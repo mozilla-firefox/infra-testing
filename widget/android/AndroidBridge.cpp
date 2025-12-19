@@ -32,7 +32,6 @@
 #include "EventDispatcher.h"
 
 #include "mozilla/TimeStamp.h"
-#include "mozilla/UniquePtr.h"
 #include "WidgetUtils.h"
 
 #include "mozilla/java/EventDispatcherWrappers.h"
@@ -42,7 +41,6 @@
 using namespace mozilla;
 
 AndroidBridge* AndroidBridge::sBridge = nullptr;
-static jobject sGlobalContext = nullptr;
 
 jmethodID AndroidBridge::GetMethodID(JNIEnv* env, jclass jClass,
                                      const char* methodName,
@@ -274,14 +272,6 @@ void AndroidBridge::GetCurrentNetworkInformation(
   env->ReleaseDoubleArrayElements(arr.Get(), info, 0);
 }
 
-jobject AndroidBridge::GetGlobalContextRef() {
-  // The context object can change, so get a fresh copy every time.
-  auto context = java::GeckoAppShell::GetApplicationContext();
-  sGlobalContext = jni::Object::GlobalRef(context).Forget();
-  MOZ_ASSERT(sGlobalContext);
-  return sGlobalContext;
-}
-
 /* Implementation file */
 NS_IMPL_ISUPPORTS(nsAndroidBridge, nsIGeckoViewEventDispatcher,
                   nsIGeckoViewBridge)
@@ -289,8 +279,7 @@ NS_IMPL_ISUPPORTS(nsAndroidBridge, nsIGeckoViewEventDispatcher,
 nsAndroidBridge::nsAndroidBridge() {
   if (jni::IsAvailable()) {
     RefPtr<widget::EventDispatcher> dispatcher = new widget::EventDispatcher();
-    dispatcher->Attach(java::EventDispatcher::GetInstance(),
-                       /* window */ nullptr);
+    dispatcher->Attach(java::EventDispatcher::GetInstance());
     mEventDispatcher = dispatcher;
   }
 }
@@ -303,8 +292,7 @@ nsAndroidBridge::GetDispatcherByName(const char* aName,
   }
 
   RefPtr<widget::EventDispatcher> dispatcher = new widget::EventDispatcher();
-  dispatcher->Attach(java::EventDispatcher::ByName(aName),
-                     /* window */ nullptr);
+  dispatcher->Attach(java::EventDispatcher::ByName(aName));
   dispatcher.forget(aResult);
   return NS_OK;
 }

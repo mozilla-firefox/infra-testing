@@ -7,27 +7,24 @@
 #include <stdlib.h>
 
 #include <bitset>
-#include <iterator>
 #include <set>
 #include <string>
 #include <utility>
 
-#include "mozilla/StaticPrefs_media.h"
-#include "transport/logging.h"
+#include "api/rtp_parameters.h"
+#include "jsep/JsepTrack.h"
+#include "jsep/JsepTransport.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/net/DataChannelProtocol.h"
 #include "nsDebug.h"
 #include "nspr.h"
 #include "nss.h"
 #include "pk11pub.h"
-
-#include "api/rtp_parameters.h"
-
-#include "jsep/JsepTrack.h"
-#include "jsep/JsepTransport.h"
 #include "sdp/HybridSdpParser.h"
 #include "sdp/SipccSdp.h"
+#include "transport/logging.h"
 
 namespace mozilla {
 
@@ -308,6 +305,9 @@ nsresult JsepSessionImpl::CreateOfferMsection(const JsepOfferOptions& options,
           new SdpFlagAttribute(SdpAttribute::kRtcpRsizeAttribute));
     }
   }
+  // Ditto for extmap-allow-mixed
+  msection->GetAttributeList().SetAttribute(
+      new SdpFlagAttribute(SdpAttribute::kExtmapAllowMixedAttribute));
 
   nsresult rv = AddTransportAttributes(msection, SdpSetupAttribute::kActpass);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -569,6 +569,16 @@ JsepSession::Result JsepSessionImpl::CreateAnswer(
   UniquePtr<SdpGroupAttributeList> groupAttr(new SdpGroupAttributeList);
   mSdpHelper.GetBundleGroups(offer, &groupAttr->mGroups);
   sdp->GetAttributeList().SetAttribute(groupAttr.release());
+
+  // Copy EXTMAP-ALLOW-MIXED from the offer to the answer
+  if (offer.GetAttributeList().HasAttribute(
+          SdpAttribute::kExtmapAllowMixedAttribute)) {
+    sdp->GetAttributeList().SetAttribute(
+        new SdpFlagAttribute(SdpAttribute::kExtmapAllowMixedAttribute));
+  } else {
+    sdp->GetAttributeList().RemoveAttribute(
+        SdpAttribute::kExtmapAllowMixedAttribute);
+  }
 
   for (size_t i = 0; i < offer.GetMediaSectionCount(); ++i) {
     // The transceivers are already in place, due to setRemote
@@ -909,10 +919,12 @@ nsresult JsepSessionImpl::SetLocalDescriptionOffer(UniquePtr<Sdp> offer) {
   for (auto& transceiver : mTransceivers) {
     if (transceiver.mJsDirection & sdp::kRecv) {
       recvTracks.push_back(&transceiver.mRecvTrack);
+    } else {
+      transceiver.mRecvTrack.ResetReceivePayloadTypes();
     }
   }
 
-  JsepTrack::SetUniqueReceivePayloadTypes(recvTracks, true);
+  JsepTrack::SetReceivePayloadTypes(recvTracks, true);
 
   return NS_OK;
 }
@@ -1143,16 +1155,21 @@ nsresult JsepSessionImpl::HandleNegotiatedSession(
   CopyBundleTransports();
 
   std::vector<JsepTrack*> receiveTracks;
+  receiveTracks.reserve(mTransceivers.size());
   for (auto& transceiver : mTransceivers) {
     // Do not count payload types for non-active recv tracks as duplicates. If
     // we receive an RTP packet with a payload type that is used by both a
     // sendrecv and a sendonly m-section, there is no ambiguity; it is for the
-    // sendrecv m-section.
+    // sendrecv m-section. MediaPipelineFilter and conduits are informed of
+    // their active status, so they know whether they can process packets and
+    // learn new SSRCs.
     if (transceiver.mRecvTrack.GetActive()) {
       receiveTracks.push_back(&transceiver.mRecvTrack);
+    } else {
+      transceiver.mRecvTrack.ResetReceivePayloadTypes();
     }
   }
-  JsepTrack::SetUniqueReceivePayloadTypes(receiveTracks);
+  JsepTrack::SetReceivePayloadTypes(receiveTracks);
 
   mNegotiations++;
 

@@ -4,18 +4,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/dom/ShadowRealmGlobalScope.h"
+
+#include "js/TypeDecls.h"
+#include "js/loader/ModuleLoaderBase.h"
+#include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/ModuleLoader.h"
+#include "mozilla/dom/ScriptLoader.h"
+#include "mozilla/dom/ShadowRealmGlobalScopeBinding.h"
 #include "nsGlobalWindowInner.h"
 #include "nsIGlobalObject.h"
 #include "xpcpublic.h"
-#include "js/TypeDecls.h"
-
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/BindingDeclarations.h"
-#include "mozilla/dom/ModuleLoader.h"
-#include "mozilla/dom/ShadowRealmGlobalScope.h"
-#include "mozilla/dom/ShadowRealmGlobalScopeBinding.h"
-
-#include "js/loader/ModuleLoaderBase.h"
 
 using namespace JS::loader;
 
@@ -108,7 +108,10 @@ ModuleLoaderBase* ShadowRealmGlobalScope::GetModuleLoader(JSContext* aCx) {
     return nullptr;
   }
 
-  ScriptLoader* scriptLoader = doc->ScriptLoader();
+  ScriptLoader* scriptLoader = doc->GetScriptLoader();
+  if (!scriptLoader) {
+    return nullptr;
+  }
 
   mModuleLoader = new ModuleLoader(scriptLoader, this, ModuleLoader::Normal);
 

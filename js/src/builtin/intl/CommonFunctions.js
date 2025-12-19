@@ -142,38 +142,6 @@ function IsASCIIAlphaString(s) {
   return true;
 }
 
-var localeCache = {
-  runtimeDefaultLocale: undefined,
-  defaultLocale: undefined,
-};
-
-/**
- * Returns the BCP 47 language tag for the host environment's current locale.
- *
- * Spec: ECMAScript Internationalization API Specification, 6.2.4.
- */
-function DefaultLocale() {
-  if (intl_IsRuntimeDefaultLocale(localeCache.runtimeDefaultLocale)) {
-    return localeCache.defaultLocale;
-  }
-
-  // If we didn't have a cache hit, compute the candidate default locale.
-  var runtimeDefaultLocale = intl_RuntimeDefaultLocale();
-  var locale = intl_supportedLocaleOrFallback(runtimeDefaultLocale);
-
-  assertIsValidAndCanonicalLanguageTag(locale, "the computed default locale");
-  assert(
-    startOfUnicodeExtensions(locale) < 0,
-    "the computed default locale must not contain a Unicode extension sequence"
-  );
-
-  // Cache the computed locale until the runtime default locale changes.
-  localeCache.defaultLocale = locale;
-  localeCache.runtimeDefaultLocale = runtimeDefaultLocale;
-
-  return locale;
-}
-
 /**
  * Canonicalizes a locale list.
  *
@@ -249,7 +217,7 @@ function CanonicalizeLocaleList(locales) {
  * Spec: RFC 4647, section 3.4.
  */
 function BestAvailableLocale(availableLocales, locale) {
-  return intl_BestAvailableLocale(availableLocales, locale, DefaultLocale());
+  return intl_BestAvailableLocale(availableLocales, locale, intl_DefaultLocale());
 }
 
 /**
@@ -274,7 +242,7 @@ function BestAvailableLocaleIgnoringDefault(availableLocales, locale) {
  */
 function LookupMatcher(availableLocales, requestedLocales) {
   // Step 1.
-  var result = new_Record();
+  var result = NEW_RECORD();
 
   // Step 2.
   for (var i = 0; i < requestedLocales.length; i++) {
@@ -305,7 +273,7 @@ function LookupMatcher(availableLocales, requestedLocales) {
   }
 
   // Steps 3-4.
-  result.locale = DefaultLocale();
+  result.locale = intl_DefaultLocale();
 
   // Step 5.
   return result;
@@ -429,7 +397,7 @@ function ResolveLocale(
   var extension = r.extension;
 
   // Step 5.
-  var result = new_Record();
+  var result = NEW_RECORD();
 
   // Step 6.
   result.dataLocale = foundLocale;
@@ -596,82 +564,6 @@ function addUnicodeExtension(locale, extension) {
 }
 
 /**
- * Returns the subset of requestedLocales for which availableLocales has a
- * matching (possibly fallback) locale. Locales appear in the same order in the
- * returned list as in the input list.
- *
- * Spec: ECMAScript Internationalization API Specification, 9.2.7.
- */
-function LookupSupportedLocales(availableLocales, requestedLocales) {
-  // Step 1.
-  var subset = [];
-
-  // Step 2.
-  for (var i = 0; i < requestedLocales.length; i++) {
-    var locale = requestedLocales[i];
-
-    // Step 2.a.
-    var noExtensionsLocale = removeUnicodeExtensions(locale);
-
-    // Step 2.b.
-    var availableLocale = BestAvailableLocale(
-      availableLocales,
-      noExtensionsLocale
-    );
-
-    // Step 2.c.
-    if (availableLocale !== undefined) {
-      DefineDataProperty(subset, subset.length, locale);
-    }
-  }
-
-  // Step 3.
-  return subset;
-}
-
-/**
- * Returns the subset of requestedLocales for which availableLocales has a
- * matching (possibly fallback) locale. Locales appear in the same order in the
- * returned list as in the input list.
- *
- * Spec: ECMAScript Internationalization API Specification, 9.2.8.
- */
-function BestFitSupportedLocales(availableLocales, requestedLocales) {
-  // don't have anything better
-  return LookupSupportedLocales(availableLocales, requestedLocales);
-}
-
-/**
- * Returns the subset of requestedLocales for which availableLocales has a
- * matching (possibly fallback) locale. Locales appear in the same order in the
- * returned list as in the input list.
- *
- * Spec: ECMAScript Internationalization API Specification, 9.2.9.
- */
-function SupportedLocales(availableLocales, requestedLocales, options) {
-  // Step 1.
-  var matcher;
-  if (options !== undefined) {
-    // Step 1.a.
-    options = ToObject(options);
-
-    // Step 1.b
-    matcher = options.localeMatcher;
-    if (matcher !== undefined) {
-      matcher = ToString(matcher);
-      if (matcher !== "lookup" && matcher !== "best fit") {
-        ThrowRangeError(JSMSG_INVALID_LOCALE_MATCHER, matcher);
-      }
-    }
-  }
-
-  // Steps 2-5.
-  return matcher === undefined || matcher === "best fit"
-    ? BestFitSupportedLocales(availableLocales, requestedLocales)
-    : LookupSupportedLocales(availableLocales, requestedLocales);
-}
-
-/**
  * Extracts a property value from the provided options object, converts it to
  * the required type, checks whether it is one of a list of allowed values,
  * and fills in a fallback value if necessary.
@@ -686,7 +578,7 @@ function GetOption(options, property, type, values, fallback) {
   if (value !== undefined) {
     // Steps 2.a-c.
     if (type === "boolean") {
-      value = ToBoolean(value);
+      value = TO_BOOLEAN(value);
     } else if (type === "string") {
       value = ToString(value);
     } else {
@@ -784,7 +676,7 @@ function DefaultNumberOption(value, minimum, maximum, fallback) {
   }
 
   // Step 2.
-  value = ToNumber(value);
+  value = TO_NUMBER(value);
 
   // Step 3.
   if (Number_isNaN(value) || value < minimum || value > maximum) {

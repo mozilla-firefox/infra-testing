@@ -7,8 +7,13 @@ import { SharedDataMap } from "resource://nimbus/lib/SharedDataMap.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  FeatureManifest: "resource://nimbus/FeatureManifest.sys.mjs",
-  PrefUtils: "resource://normandy/lib/PrefUtils.sys.mjs",
+  ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
+  NimbusEnrollments: "resource://nimbus/lib/Enrollments.sys.mjs",
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
+  NimbusMigrations: "resource://nimbus/lib/Migrations.sys.mjs",
+  PrefUtils: "moz-src:///toolkit/modules/PrefUtils.sys.mjs",
+  ProfilesDatastoreService:
+    "moz-src:///toolkit/profile/ProfilesDatastoreService.sys.mjs",
 });
 
 // This branch is used to store experiment data
@@ -71,7 +76,7 @@ ChromeUtils.defineLazyGetter(lazy, "syncDataStore", () => {
      * { childPref: value }
      * where value is parsed to the appropriate type
      *
-     * @returns {Object[]}
+     * @returns {object[]}
      */
     _getBranchChildValues(prefBranch, featureId) {
       const branch = Services.prefs.getBranch(prefBranch);
@@ -85,7 +90,8 @@ ChromeUtils.defineLazyGetter(lazy, "syncDataStore", () => {
         let value = lazy.PrefUtils.getPref(prefName);
         // Try to parse string values that could be stringified objects
         if (
-          lazy.FeatureManifest[featureId]?.variables[childPref]?.type === "json"
+          lazy.NimbusFeatures[featureId]?.manifest?.variables?.[childPref]
+            ?.type === "json"
         ) {
           let parsedValue = tryJSONParse(value);
           if (parsedValue) {
@@ -216,7 +222,17 @@ export class ExperimentStore extends SharedDataMap {
     super(sharedDataKey ?? DEFAULT_STORE_ID, options);
   }
 
-  async init() {
+  /**
+   * Initialize the ExperimentStore.
+   *
+   * @param {object} options
+   * @param {boolean} options.cleanupOldRecipes
+   * ** TEST ONLY **
+   *
+   * Whether or not to automatically remove recipes from the ExperimentStore
+   * after initialization. Defaults to true.
+   */
+  async init({ cleanupOldRecipes = true } = {}) {
     await super.init();
 
     const featureIds = new Set();
@@ -230,7 +246,13 @@ export class ExperimentStore extends SharedDataMap {
       this._emitFeatureUpdate(featureId, "feature-enrollments-loaded");
     }
 
-    Services.tm.idleDispatchToMainThread(() => this._cleanupOldRecipes());
+    await this._reportStartupDatabaseConsistency("startup");
+
+    // Clean up the old recipes *after* we report database consistency so that
+    // we're not racing.
+    if (cleanupOldRecipes) {
+      Services.tm.idleDispatchToMainThread(() => this._cleanupOldRecipes());
+    }
   }
 
   /**
@@ -249,7 +271,7 @@ export class ExperimentStore extends SharedDataMap {
       );
     }
 
-    if (lazy.FeatureManifest[featureId].isEarlyStartup) {
+    if (lazy.NimbusFeatures[featureId]?.manifest.isEarlyStartup) {
       return lazy.syncDataStore.get(featureId);
     }
 
@@ -287,6 +309,7 @@ export class ExperimentStore extends SharedDataMap {
 
   /**
    * Returns all active experiments
+   *
    * @returns {Enrollment[]}
    */
   getAllActiveExperiments() {
@@ -297,6 +320,7 @@ export class ExperimentStore extends SharedDataMap {
 
   /**
    * Returns all active rollouts
+   *
    * @returns {Enrollment[]}
    */
   getAllActiveRollouts() {
@@ -306,7 +330,28 @@ export class ExperimentStore extends SharedDataMap {
   }
 
   /**
+   * Returns a Map from the setPrefs from all active experiments to
+   * the pref values that the experiment overwrote.
+   *
+   * @returns {nsIPrefOverrideMap}
+   */
+  getOriginalPrefValuesForAllActiveEnrollments() {
+    let ret = Cc["@mozilla.org/pref-override-map;1"].createInstance(
+      Ci.nsIPrefOverrideMap
+    );
+    this.getAll()
+      .filter(enrollment => enrollment.active)
+      .forEach(enrollmentsArray =>
+        enrollmentsArray.prefs.forEach(enrollment => {
+          ret.addEntry(enrollment.name, enrollment.originalValue);
+        })
+      );
+    return ret;
+  }
+
+  /**
    * Query the store for the remote configuration of a feature
+   *
    * @param {string} featureId The feature we want to query for
    * @returns {{Rollout}|undefined} Remote defaults if available
    */
@@ -317,7 +362,7 @@ export class ExperimentStore extends SharedDataMap {
       );
     }
 
-    if (lazy.FeatureManifest[featureId].isEarlyStartup) {
+    if (lazy.NimbusFeatures[featureId]?.manifest.isEarlyStartup) {
       return lazy.syncDataStore.getDefault(featureId);
     }
 
@@ -344,15 +389,21 @@ export class ExperimentStore extends SharedDataMap {
   _cleanupOldRecipes() {
     const threshold = 365.25 * 24 * 3600 * 1000;
     const nowTimestamp = new Date().getTime();
-    const recipesToRemove = this.getAll().filter(
-      experiment =>
-        !experiment.active &&
-        // Flip the comparison here to catch scenarios in which lastSeen is
-        // invalid or undefined. The result with be a comparison with NaN
-        // which is always false
-        !(nowTimestamp - new Date(experiment.lastSeen).getTime() < threshold)
-    );
-    this._removeEntriesByKeys(recipesToRemove.map(r => r.slug));
+    const slugsToRemove = this.getAll()
+      .filter(
+        experiment =>
+          !experiment.active &&
+          // Flip the comparison here to catch scenarios in which lastSeen is
+          // invalid or undefined. The result with be a comparison with NaN
+          // which is always false
+          !(nowTimestamp - new Date(experiment.lastSeen).getTime() < threshold)
+      )
+      .map(r => r.slug);
+
+    this._removeEntriesByKeys(slugsToRemove);
+    for (const slug of slugsToRemove) {
+      this._db?.updateEnrollment(slug);
+    }
   }
 
   _emitUpdates(enrollment) {
@@ -394,11 +445,12 @@ export class ExperimentStore extends SharedDataMap {
 
   /**
    * Persists early startup experiments or rollouts
+   *
    * @param {Enrollment} enrollment Experiment or rollout
    */
   _updateSyncStore(enrollment) {
     for (let feature of enrollment.branch.features) {
-      if (lazy.FeatureManifest[feature.featureId]?.isEarlyStartup) {
+      if (lazy.NimbusFeatures[feature.featureId]?.manifest.isEarlyStartup) {
         if (!enrollment.active) {
           // Remove experiments on un-enroll, no need to check if it exists
           if (enrollment.isRollout) {
@@ -426,47 +478,141 @@ export class ExperimentStore extends SharedDataMap {
 
   /**
    * Add an enrollment and notify listeners
-   * @param {Enrollment} enrollment
+   *
+   * @param {object} enrollment The enrollment to add.
+   * @param {object} recipe The recipe for the enrollment that was enrolled.
    */
-  addEnrollment(enrollment) {
+  addEnrollment(enrollment, recipe) {
     if (!enrollment || !enrollment.slug) {
       throw new Error(
         `Tried to add an experiment but it didn't have a .slug property.`
       );
     }
 
+    if (!recipe) {
+      throw new Error("Recipe is required");
+    }
+
     this.set(enrollment.slug, enrollment);
+    this._db?.updateEnrollment(enrollment.slug, recipe);
     this._updateSyncStore(enrollment);
     this._emitUpdates(enrollment);
   }
 
   /**
-   * Merge new properties into the properties of an existing experiment
-   * @param {string} slug
-   * @param {Partial<Enrollment>} newProperties
+   * Deactivate an enrollment and notify listeners.
+   *
+   * @param {string} slug The slug of the enrollment to update.
+   * @param {string} unenrollReason The reason the unenrollment occurred.
    */
-  updateExperiment(slug, newProperties) {
-    const oldProperties = this.get(slug);
-    if (!oldProperties) {
+  deactivateEnrollment(slug, unenrollReason = "unknown") {
+    const enrollment = this.get(slug);
+    if (!slug) {
       throw new Error(
         `Tried to update experiment ${slug} but it doesn't exist`
       );
     }
-    const updatedExperiment = { ...oldProperties, ...newProperties };
-    this.set(slug, updatedExperiment);
-    this._updateSyncStore(updatedExperiment);
-    this._emitUpdates(updatedExperiment);
+
+    const inactiveEnrollment = {
+      ...enrollment,
+      active: false,
+      unenrollReason,
+      prefFlips: null,
+      prefs: null,
+    };
+    this.set(slug, inactiveEnrollment);
+    this._db?.updateEnrollment(slug);
+
+    this._updateSyncStore(inactiveEnrollment);
+    this._emitUpdates(inactiveEnrollment);
   }
 
   /**
    * Test only helper for cleanup
    *
-   * @param slugOrFeatureId Can be called with slug (which removes the SharedDataMap entry) or
+   * @param {string} slugOrFeatureId Can be called with slug (which removes the SharedDataMap entry) or
    * with featureId which removes the SyncDataStore entry for the feature
+   *
+   * @param {object} options
+   * @param {boolean} removeFromNimbusEnrollments If true (the default), this
+   * will also queue a deletion from the NimbusEnrollments table.
    */
-  _deleteForTests(slugOrFeatureId) {
+  _deleteForTests(
+    slugOrFeatureId,
+    { removeFromNimbusEnrollments = true } = {}
+  ) {
+    const isEnrollment = this.has(slugOrFeatureId);
+
     super._deleteForTests(slugOrFeatureId);
     lazy.syncDataStore.deleteDefault(slugOrFeatureId);
     lazy.syncDataStore.delete(slugOrFeatureId);
+
+    // removeFromNimbusEnrollments must default to true becuase Nimbus DevTools
+    // uses this function to remove entries from the store.
+    if (isEnrollment && removeFromNimbusEnrollments) {
+      this._db?.updateEnrollment(slugOrFeatureId);
+    }
+  }
+
+  async _reportStartupDatabaseConsistency(trigger) {
+    if (!lazy.NimbusEnrollments.databaseEnabled) {
+      // We are in an xpcshell test that has not initialized the
+      // ProfilesDatastoreService.
+      //
+      // TODO(bug 1967779): require the ProfilesDatastoreService to be initialized
+      // and remove this check.
+      return;
+    }
+
+    // If we call this with trigger === "migration", the migration won't
+    // actually be completed because it will be in progress.
+    if (
+      trigger === "startup" &&
+      !lazy.NimbusMigrations.isMigrationCompleted(
+        lazy.NimbusMigrations.Phase.AFTER_STORE_INITIALIZED,
+        "import-enrollments-to-sql"
+      )
+    ) {
+      // We haven't ran the migration, so it will report 0 enrollments in the
+      // database. We will report this event when the migration completes.
+      return;
+    }
+
+    const conn = await lazy.ProfilesDatastoreService.getConnection();
+    const rows = await conn.execute(
+      `
+        SELECT
+          active
+        FROM NimbusEnrollments
+        WHERE
+          profileId = :profileId;
+      `,
+      {
+        profileId: lazy.ExperimentAPI.profileId,
+      }
+    );
+
+    const dbEnrollments = rows.map(row => row.getResultByName("active"));
+    const storeEnrollments = Object.values(this._jsonFile.data).map(
+      e => e.active
+    );
+
+    function countActive(sum, active) {
+      return sum + Number(active);
+    }
+
+    const dbActiveCount = dbEnrollments.reduce(countActive, 0);
+    const storeActiveCount = storeEnrollments.reduce(countActive, 0);
+
+    Glean.nimbusEvents.startupDatabaseConsistency.record({
+      total_db_count: dbEnrollments.length,
+      total_store_count: storeEnrollments.length,
+      db_active_count: dbActiveCount,
+      store_active_count: storeActiveCount,
+      trigger,
+      primary: lazy.NimbusEnrollments.readFromDatabaseEnabled
+        ? "database"
+        : "jsonfile",
+    });
   }
 }

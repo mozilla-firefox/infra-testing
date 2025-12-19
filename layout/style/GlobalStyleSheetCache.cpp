@@ -6,11 +6,11 @@
 
 #include "GlobalStyleSheetCache.h"
 
-#include "nsAppDirectoryServiceDefs.h"
-#include "nsExceptionHandler.h"
+#include "MainThreadUtils.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/NeverDestroyed.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/ServoBindings.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StyleSheet.h"
 #include "mozilla/StyleSheetInlines.h"
@@ -19,8 +19,9 @@
 #include "mozilla/dom/SRIMetadata.h"
 #include "mozilla/ipc/SharedMemoryHandle.h"
 #include "mozilla/ipc/SharedMemoryMapping.h"
-#include "MainThreadUtils.h"
+#include "nsAppDirectoryServiceDefs.h"
 #include "nsContentUtils.h"
+#include "nsExceptionHandler.h"
 #include "nsIConsoleService.h"
 #include "nsIFile.h"
 #include "nsIObserverService.h"
@@ -29,8 +30,6 @@
 #include "nsPrintfCString.h"
 #include "nsServiceManagerUtils.h"
 #include "nsXULAppAPI.h"
-
-#include <mozilla/ServoBindings.h>
 
 namespace mozilla {
 
@@ -130,15 +129,30 @@ nsresult GlobalStyleSheetCache::Observe(nsISupports* aSubject,
   return NS_OK;
 }
 
-#define STYLE_SHEET(identifier_, url_, shared_)                                \
-  NotNull<StyleSheet*> GlobalStyleSheetCache::identifier_##Sheet() {           \
-    if (!m##identifier_##Sheet) {                                              \
-      m##identifier_##Sheet = LoadSheetURL(url_, eAgentSheetFeatures, eCrash); \
-    }                                                                          \
-    return WrapNotNull(m##identifier_##Sheet);                                 \
-  }
-#include "mozilla/UserAgentStyleSheetList.h"
+static constexpr struct {
+  nsLiteralCString mURL;
+  BuiltInStyleSheetFlags mFlags;
+} kBuiltInSheetInfo[] = {
+#define STYLE_SHEET(identifier_, url_, flags_) \
+  {nsLiteralCString(url_), BuiltInStyleSheetFlags::flags_},
+#include "mozilla/BuiltInStyleSheetList.h"
 #undef STYLE_SHEET
+};
+
+NotNull<StyleSheet*> GlobalStyleSheetCache::BuiltInSheet(
+    BuiltInStyleSheet aSheet) {
+  auto& slot = mBuiltIns[aSheet];
+  if (!slot) {
+    const auto& info = kBuiltInSheetInfo[size_t(aSheet)];
+    const auto parsingMode = (info.mFlags & BuiltInStyleSheetFlags::UA)
+                                 ? eAgentSheetFeatures
+                                 : eAuthorSheetFeatures;
+    MOZ_ASSERT(info.mFlags & BuiltInStyleSheetFlags::UA ||
+               info.mFlags & BuiltInStyleSheetFlags::Author);
+    slot = LoadSheetURL(info.mURL, parsingMode, eCrash);
+  }
+  return WrapNotNull(slot);
+}
 
 StyleSheet* GlobalStyleSheetCache::GetUserContentSheet() {
   return mUserContentSheet;
@@ -194,9 +208,9 @@ size_t GlobalStyleSheetCache::SizeOfIncludingThis(
 
 #define MEASURE(s) n += s ? s->SizeOfIncludingThis(aMallocSizeOf) : 0;
 
-#define STYLE_SHEET(identifier_, url_, shared_) MEASURE(m##identifier_##Sheet);
-#include "mozilla/UserAgentStyleSheetList.h"
-#undef STYLE_SHEET
+  for (const auto& sheet : mBuiltIns) {
+    MEASURE(sheet);
+  }
 
   MEASURE(mUserChromeSheet);
   MEASURE(mUserContentSheet);
@@ -270,21 +284,25 @@ GlobalStyleSheetCache::GlobalStyleSheetCache() {
             reinterpret_cast<const Header*>(sSharedMemory.data())) {
       MOZ_RELEASE_ASSERT(header->mMagic == Header::kMagic);
 
-#define STYLE_SHEET(identifier_, url_, shared_)                    \
-  if (shared_) {                                                   \
-    LoadSheetFromSharedMemory(url_, &m##identifier_##Sheet,        \
-                              eAgentSheetFeatures, header,         \
-                              UserAgentStyleSheetID::identifier_); \
-  }
-#include "mozilla/UserAgentStyleSheetList.h"
-#undef STYLE_SHEET
+      for (auto kind : MakeEnumeratedRange(BuiltInStyleSheet::Count)) {
+        const auto& info = kBuiltInSheetInfo[size_t(kind)];
+        if (info.mFlags & BuiltInStyleSheetFlags::NotShared) {
+          continue;
+        }
+        const auto parsingMode = (info.mFlags & BuiltInStyleSheetFlags::UA)
+                                     ? eAgentSheetFeatures
+                                     : eAuthorSheetFeatures;
+        LoadSheetFromSharedMemory(info.mURL, &mBuiltIns[kind], parsingMode,
+                                  header, kind);
+      }
     }
   }
 }
 
 void GlobalStyleSheetCache::LoadSheetFromSharedMemory(
-    const char* aURL, RefPtr<StyleSheet>* aSheet, SheetParsingMode aParsingMode,
-    const Header* aHeader, UserAgentStyleSheetID aSheetID) {
+    const nsACString& aURL, RefPtr<StyleSheet>* aSheet,
+    SheetParsingMode aParsingMode, const Header* aHeader,
+    BuiltInStyleSheet aSheetID) {
   auto i = size_t(aSheetID);
 
   auto sheet =
@@ -293,11 +311,9 @@ void GlobalStyleSheetCache::LoadSheetFromSharedMemory(
   nsCOMPtr<nsIURI> uri;
   MOZ_ALWAYS_SUCCEEDS(NS_NewURI(getter_AddRefs(uri), aURL));
 
-  sheet->SetPrincipal(nsContentUtils::GetSystemPrincipal());
-  sheet->SetURIs(uri, uri, uri);
   nsCOMPtr<nsIReferrerInfo> referrerInfo =
-      dom::ReferrerInfo::CreateForExternalCSSResources(sheet);
-  sheet->SetReferrerInfo(referrerInfo);
+      dom::ReferrerInfo::CreateForExternalCSSResources(sheet, uri);
+  sheet->SetURIs(uri, uri, referrerInfo, nsContentUtils::GetSystemPrincipal());
   sheet->SetSharedContents(aHeader->mSheets[i]);
   sheet->SetComplete();
   URLExtraData::sShared[i] = sheet->URLData();
@@ -377,19 +393,20 @@ void GlobalStyleSheetCache::InitSharedSheetsInParent() {
   // Normally calling ToShared on UA sheets should not fail.  It happens
   // in practice in odd cases that seem like corrupted installations; see bug
   // 1621773.  On failure, return early and fall back to non-shared sheets.
-#define STYLE_SHEET(identifier_, url_, shared_)                      \
-  if (shared_) {                                                     \
-    StyleSheet* sheet = identifier_##Sheet();                        \
-    size_t i = size_t(UserAgentStyleSheetID::identifier_);           \
-    URLExtraData::sShared[i] = sheet->URLData();                     \
-    header->mSheets[i] = sheet->ToShared(builder.get(), message);    \
-    if (!header->mSheets[i]) {                                       \
-      CrashReporter::AppendAppNotesToCrashReport("\n"_ns + message); \
-      return;                                                        \
-    }                                                                \
+  for (auto kind : MakeEnumeratedRange(BuiltInStyleSheet::Count)) {
+    auto i = size_t(kind);
+    const auto& info = kBuiltInSheetInfo[i];
+    if (info.mFlags & BuiltInStyleSheetFlags::NotShared) {
+      continue;
+    }
+    StyleSheet* sheet = BuiltInSheet(kind);
+    URLExtraData::sShared[i] = sheet->URLData();
+    header->mSheets[i] = sheet->ToShared(builder.get(), message);
+    if (!header->mSheets[i]) {
+      CrashReporter::AppendAppNotesToCrashReport("\n"_ns + message);
+      return;
+    }
   }
-#include "mozilla/UserAgentStyleSheetList.h"
-#undef STYLE_SHEET
 
   // Finished writing into the shared memory.  Freeze it, so that a process
   // can't confuse other processes by changing the UA style sheet contents.
@@ -479,7 +496,7 @@ void GlobalStyleSheetCache::InitFromProfile() {
 }
 
 RefPtr<StyleSheet> GlobalStyleSheetCache::LoadSheetURL(
-    const char* aURL, SheetParsingMode aParsingMode,
+    const nsACString& aURL, SheetParsingMode aParsingMode,
     FailureAction aFailureAction) {
   nsCOMPtr<nsIURI> uri;
   NS_NewURI(getter_AddRefs(uri), aURL);

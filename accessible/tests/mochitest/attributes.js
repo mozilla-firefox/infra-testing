@@ -319,6 +319,9 @@ const kSansSerifFontFamily = function (aFontFamily) {
 const kSerifFontFamily = function (aFontFamily) {
   return aFontFamily != "serif";
 };
+const kMathFontFamily = function (aFontFamily) {
+  return aFontFamily != "math";
+};
 
 const kCursiveFontFamily = LINUX ? "DejaVu Serif" : "Comic Sans MS";
 
@@ -334,6 +337,8 @@ function fontFamily(aComputedStyle) {
       return kSansSerifFontFamily;
     case "serif":
       return kSerifFontFamily;
+    case "math":
+      return kMathFontFamily;
     default:
       return name;
   }
@@ -343,7 +348,7 @@ function fontFamily(aComputedStyle) {
  * Returns a computed system color for this document.
  */
 function getSystemColor(aColor) {
-  let { r, g, b, a } = InspectorUtils.colorToRGBA(aColor, document);
+  let { r, g, b, a } = InspectorUtils.colorToRGBA(aColor);
   return a == 1 ? `rgb(${r}, ${g}, ${b})` : `rgba(${r}, ${g}, ${b}, ${a})`;
 }
 

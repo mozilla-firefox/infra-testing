@@ -14,9 +14,9 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
   ClientID: "resource://gre/modules/ClientID.sys.mjs",
-  DoHConfigController: "resource://gre/modules/DoHConfig.sys.mjs",
-  ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
-  Heuristics: "resource://gre/modules/DoHHeuristics.sys.mjs",
+  DoHConfigController: "moz-src:///toolkit/components/doh/DoHConfig.sys.mjs",
+  EnrollmentType: "resource://nimbus/ExperimentAPI.sys.mjs",
+  Heuristics: "moz-src:///toolkit/components/doh/DoHHeuristics.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   Preferences: "resource://gre/modules/Preferences.sys.mjs",
   clearTimeout: "resource://gre/modules/Timer.sys.mjs",
@@ -69,14 +69,14 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "gCaptivePortalService",
   "@mozilla.org/network/captive-portal-service;1",
-  "nsICaptivePortalService"
+  Ci.nsICaptivePortalService
 );
 
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "gNetworkLinkService",
   "@mozilla.org/network/network-link-service;1",
-  "nsINetworkLinkService"
+  Ci.nsINetworkLinkService
 );
 
 // Stores whether we've done first-run.
@@ -163,6 +163,11 @@ export const DoHController = {
     );
 
     lazy.Preferences.set(FIRST_RUN_PREF, true);
+  },
+
+  // Clears all of the doh-rollout prefs
+  async cleanupPrefs() {
+    lazy.Preferences.resetBranch("doh-rollout.");
   },
 
   // Also used by tests to reset DoHController state (prefs are not cleared
@@ -385,9 +390,9 @@ export const DoHController = {
       networkID: getHashedNetworkID(),
     };
 
-    const oHTTPexperiment = lazy.ExperimentAPI.getExperimentMetaData({
-      featureId: "dooh",
-    });
+    const oHTTPexperiment = lazy.NimbusFeatures.dooh.getEnrollmentMetadata(
+      lazy.EnrollmentType.EXPERIMENT
+    );
 
     // When the OHTTP experiment is active we don't want to enable steering.
     if (results.steeredProvider && !oHTTPexperiment) {
@@ -589,7 +594,7 @@ export const DoHController = {
     // Importing the module here saves us from having to do it at startup, and
     // ensures tests have time to set prefs before the module initializes.
     let { TRRRacer } = ChromeUtils.importESModule(
-      "resource://gre/modules/TRRPerformance.sys.mjs"
+      "moz-src:///toolkit/components/doh/TRRPerformance.sys.mjs"
     );
     await new Promise(resolve => {
       let trrList =

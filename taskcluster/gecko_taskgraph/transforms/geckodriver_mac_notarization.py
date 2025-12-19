@@ -12,7 +12,6 @@ from voluptuous import Optional
 
 from gecko_taskgraph.transforms.task import task_description_schema
 from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
-from gecko_taskgraph.util.scriptworker import add_scope_prefix
 
 geckodriver_notarization_description_schema = Schema(
     {
@@ -24,6 +23,7 @@ geckodriver_notarization_description_schema = Schema(
         Optional("task-from"): task_description_schema["task-from"],
         Optional("attributes"): task_description_schema["attributes"],
         Optional("dependencies"): task_description_schema["dependencies"],
+        Optional("run-on-repo-type"): task_description_schema["run-on-repo-type"],
     }
 )
 
@@ -64,7 +64,7 @@ def geckodriver_mac_notarization(config, jobs):
 
         build_platform = dep_job.attributes.get("build_platform")
 
-        scopes = [add_scope_prefix(config, "signing:cert:release-apple-notarization")]
+        job["worker"]["signing-type"] = "release-apple-notarization"
 
         platform = build_platform.rsplit("-", 1)[0]
 
@@ -73,11 +73,11 @@ def geckodriver_mac_notarization(config, jobs):
             "description": description,
             "worker-type": job["worker-type"],
             "worker": job["worker"],
-            "scopes": scopes,
             "dependencies": dependencies,
             "attributes": attributes,
             "treeherder": treeherder,
             "run-on-projects": ["mozilla-central"],
+            "run-on-repo-type": job.get("run-on-repo-type", ["git", "hg"]),
             "index": {"product": "geckodriver", "job-name": f"{platform}-notarized"},
         }
         yield task

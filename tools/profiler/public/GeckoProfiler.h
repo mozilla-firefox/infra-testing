@@ -29,9 +29,8 @@
 #include "mozilla/ProfilerState.h"
 #include "mozilla/ProfilerThreadSleep.h"
 #include "mozilla/ProfilerThreadState.h"
+#include "mozilla/ProfilerUtils.h"
 #include "mozilla/ProgressLogger.h"
-#include "mozilla/Result.h"
-#include "mozilla/ResultVariant.h"
 
 #ifndef MOZ_GECKO_PROFILER
 
@@ -106,13 +105,10 @@ static inline void profiler_record_wakeup_count(
 #else  // !MOZ_GECKO_PROFILER
 
 #  include "js/ProfilingStack.h"
-#  include "mozilla/Assertions.h"
-#  include "mozilla/Atomics.h"
 #  include "mozilla/Attributes.h"
 #  include "mozilla/BaseProfilerRAIIMacro.h"
 #  include "mozilla/Maybe.h"
 #  include "mozilla/PowerOfTwo.h"
-#  include "mozilla/ThreadLocal.h"
 #  include "mozilla/TimeStamp.h"
 #  include "mozilla/UniquePtr.h"
 #  include "nscore.h"
@@ -135,14 +131,6 @@ class SpliceableJSONWriter;
 }  // namespace baseprofiler
 }  // namespace mozilla
 class nsIURI;
-
-enum class ProfilerError {
-  IsInactive,
-  JsonGenerationFailed,
-};
-
-template <typename T>
-using ProfilerResult = mozilla::Result<T, ProfilerError>;
 
 //---------------------------------------------------------------------------
 // Give information to the profiler
@@ -273,8 +261,9 @@ class ProfilerStackCollector {
 
   virtual void CollectJitReturnAddr(void* aAddr) = 0;
 
-  virtual void CollectWasmFrame(JS::ProfilingCategoryPair aCategory,
-                                const char* aLabel) = 0;
+  virtual void CollectWasmOrSyncJITFrame(JS::ProfilingCategoryPair aCategory,
+                                         const char* aLabel,
+                                         uint32_t aSourceId) = 0;
 
   virtual void CollectProfilingStackFrame(
       const js::ProfilingStackFrame& aFrame) = 0;

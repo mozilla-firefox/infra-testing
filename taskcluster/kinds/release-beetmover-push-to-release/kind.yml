@@ -15,10 +15,9 @@ kind-dependencies:
     - post-update-verify-dummy
 
 task-defaults:
+    run-on-repo-type: [hg]
     run-on-projects: []
     shipping-phase: push
-    worker:
-        max-run-time: 2700
 
 tasks:
     devedition-push-to-release:

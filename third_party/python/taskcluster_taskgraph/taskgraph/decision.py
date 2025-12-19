@@ -3,7 +3,6 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
-import json
 import logging
 import os
 import pathlib
@@ -19,9 +18,10 @@ from taskgraph.create import create_tasks
 from taskgraph.generator import TaskGraphGenerator
 from taskgraph.parameters import Parameters, get_version
 from taskgraph.taskgraph import TaskGraph
+from taskgraph.util import json
 from taskgraph.util.python_path import find_object
 from taskgraph.util.schema import Schema, validate_schema
-from taskgraph.util.vcs import Repository, get_repository
+from taskgraph.util.vcs import get_repository
 from taskgraph.util.yaml import load_yaml
 
 logger = logging.getLogger(__name__)
@@ -39,6 +39,7 @@ PER_PROJECT_PARAMETERS = {
 }
 
 
+#: Schema for try_task_config.json version 2
 try_task_config_schema_v2 = Schema(
     {
         Optional("parameters"): {str: object},
@@ -109,6 +110,7 @@ def taskgraph_decision(options, parameters=None):
         parameters=parameters,
         decision_task_id=decision_task_id,
         write_artifacts=True,
+        enable_verifications=options.get("verify", True),
     )
 
     # write out the parameters used to generate this graph
@@ -190,25 +192,10 @@ def get_decision_parameters(graph_config, options):
     except UnicodeDecodeError:
         commit_message = ""
 
-    parameters["base_ref"] = _determine_more_accurate_base_ref(
-        repo,
-        candidate_base_ref=options.get("base_ref"),
-        head_ref=options.get("head_ref"),
-        base_rev=options.get("base_rev"),
-    )
-
-    parameters["base_rev"] = _determine_more_accurate_base_rev(
-        repo,
-        base_ref=parameters["base_ref"],
-        candidate_base_rev=options.get("base_rev"),
-        head_rev=options.get("head_rev"),
-        env_prefix=_get_env_prefix(graph_config),
-    )
-
     # Define default filter list, as most configurations shouldn't need
     # custom filters.
     parameters["files_changed"] = repo.get_changed_files(
-        rev=parameters["head_rev"], base_rev=parameters["base_rev"]
+        rev=parameters["head_rev"], base=parameters["base_rev"]
     )
     parameters["filters"] = [
         "target_tasks_method",
@@ -261,9 +248,9 @@ def get_decision_parameters(graph_config, options):
         parameters["optimize_target_tasks"] = options["optimize_target_tasks"]
 
     if "decision-parameters" in graph_config["taskgraph"]:
-        find_object(graph_config["taskgraph"]["decision-parameters"])(
-            graph_config, parameters
-        )
+        decision_params = find_object(graph_config["taskgraph"]["decision-parameters"])
+        assert callable(decision_params)
+        decision_params(graph_config, parameters)
 
     if options.get("try_task_config_file"):
         task_config_file = os.path.abspath(options.get("try_task_config_file"))
@@ -280,68 +267,6 @@ def get_decision_parameters(graph_config, options):
     result = Parameters(**parameters)
     result.check()
     return result
-
-
-def _determine_more_accurate_base_ref(repo, candidate_base_ref, head_ref, base_rev):
-    base_ref = candidate_base_ref
-
-    if not candidate_base_ref:
-        base_ref = repo.default_branch
-    elif candidate_base_ref == head_ref and base_rev == Repository.NULL_REVISION:
-        logger.info(
-            "base_ref and head_ref are identical but base_rev equals the null revision. "
-            "This is a new branch but Github didn't identify its actual base."
-        )
-        base_ref = repo.default_branch
-
-    if base_ref != candidate_base_ref:
-        logger.info(
-            f'base_ref has been reset from "{candidate_base_ref}" to "{base_ref}".'
-        )
-
-    return base_ref
-
-
-def _determine_more_accurate_base_rev(
-    repo, base_ref, candidate_base_rev, head_rev, env_prefix
-):
-    if not candidate_base_rev:
-        logger.info("base_rev is not set.")
-        base_ref_or_rev = base_ref
-    elif candidate_base_rev == Repository.NULL_REVISION:
-        logger.info("base_rev equals the null revision. This branch is a new one.")
-        base_ref_or_rev = base_ref
-    elif not repo.does_revision_exist_locally(candidate_base_rev):
-        logger.warning(
-            "base_rev does not exist locally. It is likely because the branch was force-pushed. "
-            "taskgraph is not able to assess how many commits were changed and assumes it is only "
-            f"the last one. Please set the {env_prefix.upper()}_BASE_REV environment variable "
-            "in the decision task and provide `--base-rev` to taskgraph."
-        )
-        base_ref_or_rev = base_ref
-    else:
-        base_ref_or_rev = candidate_base_rev
-
-    if base_ref_or_rev == base_ref:
-        logger.info(
-            f'Using base_ref "{base_ref}" to determine latest common revision...'
-        )
-
-    base_rev = repo.find_latest_common_revision(base_ref_or_rev, head_rev)
-    if base_rev != candidate_base_rev:
-        if base_ref_or_rev == candidate_base_rev:
-            logger.info("base_rev is not an ancestor of head_rev.")
-
-        logger.info(
-            f'base_rev has been reset from "{candidate_base_rev}" to "{base_rev}".'
-        )
-
-    return base_rev
-
-
-def _get_env_prefix(graph_config):
-    repo_keys = list(graph_config["taskgraph"].get("repositories", {}).keys())
-    return repo_keys[0] if repo_keys else ""
 
 
 def set_try_config(parameters, task_config_file):
@@ -374,9 +299,9 @@ def write_artifact(filename, data):
             yaml.safe_dump(data, f, allow_unicode=True, default_flow_style=False)
     elif filename.endswith(".json"):
         with open(path, "w") as f:
-            json.dump(data, f, sort_keys=True, indent=2, separators=(",", ": "))
+            json.dump(data, f, sort_keys=True, indent=2)
     elif filename.endswith(".gz"):
-        import gzip
+        import gzip  # noqa: PLC0415
 
         with gzip.open(path, "wb") as f:
             f.write(json.dumps(data))  # type: ignore
@@ -392,7 +317,7 @@ def read_artifact(filename):
         with open(path) as f:
             return json.load(f)
     elif filename.endswith(".gz"):
-        import gzip
+        import gzip  # noqa: PLC0415
 
         with gzip.open(path, "rb") as f:
             return json.load(f)

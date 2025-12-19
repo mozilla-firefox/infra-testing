@@ -10,8 +10,6 @@
  * add code here or elsewhere.
  */
 
-/* eslint "valid-jsdoc": [2, {requireReturn: false, requireReturnDescription: false, prefer: {return: "returns"}}] */
-
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 import { XPIExports } from "resource://gre/modules/addons/XPIExports.sys.mjs";
@@ -228,7 +226,7 @@ async function getRepositoryAddon(aAddon) {
  *        An array of properties to be copied
  * @param {object?} [aTarget]
  *        An optional target object to copy the properties to
- * @returns {Object}
+ * @returns {object}
  *        The object that the properties were copied onto
  */
 function copyProperties(aObject, aProperties, aTarget) {
@@ -248,8 +246,6 @@ const wrapperMap = new WeakMap();
 let addonFor = wrapper => wrapperMap.get(wrapper);
 
 const EMPTY_ARRAY = Object.freeze([]);
-
-let AddonWrapper;
 
 /**
  * The AddonInternal is an internal only representation of add-ons. It
@@ -348,7 +344,7 @@ export class AddonInternal {
    * SitePermission addons are a special case, where the triggering install site may be a subdomain
    * of a valid xpi origin.
    *
-   * @param {Object}  origins             Object containing URIs related to install.
+   * @param {object}  origins             Object containing URIs related to install.
    * @params {nsIURI} origins.installFrom The nsIURI of the website that has triggered the install flow.
    * @params {nsIURI} origins.source      The nsIURI where the xpi is hosted.
    * @returns {boolean}
@@ -763,7 +759,7 @@ export class AddonInternal {
    * This method reads particular properties of that metadata that may be newer
    * than that in the extension manifest, like compatibility information.
    *
-   * @param {Object} aObj
+   * @param {object} aObj
    *        A JS object containing the cached metadata
    */
   importMetadata(aObj) {
@@ -882,7 +878,7 @@ export class AddonInternal {
  * @param {AddonInternal} aAddon
  *        The add-on object to wrap.
  */
-AddonWrapper = class {
+export class AddonWrapper {
   constructor(aAddon) {
     wrapperMap.set(this, aAddon);
   }
@@ -1374,11 +1370,17 @@ AddonWrapper = class {
   /**
    * Returns true if the addon is configured to be installed
    * by enterprise policy.
+   *
+   * Should be kept in sync with Extension.sys.mjs
    */
   get isInstalledByEnterprisePolicy() {
     const policySettings = Services.policies?.getExtensionSettings(this.id);
-    return ["force_installed", "normal_installed"].includes(
-      policySettings?.installation_mode
+    const legacyLockedSettings =
+      Services.policies?.getActivePolicies()?.Extensions?.Locked ?? [];
+    return (
+      ["force_installed", "normal_installed"].includes(
+        policySettings?.installation_mode
+      ) || legacyLockedSettings.includes(this.id)
     );
   }
 
@@ -1416,9 +1418,12 @@ AddonWrapper = class {
     let perms = {
       origins: required.origins.concat(requested?.origins ?? []),
       permissions: required.permissions.concat(requested?.permissions ?? []),
-      data_collection: required.data_collection.concat(
-        requested?.data_collection ?? []
-      ),
+      data_collection: [
+        // These fields can be missing if read from extensions.json that was
+        // generated before support for data_collection was introduced.
+        ...(required?.data_collection ?? []),
+        ...(requested?.data_collection ?? []),
+      ],
     };
     return perms;
   }
@@ -1444,6 +1449,13 @@ AddonWrapper = class {
 
     // De-dup the normalized host permission patterns.
     return [...new Set(origins)];
+  }
+
+  get hasDataCollectionPermissions() {
+    return !!(
+      this.installPermissions?.data_collection?.length ||
+      this.optionalPermissions?.data_collection?.length
+    );
   }
 
   isCompatibleWith(aAppVersion, aPlatformVersion) {
@@ -1525,7 +1537,7 @@ AddonWrapper = class {
     }
     return url;
   }
-};
+}
 
 function chooseValue(aAddon, aObj, aProp) {
   let repositoryAddon = aAddon._repositoryAddon;
@@ -1841,10 +1853,9 @@ export const XPIDatabase = {
       // use an Error here so we get a stack trace.
       let err = new Error("XPI database modified after shutdown began");
       logger.warn(err);
-      lazy.AddonManagerPrivate.recordSimpleMeasure(
-        "XPIDB_late_stack",
-        Log.stackTrace(err)
-      );
+      const stack = Log.stackTrace(err);
+      lazy.AddonManagerPrivate.recordSimpleMeasure("XPIDB_late_stack", stack);
+      Glean.xpiDatabase.lateStack.set(stack);
     }
 
     if (!this._saveTask) {
@@ -1870,7 +1881,7 @@ export const XPIDatabase = {
    * Converts the current internal state of the XPI addon database to
    * a JSON.stringify()-ready structure
    *
-   * @returns {Object}
+   * @returns {object}
    */
   toJSON() {
     if (!this.addonDB) {
@@ -1900,10 +1911,9 @@ export const XPIDatabase = {
   syncLoadDB(aRebuildOnError) {
     let err = new Error("Synchronously loading the add-ons database");
     logger.debug(err.message);
-    lazy.AddonManagerPrivate.recordSimpleMeasure(
-      "XPIDB_sync_stack",
-      Log.stackTrace(err)
-    );
+    const stack = Log.stackTrace(err);
+    lazy.AddonManagerPrivate.recordSimpleMeasure("XPIDB_sync_stack", stack);
+    Glean.xpiDatabase.syncStack.set(stack);
     try {
       this.syncLoadingDB = true;
       XPIExports.XPIInternal.awaitPromise(this.asyncLoadDB(aRebuildOnError));
@@ -1914,6 +1924,7 @@ export const XPIDatabase = {
 
   _recordStartupError(reason) {
     lazy.AddonManagerPrivate.recordSimpleMeasure("XPIDB_startupError", reason);
+    Glean.xpiDatabase.startupError.set(reason);
   },
 
   /**
@@ -1925,8 +1936,10 @@ export const XPIDatabase = {
    *        If true, synchronously reconstruct the database from installed add-ons
    */
   async parseDB(aInputAddons, aRebuildOnError) {
+    let timerId;
     try {
       let parseTimer = lazy.AddonManagerPrivate.simpleTimer("XPIDB_parseDB_MS");
+      timerId = Glean.xpiDatabase.parses.start();
 
       if (!("schemaVersion" in aInputAddons) || !("addons" in aInputAddons)) {
         let error = new Error("Bad JSON file contents");
@@ -1986,11 +1999,15 @@ export const XPIDatabase = {
         }
       });
 
+      Glean.xpiDatabase.parses.stopAndAccumulate(timerId);
       parseTimer.done();
       this.addonDB = addonDB;
       logger.debug("Successfully read XPI database");
       this.initialized = true;
     } catch (e) {
+      if (timerId) {
+        Glean.xpiDatabase.parses.cancel(timerId);
+      }
       if (e.name == "SyntaxError") {
         logger.error("Syntax error parsing saved XPI JSON data");
         this._recordStartupError("syntax");
@@ -2037,10 +2054,9 @@ export const XPIDatabase = {
         "XPIDatabase.asyncLoadDB attempt after XPIProvider shutdown."
       );
       logger.warn("Fail to load AddonDB: ${error}", { error: err });
-      lazy.AddonManagerPrivate.recordSimpleMeasure(
-        "XPIDB_late_load",
-        Log.stackTrace(err)
-      );
+      const stack = Log.stackTrace(err);
+      lazy.AddonManagerPrivate.recordSimpleMeasure("XPIDB_late_load", stack);
+      Glean.xpiDatabase.lateLoad.set(stack);
       this._dbPromise = Promise.reject(err);
 
       XPIExports.XPIInternal.resolveDBReady(this._dbPromise);
@@ -2083,7 +2099,12 @@ export const XPIDatabase = {
 
   timeRebuildDatabase(timerName, rebuildOnError) {
     lazy.AddonManagerPrivate.recordTiming(timerName, () => {
-      return this.rebuildDatabase(rebuildOnError);
+      const timerId = Glean.xpiDatabase.rebuilds[timerName].start();
+      try {
+        return this.rebuildDatabase(rebuildOnError);
+      } finally {
+        Glean.xpiDatabase.rebuilds[timerName].stopAndAccumulate(timerId);
+      }
     });
   },
 
@@ -2874,7 +2895,7 @@ export const XPIDatabase = {
    *
    * @param {AddonInternal} aAddon
    *        The AddonInternal being updated
-   * @param {Object} aProperties
+   * @param {object} aProperties
    *        A dictionary of properties to set
    */
   setAddonProperties(aAddon, aProperties) {
@@ -2955,7 +2976,7 @@ export const XPIDatabase = {
    *
    * @param {AddonInternal} aAddon
    *        The AddonInternal to update
-   * @param {Object} properties - Properties to set on the addon
+   * @param {object} properties - Properties to set on the addon
    * @param {boolean?} [properties.userDisabled]
    *        Value for the userDisabled property. If undefined the value will
    *        not change
@@ -3160,26 +3181,29 @@ export const XPIDatabaseReconcile = {
    * Returns a map of ID -> add-on. When the same add-on ID exists in multiple
    * install locations the highest priority location is chosen.
    *
-   * @param {Map<String, AddonInternal>} addonMap
+   * @param {Map<string, AddonInternal>} addonMap
    *        The add-on map to flatten.
-   * @param {string?} [hideLocation]
-   *        An optional location from which to hide any add-ons.
+   * @param {function(string, string): boolean} [hideAddonCb]
+   *        An optional callback used to determine if any of the addons
+   *        in addonMap should be hidden based on their location name and
+   *        addon id (e.g. system addons that are determined to be invalid
+   *        by XPIDatabaseReconcile.processFileChanges are disabled through
+   *        this callback).
    * @returns {Map<string, AddonInternal>}
    */
-  flattenByID(addonMap, hideLocation) {
+  flattenByID(addonMap, hideAddonCb) {
     let map = new Map();
 
     for (let loc of XPIExports.XPIInternal.XPIStates.locations()) {
-      if (loc.name == hideLocation) {
-        continue;
-      }
-
       let locationMap = addonMap.get(loc.name);
       if (!locationMap) {
         continue;
       }
 
       for (let [id, addon] of locationMap) {
+        if (hideAddonCb?.(loc.name, id)) {
+          continue;
+        }
         if (!map.has(id)) {
           map.set(id, addon);
         }
@@ -3192,7 +3216,7 @@ export const XPIDatabaseReconcile = {
   /**
    * Finds the visible add-ons from the map.
    *
-   * @param {Map<String, AddonInternal>} addonMap
+   * @param {Map<string, AddonInternal>} addonMap
    *        The add-on map to filter.
    * @returns {Map<string, AddonInternal>}
    */
@@ -3691,7 +3715,7 @@ export const XPIDatabaseReconcile = {
    * Always called after XPIDatabase.sys.mjs and extensions.json have been
    * loaded.
    *
-   * @param {Object} aManifests
+   * @param {object} aManifests
    *        A dictionary of cached AddonInstalls for add-ons that have been
    *        installed
    * @param {boolean} aUpdateCompatibility
@@ -3794,26 +3818,31 @@ export const XPIDatabaseReconcile = {
     }
 
     // Validate the updated system add-ons
-    let hideLocation;
+    let hideAddonCb;
     {
       let systemAddonLocation = XPIExports.XPIInternal.XPIStates.getLocation(
         KEY_APP_SYSTEM_ADDONS
       );
       let addons = currentAddons.get(systemAddonLocation.name);
-
-      if (!systemAddonLocation.installer.isValid(addons)) {
-        // Hide the system add-on updates if any are invalid.
+      let invalidAddonIds =
+        systemAddonLocation.installer.getInvalidAddonIds(addons);
+      if (invalidAddonIds?.length) {
         logger.info(
-          "One or more updated system add-ons invalid, falling back to defaults."
+          `Detected invalid system-signed addons to be disabled: ${invalidAddonIds.join(", ")}`
         );
-        hideLocation = systemAddonLocation.name;
+        // Set the callback passed to flattenByID, this callback
+        // should return true if both the location name and addon id
+        // match one that should be disabled.
+        hideAddonCb = (locName, addonId) =>
+          locName === systemAddonLocation.name &&
+          invalidAddonIds?.includes(addonId);
       }
     }
 
     // Apply startup changes to any currently-visible add-ons, and
     // uninstall any which were previously visible, but aren't anymore.
     let previousVisible = this.getVisibleAddons(previousAddons);
-    let currentVisible = this.flattenByID(currentAddons, hideLocation);
+    let currentVisible = this.flattenByID(currentAddons, hideAddonCb);
 
     for (let addon of XPIDatabase.orphanedAddons.splice(0)) {
       if (addon.visible) {

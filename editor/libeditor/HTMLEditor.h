@@ -56,6 +56,7 @@ class ResizerSelectionListener;
 class Runnable;
 template <class T>
 class OwningNonNull;
+enum class LogLevel;
 namespace dom {
 class AbstractRange;
 class Blob;
@@ -102,6 +103,7 @@ class HTMLEditor final : public EditorBase,
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTINSERTED
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTREMOVED
   NS_DECL_NSIMUTATIONOBSERVER_CHARACTERDATACHANGED
+  NS_DECL_NSIMUTATIONOBSERVER_ATTRIBUTECHANGED
 
   // nsIHTMLEditor methods
   NS_DECL_NSIHTMLEDITOR
@@ -201,7 +203,8 @@ class HTMLEditor final : public EditorBase,
   dom::EventTarget* GetDOMEventTarget() const final;
   [[nodiscard]] Element* FindSelectionRoot(const nsINode& aNode) const final;
   bool IsAcceptableInputEvent(WidgetGUIEvent* aGUIEvent) const final;
-  nsresult GetPreferredIMEState(widget::IMEState* aState) final;
+  [[nodiscard]] Result<widget::IMEState, nsresult> GetPreferredIMEState()
+      const final;
   MOZ_CAN_RUN_SCRIPT nsresult
   OnFocus(const nsINode& aOriginalEventTargetNode) final;
   nsresult OnBlur(const dom::EventTarget* aEventTarget) final;
@@ -1054,29 +1057,23 @@ class HTMLEditor final : public EditorBase,
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult
   SetPositionToStatic(Element& aElement);
 
-  class DocumentModifiedEvent final : public Runnable {
-   public:
-    explicit DocumentModifiedEvent(HTMLEditor& aHTMLEditor)
-        : Runnable("DocumentModifiedEvent"), mHTMLEditor(aHTMLEditor) {}
+  /**
+   * Called when aRunner starts calling a DOM API to modify the DOM.
+   *
+   * @return The previous runner if the DOM API calls are unfortunately nested.
+   */
+  [[nodiscard]] const AutoDOMAPIWrapperBase* OnDOMAPICallStart(
+      const AutoDOMAPIWrapperBase& aRunner);
 
-    MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHOD Run() {
-      Unused << MOZ_KnownLive(mHTMLEditor)->OnModifyDocument(*this);
-      return NS_OK;
-    }
+  /**
+   * Called when aRunner ends calling a DOM API to modify the DOM.
+   *
+   * @param aPrevRunner Must be set to the result of the preceding
+   *                    OnDOMMutationStart() call.
+   */
+  void OnDOMAPICallEnd(const AutoDOMAPIWrapperBase* aPrevRunner);
 
-    const nsTArray<EditorDOMPointInText>& NewInvisibleWhiteSpacesRef() const {
-      return mNewInvisibleWhiteSpaces;
-    }
-
-    void MaybeAppendNewInvisibleWhiteSpace(
-        const nsIContent* aContentWillBeRemoved);
-
-   private:
-    ~DocumentModifiedEvent() = default;
-
-    const OwningNonNull<HTMLEditor> mHTMLEditor;
-    nsTArray<EditorDOMPointInText> mNewInvisibleWhiteSpaces;
-  };
+  class DocumentModifiedEvent;
 
   /**
    * OnModifyDocument() is called when the editor is changed.  This should
@@ -1134,7 +1131,7 @@ class HTMLEditor final : public EditorBase,
    * XXX I think that `IsSelectionEditable()` is better name, but it's already
    *     in `EditorBase`...
    */
-  enum class CheckSelectionInReplacedElement { Yes, OnlyWhenNotInSameNode };
+  enum class CheckSelectionInReplacedElement { No, Yes, OnlyWhenNotInSameNode };
   Result<EditActionResult, nsresult> CanHandleHTMLEditSubAction(
       CheckSelectionInReplacedElement aCheckSelectionInReplacedElement =
           CheckSelectionInReplacedElement::Yes) const;
@@ -1232,46 +1229,6 @@ class HTMLEditor final : public EditorBase,
    * @param aNode       The start node to look for parent mail cite elements.
    */
   Element* GetMostDistantAncestorMailCiteElement(const nsINode& aNode) const;
-
-  /**
-   * HandleInsertParagraphInMailCiteElement() splits aMailCiteElement at
-   * aPointToSplit.
-   *
-   * @param aMailCiteElement    The mail-cite element which should be split.
-   * @param aPointToSplit       The point to split.
-   * @return                    Candidate caret position where is at inserted
-   *                            <br> element into the split point.
-   */
-  [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<CaretPoint, nsresult>
-  HandleInsertParagraphInMailCiteElement(Element& aMailCiteElement,
-                                         const EditorDOMPoint& aPointToSplit);
-
-  /**
-   * HandleInsertBRElement() inserts a <br> element into aPointToBreak.
-   * This may split container elements at the point and/or may move following
-   * <br> element to immediately after the new <br> element if necessary.
-   *
-   * @param aPointToBreak       The point where new <br> element will be
-   *                            inserted before.
-   * @param aEditingHost        Current active editing host.
-   * @return                    If succeeded, returns new <br> element and
-   *                            candidate caret point.
-   */
-  [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<CreateElementResult, nsresult>
-  HandleInsertBRElement(const EditorDOMPoint& aPointToBreak,
-                        const Element& aEditingHost);
-
-  /**
-   * HandleInsertLinefeed() inserts a linefeed character into aPointToBreak.
-   *
-   * @param aPointToBreak       The point where new linefeed character will be
-   *                            inserted before.
-   * @param aEditingHost        Current active editing host.
-   * @return                    A suggest point to put caret.
-   */
-  [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<EditorDOMPoint, nsresult>
-  HandleInsertLinefeed(const EditorDOMPoint& aPointToBreak,
-                       const Element& aEditingHost);
 
   /**
    * Splits inclusive inline ancestors at both start and end of aRangeItem.  If
@@ -1717,86 +1674,11 @@ class HTMLEditor final : public EditorBase,
                               nsIEditor::EStripWrappers aStripWrappers,
                               AutoClonedRangeArray& aRangesToDelete) override;
 
-  /**
-   * SplitParagraphWithTransaction() splits the parent block, aParentDivOrP, at
-   * aStartOfRightNode.
-   *
-   * @param aParentDivOrP       The parent block to be split.  This must be <p>
-   *                            or <div> element.
-   * @param aStartOfRightNode   The point to be start of right node after
-   *                            split.  This must be descendant of
-   *                            aParentDivOrP.
-   * @param aMayBecomeVisibleBRElement
-   *                            Next <br> element of the split point if there
-   *                            is.  Otherwise, nullptr. If this is not nullptr,
-   *                            the <br> element may be removed if it becomes
-   *                            visible.
-   * @param aEditingHost        The editing host.
-   */
-  [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<SplitNodeResult, nsresult>
-  SplitParagraphWithTransaction(Element& aParentDivOrP,
-                                const EditorDOMPoint& aStartOfRightNode,
-                                dom::HTMLBRElement* aMayBecomeVisibleBRElement,
-                                const Element& aEditingHost);
+  class AutoInsertParagraphHandler;
+  class AutoInsertLineBreakHandler;
 
   /**
-   * HandleInsertParagraphInParagraph() does the right thing for Enter key
-   * press or 'insertParagraph' command in aParentDivOrP.  aParentDivOrP will
-   * be split **around** aCandidatePointToSplit.  If this thinks that it should
-   * be handled to insert a <br> instead, this returns "not handled".
-   *
-   * @param aParentDivOrP   The parent block.  This must be <p> or <div>
-   *                        element.
-   * @param aCandidatePointToSplit
-   *                        The point where the caller want to split
-   *                        aParentDivOrP.  However, in some cases, this is not
-   *                        used as-is.  E.g., this method avoids to create new
-   *                        empty <a href> in the right paragraph.  So this may
-   *                        be adjusted to proper position around it.
-   * @param aEditingHost    The editing host.
-   * @return                If the caller should default to inserting <br>
-   *                        element, returns "not handled".
-   */
-  [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<SplitNodeResult, nsresult>
-  HandleInsertParagraphInParagraph(Element& aParentDivOrP,
-                                   const EditorDOMPoint& aCandidatePointToSplit,
-                                   const Element& aEditingHost);
-
-  /**
-   * HandleInsertParagraphInHeadingElement() handles insertParagraph command
-   * (i.e., handling Enter key press) in a heading element.  This splits
-   * aHeadingElement element at aPointToSplit.  Then, if right heading element
-   * is empty, it'll be removed and new paragraph is created (its type is
-   * decided with default paragraph separator).
-   *
-   * @param aHeadingElement     The heading element to be split.
-   * @param aPointToSplit       The point to split aHeadingElement.
-   * @return                    New paragraph element, meaning right heading
-   *                            element if aHeadingElement is split, or newly
-   *                            created or existing paragraph element.
-   */
-  [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<InsertParagraphResult, nsresult>
-  HandleInsertParagraphInHeadingElement(Element& aHeadingElement,
-                                        const EditorDOMPoint& aPointToSplit);
-
-  /**
-   * HandleInsertParagraphInListItemElement() handles insertParagraph command
-   * (i.e., handling Enter key press) in a list item element.
-   *
-   * @param aListItemElement    The list item which has the following point.
-   * @param aPointToSplit       The point to split aListItemElement.
-   * @param aEditingHost        The editing host.
-   * @return                    New paragraph element, meaning right list item
-   *                            element if aListItemElement is split, or newly
-   *                            created paragraph element.
-   */
-  [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<InsertParagraphResult, nsresult>
-  HandleInsertParagraphInListItemElement(Element& aListItemElement,
-                                         const EditorDOMPoint& aPointToSplit,
-                                         const Element& aEditingHost);
-
-  /**
-   * InsertParagraphSeparatorAsSubAction() handles insertPargraph commad
+   * InsertParagraphSeparatorAsSubAction() handles insertParagraph command
    * (i.e., handling Enter key press) with the above helper methods.
    *
    * @param aEditingHost        The editing host.
@@ -2022,6 +1904,15 @@ class HTMLEditor final : public EditorBase,
                           const EditorDOMPoint& aPointToInsert);
 
   /**
+   * Moves all siblings from aFirstContentToMove to aLastContentToMove to
+   * aPointToInsert with a transaction.
+   */
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<MoveNodeResult, nsresult>
+  MoveSiblingsWithTransaction(nsIContent& aFirstContentToMove,
+                              nsIContent& aLastContentToMove,
+                              const EditorDOMPoint& aPointToInsert);
+
+  /**
    * MoveNodeToEndWithTransaction() moves aContentToMove to end of
    * aNewContainer.
    *
@@ -2032,6 +1923,15 @@ class HTMLEditor final : public EditorBase,
   [[nodiscard]] inline MOZ_CAN_RUN_SCRIPT Result<MoveNodeResult, nsresult>
   MoveNodeToEndWithTransaction(nsIContent& aContentToMove,
                                nsINode& aNewContainer);
+
+  /**
+   * Moves all siblings from aFirstContentToMove to aLastContentToMove to the
+   * end of aNewContainer with a transaction.
+   */
+  [[nodiscard]] inline MOZ_CAN_RUN_SCRIPT Result<MoveNodeResult, nsresult>
+  MoveSiblingsToEndWithTransaction(nsIContent& aFirstContentToMove,
+                                   nsIContent& aLastContentToMove,
+                                   nsINode& aNewContainer);
 
   /**
    * MoveNodeOrChildrenWithTransaction() moves aContent to aPointToInsert.  If
@@ -2115,8 +2015,8 @@ class HTMLEditor final : public EditorBase,
    * @param aPointToInsert      The insertion point.  The container must not
    *                            be a data node like a text node.
    */
-  [[nodiscard]] nsresult MoveAllChildren(
-      nsINode& aContainer, const EditorRawDOMPoint& aPointToInsert);
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult
+  MoveAllChildren(nsINode& aContainer, const EditorRawDOMPoint& aPointToInsert);
 
   /**
    * MoveChildrenBetween() moves all children between aFirstChild and aLastChild
@@ -2134,9 +2034,9 @@ class HTMLEditor final : public EditorBase,
    * @param aPointToInsert      The insertion point.  The container must not
    *                            be a data node like a text node.
    */
-  [[nodiscard]] nsresult MoveChildrenBetween(
-      nsIContent& aFirstChild, nsIContent& aLastChild,
-      const EditorRawDOMPoint& aPointToInsert);
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult
+  MoveChildrenBetween(nsIContent& aFirstChild, nsIContent& aLastChild,
+                      const EditorRawDOMPoint& aPointToInsert);
 
   /**
    * MovePreviousSiblings() moves all siblings before aChild (i.e., aChild
@@ -2148,7 +2048,7 @@ class HTMLEditor final : public EditorBase,
    * @param aPointToInsert      The insertion point.  The container must not
    *                            be a data node like a text node.
    */
-  [[nodiscard]] nsresult MovePreviousSiblings(
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult MovePreviousSiblings(
       nsIContent& aChild, const EditorRawDOMPoint& aPointToInsert);
 
   /**
@@ -2160,7 +2060,7 @@ class HTMLEditor final : public EditorBase,
    * @param aPointToInsert      The insertion point.  The container must not
    *                            be a data node like a text node.
    */
-  [[nodiscard]] nsresult MoveInclusiveNextSiblings(
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult MoveInclusiveNextSiblings(
       nsIContent& aChild, const EditorRawDOMPoint& aPointToInsert);
 
   /**
@@ -2872,10 +2772,10 @@ class HTMLEditor final : public EditorBase,
   AddZIndexAsSubAction(int32_t aChange);
 
   /**
-   * OnDocumentModified() is called when editor content is changed.
+   * RunOrScheduleOnModifyDocument() is called when editor content is changed.
    */
-  MOZ_CAN_RUN_SCRIPT nsresult
-  OnDocumentModified(const nsIContent* aContentWillBeRemoved = nullptr);
+  MOZ_CAN_RUN_SCRIPT nsresult RunOrScheduleOnModifyDocument(
+      const nsIContent* aContentWillBeRemoved = nullptr);
 
  protected:  // Called by helper classes.
   MOZ_CAN_RUN_SCRIPT void OnStartToHandleTopLevelEditSubAction(
@@ -2886,6 +2786,28 @@ class HTMLEditor final : public EditorBase,
 
  protected:  // Shouldn't be used by friend classes
   virtual ~HTMLEditor();
+
+  enum class DOMMutationType {
+    ContentAppended,
+    ContentInserted,
+    ContentWillBeRemoved,
+    CharacterDataChanged,
+  };
+  [[nodiscard]] LogLevel MutationLogLevelOf(
+      nsIContent* aContent,
+      const CharacterDataChangeInfo* aCharacterDataChangeInfo,
+      DOMMutationType aDOMMutationType) const;
+  [[nodiscard]] LogLevel AttrMutationLogLevelOf(
+      Element* aElement, int32_t aNameSpaceID, nsAtom* aAttribute,
+      AttrModType aModType, const nsAttrValue* aOldValue) const;
+
+  void MaybeLogContentAppended(nsIContent*) const;
+  void MaybeLogContentInserted(nsIContent*) const;
+  void MaybeLogContentWillBeRemoved(nsIContent*) const;
+  void MaybeLogCharacterDataChanged(nsIContent*,
+                                    const CharacterDataChangeInfo&) const;
+  void MaybeLogAttributeChanged(Element*, int32_t, nsAtom*, AttrModType,
+                                const nsAttrValue*) const;
 
   /**
    * InitEditorContentAndSelection() may insert `<br>` elements and padding
@@ -3562,16 +3484,6 @@ class HTMLEditor final : public EditorBase,
   void AppendInlineStyleAndRelatedStyle(
       const EditorInlineStyle& aStyleToRemove,
       nsTArray<EditorInlineStyle>& aStylesToRemove) const;
-
-  /**
-   * ReplaceHeadContentsWithSourceWithTransaction() replaces all children of
-   * <head> element with given source code.  This is undoable.
-   *
-   * @param aSourceToInsert     HTML source fragment to replace the children
-   *                            of <head> element.
-   */
-  MOZ_CAN_RUN_SCRIPT nsresult ReplaceHeadContentsWithSourceWithTransaction(
-      const nsAString& aSourceToInsert);
 
   enum class RetrievingBackgroundColorOption {
     // Ignore inline styles, i.e., return only background color of ancestor
@@ -4405,14 +4317,17 @@ class HTMLEditor final : public EditorBase,
   /**
    * HideAnonymousEditingUIs() forcibly hides all editing UIs (resizers,
    * inline-table-editing UI, absolute positioning UI).
+   *
+   * XXX This method is called by the CC, therefore, needs to be a boundary
+   * method.
    */
-  void HideAnonymousEditingUIs();
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void HideAnonymousEditingUIs();
 
   /**
    * HideAnonymousEditingUIsIfUnnecessary() hides all editing UIs if some of
    * visible UIs are now unnecessary.
    */
-  void HideAnonymousEditingUIsIfUnnecessary();
+  MOZ_CAN_RUN_SCRIPT void HideAnonymousEditingUIsIfUnnecessary();
 
   /**
    * sets the z-index of an element.
@@ -4442,7 +4357,7 @@ class HTMLEditor final : public EditorBase,
   /**
    * hide the grabber if it shown.
    */
-  void HideGrabberInternal();
+  MOZ_CAN_RUN_SCRIPT void HideGrabberInternal();
 
   /**
    * CreateGrabberInternal() creates a grabber for moving aParentContent.
@@ -4643,6 +4558,10 @@ class HTMLEditor final : public EditorBase,
   // This is set only when HandleInsertText appended a collapsible white-space.
   RefPtr<dom::Text> mLastCollapsibleWhiteSpaceAppendedTextNode;
 
+  // While this instance or its helper class updates the DOM with a DOM API,
+  // this is set to the wrapper class to call the DOM API.
+  const AutoDOMAPIWrapperBase* mRunningDOMAPIWrapper = nullptr;
+
   bool mCRInParagraphCreatesParagraph;
 
   // resizing
@@ -4748,6 +4667,8 @@ class HTMLEditor final : public EditorBase,
   friend class AutoClonedRangeArray;   // RangeUpdaterRef,
                                        // SplitNodeWithTransaction,
                                        // SplitInlineAncestorsAtRangeBoundaries
+  friend class AutoDOMAPIWrapperBase;  // OnDOMAPICallEnd,
+                                       // OnDOMAPICallStart,
   friend class AutoClonedSelectionRangeArray;  // RangeUpdaterRef,
   friend class AutoSelectionRestore;
   friend class AutoSelectionSetterAfterTableEdit;  // SetSelectionAfterEdit
@@ -4767,9 +4688,10 @@ class HTMLEditor final : public EditorBase,
                                                // CollectNonEditableNodes
   friend class ListItemElementSelectionState;  // CollectEditTargetNodes,
                                                // CollectNonEditableNodes
-  friend class MoveNodeTransaction;  // AllowsTransactionsToChangeSelection,
-                                     // CollapseSelectionTo, MarkElementDirty,
-                                     // RangeUpdaterRef
+  friend class MoveNodeTransaction;      // AllowsTransactionsToChangeSelection,
+                                         // CollapseSelectionTo, RangeUpdaterRef
+  friend class MoveSiblingsTransaction;  // AllowsTransactionsToChangeSelection,
+                                         // CollapseSelectionTo, RangeUpdaterRef
   friend class ParagraphStateAtSelection;  // CollectChildren,
                                            // CollectEditTargetNodes,
                                            // CollectListChildren,

@@ -35,6 +35,7 @@ IdentityNetworkHelpers::FetchWellKnownHelper(
         IdentityProviderWellKnown value;
         bool success = value.Init(aCx, aValue);
         if (!success) {
+          JS_ClearPendingException(aCx);
           result->Reject(NS_ERROR_INVALID_ARG, __func__);
           return;
         }
@@ -47,13 +48,18 @@ IdentityNetworkHelpers::FetchWellKnownHelper(
   return result;
 }
 
-RefPtr<MozPromise<IdentityProviderAPIConfig, nsresult, true>>
-IdentityNetworkHelpers::FetchConfigHelper(nsIURI* aConfig,
-                                          nsIPrincipal* aTriggeringPrincipal) {
-  RefPtr<MozPromise<IdentityProviderAPIConfig, nsresult, true>::Private>
-      result =
-          new MozPromise<IdentityProviderAPIConfig, nsresult, true>::Private(
-              __func__);
+RefPtr<MozPromise<
+    std::tuple<Maybe<IdentityProviderWellKnown>, IdentityProviderAPIConfig>,
+    nsresult, true>>
+IdentityNetworkHelpers::FetchConfigHelper(
+    nsIURI* aConfig, nsIPrincipal* aTriggeringPrincipal,
+    Maybe<IdentityProviderWellKnown> aWellKnownConfig) {
+  RefPtr<MozPromise<
+      std::tuple<Maybe<IdentityProviderWellKnown>, IdentityProviderAPIConfig>,
+      nsresult, true>::Private>
+      result = new MozPromise<std::tuple<Maybe<IdentityProviderWellKnown>,
+                                         IdentityProviderAPIConfig>,
+                              nsresult, true>::Private(__func__);
   nsresult rv;
   nsCOMPtr<nsICredentialChooserService> ccService =
       mozilla::components::CredentialChooserService::Service(&rv);
@@ -70,14 +76,16 @@ IdentityNetworkHelpers::FetchConfigHelper(nsIURI* aConfig,
     return result;
   }
   serviceResult->AddCallbacksWithCycleCollectedArgs(
-      [result](JSContext* aCx, JS::Handle<JS::Value> aValue, ErrorResult&) {
+      [result, aWellKnownConfig](JSContext* aCx, JS::Handle<JS::Value> aValue,
+                                 ErrorResult&) {
         IdentityProviderAPIConfig value;
         bool success = value.Init(aCx, aValue);
         if (!success) {
+          JS_ClearPendingException(aCx);
           result->Reject(NS_ERROR_INVALID_ARG, __func__);
           return;
         }
-        result->Resolve(value, __func__);
+        result->Resolve(std::make_tuple(aWellKnownConfig, value), __func__);
       },
       [result](JSContext* aCx, JS::Handle<JS::Value> aValue, ErrorResult&) {
         result->Reject(Promise::TryExtractNSResultFromRejectionValue(aValue),
@@ -113,6 +121,7 @@ IdentityNetworkHelpers::FetchAccountsHelper(
         IdentityProviderAccountList value;
         bool success = value.Init(aCx, aValue);
         if (!success) {
+          JS_ClearPendingException(aCx);
           result->Reject(NS_ERROR_INVALID_ARG, __func__);
           return;
         }
@@ -125,12 +134,14 @@ IdentityNetworkHelpers::FetchAccountsHelper(
   return result;
 }
 
-RefPtr<MozPromise<IdentityProviderToken, nsresult, true>>
+RefPtr<MozPromise<IdentityAssertionResponse, nsresult, true>>
 IdentityNetworkHelpers::FetchTokenHelper(nsIURI* aAccountsEndpoint,
                                          const nsCString& aBody,
                                          nsIPrincipal* aTriggeringPrincipal) {
-  RefPtr<MozPromise<IdentityProviderToken, nsresult, true>::Private> result =
-      new MozPromise<IdentityProviderToken, nsresult, true>::Private(__func__);
+  RefPtr<MozPromise<IdentityAssertionResponse, nsresult, true>::Private>
+      result =
+          new MozPromise<IdentityAssertionResponse, nsresult, true>::Private(
+              __func__);
   nsresult rv;
   nsCOMPtr<nsICredentialChooserService> ccService =
       mozilla::components::CredentialChooserService::Service(&rv);
@@ -149,15 +160,17 @@ IdentityNetworkHelpers::FetchTokenHelper(nsIURI* aAccountsEndpoint,
   }
   serviceResult->AddCallbacksWithCycleCollectedArgs(
       [result](JSContext* aCx, JS::Handle<JS::Value> aValue, ErrorResult&) {
-        IdentityProviderToken value;
+        IdentityAssertionResponse value;
         bool success = value.Init(aCx, aValue);
         if (!success) {
+          JS_ClearPendingException(aCx);
           result->Reject(NS_ERROR_INVALID_ARG, __func__);
           return;
         }
         result->Resolve(value, __func__);
       },
       [result](JSContext* aCx, JS::Handle<JS::Value> aValue, ErrorResult&) {
+        JS_ClearPendingException(aCx);
         result->Reject(Promise::TryExtractNSResultFromRejectionValue(aValue),
                        __func__);
       });
@@ -191,12 +204,14 @@ IdentityNetworkHelpers::FetchDisconnectHelper(
         DisconnectedAccount value;
         bool success = value.Init(aCx, aValue);
         if (!success) {
+          JS_ClearPendingException(aCx);
           result->Reject(NS_ERROR_INVALID_ARG, __func__);
           return;
         }
         result->Resolve(value, __func__);
       },
       [result](JSContext* aCx, JS::Handle<JS::Value> aValue, ErrorResult&) {
+        JS_ClearPendingException(aCx);
         result->Reject(Promise::TryExtractNSResultFromRejectionValue(aValue),
                        __func__);
       });

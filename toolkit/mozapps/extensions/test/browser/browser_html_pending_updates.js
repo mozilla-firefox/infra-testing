@@ -1,7 +1,13 @@
 /* eslint max-len: ["error", 80] */
 
+requestLongerTimeout(2);
+
 const { AddonTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/AddonTestUtils.sys.mjs"
+);
+
+const { CustomizableUITestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/CustomizableUITestUtils.sys.mjs"
 );
 
 ChromeUtils.defineESModuleGetters(this, {
@@ -14,8 +20,10 @@ AddonTestUtils.initMochitest(this);
 const server = AddonTestUtils.createHttpServer();
 
 const LOCALE_ADDON_ID = "postponed-langpack@mochi.test";
+const HIDDEN_ADDON_ID = "hidden-addon@mochi.test";
 
 let gProvider;
+let gCUITestUtils = new CustomizableUITestUtils(window);
 
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
@@ -41,10 +49,34 @@ add_setup(async function () {
         install: fakeLocalePostponedInstall,
       },
     },
+    {
+      id: HIDDEN_ADDON_ID,
+      name: "Hidden Extension (privileged or system)",
+      type: "extension",
+      version: "1.0",
+      // pendingUpgrade is only set when the staged addon is installed
+      // in the same location as the existing one.
+      pendingUpgrade: null,
+      hidden: true,
+    },
   ]);
 
   fakeLocalePostponedInstall.existingAddon = gProvider.addons[0];
-  gProvider.createInstalls([fakeLocalePostponedInstall]);
+
+  const fakeHiddenAddonPostponedInstall = {
+    name: gProvider.addons[1].name,
+    version: "2.0",
+    state: AddonManager.STATE_POSTPONED,
+  };
+  fakeHiddenAddonPostponedInstall.existingAddon = gProvider.addons[1];
+  fakeHiddenAddonPostponedInstall.addon = new MockAddon(HIDDEN_ADDON_ID);
+  fakeHiddenAddonPostponedInstall.addon.version = "2.0";
+  fakeHiddenAddonPostponedInstall.addon.hidden = true;
+
+  gProvider.createInstalls([
+    fakeLocalePostponedInstall,
+    fakeHiddenAddonPostponedInstall,
+  ]);
 
   registerCleanupFunction(() => {
     cleanupPendingNotifications();
@@ -131,12 +163,16 @@ function expectUpdatesAvailableBadgeCount({ win, expectedNumber }) {
     categoriesSidebar.getButtonByName("available-updates");
   is(
     availableButton.badgeCount,
-    1,
-    `Expect only ${expectedNumber} available updates`
+    expectedNumber,
+    expectedNumber
+      ? `Expect only ${expectedNumber} available updates`
+      : "Expect no available updates"
   );
   ok(
-    !availableButton.hidden,
-    "Expecte the available updates category to be visible"
+    expectedNumber ? !availableButton.hidden : availableButton.hidden,
+    `Expect the available updates category to be ${
+      expectedNumber ? "visible" : "hidden"
+    }`
   );
 }
 
@@ -234,6 +270,43 @@ async function completePostponedUpdate({ id, win }) {
   await testPostponedBarVisibility({ id, win, hidden: true });
 }
 
+async function verifyAppMenuAddonNotifications({
+  expectedNotification,
+  clickAddonNotification = false,
+}) {
+  await gCUITestUtils.openMainMenu();
+  is(
+    PanelUI.addonNotificationContainer.children.length,
+    expectedNotification ? 1 : 0,
+    expectedNotification
+      ? "Expect messagebar for granting addon update permissions"
+      : "Expect no messagebar for granting addon update permissions"
+  );
+  if (expectedNotification && clickAddonNotification) {
+    PanelUI.addonNotificationContainer.children[0].click();
+  } else {
+    await gCUITestUtils.hideMainMenu();
+  }
+}
+
+async function simulateBackgroundAddonUpdateCheck(addonId) {
+  const addon = await AddonManager.getAddonByID(addonId);
+  const promiseDownloadEnded =
+    AddonTestUtils.promiseInstallEvent("onDownloadEnded");
+  addon.findUpdates(
+    {
+      onUpdateAvailable(addon, install) {
+        install.promptHandler = (...args) => {
+          return AddonManager.updatePromptHandler(...args);
+        };
+        install.install();
+      },
+    },
+    AddonManager.UPDATE_WHEN_PERIODIC_UPDATE
+  );
+  await promiseDownloadEnded;
+}
+
 add_task(async function test_pending_update_with_prompted_permission() {
   const id = "test-pending-update-with-prompted-permission@mochi.test";
 
@@ -326,10 +399,38 @@ add_task(async function test_pending_update_no_prompted_permission() {
   await extension.unload();
 });
 
-add_task(async function test_pending_update_with_prompted_permission() {
+add_task(async function test_hidden_addon_pending_update() {
+  const win = await loadInitialView("extension");
+
+  await expectAddonInstallStatePostponed(HIDDEN_ADDON_ID);
+  expectUpdatesAvailableBadgeCount({ win, expectedNumber: 0 });
+
+  await closeView(win);
+});
+
+add_task(async function test_pending_update_with_prompted_data_permission() {
   await SpecialPowers.pushPrefEnv({
     set: [["extensions.dataCollectionPermissions.enabled", true]],
   });
+
+  const assertSectionHeaders = (popupContentEl, expectedHeaders = []) => {
+    for (const { id, isVisible, fluentId } of expectedHeaders) {
+      const titleEl = popupContentEl.querySelector(`#${id}`);
+      ok(titleEl, `Expected element for ${id}`);
+      Assert.equal(
+        BrowserTestUtils.isVisible(titleEl),
+        isVisible,
+        `Expected ${id} to${isVisible ? "" : " not"} be visible`
+      );
+      if (isVisible) {
+        Assert.equal(
+          titleEl.textContent,
+          PERMISSION_L10N.formatValueSync(fluentId),
+          `Expected formatted string for ${id}`
+        );
+      }
+    }
+  };
 
   const TEST_CASES = [
     {
@@ -342,24 +443,46 @@ add_task(async function test_pending_update_with_prompted_permission() {
           popupContentEl.querySelector(".popup-notification-description")
             .textContent,
           PERMISSION_L10N.formatValueSync(
-            "webext-perms-update-data-collection-only-text",
+            "webext-perms-update-text-with-data-collection",
             { extension: extensionId }
           ),
-          "Expected header string without perms"
+          "Expected header string"
         );
         Assert.equal(
-          popupContentEl.permsListEl.childElementCount,
+          popupContentEl.introEl.textContent,
+          PERMISSION_L10N.formatValueSync(
+            "webext-perms-update-list-intro-with-data-collection"
+          ),
+          "Expected list intro string"
+        );
+        assertSectionHeaders(popupContentEl, [
+          {
+            id: "addon-webext-perm-title-required",
+            isVisible: false,
+          },
+          {
+            id: "addon-webext-perm-title-data-collection",
+            isVisible: true,
+            fluentId: "webext-perms-header-update-data-collection-perms",
+          },
+          {
+            id: "addon-webext-perm-title-optional",
+            isVisible: false,
+          },
+        ]);
+        Assert.equal(
+          popupContentEl.permsListDataCollectionEl.childElementCount,
           1,
-          "Expected a permission entry in the list"
+          "Expected a data collection permission"
         );
         Assert.ok(
-          popupContentEl.permsListEl.querySelector(
+          popupContentEl.permsListDataCollectionEl.querySelector(
             "li.webext-data-collection-perm-granted"
           ),
           "Expected data collection item"
         );
         Assert.equal(
-          popupContentEl.permsListEl.firstChild.textContent,
+          popupContentEl.permsListDataCollectionEl.textContent,
           PERMISSION_L10N.formatValueSync(
             "webext-perms-description-data-some-update",
             {
@@ -377,6 +500,9 @@ add_task(async function test_pending_update_with_prompted_permission() {
     {
       title: "With data collection and required permission",
       permissions: ["bookmarks"],
+      old_data_collection_permissions: {
+        required: ["locationInfo"],
+      },
       data_collection_permissions: {
         required: ["locationInfo", "healthInfo"],
       },
@@ -385,27 +511,48 @@ add_task(async function test_pending_update_with_prompted_permission() {
           popupContentEl.querySelector(".popup-notification-description")
             .textContent,
           PERMISSION_L10N.formatValueSync(
-            "webext-perms-update-data-collection-text",
+            "webext-perms-update-text-with-data-collection",
             { extension: extensionId }
           ),
           "Expected header string with perms"
         );
+        assertSectionHeaders(popupContentEl, [
+          {
+            id: "addon-webext-perm-title-required",
+            isVisible: true,
+            fluentId: "webext-perms-header-update-required-perms",
+          },
+          {
+            id: "addon-webext-perm-title-data-collection",
+            isVisible: true,
+            fluentId: "webext-perms-header-update-data-collection-perms",
+          },
+          {
+            id: "addon-webext-perm-title-optional",
+            isVisible: false,
+          },
+        ]);
         Assert.equal(
           popupContentEl.permsListEl.childElementCount,
-          2,
-          "Expected two permission entries in the list"
+          1,
+          "Expected a required permission"
         );
         Assert.equal(
-          popupContentEl.permsListEl.firstChild.textContent,
+          popupContentEl.permsListDataCollectionEl.childElementCount,
+          1,
+          "Expected a data collection permission"
+        );
+        Assert.equal(
+          popupContentEl.permsListEl.textContent,
           PERMISSION_L10N.formatValueSync("webext-perms-description-bookmarks"),
           "Expected formatted permission string"
         );
         Assert.equal(
-          popupContentEl.permsListEl.lastChild.textContent,
+          popupContentEl.permsListDataCollectionEl.textContent,
           PERMISSION_L10N.formatValueSync(
             "webext-perms-description-data-some-update",
             {
-              permissions: "location, health information",
+              permissions: "health information",
             }
           ),
           "Expected formatted data collection permission string"
@@ -431,23 +578,44 @@ add_task(async function test_pending_update_with_prompted_permission() {
           popupContentEl.querySelector(".popup-notification-description")
             .textContent,
           PERMISSION_L10N.formatValueSync(
-            "webext-perms-update-data-collection-text",
+            "webext-perms-update-text-with-data-collection",
             { extension: extensionId }
           ),
           "Expected header string with perms"
         );
+        assertSectionHeaders(popupContentEl, [
+          {
+            id: "addon-webext-perm-title-required",
+            isVisible: true,
+            fluentId: "webext-perms-header-update-required-perms",
+          },
+          {
+            id: "addon-webext-perm-title-data-collection",
+            isVisible: true,
+            fluentId: "webext-perms-header-update-data-collection-perms",
+          },
+          {
+            id: "addon-webext-perm-title-optional",
+            isVisible: false,
+          },
+        ]);
         Assert.equal(
           popupContentEl.permsListEl.childElementCount,
-          2,
-          "Expected two permission entries in the list"
+          1,
+          "Expected a required permission"
         );
         Assert.equal(
-          popupContentEl.permsListEl.childNodes[0].textContent,
+          popupContentEl.permsListDataCollectionEl.childElementCount,
+          1,
+          "Expected a data collection permission"
+        );
+        Assert.equal(
+          popupContentEl.permsListEl.textContent,
           PERMISSION_L10N.formatValueSync("webext-perms-description-bookmarks"),
           "Expected formatted bookmarks permission string"
         );
         Assert.equal(
-          popupContentEl.permsListEl.childNodes[1].textContent,
+          popupContentEl.permsListDataCollectionEl.textContent,
           PERMISSION_L10N.formatValueSync(
             "webext-perms-description-data-some-update",
             {
@@ -459,6 +627,188 @@ add_task(async function test_pending_update_with_prompted_permission() {
         Assert.ok(
           popupContentEl.hasAttribute("learnmoreurl"),
           "Expected a learn more link"
+        );
+      },
+    },
+    {
+      title: "Has previous consent set to false",
+      data_collection_permissions: {
+        has_previous_consent: false,
+        required: ["locationInfo"],
+      },
+      verifyDialog(popupContentEl, { extensionId }) {
+        Assert.equal(
+          popupContentEl.querySelector(".popup-notification-description")
+            .textContent,
+          PERMISSION_L10N.formatValueSync(
+            "webext-perms-update-text-with-data-collection",
+            { extension: extensionId }
+          ),
+          "Expected header string"
+        );
+        Assert.equal(
+          popupContentEl.introEl.textContent,
+          PERMISSION_L10N.formatValueSync(
+            "webext-perms-update-list-intro-with-data-collection"
+          ),
+          "Expected list intro string"
+        );
+        assertSectionHeaders(popupContentEl, [
+          {
+            id: "addon-webext-perm-title-required",
+            isVisible: false,
+          },
+          {
+            id: "addon-webext-perm-title-data-collection",
+            isVisible: true,
+            fluentId: "webext-perms-header-update-data-collection-perms",
+          },
+          {
+            id: "addon-webext-perm-title-optional",
+            isVisible: false,
+          },
+        ]);
+        Assert.equal(
+          popupContentEl.permsListDataCollectionEl.childElementCount,
+          1,
+          "Expected a data collection permission"
+        );
+        Assert.equal(
+          popupContentEl.permsListDataCollectionEl.textContent,
+          PERMISSION_L10N.formatValueSync(
+            "webext-perms-description-data-some-update",
+            {
+              permissions: "location",
+            }
+          ),
+          "Expected formatted data collection permission string"
+        );
+      },
+    },
+    {
+      title:
+        "Has previous consent with data collection permissions defined before",
+      old_data_collection_permissions: {
+        // addons-linter requires this property to be required and non-empty.
+        required: ["none"],
+      },
+      data_collection_permissions: {
+        has_previous_consent: true,
+        required: ["locationInfo"],
+      },
+      verifyDialog(popupContentEl, { extensionId }) {
+        Assert.equal(
+          popupContentEl.querySelector(".popup-notification-description")
+            .textContent,
+          PERMISSION_L10N.formatValueSync(
+            "webext-perms-update-text-with-data-collection",
+            { extension: extensionId }
+          ),
+          "Expected header string"
+        );
+        Assert.equal(
+          popupContentEl.introEl.textContent,
+          PERMISSION_L10N.formatValueSync(
+            "webext-perms-update-list-intro-with-data-collection"
+          ),
+          "Expected list intro string"
+        );
+        assertSectionHeaders(popupContentEl, [
+          {
+            id: "addon-webext-perm-title-required",
+            isVisible: false,
+          },
+          {
+            id: "addon-webext-perm-title-data-collection",
+            isVisible: true,
+            fluentId: "webext-perms-header-update-data-collection-perms",
+          },
+          {
+            id: "addon-webext-perm-title-optional",
+            isVisible: false,
+          },
+        ]);
+        Assert.equal(
+          popupContentEl.permsListDataCollectionEl.childElementCount,
+          1,
+          "Expected a data collection permission"
+        );
+        Assert.equal(
+          popupContentEl.permsListDataCollectionEl.textContent,
+          PERMISSION_L10N.formatValueSync(
+            "webext-perms-description-data-some-update",
+            {
+              permissions: "location",
+            }
+          ),
+          "Expected formatted data collection permission string"
+        );
+      },
+    },
+    {
+      title: "Has previous consent with other permissions",
+      permissions: ["bookmarks"],
+      data_collection_permissions: {
+        has_previous_consent: true,
+        required: ["locationInfo"],
+      },
+      verifyDialog(popupContentEl, { extensionId }) {
+        Assert.equal(
+          popupContentEl.querySelector(".popup-notification-description")
+            .textContent,
+          PERMISSION_L10N.formatValueSync(
+            "webext-perms-update-text-with-data-collection",
+            { extension: extensionId }
+          ),
+          "Expected header string"
+        );
+        Assert.equal(
+          popupContentEl.introEl.textContent,
+          PERMISSION_L10N.formatValueSync(
+            "webext-perms-update-list-intro-with-data-collection"
+          ),
+          "Expected list intro string"
+        );
+        assertSectionHeaders(popupContentEl, [
+          {
+            id: "addon-webext-perm-title-required",
+            isVisible: true,
+            fluentId: "webext-perms-header-update-required-perms",
+          },
+          {
+            id: "addon-webext-perm-title-data-collection",
+            isVisible: true,
+            fluentId: "webext-perms-header-update-data-collection-perms",
+          },
+          {
+            id: "addon-webext-perm-title-optional",
+            isVisible: false,
+          },
+        ]);
+        Assert.equal(
+          popupContentEl.permsListEl.childElementCount,
+          1,
+          "Expected a required permission"
+        );
+        Assert.equal(
+          popupContentEl.permsListDataCollectionEl.childElementCount,
+          1,
+          "Expected a data collection permission"
+        );
+        Assert.equal(
+          popupContentEl.permsListEl.textContent,
+          PERMISSION_L10N.formatValueSync("webext-perms-description-bookmarks"),
+          "Expected formatted bookmarks permission string"
+        );
+        Assert.equal(
+          popupContentEl.permsListDataCollectionEl.textContent,
+          PERMISSION_L10N.formatValueSync(
+            "webext-perms-description-data-some-update",
+            {
+              permissions: "location",
+            }
+          ),
+          "Expected formatted data collection permission string"
         );
       },
     },
@@ -474,7 +824,7 @@ add_task(async function test_pending_update_with_prompted_permission() {
     info(title);
 
     const id = `@${title.toLowerCase().replaceAll(/[^\w]+/g, "-")}`;
-    const { extension } = createTestExtension({
+    const testExtensionProps = {
       id,
       oldManifest: {
         browser_specific_settings: {
@@ -495,20 +845,21 @@ add_task(async function test_pending_update_with_prompted_permission() {
           },
         },
       },
-    });
+    };
 
+    const { extension } = createTestExtension(testExtensionProps);
     await extension.startup();
     await extension.awaitMessage("bgpage-ready");
     const win = await loadInitialView("extension");
 
-    const dialogPromise = promisePopupNotificationShown(
+    let dialogPromise = promisePopupNotificationShown(
       "addon-webext-permissions"
     );
     // This `promptPromise` is retrieving data from the prompt internals, while
     // the `dialogPromise` will return the actual dialog element.
-    const promptPromise = promisePermissionPrompt(id);
+    let promptPromise = promisePermissionPrompt(id);
     win.checkForUpdates();
-    const [popupContentEl, infoProps] = await Promise.all([
+    let [popupContentEl, infoProps] = await Promise.all([
       dialogPromise,
       promptPromise,
     ]);
@@ -516,7 +867,7 @@ add_task(async function test_pending_update_with_prompted_permission() {
     verifyDialog(popupContentEl, { extensionId: id });
 
     // Confirm the update, and proceed.
-    const waitForManagementUpdate = new Promise(resolve => {
+    let waitForManagementUpdate = new Promise(resolve => {
       const { Management } = ChromeUtils.importESModule(
         "resource://gre/modules/Extension.sys.mjs"
       );
@@ -530,8 +881,52 @@ add_task(async function test_pending_update_with_prompted_permission() {
     info("Wait for the Management update to be emitted");
     await waitForManagementUpdate;
 
-    await closeView(win);
     await extension.unload();
+    await closeView(win);
+
+    info("Test again on simulated background update");
+    await BrowserTestUtils.withNewTab({ gBrowser }, async () => {
+      const { extension: extension2 } = createTestExtension(testExtensionProps);
+      await extension2.startup();
+      await extension2.awaitMessage("bgpage-ready");
+
+      dialogPromise = promisePopupNotificationShown("addon-webext-permissions");
+      promptPromise = BrowserUtils.promiseObserved(
+        "webextension-update-permission-prompt",
+        subject => subject.wrappedJSObject?.addon?.id == id
+      ).then(({ subject }) => subject.wrappedJSObject);
+
+      await simulateBackgroundAddonUpdateCheck(id);
+
+      await verifyAppMenuAddonNotifications({
+        expectedNotification: true,
+        clickAddonNotification: true,
+      });
+
+      [popupContentEl, infoProps] = await Promise.all([
+        dialogPromise,
+        promptPromise,
+      ]);
+      verifyDialog(popupContentEl, { extensionId: id });
+
+      // Confirm the update, and proceed.
+      waitForManagementUpdate = new Promise(resolve => {
+        const { Management } = ChromeUtils.importESModule(
+          "resource://gre/modules/Extension.sys.mjs"
+        );
+        Management.once("update", resolve);
+      });
+      infoProps.resolve();
+      await promiseUpdateAvailable(extension2);
+      const win2 = gBrowser.selectedBrowser.contentWindow;
+      await completePostponedUpdate({ id, win: win2 });
+      // Ensure that the bootstrap scope update method has been executed
+      // successfully and emitted the update Management event.
+      info("Wait for the Management update to be emitted");
+      await waitForManagementUpdate;
+
+      await extension2.unload();
+    });
   }
 
   await SpecialPowers.popPrefEnv();
@@ -559,13 +954,20 @@ add_task(async function test_pending_update_with_no_prompted_permission() {
         optional: ["technicalAndInteraction"],
       },
     },
+    {
+      title: "Has previous consent",
+      data_collection_permissions: {
+        has_previous_consent: true,
+        required: ["locationInfo"],
+      },
+    },
   ];
 
   for (const { title, data_collection_permissions } of TEST_CASES) {
     info(title);
 
     const id = `@${title.toLowerCase().replaceAll(/[^\w]+/g, "-")}`;
-    const { extension } = createTestExtension({
+    const testExtensionProps = {
       id,
       newManifest: {
         name: id,
@@ -576,7 +978,8 @@ add_task(async function test_pending_update_with_no_prompted_permission() {
           },
         },
       },
-    });
+    };
+    const { extension } = createTestExtension(testExtensionProps);
 
     await extension.startup();
     await extension.awaitMessage("bgpage-ready");
@@ -588,6 +991,20 @@ add_task(async function test_pending_update_with_no_prompted_permission() {
 
     await closeView(win);
     await extension.unload();
+
+    info("Test again on simulated background update");
+    const { extension: extension2 } = createTestExtension(testExtensionProps);
+    await extension2.startup();
+    await extension2.awaitMessage("bgpage-ready");
+    await simulateBackgroundAddonUpdateCheck(id);
+    await verifyAppMenuAddonNotifications({
+      expectedNotification: false,
+    });
+    let win2 = await loadInitialView("extension");
+    await promiseUpdateAvailable(extension2);
+    await completePostponedUpdate({ id, win: win2 });
+    await closeView(win2);
+    await extension2.unload();
   }
 
   await SpecialPowers.popPrefEnv();

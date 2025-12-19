@@ -40,7 +40,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "stun.h"
 #include "nr_socket_local.h"
 #include "nr_socket_turn.h"
-#include "nr_socket_wrapper.h"
 #include "nr_socket_buffered_stun.h"
 #include "nr_socket_multi_tcp.h"
 #include "ice_reg.h"
@@ -805,36 +804,25 @@ static int nr_ice_component_pair_matches_check(nr_ice_component *comp, nr_ice_ca
     return(1);
   }
 
-static int nr_ice_component_handle_triggered_check(nr_ice_component *comp, nr_ice_cand_pair *pair, nr_stun_server_request *req, int *error)
+static int nr_ice_component_handle_use_candidate(nr_ice_component *comp, nr_ice_cand_pair *pair, int *error)
   {
-    nr_stun_message *sreq=req->request;
     int r=0,_status;
 
-    if(nr_stun_message_has_attribute(sreq,NR_STUN_ATTR_USE_CANDIDATE,0)){
-      if(comp->stream->pctx->controlling){
-        r_log(LOG_ICE,LOG_WARNING,"ICE-PEER(%s)/CAND_PAIR(%s): Peer sent USE-CANDIDATE but is controlled",comp->stream->pctx->label, pair->codeword);
-      }
-      else{
-        /* If this is the first time we've noticed this is nominated...*/
-        pair->peer_nominated=1;
+    if(comp->stream->pctx->controlling){
+      r_log(LOG_ICE,LOG_WARNING,"ICE-PEER(%s)/CAND_PAIR(%s): Peer sent USE-CANDIDATE but is controlled",comp->stream->pctx->label, pair->codeword);
+    }
+    else{
+      /* If this is the first time we've noticed this is nominated...*/
+      pair->peer_nominated=1;
 
-        if(pair->state==NR_ICE_PAIR_STATE_SUCCEEDED && !pair->nominated){
-          pair->nominated=1;
+      if(pair->state==NR_ICE_PAIR_STATE_SUCCEEDED && !pair->nominated){
+        pair->nominated=1;
 
-          if(r=nr_ice_component_nominated_pair(pair->remote->component, pair)) {
-            *error=(r==R_NO_MEMORY)?500:400;
-            ABORT(r);
-          }
+        if(r=nr_ice_component_nominated_pair(pair->remote->component, pair)) {
+          *error=(r==R_NO_MEMORY)?500:400;
+          ABORT(r);
         }
       }
-    }
-
-    /* Note: the RFC says to trigger first and then nominate. But in that case
-     * the canceled trigger pair would get nominated and the cloned trigger pair
-     * would not get the nomination status cloned with it.*/
-    if(r=nr_ice_candidate_pair_do_triggered_check(comp->stream->pctx,pair)) {
-      *error=(r==R_NO_MEMORY)?500:400;
-      ABORT(r);
     }
 
     _status=0;
@@ -905,9 +893,26 @@ static int nr_ice_component_process_incoming_check(nr_ice_component *comp, nr_tr
        * we are willing to handle multiple matches here. */
       if(nr_ice_component_pair_matches_check(comp, pair, local_addr, req)){
         r_log(LOG_ICE,LOG_DEBUG,"ICE-PEER(%s)/CAND_PAIR(%s): Found a matching pair for received check: %s",comp->stream->pctx->label,pair->codeword,pair->as_string);
-        if(r=nr_ice_component_handle_triggered_check(comp, pair, req, error))
+        int peer_nominated = pair->peer_nominated;
+        if(nr_stun_message_has_attribute(req->request,NR_STUN_ATTR_USE_CANDIDATE,0)){
+          if(r=nr_ice_component_handle_use_candidate(comp, pair, error)) {
+            ABORT(r);
+          }
+        }
+
+        int new_peer_nomination = !peer_nominated && pair->peer_nominated;
+        int might_select = !comp->nominated ||
+          (comp->nominated->priority < pair->priority);
+        int force = new_peer_nomination && might_select;
+
+        /* Note: the RFC says to trigger first and then nominate. But in that
+         * case the canceled trigger pair would get nominated and the cloned
+         * trigger pair would not get the nomination status cloned with it.*/
+        if(!found_valid && (r=nr_ice_candidate_pair_do_triggered_check(comp->stream->pctx, pair, force))) {
+          *error=(r==R_NO_MEMORY)?500:400;
           ABORT(r);
-        ++found_valid;
+        }
+        found_valid=1;
       }
       pair=TAILQ_NEXT(pair,check_queue_entry);
     }
@@ -969,9 +974,17 @@ static int nr_ice_component_process_incoming_check(nr_ice_component *comp, nr_tr
       TAILQ_INSERT_TAIL(&comp->candidates,pcand,entry_comp);
       pcand=0;
 
+      if(nr_stun_message_has_attribute(req->request,NR_STUN_ATTR_USE_CANDIDATE,0)){
+        if(r=nr_ice_component_handle_use_candidate(comp, pair, error)) {
+          ABORT(r);
+        }
+      }
+
       /* Finally start the trigger check if needed */
-      if(r=nr_ice_component_handle_triggered_check(comp, pair, req, error))
+      if(r=nr_ice_candidate_pair_do_triggered_check(comp->stream->pctx, pair, 0)) {
+        *error=(r==R_NO_MEMORY)?500:400;
         ABORT(r);
+      }
     }
 
     _status=0;
@@ -1352,7 +1365,9 @@ static void nr_ice_component_consent_refreshed(nr_ice_component *comp)
 
 static void nr_ice_component_refresh_consent_cb(NR_SOCKET s, int how, void *cb_arg)
   {
-    nr_ice_component *comp=cb_arg;
+    nr_ice_cand_pair *pair=cb_arg;
+    assert(pair && pair->remote && pair->remote->component);
+    nr_ice_component *comp=pair->remote->component;
 
     switch (comp->consent_ctx->state) {
       case NR_STUN_CLIENT_STATE_FAILED:
@@ -1365,6 +1380,12 @@ static void nr_ice_component_refresh_consent_cb(NR_SOCKET s, int how, void *cb_a
       case NR_STUN_CLIENT_STATE_DONE:
         r_log(LOG_ICE, LOG_INFO, "ICE(%s)/STREAM(%s)/COMP(%d): Consent refreshed",
               comp->ctx->label, comp->stream->label, comp->component_id);
+        if (comp->consent_ctx->rtt_valid) {
+          nr_ice_candidate_pair_update_rtt(pair, comp->consent_ctx->rtt_ms);
+          // clear rtt_ms so we can't double process it.
+          comp->consent_ctx->rtt_valid = 0;
+          comp->consent_ctx->rtt_ms = 0;
+        }
         nr_ice_component_consent_refreshed(comp);
         break;
       case NR_STUN_CLIENT_STATE_TIMED_OUT:
@@ -1438,7 +1459,7 @@ static void nr_ice_component_consent_timer_cb(NR_SOCKET s, int how, void *cb_arg
 
     if (r=nr_ice_component_refresh_consent(comp->consent_ctx,
                                            nr_ice_component_refresh_consent_cb,
-                                           comp)) {
+                                           comp->active)) {
       r_log(LOG_ICE,LOG_ERR,"ICE(%s)/STREAM(%s)/COMP(%d): Refresh consent failed with %d",
             comp->ctx->label, comp->stream->label, comp->component_id, r);
     }
@@ -1493,9 +1514,17 @@ int nr_ice_component_setup_consent(nr_ice_component *comp)
 
     nr_ice_component_consent_destroy(comp);
 
-    if (r=nr_stun_client_ctx_create("consent", comp->active->local->osock,
-                                    &comp->active->remote->addr, 0,
-                                    &comp->consent_ctx))
+    int flags = NR_STUN_TRANSPORT_ADDR_CHECK_WILDCARD;
+    if (!(comp->ctx->flags & NR_ICE_CTX_FLAGS_ALLOW_LOOPBACK)) {
+      flags |= NR_STUN_TRANSPORT_ADDR_CHECK_LOOPBACK;
+    }
+    if (!(comp->ctx->flags & NR_ICE_CTX_FLAGS_ALLOW_LINK_LOCAL)) {
+      flags |= NR_STUN_TRANSPORT_ADDR_CHECK_LINK_LOCAL;
+    }
+
+    if (r = nr_stun_client_ctx_create("consent", comp->active->local->osock,
+                                      &comp->active->remote->addr, 0, flags,
+                                      &comp->consent_ctx))
       ABORT(r);
     /* Consent request get send only once. */
     comp->consent_ctx->maximum_transmits = 1;
@@ -1540,10 +1569,15 @@ int nr_ice_component_nominated_pair(nr_ice_component *comp, nr_ice_cand_pair *pa
     r_log(LOG_ICE,LOG_INFO,"ICE-PEER(%s)/STREAM(%s)/COMP(%d)/CAND-PAIR(%s): cancelling all pairs but %s",comp->stream->pctx->label,comp->stream->label,comp->component_id,pair->codeword,pair->as_string);
 
     /* Cancel checks in WAITING and FROZEN per ICE S 8.1.2 */
+    /* DO NOT CANCEL HIGHER PRIORITY PEER NOMINATED PAIRS!!! If a pair has been
+     * peer nominated, we _must_ pursue it to completion, because if this is
+     * the highest priority working pair from the peer's perspective, this is
+     * the one it will use! This is a spec bug. */
     p2=TAILQ_FIRST(&comp->stream->trigger_check_queue);
     while(p2){
       if((p2 != pair) &&
-         (p2->remote->component->component_id == comp->component_id)) {
+         (p2->remote->component->component_id == comp->component_id) &&
+         !(p2->peer_nominated && (p2->priority > pair->priority))) {
         assert(p2->state == NR_ICE_PAIR_STATE_WAITING ||
                p2->state == NR_ICE_PAIR_STATE_CANCELLED);
         r_log(LOG_ICE,LOG_INFO,"ICE-PEER(%s)/STREAM(%s)/COMP(%d)/CAND-PAIR(%s): cancelling FROZEN/WAITING pair %s in trigger check queue because CAND-PAIR(%s) was nominated.",comp->stream->pctx->label,comp->stream->label,comp->component_id,p2->codeword,p2->as_string,pair->codeword);
@@ -1558,7 +1592,8 @@ int nr_ice_component_nominated_pair(nr_ice_component *comp, nr_ice_cand_pair *pa
       if((p2 != pair) &&
          (p2->remote->component->component_id == comp->component_id) &&
          ((p2->state == NR_ICE_PAIR_STATE_FROZEN) ||
-          (p2->state == NR_ICE_PAIR_STATE_WAITING))) {
+          (p2->state == NR_ICE_PAIR_STATE_WAITING)) &&
+         !(p2->peer_nominated && (p2->priority > pair->priority))) {
         r_log(LOG_ICE,LOG_INFO,"ICE-PEER(%s)/STREAM(%s)/COMP(%d)/CAND-PAIR(%s): cancelling FROZEN/WAITING pair %s because CAND-PAIR(%s) was nominated.",comp->stream->pctx->label,comp->stream->label,comp->component_id,p2->codeword,p2->as_string,pair->codeword);
 
         nr_ice_candidate_pair_cancel(pair->pctx,p2,0);

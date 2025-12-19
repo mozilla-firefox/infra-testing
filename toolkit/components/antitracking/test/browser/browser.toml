@@ -1,5 +1,7 @@
 [DEFAULT]
-skip-if = ["debug"] # bug 1884982 - takes 20+ minutes to run on debug
+skip-if = [
+  "debug", # bug 1884982 - takes 20+ minutes to run on debug
+]
 prefs = [
   "dom.storage_access.prompt.testing=true", # Disable the Storage Access API prompts for all of the tests in this directory
   "dom.storage_access.prompt.testing.allow=true",
@@ -8,6 +10,7 @@ prefs = [
   "network.cookie.sameSite.laxByDefault=false", # Bug 1617611: Fix all the tests broken by "cookies SameSite=lax by default"
   "dom.security.https_first=false", # Disable https-first because of explicit http/https testing
   "dom.storage_access.dont_grant_insecure_contexts=true", # Enable constraining storage access api to secure contexts
+  "network.lna.block_trackers=false",
 ]
 support-files = [
   "container.html",
@@ -67,6 +70,8 @@ support-files = [
 
 ["browser_allowListNotifications.js"]
 
+["browser_allowListPreference.js"]
+
 ["browser_allowListSeparationInPrivateAndNormalWindows.js"]
 
 ["browser_allowPermissionForTracker.js"]
@@ -86,6 +91,14 @@ support-files = [
 ["browser_fileUrl.js"]
 
 ["browser_firstPartyCookieRejectionHonoursAllowList.js"]
+
+["browser_fixed_ABA_partitionKey.js"]
+
+["browser_foreignWorker_eventSource.js"]
+support-files= [
+  "eventsource_worker.js",
+  "eventsource_message.sjs",
+]
 
 ["browser_hasStorageAccess.js"]
 
@@ -149,7 +162,9 @@ support-files = ["localStorageEvents.html"]
 ["browser_partitionedLockManager.js"]
 
 ["browser_partitionedMessaging.js"]
-skip-if = ["true"] #Bug 1588241
+skip-if = [
+  "true", # Bug 1588241
+]
 
 ["browser_partitionedServiceWorkers.js"]
 support-files = [
@@ -171,7 +186,9 @@ support-files = [
 ["browser_permissionInPrivateWindows.js"]
 
 ["browser_permissionPropagation.js"]
-skip-if = ["os == 'win' && debug"] # Bug 1645505
+skip-if = [
+  "os == 'win' && debug", # Bug 1645505
+]
 
 ["browser_referrerDefaultPolicy.js"]
 support-files = ["referrer.sjs"]
@@ -236,7 +253,6 @@ support-files = [
 ["browser_staticPartition_tls_session.js"]
 
 ["browser_staticPartition_websocket.js"]
-skip-if = ["os == 'mac' && verify"] # Bug 1721210
 support-files = ["file_ws_handshake_delay_wsh.py"]
 
 ["browser_storageAccessAutograntFromFedCM.js"]
@@ -304,7 +320,9 @@ support-files = [
 ["browser_storageAccess_TopLevel_StorageAccessPermission.js"]
 
 ["browser_storageAccess_TopLevel_UserActivation.js"]
-skip-if = ["debug"] # Bug 1700551
+skip-if = [
+  "debug", # Bug 1700551
+]
 
 ["browser_storageAccess_cookies_on_grant.js"]
 
@@ -326,10 +344,29 @@ support-files = [
 
 ["browser_thirdPartyStorageRejectionForCORS.js"]
 
+["browser_triggeringClassificationFlags.js"]
+support-files = [
+  "empty_size.mp3",
+  "empty_size.mp3^headers^",
+  "fetch.html",
+  "fetch.html^headers^",
+  "file_ws_handshake_delay_wsh.py",
+  "short.mp4",
+  "short.mp4^headers^",
+  "style.css",
+  "style.css^headers^",
+  "test.font.woff",
+  "test.font.woff^headers^",
+  "triggerLoads.sjs",
+]
+
 ["browser_urlDecorationStripping.js"]
 
 ["browser_urlQueryStringStripping.js"]
 support-files = ["file_stripping.html"]
+skip-if = [
+  "opt && verify-standalone",
+]
 
 ["browser_urlQueryStringStrippingWithEncoding.js"]
 support-files = ["file_stripping.html"]
@@ -354,6 +391,15 @@ support-files = ["file_stripping.html"]
 ["browser_userInteraction.js"]
 
 ["browser_viewsource_localhost_request.js"]
+
+["browser_workerFetch_trackingProtection.js"]
+support-files = [
+  "corsAllowed.html",
+  "corsAllowed.html^headers^",
+  "sharedWorkerFetch.js",
+  "serviceWorkerFetch.js",
+  "workerFetch.js",
+]
 
 ["browser_workerPropagation.js"]
 support-files = ["workerIframe.html"]

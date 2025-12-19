@@ -32,6 +32,7 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.components.bookmarks.BookmarksUseCase
 import org.mozilla.fenix.components.usecases.FenixBrowserUseCases
 import org.mozilla.fenix.home.mars.MARSUseCases
+import org.mozilla.fenix.pbmlock.PrivateBrowsingLockUseCases
 import org.mozilla.fenix.perf.StrictModeManager
 import org.mozilla.fenix.perf.lazyMonitored
 import org.mozilla.fenix.wallpapers.WallpapersUseCases
@@ -93,7 +94,7 @@ class UseCases(
         WebAppUseCases(context, store.value, shortcutManager.value)
     }
 
-    val downloadUseCases by lazyMonitored { DownloadsUseCases(store.value) }
+    val downloadUseCases by lazyMonitored { DownloadsUseCases(store.value, context.applicationContext) }
 
     val contextMenuUseCases by lazyMonitored { ContextMenuUseCases(store.value) }
 
@@ -116,7 +117,7 @@ class UseCases(
 
     val wallpaperUseCases by lazyMonitored {
         // Required to even access context.filesDir property and to retrieve current locale
-        val (rootStorageDirectory, currentLocale) = strictMode.value.resetAfter(StrictMode.allowThreadDiskReads()) {
+        val (rootStorageDirectory, currentLocale) = strictMode.value.allowViolation(StrictMode::allowThreadDiskReads) {
             val rootStorageDirectory = context.filesDir
             val currentLocale = LocaleManager.getCurrentLocale(context)?.toLanguageTag()
                 ?: LocaleManager.getSystemDefault().toLanguageTag()
@@ -131,11 +132,16 @@ class UseCases(
 
     val fenixBrowserUseCases by lazyMonitored {
         FenixBrowserUseCases(
+            appStore = appStore.value,
             addNewTabUseCase = tabsUseCases.addTab,
             loadUrlUseCase = sessionUseCases.loadUrl,
             searchUseCases = searchUseCases,
             homepageTitle = context.getString(R.string.tab_tray_homepage_tab),
             profiler = engine.value.profiler,
         )
+    }
+
+    val privateBrowsingLockUseCases by lazyMonitored {
+        PrivateBrowsingLockUseCases(appStore.value)
     }
 }

@@ -7,11 +7,10 @@
 #ifndef LAYOUT_SVG_SVGGEOMETRYFRAME_H_
 #define LAYOUT_SVG_SVGGEOMETRYFRAME_H_
 
-#include "mozilla/Attributes.h"
-#include "mozilla/DisplaySVGItem.h"
-#include "mozilla/ISVGDisplayableFrame.h"
 #include "gfxMatrix.h"
 #include "gfxRect.h"
+#include "mozilla/DisplaySVGItem.h"
+#include "mozilla/ISVGDisplayableFrame.h"
 #include "nsIFrame.h"
 
 namespace mozilla {
@@ -66,7 +65,7 @@ class SVGGeometryFrame final : public nsIFrame, public ISVGDisplayableFrame {
             nsIFrame* aPrevInFlow) override;
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
   void DidSetComputedStyle(ComputedStyle* aOldComputedStyle) override;
 

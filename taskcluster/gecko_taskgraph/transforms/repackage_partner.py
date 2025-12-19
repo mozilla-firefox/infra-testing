@@ -59,6 +59,7 @@ packaging_description_schema = Schema(
         Optional("task-from"): task_description_schema["task-from"],
         Optional("attributes"): task_description_schema["attributes"],
         Optional("dependencies"): task_description_schema["dependencies"],
+        Optional("run-on-repo-type"): task_description_schema["run-on-repo-type"],
     }
 )
 
@@ -187,7 +188,7 @@ def make_job_description(config, jobs):
             "skip-artifacts": True,
         }
 
-        worker_type = "b-linux-gcp"
+        worker_type = "b-linux"
 
         worker["artifacts"] = _generate_task_output_files(
             dep_job,

@@ -9,18 +9,20 @@
 #include "DNSLogging.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/glean/NetwerkDnsMetrics.h"
-#include "mozilla/Telemetry.h"
 #include "mozilla/ThreadSafety.h"
 #include "TRRService.h"
+#include "mozilla/ProfilerMarkers.h"
 
 //----------------------------------------------------------------------------
 // this macro filters out any flags that are not used when constructing the
 // host key.  the significant flags are those that would affect the resulting
 // host record (i.e., the flags that are passed down to PR_GetAddrInfoByName).
-#define RES_KEY_FLAGS(_f)                   \
-  ((_f) &                                   \
-   (nsIDNSService::RESOLVE_CANONICAL_NAME | \
-    nsIDNSService::RESOLVE_DISABLE_TRR |    \
+#define RES_KEY_FLAGS(_f)                           \
+  ((_f) &                                           \
+   ((StaticPrefs::network_dns_always_ai_canonname() \
+         ? 0                                        \
+         : nsIDNSService::RESOLVE_CANONICAL_NAME) | \
+    nsIDNSService::RESOLVE_DISABLE_TRR |            \
     nsIDNSService::RESOLVE_TRR_MODE_MASK | nsIDNSService::RESOLVE_IP_HINT))
 
 #define IS_ADDR_TYPE(_type) ((_type) == nsIDNSService::RESOLVE_TYPE_DEFAULT)
@@ -30,6 +32,34 @@
 
 using namespace mozilla;
 using namespace mozilla::net;
+
+struct HostResolverMarker {
+  static constexpr mozilla::Span<const char> MarkerTypeName() {
+    return mozilla::MakeStringSpan("HostResolver");
+  }
+  static void StreamJSONMarkerData(
+      mozilla::baseprofiler::SpliceableJSONWriter& aWriter,
+      const mozilla::ProfilerString8View& aHost,
+      const mozilla::ProfilerString8View& aOriginSuffix, uint16_t aType,
+      uint32_t aFlags) {
+    aWriter.StringProperty("host", aHost);
+    aWriter.StringProperty("originSuffix", aOriginSuffix);
+    aWriter.IntProperty("qtype", aType);
+    aWriter.StringProperty("flags", nsPrintfCString("0x%x", aFlags));
+  }
+  static MarkerSchema MarkerTypeDisplay() {
+    using MS = MarkerSchema;
+    MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
+    schema.SetTableLabel("{marker.data.host}");
+    schema.AddKeyFormat("host", MS::Format::SanitizedString,
+                        MS::PayloadFlags::Searchable);
+    schema.AddKeyFormat("originSuffix", MS::Format::SanitizedString,
+                        MS::PayloadFlags::Searchable);
+    schema.AddKeyFormat("qtype", MS::Format::Integer);
+    schema.AddKeyFormat("flags", MS::Format::String);
+    return schema;
+  }
+};
 
 nsHostKey::nsHostKey(const nsACString& aHost, const nsACString& aTrrServer,
                      uint16_t aType, nsIDNSService::DNSFlags aFlags,
@@ -285,14 +315,21 @@ void AddrHostRecord::NotifyRetryingTrr() {
 }
 
 void AddrHostRecord::ResolveComplete() {
+  TimeStamp now = TimeStamp::Now();
+
   if (LoadNativeUsed()) {
     if (mNativeSuccess) {
       glean::dns::native_lookup_time.AccumulateRawDuration(mNativeDuration);
+      profiler_add_marker(
+          "Native DNS Lookup", geckoprofiler::category::NETWORK,
+          MarkerOptions(MarkerTiming::Interval(mNativeStart, now),
+                        MarkerThreadId::MainThread()),
+          HostResolverMarker{}, host, originSuffix, type, flags);
     }
-    AccumulateCategoricalKeyed(
-        TRRService::ProviderKey(),
-        mNativeSuccess ? Telemetry::LABELS_DNS_LOOKUP_DISPOSITION3::osOK
-                       : Telemetry::LABELS_DNS_LOOKUP_DISPOSITION3::osFail);
+    glean::dns::lookup_disposition
+        .Get(TRRService::ProviderKey(),
+             mNativeSuccess ? "osOK"_ns : "osFail"_ns)
+        .Add();
   }
 
   if (mResolverType == DNSResolverType::TRR) {
@@ -301,11 +338,15 @@ void AddrHostRecord::ResolveComplete() {
                             mozilla::net::TRRSkippedReason::TRR_OK);
       glean::dns::trr_lookup_time.Get(TRRService::ProviderKey())
           .AccumulateRawDuration(mTrrDuration);
+      profiler_add_marker(
+          "TRR DNS Lookup", geckoprofiler::category::NETWORK,
+          MarkerOptions(MarkerTiming::Interval(now - mTrrDuration, now),
+                        MarkerThreadId::MainThread()),
+          HostResolverMarker{}, host, originSuffix, type, flags);
     }
-    AccumulateCategoricalKeyed(
-        TRRService::ProviderKey(),
-        mTRRSuccess ? Telemetry::LABELS_DNS_LOOKUP_DISPOSITION3::trrOK
-                    : Telemetry::LABELS_DNS_LOOKUP_DISPOSITION3::trrFail);
+    glean::dns::lookup_disposition
+        .Get(TRRService::ProviderKey(), mTRRSuccess ? "trrOK"_ns : "trrFail"_ns)
+        .Add();
   }
 
   if (nsHostResolver::Mode() == nsIDNSService::MODE_TRRFIRST ||
@@ -377,25 +418,25 @@ void AddrHostRecord::ResolveComplete() {
   if (mEffectiveTRRMode == nsIRequest::TRR_FIRST_MODE) {
     if (flags & nsIDNSService::RESOLVE_DISABLE_TRR) {
       // TRR is disabled on request, which is a next-level back-off method.
-      Telemetry::Accumulate(Telemetry::DNS_TRR_DISABLED3,
-                            TRRService::ProviderKey(), mNativeSuccess);
+      glean::dns::trr_disabled
+          .Get(TRRService::ProviderKey(),
+               mNativeSuccess ? "true"_ns : "false"_ns)
+          .Add();
     } else {
       if (mTRRSuccess) {
-        AccumulateCategoricalKeyed(TRRService::ProviderKey(),
-                                   Telemetry::LABELS_DNS_TRR_FIRST4::TRR);
+        glean::dns::trr_first.Get(TRRService::ProviderKey(), "TRR"_ns).Add();
       } else if (mNativeSuccess) {
         if (mResolverType == DNSResolverType::TRR) {
-          AccumulateCategoricalKeyed(
-              TRRService::ProviderKey(),
-              Telemetry::LABELS_DNS_TRR_FIRST4::NativeAfterTRR);
+          glean::dns::trr_first
+              .Get(TRRService::ProviderKey(), "NativeAfterTRR"_ns)
+              .Add();
         } else {
-          AccumulateCategoricalKeyed(TRRService::ProviderKey(),
-                                     Telemetry::LABELS_DNS_TRR_FIRST4::Native);
+          glean::dns::trr_first.Get(TRRService::ProviderKey(), "Native"_ns)
+              .Add();
         }
       } else {
-        AccumulateCategoricalKeyed(
-            TRRService::ProviderKey(),
-            Telemetry::LABELS_DNS_TRR_FIRST4::BothFailed);
+        glean::dns::trr_first.Get(TRRService::ProviderKey(), "BothFailed"_ns)
+            .Add();
       }
     }
   }
@@ -442,6 +483,12 @@ AddrHostRecord::DnsPriority AddrHostRecord::GetPriority(
 nsresult AddrHostRecord::GetTtl(uint32_t* aResult) {
   NS_ENSURE_ARG(aResult);
   *aResult = mTtl;
+  return NS_OK;
+}
+
+nsresult AddrHostRecord::GetLastUpdate(mozilla::TimeStamp* aLastUpdate) {
+  addr_info_lock.AssertCurrentThreadOwns();
+  *aLastUpdate = mLastUpdate;
   return NS_OK;
 }
 

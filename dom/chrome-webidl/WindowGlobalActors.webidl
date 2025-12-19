@@ -27,11 +27,18 @@ interface WindowContext {
   // True if this WindowContext is currently frozen in the BFCache.
   readonly attribute boolean isInBFCache;
 
-  // True if this window has registered a "beforeunload" event handler.
+  // True if this window has registered a "beforeunload" event handler, and/or
+  // if this context is top level and has registered a "navigate" event handler.
   readonly attribute boolean hasBeforeUnload;
 
   // True if the principal of this window is for a local ip address.
   readonly attribute boolean isLocalIP;
+
+  // True if the principal of this window has an active CloseWatcher
+  readonly attribute boolean hasActiveCloseWatcher;
+
+  // Request the windows CloseWatcher manager to close the top-most CloseWatcher
+  undefined processCloseRequest();
 
   readonly attribute boolean shouldResistFingerprinting;
 
@@ -84,10 +91,13 @@ interface WindowGlobalParent : WindowContext {
   // embedder is in a different process.
   readonly attribute boolean isProcessRoot;
 
-  // Is the document loaded in this WindowGlobalParent the initial document
-  // implicitly created while "creating a new browsing context".
-  // https://html.spec.whatwg.org/multipage/browsers.html#creating-a-new-browsing-context
+  // True if the document loaded in this WindowGlobalParent has the
+  // isInitialDocument flag set.
   readonly attribute boolean isInitialDocument;
+
+  // True if the document loaded in this WindowGlobalParent has the
+  // isUncommittedInitialDocument flag set.
+  readonly attribute boolean isUncommittedInitialDocument;
 
   readonly attribute FrameLoader? rootFrameLoader; // Embedded (browser) only
 

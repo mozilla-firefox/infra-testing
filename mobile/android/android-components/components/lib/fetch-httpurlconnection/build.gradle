@@ -6,35 +6,22 @@ apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 
 android {
-    defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
-    }
-
     namespace = 'mozilla.components.lib.fetch.httpurlconnection'
 }
 
 dependencies {
-    implementation libs.kotlin.coroutines
+    implementation project(':components:concept-fetch')
 
-    implementation project(':concept-fetch')
+    implementation libs.kotlinx.coroutines
+
+    testImplementation project(':components:tooling-fetch-tests')
 
     testImplementation libs.androidx.test.core
     testImplementation libs.androidx.test.junit
-    testImplementation libs.testing.robolectric
-    testImplementation libs.testing.mockito
-
-    testImplementation project(':tooling-fetch-tests')
+    testImplementation libs.mockito
+    testImplementation libs.robolectric
 }
 
-apply from: '../../../android-lint.gradle'
+apply from: '../../../common-config.gradle'
 apply from: '../../../publish.gradle'
 ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

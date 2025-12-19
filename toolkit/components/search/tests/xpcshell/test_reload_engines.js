@@ -127,7 +127,7 @@ const CONFIG = [
 ];
 
 async function visibleEngines() {
-  return (await Services.search.getVisibleEngines()).map(e => e.identifier);
+  return (await Services.search.getVisibleEngines()).map(e => e.id);
 }
 
 add_setup(async function () {
@@ -150,7 +150,7 @@ add_task(async function test_initial_config_correct() {
 
   const installedEngines = await Services.search.getAppProvidedEngines();
   Assert.deepEqual(
-    installedEngines.map(e => e.identifier),
+    installedEngines.map(e => e.id),
     [
       "appDefault",
       "defaultInFRRegion",
@@ -163,13 +163,13 @@ add_task(async function test_initial_config_correct() {
   );
 
   Assert.equal(
-    (await Services.search.getDefault()).identifier,
+    (await Services.search.getDefault()).id,
     "appDefault",
     "Should have loaded the expected default engine"
   );
 
   Assert.equal(
-    (await Services.search.getDefaultPrivate()).identifier,
+    (await Services.search.getDefaultPrivate()).id,
     "appDefault",
     "Should have loaded the expected private default engine"
   );
@@ -194,15 +194,11 @@ add_task(async function test_config_updated_engine_changes() {
 
   function enginesObs(subject, topic, data) {
     if (data == SearchUtils.MODIFIED_TYPE.ADDED) {
-      enginesAdded.push(subject.QueryInterface(Ci.nsISearchEngine).identifier);
+      enginesAdded.push(subject.QueryInterface(Ci.nsISearchEngine).id);
     } else if (data == SearchUtils.MODIFIED_TYPE.CHANGED) {
-      enginesModified.push(
-        subject.QueryInterface(Ci.nsISearchEngine).identifier
-      );
+      enginesModified.push(subject.QueryInterface(Ci.nsISearchEngine).id);
     } else if (data == SearchUtils.MODIFIED_TYPE.REMOVED) {
-      enginesRemoved.push(
-        subject.QueryInterface(Ci.nsISearchEngine).identifier
-      );
+      enginesRemoved.push(subject.QueryInterface(Ci.nsISearchEngine).id);
     }
   }
   Services.obs.addObserver(enginesObs, SearchUtils.TOPIC_ENGINE_MODIFIED);
@@ -216,9 +212,7 @@ add_task(async function test_config_updated_engine_changes() {
 
   Assert.deepEqual(
     enginesAdded,
-    SearchUtils.rustSelectorFeatureGate
-      ? ["engineOrderedInFR", "engineSameNameOther", "onlyInFRRegion"]
-      : ["engineOrderedInFR", "onlyInFRRegion", "engineSameNameOther"],
+    ["engineOrderedInFR", "engineSameNameOther", "onlyInFRRegion"],
     "Should have added the correct engines"
   );
 
@@ -230,16 +224,14 @@ add_task(async function test_config_updated_engine_changes() {
 
   Assert.deepEqual(
     enginesRemoved,
-    SearchUtils.rustSelectorFeatureGate
-      ? ["engineSameName", "notInFRRegion1", "notInFRRegion2"]
-      : ["notInFRRegion1", "notInFRRegion2", "engineSameName"],
+    ["engineSameName", "notInFRRegion1", "notInFRRegion2"],
     "Should have removed the expected engines"
   );
 
   const installedEngines = await Services.search.getAppProvidedEngines();
 
   Assert.deepEqual(
-    installedEngines.map(e => e.identifier),
+    installedEngines.map(e => e.id),
     [
       "defaultInFRRegion",
       "engineOrderedInFR",

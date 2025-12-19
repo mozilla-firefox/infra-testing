@@ -6,17 +6,17 @@ package org.mozilla.fenix.ui
 
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.test.filters.SdkSuppress
+import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
-import org.mozilla.fenix.R
 import org.mozilla.fenix.customannotations.SkipLeaks
 import org.mozilla.fenix.customannotations.SmokeTest
 import org.mozilla.fenix.helpers.AppAndSystemHelper.setNetworkEnabled
-import org.mozilla.fenix.helpers.DataGenerationHelper.getStringResource
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResId
-import org.mozilla.fenix.helpers.TestAssetHelper
-import org.mozilla.fenix.helpers.TestAssetHelper.getStorageTestAsset
+import org.mozilla.fenix.helpers.TestAssetHelper.getGenericAsset
+import org.mozilla.fenix.helpers.TestAssetHelper.storageCheckPageAsset
+import org.mozilla.fenix.helpers.TestAssetHelper.storageWritePageAsset
 import org.mozilla.fenix.helpers.TestHelper.exitMenu
 import org.mozilla.fenix.helpers.TestHelper.mDevice
 import org.mozilla.fenix.helpers.TestHelper.restartApp
@@ -48,9 +48,9 @@ class SettingsDeleteBrowsingDataTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/937561
     @Test
     fun deleteBrowsingDataOptionStatesTest() {
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openSettingsSubMenuDeleteBrowsingData {
             verifyAllCheckBoxesAreChecked()
             switchBrowsingHistoryCheckBox()
@@ -65,9 +65,9 @@ class SettingsDeleteBrowsingDataTest : TestSetup() {
 
         restartApp(composeTestRule.activityRule)
 
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openSettingsSubMenuDeleteBrowsingData {
             verifyOpenTabsCheckBox(true)
             verifyBrowsingHistoryDetails(false)
@@ -91,9 +91,9 @@ class SettingsDeleteBrowsingDataTest : TestSetup() {
 
         restartApp(composeTestRule.activityRule)
 
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openSettingsSubMenuDeleteBrowsingData {
             verifyOpenTabsCheckBox(false)
             verifyBrowsingHistoryDetails(true)
@@ -107,9 +107,9 @@ class SettingsDeleteBrowsingDataTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/517811
     @Test
     fun deleteOpenTabsBrowsingDataWithNoOpenTabsTest() {
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openSettingsSubMenuDeleteBrowsingData {
             verifyAllCheckBoxesAreChecked()
             selectOnlyOpenTabsCheckBox()
@@ -126,13 +126,13 @@ class SettingsDeleteBrowsingDataTest : TestSetup() {
     @SmokeTest
     @Test
     fun deleteOpenTabsBrowsingDataTest() {
-        val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
+        val defaultWebPage = mockWebServer.getGenericAsset(1)
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(defaultWebPage.url) {
             mDevice.waitForIdle()
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openSettingsSubMenuDeleteBrowsingData {
             verifyAllCheckBoxesAreChecked()
             selectOnlyOpenTabsCheckBox()
@@ -149,8 +149,8 @@ class SettingsDeleteBrowsingDataTest : TestSetup() {
         }.openSettingsSubMenuDeleteBrowsingData {
             verifyOpenTabsDetails("0")
         }.goBack {
-        }.goBack {
-        }.openTabDrawer(composeTestRule) {
+        }.goBack(composeTestRule) {
+        }.openTabDrawer {
             verifyNoOpenTabsInNormalBrowsing()
         }
     }
@@ -159,12 +159,12 @@ class SettingsDeleteBrowsingDataTest : TestSetup() {
     @SmokeTest
     @Test
     fun deleteBrowsingHistoryTest() {
-        val genericPage = getStorageTestAsset(mockWebServer, "generic1.html").url
+        val genericPage = mockWebServer.getGenericAsset(1).url
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(genericPage) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openSettingsSubMenuDeleteBrowsingData {
             verifyBrowsingHistoryDetails("1")
             selectOnlyBrowsingHistoryCheckBox()
@@ -178,9 +178,9 @@ class SettingsDeleteBrowsingDataTest : TestSetup() {
             verifyBrowsingHistoryDetails("0")
             exitMenu()
         }
-        navigationToolbar {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openHistory {
+        }.clickHistoryButton {
             verifyEmptyHistoryView()
             mDevice.pressBack()
         }
@@ -191,24 +191,26 @@ class SettingsDeleteBrowsingDataTest : TestSetup() {
     @Test
     @SkipLeaks
     fun deleteCookiesAndSiteDataTest() {
-        val genericPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
-        val storageWritePage = getStorageTestAsset(mockWebServer, "storage_write.html").url
-        val storageCheckPage = getStorageTestAsset(mockWebServer, "storage_check.html").url
+        val genericPage = mockWebServer.getGenericAsset(1)
+        val storageWritePage = mockWebServer.storageWritePageAsset.url
+        val storageCheckPage = mockWebServer.storageCheckPageAsset.url
 
         // Browsing a generic page to allow GV to load on a fresh run
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(genericPage.url) {
-        }.openNavigationToolbar {
+        }
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(storageWritePage) {
             verifyPageContent("No cookies set")
-            clickPageObject(itemWithResId("setCookies"))
+            clickPageObject(composeTestRule, itemWithResId("setCookies"))
             verifyPageContent("user=android")
-        }.openNavigationToolbar {
+        }
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(storageCheckPage) {
             verifyPageContent("Session storage has value")
             verifyPageContent("Local storage has value")
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openSettingsSubMenuDeleteBrowsingData {
             selectOnlyCookiesCheckBox()
             clickDeleteBrowsingDataButton()
@@ -220,34 +222,34 @@ class SettingsDeleteBrowsingDataTest : TestSetup() {
             confirmDeletionAndAssertSnackbar()
             exitMenu()
         }
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(storageCheckPage) {
             verifyPageContent("Session storage empty")
             verifyPageContent("Local storage empty")
-        }.openNavigationToolbar {
+        }
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(storageWritePage) {
             verifyPageContent("No cookies set")
         }
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/416042
+    @Ignore("Failing, see https://bugzilla.mozilla.org/show_bug.cgi?id=1987355")
     @SdkSuppress(minSdkVersion = 34)
     @SmokeTest
     @Test
     fun deleteCachedFilesTest() {
-        val pocketTopArticles = getStringResource(R.string.pocket_pinned_top_articles)
-
-        homeScreen {
-            verifyExistingTopSitesTabs(pocketTopArticles)
-        }.openTopSiteTabWithTitle(pocketTopArticles) {
-            verifyPocketPageContent()
+        homeScreen(composeTestRule) {
+            verifyExistingTopSitesTabs("Wikipedia")
+        }.openTopSiteTabWithTitle("Wikipedia") {
+            verifyUrl("wikipedia.org")
         }.openTabDrawer(composeTestRule) {
         }.openNewTab {
         }.submitQuery("about:cache") {
             // disabling wifi to prevent downloads in the background
             setNetworkEnabled(enabled = false)
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openSettingsSubMenuDeleteBrowsingData {
             selectOnlyCachedFilesCheckBox()
             clickDeleteBrowsingDataButton()
@@ -255,9 +257,9 @@ class SettingsDeleteBrowsingDataTest : TestSetup() {
             confirmDeletionAndAssertSnackbar()
             exitMenu()
         }
-        browserScreen {
+        browserScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.refreshPage {
+        }.clickRefreshButton {
             verifyNetworkCacheIsEmpty("memory")
             verifyNetworkCacheIsEmpty("disk")
         }

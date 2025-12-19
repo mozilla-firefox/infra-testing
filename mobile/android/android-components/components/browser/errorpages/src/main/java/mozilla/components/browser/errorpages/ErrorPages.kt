@@ -102,11 +102,11 @@ object ErrorPages {
  * Enum containing all supported error types that we can display an error page for.
  */
 enum class ErrorType(
-    @StringRes val titleRes: Int,
-    @StringRes val messageRes: Int,
-    @StringRes val refreshButtonRes: Int = R.string.mozac_browser_errorpages_page_refresh,
-    @StringRes val imageNameRes: Int? = null,
-    @StringRes val errorCode: Int? = null,
+    @param:StringRes val titleRes: Int,
+    @param:StringRes val messageRes: Int,
+    @param:StringRes val refreshButtonRes: Int = R.string.mozac_browser_errorpages_page_refresh,
+    @param:StringRes val imageNameRes: Int? = null,
+    @param:StringRes val errorCode: Int? = null,
 ) {
     UNKNOWN(
         R.string.mozac_browser_errorpages_generic_title,
@@ -239,6 +239,10 @@ enum class ErrorType(
     ERROR_SAFEBROWSING_PHISHING_URI(
         R.string.mozac_browser_errorpages_safe_phishing_uri_title,
         R.string.mozac_browser_errorpages_safe_phishing_uri_message,
+    ),
+    ERROR_HARMFULADDON_URI(
+        R.string.mozac_browser_errorpages_harmful_addon_uri_title,
+        R.string.mozac_browser_errorpages_harmful_addon_uri_message,
     ),
     ERROR_HTTPS_ONLY(
         R.string.mozac_browser_errorpages_httpsonly_title,

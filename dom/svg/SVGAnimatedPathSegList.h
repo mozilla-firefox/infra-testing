@@ -7,11 +7,10 @@
 #ifndef DOM_SVG_SVGANIMATEDPATHSEGLIST_H_
 #define DOM_SVG_SVGANIMATEDPATHSEGLIST_H_
 
-#include "mozilla/Attributes.h"
+#include "SVGPathData.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/SMILAttr.h"
 #include "mozilla/UniquePtr.h"
-#include "SVGPathData.h"
 
 namespace mozilla {
 

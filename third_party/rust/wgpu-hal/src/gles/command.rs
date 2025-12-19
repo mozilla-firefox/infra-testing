@@ -37,6 +37,7 @@ pub(super) struct State {
     // The current state of the push constant data block.
     current_push_constant_data: [u32; super::MAX_PUSH_CONSTANTS],
     end_of_pass_timestamp: Option<glow::Query>,
+    clip_distance_count: u32,
 }
 
 impl Default for State {
@@ -65,6 +66,7 @@ impl Default for State {
             push_constant_descs: Default::default(),
             current_push_constant_data: [0; super::MAX_PUSH_CONSTANTS],
             end_of_pass_timestamp: Default::default(),
+            clip_distance_count: Default::default(),
         }
     }
 }
@@ -309,11 +311,10 @@ impl crate::CommandEncoder for super::CommandEncoder {
         let mut combined_usage = wgt::TextureUses::empty();
         for bar in barriers {
             // GLES only synchronizes storage -> anything explicitly
-            if !bar
-                .usage
-                .from
-                .contains(wgt::TextureUses::STORAGE_READ_WRITE)
-            {
+            // if shader writes to a texture then barriers should be placed
+            if !bar.usage.from.intersects(
+                wgt::TextureUses::STORAGE_READ_WRITE | wgt::TextureUses::STORAGE_WRITE_ONLY,
+            ) {
                 continue;
             }
             // unlike buffers, there is no need for a concrete texture
@@ -496,7 +497,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
     unsafe fn begin_render_pass(
         &mut self,
         desc: &crate::RenderPassDescriptor<super::QuerySet, super::TextureView>,
-    ) {
+    ) -> Result<(), crate::DeviceError> {
         debug_assert!(self.state.end_of_pass_timestamp.is_none());
         if let Some(ref t) = desc.timestamp_writes {
             if let Some(index) = t.beginning_of_pass_write_index {
@@ -523,6 +524,8 @@ impl crate::CommandEncoder for super::CommandEncoder {
             .any(|at| match at.target.view.inner {
                 #[cfg(webgl)]
                 super::TextureInner::ExternalFramebuffer { .. } => true,
+                #[cfg(native)]
+                super::TextureInner::ExternalNativeFramebuffer { .. } => true,
                 _ => false,
             });
 
@@ -557,6 +560,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
                         self.cmd_buffer.commands.push(C::BindAttachment {
                             attachment,
                             view: cat.target.view.clone(),
+                            depth_slice: cat.depth_slice,
                         });
                         if let Some(ref rat) = cat.resolve_target {
                             self.state
@@ -578,6 +582,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
                     self.cmd_buffer.commands.push(C::BindAttachment {
                         attachment,
                         view: dsat.target.view.clone(),
+                        depth_slice: None,
                     });
                     if aspects.contains(crate::FormatAspects::DEPTH)
                         && !dsat.depth_ops.contains(crate::AttachmentOps::STORE)
@@ -665,6 +670,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
                     .push(C::ClearStencil(dsat.clear_value.1));
             }
         }
+        Ok(())
     }
     unsafe fn end_render_pass(&mut self) {
         for (attachment, dst) in self.state.resolve_attachments.drain(..) {
@@ -975,6 +981,15 @@ impl crate::CommandEncoder for super::CommandEncoder {
         self.state.color_targets.clear();
         for ct in pipeline.color_targets.iter() {
             self.state.color_targets.push(ct.clone());
+        }
+
+        // set clip plane count
+        if pipeline.inner.clip_distance_count != self.state.clip_distance_count {
+            self.cmd_buffer.commands.push(C::SetClipDistances {
+                old_count: self.state.clip_distance_count,
+                new_count: pipeline.inner.clip_distance_count,
+            });
+            self.state.clip_distance_count = pipeline.inner.clip_distance_count;
         }
     }
 

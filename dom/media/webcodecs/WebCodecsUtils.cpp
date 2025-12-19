@@ -7,17 +7,22 @@
 #include "WebCodecsUtils.h"
 
 #include "DecoderTypes.h"
+#include "EncoderTypes.h"
 #include "PlatformEncoderModule.h"
 #include "VideoUtils.h"
 #include "js/experimental/TypedData.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_media.h"
+#include "mozilla/ToString.h"
+#include "mozilla/dom/EncoderTypes.h"
 #include "mozilla/dom/ImageBitmapBinding.h"
+#include "mozilla/dom/UnionTypes.h"
 #include "mozilla/dom/VideoColorSpaceBinding.h"
 #include "mozilla/dom/VideoFrameBinding.h"
 #include "mozilla/gfx/Types.h"
 #include "nsDebug.h"
+#include "nsIGlobalObject.h"
 #include "nsString.h"
 
 extern mozilla::LazyLogModule gWebCodecsLog;
@@ -31,6 +36,10 @@ extern mozilla::LazyLogModule gWebCodecsLog;
 #  undef LOG
 #endif  // LOG
 #define LOG(msg, ...) LOG_INTERNAL(Debug, msg, ##__VA_ARGS__)
+#ifdef LOGW
+#  undef LOGW
+#endif  // LOGW
+#define LOGW(msg, ...) LOG_INTERNAL(Warning, msg, ##__VA_ARGS__)
 
 namespace mozilla {
 std::atomic<WebCodecsId> sNextId = 0;
@@ -177,7 +186,13 @@ bool CopyExtradataToDescription(JSContext* aCx, Span<const uint8_t>& aSrc,
   MOZ_ASSERT(aCx);
 
   size_t lengthBytes = aSrc.Length();
-  UniquePtr<uint8_t[], JS::FreePolicy> extradata(new uint8_t[lengthBytes]);
+
+  UniquePtr<uint8_t[], JS::FreePolicy> extradata(
+      js_pod_arena_malloc<uint8_t>(js::ArrayBufferContentsArena, lengthBytes));
+
+  if (!extradata) {
+    return false;
+  }
 
   PodCopy(extradata.get(), aSrc.Elements(), lengthBytes);
 
@@ -661,6 +676,34 @@ uint32_t BytesPerSamples(const mozilla::dom::AudioSampleFormat& aFormat) {
   }
   MOZ_ASSERT_UNREACHABLE("Invalid enum value");
   return 0;
+}
+
+template <typename T>
+void ApplyResistFingerprintingImpl(const RefPtr<T>& aConfig,
+                                   nsIGlobalObject* aGlobal) {
+  // When resisting fingerprinting, don't reveal information about the host
+  // hardware.
+  if (nsContentUtils::ShouldResistFingerprinting(
+          aGlobal, RFPTarget::MediaCapabilities)) {
+    if (aConfig->mHardwareAcceleration != HardwareAcceleration::No_preference) {
+      LOGW(
+          "Resist fingerprinting (MediaCapabilities) enabled, overriding "
+          "hardware preference");
+      aConfig->mHardwareAcceleration = HardwareAcceleration::No_preference;
+    }
+  }
+}
+
+void ApplyResistFingerprintingIfNeeded(
+    const RefPtr<VideoEncoderConfigInternal>& aConfig,
+    nsIGlobalObject* aGlobal) {
+  ApplyResistFingerprintingImpl(aConfig, aGlobal);
+}
+
+void ApplyResistFingerprintingIfNeeded(
+    const RefPtr<VideoDecoderConfigInternal>& aConfig,
+    nsIGlobalObject* aGlobal) {
+  ApplyResistFingerprintingImpl(aConfig, aGlobal);
 }
 
 }  // namespace mozilla::dom

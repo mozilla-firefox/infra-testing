@@ -7,7 +7,7 @@
 const Rule = require("resource://devtools/client/inspector/rules/models/rule.js");
 const UserProperties = require("resource://devtools/client/inspector/rules/models/user-properties.js");
 const {
-  style: { ELEMENT_STYLE },
+  style: { ELEMENT_STYLE, PRES_HINTS },
 } = require("resource://devtools/shared/constants.js");
 
 loader.lazyRequireGetter(
@@ -29,8 +29,6 @@ loader.lazyRequireGetter(
   true
 );
 
-const PREF_INACTIVE_CSS_ENABLED = "devtools.inspector.inactive.css.enabled";
-
 /**
  * ElementStyle is responsible for the following:
  *   Keeps track of which properties are overridden.
@@ -42,14 +40,14 @@ class ElementStyle {
    *         The element whose style we are viewing.
    * @param  {CssRuleView} ruleView
    *         The instance of the rule-view panel.
-   * @param  {Object} store
+   * @param  {object} store
    *         The ElementStyle can use this object to store metadata
    *         that might outlast the rule view, particularly the current
    *         set of disabled properties.
    * @param  {PageStyleFront} pageStyle
    *         Front for the page style actor that will be providing
    *         the style information.
-   * @param  {Boolean} showUserAgentStyles
+   * @param  {boolean} showUserAgentStyles
    *         Should user agent styles be inspected?
    */
   constructor(element, ruleView, store, pageStyle, showUserAgentStyles) {
@@ -73,16 +71,6 @@ class ElementStyle {
     if (!("disabled" in this.store)) {
       this.store.disabled = new WeakMap();
     }
-  }
-
-  get unusedCssEnabled() {
-    if (!this._unusedCssEnabled) {
-      this._unusedCssEnabled = Services.prefs.getBoolPref(
-        PREF_INACTIVE_CSS_ENABLED,
-        false
-      );
-    }
-    return this._unusedCssEnabled;
   }
 
   destroy() {
@@ -180,7 +168,7 @@ class ElementStyle {
   /**
    * Returns the Rule object of the given rule id.
    *
-   * @param  {String|null} id
+   * @param  {string | null} id
    *         The id of the Rule object.
    * @return {Rule|undefined} of the given rule id or undefined if it cannot be found.
    */
@@ -246,12 +234,12 @@ class ElementStyle {
    * Add a rule if it's one we care about. Filters out duplicates and
    * inherited styles with no inherited properties.
    *
-   * @param  {Object} options
+   * @param  {object} options
    *         Options for creating the Rule, see the Rule constructor.
    * @param  {Array} existingRules
    *         Rules to reuse if possible. If a rule is reused, then it
    *         it will be deleted from this array.
-   * @return {Boolean} true if we added the rule.
+   * @return {boolean} true if we added the rule.
    */
   _maybeAddRule(options, existingRules) {
     // If we've already included this domRule (for example, when a
@@ -314,7 +302,7 @@ class ElementStyle {
    * the latest state. Use this opportunity to also trigger checks for the "inactive"
    * state of the declaration (whether it has effect or not).
    *
-   * @param  {String} pseudo
+   * @param  {string} pseudo
    *         Optional pseudo-element for which to restrict marking CSS declarations as
    *         overridden.
    */
@@ -367,7 +355,6 @@ class ElementStyle {
         //  -webkit-linear-gradient: ...;
         //  linear-gradient: ...;
         if (!computedProp.textProp.isValid()) {
-          computedProp.overridden = true;
           continue;
         }
 
@@ -467,6 +454,15 @@ class ElementStyle {
     this.variablesMap.set(pseudo, variables);
     this.startingStyleVariablesMap.set(pseudo, startingStyleVariables);
 
+    const rulesEditors = new Set();
+    const variableTree = new Map();
+
+    if (!this.usedVariables) {
+      this.usedVariables = new Set();
+    } else {
+      this.usedVariables.clear();
+    }
+
     // For each TextProperty, mark it overridden if all of its computed
     // properties are marked overridden. Update the text property's associated
     // editor, if any. This will clear the _overriddenDirty state on all
@@ -489,9 +485,58 @@ class ElementStyle {
       }
 
       // For each editor show or hide the inactive CSS icon as needed.
-      if (textProp.editor && this.unusedCssEnabled) {
-        textProp.editor.updatePropertyState();
+      if (textProp.editor) {
+        textProp.editor.updateUI();
       }
+
+      // First we need to update used variables from all declarations
+      textProp.updateUsedVariables();
+      const isCustomProperty = textProp.name.startsWith("--");
+      const isNewCustomProperty =
+        isCustomProperty && textProp.isPropertyChanged;
+      if (isNewCustomProperty) {
+        this.usedVariables.add(textProp.name);
+      }
+      if (textProp.usedVariables) {
+        if (!isCustomProperty) {
+          for (const variable of textProp.usedVariables) {
+            this.usedVariables.add(variable);
+          }
+        } else {
+          variableTree.set(textProp.name, textProp.usedVariables);
+        }
+      }
+
+      if (textProp.rule.editor) {
+        rulesEditors.add(textProp.rule.editor);
+      }
+    }
+
+    const collectVariableDependencies = variable => {
+      if (!variableTree.has(variable)) {
+        return;
+      }
+
+      for (const dep of variableTree.get(variable)) {
+        if (!this.usedVariables.has(dep)) {
+          this.usedVariables.add(dep);
+          collectVariableDependencies(dep);
+        }
+      }
+    };
+
+    for (const variable of this.usedVariables) {
+      collectVariableDependencies(variable);
+    }
+
+    for (const textProp of textProps) {
+      // Then we need to update the isUnusedCssVariable
+      textProp.updateIsUnusedVariable();
+    }
+
+    // Then update the UI
+    for (const ruleEditor of rulesEditors) {
+      ruleEditor.updateUnusedCssVariables();
     }
   }
 
@@ -500,8 +545,8 @@ class ElementStyle {
    * a computed property seen "earlier" (e.g. whose rule had higher priority, or that
    * was declared in the same rule, but earlier).
    *
-   * @param {Object} computedProp: A computed prop object, as stored in TextProp#computed
-   * @param {Object} earlierProp: The computed prop to compare against
+   * @param {object} computedProp: A computed prop object, as stored in TextProp#computed
+   * @param {object} earlierProp: The computed prop to compare against
    * @returns Boolean
    */
   _hasHigherPriorityThanEarlierProp(computedProp, earlierProp) {
@@ -544,7 +589,7 @@ class ElementStyle {
    * Update CSS variable tooltip information on textProp editor when registered property
    * are added/modified/removed.
    *
-   * @param {Set<String>} registeredPropertyNamesSet: A Set containing the name of the
+   * @param {Set<string>} registeredPropertyNamesSet: A Set containing the name of the
    *                      registered properties which were added/modified/removed.
    */
   onRegisteredPropertiesChange(registeredPropertyNamesSet) {
@@ -563,17 +608,15 @@ class ElementStyle {
    *
    * @param {TextProperty} declaration
    *        A TextProperty of a rule.
-   * @param {Set<>String} variableNamesSet
+   * @param {Set<string>} variableNamesSet
    *        A Set of CSS variable names that have been updated.
    */
   _hasUpdatedCSSVariable(declaration, variableNamesSet) {
-    for (const variableName of variableNamesSet) {
-      if (declaration.hasCSSVariable(variableName)) {
-        return true;
-      }
+    if (variableNamesSet.size === 0) {
+      return false;
     }
 
-    return false;
+    return !variableNamesSet.isDisjointFrom(declaration.usedVariables);
   }
 
   /**
@@ -589,7 +632,7 @@ class ElementStyle {
    * criteria such as time and animation delay need to be checked in order to determine
    * if the property is overridden at runtime.
    *
-   * @param  {String} pseudo
+   * @param  {string} pseudo
    *         Optional pseudo-element for which to restrict marking CSS declarations as
    *         overridden. If omitted, only declarations for regular style rules are
    *         returned (no pseudo-element style rules).
@@ -633,12 +676,16 @@ class ElementStyle {
         rule.pseudoElement !== "" && isInherited;
 
       const isElementStyle = rule.domRule.type === ELEMENT_STYLE;
+      const isElementAttributesStyle = rule.domRule.type === PRES_HINTS;
 
       const filterCondition =
         isNestedDeclarations ||
         (pseudo && isMatchingPseudoElementRule) ||
         (pseudo === "" &&
-          (isStyleRule || isElementStyle || isInheritedPseudoElementRule));
+          (isStyleRule ||
+            isElementStyle ||
+            isElementAttributesStyle ||
+            isInheritedPseudoElementRule));
 
       // Collect all relevant CSS declarations (aka TextProperty instances).
       if (filterCondition) {
@@ -656,9 +703,9 @@ class ElementStyle {
   /**
    * Adds a new declaration to the rule.
    *
-   * @param  {String} ruleId
+   * @param  {string} ruleId
    *         The id of the Rule to be modified.
-   * @param  {String} value
+   * @param  {string} value
    *         The new declaration value.
    */
   addNewDeclaration(ruleId, value) {
@@ -695,11 +742,11 @@ class ElementStyle {
    * Given the id of the rule and the new declaration name, modifies the existing
    * declaration name to the new given value.
    *
-   * @param  {String} ruleId
+   * @param  {string} ruleId
    *         The Rule id of the given CSS declaration.
-   * @param  {String} declarationId
+   * @param  {string} declarationId
    *         The TextProperty id for the CSS declaration.
-   * @param  {String} name
+   * @param  {string} name
    *         The new declaration name.
    */
   async modifyDeclarationName(ruleId, declarationId, name) {
@@ -733,7 +780,7 @@ class ElementStyle {
    *
    * @param  {Rule} rule
    *         The Rule object to write new declarations to.
-   * @param  {Array<Object>} declarationsToAdd
+   * @param  {Array<object>} declarationsToAdd
    *         An array of object containg the parsed declaration data to be added.
    * @param  {TextProperty|null} siblingDeclaration
    *         Optional declaration next to which the new declaration will be added.
@@ -759,9 +806,9 @@ class ElementStyle {
    * Example: Calling with "red; width: 100px" would return
    * { firstValue: "red", propertiesToAdd: [{ name: "width", value: "100px" }] }
    *
-   * @param  {String} value
+   * @param  {string} value
    *         The string to parse.
-   * @return {Object} An object with the following properties:
+   * @return {object} An object with the following properties:
    *         firstValue: A string containing a simple value, like
    *                     "red" or "100px!important"
    *         declarationsToAdd: An array with additional declarations, following the
@@ -803,11 +850,11 @@ class ElementStyle {
    * Given the id of the rule and the new declaration value, modifies the existing
    * declaration value to the new given value.
    *
-   * @param  {String} ruleId
+   * @param  {string} ruleId
    *         The Rule id of the given CSS declaration.
-   * @param  {String} declarationId
+   * @param  {string} declarationId
    *         The TextProperty id for the CSS declaration.
-   * @param  {String} value
+   * @param  {string} value
    *         The new declaration value.
    */
   async modifyDeclarationValue(ruleId, declarationId, value) {
@@ -849,9 +896,9 @@ class ElementStyle {
   /**
    * Modifies the existing rule's selector to the new given value.
    *
-   * @param  {String} ruleId
+   * @param  {string} ruleId
    *         The id of the Rule to be modified.
-   * @param  {String} selector
+   * @param  {string} selector
    *         The new selector value.
    */
   async modifySelector(ruleId, selector) {
@@ -919,9 +966,9 @@ class ElementStyle {
   /**
    * Toggles the enabled state of the given CSS declaration.
    *
-   * @param  {String} ruleId
+   * @param  {string} ruleId
    *         The Rule id of the given CSS declaration.
-   * @param  {String} declarationId
+   * @param  {string} declarationId
    *         The TextProperty id for the CSS declaration.
    */
   toggleDeclaration(ruleId, declarationId) {
@@ -945,10 +992,15 @@ class ElementStyle {
    *
    * @param  {TextProperty} prop
    *         The text property to update.
-   * @return {Boolean} true if the TextProperty's overridden state (or any of
+   * @return {boolean} true if the TextProperty's overridden state (or any of
    *         its computed properties overridden state) changed.
    */
   _updatePropertyOverridden(prop) {
+    if (!prop.isValid() && !prop.computed.length) {
+      prop.overridden = false;
+      return false;
+    }
+
     let overridden = true;
     let dirty = false;
 
@@ -969,11 +1021,11 @@ class ElementStyle {
   /**
    * Returns data about a CSS variable.
    *
-   * @param  {String} name
+   * @param  {string} name
    *         The name of the variable.
-   * @param  {String} pseudo
+   * @param  {string} pseudo
    *         The pseudo-element name of the rule.
-   * @return {Object} An object with the following properties:
+   * @return {object} An object with the following properties:
    *         - {String|undefined} value: The variable's value. Undefined if variable is not set.
    *         - {RegisteredPropertyResource|undefined} registeredProperty: The registered
    *           property data (syntax, initial value, inherits). Undefined if the variable
@@ -1006,7 +1058,7 @@ class ElementStyle {
   /**
    * Get all custom properties.
    *
-   * @param  {String} pseudo
+   * @param  {string} pseudo
    *         The pseudo-element name of the rule.
    * @returns Map<String, String> A map whose key is the custom property name and value is
    *                              the custom property value (or registered property initial

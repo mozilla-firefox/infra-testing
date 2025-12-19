@@ -57,7 +57,9 @@ GtkCompositorWidget::~GtkCompositorWidget() {
   CleanupResources();
 #ifdef MOZ_WAYLAND
   if (mNativeLayerRoot) {
-    mNativeLayerRoot->Shutdown();
+    NS_DispatchToMainThread(NS_NewRunnableFunction(
+        "~GtkCompositorWidget::NativeLayerRootWayland::Shutdown()",
+        [root = RefPtr{mNativeLayerRoot}]() -> void { root->Shutdown(); }));
   }
 #endif
   RefPtr<nsIWidget> widget = mWidget.forget();
@@ -91,6 +93,15 @@ void GtkCompositorWidget::NotifyClientSizeChanged(
   *size = aClientSize;
 }
 
+void GtkCompositorWidget::NotifyFullscreenChanged(bool aIsFullscreen) {
+#ifdef MOZ_WAYLAND
+  if (mNativeLayerRoot) {
+    LOG("GtkCompositorWidget::NotifyFullscreenChanged() [%d]", aIsFullscreen);
+    mNativeLayerRoot->NotifyFullscreenChanged(aIsFullscreen);
+  }
+#endif
+}
+
 LayoutDeviceIntSize GtkCompositorWidget::GetClientSize() {
   auto size = mClientSize.Lock();
   return *size;
@@ -111,15 +122,14 @@ EGLNativeWindowType GtkCompositorWidget::GetEGLNativeWindow() {
   return window;
 }
 
-bool GtkCompositorWidget::SetEGLNativeWindowSize(
+void GtkCompositorWidget::SetEGLNativeWindowSize(
     const LayoutDeviceIntSize& aEGLWindowSize) {
 #if defined(MOZ_WAYLAND)
   // We explicitly need to set EGL window size on Wayland only.
-  if (GdkIsWaylandDisplay() && mWidget) {
-    return mWidget->SetEGLNativeWindowSize(aEGLWindowSize);
+  if (mWidget && mWidget->GetWaylandSurface()) {
+    mWidget->GetWaylandSurface()->ApplyEGLWindowSize(aEGLWindowSize);
   }
 #endif
-  return true;
 }
 
 LayoutDeviceIntRegion GtkCompositorWidget::GetTransparentRegion() {
@@ -132,8 +142,7 @@ LayoutDeviceIntRegion GtkCompositorWidget::GetTransparentRegion() {
 }
 
 #ifdef MOZ_WAYLAND
-RefPtr<mozilla::layers::NativeLayerRoot>
-GtkCompositorWidget::GetNativeLayerRoot() {
+mozilla::layers::NativeLayerRoot* GtkCompositorWidget::GetNativeLayerRoot() {
   if (gfx::gfxVars::UseWebRenderCompositor()) {
     if (!mNativeLayerRoot) {
       LOG("GtkCompositorWidget::GetNativeLayerRoot [%p] create",

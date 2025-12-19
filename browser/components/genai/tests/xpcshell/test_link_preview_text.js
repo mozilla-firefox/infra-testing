@@ -77,6 +77,14 @@ add_task(function test_text_processing() {
     text.repeat(6).trim(),
     "restrict to 6 sentences"
   );
+
+  Assert.equal(
+    LinkPreviewModel.preprocessText(
+      "This is a test sentence with an emoji \ud83e\udd14."
+    ),
+    "This is a test sentence with an emoji .",
+    "emoji should be removed from the sentence"
+  );
 });
 
 /**
@@ -90,7 +98,51 @@ add_task(function test_text_processing_prefs() {
     text.repeat(3).trim(),
     "restrict to 3 sentences"
   );
+
+  Services.prefs.setIntPref(
+    "browser.ml.linkPreview.minWordsPerOutputSentences",
+    3
+  );
+  let processor = new SentencePostProcessor();
+  let output = "";
+  output += processor.put("I am writing unit test.").sentence;
+
+  output += processor.put(" So great.").sentence;
+
+  output += processor.put(" I like it.").sentence;
+
+  output += processor.put(" Done. ").sentence;
+
+  Assert.equal(
+    output,
+    "I am writing unit test. I like it. ",
+    "ignore too short sentences"
+  );
+
+  Services.prefs.setIntPref(
+    "browser.ml.linkPreview.minWordsPerOutputSentences",
+    4
+  );
+  processor = new SentencePostProcessor();
+  output = "";
+  output += processor.put("I am writing unit test.").sentence;
+
+  output += processor.put(" So great.").sentence;
+
+  output += processor.put(" I like it.").sentence;
+
+  output += processor.put(" Done. ").sentence;
+
+  Assert.equal(
+    output,
+    "I am writing unit test. ",
+    "ignore too short sentences"
+  );
+
   Services.prefs.clearUserPref("browser.ml.linkPreview.inputSentences");
+  Services.prefs.clearUserPref(
+    "browser.ml.linkPreview.minWordsPerOutputSentences"
+  );
 });
 
 /**

@@ -200,7 +200,7 @@ class HighlightersOverlay {
     // Add inspector events, not specific to a given view.
     this.inspector.on("markupmutation", this.onMarkupMutation);
 
-    this.resourceCommand = this.inspector.toolbox.resourceCommand;
+    this.resourceCommand = this.inspector.commands.resourceCommand;
     this.resourceCommand.watchResources(
       [this.resourceCommand.TYPES.ROOT_NODE],
       { onAvailable: this.#onResourceAvailable }
@@ -251,7 +251,7 @@ class HighlightersOverlay {
    * This is a chance to run some non-essential operations like: logging telemetry data,
    * storing metadata about the highlighter to enable restoring it after refresh, etc.
    *
-   * @param  {String} type
+   * @param  {string} type
    *          Highlighter type shown.
    * @param  {NodeFront} nodeFront
    *          Node front of the element that was highlighted.
@@ -262,7 +262,7 @@ class HighlightersOverlay {
     switch (type) {
       // Log telemetry for showing the flexbox and grid highlighters.
       case TYPES.FLEXBOX:
-      case TYPES.GRID:
+      case TYPES.GRID: {
         const toolID = GLEAN_TOOL_IDS[type];
         if (toolID) {
           this.telemetry.toolOpened(toolID, this);
@@ -274,6 +274,7 @@ class HighlightersOverlay {
         }
 
         break;
+      }
     }
 
     // Set metadata necessary to restore the active highlighter upon page refresh.
@@ -300,7 +301,7 @@ class HighlightersOverlay {
    * Returns a promise that resovles with a boolean indicating whether to skip showing
    * the highlighter with these arguments.
    *
-   * @param  {String} type
+   * @param  {string} type
    *          Highlighter type to show.
    * @param  {NodeFront} nodeFront
    *          Node front of the element to be highlighted.
@@ -362,7 +363,7 @@ class HighlightersOverlay {
    * Optionally run some operations before hiding a highlighter of a given type.
    * Runs only if a highlighter of that type exists.
    *
-   * @param {String} type
+   * @param {string} type
    *         highlighter type
    * @return {Promise}
    */
@@ -370,7 +371,7 @@ class HighlightersOverlay {
     switch (type) {
       // Log telemetry for hiding the flexbox and grid highlighters.
       case TYPES.FLEXBOX:
-      case TYPES.GRID:
+      case TYPES.GRID: {
         const toolID = GLEAN_TOOL_IDS[type];
         const conditions = {
           [TYPES.FLEXBOX]: () => {
@@ -388,15 +389,16 @@ class HighlightersOverlay {
         }
 
         break;
+      }
     }
   }
 
   /**
    * Get the maximum number of possible active highlighter instances of a given type.
    *
-   * @param  {String} type
+   * @param  {string} type
    *         Highlighter type
-   * @return {Number}
+   * @return {number}
    *         Default 1
    */
   #getMaxActiveHighlighters(type) {
@@ -422,7 +424,7 @@ class HighlightersOverlay {
   /**
    * Get a highlighter instance of the given type for the given node front.
    *
-   * @param  {String} type
+   * @param  {string} type
    *         Highlighter type.
    * @param  {NodeFront} nodeFront
    *         Node front of the element to be highlighted with the requested highlighter.
@@ -449,7 +451,7 @@ class HighlightersOverlay {
   /**
    * Get the currently active highlighter of a given type.
    *
-   * @param  {String} type
+   * @param  {string} type
    *         Highlighter type.
    * @return {Highlighter|null}
    *         Highlighter instance
@@ -473,9 +475,9 @@ class HighlightersOverlay {
    *   - timer: (Optional) index of timer set with setTimout() to autohide the highlighter
    * Returns an empty object if a highlighter of the given type is not active.
    *
-   * @param  {String} type
+   * @param  {string} type
    *         Highlighter type.
-   * @return {Object}
+   * @return {object}
    */
   getDataForActiveHighlighter(type) {
     if (!this.#activeHighlighters.has(type)) {
@@ -488,9 +490,9 @@ class HighlightersOverlay {
   /**
    * Get the configuration options of the active highlighter of a given type.
    *
-   * @param  {String} type
+   * @param  {string} type
    *         Highlighter type.
-   * @return {Object}
+   * @return {object}
    */
   getOptionsForActiveHighlighter(type) {
     const { options } = this.getDataForActiveHighlighter(type);
@@ -500,7 +502,7 @@ class HighlightersOverlay {
   /**
    * Get the node front highlighted by a given highlighter type.
    *
-   * @param  {String} type
+   * @param  {string} type
    *         Highlighter type.
    * @return {NodeFront|null}
    *         Node front of the element currently being highlighted
@@ -523,7 +525,7 @@ class HighlightersOverlay {
    * In pages with frames running in different processes, this ensures highlighters from
    * other frames do not stay visible.
    *
-   * @param  {String} type
+   * @param  {string} type
    *          Highlighter type to show.
    * @param  {NodeFront} nodeFront
    *          Node front of the element to be highlighted.
@@ -584,12 +586,12 @@ class HighlightersOverlay {
   /**
    * Set a timer to automatically hide all highlighters of a given type after a delay.
    *
-   * @param  {String} type
+   * @param  {string} type
    *         Highlighter type to hide.
-   * @param  {Number|undefined} duration
+   * @param  {number | undefined} duration
    *         Delay in milliseconds after which to hide the highlighter.
    *         If a duration is not provided, return early without scheduling a task.
-   * @return {Number|undefined}
+   * @return {number | undefined}
    *         Index of the scheduled task returned by setTimeout().
    */
   scheduleAutoHideHighlighterType(type, duration) {
@@ -608,7 +610,7 @@ class HighlightersOverlay {
   /**
    * Hide all instances of a given highlighter type.
    *
-   * @param  {String} type
+   * @param  {string} type
    *         Highlighter type to hide.
    * @return {Promise}
    */
@@ -647,7 +649,7 @@ class HighlightersOverlay {
    *
    * @param  {NodeFront} node
    *         Grid container NodeFront.
-   * @return {Boolean}
+   * @return {boolean}
    */
   canGridHighlighterToggle(node) {
     return (
@@ -661,7 +663,7 @@ class HighlightersOverlay {
    * Returns true when the maximum number of grid highlighter instances is reached.
    * FIXME: Bug 1572652 should address this constraint.
    *
-   * @return {Boolean}
+   * @return {boolean}
    */
   isGridHighlighterLimitReached() {
     return this.gridHighlighters.size === this.maxGridHighlighters;
@@ -671,7 +673,7 @@ class HighlightersOverlay {
    * Returns whether `node` is somewhere inside the DOM of the rule view.
    *
    * @param {DOMNode} node
-   * @return {Boolean}
+   * @return {boolean}
    */
   isRuleView(node) {
     return !!node.closest("#ruleview-panel");
@@ -712,7 +714,7 @@ class HighlightersOverlay {
    *
    * @param  {NodeFront} node
    *         The NodeFront of the element with a shape to highlight.
-   * @param  {Object} options
+   * @param  {object} options
    *         Object used for passing options to the shapes highlighter.
    * @param {TextProperty} textProperty
    *        TextProperty where to write changes.
@@ -731,7 +733,7 @@ class HighlightersOverlay {
    *
    * @param  {NodeFront} node
    *         The NodeFront of the element with a shape to highlight.
-   * @param  {Object} options
+   * @param  {object} options
    *         Object used for passing options to the shapes highlighter.
    */
   async showShapesHighlighter(node, options) {
@@ -745,7 +747,7 @@ class HighlightersOverlay {
   /**
    * Called after the shape highlighter was shown.
    *
-   * @param  {Object} data
+   * @param  {object} data
    *         Data associated with the event.
    *         Contains:
    *         - {NodeFront} node: The NodeFront of the element that is highlighted.
@@ -791,7 +793,7 @@ class HighlightersOverlay {
    *
    * @param {NodeFront} node
    *        The NodeFront of the element to highlight.
-   * @param {String} point
+   * @param {string} point
    *        The point to highlight in the shapes highlighter.
    */
   async hoverPointShapesHighlighter(node, point) {
@@ -846,7 +848,7 @@ class HighlightersOverlay {
    *
    * @param  {NodeFront} node
    *         The NodeFront of the flexbox container element to highlight.
-   * @param. {String} trigger
+   * @param. {string} trigger
    *         String name matching "layout", "markup" or "rule" to indicate where the
    *         flexbox highlighter was toggled on from. "layout" represents the layout view.
    *         "markup" represents the markup view. "rule" represents the rule view.
@@ -866,9 +868,9 @@ class HighlightersOverlay {
    *
    * @param  {NodeFront} node
    *         The NodeFront of the flexbox container element to highlight.
-   * @param  {Object} options
+   * @param  {object} options
    *         Object used for passing options to the flexbox highlighter.
-   * @param. {String} trigger
+   * @param. {string} trigger
    *         String name matching "layout", "markup" or "rule" to indicate where the
    *         flexbox highlighter was toggled on from. "layout" represents the layout view.
    *         "markup" represents the markup view. "rule" represents the rule view.
@@ -934,7 +936,7 @@ class HighlightersOverlay {
    *
    * @param  {NodeFront} node
    *         The NodeFront of the grid container element to highlight.
-   * @param. {String} trigger
+   * @param. {string} trigger
    *         String name matching "grid", "markup" or "rule" to indicate where the
    *         grid highlighter was toggled on from. "grid" represents the grid view.
    *         "markup" represents the markup view. "rule" represents the rule view.
@@ -976,9 +978,9 @@ class HighlightersOverlay {
    *
    * @param  {NodeFront} node
    *         The NodeFront of the grid container element to highlight.
-   * @param  {Object} options
+   * @param  {object} options
    *         Object used for passing options to the grid highlighter.
-   * @param  {String} trigger
+   * @param  {string} trigger
    *         String name matching "grid", "markup" or "rule" to indicate where the
    *         grid highlighter was toggled on from. "grid" represents the grid view.
    *         "markup" represents the markup view. "rule" represents the rule view.
@@ -1353,9 +1355,9 @@ class HighlightersOverlay {
    * Restores the saved highlighter state for the given highlighter
    * and their state.
    *
-   * @param  {String} type
+   * @param  {string} type
    *         Highlighter type to be restored.
-   * @param  {Object} state
+   * @param  {object} state
    *         Object containing the metadata used to restore the highlighter.
    *         {Array} state.selectors
    *         Array of CSS selector which identifies the node to be highlighted.
@@ -1402,9 +1404,9 @@ class HighlightersOverlay {
    * They typically exist in the context of the page, like the ShapesInContextEditor.
    *
    * @param  {NodeFront} node.
-   * @param  {String} type
+   * @param  {string} type
    *         Type of in-context editor. Currently supported: "shapesEditor"
-   * @return {Object|null}
+   * @return {object | null}
    *         Reference to instance for given type of in-context editor or null.
    */
   async getInContextEditor(node, type) {
@@ -1415,7 +1417,7 @@ class HighlightersOverlay {
     let editor;
 
     switch (type) {
-      case "shapesEditor":
+      case "shapesEditor": {
         const highlighter = await this.#getHighlighterTypeForNode(
           TYPES.SHAPES,
           node
@@ -1433,6 +1435,7 @@ class HighlightersOverlay {
         editor.on("show", this.onShapesHighlighterShown);
         editor.on("hide", this.onShapesHighlighterHidden);
         break;
+      }
       default:
         throw new Error(`Unsupported in-context editor '${name}'`);
     }
@@ -1445,7 +1448,7 @@ class HighlightersOverlay {
   /**
    * Get a highlighter front given a type. It will only be initialized once.
    *
-   * @param  {String} type
+   * @param  {string} type
    *         The highlighter type. One of this.highlighters.
    * @return {Promise} that resolves to the highlighter
    */
@@ -1488,7 +1491,7 @@ class HighlightersOverlay {
    *
    * @param {NodeFront} node
    *        The NodeFront of the shape point to toggle
-   * @param {Boolean} active
+   * @param {boolean} active
    *        Whether the shape point should be active
    */
   _toggleShapePointActive(node, active) {
@@ -1553,8 +1556,8 @@ class HighlightersOverlay {
    * Is the current hovered node a css transform property value in the
    * computed-view.
    *
-   * @param  {Object} nodeInfo
-   * @return {Boolean}
+   * @param  {object} nodeInfo
+   * @return {boolean}
    */
   #isComputedViewTransform(nodeInfo) {
     if (nodeInfo.view != "computed") {
@@ -1571,7 +1574,7 @@ class HighlightersOverlay {
    * rule-view.
    *
    * @param  {DOMNode} node
-   * @return {Boolean}
+   * @return {boolean}
    */
   #isRuleViewShapeSwatch(node) {
     return (
@@ -1582,8 +1585,8 @@ class HighlightersOverlay {
   /**
    * Is the current hovered node a css transform property value in the rule-view.
    *
-   * @param  {Object} nodeInfo
-   * @return {Boolean}
+   * @param  {object} nodeInfo
+   * @return {boolean}
    */
   #isRuleViewTransform(nodeInfo) {
     if (nodeInfo.view != "rule") {
@@ -1602,8 +1605,8 @@ class HighlightersOverlay {
   /**
    * Is the current hovered node a highlightable shape point in the rule-view.
    *
-   * @param  {Object} nodeInfo
-   * @return {Boolean}
+   * @param  {object} nodeInfo
+   * @return {boolean}
    */
   isRuleViewShapePoint(nodeInfo) {
     if (nodeInfo.view != "rule") {

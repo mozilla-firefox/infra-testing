@@ -16,7 +16,6 @@ const {
 const {
   createContext,
   findSource,
-  getCMEditor,
   hoverOnToken,
   openDebuggerAndLog,
   pauseDebugger,
@@ -31,7 +30,6 @@ const {
   addBreakpoint,
   waitForPaused,
   waitForState,
-  isCm6Enabled,
   openEditorContextMenu,
   selectEditorContextMenuItem,
   scrollEditorIntoView,
@@ -234,7 +232,7 @@ async function testOpeningLargeMinifiedFile(dbg) {
   await onSelected;
   fullTest.done();
 
-  await dbg.actions.closeTabs([findSource(dbg, MINIFIED_URL)]);
+  await dbg.actions.closeTabsForSources([findSource(dbg, MINIFIED_URL)]);
 
   // Also clear to prevent reselecting this source
   await dbg.actions.clearSelectedLocation();
@@ -248,18 +246,9 @@ async function testLargeFileWithWrapping(dbg, toolbox) {
   await openEditorContextMenu(dbg, toolbox);
   await selectEditorContextMenuItem(dbg, toolbox, "editor-wrapping");
   await waitUntil(() => {
-    if (isCm6Enabled()) {
-      return dbg.win.document
-        .querySelector(".cm-content")
-        .classList.contains("cm-lineWrapping");
-    }
-    // Waiting for the white-space property value to change from "pre" (before line wrapping) to
-    // "pre-wrap" (after line wrapping).
-    return (
-      dbg.win
-        .getComputedStyle(dbg.win.document.querySelector(".CodeMirror-line"))
-        .getPropertyValue("white-space") === "pre-wrap"
-    );
+    return dbg.win.document
+      .querySelector(".cm-content")
+      .classList.contains("cm-lineWrapping");
   });
 
   dump("Add breakpoint to main.js with wrap editor switched on\n");
@@ -283,7 +272,7 @@ async function testLargeFileWithWrapping(dbg, toolbox) {
   );
 
   await removeBreakpoints(dbg);
-  await dbg.actions.closeTabs([findSource(dbg, MAIN_URL)]);
+  await dbg.actions.closeTabsForSources([findSource(dbg, MAIN_URL)]);
 
   await garbageCollect();
 }
@@ -295,21 +284,8 @@ async function testPrettyPrint(dbg, toolbox) {
   dump("Select minified file\n");
   await selectSource(dbg, MINIFIED_URL);
 
-  dump("Wait until CodeMirror highlighting is done\n");
-  const cm = getCMEditor(dbg).codeMirror;
-  await waitUntil(() => {
-    if (isCm6Enabled()) {
-      return true;
-    }
-    // For CM5 highlightFrontier is not documented but is an internal variable indicating the current
-    // line that was just highlighted. This document has only 2 lines, so wait until both
-    // are highlighted. Since there was an other document opened before, we need to do an
-    // exact check to properly wait.
-    return cm.doc.highlightFrontier === 2;
-  });
-
   const prettyPrintButton = await waitUntil(() => {
-    return dbg.win.document.querySelector(".source-footer .prettyPrint.active");
+    return dbg.win.document.querySelector(".source-footer .prettyPrint");
   });
 
   dump("Click pretty-print button\n");
@@ -371,7 +347,7 @@ async function testPrettyPrint(dbg, toolbox) {
   // (because bundle and pretty print sources use almost the same URL except ':formatted' for the pretty printed one)
   // let's close all the tabs.
   const sources = dbg.selectors.getSourceList(dbg.getState());
-  await dbg.actions.closeTabs(sources);
+  await dbg.actions.closeTabsForSources(sources);
 
   await garbageCollect();
 }
@@ -418,7 +394,7 @@ async function testBigBundle(dbg, tab) {
   await stepDebuggerAndLog(dbg, tab, EXPECTED_FUNCTION, STEP_TESTS);
 
   const sources = dbg.selectors.getSourceList(dbg.getState());
-  await dbg.actions.closeTabs(sources);
+  await dbg.actions.closeTabsForSources(sources);
 
   await garbageCollect();
 }

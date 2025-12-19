@@ -6,19 +6,20 @@
 
 #include "SMILFloatType.h"
 
+#include <math.h>
+
 #include "mozilla/SMILValue.h"
 #include "nsDebug.h"
-#include <math.h>
 
 namespace mozilla {
 
-void SMILFloatType::Init(SMILValue& aValue) const {
+void SMILFloatType::InitValue(SMILValue& aValue) const {
   MOZ_ASSERT(aValue.IsNull(), "Unexpected value type");
   aValue.mU.mDouble = 0.0;
   aValue.mType = this;
 }
 
-void SMILFloatType::Destroy(SMILValue& aValue) const {
+void SMILFloatType::DestroyValue(SMILValue& aValue) const {
   MOZ_ASSERT(aValue.mType == this, "Unexpected SMIL value");
   aValue.mU.mDouble = 0.0;
   aValue.mType = SMILNullType::Singleton();

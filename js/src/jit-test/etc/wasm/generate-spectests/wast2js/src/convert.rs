@@ -61,6 +61,7 @@ pub fn convert<P: AsRef<Path>>(path: P, wast: &str) -> Result<String> {
             col,
             wast,
             &mut out,
+            None,
         )
         .with_context(|| {
             format!(
@@ -83,13 +84,28 @@ fn convert_directive(
     col: usize,
     wast: &str,
     out: &mut String,
+    escape: Option<&dyn Fn(&str) -> String>,
 ) -> Result<()> {
     use wast::WastDirective::*;
 
+    // A local replacement for `writeln!` that automatically applies the
+    // provided escape function.
+    macro_rules! writejs {
+        ($($arg:tt)*) => {{
+            let s = format!($($arg)*);
+            let s = if let Some(escape_fn) = escape {
+                escape_fn(&s)
+            } else {
+                s
+            };
+            writeln!(out, "{}", s)
+        }};
+    }
+
     if col == 1 {
-        writeln!(out, "// {}:{}", filename.display(), line + 1)?;
+        writejs!("// {}:{}", filename.display(), line + 1)?;
     } else {
-        writeln!(out, "// {}:{}:{}", filename.display(), line + 1, col)?;
+        writejs!("// {}:{}:{}", filename.display(), line + 1, col)?;
     }
 
     // For full definitions of these directives, see
@@ -100,13 +116,9 @@ fn convert_directive(
             let next_instance = current_instance.map(|x| x + 1).unwrap_or(0);
             let module_text = module_to_js_string(&module, wast)?;
 
-            writeln!(
-                out,
-                "let ${} = instantiate(`{}`);",
-                next_instance, module_text
-            )?;
+            writejs!("let ${} = instantiate(`{}`);", next_instance, module_text)?;
             if let Some(id) = module.id {
-                writeln!(out, "let ${} = ${};", id.name(), next_instance)?;
+                writejs!("let ${} = ${};", id.name(), next_instance)?;
             }
 
             *current_instance = Some(next_instance);
@@ -117,11 +129,7 @@ fn convert_directive(
             let next_instance = current_instance.map(|x| x + 1).unwrap_or(0);
             let module_text = quote_module_to_js_string(source)?;
 
-            writeln!(
-                out,
-                "let ${} = instantiate(`{}`);",
-                next_instance, module_text
-            )?;
+            writejs!("let ${} = instantiate(`{}`);", next_instance, module_text)?;
 
             *current_instance = Some(next_instance);
         }
@@ -129,13 +137,12 @@ fn convert_directive(
 
         // (module definition $M ...): Define and validate, but do not instantiate, a module
         ModuleDefinition(wast::QuoteWat::Wat(wast::Wat::Module(module))) => {
-            let name = module
-                .id
-                .ok_or(anyhow!("`module define` directives must have IDs"))?
-                .name();
             let module_text = module_definition_to_js_string(&module, wast)?;
-
-            writeln!(out, "let ${} = module(`{}`);", name, module_text)?;
+            if let Some(id) = module.id {
+                writejs!("let ${} = module(`{}`);", id.name(), module_text)?;
+            } else {
+                writejs!("let _anon_{} = module(`{}`);", line, module_text)?;
+            }
         }
         ModuleDefinition(..) => bail!("unsupported module definition...definition"),
 
@@ -145,8 +152,7 @@ fn convert_directive(
             instance: Some(instance),
             module: Some(module),
         } => {
-            writeln!(
-                out,
+            writejs!(
                 "let ${} = instantiateFromModule(${});",
                 instance.name(),
                 module.name()
@@ -160,8 +166,7 @@ fn convert_directive(
             name,
             module: None,
         } => {
-            writeln!(
-                out,
+            writejs!(
                 "register(${}, `{}`);",
                 current_instance.unwrap(),
                 escape_template_name_string(name)
@@ -173,8 +178,7 @@ fn convert_directive(
             name,
             module: Some(thing),
         } => {
-            writeln!(
-                out,
+            writejs!(
                 "register(${}, `{}`);",
                 thing.name(),
                 escape_template_name_string(name)
@@ -184,7 +188,7 @@ fn convert_directive(
         // (invoke $M? "a" ...args): Call an exported function
         Invoke(i) => {
             let invoke_node = invoke_to_js(current_instance, i)?;
-            writeln!(out, "{};", invoke_node.output(0))?;
+            writejs!("{};", invoke_node.output(0))?;
         }
 
         // (assert_return ...)
@@ -195,8 +199,7 @@ fn convert_directive(
         } => {
             let exec_node = execute_to_js(current_instance, exec, wast)?;
             let expected_node = to_js_value_array(&results, assert_expression_to_js_value)?;
-            writeln!(
-                out,
+            writejs!(
                 "{};",
                 JSNode::Assert {
                     name: "assert_return".to_string(),
@@ -218,8 +221,7 @@ fn convert_directive(
                 "`{}`",
                 escape_template_name_string(message)
             )));
-            writeln!(
-                out,
+            writejs!(
                 "{};",
                 JSNode::Assert {
                     name: "assert_trap".to_string(),
@@ -241,8 +243,7 @@ fn convert_directive(
                 "`{}`",
                 escape_template_name_string(message)
             )));
-            writeln!(
-                out,
+            writejs!(
                 "{};",
                 JSNode::Assert {
                     name: "assert_exhaustion".to_string(),
@@ -269,8 +270,7 @@ fn convert_directive(
                 "`{}`",
                 escape_template_name_string(message)
             )));
-            writeln!(
-                out,
+            writejs!(
                 "{};",
                 JSNode::Assert {
                     name: "assert_invalid".to_string(),
@@ -292,7 +292,7 @@ fn convert_directive(
                 wast::QuoteWat::QuoteModule(_, source) => match quote_module_to_js_string(source) {
                     Ok(t) => t,
                     Err(err) => {
-                        writeln!(out, "// ignoring badly-encoded assert_malformed: {:?}", err)?;
+                        writejs!("// ignoring badly-encoded assert_malformed: {:?}", err)?;
                         return Ok(());
                     }
                 },
@@ -303,8 +303,7 @@ fn convert_directive(
                 "`{}`",
                 escape_template_name_string(message)
             )));
-            writeln!(
-                out,
+            writejs!(
                 "{};",
                 JSNode::Assert {
                     name: "assert_malformed".to_string(),
@@ -330,8 +329,7 @@ fn convert_directive(
                 "`{}`",
                 escape_template_name_string(message)
             )));
-            writeln!(
-                out,
+            writejs!(
                 "{};",
                 JSNode::Assert {
                     name: "assert_unlinkable".to_string(),
@@ -346,11 +344,59 @@ fn convert_directive(
             // This assert doesn't have a second parameter, so we don't bother
             // formatting it using an Assert node.
             let exec_node = execute_to_js(current_instance, exec, wast)?;
-            writeln!(out, "assert_exception(() => {});", exec_node.output(0))?;
+            writejs!("assert_exception(() => {});", exec_node.output(0))?;
         }
-        AssertSuspension { .. } => unimplemented!(),
-        Thread(..) => unimplemented!(),
-        Wait { .. } => unimplemented!(),
+        AssertSuspension {
+            span: _,
+            exec,
+            message,
+        } => unimplemented!(
+            "unsupported assert_suspension directive at {}:{}:{}: exec {:#?}, message {:#?}",
+            filename.display(),
+            line,
+            col,
+            exec,
+            message
+        ),
+        Thread(thread) => {
+            writejs!(
+                "let ${0} = new Thread(${1}, \"${1}\", `",
+                thread.name.name(),
+                thread
+                    .shared_module
+                    .expect("shared_module on threads is required")
+                    .name()
+            )?;
+
+            for directive in thread.directives {
+                let sp = directive.span();
+                let (line, col) = sp.linecol_in(wast);
+                writejs!("")?;
+                convert_directive(
+                    directive,
+                    current_instance,
+                    filename,
+                    line,
+                    col,
+                    wast,
+                    out,
+                    Some(&escape_template_module_string),
+                )
+                .with_context(|| {
+                    format!(
+                        "failed to convert thread directive on {}:{}:{}",
+                        filename.display(),
+                        line + 1,
+                        col
+                    )
+                })?;
+            }
+
+            writejs!("`);")?;
+        }
+        Wait { span: _, thread } => {
+            writejs!("${}.wait();", thread.name())?;
+        }
     }
 
     Ok(())
@@ -360,7 +406,7 @@ fn escape_template_string(text: &str, escape_ascii_lf_tab: bool) -> String {
     let mut escaped = String::new();
     for c in text.chars() {
         match c {
-            '$' => escaped.push_str("$$"),
+            '$' => escaped.push_str("\\$"),
             '\\' => escaped.push_str("\\\\"),
             '`' => escaped.push_str("\\`"),
             c if c.is_ascii_control() && escape_ascii_lf_tab && c != '\n' && c != '\t' => {
@@ -468,7 +514,7 @@ fn module_definition_to_js_string(module: &wast::core::Module, wast: &str) -> Re
     let opened_module = &wast[offset..];
 
     // strip "module definition $M" down to just "module"
-    let pattern = r"^module definition \$[a-zA-Z_$][a-zA-Z0-9_$]*(.*)";
+    let pattern = r"^module definition (?:\$[a-zA-Z_$][a-zA-Z0-9_$]* )?(.*)";
     let re = Regex::new(pattern).expect("Invalid regex pattern");
     let without_definition = re.replace(opened_module, "module $1");
 

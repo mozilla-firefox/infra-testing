@@ -243,26 +243,6 @@ sidebar:
       addon_id:
         type: string
         description: The extension's ID.
-  shopping_review_checker_icon_click:
-    type: event
-    description: >
-      The Review Checker icon was clicked.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1951175
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1951175
-    data_sensitivity:
-      - interaction
-    expires: 147
-    notification_emails:
-     - betling@mozilla.com
-      - fx-desktop-shopping-eng@mozilla.com
-    send_in_pings:
-      - events
-    extra_keys:
-      sidebar_open:
-        type: boolean
-        description: Whether the sidebar is expanded or collapsed.
   keyboard_shortcut:
     type: event
     description: >
@@ -273,7 +253,7 @@ sidebar:
       - https://phabricator.services.mozilla.com/D229405
     data_sensitivity:
       - interaction
-    expires: 147
+    expires: never
     notification_emails:
       - vsabino@mozilla.com
     send_in_pings:
@@ -305,30 +285,6 @@ history:
       opened:
         type: boolean
         description: Whether the panel was opened.
-      version:
-        type: string
-        description: The active version of sidebar (either "old" or "new").
-shopping:
-  sidebar_toggle:
-    type: event
-    description: >
-      The Review Checker sidebar panel was loaded or unloaded.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1941047
-    data_reviews:
-      - https://phabricator.services.mozilla.com/D235052
-    data_sensitivity:
-      - interaction
-    expires: 147
-    notification_emails:
-      - betling@mozilla.com
-      - fx-desktop-shopping-eng@mozilla.com
-    send_in_pings:
-      - events
-    extra_keys:
-      opened:
-        type: boolean
-        description: New/current state of sidebar is open.
       version:
         type: string
         description: The active version of sidebar (either "old" or "new").
@@ -521,26 +477,6 @@ sidebar.customize:
       checked:
         type: boolean
         description: Whether the box was checked.
-  shopping_review_checker_enabled:
-    type: event
-    description: >
-      User clicked on the checkbox corresponding to Review Checker on sidebar customization settings.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1938428
-    data_reviews:
-      - https://phabricator.services.mozilla.com/D235053
-    data_sensitivity:
-      - interaction
-    expires: 147
-    notification_emails:
-      - betling@mozilla.com
-      - fx-desktop-shopping-eng@mozilla.com
-    send_in_pings:
-      - events
-    extra_keys:
-      checked:
-        type: boolean
-        description: Whether the box was checked.
   extensions_clicked:
     type: event
     description: >
@@ -708,3 +644,81 @@ contextual_manager:
       checked:
         type: boolean
         description: Whether the Passwords box was checked.
+pinned_tabs:
+  activations:
+    type: labeled_counter
+    description: >
+      Records how many times a pinned tab gets activated.
+    bugs:
+      - https://bugzil.la/1966761
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D253888
+    data_sensitivity:
+      - interaction
+    expires: never
+    notification_emails:
+      - vsabino@mozilla.com
+    send_in_pings:
+      - metrics
+    labels:
+      - sidebar
+      - horizontal_bar
+  count:
+    type: labeled_quantity
+    description: >
+      Records how many pinned tabs the user currently has across all windows.
+    bugs:
+      - https://bugzil.la/1966761
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D253888
+    data_sensitivity:
+      - interaction
+    expires: never
+    notification_emails:
+      - vsabino@mozilla.com
+    send_in_pings:
+      - metrics
+    labels:
+      - sidebar
+      - horizontal_bar
+  pin:
+    type: event
+    description: >
+      Recorded when a user pins a tab.
+    bugs:
+      - https://bugzil.la/1966761
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D253888
+    data_sensitivity:
+      - interaction
+    expires: never
+    notification_emails:
+      - vsabino@mozilla.com
+    send_in_pings:
+      - events
+    extra_keys:
+      layout:
+        type: string
+        description: Either "horizontal" or "vertical".
+      source:
+        type: string
+        description: Either "tab_menu", "drag", or "unknown".
+  close:
+    type: event
+    description: >
+      Recorded when a user closes a pinned tab.
+    bugs:
+      - https://bugzil.la/1966761
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D253888
+    data_sensitivity:
+      - interaction
+    expires: never
+    notification_emails:
+      - vsabino@mozilla.com
+    send_in_pings:
+      - events
+    extra_keys:
+      layout:
+        type: string
+        description: Either "horizontal" or "vertical".

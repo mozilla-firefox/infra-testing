@@ -3,6 +3,12 @@ const { CustomizableUITestUtils } = ChromeUtils.importESModule(
 );
 let gCUITestUtils = new CustomizableUITestUtils(window);
 
+add_setup(async function setup() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["test.wait300msAfterTabSwitch", true]],
+  });
+});
+
 add_task(async function ctrl_d() {
   if (AppConstants.platform == "macosx") {
     return;
@@ -29,7 +35,7 @@ add_task(async function ctrl_d() {
   let searchBar = await gCUITestUtils.addSearchBar();
 
   const kTestPage = "data:text/html,<body>simple web page</body>";
-  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, kTestPage);
+  await BrowserTestUtils.openNewForegroundTab(gBrowser, kTestPage);
 
   searchBar.focus();
 
@@ -41,7 +47,7 @@ add_task(async function ctrl_d() {
         return;
       }
       info("Waiting focus event...");
-      gURLBar.addEventListener(
+      gURLBar.inputField.addEventListener(
         "focus",
         () => {
           ok(true, "The URL bar gets focus");

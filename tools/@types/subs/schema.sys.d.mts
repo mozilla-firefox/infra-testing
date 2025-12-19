@@ -243,6 +243,14 @@ export namespace schema {
                                 };
                             };
                         };
+                        Download: {
+                            type: string;
+                            properties: {
+                                Enabled: {
+                                    type: string;
+                                };
+                            };
+                        };
                         DragAndDrop: {
                             type: string;
                             properties: {
@@ -527,12 +535,25 @@ export namespace schema {
                 EmailTracking: {
                     type: string;
                 };
+                SuspectedFingerprinting: {
+                    type: string;
+                };
                 Exceptions: {
                     type: string;
                     strict: boolean;
                     items: {
                         type: string;
                     };
+                };
+                Category: {
+                    type: string;
+                    enum: string[];
+                };
+                BaselineExceptions: {
+                    type: string;
+                };
+                ConvenienceExceptions: {
+                    type: string;
                 };
             };
         };
@@ -677,7 +698,13 @@ export namespace schema {
                 Pocket: {
                     type: string;
                 };
+                Stories: {
+                    type: string;
+                };
                 SponsoredPocket: {
+                    type: string;
+                };
+                SponsoredStories: {
                     type: string;
                 };
                 Snippets: {
@@ -1034,6 +1061,31 @@ export namespace schema {
                     };
                 };
                 VirtualReality: {
+                    type: string;
+                    properties: {
+                        Allow: {
+                            type: string;
+                            strict: boolean;
+                            items: {
+                                type: string;
+                            };
+                        };
+                        Block: {
+                            type: string;
+                            strict: boolean;
+                            items: {
+                                type: string;
+                            };
+                        };
+                        BlockNewRequests: {
+                            type: string;
+                        };
+                        Locked: {
+                            type: string;
+                        };
+                    };
+                };
+                ScreenShare: {
                     type: string;
                     properties: {
                         Allow: {

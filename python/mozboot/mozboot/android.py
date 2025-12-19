@@ -3,7 +3,6 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import errno
-import json
 import os
 import platform
 import stat
@@ -12,10 +11,11 @@ import sys
 import time
 from enum import Enum
 from pathlib import Path
-from typing import Optional, Set, Union
+from typing import Optional, Union
 
 import requests
 from mach.util import get_state_dir
+from mozfile import json
 from tqdm import tqdm
 
 from mozboot.bootstrap import MOZCONFIG_SUGGESTION_TEMPLATE
@@ -23,18 +23,20 @@ from mozboot.bootstrap import MOZCONFIG_SUGGESTION_TEMPLATE
 # We need the NDK version in multiple different places, and it's inconvenient
 # to pass down the NDK version to all relevant places, so we have this global
 # variable.
-NDK_VERSION = "r28b"
+NDK_VERSION = "r29"
 CMDLINE_TOOLS_VERSION_STRING = "19.0"
 CMDLINE_TOOLS_VERSION = "13114758"
 
-BUNDLETOOL_VERSION = "1.18.1"
+BUNDLETOOL_VERSION = "1.18.3"
 BUNDLETOOL_URL = f"https://github.com/google/bundletool/releases/download/{BUNDLETOOL_VERSION}/bundletool-all-{BUNDLETOOL_VERSION}.jar"
 
 # We expect the emulator AVD definitions to be platform agnostic
 X86_64_ANDROID_AVD = "linux64-android-avd-x86_64-repack"
 ARM64_ANDROID_AVD = "linux64-android-avd-arm64-repack"
 
-AVD_MANIFEST_X86_64 = Path(__file__).resolve().parent / "android-avds/x86_64.json"
+AVD_MANIFEST_X86_64 = (
+    Path(__file__).resolve().parent / "android-avds/android34-x86_64.json"
+)
 AVD_MANIFEST_ARM64 = Path(__file__).resolve().parent / "android-avds/arm64.json"
 
 MOZBUILD_PATH = Path(get_state_dir())
@@ -46,8 +48,8 @@ AVD_HOME_PATH = Path(
 )
 
 JAVA_VERSION_MAJOR = "17"
-JAVA_VERSION_MINOR = "0.15"
-JAVA_VERSION_PATCH = "6"
+JAVA_VERSION_MINOR = "0.17"
+JAVA_VERSION_PATCH = "10"
 
 ANDROID_NDK_EXISTS = """
 Looks like you have the correct version of the Android NDK installed at:
@@ -95,6 +97,16 @@ ac_add_options --enable-artifact-builds
 {extra_lines}
 # Write build artifacts to:
 mk_add_options MOZ_OBJDIR=./objdir-frontend
+"""
+
+SUGGEST_ADD_PLATFORM_TOOLS_PATH = """
+If you plan to use adb or other platform tools directly on the command line, it may
+be useful to add them to your PATH. Edit your shell initialization script to prepend
+{platform_tools} to your PATH. For example:
+
+    export PATH="{platform_tools}:$PATH"
+
+Then restart your shell.
 """
 
 
@@ -329,7 +341,7 @@ def get_os_tag_for_android(os_name: str):
 def ensure_android(
     os_name: str,
     os_arch: str,
-    packages: Optional[Set[str]] = None,
+    packages: Optional[set[str]] = None,
     artifact_mode=False,
     avd_manifest_path: Optional[Path] = None,
     prewarm_avd=False,
@@ -437,6 +449,13 @@ def ensure_android_sdk(os_name: str, os_tag: str):
 
 
 def ensure_bundletool():
+    bundletool_path = os.environ.get("ANDROID_BUNDLETOOL_PATH")
+    if bundletool_path:
+        print(
+            f"ANDROID_BUNDLETOOL_PATH specified. Using {bundletool_path}. Bundletool will not be bootstrapped."
+        )
+        return
+
     download(BUNDLETOOL_URL, MOZBUILD_PATH / "bundletool.jar")
 
 
@@ -451,6 +470,13 @@ def ensure_android_avd(
     Use the given sdkmanager tool (like 'sdkmanager') to install required
     Android packages.
     """
+    avd_path = os.environ.get("ANDROID_AVD_PATH")
+    if avd_path:
+        print(
+            f"ANDROID_AVD_PATH specified. Using {avd_path}. Android AVD will not be bootstrapped."
+        )
+        return
+
     if avd_manifest is None:
         return
 
@@ -587,7 +613,7 @@ class AndroidPackageList(Enum):
 
 def get_android_packages(
     package_list_type: AndroidPackageList = AndroidPackageList.ALL,
-) -> Set[str]:
+) -> set[str]:
     packages_file_path = (Path(__file__).parent / package_list_type.value).resolve()
 
     content = packages_file_path.read_text()
@@ -599,7 +625,7 @@ def get_android_packages(
 def ensure_android_packages(
     os_name: str,
     os_arch: str,
-    packages: Optional[Set[str]],
+    packages: Optional[set[str]],
     avd_manifest=None,
     no_interactive=False,
     list_packages=False,
@@ -611,7 +637,8 @@ def ensure_android_packages(
     if not packages:
         packages = get_android_packages(AndroidPackageList.ALL)
 
-    sdkmanager_tool = get_sdkmanager_tool_path(sdk_path=get_sdk_path(os_name))
+    sdk_path = get_sdk_path(os_name)
+    sdkmanager_tool = get_sdkmanager_tool_path(sdk_path=sdk_path)
 
     if avd_manifest is not None:
         packages.add(avd_manifest["emulator_package"])
@@ -634,6 +661,7 @@ def ensure_android_packages(
 
     if not no_interactive:
         subprocess.check_call(args, env=env)
+        suggest_platform_tools_path(packages, sdk_path)
         return
 
     # Flush outputs before running sdkmanager.
@@ -652,6 +680,30 @@ def ensure_android_packages(
         raise e
     if list_packages:
         subprocess.check_call([str(sdkmanager_tool), "--list"])
+
+    suggest_platform_tools_path(packages, sdk_path)
+
+
+def suggest_platform_tools_path(packages: set, sdk_path: Path):
+    if "platform-tools" in packages:
+        platform_tools_dir = (sdk_path / "platform-tools").resolve()
+        path_entries = os.environ.get("PATH", "").split(os.pathsep)
+        normalized_entries = {
+            os.path.normpath(
+                os.path.normcase(os.path.expanduser(os.path.expandvars(p)))
+            )
+            for p in path_entries
+        }
+        normalized_platform_tools_dir = os.path.normpath(
+            os.path.normcase(platform_tools_dir)
+        )
+
+        if normalized_platform_tools_dir not in normalized_entries:
+            print(
+                SUGGEST_ADD_PLATFORM_TOOLS_PATH.format(
+                    platform_tools=normalized_platform_tools_dir
+                )
+            )
 
 
 def generate_mozconfig(os_name: str, artifact_mode=False):
@@ -839,7 +891,7 @@ def ensure_java(os_name: str, os_arch: str):
         ext = "zip" if os_name == "windows" else "tar.gz"
 
         # e.g. https://github.com/adoptium/temurin17-binaries/releases/
-        #      download/jdk-17.0.15%2B6/OpenJDK17U-jdk_x64_linux_hotspot_17.0.15_6.tar.gz
+        #      download/jdk-17.0.17%2B10/OpenJDK17U-jdk_x64_linux_hotspot_17.0.17_10.tar.gz
         java_url = (
             f"https://github.com/adoptium/temurin{JAVA_VERSION_MAJOR}-binaries/releases/"
             f"download/jdk-{JAVA_VERSION_MAJOR}.{JAVA_VERSION_MINOR}%2B{JAVA_VERSION_PATCH}/"
@@ -849,7 +901,7 @@ def ensure_java(os_name: str, os_arch: str):
 
 
 def get_java_bin_path(os_name: str, toolchain_path: Path):
-    # Like jdk-17.0.15+6
+    # Like jdk-17.0.17+10
     jdk_folder = f"jdk-{JAVA_VERSION_MAJOR}.{JAVA_VERSION_MINOR}+{JAVA_VERSION_PATCH}"
 
     java_path = toolchain_path / "jdk" / jdk_folder

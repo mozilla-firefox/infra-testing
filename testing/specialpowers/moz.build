@@ -5,6 +5,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 XPI_NAME = "specialpowers"
+XPI_PKGNAME = "specialpowers@mozilla.org"
 
 USE_EXTENSION_MANIFEST = True
 
@@ -30,6 +31,7 @@ modules = [
     "content/SpecialPowersChild.sys.mjs",
     "content/SpecialPowersEventUtils.sys.mjs",
     "content/SpecialPowersParent.sys.mjs",
+    "content/SpecialPowersProcessActor.sys.mjs",
     "content/SpecialPowersSandbox.sys.mjs",
     "content/WrapPrivileged.sys.mjs",
 ]

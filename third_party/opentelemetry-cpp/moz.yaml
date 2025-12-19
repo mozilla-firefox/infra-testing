@@ -9,8 +9,8 @@ origin:
   description: The OpenTelemetry C++ Client
   url: https://opentelemetry.io/
 
-  release: v1.18.0 (2024-11-26T00:19:04+01:00).
-  revision: v1.18.0
+  release: v1.23.0 (2025-09-26T02:04:33+02:00).
+  revision: v1.23.0
 
   license: Apache-2.0
   license-file: LICENSE
@@ -22,6 +22,9 @@ vendoring:
 
   exclude:
    - "**"
+   - "sdk/include/opentelemetry/sdk/common/thread_instrumentation.h"
+   - "sdk/include/opentelemetry/sdk/trace/batch_span_processor*.h"
+   - "sdk/src/trace/batch_span_processor*.cc"
 
   include:
    - CHANGELOG.md
@@ -37,11 +40,15 @@ vendoring:
    - api/include/opentelemetry/semconv/telemetry_attributes.h
    - api/include/opentelemetry/std/*.h
    - api/include/opentelemetry/trace/*.h
-   - exporters/ostream/include/opentelemetry/exporters/ostream/common_utils.h
-   - exporters/ostream/include/opentelemetry/exporters/ostream/span_exporter.h
-   - exporters/ostream/include/opentelemetry/exporters/ostream/span_exporter_factory.h
-   - exporters/ostream/src/span_exporter.cc
-   - exporters/ostream/src/span_exporter_factory.cc
+   - exporters/memory/include/opentelemetry/exporters/memory/in_memory_data.h
+   - exporters/memory/include/opentelemetry/exporters/memory/in_memory_span*.h
+   - exporters/memory/src/in_memory_span_exporter_factory.cc
+   - exporters/otlp/include/opentelemetry/exporters/otlp/otlp_populate_attribute_utils.h
+   - exporters/otlp/include/opentelemetry/exporters/otlp/otlp_recordable*.h
+   - exporters/otlp/include/opentelemetry/exporters/otlp/protobuf_include_prefix.h
+   - exporters/otlp/include/opentelemetry/exporters/otlp/protobuf_include_suffix.h
+   - exporters/otlp/src/otlp_populate_attribute_utils.cc
+   - exporters/otlp/src/otlp_recordable*.cc
    - sdk/include/opentelemetry/*.h
    - sdk/include/opentelemetry/sdk/common/*.h
    - sdk/include/opentelemetry/sdk/instrumentationscope/*.h
@@ -60,14 +67,16 @@ vendoring:
 
   keep:
    - opentelemetry-config.mozbuild
+   - third_party/
 
   patches:
    - patches/fix-ambiguous-holds_alternative.patch # Maybe we should upstream this
    - patches/remove-non-vendored-context_value-variant.patch
+   - patches/remove-log-related-entries-from-otlp-exporter.patch
 
 updatebot:
-  maintainer-phab: mvanstraten
-  maintainer-bz: mvanstraten@mozilla.com
+  maintainer-phab: jari
+  maintainer-bz: jjalkanen@mozilla.com
   tasks:
    - type: vendoring
      enabled: true

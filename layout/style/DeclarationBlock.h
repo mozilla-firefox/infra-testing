@@ -12,15 +12,16 @@
 #ifndef mozilla_DeclarationBlock_h
 #define mozilla_DeclarationBlock_h
 
+#include "NonCustomCSSPropertyId.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/ServoBindings.h"
-
-#include "nsCSSPropertyID.h"
 #include "nsString.h"
 
 namespace mozilla {
 
 class AttributeStyles;
+struct CSSPropertyId;
+
 namespace css {
 class Declaration;
 class Rule;
@@ -35,7 +36,8 @@ class DeclarationBlock final {
   }
 
  public:
-  explicit DeclarationBlock(already_AddRefed<StyleLockedDeclarationBlock> aRaw)
+  explicit DeclarationBlock(
+      already_AddRefed<const StyleLockedDeclarationBlock> aRaw)
       : mRaw(aRaw), mImmutable(false), mIsDirty(false) {
     mContainer.mRaw = 0;
   }
@@ -162,7 +164,7 @@ class DeclarationBlock final {
     return FromCssText(value, aExtraData, aMode, aLoader, aRuleType);
   }
 
-  StyleLockedDeclarationBlock* Raw() const { return mRaw; }
+  const StyleLockedDeclarationBlock* Raw() const { return mRaw; }
 
   void ToString(nsACString& aResult) const {
     Servo_DeclarationBlock_GetCssText(mRaw, &aResult);
@@ -179,12 +181,25 @@ class DeclarationBlock final {
     Servo_DeclarationBlock_GetPropertyValue(mRaw, &aProperty, &aValue);
   }
 
-  void GetPropertyValueByID(nsCSSPropertyID aPropID, nsACString& aValue) const {
-    Servo_DeclarationBlock_GetPropertyValueById(mRaw, aPropID, &aValue);
+  void GetPropertyValueById(NonCustomCSSPropertyId aPropId,
+                            nsACString& aValue) const {
+    Servo_DeclarationBlock_GetPropertyValueByNonCustomId(mRaw, aPropId,
+                                                         &aValue);
+  }
+
+  void GetPropertyValueById(const CSSPropertyId& aPropId,
+                            nsACString& aValue) const {
+    Servo_DeclarationBlock_GetPropertyValueById(mRaw, &aPropId, &aValue);
   }
 
   bool GetPropertyIsImportant(const nsACString& aProperty) const {
     return Servo_DeclarationBlock_GetPropertyIsImportant(mRaw, &aProperty);
+  }
+
+  bool GetPropertyTypedValue(const nsACString& aProperty,
+                             StylePropertyTypedValueResult& aResult) const {
+    return Servo_DeclarationBlock_GetPropertyTypedValue(mRaw, &aProperty,
+                                                        &aResult);
   }
 
   // Returns whether the property was removed.
@@ -195,7 +210,7 @@ class DeclarationBlock final {
   }
 
   // Returns whether the property was removed.
-  bool RemovePropertyByID(nsCSSPropertyID aProperty,
+  bool RemovePropertyById(NonCustomCSSPropertyId aProperty,
                           DeclarationBlockMutationClosure aClosure = {}) {
     AssertMutable();
     return Servo_DeclarationBlock_RemovePropertyById(mRaw, aProperty, aClosure);
@@ -221,7 +236,7 @@ class DeclarationBlock final {
     AttributeStyles* mAttributeStyles;
   } mContainer;
 
-  RefPtr<StyleLockedDeclarationBlock> mRaw;
+  RefPtr<const StyleLockedDeclarationBlock> mRaw;
 
   // set when declaration put in the rule tree;
   bool mImmutable;

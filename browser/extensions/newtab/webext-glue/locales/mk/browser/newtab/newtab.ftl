@@ -43,9 +43,6 @@ newtab-confirm-delete-history-p1 = Дали сте сигурни дека са�
 # "This action" refers to deleting a page from history.
 newtab-confirm-delete-history-p2 = Ова дејство не може да се одврати.
 
-## Top Sites - Sponsored label
-
-
 ## Context Menu - Action Tooltips.
 
 # General tooltip for context menus.
@@ -75,9 +72,6 @@ newtab-menu-delete-history = Избриши од историја
 newtab-menu-save-to-pocket = Зачувај во { -pocket-brand-name }
 newtab-menu-delete-pocket = Избриши од { -pocket-brand-name }
 newtab-menu-archive-pocket = Архивирај во { -pocket-brand-name }
-
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
 
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
@@ -129,9 +123,6 @@ newtab-section-menu-move-up = Помести нагоре
 newtab-section-menu-move-down = Помести надолу
 newtab-section-menu-privacy-notice = Белешка за приватност
 
-## Section aria-labels
-
-
 ## Section Headers.
 
 newtab-section-header-topsites = Популарни мрежни места
@@ -162,57 +153,8 @@ newtab-pocket-read-more = Популарни теми:
 newtab-pocket-more-recommendations = Повеќе препораки
 newtab-pocket-cta-button = Превземете го { -pocket-brand-name }
 
-## Thumbs up and down buttons that shows over a newtab stories card thumbnail on hover.
-
-
-## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
-
-
 ## Error Fallback Content.
 ## This message and suggested action link are shown in each section of UI that fails to render.
 
 newtab-error-fallback-info = Упс, нешто отиде погрешно со прикажување на оваа содржина
 newtab-error-fallback-refresh-link = Освежете ја страницата за да се обидете повторно.
-
-## Customization Menu
-
-
-## New Tab Wallpapers
-
-
-## Solid Colors
-
-
-## Abstract
-
-
-## Celestial
-
-
-## Celestial
-
-
-## New Tab Weather
-
-
-## Topic Labels
-
-
-## Topic Selection Modal
-
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
-
-## Panel in the Customize menu section to manage followed and blocked topics
-

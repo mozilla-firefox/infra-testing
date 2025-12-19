@@ -9,16 +9,19 @@ add_task(async function test_receive_punycode_result() {
   // eslint-disable-next-line jsdoc/require-jsdoc
   class ResultWithHighlightsProvider extends UrlbarTestUtils.TestProvider {
     startQuery(context, addCallback) {
-      let result = Object.assign(
-        new UrlbarResult(
-          UrlbarUtils.RESULT_TYPE.URL,
-          UrlbarUtils.RESULT_SOURCE.HISTORY,
-          ...UrlbarResult.payloadAndSimpleHighlights(context.tokens, {
-            url: [url, UrlbarUtils.HIGHLIGHT.TYPED],
-          })
-        ),
-        { suggestedIndex: 0 }
-      );
+      let result = new UrlbarResult({
+        type: UrlbarUtils.RESULT_TYPE.URL,
+        source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+        suggestedIndex: 0,
+        payload: {
+          url,
+          title: "www.اختبار.اختبار.org:5000",
+        },
+        highlights: {
+          url: UrlbarUtils.HIGHLIGHT.TYPED,
+          title: UrlbarUtils.HIGHLIGHT.TYPED,
+        },
+      });
       addCallback(this, result);
     }
 
@@ -44,12 +47,12 @@ add_task(async function test_receive_punycode_result() {
   let row = await UrlbarTestUtils.waitForAutocompleteResultAt(window, 0);
   is(row.result.type, UrlbarUtils.RESULT_TYPE.URL, "row.result.type");
   is(
-    row.result.payload.displayUrl,
+    row.result.getDisplayableValueAndHighlights("url", { isURL: true }).value,
     "اختبار.اختبار.org:5000",
     "Result is trimmed and formatted correctly."
   );
   is(
-    row.result.payload.title,
+    row.result.getDisplayableValueAndHighlights("title").value,
     "www.اختبار.اختبار.org:5000",
     "Result is trimmed and formatted correctly."
   );

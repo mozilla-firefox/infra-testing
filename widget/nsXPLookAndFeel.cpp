@@ -3,8 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/ArrayUtils.h"
-
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/RWLock.h"
 #include "nscore.h"
@@ -121,8 +119,7 @@ static const char sIntPrefs[][45] = {
     "ui.windowsMica",
     "ui.windowsMicaPopups",
     "ui.macBigSurTheme",
-    "ui.macRTL",
-    "ui.macTitlebarHeight",
+    "ui.macTahoeTheme",
     "ui.alertNotificationOrigin",
     "ui.scrollToClick",
     "ui.IMERawInputUnderlineStyle",
@@ -157,7 +154,6 @@ static const char sIntPrefs[][45] = {
     "ui.systemScrollbarSize",
     "ui.touchDeviceSupportPresent",
     "ui.titlebarRadius",
-    "ui.titlebarButtonSpacing",
     "ui.tooltipRadius",
     "ui.dynamicRange",
     "ui.panelAnimations",
@@ -166,6 +162,7 @@ static const char sIntPrefs[][45] = {
     "ui.fullKeyboardAccess",
     "ui.pointingDeviceKinds",
     "ui.nativeMenubar",
+    "ui.hourCycle",
 };
 
 static_assert(std::size(sIntPrefs) == size_t(LookAndFeel::IntID::End),
@@ -233,17 +230,19 @@ static const char sColorPrefs[][41] = {
     "ui.-moz_cellhighlighttext",
     "ui.selecteditem",
     "ui.selecteditemtext",
-    "ui.-moz-buttonhoverface",
-    "ui.-moz_buttonhovertext",
     "ui.-moz_menuhover",
     "ui.-moz_menuhoverdisabled",
     "ui.-moz_menuhovertext",
     "ui.-moz_menubarhovertext",
-    "ui.-moz_eventreerow",
     "ui.-moz_oddtreerow",
-    "ui.-moz-buttonactivetext",
+    "ui.-moz-buttonhoverface",
+    "ui.-moz_buttonhovertext",
+    "ui.-moz_buttonhoverborder",
     "ui.-moz-buttonactiveface",
+    "ui.-moz-buttonactivetext",
+    "ui.-moz-buttonactiveborder",
     "ui.-moz-buttondisabledface",
+    "ui.-moz-buttondisabledborder",
     "ui.-moz-headerbar",
     "ui.-moz-headerbartext",
     "ui.-moz-headerbarinactive",
@@ -287,11 +286,9 @@ static const char sColorPrefs[][41] = {
     "ui.IMESelectedConvertedTextUnderline",
     "ui.SpellCheckerUnderline",
     "ui.themedScrollbar",
-    "ui.themedScrollbarInactive",
     "ui.themedScrollbarThumb",
     "ui.themedScrollbarThumbHover",
     "ui.themedScrollbarThumbActive",
-    "ui.themedScrollbarThumbInactive",
 };
 
 static_assert(std::size(sColorPrefs) == size_t(LookAndFeel::ColorID::End),
@@ -523,12 +520,15 @@ static constexpr struct {
     // Affects zoom settings which includes text and full zoom.
     {"browser.display.os-zoom-behavior"_ns,
      widget::ThemeChangeKind::StyleAndLayout},
-    // This affects system colors on Linux.
+    // These affects system colors on Linux.
     {"widget.gtk.libadwaita-colors.enabled"_ns, widget::ThemeChangeKind::Style},
+    {"widget.gtk.theme-scrollbar-colors.enabled"_ns,
+     widget::ThemeChangeKind::Style},
     // This affects not only the media query, but also the native theme, so we
     // need to re-layout.
     {"browser.theme.toolbar-theme"_ns, widget::ThemeChangeKind::AllBits},
     {"browser.theme.content-theme"_ns},
+    {"browser.theme.native-theme"_ns},
     // Affects PreferenceSheet, and thus styling.
     {"browser.anchor_color"_ns, widget::ThemeChangeKind::Style},
     {"browser.anchor_color.dark"_ns, widget::ThemeChangeKind::Style},
@@ -543,6 +543,7 @@ static constexpr struct {
     {"browser.display.foreground_color.dark"_ns,
      widget::ThemeChangeKind::Style},
     {"browser.display.document_color_use"_ns, widget::ThemeChangeKind::Style},
+    {"browser.display.use_document_fonts"_ns, widget::ThemeChangeKind::Style},
     {"browser.display.permit_backplate"_ns, widget::ThemeChangeKind::Style},
     {"ui.use_standins_for_native_colors"_ns, widget::ThemeChangeKind::Style},
     {"privacy.resistFingerprinting"_ns, widget::ThemeChangeKind::Style},
@@ -622,10 +623,6 @@ nscolor nsXPLookAndFeel::GetStandinForNativeColor(ColorID aID,
       COLOR(TextSelectDisabledBackground, 0xAA, 0xAA, 0xAA)
 
       // Titlebar colors
-      // deprecated in CSS Color Level 4, same as Buttonborder:
-      COLOR(Activeborder, 0xE3, 0xE3, 0xE3)
-      // deprecated in CSS Color Level 4, same as Buttonborder:
-      COLOR(Inactiveborder, 0xE3, 0xE3, 0xE3)
       // deprecated in CSS Color Level 4, same as Canvas/Window:
       COLOR(Activecaption, 0xFF, 0xFF, 0xFF)
       // deprecated in CSS Color Level 4, same as Canvas/Window:
@@ -640,20 +637,40 @@ nscolor nsXPLookAndFeel::GetStandinForNativeColor(ColorID aID,
       COLOR(Appworkspace, 0xFF, 0xFF, 0xFF)
       // deprecated in CSS Color Level 4, same as Canvas/Window:
       COLOR(Background, 0xFF, 0xFF, 0xFF)
-      // deprecated in CSS Color Level 4, same as Buttonface:
-      COLOR(Buttonhighlight, 0xE9, 0xE9, 0xED)
-      // deprecated in CSS Color Level 4, same as Buttonface:
-      COLOR(Buttonshadow, 0xE9, 0xE9, 0xED)
 
+      // deprecated in CSS Color Level 4, same as Buttonface
+    case ColorID::Buttonhighlight:
+    case ColorID::Buttonshadow:
+    case ColorID::Threedface:
       // Buttons and comboboxes should be kept in sync since they are drawn with
       // the same colors by the non-native theme.
-      COLOR(Buttonface, 0xE9, 0xE9, 0xED)
+    case ColorID::MozCombobox:
+    case ColorID::Buttonface:
+      return NS_RGB(0xE9, 0xE9, 0xED);
+
+      COLOR(MozButtonhoverface, 0xd0, 0xd0, 0xd7)
+      COLOR(MozButtonactiveface, 0xb1, 0xb1, 0xb9)
       COLORA(MozButtondisabledface, 0xE9, 0xE9, 0xED, 128)
 
-      COLOR(MozCombobox, 0xE9, 0xE9, 0xED)
-
+    case ColorID::MozComboboxtext:
+    case ColorID::MozButtonhovertext:
+    case ColorID::MozButtonactivetext:
       COLOR(Buttontext, 0x00, 0x00, 0x00)
-      COLOR(MozComboboxtext, 0x00, 0x00, 0x00)
+
+      // deprecated in CSS Color Level 4, same as Buttonborder:
+    case ColorID::Threedhighlight:
+    case ColorID::Threedlightshadow:
+    case ColorID::Threedshadow:
+    case ColorID::Threeddarkshadow:
+    case ColorID::Windowframe:
+    case ColorID::Activeborder:
+    case ColorID::Inactiveborder:
+    case ColorID::Buttonborder:
+      return NS_RGB(0x8f, 0x8f, 0x9d);
+
+      COLOR(MozButtonhoverborder, 0x67, 0x67, 0x74)
+      COLOR(MozButtonactiveborder, 0x48, 0x48, 0x51)
+      COLORA(MozButtondisabledborder, 0x8f, 0x8f, 0x9d, 0x7f)
 
       COLOR(Graytext, 0x6D, 0x6D, 0x6D)
       COLOR(Highlight, 0x33, 0x99, 0xFF)
@@ -668,21 +685,9 @@ nscolor nsXPLookAndFeel::GetStandinForNativeColor(ColorID aID,
       COLOR(Menutext, 0x00, 0x00, 0x00)
       // deprecated in CSS Color Level 4, same as Canvas/Window:
       COLOR(Scrollbar, 0xFF, 0xFF, 0xFF)
-      // deprecated in CSS Color Level 4, same as Buttonborder:
-      COLOR(Threeddarkshadow, 0xE3, 0xE3, 0xE3)
-      // deprecated in CSS Color Level 4, same as Buttonface:
-      COLOR(Threedface, 0xE9, 0xE9, 0xED)
-      // deprecated in CSS Color Level 4, same as Buttonborder:
-      COLOR(Threedhighlight, 0xE3, 0xE3, 0xE3)
-      COLOR(Threedlightshadow, 0xE3, 0xE3, 0xE3)
-      // deprecated in CSS Color Level 4, same as Buttonborder:
-      COLOR(Threedshadow, 0xE3, 0xE3, 0xE3)
-      COLOR(Buttonborder, 0xE3, 0xE3, 0xE3)
       COLOR(Mark, 0xFF, 0xFF, 0x00)
       COLOR(Marktext, 0x00, 0x00, 0x00)
       COLOR(Window, 0xFF, 0xFF, 0xFF)
-      // deprecated in CSS Color Level 4, same as Buttonborder:
-      COLOR(Windowframe, 0xE3, 0xE3, 0xE3)
       COLOR(Windowtext, 0x00, 0x00, 0x00)
       COLOR(Field, 0xFF, 0xFF, 0xFF)
       COLORA(MozDisabledfield, 0xFF, 0xFF, 0xFF, 128)
@@ -695,15 +700,10 @@ nscolor nsXPLookAndFeel::GetStandinForNativeColor(ColorID aID,
       COLOR(MozCellhighlighttext, 0x00, 0x00, 0x00)
       COLOR(Selecteditem, 0x33, 0x99, 0xFF)
       COLOR(Selecteditemtext, 0xFF, 0xFF, 0xFF)
-      COLOR(MozButtonhoverface, 0xd0, 0xd0, 0xd7)
-      COLOR(MozButtonhovertext, 0x00, 0x00, 0x00)
-      COLOR(MozButtonactiveface, 0xb1, 0xb1, 0xb9)
-      COLOR(MozButtonactivetext, 0x00, 0x00, 0x00)
       COLOR(MozMenuhover, 0x33, 0x99, 0xFF)
       COLOR(MozMenuhovertext, 0x00, 0x00, 0x00)
       COLOR(MozMenubarhovertext, 0x00, 0x00, 0x00)
       COLOR(MozMenuhoverdisabled, 0xF0, 0xF0, 0xF0)
-      COLOR(MozEventreerow, 0xFF, 0xFF, 0xFF)
       COLOR(MozOddtreerow, 0xFF, 0xFF, 0xFF)
       COLOR(MozMacFocusring, 0x60, 0x9D, 0xD7)
       COLOR(MozMacDisabledtoolbartext, 0x3F, 0x3F, 0x3F)
@@ -711,7 +711,7 @@ nscolor nsXPLookAndFeel::GetStandinForNativeColor(ColorID aID,
       COLOR(Activetext, 0xee, 0x00, 0x00)
       COLOR(Visitedtext, 0x55, 0x1A, 0x8B)
       COLOR(MozAutofillBackground, 0xff, 0xfc, 0xc8)
-      COLOR(TargetTextBackground, 0xff, 0xeb, 0xcd)
+      COLOR(TargetTextBackground, 0xf5, 0xcc, 0x58)  // --yellow-20
       COLOR(TargetTextForeground, 0x00, 0x00, 0x00)
     default:
       break;
@@ -728,7 +728,7 @@ Maybe<nscolor> nsXPLookAndFeel::GenericDarkColor(ColorID aID) {
   static constexpr nscolor kWindowBackground = NS_RGB(28, 27, 34);
   static constexpr nscolor kWindowText = NS_RGB(251, 251, 254);
   switch (aID) {
-    case ColorID::Window:  // --in-content-page-background
+    case ColorID::Window:  // --background-color-canvas
     case ColorID::Background:
     case ColorID::Appworkspace:
     case ColorID::Scrollbar:
@@ -754,18 +754,16 @@ Maybe<nscolor> nsXPLookAndFeel::GenericDarkColor(ColorID aID) {
       color = NS_RGB(0x3a, 0x39, 0x44);
       break;
 
-    case ColorID::MozEventreerow:
     case ColorID::MozOddtreerow:
     case ColorID::MozDialog:  // --background-color-box
       color = NS_RGB(35, 34, 43);
       break;
-    case ColorID::Windowtext:  // --in-content-page-color
+    case ColorID::Windowtext:  // --text-color
     case ColorID::MozDialogtext:
     case ColorID::MozSidebartext:
     case ColorID::Fieldtext:
     case ColorID::Infotext:
-    case ColorID::Buttontext:  // --in-content-button-text-color (via
-                               // --in-content-page-color)
+    case ColorID::Buttontext:  // --button-text-color
     case ColorID::MozComboboxtext:
     case ColorID::MozButtonhovertext:
     case ColorID::MozButtonactivetext:
@@ -779,35 +777,40 @@ Maybe<nscolor> nsXPLookAndFeel::GenericDarkColor(ColorID aID) {
     case ColorID::MozColheaderactivetext:
       color = kWindowText;
       break;
-    case ColorID::Buttonshadow:
-    case ColorID::Threedshadow:
     case ColorID::MozSidebarborder:
-    case ColorID::Threedlightshadow:
-    case ColorID::Threedhighlight:
-    case ColorID::Windowframe:
-    case ColorID::Buttonborder:  // --in-content-box-border-color computed
-                                 // with kWindowText above
-                                 // kWindowBackground.
-    case ColorID::Graytext:      // opacity: 0.4 of kWindowText blended over the
+    case ColorID::Windowframe:  // --border-color computed
+                                // with kWindowText above
+                                // kWindowBackground.
+    case ColorID::Graytext:     // opacity: 0.4 of kWindowText blended over the
                              // "Window" background color, which happens to be
                              // the same :-)
       color = NS_ComposeColors(kWindowBackground, NS_RGBA(251, 251, 254, 102));
       break;
+    case ColorID::Threedshadow:
+    case ColorID::Threedlightshadow:
+    case ColorID::Threedhighlight:
+    case ColorID::Buttonborder:
+    case ColorID::MozButtondisabledborder:
+      color = NS_RGB(0x8f, 0x8f, 0x9d);
+      break;
+    case ColorID::MozButtonactiveborder:
+      color = NS_RGB(0xd0, 0xd0, 0xd7);
+      break;
+    case ColorID::MozButtonhoverborder:
+      color = NS_RGB(0xb1, 0xb1, 0xb1);
+      break;
     case ColorID::MozCellhighlight:
-    case ColorID::Selecteditem:  // --in-content-primary-button-background /
-                                 // --in-content-item-selected
-      color = NS_RGB(0, 221, 255);
+    case ColorID::Selecteditem:
+      color = NS_RGBA(249, 249, 250, 26);
       break;
     case ColorID::MozSidebar:
     case ColorID::Field:
-    case ColorID::Buttonface:  // --in-content-button-background
+    case ColorID::Buttonface:  // --button-background-color
+    case ColorID::Buttonshadow:
     case ColorID::Buttonhighlight:
     case ColorID::MozColheader:
     case ColorID::Threedface:
     case ColorID::MozCombobox:
-    case ColorID::MozCellhighlighttext:
-    case ColorID::Selecteditemtext:  // --in-content-primary-button-text-color /
-                                     // --in-content-item-selected-text
       color = NS_RGB(43, 42, 51);
       break;
     case ColorID::Threeddarkshadow:  // Same as Threedlightshadow but with the
@@ -817,17 +820,19 @@ Maybe<nscolor> nsXPLookAndFeel::GenericDarkColor(ColorID aID) {
     case ColorID::MozButtondisabledface:
       color = NS_ComposeColors(kWindowBackground, NS_RGBA(43, 42, 51, 102));
       break;
-    case ColorID::MozButtonhoverface:  // --in-content-button-background-hover
+    case ColorID::MozButtonhoverface:  // --button-background-color-hover
     case ColorID::MozColheaderhover:
       color = NS_RGB(82, 82, 94);
       break;
-    case ColorID::MozButtonactiveface:  // --in-content-button-background-active
+    case ColorID::MozButtonactiveface:  // --button-background-color-active
     case ColorID::MozColheaderactive:
       color = NS_RGB(91, 91, 102);
       break;
     case ColorID::Highlight:
       color = NS_RGBA(0, 221, 255, 78);
       break;
+    case ColorID::MozCellhighlighttext:
+    case ColorID::Selecteditemtext:
     case ColorID::Highlighttext:
       color = NS_SAME_AS_FOREGROUND_COLOR;
       break;
@@ -862,6 +867,12 @@ Maybe<nscolor> nsXPLookAndFeel::GenericDarkColor(ColorID aID) {
       // This is the light version of this color, but darkened to have good
       // contrast with our white-ish FieldText.
       color = NS_RGB(0x72, 0x6c, 0x00);
+      break;
+    case ColorID::TargetTextBackground:
+      color = NS_RGB(0xff, 0xf4, 0xd0);  // --yellow-0
+      break;
+    case ColorID::TargetTextForeground:
+      color = NS_RGB(0x00, 0x00, 0x00);
       break;
     default:
       return Nothing();
@@ -1203,17 +1214,16 @@ void LookAndFeel::DoHandleGlobalThemeChange() {
 // lack of contrast.
 static constexpr std::bitset<size_t(ColorID::End)> sNonNativeThemeStandinColors{
     // Used by default button styles.
-    BIT_FOR(Buttonface) | BIT_FOR(Buttontext) | BIT_FOR(MozButtonhoverface) |
-    BIT_FOR(MozButtonhovertext) | BIT_FOR(MozButtonactiveface) |
-    BIT_FOR(MozButtonactivetext) | BIT_FOR(MozButtondisabledface) |
-    BIT_FOR(Buttonborder) |
+    BIT_FOR(Buttonface) | BIT_FOR(Buttontext) | BIT_FOR(Buttonborder) |
+    BIT_FOR(MozButtonhoverface) | BIT_FOR(MozButtonhovertext) |
+    BIT_FOR(MozButtonhoverborder) | BIT_FOR(MozButtonactiveface) |
+    BIT_FOR(MozButtonactivetext) | BIT_FOR(MozButtonactiveborder) |
+    BIT_FOR(MozButtondisabledface) | BIT_FOR(MozButtondisabledborder) |
     // Used by select elements.
     BIT_FOR(MozCombobox) | BIT_FOR(MozComboboxtext) |
     BIT_FOR(Threedlightshadow) |
     // For symmetry with the above.
     BIT_FOR(Threeddarkshadow) |
-    // Used by fieldset borders.
-    BIT_FOR(Threedface) |
     // Used by input / textarea.
     BIT_FOR(Field) | BIT_FOR(Fieldtext) |
     // Used by disabled form controls.
@@ -1234,7 +1244,8 @@ static constexpr std::bitset<size_t(ColorID::End)> sNonNativeThemeStandinColors{
     // should match CanvasText/WindowText:
     BIT_FOR(Activecaption) | BIT_FOR(Captiontext) | BIT_FOR(Infotext) |
     BIT_FOR(Menutext) |
-    // Some pages expect these to return windows-like colors, see bug 1773795.
+    // Some pages expect these to return windows-like colors, see bug
+    // 1773795.
     // Also, per spec, these should match Canvas/CanvasText, see
     // https://drafts.csswg.org/css-color-4/#valdef-color-window and
     // https://drafts.csswg.org/css-color-4/#valdef-color-windowtext
@@ -1339,10 +1350,8 @@ static bool ColorIsCSSAccessible(LookAndFeel::ColorID aId) {
     case ColorID::TextHighlightBackground:
     case ColorID::TextHighlightForeground:
     case ColorID::ThemedScrollbar:
-    case ColorID::ThemedScrollbarInactive:
     case ColorID::ThemedScrollbarThumb:
     case ColorID::ThemedScrollbarThumbActive:
-    case ColorID::ThemedScrollbarThumbInactive:
     case ColorID::ThemedScrollbarThumbHover:
     case ColorID::IMERawInputBackground:
     case ColorID::IMERawInputForeground:
@@ -1481,7 +1490,7 @@ Modifiers LookAndFeel::GetMenuAccessKeyModifiers() {
   }
 }
 
-void LookAndFeel::EnsureInit() { Unused << nsXPLookAndFeel::GetInstance(); }
+void LookAndFeel::EnsureInit() { (void)nsXPLookAndFeel::GetInstance(); }
 
 // static
 void LookAndFeel::Refresh() {

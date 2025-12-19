@@ -8,8 +8,8 @@
 #define mozilla_dom_simpledb_SDBRequest_h
 
 #include <cstdint>
+
 #include "ErrorList.h"
-#include "mozilla/Assertions.h"
 #include "mozilla/RefPtr.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"

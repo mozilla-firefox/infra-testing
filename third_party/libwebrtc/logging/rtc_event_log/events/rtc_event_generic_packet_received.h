@@ -62,7 +62,7 @@ class RtcEventGenericPacketReceived final : public RtcEvent {
   // including ICE/TURN/IP overheads.
   size_t packet_length() const { return packet_length_; }
 
-  static std::string Encode(rtc::ArrayView<const RtcEvent*> /* batch */) {
+  static std::string Encode(ArrayView<const RtcEvent*> /* batch */) {
     // TODO(terelius): Implement
     return "";
   }
@@ -76,7 +76,7 @@ class RtcEventGenericPacketReceived final : public RtcEvent {
   }
 
  private:
-  RtcEventGenericPacketReceived(const RtcEventGenericPacketReceived& packet);
+  RtcEventGenericPacketReceived(const RtcEventGenericPacketReceived&) = default;
 
   const int64_t packet_number_;
   const size_t packet_length_;

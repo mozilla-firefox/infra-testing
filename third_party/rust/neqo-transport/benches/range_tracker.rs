@@ -4,6 +4,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![expect(
+    clippy::significant_drop_tightening,
+    reason = "Inherent in codspeed criterion_group! macro."
+)]
+
+use std::hint::black_box;
+
 use criterion::{criterion_group, criterion_main, Criterion};
 use neqo_transport::send_stream::RangeTracker;
 
@@ -29,12 +36,12 @@ fn coalesce(c: &mut Criterion, count: u64) {
         |b| {
             b.iter_batched_ref(
                 || build_coalesce(count),
-                |used| {
+                black_box(|used: &mut RangeTracker| {
                     used.mark_acked(CHUNK, chunk);
                     let tail = (count + 1) * CHUNK;
                     used.mark_sent(tail, chunk);
                     used.mark_acked(tail, chunk);
-                },
+                }),
                 criterion::BatchSize::SmallInput,
             );
         },

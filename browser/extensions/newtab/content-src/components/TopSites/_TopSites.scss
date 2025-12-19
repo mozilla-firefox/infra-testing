@@ -3,11 +3,9 @@
 /* stylelint-disable max-nesting-depth */
 
 $top-sites-size: $grid-unit-small;
-$top-sites-border-radius: 8px;
-$top-sites-icon-border-radius: 4px;
 $rich-icon-size: 96px;
-$default-icon-wrapper-size: 32px;
-$default-icon-size: 32px;
+$default-icon-wrapper-size: 40px;
+$default-icon-size: 40px;
 $default-icon-offset: 6px;
 $half-base-gutter: math.div($base-gutter, 2);
 $hover-transition-duration: 150ms;
@@ -19,50 +17,53 @@ $calculated-max-width-widest: $break-point-widest + $card-width;
 $calculated-max-width-twice-widest: $break-point-widest + 2 * $card-width;
 
 .top-sites-list {
-  list-style: none;
-  margin: 0 (-$half-base-gutter);
-  padding: 0;
-  display: flex;
-  flex-wrap: wrap;
-
-  .layout-variant-a &,
-  .layout-variant-b & {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    row-gap: var(--space-xlarge);
-
-    @media (min-width: $break-point-layout-variant) {
-      grid-template-columns: repeat(6, 1fr);
-    }
-
-    @media (min-width: $break-point-widest) {
-      grid-template-columns: repeat(8, 1fr);
-    }
-  }
-
-  .shortcuts-refresh & {
-    row-gap: var(--space-small);
-  }
-
-  a {
-    text-decoration: none;
-  }
-
   &:not(.dnd-active) {
     .top-site-outer:is(.active, :focus, :hover) {
-      background: var(--newtab-element-hover-color);
+      @include wallpaper-contrast-fix;
 
-      // Bug 1908010 - This overwrites the design system color because of a
-      // known transparency issue with color-mix syntax when a wallpaper is set
+      // Ideally this would just match button --button-background-color-hover.
+      // However, --button-background-color-hover uses currentColor.
+      // We cannot change the shortcut's color to match,
+      // so we just use --button-text-color-hover directly.
+      background: color-mix(in srgb, var(--button-text-color-hover) 14%, transparent);
+
+      .tile {
+        box-shadow: 0 2px 8px 0 var(--newtab-section-card-box-shadow-color);
+      }
+
+      .icon-pin-small {
+        opacity: 1;
+      }
+
       .lightWallpaper &,
       .darkWallpaper & {
-        background-color: var(--newtab-weather-background-color);
+        background: color-mix(in srgb, var(--button-text-color-hover) 14%, transparent);
 
         @media (prefers-contrast) {
           background-color: var(--background-color-box);
         }
       }
     }
+  }
+
+  list-style: none;
+  margin: 0 calc(var(--space-large) * -1);
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  justify-content: center; // Center shortcuts when fewer than max number of sites per row
+  row-gap: var(--space-small);
+
+  @media (min-width: $break-point-layout-variant) {
+    grid-template-columns: repeat(6, auto);
+  }
+
+  @media (min-width: $break-point-widest) {
+    grid-template-columns: repeat(8, auto);
+  }
+
+  a {
+    text-decoration: none;
   }
 
   // Two columns
@@ -121,12 +122,7 @@ $calculated-max-width-twice-widest: $break-point-widest + 2 * $card-width;
 
   @media (min-width: $break-point-medium) {
     .hide-for-narrow {
-      display: inline-block;
-
-      .layout-variant-a &,
-      .layout-variant-b & {
-        display: none;
-      }
+      display: none;
     }
   }
 
@@ -139,88 +135,124 @@ $calculated-max-width-twice-widest: $break-point-widest + 2 * $card-width;
   @media (min-width: $break-point-widest) {
     .hide-for-narrow {
       display: inline-block;
-
-      .layout-variant-a &,
-      .layout-variant-b & {
-        display: inline-block;
-      }
     }
+  }
+}
+
+.discovery-stream.ds-layout.ds-layout-topsites {
+  display: flex;
+  justify-content: center;
+
+  .top-sites-list {
+    padding-block-start: 0;
   }
 }
 
 // container for drop zone
 .top-site-outer {
   width: 120px;
-  border-radius: 8px;
+  // Compact layout spacing migrated from .thumbs-ui-compact
+  margin-block-end: var(--space-medium);
+  border-radius: var(--border-radius-large);
   display: inline-block;
-  margin-block-end: 16px;
 
-  .layout-variant-a &,
-  .layout-variant-b & {
-    width:  calc(var(--size-item-large) * 3);
-
-    .tile {
-      width: calc(var(--size-item-large) * 2);
-      height: calc(var(--size-item-large) * 2);
-
-      .icon-wrapper {
-        width: var(--size-item-large);
-        height: var(--size-item-large);
-      }
-    }
-  }
-
-  // container for context menu
   .top-site-inner {
     position: relative;
 
     > a {
-      padding: 20px $half-base-gutter 4px;
+      padding: var(--space-large) var(--space-large) var(--space-xsmall);
       color: inherit;
       display: block;
       outline: none;
     }
   }
 
-  &:is(:hover) {
+  &:hover, &:focus {
     .context-menu-button {
       opacity: 1;
       transition: opacity 200ms;
+
+      @include wallpaper-contrast-fix;
+    }
+
+    .tile {
+      background-color: var(--newtab-background-color-secondary);
+    }
+
+    .icon-pin-small {
+      opacity: 1;
     }
   }
 
-  // Contrast fix for users who have wallpapers set
   &:not(:hover, :active, .active) {
     @include wallpaper-contrast-fix;
   }
 
-  // Necessary for when navigating by a keyboard, having the context
-  // menu open should display the "…" button. This style is a clone
-  // of the `:active` state for `.context-menu-button`
-  &.active {
-    .context-menu-button {
-      opacity: 1;
-      background-color: var(--newtab-button-active-background);
+  &.active .context-menu-button {
+    opacity: 1;
+    background-color: var(--newtab-button-active-background);
+  }
+
+  .tile {
+    background: var(--newtab-background-card);
+    border-radius: var(--border-radius-large);
+    box-shadow: $shadow-card;
+    height: calc(var(--size-item-large) * 2);
+    width: calc(var(--size-item-large) * 2);
+    margin: 0 auto;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-transform: uppercase;
+    font-size: var(--font-size-xxlarge);
+    color: var(--newtab-contextual-text-secondary-color);
+    cursor: pointer;
+
+    .icon-wrapper {
+      border-radius: var(--border-radius-small);
+      width: $default-icon-wrapper-size;
+      height: $default-icon-wrapper-size;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
+
+      &.letter-fallback {
+        border-radius: var(--border-radius-circle);
+
+        &::before {
+          content: attr(data-fallback);
+          font-size: var(--font-size-xlarge);
+          transform: none;
+          position: static;
+        }
+      }
+    }
+
+    .top-site-icon {
+      background-color: transparent;
+      border-radius: var(--border-radius-medium);
+      background-position: center;
+      background-repeat: no-repeat;
+      position: absolute;
     }
   }
 
   .context-menu-button {
     background-image: url('chrome://global/skin/icons/more.svg');
-    background-color: var(--newtab-button-background);
     border: 0;
-    border-radius: 4px;
+    border-radius: var(--border-radius-small);
     cursor: pointer;
     fill: var(--newtab-button-text);
     -moz-context-properties: fill;
-    height: 20px;
-    width: 20px;
-    inset-inline-end: 3px;
-    opacity: 0;
+    height: var(--size-item-medium);
+    width: var(--size-item-medium);
+    inset-inline-end: 0;
+    inset-block-start: var(--space-medium);
     position: absolute;
-    top: -20px;
-
-    // Contrast fix for users who have wallpapers set
-    @include wallpaper-contrast-fix;
+    opacity: 0;
 
     &:hover {
       background-color: var(--newtab-button-hover-background);
@@ -232,71 +264,94 @@ $calculated-max-width-twice-widest: $break-point-widest + 2 * $card-width;
 
     &:focus-visible {
       background-color: var(--newtab-button-focus-background);
-      border-color: var(--newtab-button-focus-border);
+      outline: var(--focus-outline); // Backup for when wallpaper is not set
       opacity: 1;
-    }
-  }
 
-  .tile {
-    border-radius: $top-sites-border-radius;
-    box-shadow: $shadow-card;
-    background-color: var(--newtab-background-color-secondary);
-    justify-content: center;
-    margin: 0 auto;
-    height: $top-sites-size;
-    width: $top-sites-size;
-    cursor: pointer;
-    position: relative;
-
-    // For letter fallback
-    align-items: center;
-    color: var(--newtab-contextual-text-secondary-color);
-    display: flex;
-    font-size: 32px;
-    font-weight: 200;
-    text-transform: uppercase;
-
-    .icon-wrapper {
-      border-radius: 4px;
-      width: 48px;
-      height: 48px;
-      overflow: hidden;
-      position: relative;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-
-      &.letter-fallback::before {
-        content: attr(data-fallback);
-        text-transform: uppercase;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 64px;
-        font-weight: 800;
-        transform: rotate(-10deg);
-        top: 6px;
-        position: relative;
-        color: $letter-fallback-color;
+      .lightWallpaper &,
+      .darkWallpaper & {
+        &::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          border-radius: var(--border-radius-small);
+          outline: var(--focus-outline);
+          color-scheme: initial; // Override wallpaper-contrast-fix for focus outline color
+        }
       }
     }
   }
 
-  // Some common styles for all icons (rich and default) in top sites
-  .top-site-icon {
-    background-color: var(--newtab-background-color-secondary);
-    background-position: center center;
-    background-repeat: no-repeat;
-    border-radius: $top-sites-icon-border-radius;
+  .context-menu {
+    inset-block-start: calc(var(--space-large) + var(--space-xlarge));
+  }
+
+  .icon-pin-small {
+    inset-block-start: var(--space-small);
+    inset-inline-start: var(--space-small);
+    opacity: 0;
     position: absolute;
+  }
+
+  .top-site-button {
+    padding: var(--space-large) var(--space-large) var(--space-small);
+
+    &:focus + div .context-menu-button {
+      opacity: 1;
+    }
+
+    &:focus .tile {
+      .lightWallpaper &,
+      .darkWallpaper & {
+        outline: var(--focus-outline);
+        color-scheme: initial;
+      }
+    }
+  }
+
+  .title {
+    color: var(--newtab-contextual-text-primary-color);
+    padding-block-start: var(--space-small);
+    font: caption;
+    text-align: center;
+    position: relative;
+
+    .icon {
+      margin-inline-end: var(--space-xxsmall);
+      fill: currentColor;
+    }
+
+    .sponsored-label {
+      color: var(--newtab-contextual-text-secondary-color);
+      font-size: var(--font-size-xsmall);
+    }
+
+    &:not(.sponsored) .sponsored-label {
+      display: none;
+    }
+
+    .search-topsite {
+      margin-inline-end: var(--space-xxsmall);
+      fill: currentColor;
+      background-size: var(--icon-size-xsmall);
+      height: var(--icon-size-xsmall);
+      width: var(--icon-size-xsmall);
+      background-position: center;
+      background-repeat: no-repeat;
+      background-color: transparent;
+      position: static;
+      display: inline-block;
+      color: var(--icon-color);
+      box-shadow: none;
+    }
   }
 
   .rich-icon {
     background-size: cover;
     height: 100%;
-    inset-inline-start: 0;
-    top: 0;
     width: 100%;
+    position: absolute;
+    inset-inline-start: 0;
+    inset-block-start: 0;
   }
 
   .default-icon,
@@ -304,12 +359,10 @@ $calculated-max-width-twice-widest: $break-point-widest + 2 * $card-width;
     background-size: $default-icon-size;
     height: $default-icon-wrapper-size;
     width: $default-icon-wrapper-size;
-
-    // for corner letter fallback
     align-items: center;
     display: flex;
-    font-size: 20px;
     justify-content: center;
+    font-size: var(--font-size-xlarge);
 
     &[data-fallback]::before {
       content: attr(data-fallback);
@@ -320,16 +373,20 @@ $calculated-max-width-twice-widest: $break-point-widest + 2 * $card-width;
     background-image: url('chrome://global/skin/icons/search-glass.svg');
     background-size: 16px;
     background-color: var(--newtab-primary-action-background);
-    border-radius: $default-icon-wrapper-size;
+    border-radius: var(--border-radius-circle);
     -moz-context-properties: fill;
     fill: var(--newtab-primary-element-text-color);
     box-shadow: $shadow-card;
-    transition-duration: $hover-transition-duration;
-    transition-property: background-size, bottom, inset-inline-end, height, width;
+    transition: background-size $hover-transition-duration,
+      bottom $hover-transition-duration,
+      inset-inline-end $hover-transition-duration,
+      height $hover-transition-duration,
+      width $hover-transition-duration;
     height: 32px;
     width: 32px;
-    bottom: -$default-icon-offset;
-    inset-inline-end: -$default-icon-offset;
+    // Bug 1967304 - $variable
+    inset-block-end: -$default-icon-offset; // stylelint-disable-line declaration-property-value-disallowed-list
+    inset-inline-end: -$default-icon-offset; // stylelint-disable-line declaration-property-value-disallowed-list
   }
 
   &.placeholder {
@@ -337,47 +394,31 @@ $calculated-max-width-twice-widest: $break-point-widest + 2 * $card-width;
       box-shadow: $shadow-card;
       cursor: default;
     }
+  }
 
-    &.add-button {
+  &.add-button {
+    .tile {
+      background-color: var(--button-background-color);
+
+      .icon-wrapper {
+        background-image: url('chrome://global/skin/icons/plus-20.svg');
+        background-size: cover;
+        background-repeat: no-repeat;
+        height: 20px;
+        width: 20px;
+        fill: var(--icon-color);
+        -moz-context-properties: fill;
+      }
+    }
+
+    &:hover {
       .tile {
-        background-color: var(--button-background-color);
-
-        .icon-wrapper {
-          background-image: url('chrome://global/skin/icons/plus-20.svg');
-          background-size: cover;
-          background-repeat: no-repeat;
-          height: 20px;
-          width: 20px;
-          fill: var(--icon-color);
-          -moz-context-properties: fill;
-        }
+        background-color: var(--newtab-background-color-secondary);
+        color-scheme: initial;
       }
     }
   }
 
-  .title {
-    color: var(--newtab-contextual-text-primary-color);
-    padding-top: 8px;
-    font: caption;
-    text-align: center;
-    position: relative;
-
-    .icon {
-      margin-inline-end: 2px;
-      fill: currentColor;
-    }
-
-    .sponsored-label {
-      color: var(--newtab-contextual-text-secondary-color);
-      font-size: 0.9em;
-    }
-
-    &:not(.sponsored) .sponsored-label {
-      display: none;
-    }
-  }
-
-  // We want all search shortcuts to have a white background in case they have transparency.
   &.search-shortcut {
     .rich-icon {
       background-color: $white;
@@ -400,159 +441,28 @@ $calculated-max-width-twice-widest: $break-point-widest + 2 * $card-width;
       visibility: hidden;
     }
   }
-
-  .shortcuts-refresh & {
-    width: 120px;
-    margin-block-end: 0;
-    border-radius: var(--border-radius-large);
-
-    &:hover {
-      .context-menu-button {
-        @include wallpaper-contrast-fix;
-      }
-
-      .tile {
-        background-color: var(--newtab-background-color-secondary);
-      }
-    }
-
-    .top-site-button {
-      padding: 20px 16px 6px;
-
-      &:focus + div .context-menu-button {
-        opacity: 1;
-      }
-    }
-
-    .tile {
-      background: var(--newtab-background-card);
-      border-radius: var(--border-radius-large);
-
-      .icon-wrapper {
-        width: 40px;
-        height: 40px;
-      }
-
-      .top-site-icon {
-        // Remove the white background colors on icons,
-        // fully rely on the icon itself to make the decision on the background.
-        background-color: transparent;
-        border-radius: var(--border-radius-medium);
-      }
-
-      .icon-wrapper.letter-fallback {
-        border-radius: var(--border-radius-circle);
-
-        &::before {
-          transform: none;
-          position: static;
-          font-size: var(--font-size-xlarge);
-        }
-      }
-    }
-
-    .title {
-      .search-topsite {
-        margin-inline-end: 2px;
-        fill: currentColor;
-        background-size: 12px;
-        height: 12px;
-        width: 12px;
-        background-position: center center;
-        background-repeat: no-repeat;
-        background-color: transparent;
-        position: static;
-        display: inline-block;
-        color: var(--icon-color);
-        box-shadow: none;
-      }
-    }
-
-    .context-menu-button {
-      inset-inline-end: 0;
-      inset-block-start: 12px;
-      height: 24px;
-      width: 24px;
-      background-color: unset;
-
-      &:hover {
-        background-color: var(--newtab-button-hover-background);
-      }
-    }
-
-    .context-menu {
-      inset-block-start: 40px;
-    }
-
-    .icon-pin-small {
-      // The icon's colour is based on currentColor, which is a ligh/dark colour.
-      // We don't want it to change on hover based on the wallpaper-contrast-fix mixin,
-      // as it's inside the icon container now which is always the same colour
-      // regardless of wallpaper or hover state.
-      color-scheme: light;
-
-      @include dark-theme-only {
-        color-scheme: dark;
-      }
-
-      position: absolute;
-      inset-block-start: 0.188rem;
-      inset-inline-start: 0.188rem;
-    }
-  }
 }
 
+// Preserve shortcuts-refresh variant from compact thumbs UI
 .shortcuts-refresh {
-  .discovery-stream.ds-layout.ds-layout-topsites {
-    display: flex;
-    justify-content: center;
-
-    .top-sites {
-      padding-block-start: 0;
-    }
-  }
-
-  .top-sites-list {
-    &:not(.dnd-active) {
-      .top-site-outer:is(.active, :focus, :hover) {
-        @include wallpaper-contrast-fix;
-
-        // Ideally this would just match button --button-background-color-hover.
-        // However, --button-background-color-hover uses currentColor.
-        // We cannot change the shortcut's color to match,
-        // so we just use --button-text-color-hover directly.
-        background: color-mix(in srgb, var(--button-text-color-hover) 14%, transparent);
-
-        .tile {
-          box-shadow: 0 2px 8px 0 var(--newtab-section-card-box-shadow-color);
-        }
-
-        .lightWallpaper &,
-        .darkWallpaper & {
-          background: color-mix(in srgb, var(--button-text-color-hover) 14%, transparent);
-
-          @media (prefers-contrast) {
-            background-color: var(--background-color-box);
-          }
-        }
-      }
-    }
+  .top-site-outer {
+    margin-block-end: 0;
   }
 }
 
 .edit-topsites-wrapper {
   .top-site-inner > .top-site-button > .tile {
-    border: 1px solid var(--newtab-border-color);
+    border: 1px solid var(--border-color);
   }
 
   .modal {
     box-shadow: $shadow-secondary;
-    left: 0;
+    inset-inline-start: 0;
     margin: 0 auto;
     max-height: calc(100% - 40px);
     position: fixed;
-    right: 0;
-    top: 40px;
+    inset-inline-end: 0;
+    inset-block-start: var(--space-xxlarge);
     width: $wrapper-default-width;
 
     @media (min-width: $break-point-medium) {
@@ -570,14 +480,14 @@ $calculated-max-width-twice-widest: $break-point-widest + 2 * $card-width;
   $form-spacing: 32px;
 
   .section-title {
-    font-size: 16px;
-    margin: 0 0 16px;
+    font-size: inherit;
+    margin: 0 0 var(--space-large);
   }
 
   .form-input-container {
     max-width: $form-width + 3 * $form-spacing + $rich-icon-size;
     margin: 0 auto;
-    padding: $form-spacing;
+    padding: var(--space-xxlarge);
 
     .top-site-outer {
       pointer-events: none;
@@ -587,22 +497,22 @@ $calculated-max-width-twice-widest: $break-point-widest + 2 * $card-width;
   .search-shortcuts-container {
     max-width: 700px;
     margin: 0 auto;
-    padding: $form-spacing;
+    padding: var(--space-xxlarge);
 
     > div {
-      margin-inline-end: -39px;
+      margin-inline-end: calc(var(--space-xxlarge) * -1);
     }
 
     .top-site-outer {
       margin-inline-start: 0;
-      margin-inline-end: 39px;
+      margin-inline-end: var(--space-xxlarge);
     }
   }
 
   .top-site-outer {
     padding: 0;
-    margin: 24px 0 0;
-    margin-inline-start: $form-spacing;
+    margin: var(--space-xlarge) 0 0;
+    margin-inline-start: var(--space-xxlarge);
   }
 
   .fields-and-preview {
@@ -622,35 +532,35 @@ $calculated-max-width-twice-widest: $break-point-widest + 2 * $card-width;
       .icon-clear-input {
         position: absolute;
         transform: translateY(-50%);
-        top: 50%;
-        inset-inline-end: 8px;
+        inset-block-start: 50%;
+        inset-inline-end: var(--space-small);
       }
     }
 
     .url {
       input:dir(ltr) {
-        padding-right: 32px;
+        padding-inline-end: var(--space-xxlarge);
       }
 
       input:dir(rtl) {
-        padding-left: 32px;
+        padding-inline-start: var(--space-xxlarge);
 
         &:not(:placeholder-shown) {
           direction: ltr;
-          text-align: right;
+          text-align: end;
         }
       }
     }
 
     .enable-custom-image-input {
       display: inline-block;
-      font-size: 13px;
-      margin-top: 4px;
+      font-size: var(--font-size-small);
+      margin-block-start: var(--space-xsmall);
       cursor: pointer;
     }
 
     .custom-image-input-container {
-      margin-top: 4px;
+      margin-block-start: var(--space-xsmall);
 
       .loading-container {
         width: 16px;
@@ -658,8 +568,8 @@ $calculated-max-width-twice-widest: $break-point-widest + 2 * $card-width;
         overflow: hidden;
         position: absolute;
         transform: translateY(-50%);
-        top: 50%;
-        inset-inline-end: 8px;
+        inset-block-start: 50%;
+        inset-inline-end: var(--space-small);
       }
 
       // This animation is derived from Firefox's tab loading animation
@@ -689,15 +599,15 @@ $calculated-max-width-twice-widest: $break-point-widest + 2 * $card-width;
     input {
       &[type='text'] {
         background-color: var(--newtab-background-color-secondary);
-        border: $input-border;
-        margin: 8px 0;
-        padding: 0 8px;
+        border: 1px solid var(--border-color-interactive);
+        margin: var(--space-small) 0;
+        padding: 0 var(--space-small);
         height: 32px;
         width: 100%;
-        font-size: 15px;
+        font-size: inherit;
 
         &[disabled] {
-          border: $input-border;
+          border: 1px solid var(--border-color-interactive-disabled);
           box-shadow: none;
           opacity: 0.4;
         }
@@ -707,7 +617,7 @@ $calculated-max-width-twice-widest: $break-point-widest + 2 * $card-width;
     .invalid {
       input {
         &[type='text'] {
-          border: $input-error-border;
+          border: 1px solid var(--outline-color-error);
           box-shadow: $input-error-boxshadow;
         }
       }
@@ -716,24 +626,24 @@ $calculated-max-width-twice-widest: $break-point-widest + 2 * $card-width;
     .error-tooltip {
       animation: fade-up-tt 450ms;
       background: var(--newtab-status-error);
-      border-radius: 2px;
+      border-radius: var(--border-radius-small);
       color: $white;
-      inset-inline-start: 3px;
-      padding: 5px 12px;
+      inset-inline-start: var(--space-xxsmall);
+      padding: var(--space-xsmall) var(--space-medium);
       position: absolute;
-      top: 44px;
+      inset-block-start: var(--space-xxlarge);
       z-index: 1;
 
       // tooltip caret
       &::before {
         background: var(--newtab-status-error);
-        bottom: -8px;
+        inset-block-end: calc(var(--space-small) * -1);
         content: '.';
         height: 16px;
-        inset-inline-start: 12px;
+        inset-inline-start: var(--space-medium);
         position: absolute;
         text-indent: -999px;
-        top: -7px;
+        inset-block-start: calc(var(--space-small) * -1);
         transform: rotate(45deg);
         white-space: nowrap;
         width: 16px;
@@ -746,7 +656,7 @@ $calculated-max-width-twice-widest: $break-point-widest + 2 * $card-width;
     justify-content: flex-end;
 
     button {
-      margin-inline-start: 10px;
+      margin-inline-start: var(--space-small);
       margin-inline-end: 0;
     }
   }
@@ -769,7 +679,7 @@ $calculated-max-width-twice-widest: $break-point-widest + 2 * $card-width;
   // CSS styled checkbox
   [type='checkbox']:not(:checked),
   [type='checkbox']:checked {
-    inset-inline-start: -9999px;
+    inset-inline-start: -9999px; // stylelint-disable-line declaration-property-value-disallowed-list
     position: absolute;
   }
 
@@ -780,24 +690,24 @@ $calculated-max-width-twice-widest: $break-point-widest + 2 * $card-width;
     position: relative;
   }
 
-  $checkbox-offset: -8px;
+  $checkbox-offset: calc(var(--space-small) * -1);
 
   [type='checkbox']:not(:checked) + label::before,
   [type='checkbox']:checked + label::before {
     background: var(--newtab-background-color);
-    border: $input-border;
-    border-radius: $border-radius;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-small);
     content: '';
     height: 21px;
-    left: $checkbox-offset;
+    inset-inline-start: calc(var(--space-small) * -1);
     position: absolute;
-    top: $checkbox-offset;
+    inset-block-start: calc(var(--space-small) * -1);
     width: 21px;
     z-index: 1;
 
     [dir='rtl'] & {
-      left: auto;
-      right: $checkbox-offset;
+      inset-inline-start: auto;
+      inset-inline-end: calc(var(--space-small) * -1);
     }
   }
 
@@ -807,17 +717,17 @@ $calculated-max-width-twice-widest: $break-point-widest + 2 * $card-width;
     background: url('chrome://global/skin/icons/check.svg') no-repeat center center;
     content: '';
     height: 21px;
-    left: $checkbox-offset;
+    inset-inline-start: calc(var(--space-small) * -1);
     position: absolute;
-    top: $checkbox-offset;
+    inset-block-start: calc(var(--space-small) * -1);
     width: 21px;
     -moz-context-properties: fill;
     fill: var(--newtab-primary-action-background);
     z-index: 2;
 
     [dir='rtl'] & {
-      left: auto;
-      right: $checkbox-offset;
+      inset-inline-start: auto;
+      inset-inline-end: calc(var(--space-small) * -1);
     }
   }
 
@@ -862,7 +772,6 @@ $calculated-max-width-twice-widest: $break-point-widest + 2 * $card-width;
         -webkit-line-clamp: 2;
         white-space: wrap;
         word-break: break-word;
-        line-height: 1.3;
         min-height: 2lh;
         width: 100px;
         padding: 0 var(--space-xsmall);
@@ -892,7 +801,7 @@ $calculated-max-width-twice-widest: $break-point-widest + 2 * $card-width;
 // used for TopSites impression wrapper
 .topsite-impression-observer {
   position: absolute;
-  top: 0;
+  inset-block-start: 0;
   width: 100%;
   height: 100%;
   pointer-events: none;

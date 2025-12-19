@@ -7,12 +7,14 @@
 
 #include <wrl.h>
 
-#include "mozilla/Assertions.h"
-#include "mozilla/PMFCDMParent.h"
 #include "MFCDMExtra.h"
 #include "MFCDMSession.h"
 #include "MFPMPHostWrapper.h"
-#include "RemoteDecoderManagerParent.h"
+#include "RemoteMediaManagerParent.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/EventTargetAndLockCapability.h"
+#include "mozilla/PMFCDMParent.h"
+#include "mozilla/RefPtr.h"
 
 namespace mozilla {
 
@@ -31,7 +33,7 @@ class MFCDMParent final : public PMFCDMParent {
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MFCDMParent);
 
-  MFCDMParent(const nsAString& aKeySystem, RemoteDecoderManagerParent* aManager,
+  MFCDMParent(const nsAString& aKeySystem, RemoteMediaManagerParent* aManager,
               nsISerialEventTarget* aManagerThread);
 
   static void SetWidevineL1Path(const char* aPath);
@@ -84,12 +86,9 @@ class MFCDMParent final : public PMFCDMParent {
       const dom::HDCPVersion& aMinHdcpVersion,
       GetStatusForPolicyResolver&& aResolver);
 
-  nsISerialEventTarget* ManagerThread() { return mManagerThread; }
-  void AssertOnManagerThread() const {
-    MOZ_ASSERT(mManagerThread->IsOnCurrentThread());
-  }
-
-  already_AddRefed<MFCDMProxy> GetMFCDMProxy();
+  // A thread-safe method to access the CDM proxy. Returns nullptr if the CDM
+  // has been shut down.
+  MFCDMProxy* GetMFCDMProxy();
 
   void ShutdownCDM();
 
@@ -100,7 +99,6 @@ class MFCDMParent final : public PMFCDMParent {
 
   enum class CapabilitesFlag {
     HarewareDecryption,
-    NeedHDCPCheck,
     NeedClearLeadCheck,
     IsPrivateBrowsing,
   };
@@ -128,9 +126,13 @@ class MFCDMParent final : public PMFCDMParent {
 
   MFCDMSession* GetSession(const nsString& aSessionId);
 
+  mozilla::Mutex& Mutex() MOZ_RETURN_CAPABILITY(mCDMAccessLock.Lock()) {
+    return mCDMAccessLock.Lock();
+  }
+
   nsString mKeySystem;
 
-  const RefPtr<RemoteDecoderManagerParent> mManager;
+  const RefPtr<RemoteMediaManagerParent> mManager;
   const RefPtr<nsISerialEventTarget> mManagerThread;
 
   MOZ_RUNINIT static inline nsTHashMap<nsUint64HashKey, MFCDMParent*>
@@ -144,7 +146,6 @@ class MFCDMParent final : public PMFCDMParent {
 
   RefPtr<MFCDMParent> mIPDLSelfRef;
   Microsoft::WRL::ComPtr<IMFContentDecryptionModuleFactory> mFactory;
-  Microsoft::WRL::ComPtr<IMFContentDecryptionModule> mCDM;
   Microsoft::WRL::ComPtr<MFPMPHostWrapper> mPMPHostWrapper;
 
   std::map<nsString, UniquePtr<MFCDMSession>> mSessions;
@@ -152,10 +153,21 @@ class MFCDMParent final : public PMFCDMParent {
   MediaEventForwarder<MFCDMKeyMessage> mKeyMessageEvents;
   MediaEventForwarder<MFCDMKeyStatusChange> mKeyChangeEvents;
   MediaEventForwarder<MFCDMKeyExpiration> mExpirationEvents;
+  MediaEventForwarder<MFCDMSessionClosedResult> mClosedEvents;
 
   MediaEventListener mKeyMessageListener;
   MediaEventListener mKeyChangeListener;
   MediaEventListener mExpirationListener;
+  MediaEventListener mClosedListener;
+
+  // The mCDM and mCDMProxy members are exclusively modified on the manager
+  // thread, while being read-only on other threads. To ensure thread-safe
+  // access, we employ the EventTargetAndLockCapability mechanism.
+  mozilla::EventTargetAndLockCapability<nsISerialEventTarget, mozilla::Mutex>
+      mCDMAccessLock;
+  Microsoft::WRL::ComPtr<IMFContentDecryptionModule> mCDM
+      MOZ_GUARDED_BY(mCDMAccessLock);
+  RefPtr<MFCDMProxy> mCDMProxy MOZ_GUARDED_BY(mCDMAccessLock);
 };
 
 // A helper class only used in the chrome process to handle CDM related tasks.

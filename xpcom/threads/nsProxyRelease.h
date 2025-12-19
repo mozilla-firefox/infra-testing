@@ -11,7 +11,6 @@
 
 #include "MainThreadUtils.h"
 #include "mozilla/Likely.h"
-#include "mozilla/Unused.h"
 #include "nsCOMPtr.h"
 #include "nsIEventTarget.h"
 #include "nsISerialEventTarget.h"
@@ -78,9 +77,10 @@ nsresult ProxyRelease(const char* aName, nsIEventTarget* aTarget,
 
   rv = aTarget->Dispatch(ev, NS_DISPATCH_NORMAL);
   if (NS_FAILED(rv)) {
-    NS_WARNING(nsPrintfCString(
-                   "failed to post proxy release event for %s, leaking!", aName)
-                   .get());
+    NS_WARNING(
+        nsPrintfCString("failed to post proxy release event for %s, leaking!",
+                        aName ? aName : "pointer")
+            .get());
     // It is better to leak the aDoomed object than risk crashing as
     // a result of deleting it on the wrong thread.
   }
@@ -179,7 +179,7 @@ inline NS_HIDDEN_(void)
 
     if (!target) {
       MOZ_ASSERT_UNREACHABLE("Could not get main thread; leaking an object!");
-      mozilla::Unused << doomed.forget().take();
+      doomed.forget().leak();
       return;
     }
   }

@@ -8,14 +8,15 @@
 
 #include "SVGMotionSMILType.h"
 
+#include <math.h>
+
+#include "gfx2DGlue.h"
 #include "mozilla/SMILValue.h"
 #include "mozilla/gfx/Point.h"
-#include "gfx2DGlue.h"
 #include "nsDebug.h"
-#include "nsMathUtils.h"
 #include "nsISupportsUtils.h"
+#include "nsMathUtils.h"
 #include "nsTArray.h"
-#include <math.h>
 
 using namespace mozilla::gfx;
 
@@ -160,14 +161,14 @@ static const MotionSegmentArray& ExtractMotionSegmentArray(
 // nsISMILType Methods
 // -------------------
 
-void SVGMotionSMILType::Init(SMILValue& aValue) const {
+void SVGMotionSMILType::InitValue(SMILValue& aValue) const {
   MOZ_ASSERT(aValue.IsNull(), "Unexpected SMIL type");
 
   aValue.mType = this;
   aValue.mU.mPtr = new MotionSegmentArray(1);
 }
 
-void SVGMotionSMILType::Destroy(SMILValue& aValue) const {
+void SVGMotionSMILType::DestroyValue(SMILValue& aValue) const {
   MOZ_ASSERT(aValue.mType == this, "Unexpected SMIL type");
 
   MotionSegmentArray* arr = static_cast<MotionSegmentArray*>(aValue.mU.mPtr);
@@ -411,7 +412,8 @@ nsresult SVGMotionSMILType::Interpolate(const SMILValue& aStartVal,
       InterpolateFloat(startDist, endParams.mDistToPoint, aUnitDistance);
 
   // Construct the intermediate result segment, and put it in our outparam.
-  // AppendElement has guaranteed success here, since Init() allocates 1 slot.
+  // AppendElement has guaranteed success here, since InitValue() allocates
+  // 1 slot.
   MOZ_ALWAYS_TRUE(resultArr.AppendElement(
       MotionSegment(path, resultDist, rotateType, rotateAngle), fallible));
   return NS_OK;
@@ -450,7 +452,8 @@ SMILValue SVGMotionSMILType::ConstructSMILValue(Path* aPath, float aDist,
   SMILValue smilVal(&SVGMotionSMILType::sSingleton);
   MotionSegmentArray& arr = ExtractMotionSegmentArray(smilVal);
 
-  // AppendElement has guaranteed success here, since Init() allocates 1 slot.
+  // AppendElement has guaranteed success here, since InitValue() allocates
+  // 1 slot.
   MOZ_ALWAYS_TRUE(arr.AppendElement(
       MotionSegment(aPath, aDist, aRotateType, aRotateAngle), fallible));
   return smilVal;

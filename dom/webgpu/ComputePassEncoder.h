@@ -6,8 +6,9 @@
 #ifndef GPU_ComputePassEncoder_H_
 #define GPU_ComputePassEncoder_H_
 
-#include "mozilla/dom/TypedArray.h"
 #include "ObjectModel.h"
+#include "mozilla/dom/TypedArray.h"
+#include "mozilla/webgpu/CanvasContext.h"
 
 namespace mozilla {
 class ErrorResult;
@@ -30,32 +31,41 @@ struct ffiWGPUComputePassDeleter {
   void operator()(ffi::WGPURecordedComputePass*);
 };
 
-class ComputePassEncoder final : public ObjectBase,
+class ComputePassEncoder final : public nsWrapperCache,
+                                 public ObjectBase,
                                  public ChildOf<CommandEncoder> {
  public:
   GPU_DECL_CYCLE_COLLECTION(ComputePassEncoder)
   GPU_DECL_JS_WRAP(ComputePassEncoder)
 
-  ComputePassEncoder(CommandEncoder* const aParent,
+  ComputePassEncoder(CommandEncoder* const aParent, RawId aId,
                      const dom::GPUComputePassDescriptor& aDesc);
 
  private:
   virtual ~ComputePassEncoder();
-  void Cleanup();
 
   std::unique_ptr<ffi::WGPURecordedComputePass, ffiWGPUComputePassDeleter>
       mPass;
   // keep all the used objects alive while the pass is recorded
   nsTArray<RefPtr<const BindGroup>> mUsedBindGroups;
+  nsTArray<RefPtr<const Buffer>> mUsedBuffers;
   nsTArray<RefPtr<const ComputePipeline>> mUsedPipelines;
+
+  // The canvas contexts of any canvas textures used in bind groups of this
+  // compute pass.
+  CanvasContextArray mUsedCanvasContexts;
 
   // programmable pass encoder
  private:
+  bool mValid = true;
+
   void SetBindGroup(uint32_t aSlot, BindGroup* const aBindGroup,
                     const uint32_t* aDynamicOffsets,
-                    uint64_t aDynamicOffsetsLength);
+                    size_t aDynamicOffsetsLength);
 
  public:
+  void Invalidate() { mValid = false; }
+
   void SetBindGroup(uint32_t aSlot, BindGroup* const aBindGroup,
                     const dom::Sequence<uint32_t>& aDynamicOffsets,
                     ErrorResult& aRv);
@@ -76,6 +86,11 @@ class ComputePassEncoder final : public ObjectBase,
   void InsertDebugMarker(const nsAString& aString);
 
   void End();
+
+  // helpers not defined by WebGPU
+  mozilla::Span<const WeakPtr<CanvasContext>> GetCanvasContexts() const {
+    return mUsedCanvasContexts;
+  }
 };
 
 }  // namespace webgpu

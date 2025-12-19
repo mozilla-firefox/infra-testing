@@ -1,24 +1,23 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-*/
+/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "CrossGraphPort.h"
+#include "DeviceInputTrack.h"
 #include "MediaTrackGraphImpl.h"
-
 #include "gmock/gmock.h"
 #include "gtest/gtest-printers.h"
 #include "gtest/gtest.h"
-
-#include "CrossGraphPort.h"
-#include "DeviceInputTrack.h"
 #ifdef MOZ_WEBRTC
 #  include "MediaEngineWebRTCAudio.h"
 #endif  // MOZ_WEBRTC
 #include "MockCubeb.h"
-#include "mozilla/gtest/WaitFor.h"
+#include "WavDumper.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/SpinEventLoopUntil.h"
-#include "WavDumper.h"
+#include "mozilla/gtest/WaitFor.h"
 
 using namespace mozilla;
 using testing::AtLeast;
@@ -309,11 +308,11 @@ TEST(TestAudioTrackGraph, NotifyDeviceStarted)
       nullptr, GetMainThreadSerialEventTarget());
 
   RefPtr<SourceMediaTrack> dummySource;
-  Unused << WaitFor(InvokeAsync([&] {
+  (void)WaitForResolve(InvokeAsync([&] {
     // Dummy track to make graph rolling. Add it and remove it to remove the
     // graph from the global hash table and let it shutdown.
     dummySource = graph->CreateSourceTrack(MediaSegment::AUDIO);
-
+    dummySource->AddAudioOutput(reinterpret_cast<void*>(1), nullptr);
     return graph->NotifyWhenDeviceStarted(nullptr);
   }));
 
@@ -437,7 +436,7 @@ TEST(TestAudioTrackGraph, NonNativeInputTrackStartAndStop)
         EXPECT_EQ(info.mType, AudioInputType::Voice);
       }
 
-      Unused << WaitFor(nonNativeStream->FramesProcessedEvent());
+      (void)WaitFor(nonNativeStream->FramesProcessedEvent());
 
       DispatchFunction([&] {
         track->GraphImpl()->AppendMessage(
@@ -481,7 +480,7 @@ TEST(TestAudioTrackGraph, NonNativeInputTrackStartAndStop)
       EXPECT_EQ(nonNativeStream->InputChannels(), channels);
       EXPECT_EQ(nonNativeStream->SampleRate(), static_cast<uint32_t>(rate));
 
-      Unused << WaitFor(nonNativeStream->FramesProcessedEvent());
+      (void)WaitFor(nonNativeStream->FramesProcessedEvent());
 
       DispatchFunction([&] {
         track->GraphImpl()->AppendMessage(
@@ -548,7 +547,7 @@ TEST(TestAudioTrackGraph, NonNativeInputTrackErrorCallback)
     EXPECT_EQ(nonNativeStream->SampleRate(), static_cast<uint32_t>(rate));
 
     // Make sure the audio stream is running.
-    Unused << WaitFor(nonNativeStream->FramesProcessedEvent());
+    (void)WaitFor(nonNativeStream->FramesProcessedEvent());
 
     // Force an error. This results in the audio stream destroying.
     DispatchFunction([&] { nonNativeStream->ForceError(); });
@@ -659,7 +658,7 @@ TEST(TestAudioTrackGraph, DeviceChangedCallback)
   EXPECT_TRUE(stream1->mHasInput);
   EXPECT_TRUE(stream1->mHasOutput);
   EXPECT_EQ(stream1->GetInputDeviceID(), device1);
-  Unused << WaitFor(started);
+  (void)WaitFor(started);
 
   // Create a NonNativeInputTrack, and make sure its DeviceChangeCallback works.
   const CubebUtils::AudioDeviceID device2 = (CubebUtils::AudioDeviceID)2;
@@ -721,7 +720,7 @@ TEST(TestAudioTrackGraph, RestartAudioIfMaxChannelCountChanged)
   MockCubeb* cubeb = new MockCubeb();
   CubebUtils::ForceSetCubebContext(cubeb->AsCubebContext());
   auto unforcer = WaitFor(cubeb->ForceAudioThread()).unwrap();
-  Unused << unforcer;
+  (void)unforcer;
 
   MediaTrackGraph* graphImpl = MediaTrackGraphImpl::GetInstance(
       MediaTrackGraph::SYSTEM_THREAD_DRIVER, /*Window ID*/ 1,
@@ -860,7 +859,7 @@ TEST(TestAudioTrackGraph, RestartAudioIfMaxChannelCountChanged)
     EXPECT_TRUE(nativeStream->mHasInput);
     EXPECT_TRUE(nativeStream->mHasOutput);
     EXPECT_EQ(nativeStream->GetInputDeviceID(), nativeDevice);
-    Unused << WaitFor(started);
+    (void)WaitFor(started);
 
     // Open a 2-channel NativeInputTrack and wait for a new driver since the
     // max-channel for the native device becomes 2 now.
@@ -1062,7 +1061,7 @@ TEST(TestAudioTrackGraph, SwitchNativeInputDevice)
   EXPECT_TRUE(stream1->mHasOutput);
   EXPECT_EQ(stream1->InputChannels(), 1U);
   EXPECT_EQ(stream1->GetInputDeviceID(), device1);
-  Unused << WaitFor(started);
+  (void)WaitFor(started);
   std::cerr << "Device " << device1 << " is opened (stream " << stream1.get()
             << ")" << std::endl;
 
@@ -1213,7 +1212,7 @@ TEST(TestAudioTrackGraph, AudioProcessingTrack)
   MockCubeb* cubeb = new MockCubeb();
   CubebUtils::ForceSetCubebContext(cubeb->AsCubebContext());
   auto unforcer = WaitFor(cubeb->ForceAudioThread()).unwrap();
-  Unused << unforcer;
+  (void)unforcer;
 
   // Start on a system clock driver, then switch to full-duplex in one go. If we
   // did output-then-full-duplex we'd risk a second NotifyWhenDeviceStarted
@@ -1249,7 +1248,7 @@ TEST(TestAudioTrackGraph, AudioProcessingTrack)
 
   RefPtr<SmartMockCubebStream> stream = WaitFor(cubeb->StreamInitEvent());
   EXPECT_TRUE(stream->mHasInput);
-  Unused << WaitFor(p);
+  (void)WaitFor(p);
 
   // Wait for a second worth of audio data. GoFaster is dispatched through a
   // ControlMessage so that it is called in the first audio driver iteration.
@@ -1377,10 +1376,7 @@ TEST(TestAudioTrackGraph, ReConnectDeviceInput)
 
   // Dispatch the disconnect message.
   ProcessEventQueue();
-  // Run the disconnect message.
-  EXPECT_EQ(stream->ManualDataCallback(0),
-            MockCubebStream::KeepProcessing::Yes);
-  // Switch driver.
+  // Run the disconnect message and switch driver.
   auto initPromise = TakeN(cubeb->StreamInitEvent(), 1);
   EXPECT_EQ(stream->ManualDataCallback(0), MockCubebStream::KeepProcessing::No);
   std::tie(stream) = WaitFor(initPromise).unwrap()[0];
@@ -1414,10 +1410,7 @@ TEST(TestAudioTrackGraph, ReConnectDeviceInput)
   });
   // Dispatch the connect message.
   ProcessEventQueue();
-  // Run the connect message.
-  EXPECT_EQ(stream->ManualDataCallback(0),
-            MockCubebStream::KeepProcessing::Yes);
-  // Switch driver.
+  // Run the connect message and switch driver.
   initPromise = TakeN(cubeb->StreamInitEvent(), 1);
   EXPECT_EQ(stream->ManualDataCallback(0), MockCubebStream::KeepProcessing::No);
   std::tie(stream) = WaitFor(initPromise).unwrap()[0];
@@ -1457,10 +1450,7 @@ TEST(TestAudioTrackGraph, ReConnectDeviceInput)
 
   // Dispatch the clean-up messages.
   ProcessEventQueue();
-  // Run the clean-up messages.
-  EXPECT_EQ(stream->ManualDataCallback(0),
-            MockCubebStream::KeepProcessing::Yes);
-  // Shut down driver.
+  // Run the clean-up messages and shut down driver.
   EXPECT_EQ(stream->ManualDataCallback(0), MockCubebStream::KeepProcessing::No);
 
   uint32_t inputFrequency = stream->InputFrequency();
@@ -1662,7 +1652,7 @@ TEST(TestAudioTrackGraph, SetRequestedInputChannelCount)
   EXPECT_TRUE(stream1->mHasOutput);
   EXPECT_EQ(stream1->InputChannels(), 2U);
   EXPECT_EQ(stream1->GetInputDeviceID(), device1);
-  Unused << WaitFor(started);
+  (void)WaitFor(started);
 
   // Open a 1-channel non-native input stream.
   const CubebUtils::AudioDeviceID device2 = (CubebUtils::AudioDeviceID)2;
@@ -1764,7 +1754,7 @@ TEST(TestAudioTrackGraph, RestartAudioIfProcessingMaxChannelCountChanged)
   MockCubeb* cubeb = new MockCubeb();
   CubebUtils::ForceSetCubebContext(cubeb->AsCubebContext());
   auto unforcer = WaitFor(cubeb->ForceAudioThread()).unwrap();
-  Unused << unforcer;
+  (void)unforcer;
 
   MediaTrackGraph* graph = MediaTrackGraphImpl::GetInstance(
       MediaTrackGraph::SYSTEM_THREAD_DRIVER, /*Window ID*/ 1,
@@ -1887,7 +1877,7 @@ TEST(TestAudioTrackGraph, RestartAudioIfProcessingMaxChannelCountChanged)
     EXPECT_TRUE(nativeStream->mHasOutput);
     EXPECT_EQ(nativeStream->InputChannels(), 1U);
     EXPECT_EQ(nativeStream->GetInputDeviceID(), nativeDevice);
-    Unused << WaitFor(started);
+    (void)WaitFor(started);
 
     // Open a 2-channel AudioProcessingTrack for the native device and wait for
     // a new driver since the max-channel for the native device becomes 2 now.
@@ -2041,7 +2031,7 @@ TEST(TestAudioTrackGraph, SetInputChannelCountBeforeAudioCallbackDriver)
   EXPECT_TRUE(stream->mHasOutput);
   EXPECT_EQ(stream->InputChannels(), 1U);
 
-  Unused << WaitFor(
+  (void)WaitFor(
       InvokeAsync([&] { return graph->NotifyWhenDeviceStarted(nullptr); }));
 
   // Clean up.
@@ -2051,7 +2041,7 @@ TEST(TestAudioTrackGraph, SetInputChannelCountBeforeAudioCallbackDriver)
     track->DisconnectDeviceInput();
     track->Destroy();
   });
-  Unused << WaitFor(cubeb->StreamDestroyEvent());
+  (void)WaitFor(cubeb->StreamDestroyEvent());
 }
 
 TEST(TestAudioTrackGraph, StartAudioDeviceBeforeStartingAudioProcessing)
@@ -2116,7 +2106,7 @@ TEST(TestAudioTrackGraph, StartAudioDeviceBeforeStartingAudioProcessing)
     track->DisconnectDeviceInput();
     track->Destroy();
   });
-  Unused << WaitFor(cubeb->StreamDestroyEvent());
+  (void)WaitFor(cubeb->StreamDestroyEvent());
 }
 
 TEST(TestAudioTrackGraph, StopAudioProcessingBeforeStoppingAudioDevice)
@@ -2182,7 +2172,7 @@ TEST(TestAudioTrackGraph, StopAudioProcessingBeforeStoppingAudioDevice)
     track->DisconnectDeviceInput();
     track->Destroy();
   });
-  Unused << WaitFor(cubeb->StreamDestroyEvent());
+  (void)WaitFor(cubeb->StreamDestroyEvent());
 }
 
 // This test is pretty similar to SwitchNativeInputDevice above, which makes
@@ -2285,7 +2275,7 @@ TEST(TestAudioTrackGraph, SwitchNativeAudioProcessingTrack)
   EXPECT_TRUE(stream1->mHasOutput);
   EXPECT_EQ(stream1->InputChannels(), 1U);
   EXPECT_EQ(stream1->GetInputDeviceID(), device1);
-  Unused << WaitFor(started);
+  (void)WaitFor(started);
   std::cerr << "Device " << device1 << " is opened (stream " << stream1.get()
             << ")" << std::endl;
 
@@ -2518,11 +2508,6 @@ void TestCrossGraphPort(uint32_t aInputRate, uint32_t aOutputRate,
 
   ProcessEventQueue();
 
-  EXPECT_EQ(inputStream->ManualDataCallback(0),
-            MockCubebStream::KeepProcessing::Yes);
-  EXPECT_EQ(partnerStream->ManualDataCallback(0),
-            MockCubebStream::KeepProcessing::Yes);
-
   EXPECT_EQ(inputStream->ManualDataCallback(128),
             MockCubebStream::KeepProcessing::No);
   EXPECT_EQ(partnerStream->ManualDataCallback(128),
@@ -2722,7 +2707,7 @@ TEST(TestAudioTrackGraph, SecondaryOutputDevice)
 }
 
 // Test when AudioInputProcessing expects clock drift
-TEST(TestAudioInputProcessing, ClockDriftExpectation)
+TEST(TestAudioTrackGraph, ClockDriftExpectation)
 {
   MockCubeb* cubeb = new MockCubeb();
   CubebUtils::ForceSetCubebContext(cubeb->AsCubebContext());
@@ -2760,6 +2745,9 @@ TEST(TestAudioInputProcessing, ClockDriftExpectation)
   DispatchFunction([&] {
     createInputProcessing(nullptr, &processingTrack1, &inputProcessing1);
   });
+  RefPtr<SmartMockCubebStream> primaryStream =
+      WaitFor(cubeb->StreamInitEvent());
+  EXPECT_GT(primaryStream->OutputChannels(), 0U);
   // Non-native input
   const auto* nonNativeInputDeviceID = CubebUtils::AudioDeviceID(1);
   RefPtr<AudioProcessingTrack> processingTrack2;
@@ -2770,18 +2758,10 @@ TEST(TestAudioInputProcessing, ClockDriftExpectation)
     processingTrack2->AddAudioOutput(nullptr, nullptr, rate);
   });
 
-  RefPtr<SmartMockCubebStream> primaryStream;
-  RefPtr<SmartMockCubebStream> nonNativeInputStream;
-  WaitUntil(cubeb->StreamInitEvent(),
-            [&](RefPtr<SmartMockCubebStream>&& stream) {
-              if (stream->OutputChannels() > 0) {
-                primaryStream = std::move(stream);
-                return false;
-              }
-              nonNativeInputStream = std::move(stream);
-              return true;
-            });
+  RefPtr<SmartMockCubebStream> nonNativeInputStream =
+      WaitFor(cubeb->StreamInitEvent());
   EXPECT_EQ(nonNativeInputStream->GetInputDeviceID(), nonNativeInputDeviceID);
+  EXPECT_EQ(nonNativeInputStream->OutputChannels(), 0U);
 
   // Wait until non-native input signal reaches the output, when input
   // processing has run and so has been configured.
@@ -2980,15 +2960,14 @@ TEST(TestAudioTrackGraph, PlatformProcessing)
 
   // Switch driver.
   EXPECT_CALL(*listener, RequestedInputChannelCount).WillRepeatedly(Return(2));
+  // ReevaluateInputDevice() is not required for the native input, but is
+  // called anyway.
   DispatchFunction([&] {
     track->QueueControlMessageWithNoShutdown(
         [&] { graph->ReevaluateInputDevice(device); });
   });
   ProcessEventQueue();
-  // Process the reevaluation message.
-  EXPECT_EQ(stream->ManualDataCallback(0),
-            MockCubebStream::KeepProcessing::Yes);
-  // Perform the switch.
+  // Process the reevaluation message and perform the switch.
   auto initPromise = TakeN(cubeb->StreamInitEvent(), 1);
   EXPECT_EQ(stream->ManualDataCallback(0), MockCubebStream::KeepProcessing::No);
   std::tie(stream) = WaitFor(initPromise).unwrap()[0];
@@ -3038,10 +3017,7 @@ TEST(TestAudioTrackGraph, PlatformProcessing)
     track->Destroy();
   });
   ProcessEventQueue();
-  // Process the destroy message.
-  EXPECT_EQ(stream->ManualDataCallback(0),
-            MockCubebStream::KeepProcessing::Yes);
-  // Shut down.
+  // Process the destroy message and shut down.
   EXPECT_EQ(stream->ManualDataCallback(0), MockCubebStream::KeepProcessing::No);
   RefPtr<SmartMockCubebStream> destroyedStream =
       WaitFor(cubeb->StreamDestroyEvent());
@@ -3119,25 +3095,25 @@ TEST(TestAudioTrackGraph, PlatformProcessingNonNativeToNativeSwitch)
     // On non-native device's start.
     EXPECT_CALL(*secondListener,
                 NotifySetRequestedInputProcessingParams(
-                    graph, 1, CUBEB_INPUT_PROCESSING_PARAM_ECHO_CANCELLATION));
+                    graph, 3, CUBEB_INPUT_PROCESSING_PARAM_ECHO_CANCELLATION));
     EXPECT_CALL(*secondListener, NotifySetRequestedInputProcessingParamsResult(
-                                     graph, 1, Eq(std::ref(echoResult))))
+                                     graph, 3, Eq(std::ref(echoResult))))
         .WillOnce([&] { ++numProcessingParamsResults; });
     // After switch to native device for second device.
     EXPECT_CALL(*firstListener, Disconnect);
     EXPECT_CALL(*secondListener, Disconnect);
     EXPECT_CALL(*secondListener,
                 NotifySetRequestedInputProcessingParams(
-                    graph, 1, CUBEB_INPUT_PROCESSING_PARAM_ECHO_CANCELLATION));
+                    graph, 4, CUBEB_INPUT_PROCESSING_PARAM_ECHO_CANCELLATION));
     EXPECT_CALL(*secondListener, NotifySetRequestedInputProcessingParamsResult(
-                                     graph, 1, Eq(std::ref(echoResult))))
+                                     graph, 4, Eq(std::ref(echoResult))))
         .WillOnce([&] { ++numProcessingParamsResults; });
     // After param update.
     EXPECT_CALL(*secondListener,
                 NotifySetRequestedInputProcessingParams(
-                    graph, 2, CUBEB_INPUT_PROCESSING_PARAM_NOISE_SUPPRESSION));
+                    graph, 5, CUBEB_INPUT_PROCESSING_PARAM_NOISE_SUPPRESSION));
     EXPECT_CALL(*secondListener, NotifySetRequestedInputProcessingParamsResult(
-                                     graph, 2, Eq(std::ref(noiseResult))))
+                                     graph, 5, Eq(std::ref(noiseResult))))
         .WillOnce([&] { ++numProcessingParamsResults; });
     EXPECT_CALL(*secondListener, Disconnect);
   }
@@ -3252,11 +3228,8 @@ TEST(TestAudioTrackGraph, PlatformProcessingNonNativeToNativeSwitch)
   });
   ProcessEventQueue();
   initPromise = TakeN(cubeb->StreamInitEvent(), 1);
-  // Process the disconnect message, and check that the second device is now
-  // used with the new graph driver.
-  EXPECT_EQ(nativeStream->ManualDataCallback(0),
-            MockCubebStream::KeepProcessing::Yes);
-  // Perform the switch.
+  // Process the disconnect message, perform the switch,
+  // and check that the second device is now used with the new graph driver.
   EXPECT_EQ(nativeStream->ManualDataCallback(0),
             MockCubebStream::KeepProcessing::No);
   std::tie(nativeStream) = WaitFor(initPromise).unwrap()[0];
@@ -3300,10 +3273,7 @@ TEST(TestAudioTrackGraph, PlatformProcessingNonNativeToNativeSwitch)
   auto destroyPromise = TakeN(cubeb->StreamDestroyEvent(), 1);
   DispatchFunction([&] {
     ProcessEventQueue();
-    // Process the destroy message.
-    EXPECT_EQ(nativeStream->ManualDataCallback(0),
-              MockCubebStream::KeepProcessing::Yes);
-    // Shut down native.
+    // Process the destroy message and shut down native.
     EXPECT_EQ(nativeStream->ManualDataCallback(0),
               MockCubebStream::KeepProcessing::No);
   });
@@ -3400,6 +3370,118 @@ TEST(TestAudioTrackGraph, EmptyProcessingInterval)
   // reference, and before the next test might ForceSetCubebContext() to
   // destroy our cubeb.
   (void)WaitFor(destroyPromise).unwrap()[0];
+}
+
+TEST(TestAudioTrackGraph, DefaultOutputDeviceIDTracking)
+{
+#ifdef ANDROID
+  GTEST_SKIP() << "On Android CubebDeviceEnumerator, not the cubeb backend, "
+                  "handles device enumeration, exposing only a single input "
+                  "and output device. Both with devid 0.";
+#else
+  MockCubeb* cubeb = new MockCubeb(MockCubeb::RunningMode::Manual);
+  AddDevices(cubeb, 1, CUBEB_DEVICE_TYPE_INPUT);
+  AddDevices(cubeb, 2, CUBEB_DEVICE_TYPE_OUTPUT);
+  CubebUtils::ForceSetCubebContext(cubeb->AsCubebContext());
+
+  MediaTrackGraphImpl* graph = MediaTrackGraphImpl::GetInstance(
+      MediaTrackGraph::AUDIO_THREAD_DRIVER, /*Window ID*/ 1,
+      CubebUtils::PreferredSampleRate(/* aShouldResistFingerprinting */ false),
+      nullptr, GetMainThreadSerialEventTarget());
+
+  // Mocks and expectations.
+  RefPtr processedTrack = new MockProcessedMediaTrack(graph->GraphRate());
+  RefPtr<MockAudioDataListener> dataListener =
+      MakeRefPtr<MockAudioDataListener>();
+  const Result<cubeb_input_processing_params, int> notSupportedResult(
+      Err(CUBEB_ERROR_NOT_SUPPORTED));
+
+  EXPECT_CALL(*processedTrack, ProcessInput).Times(AtLeast(1));
+  EXPECT_CALL(*dataListener, RequestedInputChannelCount)
+      .WillRepeatedly(Return(2));
+  EXPECT_CALL(*dataListener, RequestedInputProcessingParams)
+      .WillRepeatedly(Return(CUBEB_INPUT_PROCESSING_PARAM_NONE));
+  EXPECT_CALL(*dataListener, IsVoiceInput).WillRepeatedly(Return(true));
+  {
+    InSequence s;
+    EXPECT_CALL(*dataListener, NotifySetRequestedInputProcessingParamsResult(
+                                   graph, 0, Eq(std::ref(notSupportedResult))));
+    EXPECT_CALL(*dataListener, Disconnect);
+  }
+
+  // Add a track to maintain an output-only audio driver.
+  RefPtr fallbackListener = new OnFallbackListener(processedTrack);
+  DispatchFunction([&] {
+    graph->AddTrack(processedTrack);
+    processedTrack->AddAudioOutput(reinterpret_cast<void*>(1), nullptr);
+    processedTrack->AddListener(fallbackListener);
+  });
+
+  RefPtr<SmartMockCubebStream> stream = WaitFor(cubeb->StreamInitEvent());
+  while (stream->State().isNothing()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  EXPECT_EQ(*stream->State(), CUBEB_STATE_STARTED);
+  // Wait for the AudioCallbackDriver to come into effect.
+  while (fallbackListener->OnFallback()) {
+    EXPECT_EQ(stream->ManualDataCallback(1),
+              MockCubebStream::KeepProcessing::Yes);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  // The graph is now run by ManualDataCallback().
+
+  EXPECT_EQ(graph->DefaultOutputDeviceID(), nullptr)
+      << "Without an input track, the default output isn't tracked.";
+
+  // Add an input track.
+  RefPtr<TestDeviceInputConsumerTrack> inputTrack;
+  DispatchFunction([&] {
+    processedTrack->RemoveListener(fallbackListener);
+    inputTrack = TestDeviceInputConsumerTrack::Create(graph);
+    inputTrack->ConnectDeviceInput(CubebUtils::AudioDeviceID(1), dataListener,
+                                   PRINCIPAL_HANDLE_NONE);
+    fallbackListener = new OnFallbackListener(inputTrack);
+    inputTrack->AddListener(fallbackListener);
+  });
+  auto initPromise = TakeN(cubeb->StreamInitEvent(), 1);
+  ProcessEventQueue();
+  // Process the disconnect message, perform the switch,
+  // and check that the second device is now used with the new graph driver.
+  EXPECT_EQ(stream->ManualDataCallback(0), MockCubebStream::KeepProcessing::No);
+  std::tie(stream) = WaitFor(initPromise).unwrap()[0];
+  EXPECT_TRUE(stream->mHasInput);
+  EXPECT_TRUE(stream->mHasOutput);
+  EXPECT_EQ(stream->InputChannels(), 2U);
+  EXPECT_EQ(stream->GetInputDeviceID(), CubebUtils::AudioDeviceID(1));
+  EXPECT_EQ(stream->GetOutputDeviceID(), nullptr);
+  stream->ManualDataCallback(0);
+
+  EXPECT_EQ(graph->DefaultOutputDeviceID(), CubebUtils::AudioDeviceID(2))
+      << "With an input track, we are tracking the default output device.";
+
+  cubeb->SetPreferredDevice(CubebUtils::AudioDeviceID(1),
+                            CUBEB_DEVICE_TYPE_OUTPUT);
+  ProcessEventQueue();
+  EXPECT_EQ(graph->DefaultOutputDeviceID(), CubebUtils::AudioDeviceID(1))
+      << "Default output device tracking follows system changes.";
+
+  DispatchFunction([&] {
+    inputTrack->RemoveListener(fallbackListener);
+    inputTrack->Destroy();
+    processedTrack->Destroy();
+  });
+  ProcessEventQueue();
+  // Process the destroy message and drain the stream.
+  auto destroyPromise = TakeN(cubeb->StreamDestroyEvent(), 1);
+  while (stream->ManualDataCallback(0) ==
+         MockCubebStream::KeepProcessing::Yes) {
+  }
+  // Ensure the stream is no longer used by its MockCubeb before releasing our
+  // reference, and before the next test might ForceSetCubebContext() to
+  // destroy our cubeb.
+  (void)WaitFor(destroyPromise).unwrap()[0];
+#endif
 }
 
 #undef Invoke

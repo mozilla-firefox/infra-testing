@@ -83,6 +83,9 @@ class RenderCompositorANGLE final : public RenderCompositor {
 
   bool ShouldUseNativeCompositor() override;
 
+  bool ShouldUseLayerCompositor() const override;
+  bool UseLayerCompositor() const override;
+
   // Interface for wr::Compositor
   void CompositorBeginFrame() override;
   void CompositorEndFrame() override;
@@ -90,8 +93,12 @@ class RenderCompositorANGLE final : public RenderCompositor {
             wr::DeviceIntRect aDirtyRect,
             wr::DeviceIntRect aValidRect) override;
   void Unbind() override;
-  void BindSwapChain(wr::NativeSurfaceId aId) override;
-  void PresentSwapChain(wr::NativeSurfaceId aId) override;
+  void BindSwapChain(wr::NativeSurfaceId aId,
+                     const wr::DeviceIntRect* aDirtyRects,
+                     size_t aNumDirtyRects) override;
+  void PresentSwapChain(wr::NativeSurfaceId aId,
+                        const wr::DeviceIntRect* aDirtyRects,
+                        size_t aNumDirtyRects) override;
   void CreateSurface(wr::NativeSurfaceId aId, wr::DeviceIntPoint aVirtualOffset,
                      wr::DeviceIntSize aTileSize, bool aIsOpaque) override;
   void CreateExternalSurface(wr::NativeSurfaceId aId, bool aIsOpaque) override;
@@ -101,7 +108,8 @@ class RenderCompositorANGLE final : public RenderCompositor {
   void AttachExternalImage(wr::NativeSurfaceId aId,
                            wr::ExternalImageId aExternalImage) override;
   void CreateSwapChainSurface(wr::NativeSurfaceId aId, wr::DeviceIntSize aSize,
-                              bool aIsOpaque) override;
+                              bool aIsOpaque,
+                              bool aNeedsSyncDcompCommit) override;
   void ResizeSwapChainSurface(wr::NativeSurfaceId aId,
                               wr::DeviceIntSize aSize) override;
   void AddSurface(wr::NativeSurfaceId aId,
@@ -111,6 +119,7 @@ class RenderCompositorANGLE final : public RenderCompositor {
                   wr::DeviceIntRect aRoundedClipRect,
                   wr::ClipRadius aClipRadius) override;
   void EnableNativeCompositor(bool aEnable) override;
+  bool EnableAsyncScreenshot() override;
   void GetCompositorCapabilities(CompositorCapabilities* aCaps) override;
   void GetWindowProperties(WindowProperties* aProperties) override;
 
@@ -169,7 +178,6 @@ class RenderCompositorANGLE final : public RenderCompositor {
   RenderedFrameId mLastCompletedFrameId;
 
   Maybe<LayoutDeviceIntSize> mBufferSize;
-  bool mUseNativeCompositor = true;
   bool mUsePartialPresent = false;
   bool mFullRender = false;
   // Used to know a timing of disabling native compositor.

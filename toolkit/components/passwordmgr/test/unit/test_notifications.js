@@ -21,7 +21,7 @@ let TestObserver = {
         Assert.ok(subject instanceof Ci.nsILoginMetaInfo);
         Assert.ok(expectedData.equals(subject)); // nsILoginInfo.equals()
         break;
-      case "modifyLogin":
+      case "modifyLogin": {
         Assert.ok(subject instanceof Ci.nsIArray);
         Assert.equal(subject.length, 2);
         let oldLogin = subject.queryElementAt(0, Ci.nsILoginInfo);
@@ -29,6 +29,7 @@ let TestObserver = {
         Assert.ok(expectedData[0].equals(oldLogin)); // nsILoginInfo.equals()
         Assert.ok(expectedData[1].equals(newLogin));
         break;
+      }
       case "removeLogin":
         Assert.ok(subject instanceof Ci.nsILoginInfo);
         Assert.ok(subject instanceof Ci.nsILoginMetaInfo);
@@ -98,7 +99,7 @@ add_task(async function test_notifications() {
 
     expectedNotification = "modifyLogin";
     expectedData = [testuser1, testuser2];
-    Services.logins.modifyLogin(testuser1, testuser2);
+    await Services.logins.modifyLoginAsync(testuser1, testuser2);
     Assert.equal(expectedNotification, null);
     await LoginTestUtils.checkLogins([testuser2]);
 

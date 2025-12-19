@@ -4,8 +4,10 @@
 
 import asyncio
 import contextlib
+import math
 import time
-from base64 import b64decode
+import zipfile
+from base64 import b64decode, b64encode
 from io import BytesIO
 from urllib.parse import quote
 
@@ -23,6 +25,122 @@ class Client:
         self.event_loop = event_loop
         self.subscriptions = {}
         self.content_blocker_loaded = False
+
+        platform_override = request.config.getoption("platform_override")
+        if (
+            platform_override
+            and platform_override != session.capabilities["platformName"]
+        ):
+            self.platform_override = platform_override
+
+        self._start_collecting_alerts()
+
+    async def set_page_zoom_level(self, level):
+        with self.using_context("chrome"):
+            self.execute_script(
+                r"""
+                    const [ level ] = arguments;
+                    const win = browser.ownerGlobal;
+                    win.ZoomManager.setZoomForBrowser(win.gBrowser.selectedTab.linkedBrowser, level);
+                    """,
+                level,
+            )
+
+    async def maybe_enable_font_inflation(self):
+        # GVE does not enable font inflation by default. We want to match Fenix.
+        if self.session.capabilities["platformName"] != "android":
+            return
+        with self.using_context("chrome"):
+            self.execute_script(
+                r"""
+                  const minTwips = "font.size.inflation.minTwips";
+                  if (!Services.prefs.getIntPref(minTwips)) {
+                    Services.prefs.setIntPref(minTwips, 120);
+                  }
+                """
+            )
+
+    async def maybe_override_platform(self):
+        if hasattr(self, "_platform_override_checked"):
+            return
+        self._platform_override_checked = True
+
+        if not hasattr(self, "platform_override"):
+            return False
+
+        target = self.platform_override
+
+        with self.using_context("chrome"):
+            self.execute_script(
+                r"""
+                    const [ target ] = arguments;
+
+                    // Start responsive design mode if emulating an Android device.
+                    if (target === "android") {
+                        Services.prefs.setBoolPref("devtools.responsive.touchSimulation.enabled", true);
+                        Services.prefs.setIntPref("devtools.responsive.viewport.pixelRatio", 2);
+                        Services.prefs.setIntPref("devtools.responsive.viewport.width", 400);
+                        Services.prefs.setIntPref("devtools.responsive.viewport.height", 640);
+                        ChromeUtils.defineESModuleGetters(this, {
+                          loader: "resource://devtools/shared/loader/Loader.sys.mjs",
+                        });
+                        loader.lazyRequireGetter(
+                          this,
+                          "ResponsiveUIManager",
+                          "resource://devtools/client/responsive/manager.js"
+                        );
+                        const tab = gBrowser.selectedTab;
+                        ResponsiveUIManager.toggle(gBrowser.ownerDocument.defaultView, tab, {
+                          trigger: "toolbox",
+                        });
+                    }
+
+                    const ver = navigator.userAgent.match(/Firefox\/([0-9.]+)/)[1];
+                    const overrides = {
+                        android: {
+                            appVersion: "5.0 (Android 11)",
+                            oscpu: "Linux armv81",
+                            platform: "Linux armv81",
+                            userAgent: `Mozilla/5.0 (Android 15; Mobile; rv:${ver}) Gecko/${ver} Firefox/${ver}`,
+                        },
+                        linux: {
+                            appVersion: "5.0 (X11)",
+                            oscpu: "Linux x86_64",
+                            platform: "Linux x86_64",
+                            userAgent: `Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:${ver}) Gecko/20100101 Firefox/${ver}`,
+                        },
+                        mac: {
+                            appVersion: "5.0 (Macintosh)",
+                            oscpu: "Intel Mac OS X 10.15",
+                            platform: "MacIntel",
+                            userAgent: `Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:${ver}) Gecko/20100101 Firefox/${ver}`,
+                        },
+                        windows: {
+                            appVersion: "5.0 (Windows)",
+                            oscpu: "Windows NT 10.0; Win64; x64",
+                            platform: "Win32",
+                            userAgent: `Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:${ver}) Gecko/20100101 Firefox/${ver}`,
+                        },
+                    }[target];
+                    if (overrides) {
+                        const { appVersion, oscpu, platform, userAgent } = overrides;
+                        Services.prefs.setCharPref("general.appversion.override", appVersion);
+                        Services.prefs.setCharPref("general.oscpu.override", oscpu);
+                        Services.prefs.setCharPref("general.platform.override", platform);
+
+                        // We must override the userAgent as a header, like our addon does.
+                        const defaultUA = navigator.userAgent;
+                        Services.obs.addObserver(function (subject) {
+                            const channel = subject.QueryInterface(Ci.nsIHttpChannel);
+                            // If we raced with the webcompat addon, and it changed the UA already, leave it alone.
+                            if (defaultUA === channel.getRequestHeader("user-agent")) {
+                                channel.setRequestHeader("user-agent", userAgent, true);
+                            }
+                        }, "http-on-modify-request");
+                    }
+                    """,
+                target,
+            )
 
     @property
     def current_url(self):
@@ -55,6 +173,8 @@ class Client:
                 self.context = orig_context
 
     def set_screen_size(self, width, height):
+        if self.request.config.getoption("platform_override") == "android":
+            return False
         if self.session.capabilities.get("setWindowRect"):
             self.session.window.size = (width, height)
             return True
@@ -74,8 +194,54 @@ class Client:
             element,
         )
 
+    async def send_apz_scroll_gesture(
+        self, units, element=None, offset=None, coords=None
+    ):
+        if coords is None:
+            if element is None:
+                raise ValueError("require coords and/or element")
+            coords = self.get_element_screen_position(element)
+        if offset is not None:
+            coords[0] += offset[0]
+            coords[1] += offset[1]
+        with self.using_context("chrome"):
+            return self.execute_async_script(
+                """
+                const [units, coords, done] = arguments;
+                const { devicePixelRatio, windowUtils } = window;
+                const resolution = windowUtils.getResolution();
+                const toScreenCoords = x => x * devicePixelRatio * resolution;
+
+                // based on nativeVerticalWheelEventMsg()
+                let msg = 4; // linux default
+                switch (Services.appinfo.OS) {
+                  case "WINNT":
+                    msg = 0x0115; // WM_VSCROLL
+                    break;
+                  case "Darwin":
+                    msg = 1; // use a gesture; don't synthesize a wheel scroll
+                    break;
+                }
+
+                windowUtils.sendNativeMouseScrollEvent(
+                    toScreenCoords(coords[0]),
+                    toScreenCoords(coords[1]),
+                    msg,
+                    0,
+                    units,
+                    0,
+                    0,
+                    0,
+                    document.documentElement,
+                    () => { done(); },
+                );
+            """,
+                units,
+                coords,
+            )
+
     async def send_apz_mouse_event(
-        self, event_type, coords=None, element=None, button=0
+        self, event_type, coords=None, element=None, offset=None, button=0
     ):
         # note: use button=2 for context menu/right click (0 is left button)
         if event_type == "down":
@@ -90,6 +256,9 @@ class Client:
             if element is None:
                 raise ValueError("require coords and/or element")
             coords = self.get_element_screen_position(element)
+            if offset:
+                coords[0] += offset[0]
+                coords[1] += offset[1]
         with self.using_context("chrome"):
             return self.execute_async_script(
                 """
@@ -221,7 +390,7 @@ class Client:
             else:
                 self.subscriptions[event] += 1
 
-        if len(must_sub):
+        if must_sub:
             await self.session.bidi_session.session.subscribe(events=must_sub)
 
     async def unsubscribe(self, events):
@@ -234,7 +403,7 @@ class Client:
             if not self.subscriptions[event]:
                 must_unsub.append(event)
 
-        if len(must_unsub):
+        if must_unsub:
             try:
                 await self.session.bidi_session.session.unsubscribe(events=must_unsub)
             except (InvalidArgumentException, NoSuchFrameException):
@@ -339,37 +508,38 @@ class Client:
     def await_script(self, script, *args, **kwargs):
         return self.run_script(script, *args, **kwargs, await_promise=True)
 
-    def await_interventions_started(self):
-        with self.using_context("chrome"):
-            interventionsOn = self.request.node.get_closest_marker("with_interventions")
-            shimsOn = self.request.node.get_closest_marker("with_shims")
+    async def await_interventions_started(self):
+        interventionsOn = self.request.node.get_closest_marker("with_interventions")
+        shimsOn = self.request.node.get_closest_marker("with_shims")
 
-            if not interventionsOn and not shimsOn:
-                print("Not waiting for interventions/shims")
-                return
+        if not interventionsOn and not shimsOn:
+            print("Not waiting for interventions/shims")
+            return
 
-            expectedMsg = (
-                "WebCompatTests:InterventionsStatus"
-                if interventionsOn
-                else "WebCompatTests:ShimsStatus"
-            )
+        waitFor = "interventions" if interventionsOn else "shims"
 
-            print("Waiting for", expectedMsg, 'to be "active"')
-            self.execute_async_script(
-                """
-                const [expectedMsg, done] = arguments;
-                const timer = setInterval(() => {
-                  if (Services.ppmm.sharedData.get(expectedMsg) === "active") {
-                    clearInterval(timer);
-                    done();
-                  }
-                }, 100);
-            """,
-                expectedMsg,
-            )
+        print("Waiting for", waitFor, "to be ready")
+        context = await self.session.bidi_session.browsing_context.create(
+            type_hint="tab", background=True
+        )
+        await self.session.bidi_session.browsing_context.navigate(
+            context=context["context"],
+            url="about:compat",
+            wait="interactive",
+        )
+        await self.session.bidi_session.script.evaluate(
+            expression=f"window.browser.extension.getBackgroundPage().{waitFor}.ready()",
+            target=ContextTarget(context["context"]),
+            await_promise=True,
+        )
+        await self.session.bidi_session.browsing_context.close(
+            context=context["context"]
+        )
 
     async def navigate(self, url, timeout=90, no_skip=False, **kwargs):
-        self.await_interventions_started()
+        await self.await_interventions_started()
+        await self.maybe_override_platform()
+        await self.maybe_enable_font_inflation()
         try:
             return await asyncio.wait_for(
                 asyncio.ensure_future(self._navigate(url, **kwargs)), timeout=timeout
@@ -379,32 +549,30 @@ class Client:
                 raise t
                 return
             pytest.skip(
-                "%s: Timed out navigating to site after %s seconds. Please try again later."
-                % (self.request.fspath.basename, timeout)
+                f"{self.request.fspath.basename}: Timed out navigating to site after {timeout} seconds. Please try again later."
             )
         except webdriver.bidi.error.UnknownErrorException as e:
             if no_skip:
                 raise e
                 return
             s = str(e)
-            if "Address rejected" in s:
+            if "Address rejected" in s or "NS_ERROR_NET_TIMEOUT" in s:
                 pytest.skip(
-                    "%s: Site not responding. Please try again later."
-                    % self.request.fspath.basename
+                    f"{self.request.fspath.basename}: Site not responding. Please try again later."
                 )
                 return
             elif "NS_ERROR_UNKNOWN_HOST" in s:
                 pytest.skip(
-                    "%s: Site appears to be down. Please try again later."
-                    % self.request.fspath.basename
+                    f"{self.request.fspath.basename}: Site appears to be down. Please try again later."
                 )
                 return
             elif "NS_ERROR_REDIRECT_LOOP" in s:
                 pytest.skip(
-                    "%s: Site is stuck in a redirect loop. Please try again later."
-                    % self.request.fspath.basename
+                    f"{self.request.fspath.basename}: Site is stuck in a redirect loop. Please try again later."
                 )
                 return
+            elif "NS_ERROR_CONNECTION_REFUSED" in s:
+                raise ConnectionRefusedError("Connection refused")
             raise e
 
     async def _navigate(self, url, wait="complete", await_console_message=None):
@@ -544,6 +712,9 @@ class Client:
 
         return find_in([await self.top_context()], url)
 
+    def stall(self, delay):
+        return asyncio.sleep(delay)
+
     class Context:
         def __init__(self, client, id):
             self.client = client
@@ -678,7 +849,7 @@ class Client:
                 out.append({"type": "string", "value": arg})
             else:
                 if "type" in arg:
-                    out.push(arg)
+                    out.append(arg)
                     continue
                 raise ValueError(f"Unhandled argument type: {t}")
         return out
@@ -739,45 +910,129 @@ class Client:
             )
         return self.prompts_preload_script
 
-    async def await_alert(self, texts, timeout=10):
-        if type(texts) is not list:
-            texts = [texts]
-        if not hasattr(self, "alert_preload_script"):
-            self.alert_preload_script = await self.make_preload_script(
+    def _start_collecting_alerts(self):
+        # WebDriver doesn't make it easy to just wait for an alert, because while you can
+        # listen for the events, there is no guarantee that UnexpectedAlertExceptions won't
+        # be thrown while you're doing other things. So we just tell Gecko to collect the
+        # prompts as they come in, and immediately dismiss them to prevent the exceptions.
+        with self.using_context("chrome"):
+            self.execute_script(
                 """
-                    window.__alerts = [];
-                    window.wrappedJSObject.alert = function(text) {
-                        window.__alerts.push(text);
+                const lazy = {};
+
+                ChromeUtils.defineESModuleGetters(lazy, {
+                  EventPromise: "chrome://remote/content/shared/Sync.sys.mjs",
+                  modal: "chrome://remote/content/shared/Prompt.sys.mjs",
+                  NavigableManager: "chrome://remote/content/shared/NavigableManager.sys.mjs",
+                  PromptListener: "chrome://remote/content/shared/listeners/PromptListener.sys.mjs",
+                  TabManager: "chrome://remote/content/shared/TabManager.sys.mjs",
+                });
+
+                async function tryClosePrompt(contextId) {
+                    const context = lazy.NavigableManager.getBrowsingContextById(contextId);
+                    if (!context) {
+                      return;
                     }
-                """,
-                "alert_detector",
-            )
-        return self.alert_preload_script.run(
-            """(timeout, ...msgs) => new Promise(done => {
-                    const interval = 200;
-                    let count = 0;
-                    const to = setInterval(() => {
-                        for (const a of window.__alerts || []) {
-                            for (const msg of msgs) {
-                                if (a.includes(msg)) {
-                                    clearInterval(to);
-                                    done(a);
-                                    return;
-                                }
+
+                    const tab = lazy.TabManager.getTabForBrowsingContext(context);
+                    const browser = lazy.TabManager.getBrowserForTab(tab);
+                    const window = lazy.TabManager.getWindowForTab(tab);
+                    const dialog = lazy.modal.findPrompt({
+                      window,
+                      contentBrowser: browser,
+                    });
+
+                    const closePrompt = async callback => {
+                      const dialogClosed = new lazy.EventPromise(
+                        window,
+                        "DOMModalDialogClosed"
+                      );
+                      callback();
+                      await dialogClosed;
+                    };
+
+                    if (dialog && dialog.isOpen) {
+                      switch (dialog.promptType) {
+                        case "alert":
+                          await closePrompt(() => dialog.accept());
+                          return;
+
+                        case "beforeunload":
+                        case "confirm":
+                          await closePrompt(() => {
+                            if (accept) {
+                              dialog.accept();
+                            } else {
+                              dialog.dismiss();
                             }
-                        }
-                        count += interval;
-                        if (timeout && timeout * 1000 < count) {
-                            clearInterval(to);
-                            done(false);
-                        }
-                    }, interval);
-               })
-            """,
-            timeout,
-            *texts,
-            await_promise=True,
-        )
+                          });
+                          return;
+
+                        case "prompt":
+                          await closePrompt(() => {
+                            if (accept) {
+                              dialog.text = userText;
+                              dialog.accept();
+                            } else {
+                              dialog.dismiss();
+                            }
+                          });
+                          return;
+                      }
+                   }
+                }
+
+                const alerts = [];
+                const promptListener = new lazy.PromptListener();
+                promptListener.on("opened", async (eventName, data) => {
+                    const { contentBrowser, prompt } = data;
+                    const type = prompt.promptType;
+                    const context = lazy.NavigableManager.getIdForBrowser(contentBrowser);
+                    const message = await prompt.getText();
+                    alerts.push({type, context, message});
+                    tryClosePrompt(context);
+                    Services.ppmm.sharedData.set("WebCompatTests:Prompts", alerts);
+                    console.error(`**** Closed ${type} in context ${context} with message: ${message}`);
+                });
+                promptListener.startListening();
+            """
+            )
+
+    def _get_prompts(self):
+        with self.using_context("chrome"):
+            return self.execute_script(
+                "return Services.cpmm.sharedData.get('WebCompatTests:Prompts')"
+            )
+
+    def _check_prompts(self, specific_messages, prompts):
+        if not prompts:
+            return
+        for prompt in prompts:
+            message = prompt["message"]
+            if not specific_messages:
+                return message
+            else:
+                for specific_message in specific_messages:
+                    if specific_message in prompt["message"]:
+                        return prompt["message"]
+
+    async def find_alert(self, specific_messages=None, delay=None):
+        if delay:
+            await asyncio.sleep(delay)
+        found = self._check_prompts(specific_messages, self._get_prompts())
+        if found is not None:
+            return found
+
+    async def await_alert(
+        self, specific_messages=None, timeout=20, polling_interval=0.2
+    ):
+        with self.using_context("chrome"):
+            print(math.ceil(timeout / polling_interval))
+            for _ in range(math.ceil(timeout / polling_interval)):
+                found = self._check_prompts(specific_messages, self._get_prompts())
+                if found is not None:
+                    return found
+                await asyncio.sleep(polling_interval)
 
     async def await_popup(self, url=None):
         if not hasattr(self, "popup_preload_script"):
@@ -877,15 +1132,15 @@ class Client:
 
     def clear_all_cookies(self):
         self.session.transport.send(
-            "DELETE", "session/%s/cookie" % self.session.session_id
+            "DELETE", f"session/{self.session.session_id}/cookie"
         )
 
     def send_element_command(self, element, method, uri, body=None):
-        url = "element/%s/%s" % (element.id, uri)
+        url = f"element/{element.id}/{uri}"
         return self.session.send_session_command(method, url, body)
 
     def get_element_attribute(self, element, name):
-        return self.send_element_command(element, "GET", "attribute/%s" % name)
+        return self.send_element_command(element, "GET", f"attribute/{name}")
 
     def _do_is_displayed_check(self, ele, is_displayed):
         if ele is None:
@@ -984,6 +1239,8 @@ class Client:
                     if len(result):
                         if condition:
                             result = self.session.execute_script(condition, [result])
+                            if not len(result):
+                                continue
                         found[i] = result[0] if not all else result
                         return found
                 except webdriver.error.NoSuchElementException as e:
@@ -1069,7 +1326,7 @@ class Client:
         left_to_try = list(popup_close_button_finders)
         closed_one = False
         num_intercepted = 0
-        while len(left_to_try):
+        while left_to_try:
             finder = left_to_try.pop(0)
             try:
                 if self.try_closing_popup(finder, timeout=timeout):
@@ -1190,20 +1447,6 @@ class Client:
     async def ensure_InstallTrigger_undefined(self):
         return await self.make_preload_script("delete InstallTrigger")
 
-    async def test_entrata_banner_hidden(self, url, iframe_css=None):
-        # some sites take a while to load, but they always have the browser
-        # warning popup, it just isn't shown until the page finishes loading.
-        await self.navigate(url, wait="none")
-        if iframe_css:
-            frame = self.await_css(iframe_css)
-            self.switch_frame(frame)
-        self.await_css("#browser-warning-popup", timeout=120)
-        try:
-            self.await_css("#browser-warning-popup", is_displayed=True, timeout=2)
-            return False
-        except webdriver.error.NoSuchElementException:
-            return True
-
     def test_future_plc_trending_scrollbar(self, shouldFail=False):
         trending_list = self.await_css(".trending__list")
         if not trending_list:
@@ -1270,6 +1513,7 @@ class Client:
             """,
                 trending_list,
             )
+            time.sleep(0.5)
             with_scrollbar = trending_list.screenshot()
             self.execute_script(
                 """
@@ -1277,6 +1521,7 @@ class Client:
             """,
                 trending_list,
             )
+            time.sleep(0.5)
             without_scrollbar = trending_list.screenshot()
             assert (
                 with_scrollbar == without_scrollbar
@@ -1302,11 +1547,47 @@ class Client:
         )
         self.scroll_into_view(element)
         self.clear_covering_elements(element)
-        # tap a few times in case the site's other code interferes
-        self.touch.click(element=element).perform()
-        self.touch.click(element=element).perform()
-        self.touch.click(element=element).perform()
+        # tap a few times in case the site's other code interferes, but
+        # FastClick can move the element out of bounds, so take care.
+        try:
+            self.touch.click(element=element).perform()
+            self.touch.click(element=element).perform()
+            self.touch.click(element=element).perform()
+        except webdriver.error.MoveTargetOutOfBoundsException:
+            pass
         return self.execute_script("return window.fastclicked")
+
+    async def test_aceomni_pan_and_zoom_works(self, url):
+        await self.navigate(url, wait="none")
+        img = self.await_css("#imageZoom", is_displayed=True)
+        await self.stall(1)
+
+        def get_zoom_x():
+            return self.execute_script(
+                "return arguments[0].style.cssText.match(/--zoom-x:\\s?(\\d+(\\.\\d+)?)%/)?.[1]",
+                img,
+            )
+
+        if get_zoom_x() is not None:
+            return False
+
+        await self.stall(0.5)
+        coords = self.get_element_screen_position(img)
+        coords = [coords[0] + 50, coords[1] + 100]
+        await self.apz_move(coords=coords)
+        await self.stall(0.5)
+        old_x = float(get_zoom_x())
+
+        for i in range(20):
+            coords = [coords[0] + 10, coords[1]]
+            await self.apz_move(coords=coords)
+            await self.stall(0.01)
+            x = float(get_zoom_x())
+            if x < old_x:
+                return False
+            old_x = x
+
+        return True
 
     def is_displayed(self, element):
         if element is None:
@@ -1318,8 +1599,9 @@ class Client:
                   const e = arguments[0],
                   s = window.getComputedStyle(e),
                   v = s.visibility === "visible",
-                  o = Math.abs(parseFloat(s.opacity));
-                  return e.getClientRects().length > 0 && v && (isNaN(o) || o === 1.0);
+                  o = Math.abs(parseFloat(s.opacity)),
+                  d = s.display === "contents" || e.getClientRects().length > 0;
+                  return d && v && (isNaN(o) || o === 1.0);
               """,
                 args=[element],
             )
@@ -1334,3 +1616,85 @@ class Client:
             if max - min > max_fuzz:
                 return False
         return True
+
+    def add_stylesheet(self, sheet):
+        self.execute_script(
+            """
+           const s = document.createElement("style");
+           s.textContent = arguments[0];
+           const timer = setInterval(() => {
+             if (document.head) {
+                document.head.appendChild(s);
+                clearInterval(timer);
+             }
+           }, 50);
+        """,
+            sheet,
+        )
+
+    def hide_elements(self, selector):
+        self.add_stylesheet(
+            f"""{selector} {{ opacity:0 !important; pointer-events:none !important; }}"""
+        )
+
+    def set_clipboard(self, string):
+        with self.using_context("chrome"):
+            self.execute_script(
+                """
+                  Cc["@mozilla.org/widget/clipboardhelper;1"]
+                    .getService(Ci.nsIClipboardHelper)
+                    .copyString(arguments[0]);
+            """,
+                string,
+            )
+
+    def do_paste(self):
+        with self.using_context("chrome"):
+            self.execute_script(
+                """
+                function _getEventUtils(win) {
+                    const eventUtilsObject = {
+                      window: win,
+                      parent: win,
+                      _EU_Ci: Ci,
+                      _EU_Cc: Cc,
+                    };
+                    Services.scriptloader.loadSubScript(
+                      "chrome://remote/content/external/EventUtils.js",
+                      eventUtilsObject
+                    );
+                    return eventUtilsObject;
+                }
+                const win = browser.ownerGlobal;
+                if (!win.EventUtils) {
+                    win.EventUtils = _getEventUtils(win);
+                }
+                win.EventUtils.synthesizeKey("v", { accelKey: true }, win);
+            """
+            )
+
+    def make_base64_xpi(self, files):
+        buf = BytesIO()
+        with zipfile.ZipFile(file=buf, mode="w") as zip:
+            for filename, src in files.items():
+                zip.writestr(filename, data=src)
+        buf.seek(0)
+        return b64encode(buf.getvalue())
+
+    def install_addon(
+        self, srcfiles, method="addon", temp=True, allow_private_browsing=True
+    ):
+        arg = {"temporary": temp, "allowPrivateBrowsing": allow_private_browsing}
+        arg[method] = self.make_base64_xpi(srcfiles).decode()
+        return self.session.transport.send(
+            "POST",
+            f"/session/{self.session.session_id}/moz/addon/install",
+            arg,
+        )
+
+    def uninstall_addon(self, addon_id):
+        return self.session.transport.send(
+            "POST",
+            f"/session/{self.session.session_id}/moz/addon/uninstall",
+            {"id": addon_id},
+        )

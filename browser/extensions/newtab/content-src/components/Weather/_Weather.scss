@@ -1,63 +1,64 @@
 // Custom font sizing for weather widget
 :root {
-  --newtab-weather-content-font-size: 11px;
+  --newtab-weather-content-font-size: var(--font-size-small);
   --newtab-weather-sponsor-font-size: 8px;
 }
 
 .weather {
-  font-size: var(--font-size-root);
-  margin-block-start: var(--space-xlarge);
-  margin-inline-start: var(--space-xlarge);
+  font-size: inherit;
   display: inline-block;
+  margin-inline-start: 0;
+  position: absolute;
+  inset-inline-end: var(--space-xxlarge);
+  inset-block-start: var(--space-xxlarge);
+  margin-block-start: 0;
+  z-index: 1;
 
-  @media (min-width: $break-point-medium) {
-    position: absolute;
-    inset-inline-start: var(--space-xlarge);
-    inset-block-start: var(--space-xlarge);
-    margin-block-start: 0;
-    margin-inline-start: 0;
-    z-index: 1;
-
-    // Bug 1914055 - Layout experiment: logo/search spacing
-    .layout-variant-a &,
-    .layout-variant-b & {
-      inset-inline-start: 24px;
-      inset-block-start: 24px;
-    }
+  @media (min-width: $break-point-layout-variant) {
+    inset-inline-end: var(--space-large);
   }
 
-  // Bug 1914055 - Layout experiment: Position the weather widget absolutely
-  // across all breakpoints to keep logo margins consistent
-  .no-search.layout-variant-a &,
-  .no-search.layout-variant-b &,
-  .layout-variant-a &,
-  .layout-variant-b & {
-    position: absolute;
-    inset-inline-start: var(--space-xlarge);
-    inset-block-start: var(--space-xlarge);
-    margin-block-start: 0;
-    margin-inline-start: 0;
+  @media (min-width: $break-point-large) {
+    inset-inline-end: var(--space-xxlarge);
+  }
+
+  // Variant with the weather in the header of a section
+  &.section-weather {
+    position: initial;
+    margin-inline-start: var(--space-medium);
+
+    .weatherInfoLink {
+      max-width: unset;
+    }
   }
 
   // Edge case: users with weather enabled/search disabled
   .no-search & {
-    position: relative;
-    margin-block-start: var(--space-xlarge);
-    margin-inline-start: var(--space-xlarge);
+    position: absolute;
+    inset-block-start: var(--space-xxlarge);
+    margin-block-start: 0;
+    margin-inline-start: 0;
+    inset-inline-end: var(--space-large);
 
-    @media (min-width: $break-point-medium) {
-      margin-block-start: 0;
-      margin-inline-start: 0;
+    @media (min-width: $break-point-small) {
+      inset-inline-end: var(--space-xxlarge);
     }
 
-    @media (min-width: $break-point-weather) {
-      position: absolute;
-      inset-inline-start: var(--space-xlarge);
-      inset-block-start: var(--space-xlarge);
-      margin-block-start: 0;
-      margin-inline-start: 0;
+    @media (min-width: $break-point-layout-variant) {
+      inset-inline-end: var(--space-large);
+    }
+
+    @media (min-width: $break-point-large) {
+      inset-inline-end: var(--space-xxlarge);
     }
   }
+
+  .context-menu {
+    inset-inline-end: 100%;
+    inset-inline-start: auto;
+    margin-inline-end: var(--space-xsmall);
+  }
+
 }
 
 .weather-placeholder {
@@ -104,7 +105,7 @@
       content: '';
       display: block;
       position: absolute;
-      top: 0;
+      inset-block-start: 0;
       inset-inline-start: -100%;
       height: 100%;
       width: 100%;
@@ -129,119 +130,30 @@
   }
 }
 
-// Edge case: users with weather enabled/search disabled
-.has-weather.no-search {
-  .outer-wrapper {
-    padding-top: 0;
-
-    @media (min-width: $break-point-medium) {
-      padding-top: 30px;
-    }
-  }
-}
-
-// Bug 1914055 - Layout experiment: logo/search spacing
-.layout-variant-a.has-weather.no-search,
-.layout-variant-b.has-weather.no-search {
-  .outer-wrapper {
-    padding-top: 24px;
-  }
-}
-
-.no-search.layout-variant-b,
-.layout-variant-b {
-  .weather {
-    position: absolute;
-    inset-inline-start: auto;
-    inset-inline-end: 40px;
-    inset-block-start: 40px;
-    margin-block-start: 0;
-
-    @media (min-width: $break-point-layout-variant) {
-      inset-inline-end: 20px;
-    }
-
-    @media (min-width: $break-point-large) {
-      inset-inline-end: 40px;
-    }
-
-    .weatherSponsorText {
-      float: inline-end;
-
-      span {
-        inset-inline-end: 0;
-      }
-    }
-
-    .context-menu {
-      inset-inline-end: 100%;
-      inset-inline-start: auto;
-      margin-inline-end: 5px;
-    }
-  }
-}
-
 // Bug 1959189 - Show mobile QR code modal toggle next to weather widget
 .has-mobile-download-promo {
-  $mobile-download-promo-width: 32px;
-  // No Variant Layout, Var A Layout
-  .weather, &.layout-variant-a .weather {
-    // Default spacing (--space-xlarge) + width of .mobile-download-promo (32px) + gap
-    @media (min-width: $break-point-medium) {
-      inset-inline-start: calc($mobile-download-promo-width + var(--space-xxlarge));
-    }
-  }
+  --mobile-download-promo-width: var(--space-xxlarge);
 
-  &.layout-variant-b .weather {
-    // Var B: width of .mobile-download-promo (32px) + gap
+  .weather {
     @media (min-width: $break-point-medium) {
-      inset-inline-start: auto;
-      inset-inline-end: calc($mobile-download-promo-width + var(--space-medium));
+      inset-inline-end: calc(var(--mobile-download-promo-width) + var(--space-medium));
     }
 
-    // Var B offset (40px) + width of .mobile-download-promo (32px) + gap
     @media (min-width: $break-point-layout-variant) {
-      inset-inline-end: calc(40px + $mobile-download-promo-width + var(--space-medium));
+      inset-inline-end: calc(var(--space-xxlarge) + var(--mobile-download-promo-width) + var(--space-medium));
     }
   }
 
   // Layout when search has been turned off. It will show one breakpoint later than `has-search`
-  &.layout-variant-b.no-search .weather {
-    // Var B offset (40px) + width of .mobile-download-promo (32px) + gap
+  &.no-search .weather {
     @media (min-width: $break-point-large) {
-      inset-inline-end: calc(40px + $mobile-download-promo-width + var(--space-medium));
-    }
-  }
-}
-
-.no-search.layout-variant-b {
-  .weather {
-    inset-inline-end: 20px;
-
-    @media (min-width: $break-point-small) {
-      inset-inline-end: 40px;
-    }
-
-    @media (min-width: $break-point-layout-variant) {
-      inset-inline-end: 20px;
-    }
-
-    @media (min-width: $break-point-large) {
-      inset-inline-end: 40px;
+      inset-inline-end: calc(var(--space-xxlarge) + var(--mobile-download-promo-width) + var(--space-medium));
     }
   }
 }
 
 // Edge case: users with weather enabled/search enabled
 .has-weather.has-search {
-  .outer-wrapper:not(.only-search) {
-    padding-top: 0;
-
-    @media (min-width: $break-point-medium) {
-      padding-top: 30px;
-    }
-  }
-
   // Edge case: medium screens where we hide the weather icon and
   // detail info row for overlap issues
   .weatherDetailedSummaryRow {
@@ -269,38 +181,17 @@
   }
 }
 
-// Bug 1914055 - Layout experiment: logo/search spacing
-.layout-variant-a.has-weather.has-search,
-.layout-variant-b.has-weather.has-search {
-  .outer-wrapper:not(.only-search) {
-    padding-top: 24px;
-  }
-}
-
 // Unavailable / Error State
 .weatherNotAvailable {
   font-size: var(--newtab-weather-content-font-size);
-  display: flex;
   align-items: center;
   border-radius: var(--border-radius-medium);
   height: 52px;
   max-width: 205px;
+  display: none;
 
-  // Bug 1915727 - Layout experiment: hide error message on smallest breakpoint
-  .layout-variant-a & {
-    display: none;
-
-    @media (min-width: $break-point-medium) {
-      display: flex
-    }
-  }
-
-  .layout-variant-b & {
-    display: none;
-
-    @media (min-width: $break-point-large) {
-      display: flex
-    }
+  @media (min-width: $break-point-large) {
+    display: flex
   }
 
   &:hover {
@@ -343,7 +234,6 @@
   flex-wrap: nowrap;
   align-items: stretch;
   border-radius: var(--border-radius-medium);
-  overflow: hidden;
 
   &:hover, &:focus-within {
     ~ .weatherSponsorText {
@@ -351,8 +241,14 @@
     }
   }
 
-  &:focus-within {
-    overflow: visible;
+  &:has(.staticWeatherInfo) {
+    &:hover {
+      box-shadow: none;
+
+      ~ .weatherSponsorText {
+        visibility: hidden;
+      }
+    }
   }
 
   &:hover {
@@ -369,13 +265,99 @@
   visibility: hidden;
   font-size: var(--newtab-weather-sponsor-font-size);
   color: var(--newtab-contextual-text-primary-color);
+  float: inline-end;
 
   // Contrast fix for users who have wallpapers set
   @include wallpaper-contrast-fix;
 
   span {
     color: var(--text-color-deemphasized);
+    inset-inline-end: 0;
   }
+}
+
+.weatherOptIn {
+  position: absolute;
+  inset-block-end: calc(var(--space-medium) * -1.5);
+  inset-inline-start: calc(var(--space-xxlarge) * -9);
+
+  dialog {
+    background: var(--newtab-background-color-secondary);
+    border: 1px solid var(--border-color-card);
+    border-radius: var(--border-radius-medium);
+    box-shadow: var(--box-shadow-card);
+    display: flex;
+    width: 332px;
+
+    .weatherOptInImg {
+      -webkit-mask: url('chrome://browser/skin/weather/mostly-sunny.svg') no-repeat center;
+      mask: url('chrome://browser/skin/weather/mostly-sunny.svg') no-repeat center;
+      background-color: var(--button-icon-fill);
+      mask-size: cover;
+      margin-inline-end: var(--space-medium);
+      height: var(--icon-size-xlarge);
+      width: var(--icon-size-xlarge);
+    }
+
+    &:focus-visible {
+      outline: var(--focus-outline);
+
+      &::after {
+        border-block-end: var(--focus-outline);
+        border-inline-end: var(--focus-outline);
+      }
+    }
+  }
+
+  dialog .weatherOptInContent {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+
+    h3 {
+      font-size: var(--button-font-size);
+      font-weight: var(--heading-font-weight);
+      margin-block: 0 var(--space-medium);
+    }
+
+    moz-button-group {
+      align-self: flex-end;
+
+      moz-button:first-of-type {
+        margin-inline-end: var(--space-small);
+      }
+    }
+  }
+
+  @media (min-width: $break-point-large) {
+    inset-block-end: calc(var(--space-medium) * -1);
+    inset-inline-start: calc(var(--space-xxlarge) * -5.5);
+  }
+}
+
+// Arrow pointed upwards from the right side of the dialog
+dialog {
+  &::after {
+    content: '';
+    position: absolute;
+    inset-block-start: -9%;
+    inset-inline-end: 5%;
+    transform: translateX(-50%) rotate(225deg);
+    height: 16px;
+    width: 16px;
+    background: var(--newtab-background-color-secondary);
+    box-shadow: 4px 4px 6px -2px var(--box-shadow-card);
+    border-inline-end: 1px solid var(--border-color-card);
+    border-block-end: 1px solid var(--border-color-card);
+  }
+
+  &:dir(rtl)::after {
+    border-inline-start: 1px solid var(--border-color-card);
+    border-block-end: 1px solid var(--border-color-card);
+    border-inline-end: none;
+    inset-inline-end: 10%;
+  }
+
 }
 
 .weatherInfoLink, .weatherButtonContextMenuWrapper {
@@ -395,10 +377,6 @@
     &:active {
       background-color: var(--button-background-color-ghost-active);
     }
-  }
-
-  &:focus-visible {
-    outline: var(--focus-outline);
   }
 
   // Bug 1908010 - This overwrites the design system color because of a
@@ -430,7 +408,7 @@
   border-end-end-radius: 0;
   border-end-start-radius: var(--border-radius-medium);
   text-decoration: none;
-  color: var(--text-color);;
+  color: var(--text-color);
   min-width: 130px;
   max-width: 190px;
   text-overflow: ellipsis;
@@ -447,12 +425,31 @@
 
   &:focus-visible {
     border-radius: var(--border-radius-medium);
+    outline: var(--focus-outline);
+    z-index: 1;
 
     ~ .weatherButtonContextMenuWrapper {
       &::after {
         background-color: transparent
       }
     }
+  }
+}
+
+.weatherInfoLink.staticWeatherInfo {
+  .weatherIcon {
+    filter: opacity(60%);
+  }
+
+  .weatherText {
+    color: var(--text-color-disabled)
+  }
+
+  &:hover,
+  &:active {
+    box-shadow: none;
+    cursor: default;
+    background-color: var(--newtab-weather-background-color);
   }
 }
 
@@ -471,7 +468,7 @@
   &::after {
     content: '';
     inset-inline-start: 0;
-    top: 10px;
+    inset-block-start: var(--space-small);
     height: calc(100% - 20px);
     width: 1px;
     background-color: var(--newtab-button-static-background);
@@ -486,8 +483,9 @@
     }
   }
 
-  &:focus-visible {
+  &:has(:focus-visible) {
     border-radius: var(--border-radius-medium);
+    outline: var(--focus-outline);
 
     &::after {
       background-color: transparent
@@ -509,6 +507,10 @@
   border: 0;
   appearance: none;
   min-width: var(--size-item-large);
+
+  &:focus {
+    outline: none;
+  }
 }
 
 .weatherText {
@@ -524,7 +526,13 @@
 
 .weatherForecastRow {
   text-transform: uppercase;
-  font-weight: var(--font-weight-bold);
+
+  /**
+   * @backward-compat { version 146 }
+   *
+   * Replace this with `--font-weight-semibold` once 146 hits release.
+   */
+  font-weight: var(--heading-font-weight);
 }
 
 .weatherCityRow {
@@ -592,22 +600,18 @@
 
   &.iconId1 {
     content: url('chrome://browser/skin/weather/sunny.svg');
-    // height: var(--size-item-large);
   }
 
   &.iconId2 {
     content: url('chrome://browser/skin/weather/mostly-sunny.svg');
-    // height: var(--size-item-large);
   }
 
   &:is(.iconId3, .iconId4, .iconId6) {
     content: url('chrome://browser/skin/weather/partly-sunny.svg');
-    // height: var(--size-item-large);
   }
 
   &.iconId5 {
     content: url('chrome://browser/skin/weather/hazy-sunshine.svg');
-    // height: var(--size-item-large);
   }
 
   &:is(.iconId7, .iconId8) {
@@ -624,7 +628,6 @@
 
   &:is(.iconId13, .iconId14) {
     content: url('chrome://browser/skin/weather/mostly-cloudy-with-showers.svg');
-    // height: var(--size-item-large);
   }
 
   &.iconId15 {
@@ -724,14 +727,14 @@
     -moz-context-properties: fill;
     fill: var(--icon-color);
     position: absolute;
-    top: 50%;
+    inset-block-start: 50%;
     transform: translateY(-50%);
-    inset-inline-start: 18px;
+    inset-inline-start: var(--space-large);
   }
 
   .close-icon {
     position: absolute;
-    top: 50%;
+    inset-block-start: 50%;
     transform: translateY(-50%);
     inset-inline-end: var(--space-medium);
 
@@ -743,22 +746,19 @@
   input {
     border-radius: var(--border-radius-medium);
     background-color: light-dark(var(--color-white), var(--newtab-background-color-secondary));
-    padding-block: 8px;
-    padding-inline: 30px;
-    border: $border-primary;
+    padding: var(--space-small) var(--space-xxlarge);
+    border: 1px solid var(--border-color);
 
     &:focus-visible {
-      outline: 2px solid var(--focus-outline-color);
+      outline: var(--focus-outline);
     }
   }
 }
 
 // Bug 1914193 - Only show the temperature on the smallest breakpoint and
 // return to default view on medium breakpoints
-.has-weather.has-search.layout-variant-a,
-.has-weather.has-search.layout-variant-b,
-.layout-variant-a,
-.layout-variant-b  {
+.has-weather.has-search,
+.has-weather  {
   .weatherCityRow,
   .weatherButtonContextMenuWrapper {
     display: none;

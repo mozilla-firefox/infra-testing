@@ -264,8 +264,13 @@ static ErrorObject* CreateErrorObject(JSContext* cx, const CallArgs& args,
 
   // Don't interpret the two parameters following the message parameter as the
   // non-standard fileName and lineNumber arguments when we have an options
-  // object argument.
-  bool hasOptions = args.get(messageArg + 1).isObject();
+  // object argument and the exception type is not SuppressedError.
+  bool hasOptions =
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+      args.get(messageArg + 1).isObject() && exnType != JSEXN_SUPPRESSEDERR;
+#else
+      args.get(messageArg + 1).isObject();
+#endif
 
   Rooted<mozilla::Maybe<Value>> cause(cx, mozilla::Nothing());
   if (hasOptions) {
@@ -764,30 +769,6 @@ static bool FindErrorInstanceOrPrototype(JSContext* cx, HandleObject obj,
 
 static MOZ_ALWAYS_INLINE bool IsObject(HandleValue v) { return v.isObject(); }
 
-// This is a helper method for telemetry to provide feedback for
-// proposal-error-stack-accessor and can be removed (Bug 1943623).
-// It is based upon the implementation of exn_isError.
-static bool HasErrorDataSlot(JSContext* cx, HandleObject obj) {
-  JSObject* unwrappedObject = CheckedUnwrapStatic(obj);
-  if (!unwrappedObject) {
-    return false;
-  }
-
-  if (JS_IsDeadWrapper(unwrappedObject)) {
-    return false;
-  }
-
-  if (unwrappedObject->is<ErrorObject>()) {
-    return true;
-  }
-  if (unwrappedObject->getClass()->isDOMClass()) {
-    return cx->runtime()->DOMcallbacks->instanceClassIsError(
-        unwrappedObject->getClass());
-  }
-
-  return false;
-}
-
 /* static */
 bool js::ErrorObject::getStack(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
@@ -798,14 +779,6 @@ bool js::ErrorObject::getStack(JSContext* cx, unsigned argc, Value* vp) {
 /* static */
 bool js::ErrorObject::getStack_impl(JSContext* cx, const CallArgs& args) {
   RootedObject thisObj(cx, &args.thisv().toObject());
-
-  // This telemetry to provide feedback for proposal-error-stack-accessor and
-  // can later be removed (Bug 1943623).
-  cx->runtime()->setUseCounter(cx->global(), JSUseCounter::ERRORSTACK_GETTER);
-  if (!HasErrorDataSlot(cx, thisObj)) {
-    cx->runtime()->setUseCounter(cx->global(),
-                                 JSUseCounter::ERRORSTACK_GETTER_NO_ERRORDATA);
-  }
 
   RootedObject obj(cx);
   if (!FindErrorInstanceOrPrototype(cx, thisObj, &obj)) {
@@ -864,20 +837,8 @@ bool js::ErrorObject::setStack_impl(JSContext* cx, const CallArgs& args) {
   if (!args.requireAtLeast(cx, "(set stack)", 1)) {
     return false;
   }
-  RootedValue val(cx, args[0]);
 
-  // This telemetry to provide feedback for proposal-error-stack-accessor and
-  // can later be removed (Bug 1943623).
-  cx->runtime()->setUseCounter(cx->global(), JSUseCounter::ERRORSTACK_SETTER);
-  if (!val.isString()) {
-    cx->runtime()->setUseCounter(cx->global(),
-                                 JSUseCounter::ERRORSTACK_SETTER_NONSTRING);
-  }
-  if (!HasErrorDataSlot(cx, thisObj)) {
-    cx->runtime()->setUseCounter(cx->global(),
-                                 JSUseCounter::ERRORSTACK_SETTER_NO_ERRORDATA);
-  }
-  return DefineDataProperty(cx, thisObj, cx->names().stack, val);
+  return DefineDataProperty(cx, thisObj, cx->names().stack, args[0]);
 }
 
 void js::ErrorObject::setFromWasmTrap() {
@@ -887,6 +848,14 @@ void js::ErrorObject::setFromWasmTrap() {
 }
 
 JSString* js::ErrorToSource(JSContext* cx, HandleObject obj) {
+  AutoCycleDetector detector(cx, obj);
+  if (!detector.init()) {
+    return nullptr;
+  }
+  if (detector.foundCycle()) {
+    return NewStringCopyZ<CanGC>(cx, "{}");
+  }
+
   RootedValue nameVal(cx);
   RootedString name(cx);
   if (!GetProperty(cx, obj, obj, cx->names().name, &nameVal) ||
@@ -908,6 +877,17 @@ JSString* js::ErrorToSource(JSContext* cx, HandleObject obj) {
     return nullptr;
   }
 
+  RootedValue errorsVal(cx);
+  RootedString errors(cx);
+  bool isAggregateError = obj->is<ErrorObject>() &&
+                          obj->as<ErrorObject>().type() == JSEXN_AGGREGATEERR;
+  if (isAggregateError) {
+    if (!GetProperty(cx, obj, obj, cx->names().errors, &errorsVal) ||
+        !(errors = ValueToSource(cx, errorsVal))) {
+      return nullptr;
+    }
+  }
+
   RootedValue linenoVal(cx);
   uint32_t lineno;
   if (!GetProperty(cx, obj, obj, cx->names().lineNumber, &linenoVal) ||
@@ -918,6 +898,12 @@ JSString* js::ErrorToSource(JSContext* cx, HandleObject obj) {
   JSStringBuilder sb(cx);
   if (!sb.append("(new ") || !sb.append(name) || !sb.append("(")) {
     return nullptr;
+  }
+
+  if (isAggregateError) {
+    if (!sb.append(errors) || !sb.append(", ")) {
+      return nullptr;
+    }
   }
 
   if (!sb.append(message)) {

@@ -9,6 +9,7 @@
 
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/dom/CloseWatcherBinding.h"
+#include "mozilla/dom/DebuggerNotificationBinding.h"
 
 namespace mozilla::dom {
 
@@ -17,6 +18,11 @@ class CloseWatcher : public DOMEventTargetHelper, public AbortFollower {
   NS_DECL_ISUPPORTS_INHERITED
 
   nsIGlobalObject* GetParentObject() const { return GetOwnerGlobal(); }
+
+  mozilla::Maybe<EventCallbackDebuggerNotificationType>
+  GetDebuggerNotificationType() const override {
+    return mozilla::Some(EventCallbackDebuggerNotificationType::Closewatcher);
+  }
 
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
@@ -41,12 +47,16 @@ class CloseWatcher : public DOMEventTargetHelper, public AbortFollower {
 
   MOZ_CAN_RUN_SCRIPT void Close();
 
+  void AddToWindowsCloseWatcherManager();
+
   void Destroy();
 
   // AbortFollower
   void RunAbortAlgorithm() override;
 
   bool IsActive() const;
+
+  void SetEnabled(bool aEnabled) { mEnabled = aEnabled; }
 
   void DisconnectFromOwner() override {
     Destroy();
@@ -57,6 +67,10 @@ class CloseWatcher : public DOMEventTargetHelper, public AbortFollower {
   virtual ~CloseWatcher() = default;
 
   bool mIsRunningCancelAction = false;
+
+  // https://html.spec.whatwg.org/multipage/interaction.html#create-close-watcher-getenabledstate
+  // HTMLDialogElement can enable/disable close watcher using ClosedBy=none
+  bool mEnabled = true;
 };
 
 }  // namespace mozilla::dom

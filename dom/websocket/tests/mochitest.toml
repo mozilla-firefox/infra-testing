@@ -1,7 +1,7 @@
 [DEFAULT]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
 ]
 support-files = [
   "!/dom/events/test/event_leak_utils.js",
@@ -28,6 +28,9 @@ support-files = [
 
 ["test_event_listener_leaks.html"]
 support-files = ["file_websocket_bigBlob_wsh.py"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug", # Bug 1879751
+]
 
 ["test_websocket1.html"]
 
@@ -96,7 +99,9 @@ support-files = ["websocket1.worker.js"]
 
 ["test_worker_websocket2.html"]
 support-files = ["websocket2.worker.js"]
-skip-if = ["socketprocess_networking"] # bug 1787044
+skip-if = [
+  "socketprocess_networking", # bug 1787044
+]
 
 ["test_worker_websocket3.html"]
 support-files = ["websocket3.worker.js"]

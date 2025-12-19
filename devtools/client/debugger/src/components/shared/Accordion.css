@@ -60,7 +60,9 @@
     display: inline-block;
     width: 10px;
     height: 10px;
+    flex-shrink: 0;
     background-image: url(chrome://devtools/content/debugger/images/arrow.svg);
+    background-repeat: no-repeat;
     background-size: contain;
     -moz-context-properties: fill;
     fill: var(--dbg-accordion-twisty-color);
@@ -93,11 +95,7 @@
   height: 16px;
 }
 
-.accordion ._header .header-buttons button::-moz-focus-inner {
-  border: none;
-}
-
-.accordion ._header .header-buttons button .img {
+.accordion ._header .header-buttons button .dbg-img {
   display: block;
 }
 

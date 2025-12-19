@@ -70,6 +70,7 @@ import org.mozilla.geckoview.Autofill;
 import org.mozilla.geckoview.ContentBlocking;
 import org.mozilla.geckoview.ExperimentDelegate;
 import org.mozilla.geckoview.GeckoDisplay;
+import org.mozilla.geckoview.GeckoPreferenceController;
 import org.mozilla.geckoview.GeckoResult;
 import org.mozilla.geckoview.GeckoRuntime;
 import org.mozilla.geckoview.GeckoRuntime.ActivityDelegate;
@@ -988,6 +989,14 @@ public class GeckoSessionTestRule implements TestRule {
   /** Sets an experiment delegate on the runtime creator. */
   public void setExperimentDelegate(final ExperimentDelegate delegate) {
     RuntimeCreator.setExperimentDelegate(delegate);
+  }
+
+  /**
+   * Convenience method to facilitate setting a preference delegate in order to use the test harness
+   * delegate callback framework.
+   */
+  public void setPreferenceDelegate(final GeckoPreferenceController.Observer.Delegate delegate) {
+    RuntimeCreator.setGeckoPreferenceDelegate(delegate);
   }
 
   public @Nullable GeckoDisplay getDisplay() {
@@ -2263,7 +2272,7 @@ public class GeckoSessionTestRule implements TestRule {
 
     /**
      * When doContinuallyPost is set to true, @{@link #postLocation()} will post the location to the
-     * location manager every 3s. When set to false, @{@link #postLocation()} will only post the
+     * location manager every 2s. When set to false, @{@link #postLocation()} will only post the
      * location once. Purpose is to prevent the location from becoming stale.
      *
      * @param doContinuallyPost setting for continually posting the location after calling @{@link
@@ -2279,14 +2288,14 @@ public class GeckoSessionTestRule implements TestRule {
      */
     public void stopPostingLocation() {
       if (executor != null) {
-        executor.shutdown();
+        executor.shutdownNow();
         executor = null;
       }
     }
 
     /**
      * Posts the set location to the system location manager. If @{@link #doContinuallyPost} is
-     * true, the location will be posted every 3s by an executor, otherwise will post once.
+     * true, the location will be posted every 2s by an executor, otherwise will post once.
      */
     public void postLocation() {
       if (!isActiveTestProvider) {
@@ -2335,7 +2344,7 @@ public class GeckoSessionTestRule implements TestRule {
               }
             },
             0,
-            3,
+            2,
             TimeUnit.SECONDS);
       }
     }
@@ -2531,6 +2540,10 @@ public class GeckoSessionTestRule implements TestRule {
         });
   }
 
+  public void teardownAlertsService(final @NonNull GeckoSession session) {
+    webExtensionApiCall(session, "TeardownAlertsService", null);
+  }
+
   private Object waitForMessage(final WebExtension.Port port, final String id) {
     mPendingResponses.add(port, id);
     UiThreadUtils.waitForCondition(() -> mPendingMessages.containsKey(id), mTimeoutMillis);
@@ -2681,6 +2694,22 @@ public class GeckoSessionTestRule implements TestRule {
   }
 
   /**
+   * Called to clear a user set value from a specific preference. This will, in effect, reset the
+   * value to the default value. If no default value exists the preference will cease to exist.
+   *
+   * <p>See nsIPrefBranch.idl for more details.
+   *
+   * @param pref Pref name.
+   */
+  public void clearUserPref(final @NonNull String pref) {
+    webExtensionApiCall(
+        "ClearUserPref",
+        args -> {
+          args.put("pref", pref);
+        });
+  }
+
+  /**
    * Gets the color of a link for a given selector.
    *
    * @param selector Selector that matches the link
@@ -2798,6 +2827,33 @@ public class GeckoSessionTestRule implements TestRule {
   /** Checks if fission is running. */
   public boolean isFissionRunning() {
     return (Boolean) webExtensionApiCall("IsFissionRunning", null);
+  }
+
+  /** Simulate user gesture activation */
+  public void notifyUserGestureActivation(final GeckoSession session) {
+    webExtensionApiCall(session, "NotifyUserGestureActivation", null);
+  }
+
+  /**
+   * Gets all the permission names defined in the WebExtensions API JSONSchema given an array of
+   * type names.
+   *
+   * @param typeNames JSONSchema type names to retrieve permission names for.
+   * @return JSONArray array of the permission names found.
+   */
+  public JSONArray getWebExtensionsSchemaPermissionNames(
+      final GeckoSession session, final String[] typeNames) {
+    return (JSONArray)
+        webExtensionApiCall(
+            session,
+            "GetWebExtensionSchemaPermissionNames",
+            args -> {
+              JSONArray jsonTypeNames = new JSONArray();
+              for (String str : typeNames) {
+                jsonTypeNames.put(str);
+              }
+              args.put("typeNames", jsonTypeNames);
+            });
   }
 
   private Object webExtensionApiCall(

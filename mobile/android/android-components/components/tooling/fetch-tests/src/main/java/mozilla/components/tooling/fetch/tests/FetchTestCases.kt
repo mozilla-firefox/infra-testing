@@ -27,7 +27,6 @@ import org.junit.Assert.fail
 import org.junit.Test
 import java.io.File
 import java.io.IOException
-import java.lang.Exception
 import java.net.SocketTimeoutException
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -85,7 +84,7 @@ abstract class FetchTestCases {
                     headers = MutableHeaders()
                         .set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
                         .set("Accept-Encoding", "gzip, deflate")
-                        .set("Accept-Language", "en-US,en;q=0.5")
+                        .set("Accept-Language", "en-US,en;q=0.9")
                         .set("Connection", "keep-alive")
                         .set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.14; rv:65.0) Gecko/20100101 Firefox/65.0"),
                 ),
@@ -114,7 +113,7 @@ abstract class FetchTestCases {
             )
 
             assertEquals(
-                "en-US,en;q=0.5",
+                "en-US,en;q=0.9",
                 request.headers.get("Accept-Language"),
             )
 
@@ -512,7 +511,11 @@ abstract class FetchTestCases {
                 server.block(client)
             }
         } finally {
-            try { server.shutdown() } catch (e: IOException) {}
+            try {
+                server.shutdown()
+            } catch (e: IOException) {
+                // Ignore exception
+            }
         }
     }
 

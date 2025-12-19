@@ -13,7 +13,6 @@
 #include "imgIContainer.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
 #include "nsColor.h"
 #include "nsContentUtils.h"
@@ -109,8 +108,7 @@ class gfxUtils {
                                const mozilla::gfx::SurfaceFormat aFormat,
                                mozilla::gfx::SamplingFilter aSamplingFilter,
                                uint32_t aImageFlags = imgIContainer::FLAG_NONE,
-                               gfxFloat aOpacity = 1.0,
-                               bool aUseOptimalFillOp = true);
+                               gfxFloat aOpacity = 1.0);
 
   /**
    * Clip aContext to the region aRegion.
@@ -287,6 +285,13 @@ class gfxUtils {
   CopySurfaceToDataSourceSurfaceWithFormat(SourceSurface* aSurface,
                                            SurfaceFormat aFormat);
 
+  // Scales a SourceSurface to the new requested size.
+  //
+  // Asserts when the requested size is equal to the current size of the
+  // surface.
+  static already_AddRefed<SourceSurface> ScaleSourceSurface(
+      SourceSurface& aSurface, const mozilla::gfx::IntSize& aTargetSize);
+
   /**
    * Return a color that can be used to identify a frame with a given frame
    * number. The colors will cycle after sNumFrameColors.  You can query colors
@@ -400,7 +405,8 @@ class gfxUtils {
 
   static mozilla::UniquePtr<uint8_t[]> GetImageBufferWithRandomNoise(
       DataSourceSurface* aSurface, bool aIsAlphaPremultiplied,
-      nsICookieJarSettings* aCookieJarSettings, int32_t* outFormat);
+      nsICookieJarSettings* aCookieJarSettings, nsIPrincipal* aPrincipal,
+      int32_t* outFormat);
 
   static nsresult GetInputStream(DataSourceSurface* aSurface,
                                  bool aIsAlphaPremultiplied,
@@ -411,7 +417,8 @@ class gfxUtils {
   static nsresult GetInputStreamWithRandomNoise(
       DataSourceSurface* aSurface, bool aIsAlphaPremultiplied,
       const char* aMimeType, const nsAString& aEncoderOptions,
-      nsICookieJarSettings* aCookieJarSettings, nsIInputStream** outStream);
+      nsICookieJarSettings* aCookieJarSettings, nsIPrincipal* aPrincipal,
+      nsIInputStream** outStream);
 
   static void RemoveShaderCacheFromDiskIfNecessary();
 

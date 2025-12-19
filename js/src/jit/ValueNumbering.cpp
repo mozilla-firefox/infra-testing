@@ -56,7 +56,6 @@ bool ValueNumberer::VisibleValues::ValueHasher::match(Key k, Lookup l) {
 
   bool congruent =
       k->congruentTo(l);  // Ask the values themselves what they think.
-  MOZ_ASSERT_IF(congruent, k->wasmRefType() == l->wasmRefType());
 #ifdef JS_JITSPEW
   if (congruent != l->congruentTo(k)) {
     JitSpew(
@@ -119,9 +118,15 @@ bool ValueNumberer::VisibleValues::has(const MDefinition* def) const {
 // Call MDefinition::justReplaceAllUsesWith, and add some GVN-specific asserts.
 static void ReplaceAllUsesWith(MDefinition* from, MDefinition* to) {
   MOZ_ASSERT(from != to, "GVN shouldn't try to replace a value with itself");
-  MOZ_ASSERT(from->type() == to->type(), "Def replacement has different type");
+  MOZ_ASSERT(from->type() == to->type(),
+             "Def replacement has different MIR type");
   MOZ_ASSERT(!to->isDiscarded(),
              "GVN replaces an instruction by a removed instruction");
+
+  // Update the node's wasm ref type to the LUB of the two nodes being combined.
+  // This ensures that any type-based optimizations downstream remain correct.
+  to->setWasmRefType(wasm::MaybeRefType::leastUpperBound(from->wasmRefType(),
+                                                         to->wasmRefType()));
 
   // We don't need the extra setting of ImplicitlyUsed flags that the regular
   // replaceAllUsesWith does because we do it ourselves.
@@ -777,6 +782,18 @@ bool ValueNumberer::visitDefinition(MDefinition* def) {
       def->block()->insertAfter(def->toInstruction(), sim->toInstruction());
     }
 
+    // Get rid of flags that are meaningless for wasm and that hinder dead code
+    // removal below.  Do this separately for |def| and |sim| to guard against
+    // future scenarios where they come from different (JS-vs-wasm) worlds.
+    // See bug 1969987.  This is an interim fix to a larger problem, as
+    // described in bug 1973635.
+    if (def->isGuardRangeBailouts() && def->block()->info().compilingWasm()) {
+      def->setNotGuardRangeBailoutsUnchecked();
+    }
+    if (sim->isGuardRangeBailouts() && sim->block()->info().compilingWasm()) {
+      sim->setNotGuardRangeBailoutsUnchecked();
+    }
+
 #ifdef JS_JITSPEW
     JitSpew(JitSpew_GVN, "      Folded %s%u to %s%u", def->opName(), def->id(),
             sim->opName(), sim->id());
@@ -784,8 +801,8 @@ bool ValueNumberer::visitDefinition(MDefinition* def) {
     MOZ_ASSERT(!sim->isDiscarded());
     ReplaceAllUsesWith(def, sim);
 
-    // The node's foldsTo said |def| can be replaced by |rep|. If |def| is a
-    // guard, then either |rep| is also a guard, or a guard isn't actually
+    // The node's foldsTo said |def| can be replaced by |sim|. If |def| is a
+    // guard, then either |sim| is also a guard, or a guard isn't actually
     // needed, so we can clear |def|'s guard flag and let it be discarded.
     def->setNotGuardUnchecked();
 

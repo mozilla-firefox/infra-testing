@@ -1,9 +1,23 @@
+/* Any copyright is dedicated to the Public Domain.
+ * https://creativecommons.org/publicdomain/zero/1.0/ */
+
+"use strict";
+
+add_setup(async function () {
+  /* This test exercises the sidebar switcher -
+  which is only available under the legacy sidebar. */
+  await SpecialPowers.pushPrefEnv({
+    set: [["sidebar.revamp", false]],
+  });
+});
+
 registerCleanupFunction(() => {
   SidebarController.hide();
 });
 
 /**
  * Helper function that opens a sidebar switcher panel popup menu
+ *
  * @returns Promise that resolves when the switcher panel popup is shown
  *          without any action from a user/test
  */
@@ -22,6 +36,7 @@ function showSwitcherPanelPromise() {
 
 /**
  * Helper function that waits for a sidebar switcher panel's "popupshown" event
+ *
  * @returns Promise which resolves when the popup menu is opened
  */
 async function waitForSwitcherPopupShown() {
@@ -35,7 +50,8 @@ async function waitForSwitcherPopupShown() {
  * Helper function that sends a mouse click to a specific menu item or a key
  * event to a active menu item of the sidebar switcher menu popup. Provide a
  * querySelector parameter when a click behavior is needed.
- * @param {String} [querySelector=null]  An HTML attribute of the menu item
+ *
+ * @param {string} [querySelector=null]  An HTML attribute of the menu item
  *                                       to be clicked
  * @returns Promise that resolves when both the menu popup is hidden and
  *          the sidebar itself is focused
@@ -57,8 +73,9 @@ function pickSwitcherMenuitem(querySelector = null) {
 /**
  * Helper function to test a key handling of sidebar menu popup items used to
  * access a specific sidebar
- * @param {String} key           Event.key to open the switcher menu popup
- * @param {String} sidebarTitle  Title of the sidebar that is to be activated
+ *
+ * @param {string} key           Event.key to open the switcher menu popup
+ * @param {string} sidebarTitle  Title of the sidebar that is to be activated
  *                               during the test (capitalized one word versions),
  *                               i.e. "History" or "Tabs"
  */

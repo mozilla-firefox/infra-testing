@@ -8,26 +8,27 @@
 #define nsFrameSelection_h___
 
 #include <stdint.h>
-#include "mozilla/intl/BidiEmbeddingLevel.h"
+
+#include "WordMovementType.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/CaretAssociationHint.h"
 #include "mozilla/CompactPair.h"
 #include "mozilla/EnumSet.h"
 #include "mozilla/EventForwards.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/dom/Highlight.h"
-#include "mozilla/dom/Selection.h"
 #include "mozilla/Result.h"
 #include "mozilla/TextRange.h"
 #include "mozilla/UniquePtr.h"
-#include "nsIFrame.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/Highlight.h"
+#include "mozilla/dom/Selection.h"
+#include "mozilla/intl/BidiEmbeddingLevel.h"
+#include "nsBidiPresUtils.h"
 #include "nsIContent.h"
+#include "nsIFrame.h"
 #include "nsISelectionController.h"
 #include "nsISelectionListener.h"
 #include "nsITableCellLayout.h"
-#include "WordMovementType.h"
-#include "nsBidiPresUtils.h"
 
 class nsRange;
 
@@ -42,7 +43,14 @@ struct SelectionDetails {
       : mStart(), mEnd(), mSelectionType(mozilla::SelectionType::eInvalid) {
     MOZ_COUNT_CTOR(SelectionDetails);
   }
-  MOZ_COUNTED_DTOR(SelectionDetails)
+  ~SelectionDetails() {
+    MOZ_COUNT_DTOR(SelectionDetails);
+    // Destroy the linked list without recursion.
+    auto next = std::move(mNext);
+    while (next) {
+      next = std::move(next->mNext);
+    }
+  }
 
   int32_t mStart;
   int32_t mEnd;
@@ -423,12 +431,13 @@ class nsFrameSelection final {
    * @param aContent is the content asking
    * @param aContentOffset is the starting content boundary
    * @param aContentLength is the length of the content piece asking
-   * @param aSlowCheck will check using slow method with no shortcuts
+   * @param aIgnoreSelection is Yes, this won't return selection details about
+   * the normal selection.
    */
-  mozilla::UniquePtr<SelectionDetails> LookUpSelection(nsIContent* aContent,
-                                                       int32_t aContentOffset,
-                                                       int32_t aContentLength,
-                                                       bool aSlowCheck) const;
+  enum class IgnoreNormalSelection : bool { No, Yes };
+  mozilla::UniquePtr<SelectionDetails> LookUpSelection(
+      nsIContent* aContent, int32_t aContentOffset, int32_t aContentLength,
+      IgnoreNormalSelection aIgnoreNormalSelection) const;
 
   /**
    * Sets the drag state to aState for resons of drag state.
@@ -489,6 +498,9 @@ class nsFrameSelection final {
    */
   MOZ_CAN_RUN_SCRIPT void AddHighlightSelection(
       nsAtom* aHighlightName, mozilla::dom::Highlight& aHighlight);
+
+  void RepaintHighlightSelection(nsAtom* aHighlightName);
+
   /**
    * @brief Removes the Highlight selection identified by `aHighlightName`.
    */

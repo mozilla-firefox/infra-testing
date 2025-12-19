@@ -6,13 +6,13 @@
 
 #include "DAV1DDecoder.h"
 
-#include "gfxUtils.h"
 #include "ImageContainer.h"
+#include "PerformanceRecorder.h"
+#include "VideoUtils.h"
+#include "gfxUtils.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/TaskQueue.h"
 #include "nsThreadUtils.h"
-#include "PerformanceRecorder.h"
-#include "VideoUtils.h"
 
 #undef LOG
 #define LOG(arg, ...)                                                  \
@@ -20,6 +20,7 @@
             ##__VA_ARGS__)
 
 namespace mozilla {
+using layers::BufferRecycleBin;
 
 static int GetDecodingThreadCount(uint32_t aCodedHeight) {
   /**
@@ -67,11 +68,18 @@ DAV1DDecoder::DAV1DDecoder(const CreateDecoderParams& aParams)
       mImageAllocator(aParams.mKnowsCompositor),
       mTrackingId(aParams.mTrackingId),
       mLowLatency(
-          aParams.mOptions.contains(CreateDecoderParams::Option::LowLatency)) {}
+          aParams.mOptions.contains(CreateDecoderParams::Option::LowLatency)),
+      m8bpcOutput(aParams.mOptions.contains(
+          CreateDecoderParams::Option::Output8BitPerChannel)) {
+  if (m8bpcOutput) {
+    m8bpcRecycleBin = MakeRefPtr<BufferRecycleBin>();
+  }
+}
 
 DAV1DDecoder::~DAV1DDecoder() = default;
 
 RefPtr<MediaDataDecoder::InitPromise> DAV1DDecoder::Init() {
+  AUTO_PROFILER_LABEL("DAV1DDecoder::Init", MEDIA_PLAYBACK);
   Dav1dSettings settings;
   dav1d_default_settings(&settings);
   if (mLowLatency) {
@@ -135,12 +143,13 @@ void DAV1DDecoder::ReleaseDataBuffer(const uint8_t* buf) {
     nsresult rv = mTaskQueue->Dispatch(NS_NewRunnableFunction(
         "DAV1DDecoder::ReleaseDataBuffer", std::move(releaseBuffer)));
     MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-    Unused << rv;
+    (void)rv;
   }
 }
 
 RefPtr<MediaDataDecoder::DecodePromise> DAV1DDecoder::InvokeDecode(
     MediaRawData* aSample) {
+  AUTO_PROFILER_LABEL("DAV1DDecoder::InvokeDecode", MEDIA_PLAYBACK);
   MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn());
   MOZ_ASSERT(aSample);
 
@@ -277,14 +286,8 @@ Maybe<gfx::ColorSpace2> DAV1DDecoder::GetColorPrimaries(
 
 Result<already_AddRefed<VideoData>, MediaResult> DAV1DDecoder::ConstructImage(
     const Dav1dPicture& aPicture) {
-  VideoData::YCbCrBuffer b;
-  if (aPicture.p.bpc == 10) {
-    b.mColorDepth = gfx::ColorDepth::COLOR_10;
-  } else if (aPicture.p.bpc == 12) {
-    b.mColorDepth = gfx::ColorDepth::COLOR_12;
-  } else {
-    b.mColorDepth = gfx::ColorDepth::COLOR_8;
-  }
+  VideoData::QuantizableBuffer b;
+  b.mColorDepth = gfx::ColorDepthForBitDepth(aPicture.p.bpc);
 
   b.mYUVColorSpace =
       DAV1DDecoder::GetColorSpace(aPicture, sPDMLog)
@@ -305,18 +308,16 @@ Result<already_AddRefed<VideoData>, MediaResult> DAV1DDecoder::ConstructImage(
   b.mPlanes[1].mSkip = 0;
 
   b.mPlanes[2].mData = static_cast<uint8_t*>(aPicture.data[2]);
-  b.mPlanes[2].mStride = aPicture.stride[1];
+  b.mPlanes[2].mStride = b.mPlanes[1].mStride;
   b.mPlanes[2].mSkip = 0;
 
   // https://code.videolan.org/videolan/dav1d/blob/master/tools/output/yuv.c#L67
   const int ss_ver = aPicture.p.layout == DAV1D_PIXEL_LAYOUT_I420;
   const int ss_hor = aPicture.p.layout != DAV1D_PIXEL_LAYOUT_I444;
 
-  b.mPlanes[1].mHeight = (aPicture.p.h + ss_ver) >> ss_ver;
-  b.mPlanes[1].mWidth = (aPicture.p.w + ss_hor) >> ss_hor;
-
-  b.mPlanes[2].mHeight = (aPicture.p.h + ss_ver) >> ss_ver;
-  b.mPlanes[2].mWidth = (aPicture.p.w + ss_hor) >> ss_hor;
+  b.mPlanes[1].mHeight = b.mPlanes[2].mHeight =
+      (aPicture.p.h + ss_ver) >> ss_ver;
+  b.mPlanes[1].mWidth = b.mPlanes[2].mWidth = (aPicture.p.w + ss_hor) >> ss_hor;
 
   if (ss_ver) {
     b.mChromaSubsampling = gfx::ChromaSubsampling::HALF_WIDTH_AND_HEIGHT;
@@ -356,6 +357,13 @@ Result<already_AddRefed<VideoData>, MediaResult> DAV1DDecoder::ConstructImage(
                                   aPicture.m.timestamp + aPicture.m.duration);
   });
 
+  if (aPicture.p.bpc != 8 && m8bpcOutput) {
+    MediaResult rv = b.To8BitPerChannel(m8bpcRecycleBin);
+    if (NS_FAILED(rv.Code())) {
+      return Result<already_AddRefed<VideoData>, MediaResult>(rv);
+    }
+  }
+
   return VideoData::CreateAndCopyData(
       mInfo, mImageContainer, offset, timecode, duration, b, keyframe, timecode,
       mInfo.ScaledImageRect(aPicture.p.w, aPicture.p.h), mImageAllocator);
@@ -364,6 +372,7 @@ Result<already_AddRefed<VideoData>, MediaResult> DAV1DDecoder::ConstructImage(
 RefPtr<MediaDataDecoder::DecodePromise> DAV1DDecoder::Drain() {
   RefPtr<DAV1DDecoder> self = this;
   return InvokeAsync(mTaskQueue, __func__, [self, this] {
+    AUTO_PROFILER_LABEL("DAV1DDecoder::Drain", MEDIA_PLAYBACK);
     DecodedData results;
     while (true) {
       Result<already_AddRefed<VideoData>, MediaResult> r = GetPicture();
@@ -387,6 +396,7 @@ RefPtr<MediaDataDecoder::DecodePromise> DAV1DDecoder::Drain() {
 RefPtr<MediaDataDecoder::FlushPromise> DAV1DDecoder::Flush() {
   RefPtr<DAV1DDecoder> self = this;
   return InvokeAsync(mTaskQueue, __func__, [this, self]() {
+    AUTO_PROFILER_LABEL("DAV1DDecoder::Flush", MEDIA_PLAYBACK);
     dav1d_flush(self->mContext);
     mPerformanceRecorder.Record(std::numeric_limits<int64_t>::max());
     return FlushPromise::CreateAndResolve(true, __func__);
@@ -396,6 +406,7 @@ RefPtr<MediaDataDecoder::FlushPromise> DAV1DDecoder::Flush() {
 RefPtr<ShutdownPromise> DAV1DDecoder::Shutdown() {
   RefPtr<DAV1DDecoder> self = this;
   return InvokeAsync(mTaskQueue, __func__, [self]() {
+    AUTO_PROFILER_LABEL("DAV1DDecoder::Shutdown", MEDIA_PLAYBACK);
     dav1d_close(&self->mContext);
     return self->mTaskQueue->BeginShutdown();
   });

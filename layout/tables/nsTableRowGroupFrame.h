@@ -5,14 +5,13 @@
 #ifndef nsTableRowGroupFrame_h__
 #define nsTableRowGroupFrame_h__
 
-#include "mozilla/Attributes.h"
-#include "nscore.h"
-#include "nsContainerFrame.h"
+#include "mozilla/WritingModes.h"
 #include "nsAtom.h"
+#include "nsContainerFrame.h"
 #include "nsILineIterator.h"
 #include "nsTArray.h"
 #include "nsTableFrame.h"
-#include "mozilla/WritingModes.h"
+#include "nscore.h"
 
 class nsTableRowFrame;
 namespace mozilla {
@@ -189,7 +188,8 @@ class nsTableRowGroupFrame final : public nsContainerFrame,
    *                       frame and the index is at least aStartLine.
    *                       -1 if the frame cannot be found.
    */
-  int32_t FindLineContaining(nsIFrame* aFrame, int32_t aStartLine = 0) final;
+  int32_t FindLineContaining(const nsIFrame* aFrame,
+                             int32_t aStartLine = 0) final;
 
   /** Find the orginating cell frame on a row that is the nearest to the
    * inline-dir coordinate of aPos.

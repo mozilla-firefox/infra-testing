@@ -6,6 +6,8 @@
 
 #include "QuotaManagerDependencyFixture.h"
 
+#include "DirectoryMetadata.h"
+#include "QuotaManagerTestHelpers.h"
 #include "mozIStorageService.h"
 #include "mozStorageCID.h"
 #include "mozilla/BasePrincipal.h"
@@ -22,7 +24,6 @@
 #include "nsIQuotaRequests.h"
 #include "nsIVariant.h"
 #include "nsScriptSecurityManager.h"
-#include "QuotaManagerTestHelpers.h"
 
 namespace mozilla::dom::quota::test {
 
@@ -272,6 +273,18 @@ void QuotaManagerDependencyFixture::AssertTemporaryOriginNotInitialized(
 }
 
 // static
+void QuotaManagerDependencyFixture::SaveOriginAccessTime(
+    const OriginMetadata& aOriginMetadata) {
+  PerformOnBackgroundThread([aOriginMetadata]() {
+    QuotaManager* quotaManager = QuotaManager::Get();
+    MOZ_RELEASE_ASSERT(quotaManager);
+
+    auto value = Await(quotaManager->SaveOriginAccessTime(aOriginMetadata));
+    MOZ_RELEASE_ASSERT(value.IsResolve());
+  });
+}
+
+// static
 void QuotaManagerDependencyFixture::GetOriginUsage(
     const OriginMetadata& aOriginMetadata, UsageInfo* aResult) {
   ASSERT_TRUE(aResult);
@@ -334,20 +347,25 @@ void QuotaManagerDependencyFixture::ClearStoragesForOrigin(
 }
 
 // static
-void QuotaManagerDependencyFixture::InitializeTemporaryClient(
+void QuotaManagerDependencyFixture::InitializePersistentClient(
     const ClientMetadata& aClientMetadata) {
-  mozilla::ipc::PrincipalInfo principalInfo;
-  ASSERT_NO_FATAL_FAILURE(
-      CreateContentPrincipalInfo(aClientMetadata.mOrigin, principalInfo));
-
-  PerformOnBackgroundThread([persistenceType = aClientMetadata.mPersistenceType,
-                             principalInfo = std::move(principalInfo),
-                             clientType = aClientMetadata.mClientType]() {
+  PerformOnBackgroundThread([aClientMetadata]() {
     QuotaManager* quotaManager = QuotaManager::Get();
     ASSERT_TRUE(quotaManager);
 
-    Await(quotaManager->InitializeTemporaryClient(persistenceType,
-                                                  principalInfo, clientType));
+    Await(quotaManager->InitializePersistentClient(aClientMetadata));
+  });
+}
+
+// static
+void QuotaManagerDependencyFixture::InitializeTemporaryClient(
+    const ClientMetadata& aClientMetadata, bool aCreateIfNonExistent) {
+  PerformOnBackgroundThread([aClientMetadata, aCreateIfNonExistent]() {
+    QuotaManager* quotaManager = QuotaManager::Get();
+    ASSERT_TRUE(quotaManager);
+
+    Await(quotaManager->InitializeTemporaryClient(aClientMetadata,
+                                                  aCreateIfNonExistent));
   });
 }
 
@@ -398,12 +416,95 @@ void QuotaManagerDependencyFixture::ClearStoragesForOriginAttributesPattern(
 }
 
 // static
+void QuotaManagerDependencyFixture::ProcessPendingNormalOriginOperations() {
+  PerformOnBackgroundThread([]() {
+    QuotaManager* quotaManager = QuotaManager::Get();
+    MOZ_RELEASE_ASSERT(quotaManager);
+
+    quotaManager->ProcessPendingNormalOriginOperations();
+  });
+}
+
+// static
+Maybe<OriginStateMetadata>
+QuotaManagerDependencyFixture::GetOriginStateMetadata(
+    const OriginMetadata& aOriginMetadata) {
+  const auto result =
+      PerformOnIOThread([aOriginMetadata]() -> Maybe<OriginStateMetadata> {
+        QuotaManager* quotaManager = QuotaManager::Get();
+        MOZ_RELEASE_ASSERT(quotaManager);
+
+        return quotaManager->GetOriginStateMetadata(aOriginMetadata);
+      });
+
+  return result;
+}
+
+// static
+Maybe<OriginStateMetadata>
+QuotaManagerDependencyFixture::LoadDirectoryMetadataHeader(
+    const OriginMetadata& aOriginMetadata) {
+  auto result =
+      PerformOnIOThread([aOriginMetadata]() -> Maybe<OriginStateMetadata> {
+        QuotaManager* quotaManager = QuotaManager::Get();
+        MOZ_RELEASE_ASSERT(quotaManager);
+
+        auto directoryRes = quotaManager->GetOriginDirectory(aOriginMetadata);
+        MOZ_RELEASE_ASSERT(directoryRes.isOk());
+
+        auto directory = directoryRes.unwrap();
+
+        bool exists;
+        nsresult rv = directory->Exists(&exists);
+        MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv));
+
+        if (!exists) {
+          return Nothing();
+        }
+
+        auto originStateMetadataRes =
+            quota::LoadDirectoryMetadataHeader(*directory);
+        MOZ_RELEASE_ASSERT(originStateMetadataRes.isOk());
+
+        auto originStateMetadata = originStateMetadataRes.unwrap();
+
+        return Some(originStateMetadata);
+      });
+
+  return result;
+}
+
+// static
 uint64_t QuotaManagerDependencyFixture::TotalDirectoryIterations() {
   const auto result = PerformOnIOThread([]() -> uint64_t {
     QuotaManager* quotaManager = QuotaManager::Get();
     MOZ_RELEASE_ASSERT(quotaManager);
 
     return quotaManager->TotalDirectoryIterations();
+  });
+
+  return result;
+}
+
+// static
+uint64_t QuotaManagerDependencyFixture::SaveOriginAccessTimeCount() {
+  const auto result = PerformOnBackgroundThread([]() -> uint64_t {
+    QuotaManager* quotaManager = QuotaManager::Get();
+    MOZ_RELEASE_ASSERT(quotaManager);
+
+    return quotaManager->SaveOriginAccessTimeCount();
+  });
+
+  return result;
+}
+
+// static
+uint64_t QuotaManagerDependencyFixture::SaveOriginAccessTimeCountInternal() {
+  const auto result = PerformOnIOThread([]() -> uint64_t {
+    QuotaManager* quotaManager = QuotaManager::Get();
+    MOZ_RELEASE_ASSERT(quotaManager);
+
+    return quotaManager->SaveOriginAccessTimeCountInternal();
   });
 
   return result;
@@ -421,6 +522,12 @@ QuotaManagerDependencyFixture::GetTestPersistentOriginMetadata() {
 }
 
 // static
+ClientMetadata
+QuotaManagerDependencyFixture::GetTestPersistentClientMetadata() {
+  return {GetTestPersistentOriginMetadata(), Client::SDB};
+}
+
+// static
 OriginMetadata QuotaManagerDependencyFixture::GetTestOriginMetadata() {
   return {GetTestPrincipalMetadata(), PERSISTENCE_TYPE_DEFAULT};
 }
@@ -428,6 +535,16 @@ OriginMetadata QuotaManagerDependencyFixture::GetTestOriginMetadata() {
 // static
 ClientMetadata QuotaManagerDependencyFixture::GetTestClientMetadata() {
   return {GetTestOriginMetadata(), Client::SDB};
+}
+
+// static
+OriginMetadata QuotaManagerDependencyFixture::GetTestPrivateOriginMetadata() {
+  return {GetTestPrincipalMetadata(), PERSISTENCE_TYPE_PRIVATE};
+}
+
+// static
+ClientMetadata QuotaManagerDependencyFixture::GetTestPrivateClientMetadata() {
+  return {GetTestPrivateOriginMetadata(), Client::SDB};
 }
 
 // static
@@ -477,7 +594,7 @@ void QuotaManagerDependencyFixture::EnsureQuotaManager() {
                      [&resolver]() { return resolver->IsDone(); });
 }
 
-MOZ_RUNINIT nsCOMPtr<nsISerialEventTarget>
+constinit nsCOMPtr<nsISerialEventTarget>
     QuotaManagerDependencyFixture::sBackgroundTarget;
 
 }  // namespace mozilla::dom::quota::test

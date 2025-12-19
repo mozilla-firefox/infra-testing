@@ -11,13 +11,40 @@ import cpp
 import jinja2
 import jog
 import rust
+import typescript
 from buildconfig import topsrcdir
 from glean_parser import lint, metrics, parser, translate, util
+from glean_parser.lint import METRIC_CHECKS, CheckType, GlinterNit
+from glean_parser.pings import Ping
 from metrics_header_names import convert_yaml_path_to_header_name
 from mozbuild.util import FileAvoidWrite, memoize
 from util import generate_metric_ids
 
 import js
+
+
+def lint_gifft_non_ping_lifetime(metric, parser_config):
+    """
+    We only support mirrors for lifetime: ping
+    If you understand and are okay with how Legacy Telemetry has no
+    mechanism to which to mirror non-ping lifetimes,
+    you may use `no_lint: [GIFFT_NON_PING_LIFETIME]`
+    """
+
+    if not hasattr(metric, "telemetry_mirror") or metric.telemetry_mirror is None:
+        return
+
+    if metric.lifetime != metrics.Lifetime.ping:
+        yield (
+            f"Glean lifetime semantics are not mirrored. The lifetime of {metric.lifetime} is not supported."
+        )
+
+
+# Add to the built-in lints
+METRIC_CHECKS["GIFFT_NON_PING_LIFETIME"] = (
+    lint_gifft_non_ping_lifetime,
+    CheckType.warning,
+)
 
 
 @memoize
@@ -46,6 +73,7 @@ GIFFT_TYPES = {
         "labeled_timing_distribution",
         "counter",
         "labeled_counter",
+        "dual_labeled_counter",
     ],
     "Scalar": [
         "boolean",
@@ -117,7 +145,55 @@ def parse(args, interesting_yamls=None):
     return parse_with_options(input_files, options)
 
 
-def parse_with_options(input_files, options):
+def _lint_pings(pings):
+    """
+    Extra lints applied to pings.
+    """
+    nits = []
+    for ping_name, ping in sorted(list(pings.items())):
+        assert isinstance(ping, Ping)
+
+        if "use_ohttp" in ping.metadata:
+            nits.append(
+                GlinterNit(
+                    check_name="USES_OHTTP_CHECK",
+                    name=ping_name,
+                    msg=f"Ping {ping_name} uses `use_ohttp`. Switch to `uploader_capabilities`.",
+                    check_type=CheckType.error,
+                )
+            )
+
+    return nits
+
+
+def _lint_metrics(objs, parser_config, file=sys.stderr):
+    """
+    Extra lints for metrics and pings.
+    """
+    nits = []
+
+    for category_name, category in sorted(list(objs.items())):
+        if category_name == "pings":
+            nits.extend(_lint_pings(category))
+
+        if category_name == "tags":
+            # currently we have no linting for tags
+            continue
+
+        # handling metrics
+        # we don't have any extra lints yet.
+
+    if nits:
+        print("Sorry, run_glean_parser found some glinter nits:", file=file)
+        for nit in nits:
+            print(nit.format(), file=file)
+        print("", file=file)
+        print("Please fix the above nits to continue.", file=file)
+
+    return nits
+
+
+def parse_with_options(input_files, options, file=sys.stderr):
     # Derived heavily from glean_parser.translate.translate.
     # Adapted to how mozbuild sends us a fd, and to expire on versions not dates.
 
@@ -125,7 +201,7 @@ def parse_with_options(input_files, options):
     if util.report_validation_errors(all_objs):
         raise ParserError("found validation errors during parse")
 
-    nits = lint.lint_metrics(all_objs.value, options)
+    nits = lint.lint_metrics(all_objs.value, options, file=file)
     if nits is not None and any(nit.check_name != "EXPIRED" for nit in nits):
         # Treat Warnings as Errors in FOG.
         # But don't fail the whole build on expired metrics (it blocks testing).
@@ -133,14 +209,21 @@ def parse_with_options(input_files, options):
 
     objects = all_objs.value
 
+    # m-c specific lints
+    nits = _lint_metrics(objects, options, file=file)
+    if nits:
+        raise ParserError("additional glinter nits found during parse")
+
     translate.transform_metrics(objects)
 
     return objects, options
 
 
 def main(cpp_fd, *args):
+    cpp_fd_path = Path(cpp_fd.name)
+
     def open_output(filename):
-        return FileAvoidWrite(os.path.join(os.path.dirname(cpp_fd.name), filename))
+        return FileAvoidWrite(os.path.join(cpp_fd_path.parent, filename))
 
     all_objs, options = parse(args)
     all_metric_header_files = {}
@@ -166,7 +249,7 @@ def main(cpp_fd, *args):
             objs,
             (
                 cpp_fd
-                if header_name == "GleanMetrics"
+                if header_name == cpp_fd_path.stem
                 else open_output(header_name + ".h")
             ),
             {"header_name": header_name, "get_metric_id": get_metric_id},
@@ -196,6 +279,12 @@ def rust_metrics(rust_fd, *args):
     ping_names_by_app_id = {}
     rust.output_rust(all_objs, rust_fd, ping_names_by_app_id, options)
 
+    return get_deps()
+
+
+def ts_metrics_pings(typescript_fd, *args):
+    all_objs, options = parse(args)
+    typescript.output_dts(all_objs, typescript_fd)
     return get_deps()
 
 
@@ -292,19 +381,6 @@ def output_gifft_map(output_fd, probe_type, all_objs, cpp_fd, options):
                     print(
                         f"Glean metric {category_name}.{metric.name} is of type {metric.type}"
                         " which can't be mirrored (we don't know how).",
-                        file=sys.stderr,
-                    )
-                    sys.exit(1)
-                # We only support mirrors for lifetime: ping
-                # If you understand and are okay with how Legacy Telemetry has no
-                # mechanism to which to mirror non-ping lifetimes,
-                # you may use `no_lint: [GIFFT_NON_PING_LIFETIME]`
-                elif (
-                    metric.lifetime != metrics.Lifetime.ping
-                    and "GIFFT_NON_PING_LIFETIME" not in metric.no_lint
-                ):
-                    print(
-                        f"Glean lifetime semantics are not mirrored. {category_name}.{metric.name}'s lifetime of {metric.lifetime} is not supported.",
                         file=sys.stderr,
                     )
                     sys.exit(1)

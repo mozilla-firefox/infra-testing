@@ -7,11 +7,10 @@
 #ifndef mozilla_dom_MediaStreamError_h
 #define mozilla_dom_MediaStreamError_h
 
-#include "mozilla/Attributes.h"
-#include "nsWrapperCache.h"
 #include "js/TypeDecls.h"
-#include "nsPIDOMWindow.h"
 #include "mozilla/RefPtr.h"
+#include "nsPIDOMWindow.h"
+#include "nsWrapperCache.h"
 
 #if defined(XP_WIN) && defined(GetMessage)
 #  undef GetMessage
@@ -22,11 +21,7 @@ namespace mozilla {
 namespace dom {
 
 #define MOZILLA_DOM_MEDIASTREAMERROR_IMPLEMENTATION_IID \
-  {                                                     \
-    0x95fa29aa, 0x0cc2, 0x4698, {                       \
-      0x9d, 0xa9, 0xf2, 0xeb, 0x03, 0x91, 0x0b, 0xd1    \
-    }                                                   \
-  }
+  {0x95fa29aa, 0x0cc2, 0x4698, {0x9d, 0xa9, 0xf2, 0xeb, 0x03, 0x91, 0x0b, 0xd1}}
 
 class MediaStreamError;
 }  // namespace dom
@@ -88,8 +83,7 @@ class MediaStreamError final : public nsISupports,
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(MediaStreamError)
-  NS_DECLARE_STATIC_IID_ACCESSOR(
-      MOZILLA_DOM_MEDIASTREAMERROR_IMPLEMENTATION_IID)
+  NS_INLINE_DECL_STATIC_IID(MOZILLA_DOM_MEDIASTREAMERROR_IMPLEMENTATION_IID)
 
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
@@ -105,8 +99,6 @@ class MediaStreamError final : public nsISupports,
   RefPtr<nsPIDOMWindowInner> mParent;
 };
 
-NS_DEFINE_STATIC_IID_ACCESSOR(MediaStreamError,
-                              MOZILLA_DOM_MEDIASTREAMERROR_IMPLEMENTATION_IID)
 }  // namespace dom
 }  // namespace mozilla
 

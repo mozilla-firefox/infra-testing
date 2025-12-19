@@ -27,6 +27,12 @@ function waitForPendingIcon() {
   });
 }
 
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["test.wait300msAfterTabSwitch", true]],
+  });
+});
+
 // Verify that the title doesn't flicker if the icon takes too long to load.
 // We expect to see events in the following order:
 // "label" added to tab
@@ -46,6 +52,7 @@ add_task(async () => {
       await waitForAttributeChange(tab, "label");
       ok(tab.hasAttribute("busy"), "Should have seen the busy attribute");
       let label = tab.textLabel;
+      ok(label.textContent.includes("file_with_slow_favicon.html"));
       let bounds = label.getBoundingClientRect();
 
       await waitForAttributeChange(tab, "busy");
@@ -154,6 +161,8 @@ add_task(async () => {
 
       await waitForAttributeChange(tab, "label");
       ok(tab.hasAttribute("busy"), "Should have seen the busy attribute");
+      let label = tab.textLabel;
+      ok(label.textContent.includes("file_with_slow_favicon.html"));
       let newBounds = tab.getBoundingClientRect();
       is(
         bounds.width,

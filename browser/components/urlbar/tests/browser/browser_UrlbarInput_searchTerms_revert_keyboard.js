@@ -30,12 +30,9 @@ add_setup(async function () {
 add_task(async function no_keyboard_trap() {
   let { tab } = await searchWithTab(SEARCH_STRING);
 
-  let leftElement = window.document.getElementById(
-    "urlbar-searchmode-switcher"
-  );
+  let leftElement = gURLBar.querySelector(".searchmode-switcher");
   let inputField = gURLBar.inputField;
   let revertButton = gURLBar.querySelector(".urlbar-revert-button");
-  let rightElement = window.document.getElementById("save-to-pocket-button");
 
   gURLBar.focus();
 
@@ -63,22 +60,6 @@ add_task(async function no_keyboard_trap() {
 
   info("Press Tab.");
   EventUtils.synthesizeKey("KEY_Tab");
-  Assert.equal(
-    Services.focus.focusedElement,
-    revertButton,
-    "Revert button is focused."
-  );
-
-  info("Press Tab.");
-  EventUtils.synthesizeKey("KEY_Tab");
-  Assert.equal(
-    Services.focus.focusedElement,
-    rightElement,
-    "Save to Pocket Button is focused."
-  );
-
-  info("Press Shift + Tab.");
-  EventUtils.synthesizeKey("KEY_Tab", { shiftKey: true });
   Assert.equal(
     Services.focus.focusedElement,
     revertButton,

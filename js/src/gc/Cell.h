@@ -7,7 +7,6 @@
 #ifndef gc_Cell_h
 #define gc_Cell_h
 
-#include "mozilla/Atomics.h"
 #include "mozilla/EndianUtils.h"
 
 #include <type_traits>
@@ -627,8 +626,18 @@ class alignas(gc::CellAlignBytes) CellWithLengthAndFlags : public Cell {
     return uint32_t(header_.get() >> 32);
 #endif
   }
+  uint32_t headerLengthFieldAtomic() const {
+#if JS_BITS_PER_WORD == 32
+    return length_;
+#else
+    return uint32_t(header_.getAtomic() >> 32);
+#endif
+  }
 
   uint32_t headerFlagsField() const { return uint32_t(header_.get()); }
+  uint32_t headerFlagsFieldAtomic() const {
+    return uint32_t(header_.getAtomic());
+  }
 
   void setHeaderFlagBit(uint32_t flag) {
     header_.set(header_.get() | uintptr_t(flag));
@@ -817,30 +826,27 @@ constexpr inline bool GCTypeIsTenured() {
 }
 
 template <class PtrT>
-class alignas(gc::CellAlignBytes) TenuredCellWithGCPointer
-    : public TenuredCell {
+class alignas(gc::CellAlignBytes) CellWithGCPointer : public Cell {
   static void staticAsserts() {
     // These static asserts are not in class scope because the PtrT may not be
     // defined when this class template is instantiated.
     static_assert(
         !std::is_pointer_v<PtrT>,
         "PtrT should be the type of the referent, not of the pointer");
-    static_assert(
-        std::is_base_of_v<Cell, PtrT>,
-        "Only use TenuredCellWithGCPointer for pointers to GC things");
-    static_assert(
-        !GCTypeIsTenured<PtrT>,
-        "Don't use TenuredCellWithGCPointer for always-tenured GC things");
+    static_assert(std::is_base_of_v<Cell, PtrT>,
+                  "Only use CellWithGCPointer for pointers to GC things");
+    static_assert(!GCTypeIsTenured<PtrT>,
+                  "Don't use CellWithGCPointer for always-tenured GC things");
   }
 
  protected:
-  TenuredCellWithGCPointer() = default;
-  explicit TenuredCellWithGCPointer(PtrT* initial) { initHeaderPtr(initial); }
+  CellWithGCPointer() = default;
+  explicit CellWithGCPointer(PtrT* initial) { initHeaderPtr(initial); }
 
   void initHeaderPtr(PtrT* initial) {
     uintptr_t data = uintptr_t(initial);
     this->header_.set(data);
-    if (initial && IsInsideNursery(initial)) {
+    if (initial && isTenured() && IsInsideNursery(initial)) {
       CellHeaderPostWriteBarrier(headerPtrAddress(), nullptr, initial);
     }
   }
@@ -863,7 +869,7 @@ class alignas(gc::CellAlignBytes) TenuredCellWithGCPointer
   }
 
   static constexpr size_t offsetOfHeaderPtr() {
-    return offsetof(TenuredCellWithGCPointer, header_);
+    return offsetof(CellWithGCPointer, header_);
   }
 };
 
@@ -885,32 +891,6 @@ template <>
 inline bool TenuredThingIsMarkedAny<Cell>(Cell* thing) {
   return thing->asTenured().isMarkedAny();
 }
-
-class alignas(gc::CellAlignBytes) SmallBuffer : public TenuredCell {
- public:
-  static constexpr uintptr_t NURSERY_OWNED_BIT = Bit(3);
-
-  void check() const {}  // No check value.
-
-  bool isNurseryOwned() const;
-  void setNurseryOwned(bool value);
-
-  static const JS::TraceKind TraceKind = JS::TraceKind::SmallBuffer;
-  void traceChildren(JSTracer* trc) {
-    // TODO: Generic tracing not supported for sized allocations.
-    // GCRuntime::checkForCompartmentMismatches ends up calling this because it
-    // iterates all GC cells.
-  }
-
-  size_t allocBytes() const;
-  void* data() { return this + 1; }
-};
-template <size_t bytes>
-struct SmallBufferN : public SmallBuffer {
-  uint8_t data[bytes - sizeof(SmallBuffer)];
-};
-static_assert(sizeof(SmallBufferN<16>) == 16);
-static_assert(sizeof(SmallBufferN<128>) == 128);
 
 } /* namespace gc */
 } /* namespace js */

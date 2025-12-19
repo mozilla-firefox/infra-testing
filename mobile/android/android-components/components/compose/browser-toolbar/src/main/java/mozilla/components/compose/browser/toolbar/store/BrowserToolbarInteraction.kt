@@ -21,6 +21,14 @@ sealed interface BrowserToolbarInteraction {
      */
     interface BrowserToolbarEvent : BrowserToolbarInteraction, BrowserToolbarAction {
         /**
+         * The interaction source of this event.
+         *
+         * @see [Source]
+         */
+        val source: Source
+            get() = Source.Unknown
+
+        /**
          * Convenience method to combine dispatching a [BrowserToolbarEvent] with
          * showing a [BrowserToolbarMenu] for the same user interaction.
          *
@@ -30,6 +38,49 @@ sealed interface BrowserToolbarInteraction {
             event = this,
             menu = menu,
         )
+
+        /**
+         * Possible sources of a [BrowserToolbarEvent].
+         */
+        sealed interface Source {
+            /**
+             * Sources representing parts of the address bar where an interaction originated.
+             *
+             * Use these to differentiate interactions on the browser/page start/end areas
+             * of the address bar.
+             */
+            sealed interface AddressBar : Source {
+                /**
+                 * The user interacted with a browser start toolbar element.
+                 */
+                data object BrowserStart : AddressBar
+
+                /**
+                 * The user interacted with a page start toolbar element.
+                 */
+                data object PageStart : AddressBar
+
+                /**
+                 * The user interacted with a page end toolbar element.
+                 */
+                data object PageEnd : AddressBar
+
+                /**
+                 * The user interacted with a browser end toolbar element.
+                 */
+                data object BrowserEnd : AddressBar
+            }
+
+            /**
+             * The user interacted with a navigation bar element.
+             */
+            data object NavigationBar : Source
+
+            /**
+             * Default/unknown source when none of the specific sources apply.
+             */
+            data object Unknown : Source
+        }
     }
 
     /**
@@ -64,18 +115,79 @@ sealed class BrowserToolbarMenuItem {
      * Button to shown in a [BrowserToolbarMenu].
      *
      * @property icon Optional [Drawable] icon for the menu item.
-     * @property iconResource Optional resource id of the icon to use for this button if a [Drawable] is not provided.
-     * @property text Optional text for the menu item.
-     * @property contentDescription Content description for this item. `null` if not important for accessibility.
+     * @property text The text shown for this item.
+     * @property contentDescription Content description for this item.
      * @property onClick Optional [BrowserToolbarEvent] to be dispatched when this item is clicked.
      */
     data class BrowserToolbarMenuButton(
-        val icon: Drawable? = null,
-        @DrawableRes val iconResource: Int?,
-        @StringRes val text: Int?,
-        @StringRes val contentDescription: Int?,
+        val icon: Icon?,
+        val text: Text,
+        val contentDescription: ContentDescription,
         val onClick: BrowserToolbarEvent?,
-    ) : BrowserToolbarMenuItem()
+    ) : BrowserToolbarMenuItem() {
+
+        /**
+         * The image to use as icon for this menu item.
+         */
+        sealed interface Icon {
+            /**
+             *  The [Drawable] as icon for this menu item.
+             *
+             *  @property drawable The [Drawable] to use as icon.
+             *  @property shouldTint Whether or not to apply the application default tint to this icon.
+             */
+            data class DrawableIcon(
+                val drawable: Drawable,
+                val shouldTint: Boolean = true,
+            ) : Icon
+
+            /**
+             * The [DrawableRes] as icon for this menu item.
+             */
+            @JvmInline
+            value class DrawableResIcon(
+                @param:DrawableRes val resourceId: Int,
+            ) : Icon
+        }
+
+        /**
+         * The text that this menu item should display.
+         */
+        sealed interface Text {
+            /**
+             * The [String] to display in this this menu item.
+             */
+            @JvmInline
+            value class StringText(val text: String) : Text
+
+            /**
+             * The [StringRes] to display as text in this menu item.
+             */
+            @JvmInline
+            value class StringResText(
+                @param:StringRes val resourceId: Int,
+            ) : Text
+        }
+
+        /**
+         * The content description menu item.
+         */
+        sealed interface ContentDescription {
+            /**
+             * The [String] to use as content description of this menu item.
+             */
+            @JvmInline
+            value class StringContentDescription(val text: String) : ContentDescription
+
+            /**
+             * The [StringRes] to use as content description of this menu item.
+             */
+            @JvmInline
+            value class StringResContentDescription(
+                @param:StringRes val resourceId: Int,
+            ) : ContentDescription
+        }
+    }
 
     /**
      * Divider to show in a [BrowserToolbarMenu].

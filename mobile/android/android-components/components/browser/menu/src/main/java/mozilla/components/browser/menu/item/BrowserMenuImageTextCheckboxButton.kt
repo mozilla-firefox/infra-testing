@@ -8,6 +8,7 @@ import android.view.View
 import androidx.annotation.ColorRes
 import androidx.annotation.DrawableRes
 import androidx.annotation.VisibleForTesting
+import androidx.appcompat.content.res.AppCompatResources
 import androidx.appcompat.widget.AppCompatCheckBox
 import androidx.core.content.ContextCompat
 import mozilla.components.browser.menu.BrowserMenu
@@ -39,12 +40,12 @@ class BrowserMenuImageTextCheckboxButton(
     @DrawableRes imageResource: Int,
     private val label: String,
     @ColorRes iconTintColorResource: Int = NO_ID,
-    @ColorRes internal val textColorResource: Int = NO_ID,
+    @param:ColorRes internal val textColorResource: Int = NO_ID,
     enabled: Boolean = true,
     @get:VisibleForTesting internal val labelListener: () -> Unit,
-    @DrawableRes val primaryStateIconResource: Int,
-    @DrawableRes val secondaryStateIconResource: Int,
-    @ColorRes internal val tintColorResource: Int = NO_ID,
+    @param:DrawableRes val primaryStateIconResource: Int,
+    @param:DrawableRes val secondaryStateIconResource: Int,
+    @param:ColorRes internal val tintColorResource: Int = NO_ID,
     private val primaryLabel: String,
     private val secondaryLabel: String,
     override val isCollapsingMenuLimit: Boolean = false,
@@ -79,9 +80,9 @@ class BrowserMenuImageTextCheckboxButton(
         val buttonText = if (isInPrimaryState()) primaryLabel else secondaryLabel
         val tintColor = ContextCompat.getColor(button.context, tintColorResource)
         val buttonDrawableIcon = if (isInPrimaryState()) {
-            ContextCompat.getDrawable(button.context, primaryStateIconResource)
+            AppCompatResources.getDrawable(button.context, primaryStateIconResource)
         } else {
-            ContextCompat.getDrawable(button.context, secondaryStateIconResource)
+            AppCompatResources.getDrawable(button.context, secondaryStateIconResource)
         }
         buttonDrawableIcon?.setTint(tintColor)
         val displayMetrics = button.context.resources.displayMetrics

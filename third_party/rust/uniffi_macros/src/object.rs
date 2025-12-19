@@ -4,7 +4,10 @@ use syn::DeriveInput;
 
 use crate::{
     ffiops,
-    util::{create_metadata_items, extract_docstring, ident_to_string, mod_path},
+    util::{
+        create_metadata_items, extract_docstring, ident_to_string, mod_path,
+        wasm_single_threaded_annotation,
+    },
     DeriveOptions,
 };
 use uniffi_meta::ObjectImpl;
@@ -62,7 +65,7 @@ pub fn expand_object(input: DeriveInput, options: DeriveOptions) -> syn::Result<
 
     Ok(quote! {
         #[doc(hidden)]
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         pub unsafe extern "C" fn #clone_fn_ident(
             ptr: *const ::std::ffi::c_void,
             call_status: &mut ::uniffi::RustCallStatus
@@ -75,7 +78,7 @@ pub fn expand_object(input: DeriveInput, options: DeriveOptions) -> syn::Result<
         }
 
         #[doc(hidden)]
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         pub unsafe extern "C" fn #free_fn_ident(
             ptr: *const ::std::ffi::c_void,
             call_status: &mut ::uniffi::RustCallStatus
@@ -115,12 +118,14 @@ fn interface_impl(object: &ObjectItem, options: &DeriveOptions) -> TokenStream {
     let lower_return_type_arc = ffiops::lower_return_type(&arc_self_type);
     let lower_return_arc = ffiops::lower_return(&arc_self_type);
     let lower_error_arc = ffiops::lower_error(&arc_self_type);
+    let single_threaded_annotation = wasm_single_threaded_annotation();
 
     quote! {
         // All Object structs must be `Sync + Send`. The generated scaffolding will fail to compile
         // if they are not, but unfortunately it fails with an unactionably obscure error message.
         // By asserting the requirement explicitly, we help Rust produce a more scrutable error message
         // and thus help the user debug why the requirement isn't being met.
+        #single_threaded_annotation
         ::uniffi::deps::static_assertions::assert_impl_all!(
             #ident: ::core::marker::Sync, ::core::marker::Send
         );

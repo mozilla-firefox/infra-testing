@@ -73,12 +73,6 @@
   font: inherit;
 }
 
-/* This is a Firefox-specific style because Firefox adds a focusring at a bad
- * position. We're adding our own below. */
-.perf-photon-button::-moz-focus-inner {
-  border: none;
-}
-
 .perf-photon-button:hover:active:not([disabled]) {
   background-color: var(--grey-90-a30);
 }
@@ -173,7 +167,7 @@
   appearance: none;
   color: var(--theme-select-color);
   background-color: var(--theme-select-background);
-  background-image: url('chrome://devtools/skin/images/arrow-dropdown-12.svg');
+  background-image: url("chrome://devtools/skin/images/arrow-dropdown-12.svg");
   background-position: right 4px center;
   background-repeat: no-repeat;
 

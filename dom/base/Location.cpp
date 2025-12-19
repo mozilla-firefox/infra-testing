@@ -5,39 +5,39 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Location.h"
-#include "nsIScriptObjectPrincipal.h"
-#include "nsIScriptContext.h"
-#include "nsDocShellLoadState.h"
-#include "nsIWebNavigation.h"
-#include "nsIOService.h"
-#include "nsIURL.h"
-#include "nsIJARURI.h"
-#include "nsIURIMutator.h"
-#include "nsNetUtil.h"
-#include "nsCOMPtr.h"
-#include "nsEscape.h"
-#include "nsPresContext.h"
-#include "nsError.h"
-#include "nsReadableUtils.h"
-#include "nsJSUtils.h"
-#include "nsContentUtils.h"
-#include "nsDocShell.h"
-#include "nsGlobalWindowOuter.h"
-#include "nsPIDOMWindowInlines.h"
-#include "mozilla/Likely.h"
-#include "nsCycleCollectionParticipant.h"
+
+#include "ReferrerInfo.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/Components.h"
+#include "mozilla/Likely.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/ServoStyleConsts.h"
 #include "mozilla/StaticPrefs_dom.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/FragmentDirective.h"
 #include "mozilla/dom/LocationBinding.h"
 #include "mozilla/dom/ScriptSettings.h"
-#include "ReferrerInfo.h"
+#include "nsCOMPtr.h"
+#include "nsContentUtils.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsDocShell.h"
+#include "nsDocShellLoadState.h"
+#include "nsError.h"
+#include "nsEscape.h"
+#include "nsGlobalWindowOuter.h"
+#include "nsIJARURI.h"
+#include "nsIOService.h"
+#include "nsIScriptContext.h"
+#include "nsIScriptObjectPrincipal.h"
+#include "nsIURIMutator.h"
+#include "nsIURL.h"
+#include "nsIWebNavigation.h"
+#include "nsJSUtils.h"
+#include "nsNetUtil.h"
+#include "nsPIDOMWindowInlines.h"
+#include "nsPresContext.h"
+#include "nsReadableUtils.h"
 
 namespace mozilla::dom {
 
@@ -172,7 +172,7 @@ void Location::SetHash(const nsACString& aHash, nsIPrincipal& aSubjectPrincipal,
     return;
   }
 
-  SetURI(uri, aSubjectPrincipal, aRv);
+  Navigate(uri, aSubjectPrincipal, aRv);
 }
 
 void Location::GetHost(nsACString& aHost, nsIPrincipal& aSubjectPrincipal,
@@ -185,10 +185,10 @@ void Location::GetHost(nsACString& aHost, nsIPrincipal& aSubjectPrincipal,
   aHost.Truncate();
 
   nsCOMPtr<nsIURI> uri;
-  mozilla::Unused << GetURI(getter_AddRefs(uri), true);
+  (void)GetURI(getter_AddRefs(uri), true);
 
   if (uri) {
-    mozilla::Unused << uri->GetHostPort(aHost);
+    (void)uri->GetHostPort(aHost);
   }
 }
 
@@ -210,7 +210,7 @@ void Location::SetHost(const nsACString& aHost, nsIPrincipal& aSubjectPrincipal,
     return;
   }
 
-  SetURI(uri, aSubjectPrincipal, aRv);
+  Navigate(uri, aSubjectPrincipal, aRv);
 }
 
 void Location::GetHostname(nsACString& aHostname,
@@ -247,7 +247,7 @@ void Location::SetHostname(const nsACString& aHostname,
     return;
   }
 
-  SetURI(uri, aSubjectPrincipal, aRv);
+  Navigate(uri, aSubjectPrincipal, aRv);
 }
 
 nsresult Location::GetHref(nsACString& aHref) {
@@ -327,7 +327,7 @@ void Location::SetPathname(const nsACString& aPathname,
     return;
   }
 
-  SetURI(uri, aSubjectPrincipal, aRv);
+  Navigate(uri, aSubjectPrincipal, aRv);
 }
 
 void Location::GetPort(nsACString& aPort, nsIPrincipal& aSubjectPrincipal,
@@ -386,7 +386,7 @@ void Location::SetPort(const nsACString& aPort, nsIPrincipal& aSubjectPrincipal,
     return;
   }
 
-  SetURI(uri, aSubjectPrincipal, aRv);
+  Navigate(uri, aSubjectPrincipal, aRv);
 }
 
 void Location::GetProtocol(nsACString& aProtocol,
@@ -429,7 +429,7 @@ void Location::SetProtocol(const nsACString& aProtocol,
   aProtocol.BeginReading(start);
   aProtocol.EndReading(end);
   nsACString::const_iterator iter(start);
-  Unused << FindCharInReadable(':', iter, end);
+  (void)FindCharInReadable(':', iter, end);
 
   nsresult rv =
       NS_MutateURI(uri).SetScheme(Substring(start, iter)).Finalize(uri);
@@ -461,7 +461,7 @@ void Location::SetProtocol(const nsACString& aProtocol,
     return;
   }
 
-  SetURI(uri, aSubjectPrincipal, aRv);
+  Navigate(uri, aSubjectPrincipal, aRv);
 }
 
 void Location::GetSearch(nsACString& aSearch, nsIPrincipal& aSubjectPrincipal,
@@ -512,11 +512,11 @@ void Location::SetSearch(const nsACString& aSearch,
     return;
   }
 
-  SetURI(uri, aSubjectPrincipal, aRv);
+  Navigate(uri, aSubjectPrincipal, aRv);
 }
 
-void Location::Reload(bool aForceget, nsIPrincipal& aSubjectPrincipal,
-                      ErrorResult& aRv) {
+void Location::Reload(JSContext* aCx, bool aForceget,
+                      nsIPrincipal& aSubjectPrincipal, ErrorResult& aRv) {
   if (!CallerSubsumes(&aSubjectPrincipal)) {
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
     return;
@@ -549,7 +549,12 @@ void Location::Reload(bool aForceget, nsIPrincipal& aSubjectPrincipal,
                   nsIWebNavigation::LOAD_FLAGS_BYPASS_PROXY;
   }
 
-  rv = docShell->Reload(reloadFlags);
+  UserNavigationInvolvement userInvolvement =
+      callerType == CallerType::System ? UserNavigationInvolvement::BrowserUI
+                                       : UserNavigationInvolvement::None;
+
+  rv = docShell->ReloadNavigable(Some(WrapNotNull(aCx)), reloadFlags, nullptr,
+                                 userInvolvement);
   if (NS_FAILED(rv) && rv != NS_BINDING_ABORTED) {
     // NS_BINDING_ABORTED is returned when we attempt to reload a POST result
     // and the user says no at the "do you want to reload?" prompt.  Don't

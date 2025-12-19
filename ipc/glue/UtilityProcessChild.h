@@ -7,14 +7,17 @@
 #define _include_ipc_glue_UtilityProcessChild_h_
 #include "mozilla/ipc/PUtilityProcessChild.h"
 #include "mozilla/ipc/UtilityProcessSandboxing.h"
-#include "mozilla/ipc/UtilityAudioDecoderParent.h"
-#include "mozilla/UniquePtr.h"
+#include "mozilla/ipc/UtilityMediaServiceParent.h"
 #include "ChildProfilerController.h"
+
+#ifndef MOZ_NO_SMART_CARDS
+#  include "mozilla/psm/PKCS11ModuleChild.h"
+#endif  // !MOZ_NO_SMART_CARDS
 
 #if defined(MOZ_SANDBOX) && defined(MOZ_DEBUG) && defined(ENABLE_TESTS)
 #  include "mozilla/PSandboxTestingChild.h"
 #endif
-#include "mozilla/PRemoteDecoderManagerParent.h"
+#include "mozilla/PRemoteMediaManagerParent.h"
 #include "mozilla/ipc/AsyncBlockers.h"
 #include "mozilla/dom/JSOracleChild.h"
 #include "mozilla/ProfilerMarkers.h"
@@ -62,8 +65,8 @@ class UtilityProcessChild final : public PUtilityProcessChild {
 
   mozilla::ipc::IPCResult RecvTestTelemetryProbes();
 
-  mozilla::ipc::IPCResult RecvStartUtilityAudioDecoderService(
-      Endpoint<PUtilityAudioDecoderParent>&& aEndpoint,
+  mozilla::ipc::IPCResult RecvStartUtilityMediaService(
+      Endpoint<PUtilityMediaServiceParent>&& aEndpoint,
       nsTArray<gfx::GfxVarUpdate>&& aUpdates);
 
   mozilla::ipc::IPCResult RecvStartJSOracleService(
@@ -83,12 +86,21 @@ class UtilityProcessChild final : public PUtilityProcessChild {
 
   AsyncBlockers& AsyncShutdownService() { return mShutdownBlockers; }
 
+#ifndef MOZ_NO_SMART_CARDS
+  IPCResult RecvStartPKCS11ModuleService(
+      Endpoint<PPKCS11ModuleChild>&& aEndpoint);
+#endif  // !MOZ_NO_SMART_CARDS
+
   void ActorDestroy(ActorDestroyReason aWhy) override;
 
 #if defined(MOZ_SANDBOX) && defined(MOZ_DEBUG) && defined(ENABLE_TESTS)
   mozilla::ipc::IPCResult RecvInitSandboxTesting(
       Endpoint<PSandboxTestingChild>&& aEndpoint);
 #endif
+
+  RefPtr<UtilityMediaServiceParent> GetMediaService() const {
+    return mUtilityMediaServiceInstance;
+  }
 
  protected:
   friend class UtilityProcessImpl;
@@ -97,11 +109,14 @@ class UtilityProcessChild final : public PUtilityProcessChild {
  private:
   TimeStamp mChildStartTime;
   RefPtr<ChildProfilerController> mProfilerController;
-  RefPtr<UtilityAudioDecoderParent> mUtilityAudioDecoderInstance{};
+  RefPtr<UtilityMediaServiceParent> mUtilityMediaServiceInstance{};
   RefPtr<dom::JSOracleChild> mJSOracleInstance{};
 #ifdef XP_WIN
   RefPtr<PWindowsUtilsChild> mWindowsUtilsInstance;
 #endif
+#ifndef MOZ_NO_SMART_CARDS
+  RefPtr<psm::PKCS11ModuleChild> mPKCS11ModuleInstance;
+#endif  // !MOZ_NO_SMART_CARDS
 
   AsyncBlockers mShutdownBlockers;
 };

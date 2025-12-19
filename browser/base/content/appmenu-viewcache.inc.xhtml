@@ -11,7 +11,7 @@
                      wrap="true"
                      hidden="true"/>
 
-      <toolbaritem id="appMenu-fxa-menu-message"
+      <toolbaritem id="appMenu-menu-message"
                    closemenu="none">
       </toolbaritem>
       <toolbaritem id="appMenu-fxa-status2"
@@ -49,6 +49,14 @@
                      data-l10n-id="appmenuitem-new-window"
                      key="key_newNavigator"
                      command="cmd_newNavigator"/>
+      <toolbarbutton id="appMenu-new-ai-window-button"
+                     class="subviewbutton"
+                     data-l10n-id="appmenuitem-new-ai-window"
+                     command="Tools:AIWindow"/>
+      <toolbarbutton id="appMenu-new-classic-window-button"
+                     class="subviewbutton"
+                     data-l10n-id="appmenuitem-new-classic-window"
+                     command="Tools:ClassicWindow"/>
       <toolbarbutton id="appMenu-new-private-window-button2"
                      class="subviewbutton"
                      data-l10n-id="appmenuitem-new-private-window"
@@ -76,9 +84,15 @@
                      />
       <toolbarbutton id="appMenu-extensions-themes-button"
                      class="subviewbutton"
-                     data-l10n-id="appmenuitem-addons-and-themes"
+                     data-l10n-id="appmenuitem-extensions-and-themes"
                      key="key_openAddons"
                      command="Tools:Addons"
+                     />
+      <toolbarbutton id="appMenu-unified-extensions-button"
+                     class="subviewbutton"
+                     data-l10n-id="appmenuitem-extensions"
+                     command="cmd_openUnifiedExtensionsPanel"
+                     hidden="true"
                      />
       <toolbarseparator/>
       <toolbarbutton id="appMenu-print-button2"
@@ -201,6 +215,8 @@
     <toolbarbutton id="PanelUI-historyMore"
                    class="subviewbutton panel-subview-footer-button"
                    data-l10n-id="appmenu-manage-history"
+                   key="showAllHistoryKb"
+                   command="Browser:ShowAllHistory"
                    />
   </panelview>
 
@@ -231,15 +247,6 @@
                class="subview-subheader"
                data-l10n-id="appmenu-other-profiles" />
       <vbox id="profiles-list"></vbox>
-      <toolbarbutton id="profiles-create-profile-button"
-                     class="subviewbutton subviewbutton-iconic"
-                     data-l10n-id="appmenu-create-profile"
-                     />
-      <toolbarseparator/>
-      <toolbarbutton id="profiles-manage-profiles-button"
-                     class="subviewbutton"
-                     data-l10n-id="appmenu-manage-profiles"
-                     />
     </vbox>
   </panelview>
 
@@ -443,15 +450,6 @@
     </vbox>
   </panelview>
 
-  <panelview id="PanelUI-savetopocket"
-             class="PanelUI-subView"
-             remote="true"
-             neverhidden="true"
-             closemenu="none">
-    <vbox class="PanelUI-savetopocket-container">
-    </vbox>
-  </panelview>
-
   <panelview id="PanelUI-remotetabs" class="PanelUI-subView">
     <vbox class="panel-subview-body">
       <!-- this widget has 3 boxes in the body, but only 1 is ever visible -->
@@ -640,16 +638,17 @@
                       data-l10n-id="fxa-menu-connect-another-device"
                       disabled="true"
                       />
-      <toolbarbutton id="PanelUI-fxa-menu-sendtab-button"
-                      class="subviewbutton subviewbutton-nav"
-                      data-l10n-id="fxa-menu-send-tab-to-device"
-                      data-l10n-args='{"tabCount":1}'
-                      closemenu="none"
-                      />
       <toolbarbutton id="PanelUI-fxa-menu-sync-prefs-button"
                       class="subviewbutton"
                       data-l10n-id="fxa-menu-sync-settings"
                       hidden="true"
+                      />
+      <toolbarseparator id="PanelUI-fxa-menu-sendtab-separator" />
+      <toolbarbutton id="PanelUI-fxa-menu-sendtab-button"
+                      class="subviewbutton subviewbutton-nav"
+                      data-l10n-id="fxa-menu-send-to-device"
+                      data-l10n-args='{"tabCount":1}'
+                      closemenu="none"
                       />
       <toolbarseparator id="PanelUI-sign-out-separator" />
       <toolbarbutton id="PanelUI-fxa-menu-account-signout-button"
@@ -687,7 +686,7 @@
       <!-- updateCTAPanel will control if we show this panel -->
       <vbox id="PanelUI-fxa-cta-menu" hidden="true">
         <toolbarseparator id="PanelUI-products-separator" />
-        <label id="fxa-menu-other-protection-tools-header" crop="end" class="PanelUI-fxa-menu-section-title" data-l10n-id="appmenu-other-protection-header" />
+        <label id="fxa-menu-other-protection-tools-header" crop="end" class="PanelUI-fxa-menu-section-title" data-l10n-id="appmenu-other-protection-header2" />
         <toolbarbutton id="PanelUI-fxa-menu-monitor-button" class="fxa-cta-button subviewbutton subviewbutton-iconic">
           <vbox flex="1">
             <hbox align="center">
@@ -825,6 +824,32 @@
                 support-page="data-loss-prevention"/>
       </description>
     </vbox>
+  </panelview>
+
+  <panelview id="PanelUI-ipprotection"
+             class="PanelUI-subView"
+             mainview-with-header="true"
+             has-custom-header="true">
+    <hbox id="PanelUI-ipprotection-header"
+         class="panel-header panel-header-with-info-button">
+        <html:h1>
+          <html:span id="ipprotection-header-content"
+                     data-l10n-id="ipprotection-title"></html:span>
+          <html:moz-badge
+            id="ipprotection-experiment-badge"
+            data-l10n-id="ipprotection-experiment-badge"
+          ></html:moz-badge>
+        </html:h1>
+    </hbox>
+    <toolbarseparator/>
+    <vbox id="PanelUI-ipprotection-content" class="panel-subview-body"/>
+  </panelview>
+
+  <panelview id="PanelUI-ipprotection-site-settings"
+             class="PanelUI-subView"
+             data-l10n-id="ipprotection-site-settings-title"
+             data-l10n-attrs="title">
+    <vbox id="PanelUI-ipprotection-site-settings-content" class="panel-subview-body"/>
   </panelview>
 
 #include ../../components/reportbrokensite/content/reportBrokenSitePanel.inc.xhtml

@@ -8,19 +8,53 @@ ChromeUtils.defineESModuleGetters(this, {
 // Used in multiple tests for loading a page in the sidebar
 const TEST_CHAT_PROVIDER_URL = "http://mochi.test:8888/";
 
+registerCleanupFunction(() => {
+  Services.prefs.clearUserPref("sidebar.old-sidebar.has-used");
+});
+
 /**
  * Check that chat sidebar renders
  */
 add_task(async function test_sidebar_render() {
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.ml.chat.provider", TEST_CHAT_PROVIDER_URL]],
+    set: [
+      ["browser.ml.chat.provider", TEST_CHAT_PROVIDER_URL],
+      ["browser.ml.chat.page", false],
+    ],
   });
 
   await SidebarController.show("viewGenaiChatSidebar");
 
-  const provider =
-    SidebarController.browser.contentWindow.document.getElementById("provider");
+  const { document, getComputedStyle } =
+    SidebarController.browser.contentWindow;
+
+  const provider = document.getElementById("provider");
+
   Assert.ok(provider, "Rendered provider select");
+
+  const summarizeBtnContainer = document.getElementById(
+    "summarize-btn-container"
+  );
+  Assert.equal(
+    getComputedStyle(summarizeBtnContainer).display,
+    "none",
+    "Button container set hidden"
+  );
+
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.ml.chat.page", true]],
+  });
+
+  await TestUtils.waitForCondition(
+    () => getComputedStyle(summarizeBtnContainer).display != "none",
+    "Button container changed by css"
+  );
+
+  Assert.notEqual(
+    getComputedStyle(summarizeBtnContainer).display,
+    "none",
+    "Button container set not hidden"
+  );
 
   SidebarController.hide();
 });
@@ -83,13 +117,6 @@ add_task(async function test_sidebar_onboarding() {
     "Should have previewed provider"
   );
 
-  Assert.notEqual(
-    document.querySelector(":has(> .selected) [style]").style.maxHeight,
-    "0px",
-    "Selected provider expanded"
-  );
-  Assert.ok(browser.currentURI.spec, "Provider previewed");
-
   const pickButton = await TestUtils.waitForCondition(() =>
     document.querySelector(".chat_pick .primary:not([disabled])")
   );
@@ -101,41 +128,17 @@ add_task(async function test_sidebar_onboarding() {
 
   pickButton.click();
 
-  const startButton = await TestUtils.waitForCondition(() =>
-    document.querySelector(".chat_suggest .primary")
-  );
-  Assert.ok(startButton, "Got button to start");
   Assert.equal(
     Services.prefs.getStringPref("browser.ml.chat.provider"),
     "http://localhost:8080",
     "Provider pref changed during onboarding"
   );
-  events = Glean.genaiChatbot.onboardingContinue.testGetValue();
-  Assert.equal(events.length, 1, "Continued once");
-  Assert.equal(
-    events[0].extra.provider,
-    "localhost",
-    "Continued with localhost"
-  );
-  Assert.equal(events[0].extra.step, "1", "First step");
-  events = await TestUtils.waitForCondition(() =>
-    Glean.genaiChatbot.onboardingTextHighlightDisplayed.testGetValue()
-  );
-  Assert.equal(events.length, 1, "Displayed highlight once");
-  Assert.equal(
-    events[0].extra.provider,
-    "localhost",
-    "Continued with localhost"
-  );
-  Assert.equal(events[0].extra.step, "2", "Second step");
-
-  Services.prefs.clearUserPref("browser.ml.chat.provider");
-  startButton.click();
 
   const noOnboarding = await TestUtils.waitForCondition(
     () => !document.getElementById("multi-stage-message-root")
   );
   Assert.ok(noOnboarding, "Onboarding container went away");
+
   events = Glean.genaiChatbot.onboardingFinish.testGetValue();
   Assert.equal(events.length, 1, "Finished once");
   Assert.equal(
@@ -143,8 +146,9 @@ add_task(async function test_sidebar_onboarding() {
     "localhost",
     "Finished with localhost"
   );
-  Assert.equal(events[0].extra.step, "2", "Second step");
+  Assert.equal(events[0].extra.step, "1", "First step");
 
+  Services.prefs.clearUserPref("browser.ml.chat.provider");
   SidebarController.hide();
 });
 
@@ -317,3 +321,169 @@ add_task(async function test_keyboard_shortcut() {
     "Already opened"
   );
 });
+
+/**
+ * Check Picture in Picture actors are not attached in sidebar chatbot
+ */
+add_task(async function test_pip_actor_not_chat_sidebar() {
+  await BrowserTestUtils.withNewTab("about:blank", async browser => {
+    const wgp = browser.browsingContext.currentWindowGlobal;
+    const actor = wgp.getActor("PictureInPicture");
+    Assert.ok(actor, "PiP actor is attached in the tab content");
+
+    await SidebarController.show("viewGenaiChatSidebar");
+
+    const chatbotBrowser = await TestUtils.waitForCondition(() => {
+      const { document } = SidebarController.browser.contentWindow;
+      const chatbotBrowserContainer =
+        document.getElementById("browser-container");
+      return chatbotBrowserContainer.querySelector("browser");
+    }, "Chatbot <browser> is loaded in the sidebar");
+
+    Assert.throws(
+      () =>
+        chatbotBrowser.browsingContext.currentWindowGlobal.getActor(
+          "PictureInPicture"
+        ),
+      /doesn't match message manager group/i,
+      "Getting PiP actor in sidebar chatbot should throw"
+    );
+
+    await SidebarController.hide();
+  });
+});
+
+add_task(
+  async function test_chatbot_microphone_access_if_persistent_perm_already_granted_in_tab() {
+    await SpecialPowers.pushPrefEnv({
+      set: [
+        ["media.navigator.streams.fake", true],
+        ["browser.ml.chat.provider", "https://example.org"],
+      ],
+    });
+
+    await BrowserTestUtils.withNewTab("https://example.org", async browser => {
+      const { principal, rawId } = await SpecialPowers.spawn(
+        browser,
+        [],
+        async () => {
+          const stream = await content.navigator.mediaDevices.getUserMedia({
+            audio: true,
+          });
+          const track = stream.getAudioTracks()[0];
+          const id = track.getSettings().deviceId || "default";
+          stream.getTracks().forEach(t => t.stop());
+          return {
+            principal: content.document.nodePrincipal,
+            rawId: id,
+          };
+        }
+      );
+
+      Assert.ok(rawId, "Got microphone rawId from the tab");
+
+      const key = "microphone";
+      SitePermissions.setForPrincipal(
+        principal,
+        key,
+        SitePermissions.ALLOW,
+        SitePermissions.SCOPE_PERSISTENT,
+        browser
+      );
+
+      await SidebarController.show("viewGenaiChatSidebar");
+
+      const { document } = SidebarController.browser.contentWindow;
+      const chatbotBrowserContainer =
+        document.getElementById("browser-container");
+      const chatbotBrowser = chatbotBrowserContainer.querySelector("browser");
+
+      await BrowserTestUtils.browserLoaded(chatbotBrowser, false, url => {
+        return new URL(url).origin === "https://example.org";
+      });
+
+      const chatbotPrincipal = await SpecialPowers.spawn(
+        chatbotBrowser,
+        [],
+        async () => content.document.nodePrincipal
+      );
+
+      let shown = false;
+      let onShown = () => {
+        shown = true;
+      };
+      PopupNotifications.panel.addEventListener("popupshown", onShown);
+
+      await SpecialPowers.spawn(chatbotBrowser, [rawId], async id => {
+        const { WebRTCChild } = SpecialPowers.ChromeUtils.importESModule(
+          "resource:///actors/WebRTCChild.sys.mjs"
+        );
+
+        const mic = [
+          {
+            type: "audioinput",
+            rawName: "fake mic",
+            rawId: id,
+            id,
+            QueryInterface: ChromeUtils.generateQI([Ci.nsIMediaDevice]),
+            mediaSource: "microphone",
+          },
+        ];
+
+        const req = {
+          type: "getUserMedia",
+          windowID: content.windowGlobalChild.outerWindowId,
+          isSecure: true,
+          isHandlingUserInput: true,
+
+          audioInputDevices: mic,
+          videoInputDevices: [],
+          audioOutputDevices: [],
+
+          deviceIndex: 0,
+          devices: mic,
+
+          getConstraints: () => ({ audio: true }),
+          getAudioInputOptions: () => ({ deviceId: id }),
+          getVideoInputOptions: () => ({}),
+          getAudioOutputOptions: () => ({}),
+        };
+
+        WebRTCChild.observe(req, "getUserMedia:request");
+      });
+
+      const sidebarMicPerm = SitePermissions.getForPrincipal(
+        chatbotPrincipal,
+        key,
+        chatbotBrowser
+      );
+
+      is(
+        sidebarMicPerm.state,
+        SitePermissions.ALLOW,
+        "Sidebar chatbot has granted mic allow"
+      );
+      is(
+        sidebarMicPerm.scope,
+        SitePermissions.SCOPE_PERSISTENT,
+        "sidebar chatbot mic access is persistent"
+      );
+      Assert.ok(
+        !shown,
+        "PopupNotification didn't fire because the mic access has been granted"
+      );
+
+      PopupNotifications.panel.removeEventListener("popupshown", onShown);
+      SitePermissions.removeFromPrincipal(principal, key, browser);
+      SitePermissions.removeFromPrincipal(
+        chatbotPrincipal,
+        key,
+        chatbotBrowser
+      );
+    });
+
+    await SidebarController.hide();
+    await SpecialPowers.popPrefEnv();
+    Services.fog.testResetFOG();
+  }
+);

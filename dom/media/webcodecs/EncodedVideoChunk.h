@@ -8,11 +8,10 @@
 #define mozilla_dom_EncodedVideoChunk_h
 
 #include "js/TypeDecls.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/Buffer.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/BufferSourceBindingFwd.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
 

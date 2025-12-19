@@ -7,11 +7,10 @@
 #ifndef mozilla_dom_HTMLFormSubmission_h
 #define mozilla_dom_HTMLFormSubmission_h
 
-#include "mozilla/Attributes.h"
-#include "mozilla/dom/UserActivation.h"
-#include "mozilla/dom/HTMLDialogElement.h"
-#include "nsCOMPtr.h"
 #include "mozilla/Encoding.h"
+#include "mozilla/dom/HTMLDialogElement.h"
+#include "mozilla/dom/UserActivation.h"
+#include "nsCOMPtr.h"
 #include "nsString.h"
 
 class nsIURI;
@@ -45,6 +44,7 @@ class HTMLFormSubmission {
   static nsresult GetFromForm(HTMLFormElement* aForm,
                               nsGenericHTMLElement* aSubmitter,
                               NotNull<const Encoding*>& aEncoding,
+                              FormData* aFormData,
                               HTMLFormSubmission** aFormSubmission);
 
   MOZ_COUNTED_DTOR_VIRTUAL(HTMLFormSubmission)
@@ -111,6 +111,8 @@ class HTMLFormSubmission {
 
   virtual DialogFormSubmission* GetAsDialogSubmission() { return nullptr; }
 
+  FormData* GetFormData() const { return mFormData; }
+
  protected:
   /**
    * Can only be constructed by subclasses.
@@ -128,6 +130,8 @@ class HTMLFormSubmission {
 
   // The character encoding of this form submission
   mozilla::NotNull<const mozilla::Encoding*> mEncoding;
+
+  RefPtr<FormData> mFormData;
 
   // Keep track of whether this form submission was user-initiated or not
   bool mInitiatedFromUserInput;

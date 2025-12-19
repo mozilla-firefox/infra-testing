@@ -12,7 +12,6 @@ import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.feature.addons.Addon
@@ -20,7 +19,6 @@ import mozilla.components.feature.addons.R
 import mozilla.components.feature.addons.ui.AddonsManagerAdapter.DifferCallback
 import mozilla.components.feature.addons.ui.AddonsManagerAdapter.NotYetSupportedSection
 import mozilla.components.feature.addons.ui.AddonsManagerAdapter.Section
-import mozilla.components.support.test.libstate.ext.waitUntilIdle
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.test.rule.MainCoroutineRule
@@ -40,7 +38,6 @@ import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import java.util.Locale
 
-@ExperimentalCoroutinesApi
 @RunWith(AndroidJUnit4::class)
 class AddonsManagerAdapterTest {
 
@@ -542,7 +539,6 @@ class AddonsManagerAdapterTest {
 
         viewHolder.restartButton.performClick()
         dispatcher.scheduler.advanceUntilIdle()
-        store.waitUntilIdle()
 
         assertFalse(store.state.extensionsProcessDisabled)
         verify(adapter).submitList(emptyList())
@@ -836,7 +832,7 @@ class AddonsManagerAdapterTest {
         val addon = makeDisabledAddon(Addon.DisabledReason.SOFT_BLOCKED)
         whenever(addon.isEnabled()).thenReturn(false)
         val expectedMessage =
-            "This extension is restricted for violating Mozilla’s policies and has been disabled. You can enable it, but this may be risky."
+            "This extension is restricted and has been disabled. You can enable it, but this may be risky."
 
         bindSoftBlockedAddon(addon, expectedMessage)
     }
@@ -845,7 +841,7 @@ class AddonsManagerAdapterTest {
     fun `bind soft-blocked add-on that has been re-enabled by user`() {
         val addon = makeDisabledAddon(Addon.DisabledReason.SOFT_BLOCKED)
         whenever(addon.isEnabled()).thenReturn(true)
-        val expectedMessage = "This extension violates Mozilla’s policies. Using it may be risky."
+        val expectedMessage = "This extension is restricted. Using it may be risky."
 
         bindSoftBlockedAddon(addon, expectedMessage)
     }

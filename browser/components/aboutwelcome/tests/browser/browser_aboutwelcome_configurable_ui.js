@@ -1,6 +1,6 @@
 "use strict";
 
-const { ExperimentFakes } = ChromeUtils.importESModule(
+const { NimbusTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/NimbusTestUtils.sys.mjs"
 );
 
@@ -33,7 +33,7 @@ async function testAboutWelcomeLogoFor(logo = {}) {
 
   let screens = [makeTestContent("TEST_LOGO_SELECTION_STEP", { logo })];
 
-  let doExperimentCleanup = await ExperimentFakes.enrollWithFeatureConfig({
+  let doExperimentCleanup = await NimbusTestUtils.enrollWithFeatureConfig({
     featureId: "aboutwelcome",
     value: { enabled: true, screens },
   });
@@ -367,7 +367,7 @@ add_task(async function test_aboutwelcome_with_url_backdrop() {
   const TEST_BACKDROP_VALUE = `#212121 ${TEST_BACKDROP_URL} center/cover no-repeat fixed`;
   const TEST_URL_BACKDROP_CONTENT = makeTestContent("TEST_URL_BACKDROP_STEP");
 
-  let doExperimentCleanup = await ExperimentFakes.enrollWithFeatureConfig({
+  let doExperimentCleanup = await NimbusTestUtils.enrollWithFeatureConfig({
     featureId: "aboutwelcome",
     value: {
       enabled: true,
@@ -383,7 +383,7 @@ add_task(async function test_aboutwelcome_with_url_backdrop() {
     // Expected selectors:
     [`div.outer-wrapper.onboardingContainer[style*='${TEST_BACKDROP_URL}']`]
   );
-  doExperimentCleanup();
+  await doExperimentCleanup();
   browser.closeBrowser();
 });
 
@@ -396,7 +396,7 @@ add_task(async function test_aboutwelcome_with_color_backdrop() {
     "TEST_COLOR_NAME_BACKDROP_STEP"
   );
 
-  let doExperimentCleanup = await ExperimentFakes.enrollWithFeatureConfig({
+  let doExperimentCleanup = await NimbusTestUtils.enrollWithFeatureConfig({
     featureId: "aboutwelcome",
     value: {
       enabled: true,
@@ -412,7 +412,7 @@ add_task(async function test_aboutwelcome_with_color_backdrop() {
     // Expected selectors:
     [`div.outer-wrapper.onboardingContainer[style*='${TEST_BACKDROP_COLOR}']`]
   );
-  doExperimentCleanup();
+  await doExperimentCleanup();
   browser.closeBrowser();
 });
 
@@ -438,7 +438,7 @@ add_task(async function test_aboutwelcome_with_text_color_override() {
     );
   }
 
-  let doExperimentCleanup = await ExperimentFakes.enrollWithFeatureConfig({
+  let doExperimentCleanup = await NimbusTestUtils.enrollWithFeatureConfig({
     featureId: "aboutwelcome",
     value: {
       enabled: true,
@@ -476,7 +476,7 @@ add_task(async function test_aboutwelcome_with_text_color_override() {
     }
   );
 
-  doExperimentCleanup();
+  await doExperimentCleanup();
   await SpecialPowers.popPrefEnv();
   browser.closeBrowser();
 });
@@ -508,7 +508,7 @@ add_task(async function test_aboutwelcome_with_progress_bar() {
     );
   }
 
-  let doExperimentCleanup = await ExperimentFakes.enrollWithFeatureConfig({
+  let doExperimentCleanup = await NimbusTestUtils.enrollWithFeatureConfig({
     featureId: "aboutwelcome",
     value: {
       enabled: true,
@@ -534,7 +534,7 @@ add_task(async function test_aboutwelcome_with_progress_bar() {
     const indicatorStyles = content.window.getComputedStyle(indicator);
     for (let [key, val] of Object.entries({
       // The filled "completed" element should have
-      // `background-color: var(--in-content-primary-button-background);`
+      // `background-color: var(--button-background-color-primary);`
       "background-color": "oklch(0.55 0.24 260)",
       // Base progress bar step styles.
       height: "6px",
@@ -553,7 +553,7 @@ add_task(async function test_aboutwelcome_with_progress_bar() {
     );
   });
 
-  doExperimentCleanup();
+  await doExperimentCleanup();
   browser.closeBrowser();
 });
 
@@ -566,7 +566,7 @@ add_task(async function test_aboutwelcome_history_updates_disabled() {
   for (let i = 1; i < 3; i++) {
     screens.push(makeTestContent(`TEST_PUSH_STATE_STEP_${i}`));
   }
-  let doExperimentCleanup = await ExperimentFakes.enrollWithFeatureConfig({
+  let doExperimentCleanup = await NimbusTestUtils.enrollWithFeatureConfig({
     featureId: "aboutwelcome",
     value: {
       enabled: true,
@@ -595,7 +595,7 @@ add_task(async function test_aboutwelcome_history_updates_disabled() {
     "No entries added to the session's history stack with history updates disabled"
   );
 
-  doExperimentCleanup();
+  await doExperimentCleanup();
   browser.closeBrowser();
 });
 
@@ -644,7 +644,7 @@ add_task(async function test_aboutwelcome_start_screen_configured() {
   for (let i = 1; i < 3; i++) {
     screens.push(makeTestContent(`TEST_START_STEP_${i}`));
   }
-  let doExperimentCleanup = await ExperimentFakes.enrollWithFeatureConfig({
+  let doExperimentCleanup = await NimbusTestUtils.enrollWithFeatureConfig({
     featureId: "aboutwelcome",
     value: {
       enabled: true,
@@ -702,7 +702,7 @@ add_task(async function test_aboutwelcome_start_screen_configured() {
     ok(false, "No telemetry sent");
   }
 
-  doExperimentCleanup();
+  await doExperimentCleanup();
   browser.closeBrowser();
   sandbox.restore();
 });
@@ -713,7 +713,7 @@ add_task(async function test_aboutwelcome_start_screen_configured() {
 add_task(async function test_aboutwelcome_rdm_property() {
   let screens = [makeTestContent(`TEST_NO_RDM`, { no_rdm: true })];
 
-  let doExperimentCleanup = await ExperimentFakes.enrollWithFeatureConfig({
+  let doExperimentCleanup = await NimbusTestUtils.enrollWithFeatureConfig({
     featureId: "aboutwelcome",
     value: { enabled: true, screens },
   });
@@ -727,7 +727,7 @@ add_task(async function test_aboutwelcome_rdm_property() {
     ["main.TEST_NO_RDM[no-rdm]"]
   );
 
-  doExperimentCleanup();
+  await doExperimentCleanup();
   browser.closeBrowser();
 });
 
@@ -743,7 +743,7 @@ add_task(async function test_aboutwelcome_reverse_dismiss() {
     }),
   ];
 
-  let doExperimentCleanup = await ExperimentFakes.enrollWithFeatureConfig({
+  let doExperimentCleanup = await NimbusTestUtils.enrollWithFeatureConfig({
     featureId: "aboutwelcome",
     value: { enabled: true, screens },
   });
@@ -771,7 +771,7 @@ add_task(async function test_aboutwelcome_reverse_dismiss() {
   await BrowserTestUtils.browserLoaded(browser, false, "about:home");
   is(browser.currentURI.spec, "about:home", "about:home loaded");
 
-  doExperimentCleanup();
+  await doExperimentCleanup();
   browser.closeBrowser();
 });
 
@@ -781,7 +781,7 @@ add_task(async function test_aboutwelcome_reverse_dismiss() {
 add_task(async function test_aboutwelcome_fullscreen_property() {
   let screens = [makeTestContent(`TEST_FULLSCREEN`, { fullscreen: true })];
 
-  let doExperimentCleanup = await ExperimentFakes.enrollWithFeatureConfig({
+  let doExperimentCleanup = await NimbusTestUtils.enrollWithFeatureConfig({
     featureId: "aboutwelcome",
     value: { enabled: true, screens },
   });
@@ -795,7 +795,7 @@ add_task(async function test_aboutwelcome_fullscreen_property() {
     ["main.TEST_FULLSCREEN[fullscreen]"]
   );
 
-  doExperimentCleanup();
+  await doExperimentCleanup();
   browser.closeBrowser();
 });
 
@@ -819,7 +819,7 @@ add_task(async function test_aboutwelcome_narrow_property() {
     }),
   ];
 
-  let doExperimentCleanup = await ExperimentFakes.enrollWithFeatureConfig({
+  let doExperimentCleanup = await NimbusTestUtils.enrollWithFeatureConfig({
     featureId: "aboutwelcome",
     value: { enabled: true, screens },
   });
@@ -862,7 +862,7 @@ add_task(async function test_aboutwelcome_narrow_property() {
     }
   );
 
-  doExperimentCleanup();
+  await doExperimentCleanup();
   browser.closeBrowser();
 });
 
@@ -929,7 +929,7 @@ add_task(async function test_aboutwelcome_single_select_icon_styles() {
     }),
   ];
 
-  let doExperimentCleanup = await ExperimentFakes.enrollWithFeatureConfig({
+  let doExperimentCleanup = await NimbusTestUtils.enrollWithFeatureConfig({
     featureId: "aboutwelcome",
     value: { enabled: true, screens },
   });
@@ -952,6 +952,159 @@ add_task(async function test_aboutwelcome_single_select_icon_styles() {
     }
   );
 
-  doExperimentCleanup();
+  await doExperimentCleanup();
+  browser.closeBrowser();
+});
+
+/**
+ * Test configurability of secondary_button_top
+ */
+add_task(async function test_secondary_button_top_configuration() {
+  const secondaryTopContent = makeTestContent(`TEST_SECONDARY_TOP_CONTENT`, {
+    secondary_button_top: [
+      {
+        label: {
+          raw: "test button 1",
+        },
+        action: {
+          navigate: true,
+        },
+      },
+      {
+        label: {
+          raw: "test button 2",
+        },
+        action: {
+          navigate: true,
+        },
+      },
+    ],
+  });
+
+  let screens = [secondaryTopContent];
+
+  let doExperimentCleanup = await NimbusTestUtils.enrollWithFeatureConfig({
+    featureId: "aboutwelcome",
+    value: { enabled: true, screens },
+  });
+
+  let browser = await openAboutWelcome();
+
+  await test_screen_content(
+    browser,
+    "render the secondary top buttons in a container",
+    // Expected selectors:
+    [
+      ".secondary-buttons-top-container",
+      "#secondary_button_0",
+      "#secondary_button_1",
+    ]
+  );
+
+  // Ensure container has appropriate styles
+  await test_element_styles(
+    browser,
+    ".secondary-buttons-top-container",
+    // Expected styles:
+    {
+      display: "flex",
+      "flex-direction": "row-reverse",
+      position: "fixed",
+      top: "10px",
+    }
+  );
+
+  await doExperimentCleanup();
+  browser.closeBrowser();
+});
+
+/**
+ * Test rendering a fullscreen split screen that supports lengthy content
+ */
+add_task(async function test_aboutwelcome_fullscreen_split_layout_styles() {
+  let screens = [
+    makeTestContent("TEST_FULLSCREEN_SPLIT", {
+      fullscreen: true,
+      position: "split",
+      background:
+        "var(--mr-secondary-position) var(--mr-screen-background-color)",
+      secondary_button_top: [
+        {
+          label: {
+            raw: "Sign in",
+          },
+          action: {
+            navigate: true,
+          },
+        },
+      ],
+    }),
+  ];
+
+  let doExperimentCleanup = await NimbusTestUtils.enrollWithFeatureConfig({
+    featureId: "aboutwelcome",
+    value: { enabled: true, screens },
+  });
+
+  let browser = await openAboutWelcome();
+
+  await test_screen_content(
+    browser,
+    "render fullscreen split screen",
+    // Expected selectors:
+    ["main.TEST_FULLSCREEN_SPLIT[pos='split'][fullscreen]"]
+  );
+
+  await test_element_styles(
+    browser,
+    ".onboardingContainer",
+    // Expected styles:
+    {
+      display: "flex",
+      flexDirection: "column",
+    }
+  );
+
+  await test_element_styles(
+    browser,
+    ".section-main",
+    // Expected styles:
+    {
+      margin: "0px",
+      display: "flex",
+    }
+  );
+
+  await test_element_styles(
+    browser,
+    ".section-main .main-content",
+    // Expected styles:
+    {
+      flex: "1 1 0%",
+      borderRadius: "0px",
+      padding: "0px",
+    }
+  );
+
+  await test_element_styles(
+    browser,
+    ".section-main .main-content .main-content-inner",
+    // Expected styles:
+    {
+      paddingTop: "40px",
+      paddingBottom: "40px",
+    }
+  );
+
+  await test_element_styles(
+    browser,
+    ".secondary-buttons-top-container",
+    // Expected styles:
+    {
+      zIndex: "2",
+    }
+  );
+
+  await doExperimentCleanup();
   browser.closeBrowser();
 });

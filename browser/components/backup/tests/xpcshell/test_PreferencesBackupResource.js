@@ -7,7 +7,7 @@ const { PreferencesBackupResource } = ChromeUtils.importESModule(
   "resource:///modules/backup/PreferencesBackupResource.sys.mjs"
 );
 const { SearchUtils } = ChromeUtils.importESModule(
-  "resource://gre/modules/SearchUtils.sys.mjs"
+  "moz-src:///toolkit/components/search/SearchUtils.sys.mjs"
 );
 
 /**
@@ -17,7 +17,7 @@ const { SearchUtils } = ChromeUtils.importESModule(
 add_task(async function test_measure() {
   Services.fog.testResetFOG();
 
-  const EXPECTED_PREFERENCES_KILOBYTES_SIZE = 415;
+  const EXPECTED_PREFERENCES_KILOBYTES_SIZE = 55;
   const tempDir = await IOUtils.createUniqueDirectory(
     PathUtils.tempDir,
     "PreferencesBackupResource-measure-test"
@@ -25,8 +25,6 @@ add_task(async function test_measure() {
   const mockFiles = [
     { path: "prefs.js", sizeInKB: 20 },
     { path: "xulstore.json", sizeInKB: 1 },
-    { path: "permissions.sqlite", sizeInKB: 100 },
-    { path: "content-prefs.sqlite", sizeInKB: 260 },
     { path: "containers.json", sizeInKB: 1 },
     { path: "handlers.json", sizeInKB: 1 },
     { path: "search.json.mozlz4", sizeInKB: 1 },
@@ -89,14 +87,6 @@ add_task(async function test_backup() {
   ];
   await createTestFiles(sourcePath, simpleCopyFiles);
 
-  // Create our fake database files. We don't expect these to be copied to the
-  // staging directory in this test due to our stubbing of the backup method, so
-  // we don't include it in `simpleCopyFiles`.
-  await createTestFiles(sourcePath, [
-    { path: "permissions.sqlite" },
-    { path: "content-prefs.sqlite" },
-  ]);
-
   // We have no need to test that Sqlite.sys.mjs's backup method is working -
   // this is something that is tested in Sqlite's own tests. We can just make
   // sure that it's being called using sinon. Unfortunately, we cannot do the
@@ -120,23 +110,9 @@ add_task(async function test_backup() {
 
   await assertFilesExist(stagingPath, simpleCopyFiles);
 
-  // Next, we'll make sure that the Sqlite connection had `backup` called on it
-  // with the right arguments.
   Assert.ok(
-    fakeConnection.backup.calledTwice,
-    "Called backup the expected number of times for all connections"
-  );
-  Assert.ok(
-    fakeConnection.backup.firstCall.calledWith(
-      PathUtils.join(stagingPath, "permissions.sqlite")
-    ),
-    "Called backup on the permissions.sqlite Sqlite connection"
-  );
-  Assert.ok(
-    fakeConnection.backup.secondCall.calledWith(
-      PathUtils.join(stagingPath, "content-prefs.sqlite")
-    ),
-    "Called backup on the content-prefs.sqlite Sqlite connection"
+    fakeConnection.backup.notCalled,
+    "No sqlite connections should have been made"
   );
 
   // And we'll make sure that preferences were properly written out.
@@ -152,123 +128,37 @@ add_task(async function test_backup() {
 });
 
 /**
- * Tests that the backup method does not copy the permissions or content prefs
- * databases if the browser is configured to not save history - either while
- * running, or to clear it at shutdown.
+ * Check that prefs.js has "browser.backup.profile-restoration-date".  Due to
+ * concerns over potential time skips in automation, we only check that the
+ * timestamp is not more than a week before/after now (we would expect the
+ * difference to be more like a few milliseconds).
+ *
+ * @param {string} prefsJsPath
  */
-add_task(async function test_backup_no_saved_history() {
-  let preferencesBackupResource = new PreferencesBackupResource();
-  let sourcePath = await IOUtils.createUniqueDirectory(
-    PathUtils.tempDir,
-    "PreferencesBackupResource-source-test"
-  );
-  let stagingPath = await IOUtils.createUniqueDirectory(
-    PathUtils.tempDir,
-    "PreferencesBackupResource-staging-test"
+async function checkPrefsJsHasValidRecoveryTime(prefsJsPath) {
+  Assert.equal(
+    Services.prefs.getPrefType("browser.backup.profile-restoration-date"),
+    Services.prefs.PREF_INVALID,
+    "Restoration pref not set since current profile was not restored"
   );
 
-  let sandbox = sinon.createSandbox();
-  let fakeConnection = {
-    backup: sandbox.stub().resolves(true),
-    close: sandbox.stub().resolves(true),
-  };
-  sandbox.stub(Sqlite, "openConnection").returns(fakeConnection);
+  // NB: The non-profile-restoration-date part of the prefs file is junk made
+  // by `createTestFiles`.  We don't care about that here.
+  const contents = await IOUtils.readUTF8(prefsJsPath);
+  const dateRegex =
+    /pref\("browser\.backup\.profile-restoration-date", (\d+)\);/;
+  let restoreDate = contents.match(dateRegex);
+  Assert.equal(restoreDate.length, 2, "found the restoration date");
 
-  // First, we'll try with browsing history in general being disabled.
-  Services.prefs.setBoolPref(HISTORY_ENABLED_PREF, false);
-  Services.prefs.setBoolPref(SANITIZE_ON_SHUTDOWN_PREF, false);
-
-  let manifestEntry = await preferencesBackupResource.backup(
-    stagingPath,
-    sourcePath
+  const kOneWeekAgoInSec =
+    60 /* sec/min */ * 60 /* min/hr */ * 24 /* hr/day */ * 7; /* day/wk */
+  const nowInSeconds = Math.round(Date.now() / 1000);
+  Assert.lessOrEqual(
+    Math.abs(nowInSeconds - Number(restoreDate[1])),
+    kOneWeekAgoInSec,
+    "timestamp was within one week of now"
   );
-  Assert.deepEqual(
-    manifestEntry,
-    { profilePath: sourcePath },
-    "PreferencesBackupResource.backup should return the original profile path " +
-      "in its ManifestEntry"
-  );
-
-  Assert.ok(
-    fakeConnection.backup.notCalled,
-    "No sqlite connections should have been made with remember history disabled"
-  );
-
-  // Now verify that the sanitize shutdown pref also prevents us from backing
-  // up site permissions and preferences
-  Services.prefs.setBoolPref(HISTORY_ENABLED_PREF, true);
-  Services.prefs.setBoolPref(SANITIZE_ON_SHUTDOWN_PREF, true);
-
-  fakeConnection.backup.resetHistory();
-  manifestEntry = await preferencesBackupResource.backup(
-    stagingPath,
-    sourcePath
-  );
-  Assert.deepEqual(
-    manifestEntry,
-    { profilePath: sourcePath },
-    "PreferencesBackupResource.backup should return the original profile path " +
-      "in its ManifestEntry"
-  );
-
-  Assert.ok(
-    fakeConnection.backup.notCalled,
-    "No sqlite connections should have been made with sanitize shutdown enabled"
-  );
-
-  await maybeRemovePath(stagingPath);
-  await maybeRemovePath(sourcePath);
-
-  sandbox.restore();
-  Services.prefs.clearUserPref(HISTORY_ENABLED_PREF);
-  Services.prefs.clearUserPref(SANITIZE_ON_SHUTDOWN_PREF);
-});
-
-/**
- * Tests that the backup method correctly skips backing up the permissions and
- * content prefs databases if permanent private browsing mode is enabled.
- */
-add_task(async function test_backup_private_browsing() {
-  let sandbox = sinon.createSandbox();
-
-  let preferencesBackupResource = new PreferencesBackupResource();
-  let sourcePath = await IOUtils.createUniqueDirectory(
-    PathUtils.tempDir,
-    "PreferencesBackupResource-source-test"
-  );
-  let stagingPath = await IOUtils.createUniqueDirectory(
-    PathUtils.tempDir,
-    "PreferencesBackupResource-staging-test"
-  );
-
-  let fakeConnection = {
-    backup: sandbox.stub().resolves(true),
-    close: sandbox.stub().resolves(true),
-  };
-  sandbox.stub(Sqlite, "openConnection").returns(fakeConnection);
-  sandbox.stub(PrivateBrowsingUtils, "permanentPrivateBrowsing").value(true);
-
-  let manifestEntry = await preferencesBackupResource.backup(
-    stagingPath,
-    sourcePath
-  );
-  Assert.deepEqual(
-    manifestEntry,
-    { profilePath: sourcePath },
-    "PreferencesBackupResource.backup should return the original profile path " +
-      "in its ManifestEntry"
-  );
-
-  Assert.ok(
-    fakeConnection.backup.notCalled,
-    "No sqlite connections should have been made with permanent private browsing enabled"
-  );
-
-  await maybeRemovePath(stagingPath);
-  await maybeRemovePath(sourcePath);
-
-  sandbox.restore();
-});
+}
 
 /**
  * Test that the recover method correctly copies items from the recovery
@@ -289,8 +179,6 @@ add_task(async function test_recover() {
   const simpleCopyFiles = [
     { path: "prefs.js" },
     { path: "xulstore.json" },
-    { path: "permissions.sqlite" },
-    { path: "content-prefs.sqlite" },
     { path: "containers.json" },
     { path: "handlers.json" },
     { path: "user.js" },
@@ -368,6 +256,9 @@ add_task(async function test_recover() {
   );
 
   await assertFilesExist(destProfilePath, simpleCopyFiles);
+  await checkPrefsJsHasValidRecoveryTime(
+    PathUtils.join(destProfilePath, "prefs.js")
+  );
 
   // Now ensure that the verification was properly recomputed. We should
   // Have called getVerificationHash 6 times - twice each for:

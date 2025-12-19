@@ -108,10 +108,10 @@ pub struct SearchUrlParam {
 }
 
 /// Defines an individual search engine URL.
-#[derive(Debug, uniffi::Record, PartialEq, Deserialize, Clone, Default)]
+#[derive(Debug, uniffi::Record, PartialEq, Deserialize, Clone)]
 pub struct SearchEngineUrl {
     /// The PrePath and FilePath of the URL. May include variables for engines
-    /// which have a variable FilePath, e.g. `{searchTerm}` for when a search
+    /// which have a variable FilePath, e.g. `{searchTerms}` for when a search
     /// term is within the path of the url.
     pub base: String,
 
@@ -123,9 +123,33 @@ pub struct SearchEngineUrl {
     pub params: Vec<SearchUrlParam>,
 
     /// The name of the query parameter for the search term. Automatically
-    /// appended to the end of the query. This may be skipped if `{searchTerm}`
+    /// appended to the end of the query. This may be skipped if `{searchTerms}`
     /// is included in the base.
     pub search_term_param_name: Option<String>,
+
+    /// The display name of the URL, if any. This is useful if the URL
+    /// corresponds to a brand name distinct from the engine's brand name.
+    #[uniffi(default = None)]
+    pub display_name: Option<String>,
+
+    /// Indicates the date until which the URL is considered new
+    /// (format: YYYY-MM-DD).
+    #[uniffi(default = None)]
+    pub is_new_until: Option<String>,
+
+    /// Whether the engine's partner code should be excluded from telemetry when
+    /// this URL is visited.
+    #[uniffi(default = false)]
+    pub exclude_partner_code_from_telemetry: bool,
+
+    /// If this URL performs searches only for certain MIME types, they should
+    /// be listed here. If `None`, it's assumed the content type is text or not
+    /// relevant. This field is intended to be used for URLs like visual search,
+    /// which might support certain image types and not others. Consumers can
+    /// use it to determine whether search UI corresponding to the URL should be
+    /// shown to the user in a given context.
+    #[uniffi(default = None)]
+    pub accepted_content_types: Option<Vec<String>>,
 }
 
 /// The URLs associated with the search engine.
@@ -142,6 +166,9 @@ pub struct SearchEngineUrls {
 
     /// The URL of the search engine homepage.
     pub search_form: Option<SearchEngineUrl>,
+
+    /// The URL to use for visual searches.
+    pub visual_search: Option<SearchEngineUrl>,
 }
 
 /// The list of acceptable classifications for a search engine.
@@ -182,6 +209,10 @@ pub struct SearchEngineDefinition {
     /// identifier, e.g. for saving the user's settings for the engine. It is
     /// also used to form the base telemetry id and may be extended by telemetrySuffix.
     pub identifier: String,
+
+    /// Indicates the date until which the engine variant or subvariant is considered new
+    /// (format: YYYY-MM-DD).
+    pub is_new_until: Option<String>,
 
     /// The user visible name of the search engine.
     pub name: String,

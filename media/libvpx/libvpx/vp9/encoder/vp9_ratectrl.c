@@ -856,15 +856,19 @@ int vp9_rc_regulate_q(const VP9_COMP *cpi, int target_bits_per_frame,
           frame_type, i, correction_factor, cm->bit_depth);
     }
 
+    int diff_bits = (int)VPXMIN(
+        VPXMAX(((int64_t)target_bits_per_mb - (int64_t)bits_per_mb_at_this_q),
+               -INT_MAX),
+        INT_MAX);
     if (bits_per_mb_at_this_q <= target_bits_per_mb) {
-      if ((target_bits_per_mb - bits_per_mb_at_this_q) <= last_error)
+      if (diff_bits <= last_error)
         q = i;
       else
         q = i - 1;
 
       break;
     } else {
-      last_error = bits_per_mb_at_this_q - target_bits_per_mb;
+      last_error = -diff_bits;
     }
   } while (++i <= active_worst_quality);
 
@@ -1733,14 +1737,6 @@ void vp9_rc_set_frame_target(VP9_COMP *cpi, int target) {
     rc->this_frame_target = (int)(rc->this_frame_target *
                                   rate_thresh_mult[rc->frame_size_selector]);
   }
-
-#if CONFIG_RATE_CTRL
-  if (cpi->oxcf.use_simple_encode_api) {
-    if (cpi->encode_command.use_external_target_frame_bits) {
-      rc->this_frame_target = cpi->encode_command.target_frame_bits;
-    }
-  }
-#endif  // CONFIG_RATE_CTRL
 
   // Target rate per SB64 (including partial SB64s.
   const int64_t sb64_target_rate =
@@ -2612,13 +2608,6 @@ void vp9_rc_set_gf_interval_range(const VP9_COMP *const cpi,
     // Set Maximum gf/arf interval
     rc->max_gf_interval = oxcf->max_gf_interval;
     rc->min_gf_interval = oxcf->min_gf_interval;
-#if CONFIG_RATE_CTRL
-    if (oxcf->use_simple_encode_api) {
-      // In this experiment, we avoid framerate being changed dynamically during
-      // encoding.
-      framerate = oxcf->init_framerate;
-    }
-#endif  // CONFIG_RATE_CTRL
     if (rc->min_gf_interval == 0) {
       rc->min_gf_interval = vp9_rc_get_default_min_gf_interval(
           oxcf->width, oxcf->height, framerate);
@@ -3289,7 +3278,6 @@ int vp9_encodedframe_overshoot(VP9_COMP *cpi, int frame_size, int *q) {
     int enumerator;
     // Set a larger QP.
     if (cpi->oxcf.content != VP9E_CONTENT_SCREEN &&
-        cm->width * cm->height >= 1280 * 720 &&
         (rc->buffer_level > (3 * rc->optimal_buffer_level) >> 2) &&
         (cpi->rc.avg_source_sad[0] < sad_thr)) {
       *q = (*q + cpi->rc.worst_quality) >> 1;

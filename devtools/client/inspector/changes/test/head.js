@@ -12,20 +12,13 @@ Services.scriptloader.loadSubScript(
   this
 );
 
-// Ensure the three-pane mode is enabled before running the tests.
-Services.prefs.setBoolPref("devtools.inspector.three-pane-enabled", true);
-
-registerCleanupFunction(() => {
-  Services.prefs.clearUserPref("devtools.inspector.three-pane-enabled");
-});
-
 /**
  * Get an array of objects with property/value pairs of the CSS declarations rendered
  * in the Changes panel.
  *
  * @param  {Document} panelDoc
  *         Host document of the Changes panel.
- * @param  {String} selector
+ * @param  {string} selector
  *         Optional selector to filter rendered declaration DOM elements.
  *         One of ".diff-remove" or ".diff-add".
  *         If omitted, all declarations will be returned.
@@ -64,7 +57,7 @@ function getRemovedDeclarations(panelDoc, containerNode) {
  *
  * @param  {Document} panelDoc
  *         Host document of the Changes panel.
- * @param  {String} selector
+ * @param  {string} selector
  *         Optional selector to filter rendered selector DOM elements.
  *         One of ".diff-remove" or ".diff-add".
  *         If omitted, all selectors will be returned.

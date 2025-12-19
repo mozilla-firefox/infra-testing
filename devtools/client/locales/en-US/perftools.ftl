@@ -151,6 +151,9 @@ perftools-presets-graphics-description = Preset for investigating graphics bugs 
 perftools-presets-media-label = Media
 perftools-presets-media-description2 = Preset for investigating audio and video bugs in { -brand-shorter-name }.
 
+perftools-presets-ml-label = Machine Learning
+perftools-presets-ml-description2 = Preset for investigating machine learning bugs in { -brand-shorter-name }.
+
 perftools-presets-networking-label = Networking
 perftools-presets-networking-description = Preset for investigating networking bugs in { -brand-shorter-name }.
 
@@ -160,6 +163,9 @@ perftools-presets-power-description = Preset for investigating power use bugs in
 
 perftools-presets-debug-label = Debug
 perftools-presets-debug-description = Preset for debugging in { -brand-shorter-name }. High overhead, do not use for performance work but use for focusing on understanding browser behavior.
+
+perftools-presets-web-compat-label = Web Compat
+perftools-presets-web-compat-description = Recommended preset for debugging web compatibility issues in websites, rather than tracking performance.
 
 perftools-presets-custom-label = Custom
 

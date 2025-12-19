@@ -7,8 +7,8 @@
 export const HeuristicsRegExp = {
   RULES: {
     email: undefined,
-    tel: undefined,
     "tel-country-code" : undefined,
+    tel: undefined,
     "address-housenumber": undefined,
     "street-address": undefined,
     "address-line1": undefined,
@@ -49,27 +49,40 @@ export const HeuristicsRegExp = {
     //=========================================================================
     // Firefox-specific rules
     {
-      "street-address": "ulica(.*(numer|nr))?", // pl-PL
-      "address-line1": "addrline1|address_1|addl1",
+      "street-address":
+        "ulica(.*(numer|nr))?" + // pl-PL
+        "|straat", // nl
+      "address-line1": "addrline1|address_1|addl1" +
+        // TODO: Bug 1829583
+        "|(?<neg>nome.*)|endereço", // es
       "address-line2":
         "addrline2|address_2|addl2" +
         "|landmark", // common in IN
       "address-line3": "addrline3|address_3|addl3",
       "address-level2": 
         "città" + // it-IT
-        "|miasto|miejscowosc|miejscowość", //pl-PL
+        "|miasto|miejscowosc|miejscowość" + //pl-PL
+        "|\\bstad|woonplaats|plaats", // nl
       "address-housenumber":
-        "(house|building)\\s*number|hausnummer|haus|house[a-z\-]*n(r|o)" +
-        "|n[úu]mero",
+        "(house|building|street1?)[\\s\\-_]*number|hausnummer|haus|house[a-z\-]*n(r|o)" +
+        "|n[úu]mero" +
+        "|domu" + // pl-PL
+        "|huisnummer", // nl
       "address-level3":
         "(^address-?level-?3$)" +
         "|neighbou*rhood|barrio|bairro|colonia|suburb", // en/es/pt/mx/au/nz
       "postal-code": 
         "^PLZ(\\b|\\*)" + // de-DE
         "|kod.?pocztowy", // pl-PL
-      "given-name": "imię", // pl-PL
-      "additional-name": "apellido.?materno|lastlastname",
-      "family-name": "nazwisko",
+      "given-name":
+        "imię" + // pl-PL
+        "|voornaam", // nl
+      "additional-name":
+        "apellido.?materno|lastlastname" +
+        "|voorletters?|tussenvoegsel", // nl
+      "family-name":
+        "nazwisko" +
+        "|achternaam", // nl
       "cc-name":
         "accountholdername" +
         "|titulaire", // fr-FR
@@ -102,8 +115,12 @@ export const HeuristicsRegExp = {
         "(\\bcvn\\b|\\bcvv\\b|\\bcvc\\b|\\bcsc\\b|\\bcvd\\b|\\bcid\\b|\\bccv\\b)",
       "tel-country-code":
         "phone.*country|country.*phone" +
-        "tel.*country|country.*tel",
-      "tel": "(numer|nr)?\\.?telefonu", //pl-PL
+        "|tel.*country|country.*tel" +
+        "|phone(?!-local).*prefix|tel(?!-local).*prefix" +
+        "|prefix.*phone|prefix.*tel",
+      "tel":
+        "(numer|nr)?\\.?telefonu" + //pl-PL
+        "|telefoon", // nl
     },
 
     //=========================================================================
@@ -376,7 +393,8 @@ export const HeuristicsRegExp = {
 
       // ==== Telephone ====
       tel:
-        "phone|mobile|contact.?number" +
+        "(?<neg>phonetic)" +
+        "|phone|mobile|contact.?number" +
         "|telefonnummer" + // de-DE
         "|telefono|teléfono" + // es
         "|telfixe" + // fr-FR
@@ -455,7 +473,7 @@ export const HeuristicsRegExp = {
         "city|town" +
         "|\\bort\\b|stadt" + // de-DE
         "|suburb" + // en-AU
-        "|ciudad|provincia|localidad|poblacion" + // es
+        "|ciudad|localidad|poblacion" + // es
         "|ville|commune" + // fr-FR
         "|localita" + // it-IT
         "|市区町村" + // ja-JP
@@ -549,7 +567,7 @@ export const HeuristicsRegExp = {
         "|vorname" + // de-DE
         "|nombre" + // es
         "|forename|prénom|prenom" + // fr-FR
-        "|名" + // ja-JP
+        "|(^|[^\\p{L}\\p{N}])名([^\\p{L}\\p{N}]|$)" + // ja-JP
         "|nome" + // pt-BR, pt-PT
         "|Имя" + // ru
         "|نام" + // fa
@@ -606,7 +624,7 @@ export const HeuristicsRegExp = {
         "|月", // zh-CN
 
       "cc-exp-year":
-        "exp|^/|(add)?year" +
+        "exp(?![a-hj-z])|^/|(add)?year" +
         "|ablaufdatum|gueltig|gültig|jahr" + // de-DE
         "|fecha" + // es
         "|scadenza" + // it-IT
@@ -662,8 +680,8 @@ export const HeuristicsRegExp = {
       "address-line2":
         "address|line" +
         "|house|building|apartment|floor" +    // de-DE
-        "|apartamento|" +    // pt
-        "|adresse" +      // fr-FR
+        "|apartamento" +    // pt
+        "|adresse|maison|bâtiment|immeuble|appartement|étage" +      // fr-FR
         "|indirizzo" +    // it-IT
         "|地址" +         // zh-CN
         "|주소" +         // ko-KR
@@ -686,7 +704,14 @@ export const HeuristicsRegExp = {
           // lower-cased field name and get a rough equivalent of a case-insensitive
           // match. This avoids a performance cliff with the "iu" flag on regular
           // expressions.
-          regexps.push(`(${set[name].toLowerCase()})`.normalize("NFKC"));
+          let pattern = `(${set[name].toLowerCase()})`.normalize("NFKC");
+
+          // We should not lower case the \p{L} & \p{N} parts of the pattern,
+          // revert them back.
+          pattern = pattern.replaceAll("\\p{l}", "\\p{L}");
+          pattern = pattern.replaceAll("\\p{n}", "\\p{N}");
+
+          regexps.push(pattern);
         }
       });
 

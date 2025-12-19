@@ -8,10 +8,9 @@
 #define mozilla_dom_MediaSession_h
 
 #include "js/TypeDecls.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/dom/MediaSessionBinding.h"
 #include "mozilla/EnumeratedArray.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/dom/MediaSessionBinding.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIDocumentActivity.h"
 #include "nsWrapperCache.h"
@@ -50,7 +49,7 @@ struct PositionState {
 class MediaSession final : public nsIDocumentActivity, public nsWrapperCache {
  public:
   // Ref counting and cycle collection
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(MediaSession)
   NS_DECL_NSIDOCUMENTACTIVITY
 

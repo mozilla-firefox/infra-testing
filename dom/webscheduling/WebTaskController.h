@@ -8,10 +8,9 @@
 #ifndef mozilla_dom_WebTaskController_h
 #define mozilla_dom_WebTaskController_h
 
-#include "nsWrapperCache.h"
-
-#include "mozilla/dom/WebTaskSchedulingBinding.h"
 #include "mozilla/dom/AbortController.h"
+#include "mozilla/dom/WebTaskSchedulingBinding.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla::dom {
 class WebTaskController : public AbortController {
@@ -28,6 +27,10 @@ class WebTaskController : public AbortController {
   void SetPriority(TaskPriority aPriority, ErrorResult& aRv);
 
  private:
+  // https://wicg.github.io/scheduling-apis/#tasksignal-signal-priority-change
+  void SignalPriorityChange(TaskSignal* aTaskSignal, TaskPriority aPriority,
+                            ErrorResult& aRv);
+
   ~WebTaskController() = default;
 };
 }  // namespace mozilla::dom

@@ -12,13 +12,6 @@
 
 namespace mozilla {
 
-#ifdef LOG
-#  undef LOG
-#endif
-#ifdef LOG_TEST
-#  undef LOG_TEST
-#endif
-
 extern LazyLogModule gMediaTrackGraphLog;
 #define LOG(type, msg) MOZ_LOG(gMediaTrackGraphLog, type, msg)
 #define LOG_TEST(type) MOZ_LOG_TEST(gMediaTrackGraphLog, type)
@@ -110,7 +103,7 @@ void CrossGraphTransmitter::ProcessInput(GraphTime aFrom, GraphTime aTo,
   mStartTime = aTo;
 
   for (AudioSegment::ChunkIterator iter(audio); !iter.IsEnded(); iter.Next()) {
-    Unused << mReceiver->EnqueueAudio(*iter);
+    (void)mReceiver->EnqueueAudio(*iter);
   }
 }
 
@@ -136,7 +129,7 @@ void CrossGraphReceiver::ProcessInput(GraphTime aFrom, GraphTime aTo,
   AudioSegment transmittedAudio;
   while (mCrossThreadFIFO.AvailableRead()) {
     AudioChunk chunk;
-    Unused << mCrossThreadFIFO.Dequeue(&chunk, 1);
+    (void)mCrossThreadFIFO.Dequeue(&chunk, 1);
     transmittedAudio.AppendAndConsumeChunk(std::move(chunk));
     mTransmitterHasStarted = true;
   }
@@ -161,3 +154,6 @@ int CrossGraphReceiver::EnqueueAudio(AudioChunk& aChunk) {
 }
 
 }  // namespace mozilla
+
+#undef LOG
+#undef LOG_TEST

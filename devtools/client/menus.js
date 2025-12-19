@@ -70,7 +70,10 @@ exports.menuitems = [
     oncommand(event) {
       try {
         const window = event.target.ownerDocument.defaultView;
-        gDevToolsBrowser.toggleToolboxCommand(window.gBrowser, Cu.now());
+        gDevToolsBrowser.toggleToolboxCommand(
+          window.gBrowser,
+          ChromeUtils.now()
+        );
       } catch (e) {
         console.error(`Exception while opening the toolbox: ${e}\n${e.stack}`);
       }
@@ -136,25 +139,20 @@ exports.menuitems = [
 
       // If RDM is active, disable touch simulation events if they're enabled.
       // Similarly, enable them when the color picker is done picking.
-      if (ResponsiveUIManager.isActiveForTab(target.localTab)) {
-        const ui = ResponsiveUIManager.getResponsiveUIForTab(target.localTab);
-        await ui.responsiveFront.setElementPickerState(
-          true,
-          PICKER_TYPES.EYEDROPPER
+      if (
+        ResponsiveUIManager.isActiveForTab(commands.descriptorFront.localTab)
+      ) {
+        const ui = ResponsiveUIManager.getResponsiveUIForTab(
+          commands.descriptorFront.localTab
         );
+        await ui.setElementPickerState(true, PICKER_TYPES.EYEDROPPER);
 
         inspectorFront.once("color-picked", async () => {
-          await ui.responsiveFront.setElementPickerState(
-            false,
-            PICKER_TYPES.EYEDROPPER
-          );
+          await ui.setElementPickerState(false, PICKER_TYPES.EYEDROPPER);
         });
 
         inspectorFront.once("color-pick-canceled", async () => {
-          await ui.responsiveFront.setElementPickerState(
-            false,
-            PICKER_TYPES.EYEDROPPER
-          );
+          await ui.setElementPickerState(false, PICKER_TYPES.EYEDROPPER);
         });
       }
 

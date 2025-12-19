@@ -1,6 +1,7 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 package org.mozilla.focus.topsites
 
 import androidx.compose.foundation.layout.Column
@@ -34,7 +35,7 @@ import org.mozilla.focus.state.AppAction
 fun TopSitesOverlay(modifier: Modifier = Modifier) {
     val components = components
     val topSitesState = components.appStore.observeAsComposableState { state -> state.topSites }
-    val topSites = topSitesState.value ?: listOf()
+    val topSites = topSitesState.value
     val showRenameDialog: MutableState<Boolean> = remember { mutableStateOf(false) }
     val topSiteItem: MutableState<TopSite?> = remember { mutableStateOf(null) }
 

@@ -6,7 +6,12 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 import {
   getSearchProvider,
   SEARCH_SHORTCUTS_EXPERIMENT,
-} from "resource://gre/modules/SearchShortcuts.sys.mjs";
+} from "moz-src:///toolkit/components/search/SearchShortcuts.sys.mjs";
+
+// eslint-disable-next-line mozilla/use-static-import
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
+);
 
 const lazy = {};
 
@@ -14,8 +19,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
   BinarySearch: "resource://gre/modules/BinarySearch.sys.mjs",
   PageThumbs: "resource://gre/modules/PageThumbs.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
-  Pocket: "chrome://pocket/content/Pocket.sys.mjs",
-  pktApi: "chrome://pocket/content/pktApi.sys.mjs",
 });
 
 let BrowserWindowTracker;
@@ -37,11 +40,8 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "IDNService",
   "@mozilla.org/network/idn-service;1",
-  "nsIIDNService"
+  Ci.nsIIDNService
 );
-
-// Boolean preferences that control newtab content
-const PREF_NEWTAB_ENABLED = "browser.newtabpage.enabled";
 
 // The maximum number of results PlacesProvider retrieves from history.
 const HISTORY_RESULTS_LIMIT = 100;
@@ -53,7 +53,18 @@ const LINKS_GET_LINKS_LIMIT = 100;
 const TOPIC_GATHER_TELEMETRY = "gather-telemetry";
 
 // Some default frecency threshold for Activity Stream requests
-const ACTIVITY_STREAM_DEFAULT_FRECENCY = 150;
+ChromeUtils.defineLazyGetter(lazy, "pageFrecencyThreshold", () => {
+  // @backward-compat { version 147 }
+  // Frecency was graduated in 147 Nightly.
+  if (Services.vc.compare(AppConstants.MOZ_APP_VERSION, "147.0a1") >= 0) {
+    // 30 days ago, 7 visits. The threshold avoids one non-typed visit from
+    // immediately being included in recent history and is slightly higher than
+    // Top Sites to mimic how this had a higher threshold.
+    return lazy.PlacesUtils.history.pageFrecencyThreshold(30, 7, false);
+  }
+  // The old threshold used for classic frecency.
+  return 150;
+});
 
 // Some default query limit for Activity Stream requests
 const ACTIVITY_STREAM_DEFAULT_LIMIT = 12;
@@ -66,12 +77,9 @@ const ACTIVITY_STREAM_DEFAULT_RECENT = 5 * 24 * 60 * 60;
 // If devicePixelRatio cannot be found, it will be multiplied by 2.
 const DEFAULT_SMALL_FAVICON_WIDTH = 16;
 
-const POCKET_UPDATE_TIME = 24 * 60 * 60 * 1000; // 1 day
-const POCKET_INACTIVE_TIME = 7 * 24 * 60 * 60 * 1000; // 1 week
-const PREF_POCKET_LATEST_SINCE = "extensions.pocket.settings.latestSince";
-
 /**
  * Calculate the MD5 hash for a string.
+ *
  * @param aValue
  *        The string to convert.
  * @return The base64 representation of the MD5 hash.
@@ -85,6 +93,7 @@ function toHash(aValue) {
 
 /**
  * Properly convert internationalized domain names.
+ *
  * @param {string} host Domain hostname.
  * @returns {string} Hostname suitable to be displayed.
  */
@@ -172,6 +181,7 @@ LinksStorage.prototype = {
 
   /**
    * Gets the value for a given key from the storage.
+   *
    * @param aKey The storage key (a string).
    * @param aDefault A default value if the key doesn't exist.
    * @return The value for the given key.
@@ -187,6 +197,7 @@ LinksStorage.prototype = {
 
   /**
    * Sets the storage value for a given key.
+   *
    * @param aKey The storage key (a string).
    * @param aValue The value to set.
    */
@@ -197,6 +208,7 @@ LinksStorage.prototype = {
 
   /**
    * Removes the storage value for a given key.
+   *
    * @param aKey The storage key (a string).
    */
   remove: function Storage_remove(aKey) {
@@ -211,113 +223,6 @@ LinksStorage.prototype = {
       this.remove(key);
     }
   },
-};
-
-/**
- * Singleton that serves as a registry for all open 'New Tab Page's.
- */
-var AllPages = {
-  /**
-   * The array containing all active pages.
-   */
-  _pages: [],
-
-  /**
-   * Cached value that tells whether the New Tab Page feature is enabled.
-   */
-  _enabled: null,
-
-  /**
-   * Adds a page to the internal list of pages.
-   * @param aPage The page to register.
-   */
-  register: function AllPages_register(aPage) {
-    this._pages.push(aPage);
-    this._addObserver();
-  },
-
-  /**
-   * Removes a page from the internal list of pages.
-   * @param aPage The page to unregister.
-   */
-  unregister: function AllPages_unregister(aPage) {
-    let index = this._pages.indexOf(aPage);
-    if (index > -1) {
-      this._pages.splice(index, 1);
-    }
-  },
-
-  /**
-   * Returns whether the 'New Tab Page' is enabled.
-   */
-  get enabled() {
-    if (this._enabled === null) {
-      this._enabled = Services.prefs.getBoolPref(PREF_NEWTAB_ENABLED, false);
-    }
-
-    return this._enabled;
-  },
-
-  /**
-   * Enables or disables the 'New Tab Page' feature.
-   */
-  set enabled(aEnabled) {
-    if (this.enabled != aEnabled) {
-      Services.prefs.setBoolPref(PREF_NEWTAB_ENABLED, !!aEnabled);
-    }
-  },
-
-  /**
-   * Returns the number of registered New Tab Pages (i.e. the number of open
-   * about:newtab instances).
-   */
-  get length() {
-    return this._pages.length;
-  },
-
-  /**
-   * Updates all currently active pages but the given one.
-   * @param aExceptPage The page to exclude from updating.
-   * @param aReason The reason for updating all pages.
-   */
-  update(aExceptPage, aReason = "") {
-    for (let page of this._pages.slice()) {
-      if (aExceptPage != page) {
-        page.update(aReason);
-      }
-    }
-  },
-
-  /**
-   * Implements the nsIObserver interface to get notified when the preference
-   * value changes or when a new copy of a page thumbnail is available.
-   */
-  observe: function AllPages_observe(aSubject, aTopic, aData) {
-    if (aTopic == "nsPref:changed") {
-      // Clear the cached value.
-      switch (aData) {
-        case PREF_NEWTAB_ENABLED:
-          this._enabled = null;
-          break;
-      }
-    }
-    // and all notifications get forwarded to each page.
-    this._pages.forEach(function (aPage) {
-      aPage.observe(aSubject, aTopic, aData);
-    }, this);
-  },
-
-  /**
-   * Adds a preference and new thumbnail observer and turns itself into a
-   * no-op after the first invokation.
-   */
-  _addObserver: function AllPages_addObserver() {
-    Services.prefs.addObserver(PREF_NEWTAB_ENABLED, this);
-    Services.obs.addObserver(this, "page-thumbnail:create");
-    this._addObserver = function () {};
-  },
-
-  QueryInterface: ChromeUtils.generateQI(["nsIObserver"]),
 };
 
 /**
@@ -343,6 +248,7 @@ var PinnedLinks = {
 
   /**
    * Pins a link at the given position.
+   *
    * @param aLink The link to pin.
    * @param aIndex The grid index to pin the cell at.
    * @return true if link changes, false otherwise
@@ -360,6 +266,7 @@ var PinnedLinks = {
 
   /**
    * Unpins a given link.
+   *
    * @param aLink The link to unpin.
    */
   unpin: function PinnedLinks_unpin(aLink) {
@@ -387,6 +294,7 @@ var PinnedLinks = {
 
   /**
    * Checks whether a given link is pinned.
+   *
    * @params aLink The link to check.
    * @return whether The link is pinned.
    */
@@ -403,6 +311,7 @@ var PinnedLinks = {
 
   /**
    * Finds the index of a given link in the list of pinned links.
+   *
    * @param aLink The link to find an index for.
    * @return The link's index.
    */
@@ -420,6 +329,7 @@ var PinnedLinks = {
 
   /**
    * Transforms link into a "history" link
+   *
    * @param aLink The link to change
    * @return true if link changes, false otherwise
    */
@@ -433,6 +343,7 @@ var PinnedLinks = {
 
   /**
    * Replaces existing link with another link.
+   *
    * @param aUrl The url of existing link
    * @param aLink The replacement link
    */
@@ -487,6 +398,7 @@ var BlockedLinks = {
 
   /**
    * Blocks a given link. Adjusts siteMap accordingly, and notifies listeners.
+   *
    * @param aLink The link to block.
    */
   block: function BlockedLinks_block(aLink) {
@@ -500,6 +412,7 @@ var BlockedLinks = {
 
   /**
    * Unblocks a given link. Adjusts siteMap accordingly, and notifies listeners.
+   *
    * @param aLink The link to unblock.
    */
   unblock: function BlockedLinks_unblock(aLink) {
@@ -519,6 +432,7 @@ var BlockedLinks = {
 
   /**
    * Returns whether a given link is blocked.
+   *
    * @param aLink The link to check.
    */
   isBlocked: function BlockedLinks_isBlocked(aLink) {
@@ -527,6 +441,7 @@ var BlockedLinks = {
 
   /**
    * Checks whether the list of blocked links is empty.
+   *
    * @return Whether the list is empty.
    */
   isEmpty: function BlockedLinks_isEmpty() {
@@ -578,6 +493,7 @@ var PlacesProvider = {
 
   /**
    * Gets the current set of links delivered by this provider.
+   *
    * @param aCallback The function that the array of links is passed to.
    */
   getLinks: function PlacesProvider_getLinks(aCallback) {
@@ -652,6 +568,7 @@ var PlacesProvider = {
 
   /**
    * Registers an object that will be notified when the provider's links change.
+   *
    * @param aObserver An object with the following optional properties:
    *        * onLinkChanged: A function that's called when a single link
    *          changes.  It's passed the provider and the link object.  Only the
@@ -908,7 +825,9 @@ var ActivityStreamProvider = {
   _addFavicons(aLinks) {
     let win;
     if (BrowserWindowTracker) {
-      win = BrowserWindowTracker.getTopWindow();
+      win = BrowserWindowTracker.getTopWindow({
+        allowFromInactiveWorkspace: true,
+      });
     }
     // We fetch two copies of a page's favicon: the largest available, for
     // Activity Stream; and a smaller size appropriate for the Urlbar.
@@ -923,11 +842,6 @@ var ActivityStreamProvider = {
         link =>
           // eslint-disable-next-line no-async-promise-executor
           new Promise(async resolve => {
-            // Never add favicon data for pocket items
-            if (link.type === "pocket") {
-              resolve(link);
-              return;
-            }
             let iconData;
             try {
               let linkUri = Services.io.newURI(link.url);
@@ -956,89 +870,9 @@ var ActivityStreamProvider = {
   },
 
   /**
-   * Helper function which makes the call to the Pocket API to fetch the user's
-   * saved Pocket items.
-   */
-  fetchSavedPocketItems(requestData) {
-    const latestSince =
-      Services.prefs.getStringPref(PREF_POCKET_LATEST_SINCE, 0) * 1000;
-
-    // Do not fetch Pocket items for users that have been inactive for too long, or are not logged in
-    if (
-      !lazy.pktApi.isUserLoggedIn() ||
-      Date.now() - latestSince > POCKET_INACTIVE_TIME
-    ) {
-      return Promise.resolve(null);
-    }
-
-    return new Promise((resolve, reject) => {
-      lazy.pktApi.retrieve(requestData, {
-        success(data) {
-          resolve(data);
-        },
-        error(error) {
-          reject(error);
-        },
-      });
-    });
-  },
-
-  /**
-   * Get the most recently Pocket-ed items from a user's Pocket list. See:
-   * https://getpocket.com/developer/docs/v3/retrieve for details
-   *
-   * @param {Object} aOptions
-   *   {int} numItems: The max number of pocket items to fetch
-   */
-  async getRecentlyPocketed(aOptions) {
-    const pocketSecondsAgo =
-      Math.floor(Date.now() / 1000) - ACTIVITY_STREAM_DEFAULT_RECENT;
-    const requestData = {
-      detailType: "complete",
-      count: aOptions.numItems,
-      since: pocketSecondsAgo,
-    };
-    let data;
-    try {
-      data = await this.fetchSavedPocketItems(requestData);
-      if (!data) {
-        return [];
-      }
-    } catch (e) {
-      console.error(e);
-      return [];
-    }
-    /* Extract relevant parts needed to show this card as a highlight:
-     * url, preview image, title, description, and the unique item_id
-     * necessary for Pocket to identify the item
-     */
-    let items = Object.values(data.list)
-      // status "0" means not archived or deleted
-      .filter(item => item.status === "0")
-      .map(item => ({
-        date_added: item.time_added * 1000,
-        description: item.excerpt,
-        preview_image_url: item.image && item.image.src,
-        title: item.resolved_title,
-        url: item.resolved_url,
-        pocket_id: item.item_id,
-        open_url: item.open_url,
-      }));
-
-    // Append the query param to let Pocket know this item came from highlights
-    for (let item of items) {
-      let url = new URL(item.open_url);
-      url.searchParams.append("src", "fx_new_tab");
-      item.open_url = url.href;
-    }
-
-    return this._processHighlights(items, aOptions, "pocket");
-  },
-
-  /**
    * Get most-recently-created visited bookmarks for Activity Stream.
    *
-   * @param {Object} aOptions
+   * @param {object} aOptions
    *   {num}  bookmarkSecondsAgo: Maximum age of added bookmark.
    *   {bool} ignoreBlocked: Do not filter out blocked links.
    *   {int}  numItems: Maximum number of items to return.
@@ -1116,7 +950,7 @@ var ActivityStreamProvider = {
   /**
    * Get most-recently-visited history with metadata for Activity Stream.
    *
-   * @param {Object} aOptions
+   * @param {object} aOptions
    *   {bool} ignoreBlocked: Do not filter out blocked links.
    *   {int}  numItems: Maximum number of items to return.
    */
@@ -1155,10 +989,10 @@ var ActivityStreamProvider = {
     );
   },
 
-  /*
+  /**
    * Gets the top frecent sites for Activity Stream.
    *
-   * @param {Object} aOptions
+   * @param {object} aOptions
    *   {bool} ignoreBlocked: Do not filter out blocked links.
    *   {int}  numItems: Maximum number of items to return.
    *   {int}  topsiteFrecency: Minimum amount of frecency for a site.
@@ -1181,7 +1015,7 @@ var ActivityStreamProvider = {
       {
         ignoreBlocked: false,
         numItems: ACTIVITY_STREAM_DEFAULT_LIMIT,
-        topsiteFrecency: ACTIVITY_STREAM_DEFAULT_FRECENCY,
+        topsiteFrecency: lazy.pageFrecencyThreshold,
         onePerDomain: true,
         includeFavicon: true,
         hideWithSearchParam: Services.prefs.getCharPref(
@@ -1309,6 +1143,9 @@ var ActivityStreamProvider = {
           url => url.match(/:\/\/(?:www\.)?([^\/]+)/),
           // Combine frecencies when deduping these links
           (targetLink, otherLink) => {
+            // TODO: Experiment with max() vs sum() for frecency combination.
+            // Current additive approach may bias toward sites requiring
+            // deduplication.
             targetLink.frecency = link.frecency + otherLink.frecency;
           }
         );
@@ -1368,9 +1205,9 @@ var ActivityStreamProvider = {
   /**
    * Executes arbitrary query against places database
    *
-   * @param {String} aQuery
+   * @param {string} aQuery
    *        SQL query to execute
-   * @param {Object} [optional] aOptions
+   * @param {object} [optional] aOptions
    *          aOptions.columns - an array of column names. if supplied the return
    *          items will consists of objects keyed on column names. Otherwise
    *          array of raw values is returned in the select order
@@ -1416,22 +1253,14 @@ var ActivityStreamProvider = {
  * A set of actions which influence what sites shown on the Activity Stream page
  */
 var ActivityStreamLinks = {
-  _savedPocketStories: null,
-  _pocketLastUpdated: 0,
-  _pocketLastLatest: 0,
-
   /**
    * Block a url
    *
-   * @param {Object} aLink
+   * @param {object} aLink
    *          The link which contains a URL to add to the block list
    */
   blockURL(aLink) {
     BlockedLinks.block(aLink);
-    // If we're blocking a pocket item, invalidate the cache too
-    if (aLink.pocket_id) {
-      this._savedPocketStories = null;
-    }
   },
 
   onLinkBlocked(aLink) {
@@ -1442,7 +1271,7 @@ var ActivityStreamLinks = {
    * Adds a bookmark and opens up the Bookmark Dialog to show feedback that
    * the bookmarking action has been successful
    *
-   * @param {Object} aData
+   * @param {object} aData
    *          aData.url The url to bookmark
    *          aData.title The title of the page to bookmark
    * @param {Window} aBrowserWindow
@@ -1458,7 +1287,7 @@ var ActivityStreamLinks = {
   /**
    * Removes a bookmark
    *
-   * @param {String} aBookmarkGuid
+   * @param {string} aBookmarkGuid
    *          The bookmark guid associated with the bookmark to remove
    *
    * @returns {Promise} Returns a promise at completion.
@@ -1470,7 +1299,7 @@ var ActivityStreamLinks = {
   /**
    * Removes a history link and unpins the URL if previously pinned
    *
-   * @param {String} aUrl
+   * @param {string} aUrl
    *           The url to be removed from history
    *
    * @returns {Promise} Returns a promise set to true if link was removed
@@ -1482,77 +1311,11 @@ var ActivityStreamLinks = {
   },
 
   /**
-   * Helper function which makes the call to the Pocket API to delete an item from
-   * a user's saved to Pocket feed. Also, invalidate the Pocket stories cache
-   *
-   * @param {Integer} aItemID
-   *           The unique pocket ID used to find the item to be deleted
-   *
-   *@returns {Promise} Returns a promise at completion
-   */
-  deletePocketEntry(aItemID) {
-    this._savedPocketStories = null;
-    return new Promise((success, error) =>
-      lazy.pktApi.deleteItem(aItemID, { success, error })
-    );
-  },
-
-  /**
-   * Helper function which makes the call to the Pocket API to archive an item from
-   * a user's saved to Pocket feed. Also, invalidate the Pocket stories cache
-   *
-   * @param {Integer} aItemID
-   *           The unique pocket ID used to find the item to be archived
-   *
-   *@returns {Promise} Returns a promise at completion
-   */
-  archivePocketEntry(aItemID) {
-    this._savedPocketStories = null;
-    return new Promise((success, error) =>
-      lazy.pktApi.archiveItem(aItemID, { success, error })
-    );
-  },
-
-  /**
-   * Helper function which makes the call to the Pocket API to save an item to
-   * a user's saved to Pocket feed if they are logged in. Also, invalidate the
-   * Pocket stories cache
-   *
-   * @param {String} aUrl
-   *           The URL belonging to the story being saved
-   * @param {String} aTitle
-   *           The title belonging to the story being saved
-   * @param {Browser} aBrowser
-   *           The target browser to show the doorhanger in
-   *
-   *@returns {Promise} Returns a promise at completion
-   */
-  addPocketEntry(aUrl, aTitle, aBrowser) {
-    // If the user is not logged in, show the panel to prompt them to log in
-    if (!lazy.pktApi.isUserLoggedIn()) {
-      lazy.Pocket.savePage(aBrowser, aUrl, aTitle);
-      return Promise.resolve(null);
-    }
-
-    // If the user is logged in, just save the link to Pocket and Activity Stream
-    // will update the page
-    this._savedPocketStories = null;
-    return new Promise((success, error) => {
-      lazy.pktApi.addLink(aUrl, {
-        title: aTitle,
-        success,
-        error,
-      });
-    });
-  },
-
-  /**
    * Get the Highlights links to show on Activity Stream
    *
-   * @param {Object} aOptions
+   * @param {object} aOptions
    *   {bool} excludeBookmarks: Don't add bookmark items.
    *   {bool} excludeHistory: Don't add history items.
-   *   {bool} excludePocket: Don't add Pocket items.
    *   {bool} withFavicons: Add favicon data: URIs, when possible.
    *   {int}  numItems: Maximum number of (bookmark or history) items to return.
    *
@@ -1567,29 +1330,6 @@ var ActivityStreamLinks = {
       results.push(
         ...(await ActivityStreamProvider.getRecentBookmarks(aOptions))
       );
-    }
-
-    // Add the Pocket items if we need more and want them
-    if (aOptions.numItems - results.length > 0 && !aOptions.excludePocket) {
-      const latestSince = ~~Services.prefs.getStringPref(
-        PREF_POCKET_LATEST_SINCE,
-        0
-      );
-      // Invalidate the cache, get new stories, and update timestamps if:
-      //  1. we do not have saved to Pocket stories already cached OR
-      //  2. it has been too long since we last got Pocket stories OR
-      //  3. there has been a paged saved to pocket since we last got new stories
-      if (
-        !this._savedPocketStories ||
-        Date.now() - this._pocketLastUpdated > POCKET_UPDATE_TIME ||
-        this._pocketLastLatest < latestSince
-      ) {
-        this._savedPocketStories =
-          await ActivityStreamProvider.getRecentlyPocketed(aOptions);
-        this._pocketLastUpdated = Date.now();
-        this._pocketLastLatest = latestSince;
-      }
-      results.push(...this._savedPocketStories);
     }
 
     // Add in history if we need more and want them
@@ -1682,6 +1422,7 @@ var Links = {
 
   /**
    * Adds a link provider.
+   *
    * @param aProvider The link provider.
    */
   addProvider: function Links_addProvider(aProvider) {
@@ -1691,6 +1432,7 @@ var Links = {
 
   /**
    * Removes a link provider.
+   *
    * @param aProvider The link provider.
    */
   removeProvider: function Links_removeProvider(aProvider) {
@@ -1701,6 +1443,7 @@ var Links = {
 
   /**
    * Populates the cache with fresh links from the providers.
+   *
    * @param aCallback The callback to call when finished (optional).
    * @param aForce When true, populates the cache even when it's already filled.
    */
@@ -1747,6 +1490,7 @@ var Links = {
 
   /**
    * Gets the current set of links contained in the grid.
+   *
    * @return The links in the grid.
    */
   getLinks: function Links_getLinks() {
@@ -1802,6 +1546,7 @@ var Links = {
 
   /**
    * Compares two links.
+   *
    * @param aLink1 The first link.
    * @param aLink2 The second link.
    * @return A negative number if aLink1 is ordered before aLink2, zero if
@@ -1889,6 +1634,7 @@ var Links = {
 
   /**
    * Calls getLinks on the given provider and populates our cache for it.
+   *
    * @param aProvider The provider whose cache will be populated.
    * @param aCallback The callback to call when finished.
    * @param aForce When true, populates the provider's cache even when it's
@@ -1934,6 +1680,7 @@ var Links = {
 
   /**
    * Merges the cached lists of links from all providers whose lists are cached.
+   *
    * @return The merged list.
    */
   _getMergedProviderLinks: function Links__getMergedProviderLinks() {
@@ -1981,6 +1728,7 @@ var Links = {
 
   /**
    * Called by a provider to notify us when a single link changes.
+   *
    * @param aProvider The provider whose link changed.
    * @param aLink The link that changed.  If the link is new, it must have all
    *              of the _sortProperties.  Otherwise, it may have as few or as
@@ -2010,7 +1758,6 @@ var Links = {
     let { sortedLinks, siteMap, linkMap } = links;
     let existingLink = linkMap.get(aLink.url);
     let insertionLink = null;
-    let updatePages = false;
 
     if (existingLink) {
       // Update our copy's position in O(lg n) by first removing it from its
@@ -2029,7 +1776,6 @@ var Links = {
         sortedLinks.splice(idx, 1);
 
         if (aDeleted) {
-          updatePages = true;
           linkMap.delete(existingLink.url);
           this._decrementSiteMap(siteMap, existingLink);
         } else {
@@ -2043,7 +1789,6 @@ var Links = {
       // Update our copy's title in O(1).
       if ("title" in aLink && aLink.title != existingLink.title) {
         existingLink.title = aLink.title;
-        updatePages = true;
       }
     } else if (this._sortProperties.every(prop => prop in aLink)) {
       // Before doing the O(lg n) insertion below, do an O(1) check for the
@@ -2072,11 +1817,6 @@ var Links = {
         linkMap.delete(lastLink.url);
         this._decrementSiteMap(siteMap, lastLink);
       }
-      updatePages = true;
-    }
-
-    if (updatePages) {
-      AllPages.update(null, "links-changed");
     }
   },
 
@@ -2084,13 +1824,7 @@ var Links = {
    * Called by a provider to notify us when many links change.
    */
   onManyLinksChanged: function Links_onManyLinksChanged(aProvider) {
-    this._populateProviderCache(
-      aProvider,
-      () => {
-        AllPages.update(null, "links-changed");
-      },
-      true
-    );
+    this._populateProviderCache(aProvider, () => {}, true);
   },
 
   _indexOf: function Links__indexOf(aArray, aLink) {
@@ -2110,15 +1844,7 @@ var Links = {
    * sanitization.
    */
   observe: function Links_observe() {
-    // Make sure to update open about:newtab instances. If there are no opened
-    // pages we can just wait for the next new tab to populate the cache again.
-    if (AllPages.length && AllPages.enabled) {
-      this.populateCache(function () {
-        AllPages.update();
-      }, true);
-    } else {
-      this.resetCache();
-    }
+    this.resetCache();
   },
 
   _callObservers(methodName, ...args) {
@@ -2232,11 +1958,6 @@ var ExpirationFilter = {
 
   filterForThumbnailExpiration:
     function ExpirationFilter_filterForThumbnailExpiration(aCallback) {
-      if (!AllPages.enabled) {
-        aCallback([]);
-        return;
-      }
-
       Links.populateCache(function () {
         let urls = [];
 
@@ -2261,6 +1982,7 @@ export var NewTabUtils = {
   /**
    * Extract a "site" from a url in a way that multiple urls of a "site" returns
    * the same "site."
+   *
    * @param aUrl Url spec string
    * @return The "site" string or null
    */
@@ -2320,10 +2042,6 @@ export var NewTabUtils = {
     return false;
   },
 
-  isTopPlacesSite(aSite) {
-    return this.isTopSiteGivenProvider(aSite, PlacesProvider);
-  },
-
   /**
    * Restores all sites that have been removed from the grid.
    */
@@ -2333,14 +2051,13 @@ export var NewTabUtils = {
     PinnedLinks.resetCache();
     BlockedLinks.resetCache();
 
-    Links.populateCache(function () {
-      AllPages.update();
-    }, true);
+    Links.populateCache(() => {}, true);
   },
 
   /**
    * Undoes all sites that have been removed from the grid and keep the pinned
    * tabs.
+   *
    * @param aCallback the callback method.
    */
   undoAll: function NewTabUtils_undoAll(aCallback) {
@@ -2352,6 +2069,7 @@ export var NewTabUtils = {
 
   /**
    * Get the effective top level domain of a host.
+   *
    * @param {string} host The host to be analyzed.
    * @return {str} The suffix or empty string if there's no suffix.
    */
@@ -2416,9 +2134,17 @@ export var NewTabUtils = {
   /**
    * retrieves positive UTC offset, rounded to the nearest integer number greater than 0.
    * (If less than 0, then add 24.)
-   * @returns {Number} utc_offset
+   *
+   * @param {str} [surfaceID] Optional surface ID to constrain time zone to reduce identifying telemetry.
+   * @returns {number} utc_offset. Output is clamped if surfaceID is specified, and 0 if surfaceID present and not supported.
    */
-  getUtcOffset() {
+  getUtcOffset(surfaceID) {
+    const surfaceRestrictions = { NEW_TAB_EN_US: { min: 24 - 8, max: 24 - 4 } }; // Inclusive hour ranges UTC-8 (PST), UTC-4 (EDT)
+    const restriction = surfaceID && surfaceRestrictions[surfaceID];
+    if (surfaceID && !restriction) {
+      // Missing restriction for the surface
+      return 0;
+    }
     const offsetInMinutes = new Date().getTimezoneOffset(); // in minutes, positive behind UTC
     const offsetInHours = -offsetInMinutes / 60; // convert to hours, now positive *ahead* of UTC
     let utc_offset = Math.round(offsetInHours);
@@ -2426,15 +2152,24 @@ export var NewTabUtils = {
     if (utc_offset <= 0) {
       utc_offset += 24;
     }
+    if (restriction) {
+      if (utc_offset < restriction.min) {
+        utc_offset = restriction.min;
+      }
+      if (utc_offset > restriction.max) {
+        utc_offset = restriction.max;
+      }
+    }
 
     return utc_offset;
   },
 
   /**
-   *  Returns a normalized OS string used in the newtab-content ping
+   * Returns a normalized OS string used in the newtab-content ping
    * Borrowed from https://github.com/mozilla/gcp-ingestion/ingestion-beam/
    * src/main/java/com/mozilla/telemetry/transforms/NormalizeAttributes.java
-   * @returns {String} Normalized OS string mac|win|linux|android|ios|other
+   *
+   * @returns {string} Normalized OS string mac|win|linux|android|ios|other
    */
   normalizeOs() {
     const osString = Services.appinfo.OS;
@@ -2448,7 +2183,7 @@ export var NewTabUtils = {
       osString.includes("SunOS") ||
       osString.includes("Solaris")
     ) {
-      return "Linux";
+      return "linux";
     } else if (osString.startsWith("iOS") || osString.includes("iPhone")) {
       return "ios";
     } else if (osString.startsWith("Android")) {
@@ -2458,7 +2193,6 @@ export var NewTabUtils = {
   },
 
   links: Links,
-  allPages: AllPages,
   pinnedLinks: PinnedLinks,
   blockedLinks: BlockedLinks,
   activityStreamLinks: ActivityStreamLinks,

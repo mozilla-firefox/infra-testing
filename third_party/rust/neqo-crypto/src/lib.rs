@@ -4,6 +4,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+
 mod aead;
 #[cfg(feature = "disable-encryption")]
 pub mod aead_null;
@@ -37,6 +39,7 @@ pub use self::aead::RealAead;
 #[cfg(feature = "disable-encryption")]
 pub use self::aead_null::AeadNull as Aead;
 pub use self::{
+    aead::Aead as AeadTrait,
     agent::{
         Agent, AllowZeroRtt, Client, HandshakeState, Record, RecordList, ResumptionToken,
         SecretAgent, SecretAgentInfo, SecretAgentPreInfo, Server, ZeroRttCheckResult,
@@ -118,9 +121,9 @@ fn init_once(db: Option<PathBuf>) -> Res<NssLoaded> {
 
     let state = if let Some(path) = db {
         if !path.is_dir() {
-            return Err(Error::InternalError);
+            return Err(Error::Internal);
         }
-        let pathstr = path.to_str().ok_or(Error::InternalError)?;
+        let pathstr = path.to_str().ok_or(Error::Internal)?;
         let dircstr = CString::new(pathstr)?;
         let empty = CString::new("")?;
         secstatus_to_res(unsafe {
@@ -168,8 +171,8 @@ pub fn init() -> Res<()> {
 /// If NSS cannot be initialized.
 pub fn init_db<P: Into<PathBuf>>(dir: P) -> Res<()> {
     // Allow overriding the NSS database path with an environment variable.
-    let dir = env::var("NSS_DB_PATH")
-        .unwrap_or(dir.into().to_str().ok_or(Error::InternalError)?.to_string());
+    let dir =
+        env::var("NSS_DB_PATH").unwrap_or(dir.into().to_str().ok_or(Error::Internal)?.to_string());
     let res = INITIALIZED.get_or_init(|| init_once(Some(dir.into())));
     res.as_ref().map(|_| ()).map_err(Clone::clone)
 }

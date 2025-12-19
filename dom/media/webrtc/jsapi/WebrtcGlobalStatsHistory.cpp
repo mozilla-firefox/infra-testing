@@ -5,10 +5,10 @@
 #include "WebrtcGlobalStatsHistory.h"
 
 #include "domstubs.h"
-#include "mozilla/LinkedList.h"
-#include "mozilla/dom/RTCStatsReportBinding.h"  // for RTCStatsReportInternal
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/LinkedList.h"
 #include "mozilla/StaticPrefs_media.h"
+#include "mozilla/dom/RTCStatsReportBinding.h"  // for RTCStatsReportInternal
 #include "mozilla/fallible.h"
 #include "mozilla/mozalloc_oom.h"
 #include "nsDOMNavigationTiming.h"
@@ -162,8 +162,9 @@ auto WebrtcGlobalStatsHistory::Entry::Prune(const DOMHighResTimeStamp aBefore)
   // Note: we always keep the most recent SDP
 }
 
-auto WebrtcGlobalStatsHistory::InitHistory(
-    const nsAString& aPcId, const bool aIsLongTermStatsDisabled) -> void {
+auto WebrtcGlobalStatsHistory::InitHistory(const nsAString& aPcId,
+                                           const bool aIsLongTermStatsDisabled)
+    -> void {
   MOZ_ASSERT(XRE_IsParentProcess());
   if (WebrtcGlobalStatsHistory::Get().MaybeGet(aPcId)) {
     return;

@@ -71,6 +71,13 @@
 # This should be MOZ_CHILD_PROCESS_NAME, but that has a "lib/" prefix.
 @BINPATH@/@MOZ_CHILD_PROCESS_NAME@
 
+#ifdef MOZ_APPSERVICES_IN_TREE
+; This is mis-placed as it will cause the megazord to be shipped with geckoview, which
+; isn't what we want in general, but seems fine for now.
+; TODO: work out a better way of shipping the megazord where we need it, but not where we do not.
+@BINPATH@/@DLL_PREFIX@megazord@DLL_SUFFIX@
+#endif
+
 #ifdef MOZ_ANDROID_GOOGLE_VR
 @BINPATH@/@DLL_PREFIX@gvr@DLL_SUFFIX@
 #endif
@@ -79,6 +86,9 @@
 @BINPATH@/@DLL_PREFIX@crashhelper@DLL_SUFFIX@
 @BINPATH@/@DLL_PREFIX@minidump_analyzer@DLL_SUFFIX@
 #endif
+
+; GMP clearkey plugin
+@BINPATH@/@DLL_PREFIX@clearkey@DLL_SUFFIX@
 
 [browser]
 ; [Base Browser Files]
@@ -98,6 +108,7 @@
 
 ; Modules
 @BINPATH@/modules/*
+@BINPATH@/moz-src/*
 @BINPATH@/actors/*
 
 ; [Browser Chrome Files]
@@ -124,7 +135,10 @@
 @BINPATH@/*/greprefs.js
 @BINPATH@/@PREF_DIR@/*/geckoview-prefs.js
 #endif # !MOZ_ANDROID_FAT_AAR_ARCHITECTURES
+
+#ifdef MOZ_PREF_EXTENSIONS
 @BINPATH@/defaults/autoconfig/prefcalls.js
+#endif
 
 ; [Layout Engine Resources]
 ; Style Sheets, Graphics and other Resources used by the layout engine.
@@ -155,6 +169,7 @@
 @BINPATH@/res/locale/layout/MediaDocument.properties
 @BINPATH@/res/locale/layout/xmlparser.properties
 @BINPATH@/res/locale/dom/dom.properties
+@BINPATH@/res/locale/necko/necko.properties
 
 #ifndef MOZ_ANDROID_EXCLUDE_FONTS
 @BINPATH@/res/fonts/*

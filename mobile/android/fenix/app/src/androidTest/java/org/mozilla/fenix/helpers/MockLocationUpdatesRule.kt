@@ -17,7 +17,7 @@ import org.mozilla.fenix.helpers.TestHelper.mDevice
 import java.util.Date
 import kotlin.random.Random
 
-private const val mockProviderName = LocationManager.GPS_PROVIDER
+private const val MOCK_PROVIDER_NAME = LocationManager.GPS_PROVIDER
 
 /**
  * Rule that sets up a mock location provider that can inject location samples
@@ -51,7 +51,7 @@ class MockLocationUpdatesRule : ExternalResource() {
         // To mock locations we need a location provider, so we generate and set it here.
         try {
             locationManager.addTestProvider(
-                mockProviderName,
+                MOCK_PROVIDER_NAME,
                 false,
                 false,
                 false,
@@ -66,15 +66,15 @@ class MockLocationUpdatesRule : ExternalResource() {
             // unstable
             Log.i(TAG, "MockLocationUpdatesRule: Exception $ex caught, addTestProvider failed")
         }
-        locationManager.setTestProviderEnabled(mockProviderName, true)
+        locationManager.setTestProviderEnabled(MOCK_PROVIDER_NAME, true)
         Log.i(TAG, "MockLocationUpdatesRule: Enabled the mock location setting on the device")
     }
 
     // Cleaning up the location provider after the test.
     override fun after() {
         Log.i(TAG, "MockLocationUpdatesRule: Trying to clean up the location provider")
-        locationManager.setTestProviderEnabled(mockProviderName, false)
-        locationManager.removeTestProvider(mockProviderName)
+        locationManager.setTestProviderEnabled(MOCK_PROVIDER_NAME, false)
+        locationManager.removeTestProvider(MOCK_PROVIDER_NAME)
         Log.i(TAG, "MockLocationUpdatesRule: Cleaned up the location provider")
     }
 
@@ -85,12 +85,8 @@ class MockLocationUpdatesRule : ExternalResource() {
      */
     fun setMockLocation(modifyLocation: (Location.() -> Unit)? = null) {
         Log.i(TAG, "setMockLocation: Trying to set the mock location")
-        check(Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            "MockLocationUpdatesRule is supported only on Android devices " +
-                "running version >= Build.VERSION_CODES.M"
-        }
 
-        val location = Location(mockProviderName)
+        val location = Location(MOCK_PROVIDER_NAME)
         location.time = Date().time
         location.elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()
         location.accuracy = 5f
@@ -99,11 +95,9 @@ class MockLocationUpdatesRule : ExternalResource() {
         location.speed = 5f
         location.latitude = latitude
         location.longitude = longitude
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            location.verticalAccuracyMeters = 5f
-            location.bearingAccuracyDegrees = 5f
-            location.speedAccuracyMetersPerSecond = 5f
-        }
+        location.verticalAccuracyMeters = 5f
+        location.bearingAccuracyDegrees = 5f
+        location.speedAccuracyMetersPerSecond = 5f
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             location.elapsedRealtimeUncertaintyNanos = 0.0
@@ -113,7 +107,7 @@ class MockLocationUpdatesRule : ExternalResource() {
             location.apply(it)
         }
 
-        locationManager.setTestProviderLocation(mockProviderName, location)
+        locationManager.setTestProviderLocation(MOCK_PROVIDER_NAME, location)
         Log.i(TAG, "setMockLocation: The mock location was successfully set")
     }
 }

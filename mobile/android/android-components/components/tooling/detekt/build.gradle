@@ -6,11 +6,14 @@ apply plugin: 'java-library'
 apply plugin: 'kotlin'
 
 dependencies {
-    implementation libs.tools.detekt.api
+    implementation libs.detekt.api
 
-    testImplementation libs.junit.vintage
-    testImplementation libs.tools.detekt.api
-    testImplementation libs.tools.detekt.test
+    testImplementation libs.detekt.api
+    testImplementation libs.detekt.test
+    testImplementation platform(libs.junit.bom)
+    testImplementation libs.junit4
+    testRuntimeOnly libs.junit.platform.launcher
+    testRuntimeOnly libs.junit.vintage
 }
 
 tasks.register("lintRelease") {

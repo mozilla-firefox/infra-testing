@@ -4,14 +4,15 @@
 
 package org.mozilla.fenix.settings
 
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Build.VERSION.SDK_INT
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.navigation.fragment.navArgs
 import androidx.preference.Preference
 import androidx.preference.PreferenceCategory
 import androidx.preference.PreferenceFragmentCompat
-import androidx.preference.PreferenceScreen
 import androidx.preference.SwitchPreference
 import org.mozilla.fenix.FeatureFlags
 import org.mozilla.fenix.GleanMetrics.AppTheme
@@ -19,11 +20,13 @@ import org.mozilla.fenix.GleanMetrics.CustomizationSettings
 import org.mozilla.fenix.GleanMetrics.PullToRefreshInBrowser
 import org.mozilla.fenix.GleanMetrics.ToolbarSettings
 import org.mozilla.fenix.R
-import org.mozilla.fenix.browser.tabstrip.isTabStripEnabled
 import org.mozilla.fenix.components.toolbar.ToolbarPosition
+import org.mozilla.fenix.ext.isTallWindow
+import org.mozilla.fenix.ext.isWideWindow
 import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.ext.showToolbar
+import org.mozilla.fenix.utils.Settings
 import org.mozilla.fenix.utils.view.addToRadioGroup
 
 /**
@@ -36,6 +39,7 @@ class CustomizationFragment : PreferenceFragmentCompat() {
     private lateinit var radioDarkTheme: RadioButtonPreference
     private lateinit var radioAutoBatteryTheme: RadioButtonPreference
     private lateinit var radioFollowDeviceTheme: RadioButtonPreference
+    private val args by navArgs<CustomizationFragmentArgs>()
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.customization_preferences, rootKey)
@@ -46,6 +50,9 @@ class CustomizationFragment : PreferenceFragmentCompat() {
     override fun onResume() {
         super.onResume()
         showToolbar(getString(R.string.preferences_customize))
+        args.preferenceToScrollTo?.let {
+            scrollToPreference(it)
+        }
     }
 
     private fun setupPreferences() {
@@ -54,30 +61,67 @@ class CustomizationFragment : PreferenceFragmentCompat() {
         bindLightTheme()
         bindAutoBatteryTheme()
         setupRadioGroups()
-        val tabletAndTabStripEnabled = requireContext().isTabStripEnabled()
-        if (tabletAndTabStripEnabled) {
-            val preferenceScreen: PreferenceScreen =
-                requirePreference(R.string.pref_key_customization_preference_screen)
-            val toolbarPrefCategory: PreferenceCategory =
-                requirePreference(R.string.pref_key_customization_category_toolbar)
-            preferenceScreen.removePreference(toolbarPrefCategory)
-        } else {
-            setupToolbarCategory()
-        }
-        val isNavBarEnabled = requireContext().settings().navigationToolbarEnabled
-        if (isNavBarEnabled) {
-            setupNavBarEnabledSettingsUpdates()
-        }
+        val tabletAndTabStripEnabled = Settings(requireContext()).isTabStripEnabled
+        updateToolbarCategoryBasedOnTabStrip(tabletAndTabStripEnabled)
+        setupTabStripCategory()
+        setupToolbarLayout()
+        updateToolbarShortcut()
+
         // if tab strip is enabled, swipe toolbar to switch tabs should not be enabled so the
         // preference is not shown
         setupGesturesCategory(isSwipeToolbarToSwitchTabsVisible = !tabletAndTabStripEnabled)
+        setupAppIconCategory()
     }
 
-    // Changes to some settings page copy for when the Toolbar(NavBar) is enabled
-    private fun setupNavBarEnabledSettingsUpdates() {
-        val scrollToEnable: SwitchPreference =
-            requirePreference(R.string.pref_key_dynamic_toolbar)
-        scrollToEnable.setTitle(R.string.preference_gestures_dynamic_toolbar_2)
+    private fun updateToolbarCategoryBasedOnTabStrip(
+        tabStripEnabled: Boolean,
+    ) {
+        val topPreference = requirePreference<RadioButtonPreference>(R.string.pref_key_toolbar_top)
+        val bottomPreference = requirePreference<RadioButtonPreference>(R.string.pref_key_toolbar_bottom)
+        val tabStripMessagePref = findPreference<Preference>(getString(R.string.pref_key_tab_strip_message))
+
+        topPreference.isEnabled = !tabStripEnabled
+        bottomPreference.isEnabled = !tabStripEnabled
+        tabStripMessagePref?.isVisible = tabStripEnabled
+
+        if (tabStripEnabled && !topPreference.isChecked) {
+            topPreference.setCheckedWithoutClickListener(true)
+            bottomPreference.setCheckedWithoutClickListener(false)
+        } else {
+            setupToolbarCategory()
+        }
+    }
+
+    private fun updateToolbarShortcut() {
+        val category = requirePreference<PreferenceCategory>(
+            R.string.pref_key_customization_category_toolbar_shortcut,
+        )
+        val settings = requireContext().settings()
+        val isExpandedToolbarEnabled = settings.shouldUseExpandedToolbar && isTallWindow() && !isWideWindow()
+        val shouldShowShortcutCategory = settings.shouldShowToolbarCustomization &&
+                settings.shouldUseComposableToolbar &&
+                settings.toolbarRedesignEnabled
+
+        category.isVisible = shouldShowShortcutCategory
+        if (shouldShowShortcutCategory) {
+            val shortcutPreference = if (isExpandedToolbarEnabled) {
+                ToolbarExpandedShortcutPreference(requireContext()).apply {
+                    key = getString(R.string.pref_key_toolbar_expanded_shortcut)
+                    layoutResource = R.layout.preference_toolbar_shortcut
+                }
+            } else {
+                ToolbarSimpleShortcutPreference(requireContext()).apply {
+                    key = getString(R.string.pref_key_toolbar_simple_shortcut)
+                    layoutResource = R.layout.preference_toolbar_shortcut
+                }
+            }
+            category.apply {
+                removeAll()
+                addPreference(shortcutPreference)
+                val shortcutOptions = shortcutPreference.getShortcutOptions()
+                shortcutOptions.forEach(::addPreference)
+            }
+        }
     }
 
     private fun setupRadioGroups() {
@@ -145,6 +189,8 @@ class CustomizationFragment : PreferenceFragmentCompat() {
                     Position.TOP.name,
                 ),
             )
+
+            updateToolbarLayoutIcons()
         }
 
         val bottomPreference = requirePreference<RadioButtonPreference>(R.string.pref_key_toolbar_bottom)
@@ -154,6 +200,8 @@ class CustomizationFragment : PreferenceFragmentCompat() {
                     Position.BOTTOM.name,
                 ),
             )
+
+            updateToolbarLayoutIcons()
         }
 
         val toolbarPosition = requireContext().settings().toolbarPosition
@@ -161,6 +209,45 @@ class CustomizationFragment : PreferenceFragmentCompat() {
         bottomPreference.setCheckedWithoutClickListener(toolbarPosition == ToolbarPosition.BOTTOM)
 
         addToRadioGroup(topPreference, bottomPreference)
+    }
+
+    private fun setupTabStripCategory() {
+        val tabStripSwitch = requirePreference<SwitchPreference>(R.string.pref_key_tab_strip_show)
+        val context = requireContext()
+
+        tabStripSwitch.isChecked = Settings(requireContext()).isTabStripEnabled
+
+        tabStripSwitch.setOnPreferenceChangeListener { _, newValue ->
+            val enabled = newValue as Boolean
+            context.settings().isTabStripEnabled = enabled
+            updateToolbarCategoryBasedOnTabStrip(enabled)
+            setupToolbarLayout()
+            true
+        }
+    }
+
+    private fun setupToolbarLayout() {
+        val settings = requireContext().settings()
+        (requirePreference(R.string.pref_key_customization_category_toolbar_layout) as PreferenceCategory).apply {
+            isVisible = settings.shouldUseComposableToolbar &&
+                    settings.toolbarRedesignEnabled && isTallWindow() && !isWideWindow()
+        }
+
+        val layoutToggle = requirePreference<ToggleRadioButtonPreference>(R.string.pref_key_toolbar_expanded)
+        layoutToggle.setOnToggleChanged {
+            updateToolbarShortcut()
+        }
+        updateToolbarLayoutIcons()
+    }
+
+    private fun updateToolbarLayoutIcons() {
+        (requirePreference(R.string.pref_key_toolbar_expanded) as ToggleRadioButtonPreference).apply {
+            if (requireContext().settings().shouldUseBottomToolbar) {
+                updateIcon(R.drawable.ic_toolbar_bottom_expanded, R.drawable.ic_toolbar_bottom_simple)
+            } else {
+                updateIcon(R.drawable.ic_toolbar_top_expanded, R.drawable.ic_toolbar_top_simple)
+            }
+        }
     }
 
     private fun setupGesturesCategory(isSwipeToolbarToSwitchTabsVisible: Boolean) {
@@ -180,6 +267,12 @@ class CustomizationFragment : PreferenceFragmentCompat() {
         }
     }
 
+    private fun setupAppIconCategory() {
+        requirePreference<PreferenceCategory>(R.string.pref_key_customization_category_app_icon).apply {
+           isVisible = context.settings().appIconSelection
+        }
+    }
+
     override fun onPreferenceTreeClick(preference: Preference): Boolean {
         when (preference.key) {
             resources.getString(R.string.pref_key_website_pull_to_refresh) -> {
@@ -190,6 +283,12 @@ class CustomizationFragment : PreferenceFragmentCompat() {
             }
         }
         return super.onPreferenceTreeClick(preference)
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        setupToolbarLayout()
+        updateToolbarShortcut()
     }
 
     companion object {

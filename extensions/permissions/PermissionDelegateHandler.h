@@ -44,7 +44,7 @@ class WindowContext;
 
 class PermissionDelegateHandler final : public nsIPermissionDelegateHandler {
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_CLASS(PermissionDelegateHandler)
 
   NS_DECL_NSIPERMISSIONDELEGATEHANDLER
@@ -52,7 +52,7 @@ class PermissionDelegateHandler final : public nsIPermissionDelegateHandler {
   explicit PermissionDelegateHandler() = default;
   explicit PermissionDelegateHandler(mozilla::dom::Document* aDocument);
 
-  static constexpr size_t DELEGATED_PERMISSION_COUNT = 13;
+  static constexpr size_t DELEGATED_PERMISSION_COUNT = 15;
 
   typedef struct DelegatedPermissionList {
     Array<uint32_t, DELEGATED_PERMISSION_COUNT> mPermissions;

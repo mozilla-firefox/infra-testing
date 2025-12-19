@@ -24,6 +24,7 @@
 #include "nsQueryObject.h"
 #include "nsComponentManagerUtils.h"
 #include "nsServiceManagerUtils.h"
+#include "mozilla/StaticPrefs_network.h"
 
 #include <algorithm>
 
@@ -480,9 +481,14 @@ void nsUnknownDecoder::DetermineContentType(nsIRequest* aRequest) {
     return;
   }
 
+  nsCOMPtr<nsIURI> uri;
+  NS_GetFinalChannelURI(channel, getter_AddRefs(uri));
+
   // We don't know what this is yet.  Before we just give up, try
   // the URI from the request.
-  if (SniffURI(aRequest)) {
+  if ((StaticPrefs::network_sniff_use_extension() ||
+       (uri && uri->SchemeIs("file"))) &&
+      SniffURI(aRequest)) {
 #ifdef DEBUG
     MutexAutoLock lock(mMutex);
     NS_ASSERTION(!mContentType.IsEmpty(),
@@ -498,6 +504,7 @@ void nsUnknownDecoder::DetermineContentType(nsIRequest* aRequest) {
 #endif
 }
 
+// https://mimesniff.spec.whatwg.org/#identifying-a-resource-with-an-unknown-mime-type
 bool nsUnknownDecoder::SniffForHTML(nsIRequest* aRequest) {
   MutexAutoLock lock(mMutex);
 
@@ -523,32 +530,42 @@ bool nsUnknownDecoder::SniffForHTML(nsIRequest* aRequest) {
     return false;
   }
 
-  // If we seem to be SGML or XML and we got down here, just pretend we're HTML
-  if (*str == '!' || *str == '?') {
+  uint32_t bufSize = end - str;
+  nsDependentCSubstring substr(str, bufSize);
+
+  if (StringBeginsWith(substr, "?xml"_ns)) {
+    mContentType = TEXT_XML;
+    return true;
+  }
+
+  // We use sizeof(_tagstr) below because that's the length of _tagstr
+  // with the one char " " or ">" appended.
+#define MATCHES_TAG(_tagstr)                               \
+  (substr.Length() >= sizeof(_tagstr) &&                   \
+   StringBeginsWith(substr, _tagstr##_ns,                  \
+                    nsCaseInsensitiveCStringComparator) && \
+   (substr[sizeof(_tagstr) - 1] == ' ' || substr[sizeof(_tagstr) - 1] == '>'))
+
+  if (MATCHES_TAG("!DOCTYPE HTML") || MATCHES_TAG("html") ||
+      MATCHES_TAG("head") || MATCHES_TAG("script") || MATCHES_TAG("iframe") ||
+      MATCHES_TAG("h1") || MATCHES_TAG("div") || MATCHES_TAG("font") ||
+      MATCHES_TAG("table") || MATCHES_TAG("a") || MATCHES_TAG("style") ||
+      MATCHES_TAG("title") || MATCHES_TAG("b") || MATCHES_TAG("body") ||
+      MATCHES_TAG("br") || MATCHES_TAG("p") || MATCHES_TAG("!--")) {
     mContentType = TEXT_HTML;
     return true;
   }
 
-  uint32_t bufSize = end - str;
-  // We use sizeof(_tagstr) below because that's the length of _tagstr
-  // with the one char " " or ">" appended.
-#define MATCHES_TAG(_tagstr)                                      \
-  (bufSize >= sizeof(_tagstr) &&                                  \
-   (nsCRT::strncasecmp(str, _tagstr " ", sizeof(_tagstr)) == 0 || \
-    nsCRT::strncasecmp(str, _tagstr ">", sizeof(_tagstr)) == 0))
-
-  if (MATCHES_TAG("html") || MATCHES_TAG("frameset") || MATCHES_TAG("body") ||
-      MATCHES_TAG("head") || MATCHES_TAG("script") || MATCHES_TAG("iframe") ||
-      MATCHES_TAG("a") || MATCHES_TAG("img") || MATCHES_TAG("table") ||
-      MATCHES_TAG("title") || MATCHES_TAG("link") || MATCHES_TAG("base") ||
-      MATCHES_TAG("style") || MATCHES_TAG("div") || MATCHES_TAG("p") ||
-      MATCHES_TAG("font") || MATCHES_TAG("applet") || MATCHES_TAG("meta") ||
-      MATCHES_TAG("center") || MATCHES_TAG("form") || MATCHES_TAG("isindex") ||
-      MATCHES_TAG("h1") || MATCHES_TAG("h2") || MATCHES_TAG("h3") ||
-      MATCHES_TAG("h4") || MATCHES_TAG("h5") || MATCHES_TAG("h6") ||
-      MATCHES_TAG("b") || MATCHES_TAG("pre")) {
-    mContentType = TEXT_HTML;
-    return true;
+  if (StaticPrefs::network_mimesniff_extra_moz_html_tags()) {
+    if (MATCHES_TAG("frameset") || MATCHES_TAG("img") || MATCHES_TAG("link") ||
+        MATCHES_TAG("base") || MATCHES_TAG("applet") || MATCHES_TAG("meta") ||
+        MATCHES_TAG("center") || MATCHES_TAG("form") ||
+        MATCHES_TAG("isindex") || MATCHES_TAG("h2") || MATCHES_TAG("h3") ||
+        MATCHES_TAG("h4") || MATCHES_TAG("h5") || MATCHES_TAG("h6") ||
+        MATCHES_TAG("pre")) {
+      mContentType = TEXT_HTML;
+      return true;
+    }
   }
 
 #undef MATCHES_TAG
@@ -558,7 +575,7 @@ bool nsUnknownDecoder::SniffForHTML(nsIRequest* aRequest) {
 
 bool nsUnknownDecoder::SniffForXML(nsIRequest* aRequest) {
   // First see whether we can glean anything from the uri...
-  if (!SniffURI(aRequest)) {
+  if (!StaticPrefs::network_sniff_use_extension() || !SniffURI(aRequest)) {
     // Oh well; just generic XML will have to do
     MutexAutoLock lock(mMutex);
     mContentType = TEXT_XML;
@@ -830,7 +847,7 @@ void nsBinaryDetector::DetermineContentType(nsIRequest* aRequest) {
   }
   // It's an HTTP channel.  Check for the text/plain mess
   nsAutoCString contentTypeHdr;
-  Unused << httpChannel->GetResponseHeader("Content-Type"_ns, contentTypeHdr);
+  (void)httpChannel->GetResponseHeader("Content-Type"_ns, contentTypeHdr);
   nsAutoCString contentType;
   httpChannel->GetContentType(contentType);
 
@@ -854,8 +871,7 @@ void nsBinaryDetector::DetermineContentType(nsIRequest* aRequest) {
   // XXXbz we could improve this by doing a local decompress if we
   // wanted, I'm sure.
   nsAutoCString contentEncoding;
-  Unused << httpChannel->GetResponseHeader("Content-Encoding"_ns,
-                                           contentEncoding);
+  (void)httpChannel->GetResponseHeader("Content-Encoding"_ns, contentEncoding);
   if (!contentEncoding.IsEmpty()) {
     return;
   }

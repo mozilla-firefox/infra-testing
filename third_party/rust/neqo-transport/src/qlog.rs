@@ -11,7 +11,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use neqo_common::{hex, qinfo, qlog::NeqoQlog, Decoder, IpTosEcn};
+use neqo_common::{hex, qinfo, qlog::Qlog, Decoder, Ecn};
 use qlog::events::{
     connectivity::{ConnectionStarted, ConnectionState, ConnectionStateUpdated},
     quic::{
@@ -25,9 +25,9 @@ use smallvec::SmallVec;
 use crate::{
     connection::State,
     frame::{CloseError, Frame},
-    packet::{self, metadata::Direction, PacketType, PublicPacket},
+    packet::{self, metadata::Direction},
     path::PathRef,
-    recovery::SentPacket,
+    recovery::sent,
     stream_id::StreamType as NeqoStreamType,
     tparams::{
         TransportParameterId::{
@@ -38,11 +38,11 @@ use crate::{
         },
         TransportParametersHandler,
     },
-    version::{Version, VersionConfig, WireVersion},
+    version::{self, Version},
 };
 
-pub fn connection_tparams_set(qlog: &NeqoQlog, tph: &TransportParametersHandler, now: Instant) {
-    qlog.add_event_data_with_instant(
+pub fn connection_tparams_set(qlog: &mut Qlog, tph: &TransportParametersHandler, now: Instant) {
+    qlog.add_event_at(
         || {
             let remote = tph.remote();
             #[expect(clippy::cast_possible_truncation, reason = "These are OK.")]
@@ -89,16 +89,16 @@ pub fn connection_tparams_set(qlog: &NeqoQlog, tph: &TransportParametersHandler,
     );
 }
 
-pub fn server_connection_started(qlog: &NeqoQlog, path: &PathRef, now: Instant) {
+pub fn server_connection_started(qlog: &mut Qlog, path: &PathRef, now: Instant) {
     connection_started(qlog, path, now);
 }
 
-pub fn client_connection_started(qlog: &NeqoQlog, path: &PathRef, now: Instant) {
+pub fn client_connection_started(qlog: &mut Qlog, path: &PathRef, now: Instant) {
     connection_started(qlog, path, now);
 }
 
-fn connection_started(qlog: &NeqoQlog, path: &PathRef, now: Instant) {
-    qlog.add_event_data_with_instant(
+fn connection_started(qlog: &mut Qlog, path: &PathRef, now: Instant) {
+    qlog.add_event_at(
         || {
             let p = path.deref().borrow();
             let ev_data = EventData::ConnectionStarted(ConnectionStarted {
@@ -122,9 +122,13 @@ fn connection_started(qlog: &NeqoQlog, path: &PathRef, now: Instant) {
     );
 }
 
-#[expect(clippy::similar_names, reason = "new and now are similar.")]
-pub fn connection_state_updated(qlog: &NeqoQlog, new: &State, now: Instant) {
-    qlog.add_event_data_with_instant(
+#[allow(
+    clippy::allow_attributes,
+    clippy::similar_names,
+    reason = "FIXME: 'new and now are similar' hits on MSRV <1.91."
+)]
+pub fn connection_state_updated(qlog: &mut Qlog, new: &State, now: Instant) {
+    qlog.add_event_at(
         || {
             let ev_data = EventData::ConnectionStateUpdated(ConnectionStateUpdated {
                 old: None,
@@ -146,11 +150,11 @@ pub fn connection_state_updated(qlog: &NeqoQlog, new: &State, now: Instant) {
 }
 
 pub fn client_version_information_initiated(
-    qlog: &NeqoQlog,
-    version_config: &VersionConfig,
+    qlog: &mut Qlog,
+    version_config: &version::Config,
     now: Instant,
 ) {
-    qlog.add_event_data_with_instant(
+    qlog.add_event_at(
         || {
             Some(EventData::VersionInformation(VersionInformation {
                 client_versions: Some(
@@ -169,13 +173,13 @@ pub fn client_version_information_initiated(
 }
 
 pub fn client_version_information_negotiated(
-    qlog: &NeqoQlog,
+    qlog: &mut Qlog,
     client: &[Version],
-    server: &[WireVersion],
+    server: &[version::Wire],
     chosen: Version,
     now: Instant,
 ) {
-    qlog.add_event_data_with_instant(
+    qlog.add_event_at(
         || {
             Some(EventData::VersionInformation(VersionInformation {
                 client_versions: Some(
@@ -193,12 +197,12 @@ pub fn client_version_information_negotiated(
 }
 
 pub fn server_version_information_failed(
-    qlog: &NeqoQlog,
+    qlog: &mut Qlog,
     server: &[Version],
-    client: WireVersion,
+    client: version::Wire,
     now: Instant,
 ) {
-    qlog.add_event_data_with_instant(
+    qlog.add_event_at(
         || {
             Some(EventData::VersionInformation(VersionInformation {
                 client_versions: Some(vec![format!("{client:02x}")]),
@@ -215,8 +219,8 @@ pub fn server_version_information_failed(
     );
 }
 
-pub fn packet_io(qlog: &NeqoQlog, meta: packet::MetaData, now: Instant) {
-    qlog.add_event_data_with_instant(
+pub fn packet_io(qlog: &mut Qlog, meta: packet::MetaData, now: Instant) {
+    qlog.add_event_at(
         || {
             let mut d = Decoder::from(meta.payload());
             let raw = RawInfo {
@@ -253,17 +257,14 @@ pub fn packet_io(qlog: &NeqoQlog, meta: packet::MetaData, now: Instant) {
         now,
     );
 }
-
-pub fn packet_dropped(qlog: &NeqoQlog, public_packet: &PublicPacket, now: Instant) {
-    qlog.add_event_data_with_instant(
+pub fn packet_dropped(qlog: &mut Qlog, decrypt_err: &packet::DecryptionError, now: Instant) {
+    qlog.add_event_at(
         || {
             let header =
-                PacketHeader::with_type(public_packet.packet_type().into(), None, None, None, None);
+                PacketHeader::with_type(decrypt_err.packet_type().into(), None, None, None, None);
             let raw = RawInfo {
-                length: Some(public_packet.len() as u64),
-                payload_length: None,
-                data: None,
-                // TODO: ..Default::default() once qlog is past 0.15.1
+                length: Some(decrypt_err.len() as u64),
+                ..Default::default()
             };
 
             let ev_data = EventData::PacketDropped(PacketDropped {
@@ -278,7 +279,7 @@ pub fn packet_dropped(qlog: &NeqoQlog, public_packet: &PublicPacket, now: Instan
     );
 }
 
-pub fn packets_lost(qlog: &NeqoQlog, pkts: &[SentPacket], now: Instant) {
+pub fn packets_lost(qlog: &mut Qlog, pkts: &[sent::Packet], now: Instant) {
     qlog.add_event_with_stream(|stream| {
         for pkt in pkts {
             let header =
@@ -296,7 +297,7 @@ pub fn packets_lost(qlog: &NeqoQlog, pkts: &[SentPacket], now: Instant) {
 }
 
 #[expect(dead_code, reason = "TODO: Construct all variants.")]
-pub enum QlogMetric {
+pub enum Metric {
     MinRtt(Duration),
     SmoothedRtt(Duration),
     LatestRtt(Duration),
@@ -311,10 +312,10 @@ pub enum QlogMetric {
     PacingRate(u64),
 }
 
-pub fn metrics_updated(qlog: &NeqoQlog, updated_metrics: &[QlogMetric], now: Instant) {
+pub fn metrics_updated(qlog: &mut Qlog, updated_metrics: &[Metric], now: Instant) {
     debug_assert!(!updated_metrics.is_empty());
 
-    qlog.add_event_data_with_instant(
+    qlog.add_event_at(
         || {
             let mut min_rtt: Option<f32> = None;
             let mut smoothed_rtt: Option<f32> = None;
@@ -329,24 +330,24 @@ pub fn metrics_updated(qlog: &NeqoQlog, updated_metrics: &[QlogMetric], now: Ins
 
             for metric in updated_metrics {
                 match metric {
-                    QlogMetric::MinRtt(v) => min_rtt = Some(v.as_secs_f32() * 1000.0),
-                    QlogMetric::SmoothedRtt(v) => smoothed_rtt = Some(v.as_secs_f32() * 1000.0),
-                    QlogMetric::LatestRtt(v) => latest_rtt = Some(v.as_secs_f32() * 1000.0),
-                    QlogMetric::RttVariance(v) => rtt_variance = Some(v.as_secs_f32() * 1000.0),
-                    QlogMetric::PtoCount(v) => {
+                    Metric::MinRtt(v) => min_rtt = Some(v.as_secs_f32() * 1000.0),
+                    Metric::SmoothedRtt(v) => smoothed_rtt = Some(v.as_secs_f32() * 1000.0),
+                    Metric::LatestRtt(v) => latest_rtt = Some(v.as_secs_f32() * 1000.0),
+                    Metric::RttVariance(v) => rtt_variance = Some(v.as_secs_f32() * 1000.0),
+                    Metric::PtoCount(v) => {
                         pto_count = Some(u16::try_from(*v).expect("fits in u16"));
                     }
-                    QlogMetric::CongestionWindow(v) => {
+                    Metric::CongestionWindow(v) => {
                         congestion_window = Some(u64::try_from(*v).expect("fits in u64"));
                     }
-                    QlogMetric::BytesInFlight(v) => {
+                    Metric::BytesInFlight(v) => {
                         bytes_in_flight = Some(u64::try_from(*v).expect("fits in u64"));
                     }
-                    QlogMetric::SsThresh(v) => {
+                    Metric::SsThresh(v) => {
                         ssthresh = Some(u64::try_from(*v).expect("fits in u64"));
                     }
-                    QlogMetric::PacketsInFlight(v) => packets_in_flight = Some(*v),
-                    QlogMetric::PacingRate(v) => pacing_rate = Some(*v),
+                    Metric::PacketsInFlight(v) => packets_in_flight = Some(*v),
+                    Metric::PacingRate(v) => pacing_rate = Some(*v),
                     _ => (),
                 }
             }
@@ -411,9 +412,9 @@ impl From<Frame<'_>> for QuicFrame {
                 Self::Ack {
                     ack_delay: Some(ack_delay as f32 / 1000.0),
                     acked_ranges,
-                    ect1: ecn_count.map(|c| c[IpTosEcn::Ect1]),
-                    ect0: ecn_count.map(|c| c[IpTosEcn::Ect0]),
-                    ce: ecn_count.map(|c| c[IpTosEcn::Ce]),
+                    ect1: ecn_count.map(|c| c[Ecn::Ect1]),
+                    ect0: ecn_count.map(|c| c[Ecn::Ect0]),
+                    ce: ecn_count.map(|c| c[Ecn::Ce]),
                     length: None,
                     payload_length: None,
                 }
@@ -553,16 +554,16 @@ impl From<Frame<'_>> for QuicFrame {
     }
 }
 
-impl From<PacketType> for qlog::events::quic::PacketType {
-    fn from(value: PacketType) -> Self {
+impl From<packet::Type> for qlog::events::quic::PacketType {
+    fn from(value: packet::Type) -> Self {
         match value {
-            PacketType::Initial => Self::Initial,
-            PacketType::Handshake => Self::Handshake,
-            PacketType::ZeroRtt => Self::ZeroRtt,
-            PacketType::Short => Self::OneRtt,
-            PacketType::Retry => Self::Retry,
-            PacketType::VersionNegotiation => Self::VersionNegotiation,
-            PacketType::OtherVersion => Self::Unknown,
+            packet::Type::Initial => Self::Initial,
+            packet::Type::Handshake => Self::Handshake,
+            packet::Type::ZeroRtt => Self::ZeroRtt,
+            packet::Type::Short => Self::OneRtt,
+            packet::Type::Retry => Self::Retry,
+            packet::Type::VersionNegotiation => Self::VersionNegotiation,
+            packet::Type::OtherVersion => Self::Unknown,
         }
     }
 }

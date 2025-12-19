@@ -17,8 +17,6 @@
 #include "mozilla/Logging.h"
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/Base64.h"
-#include "mozilla/Unused.h"
-#include "mozilla/UniquePtr.h"
 #include "nsUrlClassifierDBService.h"
 #include "nsUrlClassifierUtils.h"
 
@@ -93,7 +91,14 @@ nsresult Classifier::GetPrivateStoreDirectory(
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Append the provider name to the root store directory.
-  rv = providerDirectory->AppendNative(aProvider);
+  if (aProvider.EqualsLiteral("google5")) {
+    // We reuse the google4 directory for google5 provider because both V4 and
+    // V5 share the same file format. Reusing the directory avoids the need to
+    // migrate the data between the two providers.
+    rv = providerDirectory->AppendNative("google4"_ns);
+  } else {
+    rv = providerDirectory->AppendNative(aProvider);
+  }
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Ensure existence of the provider directory.
@@ -291,7 +296,7 @@ nsresult Classifier::Open(nsIFile& aCacheDirectory) {
   NS_ENSURE_SUCCESS(rv, rv);
 
   rv = ClearLegacyFiles();
-  Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 
   // Build the list of know urlclassifier lists
   // XXX: Disk IO potentially on the main thread during startup
@@ -481,6 +486,8 @@ nsresult Classifier::CheckURIFragments(
     return NS_ERROR_FAILURE;
   }
 
+  bool hasAnyHit = false;
+
   // Now check each lookup fragment against the entries in the DB.
   for (uint32_t i = 0; i < aSpecFragments.Length(); i++) {
     Completion lookupHash;
@@ -510,7 +517,15 @@ nsresult Classifier::CheckURIFragments(
       result->mTableName.Assign(cache->TableName());
       result->mPartialHashLength = confirmed ? COMPLETE_SIZE : matchLength;
       result->mProtocolV2 = LookupCache::Cast<LookupCacheV2>(cache);
+
+      hasAnyHit = true;
     }
+  }
+
+  if (hasAnyHit) {
+    glean::urlclassifier::lookup_hit.Get(aTable).Add(1);
+  } else {
+    glean::urlclassifier::lookup_miss.Get(aTable).Add(1);
   }
 
   return NS_OK;
@@ -978,11 +993,11 @@ nsresult Classifier::RegenActiveTables() {
   nsTArray<nsCString> exts = {".vlpset"_ns, ".pset"_ns};
   nsTArray<nsCString> foundTables;
   nsresult rv = ScanStoreDir(mRootStoreDirectory, exts, foundTables);
-  Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 
   // We don't have test tables on disk, add Moz built-in entries here
   rv = AddMozEntries(foundTables);
-  Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 
   for (const auto& table : foundTables) {
     RefPtr<const LookupCache> lookupCache = GetLookupCache(table);
@@ -1651,10 +1666,12 @@ nsresult Classifier::LoadHashStore(nsIFile* aDirectory, nsACString& aResult,
     HashStore store(table, GetProvider(table), mRootStoreDirectory);
 
     nsresult rv = store.Open();
-    if (NS_FAILED(rv) || !GetLookupCache(table)) {
+    RefPtr<LookupCache> cache = GetLookupCache(table);
+
+    if (NS_FAILED(rv) || !cache || !cache->MaybeVerifyCRC32()) {
       // TableRequest is called right before applying an update.
       // If we cannot retrieve metadata for a given table or we fail to
-      // load the prefixes for a table, reset the table to esnure we
+      // load the prefixes for a table, reset the table to ensure we
       // apply a full update to the table.
       LOG(("Failed to get metadata for v2 table %s", table.get()));
       aFailedTableNames.AppendElement(table);
@@ -1710,7 +1727,7 @@ nsresult Classifier::LoadMetadata(nsIFile* aDirectory, nsACString& aResult,
     RefPtr<LookupCache> c = GetLookupCache(table);
     RefPtr<LookupCacheV4> lookupCacheV4 = LookupCache::Cast<LookupCacheV4>(c);
 
-    if (!lookupCacheV4) {
+    if (!lookupCacheV4 || !lookupCacheV4->MaybeVerifyCRC32()) {
       aFailedTableNames.AppendElement(table);
       continue;
     }

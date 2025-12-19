@@ -25,13 +25,15 @@ class BrowserParent;
 } // namespace mozilla
 %}
 
-interface nsIContentSecurityPolicy;
+interface nsIPolicyContainer;
+interface nsIFile;
 
 [ptr] native BrowserParentPtr(mozilla::dom::BrowserParent);
 native EventMessage(mozilla::EventMessage);
 [ref] native LayoutDeviceIntPoint(mozilla::LayoutDeviceIntPoint);
 [ptr] native nsIFramePtr(nsIFrame);
 [ptr] native nsIWidgetPtr(nsIWidget);
+[ref] native StringSet(const nsTHashSet<nsString>);
 native nsSize(nsSize);
 
 webidl DataTransfer;
@@ -106,11 +108,11 @@ interface nsIDragSession : nsISupports
   attribute nsIPrincipal triggeringPrincipal;
 
   /**
-   * the triggering csp.  This may be different than sourceNode's
-   * csp when sourceNode is xul:browser and the drag is
+   * the triggering policyContainer.  This may be different than sourceNode's
+   * policyContainer when sourceNode is xul:browser and the drag is
    * triggered in a browsing context inside it.
    */
-  attribute nsIContentSecurityPolicy csp;
+  attribute nsIPolicyContainer policyContainer;
 
   /**
    * The data transfer object for the current drag.
@@ -170,9 +172,9 @@ interface nsIDragSession : nsISupports
 
   /**
    * Sets drag end point of synthesized session when the test does not dispatch
-   * "drop" event.
+   * "drop" event.  Position is relative to screen in CSS coordinates.
    */
-  void setDragEndPointForTests(in long aScreenX, in long aScreenY);
+  void setDragEndPointForTests(in float aScreenX, in float aScreenY);
 
   /**
    * Returns true if the session is for dragging text in a text in text control
@@ -188,6 +190,7 @@ interface nsIDragSession : nsISupports
   [noscript] void maybeEditorDeletedSourceNode(in Element aEditingHost);
 
   /**
+    * Sets the position for the Gecko-drawn dragged-contents image.
     * aX and aY are in LayoutDevice pixels.
     */
   [noscript] void dragMoved(in long aX, in long aY);
@@ -234,7 +237,7 @@ interface nsIDragSession : nsISupports
    * @param aShouldDrop  True to send drop event, false to send dragexit event
    */
   void sendDispatchToDropTargetAndResumeEndDragSession(
-      in boolean aShouldDrop);
+      in boolean aShouldDrop, in Array<nsIFile> aAllowedFiles);
 
   /**
    * Store aElement and aDocFrame as the future drop/dragexit context, and
@@ -252,15 +255,17 @@ interface nsIDragSession : nsISupports
    * Issue drop or dragexit to the stored drop target (if any) and issue
    * any delayed call to EndDragSession.  This is used in content processes.
    *
-   * @param aWidget      The widget on which the drop will happen
-   * @param aPt          Screen coords of drop
-   * @param aShouldDrop  If true, send a drop event.  Otherwise send dragexit.
+   * @param aWidget           The widget on which the drop will happen
+   * @param aPt               Screen coords of drop
+   * @param aShouldDrop       If true, send a drop event.  Otherwise send dragexit.
+   * @param aAllowedFilePaths Paths to the files that were allowed to be dropped.
    */
   [noscript, can_run_script]
   void dispatchToDropTargetAndResumeEndDragSession(
       in nsIWidgetPtr aWidget,
       [const] in LayoutDeviceIntPoint aPt,
-      in boolean aShouldDrop);
+      in boolean aShouldDrop,
+      in StringSet aAllowedFilePaths);
 
   /**
    * Retrun true if nsIDragSession's data is updated.

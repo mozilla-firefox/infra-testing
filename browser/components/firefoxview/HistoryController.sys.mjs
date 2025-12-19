@@ -94,7 +94,7 @@ export class HistoryController {
   }
 
   deleteFromHistory() {
-    lazy.PlacesUtils.history.remove(this.host.triggerNode.url);
+    return lazy.PlacesUtils.history.remove(this.host.triggerNode.url);
   }
 
   onSearchQuery(e) {

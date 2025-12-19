@@ -52,7 +52,12 @@ void BaselineFrame::trace(JSTracer* trc, const JSJitFrameIter& frameIterator) {
     TraceRoot(trc, &argsObj_, "baseline-args-obj");
   }
 
-  if (runningInInterpreter()) {
+  mozilla::DebugOnly<bool> isBaselineSelfHosted =
+      this->script()->selfHosted() && !runningInInterpreter();
+  MOZ_ASSERT_IF(
+      JS::Prefs::experimental_self_hosted_cache() && isBaselineSelfHosted,
+      isRealmIndependent());
+  if (runningInInterpreter() || isRealmIndependent()) {
     TraceRoot(trc, &interpreterScript_, "baseline-interpreterScript");
   }
 

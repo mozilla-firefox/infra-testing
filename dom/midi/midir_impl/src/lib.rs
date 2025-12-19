@@ -14,18 +14,6 @@ use uuid::Uuid;
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 extern crate midir;
 
-#[cfg(target_os = "windows")]
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct GeckoTimeStamp {
-    gtc: u64,
-    qpc: u64,
-
-    is_null: u8,
-    has_qpc: u8,
-}
-
-#[cfg(not(target_os = "windows"))]
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct GeckoTimeStamp {
@@ -136,7 +124,7 @@ impl MidirWrapper {
 
     // We explicitly disable Microsoft's soft synthesizer, see bug 1798097
     fn is_microsoft_synth_output(port: &MidiPortWrapper) -> bool {
-        (port.input() == false) && (port.name == "Microsoft GS Wavetable Synth")
+        !port.input() && (port.name == "Microsoft GS Wavetable Synth")
     }
 
     fn open_port(

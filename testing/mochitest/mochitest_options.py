@@ -34,7 +34,7 @@ ALL_FLAVORS = {
     "mochitest": {
         "suite": "plain",
         "aliases": ("plain", "mochitest"),
-        "enabled_apps": ("firefox", "android"),
+        "enabled_apps": ("firefox", "android", "ios"),
         "extra_args": {
             "flavor": "plain",
         },
@@ -184,6 +184,14 @@ class MochitestArguments(ArgumentContainer):
                     "/usr/bin/firefox. If you have run ./mach package beforehand, you can "
                     "specify 'dist' to run tests against the distribution bundle's binary."
                 ),
+            },
+        ],
+        [
+            ["--android"],
+            {
+                "action": "store_true",
+                "default": False,
+                "help": "Force an android test run.",
             },
         ],
         [
@@ -989,8 +997,8 @@ class MochitestArguments(ArgumentContainer):
     def validate(self, parser, options, context):
         """Validate generic options."""
 
-        # and android doesn't use 'app' the same way, so skip validation
-        if parser.app != "android":
+        # and android/iOS doesn't use 'app' the same way, so skip validation
+        if parser.app not in ("android", "ios"):
             if options.app is None:
                 if build_obj:
                     from mozbuild.base import BinaryNotFoundException
@@ -1288,6 +1296,19 @@ class AndroidArguments(ArgumentContainer):
             },
         ],
         [
+            ["--activity"],
+            {
+                "dest": "appActivity",
+                "default": "TestRunnerActivity",
+                "help": (
+                    "Specify the android app activity that should be used (e.g. "
+                    "GeckoViewActivity for org.mozilla.geckoview_example). Uses "
+                    "TestRunnerActivity by default for org.mozilla.geckoview.test_"
+                    "runner"
+                ),
+            },
+        ],
+        [
             ["--remote-webserver"],
             {
                 "dest": "remoteWebServer",
@@ -1410,9 +1431,112 @@ class AndroidArguments(ArgumentContainer):
         return options
 
 
+class IosArguments(ArgumentContainer):
+    """Ios specific arguments."""
+
+    args = [
+        [
+            ["--no-install"],
+            {
+                "action": "store_true",
+                "default": False,
+                "help": "Skip the installation of the app.",
+            },
+        ],
+        # FIXME: Support something like --deviceSerial.
+        [
+            ["--remote-webserver"],
+            {
+                "dest": "remoteWebServer",
+                "default": None,
+                "help": "IP address of the remote web server.",
+            },
+        ],
+        [
+            ["--http-port"],
+            {
+                "dest": "httpPort",
+                "default": DEFAULT_PORTS["http"],
+                "help": "http port of the remote web server.",
+                "suppress": True,
+            },
+        ],
+        [
+            ["--ssl-port"],
+            {
+                "dest": "sslPort",
+                "default": DEFAULT_PORTS["https"],
+                "help": "ssl port of the remote web server.",
+                "suppress": True,
+            },
+        ],
+        [
+            ["--remoteTestRoot"],
+            {
+                "dest": "remoteTestRoot",
+                "default": None,
+                "help": "Remote directory to use as test root "
+                "(eg. /data/local/tmp/test_root).",
+                "suppress": True,
+            },
+        ],
+    ]
+
+    defaults = {
+        # we don't want to exclude specialpowers on iOS just yet
+        "extensionsToExclude": [],
+        # mochijar doesn't get installed via marionette on iOS
+        "extensionsToInstall": [os.path.join(here, "mochijar")],
+        "logFile": "mochitest.log",
+        "utilityPath": None,
+    }
+
+    def validate(self, parser, options, context):
+        """Validate iOS options."""
+
+        if build_obj:
+            options.log_mach = "-"
+
+            objdir_xpi_stage = os.path.join(build_obj.distdir, "xpi-stage")
+            if os.path.isdir(objdir_xpi_stage):
+                options.extensionsToInstall = [
+                    os.path.join(objdir_xpi_stage, "mochijar"),
+                    os.path.join(objdir_xpi_stage, "specialpowers"),
+                ]
+
+        if options.remoteWebServer is None:
+            options.remoteWebServer = moznetwork.get_ip()
+
+        options.webServer = options.remoteWebServer
+
+        if options.app is None:
+            options.app = "org.mozilla.ios.GeckoTestBrowser"
+
+        if build_obj and "MOZ_HOST_BIN" in os.environ:
+            options.xrePath = os.environ["MOZ_HOST_BIN"]
+
+        # Only reset the xrePath if it wasn't provided
+        if options.xrePath is None:
+            options.xrePath = options.utilityPath
+
+        if build_obj:
+            options.topsrcdir = build_obj.topsrcdir
+
+        if options.pidFile != "":
+            f = open(options.pidFile, "w")
+            f.write("%s" % os.getpid())
+            f.close()
+
+        # allow us to keep original application around for cleanup while
+        # running tests
+        options.remoteappname = options.app
+        return options
+
+
 container_map = {
     "generic": [MochitestArguments],
     "android": [MochitestArguments, AndroidArguments],
+    "ios": [MochitestArguments, IosArguments],
 }
 
 
@@ -1429,9 +1553,34 @@ class MochitestArgumentParser(ArgumentParser):
 
         self.oldcwd = os.getcwd()
         self.app = app
+
+        mozlog.commandline.add_logging_group(self)
+
+        self.build_args()
+
+    @property
+    def containers(self):
+        if self._containers:
+            return self._containers
+
+        containers = container_map[self.app]
+        self._containers = [c() for c in containers]
+        return self._containers
+
+    def validate(self, args):
+        for container in self.containers:
+            args = container.validate(self, args, self.context)
+        return args
+
+    def build_args(self, args=None):
+        if args and not self.app and any("--android" == arg for arg in args):
+            self.app = "android"
+
         if not self.app and build_obj:
             if conditions.is_android(build_obj):
                 self.app = "android"
+            if conditions.is_ios(build_obj):
+                self.app = "ios"
         if not self.app:
             # platform can't be determined and app wasn't specified explicitly,
             # so just use generic arguments and hope for the best
@@ -1465,18 +1614,6 @@ class MochitestArgumentParser(ArgumentParser):
                 group.add_argument(*cli, **kwargs)
 
         self.set_defaults(**defaults)
-        mozlog.commandline.add_logging_group(self)
 
-    @property
-    def containers(self):
-        if self._containers:
-            return self._containers
-
-        containers = container_map[self.app]
-        self._containers = [c() for c in containers]
-        return self._containers
-
-    def validate(self, args):
-        for container in self.containers:
-            args = container.validate(self, args, self.context)
-        return args
+    def parse_known_args(self, args=None, namespace=None):
+        return super().parse_known_args(args, namespace)

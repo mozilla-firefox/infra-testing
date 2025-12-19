@@ -7,19 +7,20 @@
 #ifndef mozilla_dom_gamepad_Gamepad_h
 #define mozilla_dom_gamepad_Gamepad_h
 
+#include <stdint.h>
+
 #include "mozilla/dom/GamepadBinding.h"
 #include "mozilla/dom/GamepadButton.h"
 #include "mozilla/dom/GamepadHandle.h"
-#include "mozilla/dom/GamepadPose.h"
 #include "mozilla/dom/GamepadHapticActuator.h"
 #include "mozilla/dom/GamepadLightIndicator.h"
+#include "mozilla/dom/GamepadPose.h"
 #include "mozilla/dom/GamepadTouch.h"
 #include "mozilla/dom/Performance.h"
-#include <stdint.h>
 #include "nsCOMPtr.h"
-#include "nsTHashMap.h"
 #include "nsString.h"
 #include "nsTArray.h"
+#include "nsTHashMap.h"
 #include "nsWrapperCache.h"
 
 namespace mozilla::dom {
@@ -43,9 +44,8 @@ class Gamepad final : public nsISupports, public nsWrapperCache {
  public:
   Gamepad(nsISupports* aParent, const nsAString& aID, int32_t aIndex,
           GamepadHandle aHandle, GamepadMappingType aMapping, GamepadHand aHand,
-          uint32_t aDisplayID, uint32_t aNumButtons, uint32_t aNumAxes,
-          uint32_t aNumHaptics, uint32_t aNumLightIndicator,
-          uint32_t aNumTouchEvents);
+          uint32_t aNumButtons, uint32_t aNumAxes, uint32_t aNumHaptics,
+          uint32_t aNumLightIndicator, uint32_t aNumTouchEvents);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(Gamepad)
@@ -77,8 +77,6 @@ class Gamepad final : public nsISupports, public nsWrapperCache {
   DOMHighResTimeStamp Timestamp() const { return mTimestamp; }
 
   GamepadMappingType Mapping() { return mMapping; }
-
-  uint32_t DisplayId() const { return mDisplayId; }
 
   GamepadHand Hand() { return mHand; }
 
@@ -120,7 +118,6 @@ class Gamepad final : public nsISupports, public nsWrapperCache {
   int32_t mIndex;
   // the gamepad hash key in GamepadManager
   GamepadHandle mHandle;
-  uint32_t mDisplayId;
   uint32_t mTouchIdHashValue;
   // The mapping in use.
   GamepadMappingType mMapping;

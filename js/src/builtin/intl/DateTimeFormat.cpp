@@ -15,7 +15,6 @@
 #include "mozilla/intl/DateTimePart.h"
 #include "mozilla/intl/Locale.h"
 #include "mozilla/intl/TimeZone.h"
-#include "mozilla/Range.h"
 #include "mozilla/Span.h"
 
 #include "jsdate.h"
@@ -24,6 +23,7 @@
 #include "builtin/intl/CommonFunctions.h"
 #include "builtin/intl/FormatBuffer.h"
 #include "builtin/intl/LanguageTag.h"
+#include "builtin/intl/LocaleNegotiation.h"
 #include "builtin/intl/SharedIntlData.h"
 #include "builtin/temporal/Calendar.h"
 #include "builtin/temporal/Instant.h"
@@ -56,12 +56,14 @@
 #include "vm/NativeObject-inl.h"
 
 using namespace js;
+using namespace js::intl;
 using namespace js::temporal;
 
 using JS::AutoStableStringChars;
 using JS::ClippedTime;
 using JS::TimeClip;
 
+using js::intl::DateTimeFormatKind;
 using js::intl::DateTimeFormatOptions;
 using js::intl::FormatBuffer;
 using js::intl::INITIAL_CHAR_BUFFER_SIZE;
@@ -91,6 +93,9 @@ const JSClass DateTimeFormatObject::class_ = {
 
 const JSClass& DateTimeFormatObject::protoClass_ = PlainObject::class_;
 
+static bool dateTimeFormat_supportedLocalesOf(JSContext* cx, unsigned argc,
+                                              Value* vp);
+
 static bool dateTimeFormat_toSource(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   args.rval().setString(cx->names().DateTimeFormat);
@@ -98,8 +103,7 @@ static bool dateTimeFormat_toSource(JSContext* cx, unsigned argc, Value* vp) {
 }
 
 static const JSFunctionSpec dateTimeFormat_static_methods[] = {
-    JS_SELF_HOSTED_FN("supportedLocalesOf",
-                      "Intl_DateTimeFormat_supportedLocalesOf", 1, 0),
+    JS_FN("supportedLocalesOf", dateTimeFormat_supportedLocalesOf, 1, 0),
     JS_FS_END,
 };
 
@@ -197,18 +201,82 @@ static bool MozDateTimeFormat(JSContext* cx, unsigned argc, Value* vp) {
                         DateTimeFormatOptions::EnableMozExtensions);
 }
 
-bool js::intl_CreateDateTimeFormat(JSContext* cx, unsigned argc, Value* vp) {
-  CallArgs args = CallArgsFromVp(argc, vp);
-  MOZ_ASSERT(args.length() == 4);
-  MOZ_ASSERT(!args.isConstructing());
+static Handle<PropertyName*> ToRequired(JSContext* cx,
+                                        DateTimeFormatKind kind) {
+  switch (kind) {
+    case DateTimeFormatKind::All:
+      return cx->names().any;
+    case DateTimeFormatKind::Date:
+      return cx->names().date;
+    case DateTimeFormatKind::Time:
+      return cx->names().time;
+  }
+  MOZ_CRASH("invalid date time format kind");
+}
 
-  RootedString required(cx, args[2].toString());
-  RootedString defaults(cx, args[3].toString());
+static Handle<PropertyName*> ToDefaults(JSContext* cx,
+                                        DateTimeFormatKind kind) {
+  switch (kind) {
+    case DateTimeFormatKind::All:
+      return cx->names().all;
+    case DateTimeFormatKind::Date:
+      return cx->names().date;
+    case DateTimeFormatKind::Time:
+      return cx->names().time;
+  }
+  MOZ_CRASH("invalid date time format kind");
+}
 
-  // intl_CreateDateTimeFormat is an intrinsic for self-hosted JavaScript, so it
-  // cannot be used with "new", but it still has to be treated as a constructor.
-  return DateTimeFormat(cx, args, true, required, defaults,
-                        DateTimeFormatOptions::Standard);
+static DateTimeFormatObject* CreateDateTimeFormat(
+    JSContext* cx, Handle<Value> locales, Handle<Value> options,
+    Handle<Value> toLocaleStringTimeZone, DateTimeFormatKind kind) {
+  Rooted<DateTimeFormatObject*> dateTimeFormat(
+      cx, NewBuiltinClassInstance<DateTimeFormatObject>(cx));
+  if (!dateTimeFormat) {
+    return nullptr;
+  }
+
+  Handle<PropertyName*> required = ToRequired(cx, kind);
+  Handle<PropertyName*> defaults = ToDefaults(cx, kind);
+
+  Rooted<Value> thisValue(cx, ObjectValue(*dateTimeFormat));
+  Rooted<Value> ignored(cx);
+  if (!InitializeDateTimeFormatObject(
+          cx, dateTimeFormat, thisValue, locales, options, required, defaults,
+          toLocaleStringTimeZone, DateTimeFormatOptions::Standard, &ignored)) {
+    return nullptr;
+  }
+  MOZ_ASSERT(&ignored.toObject() == dateTimeFormat);
+
+  return dateTimeFormat;
+}
+
+DateTimeFormatObject* js::intl::CreateDateTimeFormat(JSContext* cx,
+                                                     Handle<Value> locales,
+                                                     Handle<Value> options,
+                                                     DateTimeFormatKind kind) {
+  return CreateDateTimeFormat(cx, locales, options, UndefinedHandleValue, kind);
+}
+
+DateTimeFormatObject* js::intl::GetOrCreateDateTimeFormat(
+    JSContext* cx, Handle<Value> locales, Handle<Value> options,
+    DateTimeFormatKind kind) {
+  // Try to use a cached instance when |locales| is either undefined or a
+  // string, and |options| is undefined.
+  if ((locales.isUndefined() || locales.isString()) && options.isUndefined()) {
+    Rooted<JSLinearString*> locale(cx);
+    if (locales.isString()) {
+      locale = locales.toString()->ensureLinear(cx);
+      if (!locale) {
+        return nullptr;
+      }
+    }
+    return cx->global()->globalIntlData().getOrCreateDateTimeFormat(cx, kind,
+                                                                    locale);
+  }
+
+  // Create a new Intl.DateTimeFormat instance.
+  return CreateDateTimeFormat(cx, locales, options, UndefinedHandleValue, kind);
 }
 
 void js::DateTimeFormatObject::finalize(JS::GCContext* gcx, JSObject* obj) {
@@ -361,167 +429,6 @@ bool js::intl_defaultCalendar(JSContext* cx, unsigned argc, Value* vp) {
   return DefaultCalendar(cx, locale, args.rval());
 }
 
-bool js::intl_IsValidTimeZoneName(JSContext* cx, unsigned argc, Value* vp) {
-  CallArgs args = CallArgsFromVp(argc, vp);
-  MOZ_ASSERT(args.length() == 1);
-  MOZ_ASSERT(args[0].isString());
-
-  SharedIntlData& sharedIntlData = cx->runtime()->sharedIntlData.ref();
-
-  RootedString timeZone(cx, args[0].toString());
-  Rooted<JSAtom*> validatedTimeZone(cx);
-  if (!sharedIntlData.validateTimeZoneName(cx, timeZone, &validatedTimeZone)) {
-    return false;
-  }
-
-  if (validatedTimeZone) {
-    cx->markAtom(validatedTimeZone);
-    args.rval().setString(validatedTimeZone);
-  } else {
-    args.rval().setNull();
-  }
-  return true;
-}
-
-JSLinearString* js::intl::CanonicalizeTimeZone(JSContext* cx,
-                                               Handle<JSString*> timeZone) {
-  SharedIntlData& sharedIntlData = cx->runtime()->sharedIntlData.ref();
-
-  // Some time zone names are canonicalized differently by ICU -- handle those
-  // first.
-  Rooted<JSAtom*> ianaTimeZone(cx);
-  if (!sharedIntlData.tryCanonicalizeTimeZoneConsistentWithIANA(
-          cx, timeZone, &ianaTimeZone)) {
-    return nullptr;
-  }
-
-  JSLinearString* resultTimeZone;
-  if (ianaTimeZone) {
-    cx->markAtom(ianaTimeZone);
-    resultTimeZone = ianaTimeZone;
-  } else {
-    AutoStableStringChars stableChars(cx);
-    if (!stableChars.initTwoByte(cx, timeZone)) {
-      return nullptr;
-    }
-
-    // Call into ICU to canonicalize the time zone.
-    FormatBuffer<char16_t, INITIAL_CHAR_BUFFER_SIZE> canonicalTimeZone(cx);
-    auto result = mozilla::intl::TimeZone::GetCanonicalTimeZoneID(
-        stableChars.twoByteRange(), canonicalTimeZone);
-    if (result.isErr()) {
-      ReportInternalError(cx, result.unwrapErr());
-      return nullptr;
-    }
-
-    resultTimeZone = canonicalTimeZone.toString(cx);
-    if (!resultTimeZone) {
-      return nullptr;
-    }
-  }
-
-  MOZ_ASSERT(!StringEqualsLiteral(resultTimeZone, "Etc/Unknown"),
-             "Invalid canonical time zone");
-
-  // Links to UTC are handled by SharedIntlData.
-  MOZ_ASSERT(!StringEqualsLiteral(resultTimeZone, "GMT"));
-  MOZ_ASSERT(!StringEqualsLiteral(resultTimeZone, "Etc/UTC"));
-  MOZ_ASSERT(!StringEqualsLiteral(resultTimeZone, "Etc/GMT"));
-
-  return resultTimeZone;
-}
-
-bool js::intl_canonicalizeTimeZone(JSContext* cx, unsigned argc, Value* vp) {
-  CallArgs args = CallArgsFromVp(argc, vp);
-  MOZ_ASSERT(args.length() == 1);
-  MOZ_ASSERT(args[0].isString());
-
-  RootedString timeZone(cx, args[0].toString());
-  auto* result = intl::CanonicalizeTimeZone(cx, timeZone);
-  if (!result) {
-    return false;
-  }
-
-  args.rval().setString(result);
-  return true;
-}
-
-bool js::intl_defaultTimeZone(JSContext* cx, unsigned argc, Value* vp) {
-  CallArgs args = CallArgsFromVp(argc, vp);
-  MOZ_ASSERT(args.length() == 0);
-
-  FormatBuffer<char16_t, intl::INITIAL_CHAR_BUFFER_SIZE> timeZone(cx);
-  auto result =
-      DateTimeInfo::timeZoneId(DateTimeInfo::forceUTC(cx->realm()), timeZone);
-  if (result.isErr()) {
-    intl::ReportInternalError(cx, result.unwrapErr());
-    return false;
-  }
-
-  JSString* str = timeZone.toString(cx);
-  if (!str) {
-    return false;
-  }
-
-  args.rval().setString(str);
-  return true;
-}
-
-bool js::intl_defaultTimeZoneOffset(JSContext* cx, unsigned argc, Value* vp) {
-  CallArgs args = CallArgsFromVp(argc, vp);
-  MOZ_ASSERT(args.length() == 0);
-
-  auto offset =
-      DateTimeInfo::getRawOffsetMs(DateTimeInfo::forceUTC(cx->realm()));
-  if (offset.isErr()) {
-    intl::ReportInternalError(cx, offset.unwrapErr());
-    return false;
-  }
-
-  args.rval().setInt32(offset.unwrap());
-  return true;
-}
-
-bool js::intl_isDefaultTimeZone(JSContext* cx, unsigned argc, Value* vp) {
-  CallArgs args = CallArgsFromVp(argc, vp);
-  MOZ_ASSERT(args.length() == 1);
-  MOZ_ASSERT(args[0].isString() || args[0].isUndefined());
-
-  // |undefined| is the default value when the Intl runtime caches haven't
-  // yet been initialized. Handle it the same way as a cache miss.
-  if (args[0].isUndefined()) {
-    args.rval().setBoolean(false);
-    return true;
-  }
-
-  FormatBuffer<char16_t, intl::INITIAL_CHAR_BUFFER_SIZE> chars(cx);
-  auto result =
-      DateTimeInfo::timeZoneId(DateTimeInfo::forceUTC(cx->realm()), chars);
-  if (result.isErr()) {
-    intl::ReportInternalError(cx, result.unwrapErr());
-    return false;
-  }
-
-  JSLinearString* str = args[0].toString()->ensureLinear(cx);
-  if (!str) {
-    return false;
-  }
-
-  bool equals;
-  if (str->length() == chars.length()) {
-    JS::AutoCheckCannotGC nogc;
-    equals =
-        str->hasLatin1Chars()
-            ? EqualChars(str->latin1Chars(nogc), chars.data(), str->length())
-            : EqualChars(str->twoByteChars(nogc), chars.data(), str->length());
-  } else {
-    equals = false;
-  }
-
-  args.rval().setBoolean(equals);
-  return true;
-}
-
 enum class HourCycle {
   // 12 hour cycle, from 0 to 11.
   H11,
@@ -540,28 +447,12 @@ static UniqueChars DateTimeFormatLocale(
     JSContext* cx, HandleObject internals,
     mozilla::Maybe<mozilla::intl::DateTimeFormat::HourCycle> hourCycle =
         mozilla::Nothing()) {
-  RootedValue value(cx);
-  if (!GetProperty(cx, internals, internals, cx->names().locale, &value)) {
-    return nullptr;
-  }
-
   // ICU expects calendar, numberingSystem, and hourCycle as Unicode locale
   // extensions on locale.
 
-  mozilla::intl::Locale tag;
-  {
-    Rooted<JSLinearString*> locale(cx, value.toString()->ensureLinear(cx));
-    if (!locale) {
-      return nullptr;
-    }
-
-    if (!intl::ParseLocale(cx, locale, tag)) {
-      return nullptr;
-    }
-  }
-
   JS::RootedVector<intl::UnicodeExtensionKeyword> keywords(cx);
 
+  RootedValue value(cx);
   if (!GetProperty(cx, internals, internals, cx->names().calendar, &value)) {
     return nullptr;
   }
@@ -615,20 +506,7 @@ static UniqueChars DateTimeFormatLocale(
     }
   }
 
-  // |ApplyUnicodeExtensionToTag| applies the new keywords to the front of
-  // the Unicode extension subtag. We're then relying on ICU to follow RFC
-  // 6067, which states that any trailing keywords using the same key
-  // should be ignored.
-  if (!intl::ApplyUnicodeExtensionToTag(cx, tag, keywords)) {
-    return nullptr;
-  }
-
-  FormatBuffer<char> buffer(cx);
-  if (auto result = tag.ToString(buffer); result.isErr()) {
-    intl::ReportInternalError(cx, result.unwrapErr());
-    return nullptr;
-  }
-  return buffer.extractStringZ();
+  return intl::FormatLocale(cx, internals, keywords);
 }
 
 static bool AssignTextComponent(
@@ -1093,10 +971,6 @@ GetDateTimeFormat(const mozilla::intl::DateTimeFormat::ComponentsBag& options,
   }
 
   // Steps 13-14.
-  //
-  // Ignore "era" to workaround a spec bug.
-  //
-  // FIXME: spec bug - https://github.com/tc39/proposal-temporal/issues/3049
   bool anyPresent = options.weekday || options.year || options.month ||
                     options.day || options.dayPeriod || options.hour ||
                     options.minute || options.second ||
@@ -2469,6 +2343,21 @@ bool js::intl_FormatDateTime(JSContext* cx, unsigned argc, Value* vp) {
                        : intl_FormatDateTime(cx, df, x, args.rval());
 }
 
+bool js::intl::FormatDateTime(JSContext* cx,
+                              Handle<DateTimeFormatObject*> dateTimeFormat,
+                              double millis, MutableHandle<Value> result) {
+  auto x = JS::TimeClip(millis);
+  MOZ_ASSERT(x.isValid());
+
+  mozilla::intl::DateTimeFormat* df =
+      GetOrCreateDateTimeFormat(cx, dateTimeFormat, DateTimeValueKind::Number);
+  if (!df) {
+    return false;
+  }
+
+  return intl_FormatDateTime(cx, df, x, result);
+}
+
 /**
  * Returns a new DateIntervalFormat with the locale and date-time formatting
  * options of the given DateTimeFormat.
@@ -2733,10 +2622,26 @@ bool js::intl_FormatDateTimeRange(JSContext* cx, unsigned argc, Value* vp) {
              : FormatDateTimeRange(cx, df, dif, x, y, args.rval());
 }
 
-bool js::TemporalObjectToLocaleString(JSContext* cx, const CallArgs& args,
-                                      Handle<JSString*> required,
-                                      Handle<JSString*> defaults,
-                                      Handle<Value> toLocaleStringTimeZone) {
+/**
+ * Intl.DateTimeFormat.supportedLocalesOf ( locales [ , options ] )
+ */
+static bool dateTimeFormat_supportedLocalesOf(JSContext* cx, unsigned argc,
+                                              Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  // Steps 1-3.
+  auto* array = SupportedLocalesOf(cx, AvailableLocaleKind::DateTimeFormat,
+                                   args.get(0), args.get(1));
+  if (!array) {
+    return false;
+  }
+  args.rval().setObject(*array);
+  return true;
+}
+
+bool js::intl::TemporalObjectToLocaleString(
+    JSContext* cx, const CallArgs& args, DateTimeFormatKind formatKind,
+    Handle<Value> toLocaleStringTimeZone) {
   MOZ_ASSERT(args.thisv().isObject());
 
   auto kind = ToDateTimeFormattable(args.thisv());
@@ -2746,21 +2651,21 @@ bool js::TemporalObjectToLocaleString(JSContext* cx, const CallArgs& args,
   MOZ_ASSERT_IF(kind == DateTimeValueKind::TemporalZonedDateTime,
                 toLocaleStringTimeZone.isString());
 
-  Rooted<DateTimeFormatObject*> dateTimeFormat(
-      cx, NewBuiltinClassInstance<DateTimeFormatObject>(cx));
+  HandleValue locales = args.get(0);
+  HandleValue options = args.get(1);
+
+  Rooted<DateTimeFormatObject*> dateTimeFormat(cx);
+  if (kind != DateTimeValueKind::TemporalZonedDateTime) {
+    dateTimeFormat =
+        GetOrCreateDateTimeFormat(cx, locales, options, formatKind);
+  } else {
+    // Cache doesn't yet support Temporal.ZonedDateTime.
+    dateTimeFormat = ::CreateDateTimeFormat(cx, locales, options,
+                                            toLocaleStringTimeZone, formatKind);
+  }
   if (!dateTimeFormat) {
     return false;
   }
-
-  Rooted<Value> thisValue(cx, ObjectValue(*dateTimeFormat));
-  Rooted<Value> ignored(cx);
-  if (!intl::InitializeDateTimeFormatObject(
-          cx, dateTimeFormat, thisValue, args.get(0), args.get(1), required,
-          defaults, toLocaleStringTimeZone, DateTimeFormatOptions::Standard,
-          &ignored)) {
-    return false;
-  }
-  MOZ_ASSERT(&ignored.toObject() == dateTimeFormat);
 
   JS::ClippedTime x;
   if (kind == DateTimeValueKind::TemporalZonedDateTime) {

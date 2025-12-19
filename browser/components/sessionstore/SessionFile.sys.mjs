@@ -40,6 +40,7 @@ export var SessionFile = {
   },
   /**
    * Write the contents of the session file, asynchronously.
+   *
    * @param aData - May get changed on shutdown.
    */
   write(aData) {
@@ -291,6 +292,22 @@ var SessionFileInternal = {
           );
         } else if (
           DOMException.isInstance(ex) &&
+          ex.name == "NotReadableError"
+        ) {
+          // The file might incorrectly jsonlz4 encoded
+          // We'll count it as "corrupted".
+          lazy.sessionStoreLogger.error(
+            `NotReadableError when reading session file: ${key}`,
+            ex
+          );
+          corrupted = true;
+          Glean.sessionRestore.backupCanBeLoadedSessionFile.record({
+            can_load: "false",
+            path_key: key,
+            loadfail_reason: ` ${ex.name}: Could not read session file`,
+          });
+        } else if (
+          DOMException.isInstance(ex) &&
           ex.name == "NotAllowedError"
         ) {
           // The file might be inaccessible due to wrong permissions
@@ -449,7 +466,11 @@ var SessionFileInternal = {
       },
       err => {
         // Catch and report any errors.
-        console.error("Could not write session state file ", err, err.stack);
+        lazy.sessionStoreLogger.error(
+          "Could not write session state file ",
+          err,
+          err.stack
+        );
         this._failures++;
         // By not doing anything special here we ensure that |promise| cannot
         // be rejected anymore. The shutdown/cleanup code at the end of the

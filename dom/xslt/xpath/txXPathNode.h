@@ -6,8 +6,8 @@
 #ifndef txXPathNode_h__
 #define txXPathNode_h__
 
-#include "nsIContent.h"
 #include "mozilla/dom/Document.h"
+#include "nsIContent.h"
 #include "nsINode.h"
 #include "nsNameSpaceManager.h"
 
@@ -65,6 +65,8 @@ class txXPathNode {
   bool operator==(const txXPathNode& aNode) const;
   bool operator!=(const txXPathNode& aNode) const { return !(*this == aNode); }
   ~txXPathNode() { MOZ_COUNT_DTOR(txXPathNode); }
+
+  mozilla::dom::Document* OwnerDoc() const { return mNode->OwnerDoc(); }
 
  private:
   friend class txXPathNativeNode;

@@ -10,26 +10,25 @@
 #include "GeolocationSystem.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/CycleCollectedJSContext.h"  // for nsAutoMicroTask
-#include "mozilla/dom/BrowserChild.h"
-#include "mozilla/dom/ContentChild.h"
-#include "mozilla/dom/PermissionMessageUtils.h"
-#include "mozilla/dom/GeolocationPositionError.h"
-#include "mozilla/dom/GeolocationPositionErrorBinding.h"
-#include "mozilla/glean/DomGeolocationMetrics.h"
-#include "mozilla/ipc/MessageChannel.h"
+#include "mozilla/EventStateManager.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_geo.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/Unused.h"
 #include "mozilla/WeakPtr.h"
-#include "mozilla/EventStateManager.h"
+#include "mozilla/dom/BrowserChild.h"
+#include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/GeolocationPositionError.h"
+#include "mozilla/dom/GeolocationPositionErrorBinding.h"
+#include "mozilla/dom/PermissionMessageUtils.h"
+#include "mozilla/glean/DomGeolocationMetrics.h"
+#include "mozilla/ipc/MessageChannel.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentPermissionHelper.h"
 #include "nsContentUtils.h"
 #include "nsGlobalWindowInner.h"
-#include "mozilla/dom/Document.h"
 #include "nsINamed.h"
 #include "nsIObserverService.h"
 #include "nsIPromptService.h"
@@ -46,9 +45,9 @@ class nsIPrincipal;
 #endif
 
 #ifdef MOZ_ENABLE_DBUS
-#  include "mozilla/WidgetUtilsGtk.h"
 #  include "GeoclueLocationProvider.h"
 #  include "PortalLocationProvider.h"
+#  include "mozilla/WidgetUtilsGtk.h"
 #endif
 
 #ifdef MOZ_WIDGET_COCOA
@@ -67,7 +66,6 @@ class nsIPrincipal;
 // default policy.
 #define PREF_GEO_SECURITY_ALLOWINSECURE "geo.security.allowinsecure"
 
-using mozilla::Unused;  // <snicker>
 using namespace mozilla;
 using namespace mozilla::dom;
 using namespace mozilla::dom::geolocation;
@@ -454,7 +452,12 @@ nsGeolocationRequest::Allow(JS::Handle<JS::Value> aChoices) {
     canUseCache = true;
   }
 
-  gs->UpdateAccuracy(WantsHighAccuracy());
+  if (XRE_IsParentProcess()) {
+    // On content process this info will be passed together via
+    // SendAddGeolocationListener called by StartDevice below
+    gs->UpdateAccuracy(WantsHighAccuracy());
+  }
+
   if (canUseCache) {
     // okay, we can return a cached position
     // getCurrentPosition requests serviced by the cache
@@ -828,6 +831,7 @@ nsGeolocationService::Observe(nsISupports* aSubject, const char* aTopic,
 NS_IMETHODIMP
 nsGeolocationService::Update(nsIDOMGeoPosition* aSomewhere) {
   if (aSomewhere) {
+    mStarting.reset();
     SetCachedPosition(aSomewhere);
   }
 
@@ -869,12 +873,20 @@ nsresult nsGeolocationService::StartDevice() {
 
   // We do not want to keep the geolocation devices online
   // indefinitely.
-  // Close them down after a reasonable period of inactivivity.
+  // Close them down after a reasonable period of inactivity.
   SetDisconnectTimer();
 
   if (XRE_IsContentProcess()) {
+    bool highAccuracyRequested = HighAccuracyRequested();
+    if (mStarting.isSome() && *mStarting == highAccuracyRequested) {
+      // Already being started
+      return NS_OK;
+    }
+    mStarting = Some(highAccuracyRequested);
     ContentChild* cpc = ContentChild::GetSingleton();
-    cpc->SendAddGeolocationListener(HighAccuracyRequested());
+    if (!cpc->SendAddGeolocationListener(highAccuracyRequested)) {
+      return NS_ERROR_NOT_AVAILABLE;
+    }
     return NS_OK;
   }
 
@@ -945,6 +957,7 @@ void nsGeolocationService::StopDevice() {
   }
 
   if (XRE_IsContentProcess()) {
+    mStarting.reset();
     ContentChild* cpc = ContentChild::GetSingleton();
     cpc->SendRemoveGeolocationListener();
 
@@ -1132,7 +1145,7 @@ void Geolocation::RemoveRequest(nsGeolocationRequest* aRequest) {
   bool requestWasKnown = (mPendingCallbacks.RemoveElement(aRequest) !=
                           mWatchingCallbacks.RemoveElement(aRequest));
 
-  Unused << requestWasKnown;
+  (void)requestWasKnown;
 }
 
 NS_IMETHODIMP

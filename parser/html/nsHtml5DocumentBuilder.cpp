@@ -9,6 +9,7 @@
 #include "mozilla/dom/ScriptLoader.h"
 #include "mozilla/dom/LinkStyle.h"
 #include "nsNameSpaceManager.h"
+#include "nsNetUtil.h"
 
 using mozilla::dom::LinkStyle;
 
@@ -53,7 +54,9 @@ void nsHtml5DocumentBuilder::UpdateStyleSheet(nsIContent* aElement) {
   if (updateOrError.isOk() && updateOrError.unwrap().ShouldBlock() &&
       !mRunsToCompletion) {
     ++mPendingSheetCount;
-    mScriptLoader->AddParserBlockingScriptExecutionBlocker();
+    if (mScriptLoader) {
+      mScriptLoader->AddParserBlockingScriptExecutionBlocker();
+    }
   }
 }
 

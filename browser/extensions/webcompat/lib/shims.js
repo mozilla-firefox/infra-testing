@@ -12,6 +12,10 @@
 // on tabs where a shim using a given logo happens to be active).
 const LogosBaseURL = "https://smartblock.firefox.etp/";
 
+const loggingPrefValue = browser.aboutConfigPrefs.getPref(
+  "disable_debug_logging"
+);
+
 const releaseBranchPromise = browser.appConstants.getReleaseBranch();
 
 const platformPromise = browser.runtime.getPlatformInfo().then(info => {
@@ -19,7 +23,10 @@ const platformPromise = browser.runtime.getPlatformInfo().then(info => {
 });
 
 let debug = async function () {
-  if ((await releaseBranchPromise) !== "release_or_beta") {
+  if (
+    loggingPrefValue !== true &&
+    (await releaseBranchPromise) !== "release_or_beta"
+  ) {
     console.debug.apply(this, arguments);
   }
 };
@@ -47,6 +54,7 @@ class Shim {
     this.hiddenInAboutCompat = opts.hiddenInAboutCompat;
     this.hosts = opts.hosts;
     this.id = opts.id;
+    this.isMissingFiles = opts.isMissingFiles;
     this.logos = opts.logos || [];
     this.matches = [];
     this.name = opts.name;
@@ -61,8 +69,10 @@ class Shim {
     this.runFirst = opts.runFirst;
     this.unblocksOnOptIn = unblocksOnOptIn;
     this.requestStorageAccessForRedirect = opts.requestStorageAccessForRedirect;
-    this.shouldUseScriptingAPI =
-      browser.aboutConfigPrefs.getBoolPrefSync("useScriptingAPI");
+    this.shouldUseScriptingAPI = browser.aboutConfigPrefs.getPref(
+      "useScriptingAPI",
+      false
+    );
     this.isSmartblockEmbedShim = opts.isSmartblockEmbedShim || false;
     debug(
       `WebCompat Shim ${this.id} will be injected using ${
@@ -122,36 +132,33 @@ class Shim {
     }
 
     browser.aboutConfigPrefs.onPrefChange.addListener(async () => {
-      const value = await browser.aboutConfigPrefs.getPref(pref);
+      const value = browser.aboutConfigPrefs.getPref(pref);
       this._disabledPrefValue = value;
       this._onEnabledStateChanged({ alsoClearResourceCache: true });
     }, pref);
 
-    this.ready = Promise.all([
-      browser.aboutConfigPrefs.getPref(pref),
-      platformPromise,
-      releaseBranchPromise,
-    ]).then(([disabledPrefValue, platform, branch]) => {
-      this._disabledPrefValue = disabledPrefValue;
+    this._disabledPrefValue = browser.aboutConfigPrefs.getPref(pref);
+    this.ready = Promise.all([platformPromise, releaseBranchPromise]).then(
+      ([platform, branch]) => {
+        this._disabledByPlatform =
+          this.platform !== "all" && this.platform !== platform;
 
-      this._disabledByPlatform =
-        this.platform !== "all" && this.platform !== platform;
-
-      this._disabledByReleaseBranch = false;
-      for (const supportedBranchAndPlatform of this.branches || []) {
-        const [supportedBranch, supportedPlatform] =
-          supportedBranchAndPlatform.split(":");
-        if (
-          (!supportedPlatform || supportedPlatform == platform) &&
-          supportedBranch != branch
-        ) {
-          this._disabledByReleaseBranch = true;
+        this._disabledByReleaseBranch = false;
+        for (const supportedBranchAndPlatform of this.branches || []) {
+          const [supportedBranch, supportedPlatform] =
+            supportedBranchAndPlatform.split(":");
+          if (
+            (!supportedPlatform || supportedPlatform == platform) &&
+            supportedBranch != branch
+          ) {
+            this._disabledByReleaseBranch = true;
+          }
         }
-      }
 
-      this._preprocessOptions(platform, branch);
-      this._onEnabledStateChanged();
-    });
+        this._preprocessOptions(platform, branch);
+        this._onEnabledStateChanged();
+      }
+    );
   }
 
   _preprocessOptions(platform, branch) {
@@ -173,6 +180,10 @@ class Shim {
   }
 
   get enabled() {
+    if (this.isMissingFiles) {
+      return false;
+    }
+
     if (this._disabledGlobally || this._disabledForSession) {
       return false;
     }
@@ -193,6 +204,10 @@ class Shim {
   }
 
   get disabledReason() {
+    if (this.isMissingFiles) {
+      return "missingFiles";
+    }
+
     if (this._disabledGlobally) {
       return "globalPref";
     }
@@ -272,12 +287,10 @@ class Shim {
     this.manager?.onShimStateChanged(this.id);
     if (!this.enabled) {
       await this._unregisterContentScripts();
-      await this._revokeRequestsInETP(alsoClearResourceCache);
-      return browser.testUtils.shimsInactive();
+      return this._revokeRequestsInETP(alsoClearResourceCache);
     }
     await this._registerContentScripts();
-    await this._allowRequestsInETP(alsoClearResourceCache);
-    return browser.testUtils.shimsActive();
+    return this._allowRequestsInETP(alsoClearResourceCache);
   }
 
   async _registerContentScripts() {
@@ -565,13 +578,14 @@ class Shim {
 
 class Shims {
   constructor(availableShims) {
-    browser.testUtils.shimsInactive();
+    this._originalShims = availableShims;
 
     if (!browser.trackingProtection) {
       console.error("Required experimental add-on APIs for shims unavailable");
       return;
     }
 
+    this._readyPromise = new Promise(done => (this._resolveReady = done));
     this._registerShims(availableShims);
 
     onMessageFromTab(this._onMessageFromShim.bind(this));
@@ -645,6 +659,10 @@ class Shims {
     });
   }
 
+  ready() {
+    return this._readyPromise;
+  }
+
   bindAboutCompatBroker(broker) {
     this._aboutCompatBroker = broker;
   }
@@ -687,10 +705,34 @@ class Shims {
     return shims;
   }
 
+  async onRemoteSettingsUpdate(updatedShims) {
+    const oldReadyPromise = this._readyPromise;
+    this._readyPromise = new Promise(done => (this._resolveReady = done));
+    await oldReadyPromise;
+    this._updateShims(updatedShims);
+  }
+
+  async _updateShims(updatedShims) {
+    await this._unregisterShims();
+    this._registerShims(updatedShims);
+    this._checkEnabledPref();
+    await this.ready();
+  }
+
+  async _resetToDefaultShims() {
+    await this._updateShims(this._originalShims);
+  }
+
   _registerShims(shims) {
     if (this.shims) {
       throw new Error("_registerShims has already been called");
     }
+
+    this._registeredShimListeners = [];
+    const registerShimListener = (api, listener, ...args) => {
+      api.addListener(listener, ...args);
+      this._registeredShimListeners.push([api, listener]);
+    };
 
     this.shims = new Map();
     for (const shimOpts of shims) {
@@ -703,7 +745,9 @@ class Shims {
     // Register onBeforeRequest listener which handles storage access requests
     // on matching redirects.
     let redirectTargetUrls = Array.from(shims.values())
-      .filter(shim => shim.requestStorageAccessForRedirect)
+      .filter(
+        shim => !shim.isMissingFiles && shim.requestStorageAccessForRedirect
+      )
       .flatMap(shim => shim.requestStorageAccessForRedirect)
       .map(([, dstUrl]) => dstUrl);
 
@@ -714,7 +758,8 @@ class Shims {
       debug("Registering redirect listener for requestStorageAccess helper", {
         redirectTargetUrls,
       });
-      browser.webRequest.onBeforeRequest.addListener(
+      registerShimListener(
+        browser.webRequest.onBeforeRequest,
         this._onRequestStorageAccessRedirect.bind(this),
         { urls: redirectTargetUrls, types: ["main_frame"] },
         ["blocking"]
@@ -735,6 +780,9 @@ class Shims {
     const allHeaderChangingMatchTypePatterns = new Map();
     const allLogos = [];
     for (const shim of this.shims.values()) {
+      if (shim.isMissingFiles) {
+        continue;
+      }
       const { logos, matches } = shim;
       allLogos.push(...logos);
       for (const { patterns, target, types } of matches || []) {
@@ -759,13 +807,14 @@ class Shims {
           shim.setActiveOnTab(tabId, false);
         }
       };
-      browser.tabs.onRemoved.addListener(unmarkShimsActive);
-      browser.tabs.onUpdated.addListener((tabId, changeInfo) => {
+      registerShimListener(browser.tabs.onRemoved, unmarkShimsActive);
+      registerShimListener(browser.tabs.onUpdated, (tabId, changeInfo) => {
         if (changeInfo.discarded || changeInfo.url) {
           unmarkShimsActive(tabId);
         }
       });
-      browser.webRequest.onBeforeRequest.addListener(
+      registerShimListener(
+        browser.webRequest.onBeforeRequest,
         this._redirectLogos.bind(this),
         { urls, types: ["image"] },
         ["blocking"]
@@ -779,12 +828,14 @@ class Shims {
       ] of allHeaderChangingMatchTypePatterns.entries()) {
         const urls = Array.from(patterns);
         debug("Shimming these", type, "URLs:", urls);
-        browser.webRequest.onBeforeSendHeaders.addListener(
+        registerShimListener(
+          browser.webRequest.onBeforeSendHeaders,
           this._onBeforeSendHeaders.bind(this),
           { urls, types: [type] },
           ["blocking", "requestHeaders"]
         );
-        browser.webRequest.onHeadersReceived.addListener(
+        registerShimListener(
+          browser.webRequest.onHeadersReceived,
           this._onHeadersReceived.bind(this),
           { urls, types: [type] },
           ["blocking", "responseHeaders"]
@@ -801,7 +852,8 @@ class Shims {
       const urls = Array.from(patterns);
       debug("Shimming these", type, "URLs:", urls);
 
-      browser.webRequest.onBeforeRequest.addListener(
+      registerShimListener(
+        browser.webRequest.onBeforeRequest,
         this._ensureShimForRequestOnTab.bind(this),
         { urls, types: [type] },
         ["blocking"]
@@ -809,16 +861,26 @@ class Shims {
     }
   }
 
-  async _checkEnabledPref() {
-    await browser.aboutConfigPrefs.getPref(this.ENABLED_PREF).then(value => {
-      if (value === undefined) {
-        browser.aboutConfigPrefs.setPref(this.ENABLED_PREF, true);
-      } else if (value === false) {
-        this.enabled = false;
-      } else {
-        this.enabled = true;
+  _unregisterShims() {
+    this.enabled = false;
+    if (this._registeredShimListeners) {
+      for (let [api, listener] of this._registeredShimListeners) {
+        api.removeListener(listener);
       }
-    });
+      this._registeredShimListeners = undefined;
+    }
+    this.shims = undefined;
+  }
+
+  async _checkEnabledPref() {
+    const value = browser.aboutConfigPrefs.getPref(this.ENABLED_PREF);
+    if (value === undefined) {
+      await browser.aboutConfigPrefs.setPref(this.ENABLED_PREF, true);
+    } else if (value === false) {
+      this.enabled = false;
+    } else {
+      this.enabled = true;
+    }
   }
 
   get enabled() {
@@ -830,6 +892,8 @@ class Shims {
       return;
     }
 
+    // resolveReady may change while we're updating
+    const resolveReady = this._resolveReady;
     this._enabled = enabled;
 
     for (const shim of this.shims.values()) {
@@ -839,23 +903,23 @@ class Shims {
         shim.onAllShimsDisabled();
       }
     }
+    resolveReady();
   }
 
   async _checkSmartblockEmbedsEnabledPref() {
-    await browser.aboutConfigPrefs
-      .getPref(this.SMARTBLOCK_EMBEDS_ENABLED_PREF)
-      .then(value => {
-        if (value === undefined) {
-          browser.aboutConfigPrefs.setPref(
-            this.SMARTBLOCK_EMBEDS_ENABLED_PREF,
-            true
-          );
-        } else if (value === false) {
-          this.smartblockEmbedsEnabled = false;
-        } else {
-          this.smartblockEmbedsEnabled = true;
-        }
-      });
+    const value = browser.aboutConfigPrefs.getPref(
+      this.SMARTBLOCK_EMBEDS_ENABLED_PREF
+    );
+    if (value === undefined) {
+      await browser.aboutConfigPrefs.setPref(
+        this.SMARTBLOCK_EMBEDS_ENABLED_PREF,
+        true
+      );
+    } else if (value === false) {
+      this.smartblockEmbedsEnabled = false;
+    } else {
+      this.smartblockEmbedsEnabled = true;
+    }
   }
 
   get smartblockEmbedsEnabled() {

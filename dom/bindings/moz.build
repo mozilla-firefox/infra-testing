@@ -196,9 +196,9 @@ if CONFIG["CC_TYPE"] == "gcc":
 
 if CONFIG["COMPILE_ENVIRONMENT"]:
     GeneratedFile(
-        "CSS2Properties.webidl",
+        "CSSStyleProperties.webidl",
         script="GenerateCSSPropListWebIDL.py",
-        entry_point="generateCSS2Properties",
+        entry_point="generateCSSStyleProperties",
         inputs=["!/layout/style/ServoCSSPropList.py"],
     )
     GeneratedFile(
@@ -213,3 +213,7 @@ if CONFIG["COMPILE_ENVIRONMENT"]:
         entry_point="generateCSSPositionTryDescriptors",
         inputs=["!/layout/style/ServoCSSPropList.py"],
     )
+
+# Old versions of GCC issue false-positive warnings about buffer overflow.
+if CONFIG["CC_TYPE"] == "gcc" and 10 <= int(CONFIG["CC_VERSION"].split(".")[0]) < 12:
+    CXXFLAGS += ["-Wno-stringop-overflow"]

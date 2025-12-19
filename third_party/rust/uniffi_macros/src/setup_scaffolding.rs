@@ -39,7 +39,7 @@ pub fn setup_scaffolding(namespace: String) -> Result<TokenStream> {
 
         #[allow(clippy::missing_safety_doc, missing_docs)]
         #[doc(hidden)]
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         pub extern "C" fn #ffi_contract_version_ident() -> ::std::primitive::u32 {
             #UNIFFI_CONTRACT_VERSION
         }
@@ -55,7 +55,7 @@ pub fn setup_scaffolding(namespace: String) -> Result<TokenStream> {
                 .concat_str(#namespace);
 
         #[doc(hidden)]
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         pub static #namespace_static_ident: [::std::primitive::u8; #namespace_const_ident.size] =
             #namespace_const_ident.into_array();
 
@@ -65,7 +65,7 @@ pub fn setup_scaffolding(namespace: String) -> Result<TokenStream> {
 
         #[allow(clippy::missing_safety_doc, missing_docs)]
         #[doc(hidden)]
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         pub extern "C" fn #ffi_rustbuffer_alloc_ident(
             size: ::std::primitive::u64,
             call_status: &mut ::uniffi::RustCallStatus,
@@ -75,7 +75,7 @@ pub fn setup_scaffolding(namespace: String) -> Result<TokenStream> {
 
         #[allow(clippy::missing_safety_doc, missing_docs)]
         #[doc(hidden)]
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         pub unsafe extern "C" fn #ffi_rustbuffer_from_bytes_ident(
             bytes: ::uniffi::ForeignBytes,
             call_status: &mut ::uniffi::RustCallStatus,
@@ -85,7 +85,7 @@ pub fn setup_scaffolding(namespace: String) -> Result<TokenStream> {
 
         #[allow(clippy::missing_safety_doc, missing_docs)]
         #[doc(hidden)]
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         pub unsafe extern "C" fn #ffi_rustbuffer_free_ident(
             buf: ::uniffi::RustBuffer,
             call_status: &mut ::uniffi::RustCallStatus,
@@ -95,7 +95,7 @@ pub fn setup_scaffolding(namespace: String) -> Result<TokenStream> {
 
         #[allow(clippy::missing_safety_doc, missing_docs)]
         #[doc(hidden)]
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         pub unsafe extern "C" fn #ffi_rustbuffer_reserve_ident(
             buf: ::uniffi::RustBuffer,
             additional: ::std::primitive::u64,
@@ -108,16 +108,16 @@ pub fn setup_scaffolding(namespace: String) -> Result<TokenStream> {
 
         // Code to re-export the UniFFI scaffolding functions.
         //
-        // Rust won't always re-export the functions from dependencies
-        // ([rust-lang#50007](https://github.com/rust-lang/rust/issues/50007))
+        // Some build environments won't always re-export the functions from dependencies.
+        // Originally attributed to [rust-lang#50007](https://github.com/rust-lang/rust/issues/50007),
+        // it's still needed in mozilla-central with that resolved.
         //
         // A workaround for this is to have the dependent crate reference a function from its dependency in
-        // an extern "C" function. This is clearly hacky and brittle, but at least we have some unittests
-        // that check if this works (fixtures/reexport-scaffolding-macro).
+        // an extern "C" function.
         //
-        // The main way we use this macro is for that contain multiple UniFFI components (libxul,
-        // megazord).  The combined library has a cargo dependency for each component and calls
-        // uniffi_reexport_scaffolding!() for each one.
+        // The main way we use this macro is for libraries which contain multiple UniFFI components (libxul,
+        // megazord).  This library has a cargo dependency for each component and calls
+        // uniffi_reexport_scaffolding!() in each one.
 
         #[allow(missing_docs)]
         #[doc(hidden)]
@@ -128,7 +128,7 @@ pub fn setup_scaffolding(namespace: String) -> Result<TokenStream> {
         macro_rules! uniffi_reexport_scaffolding {
             () => {
                 #[doc(hidden)]
-                #[no_mangle]
+                #[unsafe(no_mangle)]
                 pub extern "C" fn #reexport_hack_ident() {
                     $crate::uniffi_reexport_hack()
                 }
@@ -175,21 +175,21 @@ fn rust_future_scaffolding_fns(module_path: &str) -> TokenStream {
         quote! {
             #[allow(clippy::missing_safety_doc, missing_docs)]
             #[doc(hidden)]
-            #[no_mangle]
+            #[unsafe(no_mangle)]
             pub unsafe extern "C" fn #ffi_rust_future_poll(handle: ::uniffi::Handle, callback: ::uniffi::RustFutureContinuationCallback, data: u64) {
                 ::uniffi::ffi::rust_future_poll::<#return_type, crate::UniFfiTag>(handle, callback, data);
             }
 
             #[allow(clippy::missing_safety_doc, missing_docs)]
             #[doc(hidden)]
-            #[no_mangle]
+            #[unsafe(no_mangle)]
             pub unsafe extern "C" fn #ffi_rust_future_cancel(handle: ::uniffi::Handle) {
                 ::uniffi::ffi::rust_future_cancel::<#return_type, crate::UniFfiTag>(handle)
             }
 
             #[allow(clippy::missing_safety_doc, missing_docs)]
             #[doc(hidden)]
-            #[no_mangle]
+            #[unsafe(no_mangle)]
             pub unsafe extern "C" fn #ffi_rust_future_complete(
                 handle: ::uniffi::Handle,
                 out_status: &mut ::uniffi::RustCallStatus
@@ -199,7 +199,7 @@ fn rust_future_scaffolding_fns(module_path: &str) -> TokenStream {
 
             #[allow(clippy::missing_safety_doc, missing_docs)]
             #[doc(hidden)]
-            #[no_mangle]
+            #[unsafe(no_mangle)]
             pub unsafe extern "C" fn #ffi_rust_future_free(handle: ::uniffi::Handle) {
                 ::uniffi::ffi::rust_future_free::<#return_type, crate::UniFfiTag>(handle)
             }

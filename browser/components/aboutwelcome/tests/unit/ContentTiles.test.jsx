@@ -3,6 +3,7 @@ import { shallow, mount } from "enzyme";
 import { ContentTiles } from "content-src/components/ContentTiles";
 import { ActionChecklist } from "content-src/components/ActionChecklist";
 import { MobileDownloads } from "content-src/components/MobileDownloads";
+import { EmbeddedBackupRestore } from "content-src/components/EmbeddedBackupRestore";
 import { AboutWelcomeUtils } from "content-src/lib/aboutwelcome-utils.mjs";
 import { GlobalOverrider } from "asrouter/tests/unit/utils";
 
@@ -11,7 +12,7 @@ describe("ContentTiles component", () => {
   let wrapper;
   let handleAction;
   let setActiveMultiSelect;
-  let setActiveSingleSelect;
+  let setActiveSingleSelectSelection;
   let globals;
 
   const CHECKLIST_TILE = {
@@ -74,14 +75,29 @@ describe("ContentTiles component", () => {
     tiles: [CHECKLIST_TILE, MOBILE_TILE],
   };
 
+  const EMBEDDED_BACKUP_RESTORE_TILE = {
+    type: "backup_restore",
+    title: "Tile Title",
+    subtitle: "Tile Subtitle",
+  };
+
   beforeEach(() => {
     sandbox = sinon.createSandbox();
     handleAction = sandbox.stub();
     setActiveMultiSelect = sandbox.stub();
-    setActiveSingleSelect = sandbox.stub();
+    setActiveSingleSelectSelection = sandbox.stub();
     globals = new GlobalOverrider();
     globals.set({
       AWSendToDeviceEmailsSupported: () => Promise.resolve(),
+    });
+    globals.set({ AWSendToParent: sandbox.stub() });
+    globals.set({
+      AWSendToParent: sandbox.stub(),
+      AWFindBackupsInWellKnownLocations: sandbox.stub().resolves({
+        found: false,
+        multipleBackupsFound: false,
+        backupFileToRestore: null,
+      }),
     });
     wrapper = shallow(
       <ContentTiles
@@ -259,6 +275,29 @@ describe("ContentTiles component", () => {
     assert.equal(mobileDownloads.prop("handleAction"), handleAction);
   });
 
+  it("should render EmbeddedBackupRestore for 'backup_restore' tile type", () => {
+    const TEST_CONTENT_WITH_EMBEDDED_BACKUP_RESTORE = {
+      tiles: [EMBEDDED_BACKUP_RESTORE_TILE],
+    };
+
+    const backupWrapper = mount(
+      <ContentTiles
+        content={TEST_CONTENT_WITH_EMBEDDED_BACKUP_RESTORE}
+        handleAction={handleAction}
+        activeMultiSelect={null}
+        setActiveMultiSelect={setActiveMultiSelect}
+      />
+    );
+
+    const embeddedBackupRestore = backupWrapper.find(EmbeddedBackupRestore);
+    assert.ok(
+      embeddedBackupRestore.exists(),
+      "EmbeddedBackupRestore component should be rendered"
+    );
+
+    backupWrapper.unmount();
+  });
+
   it("should handle a single tile object", () => {
     wrapper.setProps({
       content: {
@@ -434,7 +473,7 @@ describe("ContentTiles component", () => {
         handleAction={() => {}}
         activeMultiSelect={null}
         setActiveMultiSelect={setActiveMultiSelect}
-        setActiveSingleSelect={setActiveSingleSelect}
+        setActiveSingleSelectSelection={setActiveSingleSelectSelection}
       />
     );
 
@@ -654,5 +693,373 @@ describe("ContentTiles component", () => {
     );
 
     wrapper.unmount();
+  });
+
+  it("should select defaults of single select tiles independently of one another", () => {
+    const SINGLE_SELECT_1 = {
+      type: "single-select",
+      selected: "test1",
+      data: [
+        {
+          id: "test1",
+          label: {
+            raw: "test1 label",
+          },
+        },
+        {
+          defaultValue: true,
+          id: "test2",
+          label: {
+            raw: "test2 label",
+          },
+        },
+      ],
+    };
+
+    const SINGLE_SELECT_2 = {
+      type: "single-select",
+      selected: "test4",
+      data: [
+        {
+          id: "test3",
+          label: {
+            raw: "test3 label",
+          },
+        },
+        {
+          defaultValue: true,
+          id: "test4",
+          label: {
+            raw: "test4 label",
+          },
+        },
+      ],
+    };
+
+    const content = { tiles: [SINGLE_SELECT_1, SINGLE_SELECT_2] };
+    wrapper = mount(
+      <ContentTiles
+        content={content}
+        setActiveSingleSelectSelection={setActiveSingleSelectSelection}
+        handleAction={handleAction}
+      />
+    );
+    wrapper.update();
+
+    sinon.assert.calledWithExactly(
+      setActiveSingleSelectSelection.getCall(0),
+      "test1",
+      "single-select-0"
+    );
+
+    sinon.assert.calledWithExactly(
+      setActiveSingleSelectSelection.getCall(1),
+      "test4",
+      "single-select-1"
+    );
+    wrapper.unmount();
+  });
+
+  it("should handle interactions with multiple single select tiles independently of one another", () => {
+    const SINGLE_SELECT_1 = {
+      type: "single-select",
+      selected: "test1",
+      data: [
+        {
+          id: "test1",
+          label: {
+            raw: "test1 label",
+          },
+        },
+        {
+          defaultValue: true,
+          id: "test2",
+          label: {
+            raw: "test2 label",
+          },
+        },
+      ],
+    };
+
+    const SINGLE_SELECT_2 = {
+      type: "single-select",
+      selected: "test4",
+      data: [
+        {
+          id: "test3",
+          label: {
+            raw: "test3 label",
+          },
+        },
+        {
+          defaultValue: true,
+          id: "test4",
+          label: {
+            raw: "test4 label",
+          },
+        },
+      ],
+    };
+
+    const content = { tiles: [SINGLE_SELECT_1, SINGLE_SELECT_2] };
+    wrapper = mount(
+      <ContentTiles
+        content={content}
+        setActiveSingleSelectSelection={setActiveSingleSelectSelection}
+        handleAction={handleAction}
+      />
+    );
+
+    wrapper.update();
+
+    const tile2 = wrapper.find('input[value="test2"]');
+    tile2.simulate("click");
+
+    sinon.assert.calledWithExactly(
+      setActiveSingleSelectSelection.getCall(2),
+      "test2",
+      "single-select-0"
+    );
+
+    const tile3 = wrapper.find('input[value="test3"]');
+    tile3.simulate("click");
+
+    sinon.assert.calledWithExactly(
+      setActiveSingleSelectSelection.getCall(3),
+      "test3",
+      "single-select-1"
+    );
+    wrapper.unmount();
+  });
+
+  it("should apply styles to label element", () => {
+    const TEST_STYLE = { marginBlock: "5px" };
+    const tileData = {
+      type: "single-select",
+      selected: "vertical",
+      data: [
+        {
+          id: "vertical",
+          label: { raw: "Vertical", marginBlock: "5px" },
+        },
+      ],
+    };
+
+    wrapper = mount(
+      <ContentTiles
+        content={{ tiles: [tileData] }}
+        setActiveSingleSelectSelection={() => {}}
+        handleAction={() => {}}
+      />
+    );
+
+    const styledDiv = wrapper.find(".text").at(0);
+
+    assert.deepEqual(
+      styledDiv.prop("style"),
+      TEST_STYLE,
+      "Style prop should match TEST_STYLE"
+    );
+    wrapper.unmount();
+  });
+
+  it("should apply valid styles from tile.data.style and include minWidth from icon.width", () => {
+    const icon = {
+      width: "101px",
+    };
+
+    const style = {
+      paddingBlock: "8px",
+    };
+
+    const tileData = {
+      type: "single-select",
+      selected: "test",
+      data: [
+        {
+          id: "test",
+          icon,
+          label: { raw: "Test" },
+          style,
+        },
+      ],
+    };
+
+    wrapper = mount(
+      <ContentTiles
+        content={{ tiles: [tileData] }}
+        setActiveSingleSelectSelection={() => {}}
+        handleAction={() => {}}
+      />
+    );
+
+    const label = wrapper.find("label.select-item").at(0);
+    const labelStyle = label.prop("style");
+
+    assert.equal(
+      labelStyle.paddingBlock,
+      "8px",
+      "paddingBlock should be applied"
+    );
+    assert.equal(
+      labelStyle.minWidth,
+      "101px",
+      "minWidth should be set from icon.width"
+    );
+    wrapper.unmount();
+  });
+
+  it("restores last tiles focus in Spotlight context and genuine Tab is ignored", async () => {
+    const TAB_GRACE_WINDOW_MS = 250;
+
+    function nextFrame() {
+      return new Promise(r => requestAnimationFrame(r));
+    }
+    function delay(ms) {
+      return new Promise(r => setTimeout(r, ms));
+    }
+    async function waitFor(condition, timeout = TAB_GRACE_WINDOW_MS) {
+      const start = performance.now();
+      while (!condition()) {
+        await nextFrame();
+        if (performance.now() - start > timeout) {
+          throw new Error("timeout waiting for condition");
+        }
+      }
+    }
+
+    // Pretend we're in a Spotlight dialog so the effect runs
+    const root = document.body.appendChild(document.createElement("div"));
+    root.id = "multi-stage-message-root";
+    root.className = "onboardingContainer";
+    root.dataset.page = "spotlight";
+
+    const mountNode = document.body.appendChild(document.createElement("div"));
+
+    const content = {
+      tiles: [{ type: "multiselect", header: { title: "Test" }, data: [] }],
+    };
+
+    const focusWrapper = mount(
+      <main role="alertdialog">
+        <ContentTiles
+          content={content}
+          handleAction={() => {}}
+          activeMultiSelect={null}
+          setActiveMultiSelect={() => {}}
+        />
+        <div className="action-buttons">
+          <button className="primary">Continue</button>
+        </div>
+      </main>,
+      { attachTo: mountNode }
+    );
+
+    // Let the hook attach listeners
+    await nextFrame();
+
+    const dialog = focusWrapper.getDOMNode();
+    const header = dialog.querySelector(".tile-header");
+    const primary = dialog.querySelector(".action-buttons .primary");
+
+    // Record real DOM focus inside tiles
+    header.focus();
+    header.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    await nextFrame();
+
+    // Wait past the tab grace window so this isn’t treated as a real Tab
+    await delay(TAB_GRACE_WINDOW_MS + 1);
+
+    // Simulate programmatic focus “snap” to an outside control
+    primary.focus();
+    primary.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+
+    await waitFor(() => document.activeElement === header);
+    assert.strictEqual(
+      document.activeElement,
+      header,
+      "restored focus to tiles header"
+    );
+
+    dialog.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Tab",
+        bubbles: true,
+        cancelable: true,
+      })
+    );
+    primary.focus();
+    primary.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    await nextFrame();
+    assert.strictEqual(
+      document.activeElement,
+      primary,
+      "did not override genuine Tab focus"
+    );
+
+    // Cleanup
+    focusWrapper.unmount();
+    mountNode.remove();
+    root.remove();
+  });
+
+  it("passes content.skip_button to EmbeddedBackupRestore as skipButton", () => {
+    const content = {
+      tiles: [EMBEDDED_BACKUP_RESTORE_TILE],
+      skip_button: {
+        label: { raw: "Don't restore" },
+        action: { navigate: true },
+      },
+    };
+
+    const mountedWrapper = mount(
+      <ContentTiles
+        content={content}
+        handleAction={handleAction}
+        activeMultiSelect={null}
+        setActiveMultiSelect={setActiveMultiSelect}
+      />
+    );
+
+    const embeddedBackupComponent = mountedWrapper.find(EmbeddedBackupRestore);
+    assert.ok(
+      embeddedBackupComponent.exists(),
+      "EmbeddedBackupRestore rendered"
+    );
+    assert.deepEqual(
+      embeddedBackupComponent.prop("skipButton"),
+      content.skip_button,
+      "prop is wired"
+    );
+    mountedWrapper.unmount();
+  });
+
+  it("renders a single tile without container when there is no header or container style", () => {
+    const SINGLE_TILE_NO_CONTAINER = {
+      tiles: {
+        tile_items: {
+          type: "mobile_downloads",
+          data: { email: { link_text: "Email!" } },
+        },
+        container: {},
+      },
+    };
+
+    const mounted = mount(
+      <ContentTiles
+        content={SINGLE_TILE_NO_CONTAINER}
+        handleAction={() => {}}
+        activeMultiSelect={null}
+        setActiveMultiSelect={setActiveMultiSelect}
+      />
+    );
+
+    assert.isFalse(
+      mounted.find("#content-tiles-container").exists(),
+      "should not render container wrapper"
+    );
+    assert.equal(mounted.find(".content-tile").length, 1);
+
+    mounted.unmount();
   });
 });

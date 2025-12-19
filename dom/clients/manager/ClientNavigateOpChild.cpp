@@ -6,20 +6,20 @@
 
 #include "ClientNavigateOpChild.h"
 
-#include "ClientState.h"
 #include "ClientSource.h"
 #include "ClientSourceChild.h"
+#include "ClientState.h"
+#include "ReferrerInfo.h"
 #include "mozilla/dom/Document.h"
-#include "mozilla/Unused.h"
-#include "nsIDocShell.h"
+#include "mozilla/dom/PolicyContainer.h"
 #include "nsDocShellLoadState.h"
+#include "nsIDocShell.h"
 #include "nsIWebNavigation.h"
 #include "nsIWebProgress.h"
 #include "nsIWebProgressListener.h"
 #include "nsNetUtil.h"
 #include "nsPIDOMWindow.h"
 #include "nsURLHelper.h"
-#include "ReferrerInfo.h"
 
 namespace mozilla::dom {
 
@@ -251,7 +251,7 @@ RefPtr<ClientOpPromise> ClientNavigateOpChild::DoNavigate(
   RefPtr<nsDocShellLoadState> loadState = new nsDocShellLoadState(url);
   loadState->SetTriggeringPrincipal(principal);
   loadState->SetTriggeringSandboxFlags(doc->GetSandboxFlags());
-  loadState->SetCsp(doc->GetCsp());
+  loadState->SetPolicyContainer(doc->GetPolicyContainer());
 
   auto referrerInfo = MakeRefPtr<ReferrerInfo>(*doc);
   loadState->SetReferrerInfo(referrerInfo);

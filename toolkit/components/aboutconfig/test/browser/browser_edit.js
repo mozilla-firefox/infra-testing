@@ -50,7 +50,7 @@ add_task(async function test_add_user_pref() {
       row.editColumnButton.click();
       Assert.ok(!row.hasClass("deleted"));
       Assert.ok(!row.hasClass("add"));
-      Assert.ok(Preferences.get(PREF_NEW) === expectedValue);
+      Assert.strictEqual(Preferences.get(PREF_NEW), expectedValue);
 
       // Number and String preferences should be in edit mode.
       Assert.equal(!!row.valueInput, expectedEditingMode);
@@ -93,7 +93,7 @@ add_task(async function test_delete_user_pref() {
       Assert.ok(row.element.querySelectorAll("input")[radioIndex].checked);
       row.editColumnButton.click();
       Assert.ok(!row.hasClass("deleted"));
-      Assert.ok(Preferences.get(PREF_NEW) === testValue);
+      Assert.strictEqual(Preferences.get(PREF_NEW), testValue);
 
       // Filtering again after deleting should remove the row.
       row.resetColumnButton.click();
@@ -138,7 +138,10 @@ add_task(async function test_click_type_label_multiple_forms() {
 
       // Adding the preference should set the default for the data type.
       newRow.editColumnButton.click();
-      Assert.ok(Preferences.get(PREF_NEW_WHILE_DELETED) === expectedValue);
+      Assert.strictEqual(
+        Preferences.get(PREF_NEW_WHILE_DELETED),
+        expectedValue
+      );
 
       // Reset the preference, then continue by adding a different type.
       newRow.resetColumnButton.click();
@@ -146,16 +149,13 @@ add_task(async function test_click_type_label_multiple_forms() {
 
     // Re-adding the deleted preference should restore the value.
     existingRow.editColumnButton.click();
-    Assert.ok(Preferences.get(PREF_TO_DELETE) === true);
+    Assert.strictEqual(Preferences.get(PREF_TO_DELETE), true);
   });
 });
 
 add_task(async function test_reset_user_pref() {
   await SpecialPowers.pushPrefEnv({
-    set: [
-      [PREF_BOOLEAN_DEFAULT_TRUE, false],
-      [PREF_STRING_LOCALIZED_MISSING, "user-value"],
-    ],
+    set: [[PREF_BOOLEAN_DEFAULT_TRUE, false]],
   });
 
   await AboutConfigTest.withNewTab(async function () {
@@ -174,16 +174,6 @@ add_task(async function test_reset_user_pref() {
     Assert.ok(!row.hasClass("has-user-value"));
     Assert.ok(!row.resetColumnButton);
     Assert.equal(this.getRow(PREF_BOOLEAN_DEFAULT_TRUE).value, "true");
-
-    // Clicking reset on a localized preference without a corresponding value.
-    row = this.getRow(PREF_STRING_LOCALIZED_MISSING);
-    Assert.equal(row.value, "user-value");
-    row.resetColumnButton.click();
-    // Check new layout and reset.
-    Assert.ok(!row.hasClass("has-user-value"));
-    Assert.ok(!row.resetColumnButton);
-    Assert.ok(!Services.prefs.prefHasUserValue(PREF_STRING_LOCALIZED_MISSING));
-    Assert.equal(this.getRow(PREF_STRING_LOCALIZED_MISSING).value, "");
   });
 });
 

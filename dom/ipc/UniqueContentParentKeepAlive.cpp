@@ -5,20 +5,30 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/UniqueContentParentKeepAlive.h"
+
 #include "mozilla/dom/ContentParent.h"
 
 namespace mozilla::dom {
 
-void ContentParentKeepAliveDeleter::operator()(ContentParent* aProcess) {
+// const reference to please some libstdc++ trait that requires the deleter to
+// be callable on a const pointer. We still need a reference though because of
+// the comment below.
+void ContentParentKeepAliveDeleter::operator()(ContentParent* const& aProcess) {
   AssertIsOnMainThread();
   if (RefPtr<ContentParent> process = dont_AddRef(aProcess)) {
+    // Nullify aProcess otherwise RemoveKeepAlive may end up visiting this
+    // object while it's being destroyed.
+    const_cast<ContentParent*&>(aProcess) = nullptr;
     process->RemoveKeepAlive(mBrowserId);
   }
 }
 
 void ContentParentKeepAliveDeleter::operator()(
-    ThreadsafeContentParentHandle* aHandle) {
+    ThreadsafeContentParentHandle* const& aHandle) {
   if (RefPtr<ThreadsafeContentParentHandle> handle = dont_AddRef(aHandle)) {
+    // Nullify aHandle otherwise RemoveKeepAlive may end up visiting this
+    // object while it's being destroyed.
+    const_cast<ThreadsafeContentParentHandle*&>(aHandle) = nullptr;
     NS_DispatchToMainThread(NS_NewRunnableFunction(
         "ThreadsafeContentParentKeepAliveDeleter",
         [handle = std::move(handle), browserId = mBrowserId]() {
@@ -31,7 +41,7 @@ void ContentParentKeepAliveDeleter::operator()(
 }
 
 UniqueContentParentKeepAlive UniqueContentParentKeepAliveFromThreadsafe(
-    UniqueThreadsafeContentParentKeepAlive aKeepAlive) {
+    UniqueThreadsafeContentParentKeepAlive&& aKeepAlive) {
   AssertIsOnMainThread();
   if (aKeepAlive) {
     uint64_t browserId = aKeepAlive.get_deleter().mBrowserId;
@@ -45,7 +55,7 @@ UniqueContentParentKeepAlive UniqueContentParentKeepAliveFromThreadsafe(
 }
 
 UniqueThreadsafeContentParentKeepAlive UniqueContentParentKeepAliveToThreadsafe(
-    UniqueContentParentKeepAlive aKeepAlive) {
+    UniqueContentParentKeepAlive&& aKeepAlive) {
   AssertIsOnMainThread();
   if (aKeepAlive) {
     uint64_t browserId = aKeepAlive.get_deleter().mBrowserId;
@@ -106,7 +116,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 }  // namespace
 
 already_AddRefed<nsIContentParentKeepAlive> WrapContentParentKeepAliveForJS(
-    UniqueContentParentKeepAlive aKeepAlive) {
+    UniqueContentParentKeepAlive&& aKeepAlive) {
   if (!aKeepAlive) {
     return nullptr;
   }

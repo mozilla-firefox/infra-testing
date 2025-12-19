@@ -48,7 +48,14 @@ def _generate_task_output_files(job, filenames, locale=None):
 
 
 def identify_desired_signing_keys(project, product):
-    if project in ["mozilla-central", "comm-central", "larch", "pine", "maple"]:
+    if project in [
+        "mozilla-central",
+        "comm-central",
+        "larch",
+        "pine",
+        "maple",
+        "cypress",
+    ]:
         return "nightly"
     if project == "mozilla-beta":
         if product == "devedition":
@@ -149,7 +156,7 @@ def make_task_description(config, jobs):
         task = {
             "label": label,
             "description": f"{dep_job.description} Partials",
-            "worker-type": "b-linux-gcp",
+            "worker-type": "b-linux-docker-amd",
             "dependencies": dependencies,
             "scopes": [],
             "attributes": attributes,

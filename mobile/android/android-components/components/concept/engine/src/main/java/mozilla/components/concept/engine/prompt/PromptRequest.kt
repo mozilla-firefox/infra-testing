@@ -16,6 +16,7 @@ import mozilla.components.concept.storage.Address
 import mozilla.components.concept.storage.CreditCardEntry
 import mozilla.components.concept.storage.Login
 import mozilla.components.concept.storage.LoginEntry
+import java.security.Principal
 import java.util.UUID
 
 /**
@@ -101,11 +102,13 @@ sealed class PromptRequest(
     /**
      * Value type that represents a request for a client authentication certificate prompt.
      * @property host the domain (or IP address) that requested the certificate.
+     * @property issuers array of X.500 Distinguished Names identified as acceptable issuers.
      * @property onComplete callback that is called with the chosen certificate alias (or null if
      * none was chosen) when the user deals with the prompt.
      */
     data class CertificateRequest(
         val host: String,
+        val issuers: Array<Principal>?,
         val onComplete: (String?) -> Unit,
     ) : PromptRequest()
 
@@ -395,6 +398,22 @@ sealed class PromptRequest(
     ) : PromptRequest(), Dismissible
 
     /**
+     * Value type that represents a request to redirect a top-level window.
+     * This occurs when a third-party frame attempts redirect the top-level window,
+     * in a way that doesn't appear to be the result of user input.
+     *
+     * @property targetUri the uri that the page is trying to redirect to.
+     * @property onAllow callback to notify that the user wants to redirect to [targetUri].
+     * @property onDeny callback to notify that the user doesn't want to redirect to [targetUri].
+     */
+    data class Redirect(
+        val targetUri: String,
+        val onAllow: () -> Unit,
+        val onDeny: () -> Unit,
+        override val onDismiss: () -> Unit = { onDeny() },
+    ) : PromptRequest(), Dismissible
+
+    /**
      * Value type that represents a request for showing a
      * <a href="https://developer.mozilla.org/en-US/docs/Web/API/Window/confirm>confirm prompt</a>.
      *
@@ -450,6 +469,30 @@ sealed class PromptRequest(
      */
     data class Repost(
         val onConfirm: () -> Unit,
+        override val onDismiss: () -> Unit,
+    ) : PromptRequest(), Dismissible
+
+    /**
+     * Value type that represents a request for a folder upload confirm prompt.
+     *
+     * @property folderName the name of the folder that the user is trying to upload.
+     * @property onConfirm callback to notify that the user allows to upload files in folder
+     * @property onDismiss callback to notify that the user disallow to upload files.
+     */
+    data class FolderUploadPrompt(
+        val folderName: String,
+        val onConfirm: () -> Unit,
+        override val onDismiss: () -> Unit,
+    ) : PromptRequest(), Dismissible
+
+    /**
+     * Value type that represents a request for a selecting one folder/directory.
+     *
+     * @property onSelected callback to notify that the user has selected a folder.
+     * @property onDismiss callback to notify that the user has canceled the folder selection.
+     */
+    data class Folder(
+        val onSelected: (Context, Uri) -> Unit,
         override val onDismiss: () -> Unit,
     ) : PromptRequest(), Dismissible
 

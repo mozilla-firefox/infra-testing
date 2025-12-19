@@ -14,12 +14,12 @@ def assert_browsing_context(
     info,
     context,
     children=None,
+    client_window=None,
     original_opener=None,
     parent_expected=True,
     parent=None,
     url=None,
     user_context="default",
-    client_window=None
 ):
     assert "children" in info
     if children is not None:
@@ -27,6 +27,14 @@ def assert_browsing_context(
         assert len(info["children"]) == children
     else:
         assert info["children"] is None
+
+    assert "clientWindow" in info
+    assert isinstance(info["clientWindow"], str)
+    # Note: Only the tests for browsingContext.getTree should be allowed to
+    # pass None here because it's not possible to assert the exact client
+    # window id for other browser windows.
+    if client_window is not None:
+        assert info["clientWindow"] == client_window
 
     assert "context" in info
     assert isinstance(info["context"], str)
@@ -54,8 +62,6 @@ def assert_browsing_context(
     assert info["url"] == url
     assert info["userContext"] == user_context
     assert info["originalOpener"] == original_opener
-    if client_window is not None:
-        assert info["clientWindow"] == client_window
 
 
 async def assert_document_status(bidi_session, context, visible, focused):
@@ -107,3 +113,14 @@ async def get_visibility_state(bidi_session, context: Mapping[str, Any]) -> str:
         target=ContextTarget(context["context"]),
         await_promise=False)
     return result["value"]
+
+
+def find_context_info(contexts, context):
+    return next(
+        (
+            context_info
+            for context_info in contexts
+            if context_info["context"] == context
+        ),
+        None,
+    )

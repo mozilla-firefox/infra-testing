@@ -32,6 +32,9 @@ pub struct DisplayList {
     pub present: bool,
     /// If set to true, send the transaction after adding this display list to it.
     pub send_transaction: bool,
+    /// If set to true, the pipeline will be rendered off-screen. Only snapshotted
+    /// stacking contexts will be kept.
+    pub render_offscreen: bool,
 }
 
 // TODO(gw): This descriptor matches what we currently support for fonts
@@ -245,6 +248,7 @@ impl Wrench {
 
         let mut debug_flags = DebugFlags::ECHO_DRIVER_MESSAGES;
         debug_flags.set(DebugFlags::DISABLE_BATCHING, no_batch);
+        debug_flags.set(DebugFlags::MISSING_SNAPSHOT_PINK, true);
         let callbacks = Arc::new(Mutex::new(blob::BlobCallbacks::new()));
 
         let precache_flags = if precache_shaders {
@@ -275,6 +279,10 @@ impl Wrench {
             // `clear_caches_with_quads`, but scissored clears work well.
             clear_caches_with_quads: !window.is_software(),
             compositor_config,
+            enable_debugger: true,
+            precise_radial_gradients: true,
+            precise_conic_gradients: true,
+            precise_linear_gradients: window.is_software(),
             ..Default::default()
         };
 
@@ -459,10 +467,13 @@ impl Wrench {
             stretch,
         };
         let system_fc = dwrote::FontCollection::system();
+        #[allow(deprecated)]
         if let Some(font) = system_fc.get_font_from_descriptor(&desc) {
             let face = font.create_font_face();
+            #[allow(deprecated)]
             let files = face.get_files();
             if files.len() == 1 {
+                #[allow(deprecated)]
                 if let Some(path) = files[0].get_font_file_path() {
                     return self.font_key_from_native_handle(&NativeFontHandle {
                         path,
@@ -575,12 +586,17 @@ impl Wrench {
                 (display_list.pipeline, display_list.payload),
             );
 
+            if display_list.render_offscreen {
+                txn.render_offscreen(display_list.pipeline);
+            }
+
             if display_list.send_transaction {
                 for (id, offsets) in scroll_offsets {
                     txn.set_scroll_offsets(*id, offsets.clone());
                 }
 
-                txn.generate_frame(0, present, RenderReasons::TESTING);
+                let tracked = false;
+                txn.generate_frame(0, present, tracked, RenderReasons::TESTING);
                 self.api.send_transaction(self.document_id, txn);
                 txn = Transaction::new();
 
@@ -610,7 +626,9 @@ impl Wrench {
     pub fn refresh(&mut self) {
         self.begin_frame();
         let mut txn = Transaction::new();
-        txn.generate_frame(0, true, RenderReasons::TESTING);
+        let present = true;
+        let tracked = false;
+        txn.generate_frame(0, present, tracked, RenderReasons::TESTING);
         self.api.send_transaction(self.document_id, txn);
     }
 

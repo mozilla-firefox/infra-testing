@@ -61,8 +61,6 @@ class LinuxBootstrapper(MobileAndroidBootstrapper):
                 "bash",
                 "findutils",  # contains xargs
                 "gzip",
-                "libxml2",  # used by bootstrapped clang
-                "m4",
                 "make",
                 "perl",
                 "tar",

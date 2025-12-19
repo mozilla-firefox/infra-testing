@@ -2,16 +2,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsContentAreaDragDrop.h"
 #include "RemoteDragStartData.h"
+
+#include "mozilla/dom/BlobImpl.h"
+#include "mozilla/dom/BrowserParent.h"
+#include "mozilla/dom/DOMTypes.h"
+#include "mozilla/dom/IPCBlobUtils.h"
+#include "mozilla/ipc/ProtocolUtils.h"
+#include "nsContentAreaDragDrop.h"
 #include "nsContentUtils.h"
 #include "nsICookieJarSettings.h"
 #include "nsVariant.h"
-#include "mozilla/dom/BlobImpl.h"
-#include "mozilla/dom/BrowserParent.h"
-#include "mozilla/dom/IPCBlobUtils.h"
-#include "mozilla/dom/DOMTypes.h"
-#include "mozilla/ipc/ProtocolUtils.h"
 
 using namespace mozilla::ipc;
 
@@ -23,23 +24,24 @@ RemoteDragStartData::RemoteDragStartData(
     BrowserParent* aBrowserParent,
     nsTArray<IPCTransferableData>&& aTransferableData,
     const LayoutDeviceIntRect& aRect, nsIPrincipal* aPrincipal,
-    nsIContentSecurityPolicy* aCsp, nsICookieJarSettings* aCookieJarSettings,
+    nsIPolicyContainer* aPolicyContainer,
+    nsICookieJarSettings* aCookieJarSettings,
     WindowContext* aSourceWindowContext, WindowContext* aSourceTopWindowContext)
     : mBrowserParent(aBrowserParent),
       mTransferableData(std::move(aTransferableData)),
       mRect(aRect),
       mPrincipal(aPrincipal),
-      mCsp(aCsp),
+      mPolicyContainer(aPolicyContainer),
       mCookieJarSettings(aCookieJarSettings),
       mSourceWindowContext(aSourceWindowContext),
       mSourceTopWindowContext(aSourceTopWindowContext) {}
 
 void RemoteDragStartData::AddInitialDnDDataTo(
     DataTransfer* aDataTransfer, nsIPrincipal** aPrincipal,
-    nsIContentSecurityPolicy** aCsp,
+    nsIPolicyContainer** aPolicyContainer,
     nsICookieJarSettings** aCookieJarSettings) {
   NS_IF_ADDREF(*aPrincipal = mPrincipal);
-  NS_IF_ADDREF(*aCsp = mCsp);
+  NS_IF_ADDREF(*aPolicyContainer = mPolicyContainer);
   NS_IF_ADDREF(*aCookieJarSettings = mCookieJarSettings);
 
   for (uint32_t i = 0; i < mTransferableData.Length(); ++i) {

@@ -270,7 +270,6 @@ impl SpecNewSessionParameters {
                     }
                 },
 
-                "ftpProxy" => SpecNewSessionParameters::validate_host(value, "ftpProxy")?,
                 "httpProxy" => SpecNewSessionParameters::validate_host(value, "httpProxy")?,
                 "noProxy" => SpecNewSessionParameters::validate_no_proxy(value)?,
                 "sslProxy" => SpecNewSessionParameters::validate_host(value, "sslProxy")?,
@@ -425,6 +424,7 @@ impl SpecNewSessionParameters {
                         | x @ "beforeUnload"
                         | x @ "confirm"
                         | x @ "default"
+                        | x @ "file"
                         | x @ "prompt" => {
                             let behavior = try_opt!(
                                 value.as_str(),
@@ -757,7 +757,7 @@ mod tests {
         assert!(validate_prompt_behavior(json!("foo")).is_err());
 
         // capability as object
-        let types = ["alert", "beforeUnload", "confirm", "default", "prompt"];
+        let types = ["alert", "beforeUnload", "confirm", "default", "file", "prompt"];
         let handlers = [
             "accept",
             "accept and notify",

@@ -34,17 +34,23 @@ function ensureCleanupRegistered() {
  * passing the window containing a blank XUL <window> back.
  */
 export class HiddenFrame {
+  /** @type {Window} */
   #frame = null;
+  /** @type {?nsIWindowlessBrowser} */
   #browser = null;
+  /** @type {object} */
   #listener = null;
+  /** @type {?nsIWebProgress} */
   #webProgress = null;
+  /** @type {?PromiseWithResolvers<Window>} */
   #deferred = null;
 
   /**
    * Gets the |contentWindow| of the hidden frame. Creates the frame if needed.
    *
-   * @returns {Promise} Returns a promise which is resolved when the hidden frame has finished
-   *          loading.
+   * @returns {Promise<Window>}
+   *   Returns a promise which is resolved when the hidden frame has finished
+   *   loading.
    */
   get() {
     if (!this.#deferred) {
@@ -58,7 +64,7 @@ export class HiddenFrame {
   /**
    * Fetch a sync ref to the window inside the frame (needed for the add-on SDK).
    *
-   * @returns {DOMWindow}
+   * @returns {Window}
    */
   getWindow() {
     this.get();
@@ -94,13 +100,13 @@ export class HiddenFrame {
       true,
       chromeFlags
     );
-    this.#browser.QueryInterface(Ci.nsIInterfaceRequestor);
     gAllHiddenFrames.add(this);
-    this.#webProgress = this.#browser.getInterface(Ci.nsIWebProgress);
+    this.#webProgress = this.#browser
+      .QueryInterface(Ci.nsIInterfaceRequestor)
+      .getInterface(Ci.nsIWebProgress);
     this.#listener = {
       QueryInterface: ChromeUtils.generateQI([
         "nsIWebProgressListener",
-        "nsIWebProgressListener2",
         "nsISupportsWeakReference",
       ]),
     };
@@ -121,9 +127,7 @@ export class HiddenFrame {
       this.#listener,
       Ci.nsIWebProgress.NOTIFY_STATE_DOCUMENT
     );
-    let docShell = this.#browser.docShell;
     let systemPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
-    docShell.createAboutBlankDocumentViewer(systemPrincipal, systemPrincipal);
     let browsingContext = this.#browser.browsingContext;
     browsingContext.useGlobalHistory = false;
     let loadURIOptions = {
@@ -153,8 +157,6 @@ export const HiddenBrowserManager = new (class HiddenBrowserManager {
 
   /**
    * Creates and returns a new hidden browser.
-   *
-   * @returns {Browser}
    */
   async #acquireBrowser() {
     this.#browsers++;
@@ -180,7 +182,7 @@ export const HiddenBrowserManager = new (class HiddenBrowserManager {
   /**
    * Releases the given hidden browser.
    *
-   * @param {Browser} browser
+   * @param {MozBrowser} browser
    *   The hidden browser element.
    */
   #releaseBrowser(browser) {
@@ -197,10 +199,11 @@ export const HiddenBrowserManager = new (class HiddenBrowserManager {
    * Calls a callback function with a new hidden browser.
    * This function will return whatever the callback function returns.
    *
-   * @param {Callback} callback
+   * @template T
+   * @param {(MozBrowser) => T | Promise<T>} callback
    *   The callback function will be called with the browser element and may
    *   be asynchronous.
-   * @returns {T}
+   * @returns {Promise<T>}
    */
   async withHiddenBrowser(callback) {
     let browser = await this.#acquireBrowser();

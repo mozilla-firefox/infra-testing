@@ -9,12 +9,12 @@
 
 #include "mozilla/RefPtr.h"
 #include "mozilla/WeakPtr.h"
-#include "mozilla/dom/PWindowGlobalChild.h"
-#include "nsRefPtrHashtable.h"
-#include "nsWrapperCache.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/PWindowGlobalChild.h"
 #include "mozilla/dom/WindowGlobalActor.h"
 #include "mozilla/dom/WindowProxyHolder.h"
+#include "nsRefPtrHashtable.h"
+#include "nsWrapperCache.h"
 
 class nsGlobalWindowInner;
 class nsDocShell;
@@ -83,6 +83,9 @@ class WindowGlobalChild final : public WindowGlobalActor,
   void BeforeUnloadAdded();
   void BeforeUnloadRemoved();
 
+  void NavigateAdded();
+  void NavigateRemoved();
+
   bool IsCurrentGlobal();
 
   bool IsProcessRoot();
@@ -150,7 +153,7 @@ class WindowGlobalChild final : public WindowGlobalActor,
   void BlockBFCacheFor(BFCacheStatus aStatus);
 
  protected:
-  const nsACString& GetRemoteType() override;
+  const nsACString& GetRemoteType() const override;
 
   already_AddRefed<JSActor> InitJSActor(JS::Handle<JSObject*> aMaybeActor,
                                         const nsACString& aName,
@@ -159,8 +162,8 @@ class WindowGlobalChild final : public WindowGlobalActor,
 
   // IPC messages
   mozilla::ipc::IPCResult RecvRawMessage(
-      const JSActorMessageMeta& aMeta, const Maybe<ClonedMessageData>& aData,
-      const Maybe<ClonedMessageData>& aStack);
+      const JSActorMessageMeta& aMeta, JSIPCValue&& aData,
+      const UniquePtr<ClonedMessageData>& aStack);
 
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   mozilla::ipc::IPCResult RecvMakeFrameLocal(
@@ -201,8 +204,9 @@ class WindowGlobalChild final : public WindowGlobalActor,
   mozilla::ipc::IPCResult RecvNotifyPermissionChange(const nsCString& aType,
                                                      uint32_t aPermission);
 
-  mozilla::ipc::IPCResult RecvNavigateForIdentityCredentialDiscovery(
-      const nsCString& aURI, const IdentityLoginTargetType& aType);
+  // TODO: Use MOZ_CAN_RUN_SCRIPT when it gains IPDL support (bug 1539864)
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY mozilla::ipc::IPCResult RecvProcessCloseRequest(
+      const MaybeDiscarded<dom::BrowsingContext>& aFrameContext);
 
   virtual void ActorDestroy(ActorDestroyReason aWhy) override;
 

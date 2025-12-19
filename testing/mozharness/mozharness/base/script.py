@@ -34,6 +34,7 @@ import zipfile
 import zlib
 from contextlib import contextmanager
 from io import BytesIO
+from pathlib import Path
 from queue import Empty, Queue
 
 import mozinfo
@@ -389,7 +390,7 @@ class ScriptMixin(PlatformMixin):
         for ffrec in win32api.FindFiles("\\\\?\\" + path + "\\*.*"):
             file_attr = ffrec[0]
             name = ffrec[8]
-            if name == "." or name == "..":
+            if name in {".", ".."}:
                 continue
             full_name = os.path.join(path, name)
 
@@ -670,8 +671,7 @@ class ScriptMixin(PlatformMixin):
         filter_partial = functools.partial(fnmatch.filter, namelist)
         entries = itertools.chain(*map(filter_partial, extract_dirs or ["*"]))
 
-        for entry in entries:
-            yield entry
+        yield from entries
 
     def unzip(self, compressed_file, extract_to, extract_dirs="*", verbose=False):
         """This method allows to extract a zip file without writing to disk first.
@@ -722,8 +722,16 @@ class ScriptMixin(PlatformMixin):
             mode (str): string of the form 'filemode[:compression]' (e.g. 'r:gz' or 'r:bz2')
             extract_to (str, optional): where to extract the compressed file.
         """
-        with tarfile.open(fileobj=compressed_file, mode=mode) as t:
-            _safe_extract(t, path=extract_to)
+        if mode == "r|zst":
+            import zstandard
+
+            unzstd = zstandard.ZstdDecompressor()
+            with unzstd.stream_reader(compressed_file) as stream:
+                with tarfile.open(mode="r|", fileobj=stream) as t:
+                    _safe_extract(t, path=extract_to)
+        else:
+            with tarfile.open(fileobj=compressed_file, mode=mode) as t:
+                _safe_extract(t, path=extract_to)
 
     def download_unpack(self, url, extract_to=".", extract_dirs="*", verbose=False):
         """Generic method to download and extract a compressed file without writing it
@@ -744,6 +752,7 @@ class ScriptMixin(PlatformMixin):
             EXTENSION_TO_MIMETYPE = {
                 "bz2": "application/x-bzip2",
                 "xz": "application/x-xz",
+                "zst": "application/zstd",
                 "gz": "application/x-gzip",
                 "tar": "application/x-tar",
                 "zip": "application/zip",
@@ -752,6 +761,10 @@ class ScriptMixin(PlatformMixin):
                 "application/x-xz": {
                     "function": self.deflate,
                     "kwargs": {"mode": "r:xz"},
+                },
+                "application/zstd": {
+                    "function": self.deflate,
+                    "kwargs": {"mode": "r|zst"},
                 },
                 "application/x-bzip2": {
                     "function": self.deflate,
@@ -1026,7 +1039,7 @@ class ScriptMixin(PlatformMixin):
             if overwrite == "clobber" or not os.path.exists(dest):
                 self.rmtree(dest)
                 shutil.copytree(src, dest)
-            elif overwrite == "no_overwrite" or overwrite == "overwrite_if_exists":
+            elif overwrite in {"no_overwrite", "overwrite_if_exists"}:
                 files = os.listdir(src)
                 for f in files:
                     abs_src_f = os.path.join(src, f)
@@ -1324,8 +1337,7 @@ class ScriptMixin(PlatformMixin):
                     )
                     time.sleep(sleeptime)
                     sleeptime = sleeptime * 2
-                    if sleeptime > max_sleeptime:
-                        sleeptime = max_sleeptime
+                    sleeptime = min(sleeptime, max_sleeptime)
 
     def query_env(
         self,
@@ -1581,12 +1593,11 @@ class ScriptMixin(PlatformMixin):
             if partial_env:
                 self.info("Using partial env: %s" % pprint.pformat(partial_env))
                 env = self.query_env(partial_env=partial_env)
+        elif hasattr(self, "previous_env") and env == self.previous_env:
+            self.info("Using env: (same as previous command)")
         else:
-            if hasattr(self, "previous_env") and env == self.previous_env:
-                self.info("Using env: (same as previous command)")
-            else:
-                self.info("Using env: %s" % pprint.pformat(env))
-                self.previous_env = env
+            self.info("Using env: %s" % pprint.pformat(env))
+            self.previous_env = env
 
         if output_parser is None:
             parser = OutputParser(
@@ -2078,7 +2089,7 @@ class BaseScript(ScriptMixin, LogMixin):
         **kwargs,
     ):
         self._return_code = 0
-        super(BaseScript, self).__init__()
+        super().__init__()
 
         self.log_obj = None
         self.abs_dirs = None
@@ -2211,7 +2222,7 @@ class BaseScript(ScriptMixin, LogMixin):
         if not cfg_files:
             cfg_files = []
         self.info("Total config files: %d" % (len(cfg_files)))
-        if len(cfg_files):
+        if cfg_files:
             self.info("cfg files used from lowest precedence to highest:")
         for i, (target_file, target_dict) in enumerate(cfg_files):
             unique_keys = set(target_dict.keys())
@@ -2269,10 +2280,6 @@ class BaseScript(ScriptMixin, LogMixin):
             self.error("No such method %s!" % method_name)
 
     def run_action(self, action):
-        if action not in self.actions:
-            self.action_message("Skipping %s step." % action)
-            return
-
         method_name = action.replace("-", "_")
         self.action_message("Running %s step." % action)
 
@@ -2376,12 +2383,38 @@ class BaseScript(ScriptMixin, LogMixin):
                 self.fatal("Aborting due to failure in pre-run listener.")
 
         self.dump_config()
+        perfherder_data = {
+            "framework": {"name": "mozharness"},
+            "suites": [],
+        }
         try:
             for action in self.all_actions:
+                if action not in self.actions:
+                    self.action_message(f"Skipping {action} step.")
+                    continue
+
+                start = time.monotonic()
                 self.run_action(action)
+                end = time.monotonic()
+                perfherder_data["suites"].append(
+                    {
+                        "name": action,
+                        "value": end - start,
+                        "lowerIsBetter": True,
+                        "unit": "s",
+                        "shouldAlert": False,
+                        "subtests": [],
+                    }
+                )
         except Exception:
             self.fatal("Uncaught exception: %s" % traceback.format_exc())
         finally:
+            if "MOZ_AUTOMATION" in os.environ and "UPLOAD_DIR" in os.environ:
+                upload_dir = Path(os.environ["UPLOAD_DIR"])
+                upload_dir.mkdir(parents=True, exist_ok=True)
+                upload_path = upload_dir / "perfherder-data-mozharness-actions.json"
+                with upload_path.open("w", encoding="utf-8") as f:
+                    json.dump(perfherder_data, f)
             post_success = True
             for fn in self._listeners["post_run"]:
                 try:

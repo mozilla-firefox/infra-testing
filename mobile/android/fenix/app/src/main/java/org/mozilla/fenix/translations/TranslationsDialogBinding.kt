@@ -4,6 +4,8 @@
 
 package org.mozilla.fenix.translations
 
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChangedBy
@@ -30,7 +32,8 @@ class TranslationsDialogBinding(
     browserStore: BrowserStore,
     private val translationsDialogStore: TranslationsDialogStore,
     private val getTranslatedPageTitle: (localizedFrom: String?, localizedTo: String?) -> String,
-) : AbstractBinding<BrowserState>(browserStore) {
+    mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
+) : AbstractBinding<BrowserState>(browserStore, mainDispatcher) {
 
     @Suppress("LongMethod", "CyclomaticComplexMethod")
     override suspend fun onState(flow: Flow<BrowserState>) {
@@ -49,8 +52,7 @@ class TranslationsDialogBinding(
         // Applying the flows together
         sessionFlow
             .combine(browserFlow) { sessionState, browserState -> TranslationsFlowState(sessionState, browserState) }
-            .collect {
-                    state ->
+            .collect { state ->
                 // Browser Translations State Behavior (Global)
                 val browserTranslationsState = state.browserState.translationEngine
                 val translateFromLanguages =

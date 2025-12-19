@@ -9,11 +9,9 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/CORSMode.h"
-#include "mozilla/DebugOnly.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/LoadInfo.h"
 #include "mozilla/ScopeExit.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/ReferrerInfo.h"
 #include "nsContentPolicyUtils.h"
 #include "nsContentSecurityManager.h"
@@ -154,9 +152,9 @@ nsresult FetchPreloader::CheckContentPolicy(nsIURI* aURI,
     return NS_OK;
   }
 
-  nsCOMPtr<nsILoadInfo> secCheckLoadInfo = new net::LoadInfo(
+  nsCOMPtr<nsILoadInfo> secCheckLoadInfo = MOZ_TRY(net::LoadInfo::Create(
       aDocument->NodePrincipal(), aDocument->NodePrincipal(), aDocument,
-      nsILoadInfo::SEC_ONLY_FOR_EXPLICIT_CONTENTSEC_CHECK, mContentPolicyType);
+      nsILoadInfo::SEC_ONLY_FOR_EXPLICIT_CONTENTSEC_CHECK, mContentPolicyType));
 
   int16_t shouldLoad = nsIContentPolicy::ACCEPT;
   nsresult rv = NS_CheckContentLoadPolicy(aURI, secCheckLoadInfo, &shouldLoad,
@@ -225,7 +223,7 @@ NS_IMETHODIMP FetchPreloader::OnStopRequest(nsIRequest* request,
   // We want 404 or other types of server responses to be treated as 'error'.
   if (nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(request)) {
     uint32_t responseStatus = 0;
-    Unused << httpChannel->GetResponseStatus(&responseStatus);
+    (void)httpChannel->GetResponseStatus(&responseStatus);
     if (responseStatus / 100 != 2) {
       status = NS_ERROR_FAILURE;
     }
@@ -350,7 +348,7 @@ void FetchPreloader::Cache::Consume(nsCOMPtr<nsIStreamListener> aListener) {
     }
 
     bool isCancelled = false;
-    Unused << channel->GetCanceled(&isCancelled);
+    (void)channel->GetCanceled(&isCancelled);
     if (isCancelled) {
       mRequest->GetStatus(&status);
     } else if (NS_FAILED(rv)) {

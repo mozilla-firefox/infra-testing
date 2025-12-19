@@ -5,7 +5,10 @@
 package org.mozilla.fenix.onboarding
 
 import org.mozilla.fenix.GleanMetrics.Onboarding
+import org.mozilla.fenix.GleanMetrics.TermsOfUse
 import org.mozilla.fenix.onboarding.view.OnboardingPageUiData
+import org.mozilla.fenix.termsofuse.TOU_VERSION
+import org.mozilla.fenix.termsofuse.store.Surface
 
 /**
  * Abstraction responsible for recording telemetry events for Onboarding.
@@ -82,17 +85,6 @@ class OnboardingTelemetryRecorder {
             OnboardingPageUiData.Type.NOTIFICATION_PERMISSION -> {
                 Onboarding.turnOnNotificationsCard.record(
                     Onboarding.TurnOnNotificationsCardExtra(
-                        action = ACTION_IMPRESSION,
-                        elementType = ET_ONBOARDING_CARD,
-                        sequenceId = sequenceId,
-                        sequencePosition = sequencePosition,
-                    ),
-                )
-            }
-
-            OnboardingPageUiData.Type.ADD_ONS -> {
-                Onboarding.addOnsCard.record(
-                    Onboarding.AddOnsCardExtra(
                         action = ACTION_IMPRESSION,
                         elementType = ET_ONBOARDING_CARD,
                         sequenceId = sequenceId,
@@ -326,34 +318,6 @@ class OnboardingTelemetryRecorder {
     }
 
     /**
-     * Records an add-on was installed.
-     *  @param addOnId The id of the installed add-on.
-     */
-    fun onAddOnInstalled(addOnId: String) {
-        Onboarding.addOnInstalled.record(
-            Onboarding.AddOnInstalledExtra(
-                addOnId,
-            ),
-        )
-    }
-
-    /**
-     * Records the add-ons card primary button click event.
-     * @param sequenceId The identifier of the onboarding sequence shown to the user.
-     * @param sequencePosition The sequence position of the page for which the impression occurred.
-     */
-    fun onAddOnsButtonClick(sequenceId: String, sequencePosition: String) {
-        Onboarding.addOnsCardButtonPressed.record(
-            Onboarding.AddOnsCardButtonPressedExtra(
-                action = ACTION_CLICK,
-                elementType = ET_PRIMARY_BUTTON,
-                sequenceId = sequenceId,
-                sequencePosition = sequencePosition,
-            ),
-        )
-    }
-
-    /**
      * Records when the terms of service link is clicked.
      */
     fun onTermsOfServiceLinkClick() {
@@ -379,6 +343,14 @@ class OnboardingTelemetryRecorder {
      */
     fun onTermsOfServiceManagerAcceptTermsButtonClick() {
         Onboarding.termsOfServiceAccepted.record()
+        TermsOfUse.accepted.record(
+            TermsOfUse.AcceptedExtra(
+                surface = Surface.ONBOARDING.metricLabel,
+                touVersion = TOU_VERSION,
+            ),
+        )
+        TermsOfUse.version.set(TOU_VERSION.toLong())
+        TermsOfUse.date.set()
     }
 
     /**

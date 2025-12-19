@@ -12,8 +12,9 @@ const r = React.createElement;
 
 /**
  * Dispatches a page event to the privileged frame script for this tab.
- * @param {String} action
- * @param {Object} data
+ *
+ * @param {string} action
+ * @param {object} data
  */
 function sendPageEvent(action, data) {
   const event = new CustomEvent("ShieldPageEvent", {
@@ -225,7 +226,7 @@ class StudyList extends React.Component {
 
     for (const study of experiments) {
       const clonedStudy = Object.assign({}, study, {
-        type: study.experimentType,
+        type: study.isRollout ? "rollout" : "nimbus",
         sortDate: new Date(study.lastSeen),
       });
       if (!study.active) {

@@ -8,17 +8,11 @@
 #include <algorithm>
 #include <array>
 #include <bitset>
+#include <cctype>
 #include <queue>
-#include <regex>
 
 #include "AccessCheck.h"
 #include "CompositableHost.h"
-#include "gfxConfig.h"
-#include "gfxContext.h"
-#include "gfxCrashReporterUtils.h"
-#include "gfxEnv.h"
-#include "gfxPattern.h"
-#include "MozFramebuffer.h"
 #include "GLBlitHelper.h"
 #include "GLContext.h"
 #include "GLContextProvider.h"
@@ -27,6 +21,23 @@
 #include "ImageContainer.h"
 #include "ImageEncoder.h"
 #include "LayerUserData.h"
+#include "MozFramebuffer.h"
+#include "ScopedGLHelpers.h"
+#include "SharedSurfaceGL.h"
+#include "VRManagerChild.h"
+#include "gfxConfig.h"
+#include "gfxContext.h"
+#include "gfxCrashReporterUtils.h"
+#include "gfxEnv.h"
+#include "gfxPattern.h"
+#include "mozilla/EnumeratedArrayCycleCollection.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/ProcessPriorityManager.h"
+#include "mozilla/ResultVariant.h"
+#include "mozilla/SVGObserverUtils.h"
+#include "mozilla/ScopeExit.h"
+#include "mozilla/Services.h"
+#include "mozilla/StaticPrefs_webgl.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/Document.h"
@@ -34,34 +45,22 @@
 #include "mozilla/dom/HTMLVideoElement.h"
 #include "mozilla/dom/ImageData.h"
 #include "mozilla/dom/WebGLContextEvent.h"
-#include "mozilla/EnumeratedArrayCycleCollection.h"
-#include "mozilla/EnumeratedRange.h"
+#include "mozilla/gfx/Swizzle.h"
 #include "mozilla/gfx/gfxVars.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/ProcessPriorityManager.h"
-#include "mozilla/ResultVariant.h"
-#include "mozilla/ScopeExit.h"
-#include "mozilla/Services.h"
-#include "mozilla/StaticPrefs_webgl.h"
-#include "mozilla/SVGObserverUtils.h"
 #include "mozilla/glean/DomCanvasMetrics.h"
+#include "mozilla/layers/BufferTexture.h"
+#include "mozilla/layers/CompositorBridgeChild.h"
+#include "mozilla/layers/ImageBridgeChild.h"
+#include "mozilla/layers/RemoteTextureMap.h"
+#include "mozilla/layers/WebRenderCanvasRenderer.h"
+#include "mozilla/layers/WebRenderUserData.h"
 #include "nsContentUtils.h"
 #include "nsDisplayList.h"
 #include "nsError.h"
 #include "nsIClassInfoImpl.h"
 #include "nsIWidget.h"
 #include "nsServiceManagerUtils.h"
-#include "SharedSurfaceGL.h"
 #include "prenv.h"
-#include "ScopedGLHelpers.h"
-#include "VRManagerChild.h"
-#include "mozilla/gfx/Swizzle.h"
-#include "mozilla/layers/BufferTexture.h"
-#include "mozilla/layers/RemoteTextureMap.h"
-#include "mozilla/layers/CompositorBridgeChild.h"
-#include "mozilla/layers/ImageBridgeChild.h"
-#include "mozilla/layers/WebRenderUserData.h"
-#include "mozilla/layers/WebRenderCanvasRenderer.h"
 
 // Local
 #include "CanvasUtils.h"
@@ -514,6 +513,7 @@ void WebGLContext::Resize(uvec2 requestedSize) {
   // Kill our current default fb(s), for later lazy allocation.
   mRequestedSize = requestedSize;
   mDefaultFB = nullptr;
+  mResolvedDefaultFB = nullptr;
   mResetLayer = true;  // New size means new Layer.
 }
 
@@ -677,12 +677,8 @@ RefPtr<WebGLContext> WebGLContext::Create(HostWebGLContext* host,
       LOCAL_GL_FRAGMENT_SHADER,
   };
   constexpr GLenum PRECISIONS[] = {
-      LOCAL_GL_LOW_FLOAT,
-      LOCAL_GL_MEDIUM_FLOAT,
-      LOCAL_GL_HIGH_FLOAT,
-      LOCAL_GL_LOW_INT,
-      LOCAL_GL_MEDIUM_INT,
-      LOCAL_GL_HIGH_INT,
+      LOCAL_GL_LOW_FLOAT, LOCAL_GL_MEDIUM_FLOAT, LOCAL_GL_HIGH_FLOAT,
+      LOCAL_GL_LOW_INT,   LOCAL_GL_MEDIUM_INT,   LOCAL_GL_HIGH_INT,
   };
   for (const auto& shaderType : SHADER_TYPES) {
     for (const auto& precisionType : PRECISIONS) {
@@ -701,8 +697,10 @@ RefPtr<WebGLContext> WebGLContext::Create(HostWebGLContext* host,
   }
 
   if (webgl->mDisableFragHighP) {
-    out->shaderPrecisions->at({LOCAL_GL_FRAGMENT_SHADER, LOCAL_GL_HIGH_FLOAT}) = {};
-    out->shaderPrecisions->at({LOCAL_GL_FRAGMENT_SHADER, LOCAL_GL_HIGH_INT}) = {};
+    out->shaderPrecisions->at(
+        {LOCAL_GL_FRAGMENT_SHADER, LOCAL_GL_HIGH_FLOAT}) = {};
+    out->shaderPrecisions->at(
+        {LOCAL_GL_FRAGMENT_SHADER, LOCAL_GL_HIGH_INT}) = {};
   }
 
   // -
@@ -953,7 +951,8 @@ void WebGLContext::OnEndOfFrame() {
 
 void WebGLContext::BlitBackbufferToCurDriverFB(
     WebGLFramebuffer* const srcAsWebglFb,
-    const gl::MozFramebuffer* const srcAsMozFb, bool srcIsBGRA) const {
+    const gl::MozFramebuffer* const srcAsMozFb, bool srcIsBGRA, bool yFlip,
+    Maybe<gfxAlphaType> convertAlpha) const {
   // BlitFramebuffer ignores ColorMask().
 
   if (mScissorTestEnabled) {
@@ -984,9 +983,9 @@ void WebGLContext::BlitBackbufferToCurDriverFB(
 
   // If no format conversion is necessary, then attempt to directly blit
   // between framebuffers. Otherwise, if we need to convert to RGBA from
-  // the source format, then we will need to use the texture blit path
-  // below.
-  if (!srcIsBGRA) {
+  // the source format or do other conversions, then we will need to use
+  // the texture blit path below.
+  if (!srcIsBGRA && !yFlip && !convertAlpha) {
     if (gl->IsSupported(gl::GLFeature::framebuffer_blit)) {
       gl->fBindFramebuffer(LOCAL_GL_READ_FRAMEBUFFER, fbo);
       gl->fBlitFramebuffer(0, 0, size.width, size.height, 0, 0, size.width,
@@ -1013,8 +1012,9 @@ void WebGLContext::BlitBackbufferToCurDriverFB(
   }
 
   // DrawBlit handles ColorMask itself.
-  gl->BlitHelper()->DrawBlitTextureToFramebuffer(
-      colorTex, size, size, LOCAL_GL_TEXTURE_2D, srcIsBGRA);
+  gl->BlitHelper()->DrawBlitTextureToFramebuffer(colorTex, size, size,
+                                                 LOCAL_GL_TEXTURE_2D, srcIsBGRA,
+                                                 yFlip, convertAlpha);
 }
 
 // -
@@ -1137,7 +1137,7 @@ bool WebGLContext::PresentInto(gl::SwapChain& swapChain) {
     blitter.Draw({
         .texMatrix0 = gl::Mat3::I(),
         .yFlip = false,
-        .destSize = size,
+        .fbSize = size,
         .destRect = {},
     });
 
@@ -1267,7 +1267,7 @@ bool WebGLContext::CopyToSwapChain(
 
   OnEndOfFrame();
 
-  if (!srcFb) {
+  if (!srcFb || !srcFb->IsCheckFramebufferStatusComplete()) {
     return false;
   }
   const auto* info = srcFb->GetCompletenessInfo();
@@ -1519,13 +1519,8 @@ Maybe<uvec2> WebGLContext::FrontBufferSnapshotInto(
 
   // -
 
-  front->WaitForBufferOwnership();
-  front->LockProd();
-  front->ProducerReadAcquire();
-  auto reset = MakeScopeExit([&] {
-    front->ProducerReadRelease();
-    front->UnlockProd();
-  });
+  front->BeginRead();
+  auto reset = MakeScopeExit([&] { front->EndRead(); });
 
   // -
 
@@ -1610,6 +1605,119 @@ Maybe<uvec2> WebGLContext::SnapshotInto(GLuint srcFb, const gfx::IntSize& size,
   }
 
   return Some(*uvec2::FromSize(size));
+}
+
+already_AddRefed<gfx::SourceSurface> WebGLContext::GetBackBufferSnapshot(
+    const bool requireAlphaPremult) {
+  if (IsContextLost()) {
+    return nullptr;
+  }
+
+  const auto surfSize = DrawingBufferSize();
+  if (surfSize.x <= 0 || surfSize.y <= 0) {
+    return nullptr;
+  }
+
+  const auto surfFormat = mOptions.alpha ? gfx::SurfaceFormat::B8G8R8A8
+                                         : gfx::SurfaceFormat::B8G8R8X8;
+
+  RefPtr<gfx::DataSourceSurface> dataSurf =
+      gfx::Factory::CreateDataSourceSurface(
+          gfx::IntSize(surfSize.x, surfSize.y), surfFormat);
+  if (!dataSurf) {
+    NS_WARNING("Failed to alloc DataSourceSurface for GetBackBufferSnapshot");
+    return nullptr;
+  }
+
+  {
+    gfx::DataSourceSurface::ScopedMap map(dataSurf,
+                                          gfx::DataSourceSurface::READ_WRITE);
+    if (!map.IsMapped()) {
+      NS_WARNING("Failed to map DataSourceSurface for GetBackBufferSnapshot");
+      return nullptr;
+    }
+
+    // GetDefaultFBForRead might overwrite FB state if it needs to resolve a
+    // multisampled FB, so save/restore the FB state here just in case.
+    const gl::ScopedBindFramebuffer bindFb(gl);
+    const auto fb = GetDefaultFBForRead();
+    if (!fb) {
+      gfxCriticalNote << "GetDefaultFBForRead failed for GetBackBufferSnapshot";
+      return nullptr;
+    }
+    const auto byteCount = CheckedInt<size_t>(map.GetStride()) * surfSize.y;
+    if (!byteCount.isValid()) {
+      gfxCriticalNote << "Invalid byte count for GetBackBufferSnapshot";
+      return nullptr;
+    }
+    const Range<uint8_t> range = {map.GetData(), byteCount.value()};
+    if (!SnapshotInto(fb->mFB, fb->mSize, range,
+                      Some(size_t(map.GetStride())))) {
+      gfxCriticalNote << "SnapshotInto failed for GetBackBufferSnapshot";
+      return nullptr;
+    }
+
+    if (requireAlphaPremult && mOptions.alpha && !mOptions.premultipliedAlpha) {
+      bool rv = gfx::PremultiplyYFlipData(
+          map.GetData(), map.GetStride(), gfx::SurfaceFormat::R8G8B8A8,
+          map.GetData(), map.GetStride(), surfFormat, dataSurf->GetSize());
+      MOZ_RELEASE_ASSERT(rv, "PremultiplyYFlipData failed!");
+    } else {
+      bool rv = gfx::SwizzleYFlipData(
+          map.GetData(), map.GetStride(), gfx::SurfaceFormat::R8G8B8A8,
+          map.GetData(), map.GetStride(), surfFormat, dataSurf->GetSize());
+      MOZ_RELEASE_ASSERT(rv, "SwizzleYFlipData failed!");
+    }
+  }
+
+  return dataSurf.forget();
+}
+
+std::shared_ptr<gl::SharedSurface>
+WebGLContext::GetBackBufferSnapshotSharedSurface(layers::TextureType texType,
+                                                 bool bgra, bool yFlip,
+                                                 bool requireAlphaPremult) {
+  const FuncScope funcScope(*this, "<GetBackBufferSnapshotSharedSurface>");
+  if (IsContextLost()) {
+    return nullptr;
+  }
+
+  const auto surfSize = DrawingBufferSize();
+  if (surfSize.x <= 0 || surfSize.y <= 0) {
+    return nullptr;
+  }
+
+  InitSwapChain(*gl, mSnapshotSwapChain, texType, true);
+
+  {
+    // TODO: ColorSpace will need to be part of SwapChainOptions for DTWebgl.
+    const auto colorSpace = ToColorSpace2ForOutput(mDrawingBufferColorSpace);
+    auto presenter = mSnapshotSwapChain.Acquire(
+        gfx::IntSize(surfSize.x, surfSize.y), colorSpace);
+    if (!presenter) {
+      GenerateWarning("Swap chain surface creation failed.");
+      return nullptr;
+    }
+
+    const ScopedFBRebinder saveFB(this);
+    const auto srcFb = GetDefaultFBForRead();
+
+    const auto destFb = presenter->Fb();
+    gl->fBindFramebuffer(LOCAL_GL_FRAMEBUFFER, destFb);
+
+    BlitBackbufferToCurDriverFB(
+        nullptr, srcFb, bgra, yFlip,
+        requireAlphaPremult && mOptions.alpha && !mOptions.premultipliedAlpha
+            ? Some(gfxAlphaType::Premult)
+            : Nothing());
+  }
+
+  return mSnapshotSwapChain.FrontBuffer();
+}
+
+void WebGLContext::RecycleSnapshotSharedSurface(
+    std::shared_ptr<gl::SharedSurface> sharedSurface) {
+  mSnapshotSwapChain.StoreRecycledSurface(sharedSurface);
 }
 
 void WebGLContext::ClearVRSwapChain() { mWebVRSwapChain.ClearPool(); }
@@ -2298,30 +2406,59 @@ Maybe<std::string> WebGLContext::GetString(const GLenum pname) const {
 // ---------------------------------
 
 Maybe<webgl::IndexedName> webgl::ParseIndexed(const std::string& str) {
-  static const std::regex kRegex("(.*)\\[([0-9]+)\\]");
+  // Check if the string ends with a close bracket
+  if (str.size() < 2 || str.back() != ']') {
+    return {};
+  }
+  // Search for the open bracket, only allow digits between brackets
+  const size_t closeBracket = str.size() - 1;
+  size_t openBracket = closeBracket;
+  for (;;) {
+    char c = str[--openBracket];
+    if (isdigit(c)) {
+      if (openBracket <= 0) {
+        // At the beginning of string without an open bracket
+        return {};
+      }
+    } else if (c == '[') {
+      // Found the open bracket
+      break;
+    } else {
+      // Found a non-digit
+      return {};
+    }
+  }
 
-  std::smatch match;
-  if (!std::regex_match(str, match, kRegex)) return {};
-
-  const auto index = std::stoull(match[2]);
-  return Some(webgl::IndexedName{match[1], index});
+  // Ensure non-empty digit sequence
+  size_t firstDigit = openBracket + 1;
+  if (firstDigit >= closeBracket) {
+    return {};
+  }
+  const auto index =
+      std::stoull(str.substr(firstDigit, closeBracket - firstDigit));
+  std::string name = str.substr(0, openBracket);
+  return Some(webgl::IndexedName{name, index});
 }
 
 // ExplodeName("foo.bar[3].x") -> ["foo", ".", "bar", "[", "3", "]", ".", "x"]
 static std::vector<std::string> ExplodeName(const std::string& str) {
   std::vector<std::string> ret;
-
-  static const std::regex kSep("[.[\\]]");
-
-  auto itr = std::regex_token_iterator<decltype(str.begin())>(
-      str.begin(), str.end(), kSep, {-1, 0});
-  const auto end = decltype(itr)();
-
-  for (; itr != end; ++itr) {
-    const auto& part = itr->str();
-    if (part.size()) {
-      ret.push_back(part);
+  size_t curPos = 0;
+  while (curPos < str.size()) {
+    // Find the next separator
+    size_t nextPos = str.find_first_of(".[]", curPos);
+    if (nextPos == std::string::npos) {
+      // If no separator found, add remaining substring
+      ret.push_back(str.substr(curPos));
+      break;
     }
+    // Add string between separators, if not empty
+    if (curPos < nextPos) {
+      ret.push_back(str.substr(curPos, nextPos - curPos));
+    }
+    // Add the separator
+    ret.push_back(str.substr(nextPos, 1));
+    curPos = nextPos + 1;
   }
   return ret;
 }

@@ -10,6 +10,7 @@ use crate::ping::PingMaker;
 use crate::upload::PingPayload;
 use crate::Glean;
 
+use malloc_size_of_derive::MallocSizeOf;
 use uuid::Uuid;
 
 /// Stores information about a ping.
@@ -19,6 +20,7 @@ use uuid::Uuid;
 #[derive(Clone)]
 pub struct PingType(Arc<InnerPing>);
 
+#[derive(MallocSizeOf)]
 struct InnerPing {
     /// The name of the ping.
     pub name: String,
@@ -62,6 +64,14 @@ impl fmt::Debug for PingType {
             )
             .field("uploader_capabilities", &self.0.uploader_capabilities)
             .finish()
+    }
+}
+
+impl ::malloc_size_of::MallocSizeOf for PingType {
+    fn size_of(&self, ops: &mut malloc_size_of::MallocSizeOfOps) -> usize {
+        // Note: This is behind an `Arc`.
+        // `size_of` should only be called from a single thread to avoid double-counting.
+        self.0.size_of(ops)
     }
 }
 
@@ -272,15 +282,6 @@ impl PingType {
     /// Whether the ping was succesfully assembled and queued.
     #[doc(hidden)]
     pub fn submit_sync(&self, glean: &Glean, reason: Option<&str>) -> bool {
-        if !self.enabled(glean) {
-            log::info!(
-                "The ping '{}' is disabled and will be discarded and not submitted",
-                self.0.name
-            );
-
-            return false;
-        }
-
         let ping = &self.0;
 
         // Allowing `clippy::manual_filter`.
@@ -301,10 +302,21 @@ impl PingType {
             None => None,
         };
 
+        if !self.enabled(glean) {
+            log::info!(
+                "The ping '{}' is disabled and will be discarded and not submitted",
+                self.0.name
+            );
+
+            self.handle_ping_schedule(glean, ping, reason);
+            return false;
+        }
+
         let ping_maker = PingMaker::new();
         let doc_id = Uuid::new_v4().to_string();
         let url_path = glean.make_path(&ping.name, &doc_id);
-        match ping_maker.collect(glean, self, corrected_reason, &doc_id, &url_path) {
+        let submitted = match ping_maker.collect(glean, self, corrected_reason, &doc_id, &url_path)
+        {
             None => {
                 log::info!(
                     "No content for ping '{}', therefore no ping queued.",
@@ -312,18 +324,22 @@ impl PingType {
                 );
                 false
             }
+            Some(ping) if !self.enabled(glean) => {
+                log::info!(
+                    "The ping '{}' is disabled and will be discarded and not submitted",
+                    ping.name
+                );
+
+                false
+            }
             Some(ping) => {
-                if !self.enabled(glean) {
-                    log::info!(
-                        "The ping '{}' is disabled and will be discarded and not submitted",
-                        ping.name
-                    );
-
-                    return false;
-                }
-
-                const BUILTIN_PINGS: [&str; 4] =
-                    ["baseline", "metrics", "events", "deletion-request"];
+                const BUILTIN_PINGS: [&str; 5] = [
+                    "baseline",
+                    "metrics",
+                    "events",
+                    "health",
+                    "deletion-request",
+                ];
 
                 // This metric is recorded *after* the ping is collected (since
                 // that is the only way to know *if* it will be submitted). The
@@ -371,36 +387,41 @@ impl PingType {
                     ping.name
                 );
 
-                if ping.schedules_pings.is_empty() {
-                    let ping_schedule = glean
-                        .ping_schedule
-                        .get(ping.name)
-                        .map(|v| &v[..])
-                        .unwrap_or(&[]);
-
-                    if !ping_schedule.is_empty() {
-                        log::info!(
-                            "The ping '{}' is being used to schedule other pings: {:?}",
-                            ping.name,
-                            ping_schedule
-                        );
-
-                        for scheduled_ping_name in ping_schedule {
-                            glean.submit_ping_by_name(scheduled_ping_name, reason);
-                        }
-                    }
-                } else {
-                    log::info!(
-                        "The ping '{}' is being used to schedule other pings: {:?}",
-                        ping.name,
-                        ping.schedules_pings
-                    );
-                    for scheduled_ping_name in &ping.schedules_pings {
-                        glean.submit_ping_by_name(scheduled_ping_name, reason);
-                    }
-                }
-
                 true
+            }
+        };
+
+        self.handle_ping_schedule(glean, ping, reason);
+        submitted
+    }
+
+    fn handle_ping_schedule(&self, glean: &Glean, ping: &InnerPing, reason: Option<&str>) {
+        if ping.schedules_pings.is_empty() {
+            let ping_schedule = glean
+                .ping_schedule
+                .get(&ping.name)
+                .map(|v| &v[..])
+                .unwrap_or(&[]);
+
+            if !ping_schedule.is_empty() {
+                log::info!(
+                    "The ping '{}' is being used to schedule other pings: {:?}",
+                    ping.name,
+                    ping_schedule
+                );
+
+                for scheduled_ping_name in ping_schedule {
+                    glean.submit_ping_by_name(scheduled_ping_name, reason);
+                }
+            }
+        } else {
+            log::info!(
+                "The ping '{}' is being used to schedule other pings: {:?}",
+                ping.name,
+                ping.schedules_pings
+            );
+            for scheduled_ping_name in &ping.schedules_pings {
+                glean.submit_ping_by_name(scheduled_ping_name, reason);
             }
         }
     }

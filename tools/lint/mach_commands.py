@@ -4,11 +4,13 @@
 
 import argparse
 import copy
+import json
 import os
 
 from mach.decorators import Command, CommandArgument
 from mozbuild.base import BuildEnvironmentNotFoundException
 from mozbuild.base import MachCommandConditions as conditions
+from mozsystemmonitor.resourcemonitor import SystemResourceMonitor
 
 here = os.path.abspath(os.path.dirname(__file__))
 EXCLUSION_FILES = [
@@ -23,7 +25,7 @@ if os.path.exists(thunderbird_excludes):
 
 GLOBAL_EXCLUDES = ["**/node_modules", "tools/lint/test/files", ".hg", ".git"]
 
-VALID_FORMATTERS = {"black", "clang-format", "eslint", "rustfmt"}
+VALID_FORMATTERS = {"black", "clang-format", "eslint", "rustfmt", "stylelint"}
 VALID_ANDROID_FORMATTERS = {"android-format"}
 
 # Code-review bot must index issues from the whole codebase when pushing
@@ -103,7 +105,28 @@ def lint(command_context, *runargs, **lintargs):
     setupargs = {
         "mach_command_context": command_context,
     }
-    return cli.run(*runargs, setupargs=setupargs, **lintargs)
+
+    monitor = SystemResourceMonitor(poll_interval=0.1)
+    monitor.start()
+
+    try:
+        ret = cli.run(*runargs, setupargs=setupargs, **lintargs)
+    finally:
+        monitor.stop()
+
+        if os.environ.get("MOZ_AUTOMATION") == "1":
+            profile_path = "/builds/worker/profile_resource-usage.json"
+        else:
+            command_context._ensure_state_subdir_exists(".")
+            profile_path = command_context._get_state_filename(
+                "profile_build_resources.json"
+            )
+
+        with open(profile_path, "w", encoding="utf-8", newline="\n") as f:
+            to_write = json.dumps(monitor.as_profile(), separators=(",", ":"))
+            f.write(to_write)
+
+    return ret
 
 
 @Command(
@@ -178,7 +201,7 @@ def prettier(command_context, paths, extra_args=[], **kwargs):
     command_context._mach_context.commands.dispatch(
         "format",
         command_context._mach_context,
-        linters=["eslint"],
+        linters=["eslint", "stylelint"],
         paths=paths,
         argv=extra_args,
         **kwargs
@@ -191,11 +214,18 @@ def prettier(command_context, paths, extra_args=[], **kwargs):
     description="Format files, alternative to 'lint --fix' ",
     parser=setup_argument_parser,
 )
+@CommandArgument(
+    "--skip-android",
+    default=False,
+    action="store_true",
+    help="Skips checking if android formatters are valid in this context.",
+)
 def format_files(command_context, paths, extra_args=[], **kwargs):
     linters = kwargs["linters"]
+    skip_android = kwargs["skip_android"]
 
     formatters = VALID_FORMATTERS
-    if conditions.is_android(command_context):
+    if not skip_android and conditions.is_android(command_context):
         formatters |= VALID_ANDROID_FORMATTERS
 
     if not linters:

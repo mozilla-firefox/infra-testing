@@ -124,15 +124,61 @@ NSSErrorsService::GetErrorClass(nsresult aXPCOMErrorCode,
     return NS_ERROR_FAILURE;
   }
 
-  // All overridable errors are certificate errors, but not all certificate
-  // errors are overridable.
-  if (mozilla::psm::ErrorIsOverridable(aNSPRCode) ||
-      aNSPRCode == SEC_ERROR_REVOKED_CERTIFICATE) {
+  // All overridable errors are certificate errors.
+  if (mozilla::psm::ErrorIsOverridable(aNSPRCode)) {
     *aErrorClass = ERROR_CLASS_BAD_CERT;
-  } else {
-    *aErrorClass = ERROR_CLASS_SSL_PROTOCOL;
+    return NS_OK;
+  }
+  // Some non-overridable errors are certificate errors.
+  switch (aNSPRCode) {
+    case SEC_ERROR_BAD_DER:
+    case SEC_ERROR_BAD_SIGNATURE:
+    case SEC_ERROR_CERT_NOT_IN_NAME_SPACE:
+    case SEC_ERROR_EXTENSION_VALUE_INVALID:
+    case SEC_ERROR_INADEQUATE_CERT_TYPE:
+    case SEC_ERROR_INADEQUATE_KEY_USAGE:
+    case SEC_ERROR_INVALID_KEY:
+    case SEC_ERROR_PATH_LEN_CONSTRAINT_INVALID:
+    case SEC_ERROR_REVOKED_CERTIFICATE:
+    case SEC_ERROR_UNKNOWN_CRITICAL_EXTENSION:
+    case SEC_ERROR_UNSUPPORTED_EC_POINT_FORM:
+    case SEC_ERROR_UNSUPPORTED_ELLIPTIC_CURVE:
+    case SEC_ERROR_UNSUPPORTED_KEYALG:
+    case SEC_ERROR_UNTRUSTED_CERT:
+    case SEC_ERROR_UNTRUSTED_ISSUER:
+    case mozilla::pkix::MOZILLA_PKIX_ERROR_INVALID_INTEGER_ENCODING:
+    case mozilla::pkix::MOZILLA_PKIX_ERROR_ISSUER_NO_LONGER_TRUSTED:
+    case mozilla::pkix::MOZILLA_PKIX_ERROR_KEY_PINNING_FAILURE:
+    case mozilla::pkix::MOZILLA_PKIX_ERROR_SIGNATURE_ALGORITHM_MISMATCH:
+      *aErrorClass = ERROR_CLASS_BAD_CERT;
+      return NS_OK;
+    default:
+      break;
   }
 
+  // Otherwise, this must be a TLS error.
+  *aErrorClass = ERROR_CLASS_SSL_PROTOCOL;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+NSSErrorsService::IsErrorOverridable(nsresult aXPCOMErrorCode, bool* _retval) {
+  if (!_retval) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  if (NS_ERROR_GET_MODULE(aXPCOMErrorCode) != NS_ERROR_MODULE_SECURITY ||
+      NS_ERROR_GET_SEVERITY(aXPCOMErrorCode) != NS_ERROR_SEVERITY_ERROR) {
+    return NS_ERROR_FAILURE;
+  }
+
+  int32_t aNSPRCode = -1 * NS_ERROR_GET_CODE(aXPCOMErrorCode);
+
+  if (!mozilla::psm::IsNSSErrorCode(aNSPRCode)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  *_retval = ErrorIsOverridable(aNSPRCode);
   return NS_OK;
 }
 
@@ -146,7 +192,6 @@ bool ErrorIsOverridable(PRErrorCode code) {
     case SEC_ERROR_INVALID_TIME:
     case SEC_ERROR_UNKNOWN_ISSUER:
     case SSL_ERROR_BAD_CERT_DOMAIN:
-    case mozilla::pkix::MOZILLA_PKIX_ERROR_ADDITIONAL_POLICY_CONSTRAINT_FAILED:
     case mozilla::pkix::MOZILLA_PKIX_ERROR_CA_CERT_USED_AS_END_ENTITY:
     case mozilla::pkix::MOZILLA_PKIX_ERROR_EMPTY_ISSUER_NAME:
     case mozilla::pkix::MOZILLA_PKIX_ERROR_INADEQUATE_KEY_SIZE:

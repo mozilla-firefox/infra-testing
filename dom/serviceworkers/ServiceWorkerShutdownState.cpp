@@ -13,7 +13,6 @@
 #include "ServiceWorkerUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/SchedulerGroup.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/RemoteWorkerService.h"
 #include "mozilla/dom/ServiceWorkerManager.h"
@@ -53,7 +52,7 @@ ServiceWorkerShutdownState::ServiceWorkerShutdownState()
 }
 
 ServiceWorkerShutdownState::~ServiceWorkerShutdownState() {
-  Unused << NS_WARN_IF(mProgress != Progress::ShutdownCompleted);
+  (void)NS_WARN_IF(mProgress != Progress::ShutdownCompleted);
 }
 
 const char* ServiceWorkerShutdownState::GetProgressString() const {
@@ -62,8 +61,12 @@ const char* ServiceWorkerShutdownState::GetProgressString() const {
 
 void ServiceWorkerShutdownState::SetProgress(Progress aProgress) {
   MOZ_ASSERT(aProgress != Progress::EndGuard_);
+  // The Shutdown progress should be increased step by step. However, it could
+  // directly get into ShutdownCompleted state when shutting down starts during
+  // ServiceWorker spawning.
   MOZ_RELEASE_ASSERT(UnderlyingProgressValue(mProgress) + 1 ==
-                     UnderlyingProgressValue(aProgress));
+                         UnderlyingProgressValue(aProgress) ||
+                     aProgress == Progress::ShutdownCompleted);
 
   mProgress = aProgress;
 }

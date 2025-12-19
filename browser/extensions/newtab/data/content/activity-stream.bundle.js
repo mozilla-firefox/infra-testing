@@ -104,8 +104,9 @@ for (const type of [
   "ADDONS_INFO_RESPONSE",
   "ADS_FEED_UPDATE",
   "ADS_INIT",
-  "ADS_UPDATE_DATA",
-  "ARCHIVE_FROM_POCKET",
+  "ADS_RESET",
+  "ADS_UPDATE_SPOCS",
+  "ADS_UPDATE_TILES",
   "BLOCK_SECTION",
   "BLOCK_URL",
   "BOOKMARK_URL",
@@ -113,13 +114,11 @@ for (const type of [
   "CLEAR_PREF",
   "COPY_DOWNLOAD_LINK",
   "DELETE_BOOKMARK_BY_ID",
-  "DELETE_FROM_POCKET",
   "DELETE_HISTORY_URL",
   "DIALOG_CANCEL",
   "DIALOG_CLOSE",
   "DIALOG_OPEN",
   "DISABLE_SEARCH",
-  "DISCOVERY_STREAM_COLLECTION_DISMISSIBLE_TOGGLE",
   "DISCOVERY_STREAM_CONFIG_CHANGE",
   "DISCOVERY_STREAM_CONFIG_RESET",
   "DISCOVERY_STREAM_CONFIG_RESET_DEFAULTS",
@@ -147,13 +146,13 @@ for (const type of [
   "DISCOVERY_STREAM_PERSONALIZATION_RESET",
   "DISCOVERY_STREAM_PERSONALIZATION_TOGGLE",
   "DISCOVERY_STREAM_PERSONALIZATION_UPDATED",
-  "DISCOVERY_STREAM_POCKET_STATE_INIT",
-  "DISCOVERY_STREAM_POCKET_STATE_SET",
   "DISCOVERY_STREAM_PREFS_SETUP",
-  "DISCOVERY_STREAM_RECENT_SAVES",
   "DISCOVERY_STREAM_RETRY_FEED",
   "DISCOVERY_STREAM_SPOCS_CAPS",
   "DISCOVERY_STREAM_SPOCS_ENDPOINT",
+  "DISCOVERY_STREAM_SPOCS_ONDEMAND_LOAD",
+  "DISCOVERY_STREAM_SPOCS_ONDEMAND_RESET",
+  "DISCOVERY_STREAM_SPOCS_ONDEMAND_UPDATE",
   "DISCOVERY_STREAM_SPOCS_PLACEMENTS",
   "DISCOVERY_STREAM_SPOCS_UPDATE",
   "DISCOVERY_STREAM_SPOC_BLOCKED",
@@ -161,15 +160,16 @@ for (const type of [
   "DISCOVERY_STREAM_TOPICS_LOADING",
   "DISCOVERY_STREAM_USER_EVENT",
   "DOWNLOAD_CHANGED",
-  "FAKESPOT_CTA_CLICK",
-  "FAKESPOT_DISMISS",
   "FAKE_FOCUS_SEARCH",
   "FILL_SEARCH_TERM",
   "FOLLOW_SECTION",
   "HANDOFF_SEARCH_TO_AWESOMEBAR",
   "HIDE_PERSONALIZE",
-  "HIDE_PRIVACY_INFO",
   "HIDE_TOAST_MESSAGE",
+  "INFERRED_PERSONALIZATION_MODEL_UPDATE",
+  "INFERRED_PERSONALIZATION_REFRESH",
+  "INFERRED_PERSONALIZATION_RESET",
+  "INFERRED_PERSONALIZATION_UPDATE",
   "INIT",
   "INLINE_SELECTION_CLICK",
   "INLINE_SELECTION_IMPRESSION",
@@ -177,6 +177,7 @@ for (const type of [
   "MESSAGE_CLICK",
   "MESSAGE_DISMISS",
   "MESSAGE_IMPRESSION",
+  "MESSAGE_NOTIFY_VISIBILITY",
   "MESSAGE_SET",
   "MESSAGE_TOGGLE_VISIBILITY",
   "NEW_TAB_INIT",
@@ -184,8 +185,9 @@ for (const type of [
   "NEW_TAB_LOAD",
   "NEW_TAB_REHYDRATED",
   "NEW_TAB_STATE_REQUEST",
+  "NEW_TAB_STATE_REQUEST_STARTUPCACHE",
+  "NEW_TAB_STATE_REQUEST_WITHOUT_STARTUPCACHE",
   "NEW_TAB_UNLOAD",
-  "OPEN_ABOUT_FAKESPOT",
   "OPEN_DOWNLOAD_FILE",
   "OPEN_LINK",
   "OPEN_NEW_WINDOW",
@@ -198,18 +200,16 @@ for (const type of [
   "PLACES_LINKS_CHANGED",
   "PLACES_LINKS_DELETED",
   "PLACES_LINK_BLOCKED",
-  "PLACES_SAVED_TO_POCKET",
   "POCKET_CTA",
-  "POCKET_LINK_DELETED_OR_ARCHIVED",
-  "POCKET_LOGGED_IN",
-  "POCKET_THUMBS_DOWN",
-  "POCKET_THUMBS_UP",
   "POCKET_WAITING_FOR_SPOC",
   "PREFS_INITIAL_VALUES",
   "PREF_CHANGED",
   "PREVIEW_REQUEST",
   "PREVIEW_REQUEST_CANCEL",
   "PREVIEW_RESPONSE",
+  "PROMO_CARD_CLICK",
+  "PROMO_CARD_DISMISS",
+  "PROMO_CARD_IMPRESSION",
   "REMOVE_DOWNLOAD_FILE",
   "REPORT_AD_OPEN",
   "REPORT_AD_SUBMIT",
@@ -218,12 +218,12 @@ for (const type of [
   "REPORT_CONTENT_SUBMIT",
   "RICH_ICON_MISSING",
   "SAVE_SESSION_PERF_DATA",
-  "SAVE_TO_POCKET",
   "SCREENSHOT_UPDATED",
   "SECTION_DEREGISTER",
   "SECTION_DISABLE",
   "SECTION_ENABLE",
   "SECTION_OPTIONS_CHANGED",
+  "SECTION_PERSONALIZATION_SET",
   "SECTION_PERSONALIZATION_UPDATE",
   "SECTION_REGISTER",
   "SECTION_UPDATE",
@@ -251,6 +251,7 @@ for (const type of [
   "TOPIC_SELECTION_USER_DISMISS",
   "TOPIC_SELECTION_USER_OPEN",
   "TOPIC_SELECTION_USER_SAVE",
+  "TOP_SITES_ADD",
   "TOP_SITES_CANCEL_EDIT",
   "TOP_SITES_CLOSE_SEARCH_SHORTCUTS_MODAL",
   "TOP_SITES_EDIT",
@@ -280,17 +281,35 @@ for (const type of [
   "WALLPAPER_CLICK",
   "WALLPAPER_REMOVE_UPLOAD",
   "WALLPAPER_UPLOAD",
+  "WEATHER_DETECT_LOCATION",
   "WEATHER_IMPRESSION",
   "WEATHER_LOAD_ERROR",
   "WEATHER_LOCATION_DATA_UPDATE",
   "WEATHER_LOCATION_SEARCH_UPDATE",
   "WEATHER_LOCATION_SUGGESTIONS_UPDATE",
   "WEATHER_OPEN_PROVIDER_URL",
+  "WEATHER_OPT_IN_PROMPT_SELECTION",
   "WEATHER_QUERY_UPDATE",
   "WEATHER_SEARCH_ACTIVE",
   "WEATHER_UPDATE",
+  "WEATHER_USER_OPT_IN_LOCATION",
   "WEBEXT_CLICK",
   "WEBEXT_DISMISS",
+  "WIDGETS_LISTS_CHANGE_SELECTED",
+  "WIDGETS_LISTS_SET",
+  "WIDGETS_LISTS_SET_SELECTED",
+  "WIDGETS_LISTS_UPDATE",
+  "WIDGETS_LISTS_USER_EVENT",
+  "WIDGETS_LISTS_USER_IMPRESSION",
+  "WIDGETS_TIMER_END",
+  "WIDGETS_TIMER_PAUSE",
+  "WIDGETS_TIMER_PLAY",
+  "WIDGETS_TIMER_RESET",
+  "WIDGETS_TIMER_SET",
+  "WIDGETS_TIMER_SET_DURATION",
+  "WIDGETS_TIMER_SET_TYPE",
+  "WIDGETS_TIMER_USER_EVENT",
+  "WIDGETS_TIMER_USER_IMPRESSION",
 ]) {
   actionTypes[type] = type;
 }
@@ -352,12 +371,14 @@ function OnlyToMain(action, fromTarget) {
  * BroadcastToContent - Creates a message that will be dispatched to main and sent to ALL content processes.
  *
  * @param  {object} action Any redux action (required)
+ * @param  {object} options (optional)
  * @return {object} An action with added .meta properties
  */
-function BroadcastToContent(action) {
+function BroadcastToContent(action, options) {
   return _RouteMessage(action, {
     from: MAIN_MESSAGE_TYPE,
     to: CONTENT_MESSAGE_TYPE,
+    ...options,
   });
 }
 
@@ -580,47 +601,11 @@ const external_ReactRedux_namespaceObject = ReactRedux;
 ;// CONCATENATED MODULE: external "React"
 const external_React_namespaceObject = React;
 var external_React_default = /*#__PURE__*/__webpack_require__.n(external_React_namespaceObject);
-;// CONCATENATED MODULE: ./content-src/components/DiscoveryStreamAdmin/SimpleHashRouter.jsx
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-
-class SimpleHashRouter extends (external_React_default()).PureComponent {
-  constructor(props) {
-    super(props);
-    this.onHashChange = this.onHashChange.bind(this);
-    this.state = {
-      hash: globalThis.location.hash
-    };
-  }
-  onHashChange() {
-    this.setState({
-      hash: globalThis.location.hash
-    });
-  }
-  componentWillMount() {
-    globalThis.addEventListener("hashchange", this.onHashChange);
-  }
-  componentWillUnmount() {
-    globalThis.removeEventListener("hashchange", this.onHashChange);
-  }
-  render() {
-    const [, ...routes] = this.state.hash.split("-");
-    return /*#__PURE__*/external_React_default().cloneElement(this.props.children, {
-      location: {
-        hash: this.state.hash,
-        routes
-      }
-    });
-  }
-}
 ;// CONCATENATED MODULE: ./content-src/components/DiscoveryStreamAdmin/DiscoveryStreamAdmin.jsx
-function _extends() { _extends = Object.assign ? Object.assign.bind() : function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
 
 
 
@@ -630,11 +615,17 @@ function _extends() { _extends = Object.assign ? Object.assign.bind() : function
 const PREF_AD_SIZE_MEDIUM_RECTANGLE = "newtabAdSize.mediumRectangle";
 const PREF_AD_SIZE_BILLBOARD = "newtabAdSize.billboard";
 const PREF_AD_SIZE_LEADERBOARD = "newtabAdSize.leaderboard";
-const PREF_CONTEXTUAL_CONTENT_SELECTED_FEED = "discoverystream.contextualContent.selectedFeed";
-const PREF_CONTEXTUAL_CONTENT_FEEDS = "discoverystream.contextualContent.feeds";
 const PREF_SECTIONS_ENABLED = "discoverystream.sections.enabled";
 const PREF_SPOC_PLACEMENTS = "discoverystream.placements.spocs";
 const PREF_SPOC_COUNTS = "discoverystream.placements.spocs.counts";
+const PREF_CONTEXTUAL_ADS_ENABLED = "discoverystream.sections.contextualAds.enabled";
+const PREF_CONTEXTUAL_BANNER_PLACEMENTS = "discoverystream.placements.contextualBanners";
+const PREF_CONTEXTUAL_BANNER_COUNTS = "discoverystream.placements.contextualBanners.counts";
+const PREF_UNIFIED_ADS_ENABLED = "unifiedAds.spocs.enabled";
+const PREF_UNIFIED_ADS_ENDPOINT = "unifiedAds.endpoint";
+const PREF_ALLOWED_ENDPOINTS = "discoverystream.endpoints";
+const PREF_OHTTP_CONFIG = "discoverystream.ohttp.configURL";
+const PREF_OHTTP_RELAY = "discoverystream.ohttp.relayURL";
 const Row = props => /*#__PURE__*/external_React_default().createElement("tr", _extends({
   className: "message-item"
 }, props), props.children);
@@ -729,10 +720,12 @@ class DiscoveryStreamAdminUI extends (external_React_default()).PureComponent {
     this.handleWeatherSubmit = this.handleWeatherSubmit.bind(this);
     this.handleWeatherUpdate = this.handleWeatherUpdate.bind(this);
     this.resetBlocks = this.resetBlocks.bind(this);
+    this.refreshInferredPersonalization = this.refreshInferredPersonalization.bind(this);
     this.refreshTopicSelectionCache = this.refreshTopicSelectionCache.bind(this);
-    this.toggleTBRFeed = this.toggleTBRFeed.bind(this);
     this.handleSectionsToggle = this.handleSectionsToggle.bind(this);
     this.toggleIABBanners = this.toggleIABBanners.bind(this);
+    this.handleAllizomToggle = this.handleAllizomToggle.bind(this);
+    this.sendConversionEvent = this.sendConversionEvent.bind(this);
     this.state = {
       toggledStories: {},
       weatherQuery: ""
@@ -761,6 +754,11 @@ class DiscoveryStreamAdminUI extends (external_React_default()).PureComponent {
       data: config
     }));
   }
+  refreshInferredPersonalization() {
+    this.props.dispatch(actionCreators.OnlyToMain({
+      type: actionTypes.INFERRED_PERSONALIZATION_REFRESH
+    }));
+  }
   refreshTopicSelectionCache() {
     this.props.dispatch(actionCreators.SetPref("discoverystream.topicSelection.onboarding.displayCount", 0));
     this.props.dispatch(actionCreators.SetPref("discoverystream.topicSelection.onboarding.maybeDisplay", true));
@@ -783,11 +781,6 @@ class DiscoveryStreamAdminUI extends (external_React_default()).PureComponent {
   }
   showPlaceholder() {
     this.dispatchSimpleAction(actionTypes.DISCOVERY_STREAM_DEV_SHOW_PLACEHOLDER);
-  }
-  toggleTBRFeed(e) {
-    const feed = e.target.value;
-    const selectedFeed = PREF_CONTEXTUAL_CONTENT_SELECTED_FEED;
-    this.props.dispatch(actionCreators.SetPref(selectedFeed, feed));
   }
   idleDaily() {
     this.dispatchSimpleAction(actionTypes.DISCOVERY_STREAM_DEV_IDLE_DAILY);
@@ -872,6 +865,22 @@ class DiscoveryStreamAdminUI extends (external_React_default()).PureComponent {
     // Update prefs with new values
     this.props.dispatch(actionCreators.SetPref(PREF_SPOC_PLACEMENTS, placements));
     this.props.dispatch(actionCreators.SetPref(PREF_SPOC_COUNTS, counts));
+
+    // If contextual ads, sections, and one of the banners are enabled
+    // update the contextualBanner prefs to include the banner value and count
+    // Else, clear the prefs
+    if (PREF_CONTEXTUAL_ADS_ENABLED && PREF_SECTIONS_ENABLED) {
+      if (PREF_AD_SIZE_BILLBOARD && placements.includes("newtab_billboard")) {
+        this.props.dispatch(actionCreators.SetPref(PREF_CONTEXTUAL_BANNER_PLACEMENTS, "newtab_billboard"));
+        this.props.dispatch(actionCreators.SetPref(PREF_CONTEXTUAL_BANNER_COUNTS, "1"));
+      } else if (PREF_AD_SIZE_LEADERBOARD && placements.includes("newtab_leaderboard")) {
+        this.props.dispatch(actionCreators.SetPref(PREF_CONTEXTUAL_BANNER_PLACEMENTS, "newtab_leaderboard"));
+        this.props.dispatch(actionCreators.SetPref(PREF_CONTEXTUAL_BANNER_COUNTS, "1"));
+      } else {
+        this.props.dispatch(actionCreators.SetPref(PREF_CONTEXTUAL_BANNER_PLACEMENTS, ""));
+        this.props.dispatch(actionCreators.SetPref(PREF_CONTEXTUAL_BANNER_COUNTS, ""));
+      }
+    }
   }
   handleSectionsToggle(e) {
     const {
@@ -879,7 +888,19 @@ class DiscoveryStreamAdminUI extends (external_React_default()).PureComponent {
     } = e.target;
     this.props.dispatch(actionCreators.SetPref(PREF_SECTIONS_ENABLED, pressed));
     this.props.dispatch(actionCreators.SetPref("discoverystream.sections.cards.enabled", pressed));
-    this.props.dispatch(actionCreators.SetPref("discoverystream.sections.cards.thumbsUpDown.enabled", pressed));
+  }
+  sendConversionEvent() {
+    const detail = {
+      partnerId: "demo-partner",
+      lookbackDays: 7,
+      impressionType: "default"
+    };
+    const event = new CustomEvent("FirefoxConversionNotification", {
+      detail,
+      bubbles: true,
+      composed: true
+    });
+    window?.dispatchEvent(event);
   }
   renderComponent(width, component) {
     return /*#__PURE__*/external_React_default().createElement("table", null, /*#__PURE__*/external_React_default().createElement("tbody", null, /*#__PURE__*/external_React_default().createElement(Row, null, /*#__PURE__*/external_React_default().createElement("td", {
@@ -919,6 +940,14 @@ class DiscoveryStreamAdminUI extends (external_React_default()).PureComponent {
       }, /*#__PURE__*/external_React_default().createElement("pre", null, JSON.stringify(suggestion, null, 2))))))));
     }
     return weatherTable;
+  }
+  renderPersonalizationData() {
+    const {
+      inferredInterests,
+      coarseInferredInterests,
+      coarsePrivateInferredInterests
+    } = this.props.state.InferredPersonalization;
+    return /*#__PURE__*/external_React_default().createElement("div", null, " ", "Inferred Interests:", /*#__PURE__*/external_React_default().createElement("pre", null, JSON.stringify(inferredInterests, null, 2)), " Coarse Inferred Interests:", /*#__PURE__*/external_React_default().createElement("pre", null, JSON.stringify(coarseInferredInterests, null, 2)), " Coarse Inferred Interests With Differential Privacy:", /*#__PURE__*/external_React_default().createElement("pre", null, JSON.stringify(coarsePrivateInferredInterests, null, 2)));
   }
   renderFeedData(url) {
     const {
@@ -960,19 +989,71 @@ class DiscoveryStreamAdminUI extends (external_React_default()).PureComponent {
       }, key));
     }))));
   }
+  handleAllizomToggle(e) {
+    const prefs = this.props.otherPrefs;
+    const unifiedAdsSpocsEnabled = prefs[PREF_UNIFIED_ADS_ENABLED];
+    if (!unifiedAdsSpocsEnabled) {
+      return;
+    }
+    const {
+      pressed
+    } = e.target;
+    const {
+      dispatch
+    } = this.props;
+    const allowedEndpoints = prefs[PREF_ALLOWED_ENDPOINTS];
+    const setPref = (pref = "", value = "") => {
+      dispatch(actionCreators.SetPref(pref, value));
+    };
+    const clearPref = (pref = "") => {
+      dispatch(actionCreators.OnlyToMain({
+        type: actionTypes.CLEAR_PREF,
+        data: {
+          name: pref
+        }
+      }));
+    };
+    if (pressed) {
+      setPref(PREF_UNIFIED_ADS_ENDPOINT, "https://ads.allizom.org/");
+      setPref(PREF_ALLOWED_ENDPOINTS, `${allowedEndpoints},https://ads.allizom.org/`);
+      setPref(PREF_OHTTP_CONFIG, "https://stage.ohttp-gateway.nonprod.webservices.mozgcp.net/ohttp-configs");
+      setPref(PREF_OHTTP_RELAY, "https://mozilla-ohttp-relay-test.edgecompute.app/");
+    } else {
+      clearPref(PREF_UNIFIED_ADS_ENDPOINT);
+      clearPref(PREF_ALLOWED_ENDPOINTS);
+      clearPref(PREF_OHTTP_CONFIG);
+      clearPref(PREF_OHTTP_RELAY);
+    }
+  }
   renderSpocs() {
     const {
       spocs
     } = this.props.state.DiscoveryStream;
-    const unifiedAdsSpocsEnabled = this.props.otherPrefs["unifiedAds.spocs.enabled"];
-    const unifiedAdsEndpoint = this.props.otherPrefs["unifiedAds.endpoint"];
+    const unifiedAdsSpocsEnabled = this.props.otherPrefs[PREF_UNIFIED_ADS_ENABLED];
+
+    // Determine which mechanism is querying the UAPI ads server
+    const PREF_UNIFIED_ADS_ADSFEED_ENABLED = "unifiedAds.adsFeed.enabled";
+    const adsFeedEnabled = this.props.otherPrefs[PREF_UNIFIED_ADS_ADSFEED_ENABLED];
+    const unifiedAdsEndpoint = this.props.otherPrefs[PREF_UNIFIED_ADS_ENDPOINT];
+    const spocsEndpoint = unifiedAdsSpocsEnabled ? unifiedAdsEndpoint : spocs.spocs_endpoint;
     let spocsData = [];
+    let allizomEnabled = spocsEndpoint?.includes("allizom");
     if (spocs.data && spocs.data.newtab_spocs && spocs.data.newtab_spocs.items) {
       spocsData = spocs.data.newtab_spocs.items || [];
     }
     return /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, /*#__PURE__*/external_React_default().createElement("table", null, /*#__PURE__*/external_React_default().createElement("tbody", null, /*#__PURE__*/external_React_default().createElement(Row, null, /*#__PURE__*/external_React_default().createElement("td", {
+      colSpan: "2"
+    }, /*#__PURE__*/external_React_default().createElement("moz-toggle", {
+      id: "sections-toggle",
+      disabled: !unifiedAdsSpocsEnabled || null,
+      pressed: allizomEnabled || null,
+      onToggle: this.handleAllizomToggle,
+      label: "Toggle allizom"
+    }))), /*#__PURE__*/external_React_default().createElement(Row, null, /*#__PURE__*/external_React_default().createElement("td", {
       className: "min"
-    }, "spocs_endpoint"), /*#__PURE__*/external_React_default().createElement("td", null, unifiedAdsSpocsEnabled ? unifiedAdsEndpoint : spocs.spocs_endpoint)), /*#__PURE__*/external_React_default().createElement(Row, null, /*#__PURE__*/external_React_default().createElement("td", {
+    }, "adsfeed enabled"), /*#__PURE__*/external_React_default().createElement("td", null, adsFeedEnabled ? "true" : "false")), /*#__PURE__*/external_React_default().createElement(Row, null, /*#__PURE__*/external_React_default().createElement("td", {
+      className: "min"
+    }, "spocs endpoint"), /*#__PURE__*/external_React_default().createElement("td", null, spocsEndpoint)), /*#__PURE__*/external_React_default().createElement(Row, null, /*#__PURE__*/external_React_default().createElement("td", {
       className: "min"
     }, "Data last fetched"), /*#__PURE__*/external_React_default().createElement("td", null, relativeTime(spocs.lastUpdated))))), /*#__PURE__*/external_React_default().createElement("h4", null, "Spoc data"), /*#__PURE__*/external_React_default().createElement("table", null, /*#__PURE__*/external_React_default().createElement("tbody", null, spocsData.map(spoc => this.renderStoryData(spoc)))), /*#__PURE__*/external_React_default().createElement("h4", null, "Spoc frequency caps"), /*#__PURE__*/external_React_default().createElement("table", null, /*#__PURE__*/external_React_default().createElement("tbody", null, spocs.frequency_caps.map(spoc => this.renderStoryData(spoc)))));
   }
@@ -1024,9 +1105,7 @@ class DiscoveryStreamAdminUI extends (external_React_default()).PureComponent {
       layout
     } = this.props.state.DiscoveryStream;
     const personalized = this.props.otherPrefs["discoverystream.personalization.enabled"];
-    const selectedFeed = this.props.otherPrefs[PREF_CONTEXTUAL_CONTENT_SELECTED_FEED];
     const sectionsEnabled = this.props.otherPrefs[PREF_SECTIONS_ENABLED];
-    const TBRFeeds = this.props.otherPrefs[PREF_CONTEXTUAL_CONTENT_FEEDS].split(",").map(s => s.trim()).filter(item => item);
 
     // Prefs for IAB Banners
     const mediumRectangleEnabled = this.props.otherPrefs[PREF_AD_SIZE_MEDIUM_RECTANGLE];
@@ -1053,6 +1132,9 @@ class DiscoveryStreamAdminUI extends (external_React_default()).PureComponent {
       onClick: this.idleDaily
     }, "Trigger Idle Daily"), /*#__PURE__*/external_React_default().createElement("br", null), /*#__PURE__*/external_React_default().createElement("button", {
       className: "button",
+      onClick: this.refreshInferredPersonalization
+    }, "Refresh Inferred Personalization"), /*#__PURE__*/external_React_default().createElement("br", null), /*#__PURE__*/external_React_default().createElement("button", {
+      className: "button",
       onClick: this.syncRemoteSettings
     }, "Sync Remote Settings"), " ", /*#__PURE__*/external_React_default().createElement("button", {
       className: "button",
@@ -1060,14 +1142,7 @@ class DiscoveryStreamAdminUI extends (external_React_default()).PureComponent {
     }, "Refresh Topic selection count"), /*#__PURE__*/external_React_default().createElement("br", null), /*#__PURE__*/external_React_default().createElement("button", {
       className: "button",
       onClick: this.showPlaceholder
-    }, "Show Placeholder Cards"), " ", /*#__PURE__*/external_React_default().createElement("select", {
-      className: "button",
-      onChange: this.toggleTBRFeed,
-      value: selectedFeed
-    }, TBRFeeds.map(feed => /*#__PURE__*/external_React_default().createElement("option", {
-      key: feed,
-      value: feed
-    }, feed))), /*#__PURE__*/external_React_default().createElement("div", {
+    }, "Show Placeholder Cards"), " ", /*#__PURE__*/external_React_default().createElement("div", {
       className: "toggle-wrapper"
     }, /*#__PURE__*/external_React_default().createElement("moz-toggle", {
       id: "sections-toggle",
@@ -1097,7 +1172,10 @@ class DiscoveryStreamAdminUI extends (external_React_default()).PureComponent {
       pressed: mediumRectangleEnabledPressed || null,
       onToggle: this.toggleIABBanners,
       label: "Enable IAB Medium Rectangle (MREC)"
-    }))), /*#__PURE__*/external_React_default().createElement("table", null, /*#__PURE__*/external_React_default().createElement("tbody", null, prefToggles.map(pref => /*#__PURE__*/external_React_default().createElement(Row, {
+    }))), /*#__PURE__*/external_React_default().createElement("button", {
+      className: "button",
+      onClick: this.sendConversionEvent
+    }, "Send conversion event"), /*#__PURE__*/external_React_default().createElement("table", null, /*#__PURE__*/external_React_default().createElement("tbody", null, prefToggles.map(pref => /*#__PURE__*/external_React_default().createElement(Row, {
       key: pref
     }, /*#__PURE__*/external_React_default().createElement("td", null, /*#__PURE__*/external_React_default().createElement(TogglePrefCheckbox, {
       checked: config[pref],
@@ -1120,7 +1198,7 @@ class DiscoveryStreamAdminUI extends (external_React_default()).PureComponent {
       className: "large-data-container"
     }, this.renderImpressionsData()), /*#__PURE__*/external_React_default().createElement("h3", null, "Blocked Data"), /*#__PURE__*/external_React_default().createElement("div", {
       className: "large-data-container"
-    }, this.renderBlocksData()), /*#__PURE__*/external_React_default().createElement("h3", null, "Weather Data"), this.renderWeatherData());
+    }, this.renderBlocksData()), /*#__PURE__*/external_React_default().createElement("h3", null, "Weather Data"), this.renderWeatherData(), /*#__PURE__*/external_React_default().createElement("h3", null, "Personalization Data"), this.renderPersonalizationData());
   }
 }
 class DiscoveryStreamAdminInner extends (external_React_default()).PureComponent {
@@ -1144,76 +1222,49 @@ class DiscoveryStreamAdminInner extends (external_React_default()).PureComponent
       state: {
         DiscoveryStream: this.props.DiscoveryStream,
         Personalization: this.props.Personalization,
-        Weather: this.props.Weather
+        Weather: this.props.Weather,
+        InferredPersonalization: this.props.InferredPersonalization
       },
       otherPrefs: this.props.Prefs.values,
       dispatch: this.props.dispatch
     }))));
   }
 }
-class CollapseToggle extends (external_React_default()).PureComponent {
-  constructor(props) {
-    super(props);
-    this.onCollapseToggle = this.onCollapseToggle.bind(this);
-    this.state = {
-      collapsed: false
-    };
-  }
-  get renderAdmin() {
-    const {
-      props
-    } = this;
-    return props.location.hash && props.location.hash.startsWith("#devtools");
-  }
-  onCollapseToggle(e) {
-    e.preventDefault();
-    this.setState(state => ({
-      collapsed: !state.collapsed
-    }));
-  }
-  setBodyClass() {
-    if (this.renderAdmin && !this.state.collapsed) {
-      globalThis.document.body.classList.add("no-scroll");
-    } else {
+function CollapseToggle(props) {
+  const {
+    devtoolsCollapsed
+  } = props;
+  const label = `${devtoolsCollapsed ? "Expand" : "Collapse"} devtools`;
+  (0,external_React_namespaceObject.useEffect)(() => {
+    // Set or remove body class depending on devtoolsCollapsed state
+    if (devtoolsCollapsed) {
       globalThis.document.body.classList.remove("no-scroll");
+    } else {
+      globalThis.document.body.classList.add("no-scroll");
     }
-  }
-  componentDidMount() {
-    this.setBodyClass();
-  }
-  componentDidUpdate() {
-    this.setBodyClass();
-  }
-  componentWillUnmount() {
-    globalThis.document.body.classList.remove("no-scroll");
-  }
-  render() {
-    const {
-      props
-    } = this;
-    const {
-      renderAdmin
-    } = this;
-    const isCollapsed = this.state.collapsed || !renderAdmin;
-    const label = `${isCollapsed ? "Expand" : "Collapse"} devtools`;
-    return /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, /*#__PURE__*/external_React_default().createElement("a", {
-      href: "#devtools",
-      title: label,
-      "aria-label": label,
-      className: `discoverystream-admin-toggle ${isCollapsed ? "collapsed" : "expanded"}`,
-      onClick: this.renderAdmin ? this.onCollapseToggle : null
-    }, /*#__PURE__*/external_React_default().createElement("span", {
-      className: "icon icon-devtools"
-    })), renderAdmin ? /*#__PURE__*/external_React_default().createElement(DiscoveryStreamAdminInner, _extends({}, props, {
-      collapsed: this.state.collapsed
-    })) : null);
-  }
+
+    // Cleanup on unmount
+    return () => {
+      globalThis.document.body.classList.remove("no-scroll");
+    };
+  }, [devtoolsCollapsed]);
+  return /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, /*#__PURE__*/external_React_default().createElement("a", {
+    href: devtoolsCollapsed ? "#devtools" : "#",
+    title: label,
+    "aria-label": label,
+    className: `discoverystream-admin-toggle ${devtoolsCollapsed ? "expanded" : "collapsed"}`
+  }, /*#__PURE__*/external_React_default().createElement("span", {
+    className: "icon icon-devtools"
+  })), !devtoolsCollapsed ? /*#__PURE__*/external_React_default().createElement(DiscoveryStreamAdminInner, _extends({}, props, {
+    collapsed: devtoolsCollapsed
+  })) : null);
 }
-const _DiscoveryStreamAdmin = props => /*#__PURE__*/external_React_default().createElement(SimpleHashRouter, null, /*#__PURE__*/external_React_default().createElement(CollapseToggle, props));
+const _DiscoveryStreamAdmin = props => /*#__PURE__*/external_React_default().createElement(CollapseToggle, props);
 const DiscoveryStreamAdmin = (0,external_ReactRedux_namespaceObject.connect)(state => ({
   Sections: state.Sections,
   DiscoveryStream: state.DiscoveryStream,
   Personalization: state.Personalization,
+  InferredPersonalization: state.InferredPersonalization,
   Prefs: state.Prefs,
   Weather: state.Weather
 }))(_DiscoveryStreamAdmin);
@@ -1415,12 +1466,27 @@ class DSImage extends (external_React_default()).PureComponent {
       });
     }
   }
+
+  // Wraps the image url with the Pocket proxy to both resize and crop the image.
   reformatImageURL(url, width, height) {
     const smart = this.props.smartCrop ? "smart/" : "";
     // Change the image URL to request a size tailored for the parent container width
     // Also: force JPEG, quality 60, no upscaling, no EXIF data
     // Uses Thumbor: https://thumbor.readthedocs.io/en/latest/usage.html
-    return `https://img-getpocket.cdn.mozilla.net/${width}x${height}/${smart}filters:format(jpeg):quality(60):no_upscale():strip_exif()/${encodeURIComponent(url)}`;
+    const formattedUrl = `https://img-getpocket.cdn.mozilla.net/${width}x${height}/${smart}filters:format(jpeg):quality(60):no_upscale():strip_exif()/${encodeURIComponent(url)}`;
+    return this.secureImageURL(formattedUrl);
+  }
+
+  // Wraps the image URL with the moz-cached-ohttp:// protocol.
+  // This enables Firefox to load resources over Oblivious HTTP (OHTTP),
+  // providing privacy-preserving resource loading.
+  // Applied only when inferred personalization is enabled.
+  // See: https://firefox-source-docs.mozilla.org/browser/components/mozcachedohttp/docs/index.html
+  secureImageURL(url) {
+    if (!this.props.secureImage) {
+      return url;
+    }
+    return `moz-cached-ohttp://newtab-image/?url=${encodeURIComponent(url)}`;
   }
   componentDidMount() {
     this.idleCallbackId = this.props.windowObj.requestIdleCallback(this.onIdleCallback.bind(this));
@@ -1439,7 +1505,12 @@ class DSImage extends (external_React_default()).PureComponent {
     let img;
     if (this.state) {
       if (this.props.optimize && this.props.rawSource && !this.state.optimizedImageFailed) {
-        let baseSource = this.props.rawSource;
+        const baseSource = this.props.rawSource;
+
+        // We don't care about securing this.props.source, as this exclusivly
+        // comes from an older service that is not personalized.
+        // This can also return a non secure url if this functionality is not enabled.
+        const securedSource = this.secureImageURL(baseSource);
         let sizeRules = [];
         let srcSetRules = [];
         for (let rule of this.props.sizes) {
@@ -1467,7 +1538,7 @@ class DSImage extends (external_React_default()).PureComponent {
           onLoad: this.onLoad,
           onError: this.onOptimizedImageError,
           sizes: sizeRules.join(","),
-          src: baseSource,
+          src: securedSource,
           srcSet: srcSetRules.join(",")
         });
       } else if (this.props.source && !this.state.nonOptimizedImageFailed) {
@@ -1701,7 +1772,11 @@ const _OpenInPrivateWindow = site => ({
   icon: "new-window-private",
   action: actionCreators.OnlyToMain({
     type: actionTypes.OPEN_PRIVATE_WINDOW,
-    data: { url: site.url, referrer: site.referrer },
+    data: {
+      url: site.url,
+      referrer: site.referrer,
+      event_source: "CONTEXT_MENU",
+    },
   }),
   userEvent: "OPEN_PRIVATE_WINDOW",
 });
@@ -1760,10 +1835,23 @@ const LinkMenuOptions = {
     action: actionCreators.AlsoToMain({
       type: actionTypes.OPEN_NEW_WINDOW,
       data: {
+        card_type: site.card_type,
         referrer: site.referrer,
         typedBonus: site.typedBonus,
         url: site.url,
-        sponsored_tile_id: site.sponsored_tile_id,
+        is_sponsored: !!site.sponsored_tile_id,
+        event_source: "CONTEXT_MENU",
+        topic: site.topic,
+        firstVisibleTimestamp: site.firstVisibleTimestamp,
+        tile_id: site.tile_id,
+        recommendation_id: site.recommendation_id,
+        scheduled_corpus_item_id: site.scheduled_corpus_item_id,
+        corpus_item_id: site.corpus_item_id,
+        received_rank: site.received_rank,
+        recommended_at: site.recommended_at,
+        format: site.format,
+        ...(site.flight_id ? { flight_id: site.flight_id } : {}),
+        is_pocket_card: site.type === "CardGrid",
         ...(site.section
           ? {
               section: site.section,
@@ -1775,6 +1863,7 @@ const LinkMenuOptions = {
     }),
     userEvent: "OPEN_NEW_WINDOW",
   }),
+
   // This blocks the url for regular stories,
   // but also sends a message to DiscoveryStream with flight_id.
   // If DiscoveryStream sees this message for a flight_id
@@ -1788,6 +1877,7 @@ const LinkMenuOptions = {
     icon: "dismiss",
     action: actionCreators.AlsoToMain({
       type: actionTypes.BLOCK_URL,
+      source: eventSource,
       data: tiles.map(site => ({
         url: site.original_url || site.open_url || site.url,
         // pocket_id is only for pocket stories being in highlights, and then dismissed.
@@ -1817,7 +1907,6 @@ const LinkMenuOptions = {
         position: pos,
         ...(site.sponsored_tile_id ? { tile_id: site.sponsored_tile_id } : {}),
         is_pocket_card: site.type === "CardGrid",
-        is_list_card: site.is_list_card,
         ...(site.format ? { format: site.format } : {}),
         ...(site.section
           ? {
@@ -1975,46 +2064,6 @@ const LinkMenuOptions = {
     }),
     userEvent: "UNPIN",
   }),
-  SaveToPocket: (site, index, eventSource = "CARDGRID") => ({
-    id: "newtab-menu-save-to-pocket",
-    icon: "pocket-save",
-    action: actionCreators.AlsoToMain({
-      type: actionTypes.SAVE_TO_POCKET,
-      data: {
-        site: { url: site.url, title: site.title },
-      },
-    }),
-    impression: actionCreators.ImpressionStats({
-      source: eventSource,
-      pocket: 0,
-      tiles: [
-        {
-          id: site.guid,
-          pos: index,
-          ...(site.shim && site.shim.save ? { shim: site.shim.save } : {}),
-        },
-      ],
-    }),
-    userEvent: "SAVE_TO_POCKET",
-  }),
-  DeleteFromPocket: site => ({
-    id: "newtab-menu-delete-pocket",
-    icon: "pocket-delete",
-    action: actionCreators.AlsoToMain({
-      type: actionTypes.DELETE_FROM_POCKET,
-      data: { pocket_id: site.pocket_id },
-    }),
-    userEvent: "DELETE_FROM_POCKET",
-  }),
-  ArchiveFromPocket: site => ({
-    id: "newtab-menu-archive-pocket",
-    icon: "pocket-archive",
-    action: actionCreators.AlsoToMain({
-      type: actionTypes.ARCHIVE_FROM_POCKET,
-      data: { pocket_id: site.pocket_id },
-    }),
-    userEvent: "ARCHIVE_FROM_POCKET",
-  }),
   EditTopSite: (site, index) => ({
     id: "newtab-menu-edit-topsites",
     icon: "edit",
@@ -2031,22 +2080,6 @@ const LinkMenuOptions = {
     site.isPinned
       ? LinkMenuOptions.UnpinTopSite(site)
       : LinkMenuOptions.PinTopSite(site, index),
-  CheckSavedToPocket: (site, index, source) =>
-    site.pocket_id
-      ? LinkMenuOptions.DeleteFromPocket(site)
-      : LinkMenuOptions.SaveToPocket(site, index, source),
-  CheckBookmarkOrArchive: site =>
-    site.pocket_id
-      ? LinkMenuOptions.ArchiveFromPocket(site)
-      : LinkMenuOptions.CheckBookmark(site),
-  CheckArchiveFromPocket: site =>
-    site.pocket_id
-      ? LinkMenuOptions.ArchiveFromPocket(site)
-      : LinkMenuOptions.EmptyItem(),
-  CheckDeleteFromPocket: site =>
-    site.pocket_id
-      ? LinkMenuOptions.DeleteFromPocket(site)
-      : LinkMenuOptions.EmptyItem(),
   OpenInPrivateWindow: (site, index, eventSource, isEnabled) =>
     isEnabled ? _OpenInPrivateWindow(site) : LinkMenuOptions.EmptyItem(),
   ChangeWeatherLocation: () => ({
@@ -2055,6 +2088,13 @@ const LinkMenuOptions = {
       type: actionTypes.WEATHER_SEARCH_ACTIVE,
       data: true,
     }),
+  }),
+  DetectLocation: () => ({
+    id: "newtab-weather-menu-detect-my-location",
+    action: actionCreators.AlsoToMain({
+      type: actionTypes.WEATHER_USER_OPT_IN_LOCATION,
+    }),
+    userEvent: "WEATHER_DETECT_LOCATION",
   }),
   ChangeWeatherDisplaySimple: () => ({
     id: "newtab-weather-menu-change-weather-display-simple",
@@ -2113,29 +2153,6 @@ const LinkMenuOptions = {
       data: { url: site.url },
     }),
   }),
-  FakespotDismiss: () => ({
-    id: "newtab-menu-dismiss",
-    action: actionCreators.OnlyToMain({
-      type: actionTypes.SET_PREF,
-      data: {
-        name: "discoverystream.contextualContent.fakespot.enabled",
-        value: false,
-      },
-    }),
-    impression: actionCreators.OnlyToMain({
-      type: actionTypes.FAKESPOT_DISMISS,
-    }),
-  }),
-  AboutFakespot: site => ({
-    id: "newtab-menu-about-fakespot",
-    action: actionCreators.OnlyToMain({
-      type: actionTypes.OPEN_LINK,
-      data: { url: site.url },
-    }),
-    impression: actionCreators.OnlyToMain({
-      type: actionTypes.OPEN_ABOUT_FAKESPOT,
-    }),
-  }),
   SectionBlock: ({
     sectionPersonalization,
     sectionKey,
@@ -2152,7 +2169,7 @@ const LinkMenuOptions = {
           // Once the user confirmed their intention to block this section,
           // update their preferences.
           actionCreators.AlsoToMain({
-            type: actionTypes.SECTION_PERSONALIZATION_UPDATE,
+            type: actionTypes.SECTION_PERSONALIZATION_SET,
             data: {
               ...sectionPersonalization,
               [sectionKey]: {
@@ -2196,8 +2213,8 @@ const LinkMenuOptions = {
   }) => ({
     id: "newtab-menu-section-unfollow",
     action: actionCreators.AlsoToMain({
-      type: actionTypes.SECTION_PERSONALIZATION_UPDATE,
-      data: (({ sectionKey: _sectionKey, ...remaining }) => remaining)(
+      type: actionTypes.SECTION_PERSONALIZATION_SET,
+      data: (({ [sectionKey]: _sectionKey, ...remaining }) => remaining)(
         sectionPersonalization
       ),
     }),
@@ -2242,15 +2259,12 @@ const LinkMenuOptions = {
 
   ReportContent: site => {
     return {
-      id: "newtab-menu-report-content",
+      id: "newtab-menu-report",
       action: actionCreators.AlsoToMain({
         type: actionTypes.REPORT_CONTENT_OPEN,
         data: {
           card_type: site.card_type,
           corpus_item_id: site.corpus_item_id,
-          is_section_followed: site.is_section_followed,
-          received_rank: site.received_rank,
-          recommended_at: site.recommended_at,
           scheduled_corpus_item_id: site.scheduled_corpus_item_id,
           section_position: site.section_position,
           section: site.section,
@@ -2323,18 +2337,62 @@ class _LinkMenu extends (external_React_default()).PureComponent {
           }
           dispatch(action);
           if (eventName) {
+            let value;
+            // Bug 1958135: Pass additional info to ac.OPEN_NEW_WINDOW event
+            if (action.type === "OPEN_NEW_WINDOW") {
+              const {
+                card_type,
+                corpus_item_id,
+                event_source,
+                fetchTimestamp,
+                firstVisibleTimestamp,
+                format,
+                is_section_followed,
+                received_rank,
+                recommendation_id,
+                recommended_at,
+                scheduled_corpus_item_id,
+                section_position,
+                section,
+                selected_topics,
+                tile_id,
+                topic
+              } = action.data;
+              value = {
+                card_type,
+                corpus_item_id,
+                event_source,
+                fetchTimestamp,
+                firstVisibleTimestamp,
+                format,
+                received_rank,
+                recommendation_id,
+                recommended_at,
+                scheduled_corpus_item_id,
+                ...(section ? {
+                  is_section_followed,
+                  section_position,
+                  section
+                } : {}),
+                selected_topics: selected_topics ? selected_topics : "",
+                tile_id,
+                topic
+              };
+            } else {
+              value = {
+                card_type: site.flight_id ? "spoc" : "organic"
+              };
+            }
             const userEventData = Object.assign({
               event: eventName,
               source,
               action_position: index,
-              value: {
-                card_type: site.flight_id ? "spoc" : "organic"
-              }
+              value
             }, siteInfo);
             dispatch(userEvent(userEventData));
-          }
-          if (impression && shouldSendImpressionStats) {
-            dispatch(impression);
+            if (impression && shouldSendImpressionStats) {
+              dispatch(impression);
+            }
           }
         };
       }
@@ -2418,7 +2476,8 @@ class ContextMenuButton extends (external_React_default()).PureComponent {
       contextMenuKeyboard
     } = this.state;
     return /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, /*#__PURE__*/external_React_default().createElement("button", {
-      "aria-haspopup": "true",
+      "aria-haspopup": "menu",
+      "aria-expanded": showContextMenu,
       "data-l10n-id": tooltip,
       "data-l10n-args": tooltipArgs ? JSON.stringify(tooltipArgs) : null,
       className: "context-menu-button icon",
@@ -2457,8 +2516,7 @@ class _DSLinkMenu extends (external_React_default()).PureComponent {
     if (isSpoc) {
       TOP_STORIES_CONTEXT_MENU_OPTIONS = ["BlockUrl", ...(showAdsReporting ? ["ReportAd"] : []), "ManageSponsoredContent", "OurSponsorsAndYourPrivacy"];
     } else {
-      const saveToPocketOptions = this.props.pocket_button_enabled ? ["CheckArchiveFromPocket", "CheckSavedToPocket"] : [];
-      TOP_STORIES_CONTEXT_MENU_OPTIONS = ["CheckBookmark", ...(this.props.section ? ["ReportContent"] : []), ...saveToPocketOptions, "Separator", "OpenInNewWindow", "OpenInPrivateWindow", "Separator", "BlockUrl"];
+      TOP_STORIES_CONTEXT_MENU_OPTIONS = ["CheckBookmark", "Separator", "OpenInNewWindow", "OpenInPrivateWindow", "Separator", "BlockUrl", ...(this.props.section ? ["ReportContent"] : [])];
     }
     const type = this.props.type || "DISCOVERY_STREAM";
     const title = this.props.title || this.props.source;
@@ -2469,7 +2527,8 @@ class _DSLinkMenu extends (external_React_default()).PureComponent {
       tooltipArgs: {
         title
       },
-      onUpdate: this.props.onMenuUpdate
+      onUpdate: this.props.onMenuUpdate,
+      tabIndex: this.props.tabIndex
     }, /*#__PURE__*/external_React_default().createElement(LinkMenu, {
       dispatch: dispatch,
       index: index,
@@ -2493,10 +2552,10 @@ class _DSLinkMenu extends (external_React_default()).PureComponent {
         recommendation_id: this.props.recommendation_id,
         corpus_item_id: this.props.corpus_item_id,
         scheduled_corpus_item_id: this.props.scheduled_corpus_item_id,
+        firstVisibleTimestamp: this.props.firstVisibleTimestamp,
         recommended_at: this.props.recommended_at,
         received_rank: this.props.received_rank,
         topic: this.props.topic,
-        is_list_card: this.props.is_list_card,
         position: index,
         ...(this.props.format ? {
           format: this.props.format
@@ -2518,28 +2577,33 @@ const DSLinkMenu = (0,external_ReactRedux_namespaceObject.connect)(state => ({
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
+const PREF_WEATHER_PLACEMENT = "weather.placement";
+const PREF_DAILY_BRIEF_SECTIONID = "discoverystream.dailyBrief.sectionId";
+const PREF_DAILY_BRIEF_ENABLED = "discoverystream.dailyBrief.enabled";
+const PREF_STORIES_ENABLED = "feeds.section.topstories";
+const PREF_SYSTEM_STORIES_ENABLED = "feeds.system.topstories";
 
 /**
  * A custom react hook that sets up an IntersectionObserver to observe a single
  * or list of elements and triggers a callback when the element comes into the viewport
  * Note: The refs used should be an array type
+ *
  * @function useIntersectionObserver
  * @param {function} callback - The function to call when an element comes into the viewport
- * @param {Object} options - Options object passed to Intersection Observer:
+ * @param {object} options - Options object passed to Intersection Observer:
  * https://developer.mozilla.org/en-US/docs/Web/API/IntersectionObserver/IntersectionObserver#options
- * @param {Boolean} [isSingle = false] Boolean if the elements are an array or single element
+ * @param {boolean} [isSingle = false] Boolean if the elements are an array or single element
  *
  * @returns {React.MutableRefObject} a ref containing an array of elements or single element
- *
- *
- *
  */
 function useIntersectionObserver(callback, threshold = 0.3) {
   const elementsRef = (0,external_React_namespaceObject.useRef)([]);
+  const triggeredElements = (0,external_React_namespaceObject.useRef)(new WeakSet());
   (0,external_React_namespaceObject.useEffect)(() => {
     const observer = new IntersectionObserver(entries => {
       entries.forEach(entry => {
-        if (entry.isIntersecting) {
+        if (entry.isIntersecting && !triggeredElements.current.has(entry.target)) {
+          triggeredElements.current.add(entry.target);
           callback(entry.target);
           observer.unobserve(entry.target);
         }
@@ -2548,7 +2612,7 @@ function useIntersectionObserver(callback, threshold = 0.3) {
       threshold
     });
     elementsRef.current.forEach(el => {
-      if (el) {
+      if (el && !triggeredElements.current.has(el)) {
         observer.observe(el);
       }
     });
@@ -2557,6 +2621,36 @@ function useIntersectionObserver(callback, threshold = 0.3) {
     return () => observer.disconnect();
   }, [callback, threshold]);
   return elementsRef;
+}
+
+/**
+ * Determines which column layout is active based on the screen width
+ *
+ * @param {number} screenWidth - The current window width (in pixels)
+ * @returns {string} The active column layout (e.g. "col-3", "col-2", "col-1")
+ */
+function getActiveColumnLayout(screenWidth) {
+  const breakpoints = [{
+    min: 1374,
+    column: "col-4"
+  },
+  // $break-point-sections-variant
+  {
+    min: 1122,
+    column: "col-3"
+  },
+  // $break-point-widest
+  {
+    min: 724,
+    column: "col-2"
+  },
+  // $break-point-layout-variant
+  {
+    min: 0,
+    column: "col-1"
+  } // (default layout)
+  ];
+  return breakpoints.find(bp => screenWidth >= bp.min).column;
 }
 
 /**
@@ -2587,32 +2681,10 @@ function getActiveCardSize(screenWidth, classNames, sectionsEnabled, flightId) {
     return null;
   }
   const classList = classNames.split(" ");
-
-  // Each breakpoint corresponds to a minimum screen width and its associated column class
-  const breakpoints = [{
-    min: 1374,
-    column: "col-4"
-  },
-  // $break-point-sections-variant
-  {
-    min: 1122,
-    column: "col-3"
-  },
-  // $break-point-widest
-  {
-    min: 724,
-    column: "col-2"
-  },
-  // $break-point-layout-variant
-  {
-    min: 0,
-    column: "col-1"
-  } // (default layout)
-  ];
   const cardTypes = ["small", "medium", "large"];
 
   // Determine which column is active based on the current screen width
-  const currColumnCount = breakpoints.find(bp => screenWidth >= bp.min).column;
+  const currColumnCount = getActiveColumnLayout(screenWidth);
 
   // Match the card type for that column count
   for (let type of cardTypes) {
@@ -2627,6 +2699,149 @@ function getActiveCardSize(screenWidth, classNames, sectionsEnabled, flightId) {
     }
   }
   return null;
+}
+const CONFETTI_VARS = ["--color-red-40", "--color-yellow-40", "--color-purple-40", "--color-blue-40", "--color-green-40"];
+
+/**
+ * Custom hook to animate a confetti burst.
+ *
+ * @param {number} count   Number of particles
+ * @param {number} spread  spread of confetti
+ * @returns {[React.RefObject<HTMLCanvasElement>, () => void]}
+ */
+function useConfetti(count = 80, spread = Math.PI / 3) {
+  // avoid errors from about:home cache
+  const prefersReducedMotion = typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let colors;
+  // if in abouthome cache, getComputedStyle will not be available
+  if (typeof getComputedStyle === "function") {
+    const styles = getComputedStyle(document.documentElement);
+    colors = CONFETTI_VARS.map(variable => styles.getPropertyValue(variable).trim());
+  } else {
+    colors = ["#fa5e75", "#de9600", "#c671eb", "#3f94ff", "#37b847"];
+  }
+  const canvasRef = (0,external_React_namespaceObject.useRef)(null);
+  const particlesRef = (0,external_React_namespaceObject.useRef)([]);
+  const animationFrameRef = (0,external_React_namespaceObject.useRef)(0);
+
+  // initialize/reset pool
+  const initializeConfetti = (0,external_React_namespaceObject.useCallback)((width, height) => {
+    const centerX = width / 2;
+    const centerY = height;
+    const pool = particlesRef.current;
+
+    // Create or overwrite each particle’s initial state
+    for (let i = 0; i < count; i++) {
+      const angle = Math.PI / 2 + (Math.random() - 0.5) * spread;
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      const color = colors[Math.floor(Math.random() * colors.length)];
+      pool[i] = {
+        x: centerX + (Math.random() - 0.5) * 40,
+        y: centerY,
+        cos,
+        sin,
+        velocity: Math.random() * 6 + 6,
+        gravity: 0.3,
+        decay: 0.96,
+        size: 8,
+        color,
+        life: 0,
+        maxLife: 100,
+        tilt: Math.random() * Math.PI * 2,
+        tiltSpeed: Math.random() * 0.2 + 0.05
+      };
+    }
+  }, [count, spread, colors]);
+
+  // Core animation loop — updates physics & renders each frame
+  const animateParticles = (0,external_React_namespaceObject.useCallback)(canvas => {
+    const context = canvas.getContext("2d");
+    const {
+      width,
+      height
+    } = canvas;
+    const pool = particlesRef.current;
+
+    // Clear the entire canvas each frame
+    context.clearRect(0, 0, width, height);
+    let anyAlive = false;
+    for (let particle of pool) {
+      if (particle.life < particle.maxLife) {
+        anyAlive = true;
+
+        // update each particles physics: position, velocity decay, gravity, tilt, lifespan
+        particle.velocity *= particle.decay;
+        particle.x += particle.cos * particle.velocity;
+        particle.y -= particle.sin * particle.velocity;
+        particle.y += particle.gravity;
+        particle.tilt += particle.tiltSpeed;
+        particle.life += 1;
+      }
+
+      // Draw: apply alpha, transform & draw a rotated, scaled square
+      const alphaValue = 1 - particle.life / particle.maxLife;
+      const scaleY = Math.sin(particle.tilt);
+      context.globalAlpha = alphaValue;
+      context.setTransform(1, 0, 0, 1, particle.x, particle.y);
+      context.rotate(Math.PI / 4);
+      context.scale(1, scaleY);
+      context.fillStyle = particle.color;
+      context.fillRect(-particle.size / 2, -particle.size / 2, particle.size, particle.size);
+
+      // reset each particle
+      context.setTransform(1, 0, 0, 1, 0, 0);
+      context.globalAlpha = 1;
+    }
+    if (anyAlive) {
+      // continue the animation
+      animationFrameRef.current = requestAnimationFrame(() => {
+        animateParticles(canvas);
+      });
+    } else {
+      cancelAnimationFrame(animationFrameRef.current);
+      context.clearRect(0, 0, width, height);
+    }
+  }, []);
+
+  // Resets and starts a new confetti animation
+  const fireConfetti = (0,external_React_namespaceObject.useCallback)(() => {
+    if (prefersReducedMotion) {
+      return;
+    }
+    const canvas = canvasRef?.current;
+    if (canvas) {
+      cancelAnimationFrame(animationFrameRef.current);
+      initializeConfetti(canvas.width, canvas.height);
+      animateParticles(canvas);
+    }
+  }, [initializeConfetti, animateParticles, prefersReducedMotion]);
+  return [canvasRef, fireConfetti];
+}
+function selectWeatherPlacement(state) {
+  const prefs = state.Prefs.values || {};
+
+  // Intent: only placed in section if explicitly requested
+  const placementPref = prefs.trainhopConfig?.dailyBriefing?.placement || prefs[PREF_WEATHER_PLACEMENT];
+  if (placementPref === "header" || !placementPref) {
+    return "header";
+  }
+  const sections = state.DiscoveryStream.feeds.data["https://merino.services.mozilla.com/api/v1/curated-recommendations"]?.data.sections ?? [];
+  // check the following prefs to make sure weather is elligible to be placed in sections
+  // 1. The daily brieifng section must be availible and in the top position
+  // 2. That the daily briefing section has not been blocked
+  // 3. That reccomended stories are truned on
+  // Otherwise it should be placed in the header
+  const pocketEnabled = prefs[PREF_STORIES_ENABLED] && prefs[PREF_SYSTEM_STORIES_ENABLED];
+  const sectionPersonalization = state.DiscoveryStream?.sectionPersonalization || {};
+  const dailyBriefEnabled = prefs.trainhopConfig?.dailyBriefing?.enabled || prefs[PREF_DAILY_BRIEF_ENABLED];
+  const sectionId = prefs.trainhopConfig?.dailyBriefing?.sectionId || prefs[PREF_DAILY_BRIEF_SECTIONID];
+  const notBlocked = sectionId && !sectionPersonalization[sectionId]?.isBlocked;
+  let filteredSections = sections.filter(section => !sectionPersonalization[section.sectionKey]?.isBlocked);
+  const foundSection = filteredSections.find(section => section.sectionKey === sectionId);
+  const isTopSection = foundSection?.receivedRank === 0 || filteredSections.indexOf(foundSection) === 0;
+  const eligible = pocketEnabled && dailyBriefEnabled && sectionId && notBlocked && isTopSection;
+  return eligible ? "section" : "header";
 }
 
 ;// CONCATENATED MODULE: ./content-src/components/TopSites/TopSitesConstants.mjs
@@ -2723,9 +2938,6 @@ class ImpressionStats_ImpressionStats extends (external_React_default()).PureCom
     const {
       props
     } = this;
-    const {
-      isFakespot
-    } = props;
     const cards = props.rows;
     if (this.props.flightId) {
       this.props.dispatch(actionCreators.OnlyToMain({
@@ -2747,59 +2959,49 @@ class ImpressionStats_ImpressionStats extends (external_React_default()).PureCom
               advertiser: card.advertiser,
               // Keep the 0-based position, can be adjusted by the telemetry
               // sender if necessary.
-              position: card.pos
+              position: card.pos,
+              attribution: card.attribution
             }
           }));
         }
       }
     }
     if (this._needsImpressionStats(cards)) {
-      if (isFakespot) {
-        props.dispatch(actionCreators.DiscoveryStreamImpressionStats({
-          source: props.source.toUpperCase(),
-          window_inner_width: window.innerWidth,
-          window_inner_height: window.innerHeight,
-          tiles: cards.map(link => ({
-            id: link.id,
-            type: "fakespot",
-            category: link.category
-          }))
-        }));
-      } else {
-        props.dispatch(actionCreators.DiscoveryStreamImpressionStats({
-          source: props.source.toUpperCase(),
-          window_inner_width: window.innerWidth,
-          window_inner_height: window.innerHeight,
-          tiles: cards.map(link => ({
-            id: link.id,
-            pos: link.pos,
-            type: props.flightId ? "spoc" : "organic",
-            ...(link.shim ? {
-              shim: link.shim
-            } : {}),
-            recommendation_id: link.recommendation_id,
-            fetchTimestamp: link.fetchTimestamp,
-            corpus_item_id: link.corpus_item_id,
-            scheduled_corpus_item_id: link.scheduled_corpus_item_id,
-            recommended_at: link.recommended_at,
-            received_rank: link.received_rank,
-            topic: link.topic,
-            is_list_card: link.is_list_card,
-            ...(link.format ? {
-              format: link.format
-            } : {
-              format: getActiveCardSize(window.innerWidth, link.class_names, link.section, link.flightId)
-            }),
-            ...(link.section ? {
-              section: link.section,
-              section_position: link.section_position,
-              is_section_followed: link.is_section_followed
-            } : {})
-          })),
-          firstVisibleTimestamp: props.firstVisibleTimestamp
-        }));
-        this.impressionCardGuids = cards.map(link => link.id);
-      }
+      props.dispatch(actionCreators.DiscoveryStreamImpressionStats({
+        source: props.source.toUpperCase(),
+        window_inner_width: window.innerWidth,
+        window_inner_height: window.innerHeight,
+        tiles: cards.map(link => ({
+          id: link.id,
+          pos: link.pos,
+          type: props.flightId ? "spoc" : "organic",
+          ...(link.shim ? {
+            shim: link.shim
+          } : {}),
+          recommendation_id: link.recommendation_id,
+          fetchTimestamp: link.fetchTimestamp,
+          corpus_item_id: link.corpus_item_id,
+          scheduled_corpus_item_id: link.scheduled_corpus_item_id,
+          recommended_at: link.recommended_at,
+          received_rank: link.received_rank,
+          topic: link.topic,
+          features: link.features,
+          attribution: link.attribution,
+          ...(link.format ? {
+            format: link.format
+          } : {
+            format: getActiveCardSize(window.innerWidth, link.class_names, link.section, link.flightId)
+          }),
+          ...(link.section ? {
+            section: link.section,
+            section_position: link.section_position,
+            is_section_followed: link.is_section_followed,
+            layout_name: link.sectionLayoutName
+          } : {})
+        })),
+        firstVisibleTimestamp: props.firstVisibleTimestamp
+      }));
+      this.impressionCardGuids = cards.map(link => link.id);
     }
   }
 
@@ -2915,6 +3117,7 @@ ImpressionStats_ImpressionStats.defaultProps = {
   source: ""
 };
 ;// CONCATENATED MODULE: ./content-src/components/DiscoveryStreamComponents/SafeAnchor/SafeAnchor.jsx
+function SafeAnchor_extends() { return SafeAnchor_extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, SafeAnchor_extends.apply(null, arguments); }
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -2949,7 +3152,8 @@ class SafeAnchor extends (external_React_default()).PureComponent {
           },
           referrer: this.props.referrer || "https://getpocket.com/recommendations",
           // Use the anchor's url, which could have been cleaned up
-          url: event.currentTarget.href
+          url: event.currentTarget.href,
+          is_sponsored: this.props.isSponsored
         }
       }));
     }
@@ -2977,14 +3181,23 @@ class SafeAnchor extends (external_React_default()).PureComponent {
     const {
       url,
       className,
-      title
+      title,
+      isSponsored,
+      onFocus
     } = this.props;
-    return /*#__PURE__*/external_React_default().createElement("a", {
+    let anchor = /*#__PURE__*/external_React_default().createElement("a", SafeAnchor_extends({
       href: this.safeURI(url),
       title: title,
       className: className,
-      onClick: this.onClick
-    }, this.props.children);
+      onClick: this.onClick,
+      "data-is-sponsored-link": !!isSponsored
+    }, this.props.tabIndex === 0 || this.props.tabIndex ? {
+      ref: this.props.setRef,
+      tabIndex: this.props.tabIndex
+    } : {}, onFocus ? {
+      onFocus
+    } : {}), this.props.children);
+    return anchor;
   }
 }
 ;// CONCATENATED MODULE: ./content-src/components/Card/types.mjs
@@ -3019,120 +3232,6 @@ const cardContextTypes = {
   },
 };
 
-;// CONCATENATED MODULE: ./content-src/components/DiscoveryStreamComponents/FeatureHighlight/FeatureHighlight.jsx
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-
-
-function FeatureHighlight({
-  message,
-  icon,
-  toggle,
-  position = "top-left",
-  title,
-  ariaLabel,
-  feature = "FEATURE_HIGHLIGHT_DEFAULT",
-  dispatch = () => {},
-  windowObj = __webpack_require__.g,
-  openedOverride = false,
-  showButtonIcon = true,
-  dismissCallback = () => {},
-  outsideClickCallback = () => {}
-}) {
-  const [opened, setOpened] = (0,external_React_namespaceObject.useState)(openedOverride);
-  const ref = (0,external_React_namespaceObject.useRef)(null);
-  (0,external_React_namespaceObject.useEffect)(() => {
-    const handleOutsideClick = e => {
-      if (!ref?.current?.contains(e.target)) {
-        setOpened(false);
-        outsideClickCallback();
-      }
-    };
-    const handleKeyDown = e => {
-      if (e.key === "Escape") {
-        outsideClickCallback();
-      }
-    };
-    windowObj.document.addEventListener("click", handleOutsideClick);
-    windowObj.document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      windowObj.document.removeEventListener("click", handleOutsideClick);
-      windowObj.document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [windowObj, outsideClickCallback]);
-  const onToggleClick = (0,external_React_namespaceObject.useCallback)(() => {
-    if (!opened) {
-      dispatch(actionCreators.DiscoveryStreamUserEvent({
-        event: "CLICK",
-        source: "FEATURE_HIGHLIGHT",
-        value: {
-          feature
-        }
-      }));
-    }
-    setOpened(!opened);
-  }, [dispatch, feature, opened]);
-  const onDismissClick = (0,external_React_namespaceObject.useCallback)(() => {
-    setOpened(false);
-    dismissCallback();
-  }, [dismissCallback]);
-  const hideButtonClass = showButtonIcon ? `` : `isHidden`;
-  const openedClassname = opened ? `opened` : `closed`;
-  return /*#__PURE__*/external_React_default().createElement("div", {
-    ref: ref,
-    className: "feature-highlight"
-  }, /*#__PURE__*/external_React_default().createElement("button", {
-    title: title,
-    "aria-haspopup": "true",
-    "aria-label": ariaLabel,
-    className: `toggle-button ${hideButtonClass}`,
-    onClick: onToggleClick
-  }, toggle), /*#__PURE__*/external_React_default().createElement("div", {
-    className: `feature-highlight-modal ${position} ${openedClassname}`
-  }, /*#__PURE__*/external_React_default().createElement("div", {
-    className: "message-icon"
-  }, icon), /*#__PURE__*/external_React_default().createElement("p", {
-    className: "content-wrapper"
-  }, message), /*#__PURE__*/external_React_default().createElement("button", {
-    "data-l10n-id": "feature-highlight-dismiss-button",
-    className: "icon icon-dismiss",
-    onClick: onDismissClick
-  })));
-}
-;// CONCATENATED MODULE: ./content-src/components/DiscoveryStreamComponents/FeatureHighlight/SponsoredContentHighlight.jsx
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-
-
-
-function SponsoredContentHighlight({
-  position,
-  dispatch
-}) {
-  return /*#__PURE__*/external_React_default().createElement("div", {
-    className: "sponsored-content-highlight"
-  }, /*#__PURE__*/external_React_default().createElement(FeatureHighlight, {
-    position: position,
-    ariaLabel: "Sponsored content supports our mission to build a better web.",
-    title: "Sponsored content more info",
-    feature: "SPONSORED_CONTENT_INFO",
-    dispatch: dispatch,
-    message: /*#__PURE__*/external_React_default().createElement("span", null, "Sponsored content supports our mission to build a better web.", " ", /*#__PURE__*/external_React_default().createElement(SafeAnchor, {
-      dispatch: dispatch,
-      url: "https://support.mozilla.org/kb/pocket-sponsored-stories-new-tabs"
-    }, "Find out how")),
-    icon: /*#__PURE__*/external_React_default().createElement("div", {
-      className: "sponsored-message-icon"
-    }),
-    toggle: /*#__PURE__*/external_React_default().createElement("div", {
-      className: "icon icon-help"
-    })
-  }));
-}
 ;// CONCATENATED MODULE: external "ReactTransitionGroup"
 const external_ReactTransitionGroup_namespaceObject = ReactTransitionGroup;
 ;// CONCATENATED MODULE: ./content-src/components/FluentOrText/FluentOrText.jsx
@@ -3179,7 +3278,6 @@ class FluentOrText extends (external_React_default()).PureComponent {
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
 
 
 // eslint-disable-next-line no-shadow
@@ -3269,8 +3367,6 @@ class DSContextFooter extends (external_React_default()).PureComponent {
       sponsored_by_override,
       cta_button_variant,
       source,
-      spocMessageVariant,
-      dispatch,
       mayHaveSectionsCards
     } = this.props;
     const sponsorLabel = SponsorLabel({
@@ -3301,10 +3397,7 @@ class DSContextFooter extends (external_React_default()).PureComponent {
     if (sponsorLabel || dsMessageLabel && context_type !== "pocket") {
       return /*#__PURE__*/external_React_default().createElement("div", {
         className: "story-footer"
-      }, sponsorLabel, sponsorLabel && spocMessageVariant === "variant-b" && /*#__PURE__*/external_React_default().createElement(SponsoredContentHighlight, {
-        dispatch: dispatch,
-        position: "inset-block-end inset-inline-start"
-      }), dsMessageLabel);
+      }, sponsorLabel, dsMessageLabel);
     }
     return null;
   }
@@ -3312,8 +3405,7 @@ class DSContextFooter extends (external_React_default()).PureComponent {
 const DSMessageFooter = props => {
   const {
     context,
-    context_type,
-    saveToPocketCard
+    context_type
   } = props;
   const dsMessageLabel = DSMessageLabel({
     context,
@@ -3321,41 +3413,13 @@ const DSMessageFooter = props => {
   });
 
   // This case is specific and already displayed to the user elsewhere.
-  if (!dsMessageLabel || saveToPocketCard && context_type === "pocket") {
+  if (!dsMessageLabel) {
     return null;
   }
   return /*#__PURE__*/external_React_default().createElement("div", {
     className: "story-footer"
   }, dsMessageLabel);
 };
-;// CONCATENATED MODULE: ./content-src/components/DiscoveryStreamComponents/DSThumbsUpDownButtons/DSThumbsUpDownButtons.jsx
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-
-function DSThumbsUpDownButtons({
-  sponsor,
-  onThumbsUpClick,
-  onThumbsDownClick,
-  isThumbsUpActive,
-  isThumbsDownActive
-}) {
-  return /*#__PURE__*/external_React_default().createElement("div", {
-    className: "card-stp-thumbs-buttons-wrapper"
-  }, !sponsor && /*#__PURE__*/external_React_default().createElement("div", {
-    className: "card-stp-thumbs-buttons"
-  }, /*#__PURE__*/external_React_default().createElement("button", {
-    onClick: onThumbsUpClick,
-    className: `card-stp-thumbs-button icon icon-thumbs-up ${isThumbsUpActive ? "is-active" : null}`,
-    "data-l10n-id": "newtab-pocket-thumbs-up-tooltip"
-  }), /*#__PURE__*/external_React_default().createElement("button", {
-    onClick: onThumbsDownClick,
-    className: `card-stp-thumbs-button icon icon-thumbs-down ${isThumbsDownActive ? "is-active" : null}`,
-    "data-l10n-id": "newtab-pocket-thumbs-down-tooltip"
-  })));
-}
-
 ;// CONCATENATED MODULE: ./content-src/components/DiscoveryStreamComponents/DSCard/DSCard.jsx
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
@@ -3371,12 +3435,15 @@ function DSThumbsUpDownButtons({
 
 
 
-
-
 const READING_WPM = 220;
+const PREF_OHTTP_MERINO = "discoverystream.merino-provider.ohttp.enabled";
+const PREF_OHTTP_UNIFIED_ADS = "unifiedAds.ohttp.enabled";
+const DSCard_PREF_SECTIONS_ENABLED = "discoverystream.sections.enabled";
+const PREF_FAVICONS_ENABLED = "discoverystream.publisherFavicon.enabled";
 
 /**
  * READ TIME FROM WORD COUNT
+ *
  * @param {int} wordCount number of words in an article
  * @returns {int} number of words per minute in minutes
  */
@@ -3393,8 +3460,12 @@ const DSSource = ({
   context,
   sponsor,
   sponsored_by_override,
-  icon_src
+  icon_src,
+  refinedCardsLayout
 }) => {
+  // refinedCard styles will have a larger favicon size
+  const faviconSize = refinedCardsLayout ? 20 : 16;
+
   // First try to display sponsored label or time to read here.
   if (newSponsoredLabel) {
     // If we can display something for spocs, do so.
@@ -3428,8 +3499,8 @@ const DSSource = ({
     className: "source-wrapper"
   }, icon_src && /*#__PURE__*/external_React_default().createElement("img", {
     src: icon_src,
-    height: "16",
-    width: "16",
+    height: faviconSize,
+    width: faviconSize,
     alt: ""
   }), /*#__PURE__*/external_React_default().createElement("p", {
     className: "source clamp"
@@ -3445,29 +3516,22 @@ const DefaultMeta = ({
   context_type,
   sponsor,
   sponsored_by_override,
-  saveToPocketCard,
   ctaButtonVariant,
   dispatch,
-  spocMessageVariant,
   mayHaveSectionsCards,
-  mayHaveThumbsUpDown,
-  onThumbsUpClick,
-  onThumbsDownClick,
-  isListCard,
-  state,
   format,
   topic,
   isSectionsCard,
   showTopics,
-  icon_src
+  icon_src,
+  refinedCardsLayout
 }) => {
-  const shouldHaveThumbs = !isListCard && format !== "rectangle" && mayHaveSectionsCards && mayHaveThumbsUpDown;
-  const shouldHaveFooterSection = isSectionsCard && (shouldHaveThumbs || showTopics);
+  const shouldHaveFooterSection = isSectionsCard && showTopics;
   return /*#__PURE__*/external_React_default().createElement("div", {
     className: "meta"
   }, /*#__PURE__*/external_React_default().createElement("div", {
     className: "info-wrap"
-  }, ctaButtonVariant !== "variant-b" && format !== "rectangle" && /*#__PURE__*/external_React_default().createElement(DSSource, {
+  }, ctaButtonVariant !== "variant-b" && format !== "rectangle" && !refinedCardsLayout && /*#__PURE__*/external_React_default().createElement(DSSource, {
     source: source,
     timeToRead: timeToRead,
     newSponsoredLabel: newSponsoredLabel,
@@ -3475,28 +3539,23 @@ const DefaultMeta = ({
     sponsor: sponsor,
     sponsored_by_override: sponsored_by_override,
     icon_src: icon_src
-  }), format !== "rectangle" && /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, /*#__PURE__*/external_React_default().createElement("h3", {
+  }), /*#__PURE__*/external_React_default().createElement("h3", {
     className: "title clamp"
-  }, title), excerpt && /*#__PURE__*/external_React_default().createElement("p", {
+  }, format === "rectangle" ? "Sponsored" : title), format === "rectangle" ? /*#__PURE__*/external_React_default().createElement("p", {
     className: "excerpt clamp"
-  }, excerpt)), format === "rectangle" && /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, /*#__PURE__*/external_React_default().createElement("h3", {
-    className: "title clamp"
-  }, "Sponsored"), /*#__PURE__*/external_React_default().createElement("p", {
+  }, "Sponsored content supports our mission to build a better web.") : excerpt && /*#__PURE__*/external_React_default().createElement("p", {
     className: "excerpt clamp"
-  }, "Sponsored content supports our mission to build a better web."))), !isListCard && format !== "rectangle" && !mayHaveSectionsCards && mayHaveThumbsUpDown && /*#__PURE__*/external_React_default().createElement(DSThumbsUpDownButtons, {
-    onThumbsDownClick: onThumbsDownClick,
-    onThumbsUpClick: onThumbsUpClick,
-    sponsor: sponsor,
-    isThumbsDownActive: state.isThumbsDownActive,
-    isThumbsUpActive: state.isThumbsUpActive
-  }), shouldHaveFooterSection && /*#__PURE__*/external_React_default().createElement("div", {
+  }, excerpt)), (shouldHaveFooterSection || refinedCardsLayout) && /*#__PURE__*/external_React_default().createElement("div", {
     className: "sections-card-footer"
-  }, shouldHaveThumbs && /*#__PURE__*/external_React_default().createElement(DSThumbsUpDownButtons, {
-    onThumbsDownClick: onThumbsDownClick,
-    onThumbsUpClick: onThumbsUpClick,
+  }, refinedCardsLayout && format !== "rectangle" && format !== "spoc" && /*#__PURE__*/external_React_default().createElement(DSSource, {
+    source: source,
+    timeToRead: timeToRead,
+    newSponsoredLabel: newSponsoredLabel,
+    context: context,
     sponsor: sponsor,
-    isThumbsDownActive: state.isThumbsDownActive,
-    isThumbsUpActive: state.isThumbsUpActive
+    sponsored_by_override: sponsored_by_override,
+    icon_src: icon_src,
+    refinedCardsLayout: refinedCardsLayout
   }), showTopics && /*#__PURE__*/external_React_default().createElement("span", {
     className: "ds-card-topic",
     "data-l10n-id": `newtab-topic-label-${topic}`
@@ -3508,12 +3567,10 @@ const DefaultMeta = ({
     cta_button_variant: ctaButtonVariant,
     source: source,
     dispatch: dispatch,
-    spocMessageVariant: spocMessageVariant,
     mayHaveSectionsCards: mayHaveSectionsCards
   }), newSponsoredLabel && /*#__PURE__*/external_React_default().createElement(DSMessageFooter, {
     context_type: context_type,
-    context: null,
-    saveToPocketCard: saveToPocketCard
+    context: null
   }));
 };
 class _DSCard extends (external_React_default()).PureComponent {
@@ -3523,8 +3580,7 @@ class _DSCard extends (external_React_default()).PureComponent {
     this.doesLinkTopicMatchSelectedTopic = this.doesLinkTopicMatchSelectedTopic.bind(this);
     this.onMenuUpdate = this.onMenuUpdate.bind(this);
     this.onMenuShow = this.onMenuShow.bind(this);
-    this.onThumbsUpClick = this.onThumbsUpClick.bind(this);
-    this.onThumbsDownClick = this.onThumbsDownClick.bind(this);
+    const refinedCardsLayout = this.props.Prefs.values["discoverystream.refinedCardsLayout.enabled"];
     this.setContextMenuButtonHostRef = element => {
       this.contextMenuButtonHostElement = element;
     };
@@ -3532,14 +3588,12 @@ class _DSCard extends (external_React_default()).PureComponent {
       this.placeholderElement = element;
     };
     this.state = {
-      isSeen: false,
-      isThumbsUpActive: false,
-      isThumbsDownActive: false
+      isSeen: false
     };
 
     // If this is for the about:home startup cache, then we always want
     // to render the DSCard, regardless of whether or not its been seen.
-    if (props.App.isForStartupCache) {
+    if (props.App.isForStartupCache.App) {
       this.state.isSeen = true;
     }
 
@@ -3551,23 +3605,10 @@ class _DSCard extends (external_React_default()).PureComponent {
     // The values chosen here were the dimensions of the card thumbnails as
     // computed by getBoundingClientRect() for each type of viewport width
     // across both high-density and normal-density displays.
-    this.dsImageSizes = [{
-      mediaMatcher: "(min-width: 1122px)",
-      width: 296,
-      height: 148
-    }, {
-      mediaMatcher: "(min-width: 866px)",
-      width: 218,
-      height: 109
-    }, {
-      mediaMatcher: "(max-width: 610px)",
-      width: 202,
-      height: 101
-    }];
     this.standardCardImageSizes = [{
       mediaMatcher: "default",
       width: 296,
-      height: 148
+      height: refinedCardsLayout ? 160 : 148
     }];
     this.listCardImageSizes = [{
       mediaMatcher: "(min-width: 1122px)",
@@ -3580,16 +3621,16 @@ class _DSCard extends (external_React_default()).PureComponent {
     }];
     this.sectionsCardImagesSizes = {
       small: {
-        width: 100,
-        height: 120
+        width: 110,
+        height: 117
       },
       medium: {
         width: 300,
-        height: 150
+        height: refinedCardsLayout ? 160 : 150
       },
       large: {
-        width: 265,
-        height: 265
+        width: 190,
+        height: 250
       }
     };
     this.sectionsColumnMediaMatcher = {
@@ -3625,203 +3666,69 @@ class _DSCard extends (external_React_default()).PureComponent {
   onLinkClick() {
     const matchesSelectedTopic = this.doesLinkTopicMatchSelectedTopic();
     if (this.props.dispatch) {
-      if (this.props.isFakespot) {
-        this.props.dispatch(actionCreators.DiscoveryStreamUserEvent({
-          event: "FAKESPOT_CLICK",
-          value: {
-            product_id: this.props.id,
-            category: this.props.category || ""
-          }
-        }));
-      } else {
-        this.props.dispatch(actionCreators.DiscoveryStreamUserEvent({
-          event: "CLICK",
-          source: this.props.type.toUpperCase(),
-          action_position: this.props.pos,
-          value: {
-            card_type: this.props.flightId ? "spoc" : "organic",
-            recommendation_id: this.props.recommendation_id,
-            tile_id: this.props.id,
-            ...(this.props.shim && this.props.shim.click ? {
-              shim: this.props.shim.click
-            } : {}),
-            fetchTimestamp: this.props.fetchTimestamp,
-            firstVisibleTimestamp: this.props.firstVisibleTimestamp,
-            corpus_item_id: this.props.corpus_item_id,
-            scheduled_corpus_item_id: this.props.scheduled_corpus_item_id,
-            recommended_at: this.props.recommended_at,
-            received_rank: this.props.received_rank,
-            topic: this.props.topic,
-            matches_selected_topic: matchesSelectedTopic,
-            selected_topics: this.props.selectedTopics,
-            is_list_card: this.props.isListCard,
-            ...(this.props.format ? {
-              format: this.props.format
-            } : {
-              format: getActiveCardSize(window.innerWidth, this.props.sectionsClassNames, this.props.section, this.props.flightId)
-            }),
-            ...(this.props.section ? {
-              section: this.props.section,
-              section_position: this.props.sectionPosition,
-              is_section_followed: this.props.sectionFollowed
-            } : {})
-          }
-        }));
-        this.props.dispatch(actionCreators.ImpressionStats({
-          source: this.props.type.toUpperCase(),
-          click: 0,
-          window_inner_width: this.props.windowObj.innerWidth,
-          window_inner_height: this.props.windowObj.innerHeight,
-          tiles: [{
-            id: this.props.id,
-            pos: this.props.pos,
-            ...(this.props.shim && this.props.shim.click ? {
-              shim: this.props.shim.click
-            } : {}),
-            type: this.props.flightId ? "spoc" : "organic",
-            recommendation_id: this.props.recommendation_id,
-            topic: this.props.topic,
-            selected_topics: this.props.selectedTopics,
-            is_list_card: this.props.isListCard,
-            ...(this.props.format ? {
-              format: this.props.format
-            } : {
-              format: getActiveCardSize(window.innerWidth, this.props.sectionsClassNames, this.props.section, this.props.flightId)
-            }),
-            ...(this.props.section ? {
-              section: this.props.section,
-              section_position: this.props.sectionPosition,
-              is_section_followed: this.props.sectionFollowed
-            } : {})
-          }]
-        }));
-      }
-    }
-  }
-  onThumbsUpClick(event) {
-    event.stopPropagation();
-    event.preventDefault();
-
-    // Toggle active state for thumbs up button to show CSS animation
-    const currentState = this.state.isThumbsUpActive;
-
-    // If thumbs up has been clicked already, do nothing.
-    if (currentState) {
-      return;
-    }
-    this.setState({
-      isThumbsUpActive: !currentState
-    });
-
-    // Record thumbs up telemetry event
-    this.props.dispatch(actionCreators.DiscoveryStreamUserEvent({
-      event: "POCKET_THUMBS_UP",
-      source: "THUMBS_UI",
-      value: {
-        recommendation_id: this.props.recommendation_id,
-        tile_id: this.props.id,
-        corpus_item_id: this.props.corpus_item_id,
-        scheduled_corpus_item_id: this.props.scheduled_corpus_item_id,
-        recommended_at: this.props.recommended_at,
-        received_rank: this.props.received_rank,
-        thumbs_up: true,
-        thumbs_down: false,
-        topic: this.props.topic,
-        format: getActiveCardSize(window.innerWidth, this.props.sectionsClassNames, this.props.section, false // (thumbs up/down only exist on organic content)
-        ),
-        ...(this.props.section ? {
-          section: this.props.section,
-          section_position: this.props.sectionPosition,
-          is_section_followed: this.props.sectionFollowed
-        } : {})
-      }
-    }));
-
-    // Show Toast
-    this.props.dispatch(actionCreators.OnlyToOneContent({
-      type: actionTypes.SHOW_TOAST_MESSAGE,
-      data: {
-        showNotifications: true,
-        toastId: "thumbsUpToast"
-      }
-    }, "ActivityStream:Content"));
-  }
-  onThumbsDownClick(event) {
-    event.stopPropagation();
-    event.preventDefault();
-
-    // Toggle active state for thumbs down button to show CSS animation
-    const currentState = this.state.isThumbsDownActive;
-    this.setState({
-      isThumbsDownActive: !currentState
-    });
-
-    // Run dismiss event after 0.5 second delay
-    if (this.props.dispatch && this.props.type && this.props.id && this.props.url) {
-      const index = this.props.pos;
-      const source = this.props.type.toUpperCase();
-      const spocData = {
-        url: this.props.url,
-        guid: this.props.id,
-        type: "CardGrid",
-        card_type: "organic",
-        recommendation_id: this.props.recommendation_id,
-        tile_id: this.props.id,
-        corpus_item_id: this.props.corpus_item_id,
-        scheduled_corpus_item_id: this.props.scheduled_corpus_item_id,
-        recommended_at: this.props.recommended_at,
-        received_rank: this.props.received_rank
-      };
-      const blockUrlOption = LinkMenuOptions.BlockUrl(spocData, index, source);
-      const {
-        action,
-        impression,
-        userEvent
-      } = blockUrlOption;
-      setTimeout(() => {
-        this.props.dispatch(action);
-        this.props.dispatch(actionCreators.DiscoveryStreamUserEvent({
-          event: userEvent,
-          source,
-          action_position: index
-        }));
-      }, 500);
-      if (impression) {
-        this.props.dispatch(impression);
-      }
-
-      // Record thumbs down telemetry event
       this.props.dispatch(actionCreators.DiscoveryStreamUserEvent({
-        event: "POCKET_THUMBS_DOWN",
-        source: "THUMBS_UI",
+        event: "CLICK",
+        source: this.props.type.toUpperCase(),
+        action_position: this.props.pos,
         value: {
+          event_source: "card",
+          card_type: this.props.flightId ? "spoc" : "organic",
           recommendation_id: this.props.recommendation_id,
           tile_id: this.props.id,
+          ...(this.props.shim && this.props.shim.click ? {
+            shim: this.props.shim.click
+          } : {}),
+          fetchTimestamp: this.props.fetchTimestamp,
+          firstVisibleTimestamp: this.props.firstVisibleTimestamp,
           corpus_item_id: this.props.corpus_item_id,
           scheduled_corpus_item_id: this.props.scheduled_corpus_item_id,
           recommended_at: this.props.recommended_at,
           received_rank: this.props.received_rank,
-          thumbs_up: false,
-          thumbs_down: true,
           topic: this.props.topic,
-          format: getActiveCardSize(window.innerWidth, this.props.sectionsClassNames, this.props.section, false // (thumbs up/down only exist on organic content)
-          ),
+          features: this.props.features,
+          matches_selected_topic: matchesSelectedTopic,
+          selected_topics: this.props.selectedTopics,
+          attribution: this.props.attribution,
+          ...(this.props.format ? {
+            format: this.props.format
+          } : {
+            format: getActiveCardSize(window.innerWidth, this.props.sectionsClassNames, this.props.section, this.props.flightId)
+          }),
+          ...(this.props.section ? {
+            section: this.props.section,
+            section_position: this.props.sectionPosition,
+            is_section_followed: this.props.sectionFollowed,
+            layout_name: this.props.sectionLayoutName
+          } : {})
+        }
+      }));
+      this.props.dispatch(actionCreators.ImpressionStats({
+        source: this.props.type.toUpperCase(),
+        click: 0,
+        window_inner_width: this.props.windowObj.innerWidth,
+        window_inner_height: this.props.windowObj.innerHeight,
+        tiles: [{
+          id: this.props.id,
+          pos: this.props.pos,
+          ...(this.props.shim && this.props.shim.click ? {
+            shim: this.props.shim.click
+          } : {}),
+          type: this.props.flightId ? "spoc" : "organic",
+          recommendation_id: this.props.recommendation_id,
+          topic: this.props.topic,
+          selected_topics: this.props.selectedTopics,
+          ...(this.props.format ? {
+            format: this.props.format
+          } : {
+            format: getActiveCardSize(window.innerWidth, this.props.sectionsClassNames, this.props.section, this.props.flightId)
+          }),
           ...(this.props.section ? {
             section: this.props.section,
             section_position: this.props.sectionPosition,
             is_section_followed: this.props.sectionFollowed
           } : {})
-        }
+        }]
       }));
-
-      // Show Toast
-      this.props.dispatch(actionCreators.OnlyToOneContent({
-        type: actionTypes.SHOW_TOAST_MESSAGE,
-        data: {
-          showNotifications: true,
-          toastId: "thumbsDownToast"
-        }
-      }, "ActivityStream:Content"));
     }
   }
   onMenuUpdate(showContextMenu) {
@@ -3860,12 +3767,18 @@ class _DSCard extends (external_React_default()).PureComponent {
   }
   onIdleCallback() {
     if (!this.state.isSeen) {
-      if (this.observer && this.placeholderElement) {
-        this.observer.unobserve(this.placeholderElement);
+      // To improve responsiveness without impacting performance,
+      // we start rendering stories on idle.
+      // To reduce the number of requests for secure OHTTP images,
+      // we skip idle-time loading.
+      if (!this.secureImage) {
+        if (this.observer && this.placeholderElement) {
+          this.observer.unobserve(this.placeholderElement);
+        }
+        this.setState({
+          isSeen: true
+        });
       }
-      this.setState({
-        isSeen: true
-      });
     }
   }
   componentDidMount() {
@@ -3884,25 +3797,106 @@ class _DSCard extends (external_React_default()).PureComponent {
       this.props.windowObj.cancelIdleCallback(this.idleCallbackId);
     }
   }
+
+  // Wraps the image URL with the moz-cached-ohttp:// protocol.
+  // This enables Firefox to load resources over Oblivious HTTP (OHTTP),
+  // providing privacy-preserving resource loading.
+  // Applied only when inferred personalization is enabled.
+  // See: https://firefox-source-docs.mozilla.org/browser/components/mozcachedohttp/docs/index.html
+  secureImageURL(url) {
+    return `moz-cached-ohttp://newtab-image/?url=${encodeURIComponent(url)}`;
+  }
+  getRawImageSrc() {
+    let rawImageSrc = "";
+    // There is no point in fetching images for startup cache.
+    if (!this.props.App.isForStartupCache.App) {
+      rawImageSrc = this.props.raw_image_src;
+    }
+    return rawImageSrc;
+  }
+  getFaviconSrc() {
+    let faviconSrc = "";
+    const faviconEnabled = this.props.Prefs.values[PREF_FAVICONS_ENABLED];
+    // There is no point in fetching favicons for startup cache.
+    if (!this.props.App.isForStartupCache.App && faviconEnabled && this.props.icon_src) {
+      faviconSrc = this.props.icon_src;
+      if (this.secureImage) {
+        faviconSrc = this.secureImageURL(this.props.icon_src);
+      }
+    }
+    return faviconSrc;
+  }
+  get secureImage() {
+    const {
+      Prefs,
+      flightId
+    } = this.props;
+    let ohttpEnabled = false;
+    if (flightId) {
+      ohttpEnabled = Prefs.values[PREF_OHTTP_UNIFIED_ADS];
+    } else {
+      ohttpEnabled = Prefs.values[PREF_OHTTP_MERINO];
+    }
+    const ohttpImagesEnabled = Prefs.values.ohttpImagesConfig?.enabled;
+    const includeTopStoriesSection = Prefs.values.ohttpImagesConfig?.includeTopStoriesSection;
+    const nonPersonalizedSections = ["top_stories_section"];
+    const sectionPersonalized = !nonPersonalizedSections.includes(this.props.section) || includeTopStoriesSection;
+    const secureImage = ohttpImagesEnabled && ohttpEnabled && sectionPersonalized;
+    return secureImage;
+  }
+  renderImage({
+    sizes = [],
+    classNames = ""
+  } = {}) {
+    const {
+      Prefs
+    } = this.props;
+    const rawImageSrc = this.getRawImageSrc();
+    const smartCrop = Prefs.values["images.smart"];
+    return /*#__PURE__*/external_React_default().createElement(DSImage, {
+      extraClassNames: `img ${classNames}`,
+      source: this.props.image_src,
+      rawSource: rawImageSrc,
+      sizes: sizes,
+      url: this.props.url,
+      title: this.props.title,
+      isRecentSave: this.props.isRecentSave,
+      alt_text: this.props.alt_text,
+      smartCrop: smartCrop,
+      secureImage: this.secureImage
+    });
+  }
+  renderSectionCardImages() {
+    const {
+      sectionsCardImageSizes
+    } = this.props;
+    const columns = ["1", "2", "3", "4"];
+    const images = [];
+    for (const column of columns) {
+      const size = sectionsCardImageSizes[column];
+      const sizes = [this.getSectionImageSize(column, size)];
+      const image = this.renderImage({
+        sizes,
+        classNames: `image-${column}`
+      });
+      images.push(image);
+    }
+    return /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, images);
+  }
   render() {
     const {
       isRecentSave,
       DiscoveryStream,
       Prefs,
-      saveToPocketCard,
-      isListCard,
-      isFakespot,
       mayHaveSectionsCards,
-      format,
-      alt_text
+      format
     } = this.props;
+    const refinedCardsLayout = Prefs.values["discoverystream.refinedCardsLayout.enabled"];
+    const refinedCardsClassName = refinedCardsLayout ? `refined-cards` : ``;
     if (this.props.placeholder || !this.state.isSeen) {
       // placeholder-seen is used to ensure the loading animation is only used if the card is visible.
       const placeholderClassName = this.state.isSeen ? `placeholder-seen` : ``;
-      return /*#__PURE__*/external_React_default().createElement("div", {
-        className: `ds-card placeholder ${placeholderClassName} ${isListCard ? "list-card-placeholder" : ""}`,
-        ref: this.setPlaceholderRef
-      }, /*#__PURE__*/external_React_default().createElement("div", {
+      let placeholderElements = /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, /*#__PURE__*/external_React_default().createElement("div", {
         className: "placeholder-image placeholder-fill"
       }), /*#__PURE__*/external_React_default().createElement("div", {
         className: "placeholder-label placeholder-fill"
@@ -3911,6 +3905,19 @@ class _DSCard extends (external_React_default()).PureComponent {
       }), /*#__PURE__*/external_React_default().createElement("div", {
         className: "placeholder-description placeholder-fill"
       }));
+      if (refinedCardsLayout) {
+        placeholderElements = /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, /*#__PURE__*/external_React_default().createElement("div", {
+          className: "placeholder-image placeholder-fill"
+        }), /*#__PURE__*/external_React_default().createElement("div", {
+          className: "placeholder-description placeholder-fill"
+        }), /*#__PURE__*/external_React_default().createElement("div", {
+          className: "placeholder-header placeholder-fill"
+        }));
+      }
+      return /*#__PURE__*/external_React_default().createElement("div", {
+        className: `ds-card placeholder ${placeholderClassName} ${refinedCardsClassName}`,
+        ref: this.setPlaceholderRef
+      }, placeholderElements);
     }
     let source = this.props.source || this.props.publisher;
     if (!source) {
@@ -3919,7 +3926,6 @@ class _DSCard extends (external_React_default()).PureComponent {
       } catch (e) {}
     }
     const {
-      pocketButtonEnabled,
       hideDescriptions,
       compactImages,
       imageGradient,
@@ -3928,13 +3934,10 @@ class _DSCard extends (external_React_default()).PureComponent {
       descLines = 3,
       readTime: displayReadTime
     } = DiscoveryStream;
-    const layoutsVariantAEnabled = Prefs.values["newtabLayouts.variant-a"];
-    const layoutsVariantBEnabled = Prefs.values["newtabLayouts.variant-b"];
-    const sectionsEnabled = Prefs.values["discoverystream.sections.enabled"];
-    const layoutsVariantAorB = layoutsVariantAEnabled || layoutsVariantBEnabled;
-    const smartCrop = Prefs.values["images.smart"];
-    const faviconEnabled = Prefs.values["discoverystream.publisherFavicon.enabled"];
-    const excerpt = !hideDescriptions ? this.props.excerpt : "";
+    const sectionsEnabled = Prefs.values[DSCard_PREF_SECTIONS_ENABLED];
+    // Refined cards have their own excerpt hiding logic.
+    // We can ignore hideDescriptions if we are in sections and refined cards.
+    const excerpt = !hideDescriptions || sectionsEnabled && refinedCardsLayout ? this.props.excerpt : "";
     let timeToRead;
     if (displayReadTime) {
       timeToRead = this.props.time_to_read || readTimeFromWordCount(this.props.word_count);
@@ -3948,28 +3951,22 @@ class _DSCard extends (external_React_default()).PureComponent {
     const ctaButtonClassName = ctaButtonEnabled ? `ds-card-cta-button` : ``;
     const compactImagesClassName = compactImages ? `ds-card-compact-image` : ``;
     const imageGradientClassName = imageGradient ? `ds-card-image-gradient` : ``;
-    const listCardClassName = isListCard ? `list-feed-card` : ``;
-    const fakespotClassName = isFakespot ? `fakespot` : ``;
     const sectionsCardsClassName = [mayHaveSectionsCards ? `sections-card-ui` : ``, this.props.sectionsClassNames].join(" ");
-    const sectionsCardsImageSizes = this.props.sectionsCardImageSizes;
     const titleLinesName = `ds-card-title-lines-${titleLines}`;
     const descLinesClassName = `ds-card-desc-lines-${descLines}`;
     const isMediumRectangle = format === "rectangle";
     const spocFormatClassName = isMediumRectangle ? `ds-spoc-rectangle` : ``;
-    let sizes = [];
-    if (!isMediumRectangle) {
-      sizes = this.dsImageSizes;
-      if (sectionsEnabled) {
-        sizes = [this.getSectionImageSize("4", sectionsCardsImageSizes["4"]), this.getSectionImageSize("3", sectionsCardsImageSizes["3"]), this.getSectionImageSize("2", sectionsCardsImageSizes["2"]), this.getSectionImageSize("1", sectionsCardsImageSizes["1"])];
-      } else if (layoutsVariantAorB) {
-        sizes = this.standardCardImageSizes;
-      }
-      if (isListCard) {
-        sizes = this.listCardImageSizes;
-      }
+    const faviconSrc = this.getFaviconSrc();
+    let images = this.renderImage({
+      sizes: this.standardCardImageSizes
+    });
+    if (isMediumRectangle) {
+      images = this.renderImage();
+    } else if (sectionsEnabled) {
+      images = this.renderSectionCardImages();
     }
     return /*#__PURE__*/external_React_default().createElement("article", {
-      className: `ds-card ${listCardClassName} ${fakespotClassName} ${sectionsCardsClassName} ${compactImagesClassName} ${imageGradientClassName} ${titleLinesName} ${descLinesClassName} ${spocFormatClassName} ${ctaButtonClassName} ${ctaButtonVariantClassName}`,
+      className: `ds-card ${sectionsCardsClassName} ${compactImagesClassName} ${imageGradientClassName} ${titleLinesName} ${descLinesClassName} ${spocFormatClassName} ${ctaButtonClassName} ${ctaButtonVariantClassName} ${refinedCardsClassName}`,
       ref: this.setContextMenuButtonHostRef,
       "data-position-one": this.props["data-position-one"],
       "data-position-two": this.props["data-position-one"],
@@ -3980,23 +3977,16 @@ class _DSCard extends (external_React_default()).PureComponent {
       dispatch: this.props.dispatch,
       onLinkClick: !this.props.placeholder ? this.onLinkClick : undefined,
       url: this.props.url,
-      title: this.props.title
-    }, this.props.showTopics && !this.props.mayHaveSectionsCards && this.props.topic && !isListCard && /*#__PURE__*/external_React_default().createElement("span", {
+      title: this.props.title,
+      isSponsored: !!this.props.flightId,
+      tabIndex: this.props.tabIndex,
+      onFocus: this.props.onFocus
+    }, this.props.showTopics && !this.props.mayHaveSectionsCards && this.props.topic && !refinedCardsLayout && /*#__PURE__*/external_React_default().createElement("span", {
       className: "ds-card-topic",
       "data-l10n-id": `newtab-topic-label-${this.props.topic}`
     }), /*#__PURE__*/external_React_default().createElement("div", {
       className: "img-wrapper"
-    }, /*#__PURE__*/external_React_default().createElement(DSImage, {
-      extraClassNames: "img",
-      source: this.props.image_src,
-      rawSource: this.props.raw_image_src,
-      sizes: sizes,
-      url: this.props.url,
-      title: this.props.title,
-      isRecentSave: isRecentSave,
-      alt_text: alt_text,
-      smartCrop: smartCrop
-    })), /*#__PURE__*/external_React_default().createElement(ImpressionStats_ImpressionStats, {
+    }, images), /*#__PURE__*/external_React_default().createElement(ImpressionStats_ImpressionStats, {
       flightId: this.props.flightId,
       rows: [{
         id: this.props.id,
@@ -4011,16 +4001,17 @@ class _DSCard extends (external_React_default()).PureComponent {
         recommended_at: this.props.recommended_at,
         received_rank: this.props.received_rank,
         topic: this.props.topic,
-        is_list_card: isListCard,
+        features: this.props.features,
         ...(format ? {
           format
         } : {}),
-        isFakespot,
         category: this.props.category,
+        attribution: this.props.attribution,
         ...(this.props.section ? {
           section: this.props.section,
           section_position: this.props.sectionPosition,
-          is_section_followed: this.props.sectionFollowed
+          is_section_followed: this.props.sectionFollowed,
+          sectionLayoutName: this.props.sectionLayoutName
         } : {}),
         ...(!format && this.props.section ?
         // Note: sectionsCardsClassName is passed to ImpressionStats.jsx in order to calculate format
@@ -4029,18 +4020,11 @@ class _DSCard extends (external_React_default()).PureComponent {
         } : {})
       }],
       dispatch: this.props.dispatch,
-      isFakespot: isFakespot,
       source: this.props.type,
       firstVisibleTimestamp: this.props.firstVisibleTimestamp
     }), ctaButtonVariant === "variant-b" && /*#__PURE__*/external_React_default().createElement("div", {
       className: "cta-header"
-    }, "Shop Now"), isFakespot ? /*#__PURE__*/external_React_default().createElement("div", {
-      className: "meta"
-    }, /*#__PURE__*/external_React_default().createElement("div", {
-      className: "info-wrap"
-    }, /*#__PURE__*/external_React_default().createElement("h3", {
-      className: "title clamp"
-    }, this.props.title))) : /*#__PURE__*/external_React_default().createElement(DefaultMeta, {
+    }, "Shop Now"), /*#__PURE__*/external_React_default().createElement(DefaultMeta, {
       source: source,
       title: this.props.title,
       excerpt: excerpt,
@@ -4050,26 +4034,22 @@ class _DSCard extends (external_React_default()).PureComponent {
       context_type: this.props.context_type,
       sponsor: this.props.sponsor,
       sponsored_by_override: this.props.sponsored_by_override,
-      saveToPocketCard: saveToPocketCard,
       ctaButtonVariant: ctaButtonVariant,
       dispatch: this.props.dispatch,
-      spocMessageVariant: this.props.spocMessageVariant,
-      mayHaveThumbsUpDown: this.props.mayHaveThumbsUpDown,
       mayHaveSectionsCards: this.props.mayHaveSectionsCards,
-      onThumbsUpClick: this.onThumbsUpClick,
-      onThumbsDownClick: this.onThumbsDownClick,
       state: this.state,
-      isListCard: isListCard,
-      showTopics: this.props.showTopics,
-      isSectionsCard: this.props.mayHaveSectionsCards && this.props.topic && !isListCard,
+      showTopics: !refinedCardsLayout && this.props.showTopics,
+      isSectionsCard: this.props.mayHaveSectionsCards && this.props.topic,
       format: format,
       topic: this.props.topic,
-      icon_src: faviconEnabled && this.props.icon_src
+      icon_src: faviconSrc,
+      refinedCardsLayout: refinedCardsLayout,
+      tabIndex: this.props.tabIndex
     })), /*#__PURE__*/external_React_default().createElement("div", {
       className: "card-stp-button-hover-background"
     }, /*#__PURE__*/external_React_default().createElement("div", {
       className: "card-stp-button-position-wrapper"
-    }, !isFakespot && /*#__PURE__*/external_React_default().createElement(DSLinkMenu, {
+    }, /*#__PURE__*/external_React_default().createElement(DSLinkMenu, {
       id: this.props.id,
       index: this.props.pos,
       dispatch: this.props.dispatch,
@@ -4081,12 +4061,10 @@ class _DSCard extends (external_React_default()).PureComponent {
       pocket_id: this.props.pocket_id,
       shim: this.props.shim,
       bookmarkGuid: this.props.bookmarkGuid,
-      flightId: !this.props.is_collection ? this.props.flightId : undefined,
+      flightId: this.props.flightId,
       showPrivacyInfo: !!this.props.flightId,
       onMenuUpdate: this.onMenuUpdate,
       onMenuShow: this.onMenuShow,
-      saveToPocketCard: saveToPocketCard,
-      pocket_button_enabled: pocketButtonEnabled,
       isRecentSave: isRecentSave,
       recommendation_id: this.props.recommendation_id,
       tile_id: this.props.id,
@@ -4095,14 +4073,16 @@ class _DSCard extends (external_React_default()).PureComponent {
       scheduled_corpus_item_id: this.props.scheduled_corpus_item_id,
       recommended_at: this.props.recommended_at,
       received_rank: this.props.received_rank,
-      is_list_card: this.props.isListCard,
       section: this.props.section,
       section_position: this.props.sectionPosition,
       is_section_followed: this.props.sectionFollowed,
-      format: format,
+      fetchTimestamp: this.props.fetchTimestamp,
+      firstVisibleTimestamp: this.props.firstVisibleTimestamp,
+      format: format ? format : getActiveCardSize(window.innerWidth, this.props.sectionsClassNames, this.props.section, this.props.flightId),
       isSectionsCard: this.props.mayHaveSectionsCards,
       topic: this.props.topic,
-      selected_topics: this.props.selected_topics
+      selected_topics: this.props.selected_topics,
+      tabIndex: this.props.tabIndex
     }))));
   }
 }
@@ -4204,54 +4184,6 @@ class DSEmptyState extends (external_React_default()).PureComponent {
     }, /*#__PURE__*/external_React_default().createElement("div", {
       className: "empty-state-message"
     }, this.renderState()));
-  }
-}
-;// CONCATENATED MODULE: ./content-src/components/DiscoveryStreamComponents/DSDismiss/DSDismiss.jsx
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-
-class DSDismiss extends (external_React_default()).PureComponent {
-  constructor(props) {
-    super(props);
-    this.onDismissClick = this.onDismissClick.bind(this);
-    this.onHover = this.onHover.bind(this);
-    this.offHover = this.offHover.bind(this);
-    this.state = {
-      hovering: false
-    };
-  }
-  onDismissClick() {
-    if (this.props.onDismissClick) {
-      this.props.onDismissClick();
-    }
-  }
-  onHover() {
-    this.setState({
-      hovering: true
-    });
-  }
-  offHover() {
-    this.setState({
-      hovering: false
-    });
-  }
-  render() {
-    let className = `ds-dismiss
-      ${this.state.hovering ? ` hovering` : ``}
-      ${this.props.extraClasses ? ` ${this.props.extraClasses}` : ``}`;
-    return /*#__PURE__*/external_React_default().createElement("div", {
-      className: className
-    }, this.props.children, /*#__PURE__*/external_React_default().createElement("button", {
-      className: "ds-dismiss-button",
-      "data-l10n-id": "newtab-dismiss-button-tooltip",
-      onClick: this.onDismissClick,
-      onMouseEnter: this.onHover,
-      onMouseLeave: this.offHover
-    }, /*#__PURE__*/external_React_default().createElement("span", {
-      className: "icon icon-dismiss"
-    })));
   }
 }
 ;// CONCATENATED MODULE: ./content-src/components/DiscoveryStreamComponents/TopicsWidget/TopicsWidget.jsx
@@ -4373,151 +4305,6 @@ _TopicsWidget.defaultProps = {
 const TopicsWidget = (0,external_ReactRedux_namespaceObject.connect)(state => ({
   DiscoveryStream: state.DiscoveryStream
 }))(_TopicsWidget);
-;// CONCATENATED MODULE: ./content-src/components/DiscoveryStreamComponents/ListFeed/ListFeed.jsx
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-
-
-
-
-
-
-
-const PREF_LISTFEED_TITLE = "discoverystream.contextualContent.listFeedTitle";
-const PREF_FAKESPOT_CATEGROY = "discoverystream.contextualContent.fakespot.defaultCategoryTitle";
-const PREF_FAKESPOT_FOOTER = "discoverystream.contextualContent.fakespot.footerCopy";
-const PREF_FAKESPOT_CTA_COPY = "discoverystream.contextualContent.fakespot.ctaCopy";
-const PREF_FAKESPOT_CTA_URL = "discoverystream.contextualContent.fakespot.ctaUrl";
-const ListFeed_PREF_CONTEXTUAL_CONTENT_SELECTED_FEED = "discoverystream.contextualContent.selectedFeed";
-function ListFeed({
-  type,
-  firstVisibleTimestamp,
-  recs,
-  categories,
-  dispatch
-}) {
-  const [selectedFakespotFeed, setSelectedFakespotFeed] = (0,external_React_namespaceObject.useState)("");
-  const prefs = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.Prefs.values);
-  const listFeedTitle = prefs[PREF_LISTFEED_TITLE];
-  const categoryTitle = prefs[PREF_FAKESPOT_CATEGROY];
-  const footerCopy = prefs[PREF_FAKESPOT_FOOTER];
-  const ctaCopy = prefs[PREF_FAKESPOT_CTA_COPY];
-  const ctaUrl = prefs[PREF_FAKESPOT_CTA_URL];
-  const isFakespot = prefs[ListFeed_PREF_CONTEXTUAL_CONTENT_SELECTED_FEED] === "fakespot";
-  // Todo: need to remove ads while using default recommendations, remove this line once API has been updated.
-  let listFeedRecs = selectedFakespotFeed ? recs.filter(rec => rec.category === selectedFakespotFeed) : recs;
-  function handleCtaClick() {
-    dispatch(actionCreators.OnlyToMain({
-      type: "FAKESPOT_CTA_CLICK"
-    }));
-  }
-  function handleChange(e) {
-    setSelectedFakespotFeed(e.target.value);
-    dispatch(actionCreators.DiscoveryStreamUserEvent({
-      event: "FAKESPOT_CATEGORY",
-      value: {
-        category: e.target.value || ""
-      }
-    }));
-  }
-  const contextMenuOptions = ["FakespotDismiss", "AboutFakespot"];
-  const {
-    length: listLength
-  } = listFeedRecs;
-  // determine if the list should take up all availible height or not
-  const fullList = listLength >= 5;
-  return listLength > 0 && /*#__PURE__*/external_React_default().createElement("div", {
-    className: `list-feed ${fullList ? "full-height" : ""} ${listLength > 2 ? "span-2" : "span-1"}`
-  }, /*#__PURE__*/external_React_default().createElement("div", {
-    className: "list-feed-inner-wrapper"
-  }, isFakespot ? /*#__PURE__*/external_React_default().createElement("div", {
-    className: "fakespot-heading"
-  }, /*#__PURE__*/external_React_default().createElement("div", {
-    className: "dropdown-wrapper"
-  }, /*#__PURE__*/external_React_default().createElement("select", {
-    className: "fakespot-dropdown",
-    name: "fakespot-categories",
-    value: selectedFakespotFeed,
-    onChange: handleChange
-  }, /*#__PURE__*/external_React_default().createElement("option", {
-    value: ""
-  }, categoryTitle || "Holiday Gift Guide"), categories.map(category => /*#__PURE__*/external_React_default().createElement("option", {
-    key: category,
-    value: category
-  }, category))), /*#__PURE__*/external_React_default().createElement("div", {
-    className: "context-menu-wrapper"
-  }, /*#__PURE__*/external_React_default().createElement(ContextMenuButton, null, /*#__PURE__*/external_React_default().createElement(LinkMenu, {
-    dispatch: dispatch,
-    options: contextMenuOptions,
-    shouldSendImpressionStats: true,
-    site: {
-      url: "https://www.fakespot.com"
-    }
-  })))), /*#__PURE__*/external_React_default().createElement("p", {
-    className: "fakespot-desc"
-  }, listFeedTitle)) : /*#__PURE__*/external_React_default().createElement("h1", {
-    className: "list-feed-title",
-    id: "list-feed-title"
-  }, /*#__PURE__*/external_React_default().createElement("span", {
-    className: "icon icon-newsfeed"
-  }), listFeedTitle), /*#__PURE__*/external_React_default().createElement("div", {
-    className: "list-feed-content",
-    role: "menu",
-    "aria-labelledby": "list-feed-title"
-  }, listFeedRecs.slice(0, 5).map((rec, index) => {
-    if (!rec || rec.placeholder) {
-      return /*#__PURE__*/external_React_default().createElement(DSCard, {
-        key: `list-card-${index}`,
-        placeholder: true,
-        isListCard: true
-      });
-    }
-    return /*#__PURE__*/external_React_default().createElement(DSCard, {
-      key: `list-card-${index}`,
-      pos: index,
-      flightId: rec.flight_id,
-      image_src: rec.image_src,
-      raw_image_src: rec.raw_image_src,
-      word_count: rec.word_count,
-      time_to_read: rec.time_to_read,
-      title: rec.title,
-      topic: rec.topic,
-      excerpt: rec.excerpt,
-      url: rec.url,
-      id: rec.id,
-      shim: rec.shim,
-      type: type,
-      context: rec.context,
-      sponsor: rec.sponsor,
-      sponsored_by_override: rec.sponsored_by_override,
-      dispatch: dispatch,
-      source: rec.domain,
-      publisher: rec.publisher,
-      pocket_id: rec.pocket_id,
-      context_type: rec.context_type,
-      bookmarkGuid: rec.bookmarkGuid,
-      firstVisibleTimestamp: firstVisibleTimestamp,
-      corpus_item_id: rec.corpus_item_id,
-      scheduled_corpus_item_id: rec.scheduled_corpus_item_id,
-      recommended_at: rec.recommended_at,
-      received_rank: rec.received_rank,
-      isListCard: true,
-      isFakespot: isFakespot,
-      category: rec.category
-    });
-  }), isFakespot && /*#__PURE__*/external_React_default().createElement("div", {
-    className: "fakespot-footer"
-  }, /*#__PURE__*/external_React_default().createElement("p", null, footerCopy), /*#__PURE__*/external_React_default().createElement(SafeAnchor, {
-    className: "fakespot-cta",
-    url: ctaUrl,
-    referrer: "",
-    onLinkClick: handleCtaClick,
-    dispatch: dispatch
-  }, ctaCopy)))));
-}
-
 ;// CONCATENATED MODULE: ./content-src/components/DiscoveryStreamComponents/AdBannerContextMenu/AdBannerContextMenu.jsx
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -4547,7 +4334,8 @@ function AdBannerContextMenu({
   spoc,
   position,
   type,
-  showAdReporting
+  showAdReporting,
+  toggleActive = () => {}
 }) {
   const ADBANNER_CONTEXT_MENU_OPTIONS = ["BlockAdUrl", ...(showAdReporting ? ["ReportAd"] : []), "ManageSponsoredContent", "OurSponsorsAndYourPrivacy"];
   const [showContextMenu, setShowContextMenu] = (0,external_React_namespaceObject.useState)(false);
@@ -4580,6 +4368,7 @@ function AdBannerContextMenu({
    */
   const toggleContextMenu = isKeyBoard => {
     toggleContextMenuStyleSwitch(!showContextMenu);
+    toggleActive(!showContextMenu);
     setShowContextMenu(!showContextMenu);
     setIsKeyboardAccess(isKeyBoard);
   };
@@ -4595,6 +4384,7 @@ function AdBannerContextMenu({
   };
   const onUpdate = () => {
     toggleContextMenuStyleSwitch(!showContextMenu);
+    toggleActive(!showContextMenu);
     setShowContextMenu(!showContextMenu);
   };
   return /*#__PURE__*/external_React_default().createElement("div", {
@@ -4604,6 +4394,10 @@ function AdBannerContextMenu({
   }, /*#__PURE__*/external_React_default().createElement("moz-button", {
     type: "icon",
     size: "default",
+    "data-l10n-id": "newtab-menu-content-tooltip",
+    "data-l10n-args": JSON.stringify({
+      title: spoc.title || spoc.sponsor || spoc.alt_text
+    }),
     iconsrc: "chrome://global/skin/icons/more.svg",
     onClick: onClick,
     onKeyDown: onKeyDown
@@ -4639,6 +4433,79 @@ function AdBannerContextMenu({
     source: type.toUpperCase()
   })));
 }
+;// CONCATENATED MODULE: ./content-src/components/DiscoveryStreamComponents/PromoCard/PromoCard.jsx
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+
+
+
+
+const PREF_PROMO_CARD_DISMISSED = "discoverystream.promoCard.visible";
+
+/**
+ * The PromoCard component displays a promotional message.
+ * It is used next to the AdBanner component in a four-column layout.
+ */
+
+const PromoCard = () => {
+  const dispatch = (0,external_ReactRedux_namespaceObject.useDispatch)();
+  const onCtaClick = (0,external_React_namespaceObject.useCallback)(() => {
+    dispatch(actionCreators.AlsoToMain({
+      type: actionTypes.PROMO_CARD_CLICK
+    }));
+  }, [dispatch]);
+  const onDismissClick = (0,external_React_namespaceObject.useCallback)(() => {
+    dispatch(actionCreators.AlsoToMain({
+      type: actionTypes.PROMO_CARD_DISMISS
+    }));
+    dispatch(actionCreators.SetPref(PREF_PROMO_CARD_DISMISSED, false));
+  }, [dispatch]);
+  const handleIntersection = (0,external_React_namespaceObject.useCallback)(() => {
+    dispatch(actionCreators.AlsoToMain({
+      type: actionTypes.PROMO_CARD_IMPRESSION
+    }));
+  }, [dispatch]);
+  const ref = useIntersectionObserver(handleIntersection);
+  return /*#__PURE__*/external_React_default().createElement("div", {
+    className: "promo-card-wrapper",
+    ref: el => {
+      ref.current = [el];
+    }
+  }, /*#__PURE__*/external_React_default().createElement("div", {
+    className: "promo-card-dismiss-button"
+  }, /*#__PURE__*/external_React_default().createElement("moz-button", {
+    type: "icon ghost",
+    size: "small",
+    "data-l10n-id": "newtab-promo-card-dismiss-button",
+    iconsrc: "chrome://global/skin/icons/close.svg",
+    onClick: onDismissClick,
+    onKeyDown: onDismissClick
+  })), /*#__PURE__*/external_React_default().createElement("div", {
+    className: "promo-card-inner"
+  }, /*#__PURE__*/external_React_default().createElement("div", {
+    className: "img-wrapper"
+  }, /*#__PURE__*/external_React_default().createElement("img", {
+    src: "chrome://newtab/content/data/content/assets/puzzle-fox.svg",
+    alt: ""
+  })), /*#__PURE__*/external_React_default().createElement("span", {
+    className: "promo-card-title",
+    "data-l10n-id": "newtab-promo-card-title"
+  }), /*#__PURE__*/external_React_default().createElement("span", {
+    className: "promo-card-body",
+    "data-l10n-id": "newtab-promo-card-body"
+  }), /*#__PURE__*/external_React_default().createElement("span", {
+    className: "promo-card-cta-wrapper"
+  }, /*#__PURE__*/external_React_default().createElement("a", {
+    href: "https://support.mozilla.org/kb/sponsor-privacy",
+    "data-l10n-id": "newtab-promo-card-cta",
+    target: "_blank",
+    rel: "noreferrer",
+    onClick: onCtaClick
+  }))));
+};
+
 ;// CONCATENATED MODULE: ./content-src/components/DiscoveryStreamComponents/AdBanner/AdBanner.jsx
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
@@ -4649,6 +4516,12 @@ function AdBannerContextMenu({
 
 
 
+
+const AdBanner_PREF_SECTIONS_ENABLED = "discoverystream.sections.enabled";
+const AdBanner_PREF_OHTTP_UNIFIED_ADS = "unifiedAds.ohttp.enabled";
+const PREF_REPORT_ADS_ENABLED = "discoverystream.reportAds.enabled";
+const PREF_PROMOCARD_ENABLED = "discoverystream.promoCard.enabled";
+const PREF_PROMOCARD_VISIBLE = "discoverystream.promoCard.visible";
 
 /**
  * A new banner ad that appears between rows of stories: leaderboard or billboard size.
@@ -4689,8 +4562,13 @@ const AdBanner = ({
       height: undefined
     };
   };
-  const sectionsEnabled = prefs["discoverystream.sections.enabled"];
-  const showAdReporting = prefs["discoverystream.reportAds.enabled"];
+  const promoCardEnabled = spoc.format === "billboard" && prefs[PREF_PROMOCARD_ENABLED] && prefs[PREF_PROMOCARD_VISIBLE];
+  const sectionsEnabled = prefs[AdBanner_PREF_SECTIONS_ENABLED];
+  const ohttpEnabled = prefs[AdBanner_PREF_OHTTP_UNIFIED_ADS];
+  const showAdReporting = prefs[PREF_REPORT_ADS_ENABLED];
+  const ohttpImagesEnabled = prefs.ohttpImagesConfig?.enabled;
+  const [menuActive, setMenuActive] = (0,external_React_namespaceObject.useState)(false);
+  const adBannerWrapperClassName = `ad-banner-wrapper ${menuActive ? "active" : ""} ${promoCardEnabled ? "promo-card" : ""}`;
   const {
     width: imgWidth,
     height: imgHeight
@@ -4717,29 +4595,38 @@ const AdBanner = ({
       }
     }));
   };
+  const toggleActive = active => {
+    setMenuActive(active);
+  };
 
   // in the default card grid 1 would come before the 1st row of cards and 9 comes after the last row
   // using clamp to make sure its between valid values (1-9)
   const clampedRow = Math.max(1, Math.min(9, row));
+  const secureImage = ohttpImagesEnabled && ohttpEnabled;
+  let rawImageSrc = spoc.raw_image_src;
+
+  // Wraps the image URL with the moz-cached-ohttp:// protocol.
+  // This enables Firefox to load resources over Oblivious HTTP (OHTTP),
+  // providing privacy-preserving resource loading.
+  // Applied only when inferred personalization is enabled.
+  // See: https://firefox-source-docs.mozilla.org/browser/components/mozcachedohttp/docs/index.html
+  if (secureImage) {
+    rawImageSrc = `moz-cached-ohttp://newtab-image/?url=${encodeURIComponent(spoc.raw_image_src)}`;
+  }
   return /*#__PURE__*/external_React_default().createElement("aside", {
-    className: "ad-banner-wrapper",
+    className: adBannerWrapperClassName,
     style: {
       gridRow: clampedRow
     }
   }, /*#__PURE__*/external_React_default().createElement("div", {
     className: `ad-banner-inner ${spoc.format}`
-  }, /*#__PURE__*/external_React_default().createElement(AdBannerContextMenu, {
-    dispatch: dispatch,
-    spoc: spoc,
-    position: row,
-    type: type,
-    showAdReporting: showAdReporting
-  }), /*#__PURE__*/external_React_default().createElement(SafeAnchor, {
+  }, /*#__PURE__*/external_React_default().createElement(SafeAnchor, {
     className: "ad-banner-link",
     url: spoc.url,
-    title: spoc.title,
+    title: spoc.title || spoc.sponsor || spoc.alt_text,
     onLinkClick: onLinkClick,
-    dispatch: dispatch
+    dispatch: dispatch,
+    isSponsored: true
   }, /*#__PURE__*/external_React_default().createElement(ImpressionStats_ImpressionStats, {
     flightId: spoc.flight_id,
     rows: [{
@@ -4758,17 +4645,26 @@ const AdBanner = ({
   }), /*#__PURE__*/external_React_default().createElement("div", {
     className: "ad-banner-content"
   }, /*#__PURE__*/external_React_default().createElement("img", {
-    src: spoc.raw_image_src,
+    src: rawImageSrc,
     alt: spoc.alt_text,
     loading: "eager",
     width: imgWidth,
     height: imgHeight
-  }))), /*#__PURE__*/external_React_default().createElement("div", {
+  })), /*#__PURE__*/external_React_default().createElement("div", {
     className: "ad-banner-sponsored"
   }, /*#__PURE__*/external_React_default().createElement("span", {
     className: "ad-banner-sponsored-label",
-    "data-l10n-id": "newtab-topsite-sponsored"
-  }))));
+    "data-l10n-id": "newtab-label-sponsored-fixed"
+  }))), /*#__PURE__*/external_React_default().createElement("div", {
+    className: "ad-banner-hover-background"
+  }, /*#__PURE__*/external_React_default().createElement(AdBannerContextMenu, {
+    dispatch: dispatch,
+    spoc: spoc,
+    position: row,
+    type: type,
+    showAdReporting: showAdReporting,
+    toggleActive: toggleActive
+  }))), promoCardEnabled && /*#__PURE__*/external_React_default().createElement(PromoCard, null));
 };
 ;// CONCATENATED MODULE: ./content-src/components/DiscoveryStreamComponents/CardGrid/CardGrid.jsx
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -4782,27 +4678,15 @@ const AdBanner = ({
 
 
 
-
-
-
-
-const PREF_ONBOARDING_EXPERIENCE_DISMISSED = "discoverystream.onboardingExperience.dismissed";
 const PREF_SECTIONS_CARDS_ENABLED = "discoverystream.sections.cards.enabled";
-const PREF_THUMBS_UP_DOWN_ENABLED = "discoverystream.thumbsUpDown.enabled";
 const PREF_TOPICS_ENABLED = "discoverystream.topicLabels.enabled";
 const PREF_TOPICS_SELECTED = "discoverystream.topicSelection.selectedTopics";
 const PREF_TOPICS_AVAILABLE = "discoverystream.topicSelection.topics";
 const PREF_SPOCS_STARTUPCACHE_ENABLED = "discoverystream.spocs.startupCache.enabled";
-const PREF_LIST_FEED_ENABLED = "discoverystream.contextualContent.enabled";
-const PREF_LIST_FEED_SELECTED_FEED = "discoverystream.contextualContent.selectedFeed";
-const PREF_FAKESPOT_ENABLED = "discoverystream.contextualContent.fakespot.enabled";
 const PREF_BILLBOARD_ENABLED = "newtabAdSize.billboard";
+const PREF_BILLBOARD_POSITION = "newtabAdSize.billboard.position";
 const PREF_LEADERBOARD_ENABLED = "newtabAdSize.leaderboard";
 const PREF_LEADERBOARD_POSITION = "newtabAdSize.leaderboard.position";
-const PREF_BILLBOARD_POSITION = "newtabAdSize.billboard.position";
-const CardGrid_INTERSECTION_RATIO = 0.5;
-const CardGrid_VISIBLE = "visible";
-const CardGrid_VISIBILITY_CHANGE_EVENT = "visibilitychange";
 const WIDGET_IDS = {
   TOPICS: 1
 };
@@ -4814,95 +4698,6 @@ function DSSubHeader({
   }, /*#__PURE__*/external_React_default().createElement("h3", {
     className: "section-title-container"
   }, children));
-}
-function OnboardingExperience({
-  dispatch,
-  windowObj = globalThis
-}) {
-  const [dismissed, setDismissed] = (0,external_React_namespaceObject.useState)(false);
-  const [maxHeight, setMaxHeight] = (0,external_React_namespaceObject.useState)(null);
-  const heightElement = (0,external_React_namespaceObject.useRef)(null);
-  const onDismissClick = (0,external_React_namespaceObject.useCallback)(() => {
-    // We update this as state and redux.
-    // The state update is for this newtab,
-    // and the redux update is for other tabs, offscreen tabs, and future tabs.
-    // We need the state update for this tab to support the transition.
-    setDismissed(true);
-    dispatch(actionCreators.SetPref(PREF_ONBOARDING_EXPERIENCE_DISMISSED, true));
-    dispatch(actionCreators.DiscoveryStreamUserEvent({
-      event: "BLOCK",
-      source: "POCKET_ONBOARDING"
-    }));
-  }, [dispatch]);
-  (0,external_React_namespaceObject.useEffect)(() => {
-    const resizeObserver = new windowObj.ResizeObserver(() => {
-      if (heightElement.current) {
-        setMaxHeight(heightElement.current.offsetHeight);
-      }
-    });
-    const options = {
-      threshold: CardGrid_INTERSECTION_RATIO
-    };
-    const intersectionObserver = new windowObj.IntersectionObserver(entries => {
-      if (entries.some(entry => entry.isIntersecting && entry.intersectionRatio >= CardGrid_INTERSECTION_RATIO)) {
-        dispatch(actionCreators.DiscoveryStreamUserEvent({
-          event: "IMPRESSION",
-          source: "POCKET_ONBOARDING"
-        }));
-        // Once we have observed an impression, we can stop for this instance of newtab.
-        intersectionObserver.unobserve(heightElement.current);
-      }
-    }, options);
-    const onVisibilityChange = () => {
-      intersectionObserver.observe(heightElement.current);
-      windowObj.document.removeEventListener(CardGrid_VISIBILITY_CHANGE_EVENT, onVisibilityChange);
-    };
-    if (heightElement.current) {
-      resizeObserver.observe(heightElement.current);
-      // Check visibility or setup a visibility event to make
-      // sure we don't fire this for off screen pre loaded tabs.
-      if (windowObj.document.visibilityState === CardGrid_VISIBLE) {
-        intersectionObserver.observe(heightElement.current);
-      } else {
-        windowObj.document.addEventListener(CardGrid_VISIBILITY_CHANGE_EVENT, onVisibilityChange);
-      }
-      setMaxHeight(heightElement.current.offsetHeight);
-    }
-
-    // Return unmount callback to clean up observers.
-    return () => {
-      resizeObserver?.disconnect();
-      intersectionObserver?.disconnect();
-      windowObj.document.removeEventListener(CardGrid_VISIBILITY_CHANGE_EVENT, onVisibilityChange);
-    };
-  }, [dispatch, windowObj]);
-  const style = {};
-  if (dismissed) {
-    style.maxHeight = "0";
-    style.opacity = "0";
-    style.transition = "max-height 0.26s ease, opacity 0.26s ease";
-  } else if (maxHeight) {
-    style.maxHeight = `${maxHeight}px`;
-  }
-  return /*#__PURE__*/external_React_default().createElement("div", {
-    style: style
-  }, /*#__PURE__*/external_React_default().createElement("div", {
-    className: "ds-onboarding-ref",
-    ref: heightElement
-  }, /*#__PURE__*/external_React_default().createElement("div", {
-    className: "ds-onboarding-container"
-  }, /*#__PURE__*/external_React_default().createElement(DSDismiss, {
-    onDismissClick: onDismissClick,
-    extraClasses: `ds-onboarding`
-  }, /*#__PURE__*/external_React_default().createElement("div", null, /*#__PURE__*/external_React_default().createElement("header", null, /*#__PURE__*/external_React_default().createElement("span", {
-    className: "icon icon-pocket"
-  }), /*#__PURE__*/external_React_default().createElement("span", {
-    "data-l10n-id": "newtab-pocket-onboarding-discover"
-  })), /*#__PURE__*/external_React_default().createElement("p", {
-    "data-l10n-id": "newtab-pocket-onboarding-cta"
-  })), /*#__PURE__*/external_React_default().createElement("div", {
-    className: "ds-onboarding-graphic"
-  })))));
 }
 
 // eslint-disable-next-line no-shadow
@@ -4934,210 +4729,127 @@ function CardGrid_IntersectionObserver({
     ref: intersectionElement
   }, children);
 }
-function RecentSavesContainer({
-  gridClassName = "",
-  dispatch,
-  windowObj = window,
-  items = 3,
-  source = "CARDGRID_RECENT_SAVES"
-}) {
-  const {
-    recentSavesData,
-    isUserLoggedIn,
-    experimentData: {
-      utmCampaign,
-      utmContent,
-      utmSource
-    }
-  } = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.DiscoveryStream);
-  const [visible, setVisible] = (0,external_React_namespaceObject.useState)(false);
-  const onIntersecting = (0,external_React_namespaceObject.useCallback)(() => setVisible(true), []);
-  (0,external_React_namespaceObject.useEffect)(() => {
-    if (visible) {
-      dispatch(actionCreators.AlsoToMain({
-        type: actionTypes.DISCOVERY_STREAM_POCKET_STATE_INIT
-      }));
-    }
-  }, [visible, dispatch]);
-
-  // The user has not yet scrolled to this section,
-  // so wait before potentially requesting Pocket data.
-  if (!visible) {
-    return /*#__PURE__*/external_React_default().createElement(CardGrid_IntersectionObserver, {
-      windowObj: windowObj,
-      onIntersecting: onIntersecting
-    });
-  }
-
-  // Intersection observer has finished, but we're not yet logged in.
-  if (visible && !isUserLoggedIn) {
-    return null;
-  }
-  let queryParams = `?utm_source=${utmSource}`;
-  // We really only need to add these params to urls we own.
-  if (utmCampaign && utmContent) {
-    queryParams += `&utm_content=${utmContent}&utm_campaign=${utmCampaign}`;
-  }
-  function renderCard(rec, index) {
-    const url = new URL(rec.url);
-    const urlSearchParams = new URLSearchParams(queryParams);
-    if (rec?.id && !url.href.match(/getpocket\.com\/read/)) {
-      url.href = `https://getpocket.com/read/${rec.id}`;
-    }
-    for (let [key, val] of urlSearchParams.entries()) {
-      url.searchParams.set(key, val);
-    }
-    return /*#__PURE__*/external_React_default().createElement(DSCard, {
-      key: `dscard-${rec?.id || index}`,
-      id: rec.id,
-      pos: index,
-      type: source,
-      image_src: rec.image_src,
-      raw_image_src: rec.raw_image_src,
-      icon_src: rec.icon_src,
-      word_count: rec.word_count,
-      time_to_read: rec.time_to_read,
-      title: rec.title,
-      excerpt: rec.excerpt,
-      url: url.href,
-      source: rec.domain,
-      isRecentSave: true,
-      dispatch: dispatch
-    });
-  }
-  function onMyListClicked() {
-    dispatch(actionCreators.DiscoveryStreamUserEvent({
-      event: "CLICK",
-      source: `${source}_VIEW_LIST`
-    }));
-  }
-  const recentSavesCards = [];
-  // We fill the cards with a for loop over an inline map because
-  // we want empty placeholders if there are not enough cards.
-  for (let index = 0; index < items; index++) {
-    const recentSave = recentSavesData[index];
-    if (!recentSave) {
-      recentSavesCards.push( /*#__PURE__*/external_React_default().createElement(PlaceholderDSCard, {
-        key: `dscard-${index}`
-      }));
-    } else {
-      recentSavesCards.push(renderCard({
-        id: recentSave.id,
-        image_src: recentSave.top_image_url,
-        raw_image_src: recentSave.top_image_url,
-        word_count: recentSave.word_count,
-        time_to_read: recentSave.time_to_read,
-        title: recentSave.resolved_title || recentSave.given_title,
-        url: recentSave.resolved_url || recentSave.given_url,
-        domain: recentSave.domain_metadata?.name,
-        excerpt: recentSave.excerpt
-      }, index));
-    }
-  }
-
-  // We are visible and logged in.
-  return /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, /*#__PURE__*/external_React_default().createElement(DSSubHeader, null, /*#__PURE__*/external_React_default().createElement("span", {
-    className: "section-title"
-  }, /*#__PURE__*/external_React_default().createElement(FluentOrText, {
-    message: "Recently Saved to your List"
-  })), /*#__PURE__*/external_React_default().createElement(SafeAnchor, {
-    onLinkClick: onMyListClicked,
-    className: "section-sub-link",
-    url: `https://getpocket.com/a${queryParams}`
-  }, /*#__PURE__*/external_React_default().createElement(FluentOrText, {
-    message: "View My List"
-  }))), /*#__PURE__*/external_React_default().createElement("div", {
-    className: `ds-card-grid-recent-saves ${gridClassName}`
-  }, recentSavesCards));
-}
 class _CardGrid extends (external_React_default()).PureComponent {
+  constructor(props) {
+    super(props);
+    this.state = {
+      focusedIndex: 0
+    };
+    this.onCardFocus = this.onCardFocus.bind(this);
+    this.handleCardKeyDown = this.handleCardKeyDown.bind(this);
+  }
+  onCardFocus(index) {
+    this.setState({
+      focusedIndex: index
+    });
+  }
+  handleCardKeyDown(e) {
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      e.preventDefault();
+      const currentCardEl = e.target.closest("article.ds-card");
+      if (!currentCardEl) {
+        return;
+      }
+
+      // Arrow direction should match visual navigation direction in RTL
+      const isRTL = document.dir === "rtl";
+      const navigateToPrevious = isRTL ? e.key === "ArrowRight" : e.key === "ArrowLeft";
+      let targetCardEl = currentCardEl;
+
+      // Walk through siblings to find the target card element
+      while (targetCardEl) {
+        targetCardEl = navigateToPrevious ? targetCardEl.previousElementSibling : targetCardEl.nextElementSibling;
+        if (targetCardEl && targetCardEl.matches("article.ds-card")) {
+          const link = targetCardEl.querySelector("a.ds-card-link");
+          if (link) {
+            link.focus();
+          }
+          break;
+        }
+      }
+    }
+  }
+
   // eslint-disable-next-line max-statements
   renderCards() {
     const prefs = this.props.Prefs.values;
     const {
       items,
-      fourCardLayout,
-      essentialReadsHeader,
-      editorsPicksHeader,
-      onboardingExperience,
       ctaButtonSponsors,
       ctaButtonVariant,
-      spocMessageVariant,
       widgets,
-      recentSavesEnabled,
       DiscoveryStream
     } = this.props;
     const {
-      saveToPocketCard,
       topicsLoading
     } = DiscoveryStream;
-    const showRecentSaves = prefs.showRecentSaves && recentSavesEnabled;
-    const isOnboardingExperienceDismissed = prefs[PREF_ONBOARDING_EXPERIENCE_DISMISSED];
     const mayHaveSectionsCards = prefs[PREF_SECTIONS_CARDS_ENABLED];
-    const mayHaveThumbsUpDown = prefs[PREF_THUMBS_UP_DOWN_ENABLED];
     const showTopics = prefs[PREF_TOPICS_ENABLED];
     const selectedTopics = prefs[PREF_TOPICS_SELECTED];
     const availableTopics = prefs[PREF_TOPICS_AVAILABLE];
     const spocsStartupCacheEnabled = prefs[PREF_SPOCS_STARTUPCACHE_ENABLED];
-    const listFeedEnabled = prefs[PREF_LIST_FEED_ENABLED];
-    const listFeedSelectedFeed = prefs[PREF_LIST_FEED_SELECTED_FEED];
     const billboardEnabled = prefs[PREF_BILLBOARD_ENABLED];
     const leaderboardEnabled = prefs[PREF_LEADERBOARD_ENABLED];
-    // filter out recs that should be in ListFeed
-    const recs = this.props.data.recommendations.filter(item => !item.feedName).slice(0, items);
+    const recs = this.props.data.recommendations.slice(0, items);
     const cards = [];
-    let essentialReadsCards = [];
-    let editorsPicksCards = [];
+    let cardIndex = 0;
     for (let index = 0; index < items; index++) {
       const rec = recs[index];
-      cards.push(topicsLoading || !rec || rec.placeholder || rec.flight_id && !spocsStartupCacheEnabled && this.props.App.isForStartupCache ? /*#__PURE__*/external_React_default().createElement(PlaceholderDSCard, {
-        key: `dscard-${index}`
-      }) : /*#__PURE__*/external_React_default().createElement(DSCard, {
-        key: `dscard-${rec.id}`,
-        pos: rec.pos,
-        flightId: rec.flight_id,
-        image_src: rec.image_src,
-        raw_image_src: rec.raw_image_src,
-        icon_src: rec.icon_src,
-        word_count: rec.word_count,
-        time_to_read: rec.time_to_read,
-        title: rec.title,
-        topic: rec.topic,
-        showTopics: showTopics,
-        selectedTopics: selectedTopics,
-        availableTopics: availableTopics,
-        excerpt: rec.excerpt,
-        url: rec.url,
-        id: rec.id,
-        shim: rec.shim,
-        fetchTimestamp: rec.fetchTimestamp,
-        type: this.props.type,
-        context: rec.context,
-        sponsor: rec.sponsor,
-        sponsored_by_override: rec.sponsored_by_override,
-        dispatch: this.props.dispatch,
-        source: rec.domain,
-        publisher: rec.publisher,
-        pocket_id: rec.pocket_id,
-        context_type: rec.context_type,
-        bookmarkGuid: rec.bookmarkGuid,
-        is_collection: this.props.is_collection,
-        saveToPocketCard: saveToPocketCard,
-        ctaButtonSponsors: ctaButtonSponsors,
-        ctaButtonVariant: ctaButtonVariant,
-        spocMessageVariant: spocMessageVariant,
-        recommendation_id: rec.recommendation_id,
-        firstVisibleTimestamp: this.props.firstVisibleTimestamp,
-        mayHaveThumbsUpDown: mayHaveThumbsUpDown,
-        mayHaveSectionsCards: mayHaveSectionsCards,
-        corpus_item_id: rec.corpus_item_id,
-        scheduled_corpus_item_id: rec.scheduled_corpus_item_id,
-        recommended_at: rec.recommended_at,
-        received_rank: rec.received_rank,
-        format: rec.format,
-        alt_text: rec.alt_text,
-        isTimeSensitive: rec.isTimeSensitive
-      }));
+      const isPlaceholder = topicsLoading || this.props.placeholder || !rec || rec.placeholder || rec.flight_id && !spocsStartupCacheEnabled && this.props.App.isForStartupCache.DiscoveryStream;
+      if (isPlaceholder) {
+        cards.push(/*#__PURE__*/external_React_default().createElement(PlaceholderDSCard, {
+          key: `dscard-${index}`
+        }));
+      } else {
+        const currentCardIndex = cardIndex;
+        cardIndex++;
+        cards.push(/*#__PURE__*/external_React_default().createElement(DSCard, {
+          key: `dscard-${rec.id}`,
+          pos: rec.pos,
+          flightId: rec.flight_id,
+          image_src: rec.image_src,
+          raw_image_src: rec.raw_image_src,
+          icon_src: rec.icon_src,
+          word_count: rec.word_count,
+          time_to_read: rec.time_to_read,
+          title: rec.title,
+          topic: rec.topic,
+          features: rec.features,
+          showTopics: showTopics,
+          selectedTopics: selectedTopics,
+          excerpt: rec.excerpt,
+          availableTopics: availableTopics,
+          url: rec.url,
+          id: rec.id,
+          shim: rec.shim,
+          fetchTimestamp: rec.fetchTimestamp,
+          type: this.props.type,
+          context: rec.context,
+          sponsor: rec.sponsor,
+          sponsored_by_override: rec.sponsored_by_override,
+          dispatch: this.props.dispatch,
+          source: rec.domain,
+          publisher: rec.publisher,
+          pocket_id: rec.pocket_id,
+          context_type: rec.context_type,
+          bookmarkGuid: rec.bookmarkGuid,
+          ctaButtonSponsors: ctaButtonSponsors,
+          ctaButtonVariant: ctaButtonVariant,
+          recommendation_id: rec.recommendation_id,
+          firstVisibleTimestamp: this.props.firstVisibleTimestamp,
+          mayHaveSectionsCards: mayHaveSectionsCards,
+          corpus_item_id: rec.corpus_item_id,
+          scheduled_corpus_item_id: rec.scheduled_corpus_item_id,
+          recommended_at: rec.recommended_at,
+          received_rank: rec.received_rank,
+          format: rec.format,
+          alt_text: rec.alt_text,
+          isTimeSensitive: rec.isTimeSensitive,
+          tabIndex: currentCardIndex === this.state.focusedIndex ? 0 : -1,
+          onFocus: () => this.onCardFocus(currentCardIndex),
+          attribution: rec.attribution
+        }));
+      }
     }
     if (widgets?.positions?.length && widgets?.data?.length) {
       let positionIndex = 0;
@@ -5166,14 +4878,6 @@ class _CardGrid extends (external_React_default()).PureComponent {
           // We replace an existing card with the widget.
           cards.splice(position.index, 1, widgetComponent);
         }
-      }
-    }
-    if (listFeedEnabled) {
-      const isFakespot = listFeedSelectedFeed === "fakespot";
-      const fakespotEnabled = prefs[PREF_FAKESPOT_ENABLED];
-      if (!isFakespot || isFakespot && fakespotEnabled) {
-        // Place the list feed as the 3rd element in the card grid
-        cards.splice(2, 1, this.renderListFeed(this.props.data.recommendations, listFeedSelectedFeed));
       }
     }
 
@@ -5226,65 +4930,13 @@ class _CardGrid extends (external_React_default()).PureComponent {
         injectAdBanner(getBannerIndex());
       }
     }
-    let moreRecsHeader = "";
-    // For now this is English only.
-    if (showRecentSaves || essentialReadsHeader && editorsPicksHeader) {
-      let spliceAt = 6;
-      // For 4 card row layouts, second row is 8 cards, and regular it is 6 cards.
-      if (fourCardLayout) {
-        spliceAt = 8;
-      }
-      // If we have a custom header, ensure the more recs section also has a header.
-      moreRecsHeader = "More Recommendations";
-      // Put the first 2 rows into essentialReadsCards.
-      essentialReadsCards = [...cards.splice(0, spliceAt)];
-      // Put the rest into editorsPicksCards.
-      if (essentialReadsHeader && editorsPicksHeader) {
-        editorsPicksCards = [...cards.splice(0, cards.length)];
-      }
-    }
     const gridClassName = this.renderGridClassName();
-    return /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, !isOnboardingExperienceDismissed && onboardingExperience && /*#__PURE__*/external_React_default().createElement(OnboardingExperience, {
-      dispatch: this.props.dispatch
-    }), essentialReadsCards?.length > 0 && /*#__PURE__*/external_React_default().createElement("div", {
-      className: gridClassName
-    }, essentialReadsCards), showRecentSaves && /*#__PURE__*/external_React_default().createElement(RecentSavesContainer, {
-      gridClassName: gridClassName,
-      dispatch: this.props.dispatch
-    }), editorsPicksCards?.length > 0 && /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, /*#__PURE__*/external_React_default().createElement(DSSubHeader, null, /*#__PURE__*/external_React_default().createElement("span", {
-      className: "section-title"
-    }, /*#__PURE__*/external_React_default().createElement(FluentOrText, {
-      message: "Editor\u2019s Picks"
-    }))), /*#__PURE__*/external_React_default().createElement("div", {
-      className: gridClassName
-    }, editorsPicksCards)), cards?.length > 0 && /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, moreRecsHeader && /*#__PURE__*/external_React_default().createElement(DSSubHeader, null, /*#__PURE__*/external_React_default().createElement("span", {
-      className: "section-title"
-    }, /*#__PURE__*/external_React_default().createElement(FluentOrText, {
-      message: moreRecsHeader
-    }))), /*#__PURE__*/external_React_default().createElement("div", {
-      className: gridClassName
-    }, cards)));
-  }
-  renderListFeed(recommendations, selectedFeed) {
-    const recs = recommendations.filter(item => item.feedName === selectedFeed);
-    const isFakespot = selectedFeed === "fakespot";
-    // remove duplicates from category list
-    const categories = [...new Set(recs.map(({
-      category
-    }) => category))];
-    const listFeed = /*#__PURE__*/external_React_default().createElement(ListFeed
-    // only display recs that match selectedFeed for ListFeed
-    , {
-      recs: recs,
-      categories: isFakespot ? categories : [],
-      firstVisibleTimestamp: this.props.firstVisibleTimestamp,
-      type: this.props.type,
-      dispatch: this.props.dispatch
-    });
-    return listFeed;
+    return /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, cards?.length > 0 && /*#__PURE__*/external_React_default().createElement("div", {
+      className: gridClassName,
+      onKeyDown: this.handleCardKeyDown
+    }, cards));
   }
   renderGridClassName() {
-    const prefs = this.props.Prefs.values;
     const {
       hybridLayout,
       hideCardBackground,
@@ -5292,20 +4944,12 @@ class _CardGrid extends (external_React_default()).PureComponent {
       compactGrid,
       hideDescriptions
     } = this.props;
-    const adSizingVariantAEnabled = prefs["newtabAdSize.variant-a"];
-    const adSizingVariantBEnabled = prefs["newtabAdSize.variant-b"];
-    const adSizingVariantEnabled = adSizingVariantAEnabled || adSizingVariantBEnabled;
-    let adSizingVariantClassName = "";
-    if (adSizingVariantEnabled) {
-      // Ad sizing experiment variant, we want to ensure only 1 of these is ever enabled.
-      adSizingVariantClassName = adSizingVariantAEnabled ? `ad-sizing-variant-a` : `ad-sizing-variant-b`;
-    }
     const hideCardBackgroundClass = hideCardBackground ? `ds-card-grid-hide-background` : ``;
     const fourCardLayoutClass = fourCardLayout ? `ds-card-grid-four-card-variant` : ``;
     const hideDescriptionsClassName = !hideDescriptions ? `ds-card-grid-include-descriptions` : ``;
     const compactGridClassName = compactGrid ? `ds-card-grid-compact` : ``;
     const hybridLayoutClassName = hybridLayout ? `ds-card-grid-hybrid-layout` : ``;
-    const gridClassName = `ds-card-grid ${hybridLayoutClassName} ${hideCardBackgroundClass} ${fourCardLayoutClass} ${hideDescriptionsClassName} ${compactGridClassName} ${adSizingVariantClassName}`;
+    const gridClassName = `ds-card-grid ${hybridLayoutClassName} ${hideCardBackgroundClass} ${fourCardLayoutClass} ${hideDescriptionsClassName} ${compactGridClassName}`;
     return gridClassName;
   }
   render() {
@@ -5345,147 +4989,8 @@ const CardGrid = (0,external_ReactRedux_namespaceObject.connect)(state => ({
   App: state.App,
   DiscoveryStream: state.DiscoveryStream
 }))(_CardGrid);
-;// CONCATENATED MODULE: ./content-src/components/DiscoveryStreamComponents/CollectionCardGrid/CollectionCardGrid.jsx
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-
-
-
-
-
-class CollectionCardGrid extends (external_React_default()).PureComponent {
-  constructor(props) {
-    super(props);
-    this.onDismissClick = this.onDismissClick.bind(this);
-    this.state = {
-      dismissed: false
-    };
-  }
-  onDismissClick() {
-    const {
-      data
-    } = this.props;
-    if (this.props.dispatch && data && data.spocs && data.spocs.length) {
-      this.setState({
-        dismissed: true
-      });
-      const pos = 0;
-      const source = this.props.type.toUpperCase();
-      // Grab the available items in the array to dismiss.
-      // This fires a ping for all items available, even if below the fold.
-      const spocsData = data.spocs.map(item => ({
-        url: item.url,
-        guid: item.id,
-        shim: item.shim,
-        flight_id: item.flightId
-      }));
-      const blockUrlOption = LinkMenuOptions.BlockUrls(spocsData, pos, source);
-      const {
-        action,
-        impression,
-        userEvent
-      } = blockUrlOption;
-      this.props.dispatch(action);
-      this.props.dispatch(actionCreators.DiscoveryStreamUserEvent({
-        event: userEvent,
-        source,
-        action_position: pos
-      }));
-      if (impression) {
-        this.props.dispatch(impression);
-      }
-    }
-  }
-  render() {
-    const {
-      data,
-      dismissible,
-      pocket_button_enabled
-    } = this.props;
-    if (this.state.dismissed || !data || !data.spocs || !data.spocs[0] ||
-    // We only display complete collections.
-    data.spocs.length < 3) {
-      return null;
-    }
-    const {
-      spocs,
-      placement,
-      feed
-    } = this.props;
-    // spocs.data is spocs state data, and not an array of spocs.
-    const {
-      title,
-      context,
-      sponsored_by_override,
-      sponsor
-    } = spocs.data[placement.name] || {};
-    // Just in case of bad data, don't display a broken collection.
-    if (!title) {
-      return null;
-    }
-    let sponsoredByMessage = "";
-
-    // If override is not false or an empty string.
-    if (sponsored_by_override || sponsored_by_override === "") {
-      // We specifically want to display nothing if the server returns an empty string.
-      // So the server can turn off the label.
-      // This is to support the use cases where the sponsored context is displayed elsewhere.
-      sponsoredByMessage = sponsored_by_override;
-    } else if (sponsor) {
-      sponsoredByMessage = {
-        id: `newtab-label-sponsored-by`,
-        values: {
-          sponsor
-        }
-      };
-    } else if (context) {
-      sponsoredByMessage = context;
-    }
-
-    // Generally a card grid displays recs with spocs already injected.
-    // Normally it doesn't care which rec is a spoc and which isn't,
-    // it just displays content in a grid.
-    // For collections, we're only displaying a list of spocs.
-    // We don't need to tell the card grid that our list of cards are spocs,
-    // it shouldn't need to care. So we just pass our spocs along as recs.
-    // Think of it as injecting all rec positions with spocs.
-    // Consider maybe making recommendations in CardGrid use a more generic name.
-    const recsData = {
-      recommendations: data.spocs
-    };
-
-    // All cards inside of a collection card grid have a slightly different type.
-    // For the case of interactions to the card grid, we use the type "COLLECTIONCARDGRID".
-    // Example, you dismiss the whole collection, we use the type "COLLECTIONCARDGRID".
-    // For interactions inside the card grid, example, you dismiss a single card in the collection,
-    // we use the type "COLLECTIONCARDGRID_CARD".
-    const type = `${this.props.type}_card`;
-    const collectionGrid = /*#__PURE__*/external_React_default().createElement("div", {
-      className: "ds-collection-card-grid"
-    }, /*#__PURE__*/external_React_default().createElement(CardGrid, {
-      pocket_button_enabled: pocket_button_enabled,
-      title: title,
-      context: sponsoredByMessage,
-      data: recsData,
-      feed: feed,
-      type: type,
-      is_collection: true,
-      dispatch: this.props.dispatch,
-      items: this.props.items
-    }));
-    if (dismissible) {
-      return /*#__PURE__*/external_React_default().createElement(DSDismiss, {
-        onDismissClick: this.onDismissClick,
-        extraClasses: `ds-dismiss-ds-collection`
-      }, collectionGrid);
-    }
-    return collectionGrid;
-  }
-}
 ;// CONCATENATED MODULE: ./content-src/components/A11yLinkButton/A11yLinkButton.jsx
-function A11yLinkButton_extends() { A11yLinkButton_extends = Object.assign ? Object.assign.bind() : function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return A11yLinkButton_extends.apply(this, arguments); }
+function A11yLinkButton_extends() { return A11yLinkButton_extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, A11yLinkButton_extends.apply(null, arguments); }
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -5583,7 +5088,6 @@ ErrorBoundary.defaultProps = {
 
 
 
-
 /**
  * A section that can collapse. As of bug 1710937, it can no longer collapse.
  * See bug 1727365 for follow-up work to simplify this component.
@@ -5648,7 +5152,6 @@ class _CollapsibleSection extends (external_React_default()).PureComponent {
       collapsed,
       title,
       subTitle,
-      mayHaveSponsoredStories,
       mayHaveTopicsSelection,
       sectionsEnabled
     } = this.props;
@@ -5691,10 +5194,7 @@ class _CollapsibleSection extends (external_React_default()).PureComponent {
       className: "section-sub-title"
     }, /*#__PURE__*/external_React_default().createElement(FluentOrText, {
       message: subTitle
-    })), mayHaveSponsoredStories && this.props.spocMessageVariant === "variant-a" && /*#__PURE__*/external_React_default().createElement(SponsoredContentHighlight, {
-      position: "inset-block-start inset-inline-start",
-      dispatch: this.props.dispatch
-    })), mayHaveTopicsSelection && /*#__PURE__*/external_React_default().createElement("div", {
+    }))), mayHaveTopicsSelection && /*#__PURE__*/external_React_default().createElement("div", {
       className: "button-topic-selection"
     }, /*#__PURE__*/external_React_default().createElement("moz-button", {
       "data-l10n-id": topicsHaveBeenPreviouslySet ? "newtab-topic-selection-button-update-interests" : "newtab-topic-selection-button-pick-interests",
@@ -5749,117 +5249,6 @@ class DSMessage extends (external_React_default()).PureComponent {
     }))));
   }
 }
-;// CONCATENATED MODULE: ./content-src/components/ModalOverlay/ModalOverlay.jsx
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-
-function ModalOverlayWrapper({
-  // eslint-disable-next-line no-shadow
-  document = globalThis.document,
-  unstyled,
-  innerClassName,
-  onClose,
-  children,
-  headerId,
-  id
-}) {
-  const modalRef = (0,external_React_namespaceObject.useRef)(null);
-  let className = unstyled ? "" : "modalOverlayInner active";
-  if (innerClassName) {
-    className += ` ${innerClassName}`;
-  }
-
-  // The intended behaviour is to listen for an escape key
-  // but not for a click; see Bug 1582242
-  const onKeyDown = (0,external_React_namespaceObject.useCallback)(event => {
-    if (event.key === "Escape") {
-      onClose(event);
-    }
-  }, [onClose]);
-  (0,external_React_namespaceObject.useEffect)(() => {
-    document.addEventListener("keydown", onKeyDown);
-    document.body.classList.add("modal-open");
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.body.classList.remove("modal-open");
-    };
-  }, [document, onKeyDown]);
-  return /*#__PURE__*/external_React_default().createElement("div", {
-    className: "modalOverlayOuter active",
-    onKeyDown: onKeyDown,
-    role: "presentation"
-  }, /*#__PURE__*/external_React_default().createElement("div", {
-    className: className,
-    "aria-labelledby": headerId,
-    id: id,
-    role: "dialog",
-    ref: modalRef
-  }, children));
-}
-
-;// CONCATENATED MODULE: ./content-src/components/DiscoveryStreamComponents/DSPrivacyModal/DSPrivacyModal.jsx
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-
-
-
-class DSPrivacyModal extends (external_React_default()).PureComponent {
-  constructor(props) {
-    super(props);
-    this.closeModal = this.closeModal.bind(this);
-    this.onLearnLinkClick = this.onLearnLinkClick.bind(this);
-    this.onManageLinkClick = this.onManageLinkClick.bind(this);
-  }
-  onLearnLinkClick() {
-    this.props.dispatch(actionCreators.DiscoveryStreamUserEvent({
-      event: "CLICK_PRIVACY_INFO",
-      source: "DS_PRIVACY_MODAL"
-    }));
-  }
-  onManageLinkClick() {
-    this.props.dispatch(actionCreators.OnlyToMain({
-      type: actionTypes.SETTINGS_OPEN
-    }));
-  }
-  closeModal() {
-    this.props.dispatch({
-      type: `HIDE_PRIVACY_INFO`,
-      data: {}
-    });
-  }
-  render() {
-    return /*#__PURE__*/external_React_default().createElement(ModalOverlayWrapper, {
-      onClose: this.closeModal,
-      innerClassName: "ds-privacy-modal"
-    }, /*#__PURE__*/external_React_default().createElement("div", {
-      className: "privacy-notice"
-    }, /*#__PURE__*/external_React_default().createElement("h3", {
-      "data-l10n-id": "newtab-privacy-modal-header"
-    }), /*#__PURE__*/external_React_default().createElement("p", {
-      "data-l10n-id": "newtab-privacy-modal-paragraph-2"
-    }), /*#__PURE__*/external_React_default().createElement("a", {
-      className: "modal-link modal-link-privacy",
-      "data-l10n-id": "newtab-privacy-modal-link",
-      onClick: this.onLearnLinkClick,
-      href: "https://support.mozilla.org/kb/pocket-recommendations-firefox-new-tab"
-    }), /*#__PURE__*/external_React_default().createElement("button", {
-      className: "modal-link modal-link-manage",
-      "data-l10n-id": "newtab-privacy-modal-button-manage",
-      onClick: this.onManageLinkClick
-    })), /*#__PURE__*/external_React_default().createElement("section", {
-      className: "actions"
-    }, /*#__PURE__*/external_React_default().createElement("button", {
-      className: "done",
-      type: "submit",
-      onClick: this.closeModal,
-      "data-l10n-id": "newtab-privacy-modal-button-done"
-    })));
-  }
-}
 ;// CONCATENATED MODULE: ./content-src/components/DiscoveryStreamComponents/ReportContent/ReportContent.jsx
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -5887,10 +5276,7 @@ const ReportContent = spocs => {
     const {
       card_type,
       corpus_item_id,
-      is_section_followed,
       position,
-      received_rank,
-      recommended_at,
       reporting_url,
       scheduled_corpus_item_id,
       section_position,
@@ -5905,9 +5291,6 @@ const ReportContent = spocs => {
         data: {
           card_type,
           corpus_item_id,
-          is_section_followed,
-          received_rank,
-          recommended_at,
           report_reason: selectedReason,
           scheduled_corpus_item_id,
           section_position,
@@ -5963,6 +5346,19 @@ const ReportContent = spocs => {
   (0,external_React_namespaceObject.useEffect)(() => {
     if (report.visible && modal?.current) {
       modal.current.showModal();
+
+      // Clear any previously selected radio button
+      const radioGroup = radioGroupRef.current;
+      if (radioGroup) {
+        const selectedRadioButton = radioGroup.querySelector("moz-radio[checked]");
+        if (selectedRadioButton) {
+          selectedRadioButton.removeAttribute("checked");
+        }
+      }
+
+      // Clear out the states
+      setValueSelected(false);
+      setSelectedReason(null);
     } else if (!report.visible && modal?.current?.open) {
       modal.current.close();
     }
@@ -6012,7 +5408,8 @@ const ReportContent = spocs => {
     ref: radioGroupRef,
     id: "report-group",
     "data-l10n-id": "newtab-report-ads-why-reporting",
-    className: "report-ads-options"
+    className: "report-ads-options",
+    headingLevel: "3"
   }, /*#__PURE__*/external_React_default().createElement("moz-radio", {
     "data-l10n-id": "newtab-report-ads-reason-not-interested",
     value: "not_interested"
@@ -6027,7 +5424,8 @@ const ReportContent = spocs => {
     ref: radioGroupRef,
     id: "report-group",
     "data-l10n-id": "newtab-report-content-why-reporting-this",
-    className: "report-content-options"
+    className: "report-content-options",
+    headingLevel: "3"
   }, /*#__PURE__*/external_React_default().createElement("moz-radio", {
     "data-l10n-id": "newtab-report-content-wrong-category",
     value: "wrong_category"
@@ -6052,275 +5450,6 @@ const ReportContent = spocs => {
     className: "submit-report-btn"
   }))));
 };
-;// CONCATENATED MODULE: ./content-src/components/DiscoveryStreamComponents/DSSignup/DSSignup.jsx
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-
-
-
-
-
-
-class DSSignup extends (external_React_default()).PureComponent {
-  constructor(props) {
-    super(props);
-    this.state = {
-      active: false,
-      lastItem: false
-    };
-    this.onMenuButtonUpdate = this.onMenuButtonUpdate.bind(this);
-    this.onLinkClick = this.onLinkClick.bind(this);
-    this.onMenuShow = this.onMenuShow.bind(this);
-  }
-  onMenuButtonUpdate(showContextMenu) {
-    if (!showContextMenu) {
-      this.setState({
-        active: false,
-        lastItem: false
-      });
-    }
-  }
-  nextAnimationFrame() {
-    return new Promise(resolve => this.props.windowObj.requestAnimationFrame(resolve));
-  }
-  async onMenuShow() {
-    let {
-      lastItem
-    } = this.state;
-    // Wait for next frame before computing scrollMaxX to allow fluent menu strings to be visible
-    await this.nextAnimationFrame();
-    if (this.props.windowObj.scrollMaxX > 0) {
-      lastItem = true;
-    }
-    this.setState({
-      active: true,
-      lastItem
-    });
-  }
-  onLinkClick() {
-    const {
-      data
-    } = this.props;
-    if (this.props.dispatch && data && data.spocs && data.spocs.length) {
-      const source = this.props.type.toUpperCase();
-      // Grab the first item in the array as we only have 1 spoc position.
-      const [spoc] = data.spocs;
-      this.props.dispatch(actionCreators.DiscoveryStreamUserEvent({
-        event: "CLICK",
-        source,
-        action_position: 0
-      }));
-      this.props.dispatch(actionCreators.ImpressionStats({
-        source,
-        click: 0,
-        tiles: [{
-          id: spoc.id,
-          pos: 0,
-          ...(spoc.shim && spoc.shim.click ? {
-            shim: spoc.shim.click
-          } : {})
-        }]
-      }));
-    }
-  }
-  render() {
-    const {
-      data,
-      dispatch,
-      type
-    } = this.props;
-    if (!data || !data.spocs || !data.spocs[0]) {
-      return null;
-    }
-    // Grab the first item in the array as we only have 1 spoc position.
-    const [spoc] = data.spocs;
-    const {
-      title,
-      url,
-      excerpt,
-      flight_id,
-      id,
-      shim
-    } = spoc;
-    const SIGNUP_CONTEXT_MENU_OPTIONS = ["OpenInNewWindow", "OpenInPrivateWindow", "Separator", "BlockUrl", ...(flight_id ? ["ShowPrivacyInfo"] : [])];
-    const outerClassName = ["ds-signup", this.state.active && "active", this.state.lastItem && "last-item"].filter(v => v).join(" ");
-    return /*#__PURE__*/external_React_default().createElement("div", {
-      className: outerClassName
-    }, /*#__PURE__*/external_React_default().createElement("div", {
-      className: "ds-signup-content"
-    }, /*#__PURE__*/external_React_default().createElement("span", {
-      className: "icon icon-small-spacer icon-mail"
-    }), /*#__PURE__*/external_React_default().createElement("span", null, title, " ", /*#__PURE__*/external_React_default().createElement(SafeAnchor, {
-      className: "ds-chevron-link",
-      dispatch: dispatch,
-      onLinkClick: this.onLinkClick,
-      url: url
-    }, excerpt)), /*#__PURE__*/external_React_default().createElement(ImpressionStats_ImpressionStats, {
-      flightId: flight_id,
-      rows: [{
-        id,
-        pos: 0,
-        shim: shim && shim.impression
-      }],
-      dispatch: dispatch,
-      source: type
-    })), /*#__PURE__*/external_React_default().createElement(ContextMenuButton, {
-      tooltip: "newtab-menu-content-tooltip",
-      tooltipArgs: {
-        title
-      },
-      onUpdate: this.onMenuButtonUpdate
-    }, /*#__PURE__*/external_React_default().createElement(LinkMenu, {
-      dispatch: dispatch,
-      index: 0,
-      source: type.toUpperCase(),
-      onShow: this.onMenuShow,
-      options: SIGNUP_CONTEXT_MENU_OPTIONS,
-      shouldSendImpressionStats: true,
-      userEvent: actionCreators.DiscoveryStreamUserEvent,
-      site: {
-        referrer: "https://getpocket.com/recommendations",
-        title,
-        type,
-        url,
-        guid: id,
-        shim,
-        flight_id
-      }
-    })));
-  }
-}
-DSSignup.defaultProps = {
-  windowObj: window // Added to support unit tests
-};
-;// CONCATENATED MODULE: ./content-src/components/DiscoveryStreamComponents/DSTextPromo/DSTextPromo.jsx
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-
-
-
-
-
-
-
-class DSTextPromo extends (external_React_default()).PureComponent {
-  constructor(props) {
-    super(props);
-    this.onLinkClick = this.onLinkClick.bind(this);
-    this.onDismissClick = this.onDismissClick.bind(this);
-  }
-  onLinkClick() {
-    const {
-      data
-    } = this.props;
-    if (this.props.dispatch && data && data.spocs && data.spocs.length) {
-      const source = this.props.type.toUpperCase();
-      // Grab the first item in the array as we only have 1 spoc position.
-      const [spoc] = data.spocs;
-      this.props.dispatch(actionCreators.DiscoveryStreamUserEvent({
-        event: "CLICK",
-        source,
-        action_position: 0
-      }));
-      this.props.dispatch(actionCreators.ImpressionStats({
-        source,
-        click: 0,
-        tiles: [{
-          id: spoc.id,
-          pos: 0,
-          ...(spoc.shim && spoc.shim.click ? {
-            shim: spoc.shim.click
-          } : {})
-        }]
-      }));
-    }
-  }
-  onDismissClick() {
-    const {
-      data
-    } = this.props;
-    if (this.props.dispatch && data && data.spocs && data.spocs.length) {
-      const index = 0;
-      const source = this.props.type.toUpperCase();
-      // Grab the first item in the array as we only have 1 spoc position.
-      const [spoc] = data.spocs;
-      const spocData = {
-        url: spoc.url,
-        guid: spoc.id,
-        shim: spoc.shim
-      };
-      const blockUrlOption = LinkMenuOptions.BlockUrl(spocData, index, source);
-      const {
-        action,
-        impression,
-        userEvent
-      } = blockUrlOption;
-      this.props.dispatch(action);
-      this.props.dispatch(actionCreators.DiscoveryStreamUserEvent({
-        event: userEvent,
-        source,
-        action_position: index
-      }));
-      if (impression) {
-        this.props.dispatch(impression);
-      }
-    }
-  }
-  render() {
-    const {
-      data
-    } = this.props;
-    if (!data || !data.spocs || !data.spocs[0]) {
-      return null;
-    }
-    // Grab the first item in the array as we only have 1 spoc position.
-    const [spoc] = data.spocs;
-    const {
-      image_src,
-      raw_image_src,
-      alt_text,
-      title,
-      url,
-      context,
-      cta,
-      flight_id,
-      id,
-      shim
-    } = spoc;
-    return /*#__PURE__*/external_React_default().createElement(DSDismiss, {
-      onDismissClick: this.onDismissClick,
-      extraClasses: `ds-dismiss-ds-text-promo`
-    }, /*#__PURE__*/external_React_default().createElement("div", {
-      className: "ds-text-promo"
-    }, /*#__PURE__*/external_React_default().createElement(DSImage, {
-      alt_text: alt_text,
-      source: image_src,
-      rawSource: raw_image_src
-    }), /*#__PURE__*/external_React_default().createElement("div", {
-      className: "text"
-    }, /*#__PURE__*/external_React_default().createElement("h3", null, `${title}\u2003`, /*#__PURE__*/external_React_default().createElement(SafeAnchor, {
-      className: "ds-chevron-link",
-      dispatch: this.props.dispatch,
-      onLinkClick: this.onLinkClick,
-      url: url
-    }, cta)), /*#__PURE__*/external_React_default().createElement("p", {
-      className: "subtitle"
-    }, context)), /*#__PURE__*/external_React_default().createElement(ImpressionStats_ImpressionStats, {
-      flightId: flight_id,
-      rows: [{
-        id,
-        pos: 0,
-        shim: shim && shim.impression
-      }],
-      dispatch: this.props.dispatch,
-      source: this.props.type
-    })));
-  }
-}
 ;// CONCATENATED MODULE: ./content-src/lib/screenshot-utils.mjs
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
@@ -6731,7 +5860,7 @@ _PerfService.prototype = {
    * object to add a mark with the given name to the appropriate performance
    * timeline.
    *
-   * @param  {String} name  the name to give the current mark
+   * @param  {string} name  the name to give the current mark
    * @return {void}
    */
   mark: function mark(str) {
@@ -6742,8 +5871,8 @@ _PerfService.prototype = {
    * Calls the underlying getEntriesByName on the appropriate Window.performance
    * object.
    *
-   * @param  {String} name
-   * @param  {String} type eg "mark"
+   * @param  {string} name
+   * @param  {string} type eg "mark"
    * @return {Array}       Performance* objects
    */
   getEntriesByName: function getEntriesByName(entryName, type) {
@@ -6763,7 +5892,7 @@ _PerfService.prototype = {
    * created dynamically later.  Exactly how/when that shows up needs to be
    * investigated.
    *
-   * @return {Number} A double of milliseconds with a precision of 0.5us.
+   * @return {number} A double of milliseconds with a precision of 0.5us.
    */
   get timeOrigin() {
     return this._perf.timeOrigin;
@@ -6774,7 +5903,7 @@ _PerfService.prototype = {
    * should ([bug 1401406](https://bugzilla.mozilla.org/show_bug.cgi?id=1401406)
    * be comparable across both chrome and content.
    *
-   * @return {Number}
+   * @return {number}
    */
   absNow: function absNow() {
     return this.timeOrigin + this._perf.now();
@@ -6784,9 +5913,9 @@ _PerfService.prototype = {
    * This returns the absolute startTime from the most recent performance.mark()
    * with the given name.
    *
-   * @param  {String} name  the name to lookup the start time for
+   * @param  {string} name  the name to lookup the start time for
    *
-   * @return {Number}       the returned start time, as a DOMHighResTimeStamp
+   * @return {number}       the returned start time, as a DOMHighResTimeStamp
    *
    * @throws {Error}        "No Marks with the name ..." if none are available
    *
@@ -6989,37 +6118,56 @@ class MoreRecommendations extends (external_React_default()).PureComponent {
     return null;
   }
 }
-;// CONCATENATED MODULE: ./content-src/components/PocketLoggedInCta/PocketLoggedInCta.jsx
+;// CONCATENATED MODULE: ./content-src/components/ModalOverlay/ModalOverlay.jsx
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 
-
-class _PocketLoggedInCta extends (external_React_default()).PureComponent {
-  render() {
-    const {
-      pocketCta
-    } = this.props.Pocket;
-    return /*#__PURE__*/external_React_default().createElement("span", {
-      className: "pocket-logged-in-cta"
-    }, /*#__PURE__*/external_React_default().createElement("a", {
-      className: "pocket-cta-button",
-      href: pocketCta.ctaUrl ? pocketCta.ctaUrl : "https://getpocket.com/"
-    }, pocketCta.ctaButton ? pocketCta.ctaButton : /*#__PURE__*/external_React_default().createElement("span", {
-      "data-l10n-id": "newtab-pocket-cta-button"
-    })), /*#__PURE__*/external_React_default().createElement("a", {
-      href: pocketCta.ctaUrl ? pocketCta.ctaUrl : "https://getpocket.com/"
-    }, /*#__PURE__*/external_React_default().createElement("span", {
-      className: "cta-text"
-    }, pocketCta.ctaText ? pocketCta.ctaText : /*#__PURE__*/external_React_default().createElement("span", {
-      "data-l10n-id": "newtab-pocket-cta-text"
-    }))));
+function ModalOverlayWrapper({
+  // eslint-disable-next-line no-shadow
+  document = globalThis.document,
+  unstyled,
+  innerClassName,
+  onClose,
+  children,
+  headerId,
+  id
+}) {
+  const modalRef = (0,external_React_namespaceObject.useRef)(null);
+  let className = unstyled ? "" : "modalOverlayInner active";
+  if (innerClassName) {
+    className += ` ${innerClassName}`;
   }
+
+  // The intended behaviour is to listen for an escape key
+  // but not for a click; see Bug 1582242
+  const onKeyDown = (0,external_React_namespaceObject.useCallback)(event => {
+    if (event.key === "Escape") {
+      onClose(event);
+    }
+  }, [onClose]);
+  (0,external_React_namespaceObject.useEffect)(() => {
+    document.addEventListener("keydown", onKeyDown);
+    document.body.classList.add("modal-open");
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.classList.remove("modal-open");
+    };
+  }, [document, onKeyDown]);
+  return /*#__PURE__*/external_React_default().createElement("div", {
+    className: "modalOverlayOuter active",
+    onKeyDown: onKeyDown,
+    role: "presentation"
+  }, /*#__PURE__*/external_React_default().createElement("div", {
+    className: className,
+    "aria-labelledby": headerId,
+    id: id,
+    role: "dialog",
+    ref: modalRef
+  }, children));
 }
-const PocketLoggedInCta = (0,external_ReactRedux_namespaceObject.connect)(state => ({
-  Pocket: state.Pocket
-}))(_PocketLoggedInCta);
+
 ;// CONCATENATED MODULE: ./content-src/components/TopSites/SearchShortcutsForm.jsx
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
@@ -7253,8 +6401,6 @@ const TOP_SITES_MAX_SITES_PER_ROW = 8;
 
 
 
-const PREF_COLLECTION_DISMISSIBLE = "discoverystream.isCollectionDismissible";
-
 const dedupe = new Dedupe(site => site && site.url);
 
 const INITIAL_STATE = {
@@ -7262,13 +6408,21 @@ const INITIAL_STATE = {
     // Have we received real data from the app yet?
     initialized: false,
     locale: "",
-    isForStartupCache: false,
+    isForStartupCache: {
+      App: false,
+      TopSites: false,
+      DiscoveryStream: false,
+      Weather: false,
+      Wallpaper: false,
+    },
     customizeMenuVisible: false,
   },
   Ads: {
     initialized: false,
     lastUpdated: null,
-    topsites: {},
+    tiles: {},
+    spocs: {},
+    spocPlacements: {},
   },
   TopSites: {
     // Have we received real data from history yet?
@@ -7300,7 +6454,6 @@ const INITIAL_STATE = {
   },
   Sections: [],
   Pocket: {
-    isUserLoggedIn: null,
     pocketCta: {},
     waitingForSpoc: true,
   },
@@ -7309,8 +6462,6 @@ const INITIAL_STATE = {
     // This is a JSON-parsed copy of the discoverystream.config pref value.
     config: { enabled: false },
     layout: [],
-    isPrivacyInfoModalVisible: false,
-    isCollectionDismissible: false,
     topicsLoading: false,
     feeds: {
       data: {
@@ -7327,6 +6478,11 @@ const INITIAL_STATE = {
     spocs: {
       spocs_endpoint: "",
       lastUpdated: null,
+      cacheUpdateTime: null,
+      onDemand: {
+        enabled: false,
+        loaded: false,
+      },
       data: {
         // "spocs": {title: "", context: "", items: [], personalized: false},
         // "placement1": {title: "", context: "", items: [], personalized: false},
@@ -7341,9 +6497,6 @@ const INITIAL_STATE = {
       utmCampaign: undefined,
       utmContent: undefined,
     },
-    recentSavesData: [],
-    isUserLoggedIn: false,
-    recentSavesEnabled: false,
     showTopicSelection: false,
     report: {
       visible: false,
@@ -7354,7 +6507,7 @@ const INITIAL_STATE = {
   // Messages received from ASRouter to render in newtab
   Messages: {
     // messages received from ASRouter are initially visible
-    isHidden: false,
+    isVisible: true,
     // portID for that tab that was sent the message
     portID: "",
     // READONLY Message data received from ASRouter
@@ -7371,6 +6524,13 @@ const INITIAL_STATE = {
   Personalization: {
     lastUpdated: null,
     initialized: false,
+  },
+  InferredPersonalization: {
+    initialized: false,
+    lastUpdated: null,
+    inferredInterests: {},
+    coarseInferredInterests: {},
+    coarsePrivateInferredInterests: {},
   },
   Search: {
     // When search hand-off is enabled, we render a big button that is styled to
@@ -7402,6 +6562,40 @@ const INITIAL_STATE = {
     locationSearchString: "",
     suggestedLocations: [],
   },
+  // Widgets
+  ListsWidget: {
+    // value pointing to last selectled list
+    selected: "taskList",
+    // Default state of an empty task list
+    lists: {
+      taskList: {
+        label: "",
+        tasks: [],
+        completed: [],
+      },
+    },
+  },
+  TimerWidget: {
+    // The timer will have 2 types of states, focus and break.
+    // Focus will the default state
+    timerType: "focus",
+    focus: {
+      // Timer duration set by user; 25 mins by default
+      duration: 25 * 60,
+      // Initial duration - also set by the user; does not update until timer ends or user resets timer
+      initialDuration: 25 * 60,
+      // the Date.now() value when a user starts/resumes a timer
+      startTime: null,
+      // Boolean indicating if timer is currently running
+      isRunning: false,
+    },
+    break: {
+      duration: 5 * 60,
+      initialDuration: 5 * 60,
+      startTime: null,
+      isRunning: false,
+    },
+  },
 };
 
 function App(prevState = INITIAL_STATE.App, action) {
@@ -7411,17 +6605,36 @@ function App(prevState = INITIAL_STATE.App, action) {
         initialized: true,
       });
     case actionTypes.TOP_SITES_UPDATED:
-      // Toggle `isForStartupCache` when receiving the `TOP_SITES_UPDATE` action
+      // Toggle `isForStartupCache.TopSites` when receiving the `TOP_SITES_UPDATE` action
       // so that sponsored tiles can be rendered as usual. See Bug 1826360.
-      return Object.assign({}, prevState, action.data || {}, {
-        isForStartupCache: false,
-      });
+      return {
+        ...prevState,
+        isForStartupCache: { ...prevState.isForStartupCache, TopSites: false },
+      };
     case actionTypes.DISCOVERY_STREAM_SPOCS_UPDATE:
-      // Toggle `isForStartupCache` when receiving the `DISCOVERY_STREAM_SPOCS_UPDATE_STARTUPCACHE` action
+      // Toggle `isForStartupCache.DiscoveryStream` when receiving the `DISCOVERY_STREAM_SPOCS_UPDATE` action
       // so that spoc cards can be rendered as usual.
-      return Object.assign({}, prevState, action.data || {}, {
-        isForStartupCache: false,
-      });
+      return {
+        ...prevState,
+        isForStartupCache: {
+          ...prevState.isForStartupCache,
+          DiscoveryStream: false,
+        },
+      };
+    case actionTypes.WEATHER_UPDATE:
+      // Toggle `isForStartupCache.Weather` when receiving the `WEATHER_UPDATE` action
+      // so that weather can be rendered as usual.
+      return {
+        ...prevState,
+        isForStartupCache: { ...prevState.isForStartupCache, Weather: false },
+      };
+    case actionTypes.WALLPAPERS_CUSTOM_SET:
+      // Toggle `isForStartupCache.Wallpaper` when receiving the `WALLPAPERS_CUSTOM_SET` action
+      // so that custom wallpaper can be rendered as usual.
+      return {
+        ...prevState,
+        isForStartupCache: { ...prevState.isForStartupCache, Wallpaper: false },
+      };
     case actionTypes.SHOW_PERSONALIZE:
       return Object.assign({}, prevState, {
         customizeMenuVisible: true,
@@ -7716,25 +6929,6 @@ function Sections(prevState = INITIAL_STATE.Sections, action) {
           }),
         })
       );
-    case actionTypes.PLACES_SAVED_TO_POCKET:
-      if (!action.data) {
-        return prevState;
-      }
-      return prevState.map(section =>
-        Object.assign({}, section, {
-          rows: section.rows.map(item => {
-            if (item.url === action.data.url) {
-              return Object.assign({}, item, {
-                open_url: action.data.open_url,
-                pocket_id: action.data.pocket_id,
-                title: action.data.title,
-                type: "pocket",
-              });
-            }
-            return item;
-          }),
-        })
-      );
     case actionTypes.PLACES_BOOKMARKS_REMOVED:
       if (!action.data) {
         return prevState;
@@ -7777,15 +6971,6 @@ function Sections(prevState = INITIAL_STATE.Sections, action) {
           rows: section.rows.filter(site => site.url !== action.data.url),
         })
       );
-    case actionTypes.DELETE_FROM_POCKET:
-    case actionTypes.ARCHIVE_FROM_POCKET:
-      return prevState.map(section =>
-        Object.assign({}, section, {
-          rows: section.rows.filter(
-            site => site.pocket_id !== action.data.pocket_id
-          ),
-        })
-      );
     default:
       return prevState;
   }
@@ -7803,7 +6988,7 @@ function Messages(prevState = INITIAL_STATE.Messages, action) {
         portID: action.data.portID || "",
       };
     case actionTypes.MESSAGE_TOGGLE_VISIBILITY:
-      return { ...prevState, isHidden: action.data };
+      return { ...prevState, isVisible: action.data };
     default:
       return prevState;
   }
@@ -7813,8 +6998,6 @@ function Pocket(prevState = INITIAL_STATE.Pocket, action) {
   switch (action.type) {
     case actionTypes.POCKET_WAITING_FOR_SPOC:
       return { ...prevState, waitingForSpoc: action.data };
-    case actionTypes.POCKET_LOGGED_IN:
-      return { ...prevState, isUserLoggedIn: !!action.data };
     case actionTypes.POCKET_CTA:
       return {
         ...prevState,
@@ -7844,6 +7027,28 @@ function Reducers_sys_Personalization(prevState = INITIAL_STATE.Personalization,
       };
     case actionTypes.DISCOVERY_STREAM_PERSONALIZATION_RESET:
       return { ...INITIAL_STATE.Personalization };
+    default:
+      return prevState;
+  }
+}
+
+function InferredPersonalization(
+  prevState = INITIAL_STATE.InferredPersonalization,
+  action
+) {
+  switch (action.type) {
+    case actionTypes.INFERRED_PERSONALIZATION_UPDATE:
+      return {
+        ...prevState,
+        initialized: true,
+        inferredInterests: action.data.inferredInterests,
+        coarseInferredInterests: action.data.coarseInferredInterests,
+        coarsePrivateInferredInterests:
+          action.data.coarsePrivateInferredInterests,
+        lastUpdated: action.data.lastUpdated,
+      };
+    case actionTypes.INFERRED_PERSONALIZATION_RESET:
+      return { ...INITIAL_STATE.InferredPersonalization };
     default:
       return prevState;
   }
@@ -7921,11 +7126,6 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
         ...prevState,
         layout: action.data.layout || [],
       };
-    case actionTypes.DISCOVERY_STREAM_COLLECTION_DISMISSIBLE_TOGGLE:
-      return {
-        ...prevState,
-        isCollectionDismissible: action.data.value,
-      };
     case actionTypes.DISCOVERY_STREAM_TOPICS_LOADING:
       return {
         ...prevState,
@@ -7934,9 +7134,6 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
     case actionTypes.DISCOVERY_STREAM_PREFS_SETUP:
       return {
         ...prevState,
-        recentSavesEnabled: action.data.recentSavesEnabled,
-        pocketButtonEnabled: action.data.pocketButtonEnabled,
-        saveToPocketCard: action.data.saveToPocketCard,
         hideDescriptions: action.data.hideDescriptions,
         compactImages: action.data.compactImages,
         imageGradient: action.data.imageGradient,
@@ -7945,25 +7142,9 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
         descLines: action.data.descLines,
         readTime: action.data.readTime,
       };
-    case actionTypes.DISCOVERY_STREAM_RECENT_SAVES:
-      return {
-        ...prevState,
-        recentSavesData: action.data.recentSaves,
-      };
-    case actionTypes.DISCOVERY_STREAM_POCKET_STATE_SET:
-      return {
-        ...prevState,
-        isUserLoggedIn: action.data.isUserLoggedIn,
-      };
-    case actionTypes.HIDE_PRIVACY_INFO:
-      return {
-        ...prevState,
-        isPrivacyInfoModalVisible: false,
-      };
     case actionTypes.SHOW_PRIVACY_INFO:
       return {
         ...prevState,
-        isPrivacyInfoModalVisible: true,
       };
     case actionTypes.DISCOVERY_STREAM_LAYOUT_RESET:
       return { ...INITIAL_STATE.DiscoveryStream, config: prevState.config };
@@ -8032,13 +7213,50 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
       };
     case actionTypes.DISCOVERY_STREAM_SPOCS_UPDATE:
       if (action.data) {
+        // If spocs have been loaded on this tab, we can ignore future updates.
+        // This should never be true on the main store, only content pages.
+        // We check agasint onDemand just to be safe. It generally shouldn't be needed.
+        if (prevState.spocs?.onDemand?.loaded) {
+          return prevState;
+        }
         return {
           ...prevState,
           spocs: {
             ...prevState.spocs,
             lastUpdated: action.data.lastUpdated,
             data: action.data.spocs,
+            cacheUpdateTime: action.data.spocsCacheUpdateTime,
+            onDemand: {
+              enabled: action.data.spocsOnDemand,
+              loaded: false,
+            },
             loaded: true,
+          },
+        };
+      }
+      return prevState;
+    case actionTypes.DISCOVERY_STREAM_SPOCS_ONDEMAND_LOAD:
+      return {
+        ...prevState,
+        spocs: {
+          ...prevState.spocs,
+          onDemand: {
+            ...prevState.spocs.onDemand,
+            loaded: true,
+          },
+        },
+      };
+    case actionTypes.DISCOVERY_STREAM_SPOCS_ONDEMAND_RESET:
+      if (action.data) {
+        return {
+          ...prevState,
+          spocs: {
+            ...prevState.spocs,
+            cacheUpdateTime: action.data.spocsCacheUpdateTime,
+            onDemand: {
+              ...prevState.spocs.onDemand,
+              enabled: action.data.spocsOnDemand,
+            },
           },
         };
       }
@@ -8056,29 +7274,6 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
         ? prevState
         : nextState(items =>
             items.filter(item => item.url !== action.data.url)
-          );
-
-    case actionTypes.PLACES_SAVED_TO_POCKET: {
-      const addPocketInfo = item => {
-        if (item.url === action.data.url) {
-          return Object.assign({}, item, {
-            open_url: action.data.open_url,
-            pocket_id: action.data.pocket_id,
-            context_type: "pocket",
-          });
-        }
-        return item;
-      };
-      return isNotReady()
-        ? prevState
-        : nextState(items => items.map(addPocketInfo));
-    }
-    case actionTypes.DELETE_FROM_POCKET:
-    case actionTypes.ARCHIVE_FROM_POCKET:
-      return isNotReady()
-        ? prevState
-        : nextState(items =>
-            items.filter(item => item.pocket_id !== action.data.pocket_id)
           );
 
     case actionTypes.PLACES_BOOKMARK_ADDED: {
@@ -8116,14 +7311,6 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
         ? prevState
         : nextState(items => items.map(removeBookmarkInfo));
     }
-    case actionTypes.PREF_CHANGED:
-      if (action.data.name === PREF_COLLECTION_DISMISSIBLE) {
-        return {
-          ...prevState,
-          isCollectionDismissible: action.data.value,
-        };
-      }
-      return prevState;
     case actionTypes.TOPIC_SELECTION_SPOTLIGHT_OPEN:
       return {
         ...prevState,
@@ -8160,9 +7347,6 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
           ...prevState.report,
           card_type: action.data?.card_type,
           corpus_item_id: action.data?.corpus_item_id,
-          is_section_followed: action.data?.is_section_followed,
-          received_rank: action.data?.received_rank,
-          recommended_at: action.data?.recommended_at,
           scheduled_corpus_item_id: action.data?.scheduled_corpus_item_id,
           section_position: action.data?.section_position,
           section: action.data?.section,
@@ -8281,11 +7465,106 @@ function Ads(prevState = INITIAL_STATE.Ads, action) {
         ...prevState,
         initialized: true,
       };
-    case actionTypes.ADS_UPDATE_DATA:
+    case actionTypes.ADS_UPDATE_TILES:
       return {
         ...prevState,
-        topsites: action.data,
+        tiles: action.data.tiles,
       };
+    case actionTypes.ADS_UPDATE_SPOCS:
+      return {
+        ...prevState,
+        spocs: action.data.spocs,
+        spocPlacements: action.data.spocPlacements,
+      };
+    case actionTypes.ADS_RESET:
+      return { ...INITIAL_STATE.Ads };
+    default:
+      return prevState;
+  }
+}
+
+function TimerWidget(prevState = INITIAL_STATE.TimerWidget, action) {
+  // fallback to current timerType in state if not provided in action
+  const timerType = action.data?.timerType || prevState.timerType;
+  switch (action.type) {
+    case actionTypes.WIDGETS_TIMER_SET:
+      return {
+        ...prevState,
+        ...action.data,
+      };
+    case actionTypes.WIDGETS_TIMER_SET_TYPE:
+      return {
+        ...prevState,
+        timerType: action.data.timerType,
+      };
+    case actionTypes.WIDGETS_TIMER_SET_DURATION:
+      return {
+        ...prevState,
+        [timerType]: {
+          // setting a dynamic key assignment to let us dynamically update timer type's state based on what is set
+          duration: action.data.duration,
+          initialDuration: action.data.duration,
+          startTime: null,
+          isRunning: false,
+        },
+      };
+    case actionTypes.WIDGETS_TIMER_PLAY:
+      return {
+        ...prevState,
+        [timerType]: {
+          ...prevState[timerType],
+          startTime: Math.floor(Date.now() / 1000), // reflected in seconds
+          isRunning: true,
+        },
+      };
+    case actionTypes.WIDGETS_TIMER_PAUSE:
+      if (prevState[timerType]?.isRunning) {
+        return {
+          ...prevState,
+          [timerType]: {
+            ...prevState[timerType],
+            duration: action.data.duration,
+            // setting startTime to null on pause because we need to check the exact time the user presses play,
+            // whether it's when the user starts or resumes the timer. This helps get accurate results
+            startTime: null,
+            isRunning: false,
+          },
+        };
+      }
+      return prevState;
+    case actionTypes.WIDGETS_TIMER_RESET:
+      return {
+        ...prevState,
+        [timerType]: {
+          ...prevState[timerType],
+          duration: action.data.duration,
+          initialDuration: action.data.duration,
+          startTime: null,
+          isRunning: false,
+        },
+      };
+    case actionTypes.WIDGETS_TIMER_END:
+      return {
+        ...prevState,
+        [timerType]: {
+          ...prevState[timerType],
+          duration: action.data.duration,
+          initialDuration: action.data.duration,
+          startTime: null,
+          isRunning: false,
+        },
+      };
+    default:
+      return prevState;
+  }
+}
+
+function ListsWidget(prevState = INITIAL_STATE.ListsWidget, action) {
+  switch (action.type) {
+    case actionTypes.WIDGETS_LISTS_SET:
+      return { ...prevState, lists: action.data };
+    case actionTypes.WIDGETS_LISTS_SET_SELECTED:
+      return { ...prevState, selected: action.data };
     default:
       return prevState;
   }
@@ -8302,8 +7581,11 @@ const reducers = {
   Notifications,
   Pocket,
   Personalization: Reducers_sys_Personalization,
+  InferredPersonalization,
   DiscoveryStream,
   Search,
+  TimerWidget,
+  ListsWidget,
   Wallpapers,
   Weather,
 };
@@ -8529,11 +7811,287 @@ TopSiteImpressionWrapper.defaultProps = {
   actionType: null,
   tile: null
 };
-;// CONCATENATED MODULE: ./content-src/components/TopSites/TopSite.jsx
-function TopSite_extends() { TopSite_extends = Object.assign ? Object.assign.bind() : function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return TopSite_extends.apply(this, arguments); }
+;// CONCATENATED MODULE: ./content-src/components/MessageWrapper/MessageWrapper.jsx
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+
+
+
+
+
+// Note: MessageWrapper emits events via submitGleanPingForPing() in the OMC messaging-system.
+// If a feature is triggered outside of this flow (e.g., the Mobile Download QR Promo),
+// it should emit New Tab-specific Glean events independently.
+
+function MessageWrapper({
+  children,
+  dispatch,
+  hiddenOverride,
+  onDismiss
+}) {
+  const message = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.Messages);
+  const [isIntersecting, setIsIntersecting] = (0,external_React_namespaceObject.useState)(false);
+  const [tabIsVisible, setTabIsVisible] = (0,external_React_namespaceObject.useState)(() => typeof document !== "undefined" && document.visibilityState === "visible");
+  const [hasRun, setHasRun] = (0,external_React_namespaceObject.useState)();
+  const handleIntersection = (0,external_React_namespaceObject.useCallback)(() => {
+    setIsIntersecting(true);
+    // only send impression if messageId is defined and tab is visible
+    if (tabIsVisible && message.messageData.id && !hasRun) {
+      setHasRun(true);
+      dispatch(actionCreators.AlsoToMain({
+        type: actionTypes.MESSAGE_IMPRESSION,
+        data: message.messageData
+      }));
+    }
+  }, [dispatch, message, tabIsVisible, hasRun]);
+  (0,external_React_namespaceObject.useEffect)(() => {
+    // we dont want to dispatch this action unless the current tab is open and visible
+    if (message.isVisible && tabIsVisible) {
+      dispatch(actionCreators.AlsoToMain({
+        type: actionTypes.MESSAGE_NOTIFY_VISIBILITY,
+        data: true
+      }));
+    }
+  }, [message, dispatch, tabIsVisible]);
+  (0,external_React_namespaceObject.useEffect)(() => {
+    const handleVisibilityChange = () => {
+      setTabIsVisible(document.visibilityState === "visible");
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
+  const ref = useIntersectionObserver(handleIntersection);
+  const handleClose = (0,external_React_namespaceObject.useCallback)(() => {
+    const action = {
+      type: actionTypes.MESSAGE_TOGGLE_VISIBILITY,
+      data: false //isVisible
+    };
+    if (message.portID) {
+      dispatch(actionCreators.OnlyToOneContent(action, message.portID));
+    } else {
+      dispatch(actionCreators.AlsoToMain(action));
+    }
+    dispatch(actionCreators.AlsoToMain({
+      type: actionTypes.MESSAGE_NOTIFY_VISIBILITY,
+      data: false
+    }));
+    onDismiss?.();
+  }, [dispatch, message, onDismiss]);
+  function handleDismiss() {
+    const {
+      id
+    } = message.messageData;
+    if (id) {
+      dispatch(actionCreators.OnlyToMain({
+        type: actionTypes.MESSAGE_DISMISS,
+        data: {
+          message: message.messageData
+        }
+      }));
+    }
+    handleClose();
+  }
+  function handleBlock() {
+    const {
+      id
+    } = message.messageData;
+    if (id) {
+      dispatch(actionCreators.OnlyToMain({
+        type: actionTypes.MESSAGE_BLOCK,
+        data: id
+      }));
+    }
+  }
+  function handleClick(elementId) {
+    const {
+      id
+    } = message.messageData;
+    if (id) {
+      dispatch(actionCreators.OnlyToMain({
+        type: actionTypes.MESSAGE_CLICK,
+        data: {
+          message: message.messageData,
+          source: elementId || ""
+        }
+      }));
+    }
+  }
+  if (!message || !hiddenOverride && !message.isVisible) {
+    return null;
+  }
+
+  // only display the message if `isVisible` is true
+  return /*#__PURE__*/external_React_default().createElement("div", {
+    ref: el => {
+      ref.current = [el];
+    },
+    className: "message-wrapper"
+  }, /*#__PURE__*/external_React_default().cloneElement(children, {
+    isIntersecting,
+    handleDismiss,
+    handleClick,
+    handleBlock,
+    handleClose
+  }));
+}
+
+;// CONCATENATED MODULE: ./content-src/components/DiscoveryStreamComponents/FeatureHighlight/FeatureHighlight.jsx
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+
+
+function FeatureHighlight({
+  message,
+  icon,
+  toggle,
+  arrowPosition = "",
+  position = "top-left",
+  verticalPosition = "",
+  title,
+  ariaLabel,
+  feature = "FEATURE_HIGHLIGHT_DEFAULT",
+  dispatch = () => {},
+  windowObj = __webpack_require__.g,
+  openedOverride = false,
+  showButtonIcon = true,
+  dismissCallback = () => {},
+  outsideClickCallback = () => {},
+  modalClassName = ""
+}) {
+  const [opened, setOpened] = (0,external_React_namespaceObject.useState)(openedOverride);
+  const ref = (0,external_React_namespaceObject.useRef)(null);
+  (0,external_React_namespaceObject.useEffect)(() => {
+    const handleOutsideClick = e => {
+      if (!ref?.current?.contains(e.target)) {
+        setOpened(false);
+        outsideClickCallback();
+      }
+    };
+    const handleKeyDown = e => {
+      if (e.key === "Escape") {
+        outsideClickCallback();
+      }
+    };
+    windowObj.document.addEventListener("click", handleOutsideClick);
+    windowObj.document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      windowObj.document.removeEventListener("click", handleOutsideClick);
+      windowObj.document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [windowObj, outsideClickCallback]);
+  const onToggleClick = (0,external_React_namespaceObject.useCallback)(() => {
+    if (!opened) {
+      dispatch(actionCreators.DiscoveryStreamUserEvent({
+        event: "CLICK",
+        source: "FEATURE_HIGHLIGHT",
+        value: {
+          feature
+        }
+      }));
+    }
+    setOpened(!opened);
+  }, [dispatch, feature, opened]);
+  const onDismissClick = (0,external_React_namespaceObject.useCallback)(() => {
+    setOpened(false);
+    dismissCallback();
+  }, [dismissCallback]);
+  const hideButtonClass = showButtonIcon ? `` : `isHidden`;
+  const openedClassname = opened ? `opened` : `closed`;
+  return /*#__PURE__*/external_React_default().createElement("div", {
+    ref: ref,
+    className: `feature-highlight ${verticalPosition}`
+  }, /*#__PURE__*/external_React_default().createElement("button", {
+    title: title,
+    "aria-haspopup": "true",
+    "aria-label": ariaLabel,
+    className: `toggle-button ${hideButtonClass}`,
+    onClick: onToggleClick
+  }, toggle), /*#__PURE__*/external_React_default().createElement("div", {
+    className: `feature-highlight-modal ${position} ${arrowPosition} ${modalClassName} ${openedClassname}`
+  }, /*#__PURE__*/external_React_default().createElement("div", {
+    className: "message-icon"
+  }, icon), /*#__PURE__*/external_React_default().createElement("p", {
+    className: "content-wrapper"
+  }, message), /*#__PURE__*/external_React_default().createElement("moz-button", {
+    type: "icon ghost",
+    size: "small",
+    "data-l10n-id": "feature-highlight-dismiss-button",
+    iconsrc: "chrome://global/skin/icons/close.svg",
+    onClick: onDismissClick,
+    onKeyDown: onDismissClick
+  })));
+}
+;// CONCATENATED MODULE: ./content-src/components/DiscoveryStreamComponents/FeatureHighlight/ShortcutFeatureHighlight.jsx
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+
+
+function ShortcutFeatureHighlight({
+  dispatch,
+  feature,
+  handleBlock,
+  handleDismiss,
+  messageData,
+  position
+}) {
+  const onDismiss = (0,external_React_namespaceObject.useCallback)(() => {
+    handleDismiss();
+    handleBlock();
+  }, [handleDismiss, handleBlock]);
+  return /*#__PURE__*/external_React_default().createElement("div", {
+    className: `shortcut-feature-highlight ${messageData.content?.darkModeDismiss ? "is-inverted-dark-dismiss-button" : ""}`
+  }, /*#__PURE__*/external_React_default().createElement(FeatureHighlight, {
+    position: position,
+    feature: feature,
+    dispatch: dispatch,
+    message: /*#__PURE__*/external_React_default().createElement("div", {
+      className: "shortcut-feature-highlight-content"
+    }, /*#__PURE__*/external_React_default().createElement("picture", {
+      className: "follow-section-button-highlight-image"
+    }, /*#__PURE__*/external_React_default().createElement("source", {
+      srcSet: messageData.content?.darkModeImageURL || "chrome://newtab/content/data/content/assets/highlights/omc-newtab-shortcuts.svg",
+      media: "(prefers-color-scheme: dark)"
+    }), /*#__PURE__*/external_React_default().createElement("source", {
+      srcSet: messageData.content?.imageURL || "chrome://newtab/content/data/content/assets/highlights/omc-newtab-shortcuts.svg",
+      media: "(prefers-color-scheme: light)"
+    }), /*#__PURE__*/external_React_default().createElement("img", {
+      width: "320",
+      height: "195",
+      alt: ""
+    })), /*#__PURE__*/external_React_default().createElement("div", {
+      className: "shortcut-feature-highlight-copy"
+    }, messageData.content?.cardTitle ? /*#__PURE__*/external_React_default().createElement("p", {
+      className: "title"
+    }, messageData.content.cardTitle) : /*#__PURE__*/external_React_default().createElement("p", {
+      className: "title",
+      "data-l10n-id": "newtab-shortcuts-highlight-title"
+    }), messageData.content?.cardMessage ? /*#__PURE__*/external_React_default().createElement("p", {
+      className: "subtitle"
+    }, messageData.content.cardMessage) : /*#__PURE__*/external_React_default().createElement("p", {
+      className: "subtitle",
+      "data-l10n-id": "newtab-shortcuts-highlight-subtitle"
+    }))),
+    openedOverride: true,
+    showButtonIcon: false,
+    dismissCallback: onDismiss,
+    outsideClickCallback: handleDismiss
+  }));
+}
+;// CONCATENATED MODULE: ./content-src/components/TopSites/TopSite.jsx
+function TopSite_extends() { return TopSite_extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, TopSite_extends.apply(null, arguments); }
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+
 
 
 
@@ -8564,6 +8122,7 @@ class TopSiteLink extends (external_React_default()).PureComponent {
     };
     this.onDragEvent = this.onDragEvent.bind(this);
     this.onKeyPress = this.onKeyPress.bind(this);
+    this.shouldShowOMCHighlight = this.shouldShowOMCHighlight.bind(this);
   }
 
   /*
@@ -8756,6 +8315,13 @@ class TopSiteLink extends (external_React_default()).PureComponent {
       selectedColor
     };
   }
+  shouldShowOMCHighlight(componentId) {
+    const messageData = this.props.Messages?.messageData;
+    if (!messageData || Object.keys(messageData).length === 0) {
+      return false;
+    }
+    return messageData?.content?.messageType === componentId;
+  }
   render() {
     const {
       children,
@@ -8765,7 +8331,7 @@ class TopSiteLink extends (external_React_default()).PureComponent {
       onClick,
       title,
       isAddButton,
-      shortcutsRefresh
+      visibleTopSites
     } = this.props;
     const topSiteOuterClassName = `top-site-outer${className ? ` ${className}` : ""}${link.isDragged ? " dragged" : ""}${link.searchTopSite ? " search-shortcut" : ""}`;
     const [letterFallback] = title;
@@ -8776,8 +8342,17 @@ class TopSiteLink extends (external_React_default()).PureComponent {
       imageClassName,
       selectedColor
     } = this.calculateStyle();
-    let addButtonl10n = {
+    const addButtonLabell10n = {
       "data-l10n-id": "newtab-topsites-add-shortcut-label"
+    };
+    const addButtonTitlel10n = {
+      "data-l10n-id": "newtab-topsites-add-shortcut-title"
+    };
+    const addPinnedTitlel10n = {
+      "data-l10n-id": "topsite-label-pinned",
+      "data-l10n-args": JSON.stringify({
+        title
+      })
     };
     let draggableProps = {};
     if (isDraggable) {
@@ -8811,7 +8386,10 @@ class TopSiteLink extends (external_React_default()).PureComponent {
           tile_id: link.sponsored_tile_id || -1,
           reporting_url: link.sponsored_impression_url,
           advertiser: title.toLocaleLowerCase(),
-          source: NEWTAB_SOURCE
+          source: NEWTAB_SOURCE,
+          visible_topsites: visibleTopSites,
+          frecency_boosted: link.type === "frecency-boost",
+          attribution: link.attribution
         }
         // For testing.
         ,
@@ -8825,7 +8403,12 @@ class TopSiteLink extends (external_React_default()).PureComponent {
         actionType: actionTypes.TOP_SITES_ORGANIC_IMPRESSION_STATS,
         tile: {
           position: this.props.index,
-          source: NEWTAB_SOURCE
+          source: NEWTAB_SOURCE,
+          isPinned: this.props.link.isPinned,
+          guid: this.props.link.guid,
+          visible_topsites: visibleTopSites,
+          smartScores: this.props.link.scores,
+          smartWeights: this.props.link.weights
         }
         // For testing.
         ,
@@ -8843,7 +8426,7 @@ class TopSiteLink extends (external_React_default()).PureComponent {
       ref: this.props.setRef
     }, draggableProps), /*#__PURE__*/external_React_default().createElement("div", {
       className: "top-site-inner"
-    }, /*#__PURE__*/external_React_default().createElement("a", {
+    }, /*#__PURE__*/external_React_default().createElement("a", TopSite_extends({
       className: "top-site-button",
       href: link.searchTopSite ? undefined : link.url,
       tabIndex: this.props.tabIndex,
@@ -8851,9 +8434,21 @@ class TopSiteLink extends (external_React_default()).PureComponent {
       onClick: onClick,
       draggable: true,
       "data-is-sponsored-link": !!link.sponsored_tile_id,
-      title: title,
-      onFocus: this.props.onFocus
-    }, /*#__PURE__*/external_React_default().createElement("div", {
+      onFocus: this.props.onFocus,
+      "aria-label": link.isPinned ? undefined : title
+    }, isAddButton && {
+      ...addButtonTitlel10n
+    }, !isAddButton && {
+      title
+    }, link.isPinned && {
+      ...addPinnedTitlel10n
+    }, {
+      "data-l10n-args": JSON.stringify({
+        title
+      })
+    }), link.isPinned && /*#__PURE__*/external_React_default().createElement("div", {
+      className: "icon icon-pin-small"
+    }), /*#__PURE__*/external_React_default().createElement("div", {
       className: "tile",
       "aria-hidden": true
     }, /*#__PURE__*/external_React_default().createElement("div", {
@@ -8869,25 +8464,27 @@ class TopSiteLink extends (external_React_default()).PureComponent {
       className: "top-site-icon default-icon",
       "data-fallback": smallFaviconStyle ? "" : letterFallback,
       style: smallFaviconStyle
-    })), shortcutsRefresh && link.isPinned && /*#__PURE__*/external_React_default().createElement("div", {
-      className: "icon icon-pin-small"
-    }), !shortcutsRefresh && link.searchTopSite && /*#__PURE__*/external_React_default().createElement("div", {
-      className: "top-site-icon search-topsite"
-    })), /*#__PURE__*/external_React_default().createElement("div", {
+    }))), /*#__PURE__*/external_React_default().createElement("div", {
       className: `title${link.isPinned ? " has-icon pinned" : ""}${link.type === SPOC_TYPE || link.show_sponsored_label ? " sponsored" : ""}`
     }, /*#__PURE__*/external_React_default().createElement("span", TopSite_extends({
       className: "title-label",
       dir: "auto"
     }, isAddButton && {
-      ...addButtonl10n
-    }), !shortcutsRefresh && link.isPinned && /*#__PURE__*/external_React_default().createElement("div", {
-      className: "icon icon-pin-small"
-    }), shortcutsRefresh && link.searchTopSite && /*#__PURE__*/external_React_default().createElement("div", {
+      ...addButtonLabell10n
+    }), link.searchTopSite && /*#__PURE__*/external_React_default().createElement("div", {
       className: "top-site-icon search-topsite"
     }), title || /*#__PURE__*/external_React_default().createElement("br", null)), /*#__PURE__*/external_React_default().createElement("span", {
       className: "sponsored-label",
       "data-l10n-id": "newtab-topsite-sponsored"
-    }))), children, impressionStats));
+    }))), isAddButton && this.shouldShowOMCHighlight("ShortcutHighlight") && /*#__PURE__*/external_React_default().createElement(MessageWrapper, {
+      dispatch: this.props.dispatch,
+      onClick: e => e.stopPropagation()
+    }, /*#__PURE__*/external_React_default().createElement(ShortcutFeatureHighlight, {
+      dispatch: this.props.dispatch,
+      feature: "FEATURE_SHORTCUT_HIGHLIGHT",
+      position: "inset-block-end inset-inline-start",
+      messageData: this.props.Messages?.messageData
+    })), children, impressionStats));
   }
 }
 TopSiteLink.defaultProps = {
@@ -8958,7 +8555,8 @@ class TopSite extends (external_React_default()).PureComponent {
             ctrlKey,
             metaKey,
             shiftKey
-          }
+          },
+          is_sponsored: !!this.props.link.sponsored_tile_id
         })
       }));
       if (this.props.link.type === SPOC_TYPE) {
@@ -8983,7 +8581,8 @@ class TopSite extends (external_React_default()).PureComponent {
           value: {
             card_type: "spoc",
             tile_id: this.props.link.id,
-            shim: this.props.link.shim && this.props.link.shim.click
+            shim: this.props.link.shim && this.props.link.shim.click,
+            attribution: this.props.link.attribution
           }
         }));
 
@@ -8996,7 +8595,8 @@ class TopSite extends (external_React_default()).PureComponent {
             position: this.props.link.pos,
             tile_id: this.props.link.id,
             advertiser: title.toLocaleLowerCase(),
-            source: NEWTAB_SOURCE
+            source: NEWTAB_SOURCE,
+            attribution: this.props.link.attribution
           }
         }));
       } else if (isSponsored(this.props.link)) {
@@ -9010,7 +8610,10 @@ class TopSite extends (external_React_default()).PureComponent {
             tile_id: this.props.link.sponsored_tile_id || -1,
             reporting_url: this.props.link.sponsored_click_url,
             advertiser: title.toLocaleLowerCase(),
-            source: NEWTAB_SOURCE
+            source: NEWTAB_SOURCE,
+            visible_topsites: this.props.visibleTopSites,
+            frecency_boosted: this.props.link.type === "frecency-boost",
+            attribution: this.props.link.attribution
           }
         }));
       } else {
@@ -9020,7 +8623,12 @@ class TopSite extends (external_React_default()).PureComponent {
           data: {
             type: "click",
             position: this.props.index,
-            source: NEWTAB_SOURCE
+            source: NEWTAB_SOURCE,
+            isPinned: this.props.link.isPinned,
+            guid: this.props.link.guid,
+            visible_topsites: this.props.visibleTopSites,
+            smartScores: this.props.link.scores,
+            smartWeights: this.props.link.weights
           }
         }));
       }
@@ -9100,7 +8708,7 @@ TopSite.defaultProps = {
   link: {},
   onActivate() {}
 };
-class TopSitePlaceholder extends (external_React_default()).PureComponent {
+class TopSiteAddButton extends (external_React_default()).PureComponent {
   constructor(props) {
     super(props);
     this.onEditButtonClick = this.onEditButtonClick.bind(this);
@@ -9114,20 +8722,21 @@ class TopSitePlaceholder extends (external_React_default()).PureComponent {
     });
   }
   render() {
-    let addButtonProps = {};
-    if (this.props.isAddButton) {
-      addButtonProps = {
-        title: "newtab-topsites-add-shortcut-label",
-        onClick: this.onEditButtonClick
-      };
-    }
-    return /*#__PURE__*/external_React_default().createElement(TopSiteLink, TopSite_extends({}, this.props, this.props.isAddButton ? {
-      ...addButtonProps
-    } : {}, {
-      className: `placeholder ${this.props.className || ""} ${this.props.isAddButton ? "add-button" : ""}`,
+    return /*#__PURE__*/external_React_default().createElement(TopSiteLink, TopSite_extends({}, this.props, {
+      isAddButton: true,
+      className: `add-button ${this.props.className || ""}`,
+      onClick: this.onEditButtonClick,
       setPref: this.props.setPref,
       isDraggable: false,
       tabIndex: this.props.tabIndex
+    }));
+  }
+}
+class TopSitePlaceholder extends (external_React_default()).PureComponent {
+  render() {
+    return /*#__PURE__*/external_React_default().createElement(TopSiteLink, TopSite_extends({}, this.props, {
+      className: `placeholder ${this.props.className || ""}`,
+      isDraggable: false
     }));
   }
 }
@@ -9296,17 +8905,16 @@ class _TopSiteList extends (external_React_default()).PureComponent {
     if (this.state.activeIndex || this.state.activeIndex === 0) {
       return;
     }
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-      // prevent the page from scrolling up/down while navigating.
-      e.preventDefault();
-    }
-    if (this.focusedRef?.nextSibling?.querySelector("a") && e.key === "ArrowDown") {
-      this.focusedRef.nextSibling.querySelector("a").tabIndex = 0;
-      this.focusedRef.nextSibling.querySelector("a").focus();
-    }
-    if (this.focusedRef?.previousSibling?.querySelector("a") && e.key === "ArrowUp") {
-      this.focusedRef.previousSibling.querySelector("a").tabIndex = 0;
-      this.focusedRef.previousSibling.querySelector("a").focus();
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      // Arrow direction should match visual navigation direction in RTL
+      const isRTL = document.dir === "rtl";
+      const navigateToPrevious = isRTL ? e.key === "ArrowRight" : e.key === "ArrowLeft";
+      const targetTopSite = navigateToPrevious ? this.focusedRef?.previousSibling : this.focusedRef?.nextSibling;
+      const targetAnchor = targetTopSite?.querySelector("a");
+      if (targetAnchor) {
+        targetAnchor.tabIndex = 0;
+        targetAnchor.focus();
+      }
     }
   }
   onWrapperFocus() {
@@ -9324,8 +8932,6 @@ class _TopSiteList extends (external_React_default()).PureComponent {
     const {
       props
     } = this;
-    const prefs = props.Prefs.values;
-    const shortcutsRefresh = prefs["newtabShortcuts.refresh"];
     const topSites = this.state.topSitesPreview || this._getTopSites();
     const topSitesUI = [];
     const commonProps = {
@@ -9355,19 +8961,22 @@ class _TopSiteList extends (external_React_default()).PureComponent {
       let topSiteLink;
       // Use a placeholder if the link is empty or it's rendering a sponsored
       // tile for the about:home startup cache.
-      if (!link || props.App.isForStartupCache && isSponsored(link) || topSites[i]?.isAddButton) {
+      if (!link || props.App.isForStartupCache.TopSites && isSponsored(link)) {
         if (link) {
-          topSiteLink = /*#__PURE__*/external_React_default().createElement(TopSitePlaceholder, TopSite_extends({}, slotProps, commonProps, {
-            isAddButton: topSites[i] && topSites[i].isAddButton,
-            setRef: i === this.state.focusedIndex ? el => {
-              this.focusedRef = el;
-            } : () => {},
-            tabIndex: i === this.state.focusedIndex ? 0 : -1,
-            onFocus: () => {
-              this.onTopsiteFocus(i);
-            }
-          }));
+          topSiteLink = /*#__PURE__*/external_React_default().createElement(TopSitePlaceholder, TopSite_extends({}, slotProps, commonProps));
         }
+      } else if (topSites[i]?.isAddButton) {
+        topSiteLink = /*#__PURE__*/external_React_default().createElement(TopSiteAddButton, TopSite_extends({}, slotProps, commonProps, {
+          setRef: i === this.state.focusedIndex ? el => {
+            this.focusedRef = el;
+          } : () => {},
+          tabIndex: i === this.state.focusedIndex ? 0 : -1,
+          onFocus: () => {
+            this.onTopsiteFocus(i);
+          },
+          Messages: this.props.Messages,
+          visibleTopSites: this.props.visibleTopSites
+        }));
       } else {
         topSiteLink = /*#__PURE__*/external_React_default().createElement(TopSite, TopSite_extends({
           link: link,
@@ -9375,14 +8984,14 @@ class _TopSiteList extends (external_React_default()).PureComponent {
           onActivate: this.onActivate
         }, slotProps, commonProps, {
           colors: props.colors,
-          shortcutsRefresh: shortcutsRefresh,
           setRef: i === this.state.focusedIndex ? el => {
             this.focusedRef = el;
           } : () => {},
           tabIndex: i === this.state.focusedIndex ? 0 : -1,
           onFocus: () => {
             this.onTopsiteFocus(i);
-          }
+          },
+          visibleTopSites: this.props.visibleTopSites
         }));
       }
       topSitesUI.push(topSiteLink);
@@ -9403,6 +9012,7 @@ class _TopSiteList extends (external_React_default()).PureComponent {
 }
 const TopSiteList = (0,external_ReactRedux_namespaceObject.connect)(state => ({
   App: state.App,
+  Messages: state.Messages,
   Prefs: state.Prefs
 }))(_TopSiteList);
 ;// CONCATENATED MODULE: ./content-src/components/TopSites/TopSiteForm.jsx
@@ -9427,7 +9037,9 @@ class TopSiteForm extends (external_React_default()).PureComponent {
       url: site ? site.url : "",
       validationError: false,
       customScreenshotUrl: site ? site.customScreenshotURL : "",
-      showCustomScreenshotForm: site ? site.customScreenshotURL : false
+      showCustomScreenshotForm: site ? site.customScreenshotURL : false,
+      hasURLChanged: false,
+      hasTitleChanged: false
     };
     this.onClearScreenshotInput = this.onClearScreenshotInput.bind(this);
     this.onLabelChange = this.onLabelChange.bind(this);
@@ -9442,13 +9054,15 @@ class TopSiteForm extends (external_React_default()).PureComponent {
   }
   onLabelChange(event) {
     this.setState({
-      label: event.target.value
+      label: event.target.value,
+      hasTitleChanged: true
     });
   }
   onUrlChange(event) {
     this.setState({
       url: event.target.value,
-      validationError: false
+      validationError: false,
+      hasURLChanged: true
     });
   }
   onClearUrlClick() {
@@ -9490,6 +9104,7 @@ class TopSiteForm extends (external_React_default()).PureComponent {
       const {
         index
       } = this.props;
+      const isEdit = !!this.props.site;
       if (this.state.label !== "") {
         site.label = this.state.label;
       }
@@ -9506,11 +9121,21 @@ class TopSiteForm extends (external_React_default()).PureComponent {
           index
         }
       }));
-      this.props.dispatch(actionCreators.UserEvent({
-        source: TOP_SITES_SOURCE,
-        event: "TOP_SITES_EDIT",
-        action_position: index
-      }));
+      if (isEdit) {
+        this.props.dispatch(actionCreators.UserEvent({
+          source: TOP_SITES_SOURCE,
+          event: "TOP_SITES_EDIT",
+          action_position: index,
+          hasTitleChanged: this.state.hasTitleChanged,
+          hasURLChanged: this.state.hasURLChanged
+        }));
+      } else if (!isEdit) {
+        this.props.dispatch(actionCreators.UserEvent({
+          source: TOP_SITES_SOURCE,
+          event: "TOP_SITES_ADD",
+          action_position: index
+        }));
+      }
       this.props.onClose();
     }
   }
@@ -9670,7 +9295,7 @@ TopSiteForm.defaultProps = {
   index: -1
 };
 ;// CONCATENATED MODULE: ./content-src/components/TopSites/TopSites.jsx
-function TopSites_extends() { TopSites_extends = Object.assign ? Object.assign.bind() : function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return TopSites_extends.apply(this, arguments); }
+function TopSites_extends() { return TopSites_extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, TopSites_extends.apply(null, arguments); }
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9704,6 +9329,7 @@ function topSiteIconType(link) {
 
 /**
  * Iterates through TopSites and counts types of images.
+ *
  * @param acc Accumulator for reducer.
  * @param topsite Entry in TopSites.
  */
@@ -9791,7 +9417,13 @@ class _TopSites extends (external_React_default()).PureComponent {
       showSearchShortcutsForm
     } = props.TopSites;
     const extraMenuOptions = ["AddTopSite"];
+    let visibleTopSites;
     const colors = props.Prefs.values["newNewtabExperience.colors"];
+
+    // do not run this function when for startup cache
+    if (!props.App.isForStartupCache.TopSites) {
+      visibleTopSites = this._getVisibleTopSites()?.length;
+    }
     if (props.Prefs.values["improvesearch.topSiteSearchShortcuts"]) {
       extraMenuOptions.push("AddSearchShortcut");
     }
@@ -9819,7 +9451,8 @@ class _TopSites extends (external_React_default()).PureComponent {
       TopSitesRows: props.TopSitesRows,
       dispatch: props.dispatch,
       topSiteIconType: topSiteIconType,
-      colors: colors
+      colors: colors,
+      visibleTopSites: visibleTopSites
     }), /*#__PURE__*/external_React_default().createElement("div", {
       className: "edit-topsites-wrapper"
     }, editForm && /*#__PURE__*/external_React_default().createElement("div", {
@@ -9846,16 +9479,16 @@ class _TopSites extends (external_React_default()).PureComponent {
   }
 }
 const TopSites_TopSites = (0,external_ReactRedux_namespaceObject.connect)(state => ({
+  App: state.App,
   TopSites: state.TopSites,
   Prefs: state.Prefs,
   TopSitesRows: state.Prefs.values.topSitesRows
 }))(_TopSites);
 ;// CONCATENATED MODULE: ./content-src/components/Sections/Sections.jsx
-function Sections_extends() { Sections_extends = Object.assign ? Object.assign.bind() : function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return Sections_extends.apply(this, arguments); }
+function Sections_extends() { return Sections_extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, Sections_extends.apply(null, arguments); }
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
 
 
 
@@ -9997,7 +9630,6 @@ class Section extends (external_React_default()).PureComponent {
       eventSource,
       title,
       rows,
-      Pocket,
       emptyState,
       dispatch,
       compactCards,
@@ -10017,14 +9649,6 @@ class Section extends (external_React_default()).PureComponent {
     } = this;
     const maxCards = maxCardsPerRow * numRows;
     const maxCardsOnNarrow = CARDS_PER_ROW_DEFAULT * numRows;
-    const {
-      pocketCta,
-      isUserLoggedIn
-    } = Pocket || {};
-    const {
-      useCta
-    } = pocketCta || {};
-    const shouldShowPocketCta = id === "topstories" && useCta && isUserLoggedIn === false;
     const shouldShowReadMore = read_more_endpoint;
     const realRows = rows.slice(0, maxCards);
 
@@ -10094,9 +9718,7 @@ class Section extends (external_React_default()).PureComponent {
       className: "empty-state-message"
     })))), id === "topstories" && /*#__PURE__*/external_React_default().createElement("div", {
       className: "top-stories-bottom-container"
-    }, shouldShowPocketCta && /*#__PURE__*/external_React_default().createElement("div", {
-      className: "wrapper-cta"
-    }, /*#__PURE__*/external_React_default().createElement(PocketLoggedInCta, null)), /*#__PURE__*/external_React_default().createElement("div", {
+    }, /*#__PURE__*/external_React_default().createElement("div", {
       className: "wrapper-more-recommendations"
     }, shouldShowReadMore && /*#__PURE__*/external_React_default().createElement(MoreRecommendations, {
       read_more_endpoint: read_more_endpoint
@@ -10131,11 +9753,11 @@ class _Sections extends (external_React_default()).PureComponent {
         isLast: sections.length === expectedCount - 1
       };
       if (sectionId === "topsites" && showTopSites) {
-        sections.push( /*#__PURE__*/external_React_default().createElement(TopSites_TopSites, commonProps));
+        sections.push(/*#__PURE__*/external_React_default().createElement(TopSites_TopSites, commonProps));
       } else {
         const section = enabledSections.find(s => s.id === sectionId);
         if (section) {
-          sections.push( /*#__PURE__*/external_React_default().createElement(SectionIntl, Sections_extends({}, section, commonProps)));
+          sections.push(/*#__PURE__*/external_React_default().createElement(SectionIntl, Sections_extends({}, section, commonProps)));
         }
       }
     }
@@ -10152,7 +9774,7 @@ const Sections_Sections = (0,external_ReactRedux_namespaceObject.connect)(state 
   Prefs: state.Prefs
 }))(_Sections);
 ;// CONCATENATED MODULE: ./content-src/components/DiscoveryStreamComponents/Highlights/Highlights.jsx
-function Highlights_extends() { Highlights_extends = Object.assign ? Object.assign.bind() : function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return Highlights_extends.apply(this, arguments); }
+function Highlights_extends() { return Highlights_extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, Highlights_extends.apply(null, arguments); }
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10377,26 +9999,42 @@ const selectLayoutRender = ({ state = {}, prefs = {} }) => {
   const positions = {};
   const DS_COMPONENTS = [
     "Message",
-    "TextPromo",
     "SectionTitle",
-    "Signup",
     "Navigation",
+    "Widgets",
     "CardGrid",
-    "CollectionCardGrid",
     "HorizontalRule",
     "PrivacyLink",
   ];
 
   const filterArray = [];
 
+  // Filter sections is Topsites are turned off
   if (!prefs["feeds.topsites"]) {
     filterArray.push("TopSites");
   }
 
+  // Filter sections is Widgets are turned off
+  // Note extra logic is required bc this feature can be enabled via Nimbus
+  const nimbusWidgetsTrainhopEnabled = prefs.trainhopConfig?.widgets?.enabled;
+  const nimbusWidgetsEnabled = prefs.widgetsConfig?.enabled;
+  const widgetsEnabled = prefs["widgets.system.enabled"];
+  if (
+    !nimbusWidgetsTrainhopEnabled &&
+    !nimbusWidgetsEnabled &&
+    !widgetsEnabled
+  ) {
+    filterArray.push("Widgets");
+  }
+
+  // Filter sections is Recommended Stories are turned off
   const pocketEnabled =
     prefs["feeds.section.topstories"] && prefs["feeds.system.topstories"];
   if (!pocketEnabled) {
-    filterArray.push(...DS_COMPONENTS);
+    filterArray.push(
+      // Bug 1980459 - Do not remove Widgets if DS is disabled
+      ...DS_COMPONENTS.filter(component => component !== "Widgets")
+    );
   }
 
   // function to determine amount of tiles shown per section per viewport
@@ -10416,7 +10054,7 @@ const selectLayoutRender = ({ state = {}, prefs = {} }) => {
 
   const placeholderComponent = component => {
     if (!component.feed) {
-      // TODO we now need a placeholder for topsites and textPromo.
+      // TODO we now need a placeholder for topsites.
       return {
         ...component,
         data: {
@@ -10832,7 +10470,7 @@ function InterestPicker({
       }
     }));
     dispatch(actionCreators.AlsoToMain({
-      type: actionTypes.SECTION_PERSONALIZATION_UPDATE,
+      type: actionTypes.SECTION_PERSONALIZATION_SET,
       data: updatedSections
     }));
   }
@@ -10866,6 +10504,8 @@ function InterestPicker({
       checked: checked,
       "aria-checked": checked,
       onChange: e => handleChange(e, index),
+      key: `${interest.sectionId}-${checked}` // Force remount to sync DOM state with React state
+      ,
       tabIndex: index === focusedIndex ? 0 : -1,
       onFocus: () => {
         onItemFocus(index);
@@ -10889,10 +10529,29 @@ function InterestPicker({
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 
+
+
 const PersonalizedCard = ({
-  onDismiss
+  dispatch,
+  handleDismiss,
+  handleClick,
+  handleBlock,
+  messageData
 }) => {
-  const wavingFox = "chrome://newtab/content/data/content/assets/waving-fox.svg";
+  const kitFox = "chrome://newtab/content/data/content/assets/kit.png";
+  const onDismiss = (0,external_React_namespaceObject.useCallback)(() => {
+    handleDismiss();
+    handleBlock();
+  }, [handleDismiss, handleBlock]);
+  const onToggleClick = (0,external_React_namespaceObject.useCallback)(elementId => {
+    dispatch({
+      type: actionTypes.SHOW_PERSONALIZE
+    });
+    dispatch(actionCreators.UserEvent({
+      event: "SHOW_PERSONALIZE"
+    }));
+    handleClick(elementId);
+  }, [dispatch, handleClick]);
   return /*#__PURE__*/external_React_default().createElement("aside", {
     className: "personalized-card-wrapper"
   }, /*#__PURE__*/external_React_default().createElement("div", {
@@ -10905,2221 +10564,85 @@ const PersonalizedCard = ({
   })), /*#__PURE__*/external_React_default().createElement("div", {
     className: "personalized-card-inner"
   }, /*#__PURE__*/external_React_default().createElement("img", {
-    src: wavingFox,
+    src: kitFox,
     alt: ""
-  }), /*#__PURE__*/external_React_default().createElement("h2", null, "Personalized Just for You"), /*#__PURE__*/external_React_default().createElement("p", null, "We\u2019re customizing your feed to show content that matters to you, while ensuring your privacy is always respected."), /*#__PURE__*/external_React_default().createElement("moz-button", {
-    type: "primary",
-    class: "personalized-card-cta"
-  }, "Manage your settings"), /*#__PURE__*/external_React_default().createElement("a", {
-    href: "https://www.mozilla.org/en-US/privacy/firefox/#notice"
-  }, "Learn how we protect and manage data")));
-};
-;// CONCATENATED MODULE: ./content-src/components/DiscoveryStreamComponents/CardSections/CardSections.jsx
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
-
-
-
-
-
-
-
-
-
-
-
-
-// Prefs
-const CardSections_PREF_SECTIONS_CARDS_ENABLED = "discoverystream.sections.cards.enabled";
-const PREF_SECTIONS_CARDS_THUMBS_UP_DOWN_ENABLED = "discoverystream.sections.cards.thumbsUpDown.enabled";
-const PREF_SECTIONS_PERSONALIZATION_ENABLED = "discoverystream.sections.personalization.enabled";
-const CardSections_PREF_TOPICS_ENABLED = "discoverystream.topicLabels.enabled";
-const CardSections_PREF_TOPICS_SELECTED = "discoverystream.topicSelection.selectedTopics";
-const CardSections_PREF_TOPICS_AVAILABLE = "discoverystream.topicSelection.topics";
-const CardSections_PREF_THUMBS_UP_DOWN_ENABLED = "discoverystream.thumbsUpDown.enabled";
-const PREF_INTEREST_PICKER_ENABLED = "discoverystream.sections.interestPicker.enabled";
-const CardSections_PREF_VISIBLE_SECTIONS = "discoverystream.sections.interestPicker.visibleSections";
-const PREF_MEDIUM_RECTANGLE_ENABLED = "newtabAdSize.mediumRectangle";
-const CardSections_PREF_BILLBOARD_ENABLED = "newtabAdSize.billboard";
-const CardSections_PREF_LEADERBOARD_ENABLED = "newtabAdSize.leaderboard";
-const CardSections_PREF_LEADERBOARD_POSITION = "newtabAdSize.leaderboard.position";
-const CardSections_PREF_BILLBOARD_POSITION = "newtabAdSize.billboard.position";
-const PREF_INFERRED_PERSONALIZATION_ENABLED = "discoverystream.sections.personalization.inferred.enabled";
-const PREF_INFERRED_PERSONALIZATION_USER_ENABLED = "discoverystream.sections.personalization.inferred.user.enabled";
-const PREF_INFERRED_PERSONALIZATION_POSITION = "discoverystream.sections.personalization.inferred.position";
-const PREF_INFERRED_PERSONALIZATION_BLOCKED = "discoverystream.sections.personalization.inferred.blocked";
-function getLayoutData(responsiveLayouts, index) {
-  let layoutData = {
-    classNames: [],
-    imageSizes: {}
-  };
-  responsiveLayouts.forEach(layout => {
-    layout.tiles.forEach((tile, tileIndex) => {
-      if (tile.position === index) {
-        layoutData.classNames.push(`col-${layout.columnCount}-${tile.size}`);
-        layoutData.classNames.push(`col-${layout.columnCount}-position-${tileIndex}`);
-        layoutData.imageSizes[layout.columnCount] = tile.size;
-
-        // The API tells us whether the tile should show the excerpt or not.
-        // Apply extra styles accordingly.
-        if (tile.hasExcerpt) {
-          layoutData.classNames.push(`col-${layout.columnCount}-show-excerpt`);
-        } else {
-          layoutData.classNames.push(`col-${layout.columnCount}-hide-excerpt`);
-        }
-      }
-    });
-  });
-  return layoutData;
-}
-
-// function to determine amount of tiles shown per section per viewport
-function getMaxTiles(responsiveLayouts) {
-  return responsiveLayouts.flatMap(responsiveLayout => responsiveLayout).reduce((acc, t) => {
-    acc[t.columnCount] = t.tiles.length;
-
-    // Update maxTile if current tile count is greater
-    if (!acc.maxTile || t.tiles.length > acc.maxTile) {
-      acc.maxTile = t.tiles.length;
-    }
-    return acc;
-  }, {});
-}
-
-/**
- * Transforms a comma-separated string in user preferences
- * into a cleaned-up array.
- *
- * @param {string} pref - The comma-separated pref to be converted.
- * @returns {string[]} An array of trimmed strings, excluding empty values.
- */
-
-const prefToArray = (pref = "") => {
-  return pref.split(",").map(item => item.trim()).filter(item => item);
-};
-function CardSection({
-  sectionPosition,
-  section,
-  dispatch,
-  type,
-  firstVisibleTimestamp,
-  is_collection,
-  spocMessageVariant,
-  ctaButtonVariant,
-  ctaButtonSponsors
-}) {
-  const prefs = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.Prefs.values);
-  const {
-    sectionPersonalization
-  } = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.DiscoveryStream);
-  const showTopics = prefs[CardSections_PREF_TOPICS_ENABLED];
-  const mayHaveSectionsCards = prefs[CardSections_PREF_SECTIONS_CARDS_ENABLED];
-  const mayHaveSectionsCardsThumbsUpDown = prefs[PREF_SECTIONS_CARDS_THUMBS_UP_DOWN_ENABLED];
-  const mayHaveThumbsUpDown = prefs[CardSections_PREF_THUMBS_UP_DOWN_ENABLED];
-  const selectedTopics = prefs[CardSections_PREF_TOPICS_SELECTED];
-  const availableTopics = prefs[CardSections_PREF_TOPICS_AVAILABLE];
-  const {
-    saveToPocketCard
-  } = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.DiscoveryStream);
-  const mayHaveSectionsPersonalization = prefs[PREF_SECTIONS_PERSONALIZATION_ENABLED];
-  const {
-    sectionKey,
-    title,
-    subtitle
-  } = section;
-  const {
-    responsiveLayouts
-  } = section.layout;
-  const following = sectionPersonalization[sectionKey]?.isFollowed;
-  const handleIntersection = (0,external_React_namespaceObject.useCallback)(() => {
-    dispatch(actionCreators.AlsoToMain({
-      type: actionTypes.CARD_SECTION_IMPRESSION,
-      data: {
-        section: sectionKey,
-        section_position: sectionPosition,
-        is_section_followed: following
-      }
-    }));
-  }, [dispatch, sectionKey, sectionPosition, following]);
-
-  // Ref to hold the section element
-  const sectionRefs = useIntersectionObserver(handleIntersection);
-
-  // Only show thumbs up/down buttons if both default thumbs and sections thumbs prefs are enabled
-  const mayHaveCombinedThumbsUpDown = mayHaveSectionsCardsThumbsUpDown && mayHaveThumbsUpDown;
-  const onFollowClick = (0,external_React_namespaceObject.useCallback)(() => {
-    const updatedSectionData = {
-      ...sectionPersonalization,
-      [sectionKey]: {
-        isFollowed: true,
-        isBlocked: false,
-        followedAt: new Date().toISOString()
-      }
-    };
-    dispatch(actionCreators.AlsoToMain({
-      type: actionTypes.SECTION_PERSONALIZATION_UPDATE,
-      data: updatedSectionData
-    }));
-    // Telemetry Event Dispatch
-    dispatch(actionCreators.OnlyToMain({
-      type: "FOLLOW_SECTION",
-      data: {
-        section: sectionKey,
-        section_position: sectionPosition,
-        event_source: "MOZ_BUTTON"
-      }
-    }));
-  }, [dispatch, sectionPersonalization, sectionKey, sectionPosition]);
-  const onUnfollowClick = (0,external_React_namespaceObject.useCallback)(() => {
-    const updatedSectionData = {
-      ...sectionPersonalization
-    };
-    delete updatedSectionData[sectionKey];
-    dispatch(actionCreators.AlsoToMain({
-      type: actionTypes.SECTION_PERSONALIZATION_UPDATE,
-      data: updatedSectionData
-    }));
-
-    // Telemetry Event Dispatch
-    dispatch(actionCreators.OnlyToMain({
-      type: "UNFOLLOW_SECTION",
-      data: {
-        section: sectionKey,
-        section_position: sectionPosition,
-        event_source: "MOZ_BUTTON"
-      }
-    }));
-  }, [dispatch, sectionPersonalization, sectionKey, sectionPosition]);
-  const {
-    maxTile
-  } = getMaxTiles(responsiveLayouts);
-  const displaySections = section.data.slice(0, maxTile);
-  const isSectionEmpty = !displaySections?.length;
-  const shouldShowLabels = sectionKey === "top_stories_section" && showTopics;
-  if (isSectionEmpty) {
-    return null;
-  }
-  const sectionContextWrapper = /*#__PURE__*/external_React_default().createElement("div", {
-    className: "section-context-wrapper"
-  }, /*#__PURE__*/external_React_default().createElement("div", {
-    className: following ? "section-follow following" : "section-follow"
+  }), /*#__PURE__*/external_React_default().createElement("h2", null, messageData.content.cardTitle), /*#__PURE__*/external_React_default().createElement("p", null, messageData.content.cardMessage), /*#__PURE__*/external_React_default().createElement("div", {
+    className: "personalized-card-cta-wrapper"
   }, /*#__PURE__*/external_React_default().createElement("moz-button", {
-    onClick: following ? onUnfollowClick : onFollowClick,
-    type: "default",
-    index: sectionPosition,
-    section: sectionKey
-  }, /*#__PURE__*/external_React_default().createElement("span", {
-    className: "section-button-follow-text",
-    "data-l10n-id": "newtab-section-follow-button"
-  }), /*#__PURE__*/external_React_default().createElement("span", {
-    className: "section-button-following-text",
-    "data-l10n-id": "newtab-section-following-button"
-  }), /*#__PURE__*/external_React_default().createElement("span", {
-    className: "section-button-unfollow-text",
-    "data-l10n-id": "newtab-section-unfollow-button"
-  }))), /*#__PURE__*/external_React_default().createElement(SectionContextMenu, {
+    type: "primary",
+    class: "personalized-card-cta",
+    onClick: () => onToggleClick("open-personalization-panel")
+  }, messageData.content.ctaText), /*#__PURE__*/external_React_default().createElement(SafeAnchor, {
+    className: "personalized-card-link",
     dispatch: dispatch,
-    index: sectionPosition,
-    following: following,
-    sectionPersonalization: sectionPersonalization,
-    sectionKey: sectionKey,
-    title: title,
-    type: type,
-    sectionPosition: sectionPosition
-  }));
-
-  // Determine to display first medium-sized in MREC IAB format
-  const mediumRectangleEnabled = prefs[PREF_MEDIUM_RECTANGLE_ENABLED];
-  let adSizingVariantClassName = "";
-  if (mediumRectangleEnabled) {
-    adSizingVariantClassName = "ad-sizing-variant-a";
-  }
-  return /*#__PURE__*/external_React_default().createElement("section", {
-    className: "ds-section",
-    ref: el => {
-      sectionRefs.current[0] = el;
+    url: messageData.content.linkUrl || "https://support.mozilla.org/",
+    onLinkClick: () => {
+      handleClick("link-click");
     }
-  }, /*#__PURE__*/external_React_default().createElement("div", {
-    className: "section-heading"
-  }, /*#__PURE__*/external_React_default().createElement("div", {
-    className: "section-title-wrapper"
-  }, /*#__PURE__*/external_React_default().createElement("h2", {
-    className: "section-title"
-  }, title), subtitle && /*#__PURE__*/external_React_default().createElement("p", {
-    className: "section-subtitle"
-  }, subtitle)), mayHaveSectionsPersonalization ? sectionContextWrapper : null), /*#__PURE__*/external_React_default().createElement("div", {
-    className: `ds-section-grid ds-card-grid ${adSizingVariantClassName}`
-  }, section.data.slice(0, maxTile).map((rec, index) => {
-    const {
-      classNames,
-      imageSizes
-    } = getLayoutData(responsiveLayouts, index);
-    if (!rec || rec.placeholder) {
-      return /*#__PURE__*/external_React_default().createElement(PlaceholderDSCard, {
-        key: `dscard-${index}`
-      });
-    }
-    return /*#__PURE__*/external_React_default().createElement(DSCard, {
-      key: `dscard-${rec.id}`,
-      pos: rec.pos,
-      flightId: rec.flight_id,
-      image_src: rec.image_src,
-      raw_image_src: rec.raw_image_src,
-      icon_src: rec.icon_src,
-      word_count: rec.word_count,
-      time_to_read: rec.time_to_read,
-      title: rec.title,
-      topic: rec.topic,
-      excerpt: rec.excerpt,
-      url: rec.url,
-      id: rec.id,
-      shim: rec.shim,
-      fetchTimestamp: rec.fetchTimestamp,
-      type: type,
-      context: rec.context,
-      sponsor: rec.sponsor,
-      sponsored_by_override: rec.sponsored_by_override,
-      dispatch: dispatch,
-      source: rec.domain,
-      publisher: rec.publisher,
-      pocket_id: rec.pocket_id,
-      context_type: rec.context_type,
-      bookmarkGuid: rec.bookmarkGuid,
-      recommendation_id: rec.recommendation_id,
-      firstVisibleTimestamp: firstVisibleTimestamp,
-      corpus_item_id: rec.corpus_item_id,
-      scheduled_corpus_item_id: rec.scheduled_corpus_item_id,
-      recommended_at: rec.recommended_at,
-      received_rank: rec.received_rank,
-      format: rec.format,
-      alt_text: rec.alt_text,
-      mayHaveThumbsUpDown: mayHaveCombinedThumbsUpDown,
-      mayHaveSectionsCards: mayHaveSectionsCards,
-      showTopics: shouldShowLabels,
-      selectedTopics: selectedTopics,
-      availableTopics: availableTopics,
-      is_collection: is_collection,
-      saveToPocketCard: saveToPocketCard,
-      ctaButtonSponsors: ctaButtonSponsors,
-      ctaButtonVariant: ctaButtonVariant,
-      spocMessageVariant: spocMessageVariant,
-      sectionsClassNames: classNames.join(" "),
-      sectionsCardImageSizes: imageSizes,
-      section: sectionKey,
-      sectionPosition: sectionPosition,
-      sectionFollowed: following,
-      isTimeSensitive: rec.isTimeSensitive
-    });
-  })));
-}
-function CardSections({
-  data,
-  feed,
-  dispatch,
-  type,
-  firstVisibleTimestamp,
-  is_collection,
-  spocMessageVariant,
-  ctaButtonVariant,
-  ctaButtonSponsors
-}) {
-  const prefs = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.Prefs.values);
-  const {
-    spocs,
-    sectionPersonalization
-  } = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.DiscoveryStream);
-  const personalizationEnabled = prefs[PREF_SECTIONS_PERSONALIZATION_ENABLED];
-  const interestPickerEnabled = prefs[PREF_INTEREST_PICKER_ENABLED];
-
-  // Handle a render before feed has been fetched by displaying nothing
-  if (!data) {
-    return null;
-  }
-  const visibleSections = prefToArray(prefs[CardSections_PREF_VISIBLE_SECTIONS]);
-  const {
-    interestPicker
-  } = data;
-  let filteredSections = data.sections.filter(section => !sectionPersonalization[section.sectionKey]?.isBlocked);
-  if (interestPickerEnabled && visibleSections.length) {
-    filteredSections = visibleSections.reduce((acc, visibleSection) => {
-      const found = filteredSections.find(({
-        sectionKey
-      }) => sectionKey === visibleSection);
-      if (found) {
-        acc.push(found);
-      }
-      return acc;
-    }, []);
-  }
-  let sectionsToRender = filteredSections.map((section, sectionPosition) => /*#__PURE__*/external_React_default().createElement(CardSection, {
-    key: `section-${section.sectionKey}`,
-    sectionPosition: sectionPosition,
-    section: section,
-    dispatch: dispatch,
-    type: type,
-    firstVisibleTimestamp: firstVisibleTimestamp,
-    is_collection: is_collection,
-    spocMessageVariant: spocMessageVariant,
-    ctaButtonVariant: ctaButtonVariant,
-    ctaButtonSponsors: ctaButtonSponsors
-  }));
-
-  // Add a billboard/leaderboard IAB ad to the sectionsToRender array (if enabled/possible).
-  const billboardEnabled = prefs[CardSections_PREF_BILLBOARD_ENABLED];
-  const leaderboardEnabled = prefs[CardSections_PREF_LEADERBOARD_ENABLED];
-  if ((billboardEnabled || leaderboardEnabled) && spocs?.data?.newtab_spocs?.items) {
-    const spocToRender = spocs.data.newtab_spocs.items.find(({
-      format
-    }) => format === "leaderboard" && leaderboardEnabled) || spocs.data.newtab_spocs.items.find(({
-      format
-    }) => format === "billboard" && billboardEnabled);
-    if (spocToRender && !spocs.blocked.includes(spocToRender.url)) {
-      const row = spocToRender.format === "leaderboard" ? prefs[CardSections_PREF_LEADERBOARD_POSITION] : prefs[CardSections_PREF_BILLBOARD_POSITION];
-      sectionsToRender.splice(
-      // Math.min is used here to ensure the given row stays within the bounds of the sectionsToRender array.
-      Math.min(sectionsToRender.length - 1, row), 0, /*#__PURE__*/external_React_default().createElement(AdBanner, {
-        spoc: spocToRender,
-        key: `dscard-${spocToRender.id}`,
-        dispatch: dispatch,
-        type: type,
-        firstVisibleTimestamp: firstVisibleTimestamp,
-        row: row,
-        prefs: prefs
-      }));
-    }
-  }
-
-  // Add the interest picker to the sectionsToRender array (if enabled/possible).
-  if (interestPickerEnabled && personalizationEnabled && interestPicker?.sections) {
-    const index = interestPicker.receivedFeedRank - 1;
-    sectionsToRender.splice(
-    // Math.min is used here to ensure the given row stays within the bounds of the sectionsToRender array.
-    Math.min(sectionsToRender.length - 1, index), 0, /*#__PURE__*/external_React_default().createElement(InterestPicker, {
-      title: interestPicker.title,
-      subtitle: interestPicker.subtitle,
-      interests: interestPicker.sections || [],
-      receivedFeedRank: interestPicker.receivedFeedRank
-    }));
-  }
-  const handleDismissP13nCard = () => {
-    dispatch(actionCreators.SetPref(PREF_INFERRED_PERSONALIZATION_BLOCKED, true));
-  };
-  function displayP13nCard() {
-    const row = prefs[PREF_INFERRED_PERSONALIZATION_POSITION];
-    const cardBlocked = prefs[PREF_INFERRED_PERSONALIZATION_BLOCKED];
-    const cardEnabled = prefs[PREF_INFERRED_PERSONALIZATION_ENABLED];
-    const userEnabled = prefs[PREF_INFERRED_PERSONALIZATION_USER_ENABLED];
-    if (!cardBlocked && cardEnabled && userEnabled) {
-      sectionsToRender.splice(row, 0, /*#__PURE__*/external_React_default().createElement(PersonalizedCard, {
-        row: row,
-        onDismiss: handleDismissP13nCard
-      }));
-    }
-  }
-  displayP13nCard();
-  const isEmpty = sectionsToRender.length === 0;
-  return isEmpty ? /*#__PURE__*/external_React_default().createElement("div", {
-    className: "ds-card-grid empty"
-  }, /*#__PURE__*/external_React_default().createElement(DSEmptyState, {
-    status: data.status,
-    dispatch: dispatch,
-    feed: feed
-  })) : /*#__PURE__*/external_React_default().createElement("div", {
-    className: "ds-section-wrapper"
-  }, sectionsToRender);
-}
-
-;// CONCATENATED MODULE: ./content-src/components/DiscoveryStreamBase/DiscoveryStreamBase.jsx
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-const ALLOWED_CSS_URL_PREFIXES = ["chrome://", "resource://", "https://img-getpocket.cdn.mozilla.net/"];
-const DUMMY_CSS_SELECTOR = "DUMMY#CSS.SELECTOR";
-
-/**
- * Validate a CSS declaration. The values are assumed to be normalized by CSSOM.
- */
-function isAllowedCSS(property, value) {
-  // Bug 1454823: INTERNAL properties, e.g., -moz-context-properties, are
-  // exposed but their values aren't resulting in getting nothing. Fortunately,
-  // we don't care about validating the values of the current set of properties.
-  if (value === undefined) {
-    return true;
-  }
-
-  // Make sure all urls are of the allowed protocols/prefixes
-  const urls = value.match(/url\("[^"]+"\)/g);
-  return !urls || urls.every(url => ALLOWED_CSS_URL_PREFIXES.some(prefix => url.slice(5).startsWith(prefix)));
-}
-class _DiscoveryStreamBase extends (external_React_default()).PureComponent {
-  constructor(props) {
-    super(props);
-    this.onStyleMount = this.onStyleMount.bind(this);
-  }
-  onStyleMount(style) {
-    // Unmounting style gets rid of old styles, so nothing else to do
-    if (!style) {
-      return;
-    }
-    const {
-      sheet
-    } = style;
-    const styles = JSON.parse(style.dataset.styles);
-    styles.forEach((row, rowIndex) => {
-      row.forEach((component, componentIndex) => {
-        // Nothing to do without optional styles overrides
-        if (!component) {
-          return;
-        }
-        Object.entries(component).forEach(([selectors, declarations]) => {
-          // Start with a dummy rule to validate declarations and selectors
-          sheet.insertRule(`${DUMMY_CSS_SELECTOR} {}`);
-          const [rule] = sheet.cssRules;
-
-          // Validate declarations and remove any offenders. CSSOM silently
-          // discards invalid entries, so here we apply extra restrictions.
-          rule.style = declarations;
-          [...rule.style].forEach(property => {
-            const value = rule.style[property];
-            if (!isAllowedCSS(property, value)) {
-              console.error(`Bad CSS declaration ${property}: ${value}`);
-              rule.style.removeProperty(property);
-            }
-          });
-
-          // Set the actual desired selectors scoped to the component
-          const prefix = `.ds-layout > .ds-column:nth-child(${rowIndex + 1}) .ds-column-grid > :nth-child(${componentIndex + 1})`;
-          // NB: Splitting on "," doesn't work with strings with commas, but
-          // we're okay with not supporting those selectors
-          rule.selectorText = selectors.split(",").map(selector => prefix + (
-          // Assume :pseudo-classes are for component instead of descendant
-          selector[0] === ":" ? "" : " ") + selector).join(",");
-
-          // CSSOM silently ignores bad selectors, so we'll be noisy instead
-          if (rule.selectorText === DUMMY_CSS_SELECTOR) {
-            console.error(`Bad CSS selector ${selectors}`);
-          }
-        });
-      });
-    });
-  }
-  renderComponent(component) {
-    switch (component.type) {
-      case "Highlights":
-        return /*#__PURE__*/external_React_default().createElement(Highlights, null);
-      case "TopSites":
-        return /*#__PURE__*/external_React_default().createElement("div", {
-          className: "ds-top-sites"
-        }, /*#__PURE__*/external_React_default().createElement(TopSites_TopSites, {
-          isFixed: true,
-          title: component.header?.title
-        }));
-      case "TextPromo":
-        return /*#__PURE__*/external_React_default().createElement(DSTextPromo, {
-          dispatch: this.props.dispatch,
-          type: component.type,
-          data: component.data
-        });
-      case "Signup":
-        return /*#__PURE__*/external_React_default().createElement(DSSignup, {
-          dispatch: this.props.dispatch,
-          type: component.type,
-          data: component.data
-        });
-      case "Message":
-        return /*#__PURE__*/external_React_default().createElement(DSMessage, {
-          title: component.header && component.header.title,
-          subtitle: component.header && component.header.subtitle,
-          link_text: component.header && component.header.link_text,
-          link_url: component.header && component.header.link_url,
-          icon: component.header && component.header.icon,
-          essentialReadsHeader: component.essentialReadsHeader,
-          editorsPicksHeader: component.editorsPicksHeader
-        });
-      case "SectionTitle":
-        return /*#__PURE__*/external_React_default().createElement(SectionTitle, {
-          header: component.header
-        });
-      case "Navigation":
-        return /*#__PURE__*/external_React_default().createElement(Navigation, {
-          dispatch: this.props.dispatch,
-          links: component.properties.links,
-          extraLinks: component.properties.extraLinks,
-          alignment: component.properties.alignment,
-          explore_topics: component.properties.explore_topics,
-          header: component.header,
-          locale: this.props.App.locale,
-          newFooterSection: component.newFooterSection,
-          privacyNoticeURL: component.properties.privacyNoticeURL
-        });
-      case "CollectionCardGrid":
-        {
-          const {
-            DiscoveryStream
-          } = this.props;
-          return /*#__PURE__*/external_React_default().createElement(CollectionCardGrid, {
-            data: component.data,
-            feed: component.feed,
-            spocs: DiscoveryStream.spocs,
-            placement: component.placement,
-            type: component.type,
-            items: component.properties.items,
-            dismissible: this.props.DiscoveryStream.isCollectionDismissible,
-            dispatch: this.props.dispatch
-          });
-        }
-      case "CardGrid":
-        {
-          const sectionsEnabled = this.props.Prefs.values["discoverystream.sections.enabled"];
-          if (sectionsEnabled) {
-            return /*#__PURE__*/external_React_default().createElement(CardSections, {
-              feed: component.feed,
-              data: component.data,
-              dispatch: this.props.dispatch,
-              type: component.type,
-              firstVisibleTimestamp: this.props.firstVisibleTimestamp,
-              is_collection: true,
-              ctaButtonSponsors: component.properties.ctaButtonSponsors,
-              ctaButtonVariant: component.properties.ctaButtonVariant,
-              spocMessageVariant: component.properties.spocMessageVariant
-            });
-          }
-          return /*#__PURE__*/external_React_default().createElement(CardGrid, {
-            title: component.header && component.header.title,
-            data: component.data,
-            feed: component.feed,
-            widgets: component.widgets,
-            type: component.type,
-            dispatch: this.props.dispatch,
-            items: component.properties.items,
-            hybridLayout: component.properties.hybridLayout,
-            hideCardBackground: component.properties.hideCardBackground,
-            fourCardLayout: component.properties.fourCardLayout,
-            compactGrid: component.properties.compactGrid,
-            essentialReadsHeader: component.properties.essentialReadsHeader,
-            onboardingExperience: component.properties.onboardingExperience,
-            ctaButtonSponsors: component.properties.ctaButtonSponsors,
-            ctaButtonVariant: component.properties.ctaButtonVariant,
-            spocMessageVariant: component.properties.spocMessageVariant,
-            editorsPicksHeader: component.properties.editorsPicksHeader,
-            recentSavesEnabled: this.props.DiscoveryStream.recentSavesEnabled,
-            hideDescriptions: this.props.DiscoveryStream.hideDescriptions,
-            firstVisibleTimestamp: this.props.firstVisibleTimestamp
-          });
-        }
-      case "HorizontalRule":
-        return /*#__PURE__*/external_React_default().createElement(HorizontalRule, null);
-      case "PrivacyLink":
-        return /*#__PURE__*/external_React_default().createElement(PrivacyLink, {
-          properties: component.properties
-        });
-      default:
-        return /*#__PURE__*/external_React_default().createElement("div", null, component.type);
-    }
-  }
-  renderStyles(styles) {
-    // Use json string as both the key and styles to render so React knows when
-    // to unmount and mount a new instance for new styles.
-    const json = JSON.stringify(styles);
-    return /*#__PURE__*/external_React_default().createElement("style", {
-      key: json,
-      "data-styles": json,
-      ref: this.onStyleMount
-    });
-  }
-  render() {
-    const {
-      locale,
-      mayHaveSponsoredStories
-    } = this.props;
-    // Select layout render data by adding spocs and position to recommendations
-    const {
-      layoutRender
-    } = selectLayoutRender({
-      state: this.props.DiscoveryStream,
-      prefs: this.props.Prefs.values,
-      locale
-    });
-    const sectionsEnabled = this.props.Prefs.values["discoverystream.sections.enabled"];
-    const {
-      config
-    } = this.props.DiscoveryStream;
-    const topicSelectionEnabled = this.props.Prefs.values["discoverystream.topicSelection.enabled"];
-    const reportAdsEnabled = this.props.Prefs.values["discoverystream.reportAds.enabled"];
-    const spocsEnabled = this.props.Prefs.values["unifiedAds.spocs.enabled"];
-
-    // Allow rendering without extracting special components
-    if (!config.collapsible) {
-      return this.renderLayout(layoutRender);
-    }
-
-    // Find the first component of a type and remove it from layout
-    const extractComponent = type => {
-      for (const [rowIndex, row] of Object.entries(layoutRender)) {
-        for (const [index, component] of Object.entries(row.components)) {
-          if (component.type === type) {
-            // Remove the row if it was the only component or the single item
-            if (row.components.length === 1) {
-              layoutRender.splice(rowIndex, 1);
-            } else {
-              row.components.splice(index, 1);
-            }
-            return component;
-          }
-        }
-      }
-      return null;
-    };
-
-    // Get "topstories" Section state for default values
-    const topStories = this.props.Sections.find(s => s.id === "topstories");
-    if (!topStories) {
-      return null;
-    }
-
-    // Extract TopSites to render before the rest and Message to use for header
-    const topSites = extractComponent("TopSites");
-    const sponsoredCollection = extractComponent("CollectionCardGrid");
-    const message = extractComponent("Message") || {
-      header: {
-        link_text: topStories.learnMore.link.message,
-        link_url: topStories.learnMore.link.href,
-        title: topStories.title
-      }
-    };
-    const privacyLinkComponent = extractComponent("PrivacyLink");
-    let learnMore = {
-      link: {
-        href: message.header.link_url,
-        message: message.header.link_text
-      }
-    };
-    let sectionTitle = message.header.title;
-    let subTitle = "";
-
-    // If we're in one of these experiments, override the default message.
-    // For now this is English only.
-    if (message.essentialReadsHeader || message.editorsPicksHeader) {
-      learnMore = null;
-      subTitle = "Recommended By Pocket";
-      if (message.essentialReadsHeader) {
-        sectionTitle = "Today’s Essential Reads";
-      } else if (message.editorsPicksHeader) {
-        sectionTitle = "Editor’s Picks";
-      }
-    }
-    const {
-      DiscoveryStream
-    } = this.props;
-    return /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, this.props.DiscoveryStream.isPrivacyInfoModalVisible && /*#__PURE__*/external_React_default().createElement(DSPrivacyModal, {
-      dispatch: this.props.dispatch
-    }), (reportAdsEnabled && spocsEnabled || sectionsEnabled) && /*#__PURE__*/external_React_default().createElement(ReportContent, {
-      spocs: DiscoveryStream.spocs
-    }), topSites && this.renderLayout([{
-      width: 12,
-      components: [topSites],
-      sectionType: "topsites"
-    }]), sponsoredCollection && this.renderLayout([{
-      width: 12,
-      components: [sponsoredCollection]
-    }]), !!layoutRender.length && /*#__PURE__*/external_React_default().createElement(CollapsibleSection, {
-      className: "ds-layout",
-      collapsed: topStories.pref.collapsed,
-      dispatch: this.props.dispatch,
-      id: topStories.id,
-      isFixed: true,
-      learnMore: learnMore,
-      privacyNoticeURL: topStories.privacyNoticeURL,
-      showPrefName: topStories.pref.feed,
-      title: sectionTitle,
-      subTitle: subTitle,
-      mayHaveSponsoredStories: mayHaveSponsoredStories,
-      mayHaveTopicsSelection: topicSelectionEnabled,
-      sectionsEnabled: sectionsEnabled,
-      spocMessageVariant: message?.properties?.spocMessageVariant,
-      eventSource: "CARDGRID"
-    }, this.renderLayout(layoutRender)), this.renderLayout([{
-      width: 12,
-      components: [{
-        type: "Highlights"
-      }]
-    }]), privacyLinkComponent && this.renderLayout([{
-      width: 12,
-      components: [privacyLinkComponent]
-    }]));
-  }
-  renderLayout(layoutRender) {
-    const styles = [];
-    let [data] = layoutRender;
-    // Add helper class for topsites
-    const topsitesClass = data.sectionType ? "ds-layout-topsites" : "";
-    return /*#__PURE__*/external_React_default().createElement("div", {
-      className: `discovery-stream ds-layout ${topsitesClass}`
-    }, layoutRender.map((row, rowIndex) => /*#__PURE__*/external_React_default().createElement("div", {
-      key: `row-${rowIndex}`,
-      className: `ds-column ds-column-${row.width}`
-    }, /*#__PURE__*/external_React_default().createElement("div", {
-      className: "ds-column-grid"
-    }, row.components.map((component, componentIndex) => {
-      if (!component) {
-        return null;
-      }
-      styles[rowIndex] = [...(styles[rowIndex] || []), component.styles];
-      return /*#__PURE__*/external_React_default().createElement("div", {
-        key: `component-${componentIndex}`
-      }, this.renderComponent(component, row.width));
-    })))), this.renderStyles(styles));
-  }
-}
-const DiscoveryStreamBase = (0,external_ReactRedux_namespaceObject.connect)(state => ({
-  DiscoveryStream: state.DiscoveryStream,
-  Prefs: state.Prefs,
-  Sections: state.Sections,
-  document: globalThis.document,
-  App: state.App
-}))(_DiscoveryStreamBase);
-;// CONCATENATED MODULE: ./content-src/components/CustomizeMenu/SectionsMgmtPanel/SectionsMgmtPanel.jsx
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-
-
-
-// eslint-disable-next-line no-shadow
-
-function SectionsMgmtPanel({
-  exitEventFired
-}) {
-  const [showPanel, setShowPanel] = (0,external_React_namespaceObject.useState)(false); // State management with useState
-  const {
-    sectionPersonalization
-  } = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.DiscoveryStream);
-  const layoutComponents = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.DiscoveryStream.layout[0].components);
-  const sections = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.DiscoveryStream.feeds.data);
-  const dispatch = (0,external_ReactRedux_namespaceObject.useDispatch)();
-
-  // TODO: Wrap sectionsFeedName -> sectionsList logic in try...catch?
-  let sectionsFeedName;
-  const cardGridEntry = layoutComponents.find(item => item.type === "CardGrid");
-  if (cardGridEntry) {
-    sectionsFeedName = cardGridEntry.feed.url;
-  }
-  let sectionsList;
-  if (sectionsFeedName) {
-    sectionsList = sections[sectionsFeedName].data.sections;
-  }
-  const [sectionsState, setSectionState] = (0,external_React_namespaceObject.useState)(sectionPersonalization); // State management with useState
-
-  let followedSectionsData = sectionsList.filter(item => sectionsState[item.sectionKey]?.isFollowed);
-  let blockedSectionsData = sectionsList.filter(item => sectionsState[item.sectionKey]?.isBlocked);
-  function updateCachedData() {
-    // Reset cached followed/blocked list data while panel is open
-    setSectionState(sectionPersonalization);
-    followedSectionsData = sectionsList.filter(item => sectionsState[item.sectionKey]?.isFollowed);
-    blockedSectionsData = sectionsList.filter(item => sectionsState[item.sectionKey]?.isBlocked);
-  }
-  const onFollowClick = (0,external_React_namespaceObject.useCallback)((sectionKey, receivedRank) => {
-    dispatch(actionCreators.AlsoToMain({
-      type: actionTypes.SECTION_PERSONALIZATION_UPDATE,
-      data: {
-        ...sectionPersonalization,
-        [sectionKey]: {
-          isFollowed: true,
-          isBlocked: false,
-          followedAt: new Date().toISOString()
-        }
-      }
-    }));
-    // Telemetry Event Dispatch
-    dispatch(actionCreators.OnlyToMain({
-      type: "FOLLOW_SECTION",
-      data: {
-        section: sectionKey,
-        section_position: receivedRank,
-        event_source: "CUSTOMIZE_PANEL"
-      }
-    }));
-  }, [dispatch, sectionPersonalization]);
-  const onBlockClick = (0,external_React_namespaceObject.useCallback)((sectionKey, receivedRank) => {
-    dispatch(actionCreators.AlsoToMain({
-      type: actionTypes.SECTION_PERSONALIZATION_UPDATE,
-      data: {
-        ...sectionPersonalization,
-        [sectionKey]: {
-          isFollowed: false,
-          isBlocked: true
-        }
-      }
-    }));
-
-    // Telemetry Event Dispatch
-    dispatch(actionCreators.OnlyToMain({
-      type: "BLOCK_SECTION",
-      data: {
-        section: sectionKey,
-        section_position: receivedRank,
-        event_source: "CUSTOMIZE_PANEL"
-      }
-    }));
-  }, [dispatch, sectionPersonalization]);
-  const onUnblockClick = (0,external_React_namespaceObject.useCallback)((sectionKey, receivedRank) => {
-    const updatedSectionData = {
-      ...sectionPersonalization
-    };
-    delete updatedSectionData[sectionKey];
-    dispatch(actionCreators.AlsoToMain({
-      type: actionTypes.SECTION_PERSONALIZATION_UPDATE,
-      data: updatedSectionData
-    }));
-    // Telemetry Event Dispatch
-    dispatch(actionCreators.OnlyToMain({
-      type: "UNBLOCK_SECTION",
-      data: {
-        section: sectionKey,
-        section_position: receivedRank,
-        event_source: "CUSTOMIZE_PANEL"
-      }
-    }));
-  }, [dispatch, sectionPersonalization]);
-  const onUnfollowClick = (0,external_React_namespaceObject.useCallback)((sectionKey, receivedRank) => {
-    const updatedSectionData = {
-      ...sectionPersonalization
-    };
-    delete updatedSectionData[sectionKey];
-    dispatch(actionCreators.AlsoToMain({
-      type: actionTypes.SECTION_PERSONALIZATION_UPDATE,
-      data: updatedSectionData
-    }));
-    // Telemetry Event Dispatch
-    dispatch(actionCreators.OnlyToMain({
-      type: "UNFOLLOW_SECTION",
-      data: {
-        section: sectionKey,
-        section_position: receivedRank,
-        event_source: "CUSTOMIZE_PANEL"
-      }
-    }));
-  }, [dispatch, sectionPersonalization]);
-
-  // Close followed/blocked topic subpanel when parent menu is closed
-  (0,external_React_namespaceObject.useEffect)(() => {
-    if (exitEventFired) {
-      setShowPanel(false);
-    }
-  }, [exitEventFired]);
-  const togglePanel = () => {
-    setShowPanel(prevShowPanel => !prevShowPanel);
-
-    // Fire when the panel is open
-    if (!showPanel) {
-      updateCachedData();
-    }
-  };
-  const followedSectionsList = followedSectionsData.map(({
-    sectionKey,
-    title,
-    receivedRank
-  }) => {
-    const following = sectionPersonalization[sectionKey]?.isFollowed;
-    return /*#__PURE__*/external_React_default().createElement("li", {
-      key: sectionKey
-    }, /*#__PURE__*/external_React_default().createElement("label", {
-      htmlFor: `follow-topic-${sectionKey}`
-    }, title), /*#__PURE__*/external_React_default().createElement("div", {
-      className: following ? "section-follow following" : "section-follow"
-    }, /*#__PURE__*/external_React_default().createElement("moz-button", {
-      onClick: () => following ? onUnfollowClick(sectionKey, receivedRank) : onFollowClick(sectionKey, receivedRank),
-      type: "default",
-      index: receivedRank,
-      section: sectionKey,
-      id: `follow-topic-${sectionKey}`
-    }, /*#__PURE__*/external_React_default().createElement("span", {
-      className: "section-button-follow-text",
-      "data-l10n-id": "newtab-section-follow-button"
-    }), /*#__PURE__*/external_React_default().createElement("span", {
-      className: "section-button-following-text",
-      "data-l10n-id": "newtab-section-following-button"
-    }), /*#__PURE__*/external_React_default().createElement("span", {
-      className: "section-button-unfollow-text",
-      "data-l10n-id": "newtab-section-unfollow-button"
-    }))));
-  });
-  const blockedSectionsList = blockedSectionsData.map(({
-    sectionKey,
-    title,
-    receivedRank
-  }) => {
-    const blocked = sectionPersonalization[sectionKey]?.isBlocked;
-    return /*#__PURE__*/external_React_default().createElement("li", {
-      key: sectionKey
-    }, /*#__PURE__*/external_React_default().createElement("label", {
-      htmlFor: `blocked-topic-${sectionKey}`
-    }, title), /*#__PURE__*/external_React_default().createElement("div", {
-      className: blocked ? "section-block blocked" : "section-block"
-    }, /*#__PURE__*/external_React_default().createElement("moz-button", {
-      onClick: () => blocked ? onUnblockClick(sectionKey, receivedRank) : onBlockClick(sectionKey, receivedRank),
-      type: "default",
-      index: receivedRank,
-      section: sectionKey,
-      id: `blocked-topic-${sectionKey}`
-    }, /*#__PURE__*/external_React_default().createElement("span", {
-      className: "section-button-block-text",
-      "data-l10n-id": "newtab-section-block-button"
-    }), /*#__PURE__*/external_React_default().createElement("span", {
-      className: "section-button-blocked-text",
-      "data-l10n-id": "newtab-section-blocked-button"
-    }), /*#__PURE__*/external_React_default().createElement("span", {
-      className: "section-button-unblock-text",
-      "data-l10n-id": "newtab-section-unblock-button"
-    }))));
-  });
-  return /*#__PURE__*/external_React_default().createElement("div", null, /*#__PURE__*/external_React_default().createElement("moz-box-button", {
-    onClick: togglePanel,
-    "data-l10n-id": "newtab-section-manage-topics-button-v2"
-  }), /*#__PURE__*/external_React_default().createElement(external_ReactTransitionGroup_namespaceObject.CSSTransition, {
-    in: showPanel,
-    timeout: 300,
-    classNames: "sections-mgmt-panel",
-    unmountOnExit: true
-  }, /*#__PURE__*/external_React_default().createElement("div", {
-    className: "sections-mgmt-panel"
-  }, /*#__PURE__*/external_React_default().createElement("button", {
-    className: "arrow-button",
-    onClick: togglePanel
-  }, /*#__PURE__*/external_React_default().createElement("h1", {
-    "data-l10n-id": "newtab-section-mangage-topics-title"
-  })), /*#__PURE__*/external_React_default().createElement("h3", {
-    "data-l10n-id": "newtab-section-mangage-topics-followed-topics"
-  }), followedSectionsData.length ? /*#__PURE__*/external_React_default().createElement("ul", {
-    className: "topic-list"
-  }, followedSectionsList) : /*#__PURE__*/external_React_default().createElement("span", {
-    className: "topic-list-empty-state",
-    "data-l10n-id": "newtab-section-mangage-topics-followed-topics-empty-state"
-  }), /*#__PURE__*/external_React_default().createElement("h3", {
-    "data-l10n-id": "newtab-section-mangage-topics-blocked-topics"
-  }), blockedSectionsData.length ? /*#__PURE__*/external_React_default().createElement("ul", {
-    className: "topic-list"
-  }, blockedSectionsList) : /*#__PURE__*/external_React_default().createElement("span", {
-    className: "topic-list-empty-state",
-    "data-l10n-id": "newtab-section-mangage-topics-blocked-topics-empty-state"
-  }))));
-}
-
-;// CONCATENATED MODULE: ./content-src/components/WallpapersSection/WallpapersSection.jsx
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-
-
-
-class _WallpapersSection extends (external_React_default()).PureComponent {
-  constructor(props) {
-    super(props);
-    this.handleChange = this.handleChange.bind(this);
-    this.handleReset = this.handleReset.bind(this);
-    this.prefersHighContrastQuery = null;
-    this.prefersDarkQuery = null;
-  }
-  componentDidMount() {
-    this.prefersDarkQuery = globalThis.matchMedia("(prefers-color-scheme: dark)");
-  }
-  handleChange(event) {
-    const {
-      id
-    } = event.target;
-    const prefs = this.props.Prefs.values;
-    if (prefs["newtabWallpapers.v2.enabled"]) {
-      // If we don't care about color mode, set both to the same wallpaper.
-      this.props.setPref(`newtabWallpapers.wallpaper`, id);
-    }
-    this.handleUserEvent({
-      selected_wallpaper: id,
-      hadPreviousWallpaper: !!this.props.activeWallpaper
-    });
-  }
-  handleReset() {
-    const prefs = this.props.Prefs.values;
-    if (prefs["newtabWallpapers.v2.enabled"]) {
-      this.props.setPref("newtabWallpapers.wallpaper", "");
-    }
-    this.handleUserEvent({
-      selected_wallpaper: "none",
-      hadPreviousWallpaper: !!this.props.activeWallpaper
-    });
-  }
-
-  // Record user interaction when changing wallpaper and reseting wallpaper to default
-  handleUserEvent(data) {
-    this.props.dispatch(actionCreators.OnlyToMain({
-      type: actionTypes.WALLPAPER_CLICK,
-      data
-    }));
-  }
-  render() {
-    const {
-      wallpaperList
-    } = this.props.Wallpapers;
-    const {
-      activeWallpaper
-    } = this.props;
-    const prefs = this.props.Prefs.values;
-    let fieldsetClassname = `wallpaper-list`;
-    if (prefs["newtabWallpapers.v2.enabled"]) {
-      fieldsetClassname += " ignore-color-mode";
-    }
-    return /*#__PURE__*/external_React_default().createElement("div", null, /*#__PURE__*/external_React_default().createElement("fieldset", {
-      className: fieldsetClassname
-    }, wallpaperList.map(({
-      title,
-      theme,
-      fluent_id
-    }) => {
-      return /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, /*#__PURE__*/external_React_default().createElement("input", {
-        onChange: this.handleChange,
-        type: "radio",
-        name: `wallpaper-${title}`,
-        id: title,
-        value: title,
-        checked: title === activeWallpaper,
-        "aria-checked": title === activeWallpaper,
-        className: `wallpaper-input theme-${theme} ${title}`
-      }), /*#__PURE__*/external_React_default().createElement("label", {
-        htmlFor: title,
-        className: "sr-only",
-        "data-l10n-id": fluent_id
-      }, fluent_id));
-    })), /*#__PURE__*/external_React_default().createElement("button", {
-      className: "wallpapers-reset",
-      onClick: this.handleReset,
-      "data-l10n-id": "newtab-wallpaper-reset"
-    }));
-  }
-}
-const WallpapersSection = (0,external_ReactRedux_namespaceObject.connect)(state => {
-  return {
-    Wallpapers: state.Wallpapers,
-    Prefs: state.Prefs
-  };
-})(_WallpapersSection);
-;// CONCATENATED MODULE: ./content-src/components/WallpapersSection/WallpaperCategories.jsx
-function WallpaperCategories_extends() { WallpaperCategories_extends = Object.assign ? Object.assign.bind() : function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return WallpaperCategories_extends.apply(this, arguments); }
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-
-
-
-// eslint-disable-next-line no-shadow
-
-const PREF_WALLPAPER_UPLOADED_PREVIOUSLY = "newtabWallpapers.customWallpaper.uploadedPreviously";
-const PREF_WALLPAPER_UPLOAD_MAX_FILE_SIZE = "newtabWallpapers.customWallpaper.fileSize";
-const PREF_WALLPAPER_UPLOAD_MAX_FILE_SIZE_ENABLED = "newtabWallpapers.customWallpaper.fileSize.enabled";
-
-// Returns a function will not be continuously triggered when called. The
-// function will be triggered if called again after `wait` milliseconds.
-function debounce(func, wait) {
-  let timer;
-  return (...args) => {
-    if (timer) {
-      return;
-    }
-    let wakeUp = () => {
-      timer = null;
-    };
-    timer = setTimeout(wakeUp, wait);
-    func.apply(this, args);
-  };
-}
-class _WallpaperCategories extends (external_React_default()).PureComponent {
-  constructor(props) {
-    super(props);
-    this.handleColorInput = this.handleColorInput.bind(this);
-    this.debouncedHandleChange = debounce(this.handleChange.bind(this), 999);
-    this.handleChange = this.handleChange.bind(this);
-    this.handleReset = this.handleReset.bind(this);
-    this.handleCategory = this.handleCategory.bind(this);
-    this.handleUpload = this.handleUpload.bind(this);
-    this.handleBack = this.handleBack.bind(this);
-    this.getRGBColors = this.getRGBColors.bind(this);
-    this.prefersHighContrastQuery = null;
-    this.prefersDarkQuery = null;
-    this.categoryRef = []; // store references for wallpaper category list
-    this.wallpaperRef = []; // store reference for wallpaper selection list
-    this.customColorPickerRef = /*#__PURE__*/external_React_default().createRef(); // Used to determine contrast icon color for custom color picker
-    this.customColorInput = /*#__PURE__*/external_React_default().createRef(); // Used to determine contrast icon color for custom color picker
-    this.state = {
-      activeCategory: null,
-      activeCategoryFluentID: null,
-      showColorPicker: false,
-      inputType: "radio",
-      activeId: null,
-      isCustomWallpaperError: false
-    };
-  }
-  componentDidMount() {
-    this.prefersDarkQuery = globalThis.matchMedia("(prefers-color-scheme: dark)");
-  }
-  componentDidUpdate(prevProps) {
-    // Walllpaper category subpanel should close when parent menu is closed
-    if (this.props.exitEventFired && this.props.exitEventFired !== prevProps.exitEventFired) {
-      this.handleBack();
-    }
-  }
-  handleColorInput(event) {
-    let {
-      id
-    } = event.target;
-    // Set ID to include hex value of custom color
-    id = `solid-color-picker-${event.target.value}`;
-    const rgbColors = this.getRGBColors(event.target.value);
-
-    // Set background color to custom color
-    event.target.style.backgroundColor = `rgb(${rgbColors.toString()})`;
-    if (this.customColorPickerRef.current) {
-      const colorInputBackground = this.customColorPickerRef.current.children[0].style.backgroundColor;
-      this.customColorPickerRef.current.style.backgroundColor = colorInputBackground;
-    }
-
-    // Set icon color based on the selected color
-    const isColorDark = this.isWallpaperColorDark(rgbColors);
-    if (this.customColorPickerRef.current) {
-      if (isColorDark) {
-        this.customColorPickerRef.current.classList.add("is-dark");
-      } else {
-        this.customColorPickerRef.current.classList.remove("is-dark");
-      }
-
-      // Remove any possible initial classes
-      this.customColorPickerRef.current.classList.remove("custom-color-set", "custom-color-dark", "default-color-set");
-    }
-
-    // Setting this now so when we remove v1 we don't have to migrate v1 values.
-    this.props.setPref("newtabWallpapers.wallpaper", id);
-  }
-
-  // Note: There's a separate event (debouncedHandleChange) that fires the handleChange
-  // event but is delayed so that it doesn't fire multiple events when a user
-  // is selecting a custom color background
-  handleChange(event) {
-    let {
-      id
-    } = event.target;
-
-    // Set ID to include hex value of custom color
-    if (id === "solid-color-picker") {
-      id = `solid-color-picker-${event.target.value}`;
-    }
-    this.props.setPref("newtabWallpapers.wallpaper", id);
-    const uploadedPreviously = this.props.Prefs.values[PREF_WALLPAPER_UPLOADED_PREVIOUSLY];
-    this.handleUserEvent(actionTypes.WALLPAPER_CLICK, {
-      selected_wallpaper: id,
-      had_previous_wallpaper: !!this.props.activeWallpaper,
-      had_uploaded_previously: !!uploadedPreviously
-    });
-  }
-
-  // function implementing arrow navigation for wallpaper category selection
-  handleCategoryKeyDown(event, category) {
-    const getIndex = this.categoryRef.findIndex(cat => cat.id === category);
-    if (getIndex === -1) {
-      return; // prevents errors if wallpaper index isn't found when navigating with arrow keys
-    }
-    const isRTL = document.dir === "rtl"; // returns true is page language is right-to-left
-    let eventKey = event.key;
-    if (eventKey === "ArrowRight" || eventKey === "ArrowLeft") {
-      if (isRTL) {
-        eventKey = eventKey === "ArrowRight" ? "ArrowLeft" : "ArrowRight";
-      }
-    }
-    let nextIndex = getIndex;
-    if (eventKey === "ArrowRight") {
-      nextIndex = getIndex + 1 < this.categoryRef.length ? getIndex + 1 : getIndex;
-    } else if (eventKey === "ArrowLeft") {
-      nextIndex = getIndex - 1 >= 0 ? getIndex - 1 : getIndex;
-    }
-    this.categoryRef[nextIndex].focus();
-  }
-
-  // function implementing arrow navigation for wallpaper selection
-  handleWallpaperKeyDown(event, title) {
-    if (event.key === "Tab") {
-      if (event.shiftKey) {
-        event.preventDefault();
-        this.backToMenuButton?.focus();
-      } else {
-        event.preventDefault(); // prevent tabbing within wallpaper selection. We should only be using the Tab key to tab between groups
-      }
-      return;
-    }
-    const isRTL = document.dir === "rtl"; // returns true if page language is right-to-left
-    let eventKey = event.key;
-    if (eventKey === "ArrowRight" || eventKey === "ArrowLeft") {
-      if (isRTL) {
-        eventKey = eventKey === "ArrowRight" ? "ArrowLeft" : "ArrowRight";
-      }
-    }
-    const getIndex = this.wallpaperRef.findIndex(wallpaper => wallpaper.id === title);
-    if (getIndex === -1) {
-      return; // prevents errors if wallpaper index isn't found when navigating with arrow keys
-    }
-
-    // the set layout of columns per row for the wallpaper selection
-    const columnCount = 3;
-    let nextIndex = getIndex;
-    if (eventKey === "ArrowRight") {
-      nextIndex = getIndex + 1 < this.wallpaperRef.length ? getIndex + 1 : getIndex;
-    } else if (eventKey === "ArrowLeft") {
-      nextIndex = getIndex - 1 >= 0 ? getIndex - 1 : getIndex;
-    } else if (eventKey === "ArrowDown") {
-      nextIndex = getIndex + columnCount < this.wallpaperRef.length ? getIndex + columnCount : getIndex;
-    } else if (eventKey === "ArrowUp") {
-      nextIndex = getIndex - columnCount >= 0 ? getIndex - columnCount : getIndex;
-    }
-    this.wallpaperRef[nextIndex].tabIndex = 0;
-    this.wallpaperRef[getIndex].tabIndex = -1;
-    this.wallpaperRef[nextIndex].focus();
-    this.wallpaperRef[nextIndex].click();
-  }
-  handleReset() {
-    const uploadedPreviously = this.props.Prefs.values[PREF_WALLPAPER_UPLOADED_PREVIOUSLY];
-    const selectedWallpaper = this.props.Prefs.values["newtabWallpapers.wallpaper"];
-
-    // If a custom wallpaper is set, remove it
-    if (selectedWallpaper === "custom") {
-      this.props.dispatch(actionCreators.OnlyToMain({
-        type: actionTypes.WALLPAPER_REMOVE_UPLOAD
-      }));
-    }
-
-    // Reset active wallpaper
-    this.props.setPref("newtabWallpapers.wallpaper", "");
-
-    // Fire WALLPAPER_CLICK telemetry event
-    this.handleUserEvent(actionTypes.WALLPAPER_CLICK, {
-      selected_wallpaper: "none",
-      had_previous_wallpaper: !!this.props.activeWallpaper,
-      had_uploaded_previously: !!uploadedPreviously
-    });
-  }
-  handleCategory = event => {
-    this.setState({
-      activeCategory: event.target.id
-    });
-    this.handleUserEvent(actionTypes.WALLPAPER_CATEGORY_CLICK, event.target.id);
-    let fluent_id;
-    switch (event.target.id) {
-      case "abstracts":
-        fluent_id = "newtab-wallpaper-category-title-abstract";
-        break;
-      case "celestial":
-        fluent_id = "newtab-wallpaper-category-title-celestial";
-        break;
-      case "photographs":
-        fluent_id = "newtab-wallpaper-category-title-photographs";
-        break;
-      case "solid-colors":
-        fluent_id = "newtab-wallpaper-category-title-colors";
-    }
-    this.setState({
-      activeCategoryFluentID: fluent_id
-    });
-  };
-
-  // Custom wallpaper image upload
-  async handleUpload() {
-    const wallpaperUploadMaxFileSizeEnabled = this.props.Prefs.values[PREF_WALLPAPER_UPLOAD_MAX_FILE_SIZE_ENABLED];
-    const wallpaperUploadMaxFileSize = this.props.Prefs.values[PREF_WALLPAPER_UPLOAD_MAX_FILE_SIZE];
-    const uploadedPreviously = this.props.Prefs.values[PREF_WALLPAPER_UPLOADED_PREVIOUSLY];
-
-    // Create a file input since category buttons are radio inputs
-    const fileInput = document.createElement("input");
-    fileInput.type = "file";
-    fileInput.accept = "image/*"; // only allow image files
-
-    // Catch cancel events
-    fileInput.oncancel = async () => {
-      this.setState({
-        isCustomWallpaperError: false
-      });
-    };
-
-    // Reset error state when user begins file selection
-    this.setState({
-      isCustomWallpaperError: false
-    });
-
-    // Fire when user selects a file
-    fileInput.onchange = async event => {
-      const [file] = event.target.files;
-
-      // Limit image uploaded to a maximum file size if enabled
-      // Note: The max file size pref (customWallpaper.fileSize) is converted to megabytes (MB)
-      // Example: if pref value is 5, max file size is 5 MB
-      const maxSize = wallpaperUploadMaxFileSize * 1024 * 1024;
-      if (wallpaperUploadMaxFileSizeEnabled && file && file.size > maxSize) {
-        console.error("File size exceeds limit");
-        this.setState({
-          isCustomWallpaperError: true
-        });
-        return;
-      }
-      if (file) {
-        this.props.dispatch(actionCreators.OnlyToMain({
-          type: actionTypes.WALLPAPER_UPLOAD,
-          data: file
-        }));
-
-        // Set active wallpaper ID to "custom"
-        this.props.setPref("newtabWallpapers.wallpaper", "custom");
-
-        // Update the uploadedPreviously pref to TRUE
-        // Note: this pref used for telemetry. Do not reset to false.
-        this.props.setPref(PREF_WALLPAPER_UPLOADED_PREVIOUSLY, true);
-        this.handleUserEvent(actionTypes.WALLPAPER_CLICK, {
-          selected_wallpaper: "custom",
-          had_previous_wallpaper: !!this.props.activeWallpaper,
-          had_uploaded_previously: !!uploadedPreviously
-        });
-      }
-    };
-    fileInput.click();
-  }
-  handleBack() {
-    this.setState({
-      activeCategory: null
-    });
-    this.categoryRef[0]?.focus();
-  }
-
-  // Record user interaction when changing wallpaper and reseting wallpaper to default
-  handleUserEvent(type, data) {
-    this.props.dispatch(actionCreators.OnlyToMain({
-      type,
-      data
-    }));
-  }
-  setActiveId = id => {
-    this.setState({
-      activeId: id
-    }); // Set the active ID
-  };
-  getRGBColors(input) {
-    if (input.length !== 7) {
-      return [];
-    }
-    const r = parseInt(input.substr(1, 2), 16);
-    const g = parseInt(input.substr(3, 2), 16);
-    const b = parseInt(input.substr(5, 2), 16);
-    return [r, g, b];
-  }
-  isWallpaperColorDark([r, g, b]) {
-    return 0.2125 * r + 0.7154 * g + 0.0721 * b <= 110;
-  }
-  render() {
-    const prefs = this.props.Prefs.values;
-    const {
-      wallpaperList,
-      categories
-    } = this.props.Wallpapers;
-    const {
-      activeWallpaper
-    } = this.props;
-    const {
-      activeCategory,
-      showColorPicker
-    } = this.state;
-    const {
-      activeCategoryFluentID
-    } = this.state;
-    let filteredWallpapers = wallpaperList.filter(wallpaper => wallpaper.category === activeCategory);
-    const wallpaperUploadMaxFileSize = this.props.Prefs.values[PREF_WALLPAPER_UPLOAD_MAX_FILE_SIZE];
-    function reduceColorsToFitCustomColorInput(arr) {
-      // Reduce the amount of custom colors to make space for the custom color picker
-      while (arr.length % 3 !== 2) {
-        arr.pop();
-      }
-      return arr;
-    }
-    let categorySectionClassname = "category wallpaper-list";
-    if (prefs["newtabWallpapers.v2.enabled"]) {
-      categorySectionClassname += " ignore-color-mode";
-    }
-    let wallpaperCustomSolidColorHex = null;
-    const selectedWallpaper = prefs["newtabWallpapers.wallpaper"];
-
-    // User has previous selected a custom color
-    if (selectedWallpaper.includes("solid-color-picker")) {
-      this.setState({
-        showColorPicker: true
-      });
-      const regex = /#([a-fA-F0-9]{6})/;
-      [wallpaperCustomSolidColorHex] = selectedWallpaper.match(regex);
-    }
-
-    // Enable custom color select if pref'ed on
-    this.setState({
-      showColorPicker: prefs["newtabWallpapers.customColor.enabled"]
-    });
-
-    // Remove last item of solid colors to make space for custom color picker
-    if (prefs["newtabWallpapers.customColor.enabled"] && activeCategory === "solid-colors") {
-      filteredWallpapers = reduceColorsToFitCustomColorInput(filteredWallpapers);
-    }
-
-    // Bug 1953012 - If nothing selected, default to color of customize panel
-    // --color-blue-70 : #054096
-    // --color-blue-05 : #deeafc
-    const starterColorHex = this.prefersDarkQuery?.matches ? "#054096" : "#deeafc";
-
-    // Set initial state of the color picker (depending if the user has already set a custom color)
-    let initStateClassname = wallpaperCustomSolidColorHex ? "custom-color-set" : "default-color-set";
-
-    // If a custom color picker is set, make sure the icon has the correct contrast
-    if (wallpaperCustomSolidColorHex) {
-      const rgbColors = this.getRGBColors(wallpaperCustomSolidColorHex);
-      const isColorDark = this.isWallpaperColorDark(rgbColors);
-      if (isColorDark) {
-        initStateClassname += " custom-color-dark";
-      }
-    }
-    let colorPickerInput = showColorPicker && activeCategory === "solid-colors" ? /*#__PURE__*/external_React_default().createElement("div", {
-      className: `theme-custom-color-picker ${initStateClassname}`,
-      ref: this.customColorPickerRef
-    }, /*#__PURE__*/external_React_default().createElement("input", {
-      onInput: this.handleColorInput,
-      onChange: this.debouncedHandleChange,
-      onClick: () => this.setActiveId("solid-color-picker") //
-      ,
-      type: "color",
-      name: `wallpaper-solid-color-picker`,
-      id: "solid-color-picker"
-      // aria-checked is not applicable for input[type="color"] elements
-      ,
-      "aria-current": this.state.activeId === "solid-color-picker",
-      value: wallpaperCustomSolidColorHex || starterColorHex,
-      className: `wallpaper-input
-              ${this.state.activeId === "solid-color-picker" ? "active" : ""}`,
-      ref: this.customColorInput
-    }), /*#__PURE__*/external_React_default().createElement("label", {
-      htmlFor: "solid-color-picker",
-      "data-l10n-id": "newtab-wallpaper-custom-color"
-    })) : "";
-    return /*#__PURE__*/external_React_default().createElement("div", null, /*#__PURE__*/external_React_default().createElement("div", {
-      className: "category-header"
-    }, /*#__PURE__*/external_React_default().createElement("h2", {
-      "data-l10n-id": "newtab-wallpaper-title"
-    }), /*#__PURE__*/external_React_default().createElement("button", {
-      className: "wallpapers-reset",
-      onClick: this.handleReset,
-      "data-l10n-id": "newtab-wallpaper-reset"
-    })), /*#__PURE__*/external_React_default().createElement("div", {
-      role: "grid",
-      "aria-label": "Wallpaper category selection. Use arrow keys to navigate."
-    }, /*#__PURE__*/external_React_default().createElement("fieldset", {
-      className: "category-list"
-    }, categories.map((category, index) => {
-      const filteredList = wallpaperList.filter(wallpaper => wallpaper.category === category);
-      const activeWallpaperObj = activeWallpaper && filteredList.find(wp => wp.title === activeWallpaper);
-      const thumbnail = activeWallpaperObj || filteredList[0];
-      let fluent_id;
-      switch (category) {
-        case "abstracts":
-          fluent_id = "newtab-wallpaper-category-title-abstract";
-          break;
-        case "celestial":
-          fluent_id = "newtab-wallpaper-category-title-celestial";
-          break;
-        case "custom-wallpaper":
-          fluent_id = "newtab-wallpaper-upload-image";
-          break;
-        case "photographs":
-          fluent_id = "newtab-wallpaper-category-title-photographs";
-          break;
-        case "solid-colors":
-          fluent_id = "newtab-wallpaper-category-title-colors";
-      }
-      let style = {};
-      if (thumbnail?.wallpaperUrl) {
-        style.backgroundImage = `url(${thumbnail.wallpaperUrl})`;
-      } else {
-        style.backgroundColor = thumbnail?.solid_color || "";
-      }
-      return /*#__PURE__*/external_React_default().createElement("div", {
-        key: category
-      }, /*#__PURE__*/external_React_default().createElement("button", WallpaperCategories_extends({
-        ref: el => {
-          if (el) {
-            this.categoryRef[index] = el;
-          }
-        },
-        id: category,
-        style: style,
-        onKeyDown: e => this.handleCategoryKeyDown(e, category)
-        // Add overrides for custom wallpaper upload UI
-        ,
-        onClick: category !== "custom-wallpaper" ? this.handleCategory : this.handleUpload,
-        className: category !== "custom-wallpaper" ? `wallpaper-input` : `wallpaper-input theme-custom-wallpaper`,
-        tabIndex: index === 0 ? 0 : -1
-      }, category === "custom-wallpaper" ? {
-        "aria-errormessage": "customWallpaperError"
-      } : {})), /*#__PURE__*/external_React_default().createElement("label", {
-        htmlFor: category,
-        "data-l10n-id": fluent_id
-      }, fluent_id));
-    })), this.state.isCustomWallpaperError && /*#__PURE__*/external_React_default().createElement("div", {
-      className: "custom-wallpaper-error",
-      id: "customWallpaperError"
-    }, /*#__PURE__*/external_React_default().createElement("span", {
-      className: "icon icon-info"
-    }), /*#__PURE__*/external_React_default().createElement("span", {
-      "data-l10n-id": "newtab-wallpaper-error-max-file-size",
-      "data-l10n-args": `{"file_size": ${wallpaperUploadMaxFileSize}}`
-    }))), /*#__PURE__*/external_React_default().createElement(external_ReactTransitionGroup_namespaceObject.CSSTransition, {
-      in: !!activeCategory,
-      timeout: 300,
-      classNames: "wallpaper-list",
-      unmountOnExit: true
-    }, /*#__PURE__*/external_React_default().createElement("section", {
-      className: categorySectionClassname
-    }, /*#__PURE__*/external_React_default().createElement("button", {
-      className: "arrow-button",
-      "data-l10n-id": activeCategoryFluentID,
-      onClick: this.handleBack,
-      ref: el => {
-        this.backToMenuButton = el;
-      }
-    }), /*#__PURE__*/external_React_default().createElement("div", {
-      role: "grid",
-      "aria-label": "Wallpaper selection. Use arrow keys to navigate."
-    }, /*#__PURE__*/external_React_default().createElement("fieldset", null, filteredWallpapers.map(({
-      title,
-      theme,
-      fluent_id,
-      solid_color,
-      wallpaperUrl
-    }, index) => {
-      let style = {};
-      if (wallpaperUrl) {
-        style.backgroundImage = `url(${wallpaperUrl})`;
-      } else {
-        style.backgroundColor = solid_color || "";
-      }
-      return /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, /*#__PURE__*/external_React_default().createElement("input", {
-        ref: el => {
-          if (el) {
-            this.wallpaperRef[index] = el;
-          }
-        },
-        onChange: this.handleChange,
-        onKeyDown: e => this.handleWallpaperKeyDown(e, title),
-        style: style,
-        type: "radio",
-        name: `wallpaper-${title}`,
-        id: title,
-        value: title,
-        checked: title === activeWallpaper,
-        "aria-checked": title === activeWallpaper,
-        className: `wallpaper-input theme-${theme} ${this.state.activeId === title ? "active" : ""}`,
-        onClick: () => this.setActiveId(title) //
-        ,
-        tabIndex: index === 0 ? 0 : -1 //the first wallpaper in the array will have a tabindex of 0 so we can tab into it. The rest will have a tabindex of -1
-      }), /*#__PURE__*/external_React_default().createElement("label", {
-        htmlFor: title,
-        className: "sr-only",
-        "data-l10n-id": fluent_id
-      }, fluent_id));
-    }), colorPickerInput)))));
-  }
-}
-const WallpaperCategories = (0,external_ReactRedux_namespaceObject.connect)(state => {
-  return {
-    Wallpapers: state.Wallpapers,
-    Prefs: state.Prefs
-  };
-})(_WallpaperCategories);
-;// CONCATENATED MODULE: ./content-src/components/CustomizeMenu/ContentSection/ContentSection.jsx
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-
-
-
-
-
-class ContentSection extends (external_React_default()).PureComponent {
-  constructor(props) {
-    super(props);
-    this.onPreferenceSelect = this.onPreferenceSelect.bind(this);
-
-    // Refs are necessary for dynamically measuring drawer heights for slide animations
-    this.topSitesDrawerRef = /*#__PURE__*/external_React_default().createRef();
-    this.pocketDrawerRef = /*#__PURE__*/external_React_default().createRef();
-  }
-  inputUserEvent(eventSource, eventValue) {
-    this.props.dispatch(actionCreators.UserEvent({
-      event: "PREF_CHANGED",
-      source: eventSource,
-      value: {
-        status: eventValue,
-        menu_source: "CUSTOMIZE_MENU"
-      }
-    }));
-  }
-  onPreferenceSelect(e) {
-    // eventSource: WEATHER | TOP_SITES | TOP_STORIES
-    const {
-      preference,
-      eventSource
-    } = e.target.dataset;
-    let value;
-    if (e.target.nodeName === "SELECT") {
-      value = parseInt(e.target.value, 10);
-    } else if (e.target.nodeName === "INPUT") {
-      value = e.target.checked;
-      if (eventSource) {
-        this.inputUserEvent(eventSource, value);
-      }
-    } else if (e.target.nodeName === "MOZ-TOGGLE") {
-      value = e.target.pressed;
-      if (eventSource) {
-        this.inputUserEvent(eventSource, value);
-      }
-    }
-    this.props.setPref(preference, value);
-  }
-  componentDidMount() {
-    this.setDrawerMargins();
-  }
-  componentDidUpdate() {
-    this.setDrawerMargins();
-  }
-  setDrawerMargins() {
-    this.setDrawerMargin(`TOP_SITES`, this.props.enabledSections.topSitesEnabled);
-    this.setDrawerMargin(`TOP_STORIES`, this.props.enabledSections.pocketEnabled);
-  }
-  setDrawerMargin(drawerID, isOpen) {
-    let drawerRef;
-    if (drawerID === `TOP_SITES`) {
-      drawerRef = this.topSitesDrawerRef.current;
-    } else if (drawerID === `TOP_STORIES`) {
-      drawerRef = this.pocketDrawerRef.current;
-    } else {
-      return;
-    }
-    if (drawerRef) {
-      let drawerHeight = parseFloat(window.getComputedStyle(drawerRef)?.height) || 0;
-      if (isOpen) {
-        drawerRef.style.marginTop = "var(--space-large)";
-      } else {
-        drawerRef.style.marginTop = `-${drawerHeight + 3}px`;
-      }
-    }
-  }
-  render() {
-    const {
-      enabledSections,
-      pocketRegion,
-      mayHaveInferredPersonalization,
-      mayHaveRecentSaves,
-      mayHaveWeather,
-      openPreferences,
-      wallpapersEnabled,
-      wallpapersV2Enabled,
-      activeWallpaper,
-      setPref,
-      mayHaveTopicSections,
-      exitEventFired
-    } = this.props;
-    const {
-      topSitesEnabled,
-      pocketEnabled,
-      weatherEnabled,
-      showInferredPersonalizationEnabled,
-      showRecentSavesEnabled,
-      topSitesRowsCount
-    } = enabledSections;
-    return /*#__PURE__*/external_React_default().createElement("div", {
-      className: "home-section"
-    }, !wallpapersV2Enabled && wallpapersEnabled && /*#__PURE__*/external_React_default().createElement("div", {
-      className: "wallpapers-section"
-    }, /*#__PURE__*/external_React_default().createElement(WallpapersSection, {
-      setPref: setPref,
-      activeWallpaper: activeWallpaper
-    })), wallpapersV2Enabled && /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, /*#__PURE__*/external_React_default().createElement("div", {
-      className: "wallpapers-section"
-    }, /*#__PURE__*/external_React_default().createElement(WallpaperCategories, {
-      setPref: setPref,
-      activeWallpaper: activeWallpaper,
-      exitEventFired: exitEventFired
-    })), /*#__PURE__*/external_React_default().createElement("span", {
-      className: "divider",
-      role: "separator"
-    })), /*#__PURE__*/external_React_default().createElement("div", {
-      className: "settings-toggles"
-    }, mayHaveWeather && /*#__PURE__*/external_React_default().createElement("div", {
-      id: "weather-section",
-      className: "section"
-    }, /*#__PURE__*/external_React_default().createElement("moz-toggle", {
-      id: "weather-toggle",
-      pressed: weatherEnabled || null,
-      onToggle: this.onPreferenceSelect,
-      "data-preference": "showWeather",
-      "data-eventSource": "WEATHER",
-      "data-l10n-id": "newtab-custom-weather-toggle"
-    })), /*#__PURE__*/external_React_default().createElement("div", {
-      id: "shortcuts-section",
-      className: "section"
-    }, /*#__PURE__*/external_React_default().createElement("moz-toggle", {
-      id: "shortcuts-toggle",
-      pressed: topSitesEnabled || null,
-      onToggle: this.onPreferenceSelect,
-      "data-preference": "feeds.topsites",
-      "data-eventSource": "TOP_SITES",
-      "data-l10n-id": "newtab-custom-shortcuts-toggle"
-    }, /*#__PURE__*/external_React_default().createElement("div", {
-      slot: "nested"
-    }, /*#__PURE__*/external_React_default().createElement("div", {
-      className: "more-info-top-wrapper"
-    }, /*#__PURE__*/external_React_default().createElement("div", {
-      className: "more-information",
-      ref: this.topSitesDrawerRef
-    }, /*#__PURE__*/external_React_default().createElement("select", {
-      id: "row-selector",
-      className: "selector",
-      name: "row-count",
-      "data-preference": "topSitesRows",
-      value: topSitesRowsCount,
-      onChange: this.onPreferenceSelect,
-      disabled: !topSitesEnabled,
-      "aria-labelledby": "custom-shortcuts-title"
-    }, /*#__PURE__*/external_React_default().createElement("option", {
-      value: "1",
-      "data-l10n-id": "newtab-custom-row-selector",
-      "data-l10n-args": "{\"num\": 1}"
-    }), /*#__PURE__*/external_React_default().createElement("option", {
-      value: "2",
-      "data-l10n-id": "newtab-custom-row-selector",
-      "data-l10n-args": "{\"num\": 2}"
-    }), /*#__PURE__*/external_React_default().createElement("option", {
-      value: "3",
-      "data-l10n-id": "newtab-custom-row-selector",
-      "data-l10n-args": "{\"num\": 3}"
-    }), /*#__PURE__*/external_React_default().createElement("option", {
-      value: "4",
-      "data-l10n-id": "newtab-custom-row-selector",
-      "data-l10n-args": "{\"num\": 4}"
-    }))))))), pocketRegion && /*#__PURE__*/external_React_default().createElement("div", {
-      id: "pocket-section",
-      className: "section"
-    }, /*#__PURE__*/external_React_default().createElement("moz-toggle", {
-      id: "pocket-toggle",
-      pressed: pocketEnabled || null,
-      onToggle: this.onPreferenceSelect,
-      "aria-describedby": "custom-pocket-subtitle",
-      "data-preference": "feeds.section.topstories",
-      "data-eventSource": "TOP_STORIES",
-      "data-l10n-id": "newtab-custom-stories-toggle"
-    }, /*#__PURE__*/external_React_default().createElement("div", {
-      slot: "nested"
-    }, (mayHaveRecentSaves || mayHaveInferredPersonalization || mayHaveTopicSections) && /*#__PURE__*/external_React_default().createElement("div", {
-      className: "more-info-pocket-wrapper"
-    }, /*#__PURE__*/external_React_default().createElement("div", {
-      className: "more-information",
-      ref: this.pocketDrawerRef
-    }, mayHaveInferredPersonalization && /*#__PURE__*/external_React_default().createElement("div", {
-      className: "check-wrapper",
-      role: "presentation"
-    }, /*#__PURE__*/external_React_default().createElement("input", {
-      id: "inferred-personalization",
-      className: "customize-menu-checkbox",
-      disabled: !pocketEnabled,
-      checked: showInferredPersonalizationEnabled,
-      type: "checkbox",
-      onChange: this.onPreferenceSelect,
-      "data-preference": "discoverystream.sections.personalization.inferred.user.enabled",
-      "data-eventSource": "INFERRED_PERSONALIZATION"
-    }), /*#__PURE__*/external_React_default().createElement("label", {
-      className: "customize-menu-checkbox-label",
-      htmlFor: "inferred-personalization"
-    }, "Recommendations inferred from your activity with the feed")), mayHaveTopicSections && /*#__PURE__*/external_React_default().createElement(SectionsMgmtPanel, {
-      exitEventFired: exitEventFired
-    }), mayHaveRecentSaves && /*#__PURE__*/external_React_default().createElement("div", {
-      className: "check-wrapper",
-      role: "presentation"
-    }, /*#__PURE__*/external_React_default().createElement("input", {
-      id: "recent-saves-pocket",
-      className: "customize-menu-checkbox",
-      disabled: !pocketEnabled,
-      checked: showRecentSavesEnabled,
-      type: "checkbox",
-      onChange: this.onPreferenceSelect,
-      "data-preference": "showRecentSaves",
-      "data-eventSource": "POCKET_RECENT_SAVES"
-    }), /*#__PURE__*/external_React_default().createElement("label", {
-      className: "customize-menu-checkbox-label",
-      htmlFor: "recent-saves-pocket",
-      "data-l10n-id": "newtab-custom-pocket-show-recent-saves"
-    })))))))), /*#__PURE__*/external_React_default().createElement("span", {
-      className: "divider",
-      role: "separator"
-    }), /*#__PURE__*/external_React_default().createElement("div", null, /*#__PURE__*/external_React_default().createElement("button", {
-      id: "settings-link",
-      className: "external-link",
-      onClick: openPreferences,
-      "data-l10n-id": "newtab-custom-settings"
-    })));
-  }
-}
-;// CONCATENATED MODULE: ./content-src/components/CustomizeMenu/CustomizeMenu.jsx
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-
-
-
-// eslint-disable-next-line no-shadow
-
-class _CustomizeMenu extends (external_React_default()).PureComponent {
-  constructor(props) {
-    super(props);
-    this.onEntered = this.onEntered.bind(this);
-    this.onExited = this.onExited.bind(this);
-    this.state = {
-      exitEventFired: false
-    };
-  }
-  onEntered() {
-    this.setState({
-      exitEventFired: false
-    });
-    if (this.closeButton) {
-      this.closeButton.focus();
-    }
-  }
-  onExited() {
-    this.setState({
-      exitEventFired: true
-    });
-    if (this.openButton) {
-      this.openButton.focus();
-    }
-  }
-  render() {
-    return /*#__PURE__*/external_React_default().createElement("span", null, /*#__PURE__*/external_React_default().createElement(external_ReactTransitionGroup_namespaceObject.CSSTransition, {
-      timeout: 300,
-      classNames: "personalize-animate",
-      in: !this.props.showing,
-      appear: true
-    }, /*#__PURE__*/external_React_default().createElement("button", {
-      className: "icon icon-settings personalize-button",
-      onClick: () => this.props.onOpen(),
-      onKeyDown: e => {
-        if (e.key === "Enter") {
-          this.props.onOpen();
-        }
-      },
-      "data-l10n-id": "newtab-personalize-settings-icon-label",
-      ref: c => this.openButton = c
-    })), /*#__PURE__*/external_React_default().createElement(external_ReactTransitionGroup_namespaceObject.CSSTransition, {
-      timeout: 250,
-      classNames: "customize-animate",
-      in: this.props.showing,
-      onEntered: this.onEntered,
-      onExited: this.onExited,
-      appear: true
-    }, /*#__PURE__*/external_React_default().createElement("div", {
-      className: "customize-menu",
-      role: "dialog",
-      "data-l10n-id": "newtab-settings-dialog-label"
-    }, /*#__PURE__*/external_React_default().createElement("div", {
-      className: "close-button-wrapper"
-    }, /*#__PURE__*/external_React_default().createElement("button", {
-      onClick: () => this.props.onClose(),
-      className: "close-button",
-      "data-l10n-id": "newtab-custom-close-button",
-      ref: c => this.closeButton = c
-    })), /*#__PURE__*/external_React_default().createElement(ContentSection, {
-      openPreferences: this.props.openPreferences,
-      setPref: this.props.setPref,
-      enabledSections: this.props.enabledSections,
-      wallpapersEnabled: this.props.wallpapersEnabled,
-      wallpapersV2Enabled: this.props.wallpapersV2Enabled,
-      activeWallpaper: this.props.activeWallpaper,
-      pocketRegion: this.props.pocketRegion,
-      mayHaveTopicSections: this.props.mayHaveTopicSections,
-      mayHaveInferredPersonalization: this.props.mayHaveInferredPersonalization,
-      mayHaveRecentSaves: this.props.DiscoveryStream.recentSavesEnabled,
-      mayHaveWeather: this.props.mayHaveWeather,
-      dispatch: this.props.dispatch,
-      exitEventFired: this.state.exitEventFired
-    }))));
-  }
-}
-const CustomizeMenu = (0,external_ReactRedux_namespaceObject.connect)(state => ({
-  DiscoveryStream: state.DiscoveryStream
-}))(_CustomizeMenu);
-;// CONCATENATED MODULE: ./content-src/lib/constants.mjs
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-const IS_NEWTAB =
-  globalThis.document && globalThis.document.documentURI === "about:newtab";
-const NEWTAB_DARK_THEME = {
-  ntp_background: {
-    r: 42,
-    g: 42,
-    b: 46,
-    a: 1,
-  },
-  ntp_card_background: {
-    r: 66,
-    g: 65,
-    b: 77,
-    a: 1,
-  },
-  ntp_text: {
-    r: 249,
-    g: 249,
-    b: 250,
-    a: 1,
-  },
-  sidebar: {
-    r: 56,
-    g: 56,
-    b: 61,
-    a: 1,
-  },
-  sidebar_text: {
-    r: 249,
-    g: 249,
-    b: 250,
-    a: 1,
-  },
+  }, messageData.content.linkText))));
 };
-
-;// CONCATENATED MODULE: ./content-src/components/Logo/Logo.jsx
+;// CONCATENATED MODULE: ./content-src/components/DiscoveryStreamComponents/FeatureHighlight/FollowSectionButtonHighlight.jsx
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 
-function Logo() {
-  return /*#__PURE__*/external_React_default().createElement("h1", {
-    className: "logo-and-wordmark-wrapper"
-  }, /*#__PURE__*/external_React_default().createElement("div", {
-    className: "logo-and-wordmark",
-    role: "img",
-    "data-l10n-id": "newtab-logo-and-wordmark"
-  }, /*#__PURE__*/external_React_default().createElement("div", {
-    className: "logo"
-  }), /*#__PURE__*/external_React_default().createElement("div", {
-    className: "wordmark"
-  })));
+
+function FollowSectionButtonHighlight({
+  arrowPosition,
+  dispatch,
+  feature,
+  handleBlock,
+  handleDismiss,
+  messageData,
+  position,
+  verticalPosition
+}) {
+  const onDismiss = (0,external_React_namespaceObject.useCallback)(() => {
+    handleDismiss();
+    handleBlock();
+  }, [handleDismiss, handleBlock]);
+  return /*#__PURE__*/external_React_default().createElement("div", {
+    className: `follow-section-button-highlight ${messageData.content?.darkModeDismiss ? "is-inverted-dark-dismiss-button" : ""}`
+  }, /*#__PURE__*/external_React_default().createElement(FeatureHighlight, {
+    position: position,
+    arrowPosition: arrowPosition,
+    verticalPosition: verticalPosition,
+    feature: feature,
+    dispatch: dispatch,
+    message: /*#__PURE__*/external_React_default().createElement("div", {
+      className: "follow-section-button-highlight-content"
+    }, /*#__PURE__*/external_React_default().createElement("picture", {
+      className: "follow-section-button-highlight-image"
+    }, /*#__PURE__*/external_React_default().createElement("source", {
+      srcSet: messageData.content?.darkModeImageURL || "chrome://newtab/content/data/content/assets/highlights/omc-newtab-follow.svg",
+      media: "(prefers-color-scheme: dark)"
+    }), /*#__PURE__*/external_React_default().createElement("source", {
+      srcSet: messageData.content?.imageURL || "chrome://newtab/content/data/content/assets/highlights/omc-newtab-follow.svg",
+      media: "(prefers-color-scheme: light)"
+    }), /*#__PURE__*/external_React_default().createElement("img", {
+      width: "320",
+      height: "195",
+      alt: ""
+    })), /*#__PURE__*/external_React_default().createElement("div", {
+      className: "follow-section-button-highlight-copy"
+    }, messageData.content?.cardTitle ? /*#__PURE__*/external_React_default().createElement("p", {
+      className: "title"
+    }, messageData.content.cardTitle) : /*#__PURE__*/external_React_default().createElement("p", {
+      className: "title",
+      "data-l10n-id": "newtab-section-follow-highlight-title"
+    }), messageData.content?.cardMessage ? /*#__PURE__*/external_React_default().createElement("p", {
+      className: "subtitle"
+    }, messageData.content.cardMessage) : /*#__PURE__*/external_React_default().createElement("p", {
+      className: "subtitle",
+      "data-l10n-id": "newtab-section-follow-highlight-subtitle"
+    }))),
+    openedOverride: true,
+    showButtonIcon: false,
+    dismissCallback: onDismiss,
+    outsideClickCallback: handleDismiss
+  }));
 }
-
-;// CONCATENATED MODULE: ./content-src/components/Search/Search.jsx
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-/* globals ContentSearchUIController, ContentSearchHandoffUIController */
-
-
-
-
-
-
-class _Search extends (external_React_default()).PureComponent {
-  constructor(props) {
-    super(props);
-    this.onSearchClick = this.onSearchClick.bind(this);
-    this.onSearchHandoffClick = this.onSearchHandoffClick.bind(this);
-    this.onSearchHandoffPaste = this.onSearchHandoffPaste.bind(this);
-    this.onSearchHandoffDrop = this.onSearchHandoffDrop.bind(this);
-    this.onInputMount = this.onInputMount.bind(this);
-    this.onInputMountHandoff = this.onInputMountHandoff.bind(this);
-    this.onSearchHandoffButtonMount = this.onSearchHandoffButtonMount.bind(this);
-  }
-  handleEvent(event) {
-    // Also track search events with our own telemetry
-    if (event.detail.type === "Search") {
-      this.props.dispatch(actionCreators.UserEvent({
-        event: "SEARCH"
-      }));
-    }
-  }
-  onSearchClick(event) {
-    window.gContentSearchController.search(event);
-  }
-  doSearchHandoff(text) {
-    this.props.dispatch(actionCreators.OnlyToMain({
-      type: actionTypes.HANDOFF_SEARCH_TO_AWESOMEBAR,
-      data: {
-        text
-      }
-    }));
-    this.props.dispatch({
-      type: actionTypes.FAKE_FOCUS_SEARCH
-    });
-    this.props.dispatch(actionCreators.UserEvent({
-      event: "SEARCH_HANDOFF"
-    }));
-    if (text) {
-      this.props.dispatch({
-        type: actionTypes.DISABLE_SEARCH
-      });
-    }
-  }
-  onSearchHandoffClick(event) {
-    // When search hand-off is enabled, we render a big button that is styled to
-    // look like a search textbox. If the button is clicked, we style
-    // the button as if it was a focused search box and show a fake cursor but
-    // really focus the awesomebar without the focus styles ("hidden focus").
-    event.preventDefault();
-    this.doSearchHandoff();
-  }
-  onSearchHandoffPaste(event) {
-    event.preventDefault();
-    this.doSearchHandoff(event.clipboardData.getData("Text"));
-  }
-  onSearchHandoffDrop(event) {
-    event.preventDefault();
-    let text = event.dataTransfer.getData("text");
-    if (text) {
-      this.doSearchHandoff(text);
-    }
-  }
-  componentDidMount() {
-    const caret = this.fakeCaret;
-    const {
-      caretBlinkCount,
-      caretBlinkTime
-    } = this.props.Prefs.values;
-    if (caret) {
-      // If caret blink count isn't defined, use the default infinite behavior for animation
-      caret.style.setProperty("--caret-blink-count", caretBlinkCount > -1 ? caretBlinkCount : "infinite");
-
-      // Apply custom blink rate if set, else fallback to default (567ms on/off --> 1134ms total)
-      caret.style.setProperty("--caret-blink-time", caretBlinkTime > 0 ? `${caretBlinkTime * 2}ms` : `${1134}ms`);
-    }
-  }
-  componentWillUnmount() {
-    delete window.gContentSearchController;
-  }
-  onInputMount(input) {
-    if (input) {
-      // The "healthReportKey" and needs to be "newtab" or "abouthome" so that
-      // BrowserUsageTelemetry.sys.mjs knows to handle events with this name, and
-      // can add the appropriate telemetry probes for search. Without the correct
-      // name, certain tests like browser_UsageTelemetry_content.js will fail
-      // (See github ticket #2348 for more details)
-      const healthReportKey = IS_NEWTAB ? "newtab" : "abouthome";
-
-      // The "searchSource" needs to be "newtab" or "homepage" and is sent with
-      // the search data and acts as context for the search request (See
-      // nsISearchEngine.getSubmission). It is necessary so that search engine
-      // plugins can correctly atribute referrals. (See github ticket #3321 for
-      // more details)
-      const searchSource = IS_NEWTAB ? "newtab" : "homepage";
-
-      // gContentSearchController needs to exist as a global so that tests for
-      // the existing about:home can find it; and so it allows these tests to pass.
-      // In the future, when activity stream is default about:home, this can be renamed
-      window.gContentSearchController = new ContentSearchUIController(input, input.parentNode, healthReportKey, searchSource);
-      addEventListener("ContentSearchClient", this);
-    } else {
-      window.gContentSearchController = null;
-      removeEventListener("ContentSearchClient", this);
-    }
-  }
-  onInputMountHandoff(input) {
-    if (input) {
-      // The handoff UI controller helps us set the search icon and reacts to
-      // changes to default engine to keep everything in sync.
-      this._handoffSearchController = new ContentSearchHandoffUIController();
-    }
-  }
-  onSearchHandoffButtonMount(button) {
-    // Keep a reference to the button for use during "paste" event handling.
-    this._searchHandoffButton = button;
-  }
-
-  /*
-   * Do not change the ID on the input field, as legacy newtab code
-   * specifically looks for the id 'newtab-search-text' on input fields
-   * in order to execute searches in various tests
-   */
-  render() {
-    const wrapperClassName = ["search-wrapper", this.props.disable && "search-disabled", this.props.fakeFocus && "fake-focus"].filter(v => v).join(" ");
-    return /*#__PURE__*/external_React_default().createElement("div", {
-      className: wrapperClassName
-    }, this.props.showLogo && /*#__PURE__*/external_React_default().createElement(Logo, null), !this.props.handoffEnabled && /*#__PURE__*/external_React_default().createElement("div", {
-      className: "search-inner-wrapper"
-    }, /*#__PURE__*/external_React_default().createElement("input", {
-      id: "newtab-search-text",
-      "data-l10n-id": "newtab-search-box-input",
-      maxLength: "256",
-      ref: this.onInputMount,
-      type: "search"
-    }), /*#__PURE__*/external_React_default().createElement("button", {
-      id: "searchSubmit",
-      className: "search-button",
-      "data-l10n-id": "newtab-search-box-search-button",
-      onClick: this.onSearchClick
-    })), this.props.handoffEnabled && /*#__PURE__*/external_React_default().createElement("div", {
-      className: "search-inner-wrapper"
-    }, /*#__PURE__*/external_React_default().createElement("button", {
-      className: "search-handoff-button",
-      ref: this.onSearchHandoffButtonMount,
-      onClick: this.onSearchHandoffClick,
-      tabIndex: "-1"
-    }, /*#__PURE__*/external_React_default().createElement("div", {
-      className: "fake-textbox"
-    }), /*#__PURE__*/external_React_default().createElement("input", {
-      type: "search",
-      className: "fake-editable",
-      tabIndex: "-1",
-      "aria-hidden": "true",
-      onDrop: this.onSearchHandoffDrop,
-      onPaste: this.onSearchHandoffPaste,
-      ref: this.onInputMountHandoff
-    }), /*#__PURE__*/external_React_default().createElement("div", {
-      className: "fake-caret",
-      ref: el => {
-        this.fakeCaret = el;
-      }
-    }))));
-  }
-}
-const Search_Search = (0,external_ReactRedux_namespaceObject.connect)(state => ({
-  Prefs: state.Prefs
-}))(_Search);
 ;// CONCATENATED MODULE: ./content-src/components/Weather/LocationSearch.jsx
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
@@ -13165,8 +10688,9 @@ function LocationSearch({
       value
     } = event.target;
     setUserInput(value);
+
     // if the user input contains less than three characters and suggestedLocations is not an empty array,
-    // reset suggestedLocations to [] so there arent incorrect items in the datalist
+    // reset suggestedLocations to [] so there aren't incorrect items in the datalist
     if (value.length < 3 && suggestedLocations.length) {
       dispatch(actionCreators.AlsoToMain({
         type: actionTypes.WEATHER_LOCATION_SUGGESTIONS_UPDATE,
@@ -13221,10 +10745,10 @@ function LocationSearch({
     onClick: handleCloseSearch
   }), /*#__PURE__*/external_React_default().createElement("datalist", {
     id: "merino-location-list"
-  }, (suggestedLocations || []).map(merinoLcation => /*#__PURE__*/external_React_default().createElement("option", {
-    value: merinoLcation.key,
-    key: merinoLcation.key
-  }, merinoLcation.localized_name, ",", " ", merinoLcation.administrative_area.localized_name)))));
+  }, (suggestedLocations || []).map(merinoLocation => /*#__PURE__*/external_React_default().createElement("option", {
+    value: merinoLocation.key,
+    key: merinoLocation.key
+  }, merinoLocation.localized_name, ",", " ", merinoLocation.administrative_area.localized_name)))));
 }
 
 ;// CONCATENATED MODULE: ./content-src/components/Weather/Weather.jsx
@@ -13240,6 +10764,7 @@ function LocationSearch({
 
 const Weather_VISIBLE = "visible";
 const Weather_VISIBILITY_CHANGE_EVENT = "visibilitychange";
+const PREF_SYSTEM_SHOW_WEATHER = "system.showWeather";
 function WeatherPlaceholder() {
   const [isSeen, setIsSeen] = (0,external_React_namespaceObject.useState)(false);
 
@@ -13404,13 +10929,41 @@ class _Weather extends (external_React_default()).PureComponent {
       }
     }));
   }
+  handleRejectOptIn = () => {
+    (0,external_ReactRedux_namespaceObject.batch)(() => {
+      this.props.dispatch(actionCreators.SetPref("weather.optInAccepted", false));
+      this.props.dispatch(actionCreators.SetPref("weather.optInDisplayed", false));
+      this.props.dispatch(actionCreators.AlsoToMain({
+        type: actionTypes.WEATHER_OPT_IN_PROMPT_SELECTION,
+        data: "rejected opt-in"
+      }));
+    });
+  };
+  handleAcceptOptIn = () => {
+    (0,external_ReactRedux_namespaceObject.batch)(() => {
+      this.props.dispatch(actionCreators.AlsoToMain({
+        type: actionTypes.WEATHER_USER_OPT_IN_LOCATION
+      }));
+      this.props.dispatch(actionCreators.AlsoToMain({
+        type: actionTypes.WEATHER_OPT_IN_PROMPT_SELECTION,
+        data: "accepted opt-in"
+      }));
+    });
+  };
+  isEnabled() {
+    const {
+      values
+    } = this.props.Prefs;
+    const systemValue = values[PREF_SYSTEM_SHOW_WEATHER] && values["feeds.weatherfeed"];
+    const experimentValue = values.trainhopConfig?.weather?.enabled;
+    return systemValue || experimentValue;
+  }
   render() {
     // Check if weather should be rendered
-    const isWeatherEnabled = this.props.Prefs.values["system.showWeather"];
-    if (!isWeatherEnabled) {
+    if (!this.isEnabled()) {
       return false;
     }
-    if (!this.props.Weather.initialized) {
+    if (this.props.App.isForStartupCache.Weather || !this.props.Weather.initialized) {
       return /*#__PURE__*/external_React_default().createElement(WeatherPlaceholder, null);
     }
     const {
@@ -13425,12 +10978,33 @@ class _Weather extends (external_React_default()).PureComponent {
       Weather
     } = props;
     const WEATHER_SUGGESTION = Weather.suggestions?.[0];
-    const outerClassName = ["weather", Weather.searchActive && "search"].filter(v => v).join(" ");
+    const outerClassName = ["weather", Weather.searchActive && "search", props.isInSection && "section-weather"].filter(v => v).join(" ");
     const showDetailedView = Prefs.values["weather.display"] === "detailed";
+    const weatherOptIn = Prefs.values["system.showWeatherOptIn"];
+    const nimbusWeatherOptInEnabled = Prefs.values.trainhopConfig?.weather?.weatherOptInEnabled;
+    const optInDisplayed = Prefs.values["weather.optInDisplayed"];
+    const optInUserChoice = Prefs.values["weather.optInAccepted"];
+    const staticWeather = Prefs.values["weather.staticData.enabled"];
+
+    // Conditionals for rendering feature based on prefs + nimbus experiment variables
+    const isOptInEnabled = weatherOptIn || nimbusWeatherOptInEnabled;
+
+    // Opt-in dialog should only show if:
+    // - weather enabled on customization menu
+    // - weather opt-in pref is enabled
+    // - opt-in prompt is enabled
+    // - user hasn't accepted the opt-in yet
+    const shouldShowOptInDialog = isOptInEnabled && optInDisplayed && !optInUserChoice;
+
+    // Show static weather data only if:
+    // - weather is enabled on customization menu
+    // - weather opt-in pref is enabled
+    // - static weather data is enabled
+    const showStaticData = isOptInEnabled && staticWeather;
 
     // Note: The temperature units/display options will become secondary menu items
-    const WEATHER_SOURCE_CONTEXT_MENU_OPTIONS = [...(Prefs.values["weather.locationSearchEnabled"] ? ["ChangeWeatherLocation"] : []), ...(Prefs.values["weather.temperatureUnits"] === "f" ? ["ChangeTempUnitCelsius"] : ["ChangeTempUnitFahrenheit"]), ...(Prefs.values["weather.display"] === "simple" ? ["ChangeWeatherDisplayDetailed"] : ["ChangeWeatherDisplaySimple"]), "HideWeather", "OpenLearnMoreURL"];
-    const WEATHER_SOURCE_ERROR_CONTEXT_MENU_OPTIONS = [...(Prefs.values["weather.locationSearchEnabled"] ? ["ChangeWeatherLocation"] : []), "HideWeather", "OpenLearnMoreURL"];
+    const WEATHER_SOURCE_CONTEXT_MENU_OPTIONS = [...(Prefs.values["weather.locationSearchEnabled"] ? ["ChangeWeatherLocation"] : []), ...(isOptInEnabled ? ["DetectLocation"] : []), ...(Prefs.values["weather.temperatureUnits"] === "f" ? ["ChangeTempUnitCelsius"] : ["ChangeTempUnitFahrenheit"]), ...(Prefs.values["weather.display"] === "simple" ? ["ChangeWeatherDisplayDetailed"] : ["ChangeWeatherDisplaySimple"]), "HideWeather", "OpenLearnMoreURL"];
+    const WEATHER_SOURCE_SHORTENED_CONTEXT_MENU_OPTIONS = [...(Prefs.values["weather.locationSearchEnabled"] ? ["ChangeWeatherLocation"] : []), ...(isOptInEnabled ? ["DetectLocation"] : []), "HideWeather", "OpenLearnMoreURL"];
     const contextMenu = contextOpts => /*#__PURE__*/external_React_default().createElement("div", {
       className: "weatherButtonContextMenuWrapper"
     }, /*#__PURE__*/external_React_default().createElement("button", {
@@ -13461,7 +11035,24 @@ class _Weather extends (external_React_default()).PureComponent {
         className: outerClassName
       }, /*#__PURE__*/external_React_default().createElement("div", {
         className: "weatherCard"
-      }, /*#__PURE__*/external_React_default().createElement("a", {
+      }, showStaticData ? /*#__PURE__*/external_React_default().createElement("div", {
+        className: "weatherInfoLink staticWeatherInfo"
+      }, /*#__PURE__*/external_React_default().createElement("div", {
+        className: "weatherIconCol"
+      }, /*#__PURE__*/external_React_default().createElement("span", {
+        className: "weatherIcon iconId3"
+      })), /*#__PURE__*/external_React_default().createElement("div", {
+        className: "weatherText"
+      }, /*#__PURE__*/external_React_default().createElement("div", {
+        className: "weatherForecastRow"
+      }, /*#__PURE__*/external_React_default().createElement("span", {
+        className: "weatherTemperature"
+      }, "22\xB0", Prefs.values["weather.temperatureUnits"])), /*#__PURE__*/external_React_default().createElement("div", {
+        className: "weatherCityRow"
+      }, /*#__PURE__*/external_React_default().createElement("span", {
+        className: "weatherCity",
+        "data-l10n-id": "newtab-weather-static-city"
+      })))) : /*#__PURE__*/external_React_default().createElement("a", {
         "data-l10n-id": "newtab-weather-see-forecast",
         "data-l10n-args": "{\"provider\": \"AccuWeather\xAE\"}",
         href: WEATHER_SUGGESTION.forecast.url,
@@ -13487,12 +11078,36 @@ class _Weather extends (external_React_default()).PureComponent {
         className: "weatherHighLowTemps"
       }, /*#__PURE__*/external_React_default().createElement("span", null, WEATHER_SUGGESTION.forecast.high[Prefs.values["weather.temperatureUnits"]], "\xB0", Prefs.values["weather.temperatureUnits"]), /*#__PURE__*/external_React_default().createElement("span", null, "\u2022"), /*#__PURE__*/external_React_default().createElement("span", null, WEATHER_SUGGESTION.forecast.low[Prefs.values["weather.temperatureUnits"]], "\xB0", Prefs.values["weather.temperatureUnits"])), /*#__PURE__*/external_React_default().createElement("span", {
         className: "weatherTextSummary"
-      }, WEATHER_SUGGESTION.current_conditions.summary)) : null)), contextMenu(WEATHER_SOURCE_CONTEXT_MENU_OPTIONS)), /*#__PURE__*/external_React_default().createElement("span", {
+      }, WEATHER_SUGGESTION.current_conditions.summary)) : null)), contextMenu(showStaticData ? WEATHER_SOURCE_SHORTENED_CONTEXT_MENU_OPTIONS : WEATHER_SOURCE_CONTEXT_MENU_OPTIONS)), /*#__PURE__*/external_React_default().createElement("span", {
         className: "weatherSponsorText"
       }, /*#__PURE__*/external_React_default().createElement("span", {
         "data-l10n-id": "newtab-weather-sponsored",
         "data-l10n-args": "{\"provider\": \"AccuWeather\xAE\"}"
-      })));
+      })), shouldShowOptInDialog && /*#__PURE__*/external_React_default().createElement("div", {
+        className: "weatherOptIn"
+      }, /*#__PURE__*/external_React_default().createElement("dialog", {
+        open: true
+      }, /*#__PURE__*/external_React_default().createElement("span", {
+        className: "weatherOptInImg"
+      }), /*#__PURE__*/external_React_default().createElement("div", {
+        className: "weatherOptInContent"
+      }, /*#__PURE__*/external_React_default().createElement("h3", {
+        "data-l10n-id": "newtab-weather-opt-in-see-weather"
+      }), /*#__PURE__*/external_React_default().createElement("moz-button-group", {
+        className: "button-group"
+      }, /*#__PURE__*/external_React_default().createElement("moz-button", {
+        size: "small",
+        type: "default",
+        "data-l10n-id": "newtab-weather-opt-in-not-now",
+        onClick: this.handleRejectOptIn,
+        id: "reject-opt-in"
+      }), /*#__PURE__*/external_React_default().createElement("moz-button", {
+        size: "small",
+        type: "default",
+        "data-l10n-id": "newtab-weather-opt-in-yes",
+        onClick: this.handleAcceptOptIn,
+        id: "accept-opt-in"
+      }))))));
     }
     return /*#__PURE__*/external_React_default().createElement("div", {
       ref: this.setErrorRef,
@@ -13503,15 +11118,3847 @@ class _Weather extends (external_React_default()).PureComponent {
       className: "icon icon-info-warning"
     }), " ", /*#__PURE__*/external_React_default().createElement("p", {
       "data-l10n-id": "newtab-weather-error-not-available"
-    }), contextMenu(WEATHER_SOURCE_ERROR_CONTEXT_MENU_OPTIONS)));
+    }), contextMenu(WEATHER_SOURCE_SHORTENED_CONTEXT_MENU_OPTIONS)));
   }
 }
 const Weather_Weather = (0,external_ReactRedux_namespaceObject.connect)(state => ({
+  App: state.App,
   Weather: state.Weather,
   Prefs: state.Prefs,
   IntersectionObserver: globalThis.IntersectionObserver,
   document: globalThis.document
 }))(_Weather);
+;// CONCATENATED MODULE: ./content-src/components/DiscoveryStreamComponents/CardSections/CardSections.jsx
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// Prefs
+const CardSections_PREF_SECTIONS_CARDS_ENABLED = "discoverystream.sections.cards.enabled";
+const PREF_SECTIONS_PERSONALIZATION_ENABLED = "discoverystream.sections.personalization.enabled";
+const CardSections_PREF_TOPICS_ENABLED = "discoverystream.topicLabels.enabled";
+const CardSections_PREF_TOPICS_SELECTED = "discoverystream.topicSelection.selectedTopics";
+const CardSections_PREF_TOPICS_AVAILABLE = "discoverystream.topicSelection.topics";
+const PREF_INTEREST_PICKER_ENABLED = "discoverystream.sections.interestPicker.enabled";
+const CardSections_PREF_VISIBLE_SECTIONS = "discoverystream.sections.interestPicker.visibleSections";
+const CardSections_PREF_BILLBOARD_ENABLED = "newtabAdSize.billboard";
+const CardSections_PREF_BILLBOARD_POSITION = "newtabAdSize.billboard.position";
+const CardSections_PREF_LEADERBOARD_ENABLED = "newtabAdSize.leaderboard";
+const CardSections_PREF_LEADERBOARD_POSITION = "newtabAdSize.leaderboard.position";
+const PREF_REFINED_CARDS_ENABLED = "discoverystream.refinedCardsLayout.enabled";
+const PREF_INFERRED_PERSONALIZATION_USER = "discoverystream.sections.personalization.inferred.user.enabled";
+const CardSections_PREF_DAILY_BRIEF_SECTIONID = "discoverystream.dailyBrief.sectionId";
+const CardSections_PREF_SPOCS_STARTUPCACHE_ENABLED = "discoverystream.spocs.startupCache.enabled";
+function getLayoutData(responsiveLayouts, index, refinedCardsLayout) {
+  let layoutData = {
+    classNames: [],
+    imageSizes: {}
+  };
+  responsiveLayouts.forEach(layout => {
+    layout.tiles.forEach((tile, tileIndex) => {
+      if (tile.position === index) {
+        layoutData.classNames.push(`col-${layout.columnCount}-${tile.size}`);
+        layoutData.classNames.push(`col-${layout.columnCount}-position-${tileIndex}`);
+        layoutData.imageSizes[layout.columnCount] = tile.size;
+
+        // The API tells us whether the tile should show the excerpt or not.
+        // Apply extra styles accordingly.
+        if (tile.hasExcerpt) {
+          if (tile.size === "medium" && refinedCardsLayout) {
+            layoutData.classNames.push(`col-${layout.columnCount}-hide-excerpt`);
+          } else {
+            layoutData.classNames.push(`col-${layout.columnCount}-show-excerpt`);
+          }
+        } else {
+          layoutData.classNames.push(`col-${layout.columnCount}-hide-excerpt`);
+        }
+      }
+    });
+  });
+  return layoutData;
+}
+
+// function to determine amount of tiles shown per section per viewport
+function getMaxTiles(responsiveLayouts) {
+  return responsiveLayouts.flatMap(responsiveLayout => responsiveLayout).reduce((acc, t) => {
+    acc[t.columnCount] = t.tiles.length;
+
+    // Update maxTile if current tile count is greater
+    if (!acc.maxTile || t.tiles.length > acc.maxTile) {
+      acc.maxTile = t.tiles.length;
+    }
+    return acc;
+  }, {});
+}
+
+/**
+ * Transforms a comma-separated string in user preferences
+ * into a cleaned-up array.
+ *
+ * @param {string} pref - The comma-separated pref to be converted.
+ * @returns {string[]} An array of trimmed strings, excluding empty values.
+ */
+
+const prefToArray = (pref = "") => {
+  return pref.split(",").map(item => item.trim()).filter(item => item);
+};
+function shouldShowOMCHighlight(messageData, componentId) {
+  if (!messageData || Object.keys(messageData).length === 0) {
+    return false;
+  }
+  return messageData?.content?.messageType === componentId;
+}
+function CardSection({
+  sectionPosition,
+  section,
+  dispatch,
+  type,
+  firstVisibleTimestamp,
+  ctaButtonVariant,
+  ctaButtonSponsors,
+  anySectionsFollowed,
+  showWeather,
+  placeholder
+}) {
+  const prefs = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.Prefs.values);
+  const {
+    messageData
+  } = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.Messages);
+  const {
+    sectionPersonalization
+  } = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.DiscoveryStream);
+  const {
+    isForStartupCache
+  } = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.App);
+  const [focusedIndex, setFocusedIndex] = (0,external_React_namespaceObject.useState)(0);
+  const onCardFocus = index => {
+    setFocusedIndex(index);
+  };
+  const handleCardKeyDown = e => {
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      e.preventDefault();
+      const currentCardEl = e.target.closest("article.ds-card");
+      if (!currentCardEl) {
+        return;
+      }
+      const activeColumn = getActiveColumnLayout(window.innerWidth);
+
+      // Arrow direction should match visual navigation direction in RTL
+      const isRTL = document.dir === "rtl";
+      const navigateToPrevious = isRTL ? e.key === "ArrowRight" : e.key === "ArrowLeft";
+
+      // Extract current position from classList
+      let currentPosition = null;
+      const positionPrefix = `${activeColumn}-position-`;
+      for (let className of currentCardEl.classList) {
+        if (className.startsWith(positionPrefix)) {
+          currentPosition = parseInt(className.substring(positionPrefix.length), 10);
+          break;
+        }
+      }
+      if (currentPosition === null) {
+        return;
+      }
+      const targetPosition = navigateToPrevious ? currentPosition - 1 : currentPosition + 1;
+
+      // Find card with target position
+      const parentEl = currentCardEl.parentElement;
+      if (parentEl) {
+        const targetSelector = `article.ds-card.${activeColumn}-position-${targetPosition}`;
+        const targetCardEl = parentEl.querySelector(targetSelector);
+        if (targetCardEl) {
+          const link = targetCardEl.querySelector("a.ds-card-link");
+          if (link) {
+            link.focus();
+          }
+        }
+      }
+    }
+  };
+  const showTopics = prefs[CardSections_PREF_TOPICS_ENABLED];
+  const mayHaveSectionsCards = prefs[CardSections_PREF_SECTIONS_CARDS_ENABLED];
+  const selectedTopics = prefs[CardSections_PREF_TOPICS_SELECTED];
+  const availableTopics = prefs[CardSections_PREF_TOPICS_AVAILABLE];
+  const refinedCardsLayout = prefs[PREF_REFINED_CARDS_ENABLED];
+  const spocsStartupCacheEnabled = prefs[CardSections_PREF_SPOCS_STARTUPCACHE_ENABLED];
+  const mayHaveSectionsPersonalization = prefs[PREF_SECTIONS_PERSONALIZATION_ENABLED];
+  const {
+    sectionKey,
+    title,
+    subtitle
+  } = section;
+  const {
+    responsiveLayouts,
+    name: layoutName
+  } = section.layout;
+  const following = sectionPersonalization[sectionKey]?.isFollowed;
+  const handleIntersection = (0,external_React_namespaceObject.useCallback)(() => {
+    dispatch(actionCreators.AlsoToMain({
+      type: actionTypes.CARD_SECTION_IMPRESSION,
+      data: {
+        section: sectionKey,
+        section_position: sectionPosition,
+        is_section_followed: following,
+        layout_name: layoutName
+      }
+    }));
+  }, [dispatch, sectionKey, sectionPosition, following, layoutName]);
+
+  // Ref to hold the section element
+  const sectionRefs = useIntersectionObserver(handleIntersection);
+  const onFollowClick = (0,external_React_namespaceObject.useCallback)(() => {
+    const updatedSectionData = {
+      ...sectionPersonalization,
+      [sectionKey]: {
+        isFollowed: true,
+        isBlocked: false,
+        followedAt: new Date().toISOString()
+      }
+    };
+    dispatch(actionCreators.AlsoToMain({
+      type: actionTypes.SECTION_PERSONALIZATION_SET,
+      data: updatedSectionData
+    }));
+    // Telemetry Event Dispatch
+    dispatch(actionCreators.OnlyToMain({
+      type: "FOLLOW_SECTION",
+      data: {
+        section: sectionKey,
+        section_position: sectionPosition,
+        event_source: "MOZ_BUTTON"
+      }
+    }));
+  }, [dispatch, sectionPersonalization, sectionKey, sectionPosition]);
+  const onUnfollowClick = (0,external_React_namespaceObject.useCallback)(() => {
+    const updatedSectionData = {
+      ...sectionPersonalization
+    };
+    delete updatedSectionData[sectionKey];
+    dispatch(actionCreators.AlsoToMain({
+      type: actionTypes.SECTION_PERSONALIZATION_SET,
+      data: updatedSectionData
+    }));
+
+    // Telemetry Event Dispatch
+    dispatch(actionCreators.OnlyToMain({
+      type: "UNFOLLOW_SECTION",
+      data: {
+        section: sectionKey,
+        section_position: sectionPosition,
+        event_source: "MOZ_BUTTON"
+      }
+    }));
+  }, [dispatch, sectionPersonalization, sectionKey, sectionPosition]);
+  let {
+    maxTile
+  } = getMaxTiles(responsiveLayouts);
+  if (placeholder) {
+    // We need a number that divides evenly by 2, 3, and 4.
+    // So it can be displayed without orphans in grids with 2, 3, and 4 columns.
+    maxTile = 12;
+  }
+  const displaySections = section.data.slice(0, maxTile);
+  const isSectionEmpty = !displaySections?.length;
+  const shouldShowLabels = sectionKey === "top_stories_section" && showTopics;
+  if (isSectionEmpty) {
+    return null;
+  }
+  const sectionContextWrapper = /*#__PURE__*/external_React_default().createElement("div", {
+    className: "section-context-wrapper"
+  }, /*#__PURE__*/external_React_default().createElement("div", {
+    className: following ? "section-follow following" : "section-follow"
+  }, !anySectionsFollowed && sectionPosition === 0 && shouldShowOMCHighlight(messageData, "FollowSectionButtonHighlight") && /*#__PURE__*/external_React_default().createElement(MessageWrapper, {
+    dispatch: dispatch
+  }, /*#__PURE__*/external_React_default().createElement(FollowSectionButtonHighlight, {
+    verticalPosition: "inset-block-center",
+    position: "arrow-inline-start",
+    dispatch: dispatch,
+    feature: "FEATURE_FOLLOW_SECTION_BUTTON",
+    messageData: messageData
+  })), !anySectionsFollowed && sectionPosition === 0 && shouldShowOMCHighlight(messageData, "FollowSectionButtonAltHighlight") && /*#__PURE__*/external_React_default().createElement(MessageWrapper, {
+    dispatch: dispatch
+  }, /*#__PURE__*/external_React_default().createElement(FollowSectionButtonHighlight, {
+    verticalPosition: "inset-block-center",
+    position: "arrow-inline-start",
+    dispatch: dispatch,
+    feature: "FEATURE_ALT_FOLLOW_SECTION_BUTTON"
+  })), /*#__PURE__*/external_React_default().createElement("moz-button", {
+    onClick: following ? onUnfollowClick : onFollowClick,
+    type: "default",
+    index: sectionPosition,
+    section: sectionKey
+  }, /*#__PURE__*/external_React_default().createElement("span", {
+    className: "section-button-follow-text",
+    "data-l10n-id": "newtab-section-follow-button"
+  }), /*#__PURE__*/external_React_default().createElement("span", {
+    className: "section-button-following-text",
+    "data-l10n-id": "newtab-section-following-button"
+  }), /*#__PURE__*/external_React_default().createElement("span", {
+    className: "section-button-unfollow-text",
+    "data-l10n-id": "newtab-section-unfollow-button"
+  }))), /*#__PURE__*/external_React_default().createElement(SectionContextMenu, {
+    dispatch: dispatch,
+    index: sectionPosition,
+    following: following,
+    sectionPersonalization: sectionPersonalization,
+    sectionKey: sectionKey,
+    title: title,
+    type: type,
+    sectionPosition: sectionPosition
+  }));
+  return /*#__PURE__*/external_React_default().createElement("section", {
+    className: "ds-section",
+    ref: el => {
+      sectionRefs.current[0] = el;
+    }
+  }, /*#__PURE__*/external_React_default().createElement("div", {
+    className: "section-heading"
+  }, /*#__PURE__*/external_React_default().createElement("div", {
+    className: "section-heading-inline-start"
+  }, /*#__PURE__*/external_React_default().createElement("div", {
+    className: "section-title-wrapper"
+  }, /*#__PURE__*/external_React_default().createElement("h2", {
+    className: "section-title"
+  }, title), subtitle && /*#__PURE__*/external_React_default().createElement("p", {
+    className: "section-subtitle"
+  }, subtitle)), showWeather && /*#__PURE__*/external_React_default().createElement(Weather_Weather, {
+    isInSection: true
+  })), mayHaveSectionsPersonalization ? sectionContextWrapper : null), /*#__PURE__*/external_React_default().createElement("div", {
+    className: `ds-section-grid ds-card-grid`,
+    onKeyDown: handleCardKeyDown
+  }, section.data.slice(0, maxTile).map((rec, index) => {
+    const layoutData = getLayoutData(responsiveLayouts, index, refinedCardsLayout);
+    const {
+      classNames,
+      imageSizes
+    } = layoutData;
+    // Render a placeholder card when:
+    // 1. No recommendation is available.
+    // 2. The item is flagged as a placeholder.
+    // 3. Spocs are loading for with spocs startup cache disabled.
+    if (!rec || rec.placeholder || placeholder || rec.flight_id && !spocsStartupCacheEnabled && isForStartupCache.DiscoveryStream) {
+      return /*#__PURE__*/external_React_default().createElement(PlaceholderDSCard, {
+        key: `dscard-${index}`
+      });
+    }
+    const card = /*#__PURE__*/external_React_default().createElement(DSCard, {
+      key: `dscard-${rec.id}`,
+      pos: rec.pos,
+      flightId: rec.flight_id,
+      image_src: rec.image_src,
+      raw_image_src: rec.raw_image_src,
+      icon_src: rec.icon_src,
+      word_count: rec.word_count,
+      time_to_read: rec.time_to_read,
+      title: rec.title,
+      topic: rec.topic,
+      features: rec.features,
+      excerpt: rec.excerpt,
+      url: rec.url,
+      id: rec.id,
+      shim: rec.shim,
+      fetchTimestamp: rec.fetchTimestamp,
+      type: type,
+      context: rec.context,
+      sponsor: rec.sponsor,
+      sponsored_by_override: rec.sponsored_by_override,
+      dispatch: dispatch,
+      source: rec.domain,
+      publisher: rec.publisher,
+      pocket_id: rec.pocket_id,
+      context_type: rec.context_type,
+      bookmarkGuid: rec.bookmarkGuid,
+      recommendation_id: rec.recommendation_id,
+      firstVisibleTimestamp: firstVisibleTimestamp,
+      corpus_item_id: rec.corpus_item_id,
+      scheduled_corpus_item_id: rec.scheduled_corpus_item_id,
+      recommended_at: rec.recommended_at,
+      received_rank: rec.received_rank,
+      format: rec.format,
+      alt_text: rec.alt_text,
+      mayHaveSectionsCards: mayHaveSectionsCards,
+      showTopics: shouldShowLabels,
+      selectedTopics: selectedTopics,
+      availableTopics: availableTopics,
+      ctaButtonSponsors: ctaButtonSponsors,
+      ctaButtonVariant: ctaButtonVariant,
+      sectionsClassNames: classNames.join(" "),
+      sectionsCardImageSizes: imageSizes,
+      section: sectionKey,
+      sectionPosition: sectionPosition,
+      sectionFollowed: following,
+      sectionLayoutName: layoutName,
+      isTimeSensitive: rec.isTimeSensitive,
+      tabIndex: index === focusedIndex ? 0 : -1,
+      onFocus: () => onCardFocus(index),
+      attribution: rec.attribution
+    });
+    return [card];
+  })));
+}
+function CardSections({
+  data,
+  feed,
+  dispatch,
+  type,
+  firstVisibleTimestamp,
+  ctaButtonVariant,
+  ctaButtonSponsors,
+  placeholder
+}) {
+  const prefs = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.Prefs.values);
+  const {
+    spocs,
+    sectionPersonalization
+  } = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.DiscoveryStream);
+  const {
+    messageData
+  } = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.Messages);
+  const weatherPlacement = (0,external_ReactRedux_namespaceObject.useSelector)(selectWeatherPlacement);
+  const dailyBriefSectionId = prefs.trainhopConfig?.dailyBriefing?.sectionId || prefs[CardSections_PREF_DAILY_BRIEF_SECTIONID];
+  const weatherEnabled = prefs.showWeather;
+  const personalizationEnabled = prefs[PREF_SECTIONS_PERSONALIZATION_ENABLED];
+  const interestPickerEnabled = prefs[PREF_INTEREST_PICKER_ENABLED];
+
+  // Handle a render before feed has been fetched by displaying nothing
+  if (!data) {
+    return null;
+  }
+  const visibleSections = prefToArray(prefs[CardSections_PREF_VISIBLE_SECTIONS]);
+  const {
+    interestPicker
+  } = data;
+
+  // Used to determine if we should show FollowSectionButtonHighlight
+  const anySectionsFollowed = sectionPersonalization && Object.values(sectionPersonalization).some(section => section?.isFollowed);
+  let sectionsData = data.sections;
+  if (placeholder) {
+    // To clean up the placeholder state for sections if the whole section is loading still.
+    sectionsData = [{
+      ...sectionsData[0],
+      title: "",
+      subtitle: ""
+    }, {
+      ...sectionsData[1],
+      title: "",
+      subtitle: ""
+    }];
+  }
+  let filteredSections = sectionsData.filter(section => !sectionPersonalization[section.sectionKey]?.isBlocked);
+  if (interestPickerEnabled && visibleSections.length) {
+    filteredSections = visibleSections.reduce((acc, visibleSection) => {
+      const found = filteredSections.find(({
+        sectionKey
+      }) => sectionKey === visibleSection);
+      if (found) {
+        acc.push(found);
+      }
+      return acc;
+    }, []);
+  }
+  let sectionsToRender = filteredSections.map((section, sectionPosition) => /*#__PURE__*/external_React_default().createElement(CardSection, {
+    key: `section-${section.sectionKey}`,
+    sectionPosition: sectionPosition,
+    section: section,
+    dispatch: dispatch,
+    type: type,
+    firstVisibleTimestamp: firstVisibleTimestamp,
+    ctaButtonVariant: ctaButtonVariant,
+    ctaButtonSponsors: ctaButtonSponsors,
+    anySectionsFollowed: anySectionsFollowed,
+    placeholder: placeholder,
+    showWeather: weatherEnabled && weatherPlacement === "section" && sectionPosition === 0 && section.sectionKey === dailyBriefSectionId
+  }));
+
+  // Add a billboard/leaderboard IAB ad to the sectionsToRender array (if enabled/possible).
+  const billboardEnabled = prefs[CardSections_PREF_BILLBOARD_ENABLED];
+  const leaderboardEnabled = prefs[CardSections_PREF_LEADERBOARD_ENABLED];
+  if ((billboardEnabled || leaderboardEnabled) && spocs?.data?.newtab_spocs?.items) {
+    const spocToRender = spocs.data.newtab_spocs.items.find(({
+      format
+    }) => format === "leaderboard" && leaderboardEnabled) || spocs.data.newtab_spocs.items.find(({
+      format
+    }) => format === "billboard" && billboardEnabled);
+    if (spocToRender && !spocs.blocked.includes(spocToRender.url)) {
+      const row = spocToRender.format === "leaderboard" ? prefs[CardSections_PREF_LEADERBOARD_POSITION] : prefs[CardSections_PREF_BILLBOARD_POSITION];
+      sectionsToRender.splice(
+      // Math.min is used here to ensure the given row stays within the bounds of the sectionsToRender array.
+      Math.min(sectionsToRender.length - 1, row), 0, /*#__PURE__*/external_React_default().createElement(AdBanner, {
+        spoc: spocToRender,
+        key: `dscard-${spocToRender.id}`,
+        dispatch: dispatch,
+        type: type,
+        firstVisibleTimestamp: firstVisibleTimestamp,
+        row: row,
+        prefs: prefs
+      }));
+    }
+  }
+
+  // Add the interest picker to the sectionsToRender array (if enabled/possible).
+  if (interestPickerEnabled && personalizationEnabled && interestPicker?.sections) {
+    const index = interestPicker.receivedFeedRank - 1;
+    sectionsToRender.splice(
+    // Math.min is used here to ensure the given row stays within the bounds of the sectionsToRender array.
+    Math.min(sectionsToRender.length - 1, index), 0, /*#__PURE__*/external_React_default().createElement(InterestPicker, {
+      title: interestPicker.title,
+      subtitle: interestPicker.subtitle,
+      interests: interestPicker.sections || [],
+      receivedFeedRank: interestPicker.receivedFeedRank
+    }));
+  }
+  function displayP13nCard() {
+    if (messageData && Object.keys(messageData).length >= 1) {
+      if (shouldShowOMCHighlight(messageData, "PersonalizedCard") && prefs[PREF_INFERRED_PERSONALIZATION_USER]) {
+        const row = messageData.content.position;
+        sectionsToRender.splice(row, 0, /*#__PURE__*/external_React_default().createElement(MessageWrapper, {
+          dispatch: dispatch,
+          onDismiss: () => {}
+        }, /*#__PURE__*/external_React_default().createElement(PersonalizedCard, {
+          position: row,
+          dispatch: dispatch,
+          messageData: messageData
+        })));
+      }
+    }
+  }
+  displayP13nCard();
+  const isEmpty = sectionsToRender.length === 0;
+  return isEmpty ? /*#__PURE__*/external_React_default().createElement("div", {
+    className: "ds-card-grid empty"
+  }, /*#__PURE__*/external_React_default().createElement(DSEmptyState, {
+    status: data.status,
+    dispatch: dispatch,
+    feed: feed
+  })) : /*#__PURE__*/external_React_default().createElement("div", {
+    className: "ds-section-wrapper"
+  }, sectionsToRender);
+}
+
+;// CONCATENATED MODULE: ./content-src/components/Widgets/Lists/Lists.jsx
+function Lists_extends() { return Lists_extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, Lists_extends.apply(null, arguments); }
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+
+
+
+
+const TASK_TYPE = {
+  IN_PROGRESS: "tasks",
+  COMPLETED: "completed"
+};
+const USER_ACTION_TYPES = {
+  LIST_COPY: "list_copy",
+  LIST_CREATE: "list_create",
+  LIST_EDIT: "list_edit",
+  LIST_DELETE: "list_delete",
+  TASK_CREATE: "task_create",
+  TASK_EDIT: "task_edit",
+  TASK_DELETE: "task_delete",
+  TASK_COMPLETE: "task_complete"
+};
+const PREF_WIDGETS_LISTS_MAX_LISTS = "widgets.lists.maxLists";
+const PREF_WIDGETS_LISTS_MAX_LISTITEMS = "widgets.lists.maxListItems";
+const PREF_WIDGETS_LISTS_BADGE_ENABLED = "widgets.lists.badge.enabled";
+const PREF_WIDGETS_LISTS_BADGE_LABEL = "widgets.lists.badge.label";
+function Lists({
+  dispatch,
+  handleUserInteraction,
+  isMaximized
+}) {
+  const prefs = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.Prefs.values);
+  const {
+    selected,
+    lists
+  } = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.ListsWidget);
+  const [newTask, setNewTask] = (0,external_React_namespaceObject.useState)("");
+  const [isEditing, setIsEditing] = (0,external_React_namespaceObject.useState)(false);
+  const [pendingNewList, setPendingNewList] = (0,external_React_namespaceObject.useState)(null);
+  const selectedList = (0,external_React_namespaceObject.useMemo)(() => lists[selected], [lists, selected]);
+  const prevCompletedCount = (0,external_React_namespaceObject.useRef)(selectedList?.completed?.length || 0);
+  const inputRef = (0,external_React_namespaceObject.useRef)(null);
+  const selectRef = (0,external_React_namespaceObject.useRef)(null);
+  const reorderListRef = (0,external_React_namespaceObject.useRef)(null);
+  const [canvasRef, fireConfetti] = useConfetti();
+  const handleListInteraction = (0,external_React_namespaceObject.useCallback)(() => handleUserInteraction("lists"), [handleUserInteraction]);
+
+  // store selectedList with useMemo so it isnt re-calculated on every re-render
+  const isValidUrl = (0,external_React_namespaceObject.useCallback)(str => URL.canParse(str), []);
+  const handleIntersection = (0,external_React_namespaceObject.useCallback)(() => {
+    dispatch(actionCreators.AlsoToMain({
+      type: actionTypes.WIDGETS_LISTS_USER_IMPRESSION
+    }));
+  }, [dispatch]);
+  const listsRef = useIntersectionObserver(handleIntersection);
+  const reorderLists = (0,external_React_namespaceObject.useCallback)((draggedElement, targetElement, before = false) => {
+    const draggedIndex = selectedList.tasks.findIndex(({
+      id
+    }) => id === draggedElement.id);
+    const targetIndex = selectedList.tasks.findIndex(({
+      id
+    }) => id === targetElement.id);
+
+    // return early is index is not found
+    if (draggedIndex === -1 || targetIndex === -1 || draggedIndex === targetIndex) {
+      return;
+    }
+    const reordered = [...selectedList.tasks];
+    const [removed] = reordered.splice(draggedIndex, 1);
+    const insertIndex = before ? targetIndex : targetIndex + 1;
+    reordered.splice(insertIndex > draggedIndex ? insertIndex - 1 : insertIndex, 0, removed);
+    const updatedLists = {
+      ...lists,
+      [selected]: {
+        ...selectedList,
+        tasks: reordered
+      }
+    };
+    dispatch(actionCreators.AlsoToMain({
+      type: actionTypes.WIDGETS_LISTS_UPDATE,
+      data: {
+        lists: updatedLists
+      }
+    }));
+    handleListInteraction();
+  }, [lists, selected, selectedList, dispatch, handleListInteraction]);
+  const moveTask = (0,external_React_namespaceObject.useCallback)((task, direction) => {
+    const index = selectedList.tasks.findIndex(({
+      id
+    }) => id === task.id);
+
+    // guardrail a falsey index
+    if (index === -1) {
+      return;
+    }
+    const targetIndex = direction === "up" ? index - 1 : index + 1;
+    const before = direction === "up";
+    const targetTask = selectedList.tasks[targetIndex];
+    if (targetTask) {
+      reorderLists(task, targetTask, before);
+    }
+  }, [selectedList, reorderLists]);
+  (0,external_React_namespaceObject.useEffect)(() => {
+    const selectNode = selectRef.current;
+    const reorderNode = reorderListRef.current;
+    if (!selectNode || !reorderNode) {
+      return undefined;
+    }
+    function handleSelectChange(e) {
+      dispatch(actionCreators.AlsoToMain({
+        type: actionTypes.WIDGETS_LISTS_CHANGE_SELECTED,
+        data: e.target.value
+      }));
+      handleListInteraction();
+    }
+    function handleReorder(e) {
+      const {
+        draggedElement,
+        targetElement,
+        position
+      } = e.detail;
+      reorderLists(draggedElement, targetElement, position === -1);
+    }
+    reorderNode.addEventListener("reorder", handleReorder);
+    selectNode.addEventListener("change", handleSelectChange);
+    return () => {
+      selectNode.removeEventListener("change", handleSelectChange);
+      reorderNode.removeEventListener("reorder", handleReorder);
+    };
+  }, [dispatch, isEditing, reorderLists, handleListInteraction]);
+
+  // effect that enables editing new list name only after store has been hydrated
+  (0,external_React_namespaceObject.useEffect)(() => {
+    if (selected === pendingNewList) {
+      setIsEditing(true);
+      setPendingNewList(null);
+    }
+  }, [selected, pendingNewList]);
+  function saveTask() {
+    const trimmedTask = newTask.trimEnd();
+    // only add new task if it has a length, to avoid creating empty tasks
+    if (trimmedTask) {
+      const formattedTask = {
+        value: trimmedTask,
+        completed: false,
+        created: Date.now(),
+        id: crypto.randomUUID(),
+        isUrl: isValidUrl(trimmedTask)
+      };
+      const updatedLists = {
+        ...lists,
+        [selected]: {
+          ...selectedList,
+          tasks: [formattedTask, ...lists[selected].tasks]
+        }
+      };
+      (0,external_ReactRedux_namespaceObject.batch)(() => {
+        dispatch(actionCreators.AlsoToMain({
+          type: actionTypes.WIDGETS_LISTS_UPDATE,
+          data: {
+            lists: updatedLists
+          }
+        }));
+        dispatch(actionCreators.OnlyToMain({
+          type: actionTypes.WIDGETS_LISTS_USER_EVENT,
+          data: {
+            userAction: USER_ACTION_TYPES.TASK_CREATE
+          }
+        }));
+      });
+      setNewTask("");
+      handleListInteraction();
+    }
+  }
+  function updateTask(updatedTask, type) {
+    const isCompletedType = type === TASK_TYPE.COMPLETED;
+    const isNowCompleted = updatedTask.completed;
+    let newTasks = selectedList.tasks;
+    let newCompleted = selectedList.completed;
+    let userAction;
+
+    // If the task is in the completed array and is now unchecked
+    const shouldMoveToTasks = isCompletedType && !isNowCompleted;
+
+    // If we're moving the task from tasks → completed (user checked it)
+    const shouldMoveToCompleted = !isCompletedType && isNowCompleted;
+
+    //  Move task from completed -> task
+    if (shouldMoveToTasks) {
+      newCompleted = selectedList.completed.filter(task => task.id !== updatedTask.id);
+      newTasks = [...selectedList.tasks, updatedTask];
+      // Move task to completed, but also create local version
+    } else if (shouldMoveToCompleted) {
+      newTasks = selectedList.tasks.filter(task => task.id !== updatedTask.id);
+      newCompleted = [...selectedList.completed, updatedTask];
+      userAction = USER_ACTION_TYPES.TASK_COMPLETE;
+    } else {
+      const targetKey = isCompletedType ? "completed" : "tasks";
+      const updatedArray = selectedList[targetKey].map(task => task.id === updatedTask.id ? updatedTask : task);
+      // In-place update: toggle checkbox (but stay in same array or edit name)
+      if (targetKey === "tasks") {
+        newTasks = updatedArray;
+      } else {
+        newCompleted = updatedArray;
+      }
+      userAction = USER_ACTION_TYPES.TASK_EDIT;
+    }
+    const updatedLists = {
+      ...lists,
+      [selected]: {
+        ...selectedList,
+        tasks: newTasks,
+        completed: newCompleted
+      }
+    };
+    (0,external_ReactRedux_namespaceObject.batch)(() => {
+      dispatch(actionCreators.AlsoToMain({
+        type: actionTypes.WIDGETS_LISTS_UPDATE,
+        data: {
+          lists: updatedLists
+        }
+      }));
+      if (userAction) {
+        dispatch(actionCreators.AlsoToMain({
+          type: actionTypes.WIDGETS_LISTS_USER_EVENT,
+          data: {
+            userAction
+          }
+        }));
+      }
+    });
+    handleListInteraction();
+  }
+  function deleteTask(task, type) {
+    const selectedTasks = lists[selected][type];
+    const updatedTasks = selectedTasks.filter(({
+      id
+    }) => id !== task.id);
+    const updatedLists = {
+      ...lists,
+      [selected]: {
+        ...selectedList,
+        [type]: updatedTasks
+      }
+    };
+    (0,external_ReactRedux_namespaceObject.batch)(() => {
+      dispatch(actionCreators.AlsoToMain({
+        type: actionTypes.WIDGETS_LISTS_UPDATE,
+        data: {
+          lists: updatedLists
+        }
+      }));
+      dispatch(actionCreators.OnlyToMain({
+        type: actionTypes.WIDGETS_LISTS_USER_EVENT,
+        data: {
+          userAction: USER_ACTION_TYPES.TASK_DELETE
+        }
+      }));
+    });
+    handleListInteraction();
+  }
+  function handleKeyDown(e) {
+    if (e.key === "Enter" && document.activeElement === inputRef.current) {
+      saveTask();
+    } else if (e.key === "Escape" && document.activeElement === inputRef.current) {
+      // Clear out the input when esc is pressed
+      setNewTask("");
+    }
+  }
+  function handleListNameSave(newLabel) {
+    const trimmedLabel = newLabel.trimEnd();
+    if (trimmedLabel && trimmedLabel !== selectedList?.label) {
+      const updatedLists = {
+        ...lists,
+        [selected]: {
+          ...selectedList,
+          label: trimmedLabel
+        }
+      };
+      (0,external_ReactRedux_namespaceObject.batch)(() => {
+        dispatch(actionCreators.AlsoToMain({
+          type: actionTypes.WIDGETS_LISTS_UPDATE,
+          data: {
+            lists: updatedLists
+          }
+        }));
+        dispatch(actionCreators.OnlyToMain({
+          type: actionTypes.WIDGETS_LISTS_USER_EVENT,
+          data: {
+            userAction: USER_ACTION_TYPES.LIST_EDIT
+          }
+        }));
+      });
+      setIsEditing(false);
+      handleListInteraction();
+    }
+  }
+  function handleCreateNewList() {
+    const id = crypto.randomUUID();
+    const newLists = {
+      ...lists,
+      [id]: {
+        label: "",
+        tasks: [],
+        completed: []
+      }
+    };
+    (0,external_ReactRedux_namespaceObject.batch)(() => {
+      dispatch(actionCreators.AlsoToMain({
+        type: actionTypes.WIDGETS_LISTS_UPDATE,
+        data: {
+          lists: newLists
+        }
+      }));
+      dispatch(actionCreators.AlsoToMain({
+        type: actionTypes.WIDGETS_LISTS_CHANGE_SELECTED,
+        data: id
+      }));
+      dispatch(actionCreators.OnlyToMain({
+        type: actionTypes.WIDGETS_LISTS_USER_EVENT,
+        data: {
+          userAction: USER_ACTION_TYPES.LIST_CREATE
+        }
+      }));
+    });
+    setPendingNewList(id);
+    handleListInteraction();
+  }
+  function handleCancelNewList() {
+    // If current list is new and has no label/tasks, remove it
+    if (!selectedList?.label && selectedList?.tasks?.length === 0) {
+      const updatedLists = {
+        ...lists
+      };
+      delete updatedLists[selected];
+      const listKeys = Object.keys(updatedLists);
+      const key = listKeys[listKeys.length - 1];
+      (0,external_ReactRedux_namespaceObject.batch)(() => {
+        dispatch(actionCreators.AlsoToMain({
+          type: actionTypes.WIDGETS_LISTS_UPDATE,
+          data: {
+            lists: updatedLists
+          }
+        }));
+        dispatch(actionCreators.AlsoToMain({
+          type: actionTypes.WIDGETS_LISTS_CHANGE_SELECTED,
+          data: key
+        }));
+        dispatch(actionCreators.OnlyToMain({
+          type: actionTypes.WIDGETS_LISTS_USER_EVENT,
+          data: {
+            userAction: USER_ACTION_TYPES.LIST_DELETE
+          }
+        }));
+      });
+    }
+    handleListInteraction();
+  }
+  function handleDeleteList() {
+    let updatedLists = {
+      ...lists
+    };
+    if (updatedLists[selected]) {
+      delete updatedLists[selected];
+
+      // if this list was the last one created, add a new list as default
+      if (Object.keys(updatedLists)?.length === 0) {
+        updatedLists = {
+          [crypto.randomUUID()]: {
+            label: "",
+            tasks: [],
+            completed: []
+          }
+        };
+      }
+      const listKeys = Object.keys(updatedLists);
+      const key = listKeys[listKeys.length - 1];
+      (0,external_ReactRedux_namespaceObject.batch)(() => {
+        dispatch(actionCreators.AlsoToMain({
+          type: actionTypes.WIDGETS_LISTS_UPDATE,
+          data: {
+            lists: updatedLists
+          }
+        }));
+        dispatch(actionCreators.AlsoToMain({
+          type: actionTypes.WIDGETS_LISTS_CHANGE_SELECTED,
+          data: key
+        }));
+        dispatch(actionCreators.OnlyToMain({
+          type: actionTypes.WIDGETS_LISTS_USER_EVENT,
+          data: {
+            userAction: USER_ACTION_TYPES.LIST_DELETE
+          }
+        }));
+      });
+    }
+    handleListInteraction();
+  }
+  function handleHideLists() {
+    dispatch(actionCreators.OnlyToMain({
+      type: actionTypes.SET_PREF,
+      data: {
+        name: "widgets.lists.enabled",
+        value: false
+      }
+    }));
+    handleListInteraction();
+  }
+  function handleCopyListToClipboard() {
+    const currentList = lists[selected];
+    if (!currentList) {
+      return;
+    }
+    const {
+      label,
+      tasks = [],
+      completed = []
+    } = currentList;
+    const uncompleted = tasks.filter(task => !task.completed);
+    const currentCompleted = tasks.filter(task => task.completed);
+
+    // In order in include all items, we need to iterate through both current and completed tasks list and mark format all completed tasks accordingly.
+    const formatted = [`List: ${label}`, `---`, ...uncompleted.map(task => `- [ ] ${task.value}`), ...currentCompleted.map(task => `- [x] ${task.value}`), ...completed.map(task => `- [x] ${task.value}`)].join("\n");
+    try {
+      navigator.clipboard.writeText(formatted);
+    } catch (err) {
+      console.error("Copy failed", err);
+    }
+    dispatch(actionCreators.OnlyToMain({
+      type: actionTypes.WIDGETS_LISTS_USER_EVENT,
+      data: {
+        userAction: USER_ACTION_TYPES.LIST_COPY
+      }
+    }));
+    handleListInteraction();
+  }
+  function handleLearnMore() {
+    dispatch(actionCreators.OnlyToMain({
+      type: actionTypes.OPEN_LINK,
+      data: {
+        url: "https://support.mozilla.org/kb/firefox-new-tab-widgets"
+      }
+    }));
+    handleListInteraction();
+  }
+
+  // Reset baseline only when switching lists
+  (0,external_React_namespaceObject.useEffect)(() => {
+    prevCompletedCount.current = selectedList?.completed?.length || 0;
+    // intentionally leaving out selectedList from dependency array
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected]);
+  (0,external_React_namespaceObject.useEffect)(() => {
+    if (selectedList) {
+      const doneCount = selectedList.completed?.length || 0;
+      const previous = Math.floor(prevCompletedCount.current / 5);
+      const current = Math.floor(doneCount / 5);
+      if (current > previous) {
+        fireConfetti();
+      }
+      prevCompletedCount.current = doneCount;
+    }
+  }, [selectedList, fireConfetti, selected]);
+  if (!lists) {
+    return null;
+  }
+
+  // Enforce maximum count limits to lists
+  const currentListsCount = Object.keys(lists).length;
+  // Ensure a minimum of 1, but allow higher values from prefs
+  const maxListsCount = Math.max(1, prefs[PREF_WIDGETS_LISTS_MAX_LISTS]);
+  const isAtMaxListsLimit = currentListsCount >= maxListsCount;
+
+  // Enforce maximum count limits to list items
+  // The maximum applies to the total number of items (both incomplete and completed items)
+  const currentSelectedListItemsCount = selectedList?.tasks.length + selectedList?.completed.length;
+
+  // Ensure a minimum of 1, but allow higher values from prefs
+  const maxListItemsCount = Math.max(1, prefs[PREF_WIDGETS_LISTS_MAX_LISTITEMS]);
+  const isAtMaxListItemsLimit = currentSelectedListItemsCount >= maxListItemsCount;
+
+  // Figure out if the selected list is the first (default) or a new one.
+  // Index 0 → use "Task list"; any later index → use "New list".
+  // Fallback to 0 if the selected id isn’t found.
+  const listKeys = Object.keys(lists);
+  const selectedIndex = Math.max(0, listKeys.indexOf(selected));
+  const listNamePlaceholder = currentListsCount > 1 && selectedIndex !== 0 ? "newtab-widget-lists-name-placeholder-new" : "newtab-widget-lists-name-placeholder-default";
+  const nimbusBadgeEnabled = prefs.widgetsConfig?.listsBadgeEnabled;
+  const nimbusBadgeLabel = prefs.widgetsConfig?.listsBadgeLabel;
+  const nimbusBadgeTrainhopEnabled = prefs.trainhopConfig?.widgets?.listsBadgeEnabled;
+  const nimbusBadgeTrainhopLabel = prefs.trainhopConfig?.widgets?.listsBadgeLabel;
+  const badgeEnabled = (nimbusBadgeEnabled || nimbusBadgeTrainhopEnabled) ?? prefs[PREF_WIDGETS_LISTS_BADGE_ENABLED] ?? false;
+  const badgeLabel = (nimbusBadgeLabel || nimbusBadgeTrainhopLabel) ?? prefs[PREF_WIDGETS_LISTS_BADGE_LABEL] ?? "";
+  return /*#__PURE__*/external_React_default().createElement("article", {
+    className: `lists ${isMaximized ? "is-maximized" : ""}`,
+    ref: el => {
+      listsRef.current = [el];
+    }
+  }, /*#__PURE__*/external_React_default().createElement("div", {
+    className: "select-wrapper"
+  }, /*#__PURE__*/external_React_default().createElement(EditableText, {
+    value: lists[selected]?.label || "",
+    onSave: handleListNameSave,
+    isEditing: isEditing,
+    setIsEditing: setIsEditing,
+    onCancel: handleCancelNewList,
+    type: "list",
+    maxLength: 30,
+    dataL10nId: listNamePlaceholder
+  }, /*#__PURE__*/external_React_default().createElement("moz-select", {
+    ref: selectRef,
+    value: selected
+  }, Object.entries(lists).map(([key, list]) => /*#__PURE__*/external_React_default().createElement("moz-option", Lists_extends({
+    key: key,
+    value: key
+    // On the first/initial list, use default name
+  }, list.label ? {
+    label: list.label
+  } : {
+    "data-l10n-id": "newtab-widget-lists-name-label-default"
+  }))))), !isEditing && badgeEnabled && badgeLabel && /*#__PURE__*/external_React_default().createElement("moz-badge", {
+    "data-l10n-id": (() => {
+      if (badgeLabel === "New") {
+        return "newtab-widget-lists-label-new";
+      }
+      if (badgeLabel === "Beta") {
+        return "newtab-widget-lists-label-beta";
+      }
+      return "";
+    })()
+  }), /*#__PURE__*/external_React_default().createElement("moz-button", {
+    className: "lists-panel-button",
+    iconSrc: "chrome://global/skin/icons/more.svg",
+    menuId: "lists-panel",
+    type: "ghost"
+  }), /*#__PURE__*/external_React_default().createElement("panel-list", {
+    id: "lists-panel"
+  }, /*#__PURE__*/external_React_default().createElement("panel-item", {
+    "data-l10n-id": "newtab-widget-lists-menu-edit",
+    onClick: () => setIsEditing(true)
+  }), /*#__PURE__*/external_React_default().createElement("panel-item", Lists_extends({}, isAtMaxListsLimit ? {
+    disabled: true
+  } : {}, {
+    "data-l10n-id": "newtab-widget-lists-menu-create",
+    onClick: () => handleCreateNewList(),
+    className: "create-list"
+  })), /*#__PURE__*/external_React_default().createElement("panel-item", {
+    "data-l10n-id": "newtab-widget-lists-menu-delete",
+    onClick: () => handleDeleteList()
+  }), /*#__PURE__*/external_React_default().createElement("hr", null), /*#__PURE__*/external_React_default().createElement("panel-item", {
+    "data-l10n-id": "newtab-widget-lists-menu-copy",
+    onClick: () => handleCopyListToClipboard()
+  }), /*#__PURE__*/external_React_default().createElement("panel-item", {
+    "data-l10n-id": "newtab-widget-lists-menu-hide",
+    onClick: () => handleHideLists()
+  }), /*#__PURE__*/external_React_default().createElement("panel-item", {
+    className: "learn-more",
+    "data-l10n-id": "newtab-widget-lists-menu-learn-more",
+    onClick: handleLearnMore
+  }))), /*#__PURE__*/external_React_default().createElement("div", {
+    className: "add-task-container"
+  }, /*#__PURE__*/external_React_default().createElement("span", {
+    className: `icon icon-add ${isAtMaxListItemsLimit ? "icon-disabled" : ""}`
+  }), /*#__PURE__*/external_React_default().createElement("input", {
+    ref: inputRef,
+    onBlur: () => saveTask(),
+    onChange: e => setNewTask(e.target.value),
+    value: newTask,
+    "data-l10n-id": "newtab-widget-lists-input-add-an-item",
+    className: "add-task-input",
+    onKeyDown: handleKeyDown,
+    type: "text",
+    maxLength: 100,
+    disabled: isAtMaxListItemsLimit
+  })), /*#__PURE__*/external_React_default().createElement("div", {
+    className: "task-list-wrapper"
+  }, /*#__PURE__*/external_React_default().createElement("moz-reorderable-list", {
+    ref: reorderListRef,
+    itemSelector: "fieldset .task-type-tasks",
+    dragSelector: ".checkbox-wrapper:has(.task-label)"
+  }, /*#__PURE__*/external_React_default().createElement("fieldset", null, selectedList?.tasks.length >= 1 && selectedList.tasks.map((task, index) => /*#__PURE__*/external_React_default().createElement(ListItem, {
+    type: TASK_TYPE.IN_PROGRESS,
+    task: task,
+    key: task.id,
+    updateTask: updateTask,
+    deleteTask: deleteTask,
+    moveTask: moveTask,
+    isValidUrl: isValidUrl,
+    isFirst: index === 0,
+    isLast: index === selectedList.tasks.length - 1
+  })), selectedList?.completed.length >= 1 && /*#__PURE__*/external_React_default().createElement("details", {
+    className: "completed-task-wrapper",
+    open: selectedList?.tasks.length < 1
+  }, /*#__PURE__*/external_React_default().createElement("summary", null, /*#__PURE__*/external_React_default().createElement("span", {
+    "data-l10n-id": "newtab-widget-lists-completed-list",
+    "data-l10n-args": JSON.stringify({
+      number: lists[selected]?.completed.length
+    }),
+    className: "completed-title"
+  })), selectedList?.completed.map(completedTask => /*#__PURE__*/external_React_default().createElement(ListItem, {
+    key: completedTask.id,
+    type: TASK_TYPE.COMPLETED,
+    task: completedTask,
+    deleteTask: deleteTask,
+    updateTask: updateTask
+  }))))), selectedList?.tasks.length < 1 && selectedList?.completed.length < 1 && /*#__PURE__*/external_React_default().createElement("div", {
+    className: "empty-list"
+  }, /*#__PURE__*/external_React_default().createElement("picture", null, /*#__PURE__*/external_React_default().createElement("source", {
+    srcSet: "chrome://newtab/content/data/content/assets/lists-empty-state-dark.svg",
+    media: "(prefers-color-scheme: dark)"
+  }), /*#__PURE__*/external_React_default().createElement("source", {
+    srcSet: "chrome://newtab/content/data/content/assets/lists-empty-state-light.svg",
+    media: "(prefers-color-scheme: light)"
+  }), /*#__PURE__*/external_React_default().createElement("img", {
+    width: "100",
+    height: "100",
+    alt: ""
+  })), /*#__PURE__*/external_React_default().createElement("p", {
+    className: "empty-list-text",
+    "data-l10n-id": "newtab-widget-lists-empty-cta"
+  }))), /*#__PURE__*/external_React_default().createElement("canvas", {
+    className: "confetti-canvas",
+    ref: canvasRef
+  }));
+}
+function ListItem({
+  task,
+  updateTask,
+  deleteTask,
+  moveTask,
+  isValidUrl,
+  type,
+  isFirst = false,
+  isLast = false
+}) {
+  const [isEditing, setIsEditing] = (0,external_React_namespaceObject.useState)(false);
+  const [exiting, setExiting] = (0,external_React_namespaceObject.useState)(false);
+  const isCompleted = type === TASK_TYPE.COMPLETED;
+  const prefersReducedMotion = typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function handleCheckboxChange(e) {
+    const {
+      checked
+    } = e.target;
+    const updatedTask = {
+      ...task,
+      completed: checked
+    };
+    if (checked && !prefersReducedMotion) {
+      setExiting(true);
+    } else {
+      updateTask(updatedTask, type);
+    }
+  }
+
+  // When the CSS transition finishes, dispatch the real “completed = true”
+  function handleTransitionEnd(e) {
+    // only fire once for the exit:
+    if (e.propertyName === "opacity" && exiting) {
+      updateTask({
+        ...task,
+        completed: true
+      }, type);
+      setExiting(false);
+    }
+  }
+  function handleSave(newValue) {
+    const trimmedTask = newValue.trimEnd();
+    if (trimmedTask && trimmedTask !== task.value) {
+      updateTask({
+        ...task,
+        value: newValue,
+        isUrl: isValidUrl(trimmedTask)
+      }, type);
+      setIsEditing(false);
+    }
+  }
+  function handleDelete() {
+    deleteTask(task, type);
+  }
+  const taskLabel = task.isUrl ? /*#__PURE__*/external_React_default().createElement("a", {
+    href: task.value,
+    rel: "noopener noreferrer",
+    target: "_blank",
+    className: "task-label",
+    title: task.value
+  }, task.value) : /*#__PURE__*/external_React_default().createElement("label", {
+    className: "task-label",
+    title: task.value,
+    htmlFor: `task-${task.id}`,
+    onClick: () => setIsEditing(true)
+  }, task.value);
+  return /*#__PURE__*/external_React_default().createElement("div", {
+    className: `task-item task-type-${type} ${exiting ? " exiting" : ""}`,
+    id: task.id,
+    key: task.id,
+    onTransitionEnd: handleTransitionEnd
+  }, /*#__PURE__*/external_React_default().createElement("div", {
+    className: "checkbox-wrapper",
+    key: isEditing
+  }, /*#__PURE__*/external_React_default().createElement("input", {
+    type: "checkbox",
+    onChange: handleCheckboxChange,
+    checked: task.completed || exiting,
+    id: `task-${task.id}`
+  }), isCompleted ? taskLabel : /*#__PURE__*/external_React_default().createElement(EditableText, {
+    isEditing: isEditing,
+    setIsEditing: setIsEditing,
+    value: task.value,
+    onSave: handleSave,
+    type: "task"
+  }, taskLabel)), /*#__PURE__*/external_React_default().createElement("moz-button", {
+    iconSrc: "chrome://global/skin/icons/more.svg",
+    menuId: `panel-task-${task.id}`,
+    type: "ghost"
+  }), /*#__PURE__*/external_React_default().createElement("panel-list", {
+    id: `panel-task-${task.id}`
+  }, !isCompleted && /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, task.isUrl && /*#__PURE__*/external_React_default().createElement("panel-item", {
+    "data-l10n-id": "newtab-widget-lists-input-menu-open-link",
+    onClick: () => window.open(task.value, "_blank", "noopener")
+  }), /*#__PURE__*/external_React_default().createElement("panel-item", Lists_extends({}, isFirst ? {
+    disabled: true
+  } : {}, {
+    onClick: () => moveTask(task, "up"),
+    "data-l10n-id": "newtab-widget-lists-input-menu-move-up"
+  })), /*#__PURE__*/external_React_default().createElement("panel-item", Lists_extends({}, isLast ? {
+    disabled: true
+  } : {}, {
+    onClick: () => moveTask(task, "down"),
+    "data-l10n-id": "newtab-widget-lists-input-menu-move-down"
+  })), /*#__PURE__*/external_React_default().createElement("panel-item", {
+    "data-l10n-id": "newtab-widget-lists-input-menu-edit",
+    className: "edit-item",
+    onClick: () => setIsEditing(true)
+  })), /*#__PURE__*/external_React_default().createElement("panel-item", {
+    "data-l10n-id": "newtab-widget-lists-input-menu-delete",
+    className: "delete-item",
+    onClick: handleDelete
+  })));
+}
+function EditableText({
+  value,
+  isEditing,
+  setIsEditing,
+  onSave,
+  onCancel,
+  children,
+  type,
+  dataL10nId = null,
+  maxLength = 100
+}) {
+  const [tempValue, setTempValue] = (0,external_React_namespaceObject.useState)(value);
+  const inputRef = (0,external_React_namespaceObject.useRef)(null);
+
+  // True if tempValue is empty, null/undefined, or only whitespace
+  const showPlaceholder = (tempValue ?? "").trim() === "";
+  (0,external_React_namespaceObject.useEffect)(() => {
+    if (isEditing) {
+      inputRef.current?.focus();
+    } else {
+      setTempValue(value);
+    }
+  }, [isEditing, value]);
+  function handleKeyDown(e) {
+    if (e.key === "Enter") {
+      onSave(tempValue.trim());
+      setIsEditing(false);
+    } else if (e.key === "Escape") {
+      setIsEditing(false);
+      setTempValue(value);
+      onCancel?.();
+    }
+  }
+  function handleOnBlur() {
+    onSave(tempValue.trim());
+    setIsEditing(false);
+  }
+  return isEditing ? /*#__PURE__*/external_React_default().createElement("input", Lists_extends({
+    className: `edit-${type}`,
+    ref: inputRef,
+    type: "text",
+    value: tempValue,
+    maxLength: maxLength,
+    onChange: event => setTempValue(event.target.value),
+    onBlur: handleOnBlur,
+    onKeyDown: handleKeyDown
+    // Note that if a user has a custom name set, it will override the placeholder
+  }, showPlaceholder && dataL10nId ? {
+    "data-l10n-id": dataL10nId
+  } : {})) : [children];
+}
+
+;// CONCATENATED MODULE: ./content-src/components/Widgets/FocusTimer/FocusTimer.jsx
+function FocusTimer_extends() { return FocusTimer_extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, FocusTimer_extends.apply(null, arguments); }
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+
+
+
+
+const FocusTimer_USER_ACTION_TYPES = {
+  TIMER_SET: "timer_set",
+  TIMER_PLAY: "timer_play",
+  TIMER_PAUSE: "timer_pause",
+  TIMER_RESET: "timer_reset",
+  TIMER_END: "timer_end",
+  TIMER_TOGGLE_FOCUS: "timer_toggle_focus",
+  TIMER_TOGGLE_BREAK: "timer_toggle_break"
+};
+
+/**
+ * Calculates the remaining time (in seconds) by subtracting elapsed time from the original duration
+ *
+ * @param duration
+ * @param start
+ * @returns int
+ */
+const calculateTimeRemaining = (duration, start) => {
+  const currentTime = Math.floor(Date.now() / 1000);
+
+  // Subtract the elapsed time from initial duration to get time remaining in the timer
+  return Math.max(duration - (currentTime - start), 0);
+};
+
+/**
+ * Converts a number of seconds into a zero-padded MM:SS time string
+ *
+ * @param seconds
+ * @returns string
+ */
+const formatTime = seconds => {
+  const minutes = Math.floor(seconds / 60).toString().padStart(2, "0");
+  const secs = (seconds % 60).toString().padStart(2, "0");
+  return `${minutes}:${secs}`;
+};
+
+/**
+ * Validates that the inputs in the timer only allow numerical digits (0-9)
+ *
+ * @param input - The character being input
+ * @returns boolean - true if valid numeric input, false otherwise
+ */
+const isNumericValue = input => {
+  // Check for null/undefined input or non-numeric characters
+  return input && /^\d+$/.test(input);
+};
+
+/**
+ * Validates if adding a new digit would exceed the 2-character limit
+ *
+ * @param currentValue - The current value in the field
+ * @returns boolean - true if at 2-character limit, false otherwise
+ */
+const isAtMaxLength = currentValue => {
+  return currentValue.length >= 2;
+};
+
+/**
+ * Converts a polar coordinate (angle on circle) into a percentage-based [x,y] position for clip-path
+ *
+ * @param cx
+ * @param cy
+ * @param radius
+ * @param angle
+ * @returns string
+ */
+const polarToPercent = (cx, cy, radius, angle) => {
+  const rad = (angle - 90) * Math.PI / 180;
+  const x = cx + radius * Math.cos(rad);
+  const y = cy + radius * Math.sin(rad);
+  return `${x}% ${y}%`;
+};
+
+/**
+ * Generates a clip-path polygon string that represents a pie slice from 0 degrees
+ * to the current progress angle
+ *
+ * @returns string
+ * @param progress
+ */
+const getClipPath = progress => {
+  const cx = 50;
+  const cy = 50;
+  const radius = 50;
+  // Show some progress right at the start - 6 degrees is just enough to paint a dot once the timer is ticking
+  const angle = progress > 0 ? Math.max(progress * 360, 6) : 0;
+  const points = [`50% 50%`];
+  for (let a = 0; a <= angle; a += 2) {
+    points.push(polarToPercent(cx, cy, radius, a));
+  }
+  return `polygon(${points.join(", ")})`;
+};
+const FocusTimer = ({
+  dispatch,
+  handleUserInteraction,
+  isMaximized
+}) => {
+  const [timeLeft, setTimeLeft] = (0,external_React_namespaceObject.useState)(0);
+  // calculated value for the progress circle; 1 = 100%
+  const [progress, setProgress] = (0,external_React_namespaceObject.useState)(0);
+  const activeMinutesRef = (0,external_React_namespaceObject.useRef)(null);
+  const activeSecondsRef = (0,external_React_namespaceObject.useRef)(null);
+  const arcRef = (0,external_React_namespaceObject.useRef)(null);
+  const timerType = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.TimerWidget.timerType);
+  const timerData = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.TimerWidget);
+  const {
+    duration,
+    initialDuration,
+    startTime,
+    isRunning
+  } = timerData[timerType];
+  const initialTimerDuration = timerData[timerType].initialDuration;
+  const handleTimerInteraction = (0,external_React_namespaceObject.useCallback)(() => handleUserInteraction("focusTimer"), [handleUserInteraction]);
+  const handleIntersection = (0,external_React_namespaceObject.useCallback)(() => {
+    dispatch(actionCreators.AlsoToMain({
+      type: actionTypes.WIDGETS_TIMER_USER_IMPRESSION
+    }));
+  }, [dispatch]);
+  const timerRef = useIntersectionObserver(handleIntersection);
+  const resetProgressCircle = (0,external_React_namespaceObject.useCallback)(() => {
+    if (arcRef?.current) {
+      arcRef.current.style.clipPath = "polygon(50% 50%)";
+      arcRef.current.style.webkitClipPath = "polygon(50% 50%)";
+    }
+    setProgress(0);
+    handleTimerInteraction();
+  }, [arcRef, handleTimerInteraction]);
+  const prefs = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.Prefs.values);
+  const showSystemNotifications = prefs["widgets.focusTimer.showSystemNotifications"];
+  (0,external_React_namespaceObject.useEffect)(() => {
+    // resets default values after timer ends
+    let interval;
+    let hasReachedZero = false;
+    if (isRunning && duration > 0) {
+      interval = setInterval(() => {
+        const currentTime = Math.floor(Date.now() / 1000);
+        const elapsed = currentTime - startTime;
+        const remaining = calculateTimeRemaining(duration, startTime);
+
+        // using setTimeLeft to trigger a re-render of the component to show live countdown each second
+        setTimeLeft(remaining);
+        setProgress((initialDuration - remaining) / initialDuration);
+        if (elapsed >= duration && hasReachedZero) {
+          clearInterval(interval);
+          (0,external_ReactRedux_namespaceObject.batch)(() => {
+            dispatch(actionCreators.AlsoToMain({
+              type: actionTypes.WIDGETS_TIMER_END,
+              data: {
+                timerType,
+                duration: initialTimerDuration,
+                initialDuration: initialTimerDuration
+              }
+            }));
+            dispatch(actionCreators.OnlyToMain({
+              type: actionTypes.WIDGETS_TIMER_USER_EVENT,
+              data: {
+                userAction: FocusTimer_USER_ACTION_TYPES.TIMER_END
+              }
+            }));
+          });
+
+          // animate the progress circle to turn solid green
+          setProgress(1);
+
+          // More transitions after a delay to allow the animation above to complete
+          setTimeout(() => {
+            // progress circle goes back to default grey
+            resetProgressCircle();
+
+            // There's more to see!
+            setTimeout(() => {
+              // switch over to the other timer type
+              // eslint-disable-next-line max-nested-callbacks
+              (0,external_ReactRedux_namespaceObject.batch)(() => {
+                dispatch(actionCreators.AlsoToMain({
+                  type: actionTypes.WIDGETS_TIMER_SET_TYPE,
+                  data: {
+                    timerType: timerType === "focus" ? "break" : "focus"
+                  }
+                }));
+                dispatch(actionCreators.OnlyToMain({
+                  type: actionTypes.WIDGETS_TIMER_USER_EVENT,
+                  data: {
+                    userAction: timerType === "focus" ? FocusTimer_USER_ACTION_TYPES.TIMER_TOGGLE_BREAK : FocusTimer_USER_ACTION_TYPES.TIMER_TOGGLE_FOCUS
+                  }
+                }));
+              });
+            }, 500);
+          }, 1000);
+        } else if (elapsed >= duration) {
+          hasReachedZero = true;
+        }
+      }, 1000);
+    }
+
+    // Shows the correct live time in the UI whenever the timer state changes
+    const newTime = isRunning ? calculateTimeRemaining(duration, startTime) : duration;
+    setTimeLeft(newTime);
+
+    // Set progress for paused timers (handles page load and timer type toggling)
+    if (!isRunning && duration < initialDuration) {
+      // Show previously elapsed time
+      setProgress((initialDuration - duration) / initialDuration);
+    } else if (!isRunning) {
+      // Reset progress for fresh timers
+      setProgress(0);
+    }
+    return () => clearInterval(interval);
+  }, [isRunning, startTime, duration, initialDuration, dispatch, resetProgressCircle, timerType, initialTimerDuration]);
+
+  // Update the clip-path of the gradient circle to match the current progress value
+  (0,external_React_namespaceObject.useEffect)(() => {
+    if (arcRef?.current) {
+      // Only set clip-path if current timer has been started or is running
+      if (progress > 0 || isRunning) {
+        arcRef.current.style.clipPath = getClipPath(progress);
+      } else {
+        arcRef.current.style.clipPath = "";
+      }
+    }
+  }, [progress, isRunning]);
+
+  // set timer function
+  const setTimerDuration = () => {
+    const minutesEl = activeMinutesRef.current;
+    const secondsEl = activeSecondsRef.current;
+    const minutesValue = minutesEl.innerText.trim() || "0";
+    const secondsValue = secondsEl.innerText.trim() || "0";
+    let minutes = parseInt(minutesValue || "0", 10);
+    let seconds = parseInt(secondsValue || "0", 10);
+
+    // Set a limit of 99 minutes
+    minutes = Math.min(minutes, 99);
+    // Set a limit of 59 seconds
+    seconds = Math.min(seconds, 59);
+    const totalSeconds = minutes * 60 + seconds;
+    if (!Number.isNaN(totalSeconds) && totalSeconds > 0 && totalSeconds !== duration) {
+      (0,external_ReactRedux_namespaceObject.batch)(() => {
+        dispatch(actionCreators.AlsoToMain({
+          type: actionTypes.WIDGETS_TIMER_SET_DURATION,
+          data: {
+            timerType,
+            duration: totalSeconds
+          }
+        }));
+        dispatch(actionCreators.OnlyToMain({
+          type: actionTypes.WIDGETS_TIMER_USER_EVENT,
+          data: {
+            userAction: FocusTimer_USER_ACTION_TYPES.TIMER_SET
+          }
+        }));
+      });
+    }
+    handleTimerInteraction();
+  };
+
+  // Pause timer function
+  const toggleTimer = () => {
+    if (!isRunning && duration > 0) {
+      (0,external_ReactRedux_namespaceObject.batch)(() => {
+        dispatch(actionCreators.AlsoToMain({
+          type: actionTypes.WIDGETS_TIMER_PLAY,
+          data: {
+            timerType
+          }
+        }));
+        dispatch(actionCreators.OnlyToMain({
+          type: actionTypes.WIDGETS_TIMER_USER_EVENT,
+          data: {
+            userAction: FocusTimer_USER_ACTION_TYPES.TIMER_PLAY
+          }
+        }));
+      });
+    } else if (isRunning) {
+      // calculated to get the new baseline of the timer when it starts or resumes
+      const remaining = calculateTimeRemaining(duration, startTime);
+      (0,external_ReactRedux_namespaceObject.batch)(() => {
+        dispatch(actionCreators.AlsoToMain({
+          type: actionTypes.WIDGETS_TIMER_PAUSE,
+          data: {
+            timerType,
+            duration: remaining
+          }
+        }));
+        dispatch(actionCreators.OnlyToMain({
+          type: actionTypes.WIDGETS_TIMER_USER_EVENT,
+          data: {
+            userAction: FocusTimer_USER_ACTION_TYPES.TIMER_PAUSE
+          }
+        }));
+      });
+    }
+    handleTimerInteraction();
+  };
+
+  // reset timer function
+  const resetTimer = () => {
+    (0,external_ReactRedux_namespaceObject.batch)(() => {
+      dispatch(actionCreators.AlsoToMain({
+        type: actionTypes.WIDGETS_TIMER_RESET,
+        data: {
+          timerType,
+          duration: initialTimerDuration,
+          initialDuration: initialTimerDuration
+        }
+      }));
+      dispatch(actionCreators.OnlyToMain({
+        type: actionTypes.WIDGETS_TIMER_USER_EVENT,
+        data: {
+          userAction: FocusTimer_USER_ACTION_TYPES.TIMER_RESET
+        }
+      }));
+    });
+
+    // Reset progress value and gradient arc on the progress circle
+    resetProgressCircle();
+    handleTimerInteraction();
+  };
+
+  // Toggles between "focus" and "break" timer types
+  const toggleType = type => {
+    const oldTypeRemaining = calculateTimeRemaining(duration, startTime);
+    (0,external_ReactRedux_namespaceObject.batch)(() => {
+      // The type we are toggling away from automatically pauses
+      dispatch(actionCreators.AlsoToMain({
+        type: actionTypes.WIDGETS_TIMER_PAUSE,
+        data: {
+          timerType,
+          duration: oldTypeRemaining
+        }
+      }));
+      dispatch(actionCreators.OnlyToMain({
+        type: actionTypes.WIDGETS_TIMER_USER_EVENT,
+        data: {
+          userAction: FocusTimer_USER_ACTION_TYPES.TIMER_PAUSE
+        }
+      }));
+
+      // Sets the current timer type so it persists when opening a new tab
+      dispatch(actionCreators.AlsoToMain({
+        type: actionTypes.WIDGETS_TIMER_SET_TYPE,
+        data: {
+          timerType: type
+        }
+      }));
+      dispatch(actionCreators.OnlyToMain({
+        type: actionTypes.WIDGETS_TIMER_USER_EVENT,
+        data: {
+          userAction: type === "focus" ? FocusTimer_USER_ACTION_TYPES.TIMER_TOGGLE_FOCUS : FocusTimer_USER_ACTION_TYPES.TIMER_TOGGLE_BREAK
+        }
+      }));
+    });
+    handleTimerInteraction();
+  };
+  const handleKeyDown = e => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      setTimerDuration(e);
+      handleTimerInteraction();
+    }
+    if (e.key === "Tab") {
+      setTimerDuration(e);
+      handleTimerInteraction();
+    }
+  };
+  const handleBeforeInput = e => {
+    const input = e.data;
+    const values = e.target.innerText.trim();
+
+    // only allow numerical digits 0–9 for time input
+    if (!isNumericValue(input)) {
+      e.preventDefault();
+      return;
+    }
+    const selection = window.getSelection();
+    const selectedText = selection.toString();
+
+    // if entire value is selected, replace it with the new input
+    if (selectedText === values) {
+      e.preventDefault(); // prevent default typing
+      e.target.innerText = input;
+
+      // Places the caret at the end of the content-editable text
+      // This is a known problem with content-editable where the caret
+      const range = document.createRange();
+      range.selectNodeContents(e.target);
+      range.collapse(false);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      return;
+    }
+
+    // only allow 2 values each for minutes and seconds
+    if (isAtMaxLength(values)) {
+      e.preventDefault();
+    }
+  };
+  const handleFocus = e => {
+    if (isRunning) {
+      // calculated to get the new baseline of the timer when it starts or resumes
+      const remaining = calculateTimeRemaining(duration, startTime);
+      (0,external_ReactRedux_namespaceObject.batch)(() => {
+        dispatch(actionCreators.AlsoToMain({
+          type: actionTypes.WIDGETS_TIMER_PAUSE,
+          data: {
+            timerType,
+            duration: remaining
+          }
+        }));
+        dispatch(actionCreators.OnlyToMain({
+          type: actionTypes.WIDGETS_TIMER_USER_EVENT,
+          data: {
+            userAction: FocusTimer_USER_ACTION_TYPES.TIMER_PAUSE
+          }
+        }));
+      });
+    }
+
+    // highlight entire text when focused on the time.
+    // this makes it easier to input the new time instead of backspacing
+    const el = e.target;
+    if (document.createRange && window.getSelection) {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  };
+  function handleLearnMore() {
+    dispatch(actionCreators.OnlyToMain({
+      type: actionTypes.OPEN_LINK,
+      data: {
+        url: "https://support.mozilla.org/kb/firefox-new-tab-widgets"
+      }
+    }));
+    handleTimerInteraction();
+  }
+  function handlePrefUpdate(prefName, prefValue) {
+    dispatch(actionCreators.OnlyToMain({
+      type: actionTypes.SET_PREF,
+      data: {
+        name: prefName,
+        value: prefValue
+      }
+    }));
+    handleTimerInteraction();
+  }
+  return timerData ? /*#__PURE__*/external_React_default().createElement("article", {
+    className: `focus-timer ${isMaximized ? "is-maximized" : ""}`,
+    ref: el => {
+      timerRef.current = [el];
+    }
+  }, /*#__PURE__*/external_React_default().createElement("div", {
+    className: "newtab-widget-timer-notification-title-wrapper"
+  }, /*#__PURE__*/external_React_default().createElement("h3", {
+    "data-l10n-id": "newtab-widget-timer-notification-title"
+  }), /*#__PURE__*/external_React_default().createElement("div", {
+    className: "focus-timer-context-menu-wrapper"
+  }, /*#__PURE__*/external_React_default().createElement("moz-button", {
+    className: "focus-timer-context-menu-button",
+    iconSrc: "chrome://global/skin/icons/more.svg",
+    menuId: "focus-timer-context-menu",
+    type: "ghost"
+  }), /*#__PURE__*/external_React_default().createElement("panel-list", {
+    id: "focus-timer-context-menu"
+  }, /*#__PURE__*/external_React_default().createElement("panel-item", {
+    "data-l10n-id": showSystemNotifications ? "newtab-widget-timer-menu-notifications" : "newtab-widget-timer-menu-notifications-on",
+    onClick: () => {
+      handlePrefUpdate("widgets.focusTimer.showSystemNotifications", !showSystemNotifications);
+    }
+  }), /*#__PURE__*/external_React_default().createElement("panel-item", {
+    "data-l10n-id": "newtab-widget-timer-menu-hide",
+    onClick: () => {
+      handlePrefUpdate("widgets.focusTimer.enabled", false);
+    }
+  }), /*#__PURE__*/external_React_default().createElement("panel-item", {
+    "data-l10n-id": "newtab-widget-timer-menu-learn-more",
+    onClick: handleLearnMore
+  })))), /*#__PURE__*/external_React_default().createElement("div", {
+    className: "focus-timer-tabs"
+  }, /*#__PURE__*/external_React_default().createElement("div", {
+    className: "focus-timer-tabs-buttons"
+  }, /*#__PURE__*/external_React_default().createElement("moz-button", {
+    type: timerType === "focus" ? "default" : "ghost",
+    "data-l10n-id": "newtab-widget-timer-mode-focus",
+    size: "small",
+    onClick: () => toggleType("focus")
+  }), /*#__PURE__*/external_React_default().createElement("moz-button", {
+    type: timerType === "break" ? "default" : "ghost",
+    "data-l10n-id": "newtab-widget-timer-mode-break",
+    size: "small",
+    onClick: () => toggleType("break")
+  }))), /*#__PURE__*/external_React_default().createElement("div", {
+    role: "progress",
+    className: `progress-circle-wrapper ${!showSystemNotifications && !timerData[timerType].isRunning ? "is-small" : ""}`
+  }, /*#__PURE__*/external_React_default().createElement("div", {
+    className: `progress-circle-background${timerType === "break" ? "-break" : ""}`
+  }), /*#__PURE__*/external_React_default().createElement("div", {
+    className: `progress-circle ${timerType === "focus" ? "focus-visible" : "focus-hidden"}`,
+    ref: timerType === "focus" ? arcRef : null
+  }), /*#__PURE__*/external_React_default().createElement("div", {
+    className: `progress-circle ${timerType === "break" ? "break-visible" : "break-hidden"}`,
+    ref: timerType === "break" ? arcRef : null
+  }), /*#__PURE__*/external_React_default().createElement("div", {
+    className: `progress-circle-complete${progress === 1 ? " visible" : ""}`
+  }), /*#__PURE__*/external_React_default().createElement("div", {
+    role: "timer",
+    className: "progress-circle-label"
+  }, /*#__PURE__*/external_React_default().createElement(EditableTimerFields, {
+    minutesRef: activeMinutesRef,
+    secondsRef: activeSecondsRef,
+    onKeyDown: handleKeyDown,
+    onBeforeInput: handleBeforeInput,
+    onFocus: handleFocus,
+    timeLeft: timeLeft,
+    onBlur: () => setTimerDuration()
+  }))), /*#__PURE__*/external_React_default().createElement("div", {
+    className: "set-timer-controls-wrapper"
+  }, /*#__PURE__*/external_React_default().createElement("div", {
+    className: `focus-timer-controls timer-running`
+  }, /*#__PURE__*/external_React_default().createElement("moz-button", FocusTimer_extends({}, !isRunning ? {
+    type: "primary"
+  } : {}, {
+    iconsrc: `chrome://global/skin/media/${isRunning ? "pause" : "play"}-fill.svg`,
+    "data-l10n-id": isRunning ? "newtab-widget-timer-label-pause" : "newtab-widget-timer-label-play",
+    onClick: toggleTimer
+  })), isRunning && /*#__PURE__*/external_React_default().createElement("moz-button", {
+    type: "icon ghost",
+    iconsrc: "chrome://newtab/content/data/content/assets/arrow-clockwise-16.svg",
+    "data-l10n-id": "newtab-widget-timer-reset",
+    onClick: resetTimer
+  }))), !showSystemNotifications && !timerData[timerType].isRunning && /*#__PURE__*/external_React_default().createElement("p", {
+    className: "timer-notification-status",
+    "data-l10n-id": "newtab-widget-timer-notification-warning"
+  })) : null;
+};
+function EditableTimerFields({
+  minutesRef,
+  secondsRef,
+  tabIndex = 0,
+  ...props
+}) {
+  return /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, /*#__PURE__*/external_React_default().createElement("span", {
+    contentEditable: "true",
+    ref: minutesRef,
+    className: "timer-set-minutes",
+    onKeyDown: props.onKeyDown,
+    onBeforeInput: props.onBeforeInput,
+    onFocus: props.onFocus,
+    onBlur: props.onBlur,
+    tabIndex: tabIndex
+  }, formatTime(props.timeLeft).split(":")[0]), ":", /*#__PURE__*/external_React_default().createElement("span", {
+    contentEditable: "true",
+    ref: secondsRef,
+    className: "timer-set-seconds",
+    onKeyDown: props.onKeyDown,
+    onBeforeInput: props.onBeforeInput,
+    onFocus: props.onFocus,
+    onBlur: props.onBlur,
+    tabIndex: tabIndex
+  }, formatTime(props.timeLeft).split(":")[1]));
+}
+;// CONCATENATED MODULE: ./content-src/components/DiscoveryStreamComponents/FeatureHighlight/WidgetsFeatureHighlight.jsx
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+
+
+function WidgetsFeatureHighlight({
+  handleDismiss,
+  handleBlock,
+  dispatch
+}) {
+  const {
+    messageData
+  } = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.Messages);
+  return /*#__PURE__*/React.createElement(FeatureHighlight, {
+    position: "inset-inline-center inset-block-end",
+    arrowPosition: "arrow-top-center",
+    openedOverride: true,
+    showButtonIcon: false,
+    feature: messageData?.content?.feature,
+    modalClassName: "widget-highlight-wrapper",
+    message: /*#__PURE__*/React.createElement("div", {
+      className: "widget-highlight"
+    }, /*#__PURE__*/React.createElement("img", {
+      src: "chrome://newtab/content/data/content/assets/widget-message.png",
+      alt: ""
+    }), /*#__PURE__*/React.createElement("h3", {
+      "data-l10n-id": "newtab-widget-message-title"
+    }), /*#__PURE__*/React.createElement("p", {
+      "data-l10n-id": "newtab-widget-message-copy"
+    })),
+    dispatch: dispatch,
+    dismissCallback: () => {
+      handleDismiss();
+      handleBlock();
+    },
+    outsideClickCallback: handleDismiss
+  });
+}
+
+;// CONCATENATED MODULE: ./content-src/components/Widgets/Widgets.jsx
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+
+
+
+
+
+
+
+const PREF_WIDGETS_LISTS_ENABLED = "widgets.lists.enabled";
+const PREF_WIDGETS_SYSTEM_LISTS_ENABLED = "widgets.system.lists.enabled";
+const PREF_WIDGETS_TIMER_ENABLED = "widgets.focusTimer.enabled";
+const PREF_WIDGETS_SYSTEM_TIMER_ENABLED = "widgets.system.focusTimer.enabled";
+const PREF_WIDGETS_MAXIMIZED = "widgets.maximized";
+const PREF_WIDGETS_SYSTEM_MAXIMIZED = "widgets.system.maximized";
+
+// resets timer to default values (exported for testing)
+// In practice, this logic runs inside a useEffect when
+// the timer widget is disabled (after the pref flips from true to false).
+// Because Enzyme tests cannot reliably simulate that pref update or trigger
+// the related useEffect, we expose this helper to at least just test the reset behavior instead
+
+function resetTimerToDefaults(dispatch, timerType) {
+  const originalTime = timerType === "focus" ? 1500 : 300;
+
+  // Reset both focus and break timers to their initial durations
+  dispatch(actionCreators.AlsoToMain({
+    type: actionTypes.WIDGETS_TIMER_RESET,
+    data: {
+      timerType,
+      duration: originalTime,
+      initialDuration: originalTime
+    }
+  }));
+
+  // Set the timer type back to "focus"
+  dispatch(actionCreators.AlsoToMain({
+    type: actionTypes.WIDGETS_TIMER_SET_TYPE,
+    data: {
+      timerType: "focus"
+    }
+  }));
+}
+function Widgets() {
+  const prefs = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.Prefs.values);
+  const {
+    messageData
+  } = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.Messages);
+  const timerType = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.TimerWidget.timerType);
+  const timerData = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.TimerWidget);
+  const isMaximized = prefs[PREF_WIDGETS_MAXIMIZED];
+  const dispatch = (0,external_ReactRedux_namespaceObject.useDispatch)();
+  const nimbusListsEnabled = prefs.widgetsConfig?.listsEnabled;
+  const nimbusTimerEnabled = prefs.widgetsConfig?.timerEnabled;
+  const nimbusListsTrainhopEnabled = prefs.trainhopConfig?.widgets?.listsEnabled;
+  const nimbusTimerTrainhopEnabled = prefs.trainhopConfig?.widgets?.timerEnabled;
+  const listsEnabled = (nimbusListsTrainhopEnabled || nimbusListsEnabled || prefs[PREF_WIDGETS_SYSTEM_LISTS_ENABLED]) && prefs[PREF_WIDGETS_LISTS_ENABLED];
+  const timerEnabled = (nimbusTimerTrainhopEnabled || nimbusTimerEnabled || prefs[PREF_WIDGETS_SYSTEM_TIMER_ENABLED]) && prefs[PREF_WIDGETS_TIMER_ENABLED];
+
+  // track previous timerEnabled state to detect when it becomes disabled
+  const prevTimerEnabledRef = (0,external_React_namespaceObject.useRef)(timerEnabled);
+
+  // Reset timer when it becomes disabled
+  (0,external_React_namespaceObject.useEffect)(() => {
+    const wasTimerEnabled = prevTimerEnabledRef.current;
+    const isTimerEnabled = timerEnabled;
+
+    // Only reset if timer was enabled and is now disabled
+    if (wasTimerEnabled && !isTimerEnabled && timerData) {
+      resetTimerToDefaults(dispatch, timerType);
+    }
+
+    // Update the ref to track current state
+    prevTimerEnabledRef.current = isTimerEnabled;
+  }, [timerEnabled, timerData, dispatch, timerType]);
+
+  // Sends a dispatch to disable all widgets
+  function handleHideAllWidgetsClick(e) {
+    e.preventDefault();
+    (0,external_ReactRedux_namespaceObject.batch)(() => {
+      dispatch(actionCreators.SetPref(PREF_WIDGETS_LISTS_ENABLED, false));
+      dispatch(actionCreators.SetPref(PREF_WIDGETS_TIMER_ENABLED, false));
+    });
+  }
+  function handleHideAllWidgetsKeyDown(e) {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      (0,external_ReactRedux_namespaceObject.batch)(() => {
+        dispatch(actionCreators.SetPref(PREF_WIDGETS_LISTS_ENABLED, false));
+        dispatch(actionCreators.SetPref(PREF_WIDGETS_TIMER_ENABLED, false));
+      });
+    }
+  }
+
+  // Toggles the maximized state of widgets
+  function handleToggleMaximizeClick(e) {
+    e.preventDefault();
+    dispatch(actionCreators.SetPref(PREF_WIDGETS_MAXIMIZED, !isMaximized));
+  }
+  function handleToggleMaximizeKeyDown(e) {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      dispatch(actionCreators.SetPref(PREF_WIDGETS_MAXIMIZED, !isMaximized));
+    }
+  }
+  function handleUserInteraction(widgetName) {
+    const prefName = `widgets.${widgetName}.interaction`;
+    const hasInteracted = prefs[prefName];
+    // we want to make sure that the value is a strict false (and that the property exists)
+    if (hasInteracted === false) {
+      dispatch(actionCreators.SetPref(prefName, true));
+    }
+  }
+  if (!(listsEnabled || timerEnabled)) {
+    return null;
+  }
+  return /*#__PURE__*/external_React_default().createElement("div", {
+    className: "widgets-wrapper"
+  }, /*#__PURE__*/external_React_default().createElement("div", {
+    className: "widgets-section-container"
+  }, /*#__PURE__*/external_React_default().createElement("div", {
+    className: "widgets-title-container"
+  }, /*#__PURE__*/external_React_default().createElement("h1", {
+    "data-l10n-id": "newtab-widget-section-title"
+  }), prefs[PREF_WIDGETS_SYSTEM_MAXIMIZED] && /*#__PURE__*/external_React_default().createElement("moz-button", {
+    id: "toggle-widgets-size-button",
+    type: "icon ghost",
+    size: "small"
+    // Toggle the icon and hover text
+    ,
+    "data-l10n-id": isMaximized ? "newtab-widget-section-maximize" : "newtab-widget-section-minimize",
+    iconsrc: `chrome://browser/skin/${isMaximized ? "fullscreen" : "fullscreen-exit"}.svg`,
+    onClick: handleToggleMaximizeClick,
+    onKeyDown: handleToggleMaximizeKeyDown
+  }), /*#__PURE__*/external_React_default().createElement("moz-button", {
+    id: "hide-all-widgets-button",
+    type: "icon ghost",
+    size: "small",
+    "data-l10n-id": "newtab-widget-section-hide-all-button",
+    iconsrc: "chrome://global/skin/icons/close.svg",
+    onClick: handleHideAllWidgetsClick,
+    onKeyDown: handleHideAllWidgetsKeyDown
+  })), /*#__PURE__*/external_React_default().createElement("div", {
+    className: `widgets-container ${isMaximized ? "is-maximized" : ""}`
+  }, listsEnabled && /*#__PURE__*/external_React_default().createElement(Lists, {
+    dispatch: dispatch,
+    handleUserInteraction: handleUserInteraction,
+    isMaximized: isMaximized
+  }), timerEnabled && /*#__PURE__*/external_React_default().createElement(FocusTimer, {
+    dispatch: dispatch,
+    handleUserInteraction: handleUserInteraction,
+    isMaximized: isMaximized
+  }))), messageData?.content?.messageType === "WidgetMessage" && /*#__PURE__*/external_React_default().createElement(MessageWrapper, {
+    dispatch: dispatch
+  }, /*#__PURE__*/external_React_default().createElement(WidgetsFeatureHighlight, {
+    dispatch: dispatch
+  })));
+}
+
+;// CONCATENATED MODULE: ./content-src/components/DiscoveryStreamBase/DiscoveryStreamBase.jsx
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+const ALLOWED_CSS_URL_PREFIXES = ["chrome://", "resource://", "https://img-getpocket.cdn.mozilla.net/"];
+const DUMMY_CSS_SELECTOR = "DUMMY#CSS.SELECTOR";
+
+/**
+ * Validate a CSS declaration. The values are assumed to be normalized by CSSOM.
+ */
+function isAllowedCSS(property, value) {
+  // Bug 1454823: INTERNAL properties, e.g., -moz-context-properties, are
+  // exposed but their values aren't resulting in getting nothing. Fortunately,
+  // we don't care about validating the values of the current set of properties.
+  if (value === undefined) {
+    return true;
+  }
+
+  // Make sure all urls are of the allowed protocols/prefixes
+  const urls = value.match(/url\("[^"]+"\)/g);
+  return !urls || urls.every(url => ALLOWED_CSS_URL_PREFIXES.some(prefix => url.slice(5).startsWith(prefix)));
+}
+class _DiscoveryStreamBase extends (external_React_default()).PureComponent {
+  constructor(props) {
+    super(props);
+    this.onStyleMount = this.onStyleMount.bind(this);
+  }
+  onStyleMount(style) {
+    // Unmounting style gets rid of old styles, so nothing else to do
+    if (!style) {
+      return;
+    }
+    const {
+      sheet
+    } = style;
+    const styles = JSON.parse(style.dataset.styles);
+    styles.forEach((row, rowIndex) => {
+      row.forEach((component, componentIndex) => {
+        // Nothing to do without optional styles overrides
+        if (!component) {
+          return;
+        }
+        Object.entries(component).forEach(([selectors, declarations]) => {
+          // Start with a dummy rule to validate declarations and selectors
+          sheet.insertRule(`${DUMMY_CSS_SELECTOR} {}`);
+          const [rule] = sheet.cssRules;
+
+          // Validate declarations and remove any offenders. CSSOM silently
+          // discards invalid entries, so here we apply extra restrictions.
+          rule.style = declarations;
+          [...rule.style].forEach(property => {
+            const value = rule.style[property];
+            if (!isAllowedCSS(property, value)) {
+              console.error(`Bad CSS declaration ${property}: ${value}`);
+              rule.style.removeProperty(property);
+            }
+          });
+
+          // Set the actual desired selectors scoped to the component
+          const prefix = `.ds-layout > .ds-column:nth-child(${rowIndex + 1}) .ds-column-grid > :nth-child(${componentIndex + 1})`;
+          // NB: Splitting on "," doesn't work with strings with commas, but
+          // we're okay with not supporting those selectors
+          rule.selectorText = selectors.split(",").map(selector => prefix + (
+          // Assume :pseudo-classes are for component instead of descendant
+          selector[0] === ":" ? "" : " ") + selector).join(",");
+
+          // CSSOM silently ignores bad selectors, so we'll be noisy instead
+          if (rule.selectorText === DUMMY_CSS_SELECTOR) {
+            console.error(`Bad CSS selector ${selectors}`);
+          }
+        });
+      });
+    });
+  }
+  renderComponent(component) {
+    switch (component.type) {
+      case "Highlights":
+        return /*#__PURE__*/external_React_default().createElement(Highlights, null);
+      case "TopSites":
+        return /*#__PURE__*/external_React_default().createElement("div", {
+          className: "ds-top-sites"
+        }, /*#__PURE__*/external_React_default().createElement(TopSites_TopSites, {
+          isFixed: true,
+          title: component.header?.title
+        }));
+      case "Message":
+        return /*#__PURE__*/external_React_default().createElement(DSMessage, {
+          title: component.header && component.header.title,
+          subtitle: component.header && component.header.subtitle,
+          link_text: component.header && component.header.link_text,
+          link_url: component.header && component.header.link_url,
+          icon: component.header && component.header.icon
+        });
+      case "SectionTitle":
+        return /*#__PURE__*/external_React_default().createElement(SectionTitle, {
+          header: component.header
+        });
+      case "Navigation":
+        return /*#__PURE__*/external_React_default().createElement(Navigation, {
+          dispatch: this.props.dispatch,
+          links: component.properties.links,
+          extraLinks: component.properties.extraLinks,
+          alignment: component.properties.alignment,
+          explore_topics: component.properties.explore_topics,
+          header: component.header,
+          locale: this.props.App.locale,
+          newFooterSection: component.newFooterSection,
+          privacyNoticeURL: component.properties.privacyNoticeURL
+        });
+      case "CardGrid":
+        {
+          const sectionsEnabled = this.props.Prefs.values["discoverystream.sections.enabled"];
+          if (sectionsEnabled) {
+            return /*#__PURE__*/external_React_default().createElement(CardSections, {
+              feed: component.feed,
+              data: component.data,
+              dispatch: this.props.dispatch,
+              type: component.type,
+              firstVisibleTimestamp: this.props.firstVisibleTimestamp,
+              ctaButtonSponsors: component.properties.ctaButtonSponsors,
+              ctaButtonVariant: component.properties.ctaButtonVariant,
+              placeholder: this.props.placeholder
+            });
+          }
+          return /*#__PURE__*/external_React_default().createElement(CardGrid, {
+            title: component.header && component.header.title,
+            data: component.data,
+            feed: component.feed,
+            widgets: component.widgets,
+            type: component.type,
+            dispatch: this.props.dispatch,
+            items: component.properties.items,
+            hybridLayout: component.properties.hybridLayout,
+            hideCardBackground: component.properties.hideCardBackground,
+            fourCardLayout: component.properties.fourCardLayout,
+            compactGrid: component.properties.compactGrid,
+            ctaButtonSponsors: component.properties.ctaButtonSponsors,
+            ctaButtonVariant: component.properties.ctaButtonVariant,
+            hideDescriptions: this.props.DiscoveryStream.hideDescriptions,
+            firstVisibleTimestamp: this.props.firstVisibleTimestamp,
+            spocPositions: component.spocs?.positions,
+            placeholder: this.props.placeholder
+          });
+        }
+      case "HorizontalRule":
+        return /*#__PURE__*/external_React_default().createElement(HorizontalRule, null);
+      case "PrivacyLink":
+        return /*#__PURE__*/external_React_default().createElement(PrivacyLink, {
+          properties: component.properties
+        });
+      case "Widgets":
+        return /*#__PURE__*/external_React_default().createElement(Widgets, null);
+      default:
+        return /*#__PURE__*/external_React_default().createElement("div", null, component.type);
+    }
+  }
+  renderStyles(styles) {
+    // Use json string as both the key and styles to render so React knows when
+    // to unmount and mount a new instance for new styles.
+    const json = JSON.stringify(styles);
+    return /*#__PURE__*/external_React_default().createElement("style", {
+      key: json,
+      "data-styles": json,
+      ref: this.onStyleMount
+    });
+  }
+  render() {
+    const {
+      locale
+    } = this.props;
+    // Bug 1980459 - Note that selectLayoutRender acts as a selector that transforms layout data based on current
+    // preferences and experiment flags. It runs after Redux state is populated but before render.
+    // Components removed in selectLayoutRender (e.g., Widgets or TopSites) will not appear in the
+    // layoutRender result, and therefore will not be rendered here regardless of logic below.
+
+    // Select layout renders data by adding spocs and position to recommendations
+    const {
+      layoutRender
+    } = selectLayoutRender({
+      state: this.props.DiscoveryStream,
+      prefs: this.props.Prefs.values,
+      locale
+    });
+    const sectionsEnabled = this.props.Prefs.values["discoverystream.sections.enabled"];
+    const {
+      config
+    } = this.props.DiscoveryStream;
+    const topicSelectionEnabled = this.props.Prefs.values["discoverystream.topicSelection.enabled"];
+    const reportAdsEnabled = this.props.Prefs.values["discoverystream.reportAds.enabled"];
+    const spocsEnabled = this.props.Prefs.values["unifiedAds.spocs.enabled"];
+
+    // Allow rendering without extracting special components
+    if (!config.collapsible) {
+      return this.renderLayout(layoutRender);
+    }
+
+    // Find the first component of a type and remove it from layout
+    const extractComponent = type => {
+      for (const [rowIndex, row] of Object.entries(layoutRender)) {
+        for (const [index, component] of Object.entries(row.components)) {
+          if (component.type === type) {
+            // Remove the row if it was the only component or the single item
+            if (row.components.length === 1) {
+              layoutRender.splice(rowIndex, 1);
+            } else {
+              row.components.splice(index, 1);
+            }
+            return component;
+          }
+        }
+      }
+      return null;
+    };
+
+    // Get "topstories" Section state for default values
+    const topStories = this.props.Sections.find(s => s.id === "topstories");
+    if (!topStories) {
+      return null;
+    }
+
+    // Extract TopSites to render before the rest and Message to use for header
+    const topSites = extractComponent("TopSites");
+
+    // There are two ways to enable widgets:
+    // Via `widgets.system.*` prefs or Nimbus experiment
+    const widgetsNimbusTrainhopEnabled = this.props.Prefs.values.trainhopConfig?.widgets?.enabled;
+    const widgetsNimbusEnabled = this.props.Prefs.values.widgetsConfig?.enabled;
+    const widgetsSystemPrefsEnabled = this.props.Prefs.values["widgets.system.enabled"];
+    const widgets = widgetsNimbusTrainhopEnabled || widgetsNimbusEnabled || widgetsSystemPrefsEnabled;
+    const message = extractComponent("Message") || {
+      header: {
+        link_text: topStories.learnMore.link.message,
+        link_url: topStories.learnMore.link.href,
+        title: topStories.title
+      }
+    };
+    const privacyLinkComponent = extractComponent("PrivacyLink");
+    let learnMore = {
+      link: {
+        href: message.header.link_url,
+        message: message.header.link_text
+      }
+    };
+    let sectionTitle = message.header.title;
+    let subTitle = "";
+    const {
+      DiscoveryStream
+    } = this.props;
+    return /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, (reportAdsEnabled && spocsEnabled || sectionsEnabled) && /*#__PURE__*/external_React_default().createElement(ReportContent, {
+      spocs: DiscoveryStream.spocs
+    }), topSites && this.renderLayout([{
+      width: 12,
+      components: [topSites],
+      sectionType: "topsites"
+    }]), widgets && this.renderLayout([{
+      width: 12,
+      components: [{
+        type: "Widgets"
+      }],
+      sectionType: "widgets"
+    }]), !!layoutRender.length && /*#__PURE__*/external_React_default().createElement(CollapsibleSection, {
+      className: "ds-layout",
+      collapsed: topStories.pref.collapsed,
+      dispatch: this.props.dispatch,
+      id: topStories.id,
+      isFixed: true,
+      learnMore: learnMore,
+      privacyNoticeURL: topStories.privacyNoticeURL,
+      showPrefName: topStories.pref.feed,
+      title: sectionTitle,
+      subTitle: subTitle,
+      mayHaveTopicsSelection: topicSelectionEnabled,
+      sectionsEnabled: sectionsEnabled,
+      eventSource: "CARDGRID"
+    }, this.renderLayout(layoutRender)), this.renderLayout([{
+      width: 12,
+      components: [{
+        type: "Highlights"
+      }]
+    }]), privacyLinkComponent && this.renderLayout([{
+      width: 12,
+      components: [privacyLinkComponent]
+    }]));
+  }
+  renderLayout(layoutRender) {
+    const styles = [];
+    let [data] = layoutRender;
+    // Add helper class for topsites
+    const sectionClass = data.sectionType ? `ds-layout-${data.sectionType}` : "";
+    return /*#__PURE__*/external_React_default().createElement("div", {
+      className: `discovery-stream ds-layout ${sectionClass}`
+    }, layoutRender.map((row, rowIndex) => /*#__PURE__*/external_React_default().createElement("div", {
+      key: `row-${rowIndex}`,
+      className: `ds-column ds-column-${row.width}`
+    }, /*#__PURE__*/external_React_default().createElement("div", {
+      className: "ds-column-grid"
+    }, row.components.map((component, componentIndex) => {
+      if (!component) {
+        return null;
+      }
+      styles[rowIndex] = [...(styles[rowIndex] || []), component.styles];
+      return /*#__PURE__*/external_React_default().createElement("div", {
+        key: `component-${componentIndex}`
+      }, this.renderComponent(component, row.width));
+    })))), this.renderStyles(styles));
+  }
+}
+const DiscoveryStreamBase = (0,external_ReactRedux_namespaceObject.connect)(state => ({
+  DiscoveryStream: state.DiscoveryStream,
+  Prefs: state.Prefs,
+  Sections: state.Sections,
+  document: globalThis.document,
+  App: state.App
+}))(_DiscoveryStreamBase);
+;// CONCATENATED MODULE: ./content-src/components/CustomizeMenu/SectionsMgmtPanel/SectionsMgmtPanel.jsx
+function SectionsMgmtPanel_extends() { return SectionsMgmtPanel_extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, SectionsMgmtPanel_extends.apply(null, arguments); }
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+
+
+
+// eslint-disable-next-line no-shadow
+
+function SectionsMgmtPanel({
+  exitEventFired,
+  pocketEnabled,
+  onSubpanelToggle,
+  togglePanel,
+  showPanel
+}) {
+  const arrowButtonRef = (0,external_React_namespaceObject.useRef)(null);
+  const {
+    sectionPersonalization
+  } = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.DiscoveryStream);
+  const layoutComponents = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.DiscoveryStream.layout[0].components);
+  const sections = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.DiscoveryStream.feeds.data);
+  const dispatch = (0,external_ReactRedux_namespaceObject.useDispatch)();
+
+  // TODO: Wrap sectionsFeedName -> sectionsList logic in try...catch?
+  let sectionsFeedName;
+  const cardGridEntry = layoutComponents.find(item => item.type === "CardGrid");
+  if (cardGridEntry) {
+    sectionsFeedName = cardGridEntry.feed.url;
+  }
+  let sectionsList;
+  if (sectionsFeedName) {
+    sectionsList = sections[sectionsFeedName].data.sections;
+  }
+  const [sectionsState, setSectionState] = (0,external_React_namespaceObject.useState)(sectionPersonalization); // State management with useState
+
+  let followedSectionsData = sectionsList.filter(item => sectionsState[item.sectionKey]?.isFollowed);
+  let blockedSectionsData = sectionsList.filter(item => sectionsState[item.sectionKey]?.isBlocked);
+  function updateCachedData() {
+    // Reset cached followed/blocked list data while panel is open
+    setSectionState(sectionPersonalization);
+    followedSectionsData = sectionsList.filter(item => sectionsState[item.sectionKey]?.isFollowed);
+    blockedSectionsData = sectionsList.filter(item => sectionsState[item.sectionKey]?.isBlocked);
+  }
+  const onFollowClick = (0,external_React_namespaceObject.useCallback)((sectionKey, receivedRank) => {
+    dispatch(actionCreators.AlsoToMain({
+      type: actionTypes.SECTION_PERSONALIZATION_SET,
+      data: {
+        ...sectionPersonalization,
+        [sectionKey]: {
+          isFollowed: true,
+          isBlocked: false,
+          followedAt: new Date().toISOString()
+        }
+      }
+    }));
+    // Telemetry Event Dispatch
+    dispatch(actionCreators.OnlyToMain({
+      type: "FOLLOW_SECTION",
+      data: {
+        section: sectionKey,
+        section_position: receivedRank,
+        event_source: "CUSTOMIZE_PANEL"
+      }
+    }));
+  }, [dispatch, sectionPersonalization]);
+  const onBlockClick = (0,external_React_namespaceObject.useCallback)((sectionKey, receivedRank) => {
+    dispatch(actionCreators.AlsoToMain({
+      type: actionTypes.SECTION_PERSONALIZATION_SET,
+      data: {
+        ...sectionPersonalization,
+        [sectionKey]: {
+          isFollowed: false,
+          isBlocked: true
+        }
+      }
+    }));
+
+    // Telemetry Event Dispatch
+    dispatch(actionCreators.OnlyToMain({
+      type: "BLOCK_SECTION",
+      data: {
+        section: sectionKey,
+        section_position: receivedRank,
+        event_source: "CUSTOMIZE_PANEL"
+      }
+    }));
+  }, [dispatch, sectionPersonalization]);
+  const onUnblockClick = (0,external_React_namespaceObject.useCallback)((sectionKey, receivedRank) => {
+    const updatedSectionData = {
+      ...sectionPersonalization
+    };
+    delete updatedSectionData[sectionKey];
+    dispatch(actionCreators.AlsoToMain({
+      type: actionTypes.SECTION_PERSONALIZATION_SET,
+      data: updatedSectionData
+    }));
+    // Telemetry Event Dispatch
+    dispatch(actionCreators.OnlyToMain({
+      type: "UNBLOCK_SECTION",
+      data: {
+        section: sectionKey,
+        section_position: receivedRank,
+        event_source: "CUSTOMIZE_PANEL"
+      }
+    }));
+  }, [dispatch, sectionPersonalization]);
+  const onUnfollowClick = (0,external_React_namespaceObject.useCallback)((sectionKey, receivedRank) => {
+    const updatedSectionData = {
+      ...sectionPersonalization
+    };
+    delete updatedSectionData[sectionKey];
+    dispatch(actionCreators.AlsoToMain({
+      type: actionTypes.SECTION_PERSONALIZATION_SET,
+      data: updatedSectionData
+    }));
+    // Telemetry Event Dispatch
+    dispatch(actionCreators.OnlyToMain({
+      type: "UNFOLLOW_SECTION",
+      data: {
+        section: sectionKey,
+        section_position: receivedRank,
+        event_source: "CUSTOMIZE_PANEL"
+      }
+    }));
+  }, [dispatch, sectionPersonalization]);
+
+  // Close followed/blocked topic subpanel when parent menu is closed
+  (0,external_React_namespaceObject.useEffect)(() => {
+    if (exitEventFired && showPanel) {
+      togglePanel();
+    }
+  }, [exitEventFired, showPanel, togglePanel]);
+
+  // Notify parent menu when subpanel opens/closes
+  (0,external_React_namespaceObject.useEffect)(() => {
+    if (onSubpanelToggle) {
+      onSubpanelToggle(showPanel);
+    }
+  }, [showPanel, onSubpanelToggle]);
+  (0,external_React_namespaceObject.useEffect)(() => {
+    if (showPanel) {
+      updateCachedData();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showPanel]);
+  const handlePanelEntered = () => {
+    arrowButtonRef.current?.focus();
+  };
+  const followedSectionsList = followedSectionsData.map(({
+    sectionKey,
+    title,
+    receivedRank
+  }) => {
+    const following = sectionPersonalization[sectionKey]?.isFollowed;
+    return /*#__PURE__*/external_React_default().createElement("li", {
+      key: sectionKey
+    }, /*#__PURE__*/external_React_default().createElement("label", {
+      htmlFor: `follow-topic-${sectionKey}`
+    }, title), /*#__PURE__*/external_React_default().createElement("div", {
+      className: following ? "section-follow following" : "section-follow"
+    }, /*#__PURE__*/external_React_default().createElement("moz-button", {
+      onClick: () => following ? onUnfollowClick(sectionKey, receivedRank) : onFollowClick(sectionKey, receivedRank),
+      type: "default",
+      index: receivedRank,
+      section: sectionKey,
+      id: `follow-topic-${sectionKey}`
+    }, /*#__PURE__*/external_React_default().createElement("span", {
+      className: "section-button-follow-text",
+      "data-l10n-id": "newtab-section-follow-button"
+    }), /*#__PURE__*/external_React_default().createElement("span", {
+      className: "section-button-following-text",
+      "data-l10n-id": "newtab-section-following-button"
+    }), /*#__PURE__*/external_React_default().createElement("span", {
+      className: "section-button-unfollow-text",
+      "data-l10n-id": "newtab-section-unfollow-button"
+    }))));
+  });
+  const blockedSectionsList = blockedSectionsData.map(({
+    sectionKey,
+    title,
+    receivedRank
+  }) => {
+    const blocked = sectionPersonalization[sectionKey]?.isBlocked;
+    return /*#__PURE__*/external_React_default().createElement("li", {
+      key: sectionKey
+    }, /*#__PURE__*/external_React_default().createElement("label", {
+      htmlFor: `blocked-topic-${sectionKey}`
+    }, title), /*#__PURE__*/external_React_default().createElement("div", {
+      className: blocked ? "section-block blocked" : "section-block"
+    }, /*#__PURE__*/external_React_default().createElement("moz-button", {
+      onClick: () => blocked ? onUnblockClick(sectionKey, receivedRank) : onBlockClick(sectionKey, receivedRank),
+      type: "default",
+      index: receivedRank,
+      section: sectionKey,
+      id: `blocked-topic-${sectionKey}`
+    }, /*#__PURE__*/external_React_default().createElement("span", {
+      className: "section-button-block-text",
+      "data-l10n-id": "newtab-section-block-button"
+    }), /*#__PURE__*/external_React_default().createElement("span", {
+      className: "section-button-blocked-text",
+      "data-l10n-id": "newtab-section-blocked-button"
+    }), /*#__PURE__*/external_React_default().createElement("span", {
+      className: "section-button-unblock-text",
+      "data-l10n-id": "newtab-section-unblock-button"
+    }))));
+  });
+  return /*#__PURE__*/external_React_default().createElement("div", null, /*#__PURE__*/external_React_default().createElement("moz-box-button", SectionsMgmtPanel_extends({
+    onClick: togglePanel,
+    "data-l10n-id": "newtab-section-manage-topics-button-v2"
+  }, !pocketEnabled ? {
+    disabled: true
+  } : {})), /*#__PURE__*/external_React_default().createElement(external_ReactTransitionGroup_namespaceObject.CSSTransition, {
+    in: showPanel,
+    timeout: 300,
+    classNames: "sections-mgmt-panel",
+    unmountOnExit: true,
+    onEntered: handlePanelEntered
+  }, /*#__PURE__*/external_React_default().createElement("div", {
+    className: "sections-mgmt-panel"
+  }, /*#__PURE__*/external_React_default().createElement("button", {
+    ref: arrowButtonRef,
+    className: "arrow-button",
+    onClick: togglePanel
+  }, /*#__PURE__*/external_React_default().createElement("h1", {
+    "data-l10n-id": "newtab-section-mangage-topics-title"
+  })), /*#__PURE__*/external_React_default().createElement("h3", {
+    "data-l10n-id": "newtab-section-mangage-topics-followed-topics"
+  }), followedSectionsData.length ? /*#__PURE__*/external_React_default().createElement("ul", {
+    className: "topic-list"
+  }, followedSectionsList) : /*#__PURE__*/external_React_default().createElement("span", {
+    className: "topic-list-empty-state",
+    "data-l10n-id": "newtab-section-mangage-topics-followed-topics-empty-state"
+  }), /*#__PURE__*/external_React_default().createElement("h3", {
+    "data-l10n-id": "newtab-section-mangage-topics-blocked-topics"
+  }), blockedSectionsData.length ? /*#__PURE__*/external_React_default().createElement("ul", {
+    className: "topic-list"
+  }, blockedSectionsList) : /*#__PURE__*/external_React_default().createElement("span", {
+    className: "topic-list-empty-state",
+    "data-l10n-id": "newtab-section-mangage-topics-blocked-topics-empty-state"
+  }))));
+}
+
+;// CONCATENATED MODULE: ./content-src/components/WallpaperCategories/WallpaperCategories.jsx
+function WallpaperCategories_extends() { return WallpaperCategories_extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, WallpaperCategories_extends.apply(null, arguments); }
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+
+
+
+// eslint-disable-next-line no-shadow
+
+const PREF_WALLPAPER_UPLOADED_PREVIOUSLY = "newtabWallpapers.customWallpaper.uploadedPreviously";
+const PREF_WALLPAPER_UPLOAD_MAX_FILE_SIZE = "newtabWallpapers.customWallpaper.fileSize";
+const PREF_WALLPAPER_UPLOAD_MAX_FILE_SIZE_ENABLED = "newtabWallpapers.customWallpaper.fileSize.enabled";
+
+// Returns a function will not be continuously triggered when called. The
+// function will be triggered if called again after `wait` milliseconds.
+function debounce(func, wait) {
+  let timer;
+  return (...args) => {
+    if (timer) {
+      return;
+    }
+    let wakeUp = () => {
+      timer = null;
+    };
+    timer = setTimeout(wakeUp, wait);
+    func.apply(this, args);
+  };
+}
+class _WallpaperCategories extends (external_React_default()).PureComponent {
+  constructor(props) {
+    super(props);
+    this.handleColorInput = this.handleColorInput.bind(this);
+    this.debouncedHandleChange = debounce(this.handleChange.bind(this), 999);
+    this.handleChange = this.handleChange.bind(this);
+    this.handleReset = this.handleReset.bind(this);
+    this.handleCategory = this.handleCategory.bind(this);
+    this.focusCategory = this.focusCategory.bind(this);
+    this.handleUpload = this.handleUpload.bind(this);
+    this.handleBack = this.handleBack.bind(this);
+    this.handleWallpaperListEntered = this.handleWallpaperListEntered.bind(this);
+    this.getRGBColors = this.getRGBColors.bind(this);
+    this.prefersHighContrastQuery = null;
+    this.prefersDarkQuery = null;
+    this.categoryRef = []; // store references for wallpaper category list
+    this.wallpaperRef = []; // store reference for wallpaper selection list
+    this.arrowButtonRef = /*#__PURE__*/external_React_default().createRef(); // Used to focus arrow button when category opens
+    this.customColorPickerRef = /*#__PURE__*/external_React_default().createRef(); // Used to determine contrast icon color for custom color picker
+    this.customColorInput = /*#__PURE__*/external_React_default().createRef(); // Used to determine contrast icon color for custom color picker
+    this.state = {
+      activeCategory: null,
+      activeCategoryFluentID: null,
+      showColorPicker: false,
+      inputType: "radio",
+      activeId: null,
+      customWallpaperErrorType: null,
+      focusedCategoryIndex: 0
+    };
+  }
+  componentDidMount() {
+    this.prefersDarkQuery = globalThis.matchMedia("(prefers-color-scheme: dark)");
+  }
+  componentDidUpdate(prevProps) {
+    // Walllpaper category subpanel should close when parent menu is closed
+    if (this.props.exitEventFired && this.props.exitEventFired !== prevProps.exitEventFired) {
+      this.handleBack();
+    }
+  }
+  handleColorInput(event) {
+    let {
+      id
+    } = event.target;
+    // Set ID to include hex value of custom color
+    id = `solid-color-picker-${event.target.value}`;
+    const rgbColors = this.getRGBColors(event.target.value);
+
+    // Set background color to custom color
+    event.target.style.backgroundColor = `rgb(${rgbColors.toString()})`;
+    if (this.customColorPickerRef.current) {
+      const colorInputBackground = this.customColorPickerRef.current.children[0].style.backgroundColor;
+      this.customColorPickerRef.current.style.backgroundColor = colorInputBackground;
+    }
+
+    // Set icon color based on the selected color
+    const isColorDark = this.isWallpaperColorDark(rgbColors);
+    if (this.customColorPickerRef.current) {
+      if (isColorDark) {
+        this.customColorPickerRef.current.classList.add("is-dark");
+      } else {
+        this.customColorPickerRef.current.classList.remove("is-dark");
+      }
+
+      // Remove any possible initial classes
+      this.customColorPickerRef.current.classList.remove("custom-color-set", "custom-color-dark", "default-color-set");
+    }
+
+    // Setting this now so when we remove v1 we don't have to migrate v1 values.
+    this.props.setPref("newtabWallpapers.wallpaper", id);
+  }
+
+  // Note: There's a separate event (debouncedHandleChange) that fires the handleChange
+  // event but is delayed so that it doesn't fire multiple events when a user
+  // is selecting a custom color background
+  handleChange(event) {
+    let {
+      id
+    } = event.target;
+
+    // Set ID to include hex value of custom color
+    if (id === "solid-color-picker") {
+      id = `solid-color-picker-${event.target.value}`;
+    }
+    this.props.setPref("newtabWallpapers.wallpaper", id);
+    const uploadedPreviously = this.props.Prefs.values[PREF_WALLPAPER_UPLOADED_PREVIOUSLY];
+    this.handleUserEvent(actionTypes.WALLPAPER_CLICK, {
+      selected_wallpaper: id,
+      had_previous_wallpaper: !!this.props.activeWallpaper,
+      had_uploaded_previously: !!uploadedPreviously
+    });
+  }
+  focusCategory(focusIndex) {
+    if (!this.categoryRef) {
+      return;
+    }
+    const el = this.categoryRef[focusIndex];
+    if (el) {
+      el.focus();
+    }
+  }
+
+  // function implementing arrow navigation for wallpaper category selection
+  handleCategoryKeyDown(event, category) {
+    const getIndex = this.categoryRef.findIndex(cat => cat.id === category);
+    if (getIndex === -1) {
+      return; // prevents errors if wallpaper index isn't found when navigating with arrow keys
+    }
+    const isRTL = document.dir === "rtl"; // returns true if page language is right-to-left
+    let eventKey = event.key;
+    if (eventKey === "ArrowRight" || eventKey === "ArrowLeft") {
+      if (isRTL) {
+        eventKey = eventKey === "ArrowRight" ? "ArrowLeft" : "ArrowRight";
+      }
+    }
+    let nextIndex = getIndex;
+    if (eventKey === "ArrowRight") {
+      nextIndex = getIndex + 1 < this.categoryRef.length ? getIndex + 1 : getIndex;
+    } else if (eventKey === "ArrowLeft") {
+      nextIndex = getIndex - 1 >= 0 ? getIndex - 1 : getIndex;
+    }
+    this.setState({
+      focusedCategoryIndex: nextIndex
+    }, () => this.focusCategory(nextIndex));
+  }
+
+  // function implementing arrow navigation for wallpaper selection
+  handleWallpaperKeyDown(event, title) {
+    if (event.key === "Tab") {
+      if (event.shiftKey) {
+        event.preventDefault();
+        this.arrowButtonRef.current?.focus();
+      } else {
+        event.preventDefault(); // prevent tabbing within wallpaper selection. We should only be using the Tab key to tab between groups
+      }
+      return;
+    }
+    const isRTL = document.dir === "rtl"; // returns true if page language is right-to-left
+    let eventKey = event.key;
+    if (eventKey === "ArrowRight" || eventKey === "ArrowLeft") {
+      if (isRTL) {
+        eventKey = eventKey === "ArrowRight" ? "ArrowLeft" : "ArrowRight";
+      }
+    }
+    const getIndex = this.wallpaperRef.findIndex(wallpaper => wallpaper.id === title);
+    if (getIndex === -1) {
+      return; // prevents errors if wallpaper index isn't found when navigating with arrow keys
+    }
+
+    // the set layout of columns per row for the wallpaper selection
+    const columnCount = 3;
+    let nextIndex = getIndex;
+    if (eventKey === "ArrowRight") {
+      nextIndex = getIndex + 1 < this.wallpaperRef.length ? getIndex + 1 : getIndex;
+    } else if (eventKey === "ArrowLeft") {
+      nextIndex = getIndex - 1 >= 0 ? getIndex - 1 : getIndex;
+    } else if (eventKey === "ArrowDown") {
+      nextIndex = getIndex + columnCount < this.wallpaperRef.length ? getIndex + columnCount : getIndex;
+    } else if (eventKey === "ArrowUp") {
+      nextIndex = getIndex - columnCount >= 0 ? getIndex - columnCount : getIndex;
+    }
+    this.wallpaperRef[nextIndex].tabIndex = 0;
+    this.wallpaperRef[getIndex].tabIndex = -1;
+    this.wallpaperRef[nextIndex].focus();
+    this.wallpaperRef[nextIndex].click();
+  }
+  handleReset() {
+    const uploadedPreviously = this.props.Prefs.values[PREF_WALLPAPER_UPLOADED_PREVIOUSLY];
+    const selectedWallpaper = this.props.Prefs.values["newtabWallpapers.wallpaper"];
+
+    // If a custom wallpaper is set, remove it
+    if (selectedWallpaper === "custom") {
+      this.props.dispatch(actionCreators.OnlyToMain({
+        type: actionTypes.WALLPAPER_REMOVE_UPLOAD
+      }));
+    }
+
+    // Reset active wallpaper
+    this.props.setPref("newtabWallpapers.wallpaper", "");
+
+    // Fire WALLPAPER_CLICK telemetry event
+    this.handleUserEvent(actionTypes.WALLPAPER_CLICK, {
+      selected_wallpaper: "none",
+      had_previous_wallpaper: !!this.props.activeWallpaper,
+      had_uploaded_previously: !!uploadedPreviously
+    });
+  }
+  handleCategory = event => {
+    this.setState({
+      activeCategory: event.target.id
+    });
+    this.handleUserEvent(actionTypes.WALLPAPER_CATEGORY_CLICK, event.target.id);
+
+    // Notify parent menu when subpanel opens
+    if (this.props.onSubpanelToggle) {
+      this.props.onSubpanelToggle(true);
+    }
+    let fluent_id;
+    switch (event.target.id) {
+      case "abstracts":
+        fluent_id = "newtab-wallpaper-category-title-abstract";
+        break;
+      case "celestial":
+        fluent_id = "newtab-wallpaper-category-title-celestial";
+        break;
+      case "photographs":
+        fluent_id = "newtab-wallpaper-category-title-photographs";
+        break;
+      case "solid-colors":
+        fluent_id = "newtab-wallpaper-category-title-colors";
+        break;
+      case "firefox":
+        fluent_id = "newtab-wallpaper-category-title-firefox";
+        break;
+    }
+    this.setState({
+      activeCategoryFluentID: fluent_id
+    });
+  };
+
+  // Custom wallpaper image upload
+  async handleUpload() {
+    const wallpaperUploadMaxFileSizeEnabled = this.props.Prefs.values[PREF_WALLPAPER_UPLOAD_MAX_FILE_SIZE_ENABLED];
+    const wallpaperUploadMaxFileSize = this.props.Prefs.values[PREF_WALLPAPER_UPLOAD_MAX_FILE_SIZE];
+    const uploadedPreviously = this.props.Prefs.values[PREF_WALLPAPER_UPLOADED_PREVIOUSLY];
+
+    // Create a file input since category buttons are radio inputs
+    const fileInput = document.createElement("input");
+    fileInput.type = "file";
+    fileInput.accept = "image/*"; // only allow image files
+
+    // Catch cancel events
+    fileInput.oncancel = async () => {
+      this.setState({
+        customWallpaperErrorType: null
+      });
+    };
+
+    // Reset error state when user begins file selection
+    this.setState({
+      customWallpaperErrorType: null
+    });
+
+    // Fire when user selects a file
+    fileInput.onchange = async event => {
+      const [file] = event.target.files;
+      if (file) {
+        // Validate file type: Only accept files with a valid image MIME type
+        const isValidImage = file.type && file.type.startsWith("image/");
+        if (!isValidImage) {
+          console.error("Invalid file type");
+          this.setState({
+            customWallpaperErrorType: "fileType"
+          });
+          return;
+        }
+
+        // Limit image uploaded to a maximum file size if enabled
+        // Note: The max file size pref (customWallpaper.fileSize) is converted to megabytes (MB)
+        // Example: if pref value is 5, max file size is 5 MB
+        const maxSize = wallpaperUploadMaxFileSize * 1024 * 1024;
+        if (wallpaperUploadMaxFileSizeEnabled && file.size > maxSize) {
+          console.error("File size exceeds limit");
+          this.setState({
+            customWallpaperErrorType: "fileSize"
+          });
+          return;
+        }
+        this.props.dispatch(actionCreators.OnlyToMain({
+          type: actionTypes.WALLPAPER_UPLOAD,
+          data: {
+            file
+          }
+        }));
+
+        // Set active wallpaper ID to "custom"
+        this.props.setPref("newtabWallpapers.wallpaper", "custom");
+
+        // Update the uploadedPreviously pref to TRUE
+        // Note: this pref used for telemetry. Do not reset to false.
+        this.props.setPref(PREF_WALLPAPER_UPLOADED_PREVIOUSLY, true);
+        this.handleUserEvent(actionTypes.WALLPAPER_CLICK, {
+          selected_wallpaper: "custom",
+          had_previous_wallpaper: !!this.props.activeWallpaper,
+          had_uploaded_previously: !!uploadedPreviously
+        });
+      }
+    };
+    fileInput.click();
+  }
+  handleBack() {
+    this.setState({
+      activeCategory: null
+    }, () => {
+      // Notify parent menu when subpanel closes
+      if (this.props.onSubpanelToggle) {
+        this.props.onSubpanelToggle(false);
+      }
+
+      // Wait for the category grid to be back in the DOM
+      requestAnimationFrame(() => {
+        this.focusCategory(this.state.focusedCategoryIndex);
+      });
+    });
+  }
+  handleWallpaperListEntered() {
+    this.arrowButtonRef.current?.focus();
+  }
+
+  // Record user interaction when changing wallpaper and reseting wallpaper to default
+  handleUserEvent(type, data) {
+    this.props.dispatch(actionCreators.OnlyToMain({
+      type,
+      data
+    }));
+  }
+  setActiveId = id => {
+    this.setState({
+      activeId: id
+    }); // Set the active ID
+  };
+  getRGBColors(input) {
+    if (input.length !== 7) {
+      return [];
+    }
+    const r = parseInt(input.substr(1, 2), 16);
+    const g = parseInt(input.substr(3, 2), 16);
+    const b = parseInt(input.substr(5, 2), 16);
+    return [r, g, b];
+  }
+  isWallpaperColorDark([r, g, b]) {
+    return 0.2125 * r + 0.7154 * g + 0.0721 * b <= 110;
+  }
+  sortWallpapersByOrder(wallpapers) {
+    return wallpapers.sort((a, b) => {
+      const aOrder = a.order || 0;
+      const bOrder = b.order || 0;
+      if (aOrder === 0 && bOrder === 0) {
+        return 0;
+      }
+      if (aOrder === 0) {
+        return 1;
+      }
+      if (bOrder === 0) {
+        return -1;
+      }
+      return aOrder - bOrder;
+    });
+  }
+  render() {
+    const prefs = this.props.Prefs.values;
+    const {
+      wallpaperList,
+      categories
+    } = this.props.Wallpapers;
+    const {
+      activeWallpaper
+    } = this.props;
+    const {
+      activeCategory,
+      showColorPicker
+    } = this.state;
+    const {
+      activeCategoryFluentID
+    } = this.state;
+    let filteredWallpapers = wallpaperList.filter(wallpaper => wallpaper.category === activeCategory);
+    const wallpaperUploadMaxFileSize = this.props.Prefs.values[PREF_WALLPAPER_UPLOAD_MAX_FILE_SIZE];
+    function reduceColorsToFitCustomColorInput(arr) {
+      // Reduce the amount of custom colors to make space for the custom color picker
+      while (arr.length % 3 !== 2) {
+        arr.pop();
+      }
+      return arr;
+    }
+    let wallpaperCustomSolidColorHex = null;
+    const selectedWallpaper = prefs["newtabWallpapers.wallpaper"];
+
+    // User has previous selected a custom color
+    if (selectedWallpaper.includes("solid-color-picker")) {
+      this.setState({
+        showColorPicker: true
+      });
+      const regex = /#([a-fA-F0-9]{6})/;
+      [wallpaperCustomSolidColorHex] = selectedWallpaper.match(regex);
+    }
+
+    // Enable custom color select if pref'ed on
+    this.setState({
+      showColorPicker: prefs["newtabWallpapers.customColor.enabled"]
+    });
+
+    // Remove last item of solid colors to make space for custom color picker
+    if (prefs["newtabWallpapers.customColor.enabled"] && activeCategory === "solid-colors") {
+      filteredWallpapers = reduceColorsToFitCustomColorInput(filteredWallpapers);
+    }
+
+    // Bug 1953012 - If nothing selected, default to color of customize panel
+    // --color-blue-70 : #054096
+    // --color-blue-05 : #deeafc
+    const starterColorHex = this.prefersDarkQuery?.matches ? "#054096" : "#deeafc";
+
+    // Set initial state of the color picker (depending if the user has already set a custom color)
+    let initStateClassname = wallpaperCustomSolidColorHex ? "custom-color-set" : "default-color-set";
+
+    // If a custom color picker is set, make sure the icon has the correct contrast
+    if (wallpaperCustomSolidColorHex) {
+      const rgbColors = this.getRGBColors(wallpaperCustomSolidColorHex);
+      const isColorDark = this.isWallpaperColorDark(rgbColors);
+      if (isColorDark) {
+        initStateClassname += " custom-color-dark";
+      }
+    }
+    let colorPickerInput = showColorPicker && activeCategory === "solid-colors" ? /*#__PURE__*/external_React_default().createElement("div", {
+      className: `theme-custom-color-picker ${initStateClassname}`,
+      ref: this.customColorPickerRef
+    }, /*#__PURE__*/external_React_default().createElement("input", {
+      onInput: this.handleColorInput,
+      onChange: this.debouncedHandleChange,
+      onClick: () => this.setActiveId("solid-color-picker") //
+      ,
+      type: "color",
+      name: `wallpaper-solid-color-picker`,
+      id: "solid-color-picker"
+      // aria-checked is not applicable for input[type="color"] elements
+      ,
+      "aria-current": this.state.activeId === "solid-color-picker",
+      value: wallpaperCustomSolidColorHex || starterColorHex,
+      className: `wallpaper-input
+              ${this.state.activeId === "solid-color-picker" ? "active" : ""}`,
+      ref: this.customColorInput
+    }), /*#__PURE__*/external_React_default().createElement("label", {
+      htmlFor: "solid-color-picker",
+      "data-l10n-id": "newtab-wallpaper-custom-color"
+    })) : "";
+    return /*#__PURE__*/external_React_default().createElement("div", null, /*#__PURE__*/external_React_default().createElement("div", {
+      className: "category-header"
+    }, /*#__PURE__*/external_React_default().createElement("h2", {
+      "data-l10n-id": "newtab-wallpaper-title"
+    }), /*#__PURE__*/external_React_default().createElement("button", {
+      className: "wallpapers-reset",
+      onClick: this.handleReset,
+      "data-l10n-id": "newtab-wallpaper-reset"
+    })), /*#__PURE__*/external_React_default().createElement("div", {
+      role: "grid",
+      "aria-label": "Wallpaper category selection. Use arrow keys to navigate."
+    }, /*#__PURE__*/external_React_default().createElement("fieldset", {
+      className: "category-list"
+    }, categories.map((category, index) => {
+      const filteredList = wallpaperList.filter(wallpaper => wallpaper.category === category);
+      const sortedList = this.sortWallpapersByOrder(filteredList);
+      const activeWallpaperObj = activeWallpaper && sortedList.find(wp => wp.title === activeWallpaper);
+      // Detect custom solid color
+      const isCustomSolidColor = category === "solid-colors" && activeWallpaper.startsWith("solid-color-picker");
+      const thumbnail = activeWallpaperObj || sortedList[0];
+      let fluent_id;
+      switch (category) {
+        case "abstracts":
+          fluent_id = "newtab-wallpaper-category-title-abstract";
+          break;
+        case "celestial":
+          fluent_id = "newtab-wallpaper-category-title-celestial";
+          break;
+        case "custom-wallpaper":
+          fluent_id = "newtab-wallpaper-upload-image";
+          break;
+        case "photographs":
+          fluent_id = "newtab-wallpaper-category-title-photographs";
+          break;
+        case "solid-colors":
+          fluent_id = "newtab-wallpaper-category-title-colors";
+          break;
+        case "firefox":
+          fluent_id = "newtab-wallpaper-category-title-firefox";
+          break;
+      }
+      let style = {};
+      if (thumbnail?.wallpaperUrl) {
+        style.backgroundImage = `url(${thumbnail.wallpaperUrl})`;
+        style.backgroundPosition = thumbnail.background_position || "center";
+      } else {
+        style.backgroundColor = thumbnail?.solid_color || "";
+      }
+      // If custom solid color is active, override the thumbnail to the chosen hex
+      if (isCustomSolidColor) {
+        const hex = activeWallpaper.split("solid-color-picker-")[1] || "";
+        style.backgroundColor = hex;
+      }
+      const isCategorySelected = activeWallpaperObj || isCustomSolidColor;
+      return /*#__PURE__*/external_React_default().createElement("div", {
+        key: category
+      }, /*#__PURE__*/external_React_default().createElement("button", WallpaperCategories_extends({
+        ref: el => {
+          if (el) {
+            this.categoryRef[index] = el;
+          }
+        },
+        id: category,
+        style: style,
+        onKeyDown: e => this.handleCategoryKeyDown(e, category)
+        // Add overrides for custom wallpaper upload UI
+        ,
+        onClick: event => {
+          this.setState({
+            focusedCategoryIndex: index
+          });
+          if (category !== "custom-wallpaper") {
+            this.handleCategory(event);
+          } else {
+            this.handleUpload();
+          }
+        },
+        className: `wallpaper-input
+                      ${category === "custom-wallpaper" ? "theme-custom-wallpaper" : ""}
+                      ${isCategorySelected ? "selected" : ""}`,
+        tabIndex: this.state.focusedCategoryIndex === index ? 0 : -1
+      }, category === "custom-wallpaper" ? {
+        "aria-errormessage": "customWallpaperError"
+      } : {})), /*#__PURE__*/external_React_default().createElement("label", {
+        htmlFor: category,
+        "data-l10n-id": fluent_id
+      }, fluent_id));
+    })), this.state.customWallpaperErrorType && /*#__PURE__*/external_React_default().createElement("div", {
+      className: "custom-wallpaper-error",
+      id: "customWallpaperError"
+    }, /*#__PURE__*/external_React_default().createElement("span", {
+      className: "icon icon-info"
+    }), (() => {
+      switch (this.state.customWallpaperErrorType) {
+        case "fileSize":
+          return /*#__PURE__*/external_React_default().createElement("span", {
+            "data-l10n-id": "newtab-wallpaper-error-max-file-size",
+            "data-l10n-args": `{"file_size": ${wallpaperUploadMaxFileSize}}`
+          });
+        case "fileType":
+          return /*#__PURE__*/external_React_default().createElement("span", {
+            "data-l10n-id": "newtab-wallpaper-error-upload-file-type"
+          });
+        default:
+          return null;
+      }
+    })())), /*#__PURE__*/external_React_default().createElement(external_ReactTransitionGroup_namespaceObject.CSSTransition, {
+      in: !!activeCategory,
+      timeout: 300,
+      classNames: "wallpaper-list",
+      unmountOnExit: true,
+      onEntered: this.handleWallpaperListEntered
+    }, /*#__PURE__*/external_React_default().createElement("section", {
+      className: "category wallpaper-list ignore-color-mode"
+    }, /*#__PURE__*/external_React_default().createElement("button", {
+      ref: this.arrowButtonRef,
+      className: "arrow-button",
+      "data-l10n-id": activeCategoryFluentID,
+      onClick: this.handleBack
+    }), /*#__PURE__*/external_React_default().createElement("div", {
+      role: "grid",
+      "aria-label": "Wallpaper selection. Use arrow keys to navigate."
+    }, /*#__PURE__*/external_React_default().createElement("fieldset", null, this.sortWallpapersByOrder(filteredWallpapers).map(({
+      background_position,
+      fluent_id,
+      solid_color,
+      theme,
+      title,
+      wallpaperUrl
+    }, index) => {
+      let style = {};
+      if (wallpaperUrl) {
+        style.backgroundImage = `url(${wallpaperUrl})`;
+        style.backgroundPosition = background_position || "center";
+      } else {
+        style.backgroundColor = solid_color || "";
+      }
+      return /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, /*#__PURE__*/external_React_default().createElement("input", {
+        ref: el => {
+          if (el) {
+            this.wallpaperRef[index] = el;
+          }
+        },
+        onChange: this.handleChange,
+        onKeyDown: e => this.handleWallpaperKeyDown(e, title),
+        style: style,
+        type: "radio",
+        name: `wallpaper-${title}`,
+        id: title,
+        value: title,
+        checked: title === activeWallpaper,
+        "aria-checked": title === activeWallpaper,
+        className: `wallpaper-input theme-${theme} ${this.state.activeId === title ? "active" : ""}`,
+        onClick: () => this.setActiveId(title) //
+        ,
+        tabIndex: index === 0 ? 0 : -1 //the first wallpaper in the array will have a tabindex of 0 so we can tab into it. The rest will have a tabindex of -1
+      }), /*#__PURE__*/external_React_default().createElement("label", {
+        htmlFor: title,
+        className: "sr-only",
+        "data-l10n-id": fluent_id
+      }, fluent_id));
+    }), colorPickerInput)))));
+  }
+}
+const WallpaperCategories = (0,external_ReactRedux_namespaceObject.connect)(state => {
+  return {
+    Wallpapers: state.Wallpapers,
+    Prefs: state.Prefs
+  };
+})(_WallpaperCategories);
+;// CONCATENATED MODULE: ./content-src/components/CustomizeMenu/ContentSection/ContentSection.jsx
+function ContentSection_extends() { return ContentSection_extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, ContentSection_extends.apply(null, arguments); }
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+
+
+
+
+class ContentSection extends (external_React_default()).PureComponent {
+  constructor(props) {
+    super(props);
+    this.onPreferenceSelect = this.onPreferenceSelect.bind(this);
+
+    // Refs are necessary for dynamically measuring drawer heights for slide animations
+    this.topSitesDrawerRef = /*#__PURE__*/external_React_default().createRef();
+    this.pocketDrawerRef = /*#__PURE__*/external_React_default().createRef();
+  }
+  inputUserEvent(eventSource, eventValue) {
+    this.props.dispatch(actionCreators.UserEvent({
+      event: "PREF_CHANGED",
+      source: eventSource,
+      value: {
+        status: eventValue,
+        menu_source: "CUSTOMIZE_MENU"
+      }
+    }));
+  }
+  onPreferenceSelect(e) {
+    // eventSource: WEATHER | TOP_SITES | TOP_STORIES | WIDGET_LISTS | WIDGET_TIMER
+    const {
+      preference,
+      eventSource
+    } = e.target.dataset;
+    let value;
+    if (e.target.nodeName === "SELECT") {
+      value = parseInt(e.target.value, 10);
+    } else if (e.target.nodeName === "INPUT") {
+      value = e.target.checked;
+      if (eventSource) {
+        this.inputUserEvent(eventSource, value);
+      }
+    } else if (e.target.nodeName === "MOZ-TOGGLE") {
+      value = e.target.pressed;
+      if (eventSource) {
+        this.inputUserEvent(eventSource, value);
+      }
+    }
+    this.props.setPref(preference, value);
+  }
+  componentDidMount() {
+    this.setDrawerMargins();
+  }
+  componentDidUpdate() {
+    this.setDrawerMargins();
+  }
+  setDrawerMargins() {
+    this.setDrawerMargin(`TOP_SITES`, this.props.enabledSections.topSitesEnabled);
+    this.setDrawerMargin(`TOP_STORIES`, this.props.enabledSections.pocketEnabled);
+  }
+  setDrawerMargin(drawerID, isOpen) {
+    let drawerRef;
+    if (drawerID === `TOP_SITES`) {
+      drawerRef = this.topSitesDrawerRef.current;
+    } else if (drawerID === `TOP_STORIES`) {
+      drawerRef = this.pocketDrawerRef.current;
+    } else {
+      return;
+    }
+    if (drawerRef) {
+      // Use measured height if valid, otherwise use a large fallback
+      // since overflow:hidden on the parent safely hides the drawer
+      let drawerHeight = parseFloat(window.getComputedStyle(drawerRef)?.height) || 100;
+      if (isOpen) {
+        drawerRef.style.marginTop = "var(--space-small)";
+      } else {
+        drawerRef.style.marginTop = `-${drawerHeight + 3}px`;
+      }
+    }
+  }
+  render() {
+    const {
+      enabledSections,
+      enabledWidgets,
+      pocketRegion,
+      mayHaveInferredPersonalization,
+      mayHaveWeather,
+      mayHaveWidgets,
+      mayHaveTimerWidget,
+      mayHaveListsWidget,
+      openPreferences,
+      wallpapersEnabled,
+      activeWallpaper,
+      setPref,
+      mayHaveTopicSections,
+      exitEventFired,
+      onSubpanelToggle,
+      toggleSectionsMgmtPanel,
+      showSectionsMgmtPanel
+    } = this.props;
+    const {
+      topSitesEnabled,
+      pocketEnabled,
+      weatherEnabled,
+      showInferredPersonalizationEnabled,
+      topSitesRowsCount
+    } = enabledSections;
+    const {
+      timerEnabled,
+      listsEnabled
+    } = enabledWidgets;
+    return /*#__PURE__*/external_React_default().createElement("div", {
+      className: "home-section"
+    }, wallpapersEnabled && /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, /*#__PURE__*/external_React_default().createElement("div", {
+      className: "wallpapers-section"
+    }, /*#__PURE__*/external_React_default().createElement(WallpaperCategories, {
+      setPref: setPref,
+      activeWallpaper: activeWallpaper,
+      exitEventFired: exitEventFired,
+      onSubpanelToggle: onSubpanelToggle
+    })), !mayHaveWidgets && /*#__PURE__*/external_React_default().createElement("span", {
+      className: "divider",
+      role: "separator"
+    })), mayHaveWidgets && /*#__PURE__*/external_React_default().createElement("div", {
+      className: "widgets-section"
+    }, /*#__PURE__*/external_React_default().createElement("div", {
+      className: "category-header"
+    }, /*#__PURE__*/external_React_default().createElement("h2", {
+      "data-l10n-id": "newtab-custom-widget-section-title"
+    })), /*#__PURE__*/external_React_default().createElement("div", {
+      className: "settings-widgets"
+    }, mayHaveWeather && /*#__PURE__*/external_React_default().createElement("div", {
+      id: "weather-section",
+      className: "section"
+    }, /*#__PURE__*/external_React_default().createElement("moz-toggle", {
+      id: "weather-toggle",
+      pressed: weatherEnabled || null,
+      onToggle: this.onPreferenceSelect,
+      "data-preference": "showWeather",
+      "data-eventSource": "WEATHER",
+      "data-l10n-id": "newtab-custom-widget-weather-toggle"
+    })), mayHaveListsWidget && /*#__PURE__*/external_React_default().createElement("div", {
+      id: "lists-widget-section",
+      className: "section"
+    }, /*#__PURE__*/external_React_default().createElement("moz-toggle", {
+      id: "lists-toggle",
+      pressed: listsEnabled || null,
+      onToggle: this.onPreferenceSelect,
+      "data-preference": "widgets.lists.enabled",
+      "data-eventSource": "WIDGET_LISTS",
+      "data-l10n-id": "newtab-custom-widget-lists-toggle"
+    })), mayHaveTimerWidget && /*#__PURE__*/external_React_default().createElement("div", {
+      id: "timer-widget-section",
+      className: "section"
+    }, /*#__PURE__*/external_React_default().createElement("moz-toggle", {
+      id: "timer-toggle",
+      pressed: timerEnabled || null,
+      onToggle: this.onPreferenceSelect,
+      "data-preference": "widgets.focusTimer.enabled",
+      "data-eventSource": "WIDGET_TIMER",
+      "data-l10n-id": "newtab-custom-widget-timer-toggle"
+    })), /*#__PURE__*/external_React_default().createElement("span", {
+      className: "divider",
+      role: "separator"
+    }))), /*#__PURE__*/external_React_default().createElement("div", {
+      className: "settings-toggles"
+    }, !mayHaveWidgets && mayHaveWeather && /*#__PURE__*/external_React_default().createElement("div", {
+      id: "weather-section",
+      className: "section"
+    }, /*#__PURE__*/external_React_default().createElement("moz-toggle", {
+      id: "weather-toggle",
+      pressed: weatherEnabled || null,
+      onToggle: this.onPreferenceSelect,
+      "data-preference": "showWeather",
+      "data-eventSource": "WEATHER",
+      "data-l10n-id": "newtab-custom-weather-toggle"
+    })), /*#__PURE__*/external_React_default().createElement("div", {
+      id: "shortcuts-section",
+      className: "section"
+    }, /*#__PURE__*/external_React_default().createElement("moz-toggle", {
+      id: "shortcuts-toggle",
+      pressed: topSitesEnabled || null,
+      onToggle: this.onPreferenceSelect,
+      "data-preference": "feeds.topsites",
+      "data-eventSource": "TOP_SITES",
+      "data-l10n-id": "newtab-custom-shortcuts-toggle"
+    }, /*#__PURE__*/external_React_default().createElement("div", {
+      slot: "nested"
+    }, /*#__PURE__*/external_React_default().createElement("div", {
+      className: "more-info-top-wrapper"
+    }, /*#__PURE__*/external_React_default().createElement("div", {
+      className: "more-information",
+      ref: this.topSitesDrawerRef
+    }, /*#__PURE__*/external_React_default().createElement("select", {
+      id: "row-selector",
+      className: "selector",
+      name: "row-count",
+      "data-preference": "topSitesRows",
+      value: topSitesRowsCount,
+      onChange: this.onPreferenceSelect,
+      disabled: !topSitesEnabled,
+      "aria-labelledby": "custom-shortcuts-title"
+    }, /*#__PURE__*/external_React_default().createElement("option", {
+      value: "1",
+      "data-l10n-id": "newtab-custom-row-selector",
+      "data-l10n-args": "{\"num\": 1}"
+    }), /*#__PURE__*/external_React_default().createElement("option", {
+      value: "2",
+      "data-l10n-id": "newtab-custom-row-selector",
+      "data-l10n-args": "{\"num\": 2}"
+    }), /*#__PURE__*/external_React_default().createElement("option", {
+      value: "3",
+      "data-l10n-id": "newtab-custom-row-selector",
+      "data-l10n-args": "{\"num\": 3}"
+    }), /*#__PURE__*/external_React_default().createElement("option", {
+      value: "4",
+      "data-l10n-id": "newtab-custom-row-selector",
+      "data-l10n-args": "{\"num\": 4}"
+    }))))))), pocketRegion && /*#__PURE__*/external_React_default().createElement("div", {
+      id: "pocket-section",
+      className: "section"
+    }, /*#__PURE__*/external_React_default().createElement("moz-toggle", ContentSection_extends({
+      id: "pocket-toggle",
+      pressed: pocketEnabled || null,
+      onToggle: this.onPreferenceSelect,
+      "aria-describedby": "custom-pocket-subtitle",
+      "data-preference": "feeds.section.topstories",
+      "data-eventSource": "TOP_STORIES"
+    }, mayHaveInferredPersonalization ? {
+      "data-l10n-id": "newtab-custom-stories-personalized-toggle"
+    } : {
+      "data-l10n-id": "newtab-custom-stories-toggle"
+    }), /*#__PURE__*/external_React_default().createElement("div", {
+      slot: "nested"
+    }, (mayHaveInferredPersonalization || mayHaveTopicSections) && /*#__PURE__*/external_React_default().createElement("div", {
+      className: "more-info-pocket-wrapper"
+    }, /*#__PURE__*/external_React_default().createElement("div", {
+      className: "more-information",
+      ref: this.pocketDrawerRef
+    }, mayHaveInferredPersonalization && /*#__PURE__*/external_React_default().createElement("div", {
+      className: "check-wrapper",
+      role: "presentation"
+    }, /*#__PURE__*/external_React_default().createElement("input", {
+      id: "inferred-personalization",
+      className: "customize-menu-checkbox",
+      disabled: !pocketEnabled,
+      checked: showInferredPersonalizationEnabled,
+      type: "checkbox",
+      onChange: this.onPreferenceSelect,
+      "data-preference": "discoverystream.sections.personalization.inferred.user.enabled",
+      "data-eventSource": "INFERRED_PERSONALIZATION"
+    }), /*#__PURE__*/external_React_default().createElement("label", {
+      className: "customize-menu-checkbox-label",
+      htmlFor: "inferred-personalization",
+      "data-l10n-id": "newtab-custom-stories-personalized-checkbox-label"
+    })), mayHaveTopicSections && /*#__PURE__*/external_React_default().createElement(SectionsMgmtPanel, {
+      exitEventFired: exitEventFired,
+      pocketEnabled: pocketEnabled,
+      onSubpanelToggle: onSubpanelToggle,
+      togglePanel: toggleSectionsMgmtPanel,
+      showPanel: showSectionsMgmtPanel
+    }))))))), /*#__PURE__*/external_React_default().createElement("span", {
+      className: "divider",
+      role: "separator"
+    }), /*#__PURE__*/external_React_default().createElement("div", null, /*#__PURE__*/external_React_default().createElement("button", {
+      id: "settings-link",
+      className: "external-link",
+      onClick: openPreferences,
+      "data-l10n-id": "newtab-custom-settings"
+    })));
+  }
+}
+;// CONCATENATED MODULE: ./content-src/components/CustomizeMenu/CustomizeMenu.jsx
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+
+
+
+// eslint-disable-next-line no-shadow
+
+class _CustomizeMenu extends (external_React_default()).PureComponent {
+  constructor(props) {
+    super(props);
+    this.onEntered = this.onEntered.bind(this);
+    this.onExited = this.onExited.bind(this);
+    this.onSubpanelToggle = this.onSubpanelToggle.bind(this);
+    this.state = {
+      exitEventFired: false,
+      subpanelOpen: false
+    };
+  }
+  onSubpanelToggle(isOpen) {
+    this.setState({
+      subpanelOpen: isOpen
+    });
+  }
+  onEntered() {
+    this.setState({
+      exitEventFired: false
+    });
+    if (this.closeButton) {
+      this.closeButton.focus();
+    }
+  }
+  onExited() {
+    this.setState({
+      exitEventFired: true
+    });
+    if (this.openButton) {
+      this.openButton.focus();
+    }
+  }
+  render() {
+    return /*#__PURE__*/external_React_default().createElement("span", null, /*#__PURE__*/external_React_default().createElement(external_ReactTransitionGroup_namespaceObject.CSSTransition, {
+      timeout: 300,
+      classNames: "personalize-animate",
+      in: !this.props.showing,
+      appear: true
+    }, /*#__PURE__*/external_React_default().createElement("button", {
+      className: "personalize-button",
+      "data-l10n-id": "newtab-customize-panel-icon-button",
+      onClick: () => this.props.onOpen(),
+      onKeyDown: e => {
+        if (e.key === "Enter") {
+          this.props.onOpen();
+        }
+      },
+      ref: c => this.openButton = c
+    }, /*#__PURE__*/external_React_default().createElement("label", {
+      "data-l10n-id": "newtab-customize-panel-icon-button-label"
+    }), /*#__PURE__*/external_React_default().createElement("div", null, /*#__PURE__*/external_React_default().createElement("img", {
+      role: "presentation",
+      src: "chrome://global/skin/icons/edit-outline.svg"
+    })))), /*#__PURE__*/external_React_default().createElement(external_ReactTransitionGroup_namespaceObject.CSSTransition, {
+      timeout: 250,
+      classNames: "customize-animate",
+      in: this.props.showing,
+      onEntered: this.onEntered,
+      onExited: this.onExited,
+      appear: true
+    }, /*#__PURE__*/external_React_default().createElement("div", {
+      className: "customize-menu-animate-wrapper"
+    }, /*#__PURE__*/external_React_default().createElement("div", {
+      className: `customize-menu ${this.state.subpanelOpen ? "subpanel-open" : ""}`,
+      role: "dialog",
+      "data-l10n-id": "newtab-settings-dialog-label"
+    }, /*#__PURE__*/external_React_default().createElement("div", {
+      className: "close-button-wrapper"
+    }, /*#__PURE__*/external_React_default().createElement("moz-button", {
+      onClick: () => this.props.onClose(),
+      id: "close-button",
+      type: "icon ghost",
+      "data-l10n-id": "newtab-custom-close-menu-button",
+      iconsrc: "chrome://global/skin/icons/close.svg",
+      ref: c => this.closeButton = c
+    })), /*#__PURE__*/external_React_default().createElement(ContentSection, {
+      openPreferences: this.props.openPreferences,
+      setPref: this.props.setPref,
+      enabledSections: this.props.enabledSections,
+      enabledWidgets: this.props.enabledWidgets,
+      wallpapersEnabled: this.props.wallpapersEnabled,
+      activeWallpaper: this.props.activeWallpaper,
+      pocketRegion: this.props.pocketRegion,
+      mayHaveTopicSections: this.props.mayHaveTopicSections,
+      mayHaveInferredPersonalization: this.props.mayHaveInferredPersonalization,
+      mayHaveWeather: this.props.mayHaveWeather,
+      mayHaveWidgets: this.props.mayHaveWidgets,
+      mayHaveTimerWidget: this.props.mayHaveTimerWidget,
+      mayHaveListsWidget: this.props.mayHaveListsWidget,
+      dispatch: this.props.dispatch,
+      exitEventFired: this.state.exitEventFired,
+      onSubpanelToggle: this.onSubpanelToggle,
+      toggleSectionsMgmtPanel: this.props.toggleSectionsMgmtPanel,
+      showSectionsMgmtPanel: this.props.showSectionsMgmtPanel
+    })))));
+  }
+}
+const CustomizeMenu = (0,external_ReactRedux_namespaceObject.connect)(state => ({
+  DiscoveryStream: state.DiscoveryStream
+}))(_CustomizeMenu);
+;// CONCATENATED MODULE: ./content-src/components/Logo/Logo.jsx
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+
+function Logo() {
+  return /*#__PURE__*/external_React_default().createElement("h1", {
+    className: "logo-and-wordmark-wrapper"
+  }, /*#__PURE__*/external_React_default().createElement("div", {
+    className: "logo-and-wordmark",
+    role: "img",
+    "data-l10n-id": "newtab-logo-and-wordmark"
+  }, /*#__PURE__*/external_React_default().createElement("div", {
+    className: "logo"
+  }), /*#__PURE__*/external_React_default().createElement("div", {
+    className: "wordmark"
+  })));
+}
+
+;// CONCATENATED MODULE: ./content-src/components/Search/Search.jsx
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* globals ContentSearchHandoffUIController */
+
+
+
+
+
+class _Search extends (external_React_default()).PureComponent {
+  constructor(props) {
+    super(props);
+    this.onSearchHandoffClick = this.onSearchHandoffClick.bind(this);
+    this.onSearchHandoffPaste = this.onSearchHandoffPaste.bind(this);
+    this.onSearchHandoffDrop = this.onSearchHandoffDrop.bind(this);
+    this.onInputMountHandoff = this.onInputMountHandoff.bind(this);
+    this.onSearchHandoffButtonMount = this.onSearchHandoffButtonMount.bind(this);
+  }
+  handleEvent(event) {
+    // Also track search events with our own telemetry
+    if (event.detail.type === "Search") {
+      this.props.dispatch(actionCreators.UserEvent({
+        event: "SEARCH"
+      }));
+    }
+  }
+  doSearchHandoff(text) {
+    this.props.dispatch(actionCreators.OnlyToMain({
+      type: actionTypes.HANDOFF_SEARCH_TO_AWESOMEBAR,
+      data: {
+        text
+      }
+    }));
+    this.props.dispatch({
+      type: actionTypes.FAKE_FOCUS_SEARCH
+    });
+    this.props.dispatch(actionCreators.UserEvent({
+      event: "SEARCH_HANDOFF"
+    }));
+    if (text) {
+      this.props.dispatch({
+        type: actionTypes.DISABLE_SEARCH
+      });
+    }
+  }
+  onSearchHandoffClick(event) {
+    // When search hand-off is enabled, we render a big button that is styled to
+    // look like a search textbox. If the button is clicked, we style
+    // the button as if it was a focused search box and show a fake cursor but
+    // really focus the awesomebar without the focus styles ("hidden focus").
+    event.preventDefault();
+    this.doSearchHandoff();
+  }
+  onSearchHandoffPaste(event) {
+    event.preventDefault();
+    this.doSearchHandoff(event.clipboardData.getData("Text"));
+  }
+  onSearchHandoffDrop(event) {
+    event.preventDefault();
+    let text = event.dataTransfer.getData("text");
+    if (text) {
+      this.doSearchHandoff(text);
+    }
+  }
+  componentDidMount() {
+    const caret = this.fakeCaret;
+    const {
+      caretBlinkCount,
+      caretBlinkTime
+    } = this.props.Prefs.values;
+    if (caret) {
+      // If caret blink count isn't defined, use the default infinite behavior for animation
+      caret.style.setProperty("--caret-blink-count", caretBlinkCount > -1 ? caretBlinkCount : "infinite");
+
+      // Apply custom blink rate if set, else fallback to default (567ms on/off --> 1134ms total)
+      caret.style.setProperty("--caret-blink-time", caretBlinkTime > 0 ? `${caretBlinkTime * 2}ms` : `${1134}ms`);
+    }
+  }
+  onInputMountHandoff(input) {
+    if (input) {
+      // The handoff UI controller helps us set the search icon and reacts to
+      // changes to default engine to keep everything in sync.
+      this._handoffSearchController = new ContentSearchHandoffUIController();
+    }
+  }
+  onSearchHandoffButtonMount(button) {
+    // Keep a reference to the button for use during "paste" event handling.
+    this._searchHandoffButton = button;
+  }
+
+  /*
+   * Do not change the ID on the input field, as legacy newtab code
+   * specifically looks for the id 'newtab-search-text' on input fields
+   * in order to execute searches in various tests
+   */
+  render() {
+    const wrapperClassName = ["search-wrapper", this.props.disable && "search-disabled", this.props.fakeFocus && "fake-focus"].filter(v => v).join(" ");
+    return /*#__PURE__*/external_React_default().createElement("div", {
+      className: wrapperClassName
+    }, this.props.showLogo && /*#__PURE__*/external_React_default().createElement(Logo, null), /*#__PURE__*/external_React_default().createElement("div", {
+      className: "search-inner-wrapper"
+    }, /*#__PURE__*/external_React_default().createElement("button", {
+      className: "search-handoff-button",
+      ref: this.onSearchHandoffButtonMount,
+      onClick: this.onSearchHandoffClick,
+      tabIndex: "-1"
+    }, /*#__PURE__*/external_React_default().createElement("div", {
+      className: "fake-textbox"
+    }), /*#__PURE__*/external_React_default().createElement("input", {
+      type: "search",
+      className: "fake-editable",
+      tabIndex: "-1",
+      "aria-hidden": "true",
+      onDrop: this.onSearchHandoffDrop,
+      onPaste: this.onSearchHandoffPaste,
+      ref: this.onInputMountHandoff
+    }), /*#__PURE__*/external_React_default().createElement("div", {
+      className: "fake-caret",
+      ref: el => {
+        this.fakeCaret = el;
+      }
+    }))));
+  }
+}
+const Search_Search = (0,external_ReactRedux_namespaceObject.connect)(state => ({
+  Prefs: state.Prefs
+}))(_Search);
 ;// CONCATENATED MODULE: ./content-src/components/DownloadModalToggle/DownloadModalToggle.jsx
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
@@ -13528,38 +14975,6 @@ function DownloadModalToggle({
   }, /*#__PURE__*/external_React_default().createElement("div", {
     className: "icon icon-device-phone"
   }));
-}
-
-;// CONCATENATED MODULE: ./content-src/components/Notifications/Toasts/ThumbUpThumbDownToast.jsx
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-
-function ThumbUpThumbDownToast({
-  onDismissClick,
-  onAnimationEnd
-}) {
-  const mozMessageBarRef = (0,external_React_namespaceObject.useRef)(null);
-  (0,external_React_namespaceObject.useEffect)(() => {
-    const {
-      current: mozMessageBarElement
-    } = mozMessageBarRef;
-    mozMessageBarElement.addEventListener("message-bar:user-dismissed", onDismissClick, {
-      once: true
-    });
-    return () => {
-      mozMessageBarElement.removeEventListener("message-bar:user-dismissed", onDismissClick);
-    };
-  }, [onDismissClick]);
-  return /*#__PURE__*/external_React_default().createElement("moz-message-bar", {
-    type: "success",
-    class: "notification-feed-item",
-    dismissable: true,
-    "data-l10n-id": "newtab-toast-thumbs-up-or-down2",
-    ref: mozMessageBarRef,
-    onAnimationEnd: onAnimationEnd
-  });
 }
 
 ;// CONCATENATED MODULE: ./content-src/components/Notifications/Toasts/ReportContentToast.jsx
@@ -13603,7 +15018,6 @@ function ReportContentToast({
 
 
 
-
 function Notifications_Notifications({
   dispatch
 }) {
@@ -13637,13 +15051,6 @@ function Notifications_Notifications({
     switch (latestToastItem) {
       case "reportSuccessToast":
         return /*#__PURE__*/external_React_default().createElement(ReportContentToast, {
-          onDismissClick: syncHiddenToastData,
-          onAnimationEnd: syncHiddenToastData,
-          key: toastCounter
-        });
-      case "thumbsUpToast":
-      case "thumbsDownToast":
-        return /*#__PURE__*/external_React_default().createElement(ThumbUpThumbDownToast, {
           onDismissClick: syncHiddenToastData,
           onAnimationEnd: syncHiddenToastData,
           key: toastCounter
@@ -13910,19 +15317,44 @@ function TopicSelection({
 
 
 
+
 const PREF_MOBILE_DOWNLOAD_HIGHLIGHT_VARIANT_A = "mobileDownloadModal.variant-a";
 const PREF_MOBILE_DOWNLOAD_HIGHLIGHT_VARIANT_B = "mobileDownloadModal.variant-b";
 const PREF_MOBILE_DOWNLOAD_HIGHLIGHT_VARIANT_C = "mobileDownloadModal.variant-c";
+const FEATURE_ID = "FEATURE_DOWNLOAD_MOBILE_PROMO";
 function DownloadMobilePromoHighlight({
   position,
   dispatch,
   handleDismiss,
-  handleBlock
+  handleBlock,
+  isIntersecting
 }) {
   const onDismiss = (0,external_React_namespaceObject.useCallback)(() => {
+    // This event is emitted manually because the feature may be triggered outside the OMC flow,
+    // and may not be captured by the messaging-system’s automatic reporting.
+    dispatch(actionCreators.DiscoveryStreamUserEvent({
+      event: "FEATURE_HIGHLIGHT_DISMISS",
+      source: "FEATURE_HIGHLIGHT",
+      value: {
+        feature: FEATURE_ID
+      }
+    }));
     handleDismiss();
     handleBlock();
-  }, [handleDismiss, handleBlock]);
+  }, [dispatch, handleDismiss, handleBlock]);
+  (0,external_React_namespaceObject.useEffect)(() => {
+    if (isIntersecting) {
+      // This event is emitted manually because the feature may be triggered outside the OMC flow,
+      // and may not be captured by the messaging-system’s automatic reporting.
+      dispatch(actionCreators.DiscoveryStreamUserEvent({
+        event: "FEATURE_HIGHLIGHT_IMPRESSION",
+        source: "FEATURE_HIGHLIGHT",
+        value: {
+          feature: FEATURE_ID
+        }
+      }));
+    }
+  }, [dispatch, isIntersecting]);
   const prefs = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.Prefs.values);
   const mobileDownloadPromoVarA = prefs[PREF_MOBILE_DOWNLOAD_HIGHLIGHT_VARIANT_A];
   const mobileDownloadPromoVarB = prefs[PREF_MOBILE_DOWNLOAD_HIGHLIGHT_VARIANT_B];
@@ -13969,7 +15401,7 @@ function DownloadMobilePromoHighlight({
     className: "download-firefox-feature-highlight"
   }, /*#__PURE__*/external_React_default().createElement(FeatureHighlight, {
     position: position,
-    feature: "FEATURE_DOWNLOAD_MOBILE_PROMO",
+    feature: FEATURE_ID,
     dispatch: dispatch,
     message: /*#__PURE__*/external_React_default().createElement("div", {
       className: "download-firefox-feature-highlight-content"
@@ -14000,6 +15432,7 @@ function DownloadMobilePromoHighlight({
 
 
 
+
 function WallpaperFeatureHighlight({
   position,
   dispatch,
@@ -14021,32 +15454,52 @@ function WallpaperFeatureHighlight({
     handleClick(elementId);
     onDismiss();
   }, [dispatch, onDismiss, handleClick]);
+
+  // Extract the strings and feature ID from OMC
+  const {
+    messageData
+  } = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.Messages);
   return /*#__PURE__*/external_React_default().createElement("div", {
-    className: "wallpaper-feature-highlight"
+    className: `wallpaper-feature-highlight ${messageData.content?.darkModeDismiss ? "is-inverted-dark-dismiss-button" : ""}`
   }, /*#__PURE__*/external_React_default().createElement(FeatureHighlight, {
     position: position,
     "data-l10n-id": "feature-highlight-wallpaper",
-    feature: "FEATURE_HIGHLIGHT_WALLPAPER",
+    feature: messageData.content.feature,
     dispatch: dispatch,
     message: /*#__PURE__*/external_React_default().createElement("div", {
       className: "wallpaper-feature-highlight-content"
-    }, /*#__PURE__*/external_React_default().createElement("img", {
-      src: "chrome://newtab/content/data/content/assets/custom-wp-highlight.png",
-      alt: "",
+    }, /*#__PURE__*/external_React_default().createElement("picture", {
+      className: "follow-section-button-highlight-image"
+    }, /*#__PURE__*/external_React_default().createElement("source", {
+      srcSet: messageData.content?.darkModeImageURL || "chrome://newtab/content/data/content/assets/highlights/omc-newtab-wallpapers.svg",
+      media: "(prefers-color-scheme: dark)"
+    }), /*#__PURE__*/external_React_default().createElement("source", {
+      srcSet: messageData.content?.imageURL || "chrome://newtab/content/data/content/assets/highlights/omc-newtab-wallpapers.svg",
+      media: "(prefers-color-scheme: light)"
+    }), /*#__PURE__*/external_React_default().createElement("img", {
       width: "320",
-      height: "195"
-    }), /*#__PURE__*/external_React_default().createElement("p", {
+      height: "195",
+      alt: ""
+    })), messageData.content?.cardTitle ? /*#__PURE__*/external_React_default().createElement("p", {
+      className: "title"
+    }, messageData.content.cardTitle) : /*#__PURE__*/external_React_default().createElement("p", {
       className: "title",
-      "data-l10n-id": "newtab-custom-wallpaper-title"
-    }), /*#__PURE__*/external_React_default().createElement("p", {
+      "data-l10n-id": messageData.content.title || "newtab-new-user-custom-wallpaper-title"
+    }), messageData.content?.cardMessage ? /*#__PURE__*/external_React_default().createElement("p", {
+      className: "subtitle"
+    }, messageData.content.cardMessage) : /*#__PURE__*/external_React_default().createElement("p", {
       className: "subtitle",
-      "data-l10n-id": "newtab-custom-wallpaper-subtitle"
+      "data-l10n-id": messageData.content.subtitle || "newtab-new-user-custom-wallpaper-subtitle"
     }), /*#__PURE__*/external_React_default().createElement("span", {
       className: "button-wrapper"
-    }, /*#__PURE__*/external_React_default().createElement("moz-button", {
+    }, messageData.content?.cardCta ? /*#__PURE__*/external_React_default().createElement("moz-button", {
       type: "default",
       onClick: () => onToggleClick("open-customize-menu"),
-      "data-l10n-id": "newtab-custom-wallpaper-cta"
+      label: messageData.content.cardCta
+    }) : /*#__PURE__*/external_React_default().createElement("moz-button", {
+      type: "default",
+      onClick: () => onToggleClick("open-customize-menu"),
+      "data-l10n-id": messageData.content.cta || "newtab-new-user-custom-wallpaper-cta"
     }))),
     toggle: /*#__PURE__*/external_React_default().createElement("div", {
       className: "icon icon-help"
@@ -14057,120 +15510,12 @@ function WallpaperFeatureHighlight({
     outsideClickCallback: handleDismiss
   }));
 }
-;// CONCATENATED MODULE: ./content-src/components/MessageWrapper/MessageWrapper.jsx
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-
-
-
-
-function MessageWrapper({
-  children,
-  dispatch,
-  hiddenOverride,
-  onDismiss
-}) {
-  const message = (0,external_ReactRedux_namespaceObject.useSelector)(state => state.Messages);
-  const [isIntersecting, setIsIntersecting] = (0,external_React_namespaceObject.useState)(false);
-  const [hasRun, setHasRun] = (0,external_React_namespaceObject.useState)();
-  const handleIntersection = (0,external_React_namespaceObject.useCallback)(() => {
-    setIsIntersecting(true);
-    const isVisible = document?.visibilityState && document.visibilityState === "visible";
-    // only send impression if messageId is defined and tab is visible
-    if (isVisible && message.messageData.id) {
-      setHasRun(true);
-      dispatch(actionCreators.AlsoToMain({
-        type: actionTypes.MESSAGE_IMPRESSION,
-        data: message.messageData
-      }));
-    }
-  }, [dispatch, message]);
-  (0,external_React_namespaceObject.useEffect)(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible" && !hasRun) {
-        handleIntersection();
-      }
-    };
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [handleIntersection, hasRun]);
-  const ref = useIntersectionObserver(handleIntersection);
-  const handleClose = (0,external_React_namespaceObject.useCallback)(() => {
-    const action = {
-      type: actionTypes.MESSAGE_TOGGLE_VISIBILITY,
-      data: true
-    };
-    if (message.portID) {
-      dispatch(actionCreators.OnlyToOneContent(action, message.portID));
-    } else {
-      dispatch(actionCreators.AlsoToMain(action));
-    }
-    onDismiss();
-  }, [dispatch, message, onDismiss]);
-  function handleDismiss() {
-    const {
-      id
-    } = message.messageData;
-    if (id) {
-      dispatch(actionCreators.OnlyToMain({
-        type: actionTypes.MESSAGE_DISMISS,
-        data: {
-          message: message.messageData
-        }
-      }));
-    }
-    handleClose();
-  }
-  function handleBlock() {
-    const {
-      id
-    } = message.messageData;
-    if (id) {
-      dispatch(actionCreators.OnlyToMain({
-        type: actionTypes.MESSAGE_BLOCK,
-        data: id
-      }));
-    }
-  }
-  function handleClick(elementId) {
-    const {
-      id
-    } = message.messageData;
-    if (id) {
-      dispatch(actionCreators.OnlyToMain({
-        type: actionTypes.MESSAGE_CLICK,
-        data: {
-          message: message.messageData,
-          source: elementId || ""
-        }
-      }));
-    }
-  }
-
-  // only display the message if `isHidden` is false
-  return (!message.isHidden || hiddenOverride) && /*#__PURE__*/external_React_default().createElement("div", {
-    ref: el => {
-      ref.current = [el];
-    },
-    className: "message-wrapper"
-  }, /*#__PURE__*/external_React_default().cloneElement(children, {
-    isIntersecting,
-    handleDismiss,
-    handleClick,
-    handleBlock,
-    handleClose
-  }));
-}
-
 ;// CONCATENATED MODULE: ./content-src/components/Base/Base.jsx
-function Base_extends() { Base_extends = Object.assign ? Object.assign.bind() : function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return Base_extends.apply(this, arguments); }
+function Base_extends() { return Base_extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, Base_extends.apply(null, arguments); }
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 
 
 
@@ -14192,20 +15537,8 @@ function Base_extends() { Base_extends = Object.assign ? Object.assign.bind() : 
 
 const Base_VISIBLE = "visible";
 const Base_VISIBILITY_CHANGE_EVENT = "visibilitychange";
-const Base_PREF_THUMBS_UP_DOWN_ENABLED = "discoverystream.thumbsUpDown.enabled";
-const PREF_THUMBS_UP_DOWN_LAYOUT_ENABLED = "discoverystream.thumbsUpDown.searchTopsitesCompact";
 const PREF_INFERRED_PERSONALIZATION_SYSTEM = "discoverystream.sections.personalization.inferred.enabled";
-const PREF_INFERRED_PERSONALIZATION_USER = "discoverystream.sections.personalization.inferred.user.enabled";
-const PrefsButton = ({
-  onClick,
-  icon
-}) => /*#__PURE__*/external_React_default().createElement("div", {
-  className: "prefs-button"
-}, /*#__PURE__*/external_React_default().createElement("button", {
-  className: `icon ${icon || "icon-settings"}`,
-  onClick: onClick,
-  "data-l10n-id": "newtab-settings-button"
-}));
+const Base_PREF_INFERRED_PERSONALIZATION_USER = "discoverystream.sections.personalization.inferred.user.enabled";
 
 // Returns a function will not be continuously triggered when called. The
 // function will be triggered if called again after `wait` milliseconds.
@@ -14222,49 +15555,37 @@ function Base_debounce(func, wait) {
     func.apply(this, args);
   };
 }
-class _Base extends (external_React_default()).PureComponent {
-  constructor(props) {
-    super(props);
-    this.state = {
-      message: {}
+function WithDsAdmin(props) {
+  const {
+    hash = globalThis?.location?.hash || ""
+  } = props;
+  const [devtoolsCollapsed, setDevtoolsCollapsed] = (0,external_React_namespaceObject.useState)(!hash.startsWith("#devtools"));
+  (0,external_React_namespaceObject.useEffect)(() => {
+    const onHashChange = () => {
+      const h = globalThis?.location?.hash || "";
+      setDevtoolsCollapsed(!h.startsWith("#devtools"));
     };
-    this.notifyContent = this.notifyContent.bind(this);
+
+    // run once in case hash changed before mount
+    onHashChange();
+    globalThis?.addEventListener("hashchange", onHashChange);
+    return () => globalThis?.removeEventListener("hashchange", onHashChange);
+  }, []);
+  return /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, /*#__PURE__*/external_React_default().createElement(DiscoveryStreamAdmin, {
+    devtoolsCollapsed: devtoolsCollapsed
+  }), devtoolsCollapsed ? /*#__PURE__*/external_React_default().createElement(BaseContent, props) : null);
+}
+function _Base(props) {
+  const isDevtoolsEnabled = props.Prefs.values["asrouter.devtoolsEnabled"];
+  const {
+    App
+  } = props;
+  if (!App.initialized) {
+    return null;
   }
-  notifyContent(state) {
-    this.setState(state);
-  }
-  componentWillUnmount() {
-    this.updateTheme();
-  }
-  componentWillUpdate() {
-    this.updateTheme();
-  }
-  updateTheme() {
-    const bodyClassName = ["activity-stream",
-    // If we skipped the about:welcome overlay and removed the CSS classes
-    // we don't want to add them back to the Activity Stream view
-    document.body.classList.contains("inline-onboarding") ? "inline-onboarding" : ""].filter(v => v).join(" ");
-    globalThis.document.body.className = bodyClassName;
-  }
-  render() {
-    const {
-      props
-    } = this;
-    const {
-      App
-    } = props;
-    const isDevtoolsEnabled = props.Prefs.values["asrouter.devtoolsEnabled"];
-    if (!App.initialized) {
-      return null;
-    }
-    return /*#__PURE__*/external_React_default().createElement(ErrorBoundary, {
-      className: "base-content-fallback"
-    }, /*#__PURE__*/external_React_default().createElement((external_React_default()).Fragment, null, /*#__PURE__*/external_React_default().createElement(BaseContent, Base_extends({}, this.props, {
-      adminContent: this.state
-    })), isDevtoolsEnabled ? /*#__PURE__*/external_React_default().createElement(DiscoveryStreamAdmin, {
-      notifyContent: this.notifyContent
-    }) : null));
-  }
+  return /*#__PURE__*/external_React_default().createElement(ErrorBoundary, {
+    className: "base-content-fallback"
+  }, isDevtoolsEnabled ? /*#__PURE__*/external_React_default().createElement(WithDsAdmin, props) : /*#__PURE__*/external_React_default().createElement(BaseContent, props));
 }
 class BaseContent extends (external_React_default()).PureComponent {
   constructor(props) {
@@ -14279,16 +15600,20 @@ class BaseContent extends (external_React_default()).PureComponent {
     this.updateWallpaper = this.updateWallpaper.bind(this);
     this.prefersDarkQuery = null;
     this.handleColorModeChange = this.handleColorModeChange.bind(this);
-    this.shouldDisplayTopicSelectionModal = this.shouldDisplayTopicSelectionModal.bind(this);
+    this.onVisible = this.onVisible.bind(this);
     this.toggleDownloadHighlight = this.toggleDownloadHighlight.bind(this);
     this.handleDismissDownloadHighlight = this.handleDismissDownloadHighlight.bind(this);
+    this.applyBodyClasses = this.applyBodyClasses.bind(this);
+    this.toggleSectionsMgmtPanel = this.toggleSectionsMgmtPanel.bind(this);
     this.state = {
       fixedSearch: false,
       firstVisibleTimestamp: null,
       colorMode: "",
       fixedNavStyle: {},
       wallpaperTheme: "",
-      showDownloadHighlight: this.shouldShowOMCHighlight("DownloadMobilePromoHighlight")
+      showDownloadHighlightOverride: null,
+      visible: false,
+      showSectionsMgmtPanel: false
     };
   }
   setFirstVisibleTimestamp() {
@@ -14298,19 +15623,77 @@ class BaseContent extends (external_React_default()).PureComponent {
       });
     }
   }
+  onVisible() {
+    this.setState({
+      visible: true
+    });
+    this.setFirstVisibleTimestamp();
+    this.shouldDisplayTopicSelectionModal();
+    this.onVisibilityDispatch();
+  }
+  onVisibilityDispatch() {
+    const {
+      onDemand = {}
+    } = this.props.DiscoveryStream.spocs;
+
+    // We only need to dispatch this if:
+    // 1. onDemand is enabled,
+    // 2. onDemand spocs have not been loaded on this tab.
+    // 3. Spocs are expired.
+    if (onDemand.enabled && !onDemand.loaded && this.isSpocsOnDemandExpired) {
+      // This dispatches that spocs are expired and we need to update them.
+      this.props.dispatch(actionCreators.OnlyToMain({
+        type: actionTypes.DISCOVERY_STREAM_SPOCS_ONDEMAND_UPDATE
+      }));
+    }
+  }
+  get isSpocsOnDemandExpired() {
+    const {
+      onDemand = {},
+      cacheUpdateTime,
+      lastUpdated
+    } = this.props.DiscoveryStream.spocs;
+
+    // We can bail early if:
+    // 1. onDemand is off,
+    // 2. onDemand spocs have been loaded on this tab.
+    if (!onDemand.enabled || onDemand.loaded) {
+      return false;
+    }
+    return Date.now() - lastUpdated >= cacheUpdateTime;
+  }
+  spocsOnDemandUpdated() {
+    const {
+      onDemand = {},
+      loaded
+    } = this.props.DiscoveryStream.spocs;
+
+    // We only need to fire this if:
+    // 1. Spoc data is loaded.
+    // 2. onDemand is enabled.
+    // 3. The component is visible (not preloaded tab).
+    // 4. onDemand spocs have not been loaded on this tab.
+    // 5. Spocs are not expired.
+    if (loaded && onDemand.enabled && this.state.visible && !onDemand.loaded && !this.isSpocsOnDemandExpired) {
+      // This dispatches that spocs have been loaded on this tab
+      // and we don't need to update them again for this tab.
+      this.props.dispatch(actionCreators.BroadcastToContent({
+        type: actionTypes.DISCOVERY_STREAM_SPOCS_ONDEMAND_LOAD
+      }));
+    }
+  }
   componentDidMount() {
+    this.applyBodyClasses();
     __webpack_require__.g.addEventListener("scroll", this.onWindowScroll);
     __webpack_require__.g.addEventListener("keydown", this.handleOnKeyDown);
     const prefs = this.props.Prefs.values;
-    const wallpapersV2Enabled = prefs["newtabWallpapers.v2.enabled"];
+    const wallpapersEnabled = prefs["newtabWallpapers.enabled"];
     if (this.props.document.visibilityState === Base_VISIBLE) {
-      this.setFirstVisibleTimestamp();
-      this.shouldDisplayTopicSelectionModal();
+      this.onVisible();
     } else {
       this._onVisibilityChange = () => {
         if (this.props.document.visibilityState === Base_VISIBLE) {
-          this.setFirstVisibleTimestamp();
-          this.shouldDisplayTopicSelectionModal();
+          this.onVisible();
           this.props.document.removeEventListener(Base_VISIBILITY_CHANGE_EVENT, this._onVisibilityChange);
           this._onVisibilityChange = null;
         }
@@ -14321,14 +15704,34 @@ class BaseContent extends (external_React_default()).PureComponent {
     this.prefersDarkQuery = globalThis.matchMedia("(prefers-color-scheme: dark)");
     this.prefersDarkQuery.addEventListener("change", this.handleColorModeChange);
     this.handleColorModeChange();
-    if (wallpapersV2Enabled) {
+    if (wallpapersEnabled) {
       this.updateWallpaper();
     }
+    this._onHashChange = () => {
+      const hash = globalThis.location?.hash || "";
+      if (hash === "#customize" || hash === "#customize-topics") {
+        this.openCustomizationMenu();
+        if (hash === "#customize-topics") {
+          this.toggleSectionsMgmtPanel();
+        }
+      }
+    };
+    this._onHashChange();
+    globalThis.addEventListener("hashchange", this._onHashChange);
   }
   componentDidUpdate(prevProps) {
+    this.applyBodyClasses();
     const prefs = this.props.Prefs.values;
-    const wallpapersV2Enabled = prefs["newtabWallpapers.v2.enabled"];
-    if (wallpapersV2Enabled) {
+
+    // Check if weather widget was re-enabled from customization menu
+    const wasWeatherDisabled = !prevProps.Prefs.values.showWeather;
+    const isWeatherEnabled = this.props.Prefs.values.showWeather;
+    if (wasWeatherDisabled && isWeatherEnabled) {
+      // If weather widget was enabled from customization menu, display opt-in dialog
+      this.props.dispatch(actionCreators.SetPref("weather.optInDisplayed", true));
+    }
+    const wallpapersEnabled = prefs["newtabWallpapers.enabled"];
+    if (wallpapersEnabled) {
       // destructure current and previous props with fallbacks
       // (preventing undefined errors)
       const {
@@ -14348,23 +15751,32 @@ class BaseContent extends (external_React_default()).PureComponent {
       } = prevProps;
       const selectedWallpaper = prefs["newtabWallpapers.wallpaper"];
       const prevSelectedWallpaper = prevPrefs["newtabWallpapers.wallpaper"];
+      const uploadedWallpaperTheme = prefs["newtabWallpapers.customWallpaper.theme"];
+      const prevUploadedWallpaperTheme = prevPrefs["newtabWallpapers.customWallpaper.theme"];
 
       // don't update wallpaper unless the wallpaper is being changed.
       if (selectedWallpaper !== prevSelectedWallpaper ||
       // selecting a new wallpaper
       uploadedWallpaper !== prevUploadedWallpaper ||
       // uploading a new wallpaper
-      wallpaperList !== prevWallpaperList // remote settings wallpaper list updates
-      ) {
+      wallpaperList !== prevWallpaperList ||
+      // remote settings wallpaper list updates
+      this.props.App.isForStartupCache.Wallpaper !== prevProps.App.isForStartupCache.Wallpaper ||
+      // Startup cached page wallpaper is updating
+      uploadedWallpaperTheme !== prevUploadedWallpaperTheme) {
         this.updateWallpaper();
       }
     }
+    this.spocsOnDemandUpdated();
   }
   handleColorModeChange() {
     const colorMode = this.prefersDarkQuery?.matches ? "dark" : "light";
-    this.setState({
-      colorMode
-    });
+    if (colorMode !== this.state.colorMode) {
+      this.setState({
+        colorMode
+      });
+      this.updateWallpaper();
+    }
   }
   componentWillUnmount() {
     this.prefersDarkQuery?.removeEventListener("change", this.handleColorModeChange);
@@ -14372,6 +15784,9 @@ class BaseContent extends (external_React_default()).PureComponent {
     __webpack_require__.g.removeEventListener("keydown", this.handleOnKeyDown);
     if (this._onVisibilityChange) {
       this.props.document.removeEventListener(Base_VISIBILITY_CHANGE_EVENT, this._onVisibilityChange);
+    }
+    if (this._onHashChange) {
+      globalThis.removeEventListener("hashchange", this._onHashChange);
     }
   }
   onWindowScroll() {
@@ -14390,66 +15805,24 @@ class BaseContent extends (external_React_default()).PureComponent {
       return;
     }
     const logoAlwaysVisible = prefs["logowordmark.alwaysVisible"];
-    const layoutsVariantAEnabled = prefs["newtabLayouts.variant-a"];
-    const layoutsVariantBEnabled = prefs["newtabLayouts.variant-b"];
-    const layoutsVariantAorB = layoutsVariantAEnabled || layoutsVariantBEnabled;
-    const thumbsUpDownEnabled = prefs[Base_PREF_THUMBS_UP_DOWN_ENABLED];
-    // For the compact layout to be active,
-    // thumbs also has to be enabled until Bug 1932242 is fixed
-    const thumbsUpDownLayoutEnabled = prefs[PREF_THUMBS_UP_DOWN_LAYOUT_ENABLED] && thumbsUpDownEnabled;
 
     /* Bug 1917937: The logic presented below is fragile but accurate to the pixel. As new tab experiments with layouts, we have a tech debt of competing styles and classes the slightly modify where the search bar sits on the page. The larger solution for this is to replace everything with an intersection observer, but would require a larger refactor of this file. In the interim, we can programmatically calculate when to fire the fixed-scroll event and account for the moved elements so that topsites/etc stays in the same place. The CSS this references has been flagged to reference this logic so (hopefully) keep them in sync. */
 
     let SCROLL_THRESHOLD = 0; // When the fixed-scroll event fires
     let MAIN_OFFSET_PADDING = 0; // The padding to compensate for the moved elements
 
+    const CSS_VAR_SPACE_XXLARGE = 32.04; // Custom Acorn themed variable (8 * 0.267rem);
+
     let layout = {
-      outerWrapperPaddingTop: 30,
-      searchWrapperPaddingTop: 34,
-      searchWrapperPaddingBottom: 38,
-      searchWrapperFixedScrollPaddingTop: 27,
-      searchWrapperFixedScrollPaddingBottom: 27,
+      outerWrapperPaddingTop: 32.04,
+      searchWrapperPaddingTop: 16.02,
+      searchWrapperPaddingBottom: CSS_VAR_SPACE_XXLARGE,
+      searchWrapperFixedScrollPaddingTop: 24.03,
+      searchWrapperFixedScrollPaddingBottom: 24.03,
       searchInnerWrapperMinHeight: 52,
-      logoAndWordmarkWrapperHeight: 64,
-      logoAndWordmarkWrapperMarginBottom: 48
+      logoAndWordmarkWrapperHeight: 0,
+      logoAndWordmarkWrapperMarginBottom: 0
     };
-    const CSS_VAR_SPACE_XXLARGE = 34.2; // Custom Acorn themed variable (8 * 0.267rem);
-
-    // Experimental layouts
-    // (Note these if statements are ordered to match the CSS cascade)
-    if (thumbsUpDownLayoutEnabled || layoutsVariantAorB) {
-      // Thumbs Compact View Layout
-      if (thumbsUpDownLayoutEnabled) {
-        layout.logoAndWordmarkWrapperMarginBottom = CSS_VAR_SPACE_XXLARGE;
-        if (!logoAlwaysVisible) {
-          layout.searchWrapperPaddingTop = CSS_VAR_SPACE_XXLARGE;
-          layout.searchWrapperPaddingBottom = CSS_VAR_SPACE_XXLARGE;
-        }
-      }
-
-      // Variant B Layout
-      if (layoutsVariantAEnabled) {
-        layout.outerWrapperPaddingTop = 24;
-        if (!thumbsUpDownLayoutEnabled) {
-          layout.searchWrapperPaddingTop = 0;
-          layout.searchWrapperPaddingBottom = 32;
-          layout.logoAndWordmarkWrapperMarginBottom = 32;
-        }
-      }
-
-      // Variant B Layout
-      if (layoutsVariantBEnabled) {
-        layout.outerWrapperPaddingTop = 24;
-        // Logo is positioned absolute, so remove it
-        layout.logoAndWordmarkWrapperHeight = 0;
-        layout.logoAndWordmarkWrapperMarginBottom = 0;
-        layout.searchWrapperPaddingTop = 16;
-        layout.searchWrapperPaddingBottom = CSS_VAR_SPACE_XXLARGE;
-        if (!thumbsUpDownLayoutEnabled) {
-          layout.searchWrapperPaddingBottom = 32;
-        }
-      }
-    }
 
     // Logo visibility applies to all layouts
     if (!logoAlwaysVisible) {
@@ -14511,6 +15884,17 @@ class BaseContent extends (external_React_default()).PureComponent {
   setPref(pref, value) {
     this.props.dispatch(actionCreators.SetPref(pref, value));
   }
+  applyBodyClasses() {
+    const {
+      body
+    } = this.props.document;
+    if (!body) {
+      return;
+    }
+    if (!body.classList.contains("activity-stream")) {
+      body.classList.add("activity-stream");
+    }
+  }
   renderWallpaperAttribution() {
     const {
       wallpaperList
@@ -14551,63 +15935,61 @@ class BaseContent extends (external_React_default()).PureComponent {
     const selectedWallpaper = prefs["newtabWallpapers.wallpaper"];
     const {
       wallpaperList,
-      uploadedWallpaper
+      uploadedWallpaper: uploadedWallpaperUrl
     } = this.props.Wallpapers;
-    let lightWallpaper = {};
-    let darkWallpaper = {};
-    if (selectedWallpaper === "custom" && uploadedWallpaper) {
-      // revoke ObjectURL to prevent memory leaks
-      if (this.uploadedWallpaperUrl) {
-        URL.revokeObjectURL(this.uploadedWallpaperUrl);
-      }
-      const uploadedWallpaperUrl = URL.createObjectURL(uploadedWallpaper);
-      __webpack_require__.g.document?.body.style.setProperty("--newtab-wallpaper", `url(${uploadedWallpaperUrl})`);
-      __webpack_require__.g.document?.body.style.setProperty("--newtab-wallpaper-color", "transparent");
+    const uploadedWallpaperTheme = prefs["newtabWallpapers.customWallpaper.theme"];
+    // Uuse this.prefersDarkQuery since this.state.colorMode can be undefined when this is called
+    const colorMode = this.prefersDarkQuery?.matches ? "dark" : "light";
+    let url = "";
+    let color = "transparent";
+    let newTheme = colorMode;
+    let backgroundPosition = "center";
+
+    // if no selected wallpaper fallback to browser/theme styles
+    if (!selectedWallpaper) {
+      __webpack_require__.g.document?.body.style.removeProperty("--newtab-wallpaper");
+      __webpack_require__.g.document?.body.style.removeProperty("--newtab-wallpaper-color");
+      __webpack_require__.g.document?.body.style.removeProperty("--newtab-wallpaper-backgroundPosition");
+      __webpack_require__.g.document?.body.classList.remove("lightWallpaper", "darkWallpaper");
       return;
     }
-    if (wallpaperList) {
-      let wallpaper = wallpaperList.find(wp => wp.title === selectedWallpaper);
-      if (selectedWallpaper && wallpaper) {
-        // if selectedWallpaper exists - we override what light and dark prefs are to match that
-        lightWallpaper = wallpaper;
-        darkWallpaper = wallpaper;
-      }
 
-      // solid-color-picker-#00d100
-      const regexRGB = /#([a-fA-F0-9]{6})/;
-
-      // Override Remote Settings to set custom HEX bg color
+    // uploaded wallpaper
+    if (selectedWallpaper === "custom" && uploadedWallpaperUrl) {
+      url = uploadedWallpaperUrl;
+      color = "transparent";
+      // Note: There is no method to set a specific background position for custom wallpapers
+      backgroundPosition = "center";
+      newTheme = uploadedWallpaperTheme || colorMode;
+    } else if (wallpaperList) {
+      const wallpaper = wallpaperList.find(wp => wp.title === selectedWallpaper);
+      // solid color picker
       if (selectedWallpaper.includes("solid-color-picker")) {
-        wallpaper = {
-          theme: wallpaper?.theme || "light",
-          title: "solid-color-picker",
-          category: "solid-colors",
-          solid_color: selectedWallpaper.match(regexRGB)?.[0]
-        };
-      }
-      const wallpaperColor = wallpaper?.solid_color || "";
-      __webpack_require__.g.document?.body.style.setProperty("--newtab-wallpaper", `url(${wallpaper?.wallpaperUrl || ""})`);
-      __webpack_require__.g.document?.body.style.setProperty("--newtab-wallpaper-color", wallpaperColor || "transparent");
-      let wallpaperTheme = "";
-
-      // If we have a solid colour set, let's see how dark it is.
-      if (wallpaperColor) {
-        const rgbColors = this.getRGBColors(wallpaperColor);
-        const isColorDark = this.isWallpaperColorDark(rgbColors);
-        wallpaperTheme = isColorDark ? "dark" : "light";
-      } else {
-        // Grab the contrast of the currently displayed wallpaper.
-        const {
-          theme
-        } = this.state.colorMode === "light" ? lightWallpaper : darkWallpaper;
-        if (theme) {
-          wallpaperTheme = theme;
+        const regexRGB = /#([a-fA-F0-9]{6})/;
+        const hex = selectedWallpaper.match(regexRGB)?.[0];
+        url = "";
+        color = hex;
+        const rgbColors = this.getRGBColors(hex);
+        newTheme = this.isWallpaperColorDark(rgbColors) ? "dark" : "light";
+        // standard wallpaper & solid colors
+      } else if (selectedWallpaper) {
+        url = wallpaper?.wallpaperUrl || "";
+        backgroundPosition = wallpaper?.background_position || "center";
+        color = wallpaper?.solid_color || "transparent";
+        newTheme = wallpaper?.theme || colorMode;
+        // if a solid color, determine if dark or light
+        if (wallpaper?.solid_color) {
+          const rgbColors = this.getRGBColors(wallpaper.solid_color);
+          const isColorDark = this.isWallpaperColorDark(rgbColors);
+          newTheme = isColorDark ? "dark" : "light";
         }
       }
-      this.setState({
-        wallpaperTheme
-      });
     }
+    __webpack_require__.g.document?.body.style.setProperty("--newtab-wallpaper", `url(${url})`);
+    __webpack_require__.g.document?.body.style.setProperty("--newtab-wallpaper-backgroundPosition", backgroundPosition);
+    __webpack_require__.g.document?.body.style.setProperty("--newtab-wallpaper-color", color || "transparent");
+    __webpack_require__.g.document?.body.classList.remove("lightWallpaper", "darkWallpaper");
+    __webpack_require__.g.document?.body.classList.add(newTheme === "dark" ? "darkWallpaper" : "lightWallpaper");
   }
   shouldShowOMCHighlight(componentId) {
     const messageData = this.props.Messages?.messageData;
@@ -14617,13 +15999,26 @@ class BaseContent extends (external_React_default()).PureComponent {
     return messageData?.content?.messageType === componentId;
   }
   toggleDownloadHighlight() {
-    this.setState(prevState => ({
-      showDownloadHighlight: !prevState.showDownloadHighlight
-    }));
+    this.setState(prevState => {
+      const override = !(prevState.showDownloadHighlightOverride ?? this.shouldShowOMCHighlight("DownloadMobilePromoHighlight"));
+      if (override) {
+        // Emit an open event manually since OMC isn't handling it
+        this.props.dispatch(actionCreators.DiscoveryStreamUserEvent({
+          event: "FEATURE_HIGHLIGHT_OPEN",
+          source: "FEATURE_HIGHLIGHT",
+          value: {
+            feature: "FEATURE_DOWNLOAD_MOBILE_PROMO"
+          }
+        }));
+      }
+      return {
+        showDownloadHighlightOverride: override
+      };
+    });
   }
   handleDismissDownloadHighlight() {
     this.setState({
-      showDownloadHighlight: false
+      showDownloadHighlightOverride: false
     });
   }
   getRGBColors(input) {
@@ -14637,6 +16032,11 @@ class BaseContent extends (external_React_default()).PureComponent {
   }
   isWallpaperColorDark([r, g, b]) {
     return 0.2125 * r + 0.7154 * g + 0.0721 * b <= 110;
+  }
+  toggleSectionsMgmtPanel() {
+    this.setState(prevState => ({
+      showSectionsMgmtPanel: !prevState.showSectionsMgmtPanel
+    }));
   }
   shouldDisplayTopicSelectionModal() {
     const prefs = this.props.Prefs.values;
@@ -14676,45 +16076,49 @@ class BaseContent extends (external_React_default()).PureComponent {
       customizeMenuVisible
     } = App;
     const prefs = props.Prefs.values;
-    const layoutsVariantAEnabled = prefs["newtabLayouts.variant-a"];
-    const layoutsVariantBEnabled = prefs["newtabLayouts.variant-b"];
-    const shortcutsRefresh = prefs["newtabShortcuts.refresh"];
-    const layoutsVariantAorB = layoutsVariantAEnabled || layoutsVariantBEnabled;
     const activeWallpaper = prefs[`newtabWallpapers.wallpaper`];
-    const wallpapersV2Enabled = prefs["newtabWallpapers.v2.enabled"];
+    const wallpapersEnabled = prefs["newtabWallpapers.enabled"];
     const weatherEnabled = prefs.showWeather;
     const {
       showTopicSelection
     } = DiscoveryStream;
     const mayShowTopicSelection = showTopicSelection && prefs["discoverystream.topicSelection.enabled"];
-    const {
-      pocketConfig
-    } = prefs;
     const isDiscoveryStream = props.DiscoveryStream.config && props.DiscoveryStream.config.enabled;
     let filteredSections = props.Sections.filter(section => section.id !== "topstories");
-    let spocMessageVariant = "";
-    if (props.App.locale?.startsWith("en-") && pocketConfig?.spocMessageVariant === "variant-c") {
-      spocMessageVariant = pocketConfig.spocMessageVariant;
-    }
     const pocketEnabled = prefs["feeds.section.topstories"] && prefs["feeds.system.topstories"];
     const noSectionsEnabled = !prefs["feeds.topsites"] && !pocketEnabled && filteredSections.filter(section => section.enabled).length === 0;
-    const searchHandoffEnabled = prefs["improvesearch.handoffToAwesomebar"];
     const enabledSections = {
       topSitesEnabled: prefs["feeds.topsites"],
       pocketEnabled: prefs["feeds.section.topstories"],
-      showInferredPersonalizationEnabled: prefs[PREF_INFERRED_PERSONALIZATION_USER],
-      showRecentSavesEnabled: prefs.showRecentSaves,
+      showInferredPersonalizationEnabled: prefs[Base_PREF_INFERRED_PERSONALIZATION_USER],
       topSitesRowsCount: prefs.topSitesRows,
       weatherEnabled: prefs.showWeather
     };
     const pocketRegion = prefs["feeds.system.topstories"];
-    const mayHaveSponsoredStories = prefs["system.showSponsored"];
     const mayHaveInferredPersonalization = prefs[PREF_INFERRED_PERSONALIZATION_SYSTEM];
-    const mayHaveWeather = prefs["system.showWeather"];
-    const {
-      mayHaveSponsoredTopSites
-    } = prefs;
+    const mayHaveWeather = prefs["system.showWeather"] || prefs.trainhopConfig?.weather?.enabled;
     const supportUrl = prefs["support.url"];
+
+    // Weather can be enabled and not rendered in the top right corner
+    const shouldDisplayWeather = prefs.showWeather && this.props.weatherPlacement === "header";
+
+    // Widgets experiment pref check
+    const nimbusWidgetsEnabled = prefs.widgetsConfig?.enabled;
+    const nimbusListsEnabled = prefs.widgetsConfig?.listsEnabled;
+    const nimbusTimerEnabled = prefs.widgetsConfig?.timerEnabled;
+    const nimbusWidgetsTrainhopEnabled = prefs.trainhopConfig?.widgets?.enabled;
+    const nimbusListsTrainhopEnabled = prefs.trainhopConfig?.widgets?.listsEnabled;
+    const nimbusTimerTrainhopEnabled = prefs.trainhopConfig?.widgets?.timerEnabled;
+    const mayHaveWidgets = prefs["widgets.system.enabled"] || nimbusWidgetsEnabled || nimbusWidgetsTrainhopEnabled;
+    const mayHaveListsWidget = prefs["widgets.system.lists.enabled"] || nimbusListsEnabled || nimbusListsTrainhopEnabled;
+    const mayHaveTimerWidget = prefs["widgets.system.focusTimer.enabled"] || nimbusTimerEnabled || nimbusTimerTrainhopEnabled;
+
+    // These prefs set the initial values on the Customize panel toggle switches
+    const enabledWidgets = {
+      listsEnabled: prefs["widgets.lists.enabled"],
+      timerEnabled: prefs["widgets.focusTimer.enabled"],
+      weatherEnabled: prefs.showWeather
+    };
 
     // Mobile Download Promo Pref Checks
     const mobileDownloadPromoEnabled = prefs["mobileDownloadModal.enabled"];
@@ -14722,78 +16126,42 @@ class BaseContent extends (external_React_default()).PureComponent {
     const mobileDownloadPromoVariantBEnabled = prefs["mobileDownloadModal.variant-b"];
     const mobileDownloadPromoVariantCEnabled = prefs["mobileDownloadModal.variant-c"];
     const mobileDownloadPromoVariantABorC = mobileDownloadPromoVariantAEnabled || mobileDownloadPromoVariantBEnabled || mobileDownloadPromoVariantCEnabled;
-    const mobileDownloadPromoWrapperHeightModifier = prefs["weather.display"] === "detailed" && weatherEnabled && mayHaveWeather ? "is-tall" : "";
-    const hasThumbsUpDownLayout = prefs["discoverystream.thumbsUpDown.searchTopsitesCompact"];
-    const hasThumbsUpDown = prefs["discoverystream.thumbsUpDown.enabled"];
+    const mobileDownloadPromoWrapperHeightModifier = prefs["weather.display"] === "detailed" && weatherEnabled && shouldDisplayWeather && mayHaveWeather ? "is-tall" : "";
     const sectionsEnabled = prefs["discoverystream.sections.enabled"];
     const topicLabelsEnabled = prefs["discoverystream.topicLabels.enabled"];
     const sectionsCustomizeMenuPanelEnabled = prefs["discoverystream.sections.customizeMenuPanel.enabled"];
     const sectionsPersonalizationEnabled = prefs["discoverystream.sections.personalization.enabled"];
+
     // Logic to show follow/block topic mgmt panel in Customize panel
     const mayHavePersonalizedTopicSections = sectionsPersonalizationEnabled && topicLabelsEnabled && sectionsEnabled && sectionsCustomizeMenuPanelEnabled && DiscoveryStream.feeds.loaded;
     const featureClassName = [mobileDownloadPromoEnabled && mobileDownloadPromoVariantABorC && "has-mobile-download-promo",
     // Mobile download promo modal is enabled/visible
-    weatherEnabled && mayHaveWeather && "has-weather",
+    weatherEnabled && mayHaveWeather && shouldDisplayWeather && "has-weather",
     // Weather widget is enabled/visible
-    prefs.showSearch ? "has-search" : "no-search", layoutsVariantAEnabled ? "layout-variant-a" : "",
-    // Layout experiment variant A
-    layoutsVariantBEnabled ? "layout-variant-b" : "",
-    // Layout experiment variant B
-    shortcutsRefresh ? "shortcuts-refresh" : "",
-    // Shortcuts refresh experiment
+    prefs.showSearch ? "has-search" : "no-search",
+    // layoutsVariantAEnabled ? "layout-variant-a" : "", // Layout experiment variant A
+    // layoutsVariantBEnabled ? "layout-variant-b" : "", // Layout experiment variant B
     pocketEnabled ? "has-recommended-stories" : "no-recommended-stories", sectionsEnabled ? "has-sections-grid" : ""].filter(v => v).join(" ");
-    const outerClassName = ["outer-wrapper", isDiscoveryStream && pocketEnabled && "ds-outer-wrapper-search-alignment", isDiscoveryStream && "ds-outer-wrapper-breakpoint-override", prefs.showSearch && this.state.fixedSearch && !noSectionsEnabled && "fixed-search", prefs.showSearch && noSectionsEnabled && "only-search", prefs["feeds.topsites"] && !pocketEnabled && !prefs.showSearch && "only-topsites", noSectionsEnabled && "no-sections", prefs["logowordmark.alwaysVisible"] && "visible-logo", hasThumbsUpDownLayout && hasThumbsUpDown && "thumbs-ui-compact"].filter(v => v).join(" ");
-    if (wallpapersV2Enabled) {
-      // Add helper class to body if user has a wallpaper selected
-      if (this.state.wallpaperTheme === "light") {
-        __webpack_require__.g.document?.body.classList.add("lightWallpaper");
-        __webpack_require__.g.document?.body.classList.remove("darkWallpaper");
-      }
-      if (this.state.wallpaperTheme === "dark") {
-        __webpack_require__.g.document?.body.classList.add("darkWallpaper");
-        __webpack_require__.g.document?.body.classList.remove("lightWallpaper");
-      }
-    }
+    const outerClassName = ["outer-wrapper", isDiscoveryStream && pocketEnabled && "ds-outer-wrapper-search-alignment", isDiscoveryStream && "ds-outer-wrapper-breakpoint-override", prefs.showSearch && this.state.fixedSearch && !noSectionsEnabled && "fixed-search", prefs.showSearch && noSectionsEnabled && "only-search", prefs["feeds.topsites"] && !pocketEnabled && !prefs.showSearch && "only-topsites", noSectionsEnabled && "no-sections", prefs["logowordmark.alwaysVisible"] && "visible-logo"].filter(v => v).join(" ");
+
+    // If state.showDownloadHighlightOverride has value, let it override the logic
+    // Otherwise, defer to OMC message display logic
+    const shouldShowDownloadHighlight = this.state.showDownloadHighlightOverride ?? this.shouldShowOMCHighlight("DownloadMobilePromoHighlight");
     return /*#__PURE__*/external_React_default().createElement("div", {
       className: featureClassName
-    }, /*#__PURE__*/external_React_default().createElement("menu", {
-      className: "personalizeButtonWrapper"
-    }, /*#__PURE__*/external_React_default().createElement(CustomizeMenu, {
-      onClose: this.closeCustomizationMenu,
-      onOpen: this.openCustomizationMenu,
-      openPreferences: this.openPreferences,
-      setPref: this.setPref,
-      enabledSections: enabledSections,
-      wallpapersV2Enabled: wallpapersV2Enabled,
-      activeWallpaper: activeWallpaper,
-      pocketRegion: pocketRegion,
-      mayHaveTopicSections: mayHavePersonalizedTopicSections,
-      mayHaveSponsoredTopSites: mayHaveSponsoredTopSites,
-      mayHaveSponsoredStories: mayHaveSponsoredStories,
-      mayHaveInferredPersonalization: mayHaveInferredPersonalization,
-      mayHaveWeather: mayHaveWeather,
-      spocMessageVariant: spocMessageVariant,
-      showing: customizeMenuVisible
-    }), this.shouldShowOMCHighlight("CustomWallpaperHighlight") && /*#__PURE__*/external_React_default().createElement(MessageWrapper, {
-      dispatch: this.props.dispatch
-    }, /*#__PURE__*/external_React_default().createElement(WallpaperFeatureHighlight, {
-      position: "inset-block-start inset-inline-start",
-      dispatch: this.props.dispatch
-    }))), /*#__PURE__*/external_React_default().createElement("div", {
+    }, /*#__PURE__*/external_React_default().createElement("div", {
       className: "weatherWrapper"
-    }, weatherEnabled && /*#__PURE__*/external_React_default().createElement(ErrorBoundary, null, /*#__PURE__*/external_React_default().createElement(Weather_Weather, null))), /*#__PURE__*/external_React_default().createElement("div", {
+    }, shouldDisplayWeather && /*#__PURE__*/external_React_default().createElement(ErrorBoundary, null, /*#__PURE__*/external_React_default().createElement(Weather_Weather, null))), /*#__PURE__*/external_React_default().createElement("div", {
       className: `mobileDownloadPromoWrapper ${mobileDownloadPromoWrapperHeightModifier}`
     }, mobileDownloadPromoEnabled && mobileDownloadPromoVariantABorC && /*#__PURE__*/external_React_default().createElement(ErrorBoundary, null, /*#__PURE__*/external_React_default().createElement(DownloadModalToggle, {
-      isActive: this.state.showDownloadHighlight,
+      isActive: shouldShowDownloadHighlight,
       onClick: this.toggleDownloadHighlight
-    }), this.state.showDownloadHighlight && /*#__PURE__*/external_React_default().createElement(MessageWrapper, {
-      hiddenOverride: this.state.showDownloadHighlight,
+    }), shouldShowDownloadHighlight && /*#__PURE__*/external_React_default().createElement(MessageWrapper, {
+      hiddenOverride: shouldShowDownloadHighlight,
       onDismiss: this.handleDismissDownloadHighlight,
       dispatch: this.props.dispatch
-    }, /*#__PURE__*/external_React_default().createElement(DownloadMobilePromoHighlight
-    // Var B layout has the weather right-aligned
-    , {
-      position: `${layoutsVariantBEnabled ? "inset-inline-start" : "inset-inline-end"} inset-block-end`,
+    }, /*#__PURE__*/external_React_default().createElement(DownloadMobilePromoHighlight, {
+      position: `inset-inline-start inset-block-end`,
       dispatch: this.props.dispatch
     })))), /*#__PURE__*/external_React_default().createElement("div", {
       className: outerClassName,
@@ -14804,21 +16172,46 @@ class BaseContent extends (external_React_default()).PureComponent {
     }, prefs.showSearch && /*#__PURE__*/external_React_default().createElement("div", {
       className: "non-collapsible-section"
     }, /*#__PURE__*/external_React_default().createElement(ErrorBoundary, null, /*#__PURE__*/external_React_default().createElement(Search_Search, Base_extends({
-      showLogo: noSectionsEnabled || prefs["logowordmark.alwaysVisible"],
-      handoffEnabled: searchHandoffEnabled
-    }, props.Search)))), !prefs.showSearch && layoutsVariantAorB && !noSectionsEnabled && /*#__PURE__*/external_React_default().createElement(Logo, null), /*#__PURE__*/external_React_default().createElement("div", {
+      showLogo: noSectionsEnabled || prefs["logowordmark.alwaysVisible"]
+    }, props.Search)))), !prefs.showSearch && !noSectionsEnabled && /*#__PURE__*/external_React_default().createElement(Logo, null), /*#__PURE__*/external_React_default().createElement("div", {
       className: `body-wrapper${initialized ? " on" : ""}`
     }, isDiscoveryStream ? /*#__PURE__*/external_React_default().createElement(ErrorBoundary, {
       className: "borderless-error"
     }, /*#__PURE__*/external_React_default().createElement(DiscoveryStreamBase, {
       locale: props.App.locale,
-      mayHaveSponsoredStories: mayHaveSponsoredStories,
-      firstVisibleTimestamp: this.state.firstVisibleTimestamp
-    })) : /*#__PURE__*/external_React_default().createElement(Sections_Sections, null)), /*#__PURE__*/external_React_default().createElement(ConfirmDialog, null), wallpapersV2Enabled && this.renderWallpaperAttribution()), /*#__PURE__*/external_React_default().createElement("aside", null, this.props.Notifications?.showNotifications && /*#__PURE__*/external_React_default().createElement(ErrorBoundary, null, /*#__PURE__*/external_React_default().createElement(Notifications_Notifications, {
+      firstVisibleTimestamp: this.state.firstVisibleTimestamp,
+      placeholder: this.isSpocsOnDemandExpired
+    })) : /*#__PURE__*/external_React_default().createElement(Sections_Sections, null)), /*#__PURE__*/external_React_default().createElement(ConfirmDialog, null), wallpapersEnabled && this.renderWallpaperAttribution()), /*#__PURE__*/external_React_default().createElement("aside", null, this.props.Notifications?.showNotifications && /*#__PURE__*/external_React_default().createElement(ErrorBoundary, null, /*#__PURE__*/external_React_default().createElement(Notifications_Notifications, {
       dispatch: this.props.dispatch
     }))), mayShowTopicSelection && pocketEnabled && /*#__PURE__*/external_React_default().createElement(TopicSelection, {
       supportUrl: supportUrl
-    })));
+    })), /*#__PURE__*/external_React_default().createElement("menu", {
+      className: "personalizeButtonWrapper"
+    }, /*#__PURE__*/external_React_default().createElement(CustomizeMenu, {
+      onClose: this.closeCustomizationMenu,
+      onOpen: this.openCustomizationMenu,
+      openPreferences: this.openPreferences,
+      setPref: this.setPref,
+      enabledSections: enabledSections,
+      enabledWidgets: enabledWidgets,
+      wallpapersEnabled: wallpapersEnabled,
+      activeWallpaper: activeWallpaper,
+      pocketRegion: pocketRegion,
+      mayHaveTopicSections: mayHavePersonalizedTopicSections,
+      mayHaveInferredPersonalization: mayHaveInferredPersonalization,
+      mayHaveWeather: mayHaveWeather,
+      mayHaveWidgets: mayHaveWidgets,
+      mayHaveTimerWidget: mayHaveTimerWidget,
+      mayHaveListsWidget: mayHaveListsWidget,
+      showing: customizeMenuVisible,
+      toggleSectionsMgmtPanel: this.toggleSectionsMgmtPanel,
+      showSectionsMgmtPanel: this.state.showSectionsMgmtPanel
+    }), this.shouldShowOMCHighlight("CustomWallpaperHighlight") && /*#__PURE__*/external_React_default().createElement(MessageWrapper, {
+      dispatch: this.props.dispatch
+    }, /*#__PURE__*/external_React_default().createElement(WallpaperFeatureHighlight, {
+      position: "inset-block-start inset-inline-start",
+      dispatch: this.props.dispatch
+    }))));
   }
 }
 BaseContent.defaultProps = {
@@ -14833,7 +16226,8 @@ const Base = (0,external_ReactRedux_namespaceObject.connect)(state => ({
   Notifications: state.Notifications,
   Search: state.Search,
   Wallpapers: state.Wallpapers,
-  Weather: state.Weather
+  Weather: state.Weather,
+  weatherPlacement: selectWeatherPlacement(state)
 }))(_Base);
 ;// CONCATENATED MODULE: ./content-src/lib/detect-user-session-start.mjs
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -14926,8 +16320,6 @@ const external_Redux_namespaceObject = Redux;
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-/* eslint-env mozilla/remote-page */
 
 
 // We disable import checking here as redux is installed via the npm packages
@@ -15084,42 +16476,65 @@ const NewTab = ({
 }) => /*#__PURE__*/external_React_default().createElement(external_ReactRedux_namespaceObject.Provider, {
   store: store
 }, /*#__PURE__*/external_React_default().createElement(Base, null));
+function doRequestWhenReady() {
+  // If this document has already gone into the background by the time we've reached
+  // here, we can deprioritize the request until the event loop
+  // frees up. If, however, the visibility changes, we then send the request.
+  const doRequestPromise = new Promise(resolve => {
+    let didRequest = false;
+    let requestIdleCallbackId = 0;
+    function doRequest() {
+      if (!didRequest) {
+        if (requestIdleCallbackId) {
+          cancelIdleCallback(requestIdleCallbackId);
+        }
+        didRequest = true;
+        resolve();
+      }
+    }
+    if (document.hidden) {
+      requestIdleCallbackId = requestIdleCallback(doRequest);
+      addEventListener("visibilitychange", doRequest, {
+        once: true
+      });
+    } else {
+      resolve();
+    }
+  });
+  return doRequestPromise;
+}
 function renderWithoutState() {
   const store = initStore(reducers);
   new DetectUserSessionStart(store).sendEventOrAddListener();
-
-  // If this document has already gone into the background by the time we've reached
-  // here, we can deprioritize requesting the initial state until the event loop
-  // frees up. If, however, the visibility changes, we then send the request.
-  let didRequest = false;
-  let requestIdleCallbackId = 0;
-  function doRequest() {
-    if (!didRequest) {
-      if (requestIdleCallbackId) {
-        cancelIdleCallback(requestIdleCallbackId);
-      }
-      didRequest = true;
-      store.dispatch(actionCreators.AlsoToMain({
-        type: actionTypes.NEW_TAB_STATE_REQUEST
-      }));
-    }
-  }
-  if (document.hidden) {
-    requestIdleCallbackId = requestIdleCallback(doRequest);
-    addEventListener("visibilitychange", doRequest, {
-      once: true
-    });
-  } else {
-    doRequest();
-  }
-  external_ReactDOM_default().hydrate( /*#__PURE__*/external_React_default().createElement(NewTab, {
+  doRequestWhenReady().then(() => {
+    // If state events happened before we got here, we can request state again.
+    store.dispatch(actionCreators.AlsoToMain({
+      type: actionTypes.NEW_TAB_STATE_REQUEST
+    }));
+    // If we rendered without state, we don't need the startup cache.
+    store.dispatch(actionCreators.OnlyToMain({
+      type: actionTypes.NEW_TAB_STATE_REQUEST_WITHOUT_STARTUPCACHE
+    }));
+  });
+  external_ReactDOM_default().hydrate(/*#__PURE__*/external_React_default().createElement(NewTab, {
     store: store
   }), document.getElementById("root"));
 }
 function renderCache(initialState) {
+  if (initialState) {
+    initialState.App.isForStartupCache.App = false;
+  }
   const store = initStore(reducers, initialState);
   new DetectUserSessionStart(store).sendEventOrAddListener();
-  external_ReactDOM_default().hydrate( /*#__PURE__*/external_React_default().createElement(NewTab, {
+  doRequestWhenReady().then(() => {
+    // If state events happened before we got here,
+    // we can notify main that we need updates.
+    // The individual feeds know what state is not cached.
+    store.dispatch(actionCreators.OnlyToMain({
+      type: actionTypes.NEW_TAB_STATE_REQUEST_STARTUPCACHE
+    }));
+  });
+  external_ReactDOM_default().hydrate(/*#__PURE__*/external_React_default().createElement(NewTab, {
     store: store
   }), document.getElementById("root"));
 }

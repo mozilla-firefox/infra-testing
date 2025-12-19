@@ -7,15 +7,15 @@
 #ifndef nsFrameMessageManager_h__
 #define nsFrameMessageManager_h__
 
-#include <cstdint>
 #include <string.h>
-#include <utility>
+
+#include <cstdint>
+
 #include "ErrorList.h"
-#include "js/experimental/JSStencil.h"
 #include "js/TypeDecls.h"
 #include "js/Value.h"
+#include "js/experimental/JSStencil.h"
 #include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/Assertions.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPtr.h"
@@ -25,7 +25,6 @@
 #include "nsCOMPtr.h"
 #include "nsClassHashtable.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsTHashMap.h"
 #include "nsHashKeys.h"
 #include "nsIMessageManager.h"
 #include "nsIObserver.h"
@@ -34,6 +33,7 @@
 #include "nsIWeakReferenceUtils.h"
 #include "nsStringFwd.h"
 #include "nsTArray.h"
+#include "nsTHashMap.h"
 #include "nsTObserverArray.h"
 #include "nscore.h"
 
@@ -155,11 +155,11 @@ class nsFrameMessageManager : public nsIMessageSender {
   static mozilla::dom::ProcessMessageManager* NewProcessMessageManager(
       bool aIsRemote);
 
-  void ReceiveMessage(nsISupports* aTarget, nsFrameLoader* aTargetFrameLoader,
-                      const nsAString& aMessage, bool aIsSync,
-                      StructuredCloneData* aCloneData,
-                      nsTArray<StructuredCloneData>* aRetVal,
-                      mozilla::ErrorResult& aError) {
+  void ReceiveMessage(
+      nsISupports* aTarget, nsFrameLoader* aTargetFrameLoader,
+      const nsAString& aMessage, bool aIsSync, StructuredCloneData* aCloneData,
+      nsTArray<mozilla::UniquePtr<StructuredCloneData>>* aRetVal,
+      mozilla::ErrorResult& aError) {
     ReceiveMessage(aTarget, aTargetFrameLoader, mClosed, aMessage, aIsSync,
                    aCloneData, aRetVal, aError);
   }
@@ -214,11 +214,12 @@ class nsFrameMessageManager : public nsIMessageSender {
                             JS::Handle<JS::Value> aTransfers,
                             mozilla::ErrorResult& aError);
 
-  void ReceiveMessage(nsISupports* aTarget, nsFrameLoader* aTargetFrameLoader,
-                      bool aTargetClosed, const nsAString& aMessage,
-                      bool aIsSync, StructuredCloneData* aCloneData,
-                      nsTArray<StructuredCloneData>* aRetVal,
-                      mozilla::ErrorResult& aError);
+  void ReceiveMessage(
+      nsISupports* aTarget, nsFrameLoader* aTargetFrameLoader,
+      bool aTargetClosed, const nsAString& aMessage, bool aIsSync,
+      StructuredCloneData* aCloneData,
+      nsTArray<mozilla::UniquePtr<StructuredCloneData>>* aRetVal,
+      mozilla::ErrorResult& aError);
 
   void LoadScript(const nsAString& aURL, bool aAllowDelayedLoad,
                   bool aRunInGlobalScope, mozilla::ErrorResult& aError);

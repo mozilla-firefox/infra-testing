@@ -7,6 +7,7 @@
  */
 
 #include "nspr.h"
+#include "pkcs11t.h"
 #include "string.h"
 #include "nss.h"
 #include "secutil.h"
@@ -29,7 +30,7 @@ synopsis(char *program_name)
     PR_fprintf(pr_stderr,
                "Usage: %s [<common>] -i <input-file>\n"
                "       %s [<common>]  -o <output-file>\n"
-               "       <common> [-d dir] [-v] [-t text] [-a] [-f pwfile | -p pwd]\n",
+               "       <common> [-d dir] [-v] [-t text] [-a] [-f pwfile | -p pwd] [-m aes|des3]\n",
                program_name, program_name);
 }
 
@@ -65,6 +66,9 @@ long_usage(char *program_name)
     PR_fprintf(pr_stderr,
                "  %-13s supply \"password\" on the command line\n",
                "-p password");
+    PR_fprintf(pr_stderr,
+               "  %-13s Mechanism to use for encryption (aes or des3)\n",
+               "-m mechanism");
 }
 
 int
@@ -158,6 +162,7 @@ main(int argc, char **argv)
     SECItem text;
     PRBool ascii = PR_FALSE;
     secuPWData pwdata = { PW_NONE, 0 };
+    CK_MECHANISM_TYPE mechanism = CKM_AES_CBC;
 
     pr_stderr = PR_STDERR;
     result.data = 0;
@@ -167,7 +172,7 @@ main(int argc, char **argv)
     program_name = PL_strrchr(argv[0], '/');
     program_name = program_name ? (program_name + 1) : argv[0];
 
-    optstate = PL_CreateOptState(argc, argv, "?Had:i:o:t:vf:p:");
+    optstate = PL_CreateOptState(argc, argv, "?Had:i:o:t:vf:p:m:");
     if (optstate == NULL) {
         SECU_PrintError(program_name, "PL_CreateOptState failed");
         return -1;
@@ -225,6 +230,15 @@ main(int argc, char **argv)
 
             case 'v':
                 verbose = PR_TRUE;
+                break;
+
+            case 'm':
+                if (!strcmp(optstate->value, "des3")) {
+                    mechanism = CKM_DES3_CBC;
+                } else if (strcmp(optstate->value, "aes")) {
+                    short_usage(program_name);
+                    return -1;
+                }
                 break;
         }
     }
@@ -312,16 +326,17 @@ main(int argc, char **argv)
                 return SECFailure;
             }
         }
-        if (slot) {
-            PK11_FreeSlot(slot);
-        }
 
-        rv = PK11SDR_Encrypt(&keyid, &data, &result, &pwdata);
+        rv = PK11SDR_EncryptWithMechanism(slot, &keyid, mechanism, &data, &result, &pwdata);
         if (rv != SECSuccess) {
             if (verbose)
                 SECU_PrintError(program_name, "Encrypt operation failed\n");
             retval = -1;
             goto loser;
+        }
+
+        if (slot) {
+            PK11_FreeSlot(slot);
         }
 
         if (verbose)

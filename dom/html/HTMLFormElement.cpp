@@ -46,46 +46,40 @@
 
 // form submission
 #include "HTMLFormSubmissionConstants.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_prompts.h"
 #include "mozilla/dom/FormData.h"
 #include "mozilla/dom/FormDataEvent.h"
 #include "mozilla/dom/SubmitEvent.h"
-#include "mozilla/intl/Localization.h"
 #include "mozilla/glean/DomSecurityMetrics.h"
-#include "mozilla/StaticPrefs_dom.h"
-#include "mozilla/StaticPrefs_prompts.h"
+#include "mozilla/intl/Localization.h"
 #include "nsCategoryManagerUtils.h"
 #include "nsIContentInlines.h"
-#include "nsISimpleEnumerator.h"
-#include "nsRange.h"
+#include "nsIDocShell.h"
+#include "nsIInterfaceRequestorUtils.h"
+#include "nsIPromptService.h"
 #include "nsIScriptError.h"
 #include "nsIScriptSecurityManager.h"
-#include "nsNetUtil.h"
-#include "nsIInterfaceRequestorUtils.h"
-#include "nsIDocShell.h"
-#include "nsIPromptService.h"
 #include "nsISecurityUITelemetry.h"
+#include "nsISimpleEnumerator.h"
+#include "nsNetUtil.h"
+#include "nsRange.h"
 
 // radio buttons
-#include "mozilla/dom/HTMLInputElement.h"
-#include "mozilla/dom/HTMLButtonElement.h"
-#include "mozilla/dom/HTMLSelectElement.h"
-#include "nsIRadioVisitor.h"
 #include "RadioNodeList.h"
-
-#include "nsLayoutUtils.h"
-
 #include "mozAutoDocUpdate.h"
-#include "nsIHTMLCollection.h"
-
+#include "mozilla/dom/HTMLAnchorElement.h"
+#include "mozilla/dom/HTMLButtonElement.h"
+#include "mozilla/dom/HTMLInputElement.h"
+#include "mozilla/dom/HTMLSelectElement.h"
 #include "nsIConstraintValidation.h"
-
+#include "nsIHTMLCollection.h"
+#include "nsLayoutUtils.h"
 #include "nsSandboxFlags.h"
 
-#include "mozilla/dom/HTMLAnchorElement.h"
-
 // images
-#include "mozilla/dom/HTMLImageElement.h"
 #include "mozilla/dom/HTMLButtonElement.h"
+#include "mozilla/dom/HTMLImageElement.h"
 
 // construction, destruction
 NS_IMPL_NS_NEW_HTML_ELEMENT(Form)
@@ -95,12 +89,12 @@ namespace mozilla::dom {
 static const uint8_t NS_FORM_AUTOCOMPLETE_ON = 1;
 static const uint8_t NS_FORM_AUTOCOMPLETE_OFF = 0;
 
-static const nsAttrValue::EnumTable kFormAutocompleteTable[] = {
+static constexpr nsAttrValue::EnumTableEntry kFormAutocompleteTable[] = {
     {"on", NS_FORM_AUTOCOMPLETE_ON},
     {"off", NS_FORM_AUTOCOMPLETE_OFF},
-    {nullptr, 0}};
+};
 // Default autocomplete value is 'on'.
-static const nsAttrValue::EnumTable* kFormDefaultAutocomplete =
+static constexpr const nsAttrValue::EnumTableEntry* kFormDefaultAutocomplete =
     &kFormAutocompleteTable[0];
 
 HTMLFormElement::HTMLFormElement(
@@ -309,35 +303,33 @@ void HTMLFormElement::MaybeSubmit(Element* aSubmitter) {
     presShell = doc->GetPresShell();
   }
 
-  // If |PresShell::Destroy| has been called due to handling the event the pres
-  // context will return a null pres shell. See bug 125624. Using presShell to
-  // dispatch the event. It makes sure that event is not handled if the window
-  // is being destroyed.
-  if (presShell) {
-    SubmitEventInit init;
-    init.mBubbles = true;
-    init.mCancelable = true;
-    init.mSubmitter =
-        aSubmitter ? nsGenericHTMLElement::FromNode(aSubmitter) : nullptr;
-    RefPtr<SubmitEvent> event =
-        SubmitEvent::Constructor(this, u"submit"_ns, init);
-    event->SetTrusted(true);
-    nsEventStatus status = nsEventStatus_eIgnore;
-    presShell->HandleDOMEventWithTarget(this, event, &status);
+  if (!doc->IsCurrentActiveDocument()) {
+    // Bug 125624
+    return;
   }
+
+  SubmitEventInit init;
+  init.mBubbles = true;
+  init.mCancelable = true;
+  init.mSubmitter =
+      aSubmitter ? nsGenericHTMLElement::FromNode(aSubmitter) : nullptr;
+  RefPtr<SubmitEvent> event =
+      SubmitEvent::Constructor(this, u"submit"_ns, init);
+  event->SetTrusted(true);
+  nsEventStatus status = nsEventStatus_eIgnore;
+  EventDispatcher::DispatchDOMEvent(this, nullptr, event, nullptr, &status);
 }
 
 void HTMLFormElement::MaybeReset(Element* aSubmitter) {
-  // If |PresShell::Destroy| has been called due to handling the event the pres
-  // context will return a null pres shell. See bug 125624. Using presShell to
-  // dispatch the event. It makes sure that event is not handled if the window
-  // is being destroyed.
-  if (RefPtr<PresShell> presShell = OwnerDoc()->GetPresShell()) {
-    InternalFormEvent event(true, eFormReset);
-    event.mOriginator = aSubmitter;
-    nsEventStatus status = nsEventStatus_eIgnore;
-    presShell->HandleDOMEventWithTarget(this, &event, &status);
+  if (!OwnerDoc()->IsCurrentActiveDocument()) {
+    // Bug 125624
+    return;
   }
+
+  InternalFormEvent event(true, eFormReset);
+  event.mOriginator = aSubmitter;
+  nsEventStatus status = nsEventStatus_eIgnore;
+  EventDispatcher::DispatchDOMEvent(this, &event, nullptr, nullptr, &status);
 }
 
 void HTMLFormElement::Submit(ErrorResult& aRv) { aRv = DoSubmit(); }
@@ -784,7 +776,7 @@ nsresult HTMLFormElement::BuildSubmission(HTMLFormSubmission** aFormSubmission,
   //
   // Get the submission object
   //
-  rv = HTMLFormSubmission::GetFromForm(this, submitter, encoding,
+  rv = HTMLFormSubmission::GetFromForm(this, submitter, encoding, formData,
                                        aFormSubmission);
   NS_ENSURE_SUBMIT_SUCCESS(rv);
 
@@ -880,7 +872,7 @@ nsresult HTMLFormElement::SubmitSubmission(
     loadState->SetIsFormSubmission(true);
     loadState->SetTriggeringPrincipal(NodePrincipal());
     loadState->SetPrincipalToInherit(NodePrincipal());
-    loadState->SetCsp(GetCsp());
+    loadState->SetPolicyContainer(GetPolicyContainer());
     loadState->SetAllowFocusMove(UserActivation::IsHandlingUserInput());
 
     const bool hasValidUserGestureActivation =
@@ -889,6 +881,17 @@ nsresult HTMLFormElement::SubmitSubmission(
     loadState->SetTextDirectiveUserActivation(
         doc->ConsumeTextDirectiveUserActivation() ||
         hasValidUserGestureActivation);
+    loadState->SetFormDataEntryList(aFormSubmission->GetFormData());
+    if (aFormSubmission->IsInitiatedFromUserInput()) {
+      loadState->SetUserNavigationInvolvement(
+          UserNavigationInvolvement::Activation);
+    }
+    if (FormData* formData = aFormSubmission->GetFormData();
+        formData && formData->GetSubmitterElement()) {
+      loadState->SetSourceElement(formData->GetSubmitterElement());
+    } else {
+      loadState->SetSourceElement(this);
+    }
 
     nsCOMPtr<nsIPrincipal> nodePrincipal = NodePrincipal();
     rv = container->OnLinkClickSync(this, loadState, false, nodePrincipal);
@@ -1421,11 +1424,9 @@ nsresult HTMLFormElement::RemoveElementFromTable(
   return mControls->RemoveElementFromTable(aElement, aName);
 }
 
-already_AddRefed<nsISupports> HTMLFormElement::NamedGetter(
-    const nsAString& aName, bool& aFound) {
-  aFound = true;
-
-  nsCOMPtr<nsISupports> result = DoResolveName(aName);
+already_AddRefed<nsISupports> HTMLFormElement::ResolveName(
+    const nsAString& aName) {
+  nsCOMPtr<nsISupports> result = mControls->NamedItemInternal(aName);
   if (result) {
     AddToPastNamesMap(aName, result);
     return result.forget();
@@ -1438,7 +1439,13 @@ already_AddRefed<nsISupports> HTMLFormElement::NamedGetter(
   }
 
   result = mPastNameLookupTable.GetWeak(aName);
-  if (result) {
+  return result.forget();
+}
+
+already_AddRefed<nsISupports> HTMLFormElement::NamedGetter(
+    const nsAString& aName, bool& aFound) {
+  if (nsCOMPtr<nsISupports> result = ResolveName(aName)) {
+    aFound = true;
     return result.forget();
   }
 
@@ -1448,26 +1455,6 @@ already_AddRefed<nsISupports> HTMLFormElement::NamedGetter(
 
 void HTMLFormElement::GetSupportedNames(nsTArray<nsString>& aRetval) {
   // TODO https://github.com/whatwg/html/issues/1731
-}
-
-already_AddRefed<nsISupports> HTMLFormElement::FindNamedItem(
-    const nsAString& aName, nsWrapperCache** aCache) {
-  // FIXME Get the wrapper cache from DoResolveName.
-
-  bool found;
-  nsCOMPtr<nsISupports> result = NamedGetter(aName, found);
-  if (result) {
-    *aCache = nullptr;
-    return result.forget();
-  }
-
-  return nullptr;
-}
-
-already_AddRefed<nsISupports> HTMLFormElement::DoResolveName(
-    const nsAString& aName) {
-  nsCOMPtr<nsISupports> result = mControls->NamedItemInternal(aName);
-  return result.forget();
 }
 
 void HTMLFormElement::OnSubmitClickBegin() { mDeferSubmission = true; }

@@ -27,12 +27,12 @@
 #include "modules/rtp_rtcp/source/rtcp_packet.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/congestion_control_feedback.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/experiments/field_trial_parser.h"
-#include "rtc_base/logging.h"
 
 namespace webrtc {
 
-constexpr DataRate kMaxFeedbackRate = webrtc::DataRate::KilobitsPerSec(500);
+constexpr DataRate kMaxFeedbackRate = DataRate::KilobitsPerSec(500);
 
 CongestionControlFeedbackGenerator::CongestionControlFeedbackGenerator(
     const Environment& env,
@@ -54,12 +54,13 @@ void CongestionControlFeedbackGenerator::OnReceivedPacket(
   RTC_DCHECK_RUN_ON(&sequence_checker_);
 
   marker_bit_seen_ |= packet.Marker();
+  Timestamp now = env_.clock().CurrentTime();
   if (!first_arrival_time_since_feedback_) {
-    first_arrival_time_since_feedback_ = packet.arrival_time();
+    first_arrival_time_since_feedback_ = now;
   }
   feedback_trackers_[packet.Ssrc()].ReceivedPacket(packet);
-  if (NextFeedbackTime() < packet.arrival_time()) {
-    SendFeedback(env_.clock().CurrentTime());
+  if (NextFeedbackTime() < now) {
+    SendFeedback(now);
   }
 }
 

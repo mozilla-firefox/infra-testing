@@ -19,11 +19,11 @@
 #include <optional>
 #include <string>
 #include <type_traits>
+#include <variant>
 #include <vector>
 
 #include "absl/algorithm/container.h"
 #include "absl/cleanup/cleanup.h"
-#include "absl/types/variant.h"
 #include "api/array_view.h"
 #include "api/scoped_refptr.h"
 #include "api/units/data_rate.h"
@@ -80,7 +80,13 @@ constexpr std::array<VideoFrameBuffer::Type, 2> kSupportedInputFormats = {
     VideoFrameBuffer::Type::kI420, VideoFrameBuffer::Type::kNV12};
 
 constexpr std::array<Rational, 7> kSupportedScalingFactors = {
-    {{8, 1}, {4, 1}, {2, 1}, {1, 1}, {1, 2}, {1, 4}, {1, 8}}};
+    {{.numerator = 8, .denominator = 1},
+     {.numerator = 4, .denominator = 1},
+     {.numerator = 2, .denominator = 1},
+     {.numerator = 1, .denominator = 1},
+     {.numerator = 1, .denominator = 2},
+     {.numerator = 1, .denominator = 4},
+     {.numerator = 1, .denominator = 8}}};
 
 std::optional<Rational> GetScalingFactor(const Resolution& from,
                                          const Resolution& to) {
@@ -105,7 +111,7 @@ class LibaomAv1Encoder : public VideoEncoderInterface {
       const VideoEncoderFactoryInterface::StaticEncoderSettings& settings,
       const std::map<std::string, std::string>& encoder_specific_settings);
 
-  void Encode(rtc::scoped_refptr<webrtc::VideoFrameBuffer> frame_buffer,
+  void Encode(scoped_refptr<VideoFrameBuffer> frame_buffer,
               const TemporalUnitSettings& tu_settings,
               std::vector<FrameEncodeSettings> frame_settings) override;
 
@@ -165,7 +171,7 @@ bool LibaomAv1Encoder::InitEncode(
   cfg_.rc_undershoot_pct = 50;
   cfg_.rc_overshoot_pct = 50;
   auto* cbr =
-      absl::get_if<VideoEncoderFactoryInterface::StaticEncoderSettings::Cbr>(
+      std::get_if<VideoEncoderFactoryInterface::StaticEncoderSettings::Cbr>(
           &settings.rc_mode);
   cfg_.rc_buf_initial_sz = cbr ? cbr->target_buffer_size.ms() : 600;
   cfg_.rc_buf_optimal_sz = cbr ? cbr->target_buffer_size.ms() : 600;
@@ -269,7 +275,7 @@ ThreadTilesAndSuperblockSizeInfo GetThreadingTilesAndSuperblockSize(
 }
 
 bool ValidateEncodeParams(
-    const webrtc::VideoFrameBuffer& /* frame_buffer */,
+    const VideoFrameBuffer& /* frame_buffer */,
     const VideoEncoderInterface::TemporalUnitSettings& /* tu_settings */,
     const std::vector<VideoEncoderInterface::FrameEncodeSettings>&
         frame_settings,
@@ -384,9 +390,9 @@ bool ValidateEncodeParams(
     }
 
     if ((rc_mode == AOM_CBR &&
-         absl::holds_alternative<Cqp>(settings.rate_options)) ||
+         std::holds_alternative<Cqp>(settings.rate_options)) ||
         (rc_mode == AOM_Q &&
-         absl::holds_alternative<Cbr>(settings.rate_options))) {
+         std::holds_alternative<Cbr>(settings.rate_options))) {
       RTC_LOG(LS_ERROR) << "Invalid rate options, encoder configured with "
                         << (rc_mode == AOM_CBR ? "AOM_CBR" : "AOM_Q");
       return false;
@@ -537,7 +543,7 @@ aom_svc_ref_frame_config_t GetSvcRefFrameConfig(
 }
 
 aom_svc_params_t GetSvcParams(
-    const webrtc::VideoFrameBuffer& frame_buffer,
+    const VideoFrameBuffer& frame_buffer,
     const std::vector<VideoEncoderInterface::FrameEncodeSettings>&
         frame_settings) {
   aom_svc_params_t svc_params = {};
@@ -561,7 +567,8 @@ aom_svc_params_t GetSvcParams(
   for (const VideoEncoderInterface::FrameEncodeSettings& settings :
        frame_settings) {
     std::optional<Rational> scaling_factor = GetScalingFactor(
-        {frame_buffer.width(), frame_buffer.height()}, settings.resolution);
+        {.width = frame_buffer.width(), .height = frame_buffer.height()},
+        settings.resolution);
     RTC_CHECK(scaling_factor);
     svc_params.scaling_factor_num[settings.spatial_id] =
         scaling_factor->numerator;
@@ -578,7 +585,7 @@ aom_svc_params_t GetSvcParams(
                         << " den="
                         << svc_params.scaling_factor_den[settings.spatial_id];
 
-    absl::visit(
+    std::visit(
         [&](auto&& arg) {
           using T = std::decay_t<decltype(arg)>;
           if constexpr (std::is_same_v<T, Cbr>) {
@@ -634,10 +641,9 @@ aom_svc_params_t GetSvcParams(
   return svc_params;
 }
 
-void LibaomAv1Encoder::Encode(
-    rtc::scoped_refptr<webrtc::VideoFrameBuffer> frame_buffer,
-    const TemporalUnitSettings& tu_settings,
-    std::vector<FrameEncodeSettings> frame_settings) {
+void LibaomAv1Encoder::Encode(scoped_refptr<VideoFrameBuffer> frame_buffer,
+                              const TemporalUnitSettings& tu_settings,
+                              std::vector<FrameEncodeSettings> frame_settings) {
   absl::Cleanup on_return = [&] {
     // On return call `EncodeComplete` with EncodingError result unless they
     // were already called with an EncodedData result.
@@ -668,7 +674,7 @@ void LibaomAv1Encoder::Encode(
   if (cfg_.rc_end_usage == AOM_CBR) {
     DataRate accum_rate = DataRate::Zero();
     for (const FrameEncodeSettings& settings : frame_settings) {
-      accum_rate += absl::get<Cbr>(settings.rate_options).target_bitrate;
+      accum_rate += std::get<Cbr>(settings.rate_options).target_bitrate;
     }
     cfg_.rc_target_bitrate = accum_rate.kbps();
     RTC_LOG(LS_WARNING) << __FUNCTION__
@@ -733,7 +739,7 @@ void LibaomAv1Encoder::Encode(
     // not being encoded?
     TimeDelta duration = TimeDelta::Millis(1);
     if (layer_enabled) {
-      if (const Cbr* cbr = absl::get_if<Cbr>(&settings.rate_options)) {
+      if (const Cbr* cbr = std::get_if<Cbr>(&settings.rate_options)) {
         duration = cbr->duration;
       } else {
         // TD: What should duration be when Cqp is used?
@@ -782,10 +788,10 @@ void LibaomAv1Encoder::Encode(
                aom_codec_get_cx_data(&ctx_, &iter)) {
       if (pkt->kind == AOM_CODEC_CX_FRAME_PKT && pkt->data.frame.sz > 0) {
         SET_OR_RETURN(AOME_GET_LAST_QUANTIZER_64, &result.encoded_qp);
-        result.frame_type = pkt->data.frame.flags & AOM_EFLAG_FORCE_KF
+        result.frame_type = pkt->data.frame.flags & AOM_FRAME_IS_KEY
                                 ? FrameType::kKeyframe
                                 : FrameType::kDeltaFrame;
-        rtc::ArrayView<uint8_t> output_buffer =
+        ArrayView<uint8_t> output_buffer =
             settings.frame_output->GetBitstreamOutputBuffer(
                 DataSize::Bytes(pkt->data.frame.sz));
         if (output_buffer.size() != pkt->data.frame.sz) {

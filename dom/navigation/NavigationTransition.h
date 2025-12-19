@@ -7,13 +7,11 @@
 #ifndef mozilla_dom_NavigationTransition_h___
 #define mozilla_dom_NavigationTransition_h___
 
-#include "nsISupports.h"
-
+#include "mozilla/RefPtr.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsISupports.h"
 #include "nsWrapperCache.h"
-
-#include "mozilla/RefPtr.h"
 
 class nsIGlobalObject;
 
@@ -31,10 +29,14 @@ class NavigationTransition final : public nsISupports, public nsWrapperCache {
 
   NavigationTransition(nsIGlobalObject* aGlobalObject,
                        NavigationType aNavigationType,
-                       NavigationHistoryEntry* aFrom, Promise* aFinished);
+                       NavigationHistoryEntry* aFrom, Promise* aCommitted,
+                       Promise* aFinished);
 
   enum NavigationType NavigationType() const;
   NavigationHistoryEntry* From() const;
+
+  Promise* Committed() const;
+
   Promise* Finished() const;
 
   JSObject* WrapObject(JSContext* aCx,
@@ -51,6 +53,9 @@ class NavigationTransition final : public nsISupports, public nsWrapperCache {
 
   // https://html.spec.whatwg.org/#concept-navigationtransition-from
   RefPtr<NavigationHistoryEntry> mFrom;
+
+  // https://html.spec.whatwg.org/#concept-navigationtransition-committed
+  RefPtr<Promise> mCommitted;
 
   // https://html.spec.whatwg.org/#concept-navigationtransition-finished
   RefPtr<Promise> mFinished;

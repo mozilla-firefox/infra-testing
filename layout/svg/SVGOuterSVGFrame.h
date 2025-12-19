@@ -7,7 +7,6 @@
 #ifndef LAYOUT_SVG_SVGOUTERSVGFRAME_H_
 #define LAYOUT_SVG_SVGOUTERSVGFRAME_H_
 
-#include "mozilla/Attributes.h"
 #include "mozilla/ISVGSVGFrame.h"
 #include "mozilla/SVGContainerFrame.h"
 
@@ -35,6 +34,7 @@ class SVGOuterSVGFrame final : public SVGDisplayContainerFrame,
 
   friend nsContainerFrame* ::NS_NewSVGOuterSVGFrame(
       mozilla::PresShell* aPresShell, ComputedStyle* aStyle);
+  friend class AsyncSendIntrinsicSizeAndRatioToEmbedder;
   friend class AutoSVGViewHandler;
   friend class SVGFragmentIdentifier;
 
@@ -52,7 +52,7 @@ class SVGOuterSVGFrame final : public SVGDisplayContainerFrame,
   AspectRatio GetIntrinsicRatio() const override;
 
   SizeComputationResult ComputeSize(
-      gfxContext* aRenderingContext, WritingMode aWritingMode,
+      const SizeComputationInput& aSizingInput, WritingMode aWritingMode,
       const LogicalSize& aCBSize, nscoord aAvailableISize,
       const LogicalSize& aMargin, const LogicalSize& aBorderPadding,
       const mozilla::StyleSizeOverrides& aSizeOverrides,
@@ -82,7 +82,7 @@ class SVGOuterSVGFrame final : public SVGDisplayContainerFrame,
   void Destroy(DestroyContext&) override;
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
   nsContainerFrame* GetContentInsertionFrame() override {
     // Any children must be added to our single anonymous inner frame kid.

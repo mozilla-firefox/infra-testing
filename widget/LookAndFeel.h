@@ -118,12 +118,10 @@ class LookAndFeel {
     MacBigSurTheme,
 
     /*
-     * A Boolean value to determine whether macOS is in RTL mode or not.
+     * A Boolean value to determine whether the macOS Tahoe-specific
+     * theming should be used.
      */
-    MacRTL,
-
-    /* Native macOS titlebar height. */
-    MacTitlebarHeight,
+    MacTahoeTheme,
 
     /*
      * AlertNotificationOrigin indicates from which corner of the
@@ -302,9 +300,6 @@ class LookAndFeel {
     /** GTK titlebar radius */
     TitlebarRadius,
 
-    /** GTK button-to-button spacing in the inline axis */
-    TitlebarButtonSpacing,
-
     /** GTK tooltip radius */
     TooltipRadius,
 
@@ -337,6 +332,9 @@ class LookAndFeel {
 
     /* Whether the menubar is native / outside the application */
     NativeMenubar,
+
+    // The system's hour cycle, either 0 if unknown, 12, or 24.
+    HourCycle,
 
     /*
      * Not an ID; used to define the range of valid IDs.  Must be last.

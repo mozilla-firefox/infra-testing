@@ -137,7 +137,6 @@ public class GeckoThread extends Thread {
   @WrapForJNI private static MessageQueue msgQueue;
   @WrapForJNI private static int uiThreadId;
 
-  private static TelemetryUtils.Timer sInitTimer;
   private static LinkedList<StateGeckoResult> sStateListeners = new LinkedList<>();
 
   // Main process parameters
@@ -148,6 +147,9 @@ public class GeckoThread extends Thread {
   public static final int FLAG_DISABLE_LOW_MEMORY_DETECTION =
       1 << 3; // Disable low-memory detection and notifications.
   public static final int FLAG_CHILD = 1 << 4; // This is a child process.
+  public static final int FLAG_CONTENT_ISOLATED = 1 << 5; // Content service is isolated process.
+  public static final int FLAG_CONTENT_ISOLATED_HAS_ZYGOTE =
+      1 << 6; // Content service has app Zygote enabled.
 
   /* package */ static final String EXTRA_ARGS = "args";
 
@@ -282,8 +284,6 @@ public class GeckoThread extends Thread {
     if (mInitialized) {
       return false;
     }
-
-    sInitTimer = new TelemetryUtils.UptimeTimer("GV_STARTUP_RUNTIME_MS");
 
     mInitInfo = info;
     mInitialized = true;
@@ -495,6 +495,14 @@ public class GeckoThread extends Thread {
     if ((mInitInfo.flags & FLAG_PRELOAD_CHILD) != 0) {
       // Preload the content ("tab") child process.
       GeckoProcessManager.getInstance().preload(GeckoProcessType.CONTENT);
+    }
+
+    if ((mInitInfo.flags & FLAG_CONTENT_ISOLATED) != 0) {
+      GeckoProcessManager.getInstance().setIsolatedProcessEnabled(true);
+    }
+
+    if ((mInitInfo.flags & FLAG_CONTENT_ISOLATED_HAS_ZYGOTE) != 0) {
+      GeckoProcessManager.getInstance().setAppZygoteEnabled(true);
     }
 
     if ((mInitInfo.flags & FLAG_DEBUGGING) != 0) {
@@ -730,12 +738,6 @@ public class GeckoThread extends Thread {
     final boolean result = sNativeQueue.checkAndSetState(expectedState, newState);
     if (result) {
       Log.d(LOGTAG, "State changed to " + newState);
-
-      if (sInitTimer != null && isRunning()) {
-        sInitTimer.stop();
-        sInitTimer = null;
-      }
-
       notifyStateListeners();
     }
     return result;

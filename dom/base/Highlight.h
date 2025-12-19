@@ -10,11 +10,10 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/HighlightBinding.h"
-
-#include "nsCycleCollectionParticipant.h"
 #include "nsAtomHashKeys.h"
-#include "nsTHashSet.h"
+#include "nsCycleCollectionParticipant.h"
 #include "nsTArray.h"
+#include "nsTHashSet.h"
 #include "nsWrapperCache.h"
 
 class nsFrameSelection;
@@ -117,7 +116,7 @@ class Highlight final : public nsISupports, public nsWrapperCache {
    *
    * Priority is used to stack overlapping highlights.
    */
-  void SetPriority(int32_t aPriority) { mPriority = aPriority; }
+  void SetPriority(int32_t aPriority);
 
   /**
    * @brief The HighlightType of this Highlight (Highlight, Spelling Error,
@@ -128,9 +127,7 @@ class Highlight final : public nsISupports, public nsWrapperCache {
   /**
    * @brief Sets the HighlightType (Highlight, Spelling Error, Grammar Error)
    */
-  void SetType(HighlightType aHighlightType) {
-    mHighlightType = aHighlightType;
-  }
+  void SetType(HighlightType aHighlightType);
 
   /**
    * @brief This mirrors the `size` property in JS world (_not_ exposed via
@@ -146,7 +143,7 @@ class Highlight final : public nsISupports, public nsWrapperCache {
    *
    * Also notifies all `HighlightRegistry` instances.
    */
-  MOZ_CAN_RUN_SCRIPT void Add(AbstractRange& aRange, ErrorResult& aRv);
+  MOZ_CAN_RUN_SCRIPT Highlight* Add(AbstractRange& aRange, ErrorResult& aRv);
 
   /**
    * @brief Removes all ranges from this highlight.
@@ -171,6 +168,8 @@ class Highlight final : public nsISupports, public nsWrapperCache {
   MOZ_CAN_RUN_SCRIPT bool Delete(AbstractRange& aRange, ErrorResult& aRv);
 
  private:
+  void Repaint();
+
   RefPtr<nsPIDOMWindowInner> mWindow;
 
   /**

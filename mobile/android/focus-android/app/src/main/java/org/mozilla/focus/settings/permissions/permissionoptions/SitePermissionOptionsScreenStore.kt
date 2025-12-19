@@ -1,6 +1,7 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 package org.mozilla.focus.settings.permissions.permissionoptions
 
 import mozilla.components.lib.state.Action
@@ -14,7 +15,7 @@ class SitePermissionOptionsScreenStore(
     middlewares: List<Middleware<SitePermissionOptionsScreenState, SitePermissionOptionsScreenAction>> = emptyList(),
 ) : Store<SitePermissionOptionsScreenState, SitePermissionOptionsScreenAction>(
     initialState,
-    ::sitePermissionOptionsScreenReducer,
+    SitePermissionOptionsScreenReducer::reduce,
     middlewares,
 ) {
     init {
@@ -41,30 +42,50 @@ sealed class SitePermissionOptionsScreenAction : Action {
     ) : SitePermissionOptionsScreenAction()
 }
 
-private fun sitePermissionOptionsScreenReducer(
-    state: SitePermissionOptionsScreenState,
-    action: SitePermissionOptionsScreenAction,
-): SitePermissionOptionsScreenState {
-    return when (action) {
-        is SitePermissionOptionsScreenAction.Select -> {
-            state.copy(selectedSitePermissionOption = action.selectedSitePermissionOption)
-        }
-        is SitePermissionOptionsScreenAction.UpdateSitePermissionOptions -> {
-            state.copy(
-                sitePermissionOptionList = action.sitePermissionOptionsList,
-                selectedSitePermissionOption = action.selectedSitePermissionOption,
-                sitePermissionLabel = action.sitePermissionLabel,
-                isAndroidPermissionGranted = action.isAndroidPermissionGranted,
-            )
-        }
+/**
+ * A reducer that takes the current [SitePermissionOptionsScreenState] and an [SitePermissionOptionsScreenAction]
+ * and returns a new [SitePermissionOptionsScreenState].
+ *
+ * This reducer is responsible for handling actions related to site permission options, such as selecting
+ * an option, updating the list of options, and initializing the options.
+ */
+object SitePermissionOptionsScreenReducer {
+    /**
+     * Reduces the current [SitePermissionOptionsScreenState] with the given [SitePermissionOptionsScreenAction]
+     * to produce a new [SitePermissionOptionsScreenState].
+     *
+     * @param state The current state of the site permission options screen.
+     * @param action The action to be applied to the current state.
+     * @return The new state after applying the action.
+     * @throws IllegalStateException if [SitePermissionOptionsScreenAction.InitSitePermissionOptions] is dispatched
+     * without adding [SitePermissionsOptionsMiddleware] to the [SitePermissionOptionsScreenStore].
+     */
+    fun reduce(
+        state: SitePermissionOptionsScreenState,
+        action: SitePermissionOptionsScreenAction,
+    ): SitePermissionOptionsScreenState {
+        return when (action) {
+            is SitePermissionOptionsScreenAction.Select -> {
+                state.copy(selectedSitePermissionOption = action.selectedSitePermissionOption)
+            }
+            is SitePermissionOptionsScreenAction.UpdateSitePermissionOptions -> {
+                state.copy(
+                    sitePermissionOptionList = action.sitePermissionOptionsList,
+                    selectedSitePermissionOption = action.selectedSitePermissionOption,
+                    sitePermissionLabel = action.sitePermissionLabel,
+                    isAndroidPermissionGranted = action.isAndroidPermissionGranted,
+                )
+            }
 
-        SitePermissionOptionsScreenAction.InitSitePermissionOptions -> {
-            throw IllegalStateException(
-                "You need to add SitePermissionsOptionsMiddleware to your SitePermissionsOptionsScreenStore. ($action)",
-            )
-        }
-        is SitePermissionOptionsScreenAction.AndroidPermission -> {
-            state.copy(isAndroidPermissionGranted = action.isAndroidPermissionGranted)
+            SitePermissionOptionsScreenAction.InitSitePermissionOptions -> {
+                throw IllegalStateException(
+                    "You need to add SitePermissionsOptionsMiddleware " +
+                            "to your SitePermissionsOptionsScreenStore. ($action)",
+                )
+            }
+            is SitePermissionOptionsScreenAction.AndroidPermission -> {
+                state.copy(isAndroidPermissionGranted = action.isAndroidPermissionGranted)
+            }
         }
     }
 }

@@ -3,7 +3,6 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
-import json
 import logging
 import os
 import xml.etree.ElementTree as ET
@@ -12,6 +11,7 @@ from urllib.parse import quote, urlencode
 import requests
 import yaml
 from redo import retry
+from taskgraph.util import json
 from taskgraph.util.copy import deepcopy
 from taskgraph.util.schema import resolve_keyed_by
 
@@ -127,7 +127,6 @@ REPACK_CFG_QUERY = """query{
 
 # Map platforms in repack.cfg into their equivalents in taskcluster
 TC_PLATFORM_PER_FTP = {
-    "linux-i686": "linux-shippable",
     "linux-x86_64": "linux64-shippable",
     "mac": "macosx64-shippable",
     "win32": "win32-shippable",
@@ -448,8 +447,6 @@ def get_ftp_platform(platform):
         return "win64"
     if platform.startswith("macosx"):
         return "mac"
-    if platform.startswith("linux-"):
-        return "linux-i686"
     if platform.startswith("linux64"):
         return "linux-x86_64"
     raise ValueError(f"Unimplemented platform {platform}")

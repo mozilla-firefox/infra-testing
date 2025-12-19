@@ -10,31 +10,27 @@
 #include "js/AllocPolicy.h"
 #include "js/ColumnNumber.h"    // JS::ColumnNumberOneOrigin
 #include "js/CompileOptions.h"  // JS::OwningCompileOptions
-#include "js/experimental/JSStencil.h"  // JS::FrontendContext, JS::Stencil, JS::InstantiationStorage
 #include "js/RootingAPI.h"
 #include "js/SourceText.h"
 #include "js/Transcoding.h"  // JS::TranscodeResult
 #include "js/TypeDecls.h"
+#include "js/experimental/JSStencil.h"  // JS::FrontendContext, JS::Stencil, JS::InstantiationStorage
 #include "js/loader/LoadContextBase.h"
 #include "js/loader/ScriptKind.h"
 #include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/Atomics.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/CORSMode.h"
-#include "mozilla/dom/SRIMetadata.h"
-#include "mozilla/LinkedList.h"
-#include "mozilla/Maybe.h"
-#include "mozilla/MaybeOneOf.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/PreloaderBase.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/TaskController.h"  // mozilla::Task
 #include "mozilla/Utf8.h"            // mozilla::Utf8Unit
-#include "mozilla/Variant.h"
-#include "mozilla/Vector.h"
+#include "mozilla/dom/SRIMetadata.h"
+#include "mozilla/net/UrlClassifierCommon.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsIClassifiedChannel.h"
 #include "nsIScriptElement.h"
 
 class nsICacheInfoChannel;
@@ -139,7 +135,8 @@ class ScriptLoadContext : public JS::loader::LoadContextBase,
   virtual ~ScriptLoadContext();
 
  public:
-  explicit ScriptLoadContext(nsIScriptElement* aScriptElement = nullptr);
+  explicit ScriptLoadContext(nsIScriptElement* aScriptElement = nullptr,
+                             const nsAString& aSourceText = VoidString());
 
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(ScriptLoadContext,
@@ -151,10 +148,12 @@ class ScriptLoadContext : public JS::loader::LoadContextBase,
 
   bool CompileStarted() const;
 
-  bool IsTracking() const { return mIsTracking; }
-  void SetIsTracking() {
-    MOZ_ASSERT(!mIsTracking);
-    mIsTracking = true;
+  net::ClassificationFlags& GetClassificationFlags() {
+    return mClassificationFlags;
+  }
+  void SetClassificationFlags(
+      const net::ClassificationFlags& aClassificationFlags) {
+    mClassificationFlags = aClassificationFlags;
   }
 
   void BlockOnload(Document* aDocument);
@@ -201,12 +200,6 @@ class ScriptLoadContext : public JS::loader::LoadContextBase,
   // NOTE: This is called also for imported modules.
   //       The consumer allows nullptr.
   inline nsIScriptElement* GetScriptElementForTrace() const {
-    return mScriptElement;
-  }
-
-  // Event target for beforescriptexecute/afterscriptexecute events.
-  inline nsIScriptElement* GetScriptElementForExecuteEvents() const {
-    MOZ_ASSERT(mScriptElement);
     return mScriptElement;
   }
 
@@ -290,11 +283,11 @@ class ScriptLoadContext : public JS::loader::LoadContextBase,
   bool mIsNonAsyncScriptInserted;  // True if we live in
                                    // mNonAsyncExternalScriptInsertedRequests
   bool mIsXSLT;                    // True if we live in mXSLTRequests.
-  bool mInCompilingList;  // True if we are in mOffThreadCompilingRequests.
-  bool mIsTracking;       // True if the script comes from a source on our
-                          // tracking protection list.
-  bool mWasCompiledOMT;   // True if the script has been compiled off main
-                          // thread.
+  bool mInCompilingList;     // True if we are in mOffThreadCompilingRequests.
+  net::ClassificationFlags   // Classification flags
+      mClassificationFlags;  // of the source of the script.
+  bool mWasCompiledOMT;      // True if the script has been compiled off main
+                             // thread.
 
   // Task that performs off-thread compilation or off-thread decode.
   // This field is used to take the result of the task, or cancel the task.
@@ -315,6 +308,8 @@ class ScriptLoadContext : public JS::loader::LoadContextBase,
   // The script element which trigerred this script load.
   // This is valid only for classic script and top-level module script.
   nsCOMPtr<nsIScriptElement> mScriptElement;
+
+  nsString mSourceText;
 
   // For preload requests, we defer reporting errors to the console until the
   // request is used.

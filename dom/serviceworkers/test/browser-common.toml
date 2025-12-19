@@ -35,17 +35,17 @@ support-files = [
 ["browser_antitracking_subiframes.js"]
 
 ["browser_devtools_serviceworker_interception.js"]
-skip-if = ["true"]
+skip-if = [
+  "true",
+]
 
 ["browser_download.js"]
 
 ["browser_download_canceled.js"]
-skip-if = ["verify"]
 
 ["browser_etp_permission.js"]
 
 ["browser_force_refresh.js"]
-skip-if = ["verify"] # Bug 1603340
 
 ["browser_intercepted_channel_process_swap.js"]
 
@@ -58,7 +58,9 @@ skip-if = ["verify"] # Bug 1603340
 ["browser_remote_type_process_swap.js"]
 
 ["browser_storage_permission.js"]
-skip-if = ["true"] # Crashes: @ mozilla::dom::ServiceWorkerManagerService::PropagateUnregister(unsigned long, mozilla::ipc::PrincipalInfo const&, nsTSubstring<char16_t> const&), #Bug 1578337
+skip-if = [
+  "true", # Crashes: @ mozilla::dom::ServiceWorkerManagerService::PropagateUnregister(unsigned long, mozilla::ipc::PrincipalInfo const&, nsTSubstring<char16_t> const&), #Bug 1578337
+]
 
 ["browser_storage_recovery.js"]
 

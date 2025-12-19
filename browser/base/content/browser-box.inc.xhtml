@@ -20,10 +20,17 @@
       <spacer id="sidebar-spacer"/>
       <toolbarbutton id="sidebar-close" class="close-icon tabbable" data-l10n-id="sidebar-close-button"/>
     </box>
-    <browser id="sidebar" autoscroll="false" disablehistory="true" disablefullscreen="true" tooltip="aHTMLTooltip"/>
+    <stack class="sidebar-browser-stack">
+      <browser id="sidebar" autoscroll="false" disablehistory="true" disablefullscreen="true" tooltip="aHTMLTooltip"/>
+    </stack>
   </vbox>
   <splitter id="sidebar-splitter" class="chromeclass-extrachrome sidebar-splitter" resizebefore="sibling" resizeafter="none" hidden="true"/>
   <tabbox id="tabbrowser-tabbox" flex="1" tabcontainer="tabbrowser-tabs">
     <tabpanels id="tabbrowser-tabpanels" flex="1" selectedIndex="0"/>
   </tabbox>
+  <splitter id="ai-window-splitter" class="chromeclass-extrachrome sidebar-splitter" resizebefore="none" resizeafter="sibling" hidden="true"/>
+  <vbox id="ai-window-box" hidden="true" class="chromeclass-extrachrome ai-window-right-sidebar">
+    <stack class="ai-window-browser-stack" flex="1">
+    </stack>
+  </vbox>
 </hbox>

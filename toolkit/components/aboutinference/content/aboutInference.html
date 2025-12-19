@@ -12,6 +12,10 @@
     <title data-l10n-id="about-inference-title"></title>
     <link rel="stylesheet" href="chrome://global/content/aboutInference.css" />
     <link rel="localization" href="preview/aboutInference.ftl" />
+    <script
+      type="module"
+      src="chrome://global/content/model-files-view.mjs"
+    ></script>
     <script src="chrome://global/content/aboutInference.js"></script>
   </head>
   <body id="body">
@@ -24,12 +28,6 @@
         <span
           class="category-name"
           data-l10n-id="about-inference-category-local-inference"
-        ></span>
-      </div>
-      <div class="category category-no-icon" id="category-http-inference">
-        <span
-          class="category-name"
-          data-l10n-id="about-inference-category-http-inference"
         ></span>
       </div>
       <div class="category category-no-icon" id="category-models-storage">
@@ -131,7 +129,7 @@
                 <div>
                   <label for="device">Device:</label>
                   <select id="device">
-                    <option value="wasm" selected>cpu</option>
+                    <option value="cpu" selected>cpu</option>
                     <option value="gpu">gpu</option>
                   </select>
                 </div>
@@ -143,7 +141,6 @@
                   </span>
                   <input id="numRuns" type="number" min="1" value="1" />
                 </div>
-
                 <div>
                   <label for="numThreads">Number of threads:</label>
                   <span class="tooltip"
@@ -151,6 +148,14 @@
                     <span class="tooltiptext">1 means no multi-threading</span>
                   </span>
                   <select id="numThreads"></select>
+                </div>
+                <div>
+                  <label for="backend">Backend:</label>
+                  <select id="backend"></select>
+                </div>
+                <div>
+                  <label for="timeout">Timeout:</label>
+                  <input id="timeout" type="number" min="30" value="30" />
                 </div>
                 <div>
                   <label for="inferencePad">Input data:</label>
@@ -186,85 +191,9 @@
           </div>
         </div>
 
-        <!-- http tab -->
-        <div id="http-inference" class="tab" hidden="true">
-          <div class="fieldset-container">
-            <fieldset>
-              <legend>HTTP Inference Pad</legend>
-              <div class="form-container">
-                <div>
-                  <label for="http.endpoint">HTTP endpoint:</label>
-                  <input
-                    id="http.endpoint"
-                    type="text"
-                    value="http://localhost:8080/v1/chat/completions"
-                  />
-                </div>
-                <div>
-                  <label for="http.model">Model:</label>
-                  <span class="tooltip"
-                    >ℹ️
-                    <span class="tooltiptext">
-                      Some endpoints require a specific model.
-                    </span>
-                  </span>
-                  <input id="http.model" type="text" />
-                </div>
-                <div>
-                  <label for="http.bearer">Bearer token:</label>
-                  <span class="tooltip"
-                    >ℹ️
-                    <span class="tooltiptext">
-                      Some endpoints require a token for access.
-                    </span>
-                  </span>
-                  <input id="http.bearer" type="text" />
-                </div>
-                <div>
-                  <label for="http.prompt">Prompt:</label>
-                  <textarea id="http.prompt">
-                  Suggest a story from %stories% to read after "%tabTitle%"
-                </textarea
-                  >
-                </div>
-                <div>
-                  <input
-                    id="http.button"
-                    type="button"
-                    value="Run HTTP Inference"
-                  />
-                </div>
-              </div>
-            </fieldset>
-
-            <fieldset>
-              <legend>HTTP Inference Data</legend>
-              <h3>
-                Context
-                <input
-                  id="http.limit"
-                  max="120"
-                  min="1"
-                  type="range"
-                  value="10"
-                />
-              </h3>
-              <div id="http.context"></div>
-              <h3>Output</h3>
-              <textarea id="http.output" readonly></textarea>
-            </fieldset>
-          </div>
-        </div>
-
         <!-- model tab -->
         <div id="models-storage" class="tab" hidden="true">
-          <div class="fieldset-container">
-            <fieldset class="large">
-              <legend data-l10n-id="about-inference-models-title"></legend>
-              <p data-l10n-id="about-inference-downloads-description"></p>
-              <div id="modelFiles"></div>
-            </fieldset>
-          </div>
+          <model-files-view></model-files-view>
         </div>
 
         <!-- benchmark -->

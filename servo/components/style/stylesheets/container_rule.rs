@@ -7,6 +7,7 @@
 //! [container]: https://drafts.csswg.org/css-contain-3/#container-rule
 
 use crate::computed_value_flags::ComputedValueFlags;
+use crate::derives::*;
 use crate::dom::TElement;
 use crate::logical_geometry::{LogicalSize, WritingMode};
 use crate::parser::ParserContext;
@@ -17,8 +18,7 @@ use crate::queries::{FeatureType, QueryCondition};
 use crate::shared_lock::{
     DeepCloneWithLock, Locked, SharedRwLock, SharedRwLockReadGuard, ToCssWithGuard,
 };
-use crate::str::CssStringWriter;
-use crate::stylesheets::CssRules;
+use crate::stylesheets::{CssRules, CustomMediaEvaluator};
 use crate::stylist::Stylist;
 use crate::values::computed::{CSSPixelLength, ContainerType, Context, Ratio};
 use crate::values::specified::ContainerName;
@@ -30,7 +30,7 @@ use malloc_size_of::{MallocSizeOfOps, MallocUnconditionalShallowSizeOf};
 use selectors::kleene_value::KleeneValue;
 use servo_arc::Arc;
 use std::fmt::{self, Write};
-use style_traits::{CssWriter, ParseError, ToCss};
+use style_traits::{CssStringWriter, CssWriter, ParseError, ToCss};
 
 /// A container rule.
 #[derive(Debug, ToShmem)]
@@ -58,17 +58,13 @@ impl ContainerRule {
     #[cfg(feature = "gecko")]
     pub fn size_of(&self, guard: &SharedRwLockReadGuard, ops: &mut MallocSizeOfOps) -> usize {
         // Measurement of other fields may be added later.
-        self.rules.unconditional_shallow_size_of(ops) +
-            self.rules.read_with(guard).size_of(guard, ops)
+        self.rules.unconditional_shallow_size_of(ops)
+            + self.rules.read_with(guard).size_of(guard, ops)
     }
 }
 
 impl DeepCloneWithLock for ContainerRule {
-    fn deep_clone_with_lock(
-        &self,
-        lock: &SharedRwLock,
-        guard: &SharedRwLockReadGuard,
-    ) -> Self {
+    fn deep_clone_with_lock(&self, lock: &SharedRwLock, guard: &SharedRwLockReadGuard) -> Self {
         let rules = self.rules.read_with(guard);
         Self {
             condition: self.condition.clone(),
@@ -114,17 +110,17 @@ pub struct ContainerLookupResult<E> {
 }
 
 fn container_type_axes(ty_: ContainerType, wm: WritingMode) -> FeatureFlags {
-    match ty_ {
-        ContainerType::Size => FeatureFlags::all_container_axes(),
-        ContainerType::InlineSize => {
-            let physical_axis = if wm.is_vertical() {
-                FeatureFlags::CONTAINER_REQUIRES_HEIGHT_AXIS
-            } else {
-                FeatureFlags::CONTAINER_REQUIRES_WIDTH_AXIS
-            };
-            FeatureFlags::CONTAINER_REQUIRES_INLINE_AXIS | physical_axis
-        },
-        ContainerType::Normal => FeatureFlags::empty(),
+    if ty_.intersects(ContainerType::SIZE) {
+        FeatureFlags::all_container_axes()
+    } else if ty_.intersects(ContainerType::INLINE_SIZE) {
+        let physical_axis = if wm.is_vertical() {
+            FeatureFlags::CONTAINER_REQUIRES_HEIGHT_AXIS
+        } else {
+            FeatureFlags::CONTAINER_REQUIRES_WIDTH_AXIS
+        };
+        FeatureFlags::CONTAINER_REQUIRES_INLINE_AXIS | physical_axis
+    } else {
+        FeatureFlags::empty()
     }
 }
 
@@ -275,7 +271,9 @@ impl ContainerCondition {
             info,
             size_query_container_lookup,
             |context| {
-                let matches = self.condition.matches(context);
+                let matches = self
+                    .condition
+                    .matches(context, &mut CustomMediaEvaluator::none());
                 if context
                     .style()
                     .flags()
@@ -384,8 +382,8 @@ pub static CONTAINER_FEATURES: [QueryFeatureDescription; 6] = [
         // XXX from_bits_truncate is const, but the pipe operator isn't, so this
         // works around it.
         FeatureFlags::from_bits_truncate(
-            FeatureFlags::CONTAINER_REQUIRES_BLOCK_AXIS.bits() |
-                FeatureFlags::CONTAINER_REQUIRES_INLINE_AXIS.bits()
+            FeatureFlags::CONTAINER_REQUIRES_BLOCK_AXIS.bits()
+                | FeatureFlags::CONTAINER_REQUIRES_INLINE_AXIS.bits()
         ),
     ),
     feature!(
@@ -393,8 +391,8 @@ pub static CONTAINER_FEATURES: [QueryFeatureDescription; 6] = [
         AllowsRanges::No,
         keyword_evaluator!(eval_orientation, Orientation),
         FeatureFlags::from_bits_truncate(
-            FeatureFlags::CONTAINER_REQUIRES_BLOCK_AXIS.bits() |
-                FeatureFlags::CONTAINER_REQUIRES_INLINE_AXIS.bits()
+            FeatureFlags::CONTAINER_REQUIRES_BLOCK_AXIS.bits()
+                | FeatureFlags::CONTAINER_REQUIRES_INLINE_AXIS.bits()
         ),
     ),
 ];
@@ -517,25 +515,25 @@ impl<'a> ContainerSizeQuery<'a> {
 
         let container_type = box_style.clone_container_type();
         let size = e.query_container_size(&box_style.clone_display());
-        match container_type {
-            ContainerType::Size => TraversalResult::Done(ContainerSizeQueryResult {
+        if container_type.intersects(ContainerType::SIZE) {
+            TraversalResult::Done(ContainerSizeQueryResult {
                 width: size.width,
                 height: size.height,
-            }),
-            ContainerType::InlineSize => {
-                if wm.is_horizontal() {
-                    TraversalResult::Done(ContainerSizeQueryResult {
-                        width: size.width,
-                        height: None,
-                    })
-                } else {
-                    TraversalResult::Done(ContainerSizeQueryResult {
-                        width: None,
-                        height: size.height,
-                    })
-                }
-            },
-            ContainerType::Normal => TraversalResult::InProgress,
+            })
+        } else if container_type.intersects(ContainerType::INLINE_SIZE) {
+            if wm.is_horizontal() {
+                TraversalResult::Done(ContainerSizeQueryResult {
+                    width: size.width,
+                    height: None,
+                })
+            } else {
+                TraversalResult::Done(ContainerSizeQueryResult {
+                    width: None,
+                    height: size.height,
+                })
+            }
+        } else {
+            TraversalResult::InProgress
         }
     }
 

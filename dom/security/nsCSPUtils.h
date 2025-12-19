@@ -7,13 +7,13 @@
 #ifndef nsCSPUtils_h___
 #define nsCSPUtils_h___
 
+#include "mozilla/ErrorResult.h"
 #include "nsCOMPtr.h"
 #include "nsILoadInfo.h"
 #include "nsIURI.h"
 #include "nsString.h"
 #include "nsTArray.h"
 #include "nsUnicharUtils.h"
-#include "mozilla/ErrorResult.h"
 
 class nsIChannel;
 
@@ -116,7 +116,8 @@ CSPDirective CSP_StringToCSPDirective(const nsAString& aDir);
   MACRO(CSP_REPORT_SAMPLE, "'report-sample'")       \
   MACRO(CSP_STRICT_DYNAMIC, "'strict-dynamic'")     \
   MACRO(CSP_WASM_UNSAFE_EVAL, "'wasm-unsafe-eval'") \
-  MACRO(CSP_ALLOW_DUPLICATES, "'allow-duplicates'")
+  MACRO(CSP_ALLOW_DUPLICATES, "'allow-duplicates'") \
+  MACRO(CSP_TRUSTED_TYPES_EVAL, "'trusted-types-eval'")
 
 enum CSPKeyword {
 #define KEYWORD_ENUM(id_, string_) id_,
@@ -194,14 +195,15 @@ nsresult CSP_AppendCSPFromHeader(nsIContentSecurityPolicy* aCsp,
 
 /* =============== Helpers ================== */
 
-already_AddRefed<nsIContentSecurityPolicy> CSP_CreateFromHeader(const nsAString& aHeaderValue, nsIURI* aSelfURI,
-                              nsIPrincipal* aLoadingPrincipal,
-                              mozilla::ErrorResult& aRv);
+already_AddRefed<nsIContentSecurityPolicy> CSP_CreateFromHeader(
+    const nsAString& aHeaderValue, nsIURI* aSelfURI,
+    nsIPrincipal* aLoadingPrincipal, mozilla::ErrorResult& aRv);
 
 class nsCSPHostSrc;
 
 nsCSPHostSrc* CSP_CreateHostSrcFromSelfURI(nsIURI* aSelfURI);
 bool CSP_IsEmptyDirective(const nsAString& aValue, const nsAString& aDir);
+bool CSP_IsInvalidDirectiveValue(mozilla::Span<const char16_t> aValue);
 bool CSP_IsDirective(const nsAString& aValue, CSPDirective aDir);
 bool CSP_IsKeyword(const nsAString& aValue, enum CSPKeyword aKey);
 bool CSP_IsQuotelessKeyword(const nsAString& aKey);
@@ -211,6 +213,7 @@ class nsCSPSrcVisitor;
 
 void CSP_PercentDecodeStr(const nsAString& aEncStr, nsAString& outDecStr);
 bool CSP_ShouldResponseInheritCSP(nsIChannel* aChannel);
+bool CSP_ShouldURIInheritCSP(nsIURI* aURI);
 
 void CSP_ApplyMetaCSPToDoc(mozilla::dom::Document& aDoc,
                            const nsAString& aPolicyStr);

@@ -20,12 +20,11 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   BookmarkList: "resource://gre/modules/BookmarkList.sys.mjs",
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
-  ContextualIdentityService:
-    "resource://gre/modules/ContextualIdentityService.sys.mjs",
-  NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
   NonPrivateTabs: "resource:///modules/OpenTabs.sys.mjs",
+  OpenTabsController: "resource:///modules/OpenTabsController.sys.mjs",
   getTabsTargetForWindow: "resource:///modules/OpenTabs.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+  TabMetrics: "moz-src:///browser/components/tabbrowser/TabMetrics.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "fxAccounts", () => {
@@ -57,7 +56,7 @@ class OpenTabsInView extends ViewPage {
   static queries = {
     viewCards: { all: "view-opentabs-card" },
     optionsContainer: ".open-tabs-options",
-    searchTextbox: "fxview-search-textbox",
+    searchTextbox: "moz-input-search",
   };
 
   initialWindowsReady = false;
@@ -105,7 +104,7 @@ class OpenTabsInView extends ViewPage {
 
     if (this.recentBrowsing) {
       this.recentBrowsingElement.addEventListener(
-        "fxview-search-textbox-query",
+        "MozInputSearch:search",
         this
       );
     }
@@ -144,7 +143,7 @@ class OpenTabsInView extends ViewPage {
 
     if (this.recentBrowsing) {
       this.recentBrowsingElement.removeEventListener(
-        "fxview-search-textbox-query",
+        "MozInputSearch:search",
         this
       );
     }
@@ -221,15 +220,11 @@ class OpenTabsInView extends ViewPage {
       <div class="sticky-container bottom-fade">
         <h2 class="page-header" data-l10n-id="firefoxview-opentabs-header"></h2>
         <div class="open-tabs-options">
-          <div>
-            <fxview-search-textbox
-              data-l10n-id="firefoxview-search-text-box-opentabs"
-              data-l10n-attrs="placeholder"
-              @fxview-search-textbox-query=${this.onSearchQuery}
-              .size=${this.searchTextboxSize}
-              pageName=${this.recentBrowsing ? "recentbrowsing" : "opentabs"}
-            ></fxview-search-textbox>
-          </div>
+          <moz-input-search
+            data-l10n-id="firefoxview-search-text-box-opentabs"
+            data-l10n-attrs="placeholder"
+            @MozInputSearch:search=${this.onSearchQuery}
+          ></moz-input-search>
           <div class="open-tabs-sort-wrapper">
             <div class="open-tabs-sort-option">
               <input
@@ -304,6 +299,11 @@ class OpenTabsInView extends ViewPage {
   }
 
   onSearchQuery(e) {
+    if (!this.recentBrowsing) {
+      Glean.firefoxviewNext.searchInitiatedSearch.record({
+        page: "opentabs",
+      });
+    }
     this.searchQuery = e.detail.query;
   }
 
@@ -337,7 +337,7 @@ class OpenTabsInView extends ViewPage {
   }
 
   handleEvent({ detail, type }) {
-    if (this.recentBrowsing && type === "fxview-search-textbox-query") {
+    if (this.recentBrowsing && type === "MozInputSearch:search") {
       this.onSearchQuery({ detail });
       return;
     }
@@ -416,6 +416,7 @@ class OpenTabsInViewCard extends ViewPageContent {
     this.searchResults = null;
     this.showAll = false;
     this.cumulativeSearches = 0;
+    this.controller = new lazy.OpenTabsController(this, {});
   }
 
   static queries = {
@@ -448,6 +449,15 @@ class OpenTabsInViewCard extends ViewPageContent {
       this.searchResults.length > MAX_TABS_FOR_RECENT_BROWSING &&
       !this.showAll
     );
+  }
+
+  isShowMoreLinkVisible() {
+    if (!this.classList.contains("height-limited")) {
+      return false;
+    }
+
+    let tabCount = (this.searchQuery ? this.searchResults : this.tabs).length;
+    return tabCount > OpenTabsInViewCard.MAX_TABS_FOR_COMPACT_HEIGHT;
   }
 
   toggleShowMore(event) {
@@ -503,7 +513,10 @@ class OpenTabsInViewCard extends ViewPageContent {
 
   closeTab(event) {
     const tab = event.originalTarget.tabElement;
-    tab?.ownerGlobal.gBrowser.removeTab(tab);
+    tab?.ownerGlobal.gBrowser.removeTab(
+      tab,
+      lazy.TabMetrics.userTriggeredContext()
+    );
 
     Glean.firefoxviewNext.closeOpenTabTabs.record();
   }
@@ -552,7 +565,7 @@ class OpenTabsInViewCard extends ViewPageContent {
             tertiaryActionClass="dismiss-button"
             .maxTabsLength=${this.getMaxTabsLength()}
             .tabItems=${this.searchResults ||
-            getTabListItems(this.tabs, this.recentBrowsing)}
+            this.controller.getTabListItems(this.tabs, this.recentBrowsing)}
             .searchQuery=${this.searchQuery}
             .pinnedTabsGridView=${!this.recentBrowsing}
             ><view-opentabs-contextmenu slot="menu"></view-opentabs-contextmenu>
@@ -577,9 +590,7 @@ class OpenTabsInViewCard extends ViewPageContent {
               data-l10n-id=${this.showMore
                 ? "firefoxview-show-less"
                 : "firefoxview-show-more"}
-              ?hidden=${!this.classList.contains("height-limited") ||
-              this.tabs.length <=
-                OpenTabsInViewCard.MAX_TABS_FOR_COMPACT_HEIGHT}
+              ?hidden=${!this.isShowMoreLinkVisible()}
               slot="footer"
               tabindex="0"
               role="link"
@@ -603,7 +614,10 @@ class OpenTabsInViewCard extends ViewPageContent {
 
   updateSearchResults() {
     this.searchResults = this.searchQuery
-      ? searchTabList(this.searchQuery, getTabListItems(this.tabs))
+      ? searchTabList(
+          this.searchQuery,
+          this.controller.getTabListItems(this.tabs)
+        )
       : null;
   }
 
@@ -621,7 +635,7 @@ class OpenTabsInViewCard extends ViewPageContent {
       if (!isBookmark && row.indicators.includes("bookmark")) {
         row.indicators = row.indicators.filter(i => i !== "bookmark");
       }
-      row.primaryL10nId = getPrimaryL10nId(
+      row.primaryL10nId = this.controller.getPrimaryL10nId(
         this.isRecentBrowsing,
         row.indicators
       );
@@ -860,7 +874,7 @@ class OpenTabsContextMenu extends MozLitElement {
         ></panel-item>
         ${this.devices.length >= 1
           ? html`<panel-item
-              data-l10n-id="fxviewtabrow-send-tab"
+              data-l10n-id="fxviewtabrow-send-to-device"
               data-l10n-attrs="accesskey"
               submenu="send-tab-menu"
               >${this.sendTabTemplate()}</panel-item
@@ -871,161 +885,3 @@ class OpenTabsContextMenu extends MozLitElement {
   }
 }
 customElements.define("view-opentabs-contextmenu", OpenTabsContextMenu);
-
-/**
- * Checks if a given tab is within a container (contextual identity)
- *
- * @param {MozTabbrowserTab[]} tab
- *   Tab to fetch container info on.
- * @returns {object[]}
- *   Container object.
- */
-function getContainerObj(tab) {
-  let userContextId = tab.getAttribute("usercontextid");
-  let containerObj = null;
-  if (userContextId) {
-    containerObj =
-      lazy.ContextualIdentityService.getPublicIdentityFromId(userContextId);
-  }
-  return containerObj;
-}
-
-/**
- * Gets an array of tab indicators (if any) when normalizing for fxview-tab-list
- *
- * @param {MozTabbrowserTab[]} tab
- *   Tab to fetch container info on.
- * @returns {Array[]}
- *  Array of named tab indicators
- */
-function getIndicatorsForTab(tab) {
-  const url = tab.linkedBrowser?.currentURI?.spec || "";
-  let tabIndicators = [];
-  let hasAttention =
-    (tab.pinned &&
-      (tab.hasAttribute("attention") || tab.hasAttribute("titlechanged"))) ||
-    (!tab.pinned && tab.hasAttribute("attention"));
-
-  if (tab.pinned) {
-    tabIndicators.push("pinned");
-  }
-  if (getContainerObj(tab)) {
-    tabIndicators.push("container");
-  }
-  if (hasAttention) {
-    tabIndicators.push("attention");
-  }
-  if (tab.hasAttribute("soundplaying") && !tab.hasAttribute("muted")) {
-    tabIndicators.push("soundplaying");
-  }
-  if (tab.hasAttribute("muted")) {
-    tabIndicators.push("muted");
-  }
-  if (checkIfPinnedNewTab(url)) {
-    tabIndicators.push("pinnedOnNewTab");
-  }
-
-  return tabIndicators;
-}
-/**
- * Gets the primary l10n id for a tab when normalizing for fxview-tab-list
- *
- * @param {boolean} isRecentBrowsing
- *   Whether the tabs are going to be displayed on the Recent Browsing page or not
- * @param {Array[]} tabIndicators
- *   Array of tab indicators for the given tab
- * @returns {string}
- *  L10n ID string
- */
-function getPrimaryL10nId(isRecentBrowsing, tabIndicators) {
-  let indicatorL10nId = null;
-  if (!isRecentBrowsing) {
-    if (
-      tabIndicators?.includes("pinned") &&
-      tabIndicators?.includes("bookmark")
-    ) {
-      indicatorL10nId = "firefoxview-opentabs-bookmarked-pinned-tab";
-    } else if (tabIndicators?.includes("pinned")) {
-      indicatorL10nId = "firefoxview-opentabs-pinned-tab";
-    } else if (tabIndicators?.includes("bookmark")) {
-      indicatorL10nId = "firefoxview-opentabs-bookmarked-tab";
-    }
-  }
-  return indicatorL10nId;
-}
-
-/**
- * Gets the primary l10n args for a tab when normalizing for fxview-tab-list
- *
- * @param {MozTabbrowserTab[]} tab
- *   Tab to fetch container info on.
- * @param {boolean} isRecentBrowsing
- *   Whether the tabs are going to be displayed on the Recent Browsing page or not
- * @param {string} url
- *   URL for the given tab
- * @returns {string}
- *  L10n ID args
- */
-function getPrimaryL10nArgs(tab, isRecentBrowsing, url) {
-  return JSON.stringify({ tabTitle: tab.label, url });
-}
-
-/**
- * Check if a given url is pinned on the new tab page
- *
- * @param {string} url
- *   url to check
- * @returns {boolean}
- *   is tabbed pinned on new tab page
- */
-function checkIfPinnedNewTab(url) {
-  return url && lazy.NewTabUtils.pinnedLinks.isPinned({ url });
-}
-
-/**
- * Convert a list of tabs into the format expected by the fxview-tab-list
- * component.
- *
- * @param {MozTabbrowserTab[]} tabs
- *   Tabs to format.
- * @param {boolean} isRecentBrowsing
- *   Whether the tabs are going to be displayed on the Recent Browsing page or not
- * @returns {object[]}
- *   Formatted objects.
- */
-function getTabListItems(tabs, isRecentBrowsing) {
-  let filtered = tabs?.filter(tab => !tab.closing && !tab.hidden);
-
-  return filtered.map(tab => {
-    let tabIndicators = getIndicatorsForTab(tab);
-    let containerObj = getContainerObj(tab);
-    const url = tab?.linkedBrowser?.currentURI?.spec || "";
-    return {
-      containerObj,
-      indicators: tabIndicators,
-      icon: tab.getAttribute("image"),
-      primaryL10nId: getPrimaryL10nId(isRecentBrowsing, tabIndicators),
-      primaryL10nArgs: getPrimaryL10nArgs(tab, isRecentBrowsing, url),
-      secondaryL10nId:
-        isRecentBrowsing || (!isRecentBrowsing && !tab.pinned)
-          ? "fxviewtabrow-options-menu-button"
-          : null,
-      secondaryL10nArgs:
-        isRecentBrowsing || (!isRecentBrowsing && !tab.pinned)
-          ? JSON.stringify({ tabTitle: tab.label })
-          : null,
-      tertiaryL10nId:
-        isRecentBrowsing || (!isRecentBrowsing && !tab.pinned)
-          ? "fxviewtabrow-close-tab-button"
-          : null,
-      tertiaryL10nArgs:
-        isRecentBrowsing || (!isRecentBrowsing && !tab.pinned)
-          ? JSON.stringify({ tabTitle: tab.label })
-          : null,
-      tabElement: tab,
-      time: tab.lastSeenActive,
-      title: tab.label,
-      url,
-    };
-  });
-}

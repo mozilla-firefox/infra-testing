@@ -6,7 +6,7 @@ package org.mozilla.fenix.components
 
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.mockkObject
+import mozilla.components.concept.engine.EngineSession
 import mozilla.components.concept.engine.EngineSession.TrackingProtectionPolicy
 import mozilla.components.concept.engine.EngineSession.TrackingProtectionPolicy.CookiePolicy
 import mozilla.components.support.test.robolectric.testContext
@@ -17,13 +17,11 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mozilla.fenix.Config
 import org.mozilla.fenix.R
-import org.mozilla.fenix.ReleaseChannel
-import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
 import org.mozilla.fenix.utils.Settings
+import org.robolectric.RobolectricTestRunner
 
-@RunWith(FenixRobolectricTestRunner::class)
+@RunWith(RobolectricTestRunner::class)
 class TrackingProtectionPolicyFactoryTest {
 
     private lateinit var all: String
@@ -34,9 +32,6 @@ class TrackingProtectionPolicyFactoryTest {
 
     @Before
     fun setup() {
-        mockkObject(Config)
-        every { Config.channel } returns ReleaseChannel.Nightly
-
         all = testContext.resources.getString(R.string.all)
         social = testContext.resources.getString(R.string.social)
         thirdParty = testContext.resources.getString(R.string.third_party)
@@ -141,9 +136,6 @@ class TrackingProtectionPolicyFactoryTest {
 
     @Test
     fun `GIVEN TCP is enabled by nimbus WHEN applyTCPIfNeeded THEN cookie policy should be TCP`() {
-        val settings: Settings = mockk(relaxed = true)
-        every { settings.enabledTotalCookieProtection } returns true
-
         val policies = arrayOf(
             TrackingProtectionPolicy.strict(),
             TrackingProtectionPolicy.recommended(),
@@ -151,29 +143,9 @@ class TrackingProtectionPolicyFactoryTest {
         )
 
         for (policy in policies) {
-            val adaptedPolicy = policy.applyTCPIfNeeded(settings)
+            val adaptedPolicy = policy.applyTCPIfNeeded()
             assertEquals(
                 CookiePolicy.ACCEPT_FIRST_PARTY_AND_ISOLATE_OTHERS,
-                adaptedPolicy.cookiePolicy,
-            )
-        }
-    }
-
-    fun `GIVEN TCP is NOT enabled by nimbus WHEN applyTCPIfNeeded THEN reuse cookie policy`() {
-        val settings: Settings = mockk(relaxed = true)
-
-        every { settings.enabledTotalCookieProtection } returns false
-
-        val policies = arrayOf(
-            TrackingProtectionPolicy.strict(),
-            TrackingProtectionPolicy.recommended(),
-            TrackingProtectionPolicy.select(),
-        )
-
-        for (policy in policies) {
-            val adaptedPolicy = policy.applyTCPIfNeeded(settings)
-            assertEquals(
-                policy.cookiePolicy,
                 adaptedPolicy.cookiePolicy,
             )
         }
@@ -668,11 +640,20 @@ class TrackingProtectionPolicyFactoryTest {
         useStrict: Boolean = false,
         useCustom: Boolean = false,
         useTrackingProtection: Boolean = false,
+        useStandard: Boolean = false,
+        strictBaseline: Boolean = true,
+        strictConvenience: Boolean = false,
+        customBaseline: Boolean = true,
+        customConvenience: Boolean = false,
     ): Settings = mockk {
-        every { enabledTotalCookieProtection } returns false
+        every { useStandardTrackingProtection } returns useStandard
         every { useStrictTrackingProtection } returns useStrict
         every { useCustomTrackingProtection } returns useCustom
         every { shouldUseTrackingProtection } returns useTrackingProtection
+        every { strictAllowListBaselineTrackingProtection } returns strictBaseline
+        every { strictAllowListConvenienceTrackingProtection } returns strictConvenience
+        every { customAllowListBaselineTrackingProtection } returns customBaseline
+        every { customAllowListConvenienceTrackingProtection } returns customConvenience
     }
 
     private fun settingsForCustom(
@@ -731,4 +712,123 @@ class TrackingProtectionPolicyFactoryTest {
         TrackingProtectionPolicy.TrackingCategory.FINGERPRINTING,
         TrackingProtectionPolicy.TrackingCategory.CRYPTOMINING,
     )
+
+    @Test
+    fun `WHEN policy is recommended THEN baseline and convenience should be true by default`() {
+        val expected = TrackingProtectionPolicy.recommended()
+
+        val factory = TrackingProtectionPolicyFactory(
+            mockSettings(
+                useStandard = true,
+            ),
+            testContext.resources,
+        )
+
+        val privateOnly =
+            factory.createTrackingProtectionPolicy(normalMode = false, privateMode = true)
+        val normalOnly =
+            factory.createTrackingProtectionPolicy(normalMode = true, privateMode = false)
+        val always = factory.createTrackingProtectionPolicy(normalMode = true, privateMode = true)
+
+        assertEquals(privateOnly.allowListBaselineTrackingProtection, expected.allowListBaselineTrackingProtection)
+        assertEquals(normalOnly.allowListBaselineTrackingProtection, expected.allowListBaselineTrackingProtection)
+        assertEquals(always.allowListBaselineTrackingProtection, expected.allowListBaselineTrackingProtection)
+
+        assertEquals(privateOnly.allowListConvenienceTrackingProtection, expected.allowListConvenienceTrackingProtection)
+        assertEquals(normalOnly.allowListConvenienceTrackingProtection, expected.allowListConvenienceTrackingProtection)
+        assertEquals(always.allowListConvenienceTrackingProtection, expected.allowListConvenienceTrackingProtection)
+    }
+
+    private fun assertAllowListSettingsAreEqual(
+        factory: TrackingProtectionPolicyFactory,
+                                                expected: EngineSession.TrackingProtectionPolicyForSessionTypes,
+    ) {
+        val privateOnly =
+            factory.createTrackingProtectionPolicy(normalMode = false, privateMode = true)
+        val normalOnly =
+            factory.createTrackingProtectionPolicy(normalMode = true, privateMode = false)
+        val always = factory.createTrackingProtectionPolicy(normalMode = true, privateMode = true)
+
+        assertEquals(privateOnly.allowListBaselineTrackingProtection, expected.allowListBaselineTrackingProtection)
+        assertEquals(normalOnly.allowListBaselineTrackingProtection, expected.allowListBaselineTrackingProtection)
+        assertEquals(always.allowListBaselineTrackingProtection, expected.allowListBaselineTrackingProtection)
+
+        assertEquals(privateOnly.allowListConvenienceTrackingProtection, expected.allowListConvenienceTrackingProtection)
+        assertEquals(normalOnly.allowListConvenienceTrackingProtection, expected.allowListConvenienceTrackingProtection)
+        assertEquals(always.allowListConvenienceTrackingProtection, expected.allowListConvenienceTrackingProtection)
+    }
+
+    @Test
+    fun `WHEN protection policy is strict THEN baseline should be true and convenience should be false`() {
+        val expected = TrackingProtectionPolicy.select(
+            allowListBaselineTrackingProtection = true,
+            allowListConvenienceTrackingProtection = false,
+        )
+
+        val factory = TrackingProtectionPolicyFactory(
+            mockSettings(
+                useStrict = true,
+            ),
+            testContext.resources,
+        )
+
+        assertAllowListSettingsAreEqual(factory, expected)
+    }
+
+    @Test
+    fun `WHEN policy is strict and strict baseline is false THEN strict convenience should be unchanged`() {
+        val expected = TrackingProtectionPolicy.select(
+            allowListBaselineTrackingProtection = false,
+            allowListConvenienceTrackingProtection = true,
+        )
+
+        val factory = TrackingProtectionPolicyFactory(
+            mockSettings(
+                useStrict = true,
+                strictBaseline = false,
+                strictConvenience = true,
+            ),
+            testContext.resources,
+        )
+
+        assertAllowListSettingsAreEqual(factory, expected)
+    }
+
+    @Test
+    fun `When policy is strict and custom baseline is different from strict THEN policy should have strict baseline`() {
+        val expected = TrackingProtectionPolicy.select(
+            allowListBaselineTrackingProtection = true,
+        )
+
+        val factory = TrackingProtectionPolicyFactory(
+            mockSettings(
+                useStrict = true,
+                strictBaseline = true,
+            ),
+            testContext.resources,
+        )
+
+        assertAllowListSettingsAreEqual(factory, expected)
+    }
+
+    @Test
+    fun `WHEN policy is strict and custom baseline is different from strict THEN strict convenience should not be affected`() {
+        val expected = TrackingProtectionPolicy.select(
+            allowListBaselineTrackingProtection = true,
+            allowListConvenienceTrackingProtection = true,
+        )
+
+        val factory = TrackingProtectionPolicyFactory(
+            mockSettings(
+                useStrict = true,
+                strictBaseline = true,
+                strictConvenience = true,
+                customBaseline = false,
+                customConvenience = false,
+            ),
+            testContext.resources,
+        )
+
+        assertAllowListSettingsAreEqual(factory, expected)
+    }
 }

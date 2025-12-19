@@ -26,8 +26,8 @@ class ChromeObserver final : public nsStubMutationObserver {
 
  protected:
   nsIWidget* GetWindowWidget();
-  void SetDrawsTitle(bool aState);
-  nsresult HideWindowChrome(bool aShouldHide);
+  void SetHideTitlebarSeparator(bool);
+  void HideWindowChrome(bool aShouldHide);
   void SetCustomTitlebar(bool);
   void SetMica(bool);
   ~ChromeObserver();

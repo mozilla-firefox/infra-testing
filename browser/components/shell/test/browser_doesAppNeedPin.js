@@ -2,15 +2,19 @@
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 ChromeUtils.defineESModuleGetters(this, {
-  ExperimentFakes: "resource://testing-common/NimbusTestUtils.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
+  NimbusTestUtils: "resource://testing-common/NimbusTestUtils.sys.mjs",
 });
 
 let defaultValue;
 add_task(async function default_need() {
   defaultValue = await ShellService.doesAppNeedPin();
 
-  Assert.ok(defaultValue !== undefined, "Got a default app need pin value");
+  Assert.notStrictEqual(
+    defaultValue,
+    undefined,
+    "Got a default app need pin value"
+  );
 });
 
 add_task(async function remote_disable() {
@@ -19,7 +23,7 @@ add_task(async function remote_disable() {
     return;
   }
 
-  let doCleanup = await ExperimentFakes.enrollWithFeatureConfig(
+  let doCleanup = await NimbusTestUtils.enrollWithFeatureConfig(
     {
       featureId: NimbusFeatures.shellService.featureId,
       value: { disablePin: true, enabled: true },
@@ -33,7 +37,7 @@ add_task(async function remote_disable() {
     "Pinning disabled via nimbus"
   );
 
-  doCleanup();
+  await doCleanup();
 });
 
 add_task(async function restore_default() {

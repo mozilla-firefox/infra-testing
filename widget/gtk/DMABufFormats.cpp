@@ -9,16 +9,26 @@
 #include <sys/mman.h>
 #include <sys/types.h>
 
-#include "DMABufLibWrapper.h"
+#include "DMABufDevice.h"
 #include "DMABufFormats.h"
 #ifdef MOZ_WAYLAND
 #  include "nsWaylandDisplay.h"
+#  include "WidgetUtilsGtk.h"
 #  include "mozilla/widget/mozwayland.h"
 #  include "mozilla/widget/linux-dmabuf-unstable-v1-client-protocol.h"
 #endif
 #include <gbm.h>
+#include "mozilla/gfx/gfxVars.h"
+#include "mozilla/ClearOnShutdown.h"
 
 #include "mozilla/gfx/Logging.h"  // for gfxCriticalNote
+
+using namespace mozilla::gfx;
+
+#ifndef GBM_FORMAT_P010
+#  define GBM_FORMAT_P010 \
+    __gbm_fourcc_code('P', '0', '1', '0') /* 2x2 subsampled Cr:Cb plane */
+#endif
 
 // TODO: Provide fallback formats if beedback is not received yet
 // Get from display?
@@ -382,5 +392,129 @@ RefPtr<DMABufFormats> CreateDMABufFeedbackFormats(
   return formats.forget();
 }
 #endif
+
+void GlobalDMABufFormats::SetModifiersToGfxVars() {
+  RefPtr<DMABufFormats> formats;
+#ifdef MOZ_WAYLAND
+  if (GdkIsWaylandDisplay()) {
+    formats = WaylandDisplayGet()->GetDMABufFormats();
+  }
+#endif
+  if (!formats) {
+    formats = new DMABufFormats();
+  }
+  formats->EnsureBasicFormats();
+
+  DRMFormat* format = formats->GetFormat(GBM_FORMAT_XRGB8888);
+  MOZ_DIAGNOSTIC_ASSERT(format, "Missing GBM_FORMAT_XRGB8888 dmabuf format!");
+  mFormatRGBX = new DRMFormat(*format);
+  gfxVars::SetDMABufModifiersXRGB(*format->GetModifiers());
+
+  format = formats->GetFormat(GBM_FORMAT_ARGB8888);
+  MOZ_DIAGNOSTIC_ASSERT(format, "Missing GBM_FORMAT_ARGB8888 dmabuf format!");
+  mFormatRGBA = new DRMFormat(*format);
+  gfxVars::SetDMABufModifiersARGB(*format->GetModifiers());
+
+  format = formats->GetFormat(GBM_FORMAT_P010);
+  if (format) {
+    LOGDMABUF(("GBM_FORMAT_P010 is directly composited"));
+    mFormatP010 = new DRMFormat(*format);
+    gfxVars::SetDMABufModifiersP010(*format->GetModifiers());
+  }
+  format = formats->GetFormat(GBM_FORMAT_NV12);
+  if (format) {
+    LOGDMABUF(("GBM_FORMAT_NV12 is directly composited"));
+    mFormatNV12 = new DRMFormat(*format);
+    gfxVars::SetDMABufModifiersNV12(*format->GetModifiers());
+  }
+  format = formats->GetFormat(GBM_FORMAT_YUV420);
+  if (format) {
+    LOGDMABUF(("GBM_FORMAT_YUV420 is directly composited"));
+    mFormatYUV420 = new DRMFormat(*format);
+  }
+}
+
+void GlobalDMABufFormats::GetModifiersFromGfxVars() {
+  mFormatRGBX =
+      new DRMFormat(GBM_FORMAT_XRGB8888, gfxVars::DMABufModifiersXRGB());
+  mFormatRGBA =
+      new DRMFormat(GBM_FORMAT_ARGB8888, gfxVars::DMABufModifiersARGB());
+  if (!gfxVars::DMABufModifiersP010().IsEmpty()) {
+    mFormatP010 =
+        new DRMFormat(GBM_FORMAT_P010, gfxVars::DMABufModifiersP010());
+  }
+  if (!gfxVars::DMABufModifiersNV12().IsEmpty()) {
+    mFormatNV12 =
+        new DRMFormat(GBM_FORMAT_NV12, gfxVars::DMABufModifiersNV12());
+  }
+}
+
+DRMFormat* GlobalDMABufFormats::GetDRMFormat(int32_t aFOURCCFormat) {
+  switch (aFOURCCFormat) {
+    case GBM_FORMAT_XRGB8888:
+      MOZ_DIAGNOSTIC_ASSERT(mFormatRGBX, "Missing RGBX dmabuf format!");
+      return mFormatRGBX;
+    case GBM_FORMAT_ARGB8888:
+      MOZ_DIAGNOSTIC_ASSERT(mFormatRGBA, "Missing RGBA dmabuf format!");
+      return mFormatRGBA;
+    case GBM_FORMAT_P010:
+      return mFormatP010;
+    case GBM_FORMAT_NV12:
+      return mFormatNV12;
+    case GBM_FORMAT_YUV420:
+      return mFormatYUV420;
+    default:
+      gfxCriticalNoteOnce << "DMABufDevice::GetDRMFormat() unknow format: "
+                          << aFOURCCFormat;
+      return nullptr;
+  }
+}
+
+bool GlobalDMABufFormats::SupportsDirectComposition(
+    mozilla::gfx::SurfaceFormat aFormat) const {
+  switch (aFormat) {
+    case gfx::SurfaceFormat::R8G8B8X8:
+    case gfx::SurfaceFormat::R8G8B8A8:
+    case gfx::SurfaceFormat::B8G8R8A8:
+    case gfx::SurfaceFormat::B8G8R8X8:
+      return true;
+    case gfx::SurfaceFormat::NV12:
+      return !!mFormatNV12;
+    case gfx::SurfaceFormat::YUV420:
+      return !!mFormatYUV420;
+    case gfx::SurfaceFormat::P010:
+      return !!mFormatP010;
+    default:
+      MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+      return false;
+  }
+}
+
+void GlobalDMABufFormats::LoadFormatModifiers() {
+  if (XRE_IsParentProcess()) {
+    MOZ_ASSERT(NS_IsMainThread());
+    SetModifiersToGfxVars();
+  } else {
+    GetModifiersFromGfxVars();
+  }
+}
+
+GlobalDMABufFormats::GlobalDMABufFormats() { LoadFormatModifiers(); }
+
+GlobalDMABufFormats* GetGlobalDMABufFormats() {
+  static StaticAutoPtr<GlobalDMABufFormats> sGlobalDMABufFormats;
+  static std::once_flag onceFlag;
+  std::call_once(onceFlag, [] {
+    sGlobalDMABufFormats = new GlobalDMABufFormats();
+    if (NS_IsMainThread()) {
+      ClearOnShutdown(&sGlobalDMABufFormats);
+    } else {
+      NS_DispatchToMainThread(NS_NewRunnableFunction(
+          "ClearGlobalDMABufFormats",
+          [] { ClearOnShutdown(&sGlobalDMABufFormats); }));
+    }
+  });
+  return sGlobalDMABufFormats.get();
+}
 
 }  // namespace mozilla::widget

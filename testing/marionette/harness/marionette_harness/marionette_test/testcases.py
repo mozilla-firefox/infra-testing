@@ -12,7 +12,6 @@ import warnings
 import weakref
 from unittest.case import SkipTest
 
-import six
 from marionette_driver.errors import TimeoutException, UnresponsiveInstanceException
 from mozfile import load_source
 from mozlog import get_default_logger
@@ -30,7 +29,7 @@ class expectedFailure(Exception):
     """
 
     def __init__(self, exc_info):
-        super(expectedFailure, self).__init__()
+        super().__init__()
         self.exc_info = exc_info
 
 
@@ -79,14 +78,13 @@ class MetaParameterized(type):
         return type.__new__(cls, name, bases, attrs)
 
 
-@six.add_metaclass(MetaParameterized)
-class CommonTestCase(unittest.TestCase):
+class CommonTestCase(unittest.TestCase, metaclass=MetaParameterized):
     match_re = None
     failureException = AssertionError
     pydebugger = None
 
     def __init__(self, methodName, marionette_weakref, fixtures, **kwargs):
-        super(CommonTestCase, self).__init__(methodName)
+        super().__init__(methodName)
         self.methodName = methodName
 
         self._marionette_weakref = marionette_weakref
@@ -116,8 +114,7 @@ class CommonTestCase(unittest.TestCase):
     def assertRaisesRegxp(
         self, expected_exception, expected_regexp, callable_obj=None, *args, **kwargs
     ):
-        return six.assertRaisesRegex(
-            self,
+        return self.assertRaisesRegex(
             expected_exception,
             expected_regexp,
             callable_obj=None,
@@ -300,7 +297,7 @@ class CommonTestCase(unittest.TestCase):
             self.marionette.start_session()
         self.marionette.timeout.reset()
 
-        super(CommonTestCase, self).setUp()
+        super().setUp()
 
     def cleanTest(self):
         self._delete_session()
@@ -341,7 +338,7 @@ class MarionetteTestCase(CommonTestCase):
         self.filepath = filepath
         self.testvars = kwargs.pop("testvars", None)
 
-        super(MarionetteTestCase, self).__init__(
+        super().__init__(
             methodName,
             marionette_weakref=marionette_weakref,
             fixtures=fixtures,
@@ -392,7 +389,7 @@ class MarionetteTestCase(CommonTestCase):
                     )
 
     def setUp(self):
-        super(MarionetteTestCase, self).setUp()
+        super().setUp()
         self.marionette.test_name = self.test_name
 
     def tearDown(self):
@@ -403,7 +400,7 @@ class MarionetteTestCase(CommonTestCase):
 
         self.marionette.test_name = None
 
-        super(MarionetteTestCase, self).tearDown()
+        super().tearDown()
 
     def wait_for_condition(self, method, timeout=30):
         timeout = float(timeout) + time.time()
@@ -412,5 +409,4 @@ class MarionetteTestCase(CommonTestCase):
             if value:
                 return value
             time.sleep(0.5)
-        else:
-            raise TimeoutException("wait_for_condition timed out")
+        raise TimeoutException("wait_for_condition timed out")

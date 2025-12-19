@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -55,7 +62,6 @@
   <string name="menu_settings">Nastajenja</string>
   <string name="menu_about">Wó</string>
   <string name="menu_help">Pomoc</string>
-  <string name="menu_rights" moz:removedIn="137">Waše pšawa</string>
   <string name="menu_terms_of_use">Wužywańske wuměnjenja</string>
   <!--
     Menu item: This is the label for a menu entry that shows how many trackers have been blocked
@@ -150,16 +156,9 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote">&lt;p&gt;%1$s dajo was kontrolu wobchowaś.&lt;/p&gt;
-&lt;p&gt;Wužywajśo jen ako priwatny wobglědowak:
-  &lt;ul&gt;
-    &lt;li&gt;Pytajśo a pśeglědujśo direktnje w nałoženju&lt;/li&gt;
-    &lt;li&gt;Blokěrujśo pśeslědowaki (abo aktualizěrujśo nastajenja, aby pśeslědowaki dowólił)&lt;/li&gt;
-    &lt;li&gt;Lašujśo cookieje a pytańsku a pśeglědowańsku historiju&lt;/li&gt;
-  &lt;/ul&gt;
-&lt;/p&gt;
-&lt;p&gt;%1$s se wót Mozilla wuwija. Naša misija jo spěchowanje strowego, wótwórjonego interneta.&lt;br/&gt;
-&lt;a href="%2$s"&gt;Dalšne informacije&lt;/a&gt;&lt;/p&gt;</string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s dajo was kontrolu wobchowaś.</p>\n<p>Wužywajśo jen ako priwatny wobglědowak:\n<ul>\n<li>Pytajśo a pśeglědujśo direktnje w nałoženju</li>\n<li>Blokěrujśo pśeslědowaki (abo aktualizěrujśo nastajenja, aby pśeslědowaki dowólił)</li>\n<li>Lašujśo cookieje a pytańsku a pśeglědowańsku historiju</li>\n</ul> </p>\n<p>%1$s se wót Mozilla wuwija. Naša misija jo spěchowanje strowego, wótwórjonego interneta.<br/>\n<a href=\"%2$s\">Dalšne informacije</a></p>]]></string>
+  <!-- A link to SUMO at the bottom of About Focus screen. -->
+  <string name="about_screen_learn_more">Dalšne informacije</string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">Priwatnosć a wěstota</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -472,25 +471,23 @@
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" tools:ignore="UnusedResources">Gaž pókšacujośo, zwólijośo do %1$s</string>
+  <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">Gaž pókšacujośo, zwólijośo do %1$s.</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" tools:ignore="BrandUsage">Wužywańske wuměnjenja Firefox.</string>
+  <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">Wužywańske wuměnjenja Firefox</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" tools:ignore="BrandUsage">Firefox se wó wašu priwatnosć stara. Dalšne informacije w: %1$s</string>
+  <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Firefox se wó wašu priwatnosć stara. Dalšne informacije w: %1$s.</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link">Powěźeńka priwatnosći.</string>
+  <string name="onboarding_first_screen_privacy_notice_link_2">Powěźeńka priwatnosći</string>
   <!-- New Onboarding flow first screen button label -->
-  <string name="onboarding_first_screen_button_text" moz:removedIn="137" tools:ignore="UnusedResources">Prědne kšace</string>
-  <!-- New Onboarding flow first screen button label -->
-  <string name="onboarding_first_screen_button_agree_and_continue">Pśizwóliś a pókšacowaś</string>
+  <string name="onboarding_first_screen_button_agree_and_continue_2">Dalej</string>
   <!-- In the first screen of new onboarding flow, additional accessibility description for content that contain urls. -->
   <string name="a11y_link_available">Wótkaz k dispoziciji</string>
   <!--
@@ -570,36 +567,6 @@
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
   -->
   <string name="download_firefox" tools:ignore="BrandUsage">Firefox ześěgnuś</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-  -->
-  <string name="your_rights_content1" moz:removedIn="137">%1$s jo dermotna software wótwórjonego žrědła wót Mozilla a drugich sobustatkujucych.</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-    %2$s will be replaced with a URL linking to the MPL (e.g. https://www.mozilla.org/en-US/MPL/)
-  -->
-  <string name="your_rights_content2" moz:removedIn="137" tools:ignore="IncorrectStraightDoubleQuote">%1$s so pód wuměnjenjami licence &lt;a href="%2$s"&gt;Mozilla Public License&lt;/a&gt; a drugimi licencami wótwórjonego žrědła k dispoziciji staja.</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-    %2$s will be replaced with a URL linking to the trademark policy (e.g. https://www.mozilla.org/foundation/trademarks/policy/)
-  -->
-  <string name="your_rights_content3" moz:removedIn="137" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote">Njedaju wam žedne pšawa abo licence na wikowych markow załožby Mozilla Foundation abo tśeśich, inkluziwnje mjenja abo loga Mozilla, Firefox abo %1$s. Dalšne informacije namakajośo &lt;a href="%2$s"&gt;how&lt;/a&gt;.</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-    %2$s will be replaced with a URL linking to the list of licenses used by the dependencies.
-  -->
-  <string name="your_rights_content4" moz:removedIn="137" tools:ignore="IncorrectStraightDoubleQuote">Pśidatny žrědłowy kod za %1$s jo pód wšakich drugich lichych &lt;a href="%2$s"&gt;licencach&lt;/a&gt; wótwórjonego žrědła k dispoziciji.</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-    %2$s will be replaced with a URL linking to the GPL
-    %3$s will be replaced with a URL linking to the tracking protection wiki page (e.g. https://wiki.mozilla.org/Security/Tracking_protection#Lists)
-  -->
-  <string name="your_rights_content5" moz:removedIn="137" tools:ignore="IncorrectStraightDoubleQuote">%1$s teke blokěrowańske lisćiny póbitowane wót Disconnect, Inc. ako separatne a njewótwisne źěła pód licencu &lt;a href="%2$s"&gt;General Public Licence v3&lt;/a&gt; wužywa, kótarež su &lt;a href="%3$s"&gt;how&lt;/a&gt; k dispoziciji.</string>
   <!-- Text shown in prompts for GeckoView -->
   <string name="gv_prompt_username_hint">Wužywaŕske mě</string>
   <string name="gv_prompt_password_hint">Gronidło</string>
@@ -709,11 +676,11 @@
   <!-- First step for the allowing a permission -->
   <string name="phone_feature_blocked_step_settings">1. Źiśo k nastajenjam Android</string>
   <!-- Second step for the allowing a permission -->
-  <string name="phone_feature_blocked_step_permissions">2. Pótusniśo zapisk &lt;b&gt;Berechtigungen&lt;/b&gt; (Pšawa)</string>
+  <string name="phone_feature_blocked_step_permissions"><![CDATA[2. Pótusniśo zapisk <b>Berechtigungen</b> (Pšawa)]]></string>
   <!-- Button label that take the user to the Android App setting -->
   <string name="phone_feature_go_to_settings">K nastajenjam</string>
   <!-- Third step for allowing a permission. %1$s is the permission name, for example, "Camera" -->
-  <string name="phone_feature_blocked_step_feature">3. Zašaltujśo &lt;b&gt;%1$s&lt;/b&gt;</string>
+  <string name="phone_feature_blocked_step_feature"><![CDATA[3. Zašaltujśo <b>%1$s</b>]]></string>
   <!-- Preference for altering the camera access for all websites -->
   <string name="preference_phone_feature_camera">Kamera</string>
   <!-- Preference for altering the microphone access for all websites -->
@@ -740,20 +707,6 @@
   <string name="preference_block_autoplay_audio_only_summary">Dopórucone</string>
   <!-- Preference for block autoplay audio and video -->
   <string name="preference_block_autoplay_audio_video">Awdio a wideo blokěrowaś</string>
-  <!-- Preference for studies -->
-  <string name="preference_studies">Studije</string>
-  <!-- Preference for studies summary -->
-  <string name="preference_studies_summary" tools:ignore="BrandUsage">Firefox móžo wótergi studije instalěrowaś a pśewjasć.</string>
-  <!-- Learn more link for studies, links to an article for more information about studies. -->
-  <string name="studies_learn_more">Dalšne informacije</string>
-  <!-- Dialog message shown when some changes are made on studies -->
-  <string name="studies_restart_app" moz:removedIn="137">Nałoženje se skóńcyjo, aby se změny wustatkowali</string>
-  <!-- Title of the remove studies button -->
-  <string name="studies_remove">Wótwónoźeś</string>
-  <!-- Title of the active section on the studies list -->
-  <string name="studies_active">Aktiwny</string>
-  <!-- Title of the completed section on the studies list -->
-  <string name="studies_completed">Dokóńcone</string>
   <!-- Preference to enable remote debugging of the app via USB or Wi-Fi -->
   <string name="preference_remote_debugging">Daloke pytanje zmólkow pśez USB/WLAN</string>
   <!-- Text Button for show biometric prompt -->
@@ -821,8 +774,7 @@
     Tip displayed on home view explaining how to add a custom autocomplete URL
     The new line here must be kept as the second half of the string is clickable for the user.
   -->
-  <string name="tip_open_in_new_tab">Wótkaz w nowem rejtariku wócyniś\n
-        Tłocćo dłujko na wótkaz na boku</string>
+  <string name="tip_open_in_new_tab">Wótkaz w nowem rejtariku wócyniś\nTłocćo dłujko na wótkaz na boku</string>
   <!-- Tip displayed on home view explaining how to add a custom autocomplete URL -->
   <string name="tip_disable_tips2">Tipy na startowej wobrazowce znjemóžniś</string>
   <!-- Label for the snackbar when a user opens a new tab -->
@@ -903,7 +855,7 @@
     Text for context menu additional note.
     %1$s is a placeholder for the app name.
   -->
-  <string name="contextmenu_erased_images_note2">Skłaźone a źělone wobraze &lt;b&gt;se nje&lt;/b&gt;wulašuju, gaž historiju %1$s lašujośo.</string>
+  <string name="contextmenu_erased_images_note2"><![CDATA[Skłaźone a źělone wobraze <b>se nje</b>wulašuju, gaž historiju %1$s lašujośo.]]></string>
   <!--
     Theme Preferences
 
@@ -924,23 +876,13 @@
     The text of the error page for websites that do not support HTTPS when HTTPS-Only is turned on. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar"),
     %2$s is a URL to a support article. Contains a button that will redirect the user to Privacy & Security Screen.
   -->
-  <string name="errorpage_httpsonly_message2" tools:ignore="IncorrectStraightDoubleQuote">%1$s wópytujo HTTPS-zwisk wužywaś, gažkuli jo móžno za wěstotu.
- &lt;a href="%2$s"&gt;Dalšne informacije&lt;/a&gt; &lt;br/&gt;&lt;br/&gt;
- Změńśo toś to nastajenje w Nastajenja &gt; Priwatnosć a wěstota &gt; Wěstota.</string>
+  <string name="errorpage_httpsonly_message2" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[%1$s wópytujo HTTPS-zwisk wužywaś, gažkuli jo móžno za wěstotu. <a href=\"%2$s\">Dalšne informacije</a> <br/><br/> Změńśo toś to nastajenje w Nastajenja > Priwatnosć a wěstota > Wěstota.]]></string>
   <!-- The document title and heading of the error page shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_title">Zwisk njejo wěsty</string>
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_message">
- To mógło problem z konfiguraciju serwera byś, abo něchten wopytujo, serwer imitěrowaś. &lt;br/&gt;&lt;br/&gt;
-
- Jolic sćo był w zajźonosći ze serwerom wuspěšnje zwězany, móžo zmólka nachylna byś.
-    </string>
+  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[To mógło problem z konfiguraciju serwera byś, abo něchten wopytujo, serwer imitěrowaś. <br/><br/> Jolic sćo był w zajźonosći ze serwerom wuspěšnje zwězany, móžo zmólka nachylna byś.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo">
-        &lt;label&gt;Něchten mógał wopytaś, sedło za swójo wudaś, a pókšacowanje mógło riskantne byś.&lt;/label&gt;
-        &lt;br&gt;&lt;br&gt;
-        &lt;label&gt;%1$s &lt;b&gt;%2$s&lt;/b&gt; njedowěri, dokulaž jogo certifikatowy wudawaŕ jo njeznaty, certifkat jo sebjesigněrowany abo serwer korektne mjazycertifikaty njesćelo.&lt;/label&gt;
-    </string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Něchten mógał wopytaś, sedło za swójo wudaś, a pókšacowanje mógło riskantne byś.</label> <br><br>\n<label>%1$s <b>%2$s</b> njedowěri, dokulaž jogo certifikatowy wudawaŕ jo njeznaty, certifkat jo sebjesigněrowany abo serwer korektne mjazycertifikaty njesćelo.</label>]]></string>
   <!--
     Sessions List
 

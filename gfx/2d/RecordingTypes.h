@@ -7,7 +7,7 @@
 #ifndef MOZILLA_GFX_RECORDINGTYPES_H_
 #define MOZILLA_GFX_RECORDINGTYPES_H_
 
-#include <ostream>
+#include <type_traits>
 #include <vector>
 
 #include "Logging.h"
@@ -18,12 +18,15 @@ namespace gfx {
 template <class S, class T>
 struct ElementStreamFormat {
   static void Write(S& aStream, const T& aElement) {
+    static_assert(std::is_trivially_copyable_v<T>);
     aStream.write(reinterpret_cast<const char*>(&aElement), sizeof(T));
   }
   static void Read(S& aStream, T& aElement) {
+    static_assert(std::is_trivially_copyable_v<T>);
     aStream.read(reinterpret_cast<char*>(&aElement), sizeof(T));
   }
 };
+
 template <class S>
 struct ElementStreamFormat<S, bool> {
   static void Write(S& aStream, const bool& aElement) {
@@ -71,9 +74,16 @@ void ReadElement(S& aStream, T& aElement) {
 template <class S, class T>
 void ReadElementConstrained(S& aStream, T& aElement, const T& aMinValue,
                             const T& aMaxValue) {
-  ElementStreamFormat<S, T>::Read(aStream, aElement);
-  if (aElement < aMinValue || aElement > aMaxValue) {
+  std::underlying_type_t<T> value = 0;
+  ReadElement(aStream, value);
+
+  auto minInt = static_cast<std::underlying_type_t<T>>(aMinValue);
+  auto maxInt = static_cast<std::underlying_type_t<T>>(aMaxValue);
+
+  if (value < minInt || value > maxInt) {
     aStream.SetIsBad();
+  } else {
+    aElement = static_cast<T>(value);
   }
 }
 template <class S, class T>

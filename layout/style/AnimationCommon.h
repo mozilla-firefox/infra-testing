@@ -8,12 +8,12 @@
 #define mozilla_css_AnimationCommon_h
 
 #include "mozilla/AnimationCollection.h"
-#include "mozilla/LinkedList.h"
-#include "mozilla/dom/Animation.h"
-#include "mozilla/dom/BaseKeyframeTypesBinding.h"
 #include "mozilla/Assertions.h"
+#include "mozilla/LinkedList.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/TimingParams.h"
+#include "mozilla/dom/Animation.h"
+#include "mozilla/dom/BaseKeyframeTypesBinding.h"
 #include "mozilla/dom/Nullable.h"
 #include "nsContentUtils.h"
 #include "nsDOMMutationObserver.h"  // For nsAutoAnimationMutationBatch
@@ -138,6 +138,7 @@ class OwningElementRef final {
 
     enum SortingIndex : uint8_t {
       NotPseudo,
+      Backdrop,
       Marker,
       Before,
       After,
@@ -153,6 +154,8 @@ class OwningElementRef final {
       switch (aPseudoRequest.mType) {
         case PseudoStyleType::NotPseudo:
           return SortingIndex::NotPseudo;
+        case PseudoStyleType::backdrop:
+          return SortingIndex::Backdrop;
         case PseudoStyleType::marker:
           return SortingIndex::Marker;
         case PseudoStyleType::before:

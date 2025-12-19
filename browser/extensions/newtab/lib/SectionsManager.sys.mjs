@@ -30,7 +30,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
  * `${feed_pref_name}.options`.
  */
 
-const BUILT_IN_SECTIONS = ({ pocketNewtab }) => ({
+const BUILT_IN_SECTIONS = () => ({
   "feeds.section.topstories": options => ({
     id: "topstories",
     pref: {
@@ -52,16 +52,6 @@ const BUILT_IN_SECTIONS = ({ pocketNewtab }) => ({
                   "home-prefs-recommended-by-option-sponsored-stories",
                 icon: "icon-info",
                 eventSource: "POCKET_SPOCS",
-              },
-            ]
-          : []),
-        ...(pocketNewtab.recentSavesEnabled
-          ? [
-              {
-                name: "showRecentSaves",
-                titleString: "home-prefs-recommended-by-option-recent-saves",
-                icon: "icon-info",
-                eventSource: "POCKET_RECENT_SAVES",
               },
             ]
           : []),
@@ -89,8 +79,7 @@ const BUILT_IN_SECTIONS = ({ pocketNewtab }) => ({
     rowsPref: "section.topstories.rows",
     maxRows: 4,
     availableLinkMenuOptions: [
-      "CheckBookmarkOrArchive",
-      "CheckSavedToPocket",
+      "CheckBookmark",
       "Separator",
       "OpenInNewWindow",
       "OpenInPrivateWindow",
@@ -149,11 +138,10 @@ const BUILT_IN_SECTIONS = ({ pocketNewtab }) => ({
 
 export const SectionsManager = {
   ACTIONS_TO_PROXY: ["WEBEXT_CLICK", "WEBEXT_DISMISS"],
-  CONTEXT_MENU_PREFS: { CheckSavedToPocket: "extensions.pocket.enabled" },
+  CONTEXT_MENU_PREFS: {},
   CONTEXT_MENU_OPTIONS_FOR_HIGHLIGHT_TYPES: {
     history: [
       "CheckBookmark",
-      "CheckSavedToPocket",
       "Separator",
       "OpenInNewWindow",
       "OpenInPrivateWindow",
@@ -163,7 +151,6 @@ export const SectionsManager = {
     ],
     bookmark: [
       "CheckBookmark",
-      "CheckSavedToPocket",
       "Separator",
       "OpenInNewWindow",
       "OpenInPrivateWindow",
@@ -172,8 +159,6 @@ export const SectionsManager = {
       "DeleteUrl",
     ],
     pocket: [
-      "ArchiveFromPocket",
-      "CheckSavedToPocket",
       "Separator",
       "OpenInNewWindow",
       "OpenInPrivateWindow",

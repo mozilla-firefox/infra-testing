@@ -2,10 +2,22 @@
 
 const server = createHttpServer({ hosts: ["example.com", "example.net"] });
 
+// All tests in this file run user scripts at document_start that populates
+// window.resultCollector. If no user script runs, window.resultCollector
+// will be set to "NotRun" by the web page itself.
+//
+// runAt: "document_start" is chosen to ensure that the scripts run before the
+// web page, and to ensure that all user scripts have run before the page load
+// is completed - see collectResults.
+//
+// Note: test coverage for execution at document_end is provided by
+// toolkit/components/extensions/test/xpcshell/test_ext_userScripts_mv3_csp.js.
 server.registerPathHandler("/resultCollector", (request, response) => {
   response.setStatusLine(request.httpVersion, 200, "OK");
-  // main world scripts will append to resultCollector.
-  response.write(`<script>globalThis.resultCollector = [];</script>>`);
+  // main world scripts will define resultCollector at document_start and append
+  // to it. The page's scripts should run after user script's document_start,
+  // and therefore we should not see NotRun, unless no scripts ran.
+  response.write(`<script>globalThis.resultCollector ??= "NotRun";</script>`);
 });
 
 AddonTestUtils.init(this);
@@ -26,12 +38,15 @@ async function grantUserScriptsPermission(extensionId) {
 
 async function collectResults(contentPage) {
   return contentPage.spawn([], () => {
+    // The results from user scripts, or the web page (if no user scripts
+    // executed). The user scripts all run at document_start, which blocks the
+    // load completion until user script execution completes. This ensures that
+    // when we get here, that all user scripts (if any) have completed running.
     return this.content.wrappedJSObject.resultCollector;
   });
 }
 
 add_setup(async () => {
-  Services.prefs.setBoolPref("extensions.userScripts.mv3.enabled", true);
   await ExtensionTestUtils.startAddonManager();
 });
 
@@ -64,6 +79,7 @@ add_task(async function userScript_runs_in_MAIN_world() {
           id: "basic",
           matches: ["*://example.com/resultCollector"],
           js: [
+            { code: "window.resultCollector ??= [];" },
             { code: "resultCollector.push('1.code');dump('1.code ran\\n');" },
             { code: "resultCollector.push('2.code');dump('2.code ran\\n');" },
             { file: "3.file.js" },
@@ -71,7 +87,7 @@ add_task(async function userScript_runs_in_MAIN_world() {
             { code: "resultCollector.push('5.code');dump('5.code ran\\n');" },
             { file: "6.file.js" },
           ],
-          runAt: "document_end",
+          runAt: "document_start",
           world: "MAIN",
         },
       ]);
@@ -96,7 +112,7 @@ add_task(async function userScript_runs_in_MAIN_world() {
   );
   Assert.deepEqual(
     await collectResults(contentPageBeforeExtStarted),
-    [],
+    "NotRun",
     "User scripts did not execute in content that existed before registration"
   );
 
@@ -112,7 +128,7 @@ add_task(async function userScript_runs_in_MAIN_world() {
   );
   Assert.deepEqual(
     await collectResults(contentPageAfterRevoke),
-    [],
+    "NotRun",
     "Should not execute after permission revocation"
   );
   await contentPageAfterRevoke.close();
@@ -136,8 +152,13 @@ add_task(async function userScript_require_host_permissions() {
         {
           id: "basic",
           matches: ["*://*/resultCollector"],
-          js: [{ code: "resultCollector.push(origin)" }],
-          runAt: "document_end",
+          js: [
+            {
+              code: `window.resultCollector ??= [];
+                     resultCollector.push(origin);`,
+            },
+          ],
+          runAt: "document_start",
           world: "MAIN",
         },
         {
@@ -149,7 +170,7 @@ add_task(async function userScript_require_host_permissions() {
           id: "includeGlobs without matches",
           includeGlobs: ["*resultCollector"],
           js: [{ code: "resultCollector.push(origin)" }],
-          runAt: "document_end",
+          runAt: "document_start",
           world: "MAIN",
         },
       ]);
@@ -178,7 +199,7 @@ add_task(async function userScript_require_host_permissions() {
     );
     Assert.deepEqual(
       await collectResults(contentPage),
-      [],
+      "NotRun",
       "Cannot execute without host permissions"
     );
     await contentPage.close();
@@ -202,9 +223,10 @@ add_task(async function userScript_runs_in_USER_SCRIPT_world() {
     },
     files: {
       "1.file.js": `
+        // window.wrappedJSObject will be undefined if we unexpectedly run
+        // in the MAIN world instead of the "USER_SCRIPT" world.
+        window.wrappedJSObject.resultCollector ??= cloneInto([], window);
         var resultCollector_push = msg => {
-          // window.wrappedJSObject will be undefined if we unexpectedly run
-          // in the MAIN world instead of the "USER_SCRIPT" world.
           window.wrappedJSObject.resultCollector.push(msg);
         };
         resultCollector_push("1.file");dump("1.file.js ran\\n");
@@ -226,7 +248,7 @@ add_task(async function userScript_runs_in_USER_SCRIPT_world() {
               { file: "3.file.js" },
               { code: "resultCollector_push('4.code');dump('4.code ran\\n');" },
             ],
-            runAt: "document_end",
+            runAt: "document_start",
             world: "USER_SCRIPT",
           },
         ]);
@@ -270,7 +292,7 @@ add_task(async function userScript_runs_in_USER_SCRIPT_world() {
   );
   Assert.deepEqual(
     await collectResults(contentPageBeforeExtStarted),
-    [],
+    "NotRun",
     "User scripts did not execute in content that existed before registration"
   );
 
@@ -288,7 +310,7 @@ add_task(async function userScript_runs_in_USER_SCRIPT_world() {
 
   Assert.deepEqual(
     await collectResults(contentPageBeforeExtStarted),
-    [],
+    "NotRun",
     "userScripts.update() does not run code in existing documents"
   );
 

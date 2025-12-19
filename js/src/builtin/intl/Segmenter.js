@@ -130,7 +130,7 @@ function InitializeSegmenter(segmenter, locales, options) {
   }
 
   // Step 6.
-  var opt = new_Record();
+  var opt = NEW_RECORD();
   lazySegmenterData.opt = opt;
 
   // Steps 7-8.
@@ -156,26 +156,6 @@ function InitializeSegmenter(segmenter, locales, options) {
   // We've done everything that must be done now: mark the lazy data as fully
   // computed and install it.
   initializeIntlObject(segmenter, "Segmenter", lazySegmenterData);
-}
-
-/**
- * Intl.Segmenter.supportedLocalesOf ( locales [, options ])
- *
- * Returns the subset of the given locale list for which this locale list has a
- * matching (possibly fallback) locale. Locales appear in the same order in the
- * returned list as in the input list.
- */
-function Intl_Segmenter_supportedLocalesOf(locales /*, options*/) {
-  var options = ArgumentsLength() > 1 ? GetArgument(1) : undefined;
-
-  // Step 1.
-  var availableLocales = "Segmenter";
-
-  // Step 2.
-  var requestedLocales = CanonicalizeLocaleList(locales);
-
-  // Step 3.
-  return SupportedLocales(availableLocales, requestedLocales, options);
 }
 
 /**

@@ -146,9 +146,8 @@ static constexpr Result<int, TestUnusedZeroEnum> Task2UnusedZeroEnumErr(
 }
 
 static Result<int, Failed> Task3(bool pass1, bool pass2, int value) {
-  int x, y;
-  MOZ_TRY_VAR(x, Task2(pass1, value));
-  MOZ_TRY_VAR(y, Task2(pass2, value));
+  auto x = MOZ_TRY(Task2(pass1, value));
+  auto y = MOZ_TRY(Task2(pass2, value));
   return x + y;
 }
 
@@ -168,9 +167,9 @@ static void BasicTests() {
                                 Task1UnusedZeroEnumErr(false).unwrapErr());
 
   // MOZ_TRY works.
-  MOZ_STATIC_AND_RELEASE_ASSERT(Task2(true, 3).isOk());
-  MOZ_STATIC_AND_RELEASE_ASSERT(Task2(true, 3).unwrap() == 3);
-  MOZ_STATIC_AND_RELEASE_ASSERT(Task2(true, 3).unwrapOr(6) == 3);
+  MOZ_RELEASE_ASSERT(Task2(true, 3).isOk());
+  MOZ_RELEASE_ASSERT(Task2(true, 3).unwrap() == 3);
+  MOZ_RELEASE_ASSERT(Task2(true, 3).unwrapOr(6) == 3);
   MOZ_RELEASE_ASSERT(Task2(false, 3).isErr());
   MOZ_RELEASE_ASSERT(Task2(false, 3).unwrapOr(6) == 6);
 
@@ -178,11 +177,9 @@ static void BasicTests() {
   MOZ_STATIC_AND_RELEASE_ASSERT(Task2UnusedZeroEnumErr(true, 3).unwrap() == 3);
   MOZ_STATIC_AND_RELEASE_ASSERT(Task2UnusedZeroEnumErr(true, 3).unwrapOr(6) ==
                                 3);
-  MOZ_STATIC_AND_RELEASE_ASSERT(Task2UnusedZeroEnumErr(false, 3).isErr());
-  MOZ_STATIC_AND_RELEASE_ASSERT(Task2UnusedZeroEnumErr(false, 3).unwrapOr(6) ==
-                                6);
+  MOZ_RELEASE_ASSERT(Task2UnusedZeroEnumErr(false, 3).isErr());
+  MOZ_RELEASE_ASSERT(Task2UnusedZeroEnumErr(false, 3).unwrapOr(6) == 6);
 
-  // MOZ_TRY_VAR works.
   MOZ_RELEASE_ASSERT(Task3(true, true, 3).isOk());
   MOZ_RELEASE_ASSERT(Task3(true, true, 3).unwrap() == 6);
   MOZ_RELEASE_ASSERT(Task3(true, false, 3).isErr());

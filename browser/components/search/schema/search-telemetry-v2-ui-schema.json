@@ -11,6 +11,7 @@
     "organicCodes",
     "followOnParamNames",
     "followOnCookies",
+    "searchMode",
     "extraAdServersRegexps",
     "adServerAttributes",
     "components",
@@ -23,6 +24,7 @@
     "signedInCookies",
     "isSPA",
     "defaultPageQueryParam",
+    "pageTypeParam",
     "subframes"
   ]
 }

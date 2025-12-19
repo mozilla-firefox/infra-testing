@@ -11,10 +11,18 @@
 #ifndef CALL_TEST_MOCK_AUDIO_RECEIVE_STREAM_H_
 #define CALL_TEST_MOCK_AUDIO_RECEIVE_STREAM_H_
 
+#include <cstdint>
 #include <map>
 #include <vector>
 
+#include "api/audio/audio_frame.h"
 #include "api/audio/audio_mixer.h"
+#include "api/audio_codecs/audio_format.h"
+#include "api/crypto/frame_decryptor_interface.h"
+#include "api/frame_transformer_interface.h"
+#include "api/rtp_headers.h"
+#include "api/scoped_refptr.h"
+#include "api/transport/rtp/rtp_source.h"
 #include "call/audio_receive_stream.h"
 #include "test/gmock.h"
 
@@ -30,18 +38,18 @@ class MockAudioReceiveStream : public AudioReceiveStreamInterface,
   MOCK_METHOD(bool, IsRunning, (), (const override));
   MOCK_METHOD(void,
               SetDepacketizerToDecoderFrameTransformer,
-              (rtc::scoped_refptr<webrtc::FrameTransformerInterface>),
+              (scoped_refptr<FrameTransformerInterface>),
               (override));
   MOCK_METHOD(void,
               SetDecoderMap,
-              ((std::map<int, webrtc::SdpAudioFormat>)),
+              ((std::map<int, SdpAudioFormat>)),
               (override));
   MOCK_METHOD(void, SetNackHistory, (int), (override));
-  MOCK_METHOD(void, SetRtcpMode, (webrtc::RtcpMode), (override));
+  MOCK_METHOD(void, SetRtcpMode, (RtcpMode), (override));
   MOCK_METHOD(void, SetNonSenderRttMeasurement, (bool), (override));
   MOCK_METHOD(void,
               SetFrameDecryptor,
-              (rtc::scoped_refptr<webrtc::FrameDecryptorInterface>),
+              (scoped_refptr<FrameDecryptorInterface>),
               (override));
 
   MOCK_METHOD(webrtc::AudioReceiveStreamInterface::Stats,

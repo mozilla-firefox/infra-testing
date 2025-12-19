@@ -7,15 +7,17 @@
 #ifndef mozilla_dom_CookieStore_h
 #define mozilla_dom_CookieStore_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/dom/CookieStoreBinding.h"
 
 class nsIGlobalObject;
 
+namespace mozilla::net {
+class CookieStruct;
+}
+
 namespace mozilla::dom {
 
-class CookieData;
 class CookieStoreChild;
 class CookieStoreNotificationWatcherWrapper;
 class CookieStoreNotifier;
@@ -56,6 +58,9 @@ class CookieStore final : public DOMEventTargetHelper {
                                    ErrorResult& aRv);
 
   IMPL_EVENT_HANDLER(change);
+
+  static void CookieStructToItem(const net::CookieStruct& aData,
+                                 CookieListItem* aItem);
 
  private:
   explicit CookieStore(nsIGlobalObject* aGlobal);

@@ -9,15 +9,18 @@
 import {
   UrlbarProvider,
   UrlbarUtils,
-} from "resource:///modules/UrlbarUtils.sys.mjs";
+} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
+  DEFAULT_FORM_HISTORY_PARAM:
+    "moz-src:///toolkit/components/search/SearchSuggestionController.sys.mjs",
   FormHistory: "resource://gre/modules/FormHistory.sys.mjs",
-  SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
-  UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.sys.mjs",
+  SearchUtils: "moz-src:///toolkit/components/search/SearchUtils.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarSearchUtils:
+    "moz-src:///browser/components/urlbar/UrlbarSearchUtils.sys.mjs",
 });
 
 // These prefs are relative to the `browser.urlbar` branch.
@@ -29,21 +32,20 @@ const LASTDEFAULTCHANGED_PREF = "recentsearches.lastDefaultChanged";
 /**
  * A provider that returns the Recent Searches performed by the user.
  */
-class ProviderRecentSearches extends UrlbarProvider {
-  constructor(...args) {
-    super(...args);
+export class UrlbarProviderRecentSearches extends UrlbarProvider {
+  constructor() {
+    super();
     Services.obs.addObserver(this, lazy.SearchUtils.TOPIC_ENGINE_MODIFIED);
   }
 
-  get name() {
-    return "RecentSearches";
-  }
-
+  /**
+   * @returns {Values<typeof UrlbarUtils.PROVIDER_TYPE>}
+   */
   get type() {
     return UrlbarUtils.PROVIDER_TYPE.PROFILE;
   }
 
-  isActive(queryContext) {
+  async isActive(queryContext) {
     return (
       lazy.UrlbarPrefs.get(ENABLED_PREF) &&
       lazy.UrlbarPrefs.get(SUGGEST_PREF) &&
@@ -69,10 +71,10 @@ class ProviderRecentSearches extends UrlbarProvider {
       queryContext.isPrivate
     );
 
-    if (details.selType == "dismiss" && queryContext.formHistoryName) {
+    if (details.selType == "dismiss") {
       lazy.FormHistory.update({
         op: "remove",
-        fieldname: "searchbar-history",
+        fieldname: lazy.DEFAULT_FORM_HISTORY_PARAM,
         value: result.payload.suggestion,
         source: engine.name,
       }).catch(error =>
@@ -82,6 +84,13 @@ class ProviderRecentSearches extends UrlbarProvider {
     }
   }
 
+  /**
+   * Starts querying.
+   *
+   * @param {UrlbarQueryContext} queryContext
+   * @param {(provider: UrlbarProvider, result: UrlbarResult) => void} addCallback
+   *   Callback invoked by the provider to add a new result.
+   */
   async startQuery(queryContext, addCallback) {
     let engine = lazy.UrlbarSearchUtils.getDefaultEngine(
       queryContext.isPrivate
@@ -90,7 +99,7 @@ class ProviderRecentSearches extends UrlbarProvider {
       return;
     }
     let results = await lazy.FormHistory.search(["value", "lastUsed"], {
-      fieldname: "searchbar-history",
+      fieldname: lazy.DEFAULT_FORM_HISTORY_PARAM,
       source: engine.name,
     });
 
@@ -118,19 +127,20 @@ class ProviderRecentSearches extends UrlbarProvider {
     }
 
     for (let result of results) {
-      let res = new lazy.UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.SEARCH,
-        UrlbarUtils.RESULT_SOURCE.HISTORY,
-        {
+      let res = new lazy.UrlbarResult({
+        type: UrlbarUtils.RESULT_TYPE.SEARCH,
+        source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+        payload: {
           engine: engine.name,
           suggestion: result.value,
+          title: result.value,
           isBlockable: true,
           blockL10n: { id: "urlbar-result-menu-remove-from-history" },
           helpUrl:
             Services.urlFormatter.formatURLPref("app.support.baseURL") +
             "awesome-bar-result-menu",
-        }
-      );
+        },
+      });
       addCallback(this, res);
     }
   }
@@ -143,5 +153,3 @@ class ProviderRecentSearches extends UrlbarProvider {
     }
   }
 }
-
-export var UrlbarProviderRecentSearches = new ProviderRecentSearches();

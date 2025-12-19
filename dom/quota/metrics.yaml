@@ -27,7 +27,7 @@ dom.quota.try:
     data_reviews:
       - https://bugzil.la/1665088
     notification_emails:
-      - jvarga@mozilla.com
+      - jan.varga@gmail.com
       - storage-telemetry@mozilla.com
     expires: never
     extra_keys:
@@ -87,9 +87,9 @@ quotamanager:
     data_sensitivity:
       - technical
     notification_emails:
-      - jvarga@mozilla.com
+      - jan.varga@gmail.com
       - storage-telemetry@mozilla.com
-    expires: 142
+    expires: never
 quotamanager.initialize.repository:
   number_of_iterations:
     type: labeled_custom_distribution
@@ -116,7 +116,7 @@ quotamanager.initialize.repository:
     data_sensitivity:
       - technical
     notification_emails:
-      - jvarga@mozilla.com
+      - jan.varga@gmail.com
       - storage-telemetry@mozilla.com
     expires: never
     labels:
@@ -147,9 +147,41 @@ quotamanager.initialize.temporarystorage:
     data_sensitivity:
       - technical
     notification_emails:
-      - jvarga@mozilla.com
+      - jan.varga@gmail.com
       - storage-telemetry@mozilla.com
-    expires: 141
+    expires: never
+  non_persisted_zero_usage_origins:
+    type: custom_distribution
+    description: >
+      Logs the number of non-persisted origins that have zero quota-charged
+      usage after full temporary storage initialization. These origins do not
+      store any real data but still contribute to internal bookkeeping by
+      having directories and files created on disk, which can unnecessarily
+      increase initialization costs. Measuring how many such origins exist in
+      the wild helps evaluate whether the temporary storage cleanup logic
+      should be updated to clear them. This in turn can guide potential
+      optimizations and improve the performance of temporary storage
+      initialization over time, while also helping to detect unexpected
+      regressions.
+      Note: Non-persisted origins can be cleared when they have no data, while
+      persisted origins cannot be cleared even at zero usage because the
+      persisted flag is currently stored alongside the origin data and would be
+      lost.
+    range_min: 0
+    range_max: 65535
+    bucket_count: 50
+    histogram_type: exponential
+    unit: integer
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1975258
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1975258
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - jan.varga@gmail.com
+      - storage-telemetry@mozilla.com
+    expires: never
 quotamanager.shutdown:
   total_time_excluding_suspend:
     type: timing_distribution
@@ -175,9 +207,9 @@ quotamanager.shutdown:
     data_sensitivity:
       - technical
     notification_emails:
-      - jvarga@mozilla.com
+      - jan.varga@gmail.com
       - storage-telemetry@mozilla.com
-    expires: 141
+    expires: never
 
 dom.quota:
   info_load_time:
@@ -197,7 +229,7 @@ dom.quota:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1609625
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1683102
     notification_emails:
-      - ttung@mozilla.com
+      - jan.varga@gmail.com
       - storage-telemetry@mozilla.com
     expires: never
     telemetry_mirror: QM_QUOTA_INFO_LOAD_TIME_V0
@@ -217,7 +249,33 @@ dom.quota:
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1824075
     notification_emails:
-      - jvarga@mozilla.com
+      - jan.varga@gmail.com
       - storage-telemetry@mozilla.com
     expires: never
     telemetry_mirror: QM_SHUTDOWN_TIME_V0
+
+  first_initialization_attempt:
+    type: dual_labeled_counter
+    description: >
+      True if the first initialization attempt succeeded, keyed by the
+      initialization type.
+
+      This metric was generated to correspond to the Legacy Telemetry boolean
+      histogram QM_FIRST_INITIALIZATION_ATTEMPT.
+    dual_labels:
+      key:
+        description: No static keys unfortunately.
+      category:
+        labels:
+          - "false"
+          - "true"
+        description: Boolean
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1592934
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1592934
+    notification_emails:
+      - jan.varga@gmail.com
+      - storage-telemetry@mozilla.com
+    expires: never
+    telemetry_mirror: QM_FIRST_INITIALIZATION_ATTEMPT

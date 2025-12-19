@@ -9,32 +9,21 @@
 import {
   UrlbarProvider,
   UrlbarUtils,
-} from "resource:///modules/UrlbarUtils.sys.mjs";
+} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   AboutPagesUtils: "resource://gre/modules/AboutPagesUtils.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
 });
 
 /**
  * Class used to create the provider.
  */
-class ProviderAboutPages extends UrlbarProvider {
+export class UrlbarProviderAboutPages extends UrlbarProvider {
   /**
-   * Unique name for the provider, used by the context to filter on providers.
-   *
-   * @returns {string}
-   */
-  get name() {
-    return "AboutPages";
-  }
-
-  /**
-   * The type of the provider, must be one of UrlbarUtils.PROVIDER_TYPE.
-   *
-   * @returns {UrlbarUtils.PROVIDER_TYPE}
+   * @returns {Values<typeof UrlbarUtils.PROVIDER_TYPE>}
    */
   get type() {
     return UrlbarUtils.PROVIDER_TYPE.PROFILE;
@@ -46,37 +35,37 @@ class ProviderAboutPages extends UrlbarProvider {
    * with this provider, to save on resources.
    *
    * @param {UrlbarQueryContext} queryContext The query context object
-   * @returns {boolean} Whether this provider should be invoked for the search.
    */
-  isActive(queryContext) {
+  async isActive(queryContext) {
     return queryContext.trimmedLowerCaseSearchString.startsWith("about:");
   }
 
   /**
-   * Starts querying. Extended classes should return a Promise resolved when the
-   * provider is done searching AND returning results.
+   * Starts querying.
    *
-   * @param {UrlbarQueryContext} queryContext The query context object
-   * @param {Function} addCallback Callback invoked by the provider to add a new
-   *        result. A UrlbarResult should be passed to it.
+   * @param {UrlbarQueryContext} queryContext
+   * @param {(provider: UrlbarProvider, result: UrlbarResult) => void} addCallback
+   *   Callback invoked by the provider to add a new result.
    */
   startQuery(queryContext, addCallback) {
     let searchString = queryContext.trimmedLowerCaseSearchString;
     for (const aboutUrl of lazy.AboutPagesUtils.visibleAboutUrls) {
       if (aboutUrl.startsWith(searchString)) {
-        let result = new lazy.UrlbarResult(
-          UrlbarUtils.RESULT_TYPE.URL,
-          UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-          ...lazy.UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
-            title: [aboutUrl, UrlbarUtils.HIGHLIGHT.TYPED],
-            url: [aboutUrl, UrlbarUtils.HIGHLIGHT.TYPED],
+        let result = new lazy.UrlbarResult({
+          type: UrlbarUtils.RESULT_TYPE.URL,
+          source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+          payload: {
+            title: aboutUrl,
+            url: aboutUrl,
             icon: UrlbarUtils.getIconForUrl(aboutUrl),
-          })
-        );
+          },
+          highlights: {
+            title: UrlbarUtils.HIGHLIGHT.TYPED,
+            url: UrlbarUtils.HIGHLIGHT.TYPED,
+          },
+        });
         addCallback(this, result);
       }
     }
   }
 }
-
-export var UrlbarProviderAboutPages = new ProviderAboutPages();

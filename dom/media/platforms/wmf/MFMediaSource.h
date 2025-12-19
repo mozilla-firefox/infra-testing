@@ -8,11 +8,10 @@
 #include <mfidl.h>
 #include <wrl.h>
 
-#include "MediaInfo.h"
-#include "MediaEventSource.h"
 #include "MFMediaEngineExtra.h"
 #include "MFMediaEngineStream.h"
-#include "mozilla/EnumSet.h"
+#include "MediaEventSource.h"
+#include "MediaInfo.h"
 #include "mozilla/TaskQueue.h"
 
 namespace mozilla {
@@ -47,7 +46,7 @@ class MFMediaSource : public Microsoft::WRL::RuntimeClass<
   HRESULT RuntimeClassInitialize(const Maybe<AudioInfo>& aAudio,
                                  const Maybe<VideoInfo>& aVideo,
                                  nsISerialEventTarget* aManagerThread,
-                                 bool aIsEncrytpedCustomInit);
+                                 bool aIsEncryptedCustomInit);
 
   // Methods for IMFMediaSource
   IFACEMETHODIMP GetCharacteristics(DWORD* aCharacteristics) override;

@@ -21,7 +21,6 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/OperatorNewExtensions.h"
-#include "mozilla/PodOperations.h"
 #include "mozilla/fallible.h"
 #include "nsPointerHashKeys.h"
 #include "nsTArrayForwardDeclare.h"
@@ -651,6 +650,15 @@ static void FixedSizeEntryMover(PLDHashTable*, const PLDHashEntryHdr* aFrom,
   memcpy(aTo, aFrom, N);
 }
 
+// Helper type which wraps the access to EntryType::ALLOW_MEMMOVE. This is done
+// to ensure that the MOZ_NEEDS_MEMMOVABLE_TYPE attribute is applied to the
+// entry if we're going to use FixedSizeEntryMover, performing extra
+// compile-time checks against the use of non-memmoveable types.
+template <class EntryType, bool = EntryType::ALLOW_MEMMOVE>
+struct MOZ_NEEDS_MEMMOVABLE_TYPE CheckAllowMemmove : std::true_type {};
+template <class EntryType>
+struct CheckAllowMemmove<EntryType, false> : std::false_type {};
+
 }  // namespace detail
 }  // namespace mozilla
 
@@ -676,7 +684,9 @@ template <class EntryType>
   // function avoids that problem.
   static const PLDHashTableOps sOps = {
       s_HashKey, s_MatchEntry,
-      EntryType::ALLOW_MEMMOVE
+      // We intentionally indirect the access of ALLOW_MEMMOVE through
+      // CheckAllowMemmove to perform some additional static analysis.
+      mozilla::detail::CheckAllowMemmove<EntryType>::value
           ? mozilla::detail::FixedSizeEntryMover<sizeof(EntryType)>
           : s_CopyEntry,
       // Simplify hashtable clearing in case our entries are trivially
@@ -810,7 +820,7 @@ class nsTHashtable<nsPtrHashKey<T>>
     return reinterpret_cast<EntryType*>(Base::GetEntry(aKey));
   }
 
-  bool Contains(T* aKey) const { return Base::Contains(aKey); }
+  bool Contains(const T* aKey) const { return Base::Contains(aKey); }
 
   EntryType* PutEntry(T* aKey) {
     return reinterpret_cast<EntryType*>(Base::PutEntry(aKey));

@@ -153,12 +153,12 @@ class EventListenerManagerBase {
 
   EventMessage mNoListenerForEvents[3];
   uint16_t mMayHaveDOMActivateEventListener : 1;
-  uint16_t mMayHaveMutationListeners : 1;
   uint16_t mMayHaveCapturingListeners : 1;
   uint16_t mMayHaveSystemGroupListeners : 1;
   uint16_t mMayHaveTouchEventListener : 1;
   uint16_t mMayHaveMouseEnterLeaveEventListener : 1;
   uint16_t mMayHavePointerEnterLeaveEventListener : 1;
+  uint16_t mMayHavePointerRawUpdateEventListener : 1;
   uint16_t mMayHaveSelectionChangeEventListener : 1;
   uint16_t mMayHaveFormSelectEventListener : 1;
   uint16_t mMayHaveTransitionEventListener : 1;
@@ -166,7 +166,7 @@ class EventListenerManagerBase {
   uint16_t mClearingListeners : 1;
   uint16_t mIsMainThreadELM : 1;
   uint16_t mMayHaveListenersForUntrustedEvents : 1;
-  // 1 unused flag.
+  // 2 unused flag.
 };
 
 /*
@@ -473,11 +473,6 @@ class EventListenerManager final : public EventListenerManagerBase {
   void Disconnect();
 
   /**
-   * Allows us to quickly determine if we have mutation listeners registered.
-   */
-  bool HasMutationListeners();
-
-  /**
    * Allows us to quickly determine whether we have unload listeners registered.
    */
   bool HasUnloadListeners();
@@ -487,15 +482,6 @@ class EventListenerManager final : public EventListenerManagerBase {
    * registered.
    */
   bool HasBeforeUnloadListeners();
-
-  /**
-   * Returns the mutation bits depending on which mutation listeners are
-   * registered to this listener manager.
-   * @note If a listener is an nsIDOMMutationListener, all possible mutation
-   *       event bits are returned. All bits are also returned if one of the
-   *       event listeners is registered to handle DOMSubtreeModified events.
-   */
-  uint32_t MutationListenerBits();
 
   /**
    * Returns true if there is at least one event listener for aEventName.
@@ -553,6 +539,9 @@ class EventListenerManager final : public EventListenerManagerBase {
   }
   bool MayHavePointerEnterLeaveEventListener() const {
     return mMayHavePointerEnterLeaveEventListener;
+  }
+  bool MayHavePointerRawUpdateEventListener() const {
+    return mMayHavePointerRawUpdateEventListener;
   }
   bool MayHaveSelectionChangeEventListener() const {
     return mMayHaveSelectionChangeEventListener;

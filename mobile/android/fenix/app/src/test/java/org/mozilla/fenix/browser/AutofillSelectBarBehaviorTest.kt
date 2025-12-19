@@ -18,9 +18,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.toolbar.ToolbarPosition
-import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
+import org.robolectric.RobolectricTestRunner
 
-@RunWith(FenixRobolectricTestRunner::class)
+@RunWith(RobolectricTestRunner::class)
 class AutofillSelectBarBehaviorTest {
     private val loginsBar = mockk<FrameLayout>(relaxed = true)
     private var layoutParams = CoordinatorLayout.LayoutParams(0, 0)
@@ -60,7 +60,7 @@ class AutofillSelectBarBehaviorTest {
 
     @Test
     fun `GIVEN a toolbar shown at top and the navbar at the bottom WHEN the login bar is shown THEN anchor it to the navbar`() {
-        dependency.id = R.id.toolbar_navbar_container
+        dependency.id = R.id.navigation_bar
         val behavior = AutofillSelectBarBehavior<ViewGroup>(testContext, ToolbarPosition.TOP)
 
         behavior.layoutDependsOn(parent, loginsBar, dependency)
@@ -127,7 +127,7 @@ class AutofillSelectBarBehaviorTest {
     @Test
     fun `GIVEN the login bar is anchored to the navbar WHEN the navbar is not shown anymore THEN place the login bar at the bottom`() {
         val navbar = View(testContext)
-            .apply { id = R.id.toolbar_navbar_container }
+            .apply { id = R.id.navigation_bar }
             .also { parent.addView(it) }
         val behavior = AutofillSelectBarBehavior<ViewGroup>(testContext, ToolbarPosition.BOTTOM)
 

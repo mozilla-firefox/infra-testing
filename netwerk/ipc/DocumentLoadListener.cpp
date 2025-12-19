@@ -49,7 +49,9 @@
 #include "nsExternalHelperAppService.h"
 #include "nsHttpChannel.h"
 #include "nsIBrowser.h"
+#include "nsIClassifiedChannel.h"
 #include "nsIHttpChannelInternal.h"
+#include "nsINetworkInterceptController.h"
 #include "nsIStreamConverterService.h"
 #include "nsIViewSourceChannel.h"
 #include "nsImportModule.h"
@@ -70,6 +72,8 @@
 #include "mozilla/dom/RemoteWebProgressRequest.h"
 #include "mozilla/net/UrlClassifierFeatureFactory.h"
 #include "mozilla/ExtensionPolicyService.h"
+#include "mozilla/intl/Localization.h"
+#include "nsDocLoader.h"  // for FormatStatusMessage
 
 #ifdef ANDROID
 #  include "mozilla/widget/nsWindow.h"
@@ -92,6 +96,8 @@ using namespace mozilla::dom;
 
 namespace mozilla {
 namespace net {
+
+static StaticRefPtr<mozilla::intl::Localization> sL10n;
 
 static ContentParentId GetContentProcessId(ContentParent* aContentParent) {
   return aContentParent ? aContentParent->ChildID() : ContentParentId{0};
@@ -173,6 +179,12 @@ static auto CreateDocumentLoadInfo(CanonicalBrowsingContext* aBrowsingContext,
   loadInfo->SetTriggeringSandboxFlags(aLoadState->TriggeringSandboxFlags());
   loadInfo->SetTriggeringWindowId(aLoadState->TriggeringWindowId());
   loadInfo->SetTriggeringStorageAccess(aLoadState->TriggeringStorageAccess());
+  ClassificationFlags classificationFlags =
+      aLoadState->TriggeringClassificationFlags();
+  loadInfo->SetTriggeringFirstPartyClassificationFlags(
+      classificationFlags.firstPartyFlags);
+  loadInfo->SetTriggeringThirdPartyClassificationFlags(
+      classificationFlags.thirdPartyFlags);
   loadInfo->SetHasValidUserGestureActivation(
       aLoadState->HasValidUserGestureActivation());
   loadInfo->SetTextDirectiveUserActivation(
@@ -206,6 +218,12 @@ static auto CreateObjectLoadInfo(nsDocShellLoadState* aLoadState,
   loadInfo->SetTriggeringSandboxFlags(aLoadState->TriggeringSandboxFlags());
   loadInfo->SetTriggeringWindowId(aLoadState->TriggeringWindowId());
   loadInfo->SetTriggeringStorageAccess(aLoadState->TriggeringStorageAccess());
+  net::ClassificationFlags classificationFlags =
+      aLoadState->TriggeringClassificationFlags();
+  loadInfo->SetTriggeringFirstPartyClassificationFlags(
+      classificationFlags.firstPartyFlags);
+  loadInfo->SetTriggeringThirdPartyClassificationFlags(
+      classificationFlags.thirdPartyFlags);
   loadInfo->SetIsMetaRefresh(aLoadState->IsMetaRefresh());
 
   return loadInfo.forget();
@@ -281,14 +299,6 @@ class ParentProcessDocumentOpenInfo final : public nsDocumentOpenInfo,
     if (mContentType.LowerCaseEqualsASCII(UNKNOWN_CONTENT_TYPE) ||
         mContentType.IsEmpty()) {
       return nsDocumentOpenInfo::TryStreamConversion(aChannel);
-    }
-
-    if (nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
-        loadInfo->GetSandboxFlags() &&
-        mContentType.LowerCaseEqualsLiteral(APPLICATION_PDF)) {
-      // Sandboxed iframes are just never allowed to display plugins. In the
-      // modern world, this just means "application/pdf".
-      return NS_ERROR_FAILURE;
     }
 
     nsresult rv;
@@ -508,7 +518,7 @@ void DocumentLoadListener::AddURIVisit(nsIChannel* aChannel,
   uint32_t responseStatus = 0;
   nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(aChannel);
   if (httpChannel) {
-    Unused << httpChannel->GetResponseStatus(&responseStatus);
+    (void)httpChannel->GetResponseStatus(&responseStatus);
   }
 
   RefPtr<CanonicalBrowsingContext> browsingContext =
@@ -806,6 +816,39 @@ auto DocumentLoadListener::Open(nsDocShellLoadState* aLoadState,
     return nullptr;
   }
 
+  if (nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(mChannel)) {
+    // We need to set the partitioned principal to the load state so that we can
+    // propagate it to the loadingSessionHistoryInfo. To do this, we need to
+    // get the finalized cookieJarSettings for the channel because it is used by
+    // StoragePrincipalHelper to mint the partitioned principal.
+    //
+    // ClientChannelHelper below also needs us to have finalized the principal
+    // for the channel because it will request that StoragePrincipalHelper mint
+    // a principal that needs to match the same principal that a later call to
+    // StoragePrincipalHelper will mint when determining the right origin to
+    // look up the ServiceWorker.
+    //
+    // Because nsHttpChannel::AsyncOpen calls UpdateAntiTrackingInfoForChannel
+    // which potentially flips the third party bit/flag on the partition key on
+    // the cookie jar which impacts the principal that will be minted, it is
+    // essential that UpdateAntiTrackingInfoForChannel is called before
+    // AddClientChannelHelperInParent below.
+    //
+    // Because the call to UpdateAntiTrackingInfoForChannel is largely
+    // idempotent, we currently just make the call ourselves right now.  The one
+    // caveat is that the RFPRandomKey may be spuriously regenerated for
+    // top-level documents.
+    AntiTrackingUtils::UpdateAntiTrackingInfoForChannel(httpChannel);
+
+    nsCOMPtr<nsIPrincipal> partitionedPrincipal;
+
+    (void)StoragePrincipalHelper::GetPrincipal(
+        httpChannel, StoragePrincipalHelper::ePartitionedPrincipal,
+        getter_AddRefs(partitionedPrincipal));
+
+    aLoadState->SetPartitionedPrincipalToInherit(partitionedPrincipal);
+  }
+
   if (documentContext && aLoadState->LoadType() != LOAD_ERROR_PAGE &&
       mozilla::SessionHistoryInParent()) {
     // It's hard to know at this point whether session history will be enabled
@@ -817,8 +860,7 @@ auto DocumentLoadListener::Open(nsDocShellLoadState* aLoadState,
   }
 
   nsCOMPtr<nsIURI> uriBeingLoaded;
-  Unused << NS_WARN_IF(
-      NS_FAILED(mChannel->GetURI(getter_AddRefs(uriBeingLoaded))));
+  (void)NS_WARN_IF(NS_FAILED(mChannel->GetURI(getter_AddRefs(uriBeingLoaded))));
 
   RefPtr<HttpBaseChannel> httpBaseChannel = do_QueryObject(mChannel, aRv);
   if (uriBeingLoaded && httpBaseChannel) {
@@ -842,7 +884,7 @@ auto DocumentLoadListener::Open(nsDocShellLoadState* aLoadState,
 
   nsCOMPtr<nsIIdentChannel> identChannel = do_QueryInterface(mChannel);
   if (identChannel && aChannelId) {
-    Unused << identChannel->SetChannelId(*aChannelId);
+    (void)identChannel->SetChannelId(*aChannelId);
   }
   mDocumentChannelId = aChannelId;
 
@@ -861,31 +903,13 @@ auto DocumentLoadListener::Open(nsDocShellLoadState* aLoadState,
   }
 
   if (nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(mChannel)) {
-    Unused << httpChannel->SetRequestContextID(
+    (void)httpChannel->SetRequestContextID(
         loadingContext->GetRequestContextId());
 
     nsCOMPtr<nsIClassOfService> cos(do_QueryInterface(httpChannel));
     if (cos && aUrgentStart) {
       cos->AddClassFlags(nsIClassOfService::UrgentStart);
     }
-
-    // ClientChannelHelper below needs us to have finalized the principal for
-    // the channel because it will request that StoragePrincipalHelper mint us a
-    // principal that needs to match the same principal that a later call to
-    // StoragePrincipalHelper will mint when determining the right origin to
-    // look up the ServiceWorker.
-    //
-    // Because nsHttpChannel::AsyncOpen calls UpdateAntiTrackingInfoForChannel
-    // which potentially flips the third party bit/flag on the partition key on
-    // the cookie jar which impacts the principal that will be minted, it is
-    // essential that UpdateAntiTrackingInfoForChannel is called before
-    // AddClientChannelHelperInParent below.
-    //
-    // Because the call to UpdateAntiTrackingInfoForChannel is largely
-    // idempotent, we currently just make the call ourselves right now.  The one
-    // caveat is that the RFPRandomKey may be spuriously regenerated for
-    // top-level documents.
-    AntiTrackingUtils::UpdateAntiTrackingInfoForChannel(httpChannel);
   }
 
   // Setup a ClientChannelHelper to watch for redirects, and copy
@@ -917,7 +941,9 @@ auto DocumentLoadListener::Open(nsDocShellLoadState* aLoadState,
   if (documentContext && aLoadState->LoadType() != LOAD_ERROR_PAGE &&
       !(aLoadState->HasInternalLoadFlags(
           nsDocShell::INTERNAL_LOAD_FLAGS_BYPASS_LOAD_URI_DELEGATE)) &&
-      !(aLoadState->LoadType() & LOAD_HISTORY)) {
+      !(aLoadState->LoadType() & LOAD_HISTORY) &&
+      !nsExternalHelperAppService::ExternalProtocolIsBlockedBySandbox(
+          documentContext, aLoadState->HasValidUserGestureActivation())) {
     nsCOMPtr<nsIWidget> widget =
         documentContext->GetParentProcessWidgetContaining();
     RefPtr<nsWindow> window = nsWindow::From(widget);
@@ -1535,17 +1561,17 @@ void DocumentLoadListener::ApplyPendingFunctions(
     for (const auto& variant : mSecurityWarningFunctions) {
       variant.match(
           [reporter](const ReportSecurityMessageParams& aParams) {
-            Unused << reporter->ReportSecurityMessage(aParams.mMessageTag,
-                                                      aParams.mMessageCategory);
+            (void)reporter->ReportSecurityMessage(aParams.mMessageTag,
+                                                  aParams.mMessageCategory);
           },
           [reporter](const LogBlockedCORSRequestParams& aParams) {
-            Unused << reporter->LogBlockedCORSRequest(
+            (void)reporter->LogBlockedCORSRequest(
                 aParams.mMessage, aParams.mCategory, aParams.mIsWarning);
           },
           [reporter](const LogMimeTypeMismatchParams& aParams) {
-            Unused << reporter->LogMimeTypeMismatch(
-                aParams.mMessageName, aParams.mWarning, aParams.mURL,
-                aParams.mContentType);
+            (void)reporter->LogMimeTypeMismatch(aParams.mMessageName,
+                                                aParams.mWarning, aParams.mURL,
+                                                aParams.mContentType);
           });
     }
   }
@@ -1670,6 +1696,18 @@ void DocumentLoadListener::SerializeRedirectData(
   // can't use baseChannel here.
   if (nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(mChannel)) {
     MOZ_ALWAYS_SUCCEEDS(httpChannel->GetChannelId(&aArgs.channelId()));
+
+    // propagated the channel's referrerInfo back to child if the redirection
+    // is caused by ServiceWorker interception.
+    if (nsCOMPtr<nsIInterceptedChannel> interceptedChannel =
+            do_QueryInterface(mChannel)) {
+      nsCOMPtr<nsIReferrerInfo> referrerInfo;
+      MOZ_ALWAYS_SUCCEEDS(
+          httpChannel->GetReferrerInfo(getter_AddRefs(referrerInfo)));
+      if (referrerInfo) {
+        aArgs.referrerInfo() = referrerInfo;
+      }
+    }
   }
 
   aArgs.redirectMode() = nsIHttpChannelInternal::REDIRECT_MODE_FOLLOW;
@@ -1855,10 +1893,10 @@ static RefPtr<dom::BrowsingContextCallbackReceivedPromise> SwitchToNewTab(
   RefPtr<nsOpenWindowInfo> openInfo = new nsOpenWindowInfo();
   openInfo->mBrowsingContextReadyCallback =
       new nsBrowsingContextReadyCallback(promise);
-  openInfo->mOriginAttributes = aLoadingBrowsingContext->OriginAttributesRef();
   openInfo->mParent = aLoadingBrowsingContext;
   openInfo->mForceNoOpener = true;
   openInfo->mIsRemote = true;
+  openInfo->mPrincipalToInheritForAboutBlank = triggeringPrincipal;
 
   // Do the actual work to open a new tab or window async.
   nsresult rv = NS_DispatchToMainThread(NS_NewRunnableFunction(
@@ -1868,7 +1906,7 @@ static RefPtr<dom::BrowsingContextCallbackReceivedPromise> SwitchToNewTab(
         nsresult rv = browserDOMWindow->CreateContentWindow(
             /* uri */ nullptr, openInfo, aWhere,
             nsIBrowserDOMWindow::OPEN_NO_REFERRER, triggeringPrincipal,
-            /* csp */ nullptr, getter_AddRefs(bc));
+            /* policyContainer */ nullptr, getter_AddRefs(bc));
         if (NS_WARN_IF(NS_FAILED(rv))) {
           MOZ_LOG(gProcessIsolationLog, LogLevel::Warning,
                   ("Process Switch Abort: CreateContentWindow threw"));
@@ -2282,8 +2320,9 @@ void DocumentLoadListener::TriggerRedirectToRealChannel(
       ("DocumentLoadListener::TriggerRedirectToRealChannel [this=%p] "
        "aDestinationBrowsingContext=%" PRIx64 " aDestinationProcess=%" PRId64,
        this, aDestinationBrowsingContext->Id(),
-       aDestinationProcess ? int64_t((*aDestinationProcess)->ChildID())
-                           : int64_t(-1)));
+       aDestinationProcess.valueOr(nullptr)
+           ? int64_t((*aDestinationProcess)->ChildID())
+           : int64_t(-1)));
   MOZ_ASSERT(aDestinationBrowsingContext);
 
   // This initiates replacing the current DocumentChannel with a
@@ -2480,7 +2519,7 @@ void DocumentLoadListener::MaybeReportBlockedByURLClassifier(nsresult aStatus) {
 
   RefPtr<WindowGlobalParent> parent = browsingContext->GetParentWindowContext();
   if (parent) {
-    Unused << parent->SendAddBlockedFrameNodeByClassifier(browsingContext);
+    (void)parent->SendAddBlockedFrameNodeByClassifier(browsingContext);
   }
 }
 
@@ -2550,8 +2589,9 @@ bool DocumentLoadListener::MaybeHandleLoadErrorWithURIFixup(nsresult aStatus) {
   RefPtr<nsDocShellLoadState> loadState = new nsDocShellLoadState(newURI);
   nsCOMPtr<nsILoadInfo> loadInfo = mChannel->LoadInfo();
 
-  nsCOMPtr<nsIContentSecurityPolicy> cspToInherit = loadInfo->GetCspToInherit();
-  loadState->SetCsp(cspToInherit);
+  nsCOMPtr<nsIPolicyContainer> policyContainerToInherit =
+      loadInfo->GetPolicyContainerToInherit();
+  loadState->SetPolicyContainer(policyContainerToInherit);
 
   nsCOMPtr<nsIPrincipal> triggeringPrincipal = loadInfo->TriggeringPrincipal();
   loadState->SetTriggeringPrincipal(triggeringPrincipal);
@@ -2674,7 +2714,7 @@ nsresult DocumentLoadListener::DoOnStartRequest(nsIRequest* aRequest) {
       // after blocking the navigation.
       maybeCloseWindowHelper->SetShouldCloseWindow(
           IsFirstLoadInWindow(mChannel));
-      Unused << maybeCloseWindowHelper->MaybeCloseWindow();
+      (void)maybeCloseWindowHelper->MaybeCloseWindow();
     }
     DisconnectListeners(NS_ERROR_DOM_BAD_URI, NS_ERROR_DOM_BAD_URI);
     return NS_OK;
@@ -2740,11 +2780,9 @@ nsresult DocumentLoadListener::DoOnStartRequest(nsIRequest* aRequest) {
     // Not every browsing context has a BounceTrackingState. It's also null when
     // the feature is disabled.
     if (bounceTrackingState) {
-      DebugOnly<nsresult> rv =
-          bounceTrackingState->OnDocumentStartRequest(mChannel);
-      NS_WARNING_ASSERTION(
-          NS_SUCCEEDED(rv),
-          "BounceTrackingState::OnDocumentStartRequest failed.");
+      // Don't warn when OnDocumentStartRequest fails until bug 1894936 is
+      // fixed, because it fails frequently because of that.
+      (void)bounceTrackingState->OnDocumentStartRequest(mChannel);
 
       DynamicFpiNavigationHeuristic::MaybeGrantStorageAccess(loadingContext,
                                                              mChannel);
@@ -2847,7 +2885,7 @@ nsresult DocumentLoadListener::DoOnStartRequest(nsIRequest* aRequest) {
   // HttpChannelParent::OnStartRequest, we can have the value as it originally
   // was.
   if (httpChannel) {
-    Unused << httpChannel->GetApplyConversion(&mOldApplyConversion);
+    (void)httpChannel->GetApplyConversion(&mOldApplyConversion);
     if (willBeRemote) {
       httpChannel->SetApplyConversion(false);
     }
@@ -3032,7 +3070,7 @@ DocumentLoadListener::AsyncOnChannelRedirect(
   nsCOMPtr<nsIHttpChannelInternal> httpChannel = do_QueryInterface(aOldChannel);
   if (httpChannel) {
     bool isCOOPMismatch = false;
-    Unused << NS_WARN_IF(NS_FAILED(
+    (void)NS_WARN_IF(NS_FAILED(
         httpChannel->HasCrossOriginOpenerPolicyMismatch(&isCOOPMismatch)));
     mHasCrossOriginOpenerPolicyMismatch |= isCOOPMismatch;
   }
@@ -3099,7 +3137,8 @@ DocumentLoadListener::AsyncOnChannelRedirect(
       bc ? bc->GetParentProcessWidgetContaining() : nullptr;
   RefPtr<nsWindow> window = nsWindow::From(widget);
 
-  if (window) {
+  if (window && !nsExternalHelperAppService::ExternalProtocolIsBlockedBySandbox(
+                    bc, false)) {
     promise = window->OnLoadRequest(uriBeingLoaded,
                                     nsIBrowserDOMWindow::OPEN_CURRENTWINDOW,
                                     nsIWebNavigation::LOAD_FLAGS_IS_REDIRECT,
@@ -3161,7 +3200,7 @@ bool DocumentLoadListener::HasCrossOriginOpenerPolicyMismatch() const {
   }
 
   bool isCOOPMismatch = false;
-  Unused << NS_WARN_IF(NS_FAILED(
+  (void)NS_WARN_IF(NS_FAILED(
       httpChannel->HasCrossOriginOpenerPolicyMismatch(&isCOOPMismatch)));
   return isCOOPMismatch;
 }
@@ -3188,7 +3227,15 @@ NS_IMETHODIMP DocumentLoadListener::OnStatus(nsIRequest* aRequest,
 
   RefPtr<BrowsingContextWebProgress> webProgress =
       GetLoadingBrowsingContext()->GetWebProgress();
-  const nsString message(aStatusArg);
+
+  nsAutoString host;
+  host.Append(aStatusArg);
+
+  nsAutoString message;
+  nsresult rv = nsDocLoader::FormatStatusMessage(aStatus, host, message, sL10n);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
 
   if (webProgress) {
     NS_DispatchToMainThread(

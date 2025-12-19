@@ -36,7 +36,7 @@ add_task(async () => {
       ["apz.popups.enabled", true],
       ["apz.popups_without_remote.enabled", true],
       ["apz.test.logging_enabled", true],
-      ["layout.scroll.disable-pixel-alignment", true],
+      ["layout.disable-pixel-alignment", true],
     ],
   });
 });
@@ -110,7 +110,7 @@ add_task(async () => {
   ok(sampledData.length, "There should be at least one collected offsets");
   ok(
     sampledData.some(
-      data => Math.round(SpecialPowers.wrap(data).scrollOffsetY) == scrollMax
+      data => SpecialPowers.wrap(data).scrollOffsetY - scrollMax < 1.0
     ),
     `There should be ${scrollMax} in [${sampledData.map(data => SpecialPowers.wrap(data).scrollOffsetY)}]`
   );

@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
- #fxview-tab-row-secondary-button {
+#fxview-tab-row-secondary-button {
   display: none;
 
   :host(:hover) & {
@@ -18,6 +18,11 @@
   display: flex;
 }
 
+:host([selected]) {
+  background-color: var(--button-background-color-primary);
+  color: var(--button-text-color-primary);
+}
+
 .fxview-tab-row-main {
   padding-block: 4px;
   padding-inline: 8px 4px;
@@ -25,7 +30,8 @@
   gap: 8px;
   flex: 1;
 
-  &:hover, &:hover:active {
+  &:hover,
+  &:hover:active {
     background-color: unset;
   }
 }
@@ -35,4 +41,61 @@
   --button-outer-padding-inline: 4px;
   --button-size-icon: 24px;
   --button-min-height: 24px;
+}
+
+.attention > #fxview-tab-row-favicon::after {
+  background-image: radial-gradient(circle, var(--attention-dot-color), var(--attention-dot-color) 2px, transparent 2px);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-size-tokens */
+  height: 4px;
+  width: 100%;
+  inset-block-start: var(--icon-size-medium);
+}
+
+.fxview-tab-row-favicon::after {
+  display: block;
+  content: "";
+  background-size: var(--size-item-xsmall);
+  background-position: center;
+  background-repeat: no-repeat;
+  position: relative;
+  height: var(--size-item-xsmall);
+  width: var(--size-item-xsmall);
+  -moz-context-properties: fill, stroke;
+  fill: currentColor;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/no-non-semantic-token-usage */
+  stroke: var(--background-color-box);
+
+  .fxview-tab-row-main.attention > & {
+    background-image: radial-gradient(circle, var(--attention-dot-color), var(--attention-dot-color) 2px, transparent 2px);
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-size-tokens */
+    height: 4px;
+    width: 100%;
+    inset-block-start: var(--icon-size-medium);
+  }
+}
+
+.fxview-tab-row-main:is(.muted, .soundplaying, .activemedia-blocked):not(.attention) .fxview-tab-row-favicon::after {
+  /* inset-inline-start set to half of the favicon
+  width to place it horizontally centered */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-size-tokens */
+  inset-inline-start: 8px;
+  /* inset-block-start set to display 6px above
+  the top of the favicon */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-size-tokens */
+  inset-block-start: -6px;
+  background-color: var(--background-color-box);
+  padding: 1px;
+  border-radius: var(--border-radius-circle);
+}
+
+.fxview-tab-row-main.muted .fxview-tab-row-favicon::after {
+  background-image: url("chrome://global/skin/media/audio-muted.svg");
+}
+
+.fxview-tab-row-main.soundplaying .fxview-tab-row-favicon::after {
+  background-image: url("chrome://browser/skin/tabbrowser/tab-audio-playing-small.svg");
+}
+
+.fxview-tab-row-main.activemedia-blocked .fxview-tab-row-favicon::after {
+  background-image: url("chrome://browser/skin/tabbrowser/tab-audio-blocked-small.svg");
 }

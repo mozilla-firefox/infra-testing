@@ -6,6 +6,7 @@
 
 #include "mozilla/ipc/ForkServer.h"
 
+#include "base/eintr_wrapper.h"
 #include "chrome/common/chrome_switches.h"
 #include "ipc/IPCMessageUtilsSpecializations.h"
 #include "mozilla/BlockingResourceBase.h"
@@ -14,7 +15,6 @@
 #include "mozilla/Omnijar.h"
 #include "mozilla/ProcessType.h"
 #include "mozilla/ipc/FileDescriptor.h"
-#include "mozilla/ipc/IPDLParamTraits.h"
 #include "mozilla/ipc/ProcessUtils.h"
 #include "mozilla/ipc/ProtocolMessageUtils.h"
 #include "mozilla/ipc/SetProcessTitle.h"
@@ -22,10 +22,16 @@
 
 #include <fcntl.h>
 #include <string.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
 #  include "mozilla/SandboxLaunch.h"
+#endif
+
+#if defined(XP_OPENBSD)
+#  include "BinaryPath.h"
+#  include <err.h>
 #endif
 
 #include <algorithm>
@@ -35,11 +41,14 @@ namespace ipc {
 
 LazyLogModule gForkServiceLog("ForkService");
 
-ForkServer::ForkServer(int* aArgc, char*** aArgv) : mArgc(aArgc), mArgv(aArgv) {
-  // Eventually (bug 1752638) we'll want a real SIGCHLD handler, but
-  // for now, cause child processes to be automatically collected.
-  signal(SIGCHLD, SIG_IGN);
+static int gSignalPipe = -1;
+static void HandleSigChld(int aSignal) {
+  MOZ_ASSERT(aSignal == SIGCHLD);
+  const char msg = 0;
+  HANDLE_EINTR(write(gSignalPipe, &msg, 1));
+}
 
+ForkServer::ForkServer(int* aArgc, char*** aArgv) : mArgc(aArgc), mArgv(aArgv) {
   SetThisProcessName("forkserver");
 
   Maybe<UniqueFileHandle> ipcHandle = geckoargs::sIPCHandle.Get(*aArgc, *aArgv);
@@ -51,6 +60,14 @@ ForkServer::ForkServer(int* aArgc, char*** aArgv) : mArgc(aArgc), mArgv(aArgv) {
   mIpcFd = ipcHandle.extract();
   mTcver = MakeUnique<MiniTransceiver>(mIpcFd.get(),
                                        DataBufferClear::AfterReceiving);
+
+  auto signalPipe = geckoargs::sSignalPipe.Get(*aArgc, *aArgv);
+  if (signalPipe) {
+    gSignalPipe = signalPipe->release();
+    signal(SIGCHLD, HandleSigChld);
+  } else {
+    signal(SIGCHLD, SIG_IGN);
+  }
 }
 
 /**
@@ -61,6 +78,13 @@ ForkServer::ForkServer(int* aArgc, char*** aArgv) : mArgc(aArgc), mArgv(aArgv) {
  */
 static void ForkServerPreload(int& aArgc, char** aArgv) {
   Omnijar::ChildProcessInit(aArgc, aArgv);
+#if defined(XP_OPENBSD)
+  char binaryPath[MAXPATHLEN];
+  nsresult rv = mozilla::BinaryPath::Get(binaryPath);
+  if (NS_FAILED(rv)) {
+    errx(1, "failed to cache binary path ?");
+  }
+#endif
 }
 
 /**
@@ -73,9 +97,19 @@ bool ForkServer::HandleMessages() {
       break;
     }
 
-    if (OnMessageReceived(std::move(msg))) {
-      // New process - child
-      return false;
+    switch (msg->type()) {
+      case Msg_ForkNewSubprocess__ID:
+        if (HandleForkNewSubprocess(std::move(msg))) {
+          // New process - child
+          return false;
+        }
+        break;
+      case Msg_WaitPid__ID:
+        HandleWaitPid(std::move(msg));
+        break;
+      default:
+        MOZ_LOG(gForkServiceLog, LogLevel::Verbose,
+                ("unknown message type %d\n", msg->type()));
     }
   }
   // Stop the server
@@ -97,17 +131,10 @@ static void ReadParamInfallible(IPC::MessageReader* aReader, P* aResult,
 static bool ParseForkNewSubprocess(IPC::Message& aMsg,
                                    UniqueFileHandle* aExecFd,
                                    base::LaunchOptions* aOptions) {
-  if (aMsg.type() != Msg_ForkNewSubprocess__ID) {
-    MOZ_LOG(gForkServiceLog, LogLevel::Verbose,
-            ("unknown message type %d (!= %d)\n", aMsg.type(),
-             Msg_ForkNewSubprocess__ID));
-    return false;
-  }
-
+  // The type was already checked in HandleMessages
+  MOZ_ASSERT(aMsg.type() == Msg_ForkNewSubprocess__ID);
   IPC::MessageReader reader(aMsg);
 
-  // FIXME(jld): This should all be fallible, but that will have to
-  // wait until bug 1752638 before it makes sense.
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
   ReadParamInfallible(&reader, &aOptions->fork_flags,
                       "Error deserializing 'int'");
@@ -149,10 +176,14 @@ static bool ParseSubprocessExecInfo(IPC::Message& aMsg,
 // the new process configuration, and updates the environment, command line, and
 // passed file handles to reflect the new process.
 static void ForkedChildProcessInit(int aExecFd, int* aArgc, char*** aArgv) {
-  // The fork server handle SIGCHLD to read status of content
-  // processes to handle Zombies.  But, it is not necessary for
-  // content processes.
+  // Remove the fork-server-specific SIGCHLD handler.
   signal(SIGCHLD, SIG_DFL);
+  // This process is currently single-threaded, so the fd used by the
+  // signal handler can be safely closed once the handler is removed.
+  if (gSignalPipe >= 0) {
+    close(gSignalPipe);
+    gSignalPipe = -1;
+  }
 
   // Content process
   MiniTransceiver execTcver(aExecFd);
@@ -200,16 +231,22 @@ static void ForkedChildProcessInit(int aExecFd, int* aArgc, char*** aArgv) {
  * It will return in both the fork server process and the new content
  * process.  |mAppProcBuilder| is null for the fork server.
  */
-bool ForkServer::OnMessageReceived(UniquePtr<IPC::Message> message) {
+bool ForkServer::HandleForkNewSubprocess(UniquePtr<IPC::Message> aMessage) {
   UniqueFileHandle execFd;
   base::LaunchOptions options;
-  if (!ParseForkNewSubprocess(*message, &execFd, &options)) {
+  if (!ParseForkNewSubprocess(*aMessage, &execFd, &options)) {
     return false;
   }
 
 #if defined(MOZ_MEMORY) && defined(DEBUG)
   jemalloc_stats_t stats;
   jemalloc_stats(&stats);
+  // What we actually want to assert is that there are 0 thread-local arenas
+  // (threads may exist but thread-local arenas are opt-in) that would be leaked
+  // (because the threads wont exist in the new process), and 0 private
+  // main-thread-only arenas and this is not the main thread (as those might be
+  // inconsistent in the new process).  Instead we check that there's exactly
+  // one arena - the default public arena).
   MOZ_ASSERT(stats.narenas == 1,
              "ForkServer before fork()/clone() should have a single arena.");
 #endif
@@ -248,10 +285,40 @@ bool ForkServer::OnMessageReceived(UniquePtr<IPC::Message> message) {
 
   IPC::Message reply(MSG_ROUTING_CONTROL, Reply_ForkNewSubprocess__ID);
   IPC::MessageWriter writer(reply);
-  WriteIPDLParam(&writer, nullptr, pid);
+  WriteParam(&writer, pid);
   mTcver->SendInfallible(reply, "failed to send a reply message");
 
   return false;
+}
+
+void ForkServer::HandleWaitPid(UniquePtr<IPC::Message> aMessage) {
+  MOZ_ASSERT(aMessage->type() == Msg_WaitPid__ID);
+  IPC::MessageReader reader(*aMessage);
+
+  pid_t pid;
+  bool block;
+  ReadParamInfallible(&reader, &pid, "Error deserializing 'pid_t'");
+  ReadParamInfallible(&reader, &block, "Error deserializing 'bool'");
+
+  // It's safe to use plain waitpid here (and not the waitid/WNOWAIT
+  // contraption used in the parent process) because this process is
+  // single-threaded so there's no possibility of another thread
+  // trying to ptrace the same child process.
+  int status;
+  pid_t rv = HANDLE_EINTR(waitpid(pid, &status, block ? 0 : WNOHANG));
+  // Three possibilities here:
+  //  Terminated: rv > 0; return {false, status}
+  //     Running: rv = 0; return {true, 0}
+  //       Error: rv < 0; return {true, errno}
+  bool isErr = rv <= 0;
+  int err = rv < 0 ? errno : 0;
+  MOZ_ASSERT(isErr || rv == pid);
+
+  IPC::Message reply(MSG_ROUTING_CONTROL, Reply_WaitPid__ID);
+  IPC::MessageWriter writer(reply);
+  WriteParam(&writer, isErr);
+  WriteParam(&writer, isErr ? err : status);
+  mTcver->SendInfallible(reply, "failed to send a reply message");
 }
 
 /**

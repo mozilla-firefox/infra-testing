@@ -10,20 +10,21 @@
 ///
 ///```ascii
 ///                                       (int gpu buffer)
-///                                       +---------------+    (sGpuCache)
-///  (instance-step vertex attr)          |  Int header   |   +-----------+
-/// +-----------------------------+       |               |   | Transform |
-/// |    Quad instance (uvec4)    |  +--> | transform id +--> +-----------+
-/// |                             |  |    | z id          |
-/// | x: int prim address        +---+    +---------------+   (float gpu buffer)
-/// | y: float prim address      +--------------------------> +-----------+--------------+-+-+
-/// | z: quad flags               |      (sGpuCache)          | Quad Prim | Quad Segment | | |
-/// |    edge flags               |   +--------------------+  |           |              | | |
-/// |    part index               |   |     Picture task   |  | bounds    | rect         | | |
-/// |    segment index            |   |                    |  | clip      | uv rect      | | |
-/// | w: picture task address    +--> | task rect          |  | color     |              | | |
-/// +-----------------------------+   | device pixel scale |  +-----------+--------------+-+-+
-///                                   | content origin     |
+///                                       +------------------+
+///                                       |Int header (ivec4)|    (float gpu buffer)
+///  (instance-step vertex attr)          |                  |    +-----------+
+/// +-----------------------------+       | x: transform id  +--> | Transform |
+/// |    Quad instance (uvec4)    |  +--> | y: z id          |    +-----------+
+/// |                             |  |    | zw: pattern data |
+/// | x: int prim address        +---+    +------------------+   (float gpu buffer)
+/// | y: float prim address      +--------------------------> +-------------------+--------------+-+-+
+/// | z: quad flags               |     (float gpu buffer)    |     Quad Prim     | Quad Segment | | |
+/// |    edge flags               |   +--------------------+  |                   |              | | |
+/// |    part index               |   |     Picture task   |  | bounds            | rect         | | |
+/// |    segment index            |   |                    |  | clip              | uv rect      | | |
+/// | w: picture task address    +--> | task rect          |  | pattern transform |              | | |
+/// +-----------------------------+   | device pixel scale |  | color             |              | | |
+///                                   | content origin     |  +-------------------+--------------+-+-+
 ///                                   +--------------------+
 ///
 /// To use the quad infrastructure, a shader must define the following entry
@@ -230,9 +231,11 @@ vec2 scale_offset_map_point(vec4 scale_offset, vec2 p) {
 }
 
 RectWithEndpoint scale_offset_map_rect(vec4 scale_offset, RectWithEndpoint r) {
+    vec2 p0 = scale_offset_map_point(scale_offset, r.p0);
+    vec2 p1 = scale_offset_map_point(scale_offset, r.p1);
     return RectWithEndpoint(
-        scale_offset_map_point(scale_offset, r.p0),
-        scale_offset_map_point(scale_offset, r.p1)
+        min(p0, p1),
+        max(p0, p1)
     );
 }
 

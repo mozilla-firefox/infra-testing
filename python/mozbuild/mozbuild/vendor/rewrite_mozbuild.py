@@ -327,15 +327,13 @@ def assignment_node_to_source_filename_list(code, node):
     """
     if isinstance(node.value, ast.List) and "elts" in node.value._fields:
         for f in node.value.elts:
-            if not isinstance(f, ast.Constant) and not isinstance(f, ast.Str):
+            if not isinstance(f, ast.Constant):
                 log(
                     "Found non-constant source file name in list: ",
                     ast_get_source_segment(code, f),
                 )
                 return []
-        return [
-            f.value if isinstance(f, ast.Constant) else f.s for f in node.value.elts
-        ]
+        return [f.value for f in node.value.elts]
     elif isinstance(node.value, ast.ListComp):
         # SOURCES += [f for f in foo if blah]
         log("Could not find the files for " + ast_get_source_segment(code, node.value))
@@ -697,7 +695,7 @@ def guess_best_assignment(source_assignments, filename_normalized):
                 length_of_longest_match = len(prefix)
                 source_assignment_location_of_longest_match = key
             elif len(prefix) == length_of_longest_match and len(
-                source_assignments[key]
+                list_of_normalized_filenames
             ) > len(source_assignments[source_assignment_location_of_longest_match]):
                 statistic_number_refinements += 1
                 statistic_length_logic += 1

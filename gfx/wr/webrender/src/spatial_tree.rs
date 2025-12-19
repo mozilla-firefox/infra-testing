@@ -116,6 +116,21 @@ impl ops::Not for VisibleFace {
 pub trait SpatialNodeContainer {
     /// Get the common information for a given spatial node
     fn get_node_info(&self, index: SpatialNodeIndex) -> SpatialNodeInfo;
+
+    fn get_snapping_info(
+        &self,
+        parent_index: Option<SpatialNodeIndex>
+    ) -> Option<ScaleOffset> {
+        match parent_index {
+            Some(parent_index) => {
+                let node_info = self.get_node_info(parent_index);
+                node_info.snapping_transform
+            }
+            None => {
+                Some(ScaleOffset::identity())
+            }
+        }
+    }
 }
 
 #[cfg_attr(feature = "capture", derive(Serialize))]
@@ -438,17 +453,10 @@ impl SceneSpatialTree {
         mut node: SceneSpatialNode,
         uid: SpatialNodeUid,
     ) -> SpatialNodeIndex {
-        let parent_snapping_transform = match node.parent {
-            Some(parent_index) => {
-                self.get_node_info(parent_index).snapping_transform
-            }
-            None => {
-                Some(ScaleOffset::identity())
-            }
-        };
+        let parent_info = self.get_snapping_info(node.parent);
 
         node.snapping_transform = calculate_snapping_transform(
-            parent_snapping_transform,
+            parent_info,
             &node.descriptor.node_type,
         );
 
@@ -1206,19 +1214,13 @@ impl SpatialTree {
         node_index: SpatialNodeIndex,
         scene_properties: &SceneProperties,
     ) {
-        let parent_snapping_transform = match self.get_spatial_node(node_index).parent {
-            Some(parent_index) => {
-                self.get_node_info(parent_index).snapping_transform
-            }
-            None => {
-                Some(ScaleOffset::identity())
-            }
-        };
+        let parent_index = self.get_spatial_node(node_index).parent;
+        let parent_info = self.get_snapping_info(parent_index);
 
         let node = &mut self.spatial_nodes[node_index.0 as usize];
 
         node.snapping_transform = calculate_snapping_transform(
-            parent_snapping_transform,
+            parent_info,
             &node.node_type,
         );
 
@@ -1332,17 +1334,27 @@ impl SpatialTree {
     }
 
     #[allow(dead_code)]
-    pub fn print(&self) {
+    pub fn print_to_string(&self) -> String {
+        let mut result = String::new();
+
         if self.root_reference_frame_index != SpatialNodeIndex::INVALID {
             let mut buf = Vec::<u8>::new();
             {
                 let mut pt = PrintTree::new_with_sink("spatial tree", &mut buf);
                 self.print_with(&mut pt);
             }
-            // If running in Gecko, set RUST_LOG=webrender::spatial_tree=debug
-            // to get this logging to be emitted to stderr/logcat.
-            debug!("{}", std::str::from_utf8(&buf).unwrap_or("(Tree printer emitted non-utf8)"));
+            result = std::str::from_utf8(&buf).unwrap_or("(Tree printer emitted non-utf8)").to_string();
         }
+
+        result
+    }
+
+    #[allow(dead_code)]
+    pub fn print(&self) {
+        let result = self.print_to_string();
+        // If running in Gecko, set RUST_LOG=webrender::spatial_tree=debug
+        // to get this logging to be emitted to stderr/logcat.
+        debug!("{}", result);
     }
 }
 
@@ -1369,8 +1381,11 @@ pub fn get_external_scroll_offset<S: SpatialNodeContainer>(
             SpatialNodeType::ScrollFrame(ref scrolling) => {
                 offset += scrolling.external_scroll_offset;
             }
-            SpatialNodeType::StickyFrame(..) => {
-                // Doesn't provide any external scroll offset
+            SpatialNodeType::StickyFrame(ref sticky) => {
+                // Remove the sticky offset that was applied in the
+                // content process, so that primitive interning
+                // sees stable values, and doesn't invalidate unnecessarily.
+                offset -= sticky.previously_applied_offset;
             }
             SpatialNodeType::ReferenceFrame(..) => {
                 // External scroll offsets are not propagated across
@@ -1386,27 +1401,28 @@ pub fn get_external_scroll_offset<S: SpatialNodeContainer>(
 }
 
 fn calculate_snapping_transform(
-    parent_snapping_transform: Option<ScaleOffset>,
+    parent_scale_offset: Option<ScaleOffset>,
     node_type: &SpatialNodeType,
 ) -> Option<ScaleOffset> {
     // We need to incorporate the parent scale/offset with the child.
     // If the parent does not have a scale/offset, then we know we are
     // not 2d axis aligned and thus do not need to snap its children
     // either.
-    let parent_scale_offset = match parent_snapping_transform {
-        Some(parent_snapping_transform) => parent_snapping_transform,
+    let parent_scale_offset = match parent_scale_offset {
+        Some(transform) => transform,
         None => return None,
     };
 
     let scale_offset = match node_type {
         SpatialNodeType::ReferenceFrame(ref info) => {
+            let origin_offset = info.origin_in_parent_reference_frame;
+
             match info.source_transform {
                 PropertyBinding::Value(ref value) => {
                     // We can only get a ScaleOffset if the transform is 2d axis
                     // aligned.
                     match ScaleOffset::from_transform(value) {
                         Some(scale_offset) => {
-                            let origin_offset = info.origin_in_parent_reference_frame;
                             scale_offset.then(&ScaleOffset::from_offset(origin_offset.to_untyped()))
                         }
                         None => return None,
@@ -1417,7 +1433,6 @@ fn calculate_snapping_transform(
                 // We still want to incorporate the reference frame offset however.
                 // TODO(aosmond): Is there a better known starting point?
                 PropertyBinding::Binding(..) => {
-                    let origin_offset = info.origin_in_parent_reference_frame;
                     ScaleOffset::from_offset(origin_offset.to_untyped())
                 }
             }

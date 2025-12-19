@@ -557,7 +557,7 @@ add_task(async function test_accountKeys() {
           response.bodyOutputStream.write(emptyMessage, emptyMessage.length);
           break;
 
-        case 3:
+        case 3: {
           // Return gibberish to trigger client MAC error
           // Tweak a byte
           let garbageResponse = JSON.stringify({
@@ -569,6 +569,7 @@ add_task(async function test_accountKeys() {
             garbageResponse.length
           );
           break;
+        }
 
         case 4:
           // Trigger error for nonexistent account
@@ -767,7 +768,7 @@ add_task(async function test_registerDevice() {
   Assert.equal(Object.keys(result).length, 4);
   Assert.equal(result.id, DEVICE_ID);
   Assert.equal(typeof result.createdAt, "number");
-  Assert.ok(result.createdAt > 0);
+  Assert.greater(result.createdAt, 0);
   Assert.equal(result.name, DEVICE_NAME);
   Assert.equal(result.type, DEVICE_TYPE);
 

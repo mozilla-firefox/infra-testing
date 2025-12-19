@@ -53,7 +53,7 @@ NSSSocketControl::NSSSocketControl(
       mSocketCreationTimestamp(TimeStamp::Now()),
       mPlaintextBytesRead(0),
       mClaimed(!(providerFlags & nsISocketProvider::IS_SPECULATIVE_CONNECTION)),
-      mPendingSelectClientAuthCertificate(nullptr),
+      mClientAuthCertificateRequest(Nothing()),
       mBrowserId(0) {}
 
 NS_IMETHODIMP
@@ -170,7 +170,7 @@ void NSSSocketControl::SetHandshakeCompleted() {
 
   if (mTlsHandshakeCallback) {
     auto callback = std::move(mTlsHandshakeCallback);
-    Unused << callback->HandshakeDone();
+    (void)callback->HandshakeDone();
   }
 }
 
@@ -407,7 +407,6 @@ void NSSSocketControl::SetCertVerificationWaiting() {
 // callbacks.
 void NSSSocketControl::SetCertVerificationResult(PRErrorCode errorCode) {
   COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
-  SetUsedPrivateDNS(GetProviderFlags() & nsISocketProvider::USED_PRIVATE_DNS);
   MOZ_ASSERT(mCertVerificationState == WaitingForCertVerification,
              "Invalid state transition to AfterCertVerification");
 
@@ -444,7 +443,7 @@ void NSSSocketControl::SetCertVerificationResult(PRErrorCode errorCode) {
 
   mCertVerificationState = AfterCertVerification;
   if (mTlsHandshakeCallback) {
-    Unused << mTlsHandshakeCallback->CertVerificationDone();
+    (void)mTlsHandshakeCallback->CertVerificationDone();
   }
 }
 
@@ -482,7 +481,7 @@ void NSSSocketControl::ClientAuthCertificateSelected(
         if (cert) {
           if (CERT_AddCertToListTail(mClientCertChain.get(), cert.get()) ==
               SECSuccess) {
-            Unused << cert.release();
+            (void)cert.release();
           }
         }
       }
@@ -495,7 +494,7 @@ void NSSSocketControl::ClientAuthCertificateSelected(
     glean::security::client_auth_cert_usage.Get("sent"_ns).Add(1);
   }
 
-  Unused << SSL_ClientCertCallbackComplete(
+  (void)SSL_ClientCertCallbackComplete(
       mFd, sendingClientAuthCert ? SECSuccess : SECFailure,
       sendingClientAuthCert ? key.release() : nullptr,
       sendingClientAuthCert ? cert.release() : nullptr);
@@ -504,7 +503,7 @@ void NSSSocketControl::ClientAuthCertificateSelected(
           ("[%p] ClientAuthCertificateSelected mTlsHandshakeCallback=%p",
            (void*)mFd, mTlsHandshakeCallback.get()));
   if (mTlsHandshakeCallback) {
-    Unused << mTlsHandshakeCallback->ClientAuthCertificateSelected();
+    (void)mTlsHandshakeCallback->ClientAuthCertificateSelected();
   }
 }
 
@@ -535,7 +534,7 @@ NSSSocketControl::SetHandshakeCallbackListener(
 PRStatus NSSSocketControl::CloseSocketAndDestroy() {
   COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
 
-  mPendingSelectClientAuthCertificate = nullptr;
+  mClientAuthCertificateRequest.reset();
 
   PRFileDesc* popped = PR_PopIOLayer(mFd, PR_TOP_IO_LAYER);
   MOZ_ASSERT(
@@ -752,6 +751,19 @@ void NSSSocketControl::SetPreliminaryHandshakeInfo(
   mSignatureSchemeName.emplace(getSignatureName(channelInfo.signatureScheme));
   mIsDelegatedCredential.emplace(channelInfo.peerDelegCred);
   mIsAcceptedEch.emplace(channelInfo.echAccepted);
+}
+
+void NSSSocketControl::MaybeSelectClientAuthCertificate() {
+  COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
+  if (!IsWaitingForCertVerification() && mClaimed &&
+      mClientAuthCertificateRequest.isSome()) {
+    MOZ_LOG(gPIPNSSLog, mozilla::LogLevel::Debug,
+            ("[%p] selecting client auth certificate", (void*)mFd));
+    ClientAuthCertificateRequest request(
+        mClientAuthCertificateRequest.extract());
+    DoSelectClientAuthCertificate(this, std::move(request.mServerCertificate),
+                                  std::move(request.mCANames));
+  }
 }
 
 NS_IMETHODIMP NSSSocketControl::Claim() {

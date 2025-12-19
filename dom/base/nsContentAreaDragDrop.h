@@ -8,10 +8,9 @@
 #define nsContentAreaDragDrop_h__
 
 #include "nsCOMPtr.h"
-
 #include "nsITransferable.h"
 
-class nsIContentSecurityPolicy;
+class nsIPolicyContainer;
 class nsICookieJarSettings;
 class nsPIDOMWindowOuter;
 class nsITransferable;
@@ -45,7 +44,7 @@ class nsContentAreaDragDrop {
    *                    selection is being dragged.
    * aDragNode - [out] the link, image or area being dragged, or null if the
    *             drag occurred on another element.
-   * aCSP       - [out] set to the CSP of the Drag, or null if
+   * aPolicyContainer - [out] set to the policyContainer of the Drag, or null if
    *                    it's from browser chrome or OS
    * aCookieJarSettings - [out] set to the cookieJarSetting of the Drag, or null
    *                            if it's from browser chrome or OS
@@ -57,7 +56,7 @@ class nsContentAreaDragDrop {
                               bool* aCanDrag,
                               mozilla::dom::Selection** aSelection,
                               nsIContent** aDragNode,
-                              nsIContentSecurityPolicy** aCsp,
+                              nsIPolicyContainer** aPolicyContainer,
                               nsICookieJarSettings** aCookieJarSettings);
 };
 

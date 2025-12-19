@@ -8,7 +8,7 @@ const { AddonTestUtils } = ChromeUtils.importESModule(
 );
 
 const { ActionsProviderQuickActions } = ChromeUtils.importESModule(
-  "resource:///modules/ActionsProviderQuickActions.sys.mjs"
+  "moz-src:///browser/components/urlbar/ActionsProviderQuickActions.sys.mjs"
 );
 
 const CONFIG = [
@@ -42,30 +42,26 @@ const CONFIG = [
 ];
 
 let loadUri = async uri => {
-  let loaded = BrowserTestUtils.browserLoaded(
-    gBrowser.selectedBrowser,
-    false,
-    uri
-  );
-  BrowserTestUtils.startLoadingURIString(gBrowser.selectedBrowser, uri);
-  await loaded;
-};
-
-let updateConfig = async config => {
-  await waitForIdle();
-  await SearchTestUtils.setRemoteSettingsConfig(config);
-  await Services.search.wrappedJSObject.reset();
-  await Services.search.init();
+  gBrowser.selectedBrowser.stop();
+  return BrowserTestUtils.loadURIString({
+    browser: gBrowser.selectedBrowser,
+    uriString: uri,
+    wantLoad: uri,
+  });
 };
 
 add_setup(async function setup() {
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.urlbar.scotchBonnet.enableOverride", true]],
+    set: [
+      ["browser.urlbar.scotchBonnet.enableOverride", true],
+      ["browser.urlbar.quickactions.timesToShowOnboardingLabel", 0],
+    ],
   });
 
   registerCleanupFunction(async () => {
-    await updateConfig(null);
-    Services.search.restoreDefaultEngines();
+    Services.prefs.clearUserPref(
+      "browser.urlbar.quickactions.timesShownOnboardingLabel"
+    );
   });
 });
 
@@ -76,8 +72,9 @@ add_task(async function test_no_engine() {
     value: "test",
   });
 
-  Assert.ok(
-    UrlbarTestUtils.getResultCount(window) > 0,
+  Assert.greater(
+    UrlbarTestUtils.getResultCount(window),
+    0,
     "At least one result is shown"
   );
   await UrlbarTestUtils.promisePopupClose(window);
@@ -88,7 +85,7 @@ add_task(async function test_engine_match() {
     PlacesTestUtils.waitForNotification("history-cleared");
   await PlacesUtils.history.clear();
   await promiseClearHistory;
-  await updateConfig(CONFIG);
+  await SearchTestUtils.updateRemoteSettingsConfig(CONFIG);
   await loadUri("https://example.org/");
 
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
@@ -128,12 +125,10 @@ add_task(async function test_engine_match() {
   EventUtils.synthesizeKey("KEY_Enter");
 
   await onLoad;
-  await updateConfig(null);
 });
 
 add_task(async function test_actions() {
   let testActionCalled = 0;
-  await updateConfig(CONFIG);
   await loadUri("https://example.net/");
 
   ActionsProviderQuickActions.addAction("testaction", {
@@ -154,7 +149,6 @@ add_task(async function test_actions() {
 
   Assert.equal(testActionCalled, 1, "Test action was called");
 
-  await updateConfig(null);
   ActionsProviderQuickActions.removeAction("testaction");
 });
 
@@ -233,7 +227,7 @@ add_task(async function test_tab_to_search_engine() {
       },
     },
   ]);
-  await updateConfig(newConfig);
+  await SearchTestUtils.updateRemoteSettingsConfig(newConfig);
 
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
     window,
@@ -260,7 +254,29 @@ add_task(async function test_tab_to_search_engine() {
   });
 
   await onLoad;
-  await updateConfig(null);
+  await SearchTestUtils.updateRemoteSettingsConfig(CONFIG);
+});
+
+add_task(async function test_onboarding_default_engine() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.quickactions.timesToShowOnboardingLabel", 3]],
+  });
+
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "default",
+  });
+
+  Assert.ok(
+    BrowserTestUtils.isVisible(
+      window.document.querySelector(".urlbarView-press-tab-label")
+    ),
+    "Tip for user to press TAB to select action is visible"
+  );
+
+  await UrlbarTestUtils.promisePopupClose(window, () => {
+    EventUtils.synthesizeKey("KEY_Escape");
+  });
 });
 
 async function hasActions(index) {
@@ -270,10 +286,4 @@ async function hasActions(index) {
   let result = (await UrlbarTestUtils.waitForAutocompleteResultAt(window, 1))
     .result;
   return result.providerName == "UrlbarProviderGlobalActions";
-}
-
-async function waitForIdle() {
-  for (let i = 0; i < 10; i++) {
-    await new Promise(resolve => Services.tm.idleDispatchToMainThread(resolve));
-  }
 }

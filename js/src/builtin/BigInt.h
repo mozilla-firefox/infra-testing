@@ -31,10 +31,8 @@ class BigIntObject : public NativeObject {
   static bool valueOf(JSContext* cx, unsigned argc, JS::Value* vp);
   static bool toString_impl(JSContext* cx, const CallArgs& args);
   static bool toString(JSContext* cx, unsigned argc, JS::Value* vp);
-#ifndef JS_HAS_INTL_API
   static bool toLocaleString_impl(JSContext* cx, const CallArgs& args);
   static bool toLocaleString(JSContext* cx, unsigned argc, JS::Value* vp);
-#endif
   static bool asUintN(JSContext* cx, unsigned argc, JS::Value* vp);
   static bool asIntN(JSContext* cx, unsigned argc, JS::Value* vp);
 
@@ -45,8 +43,6 @@ class BigIntObject : public NativeObject {
   static const JSFunctionSpec methods[];
   static const JSFunctionSpec staticMethods[];
 };
-
-extern JSObject* InitBigIntClass(JSContext* cx, Handle<GlobalObject*> global);
 
 }  // namespace js
 

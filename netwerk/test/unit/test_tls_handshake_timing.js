@@ -7,10 +7,13 @@
 /* import-globals-from head_cache.js */
 /* import-globals-from head_cookies.js */
 /* import-globals-from head_channels.js */
-/* import-globals-from head_servers.js */
 
 var { setTimeout } = ChromeUtils.importESModule(
   "resource://gre/modules/Timer.sys.mjs"
+);
+
+const { NodeHTTPSServer } = ChromeUtils.importESModule(
+  "resource://testing-common/NodeServer.sys.mjs"
 );
 
 let h2Port;
@@ -70,11 +73,11 @@ async function do_test_timing(url) {
   await channelOpenPromise(chan);
   info(`secureConnectionStartTime=${timedChannel.secureConnectionStartTime}`);
   info(`connectEndTime=${timedChannel.connectEndTime}`);
-  Assert.ok(timedChannel.secureConnectionStartTime > 0);
-  Assert.ok(timedChannel.connectEndTime > 0);
+  Assert.greater(timedChannel.secureConnectionStartTime, 0);
+  Assert.greater(timedChannel.connectEndTime, 0);
   let handshakeTime =
     timedChannel.connectEndTime - timedChannel.secureConnectionStartTime;
-  Assert.ok(handshakeTime > 0);
+  Assert.greater(handshakeTime, 0);
   info(`handshakeTime=${handshakeTime}`);
   info("perfMetrics", { handshakeTime });
 }

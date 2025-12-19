@@ -138,6 +138,9 @@ int nr_ice_candidate_create(nr_ice_ctx *ctx,nr_ice_component *comp,nr_ice_socket
     if(r=nr_socket_getaddr(cand->isock->sock,&cand->base))
       ABORT(r);
 
+    /* The base might change protocol when a TURN allocation completes */
+    cand->local_protocol = cand->base.protocol;
+
     switch(ctype) {
       case HOST:
         snprintf(label, sizeof(label), "host(%s)", cand->base.as_string);
@@ -418,48 +421,48 @@ int nr_ice_candidate_compute_priority(nr_ice_candidate *cand)
     UCHAR direction_priority=0;
     int r,_status;
 
-    if (cand->base.protocol != IPPROTO_UDP && cand->base.protocol != IPPROTO_TCP){
+    if (cand->local_protocol != IPPROTO_UDP && cand->local_protocol != IPPROTO_TCP){
       r_log(LOG_ICE,LOG_ERR,"Unknown protocol type %u",
-            (unsigned int)cand->base.protocol);
+            (unsigned int)cand->local_protocol);
       ABORT(R_INTERNAL);
     }
 
     switch(cand->type){
       case HOST:
-        if(cand->base.protocol == IPPROTO_UDP) {
+        if(cand->local_protocol == IPPROTO_UDP) {
           if(r=NR_reg_get_uchar(NR_ICE_REG_PREF_TYPE_HOST,&type_preference))
             ABORT(r);
-        } else if(cand->base.protocol == IPPROTO_TCP) {
+        } else if(cand->local_protocol == IPPROTO_TCP) {
           if(r=NR_reg_get_uchar(NR_ICE_REG_PREF_TYPE_HOST_TCP,&type_preference))
             ABORT(r);
         }
         stun_priority=0;
         break;
       case RELAYED:
-        if(cand->base.protocol == IPPROTO_UDP) {
+        if(cand->local_protocol == IPPROTO_UDP) {
           if(r=NR_reg_get_uchar(NR_ICE_REG_PREF_TYPE_RELAYED,&type_preference))
             ABORT(r);
-        } else if(cand->base.protocol == IPPROTO_TCP) {
+        } else if(cand->local_protocol == IPPROTO_TCP) {
           if(r=NR_reg_get_uchar(NR_ICE_REG_PREF_TYPE_RELAYED_TCP,&type_preference))
             ABORT(r);
         }
         stun_priority=31-cand->stun_server->id;
         break;
       case SERVER_REFLEXIVE:
-        if(cand->base.protocol == IPPROTO_UDP) {
+        if(cand->local_protocol == IPPROTO_UDP) {
           if(r=NR_reg_get_uchar(NR_ICE_REG_PREF_TYPE_SRV_RFLX,&type_preference))
             ABORT(r);
-        } else if(cand->base.protocol == IPPROTO_TCP) {
+        } else if(cand->local_protocol == IPPROTO_TCP) {
           if(r=NR_reg_get_uchar(NR_ICE_REG_PREF_TYPE_SRV_RFLX_TCP,&type_preference))
             ABORT(r);
         }
         stun_priority=31-cand->stun_server->id;
         break;
       case PEER_REFLEXIVE:
-        if(cand->base.protocol == IPPROTO_UDP) {
+        if(cand->local_protocol == IPPROTO_UDP) {
           if(r=NR_reg_get_uchar(NR_ICE_REG_PREF_TYPE_PEER_RFLX,&type_preference))
             ABORT(r);
-        } else if(cand->base.protocol == IPPROTO_TCP) {
+        } else if(cand->local_protocol == IPPROTO_TCP) {
           if(r=NR_reg_get_uchar(NR_ICE_REG_PREF_TYPE_PEER_RFLX_TCP,&type_preference))
             ABORT(r);
         }
@@ -469,7 +472,7 @@ int nr_ice_candidate_compute_priority(nr_ice_candidate *cand)
         ABORT(R_INTERNAL);
     }
 
-    if(cand->base.protocol == IPPROTO_TCP){
+    if(cand->local_protocol == IPPROTO_TCP){
       switch (cand->tcp_type) {
         case TCP_TYPE_ACTIVE:
           if (cand->type == HOST)
@@ -588,6 +591,37 @@ static int nr_ice_candidate_use_nr_resolver(nr_transport_addr *addr)
     return use;
   }
 
+  static int nr_ice_candidate_check_stun_turn_address(
+      const nr_ice_candidate* cand, const nr_transport_addr* addr) {
+    if (!(cand->ctx->flags & NR_ICE_CTX_FLAGS_ALLOW_LOOPBACK) &&
+        nr_transport_addr_is_loopback(addr)) {
+      r_log(LOG_ICE, LOG_WARNING,
+            "ICE(%s): Skipping STUN server because it is on a loopback address "
+            "%s",
+            cand->ctx->label, cand->label);
+      return 0;
+    }
+
+    if (!(cand->ctx->flags & NR_ICE_CTX_FLAGS_ALLOW_LINK_LOCAL) &&
+        nr_transport_addr_is_link_local(addr)) {
+      r_log(LOG_ICE, LOG_WARNING,
+            "ICE(%s): Skipping STUN server because it is on a link-local "
+            "address %s",
+            cand->ctx->label, cand->label);
+      return 0;
+    }
+
+    if (nr_transport_addr_check_compatibility(addr, &cand->base)) {
+      r_log(LOG_ICE, LOG_WARNING,
+            "ICE(%s): Skipping STUN server because of link local mis-match for "
+            "candidate %s",
+            cand->ctx->label, cand->label);
+      return 0;
+    }
+
+    return 1;
+  }
+
 int nr_ice_candidate_initialize(nr_ice_candidate *cand, NR_async_cb ready_cb, void *cb_arg)
   {
     int r,_status;
@@ -671,6 +705,11 @@ int nr_ice_candidate_initialize(nr_ice_candidate *cand, NR_async_cb ready_cb, vo
             ABORT(r);
           }
         } else {
+          if (!nr_ice_candidate_check_stun_turn_address(
+                  cand, &cand->stun_server->addr)) {
+            ABORT(R_NOT_FOUND);
+          }
+
           /* No nr_resolver for this, just copy the address and finish init */
           if (r = nr_transport_addr_copy(&cand->stun_server_addr,
                                          &cand->stun_server->addr)) {
@@ -695,7 +734,6 @@ int nr_ice_candidate_initialize(nr_ice_candidate *cand, NR_async_cb ready_cb, vo
     return(_status);
   }
 
-
 static int nr_ice_candidate_resolved_cb(void *cb_arg, nr_transport_addr *addr)
   {
     nr_ice_candidate *cand=cb_arg;
@@ -713,8 +751,7 @@ static int nr_ice_candidate_resolved_cb(void *cb_arg, nr_transport_addr *addr)
       ABORT(R_NOT_FOUND);
     }
 
-    if (nr_transport_addr_check_compatibility(addr, &cand->base)) {
-      r_log(LOG_ICE,LOG_WARNING,"ICE(%s): Skipping STUN server because of link local mis-match for candidate %s",cand->ctx->label,cand->label);
+    if (!nr_ice_candidate_check_stun_turn_address(cand, addr)) {
       ABORT(R_NOT_FOUND);
     }
 
@@ -801,11 +838,18 @@ static void nr_ice_srvrflx_start_stun_timer_cb(NR_SOCKET s, int how, void *cb_ar
 static int nr_ice_srvrflx_start_stun(nr_ice_candidate *cand)
   {
     int r,_status;
+    int flags = NR_STUN_TRANSPORT_ADDR_CHECK_WILDCARD;
+    if (!(cand->ctx->flags & NR_ICE_CTX_FLAGS_ALLOW_LOOPBACK)) {
+      flags |= NR_STUN_TRANSPORT_ADDR_CHECK_LOOPBACK;
+    }
+    if (!(cand->ctx->flags & NR_ICE_CTX_FLAGS_ALLOW_LINK_LOCAL)) {
+      flags |= NR_STUN_TRANSPORT_ADDR_CHECK_LINK_LOCAL;
+    }
 
     assert(!cand->delay_timer);
-    if(r=nr_stun_client_ctx_create(cand->label, cand->isock->sock,
-      &cand->stun_server_addr, cand->stream->ctx->gather_rto,
-      &cand->u.srvrflx.stun))
+    if (r = nr_stun_client_ctx_create(
+            cand->label, cand->isock->sock, &cand->stun_server_addr,
+            cand->stream->ctx->gather_rto, flags, &cand->u.srvrflx.stun))
       ABORT(r);
 
     NR_ASYNC_TIMER_SET(cand->stream->ctx->stun_delay,nr_ice_srvrflx_start_stun_timer_cb,cand,&cand->delay_timer);

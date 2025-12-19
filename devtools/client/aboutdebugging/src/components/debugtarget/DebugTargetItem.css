@@ -22,10 +22,11 @@
   grid-template-columns: calc(var(--base-unit) * 8) 1fr max-content;
   grid-template-rows: 1fr minmax(0, auto) auto;
   grid-column-gap: calc(var(--base-unit) * 2);
-  grid-template-areas: "icon               name               action"
-                       "icon               subname            action"
-                       "detail             detail             detail"
-                       "additional_actions additional_actions additional_actions";
+  grid-template-areas:
+    "icon               name               action"
+    "icon               subname            action"
+    "detail             detail             detail"
+    "additional_actions additional_actions additional_actions";
   margin-block-end: calc(var(--base-unit) * 4);
 
   padding-block: calc(var(--base-unit) * 3) calc(var(--base-unit) * 2);
@@ -46,7 +47,7 @@
   align-self: center;
   grid-area: name;
   font-size: var(--body-20-font-size);
-  font-weight: var(--body-20-font-weight-bold);
+  font-weight: var(--body-20-font-weight-bold, var(--font-weight-bold));
   line-height: 1.5;
   margin-inline-start: calc(var(--base-unit) * 3);
 }
@@ -82,7 +83,7 @@
   grid-area: subname;
   color: var(--secondary-text-color);
   font-size: var(--caption-20-font-size);
-  font-weight: var(--caption-20-font-weight);
+  font-weight: var(--caption-20-font-weight, normal);
   line-height: 1.5;
 }
 

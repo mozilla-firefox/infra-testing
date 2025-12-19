@@ -7,8 +7,8 @@
 #ifndef jit_ABIFunctionList_inl_h
 #define jit_ABIFunctionList_inl_h
 
-#include "mozilla/MacroArgs.h" // MOZ_CONCAT
-#include "mozilla/SIMD.h"  // mozilla::SIMD::memchr{,2x}{8,16}
+#include "mozilla/MacroArgs.h"  // MOZ_CONCAT
+#include "mozilla/SIMD.h"       // mozilla::SIMD::memchr{,2x}{8,16}
 
 #include "jslibmath.h"  // js::NumberMod
 #include "jsmath.h"     // js::ecmaPow, js::ecmaHypot, js::hypot3, js::hypot4,
@@ -24,7 +24,8 @@
                                        // js::RegExpInstanceOptimizableRaw
 #include "builtin/Sorting.h"           // js::ArraySortData
 #include "builtin/TestingFunctions.h"  // js::FuzzilliHash*
-
+#include "builtin/WeakMapObject.h"     // js::WeakMapObject::{get,has}Object
+#include "builtin/WeakSetObject.h"     // js::WeakSetObject::hasObject
 #include "irregexp/RegExpAPI.h"
 // js::irregexp::CaseInsensitiveCompareNonUnicode,
 // js::irregexp::CaseInsensitiveCompareUnicode,
@@ -138,7 +139,6 @@ namespace jit {
   _(js::jit::AtomicsStore64)                                                   \
   _(js::jit::AtomizeStringNoGC)                                                \
   _(js::jit::Bailout)                                                          \
-  _(js::jit::BaselineScript::OSREntryForFrame)                                 \
   _(js::jit::BigIntNumberEqual<js::jit::EqualityKind::Equal>)                  \
   _(js::jit::BigIntNumberEqual<js::jit::EqualityKind::NotEqual>)               \
   _(js::jit::BigIntNumberCompare<js::jit::ComparisonKind::LessThan>)           \
@@ -175,8 +175,10 @@ namespace jit {
   _(js::jit::PostGlobalWriteBarrier)                                           \
   _(js::jit::PostWriteBarrier)                                                 \
   _(js::jit::PostWriteElementBarrier)                                          \
+  _(js::jit::PreserveWrapper)                                                  \
   _(js::jit::Printf0)                                                          \
   _(js::jit::Printf1)                                                          \
+  _(js::jit::ReadBarrier)                                                      \
   _(js::jit::StringFromCharCodeNoGC)                                           \
   _(js::jit::StringTrimEndIndex)                                               \
   _(js::jit::StringTrimStartIndex)                                             \
@@ -195,8 +197,18 @@ namespace jit {
   _(js::RoundFloat16)                                                          \
   _(js::SetIteratorObject::next)                                               \
   _(js::StringToNumberPure)                                                    \
+  _(js::TypedArrayFillBigInt)                                                  \
+  _(js::TypedArrayFillDouble)                                                  \
+  _(js::TypedArrayFillFloat32)                                                 \
+  _(js::TypedArrayFillInt32)                                                   \
+  _(js::TypedArrayFillInt64)                                                   \
+  _(js::TypedArraySetFromSubarrayInfallible)                                   \
+  _(js::TypedArraySetInfallible)                                               \
   _(js::TypedArraySortFromJit)                                                 \
   _(js::TypeOfObject)                                                          \
+  _(js::WeakMapObject::getObject)                                              \
+  _(js::WeakMapObject::hasObject)                                              \
+  _(js::WeakSetObject::hasObject)                                              \
   _(mozilla::SIMD::memchr16)                                                   \
   _(mozilla::SIMD::memchr2x16)                                                 \
   _(mozilla::SIMD::memchr2x8)                                                  \
@@ -250,10 +262,10 @@ namespace jit {
 ABIFUNCTION_LIST(DEF_TEMPLATE)
 #undef DEF_TEMPLATE
 
-#define DEF_TEMPLATE(fp, ...)                 \
-  template <>                                 \
-  struct ABIFunctionData<__VA_ARGS__, fp> { \
-    static constexpr bool registered = true;  \
+#define DEF_TEMPLATE(fp, ...)                \
+  template <>                                \
+  struct ABIFunctionData<__VA_ARGS__, fp> {  \
+    static constexpr bool registered = true; \
   };
 ABIFUNCTION_AND_TYPE_LIST(DEF_TEMPLATE)
 #undef DEF_TEMPLATE
@@ -284,8 +296,9 @@ ABIFUNCTIONSIG_LIST(DEF_TEMPLATE)
 // `::(foo)` is invalid; and (2) that would only check the function name itself,
 // not eg template parameters.
 namespace check_fully_qualified {
-#define CHECK_NS_VISIBILITY(fp) \
-  [[maybe_unused]] static constexpr decltype(&fp) MOZ_CONCAT(fp_, __COUNTER__) = nullptr;
+#define CHECK_NS_VISIBILITY(fp)                               \
+  [[maybe_unused]] static constexpr decltype(&fp) MOZ_CONCAT( \
+      fp_, __COUNTER__) = nullptr;
 ABIFUNCTION_LIST(CHECK_NS_VISIBILITY)
 #undef CHECK_NS_VISIBILITY
 }  // namespace check_fully_qualified

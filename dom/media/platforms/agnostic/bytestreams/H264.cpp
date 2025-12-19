@@ -3,6 +3,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "H264.h"
+
+#include <limits>
+
 #include "AnnexB.h"
 #include "BitReader.h"
 #include "BitWriter.h"
@@ -12,9 +15,7 @@
 #include "MediaInfo.h"
 #include "mozilla/PodOperations.h"
 #include "mozilla/Result.h"
-#include "mozilla/ResultExtensions.h"
 #include "mozilla/Try.h"
-#include <limits>
 
 #define READSE(var, min, max)     \
   {                               \
@@ -397,17 +398,16 @@ class SPSNALIterator {
   }
   reader.Read(paramSets[i].mOffset);
 
-  uint8_t byte;
-  MOZ_TRY_VAR(byte, reader.ReadU8());
+  uint8_t byte = MOZ_TRY(reader.ReadU8());
   uint8_t nalUnitType = byte & 0x1f;
   if (nalUnitType == H264_NAL_PREFIX || nalUnitType == H264_NAL_SLICE_EXT) {
     bool svcExtensionFlag = false;
-    MOZ_TRY_VAR(byte, reader.ReadU8());
+    byte = MOZ_TRY(reader.ReadU8());
     svcExtensionFlag = byte & 0x80;
     if (svcExtensionFlag) {
       // Discard the first byte, and find the temporal id in the second byte
       MOZ_TRY(reader.ReadU8());
-      MOZ_TRY_VAR(byte, reader.ReadU8());
+      byte = MOZ_TRY(reader.ReadU8());
       int temporalId = (byte & 0xE0) >> 5;
       return temporalId;
     }
@@ -958,18 +958,27 @@ uint32_t H264::ComputeMaxRefFrames(const mozilla::MediaByteBuffer* aExtraData) {
     int8_t nalType = AssertedCast<int8_t>(*p & 0x1f);
     if (nalType == H264_NAL_IDR_SLICE) {
       // IDR NAL.
-      return FrameType::I_FRAME;
+      return FrameType::I_FRAME_IDR;
     }
     if (nalType == H264_NAL_SEI) {
       RefPtr<mozilla::MediaByteBuffer> decodedNAL = DecodeNALUnit(p, nalLen);
       SEIRecoveryData data;
       if (DecodeRecoverySEI(decodedNAL, data)) {
-        return FrameType::I_FRAME;
+        // When both conditions are true, it means that starting decoding from
+        // an SEI frame will produce the same result as starting from an IDR
+        // frame, with no frame difference. If only one condition is true, it is
+        // not a true IDR substitute and may cause minor visual artifacts.
+        // However, since some video streams are incorrectly muxed without
+        // proper attributes, allowing playback with a few visual imperfections
+        // is preferable to failing to play them at all.
+        return (data.recovery_frame_cnt == 0 || data.exact_match_flag == 0)
+                   ? FrameType::I_FRAME_IDR
+                   : FrameType::I_FRAME_OTHER;
       }
     } else if (nalType == H264_NAL_SLICE) {
       RefPtr<mozilla::MediaByteBuffer> decodedNAL = DecodeNALUnit(p, nalLen);
       if (DecodeISlice(decodedNAL)) {
-        return FrameType::I_FRAME;
+        return FrameType::I_FRAME_OTHER;
       }
     }
   }
@@ -1019,19 +1028,19 @@ uint32_t H264::ComputeMaxRefFrames(const mozilla::MediaByteBuffer* aExtraData) {
     uint32_t nalLen = 0;
     switch (nalLenSize) {
       case 1:
-        Unused << reader.ReadU8().map(
+        (void)reader.ReadU8().map(
             [&](uint8_t x) mutable { return nalLen = x; });
         break;
       case 2:
-        Unused << reader.ReadU16().map(
+        (void)reader.ReadU16().map(
             [&](uint16_t x) mutable { return nalLen = x; });
         break;
       case 3:
-        Unused << reader.ReadU24().map(
+        (void)reader.ReadU24().map(
             [&](uint32_t x) mutable { return nalLen = x; });
         break;
       case 4:
-        Unused << reader.ReadU32().map(
+        (void)reader.ReadU32().map(
             [&](uint32_t x) mutable { return nalLen = x; });
         break;
       default:
@@ -1106,7 +1115,7 @@ uint32_t H264::ComputeMaxRefFrames(const mozilla::MediaByteBuffer* aExtraData) {
 /* static */
 uint8_t H264::NumSPS(const mozilla::MediaByteBuffer* aExtraData) {
   auto avcc = AVCCConfig::Parse(aExtraData);
-  return avcc.isErr() ? 0 : avcc.unwrap().mNumSPS;
+  return avcc.isErr() ? 0 : avcc.unwrap().NumSPS();
 }
 
 /* static */
@@ -1143,13 +1152,11 @@ bool H264::CompareExtraData(const mozilla::MediaByteBuffer* aExtraData1,
 
 static inline Result<Ok, nsresult> ReadSEIInt(BufferReader& aBr,
                                               uint32_t& aOutput) {
-  uint8_t tmpByte;
-
   aOutput = 0;
-  MOZ_TRY_VAR(tmpByte, aBr.ReadU8());
+  uint8_t tmpByte = MOZ_TRY(aBr.ReadU8());
   while (tmpByte == 0xFF) {
     aOutput += 255;
-    MOZ_TRY_VAR(tmpByte, aBr.ReadU8());
+    tmpByte = MOZ_TRY(aBr.ReadU8());
   }
   aOutput += tmpByte;  // this is the last byte
   return Ok();
@@ -1345,18 +1352,168 @@ void H264::WriteExtraData(MediaByteBuffer* aDestExtraData,
   if (!aExtraData || aExtraData->Length() < 7) {
     return mozilla::Err(NS_ERROR_FAILURE);
   }
-  const auto& byteBuffer = *aExtraData;
-  if (byteBuffer[0] != 1) {
+  AVCCConfig avcc{};
+  BitReader reader(aExtraData);
+
+  avcc.mConfigurationVersion = reader.ReadBits(8);
+  if (avcc.mConfigurationVersion != 1) {
+    LOG("Invalid configuration version %u", avcc.mConfigurationVersion);
     return mozilla::Err(NS_ERROR_FAILURE);
   }
-  AVCCConfig avcc{};
-  avcc.mConfigurationVersion = byteBuffer[0];
-  avcc.mAVCProfileIndication = byteBuffer[1];
-  avcc.mProfileCompatibility = byteBuffer[2];
-  avcc.mAVCLevelIndication = byteBuffer[3];
-  avcc.mLengthSizeMinusOne = byteBuffer[4] & 0x3;
-  avcc.mNumSPS = byteBuffer[5] & 0x1F;
+  avcc.mAVCProfileIndication = reader.ReadBits(8);
+  avcc.mProfileCompatibility = reader.ReadBits(8);
+  avcc.mAVCLevelIndication = reader.ReadBits(8);
+  (void)reader.ReadBits(6);  // reserved
+  avcc.mLengthSizeMinusOne = reader.ReadBits(2);
+  (void)reader.ReadBits(3);  // reserved
+  const uint8_t numSPS = reader.ReadBits(5);
+  for (uint8_t idx = 0; idx < numSPS; idx++) {
+    if (reader.BitsLeft() < 16) {
+      LOG("Aborting parsing, not enough bits (16) for SPS length!");
+      return mozilla::Err(NS_ERROR_FAILURE);
+    }
+    uint16_t sequenceParameterSetLength = reader.ReadBits(16);
+    uint32_t spsBitsLength = sequenceParameterSetLength * 8;
+    const uint8_t* spsPtr = aExtraData->Elements() + reader.BitCount() / 8;
+    if (reader.AdvanceBits(spsBitsLength) < spsBitsLength) {
+      LOG("Aborting parsing, SPS NALU size (%u bits) is larger than remaining!",
+          spsBitsLength);
+      return mozilla::Err(NS_ERROR_FAILURE);
+    }
+    H264NALU nalu(spsPtr, sequenceParameterSetLength);
+    if (nalu.mNalUnitType != H264_NAL_SPS) {
+      LOG("Aborting parsing, expect SPS but got incorrect NALU type (%d)!",
+          nalu.mNalUnitType);
+      return mozilla::Err(NS_ERROR_FAILURE);
+    }
+    avcc.mSPSs.AppendElement(nalu);
+  }
+  if (reader.BitsLeft() < 8) {
+    LOG("Missing numOfPictureParameterSets");
+    return mozilla::Err(NS_ERROR_FAILURE);
+  }
+  const uint8_t numPPS = reader.ReadBits(8);
+  for (uint8_t idx = 0; idx < numPPS; idx++) {
+    if (reader.BitsLeft() < 16) {
+      LOG("Aborting parsing, not enough bits (16) for PPS length!");
+      return mozilla::Err(NS_ERROR_FAILURE);
+    }
+    uint16_t pictureParameterSetLength = reader.ReadBits(16);
+    uint32_t ppsBitsLength = pictureParameterSetLength * 8;
+    const uint8_t* ppsPtr = aExtraData->Elements() + reader.BitCount() / 8;
+    if (reader.AdvanceBits(ppsBitsLength) < ppsBitsLength) {
+      LOG("Aborting parsing, PPS NALU size (%u bits) is larger than remaining!",
+          ppsBitsLength);
+      return mozilla::Err(NS_ERROR_FAILURE);
+    }
+    H264NALU nalu(ppsPtr, pictureParameterSetLength);
+    if (nalu.mNalUnitType != H264_NAL_PPS) {
+      LOG("Aborting parsing, expect PPS but got incorrect NALU type (%d)!",
+          nalu.mNalUnitType);
+      return mozilla::Err(NS_ERROR_FAILURE);
+    }
+    avcc.mPPSs.AppendElement(nalu);
+  }
+
+  // The AVCDecoderConfigurationRecord syntax requires that the SPSExt must be
+  // present if AVCProfileIndication is not 66 (Baseline), 77 (Main), or 88
+  // (Extended). However, in practice, many H.264 streams in the wild omit the
+  // SPSExt fields, especially when default values are used (e.g.,
+  // chroma_format_idc = 1 for 4:2:0 chroma format, bit_depth_luma_minus8 = 0,
+  // and bit_depth_chroma_minus8 = 0) Therefore, parsing this part is not
+  // mandatory and fail to parse this part will not cause an actual error.
+  // Instead, we will simply clear the incorrect result.
+  if (avcc.mAVCProfileIndication != 66 && avcc.mAVCProfileIndication != 77 &&
+      avcc.mAVCProfileIndication != 88 && reader.BitsLeft() >= 32) {
+    (void)reader.ReadBits(6);  // reserved
+    avcc.mChromaFormat = Some(reader.ReadBits(2));
+    (void)reader.ReadBits(5);  // reserved
+    avcc.mBitDepthLumaMinus8 = Some(reader.ReadBits(3));
+    (void)reader.ReadBits(5);  // reserved
+    avcc.mBitDepthChromaMinus8 = Some(reader.ReadBits(3));
+    const uint8_t numOfSequenceParameterSetExt = reader.ReadBits(8);
+    for (uint8_t idx = 0; idx < numOfSequenceParameterSetExt; idx++) {
+      if (reader.BitsLeft() < 16) {
+        LOG("Aborting parsing, not enough bits (16) for SPSExt length!");
+        break;
+      }
+      uint16_t sequenceParameterSetExtLength = reader.ReadBits(16);
+      uint32_t spsExtBitsLength = sequenceParameterSetExtLength * 8;
+      const uint8_t* spsExtPtr = aExtraData->Elements() + reader.BitCount() / 8;
+      if (reader.AdvanceBits(spsExtBitsLength) < spsExtBitsLength) {
+        LOG("Aborting parsing, SPS Ext NALU size (%u bits) is larger than "
+            "remaining!",
+            spsExtBitsLength);
+        break;
+      }
+      H264NALU nalu(spsExtPtr, sequenceParameterSetExtLength);
+      if (nalu.mNalUnitType != H264_NAL_SPS_EXT) {
+        LOG("Aborting parsing, expect SPSExt but got incorrect NALU type "
+            "(%d)!",
+            nalu.mNalUnitType);
+        break;
+      }
+      avcc.mSPSExts.AppendElement(nalu);
+    }
+    if (avcc.mSPSExts.Length() != numOfSequenceParameterSetExt) {
+      LOG("Failed to parse all SPSExt, and soft fail.");
+    }
+  }
   return avcc;
+}
+
+already_AddRefed<mozilla::MediaByteBuffer> AVCCConfig::CreateNewExtraData()
+    const {
+  auto extradata = MakeRefPtr<mozilla::MediaByteBuffer>();
+  BitWriter writer(extradata);
+  writer.WriteBits(mConfigurationVersion, 8);
+  writer.WriteBits(mAVCProfileIndication, 8);
+  writer.WriteBits(mProfileCompatibility, 8);
+  writer.WriteBits(mAVCLevelIndication, 8);
+  writer.WriteBits(0x111111, 6);  // reserved
+  writer.WriteBits(mLengthSizeMinusOne, 2);
+  writer.WriteBits(0x111, 3);  // reserved
+  writer.WriteBits(mSPSs.Length(), 5);
+  for (const auto& nalu : mSPSs) {
+    writer.WriteBits(nalu.mNALU.Length(), 16);
+    MOZ_DIAGNOSTIC_ASSERT(writer.BitCount() % 8 == 0);
+    extradata->AppendElements(nalu.mNALU.Elements(), nalu.mNALU.Length());
+    writer.AdvanceBytes(nalu.mNALU.Length());
+  }
+  writer.WriteBits(mPPSs.Length(), 8);
+  for (const auto& nalu : mPPSs) {
+    writer.WriteBits(nalu.mNALU.Length(), 16);
+    MOZ_DIAGNOSTIC_ASSERT(writer.BitCount() % 8 == 0);
+    extradata->AppendElements(nalu.mNALU.Elements(), nalu.mNALU.Length());
+    writer.AdvanceBytes(nalu.mNALU.Length());
+  }
+  if (mAVCProfileIndication != 66 && mAVCProfileIndication != 77 &&
+      mAVCProfileIndication != 88 && mChromaFormat.isSome() &&
+      mBitDepthLumaMinus8.isSome() && mBitDepthChromaMinus8.isSome()) {
+    writer.WriteBits(0x111111, 6);  // reserved
+    writer.WriteBits(*mChromaFormat, 2);
+    writer.WriteBits(0x11111, 5);  // reserved
+    writer.WriteBits(*mBitDepthLumaMinus8, 3);
+    writer.WriteBits(0x11111, 5);  // reserved
+    writer.WriteBits(*mBitDepthChromaMinus8, 3);
+    writer.WriteBits(mSPSExts.Length(), 8);
+    for (const auto& nalu : mSPSExts) {
+      writer.WriteBits(nalu.mNALU.Length(), 16);
+      MOZ_DIAGNOSTIC_ASSERT(writer.BitCount() % 8 == 0);
+      extradata->AppendElements(nalu.mNALU.Elements(), nalu.mNALU.Length());
+      writer.AdvanceBytes(nalu.mNALU.Length());
+    }
+  }
+  return AVCCConfig::Parse(extradata).isOk() ? extradata.forget() : nullptr;
+}
+
+H264NALU::H264NALU(const uint8_t* aData, uint32_t aByteCount)
+    : mNALU(aData, aByteCount) {
+  // Per 7.3.1 NAL unit syntax
+  BitReader reader(aData, aByteCount * 8);
+  (void)reader.ReadBit();    // forbidden_zero_bit
+  (void)reader.ReadBits(2);  // nal_ref_idc
+  mNalUnitType = reader.ReadBits(5);
 }
 
 #undef READUE

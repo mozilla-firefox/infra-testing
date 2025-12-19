@@ -53,6 +53,9 @@ newtab-topsites-add-shortcut-header = Нова пречица
 newtab-topsites-edit-topsites-header = Уреди популарне сајтове
 newtab-topsites-edit-shortcut-header = Измени пречицу
 newtab-topsites-add-shortcut-label = Додај пречицу
+newtab-topsites-add-shortcut-title =
+    .title = Додај пречицу
+    .aria-label = Додај пречицу
 newtab-topsites-title-label = Наслов
 newtab-topsites-title-input =
     .placeholder = Унесите наслов
@@ -117,9 +120,6 @@ newtab-menu-delete-pocket = Избриши из { -pocket-brand-name(case: "gen"
 newtab-menu-archive-pocket = Архивирај у { -pocket-brand-name(case: "loc") }
 newtab-menu-show-privacy-info = Наши спонзори и ваша приватност
 newtab-menu-about-fakespot = О { -fakespot-brand-name }-у
-
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
 
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
@@ -238,9 +238,6 @@ newtab-pocket-learn-more = Сазнајте више
 newtab-pocket-cta-button = Преузми { -pocket-brand-name(case: "acc") }
 newtab-pocket-cta-text = Сачувајте приче које вам се свиђају у { -pocket-brand-name(case: "loc") } и уживајте у врхунском штиву.
 newtab-pocket-pocket-firefox-family = { -pocket-brand-name } је члан { -brand-product-name } породице
-# A save to Pocket button that shows over the card thumbnail on hover.
-newtab-pocket-image =
-    .aria-label = { -pocket-brand-name }
 newtab-pocket-save = Сачувај
 newtab-pocket-saved = Сачувано
 
@@ -295,9 +292,6 @@ newtab-custom-pocket-sponsored = Спонзорисане приче
 newtab-custom-pocket-show-recent-saves = Прикажи недавно сачувано
 newtab-custom-recent-title = Недавна активност
 newtab-custom-recent-subtitle = Избор недавних сајтова и садржаја
-newtab-custom-recent-toggle =
-    .label = Недавна активност
-    .description = Избор недавних сајтова и садржаја
 newtab-custom-weather-toggle =
     .label = Време
     .description = Временска прогноза за данас
@@ -352,7 +346,7 @@ newtab-wallpaper-abstract-orange = Наранџасти облици
 newtab-wallpaper-gradient-orange = Градијент наранџасте и розе
 newtab-wallpaper-abstract-blue-purple = Плави и љубичасти облици
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Фотографије
 newtab-wallpaper-beach-at-sunrise = Плажа у изласку сунца
@@ -376,9 +370,6 @@ feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
 
-## Celestial
-
-
 ## New Tab Weather
 
 # Variables:
@@ -392,7 +383,6 @@ newtab-weather-menu-change-location = Промени место
 newtab-weather-change-location-search-input-placeholder =
     .placeholder = Потражи место
     .aria-label = Потражи место
-newtab-weather-change-location-search-input = Потражи место
 newtab-weather-menu-weather-display = Приказ времена
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
@@ -450,19 +440,3 @@ newtab-topic-selection-button-maybe-later = Можда касније
 newtab-topic-selection-privacy-link = Сазнајте како штитимо и управљамо подацима
 newtab-topic-selection-button-update-interests = Ажурирајте ваша интересовања
 newtab-topic-selection-button-pick-interests = Одаберите ваша интересовања
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
-
-## Panel in the Customize menu section to manage followed and blocked topics
-

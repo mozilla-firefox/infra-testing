@@ -11,12 +11,13 @@
 class nsDragSessionProxy : public nsBaseDragSession {
  public:
   NS_INLINE_DECL_REFCOUNTING_INHERITED(nsDragSessionProxy, nsBaseDragSession)
+  nsDragSessionProxy();
 
   MOZ_CAN_RUN_SCRIPT virtual nsresult InvokeDragSession(
       nsIWidget* aWidget, nsINode* aDOMNode, nsIPrincipal* aPrincipal,
-      nsIContentSecurityPolicy* aCsp, nsICookieJarSettings* aCookieJarSettings,
-      nsIArray* aTransferableArray, uint32_t aActionType,
-      nsContentPolicyType aContentPolicyType) override;
+      nsIPolicyContainer* aPolicyContainer,
+      nsICookieJarSettings* aCookieJarSettings, nsIArray* aTransferableArray,
+      uint32_t aActionType, nsContentPolicyType aContentPolicyType) override;
 
   nsresult InvokeDragSessionImpl(
       nsIWidget* aWidget, nsIArray* anArrayTransferables,
@@ -42,6 +43,7 @@ class nsDragSessionProxy : public nsBaseDragSession {
 class nsDragServiceProxy : public nsBaseDragService {
  public:
   NS_INLINE_DECL_REFCOUNTING_INHERITED(nsDragServiceProxy, nsBaseDragService)
+  nsDragServiceProxy();
 
   already_AddRefed<nsIDragSession> CreateDragSession() override;
 

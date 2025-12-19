@@ -29,9 +29,9 @@
 #include "rtc_base/task_queue_for_test.h"
 #include "rtc_base/thread.h"
 #include "rtc_base/thread_annotations.h"
+#include "test/create_test_field_trials.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
-#include "test/scoped_key_value_config.h"
 #include "test/wait_until.h"
 
 namespace webrtc {
@@ -40,8 +40,8 @@ namespace {
 
 using ::testing::Eq;
 
-const int kDefaultFrameRate = 30;
-const int kDefaultFrameSize = 1280 * 720;
+constexpr int kDefaultFrameRate = 30;
+constexpr int kDefaultFrameSize = 1280 * 720;
 constexpr TimeDelta kDefaultTimeout = TimeDelta::Seconds(5);
 
 class VideoSourceRestrictionsListenerForTesting
@@ -66,7 +66,7 @@ class VideoSourceRestrictionsListenerForTesting
     RTC_DCHECK_RUN_ON(&sequence_checker_);
     return adaptation_counters_;
   }
-  rtc::scoped_refptr<Resource> reason() const {
+  scoped_refptr<Resource> reason() const {
     RTC_DCHECK_RUN_ON(&sequence_checker_);
     return reason_;
   }
@@ -75,7 +75,7 @@ class VideoSourceRestrictionsListenerForTesting
   void OnVideoSourceRestrictionsUpdated(
       VideoSourceRestrictions restrictions,
       const VideoAdaptationCounters& adaptation_counters,
-      rtc::scoped_refptr<Resource> reason,
+      scoped_refptr<Resource> reason,
       const VideoSourceRestrictions& /* unfiltered_restrictions */) override {
     RTC_DCHECK_RUN_ON(&sequence_checker_);
     ++restrictions_updated_count_;
@@ -90,7 +90,7 @@ class VideoSourceRestrictionsListenerForTesting
   VideoSourceRestrictions restrictions_ RTC_GUARDED_BY(&sequence_checker_);
   VideoAdaptationCounters adaptation_counters_
       RTC_GUARDED_BY(&sequence_checker_);
-  rtc::scoped_refptr<Resource> reason_ RTC_GUARDED_BY(&sequence_checker_);
+  scoped_refptr<Resource> reason_ RTC_GUARDED_BY(&sequence_checker_);
 };
 
 class ResourceAdaptationProcessorTest : public ::testing::Test {
@@ -103,7 +103,7 @@ class ResourceAdaptationProcessorTest : public ::testing::Test {
         video_stream_adapter_(
             std::make_unique<VideoStreamAdapter>(&input_state_provider_,
                                                  &frame_rate_provider_,
-                                                 field_trials_)),
+                                                 CreateTestFieldTrials())),
         processor_(std::make_unique<ResourceAdaptationProcessor>(
             video_stream_adapter_.get())) {
     video_stream_adapter_->AddRestrictionsListener(&restrictions_listener_);
@@ -142,16 +142,15 @@ class ResourceAdaptationProcessorTest : public ::testing::Test {
   }
 
   static void WaitUntilTaskQueueIdle() {
-    ASSERT_TRUE(rtc::Thread::Current()->ProcessMessages(0));
+    ASSERT_TRUE(Thread::Current()->ProcessMessages(0));
   }
 
  protected:
-  rtc::AutoThread main_thread_;
-  webrtc::test::ScopedKeyValueConfig field_trials_;
+  AutoThread main_thread_;
   FakeFrameRateProvider frame_rate_provider_;
   VideoStreamInputStateProvider input_state_provider_;
-  rtc::scoped_refptr<FakeResource> resource_;
-  rtc::scoped_refptr<FakeResource> other_resource_;
+  scoped_refptr<FakeResource> resource_;
+  scoped_refptr<FakeResource> other_resource_;
   std::unique_ptr<VideoStreamAdapter> video_stream_adapter_;
   std::unique_ptr<ResourceAdaptationProcessor> processor_;
   VideoSourceRestrictionsListenerForTesting restrictions_listener_;
@@ -459,7 +458,7 @@ TEST_F(ResourceAdaptationProcessorTest,
 
   // Wait for `resource_` to signal oversue first so we know that the delegate
   // has passed it on to the processor's task queue.
-  rtc::Event resource_event;
+  Event resource_event;
   TaskQueueForTest resource_task_queue("ResourceTaskQueue");
   resource_task_queue.PostTask([&]() {
     resource_->SetUsageState(ResourceUsageState::kOveruse);
@@ -481,7 +480,7 @@ TEST_F(ResourceAdaptationProcessorTest,
       DegradationPreference::MAINTAIN_FRAMERATE);
   SetInputStates(true, kDefaultFrameRate, kDefaultFrameSize);
 
-  rtc::Event overuse_event;
+  Event overuse_event;
   TaskQueueForTest resource_task_queue("ResourceTaskQueue");
   // Queues task for `resource_` overuse while `processor_` is still listening.
   resource_task_queue.PostTask([&]() {

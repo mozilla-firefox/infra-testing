@@ -8,6 +8,10 @@
 
 "use strict";
 
+const { sinon } = ChromeUtils.importESModule(
+  "resource://testing-common/Sinon.sys.mjs"
+);
+
 const CONFIG = [
   {
     identifier: "defaultEngine",
@@ -29,10 +33,11 @@ const CONFIG = [
   },
 ];
 
-var appDefaultEngine, extraEngine, extraPrivateEngine, expectedString;
-var tabs = [];
+let appDefaultEngine, extraEngine, extraPrivateEngine, expectedString;
+let tabs = [];
 
-var noEngineString;
+let noEngineString;
+let keywordDisabledString;
 SearchTestUtils.init(this);
 
 add_setup(async function () {
@@ -42,13 +47,14 @@ add_setup(async function () {
   let originalOrder = (await Services.search.getEngines()).map(e => e.id);
   await SearchTestUtils.updateRemoteSettingsConfig(CONFIG);
   appDefaultEngine = await Services.search.getDefault();
-  [noEngineString, expectedString] = (
+  [noEngineString, expectedString, keywordDisabledString] = (
     await document.l10n.formatMessages([
       { id: "urlbar-placeholder" },
       {
         id: "urlbar-placeholder-with-name",
         args: { name: appDefaultEngine.name },
       },
+      { id: "urlbar-placeholder-keyword-disabled" },
     ])
   ).map(msg => msg.attributes[0].value);
 
@@ -140,6 +146,10 @@ async function doDelayedUpdatePlaceholderTest({ defaultEngine }) {
   info("Clear placeholder cache");
   Services.prefs.clearUserPref("browser.urlbar.placeholderName");
 
+  info("Pretend we're on startup and the search service hasn't started yet.");
+  let stub = sinon.stub(Services.search.wrappedJSObject, "isInitialized");
+  stub.get(() => false);
+
   info("Open a new window");
   let newWin = await BrowserTestUtils.openNewBrowserWindow();
 
@@ -154,10 +164,13 @@ async function doDelayedUpdatePlaceholderTest({ defaultEngine }) {
     "Placeholder data should be unchanged."
   );
 
+  info("Pretend the search service has finished initializing.");
+  stub.restore();
+
   info("Simulate user interaction");
   let urlTab = BrowserTestUtils.addTab(newWin.gBrowser, "about:mozilla");
   await BrowserTestUtils.switchTab(newWin.gBrowser, urlTab);
-  if (defaultEngine.isAppProvided) {
+  if (defaultEngine.isConfigEngine) {
     await TestUtils.waitForCondition(
       () => newWin.gURLBar.placeholder == expectedString,
       "The placeholder should include the engine name for built-in engines."
@@ -368,6 +381,22 @@ add_task(async function test_change_default_engine_updates_placeholder() {
   Assert.equal(gURLBar.placeholder, expectedString);
 
   notificationBox.close();
+});
+
+add_task(async function test_keyword_disabled() {
+  tabs.push(await BrowserTestUtils.openNewForegroundTab(gBrowser));
+
+  await SpecialPowers.pushPrefEnv({
+    set: [["keyword.enabled", false]],
+  });
+  await TestUtils.waitForCondition(
+    () => gURLBar.placeholder == keywordDisabledString
+  );
+  Assert.ok(true, "Updated the placeholder to the keyword disabled one.");
+
+  await SpecialPowers.popPrefEnv();
+  await TestUtils.waitForCondition(() => gURLBar.placeholder == expectedString);
+  Assert.ok(true, "Updated the placeholder to the keyword enabled one.");
 });
 
 /**

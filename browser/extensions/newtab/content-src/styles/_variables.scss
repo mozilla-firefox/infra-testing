@@ -1,50 +1,55 @@
 @use 'sass:math';
 
-$primary-blue: rgb(0, 97, 224);
-$primary-green: rgb(0, 128, 120);
-$primary-blue-dark: rgb(0, 221, 255);
+// newtab only variables, otherwise use https://firefoxux.github.io/firefox-desktop-components/?path=/story/docs-tokens-table--default
+:root {
+  --newtab-card-height: 282px;
+  --newtab-card-width-medium: 300px;
+  --newtab-card-grid-layout-width: 296px; // Matches widget used in Base.jsx
+}
+
+$primary-blue: var(--color-accent-primary);
+$primary-blue-dark: var(--color-accent-primary);
 $primary-text-color-dark: rgb(43, 42, 51);
 
 // -------------------------------------------------------------------------- //
-// Photon colors from http://design.firefox.com/photon/visuals/color.html
+// Grays from http://design.firefox.com/photon/visuals/color.html
 
-$blue-40: #45A1FF;
-$blue-50: #0A84FF;
 $grey-30: #D7D7DB;
 $grey-60: #4A4A4F;
 $grey-90: #0C0C0D;
-$red-60: #D70022;
-$yellow-50: #FFE900;
 
 $grey-90-10: rgba($grey-90, 0.1);
 $grey-90-20: rgba($grey-90, 0.2);
 
-$blue-40-40: rgba($blue-40, 0.4);
-$blue-50-30: rgba($blue-50, 0.3);
+$blue-40-40: oklch(from var(--color-blue-40) / lch 40%);
+$blue-50-30: oklch(from var(--color-blue-50) / lch 30%);
 
 $black: #000;
 $black-10: rgba($black, 0.1);
 $black-15: rgba($black, 0.15);
 $black-20: rgba($black, 0.2);
+$black-25: rgba($black, 0.25);
 $black-30: rgba($black, 0.3);
 $black-40: rgba($black, 0.4);
 
 // -------------------------------------------------------------------------- //
 // Other colors
 
-$white: #FFF;
-$status-green: #058B00;
-$status-dark-green: #7C6;
-$bookmark-icon-fill: #0A84FF;
-$download-icon-fill: #12BC00;
+$white: var(--color-white);
+$status-green: var(--color-green-50);
+$status-dark-green: var(--color-green-30);
+$bookmark-icon-fill: var(--color-blue-40);
+$download-icon-fill: var(--color-green-40);
 $pocket-icon-fill: #EF4056;
-$email-input-invalid: rgba($red-60, 0.3);
+$email-input-invalid: var(--color-red-10);
 
 $newtab-wordmark-default-color: #20123A;
 $newtab-wordmark-darktheme-color: rgb(251, 251, 254);
 
-$in-content-page-color: rgb(21, 20, 26);
-$in-content-page-color-dark: rgb(251, 251, 254);
+/* stylelint-disable-next-line stylelint-plugin-mozilla/no-non-semantic-token-usage */
+$in-content-page-color: var(--text-color);
+/* stylelint-disable-next-line stylelint-plugin-mozilla/no-non-semantic-token-usage */
+$in-content-page-color-dark: var(--text-color);
 
 // -------------------------------------------------------------------------- //
 // These colors should match the colors in the default themes
@@ -54,25 +59,22 @@ $in-content-page-color-dark: rgb(251, 251, 254);
 
 $in-content-page-background: #F9F9FB;
 $in-content-page-background-dark: #2B2A33;
-
-$newtab-background-secondary: #FFF;
+$newtab-background-secondary: var(--color-white);
 $newtab-background-secondary-dark: rgb(66, 65, 77);
 
-// Mirrors $newtab-background-secondary with 20% opacity
-$newtab-background-card: rgba(255, 255, 255, 80%);
-$newtab-background-card-dark: rgb(66, 65, 77, 80%);
+// Mirrors $newtab-background-secondary with 15% transparency
+$newtab-background-card: color-mix(in srgb, var(--color-white) 85%, transparent);
+$newtab-background-card-dark: rgba(66, 65, 77, 85%);
 
 // Photon transitions from http://design.firefox.com/photon/motion/duration-and-easing.html
 $photon-easing: cubic-bezier(0.07, 0.95, 0, 1);
 
-$border-radius: 3px;
-$border-radius-new: 8px;
-
 // Grid related styles
 $base-gutter: 32px;
 $section-horizontal-padding: 25px;
+$vars-section-horizontal-padding: 25px;
 $section-vertical-padding: 10px;
-$section-spacing: 40px - $section-vertical-padding * 2;
+$section-spacing: 40px - $section-vertical-padding * 2; // 20px
 $grid-unit: 96px; // 1 top site
 // New Tab Experience grid unit needs to be smaller, but for now we are changing
 // this UI with a pref, so requires duplication.
@@ -87,12 +89,12 @@ $searchbar-width-medium: ($grid-unit * 4 + $base-gutter * 3) - 120px; // 360px
 $searchbar-width-large: ($grid-unit * 6 + $base-gutter * 5) - 136px; // 600px
 $searchbar-width-largest: ($grid-unit * 6 + $base-gutter * 5) - 16px; // 720px
 
-$wrapper-default-width: $grid-unit * 2 + $base-gutter * 1 + $section-horizontal-padding * 2; // 2 top sites
-$wrapper-max-width-medium: $grid-unit * 4 + $base-gutter * 3 + $section-horizontal-padding * 2; // 4 top sites
-$wrapper-max-width-large: $grid-unit * 6 + $base-gutter * 5 + $section-horizontal-padding * 2; // 6 top sites
-$wrapper-max-width-widest: $grid-unit * 8 + $base-gutter * 7 + $section-horizontal-padding * 2; // 8 top sites
-$wrapper-max-width-weather: $grid-unit * 12 + $base-gutter * 7 + $section-horizontal-padding * 2; // Weather visible
-$wrapper-max-width-ultra-wide: $grid-unit * 14 + $base-gutter * 7 + $section-horizontal-padding * 2; // 8 top sites 4 stories
+$wrapper-default-width: $grid-unit * 2 + $base-gutter * 1 + $vars-section-horizontal-padding * 2; // 2 top sites
+$wrapper-max-width-medium: $grid-unit * 4 + $base-gutter * 3 + $vars-section-horizontal-padding * 2; // 4 top sites
+$wrapper-max-width-large: $grid-unit * 6 + $base-gutter * 5 + $vars-section-horizontal-padding * 2; // 6 top sites
+$wrapper-max-width-widest: $grid-unit * 8 + $base-gutter * 7 + $vars-section-horizontal-padding * 2; // 8 top sites
+$wrapper-max-width-weather: $grid-unit * 12 + $base-gutter * 7 + $vars-section-horizontal-padding * 2; // Weather visible
+$wrapper-max-width-ultra-wide: $grid-unit * 14 + $base-gutter * 7 + $vars-section-horizontal-padding * 2; // 8 top sites 4 stories
 // For the breakpoints, we need to add space for the scrollbar to avoid weird
 // layout issues when the scrollbar is visible. 16px is wide enough to cover all
 // OSes and keeps it simpler than a per-OS value.
@@ -134,7 +136,8 @@ $debug-breakpoint-colors: (
   ultra-wide: violet
 );
 
-$section-title-font-size: 17px;
+/* stylelint-disable-next-line stylelint-plugin-mozilla/no-non-semantic-token-usage */
+$section-title-font-size: var(--font-size-large);
 
 $card-width: $grid-unit-small * 2 + $base-gutter;
 
@@ -152,18 +155,16 @@ $card-preview-image-height-large: 155px;
 $card-height-compact: 160px;
 $card-preview-image-height-compact: 108px;
 
-$topic-margin-top: 12px;
+$topic-margin-block-start: 12px;
 
 $context-menu-button-size: 27px;
 $context-menu-button-boxshadow: 0 2px $grey-90-10;
 $context-menu-shadow: 0 5px 10px $black-30, 0 0 0 1px $black-20;
-$context-menu-font-size: 14px;
-$context-menu-border-radius: 5px;
+$context-menu-font-size: inherit;
+
+// $context-menu-border-radius: 5px;
 $context-menu-outer-padding: 5px;
 $context-menu-item-padding: 3px 12px;
-
-$error-fallback-font-size: 12px;
-$error-fallback-line-height: 1.5;
 
 $image-path: 'chrome://newtab/content/data/content/assets/';
 
@@ -195,17 +196,17 @@ $customize-menu-border-tint: 1px solid rgba(0, 0, 0, 15%);
     background-image: url('chrome://global/skin/icons/more.svg');
     background-position: 50.1%;
     border: 0;
-    outline: $border-primary;
+    outline: 1px solid var(--border-color);
     outline-width: 0;
-    border-radius: 100%;
+    border-radius: var(--border-radius-circle);
     cursor: pointer;
     color: var(--button-text-color);
     fill: var(--newtab-button-text);
     height: $context-menu-button-size;
-    inset-inline-end: math.div(-$context-menu-button-size, 2);
+    inset-inline-end: calc(var(--space-medium) * -1);
     opacity: 0;
     position: absolute;
-    top: math.div(-$context-menu-button-size, 2);
+    inset-block-start: calc(var(--space-medium) * -1);
     transform: scale(0.25);
     transition-duration: 150ms;
     transition-property: transform, opacity;
@@ -247,13 +248,13 @@ $customize-menu-border-tint: 1px solid rgba(0, 0, 0, 15%);
     margin-inline-end: auto;
     margin-inline-start: auto;
     inset-inline-end: auto;
-    inset-inline-start: -$base-gutter;
+    inset-inline-start: calc(var(--space-xxlarge) * -1);
   }
 }
 
 @mixin context-menu-open-left {
   .context-menu {
-    margin-inline-end: 5px;
+    margin-inline-end: var(--space-xsmall);
     margin-inline-start: auto;
     inset-inline-end: 0;
     inset-inline-start: auto;

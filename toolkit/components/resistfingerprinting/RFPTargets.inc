@@ -24,6 +24,7 @@ ITEM_VALUE(CanvasRandomization,         9)
 ITEM_VALUE(CanvasImageExtractionPrompt, 10)
 ITEM_VALUE(CanvasExtractionFromThirdPartiesIsBlocked, 11)
 ITEM_VALUE(CanvasExtractionBeforeUserInputIsBlocked,  12)
+// See also EfficientCanvasRandomization = 76 below
 
 ITEM_VALUE(JSLocale,                13)
 
@@ -34,7 +35,8 @@ ITEM_VALUE(NavigatorHWConcurrency,      16)
 ITEM_VALUE(NavigatorOscpu,              17)
 ITEM_VALUE(NavigatorPlatform,           18)
 ITEM_VALUE(NavigatorUserAgent,          19)
-ITEM_VALUE(PointerId,                   20)
+// If the user disables PDFJS via a pref, we do not expose that to the web
+ITEM_VALUE(PdfjsSpoof,                  20)
 ITEM_VALUE(StreamVideoFacingMode,       21)
 ITEM_VALUE(JSDateTimeUTC,               22)
 ITEM_VALUE(JSMathFdlibm,                23)
@@ -60,7 +62,7 @@ ITEM_VALUE(WidgetEvents,                36)
 ITEM_VALUE(MediaDevices,                37)
 ITEM_VALUE(MediaCapabilities,           38)
 ITEM_VALUE(AudioSampleRate,             39)
-ITEM_VALUE(NavigatorConnection,         40)
+ITEM_VALUE(NetworkConnection,           40)
 ITEM_VALUE(WindowDevicePixelRatio,      41)
 ITEM_VALUE(MouseEventScreenPoint,       42)
 // Visibility level of font families available to CSS font-matching
@@ -98,10 +100,21 @@ ITEM_VALUE(WebGPULimits,                64)
 ITEM_VALUE(WebGPUIsFallbackAdapter,     65)
 ITEM_VALUE(WebGPUSubgroupSizes,         66)
 ITEM_VALUE(JSLocalePrompt,              67)
+ITEM_VALUE(ScreenAvailToResolution,     68)
+ITEM_VALUE(UseHardcodedFontSubstitutes, 69)
+ITEM_VALUE(DiskStorageLimit,            70)
+ITEM_VALUE(WebCodecs,                   71)
+ITEM_VALUE(MaxTouchPoints,              72)
+ITEM_VALUE(MaxTouchPointsCollapse,      73)
+ITEM_VALUE(NavigatorHWConcurrencyTiered,74)
+ITEM_VALUE(WebGLRandomization,          75)
+ITEM_VALUE(EfficientCanvasRandomization, 76)
+ITEM_VALUE(WebGLVendorSanitize,         77)
+ITEM_VALUE(WebGLVendorConstant,         78)
+ITEM_VALUE(WebGLVendorRandomize,        79)
+ITEM_VALUE(WebGLRendererConstant,       80)
 
-
-// !!! Don't forget to update kDefaultFingerprintingProtections in nsRFPService.cpp
-// if necessary.
+// !!! Adding a new target? Rename PointerId and repurpose it.
 
 /*
  * In certain cases, we precompute the value of ShouldRFP for e.g. a Document.

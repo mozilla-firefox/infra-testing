@@ -45,10 +45,16 @@
 #include "ProfilerStackWalk.h"
 #include "ProfilerRustBindings.h"
 #include "mozilla/Assertions.h"
+#include "mozilla/HelperMacros.h"
+#include "mozilla/PodOperations.h"
 #include "mozilla/Likely.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/Perfetto.h"
+#include "nsID.h"
+#include "nsIDUtils.h"
+#include "nsString.h"
+#include "nsCExternalHandlerService.h"
 #include "nsCOMPtr.h"
 #include "nsDebug.h"
 #include "nsISupports.h"
@@ -60,7 +66,8 @@
 #include "js/ProfilingFrameIterator.h"
 #include "memory_counter.h"
 #include "memory_hooks.h"
-#include "mozilla/ArrayUtils.h"
+#include "memory_markers.h"
+#include "mozilla/ArrayAlgorithm.h"
 #include "mozilla/AutoProfilerLabel.h"
 #include "mozilla/BaseAndGeckoProfilerDetail.h"
 #include "mozilla/CycleCollectedJSContext.h"
@@ -86,7 +93,6 @@
 #  include "mozilla/WindowsStackWalkInitialization.h"
 #endif
 #include "mozilla/StaticPtr.h"
-#include "mozilla/ThreadLocal.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Vector.h"
@@ -295,6 +301,11 @@ void profiler_dump_and_stop();
 // Forward declare the function to call when we need to start the profiler.
 void profiler_start_from_signal();
 
+#if defined(GP_OS_darwin)
+// Forward declare thermal state observer function (macOS only)
+void profiler_register_thermal_state_observer();
+#endif
+
 mozilla::Atomic<int, mozilla::MemoryOrdering::Relaxed> gSkipSampling;
 
 #if defined(GP_OS_android)
@@ -311,36 +322,48 @@ class GeckoJavaSampler
     return profiler_time();
   };
 
-  static void JavaStringArrayToCharArray(jni::ObjectArray::Param& aJavaArray,
-                                         Vector<const char*>& aCharArray,
-                                         JNIEnv* aJni) {
+  static void JavaStringArrayToCharArray(
+      jni::ObjectArray::Param& aJavaArray,
+      Vector<UniqueFreePtr<char>>& aCharArray, JNIEnv* aJni) {
     int arraySize = aJavaArray->Length();
     for (int i = 0; i < arraySize; i++) {
       jstring javaString =
           (jstring)(aJni->GetObjectArrayElement(aJavaArray.Get(), i));
       const char* filterString = aJni->GetStringUTFChars(javaString, 0);
-      // FIXME. These strings are leaked.
-      MOZ_RELEASE_ASSERT(aCharArray.append(filterString));
+      if (filterString != nullptr) {
+        int filterStringLen = aJni->GetStringUTFLength(javaString);
+        MOZ_RELEASE_ASSERT(
+            aCharArray.append(strndup(filterString, filterStringLen)));
+        aJni->ReleaseStringUTFChars(javaString, filterString);
+      }
     }
   }
 
   static void StartProfiler(jni::ObjectArray::Param aFiltersArray,
                             jni::ObjectArray::Param aFeaturesArray) {
     JNIEnv* jni = jni::GetEnvForThread();
-    Vector<const char*> filtersTemp;
-    Vector<const char*> featureStringArray;
+    Vector<UniqueFreePtr<char>> filtersTemp;
+    Vector<UniqueFreePtr<char>> featureStringArray;
 
     JavaStringArrayToCharArray(aFiltersArray, filtersTemp, jni);
     JavaStringArrayToCharArray(aFeaturesArray, featureStringArray, jni);
 
     uint32_t features = 0;
-    features = ParseFeaturesFromStringArray(featureStringArray.begin(),
-                                            featureStringArray.length());
+    auto convertToPtr = [](const UniqueFreePtr<char>& ptr) -> const char* {
+      return ptr.get();
+    };
+    auto featureStringArrayPtr =
+        mozilla::TransformIntoNewArray(featureStringArray, convertToPtr);
+    features = ParseFeaturesFromStringArray(featureStringArrayPtr.Elements(),
+                                            featureStringArrayPtr.Length());
 
     // 128 * 1024 * 1024 is the entries preset that is given in
     // devtools/client/performance-new/shared/background.sys.mjs
+    auto filtersTempPtr =
+        mozilla::TransformIntoNewArray(filtersTemp, convertToPtr);
     profiler_start(PowerOfTwo32(128 * 1024 * 1024), 5.0, features,
-                   filtersTemp.begin(), filtersTemp.length(), 0, Nothing());
+                   filtersTempPtr.Elements(), filtersTempPtr.Length(), 0,
+                   Nothing());
   }
 
   static void StopProfiler(jni::Object::Param aGeckoResult) {
@@ -1224,6 +1247,11 @@ class ActivePS {
       }
     }
 #endif
+
+#if defined(MOZ_PROFILER_MEMORY) && defined(MOZJEMALLOC_PROFILING_CALLBACKS)
+    unregister_profiler_memory_callbacks();
+#endif
+
     if (mProfileBufferChunkManager) {
       // We still control the chunk manager, remove it from the core buffer.
       profiler_get_core_buffer().ResetChunkManager();
@@ -1571,6 +1599,44 @@ class ActivePS {
     // We don't need to sort the pages like threads since we won't show them
     // as a list.
     return array;
+  }
+
+  // Collect JS sources from the main thread, since script source storage is
+  // shared between all threads.
+  static nsTArray<mozilla::JSSourceEntry> GatherJSSources(PSLockRef aLock) {
+    nsTArray<mozilla::JSSourceEntry> jsSourceEntries;
+    if (!ProfilerFeature::HasJSSources(ActivePS::Features(aLock))) {
+      return jsSourceEntries;
+    }
+
+    ThreadRegistry::LockedRegistry lockedRegistry;
+    ActivePS::ProfiledThreadList threads =
+        ActivePS::ProfiledThreads(lockedRegistry, aLock);
+
+    // Get the JS context of the main thread. We don't need to get the
+    // JSContext of others because the script source storage is shared between
+    // threads.
+    auto* mainThread =
+        std::find_if(threads.begin(), threads.end(), [](const auto& thread) {
+          return thread.mProfiledThreadData->Info().IsMainThread();
+        });
+
+    if (mainThread == threads.end() || !mainThread->mJSContext) {
+      return jsSourceEntries;
+    }
+    JSContext* jsContext = mainThread->mJSContext;
+
+    js::ProfilerJSSources threadSources =
+        js::GetProfilerScriptSources(JS_GetRuntime(jsContext));
+
+    // Generate UUIDs and build mappings for each source
+    for (ProfilerJSSourceData& sourceData : threadSources) {
+      // Generate UUID for this source and store it in the global array.
+      jsSourceEntries.AppendElement(JSSourceEntry(
+          NSID_TrimBracketsASCII(nsID::GenerateUUID()), std::move(sourceData)));
+    }
+
+    return jsSourceEntries;
   }
 
   static ProfiledThreadData* AddLiveProfiledThread(
@@ -2409,7 +2475,8 @@ static void MergeStacks(
           jsFrame.kind == JS::ProfilingFrameIterator::Frame_WasmIon ||
           jsFrame.kind == JS::ProfilingFrameIterator::Frame_WasmBaseline ||
           jsFrame.kind == JS::ProfilingFrameIterator::Frame_WasmOther) {
-        aCollector.CollectWasmFrame(jsFrame.profilingCategory(), jsFrame.label);
+        aCollector.CollectWasmOrSyncJITFrame(jsFrame.profilingCategory(),
+                                             jsFrame.label, jsFrame.sourceId);
       } else if (jsFrame.kind ==
                  JS::ProfilingFrameIterator::Frame_BaselineInterpreter) {
         // Materialize a ProfilingStackFrame similar to the C++ Interpreter. We
@@ -2421,7 +2488,7 @@ static void MergeStacks(
             uint32_t(js::ProfilingStackFrame::Flags::IS_BLINTERP_FRAME);
         stackFrame.initJsFrame<JS::ProfilingCategoryPair::JS_BaselineInterpret,
                                ExtraFlags>("", jsFrame.label, script, pc,
-                                           jsFrame.realmID);
+                                           jsFrame.realmID, jsFrame.sourceId);
         aCollector.CollectProfilingStackFrame(stackFrame);
       } else {
         MOZ_ASSERT(jsFrame.kind == JS::ProfilingFrameIterator::Frame_Ion ||
@@ -3205,7 +3272,7 @@ static PreRecordedMetaInformation PreRecordMetaInformation(
   if (nsCOMPtr<nsIHttpProtocolHandler> http =
           do_GetService(NS_NETWORK_PROTOCOL_CONTRACTID_PREFIX "http", &res);
       !NS_FAILED(res) && http) {
-    Unused << http->GetPlatform(info.mHttpPlatform);
+    (void)http->GetPlatform(info.mHttpPlatform);
 
 #if defined(XP_MACOSX)
     // On Mac, the http "oscpu" is capped at 10.15, so we need to get the real
@@ -3243,7 +3310,7 @@ static PreRecordedMetaInformation PreRecordMetaInformation(
     } else
 #endif
     {
-      Unused << http->GetOscpu(info.mHttpOscpu);
+      (void)http->GetOscpu(info.mHttpOscpu);
     }
 
     // Firefox version is capped to 109.0 in the http "misc" field due to some
@@ -3255,16 +3322,16 @@ static PreRecordedMetaInformation PreRecordMetaInformation(
   if (nsCOMPtr<nsIXULRuntime> runtime =
           do_GetService("@mozilla.org/xre/runtime;1");
       runtime) {
-    Unused << runtime->GetXPCOMABI(info.mRuntimeABI);
-    Unused << runtime->GetWidgetToolkit(info.mRuntimeToolkit);
+    (void)runtime->GetXPCOMABI(info.mRuntimeABI);
+    (void)runtime->GetWidgetToolkit(info.mRuntimeToolkit);
   }
 
   if (nsCOMPtr<nsIXULAppInfo> appInfo =
           do_GetService("@mozilla.org/xre/app-info;1");
       appInfo) {
-    Unused << appInfo->GetName(info.mAppInfoProduct);
-    Unused << appInfo->GetAppBuildID(info.mAppInfoAppBuildID);
-    Unused << appInfo->GetSourceURL(info.mAppInfoSourceURL);
+    (void)appInfo->GetName(info.mAppInfoProduct);
+    (void)appInfo->GetAppBuildID(info.mAppInfoAppBuildID);
+    (void)appInfo->GetSourceURL(info.mAppInfoSourceURL);
   }
 
   ProcessInfo processInfo = {};  // Aggregate-init all fields to false/zeroes.
@@ -3282,6 +3349,27 @@ static PreRecordedMetaInformation PreRecordMetaInformation(
 static void StreamMetaPlatformSampleUnits(PSLockRef aLock,
                                           SpliceableJSONWriter& aWriter);
 
+static void MaybeWriteRawStartTimeValue(SpliceableJSONWriter& aWriter,
+                                        const TimeStamp& aStartTime) {
+#ifdef XP_LINUX
+  aWriter.DoubleProperty(
+      "startTimeAsClockMonotonicNanosecondsSinceBoot",
+      static_cast<double>(aStartTime.RawClockMonotonicNanosecondsSinceBoot()));
+#endif
+
+#ifdef XP_DARWIN
+  aWriter.DoubleProperty(
+      "startTimeAsMachAbsoluteTimeNanoseconds",
+      static_cast<double>(aStartTime.RawMachAbsoluteTimeNanoseconds()));
+#endif
+
+#ifdef XP_WIN
+  uint64_t startTimeQPC = aStartTime.RawQueryPerformanceCounterValue();
+  aWriter.DoubleProperty("startTimeAsQueryPerformanceCounterValue",
+                         static_cast<double>(startTimeQPC));
+#endif
+}
+
 static void StreamMetaJSCustomObject(
     PSLockRef aLock, SpliceableJSONWriter& aWriter, bool aIsShuttingDown,
     const PreRecordedMetaInformation& aPreRecordedMetaInformation) {
@@ -3290,14 +3378,20 @@ static void StreamMetaJSCustomObject(
   aWriter.IntProperty("version", GECKO_PROFILER_FORMAT_VERSION);
 
   // The "startTime" field holds the number of milliseconds since midnight
-  // January 1, 1970 GMT. This grotty code computes (Now - (Now -
-  // ProcessStartTime)) to convert CorePS::ProcessStartTime() into that form.
-  // Note: This is the only absolute time in the profile! All other timestamps
-  // are relative to this startTime.
-  TimeDuration delta = TimeStamp::Now() - CorePS::ProcessStartTime();
-  aWriter.DoubleProperty(
-      "startTime",
-      static_cast<double>(PR_Now() / 1000.0 - delta.ToMilliseconds()));
+  // January 1, 1970 GMT (the "Unix epoch"). This grotty code computes (Now -
+  // (Now - ProcessStartTime)) to convert CorePS::ProcessStartTime() into that
+  // form. Note: This start time, and the platform-specific "raw start time",
+  // are the only absolute time values in the profile! All other timestamps are
+  // relative to this startTime.
+  TimeStamp startTime = CorePS::ProcessStartTime();
+  TimeStamp now = TimeStamp::Now();
+  double millisecondsSinceUnixEpoch = static_cast<double>(PR_Now()) / 1000.0;
+  double millisecondsSinceStartTime = (now - startTime).ToMilliseconds();
+  double millisecondsBetweenUnixEpochAndStartTime =
+      millisecondsSinceUnixEpoch - millisecondsSinceStartTime;
+  aWriter.DoubleProperty("startTime", millisecondsBetweenUnixEpochAndStartTime);
+
+  MaybeWriteRawStartTimeValue(aWriter, startTime);
 
   aWriter.DoubleProperty("profilingStartTime", (ActivePS::ProfilingStartTime() -
                                                 CorePS::ProcessStartTime())
@@ -3537,9 +3631,9 @@ struct JavaMarkerWithDetails {
               MS::Location::MarkerTable};
     schema.SetTooltipLabel("{marker.name}");
     schema.SetChartLabel("{marker.data.name}");
-    schema.SetTableLabel("{marker.name} - {marker.data.name}");
-    schema.AddKeyLabelFormatSearchable("name", "Details", MS::Format::String,
-                                       MS::Searchable::Searchable);
+    schema.SetTableLabel("{marker.data.name}");
+    schema.AddKeyLabelFormat("name", "Details", MS::Format::String,
+                             MS::PayloadFlags::Searchable);
     return schema;
   }
 };
@@ -3578,7 +3672,7 @@ static void CollectJavaThreadProfileData(
       nsCString frameNameString = frameName->ToCString();
 
       auto categoryPair = InferJavaCategory(frameNameString);
-      aProfileBuffer.CollectCodeLocation("", frameNameString.get(), 0, 0,
+      aProfileBuffer.CollectCodeLocation("", frameNameString.get(), 0, 0, 0,
                                          Nothing(), Nothing(),
                                          Some(categoryPair));
     }
@@ -3757,7 +3851,9 @@ locked_profiler_stream_json_for_this_process(
 
   // Put page data
   aWriter.StartArrayProperty("pages");
-  { StreamPages(aLock, aWriter); }
+  {
+    StreamPages(aLock, aWriter);
+  }
   aWriter.EndArray();
   aProgressLogger.SetLocalProgress(6_pc, "Wrote pages");
 
@@ -3773,6 +3869,19 @@ locked_profiler_stream_json_for_this_process(
     return Err(ProfilerError::JsonGenerationFailed);
   }
   SLOW_DOWN_FOR_TESTING();
+
+  // Collect JS sources from the main thread, since script source storage is
+  // shared between all threads.
+  nsTArray<mozilla::JSSourceEntry> jsSourceEntries =
+      ActivePS::GatherJSSources(aLock);
+
+  // If there are sources, stream the sources table that is shared between the
+  // threads, and get the UUID to index mappings needed for frame serialization.
+  Maybe<nsTHashMap<SourceId, IndexIntoSourceTable>> sourceIdToIndexMap;
+  if (!jsSourceEntries.IsEmpty()) {
+    sourceIdToIndexMap.emplace(
+        buffer.StreamSourceTableToJSON(aWriter, jsSourceEntries));
+  }
 
   // Lists the samples for each thread profile
   aWriter.StartArrayProperty("threads");
@@ -3801,7 +3910,8 @@ locked_profiler_stream_json_for_this_process(
       MOZ_RELEASE_ASSERT(thread.mProfiledThreadData);
       processStreamingContext.AddThreadStreamingContext(
           *thread.mProfiledThreadData, buffer, thread.mJSContext, aService,
-          std::move(progressLogger));
+          std::move(progressLogger),
+          sourceIdToIndexMap.isSome() ? sourceIdToIndexMap.ptr() : nullptr);
       if (aWriter.Failed()) {
         return Err(ProfilerError::JsonGenerationFailed);
       }
@@ -3923,7 +4033,8 @@ locked_profiler_stream_json_for_this_process(
   }
 #endif  // DEBUG
 
-  return ProfileGenerationAdditionalInformation{std::move(sharedLibraryInfo)};
+  return ProfileGenerationAdditionalInformation{std::move(sharedLibraryInfo),
+                                                std::move(jsSourceEntries)};
 }
 
 // Keep this internal function non-static, so it may be used by tests.
@@ -3950,10 +4061,8 @@ do_profiler_stream_json_for_this_process(
     return Err(ProfilerError::IsInactive);
   }
 
-  ProfileGenerationAdditionalInformation additionalInfo;
-  MOZ_TRY_VAR(
-      additionalInfo,
-      locked_profiler_stream_json_for_this_process(
+  ProfileGenerationAdditionalInformation additionalInfo =
+      MOZ_TRY(locked_profiler_stream_json_for_this_process(
           lock, aWriter, aSinceTime, preRecordedMetaInformation,
           aIsShuttingDown, aService,
           aProgressLogger.CreateSubLoggerFromTo(
@@ -3976,10 +4085,10 @@ profiler_stream_json_for_this_process(SpliceableJSONWriter& aWriter,
       "In the parent process, profiles should only be generated from the main "
       "thread, otherwise they will be incomplete.");
 
-  ProfileGenerationAdditionalInformation additionalInfo;
-  MOZ_TRY_VAR(additionalInfo, do_profiler_stream_json_for_this_process(
-                                  aWriter, aSinceTime, aIsShuttingDown,
-                                  aService, std::move(aProgressLogger)));
+  ProfileGenerationAdditionalInformation additionalInfo =
+      MOZ_TRY(do_profiler_stream_json_for_this_process(
+          aWriter, aSinceTime, aIsShuttingDown, aService,
+          std::move(aProgressLogger)));
 
   return additionalInfo;
 }
@@ -5161,10 +5270,10 @@ struct UnregisteredThreadLifetimeMarker {
   static MarkerSchema MarkerTypeDisplay() {
     using MS = MarkerSchema;
     MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
-    schema.AddKeyFormatSearchable("Thread Id", MS::Format::Integer,
-                                  MS::Searchable::Searchable);
-    schema.AddKeyFormatSearchable("Thread Name", MS::Format::String,
-                                  MS::Searchable::Searchable);
+    schema.AddKeyFormat("Thread Id", MS::Format::Integer,
+                        MS::PayloadFlags::Searchable);
+    schema.AddKeyFormat("Thread Name", MS::Format::String,
+                        MS::PayloadFlags::Searchable);
     schema.AddKeyFormat("End Event", MS::Format::String);
     schema.AddStaticLabelValue(
         "Note",
@@ -5193,13 +5302,12 @@ struct UnregisteredThreadCPUMarker {
   static MarkerSchema MarkerTypeDisplay() {
     using MS = MarkerSchema;
     MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
-    schema.AddKeyFormatSearchable("Thread Id", MS::Format::Integer,
-                                  MS::Searchable::Searchable);
+    schema.AddKeyFormat("Thread Id", MS::Format::Integer,
+                        MS::PayloadFlags::Searchable);
     schema.AddKeyFormat("CPU Time", MS::Format::Nanoseconds);
     schema.AddKeyFormat("CPU Utilization", MS::Format::Percentage);
     schema.SetChartLabel("{marker.data.CPU Utilization}");
-    schema.SetTableLabel(
-        "{marker.name} - Activity: {marker.data.CPU Utilization}");
+    schema.SetTableLabel("Activity: {marker.data.CPU Utilization}");
     return schema;
   }
 };
@@ -5242,7 +5350,7 @@ void SamplerThread::SpyOnUnregisteredThreads() {
       /* aWindowInfo = */ nsTArray<WindowInfo>{},
       /* aUtilityInfo = */ nsTArray<UtilityInfo>{},
       /* aChild = */ 0
-#ifdef XP_DARWIN
+#ifdef XP_MACOSX
       ,
       /* aChildTask = */ MACH_PORT_NULL
 #endif  // XP_DARWIN
@@ -5539,9 +5647,22 @@ static void NotifyObservers(const char* aTopic,
     return;
   }
 
+  // Notify C++ observers through the ObserverService
   if (nsCOMPtr<nsIObserverService> os = services::GetObserverService()) {
     os->NotifyObservers(aSubject, aTopic, nullptr);
   }
+
+#if defined(GP_OS_android)
+  // In the parent process, notify the GeckoJavaSampler when the profiler is
+  // started / stopped.
+  if (XRE_IsParentProcess()) {
+    if (strcmp(aTopic, "profiler-started") == 0) {
+      java::GeckoJavaSampler::NotifyProfilerStateChanged(true);
+    } else if (strcmp(aTopic, "profiler-stopped") == 0) {
+      java::GeckoJavaSampler::NotifyProfilerStateChanged(false);
+    }
+  }
+#endif
 }
 
 [[nodiscard]] static RefPtr<GenericPromise> NotifyProfilerStarted(
@@ -5656,8 +5777,9 @@ static void profiler_start_signal_handler(int signal, siginfo_t* info,
   // This means that it's safe for us to call within a signal handler.
   if (sAsyncSignalControlWriteFd != -1) {
     char signalControlCharacter = sAsyncSignalControlCharStart;
-    Unused << write(sAsyncSignalControlWriteFd, &signalControlCharacter,
-                    sizeof(signalControlCharacter));
+    [[maybe_unused]] ssize_t _ =
+        write(sAsyncSignalControlWriteFd, &signalControlCharacter,
+              sizeof(signalControlCharacter));
   }
 }
 
@@ -5672,8 +5794,9 @@ static void profiler_stop_signal_handler(int signal, siginfo_t* info,
   // signal safe.
   if (sAsyncSignalControlWriteFd != -1) {
     char signalControlCharacter = sAsyncSignalControlCharStop;
-    Unused << write(sAsyncSignalControlWriteFd, &signalControlCharacter,
-                    sizeof(signalControlCharacter));
+    [[maybe_unused]] ssize_t _ =
+        write(sAsyncSignalControlWriteFd, &signalControlCharacter,
+              sizeof(signalControlCharacter));
   }
 }
 #endif
@@ -5767,7 +5890,7 @@ void profiler_start_from_signal() {
       // ParentProfiler will start child threads.
       NS_DispatchToMainThread(
           NS_NewRunnableFunction("StartProfilerInChildProcesses", [=] {
-            Unused << NotifyProfilerStarted(
+            (void)NotifyProfilerStarted(
                 PROFILER_DEFAULT_SIGHANDLE_ENTRIES, Nothing(),
                 PROFILER_DEFAULT_INTERVAL, features,
                 const_cast<const char**>(filters), std::size(filters), 0);
@@ -5847,7 +5970,7 @@ void profiler_dump_and_stop() {
 #if defined(GECKO_PROFILER_ASYNC_POSIX_SIGNAL_CONTROL)
 void profiler_init_signal_handlers() {
   // Set a handler to start the profiler
-  struct sigaction prof_start_sa {};
+  struct sigaction prof_start_sa{};
   memset(&prof_start_sa, 0, sizeof(struct sigaction));
   prof_start_sa.sa_sigaction = profiler_start_signal_handler;
   prof_start_sa.sa_flags = SA_RESTART | SA_SIGINFO;
@@ -5856,7 +5979,7 @@ void profiler_init_signal_handlers() {
   MOZ_ASSERT(rstart == 0, "Failed to install Profiler SIGUSR1 handler");
 
   // Set a handler to stop the profiler
-  struct sigaction prof_stop_sa {};
+  struct sigaction prof_stop_sa{};
   memset(&prof_stop_sa, 0, sizeof(struct sigaction));
   prof_stop_sa.sa_sigaction = profiler_stop_signal_handler;
   prof_stop_sa.sa_flags = SA_RESTART | SA_SIGINFO;
@@ -6114,12 +6237,19 @@ void profiler_init(void* aStackTop) {
   // so let's record it again now.
   profiler_mark_thread_awake();
 
+#if defined(GP_OS_darwin)
+  // Register thermal state observer callback on macOS (parent process only)
+  if (XRE_IsParentProcess()) {
+    profiler_register_thermal_state_observer();
+  }
+#endif
+
   invoke_profiler_state_change_callbacks(ProfilingState::Started);
 
   // We do this with gPSMutex unlocked. The comment in profiler_stop() explains
   // why.
-  Unused << NotifyProfilerStarted(capacity, duration, interval, features,
-                                  filters.begin(), filters.length(), 0);
+  (void)NotifyProfilerStarted(capacity, duration, interval, features,
+                              filters.begin(), filters.length(), 0);
 }
 
 static void locked_profiler_save_profile_to_file(
@@ -6183,7 +6313,7 @@ void profiler_shutdown(IsFastShutdown aIsFastShutdown) {
   // We do these operations with gPSMutex unlocked. The comments in
   // profiler_stop() explain why.
   if (samplerThread) {
-    Unused << ProfilerParent::ProfilerStopped();
+    (void)ProfilerParent::ProfilerStopped();
     NotifyObservers("profiler-stopped");
     delete samplerThread;
   }
@@ -6192,37 +6322,42 @@ void profiler_shutdown(IsFastShutdown aIsFastShutdown) {
   ThreadRegistration::UnregisterThread();
 }
 
-static bool WriteProfileToJSONWriter(SpliceableChunkedJSONWriter& aWriter,
-                                     double aSinceTime, bool aIsShuttingDown,
-                                     ProfilerCodeAddressService* aService,
-                                     mozilla::ProgressLogger aProgressLogger) {
+static ProfilerResult<ProfileGenerationAdditionalInformation>
+WriteProfileToJSONWriter(SpliceableChunkedJSONWriter& aWriter,
+                         double aSinceTime, bool aIsShuttingDown,
+                         ProfilerCodeAddressService* aService,
+                         mozilla::ProgressLogger aProgressLogger) {
   LOG("WriteProfileToJSONWriter");
 
   MOZ_RELEASE_ASSERT(CorePS::Exists());
 
   aWriter.Start();
-  {
-    auto rv = profiler_stream_json_for_this_process(
-        aWriter, aSinceTime, aIsShuttingDown, aService,
-        aProgressLogger.CreateSubLoggerFromTo(
-            0_pc,
-            "WriteProfileToJSONWriter: "
-            "profiler_stream_json_for_this_process started",
-            100_pc,
-            "WriteProfileToJSONWriter: "
-            "profiler_stream_json_for_this_process done"));
+  auto rv = profiler_stream_json_for_this_process(
+      aWriter, aSinceTime, aIsShuttingDown, aService,
+      aProgressLogger.CreateSubLoggerFromTo(
+          0_pc,
+          "WriteProfileToJSONWriter: "
+          "profiler_stream_json_for_this_process started",
+          100_pc,
+          "WriteProfileToJSONWriter: "
+          "profiler_stream_json_for_this_process done"));
 
-    if (rv.isErr()) {
-      return false;
-    }
-
-    // Don't include profiles from other processes because this is a
-    // synchronous function.
-    aWriter.StartArrayProperty("processes");
-    aWriter.EndArray();
+  if (rv.isErr()) {
+    return rv;
   }
+
+  // Don't include profiles from other processes because this is a
+  // synchronous function.
+  aWriter.StartArrayProperty("processes");
+  aWriter.EndArray();
+
   aWriter.End();
-  return !aWriter.Failed();
+
+  if (aWriter.Failed()) {
+    return Err(ProfilerError::JsonGenerationFailed);
+  }
+
+  return rv;
 }
 
 void profiler_set_process_name(const nsACString& aProcessName,
@@ -6245,14 +6380,16 @@ UniquePtr<char[]> profiler_get_profile(double aSinceTime,
 
   FailureLatchSource failureLatch;
   SpliceableChunkedJSONWriter b{failureLatch};
-  if (!WriteProfileToJSONWriter(b, aSinceTime, aIsShuttingDown, service.get(),
-                                ProgressLogger{})) {
+  if (WriteProfileToJSONWriter(b, aSinceTime, aIsShuttingDown, service.get(),
+                               ProgressLogger{})
+          .isErr()) {
     return nullptr;
   }
   return b.ChunkedWriteFunc().CopyData();
 }
 
-[[nodiscard]] bool profiler_get_profile_json(
+[[nodiscard]] ProfilerResult<ProfileGenerationAdditionalInformation>
+profiler_get_profile_json(
     SpliceableChunkedJSONWriter& aSpliceableChunkedJSONWriter,
     double aSinceTime, bool aIsShuttingDown,
     mozilla::ProgressLogger aProgressLogger) {
@@ -6419,7 +6556,7 @@ static void locked_profiler_save_profile_to_file(
     SpliceableJSONWriter w(sw, FailureLatchInfallibleSource::Singleton());
     w.Start();
     {
-      Unused << locked_profiler_stream_json_for_this_process(
+      (void)locked_profiler_stream_json_for_this_process(
           aLock, w, /* sinceTime */ 0, aPreRecordedMetaInformation,
           aIsShuttingDown, nullptr, ProgressLogger{});
 
@@ -6680,6 +6817,9 @@ static void locked_profiler_start(PSLockRef aLock, PowerOfTwo32 aCapacity,
     auto counter = mozilla::profiler::create_memory_counter();
     locked_profiler_add_sampled_counter(aLock, counter.get());
     ActivePS::SetMemoryCounter(std::move(counter), aLock);
+#  ifdef MOZJEMALLOC_PROFILING_CALLBACKS
+    register_profiler_memory_callbacks();
+#  endif
   }
 #endif
 
@@ -6747,7 +6887,7 @@ RefPtr<GenericPromise> profiler_start(PowerOfTwo32 aCapacity, double aInterval,
   // We do these operations with gPSMutex unlocked. The comments in
   // profiler_stop() explain why.
   if (samplerThread) {
-    Unused << ProfilerParent::ProfilerStopped();
+    (void)ProfilerParent::ProfilerStopped();
     NotifyObservers("profiler-stopped");
     delete samplerThread;
   }
@@ -6800,7 +6940,7 @@ void profiler_ensure_started(PowerOfTwo32 aCapacity, double aInterval,
   // We do these operations with gPSMutex unlocked. The comments in
   // profiler_stop() explain why.
   if (samplerThread) {
-    Unused << ProfilerParent::ProfilerStopped();
+    (void)ProfilerParent::ProfilerStopped();
     NotifyObservers("profiler-stopped");
     delete samplerThread;
   }
@@ -6808,8 +6948,8 @@ void profiler_ensure_started(PowerOfTwo32 aCapacity, double aInterval,
   if (startedProfiler) {
     invoke_profiler_state_change_callbacks(ProfilingState::Started);
 
-    Unused << NotifyProfilerStarted(aCapacity, aDuration, aInterval, aFeatures,
-                                    aFilters, aFilterCount, aActiveTabID);
+    (void)NotifyProfilerStarted(aCapacity, aDuration, aInterval, aFeatures,
+                                aFilters, aFilterCount, aActiveTabID);
   }
 }
 
@@ -6976,9 +7116,9 @@ void profiler_lookup_async_signal_dump_directory() {
 #if !defined(XP_WIN)
   LOG("profiler_lookup_async_signal_dump_directory");
 
-  MOZ_ASSERT(
-      NS_IsMainThread(),
-      "We can only get access to the directory service from the main thread");
+  MOZ_ASSERT(XRE_IsParentProcess() && NS_IsMainThread(),
+             "We can only get access to the directory service from the parent "
+             "process main thread");
 
   // Make sure the profiler is actually running~
   MOZ_RELEASE_ASSERT(CorePS::Exists());
@@ -7007,17 +7147,34 @@ void profiler_lookup_async_signal_dump_directory() {
 
     CorePS::SetAsyncSignalDumpDirectory(lock, Some(mozUploadDirFile));
   } else {
+#  if defined(GP_OS_android)
+    // Bug 1904639: GetPreferredDownloadsDirectory is not implemented for
+    // Android.
+    return;
+#  endif
+
     LOG("Defaulting to the user's Download directory for profile dumps");
     nsCOMPtr<nsIFile> tDownloadDir;
-    rv = NS_GetSpecialDirectory(NS_OS_DEFAULT_DOWNLOAD_DIR,
-                                getter_AddRefs(tDownloadDir));
+    nsresult rv;
+    nsCOMPtr<nsIExternalHelperAppService> svc =
+        do_GetService(NS_EXTERNALHELPERAPPSERVICE_CONTRACTID, &rv);
+
+    if (NS_FAILED(rv)) {
+      LOG("Failed to get nsIExternalHelperAppService for the download "
+          "directory. Profiler signal handling will not be able to save to "
+          "disk. Error: %s",
+          GetStaticErrorName(rv));
+      return;
+    }
+
+    rv = svc->GetPreferredDownloadsDirectory(getter_AddRefs(tDownloadDir));
     if (NS_FAILED(rv)) {
       LOG("Failed to find download directory. Profiler signal handling will "
           "not be able to save to disk. Error: %s",
           GetStaticErrorName(rv));
-    } else {
-      CorePS::SetAsyncSignalDumpDirectory(lock, Some(tDownloadDir));
+      return;
     }
+    CorePS::SetAsyncSignalDumpDirectory(lock, Some(tDownloadDir));
   }
 #endif
 }
@@ -7547,8 +7704,7 @@ struct WakeUpCountMarker {
     MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
     schema.AddKeyFormat("Count", MS::Format::Integer);
     schema.SetTooltipLabel("{marker.name} - {marker.data.label}");
-    schema.SetTableLabel(
-        "{marker.name} - {marker.data.label}: {marker.data.count}");
+    schema.SetTableLabel("{marker.data.label}: {marker.data.count}");
     return schema;
   }
 };
@@ -7670,7 +7826,8 @@ bool profiler_capture_backtrace_into(ProfileChunkedBuffer& aChunkedBuffer,
   MOZ_RELEASE_ASSERT(CorePS::Exists());
 
   if (!profiler_is_active() ||
-      aCaptureOptions == StackCaptureOptions::NoStack) {
+      aCaptureOptions == StackCaptureOptions::NoStack ||
+      profiler_is_locked_on_current_thread()) {
     return false;
   }
 

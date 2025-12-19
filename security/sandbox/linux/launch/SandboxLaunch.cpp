@@ -25,7 +25,6 @@
 #include "base/eintr_wrapper.h"
 #include "base/strings/safe_sprintf.h"
 #include "mozilla/Array.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Preferences.h"
@@ -34,7 +33,6 @@
 #include "mozilla/Components.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/StaticPrefs_security.h"
-#include "mozilla/Unused.h"
 #include "mozilla/ipc/UtilityProcessSandboxing.h"
 #include "nsCOMPtr.h"
 #include "nsDebug.h"
@@ -188,7 +186,7 @@ static bool ContentNeedsSysVIPC() {
   }
 #endif
 
-  if (!StaticPrefs::security_sandbox_content_headless_AtStartup()) {
+  if (GetEffectiveContentSandboxLevel() < 5) {
     // Bug 1438391: VirtualGL uses SysV shm for images and configuration.
     if (PR_GetEnv("VGL_ISACTIVE") != nullptr) {
       return true;
@@ -324,7 +322,9 @@ bool SandboxLaunch::Configure(GeckoProcessType aType, SandboxingKind aKind,
       flags |= CLONE_NEWIPC;
     }
 
-    if (StaticPrefs::security_sandbox_content_headless_AtStartup()) {
+    // The intent of level 5 is to block display server access, so
+    // tell the content process not to attempt to connect.
+    if (GetEffectiveContentSandboxLevel() >= 5) {
       aOptions->env_map["MOZ_HEADLESS"] = "1";
     }
   }
@@ -334,6 +334,8 @@ bool SandboxLaunch::Configure(GeckoProcessType aType, SandboxingKind aKind,
     return true;
   }
 
+  // Warning: don't combine multiple case labels, even if the code is
+  // currently the same, to avoid mistakes when changes are made.
   switch (aType) {
     case GeckoProcessType_Socket:
       if (level >= 1) {
@@ -342,6 +344,12 @@ bool SandboxLaunch::Configure(GeckoProcessType aType, SandboxingKind aKind,
       }
       break;
     case GeckoProcessType_GMPlugin:
+      if (level >= 1) {
+        canChroot = true;
+        flags |= CLONE_NEWIPC;
+        flags |= CLONE_NEWNET;
+      }
+      break;
     case GeckoProcessType_RDD:
       if (level >= 1) {
         canChroot = true;
@@ -364,9 +372,8 @@ bool SandboxLaunch::Configure(GeckoProcessType aType, SandboxingKind aKind,
         // function definition above for details.  (The display
         // local-ness is cached because it won't change.)
         static const bool canCloneNet =
-            StaticPrefs::security_sandbox_content_headless_AtStartup() ||
-            (IsGraphicsOkWithoutNetwork() &&
-             !PR_GetEnv("RENDERDOC_CAPTUREOPTS"));
+            level >= 5 || (IsGraphicsOkWithoutNetwork() &&
+                           !PR_GetEnv("RENDERDOC_CAPTUREOPTS"));
 
         if (canCloneNet) {
           flags |= CLONE_NEWNET;
@@ -596,7 +603,7 @@ static void ConfigureUserNamespace(uid_t uid, gid_t gid) {
   // establishing gid mappings will fail unless the process first
   // revokes its ability to call setgroups() by using a /proc node
   // added in the same set of patches.
-  Unused << WriteStringToFile("/proc/self/setgroups", "deny", 4);
+  (void)WriteStringToFile("/proc/self/setgroups", "deny", 4);
 
   len = static_cast<size_t>(SafeSPrintf(buf, "%d %d 1", gid, gid));
   MOZ_RELEASE_ASSERT(len < sizeof(buf));

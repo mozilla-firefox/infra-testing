@@ -9,6 +9,7 @@
 #define __MOZ_DMABUF_FORMATS_H__
 
 #include "nsTArray.h"
+#include "mozilla/gfx/Types.h"
 
 #ifdef MOZ_WAYLAND
 struct zwp_linux_dmabuf_v1;
@@ -56,9 +57,6 @@ class DRMFormat final {
   const uint64_t* GetModifiers(uint32_t& aModifiersNum) {
     aModifiersNum = mModifiers.Length();
     return mModifiers.Elements();
-  }
-  uint64_t GetModifier() {
-    return mModifiers.Length() ? mModifiers[0] : DRM_FORMAT_MOD_INVALID;
   }
   nsTArray<uint64_t>* GetModifiers() { return &mModifiers; }
 
@@ -109,6 +107,31 @@ RefPtr<DMABufFormats> CreateDMABufFeedbackFormats(
     wl_surface* aSurface,
     const std::function<void(DMABufFormats*)>& aFormatRefreshCB = nullptr);
 #endif
+
+class GlobalDMABufFormats final {
+ public:
+  DRMFormat* GetDRMFormat(int32_t aFOURCCFormat);
+
+  GlobalDMABufFormats();
+
+  bool SupportsDirectComposition(mozilla::gfx::SurfaceFormat aFormat) const;
+
+ private:
+  void LoadFormatModifiers();
+  void SetModifiersToGfxVars();
+  void GetModifiersFromGfxVars();
+
+  // Formats passed to RDD process to WebGL process
+  // where we can't get formats/modifiers from Wayland display.
+  // RGBA formats are mandatory, YUM optional (for direct HDR composition only).
+  RefPtr<DRMFormat> mFormatRGBA;
+  RefPtr<DRMFormat> mFormatRGBX;
+  RefPtr<DRMFormat> mFormatP010;
+  RefPtr<DRMFormat> mFormatNV12;
+  RefPtr<DRMFormat> mFormatYUV420;
+};
+
+GlobalDMABufFormats* GetGlobalDMABufFormats();
 
 }  // namespace mozilla::widget
 

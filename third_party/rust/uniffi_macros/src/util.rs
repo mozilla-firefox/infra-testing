@@ -115,7 +115,7 @@ pub fn create_metadata_items(
         let ident = Ident::new(&name, Span::call_site());
         quote! {
             #[doc(hidden)]
-            #[no_mangle]
+            #[unsafe(no_mangle)]
             pub extern "C" fn #ident() -> u16 {
                 // Force constant evaluation to ensure:
                 // 1. The checksum is computed at compile time; and
@@ -128,7 +128,7 @@ pub fn create_metadata_items(
 
     quote! {
         const #const_ident: ::uniffi::MetadataBuffer = #metadata_expr;
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         #[doc(hidden)]
         pub static #static_ident: [u8; #const_ident.size] = #const_ident.into_array();
 
@@ -301,4 +301,33 @@ pub(crate) fn extract_docstring(attrs: &[Attribute]) -> syn::Result<String> {
         })
         .collect::<syn::Result<Vec<_>>>()
         .map(|lines| lines.join("\n"))
+}
+
+pub(crate) fn wasm_single_threaded_annotation() -> TokenStream {
+    #[cfg(feature = "wasm-unstable-single-threaded")]
+    {
+        quote! {
+            #[cfg(not(target_arch = "wasm32"))]
+        }
+    }
+    #[cfg(not(feature = "wasm-unstable-single-threaded"))]
+    {
+        TokenStream::default()
+    }
+}
+
+pub(crate) fn async_trait_annotation() -> TokenStream {
+    #[cfg(feature = "wasm-unstable-single-threaded")]
+    {
+        quote! {
+            #[cfg_attr(not(target_arch = "wasm32"), ::async_trait::async_trait)]
+            #[cfg_attr(target_arch = "wasm32", ::async_trait::async_trait(?Send))]
+        }
+    }
+    #[cfg(not(feature = "wasm-unstable-single-threaded"))]
+    {
+        quote! {
+            #[::async_trait::async_trait]
+        }
+    }
 }

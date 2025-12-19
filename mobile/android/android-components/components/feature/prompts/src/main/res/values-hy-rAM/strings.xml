@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources xmlns:tools="http://schemas.android.com/tools">
   <!-- Text for confirmation for a positive action in dialog -->
   <string name="mozac_feature_prompts_ok">Լավ</string>
@@ -52,6 +59,8 @@
   <string name="mozac_feature_prompts_deny">Արգելել</string>
   <!-- Text of the title of a dialog when a page is requesting to open a new window. -->
   <string name="mozac_feature_prompts_popup_dialog_title">Թույլատրե՞լ այս կայքին բացել:</string>
+  <!-- Text of the title of a dialog when a third-party redirect is blocked. -->
+  <string name="mozac_feature_prompts_redirect_dialog_title">Թույլատրե՞լ վերահասցեավորումը այս կայքին:</string>
   <!-- Title of the dialog shown when a user is leaving a website and there is still data not saved yet. -->
   <string name="mozac_feature_prompt_before_unload_dialog_title">Համոզվա՞ծ եք</string>
   <!-- Body text of the dialog shown when a user is leaving a website and there is still data not saved yet. -->
@@ -67,11 +76,11 @@
   <!-- February month of the year (short description), used on the month chooser dialog. -->
   <string name="mozac_feature_prompts_feb">Փետ</string>
   <!-- March month of the year (short description), used on the month chooser dialog. -->
-  <string name="mozac_feature_prompts_mar">Մարտ</string>
+  <string name="mozac_feature_prompts_mar">Մար</string>
   <!-- April month of the year (short description), used on the month chooser dialog. -->
   <string name="mozac_feature_prompts_apr">Ապր</string>
   <!-- May month of the year (short description), used on the month chooser dialog. -->
-  <string name="mozac_feature_prompts_may">Մայիս</string>
+  <string name="mozac_feature_prompts_may">Մայ</string>
   <!-- June month of the year (short description), used on the month chooser dialog. -->
   <string name="mozac_feature_prompts_jun">Հուն</string>
   <!-- July month of the year (short description), used on the month chooser dialog. -->
@@ -110,12 +119,8 @@
   <string name="mozac_feature_prompts_suggest_strong_password_use_password">Օգտագործել գաղտնաբառը</string>
   <!-- Pressing this will dismiss the suggested strong password dialog -->
   <string name="mozac_feature_prompts_suggest_strong_password_dismiss">Ոչ հիմա</string>
-  <!-- Title for showing the suggest strong password saved confirmation snackbar -->
-  <string name="mozac_feature_prompts_suggest_strong_password_saved_snackbar_title">Գաղտնաբառը պահպանվել է</string>
   <!-- Title for showing the suggest strong password updated confirmation snackbar -->
   <string name="mozac_feature_prompts_suggest_strong_password_updated_snackbar_title">Գաղտնաբառը թարմացվել է</string>
-  <!-- Title for showing the username updated confirmation snackbar -->
-  <string name="mozac_feature_prompt_login_snackbar_username_updated">Օգտվողի անունը պատճենվել է</string>
   <!-- Strings shown in a dialog that appear when users try to refresh a certain kind of webpages -->
   <string name="mozac_feature_prompt_repost_title">Կրկին ուղարկել տվյալները այս կայքի համար:</string>
   <string name="mozac_feature_prompt_repost_message">Տվյալ էջի թարմացումը կարող է կրկնօրինակել վերջին գործողությունները, ինչպես օրինակ՝ վճարումը կամ մեկնաբանության կրկնակի հրապարակումը:</string>
@@ -123,6 +128,14 @@
   <string name="mozac_feature_prompt_repost_positive_button_text">Կրկին ուղարկել</string>
   <!-- Pressing this will dismiss the dialog and not refresh the webpage -->
   <string name="mozac_feature_prompt_repost_negative_button_text">Չեղարկել</string>
+  <!-- Strings show in a dialog that appear when user confirm folder upload -->
+  <string name="mozac_feature_prompt_folder_upload_confirm_title">Վերբեռնե՞լ ֆայլերը:</string>
+  <!-- Prompt message displayed when user selects a specific folder. %1$s is a folder / directory name. -->
+  <string name="mozac_feature_prompt_folder_upload_confirm_message">Համոզվեք, որ վստահում եք այս կայքին, նախքան «%1$s»-ից վերբեռնելը։</string>
+  <!-- Pressing this will dismiss the dialog and allow to upload folder -->
+  <string name="mozac_feature_prompt_folder_upload_confirm_positive_button_text">Վերբեռնել</string>
+  <!-- Pressing this will dismiss the dialog and disallow to upload folder -->
+  <string name="mozac_feature_prompt_folder_upload_confirm_negative_button_text">Չեղարկել</string>
   <!--
     Credit Card Autofill
 
@@ -166,7 +179,7 @@
   <!-- Title of the Identity Credential privacy policy dialog title. The %1$s will be replaced with the name of the provider. -->
   <string name="mozac_feature_prompts_identity_credentials_privacy_policy_title">Օգտագործեք %1$s որպես մուտքի մատակարար</string>
   <!-- Title of the Identity Credential privacy policy dialog description. The %1$s will be replaced with the name of the provider, %2$s will be replaced with the account, %3$s will be replaced with the privacy policy url and  %4$s will be replaced with the terms of service. -->
-  <string name="mozac_feature_prompts_identity_credentials_privacy_policy_description" tools:ignore="IncorrectStraightDoubleQuote">%1$s մուտք գործելը %2$s հաշվով ենթակա է իրենց &lt;a href="%3$s"&gt;Գաղտնիության դրույթներին&lt;/a&gt; և &lt;a href="%4$s"&gt;Ծառայության պայմաններին&lt;/a&gt;</string>
+  <string name="mozac_feature_prompts_identity_credentials_privacy_policy_description" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[%1$s մուտք գործելը %2$s հաշվով ենթակա է իրենց <a href=\"%3$s\">Գաղտնիության դրույթներին</a> և <a href=\"%4$s\">Ծառայության պայմաններին</a>]]></string>
   <!-- Text for the positive button of the Identity Credential dialogs. -->
   <string name="mozac_feature_prompts_identity_credentials_continue">Շարունակել</string>
   <!-- Text for the cancel button of the Identity Credential dialogs. -->

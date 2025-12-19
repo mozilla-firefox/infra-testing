@@ -5,16 +5,19 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsMathMLOperators.h"
-#include "nsCOMPtr.h"
-#include "nsTHashMap.h"
-#include "nsHashKeys.h"
-#include "nsNetUtil.h"
-#include "nsTArray.h"
 
+#include "mozilla/StaticPrefs_mathml.h"
 #include "mozilla/intl/UnicodeProperties.h"
+#include "nsCOMPtr.h"
+#include "nsCRT.h"
+#include "nsHashKeys.h"
 #include "nsIPersistentProperties2.h"
 #include "nsISimpleEnumerator.h"
-#include "nsCRT.h"
+#include "nsNetUtil.h"
+#include "nsTArray.h"
+#include "nsTHashMap.h"
+
+using namespace mozilla;
 
 // operator dictionary entry
 struct OperatorData {
@@ -56,7 +59,8 @@ static void SetBooleanProperty(OperatorData* aOperatorData, nsString aName) {
     aOperatorData->mFlags |= NS_MATHML_OPERATOR_STRETCHY;
   } else if (aName.EqualsLiteral("fence")) {
     aOperatorData->mFlags |= NS_MATHML_OPERATOR_FENCE;
-  } else if (aName.EqualsLiteral("accent")) {
+  } else if (!StaticPrefs::mathml_operator_dictionary_accent_disabled() &&
+             aName.EqualsLiteral("accent")) {
     aOperatorData->mFlags |= NS_MATHML_OPERATOR_ACCENT;
   } else if (aName.EqualsLiteral("largeop")) {
     aOperatorData->mFlags |= NS_MATHML_OPERATOR_LARGEOP;
@@ -427,9 +431,18 @@ bool nsMathMLOperators::LookupOperatorWithFallback(const nsString& aOperator,
 /* static */
 bool nsMathMLOperators::IsMirrorableOperator(const nsString& aOperator) {
   if (auto codePoint = ToUnicodeCodePoint(aOperator)) {
-    return mozilla::intl::UnicodeProperties::IsMirrored(codePoint);
+    return intl::UnicodeProperties::IsMirrored(codePoint);
   }
   return false;
+}
+
+/* static */
+nsString nsMathMLOperators::GetMirroredOperator(const nsString& aOperator) {
+  nsString result;
+  if (auto codePoint = ToUnicodeCodePoint(aOperator)) {
+    result.Assign(intl::UnicodeProperties::CharMirror(codePoint));
+  }
+  return result;
 }
 
 /* static */

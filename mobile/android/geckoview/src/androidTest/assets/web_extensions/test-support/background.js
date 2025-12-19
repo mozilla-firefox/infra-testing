@@ -17,6 +17,9 @@ const APIS = {
   GetRequestedLocales() {
     return browser.test.getRequestedLocales();
   },
+  ClearUserPref({ pref }) {
+    return browser.test.clearUserPref(pref);
+  },
   GetLinkColor({ tab, selector }) {
     return browser.test.getLinkColor(tab.id, selector);
   },
@@ -94,6 +97,15 @@ const APIS = {
   },
   SetHandlingUserInput({ tab, handlingUserInput }) {
     return browser.test.setHandlingUserInput(tab.id, handlingUserInput);
+  },
+  GetWebExtensionSchemaPermissionNames({ typeNames }) {
+    return browser.test.getWebExtensionsSchemaPermissionNames(typeNames);
+  },
+  TeardownAlertsService() {
+    return browser.test.teardownAlertsService();
+  },
+  NotifyUserGestureActivation({ tab }) {
+    return browser.test.notifyUserGestureActivation(tab.id);
   },
 };
 

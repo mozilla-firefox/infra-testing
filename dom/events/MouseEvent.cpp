@@ -239,6 +239,17 @@ bool MouseEvent::ClickEventPrevented() {
   return false;
 }
 
+already_AddRefed<Event> MouseEvent::GetTriggerEvent() const {
+  if (WidgetMouseEvent* mouseEvent = mEvent->AsMouseEvent()) {
+    NS_WARNING_ASSERTION(
+        mouseEvent->mMessage == eXULPopupShowing,
+        "triggerEvent is supported for popupshowing event only");
+    RefPtr<Event> e = mouseEvent->mTriggerEvent;
+    return e.forget();
+  }
+  return nullptr;
+}
+
 int16_t MouseEvent::Button() {
   switch (mEvent->mClass) {
     case eMouseEventClass:
@@ -429,7 +440,9 @@ nsIntPoint MouseEvent::GetMovementPoint() const {
   }
 
   if (!mEvent || !mEvent->AsGUIEvent()->mWidget ||
-      (mEvent->mMessage != eMouseMove && mEvent->mMessage != ePointerMove)) {
+      (mEvent->mMessage != eMouseMove && mEvent->mMessage != ePointerMove &&
+       !(StaticPrefs::dom_event_pointer_rawupdate_movement_enabled() &&
+         mEvent->mMessage == ePointerRawUpdate))) {
     // Pointer Lock spec defines that movementX/Y must be zero for all mouse
     // events except mousemove.
     return nsIntPoint(0, 0);

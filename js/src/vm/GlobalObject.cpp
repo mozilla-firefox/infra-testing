@@ -436,6 +436,16 @@ bool GlobalObject::resolveConstructor(JSContext* cx,
     return false;
   }
 
+  if (JS::Prefs::objectfuse_for_js_builtin_ctors_protos()) {
+    if (proto &&
+        !NativeObject::setHasObjectFuse(cx, proto.as<NativeObject>())) {
+      return false;
+    }
+    if (!NativeObject::setHasObjectFuse(cx, ctor.as<NativeObject>())) {
+      return false;
+    }
+  }
+
   if (!isObjectOrFunction) {
     // Any operations that modifies the global object should be placed
     // after any other fallible operations.
@@ -588,6 +598,9 @@ GlobalObject* GlobalObject::createInternal(JSContext* cx,
       ObjectFlag::QualifiedVarObj,
       ObjectFlag::GenerationCountedGlobal,
   };
+  if (ShouldUseObjectFuses() && JS::Prefs::objectfuse_for_global()) {
+    objectFlags.setFlag(ObjectFlag::HasObjectFuse);
+  }
 
   JSObject* obj =
       NewTenuredObjectWithGivenProto(cx, clasp, nullptr, objectFlags);
@@ -846,21 +859,11 @@ RegExpStatics* GlobalObject::getRegExpStatics(JSContext* cx,
   return global->regExpRealm().regExpStatics.get();
 }
 
-gc::FinalizationRegistryGlobalData*
-GlobalObject::getOrCreateFinalizationRegistryData() {
-  if (!data().finalizationRegistryData) {
-    data().finalizationRegistryData =
-        MakeUnique<gc::FinalizationRegistryGlobalData>(zone());
-  }
-
-  return maybeFinalizationRegistryData();
-}
-
 /* static */
 bool GlobalObject::createIntrinsicsHolder(JSContext* cx,
                                           Handle<GlobalObject*> global) {
-  Rooted<NativeObject*> intrinsicsHolder(
-      cx, NewPlainObjectWithProto(cx, nullptr, TenuredObject));
+  NativeObject* intrinsicsHolder =
+      NewPlainObjectWithProto(cx, nullptr, TenuredObject);
   if (!intrinsicsHolder) {
     return false;
   }
@@ -877,7 +880,7 @@ bool GlobalObject::getSelfHostedFunction(JSContext* cx,
                                          Handle<JSAtom*> name, unsigned nargs,
                                          MutableHandleValue funVal) {
   if (global->maybeGetIntrinsicValue(selfHostedName, funVal.address(), cx)) {
-    RootedFunction fun(cx, &funVal.toObject().as<JSFunction>());
+    JSFunction* fun = &funVal.toObject().as<JSFunction>();
     if (fun->fullExplicitName() == name) {
       return true;
     }
@@ -1058,6 +1061,10 @@ void GlobalObjectData::trace(JSTracer* trc, GlobalObject* global) {
 
   regExpRealm.trace(trc);
 
+#ifdef JS_HAS_INTL_API
+  globalIntlData.trace(trc);
+#endif
+
   TraceNullableEdge(trc, &mappedArgumentsTemplate, "mapped-arguments-template");
   TraceNullableEdge(trc, &unmappedArgumentsTemplate,
                     "unmapped-arguments-template");
@@ -1071,10 +1078,6 @@ void GlobalObjectData::trace(JSTracer* trc, GlobalObject* global) {
 
   TraceNullableEdge(trc, &selfHostingScriptSource,
                     "self-hosting-script-source");
-
-  if (finalizationRegistryData) {
-    finalizationRegistryData->trace(trc);
-  }
 }
 
 void GlobalObjectData::addSizeOfIncludingThis(

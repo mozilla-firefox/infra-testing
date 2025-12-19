@@ -66,10 +66,10 @@ const HTTPS_EXAMPLE_ORG_URL =
 so we must sepecify the port explicitly */
 const WS_URL = "ws://127.0.0.1:8888/browser/devtools/client/netmonitor/test/";
 const WS_HTTP_URL =
-  "http://127.0.0.1:8888/browser/devtools/client/netmonitor/test/";
+  "http://127.0.0.1:8888/browser/devtools/client/netmonitor/test/websockets/";
 
 const WS_BASE_URL =
-  "http://mochi.test:8888/browser/devtools/client/netmonitor/test/";
+  "http://mochi.test:8888/browser/devtools/client/netmonitor/test/websockets/";
 const WS_PAGE_URL = WS_BASE_URL + "html_ws-test-page.html";
 const WS_PAGE_EARLY_CONNECTION_URL =
   WS_BASE_URL + "html_ws-early-connection-page.html";
@@ -127,6 +127,7 @@ const CSP_RESEND_URL = EXAMPLE_URL + "html_csp-resend-test-page.html";
 const IMAGE_CACHE_URL = HTTPS_EXAMPLE_URL + "html_image-cache.html";
 const STYLESHEET_CACHE_URL = HTTPS_EXAMPLE_URL + "html_stylesheet-cache.html";
 const SCRIPT_CACHE_URL = HTTPS_EXAMPLE_URL + "html_script-cache.html";
+const SOURCEMAP_URL = HTTPS_EXAMPLE_URL + "html_maps-test-page.html";
 const MODULE_SCRIPT_CACHE_URL =
   HTTPS_EXAMPLE_URL + "html_module-script-cache.html";
 const SLOW_REQUESTS_URL = EXAMPLE_URL + "html_slow-requests-test-page.html";
@@ -217,17 +218,6 @@ Services.prefs.setCharPref(
 
 registerCleanupFunction(() => {
   info("finish() was called, cleaning up...");
-
-  Services.prefs.setBoolPref("devtools.debugger.log", gEnableLogging);
-  Services.prefs.setCharPref("devtools.netmonitor.filters", gDefaultFilters);
-  Services.prefs.setCharPref(
-    "devtools.netmonitor.requestfilter",
-    gDefaultRequestFilter
-  );
-  Services.prefs.clearUserPref("devtools.cache.disabled");
-  Services.prefs.clearUserPref("devtools.netmonitor.columnsData");
-  Services.prefs.clearUserPref("devtools.netmonitor.visibleColumns");
-  Services.prefs.clearUserPref("devtools.netmonitor.ui.default-raw-response");
   Services.cookies.removeAll();
 });
 
@@ -311,7 +301,7 @@ const updatedTypes = [
   "NetMonitor:NetworkEventUpdated:EventTimings",
 ];
 
-// Start collecting all networkEventUpdate event when panel is opened.
+// Start collecting all networkEventUpdate events when the panel is opened.
 // removeTab() should be called once all corresponded RECEIVED_* events finished.
 function startNetworkEventUpdateObserver(panelWin) {
   updatingTypes.forEach(type =>
@@ -452,7 +442,8 @@ function restartNetMonitor(monitor, { requestCount }) {
 
 /**
  * Clears the network requests in the UI
- * @param {Object} monitor
+ *
+ * @param {object} monitor
  *         The netmonitor instance used for retrieving a context menu element.
  */
 async function clearNetworkEvents(monitor) {
@@ -488,11 +479,11 @@ function teardown(monitor, privateWindow) {
 /**
  * Wait for the request(s) to be fully notified to the frontend.
  *
- * @param {Object} monitor
+ * @param {object} monitor
  *        The netmonitor instance used for retrieving a context menu element.
- * @param {Number} getRequests
+ * @param {number} getRequests
  *        The number of request to wait for
- * @param {Object} options (optional)
+ * @param {object} options (optional)
  *        - expectedEventTimings {Number} Number of EVENT_TIMINGS events to wait for.
  *        In case of filtering, we get less of such events.
  */
@@ -595,7 +586,7 @@ function waitForNetworkEvents(monitor, getRequests, options = {}) {
   });
 }
 
-function verifyRequestItemTarget(
+async function verifyRequestItemTarget(
   document,
   requestList,
   requestItem,
@@ -780,25 +771,38 @@ function verifyRequestItemTarget(
   );
 
   if (status !== undefined) {
+    info("Wait for the request status to be updated");
+    await waitFor(
+      () =>
+        target.querySelector(".requests-list-status-code").textContent == status
+    );
+
     const value = target
       .querySelector(".requests-list-status-code")
       .getAttribute("data-status-code");
-    const codeValue = target.querySelector(
-      ".requests-list-status-code"
-    ).textContent;
-    const tooltip = target
-      .querySelector(".requests-list-status-code")
-      .getAttribute("title");
-    info("Displayed status: " + value);
-    info("Displayed code: " + codeValue);
-    info("Tooltip status: " + tooltip);
     is(
       `${value}`,
       displayedStatus ? `${displayedStatus}` : `${status}`,
-      "The displayed status is correct."
+      `The displayed status "${value}" is correct.`
     );
-    is(`${codeValue}`, `${status}`, "The displayed status code is correct.");
-    is(tooltip, status + " " + statusText, "The tooltip status is correct.");
+
+    const codeValue = target.querySelector(
+      ".requests-list-status-code"
+    ).textContent;
+    is(
+      `${codeValue}`,
+      `${status}`,
+      `The displayed status code "${codeValue}" is correct.`
+    );
+
+    const tooltip = target
+      .querySelector(".requests-list-status-code")
+      .getAttribute("title");
+    is(
+      tooltip,
+      status + " " + statusText,
+      `The tooltip status "${tooltip}" is correct.`
+    );
   }
   if (cause !== undefined) {
     const value = Array.from(
@@ -829,28 +833,45 @@ function verifyRequestItemTarget(
     is(tooltip, fullMimeType, "The tooltip type is correct.");
   }
   if (transferred !== undefined) {
-    const value = target.querySelector(
-      ".requests-list-transferred"
-    ).textContent;
+    let transferedValue;
+    info("Wait for the transfered value to get updated");
+    const trnsOk = await waitFor(() => {
+      transferedValue = target.querySelector(
+        ".requests-list-transferred"
+      ).textContent;
+      return transferedValue == transferred;
+    });
+    ok(
+      trnsOk,
+      `The displayed transferred size "${transferedValue}" is correct.`
+    );
+
     const tooltip = target
       .querySelector(".requests-list-transferred")
       .getAttribute("title");
-    info("Displayed transferred size: " + value);
-    info("Tooltip transferred size: " + tooltip);
-    is(value, transferred, "The displayed transferred size is correct.");
-    is(tooltip, transferred, "The tooltip transferred size is correct.");
+    is(
+      tooltip,
+      transferred,
+      `The tooltip transferred size "${tooltip}" is correct.`
+    );
   }
   if (size !== undefined) {
-    const value = target.querySelector(".requests-list-size").textContent;
+    let sizeValue;
+    info("Wait for the size to get updated");
+    const sizeOk = await waitFor(() => {
+      sizeValue = target.querySelector(".requests-list-size").textContent;
+      return sizeValue == size;
+    });
+    ok(sizeOk, `The displayed size "${sizeValue}" is correct.`);
+
     const tooltip = target
       .querySelector(".requests-list-size")
       .getAttribute("title");
-    info("Displayed size: " + value);
-    info("Tooltip size: " + tooltip);
-    is(value, size, "The displayed size is correct.");
-    is(tooltip, size, "The tooltip size is correct.");
+    is(tooltip, size, `The tooltip size "${tooltip}" is correct.`);
   }
   if (time !== undefined) {
+    info("Wait for timings total to get updated");
+    await waitFor(() => target.querySelector(".requests-list-timings-total"));
     const value = target.querySelector(
       ".requests-list-timings-total"
     ).textContent;
@@ -951,7 +972,6 @@ function testFilterButtonsCustom(monitor, isChecked) {
  * @return Promise A promise that's resolved with object
  *         { status: XMLHttpRequest.status,
  *           response: XMLHttpRequest.response }
- *
  */
 function promiseXHR(data) {
   return new Promise(resolve => {
@@ -998,7 +1018,6 @@ function promiseXHR(data) {
  * @return Promise A promise that's resolved with object
  *         { status: websocket status(101),
  *           response: empty string }
- *
  */
 function promiseWS(data) {
   return new Promise(resolve => {
@@ -1124,7 +1143,7 @@ async function showColumn(monitor, column) {
 /**
  * Select a request and switch to its response panel.
  *
- * @param {Number} index The request index to be selected
+ * @param {number} index The request index to be selected
  */
 async function selectIndexAndWaitForSourceEditor(monitor, index) {
   const { document } = monitor.panelWin;
@@ -1138,9 +1157,9 @@ async function selectIndexAndWaitForSourceEditor(monitor, index) {
     document.querySelectorAll(".request-list-item")[index]
   );
   // We may already be on the ResponseTab, so only select it if needed.
-  const editor = document.querySelector("#response-panel .CodeMirror-code");
+  const editor = document.querySelector("#response-panel .cm-content");
   if (!editor) {
-    const waitDOM = waitForDOM(document, "#response-panel .CodeMirror-code");
+    const waitDOM = waitForDOM(document, "#response-panel .cm-content");
     document.querySelector("#response-tab").click();
     await waitDOM;
   }
@@ -1150,7 +1169,9 @@ async function selectIndexAndWaitForSourceEditor(monitor, index) {
 /**
  * Helper function for executing XHRs on a test page.
  *
- * @param {Number} count Number of requests to be executed.
+ * @param {object} monitor
+ * @param {object} tab - The current browser tab
+ * @param {number} count - Number of requests to be executed.
  */
 async function performRequests(monitor, tab, count) {
   const wait = waitForNetworkEvents(monitor, count);
@@ -1160,12 +1181,25 @@ async function performRequests(monitor, tab, count) {
   await wait;
 }
 
+function getCMEditor(monitor) {
+  return monitor.panelWin.codeMirrorSourceEditorTestInstance;
+}
+
 /**
- * Helper function for retrieving `.CodeMirror` content
+ * Helper function for retrieving the editor content
  */
 function getCodeMirrorValue(monitor) {
-  const { document } = monitor.panelWin;
-  return document.querySelector(".CodeMirror").CodeMirror.getValue();
+  return getCMEditor(monitor).getText();
+}
+
+/**
+ * Waits for the currently triggered editor scroll to complete
+ *
+ * @param {*} monitor
+ * @returns {Promise}
+ */
+async function waitForEditorScrolling(monitor) {
+  return getCMEditor(monitor).once("cm-editor-scrolled");
 }
 
 /**
@@ -1194,27 +1228,28 @@ function getSettingsMenuItem(monitor, itemKey) {
 /**
  * Wait for lazy fields to be loaded in a request.
  *
- * @param Object Store redux store containing request list.
- * @param array fields array of strings which contain field names to be checked
- * on the request.
+ * @param {object} Store - redux store containing request list.
+ * @param {Array} fields - array of strings which contain field names to be checked
+ * @param {number} id - The id of the request whose data we need to wait for
+ * @param {number} index - The position of the request in the sorted request list.
  */
-function waitForRequestData(store, fields, id) {
+function waitForRequestData(store, fields, id, index = 0) {
   return waitUntil(() => {
     let item;
     if (id) {
       item = getRequestById(store.getState(), id);
     } else {
-      item = getSortedRequests(store.getState())[0];
+      item = getSortedRequests(store.getState())[index];
     }
     if (!item) {
       return false;
     }
     for (const field of fields) {
-      if (!item[field]) {
+      if (item[field] == undefined) {
         return false;
       }
     }
-    return true;
+    return item;
   });
 }
 
@@ -1266,7 +1301,7 @@ function queryTelemetryEvents(query) {
 /**
  * Check that the provided requests match the requests displayed in the netmonitor.
  *
- * @param {array} requests
+ * @param {Array} requests
  *     The expected requests.
  * @param {object} monitor
  *     The netmonitor instance.
@@ -1275,7 +1310,7 @@ function queryTelemetryEvents(query) {
  *     When set to true, requests are allowed to be in a different order in the
  *     netmonitor than in the expected requests array. Defaults to false.
  */
-function validateRequests(requests, monitor, options = {}) {
+async function validateRequests(requests, monitor, options = {}) {
   const { allowDifferentOrder } = options;
   const { document, store, windowRequire } = monitor.panelWin;
 
@@ -1284,7 +1319,7 @@ function validateRequests(requests, monitor, options = {}) {
   );
   const sortedRequests = getSortedRequests(store.getState());
 
-  requests.forEach((spec, i) => {
+  for (const [i, spec] of requests.entries()) {
     const { method, url, causeType, causeUri, stack } = spec;
 
     let requestItem;
@@ -1294,7 +1329,7 @@ function validateRequests(requests, monitor, options = {}) {
       requestItem = sortedRequests[i];
     }
 
-    verifyRequestItemTarget(
+    await verifyRequestItemTarget(
       document,
       getDisplayedRequests(store.getState()),
       requestItem,
@@ -1317,47 +1352,40 @@ function validateRequests(requests, monitor, options = {}) {
       // if "stack" is array, check the details about the top stack frames
       if (Array.isArray(stack)) {
         stack.forEach((frame, j) => {
-          // If the `fn` is "*", it means the request is triggered from chrome
-          // resources, e.g. `resource:///modules/XX.jsm`, so we skip checking
-          // the function name for now (bug 1280266).
-          if (frame.file.startsWith("resource:///")) {
-            todo(false, "Requests from chrome resource should not be included");
-          } else {
-            let value = stacktrace[j].functionName;
-            if (Object.is(value, null)) {
-              value = undefined;
-            }
-            is(
-              value,
-              frame.fn,
-              `Request #${i} has the correct function on JS stack frame #${j}`
-            );
-            is(
-              stacktrace[j].filename.split("/").pop(),
-              frame.file.split("/").pop(),
-              `Request #${i} has the correct file on JS stack frame #${j}`
-            );
-            is(
-              stacktrace[j].lineNumber,
-              frame.line,
-              `Request #${i} has the correct line number on JS stack frame #${j}`
-            );
-            value = stacktrace[j].asyncCause;
-            if (Object.is(value, null)) {
-              value = undefined;
-            }
-            is(
-              value,
-              frame.asyncCause,
-              `Request #${i} has the correct async cause on JS stack frame #${j}`
-            );
+          let value = stacktrace[j].functionName;
+          if (Object.is(value, null)) {
+            value = undefined;
           }
+          is(
+            value,
+            frame.fn,
+            `Request #${i} has the correct function on JS stack frame #${j}`
+          );
+          is(
+            stacktrace[j].filename.split("/").pop(),
+            frame.file.split("/").pop(),
+            `Request #${i} has the correct file on JS stack frame #${j}`
+          );
+          is(
+            stacktrace[j].lineNumber,
+            frame.line,
+            `Request #${i} has the correct line number on JS stack frame #${j}`
+          );
+          value = stacktrace[j].asyncCause;
+          if (Object.is(value, null)) {
+            value = undefined;
+          }
+          is(
+            value,
+            frame.asyncCause,
+            `Request #${i} has the correct async cause on JS stack frame #${j}`
+          );
         });
       }
     } else {
       is(stackLen, 0, `Request #${i} (${causeType}) has an empty stacktrace`);
     }
-  });
+  }
 }
 
 /**
@@ -1411,11 +1439,11 @@ async function waitForDOMIfNeeded(target, selector, expectedLength = 1) {
  *
  * @param {Element} element
  *        Target request list item to be right clicked to bring up its context menu.
- * @param {Object} monitor
+ * @param {object} monitor
  *        The netmonitor instance used for retrieving a context menu element.
- * @param {Object} store
+ * @param {object} store
  *        The redux store (wait-service middleware required).
- * @param {String} action
+ * @param {string} action
  *        The action, block or unblock, to construct a corresponding context menu id.
  */
 async function toggleBlockedUrl(element, monitor, store, action = "block") {
@@ -1437,7 +1465,7 @@ async function toggleBlockedUrl(element, monitor, store, action = "block") {
  *
  * @param {Element} element
  *        Target element to be clicked
- * @param {Object} monitor
+ * @param {object} monitor
  *        The netmonitor instance used for retrieving the window.
  */
 
@@ -1488,9 +1516,10 @@ function compareValues(first, second) {
 
 /**
  * Click on the "Response" tab to open "Response" panel in the sidebar.
+ *
  * @param {Document} doc
  *        Network panel document.
- * @param {String} name
+ * @param {string} name
  *        Network panel sidebar tab name.
  */
 const clickOnSidebarTab = (doc, name) => {
@@ -1512,7 +1541,7 @@ const clickOnSidebarTab = (doc, name) => {
  *
  * @param {string} pattern
  *     The URL pattern to add to block requests.
- * @param {Object} monitor
+ * @param {object} monitor
  *     The netmonitor instance.
  */
 async function addBlockedRequest(pattern, monitor) {
@@ -1554,7 +1583,7 @@ function checkRequestListItemBlocked(item) {
  *
  * @param {string} string
  *     The string to type.
- * @param {Object} monitor
+ * @param {object} monitor
  *     The netmonitor instance used to type the string.
  */
 function typeInNetmonitor(string, monitor) {
@@ -1566,7 +1595,7 @@ function typeInNetmonitor(string, monitor) {
 /**
  * Opens/ closes the URL preview in the headers side panel
  *
- * @param {Boolean} shouldExpand
+ * @param {boolean} shouldExpand
  * @param {NetMonitorPanel} monitor
  * @returns
  */
@@ -1590,8 +1619,9 @@ async function toggleUrlPreview(shouldExpand, monitor) {
 
 /**
  * Wait for the eager evaluated result from the split console
- * @param {Object} hud
- * @param {String} text - expected evaluation result
+ *
+ * @param {object} hud
+ * @param {string} text - expected evaluation result
  */
 async function waitForEagerEvaluationResult(hud, text) {
   await waitUntil(() => {
@@ -1611,7 +1641,7 @@ async function waitForEagerEvaluationResult(hud, text) {
  * Assert the contents of the filter urls autocomplete box
  *
  * @param {Array} expected
- * @param {Object} document
+ * @param {object} document
  */
 function testAutocompleteContents(expected, document) {
   expected.forEach(function (item, i) {
@@ -1633,7 +1663,6 @@ function testAutocompleteContents(expected, document) {
  *     A request element from the netmonitor requests list.
  * @return {boolean}
  *     True if the size column contains a valid size, false otherwise.
- *
  */
 function hasValidSize(request) {
   const VALID_SIZE_RE = /^\d+(\.\d+)? \w+/;

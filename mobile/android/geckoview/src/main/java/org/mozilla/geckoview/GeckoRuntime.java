@@ -18,7 +18,6 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
 import android.content.res.Configuration;
-import android.os.Build;
 import android.os.Bundle;
 import android.os.Parcel;
 import android.os.Parcelable;
@@ -29,6 +28,7 @@ import android.util.Log;
 import androidx.annotation.AnyThread;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.OptIn;
 import androidx.annotation.StringDef;
 import androidx.annotation.UiThread;
 import androidx.lifecycle.Lifecycle;
@@ -59,6 +59,7 @@ import org.mozilla.gecko.util.EventCallback;
 import org.mozilla.gecko.util.GeckoBundle;
 import org.mozilla.gecko.util.ThreadUtils;
 
+/** Runtime environment for Gecko-based applications. */
 public final class GeckoRuntime implements Parcelable {
   private static final String LOGTAG = "GeckoRuntime";
   private static final boolean DEBUG = false;
@@ -101,8 +102,16 @@ public final class GeckoRuntime implements Parcelable {
 
   /**
    * This is a key for extra data sent with {@link #ACTION_CRASHED}. The value is a String matching
-   * one of the `CRASHED_PROCESS_TYPE_*` constants, describing what type of process the crash
+   * one of the `CRASHED_PROCESS_VISIBILITY_*` constants, describing what type of process the crash
    * occurred in.
+   *
+   * @see GeckoSession.ContentDelegate#onCrash(GeckoSession)
+   */
+  public static final String EXTRA_CRASH_PROCESS_VISIBILITY = "processVisibility";
+
+  /**
+   * This is a key for extra data sent with {@link #ACTION_CRASHED}. The value is a String
+   * identifier for the process type where the crash occurred.
    *
    * @see GeckoSession.ContentDelegate#onCrash(GeckoSession)
    */
@@ -117,35 +126,36 @@ public final class GeckoRuntime implements Parcelable {
   public static final String EXTRA_CRASH_REMOTE_TYPE = "remoteType";
 
   /**
-   * Value for {@link #EXTRA_CRASH_PROCESS_TYPE} indicating the main application process was
+   * Value for {@link #EXTRA_CRASH_PROCESS_VISIBILITY} indicating the main application process was
    * affected by the crash, which is therefore fatal.
    */
-  public static final String CRASHED_PROCESS_TYPE_MAIN = "MAIN";
+  public static final String CRASHED_PROCESS_VISIBILITY_MAIN = "MAIN";
 
   /**
-   * Value for {@link #EXTRA_CRASH_PROCESS_TYPE} indicating a foreground child process, such as a
-   * content process, crashed. The application may be able to recover from this crash, but it was
-   * likely noticable to the user.
+   * Value for {@link #EXTRA_CRASH_PROCESS_VISIBILITY} indicating a foreground child process, such
+   * as a content process, crashed. The application may be able to recover from this crash, but it
+   * was likely noticable to the user.
    */
-  public static final String CRASHED_PROCESS_TYPE_FOREGROUND_CHILD = "FOREGROUND_CHILD";
+  public static final String CRASHED_PROCESS_VISIBILITY_FOREGROUND_CHILD = "FOREGROUND_CHILD";
 
   /**
-   * Value for {@link #EXTRA_CRASH_PROCESS_TYPE} indicating a background child process crashed. This
-   * should have been recovered from automatically, and will have had minimal impact to the user, if
-   * any.
+   * Value for {@link #EXTRA_CRASH_PROCESS_VISIBILITY} indicating a background child process
+   * crashed. This should have been recovered from automatically, and will have had minimal impact
+   * to the user, if any.
    */
-  public static final String CRASHED_PROCESS_TYPE_BACKGROUND_CHILD = "BACKGROUND_CHILD";
+  public static final String CRASHED_PROCESS_VISIBILITY_BACKGROUND_CHILD = "BACKGROUND_CHILD";
 
   private final MemoryController mMemoryController = new MemoryController();
 
+  /** Crashed process visibility type definitions for process crash handling. */
   @Retention(RetentionPolicy.SOURCE)
   @StringDef(
       value = {
-        CRASHED_PROCESS_TYPE_MAIN,
-        CRASHED_PROCESS_TYPE_FOREGROUND_CHILD,
-        CRASHED_PROCESS_TYPE_BACKGROUND_CHILD
+        CRASHED_PROCESS_VISIBILITY_MAIN,
+        CRASHED_PROCESS_VISIBILITY_FOREGROUND_CHILD,
+        CRASHED_PROCESS_VISIBILITY_BACKGROUND_CHILD
       })
-  public @interface CrashedProcessType {}
+  public @interface CrashedProcessVisibility {}
 
   private final class LifecycleListener implements LifecycleObserver {
     private boolean mPaused = false;
@@ -190,10 +200,12 @@ public final class GeckoRuntime implements Parcelable {
       // OnPrimaryClipChangedListener() won’t be triggered for a background
       // application, so update the clipboard sequence number once the
       // application returns to the foreground.
-      ThreadUtils.sGeckoHandler.post(
-          () -> {
-            Clipboard.updateSequenceNumber(GeckoAppShell.getApplicationContext());
-          });
+      if (GeckoThread.isStateAtLeast(GeckoThread.State.PROFILE_READY)) {
+        ThreadUtils.sGeckoHandler.post(
+            () -> {
+              Clipboard.updateSequenceNumber(GeckoAppShell.getApplicationContext());
+            });
+      }
     }
 
     @OnLifecycleEvent(Lifecycle.Event.ON_PAUSE)
@@ -205,7 +217,6 @@ public final class GeckoRuntime implements Parcelable {
       // Stop monitoring network status while inactive.
       GeckoNetworkManager.getInstance().stop();
       GeckoThread.onPause();
-      Clipboard.onPause();
     }
   }
 
@@ -239,6 +250,10 @@ public final class GeckoRuntime implements Parcelable {
   private GeckoRuntimeSettings mSettings;
   private Delegate mDelegate;
   private ServiceWorkerDelegate mServiceWorkerDelegate;
+
+  @OptIn(markerClass = ExperimentalGeckoViewApi.class)
+  private GeckoPreferenceController.Observer.Delegate mPreferencesObserverDelegate;
+
   private WebNotificationDelegate mNotificationDelegate;
   private ActivityDelegate mActivityDelegate;
   private OrientationController mOrientationController;
@@ -247,14 +262,14 @@ public final class GeckoRuntime implements Parcelable {
   private WebPushController mPushController;
   private final ContentBlockingController mContentBlockingController;
   private final Autocomplete.StorageProxy mAutocompleteStorageProxy;
-  private final ProfilerController mProfilerController;
+  private final CrashPullController.CrashPullProxy mCrashPullProxy;
   private final GeckoScreenChangeListener mScreenChangeListener;
 
   private GeckoRuntime() {
     mWebExtensionController = new WebExtensionController(this);
     mContentBlockingController = new ContentBlockingController();
     mAutocompleteStorageProxy = new Autocomplete.StorageProxy();
-    mProfilerController = new ProfilerController();
+    mCrashPullProxy = new CrashPullController.CrashPullProxy();
     mScreenChangeListener = new GeckoScreenChangeListener();
 
     if (sRuntime != null) {
@@ -306,6 +321,7 @@ public final class GeckoRuntime implements Parcelable {
     }
   }
 
+  @OptIn(markerClass = ExperimentalGeckoViewApi.class)
   private final BundleEventListener mEventListener =
       new BundleEventListener() {
         @Override
@@ -340,18 +356,10 @@ public final class GeckoRuntime implements Parcelable {
                           return null;
                         });
           } else if ("GeckoView:ChildCrashReport".equals(event) && crashHandler != null) {
-            final Context context = GeckoAppShell.getApplicationContext();
-            final Intent i = new Intent(ACTION_CRASHED, null, context, crashHandler);
-            i.putExtra(EXTRA_MINIDUMP_PATH, message.getString(EXTRA_MINIDUMP_PATH));
-            i.putExtra(EXTRA_EXTRAS_PATH, message.getString(EXTRA_EXTRAS_PATH));
-            i.putExtra(EXTRA_CRASH_PROCESS_TYPE, message.getString(EXTRA_CRASH_PROCESS_TYPE));
-            i.putExtra(EXTRA_CRASH_REMOTE_TYPE, message.getString(EXTRA_CRASH_REMOTE_TYPE));
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-              context.startForegroundService(i);
-            } else {
-              context.startService(i);
-            }
+            CrashHandler.launchCrashReporter(
+                crashHandler, GeckoAppShell.getApplicationContext(), message);
+            // TODO(m_kato):
+            // If returning false, we cannot send crash data, should we re-try it later?
           } else if ("GeckoView:ServiceWorkerOpenWindow".equals(event)) {
             final String url = message.getString("url", "about:blank");
             serviceWorkerOpenWindow(url)
@@ -378,6 +386,14 @@ public final class GeckoRuntime implements Parcelable {
                           callback.sendError(error + " Could not open tab.");
                           return null;
                         });
+          } else if ("GeckoView:GeckoPreferences:Change".equals(event)) {
+            final GeckoPreferenceController.GeckoPreference<?> observedPreference =
+                GeckoPreferenceController.GeckoPreference.fromBundle(message.getBundle("data"));
+            if (observedPreference != null) {
+              mPreferencesObserverDelegate.onGeckoPreferenceChange(observedPreference);
+            } else {
+              Log.w(LOGTAG, "Could not deserialize a message for onGeckoPreferenceChange!");
+            }
           }
         }
       };
@@ -415,8 +431,7 @@ public final class GeckoRuntime implements Parcelable {
       final File minidumps = new File(context.getFilesDir(), "minidumps");
       context.bindService(
           i,
-          CrashHelper.createConnection(
-              pipes.mBreakpadServer, minidumps.getPath(), pipes.mListener, pipes.mServer),
+          CrashHelper.createConnection(pipes.mBreakpadServer, minidumps.getPath(), pipes.mServer),
           Context.BIND_AUTO_CREATE);
     } catch (final ClassNotFoundException e) {
       Log.w(LOGTAG, "Couldn't find the crash helper class");
@@ -438,6 +453,14 @@ public final class GeckoRuntime implements Parcelable {
 
     if (!settings.getLowMemoryDetection()) {
       flags |= GeckoThread.FLAG_DISABLE_LOW_MEMORY_DETECTION;
+    }
+
+    if (settings.getIsolatedProcessEnabled()) {
+      flags |= GeckoThread.FLAG_CONTENT_ISOLATED;
+    }
+
+    if (settings.getAppZygoteProcessEnabled()) {
+      flags |= GeckoThread.FLAG_CONTENT_ISOLATED_HAS_ZYGOTE;
     }
 
     final Class<?> crashHandler = settings.getCrashHandler();
@@ -536,7 +559,8 @@ public final class GeckoRuntime implements Parcelable {
             mEventListener,
             "Gecko:Exited",
             "GeckoView:Test:NewTab",
-            "GeckoView:ServiceWorkerOpenWindow");
+            "GeckoView:ServiceWorkerOpenWindow",
+            "GeckoView:GeckoPreferences:Change");
 
     // Attach and commit settings.
     mSettings.attachTo(this);
@@ -552,8 +576,8 @@ public final class GeckoRuntime implements Parcelable {
       mScreenChangeListener.enable();
     }
 
-    mProfilerController.addMarker(
-        "GeckoView Initialization START", mProfilerController.getProfilerTime());
+    ProfilerController.addMarker(
+        "GeckoView Initialization START", ProfilerController.getProfilerTime());
     return true;
   }
 
@@ -610,16 +634,6 @@ public final class GeckoRuntime implements Parcelable {
   }
 
   /**
-   * Returns a ProfilerController for this GeckoRuntime.
-   *
-   * @return an instance of {@link ProfilerController}.
-   */
-  @UiThread
-  public @NonNull ProfilerController getProfilerController() {
-    return mProfilerController;
-  }
-
-  /**
    * Create a new runtime with the given settings and attach it to the given context.
    *
    * <p>Create will throw if there is already an active Gecko instance running, to prevent that,
@@ -665,6 +679,7 @@ public final class GeckoRuntime implements Parcelable {
     GeckoThread.forceQuit();
   }
 
+  /** Delegate for handling GeckoRuntime lifecycle events. */
   public interface Delegate {
     /**
      * This is called when the runtime shuts down. Any GeckoSession instances that were opened with
@@ -720,6 +735,30 @@ public final class GeckoRuntime implements Parcelable {
     return mAutocompleteStorageProxy.getDelegate();
   }
 
+  /**
+   * Set the {@link CrashPullController.Delegate} instance set on this runtime.
+   *
+   * @param delegate The {@link CrashPullController.Delegate} handling crash pull from Remote
+   *     Settings.
+   */
+  @UiThread
+  public void setCrashPullDelegate(final @Nullable CrashPullController.Delegate delegate) {
+    ThreadUtils.assertOnUiThread();
+    mCrashPullProxy.setDelegate(delegate);
+  }
+
+  /**
+   * Get the {@link CrashPullController.Delegate} instance set on this runtime.
+   *
+   * @return The {@link CrashPullController.Delegate} set on this runtime.
+   */
+  @UiThread
+  public @Nullable CrashPullController.Delegate getCrashPullDelegate() {
+    ThreadUtils.assertOnUiThread();
+    return mCrashPullProxy.getDelegate();
+  }
+
+  /** Delegate for handling service worker events and requests. */
   @UiThread
   public interface ServiceWorkerDelegate {
 
@@ -737,6 +776,30 @@ public final class GeckoRuntime implements Parcelable {
     @UiThread
     @NonNull
     GeckoResult<GeckoSession> onOpenWindow(@NonNull String url);
+  }
+
+  /**
+   * Set the {@link GeckoPreferenceController.Observer.Delegate} instance set on this runtime.
+   *
+   * @param delegate The delegate to set on the runtime.
+   */
+  @ExperimentalGeckoViewApi
+  @AnyThread
+  public void setPreferencesObserverDelegate(
+      @Nullable final GeckoPreferenceController.Observer.Delegate delegate) {
+    mPreferencesObserverDelegate = delegate;
+  }
+
+  /**
+   * Get the {@link GeckoPreferenceController.Observer.Delegate} instance set on this runtime, if
+   * any.
+   *
+   * @return The {@link GeckoPreferenceController.Observer.Delegate} set on this runtime.
+   */
+  @ExperimentalGeckoViewApi
+  @AnyThread
+  public @Nullable GeckoPreferenceController.Observer.Delegate getPreferencesObserverDelegate() {
+    return mPreferencesObserverDelegate;
   }
 
   /**
@@ -811,6 +874,8 @@ public final class GeckoRuntime implements Parcelable {
         () -> {
           if (mNotificationDelegate != null) {
             mNotificationDelegate.onShowNotification(notification);
+          } else {
+            notification.dismiss();
           }
         });
   }
@@ -822,6 +887,8 @@ public final class GeckoRuntime implements Parcelable {
         () -> {
           if (mNotificationDelegate != null) {
             mNotificationDelegate.onCloseNotification(notification);
+          } else {
+            notification.dismiss();
           }
         });
   }
@@ -908,8 +975,12 @@ public final class GeckoRuntime implements Parcelable {
     return result;
   }
 
+  /**
+   * Get the runtime settings.
+   *
+   * @return The GeckoRuntimeSettings for this runtime
+   */
   @AnyThread
-  @SuppressWarnings("checkstyle:javadocmethod")
   public @NonNull GeckoRuntimeSettings getSettings() {
     return mSettings;
   }
@@ -1063,6 +1134,17 @@ public final class GeckoRuntime implements Parcelable {
   }
 
   /**
+   * Notifies Gecko observers of a telemetry preference change.
+   *
+   * @param isEnabled Whether telemetry is enabled or disabled.
+   */
+  @AnyThread
+  public void notifyTelemetryPrefChanged(final boolean isEnabled) {
+    GeckoAppShell.notifyObservers(
+        "mobile-telemetry-pref-changed", isEnabled ? "enabled" : "disabled");
+  }
+
+  /**
    * Appends notes to crash report.
    *
    * @param notes The application notes to append to the crash report.
@@ -1097,12 +1179,17 @@ public final class GeckoRuntime implements Parcelable {
   }
 
   // AIDL code may call readFromParcel even though it's not part of Parcelable.
+  /**
+   * Read runtime settings from a Parcel.
+   *
+   * @param source The Parcel to read from
+   */
   @AnyThread
-  @SuppressWarnings("checkstyle:javadocmethod")
   public void readFromParcel(final @NonNull Parcel source) {
     mSettings = source.readParcelable(getClass().getClassLoader());
   }
 
+  /** Parcelable creator for GeckoRuntime instances. */
   public static final Parcelable.Creator<GeckoRuntime> CREATOR =
       new Parcelable.Creator<GeckoRuntime>() {
         @Override

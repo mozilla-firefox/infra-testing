@@ -5,16 +5,15 @@
 #ifndef nsTableCellFrame_h__
 #define nsTableCellFrame_h__
 
-#include "mozilla/Attributes.h"
 #include "celldata.h"
-#include "nsITableCellLayout.h"
-#include "nscore.h"
-#include "nsContainerFrame.h"
 #include "mozilla/ComputedStyle.h"
+#include "mozilla/WritingModes.h"
+#include "nsContainerFrame.h"
 #include "nsIPercentBSizeObserver.h"
+#include "nsITableCellLayout.h"
 #include "nsTArray.h"
 #include "nsTableRowFrame.h"
-#include "mozilla/WritingModes.h"
+#include "nscore.h"
 
 namespace mozilla {
 class PresShell;
@@ -68,7 +67,7 @@ class nsTableCellFrame : public nsContainerFrame,
 #endif
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
   /** @see nsIFrame::DidSetComputedStyle */
   void DidSetComputedStyle(ComputedStyle* aOldComputedStyle) override;

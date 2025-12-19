@@ -8,6 +8,7 @@ import hashlib
 import json
 import logging
 import os
+import pathlib
 import shutil
 from collections import OrderedDict
 
@@ -89,6 +90,7 @@ def _make_artifacts(
     download_symbols=False,
     download_maven_zip=False,
     no_process=False,
+    unfiltered_project_package=False,
 ):
     state_dir = command_context._mach_context.state_dir
     cache_dir = os.path.join(state_dir, "package-frontend")
@@ -98,8 +100,12 @@ def _make_artifacts(
         hg = command_context.substs["HG"]
 
     git = None
-    if conditions.is_git(command_context):
+    if conditions.is_git(command_context) or conditions.is_jj(command_context):
         git = command_context.substs["GIT"]
+
+    jj = None
+    if conditions.is_jj(command_context):
+        jj = command_context.substs["JJ"]
 
     # If we're building Thunderbird, we should be checking for comm-central artifacts.
     topsrcdir = command_context.substs.get("commtopsrcdir", command_context.topsrcdir)
@@ -124,11 +130,13 @@ def _make_artifacts(
         skip_cache=skip_cache,
         hg=hg,
         git=git,
+        jj=jj,
         topsrcdir=topsrcdir,
         download_tests=download_tests,
         download_symbols=download_symbols,
         download_maven_zip=download_maven_zip,
         no_process=no_process,
+        unfiltered_project_package=unfiltered_project_package,
         mozbuild=command_context,
     )
     return artifacts
@@ -164,6 +172,11 @@ def _make_artifacts(
     help="Don't process (unpack) artifact packages, just download them.",
 )
 @CommandArgument(
+    "--unfiltered-project-package",
+    action="store_true",
+    help="Minimally process (only) main project package artifact, unpacking it to the given `--distdir`.",
+)
+@CommandArgument(
     "--maven-zip", action="store_true", help="Download Maven zip (Android-only)."
 )
 def artifact_install(
@@ -177,6 +190,7 @@ def artifact_install(
     symbols=False,
     distdir=None,
     no_process=False,
+    unfiltered_project_package=False,
     maven_zip=False,
 ):
     command_context._set_log_level(verbose)
@@ -189,6 +203,7 @@ def artifact_install(
         download_symbols=symbols,
         download_maven_zip=maven_zip,
         no_process=no_process,
+        unfiltered_project_package=unfiltered_project_package,
     )
 
     return artifacts.install_from(source, distdir or command_context.distdir)
@@ -313,7 +328,7 @@ def artifact_toolchain(
 
     class DownloadRecord(FileRecord):
         def __init__(self, url, *args, **kwargs):
-            super(DownloadRecord, self).__init__(*args, **kwargs)
+            super().__init__(*args, **kwargs)
             self.url = url
             self.basename = self.filename
 
@@ -324,7 +339,7 @@ def artifact_toolchain(
         def validate(self):
             if self.size is None and self.digest is None:
                 return True
-            return super(DownloadRecord, self).validate()
+            return super().validate()
 
     class ArtifactRecord(DownloadRecord):
         def __init__(self, task_id, artifact_name):
@@ -352,9 +367,7 @@ def artifact_toolchain(
                 artifact_name,
                 use_proxy=not artifact_name.startswith("public/"),
             )
-            super(ArtifactRecord, self).__init__(
-                artifact_url, name, None, digest, algorithm, unpack=True
-            )
+            super().__init__(artifact_url, name, None, digest, algorithm, unpack=True)
 
     records = OrderedDict()
     downloaded = []
@@ -393,10 +406,10 @@ def artifact_toolchain(
         for b in from_build:
             user_value = b
 
-            if not b.startswith("toolchain-"):
-                b = f"toolchain-{b}"
-
             task = tasks.get(b)
+            if not task and not b.startswith("toolchain-"):
+                task = tasks.get(f"toolchain-{b}")
+
             if not task:
                 command_context.log(
                     logging.ERROR,
@@ -419,7 +432,7 @@ def artifact_toolchain(
                 )
                 return 1
 
-            artifact_name = task.attributes.get("toolchain-artifact")
+            artifact_name = task.attributes.get(f"{task.kind}-artifact")
             command_context.log(
                 logging.DEBUG,
                 "artifact",
@@ -620,5 +633,10 @@ def artifact_toolchain(
             {"data": json.dumps(perfherder_data)},
             "PERFHERDER_DATA: {data}",
         )
+        upload_dir = pathlib.Path(os.environ.get("UPLOAD_DIR"))
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        upload_path = upload_dir / "perfherder-data-artifact.json"
+        with upload_path.open("w", encoding="utf-8") as f:
+            json.dump(perfherder_data, f)
 
     return 0

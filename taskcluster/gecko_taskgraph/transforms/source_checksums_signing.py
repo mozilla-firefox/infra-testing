@@ -12,7 +12,7 @@ from voluptuous import Optional
 
 from gecko_taskgraph.transforms.task import task_description_schema
 from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
-from gecko_taskgraph.util.scriptworker import get_signing_cert_scope
+from gecko_taskgraph.util.scriptworker import get_signing_type
 
 checksums_signing_description_schema = Schema(
     {
@@ -23,6 +23,7 @@ checksums_signing_description_schema = Schema(
         Optional("task-from"): task_description_schema["task-from"],
         Optional("attributes"): task_description_schema["attributes"],
         Optional("dependencies"): task_description_schema["dependencies"],
+        Optional("run-on-repo-type"): task_description_schema["run-on-repo-type"],
     }
 )
 
@@ -77,7 +78,7 @@ def make_checksums_signing_description(config, jobs):
             }
         ]
 
-        signing_cert_scope = get_signing_cert_scope(config)
+        signing_type = get_signing_type(config)
 
         task = {
             "label": label,
@@ -85,15 +86,13 @@ def make_checksums_signing_description(config, jobs):
             "worker-type": "linux-signing",
             "worker": {
                 "implementation": "scriptworker-signing",
+                "signing-type": signing_type,
                 "upstream-artifacts": upstream_artifacts,
-                "max-run-time": 3600,
             },
-            "scopes": [
-                signing_cert_scope,
-            ],
             "dependencies": dependencies,
             "attributes": attributes,
             "run-on-projects": dep_job.attributes.get("run_on_projects"),
+            "run-on-repo-type": job.get("run-on-repo-type", ["git", "hg"]),
             "treeherder": treeherder,
         }
 

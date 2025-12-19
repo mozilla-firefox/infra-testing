@@ -12,11 +12,11 @@ import androidx.preference.Preference
 import androidx.preference.PreferenceViewHolder
 import com.google.android.material.switchmaterial.SwitchMaterial
 import mozilla.components.support.utils.Browsers
+import mozilla.components.support.utils.BuildManufacturerChecker
 import mozilla.components.support.utils.ext.navigateToDefaultBrowserAppsSettings
 import org.mozilla.focus.GleanMetrics.SetDefaultBrowser
 import org.mozilla.focus.R
 import org.mozilla.focus.ext.tryAsActivity
-import org.mozilla.focus.utils.SupportUtils.openDefaultBrowserSumoPage
 
 class DefaultBrowserPreference @JvmOverloads constructor(
     context: Context,
@@ -47,40 +47,29 @@ class DefaultBrowserPreference @JvmOverloads constructor(
 
     public override fun onClick() {
         val isDefault = browsers.isDefaultBrowser
-        when {
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q -> {
-                context.getSystemService(RoleManager::class.java).also {
-                    if (it.isRoleAvailable(RoleManager.ROLE_BROWSER) && !it.isRoleHeld(
-                            RoleManager.ROLE_BROWSER,
-                        )
-                    ) {
-                        context.tryAsActivity()?.startActivityForResult(
-                            it.createRequestRoleIntent(RoleManager.ROLE_BROWSER),
-                            REQUEST_CODE_BROWSER_ROLE,
-                        )
-                        SetDefaultBrowser.fromAppSettings.record(
-                            SetDefaultBrowser.FromAppSettingsExtra(
-                                isDefault,
-                            ),
-                        )
-                    } else {
-                        context.navigateToDefaultBrowserAppsSettings()
-                        SetDefaultBrowser.fromOsSettings.record(SetDefaultBrowser.FromOsSettingsExtra(isDefault))
-                    }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            context.getSystemService(RoleManager::class.java).also {
+                if (it.isRoleAvailable(RoleManager.ROLE_BROWSER) && !it.isRoleHeld(RoleManager.ROLE_BROWSER)) {
+                    context.tryAsActivity()?.startActivityForResult(
+                        it.createRequestRoleIntent(RoleManager.ROLE_BROWSER),
+                        REQUEST_CODE_BROWSER_ROLE,
+                    )
+                    SetDefaultBrowser.fromAppSettings.record(
+                        SetDefaultBrowser.FromAppSettingsExtra(isDefault),
+                    )
+                } else {
+                    context.navigateToDefaultBrowserAppsSettings(BuildManufacturerChecker())
+                    SetDefaultBrowser.fromOsSettings.record(
+                        SetDefaultBrowser.FromOsSettingsExtra(isDefault),
+                    )
                 }
             }
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.N -> {
-                context.navigateToDefaultBrowserAppsSettings()
-                SetDefaultBrowser.fromOsSettings.record(SetDefaultBrowser.FromOsSettingsExtra(isDefault))
-            }
-            else -> {
-                openDefaultBrowserSumoPage(context)
-                SetDefaultBrowser.learnMoreOpened.record(
-                    SetDefaultBrowser.LearnMoreOpenedExtra(
-                        isDefault,
-                    ),
-                )
-            }
+        } else {
+            context.navigateToDefaultBrowserAppsSettings(BuildManufacturerChecker())
+            SetDefaultBrowser.fromOsSettings.record(
+                SetDefaultBrowser.FromOsSettingsExtra(isDefault),
+            )
         }
     }
 

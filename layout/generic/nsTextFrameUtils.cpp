@@ -6,15 +6,16 @@
 
 #include "nsTextFrameUtils.h"
 
+#include <algorithm>
+
+#include "mozilla/dom/CharacterDataBuffer.h"
 #include "mozilla/dom/Text.h"
 #include "nsBidiUtils.h"
 #include "nsCharTraits.h"
 #include "nsIContent.h"
 #include "nsStyleStruct.h"
-#include "nsTextFragment.h"
 #include "nsUnicharUtils.h"
 #include "nsUnicodeProperties.h"
-#include <algorithm>
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -404,13 +405,15 @@ static uint32_t DoComputeApproximateLengthWithWhitespaceCompression(
 
 uint32_t nsTextFrameUtils::ComputeApproximateLengthWithWhitespaceCompression(
     Text* aText, const nsStyleText* aStyleText) {
-  const nsTextFragment* frag = &aText->TextFragment();
-  if (frag->Is2b()) {
+  const CharacterDataBuffer* characterDataBuffer = &aText->DataBuffer();
+  if (characterDataBuffer->Is2b()) {
     return DoComputeApproximateLengthWithWhitespaceCompression(
-        frag->Get2b(), frag->GetLength(), aStyleText);
+        characterDataBuffer->Get2b(), characterDataBuffer->GetLength(),
+        aStyleText);
   }
   return DoComputeApproximateLengthWithWhitespaceCompression(
-      frag->Get1b(), frag->GetLength(), aStyleText);
+      characterDataBuffer->Get1b(), characterDataBuffer->GetLength(),
+      aStyleText);
 }
 
 uint32_t nsTextFrameUtils::ComputeApproximateLengthWithWhitespaceCompression(

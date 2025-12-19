@@ -6,16 +6,23 @@
 
 #include "EncoderTemplate.h"
 
+#include <algorithm>
+#include <type_traits>
+
 #include "EncoderTypes.h"
+#include "WebCodecsUtils.h"
 #include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/Try.h"
-#include "mozilla/Unused.h"
+#include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/VideoFrame.h"
 #include "mozilla/dom/WorkerCommon.h"
 #include "nsGkAtoms.h"
+#include "nsRFPService.h"
 #include "nsString.h"
 #include "nsThreadUtils.h"
 
@@ -68,9 +75,11 @@ EncoderTemplate<EncoderType>::ConfigureMessage::ConfigureMessage(
 
 template <typename EncoderType>
 EncoderTemplate<EncoderType>::EncodeMessage::EncodeMessage(
-    WebCodecsId aConfigureId, RefPtr<InputTypeInternal>&& aData,
+    WebCodecsId aConfigureId, already_AddRefed<InputTypeInternal> aData,
     Maybe<VideoEncoderEncodeOptions>&& aOptions)
-    : ControlMessage(aConfigureId), mData(aData) {}
+    : ControlMessage(aConfigureId) {
+  PushData(std::move(aData), std::move(aOptions));
+}
 
 template <typename EncoderType>
 EncoderTemplate<EncoderType>::FlushMessage::FlushMessage(
@@ -126,6 +135,11 @@ void EncoderTemplate<EncoderType>::Configure(const ConfigType& aConfig,
     return;
   }
 
+  // Audio encoders are all software, no need to do anything.
+  if constexpr (std::is_same_v<ConfigType, VideoEncoderConfig>) {
+    ApplyResistFingerprintingIfNeeded(config, GetOwnerGlobal());
+  }
+
   mState = CodecState::Configured;
   mEncodeCounter = 0;
   mFlushCounter = 0;
@@ -154,13 +168,13 @@ void EncoderTemplate<EncoderType>::EncodeAudioData(InputType& aInput,
     return;
   }
 
-  mEncodeQueueSize += 1;
+  mAsyncDurationTracker.Start(
+      aInput.Timestamp(),
+      AutoWebCodecsMarker(EncoderType::Name.get(), ".encode-duration-a"));
   // Dummy options here as a shortcut
-  mControlMessageQueue.push(MakeRefPtr<EncodeMessage>(
+  PushEncodeRequest(
       mLatestConfigureId,
-      EncoderType::CreateInputInternal(aInput, VideoEncoderEncodeOptions())));
-  LOGV("%s %p enqueues %s", EncoderType::Name.get(), this,
-       mControlMessageQueue.back()->ToString().get());
+      EncoderType::CreateInputInternal(aInput, VideoEncoderEncodeOptions()));
   ProcessControlMessageQueue();
 }
 
@@ -183,12 +197,12 @@ void EncoderTemplate<EncoderType>::EncodeVideoFrame(
     return;
   }
 
-  mEncodeQueueSize += 1;
-  mControlMessageQueue.push(MakeRefPtr<EncodeMessage>(
-      mLatestConfigureId, EncoderType::CreateInputInternal(aInput, aOptions),
-      Some(aOptions)));
-  LOGV("%s %p enqueues %s", EncoderType::Name.get(), this,
-       mControlMessageQueue.back()->ToString().get());
+  mAsyncDurationTracker.Start(
+      aInput.Timestamp(),
+      AutoWebCodecsMarker(EncoderType::Name.get(), ".encode-duration-v"));
+  PushEncodeRequest(mLatestConfigureId,
+                    EncoderType::CreateInputInternal(aInput, aOptions),
+                    Some(aOptions));
   ProcessControlMessageQueue();
 }
 
@@ -327,7 +341,7 @@ void EncoderTemplate<VideoEncoderTraits>::OutputEncodedVideoData(
   JSContext* cx = jsapi.cx();
 
   RefPtr<EncodedVideoChunkOutputCallback> cb(mOutputCallback);
-  for (auto& data : aData) {
+  for (const auto& data : aData) {
     // It's possible to have reset() called in between this task having been
     // dispatched, and running -- no output callback should happen when that's
     // the case.
@@ -365,6 +379,7 @@ void EncoderTemplate<VideoEncoderTraits>::OutputEncodedVideoData(
 
     LOG("EncoderTemplate:: output callback (ts: % " PRId64 ")%s",
         encodedData->Timestamp(), metadataInfo.get());
+    mAsyncDurationTracker.End(encodedData->Timestamp());
     cb->Call((EncodedVideoChunk&)(*encodedData), metadata);
   }
 }
@@ -387,7 +402,7 @@ void EncoderTemplate<AudioEncoderTraits>::OutputEncodedAudioData(
   JSContext* cx = jsapi.cx();
 
   RefPtr<EncodedAudioChunkOutputCallback> cb(mOutputCallback);
-  for (auto& data : aData) {
+  for (const auto& data : aData) {
     // It's possible to have reset() called in between this task having been
     // dispatched, and running -- no output callback should happen when that's
     // the case.
@@ -421,6 +436,7 @@ void EncoderTemplate<AudioEncoderTraits>::OutputEncodedAudioData(
             ? encodedData->GetDuration().Value()
             : 0,
         data->Size(), mPacketsOutput++);
+    mAsyncDurationTracker.End(encodedData->Timestamp());
     cb->Call((EncodedAudioChunk&)(*encodedData), metadata);
   }
 }
@@ -819,6 +835,11 @@ void EncoderTemplate<EncoderType>::Configure(
                  return;
                }
 
+               LOG("%s %p, EncoderAgent #%zu configured successfully. %u "
+                   "encode requests are pending",
+                   EncoderType::Name.get(), self.get(), id,
+                   self->mEncodeQueueSize);
+
                self->StopBlockingMessageQueue();
                self->ProcessControlMessageQueue();
              })
@@ -831,8 +852,9 @@ MessageProcessedResult EncoderTemplate<EncoderType>::ProcessEncodeMessage(
   AssertIsOnOwningThread();
   MOZ_ASSERT(mState == CodecState::Configured);
   MOZ_ASSERT(aMessage->AsEncodeMessage());
+  MOZ_ASSERT(mEncodeQueueSize > 0);
 
-  AUTO_ENCODER_MARKER(marker, ".encode");
+  AUTO_ENCODER_MARKER(marker, ".encode-process");
 
   if (mProcessingMessage) {
     return MessageProcessedResult::NotProcessed;
@@ -844,7 +866,8 @@ MessageProcessedResult EncoderTemplate<EncoderType>::ProcessEncodeMessage(
   LOGV("%s %p processing %s", EncoderType::Name.get(), this,
        aMessage->ToString().get());
 
-  mEncodeQueueSize -= 1;
+  MOZ_ASSERT(AssertedCast<uint32_t>(aMessage->BatchSize()) <= mEncodeQueueSize);
+  mEncodeQueueSize -= AssertedCast<uint32_t>(aMessage->BatchSize());
   ScheduleDequeueEvent();
 
   // Treat it like decode error if no EncoderAgent is available or the encoded
@@ -865,17 +888,15 @@ MessageProcessedResult EncoderTemplate<EncoderType>::ProcessEncodeMessage(
   }
 
   MOZ_ASSERT(mActiveConfig);
-  RefPtr<InputTypeInternal> data = aMessage->mData;
-  if (!data) {
-    LOGE("%s %p, data for %s is empty or invalid", EncoderType::Name.get(),
-         this, aMessage->ToString().get());
+  if (!aMessage->IsValid()) {
+    LOGE("%s %p, %s has empty data", EncoderType::Name.get(), this,
+         aMessage->ToString().get());
     return closeOnError();
   }
 
-  mAgent->Encode(data.get())
+  mAgent->Encode(aMessage->TakeData())
       ->Then(GetCurrentSerialEventTarget(), __func__,
-             [self = RefPtr{this}, id = mAgent->mId, aMessage,
-              m = std::move(marker)](
+             [self = RefPtr{this}, id = mAgent->mId, m = std::move(marker)](
                  EncoderAgent::EncodePromise::ResolveOrRejectValue&&
                      aResult) mutable {
                MOZ_ASSERT(self->mProcessingMessage);
@@ -885,9 +906,11 @@ MessageProcessedResult EncoderTemplate<EncoderType>::ProcessEncodeMessage(
                MOZ_ASSERT(id == self->mAgent->mId);
                MOZ_ASSERT(self->mActiveConfig);
 
-               nsCString msgStr = aMessage->ToString();
+               RefPtr<EncodeMessage> msg =
+                   self->mProcessingMessage->AsEncodeMessage();
+               nsCString msgStr = msg->ToString();
 
-               aMessage->Complete();
+               msg->Complete();
                self->mProcessingMessage = nullptr;
 
                if (aResult.IsReject()) {
@@ -1101,7 +1124,7 @@ bool EncoderTemplate<EncoderType>::CreateEncoderAgent(
         [self = RefPtr{this}]() {
           LOG("%s %p, worker is going away", EncoderType::Name.get(),
               self.get());
-          Unused << self->ResetInternal(NS_ERROR_DOM_ABORT_ERR);
+          (void)self->ResetInternal(NS_ERROR_DOM_ABORT_ERR);
         });
     if (NS_WARN_IF(!workerRef)) {
       return false;
@@ -1137,7 +1160,7 @@ bool EncoderTemplate<EncoderType>::CreateEncoderAgent(
         LOG("%s %p gets xpcom-will-shutdown notification for EncoderAgent "
             "#%zu",
             EncoderType::Name.get(), self.get(), id);
-        Unused << self->ResetInternal(NS_ERROR_DOM_ABORT_ERR);
+        (void)self->ResetInternal(NS_ERROR_DOM_ABORT_ERR);
       },
       [self = RefPtr{this}, id = mAgent->mId,
        ref = mWorkerRef](bool /* aUnUsed*/) {
@@ -1183,6 +1206,45 @@ void EncoderTemplate<EncoderType>::DestroyEncoderAgentIfAny() {
             EncoderType::Name.get(), self.get(), id,
             aResult.IsResolve() ? "resolved" : "rejected");
       });
+}
+
+template <typename EncoderType>
+void EncoderTemplate<EncoderType>::PushEncodeRequest(
+    WebCodecsId aConfigureId, RefPtr<InputTypeInternal>&& aData,
+    Maybe<VideoEncoderEncodeOptions>&& aOptions) {
+  AssertIsOnOwningThread();
+  MOZ_ASSERT(mState == CodecState::Configured);
+
+  // TODO(Bug 1984936): Enable batch encoding for selected encoders now.
+  const size_t batchSize =
+      (StaticPrefs::media_use_remote_encoder_video() && mActiveConfig &&
+       IsH264CodecString(mActiveConfig->mCodec))
+          ? std::max<size_t>(
+                StaticPrefs::dom_media_webcodecs_batch_encoding_size(), 1)
+          : 1;
+
+  RefPtr<EncodeMessage> msg;
+  if (!mControlMessageQueue.empty()) {
+    msg = mControlMessageQueue.back()->AsEncodeMessage();
+    if (msg &&
+        (msg->mConfigureId != aConfigureId || msg->BatchSize() >= batchSize)) {
+      msg = nullptr;
+    }
+  }
+
+  const bool isNewMessage = !msg;
+  if (isNewMessage) {
+    msg = MakeRefPtr<EncodeMessage>(aConfigureId, aData.forget(),
+                                    std::move(aOptions));
+    mControlMessageQueue.push(msg);
+  } else {
+    msg->PushData(aData.forget(), std::move(aOptions));
+  }
+
+  mEncodeQueueSize += 1;
+  LOGV("%s %p %s %s, encode queue size: %u", EncoderType::Name.get(), this,
+       isNewMessage ? "queued a new" : "appended data to",
+       msg->ToString().get(), mEncodeQueueSize);
 }
 
 template class EncoderTemplate<VideoEncoderTraits>;

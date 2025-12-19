@@ -55,25 +55,6 @@ class CookieEntry : public CookieKey {
   ArrayType mCookies;
 };
 
-// stores the CookieEntry entryclass and an index into the cookie array within
-// that entryclass, for purposes of storing an iteration state that points to a
-// certain cookie.
-struct CookieListIter {
-  // default (non-initializing) constructor.
-  CookieListIter() = default;
-
-  // explicit constructor to a given iterator state with entryclass 'aEntry'
-  // and index 'aIndex'.
-  explicit CookieListIter(CookieEntry* aEntry, CookieEntry::IndexType aIndex)
-      : entry(aEntry), index(aIndex) {}
-
-  // get the Cookie * the iterator currently points to.
-  mozilla::net::Cookie* Cookie() const { return entry->GetCookies()[index]; }
-
-  CookieEntry* entry;
-  CookieEntry::IndexType index;
-};
-
 class CookieStorage : public nsIObserver, public nsSupportsWeakReference {
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
@@ -85,10 +66,11 @@ class CookieStorage : public nsIObserver, public nsSupportsWeakReference {
 
   void GetSessionCookies(nsTArray<RefPtr<nsICookie>>& aCookies) const;
 
-  bool FindCookie(const nsACString& aBaseDomain,
-                  const OriginAttributes& aOriginAttributes,
-                  const nsACString& aHost, const nsACString& aName,
-                  const nsACString& aPath, CookieListIter& aIter);
+  already_AddRefed<Cookie> FindCookie(const nsACString& aBaseDomain,
+                                      const OriginAttributes& aOriginAttributes,
+                                      const nsACString& aHost,
+                                      const nsACString& aName,
+                                      const nsACString& aPath);
 
   uint32_t CountCookiesFromHost(const nsACString& aBaseDomain,
                                 uint32_t aPrivateBrowsingId);
@@ -110,7 +92,8 @@ class CookieStorage : public nsIObserver, public nsSupportsWeakReference {
   void RemoveCookie(const nsACString& aBaseDomain,
                     const OriginAttributes& aOriginAttributes,
                     const nsACString& aHost, const nsACString& aName,
-                    const nsACString& aPath, const nsID* aOperationID);
+                    const nsACString& aPath, bool aFromHttp,
+                    const nsID* aOperationID);
 
   virtual void RemoveCookiesWithOriginAttributes(
       const OriginAttributesPattern& aPattern, const nsACString& aBaseDomain);
@@ -135,23 +118,26 @@ class CookieStorage : public nsIObserver, public nsSupportsWeakReference {
                  bool aIsThirdParty, dom::BrowsingContext* aBrowsingContext,
                  const nsID* aOperationID = nullptr);
 
-  // return true if we finish within the byte limit
-  bool RemoveCookiesFromBackUntilUnderLimit(
-      nsTArray<CookieListIter>& aCookieListIter, Cookie* aCookie,
-      const nsACString& aBaseDomain, nsCOMPtr<nsIArray>& aPurgedList);
+  uint32_t RemoveOldestCookies(CookieEntry* aEntry, bool aSecure,
+                               uint32_t aBytesToRemove,
+                               nsCOMPtr<nsIArray>& aPurgedList);
 
-  void RemoveOlderCookiesUntilUnderLimit(CookieEntry* aEntry, Cookie* aCookie,
-                                         const nsACString& aBaseDomain,
-                                         nsCOMPtr<nsIArray>& aPurgedList);
+  void RemoveOlderCookiesByBytes(CookieEntry* aEntry, uint32_t removeBytes,
+                                 nsCOMPtr<nsIArray>& aPurgedList);
 
-  // prevent excessive purging by using a soft and hard limit
+  // tracks how far over the hard and soft CHIPS limits
+  // we use the hard and soft limit to prevent excessive purging.
   // the soft limit (aka quota) is derived directly from partitionLimitCapacity
-  // pref while the hard limit is 1.2 times the partitionLimitCapacity pref we
-  // use the hard limit to trigger purging and telemetry and when we do purge,
-  // we purge down to the soft limit (quota)
-  int32_t PartitionLimitExceededBytes(Cookie* aCookie,
-                                      const nsACString& aBaseDomain,
-                                      bool aHardMax);
+  // pref while the hard limit is the softLimit * a factor
+  // (kChipsHardLimitFactor). the hard limit is used to trigger purging and when
+  // we do purge, we purge down to the soft limit (quota)
+  struct ChipsLimitExcess {
+    uint32_t hard;
+    uint32_t soft;  // aka quota
+  };
+
+  ChipsLimitExcess PartitionLimitExceededBytes(Cookie* aCookie,
+                                               const nsACString& aBaseDomain);
 
   static void CreateOrUpdatePurgeList(nsCOMPtr<nsIArray>& aPurgedList,
                                       nsICookie* aCookie);
@@ -167,10 +153,45 @@ class CookieStorage : public nsIObserver, public nsSupportsWeakReference {
       nsICookieTransactionCallback* aCallback) = 0;
 
  protected:
+  // stores the CookieEntry entryclass and an index into the cookie array within
+  // that entryclass, for purposes of storing an iteration state that points to
+  // a certain cookie.
+  struct MOZ_STACK_CLASS CookieListIter {
+    // default (non-initializing) constructor.
+    CookieListIter() = default;
+
+    // explicit constructor to a given iterator state with entryclass 'aEntry'
+    // and index 'aIndex'.
+    explicit CookieListIter(CookieEntry* aEntry, CookieEntry::IndexType aIndex)
+        : entry(aEntry), index(aIndex) {}
+
+    // get the Cookie * the iterator currently points to.
+    mozilla::net::Cookie* Cookie() const { return entry->GetCookies()[index]; }
+
+    CookieEntry* entry;
+    CookieEntry::IndexType index;
+  };
+
+  // comparator class for lastaccessed times of cookies.
+  class CompareCookiesByAge;
+
+  // Cookie comparator for the priority queue used in FindStaleCookies.
+  // Note that the expired cookie has the highest priority.
+  // Other non-expired cookies are sorted by their age.
+  class CookieIterComparator;
+
+  // comparator class for sorting cookies by entry and index.
+  class CompareCookiesByIndex;
+
   CookieStorage() = default;
   virtual ~CookieStorage() = default;
 
   void Init();
+
+  bool FindCookie(const nsACString& aBaseDomain,
+                  const OriginAttributes& aOriginAttributes,
+                  const nsACString& aHost, const nsACString& aName,
+                  const nsACString& aPath, CookieListIter& aIter);
 
   void AddCookieToList(const nsACString& aBaseDomain,
                        const OriginAttributes& aOriginAttributes,
@@ -211,7 +232,7 @@ class CookieStorage : public nsIObserver, public nsSupportsWeakReference {
                         const OriginAttributes& aOriginAttributes,
                         Cookie* aCookie);
 
-  static void FindStaleCookies(CookieEntry* aEntry, int64_t aCurrentTime,
+  static void FindStaleCookies(CookieEntry* aEntry, int64_t aCurrentTimeInMSec,
                                bool aIsSecure,
                                nsTArray<CookieListIter>& aOutput,
                                uint32_t aLimit);
@@ -225,6 +246,9 @@ class CookieStorage : public nsIObserver, public nsSupportsWeakReference {
   virtual already_AddRefed<nsIArray> PurgeCookies(int64_t aCurrentTimeInUsec,
                                                   uint16_t aMaxNumberOfCookies,
                                                   int64_t aCookiePurgeAge) = 0;
+
+  void RemoveCookiesFromBack(nsTArray<CookieListIter>& aCookieIters,
+                             nsCOMPtr<nsIArray>& aPurgedList);
 
   // Serialize aBaseDomain e.g. apply "zero abbreveation" (::), use single
   // zeros and remove brackets to match principal base domain representation.

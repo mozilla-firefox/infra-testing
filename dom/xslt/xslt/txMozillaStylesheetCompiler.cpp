@@ -3,39 +3,38 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsIAuthPrompt.h"
+#include "ReferrerInfo.h"
+#include "mozilla/Encoding.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/Text.h"
+#include "nsAttrName.h"
+#include "nsCharsetSource.h"
+#include "nsComponentManagerUtils.h"
+#include "nsContentPolicyUtils.h"
+#include "nsError.h"
+#include "nsGkAtoms.h"
+#include "nsIAuthPrompt.h"
 #include "nsIExpatSink.h"
+#include "nsIHttpChannel.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsILoadGroup.h"
-#include "nsParser.h"
-#include "nsCharsetSource.h"
-#include "nsIRequestObserver.h"
-#include "nsContentPolicyUtils.h"
-#include "nsIStreamConverterService.h"
-#include "nsSyncLoadService.h"
-#include "nsIHttpChannel.h"
-#include "nsIURI.h"
 #include "nsIPrincipal.h"
+#include "nsIRequestObserver.h"
+#include "nsIScriptError.h"
+#include "nsIStreamConverterService.h"
+#include "nsIURI.h"
 #include "nsIWindowWatcher.h"
 #include "nsIXMLContentSink.h"
 #include "nsMimeTypes.h"
 #include "nsNetUtil.h"
-#include "nsGkAtoms.h"
+#include "nsParser.h"
+#include "nsSyncLoadService.h"
 #include "txLog.h"
 #include "txMozillaXSLTProcessor.h"
 #include "txStylesheetCompiler.h"
 #include "txXMLUtils.h"
-#include "nsAttrName.h"
-#include "nsComponentManagerUtils.h"
-#include "nsIScriptError.h"
-#include "nsError.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/dom/Text.h"
-#include "mozilla/Encoding.h"
-#include "mozilla/UniquePtr.h"
-#include "ReferrerInfo.h"
 
 using namespace mozilla;
 using mozilla::dom::Document;
@@ -275,7 +274,7 @@ txStylesheetSink::OnStopRequest(nsIRequest* aRequest, nsresult aStatusCode) {
 
   nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(aRequest);
   if (httpChannel) {
-    Unused << httpChannel->GetRequestSucceeded(&success);
+    (void)httpChannel->GetRequestSucceeded(&success);
   }
 
   nsresult result = aStatusCode;
@@ -539,29 +538,24 @@ nsresult txSyncCompileObserver::loadURI(const nsAString& aUri,
   nsresult rv = NS_NewURI(getter_AddRefs(uri), aUri);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsCOMPtr<nsIURI> referrerUri;
-  rv = NS_NewURI(getter_AddRefs(referrerUri), aReferrerUri);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  nsCOMPtr<nsIPrincipal> referrerPrincipal =
-      BasePrincipal::CreateContentPrincipal(referrerUri, OriginAttributes());
-  NS_ENSURE_TRUE(referrerPrincipal, NS_ERROR_FAILURE);
+  nsCOMPtr<nsPIDOMWindowInner> window =
+      do_QueryInterface(mProcessor->GetParentObject());
+  NS_ENSURE_TRUE(window, NS_ERROR_FAILURE);
+  nsCOMPtr<Document> loaderDoc = window->GetExtantDoc();
+  NS_ENSURE_TRUE(loaderDoc, NS_ERROR_FAILURE);
 
   // This is probably called by js, a loadGroup for the channel doesn't
   // make sense.
-  nsCOMPtr<nsINode> source;
-  if (mProcessor) {
-    source = mProcessor->GetSourceContentModel();
-  }
+  nsCOMPtr<nsINode> source = mProcessor->GetSourceContentModel();
   dom::nsAutoSyncOperation sync(source ? source->OwnerDoc() : nullptr,
                                 dom::SyncOperationBehavior::eSuspendInput);
   nsCOMPtr<Document> document;
 
   rv = nsSyncLoadService::LoadDocument(
-      uri, nsIContentPolicy::TYPE_XSLT, referrerPrincipal,
-      nsILoadInfo::SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT, nullptr,
-      source ? source->OwnerDoc()->CookieJarSettings() : nullptr, false,
-      aReferrerPolicy, getter_AddRefs(document));
+      uri, nsIContentPolicy::TYPE_XSLT, loaderDoc,
+      /* aLoaderPrincipal */ nullptr,
+      nsILoadInfo::SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT, nullptr, nullptr,
+      false, aReferrerPolicy, getter_AddRefs(document));
   NS_ENSURE_SUCCESS(rv, rv);
 
   rv = handleNode(document, aCompiler);

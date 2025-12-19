@@ -20,7 +20,6 @@
 #define wasm_op_iter_h
 
 #include "mozilla/CompactPair.h"
-#include "mozilla/Poison.h"
 
 #include <type_traits>
 
@@ -1695,8 +1694,8 @@ inline bool OpIter<Policy>::readTryTable(BlockType* type,
     }
 
     // Any captured exnref is the final parameter
-    if (tryTableCatch.captureExnRef &&
-        !tryTableCatch.labelType.append(ValType(RefType::exn()))) {
+    if (tryTableCatch.captureExnRef && !tryTableCatch.labelType.append(ValType(
+                                           RefType::exn().asNonNullable()))) {
       return false;
     }
 
@@ -1977,7 +1976,7 @@ inline bool OpIter<Policy>::readLinearMemoryAddress(
 
   uint8_t alignLog2 = flags & ((1 << 6) - 1);
   uint8_t hasMemoryIndex = flags & (1 << 6);
-  uint8_t undefinedBits = flags & ~((1 << 7) - 1);
+  uint32_t undefinedBits = flags & ~((1 << 7) - 1);
 
   if (undefinedBits != 0) {
     return fail("invalid memory flags");

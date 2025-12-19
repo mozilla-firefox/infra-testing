@@ -11,15 +11,16 @@
 
 #include <stdint.h>
 
-#include "mozilla/ServoTypes.h"
+#include "COLRFonts.h"
+#include "mozilla/EffectCompositor.h"
+#include "mozilla/PreferenceSheet.h"
 #include "mozilla/ServoBindingTypes.h"
+#include "mozilla/ServoTypes.h"
 #include "mozilla/css/DocumentMatchingFunction.h"
 #include "mozilla/css/SheetLoadData.h"
 #include "mozilla/dom/Document.h"
-#include "mozilla/EffectCompositor.h"
-#include "mozilla/PreferenceSheet.h"
 #include "nsStyleStruct.h"
-#include "COLRFonts.h"
+#include "nsStyleStructList.h"
 
 class nsAtom;
 class nsIURI;
@@ -79,14 +80,8 @@ bool Gecko_IsSignificantChild(const nsINode*, bool whitespace_is_significant);
 
 const nsINode* Gecko_GetLastChild(const nsINode*);
 const nsINode* Gecko_GetFlattenedTreeParentNode(const nsINode*);
-const mozilla::dom::Element* Gecko_GetBeforeOrAfterPseudo(
-    const mozilla::dom::Element*, bool is_before);
-const mozilla::dom::Element* Gecko_GetMarkerPseudo(
-    const mozilla::dom::Element*);
-
-nsTArray<nsIContent*>* Gecko_GetAnonymousContentForElement(
-    const mozilla::dom::Element*);
-void Gecko_DestroyAnonymousContentList(nsTArray<nsIContent*>* anon_content);
+void Gecko_GetAnonymousContentForElement(const mozilla::dom::Element*,
+                                         nsTArray<nsIContent*>*);
 
 const nsTArray<RefPtr<nsINode>>* Gecko_GetAssignedNodes(
     const mozilla::dom::Element*);
@@ -114,14 +109,14 @@ const nsINode* Gecko_GetNextStyleChild(mozilla::dom::StyleChildrenIterator*);
 nsAtom* Gecko_Element_ImportedPart(const nsAttrValue*, nsAtom*);
 nsAtom** Gecko_Element_ExportedParts(const nsAttrValue*, nsAtom*,
                                      size_t* aOutLength);
+uint64_t Gecko_Element_GetSubtreeBloomFilter(const mozilla::dom::Element*);
 
 NS_DECL_THREADSAFE_FFI_REFCOUNTING(mozilla::css::SheetLoadDataHolder,
                                    SheetLoadDataHolder);
 
 void Gecko_StyleSheet_FinishAsyncParse(
     mozilla::css::SheetLoadDataHolder* data,
-    mozilla::StyleStrong<mozilla::StyleStylesheetContents> sheet_contents,
-    mozilla::StyleUseCounters* use_counters);
+    mozilla::StyleStrong<mozilla::StyleStylesheetContents> sheet_contents);
 
 mozilla::StyleSheet* Gecko_LoadStyleSheet(
     mozilla::css::Loader* loader, mozilla::StyleSheet* parent,
@@ -143,6 +138,9 @@ bool Gecko_IsRootElement(const mozilla::dom::Element*);
 bool Gecko_MatchLang(const mozilla::dom::Element*, nsAtom* override_lang,
                      bool has_override_lang, const char16_t* value);
 
+bool Gecko_MatchViewTransitionClass(const mozilla::dom::Element*,
+                                    const nsTArray<mozilla::StyleAtom>*);
+
 nsAtom* Gecko_GetXMLLangValue(const mozilla::dom::Element*);
 
 const mozilla::PreferenceSheet::Prefs* Gecko_GetPrefSheetPrefs(
@@ -150,11 +148,15 @@ const mozilla::PreferenceSheet::Prefs* Gecko_GetPrefSheetPrefs(
 
 bool Gecko_IsTableBorderNonzero(const mozilla::dom::Element* element);
 bool Gecko_IsSelectListBox(const mozilla::dom::Element* element);
+bool Gecko_HasActiveViewTransitionTypes(
+    const mozilla::dom::Document*, const nsTArray<mozilla::StyleCustomIdent>*);
 
 // Attributes.
 #define SERVO_DECLARE_ELEMENT_ATTR_MATCHING_FUNCTIONS(prefix_, implementor_) \
   nsAtom* prefix_##LangValue(implementor_ element);
 
+bool Gecko_LookupAttrValue(const mozilla::dom::Element* aElement,
+                           const nsAtom& aName, nsAString& aResult);
 bool Gecko_AttrEquals(const nsAttrValue*, const nsAtom*, bool aIgnoreCase);
 bool Gecko_AttrDashEquals(const nsAttrValue*, const nsAtom*, bool aIgnoreCase);
 bool Gecko_AttrIncludes(const nsAttrValue*, const nsAtom*, bool aIgnoreCase);
@@ -240,7 +242,7 @@ bool Gecko_ElementHasWebAnimations(
 size_t Gecko_ElementTransitions_Length(
     const mozilla::dom::Element* aElementOrPseudo);
 
-nsCSSPropertyID Gecko_ElementTransitions_PropertyAt(
+NonCustomCSSPropertyId Gecko_ElementTransitions_PropertyAt(
     const mozilla::dom::Element* aElementOrPseudo, size_t aIndex);
 
 const mozilla::StyleAnimationValue* Gecko_ElementTransitions_EndValueAt(
@@ -253,13 +255,13 @@ double Gecko_GetPositionInSegment(const mozilla::AnimationPropertySegment*,
 
 // Get servo's AnimationValue for |aProperty| from the cached base style
 // |aBaseStyles|.
-// |aBaseStyles| is nsRefPtrHashtable<nsGenericHashKey<AnimatedPropertyID>,
+// |aBaseStyles| is nsRefPtrHashtable<nsGenericHashKey<CSSPropertyId>,
 // StyleAnimationValue>.
 // We use RawServoAnimationValueTableBorrowed to avoid exposing
 // nsRefPtrHashtable in FFI.
 const mozilla::StyleAnimationValue* Gecko_AnimationGetBaseStyle(
     const RawServoAnimationValueTable* aBaseStyles,
-    const mozilla::AnimatedPropertyID* aProperty);
+    const mozilla::CSSPropertyId* aProperty);
 
 void Gecko_StyleTransition_SetUnsupportedProperty(
     mozilla::StyleTransition* aTransition, nsAtom* aAtom);
@@ -502,17 +504,17 @@ nscolor Gecko_ComputeSystemColor(mozilla::StyleSystemColor,
 int32_t Gecko_GetLookAndFeelInt(int32_t int_id);
 float Gecko_GetLookAndFeelFloat(int32_t float_id);
 
-void Gecko_AddPropertyToSet(nsCSSPropertyIDSet*, nsCSSPropertyID);
+void Gecko_AddPropertyToSet(nsCSSPropertyIDSet*, NonCustomCSSPropertyId);
 
 // Style-struct management.
-#define STYLE_STRUCT(name)                                                   \
+#define DECLARE_GECKO_FUNCTIONS(name)                                        \
   void Gecko_Construct_Default_nsStyle##name(nsStyle##name* ptr,             \
                                              const mozilla::dom::Document*); \
   void Gecko_CopyConstruct_nsStyle##name(nsStyle##name* ptr,                 \
                                          const nsStyle##name* other);        \
   void Gecko_Destroy_nsStyle##name(nsStyle##name* ptr);
-#include "nsStyleStructList.h"
-#undef STYLE_STRUCT
+FOR_EACH_STYLE_STRUCT(DECLARE_GECKO_FUNCTIONS, DECLARE_GECKO_FUNCTIONS)
+#undef DECLARE_GECKO_FUNCTIONS
 
 bool Gecko_DocumentRule_UseForPresentation(
     const mozilla::dom::Document*, const nsACString* aPattern,
@@ -594,6 +596,7 @@ float Gecko_MediaFeatures_GetResolution(const mozilla::dom::Document*);
 bool Gecko_MediaFeatures_PrefersReducedMotion(const mozilla::dom::Document*);
 bool Gecko_MediaFeatures_PrefersReducedTransparency(
     const mozilla::dom::Document*);
+bool Gecko_MediaFeatures_MacRTL(const mozilla::dom::Document*);
 mozilla::StylePrefersContrast Gecko_MediaFeatures_PrefersContrast(
     const mozilla::dom::Document*);
 mozilla::StylePrefersColorScheme Gecko_MediaFeatures_PrefersColorScheme(
@@ -616,6 +619,7 @@ mozilla::PointerCapabilities Gecko_MediaFeatures_AllPointerCapabilities(
 float Gecko_MediaFeatures_GetDevicePixelRatio(const mozilla::dom::Document*);
 
 bool Gecko_MediaFeatures_IsResourceDocument(const mozilla::dom::Document*);
+bool Gecko_MediaFeatures_InAndroidPipMode(const mozilla::dom::Document*);
 bool Gecko_MediaFeatures_MatchesPlatform(mozilla::StylePlatform);
 mozilla::StyleGtkThemeFamily Gecko_MediaFeatures_GtkThemeFamily();
 
@@ -623,6 +627,33 @@ void Gecko_GetSafeAreaInsets(const nsPresContext*, float*, float*, float*,
                              float*);
 
 void Gecko_PrintfStderr(const nsCString*);
+
+bool Gecko_GetAnchorPosOffset(
+    const AnchorPosOffsetResolutionParams* aParams, const nsAtom* aAnchorName,
+    mozilla::StylePhysicalSide aPropSide,
+    mozilla::StyleAnchorSideKeyword aAnchorSideKeyword, float aPercentage,
+    mozilla::Length* aOut);
+
+/**
+ * Resolve the anchor size for a positioned element, given the anchor name.
+ *
+ * @param aParams  Parameters required to resolve anchor size.
+ * @param aAnchorName  Name of the anchor to use. If null, it will try to use
+ *                     the position-anchor property of the positioned frame (In
+ *                     |aParams|). If the property is not set, the lookup fails.
+ * @param aPropAxis  Axis of the property the anchor size is being resolved for.
+ *                   Used when |aAnchorSizeKeyword| is None
+ * @param aAnchorSizeKeyword  Which size value to use as the output.
+ * @param aLength  Location to write the resolved anchor size. Only set if the
+ *                 resolution is valid.
+ *
+ * @returns  True if the lookup succeeded.
+ */
+bool Gecko_GetAnchorPosSize(const AnchorPosResolutionParams* aParams,
+                            const nsAtom* aAnchorName,
+                            mozilla::StylePhysicalAxis aPropAxis,
+                            mozilla::StyleAnchorSizeKeyword aAnchorSizeKeyword,
+                            mozilla::Length* aOut);
 
 }  // extern "C"
 

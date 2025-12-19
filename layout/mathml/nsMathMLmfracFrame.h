@@ -7,7 +7,6 @@
 #ifndef nsMathMLmfracFrame_h___
 #define nsMathMLmfracFrame_h___
 
-#include "mozilla/Attributes.h"
 #include "nsMathMLContainerFrame.h"
 
 namespace mozilla {
@@ -63,14 +62,14 @@ class nsMathMLmfracFrame final : public nsMathMLContainerFrame {
 
   eMathMLFrameType GetMathMLFrameType() override;
 
-  nsresult Place(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
-                 ReflowOutput& aDesiredSize) override;
+  void Place(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
+             ReflowOutput& aDesiredSize) override;
 
   void BuildDisplayList(nsDisplayListBuilder* aBuilder,
                         const nsDisplayListSet& aLists) override;
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
   NS_IMETHOD
   TransmitAutomaticData() override;
@@ -79,9 +78,7 @@ class nsMathMLmfracFrame final : public nsMathMLContainerFrame {
   nscoord FixInterFrameSpacing(ReflowOutput& aDesiredSize) override;
 
   // helper to translate the thickness attribute into a usable form
-  nscoord CalcLineThickness(nsPresContext* aPresContext,
-                            ComputedStyle* aComputedStyle,
-                            nsString& aThicknessAttribute, nscoord onePixel,
+  nscoord CalcLineThickness(nsString& aThicknessAttribute, nscoord onePixel,
                             nscoord aDefaultRuleThickness,
                             float aFontSizeInflation);
 

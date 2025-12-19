@@ -20,7 +20,6 @@
 #include "ImageLogging.h"
 #include "ReferrerInfo.h"
 #include "imgRequestProxy.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ChaosMode.h"
 #include "mozilla/ClearOnShutdown.h"
@@ -57,7 +56,6 @@
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIMemoryReporter.h"
-#include "nsINetworkPredictor.h"
 #include "nsIProgressEventSink.h"
 #include "nsIProtocolHandler.h"
 #include "nsImageModule.h"
@@ -163,8 +161,14 @@ class imgMemoryReporter final : public nsIMemoryReporter {
     size_t n = 0;
     for (uint32_t i = 0; i < imgLoader::sMemReporter->mKnownLoaders.Length();
          i++) {
+      nsTArray<RefPtr<imgCacheEntry>> entries(
+          imgLoader::sMemReporter->mKnownLoaders[i]->mCache.Count());
+
       for (imgCacheEntry* entry :
            imgLoader::sMemReporter->mKnownLoaders[i]->mCache.Values()) {
+        entries.AppendElement(entry);
+      }
+      for (imgCacheEntry* entry : entries) {
         if (entry->HasNoProxies()) {
           continue;
         }
@@ -727,10 +731,13 @@ static bool ShouldLoadCachedImage(imgRequest* aImgRequest,
     loadingPrincipal = NullPrincipal::CreateWithoutOriginAttributes();
   }
 
-  nsCOMPtr<nsILoadInfo> secCheckLoadInfo = new LoadInfo(
+  Result<RefPtr<LoadInfo>, nsresult> maybeLoadInfo = LoadInfo::Create(
       loadingPrincipal, aTriggeringPrincipal, aLoadingDocument,
       nsILoadInfo::SEC_ONLY_FOR_EXPLICIT_CONTENTSEC_CHECK, aPolicyType);
-
+  if (NS_WARN_IF(maybeLoadInfo.isErr())) {
+    return false;
+  }
+  RefPtr<LoadInfo> secCheckLoadInfo = maybeLoadInfo.unwrap();
   secCheckLoadInfo->SetSendCSPViolationEvents(aSendCSPViolationReports);
 
   int16_t decision = nsIContentPolicy::REJECT_REQUEST;
@@ -920,12 +927,14 @@ static nsresult NewImageChannel(
   } else {
     // either we are loading something inside a document, in which case
     // we should always have a requestingNode, or we are loading something
-    // outside a document, in which case the triggeringPrincipal and
-    // triggeringPrincipal should always be the systemPrincipal.
-    // However, there are exceptions: one is Notifications which create a
-    // channel in the parent process in which case we can't get a
-    // requestingNode.
-    rv = NS_NewChannel(aResult, aURI, nsContentUtils::GetSystemPrincipal(),
+    // outside a document, in which case the triggeringPrincipal should be the
+    // systemPrincipal. However, there are exceptions: one is Notifications
+    // which create a channel in the parent process in which case we can't get a
+    // requestingNode though we might have a valid triggeringPrincipal.
+    rv = NS_NewChannel(aResult, aURI,
+                       aTriggeringPrincipal
+                           ? aTriggeringPrincipal
+                           : nsContentUtils::GetSystemPrincipal(),
                        securityFlags, aPolicyType,
                        nullptr,  // nsICookieJarSettings
                        nullptr,  // PerformanceStorage
@@ -1196,7 +1205,7 @@ class imgCacheExpirationTracker final
 
 imgCacheExpirationTracker::imgCacheExpirationTracker()
     : nsExpirationTracker<imgCacheEntry, 3>(TIMEOUT_SECONDS * 1000,
-                                            "imgCacheExpirationTracker") {}
+                                            "imgCacheExpirationTracker"_ns) {}
 
 void imgCacheExpirationTracker::NotifyExpired(imgCacheEntry* entry) {
   // Hold on to a reference to this entry, because the expiration tracker
@@ -1423,8 +1432,8 @@ nsresult imgLoader::ClearCache(
     const mozilla::Maybe<nsCString>& aURL /* = mozilla::Nothing() */) {
   if (XRE_IsParentProcess()) {
     for (auto* cp : ContentParent::AllProcesses(ContentParent::eLive)) {
-      Unused << cp->SendClearImageCache(aPrivateLoader, aChrome, aPrincipal,
-                                        aSchemelessSite, aPattern, aURL);
+      (void)cp->SendClearImageCache(aPrivateLoader, aChrome, aPrincipal,
+                                    aSchemelessSite, aPattern, aURL);
     }
   }
 
@@ -1878,9 +1887,6 @@ bool imgLoader::ValidateRequestWithNewChannel(
   // Add the proxy without notifying
   hvc->AddProxy(req);
 
-  mozilla::net::PredictorLearn(aURI, aInitialDocumentURI,
-                               nsINetworkPredictor::LEARN_LOAD_SUBRESOURCE,
-                               aLoadGroup);
   rv = newChannel->AsyncOpen(listener);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     req->CancelAndForgetObserver(rv);
@@ -2530,7 +2536,7 @@ nsresult imgLoader::LoadImage(
                            nsIClassOfService::Tail);
         nsCOMPtr<nsIHttpChannel> httpChannel(do_QueryInterface(newChannel));
         if (httpChannel) {
-          Unused << httpChannel->SetRequestContextID(aRequestContextID);
+          (void)httpChannel->SetRequestContextID(aRequestContextID);
         }
       }
     }
@@ -2556,10 +2562,6 @@ nsresult imgLoader::LoadImage(
     MOZ_LOG(gImgLog, LogLevel::Debug,
             ("[this=%p] imgLoader::LoadImage -- Calling channel->AsyncOpen()\n",
              this));
-
-    mozilla::net::PredictorLearn(aURI, aInitialDocumentURI,
-                                 nsINetworkPredictor::LEARN_LOAD_SUBRESOURCE,
-                                 aLoadGroup);
 
     nsresult openRes;
     openRes = newChannel->AsyncOpen(listener);

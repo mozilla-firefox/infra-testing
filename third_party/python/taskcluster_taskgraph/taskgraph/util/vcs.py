@@ -9,6 +9,7 @@ import re
 import subprocess
 from abc import ABC, abstractmethod
 from shutil import which
+from typing import Optional
 
 from taskgraph.util.path import ancestors
 
@@ -34,7 +35,7 @@ class Repository(ABC):
 
         self._env = os.environ.copy()
 
-    def run(self, *args: str, **kwargs):
+    def run(self, *args: str, **kwargs) -> str:
         return_codes = kwargs.pop("return_codes", [])
         cmd = (self.binary,) + args
 
@@ -58,22 +59,27 @@ class Repository(ABC):
 
     @property
     @abstractmethod
+    def is_shallow(self) -> str:
+        """Whether this repo is a shallow clone."""
+
+    @property
+    @abstractmethod
     def head_rev(self) -> str:
         """Hash of HEAD revision."""
 
     @property
     @abstractmethod
-    def base_rev(self):
+    def base_rev(self) -> str:
         """Hash of revision the current topic branch is based on."""
 
     @property
     @abstractmethod
-    def branch(self):
+    def branch(self) -> Optional[str]:
         """Current branch or bookmark the checkout has active."""
 
     @property
     @abstractmethod
-    def all_remote_names(self):
+    def all_remote_names(self) -> list[str]:
         """Name of all configured remote repositories."""
 
     @property
@@ -85,10 +91,10 @@ class Repository(ABC):
 
     @property
     @abstractmethod
-    def remote_name(self):
+    def remote_name(self) -> str:
         """Name of the remote repository."""
 
-    def _get_most_suitable_remote(self, remote_instructions):
+    def _get_most_suitable_remote(self, remote_instructions) -> str:
         remotes = self.all_remote_names
 
         # in case all_remote_names raised a RuntimeError
@@ -113,23 +119,38 @@ class Repository(ABC):
 
     @property
     @abstractmethod
-    def default_branch(self):
+    def default_branch(self) -> str:
         """Name of the default branch."""
 
     @abstractmethod
-    def get_url(self, remote=None):
+    def get_url(self, remote: Optional[str]) -> str:
         """Get URL of the upstream repository."""
 
     @abstractmethod
-    def get_commit_message(self, revision=None):
+    def get_commit_message(self, revision: Optional[str]) -> str:
         """Commit message of specified revision or current commit."""
 
     @abstractmethod
-    def get_changed_files(self, diff_filter, mode="unstaged", rev=None, base_rev=None):
+    def get_tracked_files(self, *paths: str, rev: Optional[str] = None) -> list[str]:
+        """Return list of tracked files.
+
+        ``*paths`` are path specifiers to limit results to.
+        ``rev`` is a revision specifier at which to retrieve the files.
+        Defaults to the parent of the working copy if unspecified.
+        """
+
+    @abstractmethod
+    def get_changed_files(
+        self,
+        diff_filter: Optional[str],
+        mode: Optional[str],
+        rev: Optional[str],
+        base: Optional[str],
+    ) -> list[str]:
         """Return a list of files that are changed in:
          * either this repository's working copy,
          * or at a given revision (``rev``)
-         * or between 2 revisions (``base_rev`` and ``rev``)
+         * or between 2 revisions (``base`` and ``rev``)
 
         ``diff_filter`` controls which kinds of modifications are returned.
         It is a string which may only contain the following characters:
@@ -146,13 +167,13 @@ class Repository(ABC):
         ``rev`` is a specifier for which changesets to consider for
         changes. The exact meaning depends on the vcs system being used.
 
-        ``base_rev`` specifies the range of changesets. This parameter cannot
+        ``base`` specifies the range of changesets. This parameter cannot
         be used without ``rev``. The range includes ``rev`` but excludes
-        ``base_rev``.
+        ``base``.
         """
 
     @abstractmethod
-    def get_outgoing_files(self, diff_filter, upstream):
+    def get_outgoing_files(self, diff_filter: str, upstream: str) -> list[str]:
         """Return a list of changed files compared to upstream.
 
         ``diff_filter`` works the same as `get_changed_files`.
@@ -162,7 +183,9 @@ class Repository(ABC):
         """
 
     @abstractmethod
-    def working_directory_clean(self, untracked=False, ignored=False):
+    def working_directory_clean(
+        self, untracked: Optional[bool] = False, ignored: Optional[bool] = False
+    ) -> bool:
         """Determine if the working directory is free of modifications.
 
         Returns True if the working directory does not have any file
@@ -174,11 +197,11 @@ class Repository(ABC):
         """
 
     @abstractmethod
-    def update(self, ref):
+    def update(self, ref: str) -> None:
         """Update the working directory to the specified reference."""
 
     @abstractmethod
-    def find_latest_common_revision(self, base_ref_or_rev, head_rev):
+    def find_latest_common_revision(self, base_ref_or_rev: str, head_rev: str) -> str:
         """Find the latest revision that is common to both the given
         ``head_rev`` and ``base_ref_or_rev``.
 
@@ -186,7 +209,7 @@ class Repository(ABC):
         be returned."""
 
     @abstractmethod
-    def does_revision_exist_locally(self, revision):
+    def does_revision_exist_locally(self, revision: str) -> bool:
         """Check whether this revision exists in the local repository.
 
         If this function returns an unexpected value, then make sure
@@ -205,6 +228,10 @@ class HgRepository(Repository):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._env["HGPLAIN"] = "1"
+
+    @property
+    def is_shallow(self):
+        return False
 
     @property
     def head_rev(self):
@@ -243,7 +270,8 @@ class HgRepository(Repository):
         # https://www.mercurial-scm.org/wiki/StandardBranching#Don.27t_use_a_name_other_than_default_for_your_main_development_branch
         return "default"
 
-    def get_url(self, remote="default"):
+    def get_url(self, remote=None):
+        remote = remote or "default"
         return self.run("path", "-T", "{url}", remote).strip()
 
     def get_commit_message(self, revision=None):
@@ -270,18 +298,21 @@ class HgRepository(Repository):
             template += "{file_mods % '{file}\\n'}"
         return template
 
-    def get_changed_files(
-        self, diff_filter="ADM", mode="unstaged", rev=None, base_rev=None
-    ):
+    def get_tracked_files(self, *paths, rev=None):
+        rev = rev or "."
+        return self.run("files", "-r", rev, *paths).splitlines()
+
+    def get_changed_files(self, diff_filter=None, mode=None, rev=None, base=None):
+        diff_filter = diff_filter or "ADM"
         if rev is None:
-            if base_rev is not None:
-                raise ValueError("Cannot specify `base_rev` without `rev`")
+            if base is not None:
+                raise ValueError("Cannot specify `base` without `rev`")
             # Use --no-status to print just the filename.
             df = self._format_diff_filter(diff_filter, for_status=True)
             return self.run("status", "--no-status", f"-{df}").splitlines()
         else:
             template = self._files_template(diff_filter)
-            revision_argument = rev if base_rev is None else f"{rev} % {base_rev}"
+            revision_argument = rev if base is None else f"{rev} % {base}"
             return self.run("log", "-r", revision_argument, "-T", template).splitlines()
 
     def get_outgoing_files(self, diff_filter="ADM", upstream=None):
@@ -315,7 +346,7 @@ class HgRepository(Repository):
         return not len(self.run(*args).strip())
 
     def update(self, ref):
-        return self.run("update", "--check", ref)
+        self.run("update", "--check", ref)
 
     def find_latest_common_revision(self, base_ref_or_rev, head_rev):
         ancestor = self.run(
@@ -348,6 +379,10 @@ class GitRepository(Repository):
         return "origin"
 
     _LS_REMOTE_PATTERN = re.compile(r"ref:\s+refs/heads/(?P<branch_name>\S+)\s+HEAD")
+
+    @property
+    def is_shallow(self):
+        return self.run("rev-parse", "--is-shallow-repository").strip() == "true"
 
     @property
     def head_rev(self):
@@ -445,30 +480,42 @@ class GitRepository(Repository):
 
         raise RuntimeError(f"Unable to find default branch. Got: {branches}")
 
-    def get_url(self, remote="origin"):
+    def get_url(self, remote=None):
+        remote = remote or "origin"
         return self.run("remote", "get-url", remote).strip()
 
     def get_commit_message(self, revision=None):
         revision = revision or "HEAD"
         return self.run("log", "-n1", "--format=%B", revision)
 
-    def get_changed_files(
-        self, diff_filter="ADM", mode="unstaged", rev=None, base_rev=None
-    ):
+    def get_tracked_files(self, *paths, rev=None):
+        rev = rev or "HEAD"
+        return self.run("ls-tree", "-r", "--name-only", rev, *paths).splitlines()
+
+    def get_changed_files(self, diff_filter=None, mode=None, rev=None, base=None):
+        diff_filter = diff_filter or "ADM"
+        mode = mode or "unstaged"
         assert all(f.lower() in self._valid_diff_filter for f in diff_filter)
 
         if rev is None:
-            if base_rev is not None:
-                raise ValueError("Cannot specify `base_rev` without `rev`")
+            if base is not None:
+                raise ValueError("Cannot specify `base` without `rev`")
             cmd = ["diff"]
             if mode == "staged":
                 cmd.append("--cached")
             elif mode == "all":
                 cmd.append("HEAD")
+        elif self.is_shallow:
+            # In shallow clones, `git log` won't have the history necessary to
+            # determine the files changed. Using `git diff` finds the
+            # differences between the two trees which is slightly more
+            # accurate. However, Github events often don't provide the true
+            # base revision so shallow Github clones will still return
+            # incorrect files changed in many cases, most notably pull
+            # requests that need rebasing.
+            cmd = ["diff", base, rev]
         else:
-            revision_argument = (
-                f"{rev}~1..{rev}" if base_rev is None else f"{base_rev}..{rev}"
-            )
+            revision_argument = f"{rev}~1..{rev}" if base is None else f"{base}..{rev}"
             cmd = ["log", "--format=format:", revision_argument]
 
         cmd.append("--name-only")
@@ -535,7 +582,7 @@ class GitRepository(Repository):
             raise
 
 
-def get_repository(path):
+def get_repository(path: str):
     """Get a repository object for the repository at `path`.
     If `path` is not a known VCS repository, raise an exception.
     """

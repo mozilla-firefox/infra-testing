@@ -8,16 +8,19 @@ import mozilla.components.browser.state.search.SearchEngine
 import mozilla.components.browser.state.state.SessionState
 import mozilla.components.concept.base.profiler.Profiler
 import mozilla.components.concept.engine.EngineSession
+import mozilla.components.concept.engine.utils.ABOUT_HOME_URL
 import mozilla.components.concept.storage.HistoryMetadataKey
 import mozilla.components.feature.search.SearchUseCases
 import mozilla.components.feature.session.SessionUseCases
 import mozilla.components.feature.tabs.TabsUseCases
 import mozilla.components.support.ktx.kotlin.isUrl
 import mozilla.components.support.ktx.kotlin.toNormalizedUrl
+import org.mozilla.fenix.components.AppStore
 
 /**
  * Use cases for handling loading a URL and performing a search.
  *
+ * @param appStore [AppStore] used to fetch the appstore
  * @param addNewTabUseCase [TabsUseCases.AddNewTabUseCase] used for adding new tabs.
  * @param loadUrlUseCase [SessionUseCases.DefaultLoadUrlUseCase] used for loading a URL.
  * @param searchUseCases [SearchUseCases] used for performing a search.
@@ -25,6 +28,7 @@ import mozilla.components.support.ktx.kotlin.toNormalizedUrl
  * @param profiler [Profiler] used to add profiler markers.
  */
 class FenixBrowserUseCases(
+    private val appStore: AppStore,
     private val addNewTabUseCase: TabsUseCases.AddNewTabUseCase,
     private val loadUrlUseCase: SessionUseCases.DefaultLoadUrlUseCase,
     private val searchUseCases: SearchUseCases,
@@ -44,10 +48,11 @@ class FenixBrowserUseCases(
      * was opened from history.
      * @param additionalHeaders The extra headers to use when loading the URL.
      */
+    @Suppress("CognitiveComplexMethod")
     fun loadUrlOrSearch(
         searchTermOrURL: String,
         newTab: Boolean,
-        private: Boolean,
+        private: Boolean = appStore.state.mode.isPrivate,
         forceSearch: Boolean = false,
         searchEngine: SearchEngine? = null,
         flags: EngineSession.LoadUrlFlags = EngineSession.LoadUrlFlags.none(),
@@ -107,7 +112,7 @@ class FenixBrowserUseCases(
             profiler.addMarker(
                 markerName = "FenixBrowserUseCases.loadUrlOrSearch",
                 startTime = startTime,
-                text = "newTab: $newTab",
+                text = "newTab: $newTab, private: $private",
             )
         }
     }
@@ -118,19 +123,18 @@ class FenixBrowserUseCases(
      * @param private Whether or not the new homepage tab should be private.
      * @return The ID of the created tab.
      */
-    fun addNewHomepageTab(private: Boolean): String {
+    fun addNewHomepageTab(private: Boolean = appStore.state.mode.isPrivate): String {
         return addNewTabUseCase.invoke(
-            url = ABOUT_HOME,
-            startLoading = false,
+            url = ABOUT_HOME_URL,
             title = homepageTitle,
             private = private,
         )
     }
 
     /**
-     * Contains constants used by [FenixBrowserUseCases].
+     * Loads the homepage ("about:home").
      */
-    companion object {
-        const val ABOUT_HOME = "about:home"
+    fun navigateToHomepage() {
+        loadUrlUseCase.invoke(url = ABOUT_HOME_URL)
     }
 }

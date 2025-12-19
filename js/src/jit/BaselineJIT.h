@@ -288,6 +288,11 @@ class alignas(uintptr_t) BaselineScript final
                              size_t retAddrEntries, size_t osrEntries,
                              size_t debugTrapEntries, size_t resumeEntries);
 
+  // Copies the given BaselineScript and all trailing arrays.
+  // Both BaselineScripts will refer to the same method and IonCompileTask (if
+  // any), but those objects won't be compiled.
+  static BaselineScript* Copy(JSContext* cx, BaselineScript* bs);
+
   static void Destroy(JS::GCContext* gcx, BaselineScript* script);
 
   void trace(JSTracer* trc);
@@ -331,7 +336,8 @@ class alignas(uintptr_t) BaselineScript final
 
   uint8_t* nativeCodeForOSREntry(uint32_t pcOffset);
 
-  static uint8_t* OSREntryForFrame(BaselineFrame* frame);
+  static bool OSREntryForFrame(JSContext* cx, BaselineFrame* frame,
+                               uint8_t** entry);
 
   void copyRetAddrEntries(const RetAddrEntry* entries);
   void copyOSREntries(const OSREntry* entries);
@@ -463,6 +469,7 @@ enum class BaselineOption : uint8_t {
 
 using BaselineOptions = EnumFlags<BaselineOption>;
 
+bool DispatchOffThreadBaselineBatchEager(JSContext* cx);
 bool DispatchOffThreadBaselineBatch(JSContext* cx);
 
 MethodStatus BaselineCompile(JSContext* cx, JSScript* script,
@@ -605,6 +612,14 @@ struct DeletePolicy<js::jit::BaselineScript> {
 
  private:
   JSRuntime* rt_;
+};
+
+template <>
+struct GCPolicy<js::jit::BaselineScript*> {
+  static void trace(JSTracer* trc, js::jit::BaselineScript** thingp,
+                    const char* name) {
+    (*thingp)->trace(trc);
+  }
 };
 
 }  // namespace JS

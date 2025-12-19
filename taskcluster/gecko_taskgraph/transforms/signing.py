@@ -15,7 +15,7 @@ from gecko_taskgraph.transforms.task import task_description_schema
 from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
 from gecko_taskgraph.util.scriptworker import (
     add_scope_prefix,
-    get_signing_cert_scope_per_platform,
+    get_signing_type_per_platform,
 )
 
 transforms = TransformSequence()
@@ -49,14 +49,13 @@ signing_description_schema = Schema(
         Optional("shipping-phase"): task_description_schema["shipping-phase"],
         Optional("shipping-product"): task_description_schema["shipping-product"],
         Required("dependencies"): task_description_schema["dependencies"],
-        # Optional control for how long a task may run (aka maxRunTime)
-        Optional("max-run-time"): int,
         Optional("extra"): {str: object},
         # Max number of partner repacks per chunk
         Optional("repacks-per-chunk"): int,
         # Override the default priority for the project
         Optional("priority"): task_description_schema["priority"],
         Optional("task-from"): task_description_schema["task-from"],
+        Optional("run-on-repo-type"): task_description_schema["run-on-repo-type"],
     }
 )
 
@@ -107,7 +106,6 @@ def make_task_description(config, jobs):
         assert dep_job
         attributes = dep_job.attributes
 
-        signing_format_scopes = []
         formats = set()
         for artifacts in job["upstream-artifacts"]:
             for f in artifacts["formats"]:
@@ -172,7 +170,7 @@ def make_task_description(config, jobs):
             # Used for l10n attribute passthrough
             attributes["chunk_locales"] = dep_job.attributes.get("chunk_locales")
 
-        signing_cert_scope = get_signing_cert_scope_per_platform(
+        signing_type = get_signing_type_per_platform(
             build_platform, is_shippable, config
         )
         worker_type_alias = "linux-signing" if is_shippable else "linux-depsigning"
@@ -181,13 +179,13 @@ def make_task_description(config, jobs):
             "description": description,
             "worker": {
                 "implementation": "scriptworker-signing",
+                "signing-type": signing_type,
                 "upstream-artifacts": job["upstream-artifacts"],
-                "max-run-time": job.get("max-run-time", 3600),
             },
-            "scopes": [signing_cert_scope] + signing_format_scopes,
             "dependencies": job["dependencies"],
             "attributes": attributes,
             "run-on-projects": dep_job.attributes.get("run_on_projects"),
+            "run-on-repo-type": job.get("run-on-repo-type", ["git", "hg"]),
             "optimization": dep_job.optimization,
             "routes": job.get("routes", []),
             "shipping-product": job.get("shipping-product"),
@@ -198,6 +196,7 @@ def make_task_description(config, jobs):
 
         # build-mac-{signing,notarization} uses signingscript instead of iscript
         if "macosx" in build_platform and config.kind.endswith("-mac-notarization"):
+            task["worker"]["signing-type"] = "release-apple-notarization"
             task["scopes"] = [
                 add_scope_prefix(config, "signing:cert:release-apple-notarization")
             ]
@@ -208,8 +207,10 @@ def make_task_description(config, jobs):
                     attributes.get("build_type"),
                 )
             )
+            task["retries"] = 0
         elif "macosx" in build_platform:
             # iscript overrides
+            task["worker"]["implementation"] = "iscript"
             task["worker"]["mac-behavior"] = "mac_sign_and_pkg"
 
             worker_type_alias_map = {

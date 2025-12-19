@@ -1,7 +1,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* eslint-env mozilla/browser-window */
 
 "use strict";
 
@@ -60,7 +59,8 @@
     /**
      * Focus the last used button.
      * This will default to the visible page button.
-     * @param {String} buttonToFocus
+     *
+     * @param {string} buttonToFocus
      */
     async focusButton(buttonToFocus) {
       await this.shadowRoot.querySelector("moz-button-group").updateComplete;

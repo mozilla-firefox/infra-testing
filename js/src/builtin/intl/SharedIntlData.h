@@ -8,6 +8,7 @@
 #define builtin_intl_SharedIntlData_h
 
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/Span.h"
 #include "mozilla/UniquePtr.h"
 
 #include <stddef.h>
@@ -29,6 +30,18 @@ namespace js {
 class ArrayObject;
 
 namespace intl {
+
+enum class AvailableLocaleKind {
+  Collator,
+  DateTimeFormat,
+  DisplayNames,
+  DurationFormat,
+  ListFormat,
+  NumberFormat,
+  PluralRules,
+  RelativeTimeFormat,
+  Segmenter,
+};
 
 /**
  * This deleter class exists so that mozilla::intl::DateTimePatternGenerator
@@ -69,6 +82,11 @@ class SharedIntlData {
         : isLatin1(true), length(length) {
       latin1Chars = reinterpret_cast<const JS::Latin1Char*>(chars);
     }
+
+    LinearStringLookup(const char16_t* chars, size_t length)
+        : isLatin1(false), length(length) {
+      twoByteChars = chars;
+    }
   };
 
  public:
@@ -99,15 +117,28 @@ class SharedIntlData {
 
   using TimeZoneName = JSAtom*;
 
-  struct TimeZoneHasher {
+  struct AvailableTimeZoneHasher {
     struct Lookup : LinearStringLookup {
       explicit Lookup(const JSLinearString* timeZone);
+      Lookup(const char* chars, size_t length);
+      Lookup(const char16_t* chars, size_t length);
     };
 
     static js::HashNumber hash(const Lookup& lookup) { return lookup.hash; }
     static bool match(TimeZoneName key, const Lookup& lookup);
   };
 
+  struct TimeZoneHasher {
+    using Lookup = TimeZoneName;
+
+    static js::HashNumber hash(const Lookup& lookup) { return lookup->hash(); }
+    static bool match(TimeZoneName key, const Lookup& lookup) {
+      return key == lookup;
+    }
+  };
+
+  using AvailableTimeZoneSet =
+      GCHashSet<TimeZoneName, AvailableTimeZoneHasher, SystemAllocPolicy>;
   using TimeZoneSet =
       GCHashSet<TimeZoneName, TimeZoneHasher, SystemAllocPolicy>;
   using TimeZoneMap =
@@ -118,11 +149,11 @@ class SharedIntlData {
    * As a threshold matter, available time zones are those time zones ICU
    * supports, via ucal_openTimeZones. But ICU supports additional non-IANA
    * time zones described in intl/icu/source/tools/tzcode/icuzones (listed in
-   * IntlTimeZoneData.cpp's |legacyICUTimeZones|) for its own backwards
+   * TimeZoneDataGenerated.h's |legacyICUTimeZones|) for its own backwards
    * compatibility purposes. This set consists of ICU's supported time zones,
    * minus all backwards-compatibility time zones.
    */
-  TimeZoneSet availableTimeZones;
+  AvailableTimeZoneSet availableTimeZones;
 
   /**
    * IANA treats some time zone names as Zones, that ICU instead treats as
@@ -142,8 +173,9 @@ class SharedIntlData {
    * instead treats as either Zones, or Links to different targets. An
    * example of the former is "Asia/Calcutta, which IANA assigns the target
    * "Asia/Kolkata" but ICU considers its own Zone. An example of the latter
-   * is "America/Virgin", which IANA assigns the target
-   * "America/Port_of_Spain" but ICU assigns the target "America/St_Thomas".
+   * is "US/East-Indiana", which IANA assigns the target
+   * "America/Indiana/Indianapolis" but ICU assigns the target
+   * "America/Indianapolis".
    *
    * ECMA-402 requires that we respect IANA data, so if we're asked to
    * canonicalize a time zone name that's a key in this map, we *must* return
@@ -159,30 +191,70 @@ class SharedIntlData {
    */
   bool ensureTimeZones(JSContext* cx);
 
- public:
   /**
-   * Returns the validated time zone name in |result|. If the input time zone
-   * isn't a valid IANA time zone name, |result| remains unchanged.
-   */
-  bool validateTimeZoneName(JSContext* cx, JS::Handle<JSString*> timeZone,
-                            JS::MutableHandle<JSAtom*> result);
-
-  /**
-   * Returns the canonical time zone name in |result|. If no canonical name
-   * was found, |result| remains unchanged.
+   * Returns the canonical time zone name. |availableTimeZone| must be an
+   * available time zone name. If no canonical name was found, returns
+   * |nullptr|.
    *
    * This method only handles time zones which are canonicalized differently
    * by ICU when compared to IANA.
    */
-  bool tryCanonicalizeTimeZoneConsistentWithIANA(
-      JSContext* cx, JS::Handle<JSString*> timeZone,
-      JS::MutableHandle<JSAtom*> result);
+  JSAtom* tryCanonicalizeTimeZoneConsistentWithIANA(JSAtom* availableTimeZone);
+
+  /**
+   * Returns the canonical time zone name. |availableTimeZone| must be an
+   * available time zone name.
+   */
+  JSAtom* canonicalizeAvailableTimeZone(JSContext* cx,
+                                        JS::Handle<JSAtom*> availableTimeZone);
+
+  /**
+   * Validates and canonicalizes a time zone name. Returns the case-normalized
+   * identifier in |identifier| and its primary time zone in |primary|. If the
+   * input time zone isn't a valid IANA time zone name, |identifier| and
+   * |primary| both remain unchanged.
+   */
+  bool validateAndCanonicalizeTimeZone(
+      JSContext* cx, const AvailableTimeZoneSet::Lookup& lookup,
+      JS::MutableHandle<JSAtom*> identifier,
+      JS::MutableHandle<JSAtom*> primary);
+
+ public:
+  /**
+   * Returns the canonical time zone name. |timeZone| must be a valid time zone
+   * name.
+   */
+  JSLinearString* canonicalizeTimeZone(JSContext* cx,
+                                       JS::Handle<JSLinearString*> timeZone);
+
+  /**
+   * Validates and canonicalizes a time zone name. Returns the case-normalized
+   * identifier in |identifier| and its primary time zone in |primary|. If the
+   * input time zone isn't a valid IANA time zone name, |identifier| and
+   * |primary| both remain unchanged.
+   */
+  bool validateAndCanonicalizeTimeZone(JSContext* cx,
+                                       JS::Handle<JSLinearString*> timeZone,
+                                       JS::MutableHandle<JSAtom*> identifier,
+                                       JS::MutableHandle<JSAtom*> primary);
+
+  /**
+   * Validates and canonicalizes a time zone name. Returns the case-normalized
+   * identifier in |identifier| and its primary time zone in |primary|. If the
+   * input time zone isn't a valid IANA time zone name, |identifier| and
+   * |primary| both remain unchanged.
+   */
+  bool validateAndCanonicalizeTimeZone(JSContext* cx,
+                                       mozilla::Span<const char> timeZone,
+                                       JS::MutableHandle<JSAtom*> identifier,
+                                       JS::MutableHandle<JSAtom*> primary);
 
   /**
    * Returns an iterator over all available time zones supported by ICU. The
    * returned time zone names aren't canonicalized.
    */
-  JS::Result<TimeZoneSet::Iterator> availableTimeZonesIteration(JSContext* cx);
+  JS::Result<AvailableTimeZoneSet::Iterator> availableTimeZonesIteration(
+      JSContext* cx);
 
  private:
   using Locale = JSAtom*;
@@ -199,7 +271,7 @@ class SharedIntlData {
 
   using LocaleSet = GCHashSet<Locale, LocaleHasher, SystemAllocPolicy>;
 
-  // Set of supported locales for all Intl service constructors except Collator,
+  // Set of available locales for all Intl service constructors except Collator,
   // which uses its own set.
   //
   // UDateFormat:
@@ -213,13 +285,13 @@ class SharedIntlData {
   // UListFormatter, UPluralRules, and URelativeDateTimeFormatter:
   // We're going to use ULocale availableLocales as per ICU recommendation:
   // https://unicode-org.atlassian.net/browse/ICU-12756
-  LocaleSet supportedLocales;
+  LocaleSet availableLocales;
 
   // ucol_[count,get]Available() return different results compared to
-  // uloc_[count,get]Available(), we can't use |supportedLocales| here.
-  LocaleSet collatorSupportedLocales;
+  // uloc_[count,get]Available(), we can't use |availableLocales| here.
+  LocaleSet collatorAvailableLocales;
 
-  bool supportedLocalesInitialized = false;
+  bool availableLocalesInitialized = false;
 
   // CountAvailable and GetAvailable describe the signatures used for ICU API
   // to determine available locales for various functionality.
@@ -233,33 +305,21 @@ class SharedIntlData {
   /**
    * Precomputes the available locales sets.
    */
-  bool ensureSupportedLocales(JSContext* cx);
+  bool ensureAvailableLocales(JSContext* cx);
 
  public:
-  enum class SupportedLocaleKind {
-    Collator,
-    DateTimeFormat,
-    DisplayNames,
-    DurationFormat,
-    ListFormat,
-    NumberFormat,
-    PluralRules,
-    RelativeTimeFormat,
-    Segmenter,
-  };
-
   /**
-   * Sets |supported| to true if |locale| is supported by the requested Intl
-   * service constructor. Otherwise sets |supported| to false.
+   * Sets |available| to true if |locale| is supported by the requested Intl
+   * service constructor. Otherwise sets |available| to false.
    */
-  [[nodiscard]] bool isSupportedLocale(JSContext* cx, SupportedLocaleKind kind,
-                                       JS::Handle<JSString*> locale,
-                                       bool* supported);
+  [[nodiscard]] bool isAvailableLocale(JSContext* cx, AvailableLocaleKind kind,
+                                       JS::Handle<JSLinearString*> locale,
+                                       bool* available);
 
   /**
    * Returns all available locales for |kind|.
    */
-  ArrayObject* availableLocalesOf(JSContext* cx, SupportedLocaleKind kind);
+  ArrayObject* availableLocalesOf(JSContext* cx, AvailableLocaleKind kind);
 
  private:
   /**
@@ -301,7 +361,7 @@ class SharedIntlData {
    * Sets |isUpperFirst| to true if |locale| sorts upper-case characters
    * before lower-case characters.
    */
-  bool isUpperCaseFirst(JSContext* cx, JS::Handle<JSString*> locale,
+  bool isUpperCaseFirst(JSContext* cx, JS::Handle<JSLinearString*> locale,
                         bool* isUpperFirst);
 
  private:
@@ -320,7 +380,7 @@ class SharedIntlData {
   /**
    * Sets |ignorePunctuation| to true if |locale| ignores punctuation.
    */
-  bool isIgnorePunctuation(JSContext* cx, JS::Handle<JSString*> locale,
+  bool isIgnorePunctuation(JSContext* cx, JS::Handle<JSLinearString*> locale,
                            bool* ignorePunctuation);
 
  private:

@@ -7,15 +7,14 @@
 #ifndef DOM_SMIL_SMILANIMATIONCONTROLLER_H_
 #define DOM_SMIL_SMILANIMATIONCONTROLLER_H_
 
-#include "mozilla/Attributes.h"
 #include "mozilla/SMILCompositorTable.h"
 #include "mozilla/SMILMilestone.h"
 #include "mozilla/SMILTimeContainer.h"
 #include "mozilla/UniquePtr.h"
 #include "nsCOMPtr.h"
+#include "nsHashKeys.h"
 #include "nsTArray.h"
 #include "nsTHashtable.h"
-#include "nsHashKeys.h"
 
 class nsRefreshDriver;
 
@@ -44,8 +43,6 @@ class SMILAnimationController final : public SMILTimeContainer {
   explicit SMILAnimationController(mozilla::dom::Document* aDoc);
 
   NS_INLINE_DECL_REFCOUNTING(SMILAnimationController)
-
-  using DiscardArray = nsTObserverArray<RefPtr<dom::Element>>;
 
   // Clears mDocument pointer. (Called by our mozilla::dom::Document when it's
   // going away)
@@ -127,8 +124,7 @@ class SMILAnimationController final : public SMILTimeContainer {
 
   void DoMilestoneSamples();
 
-  static void SampleTimedElement(dom::SVGAnimationElement* aElement,
-                                 DiscardArray& aDiscards,
+  static void SampleTimedElement(mozilla::dom::SVGAnimationElement* aElement,
                                  TimeContainerHashtable* aActiveContainers);
 
   static void AddAnimationToCompositorTable(

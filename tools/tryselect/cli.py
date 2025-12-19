@@ -6,7 +6,7 @@
 import os
 import subprocess
 import tempfile
-from argparse import SUPPRESS, ArgumentParser
+from argparse import ArgumentParser
 
 from .task_config import all_task_configs
 
@@ -28,14 +28,6 @@ COMMON_ARGUMENT_GROUPS = {
                 "action": "store_true",
                 "default": False,
                 "help": "Push despite a closed try tree",
-            },
-        ],
-        [
-            ["--push-to-lando"],
-            {
-                "action": "store_true",
-                "default": False,
-                "help": SUPPRESS,
             },
         ],
         [
@@ -123,8 +115,8 @@ NO_PUSH_ARGUMENT_GROUP = [
             "dest": "dry_run",
             "action": "store_true",
             "help": "Do not push to try as a result of running this command (if "
-            "specified this command will only print calculated try "
-            "syntax and selection info and not change files).",
+            "specified this command will only print calculated task "
+            "selection info and not change files).",
         },
     ],
 ]
@@ -140,8 +132,8 @@ class BaseTryParser(ArgumentParser):
         ArgumentParser.__init__(self, *args, **kwargs)
 
         group = self.add_argument_group(f"{self.name} arguments")
-        for cli, kwargs in self.arguments:
-            group.add_argument(*cli, **kwargs)
+        for cli, arg_kwargs in self.arguments:
+            group.add_argument(*cli, **arg_kwargs)
 
         for name in self.common_groups:
             group = self.add_argument_group(f"{name} arguments")
@@ -151,14 +143,14 @@ class BaseTryParser(ArgumentParser):
             if name == "preset":
                 group = group.add_mutually_exclusive_group()
 
-            for cli, kwargs in arguments:
-                group.add_argument(*cli, **kwargs)
+            for cli, common_kwargs in arguments:
+                group.add_argument(*cli, **common_kwargs)
 
             if name == "push":
                 group_no_push = group.add_mutually_exclusive_group()
                 arguments = NO_PUSH_ARGUMENT_GROUP
-                for cli, kwargs in arguments:
-                    group_no_push.add_argument(*cli, **kwargs)
+                for cli, push_kwargs in arguments:
+                    group_no_push.add_argument(*cli, **push_kwargs)
 
         group = self.add_argument_group("task configuration arguments")
         self.task_configs = {c: all_task_configs[c]() for c in self.task_configs}

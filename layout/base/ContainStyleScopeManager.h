@@ -8,10 +8,9 @@
 #define ContainStyleScopeManager_h_
 
 #include "nsClassHashtable.h"
-#include "nsTHashSet.h"
-#include "nsQuoteList.h"
 #include "nsCounterManager.h"
-#include <memory>
+#include "nsQuoteList.h"
+#include "nsTHashSet.h"
 
 class nsIContent;
 class nsAtom;

@@ -33,7 +33,7 @@ class InvalidatingRealmFuse : public InvalidatingFuse {
  public:
   virtual void popFuse(JSContext* cx, RealmFuses& realmFuses);
   virtual bool addFuseDependency(JSContext* cx,
-                                 Handle<JSScript*> script) override;
+                                 const jit::IonScriptKey& ionScript) override;
 
  protected:
   virtual void popFuse(JSContext* cx) override {
@@ -150,6 +150,64 @@ struct OptimizeArraySpeciesFuse final : public InvalidatingRealmFuse {
   virtual void popFuse(JSContext* cx, RealmFuses& realmFuses) override;
 };
 
+// Fuse used to optimize @@species lookups for ArrayBuffers. If this fuse is
+// intact, the following invariants must hold:
+//
+// - The builtin `ArrayBuffer.prototype` object has a `constructor` property
+//   that's the builtin `ArrayBuffer` constructor.
+// - This `ArrayBuffer` constructor has a `Symbol.species` property that's the
+//   original accessor.
+struct OptimizeArrayBufferSpeciesFuse final : public RealmFuse {
+  virtual const char* name() override {
+    return "OptimizeArrayBufferSpeciesFuse";
+  }
+  virtual bool checkInvariant(JSContext* cx) override;
+};
+
+// Fuse used to optimize @@species lookups for SharedArrayBuffers. If this fuse
+// is intact, the following invariants must hold:
+//
+// - The builtin `SharedArrayBuffer.prototype` object has a `constructor`
+//   property that's the builtin `SharedArrayBuffer` constructor.
+// - This `SharedArrayBuffer` constructor has a `Symbol.species` property that's
+//   the original accessor.
+struct OptimizeSharedArrayBufferSpeciesFuse final : public RealmFuse {
+  virtual const char* name() override {
+    return "OptimizeSharedArrayBufferSpeciesFuse";
+  }
+  virtual bool checkInvariant(JSContext* cx) override;
+};
+
+// Fuse used to optimize @@species lookups for TypedArrays. If this fuse is
+// intact, the following invariants must hold:
+//
+// - The builtin `%TypedArray%.prototype` object has a `constructor` property
+//   that's the builtin `%TypedArray%` constructor.
+// - This `%TypedArray%` constructor has a `Symbol.species` property that's the
+//   original accessor.
+// - The builtin `<TypedArray>.prototype` object has a `constructor` property
+//   that's the builtin `<TypedArray>` constructor and the prototype of
+//   `<TypedArray>.prototype` is %TypedArray%.prototype.
+//   Where `<TypedArray>` is all concrete built-in TypedArray types:
+//   - Int8Array
+//   - Uint8Array
+//   - Uint8ClampedArray
+//   - Int16Array
+//   - Uint16Array
+//   - Int32Array
+//   - Uint32Array
+//   - BigInt64Array
+//   - BigUint64Array
+//   - Float16Array
+//   - Float32Array
+//   - Float64Array
+struct OptimizeTypedArraySpeciesFuse final : public InvalidatingRealmFuse {
+  virtual const char* name() override {
+    return "OptimizeTypedArraySpeciesFuse";
+  }
+  virtual bool checkInvariant(JSContext* cx) override;
+};
+
 // Fuse used to optimize various property lookups for promises. If this fuse is
 // intact, the following invariants must hold:
 //
@@ -186,20 +244,6 @@ struct OptimizePromiseLookupFuse final : public RealmFuse {
 // - [@@split] (RegExpSplit)
 struct OptimizeRegExpPrototypeFuse final : public InvalidatingRealmFuse {
   virtual const char* name() override { return "OptimizeRegExpPrototypeFuse"; }
-  virtual bool checkInvariant(JSContext* cx) override;
-};
-
-// Fuse used to optimize lookups of certain symbols on String.prototype.
-// If this fuse is intact, the following invariants must hold:
-//
-// - The builtin String.prototype object has the builtin Object.prototype object
-//   as prototype.
-// - Both String.prototype and Object.prototype don't have any of the following
-//   properties: Symbol.match, Symbol.replace, Symbol.search, Symbol.split.
-struct OptimizeStringPrototypeSymbolsFuse final : public InvalidatingRealmFuse {
-  virtual const char* name() override {
-    return "OptimizeStringPrototypeSymbolsFuse";
-  }
   virtual bool checkInvariant(JSContext* cx) override;
 };
 
@@ -281,9 +325,12 @@ struct OptimizeWeakSetPrototypeAddFuse final : public RealmFuse {
   FUSE(IteratorPrototypeHasObjectProto, iteratorPrototypeHasObjectProto)       \
   FUSE(ObjectPrototypeHasNoReturnProperty, objectPrototypeHasNoReturnProperty) \
   FUSE(OptimizeArraySpeciesFuse, optimizeArraySpeciesFuse)                     \
+  FUSE(OptimizeArrayBufferSpeciesFuse, optimizeArrayBufferSpeciesFuse)         \
+  FUSE(OptimizeSharedArrayBufferSpeciesFuse,                                   \
+       optimizeSharedArrayBufferSpeciesFuse)                                   \
+  FUSE(OptimizeTypedArraySpeciesFuse, optimizeTypedArraySpeciesFuse)           \
   FUSE(OptimizePromiseLookupFuse, optimizePromiseLookupFuse)                   \
   FUSE(OptimizeRegExpPrototypeFuse, optimizeRegExpPrototypeFuse)               \
-  FUSE(OptimizeStringPrototypeSymbolsFuse, optimizeStringPrototypeSymbolsFuse) \
   FUSE(OptimizeMapObjectIteratorFuse, optimizeMapObjectIteratorFuse)           \
   FUSE(OptimizeSetObjectIteratorFuse, optimizeSetObjectIteratorFuse)           \
   FUSE(OptimizeMapPrototypeSetFuse, optimizeMapPrototypeSetFuse)               \
@@ -328,7 +375,7 @@ struct RealmFuses {
     MOZ_CRASH("Fuse Not Found");
   }
 
-  DependentScriptGroup fuseDependencies;
+  DependentIonScriptGroup fuseDependencies;
 
   static int32_t fuseOffsets[];
   static const char* fuseNames[];

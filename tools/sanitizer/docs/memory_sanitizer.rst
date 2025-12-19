@@ -56,7 +56,7 @@ Getting the source
 ^^^^^^^^^^^^^^^^^^
 
 If you don't have a source code repository clone yet, you need to :ref:`get
-yourself a clone of Mozilla-central <Mercurial Overview>`.
+yourself a clone of Mozilla-central <Firefox Contributors' Quick Reference>`.
 
 Adjusting the build configuration
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -143,7 +143,6 @@ subdirectory with that name.
    elif [ -d $1 ] ; then
        echo "directory $1 already exists"
    else
-       autoconf2.13
        mkdir $1
        cd $1
        LLVM_ROOT="/path/to/llvm"

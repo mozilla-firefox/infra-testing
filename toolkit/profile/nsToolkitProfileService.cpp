@@ -3,10 +3,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ErrorResult.h"
+#include "mozilla/HelperMacros.h"
 #include "mozilla/ScopeExit.h"
+#include "mozilla/Services.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/WidgetUtils.h"
@@ -45,13 +46,13 @@
 #include "nsXULAppAPI.h"
 #include "nsThreadUtils.h"
 
+#include "nsIObserverService.h"
 #include "nsIRunnable.h"
 #include "nsXREDirProvider.h"
 #include "nsAppRunner.h"
 #include "nsString.h"
 #include "nsReadableUtils.h"
 #include "nsNativeCharsetUtils.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/Sprintf.h"
 #include "nsPrintfCString.h"
 #include "mozilla/dom/DOMMozPromiseRequestHolder.h"
@@ -201,7 +202,7 @@ nsresult RemoveProfileFiles(nsIFile* aRootDir, nsIFile* aLocalDir,
   if (undeletedFiles.Length() > 0) {
     uint32_t retries = 1;
     while (undeletedFiles.Length() > 0 && retries <= 10) {
-      Unused << PR_Sleep(PR_MillisecondsToInterval(10 * retries));
+      (void)PR_Sleep(PR_MillisecondsToInterval(10 * retries));
       for (auto&& file :
            std::exchange(undeletedFiles, nsTArray<nsCOMPtr<nsIFile>>{})) {
         RemoveProfileRecursion(file,
@@ -232,7 +233,7 @@ nsresult RemoveProfileFiles(nsIFile* aRootDir, nsIFile* aLocalDir,
     // and lockfile, no other files are here.
     // As we do this only if we had no other blockers, this is as safe
     // as deleting the lockfile explicitely after unlocking.
-    Unused << aRootDir->Remove(true);
+    (void)aRootDir->Remove(true);
   }
 
   return NS_OK;
@@ -362,13 +363,6 @@ nsToolkitProfile::SetStoreID(const nsACString& aStoreID) {
     rv = nsToolkitProfileService::gService->mProfileDB.SetString(
         mSection.get(), "ShowSelector", mShowProfileSelector ? "1" : "0");
     NS_ENSURE_SUCCESS(rv, rv);
-
-    if (nsToolkitProfileService::gService->mCurrent == this) {
-      rv = prefs->SetCharPref(STORE_ID_PREF, aStoreID);
-      NS_ENSURE_SUCCESS(rv, rv);
-
-      nsToolkitProfileService::gService->mGroupProfile = this;
-    }
   } else {
     // If the string was not present in the ini file, just ignore the error.
     nsToolkitProfileService::gService->mProfileDB.DeleteString(mSection.get(),
@@ -381,13 +375,6 @@ nsToolkitProfile::SetStoreID(const nsACString& aStoreID) {
     // If the string was not present in the ini file, just ignore the error.
     nsToolkitProfileService::gService->mProfileDB.DeleteString(mSection.get(),
                                                                "ShowSelector");
-
-    if (nsToolkitProfileService::gService->mCurrent == this) {
-      rv = prefs->ClearUserPref(STORE_ID_PREF);
-      NS_ENSURE_SUCCESS(rv, rv);
-
-      nsToolkitProfileService::gService->mGroupProfile = nullptr;
-    }
   }
   mStoreID = aStoreID;
 
@@ -469,6 +456,10 @@ nsToolkitProfile::SetShowProfileSelector(bool aShowProfileSelector) {
   NS_ENSURE_SUCCESS(rv, rv);
 
   mShowProfileSelector = aShowProfileSelector;
+#  ifdef XP_WIN
+  nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
+  obs->NotifyObservers(nullptr, "profile-show-selector-changed", nullptr);
+#  endif
   return NS_OK;
 #else
   return NS_ERROR_FAILURE;
@@ -674,6 +665,24 @@ nsToolkitProfileService::~nsToolkitProfileService() {
   mProfiles.clear();
 }
 
+void nsToolkitProfileService::UpdateCurrentProfile() {
+  nsCOMPtr<nsIPrefBranch> prefs = do_GetService(NS_PREFSERVICE_CONTRACTID);
+  NS_ENSURE_TRUE_VOID(prefs);
+
+  nsCString storeID;
+  nsresult rv = prefs->GetCharPref(STORE_ID_PREF, storeID);
+  bool hasStoreIdPref = NS_SUCCEEDED(rv) && !storeID.IsEmpty();
+
+  if (!mCurrent && hasStoreIdPref) {
+    mCurrent = GetProfileByStoreID(storeID);
+    return;
+  }
+
+  if (mCurrent && !hasStoreIdPref && !mCurrent->mStoreID.IsVoid()) {
+    prefs->SetCharPref(STORE_ID_PREF, mCurrent->mStoreID);
+  }
+}
+
 void nsToolkitProfileService::CompleteStartup() {
   if (!mStartupProfileSelected) {
     return;
@@ -683,48 +692,23 @@ void nsToolkitProfileService::CompleteStartup() {
   glean::startup::profile_database_version.Set(mStartupFileVersion);
   glean::startup::profile_count.Set(static_cast<uint32_t>(mProfiles.length()));
 
-  nsresult rv;
-  bool needsFlush = false;
-
-  nsCOMPtr<nsIPrefBranch> prefs = do_GetService(NS_PREFSERVICE_CONTRACTID);
-  nsCString storeID;
-  rv = prefs->GetCharPref(STORE_ID_PREF, storeID);
-
-  if (NS_SUCCEEDED(rv) && !storeID.IsEmpty()) {
-    // We have a storeID from prefs.
-    if (!mCurrent) {
-      // We started into an unmanaged profile. Try to set the group profile to
-      // be the managed profile belonging to the group.
-      mGroupProfile = GetProfileByStoreID(storeID);
-    }
-  } else if (mCurrent && !mCurrent->mStoreID.IsVoid()) {
-    // No store ID in prefs. If the current profile has one we will use it.
-    mGroupProfile = mCurrent;
-    rv = prefs->SetCharPref(STORE_ID_PREF, mCurrent->mStoreID);
-    NS_ENSURE_SUCCESS_VOID(rv);
-  }
-
   if (mMaybeLockProfile) {
     nsCOMPtr<nsIToolkitShellService> shell =
         do_GetService(NS_TOOLKITSHELLSERVICE_CONTRACTID);
     if (shell) {
       bool isDefaultApp;
-      rv = shell->IsDefaultApplication(&isDefaultApp);
+      nsresult rv = shell->IsDefaultApplication(&isDefaultApp);
       if (NS_SUCCEEDED(rv) && isDefaultApp) {
         mProfileDB.SetString(mInstallSection.get(), "Locked", "1");
 
-        needsFlush = true;
+        // There is a very small chance that this could fail if something else
+        // overwrote the profiles database since we started up, probably less
+        // than a second ago. There isn't really a sane response here, all the
+        // other profile changes are already flushed so whether we fail to flush
+        // here or force quit the app makes no difference.
+        NS_ENSURE_SUCCESS_VOID(Flush());
       }
     }
-  }
-
-  if (needsFlush) {
-    // There is a very small chance that this could fail if something else
-    // overwrote the profiles database since we started up, probably less than
-    // a second ago. There isn't really a sane response here, all the other
-    // profile changes are already flushed so whether we fail to flush here or
-    // force quit the app makes no difference.
-    NS_ENSURE_SUCCESS_VOID(Flush());
   }
 }
 
@@ -1252,7 +1236,7 @@ nsToolkitProfileService::GetProfiles(nsISimpleEnumerator** aResult) {
 
 NS_IMETHODIMP
 nsToolkitProfileService::ProfileEnumerator::HasMoreElements(bool* aResult) {
-  *aResult = mCurrent ? true : false;
+  *aResult = static_cast<bool>(mCurrent);
   return NS_OK;
 }
 
@@ -1269,12 +1253,6 @@ nsToolkitProfileService::ProfileEnumerator::GetNext(nsISupports** aResult) {
 NS_IMETHODIMP
 nsToolkitProfileService::GetCurrentProfile(nsIToolkitProfile** aResult) {
   NS_IF_ADDREF(*aResult = mCurrent);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsToolkitProfileService::GetGroupProfile(nsIToolkitProfile** aResult) {
-  NS_IF_ADDREF(*aResult = mGroupProfile);
   return NS_OK;
 }
 
@@ -1448,6 +1426,7 @@ nsToolkitProfileService::SelectStartupProfile(
   // Since we were called outside of the normal startup path complete any
   // startup tasks.
   if (NS_SUCCEEDED(rv)) {
+    UpdateCurrentProfile();
     CompleteStartup();
   }
 
@@ -1764,11 +1743,11 @@ nsresult nsToolkitProfileService::SelectStartupProfile(
         rv =
             mProfileDB.SetString("BackgroundTasksProfiles", profilePrefix.get(),
                                  saltedProfilePrefix.get());
-        Unused << NS_WARN_IF(NS_FAILED(rv));
+        (void)NS_WARN_IF(NS_FAILED(rv));
 
         if (NS_SUCCEEDED(rv)) {
           rv = Flush();
-          Unused << NS_WARN_IF(NS_FAILED(rv));
+          (void)NS_WARN_IF(NS_FAILED(rv));
         }
       }
     }
@@ -2319,7 +2298,7 @@ NS_IMETHODIMP
 nsToolkitProfileService::GetProfileCount(uint32_t* aResult) {
   *aResult = 0;
   for (nsToolkitProfile* profile : mProfiles) {
-    Unused << profile;
+    (void)profile;
     (*aResult)++;
   }
 
@@ -2327,10 +2306,10 @@ nsToolkitProfileService::GetProfileCount(uint32_t* aResult) {
 }
 
 // Attempts to merge the given profile data into the on-disk versions which may
-// have changed since rthey were loaded.
+// have changed since they were loaded.
 nsresult WriteProfileInfo(nsIFile* profilesDBFile, nsIFile* installDBFile,
                           const nsCString& installSection,
-                          const GroupProfileData* profileInfo) {
+                          const CurrentProfileData* profileInfo) {
   nsINIParser profilesIni;
   nsresult rv = profilesIni.Init(profilesDBFile);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -2437,12 +2416,12 @@ nsISerialEventTarget* nsToolkitProfileService::AsyncQueue() {
 }
 
 NS_IMETHODIMP
-nsToolkitProfileService::AsyncFlushGroupProfile(JSContext* aCx,
-                                                dom::Promise** aPromise) {
+nsToolkitProfileService::AsyncFlushCurrentProfile(JSContext* aCx,
+                                                  dom::Promise** aPromise) {
 #ifndef MOZ_HAS_REMOTE
   return NS_ERROR_FAILURE;
 #else
-  if (!mGroupProfile) {
+  if (!mCurrent) {
     return NS_ERROR_ILLEGAL_VALUE;
   }
 
@@ -2459,12 +2438,12 @@ nsToolkitProfileService::AsyncFlushGroupProfile(JSContext* aCx,
     return result.StealNSResult();
   }
 
-  UniquePtr<GroupProfileData> profileData = MakeUnique<GroupProfileData>();
-  profileData->mStoreID = mGroupProfile->mStoreID;
-  profileData->mShowSelector = mGroupProfile->mShowProfileSelector;
+  UniquePtr<CurrentProfileData> profileData = MakeUnique<CurrentProfileData>();
+  profileData->mStoreID = mCurrent->mStoreID;
+  profileData->mShowSelector = mCurrent->mShowProfileSelector;
 
   bool isRelative;
-  GetProfileDescriptor(mGroupProfile, profileData->mPath, &isRelative);
+  GetProfileDescriptor(mCurrent, profileData->mPath, &isRelative);
 
   nsCOMPtr<nsIRemoteService> rs = GetRemoteService();
   RefPtr<nsRemoteService> remoteService =
@@ -2499,7 +2478,7 @@ nsToolkitProfileService::AsyncFlushGroupProfile(JSContext* aCx,
   // This keeps the promise alive after this method returns.
   nsMainThreadPtrHandle<dom::Promise> promiseHolder(
       new nsMainThreadPtrHolder<dom::Promise>(
-          "nsToolkitProfileService::AsyncFlushGroupProfile", promise));
+          "nsToolkitProfileService::AsyncFlushCurrentProfile", promise));
 
   p->Then(GetCurrentSerialEventTarget(), __func__,
           [requestHolder, promiseHolder](
@@ -2573,7 +2552,7 @@ nsToolkitProfileService::AsyncFlush(JSContext* aCx, dom::Promise** aPromise) {
   // This keeps the promise alive after this method returns.
   nsMainThreadPtrHandle<dom::Promise> promiseHolder(
       new nsMainThreadPtrHolder<dom::Promise>(
-          "nsToolkitProfileService::AsyncFlushGroupProfile", promise));
+          "nsToolkitProfileService::AsyncFlush", promise));
 
   p->Then(GetCurrentSerialEventTarget(), __func__,
           [requestHolder, promiseHolder](
@@ -2779,6 +2758,15 @@ nsresult nsToolkitProfileService::GetLocalDirFromRootDir(nsIFile* aRootDir,
   localDir.forget(aResult);
 
   return NS_OK;
+}
+
+bool nsToolkitProfileService::HasShowProfileSelector() {
+  for (RefPtr<nsToolkitProfile> profile : mProfiles) {
+    if (profile->GetShowProfileSelector()) {
+      return true;
+    }
+  }
+  return false;
 }
 
 already_AddRefed<nsToolkitProfileService> NS_GetToolkitProfileService() {

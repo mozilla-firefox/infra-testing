@@ -9,13 +9,11 @@
 #ifndef nsCanvasFrame_h___
 #define nsCanvasFrame_h___
 
-#include "mozilla/Attributes.h"
 #include "mozilla/EventForwards.h"
 #include "nsContainerFrame.h"
 #include "nsDisplayList.h"
 #include "nsIAnonymousContentCreator.h"
 #include "nsIPopupContainer.h"
-#include "nsIScrollPositionListener.h"
 
 class nsPresContext;
 class gfxContext;
@@ -30,16 +28,13 @@ class gfxContext;
  * frame in the main child list.
  */
 class nsCanvasFrame final : public nsContainerFrame,
-                            public nsIScrollPositionListener,
                             public nsIAnonymousContentCreator,
                             public nsIPopupContainer {
   using Element = mozilla::dom::Element;
 
  public:
   explicit nsCanvasFrame(ComputedStyle* aStyle, nsPresContext* aPresContext)
-      : nsContainerFrame(aStyle, aPresContext, kClassID),
-        mDoPaintFocus(false),
-        mAddedScrollPositionListener(false) {}
+      : nsContainerFrame(aStyle, aPresContext, kClassID) {}
 
   NS_DECL_QUERYFRAME
   NS_DECL_FRAMEARENA_HELPERS(nsCanvasFrame)
@@ -70,34 +65,8 @@ class nsCanvasFrame final : public nsContainerFrame,
   void AppendAnonymousContentTo(nsTArray<nsIContent*>& aElements,
                                 uint32_t aFilter) override;
 
-  Element* GetCustomContentContainer() const { return mCustomContentContainer; }
-
-  /**
-   * Unhide the CustomContentContainer. This call only has an effect if
-   * mCustomContentContainer is non-null.
-   */
-  void ShowCustomContentContainer();
-
-  /**
-   * Hide the CustomContentContainer. This call only has an effect if
-   * mCustomContentContainer is non-null.
-   */
-  void HideCustomContentContainer();
-
-  /** SetHasFocus tells the CanvasFrame to draw with focus ring
-   *  @param aHasFocus true to show focus ring, false to hide it
-   */
-  NS_IMETHOD SetHasFocus(bool aHasFocus);
-
   void BuildDisplayList(nsDisplayListBuilder* aBuilder,
                         const nsDisplayListSet& aLists) override;
-
-  void PaintFocus(mozilla::gfx::DrawTarget* aRenderingContext, nsPoint aPt);
-
-  // nsIScrollPositionListener
-  void ScrollPositionWillChange(nscoord aX, nscoord aY) override;
-  void ScrollPositionDidChange(nscoord aX, nscoord aY) override {}
-
 #ifdef DEBUG_FRAME_DUMP
   nsresult GetFrameName(nsAString& aResult) const override;
 #endif
@@ -105,11 +74,6 @@ class nsCanvasFrame final : public nsContainerFrame,
   nsRect CanvasArea() const;
 
  protected:
-  // Data members
-  bool mDoPaintFocus;
-  bool mAddedScrollPositionListener;
-
-  nsCOMPtr<Element> mCustomContentContainer;
   nsCOMPtr<Element> mTooltipContent;
 };
 

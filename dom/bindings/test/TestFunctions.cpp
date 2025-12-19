@@ -4,14 +4,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/dom/TestFunctions.h"
+
+#include "mozITestInterfaceJS.h"
+#include "mozilla/StringBuffer.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/Document.h"
-#include "mozilla/dom/TestFunctions.h"
 #include "mozilla/dom/TestFunctionsBinding.h"
 #include "mozilla/dom/WindowBinding.h"
 #include "mozilla/dom/WrapperCachedNonISupportsTestInterface.h"
-#include "mozilla/StringBuffer.h"
-#include "mozITestInterfaceJS.h"
 #include "nsComponentManagerUtils.h"
 #include "nsGlobalWindowInner.h"
 
@@ -307,10 +308,23 @@ TestFunctions::WrapperCachedNonISupportsObject() {
   return mWrapperCachedNonISupportsTestInterface;
 }
 
+/* static */
+already_AddRefed<TestChromeOnlyInterface>
+TestFunctions::CreateTestChromeOnlyInterface(GlobalObject& aGlobal) {
+  return MakeRefPtr<TestChromeOnlyInterface>(aGlobal.GetAsSupports()).forget();
+}
+
 bool TestFunctions::WrapObject(JSContext* aCx,
                                JS::Handle<JSObject*> aGivenProto,
                                JS::MutableHandle<JSObject*> aWrapper) {
   return TestFunctions_Binding::Wrap(aCx, this, aGivenProto, aWrapper);
 }
+
+JSObject* TestChromeOnlyInterface::WrapObject(
+    JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
+  return TestChromeOnlyInterface_Binding::Wrap(aCx, this, aGivenProto);
+}
+
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(TestChromeOnlyInterface, mParent)
 
 }  // namespace mozilla::dom

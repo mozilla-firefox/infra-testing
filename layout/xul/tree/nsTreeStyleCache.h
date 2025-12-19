@@ -8,12 +8,11 @@
 #define nsTreeStyleCache_h__
 
 #include "mozilla/AtomArray.h"
-#include "mozilla/Attributes.h"
+#include "mozilla/ComputedStyle.h"
 #include "mozilla/UniquePtr.h"
 #include "nsCOMArray.h"
-#include "nsTHashMap.h"
 #include "nsRefPtrHashtable.h"
-#include "mozilla/ComputedStyle.h"
+#include "nsTHashMap.h"
 
 class nsIContent;
 

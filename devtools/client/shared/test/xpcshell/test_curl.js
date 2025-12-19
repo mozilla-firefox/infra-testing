@@ -24,7 +24,7 @@ add_task(async function () {
           "Mozilla/5.0 (X11; Linux x86_64; rv:68.0) Gecko/20100101 Firefox/68.0",
       },
       { name: "Accept", value: "*/*" },
-      { name: "Accept-Language", value: "en-US,en;q=0.5" },
+      { name: "Accept-Language", value: "en-US,en;q=0.9" },
       { name: "Accept-Encoding", value: "gzip, deflate, br" },
       { name: "Origin", value: "https://example.com" },
       { name: "Connection", value: "keep-alive" },
@@ -54,7 +54,7 @@ add_task(async function () {
     "user-agent header present in curl command"
   );
   ok(
-    exactHeaderInParams(curlParams, "Accept-Language: en-US,en;q=0.5"),
+    exactHeaderInParams(curlParams, "Accept-Language: en-US,en;q=0.9"),
     "accept-language header present in curl output"
   );
   ok(
@@ -347,9 +347,7 @@ const QUOTE = isWin() ? '^"' : "'";
 function quote(str) {
   let escaped;
   if (isWin()) {
-    escaped = str
-      .replace(new RegExp(QUOTE, "g"), `${QUOTE}${QUOTE}`)
-      .replace(/"/g, '\\"');
+    escaped = str.replace(new RegExp('"', "g"), `^\\${QUOTE}`);
   } else {
     escaped = str.replace(new RegExp(QUOTE, "g"), `\\${QUOTE}`);
   }
@@ -358,10 +356,10 @@ function quote(str) {
 
 function escapeNewline(txt) {
   if (isWin()) {
-    // Replace new lines with ^ and TWO new lines because the first
+    // For windows we replace new lines with ^ and TWO new lines because the first
     // new line is there to enact the escape command the second is the character
     // to escape (in this case new line).
-    return txt.replace(/\r?\n/g, "^\n\n");
+    return txt.replace(/\r?\n|\r/g, "^\n\n");
   }
   return txt.replace(/\r/g, "\\r").replace(/\n/g, "\\n");
 }
@@ -396,7 +394,8 @@ function inParams(curlParams, param) {
 function parseCurl(curlCmd) {
   // This monster regexp parses the command line into an array of arguments,
   // recognizing quoted args with matching quotes and escaped quotes inside:
+  // [ "curl.exe 'url'", "--standalone-arg", "-arg-with-quoted-string 'value\'s'" ]
   // [ "curl 'url'", "--standalone-arg", "-arg-with-quoted-string 'value\'s'" ]
-  const matchRe = /[-A-Za-z1-9]+(?: ([\^\\"']+)(?:\\\1|.)*?\1)?/g;
+  const matchRe = /[-\.A-Za-z1-9]+(?: ([\^\"']+)(?:\\\1|.)*?\1)?/g;
   return curlCmd.match(matchRe);
 }

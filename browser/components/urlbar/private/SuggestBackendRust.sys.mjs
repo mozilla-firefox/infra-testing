@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { SuggestBackend } from "resource:///modules/urlbar/private/SuggestFeature.sys.mjs";
+import { SuggestBackend } from "moz-src:///browser/components/urlbar/private/SuggestFeature.sys.mjs";
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
@@ -10,30 +10,41 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
-  InterruptKind: "resource://gre/modules/RustSuggest.sys.mjs",
+  InterruptKind:
+    "moz-src:///toolkit/components/uniffi-bindgen-gecko-js/components/generated/RustSuggest.sys.mjs",
   ObjectUtils: "resource://gre/modules/ObjectUtils.sys.mjs",
-  QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
-  Region: "resource://gre/modules/Region.sys.mjs",
-  RemoteSettingsConfig2: "resource://gre/modules/RustRemoteSettings.sys.mjs",
-  RemoteSettingsContext: "resource://gre/modules/RustRemoteSettings.sys.mjs",
-  RemoteSettingsServer: "resource://gre/modules/RustRemoteSettings.sys.mjs",
-  RemoteSettingsService: "resource://gre/modules/RustRemoteSettings.sys.mjs",
-  SuggestIngestionConstraints: "resource://gre/modules/RustSuggest.sys.mjs",
-  SuggestStoreBuilder: "resource://gre/modules/RustSuggest.sys.mjs",
-  Suggestion: "resource://gre/modules/RustSuggest.sys.mjs",
-  SuggestionProvider: "resource://gre/modules/RustSuggest.sys.mjs",
-  SuggestionProviderConstraints: "resource://gre/modules/RustSuggest.sys.mjs",
-  SuggestionQuery: "resource://gre/modules/RustSuggest.sys.mjs",
-  TaskQueue: "resource:///modules/UrlbarUtils.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
+  QuickSuggest: "moz-src:///browser/components/urlbar/QuickSuggest.sys.mjs",
+  SharedRemoteSettingsService:
+    "resource://gre/modules/RustSharedRemoteSettingsService.sys.mjs",
+  SuggestIngestionConstraints:
+    "moz-src:///toolkit/components/uniffi-bindgen-gecko-js/components/generated/RustSuggest.sys.mjs",
+  SuggestStoreBuilder:
+    "moz-src:///toolkit/components/uniffi-bindgen-gecko-js/components/generated/RustSuggest.sys.mjs",
+  Suggestion:
+    "moz-src:///toolkit/components/uniffi-bindgen-gecko-js/components/generated/RustSuggest.sys.mjs",
+  SuggestionProvider:
+    "moz-src:///toolkit/components/uniffi-bindgen-gecko-js/components/generated/RustSuggest.sys.mjs",
+  SuggestionProviderConstraints:
+    "moz-src:///toolkit/components/uniffi-bindgen-gecko-js/components/generated/RustSuggest.sys.mjs",
+  SuggestionQuery:
+    "moz-src:///toolkit/components/uniffi-bindgen-gecko-js/components/generated/RustSuggest.sys.mjs",
+  TaskQueue: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
   Utils: "resource://services-settings/Utils.sys.mjs",
 });
+
+/**
+ * @import {SuggestProvider} from "moz-src:///browser/components/urlbar/private/SuggestFeature.sys.mjs"
+ * @import {
+ *   GeonameAlternates, Geoname, GeonameMatch, GeonameType, Suggestion
+ * } from "moz-src:///toolkit/components/uniffi-bindgen-gecko-js/components/generated/RustSuggest.sys.mjs"
+ */
 
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "timerManager",
   "@mozilla.org/updates/timer-manager;1",
-  "nsIUpdateTimerManager"
+  Ci.nsIUpdateTimerManager
 );
 
 const SUGGEST_DATA_STORE_BASENAME = "suggest.sqlite";
@@ -79,8 +90,8 @@ const gSuggestionTypesByCtor = new WeakMap();
  * [6] https://searchfox.org/mozilla-central/source/toolkit/components/uniffi-bindgen-gecko-js/config.toml
  */
 export class SuggestBackendRust extends SuggestBackend {
-  constructor(...args) {
-    super(...args);
+  constructor() {
+    super();
     this.#ingestQueue = new lazy.TaskQueue();
 
     // The remote settings server URL returned by `Utils.SERVER_URL` comes from
@@ -97,18 +108,16 @@ export class SuggestBackendRust extends SuggestBackend {
     // which is a "cannot-be-a-base" URL. The error is harmless, but it can be
     // logged many times during a test suite.
     //
-    // To prevent Suggest from using the dummy URL, we skip setting the initial
-    // RS config here during tests, which prevents the Suggest store from being
+    // To prevent Suggest from using the dummy URL, we skip setting the
+    // remoteSettingsService, which prevents the Suggest store from being
     // created, effectively disabling Rust suggestions. Suggest tests manually
     // set the RS config when they set up the mock RS server, so they'll work
     // fine. Alternatively the test harnesses could disable Suggest by default
     // just like they set the server pref to the dummy URL, but Suggest is more
     // than Rust suggestions.
     if (!lazy.Utils.shouldSkipRemoteActivityDueToTests) {
-      this.#setRemoteSettingsConfig({
-        serverUrl: lazy.Utils.SERVER_URL,
-        bucketName: lazy.Utils.actualBucketName("main"),
-      });
+      this.#remoteSettingsService =
+        lazy.SharedRemoteSettingsService.rustService();
     }
   }
 
@@ -146,15 +155,15 @@ export class SuggestBackendRust extends SuggestBackend {
    *
    * @param {string} searchString
    *   The search string.
-   * @param {object} options
+   * @param {object} [options]
    *   Options object.
-   * @param {UrlbarQueryContext} options._queryContext
+   * @param {UrlbarQueryContext} [options._queryContext]
    *   The query context.
-   * @param {Array} options.types
+   * @param {?Array} [options.types]
    *   This is only intended to be used in special circumstances and normally
    *   should not be specified. Array of suggestion types to query. By default
    *   all enabled suggestion types are queried.
-   * @returns {Array}
+   * @returns {Promise<Array>}
    *   Matching Rust suggestions.
    */
   async query(searchString, { _queryContext, types = null } = {}) {
@@ -164,39 +173,34 @@ export class SuggestBackendRust extends SuggestBackend {
 
     this.logger.debug("Handling query", { searchString });
 
-    if (!types) {
-      types = this.#enabledSuggestionTypes;
-    } else {
-      types = types.map(type => {
-        let provider = this.#providerFromSuggestionType(type);
+    // Build a list of Rust providers to query and an object containing Rust
+    // provider constraints for all queried providers.
+    let uniqueProviders = new Set();
+    let allProviderConstraints = {};
+    let typeItems = types
+      ? types.map(type => ({ type }))
+      : this.#enabledSuggestionTypes;
+    for (let { feature, type, provider } of typeItems) {
+      if (!provider) {
+        provider = this.#providerFromSuggestionType(type);
         if (!provider) {
           throw new Error("Unknown Rust suggestion type: " + type);
         }
-        return { type, provider };
-      });
-    }
-
-    let providers = [];
-    let allProviderConstraints = {};
-    for (let { type, provider } of types) {
+      }
       this.logger.debug("Adding type to query", { type, provider });
-      providers.push(provider);
-
-      let providerConstraints =
-        lazy.QuickSuggest.getFeatureByRustSuggestionType(
-          type
-        ).rustProviderConstraints;
-      if (providerConstraints) {
-        allProviderConstraints = {
-          ...allProviderConstraints,
-          ...providerConstraints,
-        };
+      uniqueProviders.add(provider);
+      if (feature) {
+        allProviderConstraints = SuggestBackendRust.mergeProviderConstraints(
+          allProviderConstraints,
+          feature.rustProviderConstraints
+        );
       }
     }
 
+    // Do the query.
     const { suggestions, queryTimes } = await this.#store.queryWithMetrics(
       new lazy.SuggestionQuery({
-        providers,
+        providers: [...uniqueProviders],
         keyword: searchString,
         providerConstraints: new lazy.SuggestionProviderConstraints(
           allProviderConstraints
@@ -204,31 +208,43 @@ export class SuggestBackendRust extends SuggestBackend {
       })
     );
 
+    // Update query telemetry.
     for (let { label, value } of queryTimes) {
       Glean.suggest.queryTime[label].accumulateSingleSample(value);
     }
 
-    for (let suggestion of suggestions) {
-      let type = getSuggestionType(suggestion);
+    // Build the list of suggestions to return.
+    let liftedSuggestions = [];
+    for (let s of suggestions) {
+      let type = getSuggestionType(s);
       if (!type) {
         continue;
       }
 
+      let suggestion = liftSuggestion(s);
+      if (!suggestion) {
+        continue;
+      }
+
+      // Set `suggestion.source` and `provider`, which `QuickSuggest` uses to
+      // look up the feature that manages the suggestion.
       suggestion.source = "rust";
       suggestion.provider = type;
+
       if (suggestion.icon) {
         suggestion.icon_blob = new Blob([suggestion.icon], {
           type: suggestion.iconMimetype ?? "",
         });
-
         delete suggestion.icon;
         delete suggestion.iconMimetype;
       }
+
+      liftedSuggestions.push(suggestion);
     }
 
-    this.logger.debug("Got suggestions", suggestions);
+    this.logger.debug("Got suggestions", liftedSuggestions);
 
-    return suggestions;
+    return liftedSuggestions;
   }
 
   cancelQuery() {
@@ -240,8 +256,8 @@ export class SuggestBackendRust extends SuggestBackend {
    * backend.
    *
    * @param {string} type
-   *   A Rust suggestion type name as defined in `suggest.udl`, e.g., "Amp",
-   *   "Wikipedia", "Mdn", etc. See also `SuggestProvider.rustSuggestionType`.
+   *   A suggestion type name as defined in Rust, e.g., "Amp", "Wikipedia",
+   *   "Mdn", etc.
    * @returns {object} config
    *   The config data for the type.
    */
@@ -258,9 +274,9 @@ export class SuggestBackendRust extends SuggestBackend {
    *
    * @param {SuggestProvider} feature
    *   A feature that manages Rust suggestion types.
-   * @param {object} options
+   * @param {object} [options]
    *   Options object.
-   * @param {bool} options.evenIfFresh
+   * @param {boolean} [options.evenIfFresh]
    *   Set to true to force ingest for all the feature's suggestion types, even
    *   ones that aren't stale.
    */
@@ -273,19 +289,19 @@ export class SuggestBackendRust extends SuggestBackend {
     if (!this.isEnabled || !feature.isEnabled) {
       // Mark this type as stale so we'll ingest next time this method is
       // called.
-      this.#providerConstraintsByIngestedSuggestionType.delete(type);
+      this.#providerConstraintsOnLastIngestByFeature.delete(feature);
     } else {
       let providerConstraints = feature.rustProviderConstraints;
       if (
         evenIfFresh ||
-        !this.#providerConstraintsByIngestedSuggestionType.has(type) ||
+        !this.#providerConstraintsOnLastIngestByFeature.has(feature) ||
         !lazy.ObjectUtils.deepEqual(
           providerConstraints,
-          this.#providerConstraintsByIngestedSuggestionType.get(type)
+          this.#providerConstraintsOnLastIngestByFeature.get(feature)
         )
       ) {
-        this.#providerConstraintsByIngestedSuggestionType.set(
-          type,
+        this.#providerConstraintsOnLastIngestByFeature.set(
+          feature,
           providerConstraints
         );
         this.#ingestSuggestionType({ type, providerConstraints });
@@ -303,8 +319,9 @@ export class SuggestBackendRust extends SuggestBackend {
    *   find it useful to make a `Suggestion` object directly.
    */
   async dismissRustSuggestion(suggestion) {
+    let lowered = lowerSuggestion(suggestion);
     try {
-      await this.#store?.dismissBySuggestion(suggestion);
+      await this.#store?.dismissBySuggestion(lowered);
     } catch (error) {
       this.logger.error("Error: dismissRustSuggestion", { error, suggestion });
     }
@@ -335,12 +352,13 @@ export class SuggestBackendRust extends SuggestBackend {
    *   subclasses exposed over FFI, e.g., `Suggestion.Wikipedia`. Typically the
    *   suggestion will have been returned from the Rust component, but tests may
    *   find it useful to make a `Suggestion` object directly.
-   * @returns {boolean}
+   * @returns {Promise<boolean>}
    *   Whether the suggestion has been dismissed.
    */
   async isRustSuggestionDismissed(suggestion) {
+    let lowered = lowerSuggestion(suggestion);
     try {
-      return await this.#store?.isDismissedBySuggestion(suggestion);
+      return await this.#store?.isDismissedBySuggestion(lowered);
     } catch (error) {
       this.logger.error("Error: isDismissedBySuggestion", {
         error,
@@ -358,7 +376,7 @@ export class SuggestBackendRust extends SuggestBackend {
    *
    * @param {string} dismissalKey
    *   The dismissal key.
-   * @returns {boolean}
+   * @returns {Promise<boolean>}
    *   Whether a dismissal is recorded for the key.
    */
   async isDismissedByKey(dismissalKey) {
@@ -373,7 +391,7 @@ export class SuggestBackendRust extends SuggestBackend {
   /**
    * Returns whether any dismissals are recorded.
    *
-   * @returns {boolean}
+   * @returns {Promise<boolean>}
    *   Whether any suggestions have been dismissed.
    */
   async anyDismissedSuggestions() {
@@ -406,26 +424,48 @@ export class SuggestBackendRust extends SuggestBackend {
    *
    * @param {string} searchString
    *   The string to match against geonames.
-   * @param {bool} matchNamePrefix
+   * @param {boolean} matchNamePrefix
    *   Whether prefix matching is performed on names excluding abbreviations and
    *   airport codes.
    * @param {GeonameType} geonameType
    *   Restricts returned geonames to a type.
    * @param {Array} filter
    *   Restricts returned geonames to certain cities or regions. Optional.
-   * @returns {Array}
+   * @returns {Promise<GeonameMatch[]>}
    *   Array of `GeonameMatch` objects. An empty array if there are no matches.
    */
-  fetchGeonames(searchString, matchNamePrefix, geonameType, filter) {
+  async fetchGeonames(searchString, matchNamePrefix, geonameType, filter) {
     if (!this.#store) {
       return [];
     }
-    return this.#store.fetchGeonames(
+    let geonames = await this.#store.fetchGeonames(
       searchString,
       matchNamePrefix,
       geonameType,
       filter
     );
+    return geonames;
+  }
+
+  /**
+   * Fetches geonames alternate names stored in the Suggest database. A single
+   * geoname can have many alternate names since a place can have many different
+   * variations of its name. Alternate names also include translations of names
+   * into different languages.
+   *
+   * See `SuggestStore::fetch_geoname_alternates()` in the Rust component for
+   * full documentation.
+   *
+   * @param {Geoname} geoname
+   *   A `Geoname` object returned from `fetchGeonames()`.
+   * @returns {Promise<GeonameAlternates>}
+   *   A `GeonameAlternates` object containing the alternates for the geoname,
+   *   its administrative divisions, and its country. See the Rust component for
+   *   details.
+   */
+  async fetchGeonameAlternates(geoname) {
+    let alts = await this.#store?.fetchGeonameAlternates(geoname);
+    return alts;
   }
 
   /**
@@ -434,6 +474,48 @@ export class SuggestBackendRust extends SuggestBackend {
   notify() {
     this.logger.info("Ingest timer fired");
     this.#ingestAll();
+  }
+
+  /**
+   * Merges two Rust provider constraints and returns a new object. The
+   * constraints should be plain JS objects appropriate for passing to the
+   * `SuggestionProviderConstraints` constructor.
+   *
+   * TODO: This should be a function in the Rust component.
+   *
+   * @param {object} a
+   *   The first constraints object.
+   * @param {object} b
+   *   The second constraints object.
+   * @returns {object}
+   *   A plain JS object resulting from merging `a` and `b`.
+   */
+  static mergeProviderConstraints(a, b) {
+    if (!a || !b) {
+      return a ?? b;
+    }
+
+    let merged = { ...a, ...b };
+
+    // Merge the `dynamicSuggestionTypes` arrays.
+    if (
+      a.hasOwnProperty("dynamicSuggestionTypes") ||
+      b.hasOwnProperty("dynamicSuggestionTypes")
+    ) {
+      if (!a.dynamicSuggestionTypes || !b.dynamicSuggestionTypes) {
+        merged.dynamicSuggestionTypes =
+          a.dynamicSuggestionTypes ?? b.dynamicSuggestionTypes;
+      } else {
+        // We only sort to make the behavior stable for tests.
+        merged.dynamicSuggestionTypes = [
+          ...new Set(
+            a.dynamicSuggestionTypes.concat(b.dynamicSuggestionTypes).sort()
+          ),
+        ];
+      }
+    }
+
+    return merged;
   }
 
   /**
@@ -451,19 +533,12 @@ export class SuggestBackendRust extends SuggestBackend {
   }
 
   /**
-   * @returns {string}
-   *   The path of the directory that should contain the remote settings cache
-   *   used internally by the Rust component.
-   */
-  get #remoteSettingsStoragePath() {
-    return Services.dirsvc.get("ProfLD", Ci.nsIFile).path;
-  }
-
-  /**
    * @returns {Array}
    *   Each item in this array identifies an enabled Rust suggestion type and
    *   related data. Items have the following properties:
    *
+   *   {SuggestProvider} feature
+   *     The feature that manages the Rust suggestion type.
    *   {string} type
    *     A Rust suggestion type name as defined in Rust, e.g., "Amp",
    *     "Wikipedia", "Mdn", etc.
@@ -477,7 +552,7 @@ export class SuggestBackendRust extends SuggestBackend {
         let type = feature.rustSuggestionType;
         let provider = this.#providerFromSuggestionType(type);
         if (provider) {
-          items.push({ type, provider });
+          items.push({ feature, type, provider });
         }
       }
     }
@@ -539,44 +614,8 @@ export class SuggestBackendRust extends SuggestBackend {
   }
 
   #makeStore() {
-    this.logger.info("Creating SuggestStore", {
-      server: this.#remoteSettingsServer,
-      bucketName: this.#remoteSettingsBucketName,
-      dataPath: this.#storeDataPath,
-      storagePath: this.#remoteSettingsStoragePath,
-    });
-
-    if (!this.#remoteSettingsServer) {
-      return null;
-    }
-
-    let rsContext = {
-      formFactor: "desktop",
-      appId: Services.appinfo.ID || "",
-      channel: AppConstants.IS_ESR ? "esr" : AppConstants.MOZ_UPDATE_CHANNEL,
-      appVersion: Services.appinfo.version,
-      locale: Services.locale.appLocaleAsBCP47,
-      os: AppConstants.platform,
-      osVersion: Services.sysinfo.get("version"),
-    };
-
-    // We assume `QuickSuggest` init already awaited `Region.init()`.
-    if (lazy.Region.home) {
-      rsContext.country = lazy.Region.home;
-    }
-
-    let rsService;
-    try {
-      rsService = lazy.RemoteSettingsService.init(
-        this.#remoteSettingsStoragePath,
-        new lazy.RemoteSettingsConfig2({
-          server: this.#remoteSettingsServer,
-          bucketName: this.#remoteSettingsBucketName,
-          appContext: new lazy.RemoteSettingsContext(rsContext),
-        })
-      );
-    } catch (error) {
-      this.logger.error("Error creating RemoteSettingsService", error);
+    this.logger.info("Creating SuggestStore");
+    if (!this.#remoteSettingsService) {
       return null;
     }
 
@@ -584,7 +623,7 @@ export class SuggestBackendRust extends SuggestBackend {
     try {
       builder = lazy.SuggestStoreBuilder.init()
         .dataPath(this.#storeDataPath)
-        .remoteSettingsService(rsService)
+        .remoteSettingsService(this.#remoteSettingsService)
         .loadExtension(
           AppConstants.SQLITE_LIBRARY_FILENAME,
           "sqlite3_fts5_init"
@@ -607,7 +646,7 @@ export class SuggestBackendRust extends SuggestBackend {
 
   #uninit() {
     this.#store = null;
-    this.#providerConstraintsByIngestedSuggestionType.clear();
+    this.#providerConstraintsOnLastIngestByFeature.clear();
     this.#configsBySuggestionType.clear();
     lazy.timerManager.unregisterTimer(INGEST_TIMER_ID);
 
@@ -718,14 +757,6 @@ export class SuggestBackendRust extends SuggestBackend {
     return lazy.SuggestionProvider[key];
   }
 
-  #setRemoteSettingsConfig(options) {
-    let { serverUrl, bucketName } = options || {};
-    this.#remoteSettingsServer = serverUrl
-      ? new lazy.RemoteSettingsServer.Custom(serverUrl)
-      : null;
-    this.#remoteSettingsBucketName = bucketName;
-  }
-
   /**
    * Dismissals are stored in the Rust component but were previously stored as
    * URL digests in a pref. This method migrates the pref to the Rust component
@@ -799,8 +830,8 @@ export class SuggestBackendRust extends SuggestBackend {
     return this.#enabledSuggestionTypes;
   }
 
-  async _test_setRemoteSettingsConfig(options) {
-    this.#setRemoteSettingsConfig(options);
+  async _test_setRemoteSettingsService(remoteSettingsService) {
+    this.#remoteSettingsService = remoteSettingsService;
     if (this.isEnabled) {
       // Recreate the store and re-ingest.
       Services.prefs.clearUserPref(INGEST_TIMER_LAST_UPDATE_PREF);
@@ -825,14 +856,13 @@ export class SuggestBackendRust extends SuggestBackend {
   // `SuggestStore.fetchProviderConfig()`.
   #configsBySuggestionType = new Map();
 
-  // Keeps track of suggestion types with fresh (non-stale) ingests. Maps
-  // ingested suggestion types to `feature.rustProviderConstraints`.
-  #providerConstraintsByIngestedSuggestionType = new Map();
+  // Keeps track of features with fresh (non-stale) ingests. Maps
+  // `SuggestProvider`s to their `rustProviderConstraints` on last ingest.
+  #providerConstraintsOnLastIngestByFeature = new Map();
 
   #ingestQueue;
   #shutdownBlocker;
-  #remoteSettingsServer;
-  #remoteSettingsBucketName;
+  #remoteSettingsService;
 }
 
 /**
@@ -876,4 +906,77 @@ function getSuggestionType(suggestion) {
     }
   }
   return type;
+}
+
+/**
+ * The Rust component exports a custom UniFFI type called `JsonValue`, which is
+ * just an alias of `serde_json::Value`. The type represents any value that can
+ * be serialized as JSON, but UniFFI exports it as its JSON serialization rather
+ * than the value itself. The UniFFI JS bindings don't currently deserialize the
+ * JSON back to the underlying value, so we use this function to do it
+ * ourselves. The process of converting the exported Rust value into a more
+ * convenient JS representation is called "lifting".
+ *
+ * Currently dynamic suggestions are the only objects exported from the Rust
+ * component that include a `JsonValue`.
+ *
+ * @param {Suggestion} suggestion
+ *   A `Suggestion` instance from the Rust component.
+ * @returns {Suggestion}
+ *   If any properties of the suggestion need to be lifted, returns a new
+ *   `Suggestion` that's a copy of it except the appropriate properties are
+ *   lifted. Otherwise returns the passed-in suggestion itself.
+ */
+function liftSuggestion(suggestion) {
+  if (suggestion instanceof lazy.Suggestion.Dynamic) {
+    let { data } = suggestion;
+    if (typeof data == "string") {
+      try {
+        data = JSON.parse(data);
+      } catch (error) {
+        // This shouldn't ever happen since `suggestion.data` is serialized in
+        // the Rust component and should therefore always be valid.
+        return null;
+      }
+    }
+    return new lazy.Suggestion.Dynamic({
+      suggestionType: suggestion.suggestionType,
+      data,
+      dismissalKey: suggestion.dismissalKey,
+      score: suggestion.score,
+    });
+  }
+
+  return suggestion;
+}
+
+/**
+ * This is the opposite of `liftSuggestion()`: It converts a lifted suggestion
+ * object back to the value expected by the Rust component. This is only
+ * necessary when passing a suggestion back in to the Rust component. This
+ * process is called "lowering".
+ *
+ * @param {Suggestion|object} suggestion
+ *   A suggestion object. Technically this can be a plain JS object or a
+ *   `Suggestion` instance from the Rust component.
+ * @returns {Suggestion}
+ *   If any properties of the suggestion need to be lowered, returns a new
+ *   `Suggestion` that's a copy of it except the appropriate properties are
+ *   lowered. Otherwise returns the passed-in suggestion itself.
+ */
+function lowerSuggestion(suggestion) {
+  if (suggestion.provider == "Dynamic") {
+    let { data } = suggestion;
+    if (data !== null && data !== undefined) {
+      data = JSON.stringify(data);
+    }
+    return new lazy.Suggestion.Dynamic({
+      suggestionType: suggestion.suggestionType,
+      data,
+      dismissalKey: suggestion.dismissalKey,
+      score: suggestion.score,
+    });
+  }
+
+  return suggestion;
 }

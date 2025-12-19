@@ -8,6 +8,9 @@
 newtab-page-title = Novi tab
 newtab-settings-button =
     .title = Prilagodite svoju početnu stranicu novog taba
+newtab-customize-panel-icon-button =
+    .title = Prilagodi ovu stranicu
+newtab-customize-panel-icon-button-label = Prilagodi
 newtab-personalize-settings-icon-label =
     .title = Personalizujte novi tab
     .aria-label = Postavke
@@ -53,6 +56,9 @@ newtab-topsites-add-shortcut-header = Nova prečica
 newtab-topsites-edit-topsites-header = Uredi najbolju stranicu
 newtab-topsites-edit-shortcut-header = Uredi prečicu
 newtab-topsites-add-shortcut-label = Dodaj prečicu
+newtab-topsites-add-shortcut-title =
+    .title = Dodaj prečicu
+    .aria-label = Dodaj prečicu
 newtab-topsites-title-label = Naslov
 newtab-topsites-title-input =
     .placeholder = Unesi naslov
@@ -117,6 +123,8 @@ newtab-menu-delete-pocket = Izbriši iz { -pocket-brand-name }a
 newtab-menu-archive-pocket = Arhiviraj u { -pocket-brand-name }
 newtab-menu-show-privacy-info = Naši sponzori i vaša privatnost
 newtab-menu-about-fakespot = O { -fakespot-brand-name }u
+# Report is a verb (i.e. report issue with the content).
+newtab-menu-report = Prijavi
 # Context menu option to personalize New Tab recommended stories by blocking a section of stories,
 # e.g. "Sports". "Block" is a verb here.
 newtab-menu-section-block = Blokiraj
@@ -126,6 +134,9 @@ newtab-menu-section-unfollow = Prestani pratiti temu
 
 ## Context menu options for sponsored stories and new ad formats on New Tab.
 
+newtab-menu-manage-sponsored-content = Upravljajte sponzoriranim sadržajem
+newtab-menu-our-sponsors-and-your-privacy = Naši sponzori i vaša privatnost
+newtab-menu-report-this-ad = Prijavi ovaj oglas
 
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
@@ -187,6 +198,8 @@ newtab-label-sponsored-by = Sponzorisano od { $sponsor }
 #   $source (string) - The name of a company or their domain
 #   $timeToRead (number) - The estimated number of minutes to read this story
 newtab-label-source-read-time = { $source } · { $timeToRead } min
+# This string is used under fixed size ads to indicate sponsored content
+newtab-label-sponsored-fixed = Sponzorisano
 
 ## Section Menu: These strings are displayed in the section context menu and are
 ## meant as a call to action for the given section.
@@ -249,9 +262,6 @@ newtab-pocket-learn-more = Saznajte više
 newtab-pocket-cta-button = Preuzmite { -pocket-brand-name }
 newtab-pocket-cta-text = Sačuvajte priče koje volite u { -pocket-brand-name } i podstaknite svoj um fascinantnim čitanjem.
 newtab-pocket-pocket-firefox-family = { -pocket-brand-name } je dio { -brand-product-name } porodice
-# A save to Pocket button that shows over the card thumbnail on hover.
-newtab-pocket-image =
-    .aria-label = { -pocket-brand-name }
 newtab-pocket-save = Sačuvaj
 newtab-pocket-saved = Sačuvano
 
@@ -306,12 +316,12 @@ newtab-custom-pocket-sponsored = Sponzorisane priče
 newtab-custom-pocket-show-recent-saves = Prikaži nedavno sačuvane
 newtab-custom-recent-title = Nedavne aktivnosti
 newtab-custom-recent-subtitle = Izbor najnovijih stranica i sadržaja
-newtab-custom-recent-toggle =
-    .label = Nedavne aktivnosti
-    .description = Izbor najnovijih stranica i sadržaja
 newtab-custom-weather-toggle =
     .label = Vrijeme
     .description = Ukratko o današnjoj prognozi
+newtab-custom-trending-search-toggle =
+    .label = Popularne pretrage
+    .description = Popularne i često tražene teme
 newtab-custom-close-button = Zatvori
 newtab-custom-settings = Upravljajte više postavki
 
@@ -319,6 +329,12 @@ newtab-custom-settings = Upravljajte više postavki
 
 newtab-wallpaper-title = Pozadine
 newtab-wallpaper-reset = Vrati na izvorno
+newtab-wallpaper-upload-image = Učitaj sliku
+newtab-wallpaper-custom-color = Izaberite boju
+# Variables
+#   $file_size (number) - The number of the maximum image file size (in MB) that may be uploaded
+newtab-wallpaper-error-max-file-size = Slika je premašila ograničenje veličine datoteke od { $file_size }MB. Molimo pokušajte s učitavanjem manje datoteke.
+newtab-wallpaper-error-file-type = Nismo mogli učitati vašu datoteku. Pokušajte ponovo s drugom vrstom datoteke.
 newtab-wallpaper-light-red-panda = Crvena panda
 newtab-wallpaper-light-mountain = Bijela planina
 newtab-wallpaper-light-sky = Nebo sa ljubičastim i ružičastim oblacima
@@ -362,8 +378,12 @@ newtab-wallpaper-abstract-purple = Ljubičasti oblici
 newtab-wallpaper-abstract-orange = Narandžasti oblici
 newtab-wallpaper-gradient-orange = Gradijent narandžaste i roze
 newtab-wallpaper-abstract-blue-purple = Plavi i ljubičasti oblici
+newtab-wallpaper-abstract-white-curves = Bijela sa zasjenjenim krivuljama
+newtab-wallpaper-abstract-purple-green = Gradijent ljubičastog i zelenog svjetla
+newtab-wallpaper-abstract-blue-purple-waves = Plavi i ljubičasti valoviti oblici
+newtab-wallpaper-abstract-black-waves = Crni valoviti oblici
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Fotografije
 newtab-wallpaper-beach-at-sunrise = Plaža u izlasku sunca
@@ -372,6 +392,12 @@ newtab-wallpaper-storm-sky = Olujno nebo
 newtab-wallpaper-sky-with-pink-clouds = Nebo sa ružičastim oblacima
 newtab-wallpaper-red-panda-yawns-in-a-tree = Crvena panda zijeva na drvetu
 newtab-wallpaper-white-mountains = Bijele planine
+newtab-wallpaper-hot-air-balloons = Različite boje balona na vrući zrak tokom dana
+newtab-wallpaper-starry-canyon = Plava zvjezdana noć
+newtab-wallpaper-suspension-bridge = Fotografija sivog visećeg mosta tokom dana
+newtab-wallpaper-sand-dunes = Bijele pješčane dine
+newtab-wallpaper-palm-trees = Silueta kokosovih palmi tokom zlatnog sata
+newtab-wallpaper-blue-flowers = Fotografija krupnog plana cvijeća s plavim laticama u cvatu
 # Variables
 #   $author_string (String) - The name of the creator of the photo.
 #   $webpage_string (String) - The name of the webpage where the photo is located.
@@ -389,6 +415,16 @@ feature-highlight-wallpaper =
 
 ## Celestial
 
+# “Celestial” referring to astronomy; positioned in or relating to the sky,
+# or outer space as observed in astronomy.
+# Not to be confused with religious definition of the word.
+newtab-wallpaper-category-title-celestial = Nebeski
+newtab-wallpaper-celestial-lunar-eclipse = Pomračenje Mjeseca
+newtab-wallpaper-celestial-earth-night = Noćna fotografija iz niske Zemljine orbite
+newtab-wallpaper-celestial-starry-sky = Zvjezdano nebo
+newtab-wallpaper-celestial-eclipse-time-lapse = Ubrzani snimak pomračenja Mjeseca
+newtab-wallpaper-celestial-black-hole = Ilustracija galaksije crne rupe
+newtab-wallpaper-celestial-river = Satelitski snimak rijeke
 
 ## New Tab Weather
 
@@ -403,7 +439,6 @@ newtab-weather-menu-change-location = Promijeni lokaciju
 newtab-weather-change-location-search-input-placeholder =
     .placeholder = Traži lokaciju
     .aria-label = Traži lokaciju
-newtab-weather-change-location-search-input = Traži lokaciju
 newtab-weather-menu-weather-display = Prikaz vremena
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
@@ -469,14 +504,86 @@ newtab-topic-selection-button-pick-interests = Odaberite svoja interesovanja
 newtab-section-follow-button = Prati
 newtab-section-following-button = Pratite
 newtab-section-unfollow-button = Prestani pratiti
+# A modal may appear next to the Follow button, directing users to try out the feature
+newtab-section-follow-highlight-title = Precizno podesite svoj feed
+newtab-section-follow-highlight-subtitle = Pratite svoja interesovanja da biste vidjeli više onoga što vam se sviđa.
 
 ## Button to block/unblock listed topics
 ## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
 ## e.g. Blocked the politics section of stories.
 
+newtab-section-block-button = Blokiraj
+newtab-section-blocked-button = Blokirano
+newtab-section-unblock-button = Odblokiraj
 
 ## Confirmation modal for blocking a section
 
+newtab-section-cancel-button = Ne sada
+newtab-section-confirm-block-topic-p1 = Jeste li sigurni da želite blokirati ovu temu?
+newtab-section-confirm-block-topic-p2 = Blokirane teme se više neće pojavljivati u vašem feedu.
+# Variables:
+#   $topic (string) - Name of topic that user is blocking
+newtab-section-block-topic-button = Blokiraj { $topic }
 
-## Panel in the Customize menu section to manage followed and blocked topics
+## Strings for custom wallpaper highlight
 
+newtab-section-mangage-topics-title = Teme
+newtab-section-manage-topics-button-v2 =
+    .label = Upravljaj temama
+newtab-section-mangage-topics-followed-topics = Praćeno
+newtab-section-mangage-topics-followed-topics-empty-state = Još niste pratili nijednu temu.
+newtab-section-mangage-topics-blocked-topics = Blokirano
+newtab-section-mangage-topics-blocked-topics-empty-state = Još niste blokirali nijednu temu.
+newtab-custom-wallpaper-title = Prilagođene pozadine su ovdje
+# 'Make firefox yours" means to customize or personalize
+newtab-custom-wallpaper-subtitle = Otpremite vlastitu pozadinu ili odaberite prilagođenu boju kako biste { -brand-product-name } prilagodili sebi.
+newtab-custom-wallpaper-cta = Probaj
+
+## Strings for download mobile highlight
+
+newtab-download-mobile-highlight-title = Preuzmite { -brand-product-name } za mobilne uređaje
+# "Scan the code" refers to scanning the QR code that appears above the body text that leads to Firefox for mobile download.
+newtab-download-mobile-highlight-body-variant-a = Skenirajte kod za sigurno pregledavanje u pokretu.
+newtab-download-mobile-highlight-body-variant-b = Nastavite tamo gdje ste stali prilikom sinhronizacije tabova, lozinki i još mnogo toga.
+newtab-download-mobile-highlight-body-variant-c = Jeste li znali da { -brand-product-name } možete ponijeti sa sobom? Isti preglednik. U vašem džepu.
+newtab-download-mobile-highlight-image =
+    .aria-label = QR kod za preuzimanje { -brand-product-name } za mobilne uređaje
+
+## Strings for shortcuts highlight
+
+newtab-shortcuts-highlight-title = Vaši favoriti na dohvat ruke
+newtab-shortcuts-highlight-subtitle = Dodajte prečicu da biste svoje omiljene stranice imali pri ruci na jedan klik.
+
+## Strings for reporting ads and content
+
+newtab-report-content-why-reporting-this =
+    .label = Zašto ovo prijavljujete?
+newtab-report-ads-reason-not-interested =
+    .label = Nisam zainteresovan/a
+newtab-report-ads-reason-inappropriate =
+    .label = To je neprikladno
+newtab-report-ads-reason-seen-it-too-many-times =
+    .label = Vidio/la sam to previše puta
+newtab-report-content-wrong-category =
+    .label = Pogrešna kategorija
+newtab-report-content-outdated =
+    .label = Zastarjelo
+newtab-report-content-inappropriate-offensive =
+    .label = Neprimjereno ili uvredljivo
+newtab-report-content-spam-misleading =
+    .label = Neželjena pošta ili obmanjujući sadržaj
+newtab-report-cancel = Otkaži
+newtab-report-submit = Pošalji
+newtab-toast-thanks-for-reporting =
+    .message = Hvala vam što ste ovo prijavili.
+
+## Strings for trending searches
+
+newtab-trending-searches-show-trending =
+    .title = Prikaži popularne pretrage
+newtab-trending-searches-hide-trending =
+    .title = Sakrij popularne pretrage
+newtab-trending-searches-learn-more = Saznajte više
+newtab-trending-searches-dismiss = Sakrij popularne pretrage
+# "Trending searches refers to popular searches from search engines
+newtab-trending-searches-title = Popularne pretrage

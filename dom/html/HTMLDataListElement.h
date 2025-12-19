@@ -6,9 +6,8 @@
 #ifndef HTMLDataListElement_h___
 #define HTMLDataListElement_h___
 
-#include "mozilla/Attributes.h"
-#include "nsGenericHTMLElement.h"
 #include "nsContentList.h"
+#include "nsGenericHTMLElement.h"
 
 namespace mozilla::dom {
 

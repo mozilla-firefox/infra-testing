@@ -21,13 +21,11 @@ using std::begin;
 using std::end;
 
 template <typename T, typename NestedRange>
-auto Flatten(NestedRange&& aRange)
-    -> std::enable_if_t<
-        std::is_same_v<T,
-                       std::decay_t<typename decltype(begin(
-                           std::declval<const NestedRange&>()))::value_type>>,
-        std::conditional_t<std::is_rvalue_reference_v<NestedRange>,
-                           std::decay_t<NestedRange>, NestedRange>> {
+auto Flatten(NestedRange&& aRange) -> std::enable_if_t<
+    std::is_same_v<T, std::decay_t<typename decltype(begin(
+                          std::declval<const NestedRange&>()))::value_type>>,
+    std::conditional_t<std::is_rvalue_reference_v<NestedRange>,
+                       std::decay_t<NestedRange>, NestedRange>> {
   return std::forward<NestedRange>(aRange);
 }
 
@@ -37,6 +35,12 @@ struct FlatIter {
       decltype(begin(std::declval<const std::decay_t<NestedRange>&>()));
   using InnerIterator =
       decltype(begin(*begin(std::declval<const std::decay_t<NestedRange>&>())));
+
+  using iterator_category = std::input_iterator_tag;
+  using value_type = T;
+  using difference_type = std::ptrdiff_t;
+  using pointer = const T*;
+  using reference = const T&;
 
   explicit FlatIter(const NestedRange& aRange, OuterIterator aIter)
       : mOuterIter{std::move(aIter)}, mOuterEnd{end(aRange)} {
@@ -58,6 +62,8 @@ struct FlatIter {
     return mOuterIter != aOther.mOuterIter ||
            (mOuterIter != mOuterEnd && mInnerIter != aOther.mInnerIter);
   }
+
+  bool operator==(const FlatIter& aOther) const { return !(*this != aOther); }
 
  private:
   void InitInner() {
@@ -100,12 +106,11 @@ struct FlatRange {
 };
 
 template <typename T, typename NestedRange>
-auto Flatten(NestedRange&& aRange)
-    -> std::enable_if_t<
-        !std::is_same_v<T, std::decay_t<typename decltype(begin(
-                               std::declval<const std::decay_t<
-                                   NestedRange>&>()))::value_type>>,
-        FlatRange<T, NestedRange>> {
+auto Flatten(NestedRange&& aRange) -> std::enable_if_t<
+    !std::is_same_v<
+        T, std::decay_t<typename decltype(begin(
+               std::declval<const std::decay_t<NestedRange>&>()))::value_type>>,
+    FlatRange<T, NestedRange>> {
   return FlatRange<T, NestedRange>{std::forward<NestedRange>(aRange)};
 }
 

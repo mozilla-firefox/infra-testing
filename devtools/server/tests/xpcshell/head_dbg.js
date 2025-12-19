@@ -1,6 +1,5 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
-/* eslint no-unused-vars: ["error", {"vars": "local"}] */
 /* eslint-disable no-shadow */
 
 "use strict";
@@ -200,23 +199,20 @@ function createLongStringFront(conn, form) {
 }
 
 function createTestGlobal(name, options) {
-  const principal = Cc["@mozilla.org/systemprincipal;1"].createInstance(
-    Ci.nsIPrincipal
-  );
-  // NOTE: The Sandbox constructor behaves differently based on the argument
-  //       length.
-  const sandbox = options
-    ? Cu.Sandbox(principal, options)
-    : Cu.Sandbox(principal);
-  sandbox.__name = name;
-  // Expose a few mocks to better represent a Window object.
-  // These attributes will be used by DOCUMENT_EVENT resource listener.
-  sandbox.performance = { timing: {} };
-  sandbox.document = {
-    readyState: "complete",
-    defaultView: sandbox,
-  };
-  return sandbox;
+  // By default, use a content principal to better simulate running as a web page
+  const origin = "http://example.com/" + name;
+  const principal = options?.chrome
+    ? Services.scriptSecurityManager.getSystemPrincipal()
+    : Services.scriptSecurityManager.createContentPrincipalFromOrigin(origin);
+
+  const chromeWebNav = Services.appShell.createWindowlessBrowser(false);
+  const { docShell } = chromeWebNav;
+  docShell.createAboutBlankDocumentViewer(principal, principal);
+  const window = docShell.docViewer.DOMDocument.defaultView;
+  window.document.title = name;
+
+  // When using a chrome document, the window object won't be an xray wrapper.
+  return window.wrappedJSObject || window;
 }
 
 function connect(client) {
@@ -411,8 +407,9 @@ async function getTestTab(client, title) {
 }
 /**
  *  Attach to the client's tab whose title is specified
- * @param {Object} client
- * @param {Object} title
+ *
+ * @param {object} client
+ * @param {object} title
  * @returns commands
  */
 async function attachTestTab(client, title) {
@@ -431,9 +428,10 @@ async function attachTestTab(client, title) {
 /**
  * Attach to the client's tab whose title is specified, and then attach to
  * that tab's thread.
- * @param {Object} client
- * @param {Object} title
- * @returns {Object}
+ *
+ * @param {object} client
+ * @param {object} title
+ * @returns {object}
  *         targetFront
  *         threadFront
  *         commands
@@ -446,6 +444,8 @@ async function attachTestThread(client, title) {
   // and have them to handle debugger statements.
   await commands.threadConfigurationCommand.updateConfiguration({
     skipBreakpoints: false,
+    // Disable pause overlay as we don't have a true tab and it would throw trying to display them
+    pauseOverlay: false,
   });
 
   const threadFront = await targetFront.getFront("thread");
@@ -862,6 +862,8 @@ async function setupTestFromUrl(url) {
   // and have it to notify about all sources
   await commands.threadConfigurationCommand.updateConfiguration({
     skipBreakpoints: false,
+    // Disable pause overlay as we don't have a true tab and it would throw trying to display them
+    pauseOverlay: false,
   });
 
   const threadFront = await targetFront.getFront("thread");
@@ -905,7 +907,7 @@ async function setupTestFromUrl(url) {
  */
 function threadFrontTest(test, options = {}) {
   const {
-    principal = systemPrincipal,
+    principal = "http://example.com",
     doNotRunWorker = false,
     wantXrays = true,
     waitForFinish = false,
@@ -920,7 +922,7 @@ function threadFrontTest(test, options = {}) {
     // debugger and debuggee must be in different compartments.
     const debuggee = Cu.Sandbox(principal, { freshZone: true, wantXrays });
     const scriptName = "debuggee.js";
-    debuggee.__name = scriptName;
+    debuggee.document = { title: scriptName }; // Reproduce a window object, as createTestGlobal returns a real window object
     server.addTestGlobal(debuggee);
 
     const client = new DevToolsClient(server.connectPipe());
@@ -937,7 +939,7 @@ function threadFrontTest(test, options = {}) {
     // actor instances, used by some tests.
     const rootActor = client.transport._serverConnection.rootActor;
     const targetActor =
-      rootActor._parameters.tabList.getTargetActorForTab("debuggee.js");
+      rootActor._parameters.tabList.getTargetActorForTab(scriptName);
     const { threadActor } = targetActor;
 
     // Run the test function

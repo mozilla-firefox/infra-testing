@@ -6,11 +6,11 @@
 
 #include "SMILCompositor.h"
 
-#include "mozilla/dom/SVGSVGElement.h"
-#include "nsComputedDOMStyle.h"
-#include "nsCSSProps.h"
-#include "nsHashKeys.h"
 #include "SMILCSSProperty.h"
+#include "mozilla/dom/SVGSVGElement.h"
+#include "nsCSSProps.h"
+#include "nsComputedDOMStyle.h"
+#include "nsHashKeys.h"
 
 namespace mozilla {
 
@@ -134,10 +134,10 @@ void SMILCompositor::ClearAnimationEffects() {
 // --------------------------
 UniquePtr<SMILAttr> SMILCompositor::CreateSMILAttr(
     const ComputedStyle* aBaseComputedStyle) {
-  nsCSSPropertyID propID = GetCSSPropertyToAnimate();
+  NonCustomCSSPropertyId propId = GetCSSPropertyToAnimate();
 
-  if (propID != eCSSProperty_UNKNOWN) {
-    return MakeUnique<SMILCSSProperty>(propID, mKey.mElement.get(),
+  if (propId != eCSSProperty_UNKNOWN) {
+    return MakeUnique<SMILCSSProperty>(propId, mKey.mElement.get(),
                                        aBaseComputedStyle);
   }
 
@@ -145,15 +145,15 @@ UniquePtr<SMILAttr> SMILCompositor::CreateSMILAttr(
                                         mKey.mAttributeName);
 }
 
-nsCSSPropertyID SMILCompositor::GetCSSPropertyToAnimate() const {
+NonCustomCSSPropertyId SMILCompositor::GetCSSPropertyToAnimate() const {
   if (mKey.mAttributeNamespaceID != kNameSpaceID_None) {
     return eCSSProperty_UNKNOWN;
   }
 
-  nsCSSPropertyID propID =
+  NonCustomCSSPropertyId propId =
       nsCSSProps::LookupProperty(nsAtomCString(mKey.mAttributeName));
 
-  if (!SMILCSSProperty::IsPropertyAnimatable(propID)) {
+  if (!SMILCSSProperty::IsPropertyAnimatable(propId)) {
     return eCSSProperty_UNKNOWN;
   }
 
@@ -176,7 +176,7 @@ nsCSSPropertyID SMILCompositor::GetCSSPropertyToAnimate() const {
     // Indeed an outer <svg> element, fall through.
   }
 
-  return propID;
+  return propId;
 }
 
 bool SMILCompositor::MightNeedBaseStyle() const {

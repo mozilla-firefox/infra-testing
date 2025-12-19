@@ -20,6 +20,7 @@ use marionette_rs::webdriver::{
     AuthenticatorParameters as MarionetteAuthenticatorParameters,
     AuthenticatorTransport as MarionetteAuthenticatorTransport,
     Command as MarionetteWebDriverCommand, CredentialParameters as MarionetteCredentialParameters,
+    GlobalPrivacyControlParameters as MarionetteGlobalPrivacyControlParameters,
     Keys as MarionetteKeys, Locator as MarionetteLocator, NewWindow as MarionetteNewWindow,
     PrintMargins as MarionettePrintMargins, PrintOrientation as MarionettePrintOrientation,
     PrintPage as MarionettePrintPage, PrintPageRange as MarionettePrintPageRange,
@@ -53,25 +54,26 @@ use webdriver::command::WebDriverCommand::{
     AcceptAlert, AddCookie, CloseWindow, DeleteCookie, DeleteCookies, DeleteSession, DismissAlert,
     ElementClear, ElementClick, ElementSendKeys, ExecuteAsyncScript, ExecuteScript, Extension,
     FindElement, FindElementElement, FindElementElements, FindElements, FindShadowRootElement,
-    FindShadowRootElements, FullscreenWindow, Get, GetActiveElement, GetAlertText, GetCSSValue,
-    GetComputedLabel, GetComputedRole, GetCookies, GetCurrentUrl, GetElementAttribute,
-    GetElementProperty, GetElementRect, GetElementTagName, GetElementText, GetNamedCookie,
-    GetPageSource, GetShadowRoot, GetTimeouts, GetTitle, GetWindowHandle, GetWindowHandles,
-    GetWindowRect, GoBack, GoForward, IsDisplayed, IsEnabled, IsSelected, MaximizeWindow,
-    MinimizeWindow, NewSession, NewWindow, PerformActions, Print, Refresh, ReleaseActions,
-    SendAlertText, SetPermission, SetTimeouts, SetWindowRect, Status, SwitchToFrame,
-    SwitchToParentFrame, SwitchToWindow, TakeElementScreenshot, TakeScreenshot,
-    WebAuthnAddCredential, WebAuthnAddVirtualAuthenticator, WebAuthnGetCredentials,
-    WebAuthnRemoveAllCredentials, WebAuthnRemoveCredential, WebAuthnRemoveVirtualAuthenticator,
-    WebAuthnSetUserVerified,
+    FindShadowRootElements, FullscreenWindow, GPCGetGlobalPrivacyControl,
+    GPCSetGlobalPrivacyControl, Get, GetActiveElement, GetAlertText, GetCSSValue, GetComputedLabel,
+    GetComputedRole, GetCookies, GetCurrentUrl, GetElementAttribute, GetElementProperty,
+    GetElementRect, GetElementTagName, GetElementText, GetNamedCookie, GetPageSource,
+    GetShadowRoot, GetTimeouts, GetTitle, GetWindowHandle, GetWindowHandles, GetWindowRect, GoBack,
+    GoForward, IsDisplayed, IsEnabled, IsSelected, MaximizeWindow, MinimizeWindow, NewSession,
+    NewWindow, PerformActions, Print, Refresh, ReleaseActions, SendAlertText, SetPermission,
+    SetTimeouts, SetWindowRect, Status, SwitchToFrame, SwitchToParentFrame, SwitchToWindow,
+    TakeElementScreenshot, TakeScreenshot, WebAuthnAddCredential, WebAuthnAddVirtualAuthenticator,
+    WebAuthnGetCredentials, WebAuthnRemoveAllCredentials, WebAuthnRemoveCredential,
+    WebAuthnRemoveVirtualAuthenticator, WebAuthnSetUserVerified,
 };
 use webdriver::command::{
     ActionsParameters, AddCookieParameters, AuthenticatorParameters, AuthenticatorTransport,
-    GetNamedCookieParameters, GetParameters, JavascriptCommandParameters, LocatorParameters,
-    NewSessionParameters, NewWindowParameters, PrintMargins, PrintOrientation, PrintPage,
-    PrintPageRange, PrintParameters, SendKeysParameters, SetPermissionDescriptor,
-    SetPermissionParameters, SetPermissionState, SwitchToFrameParameters, SwitchToWindowParameters,
-    TimeoutsParameters, UserVerificationParameters, WebAuthnProtocol, WindowRectParameters,
+    GetNamedCookieParameters, GetParameters, GlobalPrivacyControlParameters,
+    JavascriptCommandParameters, LocatorParameters, NewSessionParameters, NewWindowParameters,
+    PrintMargins, PrintOrientation, PrintPage, PrintPageRange, PrintParameters, SendKeysParameters,
+    SetPermissionDescriptor, SetPermissionParameters, SetPermissionState, SwitchToFrameParameters,
+    SwitchToWindowParameters, TimeoutsParameters, UserVerificationParameters, WebAuthnProtocol,
+    WindowRectParameters,
 };
 use webdriver::command::{WebDriverCommand, WebDriverMessage};
 use webdriver::common::{
@@ -468,6 +470,8 @@ impl MarionetteSession {
             | Print(_)
             | SetPermission(_)
             | TakeElementScreenshot(_)
+            | GPCGetGlobalPrivacyControl
+            | GPCSetGlobalPrivacyControl(_)
             | WebAuthnAddVirtualAuthenticator(_)
             | WebAuthnRemoveVirtualAuthenticator
             | WebAuthnAddCredential(_)
@@ -976,6 +980,12 @@ fn try_convert_to_marionette_message(
         Print(ref x) => Some(Command::WebDriver(MarionetteWebDriverCommand::Print(
             x.to_marionette()?,
         ))),
+        GPCGetGlobalPrivacyControl => Some(Command::WebDriver(
+            MarionetteWebDriverCommand::GPCGetGlobalPrivacyControl,
+        )),
+        GPCSetGlobalPrivacyControl(ref x) => Some(Command::WebDriver(
+            MarionetteWebDriverCommand::GPCSetGlobalPrivacyControl(x.to_marionette()?),
+        )),
         WebAuthnAddVirtualAuthenticator(ref x) => Some(Command::WebDriver(
             MarionetteWebDriverCommand::WebAuthnAddVirtualAuthenticator(x.to_marionette()?),
         )),
@@ -1877,6 +1887,12 @@ impl ToMarionette<MarionetteWindowRect> for WindowRectParameters {
             width: self.width,
             height: self.height,
         })
+    }
+}
+
+impl ToMarionette<MarionetteGlobalPrivacyControlParameters> for GlobalPrivacyControlParameters {
+    fn to_marionette(&self) -> WebDriverResult<MarionetteGlobalPrivacyControlParameters> {
+        Ok(MarionetteGlobalPrivacyControlParameters { gpc: self.gpc })
     }
 }
 

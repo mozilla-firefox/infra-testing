@@ -60,7 +60,8 @@ class RendererRecordedFrame final : public layers::RecordedFrame {
 
 wr::WrExternalImage wr_renderer_lock_external_image(void* aObj,
                                                     wr::ExternalImageId aId,
-                                                    uint8_t aChannelIndex) {
+                                                    uint8_t aChannelIndex,
+                                                    bool aIsComposited) {
   RendererOGL* renderer = reinterpret_cast<RendererOGL*>(aObj);
   RenderTextureHost* texture = renderer->GetRenderTexture(aId);
   MOZ_ASSERT(texture);
@@ -71,8 +72,8 @@ wr::WrExternalImage wr_renderer_lock_external_image(void* aObj,
   }
 
 #if defined(MOZ_WAYLAND)
-  // Wayland native compositor doesn't use textures so pass null GL context.
-  if (texture->AsRenderDMABUFTextureHost() &&
+  // Wayland native compositor doesn't use textures for direct compositing.
+  if (aIsComposited && texture->AsRenderDMABUFTextureHost() &&
       renderer->GetCompositor()->CompositorType() ==
           layers::WebRenderCompositor::WAYLAND) {
     return texture->Lock(aChannelIndex, nullptr);
@@ -178,6 +179,7 @@ RenderedFrameId RendererOGL::UpdateAndRender(
   auto bufferAge = 0;
   bool fullRender = false;
 
+  bool needPostRenderCall = false;
   bool beginFrame = !mThread->IsHandlingDeviceReset();
 
   if (beginFrame && present) {
@@ -186,6 +188,8 @@ RenderedFrameId RendererOGL::UpdateAndRender(
       // not handled. It needs to be addressed.
       return RenderedFrameId();
     }
+    needPostRenderCall = true;
+
     // XXX set clear color if MOZ_WIDGET_ANDROID is defined.
 
     if (!mCompositor->BeginFrame()) {
@@ -202,11 +206,17 @@ RenderedFrameId RendererOGL::UpdateAndRender(
          layers::ProfilerScreenshots::IsEnabled())) {
       fullRender = true;
     }
+  } else if (!mCompositor->MakeCurrent()) {
+    // MakeCurrent is otherwise called by mCompositor->BeginFrame above.
+    return RenderedFrameId();
   }
 
   if (!beginFrame) {
     CheckGraphicsResetStatus(gfx::DeviceResetDetectPlace::WR_BEGIN_FRAME,
                              /* aForce */ true);
+    if (needPostRenderCall) {
+      mCompositor->GetWidget()->PostRender(&widgetContext);
+    }
     return RenderedFrameId();
   }
 
@@ -223,6 +233,8 @@ RenderedFrameId RendererOGL::UpdateAndRender(
   if (!rendered) {
     if (present) {
       mCompositor->CancelFrame();
+    }
+    if (needPostRenderCall) {
       mCompositor->GetWidget()->PostRender(&widgetContext);
     }
     RenderThread::Get()->HandleWebRenderError(WebRenderError::RENDER);
@@ -259,6 +271,7 @@ RenderedFrameId RendererOGL::UpdateAndRender(
     // might invalidate it.
     MaybeRecordFrame(mLastPipelineInfo);
     frameId = mCompositor->EndFrame(dirtyRects);
+    MOZ_ASSERT(needPostRenderCall);
     mCompositor->GetWidget()->PostRender(&widgetContext);
   }
 
@@ -285,6 +298,9 @@ RenderedFrameId RendererOGL::UpdateAndRender(
 }
 
 bool RendererOGL::EnsureAsyncScreenshot() {
+  if (mCompositor->UseLayerCompositor()) {
+    return mCompositor->EnableAsyncScreenshot();
+  }
   if (mCompositor->SupportAsyncScreenshot()) {
     return true;
   }

@@ -9,6 +9,47 @@ ChromeUtils.defineESModuleGetters(lazy, {
   PollPromise: "chrome://remote/content/shared/Sync.sys.mjs",
 });
 
+/**
+ * @typedef {object} BrowsingContextDetails
+ *
+ * @property {number} browserId
+ *     Browser id for this browsing context.
+ * @property {number} browsingContextId
+ *     Internal id of the browsing context.
+ * @property {boolean} isTopBrowsingContext
+ *     Flag that indicates if the browsing context is top-level.
+ * @property {boolean} isContent
+ *     Flag that indicates if it is a content or a chrome browsing context.
+ */
+
+/**
+ * A browsing context might be replaced before reaching the parent process,
+ * instead we serialize enough information to retrieve the navigable in the
+ * parent process.
+ *
+ * If the browsing context is top level, then the browserId can be used to
+ * find the browser element and the new browsing context.
+ * Otherwise (frames) the browsing context should not be replaced and the
+ * browsing context id should be enough to find the browsing context.
+ *
+ * Should be used when preparing an event payload from the content to the
+ * parent process.
+ *
+ * @param {BrowsingContext} browsingContext
+ *     The browsing context for which we want to get details.
+ *
+ * @returns {BrowsingContextDetails}
+ *     Details of the browsing context.
+ */
+export function getBrowsingContextDetails(browsingContext) {
+  return {
+    browserId: browsingContext.browserId,
+    browsingContextId: browsingContext.id,
+    isContent: browsingContext.isContent,
+    isTopBrowsingContext: browsingContext.parent === null,
+  };
+}
+
 function isExtensionContext(browsingContext) {
   let principal;
   try {
@@ -43,7 +84,7 @@ function isParentProcess(browsingContext) {
 /**
  * Check if the provided browsing context is currently displaying its initial
  * document. For top level browsing contexts, this is usually the initial
- * about:blank which will be replaced soon.
+ * about:blank.
  *
  * @param {BrowsingContext} browsingContext
  *     The browsing context to check.
@@ -63,6 +104,28 @@ export function isInitialDocument(browsingContext) {
 }
 
 /**
+ * Check if the provided browsing context is currently displaying its initial
+ * document. For top level browsing contexts, this is usually the initial
+ * about:blank which will be replaced soon.
+ *
+ * @param {BrowsingContext} browsingContext
+ *     The browsing context to check.
+ *
+ * @returns {boolean}
+ *     True if the browsing context is on the initial document, false otherwise.
+ */
+export function isUncommittedInitialDocument(browsingContext) {
+  if (!browsingContext.currentWindowGlobal) {
+    // Right after a browsing context has been attached it could happen that
+    // no window global has been set yet. Consider this as nothing has been
+    // loaded yet.
+    return true;
+  }
+
+  return browsingContext.currentWindowGlobal.isUncommittedInitialDocument;
+}
+
+/**
  * Check if the given browsing context is valid for the message handler
  * to use.
  *
@@ -79,6 +142,10 @@ export function isInitialDocument(browsingContext) {
  */
 export function isBrowsingContextCompatible(browsingContext, options = {}) {
   const { browserId, userContext } = options;
+
+  if (!BrowsingContext.isInstance(browsingContext)) {
+    return false;
+  }
 
   // If a browserId was provided, skip browsing contexts which are not
   // associated with this browserId.

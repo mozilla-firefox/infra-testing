@@ -5,49 +5,53 @@
 #include "MediaEngineFake.h"
 
 #include "AudioSegment.h"
-#include "DOMMediaStream.h"
+#include "FakeVideoSource.h"
 #include "ImageContainer.h"
-#include "ImageTypes.h"
 #include "MediaEnginePrefs.h"
 #include "MediaEngineSource.h"
+#include "MediaTrackConstraints.h"
 #include "MediaTrackGraph.h"
 #include "MediaTrackListener.h"
-#include "MediaTrackConstraints.h"
-#include "mozilla/dom/File.h"
-#include "mozilla/MediaManager.h"
-#include "mozilla/Mutex.h"
-#include "mozilla/SyncRunnable.h"
-#include "mozilla/UniquePtr.h"
-#include "nsComponentManagerUtils.h"
-#include "nsCOMPtr.h"
-#include "nsContentUtils.h"
-#include "nsITimer.h"
 #include "SineWaveGenerator.h"
 #include "Tracing.h"
 #include "VideoSegment.h"
-#include "VideoUtils.h"
+#include "mozilla/MediaManager.h"
+#include "mozilla/SyncRunnable.h"
+#include "mozilla/UniquePtr.h"
+#include "nsCOMPtr.h"
+#include "nsContentUtils.h"
 
 #ifdef MOZ_WIDGET_ANDROID
 #  include "nsISupportsUtils.h"
 #endif
 
-#ifdef MOZ_WEBRTC
-#  include "YuvStamper.h"
-#endif
-
-#define VIDEO_WIDTH_MIN 160
-#define VIDEO_WIDTH_MAX 4096
-#define VIDEO_HEIGHT_MIN 90
-#define VIDEO_HEIGHT_MAX 2160
-#define DEFAULT_AUDIO_TIMER_MS 10
 namespace mozilla {
 
 using namespace mozilla::gfx;
+using dom::GetEnumString;
 using dom::MediaSourceEnum;
 using dom::MediaTrackCapabilities;
 using dom::MediaTrackConstraints;
 using dom::MediaTrackSettings;
 using dom::VideoFacingModeEnum;
+using dom::VideoResizeModeEnum;
+
+#ifdef DEBUG
+static constexpr int VIDEO_WIDTH_DEFAULT =
+    MediaEnginePrefs::DEFAULT_43_VIDEO_WIDTH / 2;
+#else
+static constexpr int VIDEO_WIDTH_DEFAULT =
+    MediaEnginePrefs::DEFAULT_43_VIDEO_WIDTH;
+#endif
+static constexpr int VIDEO_WIDTH_MAX = 4096;
+#ifdef DEBUG
+static constexpr int VIDEO_HEIGHT_DEFAULT =
+    MediaEnginePrefs::DEFAULT_43_VIDEO_HEIGHT / 2;
+#else
+static constexpr int VIDEO_HEIGHT_DEFAULT =
+    MediaEnginePrefs::DEFAULT_43_VIDEO_HEIGHT;
+#endif
+static constexpr int VIDEO_HEIGHT_MAX = 2160;
 
 static nsString FakeVideoName() {
   // For the purpose of testing we allow to change the name of the fake device
@@ -82,6 +86,9 @@ class MediaEngineFakeVideoSource : public MediaEngineSource {
  public:
   MediaEngineFakeVideoSource();
 
+  static already_AddRefed<MediaEngineFakeVideoSource> CreateFrom(
+      const MediaEngineFakeVideoSource* aSource);
+
   static nsString GetGroupId();
 
   nsresult Allocate(const dom::MediaTrackConstraints& aConstraints,
@@ -97,8 +104,8 @@ class MediaEngineFakeVideoSource : public MediaEngineSource {
   nsresult Deallocate() override;
 
   uint32_t GetBestFitnessDistance(
-      const nsTArray<const NormalizedConstraintSet*>& aConstraintSets)
-      const override;
+      const nsTArray<const NormalizedConstraintSet*>& aConstraintSets,
+      const MediaEnginePrefs& aPrefs) const override;
   void GetSettings(dom::MediaTrackSettings& aOutSettings) const override;
 
   void GetCapabilities(
@@ -107,41 +114,45 @@ class MediaEngineFakeVideoSource : public MediaEngineSource {
   bool IsFake() const override { return true; }
 
  protected:
-  ~MediaEngineFakeVideoSource() = default;
+  ~MediaEngineFakeVideoSource() {
+    mGeneratedImageListener.DisconnectIfExists();
+  }
 
-  /**
-   * Called by mTimer when it's time to generate a new frame.
-   */
-  void GenerateFrame();
+  void OnGeneratedImage(RefPtr<layers::Image> aImage, TimeStamp aTime);
 
-  nsCOMPtr<nsITimer> mTimer;
-
-  RefPtr<layers::ImageContainer> mImageContainer;
+  // Owning thread only.
+  RefPtr<FakeVideoSource> mCapturer;
+  MediaEventListener mGeneratedImageListener;
 
   // Current state of this source.
   MediaEngineSourceState mState = kReleased;
-  RefPtr<layers::Image> mImage;
   RefPtr<SourceMediaTrack> mTrack;
   PrincipalHandle mPrincipalHandle = PRINCIPAL_HANDLE_NONE;
 
   MediaEnginePrefs mOpts;
-  int mCb = 16;
-  int mCr = 16;
 
   // Main thread only.
   const RefPtr<media::Refcountable<dom::MediaTrackSettings>> mSettings;
 };
 
 MediaEngineFakeVideoSource::MediaEngineFakeVideoSource()
-    : mTimer(nullptr),
-      mSettings(MakeAndAddRef<media::Refcountable<MediaTrackSettings>>()) {
-  mSettings->mWidth.Construct(
-      int32_t(MediaEnginePrefs::DEFAULT_43_VIDEO_WIDTH));
-  mSettings->mHeight.Construct(
-      int32_t(MediaEnginePrefs::DEFAULT_43_VIDEO_HEIGHT));
+    : mSettings(MakeAndAddRef<media::Refcountable<MediaTrackSettings>>()) {
+  mSettings->mWidth.Construct(int32_t(VIDEO_WIDTH_DEFAULT));
+  mSettings->mHeight.Construct(int32_t(VIDEO_HEIGHT_DEFAULT));
   mSettings->mFrameRate.Construct(double(MediaEnginePrefs::DEFAULT_VIDEO_FPS));
   mSettings->mFacingMode.Construct(NS_ConvertASCIItoUTF16(
       dom::GetEnumString(VideoFacingModeEnum::Environment)));
+  mSettings->mResizeMode.Construct(NS_ConvertASCIItoUTF16(
+      dom::GetEnumString(dom::VideoResizeModeEnum::None)));
+}
+
+/*static*/ already_AddRefed<MediaEngineFakeVideoSource>
+MediaEngineFakeVideoSource::CreateFrom(
+    const MediaEngineFakeVideoSource* aSource) {
+  auto src = MakeRefPtr<MediaEngineFakeVideoSource>();
+  *static_cast<MediaTrackSettings*>(src->mSettings) = *aSource->mSettings;
+  src->mOpts = aSource->mOpts;
+  return src.forget();
 }
 
 nsString MediaEngineFakeVideoSource::GetGroupId() {
@@ -149,7 +160,8 @@ nsString MediaEngineFakeVideoSource::GetGroupId() {
 }
 
 uint32_t MediaEngineFakeVideoSource::GetBestFitnessDistance(
-    const nsTArray<const NormalizedConstraintSet*>& aConstraintSets) const {
+    const nsTArray<const NormalizedConstraintSet*>& aConstraintSets,
+    const MediaEnginePrefs& aPrefs) const {
   AssertIsOnOwningThread();
 
   uint64_t distance = 0;
@@ -158,23 +170,27 @@ uint32_t MediaEngineFakeVideoSource::GetBestFitnessDistance(
   // distance is read from first entry only
   if (aConstraintSets.Length() >= 1) {
     const auto* cs = aConstraintSets.ElementAt(0);
+    const auto resizeMode = MediaConstraintsHelper::GetResizeMode(*cs, aPrefs);
+    using H = MediaConstraintsHelper;
     Maybe<nsString> facingMode = Nothing();
-    distance +=
-        MediaConstraintsHelper::FitnessDistance(facingMode, cs->mFacingMode);
+    distance += H::FitnessDistance(facingMode, cs->mFacingMode);
 
-    if (cs->mWidth.mMax < VIDEO_WIDTH_MIN ||
-        cs->mWidth.mMin > VIDEO_WIDTH_MAX) {
-      distance += UINT32_MAX;
-    }
-
-    if (cs->mHeight.mMax < VIDEO_HEIGHT_MIN ||
-        cs->mHeight.mMin > VIDEO_HEIGHT_MAX) {
-      distance += UINT32_MAX;
+    if (resizeMode.valueOr(dom::VideoResizeModeEnum::None) ==
+        dom::VideoResizeModeEnum::None) {
+      distance +=
+          H::FitnessDistance(VIDEO_WIDTH_DEFAULT, cs->mWidth) +
+          H::FitnessDistance(VIDEO_HEIGHT_DEFAULT, cs->mHeight) +
+          H::FitnessDistance(AssertedCast<double>(aPrefs.mFPS), cs->mFrameRate);
+    } else {
+      distance += H::FeasibilityDistance(VIDEO_WIDTH_DEFAULT, cs->mWidth) +
+                  H::FeasibilityDistance(VIDEO_HEIGHT_DEFAULT, cs->mHeight) +
+                  H::FeasibilityDistance(AssertedCast<double>(aPrefs.mFPS),
+                                         cs->mFrameRate);
     }
   }
 #endif
 
-  return uint32_t(std::min(distance, uint64_t(UINT32_MAX)));
+  return SaturatingCast<uint32_t>(distance);
 }
 
 void MediaEngineFakeVideoSource::GetSettings(
@@ -193,14 +209,22 @@ void MediaEngineFakeVideoSource::GetCapabilities(
   facing.AppendElement(facingString);
   aOutCapabilities.mFacingMode.Construct(std::move(facing));
 
+  if (mOpts.mResizeModeEnabled) {
+    nsTArray<nsString> resizeModes{
+        NS_ConvertASCIItoUTF16(GetEnumString(dom::VideoResizeModeEnum::None)),
+        NS_ConvertASCIItoUTF16(
+            GetEnumString(dom::VideoResizeModeEnum::Crop_and_scale))};
+    aOutCapabilities.mResizeMode.Construct(std::move(resizeModes));
+  }
+
   dom::ULongRange widthRange;
   widthRange.mMax.Construct(VIDEO_WIDTH_MAX);
-  widthRange.mMin.Construct(VIDEO_WIDTH_MIN);
+  widthRange.mMin.Construct(1);
   aOutCapabilities.mWidth.Construct(widthRange);
 
   dom::ULongRange heightRange;
   heightRange.mMax.Construct(VIDEO_HEIGHT_MAX);
-  heightRange.mMin.Construct(VIDEO_HEIGHT_MIN);
+  heightRange.mMin.Construct(1);
   aOutCapabilities.mHeight.Construct(heightRange);
 
   dom::DoubleRange frameRateRange;
@@ -221,33 +245,39 @@ nsresult MediaEngineFakeVideoSource::Allocate(
   // emulator debug is very, very slow; reduce load on it with smaller/slower
   // fake video
   mOpts = aPrefs;
-  mOpts.mWidth =
-      c.mWidth.Get(aPrefs.mWidth ? aPrefs.mWidth :
-#ifdef DEBUG
-                                 MediaEnginePrefs::DEFAULT_43_VIDEO_WIDTH / 2
-#else
-                                 MediaEnginePrefs::DEFAULT_43_VIDEO_WIDTH
-#endif
-      );
-  mOpts.mHeight =
-      c.mHeight.Get(aPrefs.mHeight ? aPrefs.mHeight :
-#ifdef DEBUG
-                                   MediaEnginePrefs::DEFAULT_43_VIDEO_HEIGHT / 2
-#else
-                                   MediaEnginePrefs::DEFAULT_43_VIDEO_HEIGHT
-#endif
-      );
-  mOpts.mWidth =
-      std::clamp(mOpts.mWidth, VIDEO_WIDTH_MIN, VIDEO_WIDTH_MAX) & ~1;
-  mOpts.mHeight =
-      std::clamp(mOpts.mHeight, VIDEO_HEIGHT_MIN, VIDEO_HEIGHT_MAX) & ~1;
+  mOpts.mWidth = aPrefs.mWidth ? aPrefs.mWidth : VIDEO_WIDTH_DEFAULT;
+  mOpts.mHeight = aPrefs.mHeight ? aPrefs.mHeight : VIDEO_HEIGHT_DEFAULT;
+
+  const auto resizeMode = MediaConstraintsHelper::GetResizeMode(c, mOpts);
+  const auto resizeModeString = resizeMode.map(
+      [](auto aRM) { return NS_ConvertASCIItoUTF16(dom::GetEnumString(aRM)); });
+  if (resizeMode.valueOr(VideoResizeModeEnum::None) ==
+      VideoResizeModeEnum::Crop_and_scale) {
+    mOpts.mWidth = c.mWidth.Get(mOpts.mWidth);
+    mOpts.mHeight = c.mHeight.Get(mOpts.mHeight);
+    mOpts.mFPS = std::min(mOpts.mFPS, SaturatingCast<int32_t>(c.mFrameRate.Get(
+                                          AssertedCast<double>(mOpts.mFPS))));
+  }
+
+  mOpts.mWidth = std::clamp(mOpts.mWidth, 1, VIDEO_WIDTH_MAX);
+  mOpts.mHeight = std::clamp(mOpts.mHeight, 1, VIDEO_HEIGHT_MAX);
+  mOpts.mFPS = std::clamp(mOpts.mFPS, 0, MediaEnginePrefs::DEFAULT_VIDEO_FPS);
+
+  nsCOMPtr<nsISerialEventTarget> target = GetCurrentSerialEventTarget();
+  mCapturer = MakeRefPtr<FakeVideoSource>(target);
+  mGeneratedImageListener = mCapturer->GeneratedImageEvent().Connect(
+      target, this, &MediaEngineFakeVideoSource::OnGeneratedImage);
 
   NS_DispatchToMainThread(NS_NewRunnableFunction(
-      __func__, [settings = mSettings, frameRate = mOpts.mFPS,
-                 width = mOpts.mWidth, height = mOpts.mHeight]() {
+      __func__,
+      [settings = mSettings, frameRate = mOpts.mFPS, width = mOpts.mWidth,
+       height = mOpts.mHeight, resizeModeString]() {
         settings->mFrameRate.Value() = frameRate;
         settings->mWidth.Value() = width;
         settings->mHeight.Value() = height;
+        settings->mResizeMode.Reset();
+        resizeModeString.apply(
+            [&](const auto& aStr) { settings->mResizeMode.Construct(aStr); });
       }));
 
   mState = kAllocated;
@@ -257,50 +287,18 @@ nsresult MediaEngineFakeVideoSource::Allocate(
 nsresult MediaEngineFakeVideoSource::Deallocate() {
   AssertIsOnOwningThread();
 
-  MOZ_ASSERT(!mImage);
   MOZ_ASSERT(mState == kStopped || mState == kAllocated);
 
+  mGeneratedImageListener.Disconnect();
+  mCapturer = nullptr;
   if (mTrack) {
     mTrack->End();
     mTrack = nullptr;
     mPrincipalHandle = PRINCIPAL_HANDLE_NONE;
   }
   mState = kReleased;
-  mImageContainer = nullptr;
 
   return NS_OK;
-}
-
-static bool AllocateSolidColorFrame(layers::PlanarYCbCrData& aData, int aWidth,
-                                    int aHeight, int aY, int aCb, int aCr) {
-  MOZ_ASSERT(!(aWidth & 1));
-  MOZ_ASSERT(!(aHeight & 1));
-  // Allocate a single frame with a solid color
-  int yLen = aWidth * aHeight;
-  int cbLen = yLen >> 2;
-  int crLen = cbLen;
-  uint8_t* frame = (uint8_t*)malloc(yLen + cbLen + crLen);
-  if (!frame) {
-    return false;
-  }
-  memset(frame, aY, yLen);
-  memset(frame + yLen, aCb, cbLen);
-  memset(frame + yLen + cbLen, aCr, crLen);
-
-  aData.mYChannel = frame;
-  aData.mYStride = aWidth;
-  aData.mCbCrStride = aWidth >> 1;
-  aData.mCbChannel = frame + yLen;
-  aData.mCrChannel = aData.mCbChannel + cbLen;
-  aData.mPictureRect = IntRect(0, 0, aWidth, aHeight);
-  aData.mStereoMode = StereoMode::MONO;
-  aData.mYUVColorSpace = gfx::YUVColorSpace::BT601;
-  aData.mChromaSubsampling = gfx::ChromaSubsampling::HALF_WIDTH_AND_HEIGHT;
-  return true;
-}
-
-static void ReleaseFrame(layers::PlanarYCbCrData& aData) {
-  free(aData.mYChannel);
 }
 
 void MediaEngineFakeVideoSource::SetTrack(const RefPtr<MediaTrack>& aTrack,
@@ -321,26 +319,11 @@ nsresult MediaEngineFakeVideoSource::Start() {
   MOZ_ASSERT(mState == kAllocated || mState == kStopped);
   MOZ_ASSERT(mTrack, "SetTrack() must happen before Start()");
 
-  mTimer = NS_NewTimer(GetCurrentSerialEventTarget());
-  if (!mTimer) {
+  int32_t rv = mCapturer->StartCapture(
+      mOpts.mWidth, mOpts.mHeight, TimeDuration::FromSeconds(1.0 / mOpts.mFPS));
+  if (NS_WARN_IF(rv != 0)) {
     return NS_ERROR_FAILURE;
   }
-
-  if (!mImageContainer) {
-    mImageContainer = MakeAndAddRef<layers::ImageContainer>(
-        layers::ImageUsageType::Webrtc, layers::ImageContainer::ASYNCHRONOUS);
-  }
-
-  // Start timer for subsequent frames
-  const uint32_t interval = 1000 / mOpts.mFPS;
-  mTimer->InitWithNamedFuncCallback(
-      [](nsITimer* aTimer, void* aClosure) {
-        RefPtr<MediaEngineFakeVideoSource> source =
-            static_cast<MediaEngineFakeVideoSource*>(aClosure);
-        source->GenerateFrame();
-      },
-      this, interval, nsITimer::TYPE_REPEATING_PRECISE_CAN_SKIP,
-      "MediaEngineFakeVideoSource::GenerateFrame");
 
   mState = kStarted;
   return NS_OK;
@@ -354,11 +337,12 @@ nsresult MediaEngineFakeVideoSource::Stop() {
   }
 
   MOZ_ASSERT(mState == kStarted);
-  MOZ_ASSERT(mTimer);
   MOZ_ASSERT(mTrack);
 
-  mTimer->Cancel();
-  mTimer = nullptr;
+  int32_t rv = mCapturer->StopCapture();
+  if (NS_WARN_IF(rv != 0)) {
+    return NS_ERROR_FAILURE;
+  }
 
   mState = kStopped;
 
@@ -371,62 +355,12 @@ nsresult MediaEngineFakeVideoSource::Reconfigure(
   return NS_OK;
 }
 
-void MediaEngineFakeVideoSource::GenerateFrame() {
-  AssertIsOnOwningThread();
-
-  // Update the target color
-  if (mCr <= 16) {
-    if (mCb < 240) {
-      mCb++;
-    } else {
-      mCr++;
-    }
-  } else if (mCb >= 240) {
-    if (mCr < 240) {
-      mCr++;
-    } else {
-      mCb--;
-    }
-  } else if (mCr >= 240) {
-    if (mCb > 16) {
-      mCb--;
-    } else {
-      mCr--;
-    }
-  } else {
-    mCr--;
-  }
-
-  // Allocate a single solid color image
-  RefPtr<layers::PlanarYCbCrImage> ycbcr_image =
-      mImageContainer->CreatePlanarYCbCrImage();
-  layers::PlanarYCbCrData data;
-  if (NS_WARN_IF(!AllocateSolidColorFrame(data, mOpts.mWidth, mOpts.mHeight,
-                                          0x80, mCb, mCr))) {
-    return;
-  }
-
-#ifdef MOZ_WEBRTC
-  uint64_t timestamp = PR_Now();
-  YuvStamper::Encode(mOpts.mWidth, mOpts.mHeight, mOpts.mWidth, data.mYChannel,
-                     reinterpret_cast<unsigned char*>(&timestamp),
-                     sizeof(timestamp), 0, 0);
-#endif
-
-  bool setData = NS_SUCCEEDED(ycbcr_image->CopyData(data));
-  MOZ_ASSERT(setData);
-
-  // SetData copies data, so we can free the frame
-  ReleaseFrame(data);
-
-  if (!setData) {
-    return;
-  }
-
+void MediaEngineFakeVideoSource::OnGeneratedImage(RefPtr<layers::Image> aImage,
+                                                  TimeStamp aTime) {
   VideoSegment segment;
-  segment.AppendFrame(ycbcr_image.forget(),
+  segment.AppendFrame(aImage.forget(),
                       gfx::IntSize(mOpts.mWidth, mOpts.mHeight),
-                      mPrincipalHandle);
+                      mPrincipalHandle, /*aForceBlack=*/false, aTime);
   mTrack->AppendData(&segment);
 }
 
@@ -687,6 +621,22 @@ RefPtr<MediaEngineSource> MediaEngineFake::CreateSource(
     case MediaSourceEnum::Camera:
       return new MediaEngineFakeVideoSource();
     case MediaSourceEnum::Microphone:
+      return new MediaEngineFakeAudioSource();
+    default:
+      MOZ_ASSERT_UNREACHABLE("Unsupported source type");
+      return nullptr;
+  }
+}
+
+RefPtr<MediaEngineSource> MediaEngineFake::CreateSourceFrom(
+    const MediaEngineSource* aSource, const MediaDevice* aMediaDevice) {
+  MOZ_ASSERT(aMediaDevice->mEngine == this);
+  switch (aMediaDevice->mMediaSource) {
+    case MediaSourceEnum::Camera:
+      return MediaEngineFakeVideoSource::CreateFrom(
+          static_cast<const MediaEngineFakeVideoSource*>(aSource));
+    case MediaSourceEnum::Microphone:
+      // No main thread members that need to be deep cloned.
       return new MediaEngineFakeAudioSource();
     default:
       MOZ_ASSERT_UNREACHABLE("Unsupported source type");

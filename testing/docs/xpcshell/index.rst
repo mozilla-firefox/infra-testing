@@ -40,7 +40,7 @@ run:
 
 .. code:: bash
 
-   $ ./mach addtest path/to/test/test_example.js
+   $ ./mach addtest --suite xpcshell path/to/test/test_example.js
    $ hg add path/to/test/test_example.js
 
 This will automatically create the test file and add it to
@@ -318,6 +318,45 @@ listed under the ``[DEFAULT]`` section of the manifest.
 ``[test_*]``
    Test file names must start with ``test_`` and are listed in square
    brackets
+``requesttimeoutfactor``
+   A multiplier applied to the default test timeout. The default timeout for
+   xpcshell tests is 30 seconds. Setting ``requesttimeoutfactor = 2`` will
+   increase the timeout to 60 seconds (30 × 2). This can be set either at the
+   manifest level (under ``[DEFAULT]``) to apply to all tests, or on individual
+   test entries to apply only to specific tests.
+
+   **Important:** Slower platforms (such as Android, debug builds, TSan, ASan) already
+   have platform-wide timeout factors defined in ``taskcluster/kinds/test/xpcshell.yml``
+   that apply to all tests running on those platforms. These platform factors are
+   multiplied with any manifest-level or test-level factors you specify. Therefore,
+   you should **not** set ``requesttimeoutfactor`` in manifests simply because a
+   platform is generally slower—only use it when a specific test needs extra time
+   beyond what the platform factor already provides.
+
+   This should be used when tests legitimately require more time due to:
+
+   - Specific tests being disproportionately slower on certain platforms (beyond the general platform slowness)
+   - Complex operations that take longer than the default timeout (e.g., large database operations, extensive network tests)
+   - Tests that run multiple time-consuming operations sequentially
+
+   You should **not** use this for tests that are slow due to inefficient test code
+   or unnecessary waits. Consider profiling and refactoring such tests instead.
+
+   Example usage in a manifest:
+
+   .. code:: toml
+
+      [DEFAULT]
+      # Apply a 2x timeout factor to all tests in this manifest
+      requesttimeoutfactor = 2
+
+      ["test_slow_on_windows.js"]
+      # This test needs 3x timeout (90 seconds) on Windows
+      requesttimeoutfactor = 3  # Slow on Windows
+
+   When a test-level factor is specified, it replaces (not multiplies) the manifest-level
+   factor. For example, if the manifest has ``requesttimeoutfactor = 2`` and a test has
+   ``requesttimeoutfactor = 3``, the test will use a 3x factor, not 6x.
 
 
 Creating a new xpcshell.toml file
@@ -701,13 +740,8 @@ processed. In such cases, this code at the end of a test can help:
 Debugging xpcshell-tests
 ------------------------
 
-
-Running unit tests under the javascript debugger
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-
-Via --jsdebugger
-^^^^^^^^^^^^^^^^
+Running unit tests under the javascript debugger via ``--jsdebugger``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 You can specify flags when issuing the ``xpcshell-test`` command that
 will cause your test to stop right before running so you can attach the
@@ -758,13 +792,30 @@ and cause failures. Generally the firefox-appdir should only be left in
 xpcshell.toml for tests that are in the browser/ directory, or are
 Firefox-only.
 
+Running unit tests with the profiler using ``--profiler``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Similarly, it's possible to run an xpcshell test with the profiler enabled.
+After the test finishes running the profiler interface will be opened
+automatically:
+
+.. code:: bash
+
+   $ ./mach xpcshell-test --profiler browser/components/tests/unit/test_browserGlue_migration_osauth.js
+   ...
+    0:00.50 INFO Running tests sequentially.
+   ...
+    0:00.88 profiler INFO Symbolicating the performance profile... This could take a couple of minutes.
+    0:01.93 profiler INFO Temporarily serving the profile from: http://127.0.0.1:57737/profile_test_browserGlue_migration_osauth.js.json
+    0:01.93 profiler INFO Opening the profile: https://profiler.firefox.com/from-url/http%3A%2F%2F127.0.0.1%3A57737%2Fprofile_test_browserGlue_migration_osauth.js.json
+   ...
 
 Running unit tests under a C++ debugger
----------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 
-Via ``--debugger and -debugger-interactive``
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Via ``--debugger`` and ``--debugger-interactive``
+"""""""""""""""""""""""""""""""""""""""""""""""""
 
 You can specify flags when issuing the ``xpcshell-test`` command that
 will launch xpcshell in the specified debugger (implemented in
@@ -801,7 +852,7 @@ Or with modern WinDbg (WinDbg Preview as of April 2020):
 
 
 Debugging xpcshell tests in a child process
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+"""""""""""""""""""""""""""""""""""""""""""
 
 To debug the child process, where code is often being run in a project,
 set MOZ_DEBUG_CHILD_PROCESS=1 in your environment (or on the command
@@ -817,7 +868,7 @@ and when it wakes up you can debug it:
 
 
 Debug both parent and child processes
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+"""""""""""""""""""""""""""""""""""""
 
 Use MOZ_DEBUG_CHILD_PROCESS=1 to attach debuggers to each process. (For
 gdb at least, this means running separate copies of gdb, one for each

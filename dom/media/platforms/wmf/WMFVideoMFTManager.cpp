@@ -8,7 +8,9 @@
 
 #include <cguid.h>
 #include <psapi.h>
+
 #include <algorithm>
+
 #include "DXVA2Manager.h"
 #include "GMPUtils.h"  // For SplitAt. TODO: Move SplitAt to a central place.
 #include "IMFYCbCrImage.h"
@@ -27,11 +29,12 @@
 #include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/SyncRunnable.h"
-#include "mozilla/glean/DomMediaPlatformsWmfMetrics.h"
 #include "mozilla/gfx/DeviceManagerDx.h"
 #include "mozilla/gfx/gfxVars.h"
+#include "mozilla/glean/DomMediaPlatformsWmfMetrics.h"
 #include "mozilla/layers/FenceD3D11.h"
 #include "mozilla/layers/LayersTypes.h"
+#include "mozilla/mscom/EnsureMTA.h"
 #include "nsPrintfCString.h"
 #include "nsThreadUtils.h"
 #include "nsWindowsHelpers.h"
@@ -192,12 +195,16 @@ MediaResult WMFVideoMFTManager::ValidateVideoInfo() {
 }
 
 MediaResult WMFVideoMFTManager::Init() {
+  AUTO_PROFILER_LABEL("WMFVideoMFTManager::Init", MEDIA_PLAYBACK);
   MediaResult result = ValidateVideoInfo();
   if (NS_FAILED(result)) {
     return result;
   }
 
-  result = InitInternal();
+  // InitInternal() indirectly calls IMFTransform interface and should run on
+  // MTA thread.
+  // https://msdn.microsoft.com/en-us/library/windows/desktop/ee892371(v=vs.85).aspx#components
+  mozilla::mscom::EnsureMTA([&]() { result = InitInternal(); });
   if (NS_SUCCEEDED(result) && mDXVA2Manager) {
     // If we had some failures but eventually made it work,
     // make sure we preserve the messages.

@@ -6,7 +6,6 @@
 
 #include "nsScriptSecurityManager.h"
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/SourceLocation.h"
 #include "mozilla/StaticPrefs_extensions.h"
 #include "mozilla/StaticPrefs_security.h"
@@ -62,10 +61,10 @@
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/Exceptions.h"
 #include "mozilla/dom/nsCSPContext.h"
+#include "mozilla/dom/PolicyContainer.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/ExtensionPolicyService.h"
-#include "mozilla/ResultExtensions.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/dom/TrustedTypeUtils.h"
 #include "mozilla/dom/WorkerCommon.h"
@@ -480,7 +479,7 @@ bool nsScriptSecurityManager::ContentSecurityPolicyPermitsJSAction(
     bool areArgumentsTrusted = TrustedTypeUtils::
         AreArgumentsTrustedForEnsureCSPDoesNotBlockStringCompilation(
             cx, aCodeString, aCompilationType, aParameterStrings, aBodyString,
-            aParameterArgs, aBodyArg, error);
+            aParameterArgs, aBodyArg, subjectPrincipal, error);
     if (error.MaybeSetPendingException(cx)) {
       return false;
     }
@@ -493,10 +492,6 @@ bool nsScriptSecurityManager::ContentSecurityPolicyPermitsJSAction(
   // Check if Eval is allowed per firefox hardening policy
   bool contextForbidsEval =
       (subjectPrincipal->IsSystemPrincipal() || XRE_IsE10sParentProcess());
-#if defined(ANDROID)
-  contextForbidsEval = false;
-#endif
-
   if (contextForbidsEval) {
     nsAutoJSString scriptSample;
     if (aKind == JS::RuntimeCode::JS &&
@@ -514,7 +509,7 @@ bool nsScriptSecurityManager::ContentSecurityPolicyPermitsJSAction(
   // Get the window, if any, corresponding to the current global
   nsCOMPtr<nsIContentSecurityPolicy> csp;
   if (nsGlobalWindowInner* win = xpc::CurrentWindowOrNull(cx)) {
-    csp = win->GetCsp();
+    csp = PolicyContainer::GetCSP(win->GetPolicyContainer());
   }
 
   if (!csp) {
@@ -1275,13 +1270,13 @@ nsScriptSecurityManager::CheckLoadURIWithPrincipalFromJS(
       CheckLoadURIWithPrincipal(aPrincipal, aTargetURI, aFlags, aInnerWindowID);
   if (NS_FAILED(rv)) {
     nsAutoCString uriStr;
-    Unused << aTargetURI->GetSpec(uriStr);
+    (void)aTargetURI->GetSpec(uriStr);
 
     nsAutoCString message("Load of ");
     message.Append(uriStr);
 
     nsAutoCString principalStr;
-    Unused << aPrincipal->GetSpec(principalStr);
+    (void)aPrincipal->GetSpec(principalStr);
     if (!principalStr.IsEmpty()) {
       message.AppendPrintf(" from %s", principalStr.get());
     }
@@ -1862,4 +1857,12 @@ nsScriptSecurityManager::EnsureFileURIAllowlist() {
   }
 
   return mFileURIAllowlist.ref();
+}
+
+NS_IMETHODIMP
+nsScriptSecurityManager::GetFirstUnexpectedJavaScriptLoad(
+    nsACString& aScriptFilename) {
+  aScriptFilename.Truncate();
+  return nsContentSecurityUtils::GetVeryFirstUnexpectedScriptFilename(
+      aScriptFilename);
 }

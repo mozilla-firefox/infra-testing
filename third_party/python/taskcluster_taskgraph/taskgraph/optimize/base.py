@@ -55,7 +55,7 @@ def optimize_task_graph(
     assigned taskId, including replacement tasks.
     """
     # avoid circular import
-    from taskgraph.optimize.strategies import IndexSearch
+    from taskgraph.optimize.strategies import IndexSearch  # noqa: PLC0415
 
     label_to_taskid = {}
     if not existing_tasks:
@@ -293,12 +293,13 @@ def replace_tasks(
     a side-effect.
     """
     # avoid circular import
-    from taskgraph.optimize.strategies import IndexSearch
+    from taskgraph.optimize.strategies import IndexSearch  # noqa: PLC0415
 
     opt_counts = defaultdict(int)
     replaced = set()
-    dependents_of = target_task_graph.graph.reverse_links_dict()
-    dependencies_of = target_task_graph.graph.links_dict()
+    dependencies_of, dependents_of = (
+        target_task_graph.graph.links_and_reverse_links_dict()
+    )
 
     for label in target_task_graph.graph.visit_postorder():
         logger.debug(f"replace_tasks: {label}")
@@ -333,7 +334,7 @@ def replace_tasks(
         dependents = [target_task_graph.tasks[l] for l in dependents_of[label]]
         deadline = None
         if dependents:
-            now = datetime.datetime.utcnow()
+            now = datetime.datetime.now(datetime.timezone.utc)
             deadline = max(
                 resolve_timestamps(now, task.task["deadline"])
                 for task in dependents  # type: ignore
@@ -365,11 +366,11 @@ def replace_tasks(
 
 
 def get_subgraph(
-    target_task_graph,
-    removed_tasks,
-    replaced_tasks,
-    label_to_taskid,
-    decision_task_id,
+    target_task_graph: TaskGraph,
+    removed_tasks: set[str],
+    replaced_tasks: set[str],
+    label_to_taskid: dict[str, str],
+    decision_task_id: str,
 ):
     """
     Return the subgraph of target_task_graph consisting only of
@@ -399,7 +400,9 @@ def get_subgraph(
     for label in sorted(
         target_task_graph.graph.nodes - removed_tasks - set(label_to_taskid)
     ):
-        label_to_taskid[label] = slugid()
+        task_id = slugid()
+        assert isinstance(task_id, str)
+        label_to_taskid[label] = task_id
 
     # resolve labels to taskIds and populate task['dependencies']
     tasks_by_taskid = {}
@@ -424,6 +427,7 @@ def get_subgraph(
                 }
             )
 
+        assert task.task_id
         task.task = resolve_task_references(
             task.label,
             task.task,
@@ -431,8 +435,9 @@ def get_subgraph(
             decision_task_id=decision_task_id,
             dependencies=named_task_dependencies,
         )
-        deps = task.task.setdefault("dependencies", [])  # type: ignore
+        deps = task.task.setdefault("dependencies", [])
         deps.extend(sorted(named_task_dependencies.values()))
+        task.dependencies.update(named_task_dependencies)
         tasks_by_taskid[task.task_id] = task
 
     # resolve edges to taskIds
@@ -448,7 +453,9 @@ def get_subgraph(
         if left in tasks_by_taskid and right in tasks_by_taskid
     }
 
-    return TaskGraph(tasks_by_taskid, Graph(set(tasks_by_taskid), edges_by_taskid))  # type: ignore
+    return TaskGraph(
+        tasks_by_taskid, Graph(frozenset(tasks_by_taskid), edges_by_taskid)
+    )
 
 
 @register_strategy("never")

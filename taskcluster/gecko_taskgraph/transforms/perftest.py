@@ -5,12 +5,11 @@
 This transform passes options from `mach perftest` to the corresponding task.
 """
 
-
-import json
-from copy import deepcopy
 from datetime import date, timedelta
 
 from taskgraph.transforms.base import TransformSequence
+from taskgraph.util import json
+from taskgraph.util.copy import deepcopy
 from taskgraph.util.schema import Schema, optionally_keyed_by, resolve_keyed_by
 from taskgraph.util.treeherder import join_symbol, split_symbol
 from voluptuous import Any, Extra, Optional
@@ -261,6 +260,47 @@ def setup_perftest_extra_options(config, jobs):
             yield job
             continue
         job["run"]["command"] += " " + " ".join(job.pop("perftest-extra-options"))
+        yield job
+
+
+@transforms.add
+def create_duplicate_simpleperf_jobs(config, jobs):
+    for job in jobs:
+        if (
+            "startup" in job["name"]
+            and "cold" not in job["name"]
+            and "chrome-m" not in job["name"]
+        ):
+            new_job = deepcopy(job)
+            new_job["run-on-projects"] = []
+            new_job["attributes"] = {"cron": False}
+            new_job["dependencies"] = {
+                "android-aarch64-shippable": "build-android-aarch64-shippable/opt"
+            }
+            new_job["name"] += "-profiling"
+            new_job["run"][
+                "command"
+            ] += " --simpleperf --simpleperf-path $MOZ_FETCHES_DIR/android-simpleperf --geckoprofiler"
+            new_job["description"] = str(new_job["description"]).replace(
+                "Run", "Profile"
+            )
+            new_job["treeherder"]["symbol"] = str(
+                new_job["treeherder"]["symbol"]
+            ).replace(")", "-profile)")
+            new_job["fetches"]["toolchain"].extend(
+                [
+                    "linux64-android-simpleperf-linux-repack",
+                    "linux64-samply",
+                    "symbolicator-cli",
+                ]
+            )
+            new_job["fetches"]["android-aarch64-shippable"] = [
+                {
+                    "artifact": "target.crashreporter-symbols.zip",
+                    "extract": False,
+                }
+            ]
+            yield new_job
         yield job
 
 

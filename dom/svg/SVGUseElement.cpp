@@ -6,27 +6,26 @@
 
 #include "mozilla/dom/SVGUseElement.h"
 
-#include "mozilla/ArrayUtils.h"
+#include "SVGGeometryProperty.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/ScopeExit.h"
-#include "mozilla/StaticPrefs_svg.h"
 #include "mozilla/SVGObserverUtils.h"
 #include "mozilla/SVGUseFrame.h"
+#include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs_svg.h"
 #include "mozilla/URLExtraData.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/ReferrerInfo.h"
-#include "mozilla/dom/ShadowIncludingTreeIterator.h"
 #include "mozilla/dom/SVGGraphicsElement.h"
 #include "mozilla/dom/SVGLengthBinding.h"
 #include "mozilla/dom/SVGSVGElement.h"
 #include "mozilla/dom/SVGSwitchElement.h"
 #include "mozilla/dom/SVGSymbolElement.h"
 #include "mozilla/dom/SVGUseElementBinding.h"
-#include "nsGkAtoms.h"
+#include "mozilla/dom/ShadowIncludingTreeIterator.h"
 #include "nsContentUtils.h"
+#include "nsGkAtoms.h"
 #include "nsIReferrerInfo.h"
 #include "nsIURI.h"
-#include "SVGGeometryProperty.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(Use)
 
@@ -178,7 +177,8 @@ void SVGUseElement::UnbindFromTree(UnbindContext& aContext) {
 }
 
 already_AddRefed<DOMSVGAnimatedString> SVGUseElement::Href() {
-  return mStringAttributes[HREF].IsExplicitlySet()
+  return mStringAttributes[HREF].IsExplicitlySet() ||
+                 !mStringAttributes[XLINK_HREF].IsExplicitlySet()
              ? mStringAttributes[HREF].ToDOMAnimatedString(this)
              : mStringAttributes[XLINK_HREF].ToDOMAnimatedString(this);
 }
@@ -213,7 +213,7 @@ void SVGUseElement::CharacterDataChanged(nsIContent* aContent,
 }
 
 void SVGUseElement::AttributeChanged(Element* aElement, int32_t aNamespaceID,
-                                     nsAtom* aAttribute, int32_t aModType,
+                                     nsAtom* aAttribute, AttrModType,
                                      const nsAttrValue* aOldValue) {
   if (nsContentUtils::IsInSameAnonymousTree(mReferencedElementTracker.get(),
                                             aElement)) {
@@ -221,7 +221,8 @@ void SVGUseElement::AttributeChanged(Element* aElement, int32_t aNamespaceID,
   }
 }
 
-void SVGUseElement::ContentAppended(nsIContent* aFirstNewContent) {
+void SVGUseElement::ContentAppended(nsIContent* aFirstNewContent,
+                                    const ContentAppendInfo&) {
   // FIXME(emilio, bug 1442336): Why does this check the parent but
   // ContentInserted the child?
   if (nsContentUtils::IsInSameAnonymousTree(mReferencedElementTracker.get(),
@@ -230,7 +231,8 @@ void SVGUseElement::ContentAppended(nsIContent* aFirstNewContent) {
   }
 }
 
-void SVGUseElement::ContentInserted(nsIContent* aChild) {
+void SVGUseElement::ContentInserted(nsIContent* aChild,
+                                    const ContentInsertInfo&) {
   // FIXME(emilio, bug 1442336): Why does this check the child but
   // ContentAppended the parent?
   if (nsContentUtils::IsInSameAnonymousTree(mReferencedElementTracker.get(),
@@ -240,7 +242,7 @@ void SVGUseElement::ContentInserted(nsIContent* aChild) {
 }
 
 void SVGUseElement::ContentWillBeRemoved(nsIContent* aChild,
-                                         const BatchRemovalState*) {
+                                         const ContentRemoveInfo&) {
   if (nsContentUtils::IsInSameAnonymousTree(mReferencedElementTracker.get(),
                                             aChild)) {
     TriggerReclone();
@@ -578,8 +580,7 @@ void SVGUseElement::LookupHref() {
 
   // Don't allow <use href="data:...">. Using "#ref" inside a data: document is
   // handled above.
-  if (targetURI->SchemeIs("data") &&
-      !StaticPrefs::svg_use_element_data_url_href_allowed()) {
+  if (targetURI->SchemeIs("data")) {
     return;
   }
 
@@ -656,7 +657,8 @@ SVGUseElement::IsAttributeMapped(const nsAtom* name) const {
          SVGUseElementBase::IsAttributeMapped(name);
 }
 
-nsCSSPropertyID SVGUseElement::GetCSSPropertyIdForAttrEnum(uint8_t aAttrEnum) {
+NonCustomCSSPropertyId SVGUseElement::GetCSSPropertyIdForAttrEnum(
+    uint8_t aAttrEnum) {
   switch (aAttrEnum) {
     case ATTR_X:
       return eCSSProperty_x;

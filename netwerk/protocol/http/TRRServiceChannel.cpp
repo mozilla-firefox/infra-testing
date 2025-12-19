@@ -13,7 +13,6 @@
 #include "mozilla/glean/NetwerkProtocolHttpMetrics.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_network.h"
-#include "mozilla/Unused.h"
 #include "nsDNSPrefetch.h"
 #include "nsEscape.h"
 #include "nsHttpTransaction.h"
@@ -223,7 +222,7 @@ TRRServiceChannel::AsyncOpen(nsIStreamListener* aListener) {
 
   rv = MaybeResolveProxyAndBeginConnect();
   if (NS_FAILED(rv)) {
-    Unused << AsyncAbort(rv);
+    (void)AsyncAbort(rv);
   }
 
   return NS_OK;
@@ -247,7 +246,7 @@ nsresult TRRServiceChannel::MaybeResolveProxyAndBeginConnect() {
 
   rv = BeginConnect();
   if (NS_FAILED(rv)) {
-    Unused << AsyncAbort(rv);
+    (void)AsyncAbort(rv);
   }
 
   return NS_OK;
@@ -347,7 +346,7 @@ TRRServiceChannel::OnProxyAvailable(nsICancelable* request, nsIChannel* channel,
   }
 
   if (NS_FAILED(rv)) {
-    Unused << AsyncAbort(rv);
+    (void)AsyncAbort(rv);
   }
   return rv;
 }
@@ -371,7 +370,7 @@ nsresult TRRServiceChannel::BeginConnect() {
   }
 
   // Just a warning here because some nsIURIs do not implement this method.
-  Unused << NS_WARN_IF(NS_FAILED(mURI->GetUsername(mUsername)));
+  (void)NS_WARN_IF(NS_FAILED(mURI->GetUsername(mUsername)));
 
   // Reject the URL if it doesn't specify a host
   if (host.IsEmpty()) {
@@ -382,7 +381,11 @@ nsresult TRRServiceChannel::BeginConnect() {
   LOG(("uri=%s\n", mSpec.get()));
 
   nsCOMPtr<nsProxyInfo> proxyInfo;
-  if (mProxyInfo) proxyInfo = do_QueryInterface(mProxyInfo);
+  if (mConnectionInfo) {
+    proxyInfo = mConnectionInfo->ProxyInfo();
+  } else if (mProxyInfo) {
+    proxyInfo = do_QueryInterface(mProxyInfo);
+  }
 
   mRequestHead.SetHTTPS(isHttps);
   mRequestHead.SetOrigin(scheme, host, port);
@@ -401,7 +404,7 @@ nsresult TRRServiceChannel::BeginConnect() {
   }
 
   RefPtr<AltSvcMapping> mapping;
-  if (!mConnectionInfo && LoadAllowAltSvc() &&  // per channel
+  if (LoadAllowAltSvc() &&  // per channel
       (http2Allowed || http3Allowed) && !(mLoadFlags & LOAD_FRESH_CONNECTION) &&
       AltSvcMapping::AcceptableProxy(proxyInfo) &&
       (scheme.EqualsLiteral("http") || scheme.EqualsLiteral("https")) &&
@@ -452,7 +455,7 @@ nsresult TRRServiceChannel::BeginConnect() {
   }
 
   // if this somehow fails we can go on without it
-  Unused << gHttpHandler->AddConnectionHeader(&mRequestHead, mCaps);
+  (void)gHttpHandler->AddConnectionHeader(&mRequestHead, mCaps);
 
   // Adjust mCaps according to our request headers:
   //  - If "Connection: close" is set as a request header, then do not bother
@@ -461,19 +464,9 @@ nsresult TRRServiceChannel::BeginConnect() {
     mCaps &= ~(NS_HTTP_ALLOW_KEEPALIVE);
   }
 
-  if (gHttpHandler->CriticalRequestPrioritization()) {
-    if (mClassOfService.Flags() & nsIClassOfService::Leader) {
-      mCaps |= NS_HTTP_LOAD_AS_BLOCKING;
-    }
-    if (mClassOfService.Flags() & nsIClassOfService::Unblocked) {
-      mCaps |= NS_HTTP_LOAD_UNBLOCKED;
-    }
-    if (mClassOfService.Flags() & nsIClassOfService::UrgentStart &&
-        gHttpHandler->IsUrgentStartEnabled()) {
-      mCaps |= NS_HTTP_URGENT_START;
-      SetPriority(nsISupportsPriority::PRIORITY_HIGHEST);
-    }
-  }
+  // TRR requests should never be blocked.
+  mCaps |= (NS_HTTP_LOAD_UNBLOCKED | NS_HTTP_URGENT_START);
+  SetPriority(nsISupportsPriority::PRIORITY_HIGHEST);
 
   if (mCanceled) {
     return mStatus;
@@ -656,12 +649,14 @@ nsresult TRRServiceChannel::SetupTransaction() {
 
   EnsureRequestContext();
 
+  struct LNAPerms perms{};
+
   rv = mTransaction->Init(
       mCaps, mConnectionInfo, &mRequestHead, mUploadStream, mReqContentLength,
       LoadUploadStreamHasHeaders(), mCurrentEventTarget, callbacks, this,
       mBrowserId, HttpTrafficCategory::eInvalid, mRequestContext,
       mClassOfService, mInitialRwin, LoadResponseTimeoutEnabled(), mChannelId,
-      nullptr, nullptr, nullptr, 0);
+      nullptr, nsILoadInfo::IPAddressSpace::Unknown, perms);
 
   if (NS_FAILED(rv)) {
     mTransaction = nullptr;
@@ -816,7 +811,7 @@ void TRRServiceChannel::AfterApplyContentConversions(
   }
 
   if (NS_FAILED(aResult)) {
-    Unused << AsyncAbort(aResult);
+    (void)AsyncAbort(aResult);
     return;
   }
 
@@ -852,7 +847,7 @@ void TRRServiceChannel::ProcessAltService(
   }
 
   nsCString altSvc;
-  Unused << mResponseHead->GetHeader(nsHttp::Alternate_Service, altSvc);
+  (void)mResponseHead->GetHeader(nsHttp::Alternate_Service, altSvc);
   if (altSvc.IsEmpty()) {
     return;
   }
@@ -934,7 +929,9 @@ TRRServiceChannel::OnStartRequest(nsIRequest* request) {
     // mTransactionPump doesn't hit OnInputStreamReady and call this until
     // all of the response headers have been acquired, so we can take
     // ownership of them from the transaction.
-    mResponseHead = mTransaction->TakeResponseHeadAndConnInfo(nullptr);
+    RefPtr<nsHttpConnectionInfo> connInfo;
+    mResponseHead =
+        mTransaction->TakeResponseHeadAndConnInfo(getter_AddRefs(connInfo));
     if (mResponseHead) {
       uint32_t httpStatus = mResponseHead->Status();
       if (mTransaction->ProxyConnectFailed()) {
@@ -949,9 +946,7 @@ TRRServiceChannel::OnStartRequest(nsIRequest* request) {
       }
 
       if ((httpStatus < 500) && (httpStatus != 421) && (httpStatus != 407)) {
-        RefPtr<nsHttpConnectionInfo> connectionInfo =
-            mTransaction->GetConnInfo();
-        ProcessAltService(connectionInfo);
+        ProcessAltService(connInfo);
       }
 
       if (httpStatus == 300 || httpStatus == 301 || httpStatus == 302 ||
@@ -1384,7 +1379,7 @@ TRRServiceChannel::ResumeAt(uint64_t aStartPos, const nsACString& aEntityID) {
 }
 
 void TRRServiceChannel::DoAsyncAbort(nsresult aStatus) {
-  Unused << AsyncAbort(aStatus);
+  (void)AsyncAbort(aStatus);
 }
 
 NS_IMETHODIMP

@@ -6,14 +6,16 @@
 #ifndef GPU_RenderPassEncoder_H_
 #define GPU_RenderPassEncoder_H_
 
-#include "mozilla/dom/TypedArray.h"
+#include "CanvasContext.h"
 #include "ObjectModel.h"
+#include "mozilla/dom/TypedArray.h"
 
 namespace mozilla {
 class ErrorResult;
 
 namespace dom {
 class DoubleSequenceOrGPUColorDict;
+enum class GPUIndexFormat : uint8_t;
 struct GPURenderPassDescriptor;
 template <typename T>
 class Sequence;
@@ -38,18 +40,18 @@ struct ffiWGPURenderPassDeleter {
   void operator()(ffi::WGPURecordedRenderPass*);
 };
 
-class RenderPassEncoder final : public ObjectBase,
+class RenderPassEncoder final : public nsWrapperCache,
+                                public ObjectBase,
                                 public ChildOf<CommandEncoder> {
  public:
   GPU_DECL_CYCLE_COLLECTION(RenderPassEncoder)
   GPU_DECL_JS_WRAP(RenderPassEncoder)
 
-  RenderPassEncoder(CommandEncoder* const aParent,
+  RenderPassEncoder(CommandEncoder* const aParent, RawId aId,
                     const dom::GPURenderPassDescriptor& aDesc);
 
  protected:
   virtual ~RenderPassEncoder();
-  void Cleanup();
 
   std::unique_ptr<ffi::WGPURecordedRenderPass, ffiWGPURenderPassDeleter> mPass;
   // keep all the used objects alive while the pass is recorded
@@ -59,13 +61,21 @@ class RenderPassEncoder final : public ObjectBase,
   nsTArray<RefPtr<const TextureView>> mUsedTextureViews;
   nsTArray<RefPtr<const RenderBundle>> mUsedRenderBundles;
 
+  // The canvas contexts of any canvas textures used in bind groups of this
+  // render pass.
+  CanvasContextArray mUsedCanvasContexts;
+
   // programmable pass encoder
  private:
+  bool mValid = true;
+
   void SetBindGroup(uint32_t aSlot, BindGroup* const aBindGroup,
                     const uint32_t* aDynamicOffsets,
-                    uint64_t aDynamicOffsetsLength);
+                    size_t aDynamicOffsetsLength);
 
  public:
+  void Invalidate() { mValid = false; }
+
   void SetBindGroup(uint32_t aSlot, BindGroup* const aBindGroup,
                     const dom::Sequence<uint32_t>& aDynamicOffsets,
                     ErrorResult& aRv);
@@ -106,6 +116,11 @@ class RenderPassEncoder final : public ObjectBase,
       const dom::Sequence<OwningNonNull<RenderBundle>>& aBundles);
 
   void End();
+
+  // helpers not defined by WebGPU
+  mozilla::Span<const WeakPtr<CanvasContext>> GetCanvasContexts() const {
+    return mUsedCanvasContexts;
+  }
 };
 
 }  // namespace webgpu

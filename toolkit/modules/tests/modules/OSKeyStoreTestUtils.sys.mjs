@@ -2,17 +2,12 @@
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 import { OSKeyStore } from "resource://gre/modules/OSKeyStore.sys.mjs";
-import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   UpdateUtils: "resource://gre/modules/UpdateUtils.sys.mjs",
 });
 import { TestUtils } from "resource://testing-common/TestUtils.sys.mjs";
-
-// Debug builds will be treated as "official" builds for the purposes of the automated testing for behavior of OSKeyStore.ensureLoggedIn
-// We want to ensure that we catch test failures that would only otherwise show up in official builds
-const isCanaryBuildForOSKeyStore = AppConstants.DEBUG;
 
 export var OSKeyStoreTestUtils = {
   TEST_ONLY_REAUTH: "toolkit.osKeyStore.unofficialBuildOnlyLogin",
@@ -31,13 +26,11 @@ export var OSKeyStoreTestUtils = {
    * Checks whether or not the test can be run by bypassing
    * the OS login dialog. We do not want the user to be able to
    * do so with in official builds.
+   *
    * @returns {boolean} True if the test can be performed.
    */
   canTestOSKeyStoreLogin() {
-    return (
-      lazy.UpdateUtils.getUpdateChannel(false) == "default" &&
-      !isCanaryBuildForOSKeyStore
-    );
+    return lazy.UpdateUtils.getUpdateChannel(false) == "default";
   },
 
   // Wait for the observer message that simulates login success or failure.

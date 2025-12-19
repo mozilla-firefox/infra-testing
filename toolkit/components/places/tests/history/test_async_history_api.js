@@ -8,7 +8,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "asyncHistory",
   "@mozilla.org/browser/history;1",
-  "mozIAsyncHistory"
+  Ci.mozIAsyncHistory
 );
 
 const TEST_DOMAIN = "http://mozilla.org/";
@@ -19,11 +19,11 @@ const RECENT_EVENT_THRESHOLD = 15 * 60 * 1000000;
 /**
  * Object that represents a mozIVisitInfo object.
  *
- * @param [optional] aTransitionType
- *        The transition type of the visit.  Defaults to TRANSITION_LINK if not
- *        provided.
- * @param [optional] aVisitTime
- *        The time of the visit.  Defaults to now if not provided.
+ * @param {nsINavHistoryService.TransitionType} [aTransitionType]
+ *   The transition type of the visit. Defaults to TRANSITION_LINK if not
+ *   provided.
+ * @param {number} [aVisitTime]
+ *   The time of the visit. Defaults to now if not provided.
  */
 function VisitInfo(aTransitionType, aVisitTime) {
   this.transitionType =
@@ -66,13 +66,13 @@ class TitleChangedObserver {
   /**
    * Constructor.
    *
-   * @param aURI
-   *        The URI of the page we expect a notification for.
-   * @param aExpectedTitle
-   *        The expected title of the URI we expect a notification for.
-   * @param aCallback
-   *        The method to call when we have gotten the proper notification about
-   *        the title changing.
+   * @param {nsIURI} aURI
+   *   The URI of the page we expect a notification for.
+   * @param {string} aExpectedTitle
+   *   The expected title of the URI we expect a notification for.
+   * @param {() => {}} aCallback
+   *   The method to call when we have gotten the proper notification about the
+   *   title changing.
    */
   constructor(aURI, aExpectedTitle, aCallback) {
     this.uri = aURI;
@@ -152,10 +152,10 @@ class VisitObserver {
 /**
  * Tests that a title was set properly in the database.
  *
- * @param aURI
- *        The uri to check.
- * @param aTitle
- *        The expected title in the database.
+ * @param {nsIURI} aURI
+ *   The uri to check.
+ * @param {string} aTitle
+ *   The expected title in the database.
  */
 function do_check_title_for_uri(aURI, aTitle) {
   let stmt = DBConn().createStatement(
@@ -667,7 +667,7 @@ add_task(async function test_add_visit() {
         visit.transitionType
       )
     );
-    Assert.ok(visit.referrerURI === null);
+    Assert.strictEqual(visit.referrerURI, null);
 
     // For TRANSITION_EMBED visits, many properties will always be zero or
     // undefined.
@@ -681,11 +681,11 @@ add_task(async function test_add_visit() {
     } else {
       // But they should be valid for non-embed visits.
       // Check mozIPlaceInfo properties.
-      Assert.ok(placeInfo.placeId > 0);
+      Assert.greater(placeInfo.placeId, 0);
       do_check_valid_places_guid(placeInfo.guid);
 
       // Check mozIVisitInfo properties.
-      Assert.ok(visit.visitId > 0);
+      Assert.greater(visit.visitId, 0);
     }
 
     // If we have had all of our callbacks, continue running tests.

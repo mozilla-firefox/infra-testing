@@ -4,6 +4,7 @@
 
 package org.mozilla.fenix.ui
 
+import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Rule
 import org.junit.Test
@@ -26,19 +27,18 @@ import org.mozilla.fenix.ui.robots.DeepLinkRobot
  **/
 
 class DeepLinkTest : TestSetup() {
-    private val robot = DeepLinkRobot()
-
     @get:Rule
-    val activityIntentTestRule = HomeActivityIntentTestRule(
-        isHomeOnboardingDialogEnabled = false,
-        isNavigationBarCFREnabled = false,
-        isNavigationToolbarEnabled = false,
-        isMenuRedesignEnabled = false,
-        isMenuRedesignCFREnabled = false,
-    )
+    val composeTestRule =
+        AndroidComposeTestRule(
+            HomeActivityIntentTestRule(
+                isMenuRedesignCFREnabled = false,
+            ),
+        ) { it.activity }
 
     @get:Rule
     val memoryLeaksRule = DetectMemoryLeaksRule()
+
+    private val robot = DeepLinkRobot(composeTestRule)
 
     @Test
     fun openHomeScreen() {
@@ -62,9 +62,9 @@ class DeepLinkTest : TestSetup() {
 
     @Test
     fun openBookmarks() {
-        robot.openBookmarks {
+        robot.openBookmarks(composeTestRule) {
             // verify we can see headings.
-            verifyFolderTitle("Desktop Bookmarks")
+            verifyEmptyBookmarksMenuView()
         }
     }
 

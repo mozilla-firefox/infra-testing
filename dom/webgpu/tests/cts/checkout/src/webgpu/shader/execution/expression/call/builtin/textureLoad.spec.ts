@@ -22,7 +22,7 @@ import {
   isCompressedFloatTextureFormat,
   isDepthTextureFormat,
   kAllTextureFormats,
-  textureDimensionAndFormatCompatible,
+  textureFormatAndDimensionPossiblyCompatible,
   isCompressedTextureFormat,
   kPossibleMultisampledTextureFormats,
   kDepthTextureFormats,
@@ -98,7 +98,7 @@ Parameters:
     u
       .combine('stage', kShortShaderStages)
       .combine('format', kAllTextureFormats)
-      .filter(t => textureDimensionAndFormatCompatible('1d', t.format))
+      .filter(t => textureFormatAndDimensionPossiblyCompatible('1d', t.format))
       // 1d textures can't have a height !== 1
       .filter(t => !isCompressedTextureFormat(t.format))
       .beginSubcases()
@@ -109,6 +109,7 @@ Parameters:
   .fn(async t => {
     const { format, stage, C, L, samplePoints } = t.params;
     t.skipIfTextureFormatNotSupported(format);
+    t.skipIfTextureFormatAndDimensionNotCompatible(format, '1d');
 
     // We want at least 4 blocks or something wide enough for 3 mip levels.
     const [width] = chooseTextureSize({ minSize: 8, minBlocks: 4, format });
@@ -260,7 +261,8 @@ Parameters:
     u
       .combine('stage', kShortShaderStages)
       .combine('format', kAllTextureFormats)
-      .filter(t => textureDimensionAndFormatCompatible('3d', t.format))
+      .filter(t => textureFormatAndDimensionPossiblyCompatible('3d', t.format))
+      .filter(t => !isCompressedFloatTextureFormat(t.format))
       .beginSubcases()
       .combine('samplePoints', kSamplePointMethods)
       .combine('C', ['i32', 'u32'] as const)
@@ -269,6 +271,7 @@ Parameters:
   .fn(async t => {
     const { format, stage, samplePoints, C, L } = t.params;
     t.skipIfTextureFormatNotSupported(format);
+    t.skipIfTextureFormatAndDimensionNotCompatible(format, '3d');
 
     // We want at least 4 blocks or something wide enough for 3 mip levels.
     const size = chooseTextureSize({ minSize: 8, minBlocks: 4, format, viewDimension: '3d' });
@@ -366,7 +369,10 @@ Parameters:
     const descriptor: GPUTextureDescriptor = {
       format,
       size: [8, 8],
-      usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING,
+      usage:
+        GPUTextureUsage.COPY_DST |
+        GPUTextureUsage.TEXTURE_BINDING |
+        GPUTextureUsage.RENDER_ATTACHMENT,
       sampleCount,
     };
     const { texels, texture } = await createTextureWithRandomDataAndGetTexels(t, descriptor);
@@ -708,7 +714,8 @@ Parameters:
   .fn(async t => {
     const { format, stage, samplePoints, C } = t.params;
 
-    t.skipIfTextureFormatNotUsableAsStorageTexture(format);
+    t.skipIfTextureFormatNotSupported(format);
+    t.skipIfTextureFormatNotUsableWithStorageAccessMode('read-only', format);
     skipIfStorageTexturesNotSupportedInStage(t, stage);
 
     // We want at least 3 blocks or something wide enough for 3 mip levels.
@@ -787,7 +794,7 @@ Parameters:
     const { format, stage, samplePoints, C, baseMipLevel } = t.params;
 
     t.skipIfTextureFormatNotSupported(format);
-    t.skipIfTextureFormatNotUsableAsStorageTexture(format);
+    t.skipIfTextureFormatNotUsableWithStorageAccessMode('read-only', format);
     skipIfStorageTexturesNotSupportedInStage(t, stage);
 
     // We want at least 3 blocks or something wide enough for 3 mip levels.
@@ -879,7 +886,7 @@ Parameters:
       t.params;
 
     t.skipIfTextureFormatNotSupported(format);
-    t.skipIfTextureFormatNotUsableAsStorageTexture(format);
+    t.skipIfTextureFormatNotUsableWithStorageAccessMode('read-only', format);
     skipIfStorageTexturesNotSupportedInStage(t, stage);
 
     // We want at least 3 blocks or something wide enough for 3 mip levels.
@@ -967,7 +974,7 @@ Parameters:
     const { format, stage, samplePoints, C } = t.params;
 
     t.skipIfTextureFormatNotSupported(format);
-    t.skipIfTextureFormatNotUsableAsStorageTexture(format);
+    t.skipIfTextureFormatNotUsableWithStorageAccessMode('read-only', format);
     skipIfStorageTexturesNotSupportedInStage(t, stage);
 
     // We want at least 3 blocks or something wide enough for 3 mip levels.

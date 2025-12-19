@@ -5,12 +5,15 @@
 package org.mozilla.fenix.browser.store
 
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.UiStore
+import mozilla.components.lib.state.Store
 import org.mozilla.fenix.browser.store.BrowserScreenAction.CancelPrivateDownloadsOnPrivateTabsClosedAccepted
 import org.mozilla.fenix.browser.store.BrowserScreenAction.ClosingLastPrivateTab
+import org.mozilla.fenix.browser.store.BrowserScreenAction.CustomTabColorsUpdated
+import org.mozilla.fenix.browser.store.BrowserScreenAction.PageTranslationStatusUpdated
+import org.mozilla.fenix.browser.store.BrowserScreenAction.ReaderModeStatusUpdated
 
 /**
- * [UiStore] for the browser screen.
+ * [Store] for the browser screen.
  *
  * @param initialState The initial state of the store.
  * @param middleware The middlewares to be applied to this store.
@@ -18,7 +21,7 @@ import org.mozilla.fenix.browser.store.BrowserScreenAction.ClosingLastPrivateTab
 class BrowserScreenStore(
     initialState: BrowserScreenState = BrowserScreenState(),
     middleware: List<Middleware<BrowserScreenState, BrowserScreenAction>> = emptyList(),
-) : UiStore<BrowserScreenState, BrowserScreenAction>(
+) : Store<BrowserScreenState, BrowserScreenAction>(
     initialState = initialState,
     reducer = ::reduce,
     middleware = middleware,
@@ -31,5 +34,15 @@ private fun reduce(state: BrowserScreenState, action: BrowserScreenAction): Brow
 
     is CancelPrivateDownloadsOnPrivateTabsClosedAccepted -> state.copy(
         cancelPrivateDownloadsAccepted = true,
+    )
+
+    is ReaderModeStatusUpdated -> state.copy(
+        readerModeStatus = action.readerModeStatus,
+    )
+
+    is PageTranslationStatusUpdated -> state.copy(pageTranslationStatus = action.pageTranslationStatus)
+
+    is CustomTabColorsUpdated -> state.copy(
+        customTabColors = action.customTabColors,
     )
 }

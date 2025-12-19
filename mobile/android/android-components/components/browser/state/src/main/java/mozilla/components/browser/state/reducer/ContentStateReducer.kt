@@ -8,6 +8,7 @@ import androidx.core.net.toUri
 import mozilla.components.browser.state.action.ContentAction
 import mozilla.components.browser.state.action.ContentAction.UpdatePermissionHighlightsStateAction
 import mozilla.components.browser.state.ext.containsPermission
+import mozilla.components.browser.state.ext.mergePermissions
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.ContentState
 import mozilla.components.browser.state.state.SessionState
@@ -23,7 +24,7 @@ internal object ContentStateReducer {
     /**
      * [ContentAction] Reducer function for modifying a specific [ContentState] of a [SessionState].
      */
-    @Suppress("LongMethod", "ThrowsCount")
+    @Suppress("LongMethod", "ThrowsCount", "CognitiveComplexMethod")
     fun reduce(state: BrowserState, action: ContentAction): BrowserState {
         return when (action) {
             is ContentAction.RemoveIconAction -> updateContentState(state, action.sessionId) {
@@ -181,6 +182,7 @@ internal object ContentStateReducer {
                         permissionRequestsList = it.permissionRequestsList + action.permissionRequest,
                     )
                 } else {
+                    it.permissionRequestsList.mergePermissions(action.permissionRequest)
                     it
                 }
             }
@@ -205,6 +207,7 @@ internal object ContentStateReducer {
                         appPermissionRequestsList = it.appPermissionRequestsList + action.appPermissionRequest,
                     )
                 } else {
+                    it.appPermissionRequestsList.mergePermissions(action.appPermissionRequest)
                     it
                 }
             }
@@ -271,6 +274,16 @@ internal object ContentStateReducer {
                     it.copy(persistentStorageChanged = action.value)
                 }
             }
+            is UpdatePermissionHighlightsStateAction.LocalDeviceAccessChangedAction -> {
+                updatePermissionHighlightsState(state, action.tabId) {
+                    it.copy(localDeviceAccessChanged = action.value)
+                }
+            }
+            is UpdatePermissionHighlightsStateAction.LocalNetworkAccessChangedAction -> {
+                updatePermissionHighlightsState(state, action.tabId) {
+                    it.copy(localNetworkAccessChanged = action.value)
+                }
+            }
             is UpdatePermissionHighlightsStateAction.AutoPlayAudibleBlockingAction -> {
                 updatePermissionHighlightsState(state, action.tabId) {
                     it.copy(autoPlayAudibleBlocking = action.value)
@@ -311,15 +324,6 @@ internal object ContentStateReducer {
             is ContentAction.CheckForFormDataExceptionAction,
             -> {
                 throw IllegalStateException("You need to add SessionPrioritizationMiddleware. ($action)")
-            }
-            is ContentAction.UpdateProductUrlStateAction -> {
-                updateContentState(state, action.tabId) {
-                    if (it.private) {
-                        it
-                    } else {
-                        it.copy(isProductUrl = action.isProductUrl)
-                    }
-                }
             }
             is ContentAction.EnteredPdfViewer -> {
                 updateContentState(state, action.tabId) {

@@ -15,7 +15,6 @@ import org.junit.Test
 import org.junit.rules.TestRule
 import org.junit.rules.TestWatcher
 import org.junit.runner.Description
-import org.mozilla.focus.activity.robots.browserScreen
 import org.mozilla.focus.activity.robots.homeScreen
 import org.mozilla.focus.ext.components
 import org.mozilla.focus.helpers.MainActivityIntentsTestRule
@@ -38,10 +37,10 @@ import org.mozilla.gecko.util.ThreadUtils.runOnUiThread
 
 // Tests for the General settings sub-menu: changing theme, locale and default browser
 class SettingsGeneralTest : TestSetup() {
-    @get: Rule
+    @get:Rule
     val mActivityTestRule = MainActivityIntentsTestRule(showFirstRun = false)
 
-    @get: Rule
+    @get:Rule
     var watcher: TestRule = object : TestWatcher() {
         override fun starting(description: Description) {
             println("Starting test: " + description.methodName)
@@ -76,7 +75,7 @@ class SettingsGeneralTest : TestSetup() {
     @SmokeTest
     @Test
     fun englishSystemLocaleTest() {
-        /* Go to Settings and change language to French*/
+        // Go to Settings and change language to French
         homeScreen {
         }.openMainMenu {
         }.openSettings {
@@ -87,12 +86,12 @@ class SettingsGeneralTest : TestSetup() {
             verifyTranslatedTextExists(AF_LANGUAGE_MENU)
             exitToTop()
         }
-        /* Exit to main and see the UI is localized as well */
+        // Exit to main and see the UI is localized as well
         homeScreen {
         }.openMainMenu {
             verifyTranslatedTextExists(AF_SETTINGS)
             verifyTranslatedTextExists(AF_HELP)
-            /* change back to system locale, verify the locale is changed */
+            // change back to system locale, verify the locale is changed
         }.openSettings(AF_SETTINGS) {
         }.openGeneralSettingsMenu(AF_GENERAL_HEADING) {
             openLanguageSelectionMenu(AF_LANGUAGE_MENU)
@@ -109,14 +108,14 @@ class SettingsGeneralTest : TestSetup() {
 
     @Test
     fun frenchLocaleTest() {
-        /* Go to Settings */
+        // Go to Settings
         homeScreen {
         }.openMainMenu {
         }.openSettings(FR_SETTINGS) {
         }.openGeneralSettingsMenu(FR_GENERAL_HEADING) {
             openLanguageSelectionMenu(FR_LANGUAGE_MENU)
             verifySystemLocaleSelected(FR_LANGUAGE_SYSTEM_DEFAULT)
-            /* change locale to English, verify the locale is changed */
+            // change locale to English, verify the locale is changed
             selectLanguage(EN_AFRIKAANS_LOCALE)
             verifyTranslatedTextExists(AF_LANGUAGE_MENU)
             exitToTop()
@@ -138,18 +137,12 @@ class SettingsGeneralTest : TestSetup() {
         }.openSettings {
         }.openGeneralSettingsMenu {
             clickSetDefaultBrowser()
-            if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.M) {
-                browserScreen {
-                    verifyPageURL(supportPageUrl)
-                }
-            } else {
-                verifyAndroidDefaultAppsMenuAppears()
-                // for API 24 to 28 we'll skip these steps because the switch doesn't update after
-                // returning from Default apps settings, not reproducing manually
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    selectFocusDefaultBrowser()
-                    verifySwitchIsToggled(true)
-                }
+            verifyAndroidDefaultAppsMenuAppears()
+            // for API <29 we'll skip these steps because the switch doesn't update after
+            // returning from Default apps settings, not reproducing manually
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                selectFocusDefaultBrowser()
+                verifySwitchIsToggled(true)
             }
         }
     }

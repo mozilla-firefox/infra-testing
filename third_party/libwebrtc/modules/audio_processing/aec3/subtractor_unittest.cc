@@ -11,16 +11,31 @@
 #include "modules/audio_processing/aec3/subtractor.h"
 
 #include <algorithm>
+#include <array>
+#include <cstddef>
 #include <memory>
 #include <numeric>
+#include <optional>
 #include <string>
+#include <tuple>
+#include <vector>
 
+#include "api/array_view.h"
+#include "api/audio/echo_canceller3_config.h"
 #include "api/environment/environment.h"
 #include "api/environment/environment_factory.h"
+#include "modules/audio_processing/aec3/aec3_common.h"
+#include "modules/audio_processing/aec3/aec3_fft.h"
 #include "modules/audio_processing/aec3/aec_state.h"
+#include "modules/audio_processing/aec3/block.h"
+#include "modules/audio_processing/aec3/delay_estimate.h"
+#include "modules/audio_processing/aec3/echo_path_variability.h"
 #include "modules/audio_processing/aec3/render_delay_buffer.h"
+#include "modules/audio_processing/aec3/render_signal_analyzer.h"
+#include "modules/audio_processing/aec3/subtractor_output.h"
 #include "modules/audio_processing/test/echo_canceller_test_tools.h"
 #include "modules/audio_processing/utility/cascaded_biquad_filter.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/random.h"
 #include "rtc_base/strings/string_builder.h"
 #include "test/gtest.h"
@@ -83,23 +98,26 @@ std::vector<float> RunSubtractorTest(
   }
 
   // [B,A] = butter(2,100/8000,'high')
-  constexpr CascadedBiQuadFilter::BiQuadCoefficients
-      kHighPassFilterCoefficients = {{0.97261f, -1.94523f, 0.97261f},
-                                     {-1.94448f, 0.94598f}};
+  constexpr std::array<CascadedBiQuadFilter::BiQuadCoefficients, 1>
+      kHighPassFilterCoefficients = {{
+          {.b = {0.97261f, -1.94523f, 0.97261f}, .a = {-1.94448f, 0.94598f}},
+      }};
   std::vector<std::unique_ptr<CascadedBiQuadFilter>> x_hp_filter(
       num_render_channels);
   for (size_t ch = 0; ch < num_render_channels; ++ch) {
-    x_hp_filter[ch] =
-        std::make_unique<CascadedBiQuadFilter>(kHighPassFilterCoefficients, 1);
+    x_hp_filter[ch] = std::make_unique<CascadedBiQuadFilter>(
+        ArrayView<const CascadedBiQuadFilter::BiQuadCoefficients>(
+            kHighPassFilterCoefficients));
   }
   std::vector<std::unique_ptr<CascadedBiQuadFilter>> y_hp_filter(
       num_capture_channels);
   for (size_t ch = 0; ch < num_capture_channels; ++ch) {
-    y_hp_filter[ch] =
-        std::make_unique<CascadedBiQuadFilter>(kHighPassFilterCoefficients, 1);
+    y_hp_filter[ch] = std::make_unique<CascadedBiQuadFilter>(
+        ArrayView<const CascadedBiQuadFilter::BiQuadCoefficients>(
+            kHighPassFilterCoefficients));
   }
 
-  for (int k = 0; k < num_blocks_to_process; ++k) {
+  for (int block_num = 0; block_num < num_blocks_to_process; ++block_num) {
     for (size_t render_ch = 0; render_ch < num_render_channels; ++render_ch) {
       RandomizeSampleVector(&random_generator, x.View(/*band=*/0, render_ch));
     }
@@ -112,7 +130,7 @@ std::vector<float> RunSubtractorTest(
     } else {
       for (size_t capture_ch = 0; capture_ch < num_capture_channels;
            ++capture_ch) {
-        rtc::ArrayView<float> y_view = y.View(/*band=*/0, capture_ch);
+        ArrayView<float> y_view = y.View(/*band=*/0, capture_ch);
         for (size_t render_ch = 0; render_ch < num_render_channels;
              ++render_ch) {
           std::array<float, kBlockSize> y_channel;
@@ -132,7 +150,7 @@ std::vector<float> RunSubtractorTest(
     }
 
     render_delay_buffer->Insert(x);
-    if (k == 0) {
+    if (block_num == 0) {
       render_delay_buffer->Reset();
     }
     render_delay_buffer->PrepareCaptureProcessing();
@@ -142,7 +160,7 @@ std::vector<float> RunSubtractorTest(
     // Handle echo path changes.
     if (std::find(blocks_with_echo_path_changes.begin(),
                   blocks_with_echo_path_changes.end(),
-                  k) != blocks_with_echo_path_changes.end()) {
+                  block_num) != blocks_with_echo_path_changes.end()) {
       subtractor.HandleEchoPathChange(EchoPathVariability(
           true, EchoPathVariability::DelayAdjustment::kNewDetectedDelay,
           false));

@@ -99,13 +99,8 @@ export const MultiSelect = ({
   );
 
   const containerStyle = useMemo(
-    () =>
-      AboutWelcomeUtils.getValidStyle(
-        content.tiles.style,
-        MULTI_SELECT_STYLES,
-        true
-      ),
-    [content.tiles.style]
+    () => AboutWelcomeUtils.getTileStyle(content.tiles, MULTI_SELECT_STYLES),
+    [content.tiles]
   );
 
   const PickerIcon = ({ emoji, bgColor, isChecked }) => {
@@ -215,6 +210,7 @@ export const MultiSelect = ({
               onChange={handleChange}
               ref={el => (refs.current[id] = el)}
               aria-describedby={description ? `${id}-description` : null}
+              aria-labelledby={description ? `${id}-label` : null}
               tabIndex={isPicker ? "-1" : "0"}
             />
             {isPicker && (
@@ -226,7 +222,7 @@ export const MultiSelect = ({
             )}
             {label ? (
               <Localized text={label}>
-                <label htmlFor={id}></label>
+                <label id={`${id}-label`} htmlFor={id}></label>
               </Localized>
             ) : null}
             {description ? (

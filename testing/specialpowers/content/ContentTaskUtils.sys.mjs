@@ -84,7 +84,7 @@ export var ContentTaskUtils = {
    *        Rejects if timeout is exceeded or condition ever throws.
    */
   async waitForCondition(condition, msg, interval = 100, maxTries = 50) {
-    let startTime = Cu.now();
+    let startTime = ChromeUtils.now();
     for (let tries = 0; tries < maxTries; ++tries) {
       await new Promise(resolve => setTimeout(resolve, interval));
 
@@ -150,7 +150,7 @@ export var ContentTaskUtils = {
    */
   waitForEvent(subject, eventName, capture, checkFn, wantsUntrusted = false) {
     return new Promise((resolve, reject) => {
-      let startTime = Cu.now();
+      let startTime = ChromeUtils.now();
       subject.addEventListener(
         eventName,
         function listener(event) {
@@ -188,7 +188,7 @@ export var ContentTaskUtils = {
    *
    * @param {Element} subject
    *        The element on which to observe mutations.
-   * @param {Object} options
+   * @param {object} options
    *        The options to pass to MutationObserver.observe();
    * @param {function} checkFn [optional]
    *        Function that returns true when it wants the promise to be resolved.

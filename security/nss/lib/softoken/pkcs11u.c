@@ -262,6 +262,11 @@ sftk_FindAttribute(SFTKObject *object, CK_ATTRIBUTE_TYPE type)
     SFTKAttribute *attribute;
     SFTKSessionObject *sessObject = sftk_narrowToSessionObject(object);
 
+    /* validation flags are stored as FIPS indicators */
+    if (type == CKA_OBJECT_VALIDATION_FLAGS) {
+        return &object->validation_attribute;
+    }
+
     if (sessObject == NULL) {
         return sftk_FindTokenAttribute(sftk_narrowToTokenObject(object), type);
     }
@@ -631,6 +636,23 @@ sftk_forceAttribute(SFTKObject *object, CK_ATTRIBUTE_TYPE type,
         !object->slot) {
         return CKR_DEVICE_ERROR;
     }
+    /* validation flags are stored as FIPS indicators,
+     * don't send them through the general attribute
+     * parsing */
+    if (type == CKA_OBJECT_VALIDATION_FLAGS) {
+        CK_FLAGS validation;
+        if (len != sizeof(CK_FLAGS)) {
+            return CKR_ATTRIBUTE_VALUE_INVALID;
+        }
+        validation = *(CK_FLAGS *)value;
+        /* we only understand FIPS currently, don't allow setting
+         * other flags */
+        if ((validation & ~SFTK_VALIDATION_FIPS_FLAG) != 0) {
+            return CKR_ATTRIBUTE_VALUE_INVALID;
+        }
+        object->validation_value = validation;
+        return CKR_OK;
+    }
     if (sftk_isToken(object->handle)) {
         return sftk_forceTokenAttribute(object, type, value, len);
     }
@@ -738,6 +760,8 @@ sftk_modifyType(CK_ATTRIBUTE_TYPE type, CK_OBJECT_CLASS inClass)
         case CKA_EXPONENT_1:
         case CKA_EXPONENT_2:
         case CKA_COEFFICIENT:
+        case CKA_SEED:
+        case CKA_PARAMETER_SET:
         case CKA_VALUE_LEN:
         case CKA_ALWAYS_SENSITIVE:
         case CKA_NEVER_EXTRACTABLE:
@@ -809,6 +833,7 @@ sftk_isSensitive(CK_ATTRIBUTE_TYPE type, CK_OBJECT_CLASS inClass)
         case CKA_EXPONENT_1:
         case CKA_EXPONENT_2:
         case CKA_COEFFICIENT:
+        case CKA_SEED:
             return PR_TRUE;
 
         /* DEPENDS ON CLASS */
@@ -868,6 +893,28 @@ sftk_GetULongAttribute(SFTKObject *object, CK_ATTRIBUTE_TYPE type,
     }
 
     *longData = *(CK_ULONG *)attribute->attrib.pValue;
+    sftk_FreeAttribute(attribute);
+    return CKR_OK;
+}
+
+CK_RV
+sftk_ReadAttribute(SFTKObject *object, CK_ATTRIBUTE_TYPE type,
+                   unsigned char *data, unsigned int maxLen, unsigned int *lenp)
+{
+    SFTKAttribute *attribute;
+
+    attribute = sftk_FindAttribute(object, type);
+    if (attribute == NULL)
+        return CKR_TEMPLATE_INCOMPLETE;
+
+    *lenp = attribute->attrib.ulValueLen;
+    if (*lenp > maxLen) {
+        /* normally would be CKR_BUFFER_TOO_SMALL, but
+         * it used with internal buffers, so if the value is
+         * to long, the original attribute was invalid */
+        return CKR_ATTRIBUTE_VALUE_INVALID;
+    }
+    PORT_Memcpy(data, attribute->attrib.pValue, *lenp);
     sftk_FreeAttribute(attribute);
     return CKR_OK;
 }
@@ -1102,7 +1149,18 @@ sftk_NewObject(SFTKSlot *slot)
     object->handle = 0;
     object->next = object->prev = NULL;
     object->slot = slot;
-    object->isFIPS = sftk_isFIPS(slot->slotID);
+    /* set up the validation flags */
+    object->validation_value = 0;
+    object->validation_attribute.next = NULL;
+    object->validation_attribute.prev = NULL;
+    object->validation_attribute.freeAttr = PR_FALSE;
+    object->validation_attribute.freeData = PR_FALSE;
+    object->validation_attribute.handle = CKA_OBJECT_VALIDATION_FLAGS;
+    object->validation_attribute.attrib.type = CKA_OBJECT_VALIDATION_FLAGS;
+    object->validation_attribute.attrib.pValue = &object->validation_value;
+    object->validation_attribute.attrib.ulValueLen = sizeof(object->validation_value);
+    /* initialize the FIPS flag properly */
+    sftk_setFIPS(object, sftk_isFIPS(slot->slotID));
 
     object->refCount = 1;
     sessObject->sessionList.next = NULL;
@@ -1400,6 +1458,11 @@ static const CK_ATTRIBUTE_TYPE ecPubKeyAttrs[] = {
 static const CK_ULONG ecPubKeyAttrsCount =
     sizeof(ecPubKeyAttrs) / sizeof(ecPubKeyAttrs[0]);
 
+static const CK_ATTRIBUTE_TYPE mldsaPubKeyAttrs[] = {
+    CKA_PARAMETER_SET, CKA_VALUE
+};
+static const CK_ULONG mldsaPubKeyAttrsCount = PR_ARRAY_SIZE(mldsaPubKeyAttrs);
+
 static const CK_ATTRIBUTE_TYPE commonPrivKeyAttrs[] = {
     CKA_DECRYPT, CKA_SIGN, CKA_SIGN_RECOVER, CKA_UNWRAP, CKA_SUBJECT,
     CKA_SENSITIVE, CKA_EXTRACTABLE, CKA_NSS_DB, CKA_PUBLIC_KEY_INFO
@@ -1431,16 +1494,31 @@ static const CK_ATTRIBUTE_TYPE ecPrivKeyAttrs[] = {
 static const CK_ULONG ecPrivKeyAttrsCount =
     sizeof(ecPrivKeyAttrs) / sizeof(ecPrivKeyAttrs[0]);
 
+static const CK_ATTRIBUTE_TYPE mldsaPrivKeyAttrs[] = {
+    CKA_PARAMETER_SET, CKA_VALUE, CKA_SEED
+};
+static const CK_ULONG mldsaPrivKeyAttrsCount = PR_ARRAY_SIZE(mldsaPrivKeyAttrs);
+
 static const CK_ATTRIBUTE_TYPE certAttrs[] = {
     CKA_CERTIFICATE_TYPE, CKA_VALUE, CKA_SUBJECT, CKA_ISSUER, CKA_SERIAL_NUMBER
 };
 static const CK_ULONG certAttrsCount =
     sizeof(certAttrs) / sizeof(certAttrs[0]);
 
+static const CK_ATTRIBUTE_TYPE nssTrustAttrs[] = {
+    CKA_ISSUER, CKA_SERIAL_NUMBER, CKA_NSS_CERT_SHA1_HASH,
+    CKA_NSS_CERT_MD5_HASH, CKA_NSS_TRUST_SERVER_AUTH, CKA_NSS_TRUST_CLIENT_AUTH,
+    CKA_NSS_TRUST_EMAIL_PROTECTION, CKA_NSS_TRUST_CODE_SIGNING,
+    CKA_NSS_TRUST_STEP_UP_APPROVED
+};
+static const CK_ULONG nssTrustAttrsCount =
+    sizeof(nssTrustAttrs) / sizeof(nssTrustAttrs[0]);
+
 static const CK_ATTRIBUTE_TYPE trustAttrs[] = {
-    CKA_ISSUER, CKA_SERIAL_NUMBER, CKA_CERT_SHA1_HASH, CKA_CERT_MD5_HASH,
-    CKA_TRUST_SERVER_AUTH, CKA_TRUST_CLIENT_AUTH, CKA_TRUST_EMAIL_PROTECTION,
-    CKA_TRUST_CODE_SIGNING, CKA_TRUST_STEP_UP_APPROVED
+    CKA_ISSUER, CKA_SERIAL_NUMBER, CKA_HASH_OF_CERTIFICATE,
+    CKA_NAME_HASH_ALGORITHM, CKA_PKCS_TRUST_SERVER_AUTH,
+    CKA_PKCS_TRUST_CLIENT_AUTH, CKA_PKCS_TRUST_EMAIL_PROTECTION,
+    CKA_PKCS_TRUST_CODE_SIGNING
 };
 static const CK_ULONG trustAttrsCount =
     sizeof(trustAttrs) / sizeof(trustAttrs[0]);
@@ -1530,6 +1608,10 @@ stfk_CopyTokenPrivateKey(SFTKObject *destObject, SFTKTokenObject *src_to)
             crv = stfk_CopyTokenAttributes(destObject, src_to, dsaPrivKeyAttrs,
                                            dsaPrivKeyAttrsCount);
             break;
+        case CKK_ML_DSA:
+            crv = stfk_CopyTokenAttributes(destObject, src_to, mldsaPrivKeyAttrs,
+                                           mldsaPrivKeyAttrsCount);
+            break;
         case CKK_DH:
             crv = stfk_CopyTokenAttributes(destObject, src_to, dhPrivKeyAttrs,
                                            dhPrivKeyAttrsCount);
@@ -1590,6 +1672,10 @@ stfk_CopyTokenPublicKey(SFTKObject *destObject, SFTKTokenObject *src_to)
             crv = stfk_CopyTokenAttributes(destObject, src_to, dsaPubKeyAttrs,
                                            dsaPubKeyAttrsCount);
             break;
+        case CKK_ML_DSA:
+            crv = stfk_CopyTokenAttributes(destObject, src_to, mldsaPubKeyAttrs,
+                                           mldsaPubKeyAttrsCount);
+            break;
         case CKK_DH:
             crv = stfk_CopyTokenAttributes(destObject, src_to, dhPubKeyAttrs,
                                            dhPubKeyAttrsCount);
@@ -1647,6 +1733,10 @@ sftk_CopyTokenObject(SFTKObject *destObject, SFTKObject *srcObject)
                                            certAttrsCount);
             break;
         case CKO_NSS_TRUST:
+            crv = stfk_CopyTokenAttributes(destObject, src_to, nssTrustAttrs,
+                                           nssTrustAttrsCount);
+            break;
+        case CKO_TRUST:
             crv = stfk_CopyTokenAttributes(destObject, src_to, trustAttrs,
                                            trustAttrsCount);
             break;
@@ -1687,7 +1777,7 @@ sftk_CopyObject(SFTKObject *destObject, SFTKObject *srcObject)
     SFTKSessionObject *src_so = sftk_narrowToSessionObject(srcObject);
     unsigned int i;
 
-    destObject->isFIPS = srcObject->isFIPS;
+    destObject->validation_value = srcObject->validation_value;
     if (src_so == NULL) {
         return sftk_CopyTokenObject(destObject, srcObject);
     }
@@ -1884,6 +1974,10 @@ sftk_FreeContext(SFTKSessionContext *context)
         sftk_FreeObject(context->key);
         context->key = NULL;
     }
+    if (context->signature) {
+        SECITEM_FreeItem(context->signature, PR_TRUE);
+        context->signature = NULL;
+    }
     PORT_Free(context);
 }
 
@@ -2072,7 +2166,18 @@ sftk_NewTokenObject(SFTKSlot *slot, SECItem *dbKey, CK_OBJECT_HANDLE handle)
         goto loser;
     }
     object->slot = slot;
-    object->isFIPS = sftk_isFIPS(slot->slotID);
+    /* set up the validation flags */
+    object->validation_value = 0;
+    object->validation_attribute.next = NULL;
+    object->validation_attribute.prev = NULL;
+    object->validation_attribute.freeAttr = PR_FALSE;
+    object->validation_attribute.freeData = PR_FALSE;
+    object->validation_attribute.handle = CKA_OBJECT_VALIDATION_FLAGS;
+    object->validation_attribute.attrib.type = CKA_OBJECT_VALIDATION_FLAGS;
+    object->validation_attribute.attrib.pValue = &object->validation_value;
+    object->validation_attribute.attrib.ulValueLen = sizeof(object->validation_value);
+    /* initialize the FIPS flag properly */
+    sftk_setFIPS(object, sftk_isFIPS(slot->slotID));
     object->objectInfo = NULL;
     object->infoFree = NULL;
     if (!hasLocks) {
@@ -2484,7 +2589,7 @@ sftk_operationIsFIPS(SFTKSlot *slot, CK_MECHANISM *mech, CK_ATTRIBUTE_TYPE op,
     if (!sftk_isFIPS(slot->slotID)) {
         return PR_FALSE;
     }
-    if (source && !source->isFIPS) {
+    if (source && !sftk_hasFIPS(source)) {
         return PR_FALSE;
     }
     if (mech == NULL) {
@@ -2517,6 +2622,22 @@ sftk_operationIsFIPS(SFTKSlot *slot, CK_MECHANISM *mech, CK_ATTRIBUTE_TYPE op,
 #endif
 }
 
+void
+sftk_setFIPS(SFTKObject *obj, PRBool isFIPS)
+{
+    if (isFIPS) {
+        obj->validation_value |= SFTK_VALIDATION_FIPS_FLAG;
+    } else {
+        obj->validation_value &= ~SFTK_VALIDATION_FIPS_FLAG;
+    }
+}
+
+PRBool
+sftk_hasFIPS(SFTKObject *obj)
+{
+    return (obj->validation_value & SFTK_VALIDATION_FIPS_FLAG) ? PR_TRUE : PR_FALSE;
+}
+
 /*
  * create the FIPS Validation objects. If the vendor
  * doesn't supply an NSS_FIPS_MODULE_ID, at compile time,
@@ -2528,10 +2649,17 @@ sftk_CreateValidationObjects(SFTKSlot *slot)
     const char *module_id;
     int module_id_len;
     CK_RV crv = CKR_OK;
-    /* we currently use vendor specific values until the validation
-     * objects are approved for PKCS #11 v3.2. */
-    CK_OBJECT_CLASS cko_validation = CKO_NSS_VALIDATION;
+    /* we currently use both vendor specific values and PKCS #11 v3.2
+     * values for compatibility for a couple more ESR releases. Then we can
+     * drop the vendor specific ones */
+    CK_OBJECT_CLASS cko_nss_validation = CKO_NSS_VALIDATION;
+    CK_OBJECT_CLASS cko_validation = CKO_VALIDATION;
     CK_NSS_VALIDATION_TYPE ckv_fips = CKV_NSS_FIPS_140;
+    CK_FLAGS fipsFlag = SFTK_VALIDATION_FIPS_FLAG;
+    CK_VALIDATION_TYPE swValidationType = CKV_TYPE_SOFTWARE;
+    CK_VALIDATION_AUTHORITY_TYPE nistValidationAuthority =
+        CKV_AUTHORITY_TYPE_NIST_CMVP;
+    CK_UTF8CHAR us[] = { 'U', 'S' };
     CK_VERSION fips_version = { 3, 0 }; /* FIPS-140-3 */
     CK_ULONG fips_level = 1;            /* or 2 if you validated at level 2 */
 
@@ -2546,10 +2674,10 @@ sftk_CreateValidationObjects(SFTKSlot *slot)
     if (object == NULL) {
         return CKR_HOST_MEMORY;
     }
-    object->isFIPS = PR_FALSE;
+    sftk_setFIPS(object, PR_FALSE);
 
-    crv = sftk_AddAttributeType(object, CKA_CLASS,
-                                &cko_validation, sizeof(cko_validation));
+    crv = sftk_AddAttributeType(object, CKA_CLASS, &cko_nss_validation,
+                                sizeof(cko_nss_validation));
     if (crv != CKR_OK) {
         goto loser;
     }
@@ -2574,6 +2702,76 @@ sftk_CreateValidationObjects(SFTKSlot *slot)
         goto loser;
     }
 
+    object->handle = sftk_getNextHandle(slot);
+    object->slot = slot;
+    sftk_AddObject(&slot->moduleObjects, object);
+    sftk_FreeObject(object);
+
+    object = sftk_NewObject(slot); /* fill in the handle later */
+    if (object == NULL) {
+        return CKR_HOST_MEMORY;
+    }
+    sftk_setFIPS(object, PR_FALSE);
+    crv = sftk_AddAttributeType(object, CKA_CLASS, &cko_validation,
+                                sizeof(cko_validation));
+    if (crv != CKR_OK) {
+        goto loser;
+    }
+    crv = sftk_AddAttributeType(object, CKA_VALIDATION_TYPE,
+                                &swValidationType, sizeof(swValidationType));
+    if (crv != CKR_OK) {
+        goto loser;
+    }
+    crv = sftk_AddAttributeType(object, CKA_VALIDATION_VERSION,
+                                &fips_version, sizeof(fips_version));
+    if (crv != CKR_OK) {
+        goto loser;
+    }
+    crv = sftk_AddAttributeType(object, CKA_VALIDATION_LEVEL,
+                                &fips_level, sizeof(fips_level));
+    if (crv != CKR_OK) {
+        goto loser;
+    }
+    crv = sftk_AddAttributeType(object, CKA_VALIDATION_MODULE_ID,
+                                module_id, module_id_len);
+    if (crv != CKR_OK) {
+        goto loser;
+    }
+    crv = sftk_AddAttributeType(object, CKA_VALIDATION_FLAG,
+                                &fipsFlag, sizeof(fipsFlag));
+    if (crv != CKR_OK) {
+        goto loser;
+    }
+    crv = sftk_AddAttributeType(object, CKA_VALIDATION_AUTHORITY_TYPE,
+                                &nistValidationAuthority,
+                                sizeof(nistValidationAuthority));
+    if (crv != CKR_OK) {
+        goto loser;
+    }
+    crv = sftk_AddAttributeType(object, CKA_VALIDATION_COUNTRY, us, sizeof(us));
+    if (crv != CKR_OK) {
+        goto loser;
+    }
+    crv = sftk_AddAttributeType(object, CKA_VALIDATION_CERTIFICATE_IDENTIFIER,
+                                NULL, 0);
+    if (crv != CKR_OK) {
+        goto loser;
+    }
+    crv = sftk_AddAttributeType(object, CKA_VALIDATION_CERTIFICATE_URI,
+                                NULL, 0);
+    if (crv != CKR_OK) {
+        goto loser;
+    }
+    crv = sftk_AddAttributeType(object, CKA_VALIDATION_PROFILE,
+                                NULL, 0);
+    if (crv != CKR_OK) {
+        goto loser;
+    }
+    crv = sftk_AddAttributeType(object, CKA_VALIDATION_VENDOR_URI,
+                                NULL, 0);
+    if (crv != CKR_OK) {
+        goto loser;
+    }
     /* future, fill in validation certificate information from a supplied
      * pointer to a config file */
     object->handle = sftk_getNextHandle(slot);
@@ -2581,5 +2779,6 @@ sftk_CreateValidationObjects(SFTKSlot *slot)
     sftk_AddObject(&slot->moduleObjects, object);
 loser:
     sftk_FreeObject(object);
+
     return crv;
 }

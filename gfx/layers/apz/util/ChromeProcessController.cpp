@@ -9,8 +9,9 @@
 #include "MainThreadUtils.h"  // for NS_IsMainThread()
 #include "base/task.h"
 #include "mozilla/PresShell.h"
-#include "mozilla/dom/Element.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/PointerEventHandler.h"
 #include "mozilla/layers/CompositorBridgeParent.h"
 #include "mozilla/layers/APZCCallbackHelper.h"
 #include "mozilla/layers/APZEventState.h"
@@ -19,10 +20,8 @@
 #include "mozilla/layers/InputAPZContext.h"
 #include "mozilla/layers/DoubleTapToZoom.h"
 #include "mozilla/layers/RepaintRequest.h"
-#include "mozilla/dom/Document.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsLayoutUtils.h"
-#include "nsView.h"
 
 static mozilla::LazyLogModule sApzChromeLog("apz.cc.chrome");
 
@@ -113,10 +112,8 @@ PresShell* ChromeProcessController::GetPresShell() const {
   if (!mWidget) {
     return nullptr;
   }
-  if (nsView* view = nsView::GetViewFor(mWidget)) {
-    return view->GetPresShell();
-  }
-  return nullptr;
+  auto* frame = mWidget->GetFrame();
+  return frame ? frame->PresShell() : nullptr;
 }
 
 dom::Document* ChromeProcessController::GetRootDocument() const {
@@ -148,7 +145,7 @@ void ChromeProcessController::HandleDoubleTap(
   MOZ_ASSERT(mUIThread->IsOnCurrentThread());
 
   RefPtr<dom::Document> document = GetRootContentDocument(aGuid.mScrollId);
-  if (!document.get()) {
+  if (!document) {
     return;
   }
 
@@ -227,6 +224,11 @@ void ChromeProcessController::HandleTap(
       break;
     }
   }
+
+  // mAPZEventState may not dispatch the compatibility mouse events.  Therefore,
+  // we should release the pointer capturing element at the last ePointerUp
+  // here.
+  PointerEventHandler::ReleasePointerCapturingElementAtLastPointerUp();
 }
 
 void ChromeProcessController::NotifyPinchGesture(
@@ -339,14 +341,9 @@ void ChromeProcessController::NotifyAsyncAutoscrollRejected(
 
 void ChromeProcessController::CancelAutoscroll(
     const ScrollableLayerGuid& aGuid) {
-  if (!mUIThread->IsOnCurrentThread()) {
-    mUIThread->Dispatch(NewRunnableMethod<ScrollableLayerGuid>(
-        "layers::ChromeProcessController::CancelAutoscroll", this,
-        &ChromeProcessController::CancelAutoscroll, aGuid));
-    return;
-  }
-
-  APZCCallbackHelper::CancelAutoscroll(aGuid.mScrollId);
+  mUIThread->Dispatch(NewRunnableFunction("layers::CancelAutoscroll",
+                                          &APZCCallbackHelper::CancelAutoscroll,
+                                          aGuid.mScrollId));
 }
 
 void ChromeProcessController::NotifyScaleGestureComplete(
@@ -370,14 +367,5 @@ void ChromeProcessController::NotifyScaleGestureComplete(
 }
 
 nsIFrame* ChromeProcessController::GetWidgetFrame() const {
-  if (!mWidget) {
-    return nullptr;
-  }
-
-  nsView* view = nsView::GetViewFor(mWidget);
-  if (!view) {
-    return nullptr;
-  }
-
-  return view->GetFrame();
+  return mWidget ? mWidget->GetFrame() : nullptr;
 }

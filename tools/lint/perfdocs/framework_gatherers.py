@@ -281,9 +281,7 @@ class RaptorGatherer(FrameworkGatherer):
         :return str: A formatted string containing the reference link to the
             documented metric.
         """
-        metric_heading = super(RaptorGatherer, self)._get_metric_heading(
-            metric, metrics_info
-        )
+        metric_heading = super()._get_metric_heading(metric, metrics_info)
         return f"`{metric} <raptor-metrics.html#{metric_heading.lower().replace(' ', '-')}>`__"
 
     def get_test_list(self):
@@ -395,6 +393,10 @@ class RaptorGatherer(FrameworkGatherer):
             if self._task_list.get(title, []):
                 result += "   * **Test Task**:\n\n"
                 for platform in sorted(self._task_list[title]):
+                    if (suite_name == "mobile" and "android" not in platform) or (
+                        suite_name == "desktop" and "android" in platform
+                    ):
+                        continue
                     self._task_list[title][platform].sort(key=lambda x: x["test_name"])
 
                     table = TableBuilder(

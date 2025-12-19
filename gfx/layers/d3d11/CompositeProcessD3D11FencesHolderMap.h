@@ -10,8 +10,8 @@
 #include <d3d11.h>
 #include <vector>
 
+#include "mozilla/gfx/FileHandleWrapper.h"
 #include "mozilla/layers/LayersTypes.h"
-#include "mozilla/Maybe.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/StaticPtr.h"
 
@@ -33,6 +33,7 @@ class CompositeProcessD3D11FencesHolderMap {
   ~CompositeProcessD3D11FencesHolderMap();
 
   void Register(CompositeProcessFencesHolderId aHolderId);
+  void RegisterReference(CompositeProcessFencesHolderId aHolderId);
   void Unregister(CompositeProcessFencesHolderId aHolderId);
 
   void SetWriteFence(CompositeProcessFencesHolderId aHolderId,
@@ -42,6 +43,8 @@ class CompositeProcessD3D11FencesHolderMap {
 
   bool WaitWriteFence(CompositeProcessFencesHolderId aHolderId,
                       ID3D11Device* aDevice);
+  std::pair<const RefPtr<gfx::FileHandleWrapper>, uint64_t>
+  GetWriteFenceHandleAndValue(CompositeProcessFencesHolderId aHolderId) const;
   bool WaitAllFencesAndForget(CompositeProcessFencesHolderId aHolderId,
                               ID3D11Device* aDevice);
 
@@ -51,13 +54,14 @@ class CompositeProcessD3D11FencesHolderMap {
 
     RefPtr<FenceD3D11> mWriteFence;
     std::vector<RefPtr<FenceD3D11>> mReadFences;
+    uint32_t mOwners = 1;
   };
 
-  mutable Monitor mMonitor MOZ_UNANNOTATED;
+  mutable Monitor mMonitor;
 
   std::unordered_map<CompositeProcessFencesHolderId, UniquePtr<FencesHolder>,
                      CompositeProcessFencesHolderId::HashFn>
-      mFencesHolderById;
+      mFencesHolderById MOZ_GUARDED_BY(mMonitor);
 
   static StaticAutoPtr<CompositeProcessD3D11FencesHolderMap> sInstance;
 };

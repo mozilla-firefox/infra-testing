@@ -3,7 +3,6 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
-import contextlib
 import re
 import unittest
 
@@ -14,22 +13,7 @@ from taskgraph.target_tasks import get_method
 from taskgraph.task import Task
 from taskgraph.taskgraph import TaskGraph
 
-from gecko_taskgraph import target_tasks, try_option_syntax
-
-
-class FakeTryOptionSyntax:
-    def __init__(self, message, task_graph, graph_config):
-        self.trigger_tests = 0
-        self.talos_trigger_tests = 0
-        self.raptor_trigger_tests = 0
-        self.notifications = None
-        self.env = []
-        self.profile = False
-        self.tag = None
-        self.no_retry = False
-
-    def task_matches(self, task):
-        return "at-at" in task.attributes
+from gecko_taskgraph import target_tasks
 
 
 class TestTargetTasks(unittest.TestCase):
@@ -40,6 +24,7 @@ class TestTargetTasks(unittest.TestCase):
             },
             parameters={
                 "project": project,
+                "repository_type": "hg",
                 "hg_branch": "default",
             },
         )
@@ -53,6 +38,7 @@ class TestTargetTasks(unittest.TestCase):
             attributes=attributes,
             parameters={
                 "project": "mozilla-central",
+                "repository_type": "hg",
                 "hg_branch": hg_branch,
             },
         )
@@ -158,15 +144,6 @@ class TestTargetTasks(unittest.TestCase):
         )
         return TaskGraph(tasks, graph)
 
-    @contextlib.contextmanager
-    def fake_TryOptionSyntax(self):
-        orig_TryOptionSyntax = try_option_syntax.TryOptionSyntax
-        try:
-            try_option_syntax.TryOptionSyntax = FakeTryOptionSyntax
-            yield
-        finally:
-            try_option_syntax.TryOptionSyntax = orig_TryOptionSyntax
-
     def test_empty_try(self):
         "try_mode = None runs nothing"
         tg = self.make_task_graph()
@@ -178,17 +155,6 @@ class TestTargetTasks(unittest.TestCase):
         }
         # only runs the task with run_on_projects: try
         self.assertEqual(method(tg, params, {}), [])
-
-    def test_try_option_syntax(self):
-        "try_mode = try_option_syntax uses TryOptionSyntax"
-        tg = self.make_task_graph()
-        method = get_method("try_tasks")
-        with self.fake_TryOptionSyntax():
-            params = {
-                "try_mode": "try_option_syntax",
-                "message": "try: -p all",
-            }
-            self.assertEqual(method(tg, params, {}), ["b"])
 
     def test_try_task_config(self):
         "try_mode = try_task_config uses the try config"
@@ -432,6 +398,76 @@ class TestTargetTasks(unittest.TestCase):
             },
             True,
             id="filter_unsupported_artifact_builds_not_removed",
+        ),
+        pytest.param(
+            "filter_for_repo_type",
+            {
+                "task": Task(kind="test", label="a", attributes={}, task={}),
+                "parameters": {
+                    "repository_type": "hg",
+                },
+            },
+            True,
+            id="filter_for_repo_type_default_hg_not_removed",
+        ),
+        pytest.param(
+            "filter_for_repo_type",
+            {
+                "task": Task(kind="test", label="a", attributes={}, task={}),
+                "parameters": {
+                    "repository_type": "git",
+                },
+            },
+            True,
+            id="filter_for_repo_type_default_git_not_removed",
+        ),
+        pytest.param(
+            "filter_for_repo_type",
+            {
+                "task": Task(
+                    kind="test",
+                    label="a",
+                    attributes={"run_on_repo_type": ["hg"]},
+                    task={},
+                ),
+                "parameters": {
+                    "repository_type": "git",
+                },
+            },
+            False,
+            id="filter_for_repo_type_no_match_removed",
+        ),
+        pytest.param(
+            "filter_for_repo_type",
+            {
+                "task": Task(
+                    kind="test",
+                    label="a",
+                    attributes={"run_on_repo_type": ["git"]},
+                    task={},
+                ),
+                "parameters": {
+                    "repository_type": "git",
+                },
+            },
+            True,
+            id="filter_for_repo_type_match_not_removed",
+        ),
+        pytest.param(
+            "filter_for_repo_type",
+            {
+                "task": Task(
+                    kind="test",
+                    label="a",
+                    attributes={"run_on_repo_type": ["all"]},
+                    task={},
+                ),
+                "parameters": {
+                    "repository_type": "git",
+                },
+            },
+            True,
+            id="filter_for_repo_type_all_not_removed",
         ),
     ),
 )

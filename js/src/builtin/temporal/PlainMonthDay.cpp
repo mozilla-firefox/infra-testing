@@ -7,9 +7,6 @@
 #include "builtin/temporal/PlainMonthDay.h"
 
 #include "mozilla/Assertions.h"
-#include "mozilla/EnumSet.h"
-
-#include <utility>
 
 #include "jspubtd.h"
 #include "NamespaceImports.h"
@@ -82,12 +79,12 @@ static PlainMonthDayObject* CreateTemporalMonthDay(
 
   // Step 4.
   auto packedDate = PackedDate::pack(isoDate);
-  object->setFixedSlot(PlainMonthDayObject::PACKED_DATE_SLOT,
-                       PrivateUint32Value(packedDate.value));
+  object->initFixedSlot(PlainMonthDayObject::PACKED_DATE_SLOT,
+                        PrivateUint32Value(packedDate.value));
 
   // Step 5.
-  object->setFixedSlot(PlainMonthDayObject::CALENDAR_SLOT,
-                       calendar.toSlotValue());
+  object->initFixedSlot(PlainMonthDayObject::CALENDAR_SLOT,
+                        calendar.toSlotValue());
 
   // Step 6.
   return object;
@@ -111,12 +108,12 @@ PlainMonthDayObject* js::temporal::CreateTemporalMonthDay(
 
   // Step 4.
   auto packedDate = PackedDate::pack(monthDay);
-  object->setFixedSlot(PlainMonthDayObject::PACKED_DATE_SLOT,
-                       PrivateUint32Value(packedDate.value));
+  object->initFixedSlot(PlainMonthDayObject::PACKED_DATE_SLOT,
+                        PrivateUint32Value(packedDate.value));
 
   // Step 5.
-  object->setFixedSlot(PlainMonthDayObject::CALENDAR_SLOT,
-                       monthDay.calendar().toSlotValue());
+  object->initFixedSlot(PlainMonthDayObject::CALENDAR_SLOT,
+                        monthDay.calendar().toSlotValue());
 
   // Step 6.
   return object;
@@ -629,9 +626,8 @@ static bool PlainMonthDay_toString(JSContext* cx, unsigned argc, Value* vp) {
  */
 static bool PlainMonthDay_toLocaleString(JSContext* cx, const CallArgs& args) {
   // Steps 3-4.
-  Handle<PropertyName*> required = cx->names().date;
-  Handle<PropertyName*> defaults = cx->names().date;
-  return TemporalObjectToLocaleString(cx, args, required, defaults);
+  return intl::TemporalObjectToLocaleString(cx, args,
+                                            intl::DateTimeFormatKind::Date);
 }
 
 /**

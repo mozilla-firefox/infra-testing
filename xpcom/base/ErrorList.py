@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import json
 from collections import OrderedDict
 
 
@@ -55,8 +56,8 @@ modules["REG"] = Mod(12)
 modules["FILES"] = Mod(13)
 modules["DOM"] = Mod(14)
 modules["IMGLIB"] = Mod(15)
-modules["MAILNEWS"] = Mod(16)
 modules["EDITOR"] = Mod(17)
+# Mod(16) was MAILNEWS (see Bug 1927029, now optional via MOZ_EXTRA_ERROR_DEFINITIONS)
 modules["XPCONNECT"] = Mod(18)
 modules["PROFILE"] = Mod(19)
 modules["LDAP"] = Mod(20)
@@ -89,6 +90,7 @@ modules["ERRORRESULT"] = Mod(43)
 # see Bug 1686041.
 modules["WIN32"] = Mod(44)
 modules["WDBA"] = Mod(45)
+modules["DOM_QM"] = Mod(46)
 
 # NS_ERROR_MODULE_GENERAL should be used by modules that do not
 # care if return code values overlap. Callers of methods that
@@ -354,12 +356,13 @@ with modules["NETWORK"]:
     errors["NS_ERROR_BAD_HSTS_CERT"] = FAILURE(89)
     # Error parsing the status line of an HTTP response
     errors["NS_ERROR_PARSING_HTTP_STATUS_LINE"] = FAILURE(90)
-    # The user refused to navigate to a potentially unsafe URL with
-    # embedded credentials/superfluos authentication.
-    errors["NS_ERROR_SUPERFLUOS_AUTH"] = FAILURE(91)
     # The user attempted basic HTTP authentication while
     # the basic_http_auth pref is disabled
     errors["NS_ERROR_BASIC_HTTP_AUTH_DISABLED"] = FAILURE(92)
+    errors["NS_ERROR_LOCAL_NETWORK_ACCESS_DENIED"] = FAILURE(93)
+    # Used to indicate cases where we need to fall back from HTTP/2
+    # to HTTP/1.1.
+    errors["NS_ERROR_HTTP2_FALLBACK_TO_HTTP1"] = FAILURE(94)
 
     # XXX really need to better rationalize these error codes.  are consumers of
     # necko really expected to know how to discern the meaning of these??
@@ -462,6 +465,9 @@ with modules["NETWORK"]:
     # nsIInterceptedChannel
     # Generic error for non-specific failures during service worker interception
     errors["NS_ERROR_INTERCEPTION_FAILED"] = FAILURE(100)
+
+    # WebTransport Session Limit (mWebTransportMaxSessions) Exceeded
+    errors["NS_ERROR_WEBTRANSPORT_SESSION_LIMIT_EXCEEDED"] = FAILURE(199)
 
     errors["NS_ERROR_WEBTRANSPORT_CODE_BASE"] = FAILURE(200)
     errors["NS_ERROR_WEBTRANSPORT_CODE_END"] = (
@@ -806,6 +812,11 @@ with modules["EDITOR"]:
     # non-collapsed range crosses editing host boundaries.
     errors["NS_ERROR_EDITOR_NO_EDITABLE_RANGE"] = FAILURE(4)
 
+    # An error code that indicates that there is no deletable selection ranges
+    # even though there are some editable ranges.  E.g., if each editable range
+    # is in a replaced element or a void element.
+    errors["NS_ERROR_EDITOR_NO_DELETABLE_RANGE"] = FAILURE(5)
+
     errors["NS_SUCCESS_EDITOR_ELEMENT_NOT_FOUND"] = SUCCESS(1)
     errors["NS_SUCCESS_EDITOR_FOUND_TARGET"] = SUCCESS(2)
 
@@ -946,6 +957,8 @@ with modules["URILOADER"]:
     errors["NS_ERROR_CRYPTOMINING_URI"] = FAILURE(42)
     errors["NS_ERROR_SOCIALTRACKING_URI"] = FAILURE(43)
     errors["NS_ERROR_EMAILTRACKING_URI"] = FAILURE(44)
+    errors["NS_ERROR_RESTRICTED_CONTENT"] = FAILURE(45)
+    errors["NS_ERROR_HARMFULADDON_URI"] = FAILURE(46)
     # Used when "Save Link As..." doesn't see the headers quickly enough to
     # choose a filename.  See nsContextMenu.js.
     errors["NS_ERROR_SAVE_LINK_AS_TIMEOUT"] = FAILURE(32)
@@ -953,8 +966,7 @@ with modules["URILOADER"]:
     # doesn't need to be reparsed from the original source.
     errors["NS_ERROR_PARSED_DATA_CACHED"] = FAILURE(33)
 
-    # When browser.tabs.documentchannel.parent-controlled pref and SHIP
-    # are enabled and a load gets cancelled due to another one
+    # When SHIP is enabled and a load gets cancelled due to another one
     # starting, the error is NS_BINDING_CANCELLED_OLD_LOAD.
     errors["NS_BINDING_CANCELLED_OLD_LOAD"] = FAILURE(39)
 
@@ -1162,9 +1174,9 @@ with modules["DOM_MEDIA"]:
     errors["NS_ERROR_DOM_MEDIA_CDM_ERR"] = FAILURE(13)
     errors["NS_ERROR_DOM_MEDIA_NEED_NEW_DECODER"] = FAILURE(14)
     errors["NS_ERROR_DOM_MEDIA_INITIALIZING_DECODER"] = FAILURE(15)
-    errors["NS_ERROR_DOM_MEDIA_REMOTE_DECODER_CRASHED_RDD_OR_GPU_ERR"] = FAILURE(16)
-    errors["NS_ERROR_DOM_MEDIA_REMOTE_DECODER_CRASHED_UTILITY_ERR"] = FAILURE(17)
-    errors["NS_ERROR_DOM_MEDIA_REMOTE_DECODER_CRASHED_MF_CDM_ERR"] = FAILURE(18)
+    errors["NS_ERROR_DOM_MEDIA_REMOTE_CRASHED_RDD_OR_GPU_ERR"] = FAILURE(16)
+    errors["NS_ERROR_DOM_MEDIA_REMOTE_CRASHED_UTILITY_ERR"] = FAILURE(17)
+    errors["NS_ERROR_DOM_MEDIA_REMOTE_CRASHED_MF_CDM_ERR"] = FAILURE(18)
 
     # QuotaExceededError specializations
     errors["NS_ERROR_DOM_MEDIA_KEY_QUOTA_EXCEEDED_ERR"] = FAILURE(30)
@@ -1184,6 +1196,7 @@ with modules["DOM_MEDIA"]:
     errors["NS_ERROR_DOM_MEDIA_RANGE_ERR"] = FAILURE(105)
     errors["NS_ERROR_DOM_MEDIA_TYPE_ERR"] = FAILURE(106)
     errors["NS_ERROR_DOM_MEDIA_MEDIA_ENGINE_INITIALIZATION_ERR"] = FAILURE(107)
+    errors["NS_ERROR_DOM_MEDIA_DROPPED_BY_ENCODER_ERR"] = FAILURE(108)
 
 # =======================================================================
 # 42: NS_ERROR_MODULE_URL_CLASSIFIER
@@ -1234,6 +1247,11 @@ with modules["WDBA"]:
     errors["NS_ERROR_WDBA_REJECTED"] = FAILURE(3)
     errors["NS_ERROR_WDBA_BUILD"] = FAILURE(4)
 
+# =======================================================================
+# 46: NS_ERROR_MODULE_DOM_QM
+# =======================================================================
+with modules["DOM_QM"]:
+    errors["NS_ERROR_DOM_QM_CLIENT_INIT_ORIGIN_UNINITIALIZED"] = FAILURE(1)
 
 # =======================================================================
 # 51: NS_ERROR_MODULE_GENERAL
@@ -1273,12 +1291,69 @@ with modules["GENERAL"]:
     errors["NS_ERROR_BLOCKED_BY_POLICY"] = FAILURE(3)
 
 
+def import_extra_errors(infile):
+    """Import extra error definitions from a json file.
+
+    Example json file (to add module):
+    ```
+    {
+      "MAILNEWS": {
+        "description": "Extra error codes for comm/mail",
+        "code": 16,
+        "members": {
+          "NS_MSG_ERROR_MBOX_MALFORMED": {
+            "severity": "FAILURE",
+            "code": 36,
+            "description": "Mbox message doesn't start with 'From ' separator line."
+          },
+        }
+      }
+    }
+    ```
+    """
+
+    with open(infile) as f:
+        data = json.load(f)
+        for module_name, module_details in data.items():
+            mod = modules.get(module_name)
+            if mod:
+                # An existing module.
+                if module_details["code"] != mod.num:
+                    raise ValueError(
+                        f"Mismatched module code for {module_name} in {infile}"
+                    )
+            else:
+                # Create a new module.
+                mod = Mod(module_details["code"])
+                modules[module_name] = mod
+
+            with mod:
+                # Add all the error codes defined for this module.
+                for name, details in module_details["members"].items():
+                    if name in errors:
+                        raise ValueError(
+                            f"Cannot redefine existing error {name} in {infile}"
+                        )
+                    severity = details["severity"]
+                    if severity == "FAILURE":
+                        errors[name] = FAILURE(details["code"])
+                    elif severity == "SUCCESS":
+                        errors[name] = SUCCESS(details["code"])
+                    else:
+                        raise ValueError(
+                            f"Invalid severity value ({severity}) in {infile}"
+                        )
+
+
 # ============================================================================
 # Write out the resulting module declarations to C++ and rust files
 # ============================================================================
 
 
-def error_list_h(output):
+def error_list_h(output, *extra_errors):
+    for infile in extra_errors:
+        import_extra_errors(infile)
+
     output.write(
         """
 /* THIS FILE IS GENERATED BY ErrorList.py - DO NOT EDIT */
@@ -1328,11 +1403,14 @@ const nsresult
     )
 
 
-def error_names_internal_h(output):
+def error_names_internal_h(output, *extra_errors):
     """Generate ErrorNamesInternal.h, which is a header file declaring one
     function, const char* GetErrorNameInternal(nsresult). This method is not
     intended to be used by consumer code, which should instead call
     GetErrorName in ErrorNames.h."""
+
+    for infile in extra_errors:
+        import_extra_errors(infile)
 
     output.write(
         """
@@ -1373,7 +1451,10 @@ GetErrorNameInternal(nsresult rv)
     )
 
 
-def error_list_rs(output):
+def error_list_rs(output, *extra_errors):
+    for infile in extra_errors:
+        import_extra_errors(infile)
+
     output.write(
         """
 /* THIS FILE IS GENERATED BY ErrorList.py - DO NOT EDIT */
@@ -1419,3 +1500,14 @@ def gen_jinja(output, input_filename):
     }
 
     tpl.stream(context).dump(output, encoding="utf-8")
+
+
+def error_list_json(output, *extra_errors):
+    """
+    Export error_list.json, used by tools/ts to build lib.gecko.nsresult.d.ts.
+    """
+    for infile in extra_errors:
+        import_extra_errors(infile)
+
+    json.dump(errors, output, indent=2)
+    output.write("\n")

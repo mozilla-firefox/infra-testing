@@ -44,6 +44,7 @@ from .data import (
     InstallationTarget,
     IPDLCollection,
     JARManifest,
+    LegacyRunTests,
     Library,
     Linkable,
     LocalInclude,
@@ -252,8 +253,7 @@ class TreeMetadataEmitter(LoggingMixin):
             for o in lib.refs:
                 yield o
                 if isinstance(o, StaticLibrary):
-                    for q in recurse_refs(o):
-                        yield q
+                    yield from recurse_refs(o)
 
         # Check that all static libraries refering shared libraries in
         # USE_LIBS are linked into a shared library or program.
@@ -1222,8 +1222,7 @@ class TreeMetadataEmitter(LoggingMixin):
 
         # We always emit a directory traversal descriptor. This is needed by
         # the recursive make backend.
-        for o in self._emit_directory_traversal_from_context(context):
-            yield o
+        yield from self._emit_directory_traversal_from_context(context)
 
         for obj in self._process_xpidl(context):
             yield obj
@@ -1231,6 +1230,7 @@ class TreeMetadataEmitter(LoggingMixin):
         computed_flags = ComputedFlags(context, context["COMPILE_FLAGS"])
         computed_link_flags = ComputedFlags(context, context["LINK_FLAGS"])
         computed_host_flags = ComputedFlags(context, context["HOST_COMPILE_FLAGS"])
+        computed_host_link_flags = ComputedFlags(context, context["HOST_LINK_FLAGS"])
         computed_as_flags = ComputedFlags(context, context["ASM_FLAGS"])
         computed_wasm_flags = ComputedFlags(context, context["WASM_FLAGS"])
 
@@ -1239,16 +1239,22 @@ class TreeMetadataEmitter(LoggingMixin):
         # desired abstraction of the build definition away from makefiles.
         passthru = VariablePassthru(context)
         varlist = [
+            "DUMP_SYMBOLS_FLAGS",
             "EXTRA_DSO_LDOPTS",
             "RCFILE",
             "RCINCLUDE",
             "WIN32_EXE_LDFLAGS",
             "USE_EXTENSION_MANIFEST",
             "WASM_LIBS",
+            "XPI_PKGNAME",
+            "XPI_TESTDIR",
         ]
         for v in varlist:
             if v in context and context[v]:
                 passthru.variables[v] = context[v]
+
+        if "XPI_TESTDIR" in context and "XPI_PKGNAME" not in context:
+            raise SandboxValidationError("XPI_TESTDIR set but XPI_PKGNAME not set")
 
         if (
             context.config.substs.get("OS_TARGET") == "WINNT"
@@ -1285,6 +1291,20 @@ class TreeMetadataEmitter(LoggingMixin):
 
         if "LDFLAGS" in context and context["LDFLAGS"]:
             computed_link_flags.resolve_flags("MOZBUILD", context["LDFLAGS"])
+
+        if "HOST_LDFLAGS" in context and context["HOST_LDFLAGS"]:
+            computed_host_link_flags.resolve_flags("MOZBUILD", context["HOST_LDFLAGS"])
+
+        # Set link flags according to whether we want a console.
+        if context.config.substs.get("TARGET_OS") == "WINNT":
+            if context.get("WINCONSOLE", True):
+                context["WIN32_EXE_LDFLAGS"] += context.config.substs.get(
+                    "WIN32_CONSOLE_EXE_LDFLAGS", []
+                )
+            else:
+                context["WIN32_EXE_LDFLAGS"] += context.config.substs.get(
+                    "WIN32_GUI_EXE_LDFLAGS", []
+                )
 
         deffile = context.get("DEFFILE")
         if deffile and context.config.substs.get("OS_TARGET") == "WINNT":
@@ -1401,10 +1421,7 @@ class TreeMetadataEmitter(LoggingMixin):
                         "(resolved to %s)" % (local_include, full_path),
                         context,
                     )
-            if (
-                full_path == context.config.topsrcdir
-                or full_path == context.config.topobjdir
-            ):
+            if full_path in {context.config.topsrcdir, context.config.topobjdir}:
                 raise SandboxValidationError(
                     "Path specified in LOCAL_INCLUDES "
                     "(%s) resolves to the topsrcdir or topobjdir (%s), which is "
@@ -1545,18 +1562,17 @@ class TreeMetadataEmitter(LoggingMixin):
                                     % (var, f),
                                     context,
                                 )
-                        else:
-                            # Additionally, don't allow LOCALIZED_GENERATED_FILES to be used
-                            # in anything *but* LOCALIZED_FILES.
-                            if f.target_basename in localized_generated_files:
-                                raise SandboxValidationError(
-                                    (
-                                        "Outputs of LOCALIZED_GENERATED_FILES cannot "
-                                        "be used in %s: %s"
-                                    )
-                                    % (var, f),
-                                    context,
+                        # Additionally, don't allow LOCALIZED_GENERATED_FILES to be used
+                        # in anything *but* LOCALIZED_FILES.
+                        elif f.target_basename in localized_generated_files:
+                            raise SandboxValidationError(
+                                (
+                                    "Outputs of LOCALIZED_GENERATED_FILES cannot "
+                                    "be used in %s: %s"
                                 )
+                                % (var, f),
+                                context,
+                            )
 
             # Addons (when XPI_NAME is defined) and Applications (when
             # DIST_SUBDIR is defined) use a different preferences directory
@@ -1584,6 +1600,9 @@ class TreeMetadataEmitter(LoggingMixin):
                     "chrome.manifest",
                     Manifest("components", mozpath.basename(c)),
                 )
+
+        if run_tests := context.get("LEGACY_RUN_TESTS", []):
+            yield LegacyRunTests(context, run_tests)
 
         rust_tests = context.get("RUST_TESTS", [])
         if rust_tests:
@@ -1631,6 +1650,7 @@ class TreeMetadataEmitter(LoggingMixin):
 
         if context.objdir in self._host_compile_dirs:
             yield computed_host_flags
+            yield computed_host_link_flags
 
         if context.objdir in self._wasm_compile_dirs:
             yield computed_wasm_flags

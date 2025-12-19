@@ -62,7 +62,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "gMIMEService",
   "@mozilla.org/mime;1",
-  "nsIMIMEService"
+  Ci.nsIMIMEService
 );
 
 const ReferrerInfo = Components.Constructor(
@@ -130,6 +130,7 @@ function getTempFile(leafName) {
 
 /**
  * Check for file existence.
+ *
  * @param {string} path The file path.
  */
 async function fileExists(path) {
@@ -265,7 +266,7 @@ function promiseStartLegacyDownload(aSourceUrl, aOptions) {
   }
 
   if (aOptions && aOptions.launcherPath) {
-    Assert.ok(mimeInfo != null);
+    Assert.notEqual(mimeInfo, null);
 
     let localHandlerApp = Cc[
       "@mozilla.org/uriloader/local-handler-app;1"
@@ -276,7 +277,7 @@ function promiseStartLegacyDownload(aSourceUrl, aOptions) {
     mimeInfo.preferredAction = Ci.nsIMIMEInfo.useHelperApp;
   }
   if (aOptions && aOptions.launcherId) {
-    Assert.ok(mimeInfo != null);
+    Assert.notEqual(mimeInfo, null);
 
     let gioHandlerApp = Cc["@mozilla.org/gio-service;1"]
       .getService(Ci.nsIGIOService)
@@ -287,7 +288,7 @@ function promiseStartLegacyDownload(aSourceUrl, aOptions) {
   }
 
   if (aOptions && aOptions.launchWhenSucceeded) {
-    Assert.ok(mimeInfo != null);
+    Assert.notEqual(mimeInfo, null);
 
     mimeInfo.preferredAction = Ci.nsIMIMEInfo.useHelperApp;
   }
@@ -304,23 +305,21 @@ function promiseStartLegacyDownload(aSourceUrl, aOptions) {
       .then(function (aList) {
         // Temporarily register a view that will get notified when the download we
         // are controlling becomes visible in the list of downloads.
-        aList
-          .addView({
-            onDownloadAdded(aDownload) {
-              aList.removeView(this).catch(do_report_unexpected_exception);
+        aList.addView({
+          onDownloadAdded(aDownload) {
+            aList.removeView(this);
 
-              // Remove the download to keep the list empty for the next test.  This
-              // also allows the caller to register the "onchange" event directly.
-              let promise = aList.remove(aDownload);
+            // Remove the download to keep the list empty for the next test.  This
+            // also allows the caller to register the "onchange" event directly.
+            let promise = aList.remove(aDownload);
 
-              // When the download object is ready, make it available to the caller.
-              promise.then(
-                () => resolve(aDownload),
-                do_report_unexpected_exception
-              );
-            },
-          })
-          .catch(do_report_unexpected_exception);
+            // When the download object is ready, make it available to the caller.
+            promise.then(
+              () => resolve(aDownload),
+              do_report_unexpected_exception
+            );
+          },
+        });
 
         let isPrivate = aOptions && aOptions.isPrivate;
         let referrerInfo = aOptions ? aOptions.referrerInfo : null;
@@ -387,23 +386,21 @@ function promiseStartExternalHelperAppServiceDownload(aSourceUrl) {
       .then(function (aList) {
         // Temporarily register a view that will get notified when the download we
         // are controlling becomes visible in the list of downloads.
-        aList
-          .addView({
-            onDownloadAdded(aDownload) {
-              aList.removeView(this).catch(do_report_unexpected_exception);
+        aList.addView({
+          onDownloadAdded(aDownload) {
+            aList.removeView(this);
 
-              // Remove the download to keep the list empty for the next test.  This
-              // also allows the caller to register the "onchange" event directly.
-              let promise = aList.remove(aDownload);
+            // Remove the download to keep the list empty for the next test.  This
+            // also allows the caller to register the "onchange" event directly.
+            let promise = aList.remove(aDownload);
 
-              // When the download object is ready, make it available to the caller.
-              promise.then(
-                () => resolve(aDownload),
-                do_report_unexpected_exception
-              );
-            },
-          })
-          .catch(do_report_unexpected_exception);
+            // When the download object is ready, make it available to the caller.
+            promise.then(
+              () => resolve(aDownload),
+              do_report_unexpected_exception
+            );
+          },
+        });
 
         let channel = NetUtil.newChannel({
           uri: sourceURI,
@@ -617,7 +614,7 @@ async function promiseVerifyContents(aPath, aExpectedContents) {
         ) {
           // Do not print the entire content string to the test log.
           Assert.equal(contents.length, aExpectedContents.length);
-          Assert.ok(contents == aExpectedContents);
+          Assert.equal(contents, aExpectedContents);
         } else {
           // Print the string if it is short and made of printable characters.
           Assert.equal(contents, aExpectedContents);
@@ -716,7 +713,8 @@ async function promisePartFileReady(aDownload) {
  *           keepPartialData: bool,
  *           keepBlockedData: bool,
  *           useLegacySaver: bool,
- *           verdict: string indicating the detailed reason for the block,
+ *           verdict: nsIApplicationReputationService value indicating the reason for the block,
+ *           expectedError: Downloads.Error value indicating the expected error,
  *        }
  * @return {Promise}
  * @resolves The reputation blocked download.
@@ -726,7 +724,8 @@ async function promiseBlockedDownload({
   keepPartialData,
   keepBlockedData,
   useLegacySaver,
-  verdict = Downloads.Error.BLOCK_VERDICT_UNCOMMON,
+  verdict = Ci.nsIApplicationReputationService.VERDICT_UNCOMMON,
+  expectedError = Downloads.Error.BLOCK_VERDICT_UNCOMMON,
 } = {}) {
   let blockFn = () => ({
     shouldBlockForReputationCheck: () =>
@@ -766,9 +765,9 @@ async function promiseBlockedDownload({
       throw ex;
     }
     Assert.ok(ex.becauseBlockedByReputationCheck);
-    Assert.equal(ex.reputationCheckVerdict, verdict);
+    Assert.equal(ex.reputationCheckVerdict, expectedError);
     Assert.ok(download.error.becauseBlockedByReputationCheck);
-    Assert.equal(download.error.reputationCheckVerdict, verdict);
+    Assert.equal(download.error.reputationCheckVerdict, expectedError);
   }
 
   Assert.ok(download.stopped);
@@ -883,7 +882,8 @@ function isValidDate(aDate) {
  * Because the actual download's referrer info's computedReferrer is computed
  * from referrerPolicy and originalReferrer and is non-null, and the expected
  * referrer info was constructed in isolation and therefore the computedReferrer
- * is null, it isn't possible to use equals here. */
+ * is null, it isn't possible to use equals here.
+ */
 function checkEqualReferrerInfos(aActualInfo, aExpectedInfo) {
   Assert.equal(
     !!aExpectedInfo.originalReferrer,
@@ -1138,7 +1138,7 @@ add_setup(function test_common_initialize() {
       shouldBlockForReputationCheck: () =>
         Promise.resolve({
           shouldBlock: false,
-          verdict: "",
+          verdict: Ci.nsIApplicationReputationService.VERDICT_SAFE,
         }),
       confirmLaunchExecutable: () => Promise.resolve(),
       launchFile: () => Promise.resolve(),

@@ -8,23 +8,17 @@ set -v
 
 cd $GECKO_PATH
 
-# Nexus needs Java 8
-export PATH=$MOZ_FETCHES_DIR/jdk-8/bin:$PATH
-
 . taskcluster/scripts/misc/android-gradle-dependencies/before.sh
 
 export MOZCONFIG=mobile/android/config/mozconfigs/android-arm-gradle-dependencies/nightly
 ./mach build
-./mach gradle downloadDependencies --no-configuration-cache
-./mach android gradle-dependencies --no-configuration-cache
-pushd mobile/android/fenix
-./gradlew detekt lint assembleDebug :benchmark:assembleBenchmark
-popd
-pushd mobile/android/focus-android
-./gradlew lint
-popd
-pushd mobile/android/android-components
-./gradlew -Pcoverage detekt lint service-nimbus:testReleaseUnitTest samples-browser:testGeckoDebugUnitTest tooling-lint:test
-popd
+
+# After the `mach build` invocation!
+export GRADLE_FLAGS="--no-configuration-cache --write-verification-metadata sha256 --dry-run"
+
+./mach android gradle-dependencies
+./mach gradle -p mobile/android/fenix lint :benchmark:assembleBenchmark
+./mach gradle -p mobile/android/focus-android lint
+./mach gradle -p mobile/android/android-components -Pcoverage detekt lint :components:tooling-lint:test :components:lib-auth:assemble :components:lib-auth:assembleAndroidTest :components:lib-auth:testRelease :components:lib-auth:lintRelease :components:lib-auth:publish
 
 . taskcluster/scripts/misc/android-gradle-dependencies/after.sh

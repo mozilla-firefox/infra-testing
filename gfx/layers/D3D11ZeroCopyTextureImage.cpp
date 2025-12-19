@@ -5,7 +5,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include <d3d11.h>
-#include <memory>
 #include <mfobjects.h>
 
 #include "D3D11ZeroCopyTextureImage.h"
@@ -35,18 +34,23 @@ IMFSampleWrapper::~IMFSampleWrapper() {}
 void IMFSampleWrapper::ClearVideoSample() { mVideoSample = nullptr; }
 
 D3D11ZeroCopyTextureImage::D3D11ZeroCopyTextureImage(
-    ID3D11Texture2D* aTexture, uint32_t aArrayIndex, const gfx::IntSize& aSize,
-    const gfx::IntRect& aRect, gfx::ColorSpace2 aColorSpace,
-    gfx::ColorRange aColorRange, gfx::ColorDepth aColorDepth)
+    ID3D11Texture2D* aTexture, const uint32_t aArrayIndex,
+    const gfx::IntSize& aSize, const gfx::IntRect& aRect,
+    const gfx::SurfaceFormat aFormat, const gfx::ColorSpace2 aColorSpace,
+    const gfx::ColorRange aColorRange, const gfx::ColorDepth aColorDepth)
     : Image(nullptr, ImageFormat::D3D11_TEXTURE_ZERO_COPY),
       mTexture(aTexture),
       mArrayIndex(aArrayIndex),
       mSize(aSize),
       mPictureRect(aRect),
+      mFormat(aFormat),
       mColorSpace(aColorSpace),
       mColorRange(aColorRange),
       mColorDepth(aColorDepth) {
   MOZ_ASSERT(XRE_IsGPUProcess());
+  MOZ_ASSERT(mFormat == gfx::SurfaceFormat::NV12 ||
+             mFormat == gfx::SurfaceFormat::P010 ||
+             mFormat == gfx::SurfaceFormat::P016);
 }
 
 D3D11ZeroCopyTextureImage::~D3D11ZeroCopyTextureImage() {
@@ -60,8 +64,8 @@ void D3D11ZeroCopyTextureImage::AllocateTextureClient(
     aWriteFence->IncrementAndSignal();
   }
   mTextureClient = D3D11TextureData::CreateTextureClient(
-      mTexture, mArrayIndex, mSize, gfx::SurfaceFormat::NV12, mColorSpace,
-      mColorRange, aKnowsCompositor, aUsageInfo, aWriteFence);
+      mTexture, mArrayIndex, mSize, mFormat, mColorSpace, mColorRange,
+      aKnowsCompositor, aUsageInfo, aWriteFence);
   MOZ_ASSERT(mTextureClient);
 }
 
@@ -116,8 +120,15 @@ nsresult D3D11ZeroCopyTextureImage::BuildSurfaceDescriptorBuffer(
     return NS_ERROR_FAILURE;
   }
 
-  return gfx::Factory::CreateSdbForD3D11Texture(src, mSize, aSdBuffer,
-                                                aAllocate);
+  nsresult rv =
+      gfx::Factory::CreateSdbForD3D11Texture(src, mSize, aSdBuffer, aAllocate);
+  if (rv != NS_ERROR_NOT_IMPLEMENTED) {
+    // TODO(aosmond): We only support BGRA on this path, but depending on
+    // aFlags, we may be able to return a YCbCr format without conversion.
+    return rv;
+  }
+
+  return Image::BuildSurfaceDescriptorBuffer(aSdBuffer, aFlags, aAllocate);
 }
 
 ID3D11Texture2D* D3D11ZeroCopyTextureImage::GetTexture() const {
@@ -125,11 +136,12 @@ ID3D11Texture2D* D3D11ZeroCopyTextureImage::GetTexture() const {
 }
 
 D3D11TextureIMFSampleImage::D3D11TextureIMFSampleImage(
-    IMFSample* aVideoSample, ID3D11Texture2D* aTexture, uint32_t aArrayIndex,
-    const gfx::IntSize& aSize, const gfx::IntRect& aRect,
-    gfx::ColorSpace2 aColorSpace, gfx::ColorRange aColorRange,
-    gfx::ColorDepth aColorDepth)
-    : D3D11ZeroCopyTextureImage(aTexture, aArrayIndex, aSize, aRect,
+    IMFSample* aVideoSample, ID3D11Texture2D* aTexture,
+    const uint32_t aArrayIndex, const gfx::IntSize& aSize,
+    const gfx::IntRect& aRect, const gfx::SurfaceFormat aFormat,
+    const gfx::ColorSpace2 aColorSpace, const gfx::ColorRange aColorRange,
+    const gfx::ColorDepth aColorDepth)
+    : D3D11ZeroCopyTextureImage(aTexture, aArrayIndex, aSize, aRect, aFormat,
                                 aColorSpace, aColorRange, aColorDepth),
       mVideoSample(IMFSampleWrapper::Create(aVideoSample)) {
   MOZ_ASSERT(XRE_IsGPUProcess());
@@ -141,11 +153,11 @@ RefPtr<IMFSampleWrapper> D3D11TextureIMFSampleImage::GetIMFSampleWrapper() {
 
 D3D11TextureAVFrameImage::D3D11TextureAVFrameImage(
     D3D11TextureWrapper* aWrapper, const gfx::IntSize& aSize,
-    const gfx::IntRect& aRect, gfx::ColorSpace2 aColorSpace,
-    gfx::ColorRange aColorRange, gfx::ColorDepth aColorDepth)
-    : D3D11ZeroCopyTextureImage(aWrapper->GetTexture(), aWrapper->GetArrayIdx(),
-                                aSize, aRect, aColorSpace, aColorRange,
-                                aColorDepth),
+    const gfx::IntRect& aRect, const gfx::ColorSpace2 aColorSpace,
+    const gfx::ColorRange aColorRange, const gfx::ColorDepth aColorDepth)
+    : D3D11ZeroCopyTextureImage(aWrapper->GetTexture(), aWrapper->mArrayIdx,
+                                aSize, aRect, aWrapper->mFormat, aColorSpace,
+                                aColorRange, aColorDepth),
       mWrapper(aWrapper) {
   MOZ_ASSERT(XRE_IsGPUProcess());
 }

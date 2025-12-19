@@ -11,8 +11,8 @@ $modal-scrollbar-z-index: 1100;
   background: var(--newtab-overlay-color);
   height: 100%;
   position: fixed;
-  top: 0;
-  left: 0;
+  inset-block-start: 0;
+  inset-inline-start: 0;
   width: 100%;
   display: none;
   z-index: $modal-scrollbar-z-index;
@@ -31,15 +31,15 @@ $modal-scrollbar-z-index: 1100;
   margin: auto;
   background: var(--newtab-background-color-secondary);
   box-shadow: $shadow-large;
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
   display: none;
   z-index: $modal-scrollbar-z-index;
 
   // modal takes over entire screen
   @media(width <= 960px) {
     height: 100%;
-    top: 0;
-    left: 0;
+    inset-block-start: 0;
+    inset-inline-start: 0;
     box-shadow: none;
     border-radius: 0;
   }
@@ -51,28 +51,26 @@ $modal-scrollbar-z-index: 1100;
   h2 {
     color: var(--newtab-text-primary-color);
     text-align: center;
-    font-weight: 200;
-    margin-top: 30px;
-    font-size: 28px;
-    line-height: 37px;
-    letter-spacing: -0.13px;
+    margin-block-start: var(--space-xxlarge);
+    font-size: var(--font-size-xxlarge);
 
     @media(width <= 960px) {
-      margin-top: 100px;
+      // Bug 1967304 - Large number (96px)
+      margin-block-start: calc(var(--space-xlarge) * 4);
     }
 
     @media(width <= 850px) {
-      margin-top: 30px;
+      margin-block-start: var(--space-xxlarge);
     }
   }
 
   .footer {
-    border-top: $border-secondary;
-    border-radius: 4px;
+    border-block-start: 1px solid var(--border-color);
+    border-radius: var(--border-radius-small);
     height: 70px;
     width: 100%;
     position: absolute;
-    bottom: 0;
+    inset-block-end: 0;
     text-align: center;
     background-color: $white;
 
@@ -87,11 +85,11 @@ $modal-scrollbar-z-index: 1100;
     }
 
     .modalButton {
-      margin-top: 20px;
+      margin-block-start: var(--space-large);
       min-width: 150px;
       height: 30px;
-      padding: 4px 30px 6px;
-      font-size: 15px;
+      padding: var(--space-xsmall) var(--space-xxlarge);
+      font-size: inherit;
 
       &:focus,
       &.active,

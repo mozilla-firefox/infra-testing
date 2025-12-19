@@ -74,16 +74,15 @@ TaskQueue::TaskQueue(already_AddRefed<nsIEventTarget> aTarget,
       mIsShutdown(false),
       mName(aName) {}
 
-TaskQueue::~TaskQueue() {
-  // We should never free the TaskQueue if it was destroyed abnormally, meaning
-  // that all cleanup tasks should be complete if we do.
-  MOZ_ASSERT(mShutdownTasks.IsEmpty());
-}
-
 NS_IMPL_ADDREF_INHERITED(TaskQueue, SupportsThreadSafeWeakPtr<TaskQueue>)
 NS_IMPL_RELEASE_INHERITED(TaskQueue, SupportsThreadSafeWeakPtr<TaskQueue>)
-NS_IMPL_QUERY_INTERFACE(TaskQueue, nsIDirectTaskDispatcher,
-                        nsISerialEventTarget, nsIEventTarget)
+
+NS_INTERFACE_MAP_BEGIN(TaskQueue)
+  NS_INTERFACE_MAP_ENTRY(nsIDirectTaskDispatcher)
+  NS_INTERFACE_MAP_ENTRY(nsISerialEventTarget)
+  NS_INTERFACE_MAP_ENTRY(nsIEventTarget)
+  NS_INTERFACE_MAP_ENTRY_CONCRETE(TaskQueue)
+NS_INTERFACE_MAP_END
 
 TaskDispatcher& TaskQueue::TailDispatcher() {
   MOZ_ASSERT(IsCurrentThreadIn());
@@ -94,25 +93,26 @@ TaskDispatcher& TaskQueue::TailDispatcher() {
 // Note aRunnable is passed by ref to support conditional ownership transfer.
 // See Dispatch() in TaskQueue.h for more details.
 nsresult TaskQueue::DispatchLocked(nsCOMPtr<nsIRunnable>& aRunnable,
-                                   uint32_t aFlags, DispatchReason aReason) {
+                                   DispatchFlags aFlags,
+                                   DispatchReason aReason) {
   mQueueMonitor.AssertCurrentThreadOwns();
 
   // Continue to allow dispatches after shutdown until the last message has been
   // processed, at which point no more messages will be accepted.
   if (mIsShutdown && !mIsRunning) {
-    return NS_ERROR_UNEXPECTED;
+    return NS_ERROR_ILLEGAL_DURING_SHUTDOWN;
   }
 
   AbstractThread* currentThread;
   if (aReason != TailDispatch && (currentThread = GetCurrent()) &&
       RequiresTailDispatch(currentThread) &&
       currentThread->IsTailDispatcherAvailable()) {
-    MOZ_ASSERT(aFlags == NS_DISPATCH_NORMAL,
-               "Tail dispatch doesn't support flags");
     return currentThread->TailDispatcher().AddTask(this, aRunnable.forget());
   }
 
-  PROFILER_MARKER("TaskQueue::DispatchLocked", OTHER, {},
+  PROFILER_MARKER("TaskQueue::DispatchLocked", OTHER,
+                  {MarkerStack::MaybeCapture(
+                      profiler_feature_active(ProfilerFeature::Flows))},
                   FlowMarker, Flow::FromPointer(aRunnable.get()));
   LogRunnable::LogDispatch(aRunnable);
   mTasks.Push({std::move(aRunnable), aFlags});
@@ -121,7 +121,8 @@ nsresult TaskQueue::DispatchLocked(nsCOMPtr<nsIRunnable>& aRunnable,
     return NS_OK;
   }
   RefPtr<nsIRunnable> runner(new Runner(this));
-  nsresult rv = mTarget->Dispatch(runner.forget(), aFlags);
+  nsresult rv =
+      mTarget->Dispatch(runner.forget(), aFlags | NS_DISPATCH_FALLIBLE);
   if (NS_FAILED(rv)) {
     NS_WARNING("Failed to dispatch runnable to run TaskQueue");
     return rv;
@@ -138,21 +139,14 @@ nsresult TaskQueue::RegisterShutdownTask(nsITargetShutdownTask* aTask) {
   if (mIsShutdown) {
     return NS_ERROR_UNEXPECTED;
   }
-
-  MOZ_ASSERT(!mShutdownTasks.Contains(aTask));
-  mShutdownTasks.AppendElement(aTask);
-  return NS_OK;
+  return mShutdownTasks.AddTask(aTask);
 }
 
 nsresult TaskQueue::UnregisterShutdownTask(nsITargetShutdownTask* aTask) {
   NS_ENSURE_ARG(aTask);
 
   MonitorAutoLock mon(mQueueMonitor);
-  if (mIsShutdown) {
-    return NS_ERROR_UNEXPECTED;
-  }
-
-  return mShutdownTasks.RemoveElement(aTask) ? NS_OK : NS_ERROR_UNEXPECTED;
+  return mShutdownTasks.RemoveTask(aTask);
 }
 
 void TaskQueue::AwaitIdle() {
@@ -186,6 +180,7 @@ void TaskQueue::AwaitShutdownAndIdle() {
   }
   AwaitIdleLocked();
 }
+
 RefPtr<ShutdownPromise> TaskQueue::BeginShutdown() {
   // Dispatch any tasks for this queue waiting in the caller's tail dispatcher,
   // since this is the last opportunity to do so.
@@ -194,14 +189,14 @@ RefPtr<ShutdownPromise> TaskQueue::BeginShutdown() {
   }
 
   MonitorAutoLock mon(mQueueMonitor);
-  // Dispatch any cleanup tasks to the queue before we put it into full
+  // Dispatch all cleanup tasks to the queue before we put it into full
   // shutdown.
-  for (auto& task : mShutdownTasks) {
+  TargetShutdownTaskSet::TasksArray tasks = mShutdownTasks.Extract();
+  for (auto& task : tasks) {
     nsCOMPtr runnable{task->AsRunnable()};
     MOZ_ALWAYS_SUCCEEDS(
         DispatchLocked(runnable, NS_DISPATCH_NORMAL, TailDispatch));
   }
-  mShutdownTasks.Clear();
   mIsShutdown = true;
 
   RefPtr<ShutdownPromise> p = mShutdownPromise.Ensure(__func__);
@@ -217,6 +212,7 @@ void TaskQueue::MaybeResolveShutdown() {
     // Disconnect from our target as we won't try to dispatch any more events.
     mTrackerEntry = nullptr;
     mTarget = nullptr;
+    mObserver = nullptr;
   }
 }
 
@@ -230,8 +226,15 @@ bool TaskQueue::IsCurrentThreadIn() const {
   return in;
 }
 
+void TaskQueue::SetObserver(Observer* aObserver) {
+  MonitorAutoLock mon(mQueueMonitor);
+  MOZ_ASSERT_IF(aObserver, !mObserver);
+  mObserver = std::move(aObserver);
+}
+
 nsresult TaskQueue::Runner::Run() {
   TaskStruct event;
+  RefPtr<Observer> observer;
   {
     MonitorAutoLock mon(mQueue->mQueueMonitor);
     MOZ_ASSERT(mQueue->mIsRunning);
@@ -242,6 +245,7 @@ nsresult TaskQueue::Runner::Run() {
       return NS_OK;
     }
     event = mQueue->mTasks.Pop();
+    observer = mQueue->mObserver;
   }
   MOZ_ASSERT(event.event);
 
@@ -251,8 +255,7 @@ nsresult TaskQueue::Runner::Run() {
   // designed to be threadsafe, it will be, provided we're only calling it
   // in this task queue.
   {
-    AutoTaskGuard g(mQueue);
-    SerialEventTargetGuard tg(mQueue);
+    AutoTaskGuard g(mQueue, observer);
     {
       LogRunnable::Run log(event.event);
 
@@ -287,8 +290,9 @@ nsresult TaskQueue::Runner::Run() {
   nsresult rv;
   {
     MonitorAutoLock mon(mQueue->mQueueMonitor);
-    rv = mQueue->mTarget->Dispatch(
-        this, mQueue->mTasks.FirstElement().flags | NS_DISPATCH_AT_END);
+    rv = mQueue->mTarget->Dispatch(this, mQueue->mTasks.FirstElement().flags |
+                                             NS_DISPATCH_AT_END |
+                                             NS_DISPATCH_FALLIBLE);
   }
   if (NS_FAILED(rv)) {
     // Failed to dispatch, shutdown!

@@ -16,7 +16,6 @@ from copy import deepcopy
 
 import mozcrash
 import mozprocess
-import six
 from benchmark import Benchmark
 from cmdline import CHROME_ANDROID_APPS, DESKTOP_APPS, FIREFOX_ANDROID_APPS
 from logger.logger import RaptorLogger
@@ -34,8 +33,7 @@ BROWSERTIME_BENCHMARK_OUTPUT_TIMEOUT = (
 )
 
 
-@six.add_metaclass(ABCMeta)
-class Browsertime(Perftest):
+class Browsertime(Perftest, metaclass=ABCMeta):
     """Abstract base class for Browsertime"""
 
     @property
@@ -65,7 +63,7 @@ class Browsertime(Perftest):
             # use the chrome-m profile class for both chrome-m and CaR-m
             profile_class = "chrome-m"
 
-        super(Browsertime, self).__init__(
+        super().__init__(
             app,
             binary,
             profile_class=profile_class,
@@ -103,7 +101,7 @@ class Browsertime(Perftest):
         return self._crash_directory
 
     def build_browser_profile(self):
-        super(Browsertime, self).build_browser_profile()
+        super().build_browser_profile()
         if self.profile is not None:
             self.remove_mozprofile_delimiters_from_profile()
 
@@ -159,7 +157,7 @@ class Browsertime(Perftest):
         if test.get("preferences", ""):
             test["preferences"] = self._convert_prefs_to_dict(test["preferences"])
 
-        super(Browsertime, self).run_test_setup(test)
+        super().run_test_setup(test)
 
         if test.get("type") == "benchmark" or test.get("benchmark_webserver", False):
             # benchmark-type tests require the benchmark test to be served out
@@ -255,7 +253,7 @@ class Browsertime(Perftest):
         LOG.info(f"test: {test}")
 
     def run_test_teardown(self, test):
-        super(Browsertime, self).run_test_teardown(test)
+        super().run_test_teardown(test)
 
         # If we were using a playback tool, stop it
         if self.playback is not None:
@@ -271,13 +269,13 @@ class Browsertime(Perftest):
             test.get("support_class").clean_up()
 
     def check_for_crashes(self):
-        super(Browsertime, self).check_for_crashes()
+        super().check_for_crashes()
         self.crashes += mozcrash.log_crashes(
             LOG, self.crash_directory, self.config["symbols_path"]
         )
 
     def clean_up(self):
-        super(Browsertime, self).clean_up()
+        super().clean_up()
 
     def _expose_browser_profiler(self, extra_profiler_run, test):
         """Use this method to check if we will use an exposed gecko profiler via browsertime.
@@ -676,7 +674,7 @@ class Browsertime(Perftest):
             (
                 "gecko_profile_entries",
                 "--firefox.geckoProfilerParams.bufferSize",
-                str(13_107_200 * 5),  # ~500mb
+                str(128 * 1024 * 1024),  # 1GiB
             ),
         ):
             # 0 is a valid value. The setting may be present but set to None.
@@ -969,7 +967,7 @@ class Browsertime(Perftest):
         if self.debug_mode:
             output_timeout = 2147483647
 
-        LOG.info(f"timeout (s): {timeout}")
+        LOG.info(f"timeout (ms): {timeout}")
         LOG.info(f"browsertime cwd: {os.getcwd()}")
         LOG.info("browsertime cmd: {}".format(" ".join([str(c) for c in cmd])))
         if self.browsertime_video:

@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsDisplayListInvalidation.h"
+
 #include "nsDisplayList.h"
 #include "nsIFrame.h"
 #include "nsTableFrame.h"
@@ -48,7 +49,7 @@ void nsDisplayItemGenericGeometry::MoveBy(const nsPoint& aOffset) {
 nsDisplayItemBoundsGeometry::nsDisplayItemBoundsGeometry(
     nsDisplayItem* aItem, nsDisplayListBuilder* aBuilder)
     : nsDisplayItemGeometry(aItem, aBuilder) {
-  nscoord radii[8];
+  nsRectCornerRadii radii;
   mHasRoundedCorners = aItem->Frame()->GetBorderRadii(radii);
 }
 

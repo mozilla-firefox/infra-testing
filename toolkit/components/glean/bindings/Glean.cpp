@@ -4,10 +4,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/glean/bindings/Glean.h"
+
+#include "bindings/private/Common.h"
 #include "mozilla/dom/DOMJSClass.h"
 #include "mozilla/dom/GleanBinding.h"
 #include "mozilla/dom/BindingUtils.h"
-#include "mozilla/glean/bindings/Glean.h"
 #include "mozilla/glean/bindings/Category.h"
 #include "mozilla/glean/bindings/GleanJSMetricsLookup.h"
 #include "mozilla/glean/bindings/jog/jog_ffi_generated.h"
@@ -38,6 +40,8 @@ JSObject* Glean::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
   return dom::GleanImpl_Binding::Wrap(aCx, this, aGivenProto);
 }
 
+Glean::Glean(nsIGlobalObject* aGlobal) : mParent(aGlobal) {}
+
 // static
 bool Glean::DefineGlean(JSContext* aCx, JS::Handle<JSObject*> aGlobal) {
   MOZ_ASSERT(NS_IsMainThread());
@@ -63,10 +67,12 @@ bool Glean::DefineGlean(JSContext* aCx, JS::Handle<JSObject*> aGlobal) {
 already_AddRefed<Category> Glean::NamedGetter(const nsAString& aName,
                                               bool& aFound) {
   MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(IsCamelCase(aName), "NamedGetter expects CamelCase");
 
   JOG::EnsureRuntimeMetricsRegistered();
 
   NS_ConvertUTF16toUTF8 categoryName(aName);
+
   if (JOG::HasCategory(categoryName)) {
     aFound = true;
     return MakeAndAddRef<Category>(std::move(categoryName), mParent);

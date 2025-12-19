@@ -33,8 +33,16 @@ Http2Stream::Http2Stream(nsAHttpTransaction* httpTransaction,
 Http2Stream::~Http2Stream() {}
 
 void Http2Stream::CloseStream(nsresult reason) {
+  if (reason == NS_ERROR_NET_RESET &&
+      mTransaction->ConnectionInfo()->IsHttp3ProxyConnection()) {
+    // If we got NS_ERROR_NET_RESET, the transaction will be retried. When
+    // MASQUE proxy is used, keep the Alt-Svc in the connection info. Dropping
+    // it could trigger an unintended proxy connection fallback.
+    mTransaction->DoNotRemoveAltSvc();
+  }
   mTransaction->Close(reason);
   mSession = nullptr;
+  mClosed = true;
 }
 
 uint32_t Http2Stream::GetWireStreamId() {
@@ -95,9 +103,20 @@ nsresult Http2Stream::GenerateHeaders(nsCString& aCompressedData,
   head->Method(method);
   head->Path(path);
 
+  bool mayAddTEHeader = true;
+  nsAutoCString teHeader;
+  rv = head->GetHeader(nsHttp::TE, teHeader);
+  if (NS_SUCCEEDED(rv) && teHeader.Equals("moz_no_te_trailers"_ns)) {
+    // This is a hack that allows extensions or devtools to
+    // skip adding the TE header. This is necessary to be able to
+    // ship interventions when websites misbehave when the TE:trailers
+    // header is sent (see bug 1954533).
+    mayAddTEHeader = false;
+  }
+
   rv = session->Compressor()->EncodeHeaderBlock(
       mFlatHttpRequestHeaders, method, path, authorityHeader, scheme,
-      EmptyCString(), false, aCompressedData);
+      EmptyCString(), false, aCompressedData, mayAddTEHeader);
   NS_ENSURE_SUCCESS(rv, rv);
 
   int64_t clVal = session->Compressor()->GetParsedContentLength();
@@ -119,13 +138,6 @@ nsresult Http2Stream::GenerateHeaders(nsCString& aCompressedData,
     // to determine whether or not to put fin on headers
     firstFrameFlags |= Http2Session::kFlag_END_STREAM;
   }
-
-  // The size of the input headers is approximate
-  uint32_t ratio =
-      aCompressedData.Length() * 100 /
-      (11 + requestURI.Length() + mFlatHttpRequestHeaders.Length());
-
-  glean::spdy::syn_ratio.AccumulateSingleSample(ratio);
 
   return NS_OK;
 }

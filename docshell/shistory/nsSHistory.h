@@ -27,8 +27,9 @@ class nsISHEntry;
 
 namespace mozilla {
 namespace dom {
+class EntryList;
 class LoadSHEntryResult;
-}
+}  // namespace dom
 }  // namespace mozilla
 
 class nsSHistory : public mozilla::LinkedListElement<nsSHistory>,
@@ -41,7 +42,7 @@ class nsSHistory : public mozilla::LinkedListElement<nsSHistory>,
    public:
     explicit HistoryTracker(nsSHistory* aSHistory, uint32_t aTimeout,
                             nsIEventTarget* aEventTarget)
-        : nsExpirationTracker(1000 * aTimeout / 2, "HistoryTracker",
+        : nsExpirationTracker(1000 * aTimeout / 2, "HistoryTracker"_ns,
                               aEventTarget) {
       MOZ_ASSERT(aSHistory);
       mSHistory = aSHistory;
@@ -136,8 +137,9 @@ class nsSHistory : public mozilla::LinkedListElement<nsSHistory>,
   static void WalkContiguousEntries(
       nsISHEntry* aEntry, const std::function<void(nsISHEntry*)>& aCallback);
   // Same as above, but calls aCallback on the entries in their history order.
+  // Will stop walking when `aCallback` returns false.
   static void WalkContiguousEntriesInOrder(
-      nsISHEntry* aEntry, const std::function<void(nsISHEntry*)>& aCallback);
+      nsISHEntry* aEntry, const std::function<bool(nsISHEntry*)>& aCallback);
 
   nsTArray<nsCOMPtr<nsISHEntry>>& Entries() { return mEntries; }
 
@@ -159,9 +161,13 @@ class nsSHistory : public mozilla::LinkedListElement<nsSHistory>,
   };
 
   MOZ_CAN_RUN_SCRIPT
-  static void LoadURIs(nsTArray<LoadEntryResult>& aLoadResults);
+  static void LoadURIs(
+      const nsTArray<LoadEntryResult>& aLoadResults, bool aCheckForCancelation,
+      const std::function<void(nsresult)>& aResolver = [](auto) {},
+      mozilla::dom::BrowsingContext* aTraversable = nullptr);
+
   MOZ_CAN_RUN_SCRIPT
-  static void LoadURIOrBFCache(LoadEntryResult& aLoadEntry);
+  static void LoadURIOrBFCache(const LoadEntryResult& aLoadEntry);
 
   // If this doesn't return an error then either aLoadResult is set to nothing,
   // in which case the caller should ignore the load, or it returns a valid
@@ -169,7 +175,11 @@ class nsSHistory : public mozilla::LinkedListElement<nsSHistory>,
   nsresult Reload(uint32_t aReloadFlags,
                   nsTArray<LoadEntryResult>& aLoadResults);
   nsresult ReloadCurrentEntry(nsTArray<LoadEntryResult>& aLoadResults);
-  nsresult GotoIndex(int32_t aIndex, nsTArray<LoadEntryResult>& aLoadResults,
+  // Passing aSourceBrowsingContext should only be done by
+  // CanonicalBrowsingContext::HistoryGo, since that corresponds to a call to
+  // #apply-the-traverse-history-step
+  nsresult GotoIndex(mozilla::dom::BrowsingContext* aSourceBrowsingContext,
+                     int32_t aIndex, nsTArray<LoadEntryResult>& aLoadResults,
                      bool aSameEpoch, bool aLoadCurrentEntry,
                      bool aUserActivation);
 
@@ -192,10 +202,11 @@ class nsSHistory : public mozilla::LinkedListElement<nsSHistory>,
     }
   }
 
-  int32_t GetIndexForReplace() {
-    // Replace current entry in session history; If the requested index is
-    // valid, it indicates the loading was triggered by a history load, and
-    // we should replace the entry at requested index instead.
+  int32_t GetTargetIndexForHistoryOperation() {
+    // When performing a session history operation, such as replace or
+    // navigation by key that can happen during ongoing history traversals; If
+    // the requested index is valid, it indicates the loading was triggered by a
+    // history load, and we should target the entry at requested index instead.
     return mRequestedIndex == -1 ? mIndex : mRequestedIndex;
   }
 
@@ -212,6 +223,16 @@ class nsSHistory : public mozilla::LinkedListElement<nsSHistory>,
 
   void LogHistory();
 
+  mozilla::dom::SessionHistoryEntry* FindAdjacentContiguousEntryFor(
+      mozilla::dom::SessionHistoryEntry* aEntry, int32_t aSearchDirection);
+  void ReconstructContiguousEntryListFrom(
+      mozilla::dom::SessionHistoryEntry* aEntry);
+  void ReconstructContiguousEntryList();
+  already_AddRefed<mozilla::dom::EntryList> EntryListFor(const nsID& aID);
+  void RemoveEntryList(const nsID& aID);
+
+  bool ContainsEntry(nsISHEntry* aEntry);
+
  protected:
   virtual ~nsSHistory();
 
@@ -220,19 +241,20 @@ class nsSHistory : public mozilla::LinkedListElement<nsSHistory>,
  private:
   friend class nsSHistoryObserver;
 
-  bool LoadDifferingEntries(nsISHEntry* aPrevEntry, nsISHEntry* aNextEntry,
-                            mozilla::dom::BrowsingContext* aParent,
-                            long aLoadType,
-                            nsTArray<LoadEntryResult>& aLoadResults,
-                            bool aLoadCurrentEntry, bool aUserActivation,
-                            int32_t aOffset);
-  void InitiateLoad(nsISHEntry* aFrameEntry,
+  bool ForEachDifferingEntry(
+      nsISHEntry* aPrevEntry, nsISHEntry* aNextEntry,
+      mozilla::dom::BrowsingContext* aParent,
+      const std::function<void(nsISHEntry*, mozilla::dom::BrowsingContext*)>&
+          aCallback);
+  void InitiateLoad(mozilla::dom::BrowsingContext* aSourceBrowsingContext,
+                    nsISHEntry* aFrameEntry,
                     mozilla::dom::BrowsingContext* aFrameBC, long aLoadType,
                     nsTArray<LoadEntryResult>& aLoadResult,
                     bool aLoadCurrentEntry, bool aUserActivation,
                     int32_t aOffset);
 
-  nsresult LoadEntry(int32_t aIndex, long aLoadType, uint32_t aHistCmd,
+  nsresult LoadEntry(mozilla::dom::BrowsingContext* aSourceBrowsingContext,
+                     int32_t aIndex, long aLoadType, uint32_t aHistCmd,
                      nsTArray<LoadEntryResult>& aLoadResults, bool aSameEpoch,
                      bool aLoadCurrentEntry, bool aUserActivation);
 
@@ -244,7 +266,11 @@ class nsSHistory : public mozilla::LinkedListElement<nsSHistory>,
   // Evict content viewers in this window which don't lie in the "safe" range
   // around aIndex.
   virtual void EvictOutOfRangeWindowDocumentViewers(int32_t aIndex);
+
+ public:
   void EvictDocumentViewerForEntry(nsISHEntry* aEntry);
+
+ private:
   static void GloballyEvictDocumentViewers();
   static void GloballyEvictAllDocumentViewers();
 
@@ -252,10 +278,11 @@ class nsSHistory : public mozilla::LinkedListElement<nsSHistory>,
   // content viewers to cache, based on amount of total memory
   static uint32_t CalcMaxTotalViewers();
 
-  nsresult LoadNextPossibleEntry(int32_t aNewIndex, long aLoadType,
-                                 uint32_t aHistCmd,
-                                 nsTArray<LoadEntryResult>& aLoadResults,
-                                 bool aLoadCurrentEntry, bool aUserActivation);
+  nsresult LoadNextPossibleEntry(
+      mozilla::dom::BrowsingContext* aSourceBrowsingContext, int32_t aNewIndex,
+      long aLoadType, uint32_t aHistCmd,
+      nsTArray<LoadEntryResult>& aLoadResults, bool aLoadCurrentEntry,
+      bool aUserActivation);
 
   // aIndex is the index of the entry which may be removed.
   // If aKeepNext is true, aIndex is compared to aIndex + 1,
@@ -303,6 +330,11 @@ class nsSHistory : public mozilla::LinkedListElement<nsSHistory>,
   // update the epoch via a runnable on each ::Go (including AsyncGo).
   uint64_t mEpoch = 0;
   mozilla::Maybe<mozilla::dom::ContentParentId> mEpochParentId;
+
+  // Session history entries grouped by DocshellID, which are deduplicated by
+  // SessionHistoryEntry ID.
+  nsTHashMap<nsIDHashKey, mozilla::WeakPtr<mozilla::dom::EntryList>>
+      mEntryLists;
 };
 
 // CallerWillNotifyHistoryIndexAndLengthChanges is used to prevent

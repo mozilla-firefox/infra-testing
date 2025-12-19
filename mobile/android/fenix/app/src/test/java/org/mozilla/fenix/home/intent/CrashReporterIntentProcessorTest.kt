@@ -9,26 +9,28 @@ import androidx.navigation.NavController
 import io.mockk.Called
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.mockkObject
 import io.mockk.verify
-import mozilla.components.lib.crash.Crash
 import mozilla.components.lib.crash.Crash.NativeCodeCrash
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.appstate.AppAction
+import org.mozilla.fenix.utils.Settings
 
 class CrashReporterIntentProcessorTest {
     private val appStore: AppStore = mockk(relaxed = true)
     private val navController: NavController = mockk()
     private val out: Intent = mockk()
+    private val settings: Settings = mockk {
+        every { shouldUseComposableToolbar } returns false
+    }
 
     @Test
     fun `GIVEN a blank Intent WHEN processing it THEN do nothing and return false`() {
         val processor = CrashReporterIntentProcessor(appStore)
 
-        val result = processor.process(Intent(), navController, out)
+        val result = processor.process(Intent(), navController, out, settings)
 
         assertFalse(result)
         verify { navController wasNot Called }
@@ -38,20 +40,19 @@ class CrashReporterIntentProcessorTest {
 
     @Test
     fun `GIVEN a crash Intent WHEN processing it THEN update crash details and return true`() {
-        val processor = CrashReporterIntentProcessor(appStore)
-        val intent = Intent()
         val crash = mockk<NativeCodeCrash>(relaxed = true)
+        val processor = CrashReporterIntentProcessor(
+            appStore,
+            isCrashIntent = { true },
+            getCrashFromIntent = { crash },
+        )
+        val intent = Intent()
 
-        mockkObject(Crash.Companion) {
-            every { Crash.Companion.isCrashIntent(intent) } returns true
-            every { Crash.Companion.fromIntent(intent) } returns crash
+        val result = processor.process(intent, navController, out, settings)
 
-            val result = processor.process(intent, navController, out)
-
-            assertTrue(result)
-            verify { navController wasNot Called }
-            verify { out wasNot Called }
-            verify { appStore.dispatch(AppAction.AddNonFatalCrash(crash)) }
-        }
+        assertTrue(result)
+        verify { navController wasNot Called }
+        verify { out wasNot Called }
+        verify { appStore.dispatch(AppAction.AddNonFatalCrash(crash)) }
     }
 }

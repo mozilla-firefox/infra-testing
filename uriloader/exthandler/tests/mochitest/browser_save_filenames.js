@@ -27,6 +27,10 @@ let types = {
   zip: "application/zip",
   json: "application/json",
   tar: "application/x-tar",
+  mp2: "audio/mpeg",
+  wav: "audio/x-wav",
+  m4a: "audio/mp4",
+  mp4: "video/mp4",
 };
 
 const PNG_DATA = atob(
@@ -256,12 +260,6 @@ add_task(async function save_document() {
 
   for (let idx = 0; idx < expectedItems.length; idx++) {
     let filename = expectedItems[idx].filename;
-    if (idx == 66 && AppConstants.platform == "win") {
-      // This is special-cased on Windows. The default filename will be used, since
-      // the filename is invalid, but since the previous test file has the same issue,
-      // this second file will be saved with a number suffix added to it.
-      filename = "Untitled_002";
-    }
 
     let file = tmpDir.clone();
     file.append(filename);

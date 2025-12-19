@@ -21,7 +21,7 @@
 #include <cstdint>
 #include <functional>
 #include <tuple>
-#include <utility>
+
 #include "ErrorList.h"
 #include "Units.h"
 #include "js/Id.h"
@@ -31,18 +31,17 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/BasicEvents.h"
-#include "mozilla/FunctionRef.h"
-#include "mozilla/SourceLocation.h"
 #include "mozilla/CORSMode.h"
 #include "mozilla/CallState.h"
+#include "mozilla/FunctionRef.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/SourceLocation.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/CacheExpirationTime.h"
-#include "mozilla/dom/FromParser.h"
 #include "mozilla/dom/FetchPriority.h"
+#include "mozilla/dom/FromParser.h"
 #include "mozilla/fallible.h"
 #include "mozilla/gfx/Point.h"
 #include "nsCOMPtr.h"
@@ -118,9 +117,8 @@ class nsNodeInfoManager;
 class nsParser;
 class nsPIWindowRoot;
 class nsPresContext;
-class nsTextFragment;
-class nsView;
 class nsWrapperCache;
+enum class WindowMediatorFilter : uint8_t;
 
 struct JSContext;
 struct nsPoint;
@@ -158,6 +156,8 @@ class RangeBoundaryBase;
 template <typename T>
 class NotNull;
 template <class T>
+class OwningNonNull;
+template <class T>
 class StaticRefPtr;
 
 namespace dom {
@@ -192,10 +192,15 @@ class MessageBroadcaster;
 class NodeInfo;
 class OwningFileOrUSVStringOrFormData;
 class Selection;
+struct SetHTMLOptions;
+struct SetHTMLUnsafeOptions;
 enum class ShadowRootMode : uint8_t;
 class ShadowRoot;
 struct StructuredSerializeOptions;
+struct SynthesizeMouseEventData;
+struct SynthesizeMouseEventOptions;
 class TrustedHTMLOrString;
+class VoidFunction;
 class WorkerPrivate;
 enum class ElementCallbackType;
 enum class ReferrerPolicy : uint8_t;
@@ -368,6 +373,8 @@ class nsContentUtils {
                                          RFPTarget aTarget);
   static bool ShouldResistFingerprinting(nsIDocShell* aDocShell,
                                          RFPTarget aTarget);
+  static bool ShouldResistFingerprinting(const Document* aDocument,
+                                         RFPTarget aTarget);
   // These functions are the new, nuanced functions
   static bool ShouldResistFingerprinting(nsIChannel* aChannel,
                                          RFPTarget aTarget);
@@ -463,7 +470,7 @@ class nsContentUtils {
    * Retarget an object A against an object B
    * @see https://dom.spec.whatwg.org/#retarget
    */
-  static nsINode* Retarget(nsINode* aTargetA, nsINode* aTargetB);
+  static nsINode* Retarget(nsINode* aTargetA, const nsINode* aTargetB);
 
   /**
    * @see https://wicg.github.io/element-timing/#get-an-element
@@ -497,15 +504,12 @@ class nsContentUtils {
       nsTArray<mozilla::Maybe<uint32_t>>& aAncestorOffsets);
 
   /*
-   * https://dom.spec.whatwg.org/#concept-shadow-including-ancestor.
-   *
-   * Similar as the GetInclusiveAncestorsAndOffsets method, except this
-   * will use host elements as the parent for shadow roots.
+   * Similar as the GetInclusiveAncestorsAndOffsets method, but for flat tree.
    *
    * When the current content is a ShadowRoot, the offset of it from
    * its ancestor (the host element) will be Nothing().
    */
-  static nsresult GetShadowIncludingAncestorsAndOffsets(
+  static nsresult GetFlattenedTreeAncestorsAndOffsets(
       nsINode* aNode, uint32_t aOffset, nsTArray<nsIContent*>& aAncestorNodes,
       nsTArray<mozilla::Maybe<uint32_t>>& aAncestorOffsets);
 
@@ -545,8 +549,8 @@ class nsContentUtils {
    * Returns the common flattened tree ancestor from the point of view of
    * the selection system, if any, for two given content nodes.
    */
-  static nsIContent* GetCommonFlattenedTreeAncestorForSelection(
-      nsIContent* aContent1, nsIContent* aContent2);
+  static nsINode* GetCommonFlattenedTreeAncestorForSelection(nsINode* aNode1,
+                                                             nsINode* aNode2);
 
   /**
    * Returns the common flattened tree ancestor from the point of view of the
@@ -712,6 +716,9 @@ class nsContentUtils {
    *          0 if point1 == point2.
    *          `Nothing` if the two nodes aren't in the same connected subtree.
    */
+  template <TreeKind aKind = TreeKind::ShadowIncludingDOM,
+            typename = std::enable_if_t<aKind == TreeKind::ShadowIncludingDOM ||
+                                        aKind == TreeKind::Flat>>
   static mozilla::Maybe<int32_t> ComparePointsWithIndices(
       const nsINode* aParent1, uint32_t aOffset1, const nsINode* aParent2,
       uint32_t aOffset2, NodeIndexCache* aIndexCache = nullptr);
@@ -726,7 +733,10 @@ class nsContentUtils {
    *          0 if point1 == point2.
    *          `Nothing` if the two nodes aren't in the same connected subtree.
    */
-  template <typename PT1, typename RT1, typename PT2, typename RT2>
+  template <TreeKind aKind = TreeKind::ShadowIncludingDOM, typename PT1,
+            typename RT1, typename PT2, typename RT2,
+            typename = std::enable_if_t<aKind == TreeKind::ShadowIncludingDOM ||
+                                        aKind == TreeKind::Flat>>
   static mozilla::Maybe<int32_t> ComparePoints(
       const mozilla::RangeBoundaryBase<PT1, RT1>& aBoundary1,
       const mozilla::RangeBoundaryBase<PT2, RT2>& aBoundary2,
@@ -742,6 +752,9 @@ class nsContentUtils {
    * traditional behavior. If you want to use this in new code, it means that
    * you **should** check the offset values and call `ComparePoints` instead.
    */
+  template <TreeKind aKind = TreeKind::ShadowIncludingDOM,
+            typename = std::enable_if_t<aKind == TreeKind::ShadowIncludingDOM ||
+                                        aKind == TreeKind::Flat>>
   static mozilla::Maybe<int32_t> ComparePoints_AllowNegativeOffsets(
       const nsINode* aParent1, int64_t aOffset1, const nsINode* aParent2,
       int64_t aOffset2) {
@@ -764,7 +777,7 @@ class nsContentUtils {
       }
       // Otherwise, aOffset1 nor aOffset2 is referred so that any value is fine
       // if negative.
-      return ComparePointsWithIndices(
+      return ComparePointsWithIndices<aKind>(
           aParent1,
           // Avoid warnings.
           aOffset1 < 0 ? aParent1->GetChildCount()
@@ -776,7 +789,8 @@ class nsContentUtils {
                        : std::min(static_cast<uint32_t>(aOffset2),
                                   aParent2->GetChildCount()));
     }
-    return ComparePointsWithIndices(aParent1, aOffset1, aParent2, aOffset2);
+    return ComparePointsWithIndices<aKind>(aParent1, aOffset1, aParent2,
+                                           aOffset2);
   }
 
   /**
@@ -831,6 +845,7 @@ class nsContentUtils {
    * HTML 4.01 also lists U+200B (zero-width space).
    */
   static bool IsHTMLWhitespace(char16_t aChar);
+  static constexpr std::string_view kHTMLWhitespace{"\x09\x0a\x0c\x0d\x20"};
 
   /*
    * Returns whether the character is an HTML whitespace (see IsHTMLWhitespace)
@@ -882,6 +897,10 @@ class nsContentUtils {
                                       ParseHTMLIntegerResultFlags* aResult);
 
  public:
+  /* Parse a float as per
+   * https://html.spec.whatwg.org/#valid-floating-point-number */
+  static mozilla::Maybe<double> ParseHTMLFloatingPointNumber(const nsAString&);
+
   /**
    * Parse the value of the <font size=""> attribute according to the HTML5
    * spec as of April 16, 2012.
@@ -1298,6 +1317,7 @@ class nsContentUtils {
     eNECKO_PROPERTIES,
     eFORMS_PROPERTIES_en_US,
     eDOM_PROPERTIES_en_US,
+    eNECKO_PROPERTIES_en_US,
     PropertiesFile_COUNT
   };
   static nsresult ReportToConsole(
@@ -1310,9 +1330,6 @@ class nsContentUtils {
   static void ReportEmptyGetElementByIdArg(const Document* aDoc);
 
   static void LogMessageToConsole(const char* aMsg);
-
-  static bool SpoofLocaleEnglish();
-  static bool SpoofLocaleEnglish(const Document* aDocument);
 
   /**
    * Get the localized string named |aKey| in properties file |aFile|.
@@ -1358,6 +1375,12 @@ class nsContentUtils {
   static void SandboxFlagsToString(uint32_t aFlags, nsAString& aString);
 
   static bool PrefetchPreloadEnabled(nsIDocShell* aDocShell);
+
+  static bool ExtractExceptionValues(JSContext* aCx,
+                                     JS::Handle<JSObject*> aException,
+                                     nsACString& aFilename, uint32_t* aLineOut,
+                                     uint32_t* aColumnOut,
+                                     nsString& aMessageOut);
 
   static void ExtractErrorValues(JSContext* aCx, JS::Handle<JS::Value> aValue,
                                  nsACString& aSourceSpecOut, uint32_t* aLineOut,
@@ -1492,47 +1515,14 @@ class nsContentUtils {
   static bool IsPreloadType(nsContentPolicyType aType);
 
   /**
-   * Quick helper to determine whether mutation events are enabled and there are
-   * any mutation listeners of a given type that apply to this content or any of
-   * its ancestors.
-   * The method has the side effect to call document's MayDispatchMutationEvent
-   * using aTargetForSubtreeModified as the parameter.
+   * Synchronously fire a chrome only event to notify the DevTools of the
+   * removal of aRemovingNode. Only fires the event if
+   * aRemovingNode.ShouldNotifyDevToolsOfNodeRemovals() returns true.
    *
-   * @param aNode  The node to search for listeners
-   * @param aType  The type of listener (NS_EVENT_BITS_MUTATION_*)
-   * @param aTargetForSubtreeModified The node which is the target of the
-   *                                  possible DOMSubtreeModified event.
-   *
-   * @return true if there are mutation listeners of the specified type
+   * @param aRemovingNode   The node which will be removed.
    */
-  static bool WantMutationEvents(nsINode* aNode, uint32_t aType,
-                                 nsINode* aTargetForSubtreeModified);
-
-  /**
-   * Quick helper to determine whether there are any mutation listeners
-   * of a given type that apply to any content in this document. It is valid
-   * to pass null for aDocument here, in which case this function always
-   * returns true.
-   *
-   * @param aDocument The document to search for listeners
-   * @param aType     The type of listener (NS_EVENT_BITS_MUTATION_*)
-   *
-   * @return true if there are mutation listeners of the specified type
-   */
-  static bool HasMutationListeners(Document* aDocument, uint32_t aType);
-  /**
-   * Synchronously fire DOMNodeRemoved on aChild. Only fires the event if
-   * there really are listeners by checking using the HasMutationListeners
-   * function above. The function makes sure to hold the relevant objects alive
-   * for the duration of the event firing. However there are no guarantees
-   * that any of the objects are alive by the time the function returns.
-   * If you depend on that you need to hold references yourself.
-   *
-   * @param aChild    The node to fire DOMNodeRemoved at.
-   * @param aParent   The parent of aChild.
-   */
-  MOZ_CAN_RUN_SCRIPT static void MaybeFireNodeRemoved(nsINode* aChild,
-                                                      nsINode* aParent);
+  MOZ_CAN_RUN_SCRIPT static void NotifyDevToolsOfNodeRemoval(
+      nsINode& aRemovingNode);
 
   /**
    * These methods create and dispatch a trusted event.
@@ -1891,11 +1881,18 @@ class nsContentUtils {
                            bool aPreventScriptExecution,
                            mozilla::ErrorResult& aRv);
 
+  static void SetHTML(mozilla::dom::FragmentOrElement* aTarget,
+                      Element* aContext, const nsAString& aHTML,
+                      const mozilla::dom::SetHTMLOptions& aOptions,
+                      mozilla::ErrorResult& aError);
+
   MOZ_CAN_RUN_SCRIPT
   static void SetHTMLUnsafe(mozilla::dom::FragmentOrElement* aTarget,
                             Element* aContext,
                             const mozilla::dom::TrustedHTMLOrString& aSource,
-                            bool aIsShadowRoot, mozilla::ErrorResult& aError);
+                            const mozilla::dom::SetHTMLUnsafeOptions& aOptions,
+                            bool aIsShadowRoot, nsIPrincipal* aSubjectPrincipal,
+                            mozilla::ErrorResult& aError);
   /**
    * Invoke the fragment parsing algorithm (innerHTML) using the HTML parser.
    *
@@ -2020,9 +2017,13 @@ class nsContentUtils {
    * @param aValue   Value to set contents to.
    * @param aTryReuse When true, the function will try to reuse an existing
    *                  textnodes rather than always creating a new one.
+   * @param aMutationEffectOnScript Whether to preserve trustworthiness of
+   *        script elements.
    */
   MOZ_CAN_RUN_SCRIPT_BOUNDARY static nsresult SetNodeTextContent(
-      nsIContent* aContent, const nsAString& aValue, bool aTryReuse);
+      nsIContent* aContent, const nsAString& aValue, bool aTryReuse,
+      MutationEffectOnScript aMutationEffectOnScript =
+          MutationEffectOnScript::DropTrustWorthiness);
 
   /**
    * Get the textual contents of a node. This is a concatenation of all
@@ -2141,6 +2142,20 @@ class nsContentUtils {
       nsIPrincipal* aExtraPrincipal);
 
   /**
+   * Trigger a link with uri aLinkURI. Triggers a load after doing a
+   * security check using aContent's principal.
+   *
+   * @param aContent the node on which a link was triggered.
+   * @param aLinkURI the URI of the link, must be non-null.
+   * @param aTargetSpec the target (like target=, may be empty).
+   * @param aUserInvolvement whether a user is involved when link was triggered.
+   */
+  MOZ_CAN_RUN_SCRIPT
+  static void TriggerLinkClick(
+      nsIContent* aContent, nsIURI* aLinkURI, const nsString& aTargetSpec,
+      mozilla::dom::UserNavigationInvolvement aUserInvolvement);
+
+  /**
    * Trigger a link with uri aLinkURI. If aClick is false, this triggers a
    * mouseover on the link, otherwise it triggers a load after doing a
    * security check using aContent's principal.
@@ -2148,11 +2163,9 @@ class nsContentUtils {
    * @param aContent the node on which a link was triggered.
    * @param aLinkURI the URI of the link, must be non-null.
    * @param aTargetSpec the target (like target=, may be empty).
-   * @param aClick whether this was a click or not (if false, this method
-   *               assumes you just hovered over the link).
    */
-  static void TriggerLink(nsIContent* aContent, nsIURI* aLinkURI,
-                          const nsString& aTargetSpec, bool aClick);
+  static void TriggerLinkMouseOver(nsIContent* aContent, nsIURI* aLinkURI,
+                                   const nsString& aTargetSpec);
 
   /**
    * Get the link location.
@@ -2266,6 +2279,11 @@ class nsContentUtils {
   // Returns the browser window with the most recent time stamp that is
   // not in private browsing mode.
   static already_AddRefed<nsPIDOMWindowOuter> GetMostRecentNonPBWindow();
+
+  // Returns the browser window with the most recent time stamp, filtered by the
+  // parameter.
+  static already_AddRefed<nsPIDOMWindowOuter> GetMostRecentWindowBy(
+      WindowMediatorFilter aFilter);
 
   /**
    * Call this function if !IsSafeToRunScript() and we fail to run the script
@@ -2527,18 +2545,6 @@ class nsContentUtils {
   }
 
   /**
-   * Fire mutation events for changes caused by parsing directly into a
-   * context node.
-   *
-   * @param aDoc the document of the node
-   * @param aDest the destination node that got stuff appended to it
-   * @param aOldChildCount the number of children the node had before parsing
-   */
-  static void FireMutationEventsForDirectParsing(Document* aDoc,
-                                                 nsIContent* aDest,
-                                                 int32_t aOldChildCount);
-
-  /**
    * Returns the in-process subtree root document in a document hierarchy.
    * This could be a chrome document.
    */
@@ -2734,6 +2740,18 @@ class nsContentUtils {
    * otherwise false.
    */
   static bool IsJsonMimeType(const nsAString& aMimeType);
+
+  /**
+   * Returns true if the given MIME type string has a CSS MIME type essence,
+   * otherwise false.
+   */
+  static bool HasCssMimeTypeEssence(const nsAString& aMimeType);
+
+  /**
+   * Returns true if the given MIME type string has a wasm MIME type essence,
+   * otherwise false.
+   */
+  static bool HasWasmMimeTypeEssence(const nsAString& aMimeType);
 
   static void SplitMimeType(const nsAString& aValue, nsString& aType,
                             nsString& aParams);
@@ -2963,14 +2981,6 @@ class nsContentUtils {
           aCallback);
 
   /**
-   * Given an IPCDataTransferImageContainer construct an imgIContainer for the
-   * image encoded by the transfer item.
-   */
-  static nsresult DeserializeTransferableDataImageContainer(
-      const mozilla::dom::IPCTransferableDataImageContainer& aData,
-      imgIContainer** aContainer);
-
-  /**
    * Given a flavor obtained from an IPCDataTransferItem or nsITransferable,
    * returns true if we should treat the data as an image.
    */
@@ -3019,6 +3029,8 @@ class nsContentUtils {
       mozilla::gfx::DataSourceSurface&);
   static already_AddRefed<mozilla::gfx::DataSourceSurface> IPCImageToSurface(
       const mozilla::dom::IPCImage&);
+  static already_AddRefed<imgIContainer> IPCImageToImage(
+      const mozilla::dom::IPCImage&);
 
   // Helpers shared by the implementations of nsContentUtils methods and
   // nsIDOMWindowUtils methods.
@@ -3028,22 +3040,22 @@ class nsContentUtils {
   static mozilla::LayoutDeviceIntPoint ToWidgetPoint(
       const mozilla::CSSPoint& aPoint, const nsPoint& aOffset,
       nsPresContext* aPresContext);
-  static nsView* GetViewToDispatchEvent(nsPresContext* aPresContext,
-                                        mozilla::PresShell** aPresShell);
 
   /**
    * Synthesize a mouse event to the given widget
-   * (see nsIDOMWindowUtils.sendMouseEvent).
+   * (See synthesizeMouseEvent in Window.webidl).
+   *
+   * @return A boolean indicating whether the default action was prevented
+   *         by any event listener.
    */
   MOZ_CAN_RUN_SCRIPT
-  static nsresult SendMouseEvent(
+  static mozilla::Result<bool, nsresult> SynthesizeMouseEvent(
       mozilla::PresShell* aPresShell, nsIWidget* aWidget,
       const nsAString& aType, mozilla::LayoutDeviceIntPoint& aRefPoint,
-      int32_t aButton, int32_t aButtons, int32_t aClickCount,
-      int32_t aModifiers, bool aIgnoreRootScrollFrame, float aPressure,
-      unsigned short aInputSourceArg, uint32_t aIdentifier, bool aToWindow,
-      bool* aPreventDefault, bool aIsDOMEventSynthesized,
-      bool aIsWidgetEventSynthesized);
+      const mozilla::dom::SynthesizeMouseEventData& aMouseEventData,
+      const mozilla::dom::SynthesizeMouseEventOptions& aOptions,
+      const mozilla::dom::Optional<
+          mozilla::OwningNonNull<mozilla::dom::VoidFunction>>& aCallback);
 
   static void FirePageShowEventForFrameLoaderSwap(
       nsIDocShellTreeItem* aItem,
@@ -3557,7 +3569,9 @@ class nsContentUtils {
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   static nsIContent* AttachDeclarativeShadowRoot(
       nsIContent* aHost, mozilla::dom::ShadowRootMode aMode, bool aIsClonable,
-      bool aIsSerializable, bool aDelegatesFocus);
+      bool aIsSerializable, bool aDelegatesFocus, const nsAString&);
+
+  static bool NavigationMustBeAReplace(nsIURI& aURI, const Document& aDocument);
 
  private:
   static bool InitializeEventTable();
@@ -3622,6 +3636,9 @@ class nsContentUtils {
    * node.
    * Return Nothing if aChild1 is a root of the native anonymous subtree.
    */
+  template <TreeKind aKind,
+            typename = std::enable_if_t<aKind == TreeKind::ShadowIncludingDOM ||
+                                        aKind == TreeKind::Flat>>
   static mozilla::Maybe<int32_t> CompareChildNodes(
       const nsINode* aChild1, const nsINode* aChild2,
       NodeIndexCache* aIndexCache = nullptr);
@@ -3632,6 +3649,9 @@ class nsContentUtils {
    * Return 1 if aChild2 is a preceding sibling of a child at aOffset1.
    * Return Nothing if aChild2 is a root of the native anonymous subtree.
    */
+  template <TreeKind aKind,
+            typename = std::enable_if_t<aKind == TreeKind::ShadowIncludingDOM ||
+                                        aKind == TreeKind::Flat>>
   static mozilla::Maybe<int32_t> CompareChildOffsetAndChildNode(
       uint32_t aOffset1, const nsINode& aChild2,
       NodeIndexCache* aIndexCache = nullptr);
@@ -3642,6 +3662,9 @@ class nsContentUtils {
    * Return 1 if aChild1 is a following sibling of a child at aOffset2.
    * Return Nothing if aChild1 is a root of the native anonymous subtree.
    */
+  template <TreeKind aKind,
+            typename = std::enable_if_t<aKind == TreeKind::ShadowIncludingDOM ||
+                                        aKind == TreeKind::Flat>>
   static mozilla::Maybe<int32_t> CompareChildNodeAndChildOffset(
       const nsINode& aChild1, uint32_t aOffset2,
       NodeIndexCache* aIndexCache = nullptr);
@@ -3651,8 +3674,12 @@ class nsContentUtils {
    * includes odd traditional behavior. Therefore, do not use this method as a
    * utility method.
    */
+  template <TreeKind aKind = TreeKind::ShadowIncludingDOM,
+            typename = std::enable_if_t<aKind == TreeKind::ShadowIncludingDOM ||
+                                        aKind == TreeKind::Flat>>
   static mozilla::Maybe<int32_t> CompareClosestCommonAncestorChildren(
-      const nsINode&, const nsINode*, const nsINode*, NodeIndexCache*);
+      const nsINode&, const nsINode*, const nsINode*,
+      NodeIndexCache* = nullptr);
 
   static nsIXPConnect* sXPConnect;
 
@@ -3791,7 +3818,6 @@ nsContentUtils::InternalContentPolicyTypeToExternal(nsContentPolicyType aType) {
     case nsIContentPolicy::TYPE_SUBDOCUMENT:
     case nsIContentPolicy::TYPE_PING:
     case nsIContentPolicy::TYPE_XMLHTTPREQUEST:
-    case nsIContentPolicy::TYPE_OBJECT_SUBREQUEST:
     case nsIContentPolicy::TYPE_DTD:
     case nsIContentPolicy::TYPE_FONT:
     case nsIContentPolicy::TYPE_MEDIA:

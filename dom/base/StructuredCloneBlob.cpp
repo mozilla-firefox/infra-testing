@@ -10,11 +10,11 @@
 #include <cstdint>
 #include <new>
 #include <utility>
+
 #include "js/StructuredClone.h"
 #include "js/Value.h"
 #include "js/Wrapper.h"
 #include "jsapi.h"
-#include "mozilla/Assertions.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/UniquePtr.h"

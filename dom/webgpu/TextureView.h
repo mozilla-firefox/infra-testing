@@ -6,28 +6,28 @@
 #ifndef GPU_TextureView_H_
 #define GPU_TextureView_H_
 
-#include "nsWrapperCache.h"
+#include "CanvasContext.h"
 #include "ObjectModel.h"
 #include "mozilla/webgpu/WebGPUTypes.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla::webgpu {
 
 class CanvasContext;
 class Texture;
 
-class TextureView final : public ObjectBase, public ChildOf<Texture> {
+class TextureView final : public nsWrapperCache,
+                          public ObjectBase,
+                          public ChildOf<Texture> {
  public:
   GPU_DECL_CYCLE_COLLECTION(TextureView)
   GPU_DECL_JS_WRAP(TextureView)
 
   TextureView(Texture* const aParent, RawId aId);
-  CanvasContext* GetTargetContext() const;
-
-  const RawId mId;
+  WeakPtr<CanvasContext> GetTargetContext() const;
 
  private:
   virtual ~TextureView();
-  void Cleanup();
 };
 
 }  // namespace mozilla::webgpu

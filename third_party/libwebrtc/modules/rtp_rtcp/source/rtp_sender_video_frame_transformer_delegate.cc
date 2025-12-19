@@ -79,11 +79,9 @@ class TransformableVideoSenderFrame : public TransformableVideoFrameInterface {
   ~TransformableVideoSenderFrame() override = default;
 
   // Implements TransformableVideoFrameInterface.
-  rtc::ArrayView<const uint8_t> GetData() const override {
-    return *encoded_data_;
-  }
+  ArrayView<const uint8_t> GetData() const override { return *encoded_data_; }
 
-  void SetData(rtc::ArrayView<const uint8_t> data) override {
+  void SetData(ArrayView<const uint8_t> data) override {
     encoded_data_ = EncodedImageBuffer::Create(data.data(), data.size());
   }
 
@@ -149,7 +147,7 @@ class TransformableVideoSenderFrame : public TransformableVideoFrameInterface {
   const std::string& GetRid() const override { return rid_; }
 
  private:
-  rtc::scoped_refptr<EncodedImageBufferInterface> encoded_data_;
+  scoped_refptr<EncodedImageBufferInterface> encoded_data_;
   const size_t pre_transform_payload_size_;
   RTPVideoHeader header_;
   const VideoFrameType frame_type_;
@@ -167,7 +165,7 @@ class TransformableVideoSenderFrame : public TransformableVideoFrameInterface {
 
 RTPSenderVideoFrameTransformerDelegate::RTPSenderVideoFrameTransformerDelegate(
     RTPVideoFrameSenderInterface* sender,
-    rtc::scoped_refptr<FrameTransformerInterface> frame_transformer,
+    scoped_refptr<FrameTransformerInterface> frame_transformer,
     uint32_t ssrc,
     const std::string& rid,
     TaskQueueFactory* task_queue_factory)
@@ -181,7 +179,7 @@ RTPSenderVideoFrameTransformerDelegate::RTPSenderVideoFrameTransformerDelegate(
 
 void RTPSenderVideoFrameTransformerDelegate::Init() {
   frame_transformer_->RegisterTransformedFrameSinkCallback(
-      rtc::scoped_refptr<TransformedFrameCallback>(this), ssrc_);
+      scoped_refptr<TransformedFrameCallback>(this), ssrc_);
 }
 
 bool RTPSenderVideoFrameTransformerDelegate::TransformFrame(
@@ -190,22 +188,21 @@ bool RTPSenderVideoFrameTransformerDelegate::TransformFrame(
     uint32_t rtp_timestamp,
     const EncodedImage& encoded_image,
     RTPVideoHeader video_header,
-    TimeDelta expected_retransmission_time) {
+    TimeDelta expected_retransmission_time,
+    const std::vector<uint32_t>& csrcs) {
   {
     MutexLock lock(&sender_lock_);
     if (short_circuit_) {
       sender_->SendVideo(payload_type, codec_type, rtp_timestamp,
                          encoded_image.CaptureTime(),
                          *encoded_image.GetEncodedData(), encoded_image.size(),
-                         video_header, expected_retransmission_time,
-                         /*csrcs=*/{});
+                         video_header, expected_retransmission_time, csrcs);
       return true;
     }
   }
   frame_transformer_->Transform(std::make_unique<TransformableVideoSenderFrame>(
       encoded_image, video_header, payload_type, codec_type, rtp_timestamp,
-      expected_retransmission_time, ssrc_,
-      /*csrcs=*/std::vector<uint32_t>(), rid_));
+      expected_retransmission_time, ssrc_, csrcs, rid_));
   return true;
 }
 
@@ -216,7 +213,7 @@ void RTPSenderVideoFrameTransformerDelegate::OnTransformedFrame(
   if (!sender_) {
     return;
   }
-  rtc::scoped_refptr<RTPSenderVideoFrameTransformerDelegate> delegate(this);
+  scoped_refptr<RTPSenderVideoFrameTransformerDelegate> delegate(this);
   transformation_queue_->PostTask(
       [delegate = std::move(delegate), frame = std::move(frame)]() mutable {
         RTC_DCHECK_RUN_ON(delegate->transformation_queue_.get());
@@ -290,12 +287,12 @@ void RTPSenderVideoFrameTransformerDelegate::Reset() {
   }
   // Wait until all pending tasks are executed, to ensure that the last ref
   // standing is not on the transformation queue.
-  rtc::Event flush;
+  Event flush;
   transformation_queue_->PostTask([this, &flush]() {
     RTC_DCHECK_RUN_ON(transformation_queue_.get());
     flush.Set();
   });
-  flush.Wait(rtc::Event::kForever);
+  flush.Wait(Event::kForever);
 }
 
 std::unique_ptr<TransformableVideoFrameInterface> CloneSenderVideoFrame(

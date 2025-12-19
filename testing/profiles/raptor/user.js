@@ -46,14 +46,9 @@ user_pref('toolkit.telemetry.initDelay', 99999999);
 
 // disable autoplay for raptor tests
 user_pref('media.autoplay.default', 5);
-user_pref('media.autoplay.ask-permission', true);
 user_pref('media.autoplay.blocking_policy', 1);
 user_pref('media.allowed-to-play.enabled', false);
 user_pref('media.block-autoplay-until-in-foreground', true);
 
 // Turn off update
 user_pref("app.update.disabledForTesting", true);
-
-// Temporarily turn off the system access check until Browsertime will pass
-// the --remote-allow-system-access argument to Firefox.
-user_pref("remote.system-access-check.enabled", false);

@@ -9,7 +9,10 @@
 #include "GPUVideoImage.h"
 #include "mozilla/PRemoteDecoderChild.h"
 #include "mozilla/RemoteDecodeUtils.h"
-#include "mozilla/RemoteDecoderManagerChild.h"
+#include "mozilla/RemoteMediaManagerChild.h"
+#include "mozilla/RemoteMediaManagerParent.h"
+#include "mozilla/gfx/SourceSurfaceRawData.h"
+#include "mozilla/gfx/Swizzle.h"
 #include "mozilla/layers/ImageDataSerializer.h"
 #include "mozilla/layers/VideoBridgeUtils.h"
 
@@ -19,6 +22,8 @@ using namespace gfx;
 using namespace layers;
 
 RemoteImageHolder::RemoteImageHolder() = default;
+RemoteImageHolder::RemoteImageHolder(layers::SurfaceDescriptor&& aSD)
+    : mSD(Some(std::move(aSD))) {}
 RemoteImageHolder::RemoteImageHolder(
     layers::IGPUVideoSurfaceManager* aManager,
     layers::VideoBridgeSource aSource, const gfx::IntSize& aSize,
@@ -51,67 +56,97 @@ RemoteImageHolder::RemoteImageHolder(RemoteImageHolder&& aOther)
 already_AddRefed<Image> RemoteImageHolder::DeserializeImage(
     layers::BufferRecycleBin* aBufferRecycleBin) {
   MOZ_ASSERT(mSD && mSD->type() == SurfaceDescriptor::TSurfaceDescriptorBuffer);
-  const SurfaceDescriptorBuffer& sdBuffer = mSD->get_SurfaceDescriptorBuffer();
-  MOZ_ASSERT(sdBuffer.desc().type() == BufferDescriptor::TYCbCrDescriptor);
-  if (sdBuffer.desc().type() != BufferDescriptor::TYCbCrDescriptor ||
-      !aBufferRecycleBin) {
+  if (!aBufferRecycleBin) {
     return nullptr;
   }
-  const YCbCrDescriptor& descriptor = sdBuffer.desc().get_YCbCrDescriptor();
 
-  uint8_t* buffer = nullptr;
+  const SurfaceDescriptorBuffer& sdBuffer = mSD->get_SurfaceDescriptorBuffer();
   const MemoryOrShmem& memOrShmem = sdBuffer.data();
-  switch (memOrShmem.type()) {
-    case MemoryOrShmem::Tuintptr_t:
-      buffer = reinterpret_cast<uint8_t*>(memOrShmem.get_uintptr_t());
-      break;
-    case MemoryOrShmem::TShmem:
-      buffer = memOrShmem.get_Shmem().get<uint8_t>();
-      break;
-    default:
-      MOZ_ASSERT(false, "Unknown MemoryOrShmem type");
+  if (memOrShmem.type() != MemoryOrShmem::TShmem) {
+    MOZ_ASSERT_UNREACHABLE("Unexpected MemoryOrShmem type");
+    return nullptr;
   }
+
+  // Note that the shmem will be recycled by the parent automatically.
+  uint8_t* buffer = memOrShmem.get_Shmem().get<uint8_t>();
   if (!buffer) {
     return nullptr;
   }
 
-  PlanarYCbCrData pData;
-  pData.mYStride = descriptor.yStride();
-  pData.mCbCrStride = descriptor.cbCrStride();
-  // default mYSkip, mCbSkip, mCrSkip because not held in YCbCrDescriptor
-  pData.mYSkip = pData.mCbSkip = pData.mCrSkip = 0;
-  pData.mPictureRect = descriptor.display();
-  pData.mStereoMode = descriptor.stereoMode();
-  pData.mColorDepth = descriptor.colorDepth();
-  pData.mYUVColorSpace = descriptor.yUVColorSpace();
-  pData.mColorRange = descriptor.colorRange();
-  pData.mChromaSubsampling = descriptor.chromaSubsampling();
-  pData.mYChannel = ImageDataSerializer::GetYChannel(buffer, descriptor);
-  pData.mCbChannel = ImageDataSerializer::GetCbChannel(buffer, descriptor);
-  pData.mCrChannel = ImageDataSerializer::GetCrChannel(buffer, descriptor);
+  size_t bufferSize = memOrShmem.get_Shmem().Size<uint8_t>();
 
-  // images coming from AOMDecoder are RecyclingPlanarYCbCrImages.
-  RefPtr<RecyclingPlanarYCbCrImage> image =
-      new RecyclingPlanarYCbCrImage(aBufferRecycleBin);
-  bool setData = NS_SUCCEEDED(image->CopyData(pData));
-  MOZ_ASSERT(setData);
+  if (sdBuffer.desc().type() == BufferDescriptor::TYCbCrDescriptor) {
+    const YCbCrDescriptor& descriptor = sdBuffer.desc().get_YCbCrDescriptor();
 
-  switch (memOrShmem.type()) {
-    case MemoryOrShmem::Tuintptr_t:
-      delete[] reinterpret_cast<uint8_t*>(memOrShmem.get_uintptr_t());
-      break;
-    case MemoryOrShmem::TShmem:
-      // Memory buffer will be recycled by the parent automatically.
-      break;
-    default:
-      MOZ_ASSERT(false, "Unknown MemoryOrShmem type");
+    size_t descriptorSize = ImageDataSerializer::ComputeYCbCrBufferSize(
+        descriptor.ySize(), descriptor.yStride(), descriptor.cbCrSize(),
+        descriptor.cbCrStride(), descriptor.yOffset(), descriptor.cbOffset(),
+        descriptor.crOffset());
+    if (NS_WARN_IF(descriptorSize > bufferSize)) {
+      MOZ_ASSERT_UNREACHABLE("Buffer too small to fit descriptor!");
+      return nullptr;
+    }
+
+    PlanarYCbCrData pData;
+    pData.mYStride = descriptor.yStride();
+    pData.mCbCrStride = descriptor.cbCrStride();
+    // default mYSkip, mCbSkip, mCrSkip because not held in YCbCrDescriptor
+    pData.mYSkip = pData.mCbSkip = pData.mCrSkip = 0;
+    pData.mPictureRect = descriptor.display();
+    pData.mStereoMode = descriptor.stereoMode();
+    pData.mColorDepth = descriptor.colorDepth();
+    pData.mYUVColorSpace = descriptor.yUVColorSpace();
+    pData.mColorRange = descriptor.colorRange();
+    pData.mChromaSubsampling = descriptor.chromaSubsampling();
+    pData.mYChannel = ImageDataSerializer::GetYChannel(buffer, descriptor);
+    pData.mCbChannel = ImageDataSerializer::GetCbChannel(buffer, descriptor);
+    pData.mCrChannel = ImageDataSerializer::GetCrChannel(buffer, descriptor);
+
+    // images coming from AOMDecoder are RecyclingPlanarYCbCrImages.
+    RefPtr<RecyclingPlanarYCbCrImage> image =
+        new RecyclingPlanarYCbCrImage(aBufferRecycleBin);
+    if (NS_WARN_IF(NS_FAILED(image->CopyData(pData)))) {
+      return nullptr;
+    }
+
+    return image.forget();
   }
 
-  if (!setData) {
-    return nullptr;
+  if (sdBuffer.desc().type() == BufferDescriptor::TRGBDescriptor) {
+    const RGBDescriptor& descriptor = sdBuffer.desc().get_RGBDescriptor();
+
+    size_t descriptorSize = ImageDataSerializer::ComputeRGBBufferSize(
+        descriptor.size(), descriptor.format());
+    if (NS_WARN_IF(descriptorSize > bufferSize)) {
+      MOZ_ASSERT_UNREACHABLE("Buffer too small to fit descriptor!");
+      return nullptr;
+    }
+
+    auto stride = ImageDataSerializer::ComputeRGBStride(
+        descriptor.format(), descriptor.size().width);
+    auto surface = MakeRefPtr<SourceSurfaceAlignedRawData>();
+    if (NS_WARN_IF(!surface->Init(descriptor.size(), descriptor.format(),
+                                  /* aClearMem */ false, /* aClearValue */ 0,
+                                  stride))) {
+      return nullptr;
+    }
+
+    DataSourceSurface::ScopedMap map(surface, DataSourceSurface::WRITE);
+    if (NS_WARN_IF(!map.IsMapped())) {
+      return nullptr;
+    }
+
+    if (NS_WARN_IF(!SwizzleData(buffer, stride, descriptor.format(),
+                                map.GetData(), map.GetStride(),
+                                descriptor.format(), descriptor.size()))) {
+      return nullptr;
+    }
+
+    return MakeAndAddRef<SourceSurfaceImage>(descriptor.size(), surface);
   }
 
-  return image.forget();
+  MOZ_ASSERT_UNREACHABLE("Unexpected buffer descriptor type!");
+  return nullptr;
 }
 
 already_AddRefed<layers::Image> RemoteImageHolder::TransferToImage(
@@ -122,16 +157,10 @@ already_AddRefed<layers::Image> RemoteImageHolder::TransferToImage(
   RefPtr<Image> image;
   if (mSD->type() == SurfaceDescriptor::TSurfaceDescriptorBuffer) {
     image = DeserializeImage(aBufferRecycleBin);
-  } else {
-    // The Image here creates a TextureData object that takes ownership
-    // of the SurfaceDescriptor, and is responsible for making sure that
-    // it gets deallocated.
-    SurfaceDescriptorRemoteDecoder remoteSD =
-        static_cast<const SurfaceDescriptorGPUVideo&>(*mSD);
-    remoteSD.source() = Some(mSource);
-    image = new GPUVideoImage(mManager, remoteSD, mSize, mColorDepth,
-                              mYUVColorSpace, mColorPrimaries,
-                              mTransferFunction, mColorRange);
+  } else if (mManager) {
+    image = mManager->TransferToImage(*mSD, mSize, mColorDepth, mYUVColorSpace,
+                                      mColorPrimaries, mTransferFunction,
+                                      mColorRange);
   }
   mSD = Nothing();
   mManager = nullptr;
@@ -140,7 +169,7 @@ already_AddRefed<layers::Image> RemoteImageHolder::TransferToImage(
 }
 
 RemoteImageHolder::~RemoteImageHolder() {
-  // GPU Images are held by the RemoteDecoderManagerParent, we didn't get to use
+  // GPU Images are held by the RemoteMediaManagerParent, we didn't get to use
   // this image holder (the decoder could have been flushed). We don't need to
   // worry about Shmem based image as the Shmem will be automatically re-used
   // once the decoder is used again.
@@ -152,41 +181,55 @@ RemoteImageHolder::~RemoteImageHolder() {
   }
 }
 
-/* static */ void ipc::IPDLParamTraits<RemoteImageHolder>::Write(
-    IPC::MessageWriter* aWriter, ipc::IProtocol* aActor,
-    RemoteImageHolder&& aParam) {
-  WriteIPDLParam(aWriter, aActor, aParam.mSource);
-  WriteIPDLParam(aWriter, aActor, aParam.mSize);
-  WriteIPDLParam(aWriter, aActor, aParam.mColorDepth);
-  WriteIPDLParam(aWriter, aActor, aParam.mSD);
-  WriteIPDLParam(aWriter, aActor, aParam.mYUVColorSpace);
-  WriteIPDLParam(aWriter, aActor, aParam.mColorPrimaries);
-  WriteIPDLParam(aWriter, aActor, aParam.mTransferFunction);
-  WriteIPDLParam(aWriter, aActor, aParam.mColorRange);
+}  // namespace mozilla
+
+/* static */ void IPC::ParamTraits<mozilla::RemoteImageHolder>::Write(
+    MessageWriter* aWriter, mozilla::RemoteImageHolder&& aParam) {
+  WriteParam(aWriter, aParam.mSource);
+  WriteParam(aWriter, aParam.mSize);
+  WriteParam(aWriter, aParam.mColorDepth);
+  WriteParam(aWriter, aParam.mSD);
+  WriteParam(aWriter, aParam.mYUVColorSpace);
+  WriteParam(aWriter, aParam.mColorPrimaries);
+  WriteParam(aWriter, aParam.mTransferFunction);
+  WriteParam(aWriter, aParam.mColorRange);
   // Empty this holder.
-  aParam.mSD = Nothing();
+  aParam.mSD = mozilla::Nothing();
   aParam.mManager = nullptr;
 }
 
-/* static */ bool ipc::IPDLParamTraits<RemoteImageHolder>::Read(
-    IPC::MessageReader* aReader, ipc::IProtocol* aActor,
-    RemoteImageHolder* aResult) {
-  if (!ReadIPDLParam(aReader, aActor, &aResult->mSource) ||
-      !ReadIPDLParam(aReader, aActor, &aResult->mSize) ||
-      !ReadIPDLParam(aReader, aActor, &aResult->mColorDepth) ||
-      !ReadIPDLParam(aReader, aActor, &aResult->mSD) ||
-      !ReadIPDLParam(aReader, aActor, &aResult->mYUVColorSpace) ||
-      !ReadIPDLParam(aReader, aActor, &aResult->mColorPrimaries) ||
-      !ReadIPDLParam(aReader, aActor, &aResult->mTransferFunction) ||
-      !ReadIPDLParam(aReader, aActor, &aResult->mColorRange)) {
+/* static */ bool IPC::ParamTraits<mozilla::RemoteImageHolder>::Read(
+    MessageReader* aReader, mozilla::RemoteImageHolder* aResult) {
+  if (!ReadParam(aReader, &aResult->mSource) ||
+      !ReadParam(aReader, &aResult->mSize) ||
+      !ReadParam(aReader, &aResult->mColorDepth) ||
+      !ReadParam(aReader, &aResult->mSD) ||
+      !ReadParam(aReader, &aResult->mYUVColorSpace) ||
+      !ReadParam(aReader, &aResult->mColorPrimaries) ||
+      !ReadParam(aReader, &aResult->mTransferFunction) ||
+      !ReadParam(aReader, &aResult->mColorRange)) {
     return false;
   }
 
-  if (!aResult->IsEmpty()) {
-    aResult->mManager = RemoteDecoderManagerChild::GetSingleton(
-        GetRemoteDecodeInFromVideoBridgeSource(aResult->mSource));
+  if (aResult->IsEmpty()) {
+    return true;
   }
-  return true;
-}
 
-}  // namespace mozilla
+  if (auto* actor = aReader->GetActor()) {
+    if (auto* manager = actor->Manager()) {
+      if (manager->GetProtocolId() ==
+          mozilla::ipc::ProtocolId::PRemoteMediaManagerMsgStart) {
+        aResult->mManager =
+            XRE_IsContentProcess()
+                ? static_cast<mozilla::IGPUVideoSurfaceManager*>(
+                      static_cast<mozilla::RemoteMediaManagerChild*>(manager))
+                : static_cast<mozilla::IGPUVideoSurfaceManager*>(
+                      static_cast<mozilla::RemoteMediaManagerParent*>(manager));
+        return true;
+      }
+    }
+  }
+
+  MOZ_ASSERT_UNREACHABLE("Unexpected or missing protocol manager!");
+  return false;
+}

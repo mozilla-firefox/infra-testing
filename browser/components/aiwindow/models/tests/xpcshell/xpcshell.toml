@@ -1,0 +1,39 @@
+[DEFAULT]
+run-if = [
+  "os != 'android'",
+]
+head = "head.js"
+firefox-appdir = "browser"
+support-files = []
+
+["test_Chat.js"]
+
+["test_ChatUtils.js"]
+
+["test_Insights.js"]
+
+["test_InsightsChatSource.js"]
+
+["test_InsightsConversationScheduler.js"]
+
+["test_InsightsDriftDetector.js"]
+
+["test_InsightsHistoryScheduler.js"]
+
+["test_InsightsHistorySource.js"]
+
+["test_InsightsManager.js"]
+
+["test_SearchBrowsingHistory.js"]
+
+["test_TitleGeneration.js"]
+
+["test_Tools_GetOpenTabs.js"]
+
+["test_Tools_GetPageContent.js"]
+
+["test_Tools_SearchBrowsingHistory.js"]
+
+["test_Utils.js"]
+
+["test_intent_classifier.js"]

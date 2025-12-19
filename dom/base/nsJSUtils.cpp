@@ -14,7 +14,9 @@
 #include "nsJSUtils.h"
 
 #include <utility>
+
 #include "MainThreadUtils.h"
+#include "js/ArrayBuffer.h"
 #include "js/ComparisonOperators.h"
 #include "js/CompilationAndEvaluation.h"
 #include "js/CompileOptions.h"
@@ -26,13 +28,13 @@
 #include "js/RootingAPI.h"
 #include "js/SourceText.h"
 #include "js/TypeDecls.h"
+#include "js/experimental/TypedData.h"
 #include "jsfriendapi.h"
 #include "mozilla/CycleCollectedJSContext.h"
+#include "mozilla/ProfilerLabels.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/ScriptSettings.h"
-#include "mozilla/fallible.h"
-#include "mozilla/ProfilerLabels.h"
 #include "nsContentUtils.h"
 #include "nsDebug.h"
 #include "nsGlobalWindowInner.h"

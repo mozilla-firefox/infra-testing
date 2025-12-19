@@ -7,7 +7,7 @@
 # linux.yml would make using task-defaults there significantly less useful.
 ---
 task-defaults:
-    worker-type: b-linux-gcp
+    worker-type: b-linux-docker-amd
     run:
         extra-config:
             extra_mozconfig_content:
@@ -46,14 +46,14 @@ linux64-base-toolchains/opt:
             - linux64-clang-base
             - linux64-gcc-base
             - linux64-rust-base
-            - linux64-cbindgen
+            - linux64-cbindgen-base
             - linux64-dump_syms
             - linux64-sccache
             - linux64-nasm-2.14.02
             - linux64-node-12
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
-            - sysroot-wasm32-wasi-clang-8.0
+            - sysroot-wasm32-wasi-clang-base
 
 linux64-base-toolchains/debug:
     description: "Linux64 base toolchains Debug"
@@ -88,14 +88,14 @@ linux64-base-toolchains/debug:
             - linux64-clang-base
             - linux64-gcc-base
             - linux64-rust-base
-            - linux64-cbindgen
+            - linux64-cbindgen-base
             - linux64-dump_syms
             - linux64-sccache
             - linux64-nasm-2.14.02
             - linux64-node-12
             - linux64-pkgconf
             - sysroot-x86_64-linux-gnu
-            - sysroot-wasm32-wasi-clang-8.0
+            - sysroot-wasm32-wasi-clang-base
 
 linux64-base-toolchains-clang/opt:
     description: "Linux64 base toolchains clang Opt"
@@ -126,14 +126,14 @@ linux64-base-toolchains-clang/opt:
             - linux64-binutils-2.31.1
             - linux64-clang-base
             - linux64-rust-base
-            - linux64-cbindgen
+            - linux64-cbindgen-base
             - linux64-dump_syms
             - linux64-nasm-2.14.02
             - linux64-node-12
             - linux64-pkgconf
             - linux64-sccache
             - sysroot-x86_64-linux-gnu
-            - sysroot-wasm32-wasi-clang-8.0
+            - sysroot-wasm32-wasi-clang-base
 
 linux64-base-toolchains-clang/debug:
     description: "Linux64 base toolchains clang Debug"
@@ -167,11 +167,11 @@ linux64-base-toolchains-clang/debug:
             - linux64-binutils-2.31.1
             - linux64-clang-base
             - linux64-rust-base
-            - linux64-cbindgen
+            - linux64-cbindgen-base
             - linux64-dump_syms
             - linux64-nasm-2.14.02
             - linux64-node-12
             - linux64-pkgconf
             - linux64-sccache
             - sysroot-x86_64-linux-gnu
-            - sysroot-wasm32-wasi-clang-8.0
+            - sysroot-wasm32-wasi-clang-base

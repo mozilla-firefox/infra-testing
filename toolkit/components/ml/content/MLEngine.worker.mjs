@@ -9,7 +9,8 @@ ChromeUtils.defineESModuleGetters(
   {
     PromiseWorker: "resource://gre/modules/workers/PromiseWorker.mjs",
     getBackend: "chrome://global/content/ml/backends/Pipeline.mjs",
-    modelToResponse: "chrome://global/content/ml/Utils.sys.mjs",
+    OPFS: "chrome://global/content/ml/OPFS.sys.mjs",
+    generateUUID: "chrome://global/content/ml/Utils.sys.mjs",
   },
   { global: "current" }
 );
@@ -17,8 +18,9 @@ ChromeUtils.defineESModuleGetters(
 /**
  * The actual MLEngine lives here in a worker.
  */
-class MLEngineWorker {
+export class MLEngineWorker {
   #pipeline;
+  #sessionId;
 
   constructor() {
     // Connect the provider to the worker.
@@ -43,26 +45,26 @@ class MLEngineWorker {
     if (key.startsWith("NO_LOCAL")) {
       return null;
     }
-    let res = await this.getModelFile(key);
+    let res = await this.getModelFile({ url: key });
     if (res.fail) {
       return null;
     }
 
     // Transformers.js expects a response object, so we wrap the array buffer
-    return lazy.modelToResponse(res.ok[2], res.ok[1]);
+    return lazy.OPFS.toResponse(res.ok[2], res.ok[1]);
   }
 
-  async getModelFile(...args) {
-    let result = await self.callMainThread("getModelFile", args);
+  async getModelFile(args) {
+    let result = await self.callMainThread("getModelFile", [
+      { sessionId: this.#sessionId, ...args },
+    ]);
     return result;
   }
 
-  async getInferenceProcessInfo(...args) {
-    let res = await self.callMainThread("getInferenceProcessInfo", args);
-    if (res.fail) {
-      return new Map();
-    }
-    return res.ok;
+  async notifyModelDownloadComplete() {
+    return self.callMainThread("notifyModelDownloadComplete", [
+      this.#sessionId,
+    ]);
   }
 
   /**
@@ -79,7 +81,15 @@ class MLEngineWorker {
    * @param {object} options received as an object, converted to a PipelineOptions instance
    */
   async initializeEngine(wasm, options) {
-    this.#pipeline = await lazy.getBackend(this, wasm, options);
+    this.#sessionId = lazy.generateUUID();
+    this.#pipeline = await lazy
+      .getBackend(this, wasm, options)
+      .finally(async () => {
+        // Notifying here means the backend doesn't need to notify. But the backend could notify
+        // so that we receive completion as soon as possible. Otherwise, we receive download completion
+        // once pipeline is fully initialized.
+        await this.notifyModelDownloadComplete();
+      });
   }
   /**
    * Run the worker.
@@ -124,7 +134,19 @@ class MLEngineWorker {
     self.callMainThread = worker.callMainThread.bind(worker);
     self.addEventListener("message", msg => worker.handleMessage(msg));
     self.addEventListener("unhandledrejection", function (error) {
-      throw error.reason?.fail ?? error.reason;
+      const reason =
+        error?.reason?.fail ??
+        error?.reason ??
+        new Error("MLEngine.worker.mjs had an unhandled error.");
+
+      if (reason) {
+        // The PromiseWorker message passing doesn't properly expose the call stack of
+        // errors which makes it really hard to debug code. Log the error here to
+        // ensure that nice call stacks are preserved.
+        console.error("MLEngine.worker.mjs had an unhandled error.", reason);
+      }
+
+      throw reason;
     });
   }
 }

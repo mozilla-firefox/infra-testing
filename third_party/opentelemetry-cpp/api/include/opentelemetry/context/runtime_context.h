@@ -56,7 +56,7 @@ public:
 
   /**
    * Set the current context.
-   * @param the new current context
+   * @param context The new current context
    * @return a token for the new current context. This never returns a nullptr.
    */
   virtual nostd::unique_ptr<Token> Attach(const Context &context) noexcept = 0;
@@ -152,7 +152,8 @@ public:
    *
    * @param storage a custom runtime context storage
    */
-  static void SetRuntimeContextStorage(nostd::shared_ptr<RuntimeContextStorage> storage) noexcept
+  static void SetRuntimeContextStorage(
+      const nostd::shared_ptr<RuntimeContextStorage> &storage) noexcept
   {
     GetStorage() = storage;
   }

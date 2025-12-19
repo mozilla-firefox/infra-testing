@@ -7,12 +7,13 @@
 //!
 //! [image]: https://drafts.csswg.org/css-images/#image-values
 
+use crate::derives::*;
 use crate::values::computed::percentage::Percentage;
 use crate::values::computed::position::Position;
 use crate::values::computed::url::ComputedUrl;
 use crate::values::computed::{Angle, Color, Context};
 use crate::values::computed::{
-    AngleOrPercentage, LengthPercentage, NonNegativeLength, NonNegativeLengthPercentage,
+    AngleOrPercentage, Length, LengthPercentage, NonNegativeLength, NonNegativeLengthPercentage,
     Resolution, ToComputedValue,
 };
 use crate::values::generics::image::{self as generic, GradientCompatMode};
@@ -32,15 +33,14 @@ pub type Image = generic::GenericImage<Gradient, ComputedUrl, Color, Percentage,
 #[cfg(feature = "gecko")]
 size_of_test!(Image, 16);
 #[cfg(feature = "servo")]
-size_of_test!(Image, 40);
+size_of_test!(Image, 24);
 
 /// Computed values for a CSS gradient.
 /// <https://drafts.csswg.org/css-images/#gradients>
 pub type Gradient = generic::GenericGradient<
     LineDirection,
+    Length,
     LengthPercentage,
-    NonNegativeLength,
-    NonNegativeLengthPercentage,
     Position,
     Angle,
     AngleOrPercentage,
@@ -203,6 +203,46 @@ impl ToComputedValue for specified::LineDirection {
             LineDirection::Horizontal(x) => specified::LineDirection::Horizontal(x),
             LineDirection::Vertical(y) => specified::LineDirection::Vertical(y),
             LineDirection::Corner(x, y) => specified::LineDirection::Corner(x, y),
+        }
+    }
+}
+
+impl ToComputedValue for specified::Image {
+    type ComputedValue = Image;
+
+    fn to_computed_value(&self, context: &Context) -> Self::ComputedValue {
+        match self {
+            Self::None => Image::None,
+            Self::Url(u) => Image::Url(u.to_computed_value(context)),
+            Self::Gradient(g) => Image::Gradient(g.to_computed_value(context)),
+            #[cfg(feature = "gecko")]
+            Self::Element(e) => Image::Element(e.to_computed_value(context)),
+            #[cfg(feature = "gecko")]
+            Self::MozSymbolicIcon(e) => Image::MozSymbolicIcon(e.to_computed_value(context)),
+            #[cfg(feature = "servo")]
+            Self::PaintWorklet(w) => Image::PaintWorklet(w.to_computed_value(context)),
+            Self::CrossFade(f) => Image::CrossFade(f.to_computed_value(context)),
+            Self::ImageSet(s) => Image::ImageSet(s.to_computed_value(context)),
+            Self::LightDark(ld) => ld.compute(context),
+        }
+    }
+
+    fn from_computed_value(computed: &Self::ComputedValue) -> Self {
+        match computed {
+            Image::None => Self::None,
+            Image::Url(u) => Self::Url(ToComputedValue::from_computed_value(u)),
+            Image::Gradient(g) => Self::Gradient(ToComputedValue::from_computed_value(g)),
+            #[cfg(feature = "gecko")]
+            Image::Element(e) => Self::Element(ToComputedValue::from_computed_value(e)),
+            #[cfg(feature = "gecko")]
+            Image::MozSymbolicIcon(e) => {
+                Self::MozSymbolicIcon(ToComputedValue::from_computed_value(e))
+            },
+            #[cfg(feature = "servo")]
+            Image::PaintWorklet(w) => Self::PaintWorklet(ToComputedValue::from_computed_value(w)),
+            Image::CrossFade(f) => Self::CrossFade(ToComputedValue::from_computed_value(f)),
+            Image::ImageSet(s) => Self::ImageSet(ToComputedValue::from_computed_value(s)),
+            Image::LightDark(_) => unreachable!("Shouldn't have computed image-set values"),
         }
     }
 }

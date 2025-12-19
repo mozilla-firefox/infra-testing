@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -55,7 +62,6 @@
   <string name="menu_settings">Atô</string>
   <string name="menu_about">Bhaih</string>
   <string name="menu_help">Beunantu</string>
-  <string name="menu_rights" moz:removedIn="137">Hak Droeneuh</string>
   <!--
     Menu item: This is the label for a menu entry that shows how many trackers have been blocked
     for the currently loaded website. The number of blocked trackers is shown below this label.
@@ -143,16 +149,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote">&lt;p&gt;%1$s peuduek droeneuh lam keumudoe.&lt;/p&gt;
-&lt;p&gt;Ngui sibagoe browser rahsia:
-  &lt;ul&gt;
-    &lt;li&gt;Mita ngön lop lam aplikasi&lt;/li&gt;
-    &lt;li&gt;Tham ureueng seutöt (atawa pubarô seuneuatô keu peuidin ureueng seutöt)&lt;/li&gt;
-    &lt;li&gt;Lhi keu sampôh cookies lagèe riwayat mita ngön seumeulop&lt;/li&gt;
-  &lt;/ul&gt;
-&lt;/p&gt;
-&lt;p&gt;%1$s geupeugöt lé Mozilla. Misi kamoe nakeuh keu meusatoh internet nyang sihat ngön teuhah.&lt;br/&gt;
-&lt;a href="%2$s"&gt;Learn more&lt;/a&gt;&lt;/p&gt;</string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s peuduek droeneuh lam keumudoe.</p>\n<p>Ngui sibagoe browser rahsia:\n<ul>\n<li>Mita ngön lop lam aplikasi</li>\n<li>Tham ureueng seutöt (atawa pubarô seuneuatô keu peuidin ureueng seutöt)</li>\n<li>Lhi keu sampôh cookies lagèe riwayat mita ngön seumeulop</li>\n</ul> </p>\n<p>%1$s geupeugöt lé Mozilla. Misi kamoe nakeuh keu meusatoh internet nyang sihat ngön teuhah.<br/>\n<a href=\"%2$s\">Learn more</a></p>]]></string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">Privasi &amp; Keuamanan</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -270,7 +267,7 @@
   <string name="preference_privacy_block_social">Tham peulacak sosial</string>
   <string name="preference_privacy_block_social_summary">Geupeukeumat bak situs keu jilacak seunaweueneuh ngön jipeuleumah fungsi lagèe teuneuthèp bulueng</string>
   <string name="preference_privacy_block_content">Tham peulacak asoe nyang laén</string>
-  <string name="preference_privacy_block_content_summary2">Meunyo neupeuudép akébatjih ladôm mieng mungkén akan jimeulagèe </string>
+  <string name="preference_privacy_block_content_summary2">Meunyo neupeuudép akébatjih ladôm mieng mungkén akan jimeulagèe</string>
   <string name="preference_privacy_category_cookies">Tham kuki</string>
   <!--
     Three options for Cookie blocking. Yes (All cookies Blocked), Block 3rd-party cookies
@@ -454,8 +451,6 @@
   <string name="onboarding_first_screen_title">Neupiyôh bak %1$s</string>
   <!-- New Onboarding flow first screen subtitle the one that appears under title -->
   <string name="onboarding_first_screen_subtitle">Bagah. Rahsia. Hana karu.</string>
-  <!-- New Onboarding flow first screen button label -->
-  <string name="onboarding_first_screen_button_text" moz:removedIn="137" tools:ignore="UnusedResources">Puphôn</string>
   <!--
     Onboarding second screen: Title
 
@@ -585,11 +580,11 @@
   <!-- First step for the allowing a permission -->
   <string name="phone_feature_blocked_step_settings">1. Jak u Atô Android</string>
   <!-- Second step for the allowing a permission -->
-  <string name="phone_feature_blocked_step_permissions">2. Thèp &lt;b&gt;Idin&lt;/b&gt;</string>
+  <string name="phone_feature_blocked_step_permissions"><![CDATA[2. Thèp <b>Idin</b>]]></string>
   <!-- Button label that take the user to the Android App setting -->
   <string name="phone_feature_go_to_settings">Atô</string>
   <!-- Third step for allowing a permission. %1$s is the permission name, for example, "Camera" -->
-  <string name="phone_feature_blocked_step_feature">3. Pinah &lt;b&gt;%1$s&lt;/b&gt; jeuet ON</string>
+  <string name="phone_feature_blocked_step_feature"><![CDATA[3. Pinah <b>%1$s</b> jeuet ON]]></string>
   <!-- Preference for altering the camera access for all websites -->
   <string name="preference_phone_feature_camera">Kamèra</string>
   <!-- Preference for altering the microphone access for all websites -->
@@ -612,14 +607,6 @@
   <string name="preference_block_autoplay_audio_only_summary">Geupeusaran</string>
   <!-- Preference for block autoplay audio and video -->
   <string name="preference_block_autoplay_audio_video">Tham audio ngön video</string>
-  <!-- Preference for studies -->
-  <string name="preference_studies">Beuet</string>
-  <!-- Title of the remove studies button -->
-  <string name="studies_remove">Sampôh</string>
-  <!-- Title of the active section on the studies list -->
-  <string name="studies_active">Aktif</string>
-  <!-- Title of the completed section on the studies list -->
-  <string name="studies_completed">Seuleusoe</string>
   <!-- Text Button for show biometric prompt -->
   <string name="show_biometric_button_text">Peuhah</string>
   <!--

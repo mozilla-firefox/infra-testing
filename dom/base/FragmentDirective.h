@@ -8,8 +8,8 @@
 #define DOM_FRAGMENTDIRECTIVE_H_
 
 #include "js/TypeDecls.h"
-#include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/fragmentdirectives_ffi_generated.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsStringFwd.h"
@@ -138,14 +138,13 @@ class FragmentDirective final : public nsISupports, public nsWrapperCache {
    */
   MOZ_CAN_RUN_SCRIPT void RemoveAllTextDirectives(ErrorResult& aRv);
 
-  /** Creates a text directive string from a given range.
-   *
-   * @param aRange  The input range.
+  /** Creates a text directive string for the current selection.
    *
    * @return Returns the created text directive as resolved promise, or a
    *         rejected promise in case of an error.
    */
-  already_AddRefed<Promise> CreateTextDirective(nsRange& aRange);
+  already_AddRefed<Promise> CreateTextDirectiveForRanges(
+      const Sequence<OwningNonNull<nsRange>>& aRanges);
 
  private:
   RefPtr<Document> mDocument;

@@ -16,7 +16,7 @@ const TRACKER_URL = "https://tracking.example.com/";
 const IMG_FILE =
   "browser/devtools/client/webconsole/test/browser/test-image.png";
 const CONTENT_BLOCKED_BY_ETP_URL = TRACKER_URL + IMG_FILE;
-const WARNING_GROUP_PREF = "devtools.webconsole.groupWarningMessages";
+const WARNING_GROUP_PREF = "devtools.webconsole.groupSimilarMessages";
 
 const { UrlClassifierTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/UrlClassifierTestUtils.sys.mjs"
@@ -257,7 +257,7 @@ function emitEnhancedTrackingProtectionMessage() {
  * Log a string from the content page.
  *
  * @param {WebConsole} hud
- * @param {String} str
+ * @param {string} str
  */
 function logString(hud, str) {
   const onMessage = waitForMessageByType(hud, str, ".console-api");

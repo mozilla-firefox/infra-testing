@@ -15,6 +15,7 @@
 #include "mozilla/dom/Notification.h"
 #include "nsISupportsPrimitives.h"
 #include "nsPIDOMWindow.h"
+#include "nsServiceManagerUtils.h"
 #include "nsIWindowWatcher.h"
 
 using namespace mozilla;
@@ -86,27 +87,6 @@ void nsXULAlerts::PersistentAlertFinished() {
                   mPendingPersistentAlerts[0].mListener);
     mPendingPersistentAlerts.RemoveElementAt(0);
   }
-}
-
-NS_IMETHODIMP
-nsXULAlerts::ShowAlertNotification(
-    const nsAString& aImageUrl, const nsAString& aAlertTitle,
-    const nsAString& aAlertText, bool aAlertTextClickable,
-    const nsAString& aAlertCookie, nsIObserver* aAlertListener,
-    const nsAString& aAlertName, const nsAString& aBidi, const nsAString& aLang,
-    const nsAString& aData, nsIPrincipal* aPrincipal, bool aInPrivateBrowsing,
-    bool aRequireInteraction) {
-  nsCOMPtr<nsIAlertNotification> alert =
-      do_CreateInstance(ALERT_NOTIFICATION_CONTRACTID);
-  NS_ENSURE_TRUE(alert, NS_ERROR_FAILURE);
-  // vibrate is unused for now
-  nsTArray<uint32_t> vibrate;
-  nsresult rv = alert->Init(aAlertName, aImageUrl, aAlertTitle, aAlertText,
-                            aAlertTextClickable, aAlertCookie, aBidi, aLang,
-                            aData, aPrincipal, aInPrivateBrowsing,
-                            aRequireInteraction, false, vibrate);
-  NS_ENSURE_SUCCESS(rv, rv);
-  return ShowAlert(alert, aAlertListener);
 }
 
 NS_IMETHODIMP
@@ -380,6 +360,11 @@ nsXULAlerts::CloseAlert(const nsAString& aAlertName, bool aContextClosed) {
                                    ChromeOnlyDispatch::eYes);
   }
   return NS_OK;
+}
+
+NS_IMETHODIMP nsXULAlerts::GetHistory(nsTArray<nsString>& aResult) {
+  // XUL backend do not manage a notification history.
+  return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP nsXULAlerts::Teardown() { return NS_OK; }

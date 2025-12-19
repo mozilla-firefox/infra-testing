@@ -3,10 +3,11 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import os
+import platform
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
-from typing import List
 
 import pytest
 
@@ -53,23 +54,32 @@ SETUP = {
         git config user.email "<test@example.org>"
         git add *
         git commit -am "Initial commit"
-        """,
-        """
-        # Pass in user name/email via env vars because the initial commit
-        # will use them before we have a chance to configure them.
-        JJ_USER="Testing McTesterson" JJ_EMAIL="test@example.org" jj git init --colocate
+        jj git init --colocate
         jj config set --repo user.name "Testing McTesterson"
         jj config set --repo user.email "test@example.org"
+        jj describe --reset-author --no-edit
+        jj abandon
+        """,
+        """
         jj git remote add upstream ../remoterepo
         jj git fetch --remote upstream
         jj bookmark track master@upstream
         """,
     ],
+    "src": [
+        """
+        echo "foo" > foo
+        echo "bar" > bar
+        mkdir config
+        echo 1.0 > config/milestone.txt
+        """,
+        "",
+    ],
 }
 
 
 class RepoTestFixture:
-    def __init__(self, repo_dir: Path, vcs: str, steps: List[str]):
+    def __init__(self, repo_dir: Path, vcs: str, steps: list[str]):
         self.dir = repo_dir
         self.vcs = vcs
 
@@ -86,9 +96,18 @@ def shell(cmd, working_dir):
         subprocess.check_call(step, shell=True, cwd=working_dir)
 
 
-@pytest.fixture(params=["git", "hg", "jj"])
-def repo(tmpdir, request):
+@pytest.fixture(params=["git", "hg", "jj", "src"])
+def repo(request):
     if request.param == "jj":
+        if os.getenv("MOZ_AUTOMATION") == "1":
+            fetches_dir = os.environ.get("MOZ_FETCHES_DIR", "")
+            jj_dir = Path(fetches_dir) / "jj"
+            if jj_dir.is_dir():
+                os.environ["PATH"] = os.pathsep.join([str(jj_dir), os.environ["PATH"]])
+            if platform.system() == "Darwin":
+                pytest.skip(
+                    "jj tests disabled for MacOS CI due to incompatible git on workers"
+                )
         if os.getenv("MOZ_AVOID_JJ_VCS") not in (None, "0", ""):
             pytest.skip("jj support disabled")
         try:
@@ -96,11 +115,21 @@ def repo(tmpdir, request):
         except OSError:
             pytest.skip("jj unavailable")
 
-    tmpdir = Path(tmpdir)
+        # Isolate jj tests from user's local config
+        os.environ["JJ_CONFIG"] = ""
+
     vcs = request.param
+    # Use tempfile since pytest's tempdir is too long for jj on Windows
+    td = tempfile.TemporaryDirectory(prefix=f"{vcs}-repo")
+    tmpdir = Path(td.name)
     steps = SETUP[vcs]
 
     if hasattr(request.module, "STEPS"):
+        if vcs == "src" and vcs not in request.module.STEPS:
+            # Special-case SourceRepository: most tests do not handle this case,
+            # so allow it to be skipped if STEPS is defined but not for src.
+            # (Tests without STEPS will need to skip manually.)
+            pytest.skip("not applicable for src repo")
         steps.extend(request.module.STEPS[vcs])
 
     repo_dir = (tmpdir / "repo").resolve()

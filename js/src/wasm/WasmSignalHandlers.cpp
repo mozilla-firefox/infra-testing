@@ -100,6 +100,12 @@ using namespace js::wasm;
 #      define RLR_sig(p) ((p)->sc_lr)
 #      define R31_sig(p) ((p)->sc_sp)
 #    endif
+#    if defined(__riscv)
+#      define RPC_sig(p) ((p)->sc_sepc)
+#      define RRA_sig(p) ((p)->sc_ra)
+#      define RFP_sig(p) ((p)->sc_s[0])
+#      define R02_sig(p) ((p)->sc_sp)
+#    endif
 #    if defined(__mips__)
 #      define EPC_sig(p) ((p)->sc_pc)
 #      define RFP_sig(p) ((p)->sc_regs[30])
@@ -522,8 +528,8 @@ struct AutoHandlingTrap {
   }
 
   Trap trap;
-  TrapSiteDesc trapDesc;
-  if (!codeBlock->lookupTrap(pc, &trap, &trapDesc)) {
+  TrapSite trapSite;
+  if (!codeBlock->lookupTrap(pc, &trap, &trapSite)) {
     return false;
   }
 
@@ -538,6 +544,10 @@ struct AutoHandlingTrap {
   MOZ_RELEASE_ASSERT(&instance->code() == codeBlock->code ||
                      trap == Trap::IndirectCallBadSig);
 
+  // Ensure the active FP has a valid instance pointer that the trap stub can
+  // use.
+  ((FrameWithInstances*)frame)->setCalleeInstance(instance);
+
   JSContext* cx =
       instance->realm()->runtimeFromAnyThread()->mainContextFromAnyThread();
   MOZ_RELEASE_ASSERT(!assertCx || cx == assertCx);
@@ -546,7 +556,7 @@ struct AutoHandlingTrap {
   // point of the trap to allow stack unwinding or resumption, both of which
   // will call finishWasmTrap().
   jit::JitActivation* activation = cx->activation()->asJit();
-  activation->startWasmTrap(trap, trapDesc, ToRegisterState(context));
+  activation->startWasmTrap(trap, trapSite, ToRegisterState(context));
   SetContextPC(context, codeBlock->code->trapCode());
   return true;
 }
@@ -985,14 +995,15 @@ bool wasm::MemoryAccessTraps(const RegisterState& regs, uint8_t* addr,
   }
 
   Trap trap;
-  TrapSiteDesc trapDesc;
-  if (!codeBlock->code->lookupTrap(regs.pc, &trap, &trapDesc)) {
+  TrapSite trapSite;
+  if (!codeBlock->code->lookupTrap(regs.pc, &trap, &trapSite)) {
     return false;
   }
   switch (trap) {
     case Trap::OutOfBounds:
       break;
     case Trap::NullPointerDereference:
+    case Trap::BadCast:
       break;
 #  ifdef WASM_HAS_HEAPREG
     case Trap::IndirectCallToNull:
@@ -1004,9 +1015,15 @@ bool wasm::MemoryAccessTraps(const RegisterState& regs, uint8_t* addr,
       return false;
   }
 
-  const Instance& instance =
-      *GetNearestEffectiveInstance(Frame::fromUntaggedWasmExitFP(regs.fp));
+  // This is a safe and expected wasm trap. This guarantees that FP is pointing
+  // at a wasm frame.
+  FrameWithInstances* frame = (FrameWithInstances*)(regs.fp);
+  Instance& instance = *GetNearestEffectiveInstance(frame);
   MOZ_ASSERT(&instance.code() == codeBlock->code);
+
+  // Ensure the active FP has a valid instance pointer that the trap stub can
+  // use.
+  frame->setCalleeInstance(&instance);
 
   switch (trap) {
     case Trap::OutOfBounds:
@@ -1015,6 +1032,7 @@ bool wasm::MemoryAccessTraps(const RegisterState& regs, uint8_t* addr,
       }
       break;
     case Trap::NullPointerDereference:
+    case Trap::BadCast:
       if ((uintptr_t)addr >= NullPtrGuardSize) {
         return false;
       }
@@ -1034,7 +1052,7 @@ bool wasm::MemoryAccessTraps(const RegisterState& regs, uint8_t* addr,
 
   JSContext* cx = TlsContext.get();  // Cold simulator helper function
   jit::JitActivation* activation = cx->activation()->asJit();
-  activation->startWasmTrap(trap, trapDesc, regs);
+  activation->startWasmTrap(trap, trapSite, regs);
   *newPC = codeBlock->code->trapCode();
   return true;
 #endif
@@ -1051,14 +1069,24 @@ bool wasm::HandleIllegalInstruction(const RegisterState& regs,
   }
 
   Trap trap;
-  TrapSiteDesc trapDesc;
-  if (!codeBlock->code->lookupTrap(regs.pc, &trap, &trapDesc)) {
+  TrapSite trapSite;
+  if (!codeBlock->code->lookupTrap(regs.pc, &trap, &trapSite)) {
     return false;
   }
 
+  // This is a safe and expected wasm trap. This guarantees that FP is pointing
+  // at a wasm frame.
+  FrameWithInstances* frame = (FrameWithInstances*)(regs.fp);
+  Instance& instance = *GetNearestEffectiveInstance(frame);
+  MOZ_ASSERT(&instance.code() == codeBlock->code);
+
+  // Ensure the active FP has a valid instance pointer that the trap stub can
+  // use.
+  frame->setCalleeInstance(&instance);
+
   JSContext* cx = TlsContext.get();  // Cold simulator helper function
   jit::JitActivation* activation = cx->activation()->asJit();
-  activation->startWasmTrap(trap, trapDesc, regs);
+  activation->startWasmTrap(trap, trapSite, regs);
   *newPC = codeBlock->code->trapCode();
   return true;
 #endif

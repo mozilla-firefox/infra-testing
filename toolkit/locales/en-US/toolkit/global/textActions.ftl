@@ -92,6 +92,10 @@ text-action-search-text-box-clear =
 text-action-highlight-selection =
     .label = Highlight Selection
 
+# This adds a comment to selected text within the PDF viewer.
+text-action-comment-selection-1 =
+    .label = Add Comment to Selection
+
 # "Copy Link to Highlight" creates a permanent 'Text Fragment' link
 # to the current selection, and copies it into the user's clipboard.
 text-action-copy-link-to-highlight =
@@ -105,5 +109,5 @@ text-action-copy-clean-link-to-highlight =
 
 # If the page has been loaded with a text fragment and text is
 # visibly highlighted, this removes any highlighted sections on the page.
-text-action-remove-all-highlights =
-    .label = Remove All Highlights
+text-action-remove-highlight =
+    .label = Remove Highlight

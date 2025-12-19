@@ -118,7 +118,7 @@ add_task(async function test_verify_password_rules() {
  * This is because a password can still be valid even if there is not a character from
  * the "allowed" list.
  * If a character, or character class, is required, then it should be marked as such.
- * */
+ */
 
 add_task(async function test_generatePassword_many_rules() {
   // Force password generation to be enabled.
@@ -504,13 +504,15 @@ function verifyPassword(rules, generatedPassword) {
         }
       }
     } else if (_name === "minlength") {
-      Assert.ok(
-        generatedPassword.length >= value,
+      Assert.greaterOrEqual(
+        generatedPassword.length,
+        value,
         `Password should have a minimum length of ${value}`
       );
     } else if (_name === "maxlength") {
-      Assert.ok(
-        generatedPassword.length <= value,
+      Assert.lessOrEqual(
+        generatedPassword.length,
+        value,
         `Password should have a maximum length of ${value}`
       );
     } else if (_name === "max-consecutive") {

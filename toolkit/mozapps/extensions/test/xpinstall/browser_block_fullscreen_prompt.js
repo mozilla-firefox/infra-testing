@@ -6,8 +6,9 @@
 
 /**
  * Spawns content task in browser to enter / leave fullscreen
+ *
  * @param browser - Browser to use for JS fullscreen requests
- * @param {Boolean} fullscreenState - true to enter fullscreen, false to leave
+ * @param {boolean} fullscreenState - true to enter fullscreen, false to leave
  */
 function changeFullscreen(browser, fullscreenState) {
   return SpecialPowers.spawn(
@@ -98,11 +99,12 @@ add_task(async function testFullscreenCloseAddonInstallPrompt() {
     () => PopupNotifications.isPanelOpen,
     "Waiting for addon installation prompt to open"
   );
-  Assert.ok(
+  Assert.notEqual(
     PopupNotifications.getNotification(
       "addon-webext-permissions",
       gBrowser.selectedBrowser
-    ) != null,
+    ),
+    null,
     "Opened notification is webextension permissions prompt"
   );
 

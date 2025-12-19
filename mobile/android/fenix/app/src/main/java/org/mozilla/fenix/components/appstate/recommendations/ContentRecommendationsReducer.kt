@@ -25,7 +25,7 @@ internal object ContentRecommendationsReducer {
     /**
      * Reduces the given [ContentRecommendationsAction] into a new [AppState].
      */
-    @Suppress("LongMethod")
+    @Suppress("LongMethod", "CognitiveComplexMethod")
     fun reduce(state: AppState, action: ContentRecommendationsAction): AppState {
         return when (action) {
             is ContentRecommendationsAction.ContentRecommendationsFetched -> {
@@ -120,11 +120,7 @@ internal object ContentRecommendationsReducer {
 
                 updatedStoriesState.copyWithRecommendationsState {
                     it.copy(
-                        pocketStories = if (action.showContentRecommendations) {
-                            updatedStoriesState.getStories()
-                        } else {
-                            updatedStoriesState.getFilteredStories()
-                        },
+                        pocketStories = updatedStoriesState.getStories(),
                     )
                 }
             }
@@ -138,13 +134,9 @@ internal object ContentRecommendationsReducer {
 
                 updatedSponsoredContentsState.copyWithRecommendationsState {
                     it.copy(
-                        pocketStories = if (action.showContentRecommendations) {
-                            updatedSponsoredContentsState.getStories(useSponsoredStoriesState = false)
-                        } else {
-                            updatedSponsoredContentsState.getFilteredStories(
-                                useSponsoredStoriesState = false,
-                            )
-                        },
+                        pocketStories = updatedSponsoredContentsState.getStories(
+                            useSponsoredStoriesState = false,
+                        ),
                     )
                 }
             }

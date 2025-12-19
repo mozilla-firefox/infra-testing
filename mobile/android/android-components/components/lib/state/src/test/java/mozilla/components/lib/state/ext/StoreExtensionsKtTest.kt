@@ -14,7 +14,6 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.DelicateCoroutinesApi
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
@@ -24,7 +23,6 @@ import mozilla.components.lib.state.Store
 import mozilla.components.lib.state.TestAction
 import mozilla.components.lib.state.TestState
 import mozilla.components.lib.state.reducer
-import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.test.rule.MainCoroutineRule
 import mozilla.components.support.test.rule.runTestOnMain
@@ -40,7 +38,6 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
-@ExperimentalCoroutinesApi
 @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage.
 class StoreExtensionsKtTest {
 
@@ -63,7 +60,7 @@ class StoreExtensionsKtTest {
         var stateObserved = false
 
         store.observe(owner) { stateObserved = true }
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
 
         assertFalse(stateObserved)
     }
@@ -82,12 +79,12 @@ class StoreExtensionsKtTest {
         assertTrue(stateObserved)
 
         stateObserved = false
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertTrue(stateObserved)
 
         stateObserved = false
         owner.lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertFalse(stateObserved)
     }
 
@@ -108,7 +105,7 @@ class StoreExtensionsKtTest {
         // CREATED: Observer does still not get invoked
         stateObserved = false
         owner.lifecycleRegistry.currentState = Lifecycle.State.CREATED
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertFalse(stateObserved)
 
         // STARTED: Observer gets initial state and observers updates
@@ -117,31 +114,30 @@ class StoreExtensionsKtTest {
         assertTrue(stateObserved)
 
         stateObserved = false
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertTrue(stateObserved)
 
         // RESUMED: Observer continues to get updates
         stateObserved = false
         owner.lifecycleRegistry.currentState = Lifecycle.State.RESUMED
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertTrue(stateObserved)
 
         // CREATED: Not observing anymore
         stateObserved = false
         owner.lifecycleRegistry.currentState = Lifecycle.State.CREATED
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertFalse(stateObserved)
 
         // DESTROYED: Not observing
         stateObserved = false
         owner.lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertFalse(stateObserved)
     }
 
     @Test
     @Synchronized
-    @ExperimentalCoroutinesApi // Channel
     fun `Reading state updates from channel`() = runTestOnMain {
         val owner = MockedLifecycleOwner(Lifecycle.State.INITIALIZED)
 
@@ -167,7 +163,7 @@ class StoreExtensionsKtTest {
         assertEquals(0, receivedValue)
 
         // Updating state: Nothing received yet.
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertFalse(latch.await(1, TimeUnit.SECONDS))
         assertEquals(0, receivedValue)
 
@@ -177,12 +173,12 @@ class StoreExtensionsKtTest {
         assertEquals(24, receivedValue)
         latch = CountDownLatch(1)
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertTrue(latch.await(1, TimeUnit.SECONDS))
         assertEquals(25, receivedValue)
         latch = CountDownLatch(1)
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertTrue(latch.await(1, TimeUnit.SECONDS))
         assertEquals(26, receivedValue)
         latch = CountDownLatch(1)
@@ -190,13 +186,12 @@ class StoreExtensionsKtTest {
         job.cancelAndJoin()
         assertTrue(channel.isClosedForReceive)
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertFalse(latch.await(1, TimeUnit.SECONDS))
         assertEquals(26, receivedValue)
     }
 
     @Test(expected = IllegalArgumentException::class)
-    @ExperimentalCoroutinesApi // Channel
     fun `Creating channel throws if lifecycle is already DESTROYED`() {
         val owner = MockedLifecycleOwner(Lifecycle.State.STARTED)
 
@@ -214,7 +209,6 @@ class StoreExtensionsKtTest {
 
     @Test
     @Synchronized
-    @ExperimentalCoroutinesApi
     fun `Reading state updates from Flow with lifecycle owner`() = runTestOnMain {
         val owner = MockedLifecycleOwner(Lifecycle.State.INITIALIZED)
 
@@ -241,7 +235,7 @@ class StoreExtensionsKtTest {
 
         // Updating state: Nothing received yet.
         latch = CountDownLatch(1)
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertFalse(latch.await(1, TimeUnit.SECONDS))
         assertEquals(0, receivedValue)
 
@@ -251,12 +245,12 @@ class StoreExtensionsKtTest {
         assertEquals(24, receivedValue)
         latch = CountDownLatch(1)
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertTrue(latch.await(1, TimeUnit.SECONDS))
         assertEquals(25, receivedValue)
         latch = CountDownLatch(1)
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertTrue(latch.await(1, TimeUnit.SECONDS))
         assertEquals(26, receivedValue)
         latch = CountDownLatch(1)
@@ -264,13 +258,12 @@ class StoreExtensionsKtTest {
         job.cancelAndJoin()
 
         // Receiving nothing anymore since coroutine is cancelled
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertFalse(latch.await(1, TimeUnit.SECONDS))
         assertEquals(26, receivedValue)
     }
 
     @Test
-    @ExperimentalCoroutinesApi
     fun `Subscription is not added if owner destroyed before flow created`() {
         val owner = MockedLifecycleOwner(Lifecycle.State.STARTED)
         val latch = CountDownLatch(1)
@@ -288,13 +281,12 @@ class StoreExtensionsKtTest {
             }
         }
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertFalse(latch.await(1, TimeUnit.SECONDS))
         assertTrue(store.subscriptions.isEmpty())
     }
 
     @Test
-    @ExperimentalCoroutinesApi
     fun `Subscription is not added if owner destroyed before flow produced`() {
         val owner = MockedLifecycleOwner(Lifecycle.State.STARTED)
         val latch = CountDownLatch(1)
@@ -312,14 +304,13 @@ class StoreExtensionsKtTest {
             }
         }
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertFalse(latch.await(1, TimeUnit.SECONDS))
         assertTrue(store.subscriptions.isEmpty())
     }
 
     @Test
     @Synchronized
-    @ExperimentalCoroutinesApi
     fun `Reading state updates from Flow without lifecycle owner`() = runTestOnMain {
         val store = Store(
             TestState(counter = 23),
@@ -343,17 +334,17 @@ class StoreExtensionsKtTest {
         assertEquals(23, receivedValue)
 
         latch = CountDownLatch(1)
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertTrue(latch.await(1, TimeUnit.SECONDS))
         assertEquals(24, receivedValue)
 
         latch = CountDownLatch(1)
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertTrue(latch.await(1, TimeUnit.SECONDS))
         assertEquals(25, receivedValue)
 
         latch = CountDownLatch(1)
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertTrue(latch.await(1, TimeUnit.SECONDS))
         assertEquals(26, receivedValue)
 
@@ -362,14 +353,13 @@ class StoreExtensionsKtTest {
         job.cancelAndJoin()
 
         // Receiving nothing anymore since coroutine is cancelled
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertFalse(latch.await(1, TimeUnit.SECONDS))
         assertEquals(26, receivedValue)
     }
 
     @Test
     @Synchronized
-    @ExperimentalCoroutinesApi
     fun `Reading state from scoped flow without lifecycle owner`() {
         val store = Store(
             TestState(counter = 23),
@@ -379,7 +369,7 @@ class StoreExtensionsKtTest {
         var receivedValue = 0
         var latch = CountDownLatch(1)
 
-        val scope = store.flowScoped() { flow ->
+        val scope = store.flowScoped { flow ->
             flow.collect { state ->
                 receivedValue = state.counter
                 latch.countDown()
@@ -392,31 +382,30 @@ class StoreExtensionsKtTest {
 
         // Updating state: Nothing received yet.
         latch = CountDownLatch(1)
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertTrue(latch.await(1, TimeUnit.SECONDS))
         assertEquals(24, receivedValue)
 
         latch = CountDownLatch(1)
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertTrue(latch.await(1, TimeUnit.SECONDS))
         assertEquals(25, receivedValue)
 
         latch = CountDownLatch(1)
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertTrue(latch.await(1, TimeUnit.SECONDS))
         assertEquals(26, receivedValue)
 
         scope.cancel()
 
         latch = CountDownLatch(1)
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertFalse(latch.await(1, TimeUnit.SECONDS))
         assertEquals(26, receivedValue)
     }
 
     @Test
     @Synchronized
-    @ExperimentalCoroutinesApi
     fun `Reading state from scoped flow with lifecycle owner`() {
         val owner = MockedLifecycleOwner(Lifecycle.State.INITIALIZED)
 
@@ -441,7 +430,7 @@ class StoreExtensionsKtTest {
 
         // Updating state: Nothing received yet.
         latch = CountDownLatch(1)
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertFalse(latch.await(1, TimeUnit.SECONDS))
         assertEquals(0, receivedValue)
 
@@ -452,19 +441,19 @@ class StoreExtensionsKtTest {
         assertEquals(24, receivedValue)
 
         latch = CountDownLatch(1)
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertTrue(latch.await(1, TimeUnit.SECONDS))
         assertEquals(25, receivedValue)
 
         latch = CountDownLatch(1)
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertTrue(latch.await(1, TimeUnit.SECONDS))
         assertEquals(26, receivedValue)
 
         scope.cancel()
 
         latch = CountDownLatch(1)
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertFalse(latch.await(1, TimeUnit.SECONDS))
         assertEquals(26, receivedValue)
     }
@@ -481,10 +470,10 @@ class StoreExtensionsKtTest {
         store.observeForever { state -> observedValue = state.counter }
         assertEquals(23, observedValue)
 
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertEquals(24, observedValue)
 
-        store.dispatch(TestAction.DecrementAction).joinBlocking()
+        store.dispatch(TestAction.DecrementAction)
         assertEquals(23, observedValue)
     }
 
@@ -507,7 +496,7 @@ class StoreExtensionsKtTest {
         assertTrue(stateObserved)
 
         stateObserved = false
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertTrue(stateObserved)
 
         activity.windowManager.removeView(view)
@@ -515,7 +504,7 @@ class StoreExtensionsKtTest {
         assertFalse(view.isAttachedToWindow)
 
         stateObserved = false
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertFalse(stateObserved)
     }
 
@@ -536,7 +525,7 @@ class StoreExtensionsKtTest {
         assertFalse(stateObserved)
 
         stateObserved = false
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertFalse(stateObserved)
 
         activity.windowManager.addView(view, WindowManager.LayoutParams(100, 100))
@@ -558,7 +547,7 @@ class StoreExtensionsKtTest {
         assertFalse(view.isAttachedToWindow)
 
         stateObserved = false
-        store.dispatch(TestAction.IncrementAction).joinBlocking()
+        store.dispatch(TestAction.IncrementAction)
         assertFalse(stateObserved)
     }
 }

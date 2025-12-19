@@ -6,7 +6,6 @@ package org.mozilla.fenix.onboarding.view
 
 import androidx.annotation.DrawableRes
 import org.mozilla.fenix.compose.LinkTextState
-import org.mozilla.fenix.onboarding.store.OnboardingAddonStatus
 
 /**
  * Model containing data for [OnboardingPage].
@@ -17,7 +16,6 @@ import org.mozilla.fenix.onboarding.store.OnboardingAddonStatus
  * @property privacyCaption Optional privacy caption to show and allow user to view the privacy policy.
  * @property primaryButton [Action] for the primary button.
  * @property secondaryButton Optional [Action] for the secondary button.
- * @property addOns Optional list of add-ons to install during onboarding.
  * @property themeOptions Optional list of theme customizing options during onboarding.
  * @property termsOfService Optional term of service page data.
  * @property toolbarOptions Optional list of toolbar selection options.
@@ -25,13 +23,12 @@ import org.mozilla.fenix.onboarding.store.OnboardingAddonStatus
  * @property onRecordImpressionEvent Callback for recording impression event.
  */
 data class OnboardingPageState(
-    @DrawableRes val imageRes: Int,
+    @param:DrawableRes val imageRes: Int,
     val title: String,
     val description: String,
     val privacyCaption: Caption? = null,
     val primaryButton: Action,
     val secondaryButton: Action? = null,
-    val addOns: List<OnboardingAddOn>? = null,
     val themeOptions: List<ThemeOption>? = null,
     val termsOfService: OnboardingTermsOfService? = null,
     val toolbarOptions: List<ToolbarOption>? = null,
@@ -56,25 +53,11 @@ data class Caption(
 )
 
 /**
- * Model containing data for an add-on that's installable during onboarding.
- */
-data class OnboardingAddOn(
-    val id: String,
-    @DrawableRes val iconRes: Int,
-    val name: String,
-    val description: String,
-    val averageRating: String,
-    val reviewCount: String,
-    val installUrl: String,
-    val status: OnboardingAddonStatus,
-)
-
-/**
  * Model containing data for a toolbar placement.
  */
 data class ToolbarOption(
     val toolbarType: ToolbarOptionType,
-    @DrawableRes val imageRes: Int,
+    @param:DrawableRes val imageRes: Int,
     val label: String,
 )
 
@@ -128,6 +111,9 @@ enum class ThemeOptionType(val id: String) {
  * Model containing data for the terms of service page during onboarding.
  */
 data class OnboardingTermsOfService(
+    val subheaderOneText: String? = null,
+    val subheaderTwoText: String? = null,
+    val subheaderThreeText: String? = null,
     val lineOneText: String,
     val lineOneLinkText: String,
     val lineOneLinkUrl: String,
@@ -169,6 +155,8 @@ interface OnboardingTermsOfServiceEventHandler {
 
     /**
      * Invoked when the accept button is clicked.
+     *
+     * @param nowMillis The current time in milliseconds.
      */
-    fun onAcceptTermsButtonClicked() = Unit
+    fun onAcceptTermsButtonClicked(nowMillis: Long = System.currentTimeMillis()) = Unit
 }

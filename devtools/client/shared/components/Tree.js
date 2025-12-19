@@ -9,6 +9,10 @@ const { Component, createFactory } = React;
 const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
 const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.mjs");
 
+const { scrollIntoView } = ChromeUtils.importESModule(
+  "resource://devtools/client/shared/scroll.mjs"
+);
+
 // Localized strings for (devtools/client/locales/en-US/components.properties)
 loader.lazyGetter(this, "L10N_COMPONENTS", function () {
   const { LocalizationHelper } = require("resource://devtools/shared/l10n.js");
@@ -124,7 +128,8 @@ class TreeNode extends Component {
       (this.props.shouldItemUpdate &&
         this.props.shouldItemUpdate(this.props.item, nextProps.item)) ||
       this.props.focused !== nextProps.focused ||
-      this.props.expanded !== nextProps.expanded
+      this.props.expanded !== nextProps.expanded ||
+      this.props.depth !== nextProps.depth
     );
   }
 
@@ -146,8 +151,8 @@ class TreeNode extends Component {
    * element).
    *
    * @param  {DOMNode} current  currently focused element
-   * @param  {Boolean} back     direction
-   * @return {Boolean}          true there is a newly focused element.
+   * @param  {boolean} back     direction
+   * @return {boolean}          true there is a newly focused element.
    */
   _wrapMoveFocus(current, back) {
     const elms = this.getFocusableElements();
@@ -252,7 +257,7 @@ const TreeNodeFactory = createFactory(TreeNode);
  * frame.
  *
  * @param {Function} fn
- * @param {Object} options: object that contains the following properties:
+ * @param {object} options: object that contains the following properties:
  *                      - {Function} getDocument: A function that return the document
  *                                                the component is rendered in.
  * @returns {Function}
@@ -500,7 +505,7 @@ class Tree extends Component {
       style: PropTypes.object,
       // Prevents blur when Tree loses focus
       preventBlur: PropTypes.bool,
-      initiallyExpanded: PropTypes.func,
+      getInitiallyExpanded: PropTypes.func,
     };
   }
 
@@ -566,10 +571,13 @@ class Tree extends Component {
   }
 
   _autoExpand() {
-    const { autoExpandDepth, autoExpandNodeChildrenLimit, initiallyExpanded } =
-      this.props;
+    const {
+      autoExpandDepth,
+      autoExpandNodeChildrenLimit,
+      getInitiallyExpanded,
+    } = this.props;
 
-    if (!autoExpandDepth && !initiallyExpanded) {
+    if (!autoExpandDepth && !getInitiallyExpanded) {
       return;
     }
 
@@ -578,7 +586,7 @@ class Tree extends Component {
     // collapsed nodes. Any initially expanded items will be expanded regardless
     // of how deep they are.
     const autoExpand = (item, currentDepth) => {
-      const initial = initiallyExpanded && initiallyExpanded(item);
+      const initial = getInitiallyExpanded && getInitiallyExpanded(item);
 
       if (!initial && currentDepth >= autoExpandDepth) {
         return;
@@ -613,9 +621,9 @@ class Tree extends Component {
     } else if (length != 0) {
       autoExpand(roots[0], 0);
 
-      if (initiallyExpanded) {
+      if (getInitiallyExpanded) {
         for (let i = 1; i < length; i++) {
-          if (initiallyExpanded(roots[i])) {
+          if (getInitiallyExpanded(roots[i])) {
             autoExpand(roots[i], 0);
           }
         }
@@ -690,8 +698,8 @@ class Tree extends Component {
   /**
    * Expands current row.
    *
-   * @param {Object} item
-   * @param {Boolean} expandAllChildren
+   * @param {object} item
+   * @param {boolean} expandAllChildren
    */
   _onExpand(item, expandAllChildren) {
     if (this.props.onExpand) {
@@ -710,7 +718,7 @@ class Tree extends Component {
   /**
    * Collapses current row.
    *
-   * @param {Object} item
+   * @param {object} item
    */
   _onCollapse(item) {
     if (this.props.onCollapse) {
@@ -721,14 +729,15 @@ class Tree extends Component {
   /**
    * Sets the passed in item to be the focused item.
    *
-   * @param {Object|undefined} item
+   * @param {object | undefined} item
    *        The item to be focused, or undefined to focus no item.
    *
-   * @param {Object|undefined} options
+   * @param {object | undefined} options
    *        An options object which can contain:
-   *          - dir: "up" or "down" to indicate if we should scroll the element
+   *          - alignTo: "up" or "down" to indicate if we should scroll the element
    *                 to the top or the bottom of the scrollable container when
    *                 the element is off canvas.
+   *          - preventAutoScroll: boolean, avoid scrolling automatically
    */
   _focus(item, options = {}) {
     const { preventAutoScroll } = options;
@@ -752,7 +761,7 @@ class Tree extends Component {
   /**
    * Sets the passed in item to be the active item.
    *
-   * @param {Object|undefined} item
+   * @param {object | undefined} item
    *        The item to be activated, or undefined to activate no item.
    */
   _activate(item) {
@@ -764,50 +773,25 @@ class Tree extends Component {
   /**
    * Sets the passed in item to be the focused item.
    *
-   * @param {Object|undefined} item
+   * @param {object | undefined} item
    *        The item to be scrolled to.
    *
-   * @param {Object|undefined} options
+   * @param {object | undefined} options
    *        An options object which can contain:
-   *          - dir: "up" or "down" to indicate if we should scroll the element
+   *          - alignTo: "up" or "down" to indicate if we should scroll the element
    *                 to the top or the bottom of the scrollable container when
    *                 the element is off canvas.
    */
   _scrollNodeIntoView(item, options = {}) {
-    if (item !== undefined) {
-      const treeElement = this.treeRef.current;
-      const doc = treeElement && treeElement.ownerDocument;
-      const element = doc.getElementById(this.props.getKey(item));
+    if (!item) {
+      return;
+    }
+    const treeElement = this.treeRef.current;
+    const doc = treeElement && treeElement.ownerDocument;
+    const element = doc.getElementById(this.props.getKey(item));
 
-      if (element) {
-        const { top, bottom } = element.getBoundingClientRect();
-        const closestScrolledParent = node => {
-          if (node == null) {
-            return null;
-          }
-
-          if (node.scrollHeight > node.clientHeight) {
-            return node;
-          }
-          return closestScrolledParent(node.parentNode);
-        };
-        const scrolledParent = closestScrolledParent(treeElement);
-        const scrolledParentRect = scrolledParent
-          ? scrolledParent.getBoundingClientRect()
-          : null;
-        const isVisible =
-          !scrolledParent ||
-          (top >= scrolledParentRect.top &&
-            bottom <= scrolledParentRect.bottom);
-
-        if (!isVisible) {
-          const { alignTo } = options;
-          const scrollToTop = alignTo
-            ? alignTo === "top"
-            : !scrolledParentRect || top < scrolledParentRect.top;
-          element.scrollIntoView(scrollToTop);
-        }
-      }
+    if (element) {
+      scrollIntoView(element, options);
     }
   }
 

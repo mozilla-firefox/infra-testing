@@ -10,6 +10,16 @@ If you'd prefer to build Firefox for Windows in a virtual machine,
 you may be interested in the `Windows images provided by Microsoft
 <https://developer.microsoft.com/en-us/windows/downloads/virtual-machines/>`_.
 
+.. note::
+
+   Microsoft "temporarily" stopped providing these VM images in 2024. Although
+   more time-consuming initially, you can create a VM and install Windows with
+   an official Windows 11 ISO file from `Microsoft's Download Windows 11 page
+   <https://www.microsoft.com/en-us/software-download/windows11#SoftwareDownload_Edition>`_.
+
+   Unlike the evaluation versions in Microsoft's pre-built VM images, an
+   unactivated Windows VM does not shut down every hour.
+
 System Requirements
 -------------------
 
@@ -17,19 +27,6 @@ System Requirements
 -  **Disk Space:** At least 40GB of free disk space.
 -  **Operating System:** Windows 10 or later. It is advisable to have Windows Update be fully
    up-to-date. See :ref:`build_hosts` for more information.
-
-Required Installations
-----------------------
--  **Mercurial:** Ensure that the ``hg`` command works from PowerShell. If it is not set up,
-   download `Mercurial/TortoiseHg <https://www.mercurial-scm.org/downloads>`_ and ensure
-   the hg directory is added to your path. For example, this could be
-   ``C:\Program Files\Mercurial`` or
-   ``C:\Program Files\TortoiseHg``.
--  **Python:** Ensure that the ``python`` and ``pip3`` commands work from PowerShell. If it is not
-   set up, download `python 3.11 <https://www.python.org/downloads/release/python-3119/>`_, and add
-   the python directory
-   ``C:\Users\<user>\AppData\Local\Programs\Python\Python311`` and the pip3 directory
-   ``C:\Users\<user>\AppData\Local\Programs\Python\Python311\Scripts`` to your path.
 
 Recommended (For Windows 11 Users)
 ----------------------------------
@@ -40,6 +37,8 @@ Setup a `Dev Drive
 
     -  A Dev Drive has been shown to make Firefox builds and VCS operations 5-10% faster.
     -  This guide assumes no Dev Drive, so all instructions of ``C:\mozilla-source`` should be to your Dev Drive letter instead (eg: ``D:\mozilla-source``), as your ``C:\`` drive can never be a Dev Drive.
+    -  If you are using a Virtual Machine, assign a second disk in the VM
+       hypervisor and use that disk as the disk partition for the Dev Drive.
 
 1. Install MozillaBuild
 -----------------------
@@ -57,7 +56,8 @@ to make a shortcut to this file so it's easier to start).
 
 .. note::
 
-    The MozillaBuild shell is a lot more like a Linux shell than the Windows ``cmd``. You can
+    The MozillaBuild shell is a lot more like a Linux shell than the Windows ``cmd``.
+    The installer bundles required tools such as Git, Python, wget, etc. You can
     learn more about it `here <https://wiki.mozilla.org/MozillaBuild>`_.
 
 2. Bootstrap a copy of the Firefox source code
@@ -74,12 +74,8 @@ the interactive setup process.
     cd c:/
     mkdir mozilla-source
     cd mozilla-source
-    wget https://hg.mozilla.org/mozilla-central/raw-file/default/python/mozboot/bin/bootstrap.py
+    wget https://raw.githubusercontent.com/mozilla-firefox/firefox/refs/heads/main/python/mozboot/bin/bootstrap.py
 
-    # To use Git as your VCS
-    python3 bootstrap.py --vcs=git
-
-    # To use Mercurial as your VCS
     python3 bootstrap.py
 .. note::
 
@@ -88,17 +84,6 @@ the interactive setup process.
     necessary to add the Microsoft Defender Antivirus exclusions automatically. You
     should select ``Yes`` on the UAC prompt, otherwise you will need
     to :ref:`follow some manual steps below <Ensure antivirus exclusions>`.
-
-.. note::
-
-    To use ``git``, you can grab the source code in "git" form by running the
-    bootstrap script with the ``vcs`` parameter:
-
-    .. code-block:: shell
-
-        python3 bootstrap.py --vcs=git
-
-    This uses `Git Cinnabar <https://github.com/glandium/git-cinnabar/>`_ under the hood.
 
 Choosing a build type
 ~~~~~~~~~~~~~~~~~~~~~
@@ -131,9 +116,6 @@ Microsoft Defender Antivirus manually
 
 .. note::
 
-    If you are using Mercurial and you're already missing files (you'll see them listed in ``hg status``), you can have them
-    brought back by reverting your source tree: ``hg update -C``.
-
     If you are using Git and you're already missing files (you'll see them listed in ``git status``), you can have them brought back by discarding changes in your source tree: ``git restore .``.
 
 1. Build
@@ -143,8 +125,8 @@ Now that your system is bootstrapped, you should be able to build!
 
 .. code-block:: shell
 
-    cd c:/mozilla-source/mozilla-unified
-    hg up -C central
+    cd c:/mozilla-source/firefox
+    git pull origin main
     ./mach build
 
 🎉 Congratulations! You've built your own home-grown Firefox!
@@ -184,8 +166,8 @@ Build errors
 
 If you encounter a build error when trying to setup your development environment, please follow these steps:
    1. Copy the entire build error to your clipboard
-   2. Paste this error on `paste.mozilla.org <https://paste.mozilla.org>`_ in the text area and change the "Expire in one hour" option to "Expire in one week". Note: it won't take a week to get help but it's better to have the snippet be around for a bit longer than expected.
-   3. Go to the `introduction channel <https://chat.mozilla.org/#/room/#introduction:mozilla.org>`__ and ask for help with your build error. Make sure to post the link to the paste.mozilla.org snippet you created!
+   2. Paste this error on `gist.github.com <https://gist.github.com/>`_ in the text area
+   3. Go to the `introduction channel <https://chat.mozilla.org/#/room/#introduction:mozilla.org>`__ and ask for help with your build error. Make sure to post the link to the gist.github.com snippet you created!
 
 The CLOBBER file has been updated
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -225,7 +207,7 @@ Python failed to find files in directories
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Python can sometimes fail to find files in directories when path length limits are reached,
-even when the root directory is kept relatively short: ``C:\mozilla-source\mozilla-unified``. This can be resolved by
+even when the root directory is kept relatively short: ``C:\mozilla-source\firefox``. This can be resolved by
 `turning Windows long paths on <https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation?tabs=registry>`_.
 
 ``PYTHON`` environment variable

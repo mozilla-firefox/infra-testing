@@ -21,7 +21,10 @@ async function test_blankPage(
   header = "show" // show (zero content-length), hide (no content-length), or lie (non-empty content-length)
 ) {
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.http.blank_page_with_error_response.enabled", false]],
+    set: [
+      ["browser.http.blank_page_with_error_response.enabled", false],
+      ["browser.urlbar.trustPanel.featureGate", false],
+    ],
   });
 
   let browser;
@@ -151,4 +154,5 @@ add_task(async function test_emptyPage_viewSource() {
   });
 
   BrowserTestUtils.removeTab(tab);
+  await SpecialPowers.popPrefEnv();
 });

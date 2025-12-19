@@ -9,9 +9,9 @@
 
 #include "mozilla/Decimal.h"
 #include "mozilla/EventForwards.h"
+#include "nsCOMPtr.h"
 #include "nsContainerFrame.h"
 #include "nsIAnonymousContentCreator.h"
-#include "nsCOMPtr.h"
 #include "nsTArray.h"
 
 class nsDisplayRangeFocusRing;
@@ -70,7 +70,7 @@ class nsRangeFrame final : public nsContainerFrame,
                                 uint32_t aFilter) override;
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
   nscoord IntrinsicISize(const mozilla::IntrinsicSizeInput& aInput,
                          mozilla::IntrinsicISizeType aType) override;

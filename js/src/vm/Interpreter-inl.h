@@ -9,12 +9,13 @@
 
 #include "vm/Interpreter.h"
 
+#include "mozilla/CheckedArithmetic.h"
+
 #include "jslibmath.h"
 #include "jsmath.h"
 #include "jsnum.h"
 
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
-#include "util/CheckedArithmetic.h"
 #include "vm/BigIntType.h"
 #include "vm/BytecodeUtil.h"  // JSDVG_SEARCH_STACK
 #include "vm/JSAtomUtils.h"   // AtomizeString
@@ -39,7 +40,7 @@ namespace js {
  * uninitialized let declaration, represented by the magic value
  * JS_UNINITIALIZED_LEXICAL.
  */
-static inline bool IsUninitializedLexical(const Value& val) {
+static inline bool IsUninitializedLexical(Value val) {
   // Use whyMagic here because JS_OPTIMIZED_OUT could flow into here.
   return val.isMagic() && val.whyMagic() == JS_UNINITIALIZED_LEXICAL;
 }
@@ -260,6 +261,9 @@ inline void InitGlobalLexicalOperation(
   MOZ_ASSERT(prop.isSome());
   MOZ_ASSERT(IsUninitializedLexical(lexicalEnv->getSlot(prop->slot())));
 
+  // Note: we don't have to call Watchtower::watchPropertyValueChange because
+  // this is an initialization instead of a mutation. We don't optimize loads of
+  // uninitialized lexicals in the JIT.
   lexicalEnv->setSlot(prop->slot(), value);
 }
 
@@ -610,7 +614,7 @@ static MOZ_ALWAYS_INLINE bool AddOperation(JSContext* cx,
   if (lhs.isInt32() && rhs.isInt32()) {
     int32_t l = lhs.toInt32(), r = rhs.toInt32();
     int32_t t;
-    if (MOZ_LIKELY(SafeAdd(l, r, &t))) {
+    if (MOZ_LIKELY(mozilla::SafeAdd(l, r, &t))) {
       res.setInt32(t);
       return true;
     }

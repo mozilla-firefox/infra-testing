@@ -7,11 +7,10 @@
 #ifndef mozilla_dom_idbfactory_h__
 #define mozilla_dom_idbfactory_h__
 
-#include "mozilla/Attributes.h"
-#include "mozilla/dom/BindingDeclarations.h"
-#include "mozilla/dom/quota/PersistenceType.h"
 #include "mozilla/GlobalTeardownObserver.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/quota/PersistenceType.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsISupports.h"

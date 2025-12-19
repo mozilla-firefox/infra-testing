@@ -8,7 +8,8 @@ mod data;
 pub use client::{MockAttachment, MockIcon, MockRecord, MockRemoteSettingsClient};
 pub use data::*;
 
-use crate::Suggestion;
+use crate::{suggestion::YelpSubjectType, Suggestion};
+
 use parking_lot::Once;
 use serde_json::Value as JsonValue;
 
@@ -57,7 +58,6 @@ impl Suggestion {
     pub fn with_score(mut self, score: f64) -> Self {
         let current_score = match &mut self {
             Self::Amp { score, .. } => score,
-            Self::Pocket { score, .. } => score,
             Self::Amo { score, .. } => score,
             Self::Yelp { score, .. } => score,
             Self::Mdn { score, .. } => score,
@@ -79,6 +79,7 @@ impl Suggestion {
                 icon_mimetype,
                 score,
                 subject_exact_match,
+                subject_type,
                 location_param,
                 ..
             } => Self::Yelp {
@@ -88,6 +89,7 @@ impl Suggestion {
                 icon_mimetype,
                 score,
                 subject_exact_match,
+                subject_type,
                 location_param,
                 has_location_sign,
             },
@@ -103,6 +105,7 @@ impl Suggestion {
                 icon,
                 icon_mimetype,
                 score,
+                subject_type,
                 has_location_sign,
                 location_param,
                 ..
@@ -113,10 +116,38 @@ impl Suggestion {
                 icon_mimetype,
                 score,
                 subject_exact_match,
+                subject_type,
                 location_param,
                 has_location_sign,
             },
-            _ => panic!("has_location_sign only valid for yelp suggestions"),
+            _ => panic!("subject_exact_match only valid for yelp suggestions"),
+        }
+    }
+
+    pub fn subject_type(self, subject_type: YelpSubjectType) -> Self {
+        match self {
+            Self::Yelp {
+                title,
+                url,
+                icon,
+                icon_mimetype,
+                score,
+                subject_exact_match,
+                has_location_sign,
+                location_param,
+                ..
+            } => Self::Yelp {
+                title,
+                url,
+                icon,
+                icon_mimetype,
+                score,
+                subject_exact_match,
+                subject_type,
+                location_param,
+                has_location_sign,
+            },
+            _ => panic!("subject_type only valid for yelp suggestions"),
         }
     }
 }
@@ -124,8 +155,6 @@ impl Suggestion {
 pub fn before_each() {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
-        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("trace"))
-            .is_test(true)
-            .init();
+        error_support::init_for_tests_with_level(error_support::Level::Trace);
     });
 }

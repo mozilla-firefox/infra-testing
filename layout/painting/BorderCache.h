@@ -7,9 +7,9 @@
 #ifndef mozilla_BorderCache_h_
 #define mozilla_BorderCache_h_
 
-#include "mozilla/gfx/2D.h"
-#include "mozilla/HashFunctions.h"
 #include "PLDHashTable.h"
+#include "mozilla/HashFunctions.h"
+#include "mozilla/gfx/2D.h"
 
 namespace mozilla {
 // Cache for best overlap and best dashLength.
@@ -33,10 +33,7 @@ struct FourFloats {
     n[3] = d;
   }
 
-  bool operator==(const FourFloats& aOther) const {
-    return n[0] == aOther.n[0] && n[1] == aOther.n[1] && n[2] == aOther.n[2] &&
-           n[3] == aOther.n[3];
-  }
+  bool operator==(const FourFloats&) const = default;
 };
 
 class FourFloatsHashKey : public PLDHashEntryHdr {

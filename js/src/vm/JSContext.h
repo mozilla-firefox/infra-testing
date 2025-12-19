@@ -9,6 +9,7 @@
 #ifndef vm_JSContext_h
 #define vm_JSContext_h
 
+#include "mozilla/Attributes.h"
 #include "mozilla/BaseProfilerUtils.h"  // BaseProfilerThreadId
 #include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
@@ -18,15 +19,19 @@
 #include "builtin/AtomicsObject.h"
 #include "ds/TraceableFifo.h"
 #include "frontend/NameCollections.h"
+#include "gc/Allocator.h"
 #include "gc/GCEnum.h"
 #include "gc/Memory.h"
 #include "irregexp/RegExpTypes.h"
 #include "js/ContextOptions.h"  // JS::ContextOptions
+#include "js/Debug.h"           // JS::CustomObjectSummaryCallback
 #include "js/Exception.h"
+#include "js/friend/MicroTask.h"
 #include "js/GCVector.h"
 #include "js/Interrupt.h"
 #include "js/Promise.h"
 #include "js/Result.h"
+#include "js/RootingAPI.h"
 #include "js/Stack.h"  // JS::NativeStackBase, JS::NativeStackLimit
 #include "js/Utility.h"
 #include "js/Vector.h"
@@ -53,7 +58,6 @@ class ExecutionTracer;
 #endif
 
 namespace jit {
-class ICScript;
 class JitActivation;
 class JitContext;
 class DebugModeOSRVolatileJitFrameIter;
@@ -90,6 +94,9 @@ class InternalJobQueue : public JS::JobQueue {
   // JS::JobQueue methods.
   bool getHostDefinedData(JSContext* cx,
                           JS::MutableHandle<JSObject*> data) const override;
+
+  bool getHostDefinedGlobal(JSContext*,
+                            JS::MutableHandle<JSObject*>) const override;
 
   bool enqueuePromiseJob(JSContext* cx, JS::HandleObject promise,
                          JS::HandleObject job, JS::HandleObject allocationSite,
@@ -148,6 +155,63 @@ enum class InterruptReason : uint32_t {
 
 enum class ShouldCaptureStack { Maybe, Always };
 
+// A wrapper type to allow customization of tracing of
+// MicroTaskElements.
+struct MicroTaskQueueElement {
+  MOZ_IMPLICIT
+  MicroTaskQueueElement(const JS::Value& val) : value(val) {}
+
+  operator JS::Value() const { return value; }
+
+  void trace(JSTracer* trc);
+
+ private:
+  JS::Value value;
+};
+
+// Use TempAllocPolicy to report OOM
+// MG:XXX: It would be nice to explore the typical depth of the queue
+//         to see if we can get it all inline in the common case.
+// MG:XXX: This appears to be broken for non-zero values of inline!
+using MicroTaskQueue =
+    js::TraceableFifo<MicroTaskQueueElement, 0, TempAllocPolicy>;
+
+// A pair of microtask queues; one debug and one 'regular' (non-debug).
+struct MicroTaskQueueSet {
+  explicit MicroTaskQueueSet(JSContext* cx)
+      : microTaskQueue(cx), debugMicroTaskQueue(cx) {}
+
+  // We want to swap so we need move constructors
+  MicroTaskQueueSet(MicroTaskQueueSet&&) = default;
+  MicroTaskQueueSet& operator=(MicroTaskQueueSet&&) = default;
+
+  // Don't copy.
+  MicroTaskQueueSet(const MicroTaskQueueSet&) = delete;
+  MicroTaskQueueSet& operator=(const MicroTaskQueueSet&) = delete;
+
+  bool enqueueRegularMicroTask(JSContext* cx, const JS::GenericMicroTask&);
+  bool enqueueDebugMicroTask(JSContext* cx, const JS::GenericMicroTask&);
+  bool prependRegularMicroTask(JSContext* cx, const JS::GenericMicroTask&);
+
+  JS::GenericMicroTask popFront();
+  JS::GenericMicroTask popDebugFront();
+
+  bool empty() { return microTaskQueue.empty() && debugMicroTaskQueue.empty(); }
+
+  void trace(JSTracer* trc) {
+    microTaskQueue.trace(trc);
+    debugMicroTaskQueue.trace(trc);
+  }
+
+  void clear() {
+    microTaskQueue.clear();
+    debugMicroTaskQueue.clear();
+  }
+
+  MicroTaskQueue microTaskQueue;
+  MicroTaskQueue debugMicroTaskQueue;
+};
+
 } /* namespace js */
 
 /*
@@ -175,7 +239,7 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
 
   // Are we currently timing execution? This flag ensures that we do not
   // double-count execution time in reentrant situations.
-  js::ContextData<bool> measuringExecutionTime_;
+  js::ContextData<bool> measuringExecutionTimeEnabled_;
 
   // This variable is used by the HelperThread scheduling to update the priority
   // of task based on whether JavaScript is being executed on the main thread.
@@ -186,9 +250,11 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   // currently operating on.
   void setRuntime(JSRuntime* rt);
 
-  bool isMeasuringExecutionTime() const { return measuringExecutionTime_; }
-  void setIsMeasuringExecutionTime(bool value) {
-    measuringExecutionTime_ = value;
+  bool measuringExecutionTimeEnabled() const {
+    return measuringExecutionTimeEnabled_;
+  }
+  void setMeasuringExecutionTimeEnabled(bool value) {
+    measuringExecutionTimeEnabled_ = value;
   }
 
   // While JSContexts are meant to be used on a single thread, this reference is
@@ -330,6 +396,10 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   JSRuntime* runtime() { return runtime_; }
   const JSRuntime* runtime() const { return runtime_; }
 
+  static size_t offsetOfRuntime() {
+    return offsetof(JSContext, runtime_) +
+           js::UnprotectedData<JSRuntime*>::offsetOfValue();
+  }
   static size_t offsetOfRealm() { return offsetof(JSContext, realm_); }
 
   friend class JS::AutoSaveExceptionState;
@@ -397,10 +467,6 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
     return offsetof(JSContext, inUnsafeCallWithABI);
   }
 #endif
-
-  static size_t offsetOfInlinedICScript() {
-    return offsetof(JSContext, inlinedICScript_);
-  }
 
  public:
   js::InterpreterStack& interpreterStack() {
@@ -573,6 +639,7 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
 
  public:
   js::wasm::Context& wasm() { return wasm_; }
+  static constexpr size_t offsetOfWasm() { return offsetof(JSContext, wasm_); }
 
   /* Temporary arena pool used while compiling and decompiling. */
   static const size_t TEMP_LIFO_ALLOC_PRIMARY_CHUNK_SIZE = 4 * 1024;
@@ -871,12 +938,6 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   }
   void clearPendingInterrupt(js::InterruptReason reason);
 
-  // For JIT use. Points to the inlined ICScript for a baseline script
-  // being invoked as part of a trial inlining.  Contains nullptr at
-  // all times except for the brief moment between being set in the
-  // caller and read in the callee's prologue.
-  js::ContextData<js::jit::ICScript*> inlinedICScript_;
-
  public:
   void* addressOfInterruptBits() { return &interruptBits_; }
   void* addressOfJitStackLimit() { return &jitStackLimit; }
@@ -886,8 +947,6 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   void* addressOfZone() { return &zone_; }
 
   const void* addressOfRealm() const { return &realm_; }
-
-  void* addressOfInlinedICScript() { return &inlinedICScript_; }
 
   const void* addressOfJitActivation() const { return &jitActivation; }
 
@@ -958,6 +1017,11 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   js::StructuredSpewer& spewer() { return structuredSpewer_.ref(); }
 #endif
 
+  // This flag indicates whether we should bypass CSP restrictions for
+  // eval() and Function() calls or not. This flag can be set when
+  // evaluating the code for Debugger.Frame.prototype.eval.
+  js::ContextData<bool> bypassCSPForDebugger;
+
   // Debugger having set `exclusiveDebuggerOnEval` property to true
   // want their evaluations and calls to be ignore by all other Debuggers
   // except themself. This flag indicates whether we are in such debugger
@@ -967,6 +1031,8 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
 
 #ifdef MOZ_EXECUTION_TRACING
  private:
+  CustomObjectSummaryCallback customObjectSummaryCallback_ = nullptr;
+
   // This holds onto the JS execution tracer, a system which when turned on
   // records function calls and other information about the JS which has been
   // run under this context.
@@ -983,6 +1049,15 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   js::ExecutionTracer& getExecutionTracer() {
     MOZ_ASSERT(hasExecutionTracer());
     return *executionTracer_;
+  }
+
+  CustomObjectSummaryCallback getCustomObjectSummaryCallback() {
+    MOZ_ASSERT(hasExecutionTracer());
+    return customObjectSummaryCallback_;
+  }
+
+  void setCustomObjectSummaryCallback(CustomObjectSummaryCallback cb) {
+    customObjectSummaryCallback_ = cb;
   }
 
   // See the latter clause of the comment over executionTracer_
@@ -1004,6 +1079,7 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   bool hasExecutionTracer() { return false; }
 #endif
 
+  JS::PersistentRooted<js::UniquePtr<js::MicroTaskQueueSet>> microTaskQueues;
 }; /* struct JSContext */
 
 inline JSContext* JSRuntime::mainContextFromOwnThread() {
@@ -1134,6 +1210,19 @@ class MOZ_RAII AutoNoteExclusiveDebuggerOnEval {
   }
 };
 
+class MOZ_RAII AutoSetBypassCSPForDebugger {
+  JSContext* cx;
+  bool oldValue;
+
+ public:
+  AutoSetBypassCSPForDebugger(JSContext* cx, bool value)
+      : cx(cx), oldValue(cx->bypassCSPForDebugger) {
+    cx->bypassCSPForDebugger = value;
+  }
+
+  ~AutoSetBypassCSPForDebugger() { cx->bypassCSPForDebugger = oldValue; }
+};
+
 enum UnsafeABIStrictness {
   NoExceptions,
   AllowPendingExceptions,
@@ -1174,6 +1263,10 @@ class MOZ_RAII AutoUnsafeCallWithABI {
 #endif
 };
 
+template <typename T>
+inline BufferHolder<T>::BufferHolder(JSContext* cx, T* buffer)
+    : BufferHolder(cx->zone(), buffer) {}
+
 } /* namespace js */
 
 #define CHECK_THREAD(cx) \
@@ -1184,7 +1277,7 @@ class MOZ_RAII AutoUnsafeCallWithABI {
  *
  * ## Checking Results when your return type is not Result
  *
- * This header defines alternatives to MOZ_TRY and MOZ_TRY_VAR for when you
+ * This header defines alternatives to MOZ_TRY for when you
  * need to call a `Result` function from a function that uses false or nullptr
  * to indicate errors:
  *

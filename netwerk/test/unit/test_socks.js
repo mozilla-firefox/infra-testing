@@ -1,5 +1,9 @@
 "use strict";
 
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
+);
+
 var CC = Components.Constructor;
 
 const ServerSocket = CC(
@@ -292,7 +296,7 @@ SocksClient.prototype = {
       return;
     }
 
-    Assert.ok(nmethods >= 1);
+    Assert.greaterOrEqual(nmethods, 1);
     var methods = this.inbuf.slice(2, 2 + nmethods);
     Assert.ok(0 in methods);
 
@@ -419,7 +423,7 @@ SocksTestServer.prototype = {
     var test = this.pickTest(port_id);
 
     print("server: test finished", test.port);
-    Assert.ok(test != null);
+    Assert.notEqual(test, null);
     Assert.equal(test.expectedType || test.type, client.type);
     Assert.equal(test.port, port_id);
 

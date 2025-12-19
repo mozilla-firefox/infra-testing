@@ -5,6 +5,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#import <Accessibility/Accessibility.h>
+
 #import "mozAccessible.h"
 #include "MOXAccessibleBase.h"
 
@@ -13,8 +15,8 @@
 #import "MOXSearchInfo.h"
 #import "MOXTextMarkerDelegate.h"
 #import "MOXWebAreaAccessible.h"
-#import "mozTextAccessible.h"
 #import "mozRootAccessible.h"
+#import "mozTextAccessible.h"
 
 #include "LocalAccessible-inl.h"
 #include "nsAccUtils.h"
@@ -26,6 +28,7 @@
 #include "mozilla/dom/BrowserParent.h"
 #include "OuterDocAccessible.h"
 #include "nsChildView.h"
+#include "TextLeafRange.h"
 #include "xpcAccessibleMacInterface.h"
 
 #include "nsRect.h"
@@ -41,8 +44,6 @@ using namespace mozilla::a11y;
 #pragma mark -
 
 @interface mozAccessible ()
-- (BOOL)providesLabelNotTitle;
-
 - (void)maybePostA11yUtilNotification;
 @end
 
@@ -128,16 +129,6 @@ using namespace mozilla::a11y;
   }
 }
 
-- (BOOL)providesLabelNotTitle {
-  // These accessible types are the exception to the rule of label vs. title:
-  // They may be named explicitly, but they still provide a label not a title.
-  return mRole == roles::GROUPING || mRole == roles::RADIO_GROUP ||
-         mRole == roles::FIGURE || mRole == roles::GRAPHIC ||
-         mRole == roles::DOCUMENT || mRole == roles::OUTLINE ||
-         mRole == roles::ARTICLE || mRole == roles::ENTRY ||
-         mRole == roles::SPINBUTTON;
-}
-
 - (mozilla::a11y::Accessible*)geckoAccessible {
   return mGeckoAccessible;
 }
@@ -170,6 +161,10 @@ using namespace mozilla::a11y;
 
   if (selector == @selector(moxExpanded)) {
     return [self stateWithMask:states::EXPANDABLE] == 0;
+  }
+
+  if ([self blockTextFieldMethod:selector]) {
+    return YES;
   }
 
   return [super moxBlockSelector:selector];
@@ -209,11 +204,15 @@ using namespace mozilla::a11y;
   // Convert the given screen-global point in the cocoa coordinate system (with
   // origin in the bottom-left corner of the screen) into point in the Gecko
   // coordinate system (with origin in a top-left screen point).
+  NSScreen* scalingView = utils::GetNSScreenForAcc(self);
+  // Regardless of screen selected above, VO is only happy if we use the
+  // main screen height for Y coordinate conversion. This is consistent with
+  // moxFrame and GeckoTextMarkerRange::Bounds().
   NSScreen* mainView = [[NSScreen screens] objectAtIndex:0];
   NSPoint tmpPoint =
       NSMakePoint(point.x, [mainView frame].size.height - point.y);
   LayoutDeviceIntPoint geckoPoint = nsCocoaUtils::CocoaPointsToDevPixels(
-      tmpPoint, nsCocoaUtils::GetBackingScaleFactor(mainView));
+      tmpPoint, nsCocoaUtils::GetBackingScaleFactor(scalingView));
 
   Accessible* child = mGeckoAccessible->ChildAtPoint(
       geckoPoint.x, geckoPoint.y, Accessible::EWhichChildAtPoint::DeepestChild);
@@ -297,6 +296,17 @@ using namespace mozilla::a11y;
 }
 
 - (NSString*)moxRole {
+  if (mRole == roles::ENTRY ||
+      (mGeckoAccessible->IsGeneric() && mGeckoAccessible->IsEditableRoot())) {
+    if ([self stateWithMask:states::MULTI_LINE]) {
+      // This is a special case where we have a separate role when an entry is a
+      // multiline text area.
+      return NSAccessibilityTextAreaRole;
+    }
+
+    return NSAccessibilityTextFieldRole;
+  }
+
 #define ROLE(geckoRole, stringRole, ariaRole, atkRole, macRole, macSubrole, \
              msaaRole, ia2Role, androidClass, iosIsElement, uiaControlType, \
              nameRule)                                                      \
@@ -408,10 +418,10 @@ using namespace mozilla::a11y;
 
 struct RoleDescrMap {
   NSString* role;
-  const nsString description;
+  const nsLiteralString description;
 };
 
-MOZ_RUNINIT static const RoleDescrMap sRoleDescrMap[] = {
+static constexpr RoleDescrMap sRoleDescrMap[] = {
     {@"AXApplicationAlert", u"alert"_ns},
     {@"AXApplicationAlertDialog", u"alertDialog"_ns},
     {@"AXApplicationDialog", u"dialog"_ns},
@@ -477,6 +487,34 @@ struct RoleDescrComparator {
   return NSAccessibilityRoleDescription([self moxRole], subrole);
 }
 
+static bool ProvidesTitle(const Accessible* aAccessible, nsString& aName) {
+  ENameValueFlag flag = aAccessible->Name(aName);
+
+  switch (aAccessible->Role()) {
+    case roles::PAGETAB:
+    case roles::COMBOBOX_OPTION:
+    case roles::OPTION:
+    case roles::PARENT_MENUITEM:
+    case roles::MENUITEM:
+      // These roles always supply a title.
+      return true;
+    case roles::GROUPING:
+    case roles::RADIO_GROUP:
+    case roles::DOCUMENT:
+    case roles::OUTLINE:
+    case roles::ARTICLE:
+    case roles::FIGURE:
+      // These roles never supply a title.
+      return false;
+    default:
+      break;
+  }
+
+  // If the name was calculated from visible text (eg. label or subtree), we
+  // supply a title.
+  return flag != eNameOK;
+}
+
 - (NSString*)moxLabel {
   if ([self isExpired]) {
     return nil;
@@ -484,22 +522,9 @@ struct RoleDescrComparator {
 
   nsAutoString name;
 
-  /* If our accessible is:
-   * 1. Named by invisible text, or
-   * 2. Has more than one labeling relation, or
-   * 3. Is a special role defined in providesLabelNotTitle
-   *   ... return its name as a label (AXDescription).
-   */
-  ENameValueFlag flag = mGeckoAccessible->Name(name);
-  if (flag == eNameFromSubtree) {
+  if (ProvidesTitle(mGeckoAccessible, name)) {
+    // If it provides title, it is not a description.
     return nil;
-  }
-
-  if (![self providesLabelNotTitle]) {
-    NSArray* relations = [self getRelationsByType:RelationType::LABELLED_BY];
-    if ([relations count] == 1) {
-      return nil;
-    }
   }
 
   return nsCocoaUtils::ToNSString(name);
@@ -508,18 +533,16 @@ struct RoleDescrComparator {
 - (NSString*)moxTitle {
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
-  // In some special cases we provide the name in the label (AXDescription).
-  if ([self providesLabelNotTitle]) {
-    return nil;
-  }
-
-  nsAutoString title;
-  mGeckoAccessible->Name(title);
-  if (nsCoreUtils::IsWhitespaceString(title)) {
+  nsAutoString name;
+  if (!ProvidesTitle(mGeckoAccessible, name)) {
     return @"";
   }
 
-  return nsCocoaUtils::ToNSString(title);
+  if (nsCoreUtils::IsWhitespaceString(name)) {
+    return @"";
+  }
+
+  return nsCocoaUtils::ToNSString(name);
 
   NS_OBJC_END_TRY_BLOCK_RETURN(nil);
 }
@@ -536,16 +559,70 @@ struct RoleDescrComparator {
 }
 
 - (NSString*)moxHelp {
+  nsAutoString desc;
+  EDescriptionValueFlag descFlag = mGeckoAccessible->Description(desc);
+
+  if (@available(macOS 11.0, *)) {
+    // Provide AXHelp only on non-aria descriptions (eg. title attribute),
+    // or if the accessible is a fieldset or radio group.
+    if (descFlag == eDescriptionFromARIA &&
+        mGeckoAccessible->Role() != roles::GROUPING &&
+        mGeckoAccessible->Role() != roles::RADIO_GROUP) {
+      return nil;
+    }
+  }
+
+  return nsCocoaUtils::ToNSString(desc);
+}
+
+- (NSArray*)moxCustomContent {
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
-  // What needs to go here is actually the accDescription of an item.
-  // The MSAA acc_help method has nothing to do with this one.
-  nsAutoString helpText;
-  mGeckoAccessible->Description(helpText);
+  if (@available(macOS 11.0, *)) {
+    nsAutoString desc;
+    EDescriptionValueFlag descFlag = mGeckoAccessible->Description(desc);
 
-  return nsCocoaUtils::ToNSString(helpText);
+    if (!desc.IsEmpty() && descFlag == eDescriptionFromARIA) {
+      AXCustomContent* contentItem = [AXCustomContent
+          customContentWithLabel:@"description"
+                           value:nsCocoaUtils::ToNSString(desc)];
+      contentItem.importance = AXCustomContentImportanceHigh;
+      return @[ contentItem ];
+    }
+  }
+
+  return nil;
 
   NS_OBJC_END_TRY_BLOCK_RETURN(nil);
+}
+
+- (NSArray*)moxCustomActions {
+  if (@available(macOS 13.0, *)) {
+    NSMutableArray<NSAccessibilityCustomAction*>* customActions =
+        [[[NSMutableArray alloc] init] autorelease];
+    Relation relatedActions(
+        mGeckoAccessible->RelationByType(RelationType::ACTION));
+    while (Accessible* target = relatedActions.Next()) {
+      if (target->HasPrimaryAction()) {
+        // Any ACTION related accesibles should be considered a custom action.
+        mozAccessible* nativeTarget = GetNativeFromGeckoAccessible(target);
+        if (nativeTarget) {
+          nsAutoString name;
+          // Use the name of the target as the action name.
+          target->Name(name);
+          NSAccessibilityCustomAction* action =
+              [[NSAccessibilityCustomAction alloc]
+                  initWithName:nsCocoaUtils::ToNSString(name)
+                        target:nativeTarget
+                      selector:@selector(moxPerformPress)];
+          [customActions addObject:action];
+        }
+      }
+    }
+    return customActions;
+  }
+
+  return nil;
 }
 
 - (NSWindow*)moxWindow {
@@ -586,6 +663,26 @@ struct RoleDescrComparator {
   return @YES;
 }
 
+- (NSString*)moxInvalid {
+  // For controls that support text input, we will expose
+  // the string value of `aria-invalid` when it exists.
+  // See mozTextAccessible::moxInvalid for that work.
+  // Unfortunately, NSBools do not autoconvert to usable
+  // NSStrings, so we expose "true" and "false" manually.
+  return ([self stateWithMask:states::INVALID] != 0) ? @"true" : @"false";
+}
+
+- (NSArray*)moxErrorMessageElements {
+  if (![[self moxInvalid] isEqualToString:@"false"]) {
+    NSArray* relations = [self getRelationsByType:RelationType::ERRORMSG];
+    if ([relations count] > 0) {
+      return relations;
+    }
+  }
+
+  return nil;
+}
+
 - (NSNumber*)moxFocused {
   return @([self stateWithMask:states::FOCUSED] != 0);
 }
@@ -602,13 +699,19 @@ struct RoleDescrComparator {
   MOZ_ASSERT(mGeckoAccessible);
 
   LayoutDeviceIntRect rect = mGeckoAccessible->Bounds();
-  NSScreen* mainView = [[NSScreen screens] objectAtIndex:0];
-  CGFloat scaleFactor = nsCocoaUtils::GetBackingScaleFactor(mainView);
+  NSScreen* screen = utils::GetNSScreenForAcc(self);
+  CGFloat scaleFactor = nsCocoaUtils::GetBackingScaleFactor(screen);
+
+  // Regardless of screen selected above, VO is only happy if we use the
+  // main screen height for Y coordinate conversion. This is consistent with
+  // moxHitTest and GeckoTextMarkerRange::Bounds().
+  NSScreen* mainScreen = [[NSScreen screens] objectAtIndex:0];
+  CGFloat mainScreenHeight = [mainScreen frame].size.height;
 
   return [NSValue
       valueWithRect:NSMakeRect(
                         static_cast<CGFloat>(rect.x) / scaleFactor,
-                        [mainView frame].size.height -
+                        mainScreenHeight -
                             static_cast<CGFloat>(rect.y + rect.height) /
                                 scaleFactor,
                         static_cast<CGFloat>(rect.width) / scaleFactor,
@@ -664,12 +767,39 @@ struct RoleDescrComparator {
 - (id)moxTitleUIElement {
   MOZ_ASSERT(mGeckoAccessible);
 
-  NSArray* relations = [self getRelationsByType:RelationType::LABELLED_BY];
-  if ([relations count] == 1) {
-    return [relations firstObject];
+  nsAutoString unused;
+  if (mGeckoAccessible->Name(unused) != eNameFromRelations) {
+    return nil;
   }
 
-  return nil;
+  Relation rel = mGeckoAccessible->RelationByType(RelationType::LABELLED_BY);
+  Accessible* label = rel.Next();
+  if (!label || rel.Next()) {
+    // Zero or more than one relation.
+    return nil;
+  }
+
+  if (label->IsAncestorOf(mGeckoAccessible)) {
+    // Don't support labelling for a relation that references an ancestor.
+    // VO walks the label's subtree and tries to construct the name for the
+    // control. It does not strip whitespace from the text leaf children, and
+    // since the calculated name of the control is stripped, it sees it as two
+    // different names and inclues both.
+    return nil;
+  }
+
+  if (RefPtr<nsAtom>(label->DisplayStyle()) == nsGkAtoms::block) {
+    TextLeafPoint endPoint =
+        TextLeafPoint(label, nsIAccessibleText::TEXT_OFFSET_END_OF_TEXT)
+            .FindBoundary(nsIAccessibleText::BOUNDARY_CHAR, eDirPrevious);
+    if (endPoint.IsSpace()) {
+      // A label that is a block element with trailing space causes VO be
+      // unhappy.
+      return nil;
+    }
+  }
+
+  return GetNativeFromGeckoAccessible(label);
 }
 
 - (NSString*)moxDOMIdentifier {
@@ -728,8 +858,8 @@ struct RoleDescrComparator {
 }
 
 - (id)moxEditableAncestor {
-  return [self moxFindAncestor:^BOOL(id moxAcc, BOOL* stop) {
-    return [moxAcc isKindOfClass:[mozTextAccessible class]];
+  return [self moxFindAncestor:^BOOL(id<MOXAccessible> moxAcc, BOOL* stop) {
+    return [moxAcc moxIsTextField];
   }];
 }
 
@@ -767,6 +897,19 @@ struct RoleDescrComparator {
   mGeckoAccessible->Language(lang);
 
   return nsCocoaUtils::ToNSString(lang);
+}
+
+- (NSString*)moxKeyShortcutsValue {
+  MOZ_ASSERT(mGeckoAccessible);
+
+  nsAutoString shortcut;
+
+  if (!mGeckoAccessible->GetStringARIAAttr(nsGkAtoms::aria_keyshortcuts,
+                                           shortcut)) {
+    return nil;
+  }
+
+  return nsCocoaUtils::ToNSString(shortcut);
 }
 
 #ifndef RELEASE_OR_BETA
@@ -892,8 +1035,12 @@ struct RoleDescrComparator {
     if (Accessible* announcement = mGeckoAccessible->FirstChild()) {
       announcement->Name(name);
     } else {
-      MOZ_ASSERT_UNREACHABLE(
-          "A11yUtil event received, but no announcement found?");
+      // This can happen if a modal dialog is opened, which removes everything
+      // else from the accessibility tree, and then the modal is dismissed,
+      // which inserts everything else again. This causes Gecko to fire an alert
+      // event on a11y-announcement (even though it's empty) since it was just
+      // shown.
+      NS_WARNING("A11yUtil event received, but no announcement found");
     }
 
     NSDictionary* info = @{
@@ -931,12 +1078,6 @@ struct RoleDescrComparator {
   }
 
   return relations;
-}
-
-- (void)handleAccessibleTextChangeEvent:(NSString*)change
-                               inserted:(BOOL)isInserted
-                            inContainer:(Accessible*)container
-                                     at:(int32_t)start {
 }
 
 - (void)handleAccessibleEvent:(uint32_t)eventType {
@@ -989,15 +1130,45 @@ struct RoleDescrComparator {
     case nsIAccessibleEvent::EVENT_LIVE_REGION_REMOVED:
       mIsLiveRegion = false;
       break;
-    case nsIAccessibleEvent::EVENT_NAME_CHANGE:
-      if (![self providesLabelNotTitle]) {
+    case nsIAccessibleEvent::EVENT_NAME_CHANGE: {
+      // Don't want to passively activate the cache because a name changed.
+      CacheDomainActivationBlocker cacheBlocker;
+      nsAutoString nameNotUsed;
+      if (ProvidesTitle(mGeckoAccessible, nameNotUsed)) {
         [self moxPostNotification:NSAccessibilityTitleChangedNotification];
       }
       break;
+    }
     case nsIAccessibleEvent::EVENT_LIVE_REGION_CHANGED:
       MOZ_ASSERT(mIsLiveRegion);
       [self moxPostNotification:@"AXLiveRegionChanged"];
       break;
+    case nsIAccessibleEvent::EVENT_ERRORMESSAGE_CHANGED: {
+      // aria-errormessage was changed. If aria-invalid != "true", it means that
+      // VoiceOver should (a) expose a new message or (b) remove an
+      // old message
+      if (![[self moxInvalid] isEqualToString:@"false"]) {
+        [self moxPostNotification:@"AXValidationErrorChanged"];
+      }
+
+      break;
+    }
+  }
+}
+
+- (void)maybePostValidationErrorChanged {
+  NSArray* relations =
+      [self getRelationsByType:(mozilla::a11y::RelationType::ERRORMSG_FOR)];
+  if ([relations count] > 0) {
+    // only fire AXValidationErrorChanged if related node is not
+    // `aria-invalid="false"`
+    for (mozAccessible* related : relations) {
+      NSString* invalidStr = [related moxInvalid];
+      if (![invalidStr isEqualToString:@"false"]) {
+        [self moxPostNotification:@"AXValidationErrorChanged"];
+        break;
+      }
+    }
   }
 }
 

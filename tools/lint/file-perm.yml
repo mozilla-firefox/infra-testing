@@ -8,6 +8,7 @@ file-perm:
         - .c
         - .cc
         - .cpp
+        - .css
         - .flac
         - .h
         - .html
@@ -28,6 +29,7 @@ file-perm:
         - .rst
         - .svg
         - .toml
+        - .ts
         - .ttf
         - .wasm
         - .webidl

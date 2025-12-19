@@ -4,76 +4,85 @@
 
 package mozilla.components.compose.browser.toolbar.ui
 
-import android.widget.ImageView
-import androidx.annotation.ColorInt
-import androidx.annotation.DrawableRes
-import androidx.annotation.StringRes
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
+import android.graphics.drawable.Drawable
+import androidx.appcompat.content.res.AppCompatResources
+import androidx.compose.foundation.layout.Row
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.viewinterop.AndroidView
-import mozilla.components.browser.menu2.BrowserMenuController
-import mozilla.components.compose.base.annotation.LightDarkPreview
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.tooling.preview.PreviewLightDark
+import com.google.accompanist.drawablepainter.rememberDrawablePainter
+import mozilla.components.compose.base.badge.BadgedIcon
 import mozilla.components.compose.base.button.IconButton
 import mozilla.components.compose.base.button.LongPressIconButton
+import mozilla.components.compose.base.menu.CustomPlacementPopup
+import mozilla.components.compose.base.menu.CustomPlacementPopupVerticalContent
 import mozilla.components.compose.base.theme.AcornTheme
+import mozilla.components.compose.browser.toolbar.concept.Action.ActionButton.State
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarInteraction
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarInteraction.BrowserToolbarEvent
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarInteraction.BrowserToolbarMenu
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarInteraction.CombinedEventAndMenu
-import mozilla.components.ui.icons.R
-
-// Interim composable for a tab counter button that supports showing a menu on long press.
-// With this being implemented as an AndroidView the menu can be shown as low to the bottom of the screen as needed.
-// To be replaced with a fully Compose implementation in the future that use a DropdownMenu once
-// https://github.com/JetBrains/compose-multiplatform/issues/1878 is resolved.
+import mozilla.components.compose.browser.toolbar.ui.MenuState.CLick
+import mozilla.components.compose.browser.toolbar.ui.MenuState.LongClick
+import mozilla.components.compose.browser.toolbar.ui.MenuState.None
+import mozilla.components.ui.icons.R as iconsR
 
 /**
  * A clickable icon used to represent an action that can be added to the toolbar.
  *
- * @param icon Drawable resource for this button.
- * @param tint Color resource used to tint [icon].
- * @param contentDescription Text used by accessibility services to describe what this button does.
- * @property onClick [BrowserToolbarInteraction] describing how to handle this button being clicked.
+ * @param icon A [Drawable] to use as icon for this button.
+ * @param contentDescription A [String] to use as content description for this button.
+ * @param state The current [State] of the action button.
+ * @param highlighted Whether or not to highlight this button.
+ * @param onClick [BrowserToolbarInteraction] describing how to handle this button being clicked.
  * @param onLongClick Optional [BrowserToolbarInteraction] describing how to handle this button being long clicked.
  * @param onInteraction Callback for handling [BrowserToolbarEvent]s on user interactions.
  */
 @Composable
-@Suppress("CyclomaticComplexMethod")
-fun ActionButton(
-    @DrawableRes icon: Int,
-    @ColorInt tint: Int,
-    @StringRes contentDescription: Int,
-    onClick: BrowserToolbarInteraction,
+@Suppress("LongMethod", "CyclomaticComplexMethod", "CognitiveComplexMethod")
+internal fun ActionButton(
+    icon: Drawable,
+    contentDescription: String,
+    state: State = State.DEFAULT,
+    highlighted: Boolean = false,
+    onClick: BrowserToolbarInteraction? = null,
     onLongClick: BrowserToolbarInteraction? = null,
     onInteraction: (BrowserToolbarEvent) -> Unit,
 ) {
-    val onClickMenu = key(onClick) { onClick.buildMenu(onInteraction) }
-    val onLongClickMenu = key(onLongClick) { onLongClick.buildMenu(onInteraction) }
-    val shouldReactToLongClicks = remember(onLongClickMenu) {
-        mutableStateOf(
-            onLongClick is BrowserToolbarEvent ||
-                onLongClick is CombinedEventAndMenu ||
-                (onLongClick is BrowserToolbarMenu && onLongClickMenu != null),
-        )
+    val shouldReactToLongClicks = remember(onLongClick) {
+        onLongClick != null
     }
-    var currentMenuState by remember { mutableStateOf(MenuState.None) }
+    var currentMenuState by remember { mutableStateOf(None) }
+    val colors = MaterialTheme.colorScheme
+    val tint = remember(state, colors) {
+        when (state) {
+            State.ACTIVE -> colors.tertiary
+            State.DISABLED -> colors.onSurface.copy(alpha = 0.38f)
+            State.DEFAULT -> colors.onSurface
+        }
+    }
+
+    val isEnabled = remember(state) {
+        when (state) {
+            State.DISABLED -> false
+            else -> true
+        }
+    }
 
     val handleInteraction: (BrowserToolbarInteraction) -> Unit = { interaction ->
         when (interaction) {
             is BrowserToolbarEvent -> onInteraction(interaction)
             is BrowserToolbarMenu -> {
                 when (interaction) {
-                    onClick -> currentMenuState = MenuState.CLick
-                    onLongClick -> currentMenuState = MenuState.LongClick
+                    onClick -> currentMenuState = CLick
+                    onLongClick -> currentMenuState = LongClick
                     else -> {
                         // no-op. Not possible, just making the compiler happy.
                     }
@@ -81,101 +90,158 @@ fun ActionButton(
             }
             is CombinedEventAndMenu -> {
                 onInteraction(interaction.event)
-                currentMenuState = MenuState.LongClick
+                currentMenuState = LongClick
             }
         }
     }
 
-    val content: @Composable () -> Unit = {
-        ActionButtonView(
-            icon = icon,
-            tint = tint,
-            menuData = when (currentMenuState) {
-                MenuState.None -> null
-                MenuState.CLick -> {
-                    onClickMenu?.let { menuController ->
-                        MenuData(
-                            menuController = menuController,
-                            menuState = currentMenuState,
-                            onMenuShown = { currentMenuState = MenuState.None },
-                        )
-                    }
-                }
-                MenuState.LongClick -> {
-                    onLongClickMenu?.let { menuController ->
-                        MenuData(
-                            menuController = menuController,
-                            menuState = currentMenuState,
-                            onMenuShown = { currentMenuState = MenuState.None },
-                        )
-                    }
+    when (shouldReactToLongClicks) {
+        true -> LongPressIconButton(
+            onClick = {
+                if (onClick != null) {
+                    handleInteraction(onClick)
                 }
             },
-        )
-    }
-
-    when (shouldReactToLongClicks.value) {
-        true -> LongPressIconButton(
-            onClick = { handleInteraction(onClick) },
             onLongClick = {
                 if (onLongClick != null) {
                     handleInteraction(onLongClick)
                 }
             },
-            contentDescription = stringResource(contentDescription),
-            content = content,
-        )
+            enabled = isEnabled,
+            contentDescription = contentDescription,
+        ) {
+            ActionButtonIcon(icon, tint, highlighted)
+
+            ActionButtonMenu(
+                currentMenuState = currentMenuState,
+                wantedMenu = LongClick,
+                popupData = onLongClick,
+                onInteraction = onInteraction,
+                onDismissRequest = { currentMenuState = None },
+            )
+        }
 
         false -> IconButton(
-            onClick = { handleInteraction(onClick) },
-            contentDescription = stringResource(contentDescription),
-            content = content,
-        )
+            onClick = {
+                if (onClick != null) {
+                    handleInteraction(onClick)
+                }
+            },
+            enabled = isEnabled,
+            contentDescription = contentDescription,
+        ) {
+            ActionButtonIcon(icon, tint, highlighted)
+
+            ActionButtonMenu(
+                currentMenuState = currentMenuState,
+                wantedMenu = CLick,
+                popupData = onClick,
+                onInteraction = onInteraction,
+                onDismissRequest = { currentMenuState = None },
+            )
+        }
     }
 }
 
-private data class MenuData(
-    val menuController: BrowserMenuController?,
-    val menuState: MenuState,
-    val onMenuShown: () -> Unit,
-)
+@Composable
+private fun ActionButtonIcon(
+    icon: Drawable,
+    tint: Color,
+    isHighlighted: Boolean,
+) {
+    BadgedIcon(
+        painter = rememberDrawablePainter(icon),
+        isHighlighted = isHighlighted,
+        tint = tint,
+    )
+}
+
+@Composable
+private inline fun ActionButtonMenu(
+    currentMenuState: MenuState,
+    wantedMenu: MenuState,
+    popupData: BrowserToolbarInteraction?,
+    crossinline onInteraction: (BrowserToolbarEvent) -> Unit,
+    noinline onDismissRequest: () -> Unit,
+) {
+    if (currentMenuState == wantedMenu) {
+        CustomPlacementPopup(
+            isVisible = true,
+            onDismissRequest = onDismissRequest,
+        ) {
+            popupData?.let {
+                CustomPlacementPopupVerticalContent {
+                    it.toMenuItems().forEach { menuItem ->
+                        menuItemComposable(menuItem) { event ->
+                            onDismissRequest()
+                            onInteraction(event)
+                        }.invoke()
+                    }
+                }
+            }
+        }
+    }
+}
 
 private enum class MenuState {
     None, CLick, LongClick
 }
 
-@Composable
-private fun ActionButtonView(
-    @DrawableRes icon: Int,
-    @ColorInt tint: Int,
-    menuData: MenuData? = null,
-) {
-    AndroidView(
-        factory = { context ->
-            ImageView(context)
-        },
-        update = { imageView ->
-            imageView.setImageResource(icon)
-            imageView.setColorFilter(tint)
-
-            if (menuData?.menuState == MenuState.CLick || menuData?.menuState == MenuState.LongClick) {
-                menuData.menuController?.show(anchor = imageView)
-                menuData.onMenuShown()
-            }
-        },
-    )
-}
-
-@LightDarkPreview
+@PreviewLightDark
 @Composable
 private fun ActionButtonPreview() {
     AcornTheme {
-        Box(modifier = Modifier.background(AcornTheme.colors.layer1)) {
+        Surface {
+            Row {
+                ActionButton(
+                    icon = AppCompatResources.getDrawable(
+                        LocalContext.current,
+                        iconsR.drawable.mozac_ic_bookmark_24,
+                    )!!,
+                    contentDescription = "Test",
+                    onClick = object : BrowserToolbarEvent {},
+                    onInteraction = {},
+                )
+
+                ActionButton(
+                    icon = AppCompatResources.getDrawable(
+                        LocalContext.current,
+                        iconsR.drawable.mozac_ic_bookmark_24,
+                    )!!,
+                    contentDescription = "Test",
+                    state = State.ACTIVE,
+                    onClick = object : BrowserToolbarEvent {},
+                    onInteraction = {},
+                )
+
+                ActionButton(
+                    icon = AppCompatResources.getDrawable(
+                        LocalContext.current,
+                        iconsR.drawable.mozac_ic_bookmark_24,
+                    )!!,
+                    contentDescription = "Test",
+                    state = State.DISABLED,
+                    onClick = object : BrowserToolbarEvent {},
+                    onInteraction = {},
+                )
+            }
+        }
+    }
+}
+
+@PreviewLightDark
+@Composable
+private fun HighlightedActionButtonPreview() {
+    AcornTheme {
+        Surface {
             ActionButton(
-                icon = R.drawable.mozac_ic_web_extension_default_icon,
-                contentDescription = R.string.mozac_error_confused,
-                tint = AcornTheme.colors.iconPrimary.toArgb(),
+                icon = AppCompatResources.getDrawable(
+                    LocalContext.current,
+                    iconsR.drawable.mozac_ic_ellipsis_vertical_24,
+                )!!,
+                contentDescription = "Test",
                 onClick = object : BrowserToolbarEvent {},
+                highlighted = true,
                 onInteraction = {},
             )
         }

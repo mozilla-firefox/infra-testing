@@ -2,10 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/remote-page */
-
 import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
-import { html } from "chrome://global/content/vendor/lit.all.mjs";
+import { html, ifDefined } from "chrome://global/content/vendor/lit.all.mjs";
 
 /**
  * Like DeferredTask but usable from content.
@@ -57,11 +55,15 @@ import "chrome://global/content/elements/moz-button.mjs";
 // eslint-disable-next-line import/no-unassigned-import
 import "chrome://global/content/elements/moz-button-group.mjs";
 // eslint-disable-next-line import/no-unassigned-import
+import "chrome://global/content/elements/moz-visual-picker.mjs";
+// eslint-disable-next-line import/no-unassigned-import
 import "chrome://browser/content/profiles/avatar.mjs";
 // eslint-disable-next-line import/no-unassigned-import
 import "chrome://browser/content/profiles/profiles-theme-card.mjs";
 // eslint-disable-next-line import/no-unassigned-import
-import "chrome://browser/content/profiles/profiles-group.mjs";
+import "chrome://browser/content/profiles/profile-avatar-selector.mjs";
+// eslint-disable-next-line import/no-unassigned-import
+import "chrome://global/content/elements/moz-toggle.mjs";
 
 const SAVE_NAME_TIMEOUT = 2000;
 const SAVED_MESSAGE_TIMEOUT = 5000;
@@ -71,33 +73,33 @@ const SAVED_MESSAGE_TIMEOUT = 5000;
  */
 export class EditProfileCard extends MozLitElement {
   static properties = {
+    hasDesktopShortcut: { type: Boolean },
     profile: { type: Object },
     profiles: { type: Array },
     themes: { type: Array },
+    isCopy: { type: Boolean, reflect: true },
   };
 
   static queries = {
-    mozCard: "moz-card",
-    nameInput: "#profile-name",
-    errorMessage: "#error-message",
-    savedMessage: "#saved-message",
+    avatarSelector: "profile-avatar-selector",
+    avatarSelectorLink: "#profile-avatar-selector-link",
     deleteButton: "#delete-button",
     doneButton: "#done-button",
-    moreThemesLink: "#more-themes",
+    errorMessage: "#error-message",
     headerAvatar: "#header-avatar",
-    avatarsPicker: "#avatars",
+    moreThemesLink: "#more-themes",
+    mozCard: "moz-card",
+    nameInput: "#profile-name",
+    savedMessage: "#saved-message",
+    shortcutToggle: "#desktop-shortcut-toggle",
     themesPicker: "#themes",
   };
 
   updateNameDebouncer = null;
   clearSavedMessageTimer = null;
 
-  get avatars() {
-    return this.avatarsPicker.radioButtons;
-  }
-
   get themeCards() {
-    return this.themesPicker.radioButtons;
+    return this.themesPicker.childElements;
   }
 
   constructor() {
@@ -119,6 +121,8 @@ export class EditProfileCard extends MozLitElement {
 
     window.addEventListener("beforeunload", this);
     window.addEventListener("pagehide", this);
+    document.addEventListener("Profiles:CustomAvatarUpload", this);
+    document.addEventListener("Profiles:AvatarSelected", this);
 
     this.init().then(() => (this.initialized = true));
   }
@@ -128,18 +132,50 @@ export class EditProfileCard extends MozLitElement {
       return;
     }
 
-    let { currentProfile, profiles, themes, isInAutomation } =
-      await RPMSendQuery("Profiles:GetEditProfileContent");
+    this.isCopy = document.location.hash.includes("#copiedProfileName");
+    let fakeParams = new URLSearchParams(
+      document.location.hash.replace("#", "")
+    );
+    this.copiedProfileName = fakeParams.get("copiedProfileName");
+
+    let {
+      currentProfile,
+      hasDesktopShortcut,
+      isInAutomation,
+      platform,
+      profiles,
+      themes,
+    } = await RPMSendQuery("Profiles:GetEditProfileContent");
 
     if (isInAutomation) {
       this.updateNameDebouncer.timeout = 50;
     }
 
-    this.profile = currentProfile;
+    this.hasDesktopShortcut = hasDesktopShortcut;
+    this.platform = platform;
     this.profiles = profiles;
+    this.setProfile(currentProfile);
     this.themes = themes;
 
-    this.setFavicon();
+    await this.setInitialInput();
+  }
+
+  async setInitialInput() {
+    if (!this.isCopy) {
+      return;
+    }
+
+    await this.getUpdateComplete();
+
+    this.nameInput.value = "";
+  }
+
+  createAvatarURL() {
+    if (this.profile.avatarFiles?.file16) {
+      const objURL = URL.createObjectURL(this.profile.avatarFiles.file16);
+      this.profile.avatarURLs.url16 = objURL;
+      this.profile.avatarURLs.url80 = objURL;
+    }
   }
 
   async getUpdateComplete() {
@@ -154,28 +190,40 @@ export class EditProfileCard extends MozLitElement {
     return result;
   }
 
-  setFavicon() {
-    let favicon = document.getElementById("favicon");
-    favicon.href = `chrome://browser/content/profiles/assets/16_${this.profile.avatar}.svg`;
-  }
-
-  getAvatarL10nId(value) {
-    switch (value) {
-      case "book":
-        return "book-avatar";
-      case "briefcase":
-        return "briefcase-avatar";
-      case "flower":
-        return "flower-avatar";
-      case "heart":
-        return "heart-avatar";
-      case "shopping":
-        return "shopping-avatar";
-      case "star":
-        return "star-avatar";
+  setProfile(newProfile) {
+    if (this.profile?.hasCustomAvatar && this.profile?.avatarURLs.url16) {
+      URL.revokeObjectURL(this.profile.avatarURLs.url16);
+      delete this.profile.avatarURLs.url16;
+      delete this.profile.avatarURLs.url80;
     }
 
-    return "";
+    if (this.profile?.favicon) {
+      URL.revokeObjectURL(this.profile.favicon);
+    }
+
+    this.profile = newProfile;
+
+    if (this.profile.hasCustomAvatar) {
+      this.createAvatarURL();
+    }
+
+    this.setFavicon();
+  }
+
+  setFavicon() {
+    const favicon = document.getElementById("favicon");
+
+    if (this.profile.hasCustomAvatar) {
+      favicon.href = this.profile.avatarURLs.url16;
+      return;
+    }
+
+    const faviconBlob = new Blob([this.profile.faviconSVGText], {
+      type: "image/svg+xml",
+    });
+    const faviconObjURL = URL.createObjectURL(faviconBlob);
+    this.profile.favicon = faviconObjURL;
+    favicon.href = faviconObjURL;
   }
 
   handleEvent(event) {
@@ -192,6 +240,17 @@ export class EditProfileCard extends MozLitElement {
       }
       case "pagehide": {
         RPMSendAsyncMessage("Profiles:PageHide");
+        break;
+      }
+      case "Profiles:CustomAvatarUpload": {
+        let { file } = event.detail;
+        this.updateAvatar(file);
+        break;
+      }
+      case "Profiles:AvatarSelected": {
+        let { avatar } = event.detail;
+        this.updateAvatar(avatar);
+        break;
       }
     }
   }
@@ -226,11 +285,12 @@ export class EditProfileCard extends MozLitElement {
       return;
     }
 
-    let theme = await RPMSendQuery("Profiles:UpdateProfileTheme", newThemeId);
-    this.profile.themeId = theme.themeId;
-    this.profile.themeFg = theme.themeFg;
-    this.profile.themeBg = theme.themeBg;
+    let updatedProfile = await RPMSendQuery(
+      "Profiles:UpdateProfileTheme",
+      newThemeId
+    );
 
+    this.setProfile(updatedProfile);
     this.requestUpdate();
   }
 
@@ -239,10 +299,12 @@ export class EditProfileCard extends MozLitElement {
       return;
     }
 
-    this.profile.avatar = newAvatar;
-    RPMSendAsyncMessage("Profiles:UpdateProfileAvatar", this.profile);
+    let updatedProfile = await RPMSendQuery("Profiles:UpdateProfileAvatar", {
+      avatarOrFile: newAvatar,
+    });
+
+    this.setProfile(updatedProfile);
     this.requestUpdate();
-    this.setFavicon();
   }
 
   isDuplicateName(newName) {
@@ -287,6 +349,18 @@ export class EditProfileCard extends MozLitElement {
   }
 
   headerTemplate() {
+    if (this.isCopy) {
+      return html`<div>
+        <h1
+          data-l10n-id="copied-profile-page-header"
+          data-l10n-args=${JSON.stringify({
+            profilename: this.copiedProfileName,
+          })}
+        ></h1>
+        <p data-l10n-id="copied-profile-page-header-description"></p>
+      </div>`;
+    }
+
     return html`<h1
       id="profile-header"
       data-l10n-id="edit-profile-page-header"
@@ -299,7 +373,7 @@ export class EditProfileCard extends MozLitElement {
       id="profile-name"
       size="64"
       aria-errormessage="error-message"
-      value=${this.profile.name}
+      .value=${this.profile.name}
       @input=${this.handleInputEvent}
     />`;
   }
@@ -340,52 +414,100 @@ export class EditProfileCard extends MozLitElement {
       return null;
     }
 
-    return html`<profiles-group
+    return html`<moz-visual-picker
+      type="listbox"
       id="themes"
       value=${this.profile.themeId}
       data-l10n-id="edit-profile-page-theme-header-2"
       name="theme"
-      id="themes"
-      @click=${this.handleThemeClick}
+      @change=${this.handleThemeChange}
     >
       ${this.themes.map(
         t =>
-          html`<profiles-group-item l10nId=${t.dataL10nId} value=${t.id}>
+          html`<moz-visual-picker-item
+            class="theme-item"
+            l10nId=${ifDefined(t.dataL10nId)}
+            name=${ifDefined(t.name)}
+            value=${t.id}
+          >
             <profiles-theme-card
+              aria-hidden="true"
               .theme=${t}
               value=${t.id}
             ></profiles-theme-card>
-          </profiles-group-item>`
+          </moz-visual-picker-item>`
       )}
-    </profiles-group>`;
+    </moz-visual-picker>`;
   }
 
-  handleThemeClick() {
+  desktopShortcutTemplate() {
+    if (this.platform !== "win") {
+      return null;
+    }
+
+    return html`<div id="desktop-shortcut-section">
+      <label
+        for="desktop-shortcut-toggle"
+        data-l10n-id="edit-profile-page-desktop-shortcut-header"
+      ></label>
+      <moz-toggle
+        id="desktop-shortcut-toggle"
+        data-l10n-id="edit-profile-page-desktop-shortcut-toggle"
+        ?pressed=${this.hasDesktopShortcut}
+        @click=${this.handleDesktopShortcutToggle}
+      ></moz-toggle>
+    </div>`;
+  }
+
+  async handleDesktopShortcutToggle(event) {
+    event.preventDefault();
+    let { hasDesktopShortcut } = await RPMSendQuery(
+      "Profiles:SetDesktopShortcut",
+      {
+        shouldEnable: event.target.pressed,
+      }
+    );
+    this.shortcutToggle.pressed = hasDesktopShortcut;
+    this.requestUpdate();
+  }
+
+  handleThemeChange() {
     this.updateTheme(this.themesPicker.value);
   }
 
-  avatarsTemplate() {
-    let avatars = ["book", "briefcase", "flower", "heart", "shopping", "star"];
-
-    return html`<profiles-group
-      value=${this.profile.avatar}
-      data-l10n-id="edit-profile-page-avatar-header-2"
-      name="avatar"
-      id="avatars"
-      @click=${this.handleAvatarClick}
-      >${avatars.map(
-        avatar =>
-          html`<profiles-group-item
-            l10nId=${this.getAvatarL10nId(avatar)}
-            value=${avatar}
-            ><profiles-avatar value=${avatar}></profiles-avatar
-          ></profiles-group-item>`
-      )}</profiles-group
-    >`;
+  headerAvatarTemplate() {
+    return html`<div class="avatar-header-content">
+      <img
+        id="header-avatar"
+        data-l10n-id=${this.profile.avatarL10nId}
+        src=${this.profile.avatarURLs.url80}
+      />
+      <a
+        id="profile-avatar-selector-link"
+        tabindex="0"
+        @click=${this.toggleAvatarSelectorCard}
+        @keydown=${this.handleAvatarSelectorKeyDown}
+        data-l10n-id="edit-profile-page-avatar-selector-opener-link"
+      ></a>
+      <div class="avatar-selector-parent">
+        <profile-avatar-selector
+          hidden
+          value=${this.profile.avatar}
+        ></profile-avatar-selector>
+      </div>
+    </div>`;
   }
 
-  handleAvatarClick() {
-    this.updateAvatar(this.avatarsPicker.value);
+  toggleAvatarSelectorCard(event) {
+    event.stopPropagation();
+    this.avatarSelector.toggleHidden();
+  }
+
+  handleAvatarSelectorKeyDown(event) {
+    if (event.code === "Enter" || event.code === "Space") {
+      event.preventDefault();
+      this.toggleAvatarSelectorCard(event);
+    }
   }
 
   onDeleteClick() {
@@ -445,15 +567,10 @@ export class EditProfileCard extends MozLitElement {
       />
       <moz-card
         ><div id="edit-profile-card" aria-labelledby="profile-header">
-          <img
-            id="header-avatar"
-            data-l10n-id=${this.profile.avatarL10nId}
-            src="chrome://browser/content/profiles/assets/80_${this.profile
-              .avatar}.svg"
-          />
+          ${this.headerAvatarTemplate()}
           <div id="profile-content">
             ${this.headerTemplate()}${this.profilesNameTemplate()}
-            ${this.themesTemplate()}
+            ${this.themesTemplate()} ${this.desktopShortcutTemplate()}
 
             <a
               id="more-themes"
@@ -462,8 +579,6 @@ export class EditProfileCard extends MozLitElement {
               @click=${this.onMoreThemesClick}
               data-l10n-id="edit-profile-page-explore-themes"
             ></a>
-
-            ${this.avatarsTemplate()}
 
             <moz-button-group>${this.buttonsTemplate()}</moz-button-group>
           </div>

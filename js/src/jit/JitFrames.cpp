@@ -1389,15 +1389,6 @@ static void TraceBaselineInterpreterEntryFrame(JSTracer* trc,
   TraceThisAndArguments(trc, frame, layout);
 }
 
-static void TraceRectifierFrame(JSTracer* trc, const JSJitFrameIter& frame) {
-  // Trace thisv.
-  //
-  // Baseline JIT code generated as part of the ICCall_Fallback stub may use
-  // it if we're calling a constructor that returns a primitive value.
-  RectifierFrameLayout* layout = (RectifierFrameLayout*)frame.fp();
-  TraceRoot(trc, &layout->thisv(), "rectifier-thisv");
-}
-
 static void TraceTrampolineNativeFrame(JSTracer* trc,
                                        const JSJitFrameIter& frame) {
   auto* layout = (TrampolineNativeFrameLayout*)frame.fp();
@@ -1425,8 +1416,7 @@ static void TraceJitActivation(JSTracer* trc, JitActivation* activation) {
   }
 #endif
 
-  activation->traceRematerializedFrames(trc);
-  activation->traceIonRecovery(trc);
+  activation->trace(trc);
 
   // This is used for sanity checking continuity of the sequence of wasm stack
   // maps as we unwind.  It has no functional purpose.
@@ -1453,9 +1443,6 @@ static void TraceJitActivation(JSTracer* trc, JitActivation* activation) {
           break;
         case FrameType::BaselineInterpreterEntry:
           TraceBaselineInterpreterEntryFrame(trc, jitFrame);
-          break;
-        case FrameType::Rectifier:
-          TraceRectifierFrame(trc, jitFrame);
           break;
         case FrameType::TrampolineNative:
           TraceTrampolineNativeFrame(trc, jitFrame);
@@ -1497,7 +1484,7 @@ void TraceJitActivations(JSContext* cx, JSTracer* trc) {
     TraceJitActivation(trc, activations->asJit());
   }
 #ifdef ENABLE_WASM_JSPI
-  cx->wasm().promiseIntegration.traceRoots(trc);
+  cx->wasm().traceRoots(trc);
 #endif
 }
 
@@ -1518,6 +1505,7 @@ void TraceWeakJitActivationsInSweepingZones(JSContext* cx, JSTracer* trc) {
 
 void UpdateJitActivationsForMinorGC(JSRuntime* rt) {
   MOZ_ASSERT(JS::RuntimeHeapIsMinorCollecting());
+  Nursery& nursery = rt->gc.nursery();
   JSContext* cx = rt->mainContextFromOwnThread();
   for (JitActivationIterator activations(cx); !activations.done();
        ++activations) {
@@ -1530,7 +1518,7 @@ void UpdateJitActivationsForMinorGC(JSRuntime* rt) {
       } else if (iter.isWasm()) {
         const wasm::WasmFrameIter& frame = iter.asWasm();
         frame.instance()->updateFrameForMovingGC(
-            frame, frame.resumePCinCurrentFrame());
+            frame, frame.resumePCinCurrentFrame(), nursery);
       }
     }
   }
@@ -1538,6 +1526,7 @@ void UpdateJitActivationsForMinorGC(JSRuntime* rt) {
 
 void UpdateJitActivationsForCompactingGC(JSRuntime* rt) {
   MOZ_ASSERT(JS::RuntimeHeapIsMajorCollecting());
+  Nursery& nursery = rt->gc.nursery();
   JSContext* cx = rt->mainContextFromOwnThread();
   for (JitActivationIterator activations(cx); !activations.done();
        ++activations) {
@@ -1545,7 +1534,7 @@ void UpdateJitActivationsForCompactingGC(JSRuntime* rt) {
       if (iter.isWasm()) {
         const wasm::WasmFrameIter& frame = iter.asWasm();
         frame.instance()->updateFrameForMovingGC(
-            frame, frame.resumePCinCurrentFrame());
+            frame, frame.resumePCinCurrentFrame(), nursery);
       }
     }
   }
@@ -2539,12 +2528,7 @@ uintptr_t MachineState::read(Register reg) const {
 
 template <typename T>
 T MachineState::read(FloatRegister reg) const {
-#if !defined(JS_CODEGEN_RISCV64)
   MOZ_ASSERT(reg.size() == sizeof(T));
-#else
-  // RISCV64 always store FloatRegister as 64bit.
-  MOZ_ASSERT(reg.size() == sizeof(double));
-#endif
 
 #if !defined(JS_CODEGEN_NONE) && !defined(JS_CODEGEN_WASM32)
   if (state_.is<BailoutState>()) {
@@ -2717,11 +2701,10 @@ void AssertJitStackInvariants(JSContext* cx) {
         frameSize = callerFp - calleeFp;
 
         if (frames.isScripted() &&
-            (frames.prevType() == FrameType::Rectifier ||
-             frames.prevType() == FrameType::BaselineInterpreterEntry)) {
+            frames.prevType() == FrameType::BaselineInterpreterEntry) {
           MOZ_RELEASE_ASSERT(
               frameSize % JitStackAlignment == 0,
-              "The rectifier and bli entry frame should keep the alignment");
+              "The blinterp entry frame should keep the alignment");
 
           size_t expectedFrameSize =
               sizeof(Value) *
@@ -2764,8 +2747,7 @@ void AssertJitStackInvariants(JSContext* cx) {
                              "The baseline stub restores the stack alignment");
         }
 
-        isScriptedCallee =
-            frames.isScripted() || frames.type() == FrameType::Rectifier;
+        isScriptedCallee = frames.isScripted();
       }
 
       MOZ_RELEASE_ASSERT(

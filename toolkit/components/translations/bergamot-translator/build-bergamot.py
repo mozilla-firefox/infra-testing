@@ -13,23 +13,28 @@ not to check the code change in.
 """
 
 import argparse
-import os
+import logging
 import platform
 import shutil
 import subprocess
-from collections import namedtuple
+from pathlib import Path
+from typing import Any
 
 import yaml
+import zstandard as zstd
 
-DIR_PATH = os.path.realpath(os.path.dirname(__file__))
-THIRD_PARTY_PATH = os.path.join(DIR_PATH, "thirdparty")
-MOZ_YAML_PATH = os.path.join(DIR_PATH, "moz.yaml")
-REPO_PATH = os.path.join(THIRD_PARTY_PATH, "translations")
-INFERENCE_PATH = os.path.join(REPO_PATH, "inference")
-BUILD_PATH = os.path.join(INFERENCE_PATH, "build-wasm")
-JS_PATH = os.path.join(BUILD_PATH, "bergamot-translator.js")
-FINAL_JS_PATH = os.path.join(DIR_PATH, "bergamot-translator.js")
-ROOT_PATH = os.path.join(DIR_PATH, "../../../..")
+DIR_PATH = Path(__file__).parent
+ROOT_PATH = (DIR_PATH / "../../../..").resolve()
+
+MOZ_YAML_PATH = DIR_PATH / "moz.yaml"
+FINAL_JS_PATH = DIR_PATH / "bergamot-translator.js"
+PATCHES_PATH = DIR_PATH / "patches"
+
+THIRD_PARTY_PATH = DIR_PATH / "thirdparty"
+REPO_PATH = THIRD_PARTY_PATH / "translations"
+BUILD_PATH = REPO_PATH / "inference/build-wasm"
+JS_PATH = BUILD_PATH / "bergamot-translator.js"
+WASM_PATH = BUILD_PATH / "bergamot-translator.wasm"
 
 parser = argparse.ArgumentParser(
     description=__doc__,
@@ -44,13 +49,31 @@ parser.add_argument(
     action="store_true",
     help="Build with debug symbols, useful for profiling",
 )
+parser.add_argument(
+    "--translations_repo",
+    metavar="DIRECTORY",
+    type=Path,
+    help="Optionally use a local copy of the https://github.com/mozilla/translations",
+)
+parser.add_argument(
+    "--allow_run_on_host",
+    action="store_true",
+    help="Do not use Docker when building, run the build on the host machine",
+)
+parser.add_argument(
+    "--force_rebuild",
+    action="store_true",
+    help="Always rebuild the artifacts",
+)
 
-ArgNamespace = namedtuple("ArgNamespace", ["clobber", "debug"])
+logging.basicConfig(level=logging.INFO, format="[%(name)s] %(message)s")
+logger = logging.getLogger(Path(__file__).stem)
+logger.setLevel(logging.INFO)
 
 
 def git_clone_update(name: str, repo_url: str, revision: str):
-    if not os.path.exists(REPO_PATH):
-        print(f"\n📥 Clone the {name} repo into {REPO_PATH}\n")
+    if not REPO_PATH.exists():
+        logger.info(f"Clone the {name} repo into {REPO_PATH}\n")
         subprocess.check_call(
             ["git", "clone", repo_url, REPO_PATH],
             cwd=THIRD_PARTY_PATH,
@@ -66,11 +89,11 @@ def git_clone_update(name: str, repo_url: str, revision: str):
     ).strip()
 
     if local_head != revision:
-        print(f"The head ({local_head}) and revision ({revision}) don't match.")
-        print(f"\n🔎 Fetching revision {revision} from {name}.\n")
+        logger.info(f"The head ({local_head}) and revision ({revision}) don't match.")
+        logger.info(f"Fetching revision {revision} from {name}.\n")
         run(["git", "fetch", "--recurse-submodules", "origin", revision])
 
-        print(f"🛒 Checking out the revision {revision}")
+        logger.info(f"Checking out the revision {revision}")
         run(["git", "checkout", revision])
 
 
@@ -78,42 +101,41 @@ def maybe_remove_repo_path():
     """
     Removes the REPO_PATH if it exists, handling files, directories, and symlinks.
     """
-    if not os.path.exists(REPO_PATH):
+    if not REPO_PATH.exists():
         return
 
-    if os.path.islink(REPO_PATH) or os.path.isfile(REPO_PATH):
-        os.remove(REPO_PATH)
-    elif os.path.isdir(REPO_PATH):
+    if REPO_PATH.is_symlink() or REPO_PATH.is_file():
+        REPO_PATH.unlink()
+    elif REPO_PATH.is_dir():
         shutil.rmtree(REPO_PATH)
 
-    print(f"\n🗑  Remove existing path: {REPO_PATH}")
+    logger.info(f"Remove existing path: {REPO_PATH}")
 
 
-def fetch_bergamot_source():
+def fetch_bergamot_source(translations_repo: Path | None):
     """
-    Fetches the Bergamot source code either from a specified path via the
-    MOZILLA_TRANSLATIONS_PATH environment variable or by cloning the repository
-    as defined in the moz.yaml file.
+    Fetches the Bergamot source code either from the --translations_repo path,
+    or by cloning the repository as defined in the moz.yaml file.
 
     Returns:
         str: The path to the Bergamot repository.
     """
-    moz_translations_env = os.getenv("MOZILLA_TRANSLATIONS_PATH")
-
     maybe_remove_repo_path()
 
-    if moz_translations_env:
-        print(f"\n🛠️  MOZILLA_TRANSLATIONS_PATH is set to: {moz_translations_env}")
+    if translations_repo:
+        assert (
+            translations_repo.is_dir()
+        ), f"The translations repo must be a directory: {translations_repo}"
 
-        moz_translations_env = os.path.abspath(moz_translations_env)
+        logger.info(f"Using local mozilla/translations repo: {translations_repo}")
 
-        os.symlink(moz_translations_env, REPO_PATH)
-        print(f"\n🔗 Create symlink: {REPO_PATH} -> {moz_translations_env}")
+        Path(REPO_PATH).symlink_to(translations_repo)
+        logger.info(f"Create symlink: {REPO_PATH} -> {translations_repo}")
 
         return REPO_PATH
     else:
-        print(
-            "\n📄 MOZILLA_TRANSLATIONS_PATH not set. Cloning the repository as per moz.yaml."
+        logger.info(
+            "The --translations_repo was not set. Cloning the repository as per moz.yaml."
         )
 
         with open(MOZ_YAML_PATH, encoding="utf8") as file:
@@ -129,20 +151,24 @@ def fetch_bergamot_source():
         )
 
 
-def create_command(allow_run_on_host: bool, task_args: list[str]):
+def create_command(allow_run_on_host: bool, force_rebuild: bool, task_args: list[str]):
+    extra_args = []
+    if force_rebuild:
+        extra_args.extend(["--", "--force-rebuild"])
     if allow_run_on_host:
         # Attempt to build the WASM artifacts on the host computer.
-        command = ["task", "inference-build-wasm"]
+        command = ["task", "inference-build-wasm", *extra_args]
     else:
         # Attempt to build the WASM artifacts within a Docker container.
         command = [
             "task",
             "docker-run",
             "--",
-            "task",
-            "inference-build-wasm",
             "--volume",
             f"{BUILD_PATH}:/inference/build_wasm",
+            "task",
+            "inference-build-wasm",
+            *extra_args,
         ]
 
         if platform.system() == "Linux":
@@ -157,17 +183,21 @@ def create_command(allow_run_on_host: bool, task_args: list[str]):
     return command
 
 
-def build_bergamot(args: ArgNamespace):
+def build_bergamot(args: Any):
     """
     Builds the inference engine by calling the 'inference-build-wasm' task.
 
-    If the ALLOW_RUN_ON_HOST environment variable is set to 1, then the build
-    will attempt to run locally on the host system.
+    If the --allow_run_on_host flag is set, then the build will attempt to run
+    locally on the host system.
 
     Otherwise, by default, the WASM artifacts will be built with a Docker container
     using the Docker image specified by the repository.
     """
-    allow_run_on_host = os.getenv("ALLOW_RUN_ON_HOST", "0") == "1"
+
+    if WASM_PATH.exists() and JS_PATH.exists() and not args.force_rebuild:
+        logger.info("The build artifacts already exist: skipping build step...")
+        logger.info("Use the --force_rebuild flag to build them again.")
+        return
 
     task_args = []
     if args.clobber:
@@ -175,12 +205,9 @@ def build_bergamot(args: ArgNamespace):
     if args.debug:
         task_args.append("--debug")
 
-    command = create_command(
-        allow_run_on_host,
-        task_args,
-    )
+    command = create_command(args.allow_run_on_host, args.force_rebuild, task_args)
 
-    print("\n🛠️  Building inference engine WASM...\n")
+    logger.info("Building inference engine WASM...\n")
     return subprocess.run(command, cwd=REPO_PATH, shell=False, check=True)
 
 
@@ -190,10 +217,10 @@ def write_final_bergamot_js_file():
     a temporary copy and moving it to the final destination.
     """
     with open(JS_PATH, encoding="utf8") as file:
-        print("\n📐 Formatting the final Bergamot file")
+        logger.info("Formatting the final Bergamot file")
 
         # Create the file outside of this directory so it's not ignored by ESLint.
-        temp_path = os.path.join(DIR_PATH, "../temp-bergamot.js")
+        temp_path = DIR_PATH / "../temp-bergamot.js"
         with open(temp_path, "w", encoding="utf8") as temp_file:
             temp_file.write(file.read())
 
@@ -205,19 +232,51 @@ def write_final_bergamot_js_file():
             capture_output=True,
         )
 
-        print(f"\n💾 Writing out final Bergamot file: {FINAL_JS_PATH}")
+        logger.info(f"Writing out final Bergamot file: {FINAL_JS_PATH}")
         shutil.move(temp_path, FINAL_JS_PATH)
+
+    if PATCHES_PATH.exists():
+        for patch_file in PATCHES_PATH.iterdir():
+            if patch_file.is_file() and patch_file.suffix == ".diff":
+                logger.info(f"Applying patch: {patch_file.name}")
+                subprocess.check_call(
+                    ["git", "apply", "--reject", str(patch_file)], cwd=DIR_PATH
+                )
+
+
+def compress_wasm_file():
+    """
+    Compresses the generated .wasm file using zstd and saves it as .wasm.zst.
+    """
+    if not WASM_PATH.exists():
+        logger.error(f"WASM file not found: {WASM_PATH}")
+        return
+
+    compressed_path = WASM_PATH.with_suffix(".wasm.zst")
+
+    logger.info(f"Compressing WASM file: {compressed_path}")
+
+    with open(WASM_PATH, "rb") as f_in, open(compressed_path, "wb") as f_out:
+        compressor = zstd.ZstdCompressor(19)
+        f_out.write(compressor.compress(f_in.read()))
+
+    logger.info(f"Compressed WASM saved to: {compressed_path}")
 
 
 def main():
-    args: ArgNamespace = parser.parse_args()
+    args = parser.parse_args()
 
-    if not os.path.exists(THIRD_PARTY_PATH):
-        os.mkdir(THIRD_PARTY_PATH)
+    if not THIRD_PARTY_PATH.exists():
+        THIRD_PARTY_PATH.mkdir()
 
-    fetch_bergamot_source()
+    fetch_bergamot_source(args.translations_repo)
     build_bergamot(args)
     write_final_bergamot_js_file()
+    compress_wasm_file()
+
+    logger.info(
+        "Uncomment the line in toolkit/components/translations/jar.mn to test the wasm artifact locally"
+    )
 
 
 if __name__ == "__main__":

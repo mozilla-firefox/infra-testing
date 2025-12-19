@@ -21,6 +21,7 @@
 #include "js/GCAPI.h"
 #include "js/SliceBudget.h"
 #include "js/Vector.h"
+#include "vm/Logging.h"
 
 namespace js {
 
@@ -61,14 +62,14 @@ enum Count {
 
 // Stats can be set with Statistics::setStat(). They're not reset automatically.
 enum Stat {
-  // Number of strings tenured.
-  STAT_STRINGS_TENURED,
+  // Number of strings promoted.
+  STAT_STRINGS_PROMOTED,
 
   // Number of strings deduplicated.
   STAT_STRINGS_DEDUPLICATED,
 
-  // Number of BigInts tenured.
-  STAT_BIGINTS_TENURED,
+  // Number of BigInts promoted.
+  STAT_BIGINTS_PROMOTED,
 
   STAT_LIMIT
 };
@@ -201,7 +202,7 @@ struct Statistics {
   void nonincremental(GCAbortReason reason) {
     MOZ_ASSERT(reason != GCAbortReason::None);
     nonincrementalReason_ = reason;
-    log("Non-incremental reason: %s", nonincrementalReason());
+    JS_LOG(gc, Info, "non-incremental for reason %s", nonincrementalReason());
   }
 
   bool nonincremental() const {
@@ -324,21 +325,11 @@ struct Statistics {
 
   bool bufferAllocStatsEnabled() const { return enableBufferAllocStats_; }
 
-#ifdef DEBUG
-  // Print a logging message.
-  void log(const char* fmt, ...);
-#else
-  void log(const char* fmt, ...) {};
-#endif
-
  private:
   gc::GCRuntime* const gc;
 
   /* File used for MOZ_GCTIMER output. */
   FILE* gcTimerFile;
-
-  /* File used for JS_GC_DEBUG output. */
-  FILE* gcDebugFile;
 
   /* File used for JS_GC_PROFILE output. */
   FILE* gcProfileFile;
@@ -478,9 +469,8 @@ struct Statistics {
   void sccDurations(TimeDuration* total, TimeDuration* maxPause) const;
   void printStats();
 
-  template <typename LegacyFn, typename GleanFn>
-  void reportLongestPhaseInMajorGC(PhaseKind longest, LegacyFn legacyReportFn,
-                                   GleanFn gleanReportFn);
+  template <typename GleanFn>
+  void reportLongestPhaseInMajorGC(PhaseKind longest, GleanFn gleanReportFn);
 
   UniqueChars formatCompactSlicePhaseTimes(const PhaseTimes& phaseTimes) const;
 

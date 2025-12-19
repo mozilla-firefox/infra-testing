@@ -36,7 +36,7 @@ registerCleanupFunction(function () {
 });
 
 pushPref("privacy.trackingprotection.enabled", true);
-pushPref("devtools.webconsole.groupWarningMessages", true);
+pushPref("devtools.webconsole.groupSimilarMessages", true);
 
 add_task(async function testEnhancedTrackingProtectionMessage() {
   await pushPref(COOKIE_BEHAVIOR_PREF, COOKIE_BEHAVIORS_REJECT_FOREIGN);
@@ -307,7 +307,7 @@ function emitStorageAccessBlockedMessage() {
  * Log a string from the content page.
  *
  * @param {WebConsole} hud
- * @param {String} str
+ * @param {string} str
  */
 function logString(hud, str) {
   const onMessage = waitForMessageByType(hud, str, ".console-api");

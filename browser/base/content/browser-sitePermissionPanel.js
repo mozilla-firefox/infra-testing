@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/browser-window */
-
 /**
  * Utility object to handle manipulations of the identity permission indicators
  * in the UI.
@@ -187,9 +185,13 @@ var gPermissionPanel = {
       }
     }
 
-    // Show blocked popup icon in the identity-box if popups are blocked
-    // irrespective of popup permission capability value.
-    if (gBrowser.selectedBrowser.popupBlocker.getBlockedPopupCount()) {
+    // Show blocked popup icon in the identity-box if popups or a
+    // third-party redirect is blocked irrespective of popup permission
+    // capability value.
+    if (
+      gBrowser.selectedBrowser.popupAndRedirectBlocker.getBlockedPopupCount() ||
+      gBrowser.selectedBrowser.popupAndRedirectBlocker.isRedirectBlocked()
+    ) {
       let icon = permissionAnchors.popup;
       icon.setAttribute("showing", "true");
       hasPermissions = true;
@@ -203,6 +205,7 @@ var gPermissionPanel = {
 
   /**
    * Shows the permission popup.
+   *
    * @param {Event} event - Event which caused the popup to show.
    */
   openPopup(event) {
@@ -512,8 +515,12 @@ var gPermissionPanel = {
     }
 
     let totalBlockedPopups =
-      gBrowser.selectedBrowser.popupBlocker.getBlockedPopupCount();
-    let hasBlockedPopupIndicator = false;
+      gBrowser.selectedBrowser.popupAndRedirectBlocker.getBlockedPopupCount();
+    let isRedirectBlocked =
+      gBrowser.selectedBrowser.popupAndRedirectBlocker.isRedirectBlocked();
+    let showBlockedIndicator = totalBlockedPopups || isRedirectBlocked;
+
+    let hasBlockedIndicator = false;
     for (let permission of permissions) {
       let [id, key] = permission.id.split(SitePermissions.PERM_KEY_DELIMITER);
 
@@ -571,15 +578,20 @@ var gPermissionPanel = {
         anchor.appendChild(item);
       }
 
-      if (id == "popup" && totalBlockedPopups) {
-        this._createBlockedPopupIndicator(totalBlockedPopups);
-        hasBlockedPopupIndicator = true;
+      // Note: The `id` of the permission is "popup", but this may also
+      //       include blocked third-party redirects.
+      if (id == "popup" && showBlockedIndicator) {
+        this._createBlockedPopupIndicator(
+          totalBlockedPopups,
+          isRedirectBlocked
+        );
+        hasBlockedIndicator = true;
       } else if (id == "geo" && permission.state === SitePermissions.ALLOW) {
         this._createGeoLocationLastAccessIndicator();
       }
     }
 
-    if (totalBlockedPopups && !hasBlockedPopupIndicator) {
+    if (showBlockedIndicator && !hasBlockedIndicator) {
       let permission = {
         id: "popup",
         state: SitePermissions.getDefault("popup"),
@@ -587,7 +599,7 @@ var gPermissionPanel = {
       };
       let item = this._createPermissionItem({ permission });
       this._defaultPermissionAnchor.appendChild(item);
-      this._createBlockedPopupIndicator(totalBlockedPopups);
+      this._createBlockedPopupIndicator(totalBlockedPopups, isRedirectBlocked);
     }
   },
 
@@ -969,7 +981,8 @@ var gPermissionPanel = {
   /**
    * Create a permission item for a WebRTC permission. May return null if there
    * already is a suitable permission item for this device type.
-   * @param {Object} permission - Permission object.
+   *
+   * @param {object} permission - Permission object.
    * @param {string} id - Permission ID without suffix.
    * @param {string} [key] - Secondary permission key.
    * @returns {xul:hbox|null} - Element for permission or null if permission
@@ -1075,24 +1088,47 @@ var gPermissionPanel = {
     return initialCall && container;
   },
 
-  _createBlockedPopupIndicator(aTotalBlockedPopups) {
+  _createBlockedRedirectText() {
+    let text = document.createXULElement("label", { is: "text-link" });
+    text.setAttribute("class", "permission-popup-permission-label");
+    text.addEventListener("click", () => {
+      gBrowser.selectedBrowser.popupAndRedirectBlocker.unblockFirstRedirect();
+    });
+
+    document.l10n.setAttributes(text, "site-permissions-unblock-redirect");
+
+    return text;
+  },
+
+  _createBlockedPopupText(aTotalBlockedPopups) {
+    let text = document.createXULElement("label", { is: "text-link" });
+    text.setAttribute("class", "permission-popup-permission-label");
+    text.addEventListener("click", () => {
+      gBrowser.selectedBrowser.popupAndRedirectBlocker.unblockAllPopups();
+    });
+
+    document.l10n.setAttributes(text, "site-permissions-open-blocked-popups", {
+      count: aTotalBlockedPopups,
+    });
+
+    return text;
+  },
+
+  _createBlockedPopupIndicator(aTotalBlockedPopups, aIsRedirectBlocked) {
     let indicator = document.createXULElement("hbox");
     indicator.setAttribute("class", "permission-popup-permission-item");
     indicator.setAttribute("align", "center");
     indicator.setAttribute("id", "blocked-popup-indicator-item");
 
     MozXULElement.insertFTLIfNeeded("browser/sitePermissions.ftl");
-    let text = document.createXULElement("label", { is: "text-link" });
-    text.setAttribute("class", "permission-popup-permission-label");
-    document.l10n.setAttributes(text, "site-permissions-open-blocked-popups", {
-      count: aTotalBlockedPopups,
-    });
 
-    text.addEventListener("click", () => {
-      gBrowser.selectedBrowser.popupBlocker.unblockAllPopups();
-    });
+    if (aIsRedirectBlocked) {
+      indicator.appendChild(this._createBlockedRedirectText());
+    }
 
-    indicator.appendChild(text);
+    if (aTotalBlockedPopups) {
+      indicator.appendChild(this._createBlockedPopupText(aTotalBlockedPopups));
+    }
 
     document
       .getElementById("permission-popup-container")
@@ -1104,6 +1140,7 @@ var gPermissionPanel = {
  * Returns an object containing two booleans: {camGrace, micGrace},
  * whether permission grace periods are found for camera/microphone AND
  * persistent permissions do not exist for said permissions.
+ *
  * @param browser - Browser element to get permissions for.
  */
 function hasMicCamGracePeriodsSolely(browser) {

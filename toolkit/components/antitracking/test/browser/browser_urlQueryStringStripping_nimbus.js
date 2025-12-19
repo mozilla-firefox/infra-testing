@@ -10,7 +10,7 @@
  * integration works correctly in both normal and private browsing.
  */
 
-const { ExperimentFakes } = ChromeUtils.importESModule(
+const { NimbusTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/NimbusTestUtils.sys.mjs"
 );
 
@@ -33,6 +33,7 @@ async function waitForListServiceInit(strippingEnabled) {
 
 /**
  * Set a list of prefs on the default branch and restore the original values on test end.
+ *
  * @param {*} prefs - Key value pairs in an array.
  */
 function setDefaultPrefs(prefs) {
@@ -73,7 +74,10 @@ add_setup(async function () {
   ]);
 
   await SpecialPowers.pushPrefEnv({
-    set: [["privacy.query_stripping.listService.logLevel", "Debug"]],
+    set: [
+      ["test.wait300msAfterTabSwitch", true],
+      ["privacy.query_stripping.listService.logLevel", "Debug"],
+    ],
   });
 
   // Get the list service so we can wait for it to be fully initialized before running tests.
@@ -92,7 +96,7 @@ add_task(async function test() {
 
   for (let enableStripPBM of [false, true]) {
     for (let enableStrip of [false, true]) {
-      let doExperimentCleanup = await ExperimentFakes.enrollWithFeatureConfig({
+      let doExperimentCleanup = await NimbusTestUtils.enrollWithFeatureConfig({
         featureId: "queryStripping",
         value: {
           enabledNormalBrowsing: enableStrip,
@@ -133,7 +137,7 @@ add_task(async function test() {
         );
       }
 
-      doExperimentCleanup();
+      await doExperimentCleanup();
     }
   }
 

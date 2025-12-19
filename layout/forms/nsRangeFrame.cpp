@@ -7,26 +7,25 @@
 #include "nsRangeFrame.h"
 
 #include "ListMutationObserver.h"
+#include "gfxContext.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/ServoStyleSet.h"
 #include "mozilla/TouchEvents.h"
-
-#include "gfxContext.h"
-#include "nsContentCreatorFunctions.h"
-#include "nsCSSRendering.h"
-#include "nsDisplayList.h"
-#include "nsIContent.h"
-#include "nsLayoutUtils.h"
 #include "mozilla/dom/Document.h"
-#include "nsGkAtoms.h"
+#include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLDataListElement.h"
 #include "mozilla/dom/HTMLInputElement.h"
 #include "mozilla/dom/HTMLOptionElement.h"
-#include "mozilla/dom/MutationEventBinding.h"
-#include "nsPresContext.h"
+#include "nsCSSRendering.h"
+#include "nsContentCreatorFunctions.h"
+#include "nsDisplayList.h"
+#include "nsGkAtoms.h"
+#include "nsIContent.h"
+#include "nsIMutationObserver.h"
+#include "nsLayoutUtils.h"
 #include "nsNodeInfoManager.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/ServoStyleSet.h"
+#include "nsPresContext.h"
 #include "nsTArray.h"
 
 #ifdef ACCESSIBILITY
@@ -134,13 +133,9 @@ void nsRangeFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   const nsStyleDisplay* disp = StyleDisplay();
   if (IsThemed(disp)) {
     DisplayBorderBackgroundOutline(aBuilder, aLists);
-    // Only create items for the thumb. Specifically, we do not want the track
-    // to paint, since *our* background is used to paint the track, and we don't
-    // want the unthemed track painting over the top of the themed track.
-    // This logic is copied from
-    // nsContainerFrame::BuildDisplayListForNonBlockChildren as
-    // called by BuildDisplayListForInline.
-    if (nsIFrame* thumb = mThumbDiv->GetPrimaryFrame()) {
+    // Don't paint our children, but let the thumb be hittable for events.
+    if (auto* thumb = mThumbDiv->GetPrimaryFrame();
+        thumb && aBuilder->IsForEventDelivery() && !HidesContent()) {
       nsDisplayListSet set(aLists, aLists.Content());
       BuildDisplayListForChild(aBuilder, thumb, set, DisplayChildFlag::Inline);
     }
@@ -335,19 +330,10 @@ Decimal nsRangeFrame::GetValueAtEventPoint(WidgetGUIEvent* aEvent) {
     // Themed ranges draw on the border-box rect.
     rangeRect = GetRectRelativeToSelf();
     // We need to get the size of the thumb from the theme.
-    nsPresContext* pc = PresContext();
-    LayoutDeviceIntSize size = pc->Theme()->GetMinimumWidgetSize(
-        pc, this, StyleAppearance::RangeThumb);
-    thumbSize =
-        LayoutDeviceIntSize::ToAppUnits(size, pc->AppUnitsPerDevPixel());
-    // For GTK, GetMinimumWidgetSize returns zero for the thumb dimension
-    // perpendicular to the orientation of the slider.  That's okay since we
-    // only care about the dimension in the direction of the slider when using
-    // |thumbSize| below, but it means this assertion need to check
-    // IsHorizontal().
-    MOZ_ASSERT((IsHorizontal() && thumbSize.width > 0) ||
-                   (!IsHorizontal() && thumbSize.height > 0),
-               "The thumb is expected to take up some slider space");
+    nscoord min = CSSPixel::ToAppUnits(
+        PresContext()->Theme()->GetMinimumRangeThumbSize());
+    MOZ_ASSERT(min, "The thumb is expected to take up some slider space");
+    thumbSize = nsSize(min, min);
   } else {
     rangeRect = GetContentRectRelativeToSelf();
     nsIFrame* thumbFrame = mThumbDiv->GetPrimaryFrame();
@@ -566,7 +552,8 @@ void nsRangeFrame::DoUpdateRangeProgressFrame(
 }
 
 nsresult nsRangeFrame::AttributeChanged(int32_t aNameSpaceID,
-                                        nsAtom* aAttribute, int32_t aModType) {
+                                        nsAtom* aAttribute,
+                                        AttrModType aModType) {
   NS_ASSERTION(mTrackDiv, "The track div must exist!");
   NS_ASSERTION(mThumbDiv, "The thumb div must exist!");
 
@@ -596,7 +583,7 @@ nsresult nsRangeFrame::AttributeChanged(int32_t aNameSpaceID,
       PresShell()->FrameNeedsReflow(this, IntrinsicDirty::None,
                                     NS_FRAME_IS_DIRTY);
     } else if (aAttribute == nsGkAtoms::list) {
-      const bool isRemoval = aModType == MutationEvent_Binding::REMOVAL;
+      const bool isRemoval = aModType == AttrModType::Removal;
       if (mListMutationObserver) {
         mListMutationObserver->Detach();
         if (isRemoval) {
@@ -614,14 +601,10 @@ nsresult nsRangeFrame::AttributeChanged(int32_t aNameSpaceID,
 }
 
 nscoord nsRangeFrame::AutoCrossSize() {
-  nscoord minCrossSize(0);
-  if (IsThemed()) {
-    nsPresContext* pc = PresContext();
-    LayoutDeviceIntSize size = pc->Theme()->GetMinimumWidgetSize(
-        pc, this, StyleAppearance::RangeThumb);
-    minCrossSize =
-        pc->DevPixelsToAppUnits(IsHorizontal() ? size.height : size.width);
-  }
+  nscoord minCrossSize =
+      IsThemed() ? CSSPixel::ToAppUnits(
+                       PresContext()->Theme()->GetMinimumRangeThumbSize())
+                 : 0;
   return std::max(minCrossSize,
                   NSToCoordRound(OneEmInAppUnits() * CROSS_AXIS_EM_SIZE));
 }
@@ -631,7 +614,7 @@ nscoord nsRangeFrame::IntrinsicISize(const IntrinsicSizeInput& aInput,
   if (aType == IntrinsicISizeType::MinISize) {
     const auto* pos = StylePosition();
     auto wm = GetWritingMode();
-    const auto iSize = pos->ISize(wm, StyleDisplay()->mPosition);
+    const auto iSize = pos->ISize(wm, AnchorPosResolutionParams::From(this));
     if (iSize->HasPercent()) {
       // https://drafts.csswg.org/css-sizing-3/#percentage-sizing
       // https://drafts.csswg.org/css-sizing-3/#min-content-zero

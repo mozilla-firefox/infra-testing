@@ -8,7 +8,6 @@ package org.mozilla.geckoview;
 import android.content.Context;
 import android.graphics.Matrix;
 import android.graphics.Rect;
-import android.os.Build;
 import android.os.Bundle;
 import android.text.InputType;
 import android.text.TextUtils;
@@ -34,6 +33,7 @@ import org.mozilla.gecko.mozglue.JNIObject;
 import org.mozilla.gecko.util.GeckoBundle;
 import org.mozilla.gecko.util.ThreadUtils;
 
+/** Accessibility support for GeckoSession. */
 @UiThread
 public class SessionAccessibility {
   private static final String LOGTAG = "GeckoAccessibility";
@@ -521,7 +521,12 @@ public class SessionAccessibility {
     private static native void toggleNativeAccessibility(boolean enable);
   }
 
-  @SuppressWarnings("checkstyle:javadocmethod")
+  /**
+   * Handle a MotionEvent for touch exploration of accessibility nodes.
+   *
+   * @param event The MotionEvent to handle.
+   * @return true if the event was handled, false otherwise.
+   */
   public boolean onMotionEvent(final @NonNull MotionEvent event) {
     ThreadUtils.assertOnUiThread();
 
@@ -537,6 +542,10 @@ public class SessionAccessibility {
     if ((action != MotionEvent.ACTION_HOVER_MOVE)
         && (action != MotionEvent.ACTION_HOVER_ENTER)
         && (action != MotionEvent.ACTION_HOVER_EXIT)) {
+      return false;
+    }
+
+    if (!mAttached) {
       return false;
     }
 
@@ -809,9 +818,7 @@ public class SessionAccessibility {
       final Bundle bundle = node.getExtras();
       if (hint != null) {
         bundle.putCharSequence("AccessibilityNodeInfo.hint", hint);
-        if (Build.VERSION.SDK_INT >= 26) {
-          node.setHintText(hint);
-        }
+        node.setHintText(hint);
       }
       if (geckoRole != null) {
         bundle.putCharSequence("AccessibilityNodeInfo.geckoRole", geckoRole);
@@ -840,10 +847,7 @@ public class SessionAccessibility {
         }
       }
 
-      // SDK 23 and above
-      if (Build.VERSION.SDK_INT >= 23) {
-        node.setContextClickable((flags & FLAG_CONTEXT_CLICKABLE) != 0);
-      }
+      node.setContextClickable((flags & FLAG_CONTEXT_CLICKABLE) != 0);
     }
 
     @WrapForJNI

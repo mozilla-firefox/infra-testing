@@ -6,7 +6,6 @@
 
 #include "Telemetry.h"
 
-#include <algorithm>
 #include <prio.h>
 #include <prproces.h>
 #if defined(XP_UNIX) && !defined(XP_DARWIN)
@@ -24,6 +23,7 @@
 #include "js/PropertyAndElement.h"  // JS_DefineElement, JS_DefineProperty
 #include "mozilla/dom/ToJSValue.h"
 #include "mozilla/dom/Promise.h"
+#include "mozilla/glean/ProfilesMetrics.h"
 #include "mozilla/glean/TelemetryMetrics.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
@@ -33,11 +33,8 @@
 #endif
 #include "mozilla/Components.h"
 #include "mozilla/DataMutex.h"
-#include "mozilla/DebugOnly.h"
-#include "mozilla/FStream.h"
 #include "mozilla/IOInterposer.h"
 #include "mozilla/Likely.h"
-#include "mozilla/MathAlgorithms.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/MemoryTelemetry.h"
 #include "mozilla/ModuleUtils.h"
@@ -46,7 +43,6 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/StartupTimeline.h"
 #include "mozilla/StaticPtr.h"
-#include "mozilla/Unused.h"
 #if defined(XP_WIN)
 #  include "mozilla/WinDllServices.h"
 #endif
@@ -91,7 +87,6 @@
 namespace {
 
 using namespace mozilla;
-using mozilla::dom::AutoJSAPI;
 using mozilla::dom::Promise;
 using mozilla::Telemetry::CombinedStacks;
 using mozilla::Telemetry::EventExtraEntry;
@@ -167,8 +162,6 @@ class TelemetryImpl final : public nsITelemetry, public nsIMemoryReporter {
   bool GetSQLStats(JSContext* cx, JS::MutableHandle<JS::Value> ret,
                    bool includePrivateSql);
 
-  void ReadLateWritesStacks(nsIFile* aProfileDir);
-
   static StaticDataMutex<TelemetryImpl*> sTelemetry;
   AutoHashtable<SlowSQLEntryType> mPrivateSQL;
   AutoHashtable<SlowSQLEntryType> mSanitizedSQL;
@@ -176,8 +169,6 @@ class TelemetryImpl final : public nsITelemetry, public nsIMemoryReporter {
   Atomic<bool, SequentiallyConsistent> mCanRecordBase;
   Atomic<bool, SequentiallyConsistent> mCanRecordExtended;
 
-  CombinedStacks
-      mLateWritesStacks;  // This is collected out of the main thread.
   bool mCachedTelemetryData;
   uint32_t mLastShutdownTime;
   uint32_t mFailedLockCount;
@@ -222,10 +213,6 @@ TelemetryImpl::CollectReports(nsIHandleReportCallback* aHandleReport,
                    sTelemetryIOObserver->SizeOfIncludingThis(aMallocSizeOf),
                    "Memory used by the Telemetry IO Observer");
   }
-
-  COLLECT_REPORT("explicit/telemetry/LateWritesStacks",
-                 mLateWritesStacks.SizeOfExcludingThis(),
-                 "Memory used by the Telemetry LateWrites Stack capturer");
 
   COLLECT_REPORT("explicit/telemetry/Callbacks",
                  mCallbacks.ShallowSizeOfExcludingThis(aMallocSizeOf),
@@ -302,16 +289,14 @@ nsresult GetFailedProfileLockFile(nsIFile** aFile, nsIFile* aProfileDir) {
 class nsFetchTelemetryData : public Runnable {
  public:
   nsFetchTelemetryData(PathCharPtr aShutdownTimeFilename,
-                       nsIFile* aFailedProfileLockFile, nsIFile* aProfileDir)
+                       nsIFile* aFailedProfileLockFile)
       : mozilla::Runnable("nsFetchTelemetryData"),
         mShutdownTimeFilename(aShutdownTimeFilename),
-        mFailedProfileLockFile(aFailedProfileLockFile),
-        mProfileDir(aProfileDir) {}
+        mFailedProfileLockFile(aFailedProfileLockFile) {}
 
  private:
   PathCharPtr mShutdownTimeFilename;
   nsCOMPtr<nsIFile> mFailedProfileLockFile;
-  nsCOMPtr<nsIFile> mProfileDir;
 
  public:
   void MainThread() {
@@ -334,10 +319,10 @@ class nsFetchTelemetryData : public Runnable {
       auto telemetry = lock.ref();
       telemetry->mFailedLockCount = failedLockCount;
       telemetry->mLastShutdownTime = lastShutdownDuration;
-      telemetry->ReadLateWritesStacks(mProfileDir);
     }
 
     glean::browser_timings::last_shutdown.Set(lastShutdownDuration);
+    glean::profile_lock::failed_lock_count.Set(failedLockCount);
 
     nsCOMPtr<nsIRunnable> e =
         NewRunnableMethod("nsFetchTelemetryData::MainThread", this,
@@ -482,8 +467,8 @@ TelemetryImpl::AsyncFetchTelemetryData(
 
   mCallbacks.AppendObject(aCallback);
 
-  nsCOMPtr<nsIRunnable> event = new nsFetchTelemetryData(
-      shutdownTimeFilename, failedProfileLockFile, profileDir);
+  nsCOMPtr<nsIRunnable> event =
+      new nsFetchTelemetryData(shutdownTimeFilename, failedProfileLockFile);
 
   targetThread->Dispatch(event, NS_DISPATCH_NORMAL);
   return NS_OK;
@@ -648,6 +633,16 @@ TelemetryImpl::GetDebugSlowSQL(JSContext* cx,
 }
 
 NS_IMETHODIMP
+TelemetryImpl::SubmitAndGetUntrustedModulePayload(JSContext* aCx,
+                                                  Promise** aPromise) {
+#if defined(XP_WIN)
+  return Telemetry::SubmitAndGetUntrustedModulePayload(aCx, aPromise);
+#else
+  return NS_ERROR_NOT_IMPLEMENTED;
+#endif
+}
+
+NS_IMETHODIMP
 TelemetryImpl::GetUntrustedModuleLoadEvents(uint32_t aFlags, JSContext* cx,
                                             Promise** aPromise) {
 #if defined(XP_WIN)
@@ -665,377 +660,6 @@ TelemetryImpl::GetAreUntrustedModuleLoadEventsReady(bool* ret) {
 #else
   return NS_ERROR_NOT_IMPLEMENTED;
 #endif
-}
-
-#if defined(MOZ_GECKO_PROFILER)
-class GetLoadedModulesResultRunnable final : public Runnable {
-  nsMainThreadPtrHandle<Promise> mPromise;
-  SharedLibraryInfo mRawModules;
-  nsCOMPtr<nsIThread> mWorkerThread;
-#  if defined(XP_WIN)
-  nsTHashMap<nsStringHashKey, nsString> mCertSubjects;
-#  endif  // defined(XP_WIN)
-
- public:
-  GetLoadedModulesResultRunnable(const nsMainThreadPtrHandle<Promise>& aPromise,
-                                 const SharedLibraryInfo& rawModules)
-      : mozilla::Runnable("GetLoadedModulesResultRunnable"),
-        mPromise(aPromise),
-        mRawModules(rawModules),
-        mWorkerThread(do_GetCurrentThread()) {
-    MOZ_ASSERT(!NS_IsMainThread());
-#  if defined(XP_WIN)
-    ObtainCertSubjects();
-#  endif  // defined(XP_WIN)
-  }
-
-  NS_IMETHOD
-  Run() override {
-    MOZ_ASSERT(NS_IsMainThread());
-
-    mWorkerThread->Shutdown();
-
-    AutoJSAPI jsapi;
-    if (NS_WARN_IF(!jsapi.Init(mPromise->GetGlobalObject()))) {
-      mPromise->MaybeReject(NS_ERROR_FAILURE);
-      return NS_OK;
-    }
-
-    JSContext* cx = jsapi.cx();
-
-    JS::Rooted<JSObject*> moduleArray(cx, JS::NewArrayObject(cx, 0));
-    if (!moduleArray) {
-      mPromise->MaybeReject(NS_ERROR_FAILURE);
-      return NS_OK;
-    }
-
-    for (unsigned int i = 0, n = mRawModules.GetSize(); i != n; i++) {
-      const SharedLibrary& info = mRawModules.GetEntry(i);
-
-      JS::Rooted<JSObject*> moduleObj(cx, JS_NewPlainObject(cx));
-      if (!moduleObj) {
-        mPromise->MaybeReject(NS_ERROR_FAILURE);
-        return NS_OK;
-      }
-
-      // Module name.
-      JS::Rooted<JSString*> moduleName(
-          cx,
-          JS_NewUCStringCopyZ(
-              cx, NS_ConvertUTF8toUTF16(info.GetModuleName().c_str()).get()));
-      if (!moduleName || !JS_DefineProperty(cx, moduleObj, "name", moduleName,
-                                            JSPROP_ENUMERATE)) {
-        mPromise->MaybeReject(NS_ERROR_FAILURE);
-        return NS_OK;
-      }
-
-      // Module debug name.
-      JS::Rooted<JS::Value> moduleDebugName(cx);
-
-      if (!info.GetDebugName().empty()) {
-        JS::Rooted<JSString*> str_moduleDebugName(
-            cx,
-            JS_NewUCStringCopyZ(
-                cx, NS_ConvertUTF8toUTF16(info.GetDebugName().c_str()).get()));
-        if (!str_moduleDebugName) {
-          mPromise->MaybeReject(NS_ERROR_FAILURE);
-          return NS_OK;
-        }
-        moduleDebugName.setString(str_moduleDebugName);
-      } else {
-        moduleDebugName.setNull();
-      }
-
-      if (!JS_DefineProperty(cx, moduleObj, "debugName", moduleDebugName,
-                             JSPROP_ENUMERATE)) {
-        mPromise->MaybeReject(NS_ERROR_FAILURE);
-        return NS_OK;
-      }
-
-      // Module Breakpad identifier.
-      JS::Rooted<JS::Value> id(cx);
-
-      if (!info.GetBreakpadId().empty()) {
-        JS::Rooted<JSString*> str_id(
-            cx, JS_NewStringCopyZ(cx, info.GetBreakpadId().c_str()));
-        if (!str_id) {
-          mPromise->MaybeReject(NS_ERROR_FAILURE);
-          return NS_OK;
-        }
-        id.setString(str_id);
-      } else {
-        id.setNull();
-      }
-
-      if (!JS_DefineProperty(cx, moduleObj, "debugID", id, JSPROP_ENUMERATE)) {
-        mPromise->MaybeReject(NS_ERROR_FAILURE);
-        return NS_OK;
-      }
-
-      // Module version.
-      JS::Rooted<JS::Value> version(cx);
-
-      if (!info.GetVersion().empty()) {
-        JS::Rooted<JSString*> v(
-            cx, JS_NewStringCopyZ(cx, info.GetVersion().c_str()));
-        if (!v) {
-          mPromise->MaybeReject(NS_ERROR_FAILURE);
-          return NS_OK;
-        }
-        version.setString(v);
-      } else {
-        version.setNull();
-      }
-
-      if (!JS_DefineProperty(cx, moduleObj, "version", version,
-                             JSPROP_ENUMERATE)) {
-        mPromise->MaybeReject(NS_ERROR_FAILURE);
-        return NS_OK;
-      }
-
-#  if defined(XP_WIN)
-      // Cert Subject.
-      if (auto subject = mCertSubjects.Lookup(
-              NS_ConvertUTF8toUTF16(info.GetModulePath().c_str()))) {
-        JS::Rooted<JSString*> jsOrg(cx, ToJSString(cx, *subject));
-        if (!jsOrg) {
-          mPromise->MaybeReject(NS_ERROR_FAILURE);
-          return NS_OK;
-        }
-
-        JS::Rooted<JS::Value> certSubject(cx);
-        certSubject.setString(jsOrg);
-
-        if (!JS_DefineProperty(cx, moduleObj, "certSubject", certSubject,
-                               JSPROP_ENUMERATE)) {
-          mPromise->MaybeReject(NS_ERROR_FAILURE);
-          return NS_OK;
-        }
-      }
-#  endif  // defined(XP_WIN)
-
-      if (!JS_DefineElement(cx, moduleArray, i, moduleObj, JSPROP_ENUMERATE)) {
-        mPromise->MaybeReject(NS_ERROR_FAILURE);
-        return NS_OK;
-      }
-    }
-
-    mPromise->MaybeResolve(moduleArray);
-    return NS_OK;
-  }
-
- private:
-#  if defined(XP_WIN)
-  void ObtainCertSubjects() {
-    MOZ_ASSERT(!NS_IsMainThread());
-
-    // NB: Currently we cannot lower this down to the profiler layer due to
-    // differing startup dependencies between the profiler and DllServices.
-    RefPtr<DllServices> dllSvc(DllServices::Get());
-
-    for (unsigned int i = 0, n = mRawModules.GetSize(); i != n; i++) {
-      const SharedLibrary& info = mRawModules.GetEntry(i);
-
-      auto orgName = dllSvc->GetBinaryOrgName(
-          NS_ConvertUTF8toUTF16(info.GetModulePath().c_str()).get());
-      if (orgName) {
-        mCertSubjects.InsertOrUpdate(
-            NS_ConvertUTF8toUTF16(info.GetModulePath().c_str()),
-            nsDependentString(orgName.get()));
-      }
-    }
-  }
-#  endif  // defined(XP_WIN)
-};
-
-class GetLoadedModulesRunnable final : public Runnable {
-  nsMainThreadPtrHandle<Promise> mPromise;
-
- public:
-  explicit GetLoadedModulesRunnable(
-      const nsMainThreadPtrHandle<Promise>& aPromise)
-      : mozilla::Runnable("GetLoadedModulesRunnable"), mPromise(aPromise) {}
-
-  NS_IMETHOD
-  Run() override {
-    nsCOMPtr<nsIRunnable> resultRunnable = new GetLoadedModulesResultRunnable(
-        mPromise, SharedLibraryInfo::GetInfoForSelf());
-    return NS_DispatchToMainThread(resultRunnable);
-  }
-};
-#endif  // MOZ_GECKO_PROFILER
-
-NS_IMETHODIMP
-TelemetryImpl::GetLoadedModules(JSContext* cx, Promise** aPromise) {
-#if defined(MOZ_GECKO_PROFILER)
-  nsIGlobalObject* global = xpc::CurrentNativeGlobal(cx);
-  if (NS_WARN_IF(!global)) {
-    return NS_ERROR_FAILURE;
-  }
-
-  ErrorResult result;
-  RefPtr<Promise> promise = Promise::Create(global, result);
-  if (NS_WARN_IF(result.Failed())) {
-    return result.StealNSResult();
-  }
-
-  nsCOMPtr<nsIThread> getModulesThread;
-  nsresult rv =
-      NS_NewNamedThread("TelemetryModule", getter_AddRefs(getModulesThread));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    promise->MaybeReject(NS_ERROR_FAILURE);
-    return NS_OK;
-  }
-
-  nsMainThreadPtrHandle<Promise> mainThreadPromise(
-      new nsMainThreadPtrHolder<Promise>(
-          "TelemetryImpl::GetLoadedModules::Promise", promise));
-  nsCOMPtr<nsIRunnable> runnable =
-      new GetLoadedModulesRunnable(mainThreadPromise);
-  promise.forget(aPromise);
-
-  return getModulesThread->Dispatch(runnable, nsIEventTarget::DISPATCH_NORMAL);
-#else   // MOZ_GECKO_PROFILER
-  return NS_ERROR_NOT_IMPLEMENTED;
-#endif  // MOZ_GECKO_PROFILER
-}
-
-static bool IsValidBreakpadId(const std::string& breakpadId) {
-  if (breakpadId.size() < 33) {
-    return false;
-  }
-  for (char c : breakpadId) {
-    if ((c < '0' || c > '9') && (c < 'A' || c > 'F')) {
-      return false;
-    }
-  }
-  return true;
-}
-
-// Read a stack from the given file name. In case of any error, aStack is
-// unchanged.
-static void ReadStack(PathCharPtr aFileName,
-                      Telemetry::ProcessedStack& aStack) {
-  IFStream file(aFileName);
-
-  size_t numModules;
-  file >> numModules;
-  if (file.fail()) {
-    return;
-  }
-
-  char newline = file.get();
-  if (file.fail() || newline != '\n') {
-    return;
-  }
-
-  Telemetry::ProcessedStack stack;
-  for (size_t i = 0; i < numModules; ++i) {
-    std::string breakpadId;
-    file >> breakpadId;
-    if (file.fail() || !IsValidBreakpadId(breakpadId)) {
-      return;
-    }
-
-    char space = file.get();
-    if (file.fail() || space != ' ') {
-      return;
-    }
-
-    std::string moduleName;
-    getline(file, moduleName);
-    if (file.fail() || moduleName[0] == ' ') {
-      return;
-    }
-
-    Telemetry::ProcessedStack::Module module = {
-        NS_ConvertUTF8toUTF16(moduleName.c_str()),
-        nsCString(breakpadId.c_str(), breakpadId.size()),
-    };
-    stack.AddModule(module);
-  }
-
-  size_t numFrames;
-  file >> numFrames;
-  if (file.fail()) {
-    return;
-  }
-
-  newline = file.get();
-  if (file.fail() || newline != '\n') {
-    return;
-  }
-
-  for (size_t i = 0; i < numFrames; ++i) {
-    uint16_t index;
-    file >> index;
-    uintptr_t offset;
-    file >> std::hex >> offset >> std::dec;
-    if (file.fail()) {
-      return;
-    }
-
-    Telemetry::ProcessedStack::Frame frame = {offset, index};
-    stack.AddFrame(frame);
-  }
-
-  aStack = stack;
-}
-
-void TelemetryImpl::ReadLateWritesStacks(nsIFile* aProfileDir) {
-  nsCOMPtr<nsIDirectoryEnumerator> files;
-  if (NS_FAILED(aProfileDir->GetDirectoryEntries(getter_AddRefs(files)))) {
-    return;
-  }
-
-  constexpr auto prefix = u"Telemetry.LateWriteFinal-"_ns;
-  nsCOMPtr<nsIFile> file;
-  while (NS_SUCCEEDED(files->GetNextFile(getter_AddRefs(file))) && file) {
-    nsAutoString leafName;
-    if (NS_FAILED(file->GetLeafName(leafName)) ||
-        !StringBeginsWith(leafName, prefix)) {
-      continue;
-    }
-
-    Telemetry::ProcessedStack stack;
-    ReadStack(file->NativePath().get(), stack);
-    if (stack.GetStackSize() != 0) {
-      mLateWritesStacks.AddStack(stack);
-    }
-    // Delete the file so that we don't report it again on the next run.
-    file->Remove(false);
-  }
-}
-
-NS_IMETHODIMP
-TelemetryImpl::GetLateWrites(JSContext* cx, JS::MutableHandle<JS::Value> ret) {
-  // The user must call AsyncReadTelemetryData first. We return an empty list
-  // instead of reporting a failure so that the rest of telemetry can uniformly
-  // handle the read not being available yet.
-
-  // FIXME: we allocate the js object again and again in the getter. We should
-  // figure out a way to cache it. In order to do that we have to call
-  // JS_AddNamedObjectRoot. A natural place to do so is in the TelemetryImpl
-  // constructor, but it is not clear how to get a JSContext in there.
-  // Another option would be to call it in here when we first call
-  // CreateJSStackObject, but we would still need to figure out where to call
-  // JS_RemoveObjectRoot. Would it be ok to never call JS_RemoveObjectRoot
-  // and just set the pointer to nullptr is the telemetry destructor?
-
-  JSObject* report;
-  if (!mCachedTelemetryData) {
-    CombinedStacks empty;
-    report = CreateJSStackObject(cx, empty);
-  } else {
-    report = CreateJSStackObject(cx, mLateWritesStacks);
-  }
-
-  if (report == nullptr) {
-    return NS_ERROR_FAILURE;
-  }
-
-  ret.setObject(*report);
-  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -1583,7 +1207,7 @@ TelemetryImpl::FlushBatchedChildTelemetry() {
 
 NS_IMETHODIMP
 TelemetryImpl::EarlyInit() {
-  Unused << MemoryTelemetry::Get();
+  (void)MemoryTelemetry::Get();
 
   return NS_OK;
 }
@@ -1744,10 +1368,6 @@ void RecordShutdownEndTimeStamp() {
 // These are listed in Telemetry.h
 
 namespace mozilla::Telemetry {
-
-void Accumulate(HistogramID aID, const nsCString& aKey, uint32_t aSample) {
-  TelemetryHistogram::Accumulate(aID, aKey, aSample);
-}
 
 const char* GetHistogramName(HistogramID id) {
   return TelemetryHistogram::GetHistogramName(id);

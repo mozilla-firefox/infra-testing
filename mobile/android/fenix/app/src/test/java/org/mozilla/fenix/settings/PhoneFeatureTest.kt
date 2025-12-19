@@ -18,10 +18,10 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.R
-import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
 import org.mozilla.fenix.utils.Settings
+import org.robolectric.RobolectricTestRunner
 
-@RunWith(FenixRobolectricTestRunner::class)
+@RunWith(RobolectricTestRunner::class)
 class PhoneFeatureTest {
 
     @MockK private lateinit var sitePermissions: SitePermissions
@@ -67,6 +67,8 @@ class PhoneFeatureTest {
         assertEquals("Autoplay", PhoneFeature.AUTOPLAY_AUDIBLE.getLabel(testContext))
         assertEquals("Autoplay", PhoneFeature.AUTOPLAY_INAUDIBLE.getLabel(testContext))
         assertEquals("Autoplay", PhoneFeature.AUTOPLAY.getLabel(testContext))
+        assertEquals("Device apps and services", PhoneFeature.LOCAL_DEVICE_ACCESS.getLabel(testContext))
+        assertEquals("Local network devices", PhoneFeature.LOCAL_NETWORK_ACCESS.getLabel(testContext))
     }
 
     @Test
@@ -78,6 +80,8 @@ class PhoneFeatureTest {
         assertEquals(R.string.pref_key_browser_feature_autoplay_audible_v2, PhoneFeature.AUTOPLAY_AUDIBLE.getPreferenceId())
         assertEquals(R.string.pref_key_browser_feature_autoplay_inaudible_v2, PhoneFeature.AUTOPLAY_INAUDIBLE.getPreferenceId())
         assertEquals(R.string.pref_key_browser_feature_autoplay_v2, PhoneFeature.AUTOPLAY.getPreferenceId())
+        assertEquals(R.string.pref_key_browser_feature_local_device_access, PhoneFeature.LOCAL_DEVICE_ACCESS.getPreferenceId())
+        assertEquals(R.string.pref_key_browser_feature_local_network_access, PhoneFeature.LOCAL_NETWORK_ACCESS.getPreferenceId())
     }
 
     @Test

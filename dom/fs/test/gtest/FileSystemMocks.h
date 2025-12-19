@@ -19,7 +19,6 @@
 #include "jsapi.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/ScopeExit.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/DOMException.h"
@@ -192,9 +191,9 @@ class TestPromiseListener : public PromiseNativeHandler,
       *isDone = true;
       FAIL() << "Timed out!";
     };
-    const char* timerName = "fs::TestPromiseListener::ClearDone";
     auto res = NS_NewTimerWithCallback(timerCallback, MilliSeconds,
-                                       nsITimer::TYPE_ONE_SHOT, timerName);
+                                       nsITimer::TYPE_ONE_SHOT,
+                                       "fs::TestPromiseListener::ClearDone"_ns);
     if (res.isOk()) {
       mTimer = res.unwrap();
     }
@@ -353,7 +352,7 @@ class MockGlobalObject : public nsIGlobalObject, public nsWrapperCache {
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(MockGlobalObject)
 
-  NS_DECLARE_STATIC_IID_ACCESSOR(MOCKGLOBALOBJECT_IID)
+  NS_INLINE_DECL_STATIC_IID(MOCKGLOBALOBJECT_IID)
 
   explicit MockGlobalObject(nsCOMPtr<nsIGlobalObject>&& aGlobal)
       : mGlobal(std::move(aGlobal)) {}
@@ -398,7 +397,5 @@ class MockGlobalObject : public nsIGlobalObject, public nsWrapperCache {
 
   nsCOMPtr<nsIGlobalObject> mGlobal;
 };
-
-NS_DEFINE_STATIC_IID_ACCESSOR(MockGlobalObject, MOCKGLOBALOBJECT_IID)
 
 #endif  // DOM_FS_TEST_GTEST_FILESYSTEMMOCKS_H_

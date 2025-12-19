@@ -39,6 +39,7 @@ DIRS += [
     "crashes",
     "crashmonitor",
     "credentialmanagement",
+    "dap",
     "doh",
     "downloads",
     "enterprisepolicies",
@@ -52,10 +53,12 @@ DIRS += [
     "httpsonlyerror",
     "jsoncpp/src/lib_json",
     "kvstore",
+    "media",
     "mediasniffer",
     "ml",
     "mozintl",
     "mozprotocol",
+    "pageextractor",
     "parentalcontrols",
     "passwordmgr",
     "pdfjs",
@@ -73,7 +76,6 @@ DIRS += [
     "search",
     "sessionstore",
     "shell",
-    "shopping",
     "startup",
     "statusfilter",
     "telemetry",
@@ -143,7 +145,7 @@ if CONFIG["MOZ_BACKGROUNDTASKS"]:
     DIRS += ["backgroundtasks"]
 
 if CONFIG["MOZ_UNIFFI_FIXTURES"]:
-    DIRS += ["uniffi-bindgen-gecko-js/fixtures"]
+    DIRS += ["uniffi-bindgen-gecko-js/tests"]
 
 if CONFIG["NIGHTLY_BUILD"]:
     DIRS += ["aboutinference"]

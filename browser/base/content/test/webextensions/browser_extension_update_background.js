@@ -59,7 +59,9 @@ add_setup(async function () {
       gBrowser.selectedBrowser,
       "about:blank"
     );
-    await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
+    await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser, {
+      wantLoad: "about:blank",
+    });
   });
 });
 
@@ -141,7 +143,9 @@ async function backgroundUpdateTest(url, id, checkIconFn) {
   // The original extension has 1 promptable permission and the new one
   // has 2 (history and <all_urls>) plus 1 non-promptable permission (cookies).
   // So we should only see the 1 new promptable permission in the notification.
-  let permissionsListEl = document.getElementById("addon-webext-perm-list");
+  let permissionsListEl = document.getElementById(
+    "addon-webext-perm-list-required"
+  );
   ok(!permissionsListEl.hidden, "Permissions list is visible");
   ok(permissionsListEl.textContent, "Permissions list contains text");
   is(

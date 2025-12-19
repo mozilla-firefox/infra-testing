@@ -19,7 +19,7 @@ import mozilla.components.browser.state.state.LoadRequestState
 import mozilla.components.browser.state.state.MediaSessionState
 import mozilla.components.browser.state.state.ReaderState
 import mozilla.components.browser.state.state.SearchState
-import mozilla.components.browser.state.state.SecurityInfoState
+import mozilla.components.browser.state.state.SecurityInfo
 import mozilla.components.browser.state.state.SessionState
 import mozilla.components.browser.state.state.TabGroup
 import mozilla.components.browser.state.state.TabSessionState
@@ -28,6 +28,7 @@ import mozilla.components.browser.state.state.UndoHistoryState
 import mozilla.components.browser.state.state.WebExtensionState
 import mozilla.components.browser.state.state.content.DownloadState
 import mozilla.components.browser.state.state.content.FindResultState
+import mozilla.components.browser.state.state.content.PermissionHighlightsState
 import mozilla.components.browser.state.state.content.ShareResourceState
 import mozilla.components.browser.state.state.extension.WebExtensionPromptRequest
 import mozilla.components.browser.state.state.recover.RecoverableTab
@@ -378,11 +379,6 @@ sealed class UndoAction : BrowserAction() {
      * Restores the tabs in [UndoHistoryState].
      */
     object RestoreRecoverableTabs : UndoAction()
-
-    /**
-     * Updates the [EngineState] for the given tab id in [UndoHistoryState].
-     */
-    data class UpdateEngineStateForRecoverableTab(val id: String, val engineState: EngineSessionState) : UndoAction()
 }
 
 /**
@@ -517,6 +513,28 @@ sealed class ContentAction : BrowserAction() {
             UpdatePermissionHighlightsStateAction()
 
         /**
+         * Updates the [PermissionHighlightsState.localDeviceAccessChanged] property with the
+         * given [tabId]
+         *
+         * @property tabId The affected tab id
+         * @property value The value indicating whether or not the local device access permission
+         * has changed
+         */
+        data class LocalDeviceAccessChangedAction(val tabId: String, val value: Boolean) :
+            UpdatePermissionHighlightsStateAction()
+
+        /**
+         * Updates the [PermissionHighlightsState.localNetworkAccessChanged] property with the
+         * given [tabId]
+         *
+         * @property tabId The affected tab id
+         * @property value The value indicating whether or not the local network access permission
+         * has changed
+         */
+        data class LocalNetworkAccessChangedAction(val tabId: String, val value: Boolean) :
+            UpdatePermissionHighlightsStateAction()
+
+        /**
          * Updates the autoPlayAudibleChanged property of the [PermissionHighlightsState]
          * with the given [tabId].
          */
@@ -588,11 +606,11 @@ sealed class ContentAction : BrowserAction() {
     ) : ContentAction()
 
     /**
-     * Updates the [SecurityInfoState] of the [ContentState] with the given [sessionId].
+     * Updates the [SecurityInfo] of the [ContentState] with the given [sessionId].
      */
     data class UpdateSecurityInfoAction(
         val sessionId: String,
-        val securityInfo: SecurityInfoState,
+        val securityInfo: SecurityInfo,
     ) : ContentAction()
 
     /**
@@ -852,14 +870,6 @@ sealed class ContentAction : BrowserAction() {
      * Indicates the given [tabId] was unable to be checked for form data.
      */
     data class CheckForFormDataExceptionAction(val tabId: String, val throwable: Throwable) : ContentAction()
-
-    /**
-     * Updates the [ContentState.isProductUrl] state for the non private tab with the given [tabId].
-     */
-    data class UpdateProductUrlStateAction(
-        val tabId: String,
-        val isProductUrl: Boolean,
-    ) : ContentAction()
 
     /**
      * Inform that the tab with [tabId] started rendering a pdf.
@@ -1541,6 +1551,13 @@ sealed class EngineAction : BrowserAction() {
      * Purges the back/forward history of all tabs and custom tabs.
      */
     object PurgeHistoryAction : EngineAction()
+
+    /**
+     * Flushes the most recent state of the session with the provided [tabId].
+     */
+    data class FlushEngineSessionStateAction(
+        override val tabId: String,
+    ) : EngineAction(), ActionWithTab
 }
 
 /**
@@ -1716,7 +1733,8 @@ sealed class DownloadAction : BrowserAction() {
     data class RestoreDownloadStateAction(val download: DownloadState) : DownloadAction()
 
     /**
-     * [BrowserAction] to remove downloads from the storage that no longer exist on disk.
+     * [BrowserAction] to remove completed and cancelled downloads from the storage that no longer
+     * exist on disk.
      *
      * This action is used to clean up the download storage by removing entries for files
      * that have been deleted or moved from their original download location.

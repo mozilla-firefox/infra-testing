@@ -7,54 +7,40 @@ apply plugin: 'kotlin-android'
 apply plugin: 'kotlin-parcelize'
 
 android {
-    defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
-    }
-
     namespace = 'mozilla.components.feature.autofill'
 }
 
 dependencies {
-    implementation platform(libs.androidx.compose.bom)
-    implementation project(':concept-fetch')
-    implementation project(':concept-storage')
-    implementation project(':lib-publicsuffixlist')
-    implementation project(':service-digitalassetlinks')
-    implementation project(':support-base')
-    implementation project(':support-ktx')
-    implementation project(":support-utils")
-    implementation project(':ui-widgets')
+    implementation project(':components:concept-fetch')
+    implementation project(':components:concept-storage')
+    implementation project(':components:lib-publicsuffixlist')
+    implementation project(':components:service-digitalassetlinks')
+    implementation project(':components:support-base')
+    implementation project(':components:support-ktx')
+    implementation project(":components:support-utils")
+    implementation project(':components:ui-widgets')
 
     implementation libs.androidx.annotation
     implementation libs.androidx.autofill
     implementation libs.androidx.biometric
+    implementation libs.androidx.core.ktx
     implementation libs.androidx.fragment
     implementation libs.androidx.lifecycle.runtime
-    implementation libs.androidx.recyclerview
-    implementation libs.androidx.core.ktx
     implementation libs.androidx.preferences
+    implementation libs.androidx.recyclerview
+    implementation libs.kotlinx.coroutines
+    implementation libs.google.material
 
-    implementation libs.kotlin.coroutines
-
-    testImplementation project(':support-test')
-    testImplementation project(':lib-fetch-okhttp')
+    testImplementation project(':components:lib-fetch-okhttp')
+    testImplementation project(':components:support-test')
 
     testImplementation libs.androidx.test.core
     testImplementation libs.androidx.test.junit
-    testImplementation libs.testing.robolectric
-    testImplementation libs.testing.coroutines
-    testImplementation libs.testing.mockwebserver
+    testImplementation libs.kotlinx.coroutines.test
+    testImplementation libs.mockwebserver
+    testImplementation libs.robolectric
 }
 
-apply from: '../../../android-lint.gradle'
+apply from: '../../../common-config.gradle'
 apply from: '../../../publish.gradle'
 ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

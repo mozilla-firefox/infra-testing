@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -55,7 +62,6 @@
   <string name="menu_settings">سیٹنگیں</string>
   <string name="menu_about">کے بارے میں</string>
   <string name="menu_help">مدد</string>
-  <string name="menu_rights" moz:removedIn="137">آپ کے حقوق</string>
   <!--
     Menu item: This is the label for a menu entry that shows how many trackers have been blocked
     for the currently loaded website. The number of blocked trackers is shown below this label.
@@ -119,16 +125,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote">&lt;p&gt;%1$s آپ کو کنٹرول دیتی ہے &lt;/p&gt;
-&lt;p&gt; اسکو نجی برائوزر کی طرح استعمال کریں:
-  &lt;ul&gt; 
-    &lt;li&gt; اپلی کیشن میں ہی تلاش اور براؤز کریں &lt;/li&gt;
-    &lt;li&gt;ٹریکررٰ کو بلاک کریں (یا سٹینگوں کی تازہ کاری کر کے ٹریکررٰ کو اجازت دیں)۔ &lt;/li&gt;
-    &lt;li&gt; کوکیز کے ساتھ تلاش اور براؤزنگ سابقات کو بھی حذف کرنے کیلیے مٹائیں &lt;/li&gt;
-  &lt;/ul&gt;
-&lt;/p&gt;
-&lt;p&gt;%1$s کی پیداوار ہے۔ ھماری مہم ایک صحت مند کھلے انٹرنیٹ کو فروعٰ دینا ہے۔ Mozilla&lt;br/&gt;
-&lt;a href="%2$s"&gt; مزید جانیے &lt;/a&gt;&lt;/p&gt;</string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s آپ کو کنٹرول دیتی ہے </p>\n<p> اسکو نجی برائوزر کی طرح استعمال کریں:\n<ul>\n<li> اپلی کیشن میں ہی تلاش اور براؤز کریں </li>\n<li>ٹریکررٰ کو بلاک کریں (یا سٹینگوں کی تازہ کاری کر کے ٹریکررٰ کو اجازت دیں)۔ </li>\n<li> کوکیز کے ساتھ تلاش اور براؤزنگ سابقات کو بھی حذف کرنے کیلیے مٹائیں </li>\n</ul> </p>\n<p>%1$s کی پیداوار ہے۔ ھماری مہم ایک صحت مند کھلے انٹرنیٹ کو فروعٰ دینا ہے۔ Mozilla<br/>\n<a href=\"%2$s\"> مزید جانیے </a></p>]]></string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">رازداری اور سلامتی</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -282,7 +279,7 @@
   <!-- Header for the list of installed search engines -->
   <string name="preference_search_installed_search_engines">تنصیب شدہ تلاش انجن</string>
   <!-- Header for the list of installed search engines -->
-  <string name="preference_choose_search_engine">تلاش انجن کا  انتخاب  کریں </string>
+  <string name="preference_choose_search_engine">تلاش انجن کا انتخاب کریں</string>
   <!-- Action for restoring the default list of search engines -->
   <string name="preference_search_restore">طےشدہ تلاش انجن بحال کریں</string>
   <!--
@@ -390,11 +387,9 @@
 
     %1$s is the app name and build variant (for example "Firefox Focus", "Firefox Klar Nightly").
   -->
-  <string name="onboarding_first_screen_title">%1$s میں خوشامدید </string>
+  <string name="onboarding_first_screen_title">%1$s میں خوشامدید</string>
   <!-- New Onboarding flow first screen subtitle the one that appears under title -->
   <string name="onboarding_first_screen_subtitle">تیز۔ نجی۔ کوئی خلفشار نہیں۔</string>
-  <!-- New Onboarding flow first screen button label -->
-  <string name="onboarding_first_screen_button_text" moz:removedIn="137" tools:ignore="UnusedResources">شروع کریں</string>
   <!-- First run tour (Default browser): Title -->
   <string name="firstrun_defaultbrowser_title">آپ کی نجی نوعیت کو پاور اپ کرے</string>
   <!-- First run tour (Default browser): Text. -->
@@ -508,11 +503,11 @@
   <!-- First step for the allowing a permission -->
   <string name="phone_feature_blocked_step_settings">1. Android کی سیٹنگز پر جائیں</string>
   <!-- Second step for the allowing a permission -->
-  <string name="phone_feature_blocked_step_permissions">2. &lt;b&gt;اجازتوں&lt;/b&gt; پر دبایں</string>
+  <string name="phone_feature_blocked_step_permissions"><![CDATA[2. <b>اجازتوں</b> پر دبایں]]></string>
   <!-- Button label that take the user to the Android App setting -->
   <string name="phone_feature_go_to_settings">سیٹنگز پر جائیں</string>
   <!-- Third step for allowing a permission. %1$s is the permission name, for example, "Camera" -->
-  <string name="phone_feature_blocked_step_feature">3. &lt;b&gt;%1$s&lt;/b&gt; کو چالو کرنے کے لئے ٹو گل کریں</string>
+  <string name="phone_feature_blocked_step_feature"><![CDATA[3. <b>%1$s</b> کو چالو کرنے کے لئے ٹو گل کریں]]></string>
   <!-- Preference for altering the camera access for all websites -->
   <string name="preference_phone_feature_camera">کیمرہ</string>
   <!-- Preference for altering the microphone access for all websites -->
@@ -537,20 +532,8 @@
   <string name="preference_block_autoplay_audio_only_summary">تجویز کردہ</string>
   <!-- Preference for block autoplay audio and video -->
   <string name="preference_block_autoplay_audio_video">آڈیو اور ویڈیو کو مسدود کریں</string>
-  <!-- Preference for studies -->
-  <string name="preference_studies">مطالعہ</string>
-  <!-- Learn more link for studies, links to an article for more information about studies. -->
-  <string name="studies_learn_more">مزید سیکھیں</string>
-  <!-- Dialog message shown when some changes are made on studies -->
-  <string name="studies_restart_app" moz:removedIn="137">تبدیلیاں لاگو کرنے کے لیے ایپلیکیشن چھوڑ دی جائے گی۔</string>
-  <!-- Title of the remove studies button -->
-  <string name="studies_remove">ہٹائیں</string>
-  <!-- Title of the active section on the studies list -->
-  <string name="studies_active">فعال</string>
-  <!-- Title of the completed section on the studies list -->
-  <string name="studies_completed">مکمل شدہ</string>
   <!-- Preference to enable remote debugging of the app via USB or Wi-Fi -->
-  <string name="preference_remote_debugging">"USB//Wi-Fi کے ذریعے بعید ٹھیک کاری "</string>
+  <string name="preference_remote_debugging">\"USB//Wi-Fi کے ذریعے بعید ٹھیک کاری \"</string>
   <!--
     Button for the fingerprint authentication dialog box that is shown to the user when sharing a link to the app
     while the user has biometric authentication enabled. When pressed, the user's previous session is cleared, and the shared link is opened.

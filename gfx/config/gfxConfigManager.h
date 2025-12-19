@@ -30,6 +30,7 @@ class gfxConfigManager {
         mFeatureD3D11HwAngle(nullptr),
         mFeatureD3D11Compositing(nullptr),
         mFeatureGPUProcess(nullptr),
+        mFeatureGLNorm16Textures(nullptr),
         mWrForceEnabled(false),
         mWrSoftwareForceEnabled(false),
         mWrCompositorForceEnabled(false),
@@ -42,14 +43,12 @@ class gfxConfigManager {
         mWrOptimizedShaders(false),
         mWrScissoredCacheClearsEnabled(false),
         mWrScissoredCacheClearsForceEnabled(false),
-        mGPUProcessAllowSoftware(false),
         mWrEnvForceEnabled(false),
         mScaledResolution(false),
         mDisableHwCompositingNoWr(false),
         mIsNightly(false),
         mIsEarlyBetaOrEarlier(false),
-        mSafeMode(false),
-        mIsWin11OrLater(false) {}
+        mSafeMode(false) {}
 
   void Init();
 
@@ -75,6 +74,7 @@ class gfxConfigManager {
   FeatureState* mFeatureD3D11HwAngle;
   FeatureState* mFeatureD3D11Compositing;
   FeatureState* mFeatureGPUProcess;
+  FeatureState* mFeatureGLNorm16Textures;
 
   /**
    * Prefs
@@ -93,7 +93,6 @@ class gfxConfigManager {
   bool mWrOptimizedShaders;
   bool mWrScissoredCacheClearsEnabled;
   bool mWrScissoredCacheClearsForceEnabled;
-  bool mGPUProcessAllowSoftware;
 
   /**
    * Environment variables
@@ -109,7 +108,6 @@ class gfxConfigManager {
   bool mIsNightly;
   bool mIsEarlyBetaOrEarlier;
   bool mSafeMode;
-  bool mIsWin11OrLater;
 };
 
 }  // namespace gfx

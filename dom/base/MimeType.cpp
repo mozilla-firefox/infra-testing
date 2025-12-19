@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MimeType.h"
+
 #include "nsNetUtil.h"
 #include "nsUnicharUtils.h"
 
@@ -343,6 +344,11 @@ template <typename char_type>
 void TMimeType<char_type>::GetEssence(nsTSubstring<char_type>& aOutput) const {
   aOutput.Assign(mType);
   aOutput.Append('/');
+  GetSubtype(aOutput);
+}
+
+template <typename char_type>
+void TMimeType<char_type>::GetSubtype(nsTSubstring<char_type>& aOutput) const {
   aOutput.Append(mSubtype);
 }
 
@@ -416,6 +422,9 @@ template void TMimeType<char>::Serialize(nsTSubstring<char>& aOutput) const;
 template void TMimeType<char16_t>::GetEssence(
     nsTSubstring<char16_t>& aOutput) const;
 template void TMimeType<char>::GetEssence(nsTSubstring<char>& aOutput) const;
+template void TMimeType<char16_t>::GetSubtype(
+    nsTSubstring<char16_t>& aOutput) const;
+template void TMimeType<char>::GetSubtype(nsTSubstring<char>& aOutput) const;
 template bool TMimeType<char16_t>::HasParameter(
     const nsTSubstring<char16_t>& aName) const;
 template bool TMimeType<char>::HasParameter(

@@ -8,6 +8,9 @@
 newtab-page-title = Thẻ mới
 newtab-settings-button =
     .title = Tùy biến trang thẻ mới
+newtab-customize-panel-icon-button =
+    .title = Tuỳ chỉnh trang này
+newtab-customize-panel-icon-button-label = Tùy chỉnh
 newtab-personalize-settings-icon-label =
     .title = Cá nhân hóa thẻ mới
     .aria-label = Cài đặt
@@ -53,6 +56,9 @@ newtab-topsites-add-shortcut-header = Lối tắt mới
 newtab-topsites-edit-topsites-header = Sửa trang web hàng đầu
 newtab-topsites-edit-shortcut-header = Chỉnh sửa lối tắt
 newtab-topsites-add-shortcut-label = Thêm lối tắt
+newtab-topsites-add-shortcut-title =
+    .title = Thêm lối tắt
+    .aria-label = Thêm lối tắt
 newtab-topsites-title-label = Tiêu đề
 newtab-topsites-title-input =
     .placeholder = Nhập tiêu đề
@@ -81,6 +87,14 @@ newtab-confirm-delete-history-p2 = Thao tác này không thể hoàn tác đư�
 ## Top Sites - Sponsored label
 
 newtab-topsite-sponsored = Được tài trợ
+
+## Label used by screen readers for pinned top sites
+
+# Variables:
+#   $title (string) - The label or hostname of the site.
+topsite-label-pinned =
+    .aria-label = { $title } (đã ghim)
+    .title = { $title }
 
 ## Context Menu - Action Tooltips.
 
@@ -117,7 +131,8 @@ newtab-menu-delete-pocket = Xóa khỏi { -pocket-brand-name }
 newtab-menu-archive-pocket = Lưu trữ trong { -pocket-brand-name }
 newtab-menu-show-privacy-info = Nhà tài trợ của chúng tôi và sự riêng tư của bạn
 newtab-menu-about-fakespot = Về { -fakespot-brand-name }
-newtab-menu-report-content = Báo cáo nội dung này
+# Report is a verb (i.e. report issue with the content).
+newtab-menu-report = Báo cáo
 # Context menu option to personalize New Tab recommended stories by blocking a section of stories,
 # e.g. "Sports". "Block" is a verb here.
 newtab-menu-section-block = Chặn
@@ -191,6 +206,8 @@ newtab-label-sponsored-by = Được tài trợ bởi { $sponsor }
 #   $source (string) - The name of a company or their domain
 #   $timeToRead (number) - The estimated number of minutes to read this story
 newtab-label-source-read-time = { $source } · { $timeToRead } phút
+# This string is used under fixed size ads to indicate sponsored content
+newtab-label-sponsored-fixed = Được tài trợ
 
 ## Section Menu: These strings are displayed in the section context menu and are
 ## meant as a call to action for the given section.
@@ -253,9 +270,6 @@ newtab-pocket-learn-more = Tìm hiểu thêm
 newtab-pocket-cta-button = Sử dụng { -pocket-brand-name }
 newtab-pocket-cta-text = Lưu những câu chuyện bạn yêu thích trong { -pocket-brand-name } và vui vẻ khi đọc chúng.
 newtab-pocket-pocket-firefox-family = { -pocket-brand-name } là một phần của gia đình { -brand-product-name }
-# A save to Pocket button that shows over the card thumbnail on hover.
-newtab-pocket-image =
-    .aria-label = { -pocket-brand-name }
 newtab-pocket-save = Lưu
 newtab-pocket-saved = Đã lưu
 
@@ -304,16 +318,32 @@ newtab-custom-pocket-subtitle = Nội dung đặc biệt do { -pocket-brand-name
 newtab-custom-stories-toggle =
     .label = Câu chuyện được đề xuất
     .description = Nội dung đặc biệt được quản lý bởi gia đình { -brand-product-name }
+newtab-custom-stories-personalized-toggle =
+    .label = Câu chuyện
+newtab-custom-stories-personalized-checkbox-label = Câu chuyện được cá nhân hóa dựa trên hoạt động của bạn
 newtab-custom-pocket-sponsored = Câu chuyện được tài trợ
 newtab-custom-pocket-show-recent-saves = Hiển thị các lần lưu gần đây
 newtab-custom-recent-title = Hoạt động gần đây
 newtab-custom-recent-subtitle = Tuyển chọn các trang và nội dung gần đây
-newtab-custom-recent-toggle =
-    .label = Hoạt động gần đây
-    .description = Tuyển chọn các trang và nội dung gần đây
 newtab-custom-weather-toggle =
     .label = Thời tiết
     .description = Sơ lược về dự báo hôm nay
+newtab-custom-trending-search-toggle =
+    .label = Tìm kiếm thịnh hành
+    .description = Các chủ đề phổ biến và được tìm kiếm thường xuyên
+newtab-custom-widget-weather-toggle =
+    .label = Thời tiết
+newtab-custom-widget-trending-search-toggle =
+    .label = Tìm kiếm thịnh hành
+newtab-custom-widget-lists-toggle =
+    .label = Danh sách
+newtab-custom-widget-timer-toggle =
+    .label = Bộ hẹn giờ
+newtab-custom-widget-section-title = Widget
+# Tooltip for close button
+newtab-custom-close-menu-button =
+    .title = Đóng
+    .aria-label = Đóng menu
 newtab-custom-close-button = Đóng
 newtab-custom-settings = Quản lý các cài đặt khác
 
@@ -326,6 +356,7 @@ newtab-wallpaper-custom-color = Chọn màu
 # Variables
 #   $file_size (number) - The number of the maximum image file size (in MB) that may be uploaded
 newtab-wallpaper-error-max-file-size = Hình ảnh vượt quá giới hạn kích thước tập tin { $file_size }MB. Vui lòng thử tải lên một tập tin nhỏ hơn.
+newtab-wallpaper-error-upload-file-type = Chúng tôi không thể tải tập tin của bạn lên. Vui lòng thử lại với tập tin hình ảnh.
 newtab-wallpaper-error-file-type = Chúng tôi không thể tải lên tập tin của bạn. Vui lòng thử lại với loại tập tin khác.
 newtab-wallpaper-light-red-panda = Gấu trúc đỏ
 newtab-wallpaper-light-mountain = Núi trắng
@@ -375,7 +406,7 @@ newtab-wallpaper-abstract-purple-green = Chuyển sắc ánh sáng tím và xanh
 newtab-wallpaper-abstract-blue-purple-waves = Hình dạng gợn sóng màu xanh dương và tím
 newtab-wallpaper-abstract-black-waves = Hình dạng gợn sóng màu đen
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Hình ảnh
 newtab-wallpaper-beach-at-sunrise = Bãi biển lúc bình minh
@@ -390,7 +421,6 @@ newtab-wallpaper-suspension-bridge = Ảnh cầu treo màu xám chụp vào ban 
 newtab-wallpaper-sand-dunes = Đồi cát trắng
 newtab-wallpaper-palm-trees = Hình bóng của cây cọ dừa trong giờ vàng
 newtab-wallpaper-blue-flowers = Ảnh chụp cận cảnh những bông hoa cánh xanh đang nở
-newtab-wallpaper-forest-trees = Cây phủ đầy sương mù
 # Variables
 #   $author_string (String) - The name of the creator of the photo.
 #   $webpage_string (String) - The name of the webpage where the photo is located.
@@ -405,6 +435,10 @@ feature-highlight-dismiss-button =
 feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
+
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
 
 ## Celestial
 
@@ -432,7 +466,6 @@ newtab-weather-menu-change-location = Thay đổi khu vực
 newtab-weather-change-location-search-input-placeholder =
     .placeholder = Tìm kiếm khu vực
     .aria-label = Tìm kiếm khu vực
-newtab-weather-change-location-search-input = Tìm kiếm khu vực
 newtab-weather-menu-weather-display = Cách hiển thị thời tiết
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
@@ -448,8 +481,16 @@ newtab-weather-menu-change-temperature-units-fahrenheit = Chuyển sang độ F
 newtab-weather-menu-change-temperature-units-celsius = Chuyển sang độ C
 newtab-weather-menu-hide-weather = Ẩn thời tiết trên thẻ mới
 newtab-weather-menu-learn-more = Tìm hiểu thêm
+newtab-weather-menu-detect-my-location = Phát hiện vị trí của tôi
 # This message is shown if user is working offline
 newtab-weather-error-not-available = Dữ liệu thời tiết hiện không có sẵn.
+newtab-weather-opt-in-see-weather = Bạn có muốn xem thời tiết ở nơi bạn ở không?
+newtab-weather-opt-in-not-now =
+    .label = Không phải bây giờ
+newtab-weather-opt-in-yes =
+    .label = Đồng ý
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = Thành phố New York
 
 ## Topic Labels
 
@@ -498,6 +539,9 @@ newtab-topic-selection-button-pick-interests = Chọn sở thích của bạn
 newtab-section-follow-button = Theo dõi
 newtab-section-following-button = Đang theo dõi
 newtab-section-unfollow-button = Huỷ theo dõi
+# A modal may appear next to the Follow button, directing users to try out the feature
+newtab-section-follow-highlight-title = Tinh chỉnh nguồn cấp dữ liệu của bạn
+newtab-section-follow-highlight-subtitle = Theo dõi sở thích của bạn để xem thêm những gì bạn thích.
 
 ## Button to block/unblock listed topics
 ## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
@@ -516,7 +560,7 @@ newtab-section-confirm-block-topic-p2 = Chủ đề bị chặn sẽ không còn
 #   $topic (string) - Name of topic that user is blocking
 newtab-section-block-topic-button = Chặn { $topic }
 
-## Panel in the Customize menu section to manage followed and blocked topics
+## Strings for custom wallpaper highlight
 
 newtab-section-mangage-topics-title = Các chủ đề
 newtab-section-manage-topics-button-v2 =
@@ -529,3 +573,139 @@ newtab-custom-wallpaper-title = Hình nền tùy chỉnh ở đây
 # 'Make firefox yours" means to customize or personalize
 newtab-custom-wallpaper-subtitle = Tải lên hình nền của bạn hoặc chọn một màu tùy chỉnh để biến { -brand-product-name } thành của riêng bạn.
 newtab-custom-wallpaper-cta = Thử ngay
+
+## Strings for new user activation custom wallpaper highlight
+
+newtab-new-user-custom-wallpaper-title = Chọn một hình nền để tạo { -brand-product-name } thành của riêng bạn
+newtab-new-user-custom-wallpaper-subtitle = Khiến mọi thẻ mới trở nên thân thiện với hình nền và màu sắc tùy chỉnh.
+newtab-new-user-custom-wallpaper-cta = Thử ngay bây giờ
+
+## Strings for download mobile highlight
+
+newtab-download-mobile-highlight-title = Tải xuống { -brand-product-name } dành cho di động
+# "Scan the code" refers to scanning the QR code that appears above the body text that leads to Firefox for mobile download.
+newtab-download-mobile-highlight-body-variant-a = Quét mã để duyệt web an toàn khi đang di chuyển.
+newtab-download-mobile-highlight-body-variant-b = Tiếp tục từ nơi bạn dừng lại khi đồng bộ hóa các thẻ, mật khẩu và nhiều thứ khác.
+newtab-download-mobile-highlight-body-variant-c = Bạn có biết bạn có thể mang theo { -brand-product-name } khi đang di chuyển? Cùng một trình duyệt. Trong túi của bạn.
+newtab-download-mobile-highlight-image =
+    .aria-label = Mã QR để tải xuống { -brand-product-name } dành cho di động
+
+## Strings for shortcuts highlight
+
+newtab-shortcuts-highlight-title = Những mục yêu thích của bạn trong tầm tay bạn
+newtab-shortcuts-highlight-subtitle = Thêm lối tắt để truy cập các trang web yêu thích chỉ bằng một cú nhấp chuột.
+
+## Strings for reporting ads and content
+
+newtab-report-content-why-reporting-this =
+    .label = Tại sao bạn báo cáo điều này?
+newtab-report-ads-reason-not-interested =
+    .label = Tôi không quan tâm
+newtab-report-ads-reason-inappropriate =
+    .label = Không phù hợp
+newtab-report-ads-reason-seen-it-too-many-times =
+    .label = Tôi đã nhìn thấy nó quá nhiều lần
+newtab-report-content-wrong-category =
+    .label = Sai danh mục
+newtab-report-content-outdated =
+    .label = Đã lỗi thời
+newtab-report-content-inappropriate-offensive =
+    .label = Không phù hợp hoặc xúc phạm
+newtab-report-content-spam-misleading =
+    .label = Spam hoặc gây hiểu lầm
+newtab-report-cancel = Hủy bỏ
+newtab-report-submit = Gửi
+newtab-toast-thanks-for-reporting =
+    .message = Cảm ơn bạn đã báo cáo điều này.
+
+## Strings for trending searches
+
+newtab-trending-searches-show-trending =
+    .title = Hiển thị tìm kiếm thịnh hành
+newtab-trending-searches-hide-trending =
+    .title = Ẩn tìm kiếm thịnh hành
+newtab-trending-searches-learn-more = Tìm hiểu thêm
+newtab-trending-searches-dismiss = Ẩn tìm kiếm thịnh hành
+# "Trending searches refers to popular searches from search engines
+newtab-trending-searches-title = Tìm kiếm thịnh hành
+
+## Strings for task / to-do list productivity widget
+
+# "Add one" means adding a new task to the list (e.g., "Walk the dog")
+newtab-widget-lists-empty-cta = Khả năng là vô tận. Hãy thêm một cái.
+# A simple label next to the default list name letting users know this is a new / beta feature
+newtab-widget-lists-label-new =
+    .label = Mới
+newtab-widget-lists-label-beta =
+    .label = Beta
+# When tasks have been previous marked as complete, they will appear in their own separate list beneath incomplete items
+# Variables:
+#   $number (number) - Amount of list items marked complete
+newtab-widget-lists-completed-list = Đã hoàn thành ({ $number })
+newtab-widget-task-list-menu-copy = Sao chép
+newtab-widget-lists-menu-edit = Chỉnh sửa tên danh sách
+newtab-widget-lists-menu-create = Tạo một danh sách mới
+newtab-widget-lists-menu-delete = Xóa danh sách này
+newtab-widget-lists-menu-copy = Sao chép danh sách vào khay nhớ tạm
+newtab-widget-lists-menu-hide = Ẩn tất cả danh sách
+newtab-widget-lists-menu-learn-more = Tìm hiểu thêm
+newtab-widget-lists-input-add-an-item =
+    .placeholder = Thêm một mục
+newtab-widget-lists-input-error = Vui lòng thêm văn bản để thêm mục.
+newtab-widget-lists-input-menu-open-link = Mở liên kết
+newtab-widget-lists-input-menu-move-up = Di chuyển lên
+newtab-widget-lists-input-menu-move-down = Di chuyển xuống
+newtab-widget-lists-input-menu-delete = Xóa
+newtab-widget-lists-input-menu-edit = Chỉnh sửa
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + Tạo một danh sách mới
+newtab-widget-lists-name-label-default =
+    .label = Danh sách nhiệm vụ
+newtab-widget-lists-name-placeholder-default =
+    .placeholder = Danh sách nhiệm vụ
+# The placeholder value of the name field for a newly created list
+newtab-widget-lists-name-placeholder-new =
+    .placeholder = Danh sách mới
+newtab-widget-section-title = Widget
+# Tooltip for hide all widgets button
+newtab-widget-section-hide-all-button =
+    .title = Ẩn widget
+    .aria-label = Ẩn tất cả widget
+newtab-widget-section-maximize =
+    .title = Mở rộng widget
+    .aria-label = Mở rộng tất cả widget thành kích thước đầy đủ
+newtab-widget-section-minimize =
+    .title = Thu nhỏ widget
+    .aria-label = Thu nhỏ tất cả widget thành kích thước nhỏ gọn
+
+## Strings for timer productivity widget
+## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
+
+newtab-widget-timer-notification-title = Bộ hẹn giờ
+newtab-widget-timer-notification-focus = Đã hết thời gian tập trung. Làm tốt lắm. Bạn cần nghỉ ngơi không?
+newtab-widget-timer-notification-break = Giờ nghỉ của bạn đã kết thúc. Sẵn sàng bắt đầu thời gian tập trung?
+newtab-widget-timer-notification-warning = Thông báo đã tắt
+newtab-widget-timer-mode-focus =
+    .label = Tập trung
+newtab-widget-timer-mode-break =
+    .label = Giải lao
+newtab-widget-timer-label-play =
+    .label = Bắt đầu
+newtab-widget-timer-label-pause =
+    .label = Tạm dừng
+newtab-widget-timer-reset =
+    .title = Đặt lại
+newtab-widget-timer-menu-notifications = Tắt thông báo
+newtab-widget-timer-menu-notifications-on = Bật thông báo
+newtab-widget-timer-menu-hide = Ẩn bộ hẹn giờ
+newtab-widget-timer-menu-learn-more = Tìm hiểu thêm
+newtab-widget-message-title = Giữ tập trung với danh sách và bộ đếm thời gian tích hợp
+# to-dos stands for "things to do".
+newtab-widget-message-copy = Từ những lời nhắc nhở nhanh đến những việc cần làm hàng ngày, các buổi tập trung đến những giờ nghỉ giải lao — hãy tập trung vào nhiệm vụ và đúng giờ.
+newtab-promo-card-title = Hỗ trợ cho { -brand-product-name }
+newtab-promo-card-body = Các nhà tài trợ của chúng tôi hỗ trợ sứ mệnh của chúng tôi là xây dựng một trang web tốt hơn
+newtab-promo-card-cta = Tìm hiểu thêm
+newtab-promo-card-dismiss-button =
+    .title = Bỏ qua
+    .aria-label = Bỏ qua

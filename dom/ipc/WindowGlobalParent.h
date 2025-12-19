@@ -12,20 +12,20 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/dom/ClientInfo.h"
+#include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/ClientIPCTypes.h"
+#include "mozilla/dom/ClientInfo.h"
 #include "mozilla/dom/DOMRect.h"
 #include "mozilla/dom/PWindowGlobalParent.h"
 #include "mozilla/dom/WindowContext.h"
-#include "mozilla/dom/WindowGlobalActorsBinding.h"
-#include "nsTHashMap.h"
-#include "nsRefPtrHashtable.h"
-#include "nsWrapperCache.h"
-#include "nsISupports.h"
-#include "nsIDOMProcessParent.h"
 #include "mozilla/dom/WindowGlobalActor.h"
-#include "mozilla/dom/CanonicalBrowsingContext.h"
+#include "mozilla/dom/WindowGlobalActorsBinding.h"
 #include "mozilla/net/CookieJarSettings.h"
+#include "nsIDOMProcessParent.h"
+#include "nsISupports.h"
+#include "nsRefPtrHashtable.h"
+#include "nsTHashMap.h"
+#include "nsWrapperCache.h"
 
 class nsIPrincipal;
 class nsIURI;
@@ -102,7 +102,7 @@ class WindowGlobalParent final : public WindowContext,
 
   // Get this actor's manager if it is not an in-process actor. Returns
   // |nullptr| if the actor has been torn down, or is in-process.
-  BrowserParent* GetBrowserParent();
+  BrowserParent* GetBrowserParent() const;
 
   ContentParent* GetContentParent();
 
@@ -157,10 +157,22 @@ class WindowGlobalParent final : public WindowContext,
     return mIsInitialDocument.isSome() && mIsInitialDocument.value();
   }
 
+  bool IsUncommittedInitialDocument() { return mIsUncommittedInitialDocument; }
+
   already_AddRefed<mozilla::dom::Promise> PermitUnload(
       PermitUnloadAction aAction, uint32_t aTimeout, mozilla::ErrorResult& aRv);
 
-  void PermitUnload(std::function<void(bool)>&& aResolver);
+  void PermitUnload(
+      std::function<void(nsIDocumentViewer::PermitUnloadResult)>&& aResolver);
+
+  void PermitUnloadTraversable(
+      const SessionHistoryInfo& aInfo,
+      nsIDocumentViewer::PermitUnloadAction aAction,
+      std::function<void(nsIDocumentViewer::PermitUnloadResult)>&& aResolver);
+
+  void PermitUnloadChildNavigables(
+      nsIDocumentViewer::PermitUnloadAction aAction,
+      std::function<void(nsIDocumentViewer::PermitUnloadResult)>&& aResolver);
 
   already_AddRefed<mozilla::dom::Promise> DrawSnapshot(
       const DOMRect* aRect, double aScale, const nsACString& aBackgroundColor,
@@ -184,9 +196,7 @@ class WindowGlobalParent final : public WindowContext,
       const Maybe<
           ContentBlockingNotifier::StorageAccessPermissionGrantedReason>&
           aReason,
-      const Maybe<ContentBlockingNotifier::CanvasFingerprinter>&
-          aCanvasFingerprinter,
-      const Maybe<bool> aCanvasFingerprinterKnownText);
+      const Maybe<CanvasFingerprintingEvent>& aCanvasFingerprintingEvent);
 
   ContentBlockingLog* GetContentBlockingLog() { return &mContentBlockingLog; }
 
@@ -217,7 +227,7 @@ class WindowGlobalParent final : public WindowContext,
 
   nsITransportSecurityInfo* GetSecurityInfo() { return mSecurityInfo; }
 
-  const nsACString& GetRemoteType() override;
+  const nsACString& GetRemoteType() const override;
 
   void NotifySessionStoreUpdatesComplete(Element* aEmbedder);
 
@@ -265,6 +275,12 @@ class WindowGlobalParent final : public WindowContext,
     }
 
     mIsInitialDocument = Some(aIsInitialDocument);
+    mIsUncommittedInitialDocument = aIsInitialDocument;
+    return IPC_OK();
+  }
+  mozilla::ipc::IPCResult RecvCommitToInitialDocument() {
+    MOZ_ASSERT(mIsInitialDocument.isSome() && mIsInitialDocument.value());
+    mIsUncommittedInitialDocument = false;
     return IPC_OK();
   }
   mozilla::ipc::IPCResult RecvUpdateDocumentSecurityInfo(
@@ -273,8 +289,8 @@ class WindowGlobalParent final : public WindowContext,
       const IPCClientInfo& aIPCClientInfo);
   mozilla::ipc::IPCResult RecvDestroy();
   mozilla::ipc::IPCResult RecvRawMessage(
-      const JSActorMessageMeta& aMeta, const Maybe<ClonedMessageData>& aData,
-      const Maybe<ClonedMessageData>& aStack);
+      const JSActorMessageMeta& aMeta, JSIPCValue&& aData,
+      const UniquePtr<ClonedMessageData>& aStack);
 
   mozilla::ipc::IPCResult RecvGetContentBlockingEvents(
       GetContentBlockingEventsResolver&& aResolver);
@@ -318,22 +334,6 @@ class WindowGlobalParent final : public WindowContext,
 
   mozilla::ipc::IPCResult RecvReloadWithHttpsOnlyException();
 
-  mozilla::ipc::IPCResult RecvGetIdentityCredential(
-      const IdentityCredentialRequestOptions& aOptions,
-      const CredentialMediationRequirement& aMediationRequirement,
-      const GetIdentityCredentialResolver& aResolver);
-  mozilla::ipc::IPCResult RecvStoreIdentityCredential(
-      const IPCIdentityCredential& aCredential,
-      const StoreIdentityCredentialResolver& aResolver);
-  mozilla::ipc::IPCResult RecvDisconnectIdentityCredential(
-      const IdentityCredentialDisconnectOptions& aOptions,
-      const DisconnectIdentityCredentialResolver& aResolver);
-  mozilla::ipc::IPCResult RecvSetLoginStatus(
-      LoginStatus aStatus, const SetLoginStatusResolver& aResolver);
-
-  mozilla::ipc::IPCResult RecvPreventSilentAccess(
-      const PreventSilentAccessResolver& aResolver);
-
   mozilla::ipc::IPCResult RecvGetStorageAccessPermission(
       bool aIncludeIdentityCredential,
       GetStorageAccessPermissionResolver&& aResolve);
@@ -350,6 +350,8 @@ class WindowGlobalParent final : public WindowContext,
   already_AddRefed<dom::PWebAuthnTransactionParent>
   AllocPWebAuthnTransactionParent();
 
+  already_AddRefed<dom::PWebIdentityParent> AllocPWebIdentityParent();
+
  private:
   WindowGlobalParent(CanonicalBrowsingContext* aBrowsingContext,
                      uint64_t aInnerWindowId, uint64_t aOuterWindowId,
@@ -358,7 +360,13 @@ class WindowGlobalParent final : public WindowContext,
   ~WindowGlobalParent();
 
   bool ShouldTrackSiteOriginTelemetry();
-  void FinishAccumulatingPageUseCounters();
+  enum class PageUseCounterResultBits : uint8_t {
+    WAITING,
+    DATA_RECEIVED,
+    EMPTY_DATA,
+  };
+  using PageUseCounterResult = EnumSet<PageUseCounterResultBits>;
+  PageUseCounterResult FinishAccumulatingPageUseCounters();
 
   // Returns failure if the new storage principal cannot be validated
   // against the current document principle.
@@ -378,6 +386,8 @@ class WindowGlobalParent final : public WindowContext,
   Maybe<nsString> mDocumentTitle;
 
   Maybe<bool> mIsInitialDocument;
+
+  bool mIsUncommittedInitialDocument;
 
   // True if this window has a "beforeunload" event listener.
   bool mHasBeforeUnload;

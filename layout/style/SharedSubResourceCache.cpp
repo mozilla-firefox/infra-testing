@@ -17,6 +17,7 @@
 #include "mozilla/net/HttpBaseChannel.h"
 #include "nsCOMPtr.h"
 #include "nsDOMNavigationTiming.h"
+#include "nsHttpResponseHead.h"
 #include "nsIHttpChannel.h"
 #include "nsIRequest.h"
 #include "nsITimedChannel.h"
@@ -106,7 +107,7 @@ bool ShouldClearEntry(nsIURI* aEntryURI, nsIPrincipal* aEntryLoaderPrincipal,
     return spec == *aURL;
   }
 
-  if (aPrincipal && aEntryLoaderPrincipal->Equals(aPrincipal.ref())) {
+  if (aPrincipal && aEntryPartitionPrincipal->Equals(aPrincipal.ref())) {
     return true;
   }
   if (!aSchemelessSite) {
@@ -140,6 +141,8 @@ bool ShouldClearEntry(nsIURI* aEntryURI, nsIPrincipal* aEntryLoaderPrincipal,
 }
 
 }  // namespace SharedSubResourceCacheUtils
+
+SubResourceNetworkMetadataHolder::~SubResourceNetworkMetadataHolder() = default;
 
 SubResourceNetworkMetadataHolder::SubResourceNetworkMetadataHolder(
     nsIRequest* aRequest) {

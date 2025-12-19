@@ -10,6 +10,7 @@ import {
   TopSiteLink,
   _TopSiteList as TopSiteList,
   TopSitePlaceholder,
+  TopSiteAddButton,
 } from "content-src/components/TopSites/TopSite";
 import {
   INTERSECTION_RATIO,
@@ -32,6 +33,9 @@ const perfSvc = {
 const DEFAULT_PROPS = {
   Prefs: { values: { featureConfig: {} } },
   TopSites: { initialized: true, rows: [] },
+  App: {
+    isForStartupCache: false,
+  },
   TopSitesRows: TOP_SITES_DEFAULT_ROWS,
   topSiteIconType: () => "no_image",
   dispatch() {},
@@ -1180,7 +1184,7 @@ describe("<TopSiteForm>", () => {
         data: {
           action_position: -1,
           source: "TOP_SITES",
-          event: "TOP_SITES_EDIT",
+          event: "TOP_SITES_ADD",
         },
         meta: { from: "ActivityStream:Content", to: "ActivityStream:Main" },
         type: at.TELEMETRY_USER_EVENT,
@@ -1282,6 +1286,8 @@ describe("<TopSiteForm>", () => {
           action_position: 7,
           source: "TOP_SITES",
           event: "TOP_SITES_EDIT",
+          hasTitleChanged: false,
+          hasURLChanged: false,
         },
         meta: { from: "ActivityStream:Content", to: "ActivityStream:Main" },
         type: at.TELEMETRY_USER_EVENT,
@@ -1447,16 +1453,16 @@ describe("<TopSiteForm>", () => {
 });
 
 describe("<TopSiteList>", () => {
-  const APP = { isForStartupCache: false };
+  const APP = { isForStartupCache: { App: false } };
 
   it("should render a TopSiteList element", () => {
-    const wrapper = shallow(<TopSiteList {...DEFAULT_PROPS} App={{ APP }} />);
+    const wrapper = shallow(<TopSiteList {...DEFAULT_PROPS} App={APP} />);
     assert.ok(wrapper.exists());
   });
   it("should render a TopSite for each link with the right url", () => {
     const rows = [{ url: "https://foo.com" }, { url: "https://bar.com" }];
     const wrapper = shallow(
-      <TopSiteList {...DEFAULT_PROPS} TopSites={{ rows }} App={{ APP }} />
+      <TopSiteList {...DEFAULT_PROPS} TopSites={{ rows }} App={APP} />
     );
     const links = wrapper.find(TopSite);
     assert.lengthOf(links, 2);
@@ -1478,7 +1484,7 @@ describe("<TopSiteList>", () => {
         {...DEFAULT_PROPS}
         TopSites={{ rows }}
         TopSitesRows={TOP_SITES_DEFAULT_ROWS}
-        App={{ APP }}
+        App={APP}
       />
     );
     const links = wrapper.find(TopSite);
@@ -1487,7 +1493,7 @@ describe("<TopSiteList>", () => {
       TOP_SITES_DEFAULT_ROWS * TOP_SITES_MAX_SITES_PER_ROW
     );
   });
-  it("should add a single placeholder is there is availible space in the row", () => {
+  it("should add a add topsite button if there is availible space in the row", () => {
     const rows = [{ url: "https://foo.com" }, { url: "https://bar.com" }];
     const availibleRows = 1;
     const wrapper = shallow(
@@ -1495,12 +1501,12 @@ describe("<TopSiteList>", () => {
         {...DEFAULT_PROPS}
         TopSites={{ rows }}
         TopSitesRows={availibleRows}
-        App={{ APP }}
+        App={APP}
       />
     );
     assert.lengthOf(wrapper.find(TopSite), 2, "topSites");
     assert.lengthOf(
-      wrapper.find(TopSitePlaceholder),
+      wrapper.find(TopSiteAddButton),
       availibleRows >= wrapper.find(TopSite).length ? 0 : 1,
       "placeholders"
     );
@@ -1518,25 +1524,11 @@ describe("<TopSiteList>", () => {
         {...DEFAULT_PROPS}
         TopSites={{ rows }}
         TopSitesRows={1}
-        App={{ isForStartupCache: true }}
+        App={{ isForStartupCache: { TopSites: true } }}
       />
     );
     assert.lengthOf(wrapper.find(TopSite), 2, "topSites");
-    assert.lengthOf(wrapper.find(TopSitePlaceholder), 4, "placeholders");
-  });
-  it("should fill any holes in TopSites with placeholders", () => {
-    const rows = [{ url: "https://foo.com" }];
-    rows[3] = { url: "https://bar.com" };
-    const wrapper = shallow(
-      <TopSiteList
-        {...DEFAULT_PROPS}
-        TopSites={{ rows }}
-        TopSitesRows={1}
-        App={{ APP }}
-      />
-    );
-    assert.lengthOf(wrapper.find(TopSite), 2, "topSites");
-    assert.lengthOf(wrapper.find(TopSitePlaceholder), 1, "placeholders");
+    assert.lengthOf(wrapper.find(TopSitePlaceholder), 3, "placeholders");
   });
   it("should update state onDragStart and clear it onDragEnd", () => {
     const wrapper = shallow(<TopSiteList {...DEFAULT_PROPS} App={{ APP }} />);
@@ -1556,7 +1548,7 @@ describe("<TopSiteList>", () => {
     const site2 = { url: "https://bar.com" };
     const rows = [site1, site2];
     const wrapper = shallow(
-      <TopSiteList {...DEFAULT_PROPS} TopSites={{ rows }} App={{ APP }} />
+      <TopSiteList {...DEFAULT_PROPS} TopSites={{ rows }} App={APP} />
     );
     const instance = wrapper.instance();
     instance.setState({
@@ -1571,7 +1563,7 @@ describe("<TopSiteList>", () => {
   it("should dispatch events on drop", () => {
     const dispatch = sinon.spy();
     const wrapper = shallow(
-      <TopSiteList {...DEFAULT_PROPS} dispatch={dispatch} App={{ APP }} />
+      <TopSiteList {...DEFAULT_PROPS} dispatch={dispatch} App={APP} />
     );
     const instance = wrapper.instance();
     const index = 7;
@@ -1601,7 +1593,7 @@ describe("<TopSiteList>", () => {
     });
   });
   it("should make a topSitesPreview onDragEnter", () => {
-    const wrapper = shallow(<TopSiteList {...DEFAULT_PROPS} App={{ APP }} />);
+    const wrapper = shallow(<TopSiteList {...DEFAULT_PROPS} App={APP} />);
     const instance = wrapper.instance();
     const site = { url: "https://foo.com" };
     instance.setState({
@@ -1627,7 +1619,7 @@ describe("<TopSiteList>", () => {
         {...DEFAULT_PROPS}
         TopSites={{ rows }}
         TopSitesRows={1}
-        App={{ APP }}
+        App={APP}
       />
     );
     const addButton = { isAddButton: true };
@@ -1807,18 +1799,70 @@ describe("<TopSiteList>", () => {
         {...DEFAULT_PROPS}
         TopSites={{ rows }}
         TopSitesRows={1}
-        App={{ APP }}
+        App={APP}
       />
     );
     assert.lengthOf(wrapper.find("li.hide-for-narrow"), 2);
   });
+
+  describe("Keyboard navigation", () => {
+    let sandbox;
+    let wrapper;
+    let instance;
+    let mockAnchor;
+    let mockTargetSibling;
+
+    beforeEach(() => {
+      sandbox = sinon.createSandbox();
+      const rows = [
+        { url: "https://foo.com" },
+        { url: "https://bar.com" },
+        { url: "https://baz.com" },
+      ];
+      wrapper = shallow(
+        <TopSiteList {...DEFAULT_PROPS} TopSites={{ rows }} App={APP} />
+      );
+      instance = wrapper.instance();
+
+      mockAnchor = { focus: sandbox.spy(), tabIndex: -1 };
+      mockTargetSibling = { querySelector: sandbox.stub().returns(mockAnchor) };
+    });
+
+    afterEach(() => {
+      sandbox.restore();
+    });
+
+    it("should navigate to next site with ArrowRight", () => {
+      instance.focusedRef = { nextSibling: mockTargetSibling };
+      const mockEvent = { key: "ArrowRight" };
+
+      instance.onKeyDown(mockEvent);
+
+      assert.calledOnce(mockTargetSibling.querySelector);
+      assert.calledWith(mockTargetSibling.querySelector, "a");
+      assert.calledOnce(mockAnchor.focus);
+      assert.equal(mockAnchor.tabIndex, 0);
+    });
+
+    it("should navigate to previous site with ArrowLeft", () => {
+      instance.focusedRef = { previousSibling: mockTargetSibling };
+      const mockEvent = { key: "ArrowLeft" };
+
+      instance.onKeyDown(mockEvent);
+
+      assert.calledOnce(mockTargetSibling.querySelector);
+      assert.calledWith(mockTargetSibling.querySelector, "a");
+      assert.calledOnce(mockAnchor.focus);
+      assert.equal(mockAnchor.tabIndex, 0);
+    });
+  });
 });
 
-describe("TopSitePlaceholder", () => {
+describe("TopSiteAddButton", () => {
   it("should dispatch a TOP_SITES_EDIT action when the addbutton is clicked", () => {
     const dispatch = sinon.spy();
     const wrapper = shallow(
-      <TopSitePlaceholder dispatch={dispatch} index={7} isAddButton={true} />
+      <TopSiteAddButton dispatch={dispatch} index={7} isAddButton={true} />
     );
 
     wrapper.find(".add-button").first().simulate("click");

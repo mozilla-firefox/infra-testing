@@ -11,7 +11,6 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
-import org.robolectric.Shadows
 
 @RunWith(AndroidJUnit4::class)
 class DownloadUtilsTest {
@@ -53,6 +52,7 @@ class DownloadUtilsTest {
             assertContentDisposition("filename.jpg", "$contentDisposition; filename=filename.jpg")
             assertContentDisposition("filename.jpg", "$contentDisposition; filename=filename.jpg; foo")
             assertContentDisposition("filename.jpg", "$contentDisposition; filename=\"filename.jpg\"; foo")
+            assertContentDisposition("file\nname.jpg", "$contentDisposition; filename=\"file%0Aname.jpg\"; foo")
 
             // UTF-8 encoded filename* field
             assertContentDisposition(
@@ -87,6 +87,8 @@ class DownloadUtilsTest {
 
             assertContentDisposition("success.html", "$contentDisposition; filename*=utf-8''success.html; foo")
             assertContentDisposition("success.html", "$contentDisposition; filename*=utf-8''success.html")
+            assertContentDisposition("Firefox v9.apk", "$contentDisposition; filename=\"Firefox v9.apk\"; filename*=utf-8''Firefox v9.apk")
+            assertContentDisposition("Firefox (v9).apk", "$contentDisposition; filename=\"Firefox (v9).apk\"; filename*=utf-8''Firefox%20%28v9%29.apk")
         }
     }
 
@@ -173,19 +175,23 @@ class DownloadUtilsTest {
 
     @Test
     fun guessFileName_mimeType() {
-        Shadows.shadowOf(MimeTypeMap.getSingleton()).addExtensionMimeTypeMapping("jpg", "image/jpeg")
-        Shadows.shadowOf(MimeTypeMap.getSingleton()).addExtensionMimeTypeMapping("zip", "application/zip")
-        Shadows.shadowOf(MimeTypeMap.getSingleton()).addExtensionMimeTypeMapping("tar.gz", "application/gzip")
-        Shadows.shadowOf(MimeTypeMap.getSingleton()).addExtensionMimeTypeMapping("bin", "application/octet-stream")
-
-        // For one mimetype to multiple extensions mapping
-        Shadows.shadowOf(MimeTypeMap.getSingleton()).addExtensionMimeTypeMapping("com", "application/x-msdos-program")
-        Shadows.shadowOf(MimeTypeMap.getSingleton()).addExtensionMimeTypeMapping("exe", "application/x-msdos-program")
-        Shadows.shadowOf(MimeTypeMap.getSingleton()).addExtensionMimeTypeMapping("bat", "application/x-msdos-program")
-        Shadows.shadowOf(MimeTypeMap.getSingleton()).addExtensionMimeTypeMapping("dll", "application/x-msdos-program")
-        // Matches the last inserted extension
-        assertEquals("dll", MimeTypeMap.getSingleton().getExtensionFromMimeType("application/x-msdos-program"))
-        assertEquals("application/x-msdos-program", MimeTypeMap.getSingleton().getMimeTypeFromExtension("exe"))
+        // Matches the first extension from official mapping: application/x-msdos-program -> com exe bat dll
+        assertEquals(
+            "com",
+            MimeTypeMap.getSingleton().getExtensionFromMimeType("application/x-msdos-program"),
+        )
+        assertEquals(
+            "application/x-msdos-program",
+            MimeTypeMap.getSingleton().getMimeTypeFromExtension("exe"),
+        )
+        assertEquals(
+            "application/x-msdos-program",
+            MimeTypeMap.getSingleton().getMimeTypeFromExtension("dll"),
+        )
+        assertEquals(
+            "application/x-msdos-program",
+            MimeTypeMap.getSingleton().getMimeTypeFromExtension("bat"),
+        )
 
         assertEquals(
             "file.jpg",
@@ -199,7 +205,7 @@ class DownloadUtilsTest {
 
         // This is difference with URLUtil.guessFileName
         assertEquals(
-            "file.jpg",
+            "file.bin.jpg",
             DownloadUtils.guessFileName(
                 contentDisposition = null,
                 destinationDirectory = folder.root.path,
@@ -254,12 +260,21 @@ class DownloadUtilsTest {
             ),
         )
         assertEquals(
-            "file.txt",
+            "file.txt.html",
             DownloadUtils.guessFileName(
                 contentDisposition = null,
                 destinationDirectory = folder.root.path,
                 url = "http://example.com/file.txt",
                 mimeType = "text/html",
+            ),
+        )
+        assertEquals(
+            "file.txt",
+            DownloadUtils.guessFileName(
+                contentDisposition = null,
+                destinationDirectory = folder.root.path,
+                url = "http://example.com/file.txt",
+                mimeType = "text/plain",
             ),
         )
         assertEquals(
@@ -291,7 +306,7 @@ class DownloadUtilsTest {
         )
 
         assertEquals(
-            "file.jpg",
+            "file.zip.jpg",
             DownloadUtils.guessFileName(
                 contentDisposition = null,
                 destinationDirectory = folder.root.path,
@@ -355,7 +370,7 @@ class DownloadUtilsTest {
 
         // application/x-pdf with non-pdf extension
         assertEquals(
-            "file.pdf",
+            "file.bin.pdf",
             DownloadUtils.guessFileName(
                 contentDisposition = null,
                 destinationDirectory = folder.root.path,
@@ -364,16 +379,22 @@ class DownloadUtilsTest {
             ),
         )
 
-        Shadows.shadowOf(MimeTypeMap.getSingleton()).clearMappings()
-        Shadows.shadowOf(MimeTypeMap.getSingleton()).addExtensionMimeTypeMapping("exe", "application/x-msdos-program")
-
         assertEquals(
-            "file.exe",
+            "file.bin.com",
             DownloadUtils.guessFileName(
                 contentDisposition = null,
                 destinationDirectory = folder.root.path,
                 url = "http://example.com/file.bin",
                 mimeType = "application/x-msdos-program",
+            ),
+        )
+
+        assertEquals(
+            "file.apks.zip",
+            DownloadUtils.guessFileName(
+                contentDisposition = null,
+                url = "http://example.com/file.apks",
+                mimeType = "application/zip",
             ),
         )
     }

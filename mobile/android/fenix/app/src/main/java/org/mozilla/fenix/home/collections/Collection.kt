@@ -10,9 +10,10 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.Card
-import androidx.compose.material.Icon
-import androidx.compose.material.IconButton
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,11 +28,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
-import mozilla.components.compose.base.annotation.LightDarkPreview
+import mozilla.components.compose.base.button.IconButton
 import mozilla.components.feature.tab.collections.TabCollection
 import org.mozilla.fenix.R
-import org.mozilla.fenix.R.drawable
 import org.mozilla.fenix.R.string
 import org.mozilla.fenix.compose.ContextualMenu
 import org.mozilla.fenix.compose.MenuItem
@@ -39,6 +40,7 @@ import org.mozilla.fenix.compose.list.ExpandableListHeader
 import org.mozilla.fenix.ext.getIconColor
 import org.mozilla.fenix.home.fake.FakeHomepagePreview
 import org.mozilla.fenix.theme.FirefoxTheme
+import mozilla.components.ui.icons.R as iconsR
 
 /**
  * Rectangular shape with all corners rounded used to display a collapsed collection.
@@ -85,8 +87,8 @@ fun Collection(
             )
             .height(48.dp),
         shape = if (isExpanded) expandedCollectionShape else collapsedCollectionShape,
-        backgroundColor = FirefoxTheme.colors.layer2,
-        elevation = 5.dp,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest),
+        elevation = CardDefaults.cardElevation(defaultElevation = 5.dp),
     ) {
         Row(
             modifier = Modifier
@@ -94,7 +96,7 @@ fun Collection(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
-                painter = painterResource(drawable.ic_tab_collection),
+                painter = painterResource(iconsR.drawable.mozac_ic_collection_24),
                 contentDescription = null,
                 modifier = Modifier.padding(
                     start = 16.dp,
@@ -115,11 +117,11 @@ fun Collection(
                     Row {
                         IconButton(
                             onClick = { onCollectionShareTabsClicked(collection) },
+                            contentDescription = stringResource(string.share_button_content_description),
                         ) {
                             Icon(
-                                painter = painterResource(drawable.ic_share),
-                                contentDescription = stringResource(string.share_button_content_description),
-                                tint = FirefoxTheme.colors.iconPrimary,
+                                painter = painterResource(iconsR.drawable.mozac_ic_share_android_24),
+                                contentDescription = null,
                             )
                         }
 
@@ -127,13 +129,13 @@ fun Collection(
                             onClick = {
                                 isMenuExpanded = !isMenuExpanded
                             },
+                            contentDescription = stringResource(
+                                string.collection_menu_button_content_description,
+                            ),
                         ) {
                             Icon(
-                                painter = painterResource(drawable.ic_menu),
-                                contentDescription = stringResource(
-                                    string.collection_menu_button_content_description,
-                                ),
-                                tint = FirefoxTheme.colors.iconPrimary,
+                                painter = painterResource(iconsR.drawable.mozac_ic_ellipsis_vertical_24),
+                                contentDescription = null,
                             )
 
                             ContextualMenu(
@@ -150,7 +152,7 @@ fun Collection(
 }
 
 @Composable
-@LightDarkPreview
+@PreviewLightDark
 private fun CollectionExpandedPreview() {
     FirefoxTheme {
         var expanded by remember { mutableStateOf(true) }
@@ -168,7 +170,7 @@ private fun CollectionExpandedPreview() {
 }
 
 @Composable
-@LightDarkPreview
+@PreviewLightDark
 private fun CollectionPreview() {
     FirefoxTheme {
         var expanded by remember { mutableStateOf(false) }

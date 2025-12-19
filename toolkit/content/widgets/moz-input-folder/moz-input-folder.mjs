@@ -75,6 +75,11 @@ export default class MozInputFolder extends MozInputText {
     return this.#folder;
   }
 
+  hasServices() {
+    // Safely check for Services without throwing a ReferenceError.
+    return typeof Services !== "undefined";
+  }
+
   async getFolderFromPath(path) {
     let folder = null;
     try {
@@ -90,8 +95,9 @@ export default class MozInputFolder extends MozInputText {
   }
 
   getInputIconSrc(folder) {
-    if (!folder) {
-      return "";
+    if (!folder || !this.hasServices()) {
+      let defaultIconSrc = "chrome://global/skin/icons/folder.svg";
+      return defaultIconSrc;
     }
 
     let fph = Services.io
@@ -110,7 +116,7 @@ export default class MozInputFolder extends MozInputText {
     folderPicker.init(window.browsingContext, this.dialogTitle, mode);
     folderPicker.appendFilters(Ci.nsIFilePicker.filterAll);
 
-    if (this.#folder) {
+    if (this.#folder && (await IOUtils.exists(this.#folder.path))) {
       folderPicker.displayDirectory = this.#folder;
     }
 
@@ -159,6 +165,7 @@ export default class MozInputFolder extends MozInputText {
         <moz-button
           id="choose-folder-button"
           data-l10n-id="choose-folder-button"
+          data-l10n-attrs="accesskey"
           ?disabled=${this.disabled || this.parentDisabled}
           @click=${this.openFolderPicker}
         ></moz-button>

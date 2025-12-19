@@ -4,13 +4,11 @@
 
 package org.mozilla.fenix.home.pocket.ui
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
@@ -51,56 +49,28 @@ fun PocketSection(
         }
     }
 
-    Column(modifier = Modifier.padding(top = 72.dp)) {
-        // Simple wrapper to add horizontal padding to just the header while the stories have none.
-        Box(modifier = Modifier.padding(horizontal = horizontalPadding)) {
-            HomeSectionHeader(
-                headerText = stringResource(R.string.pocket_stories_header_1),
-            )
-        }
+    Column {
+        HomeSectionHeader(
+            headerText = stringResource(R.string.pocket_stories_header_2),
+            modifier = Modifier.padding(horizontal = horizontalPadding),
+            description = stringResource(R.string.stories_discover_more_content_description),
+            buttonText = stringResource(R.string.homepage_all_stories),
+            onButtonClick = if (state.showDiscoverMoreButton) {
+                interactor::onDiscoverMoreClicked
+            } else {
+                null
+            },
+        )
 
         Spacer(Modifier.height(16.dp))
 
-        PocketStories(
+        Stories(
             stories = state.stories,
             contentPadding = horizontalPadding,
             backgroundColor = cardBackgroundColor,
-            showPlaceholderStory = !state.showContentRecommendations,
             onStoryShown = interactor::onStoryShown,
             onStoryClicked = interactor::onStoryClicked,
-            onDiscoverMoreClicked = interactor::onDiscoverMoreClicked,
         )
-
-        if (!state.showContentRecommendations) {
-            Column(modifier = Modifier.padding(horizontal = horizontalPadding)) {
-                Spacer(Modifier.height(24.dp))
-
-                HomeSectionHeader(
-                    headerText = stringResource(R.string.pocket_stories_categories_header),
-                )
-
-                Spacer(Modifier.height(16.dp))
-
-                if (state.categories.isNotEmpty()) {
-                    PocketStoriesCategories(
-                        categories = state.categories,
-                        selections = state.categoriesSelections,
-                        modifier = Modifier.fillMaxWidth(),
-                        categoryColors = state.categoryColors,
-                        onCategoryClick = interactor::onCategoryClicked,
-                    )
-                }
-
-                Spacer(Modifier.height(24.dp))
-
-                PoweredByPocketHeader(
-                    onLearnMoreClicked = interactor::onLearnMoreClicked,
-                    modifier = Modifier.fillMaxWidth(),
-                    textColor = state.textColor,
-                    linkTextColor = state.linkTextColor,
-                )
-            }
-        }
     }
 }
 
@@ -108,7 +78,7 @@ fun PocketSection(
 @Composable
 private fun PocketSectionPreview() {
     FirefoxTheme {
-        Box(Modifier.background(FirefoxTheme.colors.layer2)) {
+        Surface {
             PocketSection(
                 state = FakeHomepagePreview.pocketState(),
                 cardBackgroundColor = WallpaperState.default.cardBackgroundColor,

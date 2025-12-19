@@ -7,9 +7,9 @@
 #include "AgnosticDecoderModule.h"
 
 #include "VPXDecoder.h"
+#include "VideoUtils.h"
 #include "mozilla/Logging.h"
 #include "mozilla/StaticPrefs_media.h"
-#include "VideoUtils.h"
 
 #ifdef MOZ_AV1
 #  include "AOMDecoder.h"
@@ -77,11 +77,9 @@ static bool IsAvailableInRdd(DecoderType type) {
 static bool IsAvailableInUtility(DecoderType type) {
   switch (type) {
     case DecoderType::Opus:
-      return StaticPrefs::media_utility_opus_enabled();
     case DecoderType::Vorbis:
-      return StaticPrefs::media_utility_vorbis_enabled();
     case DecoderType::Wave:
-      return StaticPrefs::media_utility_wav_enabled();
+      return true;
     // Others are video codecs, don't take care of them
     default:
       return false;

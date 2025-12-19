@@ -13,7 +13,7 @@ import types
 import uuid
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Dict, Optional, Union
+from typing import Optional, Union
 
 from mozfile import load_source
 
@@ -87,10 +87,14 @@ MACH_COMMANDS = {
     ),
     "configure": MachCommandReference("python/mozbuild/mozbuild/build_commands.py"),
     "cppunittest": MachCommandReference("testing/mach_commands.py"),
+    "crash-ping-metrics": MachCommandReference(
+        "toolkit/crashreporter/crashping/glean_metrics.py"
+    ),
     "crashtest": MachCommandReference("layout/tools/reftest/mach_commands.py"),
     "data-review": MachCommandReference(
         "toolkit/components/glean/build_scripts/mach_commands.py"
     ),
+    "devtools-node-test": MachCommandReference("devtools/mach_commands.py"),
     "doc": MachCommandReference("tools/moztreedocs/mach_commands.py"),
     "doctor": MachCommandReference("python/mozbuild/mozbuild/mach_commands.py"),
     "environment": MachCommandReference("python/mozbuild/mozbuild/mach_commands.py"),
@@ -113,11 +117,17 @@ MACH_COMMANDS = {
     ),
     "gen-uuid": MachCommandReference("dom/base/mach_commands.py"),
     "gen-use-counter-metrics": MachCommandReference("dom/base/mach_commands.py"),
+    "generate-python-lockfiles": MachCommandReference(
+        "python/mozbuild/mozbuild/lockfiles/mach_commands.py",
+    ),
     "generate-test-certs": MachCommandReference(
         "security/manager/tools/mach_commands.py"
     ),
     "gifft": MachCommandReference(
         "toolkit/components/telemetry/build_scripts/mach_commands.py"
+    ),
+    "gecko-trace": MachCommandReference(
+        "toolkit/components/gecko-trace/mach_commands.py"
     ),
     "glean": MachCommandReference(
         "toolkit/components/glean/build_scripts/mach_commands.py"
@@ -131,6 +141,7 @@ MACH_COMMANDS = {
     "ide": MachCommandReference("python/mozbuild/mozbuild/backend/mach_commands.py"),
     "import-pr": MachCommandReference("tools/vcs/mach_commands.py"),
     "install": MachCommandReference("python/mozbuild/mozbuild/mach_commands.py"),
+    "intermittents": MachCommandReference("testing/intermittents_mach_commands.py"),
     "install-moz-phab": MachCommandReference("tools/phabricator/mach_commands.py"),
     "jit-test": MachCommandReference("testing/mach_commands.py"),
     "jsapi-tests": MachCommandReference("testing/mach_commands.py"),
@@ -145,7 +156,8 @@ MACH_COMMANDS = {
         "python/mach/mach/commands/commandinfo.py"
     ),
     "macos-sign": MachCommandReference("tools/signing/macos/mach_commands.py"),
-    "manifest": MachCommandReference("testing/mach_commands.py"),
+    "manifest": MachCommandReference("testing/manifest/mach_commands.py"),
+    "platform-diff": MachCommandReference("testing/mach_commands.py"),
     "marionette-test": MachCommandReference("testing/marionette/mach_commands.py"),
     "mochitest": MachCommandReference("testing/mochitest/mach_commands.py", ["test"]),
     "mots": MachCommandReference("tools/mach_commands.py"),
@@ -157,6 +169,7 @@ MACH_COMMANDS = {
     "newtab": MachCommandReference("browser/extensions/newtab/mach_commands.py"),
     "node": MachCommandReference("tools/mach_commands.py"),
     "npm": MachCommandReference("tools/mach_commands.py"),
+    "nss-uplift": MachCommandReference("security/mach_commands.py"),
     "package": MachCommandReference("python/mozbuild/mozbuild/mach_commands.py"),
     "package-multi-locale": MachCommandReference(
         "python/mozbuild/mozbuild/mach_commands.py"
@@ -184,6 +197,9 @@ MACH_COMMANDS = {
     "release-history": MachCommandReference("taskcluster/mach_commands.py"),
     "remote": MachCommandReference("remote/mach_commands.py"),
     "repackage": MachCommandReference("python/mozbuild/mozbuild/mach_commands.py"),
+    "repackage-single-locales": MachCommandReference(
+        "python/mozbuild/mozbuild/mach_commands.py"
+    ),
     "resource-usage": MachCommandReference(
         "python/mozbuild/mozbuild/build_commands.py",
     ),
@@ -199,9 +215,6 @@ MACH_COMMANDS = {
         "browser/components/storybook/mach_commands.py", ["run"]
     ),
     "talos-test": MachCommandReference("testing/talos/mach_commands.py"),
-    "taskcluster-build-image": MachCommandReference("taskcluster/mach_commands.py"),
-    "taskcluster-image-digest": MachCommandReference("taskcluster/mach_commands.py"),
-    "taskcluster-load-image": MachCommandReference("taskcluster/mach_commands.py"),
     "taskgraph": MachCommandReference("taskcluster/mach_commands.py"),
     "telemetry-tests-client": MachCommandReference(
         "toolkit/components/telemetry/tests/marionette/mach_commands.py"
@@ -217,6 +230,7 @@ MACH_COMMANDS = {
     "uniffi": MachCommandReference(
         "toolkit/components/uniffi-bindgen-gecko-js/mach_commands.py"
     ),
+    "update": MachCommandReference("tools/update-programs/mach_commands.py"),
     "update-glean": MachCommandReference(
         "toolkit/components/glean/build_scripts/mach_commands.py"
     ),
@@ -289,14 +303,14 @@ class DecoratorVisitor(ast.NodeVisitor):
             kwarg_dict = {}
 
             for name, arg in zip(["command", "subcommand"], decorator.args):
-                kwarg_dict[name] = arg.s
+                kwarg_dict[name] = arg.value
 
             for keyword in decorator.keywords:
                 if keyword.arg not in relevant_kwargs:
                     # We only care about these 3 kwargs, so we can safely skip the rest
                     continue
 
-                kwarg_dict[keyword.arg] = getattr(keyword.value, "s", "")
+                kwarg_dict[keyword.arg] = keyword.value.value
 
             command = kwarg_dict.pop("command")
             self.results.setdefault(command, {})
@@ -322,7 +336,7 @@ class DecoratorVisitor(ast.NodeVisitor):
 
 
 def command_virtualenv_info_for_module(module_path):
-    with module_path.open("r") as file:
+    with module_path.open("r", encoding="utf-8") as file:
         content = file.read()
 
     tree = ast.parse(content)
@@ -472,7 +486,7 @@ def load_commands_from_file(path: Union[str, Path], module_name=None):
 
 
 def load_commands_from_spec(
-    spec: Dict[str, MachCommandReference], topsrcdir: str, missing_ok=False
+    spec: dict[str, MachCommandReference], topsrcdir: str, missing_ok=False
 ):
     """Load mach commands based on the given spec.
 

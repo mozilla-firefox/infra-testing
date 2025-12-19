@@ -4,18 +4,23 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+SPHINX_TREES["/toolkit/profile"] = "docs"
+
 MOCHITEST_CHROME_MANIFESTS += ["test/chrome/chrome.toml"]
 
 XPCSHELL_TESTS_MANIFESTS += ["test/xpcshell/xpcshell.toml"]
 
-if CONFIG["ENABLE_TESTS"]:
-    DIRS += ["test/gtest"]
+TEST_DIRS += ["test/gtest"]
 
 XPIDL_SOURCES += [
     "nsIProfileMigrator.idl",
     "nsIProfileUnlocker.idl",
     "nsIToolkitProfile.idl",
     "nsIToolkitProfileService.idl",
+]
+
+MOZ_SRC_FILES += [
+    "ProfilesDatastoreService.sys.mjs",
 ]
 
 XPIDL_MODULE = "toolkitprofile"

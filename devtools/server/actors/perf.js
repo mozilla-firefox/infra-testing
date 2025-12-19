@@ -1,7 +1,12 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 "use strict";
+
+/**
+ * @typedef {import("perf").BulkReceiving} BulkSending
+ */
 
 const { Actor } = require("resource://devtools/shared/protocol.js");
 const { perfSpec } = require("resource://devtools/shared/specs/perf.js");
@@ -11,6 +16,8 @@ ChromeUtils.defineESModuleGetters(
   {
     RecordingUtils:
       "resource://devtools/shared/performance-new/recording-utils.sys.mjs",
+    Symbolication:
+      "resource://devtools/shared/performance-new/symbolication.sys.mjs",
   },
   { global: "contextual" }
 );
@@ -22,6 +29,31 @@ const IS_SUPPORTED_PLATFORM = "nsIProfiler" in Ci;
  * The PerfActor wraps the Gecko Profiler interface (aka Services.profiler).
  */
 exports.PerfActor = class PerfActor extends Actor {
+  /**
+   * This counter is incremented at each new capture. This makes sure that the
+   * profile data and the additionalInformation are in sync.
+   *
+   * @type {number}
+   */
+  #captureHandleCounter = 0;
+
+  /**
+   * This stores the profile data retrieved from the last call to
+   * startCaptureAndStopProfiler.
+   *
+   * @type {Promise<ArrayBuffer> |null}
+   */
+  #previouslyRetrievedProfileDataPromise = null;
+
+  /**
+   * This stores the additionalInformation returned by
+   * getProfileDataAsGzippedArrayBufferThenStop so that it can be sent to the
+   * front using getPreviouslyRetrievedAdditionalInformation.
+   *
+   * @type {Promise<MockedExports.ProfileGenerationAdditionalInformation>| null}
+   */
+  #previouslyRetrievedAdditionalInformationPromise = null;
+
   constructor(conn) {
     super(conn, perfSpec);
 
@@ -56,13 +88,7 @@ exports.PerfActor = class PerfActor extends Actor {
       entries: options.entries || 1000000,
       duration: options.duration || 0,
       interval: options.interval || 1,
-      features: options.features || [
-        "js",
-        "stackwalk",
-        "cpu",
-        "responsiveness",
-        "memory",
-      ],
+      features: options.features || ["js", "stackwalk", "cpu", "memory"],
       threads: options.threads || ["GeckoMain", "Compositor"],
       activeTabID: RecordingUtils.getActiveBrowserID(),
     };
@@ -98,8 +124,23 @@ exports.PerfActor = class PerfActor extends Actor {
    * @returns {Promise<[number[], number[], number[]]>}
    */
   async getSymbolTable(debugPath, breakpadId) {
-    const [addr, index, buffer] = await Services.profiler.getSymbolTable(
-      debugPath,
+    const libraries = Services.profiler.sharedLibraries;
+    const symbolicationService = Symbolication.createLocalSymbolicationService(
+      libraries,
+      []
+    );
+    const debugName = libraries.find(
+      lib => lib.path === debugPath && lib.breakpadId === breakpadId
+    )?.debugName;
+
+    if (debugName === undefined) {
+      throw new Error(
+        `Couldn't find the library with path ${debugPath} and breakpadId ${breakpadId}`
+      );
+    }
+
+    const [addr, index, buffer] = await symbolicationService.getSymbolTable(
+      debugName,
       breakpadId
     );
     // The protocol does not support the transfer of typed arrays, so we convert
@@ -108,38 +149,89 @@ exports.PerfActor = class PerfActor extends Actor {
     return [Array.from(addr), Array.from(index), Array.from(buffer)];
   }
 
-  async getProfileAndStopProfiler() {
+  async startCaptureAndStopProfiler() {
     if (!IS_SUPPORTED_PLATFORM) {
-      return null;
+      throw new Error("Profiling is not supported on this platform.");
     }
 
-    // Pause profiler before we collect the profile, so that we don't capture
-    // more samples while the parent process or android threads wait for subprocess profiles.
-    Services.profiler.Pause();
+    const capturePromise =
+      RecordingUtils.getProfileDataAsGzippedArrayBufferThenStop();
 
-    let profile;
-    try {
-      // Attempt to pull out the data.
-      profile = await Services.profiler.getProfileDataAsync();
+    this.#previouslyRetrievedProfileDataPromise = capturePromise.then(
+      ({ profileCaptureResult }) => {
+        if (profileCaptureResult.type === "ERROR") {
+          throw profileCaptureResult.error;
+        }
 
-      if (Object.keys(profile).length === 0) {
-        console.error(
-          "An empty object was received from getProfileDataAsync.getProfileDataAsync(), " +
-            "meaning that a profile could not successfully be serialized and captured."
-        );
-        profile = null;
+        return profileCaptureResult.profile;
       }
-    } catch (e) {
-      // Explicitly set the profile to null if there as an error.
-      profile = null;
-      console.error(`There was an error fetching a profile`, e);
+    );
+
+    this.#previouslyRetrievedAdditionalInformationPromise = capturePromise.then(
+      ({ additionalInformation }) => additionalInformation
+    );
+
+    return ++this.#captureHandleCounter;
+  }
+
+  /**
+   * This actor function returns the profile data using the bulk protocol.
+   *
+   * @param {number} handle returned by startCaptureAndStopProfiler
+   * @returns {Promise<void>}
+   */
+  async getPreviouslyCapturedProfileDataBulk(handle, startBulkSend) {
+    if (handle < this.#captureHandleCounter) {
+      // This handle is outdated, write a message to the console and throw an error
+      console.error(
+        `[devtools perf actor] In getPreviouslyCapturedProfileDataBulk, the requested handle ${handle} is smaller than the current counter ${this.#captureHandleCounter}.`
+      );
+      throw new Error(`The requested data was not found.`);
     }
 
-    // Stop and discard the buffers.
-    Services.profiler.StopProfiler();
+    if (this.#previouslyRetrievedProfileDataPromise === null) {
+      // No capture operation has been started, write a message and throw an error.
+      console.error(
+        `[devtools perf actor] In getPreviouslyCapturedProfileDataBulk, there's no data to be returned.`
+      );
+      throw new Error(`The requested data was not found.`);
+    }
 
-    // Returns a profile when successful, and null when there is an error.
-    return profile;
+    // Note that this promise might be rejected if there was an error. That's OK
+    // and part of the design.
+    const profile = await this.#previouslyRetrievedProfileDataPromise;
+    this.#previouslyRetrievedProfileDataPromise = null;
+
+    const bulk = await startBulkSend(profile.byteLength);
+    await bulk.copyFromBuffer(profile);
+  }
+
+  /**
+   * @param {number} handle returned by startCaptureAndStopProfiler
+   * @returns {Promise<MockedExports.ProfileGenerationAdditionalInformation>}
+   */
+  async getPreviouslyRetrievedAdditionalInformation(handle) {
+    if (handle < this.#captureHandleCounter) {
+      // This handle is outdated, write a message to the console and throw an error
+      console.error(
+        `[devtools perf actor] In getPreviouslyRetrievedAdditionalInformation, the requested handle ${handle} is smaller than the current counter ${this.#captureHandleCounter}.`
+      );
+      throw new Error(`The requested data was not found.`);
+    }
+
+    if (this.#previouslyRetrievedAdditionalInformationPromise === null) {
+      // No capture operation has been started, write a message and throw an error.
+      console.error(
+        `[devtools perf actor] In getPreviouslyRetrievedAdditionalInformation, there's no data to be returned.`
+      );
+      throw new Error(`The requested data was not found.`);
+    }
+
+    try {
+      return this.#previouslyRetrievedAdditionalInformationPromise;
+    } finally {
+      this.#previouslyRetrievedAdditionalInformationPromise = null;
+    }
   }
 
   isActive() {
@@ -181,6 +273,7 @@ exports.PerfActor = class PerfActor extends Actor {
 
   /**
    * Lists the supported features of the profiler for the current browser.
+   *
    * @returns {string[]}
    */
   getSupportedFeatures() {

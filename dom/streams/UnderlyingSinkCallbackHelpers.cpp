@@ -5,7 +5,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/UnderlyingSinkCallbackHelpers.h"
+
 #include "StreamUtils.h"
+#include "mozilla/dom/BufferSourceBinding.h"
+#include "mozilla/dom/BufferSourceBindingFwd.h"
 #include "mozilla/dom/UnionTypes.h"
 #include "mozilla/dom/WebTransportError.h"
 #include "nsHttp.h"
@@ -203,7 +206,7 @@ WritableStreamToOutput::OnOutputStreamReady(nsIAsyncOutputStream* aStream) {
 already_AddRefed<Promise> WritableStreamToOutput::WriteCallbackImpl(
     JSContext* aCx, JS::Handle<JS::Value> aChunk,
     WritableStreamDefaultController& aController, ErrorResult& aRv) {
-  ArrayBufferViewOrArrayBuffer data;
+  BufferSource data;
   if (!data.Init(aCx, aChunk)) {
     aRv.MightThrowJSException();
     aRv.StealExceptionFromJSContext(aCx);

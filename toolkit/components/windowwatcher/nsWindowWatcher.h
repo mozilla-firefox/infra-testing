@@ -8,17 +8,12 @@
 #define __nsWindowWatcher_h__
 
 // {a21bfa01-f349-4394-a84c-8de5cf0737d0}
-#define NS_WINDOWWATCHER_CID                        \
-  {                                                 \
-    0xa21bfa01, 0xf349, 0x4394, {                   \
-      0xa8, 0x4c, 0x8d, 0xe5, 0xcf, 0x7, 0x37, 0xd0 \
-    }                                               \
-  }
+#define NS_WINDOWWATCHER_CID \
+  {0xa21bfa01, 0xf349, 0x4394, {0xa8, 0x4c, 0x8d, 0xe5, 0xcf, 0x7, 0x37, 0xd0}}
 
 #include "nsCOMPtr.h"
 #include "Units.h"
 #include "mozilla/Mutex.h"
-#include "mozilla/Maybe.h"
 #include "nsIWindowCreator.h"  // for stupid compilers
 #include "nsIWindowWatcher.h"
 #include "nsIOpenWindowInfo.h"
@@ -75,6 +70,7 @@ class nsWindowWatcher : public nsIWindowWatcher,
    *  - the user gesture activation flag based on the parent document
    *  - the text directive user activation flag; this will consume the parent
    *    document's flag and OR's it with the user gesture activation flag.
+   * If `aIsWindowOpen` is true, history handling will be set to "auto".
    *
    * Currently, the returned load state is intended to be passed into
    * `OpenWindowInternal()`.
@@ -82,7 +78,7 @@ class nsWindowWatcher : public nsIWindowWatcher,
    * function.
    */
   static already_AddRefed<nsDocShellLoadState> CreateLoadState(
-      nsIURI* aUri, nsPIDOMWindowOuter* aParent);
+      nsIURI* aUri, nsPIDOMWindowOuter* aParent, bool aIsWindowOpen = false);
 
  protected:
   virtual ~nsWindowWatcher();
@@ -119,7 +115,7 @@ class nsWindowWatcher : public nsIWindowWatcher,
   static uint32_t CalculateChromeFlagsForContent(
       const mozilla::dom::WindowFeatures& aFeatures,
       const mozilla::dom::UserActivation::Modifiers& aModifiers,
-      bool* aIsPopupRequested);
+      bool aCalledFromJS, bool* aIsPopupRequested);
 
   static uint32_t CalculateChromeFlagsForSystem(
       const mozilla::dom::WindowFeatures& aFeatures, bool aDialog,

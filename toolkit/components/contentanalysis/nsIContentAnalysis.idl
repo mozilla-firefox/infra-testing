@@ -5,6 +5,7 @@
 
 #include "nsISupports.idl"
 
+interface nsIFile;
 interface nsITransferable;
 interface nsIURI;
 webidl BrowsingContext;
@@ -87,11 +88,12 @@ interface nsIContentAnalysisResponse : nsIContentAnalysisResult
   // so any dialogs (for block/warn) should not be shown.
   [infallible] readonly attribute boolean isCachedResponse;
 
-  // Whether this is a response from an agent or one synthesized by Firefox.
+  // Whether this is a synthesizic response from Firefox (as opposed to a response
+  // from a DLP agent).
   // Synthetic responses ignore browser.contentanalysis.show_blocked_result and
   // always show a blocked result for blocked content, since there is no agent
   // that could have shown one for us.
-  [infallible] readonly attribute boolean isAgentResponse;
+  [infallible] readonly attribute boolean isSyntheticResponse;
 
   /**
    * Acknowledge receipt of an analysis response.
@@ -175,19 +177,21 @@ interface nsIContentAnalysisRequest : nsISupports
 
   // Enumeration of what operation is happening, to be displayed to the user
   cenum OperationType : 32 {
-    eCustomDisplayString = 0,
-    eClipboard = 1,
-    eDroppedText = 2,
-    eOperationPrint = 3,
+    eClipboard = 0,
+    eDroppedText = 1,
+    eOperationPrint = 2,
+    eUpload = 3,
+    eDownload = 4,
   };
   readonly attribute nsIContentAnalysisRequest_OperationType operationTypeForDisplay;
-  readonly attribute AString operationDisplayString;
+  // Required if operationTypeForDisplay is eUpload or eDownload.
+  readonly attribute AString fileNameForDisplay;
 
   // ContentAnalysis will analyze the contents of this DataTransfer.  May
   // contain multiple items that require analysis, or none.
   // Only one of dataTransfer, transferable, textContent or filePath may be
   // defined.
-  readonly attribute DataTransfer dataTransfer;
+  attribute DataTransfer dataTransfer;
 
   // ContentAnalysis will analyze the contents of this nsITransferable.  May
   // contain multiple items that require analysis, or none.
@@ -322,11 +326,12 @@ interface nsIContentAnalysis : nsISupports
    * an error.
    *
    * @param aCars
-   *        The requests to analyze.
+   *         The requests to analyze.
    * @param aAutoAcknowledge
-   *        Whether to send an acknowledge message to the agent after the agent sends a response.
-   *        Passing false means that the caller is responsible for
-   *        calling nsIContentAnalysisResponse::acknowledge() if the Promise is resolved.
+   *         Whether to send an acknowledge message to the agent after the agent sends a response.
+   *         Passing false means that the caller is responsible for
+   *         calling nsIContentAnalysisResponse::acknowledge() if the Promise is resolved.
+   * @return A promise that will resolve to a nsIContentAnalysisResult
    */
   [implicit_jscontext]
   Promise analyzeContentRequests(in Array<nsIContentAnalysisRequest> aCars,
@@ -350,6 +355,24 @@ interface nsIContentAnalysis : nsISupports
                                       in boolean aAutoAcknowledge,
                                       in nsIContentAnalysisCallback callback);
 
+  /**
+   * Same functionality as analyzeContentRequests(), but only accepts one request
+   * that must have a DataTransfer specified, and any files in the DataTransfer
+   * will be analyzed in a batch mode where individual files can be blocked
+   * without the whole request being rejected.
+   *
+   * @param aCar
+   *         The request to analyze, which must have a DataTransfer specified.
+   * @param aAutoAcknowledge
+   *         Whether to send an acknowledge message to the agent after the agent sends a response.
+   *         Passing false means that the caller is responsible for
+   *         calling nsIContentAnalysisResponse::acknowledge() if the Promise is resolved.
+   * @return A promise that will resolve to an array
+   *         [array of files allowed, {shouldAllowRequest}]
+   */
+  [implicit_jscontext]
+  Promise analyzeBatchContentRequest(in nsIContentAnalysisRequest aCar,
+                                     in boolean aAutoAcknowledge);
   /**
    * Internal helper for 'analyzeContentRequest*' methods.  This is abstracted
    * so that it can be mocked in tests.  Do not call this.
@@ -380,7 +403,7 @@ interface nsIContentAnalysis : nsISupports
    * Like cancelRequestsByUserAction but does the same for any other user
    * actions when aUserActionId is part of a "compound action" ("batch mode")
    * -- one actually made up of several user actions.  See
-   * ContentAnalysis::CheckFilesInBatchMode for an explanation.
+   * ContentAnalysis::CheckUploadsInBatchMode for an explanation.
    *
    * @param aUserActionId
    *        The primary user action ID for the batch request to cancel.
@@ -486,4 +509,8 @@ interface nsIContentAnalysis : nsISupports
    */
   void sendCancelToAgent(in ACString aUserActionId);
 
+  /**
+   * Force the content analysis client to be recreated. For use in tests only.
+   */
+  void forceRecreateClientForTest();
 };

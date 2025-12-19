@@ -3,7 +3,9 @@ This test dedicatedly tests validation of GPUPrimitiveState of createRenderPipel
 `;
 
 import { makeTestGroup } from '../../../../common/framework/test_group.js';
+import { hasFeature } from '../../../../common/util/util.js';
 import { kPrimitiveTopology, kIndexFormat } from '../../../capability_info.js';
+import * as vtu from '../validation_test_utils.js';
 
 import { CreateRenderPipelineValidationTest } from './common.js';
 
@@ -26,7 +28,7 @@ g.test('strip_index_format')
 
     const _success =
       topology === 'line-strip' || topology === 'triangle-strip' || stripIndexFormat === undefined;
-    t.doCreateRenderPipelineTest(isAsync, _success, descriptor);
+    vtu.doCreateRenderPipelineTest(t, isAsync, _success, descriptor);
   });
 
 g.test('unclipped_depth')
@@ -37,6 +39,6 @@ g.test('unclipped_depth')
 
     const descriptor = t.getDescriptor({ primitive: { unclippedDepth } });
 
-    const _success = !unclippedDepth || t.device.features.has('depth-clip-control');
-    t.doCreateRenderPipelineTest(isAsync, _success, descriptor);
+    const _success = !unclippedDepth || hasFeature(t.device.features, 'depth-clip-control');
+    vtu.doCreateRenderPipelineTest(t, isAsync, _success, descriptor);
   });

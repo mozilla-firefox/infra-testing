@@ -126,7 +126,7 @@ export class ProfileSelector extends MozLitElement {
       await this.setLaunchArguments(profile, url ? ["-url", url] : []);
       await this.selectableProfileService.uninit();
     } else {
-      this.selectableProfileService.launchInstance(profile, url);
+      this.selectableProfileService.launchInstance(profile, url ? [url] : []);
     }
 
     window.close();
@@ -186,12 +186,11 @@ export class ProfileSelector extends MozLitElement {
         data-l10n-id="profile-window-checkbox-label-2"
         ?checked=${this.showSelector}
       >
-        ${!this.showSelector
-          ? html`<span
-              slot="description"
-              data-l10n-id="profile-window-checkbox-subcopy"
-            ></span>`
-          : null}
+        <span
+          slot="description"
+          data-l10n-id="profile-window-checkbox-subcopy"
+          ?hidden=${this.showSelector}
+        ></span>
       </moz-checkbox>`;
   }
 }

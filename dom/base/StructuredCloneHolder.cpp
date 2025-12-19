@@ -7,6 +7,7 @@
 #include "mozilla/dom/StructuredCloneHolder.h"
 
 #include <new>
+
 #include "ErrorList.h"
 #include "MainThreadUtils.h"
 #include "js/CallArgs.h"
@@ -21,6 +22,10 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_dom.h"
+#ifdef MOZ_WEBRTC
+#  include "mozilla/StaticPrefs_media.h"
+#endif
+#include "mozilla/dom/AudioData.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/Blob.h"
@@ -29,10 +34,10 @@
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/ClonedErrorHolder.h"
 #include "mozilla/dom/ClonedErrorHolderBinding.h"
-#include "mozilla/dom/DirectoryBinding.h"
 #include "mozilla/dom/DOMJSClass.h"
 #include "mozilla/dom/DOMTypes.h"
 #include "mozilla/dom/Directory.h"
+#include "mozilla/dom/DirectoryBinding.h"
 #include "mozilla/dom/DocGroup.h"
 #include "mozilla/dom/EncodedAudioChunk.h"
 #include "mozilla/dom/EncodedAudioChunkBinding.h"
@@ -50,6 +55,12 @@
 #include "mozilla/dom/MessagePortBinding.h"
 #include "mozilla/dom/OffscreenCanvas.h"
 #include "mozilla/dom/OffscreenCanvasBinding.h"
+#ifdef MOZ_WEBRTC
+#  include "mozilla/dom/RTCEncodedAudioFrame.h"
+#  include "mozilla/dom/RTCEncodedAudioFrameBinding.h"
+#  include "mozilla/dom/RTCEncodedVideoFrame.h"
+#  include "mozilla/dom/RTCEncodedVideoFrameBinding.h"
+#endif
 #include "mozilla/dom/ReadableStream.h"
 #include "mozilla/dom/ReadableStreamBinding.h"
 #include "mozilla/dom/ScriptSettings.h"
@@ -60,13 +71,12 @@
 #include "mozilla/dom/TransformStream.h"
 #include "mozilla/dom/TransformStreamBinding.h"
 #include "mozilla/dom/VideoFrame.h"
-#include "mozilla/dom/AudioData.h"
 #include "mozilla/dom/VideoFrameBinding.h"
 #include "mozilla/dom/WebIDLSerializable.h"
-#include "mozilla/dom/WritableStream.h"
-#include "mozilla/dom/WritableStreamBinding.h"
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerPrivate.h"
+#include "mozilla/dom/WritableStream.h"
+#include "mozilla/dom/WritableStreamBinding.h"
 #include "mozilla/fallible.h"
 #include "mozilla/gfx/2D.h"
 #include "nsContentUtils.h"
@@ -85,6 +95,10 @@
 #include "nsThreadUtils.h"
 #include "nsXPCOM.h"
 #include "xpcpublic.h"
+
+#ifdef MOZ_WEBRTC
+#  include "mozilla/dom/RTCDataChannel.h"
+#endif
 
 using namespace mozilla::ipc;
 
@@ -396,15 +410,12 @@ void StructuredCloneHolder::Read(nsIGlobalObject* aGlobal, JSContext* aCx,
     return;
   }
 
-  // If we are tranferring something, we cannot call 'Read()' more than once.
+  // If we are transferring something, we cannot call 'Read()' more than once.
   if (mSupportsTransferring) {
-    mBlobImplArray.Clear();
-    mWasmModuleArray.Clear();
-    mClonedSurfaces.Clear();
-    mInputStreamArray.Clear();
-    mVideoFrames.Clear();
-    mEncodedAudioChunks.Clear();
-    mEncodedVideoChunks.Clear();
+#define STMT(_member) (_member).Clear()
+    CLONED_DATA_MEMBERS
+#undef STMT
+
     Clear();
   }
 }
@@ -1110,7 +1121,7 @@ JSObject* StructuredCloneHolder::CustomReadHandler(
     return ClonedErrorHolder::ReadStructuredClone(aCx, aReader, this);
   }
 
-  if (VideoFrame::PrefEnabled() && aTag == SCTAG_DOM_VIDEOFRAME &&
+  if (VideoFrame::PrefEnabled(aCx) && aTag == SCTAG_DOM_VIDEOFRAME &&
       CloneScope() == StructuredCloneScope::SameProcess &&
       aCloneDataPolicy.areIntraClusterClonableSharedObjectsAllowed()) {
     JS::Rooted<JSObject*> global(aCx, mGlobal->GetGlobalJSObject());
@@ -1152,6 +1163,30 @@ JSObject* StructuredCloneHolder::CustomReadHandler(
           aCx, mGlobal, aReader, EncodedAudioChunks()[aIndex]);
     }
   }
+
+#ifdef MOZ_WEBRTC
+  if (StaticPrefs::media_peerconnection_enabled() &&
+      aTag == SCTAG_DOM_RTCENCODEDVIDEOFRAME &&
+      CloneScope() == StructuredCloneScope::SameProcess &&
+      aCloneDataPolicy.areIntraClusterClonableSharedObjectsAllowed()) {
+    JS::Rooted<JSObject*> global(aCx, mGlobal->GetGlobalJSObject());
+    if (RTCEncodedVideoFrame_Binding::ConstructorEnabled(aCx, global)) {
+      return RTCEncodedVideoFrame::ReadStructuredClone(
+          aCx, mGlobal, aReader, RtcEncodedVideoFrames()[aIndex]);
+    }
+  }
+
+  if (StaticPrefs::media_peerconnection_enabled() &&
+      aTag == SCTAG_DOM_RTCENCODEDAUDIOFRAME &&
+      CloneScope() == StructuredCloneScope::SameProcess &&
+      aCloneDataPolicy.areIntraClusterClonableSharedObjectsAllowed()) {
+    JS::Rooted<JSObject*> global(aCx, mGlobal->GetGlobalJSObject());
+    if (RTCEncodedAudioFrame_Binding::ConstructorEnabled(aCx, global)) {
+      return RTCEncodedAudioFrame::ReadStructuredClone(
+          aCx, mGlobal, aReader, RtcEncodedAudioFrames()[aIndex]);
+    }
+  }
+#endif
 
   return ReadFullySerializableObjects(aCx, aReader, aTag, false);
 }
@@ -1250,7 +1285,7 @@ bool StructuredCloneHolder::CustomWriteHandler(
   }
 
   // See if this is a VideoFrame object.
-  if (VideoFrame::PrefEnabled()) {
+  if (VideoFrame::PrefEnabled(aCx)) {
     VideoFrame* videoFrame = nullptr;
     if (NS_SUCCEEDED(UNWRAP_OBJECT(VideoFrame, &obj, videoFrame))) {
       SameProcessScopeRequired(aSameProcessScopeRequired);
@@ -1295,6 +1330,29 @@ bool StructuredCloneHolder::CustomWriteHandler(
     }
   }
 
+#ifdef MOZ_WEBRTC
+  // See if this is an RTCEncodedVideoFrame object.
+  if (StaticPrefs::media_peerconnection_enabled()) {
+    RTCEncodedVideoFrame* rtcFrame = nullptr;
+    if (NS_SUCCEEDED(UNWRAP_OBJECT(RTCEncodedVideoFrame, &obj, rtcFrame))) {
+      SameProcessScopeRequired(aSameProcessScopeRequired);
+      return CloneScope() == StructuredCloneScope::SameProcess
+                 ? rtcFrame->WriteStructuredClone(aWriter, this)
+                 : false;
+    }
+  }
+
+  // See if this is an RTCEncodedAudioFrame object.
+  if (StaticPrefs::media_peerconnection_enabled()) {
+    RTCEncodedAudioFrame* rtcFrame = nullptr;
+    if (NS_SUCCEEDED(UNWRAP_OBJECT(RTCEncodedAudioFrame, &obj, rtcFrame))) {
+      SameProcessScopeRequired(aSameProcessScopeRequired);
+      return CloneScope() == StructuredCloneScope::SameProcess
+                 ? rtcFrame->WriteStructuredClone(aWriter, this)
+                 : false;
+    }
+  }
+#endif
   {
     // We only care about streams, so ReflectorToISupportsStatic is fine.
     nsCOMPtr<nsISupports> base = xpc::ReflectorToISupportsStatic(aObj);
@@ -1446,7 +1504,7 @@ StructuredCloneHolder::CustomReadTransferHandler(
                                             aReturnObject);
   }
 
-  if (VideoFrame::PrefEnabled() && aTag == SCTAG_DOM_VIDEOFRAME &&
+  if (VideoFrame::PrefEnabled(aCx) && aTag == SCTAG_DOM_VIDEOFRAME &&
       CloneScope() == StructuredCloneScope::SameProcess &&
       aCloneDataPolicy.areIntraClusterClonableSharedObjectsAllowed()) {
     MOZ_ASSERT(aContent);
@@ -1509,6 +1567,44 @@ StructuredCloneHolder::CustomReadTransferHandler(
     aReturnObject.set(&value.toObject());
     return true;
   }
+
+#ifdef MOZ_WEBRTC
+  if (aTag == SCTAG_DOM_RTCDATACHANNEL &&
+      CloneScope() == StructuredCloneScope::SameProcess) {
+    if (!CheckExposedGlobals(aCx, mGlobal,
+                             GlobalNames::DedicatedWorkerGlobalScope)) {
+      return false;
+    }
+    MOZ_ASSERT(aContent);
+
+    // This DataHolder was created over in CustomWriteTransferHandler
+    RTCDataChannel::DataHolder* dataHolder =
+        static_cast<RTCDataChannel::DataHolder*>(aContent);
+    aContent = nullptr;
+
+    RefPtr<RTCDataChannel> channel = new RTCDataChannel(mGlobal, *dataHolder);
+
+    // dataHolder will be released in CustomFreeTransferHandler if we return
+    // false. Ordinarily, I would prefer taking ownership in here, but
+    // CustomFreeTransferHandler is called in situations other than failure
+    // here, and in those situations it *does* need to handle the cleanup.
+    if (!channel) {
+      // This should only happen on OOM
+      return false;
+    }
+    channel->Init();
+
+    JS::Rooted<JS::Value> value(aCx);
+    if (!GetOrCreateDOMReflector(aCx, channel, &value)) {
+      JS_ClearPendingException(aCx);
+      return false;
+    }
+
+    delete dataHolder;
+    aReturnObject.set(&value.toObject());
+    return true;
+  }
+#endif
 
   return false;
 }
@@ -1591,7 +1687,7 @@ StructuredCloneHolder::CustomWriteTransferHandler(
         return true;
       }
 
-      if (VideoFrame::PrefEnabled()) {
+      if (VideoFrame::PrefEnabled(aCx)) {
         VideoFrame* videoFrame = nullptr;
         rv = UNWRAP_OBJECT(VideoFrame, &obj, videoFrame);
         if (NS_SUCCEEDED(rv)) {
@@ -1631,6 +1727,35 @@ StructuredCloneHolder::CustomWriteTransferHandler(
           return true;
         }
       }
+
+#ifdef MOZ_WEBRTC
+      {
+        mozilla::dom::RTCDataChannel* channel = nullptr;
+        rv = UNWRAP_OBJECT(RTCDataChannel, &obj, channel);
+        if (NS_SUCCEEDED(rv)) {
+          MOZ_ASSERT(channel);
+          // We check above that CloneScope() == SameProcess
+
+          UniquePtr<RTCDataChannel::DataHolder> dataHolder =
+              channel->Transfer();
+          if (!dataHolder) {
+            // RTCDataChannel.[[IsTransferable]] is false, apparently
+            return false;
+          }
+
+          *aExtraData = 0;
+          *aTag = SCTAG_DOM_RTCDATACHANNEL;
+
+          // Transfer ownership out (JS::SCTAG_TMO_CUSTOM signals this)
+          // This will be processed by CustomReadTransferHandler, or freed by
+          // CustomFreeTransferHandler if there's some error.
+          *aContent = dataHolder.release();
+          *aOwnership = JS::SCTAG_TMO_CUSTOM;
+
+          return true;
+        }
+      }
+#endif
     }
 
     {
@@ -1758,7 +1883,7 @@ void StructuredCloneHolder::CustomFreeTransferHandler(
     return;
   }
 
-  if (VideoFrame::PrefEnabled() && aTag == SCTAG_DOM_VIDEOFRAME &&
+  if (aTag == SCTAG_DOM_VIDEOFRAME &&
       CloneScope() == StructuredCloneScope::SameProcess) {
     if (aContent) {
       VideoFrame::TransferredData* data =
@@ -1767,8 +1892,7 @@ void StructuredCloneHolder::CustomFreeTransferHandler(
     }
     return;
   }
-  if (StaticPrefs::dom_media_webcodecs_enabled() &&
-      aTag == SCTAG_DOM_AUDIODATA &&
+  if (aTag == SCTAG_DOM_AUDIODATA &&
       CloneScope() == StructuredCloneScope::SameProcess) {
     if (aContent) {
       AudioData::TransferredData* data =
@@ -1777,6 +1901,17 @@ void StructuredCloneHolder::CustomFreeTransferHandler(
     }
     return;
   }
+#ifdef MOZ_WEBRTC
+  if (aTag == SCTAG_DOM_RTCDATACHANNEL &&
+      CloneScope() == StructuredCloneScope::SameProcess) {
+    if (aContent) {
+      RTCDataChannel::DataHolder* dataHolder =
+          static_cast<RTCDataChannel::DataHolder*>(aContent);
+      delete dataHolder;
+    }
+    return;
+  }
+#endif
 }
 
 bool StructuredCloneHolder::CustomCanTransferHandler(
@@ -1851,7 +1986,7 @@ bool StructuredCloneHolder::CustomCanTransferHandler(
     }
   }
 
-  if (VideoFrame::PrefEnabled()) {
+  if (VideoFrame::PrefEnabled(aCx)) {
     VideoFrame* videoframe = nullptr;
     nsresult rv = UNWRAP_OBJECT(VideoFrame, &obj, videoframe);
     if (NS_SUCCEEDED(rv)) {
@@ -1868,6 +2003,17 @@ bool StructuredCloneHolder::CustomCanTransferHandler(
       return CloneScope() == StructuredCloneScope::SameProcess;
     }
   }
+
+#ifdef MOZ_WEBRTC
+  {
+    mozilla::dom::RTCDataChannel* channel = nullptr;
+    nsresult rv = UNWRAP_OBJECT(RTCDataChannel, &obj, channel);
+    if (NS_SUCCEEDED(rv)) {
+      SameProcessScopeRequired(aSameProcessScopeRequired);
+      return CloneScope() == StructuredCloneScope::SameProcess;
+    }
+  }
+#endif
 
   return false;
 }

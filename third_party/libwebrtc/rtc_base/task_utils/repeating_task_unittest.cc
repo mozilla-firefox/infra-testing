@@ -13,8 +13,10 @@
 #include <atomic>
 #include <memory>
 #include <optional>
+#include <utility>
 
 #include "absl/functional/any_invocable.h"
+#include "api/location.h"
 #include "api/task_queue/task_queue_base.h"
 #include "api/task_queue/test/mock_task_queue_base.h"
 #include "api/units/time_delta.h"
@@ -208,7 +210,7 @@ TEST(RepeatingTaskTest, CompensatesForShortRunTime) {
 }
 
 TEST(RepeatingTaskTest, CancelDelayedTaskBeforeItRuns) {
-  rtc::Event done;
+  Event done;
   MockClosure mock;
   EXPECT_CALL(mock, Call).Times(0);
   EXPECT_CALL(mock, Delete).WillOnce(Invoke([&done] { done.Set(); }));
@@ -221,7 +223,7 @@ TEST(RepeatingTaskTest, CancelDelayedTaskBeforeItRuns) {
 }
 
 TEST(RepeatingTaskTest, CancelTaskAfterItRuns) {
-  rtc::Event done;
+  Event done;
   MockClosure mock;
   EXPECT_CALL(mock, Call).WillOnce(Return(TimeDelta::Millis(100)));
   EXPECT_CALL(mock, Delete).WillOnce(Invoke([&done] { done.Set(); }));
@@ -264,7 +266,7 @@ TEST(RepeatingTaskTest, TaskCanStopItselfByReturningInfinity) {
 
 TEST(RepeatingTaskTest, ZeroReturnValueRepostsTheTask) {
   NiceMock<MockClosure> closure;
-  rtc::Event done;
+  Event done;
   EXPECT_CALL(closure, Call())
       .WillOnce(Return(TimeDelta::Zero()))
       .WillOnce(Invoke([&] {
@@ -278,7 +280,7 @@ TEST(RepeatingTaskTest, ZeroReturnValueRepostsTheTask) {
 
 TEST(RepeatingTaskTest, StartPeriodicTask) {
   MockFunction<TimeDelta()> closure;
-  rtc::Event done;
+  Event done;
   EXPECT_CALL(closure, Call())
       .WillOnce(Return(TimeDelta::Millis(20)))
       .WillOnce(Return(TimeDelta::Millis(20)))

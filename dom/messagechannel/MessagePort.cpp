@@ -8,6 +8,7 @@
 
 #include "MessageEvent.h"
 #include "MessagePortChild.h"
+#include "mozilla/ScopeExit.h"
 #include "mozilla/dom/BlobBinding.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/File.h"
@@ -16,19 +17,18 @@
 #include "mozilla/dom/MessagePortBinding.h"
 #include "mozilla/dom/MessagePortChild.h"
 #include "mozilla/dom/PMessagePort.h"
+#include "mozilla/dom/RefMessageBodyService.h"
 #include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/dom/SharedMessageBody.h"
 #include "mozilla/dom/StructuredCloneTags.h"
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerRef.h"
 #include "mozilla/dom/WorkerScope.h"
 #include "mozilla/ipc/BackgroundChild.h"
-#include "mozilla/dom/RefMessageBodyService.h"
-#include "mozilla/dom/SharedMessageBody.h"
 #include "mozilla/ipc/PBackgroundChild.h"
-#include "mozilla/ScopeExit.h"
-#include "mozilla/Unused.h"
 #include "nsContentUtils.h"
+#include "nsGlobalWindowInner.h"
 #include "nsPresContext.h"
 
 #ifdef XP_WIN
@@ -119,8 +119,7 @@ class PostMessageRunnable final : public CancelableRunnable {
     }
 
     // Create the event
-    RefPtr<MessageEvent> event =
-        new MessageEvent(mPort->GetOwnerWindow(), nullptr, nullptr);
+    RefPtr<MessageEvent> event = new MessageEvent(mPort, nullptr, nullptr);
 
     Sequence<OwningNonNull<MessagePort>> ports;
     if (!mData->TakeTransferredPortsAsSequence(ports)) {
@@ -825,9 +824,9 @@ void MessagePort::ForceClose(const MessagePortIdentifier& aIdentifier) {
     return;
   }
 
-  Unused << actorChild->SendMessagePortForceClose(aIdentifier.uuid(),
-                                                  aIdentifier.destinationUuid(),
-                                                  aIdentifier.sequenceId());
+  (void)actorChild->SendMessagePortForceClose(aIdentifier.uuid(),
+                                              aIdentifier.destinationUuid(),
+                                              aIdentifier.sequenceId());
 }
 
 void MessagePort::DispatchError() {

@@ -7,15 +7,16 @@
 use super::AllowQuirks;
 use crate::color::mix::ColorInterpolationMethod;
 use crate::color::{parsing, AbsoluteColor, ColorFunction, ColorSpace};
+use crate::derives::*;
 use crate::media_queries::Device;
 use crate::parser::{Parse, ParserContext};
 use crate::values::computed::{Color as ComputedColor, Context, ToComputedValue};
 use crate::values::generics::color::{
-    ColorMixFlags, GenericCaretColor, GenericColorMix, GenericColorOrAuto,
+    ColorMixFlags, GenericCaretColor, GenericColorMix, GenericColorOrAuto, GenericLightDark,
 };
 use crate::values::specified::Percentage;
 use crate::values::{normalize, CustomIdent};
-use cssparser::{BasicParseErrorKind, ParseErrorKind, Parser, Token};
+use cssparser::{match_ignore_ascii_case, BasicParseErrorKind, ParseErrorKind, Parser, Token};
 use std::fmt::{self, Write};
 use std::io::Write as IoWrite;
 use style_traits::{CssType, CssWriter, KeywordsCollectFn, ParseError, StyleParseErrorKind};
@@ -33,8 +34,15 @@ impl ColorMix {
         input.expect_function_matching("color-mix")?;
 
         input.parse_nested_block(|input| {
-            let interpolation = ColorInterpolationMethod::parse(context, input)?;
-            input.expect_comma()?;
+            // If the color interpolation method is omitted, default to "in oklab".
+            // See: https://github.com/web-platform-tests/interop/issues/1166
+            let interpolation = input
+                .try_parse(|input| -> Result<_, ParseError<'i>> {
+                    let interpolation = ColorInterpolationMethod::parse(context, input)?;
+                    input.expect_comma()?;
+                    Ok(interpolation)
+                })
+                .unwrap_or_default();
 
             let try_parse_percentage = |input: &mut Parser| -> Option<Percentage> {
                 input
@@ -108,7 +116,7 @@ impl ToCss for Absolute {
 }
 
 /// Specified color value
-#[derive(Clone, Debug, MallocSizeOf, PartialEq, ToShmem)]
+#[derive(Clone, Debug, MallocSizeOf, PartialEq, ToShmem, ToTyped)]
 pub enum Color {
     /// The 'currentColor' keyword
     CurrentColor,
@@ -124,52 +132,12 @@ pub enum Color {
     /// A color mix.
     ColorMix(Box<ColorMix>),
     /// A light-dark() color.
-    LightDark(Box<LightDark>),
+    LightDark(Box<GenericLightDark<Self>>),
+    /// The contrast-color function.
+    ContrastColor(Box<Color>),
     /// Quirksmode-only rule for inheriting color from the body
     #[cfg(feature = "gecko")]
     InheritFromBodyQuirk,
-}
-
-/// A light-dark(<light-color>, <dark-color>) function.
-#[derive(Clone, Debug, MallocSizeOf, PartialEq, ToShmem, ToCss)]
-#[css(function, comma)]
-pub struct LightDark {
-    /// The <color> that is returned when using a light theme.
-    pub light: Color,
-    /// The <color> that is returned when using a dark theme.
-    pub dark: Color,
-}
-
-impl LightDark {
-    fn compute(&self, cx: &Context) -> ComputedColor {
-        let dark = cx.device().is_dark_color_scheme(cx.builder.color_scheme);
-        if cx.for_non_inherited_property {
-            cx.rule_cache_conditions
-                .borrow_mut()
-                .set_color_scheme_dependency(cx.builder.color_scheme);
-        }
-        let used = if dark { &self.dark } else { &self.light };
-        used.to_computed_value(cx)
-    }
-
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-        preserve_authored: PreserveAuthored,
-    ) -> Result<Self, ParseError<'i>> {
-        let enabled =
-            context.chrome_rules_enabled() || static_prefs::pref!("layout.css.light-dark.enabled");
-        if !enabled {
-            return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError));
-        }
-        input.expect_function_matching("light-dark")?;
-        input.parse_nested_block(|input| {
-            let light = Color::parse_internal(context, input, preserve_authored)?;
-            input.expect_comma()?;
-            let dark = Color::parse_internal(context, input, preserve_authored)?;
-            Ok(LightDark { light, dark })
-        })
-    }
 }
 
 impl From<AbsoluteColor> for Color {
@@ -256,10 +224,6 @@ pub enum SystemColor {
     Selecteditem,
     /// Used for selected and focused html cell text.
     Selecteditemtext,
-    /// Used to button text background when hovered.
-    MozButtonhoverface,
-    /// Used to button text color when hovered.
-    MozButtonhovertext,
     /// Used for menu item backgrounds when hovered.
     MozMenuhover,
     /// Used for menu item backgrounds when hovered and disabled.
@@ -270,22 +234,35 @@ pub enum SystemColor {
     /// Used for menubar item text when hovered.
     MozMenubarhovertext,
 
-    /// On platforms where these colors are the same as -moz-field, use
-    /// -moz-fieldtext as foreground color
-    MozEventreerow,
+    /// On platforms where this color is the same as field, or transparent, use fieldtext as
+    /// foreground color.
     MozOddtreerow,
 
-    /// Used for button text when pressed.
+    /// Used for button text background when hovered.
     #[parse(condition = "ParserContext::chrome_rules_enabled")]
-    MozButtonactivetext,
-
+    MozButtonhoverface,
+    /// Used for button text color when hovered.
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
+    MozButtonhovertext,
+    /// Used for button border color when hovered.
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
+    MozButtonhoverborder,
     /// Used for button background when pressed.
     #[parse(condition = "ParserContext::chrome_rules_enabled")]
     MozButtonactiveface,
+    /// Used for button text when pressed.
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
+    MozButtonactivetext,
+    /// Used for button border when pressed.
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
+    MozButtonactiveborder,
 
     /// Used for button background when disabled.
     #[parse(condition = "ParserContext::chrome_rules_enabled")]
     MozButtondisabledface,
+    /// Used for button border when disabled.
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
+    MozButtondisabledborder,
 
     /// Colors used for the header bar (sorta like the tab bar / menubar).
     #[parse(condition = "ParserContext::chrome_rules_enabled")]
@@ -392,15 +369,11 @@ pub enum SystemColor {
     #[css(skip)]
     ThemedScrollbar,
     #[css(skip)]
-    ThemedScrollbarInactive,
-    #[css(skip)]
     ThemedScrollbarThumb,
     #[css(skip)]
     ThemedScrollbarThumbHover,
     #[css(skip)]
     ThemedScrollbarThumbActive,
-    #[css(skip)]
-    ThemedScrollbarThumbInactive,
 
     #[css(skip)]
     End, // Just for array-indexing purposes.
@@ -484,9 +457,23 @@ impl Color {
                     return Ok(Color::ColorMix(Box::new(mix)));
                 }
 
-                if let Ok(ld) = input.try_parse(|i| LightDark::parse(context, i, preserve_authored))
-                {
+                if let Ok(ld) = input.try_parse(|i| {
+                    GenericLightDark::parse_with(i, |i| {
+                        Self::parse_internal(context, i, preserve_authored)
+                    })
+                }) {
                     return Ok(Color::LightDark(Box::new(ld)));
+                }
+
+                if static_prefs::pref!("layout.css.contrast-color.enabled") {
+                    if let Ok(c) = input.try_parse(|i| {
+                        i.expect_function_matching("contrast-color")?;
+                        i.parse_nested_block(|i| {
+                            Self::parse_internal(context, i, preserve_authored)
+                        })
+                    }) {
+                        return Ok(Color::ContrastColor(Box::new(c)));
+                    }
                 }
 
                 match e.kind {
@@ -563,10 +550,15 @@ impl ToCss for Color {
             Color::ColorFunction(ref color_function) => color_function.to_css(dest),
             Color::ColorMix(ref mix) => mix.to_css(dest),
             Color::LightDark(ref ld) => ld.to_css(dest),
+            Color::ContrastColor(ref c) => {
+                dest.write_str("contrast-color(")?;
+                c.to_css(dest)?;
+                dest.write_char(')')
+            },
             #[cfg(feature = "gecko")]
             Color::System(system) => system.to_css(dest),
             #[cfg(feature = "gecko")]
-            Color::InheritFromBodyQuirk => Ok(()),
+            Color::InheritFromBodyQuirk => dest.write_str("-moz-inherit-from-body-quirk"),
         }
     }
 }
@@ -590,13 +582,14 @@ impl Color {
                     .unwrap_or(false)
             },
             Self::LightDark(ref ld) => {
-                ld.light.honored_in_forced_colors_mode(allow_transparent) &&
-                    ld.dark.honored_in_forced_colors_mode(allow_transparent)
+                ld.light.honored_in_forced_colors_mode(allow_transparent)
+                    && ld.dark.honored_in_forced_colors_mode(allow_transparent)
             },
             Self::ColorMix(ref mix) => {
-                mix.left.honored_in_forced_colors_mode(allow_transparent) &&
-                    mix.right.honored_in_forced_colors_mode(allow_transparent)
+                mix.left.honored_in_forced_colors_mode(allow_transparent)
+                    && mix.right.honored_in_forced_colors_mode(allow_transparent)
             },
+            Self::ContrastColor(ref c) => c.honored_in_forced_colors_mode(allow_transparent),
         }
     }
 
@@ -802,6 +795,9 @@ impl Color {
                     flags: mix.flags,
                 })
             },
+            Color::ContrastColor(ref c) => {
+                ComputedColor::ContrastColor(Box::new(c.to_computed_color(context)?))
+            },
             #[cfg(feature = "gecko")]
             Color::System(system) => system.compute(context?),
             #[cfg(feature = "gecko")]
@@ -837,6 +833,9 @@ impl ToComputedValue for Color {
             ComputedColor::ColorMix(ref mix) => {
                 Color::ColorMix(Box::new(ToComputedValue::from_computed_value(&**mix)))
             },
+            ComputedColor::ContrastColor(ref c) => {
+                Self::ContrastColor(Box::new(ToComputedValue::from_computed_value(&**c)))
+            },
         }
     }
 }
@@ -864,6 +863,7 @@ impl SpecifiedValueInfo for Color {
             "oklab",
             "oklch",
             "color-mix",
+            "contrast-color",
             "light-dark",
         ]);
     }
@@ -872,7 +872,7 @@ impl SpecifiedValueInfo for Color {
 /// Specified value for the "color" property, which resolves the `currentcolor`
 /// keyword to the parent color instead of self's color.
 #[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
-#[derive(Clone, Debug, PartialEq, SpecifiedValueInfo, ToCss, ToShmem)]
+#[derive(Clone, Debug, PartialEq, SpecifiedValueInfo, ToCss, ToShmem, ToTyped)]
 pub struct ColorPropertyValue(pub Color);
 
 impl ToComputedValue for ColorPropertyValue {
@@ -956,6 +956,7 @@ bitflags! {
     ToComputedValue,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C)]
 #[value_info(other_values = "normal")]
@@ -1071,6 +1072,7 @@ impl ToCss for ColorScheme {
     ToComputedValue,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(u8)]
 pub enum PrintColorAdjust {
@@ -1093,6 +1095,7 @@ pub enum PrintColorAdjust {
     ToComputedValue,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(u8)]
 pub enum ForcedColorAdjust {

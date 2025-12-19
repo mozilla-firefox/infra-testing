@@ -13,7 +13,6 @@
 #include "mozilla/net/SocketProcessChild.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/net/SocketProcessParent.h"
-#include "mozilla/Unused.h"
 #include "nsIDNSRecord.h"
 #include "nsIDNSByTypeRecord.h"
 #include "nsHostResolver.h"
@@ -58,6 +57,7 @@ class ChildDNSRecord : public nsIDNSAddrRecord {
   nsIRequest::TRRMode mEffectiveTRRMode = nsIRequest::TRR_DEFAULT_MODE;
   nsITRRSkipReason::value mTRRSkipReason = nsITRRSkipReason::TRR_UNSET;
   uint32_t mTTL = 0;
+  TimeStamp mLastUpdate = mozilla::TimeStamp::NowLoRes();
 };
 
 NS_IMPL_ISUPPORTS(ChildDNSRecord, nsIDNSRecord, nsIDNSAddrRecord)
@@ -78,6 +78,7 @@ ChildDNSRecord::ChildDNSRecord(const DNSRecord& reply,
   const nsTArray<NetAddr>& addrs = reply.addrs();
   mAddresses = addrs.Clone();
   mTTL = reply.ttl();
+  mLastUpdate = reply.lastUpdate();
 }
 
 //-----------------------------------------------------------------------------
@@ -205,6 +206,12 @@ NS_IMETHODIMP ChildDNSRecord::GetTrrSkipReason(
 NS_IMETHODIMP
 ChildDNSRecord::GetTtl(uint32_t* aTtl) {
   *aTtl = mTTL;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+ChildDNSRecord::GetLastUpdate(TimeStamp* aLastUpdate) {
+  *aLastUpdate = mLastUpdate;
   return NS_OK;
 }
 
@@ -437,11 +444,11 @@ DNSRequestSender::Cancel(nsresult reason) {
   }
 
   if (DNSRequestChild* child = mIPCActor->AsDNSRequestChild()) {
-    Unused << child->SendCancelDNSRequest(mHost, mTrrServer, mPort, mType,
-                                          mOriginAttributes, mFlags, reason);
+    (void)child->SendCancelDNSRequest(mHost, mTrrServer, mPort, mType,
+                                      mOriginAttributes, mFlags, reason);
   } else if (DNSRequestParent* parent = mIPCActor->AsDNSRequestParent()) {
-    Unused << parent->SendCancelDNSRequest(mHost, mTrrServer, mPort, mType,
-                                           mOriginAttributes, mFlags, reason);
+    (void)parent->SendCancelDNSRequest(mHost, mTrrServer, mPort, mType,
+                                       mOriginAttributes, mFlags, reason);
   }
 
   return NS_OK;
@@ -494,7 +501,7 @@ void DNSRequestSender::StartRequest() {
     auto task = [requestParent, self]() {
       RefPtr<SocketProcessParent> socketParent =
           SocketProcessParent::GetSingleton();
-      Unused << socketParent->SendPDNSRequestConstructor(
+      (void)socketParent->SendPDNSRequestConstructor(
           requestParent, self->mHost, self->mTrrServer, self->mPort,
           self->mType, self->mOriginAttributes, self->mFlags);
     };
@@ -555,9 +562,9 @@ bool DNSRequestSender::OnRecvLookupCompleted(const DNSRequestResponse& reply) {
   }
 
   if (DNSRequestChild* child = mIPCActor->AsDNSRequestChild()) {
-    Unused << mozilla::net::DNSRequestChild::Send__delete__(child);
+    (void)mozilla::net::DNSRequestChild::Send__delete__(child);
   } else if (DNSRequestParent* parent = mIPCActor->AsDNSRequestParent()) {
-    Unused << mozilla::net::DNSRequestParent::Send__delete__(parent);
+    (void)mozilla::net::DNSRequestParent::Send__delete__(parent);
   }
 
   return true;

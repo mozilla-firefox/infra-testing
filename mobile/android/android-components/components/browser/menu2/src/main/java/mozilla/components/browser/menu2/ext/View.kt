@@ -4,9 +4,8 @@
 
 package mozilla.components.browser.menu2.ext
 
+import android.annotation.SuppressLint
 import android.content.res.ColorStateList
-import android.os.Build
-import android.os.Build.VERSION.SDK_INT
 import android.view.View
 import android.widget.ImageView
 import android.widget.TextView
@@ -66,6 +65,7 @@ internal fun ImageView.applyNotificationEffect(
 /**
  * Build a drawable to be used for the background of a menu option.
  */
+@SuppressLint("UnsafeCompatGetDrawable")
 internal fun View.applyBackgroundEffect(
     newEffect: MenuCandidateEffect?,
     oldEffect: MenuCandidateEffect?,
@@ -83,13 +83,9 @@ internal fun View.applyBackgroundEffect(
         )
 
         setBackgroundColor(highlight.backgroundTint)
-        if (SDK_INT >= Build.VERSION_CODES.M) {
-            foreground = selectableBackground
-        }
+        foreground = selectableBackground
     } else {
         setBackgroundResource(selectableBackgroundRes)
-        if (SDK_INT >= Build.VERSION_CODES.M) {
-            foreground = null
-        }
+        foreground = null
     }
 }

@@ -15,10 +15,9 @@ DIRS += [
     "jni",
 ]
 
-if CONFIG["ENABLE_TESTS"]:
-    DIRS += [
-        "tests",
-    ]
+TEST_DIRS += [
+    "tests",
+]
 
 EXPORTS += [
     "AndroidBridge.h",
@@ -67,6 +66,7 @@ classes_with_WrapForJNI = [
     "Image",
     "ImageDecoder",
     "MediaDrmProxy",
+    "MozLog",
     "PanZoomController",
     "Sample",
     "SampleBuffer",
@@ -79,12 +79,11 @@ classes_with_WrapForJNI = [
     "SurfaceAllocator",
     "SurfaceControlManager",
     "SurfaceTextureListener",
-    "TelemetryUtils",
     "WebAuthnTokenManager",
     "WebAuthnUtils",
     "WebMessage",
     "WebNotification",
-    "WebNotificationDelegate",
+    "WebNotificationAction",
     "WebRequest",
     "WebRequestError",
     "WebResponse",
@@ -145,6 +144,7 @@ UNIFIED_SOURCES += [
     "GfxInfo.cpp",
     "ImageDecoderSupport.cpp",
     "InProcessAndroidCompositorWidget.cpp",
+    "MozLogSupport.cpp",
     "nsAppShell.cpp",
     "nsClipboard.cpp",
     "nsDeviceContextAndroid.cpp",

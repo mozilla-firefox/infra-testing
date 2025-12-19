@@ -5,38 +5,40 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "HTMLFormSubmission.h"
+
+#include <tuple>
+
 #include "HTMLFormElement.h"
 #include "HTMLFormSubmissionConstants.h"
+#include "mozilla/RandomNum.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/dom/AncestorIterator.h"
+#include "mozilla/dom/Directory.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/File.h"
+#include "mozilla/dom/FormData.h"
+#include "mozilla/dom/PolicyContainer.h"
+#include "nsAttrValueInlines.h"
+#include "nsCExternalHandlerService.h"
 #include "nsCOMPtr.h"
 #include "nsComponentManagerUtils.h"
+#include "nsContentUtils.h"
+#include "nsDirectoryServiceDefs.h"
+#include "nsError.h"
+#include "nsEscape.h"
+#include "nsGenericHTMLElement.h"
 #include "nsGkAtoms.h"
 #include "nsIFormControl.h"
-#include "nsError.h"
-#include "nsGenericHTMLElement.h"
-#include "nsAttrValueInlines.h"
-#include "nsDirectoryServiceDefs.h"
-#include "nsStringStream.h"
+#include "nsIMIMEInputStream.h"
+#include "nsIMultiplexInputStream.h"
+#include "nsIScriptError.h"
 #include "nsIURI.h"
 #include "nsIURIMutator.h"
 #include "nsIURL.h"
-#include "nsNetUtil.h"
 #include "nsLinebreakConverter.h"
-#include "nsEscape.h"
+#include "nsNetUtil.h"
+#include "nsStringStream.h"
 #include "nsUnicharUtils.h"
-#include "nsIMultiplexInputStream.h"
-#include "nsIMIMEInputStream.h"
-#include "nsIScriptError.h"
-#include "nsCExternalHandlerService.h"
-#include "nsContentUtils.h"
-
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/AncestorIterator.h"
-#include "mozilla/dom/Directory.h"
-#include "mozilla/dom/File.h"
-#include "mozilla/StaticPrefs_dom.h"
-#include "mozilla/RandomNum.h"
-
-#include <tuple>
 
 namespace mozilla::dom {
 
@@ -770,6 +772,7 @@ void GetEnumAttr(nsGenericHTMLElement* aContent, nsAtom* atom,
 nsresult HTMLFormSubmission::GetFromForm(HTMLFormElement* aForm,
                                          nsGenericHTMLElement* aSubmitter,
                                          NotNull<const Encoding*>& aEncoding,
+                                         FormData* aFormData,
                                          HTMLFormSubmission** aFormSubmission) {
   // Get all the information necessary to encode the form data
   NS_ASSERTION(aForm->GetComposedDoc(),
@@ -809,7 +812,8 @@ nsresult HTMLFormSubmission::GetFromForm(HTMLFormElement* aForm,
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Check if CSP allows this form-action
-  nsCOMPtr<nsIContentSecurityPolicy> csp = aForm->GetCsp();
+  nsCOMPtr<nsIContentSecurityPolicy> csp =
+      PolicyContainer::GetCSP(aForm->GetPolicyContainer());
   if (csp) {
     bool permitsFormAction = true;
 
@@ -862,6 +866,13 @@ nsresult HTMLFormSubmission::GetFromForm(HTMLFormElement* aForm,
     }
     *aFormSubmission =
         new FSURLEncoded(actionURL, target, aEncoding, method, doc, aSubmitter);
+  }
+
+  // We store the FormData here to be able to set it on the load state when we
+  // submit the submission. It's used for the #navigate algorithm in the HTML
+  // spec and is only ever needed when the method is POST.
+  if (method == NS_FORM_METHOD_POST) {
+    (*aFormSubmission)->mFormData = aFormData;
   }
 
   return NS_OK;

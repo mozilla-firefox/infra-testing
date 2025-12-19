@@ -50,6 +50,7 @@ struct AutoPrepareFocusRange;
 struct PrimaryFrameData;
 namespace dom {
 class DocGroup;
+class ShadowRootOrGetComposedRangesOptions;
 }  // namespace dom
 }  // namespace mozilla
 
@@ -298,6 +299,10 @@ class Selection final : public nsSupportsWeakReference,
    * See mStyledRanges.mRanges.
    */
   nsRange* GetRangeAt(uint32_t aIndex) const;
+  nsRange* GetFirstRange() const { return GetRangeAt(0); }
+  nsRange* GetLastRange() const {
+    return RangeCount() ? GetRangeAt(RangeCount() - 1u) : nullptr;
+  }
 
   /**
    * @brief Get the |AbstractRange| at |aIndex|.
@@ -335,8 +340,7 @@ class Selection final : public nsSupportsWeakReference,
 
   UniquePtr<SelectionDetails> LookUpSelection(
       nsIContent* aContent, uint32_t aContentOffset, uint32_t aContentLength,
-      UniquePtr<SelectionDetails> aDetailsHead, SelectionType aSelectionType,
-      bool aSlowCheck);
+      UniquePtr<SelectionDetails> aDetailsHead, SelectionType aSelectionType);
 
   NS_IMETHOD Repaint(nsPresContext* aPresContext);
 
@@ -463,12 +467,11 @@ class Selection final : public nsSupportsWeakReference,
     }
 
     AbstractRange* range = mStyledRanges.mRanges[0].mRange;
-    MOZ_ASSERT_IF(
-        range->MayCrossShadowBoundary(),
-        !range->AsDynamicRange()->CrossShadowBoundaryRangeCollapsed());
-    // Returns false if nsRange::mCrossBoundaryRange exists,
-    // true otherwise.
-    return !range->MayCrossShadowBoundary();
+    if (range->MayCrossShadowBoundary()) {
+      return range->AsDynamicRange()->CrossShadowBoundaryRangeCollapsed();
+    }
+
+    return true;
   }
 
   // *JS() methods are mapped to Selection.*().
@@ -507,7 +510,10 @@ class Selection final : public nsSupportsWeakReference,
 
   MOZ_CAN_RUN_SCRIPT void RemoveAllRanges(mozilla::ErrorResult& aRv);
 
+  // https://www.w3.org/TR/selection-api/#ref-for-dom-selection-getcomposedranges-1
   void GetComposedRanges(
+      const ShadowRootOrGetComposedRangesOptions&
+          aShadowRootOrGetComposedRangesOptions,
       const Sequence<OwningNonNull<ShadowRoot>>& aShadowRoots,
       nsTArray<RefPtr<StaticRange>>& aComposedRanges);
 
@@ -934,11 +940,8 @@ class Selection final : public nsSupportsWeakReference,
       PostContentIterator& aPostOrderIter, nsIContent* aContent,
       bool aSelected) const;
 
-  /**
-   * https://dom.spec.whatwg.org/#concept-shadow-including-descendant
-   */
-  void SelectFramesOfShadowIncludingDescendantsOfContent(nsIContent* aContent,
-                                                         bool aSelected) const;
+  void SelectFramesOfFlattenedTreeOfContent(nsIContent* aContent,
+                                            bool aSelected) const;
 
   nsresult SelectFrames(nsPresContext* aPresContext, AbstractRange& aRange,
                         bool aSelect) const;

@@ -35,8 +35,9 @@ class MockConduit : public MediaSessionConduit {
       ConnectReceiverRtpEvent,
       void(MediaEventSourceExc<webrtc::RtpPacketReceived, webrtc::RTPHeader>&));
   MOCK_METHOD1(ConnectReceiverRtcpEvent,
-               void(MediaEventSourceExc<MediaPacket>&));
-  MOCK_METHOD1(ConnectSenderRtcpEvent, void(MediaEventSourceExc<MediaPacket>&));
+               void(MediaEventSourceExc<webrtc::CopyOnWriteBuffer>&));
+  MOCK_METHOD1(ConnectSenderRtcpEvent,
+               void(MediaEventSourceExc<webrtc::CopyOnWriteBuffer>&));
   MOCK_CONST_METHOD0(LastRtcpReceived, Maybe<DOMHighResTimeStamp>());
   MOCK_CONST_METHOD1(RtpSendBaseSeqFor, Maybe<uint16_t>(uint32_t));
   MOCK_CONST_METHOD0(GetNow, DOMHighResTimeStamp());
@@ -53,13 +54,15 @@ class MockConduit : public MediaSessionConduit {
                bool(const uint8_t*, size_t, const webrtc::PacketOptions&));
   MOCK_METHOD2(SendSenderRtcp, bool(const uint8_t*, size_t));
   MOCK_METHOD2(SendReceiverRtcp, bool(const uint8_t*, size_t));
-  MOCK_METHOD2(DeliverPacket, void(rtc::CopyOnWriteBuffer, PacketType));
+  MOCK_METHOD2(DeliverPacket, void(webrtc::CopyOnWriteBuffer, PacketType));
   MOCK_METHOD0(Shutdown, RefPtr<GenericPromise>());
+  MOCK_CONST_METHOD0(IsShutdown, bool());
   MOCK_METHOD0(AsAudioSessionConduit, Maybe<RefPtr<AudioSessionConduit>>());
   MOCK_METHOD0(AsVideoSessionConduit, Maybe<RefPtr<VideoSessionConduit>>());
   MOCK_CONST_METHOD0(GetCallStats, Maybe<webrtc::Call::Stats>());
   MOCK_METHOD1(SetJitterBufferTarget, void(DOMHighResTimeStamp));
-  MOCK_CONST_METHOD0(GetUpstreamRtpSources, std::vector<webrtc::RtpSource>());
+  MOCK_CONST_METHOD0(GetUpstreamRtpSources,
+                     const std::vector<webrtc::RtpSource>&());
 };
 }  // namespace mozilla
 

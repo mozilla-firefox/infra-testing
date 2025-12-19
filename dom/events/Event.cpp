@@ -10,19 +10,19 @@
 #include "base/basictypes.h"
 #include "ipc/IPCMessageUtils.h"
 #include "ipc/IPCMessageUtilsSpecializations.h"
-#include "mozilla/EventDispatcher.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ContentEvents.h"
 #include "mozilla/DOMEventTargetHelper.h"
+#include "mozilla/EventDispatcher.h"
 #include "mozilla/EventStateManager.h"
-#include "mozilla/InternalMutationEvent.h"
-#include "mozilla/dom/Performance.h"
-#include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/MiscEvents.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/PointerLockManager.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/SVGOuterSVGFrame.h"
+#include "mozilla/SVGUtils.h"
+#include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/TouchEvents.h"
@@ -30,20 +30,18 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/FragmentOrElement.h"
+#include "mozilla/dom/Performance.h"
 #include "mozilla/dom/ShadowRoot.h"
+#include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerScope.h"
-#include "mozilla/ScrollContainerFrame.h"
-#include "mozilla/StaticPrefs_dom.h"
-#include "mozilla/SVGUtils.h"
-#include "mozilla/SVGOuterSVGFrame.h"
-#include "nsContentUtils.h"
 #include "nsCOMPtr.h"
+#include "nsContentUtils.h"
 #include "nsDeviceContext.h"
 #include "nsError.h"
 #include "nsGlobalWindowInner.h"
-#include "nsIFrame.h"
 #include "nsIContent.h"
 #include "nsIContentInlines.h"
+#include "nsIFrame.h"
 #include "nsJSEnvironment.h"
 #include "nsLayoutUtils.h"
 #include "nsPIWindowRoot.h"
@@ -161,15 +159,13 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(Event)
         inputEvent->mTargetRanges.Clear();
         break;
       }
-      case eMutationEventClass:
-        tmp->mEvent->AsMutationEvent()->mRelatedNode = nullptr;
-        break;
       default:
         break;
     }
 
     if (WidgetMouseEvent* mouseEvent = tmp->mEvent->AsMouseEvent()) {
       mouseEvent->mClickTarget = nullptr;
+      mouseEvent->mTriggerEvent = nullptr;
     }
   }
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mExplicitOriginalTarget);
@@ -201,10 +197,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(Event)
         NS_IMPL_CYCLE_COLLECTION_TRAVERSE(
             mEvent->AsEditorInputEvent()->mTargetRanges);
         break;
-      case eMutationEventClass:
-        NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mEvent->mRelatedNode");
-        cb.NoteXPCOMChild(tmp->mEvent->AsMutationEvent()->mRelatedNode);
-        break;
       default:
         break;
     }
@@ -212,6 +204,8 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(Event)
     if (WidgetMouseEvent* mouseEvent = tmp->mEvent->AsMouseEvent()) {
       NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mEvent->mClickTarget");
       cb.NoteXPCOMChild(mouseEvent->mClickTarget);
+      NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mEvent->mTriggerEvent");
+      cb.NoteXPCOMChild(mouseEvent->mTriggerEvent);
     }
   }
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mExplicitOriginalTarget)
@@ -462,14 +456,16 @@ void Event::PreventDefault(JSContext* aCx, CallerType aCallerType) {
 void Event::PreventDefaultInternal(bool aCalledByDefaultHandler,
                                    nsIPrincipal* aPrincipal) {
   if (mEvent->mFlags.mInPassiveListener) {
-    if (nsPIDOMWindowInner* win = mOwner->GetAsInnerWindow()) {
-      if (Document* doc = win->GetExtantDoc()) {
-        if (!doc->HasWarnedAbout(
-                Document::ePreventDefaultFromPassiveListener)) {
-          AutoTArray<nsString, 1> params;
-          GetType(*params.AppendElement());
-          doc->WarnOnceAbout(Document::ePreventDefaultFromPassiveListener,
-                             false, params);
+    if (mOwner) {
+      if (nsPIDOMWindowInner* win = mOwner->GetAsInnerWindow()) {
+        if (Document* doc = win->GetExtantDoc()) {
+          if (!doc->HasWarnedAbout(
+                  Document::ePreventDefaultFromPassiveListener)) {
+            AutoTArray<nsString, 1> params;
+            GetType(*params.AppendElement());
+            doc->WarnOnceAbout(Document::ePreventDefaultFromPassiveListener,
+                               false, params);
+          }
         }
       }
     }

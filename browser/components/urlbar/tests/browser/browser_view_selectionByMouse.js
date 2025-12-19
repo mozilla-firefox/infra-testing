@@ -7,7 +7,7 @@
 
 ChromeUtils.defineESModuleGetters(this, {
   ActionsProviderQuickActions:
-    "resource:///modules/ActionsProviderQuickActions.sys.mjs",
+    "moz-src:///browser/components/urlbar/ActionsProviderQuickActions.sys.mjs",
 });
 
 add_setup(async function () {
@@ -342,25 +342,25 @@ add_task(async function buttons() {
   let provider = new UrlbarTestUtils.TestProvider({
     priority: Infinity,
     results: [
-      new UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.URL,
-        UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-        {
+      new UrlbarResult({
+        type: UrlbarUtils.RESULT_TYPE.URL,
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        payload: {
           url: mainResultUrl,
           helpUrl: mainResultHelpUrl,
           helpL10n: {
             id: "urlbar-result-menu-learn-more-about-firefox-suggest",
           },
           isBlockable: true,
-        }
-      ),
-      new UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.URL,
-        UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-        {
+        },
+      }),
+      new UrlbarResult({
+        type: UrlbarUtils.RESULT_TYPE.URL,
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        payload: {
           url: otherResultUrl,
-        }
-      ),
+        },
+      }),
     ],
   });
 
@@ -378,7 +378,7 @@ add_task(async function buttons() {
   let testData = [
     {
       description: "Menu button to menu button",
-      mousedown: ".urlbarView-row:nth-child(1) .urlbarView-button-menu",
+      mousedown: ".urlbarView-row:nth-child(1) .urlbarView-button-result-menu",
       afterMouseupCallback: assertResultMenuOpen,
       expected: {
         mousedownSelected: false,
@@ -395,7 +395,7 @@ add_task(async function buttons() {
     {
       description: "Row-inner to menu button",
       mousedown: ".urlbarView-row:nth-child(1) > .urlbarView-row-inner",
-      mouseup: ".urlbarView-row:nth-child(1) .urlbarView-button-menu",
+      mouseup: ".urlbarView-row:nth-child(1) .urlbarView-button-result-menu",
       afterMouseupCallback: assertResultMenuOpen,
       expected: {
         mousedownSelected: true,
@@ -411,7 +411,7 @@ add_task(async function buttons() {
     },
     {
       description: "Menu button to row-inner",
-      mousedown: ".urlbarView-row:nth-child(1) .urlbarView-button-menu",
+      mousedown: ".urlbarView-row:nth-child(1) .urlbarView-button-result-menu",
       mouseup: ".urlbarView-row:nth-child(1) > .urlbarView-row-inner",
       expected: {
         mousedownSelected: false,
@@ -483,11 +483,9 @@ add_task(async function buttons() {
         if (expected.url) {
           loadPromise = expected.newTab
             ? BrowserTestUtils.waitForNewTab(gBrowser, expected.url)
-            : BrowserTestUtils.browserLoaded(
-                gBrowser.selectedBrowser,
-                null,
-                expected.url
-              );
+            : BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser, {
+                wantLoad: expected.url,
+              });
         }
 
         // Mouseup and check the selection.

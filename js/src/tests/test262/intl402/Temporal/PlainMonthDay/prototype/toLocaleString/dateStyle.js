@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2024 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -29,6 +29,12 @@ assert(
 assert(
   !dateIslamic.toLocaleString("en-u-ca-islamic-tbla", { dateStyle: "short" }).includes("Ramadan"),
   "dateStyle: short does not write month of Ramadan out in full"
+);
+
+const dateWithReferenceYear = new Temporal.PlainMonthDay(5, 31, "gregory", 2222);
+assert(
+  !dateWithReferenceYear.toLocaleString("en", { dateStyle: "full" }).includes("2222"),
+  "dateStyle: full should not format reference year at all"
 );
 
 reportCompare(0, 0);

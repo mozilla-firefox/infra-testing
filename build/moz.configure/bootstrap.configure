@@ -7,18 +7,18 @@
 option(
     env="MOZ_FETCHES_DIR",
     nargs=1,
-    when="MOZ_AUTOMATION",
+    when=moz_automation,
     help="Directory containing fetched artifacts",
 )
 
 
-@depends("MOZ_FETCHES_DIR", when="MOZ_AUTOMATION")
+@depends("MOZ_FETCHES_DIR", when=moz_automation)
 def moz_fetches_dir(value):
     if value:
         return value[0]
 
 
-@depends(vcs_checkout_type, milestone.is_nightly, "MOZ_AUTOMATION")
+@depends(vcs_checkout_type, milestone.is_nightly, moz_automation)
 def bootstrap_default(vcs_checkout_type, is_nightly, automation):
     if automation:
         return False
@@ -35,7 +35,7 @@ option(
 )
 
 
-@depends_if("--enable-bootstrap")
+@depends("--enable-bootstrap")
 def want_bootstrap(bootstrap):
     include = set()
     exclude = set()
@@ -48,6 +48,9 @@ def want_bootstrap(bootstrap):
             include.add(item)
 
     def match(name):
+        if not bootstrap:
+            return False
+
         if name in exclude:
             return False
         if include and name in include:
@@ -92,8 +95,8 @@ def bootstrap_toolchain_tasks(host):
     def task_data(t):
         result = {
             "index": t.optimization["index-search"],
-            "artifact": t.attributes["toolchain-artifact"],
-            "extract": t.attributes.get("toolchain-extract", True),
+            "artifact": t.attributes[f"{t.kind}-artifact"],
+            "extract": t.attributes.get(f"{t.kind}-extract", True),
         }
         command = t.attributes.get("toolchain-command")
         if command:
@@ -105,7 +108,9 @@ def bootstrap_toolchain_tasks(host):
     tasks = {
         k: task_data(t)
         for k, t in tasks.items()
-        if t.attributes.get("local-toolchain") and "index-search" in t.optimization
+        if t.attributes.get(f"local-{t.kind}")
+        and t.optimization
+        and "index-search" in t.optimization
     }
 
     return namespace(prefix=prefix, tasks=tasks)
@@ -165,8 +170,11 @@ def bootstrap_path(path, **kwargs):
             if tasks.prefix:
                 prefixes.insert(0, "{}-".format(tasks.prefix))
             for prefix in prefixes:
-                label = "toolchain-{}{}".format(prefix, path_parts[0])
-                task = tasks.tasks.get(label)
+                for kind in ("toolchain", "fetch"):
+                    label = f"{kind}-{prefix}{path_parts[0]}"
+                    task = tasks.tasks.get(label)
+                    if task:
+                        break
                 if task:
                     break
             log.debug("Trying to bootstrap %s", label)
@@ -275,7 +283,7 @@ def bootstrap_path(path, **kwargs):
             return True
 
         path = os.path.join(toolchains_base_dir, path_prefix, *path_parts)
-        if enable_bootstrap and want_bootstrap(path_parts[0]):
+        if want_bootstrap(path_parts[0]):
             exists = os.path.exists(path)
             try:
                 # With --enable-bootstrap=no-update, we don't `try_bootstrap`, except

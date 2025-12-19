@@ -5,6 +5,7 @@ import {
   GlobalOverrider,
   FakeConsoleAPI,
   FakeLogger,
+  FakeNimbusFeatures,
 } from "test/unit/utils";
 import Adapter from "enzyme-adapter-react-16";
 import { chaiAssertions } from "test/schemas/pings";
@@ -68,6 +69,12 @@ class JSWindowActorChild {
       Promise,
     };
   }
+}
+
+class NewTabContentPing {
+  recordEvent() {}
+  scheduleSubmission() {}
+  uninit() {}
 }
 
 // Detect plain object passed to lazy getter APIs, and set its prototype to
@@ -167,6 +174,9 @@ const TEST_GLOBAL = {
   ContentSearchUIController: function () {},
   // eslint-disable-next-line object-shorthand
   ContentSearchHandoffUIController: function () {},
+  ContextId: {
+    request: () => "ContextId",
+  },
   Cc: {
     "@mozilla.org/browser/nav-bookmarks-service;1": {
       addObserver() {},
@@ -188,6 +198,7 @@ const TEST_GLOBAL = {
       insert() {},
       markPageAsTyped() {},
       removeObserver() {},
+      pageFrecencyThreshold() {},
     },
     "@mozilla.org/io/string-input-stream;1": {
       createInstance() {
@@ -214,6 +225,11 @@ const TEST_GLOBAL = {
         return {};
       },
     },
+    "@mozilla.org/network/protocol;1?name=http": {
+      getService() {
+        return this;
+      },
+    },
   },
   Ci: {
     nsICryptoHash: {},
@@ -234,6 +250,7 @@ const TEST_GLOBAL = {
       MODE_REJECT_OR_ACCEPT: 2,
       MODE_UNSET: 3,
     },
+    nsIProtocolProxyChannelFilter: {},
   },
   Cu: {
     importGlobalProperties() {},
@@ -430,6 +447,20 @@ const TEST_GLOBAL = {
       createNullPrincipal() {},
       getSystemPrincipal() {},
     },
+    vc: {
+      compare(a, b) {
+        // Rather than re-write Services.vc.compare completely, do
+        // a simple comparison of the major version.
+        // This means this function will give the wrong output for differences
+        // in minor versions, but should be sufficient for unit tests.
+        let majorA = parseInt(a, 10);
+        let majorB = parseInt(b, 10);
+        if (majorA === majorB) {
+          return 0;
+        }
+        return majorA > majorB ? 1 : -1;
+      },
+    },
     wm: {
       getMostRecentWindow: () => window,
       getMostRecentBrowserWindow: () => window,
@@ -488,30 +519,18 @@ const TEST_GLOBAL = {
     },
   },
   FX_MONITOR_OAUTH_CLIENT_ID: "fake_client_id",
-  ExperimentAPI: {
-    getExperimentMetaData() {},
-    getRolloutMetaData() {},
-  },
-  NimbusFeatures: {
-    glean: {
-      getVariable() {},
-    },
-    newtab: {
-      getVariable() {},
-      getAllVariables() {},
-      onUpdate() {},
-      offUpdate() {},
-    },
-    pocketNewtab: {
-      getVariable() {},
-      getAllVariables() {},
-      onUpdate() {},
-      offUpdate() {},
-    },
-    cookieBannerHandling: {
-      getVariable() {},
-    },
-  },
+  ExperimentAPI: {},
+  NimbusFeatures: FakeNimbusFeatures([
+    "glean",
+    "newtab",
+    "newtabTrainhop",
+    "pocketNewtab",
+    "newtabSmartShortcuts",
+    "newtabInferredPersonalization",
+    "newtabWidgets",
+    "newtabOhttpImages",
+    "cookieBannerHandling",
+  ]),
   TelemetryEnvironment: {
     setExperimentActive() {},
     currentEnvironment: {
@@ -684,8 +703,14 @@ const TEST_GLOBAL = {
       submit() {},
     },
   },
+  userAgent: "",
   Utils: {
     SERVER_URL: "bogus://foo",
+  },
+  NewTabContentPing,
+  ProxyService: {
+    registerChannelFilter() {},
+    unregisterChannelFilter() {},
   },
 };
 overrider.set(TEST_GLOBAL);

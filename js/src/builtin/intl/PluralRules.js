@@ -196,7 +196,7 @@ function InitializePluralRules(pluralRules, locales, options) {
   }
 
   // Step 3.
-  var opt = new_Record();
+  var opt = NEW_RECORD();
   lazyPluralRulesData.opt = opt;
 
   // Steps 4-5.
@@ -230,28 +230,6 @@ function InitializePluralRules(pluralRules, locales, options) {
 }
 
 /**
- * 16.2.2 Intl.PluralRules.supportedLocalesOf ( locales [ , options ] )
- *
- * Returns the subset of the given locale list for which this locale list has a
- * matching (possibly fallback) locale. Locales appear in the same order in the
- * returned list as in the input list.
- *
- * ES2024 Intl draft rev 74ca7099f103d143431b2ea422ae640c6f43e3e6
- */
-function Intl_PluralRules_supportedLocalesOf(locales /*, options*/) {
-  var options = ArgumentsLength() > 1 ? GetArgument(1) : undefined;
-
-  // Step 1.
-  var availableLocales = "PluralRules";
-
-  // Step 2.
-  var requestedLocales = CanonicalizeLocaleList(locales);
-
-  // Step 3.
-  return SupportedLocales(availableLocales, requestedLocales, options);
-}
-
-/**
  * 16.3.3 Intl.PluralRules.prototype.select ( value )
  *
  * Returns a String value representing the plural category matching
@@ -278,7 +256,7 @@ function Intl_PluralRules_select(value) {
   }
 
   // Step 3.
-  var n = ToNumber(value);
+  var n = TO_NUMBER(value);
 
   // Ensure the PluralRules internals are resolved.
   getPluralRulesInternals(pluralRules);
@@ -325,10 +303,10 @@ function Intl_PluralRules_selectRange(start, end) {
   }
 
   // Step 4.
-  var x = ToNumber(start);
+  var x = TO_NUMBER(start);
 
   // Step 5.
-  var y = ToNumber(end);
+  var y = TO_NUMBER(end);
 
   // Step 6.
   return intl_SelectPluralRuleRange(pluralRules, x, y);

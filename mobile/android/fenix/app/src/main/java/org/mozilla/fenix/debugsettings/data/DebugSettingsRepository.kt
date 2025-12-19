@@ -55,6 +55,7 @@ class DefaultDebugSettingsRepository(
 
     override val debugDrawerEnabled: Flow<Boolean> =
         dataStore.data.map { preferences ->
+            // On first lookup, when value does not exist yet, we default to true in debug mode
             preferences[debugDrawerEnabledKey] ?: false
         }
 

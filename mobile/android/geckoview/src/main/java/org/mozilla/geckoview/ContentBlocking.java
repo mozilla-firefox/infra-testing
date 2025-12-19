@@ -74,18 +74,44 @@ public class ContentBlocking {
           .dataSharingEnabled(false)
           .build();
 
-  // This class shouldn't be instantiated
+  /** {@link SafeBrowsingProvider} configuration for Google's SafeBrowsing V5 server. */
+  public static final SafeBrowsingProvider GOOGLE_SAFE_BROWSING_V5_PROVIDER =
+      SafeBrowsingProvider.withName("google5")
+          .lists(
+              "goog-badbinurl-proto",
+              "goog-downloadwhite-proto",
+              "goog-phish-proto",
+              "googpub-phish-proto",
+              "goog-malware-proto",
+              "goog-unwanted-proto",
+              "goog-harmful-proto")
+          .updateUrl(
+              "https://safebrowsing.googleapis.com/v5/hashLists:batchGet?key=%GOOGLE_SAFEBROWSING_API_KEY%")
+          .getHashUrl(
+              "https://safebrowsing.googleapis.com/v5/hashes:search?key=%GOOGLE_SAFEBROWSING_API_KEY%")
+          .reportUrl("https://safebrowsing.google.com/safebrowsing/diagnostic?site=")
+          .reportPhishingMistakeUrl("https://%LOCALE%.phish-error.mozilla.com/?url=")
+          .reportMalwareMistakeUrl("https://%LOCALE%.malware-error.mozilla.com/?url=")
+          .advisoryUrl("https://developers.google.com/safe-browsing/v4/advisory")
+          .advisoryName("Google Safe Browsing")
+          .enabled(true)
+          .build();
+
+  /** Protected constructor - this class shouldn't be instantiated. */
   protected ContentBlocking() {}
 
+  /** Content blocking settings for configuring various blocking features. */
   @AnyThread
   public static class Settings extends RuntimeSettings {
     private final Map<String, SafeBrowsingProvider> mSafeBrowsingProviders = new HashMap<>();
 
     private static final SafeBrowsingProvider[] DEFAULT_PROVIDERS = {
       ContentBlocking.GOOGLE_LEGACY_SAFE_BROWSING_PROVIDER,
-      ContentBlocking.GOOGLE_SAFE_BROWSING_PROVIDER
+      ContentBlocking.GOOGLE_SAFE_BROWSING_PROVIDER,
+      ContentBlocking.GOOGLE_SAFE_BROWSING_V5_PROVIDER
     };
 
+    /** Builder for constructing ContentBlocking Settings instances. */
     @AnyThread
     public static class Builder extends RuntimeSettings.Builder<Settings> {
       @Override
@@ -190,6 +216,23 @@ public class ContentBlocking {
        */
       public @NonNull Builder enhancedTrackingProtectionLevel(final @CBEtpLevel int level) {
         getSettings().setEnhancedTrackingProtectionLevel(level);
+        return this;
+      }
+
+      /**
+       * Set the ETP behavior category.
+       *
+       * <p>Note that there is a difference between ETP "level" and ETP "category". Level refers to
+       * whether content blocking should use the regular or the strict list, or should be disabled
+       * entirely. While "category" refers to the preset of anti-tracking features under the ETP
+       * umbrella that should be enabled.
+       *
+       * @param category The category of ETP blocking to use.
+       * @return The Builder instance.
+       */
+      public @NonNull Builder enhancedTrackingProtectionCategory(
+          final @CBEtpCategory int category) {
+        getSettings().setEnhancedTrackingProtectionCategory(category);
         return this;
       }
 
@@ -337,6 +380,43 @@ public class ContentBlocking {
         getSettings().setCookieBannerDetectOnlyMode(enabled);
         return this;
       }
+
+      /**
+       * Sets the bounce tracking protection mode.
+       *
+       * @param mode A int indicating the new mode.
+       * @return The Builder instance.
+       */
+      public @NonNull Builder bounceTrackingProtectionMode(
+          final @CBCBounceTrackingProtectionMode int mode) {
+        getSettings().setBounceTrackingProtectionMode(mode);
+        return this;
+      }
+
+      /**
+       * When set to true, the baseline allow list for tracking protection is enabled. The baseline
+       * allow list includes entries for fixing major site breakages.
+       *
+       * @param enabled A boolean indicating whether to enable the baseline allow list.
+       * @return The Builder instance.
+       */
+      public @NonNull Builder allowListBaselineTrackingProtection(final boolean enabled) {
+        getSettings().setAllowListBaselineTrackingProtection(enabled);
+        return this;
+      }
+
+      /**
+       * When set to true, the convenience allow list for tracking protection is enabled. The
+       * convenience allow list includes entries for fixing convenience features, such as the review
+       * section.
+       *
+       * @param enabled A boolean indicating whether to enable the convenience allow list.
+       * @return The Builder instance.
+       */
+      public @NonNull Builder allowListConvenienceTrackingProtection(final boolean enabled) {
+        getSettings().setAllowListConvenienceTrackingProtection(enabled);
+        return this;
+      }
     }
 
     /* package */ final Pref<String> mAt =
@@ -367,6 +447,8 @@ public class ContentBlocking {
         new Pref<Boolean>("browser.safebrowsing.malware.enabled", true);
     /* package */ final Pref<Boolean> mSbPhishing =
         new Pref<Boolean>("browser.safebrowsing.phishing.enabled", true);
+    /* package */ final Pref<Boolean> mSbHarmfulAddon =
+        new Pref<Boolean>("privacy.trackingprotection.harmfuladdon.enabled", true);
     /* package */ final Pref<Integer> mCookieBehavior =
         new Pref<Integer>(
             "network.cookie.cookieBehavior", CookieBehavior.ACCEPT_FIRST_PARTY_AND_ISOLATE_OTHERS);
@@ -381,6 +463,15 @@ public class ContentBlocking {
         new Pref<Boolean>("privacy.trackingprotection.annotate_channels", false);
     /* package */ final Pref<Boolean> mEtpStrict =
         new Pref<Boolean>("privacy.annotate_channels.strict_list.enabled", false);
+
+    /* package */ final Pref<String> mEtpCategory =
+        new Pref<String>("browser.contentblocking.category", "standard");
+
+    /* package */ final Pref<Boolean> mAllowListBaselineTrackingProtection =
+        new Pref<Boolean>("privacy.trackingprotection.allow_list.baseline.enabled", true);
+
+    /* package */ final Pref<Boolean> mAllowListConvenienceTrackingProtection =
+        new Pref<Boolean>("privacy.trackingprotection.allow_list.convenience.enabled", true);
 
     /* package */ final Pref<Integer> mCbhMode =
         new Pref<Integer>(
@@ -411,6 +502,11 @@ public class ContentBlocking {
     /* package */ final Pref<String> mQueryParameterStrippingStripList =
         new Pref<>("privacy.query_stripping.strip_list", "");
 
+    /* package */ final Pref<Integer> mBounceTrackingProtectionMode =
+        new Pref<Integer>(
+            "privacy.bounceTrackingProtection.mode",
+            BounceTrackingProtectionMode.BOUNCE_TRACKING_PROTECTION_MODE_DISABLED);
+
     /* package */ final Pref<Boolean> mEtb =
         new Pref<Boolean>("privacy.trackingprotection.emailtracking.enabled", false);
 
@@ -421,6 +517,11 @@ public class ContentBlocking {
         new Pref<String>(
             "urlclassifier.features.emailtracking.blocklistTables",
             ContentBlocking.catToPref(AntiTracking.NONE, AntiTracking.EMAIL, EMAIL));
+
+    /* package */ final Pref<String> mSbHarmfulAddonList =
+        new Pref<String>(
+            "urlclassifier.features.harmfuladdon.blocklistTables",
+            ContentBlocking.catToPref(AntiTracking.NONE, SafeBrowsing.HARMFULADDON, HARMFULADDON));
 
     /* package */ final Pref<String> mSafeBrowsingMalwareTable =
         new Pref<>(
@@ -496,8 +597,9 @@ public class ContentBlocking {
      * Sets the collection of {@link SafeBrowsingProvider} for this runtime.
      *
      * <p>By default the collection is composed of {@link
-     * ContentBlocking#GOOGLE_LEGACY_SAFE_BROWSING_PROVIDER} and {@link
-     * ContentBlocking#GOOGLE_SAFE_BROWSING_PROVIDER}.
+     * ContentBlocking#GOOGLE_LEGACY_SAFE_BROWSING_PROVIDER}, {@link
+     * ContentBlocking#GOOGLE_SAFE_BROWSING_PROVIDER} and {@link
+     * ContentBlocking#GOOGLE_SAFE_BROWSING_V5_PROVIDER}.
      *
      * @param providers {@link SafeBrowsingProvider} instances for this runtime.
      * @return the {@link Settings} instance.
@@ -511,6 +613,41 @@ public class ContentBlocking {
         mSafeBrowsingProviders.put(provider.getName(), new SafeBrowsingProvider(this, provider));
       }
 
+      return this;
+    }
+
+    /**
+     * Get whether Safe Browsing V5 is enabled.
+     *
+     * @return Whether Safe Browsing V5 is enabled.
+     */
+    public @NonNull Boolean getSafeBrowsingV5Enabled() {
+      final SafeBrowsingProvider provider = mSafeBrowsingProviders.get("google5");
+      if (provider == null) {
+        return false;
+      }
+
+      final Boolean enabled = provider.getEnabled();
+      if (enabled == null) {
+        return false;
+      }
+
+      return enabled;
+    }
+
+    /**
+     * Set the value to control whether Safe Browsing V5 is enabled.
+     *
+     * @param enabled Whether we set the Safe Browsing V5 to enabled or disabled
+     * @return the {@link Settings} instance.
+     */
+    public @NonNull Settings setSafeBrowsingV5Enabled(final boolean enabled) {
+      final SafeBrowsingProvider provider = mSafeBrowsingProviders.get("google5");
+      if (provider == null) {
+        return this;
+      }
+
+      provider.mEnabled.commit(enabled);
       return this;
     }
 
@@ -631,6 +768,11 @@ public class ContentBlocking {
     /**
      * Set the ETP behavior level.
      *
+     * <p>Note that there is a difference between ETP "level" and ETP "category". Level refers to
+     * whether content blocking should use the regular or the strict list, or should be disabled
+     * entirely. While "category" refers to the preset of anti-tracking features under the ETP
+     * umbrella that should be enabled.
+     *
      * @param level The level of ETP blocking to use; must be one of {@link
      *     ContentBlocking.EtpLevel} flags. Only takes effect if the cookie behavior is {@link
      *     ContentBlocking.CookieBehavior#ACCEPT_NON_TRACKERS} or {@link
@@ -641,6 +783,26 @@ public class ContentBlocking {
       mEtpEnabled.commit(
           level == ContentBlocking.EtpLevel.DEFAULT || level == ContentBlocking.EtpLevel.STRICT);
       mEtpStrict.commit(level == ContentBlocking.EtpLevel.STRICT);
+      return this;
+    }
+
+    /**
+     * Set the ETP behavior category.
+     *
+     * @param category The category of ETP blocking to use.
+     * @return This Settings instance.
+     */
+    public @NonNull Settings setEnhancedTrackingProtectionCategory(
+        final @CBEtpCategory int category) {
+
+      if (category == ContentBlocking.EtpCategory.STANDARD) {
+        mEtpCategory.commit("standard");
+      } else if (category == ContentBlocking.EtpCategory.STRICT) {
+        mEtpCategory.commit("strict");
+      } else if (category == ContentBlocking.EtpCategory.CUSTOM) {
+        mEtpCategory.commit("custom");
+      }
+
       return this;
     }
 
@@ -668,6 +830,7 @@ public class ContentBlocking {
     public @NonNull Settings setSafeBrowsing(final @CBSafeBrowsing int cat) {
       mSbMalware.commit(ContentBlocking.catToSbMalware(cat));
       mSbPhishing.commit(ContentBlocking.catToSbPhishing(cat));
+      mSbHarmfulAddon.commit(ContentBlocking.catToSbHarmfulAddon(cat));
       return this;
     }
 
@@ -699,6 +862,22 @@ public class ContentBlocking {
     }
 
     /**
+     * Get the set ETP behavior category.
+     *
+     * @return The current ETP category; one of {@link ContentBlocking.EtpCategory}.
+     */
+    public @CBEtpCategory int getEnhancedTrackingProtectionCategory() {
+      final String category = mEtpCategory.get();
+      if ("strict".equals(category)) {
+        return ContentBlocking.EtpCategory.STRICT;
+      } else if ("standard".equals(category)) {
+        return ContentBlocking.EtpCategory.STANDARD;
+      } else {
+        return ContentBlocking.EtpCategory.CUSTOM;
+      }
+    }
+
+    /**
      * Get whether or not strict social tracking protection is enabled.
      *
      * @return A boolean indicating whether or not strict social tracking protection is enabled.
@@ -714,7 +893,8 @@ public class ContentBlocking {
      */
     public @CBSafeBrowsing int getSafeBrowsingCategories() {
       return ContentBlocking.sbMalwareToSbCat(mSbMalware.get())
-          | ContentBlocking.sbPhishingToSbCat(mSbPhishing.get());
+          | ContentBlocking.sbPhishingToSbCat(mSbPhishing.get())
+          | ContentBlocking.sbHarmfulAddonToSbCat(mSbHarmfulAddon.get());
     }
 
     /**
@@ -953,6 +1133,7 @@ public class ContentBlocking {
       return mCbhModePrivateBrowsing.get();
     }
 
+    /** Parcelable creator for ContentBlocking Settings instances. */
     public static final Parcelable.Creator<Settings> CREATOR =
         new Parcelable.Creator<Settings>() {
           @Override
@@ -967,6 +1148,68 @@ public class ContentBlocking {
             return new Settings[size];
           }
         };
+
+    /**
+     * Get the current mode of the bounce tracking protection. See nsIBounceTrackingProtection.idl
+     * for mode descriptions.
+     *
+     * @return int indicating the bounce tracking protection mode.
+     */
+    public @CBCBounceTrackingProtectionMode int getBounceTrackingProtectionMode() {
+      return mapToBounceTrackingProtectionMode(mBounceTrackingProtectionMode.get());
+    }
+
+    /**
+     * Sets the bounce tracking protection mode.
+     *
+     * @param mode A int indicating the new mode.
+     * @return This Settings instance.
+     */
+    public @NonNull Settings setBounceTrackingProtectionMode(
+        final @CBCBounceTrackingProtectionMode int mode) {
+      mBounceTrackingProtectionMode.commit(mode);
+      return this;
+    }
+
+    /**
+     * Gets the tracking protection baseline allow list status.
+     *
+     * @return Indicates if the baseline allow list is enabled or not.
+     */
+    public boolean getAllowListBaselineTrackingProtection() {
+      return mAllowListBaselineTrackingProtection.get();
+    }
+
+    /**
+     * Gets the tracking protection convenience allow list status.
+     *
+     * @return Indicates if the convenience allow list is enabled or not.
+     */
+    public boolean getAllowListConvenienceTrackingProtection() {
+      return mAllowListConvenienceTrackingProtection.get();
+    }
+
+    /**
+     * Sets the tracking protection allow list baseline status.
+     *
+     * @param enabled A boolean indicating whether to enable the baseline allow list.
+     * @return This Settings instance.
+     */
+    public @NonNull Settings setAllowListBaselineTrackingProtection(final boolean enabled) {
+      mAllowListBaselineTrackingProtection.commit(enabled);
+      return this;
+    }
+
+    /**
+     * Sets the tracking protection allow list convenience status.
+     *
+     * @param enabled A boolean indicating whether to enable the convenience allow list.
+     * @return This Settings instance.
+     */
+    public @NonNull Settings setAllowListConvenienceTrackingProtection(final boolean enabled) {
+      mAllowListConvenienceTrackingProtection.commit(enabled);
+      return this;
+    }
   }
 
   /**
@@ -976,8 +1219,9 @@ public class ContentBlocking {
    * custom SafeBrowsing provider to the app. <br>
    * <br>
    * Default configuration for Google's SafeBrowsing servers can be found at {@link
-   * ContentBlocking#GOOGLE_SAFE_BROWSING_PROVIDER} and {@link
-   * ContentBlocking#GOOGLE_LEGACY_SAFE_BROWSING_PROVIDER}. <br>
+   * ContentBlocking#GOOGLE_SAFE_BROWSING_PROVIDER}, {@link
+   * ContentBlocking#GOOGLE_LEGACY_SAFE_BROWSING_PROVIDER} and {@link
+   * ContentBlocking#GOOGLE_SAFE_BROWSING_V5_PROVIDER}. <br>
    * <br>
    * This class is immutable, once constructed its values cannot be changed. <br>
    * <br>
@@ -1017,6 +1261,7 @@ public class ContentBlocking {
    *         custom,
    *         // Add this if you want to keep the existing configuration too.
    *         ContentBlocking.GOOGLE_SAFE_BROWSING_PROVIDER,
+   *         ContentBlocking.GOOGLE_SAFE_BROWSING_V5_PROVIDER,
    *         ContentBlocking.GOOGLE_LEGACY_SAFE_BROWSING_PROVIDER);
    * </code></pre>
    *
@@ -1051,6 +1296,7 @@ public class ContentBlocking {
     /* package */ final Pref<String> mAdvisoryName;
     /* package */ final Pref<String> mDataSharingUrl;
     /* package */ final Pref<Boolean> mDataSharingEnabled;
+    /* package */ final Pref<Boolean> mEnabled;
 
     /**
      * Creates a {@link SafeBrowsingProvider.Builder} for a provider with the given name.
@@ -1084,6 +1330,7 @@ public class ContentBlocking {
       return new Builder(provider);
     }
 
+    /** Builder for constructing SafeBrowsingProvider instances. */
     @AnyThread
     public static class Builder {
       final SafeBrowsingProvider mProvider;
@@ -1232,6 +1479,17 @@ public class ContentBlocking {
       }
 
       /**
+       * Set whether to enable this provider. This is currently only used for the SafeBrowsing V5.
+       *
+       * @param enabled <code>true</code> if the provider should be enabled.
+       * @return this {@link Builder} instance.
+       */
+      public @NonNull Builder enabled(final boolean enabled) {
+        mProvider.mEnabled.set(enabled);
+        return this;
+      }
+
+      /**
        * Build the {@link SafeBrowsingProvider} based on this {@link Builder} instance.
        *
        * @return thie {@link SafeBrowsingProvider} instance.
@@ -1277,6 +1535,7 @@ public class ContentBlocking {
       mAdvisoryName = new Pref<>(ROOT + mName + ".advisoryName", null);
       mDataSharingUrl = new Pref<>(ROOT + mName + ".dataSharingURL", null);
       mDataSharingEnabled = new Pref<>(ROOT + mName + ".dataSharing.enabled", false);
+      mEnabled = new Pref<>(ROOT + mName + ".enabled", null);
 
       if (source != null) {
         updatePrefs(source);
@@ -1403,6 +1662,15 @@ public class ContentBlocking {
       return mDataSharingEnabled.get();
     }
 
+    /**
+     * Get whether this provider is enabled. This is currently only used for the SafeBrowsing V5.
+     *
+     * @return <code>true</code> if the provider is enabled, <code>false</code> otherwise.
+     */
+    public @Nullable Boolean getEnabled() {
+      return mEnabled.get();
+    }
+
     @Override // Parcelable
     @AnyThread
     public void writeToParcel(final Parcel out, final int flags) {
@@ -1454,7 +1722,9 @@ public class ContentBlocking {
     return pref != null ? pref.split(",") : new String[] {};
   }
 
+  /** Anti-tracking content blocking constants. */
   public static class AntiTracking {
+    /** No anti-tracking protection. */
     public static final int NONE = 0;
 
     /** Block advertisement trackers. */
@@ -1493,9 +1763,11 @@ public class ContentBlocking {
     /** Block all known trackers. May cause issues with some web sites. */
     public static final int STRICT = DEFAULT | CONTENT | CRYPTOMINING | FINGERPRINTING | EMAIL;
 
+    /** Protected constructor for AntiTracking. */
     protected AntiTracking() {}
   }
 
+  /** Content blocking anti-tracking type definitions. */
   @Retention(RetentionPolicy.SOURCE)
   @IntDef(
       flag = true,
@@ -1515,7 +1787,9 @@ public class ContentBlocking {
       })
   public @interface CBAntiTracking {}
 
+  /** Safe browsing content blocking constants. */
   public static class SafeBrowsing {
+    /** No safe browsing protection. */
     public static final int NONE = 0;
 
     /** Block malware sites. */
@@ -1530,23 +1804,30 @@ public class ContentBlocking {
     /** Block phishing sites. */
     public static final int PHISHING = 1 << 13;
 
-    /** Block all unsafe sites. */
-    public static final int DEFAULT = MALWARE | UNWANTED | HARMFUL | PHISHING;
+    /** Block harmful add-on sites. */
+    public static final int HARMFULADDON = 1 << 14;
 
+    /** Block all unsafe sites. */
+    public static final int DEFAULT = MALWARE | UNWANTED | HARMFUL | PHISHING | HARMFULADDON;
+
+    /** Protected constructor for SafeBrowsing. */
     protected SafeBrowsing() {}
   }
 
+  /** Content blocking safe browsing type definitions. */
   @Retention(RetentionPolicy.SOURCE)
   @IntDef(
       flag = true,
       value = {
         SafeBrowsing.MALWARE, SafeBrowsing.UNWANTED,
         SafeBrowsing.HARMFUL, SafeBrowsing.PHISHING,
-        SafeBrowsing.DEFAULT, SafeBrowsing.NONE
+        SafeBrowsing.HARMFULADDON, SafeBrowsing.DEFAULT,
+        SafeBrowsing.NONE
       })
   public @interface CBSafeBrowsing {}
 
   // Sync values with nsICookieService.idl.
+  /** Cookie behavior content blocking constants. */
   public static class CookieBehavior {
     /** Accept first-party and third-party cookies and site data. */
     public static final int ACCEPT_ALL = 0;
@@ -1578,9 +1859,11 @@ public class ContentBlocking {
      */
     public static final int ACCEPT_FIRST_PARTY_AND_ISOLATE_OTHERS = 5;
 
+    /** Protected constructor for CookieBehavior. */
     protected CookieBehavior() {}
   }
 
+  /** Content blocking cookie behavior type definitions. */
   @Retention(RetentionPolicy.SOURCE)
   @IntDef({
     CookieBehavior.ACCEPT_ALL,
@@ -1592,6 +1875,7 @@ public class ContentBlocking {
   })
   public @interface CBCookieBehavior {}
 
+  /** Content blocking ETP level type definitions. */
   @Retention(RetentionPolicy.SOURCE)
   @IntDef({EtpLevel.NONE, EtpLevel.DEFAULT, EtpLevel.STRICT})
   public @interface CBEtpLevel {}
@@ -1610,6 +1894,23 @@ public class ContentBlocking {
     public static final int STRICT = 2;
   }
 
+  /** Content blocking ETP category type definitions. */
+  @Retention(RetentionPolicy.SOURCE)
+  @IntDef({EtpCategory.STANDARD, EtpCategory.STRICT, EtpCategory.CUSTOM})
+  public @interface CBEtpCategory {}
+
+  /** Possible settings for ETP category. */
+  public static class EtpCategory {
+    /** The default ETP category, balancing privacy and web compatibility. */
+    public static final int STANDARD = 0;
+
+    /** The strict ETP category, blocking more trackers but potentially breaking more sites. */
+    public static final int STRICT = 1;
+
+    /** The custom ETP category, allowing the user to choose which anti-tracking to enable. */
+    public static final int CUSTOM = 2;
+  }
+
   /** Holds content block event details. */
   public static class BlockEvent {
     /** The URI of the blocked resource. */
@@ -1620,7 +1921,15 @@ public class ContentBlocking {
     private final @CBCookieBehavior int mCookieBehaviorCat;
     private final boolean mIsBlocking;
 
-    @SuppressWarnings("checkstyle:javadocmethod")
+    /**
+     * Constructor for BlockEvent.
+     *
+     * @param uri The URI of the blocked resource
+     * @param atCat The anti-tracking category
+     * @param sbCat The safe browsing category
+     * @param cbCat The cookie behavior category
+     * @param isBlocking Whether the resource is being blocked
+     */
     public BlockEvent(
         @NonNull final String uri,
         final @CBAntiTracking int atCat,
@@ -1690,8 +1999,12 @@ public class ContentBlocking {
           blocking);
     }
 
+    /**
+     * Get whether this resource is being blocked.
+     *
+     * @return true if the resource is being blocked, false otherwise
+     */
     @UiThread
-    @SuppressWarnings("checkstyle:javadocmethod")
     public boolean isBlocking() {
       return mIsBlocking;
     }
@@ -1731,6 +2044,7 @@ public class ContentBlocking {
   private static final String STP =
       "social-tracking-protection-facebook-digest256,social-tracking-protection-linkedin-digest256,social-tracking-protection-twitter-digest256";
   private static final String EMAIL = "base-email-track-digest256";
+  private static final String HARMFULADDON = "harmfuladdon-block-digest256";
 
   /* package */ static @CBSafeBrowsing int sbMalwareToSbCat(final boolean enabled) {
     return enabled
@@ -1742,12 +2056,20 @@ public class ContentBlocking {
     return enabled ? SafeBrowsing.PHISHING : SafeBrowsing.NONE;
   }
 
+  /* package */ static @CBSafeBrowsing int sbHarmfulAddonToSbCat(final boolean enabled) {
+    return enabled ? SafeBrowsing.HARMFULADDON : SafeBrowsing.NONE;
+  }
+
   /* package */ static boolean catToSbMalware(@CBSafeBrowsing final int cat) {
     return (cat & (SafeBrowsing.MALWARE | SafeBrowsing.UNWANTED | SafeBrowsing.HARMFUL)) != 0;
   }
 
   /* package */ static boolean catToSbPhishing(@CBSafeBrowsing final int cat) {
     return (cat & SafeBrowsing.PHISHING) != 0;
+  }
+
+  /* package */ static boolean catToSbHarmfulAddon(@CBSafeBrowsing final int cat) {
+    return (cat & SafeBrowsing.HARMFULADDON) != 0;
   }
 
   /* package */ static String catToAtPref(@CBAntiTracking final int cat) {
@@ -1902,6 +2224,9 @@ public class ContentBlocking {
     if (error == 0x805D001EL) {
       return SafeBrowsing.MALWARE;
     }
+    if (error == 0x805D002E) {
+      return SafeBrowsing.HARMFULADDON;
+    }
     if (error == 0x805D0023L) {
       return SafeBrowsing.UNWANTED;
     }
@@ -1957,6 +2282,7 @@ public class ContentBlocking {
 
   // Cookie Banner Handling feature.
 
+  /** Cookie banner handling mode constants. */
   public static class CookieBannerMode {
     /** Do not enable handling cookie banners. */
     public static final int COOKIE_BANNER_MODE_DISABLED = 0;
@@ -1967,9 +2293,11 @@ public class ContentBlocking {
     /** Reject cookies when possible otherwise accept the cookies. */
     public static final int COOKIE_BANNER_MODE_REJECT_OR_ACCEPT = 2;
 
+    /** Protected constructor for CookieBannerMode. */
     protected CookieBannerMode() {}
   }
 
+  /** Content blocking cookie banner mode type definitions. */
   @Retention(RetentionPolicy.SOURCE)
   @IntDef({
     CookieBannerMode.COOKIE_BANNER_MODE_DISABLED,
@@ -1977,4 +2305,51 @@ public class ContentBlocking {
     CookieBannerMode.COOKIE_BANNER_MODE_REJECT_OR_ACCEPT,
   })
   public @interface CBCookieBannerMode {}
+
+  /** Modes for Bounce Tracking Protection. */
+  public static class BounceTrackingProtectionMode {
+    /** Fully disabled. */
+    public static final int BOUNCE_TRACKING_PROTECTION_MODE_DISABLED = 0;
+
+    /** Fully enabled. */
+    public static final int BOUNCE_TRACKING_PROTECTION_MODE_ENABLED = 1;
+
+    /**
+     * Disabled, but collects user interaction data. Use this mode as the "disabled" state when the
+     * feature can be toggled on and off, e.g. via preferences.
+     */
+    public static final int BOUNCE_TRACKING_PROTECTION_MODE_ENABLED_STANDBY = 2;
+
+    /**
+     * Feature enabled, but tracker purging is only simulated. Used for testing and telemetry
+     * collection.
+     */
+    public static final int BOUNCE_TRACKING_PROTECTION_MODE_ENABLED_DRY_RUN = 3;
+
+    /** Protected constructor for BounceTrackingProtectionMode. */
+    protected BounceTrackingProtectionMode() {}
+  }
+
+  /** Content blocking bounce tracking protection mode type definitions. */
+  @Retention(RetentionPolicy.SOURCE)
+  @IntDef({
+    BounceTrackingProtectionMode.BOUNCE_TRACKING_PROTECTION_MODE_DISABLED,
+    BounceTrackingProtectionMode.BOUNCE_TRACKING_PROTECTION_MODE_ENABLED,
+    BounceTrackingProtectionMode.BOUNCE_TRACKING_PROTECTION_MODE_ENABLED_STANDBY,
+    BounceTrackingProtectionMode.BOUNCE_TRACKING_PROTECTION_MODE_ENABLED_DRY_RUN,
+  })
+  public @interface CBCBounceTrackingProtectionMode {}
+
+  // Mapping function for BTP mode to ensure only valid constants are returned.
+  private static final int mapToBounceTrackingProtectionMode(final int value) {
+    switch (value) {
+      case BounceTrackingProtectionMode.BOUNCE_TRACKING_PROTECTION_MODE_DISABLED:
+      case BounceTrackingProtectionMode.BOUNCE_TRACKING_PROTECTION_MODE_ENABLED:
+      case BounceTrackingProtectionMode.BOUNCE_TRACKING_PROTECTION_MODE_ENABLED_STANDBY:
+      case BounceTrackingProtectionMode.BOUNCE_TRACKING_PROTECTION_MODE_ENABLED_DRY_RUN:
+        return value;
+      default:
+        return BounceTrackingProtectionMode.BOUNCE_TRACKING_PROTECTION_MODE_DISABLED;
+    }
+  }
 }

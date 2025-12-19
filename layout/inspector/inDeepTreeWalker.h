@@ -8,7 +8,6 @@
 #define __inDeepTreeWalker_h___
 
 #include "inIDeepTreeWalker.h"
-
 #include "nsCOMPtr.h"
 #include "nsINode.h"
 #include "nsTArray.h"
@@ -51,11 +50,7 @@ class inDeepTreeWalker final : public inIDeepTreeWalker {
 };
 
 // {BFCB82C2-5611-4318-90D6-BAF4A7864252}
-#define IN_DEEPTREEWALKER_CID                        \
-  {                                                  \
-    0xbfcb82c2, 0x5611, 0x4318, {                    \
-      0x90, 0xd6, 0xba, 0xf4, 0xa7, 0x86, 0x42, 0x52 \
-    }                                                \
-  }
+#define IN_DEEPTREEWALKER_CID \
+  {0xbfcb82c2, 0x5611, 0x4318, {0x90, 0xd6, 0xba, 0xf4, 0xa7, 0x86, 0x42, 0x52}}
 
 #endif  // __inDeepTreeWalker_h___

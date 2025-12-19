@@ -28,6 +28,7 @@ add_task(async function () {
     isPaused,
     waitForState,
     waitForSelectedSource,
+    //waitForElementWithSelector,
     waitForLoadedScopes,
     waitForInlinePreviews,
     waitForElement,
@@ -35,7 +36,6 @@ add_task(async function () {
     getSelector,
     findElementWithSelector,
     createLocation,
-    isCm6Enabled,
     getEditorContent,
     getCMEditor,
   });

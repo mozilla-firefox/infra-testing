@@ -4,7 +4,7 @@
 
 extern crate geckoservo;
 
-extern crate app_services_logger;
+extern crate abridged_certs;
 #[cfg(feature = "cubeb-remoting")]
 extern crate audioipc2_client;
 #[cfg(feature = "cubeb-remoting")]
@@ -67,6 +67,8 @@ extern crate aa_stroke;
 extern crate qcms;
 extern crate wpf_gpu_raster;
 
+extern crate locale_service_glue;
+
 extern crate unic_langid;
 extern crate unic_langid_ffi;
 
@@ -86,6 +88,7 @@ extern crate l10nregistry_ffi;
 extern crate localization_ffi;
 
 extern crate ipcclientcerts;
+extern crate qwac_trust_anchors;
 extern crate trust_anchors;
 
 #[cfg(any(
@@ -99,13 +102,16 @@ extern crate osclientcerts;
 #[cfg(not(target_os = "android"))]
 extern crate gkrust_uniffi_components;
 
-#[cfg(feature = "uniffi_fixtures")]
-extern crate gkrust_uniffi_fixtures;
+#[cfg(all(feature = "uniffi_fixtures", not(target_os = "android")))]
+extern crate uniffi_bindgen_gecko_js_test_fixtures;
 
 #[cfg(not(target_os = "android"))]
 extern crate viaduct;
+#[cfg(not(target_os = "android"))]
+extern crate viaduct_necko;
 
 extern crate gecko_logger;
+extern crate gecko_tracing;
 
 #[cfg(feature = "oxidized_breakpad")]
 extern crate rust_minidump_writer_linux;
@@ -121,6 +127,8 @@ extern crate midir_impl;
 
 #[cfg(target_os = "windows")]
 extern crate detect_win32k_conflicts;
+#[cfg(target_os = "windows")]
+extern crate widget_windows;
 
 extern crate origin_trials_ffi;
 
@@ -134,8 +142,14 @@ extern crate oblivious_http;
 
 extern crate mime_guess_ffi;
 
+extern crate uritemplate_glue;
+extern crate urlpattern;
+extern crate urlpattern_glue;
+
 #[cfg(feature = "libz-rs-sys")]
 extern crate libz_rs_sys;
+
+extern crate gecko_trace;
 
 extern crate log;
 use log::info;
@@ -148,6 +162,12 @@ use gecko_logger::GeckoLogger;
 pub extern "C" fn GkRust_Init() {
     // Initialize logging.
     let _ = GeckoLogger::init();
+    // Initialize tracing.
+    gecko_tracing::initialize_tracing();
+    #[cfg(not(target_os = "android"))]
+    if let Err(e) = viaduct_necko::init_necko_backend() {
+        log::warn!("Failed to initialize viaduct-necko backend: {:?}", e);
+    }
 }
 
 #[no_mangle]

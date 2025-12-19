@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -55,7 +62,6 @@
   <string name="menu_settings">Inställningar</string>
   <string name="menu_about">Om</string>
   <string name="menu_help">Hjälp</string>
-  <string name="menu_rights" moz:removedIn="137">Dina rättigheter</string>
   <string name="menu_terms_of_use">Användarvillkor</string>
   <!--
     Menu item: This is the label for a menu entry that shows how many trackers have been blocked
@@ -150,16 +156,9 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote">&lt;p&gt;%1$s ger dig full kontroll.&lt;/p&gt;
-&lt;p&gt;Använd den som en privat webbläsare:
-  &lt;ul&gt;
-    &lt;li&gt;Sök och surfa direkt i appen&lt;/li&gt;
-    &lt;li&gt;Blockera trackers (eller uppdatera inställningar att tillåta trackers)&lt;/li&gt;
-    &lt;li&gt;Radera för att ta bort kakor samt sök- och webbhistorik&lt;/li&gt;
-  &lt;/ul&gt;
-&lt;/p&gt;
-&lt;p&gt;%1$s är utvecklad av Mozilla. Vårt uppdrag är att främja ett hälsosamt, öppet Internet.&lt;br/&gt;
-&lt;a href="%2$s"&gt;Läs mer&lt;/a&gt;&lt;/p&gt;</string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s ger dig full kontroll.</p>\n<p>Använd den som en privat webbläsare:\n<ul>\n<li>Sök och surfa direkt i appen</li>\n<li>Blockera trackers (eller uppdatera inställningar att tillåta trackers)</li>\n<li>Radera för att ta bort kakor samt sök- och webbhistorik</li>\n</ul> </p>\n<p>%1$s är utvecklad av Mozilla. Vårt uppdrag är att främja ett hälsosamt, öppet Internet.<br/>\n<a href=\"%2$s\">Läs mer</a></p>]]></string>
+  <!-- A link to SUMO at the bottom of About Focus screen. -->
+  <string name="about_screen_learn_more">Läs mer</string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">Sekretess &amp; säkerhet</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -472,25 +471,23 @@
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" tools:ignore="UnusedResources">Genom att fortsätta godkänner du %1$s</string>
+  <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">Genom att fortsätta godkänner du %1$s.</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" tools:ignore="BrandUsage">Firefox användarvillkor.</string>
+  <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">användarvillkor för Firefox</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" tools:ignore="BrandUsage">Firefox bryr sig om din integritet. Läs mer i vår %1$s</string>
+  <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Firefox bryr sig om din integritet. Läs mer i vårt %1$s.</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link">Sekretessmeddelande.</string>
+  <string name="onboarding_first_screen_privacy_notice_link_2">sekretessmeddelande</string>
   <!-- New Onboarding flow first screen button label -->
-  <string name="onboarding_first_screen_button_text" moz:removedIn="137" tools:ignore="UnusedResources">Kom igång</string>
-  <!-- New Onboarding flow first screen button label -->
-  <string name="onboarding_first_screen_button_agree_and_continue">Godkänn och fortsätt</string>
+  <string name="onboarding_first_screen_button_agree_and_continue_2">Fortsätt</string>
   <!-- In the first screen of new onboarding flow, additional accessibility description for content that contain urls. -->
   <string name="a11y_link_available">Länk tillgänglig</string>
   <!--
@@ -570,36 +567,6 @@
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
   -->
   <string name="download_firefox" tools:ignore="BrandUsage">Hämta Firefox</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-  -->
-  <string name="your_rights_content1" moz:removedIn="137">%1$s är gratis och öppen källkodsprogramvara utvecklad av Mozilla och andra bidragsgivare.</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-    %2$s will be replaced with a URL linking to the MPL (e.g. https://www.mozilla.org/en-US/MPL/)
-  -->
-  <string name="your_rights_content2" moz:removedIn="137" tools:ignore="IncorrectStraightDoubleQuote">%1$s är tillgänglig för dig enligt villkoren i &lt;a href="%2$s"&gt;Mozilla Public License&lt;/a&gt; och andra open source-licenser.</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-    %2$s will be replaced with a URL linking to the trademark policy (e.g. https://www.mozilla.org/foundation/trademarks/policy/)
-  -->
-  <string name="your_rights_content3" moz:removedIn="137" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote">Du är inte beviljad några rättigheter eller licenser till varumärken som tillhör Mozilla Foundation eller någon part, däribland Mozilla, Firefox eller %1$s namn eller logotyper. Ytterligare information kan hittas &lt;a href="%2$s"&gt;här&lt;/a&gt;.</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-    %2$s will be replaced with a URL linking to the list of licenses used by the dependencies.
-  -->
-  <string name="your_rights_content4" moz:removedIn="137" tools:ignore="IncorrectStraightDoubleQuote">Ytterligare källkod för %1$s finns tillgänglig under flera andra gratis och open source-&lt;a href="%2$s"&gt;licenser&lt;/a&gt;.</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-    %2$s will be replaced with a URL linking to the GPL
-    %3$s will be replaced with a URL linking to the tracking protection wiki page (e.g. https://wiki.mozilla.org/Security/Tracking_protection#Lists)
-  -->
-  <string name="your_rights_content5" moz:removedIn="137" tools:ignore="IncorrectStraightDoubleQuote">%1$s använder också blocklistor som tillhandahålls av Disconnect, Inc. som separata och oberoende verk under &lt;a href="%2$s"&gt;GNU General Public License v3&lt;/a&gt; och tillgänglig &lt;a href="%3$s"&gt;här&lt;/a&gt;.</string>
   <!-- Text shown in prompts for GeckoView -->
   <string name="gv_prompt_username_hint">Användarnamn</string>
   <string name="gv_prompt_password_hint">Lösenord</string>
@@ -709,11 +676,11 @@
   <!-- First step for the allowing a permission -->
   <string name="phone_feature_blocked_step_settings">1. Gå till Android-inställningar</string>
   <!-- Second step for the allowing a permission -->
-  <string name="phone_feature_blocked_step_permissions">2. Tryck på &lt;b&gt;Behörigheter&lt;/b&gt;</string>
+  <string name="phone_feature_blocked_step_permissions"><![CDATA[2. Tryck på <b>Behörigheter</b>]]></string>
   <!-- Button label that take the user to the Android App setting -->
   <string name="phone_feature_go_to_settings">Gå till Inställningar</string>
   <!-- Third step for allowing a permission. %1$s is the permission name, for example, "Camera" -->
-  <string name="phone_feature_blocked_step_feature">3. Växla &lt;b&gt;%1$s&lt;/b&gt; till PÅ</string>
+  <string name="phone_feature_blocked_step_feature"><![CDATA[3. Växla <b>%1$s</b> till PÅ]]></string>
   <!-- Preference for altering the camera access for all websites -->
   <string name="preference_phone_feature_camera">Kamera</string>
   <!-- Preference for altering the microphone access for all websites -->
@@ -740,20 +707,6 @@
   <string name="preference_block_autoplay_audio_only_summary">Rekommenderad</string>
   <!-- Preference for block autoplay audio and video -->
   <string name="preference_block_autoplay_audio_video">Blockera ljud och video</string>
-  <!-- Preference for studies -->
-  <string name="preference_studies">Studier</string>
-  <!-- Preference for studies summary -->
-  <string name="preference_studies_summary" tools:ignore="BrandUsage">Firefox kan installera och köra studier då och då.</string>
-  <!-- Learn more link for studies, links to an article for more information about studies. -->
-  <string name="studies_learn_more">Läs mer</string>
-  <!-- Dialog message shown when some changes are made on studies -->
-  <string name="studies_restart_app" moz:removedIn="137">Applikationen avslutas för att tillämpa ändringar</string>
-  <!-- Title of the remove studies button -->
-  <string name="studies_remove">Ta bort</string>
-  <!-- Title of the active section on the studies list -->
-  <string name="studies_active">Aktiv</string>
-  <!-- Title of the completed section on the studies list -->
-  <string name="studies_completed">Slutförd</string>
   <!-- Preference to enable remote debugging of the app via USB or Wi-Fi -->
   <string name="preference_remote_debugging">Fjärrfelsökning via USB/Wi-Fi</string>
   <!-- Text Button for show biometric prompt -->
@@ -800,7 +753,7 @@
     Tip displayed on home view explaining how to disable tracking protection
     The new line here must be kept as the second half of the string is clickable for the user.
   -->
-  <string name="tip_disable_tracking_protection">Beter sig webbplatsen konstigt?\n Försök att stänga av spårningsskydd</string>
+  <string name="tip_disable_tracking_protection">Beter sig webbplatsen konstigt?\nFörsök att stänga av spårningsskydd</string>
   <!--
     Tip displayed on home view explaining how to add sites to homescreen
     %1$s is replaced with a line break in the application.
@@ -811,17 +764,17 @@
     %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     The new line here must be kept as the second half of the string is clickable for the user.
   -->
-  <string name="tip_set_default_browser">Öppna varje länk i %1$s\n Ange %1$s som standardwebbläsare</string>
+  <string name="tip_set_default_browser">Öppna varje länk i %1$s\nAnge %1$s som standardwebbläsare</string>
   <!--
     Tip displayed on home view explaining how to add a custom autocomplete URL
     The new line here must be kept as the second half of the string is clickable for the user.
   -->
-  <string name="tip_autocomplete_url">Autokomplettera webbadresser för webbplatser som du använder mest\n Tryck länge på vilken URL som helst i adressfältet</string>
+  <string name="tip_autocomplete_url">Autokomplettera webbadresser för webbplatser som du använder mest\nTryck länge på vilken URL som helst i adressfältet</string>
   <!--
     Tip displayed on home view explaining how to add a custom autocomplete URL
     The new line here must be kept as the second half of the string is clickable for the user.
   -->
-  <string name="tip_open_in_new_tab">Öppna en länk i en ny flik\n Tryck länge på en länk på en sida</string>
+  <string name="tip_open_in_new_tab">Öppna en länk i en ny flik\nTryck länge på en länk på en sida</string>
   <!-- Tip displayed on home view explaining how to add a custom autocomplete URL -->
   <string name="tip_disable_tips2">Stäng av tips på startskärmen</string>
   <!-- Label for the snackbar when a user opens a new tab -->
@@ -902,7 +855,7 @@
     Text for context menu additional note.
     %1$s is a placeholder for the app name.
   -->
-  <string name="contextmenu_erased_images_note2">Sparade och delade bilder &lt;b&gt;raderas inte&lt;/b&gt; när du rensar historiken för %1$s</string>
+  <string name="contextmenu_erased_images_note2"><![CDATA[Sparade och delade bilder <b>raderas inte</b> när du rensar historiken för %1$s]]></string>
   <!--
     Theme Preferences
 
@@ -923,22 +876,13 @@
     The text of the error page for websites that do not support HTTPS when HTTPS-Only is turned on. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar"),
     %2$s is a URL to a support article. Contains a button that will redirect the user to Privacy & Security Screen.
   -->
-  <string name="errorpage_httpsonly_message2" tools:ignore="IncorrectStraightDoubleQuote">%1$s försöker använda en HTTPS-anslutning när det är möjligt för ökad säkerhet.
-     &lt;a href="%2$s"&gt;Läs mer&lt;/a&gt; &lt;br/&gt;&lt;br/&gt;
-     Ändra den här inställningen i Inställningar &gt; Sekretess &amp;amp; Säkerhet &gt; Säkerhet.</string>
+  <string name="errorpage_httpsonly_message2" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[%1$s försöker använda en HTTPS-anslutning när det är möjligt för ökad säkerhet. <a href=\"%2$s\">Läs mer</a> <br/><br/> Ändra den här inställningen i Inställningar > Sekretess &amp; Säkerhet > Säkerhet.]]></string>
   <!-- The document title and heading of the error page shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_title">Anslutningen är inte säker</string>
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_message">
-    Detta kan vara ett problem med serverns konfiguration, eller så kan det vara någon som försöker utge sig för att vara servern. &lt;br/&gt;&lt;br/&gt;
-    Om du har anslutit till den här servern tidigare kan felet vara tillfälligt.
-    </string>
+  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Detta kan vara ett problem med serverns konfiguration, eller så kan det vara någon som försöker utge sig för att vara servern. <br/><br/> Om du har anslutit till den här servern tidigare kan felet vara tillfälligt.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo">
-        &lt;label&gt;Någon kan försöka utge sig för webbplatsen och att fortsätta kan vara riskabelt.&lt;/label&gt;
-        &lt;br&gt;&lt;br&gt;
-        &lt;label&gt;%1$s litar inte på &lt;b&gt;%2$s&lt;/b&gt; eftersom dess certifikatutfärdare är okänd, certifikatet är självsignerat eller att servern inte skickar rätt mellanliggande certifikat.&lt;/label&gt;
-    </string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Någon kan försöka utge sig för webbplatsen och att fortsätta kan vara riskabelt.</label> <br><br>\n<label>%1$s litar inte på <b>%2$s</b> eftersom dess certifikatutfärdare är okänd, certifikatet är självsignerat eller att servern inte skickar rätt mellanliggande certifikat.</label>]]></string>
   <!--
     Sessions List
 

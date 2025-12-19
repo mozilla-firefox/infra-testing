@@ -5,7 +5,7 @@
 
 use chrono::Local;
 
-use crate::db::DEFAULT_SUGGESTION_SCORE;
+use crate::{db::DEFAULT_SUGGESTION_SCORE, geoname::Geoname};
 
 /// The template parameter for a timestamp in a "raw" sponsored suggestion URL.
 const TIMESTAMP_TEMPLATE: &str = "%YYYYMMDDHH%";
@@ -15,6 +15,16 @@ const TIMESTAMP_TEMPLATE: &str = "%YYYYMMDDHH%";
 /// Cooked timestamps don't include the leading or trailing `%`, so this is
 /// 2 bytes shorter than [`TIMESTAMP_TEMPLATE`].
 const TIMESTAMP_LENGTH: usize = 10;
+
+/// Subject type for Yelp suggestion.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, uniffi::Enum)]
+#[repr(u8)]
+pub enum YelpSubjectType {
+    // Service such as sushi, ramen, yoga etc.
+    Service = 0,
+    // Specific business such as the shop name.
+    Business = 1,
+}
 
 /// A suggestion from the database to show in the address bar.
 #[derive(Clone, Debug, PartialEq, uniffi::Enum)]
@@ -29,17 +39,12 @@ pub enum Suggestion {
         block_id: i64,
         advertiser: String,
         iab_category: String,
+        categories: Vec<i32>,
         impression_url: String,
         click_url: String,
         raw_click_url: String,
         score: f64,
         fts_match_info: Option<FtsMatchInfo>,
-    },
-    Pocket {
-        title: String,
-        url: String,
-        score: f64,
-        is_top_pick: bool,
     },
     Wikipedia {
         title: String,
@@ -66,6 +71,7 @@ pub enum Suggestion {
         score: f64,
         has_location_sign: bool,
         subject_exact_match: bool,
+        subject_type: YelpSubjectType,
         location_param: String,
     },
     Mdn {
@@ -75,11 +81,7 @@ pub enum Suggestion {
         score: f64,
     },
     Weather {
-        city: Option<String>,
-        region: Option<String>,
-        country: Option<String>,
-        latitude: Option<f64>,
-        longitude: Option<f64>,
+        city: Option<Geoname>,
         score: f64,
     },
     Fakespot {
@@ -147,8 +149,7 @@ impl Suggestion {
                 }
             }
             Self::Dynamic { dismissal_key, .. } => dismissal_key.as_deref(),
-            Self::Pocket { .. }
-            | Self::Wikipedia { .. }
+            Self::Wikipedia { .. }
             | Self::Amo { .. }
             | Self::Yelp { .. }
             | Self::Mdn { .. }
@@ -161,7 +162,6 @@ impl Suggestion {
     pub fn url(&self) -> Option<&str> {
         match self {
             Self::Amp { url, .. }
-            | Self::Pocket { url, .. }
             | Self::Wikipedia { url, .. }
             | Self::Amo { url, .. }
             | Self::Yelp { url, .. }
@@ -178,8 +178,7 @@ impl Suggestion {
     pub fn raw_url(&self) -> Option<&str> {
         match self {
             Self::Amp { raw_url, .. } => Some(raw_url),
-            Self::Pocket { .. }
-            | Self::Wikipedia { .. }
+            Self::Wikipedia { .. }
             | Self::Amo { .. }
             | Self::Yelp { .. }
             | Self::Mdn { .. }
@@ -192,7 +191,6 @@ impl Suggestion {
     pub fn title(&self) -> &str {
         match self {
             Self::Amp { title, .. }
-            | Self::Pocket { title, .. }
             | Self::Wikipedia { title, .. }
             | Self::Amo { title, .. }
             | Self::Yelp { title, .. }
@@ -215,7 +213,6 @@ impl Suggestion {
     pub fn score(&self) -> f64 {
         match self {
             Self::Amp { score, .. }
-            | Self::Pocket { score, .. }
             | Self::Amo { score, .. }
             | Self::Yelp { score, .. }
             | Self::Mdn { score, .. }

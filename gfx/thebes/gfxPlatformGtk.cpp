@@ -25,7 +25,6 @@
 #include "gfxFT2FontBase.h"
 #include "gfxTextRun.h"
 #include "GLContextProvider.h"
-#include "mozilla/Atomics.h"
 #include "mozilla/Components.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/FontPropertyTypes.h"
@@ -68,7 +67,7 @@
 #  include "mozilla/widget/nsWaylandDisplay.h"
 #endif
 #ifdef MOZ_WIDGET_GTK
-#  include "mozilla/widget/DMABufLibWrapper.h"
+#  include "mozilla/widget/DMABufDevice.h"
 #  include "mozilla/StaticPrefs_widget.h"
 #endif
 
@@ -83,12 +82,6 @@ using namespace mozilla::unicode;
 using namespace mozilla::widget;
 
 static FT_Library gPlatformFTLibrary = nullptr;
-static int32_t sDPI;
-
-static void screen_resolution_changed(GdkScreen* aScreen, GParamSpec* aPspec,
-                                      gpointer aClosure) {
-  sDPI = 0;
-}
 
 #if defined(MOZ_X11)
 // TODO(aosmond): The envvar is deprecated. We should remove it once EGL is the
@@ -128,15 +121,11 @@ gfxPlatformGtk::gfxPlatformGtk() {
   MOZ_RELEASE_ASSERT(gPlatformFTLibrary);
   Factory::SetFTLibrary(gPlatformFTLibrary);
 
-  GdkScreen* gdkScreen = gdk_screen_get_default();
-  if (gdkScreen) {
-    g_signal_connect(gdkScreen, "notify::resolution",
-                     G_CALLBACK(screen_resolution_changed), nullptr);
-  }
-
   // Bug 1714483: Force disable FXAA Antialiasing on NV drivers. This is a
   // temporary workaround for a driver bug.
   PR_SetEnv("__GL_ALLOW_FXAA_USAGE=0");
+
+  InitMesaThreading();
 }
 
 gfxPlatformGtk::~gfxPlatformGtk() {
@@ -186,11 +175,6 @@ void gfxPlatformGtk::InitX11EGLConfig() {
     feature.ForceDisable(FeatureStatus::Broken, "glxtest could not use EGL",
                          "FEATURE_FAILURE_GLXTEST_NO_EGL"_ns);
   }
-
-  if (feature.IsEnabled() && IsX11Display()) {
-    // Enabling glthread crashes on X11/EGL, see bug 1670545
-    PR_SetEnv("mesa_glthread=false");
-  }
 #else
   feature.DisableByDefault(FeatureStatus::Unavailable, "X11 support missing",
                            "FEATURE_FAILURE_NO_X11"_ns);
@@ -235,81 +219,64 @@ void gfxPlatformGtk::InitDmabufConfig() {
   gfxVars::SetDrmRenderDevice(drmRenderDevice);
 
   if (feature.IsEnabled()) {
-    if (!GetDMABufDevice()->IsEnabled(failureId)) {
+    DMABufDeviceLock device;
+    if (!device.GetDMABufDevice()->IsEnabled(failureId)) {
       feature.ForceDisable(FeatureStatus::Failed, "Failed to configure",
                            failureId);
     }
+    // Make sure we have DMABuf formats available.
+    (void)GetGlobalDMABufFormats();
   }
 }
 
-bool gfxPlatformGtk::InitVAAPIConfig(bool aForceEnabledByUser) {
-  FeatureState& feature =
+void gfxPlatformGtk::InitPlatformHardwareVideoConfig() {
+  FeatureState& featureDec =
       gfxConfig::GetFeature(Feature::HARDWARE_VIDEO_DECODING);
-  // We're already configured in parent process
-  if (!XRE_IsParentProcess()) {
-    return feature.IsEnabled();
-  }
-  feature.EnableByDefault();
-
-  if (aForceEnabledByUser) {
-    feature.UserForceEnable("Force enabled by pref");
-  }
-
-  int32_t status = nsIGfxInfo::FEATURE_STATUS_UNKNOWN;
-  nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
-  nsCString failureId;
-  if (NS_FAILED(gfxInfo->GetFeatureStatus(
-          nsIGfxInfo::FEATURE_HARDWARE_VIDEO_DECODING, failureId, &status))) {
-    feature.Disable(FeatureStatus::BlockedNoGfxInfo, "gfxInfo is broken",
-                    "FEATURE_FAILURE_NO_GFX_INFO"_ns);
-  } else if (status == nsIGfxInfo::FEATURE_BLOCKED_PLATFORM_TEST) {
-    feature.ForceDisable(FeatureStatus::Unavailable,
-                         "Force disabled by gfxInfo", failureId);
-  } else if (status != nsIGfxInfo::FEATURE_STATUS_OK) {
-    feature.Disable(FeatureStatus::Blocklisted, "Blocklisted by gfxInfo",
-                    failureId);
-  }
   if (!gfxVars::UseEGL()) {
-    feature.ForceDisable(FeatureStatus::Unavailable, "Requires EGL",
-                         "FEATURE_FAILURE_REQUIRES_EGL"_ns);
+    featureDec.ForceDisable(FeatureStatus::Unavailable, "Requires EGL",
+                            "FEATURE_FAILURE_REQUIRES_EGL"_ns);
+    gfxConfig::ForceDisable(Feature::HARDWARE_VIDEO_ENCODING,
+                            FeatureStatus::Unavailable, "Requires EGL",
+                            "FEATURE_FAILURE_REQUIRES_EGL"_ns);
+  }
+
+  if (!featureDec.IsEnabled()) {
+    return;
   }
 
   // Configure zero-copy playback feature.
-  if (feature.IsEnabled()) {
-    FeatureState& featureZeroCopy =
-        gfxConfig::GetFeature(Feature::HW_DECODED_VIDEO_ZERO_COPY);
+  FeatureState& featureZeroCopy =
+      gfxConfig::GetFeature(Feature::HW_DECODED_VIDEO_ZERO_COPY);
 
-    featureZeroCopy.EnableByDefault();
-    uint32_t state =
-        StaticPrefs::media_ffmpeg_vaapi_force_surface_zero_copy_AtStartup();
-    if (state == 0) {
-      featureZeroCopy.UserDisable("Force disable by pref",
-                                  "FEATURE_FAILURE_USER_FORCE_DISABLED"_ns);
-    } else if (state == 1) {
-      featureZeroCopy.UserEnable("Force enabled by pref");
-    } else {
-      nsCString failureId;
-      int32_t status = nsIGfxInfo::FEATURE_STATUS_UNKNOWN;
-      nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
-      if (NS_FAILED(gfxInfo->GetFeatureStatus(
-              nsIGfxInfo::FEATURE_HW_DECODED_VIDEO_ZERO_COPY, failureId,
-              &status))) {
-        featureZeroCopy.Disable(FeatureStatus::BlockedNoGfxInfo,
-                                "gfxInfo is broken",
-                                "FEATURE_FAILURE_NO_GFX_INFO"_ns);
-      } else if (status == nsIGfxInfo::FEATURE_BLOCKED_PLATFORM_TEST) {
-        featureZeroCopy.ForceDisable(FeatureStatus::Unavailable,
-                                     "Force disabled by gfxInfo", failureId);
-      } else if (status != nsIGfxInfo::FEATURE_ALLOW_ALWAYS) {
-        featureZeroCopy.Disable(FeatureStatus::Blocklisted,
-                                "Blocklisted by gfxInfo", failureId);
-      }
-    }
-    if (featureZeroCopy.IsEnabled()) {
-      gfxVars::SetHwDecodedVideoZeroCopy(true);
+  featureZeroCopy.EnableByDefault();
+  uint32_t state =
+      StaticPrefs::media_ffmpeg_vaapi_force_surface_zero_copy_AtStartup();
+  if (state == 0) {
+    featureZeroCopy.UserDisable("Force disable by pref",
+                                "FEATURE_FAILURE_USER_FORCE_DISABLED"_ns);
+  } else if (state == 1) {
+    featureZeroCopy.UserEnable("Force enabled by pref");
+  } else {
+    nsCString failureId;
+    int32_t status = nsIGfxInfo::FEATURE_STATUS_UNKNOWN;
+    nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
+    if (NS_FAILED(gfxInfo->GetFeatureStatus(
+            nsIGfxInfo::FEATURE_HW_DECODED_VIDEO_ZERO_COPY, failureId,
+            &status))) {
+      featureZeroCopy.Disable(FeatureStatus::BlockedNoGfxInfo,
+                              "gfxInfo is broken",
+                              "FEATURE_FAILURE_NO_GFX_INFO"_ns);
+    } else if (status == nsIGfxInfo::FEATURE_BLOCKED_PLATFORM_TEST) {
+      featureZeroCopy.ForceDisable(FeatureStatus::Unavailable,
+                                   "Force disabled by gfxInfo", failureId);
+    } else if (status != nsIGfxInfo::FEATURE_ALLOW_ALWAYS) {
+      featureZeroCopy.Disable(FeatureStatus::Blocklisted,
+                              "Blocklisted by gfxInfo", failureId);
     }
   }
-  return feature.IsEnabled();
+  if (featureZeroCopy.IsEnabled()) {
+    gfxVars::SetHwDecodedVideoZeroCopy(true);
+  }
 }
 
 void gfxPlatformGtk::InitWebRenderConfig() {
@@ -323,11 +290,7 @@ void gfxPlatformGtk::InitWebRenderConfig() {
   // HDR requires compositor to work
 #if defined(MOZ_WAYLAND)
   if (feature.IsEnabled()) {
-    if (!StaticPrefs::gfx_wayland_hdr_AtStartup()) {
-      feature.ForceDisable(FeatureStatus::Unavailable, "HDR mode is disabled",
-                           "FEATURE_FAILURE_NO_HDR"_ns);
-
-    } else if (!IsWaylandDisplay()) {
+    if (!IsWaylandDisplay()) {
       feature.ForceDisable(FeatureStatus::Unavailable,
                            "Wayland support missing",
                            "FEATURE_FAILURE_NO_WAYLAND"_ns);
@@ -362,6 +325,36 @@ void gfxPlatformGtk::InitPlatformGPUProcessPrefs() {
                          "FEATURE_FAILURE_WAYLAND"_ns);
   }
 #endif
+}
+
+void gfxPlatformGtk::InitMesaThreading() {
+  FeatureState& featureMesaThreading =
+      gfxConfig::GetFeature(Feature::MESA_THREADING);
+  featureMesaThreading.EnableByDefault();
+
+  nsCString failureId;
+  int32_t status;
+  nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
+  if (NS_FAILED(gfxInfo->GetFeatureStatus(nsIGfxInfo::FEATURE_MESA_THREADING,
+                                          failureId, &status))) {
+    featureMesaThreading.Disable(FeatureStatus::BlockedNoGfxInfo,
+                                 "gfxInfo is broken",
+                                 "FEATURE_FAILURE_NO_GFX_INFO"_ns);
+  } else if (status != nsIGfxInfo::FEATURE_STATUS_OK) {
+    featureMesaThreading.Disable(FeatureStatus::Blocklisted,
+                                 "Blocklisted by gfxInfo", failureId);
+  }
+
+  // Enabling glthread crashes on X11/EGL, see bug 1670545
+  if (gfxConfig::IsEnabled(Feature::X11_EGL) && IsX11Display()) {
+    featureMesaThreading.Disable(FeatureStatus::Failed,
+                                 "No glthread with EGL and X11",
+                                 "FEATURE_FAILURE_EGL_X11"_ns);
+  }
+
+  if (!featureMesaThreading.IsEnabled()) {
+    PR_SetEnv("mesa_glthread=false");
+  }
 }
 
 already_AddRefed<gfxASurface> gfxPlatformGtk::CreateOffscreenSurface(
@@ -458,33 +451,6 @@ void gfxPlatformGtk::ReadSystemFontList(
 
 bool gfxPlatformGtk::CreatePlatformFontList() {
   return gfxPlatformFontList::Initialize(new gfxFcPlatformFontList);
-}
-
-int32_t gfxPlatformGtk::GetFontScaleDPI() {
-  MOZ_ASSERT(XRE_IsParentProcess(),
-             "You can access this via LookAndFeel if you need it in child "
-             "processes");
-  if (MOZ_LIKELY(sDPI != 0)) {
-    return sDPI;
-  }
-  int32_t dpi = 0;
-  if (GdkScreen* screen = gdk_screen_get_default()) {
-    // Ensure settings in config files are processed.
-    gtk_settings_get_for_screen(screen);
-    dpi = int32_t(round(gdk_screen_get_resolution(screen)));
-  }
-  if (dpi <= 0) {
-    // Fall back to something reasonable
-    dpi = 96;
-  }
-  sDPI = dpi;
-  return dpi;
-}
-
-double gfxPlatformGtk::GetFontScaleFactor() {
-  // Modern GTK works fine with non-integer scaling, and scaling factors like
-  // 1.25 are common as "Large text" in gnome as well, so no need to round.
-  return GetFontScaleDPI() / 96.0;
 }
 
 gfxImageFormat gfxPlatformGtk::GetOffscreenFormat() {

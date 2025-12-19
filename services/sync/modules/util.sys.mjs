@@ -5,7 +5,7 @@
 import { Observers } from "resource://services-common/observers.sys.mjs";
 
 import { CommonUtils } from "resource://services-common/utils.sys.mjs";
-import { CryptoUtils } from "resource://services-crypto/utils.sys.mjs";
+import { CryptoUtils } from "moz-src:///services/crypto/modules/utils.sys.mjs";
 
 import {
   DEVICE_TYPE_DESKTOP,
@@ -25,7 +25,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "cryptoSDR",
   "@mozilla.org/login-manager/crypto/SDR;1",
-  "nsILoginManagerCrypto"
+  Ci.nsILoginManagerCrypto
 );
 
 XPCOMUtils.defineLazyPreferenceGetter(

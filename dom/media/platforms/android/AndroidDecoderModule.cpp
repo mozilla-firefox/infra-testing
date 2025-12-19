@@ -16,6 +16,7 @@
 #include "mozilla/Components.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/gfx/gfxVars.h"
+#include "mozilla/java/GeckoAppShellWrappers.h"
 #include "mozilla/java/HardwareCodecCapabilityUtilsWrappers.h"
 #include "nsIGfxInfo.h"
 #include "nsPromiseFlatString.h"
@@ -202,7 +203,7 @@ void AndroidDecoderModule::SetSupportedMimeTypes(
     if (NS_IsMainThread()) {
       ClearOnShutdown(&sSupportedSwMimeTypes);
     } else {
-      Unused << NS_DispatchToMainThread(NS_NewRunnableFunction(__func__, []() {
+      (void)NS_DispatchToMainThread(NS_NewRunnableFunction(__func__, []() {
         StaticMutexAutoLock lock(sMutex);
         ClearOnShutdown(&sSupportedSwMimeTypes);
       }));
@@ -213,7 +214,7 @@ void AndroidDecoderModule::SetSupportedMimeTypes(
     if (NS_IsMainThread()) {
       ClearOnShutdown(&sSupportedHwMimeTypes);
     } else {
-      Unused << NS_DispatchToMainThread(NS_NewRunnableFunction(__func__, []() {
+      (void)NS_DispatchToMainThread(NS_NewRunnableFunction(__func__, []() {
         StaticMutexAutoLock lock(sMutex);
         ClearOnShutdown(&sSupportedHwMimeTypes);
       }));
@@ -224,7 +225,7 @@ void AndroidDecoderModule::SetSupportedMimeTypes(
     if (NS_IsMainThread()) {
       ClearOnShutdown(&sSupportedCodecs);
     } else {
-      Unused << NS_DispatchToMainThread(NS_NewRunnableFunction(__func__, []() {
+      (void)NS_DispatchToMainThread(NS_NewRunnableFunction(__func__, []() {
         StaticMutexAutoLock lock(sMutex);
         ClearOnShutdown(&sSupportedCodecs);
       }));
@@ -315,6 +316,16 @@ media::DecodeSupportSet AndroidDecoderModule::Supports(
              : media::DecodeSupportSet{};
 }
 
+static bool IsAV1MainProfile(const MediaByteBuffer* aBox) {
+  if (!aBox || aBox->IsEmpty()) {
+    return false;
+  }
+  AOMDecoder::AV1SequenceInfo av1Info;
+  MediaResult seqHdrResult;
+  AOMDecoder::TryReadAV1CBox(aBox, av1Info, seqHdrResult);
+  return seqHdrResult.Code() == NS_OK && av1Info.mProfile == 0;
+}
+
 already_AddRefed<MediaDataDecoder> AndroidDecoderModule::CreateVideoDecoder(
     const CreateDecoderParams& aParams) {
   // Temporary - forces use of VPXDecoder when alpha is present.
@@ -322,6 +333,21 @@ already_AddRefed<MediaDataDecoder> AndroidDecoderModule::CreateVideoDecoder(
   // the check for alpha to PDMFactory but not itself remove the need for a
   // check.
   if (aParams.VideoConfig().HasAlpha()) {
+    return nullptr;
+  }
+
+  if (AOMDecoder::IsAV1(aParams.mConfig.mMimeType) &&
+      !IsAV1MainProfile(aParams.VideoConfig().mExtraData)) {
+    return nullptr;
+  }
+
+  // Don't use SW VPX MediaCodecs. Prefering VPXDecoder over MediaCodec SW
+  // decoder implementation allow us to have more consistent cross-platform VPX
+  // playback experience and be able to get upstream bug fixes/improvements more
+  // frequently.
+  if (VPXDecoder::IsVPX(aParams.VideoConfig().mMimeType) &&
+      !SupportsMimeType(aParams.VideoConfig().mMimeType)
+           .contains(DecodeSupport::HardwareDecode)) {
     return nullptr;
   }
 
@@ -333,6 +359,12 @@ already_AddRefed<MediaDataDecoder> AndroidDecoderModule::CreateVideoDecoder(
   RefPtr<MediaDataDecoder> decoder =
       RemoteDataDecoder::CreateVideoDecoder(aParams, drmStubId, mProxy);
   return decoder.forget();
+}
+
+// static
+bool AndroidDecoderModule::IsJavaDecoderModuleAllowed() {
+  return StaticPrefs::media_android_media_codec_enabled() &&
+         !java::GeckoAppShell::IsIsolatedProcess();
 }
 
 already_AddRefed<MediaDataDecoder> AndroidDecoderModule::CreateAudioDecoder(

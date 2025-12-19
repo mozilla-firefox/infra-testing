@@ -11,23 +11,23 @@ add_task(async function () {
   // We need a heuristic provider that the Muxer will prefer over other
   // heuristics and that will return results after the first onQueryResults.
   // Luckily TEST providers come first in the heuristic group!
-  let result = new UrlbarResult(
-    UrlbarUtils.RESULT_TYPE.URL,
-    UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-    { url: "https://example.com/1", title: "example" }
-  );
-  result.heuristic = true;
-  // To ensure the selectedElement is removed, we use this special property that
-  // asks the view to generate new content for the row.
-  result.testForceNewContent = true;
+  let result = new UrlbarResult({
+    type: UrlbarUtils.RESULT_TYPE.URL,
+    source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+    heuristic: true,
+    // To ensure the selectedElement is removed, we use this special property
+    // that asks the view to generate new content for the row.
+    testForceNewContent: true,
+    payload: { url: "https://example.com/1", title: "example" },
+  });
 
   let receivedResults = false;
   let firstSelectedElement;
   let delayResultsPromise = new Promise(resolve => {
-    gURLBar.controller.addQueryListener({
+    gURLBar.controller.addListener({
       async onQueryResults() {
         Assert.ok(!receivedResults, "Should execute only once");
-        gURLBar.controller.removeQueryListener(this);
+        gURLBar.controller.removeListener(this);
         receivedResults = true;
         // Store the corrent selection.
         firstSelectedElement = view.selectedElement;
@@ -63,8 +63,9 @@ add_task(async function () {
     value: "exa",
   });
   Assert.ok(receivedResults, "Results observer was invoked");
-  Assert.ok(
-    UrlbarTestUtils.getResultCount(window) > 0,
+  Assert.greater(
+    UrlbarTestUtils.getResultCount(window),
+    0,
     `There should be some results in the view.`
   );
   Assert.ok(view.isOpen, `The view should be open.`);

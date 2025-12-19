@@ -4,6 +4,7 @@
 
 "use strict";
 
+const LINE_BREAK_RE = /\r\n?|\n|\u2028|\u2029/;
 const MAX_DATA_URL_LENGTH = 40;
 /**
  * Provide access to the style information in a page.
@@ -12,6 +13,7 @@ const MAX_DATA_URL_LENGTH = 40;
  * that helps them understand:
  * - why their expectations may not have been fulfilled
  * - how browsers process CSS
+ *
  * @constructor
  */
 
@@ -25,6 +27,12 @@ loader.lazyRequireGetter(
   this,
   "getTabPrefs",
   "resource://devtools/shared/indentation.js",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "getNodeDisplayName",
+  "resource://devtools/server/actors/inspector/utils.js",
   true
 );
 const { LocalizationHelper } = require("resource://devtools/shared/l10n.js");
@@ -48,6 +56,7 @@ exports.FILTER = {
  *
  * These statuses are localized inside the styleinspector.properties
  * string bundle.
+ *
  * @see csshtmltree.js RuleView._cacheStatusNames()
  */
 exports.STATUS = {
@@ -83,7 +92,7 @@ exports.CSSAtRuleClassNameType = {
  * Get Rule type as human-readable string (ex: "@media", "@container", …)
  *
  * @param {CSSRule} cssRule
- * @returns {String}
+ * @returns {string}
  */
 exports.getCSSAtRuleTypeName = function (cssRule) {
   const ruleClassName = ChromeUtils.getClassName(cssRule);
@@ -98,9 +107,9 @@ exports.getCSSAtRuleTypeName = function (cssRule) {
 /**
  * Lookup a l10n string in the shared styleinspector string bundle.
  *
- * @param {String} name
+ * @param {string} name
  *        The key to lookup.
- * @returns {String} A localized version of the given key.
+ * @returns {string} A localized version of the given key.
  */
 exports.l10n = name => styleInspectorL10N.getStr(name);
 exports.l10nFormatStr = (name, ...args) =>
@@ -232,17 +241,17 @@ function getLineCountInComments(text) {
  * is an object that looks like this:
  *
  * {
- *  original: {line: {Number}, column: {Number}},
- *  generated: {line: {Number}, column: {Number}},
+ *  original: {line: {number}, column: {number}},
+ *  generated: {line: {number}, column: {number}},
  * }
  *
- * @param  {String} text
+ * @param  {string} text
  *         The CSS source to prettify.
- * @param  {Number} ruleCount
+ * @param  {number} ruleCount
  *         The number of CSS rules expected in the CSS source.
  *         Set to null to force the text to be pretty-printed.
  *
- * @return {Object}
+ * @return {object}
  *         Object with the prettified source and source mappings.
  *          {
  *            result: {String}  // Prettified source
@@ -258,7 +267,7 @@ function prettifyCSS(text, ruleCount) {
   }
 
   // Stylesheets may start and end with HTML comment tags (possibly with whitespaces
-  // before and after). Remove those first. Don't do anything there aren't any.
+  // before and after). Remove those first. Don't do anything if there aren't any.
   const trimmed = text.trim();
   if (trimmed.startsWith("<!--")) {
     text = trimmed.replace(/^<!--/, "").replace(/-->$/, "").trim();
@@ -332,6 +341,8 @@ function prettifyCSS(text, ruleCount) {
   let anyNonWS;
   // True if the terminating token is "}".
   let isCloseBrace;
+  // True if the terminating token is a new line character.
+  let isNewLine;
   // True if the token just before the terminating token was
   // whitespace.
   let lastWasWS;
@@ -394,7 +405,16 @@ function prettifyCSS(text, ruleCount) {
         break;
       }
 
-      if (token.tokenType !== "WhiteSpace") {
+      if (token.tokenType === "WhiteSpace") {
+        if (LINE_BREAK_RE.test(token.text)) {
+          // If we encounter a new line after a significant token, we can
+          // move on to the next significant token.
+          // This avoids messing with declarations with no semi-colon preceding
+          // a closing brace, eg `{\n  color: red\n  }`
+          isNewLine = true;
+          break;
+        }
+      } else {
         anyNonWS = true;
       }
 
@@ -433,6 +453,7 @@ function prettifyCSS(text, ruleCount) {
     endIndex = undefined;
     anyNonWS = false;
     isCloseBrace = false;
+    isNewLine = false;
     lastWasWS = false;
 
     // Read tokens until we see a reason to insert a newline.
@@ -445,6 +466,9 @@ function prettifyCSS(text, ruleCount) {
         // need anything here.
       } else {
         result = result + indent + text.substring(startIndex, endIndex);
+        if (isNewLine) {
+          lineOffset = lineOffset - 1;
+        }
         if (isCloseBrace) {
           result += prettifyCSS.LINE_SEPARATOR;
           lineOffset = lineOffset + 1;
@@ -530,23 +554,36 @@ exports.prettifyCSS = prettifyCSS;
  * (the parent of the anonymous node), along with which pseudo element
  * it was.  Otherwise, return the node itself.
  *
- * @returns {Object}
- *            - {DOMNode} node The non-anonymous node
- *            - {string} pseudo One of '::marker', '::before', '::after', or null.
+ * @returns {object}
+ *            - {DOMNode} node: The non-anonymous node
+ *            - {string|null} pseudo: The label representing the anonymous node
+ *                                    (e.g. '::marker',  '::before', '::after', '::view-transition',
+ *                                    '::view-transition-group(root)', …).
+ *                                    null if node isn't an anonymous node or isn't handled
+ *                                    yet.
  */
 function getBindingElementAndPseudo(node) {
   let bindingElement = node;
   let pseudo = null;
-  if (node.nodeName == "_moz_generated_content_marker") {
-    bindingElement = node.parentNode;
-    pseudo = "::marker";
-  } else if (node.nodeName == "_moz_generated_content_before") {
-    bindingElement = node.parentNode;
-    pseudo = "::before";
-  } else if (node.nodeName == "_moz_generated_content_after") {
-    bindingElement = node.parentNode;
-    pseudo = "::after";
+  const { implementedPseudoElement } = node;
+  if (implementedPseudoElement) {
+    // we only want to explicitly handle the elements we're displaying in the markup view
+    if (
+      implementedPseudoElement === "::marker" ||
+      implementedPseudoElement === "::before" ||
+      implementedPseudoElement === "::after"
+    ) {
+      pseudo = getNodeDisplayName(node);
+      bindingElement = node.parentNode;
+    } else if (implementedPseudoElement.startsWith("::view-transition")) {
+      pseudo = getNodeDisplayName(node);
+      // The binding for all view transition pseudo element is the <html> element, i.e. we
+      // can't use `node.parentNode` as for`::view-transition-old` element, we'd get the
+      // `::view-transition-group`, which is not the binding element.
+      bindingElement = node.getRootNode().documentElement;
+    }
   }
+
   return {
     bindingElement,
     pseudo,
@@ -570,7 +607,7 @@ exports.getMatchingCSSRules = getMatchingCSSRules;
  * Returns true if the given node has visited state.
  */
 function hasVisitedState(node) {
-  if (!node) {
+  if (!Element.isInstance(node)) {
     return false;
   }
 
@@ -586,6 +623,7 @@ exports.hasVisitedState = hasVisitedState;
 
 /**
  * Find the position of [element] in [nodeList].
+ *
  * @returns an index of the match, or -1 if there is no match
  */
 function positionInNodeList(element, nodeList) {
@@ -627,6 +665,7 @@ function findNodeAndContainer(node) {
 
 /**
  * Find a unique CSS selector for a given element
+ *
  * @returns a string such that:
  *   - ele.containingDocOrShadow.querySelector(reply) === ele
  *   - ele.containingDocOrShadow.querySelectorAll(reply).length === 1
@@ -832,8 +871,8 @@ var IS_VARIABLE_TOKEN = new RegExp(`^--(${VALID_CHAR})*$`, "i");
 /**
  * Check that this is a CSS variable.
  *
- * @param {String} input
- * @return {Boolean}
+ * @param {string} input
+ * @return {boolean}
  */
 function isCssVariable(input) {
   return !!input.match(IS_VARIABLE_TOKEN);

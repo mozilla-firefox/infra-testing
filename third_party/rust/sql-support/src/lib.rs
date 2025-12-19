@@ -8,18 +8,11 @@
 //! A crate with various sql/sqlcipher helpers.
 
 mod conn_ext;
-
-// XXX - temporarily disable our debug_tools, to avoid pulling in:
-// prettytable-rs = { version = "0.10", optional = true }
-// while vendoring into m-c :(
-pub mod debug_tools {
-    pub fn define_debug_functions(_c: &rusqlite::Connection) -> rusqlite::Result<()> {
-        Ok(())
-    }
-}
+pub mod debug_tools;
 
 mod each_chunk;
 mod lazy;
+mod maintenance;
 mod maybe_cached;
 pub mod open_database;
 mod repeat;
@@ -27,8 +20,12 @@ mod repeat;
 pub use conn_ext::*;
 pub use each_chunk::*;
 pub use lazy::*;
+pub use maintenance::run_maintenance;
 pub use maybe_cached::*;
 pub use repeat::*;
+
+// reexport logging helpers.
+use error_support::{debug, info, warn};
 
 /// In PRAGMA foo='bar', `'bar'` must be a constant string (it cannot be a
 /// bound parameter), so we need to escape manually. According to

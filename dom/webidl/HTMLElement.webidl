@@ -76,13 +76,22 @@ interface HTMLElement : Element {
   [Throws]
   ElementInternals attachInternals();
 
-  [Throws] undefined showPopover();
+  [Throws] undefined showPopover(optional ShowPopoverOptions options = {});
   [Throws] undefined hidePopover();
-  [Throws] boolean togglePopover(optional boolean force);
+  [Throws] boolean togglePopover(optional (TogglePopoverOptions or boolean) options = {});
 };
 
-// http://dev.w3.org/csswg/cssom-view/#extensions-to-the-htmlelement-interface
-partial interface HTMLElement {
+dictionary ShowPopoverOptions {
+  HTMLElement source;
+};
+
+dictionary TogglePopoverOptions : ShowPopoverOptions {
+  boolean force;
+};
+
+// https://drafts.csswg.org/cssom-view/#extensions-to-the-htmlelement-interface
+// We make this an interface mixin to be shared with XULElement.
+interface mixin ElementOffsetAttributes {
   // CSSOM things are not [Pure] because they can flush
   readonly attribute Element? offsetParent;
   readonly attribute long offsetTop;
@@ -96,7 +105,7 @@ partial interface HTMLElement {
   readonly attribute ElementInternals? internals;
 
   [ChromeOnly]
-  readonly attribute boolean isFormAssociatedCustomElements;
+  readonly attribute boolean isFormAssociatedCustomElement;
 };
 
 interface mixin TouchEventHandlers {
@@ -110,6 +119,7 @@ interface mixin TouchEventHandlers {
            attribute EventHandler ontouchcancel;
 };
 
+HTMLElement includes ElementOffsetAttributes;
 HTMLElement includes GlobalEventHandlers;
 HTMLElement includes HTMLOrForeignElement;
 HTMLElement includes ElementCSSInlineStyle;

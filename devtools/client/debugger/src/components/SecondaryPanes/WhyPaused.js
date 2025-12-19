@@ -11,7 +11,7 @@ import React, { PureComponent } from "devtools/client/shared/vendor/react";
 import { div, span } from "devtools/client/shared/vendor/react-dom-factories";
 import PropTypes from "devtools/client/shared/vendor/react-prop-types";
 import { connect } from "devtools/client/shared/vendor/react-redux";
-import AccessibleImage from "../shared/AccessibleImage";
+import DebuggerImage from "../shared/DebuggerImage";
 import actions from "../../actions/index";
 
 const Reps = ChromeUtils.importESModule(
@@ -25,6 +25,7 @@ const {
 import { getPauseReason } from "../../utils/pause/index";
 import {
   getCurrentThread,
+  getPauseCommand,
   getPaneCollapse,
   getPauseReason as getWhy,
   getVisibleSelectedFrame,
@@ -190,8 +191,8 @@ class WhyPaused extends PureComponent {
           {
             className: "info icon",
           },
-          React.createElement(AccessibleImage, {
-            className: "info",
+          React.createElement(DebuggerImage, {
+            name: "info",
           })
         ),
         div(
@@ -237,11 +238,28 @@ class WhyPaused extends PureComponent {
 
 WhyPaused.contextTypes = { fluentBundles: PropTypes.array };
 
-const mapStateToProps = state => ({
-  endPanelCollapsed: getPaneCollapse(state, "end"),
-  why: getWhy(state, getCurrentThread(state)),
-  visibleSelectedFrame: getVisibleSelectedFrame(state),
-});
+// Checks if user is in debugging mode and adds a delay preventing
+// excessive vertical 'jumpiness'
+function getDelay(state, thread) {
+  const inPauseCommand = !!getPauseCommand(state, thread);
+
+  if (!inPauseCommand) {
+    return 100;
+  }
+
+  return 0;
+}
+
+const mapStateToProps = state => {
+  const thread = getCurrentThread(state);
+
+  return {
+    delay: getDelay(state, thread),
+    endPanelCollapsed: getPaneCollapse(state, "end"),
+    why: getWhy(state, thread),
+    visibleSelectedFrame: getVisibleSelectedFrame(state),
+  };
+};
 
 export default connect(mapStateToProps, {
   openElementInInspector: actions.openElementInInspectorCommand,

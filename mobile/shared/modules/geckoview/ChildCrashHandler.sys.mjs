@@ -18,13 +18,24 @@ function getDir(name) {
   return PathUtils.join(uAppDataPath, "Crash Reports", name);
 }
 
-function getPendingMinidump(id) {
-  const pendingDir = getDir("pending");
+var getPendingDir = function () {
+  return getDir("pending");
+};
+
+var getPendingMinidump = function (id) {
+  const pendingDir = getPendingDir();
 
   return [".dmp", ".extra"].map(suffix => {
     return PathUtils.join(pendingDir, `${id}${suffix}`);
   });
-}
+};
+
+export var crashPullCallback = function (matches, requestedByDevs) {
+  lazy.EventDispatcher.instance.sendRequest({
+    type: "GeckoView:RemoteSettingsCrashPull",
+    crashIDs: matches.map(id => PathUtils.join(getPendingDir(), `${id}.dmp`)),
+  });
+};
 
 export var ChildCrashHandler = {
   // Map a child ID to a remote type.
@@ -82,10 +93,12 @@ export var ChildCrashHandler = {
 
         // Report GPU and extension process crashes as occuring in a background
         // process, and others as foreground.
-        const processType =
+        const processVisibility =
           aTopic === "compositor:process-aborted" || remoteType === "extension"
             ? "BACKGROUND_CHILD"
             : "FOREGROUND_CHILD";
+
+        const processType = aSubject.get("processType");
 
         lazy.EventDispatcher.instance.sendRequest({
           type: "GeckoView:ChildCrashReport",
@@ -93,6 +106,7 @@ export var ChildCrashHandler = {
           extrasPath,
           success: true,
           fatal: false,
+          processVisibility,
           processType,
           remoteType,
         });

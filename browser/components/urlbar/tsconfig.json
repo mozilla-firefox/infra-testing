@@ -1,0 +1,21 @@
+{
+  "include": ["**/*.sys.mjs", "types/*.ts"],
+  "exclude": [
+    "UrlbarProviderGlobalActions.sys.mjs",
+    "UrlbarView.sys.mjs",
+    "private/SuggestBackendRust.sys.mjs",
+    "tests/UrlbarTestUtils.sys.mjs"
+  ],
+  "extends": "../../../tools/@types/tsconfig.json",
+
+  "compilerOptions": {
+    "checkJs": true,
+
+    "plugins": [
+      {
+        "transform": "../../../tools/ts/plugins/checkRootOnly.js",
+        "transformProgram": true
+      }
+    ]
+  }
+}

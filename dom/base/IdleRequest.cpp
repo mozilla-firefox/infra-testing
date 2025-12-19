@@ -10,10 +10,11 @@
 #include "mozilla/dom/IdleDeadline.h"
 #include "mozilla/dom/PerformanceTiming.h"
 #include "mozilla/dom/TimeoutManager.h"
+#include "mozilla/dom/WebTaskScheduler.h"
 #include "mozilla/dom/WindowBinding.h"
 #include "nsComponentManagerUtils.h"
+#include "nsGlobalWindowInner.h"
 #include "nsPIDOMWindow.h"
-#include "mozilla/dom/WebTaskScheduler.h"
 
 namespace mozilla::dom {
 
@@ -63,7 +64,7 @@ void IdleRequest::IdleRun(nsPIDOMWindowInner* aWindow,
   // Set state’s priority source to the result of creating a fixed priority
   // unabortable task signal given "background" and realm.
   newState->SetPrioritySource(
-      new TaskSignal(aWindow->AsGlobal(), TaskPriority::Background));
+      TaskSignal::Create(aWindow->AsGlobal(), TaskPriority::Background));
   // Set event loop’s current scheduling state to state.
   innerWindow->SetWebTaskSchedulingState(newState);
   callback->Call(*deadline, "requestIdleCallback handler");

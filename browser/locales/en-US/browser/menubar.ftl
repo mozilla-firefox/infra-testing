@@ -248,12 +248,17 @@ menu-bookmarks-mobile =
 
 ## Profiles Menu
 
-menu-profiles =
+menu-profiles-menu =
     .label = Profiles
+    .accesskey = P
 menu-profiles-manage-profiles =
-    .label = Manage profiles
+    .label = Manage Profiles
 menu-profiles-new-profile =
-    .label = New profile
+    .label = New Profile
+# Variables:
+#  $profileName (String): the name of the users profile
+menu-profiles-current =
+    .label = { $profileName } (current)
 
 ## Tools Menu
 
@@ -263,9 +268,9 @@ menu-tools =
 menu-tools-downloads =
     .label = Downloads
     .accesskey = D
-menu-tools-addons-and-themes =
-    .label = Add-ons and Themes
-    .accesskey = A
+menu-tools-extensions-and-themes =
+    .label = Extensions and Themes
+    .accesskey = E
 menu-tools-fxa-sign-in2 =
     .label = Sign In
     .accesskey = g

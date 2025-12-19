@@ -16,7 +16,6 @@ import io.mockk.slot
 import io.mockk.spyk
 import io.mockk.verify
 import kotlinx.coroutines.test.runTest
-import mozilla.components.support.test.libstate.ext.waitUntilIdle
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -79,6 +78,23 @@ class WallpapersUseCasesTest {
     }
 
     @Test
+    fun `WHEN retrieving users wallpaper choice THEN appstore is updated with wallpaper lacking metadata`() = runTest {
+        val name = "name"
+        val textColor = 1L
+        val cardColorLight = 2L
+        val cardColorDark = 3L
+        every { mockSettings.currentWallpaperName } returns name
+        every { mockSettings.currentWallpaperTextColor } returns textColor
+        every { mockSettings.currentWallpaperCardColorLight } returns cardColorLight
+        every { mockSettings.currentWallpaperCardColorDark } returns cardColorDark
+        val chosenWallpaper = Wallpaper.Default.copy(name = name, textColor = textColor, cardColorLight = cardColorLight, cardColorDark = cardColorDark)
+
+        WallpapersUseCases.DefaultFetchCurrentWallpaperUseCase(mockSettings, appStore).invoke()
+
+        assertEquals(chosenWallpaper, appStore.state.wallpaperState.currentWallpaper)
+    }
+
+    @Test
     fun `WHEN initializing THEN the default wallpaper is not downloaded`() = runTest {
         val fakeRemoteWallpapers = listOf("first", "second", "third").map { name ->
             makeFakeRemoteWallpaper(TimeRelation.LATER, name)
@@ -98,7 +114,6 @@ class WallpapersUseCasesTest {
             "en-US",
         ).invoke()
 
-        appStore.waitUntilIdle()
         coVerify(exactly = 0) { mockDownloader.downloadWallpaper(Wallpaper.Default) }
     }
 
@@ -122,7 +137,6 @@ class WallpapersUseCasesTest {
             "en-US",
         ).invoke()
 
-        appStore.waitUntilIdle()
         assertTrue(appStore.state.wallpaperState.availableWallpapers.contains(Wallpaper.Default))
     }
 
@@ -151,7 +165,6 @@ class WallpapersUseCasesTest {
         ).invoke()
 
         val expectedFilteredWallpaper = fakeExpiredRemoteWallpapers[0]
-        appStore.waitUntilIdle()
         assertFalse(appStore.state.wallpaperState.availableWallpapers.contains(expectedFilteredWallpaper))
         coVerify { mockFileManager.clean(Wallpaper.Default, fakeRemoteWallpapers) }
     }
@@ -181,7 +194,6 @@ class WallpapersUseCasesTest {
         val expectedWallpaper = expiredWallpaper.copy(
             thumbnailFileState = Wallpaper.ImageFileState.Downloaded,
         )
-        appStore.waitUntilIdle()
         assertTrue(appStore.state.wallpaperState.availableWallpapers.contains(expectedWallpaper))
         assertEquals(expiredWallpaper, appStore.state.wallpaperState.currentWallpaper)
     }
@@ -210,8 +222,6 @@ class WallpapersUseCasesTest {
             "en-US",
         ).invoke()
 
-        appStore.waitUntilIdle()
-
         verify { mockMigrationHelper.migrateExpiredWallpaperCardColors() }
         verify { mockSettings.currentWallpaperCardColorLight = TURNING_RED_PANDA_WALLPAPER_CARD_COLOR_LIGHT.toHexColor() }
         verify { mockSettings.currentWallpaperCardColorDark = TURNING_RED_PANDA_WALLPAPER_CARD_COLOR_DARK.toHexColor() }
@@ -237,7 +247,6 @@ class WallpapersUseCasesTest {
             locale,
         ).invoke()
 
-        appStore.waitUntilIdle()
         assertEquals(1, appStore.state.wallpaperState.availableWallpapers.size)
         assertEquals(Wallpaper.Default, appStore.state.wallpaperState.availableWallpapers[0])
     }
@@ -290,7 +299,6 @@ class WallpapersUseCasesTest {
         for (fakeRemoteWallpaper in fakeRemoteWallpapers) {
             coVerify { mockDownloader.downloadThumbnail(fakeRemoteWallpaper) }
         }
-        appStore.waitUntilIdle()
         assertTrue(
             appStore.state.wallpaperState.availableWallpapers.all {
                 it.thumbnailFileState == Wallpaper.ImageFileState.Downloaded
@@ -321,7 +329,6 @@ class WallpapersUseCasesTest {
         ).invoke()
 
         val expectedWallpaper = failedWallpaper.copy(thumbnailFileState = Wallpaper.ImageFileState.Error)
-        appStore.waitUntilIdle()
         assertTrue(appStore.state.wallpaperState.availableWallpapers.contains(expectedWallpaper))
     }
 
@@ -345,7 +352,6 @@ class WallpapersUseCasesTest {
             "en-US",
         ).invoke()
 
-        appStore.waitUntilIdle()
         assertTrue(appStore.state.wallpaperState.currentWallpaper == Wallpaper.Default)
     }
 
@@ -374,7 +380,6 @@ class WallpapersUseCasesTest {
         val expectedWallpapers = (listOf(Wallpaper.Default) + possibleWallpapers).map {
             it.copy(thumbnailFileState = Wallpaper.ImageFileState.Downloaded)
         }
-        appStore.waitUntilIdle()
         assertEquals(selectedWallpaper, appStore.state.wallpaperState.currentWallpaper)
         assertEquals(expectedWallpapers, appStore.state.wallpaperState.availableWallpapers)
     }
@@ -395,7 +400,6 @@ class WallpapersUseCasesTest {
             mockDownloader,
         ).invoke(selectedWallpaper)
 
-        appStore.waitUntilIdle()
         assertEquals(selectedWallpaper.name, slot.captured)
         assertEquals(selectedWallpaper, appStore.state.wallpaperState.currentWallpaper)
         assertEquals(wallpaperFileState, Wallpaper.ImageFileState.Downloaded)
@@ -551,7 +555,7 @@ class WallpapersUseCasesTest {
             Wallpaper(
                 name = name,
                 collection = Wallpaper.Collection(
-                    name = Wallpaper.firefoxCollectionName,
+                    name = Wallpaper.FIREFOX_COLLECTION,
                     heading = null,
                     description = null,
                     availableLocales = listOf("en-US"),
@@ -569,7 +573,7 @@ class WallpapersUseCasesTest {
             Wallpaper(
                 name = name,
                 collection = Wallpaper.Collection(
-                    name = Wallpaper.firefoxCollectionName,
+                    name = Wallpaper.FIREFOX_COLLECTION,
                     heading = null,
                     description = null,
                     availableLocales = null,

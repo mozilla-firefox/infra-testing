@@ -11,6 +11,8 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 let lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
+  TaskbarTabsUtils: "resource:///modules/taskbartabs/TaskbarTabsUtils.sys.mjs",
   URILoadingHelper: "resource:///modules/URILoadingHelper.sys.mjs",
 });
 
@@ -36,6 +38,8 @@ ChromeUtils.defineLazyGetter(lazy, "ReferrerInfo", () =>
  * well as toolkit code to have an application-agnostic interface to do things
  * like opening new tabs and windows. Fenix (Firefox on Android) has its own
  * implementation of the same interface.
+ *
+ * @implements {nsIBrowserDOMWindow}
  */
 export class BrowserDOMWindow {
   /**
@@ -43,18 +47,43 @@ export class BrowserDOMWindow {
    */
   win = null;
 
+  /**
+   * @param {Window} win
+   */
   constructor(win) {
     this.win = win;
   }
 
+  /**
+   * @param {Window} win
+   */
   static setupInWindow(win) {
     win.browserDOMWindow = new BrowserDOMWindow(win);
   }
 
+  /**
+   * @param {Window} win
+   */
   static teardownInWindow(win) {
     win.browserDOMWindow = null;
   }
 
+  /**
+   * @param {nsIURI} aURI
+   * @param {nsIReferrerInfo} aReferrerInfo
+   * @param {boolean} aIsPrivate
+   * @param {boolean} aIsExternal
+   * @param {boolean} [aForceNotRemote=false]
+   * @param {number} [aUserContextId=0]
+   * @param {nsIOpenWindowInfo} [aOpenWindowInfo=null]
+   * @param {Element} [aOpenerBrowser=null]
+   * @param {nsIPrincipal} [aTriggeringPrincipal=null]
+   * @param {string} [aName=""]
+   * @param {nsIPolicyContainer} [aPolicyContainer=null]
+   * @param {boolean} [skipLoad=false]
+   * @param {i16} [aWhere=undefined]
+   * @returns {nsIBrowser|null}
+   */
   #openURIInNewTab(
     aURI,
     aReferrerInfo,
@@ -66,14 +95,18 @@ export class BrowserDOMWindow {
     aOpenerBrowser = null,
     aTriggeringPrincipal = null,
     aName = "",
-    aCsp = null,
+    aPolicyContainer = null,
     aSkipLoad = false,
     aWhere = undefined
   ) {
     let win, needToFocusWin;
 
-    // try the current window.  if we're in a popup, fall back on the most recent browser window
-    if (this.win.toolbar.visible) {
+    // try the current window. if we're in a popup or a taskbar tab, fall
+    // back on the most recent browser window
+    if (
+      this.win.toolbar.visible &&
+      !lazy.TaskbarTabsUtils.isTaskbarTabWindow(this.win)
+    ) {
       win = this.win;
     } else {
       win = BrowserWindowTracker.getTopWindow({ private: aIsPrivate });
@@ -105,7 +138,8 @@ export class BrowserDOMWindow {
       loadInBackground = lazy.loadDivertedInBackground;
     }
 
-    let tab = win.gBrowser.addTab(aURI ? aURI.spec : "about:blank", {
+    const uriString = aURI ? aURI.spec : "about:blank";
+    const tabOptions = {
       triggeringPrincipal: aTriggeringPrincipal,
       referrerInfo: aReferrerInfo,
       userContextId: aUserContextId,
@@ -115,9 +149,21 @@ export class BrowserDOMWindow {
       openWindowInfo: aOpenWindowInfo,
       openerBrowser: aOpenerBrowser,
       name: aName,
-      csp: aCsp,
+      policyContainer: aPolicyContainer,
       skipLoad: aSkipLoad,
-    });
+    };
+
+    let tab;
+    if (aWhere == Ci.nsIBrowserDOMWindow.OPEN_NEWTAB_AFTER_CURRENT) {
+      tab = win.gBrowser.addAdjacentTab(
+        win.gBrowser.selectedTab,
+        uriString,
+        tabOptions
+      );
+    } else {
+      tab = win.gBrowser.addTab(uriString, tabOptions);
+    }
+
     let browser = win.gBrowser.getBrowserForTab(tab);
 
     if (needToFocusWin || (!loadInBackground && aIsExternal)) {
@@ -127,48 +173,71 @@ export class BrowserDOMWindow {
     return browser;
   }
 
+  /**
+   * @type {nsIBrowserDOMWindow["createContentWindow"]}
+   */
   createContentWindow(
     aURI,
     aOpenWindowInfo,
     aWhere,
     aFlags,
     aTriggeringPrincipal,
-    aCsp
+    aPolicyContainer
   ) {
-    return this.getContentWindowOrOpenURI(
+    return this.#getContentWindowOrOpenURI(
       null,
       aOpenWindowInfo,
       aWhere,
       aFlags,
       aTriggeringPrincipal,
-      aCsp,
+      aPolicyContainer,
       true
     );
   }
 
-  openURI(aURI, aOpenWindowInfo, aWhere, aFlags, aTriggeringPrincipal, aCsp) {
-    if (!aURI) {
-      console.error("openURI should only be called with a valid URI");
-      throw Components.Exception("", Cr.NS_ERROR_FAILURE);
-    }
-    return this.getContentWindowOrOpenURI(
-      aURI,
-      aOpenWindowInfo,
-      aWhere,
-      aFlags,
-      aTriggeringPrincipal,
-      aCsp,
-      false
-    );
-  }
-
-  getContentWindowOrOpenURI(
+  /**
+   * @type {nsIBrowserDOMWindow["openURI"]}
+   */
+  openURI(
     aURI,
     aOpenWindowInfo,
     aWhere,
     aFlags,
     aTriggeringPrincipal,
-    aCsp,
+    aPolicyContainer
+  ) {
+    if (!aURI) {
+      console.error("openURI should only be called with a valid URI");
+      throw Components.Exception("", Cr.NS_ERROR_FAILURE);
+    }
+    return this.#getContentWindowOrOpenURI(
+      aURI,
+      aOpenWindowInfo,
+      aWhere,
+      aFlags,
+      aTriggeringPrincipal,
+      aPolicyContainer,
+      false
+    );
+  }
+
+  /**
+   * @param {nsIURI} aURI
+   * @param {nsIOpenWindowInfo} aOpenWindowInfo
+   * @param {i16} aWhere
+   * @param {i32} aFlags
+   * @param {nsIPrincipal} aTriggeringPrincipal
+   * @param {nsIPolicyContainer} aPolicyContainer
+   * @param {boolean} aSkipLoad
+   * @returns {BrowsingContext}
+   */
+  #getContentWindowOrOpenURI(
+    aURI,
+    aOpenWindowInfo,
+    aWhere,
+    aFlags,
+    aTriggeringPrincipal,
+    aPolicyContainer,
     aSkipLoad
   ) {
     var browsingContext = null;
@@ -197,16 +266,18 @@ export class BrowserDOMWindow {
       return null;
     }
 
+    if (isExternal) {
+      lazy.NimbusFeatures.externalLinkHandling.recordExposureEvent({
+        once: true,
+      });
+    }
+
     if (aWhere == Ci.nsIBrowserDOMWindow.OPEN_DEFAULTWINDOW) {
-      if (
-        isExternal &&
-        Services.prefs.prefHasUserValue(
-          "browser.link.open_newwindow.override.external"
-        )
-      ) {
-        aWhere = Services.prefs.getIntPref(
-          "browser.link.open_newwindow.override.external"
-        );
+      /** @type {number} proxy for `browser.link.open_newwindow.override.external` */
+      const externalLinkOpeningBehavior =
+        lazy.NimbusFeatures.externalLinkHandling.getVariable("openBehavior");
+      if (isExternal && externalLinkOpeningBehavior != -1) {
+        aWhere = externalLinkOpeningBehavior;
       } else {
         aWhere = Services.prefs.getIntPref("browser.link.open_newwindow");
       }
@@ -273,7 +344,7 @@ export class BrowserDOMWindow {
             null,
             aTriggeringPrincipal,
             null,
-            aCsp,
+            aPolicyContainer,
             aOpenWindowInfo
           );
           // At this point, the new browser window is just starting to load, and
@@ -289,7 +360,8 @@ export class BrowserDOMWindow {
       }
       case Ci.nsIBrowserDOMWindow.OPEN_NEWTAB:
       case Ci.nsIBrowserDOMWindow.OPEN_NEWTAB_BACKGROUND:
-      case Ci.nsIBrowserDOMWindow.OPEN_NEWTAB_FOREGROUND: {
+      case Ci.nsIBrowserDOMWindow.OPEN_NEWTAB_FOREGROUND:
+      case Ci.nsIBrowserDOMWindow.OPEN_NEWTAB_AFTER_CURRENT: {
         // If we have an opener, that means that the caller is expecting access
         // to the nsIDOMWindow of the opened tab right away. For e10s windows,
         // this means forcing the newly opened browser to be non-remote so that
@@ -311,7 +383,7 @@ export class BrowserDOMWindow {
           aOpenWindowInfo?.parent?.top.embedderElement,
           aTriggeringPrincipal,
           "",
-          aCsp,
+          aPolicyContainer,
           aSkipLoad,
           aWhere
         );
@@ -346,7 +418,7 @@ export class BrowserDOMWindow {
           // should be addressed in bug 1815509.
           this.win.gBrowser.fixupAndLoadURIString(aURI.spec, {
             triggeringPrincipal: aTriggeringPrincipal,
-            csp: aCsp,
+            policyContainer: aPolicyContainer,
             loadFlags,
             referrerInfo,
           });
@@ -358,11 +430,14 @@ export class BrowserDOMWindow {
     return browsingContext;
   }
 
+  /**
+   * @type {nsIBrowserDOMWindow["createContentWindowInFrame"]}
+   */
   createContentWindowInFrame(aURI, aParams, aWhere, aFlags, aName) {
     // Passing a null-URI to only create the content window,
     // and pass true for aSkipLoad to prevent loading of
     // about:blank
-    return this.getContentWindowOrOpenURIInFrame(
+    return this.#getContentWindowOrOpenURIInFrame(
       null,
       aParams,
       aWhere,
@@ -372,8 +447,11 @@ export class BrowserDOMWindow {
     );
   }
 
+  /**
+   * @type {nsIBrowserDOMWindow["openURIInFrame"]}
+   */
   openURIInFrame(aURI, aParams, aWhere, aFlags, aName) {
-    return this.getContentWindowOrOpenURIInFrame(
+    return this.#getContentWindowOrOpenURIInFrame(
       aURI,
       aParams,
       aWhere,
@@ -383,7 +461,16 @@ export class BrowserDOMWindow {
     );
   }
 
-  getContentWindowOrOpenURIInFrame(
+  /**
+   * @param {nsIURI} aURI
+   * @param {nsIOpenURIInFrameParams} aParams
+   * @param {i16} aWhere
+   * @param {i32} aFlags
+   * @param {string} aName
+   * @param {boolean} aSkipLoad
+   * @returns {Element}
+   */
+  #getContentWindowOrOpenURIInFrame(
     aURI,
     aParams,
     aWhere,
@@ -425,16 +512,22 @@ export class BrowserDOMWindow {
       aParams.openerBrowser,
       aParams.triggeringPrincipal,
       aName,
-      aParams.csp,
+      aParams.policyContainer,
       aSkipLoad,
       aWhere
     );
   }
 
+  /**
+   * @type {nsIBrowserDOMWindow["canClose"]}
+   */
   canClose() {
     return this.win.CanCloseWindow();
   }
 
+  /**
+   * @type {nsIBrowserDOMWindow["tabCount"]}
+   */
   get tabCount() {
     return this.win.gBrowser.tabs.length;
   }

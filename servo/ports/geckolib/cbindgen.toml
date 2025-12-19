@@ -84,6 +84,14 @@ exclude = [
   "NS_LogDtor",
   "SelectorList",
   "AuthorStyles",
+  "LockedStyleRule",
+  "LockedImportRule",
+  "LockedFontFaceRule",
+  "LockedCounterStyleRule",
+  "LockedKeyframesRule",
+  "LockedPageRule",
+  "LockedPositionTryRule",
+  "LockedNestedDeclarationsRule",
 ]
 include = [
   "AnchorName",
@@ -100,6 +108,7 @@ include = [
   "Au",
   "BreakBetween",
   "BreakWithin",
+  "BorderSideWidth",
   "BorderStyle",
   "BorderSpacing",
   "BoolInteger",
@@ -126,6 +135,8 @@ include = [
   "Platform",
   "PositionAnchor",
   "PositionArea",
+  "PositionAreaAxis",
+  "PositionAreaTrack",
   "PositionAreaKeyword",
   "PositionTryFallbacks",
   "PositionTryOrder",
@@ -153,7 +164,6 @@ include = [
   "OffsetRotate",
   "RayFunction",
   "UnicodeRange",
-  "UserInput",
   "UserFocus",
   "UserSelect",
   "PointerEvents",
@@ -170,11 +180,12 @@ include = [
   "TransitionBehavior",
   "ViewTimelineInset",
   "OverflowAnchor",
-  "OverflowClipBox",
+  "OverflowClipMargin",
   "Resize",
   "Overflow",
   "LengthPercentage",
   "LetterSpacing",
+  "NonLocalUriDependency",
   "NonNegativeLengthPercentage",
   "LengthPercentageOrAuto",
   "LineHeight",
@@ -184,6 +195,7 @@ include = [
   "NonNegativeLengthOrAuto",
   "TextDecorationSkipInk",
   "TextDecorationLength",
+  "TextDecorationInset",
   "Time",
   "Rect",
   "InitialLetter",
@@ -202,6 +214,7 @@ include = [
   "BorderRadius",
   "ColorScheme",
   "ColumnCount",
+  "CssRuleRef",
   "NonNegativeLengthOrNumberRect",
   "Perspective",
   "ZIndex",
@@ -280,11 +293,12 @@ include = [
   "CounterSet",
   "CounterIncrement",
   "WritingMode",
+  "WritingModeProperty",
   "Content",
   "ContentItem",
-  "AlignSelf",
-  "JustifySelf",
-  "AlignItems",
+  "ContentDistribution",
+  "SelfAlignment",
+  "ItemPlacement",
   "ComputedJustifyItems",
   "AlignContent",
   "JustifyContent",
@@ -300,6 +314,7 @@ include = [
   "SVGWidth",
   "TextAlign",
   "TextAlignLast",
+  "TextAutospace",
   "FontSizeKeyword",
   "AspectRatio",
   "DefaultFontSizes",
@@ -324,14 +339,18 @@ include = [
   "XTextScale",
   "Zoom",
   "TransitionProperty",
+  "ViewTransitionClass",
   "ViewTransitionName",
   "Inset",
   "AnchorFunction",
+  "AnchorSide",
   "AnchorSizeFunction",
   "Margin",
   "PositionProperty",
   "PhysicalAxis",
+  "PhysicalSide",
   "QueryFontMetricsFlags",
+  "AllowAnchorPosResolutionInCalcPercentage",
 ]
 item_types = [
   "enums",
@@ -361,9 +380,9 @@ renaming_overrides_prefixing = true
 "ComputedTiming" = "ComputedTiming"
 "CountedUnknownProperty" = "CountedUnknownProperty"
 "RefPtr" = "RefPtr"
-"nsCSSPropertyID" = "nsCSSPropertyID"
+"NonCustomCSSPropertyId" = "NonCustomCSSPropertyId"
 "nsCSSPropertyIDSet" = "nsCSSPropertyIDSet"
-"AnimatedPropertyID" = "AnimatedPropertyID"
+"CSSPropertyId" = "CSSPropertyId"
 "nsCSSValueSharedList" = "nsCSSValueSharedList"
 "AnimationPropertySegment" = "AnimationPropertySegment"
 "RawServoAnimationValueTable" = "RawServoAnimationValueTable"
@@ -398,6 +417,9 @@ renaming_overrides_prefixing = true
 "ThinVec" = "CopyableTArray"
 "RawPthread" = "pthread_t"
 "RawHandle" = "void*"
+"PseudoStyleRequest" = "PseudoStyleRequest"
+"AnchorPosResolutionParams" = "AnchorPosResolutionParams"
+"AnchorPosOffsetResolutionParams" = "AnchorPosOffsetResolutionParams"
 
 [export.body]
 "CSSPixelLength" = """
@@ -510,6 +532,7 @@ renaming_overrides_prefixing = true
   inline bool BehavesLikeInitialValueOnBlockAxis() const;
   inline bool BehavesLikeInitialValue(LogicalAxis) const;
   inline bool HasAnchorPositioningFunction() const;
+  inline explicit StyleGenericSize(const LengthPercent &);
 """
 
 "GenericFlexBasis" = """
@@ -528,12 +551,17 @@ renaming_overrides_prefixing = true
   inline bool BehavesLikeInitialValueOnBlockAxis() const;
   inline bool BehavesLikeInitialValue(LogicalAxis) const;
   inline bool HasAnchorPositioningFunction() const;
+  inline explicit StyleGenericMaxSize(const LengthPercent &);
 """
 
 "GenericPosition" = """
   inline bool HasPercent() const;
   inline bool DependsOnPositioningAreaSize() const;
   static inline StyleGenericPosition FromPercentage(float);
+  inline gfx::Point ToGfxPoint(const CSSSize* aBasis = nullptr) const;
+  gfx::Point ToGfxPoint(const CSSSize& aBasis) const {
+    return ToGfxPoint(&aBasis);
+  };
 """
 
 "GenericBackgroundSize" = """
@@ -833,6 +861,38 @@ renaming_overrides_prefixing = true
   };
 """
 
+"CommandEndPoint" = """
+  inline gfx::Point ToGfxPoint(const CSSSize* aBasis = nullptr) const;
+  gfx::Point ToGfxPoint(const CSSSize& aBasis) const {
+    return ToGfxPoint(&aBasis);
+  };
+"""
+
+"AxisEndPoint" = """
+  inline gfx::Coord ToGfxCoord(const float* aBasis = nullptr) const;
+  gfx::Coord ToGfxCoord(const float& aBasis) const {
+    return ToGfxCoord(&aBasis);
+  };
+"""
+
+"ControlPoint" = """
+  inline gfx::Point ToGfxPoint(
+    const gfx::Point aStatePos, const gfx::Point aEndPoint,
+    const CSSSize* aBasis = nullptr) const;
+  gfx::Point ToGfxPoint(
+    const gfx::Point aStatePos, const gfx::Point aEndPoint,
+    const CSSSize& aBasis) const {
+    return ToGfxPoint(aStatePos, aEndPoint, &aBasis);
+  }
+"""
+
+"ArcRadii" = """
+  inline gfx::Point ToGfxPoint(const CSSSize* aBasis = nullptr) const;
+  gfx::Point ToGfxPoint(const CSSSize& aBasis) const {
+    return ToGfxPoint(&aBasis);
+  };
+"""
+
 "TextOverflow" = """
   StyleTextOverflow()
     : first(StyleTextOverflowSide::Clip()),
@@ -954,7 +1014,9 @@ renaming_overrides_prefixing = true
   //
   // The resolution is in dppx, and should be used to impact the intrinsic
   // size of the image.
-  ImageResolution GetResolution(const ComputedStyle&) const;
+  //
+  // @param aStyleForZoom a style, if CSS zoom should be considered as well.
+  ImageResolution GetResolution(const ComputedStyle* aStyleForZoom) const;
 
   // If this is an image-set(), the final image we've selected, otherwise it
   // returns *this.
@@ -1022,6 +1084,7 @@ renaming_overrides_prefixing = true
  bool IsNormal() const { return *this == NORMAL; }
 
  inline bool IsBold() const;
+ inline bool PreferBold() const;
 """
 
 "FontStyle" = """
@@ -1039,7 +1102,7 @@ renaming_overrides_prefixing = true
 """
 
 "Zoom" = """
- SERVO_FIXED_POINT_HELPERS(StyleZoom, uint16_t, StyleZOOM_FRACTION_BITS);
+ float ToFloat() const { return _0; }
  inline float Zoom(float) const;
  inline float Unzoom(float) const;
  inline nscoord ZoomCoord(nscoord) const;
@@ -1066,11 +1129,6 @@ renaming_overrides_prefixing = true
 "GenericViewTimelineInset" = """
  public:
   inline StyleGenericViewTimelineInset();
-"""
-
-"ViewTransitionName" = """
- public:
-  StyleViewTransitionName() : _0(nsGkAtoms::_empty) {}
 """
 
 "Time" = """
@@ -1164,7 +1222,7 @@ renaming_overrides_prefixing = true
 "TransitionProperty" = """
   bool IsAll() const {
     return IsNonCustom() &&
-           nsCSSPropertyID(AsNonCustom()._0) == eCSSProperty_all;
+           NonCustomCSSPropertyId(AsNonCustom()._0) == eCSSProperty_all;
   }
 """
 
@@ -1176,6 +1234,7 @@ renaming_overrides_prefixing = true
   inline nscoord ToLength() const;
   inline bool ConvertsToPercentage() const;
   inline float ToPercentage() const;
+  inline explicit StyleGenericInset(const LP &);
 """
 
 "GenericMargin" = """
@@ -1186,4 +1245,13 @@ renaming_overrides_prefixing = true
   inline bool ConvertsToPercentage() const;
   inline float ToPercentage() const;
   inline bool HasAnchorPositioningFunction() const;
+  inline explicit StyleGenericMargin(const LP &);
+"""
+
+"PositionArea" = """
+  inline bool IsNone() const;
+  constexpr StylePositionArea()
+    : first(StylePositionAreaKeyword::None),
+      second(StylePositionAreaKeyword::None)
+  {}
 """

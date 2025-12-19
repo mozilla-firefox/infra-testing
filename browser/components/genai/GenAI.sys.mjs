@@ -12,9 +12,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ASRouterTargeting: "resource:///modules/asrouter/ASRouterTargeting.sys.mjs",
   ContentAnalysisUtils: "resource://gre/modules/ContentAnalysisUtils.sys.mjs",
   EveryWindow: "resource:///modules/EveryWindow.sys.mjs",
-  ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
-  PrefUtils: "resource://normandy/lib/PrefUtils.sys.mjs",
+  PrefUtils: "moz-src:///toolkit/modules/PrefUtils.sys.mjs",
+  SidebarManager:
+    "moz-src:///browser/components/sidebar/SidebarManager.sys.mjs",
 });
 ChromeUtils.defineLazyGetter(
   lazy,
@@ -37,6 +38,12 @@ XPCOMUtils.defineLazyPreferenceGetter(
 );
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
+  "chatMaxLength",
+  "browser.ml.chat.maxLength"
+);
+XPCOMUtils.defineLazyPreferenceGetter(lazy, "chatMenu", "browser.ml.chat.menu");
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
   "chatNimbus",
   "browser.ml.chat.nimbus"
 );
@@ -45,6 +52,12 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "chatOpenSidebarOnProviderChange",
   "browser.ml.chat.openSidebarOnProviderChange",
   true
+);
+XPCOMUtils.defineLazyPreferenceGetter(lazy, "chatPage", "browser.ml.chat.page");
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "chatPageMenuBadge",
+  "browser.ml.chat.page.menuBadge"
 );
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
@@ -62,7 +75,7 @@ XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
   "chatProviders",
   "browser.ml.chat.providers",
-  "claude,chatgpt,gemini,huggingchat,lechat",
+  "claude,chatgpt,copilot,gemini,lechat",
   reorderChatProviders
 );
 XPCOMUtils.defineLazyPreferenceGetter(
@@ -95,6 +108,12 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "sidebarTools",
   "sidebar.main.tools"
 );
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "shortcutMouseoverCount",
+  "browser.ml.chat.shortcut.onboardingMouseoverCount",
+  0
+);
 
 export const GenAI = {
   // Cache of potentially localized prompt
@@ -107,15 +126,8 @@ export const GenAI = {
     [
       "https://claude.ai/new",
       {
-        choiceIds: [
-          "genai-onboarding-claude-generate",
-          "genai-onboarding-claude-analyze",
-          "genai-onboarding-claude-price",
-        ],
         iconUrl: "chrome://browser/content/genai/assets/brands/claude.svg",
         id: "claude",
-        learnId: "genai-onboarding-claude-learn",
-        learnLink: "https://www.anthropic.com/claude",
         link1:
           "https://www.anthropic.com/legal/archive/6370fb23-12ed-41d9-a4a2-28866dee3105",
         link2:
@@ -123,43 +135,31 @@ export const GenAI = {
         link3:
           "https://www.anthropic.com/legal/archive/628feec9-7df9-4d38-bc69-fbf104df47b0",
         linksId: "genai-settings-chat-claude-links",
-        maxLength: 15020,
+        maxLength: 14150,
         name: "Anthropic Claude",
+        supportAutoSubmit: true,
         tooltipId: "genai-onboarding-claude-tooltip",
       },
     ],
     [
       "https://chatgpt.com",
       {
-        choiceIds: [
-          "genai-onboarding-chatgpt-generate",
-          "genai-onboarding-chatgpt-analyze",
-          "genai-onboarding-chatgpt-price",
-        ],
         iconUrl: "chrome://browser/content/genai/assets/brands/chatgpt.svg",
         id: "chatgpt",
-        learnId: "genai-onboarding-chatgpt-learn",
-        learnLink: "https://help.openai.com/articles/6783457-what-is-chatgpt",
         link1: "https://openai.com/terms",
         link2: "https://openai.com/privacy",
         linksId: "genai-settings-chat-chatgpt-links",
-        maxLength: 14140,
+        maxLength: 9350,
         name: "ChatGPT",
+        supportAutoSubmit: true,
         tooltipId: "genai-onboarding-chatgpt-tooltip",
       },
     ],
     [
-      "https://copilot.microsoft.com",
+      "https://copilot.microsoft.com/?form=MOZCMC",
       {
-        choiceIds: [
-          "genai-onboarding-copilot-generate",
-          "genai-onboarding-copilot-analyze",
-          "genai-onboarding-copilot-price",
-        ],
         iconUrl: "chrome://browser/content/genai/assets/brands/copilot.svg",
         id: "copilot",
-        learnId: "genai-onboarding-copilot-learn",
-        learnLink: "https://www.microsoft.com/microsoft-copilot/learn/",
         link1: "https://www.bing.com/new/termsofuse",
         link2: "https://go.microsoft.com/fwlink/?LinkId=521839",
         linksId: "genai-settings-chat-copilot-links",
@@ -171,16 +171,9 @@ export const GenAI = {
     [
       "https://gemini.google.com",
       {
-        choiceIds: [
-          "genai-onboarding-gemini-generate",
-          "genai-onboarding-gemini-analyze",
-          "genai-onboarding-gemini-price",
-        ],
         header: "X-Firefox-Gemini",
         iconUrl: "chrome://browser/content/genai/assets/brands/gemini.svg",
         id: "gemini",
-        learnId: "genai-onboarding-gemini-learn",
-        learnLink: "https://gemini.google.com/faq",
         link1: "https://policies.google.com/terms",
         link2: "https://policies.google.com/terms/generative-ai/use-policy",
         link3: "https://support.google.com/gemini?p=privacy_notice",
@@ -195,15 +188,8 @@ export const GenAI = {
     [
       "https://huggingface.co/chat",
       {
-        choiceIds: [
-          "genai-onboarding-huggingchat-generate",
-          "genai-onboarding-huggingchat-switch",
-          "genai-onboarding-huggingchat-price-2",
-        ],
         iconUrl: "chrome://browser/content/genai/assets/brands/huggingchat.svg",
         id: "huggingchat",
-        learnId: "genai-onboarding-huggingchat-learn",
-        learnLink: "https://huggingface.co/chat/privacy/",
         link1: "https://huggingface.co/chat/privacy",
         link2: "https://huggingface.co/privacy",
         linksId: "genai-settings-chat-huggingchat-links",
@@ -215,18 +201,12 @@ export const GenAI = {
     [
       "https://chat.mistral.ai/chat",
       {
-        choiceIds: [
-          "genai-onboarding-lechat-generate",
-          "genai-onboarding-lechat-price",
-        ],
         iconUrl: "chrome://browser/content/genai/assets/brands/lechat.svg",
         id: "lechat",
-        learnId: "genai-onboarding-lechat-learn",
-        learnLink: "https://help.mistral.ai/collections/272960-le-chat",
         link1: "https://mistral.ai/terms/#terms-of-service-le-chat",
         link2: "https://mistral.ai/terms/#privacy-policy",
         linksId: "genai-settings-chat-lechat-links",
-        maxLength: 3680,
+        maxLength: 13350,
         name: "Le Chat Mistral",
         tooltipId: "genai-onboarding-lechat-tooltip",
       },
@@ -295,13 +275,9 @@ export const GenAI = {
     updateIgnoredInputs();
 
     // Handle nimbus feature pref setting
-    const featureId = "chatbot";
-    lazy.NimbusFeatures[featureId].onUpdate(() => {
-      // Prefer experiments over rollouts
-      const feature = { featureId };
-      const enrollment =
-        lazy.ExperimentAPI.getExperimentMetaData(feature) ??
-        lazy.ExperimentAPI.getRolloutMetaData(feature);
+    const feature = lazy.NimbusFeatures.chatbot;
+    feature.onUpdate(() => {
+      const enrollment = feature.getEnrollmentMetadata();
       if (!enrollment) {
         return;
       }
@@ -313,7 +289,7 @@ export const GenAI = {
           // Support betas, e.g., 132.0b1, instead of MOZ_APP_VERSION
           AppConstants.MOZ_APP_VERSION_DISPLAY,
           // Check configured version or compare with unset handled as 0
-          lazy.NimbusFeatures[featureId].getVariable("minVersion")
+          feature.getVariable("minVersion")
         ) < 0
       ) {
         return;
@@ -321,21 +297,40 @@ export const GenAI = {
 
       // Set prefs on any branch if we have a new enrollment slug, otherwise
       // only set default branch as those only last for the session
-      const slug = enrollment.slug + ":" + enrollment.branch.slug;
-      const anyBranch = slug != lazy.chatNimbus;
+      const slug = enrollment.slug + ":" + enrollment.branch;
+      const newEnroll = slug != lazy.chatNimbus;
       const setPref = ([pref, { branch = "user", value = null }]) => {
-        if (anyBranch || branch == "default") {
+        if (newEnroll || branch == "default") {
           lazy.PrefUtils.setPref("browser.ml.chat." + pref, value, { branch });
         }
       };
       setPref(["nimbus", { value: slug }]);
-      Object.entries(
-        lazy.NimbusFeatures[featureId].getVariable("prefs")
-      ).forEach(setPref);
+      Object.entries(feature.getVariable("prefs") ?? {}).forEach(setPref);
+
+      // Show sidebar badge on new enrollment
+      if (feature.getVariable("badgeSidebar") && newEnroll) {
+        Services.prefs.setBoolPref("sidebar.notification.badge.aichat", true);
+      }
     });
 
     // Record glean metrics after applying nimbus prefs
+    Glean.genaiChatbot.badges.set(
+      Object.entries({
+        footer: "browser.ml.chat.page.footerBadge",
+        menu: "browser.ml.chat.page.menuBadge",
+        sidebar: "sidebar.notification.badge.aichat",
+      })
+        .reduce((acc, [key, pref]) => {
+          if (Services.prefs.getBoolPref(pref)) {
+            acc.push(key);
+          }
+          return acc;
+        }, [])
+        .join(",")
+    );
     Glean.genaiChatbot.enabled.set(lazy.chatEnabled);
+    Glean.genaiChatbot.menu.set(lazy.chatMenu);
+    Glean.genaiChatbot.page.set(lazy.chatPage);
     Glean.genaiChatbot.provider.set(this.getProviderId());
     Glean.genaiChatbot.shortcuts.set(lazy.chatShortcuts);
     Glean.genaiChatbot.shortcutsCustom.set(lazy.chatShortcutsCustom);
@@ -366,24 +361,26 @@ export const GenAI = {
   async addAskChatItems(browser, extraContext, itemAdder, entry, cleanup) {
     // Prepare context used for both targeting and handling prompts
     const window = browser.ownerGlobal;
-    const tab = window.gBrowser.getTabForBrowser(browser);
+    const tab = window?.gBrowser?.getTabForBrowser(browser);
     const uri = browser.currentURI;
     const context = {
       ...extraContext,
       entry,
       provider: lazy.chatProvider,
       tabTitle: (tab?._labelIsContentTitle && tab?.label) || "",
-      url: uri.asciiHost + uri.filePath,
+      url: uri?.asciiHost + uri?.filePath,
       window,
     };
 
     // Add items that pass along context for handling
-    (await this.getContextualPrompts(context)).forEach(promptObj =>
-      itemAdder(promptObj).addEventListener("command", () => {
+    (await this.getContextualPrompts(context)).forEach(promptObj => {
+      const item = itemAdder(promptObj, context);
+      item?.addEventListener("command", () => {
         this.handleAskChat(promptObj, context);
-        cleanup?.();
-      })
-    );
+        cleanup?.(item);
+      });
+    });
+
     return context;
   },
 
@@ -398,7 +395,15 @@ export const GenAI = {
     }
     aiActionButton.initialized = true;
 
+    const setAIButtonAriaLabel = (chatProviderName = "localhost") => {
+      document.l10n.setAttributes(aiActionButton, "genai-shortcut-button", {
+        provider: chatProviderName,
+      });
+    };
+
     const document = aiActionButton.ownerDocument;
+    const initialChatProvider = this.chatProviders.get(lazy.chatProvider);
+    setAIButtonAriaLabel(initialChatProvider?.name);
     const buttonActiveState = "icon";
     const buttonDefaultState = "icon ghost";
     const chatShortcutsOptionsPanel = document.getElementById(
@@ -433,12 +438,11 @@ export const GenAI = {
      * @returns { mozMessageBarEl } MozMessageBar warning message bar
      */
     const createMessageBarWarning = chatProvider => {
-      const mozMessageBarEl = document.createElement("moz-message-bar");
-
-      // Create MozMessageBar
-      mozMessageBarEl.dataset.l10nAttrs = "heading,message";
-      mozMessageBarEl.setAttribute("type", "warning");
-      mozMessageBarEl.className = "ask-chat-shortcut-warning";
+      const mozMessageBarEl = this.createWarningEl(
+        document,
+        "ask-chat-shortcut-warning",
+        null
+      );
 
       // If provider is not defined, use generic warning message
       const translationId = chatProvider?.name
@@ -458,20 +462,18 @@ export const GenAI = {
       return mozMessageBarEl;
     };
 
-    // Detect hover to build and open the popup
-    aiActionButton.addEventListener("mouseover", async () => {
-      if (chatShortcutsOptionsPanel.state != "closed") {
-        return;
-      }
-
+    // build the ask popup
+    const buildPopup = async () => {
       aiActionButton.setAttribute("type", buttonActiveState);
       const vbox = chatShortcutsOptionsPanel.querySelector("vbox");
       vbox.innerHTML = "";
 
+      const showWarning = this.isContextTooLong(aiActionButton.data.selection);
       const chatProvider = this.chatProviders.get(lazy.chatProvider);
-      const selectionLength = aiActionButton.data.selection.length;
-      const showWarning =
-        this.estimateSelectionLimit(chatProvider?.maxLength) < selectionLength;
+
+      if (initialChatProvider !== chatProvider?.name) {
+        setAIButtonAriaLabel(chatProvider?.name);
+      }
 
       // Show warning if selection is too long
       if (showWarning) {
@@ -563,6 +565,35 @@ export const GenAI = {
         provider: this.getProviderId(),
         warning: showWarning,
       });
+    };
+
+    // ask popup shows on mouseover only in the first two times
+    const hasMouseoverOnPopup = () => {
+      const mouseoverCounter = lazy.shortcutMouseoverCount;
+      const maxMouseoverCount = 2;
+
+      if (mouseoverCounter >= maxMouseoverCount) {
+        return;
+      }
+
+      if (chatShortcutsOptionsPanel.state == "closed") {
+        Services.prefs.setIntPref(
+          "browser.ml.chat.shortcut.onboardingMouseoverCount",
+          mouseoverCounter + 1
+        );
+        buildPopup();
+      }
+    };
+
+    aiActionButton.addEventListener("mouseover", hasMouseoverOnPopup);
+
+    // Detect click to build and toggle the popup
+    aiActionButton.addEventListener("click", async () => {
+      if (chatShortcutsOptionsPanel.state != "closed") {
+        chatShortcutsOptionsPanel.hidePopup();
+        return;
+      }
+      buildPopup();
     });
   },
 
@@ -633,50 +664,234 @@ export const GenAI = {
   },
 
   /**
+   * Determine whether a warning should be shown depending on provider max length
+   *
+   * @param {string} selection selected text from context
+   */
+  isContextTooLong(selection) {
+    const chatProvider = this.chatProviders.get(lazy.chatProvider);
+    const selectionLength = selection.length;
+
+    return (
+      this.estimateSelectionLimit(chatProvider?.maxLength) < selectionLength
+    );
+  },
+
+  /**
+   * Create <moz-message-bar> warning element
+   *
+   * @param {Document} document the element
+   * @param {string | null} className css class to apply
+   * @param {string | null} dismissable attribute setting
+   */
+  createWarningEl(document, className, dismissable) {
+    const mozMessageBarEl = document.createElement("moz-message-bar");
+
+    mozMessageBarEl.dataset.l10nAttrs = "heading,message";
+    mozMessageBarEl.setAttribute("type", "warning");
+    if (dismissable) {
+      mozMessageBarEl.setAttribute("dismissable", true);
+    }
+
+    if (className) {
+      mozMessageBarEl.className = className;
+    }
+
+    return mozMessageBarEl;
+  },
+
+  /**
    * Build prompts menu to ask chat for context menu.
    *
    * @param {MozMenu} menu element to update
-   * @param {nsContextMenu} nsContextMenu helpers for context menu
+   * @param {object} contextMenu object containing utility and states for building the context menu
    */
-  async buildAskChatMenu(menu, nsContextMenu) {
-    nsContextMenu.showItem(menu, false);
-    if (!this.canShowChatEntrypoint) {
+  async buildAskChatMenu(menu, contextMenu) {
+    const {
+      browser,
+      selectionInfo,
+      showItem = this.showItem,
+      source,
+      contextTabs = null,
+    } = contextMenu;
+
+    // DO NOT show menu when inside an extension panel
+    const uri = browser.browsingContext?.currentURI.spec;
+    if (uri?.startsWith("moz-extension:")) {
+      showItem(menu, false);
       return;
     }
+
+    // Page feature can be shown without provider unless disabled via menu
+    // or revamp sidebar excludes chatbot
+    const isPageFeatureAllowed =
+      lazy.chatPage &&
+      (lazy.chatProvider != "" || lazy.chatMenu) &&
+      (!lazy.sidebarRevamp || lazy.sidebarTools.includes("aichat"));
+
+    let canShow = false;
+    switch (source) {
+      case "page":
+        canShow = this.canShowChatEntrypoint || isPageFeatureAllowed;
+        break;
+      case "tab":
+        canShow = isPageFeatureAllowed && contextTabs?.length === 1;
+        break;
+      case "tool":
+        canShow = lazy.chatPage;
+        break;
+    }
+    if (!canShow) {
+      showItem(menu, false);
+      return;
+    }
+
     const provider = this.chatProviders.get(lazy.chatProvider)?.name;
     const doc = menu.ownerDocument;
-    doc.l10n.setAttributes(
-      menu,
-      provider ? "genai-menu-ask-provider" : "genai-menu-ask-generic",
-      { provider }
-    );
-    menu.menupopup?.remove();
+
+    // Only "page" and "tab" contexts need a <menu> submenu
+    if (source !== "tool") {
+      if (provider) {
+        doc.l10n.setAttributes(menu, "genai-menu-ask-provider-2", { provider });
+      } else {
+        doc.l10n.setAttributes(
+          menu,
+          lazy.chatProvider
+            ? "genai-menu-ask-generic-2"
+            : "genai-menu-no-provider-2"
+        );
+      }
+      menu.menupopup?.remove();
+    }
+
+    // NOTE: Show the menu item synchronously, before any `await`.
+    showItem(menu, true);
+
+    // Determine if we have selection or should use page content
+    const context = {
+      contentType: "selection",
+      selection: selectionInfo?.fullText ?? "",
+    };
+    if (lazy.chatPage && !context.selection) {
+      // Get page content for prompts when no selection
+      await this.addPageContext(browser, context);
+    }
+    const addItem = () =>
+      source === "tool"
+        ? menu.appendChild(doc.createXULElement("menuitem"))
+        : menu.appendItem("");
     await this.addAskChatItems(
-      nsContextMenu.browser,
-      { selection: nsContextMenu.selectionInfo.fullText ?? "" },
-      promptObj => menu.appendItem(promptObj.label),
-      "menu"
+      browser,
+      context,
+      promptObj => {
+        const { contentType, selection } = context;
+        const item = addItem();
+        item.setAttribute("label", promptObj.label);
+
+        // Disabled menu if page is invalid
+        if (contentType === "page" && !selection) {
+          item.disabled = true;
+        }
+        if (promptObj.badge && lazy.chatPageMenuBadge) {
+          item.setAttribute("badge", promptObj.badge);
+        }
+
+        return item;
+      },
+      source,
+      item => {
+        // Currently only summarize page shows a badge, so remove when clicked
+        if (item.hasAttribute("badge")) {
+          Services.prefs.setBoolPref("browser.ml.chat.page.menuBadge", false);
+        }
+      }
     );
 
-    // Add separator and remove provider option
-    const hasPrompts = menu.itemCount > 0;
-    if (hasPrompts) {
-      menu.menupopup.appendChild(doc.createXULElement("menuseparator"));
-      const removeItem = menu.appendItem("");
-      doc.l10n.setAttributes(
-        removeItem,
-        provider ? "genai-menu-remove-provider" : "genai-menu-remove-generic",
-        { provider }
-      );
-      removeItem.addEventListener("command", () => {
-        Glean.genaiChatbot.contextmenuRemove.record({
+    // For page which currently only shows 1 prompt, make it less empty with an
+    // Open or Choose options depending on provider
+    if (context.contentType == "page") {
+      const openItem = addItem();
+      if (provider) {
+        doc.l10n.setAttributes(openItem, "genai-menu-open-provider", {
+          provider,
+        });
+      } else {
+        doc.l10n.setAttributes(
+          openItem,
+          lazy.chatProvider
+            ? "genai-menu-open-generic"
+            : "genai-menu-choose-chatbot"
+        );
+      }
+      openItem.addEventListener("command", () => {
+        const window = browser.ownerGlobal;
+        window.SidebarController.show("viewGenaiChatSidebar");
+        Glean.genaiChatbot.contextmenuChoose.record({
           provider: this.getProviderId(),
         });
-        Services.prefs.clearUserPref("browser.ml.chat.provider");
       });
     }
 
-    nsContextMenu.showItem(menu, hasPrompts);
+    // Add remove provider option
+    const popup = source === "tool" ? menu : menu.menupopup;
+    popup.appendChild(doc.createXULElement("menuseparator"));
+    const removeItem = addItem();
+    doc.l10n.setAttributes(
+      removeItem,
+      provider ? "genai-menu-remove-provider" : "genai-menu-remove-generic",
+      { provider }
+    );
+    removeItem.addEventListener("command", () => {
+      Glean.genaiChatbot.contextmenuRemove.record({
+        provider: this.getProviderId(),
+      });
+      if (lazy.chatProvider) {
+        Services.prefs.clearUserPref("browser.ml.chat.provider");
+      } else if (source === "tool") {
+        // When there's no provider set this menu should remove chatbot as a tool
+        lazy.SidebarManager.updateToolsPref("aichat", true);
+      } else {
+        Services.prefs.setBoolPref("browser.ml.chat.menu", false);
+      }
+    });
+  },
+
+  /**
+   *
+   * Build the buildAskChatMenu item for the tab context menu
+   *
+   * @param {MozMenu} menu the tab menu to update
+   * @param {object} tabContextMenu the tab context menu instance
+   * @returns {promise} resolve when the menu item is configured
+   */
+  async buildTabMenu(menu, tabContextMenu) {
+    const { contextTab, contextTabs } = tabContextMenu;
+
+    const browser = contextTab?.linkedBrowser;
+    await this.buildAskChatMenu(menu, {
+      browser,
+      selectionInfo: null,
+      showItem: (item, shouldShow) => {
+        const separator = item.nextElementSibling;
+        this.showItem(item, shouldShow);
+
+        if (separator && separator.localName === "menuseparator") {
+          this.showItem(separator, shouldShow);
+        }
+      },
+      source: "tab",
+      contextTabs,
+    });
+  },
+
+  /**
+   * Toggle the visibility of the chatbot menu item
+   *
+   * @param {MozMenu} item the chatbot menu item element
+   * @param {boolean} shouldShow whether to show or hide the item
+   */
+  showItem(item, shouldShow) {
+    item.hidden = !shouldShow;
   },
 
   /**
@@ -720,6 +935,20 @@ export const GenAI = {
         msg?.attributes.forEach(attr => (toFormat[idx][attr.name] = attr.value))
     );
 
+    // Specially handle page summarization prompt
+    if (context.contentType == "page") {
+      for (const promptObj of toFormat) {
+        if (promptObj.id == "summarize") {
+          const [badge, label] = await lazy.l10n.formatValues([
+            "genai-menu-new-badge",
+            "genai-menu-summarize-page",
+          ]);
+          promptObj.badge = badge;
+          promptObj.label = label;
+        }
+      }
+    }
+
     return lazy.ASRouterTargeting.findMatchingMessage({
       messages,
       returnAll: true,
@@ -735,7 +964,7 @@ export const GenAI = {
    * @param {number} maxLength optional of the provider request URI
    * @returns {number} adjusted length estimate
    */
-  estimateSelectionLimit(maxLength = 8000) {
+  estimateSelectionLimit(maxLength = lazy.chatMaxLength) {
     // Could try to be smarter including the selected text with URI encoding,
     // base URI length, other parts of the prompt (especially for custom)
     return Math.round(maxLength * 0.85) - 500;
@@ -757,10 +986,11 @@ export const GenAI = {
             {
               id: prefixObj.l10nId,
               args: {
-                tabTitle: "%tabTitle%",
                 selection: `%selection|${this.estimateSelectionLimit(
                   this.chatProviders.get(lazy.chatProvider)?.maxLength
                 )}%`,
+                tabTitle: "%tabTitle%",
+                url: "%url%",
               },
             },
           ])
@@ -797,28 +1027,191 @@ export const GenAI = {
   },
 
   /**
+   * Update context with page content.
+   *
+   * @param {MozBrowser} browser for the tab to get content
+   * @param {object} context optional existing context to update
+   * @returns {object} updated context
+   */
+  async addPageContext(browser, context = {}) {
+    context.contentType = "page";
+    try {
+      Object.assign(
+        context,
+        await browser?.browsingContext?.currentWindowContext
+          .getActor("GenAI")
+          .sendQuery("GetReadableText")
+      );
+    } catch (ex) {
+      console.warn("Failed to get page content", ex);
+    }
+    return context;
+  },
+
+  /**
+   * Summarize the current page content.
+   *
+   * @param {Window} window chrome window with tabs
+   * @param {string} entry name
+   */
+  async summarizeCurrentPage(window, entry) {
+    const browser = window.gBrowser.selectedBrowser;
+    await this.addAskChatItems(
+      browser,
+      await this.addPageContext(browser),
+      (promptObj, context) => {
+        if (promptObj.id === "summarize") {
+          this.handleAskChat(promptObj, context);
+        }
+      },
+      entry
+    );
+  },
+
+  /**
+   * Set up automatic prompt submission for ChatGPT and Claude
+   *
+   * @param {Browser} browser - current browser
+   * @param {string} prompt - prompt text
+   * @param {object} context of how the prompt should be handled
+   */
+  setupAutoSubmit(browser, prompt, context) {
+    const sendAutoSubmit = (br, promptText) => {
+      const wgp = br.browsingContext?.currentWindowGlobal;
+      const actor = wgp?.getActor("GenAI");
+      if (!actor) {
+        return;
+      }
+
+      try {
+        actor.sendAsyncMessage("AutoSubmit", {
+          promptText,
+        });
+      } catch (e) {
+        console.error("error message: ", e);
+      }
+    };
+
+    if (lazy.chatSidebar) {
+      const injector = {
+        async onStateChange(_wp, _req, flags) {
+          const stopDoc =
+            flags & Ci.nsIWebProgressListener.STATE_STOP &&
+            flags & Ci.nsIWebProgressListener.STATE_IS_DOCUMENT;
+          if (!stopDoc) {
+            return;
+          }
+
+          const wgp = browser.browsingContext?.currentWindowGlobal;
+          if (!wgp || wgp.isInitialDocument) {
+            return;
+          }
+
+          try {
+            browser.webProgress?.removeProgressListener(injector);
+          } catch {}
+          await sendAutoSubmit(browser, prompt);
+        },
+        QueryInterface: ChromeUtils.generateQI([
+          "nsIWebProgressListener",
+          "nsISupportsWeakReference",
+        ]),
+      };
+
+      browser.webProgress?.addProgressListener(
+        injector,
+        Ci.nsIWebProgress.NOTIFY_STATE_DOCUMENT
+      );
+    } else {
+      // Tab mode:
+      const gBrowser = context.window.gBrowser;
+      const targetBrowser = browser;
+
+      const tabListener = {
+        async onLocationChange(br, _wp, _req, location) {
+          if (br !== targetBrowser) {
+            return;
+          }
+
+          const spec = location?.spec || "";
+          if (spec === "about:blank") {
+            return;
+          }
+
+          try {
+            gBrowser.removeTabsProgressListener(tabListener);
+          } catch {}
+          await sendAutoSubmit(browser, prompt);
+        },
+        QueryInterface: ChromeUtils.generateQI([
+          "nsIwebProgressListener",
+          "nsISupportsWeakReference",
+        ]),
+      };
+
+      gBrowser.addTabsProgressListener(tabListener);
+    }
+  },
+
+  /**
    * Handle selected prompt by opening tab or sidebar.
    *
    * @param {object} promptObj to convert to string
    * @param {object} context of how the prompt should be handled
    */
   async handleAskChat(promptObj, context) {
-    Glean.genaiChatbot[
-      context.entry == "menu"
-        ? "contextmenuPromptClick"
-        : "shortcutsPromptClick"
-    ].record({
+    // Record up to 3 types of event telemetry for backwards compatibility
+    const isPageSummarizeRequest =
+      promptObj.id == "summarize" && context.contentType == "page";
+    if (isPageSummarizeRequest) {
+      Glean.genaiChatbot.summarizePage.record({
+        provider: this.getProviderId(),
+        reader_mode: context.readerMode,
+        selection: context.selection?.length ?? 0,
+        source: context.entry,
+      });
+    }
+    if (["page", "shortcuts"].includes(context.entry)) {
+      Glean.genaiChatbot[
+        context.entry == "page"
+          ? "contextmenuPromptClick"
+          : "shortcutsPromptClick"
+      ].record({
+        prompt: promptObj.id ?? "custom",
+        provider: this.getProviderId(),
+        selection: context.selection?.length ?? 0,
+      });
+    }
+    Glean.genaiChatbot.promptClick.record({
+      content_type: context.contentType,
       prompt: promptObj.id ?? "custom",
       provider: this.getProviderId(),
+      reader_mode: context.readerMode,
       selection: context.selection?.length ?? 0,
+      source: context.entry,
     });
 
+    // If no provider is configured, open sidebar and wait once for onboarding
+    const { SidebarController } = context.window;
+
+    if (!lazy.chatProvider) {
+      await SidebarController.show("viewGenaiChatSidebar");
+      await SidebarController.browser.contentWindow.onboardingPromise;
+      if (!lazy.chatProvider) {
+        return;
+      }
+    }
+
+    // Build prompt after provider is confirmed to use correct length limits
     await this.prepareChatPromptPrefix();
     const prompt = this.buildChatPrompt(promptObj, context);
 
     // Pass the prompt via GET url ?q= param or request header
-    const { header, queryParam = "q" } =
-      this.chatProviders.get(lazy.chatProvider) ?? {};
+    const {
+      header,
+      queryParam = "q",
+      supportAutoSubmit,
+    } = this.chatProviders.get(lazy.chatProvider) ?? {};
     const url = new URL(lazy.chatProvider);
     const options = {
       inBackground: false,
@@ -827,6 +1220,7 @@ export const GenAI = {
         {}
       ),
     };
+
     if (header) {
       options.headers = Cc[
         "@mozilla.org/io/string-input-stream;1"
@@ -841,13 +1235,33 @@ export const GenAI = {
     // Get the desired browser to handle the prompt url request
     let browser;
     if (lazy.chatSidebar) {
-      const { SidebarController } = context.window;
       await SidebarController.show("viewGenaiChatSidebar");
       browser = await SidebarController.browser.contentWindow.browserPromise;
+      if (!browser) {
+        console.error("Failed to get chat sidebar browser");
+        return;
+      }
+      const showWarning =
+        isPageSummarizeRequest && this.isContextTooLong(context.selection);
+
+      await SidebarController.browser.contentWindow.onNewPrompt({
+        show: showWarning,
+        ...(showWarning
+          ? { contextLength: context.selection?.length ?? 0 }
+          : {}),
+      });
     } else {
       browser = context.window.gBrowser.addTab("", options).linkedBrowser;
     }
     browser.fixupAndLoadURIString(url, options);
+
+    // Run autosubmit only for chatGPT, Claude, or mochitest
+    if (
+      supportAutoSubmit ||
+      lazy.chatProvider?.includes("file_chat-autosubmit.html")
+    ) {
+      this.setupAutoSubmit(browser, prompt, context);
+    }
   },
 };
 

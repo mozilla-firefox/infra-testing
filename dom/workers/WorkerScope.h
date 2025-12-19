@@ -13,18 +13,17 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/NotNull.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/AnimationFrameProvider.h"
 #include "mozilla/dom/ImageBitmapBinding.h"
 #include "mozilla/dom/ImageBitmapSource.h"
 #include "mozilla/dom/PerformanceWorker.h"
 #include "mozilla/dom/SafeRefPtr.h"
+#include "mozilla/dom/TimeoutManager.h"
 #include "mozilla/dom/TrustedTypePolicyFactory.h"
 #include "mozilla/dom/WorkerPrivate.h"
-#include "mozilla/dom/TimeoutManager.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIGlobalObject.h"
@@ -79,6 +78,7 @@ class ServiceWorkerDescriptor;
 class ServiceWorkerRegistration;
 class ServiceWorkerRegistrationDescriptor;
 struct StructuredSerializeOptions;
+class TimeoutManager;
 class WorkerDocumentListener;
 class WorkerLocation;
 class WorkerNavigator;
@@ -228,6 +228,16 @@ class WorkerGlobalScopeBase : public DOMEventTargetHelper,
     return mNumOfIndexedDBDatabases;
   }
 
+  bool IsPlayingAudio() override {
+    AssertIsOnWorkerThread();
+    return mWorkerPrivate && mWorkerPrivate->IsPlayingAudio();
+  }
+
+  bool HasActivePeerConnections() override {
+    AssertIsOnWorkerThread();
+    return mWorkerPrivate && mWorkerPrivate->HasActivePeerConnections();
+  }
+
   void TriggerUpdateCCFlag() override {
     mWorkerPrivate->UpdateCCFlag(WorkerPrivate::CCFlag::EligibleForTimeout);
   }
@@ -333,7 +343,7 @@ class WorkerGlobalScope : public WorkerGlobalScopeBase {
   MOZ_CAN_RUN_SCRIPT void ImportScripts(
       JSContext* aCx,
       const Sequence<OwningTrustedScriptURLOrString>& aScriptURLs,
-      ErrorResult& aRv);
+      nsIPrincipal* aSubjectPrincipal, ErrorResult& aRv);
 
   OnErrorEventHandlerNonNull* GetOnerror();
 
@@ -369,7 +379,7 @@ class WorkerGlobalScope : public WorkerGlobalScopeBase {
   int32_t SetTimeout(JSContext* aCx,
                      const FunctionOrTrustedScriptOrString& aHandler,
                      int32_t aTimeout, const Sequence<JS::Value>& aArguments,
-                     ErrorResult& aRv);
+                     nsIPrincipal* aSubjectPrincipal, ErrorResult& aRv);
 
   MOZ_CAN_RUN_SCRIPT
   void ClearTimeout(int32_t aHandle);
@@ -378,7 +388,7 @@ class WorkerGlobalScope : public WorkerGlobalScopeBase {
   int32_t SetInterval(JSContext* aCx,
                       const FunctionOrTrustedScriptOrString& aHandler,
                       int32_t aTimeout, const Sequence<JS::Value>& aArguments,
-                      ErrorResult& aRv);
+                      nsIPrincipal* aSubjectPrincipal, ErrorResult& aRv);
 
   MOZ_CAN_RUN_SCRIPT
   void ClearInterval(int32_t aHandle);
@@ -436,11 +446,10 @@ class WorkerGlobalScope : public WorkerGlobalScopeBase {
 
  private:
   MOZ_CAN_RUN_SCRIPT
-  int32_t SetTimeoutOrInterval(JSContext* aCx,
-                               const FunctionOrTrustedScriptOrString& aHandler,
-                               int32_t aTimeout,
-                               const Sequence<JS::Value>& aArguments,
-                               bool aIsInterval, ErrorResult& aRv);
+  int32_t SetTimeoutOrInterval(
+      JSContext* aCx, const FunctionOrTrustedScriptOrString& aHandler,
+      int32_t aTimeout, const Sequence<JS::Value>& aArguments, bool aIsInterval,
+      nsIPrincipal* aSubjectPrincipal, ErrorResult& aRv);
 
   RefPtr<Crypto> mCrypto;
   RefPtr<WorkerLocation> mLocation;

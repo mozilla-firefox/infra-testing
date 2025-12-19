@@ -5,11 +5,10 @@
 #ifndef nsTableRowFrame_h__
 #define nsTableRowFrame_h__
 
-#include "mozilla/Attributes.h"
-#include "nscore.h"
+#include "mozilla/WritingModes.h"
 #include "nsContainerFrame.h"
 #include "nsTableRowGroupFrame.h"
-#include "mozilla/WritingModes.h"
+#include "nscore.h"
 
 class nsTableCellFrame;
 namespace mozilla {

@@ -9,12 +9,12 @@
 #include "builtin/intl/RelativeTimeFormat.h"
 
 #include "mozilla/Assertions.h"
-#include "mozilla/FloatingPoint.h"
 #include "mozilla/intl/RelativeTimeFormat.h"
 
 #include "builtin/intl/CommonFunctions.h"
 #include "builtin/intl/FormatBuffer.h"
 #include "builtin/intl/LanguageTag.h"
+#include "builtin/intl/LocaleNegotiation.h"
 #include "gc/GCContext.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/Printer.h"
@@ -27,6 +27,7 @@
 #include "vm/NativeObject-inl.h"
 
 using namespace js;
+using namespace js::intl;
 
 /**************** RelativeTimeFormat *****************/
 
@@ -54,6 +55,9 @@ const JSClass RelativeTimeFormatObject::class_ = {
 
 const JSClass& RelativeTimeFormatObject::protoClass_ = PlainObject::class_;
 
+static bool relativeTimeFormat_supportedLocalesOf(JSContext* cx, unsigned argc,
+                                                  Value* vp);
+
 static bool relativeTimeFormat_toSource(JSContext* cx, unsigned argc,
                                         Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
@@ -62,8 +66,7 @@ static bool relativeTimeFormat_toSource(JSContext* cx, unsigned argc,
 }
 
 static const JSFunctionSpec relativeTimeFormat_static_methods[] = {
-    JS_SELF_HOSTED_FN("supportedLocalesOf",
-                      "Intl_RelativeTimeFormat_supportedLocalesOf", 1, 0),
+    JS_FN("supportedLocalesOf", relativeTimeFormat_supportedLocalesOf, 1, 0),
     JS_FS_END,
 };
 
@@ -155,30 +158,13 @@ void js::RelativeTimeFormatObject::finalize(JS::GCContext* gcx, JSObject* obj) {
  */
 static mozilla::intl::RelativeTimeFormat* NewRelativeTimeFormatter(
     JSContext* cx, Handle<RelativeTimeFormatObject*> relativeTimeFormat) {
+  RootedValue value(cx);
   RootedObject internals(cx, intl::GetInternalsObject(cx, relativeTimeFormat));
   if (!internals) {
     return nullptr;
   }
 
-  RootedValue value(cx);
-
-  if (!GetProperty(cx, internals, internals, cx->names().locale, &value)) {
-    return nullptr;
-  }
-
   // ICU expects numberingSystem as a Unicode locale extensions on locale.
-
-  mozilla::intl::Locale tag;
-  {
-    Rooted<JSLinearString*> locale(cx, value.toString()->ensureLinear(cx));
-    if (!locale) {
-      return nullptr;
-    }
-
-    if (!intl::ParseLocale(cx, locale, tag)) {
-      return nullptr;
-    }
-  }
 
   JS::RootedVector<intl::UnicodeExtensionKeyword> keywords(cx);
 
@@ -198,21 +184,7 @@ static mozilla::intl::RelativeTimeFormat* NewRelativeTimeFormatter(
     }
   }
 
-  // |ApplyUnicodeExtensionToTag| applies the new keywords to the front of the
-  // Unicode extension subtag. We're then relying on ICU to follow RFC 6067,
-  // which states that any trailing keywords using the same key should be
-  // ignored.
-  if (!intl::ApplyUnicodeExtensionToTag(cx, tag, keywords)) {
-    return nullptr;
-  }
-
-  intl::FormatBuffer<char> buffer(cx);
-  if (auto result = tag.ToString(buffer); result.isErr()) {
-    intl::ReportInternalError(cx, result.unwrapErr());
-    return nullptr;
-  }
-
-  UniqueChars locale = buffer.extractStringZ();
+  UniqueChars locale = intl::FormatLocale(cx, internals, keywords);
   if (!locale) {
     return nullptr;
   }
@@ -318,7 +290,7 @@ bool js::intl_FormatRelativeTime(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  intl::FieldType jsUnitType;
+  intl::RelativeTimeFormatUnit jsUnitType;
   using FormatUnit = mozilla::intl::RelativeTimeFormat::FormatUnit;
   FormatUnit relTimeUnit;
   {
@@ -404,5 +376,22 @@ bool js::intl_FormatRelativeTime(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   args.rval().setString(str);
+  return true;
+}
+
+/**
+ * Intl.RelativeTimeFormat.supportedLocalesOf ( locales [ , options ] )
+ */
+static bool relativeTimeFormat_supportedLocalesOf(JSContext* cx, unsigned argc,
+                                                  Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  // Steps 1-3.
+  auto* array = SupportedLocalesOf(cx, AvailableLocaleKind::RelativeTimeFormat,
+                                   args.get(0), args.get(1));
+  if (!array) {
+    return false;
+  }
+  args.rval().setObject(*array);
   return true;
 }

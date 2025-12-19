@@ -12,7 +12,7 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 import {
   UrlbarProvider,
   UrlbarUtils,
-} from "resource:///modules/UrlbarUtils.sys.mjs";
+} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 const lazy = {};
 
@@ -21,10 +21,12 @@ ChromeUtils.defineESModuleGetters(lazy, {
   DefaultBrowserCheck:
     "moz-src:///browser/components/DefaultBrowserCheck.sys.mjs",
   LaterRun: "resource:///modules/LaterRun.sys.mjs",
-  SearchStaticData: "resource://gre/modules/SearchStaticData.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarProviderTopSites: "resource:///modules/UrlbarProviderTopSites.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
+  SearchStaticData:
+    "moz-src:///toolkit/components/search/SearchStaticData.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarProviderTopSites:
+    "moz-src:///browser/components/urlbar/UrlbarProviderTopSites.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
 
@@ -83,10 +85,19 @@ const LAST_UPDATE_THRESHOLD_HOURS = 24;
 /**
  * A provider that sometimes returns a tip result when the user visits the
  * newtab page or their default search engine's homepage.
+ *
+ * This class supports only one instance.
  */
-class ProviderSearchTips extends UrlbarProvider {
+export class UrlbarProviderSearchTips extends UrlbarProvider {
+  /** @type {?UrlbarProviderSearchTips} */
+  static #instance = null;
+
   constructor() {
     super();
+    if (UrlbarProviderSearchTips.#instance) {
+      throw new Error("Can only have one instance of UrlbarProviderSearchTips");
+    }
+    UrlbarProviderSearchTips.#instance = this;
 
     // Whether we should disable tips for the current browser session, for
     // example because a tip was already shown.
@@ -113,29 +124,17 @@ class ProviderSearchTips extends UrlbarProvider {
    *
    * @returns {{ NONE: string; ONBOARD: string; REDIRECT: string; }}
    */
-  get TIP_TYPE() {
+  static get TIP_TYPE() {
     return TIPS;
   }
 
-  get PRIORITY() {
+  static get PRIORITY() {
     // Search tips are prioritized over the Places and top sites providers.
     return lazy.UrlbarProviderTopSites.PRIORITY + 1;
   }
 
   /**
-   * Unique name for the provider, used by the context to filter on providers.
-   * Not using a unique name will cause the newest registration to win.
-   *
-   * @returns {string}
-   */
-  get name() {
-    return "UrlbarProviderSearchTips";
-  }
-
-  /**
-   * The type of the provider.
-   *
-   * @returns {UrlbarUtils.PROVIDER_TYPE}
+   * @returns {Values<typeof UrlbarUtils.PROVIDER_TYPE>}
    */
   get type() {
     return UrlbarUtils.PROVIDER_TYPE.PROFILE;
@@ -145,11 +144,9 @@ class ProviderSearchTips extends UrlbarProvider {
    * Whether this provider should be invoked for the given context.
    * If this method returns false, the providers manager won't start a query
    * with this provider, to save on resources.
-   *
-   * @returns {boolean} Whether this provider should be invoked for the search.
    */
-  isActive() {
-    return this.currentTip && lazy.cfrFeaturesUserPref;
+  async isActive() {
+    return !!this.currentTip && lazy.cfrFeaturesUserPref;
   }
 
   /**
@@ -158,17 +155,15 @@ class ProviderSearchTips extends UrlbarProvider {
    * @returns {number} The provider's priority for the given query.
    */
   getPriority() {
-    return this.PRIORITY;
+    return UrlbarProviderSearchTips.PRIORITY;
   }
 
   /**
-   * Starts querying. Extended classes should return a Promise resolved when the
-   * provider is done searching AND returning results.
+   * Starts querying.
    *
-   * @param {UrlbarQueryContext} queryContext The query context object
-   * @param {Function} addCallback Callback invoked by the provider to add a new
-   *        result. A UrlbarResult should be passed to it.
-   * @returns {Promise}
+   * @param {UrlbarQueryContext} queryContext
+   * @param {(provider: UrlbarProvider, result: UrlbarResult) => void} addCallback
+   *   Callback invoked by the provider to add a new result.
    */
   async startQuery(queryContext, addCallback) {
     let instance = this.queryInstance;
@@ -183,37 +178,34 @@ class ProviderSearchTips extends UrlbarProvider {
       return;
     }
 
-    let result = new lazy.UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.TIP,
-      UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-      {
-        type: tip,
-        buttons: [{ l10n: { id: "urlbar-search-tips-confirm" } }],
-        icon,
-      }
-    );
-
+    let result;
     switch (tip) {
       case TIPS.ONBOARD:
-        result.heuristic = true;
-        result.payload.titleL10n = {
-          id: "urlbar-search-tips-onboard",
-          args: {
-            engineName: defaultEngine.name,
+        result = this.#makeResult({
+          tip,
+          icon,
+          titleL10n: {
+            id: "urlbar-search-tips-onboard",
+            args: {
+              engineName: defaultEngine.name,
+            },
           },
-        };
+          heuristic: true,
+        });
         break;
       case TIPS.REDIRECT:
-        result.heuristic = false;
-        result.payload.titleL10n = {
-          id: "urlbar-search-tips-redirect-2",
-          args: {
-            engineName: defaultEngine.name,
+        result = this.#makeResult({
+          tip,
+          icon,
+          titleL10n: {
+            id: "urlbar-search-tips-redirect-2",
+            args: {
+              engineName: defaultEngine.name,
+            },
           },
-        };
+        });
         break;
     }
-
     addCallback(this, result);
   }
 
@@ -251,6 +243,29 @@ class ProviderSearchTips extends UrlbarProvider {
 
   /**
    * Called from `onLocationChange` in browser.js.
+   *
+   * @param {window} window
+   *  The browser window where the location change happened.
+   * @param {nsIURI} uri
+   *  The URI being navigated to.
+   * @param {nsIWebProgress} webProgress
+   *   The progress object, which can have event listeners added to it.
+   * @param {number} flags
+   *   Load flags. See nsIWebProgressListener.idl for possible values.
+   */
+  static async onLocationChange(window, uri, webProgress, flags) {
+    if (UrlbarProviderSearchTips.#instance) {
+      UrlbarProviderSearchTips.#instance.onLocationChange(
+        window,
+        uri,
+        webProgress,
+        flags
+      );
+    }
+  }
+
+  /**
+   * Called by the static function with the same name.
    *
    * @param {window} window
    *  The browser window where the location change happened.
@@ -403,6 +418,20 @@ class ProviderSearchTips extends UrlbarProvider {
       window.gURLBar.search("", { focus: tip == TIPS.ONBOARD });
     }, SHOW_TIP_DELAY_MS);
   }
+
+  #makeResult({ tip, icon, titleL10n, heuristic = false }) {
+    return new lazy.UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.TIP,
+      source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+      heuristic,
+      payload: {
+        type: tip,
+        buttons: [{ l10n: { id: "urlbar-search-tips-confirm" } }],
+        icon,
+        titleL10n,
+      },
+    });
+  }
 }
 
 async function isBrowserShowingNotification(window) {
@@ -473,7 +502,7 @@ async function isBrowserShowingNotification(window) {
  * @param {string} urlStr
  *   The URL to check, in string form.
  *
- * @returns {boolean}
+ * @returns {Promise<boolean>}
  */
 async function isDefaultEngineHomepage(urlStr) {
   let defaultEngine = await Services.search.getDefault();
@@ -500,5 +529,3 @@ async function isDefaultEngineHomepage(urlStr) {
 
   return homepageMatches.domainPath.test(urlStr);
 }
-
-export var UrlbarProviderSearchTips = new ProviderSearchTips();

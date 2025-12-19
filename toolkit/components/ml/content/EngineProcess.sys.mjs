@@ -16,11 +16,24 @@
 export const DEFAULT_ENGINE_ID = "default-engine";
 
 /**
+ * Supported backends.
+ */
+export const BACKENDS = Object.freeze({
+  onnx: "onnx",
+  wllama: "wllama",
+  onnxNative: "onnx-native",
+  llamaCpp: "llama.cpp",
+  bestLlama: "best-llama",
+  openai: "openai",
+  staticEmbeddings: "static-embeddings",
+});
+
+/**
  * @constant
  * @type {Array<string>}
- * @description Supported backends.
+ * @description Backends using WASM.
  */
-export const BACKENDS = ["onnx", "wllama"];
+export const WASM_BACKENDS = [BACKENDS.onnx, BACKENDS.wllama];
 
 /**
  * @constant
@@ -64,7 +77,7 @@ export const DEFAULT_MODELS = Object.freeze({
   summarization: { modelId: "Xenova/distilbart-cnn-6-6", dtype: "q8" },
   translation: { modelId: "Xenova/t5-small", dtype: "q8" },
   "text2text-generation": { modelId: "Xenova/flan-t5-small", dtype: "q8" },
-  "text-generation": { modelId: "Xenova/gpt2", dtype: "q8" },
+  "text-generation": { modelId: "onnx-community/gpt2-ONNX", dtype: "q8" },
   "zero-shot-classification": {
     modelId: "Xenova/distilbert-base-uncased-mnli",
     dtype: "q8",
@@ -121,14 +134,11 @@ export const DEFAULT_MODELS = Object.freeze({
  *
  * The only exception is web extension, as the engine id is dynamically created with the extension id.
  */
-const FEATURES = {
-  // see toolkit/components/formautofill/MLAutofill.sys.mjs
-  "autofill-classification": {
-    engineId: "autofill-ml",
-  },
+export const FEATURES = {
   // see toolkit/components/pdfjs/content/PdfjsParent.sys.mjs
   "pdfjs-alt-text": {
     engineId: "pdfjs",
+    fluentId: "mlmodel-pdfjs",
   },
   // see browser/components/urlbar/private/MLSuggest.sys.mjs
   "suggest-intent-classification": {
@@ -141,18 +151,30 @@ const FEATURES = {
   // see toolkit/components/aboutinference/content/aboutInference.js
   "about-inference": {
     engineId: "about-inference",
+    fluentId: "mlmodel-about-inference",
   },
   // see browser/components/tabbrowser/SmartTabGrouping.sys.mjs,
   "smart-tab-embedding": {
     engineId: "smart-tab-embedding-engine",
+    fluentId: "mlmodel-smart-tab-embedding-engine",
   },
   // see browser/components/tabbrowser/SmartTabGrouping.sys.mjs
   "smart-tab-topic": {
     engineId: "smart-tab-topic-engine",
+    fluentId: "mlmodel-smart-tab-topic-engine",
   },
   // see toolkit/components/ml/content/nlp/EmbeddingsGenerator.sys.mjs
   "simple-text-embedder": {
     engineId: "simple-text-embedder-engine",
+  },
+  // see browser/components/genai/LinkPreviewModel.sys.mjs
+  "link-preview": {
+    engineId: "wllamapreview",
+    fluentId: "mlmodel-link-preview",
+  },
+  // see browser/components/genai/SmartAssistEngine.sys.mjs
+  "smart-intent": {
+    engineId: "smart-intent",
   },
 };
 
@@ -212,72 +234,74 @@ export const ModelHub = {
 };
 
 /**
- * Enum for execution priority.
- *
- * Defines the priority of the task:
- *
- * - "High" is absolutely needed for Firefox.
- * - "Normal" is the default priority.
- * - "Low" is for 3rd party calls.
+ * Enum for execution priority of a task.
  *
  * @readonly
  * @enum {string}
  */
 export const ExecutionPriority = {
+  // The task is absolutely needed for Firefox.
   HIGH: "HIGH",
+  // The default priority.
   NORMAL: "NORMAL",
+  // 3rd party calls.
   LOW: "LOW",
 };
 
 /**
- * Enum for model quantization levels.
- *
- * Defines the quantization level of the task:
- *
- * - 'fp32': Full precision 32-bit floating point (`''`)
- * - 'fp16': Half precision 16-bit floating point (`'_fp16'`)
- * - 'q8': Quantized 8-bit (`'_quantized'`)
- * - 'int8': Integer 8-bit quantization (`'_int8'`)
- * - 'uint8': Unsigned integer 8-bit quantization (`'_uint8'`)
- * - 'q4': Quantized 4-bit (`'_q4'`)
- * - 'bnb4': Binary/Boolean 4-bit quantization (`'_bnb4'`)
- * - 'q4f16': 16-bit floating point model with 4-bit block weight quantization (`'_q4f16'`)
+ * Enum for model quantization levels. Not all models support all values.
  *
  * @readonly
  * @enum {string}
  */
 export const QuantizationLevel = {
+  // Full precision 32-bit floating point (`''`)
   FP32: "fp32",
+  // Half precision 16-bit floating point (`'_fp16'`)
   FP16: "fp16",
+  // Floating point 8 with the exponential taking 5 bits, and the mantissa taking 2.
+  // This format can express a wide dynamic range of float values because of the
+  // extra bits in the exponential, but with the trade off of lower precision of stored
+  // values because of the small mantissa. The max finite values are ±57,344.
+  FP8_E5M2: "fp8_e5m2",
+  // Floating point 8 with the exponential taking 4 bits, and the mantissa taking 3.
+  // This format is best for values without a wide dynamic range. The higher bits
+  // in the mantissa retains more precision The max finite values are ±448.
+  FP8_E4M3: "fp8_e4m3",
+  // Quantized 8-bit (`'_quantized'`)
   Q8: "q8",
+  // Integer 8-bit quantization (`'_int8'`)
   INT8: "int8",
+  // Unsigned integer 8-bit quantization (`'_uint8'`)
   UINT8: "uint8",
+  // Quantized 4-bit (`'_q4'`)
   Q4: "q4",
+  // Binary/Boolean 4-bit quantization (`'_bnb4'`)
   BNB4: "bnb4",
+  // 16-bit floating point model with 4-bit block weight quantization (`'_q4f16'`)
   Q4F16: "q4f16",
 };
 
 /**
  * Enum for KV cache quantization levels.
  *
- * - 'q8_0': Quantized 8-bit with optimized storage (`'_q8_0'`) (block-based)
- * - 'q4_0': Quantized 4-bit version 0 (`'_q4_0'`) (block-based)
- * - 'q4_1': Quantized 4-bit version 1 (`'_q4_1'`) (block-based)
- * - 'q5_1': Quantized 5-bit version 1 (`'_q5_1'`) (block-based)
- * - 'q5_0': Quantized 5-bit version 0 (`'_q5_0'`) (block-based)
- * - 'f16':  Half-precision (16-bit floating point) (`'_f16'`)
- * - 'f32':  Full precision  (32-bit floating point) (`'_f32'`)
- *
  * @readonly
  * @enum {string}
  */
 export const KVCacheQuantizationLevel = {
+  // Quantized 8-bit with optimized storage (`'_q8_0'`) (block-based)
   Q8_0: "q8_0",
+  // Quantized 4-bit version 0 (`'_q4_0'`) (block-based)
   Q4_0: "q4_0",
+  // Quantized 4-bit version 1 (`'_q4_1'`) (block-based)
   Q4_1: "q4_1",
+  // Quantized 5-bit version 1 (`'_q5_1'`) (block-based)
   Q5_1: "q5_1",
+  // Quantized 5-bit version 0 (`'_q5_0'`) (block-based)
   Q5_0: "q5_0",
+  // Half-precision (16-bit floating point) (`'_f16'`)
   F16: "f16",
+  // Full precision  (32-bit floating point) (`'_f32'`)
   F32: "f32",
 };
 
@@ -290,6 +314,7 @@ export const KVCacheQuantizationLevel = {
 export const InferenceDevice = {
   GPU: "gpu",
   WASM: "wasm",
+  CPU: "cpu",
 };
 
 /**
@@ -317,7 +342,8 @@ export const LogLevel = {
 export const AllowedBoolean = [false, true];
 
 /**
- * @typedef {import("../../translations/actors/TranslationsEngineParent.sys.mjs").TranslationsEngineParent} TranslationsEngineParent
+ * @import { TranslationsEngineParent } from "../../translations/actors/TranslationsEngineParent.sys.mjs"
+ * @import { StaticEmbeddingsOptions } from "./backends/StaticEmbeddingsPipeline.d.ts"
  */
 
 const PIPELINE_TEST_NAMES = ["moz-echo", "test-echo"];
@@ -549,6 +575,27 @@ export class PipelineOptions {
   backend = null;
 
   /**
+   * The base URL to use for openai API requests.
+   *
+   * @type {?string}
+   */
+  baseURL = null;
+
+  /**
+   * The API key to use for openai API requests.
+   *
+   * @type {?string}
+   */
+  apiKey = null;
+
+  /**
+   * The options for the engine when using static embeddings.
+   *
+   * @type {?StaticEmbeddingsOptions}
+   */
+  staticEmbeddingsOptions = null;
+
+  /**
    * Create a PipelineOptions instance.
    *
    * @param {object} options - The options for the pipeline. Must include mandatory fields.
@@ -629,7 +676,7 @@ export class PipelineOptions {
    *
    * Throws an exception if the name or ID is invalid.
    *
-   * @param {string} field - The name of the field being validated (e.g., taskName, engineId).
+   * @param {string} field - The name of the field being validated.
    * @param {string} value - The value of the field to validate.
    * @throws {PipelineOptionsValidationError} Throws a validation error if the ID is invalid.
    * @private
@@ -637,7 +684,7 @@ export class PipelineOptions {
   #validateId(field, value) {
     // Define a regular expression to match the optional organization and required name
     // `organization/` part is optional, and both parts should follow the taskName pattern.
-    const validPattern = /^(?:[a-zA-Z0-9_\-\.]+\/)?[a-zA-Z0-9_\-\.]+$/;
+    const validPattern = /^(?:[a-zA-Z0-9_\-\.\:]+\/)?[a-zA-Z0-9_\-\.\:]+$/;
 
     // Check if the value matches the pattern
     if (!validPattern.test(value)) {
@@ -751,6 +798,9 @@ export class PipelineOptions {
       "numThreadsDecoding",
       "modelFile",
       "backend",
+      "baseURL",
+      "apiKey",
+      "staticEmbeddingsOptions",
     ];
 
     if (options instanceof PipelineOptions) {
@@ -767,26 +817,30 @@ export class PipelineOptions {
       }
       // Validating featureId
       if (key === "featureId") {
-        if (FEATURES.hasOwnProperty(options[key])) {
+        const featureId = options[key];
+        if (FEATURES.hasOwnProperty(featureId)) {
           // if featureId is set and engineId is not set, we set it
           if (
             options.engineId == null ||
             options.engineId === DEFAULT_ENGINE_ID
           ) {
-            options.engineId = FEATURES[options[key]].engineId;
+            options.engineId = FEATURES[featureId].engineId;
             this.engineId = options.engineId;
           }
-        } else {
+        } else if (
+          // Allow tests to define a feature id.
+          featureId != "test-feature"
+        ) {
           // we want an explicit list of features.
           throw new PipelineOptionsValidationError(
             key,
-            options[key],
+            featureId,
             `Should be one of ${Object.keys(FEATURES).join(", ")}`
           );
         }
       }
       // Validating values.
-      if (["taskName", "engineId"].includes(key)) {
+      if (key === "taskName") {
         this.#validateTaskName(key, options[key]);
       }
 
@@ -835,11 +889,16 @@ export class PipelineOptions {
         this.#validateIntegerRange(key, options[key], 1, 10000000);
       }
 
-      if (key === "backend" && !BACKENDS.includes(options[key])) {
+      if (
+        key === "backend" &&
+        !Object.values(BACKENDS).includes(options[key]) &&
+        // Allow tests to define a test backend.
+        options[key] != "test-backend"
+      ) {
         throw new PipelineOptionsValidationError(
           key,
           options[key],
-          `Should be one of ${BACKENDS.join(", ")}`
+          `Should be one of ${Object.values(BACKENDS).join(", ")}`
         );
       }
 
@@ -884,6 +943,9 @@ export class PipelineOptions {
       numThreadsDecoding: this.numThreadsDecoding,
       modelFile: this.modelFile,
       backend: this.backend,
+      baseURL: this.baseURL,
+      apiKey: this.apiKey,
+      staticEmbeddingsOptions: this.staticEmbeddingsOptions,
     };
   }
 
@@ -997,6 +1059,10 @@ export class EngineProcess {
 
     try {
       const actor = keepAlive.domProcess.getActor(actorName);
+
+      // keep track of the childID for the inference process, so we can observe its shutdowns.
+      actor.childID = keepAlive.domProcess.childID;
+
       if (actor && !actor.processKeepAlive) {
         ChromeUtils.addProfilerMarker(
           "EngineProcess",
@@ -1056,17 +1122,25 @@ export class EngineProcess {
 }
 
 /**
- * Creates a new ML engine instance with the provided options.
+ * Creates a new `MLEngine` instance with the provided options.
  *
  * @param {object} options - Configuration options for the ML engine.
- * @param {?function(ProgressAndStatusCallbackParams):void} notificationsCallback A function to call to indicate notifications.
- * @returns {Promise<MLEngine>} - A promise that resolves to the ML engine instance.
+ * @param {?function(ProgressAndStatusCallbackParams):void} [notificationsCallback] - A function to call to indicate notifications.
+ * @param {?AbortSignal} [abortSignal] - AbortSignal to cancel the download.
  */
-export async function createEngine(options, notificationsCallback = null) {
+export async function createEngine(
+  options,
+  notificationsCallback = null,
+  abortSignal
+) {
   try {
     const pipelineOptions = new PipelineOptions(options);
     const engineParent = await EngineProcess.getMLEngineParent();
-    return engineParent.getEngine(pipelineOptions, notificationsCallback);
+    return engineParent.getEngine({
+      pipelineOptions,
+      notificationsCallback,
+      abortSignal,
+    });
   } catch (e) {
     Glean.firefoxAiRuntime.engineCreationFailure.record({
       engineId: options.engineId || "",

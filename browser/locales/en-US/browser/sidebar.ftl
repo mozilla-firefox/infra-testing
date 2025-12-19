@@ -5,9 +5,6 @@
 menu-view-genai-chat =
   .label = AI Chatbot
 
-menu-view-review-checker =
-  .label = Review Checker
-
 menu-view-contextual-password-manager =
   .label = Passwords
 
@@ -26,6 +23,12 @@ sidebar-history-date-this-month =
   .heading = { DATETIME($date, dateStyle: "full") }
 sidebar-history-date-prev-month =
   .heading = { DATETIME($date, month: "long", year: "numeric") }
+
+# When history is sorted by site, this heading is used in place of a domain, in
+# order to group sites that do not come from an outside host.
+# For example, this would be the heading for all file:/// URLs in history.
+sidebar-history-site-localhost =
+  .heading = (local files)
 
 sidebar-history-delete =
   .title = Delete from History
@@ -71,13 +74,12 @@ sidebar-show-on-the-left =
 # hovers over it.
 expand-sidebar-on-hover =
   .label = Expand sidebar on hover
+sidebar-manage-extensions = Manage Extensions
 
 ## Labels for sidebar context menu items
 
 sidebar-context-menu-manage-extension =
   .label = Manage extension
-sidebar-context-menu-remove-extension =
-  .label = Remove extension
 sidebar-context-menu-report-extension =
   .label = Report extension
 sidebar-context-menu-open-in-tab =
@@ -104,6 +106,10 @@ sidebar-context-menu-customize-sidebar =
 #   $deviceName (String) - The name of the device the user is closing a tab for
 sidebar-context-menu-close-remote-tab =
   .label = Close tab on { $deviceName }
+sidebar-context-menu-remove-extension2 =
+  .label = Remove from { -brand-short-name }
+sidebar-context-menu-unpin-extension =
+  .label = Remove from Sidebar
 
 ## Labels for sidebar history context menu items
 
@@ -111,6 +117,8 @@ sidebar-history-context-menu-delete-page-2 =
   .label = Delete Page from History
 sidebar-history-context-menu-bookmark-page =
   .label = Bookmark Page…
+sidebar-history-context-menu-delete-pages =
+  .label = Delete Pages from History
 
 ## Labels for sidebar menu items.
 
@@ -124,10 +132,10 @@ sidebar-menu-bookmarks-label =
   .label = Bookmarks
 sidebar-menu-customize-label =
   .label = Customize sidebar
-sidebar-menu-review-checker-label =
-  .label = Review Checker
 sidebar-menu-contextual-password-manager-label =
   .label = Passwords
+sidebar-menu-more-tools-label =
+  .label = More tools
 
 ## Tooltips for sidebar menu items.
 
@@ -219,3 +227,8 @@ sidebar-widget-show-sidebar2 =
 sidebar-widget-hide-sidebar2 =
   .tooltiptext = Hide sidebar ({ $shortcut })
   .label = Sidebars
+
+# Promotional message displayed in the expanded sidebar state for Vertical Tabs
+# users who do not have any pinned tabs. Indicates that they can drop tabs in
+# this area to pin them.
+sidebar-pins-promo-text = Drag important tabs here to keep them within reach

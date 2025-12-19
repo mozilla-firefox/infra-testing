@@ -10,7 +10,10 @@
 add_setup(async () => {
   CustomizableUI.addWidgetToArea("home-button", "nav-bar");
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.tabs.searchclipboardfor.middleclick", false]],
+    set: [
+      ["test.wait300msAfterTabSwitch", true],
+      ["browser.tabs.searchclipboardfor.middleclick", false],
+    ],
   });
 
   registerCleanupFunction(() => {
@@ -133,7 +136,7 @@ add_task(async function test_middleClickOnComponentNotHandlingPasteEvent() {
     allTabsButton.addEventListener("auxclick", r, { once: true })
   );
   let pastedOnURLBar = false;
-  gURLBar.addEventListener("paste", () => {
+  gURLBar.inputField.addEventListener("paste", () => {
     pastedOnURLBar = true;
   });
   EventUtils.synthesizeMouseAtCenter(allTabsButton, { button: 1 });

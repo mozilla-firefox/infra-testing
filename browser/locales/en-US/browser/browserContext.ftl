@@ -161,10 +161,6 @@ main-context-menu-save-link =
     .label = Save Link As…
     .accesskey = k
 
-main-context-menu-save-link-to-pocket =
-    .label = Save Link to { -pocket-brand-name }
-    .accesskey = o
-
 ## The access keys for "Copy Link" and "Copy Email Address"
 ## should be the same if possible; the two context menu items
 ## are mutually exclusive.
@@ -173,13 +169,19 @@ main-context-menu-copy-email =
     .label = Copy Email Address
     .accesskey = l
 
+main-context-menu-copy-link-simple =
+    .label = Copy Link
+    .accesskey = L
+
+##
+
 main-context-menu-copy-phone =
     .label = Copy Phone Number
     .accesskey = o
 
-main-context-menu-copy-link-simple =
-    .label = Copy Link
-    .accesskey = L
+main-context-menu-preview-link =
+    .label = Preview Link
+    .accesskey = J
 
 # "Copy Clean Link" means that Firefox will remove things from the link you
 # copied, like items that identify you for advertising purposes, and other items
@@ -314,6 +316,12 @@ main-context-menu-image-desc =
     .label = View Description
     .accesskey = D
 
+# Variables
+#   $engine (String) - Name of the search engine that will perform the search.
+main-context-menu-visual-search-2 =
+    .label = Search Image with { $engine }
+    .accesskey = e
+
 main-context-menu-video-save-as =
     .label = Save Video As…
     .accesskey = v
@@ -334,12 +342,8 @@ main-context-menu-audio-email =
     .label = Email Audio…
     .accesskey = a
 
-main-context-menu-save-to-pocket =
-    .label = Save Page to { -pocket-brand-name }
-    .accesskey = k
-
-main-context-menu-send-to-device =
-    .label = Send Page to Device
+main-context-menu-send-to-device-2 =
+    .label = Send to Device
     .accesskey = n
 
 # Displayed when there are saved passwords and the user clicks inside a username or password field
@@ -358,10 +362,6 @@ main-context-menu-suggest-strong-password =
 main-context-menu-manage-passwords =
     .label = Manage Passwords
     .accesskey = M
-
-main-context-menu-keyword =
-    .label = Add a Keyword for this Search…
-    .accesskey = K
 
 main-context-menu-add-engine =
     .label = Add Search Engine
@@ -423,10 +423,6 @@ main-context-menu-take-screenshot =
     .label = Take Screenshot
     .accesskey = T
 
-main-context-menu-take-frame-screenshot =
-    .label = Take Screenshot
-    .accesskey = o
-
 main-context-menu-view-page-source =
     .label = View Page Source
     .accesskey = V
@@ -459,3 +455,6 @@ main-context-menu-open-link-in-container-tab =
 main-context-menu-reveal-password =
     .label = Reveal Password
     .accesskey = v
+
+# The label of a badge shown in menu items to call out new features.
+main-context-menu-new-feature-badge = New

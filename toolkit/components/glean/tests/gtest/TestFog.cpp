@@ -9,14 +9,12 @@
 #include "mozilla/glean/GleanPings.h"
 #include "mozilla/glean/fog_ffi_generated.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/Result.h"
-#include "mozilla/ResultVariant.h"
 #include "mozilla/TimeStamp.h"
+#include "../../bindings/private/Common.h"
 
 #include "nsTArray.h"
 
 #include "mozilla/Preferences.h"
-#include "mozilla/Unused.h"
 #include "nsString.h"
 #include "prtime.h"
 
@@ -211,17 +209,33 @@ TEST_F(FOGFixture, TestCppCustomDistWorks) {
 }
 
 TEST_F(FOGFixture, TestCppPings) {
-  test_only::one_ping_one_bool.Set(false);
   const auto& ping = mozilla::glean_pings::OnePingOnly;
-  bool submitted = false;
-  ping.TestBeforeNextSubmit([&submitted](const nsACString& aReason) {
-    submitted = true;
-    ASSERT_EQ(false,
-              test_only::one_ping_one_bool.TestGetValue().unwrap().ref());
-  });
-  ping.Submit();
-  ASSERT_TRUE(submitted)
-  << "Must have actually called the lambda.";
+
+  test_only::one_ping_one_bool.Set(false);
+
+  {
+    bool submitted = false;
+
+    ping.TestBeforeNextSubmit([&submitted](const nsACString& aReason) {
+      submitted = true;
+      ASSERT_EQ(false,
+                test_only::one_ping_one_bool.TestGetValue().unwrap().ref());
+    });
+    ping.Submit();
+
+    ASSERT_TRUE(submitted)
+    << "Must have actually called the lambda.";
+  }
+
+  test_only::one_ping_one_bool.Set(false);
+
+  ASSERT_TRUE(ping.TestSubmission(
+      [](const nsACString& aReason) {
+        ASSERT_EQ(false,
+                  test_only::one_ping_one_bool.TestGetValue().unwrap().ref());
+      },
+      [&]() { ping.Submit(); }))
+  << "Must submit ping";
 }
 
 TEST_F(FOGFixture, TestCppStringLists) {
@@ -415,6 +429,15 @@ TEST_F(FOGFixture, TestLabeledCounterWithLabelsWorks) {
                    .ref());
   ASSERT_EQ(3, test_only::mabels_labeled_counters
                    .EnumGet(test_only::MabelsLabeledCountersLabel::e1stCounter)
+                   .TestGetValue()
+                   .unwrap()
+                   .ref());
+}
+
+TEST_F(FOGFixture, TestLabeledCounterProcessGetWorks) {
+  test_only::mabels_kitchen_counters.ProcessGet().Add(5);
+
+  ASSERT_EQ(5, test_only::mabels_kitchen_counters.Get("default"_ns)
                    .TestGetValue()
                    .unwrap()
                    .ref());
@@ -654,8 +677,85 @@ TEST_F(FOGFixture, TestLabeledQuantityWorks) {
       0, test_only::button_jars.Get("push"_ns).TestGetValue().unwrap().ref());
 }
 
+TEST_F(FOGFixture, TestObjectWorks) {
+  ASSERT_EQ(mozilla::Nothing(),
+            test_only::balloons.TestGetValueAsJSONString().unwrap());
+  test_only::BalloonsObject balloons;
+  balloons.EmplaceBack(test_only::BalloonsObjectItem{
+      .colour = Some("blorange"_ns),
+      .diameter = Some(42),
+  });
+  test_only::balloons.Set(balloons);
+
+  // TODO(bug 1881023): Check the full obj, not just JSON substr.
+  nsCString json =
+      test_only::balloons.TestGetValueAsJSONString().unwrap().ref();
+  ASSERT_THAT(json.get(), testing::HasSubstr("blorange"));
+}
+
+TEST_F(FOGFixture, TestComplexObjectWorks) {
+  ASSERT_EQ(mozilla::Nothing(),
+            test_only::crash_stack.TestGetValueAsJSONString().unwrap());
+  test_only::CrashStackObject crash_obj{
+      .status = Some("failure"_ns),
+      .main_module = Some(17),
+      .crash_info = mozilla::Nothing(),
+      .modules = mozilla::Nothing(),
+  };
+
+  test_only::crash_stack.Set(crash_obj);
+
+  // TODO(bug 1881023): Check the full obj, not just JSON substr.
+  nsCString json =
+      test_only::crash_stack.TestGetValueAsJSONString().unwrap().ref();
+  ASSERT_THAT(json.get(), testing::HasSubstr("failure"));
+}
+
+TEST_F(FOGFixture, TestDualLabeledCounterWorks) {
+  ASSERT_EQ(mozilla::Nothing(),
+            test_only_ipc::a_dual_labeled_counter.Get("key"_ns, "category"_ns)
+                .TestGetValue()
+                .unwrap());
+}
+
 extern "C" void Rust_TestRustInGTest();
 TEST_F(FOGFixture, TestRustInGTest) { Rust_TestRustInGTest(); }
 
 extern "C" void Rust_TestJogfile();
 TEST_F(FOGFixture, TestJogfile) { Rust_TestJogfile(); }
+
+TEST_F(FOGFixture, IsCamelCaseWorks) {
+  ASSERT_TRUE(IsCamelCase(u"someName"_ns));
+  ASSERT_TRUE(IsCamelCase(u"s1234"_ns));
+  ASSERT_TRUE(IsCamelCase(u"some"_ns));
+
+  ASSERT_FALSE(IsCamelCase(u""_ns));
+  ASSERT_FALSE(IsCamelCase(u"SomeName"_ns));
+  ASSERT_FALSE(IsCamelCase(u"some_name"_ns));
+  ASSERT_FALSE(IsCamelCase(u"SOMENAME"_ns));
+  ASSERT_FALSE(IsCamelCase(u"1234"_ns));
+  ASSERT_FALSE(IsCamelCase(u"some#Name"_ns));
+}
+
+TEST_F(FOGFixture, TestLabeledTestGetValue) {
+  test_only::mabels_labeled_counters.Get("next_to_the_fridge"_ns).Add(5);
+  test_only::mabels_labeled_counters.Get("clean"_ns).Add(10);
+
+  nsTHashMap<nsCString, int32_t> value;
+  value = test_only::mabels_labeled_counters.TestGetValue().unwrap().value();
+  ASSERT_EQ(5, value.Get("next_to_the_fridge"_ns));
+  ASSERT_EQ(10, value.Get("clean"_ns));
+}
+
+TEST_F(FOGFixture, TestLabeledTestGetValueReturnsNothingIfEmpty) {
+  auto result = test_only::mabels_labeled_counters.TestGetValue().unwrap();
+  ASSERT_TRUE(result.isNothing());
+}
+
+TEST_F(FOGFixture, TestLabeledTestGetValueWithError) {
+  test_only::mabels_labeled_counters.Get("clean"_ns).Add(-1);
+
+  nsCString error;
+  error = test_only::mabels_labeled_counters.TestGetValue().unwrapErr();
+  ASSERT_EQ("Metric had 1 error(s) of type invalid_value!"_ns, error);
+}

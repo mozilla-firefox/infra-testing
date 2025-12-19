@@ -25,3 +25,10 @@ features:
 - name: update
   files:
   - update-media-feature.html
+- name: scripting
+  files:
+  - scripting.html
+  - scripting-*
+- name: color-gamut
+  files:
+  - mq-gamut-*

@@ -63,14 +63,12 @@ class AnotherHeuristicProvider extends UrlbarTestUtils.TestProvider {
 }
 const anotherHeuristicProvider = new AnotherHeuristicProvider({
   results: [
-    Object.assign(
-      new UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.URL,
-        UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-        { url: "https://example.com/immediate" }
-      ),
-      { heuristic: true }
-    ),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+      heuristic: true,
+      payload: { url: "https://example.com/immediate" },
+    }),
   ],
 });
 
@@ -108,7 +106,7 @@ add_task(async function engagement_before_showing_results() {
     await BrowserTestUtils.waitForCondition(
       () =>
         query.unsortedResults.some(
-          r => r.providerName === "HeuristicFallback"
+          r => r.providerName === "UrlbarProviderHeuristicFallback"
         ) &&
         query.unsortedResults.some(
           r => r.providerName === anotherHeuristicProvider.name
@@ -174,7 +172,7 @@ add_task(async function engagement_after_closing_results() {
       assertEngagementTelemetry([
         {
           selected_result: "search_engine",
-          provider: "HeuristicFallback",
+          provider: "UrlbarProviderHeuristicFallback",
           results: "search_engine",
           groups: "heuristic",
         },
@@ -201,7 +199,7 @@ add_task(async function enter_to_reload_current_url() {
     assertEngagementTelemetry([
       {
         selected_result: "url",
-        provider: "HeuristicFallback",
+        provider: "UrlbarProviderHeuristicFallback",
         results: "url",
         groups: "heuristic",
       },

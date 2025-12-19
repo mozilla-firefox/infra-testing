@@ -1,25 +1,41 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2024 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
 /*---
 esid: sec-temporal.plaindate.prototype.yearofweek
 description: >
-  Temporal.PlainDate.prototype.yearOfWeek returns undefined for all 
+  Temporal.PlainDate.prototype.yearOfWeek returns undefined for all
   non-ISO calendars without a well-defined week numbering system.
-features: [Temporal]
+features: [Temporal, Intl.Era-monthcode]
 ---*/
 
-// Gregorian calendar has a well defined week-numbering system.
+const nonIsoCalendars = [
+  "buddhist",
+  "chinese",
+  "coptic",
+  "dangi",
+  "ethioaa",
+  "ethiopic",
+  "gregory",
+  "hebrew",
+  "indian",
+  "islamic-civil",
+  "islamic-tbla",
+  "islamic-umalqura",
+  "japanese",
+  "persian",
+  "roc"
+];
 
-let calendar = "gregory";
-const date = new Temporal.PlainDate(2024, 1, 1, calendar);
 
-assert.sameValue(date.yearOfWeek, 2024);
+for (const calendar of nonIsoCalendars) {
+  assert.sameValue(
+    new Temporal.PlainDate(2024, 1, 1, calendar).yearOfWeek,
+    undefined,
+    `${calendar} does not provide week numbers`
+  );
+}
 
-calendar = "hebrew";
-const nonisodate = new Temporal.PlainDate(2024, 1, 1, calendar);
-
-assert.sameValue(nonisodate.yearOfWeek, undefined);
 
 reportCompare(0, 0);

@@ -6,20 +6,23 @@ package mozilla.components.compose.browser.toolbar.store
 
 import mozilla.components.compose.browser.toolbar.store.BrowserDisplayToolbarAction.BrowserActionsEndUpdated
 import mozilla.components.compose.browser.toolbar.store.BrowserDisplayToolbarAction.BrowserActionsStartUpdated
+import mozilla.components.compose.browser.toolbar.store.BrowserDisplayToolbarAction.NavigationActionsUpdated
 import mozilla.components.compose.browser.toolbar.store.BrowserDisplayToolbarAction.PageActionsEndUpdated
 import mozilla.components.compose.browser.toolbar.store.BrowserDisplayToolbarAction.PageActionsStartUpdated
 import mozilla.components.compose.browser.toolbar.store.BrowserDisplayToolbarAction.PageOriginUpdated
+import mozilla.components.compose.browser.toolbar.store.BrowserEditToolbarAction.AutocompleteSuggestionUpdated
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarInteraction.BrowserToolbarEvent
+import mozilla.components.compose.browser.toolbar.ui.BrowserToolbarQuery
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.UiStore
+import mozilla.components.lib.state.Store
 
 /**
- * [UiStore] for maintaining the state of the browser toolbar.
+ * [Store] for maintaining the state of the browser toolbar.
  */
 class BrowserToolbarStore(
     initialState: BrowserToolbarState = BrowserToolbarState(),
     middleware: List<Middleware<BrowserToolbarState, BrowserToolbarAction>> = emptyList(),
-) : UiStore<BrowserToolbarState, BrowserToolbarAction>(
+) : Store<BrowserToolbarState, BrowserToolbarAction>(
     initialState = initialState,
     reducer = ::reduce,
     middleware = middleware,
@@ -31,25 +34,41 @@ class BrowserToolbarStore(
                 mode = initialState.mode,
                 displayState = initialState.displayState,
                 editState = initialState.editState,
+                gravity = initialState.gravity,
             ),
         )
     }
 }
 
+@Suppress("LongMethod")
 private fun reduce(state: BrowserToolbarState, action: BrowserToolbarAction): BrowserToolbarState {
     return when (action) {
         is BrowserToolbarAction.Init -> BrowserToolbarState(
             mode = action.mode,
             displayState = action.displayState,
             editState = action.editState,
+            gravity = action.gravity,
         )
 
-        is BrowserToolbarAction.ToggleEditMode -> state.copy(
-            mode = if (action.editMode) Mode.EDIT else Mode.DISPLAY,
+        is BrowserToolbarAction.EnterEditMode -> state.copy(
+            mode = Mode.EDIT,
             editState = state.editState.copy(
-                editText = if (action.editMode) null else state.editState.editText,
+                isQueryPrivate = action.isPrivate,
             ),
         )
+
+        is BrowserToolbarAction.ExitEditMode -> state.copy(
+            mode = Mode.DISPLAY,
+            editState = state.editState.copy(
+                query = BrowserToolbarQuery(""),
+            ),
+        )
+
+        is BrowserToolbarAction.ToolbarGravityUpdated -> state.copy(
+            gravity = action.gravity,
+        )
+
+        is BrowserToolbarAction.CommitUrl -> state
 
         is BrowserActionsStartUpdated -> state.copy(
             displayState = state.displayState.copy(
@@ -81,21 +100,34 @@ private fun reduce(state: BrowserToolbarState, action: BrowserToolbarAction): Br
             ),
         )
 
-        is BrowserEditToolbarAction.UpdateEditText -> state.copy(
-            editState = state.editState.copy(
-                editText = action.text,
+        is NavigationActionsUpdated -> state.copy(
+            displayState = state.displayState.copy(
+                navigationActions = action.actions,
             ),
         )
 
-        is BrowserEditToolbarAction.AddEditActionStart -> state.copy(
+        is BrowserEditToolbarAction.SearchQueryUpdated -> state.copy(
             editState = state.editState.copy(
-                editActionsStart = state.editState.editActionsStart + action.action,
+                query = action.query,
+                isQueryPrefilled = action.isQueryPrefilled,
             ),
         )
 
-        is BrowserEditToolbarAction.AddEditActionEnd -> state.copy(
+        is AutocompleteSuggestionUpdated -> state.copy(
             editState = state.editState.copy(
-                editActionsEnd = state.editState.editActionsEnd + action.action,
+                suggestion = action.autocompletedSuggestion,
+            ),
+        )
+
+        is BrowserEditToolbarAction.SearchActionsStartUpdated -> state.copy(
+            editState = state.editState.copy(
+                editActionsStart = action.actions,
+            ),
+        )
+
+        is BrowserEditToolbarAction.SearchActionsEndUpdated -> state.copy(
+            editState = state.editState.copy(
+                editActionsEnd = action.actions,
             ),
         )
 
@@ -105,10 +137,14 @@ private fun reduce(state: BrowserToolbarState, action: BrowserToolbarAction): Br
             ),
         )
 
-        is BrowserToolbarEvent -> {
+        is BrowserToolbarEvent,
+            -> {
             // no-op
             // Expected to be handled in middlewares set by integrators.
             state
         }
+
+        is BrowserEditToolbarAction.HintUpdated ->
+            state.copy(editState = state.editState.copy(hint = action.hint))
     }
 }

@@ -8,25 +8,23 @@
 
 use crate::color::mix::ColorInterpolationMethod;
 use crate::custom_properties;
-use crate::values::generics::position::PositionComponent;
-use crate::values::generics::Optional;
+use crate::derives::*;
+use crate::values::generics::NonNegative;
+use crate::values::generics::{color::GenericLightDark, position::PositionComponent, Optional};
 use crate::values::serialize_atom_identifier;
-use crate::Atom;
-use crate::Zero;
+use crate::{Atom, Zero};
 use servo_arc::Arc;
 use std::fmt::{self, Write};
 use style_traits::{CssWriter, ToCss};
-
 /// An `<image> | none` value.
 ///
 /// https://drafts.csswg.org/css-images/#image-values
-#[derive(
-    Clone, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToComputedValue, ToResolvedValue, ToShmem,
-)]
+#[derive(Clone, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToResolvedValue, ToShmem, ToTyped)]
 #[repr(C, u8)]
 pub enum GenericImage<G, ImageUrl, Color, Percentage, Resolution> {
     /// `none` variant.
     None,
+
     /// A `<url()>` image.
     Url(ImageUrl),
 
@@ -39,10 +37,17 @@ pub enum GenericImage<G, ImageUrl, Color, Percentage, Resolution> {
     #[css(function = "-moz-element")]
     Element(Atom),
 
+    /// A `-moz-symbolic-icon(<icon-id>)`
+    /// NOTE(emilio): #[css(skip)] only really affects SpecifiedValueInfo, which we want because
+    /// this is chrome-only.
+    #[cfg(feature = "gecko")]
+    #[css(function, skip)]
+    MozSymbolicIcon(Atom),
+
     /// A paint worklet image.
     /// <https://drafts.css-houdini.org/css-paint-api/>
     #[cfg(feature = "servo")]
-    PaintWorklet(PaintWorklet),
+    PaintWorklet(Box<PaintWorklet>),
 
     /// A `<cross-fade()>` image. Storing this directly inside of
     /// GenericImage increases the size by 8 bytes so we box it here
@@ -51,7 +56,12 @@ pub enum GenericImage<G, ImageUrl, Color, Percentage, Resolution> {
     CrossFade(Box<GenericCrossFade<Self, Color, Percentage>>),
 
     /// An `image-set()` function.
-    ImageSet(#[compute(field_bound)] Box<GenericImageSet<Self, Resolution>>),
+    ImageSet(Box<GenericImageSet<Self, Resolution>>),
+
+    /// A `light-dark()` function.
+    /// NOTE(emilio): #[css(skip)] only affects SpecifiedValueInfo. Remove or make conditional
+    /// if/when shipping light-dark() for content.
+    LightDark(#[css(skip)] Box<GenericLightDark<Self>>),
 }
 
 pub use self::GenericImage as Image;
@@ -176,9 +186,8 @@ bitflags! {
 #[repr(C)]
 pub enum GenericGradient<
     LineDirection,
+    Length,
     LengthPercentage,
-    NonNegativeLength,
-    NonNegativeLengthPercentage,
     Position,
     Angle,
     AngleOrPercentage,
@@ -200,7 +209,7 @@ pub enum GenericGradient<
     /// A radial gradient.
     Radial {
         /// Shape of gradient
-        shape: GenericEndingShape<NonNegativeLength, NonNegativeLengthPercentage>,
+        shape: GenericEndingShape<NonNegative<Length>, NonNegative<LengthPercentage>>,
         /// Center of gradient
         position: Position,
         /// Method to use for color interpolation.
@@ -424,18 +433,24 @@ where
                 serialize_atom_identifier(selector, dest)?;
                 dest.write_char(')')
             },
+            #[cfg(feature = "gecko")]
+            Image::MozSymbolicIcon(ref id) => {
+                dest.write_str("-moz-symbolic-icon(")?;
+                serialize_atom_identifier(id, dest)?;
+                dest.write_char(')')
+            },
             Image::ImageSet(ref is) => is.to_css(dest),
             Image::CrossFade(ref cf) => cf.to_css(dest),
+            Image::LightDark(ref ld) => ld.to_css(dest),
         }
     }
 }
 
-impl<D, LP, NL, NLP, P, A: Zero, AoP, C> ToCss for Gradient<D, LP, NL, NLP, P, A, AoP, C>
+impl<D, L, LP, P, A: Zero, AoP, C> ToCss for Gradient<D, L, LP, P, A, AoP, C>
 where
     D: LineDirection,
+    L: ToCss,
     LP: ToCss,
-    NL: ToCss,
-    NLP: ToCss,
     P: PositionComponent + ToCss,
     A: ToCss,
     AoP: ToCss,
@@ -448,8 +463,8 @@ where
         let (compat_mode, repeating, has_default_color_interpolation_method) = match *self {
             Gradient::Linear {
                 compat_mode, flags, ..
-            } |
-            Gradient::Radial {
+            }
+            | Gradient::Radial {
                 compat_mode, flags, ..
             } => (
                 compat_mode,
@@ -512,8 +527,8 @@ where
             } => {
                 dest.write_str("radial-gradient(")?;
                 let omit_shape = match *shape {
-                    EndingShape::Ellipse(Ellipse::Extent(ShapeExtent::Cover)) |
-                    EndingShape::Ellipse(Ellipse::Extent(ShapeExtent::FarthestCorner)) => true,
+                    EndingShape::Ellipse(Ellipse::Extent(ShapeExtent::Cover))
+                    | EndingShape::Ellipse(Ellipse::Extent(ShapeExtent::FarthestCorner)) => true,
                     _ => false,
                 };
                 let omit_position = position.is_center();

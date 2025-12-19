@@ -13,8 +13,13 @@
 
 #include "api/task_queue/task_queue_base.h"
 #include "api/task_queue/test/mock_task_queue_base.h"
-#include "rtc_base/gunit.h"
+#include "api/units/time_delta.h"
+#include "api/units/timestamp.h"
+#include "net/dcsctp/public/timeout.h"
+#include "net/dcsctp/public/types.h"
+#include "rtc_base/thread.h"
 #include "test/gmock.h"
+#include "test/gtest.h"
 #include "test/time_controller/simulated_time_controller.h"
 
 namespace dcsctp {
@@ -43,7 +48,7 @@ class TaskQueueTimeoutTest : public testing::Test {
   MockFunction<void(TimeoutID)> on_expired_;
   webrtc::GlobalSimulatedTimeController time_controller_;
 
-  rtc::Thread* task_queue_;
+  webrtc::Thread* task_queue_;
   TaskQueueTimeoutFactory factory_;
 };
 

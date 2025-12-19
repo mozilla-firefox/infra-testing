@@ -13,8 +13,8 @@
 #include "mozilla/dom/PWebTransportParent.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
-#include "nsISupports.h"
 #include "nsIPrincipal.h"
+#include "nsISupports.h"
 #include "nsIWebTransport.h"
 #include "nsIWebTransportStream.h"
 #include "nsTHashMap.h"
@@ -103,9 +103,11 @@ class WebTransportParent : public PWebTransportParent,
     OnResetOrStopSendingCallback mCallback;
     nsCOMPtr<T> mStream;
   };
-  nsTHashMap<nsUint64HashKey, StreamHash<nsIWebTransportBidirectionalStream>>
+  nsTHashMap<NoMemMoveKey<nsUint64HashKey>,
+             StreamHash<nsIWebTransportBidirectionalStream>>
       mBidiStreamCallbackMap;
-  nsTHashMap<nsUint64HashKey, StreamHash<nsIWebTransportSendStream>>
+  nsTHashMap<NoMemMoveKey<nsUint64HashKey>,
+             StreamHash<nsIWebTransportSendStream>>
       mUniStreamCallbackMap;
 };
 

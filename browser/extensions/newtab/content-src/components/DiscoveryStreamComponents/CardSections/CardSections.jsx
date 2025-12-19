@@ -2,46 +2,47 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-import React, { useCallback } from "react";
+import React, { useCallback, useState } from "react";
 import { DSEmptyState } from "../DSEmptyState/DSEmptyState";
 import { DSCard, PlaceholderDSCard } from "../DSCard/DSCard";
 import { useSelector } from "react-redux";
 import { actionCreators as ac, actionTypes as at } from "common/Actions.mjs";
-import { useIntersectionObserver } from "../../../lib/utils";
+import {
+  selectWeatherPlacement,
+  useIntersectionObserver,
+  getActiveColumnLayout,
+} from "../../../lib/utils";
 import { SectionContextMenu } from "../SectionContextMenu/SectionContextMenu";
 import { InterestPicker } from "../InterestPicker/InterestPicker";
 import { AdBanner } from "../AdBanner/AdBanner.jsx";
 import { PersonalizedCard } from "../PersonalizedCard/PersonalizedCard";
+import { FollowSectionButtonHighlight } from "../FeatureHighlight/FollowSectionButtonHighlight";
+import { MessageWrapper } from "content-src/components/MessageWrapper/MessageWrapper";
+import { Weather } from "../../Weather/Weather.jsx";
 
 // Prefs
 const PREF_SECTIONS_CARDS_ENABLED = "discoverystream.sections.cards.enabled";
-const PREF_SECTIONS_CARDS_THUMBS_UP_DOWN_ENABLED =
-  "discoverystream.sections.cards.thumbsUpDown.enabled";
 const PREF_SECTIONS_PERSONALIZATION_ENABLED =
   "discoverystream.sections.personalization.enabled";
 const PREF_TOPICS_ENABLED = "discoverystream.topicLabels.enabled";
 const PREF_TOPICS_SELECTED = "discoverystream.topicSelection.selectedTopics";
 const PREF_TOPICS_AVAILABLE = "discoverystream.topicSelection.topics";
-const PREF_THUMBS_UP_DOWN_ENABLED = "discoverystream.thumbsUpDown.enabled";
 const PREF_INTEREST_PICKER_ENABLED =
   "discoverystream.sections.interestPicker.enabled";
 const PREF_VISIBLE_SECTIONS =
   "discoverystream.sections.interestPicker.visibleSections";
-const PREF_MEDIUM_RECTANGLE_ENABLED = "newtabAdSize.mediumRectangle";
 const PREF_BILLBOARD_ENABLED = "newtabAdSize.billboard";
+const PREF_BILLBOARD_POSITION = "newtabAdSize.billboard.position";
 const PREF_LEADERBOARD_ENABLED = "newtabAdSize.leaderboard";
 const PREF_LEADERBOARD_POSITION = "newtabAdSize.leaderboard.position";
-const PREF_BILLBOARD_POSITION = "newtabAdSize.billboard.position";
-const PREF_INFERRED_PERSONALIZATION_ENABLED =
-  "discoverystream.sections.personalization.inferred.enabled";
-const PREF_INFERRED_PERSONALIZATION_USER_ENABLED =
+const PREF_REFINED_CARDS_ENABLED = "discoverystream.refinedCardsLayout.enabled";
+const PREF_INFERRED_PERSONALIZATION_USER =
   "discoverystream.sections.personalization.inferred.user.enabled";
-const PREF_INFERRED_PERSONALIZATION_POSITION =
-  "discoverystream.sections.personalization.inferred.position";
-const PREF_INFERRED_PERSONALIZATION_BLOCKED =
-  "discoverystream.sections.personalization.inferred.blocked";
+const PREF_DAILY_BRIEF_SECTIONID = "discoverystream.dailyBrief.sectionId";
+const PREF_SPOCS_STARTUPCACHE_ENABLED =
+  "discoverystream.spocs.startupCache.enabled";
 
-function getLayoutData(responsiveLayouts, index) {
+function getLayoutData(responsiveLayouts, index, refinedCardsLayout) {
   let layoutData = {
     classNames: [],
     imageSizes: {},
@@ -59,7 +60,15 @@ function getLayoutData(responsiveLayouts, index) {
         // The API tells us whether the tile should show the excerpt or not.
         // Apply extra styles accordingly.
         if (tile.hasExcerpt) {
-          layoutData.classNames.push(`col-${layout.columnCount}-show-excerpt`);
+          if (tile.size === "medium" && refinedCardsLayout) {
+            layoutData.classNames.push(
+              `col-${layout.columnCount}-hide-excerpt`
+            );
+          } else {
+            layoutData.classNames.push(
+              `col-${layout.columnCount}-show-excerpt`
+            );
+          }
         } else {
           layoutData.classNames.push(`col-${layout.columnCount}-hide-excerpt`);
         }
@@ -100,35 +109,106 @@ const prefToArray = (pref = "") => {
     .filter(item => item);
 };
 
+function shouldShowOMCHighlight(messageData, componentId) {
+  if (!messageData || Object.keys(messageData).length === 0) {
+    return false;
+  }
+  return messageData?.content?.messageType === componentId;
+}
+
 function CardSection({
   sectionPosition,
   section,
   dispatch,
   type,
   firstVisibleTimestamp,
-  is_collection,
-  spocMessageVariant,
   ctaButtonVariant,
   ctaButtonSponsors,
+  anySectionsFollowed,
+  showWeather,
+  placeholder,
 }) {
   const prefs = useSelector(state => state.Prefs.values);
+
+  const { messageData } = useSelector(state => state.Messages);
+
   const { sectionPersonalization } = useSelector(
     state => state.DiscoveryStream
   );
+  const { isForStartupCache } = useSelector(state => state.App);
+
+  const [focusedIndex, setFocusedIndex] = useState(0);
+
+  const onCardFocus = index => {
+    setFocusedIndex(index);
+  };
+
+  const handleCardKeyDown = e => {
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      e.preventDefault();
+
+      const currentCardEl = e.target.closest("article.ds-card");
+      if (!currentCardEl) {
+        return;
+      }
+
+      const activeColumn = getActiveColumnLayout(window.innerWidth);
+
+      // Arrow direction should match visual navigation direction in RTL
+      const isRTL = document.dir === "rtl";
+      const navigateToPrevious = isRTL
+        ? e.key === "ArrowRight"
+        : e.key === "ArrowLeft";
+
+      // Extract current position from classList
+      let currentPosition = null;
+      const positionPrefix = `${activeColumn}-position-`;
+      for (let className of currentCardEl.classList) {
+        if (className.startsWith(positionPrefix)) {
+          currentPosition = parseInt(
+            className.substring(positionPrefix.length),
+            10
+          );
+          break;
+        }
+      }
+
+      if (currentPosition === null) {
+        return;
+      }
+
+      const targetPosition = navigateToPrevious
+        ? currentPosition - 1
+        : currentPosition + 1;
+
+      // Find card with target position
+      const parentEl = currentCardEl.parentElement;
+      if (parentEl) {
+        const targetSelector = `article.ds-card.${activeColumn}-position-${targetPosition}`;
+        const targetCardEl = parentEl.querySelector(targetSelector);
+
+        if (targetCardEl) {
+          const link = targetCardEl.querySelector("a.ds-card-link");
+          if (link) {
+            link.focus();
+          }
+        }
+      }
+    }
+  };
+
   const showTopics = prefs[PREF_TOPICS_ENABLED];
   const mayHaveSectionsCards = prefs[PREF_SECTIONS_CARDS_ENABLED];
-  const mayHaveSectionsCardsThumbsUpDown =
-    prefs[PREF_SECTIONS_CARDS_THUMBS_UP_DOWN_ENABLED];
-  const mayHaveThumbsUpDown = prefs[PREF_THUMBS_UP_DOWN_ENABLED];
   const selectedTopics = prefs[PREF_TOPICS_SELECTED];
   const availableTopics = prefs[PREF_TOPICS_AVAILABLE];
+  const refinedCardsLayout = prefs[PREF_REFINED_CARDS_ENABLED];
+  const spocsStartupCacheEnabled = prefs[PREF_SPOCS_STARTUPCACHE_ENABLED];
 
-  const { saveToPocketCard } = useSelector(state => state.DiscoveryStream);
   const mayHaveSectionsPersonalization =
     prefs[PREF_SECTIONS_PERSONALIZATION_ENABLED];
 
   const { sectionKey, title, subtitle } = section;
-  const { responsiveLayouts } = section.layout;
+  const { responsiveLayouts, name: layoutName } = section.layout;
 
   const following = sectionPersonalization[sectionKey]?.isFollowed;
 
@@ -140,17 +220,14 @@ function CardSection({
           section: sectionKey,
           section_position: sectionPosition,
           is_section_followed: following,
+          layout_name: layoutName,
         },
       })
     );
-  }, [dispatch, sectionKey, sectionPosition, following]);
+  }, [dispatch, sectionKey, sectionPosition, following, layoutName]);
 
   // Ref to hold the section element
   const sectionRefs = useIntersectionObserver(handleIntersection);
-
-  // Only show thumbs up/down buttons if both default thumbs and sections thumbs prefs are enabled
-  const mayHaveCombinedThumbsUpDown =
-    mayHaveSectionsCardsThumbsUpDown && mayHaveThumbsUpDown;
 
   const onFollowClick = useCallback(() => {
     const updatedSectionData = {
@@ -163,7 +240,7 @@ function CardSection({
     };
     dispatch(
       ac.AlsoToMain({
-        type: at.SECTION_PERSONALIZATION_UPDATE,
+        type: at.SECTION_PERSONALIZATION_SET,
         data: updatedSectionData,
       })
     );
@@ -185,7 +262,7 @@ function CardSection({
     delete updatedSectionData[sectionKey];
     dispatch(
       ac.AlsoToMain({
-        type: at.SECTION_PERSONALIZATION_UPDATE,
+        type: at.SECTION_PERSONALIZATION_SET,
         data: updatedSectionData,
       })
     );
@@ -203,7 +280,13 @@ function CardSection({
     );
   }, [dispatch, sectionPersonalization, sectionKey, sectionPosition]);
 
-  const { maxTile } = getMaxTiles(responsiveLayouts);
+  let { maxTile } = getMaxTiles(responsiveLayouts);
+  if (placeholder) {
+    // We need a number that divides evenly by 2, 3, and 4.
+    // So it can be displayed without orphans in grids with 2, 3, and 4 columns.
+    maxTile = 12;
+  }
+
   const displaySections = section.data.slice(0, maxTile);
   const isSectionEmpty = !displaySections?.length;
   const shouldShowLabels = sectionKey === "top_stories_section" && showTopics;
@@ -217,6 +300,37 @@ function CardSection({
       <div
         className={following ? "section-follow following" : "section-follow"}
       >
+        {!anySectionsFollowed &&
+          sectionPosition === 0 &&
+          shouldShowOMCHighlight(
+            messageData,
+            "FollowSectionButtonHighlight"
+          ) && (
+            <MessageWrapper dispatch={dispatch}>
+              <FollowSectionButtonHighlight
+                verticalPosition="inset-block-center"
+                position="arrow-inline-start"
+                dispatch={dispatch}
+                feature="FEATURE_FOLLOW_SECTION_BUTTON"
+                messageData={messageData}
+              />
+            </MessageWrapper>
+          )}
+        {!anySectionsFollowed &&
+          sectionPosition === 0 &&
+          shouldShowOMCHighlight(
+            messageData,
+            "FollowSectionButtonAltHighlight"
+          ) && (
+            <MessageWrapper dispatch={dispatch}>
+              <FollowSectionButtonHighlight
+                verticalPosition="inset-block-center"
+                position="arrow-inline-start"
+                dispatch={dispatch}
+                feature="FEATURE_ALT_FOLLOW_SECTION_BUTTON"
+              />
+            </MessageWrapper>
+          )}
         <moz-button
           onClick={following ? onUnfollowClick : onFollowClick}
           type="default"
@@ -249,15 +363,6 @@ function CardSection({
       />
     </div>
   );
-
-  // Determine to display first medium-sized in MREC IAB format
-  const mediumRectangleEnabled = prefs[PREF_MEDIUM_RECTANGLE_ENABLED];
-
-  let adSizingVariantClassName = "";
-  if (mediumRectangleEnabled) {
-    adSizingVariantClassName = "ad-sizing-variant-a";
-  }
-
   return (
     <section
       className="ds-section"
@@ -266,26 +371,43 @@ function CardSection({
       }}
     >
       <div className="section-heading">
-        <div className="section-title-wrapper">
-          <h2 className="section-title">{title}</h2>
-          {subtitle && <p className="section-subtitle">{subtitle}</p>}
+        <div className="section-heading-inline-start">
+          <div className="section-title-wrapper">
+            <h2 className="section-title">{title}</h2>
+            {subtitle && <p className="section-subtitle">{subtitle}</p>}
+          </div>
+          {showWeather && <Weather isInSection={true} />}
         </div>
         {mayHaveSectionsPersonalization ? sectionContextWrapper : null}
       </div>
       <div
-        className={`ds-section-grid ds-card-grid ${adSizingVariantClassName}`}
+        className={`ds-section-grid ds-card-grid`}
+        onKeyDown={handleCardKeyDown}
       >
         {section.data.slice(0, maxTile).map((rec, index) => {
-          const { classNames, imageSizes } = getLayoutData(
+          const layoutData = getLayoutData(
             responsiveLayouts,
-            index
+            index,
+            refinedCardsLayout
           );
 
-          if (!rec || rec.placeholder) {
+          const { classNames, imageSizes } = layoutData;
+          // Render a placeholder card when:
+          // 1. No recommendation is available.
+          // 2. The item is flagged as a placeholder.
+          // 3. Spocs are loading for with spocs startup cache disabled.
+          if (
+            !rec ||
+            rec.placeholder ||
+            placeholder ||
+            (rec.flight_id &&
+              !spocsStartupCacheEnabled &&
+              isForStartupCache.DiscoveryStream)
+          ) {
             return <PlaceholderDSCard key={`dscard-${index}`} />;
           }
 
-          return (
+          const card = (
             <DSCard
               key={`dscard-${rec.id}`}
               pos={rec.pos}
@@ -297,6 +419,7 @@ function CardSection({
               time_to_read={rec.time_to_read}
               title={rec.title}
               topic={rec.topic}
+              features={rec.features}
               excerpt={rec.excerpt}
               url={rec.url}
               id={rec.id}
@@ -320,24 +443,25 @@ function CardSection({
               received_rank={rec.received_rank}
               format={rec.format}
               alt_text={rec.alt_text}
-              mayHaveThumbsUpDown={mayHaveCombinedThumbsUpDown}
               mayHaveSectionsCards={mayHaveSectionsCards}
               showTopics={shouldShowLabels}
               selectedTopics={selectedTopics}
               availableTopics={availableTopics}
-              is_collection={is_collection}
-              saveToPocketCard={saveToPocketCard}
               ctaButtonSponsors={ctaButtonSponsors}
               ctaButtonVariant={ctaButtonVariant}
-              spocMessageVariant={spocMessageVariant}
               sectionsClassNames={classNames.join(" ")}
               sectionsCardImageSizes={imageSizes}
               section={sectionKey}
               sectionPosition={sectionPosition}
               sectionFollowed={following}
+              sectionLayoutName={layoutName}
               isTimeSensitive={rec.isTimeSensitive}
+              tabIndex={index === focusedIndex ? 0 : -1}
+              onFocus={() => onCardFocus(index)}
+              attribution={rec.attribution}
             />
           );
+          return [card];
         })}
       </div>
     </section>
@@ -350,15 +474,20 @@ function CardSections({
   dispatch,
   type,
   firstVisibleTimestamp,
-  is_collection,
-  spocMessageVariant,
   ctaButtonVariant,
   ctaButtonSponsors,
+  placeholder,
 }) {
   const prefs = useSelector(state => state.Prefs.values);
   const { spocs, sectionPersonalization } = useSelector(
     state => state.DiscoveryStream
   );
+  const { messageData } = useSelector(state => state.Messages);
+  const weatherPlacement = useSelector(selectWeatherPlacement);
+  const dailyBriefSectionId =
+    prefs.trainhopConfig?.dailyBriefing?.sectionId ||
+    prefs[PREF_DAILY_BRIEF_SECTIONID];
+  const weatherEnabled = prefs.showWeather;
   const personalizationEnabled = prefs[PREF_SECTIONS_PERSONALIZATION_ENABLED];
   const interestPickerEnabled = prefs[PREF_INTEREST_PICKER_ENABLED];
 
@@ -370,7 +499,30 @@ function CardSections({
   const visibleSections = prefToArray(prefs[PREF_VISIBLE_SECTIONS]);
   const { interestPicker } = data;
 
-  let filteredSections = data.sections.filter(
+  // Used to determine if we should show FollowSectionButtonHighlight
+  const anySectionsFollowed =
+    sectionPersonalization &&
+    Object.values(sectionPersonalization).some(section => section?.isFollowed);
+
+  let sectionsData = data.sections;
+
+  if (placeholder) {
+    // To clean up the placeholder state for sections if the whole section is loading still.
+    sectionsData = [
+      {
+        ...sectionsData[0],
+        title: "",
+        subtitle: "",
+      },
+      {
+        ...sectionsData[1],
+        title: "",
+        subtitle: "",
+      },
+    ];
+  }
+
+  let filteredSections = sectionsData.filter(
     section => !sectionPersonalization[section.sectionKey]?.isBlocked
   );
 
@@ -394,10 +546,16 @@ function CardSections({
       dispatch={dispatch}
       type={type}
       firstVisibleTimestamp={firstVisibleTimestamp}
-      is_collection={is_collection}
-      spocMessageVariant={spocMessageVariant}
       ctaButtonVariant={ctaButtonVariant}
       ctaButtonSponsors={ctaButtonSponsors}
+      anySectionsFollowed={anySectionsFollowed}
+      placeholder={placeholder}
+      showWeather={
+        weatherEnabled &&
+        weatherPlacement === "section" &&
+        sectionPosition === 0 &&
+        section.sectionKey === dailyBriefSectionId
+      }
     />
   ));
 
@@ -461,22 +619,25 @@ function CardSections({
     );
   }
 
-  const handleDismissP13nCard = () => {
-    dispatch(ac.SetPref(PREF_INFERRED_PERSONALIZATION_BLOCKED, true));
-  };
-
   function displayP13nCard() {
-    const row = prefs[PREF_INFERRED_PERSONALIZATION_POSITION];
-    const cardBlocked = prefs[PREF_INFERRED_PERSONALIZATION_BLOCKED];
-    const cardEnabled = prefs[PREF_INFERRED_PERSONALIZATION_ENABLED];
-    const userEnabled = prefs[PREF_INFERRED_PERSONALIZATION_USER_ENABLED];
-
-    if (!cardBlocked && cardEnabled && userEnabled) {
-      sectionsToRender.splice(
-        row,
-        0,
-        <PersonalizedCard row={row} onDismiss={handleDismissP13nCard} />
-      );
+    if (messageData && Object.keys(messageData).length >= 1) {
+      if (
+        shouldShowOMCHighlight(messageData, "PersonalizedCard") &&
+        prefs[PREF_INFERRED_PERSONALIZATION_USER]
+      ) {
+        const row = messageData.content.position;
+        sectionsToRender.splice(
+          row,
+          0,
+          <MessageWrapper dispatch={dispatch} onDismiss={() => {}}>
+            <PersonalizedCard
+              position={row}
+              dispatch={dispatch}
+              messageData={messageData}
+            />
+          </MessageWrapper>
+        );
+      }
     }
   }
 

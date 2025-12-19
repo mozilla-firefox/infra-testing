@@ -13,7 +13,7 @@
 }
 
 h1 {
-  font-size: var(--embedded-wizard-header-font-size, 1.30em);
+  font-size: var(--embedded-wizard-header-font-size, 1.3em);
   font-weight: var(--embedded-wizard-header-font-weight, normal);
   margin-block: var(--embedded-wizard-header-margin-block, 0 16px);
   min-height: 1em;
@@ -37,8 +37,8 @@ div[name="page-loading"] > .buttons > button {
 }
 
 .loading-block {
-  background-color: var(--in-content-button-background);
-  border-radius: 4px;
+  background-color: var(--button-background-color);
+  border-radius: var(--border-radius-small);
   opacity: 0.4;
   margin-block-start: 16px;
 }
@@ -53,16 +53,6 @@ div[name="page-loading"] > .buttons > button {
 
 .buttons {
   margin-block-start: 16px;
-}
-
-.deemphasized-text {
-  font-size: 0.84em;
-}
-
-@media not (prefers-contrast) {
-  .deemphasized-text {
-    color: var(--text-color-deemphasized);
-  }
 }
 
 fieldset {
@@ -145,6 +135,22 @@ panel-item[type="file"]::part(button) {
   background-position: 6px center;
 }
 
+@media (forced-colors) {
+  panel-item:not(.selected)::part(button):hover {
+    fill: SelectedItemText;
+    color: SelectedItem;
+  }
+
+  panel-item.selected::part(button) {
+    border-block: 1px solid ButtonText;
+  }
+}
+
+panel-item.selected {
+  background-color: var(--button-background-color-active);
+  color: var(--button-text-color-active);
+}
+
 panel-item[type="file"]:-moz-locale-dir(rtl)::part(button),
 panel-item[type="file"]:dir(rtl)::part(button) {
   background-position-x: right 6px;
@@ -156,15 +162,15 @@ div[name="page-selection"]:not([show-import-all]) summary {
   display: none;
 }
 
-div[name="page-selection"][show-import-all]:not([single-item]) label:not(#select-all)  {
+div[name="page-selection"][show-import-all]:not([single-item]) label:not(#select-all) {
   margin-inline: var(--resource-type-label-margin-inline, 24px 0);
 }
 
-div[name="page-selection"][show-import-all] #select-all  {
+div[name="page-selection"][show-import-all] #select-all {
   display: flex;
 }
 
-div[name="page-selection"][show-import-all][hide-select-all] #select-all  {
+div[name="page-selection"][show-import-all][hide-select-all] #select-all {
   display: none;
 }
 
@@ -239,9 +245,10 @@ summary {
 .resource-progress-group {
   display: grid;
   grid-template-columns: min-content auto;
-  grid-template-areas: "icon type"
-                       "icon status"
-                       "icon support";
+  grid-template-areas:
+    "icon type"
+    "icon status"
+    "icon support";
   align-items: center;
   justify-items: start;
 }
@@ -264,6 +271,8 @@ summary {
  * rotating masked element.
  */
 .progress-icon-parent {
+  /* stylelint rule disabled to support workaround for Bug 1671784 */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   border-radius: 0.01px;
   overflow: hidden;
   display: flex;
@@ -316,6 +325,7 @@ summary {
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
   }
@@ -324,7 +334,7 @@ summary {
 .error-icon {
   content: url("chrome://global/skin/icons/error.svg");
   -moz-context-properties: fill;
-  fill: var(--in-content-danger-button-background);
+  fill: var(--icon-color-critical);
   margin-block: 0;
   margin-inline: 0 8px;
   width: 16px;
@@ -340,14 +350,28 @@ summary {
   vertical-align: middle;
 }
 
-.safari-icon-3dots {
+.safari-icon-3dots,
+.chrome-icon-3dots {
   width: 16px;
   height: 16px;
-  vertical-align: middle;
-  content: url("chrome://browser/skin/migration/safari-icon-3dots.svg");
   -moz-context-properties: fill, stroke;
+  vertical-align: middle;
+}
+
+.safari-icon-3dots {
+  content: url("chrome://browser/skin/migration/safari-icon-3dots.svg");
   fill: currentColor;
   stroke: color-mix(in srgb, currentColor 10%, transparent 90%);
+}
+
+.chrome-icon-3dots {
+  content: url("chrome://browser/skin/migration/chrome-icon-3dots.svg");
+  /**
+   * Stroke and fill colours were sampled from built-in dark and light theme
+   * from Chrome on Windows
+   */
+  fill: light-dark(#474747, #c7c7c7);
+  stroke: light-dark(#474747, #c7c7c7);
 }
 
 .no-browsers-found-message {
@@ -371,7 +395,7 @@ summary {
 
 div[name="page-selection"]:not([no-resources]) .no-resources-found,
 div[name="page-selection"]:not([no-permissions]) .no-permissions-message,
-div[name="page-selection"]:is([no-resources],[no-permissions]) .hide-on-error,
+div[name="page-selection"]:is([no-resources], [no-permissions]) .hide-on-error,
 div[name="page-selection"]:not([file-import-error]) .file-import-error {
   display: none;
 }
@@ -383,8 +407,9 @@ div[name="page-selection"][show-import-all] .resource-selection-details {
 .resource-selection-details > summary {
   list-style: none;
   display: grid;
-  grid-template-areas: "a b"
-                       "c b";
+  grid-template-areas:
+    "a b"
+    "c b";
   margin-block: 16px 0;
 }
 
@@ -393,8 +418,8 @@ div[name="page-selection"][show-import-all] .resource-selection-details {
 }
 
 p.migration-wizard-subheader {
-  font-size: var(--embedded-wizard-subheader-font-size, .85em);
-  font-weight: var(--embedded-wizard-subheader-font-weight, 400);
+  font-size: var(--embedded-wizard-subheader-font-size, 0.85em);
+  font-weight: var(--embedded-wizard-subheader-font-weight, normal);
   margin-block: var(--embedded-wizard-subheader-margin-block, 0 28px);
   line-height: 1.2em;
 

@@ -5,17 +5,18 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/MIDIPermissionRequest.h"
+
+#include "mozilla/BasePrincipal.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/RandomNum.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/MIDIAccessManager.h"
 #include "mozilla/dom/MIDIOptionsBinding.h"
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/PBackgroundChild.h"
-#include "mozilla/BasePrincipal.h"
-#include "mozilla/RandomNum.h"
-#include "mozilla/StaticPrefs_dom.h"
-#include "nsIGlobalObject.h"
-#include "mozilla/Preferences.h"
 #include "nsContentUtils.h"
+#include "nsIGlobalObject.h"
 
 //-------------------------------------------------
 // MIDI Permission Requests
@@ -179,7 +180,8 @@ void MIDIPermissionRequest::CancelWithRandomizedDelay() {
   RefPtr<MIDIPermissionRequest> self = this;
   NS_NewTimerWithCallback(
       getter_AddRefs(mCancelTimer), [=](auto) { self->Cancel(); }, delay,
-      nsITimer::TYPE_ONE_SHOT, __func__);
+      nsITimer::TYPE_ONE_SHOT,
+      "MIDIPermissionRequest::CancelWithRandomizedDelay"_ns);
 }
 
 nsresult MIDIPermissionRequest::DoPrompt() {

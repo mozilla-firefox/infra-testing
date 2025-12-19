@@ -11,7 +11,7 @@
 #ifndef P2P_TEST_NAT_TYPES_H_
 #define P2P_TEST_NAT_TYPES_H_
 
-namespace rtc {
+namespace webrtc {
 
 /* Identifies each type of NAT that can be simulated. */
 enum NATType {
@@ -42,6 +42,7 @@ class NAT {
   static NAT* Create(NATType type);
 };
 
-}  // namespace rtc
+}  //  namespace webrtc
+
 
 #endif  // P2P_TEST_NAT_TYPES_H_

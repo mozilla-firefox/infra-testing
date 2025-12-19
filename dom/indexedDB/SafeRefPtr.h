@@ -9,7 +9,6 @@
 
 #include "mozilla/ArrayAlgorithm.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/NotNull.h"
 #include "mozilla/RefCounted.h"
 #include "mozilla/RefPtr.h"
 #include "nsCOMPtr.h"
@@ -297,8 +296,8 @@ template <typename T>
 class CheckedUnsafePtr;
 
 template <typename T>
-SafeRefPtr(const CheckedUnsafePtr<T>&,
-           const AcquireStrongRefFromRawPtr&) -> SafeRefPtr<T>;
+SafeRefPtr(const CheckedUnsafePtr<T>&, const AcquireStrongRefFromRawPtr&)
+    -> SafeRefPtr<T>;
 
 template <typename T>
 SafeRefPtr<T>::SafeRefPtr(T* aRawPtr, detail::InitialConstructionTag)

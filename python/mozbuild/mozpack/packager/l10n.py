@@ -10,7 +10,6 @@ directory.
 import json
 import os
 
-import six
 from createprecomplete import generate_precomplete
 
 import mozpack.path as mozpath
@@ -82,7 +81,7 @@ class LocaleManifestFinder:
 
 class L10NRepackFormatterMixin:
     def __init__(self, *args, **kwargs):
-        super(L10NRepackFormatterMixin, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self._dictionaries = {}
 
     def add(self, path, file):
@@ -92,7 +91,7 @@ class L10NRepackFormatterMixin:
                 root, ext = mozpath.splitext(mozpath.basename(path))
                 self._dictionaries[root] = path
         elif path.endswith("/built_in_addons.json"):
-            data = json.loads(six.ensure_text(file.open().read()))
+            data = json.loads(file.open().read())
             data["dictionaries"] = self._dictionaries
             # The GeneratedFile content is only really generated after
             # all calls to formatter.add.
@@ -105,7 +104,7 @@ class L10NRepackFormatterMixin:
             # in the omnijar, as expected -- but the signatures won't be valid
             # after repacking.  Therefore, drop them.
             return
-        super(L10NRepackFormatterMixin, self).add(path, file)
+        super().add(path, file)
 
 
 def L10NRepackFormatter(klass):
@@ -207,7 +206,7 @@ def _repack(app_finder, l10n_finder, copier, formatter, non_chrome=set()):
 
         if path:
             files = [f for p, f in l10n_finder.find(path)]
-            if not len(files):
+            if not files:
                 if base not in non_chrome:
                     finderBase = ""
                     if hasattr(l10n_finder, "base"):

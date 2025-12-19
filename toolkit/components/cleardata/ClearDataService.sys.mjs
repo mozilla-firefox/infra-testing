@@ -9,6 +9,7 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   Downloads: "resource://gre/modules/Downloads.sys.mjs",
+  ExtensionUtils: "resource://gre/modules/ExtensionUtils.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   ServiceWorkerCleanUp: "resource://gre/modules/ServiceWorkerCleanUp.sys.mjs",
 });
@@ -17,25 +18,25 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "sas",
   "@mozilla.org/storage/activity-service;1",
-  "nsIStorageActivityService"
+  Ci.nsIStorageActivityService
 );
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "TrackingDBService",
   "@mozilla.org/tracking-db-service;1",
-  "nsITrackingDBService"
+  Ci.nsITrackingDBService
 );
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "IdentityCredentialStorageService",
   "@mozilla.org/browser/identity-credential-storage-service;1",
-  "nsIIdentityCredentialStorageService"
+  Ci.nsIIdentityCredentialStorageService
 );
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "bounceTrackingProtection",
   "@mozilla.org/bounce-tracking-protection;1",
-  "nsIBounceTrackingProtection"
+  Ci.nsIBounceTrackingProtection
 );
 
 XPCOMUtils.defineLazyPreferenceGetter(
@@ -60,6 +61,7 @@ XPCOMUtils.defineLazyPreferenceGetter(
 
 /**
  * Adds brackets to a host if it's an IPv6 address.
+ *
  * @param {string} host - Host which may be an IPv6.
  * @returns {string} bracketed IPv6 or host if host is not an IPv6.
  */
@@ -67,6 +69,12 @@ function maybeFixupIpv6(host) {
   if (!host?.includes(":")) {
     return host;
   }
+
+  // don't fixup an ipv6 that already has [...]
+  if (host.startsWith("[") && host.endsWith("]")) {
+    return host;
+  }
+
   return `[${host}]`;
 }
 
@@ -74,6 +82,7 @@ function maybeFixupIpv6(host) {
  * Test if (host, OriginAttributes) or principal belong to a (schemeless) site.
  * Also considers partitioned storage by inspecting OriginAttributes
  * partitionKey.
+ *
  * @param options
  * @param {string} [options.host] - Optional host to compare to site.
  * @param {object} [options.originAttributes] - Optional origin attributes to
@@ -83,7 +92,7 @@ function maybeFixupIpv6(host) {
  * aSchemelessSite and aOriginAttributesPattern.
  * @param {string} aSchemelessSite - Domain to check for. Must be a valid,
  * non-empty baseDomain string.
- * @param {Object} [aOriginAttributesPattern] - Additional OriginAttributes
+ * @param {object} [aOriginAttributesPattern] - Additional OriginAttributes
  * filtering using an OriginAttributesPattern. Defaults to {} which matches all.
  * @returns {boolean} Whether the (host, originAttributes) or principal matches
  * the site.
@@ -185,6 +194,9 @@ function hasSite(
 //                                      Sanitizer.sanitizeOnShutdown() and
 //                                      Sanitizer.onStartup()
 
+// IETF spec for compression dictionaries requires clearing them when cookies
+// are cleared for the site - Section 10 of
+// https://datatracker.ietf.org/doc/draft-ietf-httpbis-compression-dictionary/
 const CookieCleaner = {
   deleteByLocalFiles(aOriginAttributes) {
     return new Promise(aResolve => {
@@ -202,6 +214,16 @@ const CookieCleaner = {
         aHost,
         JSON.stringify(aOriginAttributes)
       );
+      // Compression dictionaries are https only
+      // Note that IPV6 urls require [...], but aPrincipal.host (passed
+      // to this) doesn't include the [].
+      if (aHost.includes(":") && aHost[0] != "[") {
+        aHost = "https://[" + aHost + "]";
+      } else {
+        aHost = "https://" + aHost;
+      }
+      let httpsURI = Services.io.newURI(aHost);
+      Services.cache2.clearOriginDictionary(httpsURI);
       aResolve();
     });
   },
@@ -210,6 +232,9 @@ const CookieCleaner = {
     // Fall back to clearing by host and OA pattern. This will over-clear, since
     // any properties that are not explicitly set in aPrincipal.originAttributes
     // will be wildcard matched.
+    // Note that we clear cookies for all ports, because apparently
+    // cookies historically have ignored ports based on sameSite rules:
+    // https://html.spec.whatwg.org/#same-site
     return this.deleteByHost(aPrincipal.host, aPrincipal.originAttributes);
   },
 
@@ -228,6 +253,9 @@ const CookieCleaner = {
           JSON.stringify(cookie.originAttributes)
         );
       });
+    // Compression dictionaries are https only
+    let httpsURI = Services.io.newURI("https://" + aSchemelessSite);
+    Services.cache2.clearOriginDictionary(httpsURI);
   },
 
   deleteByRange(aFrom) {
@@ -241,6 +269,8 @@ const CookieCleaner = {
           aOriginAttributesString
         );
       } catch (ex) {}
+      // XXX Bug 1984198 we need to clear dictionaries here (probably has
+      // to be in CookieService::RemoveCookiesWithOriginAttributes()
       aResolve();
     });
   },
@@ -248,6 +278,7 @@ const CookieCleaner = {
   deleteAll() {
     return new Promise(aResolve => {
       Services.cookies.removeAll();
+      Services.cache2.clearAllOriginDictionaries();
       aResolve();
     });
   },
@@ -409,16 +440,69 @@ const CookieBannerExecutedRecordCleaner = {
 
 // A cleaner for cleaning fingerprinting protection states.
 const FingerprintingProtectionStateCleaner = {
+  async _maybeClearSiteSpecificZoom(aSchemelessSite, aOriginAttributes = {}) {
+    if (
+      !ChromeUtils.shouldResistFingerprinting("SiteSpecificZoom", null, true)
+    ) {
+      return;
+    }
+
+    const cps2 = Cc["@mozilla.org/content-pref/service;1"].getService(
+      Ci.nsIContentPrefService2
+    );
+    const ZOOM_PREF_NAME = "browser.content.full-zoom";
+
+    await new Promise((aResolve, aReject) => {
+      aOriginAttributes =
+        ChromeUtils.fillNonDefaultOriginAttributes(aOriginAttributes);
+
+      let loadContext;
+      if (
+        aOriginAttributes.privateBrowsingId ==
+        Services.scriptSecurityManager.DEFAULT_PRIVATE_BROWSING_ID
+      ) {
+        loadContext = Cu.createLoadContext();
+      } else {
+        loadContext = Cu.createPrivateLoadContext();
+      }
+
+      cps2.removeBySubdomainAndName(
+        aSchemelessSite,
+        ZOOM_PREF_NAME,
+        loadContext,
+        {
+          handleCompletion: aReason => {
+            if (aReason === cps2.COMPLETE_ERROR) {
+              aReject();
+            } else {
+              aResolve();
+            }
+          },
+        }
+      );
+    });
+  },
+
   async deleteAll() {
     Services.rfp.cleanAllRandomKeys();
   },
 
   async deleteByPrincipal(aPrincipal) {
     Services.rfp.cleanRandomKeyByPrincipal(aPrincipal);
+
+    await this._maybeClearSiteSpecificZoom(
+      aPrincipal.host,
+      aPrincipal.originAttributes
+    );
   },
 
   async deleteBySite(aSchemelessSite, aOriginAttributesPattern) {
     Services.rfp.cleanRandomKeyBySite(
+      aSchemelessSite,
+      aOriginAttributesPattern
+    );
+
+    await this._maybeClearSiteSpecificZoom(
       aSchemelessSite,
       aOriginAttributesPattern
     );
@@ -429,12 +513,17 @@ const FingerprintingProtectionStateCleaner = {
       aHost,
       JSON.stringify(aOriginAttributesPattern)
     );
+
+    await this._maybeClearSiteSpecificZoom(aHost, aOriginAttributesPattern);
   },
 
   async deleteByOriginAttributes(aOriginAttributesString) {
     Services.rfp.cleanRandomKeyByOriginAttributesPattern(
       aOriginAttributesString
     );
+
+    // For deleteByOriginAttributes, we only receive userContextId which is not enough to target specific
+    // site-specific zooms. So we don't clear site-specific zooms here.
   },
 };
 
@@ -725,6 +814,7 @@ const MediaDevicesCleaner = {
 const QuotaCleaner = {
   /**
    * Clear quota storage for matching principals.
+   *
    * @param {function} filterFn - Filter function which is passed a principal.
    * Return true to clear storage for given principal or false to skip it.
    * @returns {Promise} - Resolves once all matching items have been cleared.
@@ -1041,43 +1131,12 @@ const QuotaCleaner = {
   },
 };
 
-const PredictorNetworkCleaner = {
-  async deleteAll() {
-    // Predictive network data - like cache, no way to clear this per
-    // domain, so just trash it all
-    let np = Cc["@mozilla.org/network/predictor;1"].getService(
-      Ci.nsINetworkPredictor
-    );
-    np.reset();
-  },
-
-  // TODO: We should call the NetworkPredictor to clear by principal, rather
-  // than over-clearing for user requests or bailing out for programmatic calls.
-  async deleteByPrincipal(aPrincipal, aIsUserRequest) {
-    if (!aIsUserRequest) {
-      return;
-    }
-    await this.deleteAll();
-  },
-
-  // TODO: Same as above, but for base domain.
-  async deleteBySite(
-    _aSchemelessSite,
-    _aOriginAttributesPattern,
-    aIsUserRequest
-  ) {
-    if (!aIsUserRequest) {
-      return;
-    }
-    await this.deleteAll();
-  },
-};
-
 const PushNotificationsCleaner = {
   /**
    * Clear entries for aDomain including subdomains of aDomain.
+   *
    * @param {string} aDomain - Domain to clear data for.
-   * @param {Object} aOriginAttributesPattern - Optional pattern to filter OriginAttributes.
+   * @param {object} aOriginAttributesPattern - Optional pattern to filter OriginAttributes.
    * @returns {Promise} a promise which resolves once data has been cleared.
    */
   _deleteByRootDomain(aDomain, aOriginAttributesPattern = null) {
@@ -2170,8 +2229,22 @@ const StoragePermissionsCleaner = {
       // AddonPolicy() returns a WebExtensionPolicy that has been registered before,
       // typically during extension startup. Since Disabled or uninstalled add-ons
       // don't appear there, we should use schemeIs instead
-      aPrincipal.schemeIs("moz-extension")
+      lazy.ExtensionUtils.isExtensionUrl(aPrincipal)
     );
+  },
+};
+
+const BfcacheCleaner = {
+  async deleteAll() {
+    // TODO(Bug 1959477)
+  },
+
+  async deleteBySite(_aSchemelessSite, _aOriginAttributesPattern) {
+    // TODO(Bug 1959477)
+  },
+
+  async deleteByPrincipal(aPrincipal) {
+    ChromeUtils.clearBfcacheByPrincipal(aPrincipal);
   },
 };
 
@@ -2225,11 +2298,6 @@ const FLAGS_MAP = [
   },
 
   { flag: Ci.nsIClearDataService.CLEAR_DOM_QUOTA, cleaners: [QuotaCleaner] },
-
-  {
-    flag: Ci.nsIClearDataService.CLEAR_PREDICTOR_NETWORK_DATA,
-    cleaners: [PredictorNetworkCleaner],
-  },
 
   {
     flag: Ci.nsIClearDataService.CLEAR_DOM_PUSH_NOTIFICATIONS,
@@ -2322,6 +2390,11 @@ const FLAGS_MAP = [
   {
     flag: Ci.nsIClearDataService.CLEAR_SHUTDOWN_EXCEPTIONS,
     cleaners: [ShutdownExceptionsCleaner],
+  },
+
+  {
+    flag: Ci.nsIClearDataService.CLEAR_BFCACHE,
+    cleaners: [BfcacheCleaner],
   },
 ];
 

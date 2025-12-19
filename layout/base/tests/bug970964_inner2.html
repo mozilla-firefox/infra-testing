@@ -18,7 +18,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=970964
 <pre id="test">
 <script type="application/javascript">
 
-/** Test for Bug 970964 **/
+/** Test for Bug 970964 */
 
 function ok(condition, msg) {
   parent.ok(condition, msg);
@@ -75,7 +75,7 @@ function sendTouchEvent(windowUtils, aType, aEvent, aModifiers) {
   return windowUtils.sendTouchEvent(aType,
                                     ids, xs, ys, rxs, rys,
                                     rotations, forces, tiltXs, tiltYs, twists,
-                                    aModifiers, 0);
+                                    aModifiers);
 }
 
 function getDefaultArgEvent(eventname) {
@@ -287,7 +287,7 @@ function runTests() {
     is(e.button, -1, "Button must be -1 on pointer generated from mousemove when no buttons pressed");
     is(e.pointerType, "mouse", "Pointer type must be mouse");
   };
-  cwu.sendMouseEvent("mousemove", 4, 4, 0, 0, 0, false, 0, 0);
+  synthesizeMouseAtPoint(4, 4, { type: "mousemove" });
 
   d1.onpointermove = function(e) {
     is(e.buttons, 1, "Buttons must be 1 on pointermove generated from touch event");

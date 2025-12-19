@@ -7,23 +7,23 @@
 // mostly derived from the Allegro source code at:
 // http://alleg.svn.sourceforge.net/viewvc/alleg/allegro/branches/4.9/src/macosx/hidjoy.m?revision=13760&view=markup
 
-#include "mozilla/dom/GamepadHandle.h"
-#include "mozilla/dom/GamepadPlatformService.h"
-#include "mozilla/dom/GamepadRemapping.h"
-#include "mozilla/ipc/BackgroundParent.h"
-#include "mozilla/ArrayUtils.h"
-#include "mozilla/Sprintf.h"
-#include "mozilla/Tainting.h"
-#include "nsComponentManagerUtils.h"
-#include "nsITimer.h"
-#include "nsThreadUtils.h"
 #include <CoreFoundation/CoreFoundation.h>
 #include <IOKit/hid/IOHIDBase.h>
 #include <IOKit/hid/IOHIDKeys.h>
 #include <IOKit/hid/IOHIDManager.h>
-
 #include <stdio.h>
+
 #include <vector>
+
+#include "mozilla/Sprintf.h"
+#include "mozilla/Tainting.h"
+#include "mozilla/dom/GamepadHandle.h"
+#include "mozilla/dom/GamepadPlatformService.h"
+#include "mozilla/dom/GamepadRemapping.h"
+#include "mozilla/ipc/BackgroundParent.h"
+#include "nsComponentManagerUtils.h"
+#include "nsITimer.h"
+#include "nsThreadUtils.h"
 
 namespace {
 
@@ -304,20 +304,30 @@ void DarwinGamepadService::DeviceAdded(IOHIDDeviceRef device) {
   }
 
   // Gather some identifying information
-  CFNumberRef vendorIdRef =
-      (CFNumberRef)IOHIDDeviceGetProperty(device, CFSTR(kIOHIDVendorIDKey));
-  CFNumberRef productIdRef =
-      (CFNumberRef)IOHIDDeviceGetProperty(device, CFSTR(kIOHIDProductIDKey));
+  auto uintProperty = [&](CFStringRef key) {
+    int value;
+    auto numberRef =
+        reinterpret_cast<CFNumberRef>(IOHIDDeviceGetProperty(device, key));
+    if (!numberRef || !CFNumberGetValue(numberRef, kCFNumberIntType, &value)) {
+      return 0u;
+    }
+    return static_cast<unsigned int>(value);
+  };
+
+  unsigned int vendorId = uintProperty(CFSTR(kIOHIDVendorIDKey));
+  unsigned int productId = uintProperty(CFSTR(kIOHIDProductIDKey));
+
+  char productName[128];
   CFStringRef productRef =
       (CFStringRef)IOHIDDeviceGetProperty(device, CFSTR(kIOHIDProductKey));
-  int vendorId, productId;
-  CFNumberGetValue(vendorIdRef, kCFNumberIntType, &vendorId);
-  CFNumberGetValue(productIdRef, kCFNumberIntType, &productId);
-  char product_name[128];
-  CFStringGetCString(productRef, product_name, sizeof(product_name),
-                     kCFStringEncodingASCII);
+  if (!productRef ||
+      !CFStringGetCString(productRef, productName, sizeof(productName),
+                          kCFStringEncodingASCII)) {
+    SprintfLiteral(productName, "Unknown Device");
+  }
+
   char buffer[256];
-  SprintfLiteral(buffer, "%x-%x-%s", vendorId, productId, product_name);
+  SprintfLiteral(buffer, "%04x-%04x-%s", vendorId, productId, productName);
 
   bool defaultRemapper = false;
   RefPtr<GamepadRemapper> remapper =
@@ -521,7 +531,7 @@ void DarwinGamepadService::RunEventLoopOnce() {
   if (mIsRunning) {
     mPollingTimer->InitWithNamedFuncCallback(
         EventLoopOnceCallback, this, kDarwinGamepadPollInterval,
-        nsITimer::TYPE_ONE_SHOT, "EventLoopOnceCallback");
+        nsITimer::TYPE_ONE_SHOT, "EventLoopOnceCallback"_ns);
   } else {
     // We schedule a task shutdown and cleaning up resources to Background
     // thread here to make sure no runloop is running to prevent potential race
@@ -587,8 +597,8 @@ void DarwinGamepadService::StartupInternal() {
 
 void DarwinGamepadService::Startup() {
   mBackgroundThread = NS_GetCurrentThread();
-  Unused << NS_NewNamedThread("Gamepad", getter_AddRefs(mMonitorThread),
-                              new DarwinGamepadServiceStartupRunnable(this));
+  (void)NS_NewNamedThread("Gamepad", getter_AddRefs(mMonitorThread),
+                          new DarwinGamepadServiceStartupRunnable(this));
 }
 
 void DarwinGamepadService::Shutdown() {

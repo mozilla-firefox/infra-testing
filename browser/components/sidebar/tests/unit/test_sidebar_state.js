@@ -8,7 +8,7 @@ const { sinon } = ChromeUtils.importESModule(
 );
 
 const { SidebarState } = ChromeUtils.importESModule(
-  "resource:///modules/SidebarState.sys.mjs"
+  "moz-src:///browser/components/sidebar/SidebarState.sys.mjs"
 );
 
 const mockElement = {
@@ -18,6 +18,10 @@ const mockElement = {
   style: { width: "200px" },
   toggleAttribute: sinon.stub(),
 };
+const mockLitElement = Object.assign(mockElement, {
+  requestUpdate: sinon.stub(),
+});
+
 const mockGlobal = {
   document: { getElementById: () => mockElement },
   gBrowser: { tabContainer: mockElement },
@@ -27,7 +31,7 @@ const mockController = {
   hide: sinon.stub(),
   showInitially: sinon.stub(),
   sidebarContainer: { ownerGlobal: mockGlobal },
-  sidebarMain: mockElement,
+  sidebarMain: mockLitElement,
   sidebarRevampEnabled: true,
   sidebarRevampVisibility: "always-show",
   sidebars: new Set(["viewBookmarksSidebar"]),

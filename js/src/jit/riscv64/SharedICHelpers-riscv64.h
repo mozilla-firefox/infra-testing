@@ -29,8 +29,7 @@ inline void EmitCallIC(MacroAssembler& masm, CodeOffset* callOffset) {
   masm.loadPtr(Address(ICStubReg, ICStub::offsetOfStubCode()), R2.scratchReg());
 
   // Call the stubcode via a direct jump-and-link
-  masm.call(R2.scratchReg());
-  *callOffset = CodeOffset(masm.currentOffset());
+  *callOffset = masm.call(R2.scratchReg());
 }
 inline void EmitReturnFromIC(MacroAssembler& masm) { masm.branch(ra); }
 inline void EmitBaselineLeaveStubFrame(MacroAssembler& masm) {
@@ -50,8 +49,6 @@ inline void EmitBaselineLeaveStubFrame(MacroAssembler& masm) {
     Register scratch2 = temps.Acquire();
     masm.Pop(scratch2);
   }
-
-  masm.checkStackAlignment();
 }
 
 inline void EmitStubGuardFailure(MacroAssembler& masm) {

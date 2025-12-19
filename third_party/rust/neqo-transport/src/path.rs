@@ -8,32 +8,31 @@ use std::{
     cell::RefCell,
     fmt::{self, Display},
     net::SocketAddr,
+    num::NonZeroUsize,
     rc::Rc,
     time::{Duration, Instant},
 };
 
-use neqo_common::{hex, qdebug, qinfo, qlog::NeqoQlog, qtrace, qwarn, Datagram, Encoder, IpTos};
+use neqo_common::{
+    hex, qdebug, qinfo, qlog::Qlog, qtrace, qwarn, Buffer, DatagramBatch, Encoder, Tos,
+};
 use neqo_crypto::random;
 
 use crate::{
     ackrate::{AckRate, PeerAckDelay},
     cid::{ConnectionId, ConnectionIdRef, ConnectionIdStore, RemoteConnectionIdEntry},
     ecn,
-    frame::FrameType,
-    packet::{PacketBuilder, PacketType},
+    frame::{FrameEncoder as _, FrameType},
+    packet,
     pmtud::Pmtud,
-    recovery::{RecoveryToken, SentPacket},
+    recovery::{self, sent},
     rtt::{RttEstimate, RttSource},
     sender::PacketSender,
+    stateless_reset::Token as Srt,
     stats::FrameStats,
     ConnectionParameters, Stats,
 };
 
-/// The number of times that a path will be probed before it is considered failed.
-///
-/// Note that with [`crate::ecn`], a path is probed [`MAX_PATH_PROBES`] with ECN
-/// marks and [`MAX_PATH_PROBES`] without.
-pub const MAX_PATH_PROBES: usize = 3;
 /// The maximum number of paths that `Paths` will track.
 const MAX_PATHS: usize = 15;
 
@@ -45,7 +44,7 @@ pub type PathRef = Rc<RefCell<Path>>;
 /// processing a packet.
 /// This structure limits its storage and will forget about paths if it
 /// is exposed to too many paths.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Paths {
     /// All of the paths.  All of these paths will be permanent.
     #[expect(clippy::struct_field_names, reason = "This is the best name.")]
@@ -62,10 +61,25 @@ pub struct Paths {
     to_retire: Vec<u64>,
 
     /// `QLog` handler.
-    qlog: NeqoQlog,
+    qlog: Qlog,
+
+    /// Whether PMTUD is enabled for this connection.
+    pmtud: bool,
 }
 
 impl Paths {
+    #[must_use]
+    pub fn new(pmtud: bool) -> Self {
+        Self {
+            paths: Vec::new(),
+            primary: None,
+            migration_target: None,
+            to_retire: Vec::new(),
+            qlog: Qlog::disabled(),
+            pmtud,
+        }
+    }
+
     /// Find the path for the given addresses.
     /// This might be a temporary path.
     pub fn find_path(
@@ -190,6 +204,7 @@ impl Paths {
             |p| p.borrow().ecn_info.baseline(),
         );
         path.borrow_mut().set_ecn_baseline(baseline);
+        path.borrow_mut().start_ecn(stats);
         if force || path.borrow().is_valid() {
             path.borrow_mut().set_valid(now);
             drop(self.select_primary(path, now));
@@ -264,6 +279,7 @@ impl Paths {
 
     /// Set the identified path to be primary.
     /// This panics if `make_permanent` hasn't been called.
+    /// If PMTUD is enabled, it will be started on the new primary path.
     pub fn handle_migration(
         &mut self,
         path: &PathRef,
@@ -288,6 +304,10 @@ impl Paths {
             old_path.borrow_mut().probe(stats);
             // TODO(mt) - suppress probing if the path was valid within 3PTO.
         }
+
+        if self.pmtud {
+            path.borrow_mut().pmtud_mut().start(now, stats);
+        }
     }
 
     /// Select a path to send on.  This will select the first path that has
@@ -301,6 +321,7 @@ impl Paths {
 
     /// A `PATH_RESPONSE` was received.
     /// Returns `true` if migration occurred.
+    /// If PMTUD is enabled and migration occurs, it will be started on the new primary path.
     #[must_use]
     pub fn path_response(&mut self, response: [u8; 8], now: Instant, stats: &mut Stats) -> bool {
         // TODO(mt) consider recording an RTT measurement here as we don't train
@@ -314,6 +335,9 @@ impl Paths {
                     .take_if(|target| Rc::ptr_eq(target, p))
                 {
                     drop(self.select_primary(&primary, now));
+                    if self.pmtud {
+                        primary.borrow_mut().pmtud_mut().start(now, stats);
+                    }
                     return true;
                 }
                 break;
@@ -326,7 +350,7 @@ impl Paths {
     /// Keep active paths if possible by pulling new connection IDs from the provided store.
     /// One slightly non-obvious consequence of this is that if migration is being attempted
     /// and the new path cannot obtain a new connection ID, the migration attempt will fail.
-    pub fn retire_cids(&mut self, retire_prior: u64, store: &mut ConnectionIdStore<[u8; 16]>) {
+    pub fn retire_cids(&mut self, retire_prior: u64, store: &mut ConnectionIdStore<Srt>) {
         let to_retire = &mut self.to_retire;
         let migration_target = &mut self.migration_target;
 
@@ -365,10 +389,10 @@ impl Paths {
     }
 
     /// Write out any `RETIRE_CONNECTION_ID` frames that are outstanding.
-    pub fn write_frames(
+    pub fn write_frames<B: Buffer>(
         &mut self,
-        builder: &mut PacketBuilder,
-        tokens: &mut Vec<RecoveryToken>,
+        builder: &mut packet::Builder<B>,
+        tokens: &mut recovery::Tokens,
         stats: &mut FrameStats,
     ) {
         while let Some(seqno) = self.to_retire.pop() {
@@ -376,9 +400,10 @@ impl Paths {
                 self.to_retire.push(seqno);
                 break;
             }
-            builder.encode_varint(FrameType::RetireConnectionId);
-            builder.encode_varint(seqno);
-            tokens.push(RecoveryToken::RetireConnectionId(seqno));
+            builder.encode_frame(FrameType::RetireConnectionId, |b| {
+                b.encode_varint(seqno);
+            });
+            tokens.push(recovery::Token::RetireConnectionId(seqno));
             stats.retire_connection_id += 1;
         }
 
@@ -408,9 +433,21 @@ impl Paths {
         }
     }
 
-    pub fn lost_ecn(&self, pt: PacketType, stats: &mut Stats) {
+    pub fn acked_ecn(&self) {
         if let Some(path) = self.primary() {
-            path.borrow_mut().lost_ecn(pt, stats);
+            path.borrow_mut().acked_ecn();
+        }
+    }
+
+    pub fn lost_ecn(&self, stats: &mut Stats) {
+        if let Some(path) = self.primary() {
+            path.borrow_mut().lost_ecn(stats);
+        }
+    }
+
+    pub fn start_ecn(&self, stats: &mut Stats) {
+        if let Some(path) = self.primary() {
+            path.borrow_mut().start_ecn(stats);
         }
     }
 
@@ -422,12 +459,12 @@ impl Paths {
         // That is more expensive, but it should be rare and breaking encapsulation
         // is worse, especially as this is only used in tests.
         self.primary().map_or_else(
-            || RttEstimate::default().estimate(),
+            || RttEstimate::new(crate::DEFAULT_INITIAL_RTT).estimate(),
             |p| p.borrow().rtt().estimate(),
         )
     }
 
-    pub fn set_qlog(&mut self, qlog: NeqoQlog) {
+    pub fn set_qlog(&mut self, qlog: Qlog) {
         for p in &mut self.paths {
             p.borrow_mut().set_qlog(qlog.clone());
         }
@@ -509,17 +546,23 @@ pub struct Path {
     /// The ECN-related state for this path (see RFC9000, Section 13.4 and Appendix A.4)
     ecn_info: ecn::Info,
     /// For logging of events.
-    qlog: NeqoQlog,
+    qlog: Qlog,
 }
 
 impl Path {
+    /// The number of times that a path will be probed before it is considered failed.
+    ///
+    /// Note that with [`crate::ecn`], a path is probed [`Self::MAX_PROBES`] with ECN
+    /// marks and [`Self::MAX_PROBES`] without.
+    pub const MAX_PROBES: usize = 3;
+
     /// Create a path from addresses and a remote connection ID.
     /// This is used for migration and for new datagrams.
     pub fn temporary(
         local: SocketAddr,
         remote: SocketAddr,
         conn_params: &ConnectionParameters,
-        qlog: NeqoQlog,
+        qlog: Qlog,
         now: Instant,
         stats: &mut Stats,
     ) -> Self {
@@ -555,7 +598,7 @@ impl Path {
             state: ProbeState::ProbeNeeded { probe_count: 0 },
             validated: None,
             challenge: None,
-            rtt: RttEstimate::default(),
+            rtt: RttEstimate::new(conn_params.get_initial_rtt()),
             sender,
             received_bytes: 0,
             sent_bytes: 0,
@@ -569,8 +612,8 @@ impl Path {
     }
 
     /// Return the DSCP/ECN marking to use for outgoing packets on this path.
-    pub fn tos(&self, tokens: &mut Vec<RecoveryToken>) -> IpTos {
-        self.ecn_info.ecn_mark(tokens).into()
+    pub fn tos(&self) -> Tos {
+        self.ecn_info.ecn_mark().into()
     }
 
     /// Whether this path is the primary or current path for the connection.
@@ -666,31 +709,39 @@ impl Path {
     }
 
     /// Set the stateless reset token for the connection ID that is currently in use.
-    pub fn set_reset_token(&mut self, token: [u8; 16]) {
+    pub fn set_reset_token(&mut self, token: Srt) {
         if let Some(remote_cid) = self.remote_cid.as_mut() {
             remote_cid.set_stateless_reset_token(token);
         }
     }
 
     /// Determine if the provided token is a stateless reset token.
-    pub fn is_stateless_reset(&self, token: &[u8; 16]) -> bool {
+    pub fn is_stateless_reset(&self, token: &Srt) -> bool {
         self.remote_cid
             .as_ref()
             .is_some_and(|rcid| rcid.is_stateless_reset(token))
     }
 
     /// Make a datagram.
-    pub fn datagram<V: Into<Vec<u8>>>(
+    pub fn datagram_batch(
         &mut self,
-        payload: V,
-        tos: IpTos,
+        payload: Vec<u8>,
+        tos: Tos,
+        num_datagrams: usize,
+        datagram_size: usize,
         stats: &mut Stats,
-    ) -> Datagram {
+    ) -> DatagramBatch {
         // Make sure to use the TOS value from before calling ecn::Info::on_packet_sent, which may
         // update the ECN state and can hence change it - this packet should still be sent
         // with the current value.
-        self.ecn_info.on_packet_sent(stats);
-        Datagram::new(self.local, self.remote, tos, payload.into())
+        self.ecn_info.on_packet_sent(num_datagrams, stats);
+        DatagramBatch::new(
+            self.local,
+            self.remote,
+            tos,
+            NonZeroUsize::new(datagram_size).expect("datagram size cannot be zero"),
+            payload,
+        )
     }
 
     /// Get local address as `SocketAddr`
@@ -741,7 +792,7 @@ impl Path {
             ProbeState::ProbeNeeded { probe_count, .. } => *probe_count,
             _ => 0,
         };
-        self.state = if probe_count >= MAX_PATH_PROBES {
+        self.state = if probe_count >= Self::MAX_PROBES {
             if self.ecn_info.is_marking() {
                 // The path validation failure may be due to ECN blackholing, try again without ECN.
                 qinfo!("[{self}] Possible ECN blackhole, disabling ECN and re-probing path");
@@ -763,9 +814,9 @@ impl Path {
         self.challenge.is_some() || self.state.probe_needed()
     }
 
-    pub fn write_frames(
+    pub fn write_frames<B: Buffer>(
         &mut self,
-        builder: &mut PacketBuilder,
+        builder: &mut packet::Builder<B>,
         stats: &mut FrameStats,
         mtu: bool, // Whether the packet we're writing into will be a full MTU.
         now: Instant,
@@ -776,8 +827,9 @@ impl Path {
         // Send PATH_RESPONSE.
         let resp_sent = if let Some(challenge) = self.challenge.take() {
             qtrace!("[{self}] Responding to path challenge {}", hex(challenge));
-            builder.encode_varint(FrameType::PathResponse);
-            builder.encode(&challenge[..]);
+            builder.encode_frame(FrameType::PathResponse, |b| {
+                b.encode(&challenge[..]);
+            });
 
             // These frames are not retransmitted in the usual fashion.
             stats.path_response += 1;
@@ -794,8 +846,9 @@ impl Path {
         if let ProbeState::ProbeNeeded { probe_count } = self.state {
             qtrace!("[{self}] Initiating path challenge {probe_count}");
             let data = random::<8>();
-            builder.encode_varint(FrameType::PathChallenge);
-            builder.encode(&data);
+            builder.encode_frame(FrameType::PathChallenge, |b| {
+                b.encode(data);
+            });
 
             // As above, no recovery token.
             stats.path_challenge += 1;
@@ -813,10 +866,10 @@ impl Path {
     }
 
     /// Write `ACK_FREQUENCY` frames.
-    pub fn write_cc_frames(
+    pub fn write_cc_frames<B: Buffer>(
         &mut self,
-        builder: &mut PacketBuilder,
-        tokens: &mut Vec<RecoveryToken>,
+        builder: &mut packet::Builder<B>,
+        tokens: &mut recovery::Tokens,
         stats: &mut FrameStats,
     ) {
         self.rtt.write_frames(builder, tokens, stats);
@@ -826,8 +879,16 @@ impl Path {
         self.rtt.frame_lost(lost);
     }
 
-    pub fn lost_ecn(&mut self, pt: PacketType, stats: &mut Stats) {
-        self.ecn_info.lost_ecn(pt, stats);
+    pub fn acked_ecn(&mut self) {
+        self.ecn_info.acked_ecn();
+    }
+
+    pub fn lost_ecn(&mut self, stats: &mut Stats) {
+        self.ecn_info.lost_ecn(stats);
+    }
+
+    pub fn start_ecn(&mut self, stats: &mut Stats) {
+        self.ecn_info.start(stats);
     }
 
     pub fn acked_ack_frequency(&mut self, acked: &AckRate) {
@@ -850,9 +911,9 @@ impl Path {
             true
         } else if matches!(self.state, ProbeState::Valid) {
             // Retire validated, non-primary paths.
-            // Allow more than `2 * MAX_PATH_PROBES` times the PTO so that an old
+            // Allow more than `2 * Self::MAX_PROBES` times the PTO so that an old
             // path remains around until after a previous path fails.
-            let count = u32::try_from(2 * MAX_PATH_PROBES + 1).expect("result fits in u32");
+            let count = u32::try_from(2 * Self::MAX_PROBES + 1).expect("result fits in u32");
             self.validated
                 .is_some_and(|validated| validated + (pto * count) > now)
         } else {
@@ -865,11 +926,6 @@ impl Path {
     /// This only considers retransmissions of probes, not cleanup of the path.
     /// If there is no other activity, then there is no real need to schedule a
     /// timer to cleanup old paths.
-    #[allow(
-        clippy::allow_attributes,
-        clippy::missing_const_for_fn,
-        reason = "TODO: False positive on nightly."
-    )]
     pub fn next_timeout(&self, pto: Duration) -> Option<Instant> {
         if let ProbeState::Probing { sent, .. } = &self.state {
             Some(*sent + pto)
@@ -938,7 +994,7 @@ impl Path {
     }
 
     /// Record a packet as having been sent on this path.
-    pub fn packet_sent(&mut self, sent: &mut SentPacket, now: Instant) {
+    pub fn packet_sent(&mut self, sent: &mut sent::Packet, now: Instant) {
         if !self.is_primary() {
             sent.clear_primary_path();
         }
@@ -946,7 +1002,7 @@ impl Path {
     }
 
     /// Discard a packet that previously might have been in-flight.
-    pub fn discard_packet(&mut self, sent: &SentPacket, now: Instant, stats: &mut Stats) {
+    pub fn discard_packet(&mut self, sent: &sent::Packet, now: Instant, stats: &mut Stats) {
         if self.rtt.first_sample_time().is_none() {
             // When discarding a packet there might not be a good RTT estimate.
             // But discards only occur after receiving something, so that means
@@ -959,7 +1015,7 @@ impl Path {
             );
             stats.rtt_init_guess = true;
             self.rtt.update(
-                &self.qlog,
+                &mut self.qlog,
                 now - sent.time_sent(),
                 Duration::new(0, 0),
                 RttSource::Guesstimate,
@@ -973,8 +1029,8 @@ impl Path {
     /// Record packets as acknowledged with the sender.
     pub fn on_packets_acked(
         &mut self,
-        acked_pkts: &[SentPacket],
-        ack_ecn: Option<ecn::Count>,
+        acked_pkts: &[sent::Packet],
+        ack_ecn: Option<&ecn::Count>,
         now: Instant,
         stats: &mut Stats,
     ) {
@@ -982,9 +1038,11 @@ impl Path {
 
         let ecn_ce_received = self.ecn_info.on_packets_acked(acked_pkts, ack_ecn, stats);
         if ecn_ce_received {
-            let cwnd_reduced = self
-                .sender
-                .on_ecn_ce_received(acked_pkts.first().expect("must be there"), now);
+            let cwnd_reduced = self.sender.on_ecn_ce_received(
+                acked_pkts.first().expect("must be there"),
+                now,
+                &mut stats.cc,
+            );
             if cwnd_reduced {
                 self.rtt.update_ack_delay(self.sender.cwnd(), self.plpmtu());
             }
@@ -999,7 +1057,7 @@ impl Path {
         &mut self,
         prev_largest_acked_sent: Option<Instant>,
         confirmed: bool,
-        lost_packets: &[SentPacket],
+        lost_packets: &[sent::Packet],
         stats: &mut Stats,
         now: Instant,
     ) {
@@ -1048,8 +1106,8 @@ impl Path {
         }
     }
 
-    /// Update the `NeqoQLog` instance.
-    pub fn set_qlog(&mut self, qlog: NeqoQlog) {
+    /// Update the `QLog` instance.
+    pub fn set_qlog(&mut self, qlog: Qlog) {
         self.sender.set_qlog(qlog);
     }
 }

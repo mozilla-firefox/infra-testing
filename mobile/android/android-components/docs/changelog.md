@@ -4,7 +4,144 @@ title: Changelog
 permalink: /changelog/
 ---
 
-# 139.0 (In Development)
+# 148.0 (In Development)
+* **support-utils**
+  * 🆕 New `keyboardAsState` available to use in Jetpack Compose code to know when the IME is shown or hidden. This works more reliably on older Android versions than the frameworks `isImeVisible` API. [Bug 1988730](https://bugzilla.mozilla.org/show_bug.cgi?id=1988730).
+* **browser-engine-gecko** and **concept-engine**
+  * Add optional link text support to HitResult.UNKNOWN to allow getting the text associated with a link in response to a long click
+* **feature-contextmenu**
+  * 🆕 New: "Copy link text" context menu candidate to allow for the ability to copy link text [Bug 1809303](https://bugzilla.mozilla.org/show_bug.cgi?id=1809303)
+* **lib-state**
+  * ⚠️ **Breaking change**: Removed `MiddlewareContext`. You can now pass in a `Store` directly when invoking a `Middleware`. [Bug 2005443](https://bugzilla.mozilla.org/show_bug.cgi?id=2005443).
+
+# 147.0
+* **browser-state**:
+  * ⚠️ **Breaking change**: New `Unknown` third state for the `SecurityStatus` of the connection used in a tab. The `secure` property has been migrated to `isSecure`. [Bug 2000617](https://bugzilla.mozilla.org/show_bug.cgi?id=2000617).
+* **lib-state**
+    * ⚠️ **Breaking change**: Removed thread marshalling from Stores [Bug 1980348](https://bugzilla.mozilla.org/show_bug.cgi?id=1980348).
+        * `Store.dispatch` is now invoked on the calling thread.
+        * `Store.dispatch` no longer spawns a new `Job` (it now returns `Unit`).
+    * ⚠️ **Breaking change**: Removed UIStore [Bug 1980350](https://bugzilla.mozilla.org/show_bug.cgi?id=1980350)
+* **ui-widgets**
+  * 🆕 New `EngineViewScrollingDataBehavior` meant to only be used to animate a bottom toolbar/banner in sync with the current webpage [Bug 1991654](https://bugzilla.mozilla.org/show_bug.cgi?id=1991654).
+* **concept-engine** and **browser-engine-gecko**
+  * 🆕 New `verticalScrollPosition` and `verticalScrollDelta` APIs exposing the current scroll position and delta of the webpage [Bug 1990215](https://bugzilla.mozilla.org/show_bug.cgi?id=1990215).
+* **lib-state**
+  * 🆕 New `fragmentStore`, `activityStore`, `composableStore` and `navBackStackStore` APIs available to build a new Store and persist its State in a ViewModel ensuring that it survives Activity recreations. These APIs supersede the existing ones and avoid the possibility of memory leaks. [Bug 1996676](https://bugzilla.mozilla.org/show_bug.cgi?id=1996676).
+  * ⚠️ **Breaking change**: The `lazyStore` API was removed in favor of the new `fragmentStore`, `activityStore` and `composableStore` APIs. [Bug 1996676](https://bugzilla.mozilla.org/show_bug.cgi?id=1996676).
+
+# 146.0
+
+# 145.0
+* **support-ktx**
+  * 🚒 Bug fixed [Bug 1979064](https://bugzilla.mozilla.org/show_bug.cgi?id=1979064). Added back the API checks for `Window.setupPersistentInsets` and `ImeInsetsSynchronizer.setup` as on Android <13 the insets framework is not reliable.
+* **support-appservices**
+  * ⚠️ **Breaking change**: Updated the `AppServicesInitializer.init` to take in a configuration object instead of individual components.
+* **feature-framebusting**
+  * 🆕 New `GeckoSession.PromptDelegate.RedirectPrompt` prompt that is displayed when a third-party redirect is blocked. [Bug 1988107](https://bugzilla.mozilla.org/show_bug.cgi?id=1988107)
+* **feature-sitepermissions**
+  * 🚒 Bug fixed [Bug 1986429](https://bugzilla.mozilla.org/show_bug.cgi?id=1986429). Ensure that when accepting website notification permission, the user is prompted for system-level notification opt-in, if the system permission was not enabled.
+
+# 144.0
+* **feature-customtabs**
+  * 🚒 Bug fixed [Bug 1983103](https://bugzilla.mozilla.org/show_bug.cgi?id=1983103). Fixed issues with system status bars not being correctly themed for custom tabs and PWAs when used on devices with edge-to-edge enabled.
+* **support-ktx**
+  * 🆕 New `Window.setSystemBarsBackground()` allows to still theme the status bar, navigation bar and other insets background in landscape mode even when edge-to-edge is enabled and Android doesn't theme these anymore. [Bug 1981861](https://bugzilla.mozilla.org/show_bug.cgi?id=1981861)
+* **feature-sitepermissions**
+  * 🆕 New `SitePermissionsLearnMoreUrlProvider` interface that allows customizing whether to show "learn more" links in permission prompts and what URl to link to. [Bug 1985629](https://bugzilla.mozilla.org/show_bug.cgi?id=1985629)
+
+# 143.0
+* **feature-downloads**:
+  * `AbstractFetchDownloadService.onDestroy` will now cancel all non-completed downloads. [Bug 1977393](https://bugzilla.mozilla.org/show_bug.cgi?id=1977393)
+* **concept-engine** and **browser-engine-gecko**
+  * Added methods to get and set multiple browser preferences. [Bug 1974800](https://bugzilla.mozilla.org/show_bug.cgi?id=1974800)
+  * 🌟️ Added a mechanism to observe browser preferences changing. Use `registerPrefObserverDelegate` to register the delegate on the engine and `registerPrefForObservation` to register a specific pref for observation. Alternatively, use `BrowserPrefObserverFeature` which handles registration and broadcasts the events using an `ObserverRegistery`.
+  * Added new LNA content permissions - `ContentLocalDeviceAccess` and `ContentLocalNetworkAccess` and map to respective `GeckoSession.PermissionDelegate` permission. [Bug 1971500](https://bugzilla.mozilla.org/show_bug.cgi?id=1971500)
+  * Added `localDeviceAccess` and `localNetworkAccess` to `SitePermissions`
+* **feature-sitepermissions**
+    * Added two new columns - `local_device_access` and `local_network_access` to `site_permissions` db table
+    * Migrated `SitePermissionsDatabase` to version 9
+
+# 142.0
+* **feature-tabs**:
+  * Updated `LastTabFeature` to not close the current tab when there's no history. [Bug 1813413](https://bugzilla.mozilla.org/show_bug.cgi?id=1813413).
+* **feature-downloads**:
+  * `DownloadAction.RemoveDeletedDownloads` will now only remove downloads that are cancelled or completed. [Bug 1971848](https://bugzilla.mozilla.org/show_bug.cgi?id=1971848).
+* **concept-engine** and **browser-engine-gecko**
+  * 🌟️ Added `TrackingProtectionPolicy.bounceTrackingProtectionMode` it allows configuring the Bounce Tracking Protection feature, disabled by default. [Bug 1963445](https://bugzilla.mozilla.org/show_bug.cgi?id=1963445)
+  * ⚠️ Options to get, set, and clear browser preferences now require opt in for additional safety.
+  * 🌟️ Added `TrackingProtectionPolicy.allowListBaselineTrackingProtection` and `TrackingProtectionPolicy.allowListConvenienceTrackingProtection`.  Url-classifier(tracking-protection, tracking-annotation, etc) exception entries are categorized into baseline and convenience. The new member variables specify whether exception entries from the corresponding categories are applied. [Bug 1970632](https://bugzilla.mozilla.org/show_bug.cgi?id=1970632)
+* **browser-state**
+  * Removed `ContentState.isProductUrl` and related internal changes.
+* **support-ktx**
+  * Remove API level check for `setupPersistentInsets` and add a new option to consume insets; the default is the same current behaviour. [Bug 1977270](https://bugzilla.mozilla.org/show_bug.cgi?id=1977270) and [Bug 1976746](https://bugzilla.mozilla.org/show_bug.cgi?id=1976746).
+  * Remove API level check for `ImeInsetsSynchronizer`. [Bug 1977270](https://bugzilla.mozilla.org/show_bug.cgi?id=1977270)
+* **All components**
+  * ⚠️ Introduced `@ExperimentalAndroidComponentsApi` to indicate an API requires special care. Opt in via `@OptIn(ExperimentalAndroidComponentsApi::class)`.
+* **service-firefox-accounts**
+  * Renamed `withConstellation` to `withConstellationIfExists` to signify the block execution is dependant on the account being authenticated first. [Bug 1794207](https://bugzilla.mozilla.org/show_bug.cgi?id=1794207)
+
+# 141.0
+=======
+* **feature-accounts**:
+  * Respond to FxA with an error response when unknown web channel messages are sent to the client.
+* **concept-engine**, **browser-engine-gecko**: Added methods to get, set, and clear browser preferences. [Bug 1949876](https://bugzilla.mozilla.org/show_bug.cgi?id=1949876)
+* **ui-widgets**
+  * Updated EngineViewClippingBehavior to support top and bottom toolbars at the same time.
+
+* **feature-downloads**
+  * ⚠️ **Breaking change**: Changed constructor of `DownloadEstimator`. [Bug 1970176](https://bugzilla.mozilla.org/show_bug.cgi?id=1970176).
+  * ⚠️ **Breaking change**: Changed parameters of `DownloadEstimator.estimatedRemainingTime`. [Bug 1970176](https://bugzilla.mozilla.org/show_bug.cgi?id=1970176).
+  * ⚠️ **Breaking change**: Added new `downloadEstimator` abstract val to `AbstractFetchDownloadService`. [Bug 1970176](https://bugzilla.mozilla.org/show_bug.cgi?id=1970176).
+  * ⚠️ **Breaking change**: Removed `dateTimeProvider` abstract val from `AbstractFetchDownloadService`. [Bug 1970176](https://bugzilla.mozilla.org/show_bug.cgi?id=1970176).
+  * ⚠️ **Breaking change**: Changed function signature of `DownloadNotification.createOngoingDownloadNotification`. [Bug 1970176](https://bugzilla.mozilla.org/show_bug.cgi?id=1970176).
+  * ⚠️ **Breaking change**: Changed behavior and constructor signatures of `TemporaryDownloadFeature`, `CopyDownloadFeature` and `ShareResourceFeature`. [Bug 1958367](https://bugzilla.mozilla.org/show_bug.cgi?id=1958367).
+    * Renamed `cleanupCacheCoroutineDispatcher` to `ioDispatcher`
+    * The new `ioDispatcher` param is now also used for the download operation.
+
+# 140.0
+* **feature-downloads**
+  * `DownloadNotification.createOngoingDownloadNotification` will now show the download time remaining instead of the percentage completed in the notification summary. [Bug 1956577](https://bugzilla.mozilla.org/show_bug.cgi?id=1956577).
+  * Added `DateTimeProvider` to provide date and time information. [Bug 1956577](https://bugzilla.mozilla.org/show_bug.cgi?id=1956577).
+  * Added `DownloadEstimator` to estimate download time remaining. [Bug 1956577](https://bugzilla.mozilla.org/show_bug.cgi?id=1956577).
+  * ⚠️ **Breaking change**: Added `downloadEstimator` property to `DownloadJobState`. [Bug 1956577](https://bugzilla.mozilla.org/show_bug.cgi?id=1956577).
+  * ⚠️ **Breaking change**: Added new 'dateTimeProvider' abstract val to `AbstractFetchDownloadService`. [Bug 1956577](https://bugzilla.mozilla.org/show_bug.cgi?id=1956577).
+  * ⚠️ **Breaking change**: Removed Deprecated `Long.toMegabyteOrKilobyteString` in v140. [Bug 1955689](https://bugzilla.mozilla.org/show_bug.cgi?id=1955689).
+* **feature-app-links**
+  * Added `alwaysOpenCheckboxAction` parameter to `AppLinksFeature`, this was moved from `AppLinksInterceptor`.
+  * ⚠️ **Breaking change**: Moved prompt functionality back to `AppLinksFeature`.
+  * ⚠️ **Breaking change**: Removed `interceptLinkClicks` parameter from `AppLinksInterceptor` since no usage sets this to false.
+
+* **support-rusterrors**:
+  * ⚠️ **Breaking change**: Deprecated in place of `support-appservices`. See below.
+
+* **support-rusthttp**:
+  * ⚠️ **Breaking change**: Deprecated in place of `support-appservices`. See below.
+
+* **support-rustlog**:
+  * ⚠️ **Breaking change**: Deprecated in place of `support-appservices`. See below.
+
+* **support-appservices**:
+  * 🆕 New component that components the individual rust ones.
+  * Adds a `AppServicesInitializer.init` that preserves the sequence for individual component initialization.
+  * Namespacing has been preserved from previous components, so only the dependency package needs updating.
+
+# 140.0
+* **feature-downloads**
+  * `DownloadNotification.createOngoingDownloadNotification` will now show the download time remaining instead of the percentage completed in the notification summary. [Bug 1956577](https://bugzilla.mozilla.org/show_bug.cgi?id=1956577).
+  * Added `DateTimeProvider` to provide date and time information. [Bug 1956577](https://bugzilla.mozilla.org/show_bug.cgi?id=1956577).
+  * Added `DownloadEstimator` to estimate download time remaining. [Bug 1956577](https://bugzilla.mozilla.org/show_bug.cgi?id=1956577).
+  * ⚠️ **Breaking change**: Added `downloadEstimator` property to `DownloadJobState`. [Bug 1956577](https://bugzilla.mozilla.org/show_bug.cgi?id=1956577).
+  * ⚠️ **Breaking change**: Added new 'dateTimeProvider' abstract val to `AbstractFetchDownloadService`. [Bug 1956577](https://bugzilla.mozilla.org/show_bug.cgi?id=1956577).
+  * ⚠️ **Breaking change**: Removed Deprecated `Long.toMegabyteOrKilobyteString` in v140. [Bug 1955689](https://bugzilla.mozilla.org/show_bug.cgi?id=1955689).
+* **feature-app-links**
+  * Added `alwaysOpenCheckboxAction` parameter to `AppLinksFeature`, this was moved from `AppLinksInterceptor`.
+  * ⚠️ **Breaking change**: Moved prompt functionality back to `AppLinksFeature`.
+  * ⚠️ **Breaking change**: Removed `interceptLinkClicks` parameter from `AppLinksInterceptor` since no usage sets this to false.
+* **feature-accounts**:
+  * Add support for `WebChannelCommand.SYNC_PREFERENCES` web channel messages.
+
+# 139.0
 * **feature-downloads**
   * ⚠️ **Breaking change**: Added new `fileSizeFormatter` abstract val to `AbstractFetchDownloadService`. [Bug 1956580](https://bugzilla.mozilla.org/show_bug.cgi?id=1956580).
   * ⚠️ **Breaking change**: Added new `fileSizeFormatter` parameter to `DownloadNotification.createDownloadGroupNotification`. [Bug 1956580](https://bugzilla.mozilla.org/show_bug.cgi?id=1956580).

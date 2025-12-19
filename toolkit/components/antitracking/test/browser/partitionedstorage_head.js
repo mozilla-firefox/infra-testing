@@ -152,6 +152,7 @@ this.PartitionedStorageHelper = {
             "privacy.restrict3rdpartystorage.userInteractionRequiredForHosts",
             "not-tracking.example.com",
           ],
+          ["security.allow_eval_with_system_principal", true],
         ],
       });
 
@@ -232,8 +233,8 @@ this.PartitionedStorageHelper = {
                 { once: true }
               );
 
-              content.document.body.appendChild(ifr);
               ifr.src = obj.page;
+              content.document.body.appendChild(ifr);
             });
           }
         );

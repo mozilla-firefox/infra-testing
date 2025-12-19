@@ -47,27 +47,9 @@ const knownUnshownImages = [
   },
 
   {
-    file: "chrome://browser/skin/window-controls/maximize.svg",
-    platforms: ["win"],
-    // This is to prevent perma-fails in case Windows machines
-    // go back to running tests in non-maximized windows.
-    intermittentShown: ["win"],
-    // This file is not loaded on Windows 7/8.
-    intermittentNotLoaded: ["win"],
-  },
-
-  {
     file: "chrome://global/skin/icons/highlights.svg",
     platforms: ["win", "linux", "macosx"],
     intermittentShown: ["win", "linux"],
-    // this file is not loaded in beta since the pref is only
-    // turned on in nightly
-    intermittentNotLoaded: Services.prefs.getBoolPref(
-      "browser.tabs.groups.smart.enabled",
-      true
-    )
-      ? []
-      : ["win", "linux", "macosx"],
   },
 ];
 

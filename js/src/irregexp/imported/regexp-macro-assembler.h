@@ -30,8 +30,10 @@ class RegExpMacroAssembler {
   static constexpr int kMaxRegisterCount = (1 << 16);
   static constexpr int kMaxRegister = kMaxRegisterCount - 1;
   static constexpr int kMaxCaptures = (kMaxRegister - 1) / 2;
+  // Note the minimum value is chosen s.t. a negated valid offset is also a
+  // valid offset.
   static constexpr int kMaxCPOffset = (1 << 15) - 1;
-  static constexpr int kMinCPOffset = -(1 << 15);
+  static constexpr int kMinCPOffset = -kMaxCPOffset;
 
   static constexpr int kTableSizeBits = 7;
   static constexpr int kTableSize = 1 << kTableSizeBits;
@@ -40,6 +42,7 @@ class RegExpMacroAssembler {
   static constexpr int kUseCharactersValue = -1;
 
   RegExpMacroAssembler(Isolate* isolate, Zone* zone);
+  RegExpMacroAssembler(const RegExpMacroAssembler& other) V8_NOEXCEPT = default;
   virtual ~RegExpMacroAssembler() = default;
 
   virtual DirectHandle<HeapObject> GetCode(DirectHandle<String> source,
@@ -70,7 +73,7 @@ class RegExpMacroAssembler {
                                       Label* on_equal) = 0;
   virtual void CheckCharacterGT(base::uc16 limit, Label* on_greater) = 0;
   virtual void CheckCharacterLT(base::uc16 limit, Label* on_less) = 0;
-  virtual void CheckGreedyLoop(Label* on_tos_equals_current_position) = 0;
+  virtual void CheckFixedLengthLoop(Label* on_tos_equals_current_position) = 0;
   virtual void CheckAtStart(int cp_offset, Label* on_at_start) = 0;
   virtual void CheckNotAtStart(int cp_offset, Label* on_not_at_start) = 0;
   virtual void CheckNotBackReference(int start_reg, bool read_backward,

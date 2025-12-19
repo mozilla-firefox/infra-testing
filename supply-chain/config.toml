@@ -21,7 +21,7 @@ url = "https://raw.githubusercontent.com/mozilla/supply-chain/main/audits.toml"
 
 [policy.allocator-api2]
 audit-as-crates-io = true
-notes = "This is the upstream code without the Box implementation which may have a soundness issue."
+notes = "This is the upstream code with a fix for rust 1.89."
 
 [policy.any_all_workaround]
 audit-as-crates-io = true
@@ -31,9 +31,13 @@ notes = "This is the upstream code plus the ARM intrinsics workaround from qcms,
 audit-as-crates-io = true
 notes = "This is the upstream code plus a few local fixes, see bug 1685697."
 
-[policy."bindgen:0.69.4"]
+[policy.bhttp]
 audit-as-crates-io = true
-notes = "This is the upstream code plus a fix for clang trunk. See bug 1894093."
+notes = "This is upstream code in between released versions."
+
+[policy."bindgen:0.72.0@git:9366e0af8da529c958b4cd4fcbe492d951c86f5c"]
+audit-as-crates-io = true
+notes = "This is the upstream code not yet released"
 
 [policy.chardetng]
 audit-as-crates-io = true
@@ -43,21 +47,9 @@ notes = "This is a crate Henri wrote which is also published. We should probably
 audit-as-crates-io = true
 notes = "This is a crate Henri wrote which is also published. We should probably update Firefox to tip and certify that."
 
-[policy.coremidi]
-audit-as-crates-io = true
-notes = "This is a pinned version of the upstream code, presumably to get a fix that hadn't been released yet. We should consider switching to the latest official release."
-
 [policy.cose]
 audit-as-crates-io = true
 notes = "This is upstream plus a warning fix from bug 1823866."
-
-[policy.cssparser]
-audit-as-crates-io = true
-notes = "This is a pinned version of the upstream code. This can be removed when new version gets published."
-
-[policy.cssparser-macros]
-audit-as-crates-io = true
-notes = "This is a pinned version of the upstream code. This can be removed when new version gets published."
 
 [policy.firefox-on-glean]
 audit-as-crates-io = false
@@ -96,6 +88,10 @@ notes = "Patched version of upstream"
 dependency-criteria = { fluent-testing = "safe-to-run", tokio = "safe-to-run" }
 notes = "This crate has two testing-only dependencies which are specified as regular-but-optional rather than a dev-dependencies, because they need to be available to both benchmarks and integration tests."
 
+[policy.libcrux-traits]
+audit-as-crates-io = true
+notes = "Patched version of upstream to avoid unnecessary unused dependencies and conflicts."
+
 [policy.libudev-sys]
 audit-as-crates-io = false
 notes = "This override is an api-compatible fork with an orthogonal implementation."
@@ -107,6 +103,9 @@ notes = "This was originally servo code which Bobby Holley put on crates.io some
 [policy.marionette]
 audit-as-crates-io = false
 notes = "This is a first-party crate which is also published to crates.io. We certify audits for this crate as part of the documented release process, but that step happens after the version bump lands on central so we don't enforce it here."
+
+[policy.memtest]
+audit-as-crates-io = true
 
 [policy.midir]
 audit-as-crates-io = true
@@ -179,6 +178,9 @@ audit-as-crates-io = false
 [policy.mp4parse_capi]
 audit-as-crates-io = false
 
+[policy.mtu]
+audit-as-crates-io = true
+
 [policy.naga]
 audit-as-crates-io = true
 notes = "Part of the wgpu repository, pinned as the rest of wgpu crates."
@@ -191,6 +193,10 @@ notes = "This is a pinned version of the upstream code, pending update of the cr
 audit-as-crates-io = true
 notes = "This is the upstream code plus a backported fix."
 
+[policy.ohttp]
+audit-as-crates-io = true
+notes = "This is upstream code in between released versions."
+
 [policy.osclientcerts]
 audit-as-crates-io = false
 notes = "This is a first-party crate that happens to have been pushed to crates.io a very long time ago but was yanked."
@@ -200,10 +206,6 @@ audit-as-crates-io = false
 
 [policy.peek-poke-derive]
 audit-as-crates-io = false
-
-[policy.plist]
-audit-as-crates-io = true
-notes = "This is the upstream code plus one local fix, see bug 1874167."
 
 [policy.pulse]
 audit-as-crates-io = false
@@ -233,6 +235,10 @@ notes = "This is a first-party crate which is entirely unrelated to the crates.i
 audit-as-crates-io = false
 notes = "This is a first-party crate, maintained by the appservices team, which is entirely unrelated to the crates.io package of the same name."
 
+[policy.thin-vec]
+audit-as-crates-io = true
+notes = "3rd-party crate with a mozilla-specific patch applied"
+
 [policy.to_shmem]
 audit-as-crates-io = true
 notes = "This is a first-party crate which is also published to crates.io"
@@ -255,6 +261,8 @@ notes = "This is a first-party crate which is also published to crates.io. We ce
 
 [policy.webrender]
 audit-as-crates-io = false
+dependency-criteria = { hyper = "safe-to-run", tokio = "safe-to-run" }
+notes = "the hyper and tokio dependencies are only enabled in local debug builds, and are not shipped to users"
 
 [policy.webrender_api]
 audit-as-crates-io = false
@@ -288,6 +296,9 @@ notes = "Local override of the crates.io crate that uses a non-vendored local co
 
 [policy.wr_malloc_size_of]
 audit-as-crates-io = false
+
+[policy.zip]
+audit-as-crates-io = true
 
 [[exemptions.alsa]]
 version = "0.4.3"
@@ -335,10 +346,6 @@ criteria = "safe-to-run"
 
 [[exemptions.coreaudio-sys]]
 version = "0.2.10"
-criteria = "safe-to-deploy"
-
-[[exemptions.coremidi]]
-version = "0.6.0@git:fc68464b5445caf111e41f643a2e69ccce0b4f83"
 criteria = "safe-to-deploy"
 
 [[exemptions.coremidi-sys]]
@@ -393,11 +400,6 @@ criteria = "safe-to-deploy"
 version = "0.6.5"
 criteria = "safe-to-deploy"
 
-[[exemptions.derive_more-impl]]
-version = "1.0.0-beta.2"
-criteria = "safe-to-deploy"
-notes = "The crate is new to version 1.0.x, and derived from older versions of derive_more. The differences against 0.99.17 have been audited, but cargo-vet cannot record this information."
-
 [[exemptions.devd-rs]]
 version = "0.3.4"
 criteria = "safe-to-deploy"
@@ -430,10 +432,6 @@ criteria = "safe-to-deploy"
 version = "0.9.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.error-chain]]
-version = "0.12.4"
-criteria = "safe-to-deploy"
-
 [[exemptions.fallible-iterator]]
 version = "0.2.0"
 criteria = "safe-to-deploy"
@@ -456,10 +454,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.fs-err]]
 version = "2.7.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.futures-macro]]
-version = "0.3.21"
 criteria = "safe-to-deploy"
 
 [[exemptions.futures-task]]
@@ -526,10 +520,6 @@ criteria = "safe-to-deploy"
 version = "3.1.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.lazycell]]
-version = "1.3.0"
-criteria = "safe-to-deploy"
-
 [[exemptions.libdbus-sys]]
 version = "0.2.2"
 criteria = "safe-to-deploy"
@@ -546,20 +536,6 @@ notes = "The in-gecko feature that we enable makes only pre-built bindings used,
 
 [[exemptions.libudev]]
 version = "0.2.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.lmdb-rkv-sys]]
-version = "0.11.2"
-criteria = "safe-to-deploy"
-suggest = false
-notes = "This crate is forked from another crate and not developed in-house. Given that LMDB-backed RKV is going away, we will probably never bother auditing this"
-
-[[exemptions.mach]]
-version = "0.3.2"
-criteria = "safe-to-deploy"
-
-[[exemptions.memalloc]]
-version = "0.1.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.memmap2]]
@@ -660,10 +636,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.rust-ini]]
 version = "0.10.3"
-criteria = "safe-to-deploy"
-
-[[exemptions.rust_decimal]]
-version = "1.24.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.scroll]]

@@ -61,6 +61,8 @@ namespace mozilla {
 
 using namespace dom;
 
+using EditablePointOption = HTMLEditUtils::EditablePointOption;
+using EditablePointOptions = HTMLEditUtils::EditablePointOptions;
 using EmptyCheckOption = HTMLEditUtils::EmptyCheckOption;
 using LeafNodeType = HTMLEditUtils::LeafNodeType;
 using LeafNodeTypes = HTMLEditUtils::LeafNodeTypes;
@@ -431,7 +433,9 @@ nsresult HTMLEditor::SetInlinePropertiesAroundRanges(
                   : HTMLEditUtils::GetDeepestEditableStartPointOf<
                         EditorRawDOMPoint>(
                         *inlineStyleSetter.FirstHandledPointRef()
-                             .ContainerAs<nsIContent>());
+                             .ContainerAs<nsIContent>(),
+                        {EditablePointOption::RecognizeInvisibleWhiteSpaces,
+                         EditablePointOption::StopAtComment});
           const auto endPoint =
               !inlineStyleSetter.LastHandledPointRef().IsEndOfContainer()
                   ? inlineStyleSetter.LastHandledPointRef()
@@ -439,7 +443,9 @@ nsresult HTMLEditor::SetInlinePropertiesAroundRanges(
                   : HTMLEditUtils::GetDeepestEditableEndPointOf<
                         EditorRawDOMPoint>(
                         *inlineStyleSetter.LastHandledPointRef()
-                             .ContainerAs<nsIContent>());
+                             .ContainerAs<nsIContent>(),
+                        {EditablePointOption::RecognizeInvisibleWhiteSpaces,
+                         EditablePointOption::StopAtComment});
           nsresult rv = domRange->SetStartAndEnd(
               startPoint.ToRawRangeBoundary(), endPoint.ToRawRangeBoundary());
           if (NS_SUCCEEDED(rv)) {
@@ -1938,8 +1944,7 @@ HTMLEditor::AutoInlineStyleSetter::ExtendOrShrinkRangeToApplyTheStyle(
   if (range.EndRef().IsInContentNode()) {
     const WSScanResult nextContentData =
         WSRunScanner::ScanInclusiveNextVisibleNodeOrBlockBoundary(
-            WSRunScanner::Scan::EditableNodes, range.EndRef(),
-            BlockInlineCheck::UseComputedDisplayOutsideStyle);
+            {WSRunScanner::Option::OnlyEditableNodes}, range.EndRef());
     if (nextContentData.ReachedInvisibleBRElement() &&
         nextContentData.BRElementPtr()->GetParentElement() &&
         HTMLEditUtils::IsInlineContent(
@@ -2170,7 +2175,7 @@ HTMLEditor::SplitAncestorStyledInlineElementsAt(
   SplitNodeResult result = SplitNodeResult::NotHandled(aPointToSplit);
   MOZ_ASSERT(!result.Handled());
   EditorDOMPoint pointToPutCaret;
-  for (OwningNonNull<Element>& element : arrayOfParents) {
+  for (const OwningNonNull<Element>& element : arrayOfParents) {
     auto isSetByCSSOrError = [&]() -> Result<bool, nsresult> {
       if (!handleCSS) {
         return false;
@@ -2221,7 +2226,7 @@ HTMLEditor::SplitAncestorStyledInlineElementsAt(
         // If we're removing a link style and the element is an <a href>, we
         // need to split it.
         if (aStyle.mHTMLProperty == nsGkAtoms::href &&
-            HTMLEditUtils::IsLink(element)) {
+            HTMLEditUtils::IsHyperlinkElement(element)) {
         }
         // If we're removing HTML style, we should split only the element
         // which represents the style.
@@ -2904,14 +2909,14 @@ EditorRawDOMRange HTMLEditor::GetExtendedRangeWrappingNamedAnchor(
   EditorRawDOMRange newRange(aRange);
   for (Element* element :
        aRange.StartRef().GetContainer()->InclusiveAncestorsOfType<Element>()) {
-    if (!HTMLEditUtils::IsNamedAnchor(element)) {
+    if (!HTMLEditUtils::IsNamedAnchorElement(*element)) {
       continue;
     }
     newRange.SetStart(EditorRawDOMPoint(element));
   }
   for (Element* element :
        aRange.EndRef().GetContainer()->InclusiveAncestorsOfType<Element>()) {
-    if (!HTMLEditUtils::IsNamedAnchor(element)) {
+    if (!HTMLEditUtils::IsNamedAnchorElement(*element)) {
       continue;
     }
     newRange.SetEnd(EditorRawDOMPoint::After(*element));
@@ -3612,13 +3617,19 @@ nsresult HTMLEditor::RemoveInlinePropertiesAsSubAction(
                 maybeNextContent &&
                         maybeNextContent != selectionRange->GetStartContainer()
                     ? HTMLEditUtils::GetDeepestEditableStartPointOf<
-                          EditorRawDOMPoint>(*maybeNextContent)
+                          EditorRawDOMPoint>(
+                          *maybeNextContent,
+                          {EditablePointOption::RecognizeInvisibleWhiteSpaces,
+                           EditablePointOption::StopAtComment})
                     : range.StartRef();
             const auto endPoint =
                 maybePreviousContent && maybePreviousContent !=
                                             selectionRange->GetEndContainer()
                     ? HTMLEditUtils::GetDeepestEditableEndPointOf<
-                          EditorRawDOMPoint>(*maybePreviousContent)
+                          EditorRawDOMPoint>(
+                          *maybePreviousContent,
+                          {EditablePointOption::RecognizeInvisibleWhiteSpaces,
+                           EditablePointOption::StopAtComment})
                     : range.EndRef();
             DebugOnly<nsresult> rvIgnored = selectionRange->SetStartAndEnd(
                 startPoint.ToRawRangeBoundary(), endPoint.ToRawRangeBoundary());

@@ -6,7 +6,6 @@
 #include "LookupCacheV4.h"
 #include "HashStore.h"
 #include "mozilla/glean/UrlClassifierMetrics.h"
-#include "mozilla/Unused.h"
 #include "nsCheckSummedOutputStream.h"
 #include "nsUrlClassifierDBService.h"
 #include "crc32c.h"
@@ -425,7 +424,7 @@ nsresult LookupCacheV4::ApplyUpdate(RefPtr<TableUpdateV4> aTableUpdate,
   // after merging the data with local prefixes.
   aTableUpdate->Clear();
 
-  nsAutoCString sha256;
+  nsAutoCStringN<40> sha256;
   crypto->Finish(false, sha256);
   if (aTableUpdate->SHA256().IsEmpty()) {
     LOG(("Update sha256 hash missing."));

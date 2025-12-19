@@ -25,7 +25,7 @@ import org.mozilla.fenix.ext.components
  * @param listener Callback to be invoked when this menu item is clicked.
  */
 class BrowserMenuSignIn(
-    @ColorRes private val textColorResource: Int,
+    @param:ColorRes private val textColorResource: Int,
     @DrawableRes imageResource: Int = R.drawable.ic_signed_out,
     listener: () -> Unit = {},
 ) : BrowserMenuImageText(
@@ -61,7 +61,7 @@ class BrowserMenuSignIn(
         if (isSignedIn) {
             displayName ?: email ?: resources.getString(R.string.browser_menu_account_settings)
         } else {
-            resources.getString(R.string.sync_menu_sync_and_save_data)
+            resources.getString(R.string.sync_menu_sign_in)
         }
     }
 }

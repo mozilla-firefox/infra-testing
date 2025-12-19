@@ -7,12 +7,13 @@
 #ifndef moz_dom_ServiceWorkerRegistrationProxy_h
 #define moz_dom_ServiceWorkerRegistrationProxy_h
 
-#include "mozilla/dom/ClientInfo.h"
-#include "mozilla/dom/PServiceWorkerRegistrationParent.h"
-#include "nsProxyRelease.h"
 #include "ServiceWorkerRegistrationDescriptor.h"
 #include "ServiceWorkerRegistrationListener.h"
 #include "ServiceWorkerUtils.h"
+#include "mozilla/dom/ClientInfo.h"
+#include "mozilla/dom/PServiceWorkerRegistrationParent.h"
+#include "mozilla/dom/notification/NotificationUtils.h"
+#include "nsProxyRelease.h"
 
 namespace mozilla::dom {
 
@@ -86,7 +87,8 @@ class ServiceWorkerRegistrationProxy final
 
   RefPtr<NavigationPreloadStatePromise> GetNavigationPreloadState();
 
-  RefPtr<NotificationsPromise> GetNotifications(const nsAString& aTag);
+  RefPtr<notification::NotificationsPromise> GetNotifications(
+      const nsAString& aTag);
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ServiceWorkerRegistrationProxy,
                                         override);

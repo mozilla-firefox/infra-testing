@@ -29,15 +29,16 @@ keyUsage:[digitalSignature,nonRepudiation,keyEncipherment,
           dataEncipherment,keyAgreement,keyCertSign,cRLSign]
 extKeyUsage:[serverAuth,clientAuth,codeSigning,emailProtection
              nsSGC, # Netscape Server Gated Crypto
-             OCSPSigning,timeStamping]
+             OCSPSigning,timeStamping,tlsBinding]
 subjectAlternativeName:[<dNSName|directoryName|"ip4:"iPV4Address>,...]
 authorityInformationAccess:<OCSP URI>
 certificatePolicies:[<policy OID>,...]
 nameConstraints:{permitted,excluded}:[<dNSName|directoryName>,...]
 nsCertType:sslServer
 TLSFeature:[<TLSFeature>,...]
-embeddedSCTList:[<key specification>:<YYYYMMDD>,...]
+embeddedSCTList:[<key specification>:<YYYYMMDD>[:<leaf index>],...]
 delegationUsage:
+qcStatements:[<statement OID[:info OID]>,...]
 
 Where:
   [] indicates an optional field or component of a field
@@ -109,12 +110,12 @@ class UnknownBaseError(Error):
     """Base class for handling unexpected input in this module."""
 
     def __init__(self, value):
-        super(UnknownBaseError, self).__init__()
+        super().__init__()
         self.value = value
         self.category = "input"
 
     def __str__(self):
-        return 'Unknown %s type "%s"' % (self.category, repr(self.value))
+        return f'Unknown {self.category} type "{repr(self.value)}"'
 
 
 class UnknownAlgorithmTypeError(UnknownBaseError):
@@ -210,18 +211,18 @@ class InvalidSCTSpecification(Error):
     """Helper exception type to handle invalid SCT specifications."""
 
     def __init__(self, value):
-        super(InvalidSCTSpecification, self).__init__()
+        super().__init__()
         self.value = value
 
     def __str__(self):
-        return repr('invalid SCT specification "{}"' % self.value)
+        return f'invalid SCT specification "{self.value}"'
 
 
 class InvalidSerialNumber(Error):
     """Exception type to handle invalid serial numbers."""
 
     def __init__(self, value):
-        super(InvalidSerialNumber, self).__init__()
+        super().__init__()
         self.value = value
 
     def __str__(self):
@@ -254,7 +255,7 @@ def stringToDN(string, tag=None):
     optional implicit tag in cases where the Name needs to be tagged
     differently."""
     if string and "/" not in string:
-        string = "/CN=%s" % string
+        string = f"/CN={string}"
     rdns = rfc2459.RDNSequence()
     pattern = "/(C|ST|L|O|OU|CN|emailAddress)="
     split = re.split(pattern, string)
@@ -513,6 +514,8 @@ class Certificate:
             self.savedEmbeddedSCTListData = (value, critical)
         elif extensionType == "delegationUsage":
             self.addDelegationUsage(critical)
+        elif extensionType == "qcStatements":
+            self.addQCStatements(value, critical)
         else:
             raise UnknownExtensionTypeError(extensionType)
 
@@ -575,6 +578,8 @@ class Certificate:
             return univ.ObjectIdentifier("1.3.6.1.5.5.7.3.9")
         if keyPurpose == "timeStamping":
             return rfc2459.id_kp_timeStamping
+        if keyPurpose == "tlsBinding":
+            return univ.ObjectIdentifier("0.4.0.194115.1.0")
         raise UnknownKeyPurposeTypeError(keyPurpose)
 
     def addExtKeyUsage(self, extKeyUsage, critical):
@@ -621,10 +626,11 @@ class Certificate:
     def addCertificatePolicies(self, policyOIDs, critical):
         policies = rfc2459.CertificatePolicies()
         for pos, policyOID in enumerate(policyOIDs.split(",")):
-            if policyOID == "any":
-                policyOID = "2.5.29.32.0"
+            policyOIDMapped = policyOID
+            if policyOIDMapped == "any":
+                policyOIDMapped = "2.5.29.32.0"
             policy = rfc2459.PolicyInformation()
-            policyIdentifier = rfc2459.CertPolicyId(policyOID)
+            policyIdentifier = rfc2459.CertPolicyId(policyOIDMapped)
             policy["policyIdentifier"] = policyIdentifier
             policies.setComponentByPosition(pos, policy)
         self.addExtension(rfc2459.id_ce_certificatePolicies, policies, critical)
@@ -696,15 +702,20 @@ class Certificate:
         (scts, critical) = self.savedEmbeddedSCTListData
         encodedSCTs = []
         for sctSpec in scts.split(","):
-            match = re.search(r"(\w+):(\d{8})", sctSpec)
+            match = re.search(r"(\w+):(\d{8}):?(\d+)?", sctSpec)
             if not match:
                 raise InvalidSCTSpecification(sctSpec)
             keySpec = match.group(1)
+            leafIndex = match.group(3)
+            if leafIndex:
+                leafIndex = int(leafIndex)
             key = pykey.keyFromSpecification(keySpec)
             time = datetime.datetime.strptime(match.group(2), "%Y%m%d")
             tbsCertificate = self.getTBSCertificate()
             tbsDER = encoder.encode(tbsCertificate)
-            sct = pyct.SCT(key, time, pyct.PrecertEntry(tbsDER, self.issuerKey))
+            sct = pyct.SCT(
+                key, time, pyct.PrecertEntry(tbsDER, self.issuerKey), leafIndex
+            )
             signed = sct.signAndEncode()
             lengthPrefix = pack("!H", len(signed))
             encodedSCTs.append(lengthPrefix + signed)
@@ -715,6 +726,29 @@ class Certificate:
             univ.ObjectIdentifier("1.3.6.1.4.1.11129.2.4.2"),
             univ.OctetString(extensionBytes),
             critical,
+        )
+
+    def addQCStatements(self, qcStatements, critical):
+        sequence = univ.Sequence()
+        for pos, qcStatement in enumerate(qcStatements.split(",")):
+            parts = qcStatement.split(":")
+            statementID = parts[0]
+            statementInfo = None
+            if len(parts) > 1:
+                statementInfo = parts[1]
+            qcStatementSequence = univ.Sequence()
+            qcStatementSequence.setComponentByPosition(
+                0, univ.ObjectIdentifier(statementID)
+            )
+            if statementInfo:
+                statementInfoSequence = univ.Sequence()
+                statementInfoSequence.setComponentByPosition(
+                    0, univ.ObjectIdentifier(statementInfo)
+                )
+                qcStatementSequence.setComponentByPosition(1, statementInfoSequence)
+            sequence.setComponentByPosition(pos, qcStatementSequence)
+        self.addExtension(
+            univ.ObjectIdentifier("1.3.6.1.5.5.7.1.3"), sequence, critical
         )
 
     def getVersion(self):

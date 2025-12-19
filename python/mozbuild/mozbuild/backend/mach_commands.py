@@ -21,7 +21,7 @@ from mozbuild.util import cpu_count
     description="Generate a project and launch an IDE.",
     virtualenv_name="ide",
 )
-@CommandArgument("ide", choices=["eclipse", "visualstudio", "vscode"])
+@CommandArgument("ide", choices=["eclipse", "visualstudio", "vscode", "vscodium"])
 @CommandArgument(
     "--no-interactive",
     default=False,
@@ -48,7 +48,11 @@ def run(command_context, ide, no_interactive, args):
         return 1
 
     if ide == "vscode":
-        result = subprocess.run([sys.executable, "mach", "configure"])
+        result = subprocess.run(
+            [sys.executable, "mach", "configure"],
+            check=False,
+            cwd=command_context.topsrcdir,
+        )
         if result.returncode:
             return result.returncode
 
@@ -56,7 +60,9 @@ def run(command_context, ide, no_interactive, args):
         # Then build the rest of the build dependencies by running the full
         # export target, because we can't do anything better.
         result = subprocess.run(
-            [sys.executable, "mach", "build", "pre-export", "export", "pre-compile"]
+            [sys.executable, "mach", "build", "pre-export", "export", "pre-compile"],
+            check=False,
+            cwd=command_context.topsrcdir,
         )
         if result.returncode:
             return result.returncode
@@ -64,7 +70,11 @@ def run(command_context, ide, no_interactive, args):
         # Here we refresh the whole build. 'build export' is sufficient here and is
         # probably more correct but it's also nice having a single target to get a fully
         # built and indexed project (gives a easy target to use before go out to lunch).
-        result = subprocess.run([sys.executable, "mach", "build"])
+        result = subprocess.run(
+            [sys.executable, "mach", "build"],
+            check=False,
+            cwd=command_context.topsrcdir,
+        )
         if result.returncode:
             return result.returncode
 
@@ -73,14 +83,16 @@ def run(command_context, ide, no_interactive, args):
         backend = "CppEclipse"
     elif ide == "visualstudio":
         backend = "VisualStudio"
-    elif ide == "vscode":
+    elif ide in {"vscode", "vscodium"}:
         if not command_context.config_environment.is_artifact_build:
             backend = "Clangd"
 
     if backend:
         # Generate or refresh the IDE backend.
         result = subprocess.run(
-            [sys.executable, "mach", "build-backend", "-b", backend]
+            [sys.executable, "mach", "build-backend", "-b", backend],
+            check=False,
+            cwd=command_context.topsrcdir,
         )
         if result.returncode:
             return result.returncode
@@ -91,8 +103,8 @@ def run(command_context, ide, no_interactive, args):
     elif ide == "visualstudio":
         visual_studio_workspace_dir = get_visualstudio_workspace_path(command_context)
         subprocess.call(["explorer.exe", visual_studio_workspace_dir])
-    elif ide == "vscode":
-        return setup_vscode(command_context, interactive)
+    elif ide in {"vscode", "vscodium"}:
+        return setup_vscode_or_vscodium(ide, command_context, interactive)
 
 
 def get_eclipse_workspace_path(command_context):
@@ -109,12 +121,12 @@ def get_visualstudio_workspace_path(command_context):
     )
 
 
-def setup_vscode(command_context, interactive):
-    from mozbuild.backend.clangd import find_vscode_cmd
+def setup_vscode_or_vscodium(ide, command_context, interactive):
+    from mozbuild.backend.clangd import find_vscode_or_vscodium_cmd
 
     # Check if platform has VSCode installed
     if interactive:
-        vscode_cmd = find_vscode_cmd()
+        vscode_cmd = find_vscode_or_vscodium_cmd(ide)
         if vscode_cmd is None:
             choice = prompt_bool(
                 "VSCode cannot be found, and may not be installed. Proceed?"
@@ -145,14 +157,48 @@ def setup_vscode(command_context, interactive):
             "*.jsm": "javascript",
             "*.sjs": "javascript",
         },
-        # Note, the top-level editor settings are left as default to allow the
-        # user's defaults (if any) to take effect.
-        "[javascript][javascriptreact][typescript][typescriptreact][json][jsonc][html]": {
-            "editor.defaultFormatter": "esbenp.prettier-vscode",
-            "editor.formatOnSave": True,
-        },
         "files.exclude": {"obj-*": True, relobjdir: True},
         "files.watcherExclude": {"obj-*": True, relobjdir: True},
+    }
+    # These are added separately because vscode doesn't override user settings
+    # otherwise which leads to the wrong auto-formatting.
+    prettier_languages = [
+        "javascript",
+        "javascriptreact",
+        "typescript",
+        "typescriptreact",
+        "json",
+        "jsonc",
+        "html",
+        "css",
+    ]
+    for lang in prettier_languages:
+        new_settings[f"[{lang}]"] = {
+            "editor.defaultFormatter": "esbenp.prettier-vscode",
+            "editor.formatOnSave": True,
+        }
+
+    # Add matchers for autolinking bugs and revisions in the terminal.
+    new_settings = {
+        **new_settings,
+        "terminalLinks.matchers": [
+            {
+                "regex": "\\b[Bb]ug\\s*(\\d+)\\b",
+                "uri": "https://bugzilla.mozilla.org/show_bug.cgi?id=$1",
+            },
+            {
+                "regex": "\\b(D\\d+)\\b",
+                "uri": "https://phabricator.services.mozilla.com/$1",
+            },
+            {
+                "regex": "\\bmoz-src://\\w*/([^\\s:,\"'\\)\\}\\]>]+)(?:[\\s:,\"']+)(\\d+)",
+                "uri": "vscode://file${workspaceFolder}/$1:$2",
+            },
+            {
+                "regex": "\\bmoz-src://\\w*/([^\\s:,\"'\\)\\}\\]>]+)",
+                "uri": "vscode://file${workspaceFolder}/$1",
+            },
+        ],
     }
 
     import difflib
@@ -200,6 +246,8 @@ def setup_vscode(command_context, interactive):
             "[javascript][javascriptreact][typescript][typescriptreact]",
             "[javascript][javascriptreact][typescript][typescriptreact][json]",
             "[javascript][javascriptreact][typescript][typescriptreact][json][html]",
+            "[javascript][javascriptreact][typescript][typescriptreact][json][jsonc][html]",
+            "rust-analyzer.server.extraEnv",
         ]
         for entry in deprecated:
             if entry in old_settings:
@@ -302,11 +350,10 @@ def setup_clangd_rust_in_vscode(command_context):
             cargo_check_command = [sys.executable, "../../mach"]
         else:
             cargo_check_command = ["../../mach"]
+    elif sys.platform == "win32":
+        cargo_check_command = [sys.executable, "mach"]
     else:
-        if sys.platform == "win32":
-            cargo_check_command = [sys.executable, "mach"]
-        else:
-            cargo_check_command = ["./mach"]
+        cargo_check_command = ["./mach"]
 
     cargo_check_command += [
         "--log-no-times",
@@ -362,7 +409,7 @@ def setup_clangd_rust_in_vscode(command_context):
             "--clang-tidy",
             "--header-insertion=never",
         ],
-        "rust-analyzer.server.extraEnv": {
+        "rust-analyzer.cargo.extraEnv": {
             # Point rust-analyzer at the real target directory used by our
             # build, so it can discover the files created when we run `./mach
             # cargo check`.

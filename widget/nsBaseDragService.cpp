@@ -15,7 +15,6 @@
 #include "nsIFrame.h"
 #include "nsFrameLoaderOwner.h"
 #include "nsIContent.h"
-#include "nsViewManager.h"
 #include "nsINode.h"
 #include "nsPresContext.h"
 #include "nsIImageLoadingContent.h"
@@ -33,7 +32,6 @@
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/SVGImageContext.h"
 #include "mozilla/TextControlElement.h"
-#include "mozilla/Unused.h"
 #include "mozilla/ViewportUtils.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/BrowserParent.h"
@@ -60,7 +58,12 @@ using namespace mozilla::dom;
 using namespace mozilla::gfx;
 using namespace mozilla::image;
 
-LazyLogModule sWidgetDragServiceLog("WidgetDragService");
+mozilla::LazyLogModule sWidgetDragServiceLog("WidgetDragService");
+#define __DRAGSERVICE_LOG__(logLevel, ...) \
+  MOZ_LOG(sWidgetDragServiceLog, logLevel, __VA_ARGS__)
+#define LOGD(...) __DRAGSERVICE_LOG__(mozilla::LogLevel::Debug, (__VA_ARGS__))
+#define LOGI(...) __DRAGSERVICE_LOG__(mozilla::LogLevel::Info, (__VA_ARGS__))
+#define LOGE(...) __DRAGSERVICE_LOG__(mozilla::LogLevel::Error, (__VA_ARGS__))
 
 #define DRAGIMAGES_PREF "nglayout.enable_drag_images"
 
@@ -73,11 +76,14 @@ uint32_t GetSuppressLevel() {
   return static_cast<nsBaseDragService*>(svc.get())->GetSuppressLevel();
 }
 
-nsBaseDragService::nsBaseDragService() = default;
-nsBaseDragService::~nsBaseDragService() = default;
+nsBaseDragService::nsBaseDragService() { LOGD("[%p] %s", this, __FUNCTION__); }
+nsBaseDragService::~nsBaseDragService() { LOGD("[%p] %s", this, __FUNCTION__); }
 
-nsBaseDragSession::nsBaseDragSession() { TakeSessionBrowserListFromService(); }
-nsBaseDragSession::~nsBaseDragSession() = default;
+nsBaseDragSession::nsBaseDragSession() {
+  LOGD("[%p] %s", this, __FUNCTION__);
+  TakeSessionBrowserListFromService();
+}
+nsBaseDragSession::~nsBaseDragSession() { LOGD("[%p] %s", this, __FUNCTION__); }
 
 NS_IMPL_ISUPPORTS(nsBaseDragService, nsIDragService)
 NS_IMPL_ISUPPORTS(nsBaseDragSession, nsIDragSession)
@@ -200,6 +206,11 @@ void nsBaseDragSession::UpdateSource(nsINode* aNewSourceNode,
   MOZ_ASSERT(mSourceNode->IsInNativeAnonymousSubtree() ||
              aNewSourceNode->IsInNativeAnonymousSubtree());
   MOZ_ASSERT(mSourceDocument == aNewSourceNode->OwnerDoc());
+  LOGD(
+      "[%p] %s | mSourceNode: %p | aNewSourceNode: %p | mSelection: %p | "
+      "aNewSelection: %p",
+      this, __FUNCTION__, mSourceNode.get(), aNewSourceNode, mSelection.get(),
+      aNewSelection);
   mSourceNode = aNewSourceNode;
   // Don't set mSelection if the session was invoked without selection or
   // making it becomes nullptr.  The latter occurs when the old frame is
@@ -226,14 +237,14 @@ nsBaseDragSession::SetTriggeringPrincipal(nsIPrincipal* aPrincipal) {
 }
 
 NS_IMETHODIMP
-nsBaseDragSession::GetCsp(nsIContentSecurityPolicy** aCsp) {
-  NS_IF_ADDREF(*aCsp = mCsp);
+nsBaseDragSession::GetPolicyContainer(nsIPolicyContainer** aPolicyContainer) {
+  NS_IF_ADDREF(*aPolicyContainer = mPolicyContainer);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsBaseDragSession::SetCsp(nsIContentSecurityPolicy* aCsp) {
-  mCsp = aCsp;
+nsBaseDragSession::SetPolicyContainer(nsIPolicyContainer* aPolicyContainer) {
+  mPolicyContainer = aPolicyContainer;
   return NS_OK;
 }
 
@@ -285,8 +296,8 @@ uint32_t nsBaseDragSession::GetEffectAllowedForTests() {
   return mEffectAllowedForTests;
 }
 
-NS_IMETHODIMP nsBaseDragSession::SetDragEndPointForTests(int32_t aScreenX,
-                                                         int32_t aScreenY) {
+NS_IMETHODIMP nsBaseDragSession::SetDragEndPointForTests(float aScreenX,
+                                                         float aScreenY) {
   MOZ_ASSERT(mDoingDrag);
   MOZ_ASSERT(mSourceDocument);
   MOZ_ASSERT(mSessionIsSynthesizedForTests);
@@ -298,7 +309,7 @@ NS_IMETHODIMP nsBaseDragSession::SetDragEndPointForTests(int32_t aScreenX,
   if (NS_WARN_IF(!pc)) {
     return NS_ERROR_FAILURE;
   }
-  auto p = LayoutDeviceIntPoint::Round(CSSIntPoint(aScreenX, aScreenY) *
+  auto p = LayoutDeviceIntPoint::Round(CSSPoint(aScreenX, aScreenY) *
                                        pc->CSSToDevPixelScale());
   // p is screen-relative, and we want them to be top-level-widget-relative.
   if (nsCOMPtr<nsIWidget> widget = pc->GetRootWidget()) {
@@ -312,17 +323,24 @@ NS_IMETHODIMP nsBaseDragSession::SetDragEndPointForTests(int32_t aScreenX,
 //-------------------------------------------------------------------------
 nsresult nsBaseDragSession::InvokeDragSession(
     nsIWidget* aWidget, nsINode* aDOMNode, nsIPrincipal* aPrincipal,
-    nsIContentSecurityPolicy* aCsp, nsICookieJarSettings* aCookieJarSettings,
-    nsIArray* aTransferableArray, uint32_t aActionType,
-    nsContentPolicyType aContentPolicyType) {
+    nsIPolicyContainer* aPolicyContainer,
+    nsICookieJarSettings* aCookieJarSettings, nsIArray* aTransferableArray,
+    uint32_t aActionType, nsContentPolicyType aContentPolicyType) {
   AUTO_PROFILER_LABEL("nsBaseDragService::InvokeDragSession", OTHER);
+  LOGD(
+      "[%p] %s | aWidget: %p | aDOMNode: %p | aPrincipal: %p | "
+      "aPolicyContainer: %p | "
+      "aCookieJarSettings: %p | aTransferableArray: %p | aActiontype: %u | "
+      "aContentPolicyType: %u",
+      this, __FUNCTION__, aWidget, aDOMNode, aPrincipal, aPolicyContainer,
+      aCookieJarSettings, aTransferableArray, aActionType, aContentPolicyType);
 
   NS_ENSURE_TRUE(aDOMNode, NS_ERROR_INVALID_ARG);
 
   // stash the document of the dom node
   mSourceDocument = aDOMNode->OwnerDoc();
   mTriggeringPrincipal = aPrincipal;
-  mCsp = aCsp;
+  mPolicyContainer = aPolicyContainer;
   mSourceNode = aDOMNode;
   mIsDraggingTextInTextControl =
       mSourceNode->IsInNativeAnonymousSubtree() &&
@@ -363,7 +381,7 @@ nsresult nsBaseDragSession::InvokeDragSession(
   }
 
   uint32_t length = 0;
-  mozilla::Unused << aTransferableArray->GetLength(&length);
+  (void)aTransferableArray->GetLength(&length);
   if (!length) {
     nsCOMPtr<nsIMutableArray> mutableArray =
         do_QueryInterface(aTransferableArray);
@@ -391,12 +409,35 @@ nsresult nsBaseDragSession::InvokeDragSession(
     }
   }
 
+  if (MOZ_DRAGSERVICE_LOG_ENABLED()) {
+    uint32_t len = 0;
+    aTransferableArray->GetLength(&len);
+    LOGD("[%p] %s | num of nsITransferable: %d", this, __FUNCTION__, len);
+
+    for (uint32_t i = 0; i < len; ++i) {
+      LOGD("    nsITransferable %d:", i);
+
+      if (nsCOMPtr<nsITransferable> trans =
+              do_QueryElementAt(aTransferableArray, i)) {
+        nsTArray<nsCString> flavors;
+        trans->FlavorsTransferableCanExport(flavors);
+        for (const auto& flavor : flavors) {
+          LOGD("        MIME %s", flavor.get());
+        }
+      }
+    }
+  }
+
   nsresult rv =
       InvokeDragSessionImpl(aWidget, aTransferableArray, mRegion, aActionType);
 
   if (NS_FAILED(rv)) {
     // Set mDoingDrag so that EndDragSession cleans up and sends the dragend
     // event after the aborted drag.
+    LOGE("[%p] %s | rv: %s(%u) | Ending drag session due to internal error",
+         this, __FUNCTION__,
+         GetStaticErrorName(rv) ? GetStaticErrorName(rv) : "<unknown>",
+         static_cast<uint32_t>(rv));
     mDoingDrag = true;
     EndDragSession(true, 0);
   }
@@ -406,10 +447,13 @@ nsresult nsBaseDragSession::InvokeDragSession(
 
 NS_IMETHODIMP
 nsBaseDragService::InvokeDragSessionWithImage(
-    nsINode* aDOMNode, nsIPrincipal* aPrincipal, nsIContentSecurityPolicy* aCsp,
+    nsINode* aDOMNode, nsIPrincipal* aPrincipal,
+    nsIPolicyContainer* aPolicyContainer,
     nsICookieJarSettings* aCookieJarSettings, nsIArray* aTransferableArray,
     uint32_t aActionType, nsINode* aImage, int32_t aImageX, int32_t aImageY,
     DragEvent* aDragEvent, DataTransfer* aDataTransfer) {
+  LOGI("[%p] %s | aDragEvent: %p | aDataTransfer: %p | mSuppressLevel: %u",
+       this, __FUNCTION__, aDragEvent, aDataTransfer, mSuppressLevel);
   nsCOMPtr<nsIWidget> widget =
       aDragEvent->WidgetEventPtr()->AsDragEvent()->mWidget;
   MOZ_ASSERT(widget);
@@ -426,7 +470,7 @@ nsBaseDragService::InvokeDragSessionWithImage(
   bool isSynthesized =
       aDragEvent->WidgetEventPtr()->mFlags.mIsSynthesizedForTests &&
       !GetNeverAllowSessionIsSynthesizedForTests();
-  return session->InitWithImage(widget, aDOMNode, aPrincipal, aCsp,
+  return session->InitWithImage(widget, aDOMNode, aPrincipal, aPolicyContainer,
                                 aCookieJarSettings, aTransferableArray,
                                 aActionType, aImage, aImageX, aImageY,
                                 aDragEvent, aDataTransfer, isSynthesized);
@@ -434,10 +478,11 @@ nsBaseDragService::InvokeDragSessionWithImage(
 
 nsresult nsBaseDragSession::InitWithImage(
     nsIWidget* aWidget, nsINode* aDOMNode, nsIPrincipal* aPrincipal,
-    nsIContentSecurityPolicy* aCsp, nsICookieJarSettings* aCookieJarSettings,
-    nsIArray* aTransferableArray, uint32_t aActionType, nsINode* aImage,
-    int32_t aImageX, int32_t aImageY, DragEvent* aDragEvent,
-    DataTransfer* aDataTransfer, bool aIsSynthesizedForTests) {
+    nsIPolicyContainer* aPolicyContainer,
+    nsICookieJarSettings* aCookieJarSettings, nsIArray* aTransferableArray,
+    uint32_t aActionType, nsINode* aImage, int32_t aImageX, int32_t aImageY,
+    DragEvent* aDragEvent, DataTransfer* aDataTransfer,
+    bool aIsSynthesizedForTests) {
   mSessionIsSynthesizedForTests = aIsSynthesizedForTests;
   mDataTransfer = aDataTransfer;
   mSelection = nullptr;
@@ -472,7 +517,7 @@ nsresult nsBaseDragSession::InitWithImage(
   }
 
   nsresult rv = InvokeDragSession(
-      aWidget, aDOMNode, aPrincipal, aCsp, aCookieJarSettings,
+      aWidget, aDOMNode, aPrincipal, aPolicyContainer, aCookieJarSettings,
       aTransferableArray, aActionType, nsIContentPolicy::TYPE_INTERNAL_IMAGE);
   mRegion = Nothing();
   return rv;
@@ -480,10 +525,13 @@ nsresult nsBaseDragSession::InitWithImage(
 
 NS_IMETHODIMP
 nsBaseDragService::InvokeDragSessionWithRemoteImage(
-    nsINode* aDOMNode, nsIPrincipal* aPrincipal, nsIContentSecurityPolicy* aCsp,
+    nsINode* aDOMNode, nsIPrincipal* aPrincipal,
+    nsIPolicyContainer* aPolicyContainer,
     nsICookieJarSettings* aCookieJarSettings, nsIArray* aTransferableArray,
     uint32_t aActionType, RemoteDragStartData* aDragStartData,
     DragEvent* aDragEvent, DataTransfer* aDataTransfer) {
+  LOGI("[%p] %s | aDragEvent: %p | aDataTransfer: %p | mSuppressLevel: %u",
+       this, __FUNCTION__, aDragEvent, aDataTransfer, mSuppressLevel);
   nsCOMPtr<nsIWidget> widget =
       aDragEvent->WidgetEventPtr()->AsDragEvent()->mWidget;
   MOZ_ASSERT(widget);
@@ -500,18 +548,19 @@ nsBaseDragService::InvokeDragSessionWithRemoteImage(
   bool isSynthesized =
       aDragEvent->WidgetEventPtr()->mFlags.mIsSynthesizedForTests &&
       !GetNeverAllowSessionIsSynthesizedForTests();
-  return session->InitWithRemoteImage(widget, aDOMNode, aPrincipal, aCsp,
-                                      aCookieJarSettings, aTransferableArray,
-                                      aActionType, aDragStartData, aDragEvent,
-                                      aDataTransfer, isSynthesized);
+  return session->InitWithRemoteImage(
+      widget, aDOMNode, aPrincipal, aPolicyContainer, aCookieJarSettings,
+      aTransferableArray, aActionType, aDragStartData, aDragEvent,
+      aDataTransfer, isSynthesized);
 }
 
 nsresult nsBaseDragSession::InitWithRemoteImage(
     nsIWidget* aWidget, nsINode* aDOMNode, nsIPrincipal* aPrincipal,
-    nsIContentSecurityPolicy* aCsp, nsICookieJarSettings* aCookieJarSettings,
-    nsIArray* aTransferableArray, uint32_t aActionType,
-    RemoteDragStartData* aDragStartData, DragEvent* aDragEvent,
-    DataTransfer* aDataTransfer, bool aIsSynthesizedForTests) {
+    nsIPolicyContainer* aPolicyContainer,
+    nsICookieJarSettings* aCookieJarSettings, nsIArray* aTransferableArray,
+    uint32_t aActionType, RemoteDragStartData* aDragStartData,
+    DragEvent* aDragEvent, DataTransfer* aDataTransfer,
+    bool aIsSynthesizedForTests) {
   mSessionIsSynthesizedForTests = aIsSynthesizedForTests;
   mDataTransfer = aDataTransfer;
   mSelection = nullptr;
@@ -527,7 +576,7 @@ nsresult nsBaseDragSession::InitWithRemoteImage(
   mInputSource = aDragEvent->InputSource(CallerType::System);
 
   nsresult rv = InvokeDragSession(
-      aWidget, aDOMNode, aPrincipal, aCsp, aCookieJarSettings,
+      aWidget, aDOMNode, aPrincipal, aPolicyContainer, aCookieJarSettings,
       aTransferableArray, aActionType, nsIContentPolicy::TYPE_INTERNAL_IMAGE);
   mRegion = Nothing();
   return rv;
@@ -536,9 +585,15 @@ nsresult nsBaseDragSession::InitWithRemoteImage(
 NS_IMETHODIMP
 nsBaseDragService::InvokeDragSessionWithSelection(
     Selection* aSelection, nsIPrincipal* aPrincipal,
-    nsIContentSecurityPolicy* aCsp, nsICookieJarSettings* aCookieJarSettings,
-    nsIArray* aTransferableArray, uint32_t aActionType, DragEvent* aDragEvent,
-    DataTransfer* aDataTransfer, nsINode* aTargetContent) {
+    nsIPolicyContainer* aPolicyContainer,
+    nsICookieJarSettings* aCookieJarSettings, nsIArray* aTransferableArray,
+    uint32_t aActionType, DragEvent* aDragEvent, DataTransfer* aDataTransfer,
+    nsINode* aTargetContent) {
+  LOGI(
+      "[%p] %s | aSelection: %p | aDragEvent: %p | aTargetContent: %p | "
+      "mSuppressLevel: %u",
+      this, __FUNCTION__, aSelection, aDragEvent, aTargetContent,
+      mSuppressLevel);
   nsCOMPtr<nsIWidget> widget =
       aDragEvent->WidgetEventPtr()->AsDragEvent()->mWidget;
   MOZ_ASSERT(widget);
@@ -556,18 +611,18 @@ nsBaseDragService::InvokeDragSessionWithSelection(
   bool isSynthesized =
       aDragEvent->WidgetEventPtr()->mFlags.mIsSynthesizedForTests &&
       !GetNeverAllowSessionIsSynthesizedForTests();
-  return session->InitWithSelection(widget, aSelection, aPrincipal, aCsp,
-                                    aCookieJarSettings, aTransferableArray,
-                                    aActionType, aDragEvent, aDataTransfer,
-                                    aTargetContent, isSynthesized);
+  return session->InitWithSelection(
+      widget, aSelection, aPrincipal, aPolicyContainer, aCookieJarSettings,
+      aTransferableArray, aActionType, aDragEvent, aDataTransfer,
+      aTargetContent, isSynthesized);
 }
 
 nsresult nsBaseDragSession::InitWithSelection(
     nsIWidget* aWidget, Selection* aSelection, nsIPrincipal* aPrincipal,
-    nsIContentSecurityPolicy* aCsp, nsICookieJarSettings* aCookieJarSettings,
-    nsIArray* aTransferableArray, uint32_t aActionType, DragEvent* aDragEvent,
-    DataTransfer* aDataTransfer, nsINode* aTargetContent,
-    bool aIsSynthesizedForTests) {
+    nsIPolicyContainer* aPolicyContainer,
+    nsICookieJarSettings* aCookieJarSettings, nsIArray* aTransferableArray,
+    uint32_t aActionType, DragEvent* aDragEvent, DataTransfer* aDataTransfer,
+    nsINode* aTargetContent, bool aIsSynthesizedForTests) {
   mSessionIsSynthesizedForTests = aIsSynthesizedForTests;
   mDataTransfer = aDataTransfer;
   mSelection = aSelection;
@@ -588,8 +643,8 @@ nsresult nsBaseDragSession::InitWithSelection(
   mSourceTopWindowContext =
       mSourceWindowContext ? mSourceWindowContext->TopWindowContext() : nullptr;
 
-  return InvokeDragSession(aWidget, node, aPrincipal, aCsp, aCookieJarSettings,
-                           aTransferableArray, aActionType,
+  return InvokeDragSession(aWidget, node, aPrincipal, aPolicyContainer,
+                           aCookieJarSettings, aTransferableArray, aActionType,
                            nsIContentPolicy::TYPE_OTHER);
 }
 
@@ -617,13 +672,19 @@ nsIDragSession* nsBaseDragService::StartDragSession(
     nsISupports* aWidgetProvider) {
   MOZ_ASSERT(XRE_IsParentProcess());
   if (!aWidgetProvider) {
+    LOGD("[%p] %s | no widget provider", this, __FUNCTION__);
     return nullptr;
   }
   if (mCurrentParentDragSession) {
+    LOGD(
+        "[%p] %s | mCurrentParentDragSession: %p | drag session already exists",
+        this, __FUNCTION__, mCurrentParentDragSession.get());
     return mCurrentParentDragSession;
   }
 
   RefPtr<nsIDragSession> session = CreateDragSession();
+  LOGD("[%p] %s | created drag session %p", this, __FUNCTION__,
+       mCurrentParentDragSession.get());
   mCurrentParentDragSession = session;
   return session;
 }
@@ -651,6 +712,9 @@ void nsBaseDragSession::OpenDragPopup() {
   if (mDragPopup) {
     nsXULPopupManager* pm = nsXULPopupManager::GetInstance();
     if (pm) {
+      LOGD("[%p] %s | showing popup at (%d, %d)", this, __FUNCTION__,
+           static_cast<int>(mScreenPosition.x - mImageOffset.x),
+           static_cast<int>(mScreenPosition.y - mImageOffset.y));
       pm->ShowPopupAtScreen(mDragPopup, mScreenPosition.x - mImageOffset.x,
                             mScreenPosition.y - mImageOffset.y, false, nullptr);
     }
@@ -665,6 +729,10 @@ int32_t nsBaseDragSession::TakeChildProcessDragAction() {
   if (TakeDragEventDispatchedToChildProcess() &&
       mDragActionFromChildProcess !=
           nsIDragService::DRAGDROP_ACTION_UNINITIALIZED) {
+    LOGD(
+        "[%p] %s | mDragActionFromChildProcess: %u | using drag action from "
+        "child process",
+        this, __FUNCTION__, mDragActionFromChildProcess);
     retval = mDragActionFromChildProcess;
   }
 
@@ -676,18 +744,25 @@ NS_IMETHODIMP
 nsBaseDragSession::EndDragSession(bool aDoneDrag, uint32_t aKeyModifiers) {
   if (mDelayedDropTarget) {
     if (!mEndDragSessionData) {
+      LOGI(
+          "[%p] %s | aDoneDrag: %s | aKeyModifiers: %u | Delaying drag session "
+          "end",
+          this, __FUNCTION__, TrueOrFalse(aDoneDrag), aKeyModifiers);
       EndDragSessionData edsData = {aDoneDrag, aKeyModifiers};
       mEndDragSessionData = Some(edsData);
     }
     return NS_OK;
   }
+  LOGI("[%p] %s | aDoneDrag: %s | aKeyModifiers: %u | Ending drag session now",
+       this, __FUNCTION__, TrueOrFalse(aDoneDrag), aKeyModifiers);
   return EndDragSessionImpl(aDoneDrag, aKeyModifiers);
 }
 
 nsresult nsBaseDragSession::EndDragSessionImpl(bool aDoneDrag,
                                                uint32_t aKeyModifiers) {
-  MOZ_DRAGSERVICE_LOG("[%p] EndDragSession | mDoingDrag %s", this,
-                      mDoingDrag ? "true" : "false");
+  LOGD("[%p] %s | aDoneDrag: %s | aKeyModifiers: %u | mDoingDrag %s", this,
+       __FUNCTION__, TrueOrFalse(aDoneDrag), aKeyModifiers,
+       TrueOrFalse(mDoingDrag));
   if (!mDoingDrag || mEndingSession) {
     return NS_ERROR_FAILURE;
   }
@@ -715,8 +790,8 @@ nsresult nsBaseDragSession::EndDragSessionImpl(bool aDoneDrag,
     if (NS_WARN_IF(!bp)) {
       continue;
     }
-    mozilla::Unused << bp->SendEndDragSession(
-        aDoneDrag, mUserCancelled, mEndDragPoint, aKeyModifiers, dropEffect);
+    (void)bp->SendEndDragSession(aDoneDrag, mUserCancelled, mEndDragPoint,
+                                 aKeyModifiers, dropEffect);
     // Continue sending input events with input priority when stopping the dnd
     // session.
     bp->Manager()->SetInputPriorityEventEnabled(true);
@@ -749,7 +824,7 @@ nsresult nsBaseDragSession::EndDragSessionImpl(bool aDoneDrag,
   mSourceWindowContext = nullptr;
   mSourceTopWindowContext = nullptr;
   mTriggeringPrincipal = nullptr;
-  mCsp = nullptr;
+  mPolicyContainer = nullptr;
   mSelection = nullptr;
   mDataTransfer = nullptr;
   mHasImage = false;
@@ -787,12 +862,19 @@ void nsBaseDragSession::DiscardInternalTransferData() {
         writable->SetAsEmpty();
       }
     }
+    LOGD("[%p] %s | Discarded non-OTHER transfer items.", this, __FUNCTION__);
   }
 }
 
 NS_IMETHODIMP
 nsBaseDragSession::FireDragEventAtSource(EventMessage aEventMessage,
                                          uint32_t aKeyModifiers) {
+  LOGD(
+      "[%p] %s | mSourceNode: %p | mSourceDocument: %p | mSuppressLevel: %u | "
+      "presShell: %p",
+      this, __FUNCTION__, mSourceNode.get(), mSourceDocument.get(),
+      GetSuppressLevel(),
+      mSourceDocument ? mSourceDocument->GetPresShell() : nullptr);
   if (!mSourceNode || !mSourceDocument || GetSuppressLevel()) {
     return NS_OK;
   }
@@ -842,6 +924,8 @@ nsBaseDragSession::DragMoved(int32_t aX, int32_t aY) {
           RoundedToInt(LayoutDeviceIntPoint(aX, aY) /
                        frame->PresContext()->CSSToDevPixelScale()) -
           mImageOffset;
+      LOGD("[%p] %s | cssPos: (%d, %d)", this, __FUNCTION__,
+           static_cast<int>(cssPos.x), static_cast<int>(cssPos.y));
       static_cast<nsMenuPopupFrame*>(frame)->MoveTo(cssPos, true);
     }
   }
@@ -1080,6 +1164,10 @@ nsresult nsBaseDragSession::DrawDragForImage(
 NS_IMETHODIMP
 nsBaseDragService::Suppress() {
   RefPtr<nsIDragSession> session = mCurrentParentDragSession;
+  LOGI(
+      "[%p] %s | session: %p | mSuppressLevel (before increment): %u | "
+      "Suppressing drags and ending any existing drag session",
+      this, __FUNCTION__, session.get(), mSuppressLevel);
   if (session) {
     session->EndDragSession(false, 0);
   }
@@ -1090,6 +1178,10 @@ nsBaseDragService::Suppress() {
 NS_IMETHODIMP
 nsBaseDragService::Unsuppress() {
   --mSuppressLevel;
+  LOGI(
+      "[%p] %s | mSuppressLevel (after decrement): %u | "
+      "Reduced drag suppression count",
+      this, __FUNCTION__, mSuppressLevel);
   return NS_OK;
 }
 
@@ -1131,6 +1223,7 @@ static bool MaybeAddBrowser(nsTArray<nsWeakPtr>& aBrowsers,
   // element. See bug 1896166.
   size_t index = aBrowsers.IndexOfFirstElementGt(browser);
   if (index == 0 || aBrowsers[index - 1] != browser) {
+    LOGD("%s | adding PBrowser %p to drag session", __FUNCTION__, aBP);
     aBrowsers.InsertElementAt(index, browser);
     return true;
   }
@@ -1143,9 +1236,10 @@ static bool RemoveAllBrowsers(nsTArray<nsWeakPtr>& aBrowsers) {
     if (NS_WARN_IF(!browser)) {
       continue;
     }
-    mozilla::Unused << browser->SendEndDragSession(
-        true, false, LayoutDeviceIntPoint(), 0,
-        nsIDragService::DRAGDROP_ACTION_NONE);
+    LOGD("%s | removing PBrowser %p from drag session", __FUNCTION__,
+         browser.get());
+    (void)browser->SendEndDragSession(true, false, LayoutDeviceIntPoint(), 0,
+                                      nsIDragService::DRAGDROP_ACTION_NONE);
   }
 
   aBrowsers.Clear();
@@ -1230,6 +1324,13 @@ nsBaseDragService::SetNeverAllowSessionIsSynthesizedForTests(bool aNeverAllow) {
   return NS_OK;
 }
 
+void nsBaseDragSession::SetDragEndPoint(
+    mozilla::LayoutDeviceIntPoint aEndDragPoint) {
+  mEndDragPoint = aEndDragPoint;
+  LOGD("[%p] %s | mEndDragPoint: (%d,%d)", this, __FUNCTION__,
+       static_cast<int>(mEndDragPoint.x), static_cast<int>(mEndDragPoint.y));
+}
+
 NS_IMETHODIMP
 nsBaseDragSession::SetDragEndPoint(int32_t aScreenX, int32_t aScreenY) {
   SetDragEndPoint(LayoutDeviceIntPoint(aScreenX, aScreenY));
@@ -1247,8 +1348,7 @@ void nsBaseDragSession::TakeSessionBrowserListFromService() {
 /* static */
 nsIWidget* nsBaseDragService::GetWidgetFromWidgetProvider(
     nsISupports* aWidgetProvider) {
-  nsCOMPtr<nsIWidget> widget = do_QueryObject(aWidgetProvider);
-  if (widget) {
+  if (nsCOMPtr<nsIWidget> widget = do_QueryObject(aWidgetProvider)) {
     return widget;
   }
 
@@ -1270,9 +1370,7 @@ nsIWidget* nsBaseDragService::GetWidgetFromWidgetProvider(
   NS_ENSURE_TRUE(docShell, nullptr);
   PresShell* presShell = docShell->GetPresShell();
   NS_ENSURE_TRUE(presShell, nullptr);
-  nsViewManager* vm = presShell->GetViewManager();
-  NS_ENSURE_TRUE(vm, nullptr);
-  return vm->GetRootWidget();
+  return presShell->GetRootWidget();
 }
 
 NS_IMETHODIMP
@@ -1280,24 +1378,52 @@ nsBaseDragSession::SendStoreDropTargetAndDelayEndDragSession(
     DragEvent* aEvent) {
   mDelayedDropBrowserParent = dom::BrowserParent::GetBrowserParentFromLayersId(
       aEvent->WidgetEventPtr()->mLayersId);
+  LOGI("[%p] %s | mDelayedDropBrowserParent: %p", this, __FUNCTION__,
+       mDelayedDropBrowserParent.get());
   NS_ENSURE_TRUE(mDelayedDropBrowserParent, NS_ERROR_FAILURE);
   uint32_t dropEffect = nsIDragService::DRAGDROP_ACTION_NONE;
   if (mDataTransfer) {
     dropEffect = mDataTransfer->DropEffectInt();
   }
-  Unused
-      << mDelayedDropBrowserParent->SendStoreDropTargetAndDelayEndDragSession(
-             aEvent->WidgetEventPtr()->mRefPoint, dropEffect, mDragAction,
-             mTriggeringPrincipal, mCsp);
+  (void)mDelayedDropBrowserParent->SendStoreDropTargetAndDelayEndDragSession(
+      aEvent->WidgetEventPtr()->mRefPoint, dropEffect, mDragAction,
+      mTriggeringPrincipal, mPolicyContainer);
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsBaseDragSession::SendDispatchToDropTargetAndResumeEndDragSession(
-    bool aShouldDrop) {
+    bool aShouldDrop, const nsTArray<RefPtr<nsIFile>>& aAllowedFiles) {
   MOZ_ASSERT(mDelayedDropBrowserParent);
-  Unused << mDelayedDropBrowserParent
-                ->SendDispatchToDropTargetAndResumeEndDragSession(aShouldDrop);
+  nsTHashSet<nsString> allowedFilePaths;
+  if (aShouldDrop) {
+    for (const auto& allowedFile : aAllowedFiles) {
+      nsString filePath;
+      nsresult rv = allowedFile->GetPath(filePath);
+      if (NS_FAILED(rv)) {
+        LOGE(
+            "[%p] %s | mDelayedDropBrowserParent: %p | rv: %s(%u) | cancelling "
+            "drop due to internal error",
+            this, __FUNCTION__, mDelayedDropBrowserParent.get(),
+            GetStaticErrorName(rv) ? GetStaticErrorName(rv) : "<unknown>",
+            static_cast<uint32_t>(rv));
+        (void)mDelayedDropBrowserParent
+            ->SendDispatchToDropTargetAndResumeEndDragSession(
+                false /* aShouldDrop */, nsTHashSet<nsString>());
+        mDelayedDropBrowserParent = nullptr;
+        return rv;
+      }
+      allowedFilePaths.Insert(filePath);
+    }
+  }
+  LOGI(
+      "[%p] %s | mDelayedDropBrowserParent: %p | aShouldDrop: %s | sending "
+      "dispatch drop to child",
+      this, __FUNCTION__, mDelayedDropBrowserParent.get(),
+      TrueOrFalse(aShouldDrop));
+  (void)mDelayedDropBrowserParent
+      ->SendDispatchToDropTargetAndResumeEndDragSession(
+          aShouldDrop, std::move(allowedFilePaths));
   mDelayedDropBrowserParent = nullptr;
   return NS_OK;
 }
@@ -1306,9 +1432,8 @@ NS_IMETHODIMP
 nsBaseDragSession::StoreDropTargetAndDelayEndDragSession(
     mozilla::dom::Element* aElement, nsIFrame* aFrame) {
   MOZ_ASSERT(XRE_IsContentProcess());
-  MOZ_DRAGSERVICE_LOG(
-      "[%p] StoreDropTargetAndDelayEndDragSession | aElement: %p | aFrame: %p",
-      this, aElement, aFrame);
+  LOGD("[%p] %s | aElement: %p | aFrame: %p", this, __FUNCTION__, aElement,
+       aFrame);
   mDelayedDropTarget = do_GetWeakReference(aElement);
   mDelayedDropFrame = aFrame;
   return NS_OK;
@@ -1316,13 +1441,12 @@ nsBaseDragSession::StoreDropTargetAndDelayEndDragSession(
 
 NS_IMETHODIMP
 nsBaseDragSession::DispatchToDropTargetAndResumeEndDragSession(
-    nsIWidget* aWidget, const LayoutDeviceIntPoint& aPt, bool aShouldDrop) {
+    nsIWidget* aWidget, const LayoutDeviceIntPoint& aPt, bool aShouldDrop,
+    const nsTHashSet<nsString>& aAllowedFilePaths) {
   MOZ_ASSERT(XRE_IsContentProcess());
-  MOZ_DRAGSERVICE_LOG(
-      "[%p] DispatchToDropTargetAndResumeEndDragSession | pt=(%d, %d) | "
-      "shouldDrop: %s",
-      this, static_cast<int32_t>(aPt.x), static_cast<int32_t>(aPt.y),
-      aShouldDrop ? "true" : "false");
+  LOGI("[%p] %s | pt=(%d, %d) | shouldDrop: %s", this, __FUNCTION__,
+       static_cast<int32_t>(aPt.x), static_cast<int32_t>(aPt.y),
+       TrueOrFalse(aShouldDrop));
 
   RefPtr<Element> delayedDropTarget = do_QueryReferent(mDelayedDropTarget);
   mDelayedDropTarget = nullptr;
@@ -1338,6 +1462,43 @@ nsBaseDragSession::DispatchToDropTargetAndResumeEndDragSession(
     // Weak frame was deleted
     return NS_OK;
   }
+  // Remove all files that are not in the aAllowedFiles list
+  if (mDataTransfer->HasFile()) {
+    auto* items = mDataTransfer->Items();
+    auto idx = items->Length();
+    do {
+      --idx;
+      bool found;
+      auto* item = items->IndexedGetter(idx, found);
+      MOZ_ASSERT(found);
+      if (item->Kind() == dom::DataTransferItem::KIND_FILE) {
+        // Note that item->GetAsFile() doesn't work from here because
+        // mDataTransfer->GetGlobal() is null.
+        // But just getting a BlobImpl is fine for our purposes.
+        nsCOMPtr<nsIVariant> data = item->DataNoSecurityCheck();
+        nsCOMPtr<nsISupports> supports;
+        nsresult rv = data->GetAsISupports(getter_AddRefs(supports));
+        MOZ_ASSERT(NS_SUCCEEDED(rv) && supports,
+                   "File objects should be stored as nsISupports variants");
+        if (NS_FAILED(rv) || !supports) {
+          continue;
+        }
+        if (nsCOMPtr<BlobImpl> blobImpl = do_QueryInterface(supports)) {
+          MOZ_ASSERT(blobImpl->IsFile());
+          nsString path;
+          ErrorResult result;
+          blobImpl->GetMozFullPathInternal(path, result);
+          if (NS_WARN_IF(NS_FAILED(result.StealNSResult()))) {
+            continue;
+          }
+          if (!aAllowedFilePaths.Contains(path)) {
+            mDataTransfer->MozClearDataAt(u""_ns, idx, result);
+            (void)NS_WARN_IF(NS_FAILED(result.StealNSResult()));
+          }
+        }
+      }
+    } while (idx);
+  }
 
   nsEventStatus status = nsEventStatus_eIgnore;
   RefPtr<PresShell> ps = delayedDropFrame->PresContext()->GetPresShell();
@@ -1349,6 +1510,11 @@ nsBaseDragSession::DispatchToDropTargetAndResumeEndDragSession(
 
   // If EndDragSession was delayed, issue it now.
   if (edsData) {
+    LOGI(
+        "[%p] %s | mDoneDrag: %s | mKeyModifiers: %u | Issuing delayed "
+        "EndDragSession",
+        this, __FUNCTION__, TrueOrFalse(edsData->mDoneDrag),
+        edsData->mKeyModifiers);
     EndDragSession(edsData->mDoneDrag, edsData->mKeyModifiers);
   }
   return NS_OK;

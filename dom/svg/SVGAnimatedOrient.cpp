@@ -12,14 +12,13 @@
 #include "DOMSVGAnimatedAngle.h"
 #include "SVGAttrTearoffTable.h"
 #include "SVGOrientSMILType.h"
-#include "mozilla/ArrayUtils.h"
+#include "mozAutoDocUpdate.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/SMILValue.h"
 #include "mozilla/dom/SVGMarkerElement.h"
-#include "mozAutoDocUpdate.h"
 #include "nsContentUtils.h"
-#include "nsTextFormatter.h"
 #include "nsPrintfCString.h"
+#include "nsTextFormatter.h"
 
 using namespace mozilla::dom;
 using namespace mozilla::dom::SVGAngle_Binding;
@@ -27,14 +26,14 @@ using namespace mozilla::dom::SVGMarkerElement_Binding;
 
 namespace mozilla {
 
-MOZ_CONSTINIT static SVGAttrTearoffTable<SVGAnimatedOrient,
-                                         DOMSVGAnimatedEnumeration>
+constinit static SVGAttrTearoffTable<SVGAnimatedOrient,
+                                     DOMSVGAnimatedEnumeration>
     sSVGAnimatedEnumTearoffTable;
-MOZ_CONSTINIT static SVGAttrTearoffTable<SVGAnimatedOrient, DOMSVGAnimatedAngle>
+constinit static SVGAttrTearoffTable<SVGAnimatedOrient, DOMSVGAnimatedAngle>
     sSVGAnimatedAngleTearoffTable;
-MOZ_CONSTINIT static SVGAttrTearoffTable<SVGAnimatedOrient, DOMSVGAngle>
+constinit static SVGAttrTearoffTable<SVGAnimatedOrient, DOMSVGAngle>
     sBaseSVGAngleTearoffTable;
-MOZ_CONSTINIT static SVGAttrTearoffTable<SVGAnimatedOrient, DOMSVGAngle>
+constinit static SVGAttrTearoffTable<SVGAnimatedOrient, DOMSVGAngle>
     sAnimSVGAngleTearoffTable;
 
 /* Helper functions */
@@ -51,14 +50,14 @@ class MOZ_RAII AutoChangeOrientNotifier {
     MOZ_ASSERT(mOrient, "Expecting non-null orient");
     if (mSVGElement && mDoSetAttr) {
       mUpdateBatch.emplace(mSVGElement->GetComposedDoc(), true);
-      mEmptyOrOldValue = mSVGElement->WillChangeOrient(mUpdateBatch.ref());
+      mSVGElement->WillChangeOrient(mUpdateBatch.ref());
     }
   }
 
   ~AutoChangeOrientNotifier() {
     if (mSVGElement) {
       if (mDoSetAttr) {
-        mSVGElement->DidChangeOrient(mEmptyOrOldValue, mUpdateBatch.ref());
+        mSVGElement->DidChangeOrient(mUpdateBatch.ref());
       }
       if (mOrient->mIsAnimated) {
         mSVGElement->AnimationNeedsResample();
@@ -70,7 +69,6 @@ class MOZ_RAII AutoChangeOrientNotifier {
   Maybe<mozAutoDocUpdate> mUpdateBatch;
   SVGAnimatedOrient* const mOrient;
   SVGElement* const mSVGElement;
-  nsAttrValue mEmptyOrOldValue;
   bool mDoSetAttr;
 };
 

@@ -3,11 +3,12 @@
 const { ExperimentStore } = ChromeUtils.importESModule(
   "resource://nimbus/lib/ExperimentStore.sys.mjs"
 );
-const { FeatureManifest } = ChromeUtils.importESModule(
-  "resource://nimbus/FeatureManifest.sys.mjs"
-);
 
 const { SYNC_DATA_PREF_BRANCH, SYNC_DEFAULTS_PREF_BRANCH } = ExperimentStore;
+
+add_setup(function () {
+  Services.fog.initializeFOG();
+});
 
 async function setupTest({ ...args } = {}) {
   const ctx = await NimbusTestUtils.setupTest({ ...args });
@@ -30,13 +31,15 @@ add_task(async function test_usageBeforeInitialization() {
   const { store, initExperimentAPI, cleanup } = await setupTest({
     init: false,
   });
-  const experiment = NimbusTestUtils.factories.experiment("foo");
+  const recipe = NimbusTestUtils.factories.recipe("foo");
 
   Assert.equal(store.getAll().length, 0, "It should not fail");
 
   await initExperimentAPI();
 
-  store.addEnrollment(experiment);
+  const experiment = NimbusTestUtils.addEnrollmentForRecipe(recipe, {
+    branchSlug: "control",
+  });
 
   Assert.equal(
     store.getExperimentForFeature("testFeature"),
@@ -44,70 +47,80 @@ add_task(async function test_usageBeforeInitialization() {
     "should return a matching experiment for the given feature"
   );
 
-  store.updateExperiment(experiment.slug, { active: false });
+  store.deactivateEnrollment(recipe.slug);
 
-  cleanup();
+  await cleanup();
 });
 
-add_task(async function test_initOnUpdateEventsFire() {
-  let storePath;
-
-  {
-    const store = NimbusTestUtils.stubs.store();
-    await store.init();
-
-    store.addEnrollment(
-      NimbusTestUtils.factories.experiment.withFeatureConfig("testFeature-1", {
+async function test_initOnUpdateEventsFire() {
+  const storePath = await NimbusTestUtils.createStoreWith(store => {
+    NimbusTestUtils.addEnrollmentForRecipe(
+      NimbusTestUtils.factories.recipe.withFeatureConfig("testFeature-1", {
         featureId: "testFeature",
-      })
+      }),
+      { store }
     );
-    store.addEnrollment(
-      NimbusTestUtils.factories.rollout.withFeatureConfig("testFeature-2", {
-        featureId: "testFeature",
-      })
+    NimbusTestUtils.addEnrollmentForRecipe(
+      NimbusTestUtils.factories.recipe.withFeatureConfig(
+        "testFeature-2",
+        {
+          featureId: "testFeature",
+        },
+        { isRollout: true }
+      ),
+      { store }
     );
-    store.addEnrollment(
-      NimbusTestUtils.factories.experiment.withFeatureConfig(
-        "nimbus-qa-1",
-        { featureId: "nimbus-qa-1" },
-        { active: false }
-      )
+    NimbusTestUtils.addEnrollmentForRecipe(
+      NimbusTestUtils.factories.recipe.withFeatureConfig("nimbus-qa-1", {
+        featureId: "nimbus-qa-1",
+      }),
+      {
+        store,
+        extra: { active: false },
+      }
     );
-    store.addEnrollment(
-      NimbusTestUtils.factories.rollout.withFeatureConfig(
+    NimbusTestUtils.addEnrollmentForRecipe(
+      NimbusTestUtils.factories.recipe.withFeatureConfig(
         "nimbus-qa-2",
         { featureId: "nimbus-qa-2" },
-        { active: false }
-      )
+        { isRollout: true }
+      ),
+      {
+        store,
+        extra: { active: false },
+      }
     );
 
-    store.addEnrollment(
-      NimbusTestUtils.factories.experiment.withFeatureConfig("coenroll-1", {
+    NimbusTestUtils.addEnrollmentForRecipe(
+      NimbusTestUtils.factories.recipe.withFeatureConfig("coenroll-1", {
         featureId: "no-feature-firefox-desktop",
-      })
+      }),
+      { store }
     );
-    store.addEnrollment(
-      NimbusTestUtils.factories.experiment.withFeatureConfig("coenroll-2", {
+    NimbusTestUtils.addEnrollmentForRecipe(
+      NimbusTestUtils.factories.recipe.withFeatureConfig("coenroll-2", {
         featureId: "no-feature-firefox-desktop",
-      })
+      }),
+      { store }
     );
-    store.addEnrollment(
-      NimbusTestUtils.factories.rollout.withFeatureConfig("coenroll-3", {
+    NimbusTestUtils.addEnrollmentForRecipe(
+      NimbusTestUtils.factories.recipe.withFeatureConfig("coenroll-3", {
         featureId: "no-feature-firefox-desktop",
-      })
+      }),
+      { store }
     );
-    store.addEnrollment(
-      NimbusTestUtils.factories.rollout.withFeatureConfig("coenroll-4", {
+    NimbusTestUtils.addEnrollmentForRecipe(
+      NimbusTestUtils.factories.recipe.withFeatureConfig("coenroll-4", {
         featureId: "no-feature-firefox-desktop",
-      })
+      }),
+      { store }
     );
+  });
 
-    storePath = await NimbusTestUtils.saveStore(store);
-  }
-
-  const { sandbox, store, initExperimentAPI, cleanup } = await setupTest({
-    storePath,
+  const { sandbox, initExperimentAPI, cleanup } = await setupTest({
     init: false,
+    storePath,
+    migrationState: NimbusTestUtils.migrationState.LATEST,
   });
 
   const onFeatureUpdate = sandbox.stub();
@@ -139,29 +152,38 @@ add_task(async function test_initOnUpdateEventsFire() {
 
   NimbusFeatures.testFeature.offUpdate(onFeatureUpdate);
 
-  store.updateExperiment("testFeature-1", { active: false });
-  store.updateExperiment("testFeature-2", { active: false });
-  store.updateExperiment("coenroll-1", { active: false });
-  store.updateExperiment("coenroll-2", { active: false });
-  store.updateExperiment("coenroll-3", { active: false });
-  store.updateExperiment("coenroll-4", { active: false });
+  await NimbusTestUtils.cleanupManager([
+    "testFeature-1",
+    "testFeature-2",
+    "coenroll-1",
+    "coenroll-2",
+    "coenroll-3",
+    "coenroll-4",
+  ]);
+  await cleanup();
+}
 
-  cleanup();
+add_task(test_initOnUpdateEventsFire);
+add_task(async function test_initOnUpdateEventsFireDb() {
+  const resetNimbusEnrollmentPrefs = NimbusTestUtils.enableNimbusEnrollments({
+    read: true,
+  });
+  await test_initOnUpdateEventsFire();
+  resetNimbusEnrollmentPrefs();
 });
 
 add_task(async function test_getExperimentForGroup() {
   const { store, cleanup } = await setupTest();
 
-  const experiment = NimbusTestUtils.factories.experiment("foo", {
-    branch: {
-      ratio: 1,
-      slug: "variant",
-      features: [{ featureId: "purple", value: {} }],
-    },
-  });
-
-  store.addEnrollment(ExperimentFakes.experiment("bar"));
-  store.addEnrollment(experiment);
+  const experiment = NimbusTestUtils.addEnrollmentForRecipe(
+    NimbusTestUtils.factories.recipe.withFeatureConfig("foo", {
+      featureId: "purple",
+    })
+  );
+  NimbusTestUtils.addEnrollmentForRecipe(
+    NimbusTestUtils.factories.recipe("bar"),
+    { branchSlug: "control" }
+  );
 
   Assert.equal(
     store.getExperimentForFeature("purple"),
@@ -169,42 +191,32 @@ add_task(async function test_getExperimentForGroup() {
     "should return a matching experiment for the given feature"
   );
 
-  store.updateExperiment("foo", { active: false });
-  store.updateExperiment("bar", { active: false });
+  store.deactivateEnrollment("foo");
+  store.deactivateEnrollment("bar");
 
-  cleanup();
+  await cleanup();
 });
 
 add_task(async function test_hasExperimentForFeature() {
   const { store, cleanup } = await setupTest();
 
-  store.addEnrollment(
-    ExperimentFakes.experiment("foo", {
-      branch: {
-        ratio: 1,
-        slug: "variant",
-        features: [{ featureId: "green", value: {} }],
-      },
+  NimbusTestUtils.addEnrollmentForRecipe(
+    NimbusTestUtils.factories.recipe.withFeatureConfig("foo", {
+      featureId: "green",
     })
   );
-  store.addEnrollment(
-    ExperimentFakes.experiment("foo2", {
-      branch: {
-        ratio: 1,
-        slug: "variant",
-        features: [{ featureId: "yellow", value: {} }],
-      },
+  NimbusTestUtils.addEnrollmentForRecipe(
+    NimbusTestUtils.factories.recipe.withFeatureConfig("foo2", {
+      featureId: "yellow",
     })
   );
-  store.addEnrollment(
-    ExperimentFakes.experiment("bar_expired", {
-      active: false,
-      branch: {
-        ratio: 1,
-        slug: "variant",
-        features: [{ featureId: "purple", value: {} }],
-      },
-    })
+  NimbusTestUtils.addEnrollmentForRecipe(
+    NimbusTestUtils.factories.recipe.withFeatureConfig("bar_expired", {
+      featureId: "purple",
+    }),
+    {
+      extra: { active: false },
+    }
   );
   Assert.equal(
     store.hasExperimentForFeature(),
@@ -230,38 +242,46 @@ add_task(async function test_hasExperimentForFeature() {
     "should return false if there is a non-active experiment with the given groups"
   );
 
-  store.updateExperiment("foo", { active: false });
-  store.updateExperiment("foo2", { active: false });
+  store.deactivateEnrollment("foo");
+  store.deactivateEnrollment("foo2");
 
-  cleanup();
+  await cleanup();
 });
 
 add_task(async function test_getAll() {
   const { store, cleanup } = await setupTest();
 
-  store.addEnrollment(
-    NimbusTestUtils.factories.experiment("foo", { active: false })
+  NimbusTestUtils.addEnrollmentForRecipe(
+    NimbusTestUtils.factories.recipe("foo"),
+    { branchSlug: "control", extra: { active: false } }
   );
-  store.addEnrollment(
-    NimbusTestUtils.factories.experiment("bar", { active: false })
+  NimbusTestUtils.addEnrollmentForRecipe(
+    NimbusTestUtils.factories.recipe("bar"),
+    { branchSlug: "control", extra: { active: false } }
   );
-  store.addEnrollment(
-    NimbusTestUtils.factories.experiment("baz", { active: false })
+  NimbusTestUtils.addEnrollmentForRecipe(
+    NimbusTestUtils.factories.recipe("baz"),
+    { branchSlug: "control", extra: { active: false } }
   );
-  store.addEnrollment(
-    NimbusTestUtils.factories.experiment("qux", { active: true })
+  NimbusTestUtils.addEnrollmentForRecipe(
+    NimbusTestUtils.factories.recipe("qux"),
+    { branchSlug: "control", extra: { active: true } }
   );
-  store.addEnrollment(
-    NimbusTestUtils.factories.rollout("quux", { active: false })
+  NimbusTestUtils.addEnrollmentForRecipe(
+    NimbusTestUtils.factories.recipe("quux", { isRollout: true }),
+    { branchSlug: "control", extra: { active: false } }
   );
-  store.addEnrollment(
-    NimbusTestUtils.factories.rollout("corge", { active: false })
+  NimbusTestUtils.addEnrollmentForRecipe(
+    NimbusTestUtils.factories.recipe("corge", { isRollout: true }),
+    { branchSlug: "control", extra: { active: false } }
   );
-  store.addEnrollment(
-    NimbusTestUtils.factories.rollout("grault", { active: false })
+  NimbusTestUtils.addEnrollmentForRecipe(
+    NimbusTestUtils.factories.recipe("grault", { isRollout: true }),
+    { branchSlug: "control", extra: { active: false } }
   );
-  store.addEnrollment(
-    NimbusTestUtils.factories.rollout("garply", { active: true })
+  NimbusTestUtils.addEnrollmentForRecipe(
+    NimbusTestUtils.factories.recipe("garply", { isRollout: true }),
+    { branchSlug: "control", extra: { active: true } }
   );
 
   Assert.deepEqual(
@@ -280,20 +300,22 @@ add_task(async function test_getAll() {
     "getAllActiveRollouts() should return all experiments that are active"
   );
 
-  store.updateExperiment("qux", { active: false });
-  store.updateExperiment("garply", { active: false });
+  store.deactivateEnrollment("qux");
+  store.deactivateEnrollment("garply");
 
-  cleanup();
+  await cleanup();
 });
 
 add_task(async function test_addEnrollment() {
   const { store, cleanup } = await setupTest();
 
-  const experiment = NimbusTestUtils.factories.experiment("experiment");
-  const rollout = NimbusTestUtils.factories.experiment("rollout");
-
-  store.addEnrollment(experiment);
-  store.addEnrollment(rollout);
+  const experiment = NimbusTestUtils.addEnrollmentForRecipe(
+    NimbusTestUtils.factories.recipe("experiment"),
+    { branchSlug: "control" }
+  );
+  const rollout = NimbusTestUtils.addEnrollmentForRecipe(
+    NimbusTestUtils.factories.recipe("rollout", { isRollout: true })
+  );
 
   Assert.equal(
     store.get("experiment"),
@@ -302,34 +324,39 @@ add_task(async function test_addEnrollment() {
   );
   Assert.equal(store.get("rollout"), rollout, "should save experiment by slug");
 
-  store.updateExperiment("experiment", { active: false });
-  store.updateExperiment("rollout", { active: false });
+  store.deactivateEnrollment("experiment");
+  store.deactivateEnrollment("rollout");
 
-  cleanup();
+  await cleanup();
 });
 
-add_task(async function test_updateExperiment() {
+add_task(async function test_deactivateEnrollment() {
   const { store, cleanup } = await setupTest();
 
-  const features = [{ featureId: "cfr", value: {} }];
-  const experiment = Object.freeze(
-    ExperimentFakes.experiment("foo", { features, active: true })
+  const enrollment = NimbusTestUtils.addEnrollmentForRecipe(
+    NimbusTestUtils.factories.recipe.withFeatureConfig("foo", {
+      branchSlug: "treatment",
+      featureId: "no-feature-firefox-desktop",
+    })
   );
 
-  store.addEnrollment(experiment);
-  store.updateExperiment(experiment.slug, { active: false });
+  store.deactivateEnrollment("foo", "some-reason");
 
-  const actual = store.get("foo");
-  Assert.equal(actual.active, false, "should change updated props");
   Assert.deepEqual(
-    actual.branch.features,
-    features,
-    "should not update other props"
+    store.get(enrollment.slug),
+    {
+      ...enrollment,
+      unenrollReason: "some-reason",
+      active: false,
+      prefs: null,
+      prefFlips: null,
+    },
+    "should only update relevant fields"
   );
 
-  store.updateExperiment("foo", { active: false });
+  store.deactivateEnrollment("foo");
 
-  cleanup();
+  await cleanup();
 });
 
 add_task(async function test_sync_access_before_init() {
@@ -337,17 +364,18 @@ add_task(async function test_sync_access_before_init() {
 
   Assert.equal(store.getAll().length, 0, "Start with an empty store");
 
-  const experiment = ExperimentFakes.experiment("foo", {
-    features: [{ featureId: "newtab", value: {} }],
-  });
-  store.addEnrollment(experiment);
+  NimbusTestUtils.addEnrollmentForRecipe(
+    NimbusTestUtils.factories.recipe.withFeatureConfig("foo", {
+      featureId: "newtab",
+    })
+  );
 
   const prefValue = JSON.parse(
     Services.prefs.getStringPref(`${SYNC_DATA_PREF_BRANCH}newtab`)
   );
 
   Assert.ok(prefValue, "Parsed stored experiment");
-  Assert.equal(prefValue.slug, experiment.slug, "Got back the experiment");
+  Assert.equal(prefValue.slug, "foo", "Got back the experiment");
 
   // New un-initialized store that should read the pref value
   const newStore = NimbusTestUtils.stubs.store();
@@ -358,58 +386,19 @@ add_task(async function test_sync_access_before_init() {
     "Returns experiment from pref"
   );
 
-  store.updateExperiment("foo", { active: false });
+  store.deactivateEnrollment("foo");
 
-  cleanup();
+  await cleanup();
 
-  NimbusTestUtils.assert.storeIsEmpty(newStore);
-});
-
-add_task(async function test_sync_access_update() {
-  const { store, cleanup } = await setupTest();
-
-  const experiment = ExperimentFakes.experiment("foo", {
-    features: [{ featureId: "aboutwelcome", value: {} }],
-  });
-
-  store.addEnrollment(experiment);
-  store.updateExperiment("foo", {
-    branch: {
-      ...experiment.branch,
-      features: [
-        {
-          featureId: "aboutwelcome",
-          value: { bar: "bar", enabled: true },
-        },
-      ],
-    },
-  });
-
-  const newStore = NimbusTestUtils.stubs.store();
-  const cachedExperiment = newStore.getExperimentForFeature("aboutwelcome");
-
-  Assert.ok(cachedExperiment, "Got back 1 experiment");
-  Assert.deepEqual(
-    // `branch.feature` and not `features` because for sync access (early startup)
-    // experiments we only store the `isEarlyStartup` feature
-    cachedExperiment.branch.features[0].value,
-    { bar: "bar", enabled: true },
-    "Got updated value"
-  );
-
-  store.updateExperiment("foo", { active: false });
-
-  cleanup();
-
-  NimbusTestUtils.assert.storeIsEmpty(newStore);
+  await NimbusTestUtils.assert.storeIsEmpty(newStore);
 });
 
 add_task(async function test_sync_features_only() {
   const { store, cleanup } = await setupTest();
 
-  store.addEnrollment(
-    NimbusTestUtils.factories.experiment("foo", {
-      features: [{ featureId: "cfr", value: {} }],
+  NimbusTestUtils.addEnrollmentForRecipe(
+    NimbusTestUtils.factories.recipe.withFeatureConfig("foo", {
+      featureId: "cfr",
     })
   );
 
@@ -420,55 +409,59 @@ add_task(async function test_sync_features_only() {
     "cfr is not a sync access experiment"
   );
 
-  store.updateExperiment("foo", { active: false });
+  store.deactivateEnrollment("foo");
 
-  cleanup();
+  await cleanup();
 });
 
 add_task(async function test_sync_access_unenroll() {
   const { store, cleanup } = await setupTest();
 
-  let experiment = ExperimentFakes.experiment("foo", {
-    features: [{ featureId: "aboutwelcome", value: {} }],
-    active: true,
-  });
-
   await store.init();
 
-  store.addEnrollment(experiment);
-  store.updateExperiment("foo", { active: false });
+  NimbusTestUtils.addEnrollmentForRecipe(
+    NimbusTestUtils.factories.recipe.withFeatureConfig("foo", {
+      featureId: "aboutwelcome",
+    })
+  );
+  store.deactivateEnrollment("foo");
 
-  const newStore = ExperimentFakes.store();
-  Assert.equal(newStore.getAll().length, 0, "Unenrolled experiment is deleted");
+  const newStore = NimbusTestUtils.stubs.store();
+  Assert.equal(
+    newStore.getAll().length,
+    0,
+    "Unenrolled experiment is not available via sync store"
+  );
 
-  cleanup();
+  await cleanup();
 });
 
 add_task(async function test_sync_access_unenroll_2() {
   const { store, cleanup } = await setupTest();
 
-  let experiment1 = ExperimentFakes.experiment("foo", {
-    features: [{ featureId: "newtab", value: {} }],
-  });
-  let experiment2 = ExperimentFakes.experiment("bar", {
-    features: [{ featureId: "aboutwelcome", value: {} }],
-  });
-
   await store.init();
 
-  store.addEnrollment(experiment1);
-  store.addEnrollment(experiment2);
+  NimbusTestUtils.addEnrollmentForRecipe(
+    NimbusTestUtils.factories.recipe.withFeatureConfig("foo", {
+      featureId: "newtab",
+    })
+  );
+  NimbusTestUtils.addEnrollmentForRecipe(
+    NimbusTestUtils.factories.recipe.withFeatureConfig("bar", {
+      featureId: "aboutwelcome",
+    })
+  );
 
   Assert.equal(store.getAll().length, 2, "2/2 experiments");
 
-  const newStore = ExperimentFakes.store();
+  const newStore = NimbusTestUtils.stubs.store();
 
   Assert.ok(
     newStore.getExperimentForFeature("aboutwelcome"),
     "Fetches experiment from pref cache even before init (aboutwelcome)"
   );
 
-  store.updateExperiment("bar", { active: false });
+  store.deactivateEnrollment("bar");
 
   Assert.ok(
     newStore.getExperimentForFeature("newtab").slug,
@@ -479,7 +472,7 @@ add_task(async function test_sync_access_unenroll_2() {
     "Experiment was updated and should not be found"
   );
 
-  store.updateExperiment("foo", { active: false });
+  store.deactivateEnrollment("foo");
   Assert.ok(
     !newStore.getExperimentForFeature("newtab")?.slug,
     "Unenrolled from 2/2 experiments"
@@ -497,60 +490,62 @@ add_task(async function test_sync_access_unenroll_2() {
     "Cleared pref 2"
   );
 
-  cleanup();
+  await cleanup();
 });
 
 add_task(async function test_getRolloutForFeature_fromStore() {
   const { store, cleanup } = await setupTest();
-  const rollout = ExperimentFakes.rollout("foo");
 
   await store.init();
-  store.addEnrollment(rollout);
+  const rollout = NimbusTestUtils.addEnrollmentForRecipe(
+    NimbusTestUtils.factories.recipe("foo", { isRollout: true })
+  );
 
-  Assert.deepEqual(
+  Assert.equal(
     store.getRolloutForFeature(rollout.featureIds[0]),
     rollout,
     "Should return back the same rollout"
   );
 
-  store.updateExperiment("foo", { active: false });
+  store.deactivateEnrollment("foo");
 
-  cleanup();
+  await cleanup();
 });
 
 add_task(async function test_getRolloutForFeature_fromSyncCache() {
   const { store, cleanup } = await setupTest();
-  const rollout = ExperimentFakes.rollout("foo", {
-    branch: {
-      slug: "early-startup",
-      ratio: 1,
-      features: [{ featureId: "aboutwelcome", value: { enabled: true } }],
+  const recipe = NimbusTestUtils.factories.recipe.withFeatureConfig(
+    "foo",
+    {
+      featureId: "aboutwelcome",
+      value: { enabled: true },
     },
-  });
+    { isRollout: true }
+  );
 
-  store.addEnrollment(rollout);
+  NimbusTestUtils.addEnrollmentForRecipe(recipe);
   // New uninitialized store will return data from sync cache
   // before init
-  const newStore = ExperimentFakes.store();
+  const newStore = NimbusTestUtils.stubs.store();
 
   Assert.ok(
     Services.prefs.getStringPref(`${SYNC_DEFAULTS_PREF_BRANCH}aboutwelcome`),
     "Sync cache is set"
   );
   Assert.equal(
-    newStore.getRolloutForFeature(rollout.featureIds[0]).slug,
-    rollout.slug,
+    newStore.getRolloutForFeature(recipe.featureIds[0]).slug,
+    recipe.slug,
     "Should return back the same rollout"
   );
   Assert.deepEqual(
-    newStore.getRolloutForFeature(rollout.featureIds[0]).branch.features[0],
-    rollout.branch.features[0],
+    newStore.getRolloutForFeature(recipe.featureIds[0]).branch.features[0],
+    recipe.branches[0].features[0],
     "Should return back the same feature"
   );
 
-  store.updateExperiment("foo", { active: false });
+  store.deactivateEnrollment(recipe.slug);
 
-  cleanup();
+  await cleanup();
 });
 
 add_task(async function test_remoteRollout() {
@@ -559,30 +554,31 @@ add_task(async function test_remoteRollout() {
   });
   const featureUpdateStub = sinon.stub();
 
-  const rollout = ExperimentFakes.rollout("foo", {
-    branch: {
-      slug: "early-startup",
-      ratio: 1,
-      features: [{ featureId: "aboutwelcome", value: { enabled: true } }],
+  const recipe = NimbusTestUtils.factories.recipe.withFeatureConfig(
+    "foo",
+    {
+      featureId: "aboutwelcome",
+      value: { enabled: true },
     },
-  });
+    { isRollout: true }
+  );
 
   store.on("featureUpdate:aboutwelcome", featureUpdateStub);
 
   await initExperimentAPI();
 
-  store.addEnrollment(rollout);
+  NimbusTestUtils.addEnrollmentForRecipe(recipe);
 
   Assert.ok(
     Services.prefs.getStringPref(`${SYNC_DEFAULTS_PREF_BRANCH}aboutwelcome`),
     "Sync cache is set"
   );
 
-  store.updateExperiment(rollout.slug, { active: false });
+  store.deactivateEnrollment(recipe.slug);
 
   Assert.ok(featureUpdateStub.calledTwice, "Called for add and remove");
   Assert.ok(
-    store.get(rollout.slug),
+    store.get(recipe.slug),
     "Rollout is still in the store just not active"
   );
   Assert.ok(
@@ -597,7 +593,7 @@ add_task(async function test_remoteRollout() {
     "Sync cache is cleared"
   );
 
-  cleanup();
+  await cleanup();
 });
 
 add_task(async function test_syncDataStore_setDefault() {
@@ -612,38 +608,37 @@ add_task(async function test_syncDataStore_setDefault() {
     "Pref is empty"
   );
 
-  const rollout = ExperimentFakes.rollout("foo", {
-    features: [{ featureId: "aboutwelcome", value: { remote: true } }],
-  });
-  store.addEnrollment(rollout);
+  NimbusTestUtils.addEnrollmentForRecipe(
+    NimbusTestUtils.factories.recipe.withFeatureConfig(
+      "foo",
+      {
+        featureId: "aboutwelcome",
+        value: { remote: true },
+      },
+      { isRollout: true }
+    )
+  );
 
   Assert.ok(
     Services.prefs.getStringPref(`${SYNC_DEFAULTS_PREF_BRANCH}aboutwelcome`),
     "Stored in pref"
   );
 
-  store.updateExperiment("foo", { active: false });
+  store.deactivateEnrollment("foo");
 
-  cleanup();
+  await cleanup();
 });
 
 add_task(async function test_syncDataStore_getDefault() {
   const { store, cleanup } = await setupTest();
 
-  const rollout = ExperimentFakes.rollout("aboutwelcome-slug", {
-    branch: {
-      slug: "branch",
-      ratio: 1,
-      features: [
-        {
-          featureId: "aboutwelcome",
-          value: { remote: true },
-        },
-      ],
-    },
-  });
-
-  await store.addEnrollment(rollout);
+  const rollout = await NimbusTestUtils.addEnrollmentForRecipe(
+    NimbusTestUtils.factories.recipe.withFeatureConfig(
+      "aboutwelcome-slug",
+      { featureId: "aboutwelcome", value: { remote: true } },
+      { isRollout: true }
+    )
+  );
 
   Assert.ok(
     Services.prefs.getStringPref(`${SYNC_DEFAULTS_PREF_BRANCH}aboutwelcome`)
@@ -657,9 +652,9 @@ add_task(async function test_syncDataStore_getDefault() {
     "Restore data from pref"
   );
 
-  store.updateExperiment(rollout.slug, { active: false });
+  store.deactivateEnrollment(rollout.slug);
 
-  cleanup();
+  await cleanup();
 });
 
 add_task(async function test_addEnrollment_rollout() {
@@ -669,20 +664,24 @@ add_task(async function test_addEnrollment_rollout() {
 
   const stub = sandbox.stub();
   const value = { bar: true };
-  const rollout = ExperimentFakes.rollout("foo", {
-    features: [{ featureId: "aboutwelcome", value }],
-  });
+  const recipe = NimbusTestUtils.factories.recipe.withFeatureConfig(
+    "foo",
+    {
+      featureId: "aboutwelcome",
+      value,
+    },
+    { isRollout: true }
+  );
 
   store._onFeatureUpdate("aboutwelcome", stub);
 
   await initExperimentAPI();
 
-  store.addEnrollment(rollout);
+  NimbusTestUtils.addEnrollmentForRecipe(recipe);
 
-  Assert.deepEqual(
+  Assert.ok(
     store.getRolloutForFeature("aboutwelcome"),
-    rollout,
-    "should return the stored value"
+    "should return an enrollment"
   );
   Assert.equal(stub.callCount, 1, "Called once on update");
   Assert.equal(
@@ -691,82 +690,69 @@ add_task(async function test_addEnrollment_rollout() {
     "Called for correct reason"
   );
 
-  store.updateExperiment("foo", { active: false });
+  store.deactivateEnrollment("foo");
 
-  cleanup();
+  await cleanup();
 });
 
 add_task(async function test_storeValuePerPref_returnsSameValue_allTypes() {
+  const cleanupFeature = NimbusTestUtils.addTestFeatures(
+    new ExperimentFeature("purple", {
+      isEarlyStartup: true,
+      variables: {
+        string: { type: "string" },
+        bool: { type: "boolean" },
+        array: { type: "json" },
+        number1: { type: "int" },
+        number2: { type: "int" },
+        number3: { type: "int" },
+        json: { type: "json" },
+      },
+    })
+  );
+
   const { store, cleanup } = await setupTest();
 
-  // Add a fake feature that matches the variables we're testing
-  FeatureManifest.purple = {
-    isEarlyStartup: true,
-    variables: {
-      string: { type: "string" },
-      bool: { type: "boolean" },
-      array: { type: "json" },
-      number1: { type: "int" },
-      number2: { type: "int" },
-      number3: { type: "int" },
-      json: { type: "json" },
-    },
-  };
-  const experiment = ExperimentFakes.experiment("foo", {
-    branch: {
-      slug: "variant",
-      ratio: 1,
-      features: [
-        {
-          // Ensure it gets saved to prefs
-          featureId: "purple",
-          value: {
-            string: "string",
-            bool: true,
-            array: [1, 2, 3],
-            number1: 42,
-            number2: 0,
-            number3: -5,
-            json: { jsonValue: true },
-          },
-        },
-      ],
+  const recipe = NimbusTestUtils.factories.recipe.withFeatureConfig("foo", {
+    // Ensure it gets saved to prefs
+    featureId: "purple",
+    value: {
+      string: "string",
+      bool: true,
+      array: [1, 2, 3],
+      number1: 42,
+      number2: 0,
+      number3: -5,
+      json: { jsonValue: true },
     },
   });
 
-  store.addEnrollment(experiment);
+  NimbusTestUtils.addEnrollmentForRecipe(recipe);
   const branch = Services.prefs.getBranch(`${SYNC_DATA_PREF_BRANCH}purple.`);
 
   const newStore = NimbusTestUtils.stubs.store();
   Assert.deepEqual(
     newStore.getExperimentForFeature("purple").branch.features[0].value,
-    experiment.branch.features[0].value,
+    recipe.branches[0].features[0].value,
     "Returns the same value"
   );
 
   // Cleanup
-  store.updateExperiment(experiment.slug, { active: false });
+  store.deactivateEnrollment(recipe.slug);
   Assert.ok(
     !Services.prefs.getStringPref(`${SYNC_DATA_PREF_BRANCH}purple`, ""),
     "Experiment cleanup"
   );
   Assert.deepEqual(branch.getChildList(""), [], "Variables are also removed");
 
-  delete FeatureManifest.purple;
-
-  cleanup();
+  await cleanup();
+  cleanupFeature();
 });
 
 add_task(async function test_cleanupOldRecipes() {
-  const { sandbox, store, cleanup } = await setupTest();
+  const store = NimbusTestUtils.stubs.store();
 
-  // We are intentionally putting some invalid data into the ExperimentStore.
-  // NimbusTestUtils replaces addEnrollment with a version that does schema
-  // validation, which we explicitly want to avoid for `inactiveNoLastSeen`
-  // below.
-  store.addEnrollment.restore();
-
-  const stub = sandbox.stub(store, "_removeEntriesByKeys");
+  await store.init({ cleanupOldRecipes: false });
 
   const NOW = Date.now();
   const SIX_HOURS = 6 * 3600 * 1000;
@@ -774,94 +760,232 @@ add_task(async function test_cleanupOldRecipes() {
   const ONE_YEAR = 365.25 * 24 * 3600 * 1000;
   const ONE_MONTH = Math.floor(ONE_YEAR / 12);
 
-  const active = ExperimentFakes.experiment("active-6hrs", {
-    active: true,
-    lastSeen: new Date(NOW - SIX_HOURS),
-  });
+  const active = NimbusTestUtils.factories.recipe("active-6hrs");
+  const inactiveToday = NimbusTestUtils.factories.recipe("inactive-recent");
+  const inactiveSixMonths = NimbusTestUtils.factories.recipe("inactive-6mo");
+  const inactiveUnderTwelveMonths = NimbusTestUtils.factories.recipe(
+    "inactive-under-12mo"
+  );
+  const inactiveOverTwelveMonths =
+    NimbusTestUtils.factories.recipe("inactive-over-12mo");
 
-  const inactiveToday = ExperimentFakes.experiment("inactive-recent", {
-    active: false,
-    lastSeen: new Date(NOW - SIX_HOURS),
-  });
-
-  const inactiveSixMonths = ExperimentFakes.experiment("inactive-6mo", {
-    active: false,
-    lastSeen: new Date(NOW - 6 * ONE_MONTH),
-  });
-
-  const inactiveUnderTwelveMonths = ExperimentFakes.experiment(
-    "inactive-under-12mo",
+  const inactiveNoLastSeen = NimbusTestUtils.factories.experiment(
+    "inactive-unknown",
     {
       active: false,
-      lastSeen: new Date(NOW - ONE_YEAR + ONE_DAY),
+      unenrollReason: "unknown",
     }
   );
 
-  const inactiveOverTwelveMonths = ExperimentFakes.experiment(
-    "inactive-over-12mo",
-    {
-      active: false,
-      lastSeen: new Date(NOW - ONE_YEAR - ONE_DAY),
-    }
-  );
-
-  const inactiveNoLastSeen = ExperimentFakes.experiment("inactive-unknown", {
-    active: false,
-  });
   delete inactiveNoLastSeen.lastSeen;
 
-  store.addEnrollment(active);
-  store.addEnrollment(inactiveToday);
-  store.addEnrollment(inactiveSixMonths);
-  store.addEnrollment(inactiveUnderTwelveMonths);
-  store.addEnrollment(inactiveOverTwelveMonths);
-  store.addEnrollment(inactiveNoLastSeen);
+  NimbusTestUtils.addEnrollmentForRecipe(active, {
+    store,
+    branchSlug: "control",
+    extra: {
+      lastSeen: new Date(NOW - SIX_HOURS).toJSON(),
+    },
+  });
+  NimbusTestUtils.addEnrollmentForRecipe(inactiveToday, {
+    store,
+    branchSlug: "control",
+    extra: {
+      active: false,
+      unenrollReason: "unknown",
+      lastSeen: new Date(NOW - SIX_HOURS).toJSON(),
+    },
+  });
+  NimbusTestUtils.addEnrollmentForRecipe(inactiveSixMonths, {
+    store,
+    branchSlug: "control",
+    extra: {
+      active: false,
+      unenrollReason: "unknown",
+      lastSeen: new Date(NOW - 6 * ONE_MONTH).toJSON(),
+    },
+  });
+  NimbusTestUtils.addEnrollmentForRecipe(inactiveUnderTwelveMonths, {
+    store,
+    branchSlug: "control",
+    extra: {
+      active: false,
+      unenrollReason: "unknown",
+      lastSeen: new Date(NOW - ONE_YEAR + ONE_DAY).toJSON(),
+    },
+  });
+  NimbusTestUtils.addEnrollmentForRecipe(inactiveOverTwelveMonths, {
+    store,
+    branchSlug: "control",
+    extra: {
+      active: false,
+      unenrollReason: "unknown",
+      lastSeen: new Date(NOW - ONE_YEAR - ONE_DAY).toJSON(),
+    },
+  });
+
+  await NimbusTestUtils.flushStore();
+
+  // There is a NOT NULL constraint that prevents adding this enrollment to the
+  // database and addEnrollment() is stubbed to validate the enrollment so we
+  // must use set() here.
+  store.set(inactiveNoLastSeen.slug, inactiveNoLastSeen);
+
+  // Insert a row belonging to another profile.
+  const otherProfileId = Services.uuid.generateUUID().toString().slice(1, -1);
+
+  await NimbusTestUtils.insertEnrollment(inactiveOverTwelveMonths, "control", {
+    extra: {
+      active: false,
+      lastSeen: new Date(NOW - ONE_YEAR - ONE_DAY),
+    },
+    profileId: otherProfileId,
+  });
 
   store._cleanupOldRecipes();
+  await NimbusTestUtils.flushStore(store);
 
-  Assert.ok(stub.calledOnce, "Recipe cleanup called");
   Assert.equal(
-    stub.firstCall.args[0].length,
-    2,
-    "We call to remove enrollments"
+    store.get(inactiveOverTwelveMonths.slug),
+    null,
+    "Expired enrollment removed from in memory store"
   );
   Assert.equal(
-    stub.firstCall.args[0][0],
-    inactiveOverTwelveMonths.slug,
-    "Should remove expired enrollment"
-  );
-  Assert.equal(
-    stub.firstCall.args[0][1],
-    inactiveNoLastSeen.slug,
-    "Should remove invalid enrollment"
+    store.get(inactiveNoLastSeen.slug),
+    null,
+    "invalid enrollment removed from the store"
   );
 
-  store.updateExperiment("active-6hrs", { active: false });
+  await NimbusTestUtils.assert.enrollmentExists(active.slug, { active: true });
 
-  cleanup();
+  await NimbusTestUtils.assert.enrollmentExists(inactiveToday.slug, {
+    active: false,
+  });
+
+  await NimbusTestUtils.assert.enrollmentExists(inactiveSixMonths.slug, {
+    active: false,
+  });
+  await NimbusTestUtils.assert.enrollmentExists(
+    inactiveUnderTwelveMonths.slug,
+    { active: false }
+  );
+  await NimbusTestUtils.assert.enrollmentDoesNotExist(
+    inactiveOverTwelveMonths.slug
+  );
+
+  // Rows in the other profile should not have been changed.
+  await NimbusTestUtils.assert.enrollmentExists(inactiveOverTwelveMonths.slug, {
+    active: false,
+    profileId: otherProfileId,
+  });
+
+  store.deactivateEnrollment(active.slug);
+  await NimbusTestUtils.flushStore();
+
+  await NimbusTestUtils.deleteEnrollmentsFromProfiles([otherProfileId]);
+  await NimbusTestUtils.assert.storeIsEmpty(store, { allProfiles: true });
 });
 
-add_task(async function test_restore() {
-  let storePath;
-  {
-    const store = NimbusTestUtils.stubs.store();
-    await store.init();
-
-    store.addEnrollment(NimbusTestUtils.factories.experiment("experiment"));
-    store.addEnrollment(
-      NimbusTestUtils.factories.rollout("rollout", { active: true })
-    );
-
-    storePath = await NimbusTestUtils.saveStore(store);
-  }
-
-  const { store, cleanup } = await setupTest({ storePath });
+async function test_restore() {
+  const { store, cleanup } = await setupTest({
+    storePath: await NimbusTestUtils.createStoreWith(store => {
+      NimbusTestUtils.addEnrollmentForRecipe(
+        NimbusTestUtils.factories.recipe("experiment"),
+        { store, branchSlug: "control" }
+      );
+      NimbusTestUtils.addEnrollmentForRecipe(
+        NimbusTestUtils.factories.recipe("rollout", { isRollout: true }),
+        { store }
+      );
+    }),
+    migrationState: NimbusTestUtils.migrationState.LATEST,
+  });
 
   Assert.ok(store.get("experiment"));
   Assert.ok(store.get("rollout"));
 
-  store.updateExperiment("experiment", { active: false });
-  store.updateExperiment("rollout", { active: false });
+  await NimbusTestUtils.cleanupManager(["experiment", "rollout"]);
+  await cleanup();
+}
 
-  cleanup();
+add_task(test_restore);
+add_task(async function test_restore_db() {
+  const resetNimbusEnrollmentPrefs = NimbusTestUtils.enableNimbusEnrollments({
+    read: true,
+  });
+  await test_restore();
+  resetNimbusEnrollmentPrefs();
+});
+
+async function test_restoreDatabaseConsistency(primary = "jsonfile") {
+  Services.fog.testResetFOG();
+
+  const storePath = await NimbusTestUtils.createStoreWith(store => {
+    const experimentRecipe = NimbusTestUtils.factories.recipe.withFeatureConfig(
+      "experiment",
+      { featureId: "no-feature-firefox-desktop" }
+    );
+
+    const rolloutRecipe = NimbusTestUtils.factories.recipe.withFeatureConfig(
+      "rollout",
+      { featureId: "no-feature-firefox-desktop" },
+      { isRollout: true }
+    );
+
+    const inactiveRecipe = NimbusTestUtils.factories.recipe.withFeatureConfig(
+      "inactive",
+      { featureId: "no-feature-firefox-desktop" }
+    );
+
+    NimbusTestUtils.addEnrollmentForRecipe(experimentRecipe, { store });
+    NimbusTestUtils.addEnrollmentForRecipe(rolloutRecipe, { store });
+    NimbusTestUtils.addEnrollmentForRecipe(inactiveRecipe, {
+      store,
+      extra: { active: false },
+    });
+  });
+
+  {
+    // We should expect to see one successful databaseWrite event.
+    const events = Glean.nimbusEvents.databaseWrite
+      .testGetValue("events")
+      .map(ev => ev.extra);
+
+    Assert.deepEqual(events, [{ success: "true" }]);
+  }
+
+  // Initializing the store above will submit the event we care about. Disregard
+  // any metrics previously recorded.
+  Services.fog.testResetFOG();
+
+  const { cleanup } = await NimbusTestUtils.setupTest({
+    storePath,
+    clearTelemetry: true,
+    migrationState: NimbusTestUtils.migrationState.LATEST,
+  });
+
+  const events = Glean.nimbusEvents.startupDatabaseConsistency
+    .testGetValue("events")
+    .map(ev => ev.extra);
+  Assert.deepEqual(events, [
+    {
+      total_db_count: "3",
+      total_store_count: "3",
+      db_active_count: "2",
+      store_active_count: "2",
+      trigger: "startup",
+      primary,
+    },
+  ]);
+
+  await NimbusTestUtils.cleanupManager(["rollout", "experiment"]);
+  await cleanup();
+}
+
+add_task(test_restoreDatabaseConsistency);
+add_task(async function test_restoreDatabaseConsistencyDb() {
+  const resetNimbusEnrollmentPrefs = NimbusTestUtils.enableNimbusEnrollments({
+    read: true,
+  });
+  await test_restoreDatabaseConsistency("database");
+  resetNimbusEnrollmentPrefs();
 });

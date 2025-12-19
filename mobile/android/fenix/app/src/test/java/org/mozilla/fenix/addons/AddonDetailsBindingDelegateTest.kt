@@ -24,9 +24,10 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.R
 import org.mozilla.fenix.databinding.FragmentAddOnDetailsBinding
-import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
+import org.robolectric.RobolectricTestRunner
+import mozilla.components.feature.addons.R as addonsR
 
-@RunWith(FenixRobolectricTestRunner::class)
+@RunWith(RobolectricTestRunner::class)
 class AddonDetailsBindingDelegateTest {
 
     private lateinit var view: View
@@ -70,12 +71,12 @@ class AddonDetailsBindingDelegateTest {
         assertEquals(4.5f, binding.ratingView.rating)
         assertEquals("100", binding.reviewCount.text)
 
-        val ratingContentDescription = testContext.getString(R.string.mozac_feature_addons_rating_content_description_2)
+        val ratingContentDescription = testContext.getString(addonsR.string.mozac_feature_addons_rating_content_description_2)
         var formattedRatting = String.format(ratingContentDescription, 4.3f)
         assertEquals(formattedRatting, binding.ratingLabel.contentDescription)
         assertEquals(IMPORTANT_FOR_ACCESSIBILITY_NO, binding.ratingView.importantForAccessibility)
 
-        val reviewContentDescription = testContext.getString(R.string.mozac_feature_addons_user_rating_count_2)
+        val reviewContentDescription = testContext.getString(addonsR.string.mozac_feature_addons_user_rating_count_2)
         formattedRatting = String.format(reviewContentDescription, 100)
         assertEquals(formattedRatting, binding.reviewCount.contentDescription)
     }

@@ -16,6 +16,8 @@
 
 namespace js {
 
+class NamedLambdaObject;
+
 namespace jit {
 
 class BaselineSnapshot;
@@ -87,6 +89,8 @@ class BaselineCodeGen {
   // stored in the script) as argument for a VM function.
   void loadScriptGCThing(ScriptGCThingType type, Register dest,
                          Register scratch);
+  void loadScriptGCThingInternal(ScriptGCThingType type, Register dest,
+                                 Register scratch);
   void pushScriptGCThingArg(ScriptGCThingType type, Register scratch1,
                             Register scratch2);
   void pushScriptNameArg(Register scratch1, Register scratch2);
@@ -100,12 +104,17 @@ class BaselineCodeGen {
 
   // Loads the current JSScript* in dest.
   void loadScript(Register dest);
+  // Loads the current JitScript* in dest
+  void loadJitScript(Register dest);
 
   void saveInterpreterPCReg();
   void restoreInterpreterPCReg();
 
   // Subtracts |script->nslots() * sizeof(Value)| from reg.
   void subtractScriptSlotsSize(Register reg, Register scratch);
+
+  // Loads the resume entries of the current BaselineScript* in dest
+  void loadBaselineScriptResumeEntries(Register dest, Register scratch);
 
   // Jump to the script's resume entry indicated by resumeIndex.
   void jumpToResumeEntry(Register resumeIndex, Register scratch1,
@@ -138,6 +147,13 @@ class BaselineCodeGen {
     return callVM<Fn, fn>(RetAddrEntry::Kind::NonOpCallVM, phase);
   }
 
+  template <typename T>
+  void emitGuardedCallPreBarrierAnyZone(const T& address, MIRType type,
+                                        Register scratch) {
+    MOZ_ASSERT_IF(handler.realmIndependentJitcode(), !masm.maybeRealm());
+    masm.guardedCallPreBarrierAnyZone(address, type, scratch);
+  }
+
   // ifDebuggee should be a function emitting code for when the script is a
   // debuggee script. ifNotDebuggee (if present) is called to emit code for
   // non-debuggee scripts.
@@ -151,9 +167,8 @@ class BaselineCodeGen {
 
   bool emitSuspend(JSOp op);
 
-  template <typename F>
-  [[nodiscard]] bool emitAfterYieldDebugInstrumentation(const F& ifDebuggee,
-                                                        Register scratch);
+  [[nodiscard]] bool emitAfterYieldDebugInstrumentation(Register scratch);
+  [[nodiscard]] bool emitDebugAfterYield();
 
   // ifSet should be a function emitting code for when the script has |flag|
   // set. ifNotSet emits code for when the flag isn't set.
@@ -187,6 +202,9 @@ class BaselineCodeGen {
   [[nodiscard]] bool emitNextIC();
   [[nodiscard]] bool emitInterruptCheck();
   [[nodiscard]] bool emitWarmUpCounterIncrement();
+
+  [[nodiscard]] bool emitTrialInliningCheck(Register count, Register icScript,
+                                            Register scratch);
 
 #define EMIT_OP(op, ...) bool emit_##op();
   FOR_EACH_OPCODE(EMIT_OP)
@@ -297,8 +315,13 @@ class BaselineCompilerHandler {
   JSScript* script_;
   jsbytecode* pc_;
 
+  size_t nargs_;
+
   JSObject* globalLexicalEnvironment_;
   JSObject* globalThis_;
+
+  CallObject* callObjectTemplate_;
+  NamedLambdaObject* namedLambdaTemplate_;
 
   // Index of the current ICEntry in the script's JitScript.
   uint32_t icEntryIndex_;
@@ -309,6 +332,8 @@ class BaselineCompilerHandler {
   bool ionCompileable_;
 
   bool compilingOffThread_ = false;
+
+  bool needsEnvAllocSite_ = false;
 
  public:
   using FrameInfoT = CompilerFrameInfo;
@@ -338,8 +363,16 @@ class BaselineCompilerHandler {
   JSScript* script() const { return script_; }
   JSScript* maybeScript() const { return script_; }
 
-  JSFunction* function() const { return script_->function(); }
-  JSFunction* maybeFunction() const { return function(); }
+  size_t nargs() const {
+    MOZ_ASSERT(isFunction());
+    return nargs_;
+  }
+  CallObject* callObjectTemplate() const { return callObjectTemplate_; }
+  NamedLambdaObject* namedLambdaTemplate() const {
+    return namedLambdaTemplate_;
+  }
+
+  bool isFunction() const { return !!script_->function(); }
 
   ModuleObject* module() const { return script_->module(); }
 
@@ -370,7 +403,7 @@ class BaselineCompilerHandler {
 
   bool canHaveFixedSlots() const { return script()->nfixed() != 0; }
 
-  JSObject* globalLexicalEnvironment() const {
+  JSObject* maybeGlobalLexicalEnvironment() const {
     return globalLexicalEnvironment_;
   }
   JSObject* globalThis() const { return globalThis_; }
@@ -386,6 +419,16 @@ class BaselineCompilerHandler {
 
   bool compilingOffThread() const { return compilingOffThread_; }
   void setCompilingOffThread() { compilingOffThread_ = true; }
+
+  bool addEnvAllocSite() {
+    needsEnvAllocSite_ = true;
+    return true;
+  }
+
+  bool realmIndependentJitcode() const {
+    return JS::Prefs::experimental_self_hosted_cache() &&
+           script()->selfHosted();
+  }
 };
 
 using BaselineCompilerCodeGen = BaselineCodeGen<BaselineCompilerHandler>;
@@ -489,7 +532,6 @@ class BaselineInterpreterHandler {
   jsbytecode* maybePC() const { return nullptr; }
   bool isDefinitelyLastOp() const { return false; }
   JSScript* maybeScript() const { return nullptr; }
-  JSFunction* maybeFunction() const { return nullptr; }
 
   bool shouldEmitDebugEpilogueAtReturnOp() const {
     // The interpreter doesn't use the return address -> pc mapping and doesn't
@@ -514,6 +556,11 @@ class BaselineInterpreterHandler {
   bool mustIncludeSlotsInStackCheck() const { return true; }
 
   bool canHaveFixedSlots() const { return true; }
+  JSObject* maybeGlobalLexicalEnvironment() const { return nullptr; }
+
+  bool addEnvAllocSite() { return false; }  // Not supported.
+
+  bool realmIndependentJitcode() const { return true; }
 };
 
 using BaselineInterpreterCodeGen = BaselineCodeGen<BaselineInterpreterHandler>;

@@ -7,6 +7,7 @@
 #include "BounceTrackingProtection.h"
 #include "BounceTrackingState.h"
 #include "BounceTrackingRecord.h"
+#include "ProfileAfterChangeGate.h"
 
 #include "BounceTrackingStorageObserver.h"
 #include "ErrorList.h"
@@ -67,6 +68,13 @@ BounceTrackingState::~BounceTrackingState() {
 already_AddRefed<BounceTrackingState> BounceTrackingState::GetOrCreate(
     dom::BrowsingContextWebProgress* aWebProgress, nsresult& aRv) {
   aRv = NS_OK;
+
+  // Do not init before profile-after-change.
+  nsresult rv = EnsurePastProfileAfterChange();
+  if (NS_FAILED(rv)) {
+    aRv = rv;
+    return nullptr;
+  }
 
   if (!aWebProgress) {
     aRv = NS_ERROR_INVALID_ARG;
@@ -741,15 +749,18 @@ nsresult BounceTrackingState::OnResponseReceived(
         DebugOnly<nsresult> rv =
             bounceTrackingState->mBounceTrackingProtection
                 ->RecordStatefulBounces(bounceTrackingState);
-        NS_WARNING_ASSERTION(
-            NS_SUCCEEDED(rv),
-            "Running RecordStatefulBounces after a timeout failed.");
+#ifdef DEBUG
+        if (NS_FAILED(rv)) {
+          MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
+                  ("Running RecordStatefulBounces after a timeout failed."));
+        }
+#endif
 
         bounceTrackingState->mClientBounceDetectionTimeout = nullptr;
       },
       StaticPrefs::
           privacy_bounceTrackingProtection_clientBounceDetectionTimerPeriodMS(),
-      nsITimer::TYPE_ONE_SHOT, "mClientBounceDetectionTimeout");
+      nsITimer::TYPE_ONE_SHOT, "mClientBounceDetectionTimeout"_ns);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // For each URL in URLs: Insert host to the navigable’s bounce tracking

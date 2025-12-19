@@ -12,7 +12,6 @@
 #include "mozilla/SVGContainerFrame.h"
 #include "nsCOMPtr.h"
 #include "nsIFrame.h"
-#include "nsIFrame.h"
 #include "nsQueryFrame.h"
 
 class gfxContext;
@@ -68,8 +67,9 @@ class SVGPaintServerFrame : public SVGContainerFrame {
    */
   virtual already_AddRefed<gfxPattern> GetPaintServerPattern(
       nsIFrame* aSource, const DrawTarget* aDrawTarget,
-      const gfxMatrix& aContextMatrix, StyleSVGPaint nsStyleSVG::*aFillOrStroke,
-      float aOpacity, imgDrawingParams& aImgParams,
+      const gfxMatrix& aContextMatrix,
+      StyleSVGPaint nsStyleSVG::* aFillOrStroke, float aOpacity,
+      imgDrawingParams& aImgParams,
       const gfxRect* aOverrideBounds = nullptr) = 0;
 
   // nsIFrame methods:

@@ -7,15 +7,14 @@
 #include "ScrollSnap.h"
 
 #include "FrameMetrics.h"
-
 #include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/ScrollSnapInfo.h"
 #include "mozilla/ServoStyleConsts.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "nsIFrame.h"
 #include "nsLayoutUtils.h"
 #include "nsPresContext.h"
 #include "nsTArray.h"
-#include "mozilla/StaticPrefs_layout.h"
 
 namespace mozilla {
 
@@ -503,7 +502,7 @@ Maybe<SnapDestination> ScrollSnapUtils::GetSnapPointForDestination(
             aSnapInfo.mSnapportSize.width) {
       calcSnapPoints.AddVerticalEdge(ScrollSnapInfo::SnapTarget{
           Some(clampedDestination.x), Nothing(), range.mSnapArea,
-          StyleScrollSnapStop::Normal, range.mTargetId});
+          StyleScrollSnapStop::Normal, ScrollSnapTargetId::None});
       break;
     }
   }
@@ -513,7 +512,7 @@ Maybe<SnapDestination> ScrollSnapUtils::GetSnapPointForDestination(
             aSnapInfo.mSnapportSize.height) {
       calcSnapPoints.AddHorizontalEdge(ScrollSnapInfo::SnapTarget{
           Nothing(), Some(clampedDestination.y), range.mSnapArea,
-          StyleScrollSnapStop::Normal, range.mTargetId});
+          StyleScrollSnapStop::Normal, ScrollSnapTargetId::None});
       break;
     }
   }

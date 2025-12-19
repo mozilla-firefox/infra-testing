@@ -44,6 +44,7 @@ class js::gc::PromotionStats {
   size_t objectCount = 0;
   size_t stringCount = 0;
   size_t bigIntCount = 0;
+  size_t getterSetterCount = 0;
 
   using BaseShapeCountMap =
       HashMap<BaseShape*, size_t, PointerHasher<BaseShape*>, SystemAllocPolicy>;
@@ -65,6 +66,7 @@ class js::gc::PromotionStats {
   void notePromotedObject(JSObject* obj);
   void notePromotedString(JSString* str);
   void notePromotedBigInt(JS::BigInt* bi);
+  void notePromotedGetterSetter(GetterSetter* gs);
 
   bool shouldPrintReport() const;
   void printReport(JSContext* cx, const JS::AutoRequireNoGC& nogc);
@@ -191,6 +193,30 @@ JS::BigInt* TenuringTracer::promoteOrForward(JS::BigInt* bi) {
   return promoteBigInt(bi);
 }
 
+void TenuringTracer::onGetterSetterEdge(GetterSetter** gsp, const char* name) {
+  GetterSetter* gs = *gsp;
+  if (!nursery_.inCollectedRegion(gs)) {
+    return;
+  }
+
+  *gsp = promoteOrForward(gs);
+}
+
+GetterSetter* TenuringTracer::promoteOrForward(GetterSetter* gs) {
+  MOZ_ASSERT(nursery_.inCollectedRegion(gs));
+
+  if (gs->isForwarded()) {
+    const gc::RelocationOverlay* overlay = gc::RelocationOverlay::fromCell(gs);
+    gs = static_cast<GetterSetter*>(overlay->forwardingAddress());
+    if (IsInsideNursery(gs)) {
+      promotedToNursery = true;
+    }
+    return gs;
+  }
+
+  return promoteGetterSetter(gs);
+}
+
 // Ignore edges to cell kinds that are not allocated in the nursery.
 void TenuringTracer::onSymbolEdge(JS::Symbol** symp, const char* name) {}
 void TenuringTracer::onScriptEdge(BaseScript** scriptp, const char* name) {}
@@ -198,12 +224,9 @@ void TenuringTracer::onShapeEdge(Shape** shapep, const char* name) {}
 void TenuringTracer::onRegExpSharedEdge(RegExpShared** sharedp,
                                         const char* name) {}
 void TenuringTracer::onBaseShapeEdge(BaseShape** basep, const char* name) {}
-void TenuringTracer::onGetterSetterEdge(GetterSetter** gsp, const char* name) {}
 void TenuringTracer::onPropMapEdge(PropMap** mapp, const char* name) {}
 void TenuringTracer::onJitCodeEdge(jit::JitCode** codep, const char* name) {}
 void TenuringTracer::onScopeEdge(Scope** scopep, const char* name) {}
-void TenuringTracer::onSmallBufferEdge(SmallBuffer** sizedp, const char* name) {
-}
 
 void TenuringTracer::traverse(JS::Value* thingp) {
   MOZ_ASSERT(!nursery().inCollectedRegion(thingp));
@@ -243,6 +266,13 @@ void TenuringTracer::traverse(JS::Value* thingp) {
     JSString* str = promoteString(value.toString());
     MOZ_ASSERT(str != value.toString());
     *thingp = JS::StringValue(str);
+    return;
+  }
+  if (value.isPrivateGCThing()) {
+    GetterSetter* gs =
+        promoteGetterSetter(value.toGCThing()->as<GetterSetter>());
+    MOZ_ASSERT(gs != value.toGCThing());
+    *thingp = JS::PrivateGCThingValue(gs);
     return;
   }
   MOZ_ASSERT(value.isBigInt());
@@ -321,6 +351,7 @@ template void StoreBuffer::MonoTypeBuffer<StoreBuffer::WasmAnyRefEdge>::trace(
     TenuringTracer&, StoreBuffer* owner);
 template struct StoreBuffer::MonoTypeBuffer<StoreBuffer::StringPtrEdge>;
 template struct StoreBuffer::MonoTypeBuffer<StoreBuffer::BigIntPtrEdge>;
+template struct StoreBuffer::MonoTypeBuffer<StoreBuffer::GetterSetterPtrEdge>;
 template struct StoreBuffer::MonoTypeBuffer<StoreBuffer::ObjectPtrEdge>;
 }  // namespace js::gc
 
@@ -367,44 +398,41 @@ static inline void TraceWholeCell(TenuringTracer& mover, JSObject* object) {
   mover.traceObject(object);
 }
 
-// Return whether the string needs to be swept.
-//
-// We can break down the relevant dependency chains as follows:
-//
-//  T -> T2 : will not be swept, but safe because T2.chars is fixed.
-//  T -> N1 -> ... -> T2 : safe because T2.chars is fixed
-//  T -> N1 -> ... -> N2 : update T.chars += tenured(N2).chars - N2.chars
-//
-// Collapse the base chain down to simply T -> T2 or T -> N2. The pointer update
-// will happen during sweeping.
-//
-// Note that in cases like T -> N1 -> T2 -> T3 -> N2, both T -> N1 and T3 -> N2
-// will be processed by the whole cell buffer (or rather, only T and T3 will
-// be in the store buffer). The order that these strings are
-// visited does not matter because the nursery bases are left alone until
-// sweeping.
-static inline bool TraceWholeCell(TenuringTracer& mover, JSString* str) {
-  if (str->hasBase()) {
-    // For tenured dependent strings -> nursery string edges, sweep the
-    // (tenured) strings at the end of nursery marking to update chars pointers
-    // that were in the nursery. Rather than updating the base pointer to point
-    // directly to the tenured version of itself, we will leave it pointing at
-    // the nursery Cell (which will become a StringRelocationOverlay during the
-    // minor GC.)
-    JSLinearString* base = str->nurseryBaseOrRelocOverlay();
-    if (IsInsideNursery(base)) {
-      str->traceBaseAndRecordOldRoot(&mover);
-      return IsInsideNursery(str->nurseryBaseOrRelocOverlay());
+void JSDependentString::setBase(JSLinearString* newBase) {
+  // This compiles down to a single assignment, with no type test.
+  if (isAtomRef()) {
+    MOZ_ASSERT(newBase->isAtom());
+    d.s.u3.atom = &newBase->asAtom();
+  } else {
+    MOZ_ASSERT(newBase->canOwnDependentChars());
+    d.s.u3.base = newBase;
+  }
+
+  if (isTenured() && !newBase->isTenured()) {
+    MOZ_ASSERT(!InCollectedNurseryRegion(newBase));
+    newBase->storeBuffer()->putWholeCell(this);
+  }
+}
+
+static void TraceWholeCell(TenuringTracer& mover, JSString* str) {
+  if (str->isDependent() && !str->isAtomRef()) {
+    // For tenured dependent strings -> nursery base string edges, promote the
+    // base immediately and then use its old chars pointer to find the offset
+    // needed to update the dependent string's pointer if the base string moves
+    // its chars.
+    JSDependentString* dep = &str->asDependent();
+    JSLinearString* base = dep->rootBaseDuringMinorGC();
+    if (InCollectedNurseryRegion(base)) {
+      mover.promoteOrForward(base);
+      dep->updateToPromotedBase(base);
+    } else {
+      // Set base to (promoted) root base.
+      dep->setBase(base);
     }
+    return;
   }
 
   str->traceChildren(&mover);
-
-  return false;
-}
-
-static inline void TraceWholeCell(TenuringTracer& mover, BaseScript* script) {
-  script->traceChildren(&mover);
 }
 
 static inline void TraceWholeCell(TenuringTracer& mover,
@@ -436,38 +464,6 @@ bool TenuringTracer::traceBufferedCells(Arena* arena, ArenaCellSet* cells) {
   return false;
 }
 
-template <>
-bool TenuringTracer::traceBufferedCells<JSString>(Arena* arena,
-                                                  ArenaCellSet* cells) {
-  bool needsSweep = false;
-  for (size_t i = 0; i < MaxArenaCellIndex; i += cells->BitsPerWord) {
-    ArenaCellSet::WordT bitset = cells->getWord(i / cells->BitsPerWord);
-    ArenaCellSet::WordT tosweep = bitset;
-    while (bitset) {
-      size_t bit = i + js::detail::CountTrailingZeroes(bitset);
-      auto* cell = reinterpret_cast<JSString*>(uintptr_t(arena) +
-                                               ArenaCellIndexBytes * bit);
-      TenuringTracer::AutoPromotedAnyToNursery promotedToNursery(*this);
-      bool needsSweep = TraceWholeCell(*this, cell);
-      if (promotedToNursery) {
-        runtime()->gc.storeBuffer().putWholeCell(cell);
-      }
-      ArenaCellSet::WordT mask = bitset - 1;
-      bitset &= mask;
-      if (!needsSweep) {
-        tosweep &= mask;
-      }
-    }
-
-    cells->setWord(i / cells->BitsPerWord, tosweep);
-    if (tosweep) {
-      needsSweep = true;
-    }
-  }
-
-  return needsSweep;
-}
-
 bool ArenaCellSet::trace(TenuringTracer& mover) {
   check();
 
@@ -480,9 +476,6 @@ bool ArenaCellSet::trace(TenuringTracer& mover) {
       break;
     case JS::TraceKind::String:
       return mover.traceBufferedCells<JSString>(arena, this);
-      break;
-    case JS::TraceKind::Script:
-      return mover.traceBufferedCells<BaseScript>(arena, this);
       break;
     case JS::TraceKind::JitCode:
       return mover.traceBufferedCells<jit::JitCode>(arena, this);
@@ -509,16 +502,232 @@ void js::gc::StoreBuffer::WholeCellBuffer::trace(TenuringTracer& mover,
   }
 }
 
-// Sweep a tenured dependent string with a nursery base. The base chain will
-// have been collapsed to a single link before this string was added to the
-// sweep set, so only the simple case of a promoted dependent string with a
-// nursery base needs to be considered.
-template <typename CharT>
-void JSDependentString::updatePromotedBaseImpl() {
-  MOZ_ASSERT(!InCollectedNurseryRegion(this));
-  MOZ_ASSERT(IsInsideNursery(nurseryBaseOrRelocOverlay()));
+namespace js::gc {
+// StringRelocationOverlay assists with updating the string chars
+// pointers of dependent strings when their base strings are
+// deduplicated. It stores:
+//  - nursery chars of potential root base strings
+//  - the original pointer to the original root base (still in the nursery if it
+//    was originally in the nursery, even if it has been forwarded to a promoted
+//    string now).
+//
+// StringRelocationOverlay exploits the fact that the 3rd word of a JSString's
+// RelocationOverlay is not utilized and can be used to store extra information.
+class StringRelocationOverlay : public RelocationOverlay {
+  union {
+    // nursery chars of a root base
+    const JS::Latin1Char* nurseryCharsLatin1;
+    const char16_t* nurseryCharsTwoByte;
 
-  JSLinearString* base = nurseryBaseOrRelocOverlay();
+    // The nursery base can be forwarded, which becomes a string relocation
+    // overlay, or it is not yet forwarded and is simply the (nursery) base
+    // string.
+    JSLinearString* nurseryBaseOrRelocOverlay;
+
+    // For ropes. Present only to simplify the generated code.
+    JSString* unusedLeftChild;
+  };
+
+ public:
+  StringRelocationOverlay(Cell* dst, const JS::Latin1Char* chars)
+      : RelocationOverlay(dst), nurseryCharsLatin1(chars) {}
+
+  StringRelocationOverlay(Cell* dst, const char16_t* chars)
+      : RelocationOverlay(dst), nurseryCharsTwoByte(chars) {}
+
+  StringRelocationOverlay(Cell* dst, JSLinearString* origBase)
+      : RelocationOverlay(dst), nurseryBaseOrRelocOverlay(origBase) {}
+
+  StringRelocationOverlay(Cell* dst, JSString* origLeftChild)
+      : RelocationOverlay(dst), unusedLeftChild(origLeftChild) {}
+
+  static const StringRelocationOverlay* fromCell(const Cell* cell) {
+    return static_cast<const StringRelocationOverlay*>(cell);
+  }
+
+  static StringRelocationOverlay* fromCell(Cell* cell) {
+    return static_cast<StringRelocationOverlay*>(cell);
+  }
+
+  void setNext(StringRelocationOverlay* next) {
+    RelocationOverlay::setNext(next);
+  }
+
+  StringRelocationOverlay* next() const {
+    MOZ_ASSERT(isForwarded());
+    return (StringRelocationOverlay*)next_;
+  }
+
+  template <typename CharT>
+  MOZ_ALWAYS_INLINE const CharT* savedNurseryChars() const {
+    if constexpr (std::is_same_v<CharT, JS::Latin1Char>) {
+      return savedNurseryCharsLatin1();
+    } else {
+      return savedNurseryCharsTwoByte();
+    }
+  }
+
+  const MOZ_ALWAYS_INLINE JS::Latin1Char* savedNurseryCharsLatin1() const {
+    MOZ_ASSERT(!forwardingAddress()->as<JSString>()->hasBase());
+    return nurseryCharsLatin1;
+  }
+
+  const MOZ_ALWAYS_INLINE char16_t* savedNurseryCharsTwoByte() const {
+    MOZ_ASSERT(!forwardingAddress()->as<JSString>()->hasBase());
+    return nurseryCharsTwoByte;
+  }
+
+  JSLinearString* savedNurseryBaseOrRelocOverlay() const {
+    MOZ_ASSERT(forwardingAddress()->as<JSString>()->hasBase());
+    return nurseryBaseOrRelocOverlay;
+  }
+
+  // Transform a nursery string to a StringRelocationOverlay that is forwarded
+  // to a promoted string.
+  inline static StringRelocationOverlay* forwardDependentString(JSString* src,
+                                                                Cell* dst);
+
+  // Usually only called on non-dependent strings, except for the case where a
+  // dependent string is converted to a linear string.
+  static StringRelocationOverlay* forwardString(JSString* src, Cell* dst) {
+    MOZ_ASSERT(!src->isForwarded());
+    MOZ_ASSERT(!dst->isForwarded());
+
+    JS::AutoCheckCannotGC nogc;
+
+    // Initialize the overlay for a non-dependent string (that could be the root
+    // base of other strings), remember nursery non-inlined chars.
+    //
+    // Note that this will store the chars pointer even when it is known that it
+    // will never be used (!canOwnDependentChar()), or a left child pointer of
+    // a rope that will never get used, in order to simplify the generated code
+    // to do an unconditional store.
+    //
+    // All of these compile down to
+    //    header_.value_ = dst | 1; /* offset 0 */
+    //    StringRelocationOverlay.union = d.s.u2; /* offset 16 <- offset 8 */
+    if (src->isLinear()) {
+      if (src->hasTwoByteChars()) {
+        auto* nurseryCharsTwoByte = src->asLinear().twoByteChars(nogc);
+        return new (src) StringRelocationOverlay(dst, nurseryCharsTwoByte);
+      }
+      auto* nurseryCharsLatin1 = src->asLinear().latin1Chars(nogc);
+      return new (src) StringRelocationOverlay(dst, nurseryCharsLatin1);
+    } else {
+      return new (src) StringRelocationOverlay(
+          dst, dst->as<JSString>()->asRope().leftChild());
+    }
+  }
+};
+
+/* static */
+StringRelocationOverlay* StringRelocationOverlay::forwardDependentString(
+    JSString* src, Cell* dst) {
+  MOZ_ASSERT(src->isDependent());
+  MOZ_ASSERT(!src->isForwarded());
+  MOZ_ASSERT(!dst->isForwarded());
+  JSLinearString* origBase = src->asDependent().rootBaseDuringMinorGC();
+  return new (src) StringRelocationOverlay(dst, origBase);
+}
+
+}  // namespace js::gc
+
+JSLinearString* JSDependentString::rootBaseDuringMinorGC() {
+  JSLinearString* root = this;
+  while (MaybeForwarded(root)->hasBase()) {
+    if (root->isForwarded()) {
+      root = js::gc::StringRelocationOverlay::fromCell(root)
+                 ->savedNurseryBaseOrRelocOverlay();
+    } else {
+      // Possibly nursery or tenured string (not an overlay).
+      root = root->nurseryBaseOrRelocOverlay();
+    }
+  }
+  return root;
+}
+
+template <typename CharT>
+static bool PtrIsWithinRange(const CharT* ptr,
+                             const mozilla::Range<const CharT>& valid) {
+  return size_t(ptr - valid.begin().get()) <= valid.length();
+}
+
+/* static */
+template <typename CharT>
+void JSLinearString::maybeCloneCharsOnPromotionTyped(JSLinearString* str) {
+  MOZ_ASSERT(!InCollectedNurseryRegion(str), "str should have been promoted");
+  MOZ_ASSERT(str->isDependent());
+  JSLinearString* root = str->asDependent().rootBaseDuringMinorGC();
+  JS::AutoCheckCannotGC nogc;
+  const CharT* chars = str->chars<CharT>(nogc);
+
+  // If a dependent string is using a small percentage of its base string's
+  // data, and it is not (yet) known whether anything else might be keeping
+  // that base string alive, then clone the chars (and avoid marking the base)
+  // in order to hopefully allow the base to be freed (assuming nothing later
+  // during marking needs the base for other reasons).
+  //
+  // "Nothing else is yet known to keep the base alive" == "the base is not
+  // currently forwarded".
+  bool baseKnownLiveYet = IsForwarded(root);
+  bool cloneToSaveSpace =
+      !baseKnownLiveYet &&
+      JSDependentString::smallComparedToBase(str->length(), root->length());
+
+  if (!cloneToSaveSpace) {
+    // If the root base (going through the nursery) is going to be collected,
+    // then it will record enough information for this dependent string's chars
+    // to be updated.
+    if (InCollectedNurseryRegion(root)) {
+      return;  // Remain dependent.
+    }
+
+    // If the base has not moved its chars, continue using them.
+    if (PtrIsWithinRange(chars, root->range<CharT>(nogc))) {
+      return;  // Remain dependent.
+    }
+
+    // Must clone for correctness. The reachable root base string has already
+    // been promoted (and so can't store information needed for fixup) and the
+    // dependent string uses chars from somewhere else. Clone the chars before
+    // the minor GC ends and frees or reuses them.
+  }
+
+  // Clone the chars.
+  js::AutoEnterOOMUnsafeRegion oomUnsafe;
+  size_t len = str->length();
+  size_t nbytes = len * sizeof(CharT);
+  CharT* data =
+      str->zone()->pod_arena_malloc<CharT>(js::StringBufferArena, len);
+  if (!data) {
+    oomUnsafe.crash("cloning at-risk dependent string");
+  }
+  js_memcpy(data, chars, nbytes);
+
+  // Overwrite the dest string with a new linear string.
+  new (str) JSLinearString(data, len, false /* hasBuffer */);
+  if (str->isTenured()) {
+    str->zone()->addCellMemory(str, nbytes, js::MemoryUse::StringContents);
+  } else {
+    AutoEnterOOMUnsafeRegion oomUnsafe;
+    JSRuntime* rt = str->runtimeFromAnyThread();
+    if (!rt->gc.nursery().registerMallocedBuffer(data, nbytes)) {
+      oomUnsafe.crash("maybeCloneCharsOnPromotionTyped");
+    }
+  }
+}
+
+template void JSLinearString::maybeCloneCharsOnPromotionTyped<JS::Latin1Char>(
+    JSLinearString* str);
+template void JSLinearString::maybeCloneCharsOnPromotionTyped<char16_t>(
+    JSLinearString* str);
+
+// Update a promoted dependent string with a nursery base. The base chain will
+// have been collapsed to a single link, so only the simple case of a promoted
+// dependent string with a nursery base needs to be considered.
+template <typename CharT>
+void JSDependentString::updateToPromotedBaseImpl(JSLinearString* base) {
+  MOZ_ASSERT(!InCollectedNurseryRegion(this));
   MOZ_ASSERT(IsInsideNursery(base));
   MOZ_ASSERT(!Forwarded(base)->hasBase(), "base chain should be collapsed");
   MOZ_ASSERT(base->isForwarded(), "root base should be kept alive");
@@ -532,46 +741,22 @@ void JSDependentString::updatePromotedBaseImpl() {
   // effect.)
   const CharT* oldChars = JSString::nonInlineCharsRaw<CharT>();
   size_t offset = oldChars - oldBaseChars;
-  JSLinearString* tenuredBase = Forwarded(base);
-  MOZ_ASSERT(offset < tenuredBase->length());
+  JSLinearString* promotedBase = Forwarded(base);
+  MOZ_ASSERT(offset < promotedBase->length());
 
-  const CharT* newBaseChars = tenuredBase->JSString::nonInlineCharsRaw<CharT>();
-  relocateBaseAndChars(tenuredBase, newBaseChars, offset);
+  const CharT* newBaseChars =
+      promotedBase->JSString::nonInlineCharsRaw<CharT>();
+  relocateBaseAndChars(promotedBase, newBaseChars, offset);
 }
 
-inline void JSDependentString::updatePromotedBase() {
+inline void JSDependentString::updateToPromotedBase(JSLinearString* base) {
   // The base should have been traced.
-  MOZ_ASSERT_IF(!d.s.u3.base->isTenured(), d.s.u3.base->isForwarded());
+  MOZ_ASSERT(base->isForwarded() || !InCollectedNurseryRegion(base));
 
   if (hasTwoByteChars()) {
-    updatePromotedBaseImpl<char16_t>();
+    updateToPromotedBaseImpl<char16_t>(base);
   } else {
-    updatePromotedBaseImpl<JS::Latin1Char>();
-  }
-}
-
-static void SweepDependentStrings(Arena* arena, ArenaCellSet* cells) {
-  for (size_t i = 0; i < MaxArenaCellIndex; i += cells->BitsPerWord) {
-    ArenaCellSet::WordT bitset = cells->getWord(i / cells->BitsPerWord);
-    while (bitset) {
-      size_t bit = i + js::detail::CountTrailingZeroes(bitset);
-      auto* str = reinterpret_cast<JSString*>(uintptr_t(arena) +
-                                              ArenaCellIndexBytes * bit);
-      MOZ_ASSERT(str->isTenured());
-      str->asDependent().updatePromotedBase();
-      bitset &= bitset - 1;  // Clear the low bit.
-    }
-  }
-}
-
-/* static */
-void ArenaCellSet::sweepDependentStrings(ArenaCellSet* listHead) {
-  for (ArenaCellSet* cells = listHead; cells; cells = cells->next) {
-    Arena* arena = cells->arena;
-    arena->bufferedCells() = &ArenaCellSet::Empty;
-    MOZ_ASSERT(MapAllocToTraceKind(arena->getAllocKind()) ==
-               JS::TraceKind::String);
-    SweepDependentStrings(arena, cells);
+    updateToPromotedBaseImpl<JS::Latin1Char>(base);
   }
 }
 
@@ -774,14 +959,15 @@ JSObject* js::gc::TenuringTracer::promoteObjectSlow(JSObject* src) {
 
   size_t srcSize = Arena::thingSize(dstKind);
 
-  // Arrays and Tuples do not necessarily have the same AllocKind between src
-  // and dst. We deal with this by copying elements manually, possibly
-  // re-inlining them if there is adequate room inline in dst.
+  // Arrays do not necessarily have the same AllocKind between src and dst. We
+  // deal with this by copying elements manually, possibly re-inlining them if
+  // there is adequate room inline in dst.
   //
-  // For Arrays and Tuples we're reducing promotedSize to the smaller srcSize
-  // because moveElements() accounts for all Array or Tuple elements,
-  // even if they are inlined.
-  if (src->is<FixedLengthTypedArrayObject>()) {
+  // For Arrays we're reducing promotedSize to the smaller srcSize because
+  // moveElements() accounts for all Array elements, even if they are inlined.
+  if (src->is<ArrayObject>()) {
+    srcSize = sizeof(NativeObject);
+  } else if (src->is<FixedLengthTypedArrayObject>()) {
     auto* tarray = &src->as<FixedLengthTypedArrayObject>();
     // Typed arrays with inline data do not necessarily have the same
     // AllocKind between src and dst. The nursery does not allocate an
@@ -797,8 +983,6 @@ JSObject* js::gc::TenuringTracer::promoteObjectSlow(JSObject* src) {
       size_t headerSize = Arena::thingSize(srcKind);
       srcSize = headerSize + tarray->byteLength();
     }
-  } else if (src->canHaveFixedElements()) {
-    srcSize = sizeof(NativeObject);
   }
 
   promotedSize += srcSize;
@@ -904,8 +1088,8 @@ size_t js::gc::TenuringTracer::moveElements(NativeObject* dst,
 
   void* unshiftedHeader = src->getUnshiftedElementsHeader();
 
-  /* Unlike other objects, Arrays and Tuples can have fixed elements. */
-  if (src->canHaveFixedElements() && nslots <= GetGCKindSlots(dstKind)) {
+  /* Unlike other objects, Arrays can have fixed elements. */
+  if (src->is<ArrayObject>() && nslots <= GetGCKindSlots(dstKind)) {
     dst->as<NativeObject>().setFixedElements();
     js_memcpy(dst->getElementsHeader(), unshiftedHeader, allocSize);
     dst->elements_ += numShifted;
@@ -977,7 +1161,7 @@ JSString* js::gc::TenuringTracer::promoteString(JSString* src) {
         MOZ_ASSERT(src->canOwnDependentChars());
         MOZ_ASSERT(atom->canOwnDependentChars());
 
-        StringRelocationOverlay::forwardCell(src, atom);
+        StringRelocationOverlay::forwardString(src, atom);
         gcprobes::PromoteToTenured(src, atom);
         return atom;
       }
@@ -1004,22 +1188,35 @@ JSString* js::gc::TenuringTracer::promoteString(JSString* src) {
     if (p) {
       // Deduplicate to the looked-up string!
       dst = *p;
+      MOZ_ASSERT(dst->isTenured());  // Never deduplicate to a from-space cell.
       zone->stringStats.ref().noteDeduplicated(src->length(), src->allocSize());
-      StringRelocationOverlay::forwardCell(src, dst);
+      if (src->isDependent()) {
+        StringRelocationOverlay::forwardDependentString(&src->asDependent(),
+                                                        dst);
+      } else {
+        StringRelocationOverlay::forwardString(src, dst);
+      }
       gcprobes::PromoteToTenured(src, dst);
       return dst;
     }
 
     dst = allocString(src, zone, dstKind);
 
-    using DedupHasher [[maybe_unused]] = DeduplicationStringHasher<JSString*>;
-    MOZ_ASSERT(DedupHasher::hash(src) == DedupHasher::hash(dst),
-               "src and dst must have the same hash for lookupForAdd");
+    // In some situations, a string may be converted to a different type when
+    // tenured. Currently, this only happens when a dependent string's chain of
+    // base strings makes it impossible to recover its data, in which case it
+    // will get converted to a regular linear string. In order to avoid
+    // rehashing and some complexity, do not deduplicate to such strings.
+    if (dst->flags() == src->flags()) {
+      using DedupHasher [[maybe_unused]] = DeduplicationStringHasher<JSString*>;
+      MOZ_ASSERT(DedupHasher::hash(src) == DedupHasher::hash(dst),
+                 "src and dst must have the same hash for lookupForAdd");
 
-    if (!stringDeDupSet->add(p, dst)) {
-      // When there is oom caused by the stringDeDupSet, stop deduplicating
-      // strings.
-      stringDeDupSet.reset();
+      if (!stringDeDupSet->add(p, dst)) {
+        // When there is oom caused by the stringDeDupSet, stop deduplicating
+        // strings.
+        stringDeDupSet.reset();
+      }
     }
   } else {
     dst = allocString(src, zone, dstKind);
@@ -1029,18 +1226,45 @@ JSString* js::gc::TenuringTracer::promoteString(JSString* src) {
     }
   }
 
+  gcprobes::PromoteToTenured(src, dst);
   zone->stringStats.ref().noteTenured(src->allocSize());
 
-  auto* overlay = StringRelocationOverlay::forwardCell(src, dst);
-  MOZ_ASSERT_IF(dst->isTenured() && dst->isLinear(), dst->isDeduplicatable());
+  if (dst->isDependent()) {
+    // Dependent string:
+    //   - root base was tenured => done
+    //   - otherwise => promote the root base if it has not already been
+    //     promoted, then update the dependent string's chars pointer based on
+    //     the root base's original chars pointer (stored in its
+    //     StringRelocationOverlay during promotion)
 
-  if (dst->hasBase() || dst->isRope()) {
-    // dst or one of its leaves might have a base that will be deduplicated.
-    // Insert the overlay into the fixup list to relocate it later.
-    insertIntoStringFixupList(overlay);
+    JSLinearString* base = src->asDependent().rootBaseDuringMinorGC();
+
+    // Limited recursion: the root base cannot be dependent, so this will not
+    // recurse again.
+    JSString* promotedBase =
+        InCollectedNurseryRegion(base) ? promoteOrForward(base) : base;
+    MOZ_ASSERT(!promotedBase->isDependent());
+
+    dst->asDependent().setBase(&promotedBase->asLinear());
+    if (base != promotedBase) {
+      dst->asDependent().updateToPromotedBase(base);
+    }
+
+    StringRelocationOverlay::forwardDependentString(src, dst);
+  } else {
+    // Non-dependent string: store the original chars pointer in the nursery
+    // cell (for future promotions of any dependent strings that use this string
+    // as a base), then forward to the promoted cell.
+
+    StringRelocationOverlay::forwardString(src, dst);
+    if (dst->isRope()) {
+      // Enqueue for recursion through the children.
+      insertIntoStringFixupList(StringRelocationOverlay::fromCell(src));
+    }
   }
 
-  gcprobes::PromoteToTenured(src, dst);
+  MOZ_ASSERT_IF(dst->isTenured() && dst->isLinear(), dst->isDeduplicatable());
+
   return dst;
 }
 
@@ -1067,6 +1291,43 @@ JS::BigInt* js::gc::TenuringTracer::promoteBigInt(JS::BigInt* src) {
   return dst;
 }
 
+GetterSetter* js::gc::TenuringTracer::promoteGetterSetter(GetterSetter* src) {
+  MOZ_ASSERT(IsInsideNursery(src));
+  MOZ_ASSERT(!src->isForwarded());
+
+#ifdef JS_GC_ZEAL
+  if (promotionStats) {
+    promotionStats->notePromotedGetterSetter(src);
+  }
+#endif
+
+  AllocKind dstKind = AllocKind::GETTER_SETTER;
+  MOZ_ASSERT(src->getAllocKind() == dstKind);
+  Zone* zone = src->nurseryZone();
+
+  GetterSetter* dst = alloc<GetterSetter>(zone, dstKind, src);
+  promotedSize += moveGetterSetter(dst, src, dstKind);
+  promotedCells++;
+
+  RelocationOverlay::forwardCell(src, dst);
+  gcprobes::PromoteToTenured(src, dst);
+
+  // GetterSetter only has pointers to the getter/setter JSObjects. We can trace
+  // those directly without using a fixup list. AutoPromotedAnyToNursery will
+  // reset promotedToNursery to false so we save/restore the current value.
+  bool promotedToNurseryPrev = promotedToNursery;
+  {
+    AutoPromotedAnyToNursery promotedAnyToNursery(*this);
+    dst->traceChildren(this);
+    if (dst->isTenured() && promotedAnyToNursery) {
+      runtime()->gc.storeBuffer().putWholeCell(dst);
+    }
+  }
+  promotedToNursery = promotedToNurseryPrev;
+
+  return dst;
+}
+
 void js::gc::TenuringTracer::collectToObjectFixedPoint() {
   while (RelocationOverlay* p = objHead) {
     MOZ_ASSERT(nursery().inCollectedRegion(p));
@@ -1084,34 +1345,23 @@ void js::gc::TenuringTracer::collectToObjectFixedPoint() {
 }
 
 void js::gc::TenuringTracer::collectToStringFixedPoint() {
+  // Recurse through ropes.
+
   while (StringRelocationOverlay* p = stringHead) {
     MOZ_ASSERT(nursery().inCollectedRegion(p));
     stringHead = stringHead->next();
 
-    auto* str = static_cast<JSString*>(p->forwardingAddress());
-    MOZ_ASSERT_IF(IsInsideNursery(str), !nursery().inCollectedRegion(str));
+    auto* promotedStr = static_cast<JSString*>(p->forwardingAddress());
+    MOZ_ASSERT_IF(IsInsideNursery(promotedStr),
+                  !nursery().inCollectedRegion(promotedStr));
 
     // To ensure the NON_DEDUP_BIT was reset properly.
-    MOZ_ASSERT(!str->isAtom());
-    MOZ_ASSERT_IF(str->isTenured() && str->isLinear(), str->isDeduplicatable());
+    MOZ_ASSERT(!promotedStr->isAtom());
+    MOZ_ASSERT_IF(promotedStr->isTenured() && promotedStr->isLinear(),
+                  promotedStr->isDeduplicatable());
 
-    if (str->isDependent()) {
-      str->traceBaseAndRecordOldRoot(this);
-      if (!str->nurseryBaseOrRelocOverlay()->isTenured()) {
-        // If the root base (which owns str's characters) is a nursery string,
-        // then update the chars and update the base pointer to the forwarded
-        // version.
-        str->asDependent().updatePromotedBase();
-      }
-    } else {
-      traceString(str);
-    }
-
-    if (str->hasBase()) {
-      MOZ_ASSERT(!str->base()->isForwarded());
-      MOZ_ASSERT_IF(!str->base()->isTenured(),
-                    !nursery().inCollectedRegion(str->base()));
-    }
+    MOZ_ASSERT(promotedStr->isRope());
+    traceString(promotedStr);
   }
 }
 
@@ -1125,6 +1375,20 @@ size_t js::gc::TenuringTracer::moveString(JSString* dst, JSString* src,
   // Copy the Cell contents.
   MOZ_ASSERT(OffsetToChunkEnd(src) >= size);
   js_memcpy(dst, src, size);
+
+  if (src->isDependent()) {
+    // Special case: if src is a dependent string whose base chain goes through
+    // tenured space, then it may point to dead chars -- either because its root
+    // base was deduplicated, or its root base's chars were allocated in the
+    // nursery. If src's chars pointer will no longer be valid once minor GC is
+    // complete, give it its own copy of the chars.
+    //
+    // Note that the size of any cloned data is *not* included in the "number
+    // of bytes tenured" return value here, since the donor owns them and may
+    // still be alive and we don't want to double-count.
+    JSLinearString::maybeCloneCharsOnPromotion(&dst->asDependent());
+    return size;
+  }
 
   if (!src->hasOutOfLineChars()) {
     return size;
@@ -1185,12 +1449,28 @@ size_t js::gc::TenuringTracer::moveBigInt(JS::BigInt* dst, JS::BigInt* src,
   size_t nbytes = length * sizeof(JS::BigInt::Digit);
 
   Nursery::WasBufferMoved result =
-      nursery().maybeMoveNurseryOrMallocBufferOnPromotion(
-          &dst->heapDigits_, dst, nbytes, MemoryUse::BigIntDigits);
+      nursery().maybeMoveBufferOnPromotion(&dst->heapDigits_, dst, nbytes);
   if (result == Nursery::BufferMoved) {
     nursery().setDirectForwardingPointer(src->heapDigits_, dst->heapDigits_);
     size += nbytes;
   }
+
+  return size;
+}
+
+size_t js::gc::TenuringTracer::moveGetterSetter(GetterSetter* dst,
+                                                GetterSetter* src,
+                                                AllocKind dstKind) {
+  size_t size = Arena::thingSize(dstKind);
+
+  MOZ_ASSERT_IF(dst->isTenured(),
+                dst->asTenured().getAllocKind() == src->getAllocKind());
+
+  // Copy the Cell contents.
+  MOZ_ASSERT(OffsetToChunkEnd(src) >= size);
+  js_memcpy(dst, src, size);
+
+  MOZ_ASSERT(dst->zone() == src->nurseryZone());
 
   return size;
 }
@@ -1296,12 +1576,16 @@ void PromotionStats::notePromotedString(JSString* str) {
 
 void PromotionStats::notePromotedBigInt(JS::BigInt* bi) { bigIntCount++; }
 
+void PromotionStats::notePromotedGetterSetter(GetterSetter* gs) {
+  getterSetterCount++;
+}
+
 bool PromotionStats::shouldPrintReport() const {
   if (hadOOM) {
     return false;
   }
 
-  return objectCount || stringCount || bigIntCount;
+  return objectCount || stringCount || bigIntCount || getterSetterCount;
 }
 
 void PromotionStats::printReport(JSContext* cx,
@@ -1318,6 +1602,10 @@ void PromotionStats::printReport(JSContext* cx,
 
   if (bigIntCount) {
     fprintf(stderr, "  BigInts promoted: %zu\n", bigIntCount);
+  }
+
+  if (getterSetterCount) {
+    fprintf(stderr, "  GetterSetters promoted: %zu\n", getterSetterCount);
   }
 }
 
@@ -1435,9 +1723,11 @@ template <typename T>
 inline void MinorSweepingTracer::onEdge(T** thingp, const char* name) {
   T* thing = *thingp;
   if (thing->isTenured()) {
+    MOZ_ASSERT(!IsForwarded(thing));
     return;
   }
 
+  MOZ_ASSERT(runtime()->gc.nursery().inCollectedRegion(thing));
   if (IsForwarded(thing)) {
     *thingp = Forwarded(thing);
     return;

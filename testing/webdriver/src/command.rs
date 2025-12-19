@@ -81,6 +81,8 @@ pub enum WebDriverCommand<T: WebDriverExtensionCommand> {
     SetPermission(SetPermissionParameters),
     Status,
     Extension(T),
+    GPCSetGlobalPrivacyControl(GlobalPrivacyControlParameters),
+    GPCGetGlobalPrivacyControl,
     WebAuthnAddVirtualAuthenticator(AuthenticatorParameters),
     WebAuthnRemoveVirtualAuthenticator,
     WebAuthnAddCredential(CredentialParameters),
@@ -413,6 +415,10 @@ impl<U: WebDriverExtensionRoute> WebDriverMessage<U> {
             }
             Route::Status => WebDriverCommand::Status,
             Route::Extension(ref extension) => extension.command(params, &body_data)?,
+            Route::GPCGetGlobalPrivacyControl => WebDriverCommand::GPCGetGlobalPrivacyControl,
+            Route::GPCSetGlobalPrivacyControl => {
+                WebDriverCommand::GPCSetGlobalPrivacyControl(serde_json::from_str(raw_body)?)
+            }
             Route::WebAuthnAddVirtualAuthenticator => {
                 WebDriverCommand::WebAuthnAddVirtualAuthenticator(serde_json::from_str(raw_body)?)
             }
@@ -713,6 +719,11 @@ pub struct AuthenticatorParameters {
 pub struct UserVerificationParameters {
     #[serde(rename = "isUserVerified")]
     pub is_user_verified: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct GlobalPrivacyControlParameters {
+    pub gpc: bool,
 }
 
 fn deserialize_to_positive_f64<'de, D>(deserializer: D) -> Result<f64, D::Error>

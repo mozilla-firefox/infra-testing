@@ -64,13 +64,11 @@
 
 #include "prenv.h"
 #include "mozilla/PodOperations.h"
-#include "mozilla/DebugOnly.h"
 #if defined(GP_OS_linux) || defined(GP_OS_android)
 #  include "common/linux/breakpad_getcontext.h"
 #endif
 
 #include <string.h>
-#include <list>
 
 using namespace mozilla;
 

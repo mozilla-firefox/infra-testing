@@ -8,15 +8,16 @@
 #![deny(unsafe_code)]
 
 use crate::context::QuirksMode;
+use crate::derives::*;
 use crate::dom::{TDocument, TElement, TNode};
 use crate::invalidation::element::element_wrapper::{ElementSnapshot, ElementWrapper};
 use crate::invalidation::element::restyle_hints::RestyleHint;
 use crate::media_queries::Device;
 use crate::selector_parser::{SelectorImpl, Snapshot, SnapshotMap};
 use crate::shared_lock::SharedRwLockReadGuard;
-use crate::stylesheets::{CssRule, StylesheetInDocument};
-use crate::stylesheets::{EffectiveRules, EffectiveRulesIterator};
 use crate::simple_buckets_map::SimpleBucketsMap;
+use crate::stylesheets::{CssRule, CssRuleRef, CustomMediaMap, StylesheetInDocument};
+use crate::stylesheets::{EffectiveRules, EffectiveRulesIterator};
 use crate::values::AtomIdent;
 use crate::LocalName as SelectorLocalName;
 use selectors::parser::{Component, LocalName, Selector};
@@ -129,6 +130,7 @@ impl StylesheetInvalidationSet {
     pub fn collect_invalidations_for<S>(
         &mut self,
         device: &Device,
+        custom_media: &CustomMediaMap,
         stylesheet: &S,
         guard: &SharedRwLockReadGuard,
     ) where
@@ -140,19 +142,26 @@ impl StylesheetInvalidationSet {
             return;
         }
 
-        if !stylesheet.enabled() || !stylesheet.is_effective_for_device(device, guard) {
+        if !stylesheet.enabled() || !stylesheet.is_effective_for_device(device, custom_media, guard)
+        {
             debug!(" > Stylesheet was not effective");
             return; // Nothing to do here.
         }
 
         let quirks_mode = device.quirks_mode();
-        for rule in stylesheet.effective_rules(device, guard) {
+        for rule in stylesheet
+            .contents(guard)
+            .effective_rules(device, custom_media, guard)
+        {
             self.collect_invalidations_for_rule(
                 rule,
                 guard,
                 device,
                 quirks_mode,
                 /* is_generic_change = */ false,
+                // Note(dshin): Technically, the iterator should provide the ancestor chain as it
+                // traverses down, but it shouldn't make a difference.
+                &[],
             );
             if self.fully_invalid {
                 break;
@@ -161,7 +170,10 @@ impl StylesheetInvalidationSet {
 
         self.shrink_if_needed();
 
-        debug!(" > resulting class invalidations: {:?}", self.buckets.classes);
+        debug!(
+            " > resulting class invalidations: {:?}",
+            self.buckets.classes
+        );
         debug!(" > resulting id invalidations: {:?}", self.buckets.ids);
         debug!(
             " > resulting local name invalidations: {:?}",
@@ -193,8 +205,7 @@ impl StylesheetInvalidationSet {
 
     /// Returns whether there's no invalidation to process.
     pub fn is_empty(&self) -> bool {
-        !self.fully_invalid &&
-            self.buckets.is_empty()
+        !self.fully_invalid && self.buckets.is_empty()
     }
 
     fn invalidation_kind_for<E>(
@@ -510,11 +521,7 @@ impl StylesheetInvalidationSet {
         true
     }
 
-    /// Collects invalidations for a given CSS rule, if not fully invalid
-    /// already.
-    ///
-    /// TODO(emilio): we can't check whether the rule is inside a non-effective
-    /// subtree, we potentially could do that.
+    /// Collects invalidations for a given CSS rule, if not fully invalid already.
     pub fn rule_changed<S>(
         &mut self,
         stylesheet: &S,
@@ -522,7 +529,9 @@ impl StylesheetInvalidationSet {
         guard: &SharedRwLockReadGuard,
         device: &Device,
         quirks_mode: QuirksMode,
+        custom_media: &CustomMediaMap,
         change_kind: RuleChangeKind,
+        ancestors: &[CssRuleRef],
     ) where
         S: StylesheetInDocument,
     {
@@ -531,9 +540,18 @@ impl StylesheetInvalidationSet {
             return;
         }
 
-        if !stylesheet.enabled() || !stylesheet.is_effective_for_device(device, guard) {
+        if !stylesheet.enabled() || !stylesheet.is_effective_for_device(device, custom_media, guard)
+        {
             debug!(" > Stylesheet was not effective");
             return; // Nothing to do here.
+        }
+
+        if ancestors
+            .iter()
+            .any(|r| !EffectiveRules::is_effective(guard, device, quirks_mode, custom_media, r))
+        {
+            debug!(" > Ancestor rules not effective");
+            return;
         }
 
         // If the change is generic, we don't have the old rule information to know e.g., the old
@@ -541,16 +559,31 @@ impl StylesheetInvalidationSet {
         // aggressively. That only applies to the changed rules, for other rules we can just
         // collect invalidations as normal.
         let is_generic_change = change_kind == RuleChangeKind::Generic;
-        self.collect_invalidations_for_rule(rule, guard, device, quirks_mode, is_generic_change);
+        self.collect_invalidations_for_rule(
+            rule,
+            guard,
+            device,
+            quirks_mode,
+            is_generic_change,
+            ancestors,
+        );
         if self.fully_invalid {
             return;
         }
 
-        if !is_generic_change && !EffectiveRules::is_effective(guard, device, quirks_mode, rule) {
+        if !is_generic_change
+            && !EffectiveRules::is_effective(guard, device, quirks_mode, custom_media, &rule.into())
+        {
             return;
         }
 
-        let rules = EffectiveRulesIterator::effective_children(device, quirks_mode, guard, rule);
+        let rules = EffectiveRulesIterator::effective_children(
+            device,
+            quirks_mode,
+            custom_media,
+            guard,
+            rule,
+        );
         for rule in rules {
             self.collect_invalidations_for_rule(
                 rule,
@@ -558,6 +591,8 @@ impl StylesheetInvalidationSet {
                 device,
                 quirks_mode,
                 /* is_generic_change = */ false,
+                // Note(dshin): Technically, the iterator should provide the ancestor chain as it traverses down, which sould be appended to `ancestors`, but it shouldn't matter.
+                &[],
             );
             if self.fully_invalid {
                 break;
@@ -573,6 +608,7 @@ impl StylesheetInvalidationSet {
         device: &Device,
         quirks_mode: QuirksMode,
         is_generic_change: bool,
+        ancestors: &[CssRuleRef],
     ) {
         use crate::stylesheets::CssRule::*;
         debug!("StylesheetInvalidationSet::collect_invalidations_for_rule");
@@ -598,7 +634,9 @@ impl StylesheetInvalidationSet {
                 }
             },
             NestedDeclarations(..) => {
-                // Our containing style rule would handle invalidation for us.
+                if ancestors.iter().any(|r| matches!(r, CssRuleRef::Scope(_))) {
+                    self.invalidate_fully();
+                }
             },
             Namespace(..) => {
                 // It's not clear what handling changes for this correctly would
@@ -609,8 +647,8 @@ impl StylesheetInvalidationSet {
                 // invalidate fully.
                 return self.invalidate_fully();
             },
-            Document(..) | Import(..) | Media(..) | Supports(..) | Container(..) |
-            LayerBlock(..) | StartingStyle(..) => {
+            Document(..) | Import(..) | Media(..) | Supports(..) | Container(..)
+            | LayerBlock(..) | StartingStyle(..) => {
                 // Do nothing, relevant nested rules are visited as part of rule iteration.
             },
             FontFace(..) => {
@@ -648,6 +686,13 @@ impl StylesheetInvalidationSet {
             PositionTry(..) => {
                 // Potential change in sizes/positions of anchored elements. TODO(dshin, bug 1910616):
                 // We should probably make an effort to see if this position-try is referenced.
+                self.invalidate_fully();
+            },
+            CustomMedia(..) => {
+                // @custom-media might be referenced by other rules which we can't get a hand on in
+                // here, so we don't know which elements are affected.
+                //
+                // TODO: Maybe track referenced custom-media rules like we do for @keyframe?
                 self.invalidate_fully();
             },
         }

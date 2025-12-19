@@ -176,6 +176,7 @@ partial interface HTMLInputElement {
   [ChromeOnly, NewObject]
   Promise<sequence<(File or Directory)>> getFilesAndDirectories();
 
+  [ChromeOnly]
   boolean mozIsTextField(boolean aExcludePassword);
 
   [ChromeOnly]
@@ -236,8 +237,6 @@ HTMLInputElement includes MozImageLoadingContent;
 
 HTMLInputElement includes PopoverInvokerElement;
 
-HTMLInputElement includes InvokerElement;
-
 // https://wicg.github.io/entries-api/#idl-index
 partial interface HTMLInputElement {
   [Pref="dom.webkitBlink.filesystem.enabled", Frozen, Cached, Pure]
@@ -272,13 +271,10 @@ partial interface HTMLInputElement {
   undefined openDateTimePicker(optional DateTimeValue initialValue = {});
 
   [Func="IsChromeOrUAWidget"]
-  undefined updateDateTimePicker(optional DateTimeValue value = {});
-
-  [Func="IsChromeOrUAWidget"]
   undefined closeDateTimePicker();
 
   [Func="IsChromeOrUAWidget"]
-  undefined setDateTimePickerState(boolean aIsOpen);
+  undefined setOpenState(boolean aIsOpen);
 
   [Func="IsChromeOrUAWidget"]
   undefined setFocusState(boolean aIsFocused);

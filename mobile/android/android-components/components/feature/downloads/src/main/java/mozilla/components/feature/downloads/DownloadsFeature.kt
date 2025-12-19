@@ -38,16 +38,25 @@ import mozilla.components.lib.state.ext.flowScoped
 import mozilla.components.support.base.feature.LifecycleAwareFeature
 import mozilla.components.support.base.feature.OnNeedToRequestPermissions
 import mozilla.components.support.base.feature.PermissionsFeature
+import mozilla.components.support.base.log.logger.Logger
 import mozilla.components.support.ktx.android.content.appName
 import mozilla.components.support.ktx.android.content.isPermissionGranted
 import mozilla.components.support.ktx.kotlin.isSameOriginAs
 import mozilla.components.support.utils.Browsers
+import mozilla.components.support.utils.ext.packageManagerCompatHelper
 
 /**
  * The name of the file to be downloaded.
  */
 @JvmInline
 value class Filename(val value: String)
+
+/**
+ * The name of a file that was already downloaded with the same ETag.
+ * The value will be `null` if no such file exists.
+ */
+@JvmInline
+value class FileNameOfDuplicateIfAlreadyDownloaded(val value: String?)
 
 /**
  * The size of the file to be downloaded expressed as the number of `bytes`.
@@ -81,6 +90,12 @@ value class PositiveActionCallback(val value: () -> Unit)
 value class NegativeActionCallback(val value: () -> Unit)
 
 /**
+ * Callback for when the open file button was tapped.
+ */
+@JvmInline
+value class OpenFileCallback(val value: () -> Unit)
+
+/**
  * Feature implementation to provide download functionality for the selected
  * session. The feature will subscribe to the selected session and listen
  * for downloads.
@@ -94,15 +109,18 @@ value class NegativeActionCallback(val value: () -> Unit)
  * responsible for performing the downloads.
  * @property store a reference to the application's [BrowserStore].
  * @property useCases [DownloadsUseCases] instance for consuming processed downloads.
+ * @property fileSystemHelper A helper for file system operations.
  * @property fragmentManager a reference to a [FragmentManager]. If a fragment
  * manager is provided, a dialog will be shown before every download.
  * @property promptsStyling styling properties for the dialog.
+ * @property onDownloadStartedListener a callback invoked when a download is started.
  * @property shouldForwardToThirdParties Indicates if downloads should be forward to third party apps,
  * if there are multiple apps a chooser dialog will shown.
  * @property customFirstPartyDownloadDialog An optional delegate for showing a dialog for a download
  * that will be processed by the current application.
  * @property customThirdPartyDownloadDialog An optional delegate for showing a dialog for a download
  * that can be processed by multiple installed applications including the current one.
+ * @property fileHasNotEnoughStorageDialog A callback invoked when there is not enough storage space.
  */
 @Suppress("LargeClass")
 class DownloadsFeature(
@@ -110,18 +128,32 @@ class DownloadsFeature(
     private val store: BrowserStore,
     @get:VisibleForTesting(otherwise = PRIVATE)
     internal val useCases: DownloadsUseCases,
+    private val fileSystemHelper: FileSystemHelper = DefaultFileSystemHelper(),
     override var onNeedToRequestPermissions: OnNeedToRequestPermissions = { },
     onDownloadStopped: onDownloadStopped = noop,
     private val downloadManager: DownloadManager = AndroidDownloadManager(applicationContext, store),
     private val tabId: String? = null,
     private val fragmentManager: FragmentManager? = null,
     private val promptsStyling: PromptsStyling? = null,
+    private val onDownloadStartedListener: ((String) -> Unit) = {},
     private val shouldForwardToThirdParties: () -> Boolean = { false },
-    private val customFirstPartyDownloadDialog:
-    ((Filename, ContentSize, PositiveActionCallback, NegativeActionCallback) -> Unit)? = null,
-    private val customThirdPartyDownloadDialog:
-    ((ThirdPartyDownloaderApps, ThirdPartyDownloaderAppChosenCallback, NegativeActionCallback) -> Unit)? = null,
+    private val customFirstPartyDownloadDialog: (
+        (
+        Filename,
+        ContentSize,
+        FileNameOfDuplicateIfAlreadyDownloaded,
+        PositiveActionCallback,
+        NegativeActionCallback,
+        OpenFileCallback,
+    ) -> Unit
+    )? = null,
+    private val customThirdPartyDownloadDialog: (
+        (ThirdPartyDownloaderApps, ThirdPartyDownloaderAppChosenCallback, NegativeActionCallback) -> Unit
+    )? = null,
+    private val fileHasNotEnoughStorageDialog: ((Filename) -> Unit) = {},
 ) : LifecycleAwareFeature, PermissionsFeature {
+
+    private val logger = Logger("DownloadsFeature")
 
     var onDownloadStopped: onDownloadStopped
         get() = downloadManager.onDownloadStopped
@@ -143,7 +175,6 @@ class DownloadsFeature(
      * Starts observing downloads on the selected session and sends them to the [DownloadManager]
      * to be processed.
      */
-    @Suppress("Deprecation")
     override fun start() {
         // Dismiss the previous prompts when the user navigates to another site.
         // This prevents prompts from the previous page from covering content.
@@ -225,15 +256,24 @@ class DownloadsFeature(
             if (applicationContext.isPermissionGranted(downloadManager.permissions.asIterable())) {
                 when {
                     customFirstPartyDownloadDialog != null && !download.skipConfirmation -> {
+                        val downloadWithSameEtag = findDownloadWithSameEtag(download)
                         customFirstPartyDownloadDialog.invoke(
                             Filename(download.realFilenameOrGuessed),
                             ContentSize(download.contentLength ?: 0),
+                            FileNameOfDuplicateIfAlreadyDownloaded(downloadWithSameEtag?.fileName),
                             PositiveActionCallback {
                                 startDownload(download)
                                 useCases.consumeDownload.invoke(tab.id, download.id)
                             },
                             NegativeActionCallback {
                                 useCases.cancelDownloadRequest.invoke(tab.id, download.id)
+                            },
+                            OpenFileCallback {
+                                useCases.openAlreadyDownloadedFile.invoke(
+                                    tab.id,
+                                    download,
+                                    downloadWithSameEtag?.filePath,
+                                )
                             },
                         )
                         false
@@ -257,9 +297,33 @@ class DownloadsFeature(
     }
 
     @VisibleForTesting
+    internal fun findDownloadWithSameEtag(download: DownloadState): DownloadState? =
+        store.state
+            .downloads
+            .values
+            .filter {
+                it.url == download.url &&
+                    it.status == DownloadState.Status.COMPLETED &&
+                    it.etag == download.etag &&
+                    fileSystemHelper.fileExists(it.filePath)
+            }
+            .minByOrNull { it.createdTime }
+
+    @VisibleForTesting
     internal fun startDownload(download: DownloadState): Boolean {
+        fileSystemHelper.createDirectoryIfNotExists(download.directoryPath)
+
+        if (isDownloadBiggerThanAvailableSpace(download)) {
+            fileHasNotEnoughStorageDialog.invoke(
+                Filename(download.realFilenameOrGuessed),
+            )
+            download.sessionId?.let { useCases.cancelDownloadRequest.invoke(it, download.id) }
+            return false
+        }
+
         val id = downloadManager.download(download)
         return if (id != null) {
+            onDownloadStartedListener.invoke(download.id)
             true
         } else {
             showDownloadNotSupportedError()
@@ -306,7 +370,6 @@ class DownloadsFeature(
         ).show()
     }
 
-    @VisibleForTesting(otherwise = PRIVATE)
     internal fun showDownloadDialog(
         tab: SessionState,
         download: DownloadState,
@@ -333,6 +396,20 @@ class DownloadsFeature(
         return findPreviousDownloadDialogFragment() ?: SimpleDownloadDialogFragment.newInstance(
             promptsStyling = promptsStyling,
         )
+    }
+
+    @VisibleForTesting
+    internal fun isDownloadBiggerThanAvailableSpace(download: DownloadState): Boolean {
+        download.contentLength?.let { downloadLength ->
+            if (fileSystemHelper.isDirectory(download.directoryPath)) {
+                try {
+                    return downloadLength > fileSystemHelper.availableBytesInDirectory(download.directoryPath)
+                } catch (e: IllegalArgumentException) {
+                    logger.error("Invalid path for StatFs: ${download.directoryPath}", e)
+                }
+            }
+        }
+        return false
     }
 
     @VisibleForTesting
@@ -416,7 +493,7 @@ class DownloadsFeature(
      */
     @VisibleForTesting
     internal fun getDownloaderApps(context: Context, download: DownloadState): List<DownloaderApp> {
-        val packageManager = context.packageManager
+        val packageManager = context.packageManagerCompatHelper
 
         val browsers = Browsers.findResolvers(context, packageManager, includeThisApp = true)
             .associateBy { it.activityInfo.identifier }
@@ -467,10 +544,8 @@ class DownloadsFeature(
     data class PromptsStyling(
         val gravity: Int,
         val shouldWidthMatchParent: Boolean = false,
-        @ColorRes
-        val positiveButtonBackgroundColor: Int? = null,
-        @ColorRes
-        val positiveButtonTextColor: Int? = null,
+        @param:ColorRes val positiveButtonBackgroundColor: Int? = null,
+        @param:ColorRes val positiveButtonTextColor: Int? = null,
         val positiveButtonRadius: Float? = null,
         val fileNameEndMargin: Int? = null,
     )

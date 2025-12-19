@@ -57,8 +57,11 @@ class Worker(Enum):
     """
 
     RESULTS_DIR = "/builds/worker/artifacts/results"
-    BASELINE_PROFILE_DEST = "/builds/worker/artifacts/build/baseline-prof.txt"
-    ARTIFACTS_DIR = "/builds/worker/artifacts"
+    BASELINE_PROFILE_DIR = "/builds/worker/workspace/baselineProfile"
+    MACROBENCHMARK_DEST = "/builds/worker/artifacts/build/macrobenchmark.json"
+    MACROBENCHMARK_DIR = "/builds/worker/artifacts/build/macrobenchmark"
+    MEMORY_LEAKS_DIR = "/builds/worker/artifacts/build/memory_leaks"
+    ARTIFACTS_DIR = "/builds/worker/artifacts/build"
 
 
 class ArtifactType(Enum):
@@ -70,7 +73,11 @@ class ArtifactType(Enum):
         "artifacts/sdcard/Android/media/org.mozilla.fenix.benchmark/*-baseline-prof.txt"
     )
     CRASH_LOG = "data_app_crash*.txt"
+    MACROBENCHMARK = (
+        "artifacts/sdcard/Android/media/org.mozilla.fenix.benchmark/*benchmarkData.json"
+    )
     MATRIX_IDS = "matrix_ids.json"
+    MEMORY_LEAKS = "artifacts/sdcard/Download/memory_leaks/*.txt"
 
 
 def load_matrix_ids_artifact(matrix_file_path):
@@ -130,16 +137,16 @@ def fetch_artifacts(root_gcs_path, device, artifact_pattern):
     Returns:
         list: A list of artifacts matching the specified pattern.
     """
-    gcs_path_pattern = f"gs://{root_gcs_path.rstrip('/')}/{device}/{artifact_pattern}"
+    gcs_path = f"gs://{root_gcs_path.rstrip('/')}/{device}*/{artifact_pattern}"
 
     try:
-        result = subprocess.check_output(["gsutil", "ls", gcs_path_pattern], text=True)
+        result = subprocess.check_output(["gsutil", "ls", gcs_path], text=True)
         return result.splitlines()
     except subprocess.CalledProcessError as e:
         if "AccessDeniedException" in e.output:
-            logging.error(f"Permission denied for GCS path: {gcs_path_pattern}")
+            logging.error(f"Permission denied for GCS path: {gcs_path}")
         elif "network error" in e.output.lower():
-            logging.error(f"Network error accessing GCS path: {gcs_path_pattern}")
+            logging.error(f"Network error accessing GCS path: {gcs_path}")
         else:
             logging.error(f"Failed to list files: {e.output}")
         return []
@@ -182,7 +189,10 @@ def gsutil_cp(artifact, dest):
     logging.info(f"Copying {artifact} to {dest}")
     try:
         result = subprocess.run(
-            ["gsutil", "cp", artifact, dest], capture_output=True, text=True
+            ["gsutil", "cp", artifact, dest],
+            check=False,
+            capture_output=True,
+            text=True,
         )
         if result.returncode != 0:
             if "AccessDeniedException" in result.stderr:
@@ -233,27 +243,96 @@ def process_artifacts(artifact_type):
     )
 
     if not device_names:
-        exit_with_error("Could not find any device in matrix file.")
+        if artifact_type == ArtifactType.CRASH_LOG:
+            logging.info(
+                "No devices with failure outcomes found - skipping crash log collection."
+            )
+            return
+        else:
+            exit_with_error("Could not find any device in matrix file.")
 
     root_gcs_path = get_gcs_path(matrix_ids_artifact)
     if not root_gcs_path:
         exit_with_error("Could not find root GCS path in matrix file.")
 
     if artifact_type == ArtifactType.BASELINE_PROFILE:
-        return process_baseline_profile_artifact(root_gcs_path, device_names)
+        return process_baseline_profile_artifacts(root_gcs_path, device_names)
+    elif artifact_type == ArtifactType.MACROBENCHMARK:
+        return process_macrobenchmark_artifact(root_gcs_path, device_names)
+    elif artifact_type == ArtifactType.MEMORY_LEAKS:
+        return process_memory_leaks_artifacts(root_gcs_path, device_names)
     else:
         return process_crash_artifacts(root_gcs_path, device_names)
 
 
-def process_baseline_profile_artifact(root_gcs_path, device_names):
+def process_baseline_profile_artifacts(root_gcs_path, device_names):
     device = device_names[0]
-    artifact = fetch_artifacts(
+    artifacts = fetch_artifacts(
         root_gcs_path, device, ArtifactType.BASELINE_PROFILE.value
-    )[0]
-    if not artifact:
-        exit_with_error(f"No artifacts found for device: {device}")
+    )
+    if not artifacts:
+        exit_with_error(f"No baseline profile artifacts found for device: {device}")
 
-    gsutil_cp(artifact, Worker.BASELINE_PROFILE_DEST.value)
+    downloaded_files = []
+
+    for artifact in artifacts:
+        base_name = os.path.basename(artifact)
+        dest_path = os.path.join(Worker.BASELINE_PROFILE_DIR.value, base_name)
+        count = 1
+
+        # If file exists, find a unique name
+        while os.path.exists(dest_path):
+            name, extension = os.path.splitext(base_name)
+            dest_path = os.path.join(
+                Worker.BASELINE_PROFILE_DIR.value, f"{name}_{count}{extension}"
+            )
+            count += 1
+
+        gsutil_cp(artifact, dest_path)
+        downloaded_files.append(dest_path)
+
+
+def process_macrobenchmark_artifact(root_gcs_path, device_names):
+    device = device_names[0]
+    artifacts = fetch_artifacts(
+        root_gcs_path, device, ArtifactType.MACROBENCHMARK.value
+    )
+    if not artifacts:
+        exit_with_error(f"No macrobenchmark artifacts found for device: {device}")
+
+    downloaded_files = []
+
+    for artifact in artifacts:
+        base_name = os.path.basename(artifact)
+        ## TODO: Maybe get the name from the shard number
+        dest_path = os.path.join(Worker.MACROBENCHMARK_DIR.value, base_name)
+        count = 1
+
+        # If file exists, find a unique name
+        while os.path.exists(dest_path):
+            name, extension = os.path.splitext(base_name)
+            dest_path = os.path.join(
+                Worker.MACROBENCHMARK_DIR.value, f"{name}_{count}{extension}"
+            )
+            count += 1
+
+        gsutil_cp(artifact, dest_path)
+        downloaded_files.append(dest_path)
+
+
+def process_memory_leaks_artifacts(root_gcs_path, device_names):
+    for device in device_names:
+        artifacts = fetch_artifacts(
+            root_gcs_path, device, ArtifactType.MEMORY_LEAKS.value
+        )
+        if not artifacts:
+            logging.info(f"No artifacts found for device: {device}")
+            continue
+        for artifact in artifacts:
+            base_name = os.path.basename(artifact)
+            dest_path = os.path.join(Worker.MEMORY_LEAKS_DIR.value, f"leak_{base_name}")
+
+            gsutil_cp(artifact, dest_path)
 
 
 def process_crash_artifacts(root_gcs_path, failed_device_names):
@@ -289,10 +368,16 @@ def main():
     artifact_type_arg = sys.argv[1]
     if artifact_type_arg == "baseline_profile":
         process_artifacts(ArtifactType.BASELINE_PROFILE)
+    elif artifact_type_arg == "macrobenchmark":
+        process_artifacts(ArtifactType.MACROBENCHMARK)
     elif artifact_type_arg == "crash_log":
         process_artifacts(ArtifactType.CRASH_LOG)
+    elif artifact_type_arg == "memory_leaks":
+        process_artifacts(ArtifactType.MEMORY_LEAKS)
     else:
-        logging.error("Invalid artifact type. Use 'baseline_profile' or 'crash_log'.")
+        logging.error(
+            "Invalid artifact type. Use one of 'baseline_profile', 'macrobenchmark', 'crash_log or 'memory_leaks."
+        )
         sys.exit(1)
 
 

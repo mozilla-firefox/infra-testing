@@ -537,15 +537,26 @@ export var PlacesUtils = {
   },
 
   /**
-   * Convert a Date object to a PRTime (microseconds).
+   * Convert a Date object or a timestamp (in milliseconds) to a PRTime
+   * (microseconds).
    *
    * @param {Date|number} date
-   *   The Date object to convert.
+   *   The Date object or a number representing milliseconds to convert.
    * @returns {number}
    *   Microseconds from the epoch.
+   * @throws {Error}
+   *   If the input is neither a valid Date nor a number.
    */
   toPRTime(date) {
-    if (date.constructor.name == "Date" && !isNaN(date.getTime())) {
+    // Use constructor name comparison instead of `instanceof` because the
+    // caller may come from a different Javascript realm/context. Typescript
+    // does not infer types using constructor name checks, so we also exclude
+    // the value is a number to aid type narrowing.
+    if (
+      date.constructor.name == "Date" &&
+      typeof date != "number" &&
+      !isNaN(date.getTime())
+    ) {
       return date.getTime() * 1000;
     } else if (typeof date == "number" && !isNaN(date)) {
       return date * 1000;
@@ -1030,7 +1041,7 @@ export var PlacesUtils = {
   /**
    * Copy a single places result node, recursively if applicable.
    *
-   * @param {Object} node
+   * @param {object} node
    *    The node to copy. If not a real places node but a single
    *    title/URL combination, you must set `type` to 0 (aka RESULT_TYPE_URI),
    *    and provide a `title` and `uri` property which should both be strings.
@@ -1731,14 +1742,16 @@ export var PlacesUtils = {
         copyProps("parentGuid");
       }
 
+      // Bug 1966462
       /** @type {number} */
-      let itemId = aRow.getResultByName("id");
+      let itemId = /** @type {any} */ (aRow.getResultByName("id"));
       if (aOptions.includeItemIds) {
         item.id = itemId;
       }
 
+      // Bug 1966462
       /** @type {number} */
-      let type = aRow.getResultByName("type");
+      let type = /** @type {any} */ (aRow.getResultByName("type"));
       item.typeCode = type;
       if (type == Ci.nsINavBookmarksService.TYPE_BOOKMARK) {
         copyProps("charset", "tags", "iconUri");
@@ -1749,6 +1762,7 @@ export var PlacesUtils = {
           item.type = PlacesUtils.TYPE_X_MOZ_PLACE;
           // If this fails due to an invalid url, the item will be skipped.
           item.uri = URL.parse(
+            // @ts-expect-error - Bug 1966462
             /** @type {string} */ aRow.getResultByName("url")
           )?.href;
           if (!item.uri) {
@@ -2128,6 +2142,24 @@ export var PlacesUtils = {
       this._loggers.set(prefix, logger);
     }
     return logger;
+  },
+
+  /**
+   * Converts an array of Float32 into a SQL bindable blob format.
+   *
+   * @param {Array<number>|Float32Array} tensor
+   * @returns {Uint8ClampedArray} SQL bindable blob.
+   */
+  tensorToSQLBindable(tensor) {
+    if (!tensor) {
+      throw new Error("tensorToSQLBindable received an invalid tensor");
+    } else if (Array.isArray(tensor)) {
+      return new Uint8ClampedArray(new Float32Array(tensor).buffer);
+    } else if (tensor instanceof Float32Array) {
+      return new Uint8ClampedArray(tensor.buffer);
+    } else {
+      throw new Error("tensorToSQLBindable received an invalid tensor");
+    }
   },
 
   /**
@@ -2983,14 +3015,14 @@ XPCOMUtils.defineLazyServiceGetter(
   PlacesUtils,
   "favicons",
   "@mozilla.org/browser/favicon-service;1",
-  "nsIFaviconService"
+  Ci.nsIFaviconService
 );
 
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "bmsvc",
   "@mozilla.org/browser/nav-bookmarks-service;1",
-  "nsINavBookmarksService"
+  Ci.nsINavBookmarksService
 );
 ChromeUtils.defineLazyGetter(PlacesUtils, "bookmarks", () => {
   return Object.freeze(
@@ -3007,7 +3039,7 @@ XPCOMUtils.defineLazyServiceGetter(
   PlacesUtils,
   "tagging",
   "@mozilla.org/browser/tagging-service;1",
-  "nsITaggingService"
+  Ci.nsITaggingService
 );
 
 ChromeUtils.defineLazyGetter(lazy, "bundle", function () {
@@ -3117,14 +3149,16 @@ ChromeUtils.defineLazyGetter(lazy, "gAsyncDBLargeCacheConnPromised", () =>
       // mozStorage value defined as MAX_CACHE_SIZE_BYTES in
       // storage/mozStorageConnection.cpp.
       await conn.execute("PRAGMA cache_size = -6144"); // 6MiB
-      // These should be kept in sync with nsPlacesTables.h.
+      // This should be kept in sync with nsPlacesTables.h.
       await conn.execute(`
         CREATE TEMP TABLE IF NOT EXISTS moz_openpages_temp (
-          url TEXT,
-          userContextId INTEGER,
+          url TEXT NOT NULL,
+          userContextId INTEGER NOT NULL,
+          groupId TEXT NOT NULL,
           open_count INTEGER,
-          PRIMARY KEY (url, userContextId)
+          PRIMARY KEY (url, userContextId, groupId)
         )`);
+      // This should be kept in sync with nsPlacesTriggers.h.
       await conn.execute(`
         CREATE TEMP TRIGGER IF NOT EXISTS moz_openpages_temp_afterupdate_trigger
         AFTER UPDATE OF open_count ON moz_openpages_temp FOR EACH ROW
@@ -3132,7 +3166,8 @@ ChromeUtils.defineLazyGetter(lazy, "gAsyncDBLargeCacheConnPromised", () =>
         BEGIN
           DELETE FROM moz_openpages_temp
           WHERE url = NEW.url
-            AND userContextId = NEW.userContextId;
+            AND userContextId = NEW.userContextId
+            AND groupId = NEW.groupId;
         END`);
       gAsyncDBLargeCacheConnDeferred.resolve(conn);
       return conn;

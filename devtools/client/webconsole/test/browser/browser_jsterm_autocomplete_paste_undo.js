@@ -10,11 +10,13 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "clipboardHelper",
   "@mozilla.org/widget/clipboardhelper;1",
-  "nsIClipboardHelper"
+  Ci.nsIClipboardHelper
 );
 const stringToCopy = "foobazbarBug642615";
 
 add_task(async function () {
+  await pushPref("devtools.selfxss.count", 5);
+
   const hud = await openNewTabAndConsole(TEST_URI);
   const { jsterm } = hud;
   await clearOutput(hud);

@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 
 use chrono::{DateTime, FixedOffset};
+use malloc_size_of::MallocSizeOf;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 pub use serde_json::Value as JsonValue;
@@ -17,6 +18,7 @@ mod counter;
 mod custom_distribution;
 mod datetime;
 mod denominator;
+pub(crate) mod dual_labeled_counter;
 mod event;
 mod experiment;
 pub(crate) mod labeled;
@@ -39,6 +41,7 @@ mod url;
 mod uuid;
 
 use crate::common_metric_data::CommonMetricDataInternal;
+pub use crate::common_metric_data::DynamicLabelType;
 pub use crate::event_database::RecordedEvent;
 use crate::histogram::{Functional, Histogram, PrecomputedExponential, PrecomputedLinear};
 pub use crate::metrics::datetime::Datetime;
@@ -50,11 +53,12 @@ pub use self::counter::CounterMetric;
 pub use self::custom_distribution::{CustomDistributionMetric, LocalCustomDistribution};
 pub use self::datetime::DatetimeMetric;
 pub use self::denominator::DenominatorMetric;
+pub use self::dual_labeled_counter::DualLabeledCounterMetric;
 pub use self::event::EventMetric;
 pub(crate) use self::experiment::ExperimentMetric;
 pub use self::labeled::{
     LabeledBoolean, LabeledCounter, LabeledCustomDistribution, LabeledMemoryDistribution,
-    LabeledMetric, LabeledQuantity, LabeledString, LabeledTimingDistribution,
+    LabeledMetric, LabeledMetricData, LabeledQuantity, LabeledString, LabeledTimingDistribution,
 };
 pub use self::memory_distribution::{LocalMemoryDistribution, MemoryDistributionMetric};
 pub use self::memory_unit::MemoryUnit;
@@ -152,6 +156,32 @@ pub enum Metric {
     Object(String),
 }
 
+impl MallocSizeOf for Metric {
+    fn size_of(&self, ops: &mut malloc_size_of::MallocSizeOfOps) -> usize {
+        match self {
+            Metric::Boolean(m) => m.size_of(ops),
+            Metric::Counter(m) => m.size_of(ops),
+            // Custom distributions are in the same section, no matter what bucketing.
+            Metric::CustomDistributionExponential(m) => m.size_of(ops),
+            Metric::CustomDistributionLinear(m) => m.size_of(ops),
+            Metric::Datetime(_a, b) => b.size_of(ops),
+            Metric::Experiment(m) => m.size_of(ops),
+            Metric::Quantity(m) => m.size_of(ops),
+            Metric::Rate(a, b) => a.size_of(ops) + b.size_of(ops),
+            Metric::String(m) => m.size_of(ops),
+            Metric::StringList(m) => m.size_of(ops),
+            Metric::Timespan(a, b) => a.size_of(ops) + b.size_of(ops),
+            Metric::TimingDistribution(m) => m.size_of(ops),
+            Metric::Url(m) => m.size_of(ops),
+            Metric::Uuid(m) => m.size_of(ops),
+            Metric::MemoryDistribution(m) => m.size_of(ops),
+            Metric::Jwe(m) => m.size_of(ops),
+            Metric::Text(m) => m.size_of(ops),
+            Metric::Object(m) => m.size_of(ops),
+        }
+    }
+}
+
 /// A [`MetricType`] describes common behavior across all metrics.
 pub trait MetricType {
     /// Access the stored metadata
@@ -166,7 +196,7 @@ pub trait MetricType {
     }
 
     /// Create a new metric from this with a specific label.
-    fn with_dynamic_label(&self, _label: String) -> Self
+    fn with_dynamic_label(&self, _label: DynamicLabelType) -> Self
     where
         Self: Sized,
     {
@@ -237,6 +267,28 @@ pub trait MetricType {
 pub trait MetricIdentifier<'a> {
     /// Retrieve the category, name and (maybe) label of the metric
     fn get_identifiers(&'a self) -> (&'a str, &'a str, Option<&'a str>);
+}
+
+/// [`TestGetValue`] describes an interface for retrieving the value for a given metric
+pub trait TestGetValue {
+    /// The output type of `test_get_value`
+    type Output;
+
+    /// **Test-only API (exported for FFI purposes).**
+    ///
+    /// Returns the currently stored value of the appropriate type for the given metric.
+    ///
+    /// This doesn't clear the stored value.
+    ///
+    /// # Arguments
+    ///
+    /// * `ping_name` - the optional name of the ping to retrieve the metric
+    ///                 for. Defaults to the first value in `send_in_pings`.
+    ///
+    /// # Returns
+    ///
+    /// The stored value or `None` if nothing stored.
+    fn test_get_value(&self, ping_name: Option<String>) -> Option<Self::Output>;
 }
 
 // Provide a blanket implementation for MetricIdentifier for all the types
@@ -312,3 +364,34 @@ impl Metric {
         }
     }
 }
+
+macro_rules! impl_malloc_size_of_for_metric {
+    ($ty:ident) => {
+        impl ::malloc_size_of::MallocSizeOf for $ty {
+            fn size_of(&self, ops: &mut malloc_size_of::MallocSizeOfOps) -> usize {
+                // Note: `meta` is likely s behind an `Arc`.
+                // `size_of` should only be called from a single thread to avoid double-counting.
+                self.meta().size_of(ops)
+            }
+        }
+    };
+}
+
+impl_malloc_size_of_for_metric!(BooleanMetric);
+impl_malloc_size_of_for_metric!(CounterMetric);
+impl_malloc_size_of_for_metric!(CustomDistributionMetric);
+impl_malloc_size_of_for_metric!(DatetimeMetric);
+impl_malloc_size_of_for_metric!(DenominatorMetric);
+impl_malloc_size_of_for_metric!(EventMetric);
+impl_malloc_size_of_for_metric!(ExperimentMetric);
+impl_malloc_size_of_for_metric!(MemoryDistributionMetric);
+impl_malloc_size_of_for_metric!(NumeratorMetric);
+impl_malloc_size_of_for_metric!(ObjectMetric);
+impl_malloc_size_of_for_metric!(QuantityMetric);
+impl_malloc_size_of_for_metric!(RateMetric);
+impl_malloc_size_of_for_metric!(StringMetric);
+impl_malloc_size_of_for_metric!(StringListMetric);
+impl_malloc_size_of_for_metric!(TextMetric);
+impl_malloc_size_of_for_metric!(TimespanMetric);
+impl_malloc_size_of_for_metric!(UrlMetric);
+impl_malloc_size_of_for_metric!(UuidMetric);

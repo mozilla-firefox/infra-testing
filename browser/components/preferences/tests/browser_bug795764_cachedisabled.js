@@ -25,6 +25,9 @@ function test() {
 }
 
 async function runTest(win) {
+  const ipProtectionExperiment = SpecialPowers.getStringPref(
+    "browser.ipProtection.variant"
+  );
   is(gBrowser.currentURI.spec, "about:preferences", "about:preferences loaded");
 
   let tab = win.document;
@@ -38,6 +41,20 @@ async function runTest(win) {
     // Ignore the cookie banner handling section, as it is currently preffed
     // off by default (bug 1800679).
     if (element.id === "cookieBannerHandlingGroup") {
+      continue;
+    }
+
+    // IP Protection is only enabled by browser.ipProtection.variant = beta
+    if (
+      element.id === "dataIPProtectionGroup" &&
+      ipProtectionExperiment !== "beta"
+    ) {
+      is_element_hidden(element, "Disabled ipProtection should be hidden");
+      continue;
+    }
+
+    if (element.getAttribute("data-hidden-from-search") == "true") {
+      is_element_hidden(element, "Hidden from search element should be hidden");
       continue;
     }
 

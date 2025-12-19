@@ -7,13 +7,10 @@
 #ifndef MOZILLA_IDENTITYCREDENTIALREQUESTMANAGER_H_
 #define MOZILLA_IDENTITYCREDENTIALREQUESTMANAGER_H_
 
-#include "mozilla/ClearOnShutdown.h"
-#include "mozilla/PrincipalHashKey.h"
-#include "mozilla/dom/IdentityCredential.h"
 #include "mozilla/dom/IdentityCredentialBinding.h"
-#include "mozilla/dom/IPCIdentityCredential.h"
-#include "nsIPrincipal.h"
-#include "nsTHashMap.h"
+#include "mozilla/dom/WebIdentityParent.h"
+#include "nsISupports.h"
+#include "nsIURI.h"
 
 namespace mozilla {
 
@@ -23,52 +20,29 @@ class IdentityCredentialRequestManager final : nsISupports {
 
   static IdentityCredentialRequestManager* GetInstance();
 
-  // Store an active cross origin identity credential request happening from the
-  // given principal and inner window ID. These accumulate forever, but if the
-  // window goes away, we will be unable to notify of a store.
-  nsresult StorePendingRequest(
-      const nsCOMPtr<nsIPrincipal>& aRPPrincipal,
-      const dom::IdentityCredentialRequestOptions& aRequest,
-      const RefPtr<
-          dom::IdentityCredential::GetIPCIdentityCredentialPromise::Private>&
-          aPromise,
-      const RefPtr<dom::CanonicalBrowsingContext>& aBrowsingContext);
-
-  // If the given credential stored by the given principal would be effective
-  // for a previously stored request, notify the window that stored that request
-  // with the credential so it can resolve a promise with that credential data.
-  void NotifyOfStoredCredential(const nsCOMPtr<nsIPrincipal>& aIDPPrincipal,
-                                const dom::IPCIdentityCredential& aCredential);
-
   IdentityCredentialRequestManager(IdentityCredentialRequestManager& other) =
       delete;
   void operator=(const IdentityCredentialRequestManager&) = delete;
+
+  RefPtr<MozPromise<std::tuple<nsCString, Maybe<nsCString>>, nsresult, true>>
+  GetTokenFromPopup(dom::WebIdentityParent* aRelyingPartyWindow,
+                    nsIURI* aURLToOpen);
+
+  nsresult MaybeResolvePopup(dom::WebIdentityParent* aPopupWindow,
+                             const nsCString& aToken,
+                             const dom::IdentityResolveOptions& aOptions);
+
+  bool IsActivePopup(dom::WebIdentityParent* aPopupWindow);
 
  private:
   static StaticRefPtr<IdentityCredentialRequestManager> sSingleton;
   IdentityCredentialRequestManager() {};
   ~IdentityCredentialRequestManager() = default;
 
-  struct PendingRequestEntry {
-    nsCOMPtr<nsIPrincipal> mRPPrincipal;
-    dom::IdentityCredentialRequestOptions mRequestOptions;
-    RefPtr<dom::IdentityCredential::GetIPCIdentityCredentialPromise::Private>
-        mPromise;
-    RefPtr<dom::CanonicalBrowsingContext> mBrowsingContext;
-
-    PendingRequestEntry(
-        nsIPrincipal* aRPPrincipal,
-        const dom::IdentityCredentialRequestOptions& aRequestOptions,
-        const RefPtr<
-            dom::IdentityCredential::GetIPCIdentityCredentialPromise::Private>&
-            aPromise,
-        const RefPtr<dom::CanonicalBrowsingContext>& aBrowsingContext)
-        : mRPPrincipal(aRPPrincipal),
-          mRequestOptions(aRequestOptions),
-          mPromise(aPromise),
-          mBrowsingContext(aBrowsingContext) {}
-  };
-  nsTHashMap<PrincipalHashKey, nsTArray<PendingRequestEntry>> mPendingRequests;
+  nsTHashMap<uint64_t,
+             RefPtr<MozPromise<std::tuple<nsCString, Maybe<nsCString>>,
+                               nsresult, true>::Private>>
+      mPendingTokenRequests;
 };
 
 }  // namespace mozilla

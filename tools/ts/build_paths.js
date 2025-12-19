@@ -4,13 +4,14 @@
 "use strict";
 
 /**
- * Build: <srcdir>/tools/@types/tspaths.json, and
- *        <srcdir>/tools/@types/lib.gecko.modules.d.ts
+ * Build: <srcdir>/tools/@types/generated/tspaths.json, and
+ *        <srcdir>/tools/@types/generated/lib.gecko.modules.d.ts
  *
  * from:  various import forms in all *.js and *.mjs sources.
  */
 
 const fs = require("fs");
+const path = require("path");
 const { fixed } = require("./config/fixed_paths.js");
 
 const HEADER = `/**
@@ -21,11 +22,11 @@ const HEADER = `/**
 
 const IGNORE = [/\.git/, /\.hg/, /node_modules/, /^obj.*/, /test262/];
 const IMPORT =
-  /(\bimport |import\(|require\(|\.importESModule\(|\.(defineESModuleGetters?|declareLazy|defineLazy)\()[^;]+/gm;
+  /(\bimport |import\(|require\(|\.(importESModule|defineESModuleGetters?|declareLazy|defineLazy)\()[^;]+/gm;
 const URI = /("|')((resource|chrome|moz-src):\/\/[\w\d\/_.-]+\.m?js)\1/gm;
 
-function ignore(path) {
-  return IGNORE.some(re => path.match(re));
+function ignore(filePath) {
+  return IGNORE.some(re => filePath.match(re));
 }
 
 // Scan the root dir for *.js and *.mjs files, recursivelly.
@@ -40,14 +41,14 @@ function scan(root, dir, files) {
 }
 
 // Emit path mapping for all found module URIs.
-function emitPaths(files, uris, modules) {
+function emitPaths(files, uris, modules, relativeBasePath) {
   let paths = {};
   for (let uri of [...uris].sort()) {
     if (uri in fixed) {
       continue;
     }
     let parts = uri.split("/");
-    let path = "";
+    let filePath = "";
     let matches;
 
     // Check for a substitution .d.ts file from processed/generated sources.
@@ -59,8 +60,8 @@ function emitPaths(files, uris, modules) {
 
     // Starting with just the file name, add each path part going backwards.
     do {
-      path = "/" + parts.pop() + path;
-      matches = files.filter(f => f.endsWith(path));
+      filePath = "/" + parts.pop() + filePath;
+      matches = files.filter(f => f.endsWith(filePath));
       // While multiple files match, add parts used for filtering.
     } while (matches.length > 1 && parts.length);
 
@@ -75,14 +76,14 @@ function emitPaths(files, uris, modules) {
   }
 
   Object.assign(paths, fixed);
-  let tspaths = { compilerOptions: { baseUrl: "../../", paths } };
+  let tspaths = { compilerOptions: { baseUrl: relativeBasePath, paths } };
   return JSON.stringify(tspaths, null, 2) + "\n";
 }
 
 // Emit type mapping for all modules imported via lazy getters.
 function emitLazy(modules) {
   let lines = [HEADER];
-  lines.push("export interface LazyModules {");
+  lines.push("export interface Modules {");
   for (let uri of [...modules].sort()) {
     lines.push(`  "${uri}": typeof import("${uri}"),`);
   }
@@ -105,14 +106,19 @@ function main(root_dir, paths_json, lib_lazy) {
         if (proto !== "moz-src") {
           uris.add(uri);
         }
-        if (method?.match(/ModuleGetter|Lazy/)) {
+        if (method?.match(/importESModule|ModuleGetter|Lazy/)) {
           modules.add(uri);
         }
       }
     }
   }
 
-  let json = emitPaths(files, uris, modules);
+  let json = emitPaths(
+    files,
+    uris,
+    modules,
+    path.relative(path.dirname(paths_json), root_dir).replaceAll("\\", "/")
+  );
   console.log(`[INFO] ${paths_json} (${json.length.toLocaleString()} bytes)`);
   fs.writeFileSync(paths_json, json);
 

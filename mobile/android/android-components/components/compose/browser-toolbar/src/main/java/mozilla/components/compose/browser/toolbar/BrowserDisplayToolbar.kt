@@ -4,37 +4,51 @@
 
 package mozilla.components.compose.browser.toolbar
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
-import androidx.compose.ui.unit.dp
-import mozilla.components.compose.base.progressbar.AnimatedProgressBar
+import androidx.compose.ui.tooling.preview.PreviewParameter
 import mozilla.components.compose.base.theme.AcornTheme
+import mozilla.components.compose.base.theme.acornPrivateColorScheme
+import mozilla.components.compose.base.theme.privateColorPalette
 import mozilla.components.compose.browser.toolbar.concept.Action
 import mozilla.components.compose.browser.toolbar.concept.PageOrigin
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarInteraction.BrowserToolbarEvent
 import mozilla.components.compose.browser.toolbar.store.ProgressBarConfig
-import mozilla.components.compose.browser.toolbar.store.ProgressBarGravity.Bottom
-import mozilla.components.compose.browser.toolbar.store.ProgressBarGravity.Top
-import mozilla.components.compose.browser.toolbar.ui.Origin
+import mozilla.components.compose.browser.toolbar.store.ToolbarGravity
+import mozilla.components.compose.browser.toolbar.store.ToolbarGravity.Bottom
+import mozilla.components.compose.browser.toolbar.ui.FullDisplayToolbar
+import mozilla.components.compose.browser.toolbar.ui.MinimalDisplayToolbar
+import mozilla.components.compose.browser.toolbar.utils.DisplayToolbarDataProvider
+import mozilla.components.compose.browser.toolbar.utils.DisplayToolbarPreviewModel
+import mozilla.components.support.utils.KeyboardState
+import mozilla.components.support.utils.keyboardAsState
 
-private val ROUNDED_CORNER_SHAPE = RoundedCornerShape(8.dp)
+// The value I've observed in my tests. Can differ based on device or keyboard used.
+private const val DEFAULT_KEYBOARD_ANIMATION_TIME_MILLIS = 285
 
 /**
  * Sub-component of the [BrowserToolbar] responsible for displaying the URL and related
  * controls ("display mode").
  *
  * @param pageOrigin Details about the website origin.
- * @param colors The color scheme to use in the browser display toolbar.
+ * @param gravity [ToolbarGravity] for where the toolbar is being placed on the screen.
  * @param progressBarConfig [ProgressBarConfig] configuration for the progress bar.
  * If `null` a progress bar will not be displayed.
  * @param browserActionsStart List of browser [Action]s to be displayed at the start of the
@@ -55,136 +69,163 @@ private val ROUNDED_CORNER_SHAPE = RoundedCornerShape(8.dp)
  * See [MDN docs](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/browserAction).
  * @param onInteraction Callback for handling [BrowserToolbarEvent]s on user interactions.
  */
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
+@Suppress("LongMethod")
 fun BrowserDisplayToolbar(
     pageOrigin: PageOrigin,
-    colors: BrowserDisplayToolbarColors,
+    gravity: ToolbarGravity,
     progressBarConfig: ProgressBarConfig?,
     browserActionsStart: List<Action> = emptyList(),
     pageActionsStart: List<Action> = emptyList(),
     pageActionsEnd: List<Action> = emptyList(),
     browserActionsEnd: List<Action> = emptyList(),
     onInteraction: (BrowserToolbarEvent) -> Unit,
+    useMinimalBottomToolbarWhenEnteringText: Boolean = false,
 ) {
-    Box(
-        modifier = Modifier
-            .background(color = colors.background)
-            .fillMaxWidth(),
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (browserActionsStart.isNotEmpty()) {
-                ActionContainer(
-                    actions = browserActionsStart,
-                    onInteraction = onInteraction,
-                )
-            }
+    val isKeyboardShowing by when (useMinimalBottomToolbarWhenEnteringText) {
+        true -> keyboardAsState()
+        false -> remember { mutableStateOf(KeyboardState.Closed) }
+    }
 
-            Row(
-                modifier = Modifier
-                    .padding(vertical = 8.dp)
-                    .background(
-                        color = colors.urlBackground,
-                        shape = ROUNDED_CORNER_SHAPE,
-                    )
-                    .weight(1f),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (pageActionsStart.isNotEmpty()) {
-                    ActionContainer(
-                        actions = pageActionsStart,
-                        onInteraction = onInteraction,
-                    )
-                }
+    val toolbarsTransitionAnimationSpec = remember {
+        tween<Float>(
+            durationMillis = DEFAULT_KEYBOARD_ANIMATION_TIME_MILLIS,
+            easing = LinearEasing,
+        )
+    }
+    val toolbarElementsAnimationSpec = remember {
+        tween<Rect>(
+            durationMillis = DEFAULT_KEYBOARD_ANIMATION_TIME_MILLIS,
+            easing = FastOutSlowInEasing,
+        )
+    }
 
-                Origin(
-                    hint = pageOrigin.hint,
-                    modifier = Modifier
-                        .height(48.dp)
-                        .weight(1f),
-                    url = pageOrigin.url,
-                    title = pageOrigin.title,
-                    onClick = pageOrigin.onClick,
-                    onLongClick = pageOrigin.onLongClick,
-                    onInteraction = onInteraction,
-                    fadeDirection = pageOrigin.fadeDirection,
-                    textGravity = pageOrigin.textGravity,
+    SharedTransitionLayout {
+        AnimatedContent(
+            targetState = gravity == Bottom && isKeyboardShowing == KeyboardState.Opened,
+            transitionSpec = {
+                fadeIn(animationSpec = toolbarsTransitionAnimationSpec) togetherWith
+                    fadeOut(animationSpec = toolbarsTransitionAnimationSpec)
+            },
+        ) { isKeyboardShown ->
+            val toolbarModifier = Modifier
+                .fillMaxWidth()
+                .sharedBounds(
+                    rememberSharedContentState(key = "toolbar_bounds"),
+                    animatedVisibilityScope = this,
+                    enter = fadeIn(),
+                    exit = fadeOut(),
+                    resizeMode = SharedTransitionScope.ResizeMode.ScaleToBounds(),
                 )
 
-                if (pageActionsEnd.isNotEmpty()) {
-                    ActionContainer(
-                        actions = pageActionsEnd,
-                        onInteraction = onInteraction,
-                    )
-                }
-            }
-
-            if (browserActionsEnd.isNotEmpty()) {
-                ActionContainer(
-                    actions = browserActionsEnd,
-                    onInteraction = onInteraction,
-                )
-            }
-        }
-
-        if (progressBarConfig != null) {
-            AnimatedProgressBar(
-                progress = progressBarConfig.progress,
-                color = progressBarConfig.color,
-                modifier = when (progressBarConfig.gravity) {
-                    Top -> Modifier.align(Alignment.TopCenter)
-                    Bottom -> Modifier.align(Alignment.BottomCenter)
-                }.fillMaxWidth(),
+            val browserActionsStartTrait = Modifier.sharedElement(
+                sharedContentState = rememberSharedContentState(key = "browser_actions_start"),
+                animatedVisibilityScope = this@AnimatedContent,
+                boundsTransform = { _, _ -> toolbarElementsAnimationSpec },
             )
+
+            val pageActionsStartTrait = Modifier.sharedElement(
+                sharedContentState = rememberSharedContentState(key = "page_actions_start"),
+                animatedVisibilityScope = this@AnimatedContent,
+                boundsTransform = { _, _ -> toolbarElementsAnimationSpec },
+            )
+
+            val originTrait = Modifier.sharedElement(
+                sharedContentState = rememberSharedContentState(key = "url_box"),
+                animatedVisibilityScope = this@AnimatedContent,
+                boundsTransform = { _, _ -> toolbarElementsAnimationSpec },
+            )
+
+            val pageActionsEndTrait = Modifier.sharedElement(
+                sharedContentState = rememberSharedContentState(key = "page_actions_end"),
+                animatedVisibilityScope = this@AnimatedContent,
+                boundsTransform = { _, _ -> toolbarElementsAnimationSpec },
+            )
+
+            val browserActionsEndTrait = Modifier.sharedElement(
+                sharedContentState = rememberSharedContentState(key = "browser_actions_end"),
+                animatedVisibilityScope = this@AnimatedContent,
+                boundsTransform = { _, _ -> toolbarElementsAnimationSpec },
+            )
+
+            if (isKeyboardShown) {
+                MinimalDisplayToolbar(
+                    pageOrigin = pageOrigin,
+                    pageActionsStart = pageActionsStart,
+                    gravity = gravity,
+                    modifier = toolbarModifier,
+                    pageActionsStartModifier = pageActionsStartTrait,
+                    originModifier = originTrait,
+                )
+            } else {
+                FullDisplayToolbar(
+                    pageOrigin = pageOrigin,
+                    gravity = gravity,
+                    progressBarConfig = progressBarConfig,
+                    browserActionsStart = browserActionsStart,
+                    pageActionsStart = pageActionsStart,
+                    pageActionsEnd = pageActionsEnd,
+                    browserActionsEnd = browserActionsEnd,
+                    onInteraction = onInteraction,
+                    modifier = toolbarModifier,
+                    browserActionsStartModifier = browserActionsStartTrait,
+                    pageActionsStartModifier = pageActionsStartTrait,
+                    originModifier = originTrait,
+                    pageActionsEndModifier = pageActionsEndTrait,
+                    browserActionsEndModifier = browserActionsEndTrait,
+                )
+            }
         }
     }
 }
 
 @PreviewLightDark
 @Composable
-private fun BrowserDisplayToolbarPreview() {
+private fun BrowserDisplayToolbarPreview(
+    @PreviewParameter(DisplayToolbarDataProvider::class) config: DisplayToolbarPreviewModel,
+) {
     AcornTheme {
         BrowserDisplayToolbar(
+            gravity = config.gravity,
+            progressBarConfig = ProgressBarConfig(progress = 66),
+            browserActionsStart = config.browserStartActions,
+            pageActionsStart = config.pageActionsStart,
             pageOrigin = PageOrigin(
                 hint = R.string.mozac_browser_toolbar_search_hint,
-                title = null,
-                url = null,
+                title = config.title,
+                url = config.url,
                 onClick = object : BrowserToolbarEvent {},
             ),
-            colors = BrowserDisplayToolbarColors(
-                background = AcornTheme.colors.layer1,
-                urlBackground = AcornTheme.colors.layer3,
-                text = AcornTheme.colors.textPrimary,
+            pageActionsEnd = config.pageActionsEnd,
+            browserActionsEnd = config.browserEndActions,
+            onInteraction = {},
+        )
+    }
+}
+
+@Preview
+@Composable
+private fun BrowserDisplayToolbarPrivatePreview(
+    @PreviewParameter(DisplayToolbarDataProvider::class) config: DisplayToolbarPreviewModel,
+) {
+    AcornTheme(
+        colors = privateColorPalette,
+        colorScheme = acornPrivateColorScheme(),
+    ) {
+        BrowserDisplayToolbar(
+            gravity = config.gravity,
+            progressBarConfig = ProgressBarConfig(progress = 66),
+            browserActionsStart = config.browserStartActions,
+            pageActionsStart = config.pageActionsStart,
+            pageOrigin = PageOrigin(
+                hint = R.string.mozac_browser_toolbar_search_hint,
+                title = config.title,
+                url = config.url,
+                onClick = object : BrowserToolbarEvent {},
             ),
-            progressBarConfig = ProgressBarConfig(
-                progress = 66,
-                gravity = Top,
-            ),
-            browserActionsStart = listOf(
-                Action.ActionButton(
-                    icon = mozilla.components.ui.icons.R.drawable.mozac_ic_home_24,
-                    contentDescription = android.R.string.untitled,
-                    tint = AcornTheme.colors.iconPrimary.toArgb(),
-                    onClick = object : BrowserToolbarEvent {},
-                ),
-            ),
-            pageActionsEnd = listOf(
-                Action.ActionButton(
-                    icon = mozilla.components.ui.icons.R.drawable.mozac_ic_arrow_clockwise_24,
-                    contentDescription = android.R.string.untitled,
-                    tint = AcornTheme.colors.iconPrimary.toArgb(),
-                    onClick = object : BrowserToolbarEvent {},
-                ),
-            ),
-            browserActionsEnd = listOf(
-                Action.ActionButton(
-                    icon = mozilla.components.ui.icons.R.drawable.mozac_ic_ellipsis_vertical_24,
-                    contentDescription = android.R.string.untitled,
-                    tint = AcornTheme.colors.iconPrimary.toArgb(),
-                    onClick = object : BrowserToolbarEvent {},
-                ),
-            ),
+            pageActionsEnd = config.pageActionsEnd,
+            browserActionsEnd = config.browserEndActions,
             onInteraction = {},
         )
     }

@@ -39,12 +39,9 @@
 #include "mozilla/Array.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/Range.h"
 #include "mozilla/SandboxInfo.h"
 #include "mozilla/StackWalk.h"
-#include "mozilla/Span.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/Unused.h"
 #include "mozilla/ipc/UtilityProcessSandboxing.h"
 #include "prenv.h"
 #include "base/posix/eintr_wrapper.h"
@@ -189,7 +186,7 @@ static void InstallSigSysHandler(void) {
   struct sigaction act;
 
   // Ensure that the Chromium handler is installed.
-  Unused << sandbox::Trap::Registry();
+  (void)sandbox::Trap::Registry();
 
   // If the signal handling state isn't as expected, crash now instead
   // of crashing later (and more confusingly) when SIGSYS happens.
@@ -484,7 +481,7 @@ static void BroadcastSetThreadSandbox(const sock_fprog* aFilter) {
     MOZ_CRASH("handler for the signal was changed to another");
   }
   gSeccompTsyncBroadcastSignum = 0;
-  Unused << closedir(taskdp);
+  (void)closedir(taskdp);
   // And now, deprivilege the main thread:
   SetThreadSandbox();
   gSetSandboxFilter = nullptr;
@@ -607,7 +604,7 @@ static void SandboxLateInit() {
   // This will create:
   //  - pointers to uprofiler to make use of the profiler
   //  - a SandboxProfiler
-  //  - a MPSCQueue
+  //  - a BoundedMPSCQueue
   //  - a std::thread
   //
   // So that later usage of uprofiler under SIGSYS context can:
@@ -648,7 +645,7 @@ static void SetCurrentProcessSandbox(
     // currently the case for all callers.  (An intentionally leaked
     // heap allocation would also work.)
     return sandbox::bpf_dsl::Trap(
-        [](const sandbox::arch_seccomp_data&, void* aux) -> intptr_t {
+        [](const arch_seccomp_data&, void* aux) -> intptr_t {
           auto error = reinterpret_cast<const char*>(aux);
           SANDBOX_LOG("Panic: %s", error);
           MOZ_CRASH("Sandbox Panic");
@@ -804,24 +801,24 @@ void SetRemoteDataDecoderSandbox(int aBroker) {
   SetCurrentProcessSandbox(GetDecoderSandboxPolicy(sBroker));
 }
 
-void SetSocketProcessSandbox(int aBroker) {
+void SetSocketProcessSandbox(SocketProcessSandboxParams&& aParams) {
   if (!SandboxInfo::Get().Test(SandboxInfo::kHasSeccompBPF) ||
       PR_GetEnv("MOZ_DISABLE_SOCKET_PROCESS_SANDBOX")) {
-    if (aBroker >= 0) {
-      close(aBroker);
-    }
     return;
   }
 
   gSandboxReporterClient = new SandboxReporterClient(
       SandboxReport::ProcType::SOCKET_PROCESS, TakeSandboxReporterFd());
 
+  // FIXME(bug 1513773): merge this with the ones for content and RDD?
   static SandboxBrokerClient* sBroker;
-  if (aBroker >= 0) {
-    sBroker = new SandboxBrokerClient(aBroker);
+  MOZ_ASSERT(!sBroker);  // This should only ever be called once.
+  if (aParams.mBroker) {
+    sBroker = new SandboxBrokerClient(aParams.mBroker.release());
   }
 
-  SetCurrentProcessSandbox(GetSocketProcessSandboxPolicy(sBroker));
+  SetCurrentProcessSandbox(
+      GetSocketProcessSandboxPolicy(sBroker, std::move(aParams)));
 }
 
 void SetUtilitySandbox(int aBroker, ipc::SandboxingKind aKind) {

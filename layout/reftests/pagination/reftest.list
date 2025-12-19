@@ -123,7 +123,7 @@ fuzzy-if(cocoaWidget,0-1,0-5000) fuzzy-if(swgl,0-1,0-9) == 745025-1.html 745025-
 == 1406291-1.html 1406291-1-ref.html
 == 1409585-1.html 1409585-1-ref.html
 == 1411799-1.html 1411799-1-ref.html
-== 1420528-1.html 1420528-1-ref.html
+fuzzy-if(gtkWidget,0-255,0-2774) == 1420528-1.html 1420528-1-ref.html # TODO: this is maligned
 == 1427141-1.html 1427141-ref.html
 == 1427141-2.html 1427141-ref.html
 == 1468654-1.html 1468654-1-ref.html
@@ -176,8 +176,8 @@ fails == bfc-004.html bfc-004-ref.html # bug 1602484
 == bfc-007.html bfc-006-ref.html
 == bfc-008.html bfc-006-ref.html
 
-pref(layout.display-list.improve-fragmentation,true) fuzzy-if(swgl,0-1,0-200) == inline-block-frag-simple-1.html inline-block-frag-simple-1-ref.html
-pref(layout.display-list.improve-fragmentation,true) fuzzy-if(swgl,0-1,0-21) == inline-block-frag-simple-2.html inline-block-frag-simple-2-ref.html
+pref(layout.display-list.improve-fragmentation,true) fuzzy(0-1,0-25889) fuzzy-if(swgl,0-1,0-200) == inline-block-frag-simple-1.html inline-block-frag-simple-1-ref.html
+pref(layout.display-list.improve-fragmentation,true) fuzzy(0-1,0-13220) fuzzy-if(swgl,0-1,0-21) == inline-block-frag-simple-2.html inline-block-frag-simple-2-ref.html
 pref(layout.display-list.improve-fragmentation,true) == inline-block-frag-offset-1.html inline-block-frag-offset-1-ref.html
 pref(layout.display-list.improve-fragmentation,true) == inline-block-frag-offset-2.html inline-block-frag-offset-2-ref.html
 pref(layout.display-list.improve-fragmentation,true) == inline-block-frag-text-1.html inline-block-frag-text-1-ref.html

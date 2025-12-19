@@ -25,6 +25,8 @@ import org.mozilla.geckoview.GeckoSession.PermissionDelegate.PERMISSION_AUTOPLAY
 import org.mozilla.geckoview.GeckoSession.PermissionDelegate.PERMISSION_AUTOPLAY_INAUDIBLE
 import org.mozilla.geckoview.GeckoSession.PermissionDelegate.PERMISSION_DESKTOP_NOTIFICATION
 import org.mozilla.geckoview.GeckoSession.PermissionDelegate.PERMISSION_GEOLOCATION
+import org.mozilla.geckoview.GeckoSession.PermissionDelegate.PERMISSION_LOCAL_DEVICE_ACCESS
+import org.mozilla.geckoview.GeckoSession.PermissionDelegate.PERMISSION_LOCAL_NETWORK_ACCESS
 import org.mozilla.geckoview.GeckoSession.PermissionDelegate.PERMISSION_MEDIA_KEY_SYSTEM_ACCESS
 import org.mozilla.geckoview.GeckoSession.PermissionDelegate.PERMISSION_PERSISTENT_STORAGE
 import org.mozilla.geckoview.GeckoSession.PermissionDelegate.PERMISSION_STORAGE_ACCESS
@@ -34,12 +36,10 @@ import java.util.UUID
  * Gecko-based implementation of [PermissionRequest].
  *
  * @property permissions the list of requested permissions.
- * @property callback the callback to grant/reject the requested permissions.
  * @property id a unique identifier for the request.
  */
 sealed class GeckoPermissionRequest constructor(
     override val permissions: List<Permission>,
-    private val callback: PermissionDelegate.Callback? = null,
     override val id: String = UUID.randomUUID().toString(),
 ) : PermissionRequest {
 
@@ -56,7 +56,7 @@ sealed class GeckoPermissionRequest constructor(
         override val uri: String,
         private val type: Int,
         internal val geckoPermission: PermissionDelegate.ContentPermission,
-        internal val geckoResult: GeckoResult<Int>,
+        internal var geckoResults: MutableList<GeckoResult<Int>>,
     ) : GeckoPermissionRequest(
         listOf(permissionsMap.getOrElse(type) { Permission.Generic("$type", "Gecko permission type = $type") }),
     ) {
@@ -69,6 +69,8 @@ sealed class GeckoPermissionRequest constructor(
                 PERMISSION_PERSISTENT_STORAGE to Permission.ContentPersistentStorage(),
                 PERMISSION_MEDIA_KEY_SYSTEM_ACCESS to Permission.ContentMediaKeySystemAccess(),
                 PERMISSION_STORAGE_ACCESS to Permission.ContentCrossOriginStorageAccess(),
+                PERMISSION_LOCAL_DEVICE_ACCESS to Permission.ContentLocalDeviceAccess(),
+                PERMISSION_LOCAL_NETWORK_ACCESS to Permission.ContentLocalNetworkAccess(),
             )
         }
 
@@ -77,16 +79,51 @@ sealed class GeckoPermissionRequest constructor(
 
         override fun grant(permissions: List<Permission>) {
             if (!isCompleted) {
-                geckoResult.complete(VALUE_ALLOW)
+                geckoResults.forEach {
+                    it.complete(VALUE_ALLOW)
+                }
             }
             isCompleted = true
         }
 
         override fun reject() {
             if (!isCompleted) {
-                geckoResult.complete(VALUE_DENY)
+                geckoResults.forEach {
+                    it.complete(VALUE_DENY)
+                }
             }
             isCompleted = true
+        }
+
+        override fun merge(permissionRequest: PermissionRequest) {
+            if (!isCompleted && uri == permissionRequest.uri && permissions == permissionRequest.permissions) {
+                val geckoPermissionRequest: GeckoPermissionRequest.Content? =
+                    permissionRequest as? GeckoPermissionRequest.Content
+                geckoPermissionRequest?.let {
+                    geckoResults.addAll(it.geckoResults)
+                    it.geckoResults.clear()
+                }
+            }
+        }
+
+        override fun equals(other: Any?): Boolean {
+            // Don't compare geckoResults for redcuer and flow
+            if (this === other) return true
+            if (other !is Content) return false
+
+            if (uri != other.uri) return false
+            if (type != other.type) return false
+            if (isCompleted != other.isCompleted) return false
+
+            return true
+        }
+
+        override fun hashCode(): Int {
+            // Don't hash geckoResults for redcuer and flow
+            var hash = uri.hashCode()
+            hash = 31 * hash + type
+            hash = 31 * hash + isCompleted.hashCode()
+            return hash
         }
     }
 
@@ -96,14 +133,13 @@ sealed class GeckoPermissionRequest constructor(
      * @property uri the URI of the content requesting the permissions.
      * @property nativePermissions the list of requested app permissions (will be
      * mapped to corresponding [Permission]s).
-     * @property callback the callback to grant/reject the requested permissions.
+     * @property callbacks the callbacks to grant/reject the requested permissions.
      */
     data class App(
         private val nativePermissions: List<String>,
-        private val callback: PermissionDelegate.Callback,
+        private val callbacks: MutableList<PermissionDelegate.Callback>,
     ) : GeckoPermissionRequest(
         nativePermissions.map { permissionsMap.getOrElse(it) { Permission.Generic(it) } },
-        callback,
     ) {
         override val uri: String? = null
 
@@ -114,6 +150,29 @@ sealed class GeckoPermissionRequest constructor(
                 CAMERA to Permission.AppCamera(CAMERA),
                 RECORD_AUDIO to Permission.AppAudio(RECORD_AUDIO),
             )
+        }
+
+        override fun grant(permissions: List<Permission>) {
+            callbacks.forEach {
+                it.grant()
+            }
+        }
+
+        override fun reject() {
+            callbacks.forEach {
+                it.reject()
+            }
+        }
+
+        override fun merge(permissionRequest: PermissionRequest) {
+            if (permissions == permissionRequest.permissions) {
+                val geckoPermissionRequest: GeckoPermissionRequest.App? =
+                    permissionRequest as? GeckoPermissionRequest.App
+                geckoPermissionRequest?.let {
+                    callbacks.addAll(it.callbacks)
+                    it.callbacks.clear()
+                }
+            }
         }
     }
 
@@ -165,7 +224,7 @@ sealed class GeckoPermissionRequest constructor(
                 else -> Permission.Generic(mediaSource.id, mediaSource.name)
             }
 
-            @Suppress("ComplexMethod", "SwitchIntDef")
+            @Suppress("SwitchIntDef")
             private fun mapVideoPermission(mediaSource: MediaSource) = when (mediaSource.source) {
                 SOURCE_CAMERA -> Permission.ContentVideoCamera(mediaSource.id, mediaSource.name)
                 SOURCE_SCREEN -> Permission.ContentVideoScreen(mediaSource.id, mediaSource.name)
@@ -175,11 +234,9 @@ sealed class GeckoPermissionRequest constructor(
         }
     }
 
-    override fun grant(permissions: List<Permission>) {
-        callback?.grant()
-    }
+    override fun grant(permissions: List<Permission>) = Unit
 
-    override fun reject() {
-        callback?.reject()
-    }
+    override fun reject() = Unit
+
+    override fun merge(permissionRequest: PermissionRequest) = Unit
 }

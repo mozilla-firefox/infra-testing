@@ -199,6 +199,14 @@ interface nsIClearDataService : nsISupports
   const uint32_t CLEAR_NETWORK_CACHE = 1 << 1;
 
   /**
+   * Clear bfcache.
+   * FIXME: We are out of bits in this bitflag. To mitigate this we will merge
+   *        CLEAR_ALL_CACHES into a single bit Bug 1918722. Reuse the
+   *        CLEAR_NETWORK_CACHE bit for now with similar effect.
+   */
+  const uint32_t CLEAR_BFCACHE = 1 << 1;
+
+  /**
    * Image cache.
    */
   const uint32_t CLEAR_IMAGE_CACHE = 1 << 2;
@@ -224,11 +232,6 @@ interface nsIClearDataService : nsISupports
    * LocalStorage, IndexedDB, ServiceWorkers, DOM Cache and so on.
    */
   const uint32_t CLEAR_DOM_QUOTA = 1 << 7;
-
-  /**
-   * Predictor network data
-   */
-  const uint32_t CLEAR_PREDICTOR_NETWORK_DATA = 1 << 8;
 
   /**
    * DOM Push notifications
@@ -366,7 +369,7 @@ interface nsIClearDataService : nsISupports
    * Delete all the possible caches.
    */
   const uint32_t CLEAR_ALL_CACHES = CLEAR_NETWORK_CACHE | CLEAR_IMAGE_CACHE |
-    CLEAR_JS_CACHE | CLEAR_CSS_CACHE | CLEAR_PREFLIGHT_CACHE | CLEAR_HSTS;
+    CLEAR_JS_CACHE | CLEAR_CSS_CACHE | CLEAR_PREFLIGHT_CACHE | CLEAR_HSTS | CLEAR_BFCACHE;
 
   /**
    * Delete all DOM storages
@@ -380,7 +383,7 @@ interface nsIClearDataService : nsISupports
     CLEAR_HISTORY | CLEAR_ALL_CACHES |
     CLEAR_COOKIES | CLEAR_EME | CLEAR_DOWNLOADS |
     CLEAR_PERMISSIONS | CLEAR_DOM_STORAGES | CLEAR_CONTENT_PREFERENCES |
-    CLEAR_PREDICTOR_NETWORK_DATA | CLEAR_DOM_PUSH_NOTIFICATIONS |
+    CLEAR_DOM_PUSH_NOTIFICATIONS |
     CLEAR_CLIENT_AUTH_REMEMBER_SERVICE | CLEAR_REPORTS | CLEAR_CERT_EXCEPTIONS |
     CLEAR_CREDENTIAL_MANAGER_STATE | CLEAR_COOKIE_BANNER_EXCEPTION |
     CLEAR_COOKIE_BANNER_EXECUTED_RECORD | CLEAR_FINGERPRINTING_PROTECTION_STATE |

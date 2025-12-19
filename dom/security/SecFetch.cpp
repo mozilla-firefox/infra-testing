@@ -5,15 +5,18 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "SecFetch.h"
-#include "nsIHttpChannel.h"
-#include "nsContentUtils.h"
-#include "nsIRedirectHistoryEntry.h"
-#include "nsIReferrerInfo.h"
+
 #include "mozIThirdPartyUtil.h"
-#include "nsMixedContentBlocker.h"
-#include "nsNetUtil.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/dom/RequestBinding.h"
+#include "nsContentSecurityManager.h"
+#include "nsContentUtils.h"
+#include "nsIHttpChannel.h"
+#include "nsIRedirectHistoryEntry.h"
+#include "nsIReferrerInfo.h"
+#include "nsMixedContentBlocker.h"
+#include "nsNetUtil.h"
 
 // Helper function which maps an internal content policy type
 // to the corresponding destination for the context of SecFetch.
@@ -73,8 +76,6 @@ nsCString MapInternalContentPolicyTypeToDest(nsContentPolicyType aType) {
     case nsIContentPolicy::TYPE_INTERNAL_XMLHTTPREQUEST_SYNC:
       return "empty"_ns;
     case nsIContentPolicy::TYPE_INTERNAL_EVENTSOURCE:
-      return "empty"_ns;
-    case nsIContentPolicy::TYPE_OBJECT_SUBREQUEST:
       return "empty"_ns;
     case nsIContentPolicy::TYPE_DTD:
     case nsIContentPolicy::TYPE_INTERNAL_DTD:
@@ -201,13 +202,13 @@ bool IsSameSite(nsIChannel* aHTTPChannel) {
   nsAutoCString hostDomain;
   nsCOMPtr<nsILoadInfo> loadInfo = aHTTPChannel->LoadInfo();
   nsresult rv = loadInfo->TriggeringPrincipal()->GetBaseDomain(hostDomain);
-  mozilla::Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 
   nsAutoCString channelDomain;
   nsCOMPtr<nsIURI> channelURI;
   NS_GetFinalChannelURI(aHTTPChannel, getter_AddRefs(channelURI));
   rv = thirdPartyUtil->GetBaseDomain(channelURI, channelDomain);
-  mozilla::Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 
   // if the initial request is not same-site, or not https, we can
   // return here because we already know it's not a same-site request
@@ -238,6 +239,8 @@ bool IsSameSite(nsIChannel* aHTTPChannel) {
 
 // Helper function to determine whether a request was triggered
 // by the end user in the context of SecFetch.
+// The more secure/closed state to return for this function is "false".
+// A user triggered action is less restricted because it is not cross-origin.
 bool IsUserTriggeredForSecFetchSite(nsIHttpChannel* aHTTPChannel) {
   /*
    * The goal is to distinguish between "webby" navigations that are controlled
@@ -249,8 +252,7 @@ bool IsUserTriggeredForSecFetchSite(nsIHttpChannel* aHTTPChannel) {
   ExtContentPolicyType contentType = loadInfo->GetExternalContentPolicyType();
 
   // A request issued by the browser is always user initiated.
-  if (loadInfo->TriggeringPrincipal()->IsSystemPrincipal() &&
-      contentType == ExtContentPolicy::TYPE_OTHER) {
+  if (loadInfo->TriggeringPrincipal()->IsSystemPrincipal()) {
     return true;
   }
 
@@ -285,12 +287,12 @@ bool IsUserTriggeredForSecFetchSite(nsIHttpChannel* aHTTPChannel) {
   if (referrerInfo) {
     nsCOMPtr<nsIURI> originalReferrer;
     referrerInfo->GetOriginalReferrer(getter_AddRefs(originalReferrer));
-    if (originalReferrer) {
-      return false;
+    if (!originalReferrer) {
+      return true;
     }
   }
 
-  return true;
+  return false;
 }
 
 void mozilla::dom::SecFetch::AddSecFetchDest(nsIHttpChannel* aHTTPChannel) {
@@ -300,45 +302,29 @@ void mozilla::dom::SecFetch::AddSecFetchDest(nsIHttpChannel* aHTTPChannel) {
 
   nsresult rv =
       aHTTPChannel->SetRequestHeader("Sec-Fetch-Dest"_ns, dest, false);
-  mozilla::Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 }
 
 void mozilla::dom::SecFetch::AddSecFetchMode(nsIHttpChannel* aHTTPChannel) {
-  nsAutoCString mode("no-cors");
-
   nsCOMPtr<nsILoadInfo> loadInfo = aHTTPChannel->LoadInfo();
   uint32_t securityMode = loadInfo->GetSecurityMode();
   ExtContentPolicyType externalType = loadInfo->GetExternalContentPolicyType();
 
-  if (securityMode ==
-          nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_INHERITS_SEC_CONTEXT ||
-      securityMode == nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_DATA_IS_BLOCKED) {
-    mode = "same-origin"_ns;
-  } else if (securityMode ==
-             nsILoadInfo::SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT) {
-    mode = "cors"_ns;
-  } else {
-    // If it's not one of the security modes above, then we ensure it's
-    // at least one of the others defined in nsILoadInfo
-    MOZ_ASSERT(
-        securityMode ==
-                nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_INHERITS_SEC_CONTEXT ||
-            securityMode ==
-                nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
-        "unhandled security mode");
-  }
-
+  nsAutoCString mode;
   if (externalType == ExtContentPolicy::TYPE_DOCUMENT ||
       externalType == ExtContentPolicy::TYPE_SUBDOCUMENT ||
       externalType == ExtContentPolicy::TYPE_OBJECT) {
     mode = "navigate"_ns;
   } else if (externalType == ExtContentPolicy::TYPE_WEBSOCKET) {
     mode = "websocket"_ns;
+  } else {
+    mode = GetEnumString(
+        nsContentSecurityManager::SecurityModeToRequestMode(securityMode));
   }
 
   nsresult rv =
       aHTTPChannel->SetRequestHeader("Sec-Fetch-Mode"_ns, mode, false);
-  mozilla::Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 }
 
 void mozilla::dom::SecFetch::AddSecFetchSite(nsIHttpChannel* aHTTPChannel) {
@@ -360,7 +346,7 @@ void mozilla::dom::SecFetch::AddSecFetchSite(nsIHttpChannel* aHTTPChannel) {
 
   nsresult rv =
       aHTTPChannel->SetRequestHeader("Sec-Fetch-Site"_ns, site, false);
-  mozilla::Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 }
 
 void mozilla::dom::SecFetch::AddSecFetchUser(nsIHttpChannel* aHTTPChannel) {
@@ -383,7 +369,7 @@ void mozilla::dom::SecFetch::AddSecFetchUser(nsIHttpChannel* aHTTPChannel) {
   nsAutoCString user("?1");
   nsresult rv =
       aHTTPChannel->SetRequestHeader("Sec-Fetch-User"_ns, user, false);
-  mozilla::Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 }
 
 void mozilla::dom::SecFetch::AddSecFetchHeader(nsIHttpChannel* aHTTPChannel) {

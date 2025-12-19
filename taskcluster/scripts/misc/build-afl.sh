@@ -12,6 +12,7 @@ SH_PROGS="afl-plot afl-cmin afl-cmin.bash afl-whatsup afl-addseeds afl-system-co
 
 cd "$MOZ_FETCHES_DIR/AFLplusplus"
 patch -p1 -i "$scripts/afl-nyx.patch"
+patch -p1 -i "$scripts/afl-llvm20.patch"
 
 make -f GNUmakefile $PROGS \
     CC="$MOZ_FETCHES_DIR/clang/bin/clang" \
@@ -21,6 +22,7 @@ make -f GNUmakefile $PROGS \
     PREFIX=/
 mkdir -p "$dir/bin"
 install -m 755 $PROGS $SH_PROGS "$dir/bin"
+install -m 644 ./utils/dynamic_covfilter/make_symbol_list.py "$dir/bin/"
 
 make -f GNUmakefile.llvm install \
     CODE_COVERAGE=1 \

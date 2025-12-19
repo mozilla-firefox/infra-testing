@@ -42,9 +42,6 @@ newtab-topsites-add-button = ଯୋଗ କରନ୍ତୁ
 # "This action" refers to deleting a page from history.
 newtab-confirm-delete-history-p2 = ଏହି କାର୍ଯ୍ୟର ପଦକ୍ଷେପ ବାତିଲ କରିପାରିବେ ନାହିଁ।
 
-## Top Sites - Sponsored label
-
-
 ## Context Menu - Action Tooltips.
 
 # General tooltip for context menus.
@@ -74,9 +71,6 @@ newtab-menu-delete-history = ପୁରୁଣା ତଥ୍ୟରୁ ବାହା�
 newtab-menu-save-to-pocket = { -pocket-brand-name }ରେ ସଂରକ୍ଷଣ କରନ୍ତୁ
 newtab-menu-delete-pocket = { -pocket-brand-name }ରୁ ବିଲୋପ କରନ୍ତୁ
 newtab-menu-archive-pocket = { -pocket-brand-name }ରେ ସକ୍ରିୟ
-
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
 
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
@@ -148,9 +142,6 @@ newtab-section-header-recent-activity = ସାମ୍ପ୍ରତିକ ଗତି
 #   $provider (string) - Name of the corresponding content provider.
 newtab-section-header-pocket = { $provider }ଦ୍ୱାରା ସୁପାରିଶକୃତ
 
-## Empty Section States: These show when there are no more items in a section. Ex. When there are no more Pocket story recommendations, in the space where there would have been stories, this is shown instead.
-
-
 ## Empty Section (Content Discovery Experience). These show when there are no more stories or when some stories fail to load.
 
 newtab-discovery-empty-section-topstories-header = ଆପଣ ଧରି ପାରିଛନ୍ତି
@@ -168,12 +159,6 @@ newtab-pocket-more-recommendations = ଅଧିକ ସୁପାରିଶ
 newtab-pocket-learn-more = ଅଧିକ ଜାଣନ୍ତୁ
 newtab-pocket-cta-button = { -pocket-brand-name } ପାଆନ୍ତୁ
 
-## Thumbs up and down buttons that shows over a newtab stories card thumbnail on hover.
-
-
-## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
-
-
 ## Error Fallback Content.
 ## This message and suggested action link are shown in each section of UI that fails to render.
 
@@ -184,43 +169,3 @@ newtab-error-fallback-refresh-link = ପୃଷ୍ଠାଟିକୁ ରିଫ୍
 
 newtab-custom-recent-title = ସାମ୍ପ୍ରତିକ ଗତିବିଧି
 newtab-custom-close-button = ବନ୍ଦ କରନ୍ତୁ
-
-## New Tab Wallpapers
-
-
-## Solid Colors
-
-
-## Abstract
-
-
-## Celestial
-
-
-## Celestial
-
-
-## New Tab Weather
-
-
-## Topic Labels
-
-
-## Topic Selection Modal
-
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
-
-## Panel in the Customize menu section to manage followed and blocked topics
-

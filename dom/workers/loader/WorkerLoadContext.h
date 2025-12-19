@@ -7,14 +7,14 @@
 #ifndef mozilla_dom_workers_WorkerLoadContext_h__
 #define mozilla_dom_workers_WorkerLoadContext_h__
 
+#include "js/loader/LoadContextBase.h"
+#include "js/loader/ScriptKind.h"
+#include "js/loader/ScriptLoadRequest.h"
+#include "mozilla/CORSMode.h"
+#include "mozilla/dom/Promise.h"
 #include "nsIChannel.h"
 #include "nsIInputStream.h"
 #include "nsIRequest.h"
-#include "mozilla/CORSMode.h"
-#include "mozilla/dom/Promise.h"
-#include "js/loader/ScriptKind.h"
-#include "js/loader/ScriptLoadRequest.h"
-#include "js/loader/LoadContextBase.h"
 
 class nsIReferrerInfo;
 class nsIURI;
@@ -102,9 +102,7 @@ class WorkerLoadContext : public JS::loader::LoadContextBase {
                     bool aOnlyExistingCachedResourcesAllowed);
 
   // Used to detect if the `is top-level` bit is set on a given module.
-  bool IsTopLevel() {
-    return mRequest->IsTopLevel() && (mKind == Kind::MainScript);
-  };
+  bool IsTopLevel();
 
   static Kind GetKind(bool isMainScript, bool isDebuggerScript) {
     if (isDebuggerScript) {
@@ -181,7 +179,7 @@ class ThreadSafeRequestHandle final {
 
   JS::loader::ScriptLoadRequest* GetRequest() const { return mRequest; }
 
-  WorkerLoadContext* GetContext() { return mRequest->GetWorkerLoadContext(); }
+  WorkerLoadContext* GetContext();
 
   bool IsEmpty() { return !mRequest; }
 

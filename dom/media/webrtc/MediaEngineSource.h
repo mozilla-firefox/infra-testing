@@ -9,12 +9,11 @@
 
 #include "MediaSegment.h"
 #include "MediaTrackConstraints.h"
+#include "PerformanceRecorder.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/dom/MediaStreamTrackBinding.h"
 #include "mozilla/media/MediaUtils.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/ThreadSafeWeakPtr.h"
 #include "nsStringFwd.h"
-#include "PerformanceRecorder.h"
 
 namespace mozilla {
 
@@ -177,8 +176,8 @@ class MediaEngineSourceInterface {
    * calculate this device's ranking as a choice.
    */
   virtual uint32_t GetBestFitnessDistance(
-      const nsTArray<const NormalizedConstraintSet*>& aConstraintSets)
-      const = 0;
+      const nsTArray<const NormalizedConstraintSet*>& aConstraintSets,
+      const MediaEnginePrefs& aPrefs) const = 0;
 
   /**
    * Returns the current settings of the underlying device.
@@ -245,8 +244,8 @@ class MediaEngineSource : public MediaEngineSourceInterface {
 
   // Returns a default distance of 0 for devices that don't have capabilities.
   uint32_t GetBestFitnessDistance(
-      const nsTArray<const NormalizedConstraintSet*>& aConstraintSets)
-      const override {
+      const nsTArray<const NormalizedConstraintSet*>& aConstraintSets,
+      const MediaEnginePrefs& aPrefs) const override {
     return 0;
   }
 

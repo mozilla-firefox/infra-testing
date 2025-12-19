@@ -15,6 +15,8 @@ mod codes {
     include!(concat!(env!("OUT_DIR"), "/nss_sslerr.rs"));
 }
 pub use codes::{SECErrorCodes as sec, SSLErrorCodes as ssl};
+use thiserror::Error;
+
 #[expect(dead_code, reason = "Code is bindgen-generated.")]
 pub mod nspr {
     include!(concat!(env!("OUT_DIR"), "/nspr_err.rs"));
@@ -50,50 +52,57 @@ pub mod mozpkix {
 
 pub type Res<T> = Result<T, Error>;
 
-#[derive(Clone, Debug, PartialEq, PartialOrd, Ord, Eq)]
+#[derive(Clone, Debug, PartialEq, PartialOrd, Ord, Eq, Error)]
 pub enum Error {
-    AeadError,
+    #[error("Certificate decoding error")]
+    CertificateDecoding,
+    #[error("Certificate encoding error")]
+    CertificateEncoding,
+    #[error("Certificate loading error")]
     CertificateLoading,
-    CipherInitFailure,
+    #[error("Cipher initialization error")]
+    CipherInit,
+    #[error("Failed to create SSL socket")]
     CreateSslSocket,
+    #[error("ECH error, retry needed")]
     EchRetry(Vec<u8>),
-    HkdfError,
-    InternalError,
+    #[error("HKDF error")]
+    Hkdf,
+    #[error("Internal error")]
+    Internal,
+    #[error("Integer overflow")]
     IntegerOverflow,
+    #[error("Invalid ALPN")]
+    InvalidAlpn,
+    #[error("Invalid epoch")]
     InvalidEpoch,
+    #[error("Invalid certificate compression ID")]
+    InvalidCertificateCompressionID,
+    #[error("Mixed handshake method")]
     MixedHandshakeMethod,
+    #[error("No data available")]
     NoDataAvailable,
-    NssError {
+    #[error("NSS error: {name} ({code}): {desc}")]
+    Nss {
         name: String,
         code: PRErrorCode,
         desc: String,
     },
-    OverrunError,
-    SelfEncryptFailure,
-    StringError,
-    TimeTravelError,
+    #[error("Self encryption error")]
+    SelfEncrypt,
+    #[error("String conversion error")]
+    String,
+    #[error("Time travel detected")]
+    TimeTravel,
+    #[error("Unsupported cipher")]
     UnsupportedCipher,
+    #[error("Unsupported version")]
     UnsupportedVersion,
 }
 
 impl Error {
     pub(crate) fn last_nss_error() -> Self {
         Self::from(unsafe { PR_GetError() })
-    }
-}
-
-impl std::error::Error for Error {
-    fn cause(&self) -> Option<&dyn std::error::Error> {
-        None
-    }
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        None
-    }
-}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "Error: {self:?}")
     }
 }
 
@@ -104,12 +113,12 @@ impl From<std::num::TryFromIntError> for Error {
 }
 impl From<std::ffi::NulError> for Error {
     fn from(_: std::ffi::NulError) -> Self {
-        Self::InternalError
+        Self::Internal
     }
 }
 impl From<Utf8Error> for Error {
     fn from(_: Utf8Error) -> Self {
-        Self::StringError
+        Self::String
     }
 }
 impl From<PRErrorCode> for Error {
@@ -119,7 +128,7 @@ impl From<PRErrorCode> for Error {
             || unsafe { PR_ErrorToString(code, PR_LANGUAGE_I_DEFAULT) },
             "...",
         );
-        Self::NssError { name, code, desc }
+        Self::Nss { name, code, desc }
     }
 }
 
@@ -148,12 +157,13 @@ pub fn secstatus_to_res(rv: SECStatus) -> Res<()> {
 
 pub const fn is_blocked(result: &Res<()>) -> bool {
     match result {
-        Err(Error::NssError { code, .. }) => *code == nspr::PR_WOULD_BLOCK_ERROR,
+        Err(Error::Nss { code, .. }) => *code == nspr::PR_WOULD_BLOCK_ERROR,
         _ => false,
     }
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use test_fixture::fixture_init;
 
@@ -189,7 +199,7 @@ mod tests {
         let r = secstatus_to_res(SECFailure);
         assert!(r.is_err());
         match r.unwrap_err() {
-            Error::NssError { name, code, desc } => {
+            Error::Nss { name, code, desc } => {
                 assert_eq!(name, "SSL_ERROR_BAD_MAC_READ");
                 assert_eq!(code, -12273);
                 assert_eq!(
@@ -207,7 +217,7 @@ mod tests {
         let r = secstatus_to_res(SECFailure);
         assert!(r.is_err());
         match r.unwrap_err() {
-            Error::NssError { name, code, .. } => {
+            Error::Nss { name, code, .. } => {
                 assert_eq!(name, "UNKNOWN_ERROR");
                 assert_eq!(code, 0);
                 // Note that we don't test |desc| here because that comes from
@@ -224,7 +234,7 @@ mod tests {
         assert!(r.is_err());
         assert!(is_blocked(&r));
         match r.unwrap_err() {
-            Error::NssError { name, code, desc } => {
+            Error::Nss { name, code, desc } => {
                 assert_eq!(name, "PR_WOULD_BLOCK_ERROR");
                 assert_eq!(code, -5998);
                 assert_eq!(desc, "The operation would have blocked");

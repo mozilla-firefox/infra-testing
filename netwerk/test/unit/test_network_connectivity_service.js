@@ -11,7 +11,7 @@ const { HttpServer } = ChromeUtils.importESModule(
 /**
  * Waits for an observer notification to fire.
  *
- * @param {String} topicName The notification topic.
+ * @param {string} topicName The notification topic.
  * @returns {Promise} A promise that fulfills when the notification is fired.
  */
 function promiseObserverNotification(topicName, matchFunc) {
@@ -27,6 +27,10 @@ function promiseObserverNotification(topicName, matchFunc) {
   });
 }
 
+Services.prefs.setBoolPref(
+  "network.connectivity-service.wait_for_idle_startup",
+  false
+);
 registerCleanupFunction(() => {
   Services.prefs.clearUserPref("network.connectivity-service.DNSv4.domain");
   Services.prefs.clearUserPref("network.connectivity-service.DNSv6.domain");

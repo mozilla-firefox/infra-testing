@@ -6,12 +6,13 @@
 
 #include "SVGTransformListSMILType.h"
 
+#include <math.h>
+
+#include "SVGTransform.h"
+#include "SVGTransformList.h"
 #include "mozilla/SMILValue.h"
 #include "nsCRT.h"
 #include "nsMathUtils.h"
-#include "SVGTransformList.h"
-#include "SVGTransform.h"
-#include <math.h>
 
 using namespace mozilla::dom::SVGTransform_Binding;
 
@@ -22,14 +23,14 @@ using TransformArray = FallibleTArray<SVGTransformSMILData>;
 //----------------------------------------------------------------------
 // nsISMILType implementation
 
-void SVGTransformListSMILType::Init(SMILValue& aValue) const {
+void SVGTransformListSMILType::InitValue(SMILValue& aValue) const {
   MOZ_ASSERT(aValue.IsNull(), "Unexpected value type");
 
   aValue.mU.mPtr = new TransformArray(1);
   aValue.mType = this;
 }
 
-void SVGTransformListSMILType::Destroy(SMILValue& aValue) const {
+void SVGTransformListSMILType::DestroyValue(SMILValue& aValue) const {
   MOZ_ASSERT(aValue.mType == this, "Unexpected SMIL value type");
   TransformArray* params = static_cast<TransformArray*>(aValue.mU.mPtr);
   delete params;

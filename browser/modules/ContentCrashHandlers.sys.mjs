@@ -25,6 +25,9 @@ const DAYS_TO_SUPPRESS = 30;
 const MAX_UNSEEN_CRASHED_CHILD_IDS = 20;
 const MAX_UNSEEN_CRASHED_SUBFRAME_IDS = 10;
 
+// Make sure that we will not prompt the user more than once a week
+const SILENCE_FOR_DAYS_IN_S = 7 * 86400;
+
 // Time after which we will begin scanning for unsubmitted crash reports
 const CHECK_FOR_UNSUBMITTED_CRASH_REPORTS_DELAY_MS = 60 * 10000; // 10 minutes
 
@@ -997,7 +1000,9 @@ export var UnsubmittedCrashHandler = {
 
   removeExistingNotification(aNotification) {
     if (aNotification) {
-      let chromeWin = lazy.BrowserWindowTracker.getTopWindow();
+      let chromeWin = lazy.BrowserWindowTracker.getTopWindow({
+        allowFromInactiveWorkspace: true,
+      });
       if (!chromeWin) {
         return false;
       }
@@ -1034,6 +1039,14 @@ export var UnsubmittedCrashHandler = {
       return null;
     }
 
+    const dontShowBefore = Services.prefs.getIntPref(
+      "browser.crashReports.dontShowBefore"
+    );
+    const now = Math.trunc(Date.now() / 1000);
+    if (now < dontShowBefore) {
+      return null;
+    }
+
     this._requestedSubmission.reportIDs.push(...newReportIDs);
     this._requestedSubmission.notification = await this.show({
       notificationID: "pending-crash-reports-req",
@@ -1041,6 +1054,10 @@ export var UnsubmittedCrashHandler = {
       onAction: () => {
         this._requestedSubmission.notification = null;
         this._requestedSubmission.reportIDs = [];
+        Services.prefs.setIntPref(
+          "browser.crashReports.dontShowBefore",
+          now + SILENCE_FOR_DAYS_IN_S
+        );
       },
       requestedByDevs: true,
     });
@@ -1099,7 +1116,9 @@ export var UnsubmittedCrashHandler = {
    * @returns The <xul:notification> if one is shown. null otherwise.
    */
   show({ notificationID, reportIDs, onAction, requestedByDevs }) {
-    let chromeWin = lazy.BrowserWindowTracker.getTopWindow();
+    let chromeWin = lazy.BrowserWindowTracker.getTopWindow({
+      allowFromInactiveWorkspace: true,
+    });
     if (!chromeWin) {
       // Can't show a notification in this case. We'll hopefully
       // get another opportunity to have the user submit their
@@ -1147,7 +1166,7 @@ export var UnsubmittedCrashHandler = {
     };
 
     const requestedCrashSupport = {
-      supportPage: "requested-crash-minidump",
+      supportPage: "unsent-crash-reports-in-firefox",
     };
     const requestedCrashReportsDontShowAgain = {
       "l10n-id": "requested-crash-reports-dont-show-again",
@@ -1193,7 +1212,7 @@ export var UnsubmittedCrashHandler = {
       {
         label: {
           "l10n-id": requestedByDevs
-            ? "requested-crash-reports-message"
+            ? "requested-crash-reports-message-new"
             : "pending-crash-reports-message",
           "l10n-args": { reportCount: reportIDs.length },
         },

@@ -7,6 +7,7 @@
 use std::any::TypeId;
 use std::collections::HashMap;
 
+use malloc_size_of_derive::MallocSizeOf;
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 
@@ -21,7 +22,7 @@ mod functional;
 mod linear;
 
 /// Different kinds of histograms.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, MallocSizeOf)]
 #[serde(rename_all = "lowercase")]
 pub enum HistogramType {
     /// A histogram with linear distributed buckets.
@@ -59,7 +60,7 @@ impl TryFrom<i32> for HistogramType {
 /// assert_eq!(10, hist.count());
 /// assert_eq!(55, hist.sum());
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, MallocSizeOf)]
 pub struct Histogram<B> {
     /// Mapping bucket's minimum to sample count.
     values: HashMap<u64, u64>,
@@ -123,19 +124,7 @@ impl<B: Bucketing> Histogram<B> {
     /// Gets a snapshot of all values from the first bucket until one past the last filled bucket,
     /// filling in empty buckets with 0.
     pub fn snapshot_values(&self) -> HashMap<u64, u64> {
-        let mut res = self.values.clone();
-
-        let max_bucket = self.values.keys().max().cloned().unwrap_or(0);
-
-        for &min_bucket in self.bucketing.ranges() {
-            // Fill in missing entries.
-            let _ = res.entry(min_bucket).or_insert(0);
-            // stop one after the last filled bucket
-            if min_bucket > max_bucket {
-                break;
-            }
-        }
-        res
+        self.values.clone()
     }
 
     /// Clear this histogram.
@@ -224,10 +213,11 @@ where
     pub fn merge(&mut self, other: &Self) {
         assert_eq!(self.bucketing, other.bucketing);
 
-        self.sum += other.sum;
-        self.count += other.count;
+        self.sum = self.sum.saturating_add(other.sum);
+        self.count = self.count.saturating_add(other.count);
         for (&bucket, &count) in &other.values {
-            *self.values.entry(bucket).or_insert(0) += count;
+            let entry = self.values.entry(bucket).or_insert(0);
+            *entry = entry.saturating_add(count)
         }
     }
 }
@@ -260,10 +250,11 @@ where
                 && matches!(other.bucketing, LinearOrExponential::Exponential(_))
             )
         );
-        self.sum += other.sum;
-        self.count += other.count;
+        self.sum = self.sum.saturating_add(other.sum);
+        self.count = self.count.saturating_add(other.count);
         for (&bucket, &count) in &other.values {
-            *self.values.entry(bucket).or_insert(0) += count;
+            let entry = self.values.entry(bucket).or_insert(0);
+            *entry = entry.saturating_add(count);
         }
     }
 }

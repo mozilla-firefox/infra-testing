@@ -3,23 +3,23 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#include "mozilla/dom/Element.h"
-#include "nsContentUtils.h"
-#include "nsLayoutUtils.h"
-#include "nsRFPService.h"
-#include "Performance.h"
-#include "imgRequest.h"
-#include "PerformanceMainThread.h"
 #include "LargestContentfulPaint.h"
 
+#include "Performance.h"
+#include "PerformanceMainThread.h"
+#include "imgRequest.h"
+#include "mozilla/Logging.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/DOMIntersectionObserver.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/Element.h"
-
-#include "mozilla/PresShell.h"
-#include "mozilla/Logging.h"
 #include "mozilla/nsVideoFrame.h"
+#include "nsContentUtils.h"
+#include "nsGkAtoms.h"
+#include "nsLayoutUtils.h"
+#include "nsRFPService.h"
 
 namespace mozilla::dom {
 
@@ -61,7 +61,7 @@ LargestContentfulPaint::LargestContentfulPaint(
     const Maybe<TimeStamp>& aLoadTime, const unsigned long aSize, nsIURI* aURI,
     Element* aElement, bool aShouldExposeRenderTime)
     : PerformanceEntry(aPerformance->GetParentObject(), u""_ns,
-                       kLargestContentfulPaintName),
+                       nsGkAtoms::largestContentfulPaint),
       mPerformance(aPerformance),
       mRenderTime(aRenderTime),
       mLoadTime(aLoadTime),
@@ -152,9 +152,8 @@ void LargestContentfulPaint::MaybeProcessImageForElementTiming(
     return;
   }
 
-  nsPresContext* pc =
-      aElement->GetPresContext(Element::PresContextFor::eForComposedDoc);
-  if (!pc) {
+  nsPresContext* pc = document->GetPresContext();
+  if (!pc || pc->HasStoppedGeneratingLCP()) {
     return;
   }
 
@@ -269,7 +268,10 @@ void LCPHelpers::FinalizeLCPEntryForImage(
 
   RefPtr<LargestContentfulPaint> entry = new LargestContentfulPaint(
       performance, lcpTimings.mRenderTime.ref(), lcpTimings.mLoadTime, 0,
-      requestURI, aContainingBlock, taoPassed);
+      requestURI, aContainingBlock,
+      taoPassed ||
+          StaticPrefs::
+              dom_performance_largest_contentful_paint_coarsened_rendertime_enabled());
 
   entry->UpdateSize(aContainingBlock, aTargetRectRelativeToSelf, performance,
                     true);
@@ -310,15 +312,7 @@ DOMHighResTimeStamp LargestContentfulPaint::LoadTime() const {
 }
 
 DOMHighResTimeStamp LargestContentfulPaint::StartTime() const {
-  if (mShouldExposeRenderTime) {
-    return GetReducedTimePrecisionDOMHighRes(mPerformance, mRenderTime);
-  }
-
-  if (mLoadTime.isNothing()) {
-    return 0;
-  }
-
-  return GetReducedTimePrecisionDOMHighRes(mPerformance, mLoadTime.ref());
+  return mShouldExposeRenderTime ? RenderTime() : LoadTime();
 }
 
 /* static */
@@ -374,7 +368,8 @@ void LargestContentfulPaint::UpdateSize(
   // algorithm using element as the target and viewport as the root.
   // (From https://wicg.github.io/element-timing/#sec-report-image-element)
   IntersectionInput input = DOMIntersectionObserver::ComputeInput(
-      *frame->PresContext()->Document(), rootFrame->GetContent(), nullptr);
+      *frame->PresContext()->Document(), rootFrame->GetContent(), nullptr,
+      nullptr);
   const IntersectionOutput output =
       DOMIntersectionObserver::Intersect(input, *aContainingBlock);
 
@@ -432,14 +427,10 @@ void LargestContentfulPaint::UpdateSize(
                                  AppUnitsPerCSSPixel());
     LOG("  boundingClientArea = %f", boundingClientArea);
 
-    // Let scaleFactor be boundingClientArea / naturalArea.
-    double scaleFactor = boundingClientArea / naturalArea;
-    LOG("  scaleFactor = %f", scaleFactor);
-
-    // If scaleFactor is greater than 1, then divide area by scaleFactor.
-    if (scaleFactor > 1) {
-      LOG("  area before sacled doown %f", area);
-      area = area / scaleFactor;
+    // If the scale factor is greater than 1, then adjust area.
+    if (boundingClientArea > naturalArea) {
+      LOG("  area before scaled down %f", area);
+      area *= (naturalArea / boundingClientArea);
     }
   }
 

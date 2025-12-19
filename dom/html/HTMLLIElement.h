@@ -7,8 +7,6 @@
 #ifndef mozilla_dom_HTMLLIElement_h
 #define mozilla_dom_HTMLLIElement_h
 
-#include "mozilla/Attributes.h"
-
 #include "nsGenericHTMLElement.h"
 
 namespace mozilla::dom {
@@ -39,8 +37,8 @@ class HTMLLIElement final : public nsGenericHTMLElement {
     SetHTMLIntAttr(nsGkAtoms::value, aValue, rv);
   }
 
-  static const nsAttrValue::EnumTable kULTypeTable[];
-  static const nsAttrValue::EnumTable kOLTypeTable[];
+  static const nsAttrValue::EnumTableEntry kULTypeTable[4];
+  static const nsAttrValue::EnumTableEntry kOLTypeTable[5];
 
  protected:
   virtual ~HTMLLIElement();

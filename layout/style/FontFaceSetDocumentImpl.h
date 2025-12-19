@@ -46,7 +46,7 @@ class FontFaceSetDocumentImpl final : public FontFaceSetImpl,
 
   bool IsFontLoadAllowed(const gfxFontFaceSrc&) override;
 
-  nsPresContext* GetPresContext() const override;
+  FontVisibilityProvider* GetFontVisibilityProvider() const override;
 
   bool UpdateRules(const nsTArray<nsFontFaceRuleContainer>& aRules) override;
 
@@ -91,10 +91,9 @@ class FontFaceSetDocumentImpl final : public FontFaceSetImpl,
   void FindMatchingFontFaces(const nsTHashSet<FontFace*>& aMatchingFaces,
                              nsTArray<FontFace*>& aFontFaces) override;
 
-  void InsertRuleFontFace(FontFaceImpl* aFontFace, FontFace* aFontFaceOwner,
-                          StyleOrigin aOrigin,
-                          nsTArray<FontFaceRecord>& aOldRecords,
-                          bool& aFontSetModified);
+  /* Returns whether the font set was modified. */
+  bool InsertRuleFontFace(StyleLockedFontFaceRule*, StyleOrigin,
+                          nsTArray<FontFaceRecord>& aOldRecords);
 
   // Helper function for HasLoadingFontFaces.
   void UpdateHasLoadingFontFaces() override;

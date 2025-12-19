@@ -8,11 +8,13 @@ ChromeUtils.defineESModuleGetters(lazy, {
   error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
   EventDispatcher:
     "chrome://remote/content/marionette/actors/MarionetteEventsParent.sys.mjs",
+  getTimeoutMultiplier: "chrome://remote/content/shared/AppInfo.sys.mjs",
   Log: "chrome://remote/content/shared/Log.sys.mjs",
+  MarionettePrefs: "chrome://remote/content/marionette/prefs.sys.mjs",
   PageLoadStrategy:
     "chrome://remote/content/shared/webdriver/Capabilities.sys.mjs",
   ProgressListener: "chrome://remote/content/shared/Navigate.sys.mjs",
-  TimedPromise: "chrome://remote/content/marionette/sync.sys.mjs",
+  TimedPromise: "chrome://remote/content/shared/Sync.sys.mjs",
   truncate: "chrome://remote/content/shared/Format.sys.mjs",
 });
 
@@ -20,8 +22,7 @@ ChromeUtils.defineLazyGetter(lazy, "logger", () =>
   lazy.Log.get(lazy.Log.TYPES.MARIONETTE)
 );
 
-// Timeouts used to check if a new navigation has been initiated.
-const TIMEOUT_BEFOREUNLOAD_EVENT = 200;
+// Timeout used to wait for the page to be unloaded.
 const TIMEOUT_UNLOAD_EVENT = 5000;
 
 /** @namespace */
@@ -45,7 +46,7 @@ export const navigate = {};
  *     True if the page load has been finished.
  */
 function checkReadyState(pageLoadStrategy, eventData = {}) {
-  const { documentURI, readyState } = eventData;
+  const { documentURI, readyState, isUncommittedInitialDocument } = eventData;
 
   const result = { error: null, finished: false };
 
@@ -76,7 +77,9 @@ function checkReadyState(pageLoadStrategy, eventData = {}) {
       break;
 
     case "complete":
-      result.finished = true;
+      if (!isUncommittedInitialDocument) {
+        result.finished = true;
+      }
       break;
   }
 
@@ -341,7 +344,8 @@ navigate.waitForNavigationCompleted = async function waitForNavigationCompleted(
       case "pageshow": {
         // Don't require an unload event when a top-level browsing context
         // change occurred.
-        if (!seenUnload && !browsingContextChanged) {
+        // The initial about:blank load has no previous page to unload.
+        if (!seenUnload && !browsingContextChanged && !data.isInitialDocument) {
           return;
         }
         const result = checkReadyState(pageLoadStrategy, data);
@@ -408,11 +412,15 @@ navigate.waitForNavigationCompleted = async function waitForNavigationCompleted(
         // Certain commands like clickElement can cause a navigation. Setup a timer
         // to check if a "beforeunload" event has been emitted within the given
         // time frame. If not resolve the Promise.
-        if (!requireBeforeUnload) {
+        if (
+          !requireBeforeUnload &&
+          lazy.MarionettePrefs.navigateAfterClickEnabled
+        ) {
           unloadTimer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
           unloadTimer.initWithCallback(
             onTimer,
-            TIMEOUT_BEFOREUNLOAD_EVENT,
+            lazy.MarionettePrefs.navigateAfterClickTimeout *
+              lazy.getTimeoutMultiplier(),
             Ci.nsITimer.TYPE_ONE_SHOT
           );
         }

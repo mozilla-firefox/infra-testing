@@ -6,10 +6,12 @@
 #include <gtest/gtest.h>
 
 #include "WMFDecoderModule.h"
-#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_media.h"
 
 using namespace mozilla;
 
 TEST(CanCreateMFTDecoder, NoIPC)
-{ EXPECT_TRUE(WMFDecoderModule::CanCreateMFTDecoder(WMFStreamType::H264)); }
+{
+  EXPECT_TRUE(WMFDecoderModule::CanCreateMFTDecoder(WMFStreamType::H264));
+}

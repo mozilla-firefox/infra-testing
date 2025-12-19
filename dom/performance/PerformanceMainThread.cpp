@@ -5,15 +5,19 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "PerformanceMainThread.h"
+
+#include "LargestContentfulPaint.h"
+#include "PerformanceEventTiming.h"
 #include "PerformanceInteractionMetrics.h"
 #include "PerformanceNavigation.h"
 #include "PerformancePaintTiming.h"
-#include "jsapi.h"
 #include "js/GCAPI.h"
 #include "js/PropertyAndElement.h"  // JS_DefineProperty
+#include "jsapi.h"
 #include "mozilla/HoldDropJSObjects.h"
-#include "PerformanceEventTiming.h"
-#include "LargestContentfulPaint.h"
+#include "mozilla/PresShell.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/TextEvents.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/EventCounts.h"
@@ -22,15 +26,12 @@
 #include "mozilla/dom/PerformanceNavigationTiming.h"
 #include "mozilla/dom/PerformanceResourceTiming.h"
 #include "mozilla/dom/PerformanceTiming.h"
-#include "mozilla/StaticPrefs_dom.h"
-#include "mozilla/PresShell.h"
-#include "nsGkAtoms.h"
-#include "nsIChannel.h"
-#include "nsIHttpChannel.h"
-#include "nsIDocShell.h"
-#include "nsGlobalWindowInner.h"
 #include "nsContainerFrame.h"
-#include "mozilla/TextEvents.h"
+#include "nsGkAtoms.h"
+#include "nsGlobalWindowInner.h"
+#include "nsIChannel.h"
+#include "nsIDocShell.h"
+#include "nsIHttpChannel.h"
 
 namespace mozilla::dom {
 
@@ -177,7 +178,7 @@ PerformanceTiming* PerformanceMainThread::Timing() {
   return mTiming;
 }
 
-void PerformanceMainThread::DispatchBufferFullEvent() {
+void PerformanceMainThread::DispatchResourceTimingBufferFullEvent() {
   RefPtr<Event> event = NS_NewDOMEvent(this, nullptr, nullptr);
   // it bubbles, and it isn't cancelable
   event->InitEvent(u"resourcetimingbufferfull"_ns, true, false);
@@ -293,24 +294,27 @@ void PerformanceMainThread::BufferLargestContentfulPaintEntryIfNeeded(
 void PerformanceMainThread::DispatchPendingEventTimingEntries() {
   DOMHighResTimeStamp renderingTime = NowUnclamped();
 
-  bool allEntriesHaveKnownInteractionIds = true;
-  for (auto* entry : mPendingEventTimingEntries) {
+  auto entriesToBeQueuedEnd = mPendingEventTimingEntries.end();
+  for (auto it = mPendingEventTimingEntries.begin();
+       it != mPendingEventTimingEntries.end(); ++it) {
     // Set its duration if it's not set already.
-    if (entry->RawDuration() == 0) {
+    PerformanceEventTiming* entry = *it;
+    if (entry->RawDuration().isNothing()) {
       entry->SetDuration(renderingTime - entry->RawStartTime());
     }
 
-    if (!entry->HasKnownInteractionId()) {
-      allEntriesHaveKnownInteractionIds = false;
+    if (!(mPendingEventTimingEntries.end() != entriesToBeQueuedEnd) &&
+        !entry->HasKnownInteractionId()) {
+      entriesToBeQueuedEnd = it;
     }
   }
 
   if (!StaticPrefs::dom_performance_event_timing_enable_interactionid() ||
-      allEntriesHaveKnownInteractionIds) {
-    while (!mPendingEventTimingEntries.isEmpty()) {
+      mPendingEventTimingEntries.begin() != entriesToBeQueuedEnd) {
+    while (mPendingEventTimingEntries.begin() != entriesToBeQueuedEnd) {
       RefPtr<PerformanceEventTiming> entry =
           mPendingEventTimingEntries.popFirst();
-      if (entry->RawDuration() >= kDefaultEventTimingMinDuration) {
+      if (entry->RawDuration().valueOr(0) >= kDefaultEventTimingMinDuration) {
         QueueEntry(entry);
       }
 
@@ -322,7 +326,7 @@ void PerformanceMainThread::DispatchPendingEventTimingEntries() {
       if (StaticPrefs::dom_performance_event_timing_enable_interactionid()) {
         if (!mHasDispatchedInputEvent && entry->InteractionId() != 0) {
           mFirstInputEvent = entry->Clone();
-          mFirstInputEvent->SetEntryType(u"first-input"_ns);
+          mFirstInputEvent->SetEntryType(nsGkAtoms::firstInput);
           QueueEntry(mFirstInputEvent);
           SetHasDispatchedInputEvent();
         }
@@ -331,7 +335,7 @@ void PerformanceMainThread::DispatchPendingEventTimingEntries() {
           switch (entry->GetMessage()) {
             case ePointerDown: {
               mPendingPointerDown = entry->Clone();
-              mPendingPointerDown->SetEntryType(u"first-input"_ns);
+              mPendingPointerDown->SetEntryType(nsGkAtoms::firstInput);
               break;
             }
             case ePointerUp: {
@@ -347,7 +351,7 @@ void PerformanceMainThread::DispatchPendingEventTimingEntries() {
             case eKeyDown:
             case eMouseDown: {
               mFirstInputEvent = entry->Clone();
-              mFirstInputEvent->SetEntryType(u"first-input"_ns);
+              mFirstInputEvent->SetEntryType(nsGkAtoms::firstInput);
               QueueEntry(mFirstInputEvent);
               SetHasDispatchedInputEvent();
               break;
@@ -366,19 +370,17 @@ PerformanceMainThread::GetPerformanceInteractionMetrics() {
   return mInteractionMetrics;
 }
 
-Maybe<uint64_t> PerformanceMainThread::ComputeInteractionId(
-    const WidgetEvent* aEvent) {
+void PerformanceMainThread::SetInteractionId(
+    PerformanceEventTiming* aEventTiming, const WidgetEvent* aEvent) {
   MOZ_ASSERT(NS_IsMainThread());
   if (!StaticPrefs::dom_performance_event_timing_enable_interactionid() ||
       aEvent->mFlags.mOnlyChromeDispatch || !aEvent->IsTrusted()) {
-    return Some(0);
+    aEventTiming->SetInteractionId(0);
+    return;
   }
 
-  if (aEvent->mMessage == ePointerDown || aEvent->mMessage == eKeyDown) {
-    return Nothing();
-  }
-
-  return Some(mInteractionMetrics.ComputeInteractionId(aEvent));
+  aEventTiming->SetInteractionId(
+      mInteractionMetrics.ComputeInteractionId(aEventTiming, aEvent));
 }
 
 DOMHighResTimeStamp PerformanceMainThread::GetPerformanceTimingFromString(

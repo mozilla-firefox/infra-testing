@@ -1,10 +1,11 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "gtest/gtest.h"
 #include "MediaCodecsSupport.h"
+#include "gtest/gtest.h"
 
 using namespace mozilla;
 using namespace media;
@@ -188,11 +189,11 @@ TEST(MediaCodecsSupport, GetMediaCodecsSupportedString)
     nsCString cn(it.commonName);
     // H264/VP8/VP9 support text should reflect args to MCSInfo::AddSupport
     if (cn == "H264"_ns) {
-      targetString += "H264 SW HW"_ns;
+      targetString += "H264 SWDEC HWDEC"_ns;
     } else if (cn.Equals("VP8"_ns)) {
-      targetString += "VP8 SW"_ns;
+      targetString += "VP8 SWDEC"_ns;
     } else if (cn.Equals("VP9"_ns)) {
-      targetString += "VP9 HW"_ns;
+      targetString += "VP9 HWDEC"_ns;
     } else {
       targetString += nsCString(it.commonName) + " NONE"_ns;
     }

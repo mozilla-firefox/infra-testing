@@ -5,7 +5,8 @@
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
+  CustomizableUI:
+    "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
   SpecialMessageActions:
     "resource://messaging-system/lib/SpecialMessageActions.sys.mjs",
   ASRouter: "resource:///modules/asrouter/ASRouter.sys.mjs",
@@ -94,7 +95,13 @@ export const BookmarksBarButton = {
       },
     };
 
-    lazy.CustomizableUI.addListener(fxmsBookmarksBarBtn);
-    lazy.CustomizableUI.createWidget(fxmsBookmarksBarBtn);
+    try {
+      lazy.CustomizableUI.addListener(fxmsBookmarksBarBtn);
+      lazy.CustomizableUI.createWidget(fxmsBookmarksBarBtn);
+    } catch (err) {
+      console.error(
+        "Error creating bookmarks bar button. It most likely already exists."
+      );
+    }
   },
 };

@@ -20,6 +20,17 @@
 #define FUN_APPLY(FUN, RECEIVER, ARGS) \
   callFunction(std_Function_apply, FUN, RECEIVER, ARGS)
 
+// A "Record" is an internal type used in the ECMAScript spec to define a struct
+// made up of key / values. It is never exposed to user script, but we use a
+// simple Object (with null prototype) as a convenient implementation.
+#define NEW_RECORD() std_Object_create(null)
+
+/* Spec: ECMAScript Language Specification, 5.1 edition, 9.2 and 11.4.9 */
+#define TO_BOOLEAN(v) !!v
+
+/* Spec: ECMAScript Language Specification, 5.1 edition, 9.3 and 11.4.6 */
+#define TO_NUMBER(v) +v
+
 // NB: keep this in sync with the copy in vm/ArgumentsObject.h.
 #define MAX_ARGS_LENGTH (500 * 1000)
 
@@ -76,6 +87,15 @@
 // Item kind for Map/Set iterators.
 #define MAP_SET_ITERATOR_SLOT_ITEM_KIND 1
 
+/* Spec: https://tc39.es/ecma262/#sec-createarrayiterator */
+#define RETURN_ARRAY_ITERATOR(obj, kind)                                 \
+  var iteratedObject = ToObject(obj);                                    \
+  var iterator = NewArrayIterator();                                     \
+  UnsafeSetReservedSlot(iterator, ITERATOR_SLOT_TARGET, iteratedObject); \
+  UnsafeSetReservedSlot(iterator, ITERATOR_SLOT_NEXT_INDEX, 0);          \
+  UnsafeSetReservedSlot(iterator, ARRAY_ITERATOR_SLOT_ITEM_KIND, kind);  \
+  return iterator
+
 #define ITEM_KIND_KEY 0
 #define ITEM_KIND_VALUE 1
 #define ITEM_KIND_KEY_AND_VALUE 2
@@ -98,21 +118,8 @@
 #define REGEXP_STRING_ITERATOR_FLAGS_SLOT 3
 #define REGEXP_STRING_ITERATOR_LASTINDEX_SLOT 4
 
-// Control values for Iterator.range
-#define ITERATOR_RANGE_SLOT_START 0
-#define ITERATOR_RANGE_SLOT_END 1
-#define ITERATOR_RANGE_SLOT_STEP 2
-#define ITERATOR_RANGE_SLOT_INCLUSIVE_END 3
-#define ITERATOR_RANGE_SLOT_ZERO 4
-#define ITERATOR_RANGE_SLOT_ONE 5
-#define ITERATOR_RANGE_SLOT_CURRENT_COUNT 6
-
 #define REGEXP_STRING_ITERATOR_LASTINDEX_DONE -1
 #define REGEXP_STRING_ITERATOR_LASTINDEX_SLOW -2
-
-#define DATE_METHOD_LOCALE_TIME_STRING 0
-#define DATE_METHOD_LOCALE_DATE_STRING 1
-#define DATE_METHOD_LOCALE_STRING 2
 
 #define INTL_INTERNALS_OBJECT_SLOT 0
 #define INTL_SEGMENTS_STRING_SLOT 1
@@ -123,8 +130,21 @@
 #define WRAP_FOR_VALID_ITERATOR_NEXT_METHOD_SLOT 1
 
 #define ITERATOR_HELPER_GENERATOR_SLOT 0
+#define ITERATOR_HELPER_UNDERLYING_ITERATOR_SLOT 1
 
 #define ASYNC_ITERATOR_HELPER_GENERATOR_SLOT 0
+
+#define GENERATOR_RESUME_INDEX_SLOT 4
+#define GENERATOR_RESUME_INDEX_INITIAL_YIELD 0
+
+// Control values for Iterator.range
+#define ITERATOR_RANGE_SLOT_START 0
+#define ITERATOR_RANGE_SLOT_END 1
+#define ITERATOR_RANGE_SLOT_STEP 2
+#define ITERATOR_RANGE_SLOT_INCLUSIVE_END 3
+#define ITERATOR_RANGE_SLOT_ZERO 4
+#define ITERATOR_RANGE_SLOT_ONE 5
+#define ITERATOR_RANGE_SLOT_CURRENT_COUNT 6
 
 // For explicit resource management.
 #define USING_HINT_SYNC 0

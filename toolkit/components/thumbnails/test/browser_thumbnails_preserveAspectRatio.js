@@ -73,10 +73,20 @@ async function testPreserveAspectRatio(
       // Calculation may be off by a pixel here and there due to floating point math;
       // assume it's correct if error is within 1%
       let deviation = Math.abs(expectedHeight - canvas.height) / expectedHeight;
-      Assert.ok(deviation < 0.01, "canvas height within 1% of expected height");
+      Assert.less(
+        deviation,
+        0.01,
+        "canvas height within 1% of expected height"
+      );
     }
   );
 }
+
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["test.wait300msAfterTabSwitch", true]],
+  });
+});
 
 /**
  * Tests PageThumbs' preserveAspectRatio option for a variety

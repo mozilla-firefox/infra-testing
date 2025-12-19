@@ -31,10 +31,14 @@ loader.lazyGetter(this, "supportBaseURL", () => {
   return url;
 });
 
+const { getMdnLinkParams } = ChromeUtils.importESModule(
+  "resource://devtools/shared/mdn.mjs",
+  { global: "contextual" }
+);
+
 const baseErrorURL =
   "https://developer.mozilla.org/docs/Web/JavaScript/Reference/Errors/";
-const params =
-  "?utm_source=mozilla&utm_medium=firefox-console-errors&utm_campaign=default";
+const params = "?" + getMdnLinkParams("firefox-console-errors");
 
 const ErrorDocs = {
   JSMSG_READ_ONLY: "Read-only",
@@ -120,7 +124,7 @@ const ErrorDocs = {
 const MIXED_CONTENT_LEARN_MORE =
   "https://developer.mozilla.org/docs/Web/Security/Mixed_content";
 const TRACKING_PROTECTION_LEARN_MORE =
-  "https://developer.mozilla.org/Firefox/Privacy/Guides/Tracking_Protection";
+  "https://developer.mozilla.org/Web/Privacy/Guides/Firefox_tracking_protection";
 const INSECURE_PASSWORDS_LEARN_MORE =
   "https://developer.mozilla.org/docs/Web/Security/Insecure_passwords";
 const PUBLIC_KEY_PINS_LEARN_MORE =
@@ -162,8 +166,7 @@ const ErrorCategories = {
 
 const baseCorsErrorUrl =
   "https://developer.mozilla.org/docs/Web/HTTP/Guides/CORS/Errors/";
-const corsParams =
-  "?utm_source=devtools&utm_medium=firefox-cors-errors&utm_campaign=default";
+const corsParams = "?" + getMdnLinkParams("firefox-cors-errors");
 const CorsErrorDocs = {
   CORSDisabled: "CORSDisabled",
   CORSDidNotSucceed2: "CORSDidNotSucceed",
@@ -185,7 +188,7 @@ const CorsErrorDocs = {
 const baseStorageAccessPolicyErrorUrl =
   "https://developer.mozilla.org/docs/Web/Privacy/Guides/Storage_Access_Policy/Errors/";
 const storageAccessPolicyParams =
-  "?utm_source=devtools&utm_medium=firefox-cookie-errors&utm_campaign=default";
+  "?" + getMdnLinkParams("firefox-cookie-errors");
 const StorageAccessPolicyErrorDocs = {
   cookieBlockedPermission: "CookieBlockedByPermission",
   cookieBlockedTracker: "CookieBlockedTracker",

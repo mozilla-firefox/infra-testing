@@ -7,6 +7,7 @@ package mozilla.components.feature.app.links
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import androidx.core.net.toUri
 import androidx.fragment.app.FragmentManager
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import mozilla.components.browser.state.action.ContentAction
@@ -23,8 +24,6 @@ import mozilla.components.concept.engine.EngineSession
 import mozilla.components.feature.session.SessionUseCases
 import mozilla.components.support.test.any
 import mozilla.components.support.test.eq
-import mozilla.components.support.test.ext.joinBlocking
-import mozilla.components.support.test.libstate.ext.waitUntilIdle
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.rule.MainCoroutineRule
 import org.junit.After
@@ -111,35 +110,34 @@ class AppLinksFeatureTest {
     }
 
     @Test
-    fun `feature observes app intents when started`() {
+    fun `WHEN feature started THEN feature observes app intents`() {
         val tab = createTab(webUrl)
-        store.dispatch(TabListAction.AddTabAction(tab)).joinBlocking()
-        verify(feature, never()).handleAppIntent(any(), any(), any())
+        store.dispatch(TabListAction.AddTabAction(tab))
+        verify(feature, never()).handleAppIntent(any(), any(), any(), any(), any())
 
         val intent: Intent = mock()
-        val appIntent = AppIntentState(intentUrl, intent)
-        store.dispatch(ContentAction.UpdateAppIntentAction(tab.id, appIntent)).joinBlocking()
+        val appIntent = AppIntentState(intentUrl, intent, null, null)
+        store.dispatch(ContentAction.UpdateAppIntentAction(tab.id, appIntent))
 
-        store.waitUntilIdle()
-        verify(feature).handleAppIntent(any(), any(), any())
+        verify(feature).handleAppIntent(any(), any(), any(), any(), any())
 
         val tabWithConsumedAppIntent = store.state.findTab(tab.id)!!
         assertNull(tabWithConsumedAppIntent.content.appIntent)
     }
 
     @Test
-    fun `feature doesn't observes app intents when stopped`() {
+    fun `WHEN feature is stopped THEN feature doesn't observes app intents`() {
         val tab = createTab(webUrl)
-        store.dispatch(TabListAction.AddTabAction(tab)).joinBlocking()
-        verify(feature, never()).handleAppIntent(any(), any(), any())
+        store.dispatch(TabListAction.AddTabAction(tab))
+        verify(feature, never()).handleAppIntent(any(), any(), any(), any(), any())
 
         feature.stop()
 
         val intent: Intent = mock()
-        val appIntent = AppIntentState(intentUrl, intent)
-        store.dispatch(ContentAction.UpdateAppIntentAction(tab.id, appIntent)).joinBlocking()
+        val appIntent = AppIntentState(intentUrl, intent, null, null)
+        store.dispatch(ContentAction.UpdateAppIntentAction(tab.id, appIntent))
 
-        verify(feature, never()).handleAppIntent(any(), any(), any())
+        verify(feature, never()).handleAppIntent(any(), any(), any(), any(), any())
     }
 
     @Test
@@ -159,7 +157,7 @@ class AppLinksFeatureTest {
         }
 
         val tab = createTab(webUrl)
-        feature.handleAppIntent(tab, intentUrl, mock())
+        feature.handleAppIntent(tab, intentUrl, mock(), null, null)
 
         verify(mockDialog).showNow(eq(mockFragmentManager), anyString())
         verify(mockOpenRedirect, never()).invoke(any(), anyBoolean(), any())
@@ -182,7 +180,7 @@ class AppLinksFeatureTest {
         }
 
         val tab = createTab(webUrl)
-        feature.handleAppIntent(tab, intentUrl, mock())
+        feature.handleAppIntent(tab, intentUrl, mock(), null, null)
 
         verify(mockDialog, never()).showNow(eq(mockFragmentManager), anyString())
     }
@@ -217,7 +215,7 @@ class AppLinksFeatureTest {
         doReturn(componentName).`when`(appIntent).component
         doReturn("com.zxing.app").`when`(componentName).packageName
 
-        feature.handleAppIntent(tab, intentUrl, appIntent)
+        feature.handleAppIntent(tab, intentUrl, appIntent, null, null)
 
         verify(mockDialog, never()).showNow(eq(mockFragmentManager), anyString())
     }
@@ -252,7 +250,7 @@ class AppLinksFeatureTest {
         doReturn(componentName).`when`(appIntent).component
         doReturn("com.zxing.app").`when`(componentName).packageName
 
-        feature.handleAppIntent(tab, intentUrl, appIntent)
+        feature.handleAppIntent(tab, intentUrl, appIntent, null, null)
 
         verify(mockDialog, never()).showNow(eq(mockFragmentManager), anyString())
     }
@@ -287,7 +285,7 @@ class AppLinksFeatureTest {
         doReturn(componentName).`when`(appIntent).component
         doReturn("com.zxing.app").`when`(componentName).packageName
 
-        feature.handleAppIntent(tab, intentUrl, appIntent)
+        feature.handleAppIntent(tab, intentUrl, appIntent, null, null)
 
         verify(mockDialog).showNow(eq(mockFragmentManager), anyString())
         verify(mockOpenRedirect, never()).invoke(any(), anyBoolean(), any())
@@ -323,7 +321,7 @@ class AppLinksFeatureTest {
         doReturn(componentName).`when`(appIntent).component
         doReturn("com.zxing.app").`when`(componentName).packageName
 
-        feature.handleAppIntent(tab, intentUrl, appIntent)
+        feature.handleAppIntent(tab, intentUrl, appIntent, null, null)
 
         verify(mockDialog).showNow(eq(mockFragmentManager), anyString())
         verify(mockOpenRedirect, never()).invoke(any(), anyBoolean(), any())
@@ -346,7 +344,7 @@ class AppLinksFeatureTest {
         }
 
         val tab = createTab(webUrl, private = true)
-        feature.handleAppIntent(tab, intentUrl, mock())
+        feature.handleAppIntent(tab, intentUrl, mock(), null, null)
 
         verify(mockDialog).showNow(eq(mockFragmentManager), anyString())
         verify(mockOpenRedirect, never()).invoke(any(), anyBoolean(), any())
@@ -369,7 +367,7 @@ class AppLinksFeatureTest {
         }
 
         val tab = createTab(webUrl, private = true)
-        feature.handleAppIntent(tab, intentUrl, mock())
+        feature.handleAppIntent(tab, intentUrl, mock(), null, null)
 
         verify(mockDialog).showNow(eq(mockFragmentManager), anyString())
         verify(mockOpenRedirect, never()).invoke(any(), anyBoolean(), any())
@@ -378,60 +376,128 @@ class AppLinksFeatureTest {
     @Test
     fun `redirect dialog is only added once`() {
         val tab = createTab(webUrl, private = true)
-        feature.handleAppIntent(tab, intentUrl, mock())
+        feature.handleAppIntent(tab, intentUrl, mock(), null, null)
 
         verify(mockDialog).showNow(eq(mockFragmentManager), anyString())
 
-        doReturn(mockDialog).`when`(feature).getOrCreateDialog(false, "")
+        doReturn(mockDialog).`when`(feature).getOrCreateDialog(false, false, "", null)
         doReturn(mockDialog).`when`(mockFragmentManager).findFragmentByTag(RedirectDialogFragment.FRAGMENT_TAG)
-        feature.handleAppIntent(tab, intentUrl, mock())
+        feature.handleAppIntent(tab, intentUrl, mock(), null, null)
         verify(mockDialog, times(1)).showNow(mockFragmentManager, RedirectDialogFragment.FRAGMENT_TAG)
     }
 
     @Test
-    fun `only loads URL if scheme is supported`() {
-        val tab = createTab(webUrl, private = true)
-
-        feature.loadUrlIfSchemeSupported(tab, intentUrl)
-        verify(mockLoadUrlUseCase, never()).invoke(anyString(), anyString(), any(), any(), any())
-
-        feature.loadUrlIfSchemeSupported(tab, webUrl)
-        verify(mockLoadUrlUseCase, times(1)).invoke(anyString(), anyString(), any(), any(), any())
-
-        feature.loadUrlIfSchemeSupported(tab, aboutUrl)
-        verify(mockLoadUrlUseCase, times(2)).invoke(anyString(), anyString(), any(), any(), any())
+    fun `WHEN url is not supported THEN isSchemeSupported returns false`() {
+        assertFalse(feature.isSchemeSupported(intentUrl))
+        assertTrue(feature.isSchemeSupported(webUrl))
+        assertTrue(feature.isSchemeSupported(aboutUrl))
     }
 
     @Test
-    fun `WHEN caller and intent have the same package name THEN return true`() {
-        val customTab =
-            createCustomTab(
-                id = "c",
-                url = webUrl,
-                source = SessionState.Source.External.CustomTab(
-                    ExternalPackage("com.zxing.app", PackageCategory.PRODUCTIVITY),
-                ),
-            )
-        val appIntent: Intent = mock()
-        val componentName: ComponentName = mock()
-        doReturn(componentName).`when`(appIntent).component
-        doReturn("com.zxing.app").`when`(componentName).packageName
-        assertTrue(feature.isAuthentication(customTab, appIntent))
-
+    fun `WHEN url or fallback url scheme is supported THEN cancel redirect will load it`() {
         val tab = createTab(webUrl, private = true)
-        assertFalse(feature.isAuthentication(tab, appIntent))
+        val intent: Intent = mock()
 
-        val customTab2 =
-            createCustomTab(
-                id = "c",
-                url = webUrl,
-                source = SessionState.Source.External.CustomTab(
-                    ExternalPackage("com.example.app", PackageCategory.PRODUCTIVITY),
-                ),
-            )
-        assertFalse(feature.isAuthentication(customTab2, appIntent))
+        feature.cancelRedirect(tab, intentUrl, null, intent)
+        verify(mockLoadUrlUseCase, never()).invoke(anyString(), anyString(), any(), any(), any())
 
-        doReturn(null).`when`(componentName).packageName
-        assertFalse(feature.isAuthentication(customTab, appIntent))
+        feature.cancelRedirect(tab, intentUrl, intentUrl, intent)
+        verify(mockLoadUrlUseCase, never()).invoke(anyString(), anyString(), any(), any(), any())
+
+        feature.cancelRedirect(tab, webUrl, null, intent)
+        verify(mockLoadUrlUseCase, times(1)).invoke(anyString(), anyString(), any(), any(), any())
+
+        feature.cancelRedirect(tab, aboutUrl, null, intent)
+        verify(mockLoadUrlUseCase, times(2)).invoke(anyString(), anyString(), any(), any(), any())
+
+        feature.cancelRedirect(tab, intentUrl, aboutUrl, intent)
+        verify(mockLoadUrlUseCase, times(3)).invoke(anyString(), anyString(), any(), any(), any())
+    }
+
+    @Test
+    fun `WHEN url scheme is a wallet scheme THEN wallet prompt is shown even if shouldPrompt is false`() {
+        feature = spy(
+            AppLinksFeature(
+                context = mockContext,
+                store = store,
+                fragmentManager = mockFragmentManager,
+                useCases = mockUseCases,
+                dialog = mockDialog,
+                loadUrlUseCase = mockLoadUrlUseCase,
+                shouldPrompt = { false },
+            ),
+        ).also {
+            it.start()
+        }
+
+        val walletUrl = "openid4vp://credential-offer"
+        val tab = createTab("https://example.com", private = false)
+
+        val appIntent: Intent = mock()
+
+        feature.handleAppIntent(tab, walletUrl, appIntent, null, null)
+
+        verify(mockDialog).showNow(eq(mockFragmentManager), anyString())
+        verify(mockOpenRedirect, never()).invoke(any(), anyBoolean(), any())
+    }
+
+    @Test
+    fun `WHEN intent data scheme is a wallet scheme THEN wallet prompt is shown even if shouldPrompt is false`() {
+        feature = spy(
+            AppLinksFeature(
+                context = mockContext,
+                store = store,
+                fragmentManager = mockFragmentManager,
+                useCases = mockUseCases,
+                dialog = mockDialog,
+                loadUrlUseCase = mockLoadUrlUseCase,
+                shouldPrompt = { false },
+            ),
+        ).also {
+            it.start()
+        }
+
+        val nonWalletUrl = "https://example.com"
+        val tab = createTab(nonWalletUrl, private = false)
+
+        val appIntent = Intent(Intent.ACTION_VIEW).apply {
+            data = "mdoc-openid4vp://present".toUri()
+        }
+
+        feature.handleAppIntent(tab, nonWalletUrl, appIntent, null, null)
+
+        verify(mockDialog).showNow(eq(mockFragmentManager), anyString())
+        verify(mockOpenRedirect, never()).invoke(any(), anyBoolean(), any())
+    }
+
+    @Test
+    fun `isWalletLink returns true only for wallet schemes`() {
+        val feature = AppLinksFeature(
+            context = mockContext,
+            store = store,
+            fragmentManager = mockFragmentManager,
+            useCases = mockUseCases,
+            loadUrlUseCase = mockLoadUrlUseCase,
+        )
+
+        val walletUrl = "openid4vp://credential-offer"
+        var appIntent = Intent(Intent.ACTION_VIEW)
+        assertTrue(feature.isWalletLink(walletUrl, appIntent))
+
+        val nonWalletUrl = "https://example.com"
+        appIntent = Intent(Intent.ACTION_VIEW).apply {
+            data = "mdoc-openid4vp://something".toUri()
+        }
+        assertTrue(feature.isWalletLink(nonWalletUrl, appIntent))
+
+        appIntent = Intent(Intent.ACTION_VIEW).apply {
+            data = "https://mozilla.org".toUri()
+        }
+        assertFalse(feature.isWalletLink("https://example.com", appIntent))
+
+        appIntent = Intent(Intent.ACTION_VIEW).apply {
+            data = "eudi-wallet://open".toUri()
+        }
+        assertTrue(feature.isWalletLink("openid-credential-offer://init", appIntent))
     }
 }

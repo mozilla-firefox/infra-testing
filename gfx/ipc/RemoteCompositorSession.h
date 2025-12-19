@@ -19,9 +19,10 @@ class APZCTreeManagerChild;
 
 class RemoteCompositorSession final : public CompositorSession {
  public:
-  RemoteCompositorSession(nsBaseWidget* aWidget, CompositorBridgeChild* aChild,
+  RemoteCompositorSession(nsIWidget* aWidget, CompositorBridgeChild* aChild,
                           CompositorWidgetDelegate* aWidgetDelegate,
                           APZCTreeManagerChild* aAPZ,
+                          UiCompositorControllerChild* aUiController,
                           const LayersId& aRootLayerTreeId);
   virtual ~RemoteCompositorSession();
 

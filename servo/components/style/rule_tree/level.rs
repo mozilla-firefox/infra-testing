@@ -4,6 +4,7 @@
 
 #![forbid(unsafe_code)]
 
+use crate::derives::*;
 use crate::properties::Importance;
 use crate::shared_lock::{SharedRwLockReadGuard, StylesheetGuards};
 use crate::stylesheets::Origin;
@@ -50,6 +51,8 @@ pub enum CascadeLevel {
         ///    https://drafts.csswg.org/css-scoping/#shadow-cascading
         shadow_cascade_order: ShadowCascadeOrder,
     },
+    /// https://drafts.csswg.org/css-anchor-position-1/#position-fallback-origin
+    PositionFallback,
     /// SVG SMIL animations.
     SMILOverride,
     /// CSS animations and script-generated animations.
@@ -79,13 +82,14 @@ impl CascadeLevel {
             } => Self::AuthorImportant {
                 shadow_cascade_order: -shadow_cascade_order,
             },
-            Self::PresHints |
-            Self::SMILOverride |
-            Self::Animations |
-            Self::AuthorImportant { .. } |
-            Self::UserImportant |
-            Self::UAImportant |
-            Self::Transitions => *self,
+            Self::PresHints
+            | Self::PositionFallback
+            | Self::SMILOverride
+            | Self::Animations
+            | Self::AuthorImportant { .. }
+            | Self::UserImportant
+            | Self::UAImportant
+            | Self::Transitions => *self,
         }
     }
 
@@ -99,13 +103,14 @@ impl CascadeLevel {
             } => Self::AuthorNormal {
                 shadow_cascade_order: -shadow_cascade_order,
             },
-            Self::PresHints |
-            Self::SMILOverride |
-            Self::Animations |
-            Self::AuthorNormal { .. } |
-            Self::UserNormal |
-            Self::UANormal |
-            Self::Transitions => *self,
+            Self::PresHints
+            | Self::PositionFallback
+            | Self::SMILOverride
+            | Self::Animations
+            | Self::AuthorNormal { .. }
+            | Self::UserNormal
+            | Self::UANormal
+            | Self::Transitions => *self,
         }
     }
 
@@ -164,12 +169,13 @@ impl CascadeLevel {
         match *self {
             Self::UAImportant | Self::UANormal => Origin::UserAgent,
             Self::UserImportant | Self::UserNormal => Origin::User,
-            Self::PresHints |
-            Self::AuthorNormal { .. } |
-            Self::AuthorImportant { .. } |
-            Self::SMILOverride |
-            Self::Animations |
-            Self::Transitions => Origin::Author,
+            Self::PresHints
+            | Self::PositionFallback { .. }
+            | Self::AuthorNormal { .. }
+            | Self::AuthorImportant { .. }
+            | Self::SMILOverride
+            | Self::Animations
+            | Self::Transitions => Origin::Author,
         }
     }
 

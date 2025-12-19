@@ -27,11 +27,25 @@ nimbus_targeting_environment:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1937207
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1898394
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1949813
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1963160
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1963183
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1971552
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1967328
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1983122
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1997164
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1995896
     data_reviews: &targeting_context_data_reviews
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1928107
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1937207
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1898394
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1949813
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1963160
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1963183
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1971552
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1967328
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1983122
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1997164
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1995896
     notification_emails: &targeting_context_notification_emails
       - beth@mozilla.com
       - project-nimbus@mozilla.com
@@ -70,10 +84,10 @@ nimbus_targeting_environment:
       - "browser.newtabpage.activity-stream.showSearch"
       - "browser.newtabpage.activity-stream.showSponsoredTopSites"
       - "browser.newtabpage.enabled"
-      - "browser.shopping.experience2023.autoActivateCount"
-      - "browser.shopping.experience2023.optedIn"
+      - "browser.profiles.created"
+      - "browser.startup.page"
       - "browser.toolbars.bookmarks.visibility"
-      - "browser.urlbar.quicksuggest.dataCollection.enabled"
+      - "browser.urlbar.lastUrlbarSearchSeconds"
       - "browser.urlbar.showSearchSuggestionsFirst"
       - "browser.urlbar.suggest.quicksuggest.sponsored"
       - "media.videocontrols.picture-in-picture.enabled"
@@ -84,6 +98,7 @@ nimbus_targeting_environment:
       - "nimbus.qa.pref-1"
       - "nimbus.qa.pref-2"
       - "security.sandbox.content.level"
+      - "termsofuse.acceptedDate"
       - "trailhead.firstrun.didSeeAboutWelcome"
 
   attr_eval_errors:
@@ -100,10 +115,12 @@ nimbus_targeting_environment:
     labels:
       - "activeExperiments"
       - "activeRollouts"
+      - "addonsInfo"
       - "addressesSaved"
       - "archBits"
       - "attributionData"
       - "browserSettings"
+      - "buildId"
       - "currentDate"
       - "defaultPDFHandler"
       - "distributionId"
@@ -111,6 +128,7 @@ nimbus_targeting_environment:
       - "enrollmentsMap"
       - "firefoxVersion"
       - "hasActiveEnterprisePolicies"
+      - "hasPinnedTabs"
       - "homePageSettings"
       - "isDefaultBrowser"
       - "isDefaultHandler"
@@ -123,6 +141,7 @@ nimbus_targeting_environment:
       - "os"
       - "primaryResolution"
       - "profileAgeCreated"
+      - "profileGroupProfileCount"
       - "region"
       - "totalBookmarksCount"
       - "userMonthlyActivity"
@@ -175,14 +194,14 @@ nimbus_targeting_environment:
           type: boolean
         browser__newtabpage__enabled:
           type: boolean
-        browser__shopping__experience2023__autoActivateCount:
-          type: number
-        browser__shopping__experience2023__optedIn:
+        browser__profiles__created:
+          type: boolean
+        browser__startup__page:
           type: number
         browser__toolbars__bookmarks__visibility:
           type: string
-        browser__urlbar__quicksuggest__dataCollection__enabled:
-          type: boolean
+        browser__urlbar__lastUrlbarSearchSeconds:
+          type: number
         browser__urlbar__showSearchSuggestionsFirst:
           type: boolean
         browser__urlbar__suggest__quicksuggest__sponsored:
@@ -199,6 +218,8 @@ nimbus_targeting_environment:
           type: number
         security__sandbox__content__level:
           type: number
+        termsofuse__acceptedDate:
+          type: string
         trailhead__firstrun__didSeeAboutWelcome:
           type: boolean
 
@@ -244,6 +265,28 @@ nimbus_targeting_context:
       items:
         type: string
 
+  addons_info:
+    bugs: *targeting_context_bugs
+    data_reviews: *targeting_context_data_reviews
+    expires: *targeting_context_expiry
+    notification_emails: *targeting_context_notification_emails
+    send_in_pings: *targeting_context_pings
+    description: Information about installed addons.
+    data_sensitivity:
+      - interaction
+    type: object
+    structure:
+      type: object
+      properties:
+        # The IDs of installed addons.
+        addons:
+          type: array
+          items:
+            type: string
+        # Has the user installed addons beyond the built in and system addons?
+        hasInstalledAddons:
+          type: boolean
+
   addresses_saved:
     bugs: *targeting_context_bugs
     data_reviews: *targeting_context_data_reviews
@@ -257,8 +300,6 @@ nimbus_targeting_context:
     unit: addresses
 
   arch_bits:
-    no_lint:
-      - UNIT_IN_NAME # metric name must match the targeting context attribute
     bugs: *targeting_context_bugs
     data_reviews: *targeting_context_data_reviews
     expires: *targeting_context_expiry
@@ -309,6 +350,18 @@ nimbus_targeting_context:
           properties:
             channel:
               type: string
+
+  build_id:
+    bugs: *targeting_context_bugs
+    data_reviews: *targeting_context_data_reviews
+    expires: *targeting_context_expiry
+    notification_emails: *targeting_context_notification_emails
+    send_in_pings: *targeting_context_pings
+    description: The Build ID.
+    data_sensitivity:
+      - technical
+    type: quantity
+    unit: build ID
 
   current_date:
     bugs: *targeting_context_bugs
@@ -406,6 +459,17 @@ nimbus_targeting_context:
     notification_emails: *targeting_context_notification_emails
     send_in_pings: *targeting_context_pings
     description: Whether the profile has any active enterprise policies.
+    data_sensitivity:
+      - technical
+    type: boolean
+
+  has_pinned_tabs:
+    bugs: *targeting_context_bugs
+    data_reviews: *targeting_context_data_reviews
+    expires: *targeting_context_expiry
+    notification_emails: *targeting_context_notification_emails
+    send_in_pings: *targeting_context_pings
+    description: Whether the profile has any pinned tabs in any open window.
     data_sensitivity:
       - technical
     type: boolean
@@ -590,6 +654,20 @@ nimbus_targeting_context:
     type: quantity
     unit: seconds since UNIX epoch
 
+  profile_group_profile_count:
+    bugs: *targeting_context_bugs
+    data_reviews: *targeting_context_data_reviews
+    expires: *targeting_context_expiry
+    notification_emails: *targeting_context_notification_emails
+    send_in_pings: *targeting_context_pings
+    description: >
+      The number of profiles in the current profile group or zero if either the
+      feature is not enabled or the user has not created any profiles.
+    data_sensitivity:
+      - interaction
+    type: quantity
+    unit: profiles
+
   region:
     bugs: *targeting_context_bugs
     data_reviews: *targeting_context_data_reviews
@@ -716,9 +794,11 @@ nimbus_events:
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1773563
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1781953
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1997467
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1773563
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1781953
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1997467
     data_sensitivity:
       - technical
     notification_emails:
@@ -763,18 +843,36 @@ nimbus_events:
         description: >
           If reason == "prefFlips-failed", The type of the existing pref value
           (one of "bool", "string", "int", or "invalid").
+      locale:
+        type: string
+        description: >
+          If reason == "l10n-missing-entry" or "l10n-missing-locale" this is the
+          locale we failed to find in the set of available translations.
+      about_config_change:
+        description: >
+          If reason == "changed-pref", whether or not the change was triggerd
+          via about:config.
+        type: string
+      migration:
+        description: >
+          If reason == "migration", the migration that triggered the unenrollment.
+        type: string
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1773563
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1781953
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1843126
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1896718
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1907649
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1976329
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1993057
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1773563
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1781953
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1843126
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1896718
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1907649
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1976329
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1993057
     data_sensitivity:
       - technical
     notification_emails:
@@ -858,21 +956,14 @@ nimbus_events:
 
           - "invalid-recipe": the recipe failed schema validation;
           - "invalid-branch": a branch value failed schema validation;
-          - "invalid-feature": the recipe uses an unknown feature;
           - "l10n-missing-locale": the recipe is missing localizations for a
             specific locale;
           - "l10n-missing-entry": the recipe is missing specific localization
             entries for a specific locale;
-          - "unsupported-feature": the recipe uses a feature that exists but is
-            not supported by this specific application (e.g., a feature that is
-            only for the background task runner);
       branch:
         type: string
         description: >
           If reason == invalid-branch, the branch that failed validation.
-      feature:
-        type: string
-        description: If reason == invalid-feature, the invalid feature ID.
       locale:
         type: string
         description: >
@@ -885,11 +976,6 @@ nimbus_events:
         description: >
           If reason == missing-l10n-entry, a comma-separated list of missing
           localization entries.
-      feature_ids:
-        type: string
-        description: >
-          If reason == unsupported-feature, a comma-separated list of the
-          unsupported feature IDs.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1762652
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1781953
@@ -950,12 +1036,17 @@ nimbus_events:
       conflict_slug:
         type: string
         description: If the enrollment hit a feature conflict, the slug of the conflicting experiment/rollout
+      migration:
+        type: string
+        description: If the unenrollment was caused by a migration, the name of the migration.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1817481
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1955169
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1997467
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1817481
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1955169
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1997467
     data_sensitivity:
       - technical
     notification_emails:
@@ -986,6 +1077,8 @@ nimbus_events:
           Reasons include:
 
           - "unknown": an unknown exception occurred.
+          - one of the reasons documented in
+            `nimbus_events.remote_settings_sync_error`.
 
       enrollments:
         type: string
@@ -993,12 +1086,140 @@ nimbus_events:
           An optional string that includes any enrollments triggered by this relation
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1937169
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1985079
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1937169
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1985079
     data_sensitivity:
       - technical
     notification_emails:
       - beth@mozilla.com
+      - project-nimbus@mozilla.com
+    expires: never
+
+  startup_database_consistency:
+    type: event
+    description: >
+      Emitted during ExperimentManager startup with details about the
+      ExperimentDataStore compared to the NimbusEnrollments database table.
+    extra_keys:
+      total_db_count:
+        description: >
+         The total number of enrollments in the NimbusEnrollments table.
+        type: quantity
+        unit: enrollments
+
+      total_store_count:
+        description: >
+         The total number of enrollments in the ExperimentStore JSON file.
+        type: quantity
+        unit: enrollments
+
+      db_active_count:
+        description: >
+         The number of active enrollments in the NimbusEnrollments table.
+        type: quantity
+        unit: enrollments
+
+      store_active_count:
+        description: >
+         The number of active enrollments in the ExperimentStore JSON file.
+        type: quantity
+        unit: enrollments
+
+      trigger:
+        description: >
+          What triggered the database consistency check. This is either
+          "migration" or "startup".
+        type: string
+
+      primary:
+        description: >
+          Which store was used at startup. This is either "database" or
+          "jsonfile".
+        type: string
+
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1956080
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972427
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1956082
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1956080
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972427
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1956082
+    notification_emails:
+      - beth@mozilla.com
+      - project-nimbus@mozilla.com
+    data_sensitivity:
+     - technical
+    expires: never
+
+  database_write:
+    type: event
+    description: >
+      Emitted when writing to the NimbusEnrollments database table.
+    extra_keys:
+      success:
+        type: boolean
+        description: Whether or not the write suceeded.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1956079
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1956080
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1956079
+    notification_emails:
+      - beth@mozilla.com
+      - project-nimbus@mozilla.com
+    data_sensitivity:
+     - technical
+    expires: never
+
+  remote_settings_sync_error:
+    type: event
+    description: >
+      Triggered when Nimbus fails to get recipes from remote settings collections.
+
+    extra_keys:
+      collection:
+        type: string
+        description: The name of the collection.
+
+      force_sync:
+        type: boolean
+        description: Whether or not the sync was forced.
+
+      trigger:
+        type: string
+        description: What triggered the sync.
+
+      reason:
+        type: string
+        description: >
+          What caused the error. One of:
+
+          - `backwards-sync`: The collection would have synced backwards.
+          - `empty`: The collection is empty. (This is not strictly speaking an
+            error, but there is usually at least one live experiment or rollout
+            in each collection.)
+          - `get-exception`: RemoteSettingsClient.get() threw an exception.
+          - `invalid-data`: The collection did not return an array.
+          - `invalid-last-modified`: The collection returned an invalid value
+            for lastModified.
+          - `last-modified-exception`: Asking the collection for the lastModified
+            triggered an exception.
+          - `null-last-modified`: The collection was empty but lastModified was
+            null (i.e., not synced).
+
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1985079
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1985079
+
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - beth@mozilla.com
+      - relud@mozilla.com
       - project-nimbus@mozilla.com
     expires: never
 
@@ -1019,7 +1240,7 @@ normandy:
     data_reviews:
       - https://bugzil.la/1675104
     notification_emails:
-      - ujet@mozilla.com
+      - omc-core@mozilla.com
     expires: never
     extra_keys:
       value:
@@ -1037,3 +1258,180 @@ normandy:
           The type of experiment variant the user was enrolled into.
         type: string
     telemetry_mirror: Normandy_Expose_NimbusExperiment
+
+heartbeat:
+  flow_id:
+    type: uuid
+    description: |
+      An identifier for the rating flow, generated on the client.
+    bugs:
+      - https://bugzilla.mozilla.org/1963706
+    data_reviews:
+      - https://bugzilla.mozilla.org/1963706
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - normandy-notifications@mozilla.com
+    expires: never
+    send_in_pings:
+      - heartbeat
+
+  offered:
+    type: datetime
+    time_unit: millisecond
+    description: |
+      When the survey was shown to the user.
+    bugs:
+      - https://bugzilla.mozilla.org/1963706
+    data_reviews:
+      - https://bugzilla.mozilla.org/1963706
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - normandy-notifications@mozilla.com
+    expires: never
+    send_in_pings:
+      - heartbeat
+
+  learn_more:
+    type: datetime
+    time_unit: millisecond
+    description: |
+      When the user clicked on the "Learn More" link.
+    bugs:
+      - https://bugzilla.mozilla.org/1963706
+    data_reviews:
+      - https://bugzilla.mozilla.org/1963706
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - normandy-notifications@mozilla.com
+    expires: never
+    send_in_pings:
+      - heartbeat
+
+  voted:
+    type: datetime
+    time_unit: millisecond
+    description: |
+      When the user voted.
+    bugs:
+      - https://bugzilla.mozilla.org/1963706
+    data_reviews:
+      - https://bugzilla.mozilla.org/1963706
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - normandy-notifications@mozilla.com
+    expires: never
+    send_in_pings:
+      - heartbeat
+
+  engaged:
+    type: datetime
+    time_unit: millisecond
+    description: |
+      When the user clicked on the survey-provided button
+      (alternative to voting feature).
+    bugs:
+      - https://bugzilla.mozilla.org/1963706
+    data_reviews:
+      - https://bugzilla.mozilla.org/1963706
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - normandy-notifications@mozilla.com
+    expires: never
+    send_in_pings:
+      - heartbeat
+
+  closed:
+    type: datetime
+    time_unit: millisecond
+    description: |
+      When the Heartbeat notification bar was closed.
+    bugs:
+      - https://bugzilla.mozilla.org/1963706
+    data_reviews:
+      - https://bugzilla.mozilla.org/1963706
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - normandy-notifications@mozilla.com
+    expires: never
+    send_in_pings:
+      - heartbeat
+
+  expired:
+    type: datetime
+    time_unit: millisecond
+    description: |
+      When the survey expired, after 2 hours of no interaction.
+      (threshold regulated by `browser.uitour.surveyDuration` pref.)
+    bugs:
+      - https://bugzilla.mozilla.org/1963706
+    data_reviews:
+      - https://bugzilla.mozilla.org/1963706
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - normandy-notifications@mozilla.com
+    expires: never
+    send_in_pings:
+      - heartbeat
+
+  window_closed:
+    type: datetime
+    time_unit: millisecond
+    description: |
+      When the user closed the Firefox window containing the survey,
+      or when the whole browser is shut down during the survey,
+      thus ending it.
+    bugs:
+      - https://bugzilla.mozilla.org/1963706
+    data_reviews:
+      - https://bugzilla.mozilla.org/1963706
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - normandy-notifications@mozilla.com
+    expires: never
+    send_in_pings:
+      - heartbeat
+
+  score:
+    type: quantity
+    unit: star rating
+    description: |
+      The user's rating.
+    bugs:
+      - https://bugzilla.mozilla.org/1963706
+    data_reviews:
+      - https://bugzilla.mozilla.org/1963706
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - normandy-notifications@mozilla.com
+    expires: never
+    send_in_pings:
+      - heartbeat
+
+  survey_id:
+    type: string
+    description: |
+      Identifies the specific survey.
+      May contain a `::` followed by the Normandy client id if the Heartbeat
+      recipe asks for it to be included.
+      e.g. "hb-out-of-date-en" or "new-user-survey-en-us::<the Normandy client id>"
+    bugs:
+      - https://bugzilla.mozilla.org/1963706
+    data_reviews:
+      - https://bugzilla.mozilla.org/1963706
+    data_sensitivity:
+      - technical
+      - highly_sensitive
+    notification_emails:
+      - normandy-notifications@mozilla.com
+    expires: never
+    send_in_pings:
+      - heartbeat

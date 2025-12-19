@@ -6,32 +6,30 @@
 
 /* the features that media queries can test */
 
-#include "nsGkAtoms.h"
-#include "nsStyleConsts.h"
-#include "nsPresContext.h"
+#include "PreferenceSheet.h"
+#include "mozilla/GeckoBindings.h"
+#include "mozilla/LookAndFeel.h"
+#include "mozilla/RelativeLuminanceUtils.h"
+#include "mozilla/StaticPrefs_browser.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StyleSheet.h"
+#include "mozilla/StyleSheetInlines.h"
+#include "mozilla/dom/BrowsingContextBinding.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentInlines.h"
+#include "mozilla/dom/ScreenBinding.h"
 #include "nsCSSProps.h"
 #include "nsCSSValue.h"
-#include "mozilla/LookAndFeel.h"
+#include "nsContentUtils.h"
 #include "nsDeviceContext.h"
+#include "nsGkAtoms.h"
+#include "nsGlobalWindowOuter.h"
 #include "nsIBaseWindow.h"
 #include "nsIDocShell.h"
 #include "nsIPrintSettings.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/DocumentInlines.h"
-#include "mozilla/dom/BrowsingContextBinding.h"
-#include "mozilla/dom/ScreenBinding.h"
 #include "nsIWidget.h"
-#include "nsContentUtils.h"
-#include "mozilla/RelativeLuminanceUtils.h"
-#include "mozilla/StaticPrefs_browser.h"
-#include "mozilla/StyleSheet.h"
-#include "mozilla/StyleSheetInlines.h"
-#include "mozilla/GeckoBindings.h"
-#include "PreferenceSheet.h"
-#include "nsGlobalWindowOuter.h"
-#ifdef XP_WIN
-#  include "mozilla/WindowsVersion.h"
-#endif
+#include "nsPresContext.h"
+#include "nsStyleConsts.h"
 
 using namespace mozilla;
 using mozilla::dom::DisplayMode;
@@ -74,6 +72,15 @@ static nsSize GetDeviceSize(const Document& aDocument) {
     return CSSPixel::ToAppUnits(deviceSize.value());
   }
 
+  // Media queries in documents should use an override set with WebDriver BiDi
+  // if it exists.
+  if (dom::BrowsingContext* bc = aDocument.GetBrowsingContext()) {
+    Maybe<CSSIntSize> screenSize = bc->GetScreenAreaOverride();
+    if (screenSize.isSome()) {
+      return CSSPixel::ToAppUnits(screenSize.value());
+    }
+  }
+
   nsPresContext* pc = aDocument.GetPresContext();
   // NOTE(emilio): We should probably figure out how to return an appropriate
   // device size here, though in a multi-screen world that makes no sense
@@ -94,6 +101,10 @@ static nsSize GetDeviceSize(const Document& aDocument) {
 
 bool Gecko_MediaFeatures_IsResourceDocument(const Document* aDocument) {
   return aDocument->IsResourceDoc();
+}
+
+bool Gecko_MediaFeatures_InAndroidPipMode(const Document* aDocument) {
+  return aDocument->InAndroidPipMode();
 }
 
 bool Gecko_MediaFeatures_UseOverlayScrollbars(const Document* aDocument) {
@@ -213,22 +224,24 @@ StyleDisplayMode Gecko_MediaFeatures_GetDisplayMode(const Document* aDocument) {
 
   nsCOMPtr<nsISupports> container = rootDocument->GetContainer();
   if (nsCOMPtr<nsIBaseWindow> baseWindow = do_QueryInterface(container)) {
-    nsCOMPtr<nsIWidget> mainWidget;
-    baseWindow->GetMainWidget(getter_AddRefs(mainWidget));
+    nsCOMPtr<nsIWidget> mainWidget = baseWindow->GetMainWidget();
     if (mainWidget && mainWidget->SizeMode() == nsSizeMode_Fullscreen) {
       return StyleDisplayMode::Fullscreen;
     }
   }
 
-  static_assert(static_cast<int32_t>(DisplayMode::Browser) ==
-                        static_cast<int32_t>(StyleDisplayMode::Browser) &&
-                    static_cast<int32_t>(DisplayMode::Minimal_ui) ==
-                        static_cast<int32_t>(StyleDisplayMode::MinimalUi) &&
-                    static_cast<int32_t>(DisplayMode::Standalone) ==
-                        static_cast<int32_t>(StyleDisplayMode::Standalone) &&
-                    static_cast<int32_t>(DisplayMode::Fullscreen) ==
-                        static_cast<int32_t>(StyleDisplayMode::Fullscreen),
-                "DisplayMode must mach nsStyleConsts.h");
+  static_assert(
+      static_cast<int32_t>(DisplayMode::Browser) ==
+              static_cast<int32_t>(StyleDisplayMode::Browser) &&
+          static_cast<int32_t>(DisplayMode::Minimal_ui) ==
+              static_cast<int32_t>(StyleDisplayMode::MinimalUi) &&
+          static_cast<int32_t>(DisplayMode::Standalone) ==
+              static_cast<int32_t>(StyleDisplayMode::Standalone) &&
+          static_cast<int32_t>(DisplayMode::Fullscreen) ==
+              static_cast<int32_t>(StyleDisplayMode::Fullscreen) &&
+          static_cast<int32_t>(DisplayMode::Picture_in_picture) ==
+              static_cast<int32_t>(StyleDisplayMode::PictureInPicture),
+      "DisplayMode must mach nsStyleConsts.h");
 
   dom::BrowsingContext* browsingContext = aDocument->GetBrowsingContext();
   if (!browsingContext) {
@@ -287,6 +300,11 @@ StylePrefersColorScheme Gecko_MediaFeatures_PrefersColorScheme(
                                      : StylePrefersColorScheme::Light;
 }
 
+bool Gecko_MediaFeatures_MacRTL(const Document* aDocument) {
+  auto* widget = nsContentUtils::WidgetForDocument(aDocument);
+  return widget && widget->IsMacTitlebarDirectionRTL();
+}
+
 // Neither Linux, Windows, nor Mac have a way to indicate that low contrast is
 // preferred so we use the presence of an accessibility theme or forced colors
 // as a signal.
@@ -343,6 +361,16 @@ StyleDynamicRange Gecko_MediaFeatures_VideoDynamicRange(
       !StaticPrefs::layout_css_video_dynamic_range_allows_high()) {
     return StyleDynamicRange::Standard;
   }
+#ifdef MOZ_WAYLAND
+  // Wayland compositors allow to process HDR content even without HDR monitor
+  // attached.
+  if (StaticPrefs::gfx_wayland_hdr_force_enabled_AtStartup()) {
+    return StyleDynamicRange::High;
+  }
+  if (!StaticPrefs::gfx_wayland_hdr_AtStartup()) {
+    return StyleDynamicRange::Standard;
+  }
+#endif
   // video-dynamic-range: high has 3 requirements:
   // 1) high peak brightness
   // 2) high contrast ratio

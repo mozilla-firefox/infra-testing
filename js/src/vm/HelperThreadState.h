@@ -13,7 +13,6 @@
 #ifndef vm_HelperThreadState_h
 #define vm_HelperThreadState_h
 
-#include "mozilla/AlreadyAddRefed.h"  // already_AddRefed
 #include "mozilla/Assertions.h"       // MOZ_ASSERT, MOZ_CRASH
 #include "mozilla/Attributes.h"       // MOZ_RAII
 #include "mozilla/EnumeratedArray.h"  // mozilla::EnumeratedArray
@@ -628,9 +627,10 @@ class SourceCompressionTask : public HelperThreadTask {
 
   bool runtimeMatches(JSRuntime* runtime) const { return runtime == runtime_; }
   bool shouldStart() const {
-    // We wait 2 major GCs to start compressing, in order to avoid
-    // immediate compression.
-    return runtime_->gc.majorGCCount() > majorGCNumber_ + 1;
+    // We wait 2 major GCs to start compressing, in order to avoid immediate
+    // compression. If the script source has no other references then don't
+    // compress it and let SweepPendingCompressions remove this task.
+    return !shouldCancel() && runtime_->gc.majorGCCount() > majorGCNumber_ + 1;
   }
 
   bool shouldCancel() const {

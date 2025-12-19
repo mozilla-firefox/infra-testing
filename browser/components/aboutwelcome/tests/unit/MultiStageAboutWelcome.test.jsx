@@ -43,6 +43,7 @@ describe("MultiStageAboutWelcome module", () => {
       AWWaitForMigrationClose: () => Promise.resolve(),
       AWSelectTheme: () => Promise.resolve(),
       AWFinish: () => Promise.resolve(),
+      AWEvaluateAttributeTargeting: () => Promise.resolve(false),
     });
     sandbox = sinon.createSandbox();
   });
@@ -217,6 +218,53 @@ describe("MultiStageAboutWelcome module", () => {
       assert.equal(stub.lastCall.args[2], "SELECT_CHECKBOX");
       stub.restore();
     });
+
+    it("does not render anything until targeting/filtering resolves (gated first paint)", async () => {
+      let resolveTargeting;
+      const targetingPromise = new Promise(r => (resolveTargeting = r));
+      globals.set("AWEvaluateScreenTargeting", () => targetingPromise);
+
+      const wrapper = mount(
+        <MultiStageAboutWelcome {...DEFAULT_PROPS} gateInitialPaint={true} />
+      );
+      // Immediately after mount (before resolve), nothing should be painted
+      assert.strictEqual(wrapper.html(), null);
+      assert.ok(!wrapper.find(WelcomeScreen).exists());
+
+      resolveTargeting();
+      await spinEventLoop();
+      wrapper.update();
+
+      // After targeting resolves, the first screen should render
+      assert.ok(wrapper.find(WelcomeScreen).exists());
+    });
+
+    it("does not send telemetry before first paint is ready, but does afterwards", async () => {
+      let resolveTargeting;
+      const targetingPromise = new Promise(r => (resolveTargeting = r));
+      globals.set("AWEvaluateScreenTargeting", () => targetingPromise);
+
+      const sendEventStub = sinon.stub(global, "AWSendEventTelemetry");
+      const wrapper = mount(
+        <MultiStageAboutWelcome {...DEFAULT_PROPS} gateInitialPaint={true} />
+      );
+      assert.notCalled(sendEventStub);
+      assert.strictEqual(wrapper.html(), null);
+
+      resolveTargeting();
+      await spinEventLoop();
+      wrapper.update();
+
+      const hadImpression = sendEventStub
+        .getCalls()
+        .some(c => c.args && c.args[0] && c.args[0].event === "IMPRESSION");
+      assert.ok(
+        hadImpression,
+        "Expected at least one IMPRESSION event after paint"
+      );
+
+      sendEventStub.restore();
+    });
   });
 
   describe("WelcomeScreen component", () => {
@@ -236,12 +284,23 @@ describe("MultiStageAboutWelcome module", () => {
           totalNumberOfScreens: 1,
           setScreenMultiSelects: sandbox.stub(),
           setActiveMultiSelect: sandbox.stub(),
+          setActiveSingleSelectSelection: sandbox.stub(),
         };
       });
 
       it("should render Easy Setup screen", () => {
         const wrapper = shallow(<WelcomeScreen {...EASY_SETUP_SCREEN_PROPS} />);
         assert.ok(wrapper.exists());
+      });
+
+      it("should render a primary and secondary button", () => {
+        const wrapper = mount(<WelcomeScreen {...EASY_SETUP_SCREEN_PROPS} />);
+        assert.ok(wrapper.find(".primary").exists());
+        assert.equal(
+          wrapper.find(".secondary-cta:not(.top) button.secondary").length,
+          1,
+          "One secondary button"
+        );
       });
 
       it("should render secondary.top button", () => {
@@ -257,6 +316,52 @@ describe("MultiStageAboutWelcome module", () => {
         };
         const wrapper = mount(<SecondaryCTA {...SCREEN_PROPS} />);
         assert.ok(wrapper.find("div.secondary-cta.top").exists());
+      });
+
+      it("should render a secondary top 'Sign in' button if user isn't signed in", async () => {
+        globals.set("AWEvaluateAttributeTargeting", expression => {
+          return Promise.resolve(expression.includes("!isFxASignedIn"));
+        });
+
+        const wrapper = mount(<WelcomeScreen {...EASY_SETUP_SCREEN_PROPS} />);
+        await spinEventLoop();
+        wrapper.update();
+
+        const secondaryTopButton = wrapper.find(".secondary-cta.top");
+        assert.ok(secondaryTopButton.exists(), "secondary button top exists");
+
+        const signInButton = secondaryTopButton.find(
+          '[data-l10n-id="mr1-onboarding-sign-in-button-label"]'
+        );
+
+        assert.equal(
+          signInButton.length,
+          1,
+          "One 'Sign in' secondary top button"
+        );
+      });
+
+      it("should render a secondary top 'Restore Backup' button when backup restore is enabled", async () => {
+        globals.set("AWEvaluateAttributeTargeting", expression => {
+          return Promise.resolve(expression.includes("backupRestoreEnabled"));
+        });
+
+        const wrapper = mount(<WelcomeScreen {...EASY_SETUP_SCREEN_PROPS} />);
+        await spinEventLoop();
+        wrapper.update();
+
+        const secondaryTopButton = wrapper.find(".secondary-cta.top");
+        assert.ok(secondaryTopButton.exists(), "Secondary button top exists");
+
+        let backup = secondaryTopButton.find(
+          '[data-l10n-id="restore-from-backup-secondary-top-button"]'
+        );
+
+        assert.equal(
+          backup.length,
+          1,
+          "One secondary 'Backup Restore' top button"
+        );
       });
 
       it("should render the arrow icon in the secondary button", () => {
@@ -310,23 +415,6 @@ describe("MultiStageAboutWelcome module", () => {
           wrapper.find("div.indicator").prop("style"),
           "--progress-bar-progress",
           "50%"
-        );
-      });
-
-      it("should have a primary, secondary and secondary.top button in the rendered input", () => {
-        const wrapper = mount(<WelcomeScreen {...EASY_SETUP_SCREEN_PROPS} />);
-        assert.ok(wrapper.find(".primary").exists());
-        assert.ok(
-          wrapper
-            .find(".secondary-cta button.secondary[value='secondary_button']")
-            .exists()
-        );
-        assert.ok(
-          wrapper
-            .find(
-              ".secondary-cta.top button.secondary[value='secondary_button_top']"
-            )
-            .exists()
         );
       });
     });
@@ -472,7 +560,7 @@ describe("MultiStageAboutWelcome module", () => {
             },
           },
           navigate: sandbox.stub(),
-          setActiveSingleSelect: sandbox.stub(),
+          setActiveSingleSelectSelection: sandbox.stub(),
           setActiveMultiSelect: sandbox.stub(),
           setScreenMultiSelects: sandbox.stub(),
         };
@@ -489,7 +577,9 @@ describe("MultiStageAboutWelcome module", () => {
         );
       });
       it("should preselect the active value if present", async () => {
-        SINGLE_SELECT_SCREEN_PROPS.activeSingleSelect = "test2";
+        SINGLE_SELECT_SCREEN_PROPS.activeSingleSelectSelections = {
+          "tile-0": ["test2"],
+        };
         const wrapper = mount(
           <WelcomeScreen {...SINGLE_SELECT_SCREEN_PROPS} />
         );
@@ -642,10 +732,14 @@ describe("MultiStageAboutWelcome module", () => {
         };
         const finishStub = sandbox.stub(global, "AWFinish");
         const wrapper = mount(<WelcomeScreen {...SCREEN_PROPS} />);
-
+        let telemetrySpy = sandbox.spy(
+          AboutWelcomeUtils,
+          "sendDismissTelemetry"
+        );
         wrapper.find(".dismiss-button").simulate("click");
 
         assert.calledOnce(finishStub);
+        assert.calledOnce(telemetrySpy);
       });
       it("should handle SHOW_FIREFOX_ACCOUNTS", () => {
         TEST_ACTION.type = "SHOW_FIREFOX_ACCOUNTS";
@@ -1071,7 +1165,7 @@ describe("MultiStageAboutWelcome module", () => {
           AboutWelcomeUtils.handleUserAction.resetHistory();
         }
       });
-      it("Should handle a campaign action when applicable", async () => {
+      it("should handle a campaign action when applicable", async () => {
         let actionSpy = sandbox.spy(AboutWelcomeUtils, "handleCampaignAction");
         let telemetrySpy = sandbox.spy(
           AboutWelcomeUtils,
@@ -1104,7 +1198,7 @@ describe("MultiStageAboutWelcome module", () => {
         assert.equal(telemetrySpy.firstCall.args[1], "CAMPAIGN_ACTION");
         globals.restore();
       });
-      it("Should not handle a campaign action when the action has already been handled", async () => {
+      it("should not handle a campaign action when the action has already been handled", async () => {
         let actionSpy = sandbox.spy(AboutWelcomeUtils, "handleCampaignAction");
         let telemetrySpy = sandbox.spy(
           AboutWelcomeUtils,
@@ -1133,7 +1227,7 @@ describe("MultiStageAboutWelcome module", () => {
         assert.notCalled(telemetrySpy);
         globals.restore();
       });
-      it("Should not send telemetrty when campaign action handling fails", async () => {
+      it("should not send telemetrty when campaign action handling fails", async () => {
         let actionSpy = sandbox.spy(AboutWelcomeUtils, "handleCampaignAction");
         let telemetrySpy = sandbox.spy(
           AboutWelcomeUtils,
@@ -1167,6 +1261,35 @@ describe("MultiStageAboutWelcome module", () => {
         // If campaign handling fails, we should not send telemetry
         assert.notCalled(telemetrySpy);
         globals.restore();
+      });
+      it("should handle action from matched tile in tiles array", () => {
+        const TILE_ID = "test-tile-id";
+        SCREEN_PROPS.content.tiles = [
+          {
+            data: [
+              {
+                id: TILE_ID,
+                action: {
+                  type: "OPEN_URL",
+                  data: { args: "https://example.com" },
+                },
+              },
+            ],
+          },
+        ];
+        const wrapper = mount(<WelcomeScreen {...SCREEN_PROPS} />);
+
+        wrapper.instance().handleAction({
+          currentTarget: { value: TILE_ID },
+          source: "test-source",
+          name: "test-click",
+        });
+
+        const [calledArg] = AboutWelcomeUtils.handleUserAction.firstCall.args;
+        const url = new URL(calledArg.data.args);
+
+        assert.equal(calledArg.type, "OPEN_URL");
+        assert.equal(url.hostname, "example.com");
       });
     });
 
@@ -1202,7 +1325,7 @@ describe("MultiStageAboutWelcome module", () => {
         globals.restore();
       });
 
-      it("Should dismiss when resolve boolean is true and needAwait true", async () => {
+      it("should dismiss when resolve boolean is true and needAwait true", async () => {
         TEST_ACTION.dismiss = "actionResult";
         TEST_ACTION.needsAwait = true;
         // `needsAwait` is true, so the handleUserAction function should return a `Promise<boolean>`
@@ -1239,7 +1362,7 @@ describe("MultiStageAboutWelcome module", () => {
         assert.calledOnce(finishStub);
       });
 
-      it("Should not dismiss when resolve boolean is false and needAwait true", async () => {
+      it("should not dismiss when resolve boolean is false and needAwait true", async () => {
         TEST_ACTION.dismiss = "actionResult";
         TEST_ACTION.needsAwait = true;
         // `needsAwait` is true, so the handleUserAction function should return a `Promise<boolean>`
@@ -1273,7 +1396,7 @@ describe("MultiStageAboutWelcome module", () => {
         assert.notCalled(finishStub);
       });
 
-      it("Should dismiss when true and handleUserAction not awaited", async () => {
+      it("should dismiss when true and handleUserAction not awaited", async () => {
         TEST_ACTION.dismiss = true;
         // `needsAwait` is not set, so the handleUserAction function should return a `Promise<undefined>`
         awSendToParentStub.callsFake(

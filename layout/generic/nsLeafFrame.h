@@ -9,9 +9,8 @@
 #ifndef nsLeafFrame_h___
 #define nsLeafFrame_h___
 
-#include "mozilla/Attributes.h"
-#include "nsIFrame.h"
 #include "nsDisplayList.h"
+#include "nsIFrame.h"
 
 /**
  * Abstract class that provides simple fixed-size layout for leaf objects.
@@ -31,7 +30,7 @@ class nsLeafFrame : public nsIFrame {
    * Our auto size is just the intrinsic size.
    */
   mozilla::LogicalSize ComputeAutoSize(
-      gfxContext* aRenderingContext, mozilla::WritingMode aWM,
+      const SizeComputationInput& aSizingInput, mozilla::WritingMode aWM,
       const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
       const mozilla::LogicalSize& aMargin,
       const mozilla::LogicalSize& aBorderPadding,

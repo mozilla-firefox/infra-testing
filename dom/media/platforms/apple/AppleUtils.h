@@ -7,11 +7,12 @@
 #ifndef mozilla_AppleUtils_h
 #define mozilla_AppleUtils_h
 
-#include "mozilla/Assertions.h"
-#include "mozilla/Attributes.h"
 #include <CoreFoundation/CFBase.h>      // For CFRelease()
 #include <CoreVideo/CVBuffer.h>         // For CVBufferRelease()
 #include <VideoToolbox/VideoToolbox.h>  // For VTCompressionSessionRef
+
+#include "mozilla/Assertions.h"
+#include "mozilla/Attributes.h"
 
 #if TARGET_OS_IPHONE
 inline bool OSSupportsSVC() {
@@ -26,76 +27,6 @@ inline bool OSSupportsSVC() {
 #endif
 
 namespace mozilla {
-
-// Wrapper class to call CFRelease/CVBufferRelease on reference types
-// when they go out of scope.
-template <class T, class F, F relFunc>
-class AutoObjRefRelease {
- public:
-  MOZ_IMPLICIT AutoObjRefRelease(T aRef) : mRef(aRef) {}
-  ~AutoObjRefRelease() {
-    if (mRef) {
-      relFunc(mRef);
-    }
-  }
-  // Return the wrapped ref so it can be used as an in parameter.
-  operator T() { return mRef; }
-  // Return a pointer to the wrapped ref for use as an out parameter.
-  T* receive() { return &mRef; }
-
- private:
-  // Copy operator isn't supported and is not implemented.
-  AutoObjRefRelease<T, F, relFunc>& operator=(
-      const AutoObjRefRelease<T, F, relFunc>&);
-  T mRef;
-};
-
-template <typename T>
-using AutoCFRelease = AutoObjRefRelease<T, decltype(&CFRelease), &CFRelease>;
-template <typename T>
-using AutoCVBufferRelease =
-    AutoObjRefRelease<T, decltype(&CVBufferRelease), &CVBufferRelease>;
-
-// CFRefPtr: A CoreFoundation smart pointer.
-template <class T>
-class CFRefPtr {
- public:
-  explicit CFRefPtr(T aRef) : mRef(aRef) {
-    if (mRef) {
-      CFRetain(mRef);
-    }
-  }
-  // Copy constructor.
-  CFRefPtr(const CFRefPtr<T>& aCFRefPtr) : mRef(aCFRefPtr.mRef) {
-    if (mRef) {
-      CFRetain(mRef);
-    }
-  }
-  // Copy operator
-  CFRefPtr<T>& operator=(const CFRefPtr<T>& aCFRefPtr) {
-    if (mRef == aCFRefPtr.mRef) {
-      return;
-    }
-    if (mRef) {
-      CFRelease(mRef);
-    }
-    mRef = aCFRefPtr.mRef;
-    if (mRef) {
-      CFRetain(mRef);
-    }
-    return *this;
-  }
-  ~CFRefPtr() {
-    if (mRef) {
-      CFRelease(mRef);
-    }
-  }
-  // Return the wrapped ref so it can be used as an in parameter.
-  operator T() { return mRef; }
-
- private:
-  T mRef;
-};
 
 template <typename T>
 struct AutoTypeRefTraits;
@@ -134,15 +65,11 @@ class AutoTypeRef {
   }
 
   // Move constructor
-  AutoTypeRef(AutoTypeRef<T, Traits>&& aOther) : mObj(aOther.mObj) {
-    aOther.mObj = Traits::InvalidValue();
-  }
+  AutoTypeRef(AutoTypeRef<T, Traits>&& aOther) : mObj(aOther.Take()) {}
 
   // Move assignment
   AutoTypeRef<T, Traits>& operator=(const AutoTypeRef<T, Traits>&& aOther) {
-    ReleaseIfNeeded();
-    mObj = aOther.mObj;
-    aOther.mObj = Traits::InvalidValue();
+    Reset(aOther.Take(), AutoTypePolicy::NoRetain);
     return *this;
   }
 
@@ -172,6 +99,12 @@ class AutoTypeRef {
   }
 
  private:
+  T Take() {
+    T obj = mObj;
+    mObj = Traits::InvalidValue();
+    return obj;
+  }
+
   void ReleaseIfNeeded() {
     if (mObj != Traits::InvalidValue()) {
       Traits::Release(mObj);

@@ -24,10 +24,7 @@ loader.lazyRequireGetter(
   this,
   [
     "getFrameElement",
-    "isAfterPseudoElement",
-    "isBeforePseudoElement",
     "isDirectShadowHostChild",
-    "isMarkerPseudoElement",
     "isFrameBlockedByCSP",
     "isFrameWithChildTarget",
     "isShadowHost",
@@ -132,37 +129,36 @@ const IMMEDIATE_MUTATIONS = ["pseudoClassLock"];
 
 const HIDDEN_CLASS = "__fx-devtools-hide-shortcut__";
 
-// The possible completions to a ':' with added score to give certain values
-// some preference.
+// The possible completions to a ':'
 const PSEUDO_SELECTORS = [
-  [":active", 1],
-  [":hover", 1],
-  [":focus", 1],
-  [":visited", 0],
-  [":link", 0],
-  [":first-letter", 0],
-  [":first-child", 2],
-  [":before", 2],
-  [":after", 2],
-  [":lang(", 0],
-  [":not(", 3],
-  [":first-of-type", 0],
-  [":last-of-type", 0],
-  [":only-of-type", 0],
-  [":only-child", 2],
-  [":nth-child(", 3],
-  [":nth-last-child(", 0],
-  [":nth-of-type(", 0],
-  [":nth-last-of-type(", 0],
-  [":last-child", 2],
-  [":root", 0],
-  [":empty", 0],
-  [":target", 0],
-  [":enabled", 0],
-  [":disabled", 0],
-  [":checked", 1],
-  ["::selection", 0],
-  ["::marker", 0],
+  "::marker",
+  "::selection",
+  ":active",
+  ":after",
+  ":before",
+  ":checked",
+  ":disabled",
+  ":empty",
+  ":enabled",
+  ":first-child",
+  ":first-letter",
+  ":first-of-type",
+  ":focus",
+  ":hover",
+  ":lang(",
+  ":last-child",
+  ":last-of-type",
+  ":link",
+  ":not(",
+  ":nth-child(",
+  ":nth-last-child(",
+  ":nth-last-of-type(",
+  ":nth-of-type(",
+  ":only-child",
+  ":only-of-type",
+  ":root",
+  ":target",
+  ":visited",
 ];
 
 const HELPER_SHEET =
@@ -194,11 +190,12 @@ exports.setValueSummaryLength = function (val) {
 class WalkerActor extends Actor {
   /**
    * Create the WalkerActor
+   *
    * @param {DevToolsServerConnection} conn
    *        The server connection.
    * @param {TargetActor} targetActor
    *        The top-level Actor for this tab.
-   * @param {Object} options
+   * @param {object} options
    *        - {Boolean} showAllAnonymousContent: Show all native anonymous content
    */
   constructor(conn, targetActor, options) {
@@ -223,6 +220,10 @@ class WalkerActor extends Actor {
     this.overflowCausingElementsMap = new Map();
 
     this.showAllAnonymousContent = options.showAllAnonymousContent;
+    // Allow native anonymous content (like <video> controls) if preffed on
+    this.documentWalkerFilter = this.showAllAnonymousContent
+      ? allAnonymousContentTreeWalkerFilter
+      : standardTreeWalkerFilter;
 
     this.walkerSearch = new WalkerSearch(this);
 
@@ -315,6 +316,7 @@ class WalkerActor extends Actor {
 
   /**
    * Callback for eventListenerService.addListenerChangeListener
+   *
    * @param nsISimpleEnumerator changesEnum
    *    enumerator of nsIEventListenerChange
    */
@@ -351,16 +353,9 @@ class WalkerActor extends Actor {
     return "[WalkerActor " + this.actorID + "]";
   }
 
-  getDocumentWalkerFilter() {
-    // Allow native anonymous content (like <video> controls) if preffed on
-    return this.showAllAnonymousContent
-      ? allAnonymousContentTreeWalkerFilter
-      : standardTreeWalkerFilter;
-  }
-
   getDocumentWalker(node, skipTo) {
     return new DocumentWalker(node, this.rootWin, {
-      filter: this.getDocumentWalkerFilter(),
+      filter: this.documentWalkerFilter,
       skipTo,
       showAnonymousContent: true,
     });
@@ -442,6 +437,7 @@ class WalkerActor extends Actor {
       this.layoutActor = null;
       this.targetActor = null;
       this.chromeEventHandler = null;
+      this.documentWalkerFilter = null;
 
       this.emit("destroyed");
     } catch (e) {
@@ -469,8 +465,9 @@ class WalkerActor extends Actor {
 
   /**
    * Determine if the walker has come across this DOM node before.
+   *
    * @param {DOMNode} rawNode
-   * @return {Boolean}
+   * @return {boolean}
    */
   hasNode(rawNode) {
     return this._nodeActorsMap.has(rawNode);
@@ -479,6 +476,7 @@ class WalkerActor extends Actor {
   /**
    * If the walker has come across this DOM node before, then get the
    * corresponding node actor.
+   *
    * @param {DOMNode} rawNode
    * @return {NodeActor}
    */
@@ -546,6 +544,7 @@ class WalkerActor extends Actor {
     const containerTypeChanges = [];
     const displayTypeChanges = [];
     const scrollableStateChanges = [];
+    const anchorNameChanges = [];
 
     const currentOverflowCausingElementsMap = new Map();
 
@@ -586,6 +585,12 @@ class WalkerActor extends Actor {
         containerTypeChanges.push(actor);
         actor.currentContainerType = containerType;
       }
+
+      const anchorName = actor.anchorName;
+      if (anchorName !== actor.currentAnchorName) {
+        anchorNameChanges.push(actor);
+        actor.currentAnchorName = anchorName;
+      }
     }
 
     // Get the NodeActor for each node in the symmetric difference of
@@ -617,6 +622,10 @@ class WalkerActor extends Actor {
     if (containerTypeChanges.length) {
       this.emit("container-type-change", containerTypeChanges);
     }
+
+    if (anchorNameChanges.length) {
+      this.emit("anchor-name-change", anchorNameChanges);
+    }
   }
 
   /**
@@ -630,7 +639,7 @@ class WalkerActor extends Actor {
    * Ensures that the node is attached and it can be accessed from the root.
    *
    * @param {(Node|NodeActor)} nodes The nodes
-   * @return {Object} An object compatible with the disconnectedNode type.
+   * @return {object} An object compatible with the disconnectedNode type.
    */
   attachElement(node) {
     const { nodes, newParents } = this.attachElements([node]);
@@ -644,25 +653,22 @@ class WalkerActor extends Actor {
    * Ensures that the nodes are attached and they can be accessed from the root.
    *
    * @param {(Node[]|NodeActor[])} nodes The nodes
-   * @return {Object} An object compatible with the disconnectedNodeArray type.
+   * @return {object} An object compatible with the disconnectedNodeArray type.
    */
   attachElements(nodes) {
     const nodeActors = [];
     const newParents = new Set();
     for (let node of nodes) {
       if (!(node instanceof NodeActor)) {
-        // If an anonymous node was passed in and we aren't supposed to know
-        // about it, then use the closest ancestor.
-        if (!this.showAllAnonymousContent) {
-          while (
-            node &&
-            standardTreeWalkerFilter(node) != nodeFilterConstants.FILTER_ACCEPT
-          ) {
-            node = this.rawParentNode(node);
-          }
-          if (!node) {
-            continue;
-          }
+        // If the provided node doesn't match the filter, use the closest ancestor
+        while (
+          node &&
+          this.documentWalkerFilter(node) != nodeFilterConstants.FILTER_ACCEPT
+        ) {
+          node = this.rawParentNode(node);
+        }
+        if (!node) {
+          continue;
         }
 
         node = this._getOrCreateNodeActor(node);
@@ -683,6 +689,7 @@ class WalkerActor extends Actor {
   /**
    * Return the document node that contains the given node,
    * or the root node if no node is specified.
+   *
    * @param NodeActor node
    *        The node whose document is needed, or null to
    *        return the root.
@@ -695,6 +702,7 @@ class WalkerActor extends Actor {
   /**
    * Return the documentElement for the document containing the
    * given node.
+   *
    * @param NodeActor node
    *        The node whose documentElement is requested, or null
    *        to use the root document.
@@ -720,21 +728,38 @@ class WalkerActor extends Actor {
     if (rawNode == this.rootDoc) {
       return null;
     }
-    return InspectorUtils.getParentForNode(rawNode, /* anonymous = */ true);
+    const parentNode = InspectorUtils.getParentForNode(
+      rawNode,
+      /* anonymous = */ true
+    );
+
+    if (!parentNode) {
+      return null;
+    }
+
+    // If the parent node is one we should ignore (e.g. :-moz-snapshot-containing-block,
+    // which is the root node for ::view-transition pseudo elements), we want to return
+    // the closest non-ignored parent.
+    if (
+      this.documentWalkerFilter(parentNode) ===
+      nodeFilterConstants.FILTER_ACCEPT_CHILDREN
+    ) {
+      return this.rawParentNode(parentNode);
+    }
+
+    return parentNode;
   }
 
   /**
    * If the given NodeActor only has a single text node as a child with a text
    * content small enough to be inlined, return that child's NodeActor.
    *
-   * @param NodeActor node
+   * @param Element rawNode
    */
-  inlineTextChild({ rawNode }) {
+  inlineTextChild(rawNode) {
     // Quick checks to prevent creating a new walker if possible.
     if (
-      isMarkerPseudoElement(rawNode) ||
-      isBeforePseudoElement(rawNode) ||
-      isAfterPseudoElement(rawNode) ||
+      !!rawNode.implementedPseudoElement ||
       isShadowHost(rawNode) ||
       rawNode.nodeType != Node.ELEMENT_NODE ||
       !!rawNode.children.length ||
@@ -906,6 +931,7 @@ class WalkerActor extends Actor {
 
   /**
    * Returns the raw children of the DOM node, with anonymous content filtered as needed
+   *
    * @param Node rawNode.
    * @param boolean includeAssigned
    *   Whether <slot> assigned children should be returned. See
@@ -913,9 +939,6 @@ class WalkerActor extends Actor {
    * @returns Array<Node> the list of children.
    */
   _rawChildren(rawNode, includeAssigned) {
-    const filter = this.showAllAnonymousContent
-      ? allAnonymousContentTreeWalkerFilter
-      : standardTreeWalkerFilter;
     const ret = [];
     const children = InspectorUtils.getChildrenForNode(
       rawNode,
@@ -923,8 +946,15 @@ class WalkerActor extends Actor {
       includeAssigned
     );
     for (const child of children) {
-      if (filter(child) == nodeFilterConstants.FILTER_ACCEPT) {
+      const filterResult = this.documentWalkerFilter(child);
+      if (filterResult == nodeFilterConstants.FILTER_ACCEPT) {
         ret.push(child);
+      } else if (filterResult == nodeFilterConstants.FILTER_ACCEPT_CHILDREN) {
+        // In some cases, we want to completly ignore a node, and display its children
+        // instead (e.g. for `<div type="::-moz-snapshot-containing-block">`,
+        // we don't want it displayed in the markup view,
+        // but we do want to have its `::view-transition` child)
+        ret.push(...this._rawChildren(child, includeAssigned));
       }
     }
     return ret;
@@ -1104,7 +1134,8 @@ class WalkerActor extends Actor {
   /**
    * Get a list of nodes that match the given selector in all known frames of
    * the current content page.
-   * @param {String} selector.
+   *
+   * @param {string} selector.
    * @return {Array}
    */
   _multiFrameQuerySelectorAll(selector) {
@@ -1124,7 +1155,8 @@ class WalkerActor extends Actor {
   /**
    * Get a list of nodes that match the given XPath in all known frames of
    * the current content page.
-   * @param {String} xPath.
+   *
+   * @param {string} xPath.
    * @return {Array}
    */
   _multiFrameXPath(xPath) {
@@ -1155,7 +1187,8 @@ class WalkerActor extends Actor {
   /**
    * Return a NodeListActor with all nodes that match the given XPath in all
    * frames of the current content page.
-   * @param {String} xPath
+   *
+   * @param {string} xPath
    */
   multiFrameXPath(xPath) {
     return new NodeListActor(this, this._multiFrameXPath(xPath));
@@ -1173,10 +1206,23 @@ class WalkerActor extends Actor {
    */
   search(query) {
     const results = this.walkerSearch.search(query);
-    const nodeList = new NodeListActor(
-      this,
-      results.map(r => r.node)
-    );
+
+    // For now, only return each node once, since the frontend doesn't have a way to
+    // highlight each result individually (This would change if we fix Bug 1976634).
+    const seenNodes = new Set();
+    for (const { node } of results) {
+      const isInlinedTextNode =
+        node.nodeType === Node.TEXT_NODE &&
+        node.parentElement &&
+        this.inlineTextChild(node.parentElement);
+
+      // If this is a text node that will be inlined in its parent element, let's directly
+      // return the parent element already so we don't get multiple results for the same
+      // Markup view tree node.
+      seenNodes.add(isInlinedTextNode ? node.parentElement : node);
+    }
+
+    const nodeList = new NodeListActor(this, Array.from(seenNodes));
 
     return {
       list: nodeList,
@@ -1197,19 +1243,23 @@ class WalkerActor extends Actor {
   // eslint-disable-next-line complexity
   getSuggestionsForQuery(query, completing, selectorState) {
     const sugs = {
-      classes: new Map(),
-      tags: new Map(),
-      ids: new Map(),
+      classes: new Set(),
+      tags: new Set(),
+      ids: new Set(),
     };
     let result = [];
     let nodes = null;
-    // Filtering and sorting the results so that protocol transfer is miminal.
+    // Filtering and sorting the results so that protocol transfer is minimal.
     switch (selectorState) {
-      case "pseudo":
-        result = PSEUDO_SELECTORS.filter(item => {
-          return item[0].startsWith(":" + completing);
-        });
+      case "pseudo": {
+        const colonPrefixedCompleting = ":" + completing;
+        for (const pseudo of PSEUDO_SELECTORS) {
+          if (pseudo.startsWith(colonPrefixedCompleting)) {
+            result.push([pseudo]);
+          }
+        }
         break;
+      }
 
       case "class":
         if (!query) {
@@ -1219,14 +1269,14 @@ class WalkerActor extends Actor {
         }
         for (const node of nodes) {
           for (const className of node.classList) {
-            sugs.classes.set(className, (sugs.classes.get(className) | 0) + 1);
+            sugs.classes.add(className);
           }
         }
         sugs.classes.delete("");
         sugs.classes.delete(HIDDEN_CLASS);
-        for (const [className, count] of sugs.classes) {
+        for (const className of sugs.classes) {
           if (className.startsWith(completing)) {
-            result.push(["." + CSS.escape(className), count, selectorState]);
+            result.push(["." + CSS.escape(className), selectorState]);
           }
         }
         break;
@@ -1238,11 +1288,11 @@ class WalkerActor extends Actor {
           nodes = this._multiFrameQuerySelectorAll(query);
         }
         for (const node of nodes) {
-          sugs.ids.set(node.id, (sugs.ids.get(node.id) | 0) + 1);
+          sugs.ids.add(node.id);
         }
-        for (const [id, count] of sugs.ids) {
+        for (const id of sugs.ids) {
           if (id.startsWith(completing) && id !== "") {
-            result.push(["#" + CSS.escape(id), count, selectorState]);
+            result.push(["#" + CSS.escape(id), selectorState]);
           }
         }
         break;
@@ -1255,11 +1305,11 @@ class WalkerActor extends Actor {
         }
         for (const node of nodes) {
           const tag = node.localName;
-          sugs.tags.set(tag, (sugs.tags.get(tag) | 0) + 1);
+          sugs.tags.add(tag);
         }
-        for (const [tag, count] of sugs.tags) {
+        for (const tag of sugs.tags) {
           if (new RegExp("^" + completing + ".*", "i").test(tag)) {
-            result.push([tag, count, selectorState]);
+            result.push([tag, selectorState]);
           }
         }
 
@@ -1279,32 +1329,28 @@ class WalkerActor extends Actor {
       case "null":
         nodes = this._multiFrameQuerySelectorAll(query);
         for (const node of nodes) {
-          sugs.ids.set(node.id, (sugs.ids.get(node.id) | 0) + 1);
+          sugs.ids.add(node.id);
           const tag = node.localName;
-          sugs.tags.set(tag, (sugs.tags.get(tag) | 0) + 1);
+          sugs.tags.add(tag);
           for (const className of node.classList) {
-            sugs.classes.set(className, (sugs.classes.get(className) | 0) + 1);
+            sugs.classes.add(className);
           }
         }
-        for (const [tag, count] of sugs.tags) {
-          tag && result.push([tag, count]);
+        for (const tag of sugs.tags) {
+          tag && result.push([tag]);
         }
-        for (const [id, count] of sugs.ids) {
-          id && result.push(["#" + id, count]);
+        for (const id of sugs.ids) {
+          id && result.push(["#" + id]);
         }
         sugs.classes.delete("");
         sugs.classes.delete(HIDDEN_CLASS);
-        for (const [className, count] of sugs.classes) {
-          className && result.push(["." + className, count]);
+        for (const className of sugs.classes) {
+          className && result.push(["." + className]);
         }
     }
 
-    // Sort by count (desc) and name (asc)
+    // Sort by type (id, class, tag) and name (asc)
     result = result.sort((a, b) => {
-      // Computed a sortable string with first the inverted count, then the name
-      let sortA = 10000 - a[1] + a[0];
-      let sortB = 10000 - b[1] + b[0];
-
       // Prefixing ids, classes and tags, to group results
       const firstA = a[0].substring(0, 1);
       const firstB = b[0].substring(0, 1);
@@ -1319,8 +1365,8 @@ class WalkerActor extends Actor {
         return "0";
       };
 
-      sortA = getSortKeyPrefix(firstA) + sortA;
-      sortB = getSortKeyPrefix(firstB) + sortB;
+      const sortA = getSortKeyPrefix(firstA) + a[0];
+      const sortB = getSortKeyPrefix(firstB) + b[0];
 
       // String compare
       return sortA.localeCompare(sortB);
@@ -1472,6 +1518,7 @@ class WalkerActor extends Actor {
 
   /**
    * Clear all the pseudo-classes on a given node or all nodes.
+   *
    * @param {NodeActor} node Optional node to clear pseudo-classes on
    */
   clearPseudoClassLocks(node) {
@@ -1832,7 +1879,7 @@ class WalkerActor extends Actor {
    * Set the state of some subset of mutation breakpoint types for this actor.
    *
    * @param {NodeActor} node The node to set breakpoint info for.
-   * @param {Object} bps A subset of the breakpoints for this actor that
+   * @param {object} bps A subset of the breakpoints for this actor that
    *                            should be updated to new states.
    */
   setMutationBreakpoints(node, bps) {
@@ -1870,7 +1917,7 @@ class WalkerActor extends Actor {
    * Update the mutation breakpoint state for the given DOM node.
    *
    * @param {Node} rawNode The DOM node.
-   * @param {Object} bpsForNode The state of each mutation bp type we support.
+   * @param {object} bpsForNode The state of each mutation bp type we support.
    */
   _updateMutationBreakpointState(mutationReason, rawNode, bpsForNode) {
     const rawDoc = rawNode.ownerDocument || rawNode;
@@ -2207,11 +2254,10 @@ class WalkerActor extends Actor {
   onMutations(mutations) {
     // Don't send a mutation event if the mutation target would be ignored by the walker
     // filter function.
-    const documentWalkerFilter = this.getDocumentWalkerFilter();
     if (
       mutations.every(
         mutation =>
-          documentWalkerFilter(mutation.target) ===
+          this.documentWalkerFilter(mutation.target) ===
           nodeFilterConstants.FILTER_SKIP
       )
     ) {
@@ -2250,41 +2296,75 @@ class WalkerActor extends Actor {
         const removedActors = [];
         const addedActors = [];
         for (const removed of change.removedNodes) {
-          const removedActor = this.getNode(removed);
-          if (!removedActor) {
-            // If the client never encountered this actor we don't need to
-            // mention that it was removed.
-            continue;
-          }
-          // While removed from the tree, nodes are saved as orphaned.
-          this._orphaned.add(removedActor);
-          removedActors.push(removedActor.actorID);
+          this._onMutationsNode(removed, removedActors, "removed");
         }
         for (const added of change.addedNodes) {
-          const addedActor = this.getNode(added);
-          if (!addedActor) {
-            // If the client never encounted this actor we don't need to tell
-            // it about its addition for ownership tree purposes - if the
-            // client wants to see the new nodes it can ask for children.
-            continue;
-          }
-          // The actor is reconnected to the ownership tree, unorphan
-          // it and let the client know so that its ownership tree is up
-          // to date.
-          this._orphaned.delete(addedActor);
-          addedActors.push(addedActor.actorID);
+          this._onMutationsNode(added, addedActors, "added");
         }
 
         mutation.numChildren = targetActor.numChildren;
         mutation.removed = removedActors;
         mutation.added = addedActors;
 
-        const inlineTextChild = this.inlineTextChild(targetActor);
+        const inlineTextChild = this.inlineTextChild(targetActor.rawNode);
         if (inlineTextChild) {
           mutation.inlineTextChild = inlineTextChild.form();
         }
       }
       this.queueMutation(mutation);
+    }
+  }
+
+  /**
+   * Handle a mutation on a node
+   *
+   * @param {Element} node
+   *        The element that is added/removed in the mutation
+   * @param {NodeActor[]} actors
+   *        An array that will be populated by this function with the node actors that
+   *        were added
+   * @param {string} mutationType
+   *        The type of mutation we're handlign ("added" or "removed")
+   */
+  _onMutationsNode(node, actors, mutationType) {
+    if (mutationType !== "added" && mutationType !== "removed") {
+      console.error("Unknown mutation type", mutationType);
+      return;
+    }
+
+    const actor = this.getNode(node);
+    if (actor) {
+      actors.push(actor.actorID);
+      if (mutationType === "added") {
+        // The actor is reconnected to the ownership tree, unorphan
+        // it and let the client know so that its ownership tree is up
+        // to date.
+        this._orphaned.delete(actor);
+        return;
+      }
+      if (mutationType === "removed") {
+        // While removed from the tree, nodes are saved as orphaned.
+        this._orphaned.add(actor);
+        return;
+      }
+    }
+
+    // Here, we might be in a case where a node is remove/added for which we don't have an
+    // actor for, but do have actors for its children.
+    if (
+      this.documentWalkerFilter(node) !==
+      nodeFilterConstants.FILTER_ACCEPT_CHILDREN
+    ) {
+      // At this point, the client never encountered this actor and the node wasn't ignored,
+      // so we don't need to tell it about this mutation.
+      // For added node, if the client wants to see the new nodes it can ask for children.
+      return;
+    }
+
+    // Otherwise, the node was ignored, so we need to go over its children to find
+    // actor references we might have.
+    for (const child of this._rawChildren(node)) {
+      this._onMutationsNode(child, actors, mutationType);
     }
   }
 
@@ -2316,7 +2396,7 @@ class WalkerActor extends Actor {
       return;
     }
 
-    const inlineTextChild = this.inlineTextChild(parentActor);
+    const inlineTextChild = this.inlineTextChild(parentActor.rawNode);
     this.queueMutation({
       type: "inlineTextChild",
       target: parentActor.actorID,
@@ -2346,8 +2426,7 @@ class WalkerActor extends Actor {
     const root = event.target;
 
     // Don't trigger a mutation if the document walker would filter out the element.
-    const documentWalkerFilter = this.getDocumentWalkerFilter();
-    if (documentWalkerFilter(root) === nodeFilterConstants.FILTER_SKIP) {
+    if (this.documentWalkerFilter(root) === nodeFilterConstants.FILTER_SKIP) {
       return;
     }
 
@@ -2516,8 +2595,9 @@ class WalkerActor extends Actor {
 
   /**
    * Check if a node is attached to the DOM tree of the current page.
+   *
    * @param {Node} rawNode
-   * @return {Boolean} false if the node is removed from the tree or within a
+   * @return {boolean} false if the node is removed from the tree or within a
    * document fragment
    */
   _isInDOMTree(rawNode) {
@@ -2641,7 +2721,7 @@ class WalkerActor extends Actor {
    *   toolbox.getPanel("inspector").selection.setNodeFront(nodeFront);
    * });
    *
-   * @param {String} actorID The ID for the actor that has a reference to the
+   * @param {string} actorID The ID for the actor that has a reference to the
    * DOM node.
    * @param {Array} path Where, on the actor, is the DOM node stored. If in the
    * scope of the actor, the node is available as `this.data.node`, then this

@@ -19,7 +19,6 @@
 #include "TLSClientAuthCertSelection.h"
 #include "keyhi.h"
 #include "mozilla/Base64.h"
-#include "mozilla/DebugOnly.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/RandomNum.h"
@@ -29,6 +28,7 @@
 #include "mozilla/net/SSLTokensCache.h"
 #include "mozilla/net/SocketProcessChild.h"
 #include "mozilla/psm/IPCClientCertsChild.h"
+#include "mozilla/psm/mozilla_abridged_certs_generated.h"
 #include "mozilla/psm/PIPCClientCertsChild.h"
 #include "mozpkix/pkixnss.h"
 #include "mozpkix/pkixtypes.h"
@@ -759,7 +759,7 @@ static int16_t nsSSLIOLayerPoll(PRFileDesc* fd, int16_t in_flags,
                : "[%p] poll SSL socket using lower %d\n",
            fd, (int)in_flags));
 
-  socketInfo->MaybeDispatchSelectClientAuthCertificate();
+  socketInfo->MaybeSelectClientAuthCertificate();
 
   // We want the handshake to continue during certificate validation, so we
   // don't need to do anything special here. libssl automatically blocks when
@@ -1347,6 +1347,51 @@ void GatherCertificateCompressionTelemetry(SECStatus rv,
   mozilla::glean::cert_compression::failures.Get(decoder).Add(0);
 }
 
+SECStatus abridgedCertificatePass1Decode(const SECItem* input,
+                                         unsigned char* output,
+                                         size_t outputLen, size_t* usedLen) {
+  if (!input || !input->data || input->len == 0 || !output || outputLen == 0) {
+    PR_SetError(SEC_ERROR_INVALID_ARGS, 0);
+    return SECFailure;
+  }
+  if (NS_FAILED(mozilla::psm::abridged_certs::decompress(
+          input->data, input->len, output, outputLen, usedLen))) {
+    PR_SetError(SEC_ERROR_BAD_DATA, 0);
+    return SECFailure;
+  }
+  return SECSuccess;
+}
+
+SECStatus abridgedCertificateDecode(const SECItem* input, unsigned char* output,
+                                    size_t outputLen, size_t* usedLen) {
+  if (!input || !input->data || input->len == 0 || !output || outputLen == 0) {
+    MOZ_LOG(gPIPNSSLog, LogLevel::Error,
+            ("AbridgedCerts: Invalid arguments passed to "
+             "abridgedCertificateDecode"));
+    PR_SetError(SEC_ERROR_INVALID_ARGS, 0);
+    return SECFailure;
+  }
+  // Pass 2 - Brotli with no dictionary
+  UniqueSECItem tempBuffer(::SECITEM_AllocItem(nullptr, nullptr, outputLen));
+  if (!tempBuffer) {
+    PR_SetError(SEC_ERROR_NO_MEMORY, 0);
+    return SECFailure;
+  }
+  size_t tempUsed;
+  SECStatus rv = brotliCertificateDecode(input, tempBuffer->data,
+                                         (size_t)tempBuffer->len, &tempUsed);
+  if (rv != SECSuccess) {
+    MOZ_LOG(gPIPNSSLog, LogLevel::Error,
+            ("AbridgedCerts: Brotli Decoder failed"));
+    // Error code set by brotliCertificateDecode
+    return rv;
+  }
+  tempBuffer->len = tempUsed;
+  // Error code (if any) set by abridgedCertificatePass1Decode
+  return abridgedCertificatePass1Decode(tempBuffer.get(), output, outputLen,
+                                        usedLen);
+}
+
 SECStatus zlibCertificateDecode(const SECItem* input, unsigned char* output,
                                 size_t outputLen, size_t* usedLen) {
   SECStatus rv = SECFailure;
@@ -1601,6 +1646,9 @@ static nsresult nsSSLIOLayerSetOptions(PRFileDesc* fd, bool forSTARTTLS,
     SSLCertificateCompressionAlgorithm zstdAlg = {3, "zstd", nullptr,
                                                   zstdCertificateDecode};
 
+    SSLCertificateCompressionAlgorithm abridgedAlg = {
+        0xab00, "abridged-00", nullptr, abridgedCertificateDecode};
+
     if (StaticPrefs::security_tls_enable_certificate_compression_zlib() &&
         SSL_SetCertificateCompressionAlgorithm(fd, zlibAlg) != SECSuccess) {
       return NS_ERROR_FAILURE;
@@ -1613,6 +1661,12 @@ static nsresult nsSSLIOLayerSetOptions(PRFileDesc* fd, bool forSTARTTLS,
 
     if (StaticPrefs::security_tls_enable_certificate_compression_zstd() &&
         SSL_SetCertificateCompressionAlgorithm(fd, zstdAlg) != SECSuccess) {
+      return NS_ERROR_FAILURE;
+    }
+
+    if (StaticPrefs::security_tls_enable_certificate_compression_abridged() &&
+        mozilla::psm::abridged_certs::certs_are_available() &&
+        SSL_SetCertificateCompressionAlgorithm(fd, abridgedAlg) != SECSuccess) {
       return NS_ERROR_FAILURE;
     }
   }

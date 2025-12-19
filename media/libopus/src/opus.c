@@ -31,7 +31,7 @@
 #endif
 
 #include "opus.h"
-#include "celt/mathops.h"
+#include "mathops.h"
 #include "opus_private.h"
 
 #ifndef DISABLE_FLOAT_API
@@ -236,6 +236,13 @@ int opus_packet_parse_impl(const unsigned char *data, opus_int32 len,
    opus_int32 pad = 0;
    const unsigned char *data0 = data;
 
+   /* Make sure we return NULL/0 on error. */
+   if (padding != NULL)
+   {
+      *padding = NULL;
+      *padding_len = 0;
+   }
+
    if (size==NULL || len<0)
       return OPUS_BAD_ARG;
    if (len==0)
@@ -389,4 +396,3 @@ int opus_packet_parse(const unsigned char *data, opus_int32 len,
    return opus_packet_parse_impl(data, len, 0, out_toc,
                                  frames, size, payload_offset, NULL, NULL, NULL);
 }
-

@@ -6,19 +6,14 @@
     <!-- Design system color attributes -->
 
     <!-- Layers -->
-    <!-- Default Screen background, Frontlayer background, App Bar Top, App Bar Bottom, Frontlayer header -->
-    <attr name="layer1" format="reference" />
     <!-- Card background, Menu background, Dialog, Banner -->
     <attr name="layer2" format="reference" />
     <!-- Search -->
     <attr name="layer3" format="reference" />
-    <attr name="layerSearch" format="reference" />
-    <!-- Selected tab -->
-    <attr name="layerNonOpaque" format="reference" />
     <attr name="scrim" format="reference" />
 
     <!-- Action -->
-    <!-- Primary button, Snackbar, Floating action button, Chip selected -->
+    <!-- Primary button, Snackbar, Floating action button -->
     <attr name="actionPrimary" format="reference" />
     <!-- Primary button in a disabled state -->
     <attr name="actionPrimaryDisabled" format="reference" />
@@ -42,19 +37,8 @@
     <attr name="textActionPrimaryDisabled" format="reference" />
 
     <!-- Icon -->
-    <!-- Secondary icon -->
-    <attr name="iconSecondary" format="reference" />
-    <!-- Active tab -->
-    <attr name="iconActive" format="reference" />
     <!-- Icon inverted (on color) -->
     <attr name="iconOnColor" format="reference" />
-
-    <!-- Border -->
-    <!-- Default, Divider, Dotted -->
-    <attr name="borderPrimary" format="reference" />
-    <attr name="borderSecondary" format="reference" />
-    <!-- Toolbar divider -->
-    <attr name="borderToolbarDivider" format="reference"/>
 
     <!-- Color palette attributes -->
     <attr name="accent" format="reference" />
@@ -63,13 +47,11 @@
     <attr name="accentUsedOnDarkBackground" format="reference" />
     <attr name="neutral" format="reference" />
     <attr name="neutralFaded" format="reference" />
-    <attr name="preferenceSectionHeader" format="reference"/>
 
     <!-- Color used in DefaultToolbarMenu for buttons placed at the end of menu items -->
     <attr name="menuItemButtonTintColor" format="reference"/>
 
     <!-- Misc -->
-    <attr name="homeBackground" format="reference"/>
     <attr name="bottomBarBackground" format="reference"/>
     <attr name="bottomBarBackgroundTop" format="reference"/>
     <attr name="fenixLogo" format="reference" />
@@ -120,6 +102,14 @@
     <declare-styleable name="RadioButtonPreference">
         <attr format="string|boolean|integer|reference|float" name="defaultValue"/>
         <attr name="android:defaultValue"/>
+    </declare-styleable>
+
+    <declare-styleable name="TwoOptionTogglePreference">
+        <attr name="sharedPreferenceKey" format="string" />
+        <attr name="trueOptionTitle" format="string" />
+        <attr name="falseOptionTitle" format="string" />
+        <attr name="trueOptionIconRes" format="reference" />
+        <attr name="falseOptionIconRes" format="reference" />
     </declare-styleable>
 
     <declare-styleable name="PreferenceBackedRadioButton">

@@ -42,6 +42,7 @@
 #define CONFIG_GCC 1
 #define CONFIG_GCOV 0
 #define CONFIG_GPROF 0
+#define CONFIG_HIGHWAY 0
 #define CONFIG_INSPECTION 0
 #define CONFIG_INTERNAL_STATS 0
 #define CONFIG_INTER_STATS_ONLY 0
@@ -80,6 +81,7 @@
 #define HAVE_ARM_CRC32 0
 #define HAVE_AVX 1
 #define HAVE_AVX2 1
+#define HAVE_AVX512 1
 #define HAVE_FEXCEPT 1
 #define HAVE_MMX 1
 #define HAVE_NEON 0

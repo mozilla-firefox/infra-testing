@@ -49,12 +49,14 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 // nICEr includes
 extern "C" {
+// clang-format off
 #include "nr_api.h"
 #include "transport_addr.h"
 #include "nr_socket.h"
 #include "ice_ctx.h"
 #include "ice_candidate.h"
 #include "ice_handler.h"
+// clang-format on
 }
 
 // Local includes
@@ -457,6 +459,9 @@ nsresult NrIceMediaStream::GetCandidatePairs(
         p1->last_sent.tv_sec * 1000 + p1->last_sent.tv_usec / 1000;
     pair.ms_since_last_recv =
         p1->last_recvd.tv_sec * 1000 + p1->last_recvd.tv_usec / 1000;
+    pair.responses_recvd = p1->responses_recvd;
+    pair.current_rtt_ms = p1->current_rtt_ms;
+    pair.total_rtt_ms = p1->total_rtt_ms;
 
     if (!ToNrIceCandidate(*(p1->local), &pair.local) ||
         !ToNrIceCandidate(*(p1->remote), &pair.remote)) {

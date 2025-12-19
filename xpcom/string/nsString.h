@@ -10,6 +10,7 @@
 #include <ostream>
 
 #include "mozilla/Attributes.h"
+#include "mozilla/Char16.h"
 
 #include "nsStringFwd.h"
 
@@ -38,7 +39,7 @@ static_assert(sizeof(nsTLiteralString<char16_t>) == sizeof(nsTString<char16_t>),
 /**
  * A helper class that converts a UTF-16 string to ASCII in a lossy manner
  */
-class NS_LossyConvertUTF16toASCII : public nsAutoCString {
+class MOZ_GSL_OWNER NS_LossyConvertUTF16toASCII : public nsAutoCString {
  public:
   explicit NS_LossyConvertUTF16toASCII(const char16ptr_t aString) {
     LossyAppendUTF16toASCII(mozilla::MakeStringSpan(aString), *this);

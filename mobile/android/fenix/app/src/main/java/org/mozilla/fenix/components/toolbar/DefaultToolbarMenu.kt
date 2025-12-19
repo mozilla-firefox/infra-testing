@@ -39,11 +39,13 @@ import mozilla.components.support.ktx.kotlin.isContentUrl
 import mozilla.components.support.ktx.kotlinx.coroutines.flow.ifAnyChanged
 import org.mozilla.fenix.Config
 import org.mozilla.fenix.R
+import org.mozilla.fenix.automotive.isAndroidAutomotiveAvailable
 import org.mozilla.fenix.components.accounts.FenixAccountManager
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.fenix.theme.ThemeManager
+import mozilla.components.ui.icons.R as iconsR
 
 /**
  * Builds the toolbar object used with the 3-dot menu in the browser fragment.
@@ -74,7 +76,6 @@ open class DefaultToolbarMenu(
 
     private val shouldDeleteDataOnQuit = context.settings().shouldDeleteBrowsingDataOnQuit
     private val shouldUseBottomToolbar = context.settings().shouldUseBottomToolbar
-    private val shouldShowMenuToolbar = !context.settings().navigationToolbarEnabled
     private val shouldShowTopSites = context.settings().showTopSitesFeature
     private val accountManager = FenixAccountManager(context)
 
@@ -100,7 +101,7 @@ open class DefaultToolbarMenu(
 
     override val menuToolbar by lazy {
         val back = BrowserMenuItemToolbar.TwoStateButton(
-            primaryImageResource = mozilla.components.ui.icons.R.drawable.mozac_ic_back_24,
+            primaryImageResource = iconsR.drawable.mozac_ic_back_24,
             primaryContentDescription = context.getString(R.string.browser_menu_back),
             primaryImageTintResource = primaryTextColor(),
             isInPrimaryState = {
@@ -114,7 +115,7 @@ open class DefaultToolbarMenu(
         }
 
         val forward = BrowserMenuItemToolbar.TwoStateButton(
-            primaryImageResource = mozilla.components.ui.icons.R.drawable.mozac_ic_forward_24,
+            primaryImageResource = iconsR.drawable.mozac_ic_forward_24,
             primaryContentDescription = context.getString(R.string.browser_menu_forward),
             primaryImageTintResource = primaryTextColor(),
             isInPrimaryState = {
@@ -128,13 +129,13 @@ open class DefaultToolbarMenu(
         }
 
         val refresh = BrowserMenuItemToolbar.TwoStateButton(
-            primaryImageResource = mozilla.components.ui.icons.R.drawable.mozac_ic_arrow_clockwise_24,
+            primaryImageResource = iconsR.drawable.mozac_ic_arrow_clockwise_24,
             primaryContentDescription = context.getString(R.string.browser_menu_refresh),
             primaryImageTintResource = primaryTextColor(),
             isInPrimaryState = {
                 selectedSession?.content?.loading == false
             },
-            secondaryImageResource = mozilla.components.ui.icons.R.drawable.mozac_ic_stop,
+            secondaryImageResource = iconsR.drawable.mozac_ic_stop,
             secondaryContentDescription = context.getString(R.string.browser_menu_stop),
             secondaryImageTintResource = primaryTextColor(),
             disableInSecondaryState = false,
@@ -203,9 +204,6 @@ open class DefaultToolbarMenu(
     @VisibleForTesting(otherwise = PRIVATE)
     fun shouldShowTranslations(): Boolean {
         val isEngineSupported = store.state.translationEngine.isEngineSupported
-        if (isEngineSupported == true) {
-            FxNimbus.features.translations.recordExposure()
-        }
         return selectedSession?.let {
             isEngineSupported == true &&
                 FxNimbus.features.translations.value().mainFlowBrowserMenuEnabled
@@ -226,7 +224,7 @@ open class DefaultToolbarMenu(
     @VisibleForTesting
     internal val newTabItem = BrowserMenuImageText(
         context.getString(R.string.library_new_tab),
-        R.drawable.ic_new,
+        iconsR.drawable.mozac_ic_plus_24,
         primaryTextColor(),
     ) {
         onItemTapped.invoke(ToolbarMenu.Item.NewTab)
@@ -250,7 +248,7 @@ open class DefaultToolbarMenu(
 
     private val passwordsItem = BrowserMenuImageText(
         context.getString(R.string.preferences_sync_logins_2),
-        R.drawable.mozac_ic_login_24,
+        iconsR.drawable.mozac_ic_login_24,
         primaryTextColor(),
     ) {
         onItemTapped.invoke(ToolbarMenu.Item.Passwords)
@@ -262,7 +260,7 @@ open class DefaultToolbarMenu(
 
     private val findInPageItem = BrowserMenuImageText(
         label = context.getString(R.string.browser_menu_find_in_page),
-        imageResource = R.drawable.mozac_ic_search_24,
+        imageResource = iconsR.drawable.mozac_ic_search_24,
         iconTintColorResource = primaryTextColor(),
     ) {
         onItemTapped.invoke(ToolbarMenu.Item.FindInPage)
@@ -270,7 +268,7 @@ open class DefaultToolbarMenu(
 
     private val translationsItem = BrowserMenuImageText(
         label = context.getString(R.string.browser_menu_translations),
-        imageResource = R.drawable.mozac_ic_translate_24,
+        imageResource = iconsR.drawable.mozac_ic_translate_24,
         iconTintColorResource = primaryTextColor(),
     ) {
         onItemTapped.invoke(ToolbarMenu.Item.Translate)
@@ -316,7 +314,7 @@ open class DefaultToolbarMenu(
 
     private val addToHomeScreenItem = BrowserMenuImageText(
         label = context.getString(R.string.browser_menu_add_to_homescreen),
-        imageResource = R.drawable.mozac_ic_add_to_homescreen_24,
+        imageResource = iconsR.drawable.mozac_ic_add_to_homescreen_24,
         iconTintColorResource = primaryTextColor(),
         isCollapsingMenuLimit = true,
     ) {
@@ -325,7 +323,7 @@ open class DefaultToolbarMenu(
 
     private val addAppToHomeScreenItem = BrowserMenuImageText(
         label = context.getString(R.string.browser_menu_add_app_to_homescreen),
-        imageResource = R.drawable.mozac_ic_add_to_homescreen_24,
+        imageResource = iconsR.drawable.mozac_ic_add_to_homescreen_24,
         iconTintColorResource = primaryTextColor(),
         isCollapsingMenuLimit = true,
     ) {
@@ -369,7 +367,7 @@ open class DefaultToolbarMenu(
     @VisibleForTesting
     internal val settingsItem = BrowserMenuHighlightableItem(
         label = context.getString(R.string.browser_menu_settings),
-        startImageResource = R.drawable.mozac_ic_settings_24,
+        startImageResource = iconsR.drawable.mozac_ic_settings_24,
         iconTintColorResource = if (hasAccountProblem) {
             ThemeManager.resolveAttribute(R.attr.syncDisconnected, context)
         } else {
@@ -409,7 +407,7 @@ open class DefaultToolbarMenu(
 
     private val deleteDataOnQuit = BrowserMenuImageText(
         label = context.getString(R.string.delete_browsing_data_on_quit_action),
-        imageResource = R.drawable.mozac_ic_cross_circle_24,
+        imageResource = iconsR.drawable.mozac_ic_cross_circle_24,
         iconTintColorResource = primaryTextColor(),
     ) {
         onItemTapped.invoke(ToolbarMenu.Item.Quit)
@@ -425,7 +423,7 @@ open class DefaultToolbarMenu(
 
     private val reportBrokenSite = BrowserMenuImageText(
         label = context.getString(R.string.browser_menu_webcompat_reporter),
-        imageResource = R.drawable.mozac_ic_lightbulb_24,
+        imageResource = iconsR.drawable.mozac_ic_lightbulb_24,
         iconTintColorResource = primaryTextColor(),
     ) {
         onItemTapped.invoke(ToolbarMenu.Item.ReportBrokenSite)
@@ -435,7 +433,7 @@ open class DefaultToolbarMenu(
     val coreMenuItems by lazy {
         val menuItems =
             listOfNotNull(
-                if (shouldUseBottomToolbar || !shouldShowMenuToolbar) null else menuToolbar,
+                if (shouldUseBottomToolbar) null else menuToolbar,
                 newTabItem,
                 BrowserMenuDivider(),
                 bookmarksItem,
@@ -447,7 +445,7 @@ open class DefaultToolbarMenu(
                 BrowserMenuDivider(),
                 findInPageItem,
                 translationsItem.apply { visible = ::shouldShowTranslations },
-                desktopSiteItem,
+                desktopSiteItem.apply { visible = { store.state.selectedTab?.content?.isPdf == false } },
                 openInRegularTabItem.apply { visible = ::shouldShowOpenInRegularTab },
                 customizeReaderView.apply { visible = ::shouldShowReaderViewCustomization },
                 openInApp.apply { visible = ::shouldShowOpenInApp },
@@ -457,12 +455,18 @@ open class DefaultToolbarMenu(
                 addAppToHomeScreenItem.apply { visible = ::canAddAppToHomescreen },
                 if (shouldShowTopSites) addRemoveTopSitesItem else null,
                 saveToCollectionItem,
-                if (FxNimbus.features.print.value().browserPrintEnabled) printPageItem else null,
+                if (FxNimbus.features.print.value().browserPrintEnabled &&
+                    !context.isAndroidAutomotiveAvailable()
+                ) {
+                    printPageItem
+                } else {
+                    null
+                },
                 BrowserMenuDivider(),
                 settingsItem,
                 if (shouldDeleteDataOnQuit) deleteDataOnQuit else null,
                 if (shouldUseBottomToolbar) BrowserMenuDivider() else null,
-                if (shouldUseBottomToolbar && shouldShowMenuToolbar) menuToolbar else null,
+                if (shouldUseBottomToolbar) menuToolbar else null,
             )
 
         registerForIsBookmarkedUpdates()
@@ -519,6 +523,7 @@ open class DefaultToolbarMenu(
         isBookmarkedJob = lifecycleOwner.lifecycleScope.launch {
             isCurrentUrlBookmarked = bookmarksStorage
                 .getBookmarksWithUrl(newUrl)
+                .getOrDefault(listOf())
                 .any { it.url == newUrl }
         }
     }

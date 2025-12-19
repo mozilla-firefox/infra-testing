@@ -8,9 +8,9 @@
 #define nsContentSecurityManager_h___
 
 #include "mozilla/CORSMode.h"
-#include "nsIContentSecurityManager.h"
 #include "nsIChannel.h"
 #include "nsIChannelEventSink.h"
+#include "nsIContentSecurityManager.h"
 #include "nsILoadInfo.h"
 
 class nsILoadInfo;
@@ -19,12 +19,8 @@ class nsIStreamListener;
 #define NS_CONTENTSECURITYMANAGER_CONTRACTID \
   "@mozilla.org/contentsecuritymanager;1"
 // cdcc1ab8-3cea-4e6c-a294-a651fa35227f
-#define NS_CONTENTSECURITYMANAGER_CID                \
-  {                                                  \
-    0xcdcc1ab8, 0x3cea, 0x4e6c, {                    \
-      0xa2, 0x94, 0xa6, 0x51, 0xfa, 0x35, 0x22, 0x7f \
-    }                                                \
-  }
+#define NS_CONTENTSECURITYMANAGER_CID \
+  {0xcdcc1ab8, 0x3cea, 0x4e6c, {0xa2, 0x94, 0xa6, 0x51, 0xfa, 0x35, 0x22, 0x7f}}
 
 class nsContentSecurityManager : public nsIContentSecurityManager,
                                  public nsIChannelEventSink {
@@ -72,6 +68,11 @@ class nsContentSecurityManager : public nsIContentSecurityManager,
   // descriptions
   static nsSecurityFlags ComputeSecurityFlags(
       mozilla::CORSMode aCORSMode, CORSSecurityMapping aCORSSecurityMapping);
+
+  static nsSecurityFlags ComputeSecurityMode(nsSecurityFlags aSecurityFlags);
+
+  static mozilla::dom::RequestMode SecurityModeToRequestMode(
+      uint32_t aSecurityMode);
 
   static void GetSerializedOrigin(nsIPrincipal* aOrigin,
                                   nsIPrincipal* aResourceOrigin,

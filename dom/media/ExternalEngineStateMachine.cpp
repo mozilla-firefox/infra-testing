@@ -10,16 +10,16 @@
 #  include "mozilla/MFMediaEngineChild.h"
 #  include "mozilla/StaticPrefs_media.h"
 #endif
+#include "VideoUtils.h"
 #include "mozilla/AppShutdown.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/ProfilerLabels.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/StaticMutex.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/glean/DomMediaPlatformsWmfMetrics.h"
 #include "nsPrintfCString.h"
 #include "nsThreadUtils.h"
-#include "VideoUtils.h"
 
 namespace mozilla {
 
@@ -130,13 +130,17 @@ class ProcessCrashMonitor final {
     return sCrashMonitor.get();
   }
 
-  static inline StaticMutex sMutex;
-  static inline MOZ_RUNINIT UniquePtr<ProcessCrashMonitor> sCrashMonitor;
-  static inline Atomic<bool> sIsShutdown{false};
+  static StaticMutex sMutex;
+  static UniquePtr<ProcessCrashMonitor> sCrashMonitor;
+  static Atomic<bool> sIsShutdown;
 
   uint32_t mCrashNums;
   uint32_t mMaxCrashes;
 };
+
+StaticMutex ProcessCrashMonitor::sMutex;
+constinit UniquePtr<ProcessCrashMonitor> ProcessCrashMonitor::sCrashMonitor;
+Atomic<bool> ProcessCrashMonitor::sIsShutdown{false};
 
 /* static */
 const char* ExternalEngineStateMachine::StateToStr(State aNextState) {
@@ -294,7 +298,7 @@ void ExternalEngineStateMachine::ReadMetadata() {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(mState.IsReadingMetadata());
   PROFILER_MARKER_UNTYPED("EESM::ReadMetadata", MEDIA_PLAYBACK);
-  Unused << OwnerThread()->Dispatch(NS_NewRunnableFunction(
+  (void)OwnerThread()->Dispatch(NS_NewRunnableFunction(
       "ExternalEngineStateMachine::ReadMetadata",
       [self = RefPtr<ExternalEngineStateMachine>{this}, this] {
         mReader->ReadMetadata()
@@ -911,7 +915,7 @@ void ExternalEngineStateMachine::StartRunningEngine() {
   // Run tasks which was called before the engine is ready.
   if (!mPendingTasks.IsEmpty()) {
     for (auto& task : mPendingTasks) {
-      Unused << OwnerThread()->Dispatch(task.forget());
+      (void)OwnerThread()->Dispatch(task.forget());
     }
     mPendingTasks.Clear();
   }
@@ -977,7 +981,7 @@ void ExternalEngineStateMachine::OnRequestAudio() {
                 LOG("Reach to the end, no more audio data");
                 EndOfStream(MediaData::Type::AUDIO_DATA);
                 break;
-              case NS_ERROR_DOM_MEDIA_REMOTE_DECODER_CRASHED_MF_CDM_ERR:
+              case NS_ERROR_DOM_MEDIA_REMOTE_CRASHED_MF_CDM_ERR:
                 // We will handle the process crash in `NotifyErrorInternal()`
                 // so here just silently ignore this.
                 break;
@@ -1053,7 +1057,7 @@ void ExternalEngineStateMachine::OnRequestVideo() {
                 LOG("Reach to the end, no more video data");
                 EndOfStream(MediaData::Type::VIDEO_DATA);
                 break;
-              case NS_ERROR_DOM_MEDIA_REMOTE_DECODER_CRASHED_MF_CDM_ERR:
+              case NS_ERROR_DOM_MEDIA_REMOTE_CRASHED_MF_CDM_ERR:
                 // We will handle the process crash in `NotifyErrorInternal()`
                 // so here just silently ignore this.
                 break;
@@ -1274,8 +1278,8 @@ void ExternalEngineStateMachine::NotifyErrorInternal(
     ReportTelemetry(NS_ERROR_DOM_MEDIA_EXTERNAL_ENGINE_NOT_SUPPORTED_ERR);
     DecodeError(
         MediaResult(NS_ERROR_DOM_MEDIA_EXTERNAL_ENGINE_NOT_SUPPORTED_ERR));
-  } else if (aError == NS_ERROR_DOM_MEDIA_REMOTE_DECODER_CRASHED_MF_CDM_ERR) {
-    ReportTelemetry(NS_ERROR_DOM_MEDIA_REMOTE_DECODER_CRASHED_MF_CDM_ERR);
+  } else if (aError == NS_ERROR_DOM_MEDIA_REMOTE_CRASHED_MF_CDM_ERR) {
+    ReportTelemetry(NS_ERROR_DOM_MEDIA_REMOTE_CRASHED_MF_CDM_ERR);
     RecoverFromCDMProcessCrashIfNeeded();
   } else if (mState.IsInitEngine() && mKeySystem.IsEmpty()) {
     // If any error occurs during media engine initialization, we should attempt
@@ -1421,7 +1425,7 @@ nsresult ExternalEngineStateMachine::IsCDMProxySupported(CDMProxy* aProxy) {
     return NS_ERROR_DOM_MEDIA_NOT_SUPPORTED_ERR;
   }
 
-  // 1=enabled encrypted and clear, 2=enabled encrytped
+  // 1=enabled encrypted and clear, 2=enabled encrypted
   if (StaticPrefs::media_wmf_media_engine_enabled() != 1 &&
       StaticPrefs::media_wmf_media_engine_enabled() != 2) {
     return NS_ERROR_DOM_MEDIA_NOT_ALLOWED_ERR;

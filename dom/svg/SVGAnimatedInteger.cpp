@@ -6,11 +6,11 @@
 
 #include "SVGAnimatedInteger.h"
 
-#include "nsError.h"
 #include "SMILIntegerType.h"
 #include "SVGAttrTearoffTable.h"
 #include "mozilla/SMILValue.h"
 #include "mozilla/SVGContentUtils.h"
+#include "nsError.h"
 
 using namespace mozilla::dom;
 
@@ -45,8 +45,8 @@ class MOZ_RAII AutoChangeIntegerNotifier {
   bool mDoSetAttr;
 };
 
-MOZ_CONSTINIT static SVGAttrTearoffTable<SVGAnimatedInteger,
-                                         SVGAnimatedInteger::DOMAnimatedInteger>
+constinit static SVGAttrTearoffTable<SVGAnimatedInteger,
+                                     SVGAnimatedInteger::DOMAnimatedInteger>
     sSVGAnimatedIntegerTearoffTable;
 
 nsresult SVGAnimatedInteger::SetBaseValueString(const nsAString& aValueAsString,

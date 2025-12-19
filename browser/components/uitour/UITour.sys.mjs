@@ -8,15 +8,14 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   AboutReaderParent: "resource:///actors/AboutReaderParent.sys.mjs",
-  AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
   BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.sys.mjs",
-  BuiltInThemes: "resource:///modules/BuiltInThemes.sys.mjs",
-  CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
+  CustomizableUI:
+    "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
   FxAccounts: "resource://gre/modules/FxAccounts.sys.mjs",
-  PanelMultiView: "resource:///modules/PanelMultiView.sys.mjs",
+  PanelMultiView:
+    "moz-src:///browser/components/customizableui/PanelMultiView.sys.mjs",
   ProfileAge: "resource://gre/modules/ProfileAge.sys.mjs",
   ResetProfile: "resource://gre/modules/ResetProfile.sys.mjs",
-  TelemetryController: "resource://gre/modules/TelemetryController.sys.mjs",
   UIState: "resource://services-sync/UIState.sys.mjs",
   UpdateUtils: "resource://gre/modules/UpdateUtils.sys.mjs",
 });
@@ -45,15 +44,6 @@ const BACKGROUND_PAGE_ACTIONS_ALLOWED = new Set([
 ]);
 const MAX_BUTTONS = 4;
 
-// Array of which colorway/theme ids can be activated.
-ChromeUtils.defineLazyGetter(lazy, "COLORWAY_IDS", () =>
-  [...lazy.BuiltInThemes.builtInThemeMap.keys()].filter(
-    id =>
-      id.endsWith("-colorway@mozilla.org") &&
-      !lazy.BuiltInThemes.themeIsExpired(id)
-  )
-);
-
 // Prefix for any target matching a search engine.
 const TARGET_SEARCHENGINE_PREFIX = "searchEngine-";
 
@@ -81,6 +71,8 @@ export var UITour = {
   },
 
   _annotationPanelMutationObservers: new WeakMap(),
+
+  _initForBrowserObserverAdded: false,
 
   highlightEffects: ["random", "wobble", "zoom", "color", "focus-outline"],
   targets: new Map([
@@ -132,13 +124,6 @@ export var UITour = {
       },
     ],
     [
-      "pocket",
-      {
-        allowAdd: true,
-        query: "#save-to-pocket-button",
-      },
-    ],
-    [
       "privateWindow",
       {
         query: "#appMenu-new-private-window-button2",
@@ -156,7 +141,9 @@ export var UITour = {
       {
         infoPanelOffsetX: 18,
         infoPanelPosition: "after_start",
-        query: "#searchbar",
+        query: Services.prefs.getBoolPref("browser.search.widget.new")
+          ? "#searchbar-new"
+          : "#searchbar",
         widgetName: "search-container",
       },
     ],
@@ -164,8 +151,12 @@ export var UITour = {
       "searchIcon",
       {
         query: aDocument => {
-          let searchbar = aDocument.getElementById("searchbar");
-          return searchbar.querySelector(".searchbar-search-button");
+          if (!Services.prefs.getBoolPref("browser.search.widget.new")) {
+            let searchbar = aDocument.getElementById("searchbar");
+            return searchbar.querySelector(".searchbar-search-button");
+          }
+          let searchbar = aDocument.getElementById("searchbar-new");
+          return searchbar.querySelector(".searchmode-switcher");
         },
         widgetName: "search-container",
       },
@@ -199,6 +190,12 @@ export var UITour = {
           let node = aDocument.getElementById("star-button-box");
           return node && !node.hidden ? node : null;
         },
+      },
+    ],
+    [
+      "profilesAppMenuButton",
+      {
+        query: "#appMenu-profiles-button",
       },
     ],
   ]),
@@ -541,10 +538,6 @@ export var UITour = {
         let name = data.name;
         let value = data.value;
         Services.prefs.setStringPref("browser.uitour.treatment." + name, value);
-        // The notification is only meant to be used in tests.
-        UITourHealthReport.recordTreatmentTag(name, value).then(() =>
-          this.notify("TreatmentTag:TelemetrySent")
-        );
         break;
       }
 
@@ -565,36 +558,10 @@ export var UITour = {
         targetPromise.then(target => {
           let searchbar = target.node;
           searchbar.value = data.term;
-          searchbar.updateGoButtonVisibility();
+          if (!Services.prefs.getBoolPref("browser.search.widget.new")) {
+            searchbar.updateGoButtonVisibility();
+          }
         });
-        break;
-      }
-
-      case "openSearchPanel": {
-        let targetPromise = this.getTarget(window, "search");
-        targetPromise
-          .then(target => {
-            let searchbar = target.node;
-
-            if (searchbar.textbox.open) {
-              this.sendPageCallback(browser, data.callbackID);
-            } else {
-              let onPopupShown = () => {
-                searchbar.textbox.popup.removeEventListener(
-                  "popupshown",
-                  onPopupShown
-                );
-                this.sendPageCallback(browser, data.callbackID);
-              };
-
-              searchbar.textbox.popup.addEventListener(
-                "popupshown",
-                onPopupShown
-              );
-              searchbar.openSuggestionsPanel();
-            }
-          })
-          .catch(console.error);
         break;
       }
 
@@ -659,8 +626,10 @@ export var UITour = {
     }
     this.tourBrowsersByWindow.get(window).add(aBrowser);
 
-    Services.obs.addObserver(this, "message-manager-close");
-
+    if (!this._initForBrowserObserverAdded) {
+      this._initForBrowserObserverAdded = true;
+      Services.obs.addObserver(this, "message-manager-close");
+    }
     window.addEventListener("SSWindowClosing", this);
   },
 
@@ -1436,16 +1405,6 @@ export var UITour = {
     } else if (aMenuName == "bookmarks") {
       let menuBtn = aWindow.document.getElementById("bookmarks-menu-button");
       openMenuButton(menuBtn);
-    } else if (aMenuName == "pocket") {
-      let button = aWindow.document.getElementById("save-to-pocket-button");
-      if (!button) {
-        lazy.log.error("Can't open the pocket menu without a button");
-        return;
-      }
-      aWindow.document.addEventListener("ViewShown", aOpenCallback, {
-        once: true,
-      });
-      button.click();
     } else if (aMenuName == "urlbar") {
       let urlbar = aWindow.gURLBar;
       if (aOpenCallback) {
@@ -1590,19 +1549,19 @@ export var UITour = {
       case "availableTargets":
         this.getAvailableTargets(aBrowser, aWindow, aCallbackID);
         break;
-      case "colorway":
-        this.sendPageCallback(aBrowser, aCallbackID, lazy.COLORWAY_IDS);
-        break;
       case "search":
       case "selectedSearchEngine":
         Services.search
           .getVisibleEngines()
           .then(engines => {
+            let { defaultEngine } = Services.search;
             this.sendPageCallback(aBrowser, aCallbackID, {
-              searchEngineIdentifier: Services.search.defaultEngine.identifier,
+              searchEngineIdentifier: defaultEngine.isAppProvided
+                ? defaultEngine.id
+                : null,
               engines: engines
-                .filter(engine => engine.identifier)
-                .map(engine => TARGET_SEARCHENGINE_PREFIX + engine.identifier),
+                .filter(engine => engine.isAppProvided)
+                .map(engine => TARGET_SEARCHENGINE_PREFIX + engine.id),
             });
           })
           .catch(() => {
@@ -1654,7 +1613,7 @@ export var UITour = {
     }
   },
 
-  async setConfiguration(aWindow, aConfiguration, aValue) {
+  async setConfiguration(aWindow, aConfiguration, _aValue) {
     switch (aConfiguration) {
       case "defaultBrowser":
         // Ignore aValue in this case because the default browser can only
@@ -1665,22 +1624,6 @@ export var UITour = {
             await shell.setDefaultBrowser(false);
           }
         } catch (e) {}
-        break;
-      case "colorway":
-        // Potentially revert to a previous theme.
-        let toEnable = this._prevTheme;
-
-        // Activate the allowed colorway.
-        if (lazy.COLORWAY_IDS.includes(aValue)) {
-          // Save the previous theme if this is the first activation.
-          if (!this._prevTheme) {
-            this._prevTheme = (
-              await lazy.AddonManager.getAddonsByTypes(["theme"])
-            ).find(theme => theme.isActive);
-          }
-          toEnable = await lazy.AddonManager.getAddonByID(aValue);
-        }
-        toEnable?.enable();
         break;
       default:
         lazy.log.error(
@@ -1820,10 +1763,7 @@ export var UITour = {
       appinfo.defaultBrowser = isDefaultBrowser;
 
       let canSetDefaultBrowserInBackground = true;
-      if (
-        AppConstants.platform == "win" ||
-        AppConstants.isPlatformAndVersionAtLeast("macosx", "10.10")
-      ) {
+      if (AppConstants.platform == "win" || AppConstants.platform == "macosx") {
         canSetDefaultBrowserInBackground = false;
       } else if (AppConstants.platform == "linux") {
         // The ShellService may not exist on some versions of Linux.
@@ -1972,20 +1912,15 @@ export var UITour = {
     }
   },
 
-  selectSearchEngine(aID) {
-    return new Promise((resolve, reject) => {
-      Services.search.getVisibleEngines().then(engines => {
-        for (let engine of engines) {
-          if (engine.identifier == aID) {
-            Services.search
-              .setDefault(engine, Ci.nsISearchService.CHANGE_REASON_UITOUR)
-              .finally(resolve);
-            return;
-          }
-        }
-        reject("selectSearchEngine could not find engine with given ID");
-      });
-    });
+  async selectSearchEngine(id) {
+    let engine = Services.search.getEngineById(id);
+    if (!engine || engine.hidden) {
+      throw new Error("selectSearchEngine could not find engine with given ID");
+    }
+    return Services.search.setDefault(
+      engine,
+      Ci.nsISearchService.CHANGE_REASON_UITOUR
+    );
   },
 
   notify(eventName, params) {
@@ -2014,26 +1949,3 @@ export var UITour = {
 };
 
 UITour.init();
-
-/**
- * UITour Health Report
- */
-/**
- * Public API to be called by the UITour code
- */
-const UITourHealthReport = {
-  recordTreatmentTag(tag, value) {
-    return lazy.TelemetryController.submitExternalPing(
-      "uitour-tag",
-      {
-        version: 1,
-        tagName: tag,
-        tagValue: value,
-      },
-      {
-        addClientId: true,
-        addEnvironment: true,
-      }
-    );
-  },
-};

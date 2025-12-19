@@ -9,9 +9,14 @@ import android.os.Looper
 import android.view.KeyEvent
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.MediumTest
-import org.hamcrest.Matchers.* // ktlint-disable no-wildcard-imports
+import junit.framework.TestCase.assertTrue
+import org.hamcrest.Matchers.equalTo
+import org.hamcrest.Matchers.isEmptyOrNullString
+import org.hamcrest.Matchers.not
+import org.hamcrest.Matchers.notNullValue
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mozilla.geckoview.Autocomplete
 import org.mozilla.geckoview.Autocomplete.Address
 import org.mozilla.geckoview.Autocomplete.AddressSelectOption
 import org.mozilla.geckoview.Autocomplete.CreditCard
@@ -104,6 +109,7 @@ class AutocompleteTest : BaseSessionTest() {
                 // Enable login management since it's disabled in automation.
                 "signon.rememberSignons" to true,
                 "signon.autofillForms.http" to true,
+                "signon.testOnlyNotWaitForPaint" to true,
             ),
         )
 
@@ -503,7 +509,7 @@ class AutocompleteTest : BaseSessionTest() {
                     equalTo(savedAddresses.size),
                 )
 
-                val addressOption = prompt.options.find { it.value.familyName == selectedAddress.familyName }
+                val addressOption = prompt.options.find { it.value.guid == selectedAddress.guid }
                 val address = addressOption?.value
 
                 assertThat("Address should not be null", address, notNullValue())
@@ -655,6 +661,38 @@ class AutocompleteTest : BaseSessionTest() {
     }
 
     @Test
+    fun addressSelectAndFillWithoutGivenName() {
+        val name = "Peter Parker"
+        val streetAddress = "20 Ingram Street, Forest Hills Gardens, Queens"
+        val postalCode = "11375"
+        val country = "US"
+        val email = "spiderman@newyork.com"
+        val tel = "+1 180090021"
+        val organization = ""
+        val guid = "test-guid"
+        val builder = Address.Builder()
+            .guid(guid)
+            .name(name)
+            .streetAddress(streetAddress)
+            .postalCode(postalCode)
+            .country(country)
+            .email(email)
+            .tel(tel)
+            .organization(organization)
+
+        val savedAddress = builder.build()
+
+        val expectedAddress = builder
+            .givenName("Peter")
+            .familyName("Parker")
+            .build()
+
+        val savedAddresses = arrayOf(savedAddress)
+
+        checkAddressesForCorrectness(savedAddresses, expectedAddress)
+    }
+
+    @Test
     fun addressSelectAndFillMultipleAddresses() {
         val names = arrayOf("Peter Parker", "Wade Wilson")
         val givenNames = arrayOf("Peter", "Wade")
@@ -772,6 +810,7 @@ class AutocompleteTest : BaseSessionTest() {
                 "signon.rememberSignons" to true,
                 "signon.autofillForms.http" to true,
                 "signon.userInputRequiredToCapture.enabled" to false,
+                "signon.testOnlyNotWaitForPaint" to true,
             ),
         )
 
@@ -835,6 +874,7 @@ class AutocompleteTest : BaseSessionTest() {
                 "signon.rememberSignons" to true,
                 "signon.autofillForms.http" to true,
                 "signon.userInputRequiredToCapture.enabled" to false,
+                "signon.testOnlyNotWaitForPaint" to true,
             ),
         )
 
@@ -909,6 +949,7 @@ class AutocompleteTest : BaseSessionTest() {
                 "signon.rememberSignons" to true,
                 "signon.autofillForms.http" to true,
                 "signon.userInputRequiredToCapture.enabled" to false,
+                "signon.testOnlyNotWaitForPaint" to true,
             ),
         )
 
@@ -991,6 +1032,7 @@ class AutocompleteTest : BaseSessionTest() {
                 "signon.rememberSignons" to true,
                 "signon.autofillForms.http" to true,
                 "signon.userInputRequiredToCapture.enabled" to false,
+                "signon.testOnlyNotWaitForPaint" to true,
             ),
         )
 
@@ -1411,6 +1453,64 @@ class AutocompleteTest : BaseSessionTest() {
     }
 
     @Test
+    fun formSubmissionWithUnchangedCreditCardShouldNotTriggerSave() {
+        val ccName = "Jane Doe"
+        val ccNumber = "5555444433331111"
+        val ccExpMonth = "6"
+        val ccExpYear = "2024"
+        val savedCreditCard = CreditCard.Builder()
+            .guid("test-guid-1")
+            .name(ccName)
+            .number(ccNumber)
+            .expirationMonth(ccExpMonth)
+            .expirationYear(ccExpYear)
+            .build()
+
+        val savedCreditCards = arrayOf(savedCreditCard)
+
+        mainSession.loadTestPath(CC_FORM_HTML_PATH)
+        mainSession.waitForPageStop()
+
+        // Setup delegates for fetching data and handling prompts.
+        sessionRule.delegateUntilTestEnd(object : StorageDelegate, PromptDelegate {
+            @AssertCalled
+            override fun onCreditCardFetch(): GeckoResult<Array<CreditCard>> {
+                return GeckoResult.fromValue(savedCreditCards)
+            }
+
+            // These should NOT be called because no information has changed.
+            @AssertCalled(count = 0)
+            override fun onCreditCardSave(creditCard: CreditCard) = Unit
+
+            @AssertCalled(count = 0)
+            override fun onCreditCardSave(
+                session: GeckoSession,
+                request: AutocompleteRequest<CreditCardSaveOption>,
+            ): GeckoResult<PromptDelegate.PromptResponse> {
+                // This block should not be reached. If it is, the test will fail.
+                return GeckoResult.fromValue(request.dismiss())
+            }
+        })
+
+        // Fill in the fields with the same saved data
+        mainSession.evaluateJS("document.querySelector('#name').focus()")
+        mainSession.evaluateJS("document.querySelector('#name').value = '$ccName'")
+        mainSession.evaluateJS("document.querySelector('#name').focus()")
+        mainSession.evaluateJS("document.querySelector('#number').value = '$ccNumber'")
+        mainSession.evaluateJS("document.querySelector('#number').focus()")
+        mainSession.evaluateJS("document.querySelector('#expMonth').value = '$ccExpMonth'")
+        mainSession.evaluateJS("document.querySelector('#expMonth').focus()")
+        mainSession.evaluateJS("document.querySelector('#expYear').value = '$ccExpYear'")
+        mainSession.evaluateJS("document.querySelector('#expYear').focus()")
+
+        // Submit the form
+        mainSession.evaluateJS("document.querySelector('form').requestSubmit()")
+
+        // Wait for the form to submit
+        mainSession.waitForRoundTrip()
+    }
+
+    @Test
     fun creditCardUpdateAccept() {
         val ccName = "MyCard"
         val ccNumber1 = "5105105105105100"
@@ -1551,6 +1651,7 @@ class AutocompleteTest : BaseSessionTest() {
                 "signon.rememberSignons" to true,
                 "signon.autofillForms.http" to true,
                 "signon.userInputRequiredToCapture.enabled" to false,
+                "signon.testOnlyNotWaitForPaint" to true,
             ),
         )
 
@@ -1661,6 +1762,7 @@ class AutocompleteTest : BaseSessionTest() {
                 "signon.rememberSignons" to true,
                 "signon.autofillForms.http" to true,
                 "signon.userInputRequiredToCapture.enabled" to false,
+                "signon.testOnlyNotWaitForPaint" to true,
             ),
         )
 
@@ -1747,6 +1849,7 @@ class AutocompleteTest : BaseSessionTest() {
                 "signon.autofillForms.http" to true,
                 "dom.disable_open_during_load" to false,
                 "signon.userInputRequiredToCapture.enabled" to false,
+                "signon.testOnlyNotWaitForPaint" to true,
             ),
         )
 
@@ -2025,6 +2128,7 @@ class AutocompleteTest : BaseSessionTest() {
                 "signon.autofillForms.http" to true,
                 "dom.disable_open_during_load" to false,
                 "signon.userInputRequiredToCapture.enabled" to false,
+                "signon.testOnlyNotWaitForPaint" to true,
             ),
         )
 
@@ -2290,6 +2394,7 @@ class AutocompleteTest : BaseSessionTest() {
                 "signon.generation.available" to true,
                 "dom.disable_open_during_load" to false,
                 "signon.userInputRequiredToCapture.enabled" to false,
+                "signon.testOnlyNotWaitForPaint" to true,
             ),
         )
 
@@ -2492,6 +2597,7 @@ class AutocompleteTest : BaseSessionTest() {
                 "signon.rememberSignons" to true,
                 "signon.autofillForms.http" to true,
                 "signon.userInputRequiredToCapture.enabled" to false,
+                "signon.testOnlyNotWaitForPaint" to true,
             ),
         )
 
@@ -2555,5 +2661,71 @@ class AutocompleteTest : BaseSessionTest() {
         sessionRule.waitForResult(promptHandled)
         mainSession.evaluateJS("document.querySelector('#user1').blur()")
         sessionRule.waitForResult(result)
+    }
+
+    @Test
+    fun testAddressStructureGetFieldsForUS() {
+        val structureResult = Autocomplete.AddressStructure.getAddressStructure("US")
+
+        try {
+            sessionRule.waitForResult(structureResult)
+            assertTrue("Should not be able to retreive a structure.", true)
+        } catch (e: Exception) {
+            assertTrue("Should not have an exception.", false)
+        }
+
+        sessionRule.waitForResult(structureResult).let { fields ->
+            val expectedResult = listOf(
+                Pair("name", "autofill-address-name"),
+                Pair("organization", "autofill-address-organization"),
+                Pair("street-address", "autofill-address-street"),
+                Pair("address-level2", "autofill-address-city"),
+                Pair("address-level1", "autofill-address-state"),
+                Pair("postal-code", "autofill-address-zip"),
+                Pair("country", "autofill-address-country"),
+                Pair("tel", "autofill-address-tel"),
+                Pair("email", "autofill-address-email"),
+            )
+
+            expectedResult.forEachIndexed { index, pair ->
+                assertTrue(
+                    "Result should have id: ${pair.first}, localizationKey: ${pair.second}",
+                    fields[index].id == pair.first && fields[index].localizationKey == pair.second,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun testAddressStructureGetFieldsForJP() {
+        val structureResult = Autocomplete.AddressStructure.getAddressStructure("JP")
+
+        try {
+            sessionRule.waitForResult(structureResult)
+            assertTrue("Should not be able to retreive a structure.", true)
+        } catch (e: Exception) {
+            assertTrue("Should not have an exception.", false)
+        }
+
+        sessionRule.waitForResult(structureResult).let { fields ->
+            val expectedResult = listOf(
+                Pair("postal-code", "autofill-address-postal-code"),
+                Pair("address-level1", "autofill-address-prefecture"),
+                Pair("address-level2", "autofill-address-city"),
+                Pair("street-address", "autofill-address-street"),
+                Pair("organization", "autofill-address-organization"),
+                Pair("name", "autofill-address-name"),
+                Pair("country", "autofill-address-country"),
+                Pair("tel", "autofill-address-tel"),
+                Pair("email", "autofill-address-email"),
+            )
+
+            expectedResult.forEachIndexed { index, pair ->
+                assertTrue(
+                    "Result should have id: ${pair.first}, localizationKey: ${pair.second}",
+                    fields[index].id == pair.first && fields[index].localizationKey == pair.second,
+                )
+            }
+        }
     }
 }

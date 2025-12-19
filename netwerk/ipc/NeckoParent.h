@@ -9,7 +9,6 @@
 #include "mozilla/net/PNeckoParent.h"
 #include "mozilla/net/NeckoCommon.h"
 #include "nsIAuthPrompt2.h"
-#include "nsINetworkPredictor.h"
 #include "nsNetUtil.h"
 
 #ifndef mozilla_net_NeckoParent_h
@@ -76,9 +75,16 @@ class NeckoParent : public PNeckoParent {
       const Maybe<TabId>& aTabId);
   bool DeallocPWebrtcTCPSocketParent(PWebrtcTCPSocketParent* aActor);
 
+  PCacheEntryWriteHandleParent* AllocPCacheEntryWriteHandleParent(
+      PHttpChannelParent* channel);
+  bool DeallocPCacheEntryWriteHandleParent(
+      PCacheEntryWriteHandleParent* aActor);
+
   PAltDataOutputStreamParent* AllocPAltDataOutputStreamParent(
       const nsACString& type, const int64_t& predictedSize,
-      PHttpChannelParent* channel);
+      mozilla::Maybe<mozilla::NotNull<mozilla::net::PHttpChannelParent*>>&
+          channel,
+      mozilla::Maybe<mozilla::NotNull<PCacheEntryWriteHandleParent*>>& handle);
   bool DeallocPAltDataOutputStreamParent(PAltDataOutputStreamParent* aActor);
 
   bool DeallocPCookieServiceParent(PCookieServiceParent*);
@@ -137,11 +143,8 @@ class NeckoParent : public PNeckoParent {
       const uint64_t& aInnerWindowID);
   bool DeallocPWebSocketEventListenerParent(PWebSocketEventListenerParent*);
 
-  already_AddRefed<PDataChannelParent> AllocPDataChannelParent(
-      const uint32_t& channelId);
+  mozilla::ipc::IPCResult RecvConnectBaseChannel(const uint32_t& channelId);
 
-  virtual mozilla::ipc::IPCResult RecvPDataChannelConstructor(
-      PDataChannelParent* aActor, const uint32_t& channelId) override;
 #  ifdef MOZ_WIDGET_GTK
   PGIOChannelParent* AllocPGIOChannelParent(
       PBrowserParent* aBrowser, const SerializedLoadContext& aSerialized,
@@ -153,31 +156,23 @@ class NeckoParent : public PNeckoParent {
       const SerializedLoadContext& aSerialized,
       const GIOChannelCreationArgs& aOpenArgs) override;
 #  endif
-  PSimpleChannelParent* AllocPSimpleChannelParent(const uint32_t& channelId);
-  bool DeallocPSimpleChannelParent(PSimpleChannelParent* actor);
+#  ifdef MOZ_WIDGET_ANDROID
+  already_AddRefed<PGeckoViewContentChannelParent>
+  AllocPGeckoViewContentChannelParent(
+      PBrowserParent* aBrowser, const SerializedLoadContext& aSerialized,
+      const GeckoViewContentChannelArgs& aOpenArgs);
 
-  virtual mozilla::ipc::IPCResult RecvPSimpleChannelConstructor(
-      PSimpleChannelParent* aActor, const uint32_t& channelId) override;
+  virtual mozilla::ipc::IPCResult RecvPGeckoViewContentChannelConstructor(
+      PGeckoViewContentChannelParent* aActor, PBrowserParent* aBrowser,
+      const SerializedLoadContext& aSerialized,
+      const GeckoViewContentChannelArgs& args) override;
+#  endif
 
-  already_AddRefed<PFileChannelParent> AllocPFileChannelParent();
-
-  virtual mozilla::ipc::IPCResult RecvPFileChannelConstructor(
-      PFileChannelParent* aActor) override;
+  mozilla::ipc::IPCResult RecvNotifyFileChannelOpened(
+      const FileChannelInfo& aInfo);
 
   PTransportProviderParent* AllocPTransportProviderParent();
   bool DeallocPTransportProviderParent(PTransportProviderParent* aActor);
-
-  /* Predictor Messages */
-  mozilla::ipc::IPCResult RecvPredPredict(
-      nsIURI* aTargetURI, nsIURI* aSourceURI,
-      const PredictorPredictReason& aReason,
-      const OriginAttributes& aOriginAttributes, const bool& hasVerifier);
-
-  mozilla::ipc::IPCResult RecvPredLearn(
-      nsIURI* aTargetURI, nsIURI* aSourceURI,
-      const PredictorPredictReason& aReason,
-      const OriginAttributes& aOriginAttributes);
-  mozilla::ipc::IPCResult RecvPredReset();
 
   mozilla::ipc::IPCResult RecvRequestContextLoadBegin(const uint64_t& rcid);
   mozilla::ipc::IPCResult RecvRequestContextAfterDOMContentLoaded(

@@ -128,8 +128,8 @@ class ICEntry {
     return offsetof(ICEntry, firstStub_);
   }
 
-  void trace(JSTracer* trc);
-  bool traceWeak(JSTracer* trc);
+  void trace(JSTracer* trc, ICFallbackStub* fallbackStub);
+  bool traceWeak(JSTracer* trc, ICFallbackStub* fallbackStub);
 };
 
 //
@@ -391,13 +391,12 @@ extern bool DoLazyConstantFallback(JSContext* cx, BaselineFrame* frame,
                                    MutableHandleValue res);
 
 extern bool DoGetPropFallback(JSContext* cx, BaselineFrame* frame,
-                              ICFallbackStub* stub, MutableHandleValue val,
+                              ICFallbackStub* stub, HandleValue val,
                               MutableHandleValue res);
 
 extern bool DoGetPropSuperFallback(JSContext* cx, BaselineFrame* frame,
                                    ICFallbackStub* stub, HandleValue receiver,
-                                   MutableHandleValue val,
-                                   MutableHandleValue res);
+                                   HandleValue val, MutableHandleValue res);
 
 extern bool DoSetPropFallback(JSContext* cx, BaselineFrame* frame,
                               ICFallbackStub* stub, Value* stack,

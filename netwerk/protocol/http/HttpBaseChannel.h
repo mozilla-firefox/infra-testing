@@ -71,15 +71,6 @@ extern mozilla::LazyLogModule gHttpLog;
 class OpaqueResponseBlocker;
 class PreferredAlternativeDataTypeParams;
 
-enum CacheDisposition : uint8_t {
-  kCacheUnresolved = 0,
-  kCacheHit = 1,
-  kCacheHitViaReval = 2,
-  kCacheMissedViaReval = 3,
-  kCacheMissed = 4,
-  kCacheUnknown = 5
-};
-
 // These need to be kept in sync with
 // "browser.opaqueResponseBlocking.filterFetchResponse"
 enum class OpaqueResponseFilterFetch { Never, AllowedByORB, BlockedByORB, All };
@@ -120,7 +111,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_DECL_NSITHROTTLEDINPUTCHANNEL
   NS_DECL_NSICLASSIFIEDCHANNEL
 
-  NS_DECLARE_STATIC_IID_ACCESSOR(HTTP_BASE_CHANNEL_IID)
+  NS_INLINE_DECL_STATIC_IID(HTTP_BASE_CHANNEL_IID)
 
   HttpBaseChannel();
 
@@ -128,7 +119,6 @@ class HttpBaseChannel : public nsHashPropertyBag,
                                       nsProxyInfo* aProxyInfo,
                                       uint32_t aProxyResolveFlags,
                                       nsIURI* aProxyURI, uint64_t aChannelId,
-                                      ExtContentPolicyType aContentPolicyType,
                                       nsILoadInfo* aLoadInfo);
 
   // nsIRequest
@@ -179,6 +169,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD GetApplyConversion(bool* value) override;
   NS_IMETHOD SetApplyConversion(bool value) override;
   NS_IMETHOD GetContentEncodings(nsIUTF8StringEnumerator** aEncodings) override;
+  // Note: Doesn't modify the Content-Encoding
   NS_IMETHOD DoApplyContentConversions(nsIStreamListener* aNextListener,
                                        nsIStreamListener** aNewNextListener,
                                        nsISupports* aCtxt) override;
@@ -220,7 +211,6 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD SetRedirectionLimit(uint32_t value) override;
   NS_IMETHOD IsNoStoreResponse(bool* value) override;
   NS_IMETHOD IsNoCacheResponse(bool* value) override;
-  NS_IMETHOD IsPrivateResponse(bool* value) override;
   NS_IMETHOD GetResponseStatus(uint32_t* aValue) override;
   NS_IMETHOD GetResponseStatusText(nsACString& aValue) override;
   NS_IMETHOD GetRequestSucceeded(bool* aValue) override;
@@ -239,6 +229,8 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD SetRequestContextID(uint64_t aRCID) override;
   NS_IMETHOD GetIsMainDocumentChannel(bool* aValue) override;
   NS_IMETHOD SetIsMainDocumentChannel(bool aValue) override;
+  NS_IMETHOD GetIsUserAgentHeaderOutdated(bool* aValue) override;
+  NS_IMETHOD SetIsUserAgentHeaderOutdated(bool aValue) override;
   NS_IMETHOD GetProtocolVersion(nsACString& aProtocolVersion) override;
   NS_IMETHOD GetChannelId(uint64_t* aChannelId) override;
   NS_IMETHOD SetChannelId(uint64_t aChannelId) override;
@@ -329,8 +321,6 @@ class HttpBaseChannel : public nsHashPropertyBag,
 
   NS_IMETHOD GetConnectionInfoHashKey(
       nsACString& aConnectionInfoHashKey) override;
-  NS_IMETHOD GetIntegrityMetadata(nsAString& aIntegrityMetadata) override;
-  NS_IMETHOD SetIntegrityMetadata(const nsAString& aIntegrityMetadata) override;
   NS_IMETHOD GetLastRedirectFlags(uint32_t* aValue) override;
   NS_IMETHOD SetLastRedirectFlags(uint32_t aValue) override;
   NS_IMETHOD GetNavigationStartTimeStamp(TimeStamp* aTimeStamp) override;
@@ -518,6 +508,10 @@ class HttpBaseChannel : public nsHashPropertyBag,
   static bool ShouldRewriteRedirectToGET(
       uint32_t httpStatus, nsHttpRequestHead::ParsedMethodType method);
 
+  [[nodiscard]] nsresult DoApplyContentConversionsInternal(
+      nsIStreamListener* aNextListener, nsIStreamListener** aNewNextListener,
+      bool aRemoveEncodings, nsISupports* aCtxt);
+
   // Like nsIEncodedChannel::DoApplyConversions except context is set to
   // mListenerContext.
   [[nodiscard]] nsresult DoApplyContentConversions(
@@ -658,8 +652,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
   // Helper function to simplify getting notification callbacks.
   template <class T>
   void GetCallback(nsCOMPtr<T>& aResult) {
-    NS_QueryNotificationCallbacks(mCallbacks, mLoadGroup,
-                                  NS_GET_TEMPLATE_IID(T),
+    NS_QueryNotificationCallbacks(mCallbacks, mLoadGroup, NS_GET_IID(T),
                                   getter_AddRefs(aResult));
   }
 
@@ -779,7 +772,6 @@ class HttpBaseChannel : public nsHashPropertyBag,
   nsTArray<PreferredAlternativeDataTypeParams> mPreferredCachedAltDataTypes;
   // Holds the name of the alternative data type the channel returned.
   nsCString mAvailableCachedAltDataType;
-  nsString mIntegrityMetadata;
 
   // Classified channel's matched information
   nsCString mMatchedList;
@@ -823,7 +815,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
   // the response of the last redirect.
   mozilla::TimeStamp mRedirectEndTimeStamp;
 
-  PRTime mChannelCreationTime;
+  PRTime mChannelCreationTime{0};
   TimeStamp mChannelCreationTimestamp;
   TimeStamp mAsyncOpenTime;
   TimeStamp mCacheReadStart;
@@ -839,35 +831,36 @@ class HttpBaseChannel : public nsHashPropertyBag,
   TimeStamp mOnStopRequestStartTime;
   // copied from the transaction before we null out mTransaction
   // so that the timing can still be queried from OnStopRequest
-  TimingStruct mTransactionTimings;
+  TimingStruct mTransactionTimings{};
 
   // Gets computed during ComputeCrossOriginOpenerPolicyMismatch so we have
   // the channel's policy even if we don't know policy initiator.
-  nsILoadInfo::CrossOriginOpenerPolicy mComputedCrossOriginOpenerPolicy;
+  nsILoadInfo::CrossOriginOpenerPolicy mComputedCrossOriginOpenerPolicy{
+      nsILoadInfo::OPENER_POLICY_UNSAFE_NONE};
 
-  uint64_t mStartPos;
-  uint64_t mTransferSize;
-  uint64_t mRequestSize;
-  uint64_t mDecodedBodySize;
+  uint64_t mStartPos{UINT64_MAX};
+  uint64_t mTransferSize{0};
+  uint64_t mRequestSize{0};
+  uint64_t mDecodedBodySize{0};
   // True only when the channel supports any of the versions of HTTP3
-  bool mSupportsHTTP3;
-  uint64_t mEncodedBodySize;
-  uint64_t mRequestContextID;
+  bool mSupportsHTTP3{false};
+  uint64_t mEncodedBodySize{0};
+  uint64_t mRequestContextID{0};
   // ID of the top-level document's inner window this channel is being
   // originated from.
-  uint64_t mContentWindowId;
-  uint64_t mBrowserId;
-  int64_t mAltDataLength;
-  uint64_t mChannelId;
-  uint64_t mReqContentLength;
+  uint64_t mContentWindowId{0};
+  uint64_t mBrowserId{0};
+  int64_t mAltDataLength{-1};
+  uint64_t mChannelId{0};
+  uint64_t mReqContentLength{0};
 
-  Atomic<nsresult, ReleaseAcquire> mStatus;
+  Atomic<nsresult, ReleaseAcquire> mStatus{NS_OK};
 
   // Use Release-Acquire ordering to ensure the OMT ODA is ignored while channel
   // is canceled on main thread.
-  Atomic<bool, ReleaseAcquire> mCanceled;
-  Atomic<uint32_t, ReleaseAcquire> mFirstPartyClassificationFlags;
-  Atomic<uint32_t, ReleaseAcquire> mThirdPartyClassificationFlags;
+  Atomic<bool, ReleaseAcquire> mCanceled{false};
+  Atomic<uint32_t, ReleaseAcquire> mFirstPartyClassificationFlags{0};
+  Atomic<uint32_t, ReleaseAcquire> mThirdPartyClassificationFlags{0};
 
   // mutex to guard members accessed during OnDataFinished in
   // HttpChannelChild.cpp
@@ -875,8 +868,8 @@ class HttpBaseChannel : public nsHashPropertyBag,
 
   UniquePtr<ProfileChunkedBuffer> mSource;
 
-  uint32_t mLoadFlags;
-  uint32_t mCaps;
+  uint32_t mLoadFlags{LOAD_NORMAL};
+  uint32_t mCaps{0};
 
   ClassOfService mClassOfService;
   // This should be set the the actual TRR mode used to resolve the request.
@@ -998,41 +991,45 @@ class HttpBaseChannel : public nsHashPropertyBag,
 
     // Indicates whether the user-agent header has been modifed since the channel
     // was created.
-    (uint32_t, IsUserAgentHeaderModified, 1)
+    (uint32_t, IsUserAgentHeaderModified, 1),
+
+    // Indicates whether the user-agent header is outdated and can not be used as
+    // a user agent value.
+    (uint32_t, IsUserAgentHeaderOutdated, 1)
   ))
   // clang-format on
 
   // An opaque flags for non-standard behavior of the TLS system.
   // It is unlikely this will need to be set outside of telemetry studies
   // relating to the TLS implementation.
-  uint32_t mTlsFlags;
+  uint32_t mTlsFlags{0};
 
   // Current suspension depth for this channel object
-  uint32_t mSuspendCount;
+  uint32_t mSuspendCount{0};
 
   // Per channel transport window override (0 means no override)
-  uint32_t mInitialRwin;
+  uint32_t mInitialRwin{0};
 
-  uint32_t mProxyResolveFlags;
+  uint32_t mProxyResolveFlags{0};
 
-  uint32_t mContentDispositionHint;
+  uint32_t mContentDispositionHint{UINT32_MAX};
 
   dom::RequestMode mRequestMode;
-  uint32_t mRedirectMode;
+  uint32_t mRedirectMode{nsIHttpChannelInternal::REDIRECT_MODE_FOLLOW};
 
   // If this channel was created as the result of a redirect, then this value
   // will reflect the redirect flags passed to the SetupReplacementChannel()
   // method.
-  uint32_t mLastRedirectFlags;
+  uint32_t mLastRedirectFlags{0};
 
-  int16_t mPriority;
+  int16_t mPriority{PRIORITY_NORMAL};
   uint8_t mRedirectionLimit;
 
   // Performance tracking
   // Number of redirects that has occurred.
-  int8_t mRedirectCount;
+  int8_t mRedirectCount{0};
   // Number of internal redirects that has occurred.
-  int8_t mInternalRedirectCount;
+  int8_t mInternalRedirectCount{0};
 
   enum class SnifferCategoryType {
     NetContent = 0,
@@ -1044,14 +1041,14 @@ class HttpBaseChannel : public nsHashPropertyBag,
   // Used to ensure the same pref value is being used across the
   // lifetime of this http channel.
   const bool mCachedOpaqueResponseBlockingPref;
-  bool mChannelBlockedByOpaqueResponse;
+  bool mChannelBlockedByOpaqueResponse{false};
 
-  bool mDummyChannelForCachedResource;
+  bool mDummyChannelForCachedResource{false};
 
-  bool mHasContentDecompressed;
+  bool mHasContentDecompressed{false};
 
   // A flag that should be false if render-blocking is not stated
-  bool mRenderBlocking;
+  bool mRenderBlocking{false};
 
   // clang-format off
   MOZ_ATOMIC_BITFIELDS(mAtomicBitfields3, 8, (
@@ -1122,8 +1119,6 @@ class HttpBaseChannel : public nsHashPropertyBag,
 
   bool PerformCORSCheck();
 };
-
-NS_DEFINE_STATIC_IID_ACCESSOR(HttpBaseChannel, HTTP_BASE_CHANNEL_IID)
 
 // Share some code while working around C++'s absurd inability to handle casting
 // of member functions between base/derived types.

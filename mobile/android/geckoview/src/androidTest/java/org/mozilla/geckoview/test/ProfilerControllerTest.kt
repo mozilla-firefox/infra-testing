@@ -1,10 +1,12 @@
 package org.mozilla.geckoview.test
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import org.hamcrest.Matchers.* // ktlint-disable no-wildcard-imports
+import org.hamcrest.Matchers.equalTo
+import org.hamcrest.Matchers.greaterThan
 import org.json.JSONObject
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mozilla.geckoview.ProfilerController
 import java.io.BufferedReader
 import java.io.ByteArrayInputStream
 import java.io.InputStreamReader
@@ -15,8 +17,8 @@ class ProfilerControllerTest : BaseSessionTest() {
 
     @Test
     fun startAndStopProfiler() {
-        sessionRule.runtime.profilerController.startProfiler(arrayOf<String>(), arrayOf<String>())
-        val result = sessionRule.runtime.profilerController.stopProfiler()
+        ProfilerController.startProfiler(arrayOf<String>(), arrayOf<String>())
+        val result = ProfilerController.stopProfiler()
         val byteArray = sessionRule.waitForResult(result)
         val head = (byteArray[0].toInt() and 0xff) or (byteArray[1].toInt() shl 8 and 0xff00)
         assertThat(

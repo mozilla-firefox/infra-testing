@@ -123,7 +123,8 @@ def setup_env_for_shell(env, shell):
 )
 def hazards(command_context):
     """Commands related to performing the GC rooting hazard analysis"""
-    print("See `mach hazards --help` for a list of subcommands")
+    command_context._sub_mach(["help", "hazards"])
+    return 1
 
 
 @inherit_command_args("artifact", "toolchain")
@@ -136,7 +137,7 @@ def bootstrap(command_context, **kwargs):
     orig_dir = os.getcwd()
     os.chdir(ensure_dir_exists(tools_dir()))
     try:
-        kwargs["from_build"] = ("linux64-gcc-sixgill", "linux64-gcc-9")
+        kwargs["from_build"] = ("linux64-gcc-10-sixgill", "linux64-gcc-10")
         command_context._mach_context.commands.dispatch(
             "artifact", command_context._mach_context, subcommand="toolchain", **kwargs
         )
@@ -550,7 +551,7 @@ def annotated_source(filename, query):
     out = "<pre>"
     for lineno, line in enumerate(fh, 1):
         processed = f"{lineno} <span id='{lineno}'"
-        if line0 <= lineno and lineno <= line1:
+        if line0 <= lineno <= line1:
             processed += " style='background: yellow'"
         processed += ">" + html.escape(line.rstrip()) + "</span>\n"
         out += processed

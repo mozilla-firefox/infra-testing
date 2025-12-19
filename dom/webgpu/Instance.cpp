@@ -5,29 +5,26 @@
 
 #include "Instance.h"
 
+#include <optional>
+#include <string_view>
+
 #include "Adapter.h"
+#include "ipc/WebGPUChild.h"
+#include "ipc/WebGPUTypes.h"
 #include "js/Value.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/ErrorResult.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/dom/Promise.h"
+#include "mozilla/dom/WorkerPrivate.h"
+#include "mozilla/gfx/CanvasManagerChild.h"
 #include "mozilla/gfx/Logging.h"
+#include "mozilla/gfx/gfxVars.h"
+#include "mozilla/webgpu/ffi/wgpu.h"
 #include "nsDebug.h"
 #include "nsIGlobalObject.h"
-#include "ipc/WebGPUChild.h"
-#include "ipc/WebGPUTypes.h"
-#include "mozilla/webgpu/ffi/wgpu.h"
-#include "mozilla/dom/Promise.h"
-#include "mozilla/gfx/CanvasManagerChild.h"
-#include "mozilla/gfx/gfxVars.h"
-#include "mozilla/StaticPrefs_dom.h"
 #include "nsString.h"
 #include "nsStringFwd.h"
-
-#ifndef EARLY_BETA_OR_EARLIER
-#  include "mozilla/dom/WorkerPrivate.h"
-#endif
-
-#include <optional>
-#include <string_view>
 
 namespace mozilla::webgpu {
 
@@ -48,7 +45,17 @@ static inline nsDependentCString ToCString(const std::string_view s) {
     return true;
   }
 
-  return StaticPrefs::dom_webgpu_workers_enabled();
+  dom::WorkerPrivate* wp = dom::GetCurrentThreadWorkerPrivate();
+  if (wp && wp->IsServiceWorker()) {
+    return StaticPrefs::dom_webgpu_service_workers_enabled();
+  }
+
+  return true;
+}
+
+/* static */ bool Instance::ExternalTexturePrefEnabled(JSContext* aCx,
+                                                       JSObject* aObj) {
+  return StaticPrefs::dom_webgpu_external_texture_enabled_AtStartup();
 }
 
 /*static*/
@@ -86,10 +93,6 @@ Instance::Instance(nsIGlobalObject* aOwner)
   }
 }
 
-Instance::~Instance() { Cleanup(); }
-
-void Instance::Cleanup() {}
-
 JSObject* Instance::WrapObject(JSContext* cx,
                                JS::Handle<JSObject*> givenProto) {
   return dom::GPU_Binding::Wrap(cx, this, givenProto);
@@ -100,6 +103,15 @@ already_AddRefed<dom::Promise> Instance::RequestAdapter(
   RefPtr<dom::Promise> promise = dom::Promise::Create(mOwner, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
+  }
+
+  if (NS_IsMainThread()) {
+    JSObject* obj = mOwner->GetGlobalJSObject();
+    if (obj) {
+      dom::SetUseCounter(obj, eUseCounter_custom_WebgpuRequestAdapter);
+    }
+  } else {
+    dom::SetUseCounter(UseCounterWorker::Custom_WebgpuRequestAdapter);
   }
 
   // -
@@ -114,14 +126,6 @@ already_AddRefed<dom::Promise> Instance::RequestAdapter(
   };
 
 #ifndef EARLY_BETA_OR_EARLIER
-  rejectIf(true, "WebGPU is not yet available in Release or late Beta builds.");
-
-  // NOTE: Deliberately left after the above check so that we only enter
-  // here if it's removed. Above is a more informative diagnostic, while the
-  // check is still present.
-  //
-  // Follow-up to remove this check:
-  // <https://bugzilla.mozilla.org/show_bug.cgi?id=1942431>
   if (dom::WorkerPrivate* wp = dom::GetCurrentThreadWorkerPrivate()) {
     rejectIf(wp->IsServiceWorker(),
              "WebGPU in service workers is not yet available in Release or "
@@ -133,6 +137,22 @@ already_AddRefed<dom::Promise> Instance::RequestAdapter(
   rejectIf(!StaticPrefs::dom_webgpu_enabled(),
            "WebGPU is disabled because the `dom.webgpu.enabled` pref. is set "
            "to `false`.");
+#ifdef WIN32
+#  ifndef MOZ_DXCOMPILER
+  rejectIf(true,
+           "WebGPU is disabled because dxcompiler is unavailable with this "
+           "build configuration");
+#  endif
+#endif
+
+  // Check if WebGPU is blocked for this global's domain.
+  {
+    const auto prefLock = mozilla::StaticPrefs::dom_webgpu_blocked_domains();
+    rejectIf(nsContentUtils::IsURIInList(mOwner->GetBaseURI(), *prefLock),
+             "WebGPU is blocked for this domain by the "
+             "`dom.webgpu.blocked-domains` pref.");
+  }
+
   if (rejectionMessage) {
     promise->MaybeRejectWithNotSupportedError(ToCString(*rejectionMessage));
     return promise.forget();
@@ -148,13 +168,11 @@ already_AddRefed<dom::Promise> Instance::RequestAdapter(
     return promise.forget();
   }
 
-  RefPtr<WebGPUChild> bridge = canvasManager->GetWebGPUChild();
-  if (!bridge) {
+  RefPtr<WebGPUChild> child = canvasManager->GetWebGPUChild();
+  if (!child) {
     promise->MaybeRejectWithInvalidStateError("Failed to create WebGPUChild");
     return promise.forget();
   }
-
-  RefPtr<Instance> instance = this;
 
   if (aOptions.mFeatureLevel.EqualsASCII("core")) {
     // Good! That's all we support.
@@ -181,22 +199,41 @@ already_AddRefed<dom::Promise> Instance::RequestAdapter(
     return promise.forget();
   }
 
-  bridge->InstanceRequestAdapter(aOptions)->Then(
-      GetCurrentSerialEventTarget(), __func__,
-      [promise, instance, bridge](ipc::ByteBuf aInfoBuf) {
-        auto info = std::make_shared<ffi::WGPUAdapterInformation>();
-        ffi::wgpu_client_adapter_extract_info(ToFFI(&aInfoBuf), info.get());
-        MOZ_ASSERT(info->id != 0);
-        RefPtr<Adapter> adapter = new Adapter(instance, bridge, info);
-        promise->MaybeResolve(adapter);
-      },
-      [promise](const Maybe<ipc::ResponseRejectReason>& aResponseReason) {
-        if (aResponseReason.isSome()) {
-          promise->MaybeRejectWithAbortError("Internal communication error!");
-        } else {
-          promise->MaybeResolve(JS::NullHandleValue);
-        }
-      });
+  if (aOptions.mXrCompatible) {
+    dom::AutoJSAPI api;
+    if (api.Init(mOwner)) {
+      JS::WarnUTF8(
+          api.cx(),
+          "User requested a WebGPU adapter with `xrCompatible: true`, "
+          "but WebXR sessions are not yet supported in WebGPU. Returning "
+          "a regular adapter for now. Subscribe to "
+          "<https://bugzilla.mozilla.org/show_bug.cgi?id=1963829>"
+          " for updates on its development in Firefox.");
+    }
+  }
+
+  ffi::WGPUPowerPreference power_preference;
+  if (aOptions.mPowerPreference.WasPassed()) {
+    switch (aOptions.mPowerPreference.Value()) {
+      case dom::GPUPowerPreference::Low_power:
+        power_preference = ffi::WGPUPowerPreference_LowPower;
+        break;
+      case dom::GPUPowerPreference::High_performance:
+        power_preference = ffi::WGPUPowerPreference_HighPerformance;
+        break;
+      default:
+        MOZ_CRASH("Unexpected `dom::GPUPowerPreference`");
+    }
+  } else {
+    power_preference = ffi::WGPUPowerPreference_None;
+  }
+
+  RawId adapter_id = ffi::wgpu_client_request_adapter(
+      child->GetClient(), power_preference, aOptions.mForceFallbackAdapter);
+
+  auto pending_promise = WebGPUChild::PendingRequestAdapterPromise{
+      RefPtr(promise), RefPtr(this), adapter_id};
+  child->mPendingRequestAdapterPromises.push_back(std::move(pending_promise));
 
   return promise.forget();
 }

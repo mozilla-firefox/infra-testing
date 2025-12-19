@@ -35,7 +35,6 @@ use crate::spatial_tree::{SceneSpatialTree, SpatialTreeUpdates};
 use crate::telemetry::Telemetry;
 use crate::SceneBuilderHooks;
 use std::iter;
-use time::precise_time_ns;
 use crate::util::drain_filter;
 use std::thread;
 use std::time::Duration;
@@ -59,6 +58,7 @@ fn rasterize_blobs(txn: &mut TransactionMsg, is_low_priority: bool, tile_pool: &
 pub struct BuiltTransaction {
     pub document_id: DocumentId,
     pub built_scene: Option<BuiltScene>,
+    pub offscreen_scenes: Vec<OffscreenBuiltScene>,
     pub view: SceneView,
     pub resource_updates: Vec<ResourceUpdate>,
     pub rasterized_blobs: Vec<(BlobImageRequest, BlobImageResult)>,
@@ -70,9 +70,16 @@ pub struct BuiltTransaction {
     pub spatial_tree_updates: Option<SpatialTreeUpdates>,
     pub render_frame: bool,
     pub present: bool,
+    pub tracked: bool,
     pub invalidate_rendered_frame: bool,
     pub profile: TransactionProfile,
     pub frame_stats: FullFrameStats,
+}
+
+pub struct OffscreenBuiltScene {
+    pub scene: BuiltScene,
+    pub interner_updates: InternerUpdates,
+    pub spatial_tree_updates: SpatialTreeUpdates,
 }
 
 #[cfg(feature = "replay")]
@@ -445,6 +452,7 @@ impl SceneBuilderThread {
             if item.scene.has_root_pipeline() {
                 built_scene = Some(SceneBuilder::build(
                     &item.scene,
+                    None,
                     item.fonts,
                     &item.view,
                     &self.config,
@@ -478,6 +486,7 @@ impl SceneBuilderThread {
             let txns = vec![Box::new(BuiltTransaction {
                 document_id: item.document_id,
                 render_frame: item.build_frame,
+                tracked: false,
                 present: true,
                 invalidate_rendered_frame: false,
                 built_scene,
@@ -492,6 +501,7 @@ impl SceneBuilderThread {
                 spatial_tree_updates,
                 profile: TransactionProfile::new(),
                 frame_stats: FullFrameStats::default(),
+                offscreen_scenes: Vec::new(),
             })];
 
             self.forward_built_transactions(txns);
@@ -539,10 +549,11 @@ impl SceneBuilderThread {
 
         let mut profile = txn.profile.take();
 
-        let scene_build_start = precise_time_ns();
+        let scene_build_start = zeitstempel::now();
         let mut removed_pipelines = Vec::new();
         let mut rebuild_scene = false;
         let mut frame_stats = FullFrameStats::default();
+        let mut offscreen_scenes = Vec::new();
 
         for message in txn.scene_ops.drain(..) {
             match message {
@@ -562,7 +573,7 @@ impl SceneBuilderThread {
                 } => {
                     let (builder_start_time_ns, builder_end_time_ns, send_time_ns) =
                       display_list.times();
-                    let content_send_time = profiler::ns_to_ms(precise_time_ns() - send_time_ns);
+                    let content_send_time = profiler::ns_to_ms(zeitstempel::now() - send_time_ns);
                     let dl_build_time = profiler::ns_to_ms(builder_end_time_ns - builder_start_time_ns);
                     profile.set(profiler::CONTENT_SEND_TIME, content_send_time);
                     profile.set(profiler::DISPLAY_LIST_BUILD_TIME, dl_build_time);
@@ -588,6 +599,29 @@ impl SceneBuilderThread {
                         display_list,
                     );
                 }
+                SceneMsg::RenderOffscreen(pipeline_id) => {
+                    let mut interners = Interners::default();
+                    let mut spatial_tree = SceneSpatialTree::new();
+                    let built = SceneBuilder::build(
+                        &scene,
+                        Some(pipeline_id),
+                        self.fonts.clone(),
+                        &doc.view,
+                        &self.config,
+                        &mut interners,
+                        &mut spatial_tree,
+                        &mut self.recycler,
+                        &doc.stats,
+                        self.debug_flags,
+                    );
+                    let interner_updates = interners.end_frame_and_get_pending_updates();
+                    let spatial_tree_updates = spatial_tree.end_frame_and_get_pending_updates();
+                    offscreen_scenes.push(OffscreenBuiltScene {
+                        scene: built,
+                        interner_updates,
+                        spatial_tree_updates,
+                    });
+                }
                 SceneMsg::SetRootPipeline(pipeline_id) => {
                     if scene.root_pipeline_id != Some(pipeline_id) {
                         rebuild_scene = true;
@@ -612,6 +646,7 @@ impl SceneBuilderThread {
 
             let built = SceneBuilder::build(
                 &scene,
+                None,
                 self.fonts.clone(),
                 &doc.view,
                 &self.config,
@@ -638,7 +673,7 @@ impl SceneBuilderThread {
         }
 
         let scene_build_time_ms =
-            profiler::ns_to_ms(precise_time_ns() - scene_build_start);
+            profiler::ns_to_ms(zeitstempel::now() - scene_build_start);
         profile.set(profiler::SCENE_BUILD_TIME, scene_build_time_ms);
 
         frame_stats.scene_build_time += scene_build_time_ms;
@@ -667,8 +702,10 @@ impl SceneBuilderThread {
             document_id: txn.document_id,
             render_frame: txn.generate_frame.as_bool(),
             present: txn.generate_frame.present(),
+            tracked: txn.generate_frame.tracked(),
             invalidate_rendered_frame: txn.invalidate_rendered_frame,
             built_scene,
+            offscreen_scenes,
             view: doc.view,
             rasterized_blobs: txn.rasterized_blobs,
             resource_updates: txn.resource_updates,

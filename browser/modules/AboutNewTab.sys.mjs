@@ -8,10 +8,12 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  AboutNewTabResourceMapping:
+    "resource:///modules/AboutNewTabResourceMapping.sys.mjs",
   ActivityStream: "resource://newtab/lib/ActivityStream.sys.mjs",
-  AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
-  AddonManagerPrivate: "resource://gre/modules/AddonManager.sys.mjs",
   ObjectUtils: "resource://gre/modules/ObjectUtils.sys.mjs",
+  TelemetryReportingPolicy:
+    "resource://gre/modules/TelemetryReportingPolicy.sys.mjs",
 });
 
 const ABOUT_URL = "about:newtab";
@@ -19,8 +21,6 @@ const PREF_ACTIVITY_STREAM_DEBUG = "browser.newtabpage.activity-stream.debug";
 // AboutHomeStartupCache needs us in "quit-application", so stay alive longer.
 // TODO: We could better have a shared async shutdown blocker?
 const TOPIC_APP_QUIT = "profile-before-change";
-const BROWSER_READY_NOTIFICATION = "sessionstore-windows-restored";
-const BUILTIN_ADDON_ID = "newtab@mozilla.org";
 
 export const AboutNewTab = {
   QueryInterface: ChromeUtils.generateQI([
@@ -46,6 +46,10 @@ export const AboutNewTab = {
    * init - Initializes an instance of Activity Stream if one doesn't exist already.
    */
   init() {
+    if (this.initialized) {
+      return;
+    }
+
     Services.obs.addObserver(this, TOPIC_APP_QUIT);
     if (!AppConstants.RELEASE_OR_BETA) {
       XPCOMUtils.defineLazyPreferenceGetter(
@@ -69,18 +73,20 @@ export const AboutNewTab = {
       }
     );
 
+    // Make sure to register newtab resource mapping as early as possible
+    // on startup.
+    if (AppConstants.BROWSER_NEWTAB_AS_ADDON) {
+      lazy.AboutNewTabResourceMapping.init();
+    }
+
     // More initialization happens here
     this.toggleActivityStream(true);
     this.initialized = true;
 
-    Services.obs.addObserver(this, BROWSER_READY_NOTIFICATION);
-  },
-
-  async uninstallAddon() {
-    let addon = await lazy.AddonManager.getAddonByID(BUILTIN_ADDON_ID);
-    if (addon) {
-      addon.uninstall();
-    }
+    Services.obs.addObserver(
+      this,
+      lazy.TelemetryReportingPolicy.TELEMETRY_TOU_ACCEPTED_OR_INELIGIBLE
+    );
   },
 
   /**
@@ -88,10 +94,10 @@ export const AboutNewTab = {
    *
    * This will only act if there is a change of state and if not overridden.
    *
-   * @returns {Boolean} Returns if there has been a state change
+   * @returns {boolean} Returns if there has been a state change
    *
-   * @param {Boolean}   stateEnabled    activity stream enabled state to set to
-   * @param {Boolean}   forceState      force state change
+   * @param {boolean}   stateEnabled    activity stream enabled state to set to
+   * @param {boolean}   forceState      force state change
    */
   toggleActivityStream(stateEnabled, forceState = false) {
     if (
@@ -160,24 +166,33 @@ export const AboutNewTab = {
     }
 
     if (AppConstants.BROWSER_NEWTAB_AS_ADDON) {
-      let addonPolicy = WebExtensionPolicy.getByID(BUILTIN_ADDON_ID);
-      if (!addonPolicy) {
-        // If this is the first time that the build flag was set to true, we
-        // might not yet have refreshed the addon database cache yet, in which
-        // case the addonPolicy will be null. In that case, we'll wait for the
-        // database to be ready before proceeding.
-        await lazy.AddonManagerPrivate.databaseReady;
-      } else {
-        await addonPolicy.readyPromise;
-      }
+      // Wait until the built-in addon has reported that it has finished
+      // initializing.
+      let redirector = Cc[
+        "@mozilla.org/network/protocol/about;1?what=newtab"
+      ].getService(Ci.nsIAboutModule).wrappedJSObject;
+
+      await redirector.promiseBuiltInAddonInitialized;
+      lazy.AboutNewTabResourceMapping.scheduleUpdateTrainhopAddonState();
     } else {
       // We may have had the built-in addon installed in the past. Since the
       // flag is false, let's go ahead and remove it. We don't need to await on
       // this since the extension should be inert if the build flag is false.
-      this.uninstallAddon();
+      lazy.AboutNewTabResourceMapping.uninstallAddon();
     }
 
-    this.activityStream = new lazy.ActivityStream();
+    try {
+      this.activityStream = new lazy.ActivityStream();
+      Glean.newtab.activityStreamCtorSuccess.set(true);
+    } catch (error) {
+      // Send Activity Stream loading failure telemetry
+      // This probe will help to monitor if ActivityStream failure has crossed
+      // a threshold and send alert. See Bug 1965278
+      Glean.newtab.activityStreamCtorSuccess.set(false);
+      console.error(error);
+      throw error;
+    }
+
     try {
       this.activityStream.init();
       this._subscribeToActivityStream();
@@ -223,6 +238,16 @@ export const AboutNewTab = {
       this.activityStream.uninit();
       this.activityStream = null;
     }
+    try {
+      Services.obs.removeObserver(this, TOPIC_APP_QUIT);
+      Services.obs.removeObserver(
+        this,
+        lazy.TelemetryReportingPolicy.TELEMETRY_TOU_ACCEPTED_OR_INELIGIBLE
+      );
+    } catch (e) {
+      // If init failed before registering these observers, removeObserver may throw.
+      // Safe to ignore during shutdown.
+    }
 
     this.initialized = false;
   },
@@ -261,8 +286,12 @@ export const AboutNewTab = {
         this.uninit();
         break;
       }
-      case BROWSER_READY_NOTIFICATION: {
-        Services.obs.removeObserver(this, BROWSER_READY_NOTIFICATION);
+      case lazy.TelemetryReportingPolicy.TELEMETRY_TOU_ACCEPTED_OR_INELIGIBLE: {
+        Services.obs.removeObserver(
+          this,
+          lazy.TelemetryReportingPolicy.TELEMETRY_TOU_ACCEPTED_OR_INELIGIBLE
+        );
+
         // Avoid running synchronously during this event that's used for timing
         Services.tm.dispatchToMainThread(() => this.onBrowserReady());
         break;

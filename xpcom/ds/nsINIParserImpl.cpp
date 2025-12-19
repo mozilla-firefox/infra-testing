@@ -9,7 +9,6 @@
 #include "nsINIParser.h"
 #include "nsStringEnumerator.h"
 #include "nsTArray.h"
-#include "mozilla/Attributes.h"
 
 class nsINIParserImpl final : public nsIINIParser, public nsIINIParserWriter {
   ~nsINIParserImpl() = default;
@@ -112,6 +111,17 @@ nsINIParserImpl::GetString(const nsACString& aSection, const nsACString& aKey,
 NS_IMETHODIMP
 nsINIParserImpl::InitFromString(const nsACString& aData) {
   return mParser.InitFromString(nsCString(aData));
+}
+
+NS_IMETHODIMP
+nsINIParserImpl::DeleteString(const nsACString& aSection,
+                              const nsACString& aKey) {
+  if (ContainsNull(aSection) || ContainsNull(aKey)) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  return mParser.DeleteString(PromiseFlatCString(aSection).get(),
+                              PromiseFlatCString(aKey).get());
 }
 
 NS_IMETHODIMP

@@ -8,6 +8,9 @@
 newtab-page-title = ਨਵੀਂ ਟੈਬ
 newtab-settings-button =
     .title = ਆਪਣੇ ਨਵੀਂ ਟੈਬ ਸਫ਼ੇ ਨੂੰ ਆਪਣੇ ਮੁਤਾਬਕ ਢਾਲੋ
+newtab-customize-panel-icon-button =
+    .title = ਇਸ ਸਫ਼ੇ ਨੂੰ ਕਸਟਮਾਈਜ਼ ਕਰੋ
+newtab-customize-panel-icon-button-label = ਕਸਟਮਾਈਜ਼
 newtab-personalize-settings-icon-label =
     .title = ਨਵੀਂ ਟੈਬ ਨੂੰ ਨਿੱਜੀ ਬਣਾਓ
     .aria-label = ਸੈਟਿੰਗਾਂ
@@ -53,6 +56,9 @@ newtab-topsites-add-shortcut-header = ਨਵਾਂ ਸ਼ਾਰਟਕੱਟ
 newtab-topsites-edit-topsites-header = ਉਪਰਲੀ ਸਾਈਟ ਸੋਧੋ
 newtab-topsites-edit-shortcut-header = ਸ਼ਾਰਟਕੱਟ ਨੂੰ ਸੋਧੋ
 newtab-topsites-add-shortcut-label = ਸ਼ਾਰਟਕੱਟ ਨੂੰ ਜੋੜੋ
+newtab-topsites-add-shortcut-title =
+    .title = ਸ਼ਾਰਟਕੱਟ ਨੂੰ ਜੋੜੋ
+    .aria-label = ਸ਼ਾਰਟਕੱਟ ਨੂੰ ਜੋੜੋ
 newtab-topsites-title-label = ਸਿਰਲੇਖ
 newtab-topsites-title-input =
     .placeholder = ਸਿਰਲੇਖ ਦਿਓ
@@ -81,6 +87,14 @@ newtab-confirm-delete-history-p2 = ਇਕ ਕਾਰਵਾਈ ਨੂੰ ਵਾਪ
 ## Top Sites - Sponsored label
 
 newtab-topsite-sponsored = ਸਪੌਂਸਰ ਕੀਤਾ
+
+## Label used by screen readers for pinned top sites
+
+# Variables:
+#   $title (string) - The label or hostname of the site.
+topsite-label-pinned =
+    .aria-label = { $title } (ਟੰਗਿਆ)
+    .title = { $title }
 
 ## Context Menu - Action Tooltips.
 
@@ -117,6 +131,8 @@ newtab-menu-delete-pocket = { -pocket-brand-name } ਤੋਂ ਹਟਾਓ
 newtab-menu-archive-pocket = { -pocket-brand-name } ਵਿੱਚ ਪੁਰਾਲੇਖਬੱਧ ਕਰੋ
 newtab-menu-show-privacy-info = ਸਾਡੇ ਸਪਾਂਸਰ ਅਤੇ ਤੁਹਾਡੀ ਪਰਦੇਦਾਰੀ
 newtab-menu-about-fakespot = { -fakespot-brand-name } ਬਾਰੇ
+# Report is a verb (i.e. report issue with the content).
+newtab-menu-report = ਰਿਪੋਰਟ
 # Context menu option to personalize New Tab recommended stories by blocking a section of stories,
 # e.g. "Sports". "Block" is a verb here.
 newtab-menu-section-block = ਪਾਬੰਦੀ
@@ -128,6 +144,7 @@ newtab-menu-section-unfollow = ਵਿਸ਼ੇ ਨੂੰ ਅਣ-ਫ਼ਾਲੋ ਕ
 
 newtab-menu-manage-sponsored-content = ਸਪੌਂਸਰ ਕੀਤੀ ਸਮੱਗਰੀ ਦਾ ਇੰਤਜ਼ਾਮ
 newtab-menu-our-sponsors-and-your-privacy = ਸਾਡੇ ਸਪੌਂਸਰ ਅਤੇ ਤੁਹਾਡੀ ਪਰਦੇਦਾਰੀ
+newtab-menu-report-this-ad = ਇਸ ਇਸ਼ਤਿਹਾਰ ਬਾਰੇ ਰਿਪੋਰਟ ਕਰੋ
 
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
@@ -171,7 +188,7 @@ newtab-menu-open-file = ਫਾਈਲ ਖੋਲ੍ਹੋ
 
 newtab-label-visited = ਖੋਲ੍ਹੀਆਂ
 newtab-label-bookmarked = ਬੁੱਕਮਾਰਕ ਕੀਤੀਆਂ
-newtab-label-removed-bookmark = ਬੁੱਕਮਾਰਕ ਹਟਾਇਆ
+newtab-label-removed-bookmark = ਬੁੱਕਮਾਰਕ ਨੂੰ ਹਟਾਇਆ
 newtab-label-recommended = ਰੁਝਾਨ
 newtab-label-saved = { -pocket-brand-name } ਵਿੱਚ ਸੰਭਾਲਿਆ
 newtab-label-download = ਡਾਊਨਲੋਡ ਕੀਤੇ ਹੋਏ
@@ -188,6 +205,8 @@ newtab-label-sponsored-by = { $sponsor } ਵਲੋਂ ਸਪਾਂਸਰ ਕੀ�
 #   $source (string) - The name of a company or their domain
 #   $timeToRead (number) - The estimated number of minutes to read this story
 newtab-label-source-read-time = { $source } · { $timeToRead } ਮਿੰਟ
+# This string is used under fixed size ads to indicate sponsored content
+newtab-label-sponsored-fixed = ਸਪੌਂਸਰ ਕੀਤੇ
 
 ## Section Menu: These strings are displayed in the section context menu and are
 ## meant as a call to action for the given section.
@@ -250,9 +269,6 @@ newtab-pocket-learn-more = ਹੋਰ ਜਾਣੋ
 newtab-pocket-cta-button = { -pocket-brand-name } ਲਵੋ
 newtab-pocket-cta-text = { -pocket-brand-name } ਵਿਚ ਆਪਣੀਆਂ ਕਹਾਣੀਆਂ ਨੂੰ ਸੁਰੱਖਿਅਤ ਕਰੋ, ਅਤੇ ਆਪਣੇ ਮਨ ਨੂੰ ਦਿਲਚਸਪ ਪੜ੍ਹ ਕੇ ਮਜਬੂਰ ਕਰੋ।
 newtab-pocket-pocket-firefox-family = { -pocket-brand-name } { -brand-product-name } ਗਰੁੱਪ ਦਾ ਭਾਗ ਹੈ
-# A save to Pocket button that shows over the card thumbnail on hover.
-newtab-pocket-image =
-    .aria-label = { -pocket-brand-name }
 newtab-pocket-save = ਸੰਭਾਲੋ
 newtab-pocket-saved = ਸੰਭਾਲਿਆ
 
@@ -302,16 +318,32 @@ newtab-custom-pocket-subtitle = { -brand-product-name } ਦੇ ਹਿੱਸੇ �
 newtab-custom-stories-toggle =
     .label = ਸਿਫ਼ਾਰਸ਼ੀ ਕਹਾਣੀਆਂ
     .description = { -brand-product-name } ਸਮੂਹ ਵਲੋਂ ਤਿਆਰੀ ਕੀਤੀ ਖਾਸ ਸਮੱਗਰੀ
+newtab-custom-stories-personalized-toggle =
+    .label = ਲੇਖ
+newtab-custom-stories-personalized-checkbox-label = ਤੁਹਾਡੀ ਸਰਗਰਮੀ ਦੇ ਮੁਤਾਬਕ ਨਿੱਜੀ ਬਣਾਏ ਗਏ ਲੇਖ
 newtab-custom-pocket-sponsored = ਸਪਾਂਸਰ ਕੀਤੀਆਂ ਕਹਾਣੀਆਂ
 newtab-custom-pocket-show-recent-saves = ਸੱਜਰੇ ਸੰਭਾਲੇ ਵੇਖੋ
 newtab-custom-recent-title = ਤਾਜ਼ਾ ਸਰਗਰਮੀ
 newtab-custom-recent-subtitle = ਤਾਜ਼ਾ ਸਾਈਟਾਂ ਤੇ ਸਮੱਗਰੀ ਦੀ ਚੋਣ
-newtab-custom-recent-toggle =
-    .label = ਤਾਜ਼ਾ ਸਰਗਰਮੀ
-    .description = ਤਾਜ਼ਾ ਸਾਈਟਾਂ ਤੇ ਸਮੱਗਰੀ ਦੀ ਚੋਣ
 newtab-custom-weather-toggle =
     .label = ਮੌਸਮ
     .description = ਅੱਜ ਦੇ ਮੌਸਮ ਬਾਰੇ ਝਾਤ
+newtab-custom-trending-search-toggle =
+    .label = ਰੁਝਾਨ ਵਿੱਚ ਖੋਜਾਂ
+    .description = ਹਰਮਨਪਿਆਰੇ ਅਤੇ ਅਕਸਰ ਖੋਜੇ ਗਏ ਵਿਸ਼ੇ
+newtab-custom-widget-weather-toggle =
+    .label = ਮੌਸਮ
+newtab-custom-widget-trending-search-toggle =
+    .label = ਰੁਝਾਨ ਵਿੱਚ ਖੋਜਾਂ
+newtab-custom-widget-lists-toggle =
+    .label = ਸੂਚੀਆਂ
+newtab-custom-widget-timer-toggle =
+    .label = ਟਾਈਮਰ
+newtab-custom-widget-section-title = ਵਿਜੈੱਟ
+# Tooltip for close button
+newtab-custom-close-menu-button =
+    .title = ਬੰਦ ਕਰੋ
+    .aria-label = ਮੇਨ ਨੂੰ ਬੰਦ ਕਰੋ
 newtab-custom-close-button = ਬੰਦ ਕਰੋ
 newtab-custom-settings = ਹੋਰ ਸੈਟਿੰਗਾਂ ਦਾ ਇੰਤਜ਼ਾਮ ਕਰੋ
 
@@ -324,6 +356,7 @@ newtab-wallpaper-custom-color = ਰੰਗ ਨੂੰ ਚੁਣੋ
 # Variables
 #   $file_size (number) - The number of the maximum image file size (in MB) that may be uploaded
 newtab-wallpaper-error-max-file-size = ਚਿੱਤਰ ਫ਼ਾਇਲ ਦਾ ਆਕਾਰ { $file_size } MB ਤੋਂ ਵੱਧ ਗਿਆ ਹੈ। ਕਿਰਪਾ ਕਰਕੇ ਛੋਟੇ ਆਕਾਰ ਦੀ ਫਾਇਲ ਅੱਪਲੋਡ ਕਰਨ ਦੀ ਕੋਸ਼ਿਸ਼ ਕਰੋ।
+newtab-wallpaper-error-upload-file-type = ਅਸੀਂ ਤੁਹਾਡੀ ਫ਼ਾਇਲ ਨੂੰ ਅੱਪਲੋਡ ਨਹੀਂ ਕਰ ਸਕੇ ਹਾਂ। ਚਿੱਤਰ  ਫ਼ਾਇਲ ਨਾਲ ਫੇਰ ਕੋਸ਼ਿਸ਼ ਕਰਕੇ ਵੇਖੋ।
 newtab-wallpaper-error-file-type = ਅਸੀਂ ਤੁਹਾਡੀ ਫ਼ਾਇਲ ਨੂੰ ਅੱਪਲੋਡ ਨਹੀਂ ਕਰ ਸਕੇ ਹਾਂ। ਵੱਖਰੀ ਫ਼ਾਇਲ ਕਿਸਮ ਨਾਲ ਫੇਰ ਕੋਸ਼ਿਸ਼ ਕਰਕੇ ਵੇਖੋ।
 newtab-wallpaper-light-red-panda = ਲਾਲ ਪਾਂਡਾ
 newtab-wallpaper-light-mountain = ਚਿੱਟਾ ਪਹਾੜ
@@ -373,7 +406,7 @@ newtab-wallpaper-abstract-purple-green = ਜਾਮਨੀ ਅਤੇ ਹਰਾ ਫ
 newtab-wallpaper-abstract-blue-purple-waves = ਨੀਲੀਆਂ ਤੇ ਜਾਮਨੀ ਲਹਿਰਦਾਰ ਸ਼ਕਲਾਂ
 newtab-wallpaper-abstract-black-waves = ਕਾਲੀਆਂ ਲਹਿਰਦਾਰ ਸ਼ਕਲਾਂ
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = ਫ਼ੋਟੋਗਰਾਫ਼
 newtab-wallpaper-beach-at-sunrise = ਬੀਚ ਉੱਤੇ ਚੜ੍ਹਦਾ ਸੂਰਜ
@@ -388,7 +421,6 @@ newtab-wallpaper-suspension-bridge = ਦਿਨ ਵੇਲੇ ਸਲੇਟੀ ਪ�
 newtab-wallpaper-sand-dunes = ਚਿੱਟੇ ਰੇਤ ਦੇ ਟਿੱਬੇ
 newtab-wallpaper-palm-trees = ਸਵੱਖਤੇ ਸੋਨੇ ਰੰਗੇ ਚਾਨਣ ਵਿੱਚ ਨਾਰੀਅਲ ਦੇ ਰੁੱਖਾਂ ਦੀ ਛਾਂ
 newtab-wallpaper-blue-flowers = ਖਿੜੇ ਹੋਏ ਨੀਲੇ-ਪੰਖੜੀਆਂ ਵਾਲੇ ਫੁੱਲਾਂ ਦੀ ਨੇੜਿਓ ਫੋਟੋਗਰਾਫ਼ੀ
-newtab-wallpaper-forest-trees = ਧੁੰਦ ਵਿੱਚ ਢੱਕੇ ਹੋਏ ਦਰਖ਼ਤ
 # Variables
 #   $author_string (String) - The name of the creator of the photo.
 #   $webpage_string (String) - The name of the webpage where the photo is located.
@@ -403,6 +435,10 @@ feature-highlight-dismiss-button =
 feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
+
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
 
 ## Celestial
 
@@ -430,7 +466,6 @@ newtab-weather-menu-change-location = ਟਿਕਾਣੇ ਨੂੰ ਬਦਲੋ
 newtab-weather-change-location-search-input-placeholder =
     .placeholder = ਟਿਕਾਣੇ ਨੂੰ ਖੋਜੋ
     .aria-label = ਟਿਕਾਣੇ ਨੂੰ ਖੋਜੋ
-newtab-weather-change-location-search-input = ਟਿਕਾਣੇ ਨੂੰ ਖੋਜੋ
 newtab-weather-menu-weather-display = ਮੌਸਮ ਦੀ ਝਲਕ
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
@@ -446,8 +481,16 @@ newtab-weather-menu-change-temperature-units-fahrenheit = ਫਾਹਰਨਹੀ�
 newtab-weather-menu-change-temperature-units-celsius = ਸੈਲਸੀਅ ਵਿੱਚ ਬਦਲੋ
 newtab-weather-menu-hide-weather = ਨਵੀਂ ਟੈਬ ਉੱਤੇ ਮੌਸਮ ਨੂੰ ਲੁਕਾਓ
 newtab-weather-menu-learn-more = ਹੋਰ ਜਾਣੋ
+newtab-weather-menu-detect-my-location = ਮੇਰੇ ਟਿਕਾਣੇ ਨੂੰ ਖੋਜੋ
 # This message is shown if user is working offline
 newtab-weather-error-not-available = ਮੌਸਮ ਦਾ ਡਾਟਾ ਹਾਲੇ ਮੌਜੂਦ ਨਹੀਂ ਹੈ।
+newtab-weather-opt-in-see-weather = ਕੀ ਤੁਸੀਂ ਆਪਣੇ ਟਿਕਾਣੇ ਲਈ ਮੌਸਮ ਵੇਖਣਾ ਚਾਹੋਗੇ?
+newtab-weather-opt-in-not-now =
+    .label = ਹੁਣੇ ਨਹੀਂ
+newtab-weather-opt-in-yes =
+    .label = ਹਾਂ
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = ਅੰਮ੍ਰਿਤਸਰ
 
 ## Topic Labels
 
@@ -496,6 +539,9 @@ newtab-topic-selection-button-pick-interests = ਆਪਣੀਆਂ ਦਿਲਚ�
 newtab-section-follow-button = ਫ਼ਾਲੋ ਕਰੋ
 newtab-section-following-button = ਫ਼ਾਲੋ ਕੀਤਾ ਜਾ ਰਿਹਾ ਹੈ
 newtab-section-unfollow-button = ਅਣ-ਫ਼ਾਲੋ ਕਰੋ
+# A modal may appear next to the Follow button, directing users to try out the feature
+newtab-section-follow-highlight-title = ਆਪਣੀ ਫੀਡ ਨੂੰ ਸੈੱਟ ਕਰੋ
+newtab-section-follow-highlight-subtitle = ਆਪਣੀਆਂ ਦਿਲਚਸਪੀਆਂ ਨੂੰ ਵੇਖਣ ਲਈ ਉਹਨਾਂ ਨੂੰ ਫ਼ਾਲੋ ਕਰੋ।
 
 ## Button to block/unblock listed topics
 ## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
@@ -514,7 +560,7 @@ newtab-section-confirm-block-topic-p2 = ਪਾਬੰਦੀ ਲਾਏ ਵਿਸ਼�
 #   $topic (string) - Name of topic that user is blocking
 newtab-section-block-topic-button = { $topic } ਉੱਤੇ ਪਾਬੰਦੀ ਲਾਓ
 
-## Panel in the Customize menu section to manage followed and blocked topics
+## Strings for custom wallpaper highlight
 
 newtab-section-mangage-topics-title = ਵਿਸ਼ੇ:
 newtab-section-manage-topics-button-v2 =
@@ -523,3 +569,143 @@ newtab-section-mangage-topics-followed-topics = ਫ਼ਾਲੋ ਕੀਤੇ
 newtab-section-mangage-topics-followed-topics-empty-state = ਤੁਸੀਂ ਹਾਲੇ ਕਿਸੇ ਵੀ ਵਿਸ਼ੇ ਨੂੰ ਫ਼ਾਲੋ ਨਹੀਂ ਕੀਤਾ ਹੈ।
 newtab-section-mangage-topics-blocked-topics = ਪਾਬੰਦੀ ਲਗਾਏ
 newtab-section-mangage-topics-blocked-topics-empty-state = ਤੁਸੀਂ ਹਾਲੇ ਕਿਸੇ ਵੀ ਵਿਸ਼ੇ ਉੱਤੇ ਪਾਬੰਦੀ ਨਹੀਂ ਲਾਈ ਹੈ।
+newtab-custom-wallpaper-title = ਪਸੰਦੀਦਾ ਵਾਲਪੇਪਰ ਇੱਥੇ ਹਨ
+# 'Make firefox yours" means to customize or personalize
+newtab-custom-wallpaper-subtitle = { -brand-product-name } ਨੂੰ ਆਪਣਾ ਬਣਾਉਣ ਵਾਸਤੇ ਖੁਦ ਦਾ ਵਾਲਪੇਪਰ ਅੱਪਲੋਡ ਕਰੋ ਜਾਂ ਕਸਟਮ ਰੰਗ ਚੁਣੋ।
+newtab-custom-wallpaper-cta = ਅਜ਼ਮਾਓ
+
+## Strings for new user activation custom wallpaper highlight
+
+newtab-new-user-custom-wallpaper-title = { -brand-product-name } ਨੂੰ ਆਪਣੀ ਪਸੰਦ ਦਾ ਬਣਾਉਣ ਵਾਸਤੇ ਕੋਈ ਵਾਲਪੇਪਰ ਚੁਣੋ।
+newtab-new-user-custom-wallpaper-subtitle = ਪਸੰਦੀਦਾ ਵਾਲਪੇਪਰਾਂ ਅਤੇ ਰੰਗਾਂ ਨਾਲ ਹਰ ਨਵੀਂ ਟੈਬ ਨੂੰ ਆਪਣੇ ਮੁਤਾਬਕ ਢਾਲੋ।
+newtab-new-user-custom-wallpaper-cta = ਹੁਣੇ ਅਜ਼ਮਾਓ
+
+## Strings for download mobile highlight
+
+newtab-download-mobile-highlight-title = ਮੋਬਾਈਲ ਲਈ { -brand-product-name } ਨੂੰ ਡਾਊਨਲੋਡ ਕਰੋ
+# "Scan the code" refers to scanning the QR code that appears above the body text that leads to Firefox for mobile download.
+newtab-download-mobile-highlight-body-variant-a = ਰਾਹ ਵਿੱਚ ਸੁਰੱਖਿਅਤ ਢੰਗ ਨਾਲ ਬਰਾਊਜ਼ ਕਰਨ ਵਾਸਤੇ ਕੋਡ ਨੂੰ ਸਕੈਨ ਕਰੋ।
+newtab-download-mobile-highlight-body-variant-b = ਜਦੋਂ ਤੁਸੀਂ ਆਪਣੀਆਂ ਟੈਬਾਂ, ਪਾਸਵਰਡਾਂ ਅਤੇ ਹੋਰ ਚੀਜ਼ਾਂ ਨੂੰ ਸਿੰਕ ਕਰਦੇ ਹੋ ਤਾਂ ਜਿੱਥੇ ਛੱਡਿਆ, ਉਥੋਂ ਹੀ ਵਰਤਣਾ ਜਾਰੀ ਰੱਖ ਸਕਦੇ ਹੋ।
+newtab-download-mobile-highlight-body-variant-c = ਕੀ ਤੁਹਾਨੂੰ ਪਤਾ ਸੀ ਕਿ ਤੁਸੀਂ ਰਾਹ ਵਿੱਚ { -brand-product-name } ਨੂੰ ਵਰਤ ਸਕਦੇ ਹੋ? ਉਹੀ ਬਰਾਊਜ਼ਰ। ਤੁਹਾਡੀ ਜੇਬ ਵਿੱਚ।
+newtab-download-mobile-highlight-image =
+    .aria-label = ਮੋਬਾਈਲ ਵਾਸਤੇ { -brand-product-name } ਡਾਊਨਲੋਡ ਕਰਨ ਲਈ QR ਕੋਡ
+
+## Strings for shortcuts highlight
+
+newtab-shortcuts-highlight-title = ਤੁਹਾਡੇ ਮਨਪਸੰਦ ਤੁਹਾਡੀਆਂ ਉਂਗਲਾਂ ਉੱਤੇ
+newtab-shortcuts-highlight-subtitle = ਆਪਣੀਆਂ ਮਨਪਸੰਦ ਸਾਈਟਾਂ ਨੂੰ ਕਲਿੱਕ ਨਾਲ ਖੋਲ੍ਹਣ ਲਈ ਸ਼ਾਰਟਕੱਟ ਵਿੱਚ ਜੋੜੋ।
+
+## Strings for reporting ads and content
+
+newtab-report-content-why-reporting-this =
+    .label = ਤੁਸੀਂ ਇਸ ਬਾਰੇ ਰਿਪੋਰਟ ਕਿਉਂ ਕਰ ਰਹੇ ਹੋ?
+newtab-report-ads-reason-not-interested =
+    .label = ਮੇਰੀ ਦਿਲਚਸਪੀ ਨਹੀਂ ਹੈ
+newtab-report-ads-reason-inappropriate =
+    .label = ਇਹ ਬੇਤੁਕਾ ਹੈ
+newtab-report-ads-reason-seen-it-too-many-times =
+    .label = ਮੈਂ ਇਸ ਨੂੰ ਬਹੁਤ ਵਾਰ ਦੇਖਿਆ
+newtab-report-content-wrong-category =
+    .label = ਗਲਤ ਵਰਗ
+newtab-report-content-outdated =
+    .label = ਪੁਰਾਣਾ
+newtab-report-content-inappropriate-offensive =
+    .label = ਬੇਤੁਕੀ ਜਾਂ ਅਪਮਾਨਜਨਕ
+newtab-report-content-spam-misleading =
+    .label = ਸਪੈਮ ਜਾਂ ਗੁੰਮਰਾਹਕੁੰਨ
+newtab-report-cancel = ਰੱਦ ਕਰੋ
+newtab-report-submit = ਭੇਜੋ
+newtab-toast-thanks-for-reporting =
+    .message = ਇਸ ਬਾਰੇ ਜਾਣਕਾਰੀ ਦੇਣ ਲਈ ਤੁਹਾਡਾ ਧੰਨਵਾਦ!
+
+## Strings for trending searches
+
+newtab-trending-searches-show-trending =
+    .title = ਰੁਝਾਨ ਵਿੱਚ ਖੋਜਾਂ ਨੂੰ ਵੇਖਾਓ
+newtab-trending-searches-hide-trending =
+    .title = ਰੁਝਾਨ ਵਿੱਚ ਖੋਜਾਂ ਨੂੰ ਲੁਕਾਓ
+newtab-trending-searches-learn-more = ਹੋਰ ਜਾਣੋ
+newtab-trending-searches-dismiss = ਰੁਝਾਨ ਵਿੱਚ ਖੋਜਾਂ ਨੂੰ ਲੁਕਾਓ
+# "Trending searches refers to popular searches from search engines
+newtab-trending-searches-title = ਰੁਝਾਨ ਵਿੱਚ ਖੋਜਾਂ
+
+## Strings for task / to-do list productivity widget
+
+# "Add one" means adding a new task to the list (e.g., "Walk the dog")
+newtab-widget-lists-empty-cta = ਸੰਭਾਵਨਾਵਾਂ ਤਾਂ ਬੇਸ਼ੁਮਾਰ ਹਨ। ਇੱਕ ਜੋੜੋ।
+# A simple label next to the default list name letting users know this is a new / beta feature
+newtab-widget-lists-label-new =
+    .label = ਨਵਾਂ
+newtab-widget-lists-label-beta =
+    .label = ਬੀਟਾ
+# When tasks have been previous marked as complete, they will appear in their own separate list beneath incomplete items
+# Variables:
+#   $number (number) - Amount of list items marked complete
+newtab-widget-lists-completed-list = ਪੂਰੇ ਹੋਏ ({ $number })
+newtab-widget-task-list-menu-copy = ਕਾਪੀ ਕਰੋ
+newtab-widget-lists-menu-edit = ਸੂਚੀ ਦੇ ਨਾਂ ਨੂੰ ਸੋਧੋ
+newtab-widget-lists-menu-create = ਇੱਕ ਨਵੀਂ ਲਿਸਟ ਬਣਾਓ
+newtab-widget-lists-menu-delete = ਇਸ ਸੂਚੀ ਨੂੰ ਹਟਾਓ
+newtab-widget-lists-menu-copy = ਸੂਚੀ ਨੂੰ ਕਲਿੱਪਬੋਰਡ ਵਿੱਚ ਕਾਪੀ ਕਰੋ
+newtab-widget-lists-menu-hide = ਸਭ ਸੂਚੀਆਂ ਨੂੰ ਓਹਲੇ ਕਰੋ
+newtab-widget-lists-menu-learn-more = ਹੋਰ ਜਾਣੋ
+newtab-widget-lists-input-add-an-item =
+    .placeholder = ਇੱਕ ਚੀਜ਼ ਨੂੰ ਜੋੜੋ
+newtab-widget-lists-input-error = ਇੱਕ ਚੀਜ਼ ਨੂੰ ਜੋੜਨ ਲਈ ਲਿਖਤ ਨੂੰ ਸ਼ਾਮਲ ਕਰੋ।
+newtab-widget-lists-input-menu-open-link = ਲਿੰਕ ਨੂੰ ਖੋਲ੍ਹੋ
+newtab-widget-lists-input-menu-move-up = ਉੱਤੇ ਭੇਜੋ
+newtab-widget-lists-input-menu-move-down = ਹੇਠਾਂ ਭੇਜੋ
+newtab-widget-lists-input-menu-delete = ਹਟਾਓ
+newtab-widget-lists-input-menu-edit = ਸੋਧੋ
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + ਨਵੀਂ ਸੂਚੀ ਬਣਾਓ
+newtab-widget-lists-name-label-default =
+    .label = ਕੰਮ ਸੂਚੀ
+newtab-widget-lists-name-placeholder-default =
+    .placeholder = ਕੰਮ ਸੂਚੀ
+# The placeholder value of the name field for a newly created list
+newtab-widget-lists-name-placeholder-new =
+    .placeholder = ਨਵੀਂ ਸੂਚੀ
+newtab-widget-section-title = ਵਿਜੈੱਟ
+# Tooltip for hide all widgets button
+newtab-widget-section-hide-all-button =
+    .title = ਵਿਜੈੱਟ ਨੂੰ ਲੁਕਾਓ
+    .aria-label = ਸਭ ਵਿਜੈੱਟ ਨੂੰ ਲੁਕਾਓ
+newtab-widget-section-maximize =
+    .title = ਵਿਜੈੱਟ ਨੂੰ ਫੈਲਾਓ
+    .aria-label = ਸਾਰੇ ਵਿਜੈੱਟ ਨੂੰ ਪੂਰੇ ਆਕਾਰ ਲਈ ਫੈਲਾਓ
+newtab-widget-section-minimize =
+    .title = ਵਿਜੈੱਟ ਨੂੰ ਘੱਟੋ-ਘੱਟ ਕਰੋ
+    .aria-label = ਸਾਰੇ ਵਿਜੈੱਟ ਨੂੰ ਸੰਖੇਪ ਆਕਾਰ ਲਈ ਸਮੇਟੋ
+
+## Strings for timer productivity widget
+## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
+
+newtab-widget-timer-notification-title = ਟਾਈਮਰ
+newtab-widget-timer-notification-focus = ਫੋਕਸ ਸਮਾਂ ਸਮਾਪਤ ਹੋਇਆ। ਵਧੀਆ ਕੰਮ ਕੀਤਾ, ਸਾਹ ਲੈਣਾ ਹੈ?
+newtab-widget-timer-notification-break = ਤੁਹਾਡੀ ਬਰੇਕ ਖ਼ਤਮ ਹੋਈ। ਫੋਕਸ ਕਰਨ ਲਈ ਤਿਆਰ ਹੋ?
+newtab-widget-timer-notification-warning = ਨੋਟੀਫਿਕੇਸ਼ਨ ਬੰਦ ਹਨ
+newtab-widget-timer-mode-focus =
+    .label = ਫੋਕਸ
+newtab-widget-timer-mode-break =
+    .label = ਬਰੇਕ
+newtab-widget-timer-label-play =
+    .label = ਖੇਡਣ
+newtab-widget-timer-label-pause =
+    .label = ਵਿਰਾਮ
+newtab-widget-timer-reset =
+    .title = ਮੁੜ-ਸੈੱਟ
+newtab-widget-timer-menu-notifications = ਨੋਟੀਫਿਕੇਸ਼ਨਾਂ ਨੂੰ ਚਾਲੂ ਕਰੋ
+newtab-widget-timer-menu-notifications-on = ਨੋਟੀਫਿਕੇਸ਼ਨਾਂ ਨੂੰ ਚਾਲੂ ਕਰੋ
+newtab-widget-timer-menu-hide = ਟਾਈਮਰ ਓਹਲੇ ਕਰੋ
+newtab-widget-timer-menu-learn-more = ਹੋਰ ਜਾਣੋ
+newtab-widget-message-title = ਸੂਚੀਆਂ ਅਤੇ ਵਿੱਚ ਮੌਜੂਦ ਟਾਈਮਰ ਨਾਲ ਫੋਕਸ ਰਹੋ
+# to-dos stands for "things to do".
+newtab-widget-message-copy = ਕਰਨ ਵਾਲੇ ਕੰਮਾਂ, ਫ਼ੋਕਸ ਵਾਲੇ ਸ਼ੈਸ਼ਨਾਂ ਤੋਂ ਲੈ ਕੇ ਛੋਟੀ ਬਰੇਕ ਲੈਣ ਲਈ ਫ਼ੌਰਨ ਯਾਦ ਕਰਵਾਉਣਾ — ਕੰਮ ਸਮੇਂ ਸਿਰ ਪੂਰੇ ਕਰੋ।
+newtab-promo-card-title = { -brand-product-name } ਲਈ ਸਹਿਯੋਗ
+newtab-promo-card-body = ਸਾਡੇ ਸਪੌਂਸ ਵਧੀਆ ਵੈੱਬ ਬਣਾਉਣ ਦੇ ਸਾਡੇ ਟੀਚੇ ਵਿੱਚ ਸਹਿਯੋਗ ਕਰਦੇ ਹਨ।
+newtab-promo-card-cta = ਹੋਰ ਜਾਣੋ
+newtab-promo-card-dismiss-button =
+    .title = ਖ਼ਾਰਜ ਕਰੋ
+    .aria-label = ਖ਼ਾਰਜ ਕਰੋ

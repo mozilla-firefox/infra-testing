@@ -45,7 +45,7 @@ object DataGenerationHelper {
         val appContext = InstrumentationRegistry.getInstrumentation()
             .targetContext
             .applicationContext
-        val pendingIntent = PendingIntent.getActivity(appContext, 0, Intent(), IntentUtils.defaultIntentPendingFlags)
+        val pendingIntent = PendingIntent.getActivity(appContext, 0, Intent(), IntentUtils.DEFAULT_PENDING_INTENT_FLAGS)
         val customTabsIntent = CustomTabsIntent.Builder()
             .addMenuItem(customMenuItemLabel, pendingIntent)
             .setShareState(CustomTabsIntent.SHARE_STATE_ON)
@@ -71,6 +71,8 @@ object DataGenerationHelper {
     }
 
     fun getStringResource(id: Int, argument: String = TestHelper.appName) = TestHelper.appContext.resources.getString(id, argument)
+
+    fun getStringResource(id: Int, vararg args: Any) = TestHelper.appContext.resources.getString(id, *args)
 
     private val charPool: List<Char> = ('a'..'z') + ('A'..'Z') + ('0'..'9')
     fun generateRandomString(stringLength: Int): String {
@@ -129,11 +131,11 @@ object DataGenerationHelper {
         Log.i(TAG, "getSponsoredShortcutTitle: Trying to get the title of the sponsored shortcut at position: ${position - 1}")
         val sponsoredShortcut = mDevice.findObject(
             UiSelector()
-                .resourceId("${TestHelper.packageName}:id/top_site_item")
+                .resourceId("top_sites_list.top_site_item")
                 .index(position - 1),
         ).getChild(
             UiSelector()
-                .resourceId("${TestHelper.packageName}:id/top_site_title"),
+                .resourceId("top_sites_list.top_site_item.top_site_title"),
         ).text
         Log.i(TAG, "getSponsoredShortcutTitle: The sponsored shortcut at position: ${position - 1} has title: $sponsoredShortcut")
         return sponsoredShortcut

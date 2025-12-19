@@ -10,6 +10,8 @@ with Files("**"):
 XPIDL_SOURCES += [
     "nsIContentSecurityManager.idl",
     "nsIContentSecurityPolicy.idl",
+    "nsIIntegrityPolicy.idl",
+    "nsIPolicyContainer.idl",
     "nsIReferrerInfo.idl",
 ]
 

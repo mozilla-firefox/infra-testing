@@ -23,6 +23,10 @@ export class Aggregator {
         this.#attachedViewModels.splice(i, 1);
       }
     }
+
+    if (!this.#attachedViewModels.length) {
+      this.#sources.forEach(source => source.willDestroy?.());
+    }
   }
 
   /**
@@ -100,6 +104,12 @@ export class Aggregator {
 
       discardChangesConfirmed() {
         aggregator.forEachViewModel(vm => vm.discardChangesConfirmed());
+      },
+
+      setPrimaryPasswordAuthenticated(isAuthenticated) {
+        aggregator.forEachViewModel(vm =>
+          vm.setPrimaryPasswordAuthenticated(isAuthenticated)
+        );
       },
     };
   }

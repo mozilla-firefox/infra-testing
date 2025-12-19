@@ -10,7 +10,6 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/UniquePtr.h"
 #include "nsCOMPtr.h"
 #include "nsIObserver.h"
 #include "nsIProxyInfo.h"
@@ -126,6 +125,12 @@ nsresult nsSSLIOLayerAddToSocket(int32_t family, const char* host, int32_t port,
                                  nsITLSSocketControl** tlsSocketControl,
                                  bool forSTARTTLS, uint32_t flags,
                                  uint32_t tlsFlags);
+
+SECStatus abridgedCertificatePass1Decode(const SECItem* input,
+                                         unsigned char* output,
+                                         size_t outputLen, size_t* usedLen);
+SECStatus abridgedCertificateDecode(const SECItem* input, unsigned char* output,
+                                    size_t outputLen, size_t* usedLen);
 
 SECStatus zlibCertificateDecode(const SECItem* input, unsigned char* output,
                                 size_t outputLen, size_t* usedLen);

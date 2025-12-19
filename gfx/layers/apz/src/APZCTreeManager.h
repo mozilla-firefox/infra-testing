@@ -19,10 +19,10 @@
 #include "mozilla/gfx/Logging.h"            // for gfx::TreeLog
 #include "mozilla/gfx/Matrix.h"             // for Matrix4x4
 #include "mozilla/layers/APZInputBridge.h"  // for APZInputBridge
-#include "mozilla/layers/APZTestData.h"     // for APZTestData
 #include "mozilla/layers/APZUtils.h"        // for AsyncTransformComponents
 #include "mozilla/layers/CompositorScrollUpdate.h"  // for CompositorScrollUpdate
 #include "mozilla/layers/IAPZCTreeManager.h"        // for IAPZCTreeManager
+#include "mozilla/layers/PWebRenderBridgeParent.h"
 #include "mozilla/layers/ScrollbarData.h"
 #include "mozilla/layers/LayersTypes.h"
 #include "mozilla/layers/KeyboardMap.h"      // for KeyboardMap
@@ -35,6 +35,7 @@
 #include "mozilla/UniquePtr.h"       // for UniquePtr
 #include "nsCOMPtr.h"                // for already_AddRefed
 #include "nsTArray.h"
+#include "VsyncSource.h"
 
 namespace mozilla {
 class MultiTouchInput;
@@ -54,8 +55,10 @@ class Layer;
 class AsyncPanZoomController;
 class APZCTreeManagerParent;
 class APZSampler;
+class APZTestData;
 class APZUpdater;
 class CompositorBridgeParent;
+class MatrixMessage;
 class OverscrollHandoffChain;
 struct OverscrollHandoffState;
 class FocusTarget;
@@ -491,6 +494,9 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
    */
   static void FlushApzRepaints(LayersId aLayersId);
 
+  void EndWheelTransaction(
+      PWebRenderBridgeParent::EndWheelTransactionResolver&& aResolver);
+
   /**
    * Mark |aLayersId| as having been moved from the compositor that owns this
    * tree manager to a compositor that doesn't use APZ.
@@ -533,6 +539,9 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
   // Protected hooks for gtests subclass
   virtual already_AddRefed<AsyncPanZoomController> NewAPZCInstance(
       LayersId aLayersId, GeckoContentController* aController);
+
+  void SetFixedLayerMarginsOnRootContentApzcs(
+      const RecursiveMutexAutoLock& aProofOfTreeLock) MOZ_REQUIRES(mTreeLock);
 
  public:
   // Public hook for gtests subclass
@@ -1126,6 +1135,9 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
 
   friend class IAPZHitTester;
   UniquePtr<IAPZHitTester> mHitTester;
+
+  // An array of root content APZCs in this tree.
+  nsTArray<AsyncPanZoomController*> mRootContentApzcs MOZ_GUARDED_BY(mTreeLock);
 
   // NOTE: This ScrollGenerationCounter needs to be per APZCTreeManager since
   // the generation is bumped up on the sampler theread which is per

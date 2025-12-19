@@ -10,6 +10,8 @@ toolkit.jar:
    content/global/aboutLogging/aboutLogging.mjs (aboutLogging/aboutLogging.mjs)
    content/global/aboutLogging/jwt.mjs (aboutLogging/jwt.mjs)
    content/global/aboutLogging/profileSaveUploadLogic.mjs (aboutLogging/profileSaveUploadLogic.mjs)
+   content/global/aboutLogging/profileStorage.mjs (aboutLogging/profileStorage.mjs)
+   content/global/aboutLogging/uploadedProfilesManager.mjs (aboutLogging/uploadedProfilesManager.mjs)
    content/global/aboutNetError.mjs
    content/global/aboutNetError.html
    content/global/aboutNetErrorHelpers.mjs
@@ -30,6 +32,9 @@ toolkit.jar:
    content/global/aboutwebrtc/disclosure.mjs (aboutwebrtc/disclosure.mjs)
    content/global/aboutwebrtc/copyButton.mjs (aboutwebrtc/copyButton.mjs)
    content/global/aboutwebrtc/aboutWebrtc.html (aboutwebrtc/aboutWebrtc.html)
+   content/global/aboutRestricted/aboutRestricted.mjs (aboutRestricted/aboutRestricted.mjs)
+   content/global/aboutRestricted/aboutRestricted.html (aboutRestricted/aboutRestricted.html)
+   content/global/aboutRestricted/aboutRestricted.css (aboutRestricted/aboutRestricted.css)
    content/global/aboutSupport.js
 *  content/global/aboutSupport.xhtml
 #ifndef MOZ_GLEAN_ANDROID
@@ -46,7 +51,6 @@ toolkit.jar:
 *   content/global/buildconfig.html
    content/global/buildconfig.css
    content/global/contentAreaUtils.js
-   content/global/datepicker.xhtml
 #ifndef MOZ_FENNEC
    content/global/editMenuOverlay.js
 #endif
@@ -56,13 +60,17 @@ toolkit.jar:
    content/global/mozilla.html
    content/global/aboutMozilla.css
    content/global/preferencesBindings.js
+   content/global/preferences/AsyncSetting.mjs  (preferences/AsyncSetting.mjs)
+   content/global/preferences/Preference.mjs    (preferences/Preference.mjs)
+   content/global/preferences/Preferences.mjs   (preferences/Preferences.mjs)
+   content/global/preferences/Setting.mjs       (preferences/Setting.mjs)
    content/global/process-content.js
    content/global/resetProfile.css
    content/global/resetProfile.js
    content/global/resetProfile.xhtml
    content/global/resetProfileProgress.xhtml
    content/global/TopLevelVideoDocument.js
-   content/global/timepicker.xhtml
+   content/global/datetimepicker.xhtml
    content/global/treeUtils.js
 #ifndef MOZ_FENNEC
    content/global/viewZoomOverlay.js
@@ -78,7 +86,7 @@ toolkit.jar:
    content/global/elements/autocomplete-input.js              (widgets/autocomplete-input.js)
    content/global/elements/autocomplete-popup.js              (widgets/autocomplete-popup.js)
    content/global/elements/autocomplete-richlistitem.js       (widgets/autocomplete-richlistitem.js)
-   content/global/elements/browser-custom-element.js          (widgets/browser-custom-element.js)
+   content/global/elements/browser-custom-element.mjs         (widgets/browser-custom-element.mjs)
    content/global/elements/button.js           (widgets/button.js)
    content/global/elements/checkbox.js         (widgets/checkbox.js)
    content/global/elements/datetimebox.js      (widgets/datetimebox.js)
@@ -89,11 +97,16 @@ toolkit.jar:
    content/global/elements/menu.js             (widgets/menu.js)
    content/global/elements/menupopup.js        (widgets/menupopup.js)
    content/global/elements/menupopup.css       (widgets/menupopup.css)
+   content/global/elements/moz-badge.css    (widgets/moz-badge/moz-badge.css)
+   content/global/elements/moz-badge.mjs    (widgets/moz-badge/moz-badge.mjs)
    content/global/elements/moz-box-common.css    (widgets/moz-box-common.css)
    content/global/elements/moz-box-button.css    (widgets/moz-box-button/moz-box-button.css)
    content/global/elements/moz-box-button.mjs    (widgets/moz-box-button/moz-box-button.mjs)
    content/global/elements/moz-box-group.css    (widgets/moz-box-group/moz-box-group.css)
    content/global/elements/moz-box-group.mjs    (widgets/moz-box-group/moz-box-group.mjs)
+   content/global/elements/moz-breadcrumb.css    (widgets/moz-breadcrumb-group/moz-breadcrumb.css)
+   content/global/elements/moz-breadcrumb-group.css    (widgets/moz-breadcrumb-group/moz-breadcrumb-group.css)
+   content/global/elements/moz-breadcrumb-group.mjs    (widgets/moz-breadcrumb-group/moz-breadcrumb-group.mjs)
    content/global/elements/moz-box-item.css    (widgets/moz-box-item/moz-box-item.css)
    content/global/elements/moz-box-item.mjs    (widgets/moz-box-item/moz-box-item.mjs)
    content/global/elements/moz-box-link.css    (widgets/moz-box-link/moz-box-link.css)
@@ -116,6 +129,8 @@ toolkit.jar:
    content/global/elements/moz-input-search.mjs    (widgets/moz-input-search/moz-input-search.mjs)
    content/global/elements/moz-input-text.css    (widgets/moz-input-text/moz-input-text.css)
    content/global/elements/moz-input-text.mjs    (widgets/moz-input-text/moz-input-text.mjs)
+   content/global/elements/moz-page-header.css    (widgets/moz-page-header/moz-page-header.css)
+   content/global/elements/moz-page-header.mjs    (widgets/moz-page-header/moz-page-header.mjs)
    content/global/elements/moz-page-nav.css    (widgets/moz-page-nav/moz-page-nav.css)
    content/global/elements/moz-page-nav-button.css    (widgets/moz-page-nav/moz-page-nav-button.css)
    content/global/elements/moz-page-nav.mjs    (widgets/moz-page-nav/moz-page-nav.mjs)
@@ -126,12 +141,18 @@ toolkit.jar:
    content/global/elements/moz-label.mjs       (widgets/moz-label/moz-label.mjs)
    content/global/elements/moz-message-bar.css    (widgets/moz-message-bar/moz-message-bar.css)
    content/global/elements/moz-message-bar.mjs    (widgets/moz-message-bar/moz-message-bar.mjs)
+   content/global/elements/moz-promo.css    (widgets/moz-promo/moz-promo.css)
+   content/global/elements/moz-promo.mjs    (widgets/moz-promo/moz-promo.mjs)
    content/global/elements/moz-radio-group.mjs    (widgets/moz-radio-group/moz-radio-group.mjs)
+   content/global/elements/moz-reorderable-list.css    (widgets/moz-reorderable-list/moz-reorderable-list.css)
+   content/global/elements/moz-reorderable-list.mjs    (widgets/moz-reorderable-list/moz-reorderable-list.mjs)
    content/global/elements/moz-select.css    (widgets/moz-select/moz-select.css)
    content/global/elements/moz-select.mjs    (widgets/moz-select/moz-select.mjs)
    content/global/elements/moz-support-link.mjs    (widgets/moz-support-link/moz-support-link.mjs)
    content/global/elements/moz-toggle.css      (widgets/moz-toggle/moz-toggle.css)
    content/global/elements/moz-toggle.mjs      (widgets/moz-toggle/moz-toggle.mjs)
+   content/global/elements/moz-visual-picker-item.css    (widgets/moz-visual-picker/moz-visual-picker-item.css)
+   content/global/elements/moz-visual-picker.mjs    (widgets/moz-visual-picker/moz-visual-picker.mjs)
    content/global/elements/named-deck.js       (widgets/named-deck.js)
    content/global/elements/infobar.css         (widgets/infobar.css)
    content/global/elements/notificationbox.js  (widgets/notificationbox.js)
@@ -146,7 +167,6 @@ toolkit.jar:
    content/global/elements/menulist.js         (widgets/menulist.js)
    content/global/elements/popupnotification.js  (widgets/popupnotification.js)
    content/global/elements/arrowscrollbox.js     (widgets/arrowscrollbox.js)
-   content/global/elements/search-textbox.js     (widgets/search-textbox.js)
    content/global/elements/stringbundle.js     (widgets/stringbundle.js)
    content/global/elements/tabbox.js           (widgets/tabbox.js)
    content/global/elements/text.js             (widgets/text.js)
@@ -157,6 +177,7 @@ toolkit.jar:
    content/global/elements/wizard.js           (widgets/wizard.js)
    content/global/vendor/lit.all.mjs           (widgets/vendor/lit.all.mjs)
    content/global/lit-utils.mjs                (widgets/lit-utils.mjs)
+   content/global/lit-select-control.mjs        (widgets/lit-select-control.mjs)
    content/global/neterror/aboutNetErrorCodes.js                    (neterror/aboutNetErrorCodes.js)
    content/global/neterror/supportpages/connection-not-secure.html  (neterror/supportpages/connection-not-secure.html)
    content/global/neterror/supportpages/time-errors.html            (neterror/supportpages/time-errors.html)

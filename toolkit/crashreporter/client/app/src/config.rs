@@ -7,6 +7,7 @@
 use crate::std::borrow::Cow;
 use crate::std::ffi::{OsStr, OsString};
 use crate::std::path::{Path, PathBuf};
+use crate::std::process::Command;
 use crate::{lang, logging::LogTarget, std};
 use anyhow::Context;
 use once_cell::sync::Lazy;
@@ -20,7 +21,7 @@ pub mod test {
 
     cfg_if::cfg_if! {
         if #[cfg(target_os = "linux")] {
-            use crate::std::{mock, env};
+            use crate::std::{mock, env, fs::MockFS, fs::MockFiles};
 
             fn cfg_get_data_dir_root() -> crate::std::path::PathBuf {
                 let cfg = super::Config::new();
@@ -40,6 +41,7 @@ pub mod test {
             #[test]
             fn data_dir_root_xdg_home() {
                 mock::builder()
+                    .set(env::MockHomeDir, "home_dir".into())
                     .set(env::MockEnv("XDG_CONFIG_HOME".into()), "home_dir/xdg/config".into())
                     .run(|| {
                         let path = cfg_get_data_dir_root();
@@ -52,6 +54,20 @@ pub mod test {
                 mock::builder()
                     .set(env::MockHomeDir, "home_dir".into())
                     .set(env::MockEnv("MOZ_LEGACY_HOME".into()), "1".into())
+                    .run(|| {
+                        let path = cfg_get_data_dir_root();
+                        assert_eq!(path, crate::std::path::PathBuf::from("home_dir/.vendor"));
+                    });
+            }
+
+            #[test]
+            fn data_dir_root_legacy_existing() {
+                let mock_files = MockFiles::new();
+                mock_files.add_dir("home_dir").add_dir("home_dir/.vendor");
+
+                mock::builder()
+                    .set(env::MockHomeDir, "home_dir".into())
+                    .set(MockFS, mock_files.clone())
                     .run(|| {
                         let path = cfg_get_data_dir_root();
                         assert_eq!(path, crate::std::path::PathBuf::from("home_dir/.vendor"));
@@ -146,10 +162,8 @@ impl Config {
         }
 
         if self.restart_command.is_none() {
-            self.restart_command = Some(
-                self.installation_program_path(mozbuild::config::MOZ_APP_NAME)
-                    .into(),
-            )
+            self.restart_command =
+                Some(installation_program_path(mozbuild::config::MOZ_APP_NAME).into())
         }
 
         // We no longer use `MOZ_CRASHREPORTER_RESTART_ARG_0`, see bug 1872920.
@@ -305,7 +319,7 @@ impl Config {
     /// The id of the local dump file (the base filename without extension).
     ///
     /// Panics if no dump file is set.
-    pub fn local_dump_id(&self) -> Cow<str> {
+    pub fn local_dump_id(&self) -> Cow<'_, str> {
         self.dump_file().file_stem().unwrap().to_string_lossy()
     }
 
@@ -446,21 +460,26 @@ impl Config {
         Ok(())
     }
 
-    /// Get the path of a program in the installation.
-    ///
-    /// The returned path isn't guaranteed to exist.
-    // This method could be standalone rather than living in `Config`; it's here because it makes
-    // sense that if it were to rely on anything, it would be the `Config` (and that may change in
-    // the future).
-    pub fn installation_program_path<N: AsRef<OsStr>>(&self, program: N) -> PathBuf {
-        let self_path = self_path();
-        let exe_extension = self_path.extension().unwrap_or_default();
-        let mut p = program.as_ref().to_os_string();
-        if !exe_extension.is_empty() {
-            p.push(".");
-            p.push(exe_extension);
+    /// Restart the program based on the configured restart command.
+    pub fn restart_process(&self) {
+        if self.restart_command.is_none() {
+            // The restart button should be hidden in this case, so this error should not occur.
+            log::error!("no process configured for restart");
+            return;
         }
-        installation_path().join(p)
+
+        let mut cmd = Command::new(self.restart_command.as_ref().unwrap());
+        cmd.args(&self.restart_args)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        if let Some(xul_app_file) = &self.app_file {
+            cmd.env("XUL_APP_FILE", xul_app_file);
+        }
+        log::debug!("restarting process: {:?}", cmd);
+        if let Err(e) = cmd.spawn() {
+            log::error!("failed to restart process: {e}");
+        }
     }
 
     /// Update the log file based on the current configured data_dir.
@@ -470,16 +489,23 @@ impl Config {
         }
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_os = "linux", any(not(mock), test)))]
     fn get_data_dir_root(&self, vendor: &str) -> anyhow::Result<PathBuf> {
         // home_dir is deprecated due to incorrect behavior on windows, but we only use it on linux
         #[allow(deprecated)]
-        let data_path = if std::env::var_os("MOZ_LEGACY_HOME").is_some() {
-            std::env::home_dir().map(|h| h.join(format!(".{}", vendor.to_lowercase())))
+        let home_dir = std::env::home_dir();
+
+        let legacy_data = home_dir
+            .clone()
+            .map(|h| h.join(format!(".{}", vendor.to_lowercase())));
+        let data_path = if std::env::var_os("MOZ_LEGACY_HOME").is_some()
+            || legacy_data.as_ref().expect("No HOME env?").exists()
+        {
+            legacy_data
         } else {
             std::env::var_os("XDG_CONFIG_HOME")
                 .map(PathBuf::from)
-                .or_else(|| std::env::home_dir().map(|home| home.join(".config")))
+                .or_else(|| home_dir.map(|home| home.join(".config")))
                 .map(|h| h.join(format!("{}", vendor.to_lowercase())))
         }
         .with_context(|| self.string("crashreporter-error-no-home-dir"))?;
@@ -594,6 +620,20 @@ pub fn installation_resource_path() -> &'static Path {
         }
     });
     &*PATH
+}
+
+/// Get the path of a program in the installation.
+///
+/// The returned path isn't guaranteed to exist.
+pub fn installation_program_path<N: AsRef<OsStr>>(program: N) -> PathBuf {
+    let self_path = self_path();
+    let exe_extension = self_path.extension().unwrap_or_default();
+    let mut p = program.as_ref().to_os_string();
+    if !exe_extension.is_empty() {
+        p.push(".");
+        p.push(exe_extension);
+    }
+    installation_path().join(p)
 }
 
 /// Get the path of the Firefox installation containing the crashreporter.

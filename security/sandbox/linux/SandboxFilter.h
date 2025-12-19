@@ -7,9 +7,6 @@
 #ifndef mozilla_SandboxFilter_h
 #define mozilla_SandboxFilter_h
 
-#include <vector>
-#include "mozilla/Atomics.h"
-#include "mozilla/Range.h"
 #include "mozilla/UniquePtr.h"
 
 namespace sandbox {
@@ -22,6 +19,7 @@ namespace mozilla {
 class SandboxBrokerClient;
 
 struct ContentProcessSandboxParams;
+struct SocketProcessSandboxParams;
 
 UniquePtr<sandbox::bpf_dsl::Policy> GetContentSandboxPolicy(
     SandboxBrokerClient* aMaybeBroker, ContentProcessSandboxParams&& aParams);
@@ -36,7 +34,7 @@ UniquePtr<sandbox::bpf_dsl::Policy> GetDecoderSandboxPolicy(
     SandboxBrokerClient* aMaybeBroker);
 
 UniquePtr<sandbox::bpf_dsl::Policy> GetSocketProcessSandboxPolicy(
-    SandboxBrokerClient* aMaybeBroker);
+    SandboxBrokerClient* aMaybeBroker, SocketProcessSandboxParams&& aParams);
 
 UniquePtr<sandbox::bpf_dsl::Policy> GetUtilitySandboxPolicy(
     SandboxBrokerClient* aMaybeBroker);

@@ -350,16 +350,10 @@ var gMenuBuilder = {
         }
 
         if (codePointsToRemove) {
-          let ellipsis = "\u2026";
-          try {
-            ellipsis = Services.prefs.getComplexValue(
-              "intl.ellipsis",
-              Ci.nsIPrefLocalizedString
-            ).data;
-          } catch (e) {}
           codePointsToRemove += 1;
           selection =
-            selectionArray.slice(0, -codePointsToRemove).join("") + ellipsis;
+            selectionArray.slice(0, -codePointsToRemove).join("") +
+            Services.locale.ellipsis;
         }
 
         label = label.replace(/%s/g, selection);
@@ -487,7 +481,7 @@ var gMenuBuilder = {
       element.setAttribute("class", "menuitem-iconic");
     }
 
-    element.setAttribute("image", resolvedURL);
+    element.setAttribute("image", ChromeUtils.encodeURIForSrcset(resolvedURL));
   },
 
   // Undo changes from setMenuItemIcon.

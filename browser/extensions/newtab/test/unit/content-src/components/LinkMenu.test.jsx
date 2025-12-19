@@ -126,132 +126,6 @@ describe("<LinkMenu>", () => {
       options.find(o => o.id && o.id === "newtab-menu-bookmark")
     );
   });
-  it("should show Save to Pocket option for an unsaved Pocket item if CheckSavedToPocket in options list", () => {
-    wrapper = shallow(
-      <LinkMenu
-        site={{ url: "", bookmarkGuid: 0 }}
-        source={"HIGHLIGHTS"}
-        options={["CheckSavedToPocket"]}
-        dispatch={() => {}}
-      />
-    );
-    const { options } = wrapper.find(ContextMenu).props();
-    assert.isDefined(
-      options.find(o => o.id && o.id === "newtab-menu-save-to-pocket")
-    );
-  });
-  it("should show Delete from Pocket option for a saved Pocket item if CheckSavedToPocket in options list", () => {
-    wrapper = shallow(
-      <LinkMenu
-        site={{ url: "", pocket_id: 1234 }}
-        source={"HIGHLIGHTS"}
-        options={["CheckSavedToPocket"]}
-        dispatch={() => {}}
-      />
-    );
-    const { options } = wrapper.find(ContextMenu).props();
-    assert.isDefined(
-      options.find(o => o.id && o.id === "newtab-menu-delete-pocket")
-    );
-  });
-  it("should show Archive from Pocket option for a saved Pocket item if CheckBookmarkOrArchive", () => {
-    wrapper = shallow(
-      <LinkMenu
-        site={{ url: "", pocket_id: 1234 }}
-        source={"HIGHLIGHTS"}
-        options={["CheckBookmarkOrArchive"]}
-        dispatch={() => {}}
-      />
-    );
-    const { options } = wrapper.find(ContextMenu).props();
-    assert.isDefined(
-      options.find(o => o.id && o.id === "newtab-menu-archive-pocket")
-    );
-  });
-  it("should show Bookmark option for an unbookmarked site if CheckBookmarkOrArchive in options list and no pocket_id", () => {
-    wrapper = shallow(
-      <LinkMenu
-        site={{ url: "" }}
-        source={"HIGHLIGHTS"}
-        options={["CheckBookmarkOrArchive"]}
-        dispatch={() => {}}
-      />
-    );
-    const { options } = wrapper.find(ContextMenu).props();
-    assert.isDefined(
-      options.find(o => o.id && o.id === "newtab-menu-bookmark")
-    );
-  });
-  it("should show Unbookmark option for a bookmarked site if CheckBookmarkOrArchive in options list and no pocket_id", () => {
-    wrapper = shallow(
-      <LinkMenu
-        site={{ url: "", bookmarkGuid: 1234 }}
-        source={"HIGHLIGHTS"}
-        options={["CheckBookmarkOrArchive"]}
-        dispatch={() => {}}
-      />
-    );
-    const { options } = wrapper.find(ContextMenu).props();
-    assert.isDefined(
-      options.find(o => o.id && o.id === "newtab-menu-remove-bookmark")
-    );
-  });
-  it("should show Archive from Pocket option for a saved Pocket item if CheckArchiveFromPocket", () => {
-    wrapper = shallow(
-      <LinkMenu
-        site={{ url: "", pocket_id: 1234 }}
-        source={"TOP_STORIES"}
-        options={["CheckArchiveFromPocket"]}
-        dispatch={() => {}}
-      />
-    );
-    const { options } = wrapper.find(ContextMenu).props();
-    assert.isDefined(
-      options.find(o => o.id && o.id === "newtab-menu-archive-pocket")
-    );
-  });
-  it("should show empty from no Pocket option for no saved Pocket item if CheckArchiveFromPocket", () => {
-    wrapper = shallow(
-      <LinkMenu
-        site={{ url: "" }}
-        source={"TOP_STORIES"}
-        options={["CheckArchiveFromPocket"]}
-        dispatch={() => {}}
-      />
-    );
-    const { options } = wrapper.find(ContextMenu).props();
-    assert.isUndefined(
-      options.find(o => o.id && o.id === "newtab-menu-archive-pocket")
-    );
-  });
-  it("should show Delete from Pocket option for a saved Pocket item if CheckDeleteFromPocket", () => {
-    wrapper = shallow(
-      <LinkMenu
-        site={{ url: "", pocket_id: 1234 }}
-        source={"TOP_STORIES"}
-        options={["CheckDeleteFromPocket"]}
-        dispatch={() => {}}
-      />
-    );
-    const { options } = wrapper.find(ContextMenu).props();
-    assert.isDefined(
-      options.find(o => o.id && o.id === "newtab-menu-delete-pocket")
-    );
-  });
-  it("should show empty from Pocket option for no saved Pocket item if CheckDeleteFromPocket", () => {
-    wrapper = shallow(
-      <LinkMenu
-        site={{ url: "" }}
-        source={"TOP_STORIES"}
-        options={["CheckDeleteFromPocket"]}
-        dispatch={() => {}}
-      />
-    );
-    const { options } = wrapper.find(ContextMenu).props();
-    assert.isUndefined(
-      options.find(o => o.id && o.id === "newtab-menu-archive-pocket")
-    );
-  });
   it("should show Open File option for a downloaded item", () => {
     wrapper = shallow(
       <LinkMenu
@@ -373,6 +247,7 @@ describe("<LinkMenu>", () => {
       typedBonus: true,
       url: "https://foo.com",
       sponsored_tile_id: 12345,
+      card_type: "organic",
     };
     const dispatch = sinon.stub();
     const propOptions = [
@@ -390,9 +265,6 @@ describe("<LinkMenu>", () => {
       "DeleteUrl",
       "PinTopSite",
       "UnpinTopSite",
-      "SaveToPocket",
-      "DeleteFromPocket",
-      "ArchiveFromPocket",
       "WebExtDismiss",
     ];
     const expectedActionData = {
@@ -403,14 +275,27 @@ describe("<LinkMenu>", () => {
         type: FAKE_SITE.type,
       },
       "newtab-menu-open-new-window": {
-        url: FAKE_SITE.url,
+        card_type: FAKE_SITE.card_type,
         referrer: FAKE_SITE.referrer,
         typedBonus: FAKE_SITE.typedBonus,
-        sponsored_tile_id: FAKE_SITE.sponsored_tile_id,
+        url: FAKE_SITE.url,
+        event_source: "CONTEXT_MENU",
+        topic: undefined,
+        firstVisibleTimestamp: undefined,
+        tile_id: undefined,
+        recommendation_id: undefined,
+        scheduled_corpus_item_id: undefined,
+        corpus_item_id: undefined,
+        received_rank: undefined,
+        recommended_at: undefined,
+        format: undefined,
+        is_pocket_card: false,
+        is_sponsored: true,
       },
       "newtab-menu-open-new-private-window": {
         url: FAKE_SITE.url,
         referrer: FAKE_SITE.referrer,
+        event_source: "CONTEXT_MENU",
       },
       "newtab-menu-dismiss": [
         {
@@ -424,10 +309,9 @@ describe("<LinkMenu>", () => {
           received_rank: undefined,
           isSponsoredTopSite: undefined,
           type: "bookmark",
-          card_type: undefined,
+          card_type: FAKE_SITE.card_type,
           position: 3,
           is_pocket_card: false,
-          is_list_card: undefined,
         },
       ],
       menu_action_webext_dismiss: {
@@ -442,11 +326,6 @@ describe("<LinkMenu>", () => {
       },
       "newtab-menu-pin": { site: FAKE_SITE, index: FAKE_INDEX },
       "newtab-menu-unpin": { site: { url: FAKE_SITE.url } },
-      "newtab-menu-save-to-pocket": {
-        site: { url: FAKE_SITE.url, title: FAKE_SITE.title },
-      },
-      "newtab-menu-delete-pocket": { pocket_id: "1234" },
-      "newtab-menu-archive-pocket": { pocket_id: "1234" },
       "newtab-menu-show-file": { url: FAKE_SITE.url },
       "newtab-menu-copy-download-link": { url: FAKE_SITE.url },
       "newtab-menu-go-to-download-page": { url: FAKE_SITE.referrer },
@@ -637,7 +516,6 @@ describe("<LinkMenu>", () => {
         card_type: undefined,
         position: 3,
         is_pocket_card: false,
-        is_list_card: undefined,
       };
       assert.deepEqual(blockUrlOption.action.data[0], expected);
     });
@@ -686,7 +564,6 @@ describe("<LinkMenu>", () => {
         card_type: undefined,
         position: 3,
         is_pocket_card: true,
-        is_list_card: undefined,
       };
       assert.deepEqual(blockUrlOption.action.data[0], expected);
     });

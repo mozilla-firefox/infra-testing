@@ -2,14 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import React, { Component } from "devtools/client/shared/vendor/react";
-import { div } from "devtools/client/shared/vendor/react-dom-factories";
+import { Component } from "devtools/client/shared/vendor/react";
 import PropTypes from "devtools/client/shared/vendor/react-prop-types";
 
-import { features } from "../../utils/prefs";
 const classnames = require("resource://devtools/client/shared/classnames.js");
-
-import ColumnBreakpoint from "./ColumnBreakpoint";
 
 import {
   getSelectedSource,
@@ -17,9 +13,7 @@ import {
   isSourceBlackBoxed,
 } from "../../selectors/index";
 import actions from "../../actions/index";
-import { markerTypes } from "../../constants";
 import { connect } from "devtools/client/shared/vendor/react-redux";
-import { makeBreakpointId } from "../../utils/breakpoint/index";
 
 const breakpointButton = document.createElement("button");
 const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -55,22 +49,19 @@ class ColumnBreakpoints extends Component {
   componentDidUpdate() {
     const { selectedSource, columnBreakpoints, editor } = this.props;
 
-    // Only for codemirror 6
-    if (!features.codemirrorNext) {
-      return;
-    }
-
     if (!selectedSource || !editor) {
       return;
     }
 
     if (!columnBreakpoints.length) {
-      editor.removePositionContentMarker(markerTypes.COLUMN_BREAKPOINT_MARKER);
+      editor.removePositionContentMarker(
+        editor.markerTypes.COLUMN_BREAKPOINT_MARKER
+      );
       return;
     }
 
     editor.setPositionContentMarker({
-      id: markerTypes.COLUMN_BREAKPOINT_MARKER,
+      id: editor.markerTypes.COLUMN_BREAKPOINT_MARKER,
       positions: columnBreakpoints.map(cbp => {
         return {
           line: cbp.location.line,
@@ -155,44 +146,7 @@ class ColumnBreakpoints extends Component {
   };
 
   render() {
-    const {
-      editor,
-      columnBreakpoints,
-      selectedSource,
-      showEditorCreateBreakpointContextMenu,
-      showEditorEditBreakpointContextMenu,
-      toggleDisabledBreakpoint,
-      removeBreakpoint,
-      addBreakpoint,
-      setSkipPausing,
-    } = this.props;
-
-    if (features.codemirrorNext) {
-      return null;
-    }
-
-    if (!selectedSource || columnBreakpoints.length === 0) {
-      return null;
-    }
-
-    let breakpoints;
-    editor.codeMirror.operation(() => {
-      breakpoints = columnBreakpoints.map(columnBreakpoint =>
-        React.createElement(ColumnBreakpoint, {
-          key: makeBreakpointId(columnBreakpoint.location),
-          columnBreakpoint,
-          editor,
-          source: selectedSource,
-          showEditorCreateBreakpointContextMenu,
-          showEditorEditBreakpointContextMenu,
-          toggleDisabledBreakpoint,
-          removeBreakpoint,
-          addBreakpoint,
-          setSkipPausing,
-        })
-      );
-    });
-    return div(null, breakpoints);
+    return null;
   }
 }
 

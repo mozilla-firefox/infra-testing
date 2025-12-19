@@ -9,21 +9,16 @@
 
 add_task(async function () {
   const toolbox = await initPane("doc-script-switching.html", "webconsole");
-  const node = await waitForLink(toolbox, "hi");
-  node.click();
+  const linkEl = await waitForConsoleMessageLink(
+    toolbox,
+    "hi",
+    "script-switching-02.js:18:9"
+  );
+  linkEl.click();
 
   await waitFor(() => toolbox.getPanel("jsdebugger"));
   const dbg = createDebuggerContext(toolbox);
   await waitForElement(dbg, "highlightLine");
   assertHighlightLocation(dbg, "script-switching-02.js", 18);
+  assertCursorPosition(dbg, 18, 9, "Cursor is set at the right location");
 });
-
-async function waitForLink(toolbox, messageText) {
-  return waitFor(async () => {
-    const [message] = await findConsoleMessages(toolbox, messageText);
-    if (!message) {
-      return false;
-    }
-    return message.querySelector(".frame-link-source");
-  });
-}

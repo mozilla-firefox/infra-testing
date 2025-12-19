@@ -21,17 +21,18 @@ fun Mode.isSelect() = this is Mode.Select
  *
  * @param shouldShowInactiveButton Whether or not to show the inactive tabs menu item.
  * @param selectedPage The currently selected page.
- * @param normalTabCount The normal tabs number.
- * @param privateTabCount The private tabs number.
- * @param onBookmarkSelectedTabsClick Invoked when user interacts with the bookmark menu item.
- * @param onCloseSelectedTabsClick Invoked when user interacts with the close menu item.
- * @param onMakeSelectedTabsInactive Invoked when user interacts with the make inactive menu item.
- * @param onTabSettingsClick Invoked when user interacts with the tab settings menu.
- * @param onRecentlyClosedClick Invoked when user interacts with the recently closed menu item.
- * @param onEnterMultiselectModeClick Invoked when user enters the multiselect mode.
- * @param onShareAllTabsClick Invoked when user interacts with the share all menu item.
- * @param onDeleteAllTabsClick Invoked when user interacts with the delete all menu item.
- * @param onAccountSettingsClick Invoked when user interacts with the account settings.
+ * @param normalTabCount The number of normal tabs.
+ * @param privateTabCount The number of private tabs.
+ * @param onBookmarkSelectedTabsClick Invoked when the user clicks the menu item to bookmark the selected tabs.
+ * @param onCloseSelectedTabsClick Invoked when the user clicks the menu item to close the selected tabs.
+ * @param onMakeSelectedTabsInactive Invoked when the user clicks the menu item to force the selected
+ * tabs as inactive.
+ * @param onTabSettingsClick Invoked when the user clicks the menu item to navigate to tab settings.
+ * @param onRecentlyClosedClick Invoked when the user clicks the menu item to navigate to their recently closed tabs.
+ * @param onEnterMultiselectModeClick Invoked when the user the menu item to enter multiselect mode.
+ * @param onShareAllTabsClick Invoked when the user clicks the menu item to share all of their tabs.
+ * @param onDeleteAllTabsClick Invoked when user clicks the menu item to delete all of their tabs.
+ * @param onAccountSettingsClick Invoked when user clicks the menu item to navigate to account settings.
  */
 @Suppress("LongParameterList")
 fun Mode.getMenuItems(
@@ -72,9 +73,15 @@ fun Mode.getMenuItems(
 }
 
 /**
- *  Builds the menu items list when in multiselect mode
+ *  Builds the menu items list when in [Mode.Select].
+ *
+ * @param shouldShowInactiveButton Whether or not to show the inactive tabs menu item.
+ * @param onBookmarkSelectedTabsClick Invoked when the user clicks the menu item to bookmark the selected tabs.
+ * @param onCloseSelectedTabsClick Invoked when the user clicks the menu item to close the selected tabs.
+ * @param onMakeSelectedTabsInactive Invoked when the user clicks the menu item to force the selected
+ * tabs as inactive.
  */
-private fun generateMultiSelectBannerMenuItems(
+internal fun generateMultiSelectBannerMenuItems(
     shouldShowInactiveButton: Boolean,
     onBookmarkSelectedTabsClick: () -> Unit,
     onCloseSelectedTabsClick: () -> Unit,
@@ -102,7 +109,17 @@ private fun generateMultiSelectBannerMenuItems(
 }
 
 /**
- *  Builds the menu items list when in normal mode
+ *  Builds the menu items list when in [Mode.Normal].
+ *
+ * @param selectedPage The currently selected page.
+ * @param normalTabCount The number of normal tabs.
+ * @param privateTabCount The number of private tabs.
+ * @param onTabSettingsClick Invoked when the user clicks the menu item to navigate to tab settings.
+ * @param onRecentlyClosedClick Invoked when the user clicks the menu item to navigate to their recently closed tabs.
+ * @param onEnterMultiselectModeClick Invoked when the user the menu item to enter multiselect mode.
+ * @param onShareAllTabsClick Invoked when the user clicks the menu item to share all of their tabs.
+ * @param onDeleteAllTabsClick Invoked when user clicks the menu item to delete all of their tabs.
+ * @param onAccountSettingsClick Invoked when user clicks the menu item to navigate to account settings.
  */
 @Suppress("LongParameterList")
 private fun generateTabPageBannerMenuItems(
@@ -118,37 +135,37 @@ private fun generateTabPageBannerMenuItems(
 ): List<MenuItem> {
     val tabSettingsItem = MenuItem.TextItem(
         text = Text.Resource(R.string.tab_tray_menu_tab_settings),
-        testTag = TabsTrayTestTag.tabSettings,
+        testTag = TabsTrayTestTag.TAB_SETTINGS,
         onClick = onTabSettingsClick,
     )
     val recentlyClosedTabsItem = MenuItem.TextItem(
         text = Text.Resource(R.string.tab_tray_menu_recently_closed),
-        testTag = TabsTrayTestTag.recentlyClosedTabs,
+        testTag = TabsTrayTestTag.RECENTLY_CLOSED_TABS,
         onClick = onRecentlyClosedClick,
     )
     val enterSelectModeItem = MenuItem.TextItem(
         text = Text.Resource(R.string.tabs_tray_select_tabs),
-        testTag = TabsTrayTestTag.selectTabs,
+        testTag = TabsTrayTestTag.SELECT_TABS,
         onClick = onEnterMultiselectModeClick,
     )
     val shareAllTabsItem = MenuItem.TextItem(
         text = Text.Resource(R.string.tab_tray_menu_item_share),
-        testTag = TabsTrayTestTag.shareAllTabs,
+        testTag = TabsTrayTestTag.SHARE_ALL_TABS,
         onClick = onShareAllTabsClick,
     )
     val deleteAllTabsItem = MenuItem.TextItem(
         text = Text.Resource(R.string.tab_tray_menu_item_close),
-        testTag = TabsTrayTestTag.closeAllTabs,
+        testTag = TabsTrayTestTag.CLOSE_ALL_TABS,
         onClick = onDeleteAllTabsClick,
     )
     val accountSettingsItem = MenuItem.TextItem(
         text = Text.Resource(R.string.tab_tray_menu_account_settings),
-        testTag = TabsTrayTestTag.accountSettings,
+        testTag = TabsTrayTestTag.ACCOUNT_SETTINGS,
         onClick = onAccountSettingsClick,
     )
     return when {
-        selectedPage == Page.NormalTabs && normalTabCount == 0 ||
-            selectedPage == Page.PrivateTabs && privateTabCount == 0 -> listOf(
+        (selectedPage == Page.NormalTabs && normalTabCount == 0) ||
+            (selectedPage == Page.PrivateTabs && privateTabCount == 0) -> listOf(
             tabSettingsItem,
             recentlyClosedTabsItem,
         )

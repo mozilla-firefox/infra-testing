@@ -27,10 +27,34 @@ export function createLocation({
     sourceActor,
     sourceActorId: sourceActor?.id,
 
-    // `line` and `column` are 1-based.
-    // This data is mostly coming from and driven by
-    // JSScript::lineno and JSScript::column
-    // https://searchfox.org/mozilla-central/rev/90dce6b0223b4dc17bb10f1125b44f70951585f9/js/src/vm/JSScript.h#1545-1548
+    // # Quick overview of 1-based versus 0-based lines and columns #
+    //
+    // Everything assumes a 1-based line, but columns can be 0 or 1 based.
+    // Note that while lines are 1-based some RDP packet may refer to line 0 which should be considered as "no precise location".
+    //
+    // Columns are 0-based in:
+    //  - overall all debugger frontend
+    //  - anything around source maps (SourceMapLoader, SourceMapURLService, SourceMap library)
+    //  - most RDP packets, especially around the thread actor:
+    //    - breakpoints
+    //    - breakpoint positions
+    //    - pause location
+    //    - paused frames
+    //
+    // Columns are 1-based in:
+    //  - the UI displayed to the user (console messages, frames, stacktraces,...)
+    //  - asserted locations in tests (to match displayed numbers)
+    //  - Spidermonkey:
+    //    This data is mostly coming from and driven by
+    //    JSScript::lineno and JSScript::column
+    //    https://searchfox.org/mozilla-central/rev/4c065f1df299065c305fb48b36cdae571a43d97c/js/src/vm/JSScript.h#1567-1570
+    //  - some RDP packets outside of the thread actor:
+    //    - CONSOLE_MESSAGE, CSS_MESSAGE, PAGE_ERROR resources for lineNumber, columnNumber and stacktrace attributes
+    //    - Error objects's Object Actor's grip's "preview" attribute will expose its stacktraces with 1-based columns
+    //  - SmartTrace is dealing with these RDP packets and consumes 1-based columns,
+    //    but has to map to 0-based columns as it depends on debugger frontend Frames components.
+    //
+    // The RDP server, especially in the thread actor ecosystem has to map from spidermonkey 1-based to historical 0-based columns.
     line,
     column,
   };
@@ -55,7 +79,7 @@ export function debuggerToSourceMapLocation(location) {
  * Pending location only need these three attributes,
  * and especially doesn't need the large source and sourceActor objects of the regular location objects.
  *
- * @param {Object} location
+ * @param {object} location
  */
 export function createPendingSelectedLocation(location) {
   return {

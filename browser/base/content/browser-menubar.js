@@ -3,8 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/browser-window */
-
 document.addEventListener(
   "DOMContentLoaded",
   () => {
@@ -26,6 +24,10 @@ document.addEventListener(
           break;
         case "repair-text-encoding":
           BrowserCommands.forceEncodingDetection();
+          break;
+        case "enterFullScreenItem":
+        case "exitFullScreenItem":
+          BrowserCommands.fullScreen();
           break;
         case "documentDirection-swap":
           gBrowser.selectedBrowser.sendMessageToActor(
@@ -62,7 +64,7 @@ document.addEventListener(
           FirefoxViewHandler.openTab();
           break;
         case "hiddenUndoCloseWindow":
-          undoCloseWindow(0);
+          SessionWindowUI.undoCloseWindow(0);
           break;
 
         // == menu_HelpPopup ==

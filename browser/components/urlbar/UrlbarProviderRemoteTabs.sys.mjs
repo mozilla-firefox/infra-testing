@@ -11,19 +11,18 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 import {
   UrlbarProvider,
   UrlbarUtils,
-} from "resource:///modules/UrlbarUtils.sys.mjs";
+} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   SyncedTabs: "resource://services-sync/SyncedTabs.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
-  UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarTokenizer:
+    "moz-src:///browser/components/urlbar/UrlbarTokenizer.sys.mjs",
 });
-
-let _cache = null;
 
 // By default, we add remote tabs that have been used more recently than this
 // time ago. Any remaining remote tabs are added in queue if no other results
@@ -59,28 +58,91 @@ function escapeRegExp(string) {
 }
 
 /**
+ * Singleton class to cache the latest remote tab data.
+ */
+class _cache {
+  /** @type {{tab: object, client: object}[]} */
+  #tabsData = null;
+
+  constructor() {
+    Services.obs.addObserver(
+      this.observe.bind(this),
+      "weave:engine:sync:finish"
+    );
+    Services.obs.addObserver(
+      this.observe.bind(this),
+      "weave:service:start-over"
+    );
+  }
+
+  /**
+   * Build the in-memory structure we use.
+   */
+  async #buildItems() {
+    // This is sorted by most recent client, most recent tab.
+    let tabsData = [];
+    // If Sync isn't initialized (either due to lag at startup or due to no user
+    // being signed in), don't reach in to Weave.Service as that may initialize
+    // Sync unnecessarily - we'll get an observer notification later when it
+    // becomes ready and has synced a list of tabs.
+    if (lazy.weaveXPCService.ready) {
+      let clients = await lazy.SyncedTabs.getTabClients();
+      lazy.SyncedTabs.sortTabClientsByLastUsed(clients);
+      for (let client of clients) {
+        for (let tab of client.tabs) {
+          tabsData.push({ tab, client });
+        }
+      }
+    }
+    this.#tabsData = tabsData;
+  }
+
+  observe(subject, topic, data) {
+    switch (topic) {
+      case "weave:engine:sync:finish":
+        if (data == "tabs") {
+          // The tabs engine just finished syncing, so may have a different list
+          // of tabs then we previously cached.
+          this.#tabsData = null;
+        }
+        break;
+      case "weave:service:start-over":
+        // Sync is being reset due to the user disconnecting - we must invalidate
+        // the cache so we don't supply tabs from a different user.
+        this.#tabsData = null;
+        break;
+      default:
+        break;
+    }
+  }
+
+  /** @type {?_cache} */
+  static #instance;
+  /**
+   * Build (if necessary) and return tabs data.
+   *
+   * @returns {Promise<{tab: object, client: object}[]>}
+   */
+  static async get() {
+    _cache.#instance ??= new _cache();
+
+    if (!_cache.#instance.#tabsData) {
+      await _cache.#instance.#buildItems();
+    }
+    return _cache.#instance.#tabsData;
+  }
+}
+
+/**
  * Class used to create the provider.
  */
-class ProviderRemoteTabs extends UrlbarProvider {
+export class UrlbarProviderRemoteTabs extends UrlbarProvider {
   constructor() {
     super();
-    Services.obs.addObserver(this.observe, "weave:engine:sync:finish");
-    Services.obs.addObserver(this.observe, "weave:service:start-over");
   }
 
   /**
-   * Unique name for the provider, used by the context to filter on providers.
-   *
-   * @returns {string}
-   */
-  get name() {
-    return "RemoteTabs";
-  }
-
-  /**
-   * The type of the provider, must be one of UrlbarUtils.PROVIDER_TYPE.
-   *
-   * @returns {UrlbarUtils.PROVIDER_TYPE}
+   * @returns {Values<typeof UrlbarUtils.PROVIDER_TYPE>}
    */
   get type() {
     return UrlbarUtils.PROVIDER_TYPE.NETWORK;
@@ -92,9 +154,8 @@ class ProviderRemoteTabs extends UrlbarProvider {
    * with this provider, to save on resources.
    *
    * @param {UrlbarQueryContext} queryContext The query context object
-   * @returns {boolean} Whether this provider should be invoked for the search.
    */
-  isActive(queryContext) {
+  async isActive(queryContext) {
     return (
       lazy.syncUsernamePref &&
       lazy.UrlbarPrefs.get("suggest.remotetab") &&
@@ -106,12 +167,11 @@ class ProviderRemoteTabs extends UrlbarProvider {
   }
 
   /**
-   * Starts querying. Extended classes should return a Promise resolved when the
-   * provider is done searching AND returning results.
+   * Starts querying.
    *
-   * @param {UrlbarQueryContext} queryContext The query context object
-   * @param {Function} addCallback Callback invoked by the provider to add a new
-   *        result. A UrlbarResult should be passed to it.
+   * @param {UrlbarQueryContext} queryContext
+   * @param {(provider: UrlbarProvider, result: UrlbarResult) => void} addCallback
+   *   Callback invoked by the provider to add a new result.
    */
   async startQuery(queryContext, addCallback) {
     let instance = this.queryInstance;
@@ -119,7 +179,7 @@ class ProviderRemoteTabs extends UrlbarProvider {
     let searchString = queryContext.tokens.map(t => t.value).join(" ");
 
     let re = new RegExp(escapeRegExp(searchString), "i");
-    let tabsData = await this.ensureCache();
+    let tabsData = await _cache.get();
     if (instance != this.queryInstance) {
       return;
     }
@@ -145,17 +205,21 @@ class ProviderRemoteTabs extends UrlbarProvider {
           }
         }
 
-        let result = new lazy.UrlbarResult(
-          UrlbarUtils.RESULT_TYPE.REMOTE_TAB,
-          UrlbarUtils.RESULT_SOURCE.TABS,
-          ...lazy.UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
-            url: [tab.url, UrlbarUtils.HIGHLIGHT.TYPED],
-            title: [tab.title, UrlbarUtils.HIGHLIGHT.TYPED],
+        let result = new lazy.UrlbarResult({
+          type: UrlbarUtils.RESULT_TYPE.REMOTE_TAB,
+          source: UrlbarUtils.RESULT_SOURCE.TABS,
+          payload: {
+            url: tab.url,
+            title: tab.title,
             device: client.name,
             icon: lazy.showRemoteIconsPref ? tab.icon : "",
             lastUsed: (tab.lastUsed || 0) * 1000,
-          })
-        );
+          },
+          highlights: {
+            url: UrlbarUtils.HIGHLIGHT.TYPED,
+            title: UrlbarUtils.HIGHLIGHT.TYPED,
+          },
+        });
 
         // We want to return the most relevant remote tabs and thus the most
         // recent ones. While SyncedTabs.sys.mjs returns tabs that are sorted by
@@ -189,63 +253,4 @@ class ProviderRemoteTabs extends UrlbarProvider {
       resultsAdded++;
     }
   }
-
-  /**
-   * Build the in-memory structure we use.
-   *
-   * @returns {{tab: object, client: object}[]}
-   */
-  async buildItems() {
-    // This is sorted by most recent client, most recent tab.
-    let tabsData = [];
-    // If Sync isn't initialized (either due to lag at startup or due to no user
-    // being signed in), don't reach in to Weave.Service as that may initialize
-    // Sync unnecessarily - we'll get an observer notification later when it
-    // becomes ready and has synced a list of tabs.
-    if (lazy.weaveXPCService.ready) {
-      let clients = await lazy.SyncedTabs.getTabClients();
-      lazy.SyncedTabs.sortTabClientsByLastUsed(clients);
-      for (let client of clients) {
-        for (let tab of client.tabs) {
-          tabsData.push({ tab, client });
-        }
-      }
-    }
-    return tabsData;
-  }
-
-  /**
-   * Ensure the cache is good.
-   *
-   * @returns {{tab: object, client: object}[]}
-   */
-  async ensureCache() {
-    if (!_cache) {
-      _cache = await this.buildItems();
-    }
-    return _cache;
-  }
-
-  observe(subject, topic, data) {
-    switch (topic) {
-      case "weave:engine:sync:finish":
-        if (data == "tabs") {
-          // The tabs engine just finished syncing, so may have a different list
-          // of tabs then we previously cached.
-          _cache = null;
-        }
-        break;
-
-      case "weave:service:start-over":
-        // Sync is being reset due to the user disconnecting - we must invalidate
-        // the cache so we don't supply tabs from a different user.
-        _cache = null;
-        break;
-
-      default:
-        break;
-    }
-  }
 }
-
-export var UrlbarProviderRemoteTabs = new ProviderRemoteTabs();

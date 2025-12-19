@@ -5,7 +5,8 @@
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
+  CustomizableUI:
+    "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
   ExtensionParent: "resource://gre/modules/ExtensionParent.sys.mjs",
   ExtensionPreferencesManager:
     "resource://gre/modules/ExtensionPreferencesManager.sys.mjs",
@@ -254,7 +255,7 @@ export let HomePage = {
    * Handles updates of the ignore list, checking the existing preference and
    * correcting it as necessary.
    *
-   * @param {Object} eventData
+   * @param {object} eventData
    *   The event data as received from RemoteSettings.
    */
   async _handleIgnoreListUpdated({ data: { current } }) {

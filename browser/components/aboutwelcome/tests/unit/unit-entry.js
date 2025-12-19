@@ -202,6 +202,7 @@ const TEST_GLOBAL = {
       insert() {},
       markPageAsTyped() {},
       removeObserver() {},
+      pageFrecencyThreshold() {},
     },
     "@mozilla.org/io/string-input-stream;1": {
       createInstance() {
@@ -503,10 +504,7 @@ const TEST_GLOBAL = {
     },
   },
   FX_MONITOR_OAUTH_CLIENT_ID: "fake_client_id",
-  ExperimentAPI: {
-    getExperimentMetaData() {},
-    getRolloutMetaData() {},
-  },
+  ExperimentAPI: {},
   NimbusFeatures: {
     glean: {
       getVariable() {},

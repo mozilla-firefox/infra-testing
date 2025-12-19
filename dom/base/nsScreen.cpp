@@ -4,18 +4,22 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsContentUtils.h"
 #include "nsScreen.h"
+
+#include "mozilla/GeckoBindings.h"
+#include "mozilla/dom/BrowsingContextBinding.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentInlines.h"
+#include "mozilla/widget/ScreenManager.h"
+#include "nsCOMPtr.h"
+#include "nsContentUtils.h"
+#include "nsDeviceContext.h"
 #include "nsGlobalWindowInner.h"
 #include "nsGlobalWindowOuter.h"
 #include "nsIDocShell.h"
-#include "nsPresContext.h"
-#include "nsCOMPtr.h"
 #include "nsIDocShellTreeItem.h"
 #include "nsLayoutUtils.h"
-#include "nsDeviceContext.h"
-#include "mozilla/widget/ScreenManager.h"
+#include "nsPresContext.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -66,7 +70,7 @@ CSSIntRect nsScreen::GetRect() {
   }
 
   // Here we manipulate the value of aRect to represent the screen size,
-  // if in RDM.
+  // if there is an override set with WebDriver BiDi or in RDM.
   if (nsPIDOMWindowInner* owner = GetOwnerWindow()) {
     if (Document* doc = owner->GetExtantDoc()) {
       Maybe<CSSIntSize> deviceSize =
@@ -74,6 +78,12 @@ CSSIntRect nsScreen::GetRect() {
       if (deviceSize.isSome()) {
         const CSSIntSize& size = deviceSize.value();
         return {0, 0, size.width, size.height};
+      }
+    }
+
+    if (BrowsingContext* bc = owner->GetBrowsingContext()) {
+      if (auto size = bc->GetScreenAreaOverride()) {
+        return {{}, *size};
       }
     }
   }
@@ -91,8 +101,17 @@ CSSIntRect nsScreen::GetAvailRect() {
     return GetTopWindowInnerRectForRFP();
   }
 
+  if (ShouldResistFingerprinting(RFPTarget::ScreenAvailToResolution)) {
+    nsDeviceContext* context = GetDeviceContext();
+    if (NS_WARN_IF(!context)) {
+      return {};
+    }
+    return nsRFPService::GetSpoofedScreenAvailSize(
+        context->GetRect(), context->GetFullZoom(), IsFullscreen());
+  }
+
   // Here we manipulate the value of aRect to represent the screen size,
-  // if in RDM.
+  // if there is an override set with WebDriver BiDi or in RDM.
   if (nsPIDOMWindowInner* owner = GetOwnerWindow()) {
     if (Document* doc = owner->GetExtantDoc()) {
       Maybe<CSSIntSize> deviceSize =
@@ -102,6 +121,12 @@ CSSIntRect nsScreen::GetAvailRect() {
         return {0, 0, size.width, size.height};
       }
     }
+
+    if (BrowsingContext* bc = owner->GetBrowsingContext()) {
+      if (auto size = bc->GetScreenAreaOverride()) {
+        return {{}, *size};
+      }
+    }
   }
 
   nsDeviceContext* context = GetDeviceContext();
@@ -109,6 +134,16 @@ CSSIntRect nsScreen::GetAvailRect() {
     return {};
   }
   return CSSIntRect::FromAppUnitsRounded(context->GetClientRect());
+}
+
+bool nsScreen::IsFullscreen() const {
+  if (nsPIDOMWindowInner* owner = GetOwnerWindow()) {
+    if (Document* doc = owner->GetExtantDoc()) {
+      return StyleDisplayMode::Fullscreen ==
+             Gecko_MediaFeatures_GetDisplayMode(doc);
+    }
+  }
+  return false;
 }
 
 uint16_t nsScreen::GetOrientationAngle() const {

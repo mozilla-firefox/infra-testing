@@ -474,7 +474,7 @@ class CommonBackend(BuildBackend):
         from the current locale as specified by ``MOZ_UI_LOCALE``, using ``L10NBASEDIR`` as the
         parent directory for non-en-US locales.
         """
-        ab_cd = self.environment.substs["MOZ_UI_LOCALE"][0]
+        ab_cd = self.environment.substs["MOZ_UI_LOCALE"]
         l10nbase = mozpath.join(self.environment.substs["L10NBASEDIR"], ab_cd)
         # Filenames from LOCALIZED_FILES will start with en-US/.
         if filename.startswith("en-US/"):
@@ -503,7 +503,7 @@ class CommonBackend(BuildBackend):
         if obj.defines:
             pp.context.update(obj.defines.defines)
         pp.context.update(self.environment.defines)
-        ab_cd = obj.config.substs["MOZ_UI_LOCALE"][0]
+        ab_cd = obj.config.substs["MOZ_UI_LOCALE"]
         pp.context.update(AB_CD=ab_cd)
         pp.out = JarManifestParser()
         try:
@@ -576,11 +576,10 @@ class CommonBackend(BuildBackend):
                         localized_files_pp[path] += [src]
                     else:
                         files_pp[path] += [src]
+                elif e.is_locale:
+                    localized_files[path] += [src]
                 else:
-                    if e.is_locale:
-                        localized_files[path] += [src]
-                    else:
-                        files[path] += [src]
+                    files[path] += [src]
 
             if files:
                 self.consume_object(FinalTargetFiles(jar_context, files))

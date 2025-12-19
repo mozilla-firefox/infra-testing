@@ -523,6 +523,7 @@ void MediaDecodeTask::FinishDecode() {
   auto newBuffers = CreateChannelBuffers(channelCount, resampledFrames);
   if (!newBuffers) {
     ReportFailureOnMainThread(WebAudioDecodeJob::UnknownError);
+    return;
   }
   mDecodeJob.mBuffer.mChannelData.SetLength(channelCount);
   for (uint32_t i = 0; i < channelCount; ++i) {
@@ -551,6 +552,7 @@ void MediaDecodeTask::FinishDecode() {
       newBuffers = CreateChannelBuffers(audioData->mChannels, resampledFrames);
       if (!newBuffers) {
         ReportFailureOnMainThread(WebAudioDecodeJob::UnknownError);
+        return;
       }
       RefPtr<ThreadSharedFloatArrayBufferList> oldBuffers =
           mDecodeJob.mBuffer.mBuffer->AsThreadSharedFloatArrayBufferList();
@@ -687,7 +689,7 @@ void AsyncDecodeWebAudio(const char* aContentType, uint8_t* aBuffer,
   } else {
     nsresult rv = task->PSupervisorTaskQueue()->Dispatch(task.forget());
     MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-    Unused << rv;
+    (void)rv;
   }
 }
 

@@ -11,7 +11,6 @@ import os
 import sys
 import traceback
 from pathlib import Path
-from typing import List
 
 from .base import (
     CommandContext,
@@ -453,7 +452,7 @@ To see more help for a specific command, run:
             # command's fault.
             self._print_error_header(argv, sys.stdout)
 
-            if len(other_frames):
+            if other_frames:
                 print(MODULE_ERROR_TEMPLATE % handler.name)
             else:
                 print(COMMAND_ERROR_TEMPLATE % handler.name)
@@ -478,11 +477,9 @@ To see more help for a specific command, run:
         fh.write(ERROR_FOOTER)
         fh.write("\n")
 
-        for l in traceback.format_exception_only(exc_type, exc_value):
-            fh.write(l)
-
-        fh.write("\n")
-        for l in traceback.format_list(stack):
+        for l in traceback.format_exception(
+            exc_type, exc_value, exc_value.__traceback__
+        ):
             fh.write(l)
 
         if not sentry_event_id:
@@ -501,7 +498,7 @@ To see more help for a specific command, run:
             self.load_settings_by_file(setting_paths_to_pass)
             self.settings_loaded = True
 
-    def load_settings_by_file(self, paths: List[Path]):
+    def load_settings_by_file(self, paths: list[Path]):
         """Load the specified settings files.
 
         If a directory is specified, the following basenames will be

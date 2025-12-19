@@ -348,7 +348,7 @@ const DownloadMap = new (class extends EventEmitter {
       this.loadPromise = (async () => {
         const list = await Downloads.getList(Downloads.ALL);
 
-        await list.addView({
+        list.addView({
           onDownloadAdded: download => {
             const item = this.newFromDownload(download, null);
             this.emit("create", item);
@@ -1211,12 +1211,6 @@ this.downloads = class extends ExtensionAPIPersistent {
 
           let windowlessBrowser =
             Services.appShell.createWindowlessBrowser(true);
-          let systemPrincipal =
-            Services.scriptSecurityManager.getSystemPrincipal();
-          windowlessBrowser.docShell.createAboutBlankDocumentViewer(
-            systemPrincipal,
-            systemPrincipal
-          );
 
           let canvas = windowlessBrowser.document.createElement("canvas");
           let img = new windowlessBrowser.docShell.domWindow.Image(size, size);

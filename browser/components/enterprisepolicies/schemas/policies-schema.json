@@ -167,6 +167,18 @@
       }
     },
 
+    "BrowserDataBackup": {
+      "type": ["boolean", "object"],
+      "properties": {
+        "AllowBackup": {
+          "type": "boolean"
+        },
+        "AllowRestore": {
+          "type": "boolean"
+        }
+      }
+    },
+
     "CaptivePortal": {
       "type": "boolean"
     },
@@ -287,6 +299,14 @@
                   "type": "boolean"
                 },
                 "PlainTextOnly": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "Download": {
+              "type": "object",
+              "properties": {
+                "Enabled": {
                   "type": "boolean"
                 }
               }
@@ -632,12 +652,25 @@
         "EmailTracking": {
           "type": "boolean"
         },
+        "SuspectedFingerprinting": {
+          "type": "boolean"
+        },
         "Exceptions": {
           "type": "array",
           "strict": false,
           "items": {
             "type": "origin"
           }
+        },
+        "Category": {
+          "type": "string",
+          "enum": ["standard", "strict"]
+        },
+        "BaselineExceptions": {
+          "type": "boolean"
+        },
+        "ConvenienceExceptions": {
+          "type": "boolean"
         }
       }
     },
@@ -799,7 +832,13 @@
         "Pocket": {
           "type": "boolean"
         },
+        "Stories": {
+          "type": "boolean"
+        },
         "SponsoredPocket": {
+          "type": "boolean"
+        },
+        "SponsoredStories": {
           "type": "boolean"
         },
         "Snippets": {
@@ -821,6 +860,30 @@
           "type": "boolean"
         },
         "ImproveSuggest": {
+          "type": "boolean"
+        },
+        "OnlineEnabled": {
+          "type": "boolean"
+        },
+        "Locked": {
+          "type": "boolean"
+        }
+      }
+    },
+
+    "GenerativeAI": {
+      "type": "object",
+      "properties": {
+        "Chatbot": {
+          "type": "boolean"
+        },
+        "LinkPreviews": {
+          "type": "boolean"
+        },
+        "TabGroups": {
+          "type": "boolean"
+        },
+        "Enabled": {
           "type": "boolean"
         },
         "Locked": {
@@ -948,6 +1011,30 @@
       "type": "array",
       "items": {
         "type": "string"
+      }
+    },
+
+    "LocalNetworkAccess": {
+      "type": "object",
+      "properties": {
+        "Enabled": {
+          "type": "boolean"
+        },
+        "BlockTrackers": {
+          "type": "boolean"
+        },
+        "EnablePrompting": {
+          "type": "boolean"
+        },
+        "SkipDomains": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "Locked": {
+          "type": "boolean"
+        }
       }
     },
 
@@ -1202,6 +1289,35 @@
         },
 
         "VirtualReality": {
+          "type": "object",
+          "properties": {
+            "Allow": {
+              "type": "array",
+              "strict": false,
+              "items": {
+                "type": "origin"
+              }
+            },
+
+            "Block": {
+              "type": "array",
+              "strict": false,
+              "items": {
+                "type": "origin"
+              }
+            },
+
+            "BlockNewRequests": {
+              "type": "boolean"
+            },
+
+            "Locked": {
+              "type": "boolean"
+            }
+          }
+        },
+
+        "ScreenShare": {
           "type": "object",
           "properties": {
             "Allow": {
@@ -1565,6 +1681,10 @@
     },
 
     "UseSystemPrintDialog": {
+      "type": "boolean"
+    },
+
+    "VisualSearchEnabled": {
       "type": "boolean"
     },
 

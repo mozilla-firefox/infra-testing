@@ -13,7 +13,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   OsEnvironment: "resource://gre/modules/OsEnvironment.sys.mjs",
   PlacesDBUtils: "resource://gre/modules/PlacesDBUtils.sys.mjs",
-  ShellService: "resource:///modules/ShellService.sys.mjs",
+  ShellService: "moz-src:///browser/components/shell/ShellService.sys.mjs",
   TelemetryReportingPolicy:
     "resource://gre/modules/TelemetryReportingPolicy.sys.mjs",
   UsageReporting: "resource://gre/modules/UsageReporting.sys.mjs",
@@ -45,7 +45,7 @@ export let StartupTelemetry = {
     for (let task of tasks) {
       ChromeUtils.idleDispatch(async () => {
         if (!Services.startup.shuttingDown) {
-          let startTime = Cu.now();
+          let startTime = ChromeUtils.now();
           try {
             await task();
           } catch (ex) {
@@ -103,7 +103,6 @@ export let StartupTelemetry = {
   bestEffortIdleStartup() {
     let tasks = [
       () => this.primaryPasswordEnabled(),
-      () => this.trustObjectCount(),
       () => lazy.OsEnvironment.reportAllowedAppSources(),
     ];
     if (AppConstants.platform == "win" && this._willUseExpensiveTelemetry) {
@@ -149,10 +148,13 @@ export let StartupTelemetry = {
     // Register Glean to listen for experiment updates releated to the
     // "glean" feature defined in the t/c/nimbus/FeatureManifest.yaml
     lazy.NimbusFeatures.glean.onUpdate(() => {
-      let cfg = lazy.NimbusFeatures.glean.getVariable(
-        "gleanMetricConfiguration"
-      );
-      Services.fog.applyServerKnobsConfig(JSON.stringify(cfg));
+      const enrollments = lazy.NimbusFeatures.glean.getAllEnrollments();
+      for (const enrollment of enrollments) {
+        const cfg = enrollment.value.gleanMetricConfiguration;
+        if (typeof cfg === "object" && cfg !== null) {
+          Services.fog.applyServerKnobsConfig(JSON.stringify(cfg));
+        }
+      }
     });
   },
 
@@ -356,6 +358,15 @@ export let StartupTelemetry = {
     _checkGPCPref();
   },
 
+  // check if the launcher was used to open firefox
+  isUsingLauncher() {
+    if (Services.env.get("FIREFOX_LAUNCHED_BY_DESKTOP_LAUNCHER") == "TRUE") {
+      return true;
+    }
+
+    return false;
+  },
+
   async pinningStatus() {
     let shellService = Cc["@mozilla.org/browser/shell-service;1"].getService(
       Ci.nsIWindowsShellService
@@ -401,6 +412,8 @@ export let StartupTelemetry = {
         classification = "Autostart";
       } else if (shortcut) {
         classification = "OtherShortcut";
+      } else if (this.isUsingLauncher()) {
+        classification = "DesktopLauncher";
       } else {
         classification = "Other";
       }
@@ -438,20 +451,8 @@ export let StartupTelemetry = {
   },
 
   osAuthEnabled() {
-    // Manually read these prefs. This treats any non-empty-string
-    // value as "turned off", irrespective of whether it correctly
-    // decrypts to the correct value, because we cannot do the
-    // decryption if the primary password has not yet been provided,
-    // and for telemetry treating that situation as "turned off"
-    // seems reasonable.
-    const osAuthForCc = !Services.prefs.getStringPref(
-      lazy.FormAutofillUtils.AUTOFILL_CREDITCARDS_REAUTH_PREF,
-      ""
-    );
-    const osAuthForPw = !Services.prefs.getStringPref(
-      lazy.LoginHelper.OS_AUTH_FOR_PASSWORDS_PREF,
-      ""
-    );
+    const osAuthForCc = lazy.FormAutofillUtils.getOSAuthEnabled();
+    const osAuthForPw = lazy.LoginHelper.getOSAuthEnabled();
 
     Glean.formautofill.osAuthEnabled.set(osAuthForCc);
     Glean.pwmgr.osAuthEnabled.set(osAuthForPw);
@@ -463,14 +464,6 @@ export let StartupTelemetry = {
     );
     let token = tokenDB.getInternalKeyToken();
     Glean.primaryPassword.enabled.set(token.hasPassword);
-  },
-
-  trustObjectCount() {
-    let certdb = Cc["@mozilla.org/security/x509certdb;1"].getService(
-      Ci.nsIX509CertDB
-    );
-    // countTrustObjects also logs the number of trust objects for telemetry purposes
-    certdb.countTrustObjects();
   },
 
   pipEnabled() {

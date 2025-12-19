@@ -154,10 +154,6 @@ exclude-multi-locale = [
     l10n = "{l}toolkit/chrome/global/commonDialogs.properties"
 
 [[paths]]
-    reference = "toolkit/locales/en-US/chrome/global/intl.properties"
-    l10n = "{l}toolkit/chrome/global/intl.properties"
-
-[[paths]]
     reference = "toolkit/locales/en-US/chrome/global/intl.css"
     l10n = "{l}toolkit/chrome/global/intl.css"
 
@@ -176,6 +172,18 @@ exclude-multi-locale = [
 [[paths]]
     reference = "toolkit/locales/en-US/toolkit/about/*Logging.ftl"
     l10n = "{l}toolkit/toolkit/about/*Logging.ftl"
+
+[[paths]]
+    reference = "toolkit/locales/en-US/toolkit/branding/brandings.ftl"
+    l10n = "{l}toolkit/toolkit/branding/brandings.ftl"
+
+[[paths]]
+    reference = "toolkit/locales/en-US/toolkit/global/processTypes.ftl"
+    l10n = "{l}toolkit/toolkit/global/processTypes.ftl"
+
+[[paths]]
+    reference = "toolkit/locales/en-US/toolkit/global/resetProfile.ftl"
+    l10n = "{l}toolkit/toolkit/global/resetProfile.ftl"
 
 [[filters]]
     path = [

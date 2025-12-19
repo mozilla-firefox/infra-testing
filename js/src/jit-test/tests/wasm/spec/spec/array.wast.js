@@ -50,13 +50,13 @@ assert_invalid(
 // ./test/core/gc/array.wast:37
 let $1 = instantiate(`(module
   (rec
-    (type $$s0 (array (ref $$s1)))
-    (type $$s1 (array (ref $$s0)))
+    (type \$s0 (array (ref \$s1)))
+    (type \$s1 (array (ref \$s0)))
   )
 
-  (func (param (ref $$forward)))
+  (func (param (ref \$forward)))
 
-  (type $$forward (array i32))
+  (type \$forward (array i32))
 )`);
 
 // ./test/core/gc/array.wast:48
@@ -67,39 +67,39 @@ assert_invalid(() => instantiate(`(module (type (array (mut (ref 1)))))`), `unkn
 
 // ./test/core/gc/array.wast:60
 let $2 = instantiate(`(module
-  (type $$vec (array f32))
-  (type $$mvec (array (mut f32)))
+  (type \$vec (array f32))
+  (type \$mvec (array (mut f32)))
 
-  (global (ref $$vec) (array.new $$vec (f32.const 1) (i32.const 3)))
-  (global (ref $$vec) (array.new_default $$vec (i32.const 3)))
+  (global (ref \$vec) (array.new \$vec (f32.const 1) (i32.const 3)))
+  (global (ref \$vec) (array.new_default \$vec (i32.const 3)))
 
-  (func $$new (export "new") (result (ref $$vec))
-    (array.new_default $$vec (i32.const 3))
+  (func \$new (export "new") (result (ref \$vec))
+    (array.new_default \$vec (i32.const 3))
   )
 
-  (func $$get (param $$i i32) (param $$v (ref $$vec)) (result f32)
-    (array.get $$vec (local.get $$v) (local.get $$i))
+  (func \$get (param \$i i32) (param \$v (ref \$vec)) (result f32)
+    (array.get \$vec (local.get \$v) (local.get \$i))
   )
-  (func (export "get") (param $$i i32) (result f32)
-    (call $$get (local.get $$i) (call $$new))
+  (func (export "get") (param \$i i32) (result f32)
+    (call \$get (local.get \$i) (call \$new))
   )
 
-  (func $$set_get (param $$i i32) (param $$v (ref $$mvec)) (param $$y f32) (result f32)
-    (array.set $$mvec (local.get $$v) (local.get $$i) (local.get $$y))
-    (array.get $$mvec (local.get $$v) (local.get $$i))
+  (func \$set_get (param \$i i32) (param \$v (ref \$mvec)) (param \$y f32) (result f32)
+    (array.set \$mvec (local.get \$v) (local.get \$i) (local.get \$y))
+    (array.get \$mvec (local.get \$v) (local.get \$i))
   )
-  (func (export "set_get") (param $$i i32) (param $$y f32) (result f32)
-    (call $$set_get (local.get $$i)
-      (array.new_default $$mvec (i32.const 3))
-      (local.get $$y)
+  (func (export "set_get") (param \$i i32) (param \$y f32) (result f32)
+    (call \$set_get (local.get \$i)
+      (array.new_default \$mvec (i32.const 3))
+      (local.get \$y)
     )
   )
 
-  (func $$len (param $$v (ref array)) (result i32)
-    (array.len (local.get $$v))
+  (func \$len (param \$v (ref array)) (result i32)
+    (array.len (local.get \$v))
   )
   (func (export "len") (result i32)
-    (call $$len (call $$new))
+    (call \$len (call \$new))
   )
 )`);
 
@@ -126,38 +126,38 @@ assert_trap(() => invoke($2, `set_get`, [10, value("f32", 7)]), `out of bounds a
 
 // ./test/core/gc/array.wast:106
 let $3 = instantiate(`(module
-  (type $$vec (array f32))
-  (type $$mvec (array (mut f32)))
+  (type \$vec (array f32))
+  (type \$mvec (array (mut f32)))
 
-  (global (ref $$vec) (array.new_fixed $$vec 2 (f32.const 1) (f32.const 2)))
+  (global (ref \$vec) (array.new_fixed \$vec 2 (f32.const 1) (f32.const 2)))
 
-  (func $$new (export "new") (result (ref $$vec))
-    (array.new_fixed $$vec 2 (f32.const 1) (f32.const 2))
+  (func \$new (export "new") (result (ref \$vec))
+    (array.new_fixed \$vec 2 (f32.const 1) (f32.const 2))
   )
 
-  (func $$get (param $$i i32) (param $$v (ref $$vec)) (result f32)
-    (array.get $$vec (local.get $$v) (local.get $$i))
+  (func \$get (param \$i i32) (param \$v (ref \$vec)) (result f32)
+    (array.get \$vec (local.get \$v) (local.get \$i))
   )
-  (func (export "get") (param $$i i32) (result f32)
-    (call $$get (local.get $$i) (call $$new))
+  (func (export "get") (param \$i i32) (result f32)
+    (call \$get (local.get \$i) (call \$new))
   )
 
-  (func $$set_get (param $$i i32) (param $$v (ref $$mvec)) (param $$y f32) (result f32)
-    (array.set $$mvec (local.get $$v) (local.get $$i) (local.get $$y))
-    (array.get $$mvec (local.get $$v) (local.get $$i))
+  (func \$set_get (param \$i i32) (param \$v (ref \$mvec)) (param \$y f32) (result f32)
+    (array.set \$mvec (local.get \$v) (local.get \$i) (local.get \$y))
+    (array.get \$mvec (local.get \$v) (local.get \$i))
   )
-  (func (export "set_get") (param $$i i32) (param $$y f32) (result f32)
-    (call $$set_get (local.get $$i)
-      (array.new_fixed $$mvec 3 (f32.const 1) (f32.const 2) (f32.const 3))
-      (local.get $$y)
+  (func (export "set_get") (param \$i i32) (param \$y f32) (result f32)
+    (call \$set_get (local.get \$i)
+      (array.new_fixed \$mvec 3 (f32.const 1) (f32.const 2) (f32.const 3))
+      (local.get \$y)
     )
   )
 
-  (func $$len (param $$v (ref array)) (result i32)
-    (array.len (local.get $$v))
+  (func \$len (param \$v (ref array)) (result i32)
+    (array.len (local.get \$v))
   )
   (func (export "len") (result i32)
-    (call $$len (call $$new))
+    (call \$len (call \$new))
   )
 )`);
 
@@ -184,202 +184,242 @@ assert_trap(() => invoke($3, `set_get`, [10, value("f32", 7)]), `out of bounds a
 
 // ./test/core/gc/array.wast:151
 let $4 = instantiate(`(module
-  (type $$vec (array i8))
-  (type $$mvec (array (mut i8)))
+  (type \$vec (array i8))
+  (type \$mvec (array (mut i8)))
 
-  (data $$d "\\00\\01\\02\\ff\\04")
+  (data \$d "\\00\\01\\02\\ff\\04")
 
-  (func $$new (export "new") (result (ref $$vec))
-    (array.new_data $$vec $$d (i32.const 1) (i32.const 3))
-  )
-
-  (func $$get_u (param $$i i32) (param $$v (ref $$vec)) (result i32)
-    (array.get_u $$vec (local.get $$v) (local.get $$i))
-  )
-  (func (export "get_u") (param $$i i32) (result i32)
-    (call $$get_u (local.get $$i) (call $$new))
+  (func \$new (export "new") (result (ref \$vec))
+    (array.new_data \$vec \$d (i32.const 1) (i32.const 3))
   )
 
-  (func $$get_s (param $$i i32) (param $$v (ref $$vec)) (result i32)
-    (array.get_s $$vec (local.get $$v) (local.get $$i))
-  )
-  (func (export "get_s") (param $$i i32) (result i32)
-    (call $$get_s (local.get $$i) (call $$new))
+  (func \$new-overflow (export "new-overflow") (result (ref \$vec))
+    (array.new_data \$vec \$d (i32.const 0x8000_0000) (i32.const 0x8000_0000))
   )
 
-  (func $$set_get (param $$i i32) (param $$v (ref $$mvec)) (param $$y i32) (result i32)
-    (array.set $$mvec (local.get $$v) (local.get $$i) (local.get $$y))
-    (array.get_u $$mvec (local.get $$v) (local.get $$i))
+  (func \$get_u (param \$i i32) (param \$v (ref \$vec)) (result i32)
+    (array.get_u \$vec (local.get \$v) (local.get \$i))
   )
-  (func (export "set_get") (param $$i i32) (param $$y i32) (result i32)
-    (call $$set_get (local.get $$i)
-      (array.new_data $$mvec $$d (i32.const 1) (i32.const 3))
-      (local.get $$y)
+  (func (export "get_u") (param \$i i32) (result i32)
+    (call \$get_u (local.get \$i) (call \$new))
+  )
+
+  (func \$get_s (param \$i i32) (param \$v (ref \$vec)) (result i32)
+    (array.get_s \$vec (local.get \$v) (local.get \$i))
+  )
+  (func (export "get_s") (param \$i i32) (result i32)
+    (call \$get_s (local.get \$i) (call \$new))
+  )
+
+  (func \$set_get (param \$i i32) (param \$v (ref \$mvec)) (param \$y i32) (result i32)
+    (array.set \$mvec (local.get \$v) (local.get \$i) (local.get \$y))
+    (array.get_u \$mvec (local.get \$v) (local.get \$i))
+  )
+  (func (export "set_get") (param \$i i32) (param \$y i32) (result i32)
+    (call \$set_get (local.get \$i)
+      (array.new_data \$mvec \$d (i32.const 1) (i32.const 3))
+      (local.get \$y)
     )
   )
 
-  (func $$len (param $$v (ref array)) (result i32)
-    (array.len (local.get $$v))
+  (func \$len (param \$v (ref array)) (result i32)
+    (array.len (local.get \$v))
   )
   (func (export "len") (result i32)
-    (call $$len (call $$new))
+    (call \$len (call \$new))
+  )
+
+  (func (export "drop_segs")
+    (data.drop \$d)
   )
 )`);
-
-// ./test/core/gc/array.wast:194
-assert_return(() => invoke($4, `new`, []), [new RefWithType('arrayref')]);
-
-// ./test/core/gc/array.wast:195
-assert_return(() => invoke($4, `new`, []), [new RefWithType('eqref')]);
-
-// ./test/core/gc/array.wast:196
-assert_return(() => invoke($4, `get_u`, [2]), [value("i32", 255)]);
-
-// ./test/core/gc/array.wast:197
-assert_return(() => invoke($4, `get_s`, [2]), [value("i32", -1)]);
-
-// ./test/core/gc/array.wast:198
-assert_return(() => invoke($4, `set_get`, [1, 7]), [value("i32", 7)]);
-
-// ./test/core/gc/array.wast:199
-assert_return(() => invoke($4, `len`, []), [value("i32", 3)]);
-
-// ./test/core/gc/array.wast:201
-assert_trap(() => invoke($4, `get_u`, [10]), `out of bounds array access`);
 
 // ./test/core/gc/array.wast:202
-assert_trap(() => invoke($4, `get_s`, [10]), `out of bounds array access`);
+assert_return(() => invoke($4, `new`, []), [new RefWithType('arrayref')]);
 
 // ./test/core/gc/array.wast:203
-assert_trap(() => invoke($4, `set_get`, [10, 7]), `out of bounds array access`);
+assert_return(() => invoke($4, `new`, []), [new RefWithType('eqref')]);
+
+// ./test/core/gc/array.wast:204
+assert_return(() => invoke($4, `get_u`, [2]), [value("i32", 255)]);
 
 // ./test/core/gc/array.wast:205
+assert_return(() => invoke($4, `get_s`, [2]), [value("i32", -1)]);
+
+// ./test/core/gc/array.wast:206
+assert_return(() => invoke($4, `set_get`, [1, 7]), [value("i32", 7)]);
+
+// ./test/core/gc/array.wast:207
+assert_return(() => invoke($4, `len`, []), [value("i32", 3)]);
+
+// ./test/core/gc/array.wast:209
+assert_trap(() => invoke($4, `new-overflow`, []), `out of bounds memory access`);
+
+// ./test/core/gc/array.wast:210
+assert_trap(() => invoke($4, `get_u`, [10]), `out of bounds array access`);
+
+// ./test/core/gc/array.wast:211
+assert_trap(() => invoke($4, `get_s`, [10]), `out of bounds array access`);
+
+// ./test/core/gc/array.wast:212
+assert_trap(() => invoke($4, `set_get`, [10, 7]), `out of bounds array access`);
+
+// ./test/core/gc/array.wast:214
+assert_return(() => invoke($4, `drop_segs`, []), []);
+
+// ./test/core/gc/array.wast:216
+assert_trap(() => invoke($4, `new`, []), `out of bounds memory access`);
+
+// ./test/core/gc/array.wast:217
+assert_trap(() => invoke($4, `new-overflow`, []), `out of bounds memory access`);
+
+// ./test/core/gc/array.wast:219
 let $5 = instantiate(`(module
-  (type $$bvec (array i8))
-  (type $$vec (array (ref $$bvec)))
-  (type $$mvec (array (mut (ref $$bvec))))
-  (type $$nvec (array (ref null $$bvec)))
-  (type $$avec (array (mut anyref)))
+  (type \$bvec (array i8))
+  (type \$vec (array (ref \$bvec)))
+  (type \$mvec (array (mut (ref \$bvec))))
+  (type \$nvec (array (ref null \$bvec)))
+  (type \$avec (array (mut anyref)))
 
-  (elem $$e (ref $$bvec)
-    (array.new $$bvec (i32.const 7) (i32.const 3))
-    (array.new_fixed $$bvec 2 (i32.const 1) (i32.const 2))
-  )
-
-  (func $$new (export "new") (result (ref $$vec))
-    (array.new_elem $$vec $$e (i32.const 0) (i32.const 2))
+  (elem \$e (ref \$bvec)
+    (array.new \$bvec (i32.const 7) (i32.const 3))
+    (array.new_fixed \$bvec 2 (i32.const 1) (i32.const 2))
   )
 
-  (func $$sub1 (result (ref $$nvec))
-    (array.new_elem $$nvec $$e (i32.const 0) (i32.const 2))
-  )
-  (func $$sub2 (result (ref $$avec))
-    (array.new_elem $$avec $$e (i32.const 0) (i32.const 2))
+  (func \$new (export "new") (result (ref \$vec))
+    (array.new_elem \$vec \$e (i32.const 0) (i32.const 2))
   )
 
-  (func $$get (param $$i i32) (param $$j i32) (param $$v (ref $$vec)) (result i32)
-    (array.get_u $$bvec (array.get $$vec (local.get $$v) (local.get $$i)) (local.get $$j))
-  )
-  (func (export "get") (param $$i i32) (param $$j i32) (result i32)
-    (call $$get (local.get $$i) (local.get $$j) (call $$new))
+  (func \$new-overflow (export "new-overflow") (result (ref \$vec))
+    (array.new_elem \$vec \$e (i32.const 0x8000_0000) (i32.const 0x8000_0000))
   )
 
-  (func $$set_get (param $$i i32) (param $$j i32) (param $$v (ref $$mvec)) (param $$y i32) (result i32)
-    (array.set $$mvec (local.get $$v) (local.get $$i) (array.get $$mvec (local.get $$v) (local.get $$y)))
-    (array.get_u $$bvec (array.get $$mvec (local.get $$v) (local.get $$i)) (local.get $$j))
+  (func \$sub1 (result (ref \$nvec))
+    (array.new_elem \$nvec \$e (i32.const 0) (i32.const 2))
   )
-  (func (export "set_get") (param $$i i32) (param $$j i32) (param $$y i32) (result i32)
-    (call $$set_get (local.get $$i) (local.get $$j)
-      (array.new_elem $$mvec $$e (i32.const 0) (i32.const 2))
-      (local.get $$y)
+  (func \$sub2 (result (ref \$avec))
+    (array.new_elem \$avec \$e (i32.const 0) (i32.const 2))
+  )
+
+  (func \$get (param \$i i32) (param \$j i32) (param \$v (ref \$vec)) (result i32)
+    (array.get_u \$bvec (array.get \$vec (local.get \$v) (local.get \$i)) (local.get \$j))
+  )
+  (func (export "get") (param \$i i32) (param \$j i32) (result i32)
+    (call \$get (local.get \$i) (local.get \$j) (call \$new))
+  )
+
+  (func \$set_get (param \$i i32) (param \$j i32) (param \$v (ref \$mvec)) (param \$y i32) (result i32)
+    (array.set \$mvec (local.get \$v) (local.get \$i) (array.get \$mvec (local.get \$v) (local.get \$y)))
+    (array.get_u \$bvec (array.get \$mvec (local.get \$v) (local.get \$i)) (local.get \$j))
+  )
+  (func (export "set_get") (param \$i i32) (param \$j i32) (param \$y i32) (result i32)
+    (call \$set_get (local.get \$i) (local.get \$j)
+      (array.new_elem \$mvec \$e (i32.const 0) (i32.const 2))
+      (local.get \$y)
     )
   )
 
-  (func $$len (param $$v (ref array)) (result i32)
-    (array.len (local.get $$v))
+  (func \$len (param \$v (ref array)) (result i32)
+    (array.len (local.get \$v))
   )
   (func (export "len") (result i32)
-    (call $$len (call $$new))
+    (call \$len (call \$new))
+  )
+
+  (func (export "drop_segs")
+    (elem.drop \$e)
   )
 )`);
 
-// ./test/core/gc/array.wast:254
+// ./test/core/gc/array.wast:276
 assert_return(() => invoke($5, `new`, []), [new RefWithType('arrayref')]);
 
-// ./test/core/gc/array.wast:255
+// ./test/core/gc/array.wast:277
 assert_return(() => invoke($5, `new`, []), [new RefWithType('eqref')]);
 
-// ./test/core/gc/array.wast:256
+// ./test/core/gc/array.wast:278
 assert_return(() => invoke($5, `get`, [0, 0]), [value("i32", 7)]);
 
-// ./test/core/gc/array.wast:257
+// ./test/core/gc/array.wast:279
 assert_return(() => invoke($5, `get`, [1, 0]), [value("i32", 1)]);
 
-// ./test/core/gc/array.wast:258
+// ./test/core/gc/array.wast:280
 assert_return(() => invoke($5, `set_get`, [0, 1, 1]), [value("i32", 2)]);
 
-// ./test/core/gc/array.wast:259
+// ./test/core/gc/array.wast:281
 assert_return(() => invoke($5, `len`, []), [value("i32", 2)]);
 
-// ./test/core/gc/array.wast:261
+// ./test/core/gc/array.wast:283
+assert_trap(() => invoke($5, `new-overflow`, []), `out of bounds table access`);
+
+// ./test/core/gc/array.wast:284
 assert_trap(() => invoke($5, `get`, [10, 0]), `out of bounds array access`);
 
-// ./test/core/gc/array.wast:262
+// ./test/core/gc/array.wast:285
 assert_trap(() => invoke($5, `set_get`, [10, 0, 0]), `out of bounds array access`);
 
-// ./test/core/gc/array.wast:264
+// ./test/core/gc/array.wast:287
+assert_return(() => invoke($5, `drop_segs`, []), []);
+
+// ./test/core/gc/array.wast:289
+assert_trap(() => invoke($5, `new`, []), `out of bounds table access`);
+
+// ./test/core/gc/array.wast:290
+assert_trap(() => invoke($5, `new-overflow`, []), `out of bounds table access`);
+
+// ./test/core/gc/array.wast:292
 assert_invalid(
   () => instantiate(`(module
-    (type $$a (array i64))
-    (func (export "array.set-immutable") (param $$a (ref $$a))
-      (array.set $$a (local.get $$a) (i32.const 0) (i64.const 1))
+    (type \$a (array i64))
+    (func (export "array.set-immutable") (param \$a (ref \$a))
+      (array.set \$a (local.get \$a) (i32.const 0) (i64.const 1))
     )
   )`),
   `array is immutable`,
 );
 
-// ./test/core/gc/array.wast:274
+// ./test/core/gc/array.wast:302
 assert_invalid(
   () => instantiate(`(module
-    (type $$bvec (array i8))
+    (type \$bvec (array i8))
 
-    (data $$d "\\00\\01\\02\\03\\04")
+    (data \$d "\\00\\01\\02\\03\\04")
 
-    (global (ref $$bvec)
-      (array.new_data $$bvec $$d (i32.const 1) (i32.const 3))
+    (global (ref \$bvec)
+      (array.new_data \$bvec \$d (i32.const 1) (i32.const 3))
     )
   )`),
   `constant expression required`,
 );
 
-// ./test/core/gc/array.wast:287
+// ./test/core/gc/array.wast:315
 assert_invalid(
   () => instantiate(`(module
-    (type $$bvec (array i8))
-    (type $$vvec (array (ref $$bvec)))
+    (type \$bvec (array i8))
+    (type \$vvec (array (ref \$bvec)))
 
-    (elem $$e (ref $$bvec) (ref.null $$bvec))
+    (elem \$e (ref \$bvec) (ref.null \$bvec))
 
-    (global (ref $$vvec)
-      (array.new_elem $$vvec $$e (i32.const 0) (i32.const 1))
+    (global (ref \$vvec)
+      (array.new_elem \$vvec \$e (i32.const 0) (i32.const 1))
     )
   )`),
   `constant expression required`,
 );
 
-// ./test/core/gc/array.wast:304
+// ./test/core/gc/array.wast:332
 let $6 = instantiate(`(module
-  (type $$t (array (mut i32)))
+  (type \$t (array (mut i32)))
   (func (export "array.get-null")
-    (local (ref null $$t)) (drop (array.get $$t (local.get 0) (i32.const 0)))
+    (local (ref null \$t)) (drop (array.get \$t (local.get 0) (i32.const 0)))
   )
   (func (export "array.set-null")
-    (local (ref null $$t)) (array.set $$t (local.get 0) (i32.const 0) (i32.const 0))
+    (local (ref null \$t)) (array.set \$t (local.get 0) (i32.const 0) (i32.const 0))
   )
 )`);
 
-// ./test/core/gc/array.wast:314
+// ./test/core/gc/array.wast:342
 assert_trap(() => invoke($6, `array.get-null`, []), `null array reference`);
 
-// ./test/core/gc/array.wast:315
+// ./test/core/gc/array.wast:343
 assert_trap(() => invoke($6, `array.set-null`, []), `null array reference`);

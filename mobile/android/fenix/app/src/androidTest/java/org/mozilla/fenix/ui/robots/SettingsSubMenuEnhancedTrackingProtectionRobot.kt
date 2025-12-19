@@ -5,6 +5,7 @@
 package org.mozilla.fenix.ui.robots
 
 import android.util.Log
+import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.Espresso.pressBack
@@ -35,7 +36,7 @@ import org.mozilla.fenix.helpers.click
 import org.mozilla.fenix.helpers.isChecked
 import org.mozilla.fenix.helpers.isEnabled
 
-const val globalPrivacyControlSwitchText = "Tell websites not to share & sell data"
+const val GLOBAL_PRIVACY_CONTROL_SWITCH_TEXT = "Tell websites not to share & sell data"
 
 /**
  * Implementation of Robot Pattern for the settings Enhanced Tracking Protection sub menu.
@@ -106,42 +107,42 @@ class SettingsSubMenuEnhancedTrackingProtectionRobot {
     }
 
     fun scrollToGCPSettings() {
-        Log.i(TAG, "scrollToGCPSettings: Trying to perform scroll to the $globalPrivacyControlSwitchText option")
+        Log.i(TAG, "scrollToGCPSettings: Trying to perform scroll to the $GLOBAL_PRIVACY_CONTROL_SWITCH_TEXT option")
         onView(withId(R.id.recycler_view)).perform(
             RecyclerViewActions.scrollTo<RecyclerView.ViewHolder>(
-                hasDescendant(withText(globalPrivacyControlSwitchText)),
+                hasDescendant(withText(GLOBAL_PRIVACY_CONTROL_SWITCH_TEXT)),
             ),
         )
-        Log.i(TAG, "scrollToGCPSettings: Performed scroll to the $globalPrivacyControlSwitchText option")
+        Log.i(TAG, "scrollToGCPSettings: Performed scroll to the $GLOBAL_PRIVACY_CONTROL_SWITCH_TEXT option")
     }
     fun verifyGPCTextWithSwitchWidget() {
-        Log.i(TAG, "verifyGPCTextWithSwitchWidget: Trying to verify that the $globalPrivacyControlSwitchText option is visible")
+        Log.i(TAG, "verifyGPCTextWithSwitchWidget: Trying to verify that the $GLOBAL_PRIVACY_CONTROL_SWITCH_TEXT option is visible")
         onView(
             allOf(
-                withChild(withText(globalPrivacyControlSwitchText)),
+                withChild(withText(GLOBAL_PRIVACY_CONTROL_SWITCH_TEXT)),
             ),
         ).check(matches(withEffectiveVisibility(Visibility.VISIBLE)))
-        Log.i(TAG, "verifyGPCTextWithSwitchWidget: Verified that the $globalPrivacyControlSwitchText option is visible")
+        Log.i(TAG, "verifyGPCTextWithSwitchWidget: Verified that the $GLOBAL_PRIVACY_CONTROL_SWITCH_TEXT option is visible")
     }
 
     fun verifyGPCSwitchEnabled(enabled: Boolean) {
-        Log.i(TAG, "verifyGPCSwitchEnabled: Trying to verify that the $globalPrivacyControlSwitchText option is checked: $enabled")
+        Log.i(TAG, "verifyGPCSwitchEnabled: Trying to verify that the $GLOBAL_PRIVACY_CONTROL_SWITCH_TEXT option is checked: $enabled")
         onView(
             allOf(
-                withChild(withText(globalPrivacyControlSwitchText)),
+                withChild(withText(GLOBAL_PRIVACY_CONTROL_SWITCH_TEXT)),
             ),
         ).check(matches(isChecked(enabled)))
-        Log.i(TAG, "verifyGPCSwitchEnabled: Verified that the $globalPrivacyControlSwitchText option is checked: $enabled")
+        Log.i(TAG, "verifyGPCSwitchEnabled: Verified that the $GLOBAL_PRIVACY_CONTROL_SWITCH_TEXT option is checked: $enabled")
     }
 
     fun switchGPCToggle() {
-        Log.i(TAG, "switchGPCToggle: Trying to click the $globalPrivacyControlSwitchText option toggle")
+        Log.i(TAG, "switchGPCToggle: Trying to click the $GLOBAL_PRIVACY_CONTROL_SWITCH_TEXT option toggle")
         onView(
             allOf(
-                withChild(withText(globalPrivacyControlSwitchText)),
+                withChild(withText(GLOBAL_PRIVACY_CONTROL_SWITCH_TEXT)),
             ),
         ).click()
-        Log.i(TAG, "switchGPCToggle: Clicked the $globalPrivacyControlSwitchText option toggle")
+        Log.i(TAG, "switchGPCToggle: Clicked the $GLOBAL_PRIVACY_CONTROL_SWITCH_TEXT option toggle")
     }
 
     fun verifyStandardOptionDescription() {
@@ -270,7 +271,7 @@ class SettingsSubMenuEnhancedTrackingProtectionRobot {
     }
 
     class Transition {
-        fun goBackToHomeScreen(interact: HomeScreenRobot.() -> Unit): HomeScreenRobot.Transition {
+        fun goBackToHomeScreen(composeTestRule: ComposeTestRule, interact: HomeScreenRobot.() -> Unit): HomeScreenRobot.Transition {
             // To settings
             Log.i(TAG, "goBackToHomeScreen: Trying to click the navigate up toolbar button")
             goBackButton().click()
@@ -280,8 +281,8 @@ class SettingsSubMenuEnhancedTrackingProtectionRobot {
             pressBack()
             Log.i(TAG, "goBackToHomeScreen: Performed press back action")
 
-            HomeScreenRobot().interact()
-            return HomeScreenRobot.Transition()
+            HomeScreenRobot(composeTestRule).interact()
+            return HomeScreenRobot.Transition(composeTestRule)
         }
 
         fun goBack(interact: SettingsRobot.() -> Unit): SettingsRobot.Transition {

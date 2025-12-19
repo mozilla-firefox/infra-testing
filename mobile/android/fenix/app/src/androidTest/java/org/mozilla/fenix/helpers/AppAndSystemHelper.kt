@@ -20,6 +20,7 @@ import android.provider.Settings
 import android.util.Log
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
+import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.core.net.toUri
 import androidx.core.os.LocaleListCompat
 import androidx.test.espresso.Espresso
@@ -34,7 +35,9 @@ import androidx.test.uiautomator.UiObject
 import androidx.test.uiautomator.UiSelector
 import androidx.test.uiautomator.Until
 import junit.framework.AssertionFailedError
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import mozilla.appservices.places.BookmarkRoot
 import mozilla.components.browser.storage.sync.PlacesBookmarksStorage
 import mozilla.components.browser.storage.sync.PlacesHistoryStorage
@@ -45,6 +48,7 @@ import org.junit.Assert.assertEquals
 import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.components.PermissionStorage
 import org.mozilla.fenix.customtabs.ExternalAppBrowserActivity
+import org.mozilla.fenix.debugsettings.data.DefaultDebugSettingsRepository
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.helpers.Constants.PackageName.PIXEL_LAUNCHER
 import org.mozilla.fenix.helpers.Constants.PackageName.YOUTUBE_APP
@@ -71,11 +75,10 @@ import java.util.regex.Pattern
 object AppAndSystemHelper {
 
     private val bookmarksStorage = PlacesBookmarksStorage(appContext.applicationContext)
-    suspend fun bookmarks() = bookmarksStorage.getTree(BookmarkRoot.Mobile.id)?.children
+    suspend fun bookmarks() = bookmarksStorage.getTree(BookmarkRoot.Mobile.id).getOrNull()?.children
     fun getPermissionAllowID(): String {
         Log.i(TAG, "getPermissionAllowID: Trying to get the permission button resource ID based on API.")
-        return when
-            (Build.VERSION.SDK_INT > Build.VERSION_CODES.P) {
+        return when (Build.VERSION.SDK_INT > Build.VERSION_CODES.P) {
             true -> {
                 Log.i(TAG, "getPermissionAllowID: Getting the permission button resource ID for API ${Build.VERSION.SDK_INT}.")
                 "com.android.permissioncontroller"
@@ -158,7 +161,7 @@ object AppAndSystemHelper {
                         "clearDownloadsFolder: Before cleanup: Downloads storage contains: ${files.size} file(s).",
                     )
                     // Delete all files in the folder
-                    for (file in files!!) {
+                    for (file in files) {
                         Log.i(
                             TAG,
                             "clearDownloadsFolder: Trying to delete $file from \"DOWNLOADS\" folder.",
@@ -249,72 +252,78 @@ object AppAndSystemHelper {
 
         when (enabled) {
             true -> {
-                Log.i(
-                    TAG,
-                    "setNetworkEnabled: Trying to enable the network connection.",
-                )
+                Log.i(TAG, "setNetworkEnabled: Trying to enable the network connection.")
                 mDevice.executeShellCommand("svc data enable")
-                Log.i(
-                    TAG,
-                    "setNetworkEnabled: Data network connection enable command sent.",
-                )
+                Log.i(TAG, "setNetworkEnabled: Data network connection enable command sent.")
                 mDevice.executeShellCommand("svc wifi enable")
-                Log.i(
-                    TAG,
-                    "setNetworkEnabled: Wifi network connection enable command sent.",
-                )
+                Log.i(TAG, "setNetworkEnabled: Wifi network connection enable command sent.")
 
                 // Wait for network connection to be completely enabled
                 Log.i(TAG, "setNetworkEnabled: Waiting for connection to be enabled.")
-                IdlingRegistry.getInstance().register(networkConnectedIdlingResource)
-                Espresso.onIdle {
-                    IdlingRegistry.getInstance().unregister(networkConnectedIdlingResource)
-                }
-                Log.i(TAG, "setNetworkEnabled: Network connection was enabled.")
 
-                // Register the TimerIdlingResource
-                IdlingRegistry.getInstance().register(enableNetworkTimerIdlingResource)
+                // Wait until both idling resources are idle
+                val registered = IdlingRegistry.getInstance().register(
+                    networkConnectedIdlingResource,
+                    enableNetworkTimerIdlingResource,
+                )
 
-                // Wait for the TimerIdlingResource to become idle
-                Espresso.onIdle {
-                    IdlingRegistry.getInstance().unregister(networkConnectedIdlingResource)
-                    // Check the active network state
-                    checkActiveNetworkState(enabled = true)
+                Log.i(TAG, "setNetworkEnabled: Trying to verify that the idling resources for enabling the connection are registered.")
+                if (registered) {
+                    Log.i(TAG, "setNetworkEnabled: Verified that the idling resources for enabling the connection are registered.")
+                    Espresso.onIdle {
+                        // Unregister resources after they become idle
+                        val unregistered = IdlingRegistry.getInstance().unregister(
+                            networkConnectedIdlingResource,
+                            enableNetworkTimerIdlingResource,
+                        )
+                        Log.i(TAG, "setNetworkEnabled: Trying to verify that the idling resources for enabling the connection are unregistered.")
+                        if (unregistered) {
+                            Log.i(TAG, "setNetworkEnabled: Verified that the idling resources for enabling the connection are unregistered.")
+                            Log.i(TAG, "setNetworkEnabled: Network connection was enabled.")
+                            checkActiveNetworkState(enabled = true)
+                        } else {
+                            Log.i(TAG, "setNetworkEnabled: Failed to unregister the idling resources for enabling the connection.")
+                        }
+                    }
+                } else {
+                    Log.i(TAG, "setNetworkEnabled: Failed to register idling resources for enabling the connection.")
                 }
             }
 
             false -> {
-                Log.i(
-                    TAG,
-                    "setNetworkEnabled: Trying to disable the network connection.",
-                )
+                Log.i(TAG, "setNetworkEnabled: Trying to disable the network connection.")
                 mDevice.executeShellCommand("svc data disable")
-                Log.i(
-                    TAG,
-                    "setNetworkEnabled: Data network connection disable command sent.",
-                )
+                Log.i(TAG, "setNetworkEnabled: Data network connection disable command sent.")
                 mDevice.executeShellCommand("svc wifi disable")
-                Log.i(
-                    TAG,
-                    "setNetworkEnabled: Wifi network connection disable command sent.",
-                )
+                Log.i(TAG, "setNetworkEnabled: Wifi network connection disable command sent.")
 
                 // Wait for network connection to be completely disabled
                 Log.i(TAG, "setNetworkEnabled: Waiting for connection to be disabled.")
-                IdlingRegistry.getInstance().register(networkDisconnectedIdlingResource)
-                Espresso.onIdle {
-                    IdlingRegistry.getInstance().unregister(networkDisconnectedIdlingResource)
-                }
-                Log.i(TAG, "setNetworkEnabled: Network connection was disabled.")
 
-                // Register the TimerIdlingResource
-                IdlingRegistry.getInstance().register(enableNetworkTimerIdlingResource)
+                val registered = IdlingRegistry.getInstance().register(
+                    networkDisconnectedIdlingResource,
+                    disableNetworkTimerIdlingResource,
+                )
 
-                // Wait for the TimerIdlingResource to become idle
-                Espresso.onIdle {
-                    IdlingRegistry.getInstance().unregister(disableNetworkTimerIdlingResource)
-                    // Check the active network state
-                    checkActiveNetworkState(enabled = false)
+                Log.i(TAG, "setNetworkEnabled: Trying to verify that the idling resources for disabling the connection are registered.")
+                if (registered) {
+                    Log.i(TAG, "setNetworkEnabled: Verified that the idling resources for disabling the connection are registered.")
+                    Espresso.onIdle {
+                        val unregistered = IdlingRegistry.getInstance().unregister(
+                            networkDisconnectedIdlingResource,
+                            disableNetworkTimerIdlingResource,
+                        )
+                        Log.i(TAG, "setNetworkEnabled: Trying to verify that the idling resources for disabling the connection are unregistered.")
+                        if (unregistered) {
+                            Log.i(TAG, "setNetworkEnabled: Verified that the idling resources for disabling the connection are unregistered.")
+                            Log.i(TAG, "setNetworkEnabled: Network connection was disabled.")
+                            checkActiveNetworkState(enabled = false)
+                        } else {
+                            Log.i(TAG, "setNetworkEnabled: Failed to unregister the idling resources for disabling the connection.")
+                        }
+                    }
+                } else {
+                    Log.i(TAG, "setNetworkEnabled: Failed to register idling resources for disabling the connection.")
                 }
             }
         }
@@ -373,7 +382,7 @@ object AppAndSystemHelper {
         }
     }
 
-    fun assertNativeAppOpens(appPackageName: String, url: String = "") {
+    fun assertNativeAppOpens(composeTestRule: ComposeTestRule, appPackageName: String, url: String = "") {
         if (isPackageInstalled(appPackageName)) {
             Log.i(TAG, "assertNativeAppOpens: Waiting for the device to be idle $waitingTimeShort ms.")
             mDevice.waitForIdle(waitingTimeShort)
@@ -390,7 +399,7 @@ object AppAndSystemHelper {
             forceCloseApp(appPackageName)
         } else {
             Log.i(TAG, "assertNativeAppOpens: Trying to verify the page redirect URL.")
-            BrowserRobot().verifyUrl(url)
+            BrowserRobot(composeTestRule).verifyUrl(url)
             Log.i(TAG, "assertNativeAppOpens: Verified the page redirect URL.")
         }
     }
@@ -480,16 +489,14 @@ object AppAndSystemHelper {
                     .className("android.widget.Button"),
             )
 
-        if (Build.VERSION.SDK_INT >= 23) {
-            if (whileUsingTheAppPermissionButton.waitForExists(waitingTimeShort)) {
-                Log.i(TAG, "grantSystemPermission: Trying to click the \"While using the app\" button.")
-                whileUsingTheAppPermissionButton.click()
-                Log.i(TAG, "grantSystemPermission: Clicked the \"While using the app\" button.")
-            } else if (allowPermissionButton.waitForExists(waitingTimeShort)) {
-                Log.i(TAG, "grantSystemPermission: Trying to click the \"Allow\" button.")
-                allowPermissionButton.click()
-                Log.i(TAG, "grantSystemPermission: Clicked the \"Allow\" button.")
-            }
+        if (whileUsingTheAppPermissionButton.waitForExists(waitingTimeShort)) {
+            Log.i(TAG, "grantSystemPermission: Trying to click the \"While using the app\" button.")
+            whileUsingTheAppPermissionButton.click()
+            Log.i(TAG, "grantSystemPermission: Clicked the \"While using the app\" button.")
+        } else if (allowPermissionButton.waitForExists(waitingTimeShort)) {
+            Log.i(TAG, "grantSystemPermission: Trying to click the \"Allow\" button.")
+            allowPermissionButton.click()
+            Log.i(TAG, "grantSystemPermission: Clicked the \"Allow\" button.")
         }
     }
 
@@ -771,5 +778,9 @@ object AppAndSystemHelper {
 
         Log.i(TAG, "isNetworkConnected: Checking if network is connected: $isConnected")
         return isConnected
+    }
+
+    suspend fun disableDebugDrawer() = withContext(Dispatchers.IO) {
+        DefaultDebugSettingsRepository(context = appContext, writeScope = this).setDebugDrawerEnabled(false)
     }
 }

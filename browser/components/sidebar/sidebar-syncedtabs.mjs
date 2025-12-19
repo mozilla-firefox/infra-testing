@@ -4,7 +4,10 @@
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   SyncedTabsController: "resource:///modules/SyncedTabsController.sys.mjs",
+  SidebarTreeView:
+    "moz-src:///browser/components/sidebar/SidebarTreeView.sys.mjs",
 });
 
 import {
@@ -24,13 +27,15 @@ class SyncedTabsInSidebar extends SidebarPage {
 
   static queries = {
     cards: { all: "moz-card" },
-    searchTextbox: "fxview-search-textbox",
+    lists: { all: "sidebar-tab-list" },
+    searchTextbox: "moz-input-search",
   };
 
   constructor() {
     super();
     this.onSearchQuery = this.onSearchQuery.bind(this);
     this.onSecondaryAction = this.onSecondaryAction.bind(this);
+    this.treeView = new lazy.SidebarTreeView(this, { multiSelect: false });
   }
 
   connectedCallback() {
@@ -60,7 +65,9 @@ class SyncedTabsInSidebar extends SidebarPage {
   }
 
   handleContextMenuEvent(e) {
-    this.triggerNode = this.findTriggerNode(e, "sidebar-tab-row");
+    this.triggerNode =
+      this.findTriggerNode(e, "sidebar-tab-row") ||
+      this.findTriggerNode(e, "moz-input-search");
     if (!this.triggerNode) {
       e.preventDefault();
       return;
@@ -75,6 +82,11 @@ class SyncedTabsInSidebar extends SidebarPage {
     );
     // Enable the feature only if the device supports it
     closeTabMenuItem.disabled = !this.triggerNode.canClose;
+
+    let privateWindowMenuItem = contextMenu.querySelector(
+      "#sidebar-synced-tabs-context-open-in-private-window"
+    );
+    privateWindowMenuItem.hidden = !lazy.PrivateBrowsingUtils.enabled;
   }
 
   handleCommandEvent(e) {
@@ -168,18 +180,20 @@ class SyncedTabsInSidebar extends SidebarPage {
       type="accordion"
       expanded
       .heading=${deviceName}
-      icon
+      .iconSrc=${this.getDeviceIconSrc(deviceType)}
       class=${deviceType}
+      @keydown=${e => this.treeView.handleCardKeydown(e)}
     >
       <sidebar-tab-list
         compactRows
         maxTabsLength="-1"
         .tabItems=${tabItems}
+        .multiSelect=${false}
         .updatesPaused=${false}
         .searchQuery=${this.controller.searchQuery}
         @fxview-tab-list-primary-action=${navigateToLink}
         @fxview-tab-list-secondary-action=${this.onSecondaryAction}
-      />
+      ></sidebar-tab-list>
     </moz-card>`;
   }
 
@@ -193,7 +207,7 @@ class SyncedTabsInSidebar extends SidebarPage {
   noDeviceTabsTemplate(deviceName, deviceType) {
     return html`<moz-card
       .heading=${deviceName}
-      icon
+      .iconSrc=${this.getDeviceIconSrc(deviceType)}
       class=${deviceType}
       data-l10n-id="firefoxview-syncedtabs-device-notabs"
     >
@@ -211,7 +225,7 @@ class SyncedTabsInSidebar extends SidebarPage {
   noSearchResultsTemplate(deviceName, deviceType) {
     return html`<moz-card
       .heading=${deviceName}
-      icon
+      .iconSrc=${this.getDeviceIconSrc(deviceType)}
       class=${deviceType}
       data-l10n-id="firefoxview-search-results-empty"
       data-l10n-args=${JSON.stringify({
@@ -287,6 +301,21 @@ class SyncedTabsInSidebar extends SidebarPage {
       );
   }
 
+  getDeviceIconSrc(deviceType) {
+    const phone = "chrome://browser/skin/device-phone.svg";
+    const desktop = "chrome://browser/skin/device-desktop.svg";
+    const tablet = "chrome://browser/skin/device-tablet.svg";
+
+    const deviceIcons = {
+      desktop,
+      mobile: phone,
+      phone,
+      tablet,
+    };
+
+    return deviceIcons[deviceType] || null;
+  }
+
   render() {
     const messageCard = this.controller.getMessageCard();
     return html`
@@ -297,18 +326,19 @@ class SyncedTabsInSidebar extends SidebarPage {
           data-l10n-attrs="heading"
           view="viewTabsSidebar"
         >
+          <moz-input-search
+            data-l10n-id="firefoxview-search-text-box-tabs"
+            data-l10n-attrs="placeholder"
+            @MozInputSearch:search=${this.onSearchQuery}
+          ></moz-input-search>
         </sidebar-panel-header>
-        <fxview-search-textbox
-          data-l10n-id="firefoxview-search-text-box-tabs"
-          data-l10n-attrs="placeholder"
-          @fxview-search-textbox-query=${this.onSearchQuery}
-          size="15"
-        ></fxview-search-textbox>
-        ${when(
-          messageCard,
-          () => this.messageCardTemplate(messageCard),
-          () => html`${this.deviceListTemplate()}`
-        )}
+        <div class="sidebar-panel-scrollable-content">
+          ${when(
+            messageCard,
+            () => this.messageCardTemplate(messageCard),
+            () => html`${this.deviceListTemplate()}`
+          )}
+        </div>
       </div>
     `;
   }

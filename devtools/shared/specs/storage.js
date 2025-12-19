@@ -59,6 +59,7 @@ types.addDictType("cookieobject", {
   isSecure: "boolean",
   isHttpOnly: "boolean",
   creationTime: "number",
+  updateTime: "number",
   lastAccessed: "number",
   expires: "number",
 });
@@ -68,6 +69,11 @@ types.addDictType("cookiestoreobject", {
   total: "number",
   offset: "number",
   data: "array:nullable:cookieobject",
+});
+
+// Result of add/edit cookie operation: can throw error
+types.addDictType("cookieoperationresult", {
+  errorString: "nullable:string",
 });
 
 // Common methods for edit/remove
@@ -106,7 +112,13 @@ createStorageSpec({
           guid: Arg(0, "string"),
           host: Arg(1, "nullable:string"),
         },
-        response: {},
+        response: RetVal("cookieoperationresult"),
+      },
+    },
+    {
+      editItem: {
+        request: editRemoveMethods.editItem.request,
+        response: RetVal("cookieoperationresult"),
       },
     },
     {

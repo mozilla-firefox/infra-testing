@@ -45,12 +45,11 @@ path = "src/lib.rs"
 [dependencies]
 anyhow = "1.0"
 camino = "1.0"
-log = "0.4"
 parking_lot = "0.12"
 regex = "1.9"
 serde_json = "1"
 sha2 = "^0.10"
-thiserror = "1.0"
+thiserror = "2"
 url = "2"
 
 [dependencies.canonical_json]
@@ -59,19 +58,20 @@ optional = true
 
 [dependencies.error-support]
 path = "../support/error"
+features = ["tracing-logging"]
 
 [dependencies.firefox-versioning]
 path = "../support/firefox-versioning"
 
 [dependencies.jexl-eval]
-version = "0.3.0"
+version = "0.4.0"
 
 [dependencies.rc_crypto]
 path = "../support/rc_crypto"
 optional = true
 
 [dependencies.rusqlite]
-version = "0.33.0"
+version = "0.37.0"
 features = ["bundled"]
 
 [dependencies.serde]
@@ -89,8 +89,11 @@ path = "../viaduct"
 
 [dev-dependencies]
 expect-test = "1.4"
-mockall = "0.11"
-mockito = "0.31"
+mockall = "0.12"
+
+[dev-dependencies.mockito]
+version = "0.31"
+default-features = false
 
 [dev-dependencies.nss]
 path = "../support/rc_crypto/nss"
@@ -99,8 +102,8 @@ path = "../support/rc_crypto/nss"
 version = "1"
 features = ["preserve_order"]
 
-[dev-dependencies.viaduct-reqwest]
-path = "../support/viaduct-reqwest"
+[dev-dependencies.viaduct-dev]
+path = "../support/viaduct-dev"
 
 [build-dependencies.uniffi]
 version = "0.29.0"

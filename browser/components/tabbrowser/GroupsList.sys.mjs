@@ -67,9 +67,9 @@ export class GroupsPanel {
   }
 
   #handleCommand(event) {
-    let { tabGroupId } = event.target.dataset;
+    let { tabGroupId, command } = event.target.dataset;
 
-    switch (event.target.dataset.command) {
+    switch (command) {
       case "allTabsGroupView_selectGroup": {
         let group = this.win.gBrowser.getTabGroupById(tabGroupId);
         group.select();
@@ -99,11 +99,9 @@ export class GroupsPanel {
   #populate() {
     let fragment = this.doc.createDocumentFragment();
 
-    let openGroups = this.win.gBrowser.getAllTabGroups();
-    openGroups.sort(
-      (group1, group2) => group2.lastSeenActive - group1.lastSeenActive
-    );
-
+    let openGroups = this.win.gBrowser.getAllTabGroups({
+      sortByLastSeenActive: true,
+    });
     let savedGroups = [];
     if (!PrivateBrowsingUtils.isWindowPrivate(this.win)) {
       savedGroups = this.win.SessionStore.savedGroups.toSorted(
@@ -132,7 +130,6 @@ export class GroupsPanel {
       let row = this.#createRow(groupData);
       let button = row.querySelector("toolbarbutton");
       button.dataset.command = "allTabsGroupView_selectGroup";
-      button.dataset.tabGroupId = groupData.id;
       button.setAttribute("context", "open-tab-group-context-menu");
       fragment.appendChild(row);
     }
@@ -145,7 +142,6 @@ export class GroupsPanel {
       let row = this.#createRow(groupData, { isOpen: false });
       let button = row.querySelector("toolbarbutton");
       button.dataset.command = "allTabsGroupView_restoreGroup";
-      button.dataset.tabGroupId = groupData.id;
       button.classList.add("all-tabs-group-saved-group");
       button.setAttribute("context", "saved-tab-group-context-menu");
       fragment.appendChild(row);
@@ -194,6 +190,7 @@ export class GroupsPanel {
       "class",
       "all-tabs-button subviewbutton subviewbutton-iconic all-tabs-group-action-button"
     );
+    button.dataset.tabGroupId = group.id;
     if (!isOpen) {
       button.classList.add(
         "all-tabs-group-saved-group",

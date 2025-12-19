@@ -111,11 +111,6 @@ MKDIR ?= mkdir
 SLEEP ?= sleep
 TOUCH ?= touch
 
-#
-# Build using PIC by default
-#
-_ENABLE_PIC=1
-
 # Don't build SIMPLE_PROGRAMS with PGO, since they don't need it anyway,
 # and we don't have the same build logic to re-link them in the second pass.
 ifdef SIMPLE_PROGRAMS
@@ -187,8 +182,8 @@ SFLAGS = $(COMPUTED_SFLAGS)
 
 HOST_CFLAGS = $(COMPUTED_HOST_CFLAGS) $(_HOST_DEPEND_CFLAGS)
 HOST_CXXFLAGS = $(COMPUTED_HOST_CXXFLAGS) $(_HOST_DEPEND_CFLAGS)
-HOST_C_LDFLAGS = $(COMPUTED_HOST_C_LDFLAGS)
-HOST_CXX_LDFLAGS = $(COMPUTED_HOST_CXX_LDFLAGS)
+HOST_C_LDFLAGS = $(COMPUTED_HOST_LDFLAGS) $(COMPUTED_HOST_C_LDFLAGS)
+HOST_CXX_LDFLAGS = $(COMPUTED_HOST_LDFLAGS) $(COMPUTED_HOST_CXX_LDFLAGS)
 
 WASM_CFLAGS = $(COMPUTED_WASM_CFLAGS) $(_DEPEND_CFLAGS) $(MK_COMPILE_DEFINES)
 WASM_CXXFLAGS = $(COMPUTED_WASM_CXXFLAGS) $(_DEPEND_CFLAGS) $(MK_COMPILE_DEFINES)
@@ -270,20 +265,6 @@ endif
 ifdef CCACHE_PREFIX
 export CCACHE_PREFIX
 endif
-
-# Set link flags according to whether we want a console.
-ifeq ($(OS_ARCH),WINNT)
-ifdef MOZ_WINCONSOLE
-ifeq ($(MOZ_WINCONSOLE),1)
-WIN32_EXE_LDFLAGS	+= $(WIN32_CONSOLE_EXE_LDFLAGS)
-else # MOZ_WINCONSOLE
-WIN32_EXE_LDFLAGS	+= $(WIN32_GUI_EXE_LDFLAGS)
-endif
-else
-# For setting subsystem version
-WIN32_EXE_LDFLAGS	+= $(WIN32_CONSOLE_EXE_LDFLAGS)
-endif
-endif # WINNT
 
 ifeq ($(OS_ARCH),WINNT)
 ifneq (,$(filter msvc clang-cl,$(CC_TYPE)))

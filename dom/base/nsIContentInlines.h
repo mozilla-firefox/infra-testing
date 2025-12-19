@@ -7,14 +7,14 @@
 #ifndef nsIContentInlines_h
 #define nsIContentInlines_h
 
-#include "nsIContent.h"
 #include "mozilla/dom/Document.h"
-#include "nsContentUtils.h"
-#include "nsAtom.h"
-#include "nsIFrame.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLSlotElement.h"
 #include "mozilla/dom/ShadowRoot.h"
+#include "nsAtom.h"
+#include "nsContentUtils.h"
+#include "nsIContent.h"
+#include "nsIFrame.h"
 
 inline bool nsIContent::IsInHTMLDocument() const {
   return OwnerDoc()->IsHTMLDocument();
@@ -144,9 +144,8 @@ inline nsINode* nsINode::GetFlattenedTreeParentNodeForStyle() const {
   return ::GetFlattenedTreeParentNode<nsINode::eForStyle>(this);
 }
 
-inline nsIContent* nsINode::GetFlattenedTreeParentNodeForSelection() const {
-  nsINode* parent = ::GetFlattenedTreeParentNode<nsINode::eForSelection>(this);
-  return (parent && parent->IsContent()) ? parent->AsContent() : nullptr;
+inline nsINode* nsINode::GetFlattenedTreeParentNodeForSelection() const {
+  return ::GetFlattenedTreeParentNode<nsINode::eForSelection>(this);
 }
 
 inline bool nsINode::NodeOrAncestorHasDirAuto() const {
@@ -252,17 +251,18 @@ inline void nsIContent::HandleShadowDOMRelatedInsertionSteps(bool aHadParent) {
   }
 }
 
-inline void nsIContent::HandleShadowDOMRelatedRemovalSteps(bool aNullParent) {
+inline void nsIContent::HandleShadowDOMRelatedRemovalSteps(bool aNullParent,
+                                                           bool aInBatch) {
   using mozilla::dom::Element;
   using mozilla::dom::ShadowRoot;
 
   if (aNullParent) {
     // FIXME(emilio, bug 1577141): FromNodeOrNull rather than just FromNode
-    // because XBL likes to call UnbindFromTree at very odd times (with already
-    // disconnected anonymous content subtrees).
+    // because frame destruction likes to call UnbindFromTree at very odd times
+    // (with already disconnected anonymous content subtrees).
     if (Element* parentElement = Element::FromNodeOrNull(mParent)) {
       if (ShadowRoot* shadow = parentElement->GetShadowRoot()) {
-        shadow->MaybeUnslotHostChild(*this);
+        shadow->MaybeUnslotHostChild(*this, aInBatch);
       }
       HandleInsertionToOrRemovalFromSlot();
     }

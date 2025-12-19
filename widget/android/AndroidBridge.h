@@ -48,11 +48,6 @@ class AndroidBridge final {
   void GetIconForExtension(const nsACString& aFileExt, uint32_t aIconSize,
                            uint8_t* const aBuf);
 
-  // Returns a global reference to the Context for Fennec's Activity. The
-  // caller is responsible for ensuring this doesn't leak by calling
-  // DeleteGlobalRef() when the context is no longer needed.
-  jobject GetGlobalContextRef(void);
-
   void GetCurrentBatteryInformation(hal::BatteryInformation* aBatteryInfo);
 
   void GetCurrentNetworkInformation(hal::NetworkInformation* aNetworkInfo);
@@ -219,12 +214,8 @@ class AutoLocalJNIFrame {
 
 }  // namespace mozilla
 
-#define NS_ANDROIDBRIDGE_CID                         \
-  {                                                  \
-    0x0FE2321D, 0xEBD9, 0x467D, {                    \
-      0xA7, 0x43, 0x03, 0xA6, 0x8D, 0x40, 0x59, 0x9E \
-    }                                                \
-  }
+#define NS_ANDROIDBRIDGE_CID \
+  {0x0FE2321D, 0xEBD9, 0x467D, {0xA7, 0x43, 0x03, 0xA6, 0x8D, 0x40, 0x59, 0x9E}}
 
 class nsAndroidBridge final : public nsIGeckoViewBridge {
  public:

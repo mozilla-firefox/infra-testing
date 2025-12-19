@@ -3,7 +3,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* eslint-disable mozilla/valid-lazy */
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
@@ -12,7 +11,8 @@ const lazy = XPCOMUtils.declareLazy({
   ExtensionUtils: "resource://gre/modules/ExtensionUtils.sys.mjs",
   storageSyncService:
     "resource://gre/modules/ExtensionStorageComponents.sys.mjs",
-  QuotaError: "resource://gre/modules/RustWebextstorage.sys.mjs",
+  QuotaError:
+    "moz-src:///toolkit/components/uniffi-bindgen-gecko-js/components/generated/RustWebextstorage.sys.mjs",
 });
 
 // The backing implementation of the browser.storage.sync web extension API.
@@ -58,6 +58,10 @@ export class ExtensionStorageSync {
           let result = await rustStore.get(extId, ...sargs);
           return JSON.parse(result);
         }
+        case "getKeys": {
+          let result = await rustStore.getKeys(extId);
+          return JSON.parse(result);
+        }
         case "getBytesInUse": {
           let result = await rustStore.getBytesInUse(extId, ...sargs);
           return JSON.parse(result);
@@ -66,13 +70,17 @@ export class ExtensionStorageSync {
     } catch (ex) {
       // The only "public" exception here is for quota failure - all others
       // are sanitized.
-      let sanitized =
-        ex instanceof lazy.QuotaError
-          ? // The same message as the local IDB implementation
-            "QuotaExceededError: storage.sync API call exceeded its quota limitations."
-          : // The standard, generic extension error.
-            "An unexpected error occurred";
-      throw new lazy.ExtensionUtils.ExtensionError(sanitized);
+      if (ex instanceof lazy.QuotaError) {
+        // The same message as the local IDB implementation
+        throw new lazy.ExtensionUtils.ExtensionError(
+          "QuotaExceededError: storage.sync API call exceeded its quota limitations."
+        );
+      }
+      Cu.reportError(ex);
+      // The standard, generic extension error.
+      throw new lazy.ExtensionUtils.ExtensionError(
+        "An unexpected error occurred"
+      );
     }
   }
 
@@ -102,6 +110,10 @@ export class ExtensionStorageSync {
 
   async get(extension, spec) {
     return await this.callRustStoreFn("get", extension, spec);
+  }
+
+  async getKeys(extension) {
+    return await this.callRustStoreFn("getKeys", extension);
   }
 
   async getBytesInUse(extension, keys) {

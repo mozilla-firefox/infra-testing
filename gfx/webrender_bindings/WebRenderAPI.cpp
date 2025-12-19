@@ -11,16 +11,26 @@
 #include "mozilla/webrender/RendererOGL.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/layers/CompositorThread.h"
+#include "mozilla/HelperMacros.h"
 #include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/StaticPrefs_webgl.h"
 #include "mozilla/ToString.h"
 #include "mozilla/webrender/RenderCompositor.h"
 #include "mozilla/widget/CompositorWidget.h"
 #include "mozilla/layers/SynchronousTask.h"
+#include "nsDisplayList.h"
 #include "nsThreadUtils.h"
 #include "TextDrawTarget.h"
 #include "malloc_decls.h"
 #include "GLContext.h"
+
+#include "source-repo.h"
+
+#ifdef MOZ_SOURCE_STAMP
+#  define MOZ_SOURCE_STAMP_VALUE MOZ_STRINGIFY(MOZ_SOURCE_STAMP)
+#else
+#  define MOZ_SOURCE_STAMP_VALUE nullptr
+#endif
 
 static mozilla::LazyLogModule sWrDLLog("wr.dl");
 #define WRDL_LOG(...) \
@@ -40,7 +50,8 @@ class NewRenderer : public RendererEvent {
               layers::CompositorBridgeParent* aBridge,
               WebRenderBackend* aBackend, WebRenderCompositor* aCompositor,
               int32_t* aMaxTextureSize, bool* aUseANGLE, bool* aUseDComp,
-              bool* aUseTripleBuffering, bool* aSupportsExternalBufferTextures,
+              bool* aUseLayerCompositor, bool* aUseTripleBuffering,
+              bool* aSupportsExternalBufferTextures,
               RefPtr<widget::CompositorWidget>&& aWidget,
               layers::SynchronousTask* aTask, LayoutDeviceIntSize aSize,
               layers::WindowKind aWindowKind, layers::SyncHandle* aHandle,
@@ -51,6 +62,7 @@ class NewRenderer : public RendererEvent {
         mMaxTextureSize(aMaxTextureSize),
         mUseANGLE(aUseANGLE),
         mUseDComp(aUseDComp),
+        mUseLayerCompositor(aUseLayerCompositor),
         mUseTripleBuffering(aUseTripleBuffering),
         mSupportsExternalBufferTextures(aSupportsExternalBufferTextures),
         mBridge(aBridge),
@@ -83,6 +95,7 @@ class NewRenderer : public RendererEvent {
     *mCompositor = compositor->CompositorType();
     *mUseANGLE = compositor->UseANGLE();
     *mUseDComp = compositor->UseDComp();
+    *mUseLayerCompositor = compositor->ShouldUseLayerCompositor();
     *mUseTripleBuffering = compositor->UseTripleBuffering();
     *mSupportsExternalBufferTextures =
         compositor->SupportsExternalBufferTextures();
@@ -131,13 +144,6 @@ class NewRenderer : public RendererEvent {
       }
     }
 
-    // Only allow the layer compositor in nightly builds, for now.
-    bool use_layer_compositor = false;
-#ifdef NIGHTLY_BUILD
-    use_layer_compositor =
-        StaticPrefs::gfx_webrender_layer_compositor_AtStartup();
-#endif
-
     if (!wr_window_new(
             aWindowId, mSize.width, mSize.height,
             mWindowKind == WindowKind::MAIN, supportLowPriorityTransactions,
@@ -159,7 +165,7 @@ class NewRenderer : public RendererEvent {
             StaticPrefs::gfx_webrender_low_quality_pinch_zoom_AtStartup(),
             StaticPrefs::gfx_webrender_max_shared_surface_size_AtStartup(),
             StaticPrefs::gfx_webrender_enable_subpixel_aa_AtStartup(),
-            use_layer_compositor)) {
+            compositor->ShouldUseLayerCompositor())) {
       // wr_window_new puts a message into gfxCriticalNote if it returns false
       MOZ_ASSERT(errorMessage);
       mError->AssignASCII(errorMessage);
@@ -185,6 +191,10 @@ class NewRenderer : public RendererEvent {
     }
 
     aRenderThread.AddRenderer(aWindowId, std::move(renderer));
+
+    // Kick off shader warmup, outside this NewRenderer task so that any
+    // threads which block on the NewRenderer work can proceed immediately.
+    aRenderThread.BeginShaderWarmupIfNeeded();
   }
 
   const char* Name() override { return "NewRenderer"; }
@@ -196,6 +206,7 @@ class NewRenderer : public RendererEvent {
   int32_t* mMaxTextureSize;
   bool* mUseANGLE;
   bool* mUseDComp;
+  bool* mUseLayerCompositor;
   bool* mUseTripleBuffering;
   bool* mSupportsExternalBufferTextures;
   layers::CompositorBridgeParent* mBridge;
@@ -288,8 +299,10 @@ void TransactionBuilder::ClearDisplayList(Epoch aEpoch,
 }
 
 void TransactionBuilder::GenerateFrame(const VsyncId& aVsyncId, bool aPresent,
+                                       bool aTracked,
                                        wr::RenderReasons aReasons) {
-  wr_transaction_generate_frame(mTxn, aVsyncId.mId, aPresent, aReasons);
+  wr_transaction_generate_frame(mTxn, aVsyncId.mId, aPresent, aTracked,
+                                aReasons);
 }
 
 void TransactionBuilder::InvalidateRenderedFrame(wr::RenderReasons aReasons) {
@@ -316,6 +329,10 @@ void TransactionBuilder::SetDocumentView(
   wrDocRect.max.x = aDocumentRect.x + aDocumentRect.width;
   wrDocRect.max.y = aDocumentRect.y + aDocumentRect.height;
   wr_transaction_set_document_view(mTxn, &wrDocRect);
+}
+
+void TransactionBuilder::RenderOffscreen(wr::WrPipelineId aPipelineId) {
+  wr_transaction_render_offscreen(mTxn, aPipelineId);
 }
 
 TransactionWrapper::TransactionWrapper(Transaction* aTxn) : mTxn(aTxn) {}
@@ -374,6 +391,7 @@ already_AddRefed<WebRenderAPI> WebRenderAPI::Create(
   int32_t maxTextureSize = 0;
   bool useANGLE = false;
   bool useDComp = false;
+  bool useLayerCompositor = false;
   bool useTripleBuffering = false;
   bool supportsExternalBufferTextures = false;
   layers::SyncHandle syncHandle = {};
@@ -384,8 +402,9 @@ already_AddRefed<WebRenderAPI> WebRenderAPI::Create(
   layers::SynchronousTask task("Create Renderer");
   auto event = MakeUnique<NewRenderer>(
       &docHandle, aBridge, &backend, &compositor, &maxTextureSize, &useANGLE,
-      &useDComp, &useTripleBuffering, &supportsExternalBufferTextures,
-      std::move(aWidget), &task, aSize, aWindowKind, &syncHandle, &aError);
+      &useDComp, &useLayerCompositor, &useTripleBuffering,
+      &supportsExternalBufferTextures, std::move(aWidget), &task, aSize,
+      aWindowKind, &syncHandle, &aError);
   RenderThread::Get()->PostEvent(aWindowId, std::move(event));
 
   task.Wait();
@@ -397,7 +416,7 @@ already_AddRefed<WebRenderAPI> WebRenderAPI::Create(
   return RefPtr<WebRenderAPI>(
              new WebRenderAPI(docHandle, aWindowId, backend, compositor,
                               maxTextureSize, useANGLE, useDComp,
-                              useTripleBuffering,
+                              useLayerCompositor, useTripleBuffering,
                               supportsExternalBufferTextures, syncHandle))
       .forget();
 }
@@ -408,8 +427,8 @@ already_AddRefed<WebRenderAPI> WebRenderAPI::Clone() {
 
   RefPtr<WebRenderAPI> renderApi = new WebRenderAPI(
       docHandle, mId, mBackend, mCompositor, mMaxTextureSize, mUseANGLE,
-      mUseDComp, mUseTripleBuffering, mSupportsExternalBufferTextures,
-      mSyncHandle, this, this);
+      mUseDComp, mUseLayerCompositor, mUseTripleBuffering,
+      mSupportsExternalBufferTextures, mSyncHandle, this, this);
 
   return renderApi.forget();
 }
@@ -421,7 +440,7 @@ wr::WrIdNamespace WebRenderAPI::GetNamespace() {
 WebRenderAPI::WebRenderAPI(
     wr::DocumentHandle* aHandle, wr::WindowId aId, WebRenderBackend aBackend,
     WebRenderCompositor aCompositor, uint32_t aMaxTextureSize, bool aUseANGLE,
-    bool aUseDComp, bool aUseTripleBuffering,
+    bool aUseDComp, bool aUseLayerCompositor, bool aUseTripleBuffering,
     bool aSupportsExternalBufferTextures, layers::SyncHandle aSyncHandle,
     wr::WebRenderAPI* aRootApi, wr::WebRenderAPI* aRootDocumentApi)
     : mDocHandle(aHandle),
@@ -431,6 +450,7 @@ WebRenderAPI::WebRenderAPI(
       mMaxTextureSize(aMaxTextureSize),
       mUseANGLE(aUseANGLE),
       mUseDComp(aUseDComp),
+      mUseLayerCompositor(aUseLayerCompositor),
       mUseTripleBuffering(aUseTripleBuffering),
       mSupportsExternalBufferTextures(aSupportsExternalBufferTextures),
       mCaptureSequence(false),
@@ -474,7 +494,7 @@ wr::WebRenderAPI* WebRenderAPI::GetRootAPI() {
   return this;
 }
 
-void WebRenderAPI::UpdateDebugFlags(uint32_t aFlags) {
+void WebRenderAPI::UpdateDebugFlags(uint64_t aFlags) {
   wr_api_set_debug_flags(mDocHandle, wr::DebugFlags{aFlags});
 }
 
@@ -712,6 +732,7 @@ void WebRenderAPI::Readback(const TimeStamp& aStartTime, gfx::IntSize size,
           .present = true,
           .render = true,
           .scrolled = false,
+          .tracked = false,
       };
       aRenderThread.UpdateAndRender(aWindowId, VsyncId(), mStartTime, params,
                                     Some(mSize),
@@ -851,7 +872,7 @@ void WebRenderAPI::FlushSceneBuilder() {
   wr_api_flush_scene_builder(mDocHandle);
 }
 
-void WebRenderAPI::WaitFlushed() {
+void WebRenderAPI::WaitUntilPresentationFlushed() {
   class WaitFlushedEvent : public RendererEvent {
    public:
     explicit WaitFlushedEvent(layers::SynchronousTask* aTask) : mTask(aTask) {
@@ -861,6 +882,11 @@ void WebRenderAPI::WaitFlushed() {
     MOZ_COUNTED_DTOR_OVERRIDE(WaitFlushedEvent)
 
     void Run(RenderThread& aRenderThread, WindowId aWindowId) override {
+      if (RendererOGL* renderer = aRenderThread.GetRenderer(aWindowId)) {
+        if (RenderCompositor* compositor = renderer->GetCompositor()) {
+          compositor->WaitUntilPresentationFlushed();
+        }
+      }
       layers::AutoCompleteTask complete(mTask);
     }
 
@@ -870,7 +896,7 @@ void WebRenderAPI::WaitFlushed() {
     layers::SynchronousTask* mTask;
   };
 
-  layers::SynchronousTask task("WaitFlushed");
+  layers::SynchronousTask task("WaitUntilPresentationFlushed");
   auto event = MakeUnique<WaitFlushedEvent>(&task);
   // This event will be passed from wr_backend thread to renderer thread. That
   // implies that all frame data have been processed when the renderer runs this
@@ -885,7 +911,8 @@ void WebRenderAPI::Capture() {
   // SCENE | FRAME | TILE_CACHE
   uint8_t bits = 15;                // TODO: get from JavaScript
   const char* path = "wr-capture";  // TODO: get from JavaScript
-  wr_api_capture(mDocHandle, path, bits);
+  const char* revision = MOZ_SOURCE_STAMP_VALUE;
+  wr_api_capture(mDocHandle, path, revision, bits);
 }
 
 void WebRenderAPI::StartCaptureSequence(const nsACString& aPath,
@@ -895,7 +922,7 @@ void WebRenderAPI::StartCaptureSequence(const nsACString& aPath,
   }
 
   wr_api_start_capture_sequence(mDocHandle, PromiseFlatCString(aPath).get(),
-                                aFlags);
+                                MOZ_SOURCE_STAMP_VALUE, aFlags);
 
   mCaptureSequence = true;
 }
@@ -1183,6 +1210,7 @@ void DisplayListBuilder::Begin(layers::DisplayItemCache* aCache) {
   wr_api_begin_builder(mWrState);
 
   mScrollIds.clear();
+  mASRToSpatialIdMap.clear();
   mCurrentSpaceAndClipChain = wr::RootScrollNodeWithChain();
   mClipChainLeaf = Nothing();
   mSuspendedSpaceAndClipChain = Nothing();
@@ -1252,14 +1280,10 @@ void DisplayListBuilder::PopStackingContext(bool aIsReferenceFrame) {
 }
 
 wr::WrClipChainId DisplayListBuilder::DefineClipChain(
-    const nsTArray<wr::WrClipId>& aClips, bool aParentWithCurrentChain) {
+    Span<const wr::WrClipId> aClips, const Maybe<wr::WrClipChainId>& aParent) {
   CancelGroup();
 
-  const uint64_t* parent = nullptr;
-  if (aParentWithCurrentChain &&
-      mCurrentSpaceAndClipChain.clip_chain != wr::ROOT_CLIP_CHAIN) {
-    parent = &mCurrentSpaceAndClipChain.clip_chain;
-  }
+  const uint64_t* parent = aParent ? &aParent->id : nullptr;
   uint64_t clipchainId = wr_dp_define_clipchain(
       mWrState, parent, aClips.Elements(), aClips.Length());
   if (MOZ_LOG_TEST(sWrDLLog, LogLevel::Debug)) {
@@ -1319,16 +1343,20 @@ wr::WrClipId DisplayListBuilder::DefineRectClip(Maybe<wr::WrSpatialId> aSpace,
 }
 
 wr::WrSpatialId DisplayListBuilder::DefineStickyFrame(
-    const wr::LayoutRect& aContentRect, const float* aTopMargin,
-    const float* aRightMargin, const float* aBottomMargin,
-    const float* aLeftMargin, const StickyOffsetBounds& aVerticalBounds,
+    const ActiveScrolledRoot* aStickyAsr,
+    Maybe<wr::WrSpatialId> aParentSpatialId, const wr::LayoutRect& aContentRect,
+    const float* aTopMargin, const float* aRightMargin,
+    const float* aBottomMargin, const float* aLeftMargin,
+    const StickyOffsetBounds& aVerticalBounds,
     const StickyOffsetBounds& aHorizontalBounds,
     const wr::LayoutVector2D& aAppliedOffset, wr::SpatialTreeItemKey aKey,
     const WrAnimationProperty* aAnimation) {
   auto spatialId = wr_dp_define_sticky_frame(
-      mWrState, mCurrentSpaceAndClipChain.space, aContentRect, aTopMargin,
-      aRightMargin, aBottomMargin, aLeftMargin, aVerticalBounds,
-      aHorizontalBounds, aAppliedOffset, aKey, aAnimation);
+      mWrState, aParentSpatialId.valueOr(mCurrentSpaceAndClipChain.space),
+      aContentRect, aTopMargin, aRightMargin, aBottomMargin, aLeftMargin,
+      aVerticalBounds, aHorizontalBounds, aAppliedOffset, aKey, aAnimation);
+
+  mASRToSpatialIdMap.emplace(aStickyAsr, spatialId);
 
   WRDL_LOG("DefineSticky id=%zu c=%s t=%s r=%s b=%s l=%s v=%s h=%s a=%s\n",
            mWrState, spatialId.id, ToString(aContentRect).c_str(),
@@ -1351,6 +1379,17 @@ Maybe<wr::WrSpatialId> DisplayListBuilder::GetScrollIdForDefinedScrollLayer(
 
   auto it = mScrollIds.find(aViewId);
   if (it == mScrollIds.end()) {
+    return Nothing();
+  }
+
+  return Some(it->second);
+}
+
+Maybe<wr::WrSpatialId> DisplayListBuilder::GetSpatialIdForDefinedStickyLayer(
+    const ActiveScrolledRoot* aASR) const {
+  MOZ_ASSERT(aASR->mKind == ActiveScrolledRoot::ASRKind::Sticky);
+  auto it = mASRToSpatialIdMap.find(aASR);
+  if (it == mASRToSpatialIdMap.end()) {
     return Nothing();
   }
 
@@ -1465,13 +1504,6 @@ void DisplayListBuilder::PushRectWithAnimation(
                                  aAnimation);
 }
 
-void DisplayListBuilder::PushClearRect(const wr::LayoutRect& aBounds) {
-  wr::LayoutRect clip = MergeClipLeaf(aBounds);
-  WRDL_LOG("PushClearRect b=%s c=%s\n", mWrState, ToString(aBounds).c_str(),
-           ToString(clip).c_str());
-  wr_dp_push_clear_rect(mWrState, aBounds, clip, &mCurrentSpaceAndClipChain);
-}
-
 void DisplayListBuilder::PushBackdropFilter(
     const wr::LayoutRect& aBounds, const wr::ComplexClipRegion& aRegion,
     const nsTArray<wr::FilterOp>& aFilters,
@@ -1481,7 +1513,8 @@ void DisplayListBuilder::PushBackdropFilter(
            ToString(aBounds).c_str(), ToString(clip).c_str());
 
   auto clipId = DefineRoundedRectClip(Nothing(), aRegion);
-  auto clipChainId = DefineClipChain({clipId}, true);
+  auto clipChainId =
+      DefineClipChain({&clipId, 1}, CurrentClipChainIdIfNotRoot());
   auto spaceAndClip =
       WrSpaceAndClipChain{mCurrentSpaceAndClipChain.space, clipChainId.id};
 
@@ -1758,7 +1791,8 @@ void DisplayListBuilder::SuspendClipLeafMerging() {
     mSuspendedSpaceAndClipChain = Some(mCurrentSpaceAndClipChain);
 
     auto clipId = DefineRectClip(Nothing(), *mClipChainLeaf);
-    auto clipChainId = DefineClipChain({clipId}, true);
+    auto clipChainId =
+        DefineClipChain({&clipId, 1}, CurrentClipChainIdIfNotRoot());
 
     mCurrentSpaceAndClipChain.clip_chain = clipChainId.id;
     mClipChainLeaf = Nothing();

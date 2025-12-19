@@ -5,6 +5,7 @@
 const path = require("path");
 const webpack = require("webpack");
 const { ResourceUriPlugin } = require("../../tools/resourceUriPlugin");
+const { MozSrcUriPlugin } = require("../../tools/mozsrcUriPlugin");
 
 const PATHS = {
   // Where is the entry point for the unit tests?
@@ -155,7 +156,7 @@ module.exports = function (config) {
             /**
              * WallpaperFeed.sys.mjs is tested via an xpcshell test
              */
-            "lib/WallpaperFeed.sys.mjs": {
+            "lib/Wallpapers/WallpaperFeed.sys.mjs": {
               statements: 0,
               lines: 0,
               functions: 0,
@@ -174,25 +175,25 @@ module.exports = function (config) {
               functions: 0,
               branches: 0,
             },
-            "content-src/components/DiscoveryStreamComponents/FeatureHighlight/WallpaperFeatureHighlight.jsx":
+            "content-src/components/DiscoveryStreamComponents/FeatureHighlight/FollowSectionButtonHighlight.jsx":
               {
-                statements: 0,
-                lines: 0,
-                functions: 0,
-                branches: 0,
-              },
-            "content-src/components/DiscoveryStreamComponents/FeatureHighlight/DownloadMobilePromoHighlight.jsx":
-              {
-                statements: 0,
-                lines: 0,
-                functions: 0,
-                branches: 0,
+                statements: 88,
+                lines: 88,
+                functions: 80,
               },
             "content-src/components/DiscoveryStreamComponents/FeatureHighlight/FeatureHighlight.jsx":
               {
                 statements: 88,
                 lines: 88,
                 functions: 80,
+              },
+            // for all other components in FeatureHighlight that dont have bespoke functionality
+            "content-src/components/DiscoveryStreamComponents/FeatureHighlight/!(FeatureHighlight).jsx":
+              {
+                statements: 0,
+                lines: 0,
+                functions: 0,
+                branches: 0,
               },
             "content-src/components/DiscoveryStreamComponents/ReportContent/ReportContent.jsx":
               {
@@ -223,17 +224,17 @@ module.exports = function (config) {
               },
             "content-src/components/DiscoveryStreamComponents/DSCard/DSCard.jsx":
               {
-                statements: 95.39,
-                lines: 95.3,
+                statements: 94.94,
+                lines: 94.84,
                 functions: 9.91,
-                branches: 72.95,
+                branches: 70.72,
               },
             "content-src/components/DiscoveryStreamComponents/CardSections/CardSections.jsx":
               {
-                statements: 86.05,
-                lines: 85.48,
+                statements: 83.11,
+                lines: 82.52,
                 functions: 79.31,
-                branches: 54.41,
+                branches: 52.8,
               },
             "content-src/components/DiscoveryStreamComponents/SectionContextMenu/SectionContextMenu.jsx":
               {
@@ -244,29 +245,43 @@ module.exports = function (config) {
               },
             "content-src/components/DiscoveryStreamComponents/AdBanner/AdBanner.jsx":
               {
+                statements: 94.12,
+                lines: 94.12,
+                functions: 75,
                 branches: 60,
               },
             "content-src/components/DiscoveryStreamComponents/AdBannerContextMenu/AdBannerContextMenu.jsx":
               {
-                statements: 86,
-                lines: 86,
+                statements: 84,
+                lines: 84,
                 functions: 83,
               },
+            /**
+             * PromoCard currently has no functionality and is a placeholder component
+             */
+            "content-src/components/DiscoveryStreamComponents/PromoCard/PromoCard.jsx":
+              {
+                statements: 0,
+                lines: 0,
+                functions: 0,
+                branches: 0,
+              },
             "content-src/components/DiscoveryStreamComponents/**/*.jsx": {
-              statements: 90.48,
-              lines: 90.48,
-              functions: 85.71,
-              branches: 68.75,
+              statements: 80.95,
+              lines: 80.95,
+              functions: 71.43,
+              branches: 70.9,
             },
             /**
-             * WallpaperSection.jsx is tested via an xpcshell test
+             * WallpaperCategories.jsx is tested via an xpcshell test
              */
-            "content-src/components/WallpapersSection/*.jsx": {
-              statements: 0,
-              lines: 0,
-              functions: 0,
-              branches: 0,
-            },
+            "content-src/components/WallpaperCategories/WallpaperCategories.jsx":
+              {
+                statements: 0,
+                lines: 0,
+                functions: 0,
+                branches: 0,
+              },
             /**
              * Notifications.jsx is tested via an xpcshell test
              */
@@ -276,10 +291,13 @@ module.exports = function (config) {
               functions: 0,
               branches: 0,
             },
-            /**
-             * Weather.jsx is tested via an xpcshell test
-             */
-            "content-src/components/Weather/*.jsx": {
+            "content-src/components/Weather/Weather.jsx": {
+              statements: 50,
+              lines: 50.94,
+              functions: 31.2,
+              branches: 31.2,
+            },
+            "content-src/components/Weather/LocationSearch.jsx": {
               statements: 0,
               lines: 0,
               functions: 0,
@@ -291,17 +309,32 @@ module.exports = function (config) {
               functions: 0,
               branches: 0,
             },
-            "content-src/components/CustomizeMenu/**/*.jsx": {
+            /**
+             * TODO: Bug 1985362 - Write SectionsMgmtPanel Unit Tests
+             */
+            "content-src/components/CustomizeMenu/SectionsMgmtPanel/*.jsx": {
               statements: 0,
               lines: 0,
               functions: 0,
               branches: 0,
             },
+            "content-src/components/CustomizeMenu/ContentSection/*.jsx": {
+              statements: 80,
+              lines: 80,
+              functions: 99,
+              branches: 62,
+            },
+            "content-src/components/CustomizeMenu/**/*.jsx": {
+              statements: 68,
+              lines: 66,
+              functions: 80,
+              branches: 16,
+            },
             "content-src/components/CustomizeMenu/*.jsx": {
-              statements: 0,
-              lines: 0,
-              functions: 0,
-              branches: 0,
+              statements: 98,
+              lines: 98,
+              functions: 98,
+              branches: 98,
             },
             "content-src/lib/link-menu-options.js": {
               statements: 96,
@@ -311,6 +344,9 @@ module.exports = function (config) {
             },
             "content-src/lib/utils.jsx": {
               branches: 60,
+              statements: 95.56,
+              lines: 95.4,
+              functions: 92.86,
             },
             "content-src/components/MessageWrapper/MessageWrapper.jsx": {
               lines: 50,
@@ -353,7 +389,9 @@ module.exports = function (config) {
               path.join(__dirname, "../../components/topsites/"),
             ],
             [
-              new RegExp("^resource://gre/modules/SearchShortcuts.sys.mjs"),
+              new RegExp(
+                "^moz-src:///toolkit/components/search/SearchShortcuts.sys.mjs"
+              ),
               path.join(
                 __dirname,
                 "../../../toolkit/components/search/SearchShortcuts.sys.mjs"
@@ -365,6 +403,10 @@ module.exports = function (config) {
             ],
           ],
         }),
+        new MozSrcUriPlugin({
+          baseDir: path.join(__dirname, "..", "..", ".."),
+        }),
+
         new webpack.DefinePlugin({
           "process.env.NODE_ENV": JSON.stringify("development"),
         }),

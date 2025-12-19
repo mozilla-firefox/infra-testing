@@ -6,49 +6,47 @@
 
 #include "nsMixedContentBlocker.h"
 
-#include "nsContentPolicyUtils.h"
-#include "nsCSPContext.h"
-#include "nsThreadUtils.h"
-#include "nsINode.h"
-#include "nsCOMPtr.h"
-#include "nsDocShell.h"
-#include "nsIWebProgressListener.h"
-#include "nsContentUtils.h"
-#include "mozilla/dom/BrowsingContext.h"
-#include "mozilla/dom/WindowContext.h"
-#include "mozilla/dom/Document.h"
-#include "nsIChannel.h"
-#include "nsIParentChannel.h"
-#include "mozilla/Preferences.h"
-#include "nsIScriptObjectPrincipal.h"
-#include "nsIProtocolHandler.h"
-#include "nsCharSeparatedTokenizer.h"
-#include "nsISecureBrowserUI.h"
-#include "nsIWebNavigation.h"
-#include "nsLoadGroup.h"
-#include "nsIScriptError.h"
-#include "nsIURI.h"
-#include "nsIChannelEventSink.h"
-#include "nsNetUtil.h"
-#include "nsAsyncRedirectVerifyHelper.h"
-#include "mozilla/LoadInfo.h"
-#include "nsISiteSecurityService.h"
-#include "prnetdb.h"
-#include "nsQueryObject.h"
-
 #include "mozilla/BasePrincipal.h"
+#include "mozilla/LoadInfo.h"
 #include "mozilla/Logging.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_fission.h"
 #include "mozilla/StaticPrefs_security.h"
-#include "mozilla/glean/DomSecurityMetrics.h"
+#include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/WindowContext.h"
+#include "mozilla/dom/nsHTTPSOnlyUtils.h"
+#include "mozilla/glean/DomSecurityMetrics.h"
 #include "mozilla/ipc/URIUtils.h"
 #include "mozilla/net/DNS.h"
-#include "mozilla/net/DocumentLoadListener.h"
 #include "mozilla/net/DocumentChannel.h"
-
-#include "mozilla/dom/nsHTTPSOnlyUtils.h"
+#include "mozilla/net/DocumentLoadListener.h"
+#include "nsAsyncRedirectVerifyHelper.h"
+#include "nsCOMPtr.h"
+#include "nsCSPContext.h"
+#include "nsCharSeparatedTokenizer.h"
+#include "nsContentPolicyUtils.h"
+#include "nsContentUtils.h"
+#include "nsDocShell.h"
+#include "nsIChannel.h"
+#include "nsIChannelEventSink.h"
+#include "nsINode.h"
+#include "nsIParentChannel.h"
+#include "nsIProtocolHandler.h"
+#include "nsIScriptError.h"
+#include "nsIScriptObjectPrincipal.h"
+#include "nsISecureBrowserUI.h"
+#include "nsISiteSecurityService.h"
+#include "nsIURI.h"
+#include "nsIWebNavigation.h"
+#include "nsIWebProgressListener.h"
+#include "nsLoadGroup.h"
+#include "nsNetUtil.h"
+#include "nsQueryObject.h"
+#include "nsThreadUtils.h"
+#include "prnetdb.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -366,30 +364,16 @@ bool nsMixedContentBlocker::IsPotentiallyTrustworthyOrigin(nsIURI* aURI) {
 }
 
 /* static */
-bool nsMixedContentBlocker::IsUpgradableContentType(nsContentPolicyType aType,
-                                                    bool aConsiderPrefs) {
+bool nsMixedContentBlocker::IsUpgradableContentType(nsContentPolicyType aType) {
   MOZ_ASSERT(NS_IsMainThread());
-
-  if (aConsiderPrefs &&
-      !StaticPrefs::security_mixed_content_upgrade_display_content()) {
-    return false;
-  }
 
   switch (aType) {
     case nsIContentPolicy::TYPE_INTERNAL_IMAGE:
     case nsIContentPolicy::TYPE_INTERNAL_IMAGE_PRELOAD:
     case nsIContentPolicy::TYPE_INTERNAL_IMAGE_FAVICON:
-      return !aConsiderPrefs ||
-             StaticPrefs::
-                 security_mixed_content_upgrade_display_content_image();
     case nsIContentPolicy::TYPE_INTERNAL_AUDIO:
-      return !aConsiderPrefs ||
-             StaticPrefs::
-                 security_mixed_content_upgrade_display_content_audio();
     case nsIContentPolicy::TYPE_INTERNAL_VIDEO:
-      return !aConsiderPrefs ||
-             StaticPrefs::
-                 security_mixed_content_upgrade_display_content_video();
+      return true;
     default:
       return false;
   }
@@ -493,13 +477,6 @@ nsresult nsMixedContentBlocker::ShouldLoad(bool aHadInsecureImageRedirect,
   // Mixed content web fonts are relatively uncommon, and we can can fall back
   // to built-in fonts with minimal disruption in almost all cases.
   //
-  // TYPE_OBJECT_SUBREQUEST could actually be either active content (e.g. a
-  // script that a plugin will execute) or display content (e.g. Flash video
-  // content).  Until we have a way to determine active vs passive content
-  // from plugin requests (bug 836352), we will treat this as passive content.
-  // This is to prevent false positives from causing users to become
-  // desensitized to the mixed content blocker.
-  //
   // TYPE_CSP_REPORT: High-risk because they directly leak information about
   // the content of the page, and because blocking them does not have any
   // negative effect on the page loading.
@@ -580,13 +557,6 @@ nsresult nsMixedContentBlocker::ShouldLoad(bool aHadInsecureImageRedirect,
     case ExtContentPolicy::TYPE_IMAGE:
     case ExtContentPolicy::TYPE_MEDIA:
       classification = eMixedDisplay;
-      break;
-    case ExtContentPolicy::TYPE_OBJECT_SUBREQUEST:
-      if (StaticPrefs::security_mixed_content_block_object_subrequest()) {
-        classification = eMixedScript;
-      } else {
-        classification = eMixedDisplay;
-      }
       break;
 
     // Active content (or content with a low value/risk-of-blocking ratio)
@@ -781,7 +751,8 @@ nsresult nsMixedContentBlocker::ShouldLoad(bool aHadInsecureImageRedirect,
   // be upgraded to https before fetching any data from the netwerk.
   if (isHttpScheme) {
     bool isUpgradableContentType =
-        IsUpgradableContentType(internalContentType, /* aConsiderPrefs */ true);
+        StaticPrefs::security_mixed_content_upgrade_display_content() &&
+        IsUpgradableContentType(internalContentType);
     if (isUpgradableContentType) {
       *aDecision = ACCEPT;
       return NS_OK;
@@ -876,19 +847,6 @@ nsresult nsMixedContentBlocker::ShouldLoad(bool aHadInsecureImageRedirect,
         cc->SendAccumulateMixedContentHSTS(innerContentLocation, active,
                                            originAttributes);
       }
-    }
-  }
-
-  // set hasMixedContentObjectSubrequest on this object if necessary
-  if (contentType == ExtContentPolicyType::TYPE_OBJECT_SUBREQUEST &&
-      aReportError) {
-    if (!StaticPrefs::security_mixed_content_block_object_subrequest()) {
-      nsAutoCString messageLookUpKey(
-          "LoadingMixedDisplayObjectSubrequestDeprecation");
-
-      LogMixedContentMessage(classification, aContentLocation, topWC->Id(),
-                             eUserOverride, requestingLocation,
-                             messageLookUpKey);
     }
   }
 

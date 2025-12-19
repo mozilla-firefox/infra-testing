@@ -4,12 +4,11 @@ import optparse
 import os
 import sys
 import unittest
+from io import StringIO
 
 import mozfile
 import mozunit
-import six
 from mozlog import commandline, formatters, handlers, reader, stdadapter, structuredlog
-from six import StringIO
 
 
 class TestHandler:
@@ -53,7 +52,7 @@ class BaseStructuredTest(unittest.TestCase):
 
 class TestStatusHandler(BaseStructuredTest):
     def setUp(self):
-        super(TestStatusHandler, self).setUp()
+        super().setUp()
         self.handler = handlers.StatusHandler()
         self.logger.add_handler(self.handler)
 
@@ -107,10 +106,79 @@ class TestStatusHandler(BaseStructuredTest):
         self.assertIn("OK", summary.expected_statuses)
         self.assertEqual(2, summary.expected_statuses["OK"])
 
+    def test_crash_with_expected_crash_status(self):
+        # Test that crashes are accounted for when test ends with expected CRASH status
+        self.logger.suite_start([])
+        self.logger.test_start("test1")
+        self.logger.crash(
+            test="test1",
+            process=1234,
+            signature="test_signature",
+            minidump_path="/path/to/dump",
+        )
+        self.logger.crash(
+            test="test1",
+            process=5678,
+            signature="test_signature2",
+            minidump_path="/path/to/dump2",
+        )
+        self.logger.test_end("test1", "CRASH", expected="CRASH")
+        self.logger.suite_end()
+        summary = self.handler.summarize()
+        # Extra crashes were subtracted, keeping 1 to match the CRASH status
+        self.assertEqual(1, summary.action_counts.get("crash", 0))
+        # Test had expected CRASH status
+        self.assertEqual(1, summary.expected_statuses["CRASH"])
+
+    def test_crash_with_retry_pass(self):
+        # Simulates xpcshell retry: test crashes producing 2 dumps, then passes on retry
+        self.logger.suite_start([])
+        # First run: test crashes
+        self.logger.test_start("test1")
+        self.logger.crash(
+            test="test1",
+            process=1234,
+            signature="test_signature",
+            minidump_path="/path/to/dump",
+        )
+        self.logger.crash(
+            test="test1",
+            process=5678,
+            signature="test_signature2",
+            minidump_path="/path/to/dump2",
+        )
+        self.logger.test_end("test1", "CRASH", expected="CRASH")
+        # Retry: test passes
+        self.logger.test_start("test1")
+        self.logger.test_end("test1", "PASS", expected="PASS")
+        self.logger.suite_end()
+        summary = self.handler.summarize()
+        # Extra crashes were subtracted, keeping 1 to match the CRASH status
+        self.assertEqual(1, summary.action_counts.get("crash", 0))
+        # Both test runs are counted
+        self.assertEqual(1, summary.expected_statuses["CRASH"])
+        self.assertEqual(1, summary.expected_statuses["PASS"])
+
+    def test_crash_without_test_name(self):
+        # Orphaned crash (e.g., shutdown crash) without associated test
+        self.logger.suite_start([])
+        self.logger.test_start("test1")
+        self.logger.test_end("test1", "PASS", expected="PASS")
+        self.logger.crash(
+            process=9999,
+            signature="shutdown_crash",
+            minidump_path="/path/to/dump",
+        )
+        self.logger.suite_end()
+        summary = self.handler.summarize()
+        # Crash without test name remains unaccounted
+        self.assertEqual(1, summary.action_counts["crash"])
+        self.assertEqual(1, summary.expected_statuses["PASS"])
+
 
 class TestSummaryHandler(BaseStructuredTest):
     def setUp(self):
-        super(TestSummaryHandler, self).setUp()
+        super().setUp()
         self.handler = handlers.SummaryHandler()
         self.logger.add_handler(self.handler)
 
@@ -652,24 +720,14 @@ class TestTypeConversions(BaseStructuredTest):
 
     def test_tuple(self):
         self.logger.suite_start([])
-        if six.PY3:
-            self.logger.test_start(
-                (
-                    b"\xf0\x90\x8d\x84\xf0\x90\x8c\xb4\xf0\x90"
-                    b"\x8d\x83\xf0\x90\x8d\x84".decode(),
-                    42,
-                    "\u16a4",
-                )
+        self.logger.test_start(
+            (
+                b"\xf0\x90\x8d\x84\xf0\x90\x8c\xb4\xf0\x90"
+                b"\x8d\x83\xf0\x90\x8d\x84".decode(),
+                42,
+                "\u16a4",
             )
-        else:
-            self.logger.test_start(
-                (
-                    "\xf0\x90\x8d\x84\xf0\x90\x8c\xb4\xf0\x90"
-                    "\x8d\x83\xf0\x90\x8d\x84",
-                    42,
-                    "\u16a4",
-                )
-            )
+        )
         self.assert_log_equals(
             {
                 "action": "test_start",
@@ -683,22 +741,13 @@ class TestTypeConversions(BaseStructuredTest):
         self.logger.info(1)
         self.assert_log_equals({"action": "log", "message": "1", "level": "INFO"})
         self.logger.info([1, (2, "3"), "s", "s" + chr(255)])
-        if six.PY3:
-            self.assert_log_equals(
-                {
-                    "action": "log",
-                    "message": "[1, (2, '3'), 's', 's\xff']",
-                    "level": "INFO",
-                }
-            )
-        else:
-            self.assert_log_equals(
-                {
-                    "action": "log",
-                    "message": "[1, (2, '3'), 's', 's\\xff']",
-                    "level": "INFO",
-                }
-            )
+        self.assert_log_equals(
+            {
+                "action": "log",
+                "message": "[1, (2, '3'), 's', 's\xff']",
+                "level": "INFO",
+            }
+        )
 
         self.logger.suite_end()
 
@@ -711,10 +760,7 @@ class TestTypeConversions(BaseStructuredTest):
             self.logger.info("☺")
             logfile.seek(0)
             data = logfile.readlines()[-1].strip()
-            if six.PY3:
-                self.assertEqual(data.decode(), "☺")
-            else:
-                self.assertEqual(data, "☺")
+            self.assertEqual(data.decode(), "☺")
             self.logger.suite_end()
             self.logger.remove_handler(_handler)
 

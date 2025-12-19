@@ -4,35 +4,35 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsContentPermissionHelper.h"
+
 #include <map>
-#include "nsCOMPtr.h"
-#include "nsIPrincipal.h"
+
+#include "js/PropertyAndElement.h"  // JS_GetProperty, JS_SetProperty
+#include "mozilla/Attributes.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/PContentPermission.h"
-#include "mozilla/dom/PermissionMessageUtils.h"
 #include "mozilla/dom/PContentPermissionRequestParent.h"
+#include "mozilla/dom/PermissionMessageUtils.h"
 #include "mozilla/dom/ScriptSettings.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/Unused.h"
-#include "nsComponentManagerUtils.h"
 #include "nsArrayUtils.h"
-#include "nsIMutableArray.h"
-#include "nsContentPermissionHelper.h"
+#include "nsCOMPtr.h"
+#include "nsComponentManagerUtils.h"
 #include "nsGlobalWindowInner.h"
-#include "nsJSUtils.h"
+#include "nsIMutableArray.h"
+#include "nsIPrincipal.h"
 #include "nsISupportsPrimitives.h"
-#include "nsServiceManagerUtils.h"
-#include "mozilla/dom/Document.h"
 #include "nsIWeakReferenceUtils.h"
-#include "js/PropertyAndElement.h"  // JS_GetProperty, JS_SetProperty
+#include "nsJSUtils.h"
+#include "nsServiceManagerUtils.h"
 
-using mozilla::Unused;  // <snicker>
 using namespace mozilla::dom;
 using namespace mozilla;
 using DelegateInfo = PermissionDelegateHandler::PermissionDelegateInfo;
@@ -101,7 +101,7 @@ mozilla::ipc::IPCResult ContentPermissionRequestParent::Recvprompt() {
 }
 
 mozilla::ipc::IPCResult ContentPermissionRequestParent::RecvDestroy() {
-  Unused << PContentPermissionRequestParent::Send__delete__(this);
+  (void)PContentPermissionRequestParent::Send__delete__(this);
   return IPC_OK();
 }
 
@@ -255,10 +255,10 @@ nsContentPermissionUtils::CreateContentPermissionRequestParent(
 /* static */
 nsresult nsContentPermissionUtils::AskPermission(
     nsIContentPermissionRequest* aRequest, nsPIDOMWindowInner* aWindow) {
-  NS_ENSURE_STATE(aWindow && aWindow->IsCurrentInnerWindow());
-
   // for content process
   if (XRE_IsContentProcess()) {
+    NS_ENSURE_STATE(aWindow && aWindow->IsCurrentInnerWindow());
+
     RefPtr<RemotePermissionRequest> req =
         new RemotePermissionRequest(aRequest, aWindow);
 
@@ -772,7 +772,7 @@ nsContentPermissionRequestProxy::Cancel() {
 
   nsTArray<PermissionChoice> emptyChoices;
 
-  Unused << mParent->SendNotifyResult(false, emptyChoices);
+  (void)mParent->SendNotifyResult(false, emptyChoices);
   return NS_OK;
 }
 
@@ -794,7 +794,7 @@ nsContentPermissionRequestProxy::Allow(JS::Handle<JS::Value> aChoices) {
     return rv;
   }
 
-  Unused << mParent->SendNotifyResult(true, choices);
+  (void)mParent->SendNotifyResult(true, choices);
   return NS_OK;
 }
 
@@ -869,6 +869,6 @@ void RemotePermissionRequest::Destroy() {
   if (!IPCOpen()) {
     return;
   }
-  Unused << this->SendDestroy();
+  (void)this->SendDestroy();
   mDestroyed = true;
 }

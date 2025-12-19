@@ -6,18 +6,18 @@ package org.mozilla.fenix.components.menu.compose
 
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.Text
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.rememberNestedScrollInteropConnection
@@ -30,7 +30,6 @@ import org.mozilla.fenix.components.appstate.OrientationMode
 import org.mozilla.fenix.compose.BottomSheetHandle
 import org.mozilla.fenix.theme.FirefoxTheme
 
-private const val BOTTOM_SHEET_HANDLE_WIDTH_PERCENT = 0.1f
 private const val CFR_HORIZONTAL_OFFSET = 160
 private const val CFR_VERTICAL_OFFSET_LANDSCAPE = 0
 private const val CFR_VERTICAL_OFFSET_PORTRAIT = -6
@@ -38,38 +37,50 @@ private const val CFR_VERTICAL_OFFSET_PORTRAIT = -6
 /**
  * The menu dialog bottom sheet.
  *
+ * @param modifier [Modifier] to be applied to [BottomSheetHandle].
  * @param onRequestDismiss Invoked when when accessibility services or UI automation requests
  * dismissal of the bottom sheet.
  * @param handlebarContentDescription Bottom sheet handlebar content description.
+ * @param isMenuDragBarDark Whether or not the menu's drag bar background should be dark.
+ * @param cornerShape The shape of the bottom sheet's top corners.
  * @param menuCfrState An optional [MenuCFRState] that describes how to display a
  * contextual feature recommendation (CFR) popup in the menu.
  * @param content The children composable to be laid out.
  */
 @Composable
 fun MenuDialogBottomSheet(
+    modifier: Modifier = Modifier,
     onRequestDismiss: () -> Unit,
     handlebarContentDescription: String,
+    isMenuDragBarDark: Boolean = false,
+    cornerShape: Shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
     menuCfrState: MenuCFRState? = null,
     content: @Composable () -> Unit,
 ) {
     Column(
         modifier = Modifier
             .background(
-                color = FirefoxTheme.colors.layer3,
-                shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                shape = cornerShape,
             )
             .nestedScroll(rememberNestedScrollInteropConnection()),
     ) {
         if (menuCfrState?.showCFR == true) {
             CFRBottomSheetHandle(
+                modifier = modifier,
                 state = menuCfrState,
                 onRequestDismiss = onRequestDismiss,
                 contentDescription = handlebarContentDescription,
+                isMenuDragBarDark = isMenuDragBarDark,
+                cornerShape = cornerShape,
             )
         } else {
             MenuBottomSheetHandle(
+                modifier = modifier,
                 onRequestDismiss = onRequestDismiss,
                 contentDescription = handlebarContentDescription,
+                isMenuDragBarDark = isMenuDragBarDark,
+                cornerShape = cornerShape,
             )
         }
 
@@ -79,22 +90,30 @@ fun MenuDialogBottomSheet(
 
 @Composable
 private fun MenuBottomSheetHandle(
+    modifier: Modifier = Modifier,
     onRequestDismiss: () -> Unit,
     contentDescription: String,
+    isMenuDragBarDark: Boolean = false,
+    cornerShape: Shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
 ) {
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .wrapContentSize(Alignment.Center),
+            .background(
+                color = if (isMenuDragBarDark) {
+                    MaterialTheme.colorScheme.surfaceContainerHighest
+                } else {
+                    Color.Transparent
+                },
+                shape = cornerShape,
+            )
+            .verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         BottomSheetHandle(
             onRequestDismiss = onRequestDismiss,
             contentDescription = contentDescription,
-            modifier = Modifier
-                .padding(top = 8.dp, bottom = 5.dp)
-                .fillMaxWidth(BOTTOM_SHEET_HANDLE_WIDTH_PERCENT)
-                .verticalScroll(rememberScrollState()),
-            color = FirefoxTheme.colors.borderInverted,
+            modifier = modifier,
         )
     }
 }
@@ -104,9 +123,12 @@ private fun MenuBottomSheetHandle(
  */
 @Composable
 private fun CFRBottomSheetHandle(
+    modifier: Modifier = Modifier,
     state: MenuCFRState,
     contentDescription: String,
     onRequestDismiss: () -> Unit,
+    isMenuDragBarDark: Boolean,
+    cornerShape: Shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
 ) {
     val (indicatorDirection, verticalOffset) = when (state.orientation) {
         OrientationMode.Landscape -> CFRPopup.IndicatorDirection.UP to CFR_VERTICAL_OFFSET_LANDSCAPE
@@ -148,8 +170,11 @@ private fun CFRBottomSheetHandle(
         },
     ) {
         MenuBottomSheetHandle(
+            modifier = modifier,
             onRequestDismiss = onRequestDismiss,
             contentDescription = contentDescription,
+            isMenuDragBarDark = isMenuDragBarDark,
+            cornerShape = cornerShape,
         )
     }
 }
@@ -167,8 +192,8 @@ private fun CFRBottomSheetHandle(
  */
 data class MenuCFRState(
     val showCFR: Boolean,
-    @StringRes val titleRes: Int,
-    @StringRes val messageRes: Int,
+    @param:StringRes val titleRes: Int,
+    @param:StringRes val messageRes: Int,
     val orientation: OrientationMode,
     val onShown: () -> Unit,
     val onDismiss: (Boolean) -> Unit,

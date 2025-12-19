@@ -12,7 +12,7 @@
 
 #include "rtc_base/checks.h"
 
-namespace rtc {
+namespace webrtc {
 
 class SymmetricNAT : public NAT {
  public:
@@ -54,8 +54,8 @@ NAT* NAT::Create(NATType type) {
       return new SymmetricNAT();
     default:
       RTC_DCHECK_NOTREACHED();
-      return 0;
+      return nullptr;
   }
 }
 
-}  // namespace rtc
+}  // namespace webrtc

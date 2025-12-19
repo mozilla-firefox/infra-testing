@@ -11,7 +11,7 @@ use crate::config::{test::MINIDUMP_PRUNE_SAVE_COUNT, Config};
 use crate::settings::Settings;
 use crate::std::{
     ffi::OsString,
-    fs::{MockFS, MockFiles},
+    fs::{MockFS, MockFiles, OpenOptions},
     io::ErrorKind,
     mock,
     process::{Command, Output},
@@ -21,6 +21,7 @@ use crate::std::{
     },
 };
 use crate::ui::{self, test::model, ui_impl::Interact};
+use ::glean::TestGetValue;
 
 /// A simple thread-safe counter which can be used in tests to mark that certain code paths were
 /// hit.
@@ -208,6 +209,7 @@ impl GuiTest {
             crate::std::env::MockCurrentExe,
             "work_dir/crashreporter".into(),
         )
+        .set(crate::std::env::MockTempDir, "tmp".into())
         .set(crate::std::time::MockCurrentTime, current_system_time())
         .set(mock::MockHook::new("enable_glean_pings"), false)
         .set(mock::MockHook::new("ping_uuid"), MOCK_PING_UUID);
@@ -453,14 +455,45 @@ fn error_dialog() {
     gui_interact(
         || {
             let cfg = Config::default();
-            ui::error_dialog(&cfg, "an error occurred");
+            ui::error_dialog(Arc::new(cfg), "an error occurred");
             Ok(())
         },
         |interact| {
-            interact.element("close", |_style, b: &model::Button| b.click.fire(&()));
+            interact.element("quit", |_style, b: &model::Button| b.click.fire(&()));
         },
     )
     .unwrap();
+}
+
+#[test]
+fn error_dialog_restart() {
+    let mut config = Config::default();
+    config.restart_command = Some("my_process".into());
+    config.restart_args = vec!["a".into(), "b".into()];
+    let ran_process = Counter::new();
+    let mock_ran_process = ran_process.clone();
+    mock::builder()
+        .set(
+            Command::mock("my_process"),
+            Box::new(move |cmd| {
+                assert_eq!(cmd.args, &["a", "b"]);
+                mock_ran_process.inc();
+                Ok(crate::std::process::success_output())
+            }),
+        )
+        .run(|| {
+            gui_interact(
+                move || {
+                    ui::error_dialog(Arc::new(config), "an error occurred");
+                    Ok(())
+                },
+                |interact| {
+                    interact.element("restart", |_style, b: &model::Button| b.click.fire(&()));
+                },
+            )
+        })
+        .unwrap();
+    ran_process.assert_one();
 }
 
 #[test]
@@ -473,6 +506,14 @@ fn no_dump_file() {
     assert!(try_run(&mut cfg).is_err());
     Arc::get_mut(&mut cfg).unwrap().auto_submit = true;
     assert!(try_run(&mut cfg).is_ok());
+}
+
+#[test]
+fn dump_file_does_not_exist() {
+    let mut test = GuiTest::new();
+    test.config.dump_file = Some("does_not_exist.dmp".into());
+    test.try_run(|_interact| {})
+        .expect_err("the gui should fail with an error");
 }
 
 #[test]
@@ -1228,10 +1269,9 @@ fn assert_mock_memtest(cmd: &Command) -> std::io::Result<Output> {
     assert_eq!(cmd.args.len(), 3);
     assert_eq!(cmd.args[0], "--memtest");
     assert!(cmd.args[1].to_string_lossy().parse::<u32>().is_ok());
-    assert!(serde_json::from_str::<memtest::MemtestRunnerArgs>(
-        cmd.args[2].to_string_lossy().borrow()
-    )
-    .is_ok());
+    assert!(
+        serde_json::from_str::<memtest::RunnerArgs>(cmd.args[2].to_string_lossy().borrow()).is_ok()
+    );
 
     let mut output = crate::std::process::success_output();
     output.stdout = "memtest output".into();
@@ -1270,6 +1310,114 @@ fn comment() {
     }
 }
 
+fn platform_path(s: &str) -> String {
+    s.replace('/', std::path::MAIN_SEPARATOR_STR)
+}
+
+/// Test the interface to the primary network backend (Necko, through a background task).
+///
+/// This doesn't yet test Glean pings because of reliability issues (see Bug 1937295).
+#[test]
+fn background_task_network_backend() {
+    let mut test = GuiTest::new();
+    test.files.add_file("minidump.memory.json.gz", "");
+    let ran_process = Counter::new();
+    let mock_ran_process = ran_process.clone();
+    test.mock.set(
+        Command::mock("work_dir/firefox"),
+        Box::new(move |cmd| {
+            if cmd.spawning {
+                return Ok(crate::std::process::success_output());
+            }
+
+            mock_ran_process.inc();
+
+            let expected_args: Vec<OsString> = [
+                "--backgroundtask",
+                "crashreporterNetworkBackend",
+                "https://reports.example.com",
+                net::http::user_agent(),
+            ]
+            .into_iter()
+            .map(Into::into)
+            .collect();
+
+            assert_eq!(cmd.args.len(), 5);
+            assert_eq!(cmd.args[..4], expected_args);
+            let request_file = &cmd.args[4];
+
+            let expected_contents = serde_json::json!({
+                "type": "MimePost",
+                "parts": [
+                    {
+                        "name": "extra",
+                        "content": {
+                            "type": "String",
+                            "value": serde_json::json!({
+                                "Vendor":"FooCorp",
+                                "ProductName":"Bar",
+                                "ReleaseChannel":"release",
+                                "BuildID":"1234",
+                                "AsyncShutdownTimeout":"{}",
+                                "Version":"100.0",
+                                "URL":"https://url.example.com",
+                                "SubmittedFrom":"Client",
+                                "Throttleable":"1"
+                            }).to_string(),
+                        },
+                        "filename": "extra.json",
+                        "mime_type": "application/json",
+                    },
+                    {
+                        "name": "upload_file_minidump",
+                        "content": {
+                            "type": "File",
+                            "value": platform_path("data_dir/pending/minidump.dmp"),
+                        },
+                    },
+                    {
+                        "name": "memory_report",
+                        "content": {
+                            "type": "File",
+                            "value": platform_path("data_dir/pending/minidump.memory.json.gz"),
+                        },
+                    }
+                ]
+            })
+            .to_string();
+
+            use ::std::io::{Read, Seek, Write};
+            let mut file = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(request_file)
+                .expect("cannot open request file");
+            {
+                let mut contents = String::new();
+                file.read_to_string(&mut contents)
+                    .expect("cannot read request file");
+                assert_eq!(contents, expected_contents);
+            }
+
+            file.rewind().expect("cannot rewind file");
+            file.set_len(0).expect("cannot truncate file");
+            file.write_all(format!("CrashID={MOCK_REMOTE_CRASH_ID}").as_bytes())
+                .expect("cannot write to request file");
+
+            Ok(crate::std::process::success_output())
+        }),
+    );
+    test.run(|interact| {
+        interact.element("quit", |_style, b: &model::Button| b.click.fire(&()));
+    });
+
+    ran_process.assert_one();
+
+    test.assert_files()
+        .saved_settings(Settings::default())
+        .submitted();
+}
+
 #[test]
 fn curl_binary() {
     let mut test = GuiTest::new();
@@ -1292,7 +1440,7 @@ fn curl_binary() {
 
             let expected_args: Vec<OsString> = [
                 "--user-agent",
-                net::http::USER_AGENT,
+                net::http::user_agent(),
                 "--form",
                 "extra=@-;filename=extra.json;type=application/json",
                 "--form",
@@ -1322,6 +1470,202 @@ fn curl_binary() {
     });
 
     ran_process.assert_one();
+}
+
+/// Test that the primary network backend (Necko) falls back to using curl if it fails.
+#[test]
+fn background_task_curl_fallback() {
+    let mut test = GuiTest::new();
+    let ran_bgtask = Counter::new();
+    let mock_ran_bgtask = ran_bgtask.clone();
+    let ran_curl = Counter::new();
+    let mock_ran_curl = ran_curl.clone();
+    let background_task_attempts = Arc::new(net::http::BackgroundTaskAttempts::new(2));
+    test.mock
+        .set(
+            net::http::BACKGROUND_TASK_ATTEMPTS,
+            background_task_attempts.clone(),
+        )
+        .set(
+            Command::mock("work_dir/firefox"),
+            Box::new(move |cmd| {
+                if cmd.spawning {
+                    return Ok(crate::std::process::success_output());
+                }
+                mock_ran_bgtask.inc();
+
+                let expected_args: Vec<OsString> = [
+                    "--backgroundtask",
+                    "crashreporterNetworkBackend",
+                    "https://reports.example.com",
+                    net::http::user_agent(),
+                ]
+                .into_iter()
+                .map(Into::into)
+                .collect();
+
+                assert_eq!(cmd.args.len(), 5);
+                assert_eq!(cmd.args[..4], expected_args);
+                let request_file = &cmd.args[4];
+
+                let expected_contents = serde_json::json!({
+                    "type": "MimePost",
+                    "parts": [
+                        {
+                            "name": "extra",
+                            "content": {
+                                "type": "String",
+                                "value": serde_json::json!({
+                                    "Vendor":"FooCorp",
+                                    "ProductName":"Bar",
+                                    "ReleaseChannel":"release",
+                                    "BuildID":"1234",
+                                    "AsyncShutdownTimeout":"{}",
+                                    "Version":"100.0",
+                                    "URL":"https://url.example.com",
+                                    "SubmittedFrom":"Client",
+                                    "Throttleable":"1"
+                                }).to_string(),
+                            },
+                            "filename": "extra.json",
+                            "mime_type": "application/json",
+                        },
+                        {
+                            "name": "upload_file_minidump",
+                            "content": {
+                                "type": "File",
+                                "value": platform_path("data_dir/pending/minidump.dmp"),
+                            },
+                        }
+                    ]
+                })
+                .to_string();
+
+                use ::std::io::Read;
+                let mut file = OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .open(request_file)
+                    .expect("cannot open request file");
+                {
+                    let mut contents = String::new();
+                    file.read_to_string(&mut contents)
+                        .expect("cannot read request file");
+                    assert_eq!(contents, expected_contents);
+                }
+
+                Ok(crate::std::process::Output {
+                    status: crate::std::process::exit_status(3),
+                    stdout: vec![],
+                    stderr: vec![],
+                })
+            }),
+        )
+        .set(
+            Command::mock("curl"),
+            Box::new(move |cmd| {
+                if cmd.spawning {
+                    return Ok(crate::std::process::success_output());
+                }
+
+                // Curl strings need backslashes escaped.
+                let curl_escaped_separator = if std::path::MAIN_SEPARATOR == '\\' {
+                    "\\\\"
+                } else {
+                    std::path::MAIN_SEPARATOR_STR
+                };
+
+                let expected_args: Vec<OsString> = [
+                    "--user-agent",
+                    net::http::user_agent(),
+                    "--form",
+                    "extra=@-;filename=extra.json;type=application/json",
+                    "--form",
+                    &format!(
+                        "upload_file_minidump=@\"data_dir{0}pending{0}minidump.dmp\"",
+                        curl_escaped_separator
+                    ),
+                    "https://reports.example.com",
+                ]
+                .into_iter()
+                .map(Into::into)
+                .collect();
+                assert_eq!(cmd.args, expected_args);
+                let mut output = crate::std::process::success_output();
+                output.stdout = format!("CrashID={MOCK_REMOTE_CRASH_ID}").into();
+                mock_ran_curl.inc();
+                Ok(output)
+            }),
+        );
+    test.run(|interact| {
+        interact.element("quit", |_style, b: &model::Button| b.click.fire(&()));
+    });
+
+    ran_bgtask.assert_one();
+    ran_curl.assert_one();
+
+    // Verify that background tasks are still enabled.
+    assert!(background_task_attempts.should_attempt());
+
+    test.assert_files()
+        .saved_settings(Settings::default())
+        .submitted();
+}
+
+#[test]
+fn background_task_disables() {
+    let mut test = GuiTest::new();
+    let ran_bgtask = Counter::new();
+    let mock_ran_bgtask = ran_bgtask.clone();
+    let ran_curl = Counter::new();
+    let mock_ran_curl = ran_curl.clone();
+    let background_task_attempts = Arc::new(net::http::BackgroundTaskAttempts::new(1));
+    test.mock
+        .set(
+            net::http::BACKGROUND_TASK_ATTEMPTS,
+            background_task_attempts.clone(),
+        )
+        .set(
+            Command::mock("work_dir/firefox"),
+            Box::new(move |cmd| {
+                if cmd.spawning {
+                    return Ok(crate::std::process::success_output());
+                }
+                mock_ran_bgtask.inc();
+
+                Ok(crate::std::process::Output {
+                    status: crate::std::process::exit_status(255),
+                    stdout: vec![],
+                    stderr: vec![],
+                })
+            }),
+        )
+        .set(
+            Command::mock("curl"),
+            Box::new(move |cmd| {
+                if cmd.spawning {
+                    return Ok(crate::std::process::success_output());
+                }
+
+                let mut output = crate::std::process::success_output();
+                output.stdout = format!("CrashID={MOCK_REMOTE_CRASH_ID}").into();
+                mock_ran_curl.inc();
+                Ok(output)
+            }),
+        );
+    test.run(|interact| {
+        interact.element("quit", |_style, b: &model::Button| b.click.fire(&()));
+    });
+
+    ran_bgtask.assert_one();
+    ran_curl.assert_one();
+
+    // Verify that background tasks are now disabled.
+    assert_eq!(false, background_task_attempts.should_attempt());
+
+    test.assert_files()
+        .saved_settings(Settings::default())
+        .submitted();
 }
 
 #[test]

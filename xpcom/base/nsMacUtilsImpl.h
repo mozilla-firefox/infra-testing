@@ -9,7 +9,6 @@
 
 #include "nsString.h"
 #include "mozilla/Atomics.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPtr.h"
 
@@ -50,6 +49,25 @@ nsresult GetArchitecturesForBinary(const char* aPath, uint32_t* aArchMask);
 int PreTranslateXUL();
 int PreTranslateBinary(nsCString aBinaryPath);
 #endif
+
+enum class CodeSignatureType {
+  UnexpectedError,
+  Unsigned,
+  AdHoc,
+  DeveloperID,
+  AppStore,
+  AppleSystem,
+  Development,
+  Other
+};
+
+// Returns a string representation of the provided code signature type enum.
+// On failure, returns CodeSignatureType::UnexpectedError.
+nsCString CodeSignatureTypeToString(CodeSignatureType aType);
+
+// Returns the signature type for the binary at `aPath`.
+CodeSignatureType GetSignatureType(const nsCString& aPath);
+
 }  // namespace nsMacUtilsImpl
 
 #endif /* nsMacUtilsImpl_h___ */

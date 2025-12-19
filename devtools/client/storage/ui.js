@@ -69,6 +69,7 @@ const HEADERS_L10N_IDS = {
   },
   cookies: {
     creationTime: "storage-table-headers-cookies-creation-time",
+    updateTime: "storage-table-headers-cookies-update-time",
     expires: "storage-table-headers-cookies-expires",
     lastAccessed: "storage-table-headers-cookies-last-accessed",
     name: "storage-table-headers-cookies-name",
@@ -129,7 +130,7 @@ const HEADERS_NON_L10N_STRINGS = {
  *
  * @param {Window} panelWin
  *        Window of the toolbox panel to populate UI in.
- * @param {Object} commands
+ * @param {object} commands
  *        The commands object with all interfaces defined from devtools/shared/commands/
  */
 class StorageUI {
@@ -318,7 +319,7 @@ class StorageUI {
 
     this._onResourceListAvailable = this._onResourceListAvailable.bind(this);
 
-    const { resourceCommand } = this._toolbox;
+    const { resourceCommand } = this._commands;
 
     this._listenedResourceTypes = [
       // The first item in this list will be the first selected storage item
@@ -333,7 +334,7 @@ class StorageUI {
     if (this._commands.descriptorFront.isWebExtensionDescriptor) {
       this._listenedResourceTypes.push(resourceCommand.TYPES.EXTENSION_STORAGE);
     }
-    await this._toolbox.resourceCommand.watchResources(
+    await this._commands.resourceCommand.watchResources(
       this._listenedResourceTypes,
       {
         onAvailable: this._onResourceListAvailable,
@@ -350,6 +351,7 @@ class StorageUI {
       "storage-table-headers-cookies-size",
       "storage-table-headers-cookies-last-accessed",
       "storage-table-headers-cookies-creation-time",
+      "storage-table-headers-cookies-update-time",
       "storage-table-headers-cache-status",
       "storage-table-headers-extension-storage-area",
       "storage-tree-labels-cookies",
@@ -445,7 +447,7 @@ class StorageUI {
     }
     this._destroyed = true;
 
-    const { resourceCommand } = this._toolbox;
+    const { resourceCommand } = this._commands;
     resourceCommand.unwatchResources(this._listenedResourceTypes, {
       onAvailable: this._onResourceListAvailable,
     });
@@ -569,14 +571,32 @@ class StorageUI {
     }
   }
 
-  editItem(data) {
+  async editItem(data, cellEditAbortController) {
     const selectedItem = this.tree.selectedItem;
     if (!selectedItem) {
       return;
     }
     const front = this.getCurrentFront();
 
-    front.editItem(data);
+    const result = await front.editItem(data);
+    // At the moment, only editing cookies can return an error
+    if (front.typeName === "cookies" && result?.errorString) {
+      const notificationBox = this._toolbox.getNotificationBox();
+      const message = await this._panelDoc.l10n.formatValue(
+        "storage-cookie-edit-error",
+        { errorString: result.errorString }
+      );
+
+      notificationBox.appendNotification(
+        message,
+        "storage-cookie-edit-error",
+        null,
+        notificationBox.PRIORITY_WARNING_LOW
+      );
+
+      // Revert value in table
+      cellEditAbortController.abort();
+    }
   }
 
   /**
@@ -716,9 +736,9 @@ class StorageUI {
    * Get a string for a column name automatically choosing whether or not the
    * string should be localized.
    *
-   * @param {String} type
+   * @param {string} type
    *        The storage type.
-   * @param {String} name
+   * @param {string} name
    *        The field name that may need to be localized.
    */
   _getColumnName(type, name) {
@@ -892,7 +912,7 @@ class StorageUI {
    *        The type of storage. Ex. "cookies"
    * @param {string} host
    *        Hostname
-   * @param {array} names
+   * @param {Array} names
    *        Names of particular store objects. Empty if all are requested
    * @param {Constant} reason
    *        See REASON constant at top of file.
@@ -1221,7 +1241,7 @@ class StorageUI {
    * Select handler for the storage tree. Fetches details of the selected item
    * from the storage details and populates the storage tree.
    *
-   * @param {array} item
+   * @param {Array} item
    *        An array of ids which represent the location of the selected item in
    *        the storage tree
    */
@@ -1349,7 +1369,7 @@ class StorageUI {
   /**
    * Populates or updates the rows in the storage table.
    *
-   * @param {array[object]} data
+   * @param {Array[object]} data
    *        Array of objects to be populated in the storage table
    * @param {Constant} reason
    *        See REASON constant at top of file.
@@ -1369,6 +1389,9 @@ class StorageUI {
       }
       if (item.creationTime != null) {
         item.creationTime = new Date(item.creationTime).toUTCString();
+      }
+      if (item.updateTime != null) {
+        item.updateTime = new Date(item.updateTime).toUTCString();
       }
       if (item.lastAccessed != null) {
         item.lastAccessed = new Date(item.lastAccessed).toUTCString();
@@ -1594,7 +1617,7 @@ class StorageUI {
   /**
    * Handles adding an item from the storage
    */
-  onAddItem() {
+  async onAddItem() {
     const selectedItem = this.tree.selectedItem;
     if (!selectedItem) {
       return;
@@ -1606,7 +1629,25 @@ class StorageUI {
     // Prepare to scroll into view.
     this.table.scrollIntoViewOnUpdate = true;
     this.table.editBookmark = createGUID();
-    front.addItem(this.table.editBookmark, host);
+    const result = await front.addItem(this.table.editBookmark, host);
+
+    // At the moment, only adding cookies can (theorically) return an error (although in
+    // practice, since we set the default properties of the cookie ourselves, this shouldn't
+    // happen).
+    if (front.typeName === "cookies" && result?.errorString) {
+      const notificationBox = this._toolbox.getNotificationBox();
+      const message = await this._panelDoc.l10n.formatValue(
+        "storage-cookie-create-error",
+        { errorString: result.errorString }
+      );
+
+      notificationBox.appendNotification(
+        message,
+        "storage-cookie-create-error",
+        null,
+        notificationBox.PRIORITY_WARNING_LOW
+      );
+    }
   }
 
   /**

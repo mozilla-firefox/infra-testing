@@ -8,7 +8,8 @@
 
 ChromeUtils.defineESModuleGetters(this, {
   BrowserUIUtils: "resource:///modules/BrowserUIUtils.sys.mjs",
-  CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
+  CustomizableUI:
+    "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
   DownloadPaths: "resource://gre/modules/DownloadPaths.sys.mjs",
   ExtensionControlledPopup:
     "resource:///modules/ExtensionControlledPopup.sys.mjs",
@@ -382,6 +383,12 @@ this.tabs = class extends ExtensionAPIPersistent {
         ) {
           return false;
         }
+        if (
+          filter.cookieStoreId != null &&
+          filter.cookieStoreId !== tab.cookieStoreId
+        ) {
+          return false;
+        }
         if (filter.urls) {
           return filter.urls.matches(tab._uri) && tab.hasTabPermission;
         }
@@ -407,11 +414,18 @@ this.tabs = class extends ExtensionAPIPersistent {
       };
 
       let listener = event => {
+        // tab grouping events are fired on the group,
+        // not the tab itself.
+        let updatedTab = event.originalTarget;
+        if (event.type == "TabGrouped" || event.type == "TabUngrouped") {
+          updatedTab = event.detail;
+        }
+
         // Ignore any events prior to TabOpen
         // and events that are triggered while tabs are swapped between windows.
         if (
-          event.originalTarget.initializingTab ||
-          event.originalTarget.ownerGlobal.gBrowserInit?.isAdoptingTab()
+          updatedTab.initializingTab ||
+          updatedTab.ownerGlobal.gBrowserInit?.isAdoptingTab()
         ) {
           return;
         }
@@ -419,6 +433,7 @@ this.tabs = class extends ExtensionAPIPersistent {
           return;
         }
         let needed = [];
+
         if (event.type == "TabAttrModified") {
           let changed = event.detail.changed;
           if (
@@ -473,7 +488,7 @@ this.tabs = class extends ExtensionAPIPersistent {
         } else if (event.type === "TabGrouped") {
           needed.push("groupId");
         } else if (event.type === "TabUngrouped") {
-          if (event.originalTarget.group) {
+          if (updatedTab.group) {
             // If there is still a group, that means that the group changed,
             // so TabGrouped will also fire. Ignore to avoid duplicate events.
             return;
@@ -485,14 +500,14 @@ this.tabs = class extends ExtensionAPIPersistent {
           needed.push("hidden");
         }
 
-        let tab = tabManager.getWrapper(event.originalTarget);
+        let tab = tabManager.getWrapper(updatedTab);
 
         let changeInfo = {};
         for (let prop of needed) {
           changeInfo[prop] = tab[prop];
         }
 
-        fireForTab(tab, changeInfo, event.originalTarget);
+        fireForTab(tab, changeInfo, updatedTab);
       };
 
       let statusListener = ({ browser, status, url }) => {
@@ -765,7 +780,7 @@ this.tabs = class extends ExtensionAPIPersistent {
               url = context.uri.resolve(createProperties.url);
 
               if (
-                !url.startsWith("moz-extension://") &&
+                !ExtensionUtils.isExtensionUrl(url) &&
                 !context.checkLoadURL(url, { dontReportErrors: true })
               ) {
                 return Promise.reject({ message: `Illegal URL: ${url}` });
@@ -779,7 +794,7 @@ this.tabs = class extends ExtensionAPIPersistent {
             }
             let discardable = url && !url.startsWith("about:");
             // Handle moz-ext separately from the discardable flag to retain prior behavior.
-            if (!discardable || url.startsWith("moz-extension://")) {
+            if (!discardable || ExtensionUtils.isExtensionUrl(url)) {
               setContentTriggeringPrincipal(url, window.gBrowser, options);
             }
 
@@ -804,12 +819,12 @@ this.tabs = class extends ExtensionAPIPersistent {
               }
             }
 
-            // Simple properties
-            const properties = ["index", "pinned"];
-            for (let prop of properties) {
-              if (createProperties[prop] != null) {
-                options[prop] = createProperties[prop];
-              }
+            if (createProperties.index != null) {
+              options.tabIndex = createProperties.index;
+            }
+
+            if (createProperties.pinned != null) {
+              options.pinned = createProperties.pinned;
             }
 
             let active =
@@ -851,11 +866,14 @@ this.tabs = class extends ExtensionAPIPersistent {
 
             if (
               createProperties.url &&
-              createProperties.url !== window.BROWSER_NEW_TAB_URL
+              createProperties.url !== window.BROWSER_NEW_TAB_URL &&
+              !createProperties.url.startsWith("about:blank")
             ) {
               // We can't wait for a location change event for about:newtab,
               // since it may be pre-rendered, in which case its initial
               // location change event has already fired.
+              // The same goes for about:blank, since the initial blank document
+              // is loaded synchronously.
 
               // Mark the tab as initializing, so that operations like
               // `executeScript` wait until the requested URL is loaded in
@@ -900,7 +918,13 @@ this.tabs = class extends ExtensionAPIPersistent {
         },
 
         async discard(tabIds) {
-          for (let nativeTab of getNativeTabsFromIDArray(tabIds)) {
+          let nativeTabs = getNativeTabsFromIDArray(tabIds);
+          await Promise.all(
+            nativeTabs.map(nativeTab =>
+              nativeTab.ownerGlobal.gBrowser.prepareDiscardBrowser(nativeTab)
+            )
+          );
+          for (let nativeTab of nativeTabs) {
             nativeTab.ownerGlobal.gBrowser.discardBrowser(nativeTab);
           }
         },
@@ -922,7 +946,7 @@ this.tabs = class extends ExtensionAPIPersistent {
 
             if (!context.checkLoadURL(url, { dontReportErrors: true })) {
               // We allow loading top level tabs for "other" extensions.
-              if (url.startsWith("moz-extension://")) {
+              if (ExtensionUtils.isExtensionUrl(url)) {
                 setContentTriggeringPrincipal(url, tabbrowser, options);
               } else {
                 return Promise.reject({ message: `Illegal URL: ${url}` });
@@ -1201,7 +1225,7 @@ this.tabs = class extends ExtensionAPIPersistent {
         },
 
         duplicate(tabId, duplicateProperties) {
-          const { active, index } = duplicateProperties || {};
+          const { active, index: tabIndex } = duplicateProperties || {};
           const inBackground = active === undefined ? false : !active;
 
           // Schema requires tab id.
@@ -1210,7 +1234,7 @@ this.tabs = class extends ExtensionAPIPersistent {
           let gBrowser = nativeTab.ownerGlobal.gBrowser;
           let newTab = gBrowser.duplicateTab(nativeTab, true, {
             inBackground,
-            index,
+            tabIndex,
           });
 
           tabListener.blockTabUntilRestored(newTab);

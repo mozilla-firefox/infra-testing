@@ -27,9 +27,8 @@ to convey the message's urgency or importance. You can customize `moz-message-ba
 The source for `moz-message-bar` can be found under
 [toolkit/content/widgets/moz-message-bar](https://searchfox.org/mozilla-central/source/toolkit/content/widgets/moz-message-bar/moz-message-bar.mjs).
 You can find an examples of `moz-message-bar` in use in the Firefox codebase in
-[about:addons](https://searchfox.org/mozilla-central/source/toolkit/mozapps/extensions/content/aboutaddons.html),
-[unified extensions panel](https://searchfox.org/mozilla-central/source/browser/base/content/browser-addons.js) and
-[shopping components](https://searchfox.org/mozilla-central/source/browser/components/shopping/content/shopping-message-bar.mjs).
+[about:addons](https://searchfox.org/mozilla-central/source/toolkit/mozapps/extensions/content/aboutaddons.html) and
+[unified extensions panel](https://searchfox.org/mozilla-central/source/browser/base/content/browser-addons.js).
 
 ## How to use `moz-message-bar`
 
@@ -53,4 +52,24 @@ The `data-l10n-attrs` will be set up automatically via `MozLitElement`, so you c
 
 ```html
   <moz-message-bar data-l10n-id="with-heading-and-message"></moz-message-bar>
+```
+
+### Custom `message` slot
+
+Normally the "message" of `moz-message-bar` can only be a string (containing no HTML elements). However, if you'd like to use a message that contains nested HTML, such as an anchor link, you can use the message slot.
+
+
+```html
+<moz-message-bar>
+  <span slot="message" data-l10n-id="moz-message-bar-message-slot">
+    <a data-l10n-name="moz-message-bar-link" href="http://example.com"></a>
+  </span>
+</moz-message-bar>
+```
+
+
+```html story
+<moz-message-bar>
+  <span slot="message">Here is a message with a nested <a href="https://example.com" target="_blank">link</a>.</span>
+</moz-message-bar>
 ```

@@ -11,13 +11,25 @@ import android.util.Base64
 import android.view.KeyEvent
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.MediumTest
-import org.hamcrest.Matchers.* // ktlint-disable no-wildcard-imports
+import org.hamcrest.Matchers.closeTo
+import org.hamcrest.Matchers.containsString
+import org.hamcrest.Matchers.endsWith
+import org.hamcrest.Matchers.equalTo
+import org.hamcrest.Matchers.greaterThan
+import org.hamcrest.Matchers.isEmptyOrNullString
+import org.hamcrest.Matchers.not
+import org.hamcrest.Matchers.notNullValue
+import org.hamcrest.Matchers.nullValue
+import org.hamcrest.Matchers.startsWith
 import org.json.JSONObject
 import org.junit.Assume.assumeThat
 import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mozilla.geckoview.* // ktlint-disable no-wildcard-imports
+import org.mozilla.geckoview.AllowOrDeny
+import org.mozilla.geckoview.ContentBlocking
+import org.mozilla.geckoview.GeckoResult
+import org.mozilla.geckoview.GeckoRuntimeSettings
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSession.ContentDelegate
 import org.mozilla.geckoview.GeckoSession.HistoryDelegate
@@ -27,8 +39,16 @@ import org.mozilla.geckoview.GeckoSession.NavigationDelegate.LoadRequest
 import org.mozilla.geckoview.GeckoSession.PermissionDelegate
 import org.mozilla.geckoview.GeckoSession.ProgressDelegate
 import org.mozilla.geckoview.GeckoSession.TextInputDelegate
+import org.mozilla.geckoview.GeckoSessionSettings
+import org.mozilla.geckoview.WebExtension
+import org.mozilla.geckoview.WebExtensionController
+import org.mozilla.geckoview.WebRequestError
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule
-import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.* // ktlint-disable no-wildcard-imports
+import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.AssertCalled
+import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.NullDelegate
+import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.RejectedPromiseException
+import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.Setting
+import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.WithDisplay
 import org.mozilla.geckoview.test.util.UiThreadUtils
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.ThreadLocalRandom
@@ -344,6 +364,7 @@ class NavigationDelegateTest : BaseSessionTest() {
         }
     }
 
+    @Ignore("https://bugzilla.mozilla.org/show_bug.cgi?id=1988041")
     @Test fun loadWithHTTPSOnlyMode() {
         sessionRule.runtime.settings.setAllowInsecureConnections(GeckoRuntimeSettings.HTTPS_ONLY)
 
@@ -476,6 +497,7 @@ class NavigationDelegateTest : BaseSessionTest() {
 
     // Due to Bug 1692578 we currently cannot test bypassing of the error
     // the URI loading process takes the desktop path for iframes
+    @Ignore("https://bugzilla.mozilla.org/show_bug.cgi?id=1988041")
     @Test fun loadHTTPSOnlyInSubframe() {
         sessionRule.runtime.settings.setAllowInsecureConnections(GeckoRuntimeSettings.HTTPS_ONLY)
 
@@ -707,10 +729,10 @@ class NavigationDelegateTest : BaseSessionTest() {
         mainSession.waitForPageStop()
 
         // load insecure subdomain url to see if it gets upgraded to https
-        val http_uri = "http://test1.example.com/"
-        val https_uri = "https://test1.example.com/"
+        val httpUri = "http://test1.example.com/"
+        val httpsUri = "https://test1.example.com/"
 
-        mainSession.loadUri(http_uri)
+        mainSession.loadUri(httpUri)
         mainSession.waitForPageStop()
 
         mainSession.forCallbacksDuringWait(object : NavigationDelegate {
@@ -722,15 +744,15 @@ class NavigationDelegateTest : BaseSessionTest() {
                 assertThat(
                     "URI should be HTTP then redirected to HTTPS",
                     request.uri,
-                    equalTo(forEachCall(http_uri, https_uri)),
+                    equalTo(forEachCall(httpUri, httpsUri)),
                 )
                 return null
             }
         })
 
         // load subdomain that will trigger the cert error
-        val no_cert_uri = "https://nocert.example.com/"
-        mainSession.loadUri(no_cert_uri)
+        val noCertUri = "https://nocert.example.com/"
+        mainSession.loadUri(noCertUri)
         mainSession.waitForPageStop()
 
         mainSession.forCallbacksDuringWait(object : NavigationDelegate {
@@ -889,6 +911,56 @@ class NavigationDelegateTest : BaseSessionTest() {
                     request.isRedirect,
                     equalTo(forEachCall(false, true)),
                 )
+                return null
+            }
+        })
+    }
+
+    @Test fun sandboxCallNavigationDelegate() {
+        mainSession.loadTestPath(IFRAME_SANDBOX_ALLOW)
+        sessionRule.waitForPageStop()
+        mainSession.evaluateJS("document.getElementById('iframe').contentDocument.getElementById('tel-button').click();")
+        sessionRule.forCallbacksDuringWait(object : NavigationDelegate {
+            @AssertCalled(count = 1)
+            override fun onLoadRequest(
+                session: GeckoSession,
+                request: LoadRequest,
+            ): GeckoResult<AllowOrDeny>? {
+                assertThat("Session should not be null", session, notNullValue())
+                assertThat("URI should not be null", request.uri, notNullValue())
+                return null
+            }
+
+            @AssertCalled(count = 1)
+            override fun onSubframeLoadRequest(
+                session: GeckoSession,
+                request: LoadRequest,
+            ): GeckoResult<AllowOrDeny?>? {
+                assertThat("URI should not be null", request.uri, notNullValue())
+                assertThat("URI should not be null", request.uri, notNullValue())
+                return null
+            }
+        })
+    }
+
+    @Test fun sandboxDoesntCallNavigationDelegate() {
+        mainSession.loadTestPath(IFRAME_SANDBOX_BLOCK)
+        sessionRule.waitForPageStop()
+        mainSession.evaluateJS("document.getElementById('iframe').contentDocument.getElementById('tel-button').click();")
+        sessionRule.forCallbacksDuringWait(object : NavigationDelegate {
+            @AssertCalled(count = 1)
+            override fun onLoadRequest(
+                session: GeckoSession,
+                request: LoadRequest,
+            ): GeckoResult<AllowOrDeny>? {
+                return null
+            }
+
+            @AssertCalled(count = 0)
+            override fun onSubframeLoadRequest(
+                session: GeckoSession,
+                request: LoadRequest,
+            ): GeckoResult<AllowOrDeny?>? {
                 return null
             }
         })
@@ -1266,6 +1338,57 @@ class NavigationDelegateTest : BaseSessionTest() {
             userAgent,
             containsString(vrSubStr),
         )
+    }
+
+    @Test fun desktopModeRFP() {
+        mainSession.loadUri("https://example.com")
+        sessionRule.waitForPageStop()
+
+        val majorVersion = BuildConfig.MOZILLA_VERSION.split(".")[0]
+
+        val rfpUADesktopString = "Mozilla/5.0 (X11; Linux x86_64; rv:$majorVersion.0) Gecko/20100101 Firefox/$majorVersion.0"
+
+        sessionRule.runtime.settings.setFingerprintingProtection(true)
+        sessionRule.runtime.settings.setFingerprintingProtectionOverrides("-AllTargets,+HttpUserAgent")
+
+        mainSession.settings.userAgentMode = GeckoSessionSettings.USER_AGENT_MODE_DESKTOP
+        mainSession.reload()
+        mainSession.waitForPageStop()
+
+        assertThat(
+            "User agent should be set to $rfpUADesktopString",
+            getUserAgent(),
+            equalTo(rfpUADesktopString),
+        )
+
+        var userAgent = sessionRule.waitForResult(mainSession.userAgent)
+        assertThat(
+            "User agent should be reported as $rfpUADesktopString",
+            userAgent,
+            containsString(rfpUADesktopString),
+        )
+
+        val rfpUAMobileString = "Mozilla/5.0 (Android 10; Mobile; rv:$majorVersion.0) Gecko/$majorVersion.0 Firefox/$majorVersion.0"
+
+        mainSession.settings.userAgentMode = GeckoSessionSettings.USER_AGENT_MODE_MOBILE
+        mainSession.reload()
+        mainSession.waitForPageStop()
+
+        assertThat(
+            "User agent should be set to $rfpUAMobileString",
+            getUserAgent(),
+            equalTo(rfpUAMobileString),
+        )
+
+        userAgent = sessionRule.waitForResult(mainSession.userAgent)
+        assertThat(
+            "User agent should be reported as $rfpUAMobileString",
+            userAgent,
+            containsString(rfpUAMobileString),
+        )
+
+        sessionRule.runtime.settings.setFingerprintingProtection(false)
+        sessionRule.runtime.settings.setFingerprintingProtectionOverrides("")
     }
 
     private fun getUserAgent(session: GeckoSession = mainSession): String {
@@ -2595,11 +2718,13 @@ class NavigationDelegateTest : BaseSessionTest() {
                 extension: WebExtension,
                 permissions: Array<String>,
                 origins: Array<String>,
+                dataCollectionPermissions: Array<String>,
             ): GeckoResult<WebExtension.PermissionPromptResponse>? {
                 return GeckoResult.fromValue(
                     WebExtension.PermissionPromptResponse(
                         true, // isPermissionsGranted
                         false, // isPrivateModeGranted
+                        false, // isTechnicalAndInteractionDataGranted
                     ),
                 )
             }

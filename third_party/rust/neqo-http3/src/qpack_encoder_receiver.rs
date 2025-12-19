@@ -4,9 +4,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc, time::Instant};
 
-use neqo_qpack::QPackEncoder;
+use neqo_qpack as qpack;
 use neqo_transport::{Connection, StreamId};
 
 use crate::{CloseType, Error, Http3StreamType, ReceiveOutput, RecvStream, Res, Stream};
@@ -14,11 +14,11 @@ use crate::{CloseType, Error, Http3StreamType, ReceiveOutput, RecvStream, Res, S
 #[derive(Debug)]
 pub struct EncoderRecvStream {
     stream_id: StreamId,
-    encoder: Rc<RefCell<QPackEncoder>>,
+    encoder: Rc<RefCell<qpack::Encoder>>,
 }
 
 impl EncoderRecvStream {
-    pub const fn new(stream_id: StreamId, encoder: Rc<RefCell<QPackEncoder>>) -> Self {
+    pub const fn new(stream_id: StreamId, encoder: Rc<RefCell<qpack::Encoder>>) -> Self {
         Self { stream_id, encoder }
     }
 }
@@ -34,8 +34,10 @@ impl RecvStream for EncoderRecvStream {
         Err(Error::HttpClosedCriticalStream)
     }
 
-    fn receive(&mut self, conn: &mut Connection) -> Res<(ReceiveOutput, bool)> {
-        self.encoder.borrow_mut().receive(conn, self.stream_id)?;
+    fn receive(&mut self, conn: &mut Connection, now: Instant) -> Res<(ReceiveOutput, bool)> {
+        self.encoder
+            .borrow_mut()
+            .receive(conn, self.stream_id, now)?;
         Ok((ReceiveOutput::NoOutput, false))
     }
 }

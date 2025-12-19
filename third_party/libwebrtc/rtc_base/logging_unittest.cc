@@ -12,21 +12,23 @@
 
 #if RTC_LOG_ENABLED()
 
+#include <cstddef>
+#include <cstdint>
 #include <string>
 
 #include "absl/strings/string_view.h"
-#include "rtc_base/arraysize.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/platform_thread.h"
 #include "rtc_base/time_utils.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 
-namespace rtc {
+namespace webrtc {
 
 namespace {
 
 using ::testing::HasSubstr;
+using ::testing::StartsWith;
 
 #if defined(WEBRTC_WIN)
 constexpr char kFakeFilePath[] = "some\\path\\myfile.cc";
@@ -264,10 +266,7 @@ TEST(LogTest, CheckExtraErrorField) {
                                0xD);
   log_msg.stream() << "This gets added at dtor time";
 
-  const std::string& extra = log_msg.get_extra();
-  const size_t length_to_check = arraysize("[0x12345678]") - 1;
-  ASSERT_GE(extra.length(), length_to_check);
-  EXPECT_EQ(std::string("[0x0000000D]"), extra.substr(0, length_to_check));
+  EXPECT_THAT(log_msg.get_extra(), StartsWith("[0x0000000D]"));
 }
 
 TEST(LogTest, CheckFilePathParsed) {
@@ -315,7 +314,9 @@ TEST(LogTest, Perf) {
   LogMessage::AddLogToStream(&stream, LS_VERBOSE);
 
   const std::string message(80, 'X');
-  { LogMessageForTesting sanity_check_msg(__FILE__, __LINE__, LS_VERBOSE); }
+  {
+    LogMessageForTesting sanity_check_msg(__FILE__, __LINE__, LS_VERBOSE);
+  }
 
   // We now know how many bytes the logging framework will tag onto every msg.
   const size_t logging_overhead = str.size();
@@ -412,5 +413,5 @@ TEST(LogTest, EnumSupportsAbslStringify) {
   LogMessage::RemoveLogToStream(&stream);
 }
 
-}  // namespace rtc
+}  // namespace webrtc
 #endif  // RTC_LOG_ENABLED()

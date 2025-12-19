@@ -25,7 +25,7 @@ AntiTracking.runTestInNormalAndPrivateMode(
       );
     });
   },
-  [["dom.indexedDB.hide_in_pbmode.enabled", false]]
+  [["network.lna.block_trackers", false]]
 );
 
 AntiTracking.runTestInNormalAndPrivateMode(
@@ -96,7 +96,7 @@ AntiTracking.runTestInNormalAndPrivateMode(
       );
     });
   },
-  [["dom.indexedDB.hide_in_pbmode.enabled", false]],
+  [["network.lna.block_trackers", false]],
   false,
   false
 );

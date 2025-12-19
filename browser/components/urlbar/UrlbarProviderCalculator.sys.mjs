@@ -7,14 +7,14 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 import {
   UrlbarProvider,
   UrlbarUtils,
-} from "resource:///modules/UrlbarUtils.sys.mjs";
+} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
-  UrlbarView: "resource:///modules/UrlbarView.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarView: "moz-src:///browser/components/urlbar/UrlbarView.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "l10n", () => {
@@ -25,7 +25,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "ClipboardHelper",
   "@mozilla.org/widget/clipboardhelper;1",
-  "nsIClipboardHelper"
+  Ci.nsIClipboardHelper
 );
 
 // This pref is relative to the `browser.urlbar` branch.
@@ -75,7 +75,7 @@ const FULL_NUMBER_MIN_THRESHOLD = 10 ** -5;
  * A provider that returns a suggested url to the user based on what
  * they have currently typed so they can navigate directly.
  */
-class ProviderCalculator extends UrlbarProvider {
+export class UrlbarProviderCalculator extends UrlbarProvider {
   constructor() {
     super();
     lazy.UrlbarResult.addDynamicResultType(DYNAMIC_RESULT_TYPE);
@@ -83,18 +83,7 @@ class ProviderCalculator extends UrlbarProvider {
   }
 
   /**
-   * Returns the name of this provider.
-   *
-   * @returns {string} the name of this provider.
-   */
-  get name() {
-    return DYNAMIC_RESULT_TYPE;
-  }
-
-  /**
-   * The type of the provider.
-   *
-   * @returns {UrlbarUtils.PROVIDER_TYPE}
+   * @returns {Values<typeof UrlbarUtils.PROVIDER_TYPE>}
    */
   get type() {
     return UrlbarUtils.PROVIDER_TYPE.PROFILE;
@@ -106,9 +95,8 @@ class ProviderCalculator extends UrlbarProvider {
    * with this provider, to save on resources.
    *
    * @param {UrlbarQueryContext} queryContext The query context object
-   * @returns {boolean} Whether this provider should be invoked for the search.
    */
-  isActive(queryContext) {
+  async isActive(queryContext) {
     return (
       queryContext.trimmedSearchString &&
       !queryContext.searchMode &&
@@ -117,12 +105,11 @@ class ProviderCalculator extends UrlbarProvider {
   }
 
   /**
-   * Starts querying. Extended classes should return a Promise resolved when the
-   * provider is done searching AND returning results.
+   * Starts querying.
    *
-   * @param {UrlbarQueryContext} queryContext The query context object
-   * @param {Function} addCallback Callback invoked by the provider to add a new
-   *        result. A UrlbarResult should be passed to it.
+   * @param {UrlbarQueryContext} queryContext
+   * @param {(provider: UrlbarProvider, result: UrlbarResult) => void} addCallback
+   *   Callback invoked by the provider to add a new result.
    */
   async startQuery(queryContext, addCallback) {
     try {
@@ -133,73 +120,53 @@ class ProviderCalculator extends UrlbarProvider {
         return;
       }
       let value = Calculator.evaluatePostfix(postfix);
-      const result = new lazy.UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.DYNAMIC,
-        UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-        {
+      const result = new lazy.UrlbarResult({
+        type: UrlbarUtils.RESULT_TYPE.DYNAMIC,
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        suggestedIndex: 1,
+        payload: {
           value,
           input: queryContext.searchString,
           dynamicType: DYNAMIC_RESULT_TYPE,
-        }
-      );
-      result.suggestedIndex = 1;
+        },
+      });
       addCallback(this, result);
     } catch (e) {}
   }
 
   getViewUpdate(result) {
-    let input;
     const { value } = result.payload;
 
-    if (value == UNDEFINED_VALUE) {
-      input = {
-        l10n: { id: "urlbar-result-action-undefined-calculator-result" },
-      };
-    } else if (value.toString().includes("e")) {
-      input = {
-        l10n: {
-          id: "urlbar-result-action-calculator-result-scientific-notation",
-          args: { result: value },
-        },
-      };
-    } else {
-      const l10nId =
-        Math.abs(value) < 1
-          ? "urlbar-result-action-calculator-result-decimal"
-          : "urlbar-result-action-calculator-result-3";
-      input = {
-        l10n: {
-          id: l10nId,
-          args: { result: value },
-        },
-      };
-    }
-
-    const viewUpdate = {
+    return {
       icon: {
         attributes: {
           src: "chrome://global/skin/icons/edit-copy.svg",
         },
       },
-      input,
+      input:
+        value == UNDEFINED_VALUE
+          ? {
+              l10n: { id: "urlbar-result-action-undefined-calculator-result" },
+            }
+          : {
+              textContent: `= ${value}`,
+              attributes: { dir: "ltr" },
+            },
       action: {
         l10n: { id: "urlbar-result-action-copy-to-clipboard" },
       },
     };
-
-    return viewUpdate;
   }
 
   onEngagement(queryContext, controller, details) {
-    let { result } = details;
-    const resultL10n = this.getViewUpdate(result).input.l10n;
-    const res = resultL10n.args || {};
-
-    let localizedResult = lazy.l10n.formatValueSync(resultL10n.id, res);
-
-    // Remove "= " from the start of the string.
-    if (localizedResult.startsWith("=")) {
-      localizedResult = localizedResult.slice(1).trim();
+    const { result } = details;
+    const input = this.getViewUpdate(result).input;
+    let localizedResult;
+    if ("l10n" in input) {
+      const args = input.l10n.args || {};
+      localizedResult = lazy.l10n.formatValueSync(input.l10n.id, args);
+    } else {
+      localizedResult = input.textContent.replace(/^=\s*/, "");
     }
 
     lazy.ClipboardHelper.copyString(localizedResult);
@@ -230,11 +197,16 @@ class BaseCalculator {
     return this.numberSystems.some(sys => sys.isNumericToken(char));
   }
 
+  /**
+   * Parses a string into a float accounting for different localisations.
+   *
+   * @param {string} num
+   */
   parsel10nFloat(num) {
     for (const system of this.numberSystems) {
       num = system.transformNumber(num);
     }
-    return parseFloat(num, 10);
+    return parseFloat(num);
   }
 
   precedence(val) {
@@ -267,13 +239,13 @@ class BaseCalculator {
   // Currently functions are unimplemented
   infix2postfix(infix) {
     let parser = new Parser(infix, this);
-    let tokens = parser.parse(infix);
+    let tokens = parser.parse();
     let output = [];
     let stack = [];
 
     tokens.forEach(token => {
       if (token.number) {
-        output.push(this.parsel10nFloat(token.value, 10));
+        output.push(this.parsel10nFloat(token.value));
       }
 
       if (this.isOperator(token.value)) {
@@ -317,16 +289,6 @@ class BaseCalculator {
     "^": (a, b) => a ** b,
   };
 
-  toScientificNotation(num) {
-    let res = new Intl.NumberFormat("en-US", {
-      style: "decimal",
-      notation: "scientific",
-      minimumFractionDigits: 1,
-      maximumFractionDigits: 8,
-    }).format(num);
-    return res.toLowerCase();
-  }
-
   evaluatePostfix(postfix) {
     let stack = [];
 
@@ -350,13 +312,35 @@ class BaseCalculator {
     if (isNaN(finalResult) || !isFinite(finalResult)) {
       throw new Error("Value is " + finalResult);
     }
+
+    let locale = Services.locale.appLocaleAsBCP47;
+
     if (
       Math.abs(finalResult) >= FULL_NUMBER_MAX_THRESHOLD ||
       (Math.abs(finalResult) <= FULL_NUMBER_MIN_THRESHOLD && finalResult != 0)
     ) {
-      finalResult = this.toScientificNotation(finalResult);
+      return new Intl.NumberFormat(locale, {
+        style: "decimal",
+        notation: "scientific",
+        minimumFractionDigits: 1,
+        maximumFractionDigits: 8,
+        numberingSystem: "latn",
+      })
+        .format(finalResult)
+        .toLowerCase();
+    } else if (Math.abs(finalResult) < 1) {
+      return new Intl.NumberFormat(locale, {
+        style: "decimal",
+        maximumSignificantDigits: 9,
+        numberingSystem: "latn",
+      }).format(finalResult);
     }
-    return finalResult;
+    return new Intl.NumberFormat(locale, {
+      style: "decimal",
+      useGrouping: false,
+      maximumFractionDigits: 8,
+      numberingSystem: "latn",
+    }).format(finalResult);
   }
 }
 
@@ -513,9 +497,13 @@ export let Calculator = new BaseCalculator();
 Calculator.addNumberSystem({
   isOperator: char => ["÷", "×", "-", "+", "*", "/", "^"].includes(char),
   isNumericToken: char => /^[0-9\.,]/.test(char),
-  // parseFloat will only handle numbers that use periods as decimal
-  // seperators, various countries use commas. This function attempts
-  // to fixup the number so parseFloat will accept it.
+  /**
+   * parseFloat will only handle numbers that use periods as decimal
+   * separators, various countries use commas. This function attempts
+   * to fixup the number so parseFloat will accept it.
+   *
+   * @param {string} num
+   */
   transformNumber: num => {
     let firstComma = num.indexOf(",");
     let firstPeriod = num.indexOf(".");
@@ -543,5 +531,3 @@ Calculator.addNumberSystem({
     return num;
   },
 });
-
-export var UrlbarProviderCalculator = new ProviderCalculator();

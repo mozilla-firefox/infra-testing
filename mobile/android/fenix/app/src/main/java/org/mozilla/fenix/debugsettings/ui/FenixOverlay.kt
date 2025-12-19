@@ -12,6 +12,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.lifecycleScope
@@ -19,17 +21,16 @@ import androidx.navigation.compose.rememberNavController
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.store.BrowserStore
-import mozilla.components.compose.base.annotation.LightDarkPreview
 import mozilla.components.concept.storage.CreditCardsAddressesStorage
 import mozilla.components.concept.storage.LoginsStorage
 import mozilla.components.lib.state.ext.observeAsState
 import mozilla.telemetry.glean.Glean
 import org.mozilla.fenix.R
-import org.mozilla.fenix.debugsettings.addresses.AddressesDebugLocalesRepository
+import org.mozilla.fenix.debugsettings.addresses.AddressesDebugRegionRepository
 import org.mozilla.fenix.debugsettings.addresses.AddressesTools
-import org.mozilla.fenix.debugsettings.addresses.FakeAddressesDebugLocalesRepository
+import org.mozilla.fenix.debugsettings.addresses.FakeAddressesDebugRegionRepository
 import org.mozilla.fenix.debugsettings.addresses.FakeCreditCardsAddressesStorage
-import org.mozilla.fenix.debugsettings.addresses.SharedPrefsAddressesDebugLocalesRepository
+import org.mozilla.fenix.debugsettings.addresses.SharedPrefsAddressesDebugRegionRepository
 import org.mozilla.fenix.debugsettings.cfrs.CfrToolsPreferencesMiddleware
 import org.mozilla.fenix.debugsettings.cfrs.CfrToolsState
 import org.mozilla.fenix.debugsettings.cfrs.CfrToolsStore
@@ -93,26 +94,19 @@ fun FenixOverlay(
                         intent.data = debugViewLink.toUri()
                         context.startActivity(intent)
                     },
-                    showToast = { pingType ->
-                        val toast = Toast.makeText(
-                            context,
-                            context.getString(
-                                R.string.glean_debug_tools_send_ping_toast_message,
-                                pingType,
-                            ),
-                            Toast.LENGTH_LONG,
-                        )
-                        toast.show()
+                    showToast = stringResource(R.string.glean_debug_tools_send_ping_toast_message).let { template ->
+                        { pingType: String ->
+                            Toast.makeText(context, template.format(pingType), Toast.LENGTH_LONG).show()
+                        }
                     },
                 ),
             ),
         ),
         loginsStorage = loginsStorage,
-        addressesDebugLocalesRepository = context.components.strictMode.resetAfter(StrictMode.allowThreadDiskReads()) {
-            SharedPrefsAddressesDebugLocalesRepository(
-                context,
-            )
-        },
+        addressesDebugRegionRepository =
+            context.components.strictMode.allowViolation(StrictMode::allowThreadDiskReads) {
+                SharedPrefsAddressesDebugRegionRepository(context)
+            },
         creditCardsAddressesStorage = context.components.core.autofillStorage,
         inactiveTabsEnabled = inactiveTabsEnabled,
     )
@@ -125,7 +119,7 @@ fun FenixOverlay(
  * @param cfrToolsStore [CfrToolsStore] used to access [CfrToolsState].
  * @param gleanDebugToolsStore [GleanDebugToolsStore] used to access [GleanDebugToolsState].
  * @param loginsStorage [LoginsStorage] used to access logins for [LoginsTools].
- * @param addressesDebugLocalesRepository used to control storage for [AddressesTools].
+ * @param addressesDebugRegionRepository used to control storage for [AddressesTools].
  * @param creditCardsAddressesStorage used to access addresses for [AddressesTools].
  * @param inactiveTabsEnabled Whether the inactive tabs feature is enabled.
  */
@@ -135,7 +129,7 @@ private fun FenixOverlay(
     cfrToolsStore: CfrToolsStore,
     gleanDebugToolsStore: GleanDebugToolsStore,
     loginsStorage: LoginsStorage,
-    addressesDebugLocalesRepository: AddressesDebugLocalesRepository,
+    addressesDebugRegionRepository: AddressesDebugRegionRepository,
     creditCardsAddressesStorage: CreditCardsAddressesStorage,
     inactiveTabsEnabled: Boolean,
 ) {
@@ -161,7 +155,7 @@ private fun FenixOverlay(
             gleanDebugToolsStore = gleanDebugToolsStore,
             inactiveTabsEnabled = inactiveTabsEnabled,
             loginsStorage = loginsStorage,
-            addressesDebugLocalesRepository = addressesDebugLocalesRepository,
+            addressesDebugRegionRepository = addressesDebugRegionRepository,
             creditCardsAddressesStorage = creditCardsAddressesStorage,
         )
     }
@@ -187,7 +181,7 @@ private fun FenixOverlay(
     }
 }
 
-@LightDarkPreview
+@PreviewLightDark
 @Composable
 private fun FenixOverlayPreview() {
     val selectedTab = createTab("https://mozilla.org")
@@ -200,11 +194,17 @@ private fun FenixOverlayPreview() {
             initialState = GleanDebugToolsState(
                 logPingsToConsoleEnabled = false,
                 debugViewTag = "",
+                pingTypes = listOf(
+                    "metrics",
+                    "baseline",
+                    "ping type 3",
+                    "ping type 4",
+                ),
             ),
         ),
         inactiveTabsEnabled = true,
         loginsStorage = FakeLoginsStorage(),
-        addressesDebugLocalesRepository = FakeAddressesDebugLocalesRepository(),
+        addressesDebugRegionRepository = FakeAddressesDebugRegionRepository(),
         creditCardsAddressesStorage = FakeCreditCardsAddressesStorage(),
     )
 }

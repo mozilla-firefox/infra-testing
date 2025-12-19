@@ -76,6 +76,7 @@ function resolveDisplayNamesInternals(lazyDisplayNamesData) {
   }
 
   if (mozExtensions) {
+    // Note that special casing applies in DateTimeFormat.
     internalProps.calendar = r.ca;
   }
 
@@ -178,7 +179,7 @@ function InitializeDisplayNames(displayNames, locales, options, mozExtensions) {
   }
 
   // Step 5.
-  var opt = new_Record();
+  var opt = NEW_RECORD();
   lazyDisplayNamesData.opt = opt;
   lazyDisplayNamesData.mozExtensions = mozExtensions;
 
@@ -303,24 +304,6 @@ function InitializeDisplayNames(displayNames, locales, options, mozExtensions) {
   // We've done everything that must be done now: mark the lazy data as fully
   // computed and install it.
   initializeIntlObject(displayNames, "DisplayNames", lazyDisplayNamesData);
-}
-
-/**
- * Returns the subset of the given locale list for which this locale list has a
- * matching (possibly fallback) locale. Locales appear in the same order in the
- * returned list as in the input list.
- */
-function Intl_DisplayNames_supportedLocalesOf(locales /*, options*/) {
-  var options = ArgumentsLength() > 1 ? GetArgument(1) : undefined;
-
-  // Step 1.
-  var availableLocales = "DisplayNames";
-
-  // Step 2.
-  var requestedLocales = CanonicalizeLocaleList(locales);
-
-  // Step 3.
-  return SupportedLocales(availableLocales, requestedLocales, options);
 }
 
 /**

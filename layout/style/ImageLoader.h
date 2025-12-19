@@ -15,7 +15,6 @@
 #include "nsHashKeys.h"
 #include "nsRect.h"
 #include "nsTArray.h"
-#include "mozilla/Attributes.h"
 
 class nsIFrame;
 class imgIContainer;

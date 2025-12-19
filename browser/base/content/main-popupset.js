@@ -3,8 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/browser-window */
-
 document.addEventListener(
   "DOMContentLoaded",
   () => {
@@ -25,6 +23,18 @@ document.addEventListener(
           break;
         case "context_ungroupTab":
           TabContextMenu.ungroupTabs();
+          break;
+        case "context_moveSplitViewToNewGroup":
+          TabContextMenu.moveSplitViewToNewGroup();
+          break;
+        case "context_ungroupSplitView":
+          TabContextMenu.ungroupSplitViews();
+          break;
+        case "context_moveTabToSplitView":
+          TabContextMenu.moveTabsToSplitView();
+          break;
+        case "context_separateSplitView":
+          TabContextMenu.unsplitTabs();
           break;
         case "context_reloadTab":
           gBrowser.reloadTab(TabContextMenu.contextTab);
@@ -49,7 +59,9 @@ document.addEventListener(
           );
           break;
         case "context_pinTab":
-          gBrowser.pinTab(TabContextMenu.contextTab);
+          gBrowser.pinTab(TabContextMenu.contextTab, {
+            telemetrySource: lazy.TabMetrics.METRIC_SOURCE.TAB_MENU,
+          });
           break;
         case "context_unpinTab":
           gBrowser.unpinTab(TabContextMenu.contextTab);
@@ -72,6 +84,13 @@ document.addEventListener(
         case "context_bookmarkTab":
           PlacesCommandHook.bookmarkTabs([TabContextMenu.contextTab]);
           break;
+        case "context_addNote":
+        case "context_editNote":
+          gBrowser.tabNoteMenu.openPanel(TabContextMenu.contextTab);
+          break;
+        case "context_deleteNote":
+          TabContextMenu.deleteTabNotes();
+          break;
         case "context_moveToStart":
           gBrowser.moveTabsToStart(TabContextMenu.contextTab);
           break;
@@ -88,16 +107,28 @@ document.addEventListener(
           TabContextMenu.closeContextTabs();
           break;
         case "context_closeDuplicateTabs":
-          gBrowser.removeDuplicateTabs(TabContextMenu.contextTab);
+          gBrowser.removeDuplicateTabs(
+            TabContextMenu.contextTab,
+            lazy.TabMetrics.userTriggeredContext()
+          );
           break;
         case "context_closeTabsToTheStart":
-          gBrowser.removeTabsToTheStartFrom(TabContextMenu.contextTab);
+          gBrowser.removeTabsToTheStartFrom(
+            TabContextMenu.contextTab,
+            lazy.TabMetrics.userTriggeredContext()
+          );
           break;
         case "context_closeTabsToTheEnd":
-          gBrowser.removeTabsToTheEndFrom(TabContextMenu.contextTab);
+          gBrowser.removeTabsToTheEndFrom(
+            TabContextMenu.contextTab,
+            lazy.TabMetrics.userTriggeredContext()
+          );
           break;
         case "context_closeOtherTabs":
-          gBrowser.removeAllTabsBut(TabContextMenu.contextTab);
+          gBrowser.removeAllTabsBut(
+            TabContextMenu.contextTab,
+            lazy.TabMetrics.userTriggeredContext()
+          );
           break;
         case "context_unloadTab":
           TabContextMenu.explicitUnloadTabs();
@@ -121,10 +152,9 @@ document.addEventListener(
           {
             let { tabGroupId } = event.target.parentElement.triggerNode.dataset;
             let otherTabGroup = gBrowser.getTabGroupById(tabGroupId);
-            let adoptedTabGroup = gBrowser.adoptTabGroup(
-              otherTabGroup,
-              gBrowser.tabs.length
-            );
+            let adoptedTabGroup = gBrowser.adoptTabGroup(otherTabGroup, {
+              tabIndex: gBrowser.tabs.length,
+            });
             adoptedTabGroup.select();
           }
           break;
@@ -223,7 +253,20 @@ document.addEventListener(
         case "toolbar-context-autohide-downloads-button":
           ToolbarContextMenu.onDownloadsAutoHideChange(event);
           break;
+        case "toolbar-context-always-show-extensions-button":
+          if (event.target.getAttribute("checked") == "true") {
+            gUnifiedExtensions.showExtensionsButtonInToolbar();
+          } else {
+            gUnifiedExtensions.hideExtensionsButtonFromToolbar();
+          }
+          break;
         case "toolbar-context-remove-from-toolbar":
+          if (
+            event.target.parentNode.triggerNode === gUnifiedExtensions.button
+          ) {
+            gUnifiedExtensions.hideExtensionsButtonFromToolbar();
+            break;
+          }
           gCustomizeMode.removeFromArea(
             event.target.parentNode.triggerNode,
             "toolbar-context-menu"
@@ -412,11 +455,13 @@ document.addEventListener(
 
         const tabGroupId = event.target.getAttribute("tab-group-id");
         const group = gBrowser.getTabGroupById(tabGroupId);
-        if (!group) {
-          return;
+        if (group) {
+          TabContextMenu.moveTabsToGroup(group);
         }
 
-        TabContextMenu.moveTabsToGroup(group);
+        if (SessionStore.getSavedTabGroup(tabGroupId)) {
+          TabContextMenu.addTabsToSavedGroup(tabGroupId);
+        }
       });
 
     document
@@ -467,7 +512,13 @@ document.addEventListener(
           );
           ToolbarContextMenu.updateDownloadsAutoHide(event.target);
           ToolbarContextMenu.updateDownloadsAlwaysOpenPanel(event.target);
-          ToolbarContextMenu.updateExtension(event.target, event);
+          ToolbarContextMenu.updateExtensionsButtonContextMenu(event.target);
+          ToolbarContextMenu.updateExtension(event.target);
+
+          // The following methods must be called last after updating the menu items above,
+          // as they may change which items are visible.
+          ToolbarContextMenu.updateCustomizationItemsVisibility(event.target);
+          ToolbarContextMenu.hideLeadingSeparatorIfNeeded(event.target);
           break;
         case "pageActionContextMenu":
           BrowserPageActions.onContextMenuShowing(event, event.target);
@@ -476,7 +527,7 @@ document.addEventListener(
           gBrowser.createTooltip(event);
           break;
         case "dynamic-shortcut-tooltip":
-          UpdateDynamicShortcutTooltipText(event.target);
+          DynamicShortcutTooltip.updateText(event.target);
           break;
         case "SyncedTabsOpenSelectedInContainerTabMenu":
           createUserContextMenu(event, { isContextMenu: true });
@@ -490,6 +541,12 @@ document.addEventListener(
           break;
         case "bhTooltip":
           BookmarksEventHandler.fillInBHTooltip(event.target, event);
+          break;
+        case "tabContextMenu":
+          TabContextMenu.addNewBadge();
+          break;
+        case "moveTabOptionsMenu":
+          gProfiles.populateMoveTabMenu(event.target);
           break;
       }
     });

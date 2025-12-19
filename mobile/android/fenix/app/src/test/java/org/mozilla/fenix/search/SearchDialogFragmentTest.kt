@@ -5,23 +5,18 @@
 package org.mozilla.fenix.search
 
 import android.view.WindowManager.LayoutParams
-import androidx.fragment.app.Fragment
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavController
-import androidx.navigation.fragment.findNavController
 import io.mockk.Called
 import io.mockk.Runs
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
-import io.mockk.mockkStatic
 import io.mockk.spyk
-import io.mockk.unmockkStatic
 import io.mockk.verify
 import mozilla.components.browser.state.search.SearchEngine
 import mozilla.components.browser.state.state.SearchState
 import mozilla.components.support.test.robolectric.testContext
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
@@ -30,29 +25,25 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.ext.components
-import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
+import org.mozilla.fenix.navigation.NavControllerProvider
+import org.robolectric.RobolectricTestRunner
 
-@RunWith(FenixRobolectricTestRunner::class)
+@RunWith(RobolectricTestRunner::class)
 internal class SearchDialogFragmentTest {
     private val navController: NavController = mockk()
     private val fragment = SearchDialogFragment()
+    private val navControllerProvider: NavControllerProvider = mockk()
 
     @Before
     fun setup() {
-        mockkStatic("androidx.navigation.fragment.FragmentKt")
-        every { any<Fragment>().findNavController() } returns navController
-    }
-
-    @After
-    fun teardown() {
-        unmockkStatic("androidx.navigation.fragment.FragmentKt")
+        every { navControllerProvider.getNavController(fragment) } returns navController
     }
 
     @Test
     fun `GIVEN this is the only visible fragment WHEN asking for the previous destination THEN return null`() {
         every { navController.currentBackStack.value } returns ArrayDeque(listOf(getDestination(fragmentName)))
 
-        assertNull(fragment.getPreviousDestination())
+        assertNull(fragment.getPreviousDestination(navControllerProvider))
     }
 
     @Test
@@ -64,7 +55,7 @@ internal class SearchDialogFragmentTest {
             ),
         )
 
-        assertNull(fragment.getPreviousDestination())
+        assertNull(fragment.getPreviousDestination(navControllerProvider))
     }
 
     @Test
@@ -78,7 +69,7 @@ internal class SearchDialogFragmentTest {
             ),
         )
 
-        assertSame(fragmentADestination, fragment.getPreviousDestination())
+        assertSame(fragmentADestination, fragment.getPreviousDestination(navControllerProvider))
     }
 
     @Test
@@ -91,7 +82,7 @@ internal class SearchDialogFragmentTest {
             ),
         )
 
-        assertSame(fragmentADestination, fragment.getPreviousDestination())
+        assertSame(fragmentADestination, fragment.getPreviousDestination(navControllerProvider))
     }
 
     @Test
@@ -161,12 +152,12 @@ internal class SearchDialogFragmentTest {
         val layoutParams = LayoutParams()
         layoutParams.flags = LayoutParams.FLAG_SECURE
 
-        every { activity.browsingModeManager.mode.isPrivate } returns true
         every { activity.window } returns mockk(relaxed = true) {
             every { attributes } returns LayoutParams().apply { flags = LayoutParams.FLAG_SECURE }
         }
         every { fragment.requireActivity() } returns activity
         every { fragment.requireContext() } returns testContext
+        every { testContext.components.appStore.state.mode.isPrivate } returns true
 
         val dialog = fragment.onCreateDialog(null)
 
@@ -180,12 +171,12 @@ internal class SearchDialogFragmentTest {
         val layoutParams = LayoutParams()
         layoutParams.flags = LayoutParams.FLAG_SECURE
 
-        every { activity.browsingModeManager.mode.isPrivate } returns false
         every { activity.window } returns mockk(relaxed = true) {
             every { attributes } returns LayoutParams().apply { flags = LayoutParams.FLAG_SECURE }
         }
         every { fragment.requireActivity() } returns activity
         every { fragment.requireContext() } returns testContext
+        every { testContext.components.appStore.state.mode.isPrivate } returns false
 
         val dialog = fragment.onCreateDialog(null)
 

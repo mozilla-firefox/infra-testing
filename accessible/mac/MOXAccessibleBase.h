@@ -79,10 +79,17 @@ inline id<mozAccessible> GetObjectOrRepresentedView(id<mozAccessible> aObject) {
 - (id)accessibilityFocusedUIElement;
 
 // override, final
+- (NSArray*)accessibilityCustomActions;
+
+// override, final
 - (BOOL)isAccessibilityElement;
 
 // final
 - (BOOL)accessibilityNotifiesWhenDestroyed;
+
+#pragma mark - AXCustomContentProvider protocol
+
+- (NSArray*)accessibilityCustomContent;
 
 #pragma mark - MOXAccessible protocol
 
@@ -91,6 +98,9 @@ inline id<mozAccessible> GetObjectOrRepresentedView(id<mozAccessible> aObject) {
 
 // override
 - (id)moxFocusedUIElement;
+
+// override
+- (NSArray*)moxCustomActions;
 
 // override
 - (void)moxPostNotification:(NSString*)notification;
@@ -127,8 +137,14 @@ inline id<mozAccessible> GetObjectOrRepresentedView(id<mozAccessible> aObject) {
 - (BOOL)moxIsLiveRegion;
 
 // override
+- (BOOL)moxIsTextField;
+
+// override
 - (id<MOXAccessible>)moxFindAncestor:(BOOL (^)(id<MOXAccessible> moxAcc,
                                                BOOL* stop))findBlock;
+
+// override
+- (NSArray*)moxCustomContent;
 
 #pragma mark -
 

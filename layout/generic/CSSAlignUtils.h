@@ -9,6 +9,7 @@
 #ifndef mozilla_CSSAlignUtils_h
 #define mozilla_CSSAlignUtils_h
 
+#include "mozilla/EnumSet.h"
 #include "mozilla/WritingModes.h"
 
 namespace mozilla {
@@ -19,22 +20,47 @@ struct StyleAlignFlags;
 class CSSAlignUtils {
  public:
   /**
+   * Map a raw StyleAlignFlags value to the used one.
+   */
+  static StyleAlignFlags UsedAlignmentForAbsPos(nsIFrame* aFrame,
+                                                StyleAlignFlags aFlags,
+                                                LogicalAxis aLogicalAxis,
+                                                WritingMode aCBWM);
+
+  /**
    * Flags to customize the behavior of AlignJustifySelf:
    */
-  enum class AlignJustifyFlags {
-    NoFlags = 0,
+  enum class AlignJustifyFlag {
     // Indicates that we have <overflow-position> = safe.
-    OverflowSafe = 1 << 0,
+    OverflowSafe,
+
     // Indicates that the container's start side in aAxis is the same
     // as the child's start side in the child's parallel axis.
-    SameSide = 1 << 1,
+    SameSide,
+
     // Indicates that AlignJustifySelf() shouldn't expand "auto" margins.
     // (By default, AlignJustifySelf() *will* expand such margins, to fill the
     // available space before any alignment is done.)
-    IgnoreAutoMargins = 1 << 2,
+    IgnoreAutoMargins,
+
     // We're aligning a margin box - the margin is already included in the
     // size. Implies `IgnoreAutoMargins`.
-    AligningMarginBox = 1 << 3,
+    AligningMarginBox,
+
+    // If the item is baseline-aligned, this flag indicates that the item is in
+    // the last baseline sharing group of the container, otherwise the item is
+    // in the container's first baseline sharing group.
+    LastBaselineSharingGroup,
+  };
+  using AlignJustifyFlags = EnumSet<AlignJustifyFlag>;
+
+  /**
+   * Additional information required to resolve anchor-center on a particular
+   * axis.
+   */
+  struct AnchorAlignInfo {
+    nscoord mAnchorStart;
+    nscoord mAnchorSize;
   };
 
   /**
@@ -53,15 +79,15 @@ class CSSAlignUtils {
    * @param aCBSize The size of the alignment container, in its aAxis.
    * @param aRI A ReflowInput for the child.
    * @param aChildSize The child's LogicalSize (in its own writing mode).
+   * @param aAnchorInfo When specified, an inset-modified anchor start and size
+   * (in the child's writing mode) to use for anchor-center alignment.
    */
-  static nscoord AlignJustifySelf(const StyleAlignFlags& aAlignment,
-                                  LogicalAxis aAxis, AlignJustifyFlags aFlags,
-                                  nscoord aBaselineAdjust, nscoord aCBSize,
-                                  const ReflowInput& aRI,
-                                  const LogicalSize& aChildSize);
+  static nscoord AlignJustifySelf(
+      const StyleAlignFlags& aAlignment, LogicalAxis aAxis,
+      AlignJustifyFlags aFlags, nscoord aBaselineAdjust, nscoord aCBSize,
+      const ReflowInput& aRI, const LogicalSize& aChildSize,
+      const Maybe<AnchorAlignInfo>& aAnchorRect = Nothing());
 };
-
-MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(CSSAlignUtils::AlignJustifyFlags)
 
 }  // namespace mozilla
 

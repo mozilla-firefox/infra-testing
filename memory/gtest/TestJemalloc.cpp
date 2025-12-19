@@ -7,7 +7,6 @@
 #include "mozilla/Literals.h"
 #include "mozilla/mozalloc.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/Unused.h"
 #include "mozilla/Vector.h"
 #include "mozilla/gtest/MozHelpers.h"
 #include "mozmemory.h"
@@ -210,7 +209,7 @@ TEST(Jemalloc, PtrInfo)
   ASSERT_TRUE(InfoEq(info, TagUnknown, nullptr, 0U, 0U));
 
   // Stack memory.
-  int stackVar;
+  int stackVar = 0;
   jemalloc_ptr_info(&stackVar, &info);
   ASSERT_TRUE(InfoEq(info, TagUnknown, nullptr, 0U, 0U));
 

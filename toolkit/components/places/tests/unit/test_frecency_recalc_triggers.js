@@ -13,7 +13,7 @@
  *  - changing url of a bookmark
  *
  * Also check setting a frecency resets recalc_frecency to 0.
- **/
+ */
 
 const TEST_URL = "https://example.com/";
 const TEST_URL_2 = "https://example2.com/";
@@ -178,7 +178,7 @@ add_task(async function test_bookmark() {
   frecency = await PlacesTestUtils.getDatabaseValue("moz_places", "frecency", {
     url: TEST_URL_2,
   });
-  Assert.ok(frecency > 0, "frecency is valid");
+  Assert.greater(frecency, 0, "frecency is valid");
   recalc = await PlacesTestUtils.getDatabaseValue(
     "moz_places",
     "recalc_frecency",

@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!-- Text for confirmation for a positive action in dialog -->
   <string name="mozac_feature_prompts_ok">ОК</string>
   <!-- Text for confirmation for a negative action in dialog. -->
@@ -102,16 +109,14 @@
   <string name="mozac_feature_prompts_suggest_strong_password_message">Көчле серсүз кулланыгыз: %1$s</string>
   <!-- Title for using the suggest strong password confirmation dialog -->
   <string name="mozac_feature_prompts_suggest_strong_password_title">Көчле серсүз кулланылсынмы?</string>
+  <!-- Content description for the suggest strong password confirmation dialog -->
+  <string name="mozac_feature_prompts_suggest_strong_password_description_3">Көчле, очраклы рәвештә ясалган серсүз кулланып, хисабыгызны саклагыз. Ул киләчәктә куллану өчен хисабыгызда сакланачак.</string>
   <!-- Pressing this will use the suggested strong password -->
   <string name="mozac_feature_prompts_suggest_strong_password_use_password">Серсүзне куллану</string>
   <!-- Pressing this will dismiss the suggested strong password dialog -->
   <string name="mozac_feature_prompts_suggest_strong_password_dismiss">Хәзер түгел</string>
-  <!-- Title for showing the suggest strong password saved confirmation snackbar -->
-  <string name="mozac_feature_prompts_suggest_strong_password_saved_snackbar_title">Серсүз сакланды</string>
   <!-- Title for showing the suggest strong password updated confirmation snackbar -->
   <string name="mozac_feature_prompts_suggest_strong_password_updated_snackbar_title">Серсүз яңартылды</string>
-  <!-- Title for showing the username updated confirmation snackbar -->
-  <string name="mozac_feature_prompt_login_snackbar_username_updated">Кулланучы исеме яңартылды</string>
   <!-- Strings shown in a dialog that appear when users try to refresh a certain kind of webpages -->
   <string name="mozac_feature_prompt_repost_title">Бу сайтка мәгълүматны яңадан җибәрергәме?</string>
   <string name="mozac_feature_prompt_repost_message">Бу битне яңарту түләү яки комментарий язу кебек иң соңгы гамәлләрегезнең кабатлануына китерә ала.</string>
@@ -161,6 +166,8 @@
   <string name="mozac_feature_prompts_identity_credentials_choose_account_for_provider">%1$s хисабыгыз ярдәмендә керегез</string>
   <!-- Title of the Identity Credential privacy policy dialog title. The %1$s will be replaced with the name of the provider. -->
   <string name="mozac_feature_prompts_identity_credentials_privacy_policy_title">%1$s-ны керү тәэминатчысы итеп куллану</string>
+  <!-- Title of the Identity Credential privacy policy dialog description. The %1$s will be replaced with the name of the provider, %2$s will be replaced with the account, %3$s will be replaced with the privacy policy url and  %4$s will be replaced with the terms of service. -->
+  <string name="mozac_feature_prompts_identity_credentials_privacy_policy_description" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[%1$s эченә %2$s хисабы белән керү аларның <a href=\"%3$s\">Хосусыйлык Сәясәте</a> һәм <a href=\"%4$s\">Куллану Шартлары</a> нигезендә башкарыла]]></string>
   <!-- Text for the positive button of the Identity Credential dialogs. -->
   <string name="mozac_feature_prompts_identity_credentials_continue">Дәвам итү</string>
   <!-- Text for the cancel button of the Identity Credential dialogs. -->

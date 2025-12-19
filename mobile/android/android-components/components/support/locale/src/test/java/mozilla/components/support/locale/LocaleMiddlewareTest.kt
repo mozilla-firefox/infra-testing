@@ -5,13 +5,10 @@
 package mozilla.components.support.locale
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.state.action.LocaleAction
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.store.BrowserStore
-import mozilla.components.support.test.ext.joinBlocking
-import mozilla.components.support.test.libstate.ext.waitUntilIdle
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.test.rule.MainCoroutineRule
 import org.junit.Assert.assertEquals
@@ -25,7 +22,6 @@ import org.mockito.Mockito.spy
 import org.mockito.Mockito.verify
 import org.robolectric.annotation.Config
 
-@ExperimentalCoroutinesApi
 @RunWith(AndroidJUnit4::class)
 class LocaleMiddlewareTest {
 
@@ -61,8 +57,7 @@ class LocaleMiddlewareTest {
 
         assertEquals(store.state.locale, null)
 
-        store.dispatch(LocaleAction.RestoreLocaleStateAction).joinBlocking()
-        store.waitUntilIdle()
+        store.dispatch(LocaleAction.RestoreLocaleStateAction)
         dispatcher.scheduler.advanceUntilIdle()
 
         assertEquals(store.state.locale, currentLocale)
@@ -91,7 +86,7 @@ class LocaleMiddlewareTest {
         assertEquals(store.state.locale, null)
 
         val newLocale = "es".toLocale()
-        store.dispatch(LocaleAction.UpdateLocaleAction(newLocale)).joinBlocking()
+        store.dispatch(LocaleAction.UpdateLocaleAction(newLocale))
         dispatcher.scheduler.advanceUntilIdle()
 
         verify(localeManager).setNewLocale(testContext, locale = newLocale)

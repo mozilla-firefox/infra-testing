@@ -8,8 +8,8 @@
 #define mozilla_dom_indexeddb_threadlocal_h__
 
 #include "IDBTransaction.h"
-#include "mozilla/dom/indexedDB/PBackgroundIDBSharedTypes.h"
 #include "ProfilerHelpers.h"
+#include "mozilla/dom/indexedDB/PBackgroundIDBSharedTypes.h"
 
 namespace mozilla::dom {
 
@@ -18,7 +18,7 @@ class IDBFactory;
 namespace indexedDB {
 
 class ThreadLocal {
-  friend class DefaultDelete<ThreadLocal>;
+  friend DefaultDelete<ThreadLocal>;
   friend IDBFactory;
 
   LoggingInfo mLoggingInfo;

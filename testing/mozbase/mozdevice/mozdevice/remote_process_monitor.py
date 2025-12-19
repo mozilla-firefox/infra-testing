@@ -38,7 +38,16 @@ class RemoteProcessMonitor:
             self.device.rm(self.remote_log_file)
             self.log.info("deleted remote log %s" % self.remote_log_file)
 
-    def launch(self, app, debugger_info, test_url, extra_args, env, e10s):
+    def launch(
+        self,
+        app,
+        debugger_info,
+        test_url,
+        extra_args,
+        env,
+        e10s,
+        activity="TestRunnerActivity",
+    ):
         """
         Start the remote activity.
         """
@@ -50,7 +59,6 @@ class RemoteProcessMonitor:
             args.extend(debugger_info.args)
             args.append(app)
         args.extend(extra_args)
-        activity = "TestRunnerActivity"
         self.device.launch_activity(
             self.app_name,
             activity_name=activity,
@@ -154,7 +162,7 @@ class RemoteProcessMonitor:
         While waiting, periodically retrieve the process output and print it.
         If the process is still running but no output is received in *timeout*
         seconds, return False; else, once the process exits/goes to background,
-        return True.
+        return whether the test suite has completed.
         """
         self.log_buffer = ""
         self.stdout_len = 0
@@ -195,6 +203,19 @@ class RemoteProcessMonitor:
                 if top is None:
                     self.log.info("Failed to get top activity, retrying, once...")
                     top = self.device.get_top_activity(timeout=60)
+                    if not has_output and top is None:
+                        if self.device._device_serial.startswith("emulator-"):
+                            self.log.info(
+                                "skipping error on emulator, "
+                                "application failed to get top activity and stdout"
+                            )
+                            break
+                        else:
+                            self.log.error(
+                                f"TEST-UNEXPECTED-FAIL | {self.last_test_seen} | "
+                                f"application failed to get top activity and stdout"
+                            )
+                            return 0
 
         # Flush anything added to stdout during the sleep
         self.read_stdout()
@@ -208,7 +229,14 @@ class RemoteProcessMonitor:
                 "application timed out after %d seconds with no output"
                 % (self.last_test_seen, int(timeout))
             )
-        return status
+            return status
+        if self.last_test_seen != "Last test finished":
+            self.log.error(
+                "TEST-UNEXPECTED-FAIL | %s | incomplete after application is no longer top"
+                % self.last_test_seen
+            )
+            return False
+        return True
 
     def kill(self):
         """

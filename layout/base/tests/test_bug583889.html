@@ -14,7 +14,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=583889
 <pre id="test">
 <script type="application/javascript">
 
-/** Test for Bug 583889 **/
+/** Test for Bug 583889 */
 SimpleTest.waitForExplicitFinish();
 
 function grabEventAndGo(event) {
@@ -24,6 +24,12 @@ function grabEventAndGo(event) {
 function* runTest() {
   window.onload = grabEventAndGo;
   // Wait for onLoad event.
+  yield;
+
+  SpecialPowers.pushPrefEnv({
+    set: [ ["layout.disable-pixel-alignment", true] ]
+  }).then(grabEventAndGo);
+  // Wait for the pref change.
   yield;
 
   var inner = $("inner");

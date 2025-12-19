@@ -35,7 +35,6 @@ _RESPATH = $(_APPNAME)/Contents/Resources
 endif
 endif
 
-PACKAGE_BASE_DIR = $(ABS_DIST)
 PACKAGE       = $(PKG_PATH)$(PKG_BASENAME)$(PKG_SUFFIX)
 
 # JavaScript Shell packaging
@@ -64,6 +63,9 @@ ifdef MSVC_C_RUNTIME_1_DLL
 endif
 ifdef MSVC_CXX_RUNTIME_DLL
   JSSHELL_BINS += $(MSVC_CXX_RUNTIME_DLL)
+endif
+ifdef MSVC_CXX_RUNTIME_ATOMIC_WAIT_DLL
+  JSSHELL_BINS += $(MSVC_CXX_RUNTIME_ATOMIC_WAIT_DLL)
 endif
 
 ifdef LLVM_SYMBOLIZER
@@ -94,24 +96,21 @@ endif
 TAR_CREATE_FLAGS := --exclude=.mkdir.done $(TAR_CREATE_FLAGS)
 CREATE_FINAL_TAR = $(TAR) -c --owner=0 --group=0 --numeric-owner \
   --mode=go-w --exclude=.mkdir.done -f
-UNPACK_TAR       = tar -xf-
 
 ifeq ($(MOZ_PKG_FORMAT),TAR)
   PKG_SUFFIX	= .tar
   INNER_MAKE_PACKAGE 	= cd $(1) && $(CREATE_FINAL_TAR) - $(MOZ_PKG_DIR) > $(PACKAGE)
-  INNER_UNMAKE_PACKAGE	= cd $(1) && $(UNPACK_TAR) < $(UNPACKAGE)
 endif
 
 ifeq ($(MOZ_PKG_FORMAT),TGZ)
   PKG_SUFFIX	= .tar.gz
   INNER_MAKE_PACKAGE 	= cd $(1) && $(CREATE_FINAL_TAR) - $(MOZ_PKG_DIR) | gzip -vf9 > $(PACKAGE)
-  INNER_UNMAKE_PACKAGE	= cd $(1) && gunzip -c $(UNPACKAGE) | $(UNPACK_TAR)
 endif
 
 ifeq ($(MOZ_PKG_FORMAT),XZ)
   PKG_SUFFIX = .tar.xz
-  INNER_MAKE_PACKAGE 	= cd $(1) && $(CREATE_FINAL_TAR) - $(MOZ_PKG_DIR) | xz --compress --stdout -9 --extreme > $(PACKAGE)
-  INNER_UNMAKE_PACKAGE	= cd $(1) && xz --decompress --stdout $(UNPACKAGE) | $(UNPACK_TAR)
+  # For non-shippable builds, we would rather finish the build sooner than have optimal compression.
+  INNER_MAKE_PACKAGE 	= cd $(1) && $(CREATE_FINAL_TAR) - $(MOZ_PKG_DIR) | xz --compress --stdout $(if $(MOZ_PROFILE_USE),-9 --extreme) > $(PACKAGE)
 endif
 
 ifeq ($(MOZ_PKG_FORMAT),BZ2)
@@ -121,94 +120,15 @@ ifeq ($(MOZ_PKG_FORMAT),BZ2)
   else
     INNER_MAKE_PACKAGE 	= cd $(1) && $(CREATE_FINAL_TAR) - $(MOZ_PKG_DIR) | bzip2 -vf > $(PACKAGE)
   endif
-  INNER_UNMAKE_PACKAGE	= cd $(1) && bunzip2 -c $(UNPACKAGE) | $(UNPACK_TAR)
 endif
 
 ifeq ($(MOZ_PKG_FORMAT),ZIP)
   PKG_SUFFIX	= .zip
   INNER_MAKE_PACKAGE = $(call py_action,zip,'$(PACKAGE)' '$(MOZ_PKG_DIR)' -x '**/.mkdir.done',$(1))
-  INNER_UNMAKE_PACKAGE = $(call py_action,make_unzip,$(UNPACKAGE),$(1))
 endif
-
-#Create an RPM file
-ifeq ($(MOZ_PKG_FORMAT),RPM)
-  PKG_SUFFIX  = .rpm
-  MOZ_NUMERIC_APP_VERSION = $(shell echo $(MOZ_PKG_VERSION) | sed 's/[^0-9.].*//' )
-  MOZ_RPM_RELEASE = $(shell echo $(MOZ_PKG_VERSION) | sed 's/[0-9.]*//' )
-
-  RPMBUILD_TOPDIR=$(ABS_DIST)/rpmbuild
-  RPMBUILD_RPMDIR=$(ABS_DIST)
-  RPMBUILD_SRPMDIR=$(ABS_DIST)
-  RPMBUILD_SOURCEDIR=$(RPMBUILD_TOPDIR)/SOURCES
-  RPMBUILD_SPECDIR=$(topsrcdir)/toolkit/mozapps/installer/linux/rpm
-  RPMBUILD_BUILDDIR=$(ABS_DIST)/..
-
-  SPEC_FILE = $(RPMBUILD_SPECDIR)/mozilla.spec
-  RPM_INCIDENTALS=$(topsrcdir)/toolkit/mozapps/installer/linux/rpm
-
-  RPM_CMD = \
-    echo Creating RPM && \
-    $(PYTHON3) -m mozbuild.action.preprocessor \
-      -DMOZ_APP_NAME=$(MOZ_APP_NAME) \
-      -DMOZ_APP_DISPLAYNAME='$(MOZ_APP_DISPLAYNAME)' \
-      -DMOZ_APP_REMOTINGNAME='$(MOZ_APP_REMOTINGNAME)' \
-      $(RPM_INCIDENTALS)/mozilla.desktop \
-      -o $(RPMBUILD_SOURCEDIR)/$(MOZ_APP_NAME).desktop && \
-    rm -rf $(ABS_DIST)/$(TARGET_RAW_CPU) && \
-    $(RPMBUILD) -bb \
-    $(SPEC_FILE) \
-    --target $(TARGET_RAW_CPU) \
-    --buildroot $(RPMBUILD_TOPDIR)/BUILDROOT \
-    --define 'moz_app_name $(MOZ_APP_NAME)' \
-    --define 'moz_app_displayname $(MOZ_APP_DISPLAYNAME)' \
-    --define 'moz_app_version $(MOZ_APP_VERSION)' \
-    --define 'moz_numeric_app_version $(MOZ_NUMERIC_APP_VERSION)' \
-    --define 'moz_rpm_release $(MOZ_RPM_RELEASE)' \
-    --define 'buildid $(BUILDID)' \
-    --define 'moz_source_repo $(shell awk '$$2 == "MOZ_SOURCE_REPO" {print $$3}' $(DEPTH)/source-repo.h)' \
-    --define 'moz_source_stamp $(shell awk '$$2 == "MOZ_SOURCE_STAMP" {print $$3}' $(DEPTH)/source-repo.h)' \
-    --define 'moz_branding_directory $(topsrcdir)/$(MOZ_BRANDING_DIRECTORY)' \
-    --define '_topdir $(RPMBUILD_TOPDIR)' \
-    --define '_rpmdir $(RPMBUILD_RPMDIR)' \
-    --define '_sourcedir $(RPMBUILD_SOURCEDIR)' \
-    --define '_specdir $(RPMBUILD_SPECDIR)' \
-    --define '_srcrpmdir $(RPMBUILD_SRPMDIR)' \
-    --define '_builddir $(RPMBUILD_BUILDDIR)' \
-    --define '_prefix $(prefix)' \
-    --define '_libdir $(libdir)' \
-    --define '_bindir $(bindir)' \
-    --define '_datadir $(datadir)' \
-    --define '_installdir $(installdir)'
-
-  ifdef ENABLE_TESTS
-    RPM_CMD += \
-      --define 'createtests yes' \
-      --define '_testsinstalldir $(shell basename $(installdir))'
-  endif
-
-  #For each of the main/tests rpms we want to make sure that
-  #if they exist that they are in objdir/dist/ and that they get
-  #uploaded and that they are beside the other build artifacts
-  MAIN_RPM= $(MOZ_APP_NAME)-$(MOZ_NUMERIC_APP_VERSION)-$(MOZ_RPM_RELEASE).$(BUILDID).$(TARGET_RAW_CPU)$(PKG_SUFFIX)
-  UPLOAD_EXTRA_FILES += $(MAIN_RPM)
-  RPM_CMD += && mv $(TARGET_RAW_CPU)/$(MAIN_RPM) $(ABS_DIST)/
-
-  ifdef ENABLE_TESTS
-    TESTS_RPM=$(MOZ_APP_NAME)-tests-$(MOZ_NUMERIC_APP_VERSION)-$(MOZ_RPM_RELEASE).$(BUILDID).$(TARGET_RAW_CPU)$(PKG_SUFFIX)
-    UPLOAD_EXTRA_FILES += $(TESTS_RPM)
-    RPM_CMD += && mv $(TARGET_RAW_CPU)/$(TESTS_RPM) $(ABS_DIST)/
-  endif
-
-  INNER_MAKE_PACKAGE = cd $(1) && $(RPM_CMD)
-  #Avoiding rpm repacks, going to try creating/uploading xpi in rpm files instead
-  INNER_UNMAKE_PACKAGE = $(error Try using rpm2cpio and cpio)
-
-endif #Create an RPM file
-
 
 ifeq ($(MOZ_PKG_FORMAT),APK)
 INNER_MAKE_PACKAGE = true
-INNER_UNMAKE_PACKAGE = true
 endif
 
 ifeq ($(MOZ_PKG_FORMAT),DMG)
@@ -216,6 +136,9 @@ ifeq ($(MOZ_PKG_FORMAT),DMG)
 
   _ABS_MOZSRCDIR = $(shell cd $(MOZILLA_DIR) && pwd)
   PKG_DMG_SOURCE = $(MOZ_PKG_DIR)
+  MOZ_PKG_MAC_DSSTORE=$(topsrcdir)/$(MOZ_BRANDING_DIRECTORY)/dsstore
+  MOZ_PKG_MAC_BACKGROUND=$(topsrcdir)/$(MOZ_BRANDING_DIRECTORY)/background.png
+  MOZ_PKG_MAC_ICON=$(topsrcdir)/$(MOZ_BRANDING_DIRECTORY)/disk.icns
   INNER_MAKE_PACKAGE = \
     $(call py_action,make_dmg, \
         $(if $(MOZ_PKG_MAC_DSSTORE),--dsstore '$(MOZ_PKG_MAC_DSSTORE)') \
@@ -223,13 +146,6 @@ ifeq ($(MOZ_PKG_FORMAT),DMG)
         $(if $(MOZ_PKG_MAC_ICON),--icon '$(MOZ_PKG_MAC_ICON)') \
         --volume-name '$(MOZ_APP_DISPLAYNAME)' \
         '$(PKG_DMG_SOURCE)' '$(PACKAGE)', \
-        $(1))
-  INNER_UNMAKE_PACKAGE = \
-    $(call py_action,unpack_dmg, \
-        $(if $(MOZ_PKG_MAC_DSSTORE),--dsstore '$(MOZ_PKG_MAC_DSSTORE)') \
-        $(if $(MOZ_PKG_MAC_BACKGROUND),--background '$(MOZ_PKG_MAC_BACKGROUND)') \
-        $(if $(MOZ_PKG_MAC_ICON),--icon '$(MOZ_PKG_MAC_ICON)') \
-        $(UNPACKAGE) $(MOZ_PKG_DIR), \
         $(1))
 endif
 
@@ -311,7 +227,7 @@ ifneq (android,$(MOZ_WIDGET_TOOLKIT))
 endif
 
 ifeq ($(OS_TARGET), WINNT)
-  INSTALLER_PACKAGE = $(DIST)/$(PKG_INST_PATH)$(PKG_INST_BASENAME).exe
+  INSTALLER_PACKAGE = $(DIST)/$(PKG_PATH)$(PKG_INST_BASENAME).exe
 endif
 
 # These are necessary because some of our packages/installers contain spaces
@@ -328,8 +244,7 @@ ESCAPE_WILDCARD = $(subst $(space),?,$(1))
 CHECKSUM_ALGORITHM_PARAM = -d sha512 -d md5 -d sha1
 
 # This variable defines where the checksum file will be located
-CHECKSUM_FILE = '$(DIST)/$(PKG_PATH)/$(CHECKSUMS_FILE_BASENAME).checksums'
-CHECKSUM_FILES = $(CHECKSUM_FILE)
+CHECKSUM_FILE = '$(ABS_DIST)/$(PKG_PATH)/$(CHECKSUMS_FILE_BASENAME).checksums'
 
 # Upload MAR tools only if AB_CD is unset or en_US
 ifeq (,$(AB_CD:en-US=))
@@ -388,7 +303,7 @@ endif
 endif
 
 ifdef MOZ_STUB_INSTALLER
-  UPLOAD_FILES += $(call QUOTED_WILDCARD,$(DIST)/$(PKG_INST_PATH)$(PKG_STUB_BASENAME).exe)
+  UPLOAD_FILES += $(call QUOTED_WILDCARD,$(DIST)/$(PKG_PATH)$(PKG_STUB_BASENAME).exe)
 endif
 
 # Upload `.xpt` artifacts for use in artifact builds.

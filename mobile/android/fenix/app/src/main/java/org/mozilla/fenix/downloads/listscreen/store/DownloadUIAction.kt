@@ -41,6 +41,11 @@ sealed interface DownloadUIAction : Action {
     data class AddPendingDeletionSet(val itemIds: Set<String>) : DownloadUIAction
 
     /**
+     * [DownloadUIAction] to undo the last pending deletion of a set of downloaded files.
+     */
+    data object UndoPendingDeletion : DownloadUIAction
+
+    /**
      * [DownloadUIAction] to undo a set of [FileItem] IDs from the pending deletion set.
      */
     data class UndoPendingDeletionSet(val itemIds: Set<String>) : DownloadUIAction
@@ -90,4 +95,24 @@ sealed interface DownloadUIAction : Action {
      * [DownloadUIAction] to hide the search bar.
      */
     data object SearchBarDismissRequest : DownloadUIAction
+
+    /**
+     * [DownloadUIAction] to pause a downloading file.
+     */
+    data class PauseDownload(val downloadId: String) : DownloadUIAction
+
+    /**
+     * [DownloadUIAction] to resume a paused download file.
+     */
+    data class ResumeDownload(val downloadId: String) : DownloadUIAction
+
+    /**
+     * [DownloadUIAction] to cancel an incomplete download file.
+     */
+    data class CancelDownload(val downloadId: String) : DownloadUIAction
+
+    /**
+     * [DownloadUIAction] to retry a failed download file.
+     */
+    data class RetryDownload(val downloadId: String) : DownloadUIAction
 }

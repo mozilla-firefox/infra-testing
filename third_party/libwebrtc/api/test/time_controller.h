@@ -16,7 +16,6 @@
 
 #include "api/task_queue/task_queue_factory.h"
 #include "api/units/time_delta.h"
-#include "api/units/timestamp.h"
 #include "rtc_base/socket_server.h"
 #include "rtc_base/thread.h"
 #include "system_wrappers/include/clock.h"
@@ -40,16 +39,16 @@ class TimeController {
   // is destroyed.
   std::unique_ptr<TaskQueueFactory> CreateTaskQueueFactory();
 
-  // Creates an rtc::Thread instance. If `socket_server` is nullptr, a default
-  // noop socket server is created.
-  // Returned thread is not null and started.
-  virtual std::unique_ptr<rtc::Thread> CreateThread(
+  // Creates an Thread instance. If `socket_server` is nullptr, a
+  // default noop socket server is created. Returned thread is not null and
+  // started.
+  virtual std::unique_ptr<Thread> CreateThread(
       const std::string& name,
-      std::unique_ptr<rtc::SocketServer> socket_server = nullptr) = 0;
+      std::unique_ptr<SocketServer> socket_server = nullptr) = 0;
 
-  // Creates an rtc::Thread instance that ensure that it's set as the current
+  // Creates an Thread instance that ensure that it's set as the current
   // thread.
-  virtual rtc::Thread* GetMainThread() = 0;
+  virtual Thread* GetMainThread() = 0;
   // Allow task queues and process threads created by this instance to execute
   // for the given `duration`.
   virtual void AdvanceTime(TimeDelta duration) = 0;

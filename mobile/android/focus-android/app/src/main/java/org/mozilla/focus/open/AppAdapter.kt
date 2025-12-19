@@ -1,6 +1,7 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 package org.mozilla.focus.open
 
 import android.content.Context
@@ -15,8 +16,10 @@ import androidx.recyclerview.widget.RecyclerView
  * This will display browser apps and an item that can be used for installing Firefox,
  * if it is not already installed on the device.
  *
- * @param infoArray List of browser apps.
- * @param store Store app for installing Firefox.
+ * @param context The context used to access resources.
+ * @param infoArray List of browser apps represented by [ActivityInfo].
+ * @param store Store app for installing Firefox, represented by [ActivityInfo].
+ *              This can be null if no store app is available.
  */
 class AppAdapter(context: Context, infoArray: Array<ActivityInfo>, store: ActivityInfo?) :
     RecyclerView.Adapter<RecyclerView.ViewHolder>() {

@@ -8,10 +8,10 @@ import pickle
 import sys
 from abc import ABCMeta, abstractmethod
 from collections import defaultdict
+from functools import lru_cache
 from urllib.parse import urlsplit
 
 import mozpack.path as mozpath
-import six
 from manifestparser import TestManifest, combine_fields
 from mozbuild.base import MozbuildObject
 from mozbuild.testing import REFTEST_FLAVORS, TEST_MANIFESTS
@@ -69,7 +69,7 @@ TEST_SUITES = {
         "mach_command": "firefox-ui-update",
         "kwargs": {},
     },
-    "marionette": {
+    "marionette-integration": {
         "aliases": ("mn",),
         "build_flavor": "marionette",
         "mach_command": "marionette-test",
@@ -375,30 +375,35 @@ TEST_SUITES = {
         "build_flavor": "fenix",
         "mach_command": "android-test",
         "kwargs": {"subproject": "fenix"},
+        "task_regex": ["(ui-)?test-apk-fenix($|.*(-1|[^0-9])$)"],
     },
     "focus": {
         "aliases": ("f",),
         "build_flavor": "focus",
         "mach_command": "android-test",
         "kwargs": {"subproject": "focus"},
+        "task_regex": ["(ui-)?test-apk-focus($|.*(-1|[^0-9])$)"],
     },
     "android-components": {
         "aliases": ("ac",),
         "build_flavor": "android-components",
         "mach_command": "android-test",
         "kwargs": {"subproject": "android-components"},
+        "task_regex": ["(build|test)-components($|.*(-1|[^0-9])$)"],
     },
     "geckoview": {
         "aliases": ("gv",),
         "build_flavor": "geckoview",
         "mach_command": "geckoview-junit",
         "kwargs": {"no_install": False, "mach_test": True},
+        "task_regex": ["geckoview-junit($|.*(-1|[^0-9])$)"],
     },
     "junit": {
         "aliases": ("j",),
         "build_flavor": "geckoview",
         "mach_command": "geckoview-junit",
         "kwargs": {"no_install": False, "mach_test": True},
+        "task_regex": ["geckoview-junit($|.*(-1|[^0-9])$)"],
     },
 }
 """Definitions of all test suites and the metadata needed to run and process
@@ -442,7 +447,8 @@ _test_flavors = {
     "crashtest": "crashtest",
     "firefox-ui-functional": "firefox-ui-functional",
     "firefox-ui-update": "firefox-ui-update",
-    "marionette": "marionette",
+    "marionette-integration": "marionette-integration",
+    "marionette-unittest": "marionette-unittest",
     "mochitest": "mochitest-plain",
     "puppeteer": "puppeteer",
     "python": "python",
@@ -459,7 +465,7 @@ _test_flavors = {
 _test_subsuites = {
     ("browser-chrome", "a11y"): "mochitest-browser-a11y",
     ("browser-chrome", "devtools"): "mochitest-devtools-chrome",
-    ("browser-chrome", "media"): "mochitest-browser-media",
+    ("browser-chrome", "media-bc"): "mochitest-browser-media",
     ("browser-chrome", "remote"): "mochitest-remote",
     ("browser-chrome", "screenshots"): "mochitest-browser-screenshots",
     ("browser-chrome", "translations"): "mochitest-browser-translations",
@@ -520,8 +526,7 @@ def rewrite_test_base(test, new_base):
     return test
 
 
-@six.add_metaclass(ABCMeta)
-class TestLoader(MozbuildObject):
+class TestLoader(MozbuildObject, metaclass=ABCMeta):
     @abstractmethod
     def __call__(self):
         """Generate test metadata."""
@@ -600,7 +605,7 @@ class BuildBackendLoader(TestLoader):
 
 class TestManifestLoader(TestLoader):
     def __init__(self, *args, **kwargs):
-        super(TestManifestLoader, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.finder = FileFinder(self.topsrcdir)
         self.reader = self.mozbuild_reader(config_mode="empty")
         self.variables = {f"{k}_MANIFESTS": v[0] for k, v in TEST_MANIFESTS.items()}
@@ -665,7 +670,7 @@ class TestResolver(MozbuildObject):
 
     def __init__(self, *args, **kwargs):
         loader_cls = kwargs.pop("loader_cls", BuildBackendLoader)
-        super(TestResolver, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         self.load_tests = self._spawn(loader_cls)
         self._tests = []
@@ -731,40 +736,53 @@ class TestResolver(MozbuildObject):
                 self._test_dirs.add(test["dir_relpath"])
         return self._test_dirs
 
-    def get_test_tags(self, test_tags, metadata_base, path):
-        paths = []
+    @lru_cache(maxsize=1024)
+    def _get_metadata_paths(self, metadata_base, dir_path):
 
-        # similar logic to wpt TestLoader::load_dir_metadata
-        path_parts = os.path.dirname(path).split(os.path.sep)
+        paths = []
+        path_parts = dir_path.split(os.path.sep) if dir_path else []
+
         for i in range(1, len(path_parts) + 1):
-            p = os.path.join(
+            dir_ini = os.path.join(
                 metadata_base, os.path.sep.join(path_parts[:i]), "__dir__.ini"
             )
-            if not p:
-                break
-            if os.path.exists(p):
-                paths.append(p)
+            if os.path.exists(dir_ini):
+                paths.append(dir_ini)
 
-        paths.append(os.path.join(metadata_base, "%s.ini" % path))
+        return tuple(paths)
 
-        for file_path in paths:
+    def _extract_tags_from_file(self, file_path):
+
+        tags = []
+        try:
+            with open(file_path, encoding="utf-8") as f:
+                for line in f:
+                    if "tags: [" in line:
+                        tags = line.split("[")[1].split("]")[0].split()
+                        break
+        except OSError:
+            # File doesn't exist or isn't readable
+            pass
+        return tags
+
+    def get_test_tags(self, test_tags, metadata_base, path):
+
+        dir_path = os.path.dirname(path) if path else ""
+        dir_metadata_paths = self._get_metadata_paths(metadata_base, dir_path)
+
+        test_metadata = os.path.join(metadata_base, f"{path}.ini")
+        if os.path.exists(test_metadata):
+            all_paths = list(dir_metadata_paths) + [test_metadata]
+        else:
+            all_paths = dir_metadata_paths
+
+        for file_path in all_paths:
             if file_path in self.meta_tags:
                 test_tags.extend(self.meta_tags[file_path])
-                continue
-
-            try:
-                with open(file_path, "rb") as f:
-                    # __dir__.ini are not proper .ini files, configParser doesn't work
-                    # WPT uses a custom reader for __dir__.ini, but hard to load/use here.
-                    data = f.read().decode("utf-8")
-                    for line in data.split("\n"):
-                        if "tags: [" in line:
-                            self.meta_tags[file_path] = (
-                                line.split("[")[1].split("]")[0].split(" ")
-                            )
-                            test_tags.extend(self.meta_tags[file_path])
-            except OSError:
-                pass
+            else:
+                tags = self._extract_tags_from_file(file_path)
+                self.meta_tags[file_path] = tags
+                test_tags.extend(tags)
 
         return list(set(test_tags))
 
@@ -902,8 +920,7 @@ class TestResolver(MozbuildObject):
 
         for p in sorted(candidate_paths):
             tests = self.tests_by_path[p]
-            for test in fltr(tests):
-                yield test
+            yield from fltr(tests)
 
     def is_puppeteer_path(self, path):
         if path is None:
@@ -1208,9 +1225,7 @@ class TestResolver(MozbuildObject):
 
                 full_path = mozpath.join(tests_root, path)  # absolute path on disk
                 src_path = mozpath.relpath(full_path, self.topsrcdir)
-                test_tags = self.get_test_tags(
-                    [], manifests[manifest].get("metadata_path", ""), path
-                )
+                test_tags = self.get_test_tags([], data.get("metadata_path", ""), path)
 
                 for test in tests:
                     testobj = {

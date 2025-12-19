@@ -29,10 +29,21 @@ DocAccessibleWrap::~DocAccessibleWrap() {}
 
 void DocAccessibleWrap::AttributeChanged(dom::Element* aElement,
                                          int32_t aNameSpaceID,
-                                         nsAtom* aAttribute, int32_t aModType,
+                                         nsAtom* aAttribute,
+                                         AttrModType aModType,
                                          const nsAttrValue* aOldValue) {
   DocAccessible::AttributeChanged(aElement, aNameSpaceID, aAttribute, aModType,
                                   aOldValue);
+  if (aAttribute == nsGkAtoms::aria_errormessage) {
+    LocalAccessible* accessible =
+        mContent != aElement ? GetAccessible(aElement) : this;
+    if (!accessible) {
+      return;
+    }
+    FireDelayedEvent(nsIAccessibleEvent::EVENT_ERRORMESSAGE_CHANGED,
+                     accessible);
+  }
+
   if (aAttribute == nsGkAtoms::aria_live) {
     LocalAccessible* accessible =
         mContent != aElement ? GetAccessible(aElement) : this;

@@ -56,6 +56,7 @@ static const struct vp9_token inter_mode_encodings[INTER_MODES] = {
 
 static void write_intra_mode(vpx_writer *w, PREDICTION_MODE mode,
                              const vpx_prob *probs) {
+  assert(!is_inter_mode(mode));
   vp9_write_token(w, vp9_intra_mode_tree, probs, &intra_mode_encodings[mode]);
 }
 
@@ -1249,6 +1250,7 @@ static void write_bitdepth_colorspace_sampling(
     }
   } else {
     assert(cm->profile == PROFILE_1 || cm->profile == PROFILE_3);
+    assert(cm->subsampling_x == 0 && cm->subsampling_y == 0);
     vpx_wb_write_bit(wb, 0);  // unused
   }
 }

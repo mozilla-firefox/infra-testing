@@ -5,12 +5,13 @@
 package org.mozilla.fenix.home.pocket
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SelectableChipColors
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import mozilla.components.service.pocket.PocketStory
 import org.mozilla.fenix.components.appstate.AppState
-import org.mozilla.fenix.compose.SelectableChipColors
-import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.utils.Settings
 
 /**
@@ -19,19 +20,19 @@ import org.mozilla.fenix.utils.Settings
  * @property stories List of [PocketStory] to display.
  * @property categories List of [PocketRecommendedStoriesCategory] to display.
  * @property categoriesSelections List of selectable [PocketRecommendedStoriesSelectedCategory] to display.
- * @property showContentRecommendations Whether or not to show Merino content recommendations.
  * @property categoryColors Color parameters for the selectable categories.
  * @property textColor [Color] for text.
  * @property linkTextColor [Color] for link text.
+ * @property showDiscoverMoreButton Whether or not to show the "Discover more" button.
  */
 data class PocketState(
     val stories: List<PocketStory>,
     val categories: List<PocketRecommendedStoriesCategory>,
     val categoriesSelections: List<PocketRecommendedStoriesSelectedCategory>,
-    val showContentRecommendations: Boolean,
     val categoryColors: SelectableChipColors,
     val textColor: Color,
     val linkTextColor: Color,
+    val showDiscoverMoreButton: Boolean,
 ) {
 
     /**
@@ -43,12 +44,12 @@ data class PocketState(
          * Builds a new [PocketState] from the current [AppState].
          *
          * @param appState State to build the [PocketState] from.
-         * @param settings [Settings] corresponding to how the homepage should be displayed.
+         * @param settings [Settings] used for accessing the application preferences.
          */
         @Composable
         internal fun build(appState: AppState, settings: Settings) = with(appState) {
-            var textColor = FirefoxTheme.colors.textPrimary
-            var linkTextColor = FirefoxTheme.colors.textAccent
+            var textColor = MaterialTheme.colorScheme.onSurface
+            var linkTextColor = MaterialTheme.colorScheme.tertiary
 
             wallpaperState.currentWallpaper.let { currentWallpaper ->
                 currentWallpaper.textColor?.let {
@@ -62,10 +63,10 @@ data class PocketState(
                 stories = recommendationState.pocketStories,
                 categories = recommendationState.pocketStoriesCategories,
                 categoriesSelections = recommendationState.pocketStoriesCategoriesSelections,
-                showContentRecommendations = settings.showContentRecommendations,
                 categoryColors = getSelectableChipColors(),
                 textColor = textColor,
                 linkTextColor = linkTextColor,
+                showDiscoverMoreButton = settings.enableDiscoverMoreStories,
             )
         }
     }
@@ -73,26 +74,28 @@ data class PocketState(
 
 @Composable
 private fun AppState.getSelectableChipColors(): SelectableChipColors {
-    var (selectedBackgroundColor, unselectedBackgroundColor, selectedTextColor, unselectedTextColor) =
-        SelectableChipColors.buildColors()
+    var selectedLabelColor = Color.Unspecified
+    var labelColor = Color.Unspecified
+    var selectedContainerColor = Color.Unspecified
+    var containerColor = Color.Unspecified
 
-    wallpaperState.composeRunIfWallpaperCardColorsAreAvailable { cardColorLight, cardColorDark ->
-        selectedTextColor = FirefoxTheme.colors.textPrimary
-        unselectedTextColor = FirefoxTheme.colors.textInverted
+    wallpaperState.ComposeRunIfWallpaperCardColorsAreAvailable { cardColorLight, cardColorDark ->
+        selectedLabelColor = MaterialTheme.colorScheme.onSurface
+        labelColor = MaterialTheme.colorScheme.inverseOnSurface
 
         if (isSystemInDarkTheme()) {
-            selectedBackgroundColor = cardColorDark
-            unselectedBackgroundColor = cardColorLight
+            selectedContainerColor = cardColorDark
+            containerColor = cardColorLight
         } else {
-            selectedBackgroundColor = cardColorLight
-            unselectedBackgroundColor = cardColorDark
+            selectedContainerColor = cardColorLight
+            containerColor = cardColorDark
         }
     }
 
-    return SelectableChipColors(
-        selectedTextColor = selectedTextColor,
-        unselectedTextColor = unselectedTextColor,
-        selectedBackgroundColor = selectedBackgroundColor,
-        unselectedBackgroundColor = unselectedBackgroundColor,
+    return FilterChipDefaults.filterChipColors(
+        selectedLabelColor = selectedLabelColor,
+        labelColor = labelColor,
+        selectedContainerColor = selectedContainerColor,
+        containerColor = containerColor,
     )
 }

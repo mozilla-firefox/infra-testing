@@ -4,9 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "gtest/gtest.h"
-
 #include "MimeType.h"
+#include "gtest/gtest.h"
 #include "nsString.h"
 
 TEST(MimeType, EmptyString)
@@ -1073,4 +1072,64 @@ TEST(MimeTypeParsing, contentTypes20)
   ASSERT_TRUE(parsed);
   ASSERT_TRUE(contentType.EqualsLiteral("text/plain"));
   ASSERT_TRUE(contentCharset.EqualsLiteral(""));
+}
+
+TEST(MimeTypeParsing, subTypeJson)
+{
+  const nsAutoCString val("text/json");
+  RefPtr<CMimeType> parsed = CMimeType::Parse(val);
+  ASSERT_TRUE(parsed);
+  nsCString subtype;
+  parsed->GetSubtype(subtype);
+  ASSERT_TRUE(subtype.EqualsLiteral("json"));
+}
+
+// U+002F(/) is not a valid HTTP token code point
+// https://mimesniff.spec.whatwg.org/#http-token-code-point
+TEST(MimeTypeParsing, invalidSubtype1)
+{
+  const nsAutoCString val("text/json/");
+  RefPtr<CMimeType> parsed = CMimeType::Parse(val);
+  ASSERT_TRUE(!parsed);
+}
+
+TEST(MimeTypeParsing, invalidSubtype2)
+{
+  const nsAutoCString val("text/json/bad");
+  RefPtr<CMimeType> parsed = CMimeType::Parse(val);
+  ASSERT_TRUE(!parsed);
+}
+
+TEST(MimeTypeParsing, countParameters0)
+{
+  constexpr nsLiteralCString val("text/plain");
+  RefPtr<CMimeType> parsed = CMimeType::Parse(val);
+  ASSERT_TRUE(parsed);
+  ASSERT_TRUE(parsed->GetParameterCount() == 0);
+}
+
+TEST(MimeTypeParsing, countParameters1)
+{
+  constexpr nsLiteralCString val("video/webm; codecs=\"vp09.00.10.08, opus\"");
+  RefPtr<CMimeType> parsed = CMimeType::Parse(val);
+  ASSERT_TRUE(parsed);
+  ASSERT_TRUE(parsed->GetParameterCount() == 1);
+}
+
+TEST(MimeTypeParsing, countParameters2)
+{
+  constexpr nsLiteralCString val(
+      "video/mp4; codecs=\"avc1.64001f\"; profile=high");
+  RefPtr<CMimeType> parsed = CMimeType::Parse(val);
+  ASSERT_TRUE(parsed);
+  ASSERT_TRUE(parsed->GetParameterCount() == 2);
+}
+
+TEST(MimeTypeParsing, countParameters3)
+{
+  constexpr nsLiteralCString val(
+      "video/mp4; codecs=\"a,b\"; FrameRate=60; BITRATE=100000");
+  RefPtr<CMimeType> parsed = CMimeType::Parse(val);
+  ASSERT_TRUE(parsed);
+  ASSERT_TRUE(parsed->GetParameterCount() == 3);
 }

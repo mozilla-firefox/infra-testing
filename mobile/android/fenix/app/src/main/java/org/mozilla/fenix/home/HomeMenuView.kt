@@ -11,13 +11,11 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
-import mozilla.appservices.fxaclient.FxaServer
-import mozilla.appservices.fxaclient.contentUrl
+import kotlinx.coroutines.launch
 import mozilla.appservices.places.BookmarkRoot
 import mozilla.components.browser.menu.view.MenuButton
 import mozilla.components.concept.sync.FxAEntryPoint
 import mozilla.telemetry.glean.private.NoExtras
-import org.mozilla.fenix.BrowserDirection
 import org.mozilla.fenix.GleanMetrics.Events
 import org.mozilla.fenix.GleanMetrics.HomeScreen
 import org.mozilla.fenix.HomeActivity
@@ -25,10 +23,11 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.components.accounts.AccountState
 import org.mozilla.fenix.components.accounts.FenixFxAEntryPoint
 import org.mozilla.fenix.components.menu.MenuAccessPoint
+import org.mozilla.fenix.components.usecases.FenixBrowserUseCases
 import org.mozilla.fenix.ext.nav
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.settings.SupportUtils
-import org.mozilla.fenix.settings.deletebrowsingdata.deleteAndQuit
+import org.mozilla.fenix.settings.deletebrowsingdata.DeleteBrowsingDataController
 import org.mozilla.fenix.theme.ThemeManager
 import org.mozilla.fenix.whatsnew.WhatsNew
 import java.lang.ref.WeakReference
@@ -39,12 +38,13 @@ import org.mozilla.fenix.GleanMetrics.HomeMenu as HomeMenuMetrics
  *
  * @param context An Android [Context].
  * @param lifecycleOwner [LifecycleOwner] for the view.
- * @param homeActivity [HomeActivity] used to open URLs in a new tab.
+ * @param homeActivity [HomeActivity] used for accessing various app components.
  * @param navController [NavController] used for navigation.
- * @param homeFragment [HomeFragment] used to attach the biometric prompt.
+ * @param fenixBrowserUseCases [FenixBrowserUseCases] used to open URLs when clicked.
  * @param menuButton The [MenuButton] that will be used to create a menu when the button is
  * clicked.
  * @param fxaEntrypoint The source entry point to FxA.
+ * @param deleteBrowsingDataController [DeleteBrowsingDataController] used to delete browsing data.
  */
 @Suppress("LongParameterList")
 class HomeMenuView(
@@ -52,9 +52,10 @@ class HomeMenuView(
     private val lifecycleOwner: LifecycleOwner,
     private val homeActivity: HomeActivity,
     private val navController: NavController,
-    private val homeFragment: HomeFragment,
+    private val fenixBrowserUseCases: FenixBrowserUseCases,
     private val menuButton: WeakReference<MenuButton>,
     private val fxaEntrypoint: FxAEntryPoint = FenixFxAEntryPoint.HomeMenu,
+    private val deleteBrowsingDataController: DeleteBrowsingDataController,
 ) {
 
     /**
@@ -111,7 +112,7 @@ class HomeMenuView(
     /**
      * Callback invoked when a menu item is tapped on.
      */
-    @Suppress("LongMethod", "ComplexMethod")
+    @Suppress("LongMethod")
     @VisibleForTesting(otherwise = PRIVATE)
     internal fun onItemTapped(item: HomeMenu.Item) {
         when (item) {
@@ -148,13 +149,6 @@ class HomeMenuView(
                     },
                 )
             }
-            HomeMenu.Item.ManageAccountAndDevices -> {
-                homeActivity.openToBrowserAndLoad(
-                    searchTermOrURL = FxaServer.Release.contentUrl() + "/settings",
-                    newTab = true,
-                    from = BrowserDirection.FromHome,
-                )
-            }
             HomeMenu.Item.Bookmarks -> {
                 navController.nav(
                     R.id.homeFragment,
@@ -181,30 +175,40 @@ class HomeMenuView(
             }
             HomeMenu.Item.Help -> {
                 HomeMenuMetrics.helpTapped.record(NoExtras())
-                homeActivity.openToBrowserAndLoad(
+
+                navController.nav(
+                    R.id.homeFragment,
+                    HomeFragmentDirections.actionGlobalBrowser(),
+                )
+                fenixBrowserUseCases.loadUrlOrSearch(
                     searchTermOrURL = SupportUtils.getSumoURLForTopic(
                         context = context,
                         topic = SupportUtils.SumoTopic.HELP,
                     ),
                     newTab = true,
-                    from = BrowserDirection.FromHome,
+                    private = homeActivity.browsingModeManager.mode.isPrivate,
                 )
             }
             HomeMenu.Item.WhatsNew -> {
                 WhatsNew.userViewedWhatsNew(context)
                 Events.whatsNewTapped.record(Events.WhatsNewTappedExtra(source = "HOME"))
 
-                homeActivity.openToBrowserAndLoad(
+                navController.nav(
+                    R.id.homeFragment,
+                    HomeFragmentDirections.actionGlobalBrowser(),
+                )
+                fenixBrowserUseCases.loadUrlOrSearch(
                     searchTermOrURL = SupportUtils.WHATS_NEW_URL,
                     newTab = true,
-                    from = BrowserDirection.FromHome,
+                    private = homeActivity.browsingModeManager.mode.isPrivate,
                 )
             }
             HomeMenu.Item.Quit -> {
-                deleteAndQuit(
-                    activity = homeActivity,
-                    coroutineScope = homeActivity.lifecycleScope,
-                )
+                homeActivity.lifecycleScope.launch {
+                    deleteBrowsingDataController.clearBrowsingDataOnQuit {
+                        homeActivity.finishAndRemoveTask()
+                    }
+                }
             }
             HomeMenu.Item.ReconnectSync -> {
                 navController.nav(

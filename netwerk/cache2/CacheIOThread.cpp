@@ -159,7 +159,7 @@ nsresult CacheIOThread::Init() {
   // IMPORTANT: The thread now owns this reference, so it's important that we
   // leak it here, otherwise we'll end up with a bad refcount.
   // See the dont_AddRef in ThreadFunc().
-  Unused << self.forget().take();
+  self.forget().leak();
 
   return NS_OK;
 }
@@ -506,8 +506,7 @@ size_t CacheIOThread::SizeOfExcludingThis(
   for (const auto& event : mEventQueue) {
     n += event.ShallowSizeOfExcludingThis(mallocSizeOf);
     // Events referenced by the queues are arbitrary objects we cannot be sure
-    // are reported elsewhere as well as probably not implementing nsISizeOf
-    // interface.  Deliberatly omitting them from reporting here.
+    // aren't reported elsewhere.  Deliberately omitting them from reporting.
   }
 
   return n;

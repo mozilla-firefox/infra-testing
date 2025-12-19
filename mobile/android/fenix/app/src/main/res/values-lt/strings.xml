@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:tools="http://schemas.android.com/tools" xmlns:moz="http://mozac.org/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!-- App name for private browsing mode. %s is the name of the app (for example "Firefox"). -->
   <string name="app_name_private_5">Privačioji „%s“</string>
   <!-- App name for private browsing mode. %s is the name of the app (for example "Firefox"). -->
@@ -10,10 +17,6 @@
     Content description (not visible, for screen readers etc.): "Three dot" menu button.
   -->
   <string name="content_description_menu">Daugiau parinkčių</string>
-  <!-- Content description (not visible, for screen readers etc.): "Private Browsing" menu button. -->
-  <string name="content_description_private_browsing_button">Įjungti privatųjį naršymą</string>
-  <!-- Content description (not visible, for screen readers etc.): "Private Browsing" menu button. -->
-  <string name="content_description_disable_private_browsing_button">Išjungti privatųjį naršymą</string>
   <!-- Placeholder text shown in the search bar before a user enters text for the default engine -->
   <string name="search_hint">Ieškokite arba įveskite adresą</string>
   <!-- Placeholder text shown in search bar when using history search -->
@@ -42,18 +45,8 @@
   <string name="tab_tray_collection_button_multiselect_content_description">Įtraukti pažymėtas korteles į rinkinį</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
   <string name="about_content">„%1$s“ kūrėjai yra „Mozilla“.</string>
-  <!--
-    Private Browsing
-
-    Explanation for private browsing displayed to users on home view when they first enable private mode.
-    %1$s is the name of the app (for example "Firefox").
-  -->
-  <string name="private_browsing_placeholder_description_2">„%1$s“ išvalo jūsų paieškos ir naršymo žurnalą iš privačiųjų kortelių kai jas užveriate, arba išjungiate programą. Nors tai ir nesuteikia jums anonimiškumo internete, taip lengviau galite išlaikyti savo privatumą nuo kitų šį įrenginį naudojančių asmenų.</string>
+  <!-- Private Browsing -->
   <string name="private_browsing_common_myths">Dažni mitai apie privatųjį naršymą</string>
-  <!-- Text for the positive button to accept adding a Private Browsing shortcut to the Home screen -->
-  <string name="private_mode_cfr_pos_button_text" moz:removedIn="138" tools:ignore="UnusedResources">Įtraukti į pradžios ekraną</string>
-  <!-- Text for the negative button to decline adding a Private Browsing shortcut to the Home screen -->
-  <string name="cfr_neg_button_text" moz:removedIn="138" tools:ignore="UnusedResources">Ačiū, ne</string>
   <!--
     Open in App "contextual feature recommendation" (CFR)
 
@@ -64,6 +57,8 @@
   <string name="open_in_app_cfr_positive_button_text">Eiti į nustatymus</string>
   <!-- Text for the negative action button -->
   <string name="open_in_app_cfr_negative_button_text">Paslėpti</string>
+  <!-- Private browsing erase action "contextual feature recommendation" (CFR) -->
+
   <!-- Text for the info dialog when camera permissions have been denied but user tries to access a camera feature. -->
   <string name="camera_permissions_needed_message">Reikia kameros prieigos. Eikite į „Android“ nustatymus, bakstelėkite „leidimus“, tada bakstelėkite „leisti“.</string>
   <!-- Text for the positive action button to go to Android Settings to grant permissions. -->
@@ -292,8 +287,6 @@
   <string name="preferences_account_sync_error">Prisijunkite, norėdami tęsti sinchronizavimą</string>
   <!-- Preference for language -->
   <string name="preferences_language">Kalba</string>
-  <!-- Preference for data choices -->
-  <string name="preferences_data_choices">Duomenų siuntimas</string>
   <!-- Preference for data collection -->
   <string name="preferences_data_collection">Duomenų rinkimas</string>
   <!-- Preference for developers -->
@@ -318,8 +311,6 @@
   <string name="preferences_enable_autocomplete_urls">Automatinis URL užbaigimas</string>
   <!-- Preference for open links in third party apps -->
   <string name="preferences_open_links_in_apps">Atverti saitus programose</string>
-  <!-- Preference for open download with an external download manager app -->
-  <string name="preferences_external_download_manager">Išorinė atsiuntimų tvarkytuvė</string>
   <!-- Preference for notifications -->
   <string name="preferences_notifications">Pranešimai</string>
   <!-- Button caption to confirm the add-on collection configuration -->
@@ -351,10 +342,6 @@
     Content description for various wallpapers. %1$s is the name of the wallpaper.
   -->
   <string name="wallpapers_item_name_content_description">Fonas: %1$s</string>
-  <!-- Snackbar message for when wallpaper is selected -->
-  <string name="wallpaper_updated_snackbar_message">Fonas pakeistas!</string>
-  <!-- Snackbar label for action to view selected wallpaper -->
-  <string name="wallpaper_updated_snackbar_action">Rodyti</string>
   <!-- Preference for triggering sync -->
   <string name="preferences_sync_now">Sinchronizuoti dabar</string>
   <!-- Preference category for sync -->
@@ -426,7 +413,7 @@
 
     Instructions on how to access pairing
   -->
-  <string name="pair_instructions_2">Nuskaitykite QR kodą iš &lt;b&gt;firefox.com/pair&lt;/b&gt;</string>
+  <string name="pair_instructions_2"><![CDATA[Nuskaitykite QR kodą iš <b>firefox.com/pair</b>]]></string>
   <!--
     Toolbar Preferences
 
@@ -645,22 +632,10 @@
   <!-- Text shown when no history exists -->
   <string name="history_empty_message">Žurnalų įrašų nėra</string>
   <!--
-    Downloads
-
-    Text for the snackbar to confirm that multiple downloads items have been removed
-  -->
-  <string name="download_delete_multiple_items_snackbar_1" moz:removedIn="138" tools:ignore="UnusedResources">Atsiuntimai pašalinti</string>
-  <!-- Text for the snackbar to confirm that a single download item has been removed. %1$s is the name of the download item. -->
-  <string name="download_delete_single_item_snackbar" moz:removedIn="138" tools:ignore="UnusedResources">Pašalinta %1$s</string>
-  <!-- Text shown when no download exists -->
-  <string name="download_empty_message_1" moz:removedIn="138" tools:ignore="UnusedResources">Nėra atsiųstų failų</string>
-  <!--
     History multi select title in app bar
     %1$d is the number of downloads selected
   -->
   <string name="download_multi_select_title">Pasirinkta: %1$d</string>
-  <!-- Text for the button to remove a single download item -->
-  <string name="download_delete_item_1" moz:removedIn="138" tools:ignore="UnusedResources">Pašalinti</string>
   <!--
     Crashes
 
@@ -673,14 +648,6 @@
   <string name="tab_crash_close">Užverti kortelę</string>
   <!-- Restore tab button text on the tab crash page -->
   <string name="tab_crash_restore">Atkurti kortelę</string>
-  <!--
-    Bookmarks
-
-    Confirmation message for a dialog confirming if the user wants to delete the selected folder
-  -->
-  <string name="bookmark_delete_folder_confirmation_dialog">Ar tikrai norite pašalinti šį aplanką?</string>
-  <!-- Confirmation message for a dialog confirming if the user wants to delete multiple items including folders. %s is the name of the app (for example "Firefox"). -->
-  <string name="bookmark_delete_multiple_folders_confirmation_dialog">„%s“ pašalins pasirinktus elementus.</string>
   <!-- Screen title for adding a bookmarks folder -->
   <string name="bookmark_add_folder">Įtraukti aplanką</string>
   <!-- Snackbar edit button shown after a bookmark has been created. -->
@@ -697,8 +664,6 @@
   <string name="bookmark_menu_open_in_private_tab_button">Atverti privačiojoje kortelėje</string>
   <!-- Bookmark overflow menu delete button -->
   <string name="bookmark_menu_delete_button">Pašalinti</string>
-  <!-- Bookmark overflow menu save button -->
-  <string name="bookmark_menu_save_button">Įrašyti</string>
   <!--
     Bookmark multi select title in app bar
     %1$d is the number of bookmarks selected
@@ -708,33 +673,21 @@
   <string name="edit_bookmark_fragment_title">Redaguoti adresyno įrašą</string>
   <!-- Bookmark folder editing screen title -->
   <string name="edit_bookmark_folder_fragment_title">Redaguoti aplanką</string>
-  <!-- Bookmark sign in button message -->
-  <string name="bookmark_sign_in_button">Prisijunkite, norėdami pamatyti adresyno įrašus iš kitų įrenginių</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">URL</string>
   <!-- Bookmark FOLDER editing field label -->
   <string name="bookmark_folder_label">Aplankas</string>
   <!-- Bookmark NAME editing field label -->
   <string name="bookmark_name_label">Pavadinimas</string>
-  <!-- Bookmark add folder screen title -->
-  <string name="bookmark_add_folder_fragment_label">Įtraukti aplanką</string>
   <!-- Bookmark select folder screen title -->
   <string name="bookmark_select_folder_fragment_label">Pasirinkite aplanką</string>
-  <!-- Bookmark editing error missing title -->
-  <string name="bookmark_empty_title_error">Būtinas pavadinimas</string>
   <!-- Bookmark editing error missing or improper URL -->
   <string name="bookmark_invalid_url_error">Neteisingas URL</string>
-  <!-- Bookmark screen message for empty bookmarks folder -->
-  <string name="bookmarks_empty_message">Adresyno įrašų nėra</string>
   <!--
     Bookmark snackbar message on deletion
     %1$s is the host part of the URL of the bookmark deleted, if any
   -->
   <string name="bookmark_deletion_snackbar_message">Pašalintas %1$s</string>
-  <!-- Bookmark snackbar message on deleting multiple bookmarks not including folders -->
-  <string name="bookmark_deletion_multiple_snackbar_message_2">Adresyno įrašai pašalinti</string>
-  <!-- Bookmark snackbar message on deleting multiple bookmarks including folders -->
-  <string name="bookmark_deletion_multiple_snackbar_message_3">Šalinami pasirinkti aplankai</string>
   <!-- Bookmark undo button for deletion snackbar action -->
   <string name="bookmark_undo_deletion">Atšaukti</string>
   <!--
@@ -843,12 +796,6 @@
     %d is a placeholder for the number of tabs selected.
   -->
   <string name="create_collection_save_to_collection_tab_selected">Pažymėta %d kortelė</string>
-  <!-- Text shown in snackbar when multiple tabs have been saved in a collection -->
-  <string name="create_collection_tabs_saved">Kortelės įrašytos!</string>
-  <!-- Text shown in snackbar when one or multiple tabs have been saved in a new collection -->
-  <string name="create_collection_tabs_saved_new_collection">Rinkinys įrašytas!</string>
-  <!-- Text shown in snackbar when one tab has been saved in a collection -->
-  <string name="create_collection_tab_saved">Kortelė įrašyta!</string>
   <!-- Content description (not visible, for screen readers etc.): button to close the collection creator -->
   <string name="create_collection_close">Užverti</string>
   <!-- Button to save currently selected tabs in the "select tabs" step of the collection creator -->
@@ -909,23 +856,15 @@
   <!--
     Snackbar
 
-    Text shown in snackbar when user deletes a collection
+    Text shown in snackbar when user closes a tab
   -->
-  <string name="snackbar_collection_deleted">Rinkinys pašalintas</string>
-  <!-- Text shown in snackbar when user renames a collection -->
-  <string name="snackbar_collection_renamed">Rinkinys pervadintas</string>
-  <!-- Text shown in snackbar when user closes a tab -->
   <string name="snackbar_tab_closed">Kortelė užverta</string>
   <!-- Text shown in snackbar when user closes all tabs -->
   <string name="snackbar_tabs_closed">Kortelės užvertos</string>
   <!-- Text shown in snackbar when user closes a private tab -->
   <string name="snackbar_private_tab_closed">Privačioji kortelė užverta</string>
-  <!-- Text shown in snackbar when user closes all private tabs -->
-  <string name="snackbar_private_tabs_closed">Privačiosios kortelės užvertos</string>
   <!-- Text shown in snackbar to undo deleting a tab, top site or collection -->
   <string name="snackbar_deleted_undo">Atšaukti</string>
-  <!-- Text shown in snackbar when user removes a top site -->
-  <string name="snackbar_top_site_removed">Svetainė pašalinta</string>
   <!--
     QR code scanner prompt which appears after scanning a code, but before navigating to it
     %1$s is the name of the app (for example "Firefox"), %2$s is the URL or text scanned
@@ -941,10 +880,6 @@
   <string name="qr_scanner_dialog_invalid_ok">Gerai</string>
   <!-- Tab collection deletion prompt dialog message. %1$s is the collection name. -->
   <string name="tab_collection_dialog_message">Ar tikrai norite pašalinti „%1$s“?</string>
-  <!-- Tab collection deletion prompt dialog option to delete the collection -->
-  <string name="tab_collection_dialog_positive">Pašalinti</string>
-  <!-- Message for copying the URL via long press on the toolbar -->
-  <string name="url_copied">URL nukopijuotas</string>
   <!-- Sample text for accessibility font size -->
   <string name="accessibility_text_size_sample_text_1">Tai pavyzdinis tekstas. Jis leidžia pamatyti, kaip atrodys tekstas padidinus arba sumažinus jo dydį su šia nuostata.</string>
   <!-- Summary for Accessibility Text Size Scaling Preference -->
@@ -1000,14 +935,6 @@
     text to display in the snackbar once account is signed-in
   -->
   <string name="onboarding_firefox_account_sync_is_on">„Sync“ įjungta</string>
-  <!--
-    Onboarding theme
-
-    Text shown in snackbar when multiple tabs have been sent to device
-  -->
-  <string name="sync_sent_tabs_snackbar">Kortelės išsiųstos!</string>
-  <!-- Text shown in snackbar when one tab has been sent to device -->
-  <string name="sync_sent_tab_snackbar">Kortelė išsiųsta!</string>
   <!-- Text shown in snackbar when sharing tabs failed -->
   <string name="sync_sent_tab_error_snackbar">Nepavyko išsiųsti</string>
   <!-- Text shown in snackbar for the "retry" action that the user has after sharing tabs failed -->
@@ -1015,7 +942,7 @@
   <!-- Title of QR Pairing Fragment -->
   <string name="sync_scan_code">Nuskaityti kodą</string>
   <!-- Instructions on how to access pairing -->
-  <string name="sign_in_instructions" tools:ignore="BrandUsage">Atverkite „Firefox“ savo kompiuteryje, ir eikite į &lt;b&gt;https://firefox.com/pair&lt;/b&gt;</string>
+  <string name="sign_in_instructions" tools:ignore="BrandUsage"><![CDATA[Atverkite „Firefox“ savo kompiuteryje, ir eikite į <b>https://firefox.com/pair</b>]]></string>
   <!-- Text shown for sign in pairing when ready -->
   <string name="sign_in_ready_for_scan">Pasiruošti nuskaitymui</string>
   <!-- Text shown for settings option for sign with pairing -->
@@ -1023,7 +950,7 @@
   <!-- Text shown for settings option for sign with email -->
   <string name="sign_in_with_email">Naudoti el. paštą</string>
   <!-- Text shown for settings option for create new account text.'Firefox' intentionally hardcoded here. -->
-  <string name="sign_in_create_account_text" tools:ignore="BrandUsage">Neturite paskyros? &lt;u&gt;Susikurkite&lt;/u&gt;, norėdami sinchronizuoti „Firefox“ tarp įrenginių.</string>
+  <string name="sign_in_create_account_text" tools:ignore="BrandUsage"><![CDATA[Neturite paskyros? <u>Susikurkite</u>, norėdami sinchronizuoti „Firefox“ tarp įrenginių.]]></string>
   <!-- Text shown in confirmation dialog to sign out of account. %s is the name of the app (for example "Firefox"). -->
   <string name="sign_out_confirmation_message_2">„%s“ nebesinchronizuos duomenų su jūsų paskyra, tačiau šiame įrenginyje esančių naršymo duomenų nepašalins.</string>
   <!-- Option to continue signing out of account shown in confirmation dialog to sign out of account -->
@@ -1237,8 +1164,6 @@
   <string name="credit_cards_edit_card">Redaguoti kortelę</string>
   <!-- The header for the card number of a credit card -->
   <string name="credit_cards_card_number">Kortelės numeris</string>
-  <!-- The header for the expiration date of a credit card -->
-  <string name="credit_cards_expiration_date">Galiojimo data</string>
   <!-- The label for the expiration date month of a credit card to be used by a11y services -->
   <string name="credit_cards_expiration_date_month">Galiojimo datos mėnuo</string>
   <!-- The label for the expiration date year of a credit card to be used by a11y services -->
@@ -1283,22 +1208,14 @@
   <string name="search_add_custom_engine_error_empty_search_string">Įveskite paieškos eilutę</string>
   <!-- Text shown when a user leaves out the required template string -->
   <string name="search_add_custom_engine_error_missing_template">Pasitikrinkite, ar paieškos eilutė atitinka formatą iš pavyzdžio</string>
-  <!-- Text shown when we aren't able to validate the custom search query. %s is the url of the custom search engine. -->
-  <string name="search_add_custom_engine_error_cannot_reach">Nepavyko prisijungti prie „%s“</string>
-  <!-- Text shown when a user creates a new search engine. %s is the url of the custom search engine. -->
-  <string name="search_add_custom_engine_success_message">Sukurta „%s“</string>
-  <!-- Text shown when a user successfully edits a custom search engine. %s is the url of the custom search engine. -->
-  <string name="search_edit_custom_engine_success_message">Įrašyta „%s“</string>
-  <!-- Text shown when a user successfully deletes a custom search engine. %s is the url of the custom search engine. -->
-  <string name="search_delete_search_engine_success_message">Pašalinta „%s“</string>
   <!-- Heading for the instructions to allow a permission -->
   <string name="phone_feature_blocked_intro">Norėdami tai leisti:</string>
   <!-- First step for the allowing a permission -->
   <string name="phone_feature_blocked_step_settings">1. Eikite į „Android“ nuostatas</string>
   <!-- Second step for the allowing a permission -->
-  <string name="phone_feature_blocked_step_permissions">2. Bakstelėkite &lt;b&gt;Leidimai&lt;/b&gt;</string>
+  <string name="phone_feature_blocked_step_permissions"><![CDATA[2. Bakstelėkite <b>Leidimai</b>]]></string>
   <!-- Third step for the allowing a permission (%1$s is the permission name, for example "Camera"). -->
-  <string name="phone_feature_blocked_step_feature">3. Įjunkite &lt;b&gt;%1$s&lt;/b&gt;</string>
+  <string name="phone_feature_blocked_step_feature"><![CDATA[3. Įjunkite <b>%1$s</b>]]></string>
   <!-- Label that indicates a site is using a secure connection -->
   <string name="quick_settings_sheet_secure_connection_2">Ryšys yra saugus</string>
   <!-- Label that indicates a site is using a insecure connection -->
@@ -1306,7 +1223,7 @@
   <!-- Label to clear site data -->
   <string name="clear_site_data">Valyti slapukus ir svetainių duomenis</string>
   <!-- Confirmation message for a dialog confirming if the user wants to delete all data for current site. %s is the domain of the site. -->
-  <string name="confirm_clear_site_data">Ar tikrai norite išvalyti visus &lt;b&gt;%s&lt;/b&gt; svetainės slapukus ir duomenis?</string>
+  <string name="confirm_clear_site_data"><![CDATA[Ar tikrai norite išvalyti visus <b>%s</b> svetainės slapukus ir duomenis?]]></string>
   <!-- Confirmation message for a dialog confirming if the user wants to delete all the permissions for all sites -->
   <string name="confirm_clear_permissions_on_all_sites">Ar tikrai norite išvalyti visus leidimus visose svetainėse?</string>
   <!-- Confirmation message for a dialog confirming if the user wants to delete all the permissions for a site -->
@@ -1315,8 +1232,6 @@
   <string name="confirm_clear_permission_site">Ar tikrai norite išvalyti šį leidimą šioje svetainėje?</string>
   <!-- label shown when there are not site exceptions to show in the site exception settings -->
   <string name="no_site_exceptions">Nėra išimčių svetainėms</string>
-  <!-- Bookmark deletion confirmation -->
-  <string name="bookmark_deletion_confirmation">Ar tikrai norite pašalinti šį adresyno įrašą?</string>
   <!--
     text shown before the issuer name to indicate who its verified by, %1$s is the name of
     the certificate authority that verified the ticket
@@ -1402,21 +1317,7 @@
   <string name="radio_preference_info_content_description">Spustelėkite čia, jeigu norite daugiau informacijos</string>
   <!-- Content description for the action bar "up" button -->
   <string name="action_bar_up_description">Pereiti aukštyn</string>
-  <!-- Content description for privacy content close button -->
-  <string name="privacy_content_close_button_content_description">Užverti</string>
-  <!--
-    Pocket recommended stories
-
-    Header text for a section on the home screen.
-  -->
-  <string name="pocket_stories_header_1">Susimąstyti verčiančios istorijos</string>
-  <!-- Header text for a section on the home screen. -->
-  <string name="pocket_stories_categories_header">Straipsniai pagal temas</string>
-  <!-- Text of a button allowing users to access an external url for more Pocket recommendations. -->
-  <string name="pocket_stories_placeholder_text">Atrasti daugiau</string>
-  <!-- Caption for describing a certain feature. %s is a link using pocket_stories_feature_learn_more as text, which will load an url in a new tab when clicked. -->
-  <string name="pocket_stories_feature_caption" tools:ignore="BrandUsage">„Firefox“ šeimos dalis. %s</string>
-  <!-- Clickable text for opening an external link for more information about Pocket. -->
-  <string name="pocket_stories_feature_learn_more">Sužinoti daugiau</string>
   <!-- Translations feature -->
+
+  <!-- TextField Design System Component -->
 </resources>

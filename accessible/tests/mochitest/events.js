@@ -16,6 +16,8 @@ const EVENT_DOCUMENT_LOAD_COMPLETE =
 const EVENT_DOCUMENT_RELOAD = nsIAccessibleEvent.EVENT_DOCUMENT_RELOAD;
 const EVENT_DOCUMENT_LOAD_STOPPED =
   nsIAccessibleEvent.EVENT_DOCUMENT_LOAD_STOPPED;
+const EVENT_ERRORMESSAGE_CHANGED =
+  nsIAccessibleEvent.EVENT_ERRORMESSAGE_CHANGED;
 const EVENT_HIDE = nsIAccessibleEvent.EVENT_HIDE;
 const EVENT_FOCUS = nsIAccessibleEvent.EVENT_FOCUS;
 const EVENT_NAME_CHANGE = nsIAccessibleEvent.EVENT_NAME_CHANGE;
@@ -215,6 +217,7 @@ const DO_NOT_FINISH_TEST = 1;
  *
  * Invoker interface is:
  *
+ * ```js
  *   var invoker = {
  *     // Generates accessible event or event sequence. If returns
  *     // INVOKER_ACTION_FAILED constant then stop tests.
@@ -283,7 +286,7 @@ const DO_NOT_FINISH_TEST = 1;
  *   // Used to add a possible scenario of expected/unexpected events on
  *   // invoker's action.
  *  defineScenario(aInvokerObj, aEventSeq, aUnexpectedEventSeq)
- *
+ * ```
  *
  * @param  aEventType  [in, optional] the default event type (isn't used if
  *                      invoker defines eventSeq property).
@@ -1963,6 +1966,7 @@ function nofocusChecker(aID) {
 
 /**
  * Text inserted/removed events checker.
+ *
  * @param aFromUser  [in, optional] kNotFromUserInput or kFromUserInput
  */
 function textChangeChecker(

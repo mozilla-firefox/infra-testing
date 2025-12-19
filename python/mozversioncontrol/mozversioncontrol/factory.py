@@ -7,10 +7,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import (
-    Optional,
-    Union,
-)
+from typing import Literal, Optional, Union, overload
 
 from packaging.version import Version
 
@@ -21,28 +18,62 @@ from mozversioncontrol.errors import (
     MissingVCSTool,
 )
 from mozversioncontrol.repo.git import GitRepository
-from mozversioncontrol.repo.jj import JujutsuRepository
+from mozversioncontrol.repo.jj import (
+    MINIMUM_SUPPORTED_JJ_VERSION,
+    USING_JJ_DETECTED,
+    USING_JJ_WARNING,
+    JjVersionError,
+    JujutsuRepository,
+)
 from mozversioncontrol.repo.mercurial import HgRepository
 from mozversioncontrol.repo.source import SrcRepository
 
-MINIMUM_SUPPORTED_JJ_VERSION = Version("0.28")
-USING_JJ_WARNING = """\
-Using JujutsuRepository because a ".jj/" directory was detected!
-
-Warning: jj support is currently experimental, and may be disabled by setting the
-environment variable MOZ_AVOID_JJ_VCS=1. (This warning may be suppressed by
-setting MOZ_AVOID_JJ_VCS=0.)"""
-
-
-class UnsupportedJujutsuVersionError(Exception):
-    """Raised when the detected jj version is below the required minimum."""
-
-    pass
+VCS_CLASSES: dict[str, type] = {
+    "hg": HgRepository,
+    "git": GitRepository,
+    "jj": JujutsuRepository,
+    "src": SrcRepository,
+}
 
 
-def get_repository_object(
-    path: Optional[Union[str, Path]], hg="hg", git="git", jj="jj", src="src"
-):
+@overload
+def get_specific_repository_object(
+    data: str, output_format: Literal["git"]
+) -> GitRepository: ...
+
+
+@overload
+def get_specific_repository_object(
+    data: str, output_format: Literal["hg"]
+) -> HgRepository: ...
+
+
+@overload
+def get_specific_repository_object(
+    data: str, output_format: Literal["jj"]
+) -> JujutsuRepository: ...
+
+
+@overload
+def get_specific_repository_object(
+    data: str, output_format: Literal["src"]
+) -> SrcRepository: ...
+
+
+def get_specific_repository_object(path: Optional[Union[str, Path]], vcs: str):
+    """Return a repository object for the given VCS and path."""
+    resolved_path = Path(path).resolve()
+
+    try:
+        vcs_cls = VCS_CLASSES[vcs]
+    except KeyError:
+        raise ValueError(
+            f"Unsupported VCS: '{vcs}'; expected one of {tuple(VCS_CLASSES)}"
+        )
+    return vcs_cls(resolved_path)
+
+
+def get_repository_object(path: Optional[Union[str, Path]]):
     """Get a repository object for the repository at `path`.
     If `path` is not a known VCS repository, raise an exception.
     """
@@ -51,8 +82,8 @@ def get_repository_object(
     # watchman with that path and watchman will spew errors.
     path = Path(path).resolve()
     if (path / ".hg").is_dir():
-        return HgRepository(path, hg=hg)
-    if (path / ".jj").is_dir() and jj is not None:
+        return HgRepository(path)
+    if (path / ".jj").is_dir():
         avoid = os.getenv("MOZ_AVOID_JJ_VCS")
         try_using_jj = avoid in (None, "0", "")
         if try_using_jj:
@@ -74,7 +105,7 @@ def get_repository_object(
                 current_jj_version = Version(match.group(1))
 
                 if current_jj_version < MINIMUM_SUPPORTED_JJ_VERSION:
-                    raise UnsupportedJujutsuVersionError(
+                    raise JjVersionError(
                         f"Detected jj version {current_jj_version}, "
                         f"but version {MINIMUM_SUPPORTED_JJ_VERSION} or newer is required.\n"
                         f'Full "jj --version" output was: "{raw_jj_version}"'
@@ -86,16 +117,17 @@ def get_repository_object(
                     # jj without warning. If it is set to anything else, do not use jj (so
                     # eg fall back to git if .git exists.)
                     get_repository_object._warned = True
+                    print(USING_JJ_DETECTED, file=sys.stderr)
                     print(USING_JJ_WARNING, file=sys.stderr)
 
-                return JujutsuRepository(path, jj=jj, git=git)
+                return JujutsuRepository(path)
 
             except OSError:
                 print(".jj/ directory exists but jj binary not usable", file=sys.stderr)
     if (path / ".git").exists():
-        return GitRepository(path, git=git)
+        return GitRepository(path)
     if (path / "config" / "milestone.txt").exists():
-        return SrcRepository(path, src=src)
+        return SrcRepository(path)
     raise InvalidRepoPath(f"Unknown VCS, or not a source checkout: {path}")
 
 

@@ -6,21 +6,22 @@
 
 #include "SVGLengthSMILType.h"
 
-#include "mozilla/SMILValue.h"
-#include "SVGAnimatedLengthList.h"
-#include "nsDebug.h"
 #include <math.h>
+
+#include "SVGAnimatedLengthList.h"
+#include "mozilla/SMILValue.h"
+#include "nsDebug.h"
 
 namespace mozilla {
 
-void SVGLengthSMILType::Init(SMILValue& aValue) const {
+void SVGLengthSMILType::InitValue(SMILValue& aValue) const {
   MOZ_ASSERT(aValue.IsNull(), "Unexpected value type");
 
   aValue.mU.mPtr = new SVGLengthAndInfo();
   aValue.mType = this;
 }
 
-void SVGLengthSMILType::Destroy(SMILValue& aValue) const {
+void SVGLengthSMILType::DestroyValue(SMILValue& aValue) const {
   MOZ_ASSERT(aValue.mType == this, "Unexpected SMIL value");
   delete static_cast<SVGLengthAndInfo*>(aValue.mU.mPtr);
   aValue.mU.mPtr = nullptr;
@@ -77,7 +78,7 @@ nsresult SVGLengthSMILType::ComputeDistance(const SMILValue& aFrom,
   // Normalize both to pixels in case they're different units:
   aDistance = fabs(to.ValueInPixels(metrics) - from.ValueInPixels(metrics));
 
-  return NS_OK;
+  return std::isfinite(aDistance) ? NS_OK : NS_ERROR_FAILURE;
 }
 
 nsresult SVGLengthSMILType::Interpolate(const SMILValue& aStartVal,

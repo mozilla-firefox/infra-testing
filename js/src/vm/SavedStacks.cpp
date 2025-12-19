@@ -1845,7 +1845,7 @@ SavedFrame* SavedStacks::getOrCreateSavedFrame(
     return *p;
   }
 
-  Rooted<SavedFrame*> frame(cx, createFrameFromLookup(cx, lookup));
+  SavedFrame* frame = createFrameFromLookup(cx, lookup);
   if (!frame) {
     return nullptr;
   }
@@ -2019,10 +2019,10 @@ JSObject* SavedStacks::MetadataBuilder::build(
 const SavedStacks::MetadataBuilder SavedStacks::metadataBuilder;
 
 /* static */
-MOZ_CONSTINIT ReconstructedSavedFramePrincipals
+constinit ReconstructedSavedFramePrincipals
     ReconstructedSavedFramePrincipals::IsSystem;
 /* static */
-MOZ_CONSTINIT ReconstructedSavedFramePrincipals
+constinit ReconstructedSavedFramePrincipals
     ReconstructedSavedFramePrincipals::IsNotSystem;
 
 UniqueChars BuildUTF8StackString(JSContext* cx, JSPrincipals* principals,

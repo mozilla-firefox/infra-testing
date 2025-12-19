@@ -7,14 +7,15 @@
 #ifndef mozilla_dom_DOMParser_h_
 #define mozilla_dom_DOMParser_h_
 
-#include "nsCOMPtr.h"
-#include "mozilla/dom/Document.h"
-#include "nsWrapperCache.h"
 #include "mozilla/Span.h"
 #include "mozilla/dom/DOMParserBinding.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/TypedArray.h"
+#include "nsCOMPtr.h"
+#include "nsWrapperCache.h"
 
 class nsIGlobalObject;
+class nsIPrincipal;
 
 namespace mozilla {
 class ErrorResult;
@@ -41,7 +42,8 @@ class DOMParser final : public nsISupports, public nsWrapperCache {
                                                      ErrorResult& aRv);
 
   MOZ_CAN_RUN_SCRIPT already_AddRefed<Document> ParseFromString(
-      const TrustedHTMLOrString& aStr, SupportedType aType, ErrorResult& aRv);
+      const TrustedHTMLOrString& aStr, SupportedType aType,
+      nsIPrincipal* aSubjectPrincipal, ErrorResult& aRv);
 
   // Chrome and UI Widgets API
   already_AddRefed<Document> ParseFromSafeString(const nsAString& aStr,

@@ -7,12 +7,11 @@
 #ifndef LAYOUT_SVG_SVGPATTERNFRAME_H_
 #define LAYOUT_SVG_SVGPATTERNFRAME_H_
 
-#include "mozilla/Attributes.h"
 #include "gfxMatrix.h"
-#include "mozilla/gfx/2D.h"
-#include "mozilla/RefPtr.h"
+#include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/SVGPaintServerFrame.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/gfx/2D.h"
 
 class nsIFrame;
 
@@ -45,9 +44,9 @@ class SVGPatternFrame final : public SVGPaintServerFrame {
   // SVGPaintServerFrame methods:
   already_AddRefed<gfxPattern> GetPaintServerPattern(
       nsIFrame* aSource, const DrawTarget* aDrawTarget,
-      const gfxMatrix& aContextMatrix, StyleSVGPaint nsStyleSVG::*aFillOrStroke,
-      float aGraphicOpacity, imgDrawingParams& aImgParams,
-      const gfxRect* aOverrideBounds) override;
+      const gfxMatrix& aContextMatrix,
+      StyleSVGPaint nsStyleSVG::* aFillOrStroke, float aGraphicOpacity,
+      imgDrawingParams& aImgParams, const gfxRect* aOverrideBounds) override;
 
  public:
   // SVGContainerFrame methods:
@@ -55,7 +54,7 @@ class SVGPatternFrame final : public SVGPaintServerFrame {
 
   // nsIFrame interface:
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
 #ifdef DEBUG
   void Init(nsIContent* aContent, nsContainerFrame* aParent,
@@ -102,7 +101,7 @@ class SVGPatternFrame final : public SVGPaintServerFrame {
   already_AddRefed<SourceSurface> PaintPattern(
       const DrawTarget* aDrawTarget, Matrix* patternMatrix,
       const Matrix& aContextMatrix, nsIFrame* aSource,
-      StyleSVGPaint nsStyleSVG::*aFillOrStroke, float aGraphicOpacity,
+      StyleSVGPaint nsStyleSVG::* aFillOrStroke, float aGraphicOpacity,
       const gfxRect* aOverrideBounds, imgDrawingParams& aImgParams);
 
   /**

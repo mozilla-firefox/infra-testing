@@ -2,9 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+@import url("chrome://browser/skin/browser-colors.css");
+
 .sidebar-panel {
   appearance: none;
+  /* Background color comes from the embedder */
   background-color: transparent;
+  color: var(--sidebar-text-color);
 }
 
 #sidebar-panel-header {
@@ -14,7 +18,7 @@
 
   > h4 {
     margin-block: var(--space-large);
-    font-weight: var(--font-weight-bold);
+    font-weight: var(--heading-font-weight);
     font-size: 15px;
   }
 
@@ -27,19 +31,8 @@
 /* Themed sidebars */
 
 .sidebar-panel[lwt-sidebar] {
-  background-color: var(--lwt-sidebar-background-color);
-  color: var(--lwt-sidebar-text-color);
   color-scheme: light;
-
-  scrollbar-color:
-    light-dark(
-      rgba(204,204,204,.5),
-      rgba(249,249,250,.4)
-    )
-    light-dark(
-      rgba(230,230,235,.5),
-      rgba(20,20,25,.3)
-    );
+  scrollbar-color: light-dark(rgba(204, 204, 204, 0.5), rgba(249, 249, 250, 0.4)) light-dark(rgba(230, 230, 235, 0.5), rgba(20, 20, 25, 0.3));
 }
 
 .sidebar-panel[lwt-sidebar="dark"] {
@@ -48,13 +41,13 @@
 
 .sidebar-panel[lwt-sidebar] .sidebar-placesTreechildren {
   &::-moz-tree-row(selected) {
-    background-color: light-dark(hsla(0,0%,80%,.3), rgba(249,249,250,.1));
+    background-color: light-dark(hsla(0, 0%, 80%, 0.3), rgba(249, 249, 250, 0.1));
   }
 
   &::-moz-tree-image(selected),
   &::-moz-tree-twisty(selected),
   &::-moz-tree-cell-text(selected) {
-    color: var(--lwt-sidebar-text-color);
+    color: var(--sidebar-text-color);
   }
 }
 
@@ -66,7 +59,7 @@
   &::-moz-tree-image(selected, focus),
   &::-moz-tree-twisty(selected, focus),
   &::-moz-tree-cell-text(selected, focus) {
-    color: var(--lwt-sidebar-highlight-text-color, var(--lwt-sidebar-text-color, var(--sidebar-text-color)));
+    color: var(--lwt-sidebar-highlight-text-color, var(--sidebar-text-color));
   }
 }
 
@@ -84,7 +77,7 @@
 
 #viewButton {
   appearance: none;
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
   padding: 2px 4px;
   color: inherit;
 }
@@ -111,9 +104,16 @@
   fill: currentColor;
 }
 
+#sidebar-search-container {
+  padding: var(--space-medium);
+}
+
+#search-box {
+  flex: 1;
+}
+
 @media (-moz-platform: windows) {
-  :root[uidensity=touch] #search-box,
-  :root[uidensity=touch] .sidebar-placesTreechildren::-moz-tree-row {
+  :root[uidensity="touch"] .sidebar-placesTreechildren::-moz-tree-row {
     min-height: 32px;
   }
 
@@ -122,7 +122,7 @@
     padding: 0 4px;
   }
 
-  .sidebar-placesTreechildren::-moz-tree-cell(leaf) ,
+  .sidebar-placesTreechildren::-moz-tree-cell(leaf),
   .sidebar-placesTreechildren::-moz-tree-image(leaf) {
     cursor: pointer;
   }
@@ -146,15 +146,7 @@
   #viewButton {
     margin: 0;
     margin-inline-start: 4px;
-    border-radius: 2px;
-  }
-
-  #sidebar-search-container {
-    padding: 8px;
-  }
-
-  #search-box {
-    margin: 0;
+    border-radius: var(--border-radius-xsmall);
   }
 }
 
@@ -163,21 +155,16 @@
     padding: 8px;
   }
 
-  #search-box {
-    margin: 0;
-  }
-
   #viewButton {
     margin: 1px 0;
     margin-inline-start: 4px;
   }
 
-  :root[uidensity=touch] #search-box,
-  :root[uidensity=touch] .sidebar-placesTreechildren::-moz-tree-row {
+  :root[uidensity="touch"] .sidebar-placesTreechildren::-moz-tree-row {
     min-height: 32px;
   }
 
-  .sidebar-placesTreechildren::-moz-tree-cell(leaf) ,
+  .sidebar-placesTreechildren::-moz-tree-cell(leaf),
   .sidebar-placesTreechildren::-moz-tree-image(leaf) {
     cursor: pointer;
   }
@@ -199,7 +186,7 @@
     font-size: 1.0909rem;
   }
 
-  :root[uidensity=touch] .sidebar-placesTreechildren::-moz-tree-row {
+  :root[uidensity="touch"] .sidebar-placesTreechildren::-moz-tree-row {
     min-height: 32px;
   }
 
@@ -210,12 +197,6 @@
 
   .sidebar-placesTreechildren::-moz-tree-cell-text {
     margin-inline-end: 6px;
-  }
-
-  #sidebar-search-container {
-    /* Native searchbar styling already adds 4px margin on Mac, so
-     * adding 4px padding results in 8px of total whitespace. */
-    padding: 4px;
   }
 
   #viewButton {

@@ -8,7 +8,6 @@
 #include "mozilla/net/DocumentChannel.h"
 
 #include <inttypes.h>
-#include <utility>
 #include "mozIDOMWindow.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Assertions.h"
@@ -16,7 +15,6 @@
 #include "mozilla/Logging.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/net/DocumentChannelChild.h"
 #include "mozilla/net/ParentProcessDocumentChannel.h"
@@ -80,9 +78,7 @@ DocumentChannel::DocumentChannel(nsDocShellLoadState* aLoadState,
   LOG(("DocumentChannel ctor [this=%p, uri=%s]", this,
        aLoadState->URI()->GetSpecOrDefault().get()));
   RefPtr<nsHttpHandler> handler = nsHttpHandler::GetInstance();
-  uint64_t channelId;
-  Unused << handler->NewChannelId(channelId);
-  mChannelId = channelId;
+  mChannelId = handler->NewChannelId();
 }
 
 NS_IMETHODIMP
@@ -127,13 +123,27 @@ void DocumentChannel::ShutdownListeners(nsresult aStatusCode) {
 void DocumentChannel::DisconnectChildListeners(
     const nsresult& aStatus, const nsresult& aLoadGroupStatus) {
   MOZ_ASSERT(NS_FAILED(aStatus));
-  mStatus = aLoadGroupStatus;
-  // Make sure we remove from the load group before
-  // setting mStatus, as existing tests expect the
-  // status to be successful when we disconnect.
-  if (mLoadGroup) {
-    mLoadGroup->RemoveRequest(this, nullptr, aStatus);
-    mLoadGroup = nullptr;
+
+  // In the case where the channel was redirected to be downloaded by the
+  // nsExternalHelperAppService in the parent process, we'll be called with a
+  // different aLoadGroupStatus and aStatus.
+  //
+  // Before DocumentChannel was implemented, the channel would have been removed
+  // from the load group by the nsExternalHelperAppService. This simulates that
+  // behaviour by removing the load group when the channel is no longer in use.
+  //
+  // We cannot unconditionally remove the channel from the load group here, as
+  // that may unblock load events too early if new navigations will be started
+  // by channel listeners. See bug 1961008.
+  if (aStatus != aLoadGroupStatus) {
+    MOZ_ASSERT(aStatus == NS_BINDING_RETARGETED);
+    MOZ_ASSERT(NS_SUCCEEDED(aLoadGroupStatus));
+
+    mStatus = aLoadGroupStatus;
+    if (mLoadGroup) {
+      mLoadGroup->RemoveRequest(this, nullptr, aStatus);
+      mLoadGroup = nullptr;
+    }
   }
 
   ShutdownListeners(aStatus);
@@ -161,7 +171,11 @@ static bool URIUsesDocChannel(nsIURI* aURI) {
   }
 
   nsCString spec = aURI->GetSpecOrDefault();
-  return !spec.EqualsLiteral("about:crashcontent");
+  return
+#ifdef MOZ_WIDGET_ANDROID
+      !spec.EqualsLiteral("about:crashcontentjava") &&
+#endif
+      !spec.EqualsLiteral("about:crashcontent");
 }
 
 bool DocumentChannel::CanUseDocumentChannel(nsIURI* aURI) {

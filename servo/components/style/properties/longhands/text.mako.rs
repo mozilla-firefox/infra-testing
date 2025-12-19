@@ -13,7 +13,7 @@ ${helpers.predefined_type(
     animation_type="discrete",
     boxed=True,
     spec="https://drafts.csswg.org/css-ui/#propdef-text-overflow",
-    servo_restyle_damage="rebuild_and_reflow",
+    servo_restyle_damage="rebuild_box",
     affects="paint",
 )}
 
@@ -24,7 +24,7 @@ ${helpers.single_keyword(
     gecko_enum_prefix="StyleUnicodeBidi",
     animation_type="none",
     spec="https://drafts.csswg.org/css-writing-modes/#propdef-unicode-bidi",
-    servo_restyle_damage="rebuild_and_reflow",
+    servo_restyle_damage="rebuild_box",
     affects="layout",
 )}
 
@@ -36,7 +36,7 @@ ${helpers.predefined_type(
     initial_specified_value="specified::TextDecorationLine::none()",
     animation_type="discrete",
     spec="https://drafts.csswg.org/css-text-decor/#propdef-text-decoration-line",
-    servo_restyle_damage="rebuild_and_reflow",
+    servo_restyle_damage="rebuild_box",
     affects="overflow",
 )}
 
@@ -47,6 +47,18 @@ ${helpers.single_keyword(
     gecko_enum_prefix="StyleTextDecorationStyle",
     animation_type="discrete",
     spec="https://drafts.csswg.org/css-text-decor/#propdef-text-decoration-style",
+    affects="overflow",
+)}
+
+${helpers.predefined_type(
+    "text-decoration-inset",
+    "TextDecorationInset",
+    "computed::text::TextDecorationInset::get_initial_value()",
+    engines="gecko",
+    initial_specified_value="specified::text::TextDecorationInset::get_initial_value()",
+    boxed=True,
+    gecko_pref="layout.css.text-decoration-inset.enabled",
+    spec="https://drafts.csswg.org/css-text-decor-4/#text-decoration-skip-inset-property",
     affects="overflow",
 )}
 

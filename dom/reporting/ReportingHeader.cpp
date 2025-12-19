@@ -5,20 +5,21 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/ReportingHeader.h"
+
 #include <limits>
 
 #include "js/Array.h"  // JS::GetArrayLength, JS::IsArrayObject
 #include "js/JSON.h"
 #include "js/PropertyAndElement.h"  // JS_GetElement
+#include "mozilla/OriginAttributes.h"
+#include "mozilla/Services.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPtr.h"
 #include "mozilla/dom/ReportingBinding.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/SimpleGlobalObject.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/net/SFVService.h"
-#include "mozilla/OriginAttributes.h"
-#include "mozilla/Services.h"
-#include "mozilla/StaticPrefs_dom.h"
-#include "mozilla/StaticPtr.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
 #include "nsIEffectiveTLDService.h"
@@ -394,6 +395,7 @@ ReportingHeader::ParseReportToHeader(nsIHttpChannel* aChannel, nsIURI* aURI,
     uint32_t endpointsLength;
     if (!JS::GetArrayLength(cx, endpoints, &endpointsLength) ||
         endpointsLength == 0) {
+      // TODO: should this clear the endpoint instead?
       LogToConsoleIncompleteItem(aChannel, aURI, groupName);
       continue;
     }
@@ -579,7 +581,7 @@ void ReportingHeader::LogToConsoleInternal(nsIHttpChannel* aChannel,
   rv = nsContentUtils::ReportToConsoleByWindowID(
       localizedMsg, nsIScriptError::infoFlag, "Reporting"_ns, windowID,
       SourceLocation(aURI));
-  Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 }
 
 /* static */
@@ -600,30 +602,48 @@ void ReportingHeader::GetEndpointForReport(
 void ReportingHeader::GetEndpointForReport(const nsAString& aGroupName,
                                            nsIPrincipal* aPrincipal,
                                            nsACString& aEndpointURI) {
+  return GetEndpointForReportIncludeSubdomains(
+      aGroupName, aPrincipal, /* includeSubdomains */ false, aEndpointURI);
+}
+/* static */
+void ReportingHeader::GetEndpointForReportIncludeSubdomains(
+    const nsAString& aGroupName, nsIPrincipal* aPrincipal,
+    bool aIncludeSubdomains, nsACString& aEndpointURI) {
   MOZ_ASSERT(aEndpointURI.IsEmpty());
 
   if (!gReporting) {
     return;
   }
 
-  nsAutoCString origin;
-  nsresult rv = aPrincipal->GetOrigin(origin);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return;
-  }
+  nsCOMPtr<nsIPrincipal> principal = aPrincipal;
+  bool mustHaveIncludeSubdomains = false;
 
-  Client* client = gReporting->mOrigins.Get(origin);
-  if (!client) {
-    return;
-  }
+  do {
+    nsAutoCString origin;
+    nsresult rv = principal->GetOrigin(origin);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return;
+    }
 
-  const auto [begin, end] = client->mGroups.NonObservingRange();
-  const auto foundIt = std::find_if(
-      begin, end,
-      [&aGroupName](const Group& group) { return group.mName == aGroupName; });
-  if (foundIt != end) {
-    GetEndpointForReportInternal(*foundIt, aEndpointURI);
-  }
+    Client* client = gReporting->mOrigins.Get(origin);
+    if (client) {
+      const auto [begin, end] = client->mGroups.NonObservingRange();
+      const auto foundIt = std::find_if(
+          begin, end,
+          [&aGroupName, mustHaveIncludeSubdomains](const Group& group) {
+            return group.mName == aGroupName &&
+                   (!mustHaveIncludeSubdomains || group.mIncludeSubdomains);
+          });
+      if (foundIt != end) {
+        GetEndpointForReportInternal(*foundIt, aEndpointURI);
+        return;
+      }
+    }
+
+    nsCOMPtr<nsIPrincipal> oldPrincipal = std::move(principal);
+    oldPrincipal->GetNextSubDomainPrincipal(getter_AddRefs(principal));
+    mustHaveIncludeSubdomains = true;
+  } while (principal && aIncludeSubdomains);
 
   // XXX More explicitly report an error if not found?
 }
@@ -675,7 +695,7 @@ void ReportingHeader::GetEndpointForReportInternal(
                totalWeight < endpoint.mWeight;
       });
   if (foundIt != end) {
-    Unused << NS_WARN_IF(NS_FAILED(foundIt->mUrl->GetSpec(aEndpointURI)));
+    (void)NS_WARN_IF(NS_FAILED(foundIt->mUrl->GetSpec(aEndpointURI)));
   }
   // XXX More explicitly report an error if not found?
 }
@@ -860,7 +880,7 @@ void ReportingHeader::MaybeCreateCleanupTimer() {
   nsresult rv =
       NS_NewTimerWithCallback(getter_AddRefs(mCleanupTimer), this, timeout,
                               nsITimer::TYPE_ONE_SHOT_LOW_PRIORITY);
-  Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 }
 
 void ReportingHeader::MaybeCancelCleanupTimer() {

@@ -7,27 +7,24 @@
 #ifndef mozilla_dom_SpeechRecognition_h
 #define mozilla_dom_SpeechRecognition_h
 
-#include "mozilla/Attributes.h"
-#include "mozilla/DOMEventTargetHelper.h"
-#include "nsCOMPtr.h"
-#include "nsString.h"
-#include "nsWrapperCache.h"
-#include "nsTArray.h"
-#include "js/TypeDecls.h"
-#include "nsProxyRelease.h"
-#include "DOMMediaStream.h"
-#include "nsITimer.h"
-#include "MediaTrackGraph.h"
 #include "AudioSegment.h"
-#include "mozilla/WeakPtr.h"
-
+#include "DOMMediaStream.h"
+#include "MediaTrackGraph.h"
 #include "SpeechGrammarList.h"
 #include "SpeechRecognitionResultList.h"
-#include "nsISpeechRecognitionService.h"
 #include "endpointer.h"
-
+#include "js/TypeDecls.h"
+#include "mozilla/DOMEventTargetHelper.h"
+#include "mozilla/WeakPtr.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/SpeechRecognitionError.h"
+#include "nsCOMPtr.h"
+#include "nsISpeechRecognitionService.h"
+#include "nsITimer.h"
+#include "nsProxyRelease.h"
+#include "nsString.h"
+#include "nsTArray.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla {
 
@@ -64,8 +61,6 @@ class SpeechRecognition final : public DOMEventTargetHelper,
 
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
-
-  static bool IsAuthorized(JSContext* aCx, JSObject* aGlobal);
 
   static already_AddRefed<SpeechRecognition> Constructor(
       const GlobalObject& aGlobal, ErrorResult& aRv);

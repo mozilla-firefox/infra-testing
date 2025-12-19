@@ -20,7 +20,6 @@
 #ifdef __linux__
 #  include <dlfcn.h>
 #endif
-#include <iterator>
 #include <stdarg.h>
 #include <string.h>
 
@@ -1559,6 +1558,10 @@ JS_PUBLIC_API void JS_SetNativeStackQuota(
   SetNativeStackSize(cx, JS::StackForTrustedScript, trustedScriptStackSize);
   SetNativeStackSize(cx, JS::StackForUntrustedScript, untrustedScriptStackSize);
 
+  if (cx->runtime()->isMainRuntime()) {
+    js::gc::MapStack(systemCodeStackSize);
+  }
+
   cx->initJitStackLimit();
 }
 
@@ -1674,8 +1677,7 @@ JS_PUBLIC_API bool JS_InstanceOf(JSContext* cx, HandleObject obj,
   CHECK_THREAD(cx);
 #ifdef DEBUG
   if (args) {
-    cx->check(obj);
-    cx->check(args->thisv(), args->calleev());
+    cx->check(obj, args->thisv(), args->calleev());
   }
 #endif
   if (!obj || obj->getClass() != clasp) {
@@ -1773,21 +1775,40 @@ JS::RealmCreationOptions& JS::RealmCreationOptions::setCoopAndCoepEnabled(
   return *this;
 }
 
-JS::RealmCreationOptions& JS::RealmCreationOptions::setLocaleCopyZ(
-    const char* locale) {
-  const size_t size = strlen(locale) + 1;
+template <class RefCountedString>
+static RefCountedString* CopyStringZ(const char* str) {
+  MOZ_ASSERT(str);
+
+  const size_t size = strlen(str) + 1;
 
   AutoEnterOOMUnsafeRegion oomUnsafe;
-  char* memoryPtr = js_pod_malloc<char>(sizeof(LocaleString) + size);
+  char* memoryPtr = js_pod_malloc<char>(sizeof(RefCountedString) + size);
   if (!memoryPtr) {
-    oomUnsafe.crash("RealmCreationOptions::setLocaleCopyZ");
+    oomUnsafe.crash("CopyStringZ");
   }
 
-  char* localePtr = memoryPtr + sizeof(LocaleString);
-  memcpy(localePtr, locale, size);
+  char* strPtr = memoryPtr + sizeof(RefCountedString);
+  memcpy(strPtr, str, size);
 
-  locale_ = new (memoryPtr) LocaleString(localePtr);
+  return new (memoryPtr) RefCountedString(strPtr);
+}
 
+JS::RealmBehaviors& JS::RealmBehaviors::setLocaleOverride(const char* locale) {
+  if (locale) {
+    localeOverride_ = CopyStringZ<JS::LocaleString>(locale);
+  } else {
+    localeOverride_ = nullptr;
+  }
+  return *this;
+}
+
+JS::RealmBehaviors& JS::RealmBehaviors::setTimeZoneOverride(
+    const char* timeZone) {
+  if (timeZone) {
+    timeZoneOverride_ = CopyStringZ<JS::TimeZoneString>(timeZone);
+  } else {
+    timeZoneOverride_ = nullptr;
+  }
   return *this;
 }
 
@@ -1797,6 +1818,14 @@ const JS::RealmBehaviors& JS::RealmBehaviorsRef(JS::Realm* realm) {
 
 const JS::RealmBehaviors& JS::RealmBehaviorsRef(JSContext* cx) {
   return cx->realm()->behaviors();
+}
+
+void JS::SetRealmLocaleOverride(Realm* realm, const char* locale) {
+  realm->setLocaleOverride(locale);
+}
+
+void JS::SetRealmTimezoneOverride(Realm* realm, const char* timezone) {
+  realm->setTimeZoneOverride(timezone);
 }
 
 void JS::SetRealmNonLive(Realm* realm) { realm->setNonLive(); }
@@ -2096,8 +2125,7 @@ JS_PUBLIC_API bool JSPropertySpec::getValue(JSContext* cx,
 
   switch (u.value.type) {
     case ValueWrapper::Type::String: {
-      Rooted<JSAtom*> atom(cx,
-                           Atomize(cx, u.value.string, strlen(u.value.string)));
+      JSAtom* atom = Atomize(cx, u.value.string, strlen(u.value.string));
       if (!atom) {
         return false;
       }
@@ -2169,7 +2197,16 @@ JS_PUBLIC_API void JS_SetAllNonReservedSlotsToUndefined(JS::HandleObject obj) {
   }
 
   NativeObject& nobj = obj->as<NativeObject>();
-  MOZ_RELEASE_ASSERT(!Watchtower::watchesPropertyValueChange(&nobj));
+
+  // XPConnect calls this for global objects and global lexical environments
+  // that won't be used anymore. These objects can have an associated ObjectFuse
+  // but we can ignore them here because the objects are effectively dead (after
+  // clearing all slots below it'd be hard to execute JS code without breaking
+  // JS semantics).
+  MOZ_RELEASE_ASSERT(nobj.is<GlobalObject>() ||
+                     nobj.is<GlobalLexicalEnvironmentObject>() ||
+                     !Watchtower::watchesPropertyValueChange(&nobj));
+
   const JSClass* clasp = obj->getClass();
   unsigned numReserved = JSCLASS_RESERVED_SLOTS(clasp);
   unsigned numSlots = nobj.slotSpan();
@@ -2184,7 +2221,6 @@ JS_PUBLIC_API void JS_SetReservedSlot(JSObject* obj, uint32_t index,
   // objects. See NativeObject::getReservedSlotRef comment.
   NativeObject& nobj = obj->as<NativeObject>();
   MOZ_ASSERT(index < JSCLASS_RESERVED_SLOTS(obj->getClass()));
-  MOZ_ASSERT(!Watchtower::watchesPropertyValueChange(&nobj));
   nobj.setSlot(index, value);
 }
 
@@ -2598,6 +2634,10 @@ JS::CompileOptions::CompileOptions(JSContext* cx) {
   if (Realm* realm = cx->realm()) {
     alwaysUseFdlibm_ = realm->creationOptions().alwaysUseFdlibm();
     discardSource = realm->behaviors().discardSource();
+  }
+
+  if (cx->options().disableFilenameSecurityChecks()) {
+    skipFilenameValidation_ = true;
   }
 }
 
@@ -3099,6 +3139,28 @@ JS_PUBLIC_API bool JS::SetPromiseUserInputEventHandlingState(
   return true;
 }
 
+/* static */
+void JS::Dispatchable::Run(JSContext* cx,
+                           js::UniquePtr<JS::Dispatchable>&& task,
+                           MaybeShuttingDown maybeShuttingDown) {
+  // Release the uniquePtr so that we don't have a double delete.
+  JS::Dispatchable* rawTaskPtr = task.release();
+  // Execute run. This will result in the task being deleted.
+  rawTaskPtr->run(cx, maybeShuttingDown);
+}
+
+/* static */
+void JS::Dispatchable::ReleaseFailedTask(
+    js::UniquePtr<JS::Dispatchable>&& task) {
+  // release the task from the uniquePtr so that it does not delete.
+  JS::Dispatchable* rawTaskPtr = task.release();
+  // We've attempted to transfer to the embedding, but this has failed.
+  // Transfer the task back to the runtime, as defined by the subclass of
+  // JS::Dispatchable. The Runtime will delete the task once we are sure
+  // we are once more executing on the main thread.
+  rawTaskPtr->transferToRuntime();
+}
+
 /**
  * Unforgeable version of Promise.all for internal use.
  *
@@ -3117,9 +3179,18 @@ JS_PUBLIC_API JSObject* JS::GetWaitForAllPromise(
   return js::GetWaitForAllPromise(cx, promises);
 }
 
-JS_PUBLIC_API void JS::InitDispatchToEventLoop(
-    JSContext* cx, JS::DispatchToEventLoopCallback callback, void* closure) {
-  cx->runtime()->offThreadPromiseState.ref().init(callback, closure);
+JS_PUBLIC_API void JS::InitAsyncTaskCallbacks(
+    JSContext* cx, JS::DispatchToEventLoopCallback dispatchCallback,
+    JS::DelayedDispatchToEventLoopCallback delayedDispatchCallback,
+    JS::AsyncTaskStartedCallback asyncTaskStartedCallback,
+    JS::AsyncTaskFinishedCallback asyncTaskFinishedCallback, void* closure) {
+  cx->runtime()->offThreadPromiseState.ref().init(
+      dispatchCallback, delayedDispatchCallback, asyncTaskStartedCallback,
+      asyncTaskFinishedCallback, closure);
+}
+
+JS_PUBLIC_API void JS::CancelAsyncTasks(JSContext* cx) {
+  cx->runtime()->offThreadPromiseState.ref().cancelTasks(cx);
 }
 
 JS_PUBLIC_API void JS::ShutdownAsyncTasks(JSContext* cx) {
@@ -3142,7 +3213,7 @@ JS_PUBLIC_API void JS_RequestInterruptCallbackCanWait(JSContext* cx) {
 }
 
 JS::AutoSetAsyncStackForNewCalls::AutoSetAsyncStackForNewCalls(
-    JSContext* cx, HandleObject stack, const char* asyncCause,
+    JSContext* cx, JSObject* stack, const char* asyncCause,
     JS::AutoSetAsyncStackForNewCalls::AsyncCallKind kind)
     : cx(cx),
       oldAsyncStack(cx, cx->asyncStackForNewActivations()),
@@ -3665,11 +3736,23 @@ JS_PUBLIC_API bool JS::PropertySpecNameEqualsId(JSPropertySpec::Name name,
 JS_PUBLIC_API bool JS_Stringify(JSContext* cx, MutableHandleValue vp,
                                 HandleObject replacer, HandleValue space,
                                 JSONWriteCallback callback, void* data) {
+  return JS_StringifyWithLengthHint(cx, vp, replacer, space, callback, data, 0);
+}
+
+JS_PUBLIC_API bool JS_StringifyWithLengthHint(JSContext* cx,
+                                              MutableHandleValue vp,
+                                              HandleObject replacer,
+                                              HandleValue space,
+                                              JSONWriteCallback callback,
+                                              void* data, size_t lengthHint) {
   AssertHeapIsIdle();
   CHECK_THREAD(cx);
   cx->check(replacer, space);
   StringBuilder sb(cx);
   if (!sb.ensureTwoByteChars()) {
+    return false;
+  }
+  if (lengthHint && !sb.reserve(lengthHint)) {
     return false;
   }
   if (!Stringify(cx, vp, replacer, space, sb, StringifyBehavior::Normal)) {
@@ -4254,10 +4337,6 @@ extern MOZ_NEVER_INLINE JS_PUBLIC_API void JS_AbortIfWrongThread(
   }
 }
 
-JS_PUBLIC_API void JS_SetParallelParsingEnabled(JSContext* cx, bool enabled) {
-  cx->runtime()->setParallelParsingEnabled(enabled);
-}
-
 JS_PUBLIC_API void JS_SetOffthreadBaselineCompilationEnabled(JSContext* cx,
                                                              bool enabled) {
   cx->runtime()->setOffthreadBaselineCompilationEnabled(enabled);
@@ -4470,16 +4549,6 @@ JS_PUBLIC_API void JS_SetGlobalJitCompilerOption(JSContext* cx,
     case JSJITCOMPILER_WASM_JIT_OPTIMIZING:
       JS::ContextOptionsRef(cx).setWasmIon(!!value);
       break;
-    case JSJITCOMPILER_REGEXP_DUPLICATE_NAMED_GROUPS:
-      jit::JitOptions.js_regexp_duplicate_named_groups = !!value;
-      break;
-
-#ifdef NIGHTLY_BUILD
-    case JSJITCOMPILER_REGEXP_MODIFIERS:
-      jit::JitOptions.js_regexp_modifiers = !!value;
-      break;
-#endif
-
 #ifdef DEBUG
     case JSJITCOMPILER_FULL_DEBUG_CHECKS:
       jit::JitOptions.fullDebugChecks = !!value;
@@ -4633,8 +4702,7 @@ JS_PUBLIC_API bool JS_IndexToId(JSContext* cx, uint32_t index,
 
 JS_PUBLIC_API bool JS_CharsToId(JSContext* cx, JS::TwoByteChars chars,
                                 MutableHandleId idp) {
-  Rooted<JSAtom*> atom(cx,
-                       AtomizeChars(cx, chars.begin().get(), chars.length()));
+  JSAtom* atom = AtomizeChars(cx, chars.begin().get(), chars.length());
   if (!atom) {
     return false;
   }
@@ -4693,7 +4761,7 @@ void AutoFilename::setUnowned(const char* filename) {
 
 void AutoFilename::setOwned(UniqueChars&& filename) {
   MOZ_ASSERT(!get());
-  filename_ = AsVariant(std::move(filename));
+  filename_ = mozilla::AsVariant(std::move(filename));
 }
 
 const char* AutoFilename::get() const {
@@ -5025,6 +5093,11 @@ JS_PUBLIC_API void js::SetStackFormat(JSContext* cx, js::StackFormat format) {
 
 JS_PUBLIC_API js::StackFormat js::GetStackFormat(JSContext* cx) {
   return cx->runtime()->stackFormat();
+}
+
+JS_PUBLIC_API void JS::SetMeasuringExecutionTimeEnabled(JSContext* cx,
+                                                        bool value) {
+  cx->setMeasuringExecutionTimeEnabled(value);
 }
 
 JS_PUBLIC_API JS::JSTimers JS::GetJSTimers(JSContext* cx) {

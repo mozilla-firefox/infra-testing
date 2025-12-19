@@ -10,17 +10,21 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.text.InputType
+import android.text.SpannableString
+import android.text.SpannedString
 import android.view.KeyEvent
 import android.view.View
+import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.ExtractedTextRequest
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputContentInfo
 import androidx.core.net.toUri
 import androidx.test.filters.MediumTest
-import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
-import org.hamcrest.Matchers.* // ktlint-disable no-wildcard-imports
+import org.hamcrest.Matchers.equalTo
+import org.hamcrest.Matchers.not
+import org.hamcrest.Matchers.notNullValue
 import org.junit.Assume.assumeThat
 import org.junit.Ignore
 import org.junit.Test
@@ -249,6 +253,9 @@ class TextInputDelegateTest : BaseSessionTest() {
         // Workaround for sync shadow text
         ic.beginBatchEdit()
         ic.endBatchEdit()
+
+        processChildEvents()
+        processParentEvents()
     }
 
     @Test fun restartInput() {
@@ -290,6 +297,7 @@ class TextInputDelegateTest : BaseSessionTest() {
         })
     }
 
+    @Ignore("https://bugzilla.mozilla.org/show_bug.cgi?id=1988041")
     @Test fun restartInput_temporaryFocus() {
         // Our user action trick doesn't work for design-mode, so we can't test that here.
         assumeThat("Not in designmode", id, not(equalTo("#designmode")))
@@ -413,6 +421,7 @@ class TextInputDelegateTest : BaseSessionTest() {
         })
     }
 
+    @WithDisplay(width = 100, height = 100)
     @Test fun restartInput_disableEnable() {
         assumeThat("input only", id, equalTo("#input"))
 
@@ -454,6 +463,45 @@ class TextInputDelegateTest : BaseSessionTest() {
         promise.value
 
         assertThat("hideSoftInput isn't called", true, equalTo(true))
+    }
+
+    // When navigating away from a page with a focused input field, the keyboard should be dismissed.
+    @WithDisplay(width = 100, height = 100)
+    @Test
+    fun restartInput_dismissAfterNavigation() {
+        assumeThat("input only", id, equalTo("#input"))
+
+        mainSession.textInput.view = View(InstrumentationRegistry.getInstrumentation().targetContext)
+        mainSession.loadTestPath(RESUBMIT_CONFIRM)
+        mainSession.waitForPageStop()
+
+        mainSession.evaluateJS("document.querySelector('#text').focus()")
+
+        mainSession.waitUntilCalled(object : TextInputDelegate {
+            @AssertCalled(count = 1)
+            override fun restartInput(session: GeckoSession, reason: Int) {
+                assertThat(
+                    "Reason should be correct",
+                    reason,
+                    equalTo(GeckoSession.TextInputDelegate.RESTART_REASON_FOCUS),
+                )
+            }
+        })
+
+        val ic = mainSession.textInput.onCreateInputConnection(EditorInfo())!!
+        pressKeyNoWait(ic, KeyEvent.KEYCODE_ENTER)
+
+        mainSession.waitUntilCalled(object : TextInputDelegate, GeckoSession.ProgressDelegate {
+            @AssertCalled(count = 1)
+            override fun hideSoftInput(session: GeckoSession) {
+            }
+
+            @AssertCalled(count = 1)
+            override fun onPageStop(session: GeckoSession, success: Boolean) {
+            }
+        })
+
+        assertThat("hideSoftInput is called once", true, equalTo(true))
     }
 
     private fun getText(ic: InputConnection) =
@@ -619,11 +667,12 @@ class TextInputDelegateTest : BaseSessionTest() {
             ic,
             "foobarfoo",
             5,
-            /* checkGecko */
+            // checkGecko
             false,
         )
     }
 
+    @Ignore("https://bugzilla.mozilla.org/show_bug.cgi?id=1988041")
     // Test deleteSurroundingText
     @WithDisplay(width = 512, height = 512)
     // Child process updates require having a display.
@@ -724,7 +773,7 @@ class TextInputDelegateTest : BaseSessionTest() {
             ic,
             "frabar",
             6,
-            /* checkGecko */
+            // checkGecko
             false,
         )
 
@@ -914,12 +963,11 @@ class TextInputDelegateTest : BaseSessionTest() {
             "Can set large initial text",
             ic,
             content,
-            /* checkGecko */
+            // checkGecko
             false,
         )
     }
 
-    @SdkSuppress(minSdkVersion = Build.VERSION_CODES.N_MR1)
     @WithDisplay(width = 512, height = 512)
     // Child process updates require having a display.
     @Test
@@ -1044,6 +1092,7 @@ class TextInputDelegateTest : BaseSessionTest() {
     }
 
     // Bug 1275371 - shift+backspace should not forward delete on Android.
+    @Ignore("https://bugzilla.mozilla.org/show_bug.cgi?id=1988041")
     @WithDisplay(width = 512, height = 512)
     // Child process updates require having a display.
     @Test
@@ -1511,7 +1560,7 @@ class TextInputDelegateTest : BaseSessionTest() {
             ic,
             0,
             0,
-            /* checkGecko */
+            // checkGecko
             false,
         )
 
@@ -1623,6 +1672,56 @@ class TextInputDelegateTest : BaseSessionTest() {
         assertText("commit foobaz1", ic, "foobaz1")
     }
 
+    @WithDisplay(width = 512, height = 512)
+    // Child process updates require having a display.
+    @Test
+    fun inputConnection_setComposingTextWithEmptyStringSpan() {
+        assumeThat("input only", id, equalTo("#input"))
+
+        setupContent("")
+        val ic = mainSession.textInput.onCreateInputConnection(EditorInfo())!!
+
+        var promise = mainSession.evaluatePromiseJS(
+            """
+            new Promise(r =>
+                document.querySelector('$id').addEventListener('input', () => {
+                    let input = document.querySelector('$id');
+                    let selStart = input.selectionStart;
+                    if (input.value.length == 4) {
+                      input.value = "123 4";
+                      selStart += 1;
+                      input.setSelectionRange(selStart, selStart);
+                      r();
+                    }
+                }));
+            """.trimIndent(),
+        )
+
+        pressKey(ic, KeyEvent.KEYCODE_1)
+        ic.setComposingText("", 1)
+        pressKey(ic, KeyEvent.KEYCODE_2)
+        ic.setComposingText("", 1)
+        pressKey(ic, KeyEvent.KEYCODE_3)
+        ic.setComposingText("", 1)
+
+        syncShadowText(ic)
+
+        assertSelectionAt("Update selection by key event", ic, 3)
+
+        pressKeyNoWait(ic, KeyEvent.KEYCODE_4)
+
+        // ATOK will set empty text that has a composing span.
+        val text = SpannableString("")
+        BaseInputConnection.setComposingSpans(text)
+        ic.setComposingText(text, 1)
+
+        promise.value
+
+        syncShadowText(ic)
+
+        assertSelectionAt("Update selection by setSelectionRange", ic, 5)
+    }
+
     @Test
     fun noHandleVolumeKeys() {
         setupContent("")
@@ -1643,5 +1742,41 @@ class TextInputDelegateTest : BaseSessionTest() {
                 equalTo(false),
             )
         }
+    }
+
+    // Bug 1964660 - Sync selection without text change
+    @WithDisplay(width = 512, height = 512)
+    // Child process updates require having a display.
+    @Test
+    fun updateSelectionWithoutTextChange() {
+        assumeThat("input only", id, equalTo("#input"))
+
+        setupContent("[***]")
+        val ic = mainSession.textInput.onCreateInputConnection(EditorInfo())!!
+
+        mainSession.evaluateJS(
+            """
+            document.querySelector('$id').blur();
+
+            document.querySelector('$id').addEventListener('focus', () => {
+                document.querySelector('$id').setSelectionRange(1, 4);
+            });
+            document.querySelector('$id').addEventListener('input', () => {
+                document.querySelector('$id').value = '[***]';
+                document.querySelector('$id').setSelectionRange(1, 4);
+            });
+            """.trimIndent(),
+        )
+
+        mainSession.evaluateJS("document.querySelector('$id').focus()")
+        mainSession.waitUntilCalled(GeckoSession.TextInputDelegate::class, "restartInput")
+
+        processChildEvents()
+        assertSelection("selection isn't collapsed at start", ic, 1, 4)
+
+        pressKey(ic, KeyEvent.KEYCODE_A)
+        processChildEvents()
+        assertText("text isn't changed", ic, "[***]")
+        assertSelection("selection isn't collapsed", ic, 1, 4)
     }
 }

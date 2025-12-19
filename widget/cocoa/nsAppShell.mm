@@ -29,7 +29,7 @@
 #include "nsObjCExceptions.h"
 #include "nsCocoaUtils.h"
 #include "nsCocoaFeatures.h"
-#include "nsChildView.h"
+#include "nsCocoaWindow.h"
 #include "nsToolkit.h"
 #include "TextInputHandler.h"
 #include "mozilla/BackgroundHangMonitor.h"
@@ -337,13 +337,11 @@ void nsAppShell::OnRunLoopActivityChanged(CFRunLoopActivity aActivity) {
           profilingStack.pushLabelFrame("Native event loop idle", nullptr,
                                         &variableOnStack,
                                         JS::ProfilingCategoryPair::IDLE, 0);
-          profiler_thread_sleep();
         });
   } else {
     if (mProfilingStackWhileWaiting) {
       mProfilingStackWhileWaiting->pop();
       mProfilingStackWhileWaiting = nullptr;
-      profiler_thread_wake();
     }
   }
 }
@@ -686,8 +684,6 @@ bool nsAppShell::ProcessNextNativeEvent(bool aMayWait) {
 
   NSRunLoop* currentRunLoop = [NSRunLoop currentRunLoop];
 
-  EventQueueRef currentEventQueue = GetCurrentEventQueue();
-
   if (aMayWait) {
     mozilla::BackgroundHangMonitor().NotifyWait();
   }
@@ -783,9 +779,11 @@ bool nsAppShell::ProcessNextNativeEvent(bool aMayWait) {
   } while (mRunningEventLoop);
 
   if (eventProcessed) {
-    moreEvents =
-        (AcquireFirstMatchingEventInQueue(currentEventQueue, 0, NULL,
-                                          kEventQueueOptionsNone) != NULL);
+    NSEvent* nextEvent = [NSApp nextEventMatchingMask:NSEventMaskAny
+                                            untilDate:nil
+                                               inMode:currentMode
+                                              dequeue:NO];
+    moreEvents = !!nextEvent;
   }
 
   mRunningEventLoop = wasRunningEventLoop;
@@ -793,7 +791,7 @@ bool nsAppShell::ProcessNextNativeEvent(bool aMayWait) {
   NS_OBJC_END_TRY_IGNORE_BLOCK;
 
   if (!moreEvents) {
-    nsChildView::UpdateCurrentInputEventCount();
+    nsCocoaWindow::UpdateCurrentInputEventCount();
   }
 
   return moreEvents;

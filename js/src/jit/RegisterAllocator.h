@@ -9,6 +9,8 @@
 
 #include "mozilla/MathAlgorithms.h"
 
+#include <compare>  // std::strong_ordering
+
 #include "jit/LIR.h"
 #include "jit/MIRGenerator.h"
 #include "jit/MIRGraph.h"
@@ -164,17 +166,7 @@ class CodePosition {
 
   SubPosition subpos() const { return (SubPosition)(bits_ & SUBPOSITION_MASK); }
 
-  bool operator<(CodePosition other) const { return bits_ < other.bits_; }
-
-  bool operator<=(CodePosition other) const { return bits_ <= other.bits_; }
-
-  bool operator!=(CodePosition other) const { return bits_ != other.bits_; }
-
-  bool operator==(CodePosition other) const { return bits_ == other.bits_; }
-
-  bool operator>(CodePosition other) const { return bits_ > other.bits_; }
-
-  bool operator>=(CodePosition other) const { return bits_ >= other.bits_; }
+  constexpr auto operator<=>(const CodePosition& other) const = default;
 
   uint32_t operator-(CodePosition other) const {
     MOZ_ASSERT(bits_ >= other.bits_);
@@ -228,11 +220,6 @@ class RegisterAllocator {
   // Pool of all registers that should be considered allocateable
   AllocatableRegisterSet allRegisters_;
 
-  // Computed data
-  InstructionDataMap insData;
-  Vector<CodePosition, 12, SystemAllocPolicy> entryPositions;
-  Vector<CodePosition, 12, SystemAllocPolicy> exitPositions;
-
   RegisterAllocator(MIRGenerator* mir, LIRGenerator* lir, LIRGraph& graph)
       : mir(mir), lir(lir), graph(graph), allRegisters_(RegisterSet::All()) {
     MOZ_ASSERT(!allRegisters_.has(FramePointer));
@@ -240,8 +227,6 @@ class RegisterAllocator {
       takeWasmRegisters(allRegisters_);
     }
   }
-
-  [[nodiscard]] bool init();
 
   TempAllocator& alloc() const { return mir->alloc(); }
 
@@ -272,19 +257,10 @@ class RegisterAllocator {
   CodePosition inputOf(const LInstruction* ins) const {
     return CodePosition(ins->id(), CodePosition::INPUT);
   }
-  CodePosition entryOf(const LBlock* block) {
-    return entryPositions[block->mir()->id()];
-  }
-  CodePosition exitOf(const LBlock* block) {
-    return exitPositions[block->mir()->id()];
-  }
 
   LMoveGroup* getInputMoveGroup(LInstruction* ins);
   LMoveGroup* getFixReuseMoveGroup(LInstruction* ins);
   LMoveGroup* getMoveGroupAfter(LInstruction* ins);
-
-  // Atomic group helper.  See comments in BacktrackingAllocator.cpp.
-  CodePosition minimalDefEnd(LNode* ins) const;
 
   void dumpInstructions(const char* who);
 

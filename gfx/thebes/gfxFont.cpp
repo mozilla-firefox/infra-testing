@@ -5,13 +5,10 @@
 
 #include "gfxFont.h"
 
-#include "mozilla/BinarySearch.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/FontPropertyTypes.h"
 #include "mozilla/gfx/2D.h"
-#include "mozilla/IntegerRange.h"
 #include "mozilla/intl/Segmenter.h"
-#include "mozilla/MathAlgorithms.h"
 #include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/SVGContextPaint.h"
@@ -183,7 +180,7 @@ void gfxFontCache::Shutdown() {
 
 gfxFontCache::gfxFontCache(nsIEventTarget* aEventTarget)
     : ExpirationTrackerImpl<gfxFont, 3, Lock, AutoLock>(
-          FONT_TIMEOUT_SECONDS * 1000, "gfxFontCache", aEventTarget) {
+          FONT_TIMEOUT_SECONDS * 1000, "gfxFontCache"_ns, aEventTarget) {
   nsCOMPtr<nsIObserverService> obs = GetObserverService();
   if (obs) {
     obs->AddObserver(new Observer, "memory-pressure", false);
@@ -1004,7 +1001,7 @@ gfxFont::gfxFont(const RefPtr<UnscaledFont>& aUnscaledFont,
 
   // Ensure the gfxFontEntry's unitsPerEm and extents fields are initialized,
   // so that GetFontExtents can use them without risk of races.
-  Unused << mFontEntry->UnitsPerEm();
+  (void)mFontEntry->UnitsPerEm();
 }
 
 gfxFont::~gfxFont() {
@@ -1427,6 +1424,7 @@ void gfxFont::CheckForFeaturesInvolvingSpace() const {
         flags = flags | gfxFontEntry::SpaceFeatures::HasFeatures;
         uint32_t index = static_cast<uint32_t>(s) >> 5;
         uint32_t bit = static_cast<uint32_t>(s) & 0x1f;
+        MutexAutoLock lock(mFontEntry->mFeatureInfoLock);
         if (isDefaultFeature) {
           mFontEntry->mDefaultSubSpaceFeatures[index] |= (1 << bit);
         } else {
@@ -1440,8 +1438,11 @@ void gfxFont::CheckForFeaturesInvolvingSpace() const {
   // spaces in default features of default script?
   // ==> can't use word cache, skip GPOS analysis
   bool canUseWordCache = true;
-  if (HasSubstitution(mFontEntry->mDefaultSubSpaceFeatures, Script::COMMON)) {
-    canUseWordCache = false;
+  {
+    MutexAutoLock lock(mFontEntry->mFeatureInfoLock);
+    if (HasSubstitution(mFontEntry->mDefaultSubSpaceFeatures, Script::COMMON)) {
+      canUseWordCache = false;
+    }
   }
 
   // GPOS lookups - distinguish kerning from non-kerning features
@@ -1460,6 +1461,7 @@ void gfxFont::CheckForFeaturesInvolvingSpace() const {
   }
 
   if (MOZ_UNLIKELY(log)) {
+    MutexAutoLock lock(mFontEntry->mFeatureInfoLock);
     TimeDuration elapsed = TimeStamp::Now() - start;
     LOG_FONTINIT((
         "(fontinit-spacelookups) font: %s - "
@@ -1494,6 +1496,7 @@ bool gfxFont::HasSubstitutionRulesWithSpaceLookups(Script aRunScript) const {
   }
 
   // default features have space lookups ==> true
+  MutexAutoLock lock(mFontEntry->mFeatureInfoLock);
   if (HasSubstitution(mFontEntry->mDefaultSubSpaceFeatures, Script::COMMON) ||
       HasSubstitution(mFontEntry->mDefaultSubSpaceFeatures, aRunScript)) {
     return true;
@@ -2766,7 +2769,7 @@ bool gfxFont::RenderColorGlyph(DrawTarget* aDrawTarget, gfxContext* aContext,
             // Save a snapshot of the rendering in the cache.
             // (We ignore potential failure here, and just paint the snapshot
             // without caching it.)
-            Unused << mColorGlyphCache->mCache.add(cached, aGlyphId, snapshot);
+            (void)mColorGlyphCache->mCache.add(cached, aGlyphId, snapshot);
           }
         }
       }
@@ -2826,10 +2829,19 @@ bool gfxFont::HasColorGlyphFor(uint32_t aCh, uint32_t aNextCh) {
   uint32_t gid = 0;
   if (gfxFontUtils::IsVarSelector(aNextCh)) {
     gid = shaper->GetVariationGlyph(aCh, aNextCh);
+    if (gid) {
+      if (aNextCh == kVariationSelector16) {
+        // If the font explicitly supports the character + VS16, we accept it
+        // as implying it will provide an emoji-style glyph.
+        return true;
+      }
+      if (aNextCh == kVariationSelector15) {
+        // Explicit support for VS15 implies a text-style glyph.
+        return false;
+      }
+    }
   }
-  if (!gid) {
-    gid = shaper->GetNominalGlyph(aCh);
-  }
+  gid = shaper->GetNominalGlyph(aCh);
   if (!gid) {
     return false;
   }
@@ -2900,16 +2912,16 @@ bool gfxFont::MeasureGlyphs(const gfxTextRun* aTextRun, uint32_t aStart,
                             gfxFloat* aAdvanceMin, gfxFloat* aAdvanceMax) {
   const gfxTextRun::CompressedGlyph* charGlyphs =
       aTextRun->GetCharacterGlyphs();
-  double x = 0;
-  if (aSpacing) {
-    x += aSpacing[0].mBefore;
-  }
   uint32_t spaceGlyph = GetSpaceGlyph();
   bool allGlyphsInvisible = true;
 
   AutoReadLock lock(aExtents->mLock);
 
+  double x = 0;
   for (uint32_t i = aStart; i < aEnd; ++i) {
+    if (aSpacing) {
+      x += aSpacing->mBefore;
+    }
     const gfxTextRun::CompressedGlyph* glyphData = &charGlyphs[i];
     if (glyphData->IsSimpleGlyph()) {
       double advance = glyphData->GetSimpleAdvance();
@@ -2997,11 +3009,8 @@ bool gfxFont::MeasureGlyphs(const gfxTextRun* aTextRun, uint32_t aStart,
       }
     }
     if (aSpacing) {
-      double space = aSpacing[i - aStart].mAfter;
-      if (i + 1 < aEnd) {
-        space += aSpacing[i + 1 - aStart].mBefore;
-      }
-      x += space;
+      x += aSpacing->mAfter;
+      ++aSpacing;
     }
   }
 
@@ -3224,6 +3233,7 @@ bool gfxFont::AgeCachedWords() {
         it.remove();
       }
     }
+    mWordCache->compact();
     return mWordCache->empty();
   }
   return true;
@@ -3855,10 +3865,11 @@ template bool gfxFont::SplitAndInitTextRun(
 
 template <>
 bool gfxFont::InitFakeSmallCapsRun(
-    nsPresContext* aPresContext, DrawTarget* aDrawTarget, gfxTextRun* aTextRun,
-    const char16_t* aText, uint32_t aOffset, uint32_t aLength,
-    FontMatchType aMatchType, gfx::ShapedTextFlags aOrientation, Script aScript,
-    nsAtom* aLanguage, bool aSyntheticLower, bool aSyntheticUpper) {
+    FontVisibilityProvider* aFontVisibilityProvider, DrawTarget* aDrawTarget,
+    gfxTextRun* aTextRun, const char16_t* aText, uint32_t aOffset,
+    uint32_t aLength, FontMatchType aMatchType,
+    gfx::ShapedTextFlags aOrientation, Script aScript, nsAtom* aLanguage,
+    bool aSyntheticLower, bool aSyntheticUpper) {
   bool ok = true;
 
   RefPtr<gfxFont> smallCapsFont = GetSmallCapsFont();
@@ -4042,13 +4053,14 @@ bool gfxFont::InitFakeSmallCapsRun(
 
 template <>
 bool gfxFont::InitFakeSmallCapsRun(
-    nsPresContext* aPresContext, DrawTarget* aDrawTarget, gfxTextRun* aTextRun,
-    const uint8_t* aText, uint32_t aOffset, uint32_t aLength,
-    FontMatchType aMatchType, gfx::ShapedTextFlags aOrientation, Script aScript,
-    nsAtom* aLanguage, bool aSyntheticLower, bool aSyntheticUpper) {
+    FontVisibilityProvider* aFontVisibilityProvider, DrawTarget* aDrawTarget,
+    gfxTextRun* aTextRun, const uint8_t* aText, uint32_t aOffset,
+    uint32_t aLength, FontMatchType aMatchType,
+    gfx::ShapedTextFlags aOrientation, Script aScript, nsAtom* aLanguage,
+    bool aSyntheticLower, bool aSyntheticUpper) {
   NS_ConvertASCIItoUTF16 unicodeString(reinterpret_cast<const char*>(aText),
                                        aLength);
-  return InitFakeSmallCapsRun(aPresContext, aDrawTarget, aTextRun,
+  return InitFakeSmallCapsRun(aFontVisibilityProvider, aDrawTarget, aTextRun,
                               static_cast<const char16_t*>(unicodeString.get()),
                               aOffset, aLength, aMatchType, aOrientation,
                               aScript, aLanguage, aSyntheticLower,
@@ -4291,12 +4303,8 @@ void gfxFont::CalculateDerivedMetrics(Metrics& aMetrics) {
   }
 
   aMetrics.maxHeight = aMetrics.maxAscent + aMetrics.maxDescent;
-
-  if (aMetrics.maxHeight - aMetrics.emHeight > 0.0) {
-    aMetrics.internalLeading = aMetrics.maxHeight - aMetrics.emHeight;
-  } else {
-    aMetrics.internalLeading = 0.0;
-  }
+  aMetrics.internalLeading =
+      std::max(0.0, aMetrics.maxHeight - aMetrics.emHeight);
 
   aMetrics.emAscent =
       aMetrics.maxAscent * aMetrics.emHeight / aMetrics.maxHeight;
@@ -4662,9 +4670,12 @@ void gfxFont::CreateVerticalMetrics() {
 
   // Somewhat arbitrary values for now, subject to future refinement...
   metrics->spaceWidth = metrics->aveCharWidth;
-  metrics->maxHeight = metrics->maxAscent + metrics->maxDescent;
   metrics->xHeight = metrics->emHeight / 2;
   metrics->capHeight = metrics->maxAscent;
+
+  metrics->maxHeight = metrics->maxAscent + metrics->maxDescent;
+  metrics->internalLeading =
+      std::max(0.0, metrics->maxHeight - metrics->emHeight);
 
   if (metrics->zeroWidth < 0.0) {
     metrics->zeroWidth = metrics->aveCharWidth;

@@ -136,7 +136,6 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   AutofillTelemetry: "resource://gre/modules/shared/AutofillTelemetry.sys.mjs",
-  CreditCard: "resource://gre/modules/CreditCard.sys.mjs",
   CreditCardRecord: "resource://gre/modules/shared/CreditCardRecord.sys.mjs",
   FormAutofillNameUtils:
     "resource://gre/modules/shared/FormAutofillNameUtils.sys.mjs",
@@ -185,6 +184,7 @@ const VALID_ADDRESS_COMPUTED_FIELDS = [
   ...AddressRecord.NAME_COMPONENTS,
   ...AddressRecord.STREET_ADDRESS_COMPONENTS,
   ...AddressRecord.TEL_COMPONENTS,
+  "address-housenumber",
 ];
 
 export const VALID_CREDIT_CARD_FIELDS = [
@@ -539,7 +539,9 @@ class AutofillRecords {
 
     let recordFound = this._findByGUID(guid);
     if (!recordFound) {
-      throw new Error("No matching record.");
+      // record must have been deleted, nothing to update
+      this.log.debug("Cannot notify. No record found with guid:", guid);
+      return;
     }
 
     recordFound.timesUsed++;
@@ -1744,45 +1746,14 @@ export class CreditCardsBase extends AutofillRecords {
     // NOTE: Computed fields should be always present in the storage no matter
     //       it's empty or not.
 
-    let hasNewComputedFields = false;
-
     if (creditCard.deleted) {
-      return hasNewComputedFields;
+      return;
     }
 
-    let type = lazy.CreditCard.getType(creditCard["cc-number"]);
-    if (type) {
-      creditCard["cc-type"] = type;
-    }
-
-    // Compute split names
-    if (!("cc-given-name" in creditCard)) {
-      const nameParts = lazy.FormAutofillNameUtils.splitName(
-        creditCard["cc-name"]
-      );
-      creditCard["cc-given-name"] = nameParts.given;
-      creditCard["cc-additional-name"] = nameParts.middle;
-      creditCard["cc-family-name"] = nameParts.family;
-      hasNewComputedFields = true;
-    }
-
-    // Compute credit card expiration date
-    if (!("cc-exp" in creditCard)) {
-      if (creditCard["cc-exp-month"] && creditCard["cc-exp-year"]) {
-        creditCard["cc-exp"] =
-          String(creditCard["cc-exp-year"]) +
-          "-" +
-          String(creditCard["cc-exp-month"]).padStart(2, "0");
-      } else {
-        creditCard["cc-exp"] = "";
-      }
-      hasNewComputedFields = true;
-    }
+    lazy.CreditCardRecord.computeFields(creditCard);
 
     // Encrypt credit card number
     await this._encryptNumber(creditCard);
-
-    return hasNewComputedFields;
   }
 
   async _encryptNumber(_creditCard) {
@@ -1845,7 +1816,8 @@ export class CreditCardsBase extends AutofillRecords {
     if (creditCard["cc-number-encrypted"]) {
       try {
         creditCard["cc-number"] = await lazy.OSKeyStore.decrypt(
-          creditCard["cc-number-encrypted"]
+          creditCard["cc-number-encrypted"],
+          "formautofill_cc"
         );
       } catch (ex) {
         if (ex.result == Cr.NS_ERROR_ABORT) {
@@ -1967,6 +1939,7 @@ export class CreditCardsBase extends AutofillRecords {
 
       const decrypted = await lazy.OSKeyStore.decrypt(
         recordInStorage["cc-number-encrypted"],
+        "formautofill_cc",
         false
       );
 

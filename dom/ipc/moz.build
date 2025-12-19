@@ -74,6 +74,7 @@ EXPORTS.mozilla.dom += [
     "NavigationAPIIPCUtils.h",
     "PageLoadEventUtils.h",
     "PermissionMessageUtils.h",
+    "PolicyContainerMessageUtils.h",
     "ProcessActor.h",
     "ProcessIsolation.h",
     "PropertyBagUtils.h",
@@ -136,6 +137,7 @@ UNIFIED_SOURCES += [
     "MemoryReportRequest.cpp",
     "MMPrinter.cpp",
     "PermissionMessageUtils.cpp",
+    "PolicyContainerMessageUtils.cpp",
     "PreallocatedProcessManager.cpp",
     "ProcessActor.cpp",
     "ProcessIsolation.cpp",
@@ -202,7 +204,9 @@ include("/ipc/chromium/chromium-config.mozbuild")
 
 FINAL_LIBRARY = "xul"
 
-if CONFIG["MOZ_SANDBOX"] and (CONFIG["OS_TARGET"] in ["Darwin", "Linux"]):
+if CONFIG["MOZ_SANDBOX"] and (
+    CONFIG["OS_ARCH"] == "Linux" or CONFIG["TARGET_OS"] == "OSX"
+):
     USE_LIBS += [
         "mozsandbox",
     ]

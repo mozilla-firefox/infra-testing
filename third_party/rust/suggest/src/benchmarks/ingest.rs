@@ -133,14 +133,6 @@ pub fn all_benchmarks() -> Vec<(&'static str, IngestBenchmark)> {
             IngestBenchmark::new(SuggestionProvider::Amo, true),
         ),
         (
-            "ingest-pocket",
-            IngestBenchmark::new(SuggestionProvider::Pocket, false),
-        ),
-        (
-            "ingest-again-pocket",
-            IngestBenchmark::new(SuggestionProvider::Pocket, true),
-        ),
-        (
             "ingest-yelp",
             IngestBenchmark::new(SuggestionProvider::Yelp, false),
         ),
@@ -192,7 +184,6 @@ pub fn all_benchmarks() -> Vec<(&'static str, IngestBenchmark)> {
 }
 
 pub fn print_debug_ingestion_sizes() {
-    viaduct_reqwest::use_reqwest_backend();
     let store = SuggestStoreInner::new(
         "file:debug_ingestion_sizes?mode=memory&cache=shared",
         vec![],

@@ -10,12 +10,12 @@
 #define mozilla_ScrollContainerFrame_h_
 
 #include "FrameMetrics.h"
+#include "ScrollVelocityQueue.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/dom/WindowBinding.h"  // for mozilla::dom::ScrollBehavior
-#include "mozilla/layout/ScrollAnchorContainer.h"
 #include "mozilla/ScrollOrigin.h"
 #include "mozilla/ScrollTypes.h"
-#include "mozilla/TypedEnumBits.h"
+#include "mozilla/dom/WindowBinding.h"  // for mozilla::dom::ScrollBehavior
+#include "mozilla/layout/ScrollAnchorContainer.h"
 #include "nsContainerFrame.h"
 #include "nsExpirationTracker.h"
 #include "nsIAnonymousContentCreator.h"
@@ -24,12 +24,10 @@
 #include "nsIStatefulFrame.h"
 #include "nsQueryFrame.h"
 #include "nsThreadUtils.h"
-#include "ScrollVelocityQueue.h"
 
 class nsPresContext;
 class nsIContent;
 class nsAtom;
-class nsIScrollPositionListener;
 class AutoContainsBlendModeCapturer;
 
 namespace mozilla {
@@ -40,6 +38,7 @@ enum class PhysicalAxis : uint8_t;
 enum class StyleScrollbarWidth : uint8_t;
 class ScrollContainerFrame;
 class ScrollPositionUpdate;
+class StickyScrollContainer;
 struct ScrollReflowInput;
 struct ScrollStyles;
 struct StyleScrollSnapAlign;
@@ -74,6 +73,7 @@ class ScrollContainerFrame : public nsContainerFrame,
                              public nsIReflowCallback,
                              public nsIStatefulFrame {
  public:
+  using CSSPoint = mozilla::CSSPoint;
   using Element = dom::Element;
   using ScrollAnchorContainer = layout::ScrollAnchorContainer;
   using SnapTargetSet = nsTHashSet<RefPtr<nsIContent>>;
@@ -111,7 +111,7 @@ class ScrollContainerFrame : public nsContainerFrame,
 
   bool GetBorderRadii(const nsSize& aFrameSize, const nsSize& aBorderArea,
                       nsIFrame::Sides aSkipSides,
-                      nscoord aRadii[8]) const final;
+                      nsRectCornerRadii&) const final;
 
   nscoord IntrinsicISize(const IntrinsicSizeInput& aInput,
                          IntrinsicISizeType aType) override;
@@ -130,6 +130,11 @@ class ScrollContainerFrame : public nsContainerFrame,
   Maybe<nscoord> GetNaturalBaselineBOffset(
       WritingMode aWM, BaselineSharingGroup aBaselineGroup,
       BaselineExportContext aExportContext) const override;
+
+  StickyScrollContainer* GetStickyContainer() const {
+    return mStickyContainer.get();
+  }
+  StickyScrollContainer& EnsureStickyContainer();
 
   // Recomputes the scrollable overflow area we store in the helper to take
   // children that are affected by perpsective set on the outer frame and scroll
@@ -272,6 +277,12 @@ class ScrollContainerFrame : public nsContainerFrame,
     }
     return mScrollPort.Size();
   }
+
+  /**
+   * Get the size used for window.innerWidth or innerHeight.
+   * This works only for the root scroll container.
+   */
+  nsSize GetSizeForWindowInnerSize() const;
 
   /**
    * GetScrolledRect is designed to encapsulate deciding which
@@ -433,7 +444,7 @@ class ScrollContainerFrame : public nsContainerFrame,
    * will be exactly aScrollPosition at the end of the scroll animation unless
    * the SMOOTH_MSD animation is interrupted.
    */
-  void ScrollToCSSPixels(const CSSIntPoint& aScrollPosition,
+  void ScrollToCSSPixels(const CSSPoint& aScrollPosition,
                          ScrollMode aMode = ScrollMode::Instant);
 
   /**
@@ -452,6 +463,13 @@ class ScrollContainerFrame : public nsContainerFrame,
    * pixel.
    */
   CSSIntPoint GetRoundedScrollPositionCSSPixels();
+
+  /**
+   * Returns the scroll position in CSS pixels.
+   */
+  CSSPoint GetScrollPositionCSSPixels() const {
+    return CSSPoint::FromAppUnits(GetScrollPosition());
+  }
 
   /**
    * Some platforms (OSX) may generate additional scrolling events even
@@ -479,7 +497,7 @@ class ScrollContainerFrame : public nsContainerFrame,
                 ScrollMomentum aMomentum = NOT_MOMENTUM,
                 ScrollSnapFlags aSnapFlags = ScrollSnapFlags::Disabled);
 
-  void ScrollByCSSPixels(const CSSIntPoint& aDelta,
+  void ScrollByCSSPixels(const CSSPoint& aDelta,
                          ScrollMode aMode = ScrollMode::Instant) {
     return ScrollByCSSPixelsInternal(aDelta, aMode);
   }
@@ -508,28 +526,11 @@ class ScrollContainerFrame : public nsContainerFrame,
   }
 
   /**
-   * Add a scroll position listener. This listener must be removed
-   * before it is destroyed.
-   */
-  void AddScrollPositionListener(nsIScrollPositionListener* aListener) {
-    mListeners.AppendElement(aListener);
-  }
-
-  /**
-   * Remove a scroll position listener.
-   */
-  void RemoveScrollPositionListener(nsIScrollPositionListener* aListener) {
-    mListeners.RemoveElement(aListener);
-  }
-
-  /**
    * @note This method might destroy the frame, pres shell and other objects.
    * Internal method used by scrollbars to notify their scrolling
    * container of changes.
    */
-  void CurPosAttributeChanged(nsIContent* aChild) {
-    return CurPosAttributeChangedInternal(aChild);
-  }
+  void ScrollbarCurPosChanged(bool aDoScroll = true);
 
   /**
    * Allows the docshell to request that the scroll frame post an event
@@ -691,7 +692,7 @@ class ScrollContainerFrame : public nsContainerFrame,
 
   /**
    * @note This method might destroy the frame, pres shell and other objects.
-   * Update scrollbar curpos attributes to reflect current scroll position
+   * Update scrollbar to reflect current scroll position
    */
   void UpdateScrollbarPosition();
 
@@ -735,6 +736,16 @@ class ScrollContainerFrame : public nsContainerFrame,
     return DecideScrollableLayer(aBuilder, aVisibleRect, aDirtyRect, aSetBase,
                                  nullptr);
   }
+
+  /**
+   * Like DecideScrollableLayer but skips computing dirty/visible rects and
+   * setting the base rect. In addition, this always ensures a display port is
+   * set if this scroll frame could async scroll. DecideScrollableLayer only
+   * sets a display port in that situation if ShouldActivateAllScrollFrames
+   * returns true. However you should only call this function is
+   * ShouldActivateAllScrollFrames returns true anyways.
+   * */
+  bool DecideScrollableLayerEnsureDisplayport(nsDisplayListBuilder* aBuilder);
 
   /**
    * Notify the scrollframe that the current scroll offset and origin have been
@@ -842,7 +853,8 @@ class ScrollContainerFrame : public nsContainerFrame,
 
   bool SmoothScrollVisual(
       const nsPoint& aVisualViewportOffset,
-      layers::FrameMetrics::ScrollOffsetUpdateType aUpdateType);
+      layers::FrameMetrics::ScrollOffsetUpdateType aUpdateType,
+      ScrollMode aMode);
 
   /**
    * Returns true if this scroll frame should perform smooth scroll with the
@@ -851,11 +863,19 @@ class ScrollContainerFrame : public nsContainerFrame,
   bool IsSmoothScroll(
       dom::ScrollBehavior aBehavior = dom::ScrollBehavior::Auto) const;
 
+  /**
+   * Returns the ScrollMode that this scroll frame should use for a
+   * programmatic scroll governed by CSSOM-View `scroll-behavior`.
+   * This includes most programmatic scrolls but not scroll snapping.
+   */
+  ScrollMode ScrollModeForScrollBehavior(
+      dom::ScrollBehavior aBehavior = dom::ScrollBehavior::Auto) const;
+
   static nscoord GetNonOverlayScrollbarSize(const nsPresContext*,
                                             StyleScrollbarWidth);
 
   void ScrollByCSSPixelsInternal(
-      const CSSIntPoint& aDelta, ScrollMode aMode = ScrollMode::Instant,
+      const CSSPoint& aDelta, ScrollMode aMode = ScrollMode::Instant,
       // This ScrollByCSSPixels is mainly used for Element.scrollBy and
       // Window.scrollBy. An exception is the transmogrification of
       // ScrollToCSSPixels.
@@ -982,7 +1002,11 @@ class ScrollContainerFrame : public nsContainerFrame,
   bool UsesOverlayScrollbars() const;
   bool IsLastSnappedTarget(const nsIFrame* aFrame) const;
 
-  static bool ShouldActivateAllScrollFrames();
+  // If aBuilder is non-null, returns the value cached on aBuilder. Pass null
+  // for aBuilder to get the correct value to cache on a new builder or new
+  // frame of painting, or if you need the correct value outside of paint time.
+  static bool ShouldActivateAllScrollFrames(nsDisplayListBuilder* aBuilder,
+                                            nsIFrame* aFrame);
   nsRect RestrictToRootDisplayPort(const nsRect& aDisplayportBase);
   bool DecideScrollableLayer(nsDisplayListBuilder* aBuilder,
                              nsRect* aVisibleRect, nsRect* aDirtyRect,
@@ -1100,42 +1124,23 @@ class ScrollContainerFrame : public nsContainerFrame,
   // top-layer items handle setting up their own ASRs.
   void MaybeCreateTopLayerAndWrapRootItems(
       nsDisplayListBuilder*, nsDisplayListCollection&, bool aCreateAsyncZoom,
+      bool aCapturedByViewTransition,
       AutoContainsBlendModeCapturer* aAsyncZoomBlendCapture,
-      const nsRect& aAsyncZoomClipRect, nscoord* aRadii);
+      const nsRect& aAsyncZoomClipRect, const nsRectCornerRadii* aRadii);
 
   void AppendScrollPartsTo(nsDisplayListBuilder* aBuilder,
                            const nsDisplayListSet& aLists, bool aCreateLayer,
                            bool aPositioned);
-
-  /**
-   * @note This method might destroy the frame, pres shell and other objects.
-   * Called when the 'curpos' attribute on one of the scrollbars changes.
-   */
-  void CurPosAttributeChangedInternal(nsIContent*, bool aDoScroll = true);
 
   void PostScrollEvent();
   MOZ_CAN_RUN_SCRIPT void FireScrollEvent();
   void PostScrolledAreaEvent();
   MOZ_CAN_RUN_SCRIPT void FireScrolledAreaEvent();
 
-  /**
-   * @note This method might destroy the frame, pres shell and other objects.
-   */
-  void FinishReflowForScrollbar(Element* aElement, nscoord aMinXY,
+  void FinishReflowForScrollbar(nsScrollbarFrame*, nscoord aMinXY,
                                 nscoord aMaxXY, nscoord aCurPosXY,
-                                nscoord aPageIncrement, nscoord aIncrement);
-  /**
-   * @note This method might destroy the frame, pres shell and other objects.
-   */
-  void SetScrollbarEnabled(Element* aElement, nscoord aMaxPos);
-  /**
-   * @note This method might destroy the frame, pres shell and other objects.
-   */
-  void SetCoordAttribute(Element* aElement, nsAtom* aAtom, nscoord aSize);
-
-  nscoord GetCoordAttribute(nsIFrame* aFrame, nsAtom* aAtom,
-                            nscoord aDefaultValue, nscoord* aRangeStart,
-                            nscoord* aRangeLength);
+                                nscoord aPageIncrement);
+  void ActivityOccurred();
 
   nsRect GetLayoutScrollRange() const;
   // Get the scroll range assuming the viewport has size (aWidth, aHeight).
@@ -1262,7 +1267,8 @@ class ScrollContainerFrame : public nsContainerFrame,
   // scroll to either).
   void ApzSmoothScrollTo(const nsPoint& aDestination, ScrollMode, ScrollOrigin,
                          ScrollTriggeredByScript,
-                         UniquePtr<ScrollSnapTargetIds> aSnapTargetIds);
+                         UniquePtr<ScrollSnapTargetIds> aSnapTargetIds,
+                         ViewportType aViewportToScroll);
 
   // Check whether APZ can scroll in the provided directions, keeping in mind
   // that APZ currently cannot scroll along axes which are overflow:hidden.
@@ -1289,8 +1295,7 @@ class ScrollContainerFrame : public nsContainerFrame,
   // We need this if a scrollbar frame is recreated.
   void ReloadChildFrames();
 
-  // NOTE: Use GetScrollStylesFromFrame() if you want to know `overflow`
-  // and `overflow-behavior` properties.
+  // NOTE: Use GetScrollStyles() if you want `overflow` property info.
   nsIFrame* GetFrameForStyle() const;
 
   // Compute all scroll snap related information and store eash snap target
@@ -1311,10 +1316,6 @@ class ScrollContainerFrame : public nsContainerFrame,
     }
     ScheduleScrollAnimations();
     mMayScheduleScrollAnimations = false;
-  }
-
-  CSSPoint GetScrollPositionCSSPixels() const {
-    return CSSPoint::FromAppUnits(GetScrollPosition());
   }
 
   static void RemoveDisplayPortCallback(nsITimer* aTimer, void* aClosure);
@@ -1343,7 +1344,6 @@ class ScrollContainerFrame : public nsContainerFrame,
   RefPtr<AsyncScroll> mAsyncScroll;
   RefPtr<AsyncSmoothMSDScroll> mAsyncSmoothMSDScroll;
   RefPtr<layout::ScrollbarActivity> mScrollbarActivity;
-  nsTArray<nsIScrollPositionListener*> mListeners;
   ScrollOrigin mLastScrollOrigin;
   Maybe<nsPoint> mApzSmoothScrollDestination;
   MainThreadScrollGeneration mScrollGeneration;
@@ -1351,6 +1351,11 @@ class ScrollContainerFrame : public nsContainerFrame,
 
   nsTArray<ScrollPositionUpdate> mScrollUpdates;
 
+  // The minimum-scale size, this is specific to mobile environments where the
+  // initial-scale can be less than 1.0.
+  // See
+  // https://github.com/bokand/bokand.github.io/blob/master/web_viewports_explainer.md#minimum-scale
+  // for details.
   nsSize mMinimumScaleSize;
 
   // Stores the ICB size for the root document if this frame is using the
@@ -1546,6 +1551,8 @@ class ScrollContainerFrame : public nsContainerFrame,
   // in the case of the top level document.
   nsRect mScrollPort;
   UniquePtr<ScrollSnapTargetIds> mLastSnapTargetIds;
+  // Lazily created on demand, see StickyScrollContainer::GetOrCreateForFrame.
+  UniquePtr<StickyScrollContainer> mStickyContainer;
 };
 
 }  // namespace mozilla

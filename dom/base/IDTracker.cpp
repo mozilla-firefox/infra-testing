@@ -9,14 +9,14 @@
 #include "mozilla/Encoding.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentOrShadowRoot.h"
-#include "mozilla/dom/ShadowRoot.h"
 #include "mozilla/dom/SVGUseElement.h"
+#include "mozilla/dom/ShadowRoot.h"
 #include "nsAtom.h"
 #include "nsContentUtils.h"
-#include "nsIURI.h"
-#include "nsIReferrerInfo.h"
-#include "nsEscape.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsEscape.h"
+#include "nsIReferrerInfo.h"
+#include "nsIURI.h"
 #include "nsStringFwd.h"
 
 namespace mozilla::dom {
@@ -78,20 +78,6 @@ void IDTracker::ResetToURIWithFragmentID(Element& aFrom, nsIURI* aURI,
   nsresult rv = encoding->DecodeWithoutBOMHandling(refPart, ref);
   if (NS_FAILED(rv) || ref.IsEmpty()) {
     return;
-  }
-
-  if (aFrom.IsInNativeAnonymousSubtree()) {
-    // This happens, for example, if aFromContent is part of the content
-    // inserted by a call to Document::InsertAnonymousContent, which we
-    // also want to handle.  (It also happens for other native anonymous content
-    // etc.)
-    Element* anonRoot = doc->GetAnonRootIfInAnonymousContentContainer(&aFrom);
-    if (anonRoot) {
-      mElement = nsContentUtils::MatchElementId(anonRoot, ref);
-      // We don't have watching working yet for anonymous content, so bail out
-      // here.
-      return;
-    }
   }
 
   bool isEqualExceptRef;

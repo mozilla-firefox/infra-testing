@@ -24,7 +24,7 @@ registerCleanupFunction(function () {
 });
 
 pushPref("privacy.trackingprotection.enabled", true);
-pushPref("devtools.webconsole.groupWarningMessages", true);
+pushPref("devtools.webconsole.groupSimilarMessages", true);
 
 const ENHANCED_TRACKING_PROTECTION_GROUP_LABEL =
   "The resource at “<URL>” was blocked because Enhanced Tracking Protection is enabled.";
@@ -324,7 +324,7 @@ function emitEnhancedTrackingProtectionMessage() {
  * ordering still works fine).
  *
  * @param {WebConsole} hud
- * @param {String} str
+ * @param {string} str
  */
 function logStrings(hud, str) {
   const onFirstMessage = waitForMessageByType(hud, `${str} #1`, ".console-api");

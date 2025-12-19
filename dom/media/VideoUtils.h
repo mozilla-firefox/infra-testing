@@ -8,8 +8,8 @@
 #define VideoUtils_h
 
 #include "AudioSampleFormat.h"
-#include "MediaInfo.h"
 #include "MediaCodecsSupport.h"
+#include "MediaInfo.h"
 #include "VideoLimits.h"
 #include "mozilla/AbstractThread.h"
 #include "mozilla/Attributes.h"
@@ -319,6 +319,7 @@ bool ParseCodecsString(const nsAString& aCodecs,
                        nsTArray<nsString>& aOutCodecs);
 
 bool IsH264CodecString(const nsAString& aCodec);
+bool IsAllowedH264Codec(const nsAString& aCodec);
 
 bool IsH265CodecString(const nsAString& aCodec);
 

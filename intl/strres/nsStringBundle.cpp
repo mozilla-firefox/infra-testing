@@ -28,7 +28,6 @@
 #include "mozilla/ipc/SharedMemoryHandle.h"
 #include "mozilla/BinarySearch.h"
 #include "mozilla/ClearOnShutdown.h"
-#include "mozilla/ResultExtensions.h"
 #include "mozilla/URLPreloader.h"
 #include "mozilla/Try.h"
 #include "mozilla/dom/ContentParent.h"
@@ -111,7 +110,7 @@ namespace {
 class StringBundleProxy : public nsIStringBundle {
   NS_DECL_THREADSAFE_ISUPPORTS
 
-  NS_DECLARE_STATIC_IID_ACCESSOR(STRINGBUNDLEPROXY_IID)
+  NS_INLINE_DECL_STATIC_IID(STRINGBUNDLEPROXY_IID)
 
   explicit StringBundleProxy(already_AddRefed<nsIStringBundle> aTarget)
       : mMutex("StringBundleProxy::mMutex"), mTarget(aTarget) {}
@@ -126,6 +125,7 @@ class StringBundleProxy : public nsIStringBundle {
   NS_IMETHOD GetStringFromID(int32_t aID, nsAString& _retval) override {
     return Target()->GetStringFromID(aID, _retval);
   }
+
   NS_IMETHOD GetStringFromAUTF8Name(const nsACString& aName,
                                     nsAString& _retval) override {
     return Target()->GetStringFromAUTF8Name(aName, _retval);
@@ -133,10 +133,7 @@ class StringBundleProxy : public nsIStringBundle {
   NS_IMETHOD GetStringFromName(const char* aName, nsAString& _retval) override {
     return Target()->GetStringFromName(aName, _retval);
   }
-  NS_IMETHOD FormatStringFromID(int32_t aID, const nsTArray<nsString>& params,
-                                nsAString& _retval) override {
-    return Target()->FormatStringFromID(aID, params, _retval);
-  }
+
   NS_IMETHOD FormatStringFromAUTF8Name(const nsACString& aName,
                                        const nsTArray<nsString>& params,
                                        nsAString& _retval) override {
@@ -177,8 +174,6 @@ class StringBundleProxy : public nsIStringBundle {
   }
 };
 
-NS_DEFINE_STATIC_IID_ACCESSOR(StringBundleProxy, STRINGBUNDLEPROXY_IID)
-
 NS_IMPL_ISUPPORTS(StringBundleProxy, nsIStringBundle, StringBundleProxy)
 
 #define SHAREDSTRINGBUNDLE_IID \
@@ -203,7 +198,7 @@ class SharedStringBundle final : public nsStringBundleBase {
   void SetMapFile(mozilla::ipc::ReadOnlySharedMemoryHandle&& aHandle);
 
   NS_DECL_ISUPPORTS_INHERITED
-  NS_DECLARE_STATIC_IID_ACCESSOR(SHAREDSTRINGBUNDLE_IID)
+  NS_INLINE_DECL_STATIC_IID(SHAREDSTRINGBUNDLE_IID)
 
   nsresult LoadProperties() override;
 
@@ -265,8 +260,6 @@ class SharedStringBundle final : public nsStringBundleBase {
 
   Maybe<mozilla::ipc::ReadOnlySharedMemoryHandle> mMapHandle;
 };
-
-NS_DEFINE_STATIC_IID_ACCESSOR(SharedStringBundle, SHAREDSTRINGBUNDLE_IID)
 
 class StringMapEnumerator final : public nsSimpleEnumerator {
  public:
@@ -610,15 +603,6 @@ nsresult SharedStringBundle::GetStringImpl(const nsACString& aName,
   return NS_ERROR_FAILURE;
 }
 
-NS_IMETHODIMP
-nsStringBundleBase::FormatStringFromID(int32_t aID,
-                                       const nsTArray<nsString>& aParams,
-                                       nsAString& aResult) {
-  nsAutoCString idStr;
-  idStr.AppendInt(aID, 10);
-  return FormatStringFromName(idStr.get(), aParams, aResult);
-}
-
 // this function supports at most 10 parameters.. see below for why
 NS_IMETHODIMP
 nsStringBundleBase::FormatStringFromAUTF8Name(const nsACString& aName,
@@ -770,6 +754,7 @@ nsStringBundleService::Observe(nsISupports* aSubject, const char* aTopic,
       strcmp("chrome-flush-caches", aTopic) == 0 ||
       strcmp("intl:app-locales-changed", aTopic) == 0) {
     flushBundleCache(/* ignoreShared = */ false);
+    mBundleMap.Clear();
   } else if (strcmp("memory-pressure", aTopic) == 0) {
     flushBundleCache(/* ignoreShared = */ true);
   }
@@ -811,7 +796,7 @@ void nsStringBundleService::SendContentBundles(ContentParent* aContentParent) {
     }
   }
 
-  Unused << aContentParent->SendRegisterStringBundles(std::move(bundles));
+  (void)aContentParent->SendRegisterStringBundles(std::move(bundles));
 }
 
 void nsStringBundleService::RegisterContentBundle(

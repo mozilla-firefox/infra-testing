@@ -14,7 +14,7 @@ use alloc::string::{String, ToString};
 ///
 /// - If a type's WGSL form requires dynamic formatting, so that
 ///   returning a `&'static str` isn't feasible, consider implementing
-///   [`std::fmt::Display`] on some wrapper type instead.
+///   [`core::fmt::Display`] on some wrapper type instead.
 pub trait ToWgsl: Sized {
     /// Return WGSL source code representation of `self`.
     fn to_wgsl(self) -> &'static str;
@@ -32,7 +32,7 @@ pub trait ToWgsl: Sized {
 ///
 /// - If a type's WGSL form requires dynamic formatting, so that
 ///   returning a `&'static str` isn't feasible, consider implementing
-///   [`std::fmt::Display`] on some wrapper type instead.
+///   [`core::fmt::Display`] on some wrapper type instead.
 pub trait TryToWgsl: Sized {
     /// Return the WGSL form of `self` as a `'static` string.
     ///
@@ -165,9 +165,11 @@ impl TryToWgsl for crate::BuiltIn {
             Bi::ViewIndex => "view_index",
             Bi::InstanceIndex => "instance_index",
             Bi::VertexIndex => "vertex_index",
+            Bi::ClipDistance => "clip_distances",
             Bi::FragDepth => "frag_depth",
             Bi::FrontFacing => "front_facing",
             Bi::PrimitiveIndex => "primitive_index",
+            Bi::Barycentric => "barycentric",
             Bi::SampleIndex => "sample_index",
             Bi::SampleMask => "sample_mask",
             Bi::GlobalInvocationId => "global_invocation_id",
@@ -183,12 +185,20 @@ impl TryToWgsl for crate::BuiltIn {
             // Non-standard built-ins.
             Bi::BaseInstance
             | Bi::BaseVertex
-            | Bi::ClipDistance
             | Bi::CullDistance
             | Bi::PointSize
             | Bi::DrawID
             | Bi::PointCoord
-            | Bi::WorkGroupSize => return None,
+            | Bi::WorkGroupSize
+            | Bi::CullPrimitive
+            | Bi::TriangleIndices
+            | Bi::LineIndices
+            | Bi::MeshTaskSize
+            | Bi::PointIndex
+            | Bi::VertexCount
+            | Bi::PrimitiveCount
+            | Bi::Vertices
+            | Bi::Primitives => return None,
         })
     }
 }
@@ -244,7 +254,7 @@ impl ToWgsl for crate::StorageFormat {
             Sf::Bgra8Unorm => "bgra8unorm",
             Sf::Rgb10a2Uint => "rgb10a2uint",
             Sf::Rgb10a2Unorm => "rgb10a2unorm",
-            Sf::Rg11b10Ufloat => "rg11b10float",
+            Sf::Rg11b10Ufloat => "rg11b10ufloat",
             Sf::R64Uint => "r64uint",
             Sf::Rg32Uint => "rg32uint",
             Sf::Rg32Sint => "rg32sint",
@@ -352,6 +362,7 @@ pub const fn address_space_str(
             As::WorkGroup => "workgroup",
             As::Handle => return (None, None),
             As::Function => "function",
+            As::TaskPayload => return (None, None),
         }),
         None,
     )

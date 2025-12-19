@@ -7,15 +7,16 @@ const { ExtensionUserScripts } = ChromeUtils.importESModule(
 const server = createHttpServer({ hosts: ["example.com", "example.net"] });
 server.registerPathHandler("/evalChecker", (request, response) => {
   response.setStatusLine(request.httpVersion, 200, "OK");
-  response.write(`<script>var res = { evalOk: [], evalBlocked: [] };</script>`);
+  response.write(`<script>
+    var res = { evalOk: [], evalBlocked: [] };
+    var userScriptsExecutionDone = Promise.withResolvers();
+  </script>`);
 });
 
 AddonTestUtils.init(this);
 AddonTestUtils.overrideCertDB();
 
 add_setup(async () => {
-  Services.prefs.setBoolPref("extensions.userScripts.mv3.enabled", true);
-
   // Grant "userScripts" permission via permissions.request() without UI.
   Services.prefs.setBoolPref(
     "extensions.webextOptionalPermissionPrompts",
@@ -30,7 +31,10 @@ async function testEvalCheckerWithUserScripts() {
   let contentPage = await ExtensionTestUtils.loadContentPage(
     "http://example.com/evalChecker"
   );
-  const res = await contentPage.spawn([], () => content.wrappedJSObject.res);
+  const res = await contentPage.spawn([], async () => {
+    await content.wrappedJSObject.userScriptsExecutionDone.promise;
+    return content.wrappedJSObject.res;
+  });
   await contentPage.close();
   return {
     // We do not want to rely on a particular execution order, so sort results.
@@ -40,6 +44,9 @@ async function testEvalCheckerWithUserScripts() {
 }
 
 async function startEvalTesterExtension() {
+  // Note: this test extension is intentionally NOT using content_scripts to
+  // make sure that the user script initialization behavior is independent of
+  // content scripts, despite sharing parts of their internal logic.
   let extension = ExtensionTestUtils.loadExtension({
     useAddonManager: "permanent",
     manifest: {
@@ -61,6 +68,19 @@ async function startEvalTesterExtension() {
       browser.test.onMessage.addListener(async (msg, args) => {
         if (msg === "grantUserScriptsPermission") {
           await browser.permissions.request({ permissions: ["userScripts"] });
+          // To allow testEvalCheckerWithUserScripts() to know for certain
+          // whether the user scripts have executed, trigger a notification
+          // after all other user scripts have run.
+          await browser.userScripts.register([
+            {
+              id: "evalChecker_done_marker",
+              matches: ["*://example.com/evalChecker"],
+              js: [{ code: "userScriptsExecutionDone.resolve();" }],
+              // document_idle is guaranteed to run after document_end above.
+              runAt: "document_idle",
+              world: "MAIN",
+            },
+          ]);
         } else if (msg === "registerUserScriptForWorldId") {
           const worldId = args;
           await browser.userScripts.register([

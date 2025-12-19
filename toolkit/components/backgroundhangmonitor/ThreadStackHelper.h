@@ -33,6 +33,13 @@
 #    define MOZ_THREADSTACKHELPER_NATIVE_STACK
 #  endif
 
+// There are frequent crashes on Android 32 bit ARM builds during EHABI
+// stackwalking. See bug 1969481.
+#  if defined(__ANDROID__) && defined(__arm__)
+#    undef MOZ_THREADSTACKHELPER_PROFILING_STACK
+#    undef MOZ_THREADSTACKHELPER_NATIVE_STACK
+#  endif
+
 namespace mozilla {
 
 /**
@@ -85,8 +92,9 @@ class ThreadStackHelper : public ProfilerStackCollector {
   virtual void SetIsMainThread() override;
   virtual void CollectNativeLeafAddr(void* aAddr) override;
   virtual void CollectJitReturnAddr(void* aAddr) override;
-  virtual void CollectWasmFrame(JS::ProfilingCategoryPair aCategory,
-                                const char* aLabel) override;
+  virtual void CollectWasmOrSyncJITFrame(JS::ProfilingCategoryPair aCategory,
+                                         const char* aLabel,
+                                         uint32_t aSourceId) override;
   virtual void CollectProfilingStackFrame(
       const js::ProfilingStackFrame& aEntry) override;
 

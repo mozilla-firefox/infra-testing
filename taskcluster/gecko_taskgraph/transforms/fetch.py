@@ -19,6 +19,7 @@ from taskgraph.util.treeherder import join_symbol
 from voluptuous import Any, Extra, Optional, Required
 
 import gecko_taskgraph
+from gecko_taskgraph.transforms.task import task_description_schema
 
 from ..util.cached_tasks import add_optimization
 
@@ -45,6 +46,7 @@ FETCH_SCHEMA = Schema(
             "`public/` the artifact will require scopes to access.",
         ): str,
         Optional("attributes"): {str: object},
+        Optional("run-on-repo-type"): task_description_schema["run-on-repo-type"],
         Required("fetch"): {
             Required("type"): str,
             Extra: object,
@@ -137,6 +139,7 @@ def make_task(config, jobs):
             "expires-after": task_expires,
             "label": "fetch-%s" % name,
             "run-on-projects": [],
+            "run-on-repo-type": job.get("run-on-repo-type", ["git", "hg"]),
             "treeherder": {
                 "symbol": join_symbol("Fetch", name),
                 "kind": "build",
@@ -148,7 +151,7 @@ def make_task(config, jobs):
                 "checkout": False,
                 "command": job["command"],
             },
-            "worker-type": "b-linux-gcp",
+            "worker-type": "b-linux",
             "worker": {
                 "chain-of-trust": True,
                 "docker-image": {"in-tree": job.get("docker-image", "fetch")},
@@ -168,6 +171,11 @@ def make_task(config, jobs):
         if job.get("secret", None):
             task["scopes"] = ["secrets:get:" + job.get("secret")]
             task["worker"]["taskcluster-proxy"] = True
+
+        # Fetches that are used for local development need to be built on a
+        # level-3 branch to be installable via `mach bootstrap`.
+        if attributes.get("local-fetch"):
+            task["run-on-projects"] = ["integration", "release"]
 
         if not taskgraph.fast:
             cache_name = task["label"].replace(f"{config.kind}-", "", 1)
@@ -202,6 +210,7 @@ def make_task(config, jobs):
             # download.
             Required("key-path"): str,
         },
+        Optional("headers"): [str],
         # The name to give to the generated artifact. Defaults to the file
         # portion of the URL. Using a different extension converts the
         # archive to the given type. Only conversion to .tar.zst is
@@ -264,6 +273,9 @@ def create_fetch_url_task(config, name, fetch):
                 "FETCH_GPG_KEY",
             ]
         )
+
+    for header in fetch.get("headers", []):
+        command.extend(["--header", header])
 
     command.extend(
         [
@@ -344,6 +356,36 @@ def create_git_fetch_task(config, name, fetch):
         "artifact_name": artifact_name,
         "digest_data": digest_data,
         "secret": ssh_key,
+    }
+
+
+@fetch_builder(
+    "onnxruntime-deps-fetch",
+    schema={
+        Required("repo"): str,
+        Required("revision"): str,
+        Required("artifact-name"): str,
+    },
+)
+def create_onnxruntime_deps_fetch_task(config, name, fetch):
+    artifact_name = fetch.get("artifact-name")
+    workdir = "/builds/worker"
+
+    script = os.path.join(workdir, "bin/fetch-onnxruntime-deps.sh")
+    repo = fetch["repo"]
+    revision = fetch["revision"]
+
+    cmd = ["bash", "-c", f"cd {workdir} && /bin/sh {script} {repo} {revision}"]
+
+    return {
+        "command": cmd,
+        "artifact_name": artifact_name,
+        "docker-image": "fetch-more",
+        "digest_data": [
+            f"repo={repo}",
+            f"revision={revision}",
+            f"artifact_name={artifact_name}",
+        ],
     }
 
 

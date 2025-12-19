@@ -13,7 +13,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "IDNService",
   "@mozilla.org/network/idn-service;1",
-  "nsIIDNService"
+  Ci.nsIIDNService
 );
 
 XPCOMUtils.defineLazyPreferenceGetter(
@@ -65,7 +65,7 @@ async function fetchToDataUrl(url) {
 
 /**
  * Class implementing the nsIIdentityCredentialPromptService
- * */
+ */
 export class IdentityCredentialPromptService {
   classID = Components.ID("{936007db-a957-4f1d-a23d-f7d9403223e6}");
   QueryInterface = ChromeUtils.generateQI([
@@ -102,6 +102,7 @@ export class IdentityCredentialPromptService {
 
   /**
    * Ask the user, using a PopupNotification, to select an Identity Provider from a provided list.
+   *
    * @param {BrowsingContext} browsingContext - The BrowsingContext of the document requesting an identity credential via navigator.credentials.get()
    * @param {IdentityProviderConfig[]} identityProviders - The list of identity providers the user selects from
    * @param {IdentityProviderAPIConfig[]} identityManifests - The manifests corresponding 1-to-1 with identityProviders
@@ -313,6 +314,7 @@ export class IdentityCredentialPromptService {
 
   /**
    * Ask the user, using a PopupNotification, to select an account from a provided list.
+   *
    * @param {BrowsingContext} browsingContext - The BrowsingContext of the document requesting an identity credential via navigator.credentials.get()
    * @param {IdentityProviderAccountList} accountList - The list of accounts the user selects from
    * @param {IdentityProviderConfig} provider - The selected identity provider
@@ -467,12 +469,26 @@ export class IdentityCredentialPromptService {
       }
 
       // Add information to the label
-      newItem.getElementsByClassName(
-        "identity-credential-list-item-label-primary"
-      )[0].textContent = account.name;
-      newItem.getElementsByClassName(
-        "identity-credential-list-item-label-secondary"
-      )[0].textContent = account.email;
+      const labels = [
+        account.name,
+        account.email,
+        account.username,
+        account.tel,
+      ].filter(label => label != undefined && label != "");
+
+      const primaryLabel = labels[0];
+      if (primaryLabel) {
+        newItem.getElementsByClassName(
+          "identity-credential-list-item-label-primary"
+        )[0].textContent = primaryLabel;
+      }
+
+      const secondaryLabel = labels[1];
+      if (secondaryLabel) {
+        newItem.getElementsByClassName(
+          "identity-credential-list-item-label-secondary"
+        )[0].textContent = secondaryLabel;
+      }
 
       // Add the item to the DOM!
       listBox.append(newItem);
@@ -548,6 +564,7 @@ export class IdentityCredentialPromptService {
 
   /**
    * Close all UI from the other methods of this module for the provided window.
+   *
    * @param {BrowsingContext} browsingContext - The BrowsingContext of the document requesting an identity credential via navigator.credentials.get()
    * @returns
    */

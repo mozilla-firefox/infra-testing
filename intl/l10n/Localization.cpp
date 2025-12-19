@@ -107,6 +107,13 @@ already_AddRefed<Localization> Localization::Create(
 
 /* static */
 already_AddRefed<Localization> Localization::Create(
+    const nsTArray<nsCString>& aResourceIds, bool aIsSync,
+    const nsTArray<nsCString>& aLocales) {
+  return MakeAndAddRef<Localization>(aResourceIds, aIsSync, aLocales);
+}
+
+/* static */
+already_AddRefed<Localization> Localization::Create(
     const nsTArray<ffi::GeckoResourceId>& aResourceIds, bool aIsSync) {
   return MakeAndAddRef<Localization>(aResourceIds, aIsSync);
 }
@@ -117,6 +124,13 @@ Localization::Localization(const nsTArray<nsCString>& aResIds, bool aIsSync) {
                         getter_AddRefs(mRaw));
 
   RegisterObservers();
+}
+
+Localization::Localization(const nsTArray<nsCString>& aResIds, bool aIsSync,
+                           const nsTArray<nsCString>& aLocales) {
+  auto ffiResourceIds{L10nRegistry::ResourceIdsToFFI(aResIds)};
+  ffi::localization_new_with_locales(&ffiResourceIds, aIsSync, nullptr,
+                                     &aLocales, getter_AddRefs(mRaw));
 }
 
 Localization::Localization(const nsTArray<ffi::GeckoResourceId>& aResIds,
@@ -148,6 +162,14 @@ Localization::Localization(nsIGlobalObject* aGlobal, bool aIsSync,
                            const ffi::LocalizationRc* aRaw)
     : mGlobal(aGlobal), mRaw(aRaw) {
   RegisterObservers();
+}
+
+Localization::Localization(nsIGlobalObject* aGlobal, bool aIsSync,
+                           const nsTArray<nsCString>& aLocales)
+    : mGlobal(aGlobal) {
+  nsTArray<ffi::GeckoResourceId> resIds;
+  ffi::localization_new_with_locales(&resIds, aIsSync, nullptr, &aLocales,
+                                     getter_AddRefs(mRaw));
 }
 
 /* static */

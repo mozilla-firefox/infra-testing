@@ -27,22 +27,22 @@ android-geckoview:
         # Lint
         - "^source-test-mozlint android-lints$ | eslint$ | rejected-words$ | file-perm$ | file-whitespace$"
         # Miscellaneous Tests
-        - "^test-android !shippable '64 'gtest | 'cpp | junit-fis"
+        - "^test-android !shippable '64 'em-14 'gtest | 'cpp | junit-fis"
         # Mochitests
-        - "^test-android !shippable !cf !gli !iso      'em 'media | 'plain"
+        - "^test-android !shippable !cf !gli !iso      'em-14 'media | 'plain"
         - "^test-android !shippable !cf !gli !iso !swr 'hw 'media 'debug"
         - "^test-android !shippable !cf !gli !iso !swr 'hw 'mochitest-webgl 'nofis"
         # Reftests
-        - "^test-android !shippable !iso 'geckoview-crashtest | 'geckoview-reftest 'nofis"
+        - "^test-android !shippable !iso 'em-14 'geckoview-crashtest | 'geckoview-reftest 'nofis"
         # Web Platform Tests
-        - "^test-android !shippable !headless 'wdspec"
-        - "^test-android !shippable       !cf !iso            'web-platform-tests-crashtest 'debug"
-        - "^test-android !shippable       !cf !iso       !swr 'web-platform-tests-crashtest"
-        - "^test-android !shippable !back !cf !iso !ship !swr 'web-platform-tests-nofis"
-        - "^test-android !shippable !back !cf !iso            'web-platform-tests-reftest 'nofis 'debug"
-        - "^test-android !shippable !back !cf !iso       !swr 'web-platform-tests-reftest 'nofis"
+        - "^test-android !shippable !headless 'em-14 'wdspec"
+        - "^test-android !shippable       !cf !iso            'em-14 'web-platform-tests-crashtest 'debug"
+        - "^test-android !shippable       !cf !iso       !swr 'em-14 'web-platform-tests-crashtest"
+        - "^test-android !shippable !back !cf !iso !ship !swr 'em-14 'web-platform-tests-nofis"
+        - "^test-android !shippable !back !cf !iso            'em-14 'web-platform-tests-reftest 'nofis 'debug"
+        - "^test-android !shippable !back !cf !iso       !swr 'em-14 'web-platform-tests-reftest 'nofis"
         # XPCShell
-        - "^test-android !shippable !iso 'xpcshell"
+        - "^test-android !shippable !iso 'em-14 'xpcshell"
 
 builds:
     selector: fuzzy
@@ -93,6 +93,22 @@ desktop-frontend:
         - "'marionette                          !asan       !source !headless !swr"
         - "'firefox-ui-functional               !asan !tsan"
 
+desktop-newtab-trainhop:
+    description: >-
+        Run mochitest-browser newtab trainhop tests on compatible release
+        channels. Excludes non-shipped configurations, since we really just
+        need the platforms to build in order to grab their test packages and
+        test running infrastructure. The actual builds under test here are
+        the latest beta and release builds, running the try pushes' generated
+        newtab XPI and tests.
+        Use with --artifact to speed up your trypush.
+        If these jobs are green, then the pushed revision is ready to be
+        manually tested for a potential trainhop to the green channels.
+    selector: fuzzy
+    full: true
+    query:
+        - "'mochitest trainhop !cf !tsan !ccov !asan !shippable !debug !devedition !wayland !-32"
+
 devtools:
     selector: fuzzy
     description: >-
@@ -102,13 +118,13 @@ devtools:
     query:
         - "'node-debugger | 'node-devtools"
         - "'mozlint-eslint"
-        # Windows: skip jobs on asan and 32 bits platforms
-        - "'mochitest-devtools-chrome | 'mochitest-chrome-1proc 'windows !asan !-32"
+        # Windows: skip jobs on win10, asan and 32 bits platforms
+        - "'mochitest-devtools-chrome | 'mochitest-chrome-1proc 'windows !windows10 !asan !-32"
         # macos: no extra platform to filter out
         - "'mochitest-devtools-chrome | 'mochitest-chrome-1proc 'macosx"
-        # Linux is being named "linux1804" and may change over time, so use a more flexible search
-        - "'mochitest-devtools-chrome | 'mochitest-chrome-1proc 'linux '64-qr/ !swr"
-        - "'xpcshell 'linux !nofis '64-qr/"
+        # Linux: skip asan and tsan
+        - "'mochitest-devtools-chrome | 'mochitest-chrome-1proc 'linux !spi !asan !tsan"
+        - "'xpcshell 'linux !nofis !asan !tsan !condprof !ioi"
 
 devtools-linux:
     selector: fuzzy
@@ -119,8 +135,8 @@ devtools-linux:
     query:
         - "'node-debugger | 'node-devtools"
         - "'mozlint-eslint"
-        - "'mochitest-devtools-chrome | 'mochitest-chrome-1proc 'linux '64-qr/ !swr"
-        - "'xpcshell 'linux !nofis '64-qr/"
+        - "'mochitest-devtools-chrome | 'mochitest-chrome-1proc 'linux !spi !asan !tsan"
+        - "'xpcshell 'linux !nofis !asan !tsan !condprof !ioi"
 
 fenix:
     selector: fuzzy
@@ -134,6 +150,7 @@ fenix:
         - "'test-apk-fenix-debug"
         - "'ui-test-apk-fenix-arm-debug"
         - "^source-test 'fenix"
+        - "'generate-baseline-profile-firebase-fenix"
 
 firefox-android:
     selector: fuzzy
@@ -155,6 +172,7 @@ firefox-android:
         - "'test-apk-focus-debug"
         - "'ui-test-apk-focus-arm-debug"
         - "^source-test 'android | 'fenix | 'focus"
+        - "'generate-baseline-profile-firebase-fenix"
 
 focus:
     selector: fuzzy
@@ -182,7 +200,7 @@ fpush-linux-android:
         codebase, while the builds on other platforms catch compilation problems
         that might result from only building locally on one platform.
     query:
-        - "'test-linux1804 'debug- !-shippable !-asan"
+        - "'test-linux2404 'debug- !-shippable !-asan"
         - "'test-android-em 'debug"
         - "^build !-shippable !-signing !-asan !-fuzzing !-rusttests !-base-toolchain !-aar- !components !apk !bundle"
 
@@ -207,7 +225,7 @@ layout:
         |mach try --preset layout -xq "linux64 'opt"|
     query:
         # Most mochitest + reftest + crashtest + wpt
-        - "!asan !tsan !jsreftest !shippable !webgl !condprof !media !webgpu 'mochitest | 'web-platform | 'crashtest | 'reftest"
+        - "!asan !tsan !jsreftest !shippable !webgl !condprof !media !webgpu !a11y-checks 'mochitest | 'web-platform | 'crashtest | 'reftest"
         # Style system unit tests
         - "'rusttests"
 
@@ -240,6 +258,8 @@ os-integration:
     selector: fuzzy
     description: >-
         Run the same tasks as the "os-integration" cron.
+    env:
+        - MOZHARNESS_TEST_TAG=["os_integration"]
     try_config_params:
         target_tasks_method: os-integration
 
@@ -350,7 +370,7 @@ webextensions:
         - toolkit/components/extensions/test/
         - toolkit/mozapps/extensions/test/
     query:
-        - "'64-qr/ | 'windows11-64-2009-qr !wpt !gpu !msix"
+        - "'android | '64/ | 'windows11-64-24h2 !wpt !gpu !msix !-lite !-asan"
 
 webgpu:
     selector: fuzzy
@@ -368,31 +388,25 @@ webrender:
     description: >-
         Runs the conformance tests relevant to WebRender.
     query:
-        - "!talos !raptor !shippable !asan '-qr !components"
-        - "^webrender-"
+        - "!talos !raptor !shippable !asan !tsan !nofis !python-reftest '-reftest"
+        - "!talos !raptor !shippable !asan !tsan !nofis !python-reftest webrender-"
 
-webrender-reftests:
+webrender-linux:
     selector: fuzzy
     description: >-
-        Runs the reftests relevant to WebRender.
+        Runs the conformance tests relevant to WebRender on linux only.
     query:
-        - "!talos !raptor !shippable !asan !nofis 'reftest"
-
-webrender-reftests-linux:
-    selector: fuzzy
-    description: >-
-        Runs the reftests relevant to WebRender on linux only.
-    query:
-        - "!talos !raptor !shippable !asan !nofis 'linux 'reftest"
+        - "!talos !raptor !shippable !asan !tsan !nofis !python-reftest 'linux '-reftest"
+        - "!talos !raptor !shippable !asan !tsan !nofis !python-reftest 'linux webrender-"
 
 webrender-perf:
     selector: fuzzy
     description: >-
         Runs the performance tests relevant to WebRender.
     query:
-        - "'-qr 'svgr"
-        - "'-qr 'g1"
-        - "'-qr 'g4"
-        - "'-qr 'tp5"
-        - "'-qr 'talos-webgl"
-        - "'-qr 'motionmark-animometer"
+        - "'svgr"
+        - "'g1"
+        - "'g4"
+        - "'tp5"
+        - "'talos-webgl"
+        - "'motionmark-animometer"

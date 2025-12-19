@@ -7,7 +7,6 @@ package mozilla.components.feature.awesomebar.provider
 import android.graphics.Bitmap
 import androidx.core.graphics.drawable.toBitmap
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import mozilla.components.concept.engine.Engine
 import mozilla.components.concept.fetch.Client
@@ -41,7 +40,6 @@ import mozilla.components.ui.icons.R as iconsR
 private const val GOOGLE_MOCK_RESPONSE = "[\"firefox\",[\"firefox\",\"firefox for mac\",\"firefox quantum\",\"firefox update\",\"firefox esr\",\"firefox focus\",\"firefox addons\",\"firefox extensions\",\"firefox nightly\",\"firefox clear cache\"]]"
 private const val GOOGLE_MOCK_RESPONSE_WITH_DUPLICATES = "[\"firefox\",[\"firefox\",\"firefox\",\"firefox for mac\",\"firefox quantum\",\"firefox update\",\"firefox esr\",\"firefox esr\",\"firefox focus\",\"firefox addons\",\"firefox extensions\",\"firefox nightly\",\"firefox clear cache\"]]"
 
-@ExperimentalCoroutinesApi // for runTest
 @RunWith(AndroidJUnit4::class)
 class SearchSuggestionProviderTest {
     @Test
@@ -327,7 +325,7 @@ class SearchSuggestionProviderTest {
 
     @Test
     fun `Provider returns empty list if text is empty`() = runTest {
-        val provider = SearchSuggestionProvider(mock(), mock(), mock())
+        val provider = SearchSuggestionProvider(searchEngine = mock(), mock(), mock())
 
         val suggestions = provider.onInputChanged("")
         assertTrue(suggestions.isEmpty())
@@ -414,7 +412,7 @@ class SearchSuggestionProviderTest {
 
     @Test(expected = IllegalArgumentException::class)
     fun `Constructor throws if limit is less than 1`() {
-        SearchSuggestionProvider(mock(), mock(), mock(), limit = 0)
+        SearchSuggestionProvider(searchEngine = mock(), mock(), mock(), limit = 0)
     }
 
     @Test

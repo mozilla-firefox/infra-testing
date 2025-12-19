@@ -34,6 +34,12 @@ const PAGE_URL =
       ")();</script>"
   );
 
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["test.wait300msAfterTabSwitch", true]],
+  });
+});
+
 add_task(async function doClick() {
   // The onbeforeunload dialog should appear.
   let dialogPromise = PromptTestUtils.waitForPrompt(null, {
@@ -73,8 +79,8 @@ async function openPage(shouldClick) {
         [],
         function () {
           return [
-            content.document.userHasInteracted,
-            content.document.userHasInteracted,
+            content.document.hasBeenUserGestureActivated,
+            content.document.hasBeenUserGestureActivated,
           ];
         }
       );

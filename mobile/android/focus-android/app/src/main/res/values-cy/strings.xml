@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -55,7 +62,6 @@
   <string name="menu_settings">Gosodiadau</string>
   <string name="menu_about">Ynghylch</string>
   <string name="menu_help">Cymorth</string>
-  <string name="menu_rights" moz:removedIn="137">Eich Hawliau</string>
   <string name="menu_terms_of_use">Amodau Defnydd</string>
   <!--
     Menu item: This is the label for a menu entry that shows how many trackers have been blocked
@@ -150,16 +156,9 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote">&lt;p&gt;Gyda %1$s chi sy’n rheoli.&lt;/p&gt;
-&lt;p&gt;Defnyddiwch ef fel porwr preifat:
-  &lt;ul&gt;
-  &lt;li&gt;Chwilio a phori o fewn yr ap&lt;/li&gt;
-  &lt;li&gt;Rhwystro tracwyr (neu ddiweddaru’ch gosodiadau i ganiatáu tracwyr)&lt;/li&gt;
-  &lt;li&gt;Dileu er mwyn dileu cwcis yn ogystal â hanes chwilio a phori&lt;/li&gt;
-  &lt;/ul&gt;
-&lt;/p&gt;
-&lt;p&gt;Mae %1$s yn cael ei gynhyrchu gan Mozilla. Ein cenhadaeth yw meithrin Rhyngrwyd iach ac agored.&lt;br/&gt;
-&lt;a href="%2$s"&gt;Dysgu rhagor&lt;/a&gt;&lt;/p&gt;</string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>Gyda %1$s chi sy’n rheoli.</p>\n<p>Defnyddiwch ef fel porwr preifat:\n<ul>\n<li>Chwilio a phori o fewn yr ap</li>\n<li>Rhwystro tracwyr (neu ddiweddaru’ch gosodiadau i ganiatáu tracwyr)</li>\n<li>Dileu er mwyn dileu cwcis yn ogystal â hanes chwilio a phori</li>\n</ul> </p>\n<p>Mae %1$s yn cael ei gynhyrchu gan Mozilla. Ein cenhadaeth yw meithrin Rhyngrwyd iach ac agored.<br/>\n<a href=\"%2$s\">Dysgu rhagor</a></p>]]></string>
+  <!-- A link to SUMO at the bottom of About Focus screen. -->
+  <string name="about_screen_learn_more">Dysgu rhagor</string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">Preifatrwydd a Diogelwch</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -472,25 +471,23 @@
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" tools:ignore="UnusedResources">Drwy barhau, rydych yn cytuno i %1$s</string>
+  <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">Drwy barhau, rydych yn cytuno i %1$s.</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" tools:ignore="BrandUsage">Amodau Defnyddio Firefox.</string>
+  <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">Amodau Defnyddio Firefox</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" tools:ignore="BrandUsage">Mae Firefox yn ofalus o\'ch preifatrwydd. Darllenwch fwy yn ein %1$s</string>
+  <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Mae Firefox yn pryderu am eich preifatrwydd. Dysgwch fwy yn ein %1$s.</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link">Hysbysiad Preifatrwydd.</string>
+  <string name="onboarding_first_screen_privacy_notice_link_2">Hysbysiad Preifatrwydd</string>
   <!-- New Onboarding flow first screen button label -->
-  <string name="onboarding_first_screen_button_text" moz:removedIn="137" tools:ignore="UnusedResources">Cychwyn arni</string>
-  <!-- New Onboarding flow first screen button label -->
-  <string name="onboarding_first_screen_button_agree_and_continue">Cytuno a pharhau</string>
+  <string name="onboarding_first_screen_button_agree_and_continue_2">Parhau</string>
   <!-- In the first screen of new onboarding flow, additional accessibility description for content that contain urls. -->
   <string name="a11y_link_available">Dolen ar gael</string>
   <!--
@@ -570,36 +567,6 @@
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
   -->
   <string name="download_firefox" tools:ignore="BrandUsage">Llwytho Firefox i Lawr</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-  -->
-  <string name="your_rights_content1" moz:removedIn="137">Mae %1$s yn feddalwedd cod agored a rhydd gan Mozilla a chyfranwyr eraill.</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-    %2$s will be replaced with a URL linking to the MPL (e.g. https://www.mozilla.org/en-US/MPL/)
-  -->
-  <string name="your_rights_content2" moz:removedIn="137" tools:ignore="IncorrectStraightDoubleQuote">Mae %1$s ar gael i chi o dan amodau &lt;a href="%2$s"&gt;Trwydded Gyhoeddus Mozilla&lt;/a&gt; a thrwyddedau cod agored eraill.</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-    %2$s will be replaced with a URL linking to the trademark policy (e.g. https://www.mozilla.org/foundation/trademarks/policy/)
-  -->
-  <string name="your_rights_content3" moz:removedIn="137" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote">Nid ydych yn derbyn unrhyw hawliau na thrwyddedau i nod masnach y Mozilla Foundation neu unrhyw barti arall, gan gynnwys enwau a logos Mozilla, Firefox n %1$s. Mae gwybodaeth bellach i’w gael &lt;a href="%2$s"&gt;yma&lt;/a&gt;.</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-    %2$s will be replaced with a URL linking to the list of licenses used by the dependencies.
-  -->
-  <string name="your_rights_content4" moz:removedIn="137" tools:ignore="IncorrectStraightDoubleQuote">Mae cod ffynhonnell ychwanegol ar gyfer %1$s ar gael o dan amrywiol &lt;a href="%2$s"&gt;drwyddedau&lt;/a&gt; rhydd a chod agored.</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-    %2$s will be replaced with a URL linking to the GPL
-    %3$s will be replaced with a URL linking to the tracking protection wiki page (e.g. https://wiki.mozilla.org/Security/Tracking_protection#Lists)
-  -->
-  <string name="your_rights_content5" moz:removedIn="137" tools:ignore="IncorrectStraightDoubleQuote">Mae %1$s hefyd yn defnyddio rhestrau rhwystro sy’n cael eu darparu gan Disconnect, Inc. fel gweithiau ar wahân ac annibynnol o dan &lt;a href="%2$s"&gt;Trwydded Gyhoeddus Gyffredinol GNU v3&lt;/a&gt;, ac sydd ar gael &lt;a href = "%3$s"&gt;yma&lt;/a&gt;.</string>
   <!-- Text shown in prompts for GeckoView -->
   <string name="gv_prompt_username_hint">Enw Defnyddiwr</string>
   <string name="gv_prompt_password_hint">Cyfrinair</string>
@@ -709,11 +676,11 @@
   <!-- First step for the allowing a permission -->
   <string name="phone_feature_blocked_step_settings">1. Ewch i Gosodiadau Android</string>
   <!-- Second step for the allowing a permission -->
-  <string name="phone_feature_blocked_step_permissions">2. Tapiwch &lt;b&gt;Caniatâd&lt;/b&gt;</string>
+  <string name="phone_feature_blocked_step_permissions"><![CDATA[2. Tapiwch <b>Caniatâd</b>]]></string>
   <!-- Button label that take the user to the Android App setting -->
   <string name="phone_feature_go_to_settings">Mynd i’r gosodiadau</string>
   <!-- Third step for allowing a permission. %1$s is the permission name, for example, "Camera" -->
-  <string name="phone_feature_blocked_step_feature">3. Toglo &lt;b&gt;%1$s&lt;/b&gt; i YMLAEN</string>
+  <string name="phone_feature_blocked_step_feature"><![CDATA[3. Toglo <b>%1$s</b> i YMLAEN]]></string>
   <!-- Preference for altering the camera access for all websites -->
   <string name="preference_phone_feature_camera">Camera</string>
   <!-- Preference for altering the microphone access for all websites -->
@@ -740,20 +707,6 @@
   <string name="preference_block_autoplay_audio_only_summary">Cymeradwy</string>
   <!-- Preference for block autoplay audio and video -->
   <string name="preference_block_autoplay_audio_video">Rhwystro sain a fideo</string>
-  <!-- Preference for studies -->
-  <string name="preference_studies">Astudiaethau</string>
-  <!-- Preference for studies summary -->
-  <string name="preference_studies_summary" tools:ignore="BrandUsage">Efallai y bydd Firefox yn gosod a rhedeg astudiaethau o bryd i’w gilydd.</string>
-  <!-- Learn more link for studies, links to an article for more information about studies. -->
-  <string name="studies_learn_more">Darllen rhagor</string>
-  <!-- Dialog message shown when some changes are made on studies -->
-  <string name="studies_restart_app" moz:removedIn="137">Bydd yr ap yn cau er mwyn gosod y newidiadau</string>
-  <!-- Title of the remove studies button -->
-  <string name="studies_remove">Tynnu</string>
-  <!-- Title of the active section on the studies list -->
-  <string name="studies_active">Gweithredol</string>
-  <!-- Title of the completed section on the studies list -->
-  <string name="studies_completed">Cwblhawyd</string>
   <!-- Preference to enable remote debugging of the app via USB or Wi-Fi -->
   <string name="preference_remote_debugging">Dadfygio pell drwy\'r USB/Diwifr</string>
   <!-- Text Button for show biometric prompt -->
@@ -800,7 +753,7 @@
     Tip displayed on home view explaining how to disable tracking protection
     The new line here must be kept as the second half of the string is clickable for the user.
   -->
-  <string name="tip_disable_tracking_protection">Gwefan yn ymddwyn yn anisgwyl?\n Ceisiwch ddiffodd Diogelwch rhag Tracio</string>
+  <string name="tip_disable_tracking_protection">Gwefan yn ymddwyn yn anisgwyl?\nCeisiwch ddiffodd Diogelwch rhag Tracio</string>
   <!--
     Tip displayed on home view explaining how to add sites to homescreen
     %1$s is replaced with a line break in the application.
@@ -811,17 +764,17 @@
     %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     The new line here must be kept as the second half of the string is clickable for the user.
   -->
-  <string name="tip_set_default_browser">Agor pob dolen yn %1$s\n Gosod %1$s fel y porwr rhagosodedig</string>
+  <string name="tip_set_default_browser">Agor pob dolen yn %1$s\nGosod %1$s fel y porwr rhagosodedig</string>
   <!--
     Tip displayed on home view explaining how to add a custom autocomplete URL
     The new line here must be kept as the second half of the string is clickable for the user.
   -->
-  <string name="tip_autocomplete_url">Gosod URLau awtogwblhau i\'ch gwefannau gorau\n Pwyso\'n hir unrhyw URL yn y bar cyfeiriad</string>
+  <string name="tip_autocomplete_url">Gosod URLau awtogwblhau i\'ch gwefannau gorau\nPwyso\'n hir unrhyw URL yn y bar cyfeiriad</string>
   <!--
     Tip displayed on home view explaining how to add a custom autocomplete URL
     The new line here must be kept as the second half of the string is clickable for the user.
   -->
-  <string name="tip_open_in_new_tab">Agor dolen mewn tab newydd\n Pwyso\'n hir ar unrhyw ddolen ar dudalen</string>
+  <string name="tip_open_in_new_tab">Agor dolen mewn tab newydd\nPwyso\'n hir ar unrhyw ddolen ar dudalen</string>
   <!-- Tip displayed on home view explaining how to add a custom autocomplete URL -->
   <string name="tip_disable_tips2">Diffodd awgrymiadau ar y sgrin cychwyn</string>
   <!-- Label for the snackbar when a user opens a new tab -->
@@ -902,7 +855,7 @@
     Text for context menu additional note.
     %1$s is a placeholder for the app name.
   -->
-  <string name="contextmenu_erased_images_note2">Fydd delweddau sydd wedi eu cadw a’u rhannu &lt;b&gt;ddim yn cael eu dileu&lt;/b&gt; pan fyddwch yn dileu hanes %1$s.</string>
+  <string name="contextmenu_erased_images_note2"><![CDATA[Fydd delweddau sydd wedi eu cadw a’u rhannu <b>ddim yn cael eu dileu</b> pan fyddwch yn dileu hanes %1$s.]]></string>
   <!--
     Theme Preferences
 
@@ -923,22 +876,13 @@
     The text of the error page for websites that do not support HTTPS when HTTPS-Only is turned on. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar"),
     %2$s is a URL to a support article. Contains a button that will redirect the user to Privacy & Security Screen.
   -->
-  <string name="errorpage_httpsonly_message2" tools:ignore="IncorrectStraightDoubleQuote">Mae %1$s yn ceisio defnyddio cysylltiad HTTPS pryd bynnag y bo modd i fod yn fwy diogel.
-     &lt;a href="%2$s"&gt;Dysgu rhagor&lt;/a&gt; &lt;br/&gt;&lt;br/&gt;
-     Newidiwch y gosodiad hwn yn Gosodiadau &gt; Preifatrwydd a Diogelwch &gt; Diogelwch.</string>
+  <string name="errorpage_httpsonly_message2" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[Mae %1$s yn ceisio defnyddio cysylltiad HTTPS pryd bynnag y bo modd i fod yn fwy diogel. <a href=\"%2$s\">Dysgu rhagor</a> <br/><br/> Newidiwch y gosodiad hwn yn Gosodiadau > Preifatrwydd a Diogelwch > Diogelwch.]]></string>
   <!-- The document title and heading of the error page shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_title">Nid yw’r cysylltiad yn ddiogel</string>
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_message">
-    Gall hyn fod yn broblem gyda ffurfweddiad y gweinydd, neu gall fod yn rhywun sy’n ceisio dynwared y gweinydd. &lt;br/&gt;&lt;br/&gt;
-    Os ydych wedi cysylltu â’r gweinydd hwn yn llwyddiannus yn y gorffennol, gall y gwall fod yn un dros dro.
-    </string>
+  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Gall hyn fod yn broblem gyda ffurfweddiad y gweinydd, neu gall fod yn rhywun sy’n ceisio dynwared y gweinydd. <br/><br/> Os ydych wedi cysylltu â’r gweinydd hwn yn llwyddiannus yn y gorffennol, gall y gwall fod yn un dros dro.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo">
-        &lt;label&gt;Gall rhywun fod yn ceisio dynwared y wefan a gall mynd ymlaen fod yn beryglus.&lt;/label&gt;
-        &lt;br&gt;&lt;br&gt;
-        &lt;label&gt; Nid yw %1$s yn ymddiried yn &lt;b&gt;%2$s&lt;/b&gt; oherwydd bod cyhoeddwr ei dystysgrif yn anhysbys, maer dystysgrif wedi’i hunan-lofnodi, neu nid yw’r gweinydd yn anfon y tystysgrifau canolradd cywir.&lt;/label&gt;
-    </string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Gall rhywun fod yn ceisio dynwared y wefan a gall mynd ymlaen fod yn beryglus.</label> <br><br>\n<label> Nid yw %1$s yn ymddiried yn <b>%2$s</b> oherwydd bod cyhoeddwr ei dystysgrif yn anhysbys, maer dystysgrif wedi’i hunan-lofnodi, neu nid yw’r gweinydd yn anfon y tystysgrifau canolradd cywir.</label>]]></string>
   <!--
     Sessions List
 

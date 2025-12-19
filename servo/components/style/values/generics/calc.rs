@@ -6,14 +6,17 @@
 //!
 //! [calc]: https://drafts.csswg.org/css-values/#calc-notation
 
+use crate::derives::*;
 use crate::values::generics::length::GenericAnchorSizeFunction;
-use crate::values::generics::position::{AnchorSide, GenericAnchorFunction};
+use crate::values::generics::position::{GenericAnchorFunction, GenericAnchorSide};
 use num_traits::Zero;
 use smallvec::SmallVec;
 use std::fmt::{self, Write};
 use std::ops::{Add, Mul, Neg, Rem, Sub};
 use std::{cmp, mem};
-use style_traits::{CssWriter, ToCss};
+use style_traits::{CssWriter, NumericValue, ToCss, ToTyped, TypedValue};
+
+use thin_vec::ThinVec;
 
 /// Whether we're a `min` or `max` function.
 #[derive(
@@ -62,9 +65,9 @@ impl ModRemOp {
         // In mod(A, B) only, if B is infinite and A has opposite sign to B
         // (including an oppositely-signed zero), the result is NaN.
         // https://drafts.csswg.org/css-values/#round-infinities
-        if matches!(self, Self::Mod) &&
-            divisor.is_infinite() &&
-            dividend.is_sign_negative() != divisor.is_sign_negative()
+        if matches!(self, Self::Mod)
+            && divisor.is_infinite()
+            && dividend.is_sign_negative() != divisor.is_sign_negative()
         {
             return f32::NAN;
         }
@@ -145,7 +148,11 @@ pub enum SortKey {
     Lvmin,
     Lvw,
     Px,
+    Rcap,
+    Rch,
     Rem,
+    Rex,
+    Ric,
     Rlh,
     Sec,
     Svb,
@@ -335,7 +342,7 @@ macro_rules! compare_helpers {
 }
 
 /// A trait that represents all the stuff a valid leaf of a calc expression.
-pub trait CalcNodeLeaf: Clone + Sized + PartialEq + ToCss {
+pub trait CalcNodeLeaf: Clone + Sized + PartialEq + ToCss + ToTyped {
     /// Returns the unit of the leaf.
     fn unit(&self) -> CalcUnits;
 
@@ -556,9 +563,7 @@ impl<L: CalcNodeLeaf> CalcNode<L> {
                 let _ = child.unit()?;
                 CalcUnits::empty()
             },
-            CalcNode::Anchor(..) | CalcNode::AnchorSize(..) => {
-                CalcUnits::LENGTH_PERCENTAGE
-            }
+            CalcNode::Anchor(..) | CalcNode::AnchorSize(..) => CalcUnits::LENGTH_PERCENTAGE,
         })
     }
 
@@ -788,7 +793,7 @@ impl<L: CalcNodeLeaf> CalcNode<L> {
                 CalcNode::Abs(child) | CalcNode::Sign(child) => map_internal(child, op),
                 // It is invalid to treat inner `CalcNode`s here - `anchor(--foo 50%) / 2` != `anchor(--foo 25%)`.
                 // Same applies to fallback, as we don't know if it will be used. Similar reasoning applies to `anchor-size()`.
-                CalcNode::Anchor(_) | CalcNode::AnchorSize(_) => Err(())
+                CalcNode::Anchor(_) | CalcNode::AnchorSize(_) => Err(()),
             }
         }
 
@@ -870,23 +875,29 @@ impl<L: CalcNodeLeaf> CalcNode<L> {
             Self::Hypot(ref c) => CalcNode::Hypot(map_children(c, map)),
             Self::Abs(ref c) => CalcNode::Abs(Box::new(c.map_leaves_internal(map))),
             Self::Sign(ref c) => CalcNode::Sign(Box::new(c.map_leaves_internal(map))),
-            Self::Anchor(ref f) => CalcNode::Anchor(Box::new(
-                GenericAnchorFunction {
-                    target_element: f.target_element.clone(),
-                    side: match &f.side {
-                        AnchorSide::Keyword(k) => AnchorSide::Keyword(*k),
-                        AnchorSide::Percentage(p) => AnchorSide::Percentage(Box::new(p.map_leaves_internal(map))),
+            Self::Anchor(ref f) => CalcNode::Anchor(Box::new(GenericAnchorFunction {
+                target_element: f.target_element.clone(),
+                side: match &f.side {
+                    GenericAnchorSide::Keyword(k) => GenericAnchorSide::Keyword(*k),
+                    GenericAnchorSide::Percentage(p) => {
+                        GenericAnchorSide::Percentage(Box::new(p.map_leaves_internal(map)))
                     },
-                    fallback: f.fallback.as_ref().map(|fb| Box::new(fb.map_leaves_internal(map))).into(),
-                }
-            )),
-            Self::AnchorSize(ref f) => CalcNode::AnchorSize(Box::new(
-                GenericAnchorSizeFunction {
-                    target_element: f.target_element.clone(),
-                    size: f.size,
-                    fallback: f.fallback.as_ref().map(|fb| Box::new(fb.map_leaves_internal(map))).into(),
-                }
-            )),
+                },
+                fallback: f
+                    .fallback
+                    .as_ref()
+                    .map(|fb| Box::new(fb.map_leaves_internal(map)))
+                    .into(),
+            })),
+            Self::AnchorSize(ref f) => CalcNode::AnchorSize(Box::new(GenericAnchorSizeFunction {
+                target_element: f.target_element.clone(),
+                size: f.size,
+                fallback: f
+                    .fallback
+                    .as_ref()
+                    .map(|fb| Box::new(fb.map_leaves_internal(map)))
+                    .into(),
+            })),
         }
     }
 
@@ -1183,7 +1194,10 @@ impl<L: CalcNodeLeaf> CalcNode<L> {
             Self::Negate(child) | Self::Invert(child) | Self::Abs(child) | Self::Sign(child) => {
                 child.map_node_internal(mapping_fn)?;
             },
-            Self::Sum(children) | Self::Product(children) | Self::Hypot(children) | Self::MinMax(children, _) => {
+            Self::Sum(children)
+            | Self::Product(children)
+            | Self::Hypot(children)
+            | Self::MinMax(children, _) => {
                 for child in children.iter_mut() {
                     child.map_node_internal(mapping_fn)?;
                 }
@@ -1271,10 +1285,10 @@ impl<L: CalcNodeLeaf> CalcNode<L> {
                 dividend.visit_depth_first_internal(f);
                 divisor.visit_depth_first_internal(f);
             },
-            Self::Sum(ref mut children) |
-            Self::Product(ref mut children) |
-            Self::MinMax(ref mut children, _) |
-            Self::Hypot(ref mut children) => {
+            Self::Sum(ref mut children)
+            | Self::Product(ref mut children)
+            | Self::MinMax(ref mut children, _)
+            | Self::Hypot(ref mut children) => {
                 for child in &mut **children {
                     child.visit_depth_first_internal(f);
                 }
@@ -1373,8 +1387,8 @@ impl<L: CalcNodeLeaf> CalcNode<L> {
                     return;
                 }
 
-                if value_or_stop!(value.is_infinite_leaf()) &&
-                    value_or_stop!(step.is_infinite_leaf())
+                if value_or_stop!(value.is_infinite_leaf())
+                    && value_or_stop!(step.is_infinite_leaf())
                 {
                     value_or_stop!(value.coerce_to_value(f32::NAN));
                     replace_self_with!(&mut **value);
@@ -1394,14 +1408,14 @@ impl<L: CalcNodeLeaf> CalcNode<L> {
                             return;
                         },
                         RoundingStrategy::Up => {
-                            if !value_or_stop!(value.is_negative_leaf()) &&
-                                !value_or_stop!(value.is_zero_leaf())
+                            if !value_or_stop!(value.is_negative_leaf())
+                                && !value_or_stop!(value.is_zero_leaf())
                             {
                                 value_or_stop!(value.coerce_to_value(f32::INFINITY));
                                 replace_self_with!(&mut **value);
                                 return;
-                            } else if !value_or_stop!(value.is_negative_leaf()) &&
-                                value_or_stop!(value.is_zero_leaf())
+                            } else if !value_or_stop!(value.is_negative_leaf())
+                                && value_or_stop!(value.is_zero_leaf())
                             {
                                 replace_self_with!(&mut **value);
                                 return;
@@ -1412,14 +1426,14 @@ impl<L: CalcNodeLeaf> CalcNode<L> {
                             }
                         },
                         RoundingStrategy::Down => {
-                            if value_or_stop!(value.is_negative_leaf()) &&
-                                !value_or_stop!(value.is_zero_leaf())
+                            if value_or_stop!(value.is_negative_leaf())
+                                && !value_or_stop!(value.is_zero_leaf())
                             {
                                 value_or_stop!(value.coerce_to_value(f32::INFINITY));
                                 replace_self_with!(&mut **value);
                                 return;
-                            } else if value_or_stop!(value.is_negative_leaf()) &&
-                                value_or_stop!(value.is_zero_leaf())
+                            } else if value_or_stop!(value.is_negative_leaf())
+                                && value_or_stop!(value.is_zero_leaf())
                             {
                                 replace_self_with!(&mut **value);
                                 return;
@@ -1710,7 +1724,7 @@ impl<L: CalcNodeLeaf> CalcNode<L> {
                 l.simplify();
             },
             Self::Anchor(ref mut f) => {
-                if let AnchorSide::Percentage(ref mut n) =  f.side {
+                if let GenericAnchorSide::Percentage(ref mut n) = f.side {
                     n.simplify_and_sort();
                 }
                 if let Some(fallback) = f.fallback.as_mut() {
@@ -1721,7 +1735,7 @@ impl<L: CalcNodeLeaf> CalcNode<L> {
                 if let Some(fallback) = f.fallback.as_mut() {
                     fallback.simplify_and_sort();
                 }
-            }
+            },
         }
     }
 
@@ -1924,6 +1938,37 @@ impl<L: CalcNodeLeaf> CalcNode<L> {
         Ok(())
     }
 
+    fn to_typed_impl(&self, level: ArgumentLevel) -> Option<TypedValue> {
+        // XXX Only supporting Sum and Leaf for now
+        match *self {
+            Self::Sum(ref children) => {
+                let mut values = ThinVec::new();
+                for child in &**children {
+                    if let Some(TypedValue::Numeric(inner)) =
+                        child.to_typed_impl(ArgumentLevel::Nested)
+                    {
+                        values.push(inner);
+                    }
+                }
+                Some(TypedValue::Numeric(NumericValue::Sum { values }))
+            },
+            Self::Leaf(ref l) => match l.to_typed() {
+                Some(TypedValue::Numeric(inner)) => match level {
+                    ArgumentLevel::CalculationRoot => {
+                        Some(TypedValue::Numeric(NumericValue::Sum {
+                            values: ThinVec::from([inner]),
+                        }))
+                    },
+                    ArgumentLevel::ArgumentRoot | ArgumentLevel::Nested => {
+                        Some(TypedValue::Numeric(inner))
+                    },
+                },
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     fn compare(
         &self,
         other: &Self,
@@ -1947,6 +1992,12 @@ impl<L: CalcNodeLeaf> ToCss for CalcNode<L> {
         W: Write,
     {
         self.to_css_impl(dest, ArgumentLevel::CalculationRoot)
+    }
+}
+
+impl<L: CalcNodeLeaf> ToTyped for CalcNode<L> {
+    fn to_typed(&self) -> Option<TypedValue> {
+        self.to_typed_impl(ArgumentLevel::CalculationRoot)
     }
 }
 

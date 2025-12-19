@@ -24,6 +24,7 @@
 #include "nsSHistory.h"
 
 #include "mozilla/Logging.h"
+#include "mozilla/dom/nsCSPUtils.h"
 #include "nsIReferrerInfo.h"
 
 extern mozilla::LazyLogModule gPageCacheLog;
@@ -41,7 +42,7 @@ nsSHEntry::nsSHEntry()
       mIsSrcdocEntry(false),
       mScrollRestorationIsManual(false),
       mLoadedInThisProcess(false),
-      mPersist(true),
+      mTransient(false),
       mHasUserInteraction(false),
       mHasUserActivation(false) {}
 
@@ -67,7 +68,7 @@ nsSHEntry::nsSHEntry(const nsSHEntry& aOther)
       mIsSrcdocEntry(aOther.mIsSrcdocEntry),
       mScrollRestorationIsManual(false),
       mLoadedInThisProcess(aOther.mLoadedInThisProcess),
-      mPersist(aOther.mPersist),
+      mTransient(aOther.mTransient),
       mHasUserInteraction(false),
       mHasUserActivation(aOther.mHasUserActivation) {}
 
@@ -384,7 +385,7 @@ nsSHEntry::Create(
     uint32_t aCacheKey, const nsACString& aContentType,
     nsIPrincipal* aTriggeringPrincipal, nsIPrincipal* aPrincipalToInherit,
     nsIPrincipal* aPartitionedPrincipalToInherit,
-    nsIContentSecurityPolicy* aCsp, const nsID& aDocShellID,
+    nsIPolicyContainer* aPolicyContainer, const nsID& aDocShellID,
     bool aDynamicCreation, nsIURI* aOriginalURI, nsIURI* aResultPrincipalURI,
     nsIURI* aUnstrippedURI, bool aLoadReplace, nsIReferrerInfo* aReferrerInfo,
     const nsAString& aSrcdocData, bool aSrcdocEntry, nsIURI* aBaseURI,
@@ -405,7 +406,7 @@ nsSHEntry::Create(
   mShared->mTriggeringPrincipal = aTriggeringPrincipal;
   mShared->mPrincipalToInherit = aPrincipalToInherit;
   mShared->mPartitionedPrincipalToInherit = aPartitionedPrincipalToInherit;
-  mShared->mCsp = aCsp;
+  mShared->mPolicyContainer = aPolicyContainer;
   mShared->mDocShellID = aDocShellID;
   mShared->mDynamicallyCreated = aDynamicCreation;
 
@@ -503,14 +504,16 @@ nsSHEntry::SetPartitionedPrincipalToInherit(
 }
 
 NS_IMETHODIMP
-nsSHEntry::GetCsp(nsIContentSecurityPolicy** aCsp) {
-  NS_IF_ADDREF(*aCsp = mShared->mCsp);
+nsSHEntry::GetPolicyContainer(nsIPolicyContainer** aPolicyContainer) {
+  NS_IF_ADDREF(*aPolicyContainer = mShared->mPolicyContainer);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsSHEntry::SetCsp(nsIContentSecurityPolicy* aCsp) {
-  mShared->mCsp = aCsp;
+nsSHEntry::SetPolicyContainer(nsIPolicyContainer* aPolicyContainer) {
+  if (CSP_ShouldURIInheritCSP(mURI)) {
+    mShared->mPolicyContainer = aPolicyContainer;
+  }
   return NS_OK;
 }
 
@@ -844,6 +847,24 @@ nsSHEntry::SetDocshellID(const nsID& aID) {
 }
 
 NS_IMETHODIMP
+nsSHEntry::GetNavigationKey(nsID& aNavigationKey) {
+  aNavigationKey.Clear();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsSHEntry::SetNavigationKey(const nsID& aNavigationKey) { return NS_OK; }
+
+NS_IMETHODIMP
+nsSHEntry::GetNavigationId(nsID& aNavigationId) {
+  aNavigationId.Clear();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsSHEntry::SetNavigationId(const nsID& aNavigationId) { return NS_OK; }
+
+NS_IMETHODIMP
 nsSHEntry::GetLastTouched(uint32_t* aLastTouched) {
   *aLastTouched = mShared->mLastTouched;
   return NS_OK;
@@ -879,14 +900,14 @@ nsSHEntry::SetLoadTypeAsHistory() {
 }
 
 NS_IMETHODIMP
-nsSHEntry::GetPersist(bool* aPersist) {
-  *aPersist = mPersist;
+nsSHEntry::IsTransient(bool* aIsTransient) {
+  *aIsTransient = mTransient;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsSHEntry::SetPersist(bool aPersist) {
-  mPersist = aPersist;
+nsSHEntry::SetTransient() {
+  mTransient = true;
   return NS_OK;
 }
 
@@ -921,8 +942,8 @@ nsSHEntry::CreateLoadInfo(nsDocShellLoadState** aLoadState) {
   nsCOMPtr<nsIPrincipal> partitionedPrincipalToInherit =
       GetPartitionedPrincipalToInherit();
   loadState->SetPartitionedPrincipalToInherit(partitionedPrincipalToInherit);
-  nsCOMPtr<nsIContentSecurityPolicy> csp = GetCsp();
-  loadState->SetCsp(csp);
+  nsCOMPtr<nsIPolicyContainer> policyContainer = GetPolicyContainer();
+  loadState->SetPolicyContainer(policyContainer);
   nsCOMPtr<nsIReferrerInfo> referrerInfo = GetReferrerInfo();
   loadState->SetReferrerInfo(referrerInfo);
 

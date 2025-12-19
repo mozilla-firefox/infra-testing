@@ -15,6 +15,9 @@ transforms:
 kind-dependencies:
     - release-eme-free-repack-mac-signing
 
+task-defaults:
+    run-on-repo-type: [hg]
+
 only-for-build-platforms:
     - macosx64-shippable/opt
 
@@ -25,5 +28,4 @@ tasks:
             copy-attributes: true
         shipping-product: firefox
         shipping-phase: promote
-        max-run-time: 1800
         copy-repack-ids: true

@@ -9,7 +9,7 @@
 
 #include <array>
 #include <cstdint>
-#include "mozilla/Assertions.h"
+
 #include "mozilla/Maybe.h"
 #include "mozilla/fallible.h"
 #include "nsStringFwd.h"
@@ -31,6 +31,10 @@ enum PersistenceType {
 static const PersistenceType kAllPersistenceTypes[] = {
     PERSISTENCE_TYPE_PERSISTENT, PERSISTENCE_TYPE_TEMPORARY,
     PERSISTENCE_TYPE_DEFAULT, PERSISTENCE_TYPE_PRIVATE};
+
+static const PersistenceType kAllPersistenceTypesButPrivate[] = {
+    PERSISTENCE_TYPE_PERSISTENT, PERSISTENCE_TYPE_TEMPORARY,
+    PERSISTENCE_TYPE_DEFAULT};
 
 static const PersistenceType kBestEffortPersistenceTypes[] = {
     PERSISTENCE_TYPE_TEMPORARY, PERSISTENCE_TYPE_DEFAULT,

@@ -3,8 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/browser-window */
-
 "use strict";
 
 var kSkipCacheFlags =
@@ -198,7 +196,7 @@ var BrowserCommands = {
 
     function loadBrowserURI(browser, url, principal) {
       browser.loadURI(url, {
-        flags: reloadFlags,
+        loadFlags: reloadFlags,
         triggeringPrincipal: principal,
       });
     }
@@ -264,7 +262,6 @@ var BrowserCommands = {
           inBackground: loadInBackground,
           triggeringPrincipal:
             Services.scriptSecurityManager.getSystemPrincipal(),
-          csp: null,
         });
         if (!loadInBackground) {
           if (isBlankPageURL(homePage)) {
@@ -396,7 +393,9 @@ var BrowserCommands = {
 
     // In a multi-select context, close all selected tabs
     if (gBrowser.multiSelectedTabsCount) {
-      gBrowser.removeMultiSelectedTabs();
+      gBrowser.removeMultiSelectedTabs(
+        gBrowser.TabMetrics.userTriggeredContext()
+      );
       return;
     }
 
@@ -414,7 +413,10 @@ var BrowserCommands = {
     }
 
     // If the current tab is the last one, this will close the window.
-    gBrowser.removeCurrentTab({ animate: true });
+    gBrowser.removeCurrentTab({
+      animate: true,
+      ...gBrowser.TabMetrics.userTriggeredContext(),
+    });
   },
 
   tryToCloseWindow(event) {
@@ -485,7 +487,9 @@ var BrowserCommands = {
     // In the case of popups, we need to find a non-popup browser window.
     if (!tabBrowser || !window.toolbar.visible) {
       // This returns only non-popup browser windows by default.
-      const browserWindow = BrowserWindowTracker.getTopWindow();
+      const browserWindow =
+        BrowserWindowTracker.getTopWindow() ??
+        (await BrowserWindowTracker.promiseOpenWindow());
       tabBrowser = browserWindow.gBrowser;
     }
 
@@ -595,5 +599,9 @@ var BrowserCommands = {
     BrowserCommands.reloadWithFlags(
       Ci.nsIWebNavigation.LOAD_FLAGS_CHARSET_CHANGE
     );
+  },
+
+  processCloseRequest() {
+    gBrowser.selectedBrowser.processCloseRequest();
   },
 };

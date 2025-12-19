@@ -6,8 +6,10 @@ copyExternalImageToTexture from HTMLImageElement source.
 import { raceWithRejectOnTimeout } from '../../../common/util/util.js';
 import {
   getBaseFormatForRegularTextureFormat,
-  kValidTextureFormatsForCopyE2T } from
+  isTextureFormatPossiblyUsableWithCopyExternalImageToTexture,
+  kRegularTextureFormats } from
 '../../format_info.js';
+import * as ttu from '../../texture_test_utils.js';
 import { TextureUploadingUtils, kCopySubrectInfo } from '../../util/copy_to_texture.js';
 
 import { kTestColorsOpaque, makeTestColorsTexelView } from './util.js';
@@ -57,7 +59,8 @@ desc(
 params((u) =>
 u.
 combine('srcDoFlipYDuringCopy', [true, false]).
-combine('dstColorFormat', kValidTextureFormatsForCopyE2T).
+combine('dstColorFormat', kRegularTextureFormats).
+filter((t) => isTextureFormatPossiblyUsableWithCopyExternalImageToTexture(t.dstColorFormat)).
 combine('dstPremultiplied', [true, false]).
 beginSubcases().
 combine('width', [1, 2, 4, 15, 255, 256]).
@@ -69,6 +72,7 @@ beforeAllSubcases((t) => {
 fn(async (t) => {
   const { width, height, dstColorFormat, dstPremultiplied, srcDoFlipYDuringCopy } = t.params;
   t.skipIfTextureFormatNotSupported(dstColorFormat);
+  t.skipIfTextureFormatPossiblyNotUsableWithCopyExternalImageToTexture(dstColorFormat);
 
   const imageCanvas = document.createElement('canvas');
   imageCanvas.width = width;
@@ -214,7 +218,7 @@ fn(async (t) => {
   new Uint8Array([0, 0, 0, 0]) :
   new Uint8Array([255, 102, 153, 0]);
 
-  t.expectSinglePixelComparisonsAreOkInTexture({ texture: dst }, [
+  ttu.expectSinglePixelComparisonsAreOkInTexture(t, { texture: dst }, [
   { coord: { x: kImageWidth * 0.3, y: kImageHeight * 0.3 }, exp: expectedPixels }]
   );
 });

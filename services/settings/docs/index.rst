@@ -172,14 +172,12 @@ The provided ``download`` helper will:
     - ``fallbackToDump`` (default: ``false``): activates a fallback to a dump that has been
       packaged with the client, when other ways to load the attachment have failed.
       See :ref:`services/packaging-attachments <services/packaging-attachments>` for more information.
+    - ``cacheResult`` (default: ``true``): keeps a copy of the attachment file in the cache when true,
+      allowing future calls for the same attachment to receive the cached result.
 
 .. note::
 
     A ``downloadAsBytes()`` method returning an ``ArrayBuffer`` is also available, if writing the attachment locally is not necessary.
-
-    Some ``downloadToDisk()`` and ``deleteFromDisk()`` methods are also available but generally discouraged, since they are prone to leaving extraneous files
-    in the profile directory (see `Bug 1634127 <https://bugzilla.mozilla.org/show_bug.cgi?id=1634127>`_).
-
 
 .. _services/initial-data:
 
@@ -378,17 +376,22 @@ In some use-cases it's necessary to store some state using extra attributes on r
     });
 
 
-``filterFunc``: custom filtering function
------------------------------------------
+``filterCreator``: custom filter
+--------------------------------
 
-By default, the entries returned by ``.get()`` are filtered based on the JEXL expression result from the ``filter_expression`` field. The ``filterFunc`` option allows to execute a custom filter (async) function, that should return the record (modified or not) if kept or a falsy value if filtered out.
+By default, the entries returned by ``.get()`` are filtered based on the JEXL expression result from the ``filter_expression`` field. The ``filterCreator`` option allows to provide a custom filter: On a call to ``.get()``, the filter creator is called to create a new filter object. Then the method `filterObject.filterEntry(entry)` is executed for every entry. This (async) method should return the record (modified or not) if the record should be kept, or a falsy value if the record should be filtered out.
 
 .. code-block:: javascript
 
     const client = RemoteSettings("a-collection", {
-      filterFunc: (record, environment) => {
-        const { enabled, ...entry } = record;
-        return enabled ? entry : null;
+      filterCreator: async (environment, collectionName) => {
+        // Return a filter object which filters entries based on entry.enabled.
+        return {
+          async filterEntry(record) {
+            const { enabled, ...entry } = record;
+            return enabled ? entry : null;
+          }
+        };
       }
     });
 

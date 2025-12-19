@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "File.h"
+
 #include "FileBlobImpl.h"
 #include "MemoryBlobImpl.h"
 #include "MultipartBlobImpl.h"
@@ -13,8 +14,8 @@
 #include "mozilla/dom/FileCreatorHelper.h"
 #include "mozilla/dom/FileSystemUtils.h"
 #include "mozilla/dom/Promise.h"
-#include "nsIFile.h"
 #include "nsContentUtils.h"
+#include "nsIFile.h"
 #include "nsXULAppAPI.h"
 
 namespace mozilla::dom {
@@ -114,6 +115,10 @@ void File::GetRelativePath(nsAString& aPath) const {
     MOZ_ASSERT(path[0] == FILESYSTEM_DOM_PATH_SEPARATOR_CHAR);
     aPath.Assign(Substring(path, 1));
   }
+}
+
+void File::SetMozRelativePath(const nsAString& aPath) {
+  mImpl->SetDOMPath(aPath);
 }
 
 int64_t File::GetLastModified(ErrorResult& aRv) {

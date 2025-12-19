@@ -44,19 +44,20 @@ class GeckoInstance:
         # and causing false-positive test failures. See bug 1176798, bug 1177018,
         # bug 1210465.
         "apz.content_response_timeout": 60000,
+        # Disable extension discovery
+        "browser.discovery.enabled": False,
         # Make sure error page is not shown for blank pages with 4xx or 5xx response code
         "browser.http.blank_page_with_error_response.enabled": True,
-        # Don't pull weather data from the network
-        "browser.newtabpage.activity-stream.discoverystream.region-weather-config": "",
-        # Don't pull wallpaper content from the network
-        "browser.newtabpage.activity-stream.newtabWallpapers.enabled": False,
-        "browser.newtabpage.activity-stream.newtabWallpapers.v2.enabled": False,
+        # Disable CFR features for automated tests.
+        "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features": False,
         # Don't pull sponsored Top Sites content from the network
         "browser.newtabpage.activity-stream.showSponsoredTopSites": False,
         # Disable geolocation ping (#1)
         "browser.region.network.url": "",
         # Don't pull Top Sites content from the network
         "browser.topsites.contile.enabled": False,
+        # Disable translations
+        "browser.translations.enable": False,
         # Disable UI tour
         "browser.uitour.enabled": False,
         # Disable captive portal
@@ -67,6 +68,8 @@ class GeckoInstance:
         "datareporting.healthreport.service.enabled": False,
         "datareporting.healthreport.service.firstRun": False,
         "datareporting.healthreport.uploadEnabled": False,
+        "datareporting.usage.uploadEnabled": False,
+        "telemetry.fog.test.localhost_port": -1,
         # Do not show datareporting policy notifications which can interfere with tests
         "datareporting.policy.dataSubmissionEnabled": False,
         "datareporting.policy.dataSubmissionPolicyBypassNotification": True,
@@ -95,6 +98,9 @@ class GeckoInstance:
         # AddonManager.SCOPE_PROFILE + AddonManager.SCOPE_APPLICATION
         "extensions.autoDisableScopes": 0,
         "extensions.enabledScopes": 5,
+        # Disable form autofill for extensions and credit cards
+        "extensions.formautofill.addresses.enabled": False,
+        "extensions.formautofill.creditCards.enabled": False,
         # Disable metadata caching for installed add-ons by default
         "extensions.getAddons.cache.enabled": False,
         # Disable intalling any distribution add-ons
@@ -154,6 +160,7 @@ class GeckoInstance:
         "network.dns.native_https_query": False,
         # Privacy and Tracking Protection
         "privacy.trackingprotection.enabled": False,
+        "privacy.trackingprotection.pbmode.enabled": False,
         # Disable recommended automation prefs in CI
         "remote.prefs.recommended": False,
         # Don't do network connections for mitm priming
@@ -169,7 +176,12 @@ class GeckoInstance:
         # Disable password capture, so that tests that include forms aren"t
         # influenced by the presence of the persistent doorhanger notification
         "signon.rememberSignons": False,
+        # Disable alerts for credential issues
+        "signon.management.page.breach-alerts.enabled": False,
+        "signon.management.page.vulnerable-passwords.enabled": False,
         # Prevent starting into safe mode after application crashes
+        # Do not show TOU new user modal which can interfere with tests
+        "termsofuse.bypassNotification": True,
         "toolkit.startup.max_resumed_crashes": -1,
         # Disable most telemetry pings
         "toolkit.telemetry.server": "https://%(server)s/telemetry-dummy/",
@@ -185,6 +197,7 @@ class GeckoInstance:
         profile=None,
         addons=None,
         app_args=None,
+        debugger_info=None,
         symbols_path=None,
         gecko_log=None,
         prefs=None,
@@ -194,6 +207,7 @@ class GeckoInstance:
     ):
         self.runner_class = Runner
         self.app_args = app_args or []
+        self.debugger_info = debugger_info
         self.runner = None
         self.symbols_path = symbols_path
         self.binary = bin
@@ -362,7 +376,16 @@ class GeckoInstance:
     def start(self):
         self._update_profile(self.profile)
         self.runner = self.runner_class(**self._get_runner_args())
-        self.runner.start()
+
+        # debugger information
+        debug_args = None
+        interactive = False
+
+        if self.debugger_info:
+            debug_args = [self.debugger_info.path] + self.debugger_info.args
+            interactive = self.debugger_info.interactive
+
+        self.runner.start(debug_args, interactive)
 
     def _get_runner_args(self):
         process_args = {
@@ -497,7 +520,7 @@ class FennecInstance(GeckoInstance):
         required_prefs = deepcopy(FennecInstance.fennec_prefs)
         required_prefs.update(kwargs.get("prefs", {}))
 
-        super(FennecInstance, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.required_prefs.update(required_prefs)
 
         self.runner_class = FennecEmulatorRunner
@@ -579,7 +602,7 @@ class FennecInstance(GeckoInstance):
 
         :param clean: If True, also perform runner cleanup.
         """
-        super(FennecInstance, self).close(clean)
+        super().close(clean)
         if clean and self.runner and self.runner.device.connected:
             try:
                 self.runner.device.device.remove_forwards(f"tcp:{self.marionette_port}")
@@ -601,6 +624,8 @@ class DesktopInstance(GeckoInstance):
         # !!! For backward compatibility up to Firefox 64. Only remove
         # when this Firefox version is no longer supported by the client !!!
         "app.update.auto": False,
+        # Disable the profile backup service.
+        "browser.backup.enabled": False,
         # Don't show the content blocking introduction panel
         # We use a larger number than the default 22 to have some buffer
         # This can be removed once Firefox 69 and 68 ESR and are no longer supported.
@@ -613,10 +638,10 @@ class DesktopInstance(GeckoInstance):
         "browser.download.panel.shown": True,
         # Do not show the EULA notification which can interfer with tests
         "browser.EULA.override": True,
-        # Disable Activity Stream telemetry pings
-        "browser.newtabpage.activity-stream.telemetry": False,
-        # Always display a blank page
-        "browser.newtabpage.enabled": False,
+        # Disable all machine learning features by default
+        "browser.ml.enable": False,
+        # Do not initialize any activitystream features
+        "browser.newtabpage.activity-stream.testing.shouldInitializeFeeds": False,
         # Background thumbnails in particular cause grief, and disabling thumbnails
         # in general can"t hurt - we re-enable them when tests need them
         "browser.pagethumbnails.capturing_disabled": True,
@@ -664,6 +689,9 @@ class DesktopInstance(GeckoInstance):
         # TODO: Should be considered to get removed once bug 1960741 is fixed.
         "threads.lower_mainthread_priority_in_background.enabled": False,
         "dom.ipc.processPriorityManager.enabled": False,
+        # Turn off semantic history search as it triggers network connections to
+        # download ML models.
+        "places.semanticHistory.featureGate": False,
         # Disable first-run welcome page
         "startup.homepage_welcome_url": "about:blank",
         "startup.homepage_welcome_url.additional": "",
@@ -673,13 +701,13 @@ class DesktopInstance(GeckoInstance):
         required_prefs = deepcopy(DesktopInstance.desktop_prefs)
         required_prefs.update(kwargs.get("prefs", {}))
 
-        super(DesktopInstance, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.required_prefs.update(required_prefs)
 
 
 class ThunderbirdInstance(GeckoInstance):
     def __init__(self, *args, **kwargs):
-        super(ThunderbirdInstance, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         try:
             # Copied alongside in the test archive
             from .thunderbirdinstance import thunderbird_prefs

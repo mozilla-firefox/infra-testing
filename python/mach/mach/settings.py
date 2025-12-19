@@ -30,6 +30,13 @@ class MachSettings:
                     "(e.g.: user has been prompted to opt-in)",
                     False,
                 ),
+                (
+                    "mach_telemetry.is_employee",
+                    "nullable_boolean",
+                    "Cached value for whether the user is a Mozilla employee "
+                    "(None=unknown, True=employee, False=not an employee)",
+                    None,
+                ),
             ]
 
         def dispatch_config_settings():
@@ -81,6 +88,12 @@ class MachSettings:
                     "int",
                     "Maximum number of pushes to save in history.",
                     10,
+                ),
+                (
+                    "try.nobrowser",
+                    "boolean",
+                    "Do not automatically open a browser during authentication.",
+                    False,
                 ),
             ]
 

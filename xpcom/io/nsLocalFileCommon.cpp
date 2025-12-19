@@ -118,6 +118,7 @@ const char* const sExecutableExts[] = {
   ".settingcontent-ms",
   ".shb",
   ".shs",
+  ".terminal",    // macOS terminal files
   ".url",
   ".vb",
   ".vbe",
@@ -170,7 +171,7 @@ nsresult NS_NewLocalFileWithPersistentDescriptor(
   return NS_OK;
 }
 
-#if !defined(MOZ_WIDGET_COCOA) && !defined(XP_WIN)
+#if !defined(XP_WIN)
 NS_IMETHODIMP
 nsLocalFile::InitWithFile(nsIFile* aFile) {
   if (NS_WARN_IF(!aFile)) {

@@ -4,33 +4,36 @@
 
 package org.mozilla.fenix.components.toolbar
 
-import android.content.Context
 import android.view.View
+import android.view.ViewGroup
 import androidx.annotation.VisibleForTesting
 import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.view.isVisible
 import mozilla.components.browser.state.state.CustomTabSessionState
 import mozilla.components.browser.state.state.ExternalAppType
+import mozilla.components.concept.engine.EngineView
 import mozilla.components.concept.toolbar.ScrollableToolbar
+import mozilla.components.support.ktx.android.view.findViewInHierarchy
+import mozilla.components.support.utils.ext.isKeyboardVisible
+import mozilla.components.ui.widgets.behavior.DependencyGravity.Bottom
+import mozilla.components.ui.widgets.behavior.DependencyGravity.Top
 import mozilla.components.ui.widgets.behavior.EngineViewScrollingBehavior
-import mozilla.components.ui.widgets.behavior.ViewPosition
-import org.mozilla.fenix.browser.tabstrip.isTabStripEnabled
-import org.mozilla.fenix.components.toolbar.navbar.shouldAddNavigationBar
-import org.mozilla.fenix.ext.settings
+import mozilla.components.ui.widgets.behavior.EngineViewScrollingBehaviorFactory
 import org.mozilla.fenix.utils.Settings
 
 /**
  * Base class for the browser toolbar implementations.
  *
- * @param context [Context] used for various system interactions.
+ * @param parent The [ViewGroup] into which the toolbar will be added.
  * @param settings [Settings] object to get the toolbar position and other settings.
  * @param customTabSession [CustomTabSessionState] if the toolbar is shown in a custom tab.
  */
 abstract class FenixBrowserToolbarView(
-    private val context: Context,
+    private val parent: ViewGroup,
     private val settings: Settings,
     private val customTabSession: CustomTabSessionState?,
 ) : ScrollableToolbar {
+
     abstract val layout: View
 
     @VisibleForTesting
@@ -52,7 +55,7 @@ abstract class FenixBrowserToolbarView(
         }
 
         (layout.layoutParams as CoordinatorLayout.LayoutParams).apply {
-            (behavior as? EngineViewScrollingBehavior)?.forceExpand(layout)
+            (behavior as? EngineViewScrollingBehavior)?.forceExpand()
         }
     }
 
@@ -63,13 +66,15 @@ abstract class FenixBrowserToolbarView(
         }
 
         (layout.layoutParams as CoordinatorLayout.LayoutParams).apply {
-            (behavior as? EngineViewScrollingBehavior)?.forceCollapse(layout)
+            (behavior as? EngineViewScrollingBehavior)?.forceCollapse()
         }
     }
 
     override fun enableScrolling() {
-        (layout.layoutParams as CoordinatorLayout.LayoutParams).apply {
-            (behavior as? EngineViewScrollingBehavior)?.enableScrolling()
+        if (!parent.isKeyboardVisible()) {
+            (layout.layoutParams as CoordinatorLayout.LayoutParams).apply {
+                (behavior as? EngineViewScrollingBehavior)?.enableScrolling()
+            }
         }
     }
 
@@ -93,22 +98,20 @@ abstract class FenixBrowserToolbarView(
      * This will intrinsically check and disable the dynamic behavior if
      *  - this is disabled in app settings
      *  - toolbar is placed at the bottom and tab shows a PWA or TWA
-     *  - toolbar is shown together with the navbar in a container that will handle scrolling
-     *  for both Views at the same time.
      *
      *  Also if the user has not explicitly set a toolbar position and has a screen reader enabled
      *  the toolbar will be placed at the top and in a fixed position.
      *
+     * @param toolbarPosition [ToolbarPosition] to set the toolbar to.
      * @param shouldDisableScroll force disable of the dynamic behavior irrespective of the intrinsic checks.
      */
-    fun setToolbarBehavior(shouldDisableScroll: Boolean = false) {
-        when (settings.toolbarPosition) {
+    fun setToolbarBehavior(toolbarPosition: ToolbarPosition, shouldDisableScroll: Boolean = false) {
+        when (toolbarPosition) {
             ToolbarPosition.BOTTOM -> {
                 if (settings.isDynamicToolbarEnabled &&
-                    !settings.shouldUseFixedTopToolbar &&
-                    !context.shouldAddNavigationBar()
+                    !settings.shouldUseFixedTopToolbar
                 ) {
-                    setDynamicToolbarBehavior(ViewPosition.BOTTOM)
+                    setDynamicToolbarBehavior(true)
                 } else {
                     expandToolbarAndMakeItFixed()
                 }
@@ -120,7 +123,7 @@ abstract class FenixBrowserToolbarView(
                 ) {
                     expandToolbarAndMakeItFixed()
                 } else {
-                    setDynamicToolbarBehavior(ViewPosition.TOP)
+                    setDynamicToolbarBehavior(false)
                 }
             }
         }
@@ -135,13 +138,22 @@ abstract class FenixBrowserToolbarView(
     }
 
     @VisibleForTesting
-    internal fun setDynamicToolbarBehavior(toolbarPosition: ViewPosition) {
-        (layout.layoutParams as CoordinatorLayout.LayoutParams).apply {
-            behavior = EngineViewScrollingBehavior(layout.context, null, toolbarPosition)
+    internal fun setDynamicToolbarBehavior(isToolbarAtBottom: Boolean) {
+        (parent.findViewInHierarchy { it is EngineView } as? EngineView)?.let { engineView ->
+            (layout.layoutParams as CoordinatorLayout.LayoutParams).apply {
+                behavior = EngineViewScrollingBehaviorFactory(
+                    useScrollData = settings.useNewDynamicToolbarBehaviour,
+                ).build(
+                    engineView = engineView,
+                    dependency = layout,
+                    dependencyGravity = when (isToolbarAtBottom) {
+                        true -> Bottom
+                        false -> Top
+                    },
+                )
+            }
         }
     }
 
-    protected fun shouldShowDropShadow() = !context.settings().navigationToolbarEnabled
-
-    protected fun shouldShowTabStrip() = customTabSession == null && context.isTabStripEnabled()
+    protected fun shouldShowTabStrip() = customTabSession == null && settings.isTabStripEnabled
 }

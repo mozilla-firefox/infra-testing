@@ -7,11 +7,12 @@
 #![expect(clippy::unwrap_used, reason = "This is example code.")]
 
 use std::{
-    collections::{HashMap, VecDeque},
-    fmt::{self, Display},
+    collections::VecDeque,
+    fmt::Display,
     fs::{create_dir_all, File, OpenOptions},
-    io::{self, BufWriter},
+    io::{self, BufWriter, ErrorKind},
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs as _},
+    num::NonZeroUsize,
     path::PathBuf,
     pin::Pin,
     process::exit,
@@ -23,14 +24,16 @@ use futures::{
     future::{select, Either},
     FutureExt as _, TryFutureExt as _,
 };
-use neqo_common::{qdebug, qerror, qinfo, qlog::NeqoQlog, qwarn, Datagram, Role};
+use neqo_common::{qdebug, qerror, qinfo, qlog::Qlog, qwarn, Datagram, Role};
 use neqo_crypto::{
     constants::{TLS_AES_128_GCM_SHA256, TLS_AES_256_GCM_SHA384, TLS_CHACHA20_POLY1305_SHA256},
     init, Cipher, ResumptionToken,
 };
-use neqo_http3::Output;
-use neqo_transport::{AppError, CloseReason, ConnectionId, Version};
+use neqo_http3::Header;
+use neqo_transport::{AppError, CloseReason, ConnectionId, OutputBatch, Version};
 use neqo_udp::RecvBuf;
+use rustc_hash::FxHashMap as HashMap;
+use thiserror::Error;
 use tokio::time::Sleep;
 use url::{Host, Origin, Url};
 
@@ -41,68 +44,36 @@ mod http3;
 
 const BUFWRITER_BUFFER_SIZE: usize = 64 * 1024;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum Error {
-    ArgumentError(&'static str),
-    Http3Error(neqo_http3::Error),
-    IoError(io::Error),
-    QlogError(qlog::Error),
-    TransportError(neqo_transport::Error),
-    ApplicationError(AppError),
-    CryptoError(neqo_crypto::Error),
-}
-
-impl From<neqo_crypto::Error> for Error {
-    fn from(err: neqo_crypto::Error) -> Self {
-        Self::CryptoError(err)
-    }
-}
-
-impl From<io::Error> for Error {
-    fn from(err: io::Error) -> Self {
-        Self::IoError(err)
-    }
-}
-
-impl From<neqo_http3::Error> for Error {
-    fn from(err: neqo_http3::Error) -> Self {
-        Self::Http3Error(err)
-    }
-}
-
-impl From<qlog::Error> for Error {
-    fn from(err: qlog::Error) -> Self {
-        Self::QlogError(err)
-    }
-}
-
-impl From<neqo_transport::Error> for Error {
-    fn from(err: neqo_transport::Error) -> Self {
-        Self::TransportError(err)
-    }
+    #[error("argument error: {0}")]
+    Argument(&'static str),
+    #[error(transparent)]
+    Http3(#[from] neqo_http3::Error),
+    #[error(transparent)]
+    Io(#[from] io::Error),
+    #[error(transparent)]
+    Qlog(#[from] qlog::Error),
+    #[error(transparent)]
+    Transport(#[from] neqo_transport::Error),
+    #[error("application error: {0}")]
+    Application(AppError),
+    #[error(transparent)]
+    Crypto(#[from] neqo_crypto::Error),
 }
 
 impl From<CloseReason> for Error {
     fn from(err: CloseReason) -> Self {
         match err {
-            CloseReason::Transport(e) => Self::TransportError(e),
-            CloseReason::Application(e) => Self::ApplicationError(e),
+            CloseReason::Transport(e) => Self::Transport(e),
+            CloseReason::Application(e) => Self::Application(e),
         }
     }
 }
 
-impl Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Error: {self:?}")?;
-        Ok(())
-    }
-}
-
-impl std::error::Error for Error {}
-
 type Res<T> = Result<T, Error>;
 
-#[derive(Debug, Parser)]
+#[derive(Clone, Debug, Parser)]
 #[command(author, version, about, long_about = None)]
 #[expect(
     clippy::struct_excessive_bools,
@@ -117,8 +88,8 @@ pub struct Args {
     #[arg(short = 'm', default_value = "GET")]
     method: String,
 
-    #[arg(short = 'H', long, number_of_values = 2)]
-    header: Vec<String>,
+    #[arg(name = "header", short = 'H', long)]
+    headers: Vec<Header>,
 
     #[arg(name = "max-push", short = 'p', long, default_value = "10")]
     max_concurrent_push_streams: u64,
@@ -184,16 +155,27 @@ impl Args {
     #[must_use]
     #[cfg(any(test, feature = "bench"))]
     #[expect(clippy::missing_panics_doc, reason = "This is example code.")]
-    pub fn new(requests: &[usize], upload: bool) -> Self {
-        use std::str::FromStr as _;
+    pub fn new(
+        server_addr: Option<SocketAddr>,
+        num_requests: usize,
+        upload_size: usize,
+        download_size: usize,
+    ) -> Self {
+        use std::{iter::repeat_with, str::FromStr as _};
+
+        let addr =
+            server_addr.map_or_else(|| "[::1]:12345".into(), |a| format!("[::1]:{}", a.port()));
         Self {
             shared: SharedArgs::default(),
-            urls: requests
-                .iter()
-                .map(|r| Url::from_str(&format!("http://[::1]:12345/{r}")).unwrap())
+            urls: repeat_with(|| Url::from_str(&format!("http://{addr}/{download_size}")).unwrap())
+                .take(num_requests)
                 .collect(),
-            method: if upload { "POST".into() } else { "GET".into() },
-            header: vec![],
+            method: if upload_size == 0 {
+                "GET".into()
+            } else {
+                "POST".into()
+            },
+            headers: vec![],
             max_concurrent_push_streams: 10,
             download_in_series: false,
             concurrency: 100,
@@ -205,7 +187,7 @@ impl Args {
             ipv4_only: false,
             ipv6_only: false,
             test: None,
-            upload_size: if upload { requests[0] } else { 100 },
+            upload_size,
             stats: false,
             cid_len: 0,
         }
@@ -383,7 +365,8 @@ enum CloseState {
 
 /// Network client, e.g. [`neqo_transport::Connection`] or [`neqo_http3::Http3Client`].
 trait Client {
-    fn process_output(&mut self, now: Instant) -> Output;
+    fn process_multiple_output(&mut self, now: Instant, max_datagrams: NonZeroUsize)
+        -> OutputBatch;
     fn process_multiple_input<'a>(
         &mut self,
         dgrams: impl IntoIterator<Item = Datagram<&'a mut [u8]>>,
@@ -422,7 +405,7 @@ impl<'a, H: Handler> Runner<'a, H> {
             handler,
             args,
             timeout: None,
-            recv_buf: RecvBuf::new(),
+            recv_buf: RecvBuf::default(),
         }
     }
 
@@ -463,26 +446,43 @@ impl<'a, H: Handler> Runner<'a, H> {
 
     async fn process_output(&mut self) -> Result<(), io::Error> {
         loop {
-            match self.client.process_output(Instant::now()) {
-                Output::Datagram(dgram) => loop {
+            let max_datagrams = self
+                .socket
+                .max_gso_segments()
+                .try_into()
+                .inspect_err(|_| qerror!("Socket return GSO size of 0"))
+                .map_err(|_| io::Error::from(ErrorKind::Unsupported))?;
+
+            match self
+                .client
+                .process_multiple_output(Instant::now(), max_datagrams)
+            {
+                OutputBatch::DatagramBatch(dgram) => loop {
                     // Optimistically attempt sending datagram. In case the OS
                     // buffer is full, wait till socket is writable then try
                     // again.
                     match self.socket.send(&dgram) {
                         Ok(()) => break,
-                        Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        Err(e) if e.kind() == ErrorKind::WouldBlock => {
                             self.socket.writable().await?;
                             // Now try again.
+                        }
+                        Err(e)
+                            if e.raw_os_error() == Some(libc::EIO) && dgram.num_datagrams() > 1 =>
+                        {
+                            qinfo!("`libc::sendmsg` failed with {e}; quinn-udp will halt segmentation offload");
+                            // Drop the packets and let QUIC handle retransmission.
+                            break;
                         }
                         e @ Err(_) => return e,
                     }
                 },
-                Output::Callback(new_timeout) => {
+                OutputBatch::Callback(new_timeout) => {
                     qdebug!("Setting timeout of {new_timeout:?}");
                     self.timeout = Some(Box::pin(tokio::time::sleep(new_timeout)));
                     break;
                 }
-                Output::None => {
+                OutputBatch::None => {
                     qdebug!("Output::None");
                     break;
                 }
@@ -505,9 +505,9 @@ impl<'a, H: Handler> Runner<'a, H> {
     }
 }
 
-fn qlog_new(args: &Args, hostname: &str, cid: &ConnectionId) -> Res<NeqoQlog> {
+fn qlog_new(args: &Args, hostname: &str, cid: &ConnectionId) -> Res<Qlog> {
     let Some(qlog_dir) = args.shared.qlog_dir.clone() else {
-        return Ok(NeqoQlog::disabled());
+        return Ok(Qlog::disabled());
     };
 
     // hostname might be an IPv6 address, e.g. `[::1]`. `:` is an invalid
@@ -518,14 +518,15 @@ fn qlog_new(args: &Args, hostname: &str, cid: &ConnectionId) -> Res<NeqoQlog> {
         .map(|c| if c == ':' { '_' } else { c })
         .collect();
 
-    NeqoQlog::enabled_with_file(
+    Qlog::enabled_with_file(
         qlog_dir,
         Role::Client,
         Some("Neqo client qlog".to_string()),
         Some("Neqo client qlog".to_string()),
         format!("client-{hostname}-{cid}"),
+        Instant::now(),
     )
-    .map_err(Error::QlogError)
+    .map_err(Error::Qlog)
 }
 
 const fn local_addr_for(remote_addr: &SocketAddr, local_port: u16) -> SocketAddr {
@@ -537,10 +538,13 @@ const fn local_addr_for(remote_addr: &SocketAddr, local_port: u16) -> SocketAddr
 
 fn urls_by_origin(urls: &[Url]) -> impl Iterator<Item = ((Host, u16), VecDeque<Url>)> {
     urls.iter()
-        .fold(HashMap::<Origin, VecDeque<Url>>::new(), |mut urls, url| {
-            urls.entry(url.origin()).or_default().push_back(url.clone());
-            urls
-        })
+        .fold(
+            HashMap::<Origin, VecDeque<Url>>::default(),
+            |mut urls, url| {
+                urls.entry(url.origin()).or_default().push_back(url.clone());
+                urls
+            },
+        )
         .into_iter()
         .filter_map(|(origin, urls)| match origin {
             Origin::Tuple(_scheme, h, p) => Some(((h, p), urls)),
@@ -587,6 +591,10 @@ pub async fn client(mut args: Args) -> Res<()> {
             exit(1);
         };
         let mut socket = crate::udp::Socket::bind(local_addr_for(&remote_addr, 0))?;
+        if socket.may_fragment() {
+            qinfo!("Datagrams may be fragmented by the IP layer. Disabling PMTUD.");
+            args.shared.quic_parameters.no_pmtud = true;
+        }
         let real_local = socket.local_addr().unwrap();
         qinfo!(
             "{} Client connecting: {real_local:?} -> {remote_addr:?}",
@@ -609,7 +617,7 @@ pub async fn client(mut args: Args) -> Res<()> {
                 let client = http3::create_client(&args, real_local, remote_addr, &hostname, token)
                     .expect("failed to create client");
 
-                let handler = http3::Handler::new(to_request, &args);
+                let handler = http3::Handler::new(to_request, args.clone());
 
                 Runner::new(real_local, &mut socket, client, handler, &args)
                     .run()

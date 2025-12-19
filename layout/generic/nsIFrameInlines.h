@@ -7,14 +7,14 @@
 #ifndef nsIFrameInlines_h___
 #define nsIFrameInlines_h___
 
-#include "mozilla/dom/ElementInlines.h"
 #include "mozilla/ComputedStyleInlines.h"
+#include "mozilla/dom/ElementInlines.h"
+#include "nsCSSAnonBoxes.h"
 #include "nsContainerFrame.h"
+#include "nsFrameManager.h"
 #include "nsIContentInlines.h"
 #include "nsLayoutUtils.h"
 #include "nsPlaceholderFrame.h"
-#include "nsCSSAnonBoxes.h"
-#include "nsFrameManager.h"
 
 bool nsIFrame::IsFlexItem() const {
   return GetParent() && GetParent()->IsFlexContainerFrame() &&
@@ -35,9 +35,18 @@ bool nsIFrame::IsFlexOrGridItem() const {
          GetParent()->IsFlexOrGridContainer();
 }
 
-bool nsIFrame::IsMasonry(mozilla::LogicalAxis aAxis) const {
+bool nsIFrame::IsLegacyWebkitBox() const {
+  MOZ_ASSERT(
+      IsFlexContainerFrame(),
+      "The state-bit is meaningful when this is a nsFlexContainerFrame!");
+  return HasAnyStateBits(NS_STATE_FLEX_IS_EMULATING_LEGACY_WEBKIT_BOX);
+}
+
+bool nsIFrame::IsMasonry(mozilla::WritingMode aWM,
+                         mozilla::LogicalAxis aAxis) const {
   MOZ_DIAGNOSTIC_ASSERT(IsGridContainerFrame());
-  return HasAnyStateBits(aAxis == mozilla::LogicalAxis::Block
+  const auto axisInOurWM = aWM.ConvertAxisTo(aAxis, GetWritingMode());
+  return HasAnyStateBits(axisInOurWM == mozilla::LogicalAxis::Block
                              ? NS_STATE_GRID_IS_ROW_MASONRY
                              : NS_STATE_GRID_IS_COL_MASONRY);
 }
@@ -63,6 +72,10 @@ bool nsIFrame::IsFixedPosContainingBlock() const {
 
 bool nsIFrame::IsRelativelyOrStickyPositioned() const {
   return StyleDisplay()->IsRelativelyOrStickyPositioned(this);
+}
+
+bool nsIFrame::HasAnchorPosName() const {
+  return StyleDisplay()->HasAnchorName();
 }
 
 bool nsIFrame::IsRelativelyPositioned() const {
@@ -189,6 +202,10 @@ mozilla::LogicalPoint nsIFrame::GetLogicalNormalPosition(
 
 bool nsIFrame::ContentIsEditable() const {
   return mContent && mContent->IsEditable();
+}
+
+inline bool nsIFrame::HasAnchorPosReference() const {
+  return IsAbsolutelyPositioned() && Style()->HasAnchorPosReference();
 }
 
 #endif

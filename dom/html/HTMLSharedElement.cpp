@@ -5,6 +5,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/HTMLSharedElement.h"
+
+#include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/HTMLBaseElementBinding.h"
 #include "mozilla/dom/HTMLDirectoryElementBinding.h"
@@ -12,8 +14,7 @@
 #include "mozilla/dom/HTMLHtmlElementBinding.h"
 #include "mozilla/dom/HTMLParamElementBinding.h"
 #include "mozilla/dom/HTMLQuoteElementBinding.h"
-
-#include "mozilla/AsyncEventDispatcher.h"
+#include "mozilla/dom/PolicyContainer.h"
 #include "nsContentUtils.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsIURI.h"
@@ -94,7 +95,8 @@ static void SetBaseURIUsingFirstBaseWithHref(Document* aDocument,
       }
 
       // Check if CSP allows this base-uri
-      nsCOMPtr<nsIContentSecurityPolicy> csp = aDocument->GetCsp();
+      nsCOMPtr<nsIContentSecurityPolicy> csp =
+          PolicyContainer::GetCSP(aDocument->GetPolicyContainer());
       if (csp && newBaseURI) {
         // base-uri is only enforced if explicitly defined in the
         // policy - do *not* consult default-src, see:

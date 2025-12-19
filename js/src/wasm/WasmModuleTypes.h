@@ -81,6 +81,15 @@ struct CacheableName {
     return mozilla::Span<const char>(bytes_);
   }
 
+  [[nodiscard]] bool clone(CacheableName* name) const {
+    UTF8Bytes bytesCopy;
+    if (!bytesCopy.appendAll(bytes_)) {
+      return false;
+    }
+    *name = CacheableName(std::move(bytesCopy));
+    return true;
+  }
+
   static CacheableName fromUTF8Chars(UniqueChars&& utf8Chars);
   [[nodiscard]] static bool fromUTF8Chars(const char* utf8Chars,
                                           CacheableName* name);
@@ -787,16 +796,20 @@ struct Limits {
   // memories.
   Shareable shared;
 
-  WASM_CHECK_CACHEABLE_POD(addressType, initial, maximum, shared);
+  // `pageSize` is used only for memories. Defaults to the standard page size
+  // but may be set to other values with the custom page size proposal.
+  PageSize pageSize = PageSize::Standard;
+
+  WASM_CHECK_CACHEABLE_POD(addressType, initial, maximum, shared, pageSize);
 
   Limits() = default;
-  explicit Limits(uint64_t initial,
-                  const mozilla::Maybe<uint64_t>& maximum = mozilla::Nothing(),
-                  Shareable shared = Shareable::False)
+  Limits(uint64_t initial, const mozilla::Maybe<uint64_t>& maximum,
+         Shareable shared, PageSize pageSize)
       : addressType(AddressType::I32),
         initial(initial),
         maximum(maximum),
-        shared(shared) {}
+        shared(shared),
+        pageSize(pageSize) {}
 };
 
 WASM_DECLARE_CACHEABLE_POD(Limits);
@@ -804,56 +817,64 @@ WASM_DECLARE_CACHEABLE_POD(Limits);
 // MemoryDesc describes a memory.
 
 struct MemoryDesc {
+  // The limits of this memory
   Limits limits;
+  // The index of the import if this memory is imported
+  mozilla::Maybe<uint32_t> importIndex;
 
-  WASM_CHECK_CACHEABLE_POD(limits);
+  WASM_CHECK_CACHEABLE_POD(limits, importIndex);
 
   bool isShared() const { return limits.shared == Shareable::True; }
 
   // Whether a backing store for this memory may move when grown.
   bool canMovingGrow() const { return limits.maximum.isNothing(); }
 
-  // Whether the bounds check limit (see the doc comment in
-  // ArrayBufferObject.cpp regarding linear memory structure) can ever be
-  // larger than 32-bits.
-  bool boundsCheckLimitIs32Bits() const {
+  // Whether the boundsCheckLimit will always fit within 32 bits. See the SMDOC
+  // for "WASM Linear Memory structure".
+  bool boundsCheckLimitIsAlways32Bits() const {
     return limits.maximum.isSome() &&
-           limits.maximum.value() < (0x100000000 / PageSize);
+           limits.maximum.value() < (0x100000000 / PageSizeInBytes(pageSize()));
   }
 
   AddressType addressType() const { return limits.addressType; }
 
+  PageSize pageSize() const { return limits.pageSize; }
+
   // The initial length of this memory in pages.
-  Pages initialPages() const { return Pages(limits.initial); }
+  Pages initialPages() const {
+    return Pages::fromPageCount(limits.initial, pageSize());
+  }
 
   // The maximum length of this memory in pages.
   mozilla::Maybe<Pages> maximumPages() const {
-    return limits.maximum.map([](uint64_t x) { return Pages(x); });
+    return limits.maximum.map(
+        [&](uint64_t x) { return Pages::fromPageCount(x, pageSize()); });
   }
 
-  // The initial length of this memory in bytes. Only valid for memory32.
-  uint64_t initialLength32() const {
-    MOZ_ASSERT(addressType() == AddressType::I32);
-    // See static_assert after MemoryDesc for why this is safe.
-    return limits.initial * PageSize;
+  uint64_t initialLength() const {
+    // See static_assert after MemoryDesc for why this is safe for memory32.
+    MOZ_ASSERT_IF(addressType() == AddressType::I64,
+                  limits.initial <= UINT64_MAX / PageSizeInBytes(pageSize()));
+    return addressType() == AddressType::I64 ? initialPages().byteLength64()
+                                             : initialPages().byteLength();
   }
 
-  uint64_t initialLength64() const {
-    MOZ_ASSERT(addressType() == AddressType::I64);
-    return limits.initial * PageSize;
-  }
-
-  MemoryDesc() {}
-  explicit MemoryDesc(Limits limits) : limits(limits) {}
+  MemoryDesc() = default;
+  explicit MemoryDesc(Limits limits)
+      : limits(limits), importIndex(mozilla::Nothing()) {}
 };
 
 WASM_DECLARE_CACHEABLE_POD(MemoryDesc);
 
 using MemoryDescVector = Vector<MemoryDesc, 1, SystemAllocPolicy>;
 
-// We don't need to worry about overflow with a Memory32 field when
+// We never need to worry about overflow with a Memory32 field when
 // using a uint64_t.
-static_assert(MaxMemory32PagesValidation <= UINT64_MAX / PageSize);
+static_assert(MaxMemory32StandardPagesValidation <=
+              UINT64_MAX / StandardPageSizeBytes);
+#ifdef ENABLE_WASM_CUSTOM_PAGE_SIZES
+static_assert(MaxMemory32TinyPagesValidation <= UINT64_MAX);
+#endif
 
 struct TableDesc {
   Limits limits;

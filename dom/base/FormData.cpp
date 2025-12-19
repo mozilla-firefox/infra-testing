@@ -5,16 +5,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "FormData.h"
-#include "nsIInputStream.h"
-#include "mozilla/dom/CustomElementTypes.h"
-#include "mozilla/dom/File.h"
-#include "mozilla/dom/Directory.h"
-#include "mozilla/dom/HTMLFormElement.h"
-#include "mozilla/Encoding.h"
-#include "nsGenericHTMLElement.h"
-#include "nsQueryObject.h"
 
 #include "MultipartBlobImpl.h"
+#include "mozilla/Encoding.h"
+#include "mozilla/dom/CustomElementTypes.h"
+#include "mozilla/dom/Directory.h"
+#include "mozilla/dom/File.h"
+#include "mozilla/dom/HTMLFormElement.h"
+#include "nsGenericHTMLElement.h"
+#include "nsIInputStream.h"
+#include "nsQueryObject.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -307,9 +307,18 @@ already_AddRefed<FormData> FormData::Constructor(
     const GlobalObject& aGlobal,
     const Optional<NonNull<HTMLFormElement> >& aFormElement,
     nsGenericHTMLElement* aSubmitter, ErrorResult& aRv) {
+  return Constructor(aGlobal.GetAsSupports(),
+                     aFormElement.WasPassed() ? &aFormElement.Value() : nullptr,
+                     aSubmitter, aRv);
+}
+
+/* static */
+already_AddRefed<FormData> FormData::Constructor(
+    nsISupports* aGlobal, HTMLFormElement* aFormElement,
+    nsGenericHTMLElement* aSubmitter, ErrorResult& aRv) {
   RefPtr<FormData> formData;
   // 1. If form is given, then:
-  if (aFormElement.WasPassed()) {
+  if (aFormElement) {
     // 1.1. If submitter is non-null, then:
     if (aSubmitter) {
       const nsIFormControl* fc = nsIFormControl::FromNode(aSubmitter);
@@ -322,7 +331,7 @@ already_AddRefed<FormData> FormData::Constructor(
 
       // 1.1.2. If submitter's form owner is not this form element, then throw a
       //      "NotFoundError" DOMException.
-      if (fc->GetForm() != &aFormElement.Value()) {
+      if (fc->GetForm() != aFormElement) {
         aRv.ThrowNotFoundError("The submitter is not owned by this form.");
         return nullptr;
       }
@@ -330,9 +339,8 @@ already_AddRefed<FormData> FormData::Constructor(
 
     // 1.2. Let list be the result of constructing the entry list for form and
     // submitter.
-    formData =
-        new FormData(aGlobal.GetAsSupports(), UTF_8_ENCODING, aSubmitter);
-    aRv = aFormElement.Value().ConstructEntryList(formData);
+    formData = new FormData(aGlobal, UTF_8_ENCODING, aSubmitter);
+    aRv = aFormElement->ConstructEntryList(formData);
     if (NS_WARN_IF(aRv.Failed())) {
       return nullptr;
     }
@@ -341,7 +349,7 @@ already_AddRefed<FormData> FormData::Constructor(
     // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-form-data-set
     formData = formData->Clone();
   } else {
-    formData = new FormData(aGlobal.GetAsSupports());
+    formData = new FormData(aGlobal);
   }
 
   return formData.forget();
@@ -395,7 +403,7 @@ CustomElementFormValue FormData::ConvertToCustomElementFormValue() {
   ForEach([&formValue](const nsString& aName,
                        const OwningBlobOrDirectoryOrUSVString& aValue) -> bool {
     if (aValue.IsBlob()) {
-      FormDataValue value(WrapNotNull(aValue.GetAsBlob()->Impl()));
+      IPCFormDataValue value(WrapNotNull(aValue.GetAsBlob()->Impl()));
       formValue.AppendElement(mozilla::dom::FormDataTuple(aName, value));
     } else if (aValue.IsUSVString()) {
       formValue.AppendElement(

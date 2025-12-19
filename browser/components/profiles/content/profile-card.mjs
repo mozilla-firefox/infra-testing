@@ -29,6 +29,9 @@ export class ProfileCard extends MozLitElement {
   static queries = {
     backgroundImage: ".profile-background-image",
     avatarImage: ".profile-avatar",
+    profileCard: ".profile-card",
+    editButton: "#edit-button",
+    deleteButton: "#delete-button",
   };
 
   firstUpdated() {
@@ -47,8 +50,8 @@ export class ProfileCard extends MozLitElement {
     this.backgroundImage.style.stroke = themeFg;
   }
 
-  setAvatarImage() {
-    this.avatarImage.style.backgroundImage = `url("chrome://browser/content/profiles/assets/80_${this.profile.avatar}.svg")`;
+  async setAvatarImage() {
+    this.avatarImage.style.backgroundImage = `url(${await this.profile.getAvatarURL(80)})`;
     let { themeFg, themeBg } = this.profile.theme;
     this.avatarImage.style.fill = themeBg;
     this.avatarImage.style.stroke = themeFg;
@@ -73,7 +76,10 @@ export class ProfileCard extends MozLitElement {
   }
 
   handleKeyDown(event) {
-    if (event.code === "Enter" || event.code === "Space") {
+    if (
+      event.target === this.profileCard &&
+      (event.code === "Enter" || event.code === "Space")
+    ) {
       this.launchProfile();
     }
   }
@@ -99,7 +105,7 @@ export class ProfileCard extends MozLitElement {
         rel="stylesheet"
         href="chrome://browser/content/profiles/profile-card.css"
       />
-      <div
+      <moz-card
         data-l10n-id="profile-card"
         data-l10n-args=${JSON.stringify({ profileName: this.profile.name })}
         class="profile-card"
@@ -116,12 +122,14 @@ export class ProfileCard extends MozLitElement {
           <h3 class="text-truncated-ellipsis">${this.profile.name}</h3>
           <moz-button-group
             ><moz-button
+              id="edit-button"
               data-l10n-id="profile-card-edit-button"
               type="ghost"
               iconsrc="chrome://global/skin/icons/edit-outline.svg"
               @click=${this.handleEditClick}
             ></moz-button
             ><moz-button
+              id="delete-button"
               data-l10n-id="profile-card-delete-button"
               type="ghost"
               iconsrc="chrome://global/skin/icons/delete.svg"
@@ -129,7 +137,7 @@ export class ProfileCard extends MozLitElement {
             ></moz-button
           ></moz-button-group>
         </div>
-      </div>`;
+      </moz-card>`;
   }
 }
 

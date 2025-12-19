@@ -41,9 +41,13 @@ async function updateFrameLocation(frame, thunkArgs) {
     return frame;
   }
 
-  const location = await getOriginalLocation(frame.location, thunkArgs, {
-    waitForSource: true,
-  });
+  const location = await getOriginalLocation(
+    frame.generatedLocation || frame.location,
+    thunkArgs,
+    {
+      waitForSource: true,
+    }
+  );
   // Avoid instantiating new frame objects if the frame location isn't mapped
   if (location == frame.location) {
     return frame;
@@ -121,7 +125,7 @@ async function updateFrameDisplayName(frame, thunkArgs) {
   }
 
   // As we now know that this frame relates to an original source...
-  // Fetch the symbols for it and compute the frame's originalDisplayName.
+  // Compute the frame's originalDisplayName.
   const originalDisplayName = location.source.isPrettyPrinted
     ? frame.displayName
     : await thunkArgs.dispatch(getOriginalFunctionDisplayName(location));
@@ -136,7 +140,7 @@ async function updateFrameDisplayName(frame, thunkArgs) {
 /**
  * Update the display names of the mapped original frames
  *
- * @param {Object} thread
+ * @param {object} thread
  * @returns
  */
 export function updateAllFrameDisplayNames(thread) {
@@ -165,7 +169,7 @@ export function updateAllFrameDisplayNames(thread) {
  * e.g.
  * 1. When the debuggee pauses
  * 2. When a source is pretty printed
- * 3. When symbols are loaded
+ *
  * @memberof actions/pause
  * @static
  */

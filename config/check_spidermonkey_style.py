@@ -11,7 +11,7 @@
 #
 # - No cyclic dependencies.
 #
-# - No normal header should #include a inlines.h/-inl.h file.
+# - No normal header should #include a -inl.h file.
 #
 # - #ifndef wrappers should have the right form. (XXX: not yet implemented)
 #   - Every header file should have one.
@@ -58,11 +58,18 @@ included_inclnames_to_ignore = set(
     [
         "ffi.h",  # generated in ctypes/libffi/
         "devtools/Instruments.h",  # we ignore devtools/ in general
+        "diplomat_runtime.hpp",  # ICU4X
         "double-conversion/double-conversion.h",  # strange MFBT case
-        "javascript-trace.h",  # generated in $OBJDIR if HAVE_DTRACE is defined
         "frontend/ReservedWordsGenerated.h",  # generated in $OBJDIR
         "gc/StatsPhasesGenerated.h",  # generated in $OBJDIR
         "gc/StatsPhasesGenerated.inc",  # generated in $OBJDIR
+        "icu4x/Calendar.hpp",  # ICU4X
+        "icu4x/Date.hpp",  # ICU4X
+        "icu4x/GraphemeClusterSegmenter.hpp",  # ICU4X
+        "icu4x/IsoDate.hpp",  # ICU4X
+        "icu4x/Locale.hpp",  # ICU4X
+        "icu4x/SentenceSegmenter.hpp",  # ICU4X
+        "icu4x/WordSegmenter.hpp",  # ICU4X
         "jit/ABIFunctionTypeGenerated.h",  # generated in $OBJDIR"
         "jit/AtomicOperationsGenerated.h",  # generated in $OBJDIR
         "jit/CacheIROpsGenerated.h",  # generated in $OBJDIR
@@ -77,21 +84,8 @@ included_inclnames_to_ignore = set(
         "fdlibm.h",  # fdlibm
         "FuzzerDefs.h",  # included without a path
         "FuzzingInterface.h",  # included without a path
-        "diplomat_runtime.h",  # ICU4X
-        "ICU4XAnyCalendarKind.h",  # ICU4X
-        "ICU4XCalendar.h",  # ICU4X
-        "ICU4XDate.h",  # ICU4X
-        "ICU4XError.h",  # ICU4X
-        "ICU4XGraphemeClusterSegmenter.h",  # ICU4X
-        "ICU4XIsoDate.h",  # ICU4X
-        "ICU4XIsoWeekday.h",  # ICU4X
-        "ICU4XSentenceSegmenter.h",  # ICU4X
-        "ICU4XWeekCalculator.h",  # ICU4X
-        "ICU4XWeekOf.h",  # ICU4X
-        "ICU4XWeekRelativeUnit.h",  # ICU4X
-        "ICU4XWordSegmenter.h",  # ICU4X
         "mozmemory.h",  # included without a path
-        "mozmemory_utils.h",  # included without a path
+        "mozmemory_stall.h",  # included without a path
         "pratom.h",  # NSPR
         "prcvar.h",  # NSPR
         "prerror.h",  # NSPR
@@ -117,10 +111,6 @@ included_inclnames_to_ignore = set(
         "fmt/format.h",  # {fmt} main header
     ]
 )
-
-deprecated_inclnames = {
-    "mozilla/Unused.h": "Use [[nodiscard]] and (void)expr casts instead.",
-}
 
 # JSAPI functions should be included through headers from js/public instead of
 # using the old, catch-all jsapi.h file.
@@ -182,9 +172,6 @@ js/src/tests/style/BadIncludes.h:10: error:
     "stdio.h" is included using the wrong path;
     did you forget a prefix, or is the file not yet committed?
 
-js/src/tests/style/BadIncludes.h:12: error:
-    "mozilla/Unused.h" is deprecated: Use [[nodiscard]] and (void)expr casts instead.
-
 js/src/tests/style/BadIncludes2.h:1: error:
     vanilla header includes an inline-header file "tests/style/BadIncludes2-inl.h"
 
@@ -228,8 +215,6 @@ js/src/tests/style/BadIncludesOrder-inl.h:28:29: error:
       -> tests/style/HeaderCycleB3-inl.h
          -> tests/style/HeaderCycleB4-inl.h
             -> tests/style/HeaderCycleB1-inl.h
-            -> tests/style/jsheadercycleB5inlines.h
-               -> tests/style/HeaderCycleB1-inl.h
       -> tests/style/HeaderCycleB4-inl.h
 
 """.splitlines(
@@ -270,10 +255,10 @@ class FileKind:
         if filename.endswith(".cpp"):
             return FileKind.CPP
 
-        if filename.endswith(("inlines.h", "-inl.h")):
+        if filename.endswith("-inl.h"):
             return FileKind.INL_H
 
-        if filename.endswith(".h"):
+        if filename.endswith((".h", ".hpp")):
             return FileKind.H
 
         if filename.endswith(".tbl"):
@@ -359,12 +344,7 @@ def check_style(enable_fixup):
     for filename in sorted(js_names.keys()):
         inclname = js_names[filename]
         file_kind = FileKind.get(filename)
-        if (
-            file_kind == FileKind.C
-            or file_kind == FileKind.CPP
-            or file_kind == FileKind.H
-            or file_kind == FileKind.INL_H
-        ):
+        if file_kind in {FileKind.C, FileKind.CPP, FileKind.H, FileKind.INL_H}:
             included_h_inclnames = set()  # type: set(inclname)
 
             with open(filename, encoding="utf-8") as f:
@@ -399,13 +379,10 @@ def check_style(enable_fixup):
 
 
 def module_name(name):
-    """Strip the trailing .cpp, .h, inlines.h or -inl.h from a filename."""
+    """Strip the trailing .cpp, .h, or -inl.h from a filename."""
 
     return (
-        name.replace("inlines.h", "")
-        .replace("-inl.h", "")
-        .replace(".h", "")
-        .replace(".cpp", "")
+        name.replace("-inl.h", "").replace(".h", "").replace(".cpp", "")
     )  # NOQA: E501
 
 
@@ -455,21 +432,20 @@ class Include:
         """Identify which section inclname belongs to.
 
         The section numbers are as follows.
-          0. Module header (e.g. jsfoo.h or jsfooinlines.h within jsfoo.cpp)
+          0. Module header (e.g. jsfoo.h or jsfoo-inl.h within jsfoo.cpp)
           1. mozilla/Foo.h
           2. <foo.h> or <foo>
           3. jsfoo.h, prmjtime.h, etc
           4. foo/Bar.h
-          5. jsfooinlines.h
-          6. foo/Bar-inl.h
-          7. non-.h, e.g. *.tbl, *.msg (these can be scattered throughout files)
+          5. foo/Bar-inl.h
+          6. non-.h, e.g. *.tbl, *.msg (these can be scattered throughout files)
         """
 
         if self.is_system:
             return 2
 
-        if not self.inclname.endswith(".h"):
-            return 7
+        if not self.inclname.endswith((".h", ".hpp")):
+            return 6
 
         # A couple of modules have the .h file in js/ and the .cpp file elsewhere and so need
         # special handling.
@@ -481,12 +457,9 @@ class Include:
                 return 1
 
             if self.inclname.endswith("-inl.h"):
-                return 6
+                return 5
 
             return 4
-
-        if self.inclname.endswith("inlines.h"):
-            return 5
 
         return 3
 
@@ -732,15 +705,7 @@ def check_file(
                     f'instead use "{wrapper_inclname}"',
                 )
         else:
-            msg = deprecated_inclnames.get(include.inclname)
-            if msg:
-                error(
-                    filename,
-                    include.linenum,
-                    include.quote() + " is deprecated: " + msg,
-                )
-
-            if file_kind == FileKind.H or file_kind == FileKind.INL_H:
+            if file_kind in {FileKind.H, FileKind.INL_H}:
                 msg = deprecated_inclnames_in_header.get(include.inclname)
                 if msg and filename not in deprecated_inclnames_in_header_excludes:
                     error(
@@ -763,7 +728,7 @@ def check_file(
 
                 # Record inclusions of .h files for cycle detection later.
                 # (Exclude .tbl and .msg files.)
-                elif included_kind == FileKind.H or included_kind == FileKind.INL_H:
+                elif included_kind in {FileKind.H, FileKind.INL_H}:
                     included_h_inclnames.add(include.inclname)
 
                 # Check a H file doesn't #include an INL_H file.

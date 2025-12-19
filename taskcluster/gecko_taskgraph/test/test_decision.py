@@ -3,14 +3,14 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
-import json
 import os
 import shutil
 import tempfile
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from mozunit import MockedOpen, main
+from taskgraph.util import json
 from taskgraph.util.yaml import load_yaml
 
 from gecko_taskgraph import decision
@@ -29,6 +29,8 @@ def register():
 def options():
     return {
         "base_repository": "https://hg.mozilla.org/mozilla-unified",
+        "base_ref": "mybranch",
+        "base_rev": "1234",
         "head_repository": "https://hg.mozilla.org/mozilla-central",
         "head_rev": "abcd",
         "head_ref": "ef01",
@@ -73,9 +75,7 @@ def test_write_artifact_yml():
 
 @patch("gecko_taskgraph.decision.get_hg_revision_info")
 @patch("gecko_taskgraph.decision.get_hg_revision_branch")
-@patch("gecko_taskgraph.decision.get_hg_commit_message")
-@patch("gecko_taskgraph.decision._determine_more_accurate_base_rev")
-@patch("gecko_taskgraph.decision.get_changed_files")
+@patch("gecko_taskgraph.decision.get_repository")
 @pytest.mark.parametrize(
     "extra_options,commit_msg,ttc,expected",
     (
@@ -90,7 +90,6 @@ def test_write_artifact_yml():
                 "hg_branch": "default",
                 "moz_build_date": "20170825200511",
                 "try_mode": None,
-                "try_options": None,
                 "try_task_config": {},
                 "head_git_rev": "bcde",
             },
@@ -110,29 +109,8 @@ def test_write_artifact_yml():
             "try: -b do -t all --artifact",
             None,
             {
-                "try_mode": "try_option_syntax",
-                "try_options": {
-                    "build_types": "do",
-                    "include_nightly": False,
-                    "interactive": False,
-                    "jobs": None,
-                    "no_retry": False,
-                    "notifications": None,
-                    "platforms": "all",
-                    "raptor": "none",
-                    "raptor_trigger_tests": 1,
-                    "tag": None,
-                    "talos": "all",
-                    "talos_trigger_tests": 1,
-                    "taskcluster_worker": False,
-                    "trigger_tests": 1,
-                    "unittests": "all",
-                },
-                "try_task_config": {
-                    "gecko-profile": False,
-                    "use-artifact-builds": True,
-                    "env": {},
-                },
+                "try_mode": None,
+                "try_task_config": {},
                 "head_git_rev": "bcde",
             },
             id="try_options",
@@ -145,7 +123,6 @@ def test_write_artifact_yml():
             {"tasks": ["a", "b"]},
             {
                 "try_mode": "try_task_config",
-                "try_options": None,
                 "try_task_config": {"tasks": ["a", "b"]},
                 "head_git_rev": "bcde",
             },
@@ -154,9 +131,7 @@ def test_write_artifact_yml():
     ),
 )
 def test_get_decision_parameters(
-    mock_get_changed_files,
-    mock_determine_more_accurate_base_rev,
-    mock_get_hg_commit_message,
+    mock_get_repository,
     mock_get_hg_revision_branch,
     mock_get_hg_revision_info,
     options,
@@ -167,9 +142,13 @@ def test_get_decision_parameters(
 ):
     mock_get_hg_revision_info.return_value = "bcde"
     mock_get_hg_revision_branch.return_value = "default"
-    mock_get_hg_commit_message.return_value = commit_msg or "commit message"
-    mock_determine_more_accurate_base_rev.return_value = "baserev"
-    mock_get_changed_files.return_value = ["foo.txt", "bar/baz.md"]
+
+    mock_repo = MagicMock()
+    mock_repo.default_branch = "baseref"
+    mock_repo.get_commit_message.return_value = commit_msg or "commit message"
+    mock_repo.get_outgoing_files.return_value = ["foo.txt", "bar/baz.md"]
+    mock_repo.get_changed_files.return_value = ["foo.txt", "bar/baz.md"]
+    mock_get_repository.return_value = mock_repo
 
     options.update(extra_options)
     contents = None

@@ -9,15 +9,19 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import androidx.navigation.NavController
+import androidx.navigation.NavDirections
+import androidx.navigation.NavOptions
 import io.mockk.Runs
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
+import io.mockk.runs
 import io.mockk.slot
 import io.mockk.spyk
 import io.mockk.verify
 import io.mockk.verifyOrder
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
 import mozilla.components.concept.engine.prompt.ShareData
 import mozilla.components.concept.sync.Device
@@ -42,12 +46,11 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.accounts.FenixFxAEntryPoint
 import org.mozilla.fenix.components.appstate.AppAction.ShareAction
-import org.mozilla.fenix.ext.nav
 import org.mozilla.fenix.helpers.FenixGleanTestRule
-import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
 import org.mozilla.fenix.share.listadapters.AppShareOption
+import org.robolectric.RobolectricTestRunner
 
-@RunWith(FenixRobolectricTestRunner::class)
+@RunWith(RobolectricTestRunner::class)
 class ShareControllerTest {
     // Need a valid context to retrieve Strings for example, but we also need it to return our "metrics"
     private val context: Context = spyk(testContext)
@@ -68,7 +71,11 @@ class ShareControllerTest {
     private val saveToPdfUseCase = mockk<SessionUseCases.SaveToPdfUseCase>(relaxed = true)
     private val printUseCase = mockk<SessionUseCases.PrintContentUseCase>(relaxed = true)
     private val sentFromFirefoxManager = mockk<SentFromFirefoxManager>(relaxed = true)
-    private val navController = mockk<NavController>(relaxed = true)
+    private val navController = mockk<NavController>(relaxed = true) {
+        every { navigate(any<NavDirections>(), any<NavOptions>()) } just runs
+        every { currentDestination?.id } returns R.id.shareFragment
+    }
+
     private val dismiss = mockk<(ShareController.Result) -> Unit>(relaxed = true)
     private val recentAppStorage = mockk<RecentAppsStorage>(relaxed = true)
 
@@ -91,6 +98,7 @@ class ShareControllerTest {
         verify { dismiss(ShareController.Result.DISMISSED) }
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class) // advanceUntilIdle
     @Test
     fun `handleShareToApp should start a new sharing activity and close this`() = runTestOnMain {
         assertNull(Events.shareToApp.testGetValue())
@@ -534,11 +542,11 @@ class ShareControllerTest {
         assertNull(SyncAccount.signInToSendTab.testGetValue()!!.single().extra)
 
         verifyOrder {
-            navController.nav(
-                R.id.shareFragment,
+            navController.navigate(
                 ShareFragmentDirections.actionGlobalTurnOnSync(
                     entrypoint = FenixFxAEntryPoint.ShareMenu,
                 ),
+                null,
             )
             dismiss(ShareController.Result.DISMISSED)
         }
@@ -549,11 +557,11 @@ class ShareControllerTest {
         controller.handleReauth()
 
         verifyOrder {
-            navController.nav(
-                R.id.shareFragment,
+            navController.navigate(
                 ShareFragmentDirections.actionGlobalAccountProblemFragment(
                     entrypoint = FenixFxAEntryPoint.ShareMenu,
                 ),
+                null,
             )
             dismiss(ShareController.Result.DISMISSED)
         }

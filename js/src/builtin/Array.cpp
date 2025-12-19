@@ -16,7 +16,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <iterator>
 
 #include "jsfriendapi.h"
 #include "jsnum.h"
@@ -259,27 +258,6 @@ JS_PUBLIC_API bool js::StringIsArrayIndex(const char16_t* str, uint32_t length,
   return true;
 }
 
-template <typename T>
-static bool ToId(JSContext* cx, T index, MutableHandleId id);
-
-template <>
-bool ToId(JSContext* cx, uint32_t index, MutableHandleId id) {
-  return IndexToId(cx, index, id);
-}
-
-template <>
-bool ToId(JSContext* cx, uint64_t index, MutableHandleId id) {
-  MOZ_ASSERT(index < uint64_t(DOUBLE_INTEGRAL_PRECISION_LIMIT));
-
-  if (index == uint32_t(index)) {
-    return IndexToId(cx, uint32_t(index), id);
-  }
-
-  Value tmp = DoubleValue(index);
-  return PrimitiveValueToId<CanGC>(cx, HandleValue::fromMarkedLocation(&tmp),
-                                   id);
-}
-
 /*
  * If the property at the given index exists, get its value into |vp| and set
  * |*hole| to false. Otherwise set |*hole| to true and |vp| to Undefined.
@@ -306,7 +284,7 @@ static bool HasAndGetElement(JSContext* cx, HandleObject obj,
   }
 
   RootedId id(cx);
-  if (!ToId(cx, index, &id)) {
+  if (!IndexToId(cx, index, &id)) {
     return false;
   }
 
@@ -329,6 +307,11 @@ static bool HasAndGetElement(JSContext* cx, HandleObject obj,
 template <typename T>
 static inline bool HasAndGetElement(JSContext* cx, HandleObject obj, T index,
                                     bool* hole, MutableHandleValue vp) {
+  return HasAndGetElement(cx, obj, obj, index, hole, vp);
+}
+
+bool js::HasAndGetElement(JSContext* cx, HandleObject obj, uint64_t index,
+                          bool* hole, MutableHandleValue vp) {
   return HasAndGetElement(cx, obj, obj, index, hole, vp);
 }
 
@@ -475,7 +458,7 @@ static inline bool GetArrayElement(JSContext* cx, HandleObject obj,
   }
 
   RootedId id(cx);
-  if (!ToId(cx, index, &id)) {
+  if (!IndexToId(cx, index, &id)) {
     return false;
   }
   return GetProperty(cx, obj, obj, id, vp);
@@ -484,7 +467,7 @@ static inline bool GetArrayElement(JSContext* cx, HandleObject obj,
 static inline bool DefineArrayElement(JSContext* cx, HandleObject obj,
                                       uint64_t index, HandleValue value) {
   RootedId id(cx);
-  if (!ToId(cx, index, &id)) {
+  if (!IndexToId(cx, index, &id)) {
     return false;
   }
   return DefineDataProperty(cx, obj, id, value);
@@ -494,10 +477,9 @@ static inline bool DefineArrayElement(JSContext* cx, HandleObject obj,
 static inline bool SetArrayElement(JSContext* cx, HandleObject obj,
                                    uint64_t index, HandleValue v) {
   RootedId id(cx);
-  if (!ToId(cx, index, &id)) {
+  if (!IndexToId(cx, index, &id)) {
     return false;
   }
-
   return SetProperty(cx, obj, id, v);
 }
 
@@ -536,7 +518,7 @@ static bool DeleteArrayElement(JSContext* cx, HandleObject obj, uint64_t index,
   }
 
   RootedId id(cx);
-  if (!ToId(cx, index, &id)) {
+  if (!IndexToId(cx, index, &id)) {
     return false;
   }
   return DeleteProperty(cx, obj, id, result);
@@ -551,7 +533,7 @@ static bool DeletePropertyOrThrow(JSContext* cx, HandleObject obj,
   }
   if (!success) {
     RootedId id(cx);
-    if (!ToId(cx, index, &id)) {
+    if (!IndexToId(cx, index, &id)) {
       return false;
     }
     return success.reportError(cx, obj, id);
@@ -1197,7 +1179,7 @@ JSString* js::ArrayToSource(JSContext* cx, HandleObject obj) {
   for (uint64_t index = 0; index < length; index++) {
     bool hole;
     if (!CheckForInterrupt(cx) ||
-        !HasAndGetElement(cx, obj, index, &hole, &elt)) {
+        !::HasAndGetElement(cx, obj, index, &hole, &elt)) {
       return nullptr;
     }
 
@@ -1312,6 +1294,33 @@ static bool ArrayJoinDenseKernel(JSContext* cx, SeparatorOp sepOp,
     // Steps 7.a, 7.e.
     if (++(*numProcessed) != length && !sepOp(sb)) {
       return false;
+    }
+  }
+
+  // If we processed all dense elements and there are no other extra indexed
+  // properties, all remaining GetElement operations would return undefined.
+  // This is used to optimize str.repeat() like uses:
+  //   new Array(1e5).join("foo").
+  if (*numProcessed == initLength && initLength < length &&
+      length < UINT32_MAX) {
+    // initLength < length, so this can't be packed.
+    MOZ_ASSERT(!ObjectMayHaveExtraIndexedProperties(obj));
+    while (*numProcessed < length) {
+      if (!CheckForInterrupt(cx)) {
+        return false;
+      }
+
+#ifdef DEBUG
+      RootedValue v(cx);
+      if (!GetArrayElement(cx, obj, *numProcessed, &v)) {
+        return false;
+      }
+      MOZ_ASSERT(v.isUndefined());
+#endif
+
+      if (++(*numProcessed) != length && !sepOp(sb)) {
+        return false;
+      }
     }
   }
 
@@ -1559,7 +1568,7 @@ static bool SetArrayElements(JSContext* cx, HandleObject obj, uint64_t start,
       return false;
     }
 
-    if (!ToId(cx, start++, &id)) {
+    if (!IndexToId(cx, start++, &id)) {
       return false;
     }
 
@@ -1682,8 +1691,8 @@ static bool array_reverse(JSContext* cx, unsigned argc, Value* vp) {
   for (uint64_t i = 0, half = len / 2; i < half; i++) {
     bool hole, hole2;
     if (!CheckForInterrupt(cx) ||
-        !HasAndGetElement(cx, obj, i, &hole, &lowval) ||
-        !HasAndGetElement(cx, obj, len - i - 1, &hole2, &hival)) {
+        !::HasAndGetElement(cx, obj, i, &hole, &lowval) ||
+        !::HasAndGetElement(cx, obj, len - i - 1, &hole2, &hival)) {
       return false;
     }
 
@@ -2211,7 +2220,7 @@ static bool ArraySortWithoutComparator(JSContext* cx, Handle<JSObject*> obj,
         }
 
         bool hole;
-        if (!HasAndGetElement(cx, obj, i, &hole, &v)) {
+        if (!::HasAndGetElement(cx, obj, i, &hole, &v)) {
           return false;
         }
         if (hole) {
@@ -2388,7 +2397,7 @@ static MOZ_ALWAYS_INLINE bool ArraySortPrologue(JSContext* cx,
       }
 
       bool hole;
-      if (!HasAndGetElement(cx, obj, i, &hole, &v)) {
+      if (!::HasAndGetElement(cx, obj, i, &hole, &v)) {
         return false;
       }
       if (hole) {
@@ -2504,7 +2513,7 @@ bool js::array_sort(JSContext* cx, unsigned argc, Value* vp) {
         return true;
 
       case ArraySortResult::CallJS:
-      case ArraySortResult::CallJSSameRealmNoRectifier:
+      case ArraySortResult::CallJSSameRealmNoUnderflow:
         MOZ_ASSERT(data.get().comparatorThisValue().isUndefined());
         MOZ_ASSERT(&args[0].toObject() == data.get().comparator());
         callArgs[0].set(data.get().comparatorArg(0));
@@ -2798,7 +2807,7 @@ static bool array_shift(JSContext* cx, unsigned argc, Value* vp) {
       return false;
     }
     bool hole;
-    if (!HasAndGetElement(cx, obj, i + 1, &hole, &value)) {
+    if (!::HasAndGetElement(cx, obj, i + 1, &hole, &value)) {
       return false;
     }
     if (hole) {
@@ -2901,7 +2910,7 @@ static bool array_unshift(JSContext* cx, unsigned argc, Value* vp) {
             return false;
           }
           bool hole;
-          if (!HasAndGetElement(cx, obj, last, &hole, &value)) {
+          if (!::HasAndGetElement(cx, obj, last, &hole, &value)) {
             return false;
           }
           if (hole) {
@@ -3040,7 +3049,7 @@ static bool CopyArrayElements(JSContext* cx, HandleObject obj, uint64_t begin,
     for (; index < limit; index++) {
       bool hole;
       if (!CheckForInterrupt(cx) ||
-          !HasAndGetElement(cx, obj, begin + index, &hole, &value)) {
+          !::HasAndGetElement(cx, obj, begin + index, &hole, &value)) {
         return false;
       }
 
@@ -3068,7 +3077,7 @@ static bool CopyArrayElements(JSContext* cx, HandleObject obj, uint64_t begin,
   for (uint64_t i = startIndex; i < count; i++) {
     bool hole;
     if (!CheckForInterrupt(cx) ||
-        !HasAndGetElement(cx, obj, begin + i, &hole, &value)) {
+        !::HasAndGetElement(cx, obj, begin + i, &hole, &value)) {
       return false;
     }
 
@@ -3082,32 +3091,8 @@ static bool CopyArrayElements(JSContext* cx, HandleObject obj, uint64_t begin,
 // Helpers for array_splice_impl() and array_to_spliced()
 //
 // Initialize variables common to splice() and toSpliced():
-// - GetActualStart() returns the index at which to start deleting elements.
 // - GetItemCount() returns the number of new elements being added.
 // - GetActualDeleteCount() returns the number of elements being deleted.
-static bool GetActualStart(JSContext* cx, HandleValue start, uint64_t len,
-                           uint64_t* result) {
-  MOZ_ASSERT(len < DOUBLE_INTEGRAL_PRECISION_LIMIT);
-
-  // Steps from proposal: https://github.com/tc39/proposal-change-array-by-copy
-  // Array.prototype.toSpliced()
-
-  // Step 3. Let relativeStart be ? ToIntegerOrInfinity(start).
-  double relativeStart;
-  if (!ToInteger(cx, start, &relativeStart)) {
-    return false;
-  }
-
-  // Steps 4-5. If relativeStart is -∞, let actualStart be 0.
-  // Else if relativeStart < 0, let actualStart be max(len + relativeStart, 0).
-  if (relativeStart < 0) {
-    *result = uint64_t(std::max(double(len) + relativeStart, 0.0));
-  } else {
-    // Step 6. Else, let actualStart be min(relativeStart, len).
-    *result = uint64_t(std::min(relativeStart, double(len)));
-  }
-  return true;
-}
 
 static uint32_t GetItemCount(const CallArgs& args) {
   if (args.length() < 2) {
@@ -3123,9 +3108,6 @@ static bool GetActualDeleteCount(JSContext* cx, const CallArgs& args,
   MOZ_ASSERT(len < DOUBLE_INTEGRAL_PRECISION_LIMIT);
   MOZ_ASSERT(actualStart <= len);
   MOZ_ASSERT(insertCount == GetItemCount(args));
-
-  // Steps from proposal: https://github.com/tc39/proposal-change-array-by-copy
-  // Array.prototype.toSpliced()
 
   if (args.length() < 1) {
     // Step 8. If start is not present, then let actualDeleteCount be 0.
@@ -3181,10 +3163,13 @@ static bool array_splice_impl(JSContext* cx, unsigned argc, Value* vp,
   /* Steps 3-6. */
   /* actualStart is the index after which elements will be
      deleted and/or new elements will be added */
-  uint64_t actualStart;
-  if (!GetActualStart(cx, args.get(0), len, &actualStart)) {
-    return false;
+  uint64_t actualStart = 0;
+  if (args.hasDefined(0)) {
+    if (!ToIntegerIndex(cx, args[0], len, &actualStart)) {
+      return false;
+    }
   }
+  MOZ_ASSERT(actualStart <= len);
 
   /* Steps 7-10.*/
   /* itemCount is the number of elements being added */
@@ -3247,7 +3232,7 @@ static bool array_splice_impl(JSContext* cx, unsigned argc, Value* vp,
 
       /* Steps 13.b, 13.c.i. */
       bool hole;
-      if (!HasAndGetElement(cx, obj, actualStart + k, &hole, &fromValue)) {
+      if (!::HasAndGetElement(cx, obj, actualStart + k, &hole, &fromValue)) {
         return false;
       }
 
@@ -3309,7 +3294,7 @@ static bool array_splice_impl(JSContext* cx, unsigned argc, Value* vp,
 
         /* Steps 16.b.iii-v */
         bool hole;
-        if (!HasAndGetElement(cx, obj, from, &hole, &fromValue)) {
+        if (!::HasAndGetElement(cx, obj, from, &hole, &fromValue)) {
           return false;
         }
 
@@ -3408,7 +3393,7 @@ static bool array_splice_impl(JSContext* cx, unsigned argc, Value* vp,
 
         /* Steps 17.b.iii, 17.b.iv.1. */
         bool hole;
-        if (!HasAndGetElement(cx, obj, from, &hole, &fromValue)) {
+        if (!::HasAndGetElement(cx, obj, from, &hole, &fromValue)) {
           return false;
         }
 
@@ -3498,8 +3483,8 @@ static void CopyDenseElementsFillHoles(ArrayObject* arr, NativeObject* nobj,
   MOZ_ASSERT(arr->denseElementsArePacked());
 }
 
-// https://github.com/tc39/proposal-change-array-by-copy
-// Array.prototype.toSpliced()
+// ES2026 draft rev a562082b031d89d00ee667181ce8a6158656bd4b
+// 23.1.3.35 Array.prototype.toSpliced ( start, skipCount, ...items )
 static bool array_toSpliced(JSContext* cx, unsigned argc, Value* vp) {
   AutoJSMethodProfilerEntry pseudoFrame(cx, "Array.prototype", "toSpliced");
   CallArgs args = CallArgsFromVp(argc, vp);
@@ -3519,9 +3504,11 @@ static bool array_toSpliced(JSContext* cx, unsigned argc, Value* vp) {
   // Steps 3-6.
   // |actualStart| is the index after which elements will be deleted and/or
   // new elements will be added
-  uint64_t actualStart;
-  if (!GetActualStart(cx, args.get(0), len, &actualStart)) {
-    return false;
+  uint64_t actualStart = 0;
+  if (args.hasDefined(0)) {
+    if (!ToIntegerIndex(cx, args[0], len, &actualStart)) {
+      return false;
+    }
   }
   MOZ_ASSERT(actualStart <= len);
 
@@ -3762,8 +3749,8 @@ static bool array_toSpliced(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
-// https://github.com/tc39/proposal-change-array-by-copy
-// Array.prototype.with()
+// ES2026 draft rev a562082b031d89d00ee667181ce8a6158656bd4b
+// Array.prototype.with ( index, value )
 static bool array_with(JSContext* cx, unsigned argc, Value* vp) {
   AutoJSMethodProfilerEntry pseudoFrame(cx, "Array.prototype", "with");
   CallArgs args = CallArgsFromVp(argc, vp);
@@ -3783,7 +3770,6 @@ static bool array_with(JSContext* cx, unsigned argc, Value* vp) {
   // Step 3. Let relativeIndex be ? ToIntegerOrInfinity(index).
   double relativeIndex;
   if (!ToInteger(cx, args.get(0), &relativeIndex)) {
-    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr, JSMSG_BAD_INDEX);
     return false;
   }
 
@@ -4006,7 +3992,7 @@ static bool SliceSparse(JSContext* cx, HandleObject obj, uint64_t begin,
     MOZ_ASSERT(begin <= index && index < end);
 
     bool hole;
-    if (!HasAndGetElement(cx, obj, index, &hole, &value)) {
+    if (!::HasAndGetElement(cx, obj, index, &hole, &value)) {
       return false;
     }
 
@@ -4036,19 +4022,6 @@ static JSObject* SliceArguments(JSContext* cx, Handle<ArgumentsObject*> argsobj,
     result->initDenseElement(index, v);
   }
   return result;
-}
-
-template <typename T, typename ArrayLength>
-static inline ArrayLength NormalizeSliceTerm(T value, ArrayLength length) {
-  if (value < 0) {
-    value += length;
-    if (value < 0) {
-      return 0;
-    }
-  } else if (double(value) > double(length)) {
-    return length;
-  }
-  return ArrayLength(value);
 }
 
 static bool ArraySliceOrdinary(JSContext* cx, HandleObject obj, uint64_t begin,
@@ -4141,26 +4114,19 @@ static bool array_slice(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
+  /* Steps 3-4. */
   uint64_t k = 0;
-  uint64_t final = length;
-  if (args.length() > 0) {
-    double d;
-    /* Step 3. */
-    if (!ToInteger(cx, args[0], &d)) {
+  if (args.hasDefined(0)) {
+    if (!ToIntegerIndex(cx, args[0], length, &k)) {
       return false;
     }
+  }
 
-    /* Step 4. */
-    k = NormalizeSliceTerm(d, length);
-
-    if (args.hasDefined(1)) {
-      /* Step 5. */
-      if (!ToInteger(cx, args[1], &d)) {
-        return false;
-      }
-
-      /* Step 6. */
-      final = NormalizeSliceTerm(d, length);
+  /* Steps 5-6. */
+  uint64_t final = length;
+  if (args.hasDefined(1)) {
+    if (!ToIntegerIndex(cx, args[1], length, &final)) {
+      return false;
     }
   }
 
@@ -4190,7 +4156,7 @@ static bool array_slice(JSContext* cx, unsigned argc, Value* vp) {
 
     /* Steps 10.a-b, and 10.c.i. */
     bool kNotPresent;
-    if (!HasAndGetElement(cx, obj, k, &kNotPresent, &kValue)) {
+    if (!::HasAndGetElement(cx, obj, k, &kNotPresent, &kValue)) {
       return false;
     }
 
@@ -4216,6 +4182,13 @@ static bool array_slice(JSContext* cx, unsigned argc, Value* vp) {
   /* Step 12. */
   args.rval().setObject(*arr);
   return true;
+}
+
+static inline uint32_t NormalizeSliceTerm(int32_t value, uint32_t length) {
+  if (value >= 0) {
+    return std::min(uint32_t(value), length);
+  }
+  return uint32_t(std::max(int32_t(uint32_t(value) + length), 0));
 }
 
 static bool ArraySliceDenseKernel(JSContext* cx, ArrayObject* arr,
@@ -4475,9 +4448,7 @@ static bool SearchElementDense(JSContext* cx, HandleValue val, Iter iterator,
   MOZ_ASSERT(val.isBigInt());
 
   // Generic implementation for the remaining types.
-  RootedValue elementRoot(cx);
-  auto cmp = [val, &elementRoot](JSContext* cx, const Value& element,
-                                 bool* equal) {
+  auto cmp = [val](JSContext* cx, const Value& element, bool* equal) {
     if (MOZ_UNLIKELY(element.isMagic(JS_ELEMENTS_HOLE))) {
       // |includes| treats holes as |undefined|, but |undefined| is already
       // handled above. For |indexOf| we have to ignore holes.
@@ -4488,14 +4459,13 @@ static bool SearchElementDense(JSContext* cx, HandleValue val, Iter iterator,
     // calls StrictlyEqual. Since we already handled NaN above, we can call
     // StrictlyEqual directly.
     MOZ_ASSERT(!val.isNumber());
-    elementRoot = element;
-    return StrictlyEqual(cx, val, elementRoot, equal);
+    return StrictlyEqual(cx, val, element, equal);
   };
   return iterator(cx, cmp, rval);
 }
 
-// ES2020 draft rev dc1e21c454bd316810be1c0e7af0131a2d7f38e9
-// 22.1.3.14 Array.prototype.indexOf ( searchElement [ , fromIndex ] )
+// ES2026 draft rev a562082b031d89d00ee667181ce8a6158656bd4b
+// 23.1.3.17 Array.prototype.indexOf ( searchElement [ , fromIndex ] )
 bool js::array_indexOf(JSContext* cx, unsigned argc, Value* vp) {
   AutoJSMethodProfilerEntry pseudoFrame(cx, "Array.prototype", "indexOf");
   CallArgs args = CallArgsFromVp(argc, vp);
@@ -4518,28 +4488,17 @@ bool js::array_indexOf(JSContext* cx, unsigned argc, Value* vp) {
     return true;
   }
 
-  // Steps 4-8.
+  // Steps 4-9.
   uint64_t k = 0;
-  if (args.length() > 1) {
-    double n;
-    if (!ToInteger(cx, args[1], &n)) {
+  if (args.hasDefined(1)) {
+    if (!ToIntegerIndex(cx, args[1], len, &k)) {
       return false;
     }
 
-    // Step 6.
-    if (n >= double(len)) {
+    // Return early if |k| exceeds the current length.
+    if (k >= len) {
       args.rval().setInt32(-1);
       return true;
-    }
-
-    // Steps 7-8.
-    if (n >= 0) {
-      k = uint64_t(n);
-    } else {
-      double d = double(len) + n;
-      if (d >= 0) {
-        k = uint64_t(d);
-      }
     }
   }
 
@@ -4547,7 +4506,7 @@ bool js::array_indexOf(JSContext* cx, unsigned argc, Value* vp) {
 
   HandleValue searchElement = args.get(0);
 
-  // Steps 9 and 10 optimized for dense elements.
+  // Step 10 optimized for dense elements.
   if (CanOptimizeForDenseStorage<ArrayAccess::Read>(obj, len)) {
     MOZ_ASSERT(len <= UINT32_MAX);
 
@@ -4591,7 +4550,7 @@ bool js::array_indexOf(JSContext* cx, unsigned argc, Value* vp) {
                                                    args.rval());
   }
 
-  // Step 9.
+  // Step 10.
   RootedValue v(cx);
   for (; k < len; k++) {
     if (!CheckForInterrupt(cx)) {
@@ -4599,7 +4558,7 @@ bool js::array_indexOf(JSContext* cx, unsigned argc, Value* vp) {
     }
 
     bool hole;
-    if (!HasAndGetElement(cx, obj, k, &hole, &v)) {
+    if (!::HasAndGetElement(cx, obj, k, &hole, &v)) {
       return false;
     }
     if (hole) {
@@ -4616,7 +4575,7 @@ bool js::array_indexOf(JSContext* cx, unsigned argc, Value* vp) {
     }
   }
 
-  // Step 10.
+  // Step 11.
   args.rval().setInt32(-1);
   return true;
 }
@@ -4713,7 +4672,7 @@ bool js::array_lastIndexOf(JSContext* cx, unsigned argc, Value* vp) {
     }
 
     bool hole;
-    if (!HasAndGetElement(cx, obj, uint64_t(i), &hole, &v)) {
+    if (!::HasAndGetElement(cx, obj, uint64_t(i), &hole, &v)) {
       return false;
     }
     if (hole) {
@@ -4735,8 +4694,8 @@ bool js::array_lastIndexOf(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
-// ES2020 draft rev dc1e21c454bd316810be1c0e7af0131a2d7f38e9
-// 22.1.3.13 Array.prototype.includes ( searchElement [ , fromIndex ] )
+// ES2026 draft rev a562082b031d89d00ee667181ce8a6158656bd4b
+// 23.1.3.16 Array.prototype.includes ( searchElement [ , fromIndex ] )
 bool js::array_includes(JSContext* cx, unsigned argc, Value* vp) {
   AutoJSMethodProfilerEntry pseudoFrame(cx, "Array.prototype", "includes");
   CallArgs args = CallArgsFromVp(argc, vp);
@@ -4759,27 +4718,17 @@ bool js::array_includes(JSContext* cx, unsigned argc, Value* vp) {
     return true;
   }
 
-  // Steps 4-7.
+  // Steps 4-9.
   uint64_t k = 0;
-  if (args.length() > 1) {
-    double n;
-    if (!ToInteger(cx, args[1], &n)) {
+  if (args.hasDefined(1)) {
+    if (!ToIntegerIndex(cx, args[1], len, &k)) {
       return false;
     }
 
-    if (n >= double(len)) {
+    // Return early if |k| exceeds the current length.
+    if (k >= len) {
       args.rval().setBoolean(false);
       return true;
-    }
-
-    // Steps 6-7.
-    if (n >= 0) {
-      k = uint64_t(n);
-    } else {
-      double d = double(len) + n;
-      if (d >= 0) {
-        k = uint64_t(d);
-      }
     }
   }
 
@@ -4787,7 +4736,7 @@ bool js::array_includes(JSContext* cx, unsigned argc, Value* vp) {
 
   HandleValue searchElement = args.get(0);
 
-  // Steps 8 and 9 optimized for dense elements.
+  // Step 10 optimized for dense elements.
   if (CanOptimizeForDenseStorage<ArrayAccess::Read>(obj, len)) {
     MOZ_ASSERT(len <= UINT32_MAX);
 
@@ -4836,7 +4785,7 @@ bool js::array_includes(JSContext* cx, unsigned argc, Value* vp) {
                                                     args.rval());
   }
 
-  // Step 8.
+  // Step 10.
   RootedValue v(cx);
   for (; k < len; k++) {
     if (!CheckForInterrupt(cx)) {
@@ -4857,7 +4806,7 @@ bool js::array_includes(JSContext* cx, unsigned argc, Value* vp) {
     }
   }
 
-  // Step 9.
+  // Step 11.
   args.rval().setBoolean(false);
   return true;
 }
@@ -5111,7 +5060,7 @@ static bool array_concat(JSContext* cx, unsigned argc, Value* vp) {
 
           // Step 5.b.iv.2.
           bool hole;
-          if (!HasAndGetElement(cx, obj, k, &hole, &v)) {
+          if (!::HasAndGetElement(cx, obj, k, &hole, &v)) {
             return false;
           }
           if (!hole) {
@@ -5211,7 +5160,6 @@ static const JSFunctionSpec array_methods[] = {
     JS_SELF_HOSTED_FN("flatMap", "ArrayFlatMap", 1, 0),
     JS_SELF_HOSTED_FN("flat", "ArrayFlat", 0, 0),
 
-    /* Proposal */
     JS_SELF_HOSTED_FN("at", "ArrayAt", 1, 0),
     JS_SELF_HOSTED_FN("findLast", "ArrayFindLast", 1, 0),
     JS_SELF_HOSTED_FN("findLastIndex", "ArrayFindLastIndex", 1, 0),
@@ -5457,7 +5405,7 @@ static JSObject* CreateArrayConstructor(JSContext* cx, JSProtoKey key) {
   if (!ctor) {
     return nullptr;
   }
-  if (!JSObject::setHasFuseProperty(cx, ctor)) {
+  if (!JSObject::setHasRealmFuseProperty(cx, ctor)) {
     return nullptr;
   }
   return ctor;
@@ -5504,8 +5452,9 @@ static bool array_proto_finish(JSContext* cx, JS::HandleObject ctor,
     return false;
   }
 
-  // Mark Array prototype as having fuse property (@iterator for example).
-  return JSObject::setHasFuseProperty(cx, proto);
+  // Mark Array prototype as having a RealmFuse property (@iterator for
+  // example).
+  return JSObject::setHasRealmFuseProperty(cx, proto);
 }
 
 static const JSClassOps ArrayObjectClassOps = {
@@ -5581,16 +5530,16 @@ ArrayObject* js::NewDenseCopiedArray(
   return arr;
 }
 
-// values must point at already-rooted Value objects
+// strings in props must point at already-rooted strings
 ArrayObject* js::NewDenseCopiedArray(
-    JSContext* cx, uint32_t length, JSLinearString** values,
+    JSContext* cx, uint32_t length, IteratorProperty* props,
     NewObjectKind newKind /* = GenericObject */) {
   ArrayObject* arr = NewArray<UINT32_MAX>(cx, length, newKind);
   if (!arr) {
     return nullptr;
   }
 
-  arr->initDenseElements(values, length);
+  arr->initDenseElements(props, length);
   return arr;
 }
 

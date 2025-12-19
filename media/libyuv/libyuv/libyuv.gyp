@@ -29,7 +29,6 @@
     'mips_msa%': 0,  # Default to msa off.
     'build_neon': 0,
     'build_msa': 0,
-    'build_lsx': 0,
     'conditions': [
        ['(target_arch == "armv7" or target_arch == "armv7s" or \
        (target_arch == "arm" and arm_version >= 7) or target_arch == "arm64")\
@@ -89,15 +88,6 @@
             'LIBYUV_MSA',
           ],
         }],
-        ['build_lsx == 0', {
-          'conditions': [
-            ['target_arch == "loongarch64"', {
-              'cflags_mozilla': [
-                '-mno-lsx',
-              ],
-            }],
-          ],
-        }],
         ['build_with_mozilla == 1', {
           'defines': [
             'HAVE_JPEG'
@@ -130,13 +120,17 @@
             }],
           ],
         }],
+        ['target_arch == "arm64" and moz_have_arm_sve2 != 1 and build_with_mozilla == 1', {
+          'defines' :[
+            'LIBYUV_DISABLE_SVE',
+          ]
+        }],
       ], #conditions
       'defines': [
         'LIBYUV_DISABLE_SME',
         # Enable the following 3 macros to turn off assembly for specified CPU.
         # 'LIBYUV_DISABLE_X86',
         # 'LIBYUV_DISABLE_NEON',
-        # 'LIBYUV_DISABLE_DSPR2',
         # Enable the following macro to build libyuv as a shared library (dll).
         # 'LIBYUV_USING_SHARED_LIBRARY',
         # TODO(fbarchard): Make these into gyp defines.
@@ -170,17 +164,6 @@
             'dependencies': [
                  ':libyuv_sve',
             ],
-            'defines' :[
-              'LIBYUV_SVE',
-            ]
-          }],
-          ['target_arch == "arm64" and moz_have_arm_sve2 == 1 and build_with_mozilla == 1', {
-            'dependencies': [
-                 ':libyuv_sve',
-            ],
-            'defines' :[
-              'LIBYUV_SVE',
-            ]
           }],
         ], #conditions
       },

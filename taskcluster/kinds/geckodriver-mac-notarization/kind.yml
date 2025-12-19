@@ -14,6 +14,9 @@ transforms:
 kind-dependencies:
     - geckodriver-signing
 
+task-defaults:
+    run-on-repo-type: [hg]
+
 only-for-build-platforms:
     - macosx64-geckodriver/opt
     - macosx64-aarch64-geckodriver/opt
@@ -26,8 +29,7 @@ tasks:
         treeherder:
             symbol: TM(gd-n)
         worker:
-            implementation: scriptworker-signing
-            max-run-time: 3600
+            implementation: iscript
             upstream-artifacts:
                 - taskType: signing
                   paths:

@@ -12,10 +12,12 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/webrender/WebRenderAPI.h"
+#include "mozilla/layout/StickyScrollContainer.h"
 
 namespace mozilla {
 
 class nsDisplayItem;
+class nsDisplayStickyPosition;
 struct ActiveScrolledRoot;
 struct DisplayItemClipChain;
 
@@ -69,10 +71,16 @@ class ClipManager {
 
  private:
   wr::WrSpatialId SpatialIdAfterOverride(const wr::WrSpatialId& aSpatialId);
-  wr::WrSpatialId GetScrollLayer(const ActiveScrolledRoot* aASR);
+  wr::WrSpatialId GetSpatialId(const ActiveScrolledRoot* aASR);
 
-  Maybe<wr::WrSpatialId> DefineScrollLayers(const ActiveScrolledRoot* aASR,
+  static StickyScrollContainer* GetStickyScrollContainer(
+      const ActiveScrolledRoot* aASR);
+  Maybe<wr::WrSpatialId> DefineSpatialNodes(nsDisplayListBuilder* aBuilder,
+                                            const ActiveScrolledRoot* aASR,
                                             nsDisplayItem* aItem);
+  Maybe<wr::WrSpatialId> DefineStickyNode(
+      nsDisplayListBuilder* aBuilder, Maybe<wr::WrSpatialId> aParentSpatialId,
+      const ActiveScrolledRoot* aASR, nsDisplayItem* aItem);
 
   Maybe<wr::WrClipChainId> DefineClipChain(const DisplayItemClipChain* aChain,
                                            int32_t aAppUnitsPerDevPixel);
@@ -92,8 +100,11 @@ class ClipManager {
   // general we need to do this anytime PushOverrideForASR is called, as that is
   // called for the same set of conditions for which we cannot deduplicate
   // clips.
-  using ClipIdMap = std::unordered_map<const DisplayItemClipChain*,
-                                       AutoTArray<wr::WrClipId, 4>>;
+  struct ClipChainCacheEntry {
+    Maybe<wr::WrClipChainId> mWrChainID;
+  };
+  using ClipIdMap =
+      std::unordered_map<const DisplayItemClipChain*, ClipChainCacheEntry>;
   std::stack<ClipIdMap> mCacheStack;
 
   // A map that holds the cache overrides created by (a) "out of band" clips,

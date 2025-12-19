@@ -2,10 +2,10 @@
 
 ChromeUtils.defineESModuleGetters(this, {
   ASRouter: "resource:///modules/asrouter/ASRouter.sys.mjs",
-  DoHConfigController: "resource://gre/modules/DoHConfig.sys.mjs",
-  DoHController: "resource://gre/modules/DoHController.sys.mjs",
+  DoHConfigController: "moz-src:///toolkit/components/doh/DoHConfig.sys.mjs",
+  DoHController: "moz-src:///toolkit/components/doh/DoHController.sys.mjs",
   DoHTestUtils: "resource://testing-common/DoHTestUtils.sys.mjs",
-  Heuristics: "resource://gre/modules/DoHHeuristics.sys.mjs",
+  Heuristics: "moz-src:///toolkit/components/doh/DoHHeuristics.sys.mjs",
   Preferences: "resource://gre/modules/Preferences.sys.mjs",
   Region: "resource://gre/modules/Region.sys.mjs",
   RegionTestUtils: "resource://testing-common/RegionTestUtils.sys.mjs",
@@ -17,7 +17,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "gDNSOverride",
   "@mozilla.org/network/native-dns-override;1",
-  "nsINativeDNSResolverOverride"
+  Ci.nsINativeDNSResolverOverride
 );
 
 const { CommonUtils } = ChromeUtils.importESModule(
@@ -118,10 +118,15 @@ async function setup() {
   // Zscaler override
   gDNSOverride.addIPOverride("sitereview.zscaler.com.", "3.1.1.1");
 
+  // Helper domains when checking the canary
+  gDNSOverride.addIPOverride("firefox.com.", "9.8.7.6");
+  gDNSOverride.addIPOverride("mozilla.org.", "8.7.6.5");
   // Global canary
   gDNSOverride.addIPOverride("use-application-dns.net.", "4.1.1.1");
 
   await DoHTestUtils.resetRemoteSettingsConfig(false);
+
+  Services.telemetry.clearEvents();
 
   await DoHConfigController.init();
   await DoHController.init();

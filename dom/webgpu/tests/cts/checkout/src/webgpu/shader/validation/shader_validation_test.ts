@@ -9,6 +9,7 @@ const kEnables: Record<string, GPUFeatureName> = {
   f16: 'shader-f16',
   subgroups: 'subgroups' as GPUFeatureName,
   clip_distances: 'clip-distances' as GPUFeatureName,
+  chromium_experimental_primitive_id: 'chromium-experimental-primitive-id' as GPUFeatureName,
 };
 
 /**
@@ -168,6 +169,7 @@ export class ShaderValidationTest extends AllFeaturesMaxLimitsGPUTest {
     statements?: string[];
     // Skip tests when WGSL code has 'enable X' and feature for 'X' is not available on device
     autoSkipIfFeatureNotAvailable?: boolean; // defaults to true. You must set to false to turn this off.
+    addWorkgroupSize?: boolean; // defaults to true. You must set to false to turn this off.
   }) {
     const phonies: Array<string> = [];
 
@@ -183,9 +185,12 @@ export class ShaderValidationTest extends AllFeaturesMaxLimitsGPUTest {
 
     const code =
       args.code +
+      (args.addWorkgroupSize !== false
+        ? `
+@workgroup_size(1)`
+        : ``) +
       `
-@compute @workgroup_size(1)
-fn main() {
+      @compute fn main() {
   ${phonies.join('\n')}
 }`;
 

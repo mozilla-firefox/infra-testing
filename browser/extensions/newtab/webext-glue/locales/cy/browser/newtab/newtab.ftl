@@ -8,6 +8,9 @@
 newtab-page-title = Tab Newydd
 newtab-settings-button =
     .title = Cyfaddasu eich tudalen Tab Newydd
+newtab-customize-panel-icon-button =
+    .title = Cyfaddasu’r dudalen hon
+newtab-customize-panel-icon-button-label = Cyfaddasu
 newtab-personalize-settings-icon-label =
     .title = Personoli Tab Newydd
     .aria-label = Gosodiadau
@@ -53,6 +56,9 @@ newtab-topsites-add-shortcut-header = Llwybr Byr Newydd
 newtab-topsites-edit-topsites-header = Golygu'r Hoff Wefan
 newtab-topsites-edit-shortcut-header = Golygu Llwybr Byr
 newtab-topsites-add-shortcut-label = Ychwanegu Llwybr Byr
+newtab-topsites-add-shortcut-title =
+    .title = Ychwanegu Llwybr Byr
+    .aria-label = Ychwanegu Llwybr Byr
 newtab-topsites-title-label = Teitl
 newtab-topsites-title-input =
     .placeholder = Rhoi teitl
@@ -81,6 +87,14 @@ newtab-confirm-delete-history-p2 = Nid oes modd dadwneud y weithred hon.
 ## Top Sites - Sponsored label
 
 newtab-topsite-sponsored = Noddwyd
+
+## Label used by screen readers for pinned top sites
+
+# Variables:
+#   $title (string) - The label or hostname of the site.
+topsite-label-pinned =
+    .aria-label = { $title } piniwyd
+    .title = { $title }
 
 ## Context Menu - Action Tooltips.
 
@@ -117,7 +131,8 @@ newtab-menu-delete-pocket = Dileu o { -pocket-brand-name }
 newtab-menu-archive-pocket = Archifo i { -pocket-brand-name }
 newtab-menu-show-privacy-info = Ein noddwyr a'ch preifatrwydd
 newtab-menu-about-fakespot = Ynghylch { -fakespot-brand-name }
-newtab-menu-report-content = Adrodd am y cynnwys hwn
+# Report is a verb (i.e. report issue with the content).
+newtab-menu-report = Adrodd
 # Context menu option to personalize New Tab recommended stories by blocking a section of stories,
 # e.g. "Sports". "Block" is a verb here.
 newtab-menu-section-block = Rhwystro
@@ -192,6 +207,8 @@ newtab-label-sponsored-by = Noddir gan { $sponsor }
 #   $source (string) - The name of a company or their domain
 #   $timeToRead (number) - The estimated number of minutes to read this story
 newtab-label-source-read-time = { $source } · { $timeToRead } mun
+# This string is used under fixed size ads to indicate sponsored content
+newtab-label-sponsored-fixed = Noddwyd
 
 ## Section Menu: These strings are displayed in the section context menu and are
 ## meant as a call to action for the given section.
@@ -254,9 +271,6 @@ newtab-pocket-learn-more = Darllen rhagor
 newtab-pocket-cta-button = Defnyddio { -pocket-brand-name }
 newtab-pocket-cta-text = Cadw'r straeon rydych yn eu hoffi i { -pocket-brand-name } a bwydo'ch meddwl á deunydd diddorol.
 newtab-pocket-pocket-firefox-family = Mae { -pocket-brand-name } yn rhan o deulu { -brand-product-name }
-# A save to Pocket button that shows over the card thumbnail on hover.
-newtab-pocket-image =
-    .aria-label = { -pocket-brand-name }
 newtab-pocket-save = Cadw
 newtab-pocket-saved = Wedi'u Cadw
 
@@ -310,16 +324,32 @@ newtab-custom-pocket-subtitle = Cynnwys eithriadol wedi'i guradu gan { -pocket-b
 newtab-custom-stories-toggle =
     .label = Straeon cymeradwy
     .description = Cynnwys eithriadol wedi'i gasglu gan deulu { -brand-product-name }
+newtab-custom-stories-personalized-toggle =
+    .label = Straeon
+newtab-custom-stories-personalized-checkbox-label = Straeon personol ar sail eich gweithgaredd
 newtab-custom-pocket-sponsored = Straeon wedi'u noddi
 newtab-custom-pocket-show-recent-saves = Dangos pethau gadwyd yn ddiweddar
 newtab-custom-recent-title = Gweithgaredd diweddar
 newtab-custom-recent-subtitle = Detholiad o wefannau a chynnwys diweddar
-newtab-custom-recent-toggle =
-    .label = Gweithgaredd diweddar
-    .description = Detholiad o wefannau a chynnwys diweddar
 newtab-custom-weather-toggle =
     .label = Y Tywydd
     .description = Cipolwg ar ragolygon tywydd heddiw
+newtab-custom-trending-search-toggle =
+    .label = Tueddiadau chwilio
+    .description = Pynciau chwilio aml a phoblogaidd
+newtab-custom-widget-weather-toggle =
+    .label = Y Tywydd
+newtab-custom-widget-trending-search-toggle =
+    .label = Tueddiadau chwilio
+newtab-custom-widget-lists-toggle =
+    .label = Rhestrau
+newtab-custom-widget-timer-toggle =
+    .label = Amserydd
+newtab-custom-widget-section-title = Teclynnau
+# Tooltip for close button
+newtab-custom-close-menu-button =
+    .title = Cau
+    .aria-label = Cau'r ddewislen
 newtab-custom-close-button = Cau
 newtab-custom-settings = Rheoli rhagor o osodiadau
 
@@ -332,6 +362,7 @@ newtab-wallpaper-custom-color = Dewis lliw
 # Variables
 #   $file_size (number) - The number of the maximum image file size (in MB) that may be uploaded
 newtab-wallpaper-error-max-file-size = Mae'r ddelwedd yn fwy na'r terfyn maint ffeil { $file_size }MB. Ceisiwch lwytho ffeil lai.
+newtab-wallpaper-error-upload-file-type = Does dim modd i ni lwytho'ch ffeil. Ceisiwch eto gyda gwahanol fathau o ffeil.
 newtab-wallpaper-error-file-type = Nid oes modd i ni lwytho'ch ffeil. Ceisiwch eto gyda gwahanol fathau o ffeil.
 newtab-wallpaper-light-red-panda = Panda coch
 newtab-wallpaper-light-mountain = Mynydd gwyn
@@ -381,7 +412,7 @@ newtab-wallpaper-abstract-purple-green = Graddiant golau porffor a gwyrdd
 newtab-wallpaper-abstract-blue-purple-waves = Siapiau tonnog glas a phorffor
 newtab-wallpaper-abstract-black-waves = Siapiau tonnog du
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Ffotograffau
 newtab-wallpaper-beach-at-sunrise = Traeth ar godiad haul
@@ -396,7 +427,6 @@ newtab-wallpaper-suspension-bridge = Ffotograffau pont crog llwyd yn ystod y dyd
 newtab-wallpaper-sand-dunes = Twyni tywod gwyn
 newtab-wallpaper-palm-trees = Amlinell coed palmwydd cnau coco yn yr awr euraidd
 newtab-wallpaper-blue-flowers = Ffotograffiaeth agos o flodau petalau glas yn eu blodau
-newtab-wallpaper-forest-trees = Coed wedi'u gorchuddio â niwl
 # Variables
 #   $author_string (String) - The name of the creator of the photo.
 #   $webpage_string (String) - The name of the webpage where the photo is located.
@@ -411,6 +441,10 @@ feature-highlight-dismiss-button =
 feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
+
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
 
 ## Celestial
 
@@ -438,7 +472,6 @@ newtab-weather-menu-change-location = Newid lleoliad
 newtab-weather-change-location-search-input-placeholder =
     .placeholder = Chwilio am leoliad
     .aria-label = Chwilio am leoliad
-newtab-weather-change-location-search-input = Chwilio am leoliad
 newtab-weather-menu-weather-display = Dangos y tywydd
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
@@ -454,8 +487,16 @@ newtab-weather-menu-change-temperature-units-fahrenheit = Newid i Fahrenheit
 newtab-weather-menu-change-temperature-units-celsius = Newid i Celsius
 newtab-weather-menu-hide-weather = Cuddio'r tywydd ar Dab Newydd
 newtab-weather-menu-learn-more = Rhagor
+newtab-weather-menu-detect-my-location = Canfod fy lleoliad
 # This message is shown if user is working offline
 newtab-weather-error-not-available = Nid yw data tywydd ar gael ar hyn o bryd.
+newtab-weather-opt-in-see-weather = Hoffech chi weld weld tywydd eich lleoliad?
+newtab-weather-opt-in-not-now =
+    .label = Nid nawr
+newtab-weather-opt-in-yes =
+    .label = Iawn
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = Dinas Efrog Newydd
 
 ## Topic Labels
 
@@ -504,6 +545,9 @@ newtab-topic-selection-button-pick-interests = Dewiswch eich diddordebau
 newtab-section-follow-button = Dilyn
 newtab-section-following-button = Yn dilyn
 newtab-section-unfollow-button = Dad-ddilyn
+# A modal may appear next to the Follow button, directing users to try out the feature
+newtab-section-follow-highlight-title = Mireinio'ch ffrwd
+newtab-section-follow-highlight-subtitle = Dilynwch eich diddordebau i weld mwy o'r hyn rydych yn ei hoffi.
 
 ## Button to block/unblock listed topics
 ## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
@@ -522,7 +566,7 @@ newtab-section-confirm-block-topic-p2 = Ni fydd pynciau sydd wedi'u rhwystro yn 
 #   $topic (string) - Name of topic that user is blocking
 newtab-section-block-topic-button = Rhwystro { $topic }
 
-## Panel in the Customize menu section to manage followed and blocked topics
+## Strings for custom wallpaper highlight
 
 newtab-section-mangage-topics-title = Pynciau
 newtab-section-manage-topics-button-v2 =
@@ -535,3 +579,139 @@ newtab-custom-wallpaper-title = Mae papurau wal cyfaddas yma
 # 'Make firefox yours" means to customize or personalize
 newtab-custom-wallpaper-subtitle = Llwythwch i fyny eich papur wal eich hun neu dewiswch liw cyfaddas i wneud { -brand-product-name } deimlo'n gartrefol.
 newtab-custom-wallpaper-cta = Rhowch gynnig arni
+
+## Strings for new user activation custom wallpaper highlight
+
+newtab-new-user-custom-wallpaper-title = Dewiswch bapur wal i wneud { -brand-product-name } eich un chi
+newtab-new-user-custom-wallpaper-subtitle = Gwnewch i bob tab newydd deimlo fel adref gyda phapurau wal a lliwiau cyfaddas.
+newtab-new-user-custom-wallpaper-cta = Rhowch gynnig arno
+
+## Strings for download mobile highlight
+
+newtab-download-mobile-highlight-title = Llwytho { -brand-product-name } symudol i lawr
+# "Scan the code" refers to scanning the QR code that appears above the body text that leads to Firefox for mobile download.
+newtab-download-mobile-highlight-body-variant-a = Sganiwch y cod i bori'n ddiogel wrth fynd.
+newtab-download-mobile-highlight-body-variant-b = Codwch lle gwnaethoch chi adael pan fyddwch chi'n cydweddu'ch tabiau, cyfrineiriau, a mwy.
+newtab-download-mobile-highlight-body-variant-c = Oeddech chi'n gwybod y gallwch chi gymryd { -brand-product-name } wrth fynd? Yr un porwr. Yn eich poced.
+newtab-download-mobile-highlight-image =
+    .aria-label = Cod QR i lwytho { -brand-product-name } i lawr ar gyfer ffôn symudol
+
+## Strings for shortcuts highlight
+
+newtab-shortcuts-highlight-title = Eich ffefrynnau ar flaenau eich bysedd
+newtab-shortcuts-highlight-subtitle = Ychwanegwch lwybr byr i gadw'ch hoff wefannau un clic i ffwrdd.
+
+## Strings for reporting ads and content
+
+newtab-report-content-why-reporting-this =
+    .label = Pam ydych chi'n adrodd ar hyn?
+newtab-report-ads-reason-not-interested =
+    .label = Does gen i ddim diddordeb
+newtab-report-ads-reason-inappropriate =
+    .label = Mae'n amhriodol
+newtab-report-ads-reason-seen-it-too-many-times =
+    .label = Rwyf wedi ei weld ormod o weithiau
+newtab-report-content-wrong-category =
+    .label = Categori anghywir
+newtab-report-content-outdated =
+    .label = Wedi dyddio
+newtab-report-content-inappropriate-offensive =
+    .label = Anaddas neu sarhaus
+newtab-report-content-spam-misleading =
+    .label = Sbam neu gamarweiniol
+newtab-report-cancel = Diddymu
+newtab-report-submit = Cyflwyno
+newtab-toast-thanks-for-reporting =
+    .message = Diolch am adrodd ar hwn.
+
+## Strings for trending searches
+
+newtab-trending-searches-show-trending =
+    .title = Dangos y tuedd chwilio
+newtab-trending-searches-hide-trending =
+    .title = Cuddio'r tuedd chwilio
+newtab-trending-searches-learn-more = Dysgu rhagor
+newtab-trending-searches-dismiss = Cuddio'r tuedd chwilio
+# "Trending searches refers to popular searches from search engines
+newtab-trending-searches-title = Tueddiadau chwilio
+
+## Strings for task / to-do list productivity widget
+
+# "Add one" means adding a new task to the list (e.g., "Walk the dog")
+newtab-widget-lists-empty-cta = Mae'r posibiliadau'n ddiddiwedd. Ychwanegwch un.
+# A simple label next to the default list name letting users know this is a new / beta feature
+newtab-widget-lists-label-new =
+    .label = Newydd
+newtab-widget-lists-label-beta =
+    .label = Beta
+# When tasks have been previous marked as complete, they will appear in their own separate list beneath incomplete items
+# Variables:
+#   $number (number) - Amount of list items marked complete
+newtab-widget-lists-completed-list = Wedi cwblhau ( { $number })
+newtab-widget-task-list-menu-copy = Copïo
+newtab-widget-lists-menu-edit = Golygu enw'r rhestr
+newtab-widget-lists-menu-create = Creu rhestr newydd
+newtab-widget-lists-menu-delete = Dileu'r rhestr hon
+newtab-widget-lists-menu-copy = Copïo'r rhestr i'r clipfwrdd
+newtab-widget-lists-menu-hide = Cuddio pob rhestr
+newtab-widget-lists-menu-learn-more = Dysgu rhagor
+newtab-widget-lists-input-add-an-item =
+    .placeholder = Ychwanegu eitem
+newtab-widget-lists-input-error = Cynhwyswch destun i ychwanegu eitem.
+newtab-widget-lists-input-menu-open-link = Agor dolen
+newtab-widget-lists-input-menu-move-up = Symud i fyny
+newtab-widget-lists-input-menu-move-down = Symud i lawr
+newtab-widget-lists-input-menu-delete = Dileu
+newtab-widget-lists-input-menu-edit = Golygu
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + Creu rhestr newydd
+newtab-widget-lists-name-label-default =
+    .label = Rhestr tasgau
+newtab-widget-lists-name-placeholder-default =
+    .placeholder = Rhestr tasgau
+# The placeholder value of the name field for a newly created list
+newtab-widget-lists-name-placeholder-new =
+    .placeholder = Rhestr newydd
+newtab-widget-section-title = Teclynnau
+# Tooltip for hide all widgets button
+newtab-widget-section-hide-all-button =
+    .title = Cuddio teclynnau
+    .aria-label = Cuddio pob teclyn
+newtab-widget-section-maximize =
+    .title = Ehangu teclynnau
+    .aria-label = Ehangu pob teclyn i'w faint llawn
+newtab-widget-section-minimize =
+    .title = Lleihau teclynnau
+    .aria-label = Lleihau pob teclyn i faint llai
+
+## Strings for timer productivity widget
+## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
+
+newtab-widget-timer-notification-title = Amserydd
+newtab-widget-timer-notification-focus = Mae'r amser canolbwyntio ar ben. Gwaith da. Angen seibiant?
+newtab-widget-timer-notification-break = Mae'ch seibiant drosodd. Barod i ganolbwyntio?
+newtab-widget-timer-notification-warning = Mae hysbysiadau wedi'u diffodd
+newtab-widget-timer-mode-focus =
+    .label = Canolbwyntio
+newtab-widget-timer-mode-break =
+    .label = Seibiant
+newtab-widget-timer-label-play =
+    .label = Chwarae
+newtab-widget-timer-label-pause =
+    .label = Oedi
+newtab-widget-timer-reset =
+    .title = Ailosod
+newtab-widget-timer-menu-notifications = Diffodd hysbysiadau
+newtab-widget-timer-menu-notifications-on = Troi hysbysiadau ymlaen
+newtab-widget-timer-menu-hide = Cuddio'r amserydd
+newtab-widget-timer-menu-learn-more = Dysgu rhagor
+newtab-widget-message-title = Canolbwyntio gyda rhestrau a'r amserydd mewnol
+# to-dos stands for "things to do".
+newtab-widget-message-copy = O negeseuon atgoffa cyflym i dasgau bob dydd, sesiynau canolbwyntio i egwyliau ymarfer corff — cadwch i'r dasg ac amser.
+newtab-promo-card-title = Cefnogwch { -brand-product-name }
+newtab-promo-card-body = Mae ein noddwyr yn cefnogi ein cenhadaeth i adeiladu gwe well
+newtab-promo-card-cta = Dysgu rhagor
+newtab-promo-card-dismiss-button =
+    .title = Cau
+    .aria-label = Cau

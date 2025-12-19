@@ -8,7 +8,13 @@ import subprocess
 
 import mozversion
 
-from mozperftest.utils import ON_TRY
+from mozperftest.utils import (
+    CHROME_DESKTOP_APPS,
+    CHROME_MOBILE_APPS,
+    FIREFOX_DESKTOP_APPS,
+    FIREFOX_MOBILE_APPS,
+    ON_TRY,
+)
 
 
 class MultipleApplicationSetups(Exception):
@@ -48,7 +54,7 @@ class BaseVersionProducer:
 class DesktopVersionProducer(BaseVersionProducer):
     def get_binary_version(self, binary, **kwargs):
         try:
-            return super(DesktopVersionProducer, self).get_binary_version(binary)
+            return super().get_binary_version(binary)
         except Exception:
             pass
 
@@ -69,7 +75,7 @@ class DesktopVersionProducer(BaseVersionProducer):
             elif "linux" in platform.system().lower():
                 command = [binary, "--version"]
                 proc = subprocess.run(
-                    command, timeout=10, capture_output=True, text=True
+                    command, check=True, timeout=10, capture_output=True, text=True
                 )
 
                 bmeta = proc.stdout.split("\n")
@@ -112,9 +118,7 @@ class DesktopVersionProducer(BaseVersionProducer):
 class MobileVersionProducer(BaseVersionProducer):
     def get_binary_version(self, binary, apk_path=None, **kwargs):
         try:
-            return super(MobileVersionProducer, self).get_binary_version(
-                apk_path or binary
-            )
+            return super().get_binary_version(apk_path or binary)
         except Exception:
             pass
 
@@ -147,7 +151,7 @@ class BaseSetup:
 
 @binary_setup
 class FirefoxSetup(BaseSetup):
-    apps = ["firefox"]
+    apps = FIREFOX_DESKTOP_APPS
 
     def setup_binary(self):
         if ON_TRY:
@@ -161,7 +165,7 @@ class FirefoxSetup(BaseSetup):
 
 @binary_setup
 class ChromeSetup(BaseSetup):
-    apps = ["chrome"]
+    apps = CHROME_DESKTOP_APPS
 
     def setup_binary(self):
         if ON_TRY:
@@ -185,7 +189,7 @@ class ChromeSetup(BaseSetup):
 
 @binary_setup
 class ChromeMobileSetup(BaseSetup):
-    apps = ["chrome-m"]
+    apps = CHROME_MOBILE_APPS
     version_producer = MobileVersionProducer
 
     def setup_binary(self):
@@ -194,7 +198,7 @@ class ChromeMobileSetup(BaseSetup):
 
 @binary_setup
 class FirefoxMobileSetup(BaseSetup):
-    apps = ["fenix", "geckoview", "focus"]
+    apps = FIREFOX_MOBILE_APPS
     version_producer = MobileVersionProducer
 
     def setup_binary(self):

@@ -6,9 +6,8 @@
 
 /* atom list for CSS anonymous boxes */
 
-#include "mozilla/ArrayUtils.h"
-
 #include "nsCSSAnonBoxes.h"
+
 #include "nsGkAtomConsts.h"
 #include "nsStaticAtomUtils.h"
 

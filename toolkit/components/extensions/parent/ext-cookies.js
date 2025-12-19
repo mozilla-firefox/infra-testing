@@ -6,11 +6,12 @@
 
 var { ExtensionError } = ExtensionUtils;
 
-const SAME_SITE_STATUSES = [
-  "no_restriction", // Index 0 = Ci.nsICookie.SAMESITE_NONE
-  "lax", // Index 1 = Ci.nsICookie.SAMESITE_LAX
-  "strict", // Index 2 = Ci.nsICookie.SAMESITE_STRICT
-];
+const SAME_SITE_STATUSES = new Map([
+  [Ci.nsICookie.SAMESITE_NONE, "no_restriction"],
+  [Ci.nsICookie.SAMESITE_LAX, "lax"],
+  [Ci.nsICookie.SAMESITE_STRICT, "strict"],
+  [Ci.nsICookie.SAMESITE_UNSET, "unspecified"],
+]);
 
 const isIPv4 = host => {
   let match = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(host);
@@ -60,9 +61,6 @@ function fromExtPartitionKey(extPartitionKey, cookieUrl) {
       if (cookieUrl == null) {
         let topLevelSiteURI = Services.io.newURI(topLevelSite);
         let topLevelSiteFilter = Services.eTLD.getSite(topLevelSiteURI);
-        if (topLevelSiteURI.port != -1) {
-          topLevelSiteFilter += `:${topLevelSiteURI.port}`;
-        }
         return topLevelSiteFilter;
       }
       return ChromeUtils.getPartitionKeyFromURL(
@@ -135,14 +133,14 @@ const convertCookie = ({ cookie, isPrivate }) => {
     path: cookie.path,
     secure: cookie.isSecure,
     httpOnly: cookie.isHttpOnly,
-    sameSite: SAME_SITE_STATUSES[cookie.sameSite],
+    sameSite: SAME_SITE_STATUSES.get(cookie.sameSite),
     session: cookie.isSession,
     firstPartyDomain: cookie.originAttributes.firstPartyDomain || "",
     partitionKey: getExtPartitionKey(cookie),
   };
 
   if (!cookie.isSession) {
-    result.expirationDate = cookie.expiry;
+    result.expirationDate = cookie.expiry / 1000;
   }
 
   if (cookie.originAttributes.userContextId) {
@@ -222,6 +220,9 @@ const checkSetCookiePermissions = (extension, uri, cookie) => {
         // requires an exact match. We already know we don't have an exact
         // match, so return false. In all other cases, re-raise the error.
         return false;
+      }
+      if (e.result == Cr.NS_ERROR_ILLEGAL_VALUE) {
+        throw new ExtensionError(`Invalid domain url: "${uri.prePath}"`);
       }
       throw e;
     }
@@ -582,19 +583,20 @@ this.cookies = class extends ExtensionAPIPersistent {
             notify(true, cookie, "overwrite");
             notify(false, cookie, "explicit");
             break;
-          case COOKIES_BATCH_DELETED:
+          case COOKIES_BATCH_DELETED: {
             let cookieArray = notification.batchDeletedCookies.QueryInterface(
               Ci.nsIArray
             );
             for (let i = 0; i < cookieArray.length; i++) {
               let cookie = cookieArray.queryElementAt(i, Ci.nsICookie);
-              if (!cookie.isSession && cookie.expiry * 1000 <= Date.now()) {
+              if (!cookie.isSession && cookie.expiry <= Date.now()) {
                 notify(true, cookie, "expired");
               } else {
                 notify(true, cookie, "evicted");
               }
             }
             break;
+          }
         }
       };
 
@@ -675,9 +677,11 @@ this.cookies = class extends ExtensionAPIPersistent {
           let secure = details.secure !== null ? details.secure : false;
           let httpOnly = details.httpOnly !== null ? details.httpOnly : false;
           let isSession = details.expirationDate === null;
+
+          // expiry is in milliseconds.
           let expiry = isSession
             ? Number.MAX_SAFE_INTEGER
-            : details.expirationDate;
+            : Services.cookies.maybeCapExpiry(details.expirationDate * 1000);
 
           let { originAttributes } = oaFromDetails(details, context);
 
@@ -694,7 +698,15 @@ this.cookies = class extends ExtensionAPIPersistent {
             });
           }
 
-          let sameSite = SAME_SITE_STATUSES.indexOf(details.sameSite);
+          let sameSite = Ci.nsICookie.SAMESITE_UNSET;
+          for (const [k, v] of SAME_SITE_STATUSES) {
+            // details.sameSite is always set and one of the values,
+            // enforced by "sameSite" in schemas/cookies.json
+            if (details.sameSite === v) {
+              sameSite = k;
+              break;
+            }
+          }
 
           let schemeType = Ci.nsICookie.SCHEME_UNSET;
           if (uri.scheme === "https") {
@@ -707,22 +719,35 @@ this.cookies = class extends ExtensionAPIPersistent {
 
           let isPartitioned = originAttributes.partitionKey?.length > 0;
 
-          // The permission check may have modified the domain, so use
-          // the new value instead.
-          Services.cookies.add(
-            cookieAttrs.host,
-            path,
-            name,
-            value,
-            secure,
-            httpOnly,
-            isSession,
-            expiry,
-            originAttributes,
-            sameSite,
-            schemeType,
-            isPartitioned
-          );
+          let cv;
+          try {
+            cv = Services.cookies.add(
+              cookieAttrs.host,
+              path,
+              name,
+              value,
+              secure,
+              httpOnly,
+              isSession,
+              expiry,
+              originAttributes,
+              sameSite,
+              schemeType,
+              isPartitioned
+            );
+          } catch (e) {
+            if (e.result == Cr.NS_ERROR_ILLEGAL_VALUE) {
+              //At this moment, the only way to have NS_ERROR_ILLEGAL_VALUE being thrown
+              // is if `cookieAttrs.host` is invalid. See: https://searchfox.org/mozilla-central/rev/f008b9aa2adf2dca6bdd49855b314cb3195f6f27/netwerk/cookie/CookieService.cpp#733-738
+              // We will have to make this error more specific if other cases arise.
+              throw new ExtensionError(`Invalid domain: "${cookieAttrs.host}"`);
+            }
+            throw e;
+          }
+
+          if (cv.result !== Ci.nsICookieValidation.eOK) {
+            return Promise.reject({ message: cv.errorString });
+          }
 
           return self.cookies.get(details);
         },

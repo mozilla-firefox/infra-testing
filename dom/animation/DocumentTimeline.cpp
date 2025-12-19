@@ -5,9 +5,10 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "DocumentTimeline.h"
+
+#include "AnimationUtils.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/DocumentTimelineBinding.h"
-#include "AnimationUtils.h"
 #include "nsContentUtils.h"
 #include "nsDOMMutationObserver.h"
 #include "nsDOMNavigationTiming.h"
@@ -46,7 +47,7 @@ DocumentTimeline::DocumentTimeline(Document* aDocument,
       mDocument(aDocument),
       mOriginTime(aOriginTime) {
   if (mDocument) {
-    mDocument->Timelines().insertBack(this);
+    mDocument->TimelinesController().AddDocumentTimeline(*this);
   }
   // Ensure mLastRefreshDriverTime is valid.
   UpdateLastRefreshDriverTime();
@@ -96,8 +97,10 @@ bool DocumentTimeline::TracksWallclockTime() const {
 
 TimeStamp DocumentTimeline::GetCurrentTimeStamp() const {
   nsRefreshDriver* refreshDriver = GetRefreshDriver();
-  return refreshDriver ? refreshDriver->MostRecentRefresh()
-                       : mLastRefreshDriverTime;
+  TimeStamp result = refreshDriver ? refreshDriver->MostRecentRefresh()
+                                   : mLastRefreshDriverTime;
+
+  return EnsureValidTimestamp(result);
 }
 
 void DocumentTimeline::UpdateLastRefreshDriverTime() {
@@ -108,6 +111,15 @@ void DocumentTimeline::UpdateLastRefreshDriverTime() {
     return mLastRefreshDriverTime;
   }();
 
+  result = EnsureValidTimestamp(result);
+
+  if (!result.IsNull()) {
+    mLastRefreshDriverTime = result;
+  }
+}
+
+TimeStamp DocumentTimeline::EnsureValidTimestamp(
+    const TimeStamp& aTimestamp) const {
   if (nsDOMNavigationTiming* timing = mDocument->GetNavigationTiming()) {
     // If we don't have a refresh driver and we've never had one use the
     // timeline's zero time.
@@ -119,14 +131,12 @@ void DocumentTimeline::UpdateLastRefreshDriverTime() {
     // Also, let this time represent the current refresh time. This way we'll
     // save it as the last refresh time and skip looking up navigation start
     // time each time.
-    if (result.IsNull() || result < timing->GetNavigationStartTimeStamp()) {
-      result = timing->GetNavigationStartTimeStamp();
+    if (aTimestamp.IsNull() ||
+        aTimestamp < timing->GetNavigationStartTimeStamp()) {
+      return timing->GetNavigationStartTimeStamp();
     }
   }
-
-  if (!result.IsNull()) {
-    mLastRefreshDriverTime = result;
-  }
+  return aTimestamp;
 }
 
 Nullable<TimeDuration> DocumentTimeline::ToTimelineTime(

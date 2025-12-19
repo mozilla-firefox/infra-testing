@@ -15,7 +15,6 @@ from ..push import push_to_try
 
 TASK_TYPES = {
     "linux-signing": [
-        "build-signing-linux-shippable/opt",
         "build-signing-linux64-shippable/opt",
         "build-signing-win64-shippable/opt",
         "build-signing-win32-shippable/opt",
@@ -113,7 +112,6 @@ def run(
     dry_run=False,
     message="{msg}",
     closed_tree=False,
-    push_to_lando=False,
     push_to_vcs=False,
 ):
     if task_type == "list":
@@ -171,6 +169,5 @@ def run(
         closed_tree=closed_tree,
         try_task_config=task_config,
         files_to_change=files_to_change,
-        push_to_lando=push_to_lando,
         push_to_vcs=push_to_vcs,
     )

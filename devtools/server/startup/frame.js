@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/frame-script */
-
 "use strict";
 
 /* global addEventListener */
@@ -22,8 +20,8 @@ try {
     // In most cases, we are debugging a tab in content process, without chrome
     // privileges. But in some tests, we are attaching to privileged document.
     // Because the debugger can't be running in the same compartment than its debuggee,
-    // we have to load the server in a dedicated Loader, flagged with
-    // invisibleToDebugger, which will force it to be loaded in another compartment.
+    // we have to load the server in a dedicated Loader, loading modules in a distinct compartment.
+    // That's what DistinctSystemPrincipalLoader does.
     let loader,
       customLoader = false;
     if (content.document.nodePrincipal.isSystemPrincipal) {
@@ -92,6 +90,7 @@ try {
       };
       const actor = new WindowGlobalTargetActor(conn, {
         docShell,
+        ignoreSubFrames: false,
         isTopLevelTarget: true,
         // This is only used when server target switching is off and we create
         // the target from TabDescriptor. So all config attributes are false.

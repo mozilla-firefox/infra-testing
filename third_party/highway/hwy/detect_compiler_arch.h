@@ -20,6 +20,11 @@
 // inclusion by foreach_target.h.
 
 // Add to #if conditions to prevent IDE from graying out code.
+// Note for clangd users: There is no predefined macro in clangd, so you must
+// manually add these two lines (without the preceding '// ') to your project's
+// `.clangd` file:
+// CompileFlags:
+//   Add: [-D__CLANGD__]
 #if (defined __CDT_PARSER__) || (defined __INTELLISENSE__) || \
     (defined Q_CREATOR_RUN) || (defined __CLANGD__) ||        \
     (defined GROK_ELLIPSIS_BUILD)
@@ -65,15 +70,27 @@
 #define HWY_COMPILER_GCC 0
 #endif
 
-// Clang or clang-cl, not GCC.
-#ifdef __clang__
+#ifndef HWY_COMPILER_CLANG  // Allow user override.
+#ifdef __clang__            // Clang or clang-cl, not GCC.
 // In case of Apple LLVM (whose version number is unrelated to that of LLVM) or
 // an invalid version number, deduce it from the presence of warnings.
 // Originally based on
 // https://github.com/simd-everywhere/simde/blob/47d6e603de9d04ee05cdfbc57cf282a02be1bf2a/simde/simde-detect-clang.h#L59.
 // Please send updates below to them as well, thanks!
 #if defined(__apple_build_version__) || __clang_major__ >= 999
-#if __has_attribute(unsafe_buffer_usage)  // no new warnings in 17.0
+#if __has_builtin(__builtin_elementwise_fshl)
+#define HWY_COMPILER_CLANG 2201
+#elif __has_builtin(__builtin_structured_binding_size)
+#define HWY_COMPILER_CLANG 2101
+#elif __has_builtin(__builtin_common_type)
+#define HWY_COMPILER_CLANG 2001
+#elif __has_warning("-Wreturn-mismatch")
+#define HWY_COMPILER_CLANG 1901
+#elif __has_warning("-Woverriding-option")
+#define HWY_COMPILER_CLANG 1801
+// No new warnings in 17.0, and Apple LLVM 15.3, which should be 1600, already
+// has the unsafe_buffer_usage attribute, so we instead check for new builtins.
+#elif __has_builtin(__builtin_nondeterministic_value)
 #define HWY_COMPILER_CLANG 1700
 #elif __has_attribute(nouwtable)  // no new warnings in 16.0
 #define HWY_COMPILER_CLANG 1600
@@ -104,7 +121,6 @@
 #else  // Anything older than 7.0 is not recommended for Highway.
 #define HWY_COMPILER_CLANG 600
 #endif  // __has_warning chain
-#define HWY_COMPILER3_CLANG (HWY_COMPILER_CLANG * 100)
 #else  // use normal version
 #define HWY_COMPILER_CLANG (__clang_major__ * 100 + __clang_minor__)
 #define HWY_COMPILER3_CLANG \
@@ -113,9 +129,16 @@
 #else  // Not clang
 #define HWY_COMPILER_CLANG 0
 #define HWY_COMPILER3_CLANG 0
+#endif  // __clang__
+#endif  // HWY_COMPILER_CLANG
+
+// User-defined or deduced HWY_COMPILER_CLANG: derive HWY_COMPILER3_CLANG.
+#ifndef HWY_COMPILER3_CLANG
+#define HWY_COMPILER3_CLANG (HWY_COMPILER_CLANG * 100)
 #endif
 
-#if HWY_COMPILER_GCC && !HWY_COMPILER_CLANG && !HWY_COMPILER_ICC
+#if HWY_COMPILER_GCC && !HWY_COMPILER_CLANG && !HWY_COMPILER_ICC && \
+    !HWY_COMPILER_ICX
 #define HWY_COMPILER_GCC_ACTUAL HWY_COMPILER_GCC
 #else
 #define HWY_COMPILER_GCC_ACTUAL 0
@@ -123,16 +146,19 @@
 
 // More than one may be nonzero, but we want at least one.
 #if 0 == (HWY_COMPILER_MSVC + HWY_COMPILER_CLANGCL + HWY_COMPILER_ICC + \
-          HWY_COMPILER_GCC + HWY_COMPILER_CLANG)
+          HWY_COMPILER_ICX + HWY_COMPILER_GCC + HWY_COMPILER_CLANG)
 #error "Unsupported compiler"
 #endif
 
-// We should only detect one of these (only clang/clangcl overlap)
-#if 1 <                                                                     \
-    (!!HWY_COMPILER_MSVC + !!HWY_COMPILER_ICC + !!HWY_COMPILER_GCC_ACTUAL + \
-     !!(HWY_COMPILER_CLANGCL | HWY_COMPILER_CLANG))
+// We should only detect one of these (only clang/clangcl/icx overlap)
+#if 1 < (!!HWY_COMPILER_MSVC + (!!HWY_COMPILER_ICC & !HWY_COMPILER_ICX) + \
+         !!HWY_COMPILER_GCC_ACTUAL +                                      \
+         !!(HWY_COMPILER_ICX | HWY_COMPILER_CLANGCL | HWY_COMPILER_CLANG))
 #error "Detected multiple compilers"
 #endif
+
+//------------------------------------------------------------------------------
+// Compiler features and C++ version
 
 #ifdef __has_builtin
 #define HWY_HAS_BUILTIN(name) __has_builtin(name)
@@ -156,6 +182,44 @@
 #define HWY_HAS_FEATURE(name) __has_feature(name)
 #else
 #define HWY_HAS_FEATURE(name) 0
+#endif
+
+// NOTE: clang ~17 does not correctly handle wrapping __has_include in a macro.
+
+#if HWY_COMPILER_MSVC && defined(_MSVC_LANG) && _MSVC_LANG > __cplusplus
+#define HWY_CXX_LANG _MSVC_LANG
+#else
+#define HWY_CXX_LANG __cplusplus
+#endif
+
+#if defined(__cpp_constexpr) && __cpp_constexpr >= 201603L
+#define HWY_CXX17_CONSTEXPR constexpr
+#else
+#define HWY_CXX17_CONSTEXPR
+#endif
+
+#if defined(__cpp_constexpr) && __cpp_constexpr >= 201304L
+#define HWY_CXX14_CONSTEXPR constexpr
+#else
+#define HWY_CXX14_CONSTEXPR
+#endif
+
+#if HWY_CXX_LANG >= 201703L
+#define HWY_IF_CONSTEXPR if constexpr
+#else
+#define HWY_IF_CONSTEXPR if
+#endif
+
+// Use for constexpr variables at namespace scope in headers. Constexpr is
+// separate to allow using `HWY_CXX14_CONSTEXPR` if required.
+#ifndef HWY_INLINE_VAR
+#if __cplusplus > 201402L
+// C++17: mark as COMDAT to ensure linkers de-duplicate it. See
+// https://quuxplusone.github.io/blog/2022/07/08/inline-constexpr/
+#define HWY_INLINE_VAR inline
+#else
+#define HWY_INLINE_VAR
+#endif
 #endif
 
 //------------------------------------------------------------------------------
@@ -233,9 +297,34 @@
 #endif
 
 #ifdef __riscv
-#define HWY_ARCH_RVV 1
+#define HWY_ARCH_RISCV 1
 #else
-#define HWY_ARCH_RVV 0
+#define HWY_ARCH_RISCV 0
+#endif
+// DEPRECATED names; please use HWY_ARCH_RISCV instead.
+#define HWY_ARCH_RVV HWY_ARCH_RISCV
+
+#if HWY_ARCH_RISCV && defined(__riscv_xlen)
+
+#if __riscv_xlen == 32
+#define HWY_ARCH_RISCV_32 1
+#else
+#define HWY_ARCH_RISCV_32 0
+#endif
+
+#if __riscv_xlen == 64
+#define HWY_ARCH_RISCV_64 1
+#else
+#define HWY_ARCH_RISCV_64 0
+#endif
+
+#else  // !HWY_ARCH_RISCV || !defined(__riscv_xlen)
+#define HWY_ARCH_RISCV_32 0
+#define HWY_ARCH_RISCV_64 0
+#endif  // HWY_ARCH_RISCV && defined(__riscv_xlen)
+
+#if HWY_ARCH_RISCV_32 && HWY_ARCH_RISCV_64
+#error "Cannot have both RISCV_32 and RISCV_64"
 #endif
 
 #if defined(__s390x__)
@@ -244,12 +333,34 @@
 #define HWY_ARCH_S390X 0
 #endif
 
+#if defined(__loongarch64__) || defined(__loongarch64) || \
+    (defined(__loongarch_grlen) && __loongarch_grlen == 64)
+#define HWY_ARCH_LOONGARCH_64 1
+#else
+#define HWY_ARCH_LOONGARCH_64 0
+#endif
+
+#if defined(__loongarch__) && !HWY_ARCH_LOONGARCH_64
+#define HWY_ARCH_LOONGARCH_32 1
+#else
+#define HWY_ARCH_LOONGARCH_32 0
+#endif
+
+#if HWY_ARCH_LOONGARCH_64 || HWY_ARCH_LOONGARCH_32
+#define HWY_ARCH_LOONGARCH 1
+#else
+#define HWY_ARCH_LOONGARCH 0
+#endif
+
 // It is an error to detect multiple architectures at the same time, but OK to
 // detect none of the above.
 #if (HWY_ARCH_X86 + HWY_ARCH_PPC + HWY_ARCH_ARM + HWY_ARCH_ARM_OLD + \
-     HWY_ARCH_WASM + HWY_ARCH_RVV + HWY_ARCH_S390X) > 1
+     HWY_ARCH_WASM + HWY_ARCH_RISCV + HWY_ARCH_S390X + HWY_ARCH_LOONGARCH) > 1
 #error "Must not detect more than one architecture"
 #endif
+
+//------------------------------------------------------------------------------
+// Operating system
 
 #if defined(_WIN32) || defined(_WIN64)
 #define HWY_OS_WIN 1
@@ -268,6 +379,18 @@
 #define HWY_OS_APPLE 1
 #else
 #define HWY_OS_APPLE 0
+#endif
+
+#if defined(__FreeBSD__)
+#define HWY_OS_FREEBSD 1
+#else
+#define HWY_OS_FREEBSD 0
+#endif
+
+// It is an error to detect multiple OSes at the same time, but OK to
+// detect none of the above.
+#if (HWY_OS_WIN + HWY_OS_LINUX + HWY_OS_APPLE + HWY_OS_FREEBSD) > 1
+#error "Must not detect more than one OS"
 #endif
 
 //------------------------------------------------------------------------------

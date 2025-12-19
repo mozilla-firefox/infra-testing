@@ -9,39 +9,16 @@ import io.mockk.mockk
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.LastMediaAccessState
 import mozilla.components.browser.state.state.createTab
+import mozilla.components.concept.engine.utils.ABOUT_HOME_URL
 import mozilla.components.concept.storage.HistoryMetadataKey
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import org.mozilla.fenix.components.usecases.FenixBrowserUseCases.Companion.ABOUT_HOME
 import org.mozilla.fenix.home.recenttabs.RecentTab
 import org.mozilla.fenix.utils.Settings
 
 class BrowserStateTest {
-
-    @Test
-    fun `GIVEN a tab which had media playing WHEN inProgressMediaTab is called THEN return that tab`() {
-        val inProgressMediaTab = createTab(
-            url = "mediaUrl",
-            id = "2",
-            lastMediaAccessState = LastMediaAccessState("https://mozilla.com", 123, true),
-        )
-        val browserState = BrowserState(
-            tabs = listOf(mockk(relaxed = true), inProgressMediaTab, mockk(relaxed = true)),
-        )
-
-        assertEquals(inProgressMediaTab, browserState.inProgressMediaTab)
-    }
-
-    @Test
-    fun `GIVEN no tab which had media playing exists WHEN inProgressMediaTab is called THEN return null`() {
-        val browserState = BrowserState(
-            tabs = listOf(createTab("tab1"), createTab("tab2"), createTab("tab3")),
-        )
-
-        assertNull(browserState.inProgressMediaTab)
-    }
 
     @Test
     fun `GIVEN the selected tab is a normal tab and no media tab exists WHEN asRecentTabs is called THEN return a list of that tab`() {
@@ -59,7 +36,7 @@ class BrowserStateTest {
 
     @Test
     fun `GIVEN the selected tab is a homepage tab WHEN asRecentTabs is called THEN return an empty list`() {
-        val selectedTab = createTab(url = ABOUT_HOME, id = "3")
+        val selectedTab = createTab(url = ABOUT_HOME_URL, id = "3")
         val browserState = BrowserState(
             tabs = listOf(createTab("tab1"), selectedTab, createTab("tab3")),
             selectedTabId = selectedTab.id,
@@ -247,45 +224,6 @@ class BrowserStateTest {
     }
 
     @Test
-    fun `GIVEN no normal tabs are open WHEN secondToLastOpenedNormalTab is called THEN return null`() {
-        val browserState = BrowserState(
-            tabs = listOf(mockk(relaxed = true)),
-        )
-        assertNull(browserState.secondToLastOpenedNormalTab)
-    }
-
-    @Test
-    fun `GIVEN one normal tab is open WHEN secondToLastOpenedNormalTab is called THEN return the one tab`() {
-        val lastAccessedNormalTab = createTab(url = "url2", id = "2", lastAccess = 1)
-        val browserState = BrowserState(
-            tabs = listOf(lastAccessedNormalTab),
-        )
-        assertNull(browserState.secondToLastOpenedNormalTab)
-    }
-
-    @Test
-    fun `GIVEN two normal tabs are open WHEN secondToLastOpenedNormalTab is called THEN return the second-to-last opened tab`() {
-        val normalTab1 = createTab(url = "url1", id = "1", lastAccess = 1)
-        val normalTab2 = createTab(url = "url2", id = "2", lastAccess = 2)
-        val browserState = BrowserState(
-            tabs = listOf(normalTab1, normalTab2),
-        )
-        assertEquals(normalTab1.id, browserState.secondToLastOpenedNormalTab!!.id)
-    }
-
-    @Test
-    fun `GIVEN four normal tabs are open WHEN secondToLastOpenedNormalTab is called THEN return the second-to-last opened tab`() {
-        val normalTab1 = createTab(url = "url1", id = "1", lastAccess = 1)
-        val normalTab2 = createTab(url = "url2", id = "2", lastAccess = 4)
-        val normalTab3 = createTab(url = "url3", id = "3", lastAccess = 3)
-        val normalTab4 = createTab(url = "url4", id = "4", lastAccess = 2)
-        val browserState = BrowserState(
-            tabs = listOf(normalTab1, normalTab2, normalTab3, normalTab4),
-        )
-        assertEquals(normalTab3.id, browserState.secondToLastOpenedNormalTab!!.id)
-    }
-
-    @Test
     fun `GIVEN a list of tabs WHEN potentialInactiveTabs is called THEN return the normal tabs which haven't been active lately`() {
         // An inactive tab is one created or accessed more than [maxActiveTime] ago
         // checked against [System.currentTimeMillis]
@@ -348,7 +286,7 @@ class BrowserStateTest {
                 privateTab4,
             ),
         )
-        val settings: Settings = mockk() {
+        val settings: Settings = mockk {
             every { inactiveTabsAreEnabled } returns false
         }
 
@@ -385,7 +323,7 @@ class BrowserStateTest {
                 privateTab4,
             ),
         )
-        val settings: Settings = mockk() {
+        val settings: Settings = mockk {
             every { inactiveTabsAreEnabled } returns true
         }
 

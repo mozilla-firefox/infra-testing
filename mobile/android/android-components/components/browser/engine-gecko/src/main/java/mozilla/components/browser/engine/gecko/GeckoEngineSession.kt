@@ -68,6 +68,10 @@ import org.mozilla.geckoview.ContentBlocking
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoSession
+import org.mozilla.geckoview.GeckoSession.APP_LINK_LAUNCH_TYPE_COLD
+import org.mozilla.geckoview.GeckoSession.APP_LINK_LAUNCH_TYPE_HOT
+import org.mozilla.geckoview.GeckoSession.APP_LINK_LAUNCH_TYPE_UNKNOWN
+import org.mozilla.geckoview.GeckoSession.APP_LINK_LAUNCH_TYPE_WARM
 import org.mozilla.geckoview.GeckoSession.NavigationDelegate
 import org.mozilla.geckoview.GeckoSession.PermissionDelegate.ContentPermission
 import org.mozilla.geckoview.GeckoSessionSettings
@@ -193,6 +197,7 @@ class GeckoEngineSession(
             .flags(flags.getGeckoFlags())
             .originalInput(originalInput)
             .textDirectiveUserActivation(textDirectiveUserActivation)
+            .appLinkLaunchType(flags.toGeckoLaunchType())
 
         if (additionalHeaders != null) {
             val headerFilter = if (flags.contains(ALLOW_ADDITIONAL_HEADERS)) {
@@ -378,6 +383,13 @@ class GeckoEngineSession(
 
         geckoSession.restoreState(state.actualState)
         return true
+    }
+
+    /**
+     * See [EngineSession.flushSessionState]
+     */
+    override fun flushSessionState() {
+        geckoSession.flushSessionState()
     }
 
     /**
@@ -743,8 +755,7 @@ class GeckoEngineSession(
                 onTranslateComplete(TranslationOperation.TRANSLATE)
             }
             GeckoResult<Void>()
-        }, {
-                throwable ->
+        }, { throwable ->
             logger.error("Request for translation failed: ", throwable)
             notifyObservers {
                 onTranslateException(
@@ -775,8 +786,7 @@ class GeckoEngineSession(
                 onTranslateComplete(TranslationOperation.RESTORE)
             }
             GeckoResult<Void>()
-        }, {
-                throwable ->
+        }, { throwable ->
             logger.error("Request for translation failed: ", throwable)
             notifyObservers {
                 onTranslateException(TranslationOperation.RESTORE, throwable.intoTranslationError())
@@ -797,8 +807,7 @@ class GeckoEngineSession(
             return
         }
 
-        geckoSession.sessionTranslation!!.neverTranslateSiteSetting.then({
-                response ->
+        geckoSession.sessionTranslation!!.neverTranslateSiteSetting.then({ response ->
             if (response == null) {
                 logger.error("Did not receive a site setting response.")
                 onException(
@@ -808,8 +817,7 @@ class GeckoEngineSession(
             }
             onResult(response)
             GeckoResult<Boolean>()
-        }, {
-                throwable ->
+        }, { throwable ->
             logger.error("Request for site translation preference failed: ", throwable)
             onException(throwable.intoTranslationError())
             GeckoResult()
@@ -832,8 +840,7 @@ class GeckoEngineSession(
         geckoSession.sessionTranslation!!.setNeverTranslateSiteSetting(setting).then({
             onResult()
             GeckoResult<Boolean>()
-        }, {
-                throwable ->
+        }, { throwable ->
             logger.error("Request for setting site translation preference failed: ", throwable)
             onException(throwable.intoTranslationError())
             GeckoResult()
@@ -863,7 +870,7 @@ class GeckoEngineSession(
     /**
      * NavigationDelegate implementation for forwarding callbacks to observers of the session.
      */
-    @Suppress("ComplexMethod")
+    @Suppress("CognitiveComplexMethod")
     private fun createNavigationDelegate() = object : GeckoSession.NavigationDelegate {
         override fun onLocationChange(
             session: GeckoSession,
@@ -904,8 +911,6 @@ class GeckoEngineSession(
             notifyObservers {
                 onCookieBannerChange(CookieBannerHandlingStatus.NO_DETECTED)
             }
-            // Reset the status of current page being product or not when user navigates away.
-            notifyObservers { onProductUrlChange(false) }
             // Reset the status of the translation state for the page
             notifyObservers { onTranslatePageChange() }
             notifyObservers { onLocationChange(url, hasUserGesture) }
@@ -1021,14 +1026,17 @@ class GeckoEngineSession(
                     request.isRedirect,
                     request.isDirectNavigation,
                     isSubframeRequest,
-                )?.takeUnless {
-                    it is InterceptionResponse.AppIntent && request.isDirectNavigation
-                }?.apply {
+                )?.apply {
                     when (this) {
                         is InterceptionResponse.AppIntent -> {
                             appRedirectUrl = lastLoadRequestUri
                             notifyObservers {
-                                onLaunchIntentRequest(url = url, appIntent = appIntent)
+                                onLaunchIntentRequest(
+                                    url = url,
+                                    appIntent = appIntent,
+                                    fallbackUrl = fallbackUrl,
+                                    appName = appName,
+                                )
                             }
                         }
 
@@ -1072,11 +1080,11 @@ class GeckoEngineSession(
             }
 
             notifyObservers {
-                // TODO provide full certificate info: https://github.com/mozilla-mobile/android-components/issues/5557
                 onSecurityChange(
                     securityInfo.isSecure,
                     securityInfo.host,
                     securityInfo.getIssuerName(),
+                    securityInfo.certificate,
                 )
             }
         }
@@ -1125,7 +1133,6 @@ class GeckoEngineSession(
         }
     }
 
-    @Suppress("ComplexMethod")
     internal fun createHistoryDelegate() = object : GeckoSession.HistoryDelegate {
         @SuppressWarnings("ReturnCount")
         override fun onVisited(
@@ -1228,7 +1235,7 @@ class GeckoEngineSession(
         }
     }
 
-    @Suppress("ComplexMethod", "NestedBlockDepth")
+    @Suppress("NestedBlockDepth", "CognitiveComplexMethod")
     internal fun createContentDelegate() = object : GeckoSession.ContentDelegate {
         override fun onCookieBannerDetected(session: GeckoSession) {
             notifyObservers { onCookieBannerChange(CookieBannerHandlingStatus.DETECTED) }
@@ -1254,7 +1261,13 @@ class GeckoEngineSession(
             screenY: Int,
             element: GeckoSession.ContentDelegate.ContextElement,
         ) {
-            val hitResult = handleLongClick(element.srcUri, element.type, element.linkUri, element.title)
+            val hitResult = handleLongClick(
+                elementSrc = element.srcUri,
+                elementType = element.type,
+                uri = element.linkUri,
+                title = element.title,
+                linkText = element.linkText,
+            )
             hitResult?.let {
                 notifyObservers { onLongPress(it) }
             }
@@ -1469,7 +1482,7 @@ class GeckoEngineSession(
             val geckoResult = GeckoResult<Int>()
             val uri = geckoContentPermission.uri
             val type = geckoContentPermission.permission
-            val request = GeckoPermissionRequest.Content(uri, type, geckoContentPermission, geckoResult)
+            val request = GeckoPermissionRequest.Content(uri, type, geckoContentPermission, mutableListOf(geckoResult))
             notifyObservers { onContentPermissionRequest(request) }
             return geckoResult
         }
@@ -1497,7 +1510,7 @@ class GeckoEngineSession(
         ) {
             val request = GeckoPermissionRequest.App(
                 permissions?.toList() ?: emptyList(),
-                callback,
+                mutableListOf(callback),
             )
             notifyObservers { onAppPermissionRequest(request) }
         }
@@ -1510,8 +1523,22 @@ class GeckoEngineSession(
         }
     }
 
-    @Suppress("ComplexMethod")
-    fun handleLongClick(elementSrc: String?, elementType: Int, uri: String? = null, title: String? = null): HitResult? {
+    /**
+     * Handles long click events.
+     *
+     * @param elementSrc The source of the element.
+     * @param elementType The type of the element.
+     * @param uri The (optional) URI of the element.
+     * @param title The (optional) title of the element.
+     * @param linkText The (optional) link text of the element.
+     */
+    fun handleLongClick(
+        elementSrc: String?,
+        elementType: Int,
+        uri: String? = null,
+        title: String? = null,
+        linkText: String? = null,
+    ): HitResult? {
         return when (elementType) {
             GeckoSession.ContentDelegate.ContextElement.TYPE_AUDIO ->
                 elementSrc?.let {
@@ -1539,7 +1566,7 @@ class GeckoEngineSession(
                         else -> HitResult.UNKNOWN(it)
                     }
                 } ?: uri?.let {
-                    HitResult.UNKNOWN(it)
+                    HitResult.UNKNOWN(src = it, linkText = linkText)
                 }
             }
             else -> HitResult.UNKNOWN("")
@@ -1590,7 +1617,6 @@ class GeckoEngineSession(
         /**
          * Provides an ErrorType corresponding to the error code provided.
          */
-        @Suppress("ComplexMethod")
         internal fun geckoErrorToErrorType(errorCode: Int) =
             when (errorCode) {
                 WebRequestError.ERROR_UNKNOWN -> ErrorType.UNKNOWN
@@ -1619,11 +1645,42 @@ class GeckoEngineSession(
                 WebRequestError.ERROR_SAFEBROWSING_UNWANTED_URI -> ErrorType.ERROR_SAFEBROWSING_UNWANTED_URI
                 WebRequestError.ERROR_SAFEBROWSING_HARMFUL_URI -> ErrorType.ERROR_SAFEBROWSING_HARMFUL_URI
                 WebRequestError.ERROR_SAFEBROWSING_PHISHING_URI -> ErrorType.ERROR_SAFEBROWSING_PHISHING_URI
+                WebRequestError.ERROR_HARMFULADDON_URI -> ErrorType.ERROR_HARMFULADDON_URI
                 WebRequestError.ERROR_HTTPS_ONLY -> ErrorType.ERROR_HTTPS_ONLY
                 WebRequestError.ERROR_BAD_HSTS_CERT -> ErrorType.ERROR_BAD_HSTS_CERT
                 else -> ErrorType.UNKNOWN
             }
     }
+}
+
+/**
+ * Provides all gecko app link intent launch types ignoring the types that only exists on AC.
+ * Ensures AC app-link launch types map to GeckoView.
+ **/
+private fun EngineSession.LoadUrlFlags.toGeckoLaunchType(): Int {
+    return when (getGeckoAppLinkLaunchType()) {
+        EngineSession.LoadUrlFlags.APP_LINK_LAUNCH_TYPE_COLD ->
+            APP_LINK_LAUNCH_TYPE_COLD
+
+        EngineSession.LoadUrlFlags.APP_LINK_LAUNCH_TYPE_WARM ->
+            APP_LINK_LAUNCH_TYPE_WARM
+
+        EngineSession.LoadUrlFlags.APP_LINK_LAUNCH_TYPE_HOT ->
+            APP_LINK_LAUNCH_TYPE_HOT
+
+        else -> APP_LINK_LAUNCH_TYPE_UNKNOWN
+    }
+}
+
+private fun EngineSession.LoadUrlFlags.getGeckoAppLinkLaunchType(): Int {
+    val launchTypes = listOf(
+        EngineSession.LoadUrlFlags.APP_LINK_LAUNCH_TYPE_COLD,
+        EngineSession.LoadUrlFlags.APP_LINK_LAUNCH_TYPE_WARM,
+        EngineSession.LoadUrlFlags.APP_LINK_LAUNCH_TYPE_HOT,
+    )
+
+    return launchTypes.firstOrNull { contains(it) }
+        ?: EngineSession.LoadUrlFlags.APP_LINK_LAUNCH_TYPE_UNKNOWN
 }
 
 /**

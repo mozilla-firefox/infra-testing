@@ -11,15 +11,14 @@ complexities of worker implementations, scopes, and treeherder annotations.
 import functools
 import hashlib
 import os
-import re
 import time
 from copy import deepcopy
 from dataclasses import dataclass
+from textwrap import dedent
 from typing import Callable
 
 from voluptuous import All, Any, Extra, NotIn, Optional, Required
 
-from taskgraph import MAX_DEPENDENCIES
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.hash import hash_path
 from taskgraph.util.keyed_by import evaluate_keyed_by
@@ -42,27 +41,58 @@ RUN_TASK = os.path.join(
 )
 
 
-@functools.lru_cache(maxsize=None)
-def _run_task_suffix():
+@functools.cache
+def run_task_suffix():
     """String to append to cache names under control of run-task."""
     return hash_path(RUN_TASK)[0:20]
 
 
-# A task description is a general description of a TaskCluster task
+#: Schema for the task transforms
 task_description_schema = Schema(
     {
-        # the label for this task
-        Required("label"): str,
-        # description of the task (for metadata)
-        Required("description"): str,
-        # attributes for this task
-        Optional("attributes"): {str: object},
-        # relative path (from config.path) to the file task was defined in
-        Optional("task-from"): str,
-        # dependencies of this task, keyed by name; these are passed through
-        # verbatim and subject to the interpretation of the Task's get_dependencies
-        # method.
-        Optional("dependencies"): {
+        Required(
+            "label",
+            description=dedent(
+                """
+                The label for this task.
+                """.lstrip()
+            ),
+        ): str,
+        Required(
+            "description",
+            description=dedent(
+                """
+                Description of the task (for metadata).
+                """.lstrip()
+            ),
+        ): str,
+        Optional(
+            "attributes",
+            description=dedent(
+                """
+                Attributes for this task.
+                """.lstrip()
+            ),
+        ): {str: object},
+        Optional(
+            "task-from",
+            description=dedent(
+                """
+                Relative path (from config.path) to the file task was defined
+                in.
+                """.lstrip()
+            ),
+        ): str,
+        Optional(
+            "dependencies",
+            description=dedent(
+                """
+                Dependencies of this task, keyed by name; these are passed
+                through verbatim and subject to the interpretation of the
+                Task's get_dependencies method.
+                """.lstrip()
+            ),
+        ): {
             All(
                 str,
                 NotIn(
@@ -71,7 +101,14 @@ task_description_schema = Schema(
                 ),
             ): object,
         },
-        Optional("priority"): Any(
+        Optional(
+            "priority",
+            description=dedent(
+                """
+                Priority of the task.
+                """.lstrip()
+            ),
+        ): Any(
             "highest",
             "very-high",
             "high",
@@ -80,61 +117,146 @@ task_description_schema = Schema(
             "very-low",
             "lowest",
         ),
-        # Soft dependencies of this task, as a list of tasks labels
-        Optional("soft-dependencies"): [str],
-        # Dependencies that must be scheduled in order for this task to run.
-        Optional("if-dependencies"): [str],
-        Optional("requires"): Any("all-completed", "all-resolved"),
-        # expiration and deadline times, relative to task creation, with units
-        # (e.g., "14 days").  Defaults are set based on the project.
-        Optional("expires-after"): str,
-        Optional("deadline-after"): str,
-        # custom routes for this task; the default treeherder routes will be added
-        # automatically
-        Optional("routes"): [str],
-        # custom scopes for this task; any scopes required for the worker will be
-        # added automatically. The following parameters will be substituted in each
-        # scope:
-        #  {level} -- the scm level of this push
-        #  {project} -- the project of this push
-        Optional("scopes"): [str],
-        # Tags
-        Optional("tags"): {str: str},
-        # custom "task.extra" content
-        Optional("extra"): {str: object},
-        # treeherder-related information; see
-        # https://schemas.taskcluster.net/taskcluster-treeherder/v1/task-treeherder-config.json
-        # This may be provided in one of two ways:
-        # 1) A simple `true` will cause taskgraph to generate the required information
-        # 2) A dictionary with one or more of the required keys. Any key not present
-        #    will use a default as described below.
-        # If not specified, no treeherder extra information or routes will be
-        # added to the task
-        Optional("treeherder"): Any(
+        Optional(
+            "soft-dependencies",
+            description=dedent(
+                """
+                Soft dependencies of this task, as a list of task labels.
+                """.lstrip()
+            ),
+        ): [str],
+        Optional(
+            "if-dependencies",
+            description=dedent(
+                """
+                Dependencies that must be scheduled in order for this task to run.
+                """.lstrip()
+            ),
+        ): [str],
+        Optional(
+            "requires",
+            description=dedent(
+                """
+                Specifies the condition for task execution.
+                """.lstrip()
+            ),
+        ): Any("all-completed", "all-resolved"),
+        Optional(
+            "expires-after",
+            description=dedent(
+                """
+                Expiration time relative to task creation, with units (e.g.,
+                '14 days'). Defaults are set based on the project.
+                """.lstrip()
+            ),
+        ): str,
+        Optional(
+            "deadline-after",
+            description=dedent(
+                """
+                Deadline time relative to task creation, with units (e.g.,
+                '14 days'). Defaults are set based on the project.
+                """.lstrip()
+            ),
+        ): str,
+        Optional(
+            "routes",
+            description=dedent(
+                """
+                Custom routes for this task; the default treeherder routes will
+                be added automatically.
+                """.lstrip()
+            ),
+        ): [str],
+        Optional(
+            "scopes",
+            description=dedent(
+                """
+                Custom scopes for this task; any scopes required for the worker
+                will be added automatically. The following parameters will be
+                substituted in each scope:
+
+                    {level} -- the scm level of this push
+                    {project} -- the project of this push.
+                """.lstrip()
+            ),
+        ): [str],
+        Optional(
+            "tags",
+            description=dedent(
+                """
+                Tags for this task.
+                """.lstrip()
+            ),
+        ): {str: str},
+        Optional(
+            "extra",
+            description=dedent(
+                """
+                Custom 'task.extra' content.
+                """.lstrip()
+            ),
+        ): {str: object},
+        Optional(
+            "treeherder",
+            description=dedent(
+                """
+                Treeherder-related information. Can be a simple `true` to
+                auto-generate information or a dictionary with specific keys.
+                """.lstrip()
+            ),
+        ): Any(
             True,
             {
-                # either a bare symbol, or "grp(sym)".
-                # The default symbol is the uppercased first letter of each
-                # section of the kind (delimited by "-") all smooshed together.
-                # Eg: "test" becomes "T", "docker-image" becomes "DI", etc.
-                "symbol": Optional(str),
-                # the task kind
-                # If "build" or "test" is found in the kind name, this defaults
-                # to the appropriate value. Otherwise, defaults to "other"
-                "kind": Optional(Any("build", "test", "other")),
-                # tier for this task
-                # Defaults to 1
-                "tier": Optional(int),
-                # task platform, in the form platform/collection, used to set
-                # treeherder.machine.platform and treeherder.collection or
-                # treeherder.labels
-                # Defaults to "default/opt"
-                "platform": Optional(str),
+                "symbol": Optional(
+                    str,
+                    description=dedent(
+                        """
+                        Either a bare symbol, or 'grp(sym)'. Defaults to the
+                        uppercased first letter of each section of the kind
+                        (delimited by '-') all smooshed together.
+                        """.lstrip()
+                    ),
+                ),
+                "kind": Optional(
+                    Any("build", "test", "other"),
+                    description=dedent(
+                        """
+                        The task kind. Defaults to 'build', 'test', or 'other'
+                        based on the kind name.
+                        """.lstrip()
+                    ),
+                ),
+                "tier": Optional(
+                    int,
+                    description=dedent(
+                        """
+                        Tier for this task. Defaults to 1.
+                        """.lstrip()
+                    ),
+                ),
+                "platform": Optional(
+                    str,
+                    description=dedent(
+                        """
+                        Task platform in the form platform/collection, used to
+                        set treeherder.machine.platform and
+                        treeherder.collection or treeherder.labels Defaults to
+                        'default/opt'.
+                        """.lstrip()
+                    ),
+                ),
             },
         ),
-        # information for indexing this build so its artifacts can be discovered;
-        # if omitted, the build will not be indexed.
-        Optional("index"): {
+        Optional(
+            "index",
+            description=dedent(
+                """
+                Information for indexing this build so its artifacts can be
+                discovered. If omitted, the build will not be indexed.
+                """.lstrip()
+            ),
+        ): {
             # the name of the product this build produces
             "product": str,
             # the names to use for this task in the TaskCluster index
@@ -159,39 +281,105 @@ task_description_schema = Schema(
                 "build_date",
             ),
         },
-        # The `run_on_projects` attribute, defaulting to "all".  This dictates the
-        # projects on which this task should be included in the target task set.
-        # See the attributes documentation for details.
-        Optional("run-on-projects"): optionally_keyed_by("build-platform", [str]),
-        Optional("run-on-tasks-for"): [str],
-        Optional("run-on-git-branches"): [str],
-        # The `shipping_phase` attribute, defaulting to None. This specifies the
-        # release promotion phase that this task belongs to.
-        Optional("shipping-phase"): Any(
+        Optional(
+            "run-on-projects",
+            description=dedent(
+                """
+                The `run_on_projects` attribute, defaulting to 'all'. Dictates
+                the projects on which this task should be included in the
+                target task set. See the attributes documentation for details.
+                """.lstrip()
+            ),
+        ): optionally_keyed_by("build-platform", [str]),
+        Optional(
+            "run-on-tasks-for",
+            description=dedent(
+                """
+                Specifies tasks for which this task should run.
+                """.lstrip()
+            ),
+        ): [str],
+        Optional(
+            "run-on-git-branches",
+            description=dedent(
+                """
+                Specifies git branches for which this task should run.
+                """.lstrip()
+            ),
+        ): [str],
+        Optional(
+            "shipping-phase",
+            description=dedent(
+                """
+                The `shipping_phase` attribute, defaulting to None. Specifies
+                the release promotion phase that this task belongs to.
+                """.lstrip()
+            ),
+        ): Any(
             None,
             "build",
             "promote",
             "push",
             "ship",
         ),
-        # The `always-target` attribute will cause the task to be included in the
-        # target_task_graph regardless of filtering. Tasks included in this manner
-        # will be candidates for optimization even when `optimize_target_tasks` is
-        # False, unless the task was also explicitly chosen by the target_tasks
-        # method.
-        Required("always-target"): bool,
-        # Optimization to perform on this task during the optimization phase.
-        # Optimizations are defined in taskcluster/taskgraph/optimize.py.
-        Required("optimization"): OptimizationSchema,
-        # the provisioner-id/worker-type for the task.  The following parameters will
-        # be substituted in this string:
-        #  {level} -- the scm level of this push
-        "worker-type": str,
-        # Whether the task should use sccache compiler caching.
-        Required("needs-sccache"): bool,
-        # information specific to the worker implementation that will run this task
-        Optional("worker"): {
-            Required("implementation"): str,
+        Required(
+            "always-target",
+            description=dedent(
+                """
+                The `always-target` attribute will cause the task to be
+                included in the target_task_graph regardless of filtering.
+
+                Tasks included in this manner will be candidates for
+                optimization even when `optimize_target_tasks` is False, unless
+                the task was also explicitly chosen by the target_tasks method.
+                """.lstrip()
+            ),
+        ): bool,
+        Required(
+            "optimization",
+            description=dedent(
+                """
+                Optimization to perform on this task during the optimization
+                phase. Defined in taskcluster/taskgraph/optimize.py.
+                """.lstrip()
+            ),
+        ): OptimizationSchema,
+        Required(
+            "worker-type",
+            description=dedent(
+                """
+                The provisioner-id/worker-type for the task. The following
+                parameters will be substituted in this string:
+
+                  {level} -- the scm level of this push.
+                """.lstrip()
+            ),
+        ): str,
+        Required(
+            "needs-sccache",
+            description=dedent(
+                """
+                Whether the task should use sccache compiler caching.
+                """.lstrip()
+            ),
+        ): bool,
+        Optional(
+            "worker",
+            description=dedent(
+                """
+                Information specific to the worker implementation that will run
+                this task.
+                """.lstrip()
+            ),
+        ): {
+            Required(
+                "implementation",
+                description=dedent(
+                    """
+                    The worker implementation type.
+                    """.lstrip()
+                ),
+            ): str,
             Extra: object,
         },
     }
@@ -222,14 +410,14 @@ def get_branch_rev(config):
     return config.params["head_rev"]
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def get_default_priority(graph_config, project):
     return evaluate_keyed_by(
         graph_config["task-priority"], "Graph Config", {"project": project}
     )
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def get_default_deadline(graph_config, project):
     return evaluate_keyed_by(
         graph_config["task-deadline-after"], "Graph Config", {"project": project}
@@ -338,8 +526,9 @@ def verify_index(config, index):
         # artifacts to extract from the task image after completion
         Optional("artifacts"): [
             {
-                # type of artifact -- simple file, or recursive directory
-                "type": Any("file", "directory"),
+                # type of artifact -- simple file, or recursive directory,
+                # or a volume mounted directory.
+                "type": Any("file", "directory", "volume"),
                 # task image path from which to read artifact
                 "path": str,
                 # name of the produced artifact (root of the names for
@@ -384,7 +573,7 @@ def build_docker_worker_payload(config, task, task_def):
             }
 
             # Find VOLUME in Dockerfile.
-            volumes = dockerutil.parse_volumes(name)
+            volumes = dockerutil.parse_volumes(name, config.graph_config)
             for v in sorted(volumes):
                 if v in worker["volumes"]:
                     raise Exception(
@@ -460,7 +649,7 @@ def build_docker_worker_payload(config, task, task_def):
     if "max-run-time" in worker:
         payload["maxRunTime"] = worker["max-run-time"]
 
-    run_task = payload.get("command", [""])[0].endswith("run-task")
+    run_task = os.path.basename(payload.get("command", [""])[0]).startswith("run-task")
 
     # run-task exits EXIT_PURGE_CACHES if there is a problem with caches.
     # Automatically retry the tasks and purge caches if we see this exit
@@ -524,7 +713,7 @@ def build_docker_worker_payload(config, task, task_def):
         cache_version = "v3"
 
         if run_task:
-            suffix = f"{cache_version}-{_run_task_suffix()}"
+            suffix = f"{cache_version}-{run_task_suffix()}"
 
             if out_of_tree_image:
                 name_hash = hashlib.sha256(
@@ -571,8 +760,6 @@ def build_docker_worker_payload(config, task, task_def):
         payload["features"] = features
     if capabilities:
         payload["capabilities"] = capabilities
-
-    check_caches_are_volumes(task)
 
 
 @payload_builder(
@@ -901,11 +1088,6 @@ def set_defaults(config, tasks):
         elif worker["implementation"] == "generic-worker":
             worker.setdefault("env", {})
             worker.setdefault("os-groups", [])
-            if worker["os-groups"] and worker["os"] != "windows":
-                raise Exception(
-                    "os-groups feature of generic-worker is only supported on "
-                    "Windows, not on {}".format(worker["os"])
-                )
             worker.setdefault("chain-of-trust", False)
         elif worker["implementation"] in (
             "scriptworker-signing",
@@ -1270,136 +1452,4 @@ def chain_of_trust(config, tasks):
                 cot.setdefault("inputs", {})["docker-image"] = {
                     "task-reference": "<docker-image>"
                 }
-        yield task
-
-
-@transforms.add
-def check_task_identifiers(config, tasks):
-    """Ensures that all tasks have well defined identifiers:
-    ``^[a-zA-Z0-9_-]{1,38}$``
-    """
-    e = re.compile("^[a-zA-Z0-9_-]{1,38}$")
-    for task in tasks:
-        for attrib in ("workerType", "provisionerId"):
-            if not e.match(task["task"][attrib]):
-                raise Exception(
-                    "task {}.{} is not a valid identifier: {}".format(
-                        task["label"], attrib, task["task"][attrib]
-                    )
-                )
-        yield task
-
-
-@transforms.add
-def check_task_dependencies(config, tasks):
-    """Ensures that tasks don't have more than 100 dependencies."""
-    for task in tasks:
-        number_of_dependencies = (
-            len(task["dependencies"])
-            + len(task["if-dependencies"])
-            + len(task["soft-dependencies"])
-        )
-        if number_of_dependencies > MAX_DEPENDENCIES:
-            raise Exception(
-                "task {}/{} has too many dependencies ({} > {})".format(
-                    config.kind,
-                    task["label"],
-                    number_of_dependencies,
-                    MAX_DEPENDENCIES,
-                )
-            )
-        yield task
-
-
-def check_caches_are_volumes(task):
-    """Ensures that all cache paths are defined as volumes.
-
-    Caches and volumes are the only filesystem locations whose content
-    isn't defined by the Docker image itself. Some caches are optional
-    depending on the task environment. We want paths that are potentially
-    caches to have as similar behavior regardless of whether a cache is
-    used. To help enforce this, we require that all paths used as caches
-    to be declared as Docker volumes. This check won't catch all offenders.
-    But it is better than nothing.
-    """
-    volumes = set(task["worker"]["volumes"])
-    paths = {c["mount-point"] for c in task["worker"].get("caches", [])}
-    missing = paths - volumes
-
-    if not missing:
-        return
-
-    raise Exception(
-        "task {} (image {}) has caches that are not declared as "
-        "Docker volumes: {} "
-        "(have you added them as VOLUMEs in the Dockerfile?)".format(
-            task["label"], task["worker"]["docker-image"], ", ".join(sorted(missing))
-        )
-    )
-
-
-@transforms.add
-def check_run_task_caches(config, tasks):
-    """Audit for caches requiring run-task.
-
-    run-task manages caches in certain ways. If a cache managed by run-task
-    is used by a non run-task task, it could cause problems. So we audit for
-    that and make sure certain cache names are exclusive to run-task.
-
-    IF YOU ARE TEMPTED TO MAKE EXCLUSIONS TO THIS POLICY, YOU ARE LIKELY
-    CONTRIBUTING TECHNICAL DEBT AND WILL HAVE TO SOLVE MANY OF THE PROBLEMS
-    THAT RUN-TASK ALREADY SOLVES. THINK LONG AND HARD BEFORE DOING THAT.
-    """
-    re_reserved_caches = re.compile(
-        """^
-        (checkouts|tooltool-cache)
-    """,
-        re.VERBOSE,
-    )
-
-    cache_prefix = "{trust_domain}-level-{level}-".format(
-        trust_domain=config.graph_config["trust-domain"],
-        level=config.params["level"],
-    )
-
-    suffix = _run_task_suffix()
-
-    for task in tasks:
-        payload = task["task"].get("payload", {})
-        command = payload.get("command") or [""]
-
-        main_command = command[0] if isinstance(command[0], str) else ""
-        run_task = main_command.endswith("run-task")
-
-        for cache in payload.get("cache", {}).get(
-            "task-reference", payload.get("cache", {})
-        ):
-            if not cache.startswith(cache_prefix):
-                raise Exception(
-                    "{} is using a cache ({}) which is not appropriate "
-                    "for its trust-domain and level. It should start with {}.".format(
-                        task["label"], cache, cache_prefix
-                    )
-                )
-
-            cache = cache[len(cache_prefix) :]
-
-            if not re_reserved_caches.match(cache):
-                continue
-
-            if not run_task:
-                raise Exception(
-                    f"{task['label']} is using a cache ({cache}) reserved for run-task "
-                    "change the task to use run-task or use a different "
-                    "cache name"
-                )
-
-            if suffix not in cache:
-                raise Exception(
-                    f"{task['label']} is using a cache ({cache}) reserved for run-task "
-                    "but the cache name is not dependent on the contents "
-                    "of run-task; change the cache name to conform to the "
-                    "naming requirements"
-                )
-
         yield task

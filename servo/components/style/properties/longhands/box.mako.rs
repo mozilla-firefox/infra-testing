@@ -13,7 +13,7 @@ ${helpers.predefined_type(
     initial_specified_value="specified::Display::inline()",
     animation_type="discrete",
     spec="https://drafts.csswg.org/css-display/#propdef-display",
-    servo_restyle_damage="rebuild_and_reflow",
+    servo_restyle_damage="rebuild_box",
     affects="layout",
 )}
 
@@ -49,7 +49,7 @@ ${helpers.predefined_type(
     initial_specified_value="specified::PositionProperty::Static",
     animation_type="discrete",
     spec="https://drafts.csswg.org/css-position/#position-property",
-    servo_restyle_damage="rebuild_and_reflow",
+    servo_restyle_damage="rebuild_box",
     affects="layout",
 )}
 
@@ -86,7 +86,7 @@ ${helpers.predefined_type(
     engines="gecko servo",
     animation_type="discrete",
     spec="https://drafts.csswg.org/css-box/#propdef-float",
-    servo_restyle_damage="rebuild_and_reflow",
+    servo_restyle_damage="rebuild_box",
     affects="layout",
 )}
 
@@ -97,7 +97,7 @@ ${helpers.predefined_type(
     engines="gecko servo",
     animation_type="discrete",
     spec="https://drafts.csswg.org/css2/#propdef-clear",
-    servo_restyle_damage="rebuild_and_reflow",
+    servo_restyle_damage="rebuild_box",
     affects="layout",
 )}
 
@@ -107,7 +107,7 @@ ${helpers.predefined_type(
     "computed::VerticalAlign::baseline()",
     engines="gecko servo",
     spec="https://www.w3.org/TR/CSS2/visudet.html#propdef-vertical-align",
-    servo_restyle_damage = "reflow",
+    servo_restyle_damage = "rebuild_box",
     affects="layout",
 )}
 
@@ -118,7 +118,7 @@ ${helpers.predefined_type(
     engines="gecko servo",
     animation_type="discrete",
     spec="https://drafts.csswg.org/css-inline-3/#baseline-source",
-    servo_restyle_damage = "reflow",
+    servo_restyle_damage = "rebuild_box",
     affects="layout",
 )}
 
@@ -135,21 +135,6 @@ ${helpers.single_keyword(
     affects="layout",
 )}
 
-% for direction in ["inline", "block"]:
-    ${helpers.predefined_type(
-        "overflow-clip-box-" + direction,
-        "OverflowClipBox",
-        "computed::OverflowClipBox::PaddingBox",
-        engines="gecko",
-        enabled_in="chrome",
-        gecko_pref="layout.css.overflow-clip-box.enabled",
-        animation_type="discrete",
-        spec="Internal, may be standardized in the future: \
-              https://developer.mozilla.org/en-US/docs/Web/CSS/overflow-clip-box",
-        affects="layout",
-    )}
-% endfor
-
 % for (axis, logical) in ALL_AXES:
     <% full_name = "overflow-{}".format(axis) %>
     ${helpers.predefined_type(
@@ -161,7 +146,7 @@ ${helpers.single_keyword(
         logical=logical,
         animation_type="discrete",
         spec="https://drafts.csswg.org/css-overflow-3/#propdef-{}".format(full_name),
-        servo_restyle_damage = "reflow",
+        servo_restyle_damage = "rebuild_box",
         affects="layout",
     )}
 % endfor
@@ -185,10 +170,10 @@ ${helpers.predefined_type(
     "Transform",
     "generics::transform::Transform::none()",
     engines="gecko servo",
-    extra_prefixes=transform_extra_prefixes,
+    extra_prefixes="moz:layout.css.prefixes.transforms",
     flags="CAN_ANIMATE_ON_COMPOSITOR",
     spec="https://drafts.csswg.org/css-transforms/#propdef-transform",
-    servo_restyle_damage="reflow_out_of_flow",
+    servo_restyle_damage="recalculate_overflow",
     affects="overflow",
 )}
 
@@ -200,7 +185,7 @@ ${helpers.predefined_type(
     boxed=True,
     flags="CAN_ANIMATE_ON_COMPOSITOR",
     spec="https://drafts.csswg.org/css-transforms-2/#individual-transforms",
-    servo_restyle_damage = "reflow_out_of_flow",
+    servo_restyle_damage = "recalculate_overflow",
     affects="overflow",
 )}
 
@@ -212,7 +197,7 @@ ${helpers.predefined_type(
     boxed=True,
     flags="CAN_ANIMATE_ON_COMPOSITOR",
     spec="https://drafts.csswg.org/css-transforms-2/#individual-transforms",
-    servo_restyle_damage = "reflow_out_of_flow",
+    servo_restyle_damage = "recalculate_overflow",
     affects="overflow",
 )}
 
@@ -224,7 +209,7 @@ ${helpers.predefined_type(
     boxed=True,
     flags="CAN_ANIMATE_ON_COMPOSITOR",
     spec="https://drafts.csswg.org/css-transforms-2/#individual-transforms",
-    servo_restyle_damage="reflow_out_of_flow",
+    servo_restyle_damage="recalculate_overflow",
     affects="overflow",
 )}
 
@@ -237,7 +222,7 @@ ${helpers.predefined_type(
     servo_pref="layout.unimplemented",
     flags="CAN_ANIMATE_ON_COMPOSITOR",
     spec="https://drafts.fxtf.org/motion-1/#offset-path-property",
-    servo_restyle_damage="reflow_out_of_flow",
+    servo_restyle_damage="rebuild_box",
     affects="overflow",
 )}
 
@@ -249,7 +234,7 @@ ${helpers.predefined_type(
     engines="gecko",
     flags="CAN_ANIMATE_ON_COMPOSITOR",
     spec="https://drafts.fxtf.org/motion-1/#offset-distance-property",
-    servo_restyle_damage="reflow_out_of_flow",
+    servo_restyle_damage="rebuild_box",
     affects="overflow",
 )}
 
@@ -261,7 +246,7 @@ ${helpers.predefined_type(
     engines="gecko",
     flags="CAN_ANIMATE_ON_COMPOSITOR",
     spec="https://drafts.fxtf.org/motion-1/#offset-rotate-property",
-    servo_restyle_damage="reflow_out_of_flow",
+    servo_restyle_damage="rebuild_box",
     affects="overflow",
 )}
 
@@ -273,7 +258,7 @@ ${helpers.predefined_type(
     engines="gecko",
     flags="CAN_ANIMATE_ON_COMPOSITOR",
     spec="https://drafts.fxtf.org/motion-1/#offset-anchor-property",
-    servo_restyle_damage="reflow_out_of_flow",
+    servo_restyle_damage="rebuild_box",
     boxed=True,
     affects="overflow",
 )}
@@ -286,7 +271,7 @@ ${helpers.predefined_type(
     engines="gecko",
     flags="CAN_ANIMATE_ON_COMPOSITOR",
     spec="https://drafts.fxtf.org/motion-1/#offset-position-property",
-    servo_restyle_damage="reflow_out_of_flow",
+    servo_restyle_damage="rebuild_box",
     boxed=True,
     affects="overflow",
 )}
@@ -341,7 +326,6 @@ ${helpers.predefined_type(
         engines="gecko",
         logical_group="overscroll-behavior",
         logical=logical,
-        gecko_pref="layout.css.overscroll-behavior.enabled",
         spec="https://wicg.github.io/overscroll-behavior/#overscroll-behavior-properties",
         animation_type="discrete",
         affects="paint",
@@ -358,6 +342,7 @@ ${helpers.single_keyword(
     gecko_enum_prefix="StyleIsolation",
     animation_type="discrete",
     affects="paint",
+    servo_restyle_damage="repaint",
 )}
 
 ${helpers.predefined_type(
@@ -410,8 +395,8 @@ ${helpers.predefined_type(
     engines="gecko servo",
     gecko_ffi_name="mChildPerspective",
     spec="https://drafts.csswg.org/css-transforms/#perspective",
-    extra_prefixes=transform_extra_prefixes,
-    servo_restyle_damage = "reflow_out_of_flow",
+    extra_prefixes="moz:layout.css.prefixes.transforms",
+    servo_restyle_damage = "recalculate_overflow",
     affects="overflow",
 )}
 
@@ -423,7 +408,7 @@ ${helpers.predefined_type(
     boxed=True,
     extra_prefixes=transform_extra_prefixes,
     spec="https://drafts.csswg.org/css-transforms-2/#perspective-origin-property",
-    servo_restyle_damage="reflow_out_of_flow",
+    servo_restyle_damage="recalculate_overflow",
     affects="overflow",
 )}
 
@@ -435,6 +420,7 @@ ${helpers.single_keyword(
     spec="https://drafts.csswg.org/css-transforms/#backface-visibility-property",
     extra_prefixes=transform_extra_prefixes,
     animation_type="discrete",
+    servo_restyle_damage="repaint",
     affects="paint",
 )}
 
@@ -456,7 +442,7 @@ ${helpers.predefined_type(
     spec="https://drafts.csswg.org/css-transforms-2/#transform-style-property",
     extra_prefixes=transform_extra_prefixes,
     animation_type="discrete",
-    servo_restyle_damage = "reflow_out_of_flow",
+    servo_restyle_damage = "recalculate_overflow",
     affects="overflow",
 )}
 
@@ -469,7 +455,7 @@ ${helpers.predefined_type(
     gecko_ffi_name="mTransformOrigin",
     boxed=True,
     spec="https://drafts.csswg.org/css-transforms/#transform-origin-property",
-    servo_restyle_damage="reflow_out_of_flow",
+    servo_restyle_damage="recalculate_overflow",
     affects="overflow",
 )}
 
@@ -496,7 +482,7 @@ ${helpers.predefined_type(
 ${helpers.predefined_type(
     "container-type",
     "ContainerType",
-    "computed::ContainerType::Normal",
+    "computed::ContainerType::NORMAL",
     engines="gecko servo",
     animation_type="none",
     servo_pref="layout.container-queries.enabled",
@@ -520,7 +506,7 @@ ${helpers.predefined_type(
     "Appearance",
     "computed::Appearance::None",
     engines="gecko",
-    aliases="-moz-appearance -webkit-appearance",
+    extra_prefixes="moz:layout.css.moz-appearance.enabled webkit",
     spec="https://drafts.csswg.org/css-ui-4/#propdef-appearance",
     animation_type="discrete",
     gecko_ffi_name="mAppearance",

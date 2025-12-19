@@ -5,12 +5,18 @@ import json
 import os
 import pathlib
 import re
+from urllib.parse import (
+    parse_qs,
+    unquote,
+    urlencode,
+    urlsplit,
+    urlunsplit,
+)
 
 from cmdline import DESKTOP_APPS, GECKO_PROFILER_APPS, TRACE_APPS
 from constants.raptor_tests_constants import YOUTUBE_PLAYBACK_MEASURE
 from logger.logger import RaptorLogger
 from manifestparser import TestManifest
-from six.moves.urllib.parse import parse_qs, unquote, urlencode, urlsplit, urlunsplit
 from support_class_utils import import_support_class
 from utils import (
     bool_from_str,
@@ -27,6 +33,7 @@ LIVE_SITE_TIMEOUT_MULTIPLIER = 1.2
 
 required_settings = [
     "alert_threshold",
+    "subtest_alert_threshold",
     "apps",
     "lower_is_better",
     "measure",
@@ -79,6 +86,9 @@ def validate_test_toml(test_details):
         if setting == "measure" and test_details["type"] == "benchmark":
             continue
         if setting == "scenario_time" and test_details["type"] != "scenario":
+            continue
+        # subtest_alert_threshold is optional
+        if setting == "subtest_alert_threshold":
             continue
         if test_details.get(setting) is None:
             # if page-cycles is not specified, it's ok as long as browser-cycles is there
@@ -431,11 +441,10 @@ def get_raptor_test_list(args, oskey):
                         next_test["playback_pageset_manifest"], next_test["name"]
                     )
 
-        else:
-            if next_test.get("playback") is not None:
-                next_test["playback_pageset_manifest"] = transform_subtest(
-                    next_test["playback_pageset_manifest"], next_test["name"]
-                )
+        elif next_test.get("playback") is not None:
+            next_test["playback_pageset_manifest"] = transform_subtest(
+                next_test["playback_pageset_manifest"], next_test["name"]
+            )
 
         # Check if either --gecko-profiler or --extra-profiler-run is enabled.
         if args.gecko_profile or (
@@ -680,6 +689,7 @@ def get_raptor_test_list(args, oskey):
             "interactive",
             "host_from_parent",
             "expose_browser_profiler",
+            "sparse_checkout",
         ]
         for setting in bool_settings:
             if next_test.get(setting, None) is not None:

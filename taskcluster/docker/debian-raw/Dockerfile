@@ -32,12 +32,11 @@ RUN if [ -n "$DIST" ]; then for s in debian_$DIST debian_$DIST-updates debian_$D
       debian-security_jessie-security) \
           echo "deb http://archive.debian.org/debian-security/ jessie/updates main"; \
           ;; \
-      debian*_jessie*) \
-          echo "deb http://archive.debian.org/${s%_*}/ ${s#*_} main"; \
-          ;; \
       debian-security_buster-security) \
-          d=${s#*_}; \
-          echo "deb http://snapshot.debian.org/archive/${s%_*}/$SNAPSHOT/ ${d%-security}/updates main"; \
+          echo "deb http://archive.debian.org/debian-security/ buster/updates main"; \
+          ;; \
+      debian*_jessie*|debian*_buster*) \
+          echo "deb http://archive.debian.org/${s%_*}/ ${s#*_} main"; \
           ;; \
       *) \
           echo "deb http://snapshot.debian.org/archive/${s%_*}/$SNAPSHOT/ ${s#*_} main"; \
@@ -69,7 +68,16 @@ RUN apt-get update && \
       apt-get install python3-minimal libpython3-stdlib; \
       echo 'dir::bin::methods::http "/usr/local/sbin/snapshot-hack.py";' >> /etc/apt/apt.conf.d/99taskcluster; \
     fi && \
-    apt-get dist-upgrade && \
     apt-get install \
       apt-transport-https \
-      ca-certificates
+      ca-certificates && \
+    if [ -n "$SNAPSHOT" -a -f /etc/apt/sources.list.d/ubuntu.sources ]; then \
+      echo "APT::Snapshot \"$SNAPSHOT\";" > /etc/apt/apt.conf.d/99snapshot && \
+      ( echo 'Package: *'; \
+        echo 'Pin: origin "snapshot.ubuntu.com"'; \
+        echo 'Pin-Priority: 1001'; \
+      ) > /etc/apt/preferences.d/90snapshot && \
+      downgrades=--allow-downgrades && \
+      apt-get update; fi && \
+    apt-get dist-upgrade ${downgrades} && \
+    rm -f /etc/apt/preferences.d/90snapshot

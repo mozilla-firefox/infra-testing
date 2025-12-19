@@ -27,9 +27,6 @@
 #include "gfxContext.h"
 #include "gfxPlatform.h"
 #include "mozilla/ClearOnShutdown.h"
-#include "mozilla/DebugOnly.h"
-#include "mozilla/Likely.h"
-#include "mozilla/MemoryReporting.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/SizeOfState.h"
 #include "mozilla/StaticPrefs_image.h"
@@ -208,6 +205,20 @@ RasterImage::GetHeight(int32_t* aHeight) {
 }
 
 //******************************************************************************
+NS_IMETHODIMP
+RasterImage::GetIntrinsicSize(ImageIntrinsicSize* aIntrinsicSize) {
+  NS_ENSURE_ARG_POINTER(aIntrinsicSize);
+
+  if (mError) {
+    return NS_ERROR_FAILURE;
+  }
+
+  aIntrinsicSize->mWidth = Some(mSize.width);
+  aIntrinsicSize->mHeight = Some(mSize.height);
+  return NS_OK;
+}
+
+//******************************************************************************
 void RasterImage::MediaFeatureValuesChangedAllDocuments(
     const mozilla::MediaFeatureChange& aChange) {}
 
@@ -245,7 +256,7 @@ size_t RasterImage::GetNativeSizesLength() {
 
 //******************************************************************************
 NS_IMETHODIMP
-RasterImage::GetIntrinsicSize(nsSize* aSize) {
+RasterImage::GetIntrinsicSizeInAppUnits(nsSize* aSize) {
   if (mError) {
     return NS_ERROR_FAILURE;
   }
@@ -1533,6 +1544,11 @@ void RasterImage::DoError() {
 
   // Invalidate to get rid of any partially-drawn image content.
   auto dirtyRect = OrientedIntRect({0, 0}, mSize);
+  // Make sure to provide a non-empty rect so a FRAME_UPDATE notification goes
+  // out otherwise consumers might not get any kind of update whatsoever.
+  if (dirtyRect.IsEmpty()) {
+    dirtyRect.width = dirtyRect.height = 1;
+  }
   NotifyProgress(NoProgress, dirtyRect);
 
   MOZ_LOG(gImgLog, LogLevel::Error,

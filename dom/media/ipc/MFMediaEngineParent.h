@@ -9,11 +9,11 @@
 #include <winnt.h>
 #include <wrl.h>
 
-#include "MediaInfo.h"
 #include "MFMediaEngineExtra.h"
 #include "MFMediaEngineNotify.h"
 #include "MFMediaEngineUtils.h"
 #include "MFMediaSource.h"
+#include "MediaInfo.h"
 #include "PlatformDecoderModule.h"
 #include "mozilla/PMFMediaEngineParent.h"
 
@@ -24,7 +24,7 @@ class MFContentProtectionManager;
 class MFMediaEngineExtension;
 class MFMediaEngineStreamWrapper;
 class MFMediaSource;
-class RemoteDecoderManagerParent;
+class RemoteMediaManagerParent;
 
 /**
  * MFMediaEngineParent is a wrapper class for a MediaEngine in the MF-CDM
@@ -37,7 +37,7 @@ class RemoteDecoderManagerParent;
 class MFMediaEngineParent final : public PMFMediaEngineParent {
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MFMediaEngineParent);
-  MFMediaEngineParent(RemoteDecoderManagerParent* aManager,
+  MFMediaEngineParent(RemoteMediaManagerParent* aManager,
                       nsISerialEventTarget* aManagerThread);
 
   using TrackType = TrackInfo::TrackType;
@@ -68,7 +68,7 @@ class MFMediaEngineParent final : public PMFMediaEngineParent {
   ~MFMediaEngineParent();
 
   void CreateMediaEngine();
-  HRESULT SetMediaInfo(const MediaInfoIPDL& aInfo, bool aIsEncrytpedCustomInit);
+  HRESULT SetMediaInfo(const MediaInfoIPDL& aInfo, bool aIsEncryptedCustomInit);
 
   void InitializeDXGIDeviceManager();
 
@@ -90,6 +90,11 @@ class MFMediaEngineParent final : public PMFMediaEngineParent {
   Maybe<gfx::IntSize> DetectVideoSizeChange();
   void NotifyVideoResizing();
 
+#ifdef MOZ_WMF_CDM
+  // We will disable HWDRM when receiving error MSPR_E_NO_DECRYPTOR_AVAILABLE.
+  void NotifyDisableHWDRM();
+#endif
+
   // This generates unique id for each MFMediaEngineParent instance, and it
   // would be increased monotonically.
   static inline uint64_t sMediaEngineIdx = 0;
@@ -101,7 +106,7 @@ class MFMediaEngineParent final : public PMFMediaEngineParent {
   // destroy.
   RefPtr<MFMediaEngineParent> mIPDLSelfRef;
 
-  const RefPtr<RemoteDecoderManagerParent> mManager;
+  const RefPtr<RemoteMediaManagerParent> mManager;
   const RefPtr<nsISerialEventTarget> mManagerThread;
 
   // Required classes for working with the media engine.

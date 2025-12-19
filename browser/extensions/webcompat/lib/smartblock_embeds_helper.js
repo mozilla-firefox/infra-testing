@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* globals browser */
+/* globals browser exportFunction */
 
 "use strict";
 
@@ -86,8 +86,10 @@ const embedHelperLib = (() => {
       const SMARTBLOCK_PLACEHOLDER_HTML_STRING = `
         <style>
           #smartblock-placeholder-wrapper {
-            min-height: 225px;
-            width: 400px;
+            min-height: 137px;
+            min-width: 150px;
+            max-height: 225px;
+            max-width: 400px;
             padding: 32px 24px;
   
             display: block;
@@ -126,7 +128,7 @@ const embedHelperLib = (() => {
               https://searchfox.org/mozilla-central/source/browser/themes/addons/dark/manifest.json */
             background-color: light-dark(rgb(2, 80, 187), rgb(128, 235, 255));
           }
-  
+
           #smartblock-placeholder-button:hover:active {
             /* Colours match light/dark theme from
               https://searchfox.org/mozilla-central/source/browser/themes/addons/light/manifest.json
@@ -153,6 +155,10 @@ const embedHelperLib = (() => {
 
       // Create the placeholder inside a shadow dom
       const placeholderDiv = document.createElement("div");
+
+      // Workaround to make sure clicks reach our placeholder button if the site
+      // uses pointer capture. See Bug 1966696 for an example.
+      disableSetPointerCaptureFor(placeholderDiv);
 
       if (isTestShim) {
         // Tag the div with a class to make it easily detectable FOR THE TEST SHIM ONLY
@@ -218,11 +224,15 @@ const embedHelperLib = (() => {
       for (let { addedNodes, target, type } of mutations) {
         const nodes = type === "attributes" ? [target] : addedNodes;
         for (const node of nodes) {
+          if (node.nodeType !== Node.ELEMENT_NODE) {
+            // node is not an element, skip
+            continue;
+          }
           if (node.matches(embedSelector)) {
-            // If node is an embed, replace with placeholder
+            // If element is an embed, replace with placeholder
             createShimPlaceholders([node], SHIM_INFO);
           } else {
-            // If node is not an embed, check if any children are
+            // If element is not an embed, check if any children are
             // and replace if needed
             let maybeEmbedNodeList = node.querySelectorAll?.(embedSelector);
             if (maybeEmbedNodeList) {
@@ -246,6 +256,31 @@ const embedHelperLib = (() => {
         newEmbedObserver.disconnect();
       }
     }, SMARTBLOCK_EMBED_OBSERVER_TIMEOUT_MS);
+  }
+
+  /**
+   * Disables the setPointerCapture method for a given element to prevent
+   * pointer capture issues.
+   *
+   * @param {HTMLElement} el - The element to disable setPointerCapture for.
+   */
+  function disableSetPointerCaptureFor(el) {
+    const pageEl = el.wrappedJSObject;
+
+    Object.defineProperty(pageEl, "setPointerCapture", {
+      configurable: true,
+      writable: true,
+      enumerable: false,
+      // no-op ONLY for this element
+      value: exportFunction(function (_pointerId) {
+        console.warn(
+          "Blocked setPointerCapture on SmartBlock embed placeholder.",
+          this,
+          _pointerId
+        );
+        // swallow
+      }, window),
+    });
   }
 
   /**

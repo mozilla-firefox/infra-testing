@@ -4,7 +4,7 @@
 
 package mozilla.components.concept.engine.translate
 
-import org.jetbrains.annotations.VisibleForTesting
+import androidx.annotation.VisibleForTesting
 
 /**
  * The language model container for representing language model state to the user.
@@ -117,6 +117,7 @@ data class LanguageModel(
          * @param newStatus What the new state should be based on the change.
          * @return The new state of the language models based on the information.
          */
+        @Suppress("CognitiveComplexMethod")
         fun determineNewLanguageModelState(
             appLanguage: String?,
             currentLanguageModels: List<LanguageModel>?,

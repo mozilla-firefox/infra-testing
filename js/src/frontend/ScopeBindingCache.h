@@ -18,10 +18,13 @@
 
 #include "js/Utility.h"  // AutoEnterOOMUnsafeRegion
 
-#include "vm/Scope.h"       // AbstractBaseScopeData
 #include "vm/StringType.h"  // JSAtom
 
 namespace js {
+
+template <typename NameT>
+class AbstractBaseScopeData;
+
 namespace frontend {
 
 struct CompilationAtomCache;
@@ -235,13 +238,14 @@ class MOZ_STACK_CLASS StencilScopeBindingCache final
     : public ScopeBindingCache {
   ScopeBindingMap<TaggedParserAtomIndex> scopeMap;
 #ifdef DEBUG
-  const CompilationStencilMerger& merger_;
+  const InitialStencilAndDelazifications& stencils_;
 #endif
 
  public:
-  explicit StencilScopeBindingCache(const CompilationStencilMerger& merger)
+  explicit StencilScopeBindingCache(
+      const InitialStencilAndDelazifications& stencils)
 #ifdef DEBUG
-      : merger_(merger)
+      : stencils_(stencils)
 #endif
   {
   }

@@ -5,12 +5,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // Keep in (case-insensitive) order:
-#include "mozilla/dom/SVGFilters.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/SVGObserverUtils.h"
+#include "mozilla/dom/SVGFilters.h"
 #include "nsContainerFrame.h"
-#include "nsIFrame.h"
 #include "nsGkAtoms.h"
+#include "nsIFrame.h"
 
 nsIFrame* NS_NewSVGFEUnstyledLeafFrame(mozilla::PresShell* aPresShell,
                                        mozilla::ComputedStyle* aStyle);
@@ -41,7 +41,7 @@ class SVGFEUnstyledLeafFrame final : public nsIFrame {
 #endif
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
   bool ComputeCustomOverflow(OverflowAreas& aOverflowAreas) override {
     // We don't maintain a ink overflow rect
@@ -63,7 +63,7 @@ NS_IMPL_FRAMEARENA_HELPERS(SVGFEUnstyledLeafFrame)
 
 nsresult SVGFEUnstyledLeafFrame::AttributeChanged(int32_t aNameSpaceID,
                                                   nsAtom* aAttribute,
-                                                  int32_t aModType) {
+                                                  AttrModType aModType) {
   auto* element =
       static_cast<mozilla::dom::SVGFilterPrimitiveChildElement*>(GetContent());
   if (element->AttributeAffectsRendering(aNameSpaceID, aAttribute)) {

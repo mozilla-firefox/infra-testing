@@ -6,6 +6,7 @@
 #ifndef CODEC_CONFIG_H_
 #define CODEC_CONFIG_H_
 
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -33,6 +34,8 @@ struct AudioCodecConfig {
   uint32_t mMaxFrameSizeMs;
   uint32_t mMinFrameSizeMs;
 
+  AudioEncodingConstraints mEncodingConstraints;
+
   // OPUS-specific
   bool mDTXEnabled;
   uint32_t mMaxAverageBitrate;
@@ -42,7 +45,7 @@ struct AudioCodecConfig {
   AudioCodecConfig(int type, std::string name, int freq, int channels,
                    bool FECEnabled)
       : mType(type),
-        mName(name),
+        mName(std::move(name)),
         mFreq(freq),
         mChannels(channels),
         mFECEnabled(FECEnabled),
@@ -63,10 +66,17 @@ struct AudioCodecConfig {
            mFrameSizeMs == aOther.mFrameSizeMs &&
            mMaxFrameSizeMs == aOther.mMaxFrameSizeMs &&
            mMinFrameSizeMs == aOther.mMinFrameSizeMs &&
+           mEncodingConstraints == aOther.mEncodingConstraints &&
            mDTXEnabled == aOther.mDTXEnabled &&
            mMaxAverageBitrate == aOther.mMaxAverageBitrate &&
            mMaxPlaybackRate == aOther.mMaxPlaybackRate &&
            mCbrEnabled == aOther.mCbrEnabled;
+  }
+
+  std::string MimeType() {
+    std::stringstream ss;
+    ss << "audio/" << mName;
+    return ss.str();
   }
 };
 
@@ -119,10 +129,10 @@ class VideoCodecConfig {
   int mRTXPayloadType = -1;
 
   uint32_t mTias = 0;
-  EncodingConstraints mEncodingConstraints;
+  VideoEncodingConstraints mEncodingConstraints;
   struct Encoding {
     std::string rid;
-    EncodingConstraints constraints;
+    VideoEncodingConstraints constraints;
     bool active = true;
     // TODO(bug 1744116): Use = default here
     bool operator==(const Encoding& aOther) const {
@@ -163,14 +173,15 @@ class VideoCodecConfig {
   }
 
   static VideoCodecConfig CreateAv1Config(
-      int pt, const EncodingConstraints& constraints,
+      int pt, const VideoEncodingConstraints& constraints,
       const JsepVideoCodecDescription::Av1Config& av1) {
     VideoCodecConfig config(pt, "AV1", constraints);
     config.mAv1Config = Some(av1);
     return config;
   }
 
-  static auto CreateH264Config(int pt, const EncodingConstraints& constraints,
+  static auto CreateH264Config(int pt,
+                               const VideoEncodingConstraints& constraints,
                                const VideoCodecConfigH264& h264)
       -> VideoCodecConfig {
     VideoCodecConfig config(pt, "H264", constraints);
@@ -184,7 +195,7 @@ class VideoCodecConfig {
   }
 
   VideoCodecConfig(int type, std::string name,
-                   const EncodingConstraints& constraints)
+                   const VideoEncodingConstraints& constraints)
       : mType(type),
         mName(std::move(name)),
         mEncodingConstraints(constraints) {}
@@ -238,6 +249,12 @@ class VideoCodecConfig {
   bool RtcpFbTransportCCIsSet() const { return mTransportCCFbSet; }
 
   bool RtxPayloadTypeIsSet() const { return mRTXPayloadType != -1; }
+
+  std::string MimeType() {
+    std::stringstream ss;
+    ss << "video/" << mName;
+    return ss.str();
+  }
 };
 }  // namespace mozilla
 #endif

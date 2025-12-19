@@ -12,7 +12,6 @@
 #include "nsISHEntry.h"
 #include "nsString.h"
 #include "nsWeakReference.h"
-#include "mozilla/Attributes.h"
 
 class nsSHEntryShared;
 class nsIInputStream;
@@ -64,7 +63,7 @@ class nsSHEntry : public nsISHEntry, public nsSupportsWeakReference {
   bool mIsSrcdocEntry;
   bool mScrollRestorationIsManual;
   bool mLoadedInThisProcess;
-  bool mPersist;
+  bool mTransient;
   bool mHasUserInteraction;
   bool mHasUserActivation;
 };

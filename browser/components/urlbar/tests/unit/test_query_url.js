@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const PLACES_PROVIDERNAME = "Places";
+const PLACES_PROVIDERNAME = "UrlbarProviderPlaces";
 
 testEngine_setup();
 
@@ -20,7 +20,7 @@ add_task(async function test_no_slash() {
     matches: [
       makeVisitResult(context, {
         uri: "http://file.org/",
-        fallbackTitle: UrlbarTestUtils.trimURL("http://file.org/"),
+        title: UrlbarTestUtils.trimURL("http://file.org/"),
         heuristic: true,
       }),
       makeVisitResult(context, {
@@ -56,7 +56,7 @@ add_task(async function test_w_slash() {
     matches: [
       makeVisitResult(context, {
         uri: "http://file.org/",
-        fallbackTitle: UrlbarTestUtils.trimURL("http://file.org/", {
+        title: UrlbarTestUtils.trimURL("http://file.org/", {
           removeSingleTrailingSlash: false,
         }),
         heuristic: true,

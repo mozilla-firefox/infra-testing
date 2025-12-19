@@ -8,7 +8,10 @@ const lazy = {};
 
 ChromeUtils.defineLazyGetter(lazy, "require", () => {
   const { require } = ChromeUtils.importESModule(
-    "resource://devtools/shared/loader/Loader.sys.mjs"
+    "resource://devtools/shared/loader/Loader.sys.mjs",
+    // Ensure loading all DevTools modules in the dedicated "devtools" global
+    // so that it can safely debug all the privileged modules running from the shared system global.
+    { global: "devtools" }
   );
   return require;
 });
@@ -62,7 +65,7 @@ export var GeckoViewRemoteDebugger = {
     lazy.DevToolsServer.keepAlive = true;
 
     // Socket address for USB remote debugger expects
-    // @ANDROID_PACKAGE_NAME/firefox-debugger-socket.
+    // @{package_name}/firefox-debugger-socket format.
     // In /proc/net/unix, it will be outputed as
     // @org.mozilla.geckoview_example/firefox-debugger-socket
     //

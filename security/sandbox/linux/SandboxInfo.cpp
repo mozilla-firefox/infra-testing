@@ -18,7 +18,6 @@
 
 #include "base/posix/eintr_wrapper.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/SandboxSettings.h"
 #include "sandbox/linux/system_headers/linux_seccomp.h"
 #include "sandbox/linux/system_headers/linux_syscalls.h"
@@ -174,7 +173,9 @@ static bool CanCreateUserNamespace() {
   // Check for failures reported by the child process.
   if (!WIFEXITED(wstatus) || WEXITSTATUS(wstatus) != 0) {
     if (!(WIFEXITED(wstatus) && WEXITSTATUS(wstatus) == 1)) {
-      SANDBOX_LOG("CanCreateUserNamespace() waitpid(%d) child process failure %08x", pid, wstatus);
+      SANDBOX_LOG(
+          "CanCreateUserNamespace() waitpid(%d) child process failure %08x",
+          pid, wstatus);
     }
     setenv(kCacheEnvName, "0", 1);
     return false;

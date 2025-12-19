@@ -22,6 +22,7 @@
 #include "intgemm/IntegerGemmIntrinsic.h"
 #include "jit/IonTypes.h"
 #include "wasm/WasmBuiltinModuleGenerated.h"
+#include "wasm/WasmConstants.h"
 
 namespace js {
 class JitFrameIter;
@@ -131,9 +132,9 @@ enum class SymbolicAddress {
   TableSet,
   TableSize,
   RefFunc,
-  PostBarrier,
-  PostBarrierPrecise,
-  PostBarrierPreciseWithOffset,
+  PostBarrierEdge,
+  PostBarrierEdgePrecise,
+  PostBarrierWholeCell,
   ExceptionNew,
   ThrowException,
   StructNewIL_true,
@@ -174,7 +175,7 @@ enum class FailureMode : uint8_t {
   FailOnNegI32,
   FailOnMaxI32,
   FailOnNullPtr,
-  FailOnInvalidRef
+  FailOnInvalidRef,
 };
 
 // SymbolicAddressSignature carries type information for a function referred
@@ -194,6 +195,8 @@ struct SymbolicAddressSignature {
   const jit::MIRType retType;
   // The failure mode, which is checked by masm.wasmCallBuiltinInstanceMethod.
   const FailureMode failureMode;
+  // The trap to execute if the builtin fails.
+  const Trap failureTrap;
   // The number of arguments, 0 .. SymbolicAddressSignatureMaxArgs only.
   const uint8_t numArgs;
   // The argument types; SymbolicAddressSignatureMaxArgs + 1 guard, which
@@ -274,9 +277,9 @@ extern const SymbolicAddressSignature SASigTableInit;
 extern const SymbolicAddressSignature SASigTableSet;
 extern const SymbolicAddressSignature SASigTableSize;
 extern const SymbolicAddressSignature SASigRefFunc;
-extern const SymbolicAddressSignature SASigPostBarrier;
-extern const SymbolicAddressSignature SASigPostBarrierPrecise;
-extern const SymbolicAddressSignature SASigPostBarrierPreciseWithOffset;
+extern const SymbolicAddressSignature SASigPostBarrierEdge;
+extern const SymbolicAddressSignature SASigPostBarrierEdgePrecise;
+extern const SymbolicAddressSignature SASigPostBarrierWholeCell;
 extern const SymbolicAddressSignature SASigExceptionNew;
 extern const SymbolicAddressSignature SASigThrowException;
 extern const SymbolicAddressSignature SASigStructNewIL_true;
@@ -305,6 +308,18 @@ bool IsRoundingFunction(SymbolicAddress callee, jit::RoundingMode* mode);
 
 bool NeedsBuiltinThunk(SymbolicAddress sym);
 
+// Returns the ABI that needs to be used to call a builtin.
+inline jit::ABIKind ABIForBuiltin(SymbolicAddress sym) {
+  // Builtin thunks use the WebAssembly ABI. See GenerateBuiltinThunk for more
+  // information.
+  if (NeedsBuiltinThunk(sym)) {
+    return jit::ABIKind::Wasm;
+  }
+
+  // Otherwise non-thunked builtins use the System ABI directly.
+  return jit::ABIKind::System;
+}
+
 // This function queries whether pc is in one of the process's builtin thunks
 // and, if so, returns the CodeRange and pointer to the code segment that the
 // CodeRange is relative to.
@@ -329,7 +344,7 @@ void* SymbolicAddressTarget(SymbolicAddress sym);
 
 void* ProvisionalLazyJitEntryStub();
 
-void* MaybeGetBuiltinThunk(JSFunction* f, const FuncType& funcType);
+void* MaybeGetTypedNative(JSFunction* f, const FuncType& funcType);
 
 void ReleaseBuiltinThunks();
 

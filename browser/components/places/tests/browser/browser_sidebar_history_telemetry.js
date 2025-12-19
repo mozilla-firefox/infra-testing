@@ -23,6 +23,11 @@ let gResponse = 1;
 })();
 
 add_setup(async function () {
+  // This test is specific to the legacy history sidebar. For equivalent telemetry for
+  // the new sidebar and history panel implementation, see bug 2002108.
+  await SpecialPowers.pushPrefEnv({
+    set: [["sidebar.revamp", false]],
+  });
   await PlacesUtils.history.clear();
 
   // Visited pages listed by descending visit date.
@@ -209,17 +214,14 @@ add_task(async function test_search_and_filter() {
 
     // Search the tree.
     let searchBox = tree.ownerDocument.getElementById("search-box");
-    searchBox.value = "sidebar.mozilla";
-    searchBox.doCommand();
+    await setSearch(searchBox, "sidebar.mozilla");
     info("Tree was searched with sting sidebar.mozilla");
 
-    searchBox.value = "";
-    searchBox.doCommand();
+    await setSearch(searchBox, "");
     info("Search was reset");
 
     // Perform a second search.
-    searchBox.value = "sidebar.mozilla";
-    searchBox.doCommand();
+    await setSearch(searchBox, "sidebar.mozilla");
     info("Second search was performed");
 
     // Select the first link and click on it.
@@ -259,8 +261,7 @@ add_task(async function test_search_and_filter() {
 
     // Search the tree.
     let searchBox = tree.ownerDocument.getElementById("search-box");
-    searchBox.value = "sidebar.mozilla";
-    searchBox.doCommand();
+    await setSearch(searchBox, "sidebar.mozilla");
 
     // Select the first link and click on it.
     tree.selectNode(tree.view.nodeForTreeIndex(firstNodeIndex));

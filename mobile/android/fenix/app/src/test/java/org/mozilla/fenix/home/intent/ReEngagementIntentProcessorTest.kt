@@ -24,15 +24,19 @@ import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.NavGraphDirections
 import org.mozilla.fenix.browser.browsingmode.BrowsingModeManager
 import org.mozilla.fenix.helpers.FenixGleanTestRule
-import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
 import org.mozilla.fenix.onboarding.ReEngagementNotificationWorker
 import org.mozilla.fenix.utils.Settings
+import org.robolectric.RobolectricTestRunner
 
-@RunWith(FenixRobolectricTestRunner::class)
+@RunWith(RobolectricTestRunner::class)
 class ReEngagementIntentProcessorTest {
 
     @get:Rule
     val gleanTestRule = FenixGleanTestRule(testContext)
+
+    private val settings: Settings = mockk {
+        every { shouldUseComposableToolbar } returns false
+    }
 
     @Test
     fun `do not process blank intents`() {
@@ -40,7 +44,7 @@ class ReEngagementIntentProcessorTest {
         val out: Intent = mockk()
         val settings: Settings = mockk()
         val result = ReEngagementIntentProcessor(mockk(), settings)
-            .process(Intent(), navController, out)
+            .process(Intent(), navController, out, settings)
 
         assertFalse(result)
         verify { navController wasNot Called }
@@ -65,7 +69,7 @@ class ReEngagementIntentProcessorTest {
         assertNull(Events.reEngagementNotifTapped.testGetValue())
 
         val result = ReEngagementIntentProcessor(activity, settings)
-            .process(intent, navController, out)
+            .process(intent, navController, out, settings)
 
         assert(result)
 
@@ -104,7 +108,7 @@ class ReEngagementIntentProcessorTest {
         assertNull(Events.reEngagementNotifTapped.testGetValue())
 
         val result = ReEngagementIntentProcessor(activity, settings)
-            .process(intent, navController, out)
+            .process(intent, navController, out, settings)
 
         assert(result)
 

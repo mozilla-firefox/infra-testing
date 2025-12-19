@@ -5,13 +5,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // Keep in (case-insensitive) order:
-#include "nsContainerFrame.h"
-#include "nsIFrame.h"
-#include "nsGkAtoms.h"
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/SVGGradientFrame.h"
 #include "mozilla/SVGObserverUtils.h"
+#include "nsContainerFrame.h"
+#include "nsGkAtoms.h"
+#include "nsIFrame.h"
 
 // This is a very simple frame whose only purpose is to capture style change
 // events and propagate them to the parent.  Most of the heavy lifting is done
@@ -45,7 +45,7 @@ class SVGStopFrame : public nsIFrame {
                         const nsDisplayListSet& aLists) override {}
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
 #ifdef DEBUG_FRAME_DUMP
   nsresult GetFrameName(nsAString& aResult) const override {
@@ -73,7 +73,8 @@ void SVGStopFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
 #endif /* DEBUG */
 
 nsresult SVGStopFrame::AttributeChanged(int32_t aNameSpaceID,
-                                        nsAtom* aAttribute, int32_t aModType) {
+                                        nsAtom* aAttribute,
+                                        AttrModType aModType) {
   if (aNameSpaceID == kNameSpaceID_None && aAttribute == nsGkAtoms::offset) {
     MOZ_ASSERT(
         static_cast<SVGGradientFrame*>(do_QueryFrame(GetParent())),

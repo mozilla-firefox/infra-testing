@@ -43,6 +43,14 @@ class GeckoPermissionRequestTest {
         assertEquals(uri, request.uri)
         assertEquals(listOf(Permission.ContentAutoPlayInaudible()), request.permissions)
 
+        request = GeckoPermissionRequest.Content(uri, GeckoSession.PermissionDelegate.PERMISSION_LOCAL_DEVICE_ACCESS, mock(), mock())
+        assertEquals(uri, request.uri)
+        assertEquals(listOf(Permission.ContentLocalDeviceAccess()), request.permissions)
+
+        request = GeckoPermissionRequest.Content(uri, GeckoSession.PermissionDelegate.PERMISSION_LOCAL_NETWORK_ACCESS, mock(), mock())
+        assertEquals(uri, request.uri)
+        assertEquals(listOf(Permission.ContentLocalNetworkAccess()), request.permissions)
+
         request = GeckoPermissionRequest.Content(uri, 1234, mock(), mock())
         assertEquals(uri, request.uri)
         assertEquals(listOf(Permission.Generic("1234", "Gecko permission type = 1234")), request.permissions)
@@ -53,7 +61,7 @@ class GeckoPermissionRequestTest {
         val uri = "https://mozilla.org"
         val geckoResult = mock<GeckoResult<Int>>()
 
-        val request = GeckoPermissionRequest.Content(uri, PERMISSION_GEOLOCATION, mock(), geckoResult)
+        val request = GeckoPermissionRequest.Content(uri, PERMISSION_GEOLOCATION, mock(), mutableListOf(geckoResult))
 
         assertFalse(request.isCompleted)
 
@@ -68,7 +76,7 @@ class GeckoPermissionRequestTest {
         val uri = "https://mozilla.org"
         val geckoResult = mock<GeckoResult<Int>>()
 
-        val request = GeckoPermissionRequest.Content(uri, PERMISSION_GEOLOCATION, mock(), geckoResult)
+        val request = GeckoPermissionRequest.Content(uri, PERMISSION_GEOLOCATION, mock(), mutableListOf(geckoResult))
 
         assertFalse(request.isCompleted)
 
@@ -96,7 +104,7 @@ class GeckoPermissionRequestTest {
             Permission.Generic("unknown app permission"),
         )
 
-        val request = GeckoPermissionRequest.App(permissions, callback)
+        val request = GeckoPermissionRequest.App(permissions, mutableListOf(callback))
         assertEquals(mappedPermissions, request.permissions)
     }
 
@@ -104,7 +112,7 @@ class GeckoPermissionRequestTest {
     fun `grant app permission request`() {
         val callback: GeckoSession.PermissionDelegate.Callback = mock()
 
-        val request = GeckoPermissionRequest.App(listOf(Manifest.permission.CAMERA), callback)
+        val request = GeckoPermissionRequest.App(listOf(Manifest.permission.CAMERA), mutableListOf(callback))
         request.grant()
         verify(callback).grant()
     }
@@ -113,7 +121,7 @@ class GeckoPermissionRequestTest {
     fun `reject app permission request`() {
         val callback: GeckoSession.PermissionDelegate.Callback = mock()
 
-        val request = GeckoPermissionRequest.App(listOf(Manifest.permission.CAMERA), callback)
+        val request = GeckoPermissionRequest.App(listOf(Manifest.permission.CAMERA), mutableListOf(callback))
         request.reject()
         verify(callback).reject()
     }
@@ -238,5 +246,35 @@ class GeckoPermissionRequestTest {
             ReflectionUtils.setField(this, "source", source)
             ReflectionUtils.setField(this, "type", type)
         }
+    }
+
+    @Test
+    fun `grant all content permission requests`() {
+        val uri = "https://mozilla.org"
+        val geckoResult1 = mock<GeckoResult<Int>>()
+        val geckoResult2 = mock<GeckoResult<Int>>()
+        val request1 = GeckoPermissionRequest.Content(uri, PERMISSION_GEOLOCATION, mock(), mutableListOf(geckoResult1))
+        val request2 = GeckoPermissionRequest.Content(uri, PERMISSION_GEOLOCATION, mock(), mutableListOf(geckoResult2))
+        request1.merge(request2)
+        request1.grant()
+
+        verify(geckoResult1).complete(VALUE_ALLOW)
+        verify(geckoResult2).complete(VALUE_ALLOW)
+        assertTrue(request1.isCompleted)
+    }
+
+    @Test
+    fun `grant all app permission requests`() {
+        val callback1: GeckoSession.PermissionDelegate.Callback = mock()
+        val callback2: GeckoSession.PermissionDelegate.Callback = mock()
+        val request1 = GeckoPermissionRequest.App(listOf(Manifest.permission.CAMERA), mutableListOf(callback1))
+        val request2 = GeckoPermissionRequest.App(listOf(Manifest.permission.CAMERA), mutableListOf(callback2))
+
+        // Both requests are mergeable since permissions are the same.
+        request1.merge(request2)
+        request1.grant()
+
+        verify(callback1).grant()
+        verify(callback2).grant()
     }
 }

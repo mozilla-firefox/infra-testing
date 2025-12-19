@@ -7,14 +7,15 @@
 #ifndef LAYOUT_SVG_SVGTEXTFRAME_H_
 #define LAYOUT_SVG_SVGTEXTFRAME_H_
 
+#include "gfxMatrix.h"
+#include "gfxRect.h"
+#include "gfxTextRun.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/PresShellForwards.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/SVGContainerFrame.h"
 #include "mozilla/gfx/2D.h"
-#include "gfxMatrix.h"
-#include "gfxRect.h"
-#include "gfxTextRun.h"
 #include "nsIContent.h"  // for GetContent
 #include "nsStubMutationObserver.h"
 #include "nsTextFrame.h"
@@ -25,6 +26,7 @@ namespace mozilla {
 
 class CharIterator;
 class DisplaySVGText;
+class SVGContextPaint;
 class SVGTextFrame;
 class TextFrameIterator;
 class TextNodeCorrespondenceRecorder;
@@ -202,7 +204,7 @@ class SVGTextFrame final : public SVGDisplayContainerFrame {
   void DidSetComputedStyle(ComputedStyle* aOldComputedStyle) override;
 
   nsresult AttributeChanged(int32_t aNamespaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
   nsContainerFrame* GetContentInsertionFrame() override {
     return PrincipalChildList().FirstChild()->GetContentInsertionFrame();
@@ -517,10 +519,12 @@ class SVGTextFrame final : public SVGDisplayContainerFrame {
    * nsTextFrame::DrawPathCallbacks rather than directly painting
    * the text frames.
    *
+   * @param aContextPaint Used by context-fill and context-stroke.
    * @param aShouldPaintSVGGlyphs (out) Whether SVG glyphs in the text
    *   should be painted.
    */
-  bool ShouldRenderAsPath(nsTextFrame* aFrame, bool& aShouldPaintSVGGlyphs);
+  bool ShouldRenderAsPath(nsTextFrame* aFrame, SVGContextPaint* aContextPaint,
+                          bool& aShouldPaintSVGGlyphs);
 
   // Methods to get information for a <textPath> frame.
   already_AddRefed<Path> GetTextPath(nsIFrame* aTextPathFrame);
@@ -583,6 +587,52 @@ class SVGTextFrame final : public SVGDisplayContainerFrame {
    * lengthAdjust="spacingAndGlyphs".
    */
   float mLengthAdjustScaleFactor = 1.0f;
+
+ public:
+  struct CachedMeasuredRange {
+    Range mRange;
+    nscoord mAdvance;
+  };
+
+  void SetCurrentFrameForCaching(const nsTextFrame* aFrame) {
+    if (mFrameForCachedRanges != aFrame) {
+      PodArrayZero(mCachedRanges);
+      mFrameForCachedRanges = aFrame;
+    }
+  }
+
+  enum WhichRange {
+    Before,
+    After,
+    CachedRangeCount,
+  };
+
+  CachedMeasuredRange& CachedRange(WhichRange aWhichRange) {
+    return mCachedRanges[aWhichRange];
+  }
+
+  // Return a reference to a PropertyProvider for the given textframe;
+  // the provider is cached by SVGTextFrame to avoid creating it afresh
+  // for repeated operations involving the same textframe.
+  nsTextFrame::PropertyProvider& PropertyProviderFor(nsTextFrame* aFrame) {
+    if (!mCachedProvider || aFrame != mCachedProvider->GetFrame()) {
+      mCachedProvider.reset();
+      mCachedProvider.emplace(aFrame,
+                              aFrame->EnsureTextRun(nsTextFrame::eInflated));
+    }
+    return mCachedProvider.ref();
+  }
+
+  // Forget any cached PropertyProvider. This should be called at the end of
+  // any method that relied on PropertyProviderFor(), to avoid leaving a
+  // cached provider that may become invalid.
+  void ForgetCachedProvider() { mCachedProvider.reset(); }
+
+ private:
+  const nsTextFrame* mFrameForCachedRanges = nullptr;
+  CachedMeasuredRange mCachedRanges[CachedRangeCount];
+
+  Maybe<nsTextFrame::PropertyProvider> mCachedProvider;
 };
 
 }  // namespace mozilla

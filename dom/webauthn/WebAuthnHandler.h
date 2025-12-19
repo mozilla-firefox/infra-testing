@@ -9,11 +9,10 @@
 
 #include "mozilla/Maybe.h"
 #include "mozilla/MozPromise.h"
-#include "mozilla/RandomNum.h"
 #include "mozilla/dom/AbortSignal.h"
-#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/PWebAuthnTransaction.h"
 #include "mozilla/dom/PWebAuthnTransactionChild.h"
+#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/WebAuthnTransactionChild.h"
 
 /*

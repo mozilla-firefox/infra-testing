@@ -22,7 +22,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "resProto",
   "@mozilla.org/network/protocol;1?name=resource",
-  "nsISubstitutingProtocolHandler"
+  Ci.nsISubstitutingProtocolHandler
 );
 
 // These are not automagically defined for us because we are an extension.
@@ -181,7 +181,7 @@ TalosPowersService.prototype = {
    *        Marker name.
    */
   profilerSubtestStart(marker = null) {
-    profilerSubtestStartTime = Cu.now();
+    profilerSubtestStartTime = ChromeUtils.now();
 
     if (marker) {
       this.addInstantMarker(marker);
@@ -192,7 +192,6 @@ TalosPowersService.prototype = {
    * Adds an instant marker to the Profile in the parent process.
    *
    * @param marker (string)  A marker to set.
-   *
    */
   addInstantMarker(marker) {
     ChromeUtils.addProfilerMarker("Talos", { category: "Test" }, marker);

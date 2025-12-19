@@ -9,7 +9,6 @@
 #ifndef nsVideoFrame_h___
 #define nsVideoFrame_h___
 
-#include "mozilla/Attributes.h"
 #include "nsContainerFrame.h"
 #include "nsIAnonymousContentCreator.h"
 #include "nsIReflowCallback.h"
@@ -42,7 +41,7 @@ class nsVideoFrame : public nsContainerFrame,
                         const nsDisplayListSet& aLists) final;
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) final;
+                            AttrModType aModType) final;
 
   void OnVisibilityChange(
       Visibility aNewVisibility,
@@ -50,9 +49,11 @@ class nsVideoFrame : public nsContainerFrame,
 
   /* get the size of the video's display */
   mozilla::IntrinsicSize GetIntrinsicSize() final;
+  mozilla::IntrinsicSize GetIntrinsicSize(bool aIgnoreContainment) const;
   mozilla::AspectRatio GetIntrinsicRatio() const final;
+  mozilla::AspectRatio GetIntrinsicRatio(bool aIgnoreContainment) const;
   SizeComputationResult ComputeSize(
-      gfxContext* aRenderingContext, mozilla::WritingMode aWM,
+      const SizeComputationInput& aSizingInput, mozilla::WritingMode aWM,
       const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
       const mozilla::LogicalSize& aMargin,
       const mozilla::LogicalSize& aBorderPadding,
@@ -61,6 +62,8 @@ class nsVideoFrame : public nsContainerFrame,
 
   nscoord IntrinsicISize(const mozilla::IntrinsicSizeInput& aInput,
                          mozilla::IntrinsicISizeType aType) final;
+
+  nsRect GetDestRect(const nsRect& aContentBox) const;
 
   void Destroy(DestroyContext&) final;
 

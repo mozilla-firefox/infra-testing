@@ -1,7 +1,9 @@
 /* stylelint-disable max-nesting-depth */
 
 .collapsible-section {
-  padding: $section-vertical-padding $section-horizontal-padding;
+  // Compact layout padding and spacing from thumbs UI overrides
+  padding: 0 var(--space-xlarge);
+  margin-block-end: var(--space-xxlarge);
 
   .section-title-container {
     margin: 0;
@@ -20,7 +22,7 @@
 
   .section-title {
     font-size: $section-title-font-size;
-    font-weight: 600;
+    font-weight: var(--heading-font-weight);
     color: var(--newtab-text-primary-color);
 
     &.grey-title {
@@ -50,15 +52,14 @@
   }
 
   .section-sub-title {
-    font-size: 14px;
-    line-height: 16px;
+    font-size: inherit;
     color: var(--newtab-text-secondary-color);
     opacity: 0.3;
   }
 
   .section-top-bar {
     min-height: 19px;
-    margin-bottom: 13px;
+    margin-block-end: var(--space-medium);
     position: relative;
     display: flex;
     justify-content: space-between;
@@ -73,12 +74,12 @@
 
   &.active {
     background: var(--newtab-element-hover-color);
-    border-radius: 4px;
+    border-radius: var(--border-radius-small);
   }
 
   .learn-more-link {
-    font-size: 13px;
-    margin-inline-start: 12px;
+    font-size: var(--font-size-small);
+    margin-inline-start: var(--space-medium);
 
     a {
       color: var(--newtab-primary-action-background);
@@ -91,10 +92,8 @@
 
   .section-body {
     // This is so the top sites favicon and card dropshadows don't get clipped during animation:
-    $horizontal-padding: 7px;
-
-    margin: 0 (-$horizontal-padding);
-    padding: 0 $horizontal-padding;
+    margin: 0 calc(var(--space-xsmall) * -1);
+    padding: 0 var(--space-small);
 
     &.animating {
       overflow: hidden;
@@ -115,19 +114,13 @@
     }
   }
 
-  // Bug 1914195 - Only show the topic selection button/modal on larger and wider breakpoints
-  .layout-variant-a &,
-  .layout-variant-b & {
-    .button-topic-selection {
-      display: none;
-
-      @media(min-width: $break-point-layout-variant) {
-        display: block;
-      }
-    }
-  }
-
   .button-topic-selection {
+    display: none;
+
+    @media(min-width: $break-point-layout-variant) {
+      display: block;
+    }
+
     // Note: the 'primary' theme uses a solid color and does not need this override
     moz-button[type='default'] {
       // Bug 1908010 - This overwrites the design system color because of a

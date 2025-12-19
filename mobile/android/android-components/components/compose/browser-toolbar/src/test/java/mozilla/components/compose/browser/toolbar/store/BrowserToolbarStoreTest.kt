@@ -6,18 +6,20 @@ package mozilla.components.compose.browser.toolbar.store
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import mozilla.components.compose.browser.toolbar.R
-import mozilla.components.compose.browser.toolbar.concept.Action.ActionButton
+import mozilla.components.compose.browser.toolbar.concept.Action.ActionButtonRes
 import mozilla.components.compose.browser.toolbar.concept.PageOrigin
 import mozilla.components.compose.browser.toolbar.store.BrowserDisplayToolbarAction.BrowserActionsEndUpdated
 import mozilla.components.compose.browser.toolbar.store.BrowserDisplayToolbarAction.BrowserActionsStartUpdated
 import mozilla.components.compose.browser.toolbar.store.BrowserDisplayToolbarAction.PageActionsEndUpdated
 import mozilla.components.compose.browser.toolbar.store.BrowserDisplayToolbarAction.PageActionsStartUpdated
 import mozilla.components.compose.browser.toolbar.store.BrowserDisplayToolbarAction.PageOriginUpdated
+import mozilla.components.compose.browser.toolbar.store.BrowserToolbarAction.ToolbarGravityUpdated
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarInteraction.BrowserToolbarEvent
-import mozilla.components.support.test.rule.MainCoroutineRule
+import mozilla.components.compose.browser.toolbar.store.ToolbarGravity.Bottom
+import mozilla.components.compose.browser.toolbar.store.ToolbarGravity.Top
+import mozilla.components.compose.browser.toolbar.ui.BrowserToolbarQuery
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Rule
+import org.junit.Assert.assertFalse
 import org.junit.Test
 import org.junit.runner.RunWith
 import kotlin.random.Random
@@ -25,20 +27,50 @@ import kotlin.random.Random
 @RunWith(AndroidJUnit4::class)
 class BrowserToolbarStoreTest {
 
-    @get:Rule
-    val coroutineTestRule = MainCoroutineRule()
-
     @Test
-    fun `WHEN toggle edit mode action is dispatched THEN update the mode and edit text states`() {
+    fun `WHEN enter edit mode action is dispatched THEN mode is updated and query remains unchanged`() {
         val store = BrowserToolbarStore()
-        val editMode = true
 
         assertEquals(Mode.DISPLAY, store.state.mode)
+        assertFalse(store.state.editState.isQueryPrivate)
 
-        store.dispatch(BrowserToolbarAction.ToggleEditMode(editMode = editMode))
+        store.dispatch(BrowserToolbarAction.EnterEditMode(false))
 
         assertEquals(Mode.EDIT, store.state.mode)
-        assertNull(store.state.editState.editText)
+        assertEquals("", store.state.editState.query.current)
+        assertEquals(false, store.state.editState.isQueryPrivate)
+    }
+
+    @Test
+    fun `WHEN enter edit mode action in private mode is dispatched THEN replace the old details with the new one`() {
+        val store = BrowserToolbarStore()
+        assertEquals(Mode.DISPLAY, store.state.mode)
+        assertFalse(store.state.editState.isQueryPrivate)
+
+        store.dispatch(BrowserToolbarAction.EnterEditMode(true))
+
+        assertEquals(Mode.EDIT, store.state.mode)
+        assertEquals("", store.state.editState.query.current)
+        assertEquals(true, store.state.editState.isQueryPrivate)
+    }
+
+    @Test
+    fun `WHEN exit edit mode action is dispatched THEN mode is updated and query is cleared`() {
+        val store = BrowserToolbarStore(
+            initialState = BrowserToolbarState(
+                mode = Mode.EDIT,
+                editState = EditState(
+                query = BrowserToolbarQuery("Mozilla"),
+                ),
+            ),
+        )
+
+        assertEquals(Mode.EDIT, store.state.mode)
+
+        store.dispatch(BrowserToolbarAction.ExitEditMode)
+
+        assertEquals(Mode.DISPLAY, store.state.mode)
+        assertEquals("", store.state.editState.query.current)
     }
 
     @Test
@@ -46,11 +78,11 @@ class BrowserToolbarStoreTest {
         val store = BrowserToolbarStore()
         val text = "Mozilla"
 
-        assertNull(store.state.editState.editText)
+        assertEquals("", store.state.editState.query.current)
 
-        store.dispatch(BrowserEditToolbarAction.UpdateEditText(text = text))
+        store.dispatch(BrowserEditToolbarAction.SearchQueryUpdated(query = BrowserToolbarQuery(text)))
 
-        assertEquals(text, store.state.editState.editText)
+        assertEquals(text, store.state.editState.query.current)
     }
 
     @Test
@@ -61,12 +93,12 @@ class BrowserToolbarStoreTest {
 
         assertEquals(0, store.state.editState.editActionsStart.size)
 
-        store.dispatch(BrowserEditToolbarAction.AddEditActionStart(action = action1))
+        store.dispatch(BrowserEditToolbarAction.SearchActionsStartUpdated(listOf(action1)))
 
         assertEquals(1, store.state.editState.editActionsStart.size)
         assertEquals(action1, store.state.editState.editActionsStart.first())
 
-        store.dispatch(BrowserEditToolbarAction.AddEditActionStart(action = action2))
+        store.dispatch(BrowserEditToolbarAction.SearchActionsStartUpdated(listOf(action1, action2)))
 
         assertEquals(2, store.state.editState.editActionsStart.size)
         assertEquals(action1, store.state.editState.editActionsStart.first())
@@ -81,12 +113,12 @@ class BrowserToolbarStoreTest {
 
         assertEquals(0, store.state.editState.editActionsEnd.size)
 
-        store.dispatch(BrowserEditToolbarAction.AddEditActionEnd(action = action1))
+        store.dispatch(BrowserEditToolbarAction.SearchActionsEndUpdated(listOf(action1)))
 
         assertEquals(1, store.state.editState.editActionsEnd.size)
         assertEquals(action1, store.state.editState.editActionsEnd.first())
 
-        store.dispatch(BrowserEditToolbarAction.AddEditActionEnd(action = action2))
+        store.dispatch(BrowserEditToolbarAction.SearchActionsEndUpdated(listOf(action1, action2)))
 
         assertEquals(2, store.state.editState.editActionsEnd.size)
         assertEquals(action1, store.state.editState.editActionsEnd.first())
@@ -182,10 +214,19 @@ class BrowserToolbarStoreTest {
         assertEquals(listOf(action2, action3), store.state.displayState.browserActionsEnd)
     }
 
-    private fun fakeActionButton() = ActionButton(
-        icon = Random.nextInt(),
+    @Test
+    fun `WHEN the toolbar gravity is updated THEN replace the old details with the new ones`() {
+        val store = BrowserToolbarStore()
+        assertEquals(Top, store.state.gravity)
+
+        store.dispatch(ToolbarGravityUpdated(Bottom))
+
+        assertEquals(Bottom, store.state.gravity)
+    }
+
+    private fun fakeActionButton() = ActionButtonRes(
+        drawableResId = Random.nextInt(),
         contentDescription = Random.nextInt(),
-        tint = Random.nextInt(),
         onClick = object : BrowserToolbarEvent {},
     )
 

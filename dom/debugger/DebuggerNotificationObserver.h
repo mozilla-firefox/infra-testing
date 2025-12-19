@@ -8,8 +8,8 @@
 #define mozilla_dom_DebuggerNotificationObserver_h
 
 #include "DebuggerNotificationManager.h"
-#include "mozilla/dom/DebuggerNotificationObserverBinding.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/dom/DebuggerNotificationObserverBinding.h"
 #include "nsTObserverArray.h"
 #include "nsWrapperCache.h"
 
@@ -22,7 +22,7 @@ class DebuggerNotification;
 class DebuggerNotificationObserver final : public nsISupports,
                                            public nsWrapperCache {
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(DebuggerNotificationObserver)
 
   static already_AddRefed<DebuggerNotificationObserver> Constructor(

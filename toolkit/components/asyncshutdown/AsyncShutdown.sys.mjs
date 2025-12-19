@@ -44,7 +44,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "gDebug",
   "@mozilla.org/xpcom/debug;1",
-  "nsIDebug2"
+  Ci.nsIDebug2
 );
 
 // `true` if this is a content process, `false` otherwise.
@@ -107,6 +107,7 @@ PromiseSet.prototype = {
    *
    * Note that calling `wait()` causes Promise to be removed from the
    * Set once they are resolved.
+   *
    * @param {function} onDoneCb invoked synchronously once all the entries
    * have been handled and no new entries will be accepted.
    * @return {Promise} Resolved once all Promise have been resolved or removed,
@@ -1101,9 +1102,6 @@ Barrier.prototype = Object.freeze({
 
 // Parent process only
 if (!isContent) {
-  // TODO: No mapping to ShutdownPhase, this barrier should go away.
-  AsyncShutdown.quitApplicationGranted = getPhase("quit-application-granted");
-
   // ShutdownPhase::AppShutdownConfirmed
   AsyncShutdown.appShutdownConfirmed = getPhase("quit-application");
 

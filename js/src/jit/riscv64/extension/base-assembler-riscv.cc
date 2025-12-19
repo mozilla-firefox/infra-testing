@@ -101,9 +101,9 @@ void AssemblerRiscvBase::GenInstrR(uint8_t funct7, uint8_t funct3,
                                    BaseOpcode opcode, FPURegister rd,
                                    FPURegister rs1, FPURegister rs2) {
   MOZ_ASSERT(is_uint7(funct7) && is_uint3(funct3));
-  Instr instr = opcode | (rd.code() << kRdShift) | (funct3 << kFunct3Shift) |
-                (rs1.code() << kRs1Shift) | (rs2.code() << kRs2Shift) |
-                (funct7 << kFunct7Shift);
+  Instr instr = opcode | (rd.encoding() << kRdShift) |
+                (funct3 << kFunct3Shift) | (rs1.encoding() << kRs1Shift) |
+                (rs2.encoding() << kRs2Shift) | (funct7 << kFunct7Shift);
   emit(instr);
 }
 
@@ -112,7 +112,7 @@ void AssemblerRiscvBase::GenInstrR(uint8_t funct7, uint8_t funct3,
                                    FPURegister rs1, Register rs2) {
   MOZ_ASSERT(is_uint7(funct7) && is_uint3(funct3));
   Instr instr = opcode | (rd.code() << kRdShift) | (funct3 << kFunct3Shift) |
-                (rs1.code() << kRs1Shift) | (rs2.code() << kRs2Shift) |
+                (rs1.encoding() << kRs1Shift) | (rs2.code() << kRs2Shift) |
                 (funct7 << kFunct7Shift);
   emit(instr);
 }
@@ -121,9 +121,9 @@ void AssemblerRiscvBase::GenInstrR(uint8_t funct7, uint8_t funct3,
                                    BaseOpcode opcode, FPURegister rd,
                                    Register rs1, Register rs2) {
   MOZ_ASSERT(is_uint7(funct7) && is_uint3(funct3));
-  Instr instr = opcode | (rd.code() << kRdShift) | (funct3 << kFunct3Shift) |
-                (rs1.code() << kRs1Shift) | (rs2.code() << kRs2Shift) |
-                (funct7 << kFunct7Shift);
+  Instr instr = opcode | (rd.encoding() << kRdShift) |
+                (funct3 << kFunct3Shift) | (rs1.code() << kRs1Shift) |
+                (rs2.code() << kRs2Shift) | (funct7 << kFunct7Shift);
   emit(instr);
 }
 
@@ -131,9 +131,9 @@ void AssemblerRiscvBase::GenInstrR(uint8_t funct7, uint8_t funct3,
                                    BaseOpcode opcode, FPURegister rd,
                                    FPURegister rs1, Register rs2) {
   MOZ_ASSERT(is_uint7(funct7) && is_uint3(funct3));
-  Instr instr = opcode | (rd.code() << kRdShift) | (funct3 << kFunct3Shift) |
-                (rs1.code() << kRs1Shift) | (rs2.code() << kRs2Shift) |
-                (funct7 << kFunct7Shift);
+  Instr instr = opcode | (rd.encoding() << kRdShift) |
+                (funct3 << kFunct3Shift) | (rs1.encoding() << kRs1Shift) |
+                (rs2.code() << kRs2Shift) | (funct7 << kFunct7Shift);
   emit(instr);
 }
 
@@ -142,7 +142,7 @@ void AssemblerRiscvBase::GenInstrR(uint8_t funct7, uint8_t funct3,
                                    FPURegister rs1, FPURegister rs2) {
   MOZ_ASSERT(is_uint7(funct7) && is_uint3(funct3));
   Instr instr = opcode | (rd.code() << kRdShift) | (funct3 << kFunct3Shift) |
-                (rs1.code() << kRs1Shift) | (rs2.code() << kRs2Shift) |
+                (rs1.encoding() << kRs1Shift) | (rs2.encoding() << kRs2Shift) |
                 (funct7 << kFunct7Shift);
   emit(instr);
 }
@@ -162,9 +162,9 @@ void AssemblerRiscvBase::GenInstrR4(uint8_t funct2, BaseOpcode opcode,
                                     FPURegister rs2, FPURegister rs3,
                                     FPURoundingMode frm) {
   MOZ_ASSERT(is_uint2(funct2) && is_uint3(frm));
-  Instr instr = opcode | (rd.code() << kRdShift) | (frm << kFunct3Shift) |
-                (rs1.code() << kRs1Shift) | (rs2.code() << kRs2Shift) |
-                (funct2 << kFunct2Shift) | (rs3.code() << kRs3Shift);
+  Instr instr = opcode | (rd.encoding() << kRdShift) | (frm << kFunct3Shift) |
+                (rs1.encoding() << kRs1Shift) | (rs2.encoding() << kRs2Shift) |
+                (funct2 << kFunct2Shift) | (rs3.encoding() << kRs3Shift);
   emit(instr);
 }
 
@@ -188,40 +188,42 @@ void AssemblerRiscvBase::GenInstrRFrm(uint8_t funct7, BaseOpcode opcode,
   emit(instr);
 }
 
-void AssemblerRiscvBase::GenInstrI(uint8_t funct3, BaseOpcode opcode,
-                                   Register rd, Register rs1, int16_t imm12) {
+BufferOffset AssemblerRiscvBase::GenInstrI(uint8_t funct3, BaseOpcode opcode,
+                                           Register rd, Register rs1,
+                                           int16_t imm12) {
   MOZ_ASSERT(is_uint3(funct3) && (is_uint12(imm12) || is_int12(imm12)));
   Instr instr = opcode | (rd.code() << kRdShift) | (funct3 << kFunct3Shift) |
                 (rs1.code() << kRs1Shift) | (imm12 << kImm12Shift);
-  emit(instr);
+  return emit(instr);
 }
 
-void AssemblerRiscvBase::GenInstrI(uint8_t funct3, BaseOpcode opcode,
-                                   FPURegister rd, Register rs1,
-                                   int16_t imm12) {
+BufferOffset AssemblerRiscvBase::GenInstrI(uint8_t funct3, BaseOpcode opcode,
+                                           FPURegister rd, Register rs1,
+                                           int16_t imm12) {
   MOZ_ASSERT(is_uint3(funct3) && (is_uint12(imm12) || is_int12(imm12)));
-  Instr instr = opcode | (rd.code() << kRdShift) | (funct3 << kFunct3Shift) |
-                (rs1.code() << kRs1Shift) | (imm12 << kImm12Shift);
-  emit(instr);
+  Instr instr = opcode | (rd.encoding() << kRdShift) |
+                (funct3 << kFunct3Shift) | (rs1.code() << kRs1Shift) |
+                (imm12 << kImm12Shift);
+  return emit(instr);
 }
 
-void AssemblerRiscvBase::GenInstrIShift(bool arithshift, uint8_t funct3,
+void AssemblerRiscvBase::GenInstrIShift(uint8_t funct6, uint8_t funct3,
                                         BaseOpcode opcode, Register rd,
                                         Register rs1, uint8_t shamt) {
   MOZ_ASSERT(is_uint3(funct3) && is_uint6(shamt));
   Instr instr = opcode | (rd.code() << kRdShift) | (funct3 << kFunct3Shift) |
                 (rs1.code() << kRs1Shift) | (shamt << kShamtShift) |
-                (arithshift << kArithShiftShift);
+                (funct6 << kFunct6Shift);
   emit(instr);
 }
 
-void AssemblerRiscvBase::GenInstrIShiftW(bool arithshift, uint8_t funct3,
+void AssemblerRiscvBase::GenInstrIShiftW(uint8_t funct7, uint8_t funct3,
                                          BaseOpcode opcode, Register rd,
                                          Register rs1, uint8_t shamt) {
   MOZ_ASSERT(is_uint3(funct3) && is_uint5(shamt));
   Instr instr = opcode | (rd.code() << kRdShift) | (funct3 << kFunct3Shift) |
                 (rs1.code() << kRs1Shift) | (shamt << kShamtWShift) |
-                (arithshift << kArithShiftShift);
+                (funct7 << kFunct7Shift);
   emit(instr);
 }
 
@@ -241,7 +243,7 @@ void AssemblerRiscvBase::GenInstrS(uint8_t funct3, BaseOpcode opcode,
   MOZ_ASSERT(is_uint3(funct3) && is_int12(imm12));
   Instr instr = opcode | ((imm12 & 0x1f) << 7) |  // bits  4-0
                 (funct3 << kFunct3Shift) | (rs1.code() << kRs1Shift) |
-                (rs2.code() << kRs2Shift) |
+                (rs2.encoding() << kRs2Shift) |
                 ((imm12 & 0xfe0) << 20);  // bits 11-5
   emit(instr);
 }
@@ -315,7 +317,7 @@ void AssemblerRiscvBase::GenInstrCIU(uint8_t funct3, BaseOpcode opcode,
                                      FPURegister rd, uint8_t uimm6) {
   MOZ_ASSERT(is_uint3(funct3) && is_uint6(uimm6));
   ShortInstr instr = opcode | ((uimm6 & 0x1f) << 2) |
-                     (rd.code() << kRvcRdShift) | ((uimm6 & 0x20) << 7) |
+                     (rd.encoding() << kRvcRdShift) | ((uimm6 & 0x20) << 7) |
                      (funct3 << kRvcFunct3Shift);
   emit(instr);
 }
@@ -340,7 +342,7 @@ void AssemblerRiscvBase::GenInstrCSS(uint8_t funct3, BaseOpcode opcode,
 void AssemblerRiscvBase::GenInstrCSS(uint8_t funct3, BaseOpcode opcode,
                                      FPURegister rs2, uint8_t uimm6) {
   MOZ_ASSERT(is_uint3(funct3) && is_uint6(uimm6));
-  ShortInstr instr = opcode | (uimm6 << 7) | (rs2.code() << kRvcRs2Shift) |
+  ShortInstr instr = opcode | (uimm6 << 7) | (rs2.encoding() << kRvcRs2Shift) |
                      (funct3 << kRvcFunct3Shift);
   emit(instr);
 }
@@ -360,7 +362,7 @@ void AssemblerRiscvBase::GenInstrCL(uint8_t funct3, BaseOpcode opcode,
                                     uint8_t uimm5) {
   MOZ_ASSERT(is_uint3(funct3) && is_uint5(uimm5));
   ShortInstr instr = opcode | ((uimm5 & 0x3) << 5) |
-                     ((rd.code() & 0x7) << kRvcRs2sShift) |
+                     ((rd.encoding() & 0x7) << kRvcRs2sShift) |
                      ((uimm5 & 0x1c) << 8) | (funct3 << kRvcFunct3Shift) |
                      ((rs1.code() & 0x7) << kRvcRs1sShift);
   emit(instr);
@@ -387,7 +389,7 @@ void AssemblerRiscvBase::GenInstrCS(uint8_t funct3, BaseOpcode opcode,
                                     uint8_t uimm5) {
   MOZ_ASSERT(is_uint3(funct3) && is_uint5(uimm5));
   ShortInstr instr = opcode | ((uimm5 & 0x3) << 5) |
-                     ((rs2.code() & 0x7) << kRvcRs2sShift) |
+                     ((rs2.encoding() & 0x7) << kRvcRs2sShift) |
                      ((uimm5 & 0x1c) << 8) | (funct3 << kRvcFunct3Shift) |
                      ((rs1.code() & 0x7) << kRvcRs1sShift);
   emit(instr);
@@ -437,7 +439,8 @@ void AssemblerRiscvBase::GenInstrShift_ri(bool arithshift, uint8_t funct3,
                                           Register rd, Register rs1,
                                           uint8_t shamt) {
   MOZ_ASSERT(is_uint6(shamt));
-  GenInstrI(funct3, OP_IMM, rd, rs1, (arithshift << 10) | shamt);
+  GenInstrIShift(arithshift << (kArithShiftShift - kFunct6Shift), funct3,
+                 OP_IMM, rd, rs1, shamt);
 }
 
 void AssemblerRiscvBase::GenInstrALU_rr(uint8_t funct7, uint8_t funct3,
@@ -459,7 +462,8 @@ void AssemblerRiscvBase::GenInstrCSR_ii(uint8_t funct3, Register rd,
 void AssemblerRiscvBase::GenInstrShiftW_ri(bool arithshift, uint8_t funct3,
                                            Register rd, Register rs1,
                                            uint8_t shamt) {
-  GenInstrIShiftW(arithshift, funct3, OP_IMM_32, rd, rs1, shamt);
+  GenInstrIShiftW(arithshift << (kArithShiftShift - kFunct7Shift), funct3,
+                  OP_IMM_32, rd, rs1, shamt);
 }
 
 void AssemblerRiscvBase::GenInstrALUW_rr(uint8_t funct7, uint8_t funct3,

@@ -7,16 +7,21 @@
 #include "nsMathMLFrame.h"
 
 #include "gfxContext.h"
+#include "gfxMathTable.h"
 #include "gfxUtils.h"
+#include "mozilla/StaticPrefs_mathml.h"
+#include "mozilla/dom/MathMLElement.h"
 #include "mozilla/gfx/2D.h"
+#include "nsCSSPseudoElements.h"
 #include "nsCSSValue.h"
 #include "nsLayoutUtils.h"
-#include "nsNameSpaceManager.h"
 #include "nsMathMLChar.h"
-#include "nsCSSPseudoElements.h"
-#include "mozilla/dom/MathMLElement.h"
-#include "gfxMathTable.h"
+#include "nsNameSpaceManager.h"
 #include "nsPresContextInlines.h"
+
+// used for parsing CSS units
+#include "mozilla/dom/SVGAnimatedLength.h"
+#include "mozilla/dom/SVGLength.h"
 
 // used to map attributes into CSS rules
 #include "mozilla/ServoStyleSet.h"
@@ -65,7 +70,8 @@ nsMathMLFrame::UpdatePresentationData(uint32_t aFlagsValues,
                    NS_MATHML_IS_DTLS_SET(aWhichFlags),
                "aWhichFlags should only be compression or dtls flag");
 
-  if (NS_MATHML_IS_COMPRESSED(aWhichFlags)) {
+  if (!StaticPrefs::mathml_math_shift_enabled() &&
+      NS_MATHML_IS_COMPRESSED(aWhichFlags)) {
     // updating the compression flag is allowed
     if (NS_MATHML_IS_COMPRESSED(aFlagsValues)) {
       // 'compressed' means 'prime' style in App. G, TeXbook
@@ -182,33 +188,21 @@ void nsMathMLFrame::GetAxisHeight(DrawTarget* aDrawTarget,
 }
 
 /* static */
-nscoord nsMathMLFrame::CalcLength(nsPresContext* aPresContext,
-                                  ComputedStyle* aComputedStyle,
-                                  const nsCSSValue& aCSSValue,
-                                  float aFontSizeInflation) {
+nscoord nsMathMLFrame::CalcLength(const nsCSSValue& aCSSValue,
+                                  float aFontSizeInflation, nsIFrame* aFrame) {
   NS_ASSERTION(aCSSValue.IsLengthUnit(), "not a length unit");
 
-  if (aCSSValue.IsPixelLengthUnit()) {
-    return aCSSValue.GetPixelLength();
-  }
-
   nsCSSUnit unit = aCSSValue.GetUnit();
+  mozilla::dom::NonSVGFrameUserSpaceMetrics userSpaceMetrics(aFrame);
 
-  if (eCSSUnit_EM == unit) {
-    const nsStyleFont* font = aComputedStyle->StyleFont();
-    return font->mFont.size.ScaledBy(aCSSValue.GetFloatValue()).ToAppUnits();
-  }
+  // The axis is only relevant for percentages, so it doesn't matter what we use
+  // here.
+  auto axis = SVGContentUtils::X;
 
-  if (eCSSUnit_XHeight == unit) {
-    RefPtr<nsFontMetrics> fm = nsLayoutUtils::GetFontMetricsForComputedStyle(
-        aComputedStyle, aPresContext, aFontSizeInflation);
-    nscoord xHeight = fm->XHeight();
-    return NSToCoordRound(aCSSValue.GetFloatValue() * (float)xHeight);
-  }
-
-  // MathML doesn't specify other CSS units such as rem or ch
-  NS_ERROR("Unsupported unit");
-  return 0;
+  return nsPresContext::CSSPixelsToAppUnits(
+      aCSSValue.GetFloatValue() *
+      SVGLength::GetPixelsPerCSSUnit(userSpaceMetrics, unit, axis,
+                                     /* aApplyZoom = */ true));
 }
 
 /* static */
@@ -228,15 +222,15 @@ void nsMathMLFrame::GetSupDropFromChild(nsIFrame* aChild, nscoord& aSupDrop,
 }
 
 /* static */
-void nsMathMLFrame::ParseNumericValue(const nsString& aString,
-                                      nscoord* aLengthValue, uint32_t aFlags,
-                                      nsPresContext* aPresContext,
-                                      ComputedStyle* aComputedStyle,
-                                      float aFontSizeInflation) {
+void nsMathMLFrame::ParseAndCalcNumericValue(const nsString& aString,
+                                             nscoord* aLengthValue,
+                                             uint32_t aFlags,
+                                             float aFontSizeInflation,
+                                             nsIFrame* aFrame) {
   nsCSSValue cssValue;
 
-  if (!dom::MathMLElement::ParseNumericValue(aString, cssValue, aFlags,
-                                             aPresContext->Document())) {
+  if (!dom::MathMLElement::ParseNumericValue(
+          aString, cssValue, aFlags, aFrame->PresContext()->Document())) {
     // Invalid attribute value. aLengthValue remains unchanged, so the default
     // length value is used.
     return;
@@ -244,17 +238,15 @@ void nsMathMLFrame::ParseNumericValue(const nsString& aString,
 
   nsCSSUnit unit = cssValue.GetUnit();
 
+  // Since we're reusing the SVG code to calculate unit lengths,
+  // which handles percentage values specially, we have to deal
+  // with percentages early on.
   if (unit == eCSSUnit_Percent) {
-    // Relative units. A multiple of the default length value is used.
-    *aLengthValue = NSToCoordRound(
-        *aLengthValue * (unit == eCSSUnit_Percent ? cssValue.GetPercentValue()
-                                                  : cssValue.GetFloatValue()));
+    *aLengthValue = NSToCoordRound(*aLengthValue * cssValue.GetPercentValue());
     return;
   }
 
-  // Absolute units.
-  *aLengthValue =
-      CalcLength(aPresContext, aComputedStyle, cssValue, aFontSizeInflation);
+  *aLengthValue = CalcLength(cssValue, aFontSizeInflation, aFrame);
 }
 
 namespace mozilla {

@@ -12,7 +12,8 @@ use crate::spatial_tree::{CoordinateSystem, SpatialNodeIndex, TransformUpdateSta
 use crate::spatial_tree::CoordinateSystemId;
 use euclid::{Vector2D, SideOffsets2D};
 use crate::scene::SceneProperties;
-use crate::util::{LayoutFastTransform, MatrixHelpers, ScaleOffset, TransformedRectKind, PointHelpers};
+use crate::util::{LayoutFastTransform, MatrixHelpers, ScaleOffset, TransformedRectKind};
+use crate::util::{PointHelpers, VectorHelpers};
 
 /// The kind of a spatial node uid. These are required because we currently create external
 /// nodes during DL building, but the internal nodes aren't created until scene building.
@@ -338,6 +339,13 @@ impl SpatialNode {
 
         for element in offsets.iter_mut() {
             element.offset = -element.offset - scrolling.external_scroll_offset;
+
+            // Once the final scroll offset (APZ + content external offset) is
+            // calculated, we need to snap it to a device pixel. We already snap
+            // the final transforms in `update_transform`. However, we need to
+            // ensure the offsets are also snapped so that if the offset is used
+            // in a nested sticky frame, it is pre-snapped.
+            element.offset = element.offset.snap();
         }
 
         if scrolling.offsets == offsets {
@@ -438,8 +446,34 @@ impl SpatialNode {
                     ReferenceFrameKind::Transform { .. } => source_transform,
                 };
 
+                // Previously, the origin of a stacking context transform was snapped
+                // in Gecko. However, this causes jittering issues during scrolling in
+                // some cases when fractional scrolling is enabled. The origin used in
+                // Gecko doesn't have the external scroll offset from the content process
+                // removed, so if that content-side scroll amount is fractional, it can
+                // cause inconsistent snapping during scene building. Instead, we need
+                // to apply the device-pixel snap _after_ the external scroll offset
+                // has been removed. To further complicate matters, we _don't_ want to
+                // snap this if this spatial node has a snapping transform, as we rely
+                // on the fractional intermediate nodes in order to arrive at a correct
+                // final snapping result. If we don't have a snapping offset, we've
+                // reached a spatial node where snapping will no longer apply (e.g. a
+                // complex transform) and then we need to snap the device pixel position
+                // of that transform.
+                let parent_origin = match self.snapping_transform {
+                    Some(..) => {
+                        info.origin_in_parent_reference_frame
+                    }
+                    None => {
+                        snap_offset(
+                            info.origin_in_parent_reference_frame,
+                            state.coordinate_system_relative_scale_offset.scale,
+                        )
+                    }
+                };
+
                 let resolved_transform =
-                    LayoutFastTransform::with_vector(info.origin_in_parent_reference_frame)
+                    LayoutFastTransform::with_vector(parent_origin)
                         .pre_transform(&source_transform);
 
                 // The transformation for this viewport in world coordinates is the transformation for
@@ -687,7 +721,10 @@ impl SpatialNode {
                                          info.previously_applied_offset.x,
                                          &info.horizontal_offset_bounds);
 
-        sticky_offset
+        // Reapply the content-process side sticky offset, which was removed
+        // from the primitive bounds attached to this node, so that interning
+        // sees stable values.
+        sticky_offset + info.previously_applied_offset
     }
 
     pub fn prepare_state_for_children(&self, state: &mut TransformUpdateState) {

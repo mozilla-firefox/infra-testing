@@ -4,13 +4,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "txXMLParser.h"
-#include "txURIUtils.h"
-#include "txXPathTreeWalker.h"
 
 #include "mozilla/dom/Document.h"
-#include "nsSyncLoadService.h"
-#include "nsNetUtil.h"
 #include "nsIURI.h"
+#include "nsNetUtil.h"
+#include "nsSyncLoadService.h"
+#include "txURIUtils.h"
+#include "txXPathTreeWalker.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -36,10 +36,9 @@ Result<txXPathNode, nsresult> txParseDocumentFromURI(const nsAString& aHref,
                            SyncOperationBehavior::eSuspendInput);
   rv = nsSyncLoadService::LoadDocument(
       documentURI, nsIContentPolicy::TYPE_INTERNAL_XMLHTTPREQUEST_SYNC,
-      loaderDocument->NodePrincipal(),
-      nsILoadInfo::SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT, loadGroup,
-      loaderDocument->CookieJarSettings(), true,
-      loaderDocument->GetReferrerPolicy(), getter_AddRefs(theDocument));
+      loaderDocument, nullptr,
+      nsILoadInfo::SEC_REQUIRE_CORS_INHERITS_SEC_CONTEXT, loadGroup, nullptr,
+      true, loaderDocument->GetReferrerPolicy(), getter_AddRefs(theDocument));
 
   if (NS_FAILED(rv)) {
     aErrMsg.AppendLiteral("Document load of ");

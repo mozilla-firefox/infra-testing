@@ -6,7 +6,6 @@ support-files = [
   "head.js",
   "image.html",
   "imageX2.html",
-  "browser_docshell_type_editor/**"
 ]
 
 ["browser_animated_css_image.js"]
@@ -21,7 +20,9 @@ support-files = [
 ]
 
 ["browser_bug666317.js"]
-skip-if = ["true"] # Bug 1207012 - Permaorange from an uncaught exception that isn't actually turning the suite orange until it hits beta, Bug 948194 - Decoded Images seem to not be discarded on memory-pressure notification
+skip-if = [
+  "true", # Bug 1207012 - Permaorange from an uncaught exception that isn't actually turning the suite orange until it hits beta, Bug 948194 - Decoded Images seem to not be discarded on memory-pressure notification
+]
 
 ["browser_bug1869938.js"]
 support-files = ["helper1869938.html"]
@@ -32,9 +33,16 @@ support-files = ["helper1899180.html"]
 ["browser_docshell_type_editor.js"]
 
 ["browser_image.js"]
-skip-if = ["true"] # Bug 987616
+skip-if = [
+  "true", # Bug 987616
+]
 
 ["browser_mozicon_file.js"]
+
+["browser_mozicon_file_sandbox_headless.js"]
+run-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # specific to Linux sandboxing
+]
 
 ["browser_offscreen_image_in_out_of_process_iframe.js"]
 https_first_disabled = true

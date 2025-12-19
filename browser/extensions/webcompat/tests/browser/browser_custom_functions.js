@@ -1,26 +1,13 @@
 "use strict";
 
-function promiseWebCompatAddonReady() {
-  return TestUtils.waitForCondition(() => {
-    return (
-      Services.ppmm.sharedData.get("WebCompatTests:InterventionsStatus") ===
-      "active"
-    );
+add_setup(async function () {
+  // We don't send events or call official addon APIs while running
+  // these tests, so there a good chance that test-verify mode may
+  // end up seeing the addon as "idle". This pref should avoid that.
+  await SpecialPowers.pushPrefEnv({
+    set: [["extensions.background.idle.timeout", 300_000]],
   });
-}
-
-function sendWebCompatAddonCommand(name, data) {
-  return new Promise(done => {
-    const listener = {
-      receiveMessage(message) {
-        Services.cpmm.removeMessageListener(`WebCompat:${name}:Done`, listener);
-        done(message.data);
-      },
-    };
-    Services.cpmm.addMessageListener(`WebCompat:${name}:Done`, listener);
-    Services.ppmm.broadcastAsyncMessage("WebCompat", { name, data });
-  });
-}
+});
 
 async function setupTestIntervention(interventions) {
   const config = {
@@ -36,9 +23,7 @@ async function setupTestIntervention(interventions) {
     ),
   };
 
-  const results = await sendWebCompatAddonCommand("UpdateInterventions", [
-    config,
-  ]);
+  const results = await WebCompatExtension.updateInterventions([config]);
   ok(results[0].active, "Verify intervention is active");
 }
 
@@ -67,8 +52,91 @@ async function testResponseHeaderValue({
   }
 }
 
-add_task(async function test_custom_functions() {
-  await promiseWebCompatAddonReady();
+async function getRequestHeaders(browser, alter_request_headers) {
+  await setupTestIntervention([{ alter_request_headers }]);
+
+  let url =
+    "https://example.com/browser/browser/extensions/webcompat/tests/browser/echo_headers.sjs";
+  let loaded = BrowserTestUtils.browserLoaded(browser, true, url, true);
+  BrowserTestUtils.startLoadingURIString(browser, url);
+  await loaded;
+
+  const headers = await SpecialPowers.spawn(browser, [], async () => {
+    return content.wrappedJSObject.headers;
+  });
+
+  return headers;
+}
+
+add_task(async function test_alter_response_headers() {
+  await WebCompatExtension.started();
+
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
+  let browser = tab.linkedBrowser;
+
+  let headers = await getRequestHeaders(browser, [
+    {
+      headers: ["user-agent"],
+      replacement: "Test",
+    },
+  ]);
+  is(headers["user-agent"], "Test", "Test basic replacement");
+
+  headers = await getRequestHeaders(browser, [
+    {
+      headers: ["user-agent"],
+      replacement: null,
+    },
+  ]);
+  is(headers["user-agent"], undefined, "Test removal");
+
+  headers = await getRequestHeaders(browser, [
+    {
+      headers: ["user-agent"],
+      replace: "certainly won't match",
+      replacement: null,
+    },
+  ]);
+  is(headers["user-agent"], undefined, "Test selective removal");
+
+  headers = await getRequestHeaders(browser, [
+    {
+      headers: ["user-agent"],
+      replace: "(Firefox)",
+      replacement: "Special$1Change",
+    },
+  ]);
+  is(
+    headers["user-agent"],
+    navigator.userAgent.replace("Firefox", "SpecialFirefoxChange"),
+    "Test regexp replacement"
+  );
+
+  headers = await getRequestHeaders(browser, [
+    {
+      headers: ["unknown"],
+      fallback: "fallback",
+    },
+  ]);
+  is(headers.unknown, "fallback", "Test fallback");
+
+  headers = await getRequestHeaders(browser, [
+    {
+      headers: ["user-agent"],
+      fallback: "fallback",
+    },
+  ]);
+  is(
+    headers["user-agent"],
+    navigator.userAgent,
+    "Test fallback not used if found"
+  );
+
+  BrowserTestUtils.removeTab(tab);
+});
+
+add_task(async function test_alter_response_headers() {
+  await WebCompatExtension.started();
 
   const tab = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
@@ -166,7 +234,7 @@ add_task(async function test_custom_functions() {
     test: "verify that setting `replacement` to `null` removes a header",
     browser,
     serverSends: {
-      "sent-value": "bad",
+      "sent-header": "bad",
     },
     expect: { "sent-header": null },
   });

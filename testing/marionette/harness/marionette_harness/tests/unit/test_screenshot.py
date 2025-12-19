@@ -4,13 +4,11 @@
 
 import base64
 import hashlib
-import imghdr
 import struct
 import tempfile
 import unittest
 
-import six
-from six.moves.urllib.parse import quote
+from urllib.parse import quote
 
 import mozinfo
 
@@ -21,12 +19,6 @@ from marionette_harness import (
     skip,
     WindowManagerMixin,
 )
-
-
-def decodebytes(s):
-    if six.PY3:
-        return base64.decodebytes(six.ensure_binary(s))
-    return base64.decodestring(s)
 
 
 def inline(doc, mime="text/html;charset=utf-8"):
@@ -87,51 +79,54 @@ class ScreenCaptureTestCase(MarionetteTestCase):
 
     def assert_png(self, screenshot):
         """Test that screenshot is a Base64 encoded PNG file."""
-        if six.PY3 and not isinstance(screenshot, bytes):
+        if not isinstance(screenshot, bytes):
             screenshot = bytes(screenshot, encoding="utf-8")
-        image = decodebytes(screenshot)
-        self.assertEqual(imghdr.what("", image), "png")
+            image = base64.decodebytes(screenshot)
+        else:
+            if screenshot.startswith(b"\211PNG\r\n\032\n"):
+                image = screenshot
+            else:
+                image = base64.decodebytes(screenshot)
+        self.assertRegex(image, b"\211PNG\r\n\032\n", "Expected image to be PNG")
+        return image
 
     def assert_formats(self, element=None):
         if element is None:
             element = self.document_element
 
-        screenshot_default = self.marionette.screenshot(element=element)
-        if six.PY3 and not isinstance(screenshot_default, bytes):
-            screenshot_default = bytes(screenshot_default, encoding="utf-8")
-        screenshot_image = self.marionette.screenshot(element=element, format="base64")
-        if six.PY3 and not isinstance(screenshot_image, bytes):
-            screenshot_image = bytes(screenshot_image, encoding="utf-8")
-        binary1 = self.marionette.screenshot(element=element, format="binary")
-        binary2 = self.marionette.screenshot(element=element, format="binary")
-        hash1 = self.marionette.screenshot(element=element, format="hash")
-        hash2 = self.marionette.screenshot(element=element, format="hash")
+        image_default = self.assert_png(self.marionette.screenshot(element=element))
+        screenshot_base64 = self.marionette.screenshot(element=element, format="base64")
+        image_base64 = self.assert_png(screenshot_base64)
+        image_binary1 = self.marionette.screenshot(element=element, format="binary")
+        image_binary2 = self.marionette.screenshot(element=element, format="binary")
+        screenshot_hash1 = self.marionette.screenshot(element=element, format="hash")
+        screenshot_hash2 = self.marionette.screenshot(element=element, format="hash")
 
         # Valid data should have been returned
-        self.assert_png(screenshot_image)
-        self.assertEqual(imghdr.what("", binary1), "png")
-        self.assertEqual(screenshot_image, base64.b64encode(binary1))
-        self.assertEqual(hash1, hashlib.sha256(screenshot_image).hexdigest())
+        self.assert_png(image_base64)
+        self.assert_png(image_binary1)
+        self.assertEqual(image_base64, image_binary1)
+        self.assertEqual(
+            screenshot_hash1,
+            hashlib.sha256(screenshot_base64.encode("utf-8")).hexdigest(),
+        )
 
         # Different formats produce different data
-        self.assertNotEqual(screenshot_image, binary1)
-        self.assertNotEqual(screenshot_image, hash1)
-        self.assertNotEqual(binary1, hash1)
+        self.assertNotEqual(screenshot_base64, image_binary1)
+        self.assertNotEqual(screenshot_base64, screenshot_hash1)
+        self.assertNotEqual(image_binary1, screenshot_hash1)
 
         # A second capture should be identical
-        self.assertEqual(screenshot_image, screenshot_default)
-        self.assertEqual(binary1, binary2)
-        self.assertEqual(hash1, hash2)
+        self.assertEqual(image_base64, image_default)
+        self.assertEqual(image_binary1, image_binary2)
+        self.assertEqual(screenshot_hash1, screenshot_hash2)
 
     def get_element_dimensions(self, element):
         rect = element.rect
         return rect["width"], rect["height"]
 
-    def get_image_dimensions(self, screenshot):
-        if six.PY3 and not isinstance(screenshot, bytes):
-            screenshot = bytes(screenshot, encoding="utf-8")
-        self.assert_png(screenshot)
-        image = decodebytes(screenshot)
+    def get_image_dimensions(self, image):
+        image = self.assert_png(image)
         width, height = struct.unpack(">LL", image[16:24])
         return int(width), int(height)
 
@@ -140,100 +135,6 @@ class ScreenCaptureTestCase(MarionetteTestCase):
             int(rect[0] * self.device_pixel_ratio),
             int(rect[1] * self.device_pixel_ratio),
         )
-
-
-class TestScreenCaptureChrome(WindowManagerMixin, ScreenCaptureTestCase):
-    def setUp(self):
-        super(TestScreenCaptureChrome, self).setUp()
-        self.marionette.set_context("chrome")
-
-    def tearDown(self):
-        self.close_all_windows()
-        super(TestScreenCaptureChrome, self).tearDown()
-
-    @property
-    def window_dimensions(self):
-        return tuple(
-            self.marionette.execute_script(
-                """
-            let el = document.documentElement;
-            let rect = el.getBoundingClientRect();
-            return [rect.width, rect.height];
-            """
-            )
-        )
-
-    def open_dialog(self):
-        return self.open_chrome_window(
-            "chrome://remote/content/marionette/test_dialog.xhtml"
-        )
-
-    def test_capture_different_context(self):
-        """Check that screenshots in content and chrome are different."""
-        with self.marionette.using_context("content"):
-            screenshot_content = self.marionette.screenshot()
-        screenshot_chrome = self.marionette.screenshot()
-        self.assertNotEqual(screenshot_content, screenshot_chrome)
-
-    def test_capture_element(self):
-        dialog = self.open_dialog()
-        self.marionette.switch_to_window(dialog)
-
-        # Ensure we only capture the element
-        el = self.marionette.find_element(By.ID, "test-list")
-        screenshot_element = self.marionette.screenshot(element=el)
-        self.assertEqual(
-            self.scale(self.get_element_dimensions(el)),
-            self.get_image_dimensions(screenshot_element),
-        )
-
-        # Ensure we do not capture the full window
-        screenshot_dialog = self.marionette.screenshot()
-        self.assertNotEqual(screenshot_dialog, screenshot_element)
-
-        self.marionette.close_chrome_window()
-        self.marionette.switch_to_window(self.start_window)
-
-    def test_capture_full_area(self):
-        dialog = self.open_dialog()
-        self.marionette.switch_to_window(dialog)
-
-        root_dimensions = self.scale(self.get_element_dimensions(self.document_element))
-
-        # self.marionette.set_window_rect(width=100, height=100)
-        # A full capture is not the outer dimensions of the window,
-        # but instead the bounding box of the window's root node (documentElement).
-        screenshot_full = self.marionette.screenshot()
-        screenshot_root = self.marionette.screenshot(element=self.document_element)
-
-        self.marionette.close_chrome_window()
-        self.marionette.switch_to_window(self.start_window)
-
-        self.assert_png(screenshot_full)
-        self.assert_png(screenshot_root)
-        self.assertEqual(root_dimensions, self.get_image_dimensions(screenshot_full))
-        self.assertEqual(screenshot_root, screenshot_full)
-
-    def test_capture_window_already_closed(self):
-        dialog = self.open_dialog()
-        self.marionette.switch_to_window(dialog)
-        self.marionette.close_chrome_window()
-
-        self.assertRaises(NoSuchWindowException, self.marionette.screenshot)
-        self.marionette.switch_to_window(self.start_window)
-
-    def test_formats(self):
-        dialog = self.open_dialog()
-        self.marionette.switch_to_window(dialog)
-
-        self.assert_formats()
-
-        self.marionette.close_chrome_window()
-        self.marionette.switch_to_window(self.start_window)
-
-    def test_format_unknown(self):
-        with self.assertRaises(ValueError):
-            self.marionette.screenshot(format="cheese")
 
 
 class TestScreenCaptureContent(WindowManagerMixin, ScreenCaptureTestCase):

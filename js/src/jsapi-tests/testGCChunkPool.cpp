@@ -5,8 +5,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <utility>
-
 #include "gc/GCLock.h"
 #include "gc/GCRuntime.h"
 #include "jsapi-tests/tests.h"
@@ -21,7 +19,7 @@ BEGIN_TEST(testGCChunkPool) {
   for (int i = 0; i < N; ++i) {
     void* ptr = ArenaChunk::allocate(&cx->runtime()->gc, StallAndRetry::No);
     CHECK(ptr);
-    ArenaChunk* chunk = ArenaChunk::emplace(ptr, &cx->runtime()->gc, true);
+    ArenaChunk* chunk = ArenaChunk::init(ptr, &cx->runtime()->gc, true);
     CHECK(chunk);
     pool.push(chunk);
   }

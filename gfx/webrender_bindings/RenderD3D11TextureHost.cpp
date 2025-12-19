@@ -12,7 +12,6 @@
 #include "RenderCompositor.h"
 #include "RenderCompositorD3D11SWGL.h"
 #include "ScopedGLHelpers.h"
-#include "mozilla/DebugOnly.h"
 #include "mozilla/gfx/CanvasManagerParent.h"
 #include "mozilla/gfx/DeviceManagerDx.h"
 #include "mozilla/gfx/Logging.h"
@@ -371,7 +370,8 @@ bool RenderDXGITextureHost::LockInternal() {
 
   if (!mLocked) {
     if (mFencesHolderId.isSome()) {
-      auto* fencesHolderMap = layers::CompositeProcessD3D11FencesHolderMap::Get();
+      auto* fencesHolderMap =
+          layers::CompositeProcessD3D11FencesHolderMap::Get();
       if (!fencesHolderMap) {
         MOZ_ASSERT_UNREACHABLE("unexpected to be called");
         return false;
@@ -473,7 +473,7 @@ bool RenderDXGITextureHost::SyncObjectNeeded() {
 }
 
 RenderDXGIYCbCrTextureHost::RenderDXGIYCbCrTextureHost(
-    RefPtr<gfx::FileHandleWrapper> (&aHandles)[3],
+    const RefPtr<gfx::FileHandleWrapper> (&aHandles)[3],
     const gfx::YUVColorSpace aYUVColorSpace, const gfx::ColorDepth aColorDepth,
     const gfx::ColorRange aColorRange, const gfx::IntSize aSizeY,
     const gfx::IntSize aSizeCbCr,

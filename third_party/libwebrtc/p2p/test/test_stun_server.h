@@ -11,8 +11,12 @@
 #ifndef P2P_TEST_TEST_STUN_SERVER_H_
 #define P2P_TEST_TEST_STUN_SERVER_H_
 
+#include <functional>
 #include <memory>
+#include <utility>
 
+#include "absl/base/attributes.h"
+#include "api/environment/environment.h"
 #include "api/transport/stun.h"
 #include "p2p/test/stun_server.h"
 #include "rtc_base/async_udp_socket.h"
@@ -20,36 +24,37 @@
 #include "rtc_base/socket_server.h"
 #include "rtc_base/thread.h"
 
-namespace cricket {
+namespace webrtc {
 
 // A test STUN server. Useful for unit tests.
 class TestStunServer : StunServer {
  public:
   using StunServerPtr =
       std::unique_ptr<TestStunServer, std::function<void(TestStunServer*)>>;
-  static StunServerPtr Create(rtc::SocketServer* ss,
-                              const rtc::SocketAddress& addr,
-                              rtc::Thread& network_thread);
+  static StunServerPtr Create(const Environment& env,
+                              const SocketAddress& addr,
+                              SocketServer& ss,
+                              Thread& network_thread
+                                  ABSL_ATTRIBUTE_LIFETIME_BOUND);
 
   // Set a fake STUN address to return to the client.
-  void set_fake_stun_addr(const rtc::SocketAddress& addr) {
-    fake_stun_addr_ = addr;
-  }
+  void set_fake_stun_addr(const SocketAddress& addr) { fake_stun_addr_ = addr; }
 
  private:
   static void DeleteOnNetworkThread(TestStunServer* server);
 
-  TestStunServer(rtc::AsyncUDPSocket* socket, rtc::Thread& network_thread)
-      : StunServer(socket), network_thread_(network_thread) {}
+  TestStunServer(std::unique_ptr<AsyncUDPSocket> socket, Thread& network_thread)
+      : StunServer(std::move(socket)), network_thread_(network_thread) {}
 
   void OnBindingRequest(StunMessage* msg,
-                        const rtc::SocketAddress& remote_addr) override;
+                        const SocketAddress& remote_addr) override;
 
  private:
-  rtc::SocketAddress fake_stun_addr_;
-  rtc::Thread& network_thread_;
+  SocketAddress fake_stun_addr_;
+  Thread& network_thread_;
 };
 
-}  // namespace cricket
+}  //  namespace webrtc
+
 
 #endif  // P2P_TEST_TEST_STUN_SERVER_H_

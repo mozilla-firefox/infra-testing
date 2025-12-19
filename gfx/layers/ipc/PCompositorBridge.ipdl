@@ -11,10 +11,12 @@ include PlatformWidgetTypes;
 include PCompositorBridgeTypes;
 include protocol PAPZ;
 include protocol PAPZCTreeManager;
+include protocol PAPZInputBridge;
 include protocol PBrowser;
 include protocol PCompositorManager;
 include protocol PCompositorWidget;
 include protocol PTexture;
+include protocol PUiCompositorController;
 include protocol PWebRenderBridge;
 include "mozilla/GfxMessageUtils.h";
 include "mozilla/layers/LayersMessageUtils.h";
@@ -52,7 +54,6 @@ struct FrameStats {
   TimeStamp compositeEnd;
   int32_t contentFrameTime;
   double resourceUploadTime;
-  double gpuCacheUploadTime;
   TimeStamp transactionStart;
   TimeStamp refreshStart;
   TimeStamp fwdTime;
@@ -126,8 +127,16 @@ parent:
   async PCompositorWidget(CompositorWidgetInitData aInitData);
 
   // When out-of-process, this must be called to finish initialization.
-  sync Initialize(LayersId rootLayerTreeId);
+  async Initialize(LayersId rootLayerTreeId);
 
+  // Must be called after Initialize(), and only for top-level compositors and
+  // when using a GPU process.
+  async InitAPZInputBridge(Endpoint<PAPZInputBridgeParent> endpoint);
+
+  // Must be called after Initialize(), and only for top-level compositors.
+  async InitUiCompositorController(
+      Endpoint<PUiCompositorControllerParent> endpoint);
+      
   // Must be called after Initialize(), and only succeeds if AsyncPanZoomEnabled() is true.
   async PAPZ(LayersId layersId);
   async PAPZCTreeManager(LayersId layersId);
@@ -203,6 +212,8 @@ parent:
 
   // To set up sharing the composited output to Firefox Reality on Desktop
   async RequestFxrOutput();
+
+  async DynamicToolbarOffsetChanged(int32_t aOffset);
 };
 
 } // layers

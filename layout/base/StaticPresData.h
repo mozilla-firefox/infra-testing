@@ -9,10 +9,10 @@
 
 #include "mozilla/StaticPtr.h"
 #include "mozilla/UniquePtr.h"
-#include "nsCoord.h"
-#include "nsCOMPtr.h"
-#include "nsFont.h"
 #include "nsAtom.h"
+#include "nsCOMPtr.h"
+#include "nsCoord.h"
+#include "nsFont.h"
 #include "nsLanguageAtomService.h"
 
 namespace mozilla {
@@ -72,6 +72,11 @@ struct LangGroupFontPrefs {
         return &mDefaultCursiveFont;
       case StyleGenericFontFamily::Fantasy:
         return &mDefaultFantasyFont;
+      case StyleGenericFontFamily::Math:
+        // TODO(eri): Change to a specific math font once the generic
+        // math family is no longer mapped to "serif.x-math". See
+        // `gfxPlatformFontList::AddGenericFonts`.
+        return &mDefaultSerifFont;
       case StyleGenericFontFamily::SystemUi:
         return &mDefaultSystemUiFont;
       case StyleGenericFontFamily::MozEmoji:

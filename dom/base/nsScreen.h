@@ -6,12 +6,12 @@
 #ifndef nsScreen_h___
 #define nsScreen_h___
 
+#include "Units.h"
+#include "mozilla/DOMEventTargetHelper.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/dom/ScreenBinding.h"
 #include "mozilla/dom/ScreenLuminance.h"
 #include "mozilla/dom/ScreenOrientation.h"
-#include "mozilla/DOMEventTargetHelper.h"
-#include "mozilla/StaticPrefs_media.h"
-#include "Units.h"
 
 class nsDeviceContext;
 
@@ -84,11 +84,14 @@ class nsScreen : public mozilla::DOMEventTargetHelper {
     return mScreenOrientation.get();
   }
 
+  bool IsScreen() const override { return true; }
+
  protected:
   nsDeviceContext* GetDeviceContext() const;
   mozilla::CSSIntRect GetRect();
   mozilla::CSSIntRect GetAvailRect();
   mozilla::CSSIntRect GetTopWindowInnerRectForRFP();
+  bool IsFullscreen() const;
 
  private:
   virtual ~nsScreen();
@@ -99,5 +102,27 @@ class nsScreen : public mozilla::DOMEventTargetHelper {
 
   RefPtr<mozilla::dom::ScreenOrientation> mScreenOrientation;
 };
+
+namespace mozilla::dom {
+
+inline nsScreen* EventTarget::GetAsScreen() {
+  return IsScreen() ? AsScreen() : nullptr;
+}
+
+inline const nsScreen* EventTarget::GetAsScreen() const {
+  return IsScreen() ? AsScreen() : nullptr;
+}
+
+inline nsScreen* EventTarget::AsScreen() {
+  MOZ_DIAGNOSTIC_ASSERT(IsScreen());
+  return static_cast<nsScreen*>(this);
+}
+
+inline const nsScreen* EventTarget::AsScreen() const {
+  MOZ_DIAGNOSTIC_ASSERT(IsScreen());
+  return static_cast<const nsScreen*>(this);
+}
+
+}  // namespace mozilla::dom
 
 #endif /* nsScreen_h___ */

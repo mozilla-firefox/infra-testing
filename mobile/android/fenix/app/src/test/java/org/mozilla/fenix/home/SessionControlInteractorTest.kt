@@ -24,9 +24,12 @@ import org.mozilla.fenix.home.recentsyncedtabs.RecentSyncedTab
 import org.mozilla.fenix.home.recentsyncedtabs.controller.RecentSyncedTabController
 import org.mozilla.fenix.home.recenttabs.controller.RecentTabController
 import org.mozilla.fenix.home.recentvisits.controller.RecentVisitsController
+import org.mozilla.fenix.home.search.HomeSearchController
 import org.mozilla.fenix.home.sessioncontrol.DefaultSessionControlController
 import org.mozilla.fenix.home.sessioncontrol.SessionControlInteractor
+import org.mozilla.fenix.home.termsofuse.PrivacyNoticeBannerController
 import org.mozilla.fenix.home.toolbar.ToolbarController
+import org.mozilla.fenix.home.topsites.controller.TopSiteController
 import org.mozilla.fenix.search.toolbar.SearchSelectorController
 
 class SessionControlInteractorTest {
@@ -39,6 +42,9 @@ class SessionControlInteractorTest {
     private val privateBrowsingController: PrivateBrowsingController = mockk(relaxed = true)
     private val searchSelectorController: SearchSelectorController = mockk(relaxed = true)
     private val toolbarController: ToolbarController = mockk(relaxed = true)
+    private val homeSearchController: HomeSearchController = mockk(relaxed = true)
+    private val topSiteController: TopSiteController = mockk(relaxed = true)
+    private val privacyNoticeBannerController: PrivacyNoticeBannerController = mockk(relaxed = true)
 
     // Note: the recent visits tests are handled in [RecentVisitsInteractorTest] and [RecentVisitsControllerTest]
     private val recentVisitsController: RecentVisitsController = mockk(relaxed = true)
@@ -57,6 +63,9 @@ class SessionControlInteractorTest {
             privateBrowsingController,
             searchSelectorController,
             toolbarController,
+            homeSearchController,
+            topSiteController,
+            privacyNoticeBannerController,
         )
     }
 
@@ -148,6 +157,12 @@ class SessionControlInteractorTest {
     }
 
     @Test
+    fun onHomeContentFocusedWhileSearchIsActive() {
+        interactor.onHomeContentFocusedWhileSearchIsActive()
+        verify { homeSearchController.handleHomeContentFocusedWhileSearchIsActive() }
+    }
+
+    @Test
     fun onRemoveCollectionsPlaceholder() {
         interactor.onRemoveCollectionsPlaceholder()
         verify { controller.handleRemoveCollectionsPlaceholder() }
@@ -190,12 +205,6 @@ class SessionControlInteractorTest {
     }
 
     @Test
-    fun `WHEN tapping on the customize home button THEN openCustomizeHomePage`() {
-        interactor.openCustomizeHomePage()
-        verify { controller.handleCustomizeHomeTapped() }
-    }
-
-    @Test
     fun `WHEN Show All bookmarks button is clicked THEN the click is handled`() {
         interactor.onShowAllBookmarksClicked()
         verify { bookmarksController.handleShowAllBookmarksClicked() }
@@ -212,20 +221,20 @@ class SessionControlInteractorTest {
     @Test
     fun `WHEN onSettingsClicked is called THEN handleTopSiteSettingsClicked is called`() {
         interactor.onSettingsClicked()
-        verify { controller.handleTopSiteSettingsClicked() }
+        verify { topSiteController.handleTopSiteSettingsClicked() }
     }
 
     @Test
     fun `WHEN onSponsorPrivacyClicked is called THEN handleSponsorPrivacyClicked is called`() {
         interactor.onSponsorPrivacyClicked()
-        verify { controller.handleSponsorPrivacyClicked() }
+        verify { topSiteController.handleSponsorPrivacyClicked() }
     }
 
     @Test
     fun `WHEN a top site is long clicked THEN the click is handled`() {
         val topSite: TopSite = mockk()
         interactor.onTopSiteLongClicked(topSite)
-        verify { controller.handleTopSiteLongClicked(topSite) }
+        verify { topSiteController.handleTopSiteLongClicked(topSite) }
     }
 
     @Test
@@ -264,24 +273,6 @@ class SessionControlInteractorTest {
         interactor.onStoryClicked(clickedStory, storyPosition)
 
         verify { pocketStoriesController.handleStoryClicked(clickedStory, storyPosition) }
-    }
-
-    @Test
-    fun `GIVEN a PocketStoriesInteractor WHEN discover more clicked THEN handle it in a PocketStoriesController`() {
-        val link = "http://getpocket.com/explore"
-
-        interactor.onDiscoverMoreClicked(link)
-
-        verify { pocketStoriesController.handleDiscoverMoreClicked(link) }
-    }
-
-    @Test
-    fun `GIVEN a PocketStoriesInteractor WHEN learn more clicked THEN handle it in a PocketStoriesController`() {
-        val link = "https://www.mozilla.org/en-US/firefox/pocket/"
-
-        interactor.onLearnMoreClicked(link)
-
-        verify { pocketStoriesController.handleLearnMoreClicked(link) }
     }
 
     @Test

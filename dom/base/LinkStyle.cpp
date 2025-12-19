@@ -12,27 +12,27 @@
 
 #include "mozilla/dom/LinkStyle.h"
 
+#include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StyleSheet.h"
 #include "mozilla/StyleSheetInlines.h"
 #include "mozilla/css/Loader.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/FragmentOrElement.h"
 #include "mozilla/dom/HTMLLinkElement.h"
 #include "mozilla/dom/HTMLStyleElement.h"
+#include "mozilla/dom/SRILogHelper.h"
 #include "mozilla/dom/SVGStyleElement.h"
 #include "mozilla/dom/ShadowRoot.h"
-#include "mozilla/dom/SRILogHelper.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs_dom.h"
-#include "nsIContent.h"
-#include "mozilla/dom/Document.h"
-#include "nsUnicharUtils.h"
 #include "nsCRT.h"
-#include "nsXPCOMCIDInternal.h"
-#include "nsUnicharInputStream.h"
 #include "nsContentUtils.h"
-#include "nsStyleUtil.h"
+#include "nsIContent.h"
 #include "nsQueryObject.h"
+#include "nsStyleUtil.h"
+#include "nsUnicharInputStream.h"
+#include "nsUnicharUtils.h"
+#include "nsXPCOMCIDInternal.h"
 
 namespace mozilla::dom {
 
@@ -149,6 +149,8 @@ static uint32_t ToLinkMask(const nsAString& aLink) {
     mask = LinkStyle::ePRELOAD;
   } else if (aLink.EqualsLiteral("modulepreload")) {
     mask = LinkStyle::eMODULE_PRELOAD;
+  } else if (aLink.EqualsLiteral("compression-dictionary")) {
+    mask = LinkStyle::eCOMPRESSION_DICTIONARY;
   }
 
   return mask;
@@ -258,19 +260,22 @@ Result<LinkStyle::Update, nsresult> LinkStyle::DoUpdateStyleSheet(
   Document* doc = thisContent.GetComposedDoc();
 
   // Loader could be null during unlink, see bug 1425866.
-  if (!doc || !doc->CSSLoader() || !doc->CSSLoader()->GetEnabled()) {
+  // ... No need to update if updating is disabled, as well.
+  if (!doc || !doc->EnsureCSSLoader().GetEnabled() || !mUpdatesEnabled) {
     return Update{};
   }
 
-  // When static documents are created, stylesheets are cloned manually.
-  if (!mUpdatesEnabled || doc->IsStaticDocument()) {
+  // When static documents are created, we need to finish up cloning
+  // the stylesheet (See documentation for MaybeFinishCopyStyleSheet).
+  if (doc->IsStaticDocument()) {
+    MaybeFinishCopyStyleSheet(doc);
     return Update{};
   }
 
   Maybe<SheetInfo> info = GetStyleSheetInfo();
   if (aForceUpdate == ForceUpdate::No && mStyleSheet && info &&
       !info->mIsInline && info->mURI) {
-    if (nsIURI* oldURI = mStyleSheet->GetSheetURI()) {
+    if (nsIURI* oldURI = mStyleSheet->GetOriginalURI()) {
       bool equal;
       nsresult rv = oldURI->Equals(info->mURI, &equal);
       if (NS_SUCCEEDED(rv) && equal) {
@@ -325,7 +330,7 @@ Result<LinkStyle::Update, nsresult> LinkStyle::DoUpdateStyleSheet(
     }
 
     // Parse the style sheet.
-    return doc->CSSLoader()->LoadInlineStyle(*info, text, aObserver);
+    return doc->EnsureCSSLoader().LoadInlineStyle(*info, text, aObserver);
   }
   if (thisContent.IsElement()) {
     nsAutoString integrity;
@@ -336,7 +341,7 @@ Result<LinkStyle::Update, nsresult> LinkStyle::DoUpdateStyleSheet(
                NS_ConvertUTF16toUTF8(integrity).get()));
     }
   }
-  auto resultOrError = doc->CSSLoader()->LoadStyleLink(*info, aObserver);
+  auto resultOrError = doc->EnsureCSSLoader().LoadStyleLink(*info, aObserver);
   if (resultOrError.isErr()) {
     // Don't propagate LoadStyleLink() errors further than this, since some
     // consumers (e.g. nsXMLContentSink) will completely abort on innocuous
@@ -344,6 +349,47 @@ Result<LinkStyle::Update, nsresult> LinkStyle::DoUpdateStyleSheet(
     return Update{};
   }
   return resultOrError;
+}
+
+void LinkStyle::MaybeStartCopyStyleSheetTo(LinkStyle* aDest,
+                                           Document* aDoc) const {
+  MOZ_ASSERT(aDoc, "Copying to null Document?");
+  if (!aDoc->IsStaticDocument() || !mStyleSheet ||
+      !mStyleSheet->IsApplicable()) {
+    return;
+  }
+
+  // We don't yet if know we're in shadow root, so the only thing we can do is
+  // to keep an incomplete clone. Namely, the sheet does not have knowledge of
+  // its owning node and which document or shadow root it belongs to.
+  aDest->mStyleSheet = mStyleSheet->Clone(nullptr, nullptr);
+}
+
+void LinkStyle::MaybeFinishCopyStyleSheet(Document* aDocument) {
+  if (!mStyleSheet) {
+    return;
+  }
+  auto& thisContent = AsContent();
+  // Are we in the holdover copy state?
+  if (mStyleSheet->GetOwnerNode() == &thisContent) {
+    return;
+  }
+  MOZ_ASSERT(aDocument->IsStaticDocument(),
+             "Copying stylesheet over into a non-static document?");
+
+  DocumentOrShadowRoot* root = aDocument;
+  auto* shadowRoot = thisContent.GetContainingShadow();
+  if (shadowRoot) {
+    root = shadowRoot;
+    if (MOZ_UNLIKELY(!root)) {
+      // This can happen during unlink - just drop the holdover stylesheet.
+      mStyleSheet = nullptr;
+      return;
+    }
+  }
+  RefPtr<StyleSheet> sheet = mStyleSheet->Clone(nullptr, root);
+  SetStyleSheet(sheet.get());
+  aDocument->EnsureCSSLoader().InsertSheetInTree(*sheet);
 }
 
 }  // namespace mozilla::dom

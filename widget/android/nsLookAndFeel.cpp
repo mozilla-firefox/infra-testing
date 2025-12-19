@@ -133,7 +133,6 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aColorScheme,
   switch (aID) {
       // These colors don't seem to be used for anything anymore in Mozilla
       // The CSS2 colors below are used.
-    case ColorID::ThemedScrollbarThumbInactive:
     case ColorID::ThemedScrollbarThumb:
       // We don't need to care about the Active and Hover colors because Android
       // scrollbars can't be hovered (they always have pointer-events: none).
@@ -223,7 +222,6 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aColorScheme,
     case ColorID::Field:
     case ColorID::Threedhighlight:
     case ColorID::MozCombobox:
-    case ColorID::MozEventreerow:
       aColor = NS_RGB(0xff, 0xff, 0xff);
       break;
 
@@ -367,7 +365,7 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
       break;
 
     case IntID::PrimaryPointerCapabilities:
-      aResult = java::GeckoAppShell::GetAllPointerCapabilities();
+      aResult = java::GeckoSystemStateListener::GetAllPointerCapabilities();
 
       // We cannot assume what is primary device, so we use Blink's way for web
       // compatibility (https://crbug.com/136119#c6). If having coarse
@@ -378,7 +376,7 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
       break;
 
     case IntID::AllPointerCapabilities:
-      aResult = java::GeckoAppShell::GetAllPointerCapabilities();
+      aResult = java::GeckoSystemStateListener::GetAllPointerCapabilities();
       break;
 
     case IntID::SystemUsesDarkTheme: {
@@ -399,7 +397,7 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
       break;
 
     case IntID::PointingDeviceKinds:
-      aResult = java::GeckoAppShell::GetPointingDeviceKinds();
+      aResult = java::GeckoSystemStateListener::GetPointingDeviceKinds();
       break;
 
     default:

@@ -421,6 +421,7 @@ this.AntiTracking = {
           "tracking.example.com,tracking.example.org",
         ],
         ["privacy.antitracking.testing", true],
+        ["network.lna.block_trackers", false],
       ],
     });
 
@@ -719,8 +720,8 @@ this.AntiTracking = {
               ok(false, "Unknown message");
             });
 
-            content.document.body.appendChild(ifr);
             ifr.src = obj.page;
+            content.document.body.appendChild(ifr);
           });
 
           if (obj.doAccessRemovalChecks) {
@@ -838,8 +839,8 @@ this.AntiTracking = {
               ok(false, "Unknown message");
             });
 
-            content.document.body.appendChild(ifr);
             ifr.src = obj.page;
+            content.document.body.appendChild(ifr);
           }
         );
       }
@@ -1023,11 +1024,9 @@ this.AntiTracking = {
           async function (obj) {
             // Add an iframe.
             let ifr = content.document.createElement("iframe");
-            let loading = new content.Promise(resolve => {
-              ifr.onload = resolve;
-            });
-            content.document.body.appendChild(ifr);
+            const loading = ContentTaskUtils.waitForEvent(ifr, "load");
             ifr.src = obj.page;
+            content.document.body.appendChild(ifr);
             await loading;
 
             return ifr.browsingContext;
@@ -1088,8 +1087,8 @@ this.AntiTracking = {
               ok(false, "Unknown message");
             });
 
-            content.document.body.appendChild(ifr);
             ifr.src = obj.page;
+            content.document.body.appendChild(ifr);
           });
         }
       );
@@ -1158,11 +1157,9 @@ this.AntiTracking = {
           async function (obj) {
             // Add an iframe.
             let ifr = content.document.createElement("iframe");
-            let loading = new content.Promise(resolve => {
-              ifr.onload = resolve;
-            });
-            content.document.body.appendChild(ifr);
+            const loading = ContentTaskUtils.waitForEvent(ifr, "load");
             ifr.src = obj.page;
+            content.document.body.appendChild(ifr);
             await loading;
 
             return ifr.browsingContext;
@@ -1191,17 +1188,15 @@ this.AntiTracking = {
         ],
         async function (obj) {
           let ifr = content.document.createElement("iframe");
-          let loading = new content.Promise(resolve => {
-            ifr.onload = resolve;
-          });
+          const loading = ContentTaskUtils.waitForEvent(ifr, "load");
           if (typeof obj.iframeSandbox == "string") {
             ifr.setAttribute("sandbox", obj.iframeSandbox);
           }
           if (typeof obj.iframeAllow == "string") {
             ifr.setAttribute("allow", obj.iframeAllow);
           }
-          content.document.body.appendChild(ifr);
           ifr.src = obj.page;
+          content.document.body.appendChild(ifr);
           await loading;
 
           info(
@@ -1323,17 +1318,15 @@ this.AntiTracking = {
         ],
         async function (obj) {
           let ifr = content.document.createElement("iframe");
-          let loading = new content.Promise(resolve => {
-            ifr.onload = resolve;
-          });
+          const loading = ContentTaskUtils.waitForEvent(ifr, "load");
           if (typeof obj.iframeSandbox == "string") {
             ifr.setAttribute("sandbox", obj.iframeSandbox);
           }
           if (typeof obj.iframeAllow == "string") {
             ifr.setAttribute("allow", obj.iframeAllow);
           }
-          content.document.body.appendChild(ifr);
           ifr.src = obj.page;
+          content.document.body.appendChild(ifr);
           await loading;
 
           let windowClosed = new content.Promise(resolve => {

@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -50,12 +57,11 @@
   <!-- Menu item: Add the current site as a shortcut on the Home screen -->
   <string name="menu_add_to_shortcuts">Jurhikutakuecharhu kuparata</string>
   <!-- Menu item: Remove the current site as a shortcut from the Home screen -->
-  <string name="menu_remove_from_shortcuts">Jurhikutakuaecharhu kentita </string>
+  <string name="menu_remove_from_shortcuts">Jurhikutakuaecharhu kentita</string>
   <!-- Menu item: Shows information about features and changes that are new to this version -->
   <string name="menu_settings">Pérakurhikwaecha</string>
   <string name="menu_about">Áamkuri</string>
   <string name="menu_help">Jahroap\'erakwa</string>
-  <string name="menu_rights" moz:removedIn="137">Sésikwaecha</string>
   <!--
     Menu item: This is the label for a menu entry that shows how many trackers have been blocked
     for the currently loaded website. The number of blocked trackers is shown below this label.
@@ -84,6 +90,7 @@
     sharing an URL.
   -->
   <string name="share_dialog_title">Ixusï kwankurhini</string>
+  <string name="notification_erase_title_android_14">Jirinhantskwa ampe mirikurhini?</string>
   <string name="notification_erase_text">Jirinhantskwa ampe mirikurhini</string>
   <!-- Notification action to open Focus and resume the current browsing session. -->
   <string name="notification_action_open">Inchani</string>
@@ -138,7 +145,7 @@
     Focus Nightly is hard coded since we can't use variables in this context.
     Do not translate or transliterate Focus Nightly.
   -->
-  <string name="text_selection_search_action_focus_nightly" tools:ignore="BrandUsage">Focus Nightlyrhu jirinhantsi </string>
+  <string name="text_selection_search_action_focus_nightly" tools:ignore="BrandUsage">Focus Nightlyrhu jirinhantsi</string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">Kwatakwa &amp; Jískakwa</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -313,7 +320,7 @@
   <!-- In-app link (in settings) to Focus licensing information. -->
   <string name="preference_licensing_info">Tsirimerakuaeri ampe</string>
   <!-- Link to Focus licensing information from other libraries that we use. -->
-  <string name="preference_libraries_we_use">Materu tsirimerariecha </string>
+  <string name="preference_libraries_we_use">Materu tsirimerariecha</string>
   <!-- Open Source Licenses page title. %s is the name of the app (for example "Firefox Focus" or "Firefox Klar"). -->
   <string name="open_source_licenses_title">%s |OSS tsirimerariecha</string>
   <!-- Item in Preferences that shows the about page. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar"). -->
@@ -437,8 +444,6 @@
   <string name="onboarding_first_screen_title">Maruata je %1$s</string>
   <!-- New Onboarding flow first screen subtitle the one that appears under title -->
   <string name="onboarding_first_screen_subtitle">Jano je.</string>
-  <!-- New Onboarding flow first screen button label -->
-  <string name="onboarding_first_screen_button_text" moz:removedIn="137" tools:ignore="UnusedResources">Wenakuni</string>
   <!--
     Onboarding second screen: Title
 
@@ -514,36 +519,6 @@
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
   -->
   <string name="download_firefox" tools:ignore="BrandUsage">Firefox jatsïrakurhini</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-  -->
-  <string name="your_rights_content1" moz:removedIn="137">%1$s úratarakwa maesti énkari úaka k\'ánkurhini Mozilla ústi máteruecha jinkoni.</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-    %2$s will be replaced with a URL linking to the MPL (e.g. https://www.mozilla.org/en-US/MPL/)
-  -->
-  <string name="your_rights_content2" moz:removedIn="137" tools:ignore="IncorrectStraightDoubleQuote">%1$s úakari pitsikurhini jimpoka &lt;a href="%2$s"&gt; úkata jarasti &lt;/a&gt;Mozillaeri jinkoni ka máterueri úratarakuaecha.</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-    %2$s will be replaced with a URL linking to the trademark policy (e.g. https://www.mozilla.org/foundation/trademarks/policy/)
-  -->
-  <string name="your_rights_content3" moz:removedIn="137" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote">Áamkuri tsïrimerakata jaki Mozilla jimpo eska na jinteka Mozilla, Firefox o %1$s jakankurhikwaecha o mitintskwaecha, Sánteru ampe &lt;a href="%2$s"&gt;ixu exentakari&lt;/a&gt;.</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-    %2$s will be replaced with a URL linking to the list of licenses used by the dependencies.
-  -->
-  <string name="your_rights_content4" moz:removedIn="137" tools:ignore="IncorrectStraightDoubleQuote">Sánteru ampe marhuatakuaeri %1$s exentakari máteru úricha&lt;a href="%2$s"&gt;jinkoni &lt;/a&gt;.</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-    %2$s will be replaced with a URL linking to the GPL
-    %3$s will be replaced with a URL linking to the tracking protection wiki page (e.g. https://wiki.mozilla.org/Security/Tracking_protection#Lists)
-  -->
-  <string name="your_rights_content5" moz:removedIn="137" tools:ignore="IncorrectStraightDoubleQuote">%1$s kwarhukperatiechani maruatasïnti énka Disconnect, Inc. táchani únka ixu &lt;a href="%2$s"&gt;GNU mítikata jaka 3&lt;/a&gt;, ka úakari exeni &lt;a href="%3$s"&gt;ixu&lt;/a&gt;.</string>
   <!-- Text shown in prompts for GeckoView -->
   <string name="gv_prompt_username_hint">Jakankurhikwa</string>
   <string name="gv_prompt_password_hint">Mítintskwa</string>
@@ -635,11 +610,11 @@
   <!-- First step for the allowing a permission -->
   <string name="phone_feature_blocked_step_settings">1. Android pekurhintskuecha</string>
   <!-- Second step for the allowing a permission -->
-  <string name="phone_feature_blocked_step_permissions">2. Puchastsïku &lt;b&gt;jiankukuecha&lt;/b&gt;</string>
+  <string name="phone_feature_blocked_step_permissions"><![CDATA[2. Puchastsïku <b>jiankukuecha</b>]]></string>
   <!-- Button label that take the user to the Android App setting -->
   <string name="phone_feature_go_to_settings">Pékurhintskuarhu niarani</string>
   <!-- Third step for allowing a permission. %1$s is the permission name, for example, "Camera" -->
-  <string name="phone_feature_blocked_step_feature">3. Mojtaku &lt;b&gt;%1$s&lt;/b&gt; ETSKUNI</string>
+  <string name="phone_feature_blocked_step_feature"><![CDATA[3. Mojtaku <b>%1$s</b> ETSKUNI]]></string>
   <!-- Preference for altering the camera access for all websites -->
   <string name="preference_phone_feature_camera">Pitani</string>
   <!-- Preference for altering the microphone access for all websites -->
@@ -666,20 +641,6 @@
   <string name="preference_block_autoplay_audio_only_summary">Mintsinharikua</string>
   <!-- Preference for block autoplay audio and video -->
   <string name="preference_block_autoplay_audio_video">Kustakua kuarhukuni</string>
-  <!-- Preference for studies -->
-  <string name="preference_studies">Jurenkurikua</string>
-  <!-- Preference for studies summary -->
-  <string name="preference_studies_summary" tools:ignore="BrandUsage">Menhechani firefox jatsïraati jurenkuarikua ampe.</string>
-  <!-- Learn more link for studies, links to an article for more information about studies. -->
-  <string name="studies_learn_more">Sánteru mítini</string>
-  <!-- Dialog message shown when some changes are made on studies -->
-  <string name="studies_restart_app" moz:removedIn="137">Uratarakua mikurintaati jimpoka jimpankikurintaati</string>
-  <!-- Title of the remove studies button -->
-  <string name="studies_remove">Kéntitani</string>
-  <!-- Title of the active section on the studies list -->
-  <string name="studies_active">Etskukata</string>
-  <!-- Title of the completed section on the studies list -->
-  <string name="studies_completed">Jayarakata</string>
   <!-- Preference to enable remote debugging of the app via USB or Wi-Fi -->
   <string name="preference_remote_debugging">USB/Wi-Fi weratini ampakerant\'ani</string>
   <!-- Text Button for show biometric prompt -->
@@ -727,12 +688,12 @@
     %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     The new line here must be kept as the second half of the string is clickable for the user.
   -->
-  <string name="tip_set_default_browser">Yámu miyukwaechani mítani %1$s rhu\n %1$s Pékurhintsï</string>
+  <string name="tip_set_default_browser">Yámu miyukwaechani mítani %1$s rhu\n%1$s Pékurhintsï</string>
   <!--
     Tip displayed on home view explaining how to add a custom autocomplete URL
     The new line here must be kept as the second half of the string is clickable for the user.
   -->
-  <string name="tip_open_in_new_tab">Miyukwani jimpanhi eranharhikwarhu mítani \n Nákintaru ma miyukwani puchanharhiku</string>
+  <string name="tip_open_in_new_tab">Miyukwani jimpanhi eranharhikwarhu mítani \nNákintaru ma miyukwani puchanharhiku</string>
   <!-- Label for the snackbar when a user opens a new tab -->
   <string name="new_tab_opened_snackbar">Mitakurhisti jimpanhi eranharhikwa</string>
   <!-- Label for the button in the snackbar that switches to the newly opened tab -->
@@ -793,7 +754,7 @@
     Text for context menu additional note.
     %1$s is a placeholder for the app name.
   -->
-  <string name="contextmenu_erased_images_note2">Patsakurhikataecha &lt;b&gt;áamku kéntitanhaa&lt;/b&gt; énkari miatskuani %1$s kéntitaka</string>
+  <string name="contextmenu_erased_images_note2"><![CDATA[Patsakurhikataecha <b>áamku kéntitanhaa</b> énkari miatskuani %1$s kéntitaka]]></string>
   <!--
     Theme Preferences
 

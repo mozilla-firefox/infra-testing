@@ -5,8 +5,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // Keep in (case-insensitive) order:
-#include "gfxRect.h"
 #include "SVGGFrame.h"
+#include "gfxRect.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/SVGContainerFrame.h"
 #include "mozilla/SVGObserverUtils.h"
@@ -89,6 +89,9 @@ void SVGSwitchFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
 
 void SVGSwitchFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                       const nsDisplayListSet& aLists) {
+  if (HidesContent()) {
+    return;
+  }
   if (auto* kid = GetActiveChildFrame()) {
     BuildDisplayListForChild(aBuilder, kid, aLists);
   }

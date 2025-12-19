@@ -4,6 +4,10 @@
 
 use interrupt_support::Interrupted;
 
+// reexport logging helpers.
+#[allow(unused_imports)] // some only used with certain features.
+pub use error_support::{debug, error, info, trace, warn};
+
 /// This enum is to discriminate `StorageHttpError`, and not used as an error.
 #[cfg(feature = "sync-client")]
 #[derive(Debug, Clone)]
@@ -112,7 +116,7 @@ pub enum Error {
 
     #[cfg(feature = "sync-client")]
     #[error("Network error: {0}")]
-    RequestError(#[from] viaduct::Error),
+    RequestError(#[from] viaduct::ViaductError),
 
     #[cfg(feature = "sync-client")]
     #[error("Unexpected HTTP status: {0}")]

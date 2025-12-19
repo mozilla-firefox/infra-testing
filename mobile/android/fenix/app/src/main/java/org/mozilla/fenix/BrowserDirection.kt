@@ -13,7 +13,9 @@ import androidx.annotation.IdRes
  * @property fragmentId ID of the fragment opening the browser in the navigation graph.
  * An ID of `0` indicates a global action with no corresponding opening fragment.
  */
-enum class BrowserDirection(@IdRes val fragmentId: Int) {
+enum class BrowserDirection(
+    @param:IdRes val fragmentId: Int,
+) {
     FromGlobal(0),
     FromHome(R.id.homeFragment),
     FromWallpaper(R.id.wallpaperSettingsFragment),
@@ -37,6 +39,7 @@ enum class BrowserDirection(@IdRes val fragmentId: Int) {
     FromAddonPermissionsDetailsFragment(R.id.addonPermissionsDetailFragment),
     FromLoginDetailFragment(R.id.loginDetailFragment),
     FromTabsTray(R.id.tabsTrayFragment),
+    FromTabManager(R.id.tabManagementFragment),
     FromRecentlyClosed(R.id.recentlyClosedFragment),
     FromAddonsManagementFragment(R.id.addonsManagementFragment),
     FromTranslationsDialogFragment(R.id.translationsDialogFragment),

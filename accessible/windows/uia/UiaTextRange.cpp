@@ -135,6 +135,19 @@ static NotNull<Accessible*> GetSelectionContainer(TextLeafRange& aRange) {
   return WrapNotNull(nsAccUtils::DocumentFor(acc));
 }
 
+static TextLeafPoint NormalizePoint(Accessible* aAcc, int32_t aOffset) {
+  if (!aAcc) {
+    return TextLeafPoint(aAcc, aOffset);
+  }
+  int32_t length = static_cast<int32_t>(nsAccUtils::TextLength(aAcc));
+  if (aOffset > length) {
+    // This range was created when this leaf contained more characters, but some
+    // characters were since removed. Restrict to the new length.
+    aOffset = length;
+  }
+  return TextLeafPoint(aAcc, aOffset);
+}
+
 // UiaTextRange
 
 UiaTextRange::UiaTextRange(const TextLeafRange& aRange) {
@@ -163,12 +176,12 @@ TextLeafRange UiaTextRange::GetRange() const {
   // handle this case.
   if (mIsEndOfLineInsertionPoint) {
     MOZ_ASSERT(mStartAcc == mEndAcc && mStartOffset == mEndOffset);
-    TextLeafPoint point(mStartAcc->Acc(), mStartOffset);
+    TextLeafPoint point = NormalizePoint(mStartAcc->Acc(), mStartOffset);
     point.mIsEndOfLineInsertionPoint = true;
     return TextLeafRange(point, point);
   }
-  return TextLeafRange({mStartAcc->Acc(), mStartOffset},
-                       {mEndAcc->Acc(), mEndOffset});
+  return TextLeafRange(NormalizePoint(mStartAcc->Acc(), mStartOffset),
+                       NormalizePoint(mEndAcc->Acc(), mEndOffset));
 }
 
 /* static */
@@ -472,10 +485,11 @@ UiaTextRange::FindText(__RPC__in BSTR aText, BOOL aBackward, BOOL aIgnoreCase,
   if (!range) {
     return CO_E_OBJNOTCONNECTED;
   }
-  MOZ_ASSERT(range.Start() <= range.End(), "Range must be valid to proceed.");
+  const TextLeafPoint origStart = range.Start();
+  MOZ_ASSERT(origStart <= range.End(), "Range must be valid to proceed.");
 
   // We can't find anything in an empty range.
-  if (range.Start() == range.End()) {
+  if (origStart == range.End()) {
     return S_OK;
   }
 
@@ -485,10 +499,12 @@ UiaTextRange::FindText(__RPC__in BSTR aText, BOOL aBackward, BOOL aIgnoreCase,
   nsTArray<std::pair<int32_t, Accessible*>> indexToAcc;
   nsAutoString rangeText;
   for (const TextLeafRange leafSegment : range) {
-    Accessible* startAcc = leafSegment.Start().mAcc;
+    const TextLeafPoint segmentStart = leafSegment.Start();
+    Accessible* startAcc = segmentStart.mAcc;
     MOZ_ASSERT(startAcc, "Start acc of leaf segment was unexpectedly null.");
     indexToAcc.EmplaceBack(rangeText.Length(), startAcc);
-    startAcc->AppendTextTo(rangeText);
+    startAcc->AppendTextTo(rangeText, segmentStart.mOffset,
+                           leafSegment.End().mOffset - segmentStart.mOffset);
   }
 
   // Find the search string's start position in the text of the range, ignoring
@@ -525,15 +541,28 @@ UiaTextRange::FindText(__RPC__in BSTR aText, BOOL aBackward, BOOL aIgnoreCase,
     return itr;
   };
 
+  // Get the start offset to use for a given Accessible containing our match.
+  auto getStartOffsetForAcc = [origStart](Accessible* aAcc) {
+    if (aAcc == origStart.mAcc) {
+      // aAcc is in the same leaf in which the origin range starts. The origin
+      // range might start in the middle of the leaf, in which case our gathered
+      // text starts there too.
+      return origStart.mOffset;
+    }
+    return 0;
+  };
+
   // Calculate the TextLeafPoint for the start and end of the found text.
   auto itr = GetNearestAccLessThanIndex(startIndex);
   Accessible* foundTextStart = itr->second;
-  const int32_t offsetFromStart = startIndex - itr->first;
+  const int32_t offsetFromStart =
+      startIndex - itr->first + getStartOffsetForAcc(foundTextStart);
   const TextLeafPoint rangeStart{foundTextStart, offsetFromStart};
 
   itr = GetNearestAccLessThanIndex(endIndex);
   Accessible* foundTextEnd = itr->second;
-  const int32_t offsetFromEndAccStart = endIndex - itr->first;
+  const int32_t offsetFromEndAccStart =
+      endIndex - itr->first + getStartOffsetForAcc(foundTextEnd);
   const TextLeafPoint rangeEnd{foundTextEnd, offsetFromEndAccStart};
 
   TextLeafRange resultRange{rangeStart, rangeEnd};
@@ -690,8 +719,7 @@ UiaTextRange::GetBoundingRectangles(__RPC__deref_out_opt SAFEARRAY** aRetVal) {
   }
 
   // Get the rectangles for each line.
-  const nsTArray<LayoutDeviceIntRect> lineRects = range.LineRects();
-
+  nsTArray<LayoutDeviceIntRect> lineRects = range.LineRects();
   // For UIA's purposes, the rectangles of this array are four doubles arranged
   // in order {left, top, width, height}.
   SAFEARRAY* rectsVec = SafeArrayCreateVector(VT_R8, 0, lineRects.Length() * 4);
@@ -887,7 +915,8 @@ MOZ_CAN_RUN_SCRIPT_BOUNDARY STDMETHODIMP UiaTextRange::Select() {
   if (!range) {
     return CO_E_OBJNOTCONNECTED;
   }
-  if (!range.SetSelection(TextLeafRange::kRemoveAllExistingSelectedRanges)) {
+  if (!range.SetSelection(TextLeafRange::kRemoveAllExistingSelectedRanges,
+                          /* aSetFocus */ false)) {
     return UIA_E_INVALIDOPERATION;
   }
   return S_OK;
@@ -899,7 +928,7 @@ MOZ_CAN_RUN_SCRIPT_BOUNDARY STDMETHODIMP UiaTextRange::AddToSelection() {
   if (!range) {
     return CO_E_OBJNOTCONNECTED;
   }
-  if (!range.SetSelection(-1)) {
+  if (!range.SetSelection(-1, /* aSetFocus */ false)) {
     return UIA_E_INVALIDOPERATION;
   }
   return S_OK;
@@ -1088,7 +1117,7 @@ struct AttributeTraits<UIA_FontWeightAttributeId> {
     if (!attrs) {
       return {};
     }
-    return attrs->GetAttribute<AttrType>(nsGkAtoms::fontWeight);
+    return attrs->GetAttribute<AttrType>(nsGkAtoms::font_weight);
   }
 
   static AttrType DefaultValue() {

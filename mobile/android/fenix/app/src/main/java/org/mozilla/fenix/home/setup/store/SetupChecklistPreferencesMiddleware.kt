@@ -9,7 +9,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.appstate.AppState
 import org.mozilla.fenix.components.appstate.setup.checklist.ChecklistItem
@@ -26,7 +26,7 @@ class SetupChecklistPreferencesMiddleware(
 ) : Middleware<AppState, AppAction> {
 
     override fun invoke(
-        context: MiddlewareContext<AppState, AppAction>,
+        store: Store<AppState, AppAction>,
         next: (AppAction) -> Unit,
         action: AppAction,
     ) {
@@ -38,7 +38,7 @@ class SetupChecklistPreferencesMiddleware(
                     repository.setupChecklistPreferenceUpdates
                         .collect { preferenceUpdate ->
                             val updateAction = mapRepoUpdateToStoreAction(preferenceUpdate)
-                            context.store.dispatch(updateAction)
+                            store.dispatch(updateAction)
                         }
                 }
                 repository.init()
@@ -55,12 +55,12 @@ class SetupChecklistPreferencesMiddleware(
                         ChecklistItem.Task.Type.SELECT_THEME -> SetupChecklistPreference.ThemeComplete
                         ChecklistItem.Task.Type.CHANGE_TOOLBAR_PLACEMENT -> SetupChecklistPreference.ToolbarComplete
                         ChecklistItem.Task.Type.EXPLORE_EXTENSION -> SetupChecklistPreference.ExtensionsComplete
+                        ChecklistItem.Task.Type.INSTALL_SEARCH_WIDGET -> SetupChecklistPreference.InstallSearchWidget
 
                         // no-ops
                         // these preferences are handled elsewhere outside of the setup checklist feature.
                         ChecklistItem.Task.Type.SET_AS_DEFAULT,
                         ChecklistItem.Task.Type.SIGN_IN,
-                        ChecklistItem.Task.Type.INSTALL_SEARCH_WIDGET,
                         -> null
                     }
 

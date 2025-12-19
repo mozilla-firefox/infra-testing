@@ -18,15 +18,28 @@ import numpy as np
 from mozdevice import ADBDevice
 from mozperftest.profiler import ProfilingMediator
 
-PROD_FENIX = "fenix"
-PROD_CHRM = "chrome-m"
+"""
+Homeview:
+An error of greater than 0.0002 indicates we have 1 icon, any less than this startup is done
+Else(newssite(cvne), shopify (cvne), tab-restore):
+An error of greater than 0.001 indicates we have the loading bar present, any less than this startup is done
+"""
+ACCEPTABLE_THRESHOLD_ERROR = {
+    "homeview_startup": 0.0002,
+    "cold_view_nav_end": 0.001,
+    "mobile_restore": 0.001,
+}
 BACKGROUND_TABS = [
     "https://www.google.com/search?q=toronto+weather",
     "https://en.m.wikipedia.org/wiki/Anemone_hepatica",
-    "https://www.amazon.ca/gp/aw/gb?ref_=navm_cs_gb&discounts-widget",
+    "https://www.temu.com",
     "https://www.espn.com/nfl/game/_/gameId/401671793/chiefs-falcons",
 ]
+ERROR_THRESHOLD = 8  # This is the lower bound for the high pass filter to remove noise
 ITERATIONS = 5
+MAX_STARTUP_TIME = 25000  # 25000ms = 25 seconds
+PROD_CHRM = "chrome-m"
+PROD_FENIX = "fenix"
 
 
 class ImageAnalzer:
@@ -34,6 +47,7 @@ class ImageAnalzer:
         self.video = None
         self.browser = browser
         self.test = test
+        self.acceptable_error = ACCEPTABLE_THRESHOLD_ERROR[test]
         self.test_url = test_url
         self.width = 0
         self.height = 0
@@ -43,34 +57,34 @@ class ImageAnalzer:
         self.profiler = ProfilingMediator()
         self.cpu_data = {"total": {"time": []}}
         if self.browser == PROD_FENIX:
-            self.intent = "org.mozilla.fenix/org.mozilla.fenix.IntentReceiverActivity"
+            self.package_and_activity = (
+                "org.mozilla.fenix/org.mozilla.fenix.IntentReceiverActivity"
+            )
         elif self.browser == PROD_CHRM:
-            self.intent = (
+            self.package_and_activity = (
                 "com.android.chrome/com.google.android.apps.chrome.IntentDispatcher"
             )
         else:
             raise Exception("Bad browser name")
-        self.nav_start_command = (
-            f"am start-activity -W -n {self.intent} -a "
-            f"android.intent.action.VIEW -d "
-        )
+        self.nav_start_command = f"am start-activity -W -n {self.package_and_activity} -a android.intent.action.VIEW -d "
         self.view_intent_command = (
-            f"am start-activity -W -n {self.intent} -a " f"android.intent.action.VIEW"
+            f"am start-activity -W -n {self.package_and_activity} -a "
+            f"android.intent.action.VIEW"
         )
-
         self.device.shell("mkdir -p /sdcard/Download")
         self.device.shell("settings put global window_animation_scale 1")
         self.device.shell("settings put global transition_animation_scale 1")
         self.device.shell("settings put global animator_duration_scale 1")
+        self.device.disable_notifications("com.topjohnwu.magisk")
 
     def app_setup(self):
         if ON_TRY:
             self.device.shell(f"pm clear {self.package_name}")
         time.sleep(3)
         self.skip_onboarding()
-        self.device.shell(
-            f"pm grant {self.package_name} android.permission.POST_NOTIFICATIONS"
-        )  # enabling notifications
+        self.device.enable_notifications(
+            self.package_name
+        )  # enabling notifications for android
         if self.test != "homeview_startup":
             self.create_background_tabs()
         self.device.shell(f"am force-stop {self.package_name}")
@@ -134,31 +148,37 @@ class ImageAnalzer:
         )
 
         time.sleep(4)
-        video_location = pathlib.Path(os.environ["TESTING_DIR"], self.video_name)
-
+        video_location = str(pathlib.Path(os.environ["TESTING_DIR"], self.video_name))
         self.video = cv2.VideoCapture(video_location)
         self.width = self.video.get(cv2.CAP_PROP_FRAME_WIDTH)
         self.height = self.video.get(cv2.CAP_PROP_FRAME_HEIGHT)
         self.device.shell(f"am force-stop {self.package_name}")
 
-    def get_image(self, frame_position):
+    def get_image(self, frame_position, cropped=True, bw=True):
         self.video.set(cv2.CAP_PROP_POS_FRAMES, frame_position)
         ret, frame = self.video.read()
+        if bw:
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         if not ret:
             raise Exception("Frame not read")
         # We crop out the top 100 pixels in each image as when we have --bug-report in the
         # screen-recording command it displays a timestamp which interferes with the image comparisons
-        return frame[100 : int(self.height), 0 : int(self.width)]
+        # We crop out the bottom 100 pixels to remove the fading in of the OS navigation controls
+        # We crop out the right 20 pixels to remove the scroll bar as it interferes with startup accuracy
+        if cropped:
+            return frame[100 : int(self.height) - 100, 0 : int(self.width) - 20]
+        return frame
 
     def error(self, img1, img2):
         h = img1.shape[0]
         w = img1.shape[1]
-        diff = cv2.subtract(img1, img2)
-        err = np.sum(diff**2)
+        diff = cv2.absdiff(img1, img2)
+        threshold_diff = cv2.threshold(diff, ERROR_THRESHOLD, 255, cv2.THRESH_BINARY)[1]
+        err = np.sum(threshold_diff**2)
         mse = err / (float(h * w))
         return mse
 
-    def get_page_loaded_time(self):
+    def get_page_loaded_time(self, iteration):
         """
         Returns the index of the frame where the main image on the shopify demo page is displayed
         for the first time.
@@ -168,23 +188,37 @@ class ImageAnalzer:
         """
         final_frame_index = self.video.get(cv2.CAP_PROP_FRAME_COUNT) - 1
         final_frame = self.get_image(final_frame_index)
+        compare_to_end_frame = final_frame_index
+        diff = 0
 
-        lo = 0
-        hi = final_frame_index
+        while diff <= self.acceptable_error:
+            compare_to_end_frame -= 1
+            if compare_to_end_frame < 0:
+                raise Exception(
+                    "Could not find the initial pageload frame, all possible images compared"
+                )
+            diff = self.error(self.get_image(compare_to_end_frame), final_frame)
 
-        while lo < hi:
-            mid = (lo + hi) // 2
-            diff = self.error(self.get_image(mid), final_frame)
-            if diff <= 20:
-                hi = mid
-            else:
-                lo = mid + 1
-        return lo
+        compare_to_end_frame += 1
+        save_image_location = pathlib.Path(
+            os.environ["TESTING_DIR"],
+            f"iter_{iteration}_startup_done.png",
+        )
+        cv2.imwrite(
+            save_image_location,
+            self.get_image(compare_to_end_frame, cropped=False, bw=False),
+        )
+        return compare_to_end_frame
 
     def get_time_from_frame_num(self, frame_num):
         self.video.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
         self.video.read()
-        return self.video.get(cv2.CAP_PROP_POS_MSEC)
+        video_timestamp = self.video.get(cv2.CAP_PROP_POS_MSEC)
+        if video_timestamp > MAX_STARTUP_TIME:
+            raise ValueError(
+                f"Startup time of {video_timestamp/1000}s exceeds max time of {MAX_STARTUP_TIME/1000}s"
+            )
+        return video_timestamp
 
     def load_page_to_test_startup(self):
         # Navigate to the page we want to use for testing startup
@@ -211,6 +245,11 @@ class ImageAnalzer:
             total_time_seconds += time_seconds
             if "org.mozilla.fenix:tab" in process_name:
                 process_name = "org.mozilla.fenix:tab"
+            if (
+                "com.android.chrome" in process_name
+                and "sandboxed_process" in process_name
+            ):
+                process_name = "com.android.chrome:sandboxed_process"
 
             if process_name not in self.cpu_data.keys():
                 self.cpu_data[process_name] = {}
@@ -254,7 +293,7 @@ if __name__ == "__main__":
     for iteration in range(ITERATIONS):
         ImageObject.app_setup()
         ImageObject.get_video(iteration)
-        nav_done_frame = ImageObject.get_page_loaded_time()
+        nav_done_frame = ImageObject.get_page_loaded_time(iteration)
         start_video_timestamp += [ImageObject.get_time_from_frame_num(nav_done_frame)]
     print(
         'perfMetrics: {"values": '

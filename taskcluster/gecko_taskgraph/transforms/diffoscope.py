@@ -50,6 +50,7 @@ diff_description_schema = Schema(
         Optional("pre-diff-commands"): [str],
         # Only run the task on a set of projects/branches.
         Optional("run-on-projects"): task_description_schema["run-on-projects"],
+        Optional("run-on-repo-type"): task_description_schema["run-on-repo-type"],
         Optional("optimization"): task_description_schema["optimization"],
     }
 )
@@ -121,7 +122,7 @@ def fill_template(config, tasks):
                 "kind": "other",
                 "tier": task["tier"],
             },
-            "worker-type": "b-linux-gcp",
+            "worker-type": "b-linux",
             "worker": {
                 "docker-image": {"in-tree": "diffoscope"},
                 "artifacts": [
@@ -155,6 +156,7 @@ def fill_template(config, tasks):
             },
             "dependencies": deps,
             "optimization": task.get("optimization"),
+            "run-on-repo-type": task.get("run-on-repo-type", ["git", "hg"]),
         }
         if "run-on-projects" in task:
             taskdesc["run-on-projects"] = task["run-on-projects"]

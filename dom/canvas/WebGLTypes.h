@@ -17,11 +17,11 @@
 #include "GLContextTypes.h"
 #include "GLDefs.h"
 #include "ImageContainer.h"
+#include "gfxTypes.h"
 #include "mozilla/Casting.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/EnumTypeTraits.h"
 #include "mozilla/IsEnumCase.h"
-#include "mozilla/MathAlgorithms.h"
 #include "mozilla/Range.h"
 #include "mozilla/RefCounted.h"
 #include "mozilla/Result.h"
@@ -29,6 +29,8 @@
 #include "mozilla/Span.h"
 #include "mozilla/TiedFields.h"
 #include "mozilla/TypedEnumBits.h"
+#include "mozilla/WeakPtr.h"
+#include "mozilla/dom/WebGLRenderingContextBinding.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/BuildConstants.h"
 #include "mozilla/gfx/Logging.h"
@@ -36,11 +38,8 @@
 #include "mozilla/gfx/Rect.h"
 #include "mozilla/ipc/Shmem.h"
 #include "mozilla/layers/LayersSurfaces.h"
-#include "gfxTypes.h"
-
-#include "nsTArray.h"
 #include "nsString.h"
-#include "mozilla/dom/WebGLRenderingContextBinding.h"
+#include "nsTArray.h"
 
 // Manual reflection of WebIDL typedefs that are different from their
 // OpenGL counterparts.
@@ -101,7 +100,6 @@ namespace webgl {
 template <typename T>
 struct QueueParamTraits;
 class TexUnpackBytes;
-class TexUnpackImage;
 class TexUnpackSurface;
 }  // namespace webgl
 
@@ -806,14 +804,10 @@ struct InitContextResult final {
   Limits limits;
   EnumMask<layers::SurfaceDescriptor::Type> uploadableSdTypes;
   // Padded because of "Android 5.0 ARMv7" builds:
-  Padded<
-    std::unordered_map<
-      GetShaderPrecisionFormatArgs,
-      ShaderPrecisionFormat,
-      TupleStdHash<GetShaderPrecisionFormatArgs>
-    >,
-    64
-  > shaderPrecisions;
+  Padded<std::unordered_map<GetShaderPrecisionFormatArgs, ShaderPrecisionFormat,
+                            TupleStdHash<GetShaderPrecisionFormatArgs>>,
+         64>
+      shaderPrecisions;
 
   auto MutTiedFields() {
     return std::tie(error, options, vendor, optionalRenderableFormatBits,
@@ -917,7 +911,10 @@ struct LinkActiveInfo final {
   std::vector<ActiveInfo> activeTfVaryings;
 };
 
-struct LinkResult final {
+struct LinkResult final : public SupportsWeakPtr {
+  LinkResult() {}
+  ~LinkResult() = default;
+
   bool pending = true;
   nsCString log;
   bool success = false;
@@ -1013,6 +1010,17 @@ inline Maybe<T> MaybeAs(const U val) {
 }
 
 // -
+
+inline GLenum IsTexMipmapFilter(const GLenum texFilter) {
+  switch (texFilter) {
+    case LOCAL_GL_NEAREST_MIPMAP_NEAREST:
+    case LOCAL_GL_LINEAR_MIPMAP_NEAREST:
+    case LOCAL_GL_NEAREST_MIPMAP_LINEAR:
+    case LOCAL_GL_LINEAR_MIPMAP_LINEAR:
+      return true;
+  }
+  return false;
+}
 
 inline GLenum IsTexImageTarget(const GLenum imageTarget) {
   switch (imageTarget) {
@@ -1412,10 +1420,9 @@ inline std::string ToStringWithCommas(uint64_t v) {
 // https://en.cppreference.com/w/cpp/container/array/to_array
 
 namespace detail {
-template<class T, size_t N, size_t... I>
-constexpr std::array<std::remove_cv_t<T>, N>
-  to_array_impl(T (&a)[N], std::index_sequence<I...>)
-{
+template <class T, size_t N, size_t... I>
+constexpr std::array<std::remove_cv_t<T>, N> to_array_impl(
+    T (&a)[N], std::index_sequence<I...>) {
   return {{a[I]...}};
 }
 
@@ -1426,9 +1433,9 @@ constexpr std::array<std::remove_cv_t<T>, N> to_array_impl(
 }
 }  // namespace detail
 
-template<class T, size_t N>
+template <class T, size_t N>
 constexpr std::array<std::remove_cv_t<T>, N> to_array(T (&a)[N]) {
-    return detail::to_array_impl(a, std::make_index_sequence<N>{});
+  return detail::to_array_impl(a, std::make_index_sequence<N>{});
 }
 
 template <class T, size_t N>

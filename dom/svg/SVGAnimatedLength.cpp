@@ -6,26 +6,25 @@
 
 #include "SVGAnimatedLength.h"
 
+#include "DOMSVGAnimatedLength.h"
+#include "DOMSVGLength.h"
+#include "LayoutLogging.h"
+#include "SVGAttrTearoffTable.h"
+#include "SVGGeometryProperty.h"
+#include "SVGLengthSMILType.h"
 #include "mozAutoDocUpdate.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/GeckoBindings.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/SMILValue.h"
-#include "mozilla/StaticPresData.h"
-#include "nsPresContextInlines.h"
 #include "mozilla/SVGIntegrationUtils.h"
+#include "mozilla/StaticPresData.h"
 #include "mozilla/dom/SVGViewportElement.h"
-#include "DOMSVGAnimatedLength.h"
-#include "DOMSVGLength.h"
-#include "LayoutLogging.h"
 #include "nsContentUtils.h"
 #include "nsIFrame.h"
 #include "nsLayoutUtils.h"
+#include "nsPresContextInlines.h"
 #include "nsTextFormatter.h"
-#include "SVGLengthSMILType.h"
-#include "SVGAttrTearoffTable.h"
-#include "SVGGeometryProperty.h"
 
 using namespace mozilla::dom;
 
@@ -45,15 +44,13 @@ class MOZ_RAII AutoChangeLengthNotifier {
 
     if (mDoSetAttr) {
       mUpdateBatch.emplace(aSVGElement->GetComposedDoc(), true);
-      mEmptyOrOldValue =
-          mSVGElement->WillChangeLength(mLength->mAttrEnum, mUpdateBatch.ref());
+      mSVGElement->WillChangeLength(mLength->mAttrEnum, mUpdateBatch.ref());
     }
   }
 
   ~AutoChangeLengthNotifier() {
     if (mDoSetAttr) {
-      mSVGElement->DidChangeLength(mLength->mAttrEnum, mEmptyOrOldValue,
-                                   mUpdateBatch.ref());
+      mSVGElement->DidChangeLength(mLength->mAttrEnum, mUpdateBatch.ref());
     }
     if (mLength->mIsAnimated) {
       mSVGElement->AnimationNeedsResample();
@@ -64,12 +61,10 @@ class MOZ_RAII AutoChangeLengthNotifier {
   SVGAnimatedLength* const mLength;
   SVGElement* const mSVGElement;
   Maybe<mozAutoDocUpdate> mUpdateBatch;
-  nsAttrValue mEmptyOrOldValue;
   bool mDoSetAttr;
 };
 
-MOZ_CONSTINIT static SVGAttrTearoffTable<SVGAnimatedLength,
-                                         DOMSVGAnimatedLength>
+constinit static SVGAttrTearoffTable<SVGAnimatedLength, DOMSVGAnimatedLength>
     sSVGAnimatedLengthTearoffTable;
 
 /* Helper functions */
@@ -509,6 +504,9 @@ nsresult SVGAnimatedLength::SetBaseValueString(const nsAString& aValueAsString,
   uint16_t unitType;
 
   if (!GetValueFromString(aValueAsString, value, &unitType)) {
+    return NS_ERROR_DOM_SYNTAX_ERR;
+  }
+  if (aSVGElement->LengthAttrIsNonNegative(mAttrEnum) && value < 0.0f) {
     return NS_ERROR_DOM_SYNTAX_ERR;
   }
 

@@ -5,7 +5,7 @@
 package org.mozilla.focus.browser.integration
 
 import android.content.Context
-import androidx.core.content.ContextCompat
+import androidx.appcompat.content.res.AppCompatResources
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.map
@@ -20,6 +20,7 @@ import mozilla.components.support.utils.ColorUtils
 import org.mozilla.focus.R
 import org.mozilla.focus.ext.ifCustomTab
 import org.mozilla.focus.theme.resolveAttribute
+import mozilla.components.ui.icons.R as iconsR
 
 class NavigationButtonsIntegration(
     val context: Context,
@@ -44,7 +45,7 @@ class NavigationButtonsIntegration(
         }
 
         val backButton = BrowserToolbar.TwoStateButton(
-            primaryImage = ContextCompat.getDrawable(context, R.drawable.mozac_ic_back_24)!!,
+            primaryImage = AppCompatResources.getDrawable(context, iconsR.drawable.mozac_ic_back_24)!!,
             primaryContentDescription = context.getString(R.string.content_description_back),
             primaryImageTintResource = enabledColorRes,
             isInPrimaryState = {
@@ -60,7 +61,7 @@ class NavigationButtonsIntegration(
         toolbar.addNavigationAction(backButton)
 
         val forwardButton = BrowserToolbar.TwoStateButton(
-            primaryImage = ContextCompat.getDrawable(context, R.drawable.mozac_ic_forward_24)!!,
+            primaryImage = AppCompatResources.getDrawable(context, iconsR.drawable.mozac_ic_forward_24)!!,
             primaryContentDescription = context.getString(R.string.content_description_forward),
             primaryImageTintResource = enabledColorRes,
             isInPrimaryState = {
@@ -76,8 +77,8 @@ class NavigationButtonsIntegration(
         toolbar.addNavigationAction(forwardButton)
 
         val reloadOrStopButton = BrowserToolbar.TwoStateButton(
-            primaryImage = ContextCompat.getDrawable(context, R.drawable.mozac_ic_stop)!!,
-            secondaryImage = ContextCompat.getDrawable(context, R.drawable.mozac_ic_arrow_clockwise_24)!!,
+            primaryImage = AppCompatResources.getDrawable(context, iconsR.drawable.mozac_ic_stop)!!,
+            secondaryImage = AppCompatResources.getDrawable(context, iconsR.drawable.mozac_ic_arrow_clockwise_24)!!,
             primaryContentDescription = context.getString(R.string.content_description_stop),
             secondaryContentDescription = context.getString(R.string.content_description_reload),
             primaryImageTintResource = enabledColorRes,

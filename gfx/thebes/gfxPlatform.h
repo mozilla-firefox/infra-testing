@@ -28,6 +28,7 @@
 #include "mozilla/layers/MemoryPressureObserver.h"
 #include "mozilla/layers/OverlayInfo.h"
 
+class FontVisibilityProvider;
 class gfxASurface;
 class gfxFont;
 class gfxFontGroup;
@@ -39,7 +40,6 @@ class gfxTextRun;
 class nsIURI;
 class nsAtom;
 class nsIObserver;
-class nsPresContext;
 class SRGBOverrideObserver;
 class gfxTextPerfMetrics;
 typedef struct FT_LibraryRec_* FT_Library;
@@ -123,6 +123,11 @@ inline bool PrefersColor(FontPresentation aPresentation) {
   return aPresentation >= FontPresentation::EmojiDefault;
 }
 
+inline bool IsExplicitPresentation(FontPresentation aPresentation) {
+  return aPresentation == FontPresentation::TextExplicit ||
+         aPresentation == FontPresentation::EmojiExplicit;
+}
+
 // when searching through pref langs, max number of pref langs
 const uint32_t kMaxLenPrefLangList = 32;
 
@@ -130,16 +135,12 @@ const uint32_t kMaxLenPrefLangList = 32;
 
 inline const char* GetBackendName(mozilla::gfx::BackendType aBackend) {
   switch (aBackend) {
-    case mozilla::gfx::BackendType::DIRECT2D:
-      return "direct2d";
     case mozilla::gfx::BackendType::CAIRO:
       return "cairo";
     case mozilla::gfx::BackendType::SKIA:
       return "skia";
     case mozilla::gfx::BackendType::RECORDING:
       return "recording";
-    case mozilla::gfx::BackendType::DIRECT2D1_1:
-      return "direct2d 1.1";
     case mozilla::gfx::BackendType::WEBRENDER_TEXT:
       return "webrender text";
     case mozilla::gfx::BackendType::NONE:
@@ -226,8 +227,6 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   static bool IsBackendAccelerated(
       const mozilla::gfx::BackendType aBackendType);
 
-  static bool CanMigrateMacGPUs();
-
   /**
    * Create an offscreen surface of the given dimensions
    * and image format.
@@ -283,7 +282,8 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
 
   static already_AddRefed<DrawTarget> CreateDrawTargetForData(
       unsigned char* aData, const mozilla::gfx::IntSize& aSize, int32_t aStride,
-      mozilla::gfx::SurfaceFormat aFormat, bool aUninitialized = false);
+      mozilla::gfx::SurfaceFormat aFormat, bool aUninitialized = false,
+      bool aIsClear = false);
 
   /**
    * Returns true if we should use Azure to render content with aTarget. For
@@ -393,7 +393,7 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
    * Ownership of the returned gfxFontEntry is passed to the caller,
    * who must either AddRef() or delete.
    */
-  gfxFontEntry* LookupLocalFont(nsPresContext* aPresContext,
+  gfxFontEntry* LookupLocalFont(FontVisibilityProvider* aFontVisibilityProvider,
                                 const nsACString& aFontName,
                                 WeightRange aWeightForEntry,
                                 StretchRange aStretchForEntry,
@@ -499,8 +499,6 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   static bool InSafeMode();
 
   static bool OffMainThreadCompositingEnabled();
-
-  void UpdateCanUseHardwareVideoDecoding();
 
   inline static void EnsureCMSInitialized() {
     if (MOZ_UNLIKELY(!gCMSInitialized)) {
@@ -691,6 +689,12 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   static void ReInitFrameRate(const char* aPrefIgnored, void* aDataIgnored);
 
   /**
+   * Reset the global hardware vsync source. The next call to ReInitFrameRate
+   * will attempt to reestablish it, and fall back to software if needed.
+   */
+  static void ResetHardwareVsyncSource();
+
+  /**
    * Update force subpixel AA quality setting (called after pref
    * changes).
    */
@@ -725,6 +729,13 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
    */
   static bool PerfWarnings();
 
+  static void DisableAcceleratedCanvasForFallback(
+      mozilla::gfx::FeatureStatus aStatus, const char* aMessage,
+      const nsACString& aFailureId);
+
+  static void DisableAllCanvasForFallback(mozilla::gfx::FeatureStatus aStatus,
+                                          const char* aMessage,
+                                          const nsACString& aFailureId);
   static void DisableGPUProcess();
 
   void NotifyCompositorCreated(mozilla::layers::LayersBackend aBackend);
@@ -918,8 +929,6 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
    */
   static mozilla::gfx::BackendType BackendTypeForName(const nsCString& aName);
 
-  virtual bool CanUseHardwareVideoDecoding();
-
   int8_t mAllowDownloadableFonts;
 
   // Whether the platform supports rendering OpenType font variations
@@ -950,6 +959,10 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
 
   static void InitOpenGLConfig();
 
+  static void VideoDecodingFailedChangedCallback(const char* aPref, void*);
+
+  static void HWDRMFailedChangedCallback(const char* aPref, void*);
+
   static gfxPlatform* gPlatform;
 
   void InitializeCMS();
@@ -963,6 +976,8 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   void InitCompositorAccelerationPrefs();
   void InitGPUProcessPrefs();
   virtual void InitPlatformGPUProcessPrefs() {}
+  virtual void InitPlatformHardwareVideoConfig() {}
+  virtual void InitPlatformHardwarDRMConfig() {}
 
   // Gather telemetry data about the Gfx Platform and send it
   static void ReportTelemetry();

@@ -4,7 +4,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/intl/Collator.h"
 
 #include "SQLCollations.h"
@@ -106,11 +105,12 @@ int registerCollations(sqlite3* aDB, Service* aService) {
       {"locale_accent_sensitive", SQLITE_UTF8, localeCollationAccentSensitive8},
       {"locale_case_accent_sensitive", SQLITE_UTF8,
        localeCollationCaseAccentSensitive8},
-      {"locale", SQLITE_UTF16, localeCollation16},
-      {"locale_case_sensitive", SQLITE_UTF16, localeCollationCaseSensitive16},
-      {"locale_accent_sensitive", SQLITE_UTF16,
+      {"locale", SQLITE_UTF16_ALIGNED, localeCollation16},
+      {"locale_case_sensitive", SQLITE_UTF16_ALIGNED,
+       localeCollationCaseSensitive16},
+      {"locale_accent_sensitive", SQLITE_UTF16_ALIGNED,
        localeCollationAccentSensitive16},
-      {"locale_case_accent_sensitive", SQLITE_UTF16,
+      {"locale_case_accent_sensitive", SQLITE_UTF16_ALIGNED,
        localeCollationCaseAccentSensitive16},
   };
 

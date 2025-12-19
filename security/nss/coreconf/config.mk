@@ -148,7 +148,6 @@ ifndef NSS_DISABLE_AVX2
     ifneq ($(CPU_ARCH),x86_64)
         # Disable AVX2 entirely on non-Intel platforms
         NSS_DISABLE_AVX2 = 1
-        $(warning CPU_ARCH is not x86_64, disabling -mavx2)
     else
         # Clang reports its version as an older gcc, but it's OK
         ifndef CC_IS_CLANG
@@ -181,6 +180,10 @@ endif
 
 ifdef NSS_DISABLE_DBM
 DEFINES += -DNSS_DISABLE_DBM
+endif
+
+ifdef NSS_DISABLE_DSA
+DEFINES += -DNSS_DISABLE_DSA
 endif
 
 ifdef NSS_DISABLE_AVX2
@@ -238,6 +241,10 @@ ifdef NSS_DISABLE_ARM32_NEON
 DEFINES += -DNSS_DISABLE_ARM32_NEON
 endif
 
+ifdef NSS_DISABLE_KYBER
+DEFINES += -DNSS_DISABLE_KYBER
+endif
+
 # Avoid building with PowerPC's Altivec acceleration
 ifeq ($(NSS_DISABLE_ALTIVEC),1)
 DEFINES += -DNSS_DISABLE_ALTIVEC
@@ -259,3 +266,22 @@ DEFINES += -DNO_NSPR_10_SUPPORT
 
 # Hide old, deprecated, TLS cipher suite names when building NSS
 DEFINES += -DSSL_DISABLE_DEPRECATED_CIPHER_SUITE_NAMES
+
+
+# By default the PKCS5_PBKD2_PARAMS(structure) version is determined based on the
+# cryptokiVersion of the token, PKCS5_PBKD2_PARAMS2 structure is used for version
+# 2.40 or later, PKCS5_PBKD2_PARAMS structure is used otherwise.
+# This define allows to force the use of PKCS5_PBKD2_PARAMS2 structure only.
+ifdef NSS_USE_PKCS5_PBKD2_PARAMS2_ONLY
+DEFINES += -DNSS_USE_PKCS5_PBKD2_PARAMS2_ONLY
+endif
+
+# By default the PKCS5_PBKD2_PARAMS(structure) version is auto-detected based on
+# the difference between the two structures,by default this limits
+# the password length to 8192 bytes.
+# Using this define, only PKCS5_PBKD2_PARAMS2 structure is expected, this can cause
+# segmentation fault if PKCS5_PBKD2_PARAMS structure is provided!).
+# Additional the password length is not limited with this option.
+ifdef SOFTOKEN_USE_PKCS5_PBKD2_PARAMS2_ONLY
+DEFINES += -DSOFTOKEN_USE_PKCS5_PBKD2_PARAMS2_ONLY
+endif

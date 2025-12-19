@@ -31,10 +31,12 @@ namespace layers {
 class GpuFence;
 class NativeLayer;
 class NativeLayerCA;
+class NativeLayerRemoteMac;
 class NativeLayerWayland;
 class NativeLayerRootCA;
 class NativeLayerRootWayland;
 class NativeLayerRootSnapshotter;
+class NativeLayerWayland;
 class SurfacePoolHandle;
 
 // NativeLayerRoot and NativeLayer allow building up a flat layer "tree" of
@@ -60,6 +62,8 @@ class NativeLayerRoot {
     return nullptr;
   }
 
+  virtual void LayerDestroyed(NativeLayer* aLayer) {}
+
   virtual void AppendLayer(NativeLayer* aLayer) = 0;
   virtual void RemoveLayer(NativeLayer* aLayer) = 0;
   virtual void SetLayers(const nsTArray<RefPtr<NativeLayer>>& aLayers) = 0;
@@ -70,6 +74,10 @@ class NativeLayerRoot {
   // Publish the layer changes to the screen. Returns whether the commit was
   // successful.
   virtual bool CommitToScreen() = 0;
+
+  // When called on a remote instance, synchronously wait until the other side
+  // has processed any previous commits.
+  virtual void WaitUntilCommitToScreenHasBeenProcessed() {}
 
   // Returns a new NativeLayerRootSnapshotter that can be used to read back the
   // visual output of this NativeLayerRoot. The snapshotter needs to be
@@ -131,6 +139,7 @@ class NativeLayer {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(NativeLayer)
 
   virtual NativeLayerCA* AsNativeLayerCA() { return nullptr; }
+  virtual NativeLayerRemoteMac* AsNativeLayerRemoteMac() { return nullptr; }
   virtual NativeLayerWayland* AsNativeLayerWayland() { return nullptr; }
 
   // The size and opaqueness of a layer are supplied during layer creation and
@@ -156,6 +165,11 @@ class NativeLayer {
   virtual void SetClipRect(const Maybe<gfx::IntRect>& aClipRect) = 0;
   virtual Maybe<gfx::IntRect> ClipRect() = 0;
 
+  // Set an optional rounded clip rect on the layer. The clip rect is in
+  // post-transform coordinate space
+  virtual void SetRoundedClipRect(const Maybe<gfx::RoundedRect>& aClip) = 0;
+  virtual Maybe<gfx::RoundedRect> RoundedClipRect() = 0;
+
   // Returns the "display rect", in content coordinates, of the current front
   // surface. This rect acts as an extra clip and prevents invalid content from
   // getting to the screen. The display rect starts out empty before the first
@@ -170,6 +184,9 @@ class NativeLayer {
   virtual bool SurfaceIsFlipped() = 0;
 
   virtual void SetSamplingFilter(gfx::SamplingFilter aSamplingFilter) = 0;
+  virtual gfx::SamplingFilter SamplingFilter() {
+    return gfx::SamplingFilter::POINT;
+  };
 
   // Returns a DrawTarget. The size of the DrawTarget will be the same as the
   // size of this layer. The caller should draw to that DrawTarget, then drop

@@ -7,10 +7,12 @@
 #ifndef nsIMutationObserver_h
 #define nsIMutationObserver_h
 
-#include "nsISupports.h"
+#include <ostream>
 
 #include "mozilla/Assertions.h"
+#include "mozilla/DbgMacro.h"
 #include "mozilla/DoublyLinkedList.h"
+#include "nsISupports.h"
 
 class nsAttrValue;
 class nsAtom;
@@ -24,6 +26,37 @@ class Element;
 
 #define NS_IMUTATION_OBSERVER_IID \
   {0x6d674c17, 0x0fbc, 0x4633, {0x8f, 0x46, 0x73, 0x4e, 0x87, 0xeb, 0xf0, 0xc7}}
+
+/**
+ * Used for Trusted Types' Enforcement for scripts.
+ * https://w3c.github.io/trusted-types/dist/spec/#enforcement-in-scripts
+ */
+enum class MutationEffectOnScript : bool {
+  KeepTrustWorthiness,
+  DropTrustWorthiness,
+};
+
+inline std::ostream& operator<<(
+    std::ostream& aStream, MutationEffectOnScript aMutationEffectOnScript) {
+  return aStream << (static_cast<bool>(aMutationEffectOnScript)
+                         ? "DropTrustWorthiness"
+                         : "KeepTrustWorthiness");
+}
+
+// AttrModType is same as the legacy MutationEvent.attrChange value.
+enum class AttrModType : uint8_t {
+  Modification = 1,
+  Addition = 2,
+  Removal = 3,
+};
+
+[[nodiscard]] inline bool IsAdditionOrModification(AttrModType aModType) {
+  return aModType == AttrModType::Modification ||
+         aModType == AttrModType::Addition;
+}
+[[nodiscard]] inline bool IsAdditionOrRemoval(AttrModType aModType) {
+  return aModType == AttrModType::Addition || aModType == AttrModType::Removal;
+}
 
 /**
  * Information details about a characterdata change.  Basically, we
@@ -68,6 +101,9 @@ struct CharacterDataChangeInfo {
    * mChangeStart + mReplaceLength.
    */
 
+  MutationEffectOnScript mMutationEffectOnScript =
+      MutationEffectOnScript::DropTrustWorthiness;
+
   struct MOZ_STACK_CLASS Details {
     enum {
       eMerge,  // two text nodes are merged as a result of normalize()
@@ -83,7 +119,37 @@ struct CharacterDataChangeInfo {
   /**
    * Used for splitText() and normalize(), otherwise null.
    */
-  Details* mDetails;
+  Details* mDetails = nullptr;
+
+  MOZ_DEFINE_DBG(CharacterDataChangeInfo, mAppend, mChangeStart, mChangeEnd,
+                 mReplaceLength, mMutationEffectOnScript, mDetails);
+};
+
+/**
+ * Information details about a content appending.
+ */
+struct ContentAppendInfo {
+  MutationEffectOnScript mMutationEffectOnScript =
+      MutationEffectOnScript::DropTrustWorthiness;
+  nsINode* mOldParent = nullptr;
+};
+
+/**
+ * Information details about a content insertion.
+ */
+using ContentInsertInfo = ContentAppendInfo;
+
+/**
+ * Information details about a content removal.
+ */
+struct ContentRemoveInfo {
+  /* Whether we'll be removing all children of this
+     container. This is useful to avoid wasteful work. */
+  const BatchRemovalState* mBatchRemovalState = nullptr;
+
+  MutationEffectOnScript mMutationEffectOnScript =
+      MutationEffectOnScript::DropTrustWorthiness;
+  nsINode* mNewParent = nullptr;
 };
 
 /**
@@ -110,7 +176,7 @@ class nsIMutationObserver
   friend struct mozilla::GetDoublyLinkedListElement<nsIMutationObserver>;
 
  public:
-  NS_DECLARE_STATIC_IID_ACCESSOR(NS_IMUTATION_OBSERVER_IID)
+  NS_INLINE_DECL_STATIC_IID(NS_IMUTATION_OBSERVER_IID)
 
   /**
    * Notification that the node value of a data node (text, cdata, pi, comment)
@@ -163,8 +229,7 @@ class nsIMutationObserver
    * @param aNameSpaceID The namespace id of the changing attribute
    * @param aAttribute   The name of the changing attribute
    * @param aModType     Whether or not the attribute will be added, changed, or
-   *                     removed. The constants are defined in
-   *                     MutationEvent.webidl.
+   *                     removed.
    *
    * @note Callers of this method might not hold a strong reference to the
    *       observer.  The observer is responsible for making sure it stays
@@ -174,7 +239,7 @@ class nsIMutationObserver
    */
   virtual void AttributeWillChange(mozilla::dom::Element* aElement,
                                    int32_t aNameSpaceID, nsAtom* aAttribute,
-                                   int32_t aModType) = 0;
+                                   AttrModType aModType) = 0;
 
   /**
    * Notification that an attribute of an element has changed.
@@ -183,8 +248,7 @@ class nsIMutationObserver
    * @param aNameSpaceID The namespace id of the changed attribute
    * @param aAttribute   The name of the changed attribute
    * @param aModType     Whether or not the attribute was added, changed, or
-   *                     removed. The constants are defined in
-   *                     MutationEvent.webidl.
+   *                     removed.
    * @param aOldValue    The old value, if either the old value or the new
    *                     value are StoresOwnData() (or absent); null otherwise.
    *
@@ -196,7 +260,7 @@ class nsIMutationObserver
    */
   virtual void AttributeChanged(mozilla::dom::Element* aElement,
                                 int32_t aNameSpaceID, nsAtom* aAttribute,
-                                int32_t aModType,
+                                AttrModType aModType,
                                 const nsAttrValue* aOldValue) = 0;
 
   /**
@@ -216,6 +280,7 @@ class nsIMutationObserver
    * child list of another node in the tree.
    *
    * @param aFirstNewContent the first node appended.
+   * @param aInfo The structure with information details about the change.
    *
    * @note Callers of this method might not hold a strong reference to the
    *       observer.  The observer is responsible for making sure it stays
@@ -223,13 +288,15 @@ class nsIMutationObserver
    *       assume that this call will happen when there are script blockers on
    *       the stack.
    */
-  virtual void ContentAppended(nsIContent* aFirstNewContent) = 0;
+  virtual void ContentAppended(nsIContent* aFirstNewContent,
+                               const ContentAppendInfo&) = 0;
 
   /**
    * Notification that a content node has been inserted as child to another
    * node in the tree.
    *
    * @param aChild The newly inserted child.
+   * @param aInfo The structure with information details about the change.
    *
    * @note Callers of this method might not hold a strong reference to the
    *       observer.  The observer is responsible for making sure it stays
@@ -237,7 +304,8 @@ class nsIMutationObserver
    *       assume that this call will happen when there are script blockers on
    *       the stack.
    */
-  virtual void ContentInserted(nsIContent* aChild) = 0;
+  virtual void ContentInserted(nsIContent* aChild,
+                               const ContentInsertInfo&) = 0;
 
   /**
    * Notification that a content node is about to be removed from the child list
@@ -245,6 +313,7 @@ class nsIMutationObserver
    *
    * @param aChild     The child that will be removed.
    * @param aState     The state of our batch removal of all children, or null.
+   * @param aInfo      The structure with information details about the change.
    *
    * @note Callers of this method might not hold a strong reference to the
    *       observer.  The observer is responsible for making sure it stays
@@ -253,7 +322,7 @@ class nsIMutationObserver
    *       the stack.
    */
   virtual void ContentWillBeRemoved(nsIContent* aChild,
-                                    const BatchRemovalState*) = 0;
+                                    const ContentRemoveInfo&) = 0;
 
   /**
    * The node is in the process of being destroyed. Calling QI on the node is
@@ -294,10 +363,10 @@ class nsIMutationObserver
 
   virtual void ARIAAttributeDefaultWillChange(mozilla::dom::Element* aElement,
                                               nsAtom* aAttribute,
-                                              int32_t aModType) = 0;
+                                              AttrModType aModType) = 0;
   virtual void ARIAAttributeDefaultChanged(mozilla::dom::Element* aElement,
                                            nsAtom* aAttribute,
-                                           int32_t aModType) = 0;
+                                           AttrModType aModType) = 0;
 
   enum : uint32_t {
     kNone = 0,
@@ -339,8 +408,6 @@ class nsIMutationObserver
   uint32_t mEnabledCallbacks = kAll;
 };
 
-NS_DEFINE_STATIC_IID_ACCESSOR(nsIMutationObserver, NS_IMUTATION_OBSERVER_IID)
-
 #define NS_DECL_NSIMUTATIONOBSERVER_CHARACTERDATAWILLCHANGE \
   virtual void CharacterDataWillChange(                     \
       nsIContent* aContent, const CharacterDataChangeInfo& aInfo) override;
@@ -352,23 +419,25 @@ NS_DEFINE_STATIC_IID_ACCESSOR(nsIMutationObserver, NS_IMUTATION_OBSERVER_IID)
 #define NS_DECL_NSIMUTATIONOBSERVER_ATTRIBUTEWILLCHANGE                      \
   virtual void AttributeWillChange(mozilla::dom::Element* aElement,          \
                                    int32_t aNameSpaceID, nsAtom* aAttribute, \
-                                   int32_t aModType) override;
+                                   AttrModType aModType) override;
 
 #define NS_DECL_NSIMUTATIONOBSERVER_ATTRIBUTECHANGED                      \
   virtual void AttributeChanged(mozilla::dom::Element* aElement,          \
                                 int32_t aNameSpaceID, nsAtom* aAttribute, \
-                                int32_t aModType,                         \
+                                AttrModType aModType,                     \
                                 const nsAttrValue* aOldValue) override;
 
-#define NS_DECL_NSIMUTATIONOBSERVER_CONTENTAPPENDED \
-  virtual void ContentAppended(nsIContent* aFirstNewContent) override;
+#define NS_DECL_NSIMUTATIONOBSERVER_CONTENTAPPENDED          \
+  virtual void ContentAppended(nsIContent* aFirstNewContent, \
+                               const ContentAppendInfo&) override;
 
-#define NS_DECL_NSIMUTATIONOBSERVER_CONTENTINSERTED \
-  virtual void ContentInserted(nsIContent* aChild) override;
+#define NS_DECL_NSIMUTATIONOBSERVER_CONTENTINSERTED                          \
+  virtual void ContentInserted(nsIContent* aChild, const ContentInsertInfo&) \
+      override;
 
 #define NS_DECL_NSIMUTATIONOBSERVER_CONTENTREMOVED      \
   virtual void ContentWillBeRemoved(nsIContent* aChild, \
-                                    const BatchRemovalState*) override;
+                                    const ContentRemoveInfo&) override;
 
 #define NS_DECL_NSIMUTATIONOBSERVER_NODEWILLBEDESTROYED \
   virtual void NodeWillBeDestroyed(nsINode* aNode) override;
@@ -376,15 +445,15 @@ NS_DEFINE_STATIC_IID_ACCESSOR(nsIMutationObserver, NS_IMUTATION_OBSERVER_IID)
 #define NS_DECL_NSIMUTATIONOBSERVER_PARENTCHAINCHANGED \
   virtual void ParentChainChanged(nsIContent* aContent) override;
 
-#define NS_DECL_NSIMUTATIONOBSERVER_ARIAATTRIBUTEDEFAULTWILLCHANGE           \
-  virtual void ARIAAttributeDefaultWillChange(                               \
-      mozilla::dom::Element* aElement, nsAtom* aAttribute, int32_t aModType) \
-      override;
+#define NS_DECL_NSIMUTATIONOBSERVER_ARIAATTRIBUTEDEFAULTWILLCHANGE             \
+  virtual void ARIAAttributeDefaultWillChange(mozilla::dom::Element* aElement, \
+                                              nsAtom* aAttribute,              \
+                                              AttrModType aModType) override;
 
-#define NS_DECL_NSIMUTATIONOBSERVER_ARIAATTRIBUTEDEFAULTCHANGED              \
-  virtual void ARIAAttributeDefaultChanged(                                  \
-      mozilla::dom::Element* aElement, nsAtom* aAttribute, int32_t aModType) \
-      override;
+#define NS_DECL_NSIMUTATIONOBSERVER_ARIAATTRIBUTEDEFAULTCHANGED             \
+  virtual void ARIAAttributeDefaultChanged(mozilla::dom::Element* aElement, \
+                                           nsAtom* aAttribute,              \
+                                           AttrModType aModType) override;
 
 #define NS_DECL_NSIMUTATIONOBSERVER                          \
   NS_DECL_NSIMUTATIONOBSERVER_CHARACTERDATAWILLCHANGE        \
@@ -409,20 +478,23 @@ NS_DEFINE_STATIC_IID_ACCESSOR(nsIMutationObserver, NS_IMUTATION_OBSERVER_IID)
                                     const CharacterDataChangeInfo& aInfo) {}   \
   void _class::AttributeWillChange(mozilla::dom::Element* aElement,            \
                                    int32_t aNameSpaceID, nsAtom* aAttribute,   \
-                                   int32_t aModType) {}                        \
-  void _class::AttributeChanged(                                               \
-      mozilla::dom::Element* aElement, int32_t aNameSpaceID,                   \
-      nsAtom* aAttribute, int32_t aModType, const nsAttrValue* aOldValue) {}   \
-  void _class::ContentAppended(nsIContent* aFirstNewContent) {}                \
-  void _class::ContentInserted(nsIContent* aChild) {}                          \
-  void _class::ContentWillBeRemoved(nsIContent* aChild,                        \
-                                    const BatchRemovalState*) {}               \
-  void _class::ParentChainChanged(nsIContent* aContent) {}                     \
-  void _class::ARIAAttributeDefaultWillChange(                                 \
-      mozilla::dom::Element* aElement, nsAtom* aAttribute, int32_t aModType) { \
+                                   AttrModType aModType) {}                    \
+  void _class::AttributeChanged(mozilla::dom::Element* aElement,               \
+                                int32_t aNameSpaceID, nsAtom* aAttribute,      \
+                                AttrModType aModType,                          \
+                                const nsAttrValue* aOldValue) {}               \
+  void _class::ContentAppended(nsIContent* aFirstNewContent,                   \
+                               const ContentAppendInfo&) {}                    \
+  void _class::ContentInserted(nsIContent* aChild, const ContentInsertInfo&) { \
   }                                                                            \
-  void _class::ARIAAttributeDefaultChanged(                                    \
-      mozilla::dom::Element* aElement, nsAtom* aAttribute, int32_t aModType) { \
-  }
+  void _class::ContentWillBeRemoved(nsIContent* aChild,                        \
+                                    const ContentRemoveInfo&) {}               \
+  void _class::ParentChainChanged(nsIContent* aContent) {}                     \
+  void _class::ARIAAttributeDefaultWillChange(mozilla::dom::Element* aElement, \
+                                              nsAtom* aAttribute,              \
+                                              AttrModType aModType) {}         \
+  void _class::ARIAAttributeDefaultChanged(mozilla::dom::Element* aElement,    \
+                                           nsAtom* aAttribute,                 \
+                                           AttrModType aModType) {}
 
 #endif /* nsIMutationObserver_h */

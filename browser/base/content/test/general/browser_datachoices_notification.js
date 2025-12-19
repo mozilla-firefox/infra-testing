@@ -22,8 +22,7 @@ const PREF_ACCEPTED_POLICY_DATE =
   PREF_BRANCH + "dataSubmissionPolicyNotifiedTime";
 const PREF_TOS_ROLLOUT_POPULATION =
   "browser.preonboarding.onTrainRolloutPopulation";
-const PREF_TOS_ROLLOUT_ENROLLED =
-  "browser.preonboarding.enrolledInOnTrainRollout";
+const PREF_TOS_ENABLED = "browser.preonboarding.enabled";
 
 const PREF_TELEMETRY_LOG_LEVEL = "toolkit.telemetry.log.level";
 
@@ -54,7 +53,8 @@ function promiseNextTick() {
 
 /**
  * Wait for a notification to be shown in a notification box.
- * @param {Object} aNotificationBox The notification box.
+ *
+ * @param {object} aNotificationBox The notification box.
  * @return {Promise} Resolved when the notification is displayed.
  */
 function promiseWaitForAlertActive(aNotificationBox) {
@@ -71,7 +71,8 @@ function promiseWaitForAlertActive(aNotificationBox) {
 
 /**
  * Wait for a notification to be closed.
- * @param {Object} aNotification The notification.
+ *
+ * @param {object} aNotification The notification.
  * @return {Promise} Resolved when the notification is closed.
  */
 function promiseWaitForNotificationClose(aNotification) {
@@ -98,28 +99,6 @@ async function triggerInfoBar(expectedTimeoutMs) {
   showInfobarCallback();
 }
 
-var checkInfobarButton = async function (aNotification) {
-  // Check that the button on the data choices infobar does the right thing.
-  let buttons = aNotification.buttonContainer.getElementsByTagName("button");
-  Assert.equal(
-    buttons.length,
-    1,
-    "There is 1 button in the data reporting notification."
-  );
-  let button = buttons[0];
-
-  let openPrefsPromise = BrowserTestUtils.waitForLocationChange(
-    gBrowser,
-    "about:preferences#privacy"
-  );
-
-  // Click on the button.
-  button.click();
-
-  // Wait for the preferences panel to open.
-  await openPrefsPromise;
-};
-
 add_setup(async function () {
   const isFirstRun = Preferences.get(PREF_FIRST_RUN, true);
   const bypassNotification = Preferences.get(PREF_BYPASS_NOTIFICATION, true);
@@ -131,9 +110,10 @@ add_setup(async function () {
     Preferences.set(PREF_BYPASS_NOTIFICATION, bypassNotification);
     Preferences.set(PREF_CURRENT_POLICY_VERSION, currentPolicyVersion);
     Preferences.reset(PREF_TELEMETRY_LOG_LEVEL);
-    Preferences.reset(PREF_TOS_ROLLOUT_ENROLLED);
-    Preferences.reset(PREF_TOS_ROLLOUT_POPULATION);
-
+    Preferences.reset(PREF_ACCEPTED_POLICY_VERSION);
+    Preferences.reset(PREF_ACCEPTED_POLICY_DATE);
+    Preferences.reset(PREF_TOS_ENABLED);
+    Preferences.reset("browser.policies.alternatePath");
     return closeAllNotifications();
   });
 
@@ -144,9 +124,8 @@ add_setup(async function () {
   // Ensure this isn't the first run, because then we open the first run page.
   Preferences.set(PREF_FIRST_RUN, false);
   TelemetryReportingPolicy.testUpdateFirstRun();
-  // Do not trigger ToS modal for Linux, Mac, and MSIX builds
-  Preferences.set(PREF_TOS_ROLLOUT_ENROLLED, false);
-  Preferences.set(PREF_TOS_ROLLOUT_POPULATION, 0);
+  // Do not enable the TOS modal
+  Preferences.set(PREF_TOS_ENABLED, false);
 });
 
 function clearAcceptedPolicy() {
@@ -168,7 +147,7 @@ function assertCoherentInitialState() {
     "No date should be set on init."
   );
   Assert.ok(
-    !TelemetryReportingPolicy.testIsUserNotified(),
+    !TelemetryReportingPolicy.testIsUserNotifiedOfDataReportingPolicy(),
     "User not notified about datareporting policy."
   );
 }
@@ -204,11 +183,13 @@ add_task(async function test_single_window() {
     "User should be allowed to upload now."
   );
 
-  await promiseNextTick();
-  let promiseClosed = promiseWaitForNotificationClose(
-    gNotificationBox.currentNotification
-  );
-  await checkInfobarButton(gNotificationBox.currentNotification);
+  // Close the infobar without opening the prefs UI to avoid side effects that
+  // change prefs.
+  let notifications = gNotificationBox.allNotifications;
+  Assert.equal(notifications.length, 1, "One notification present to close");
+  let notification = notifications[0];
+  let promiseClosed = promiseWaitForNotificationClose(notification);
+  notification.close();
   await promiseClosed;
 
   Assert.equal(
@@ -220,7 +201,7 @@ add_task(async function test_single_window() {
   // Check that we are still clear to upload and that the policy data is saved.
   Assert.ok(TelemetryReportingPolicy.canUpload());
   Assert.equal(
-    TelemetryReportingPolicy.testIsUserNotified(),
+    TelemetryReportingPolicy.testIsUserNotifiedOfDataReportingPolicy(),
     true,
     "User notified about datareporting policy."
   );
@@ -287,7 +268,7 @@ add_task(async function test_multiple_windows() {
     "User should be allowed to upload now."
   );
   Assert.equal(
-    TelemetryReportingPolicy.testIsUserNotified(),
+    TelemetryReportingPolicy.testIsUserNotifiedOfDataReportingPolicy(),
     true,
     "User notified about datareporting policy."
   );

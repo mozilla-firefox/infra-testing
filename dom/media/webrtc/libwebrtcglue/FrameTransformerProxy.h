@@ -7,11 +7,12 @@
 #ifndef MOZILLA_DOM_MEDIA_WEBRTC_LIBWEBRTCGLUE_FRAMETRANSFORMERPROXY_H_
 #define MOZILLA_DOM_MEDIA_WEBRTC_LIBWEBRTCGLUE_FRAMETRANSFORMERPROXY_H_
 
-#include "nsISupportsImpl.h"
-#include "mozilla/Mutex.h"
-#include "mozilla/Maybe.h"
 #include <list>
 #include <memory>
+
+#include "mozilla/Maybe.h"
+#include "mozilla/Mutex.h"
+#include "nsISupportsImpl.h"
 
 class nsIEventTarget;
 
@@ -80,7 +81,7 @@ class FrameTransformerProxy {
   // Called on worker thread
   bool RequestKeyFrame();
   // Called on call thread
-  void KeyFrameRequestDone(bool aSuccess);
+  void KeyFrameRequestDone();
 
   bool GenerateKeyFrame(const Maybe<std::string>& aRid);
   void GenerateKeyFrameError(const Maybe<std::string>& aRid,

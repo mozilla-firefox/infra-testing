@@ -8,10 +8,14 @@
 #define builtin_intl_NumberFormat_h
 
 #include <stdint.h>
+#include <string_view>
 
 #include "builtin/SelfHostingDefines.h"
 #include "js/Class.h"
 #include "vm/NativeObject.h"
+
+class JSString;
+class JSLinearString;
 
 namespace mozilla::intl {
 class NumberFormat;
@@ -19,6 +23,8 @@ class NumberRangeFormat;
 }  // namespace mozilla::intl
 
 namespace js {
+
+class ArrayObject;
 
 class NumberFormatObject : public NativeObject {
  public:
@@ -121,6 +127,56 @@ class NumberFormatObject : public NativeObject {
                                                          unsigned argc,
                                                          Value* vp);
 #endif
+
+namespace intl {
+
+/**
+ * Returns a new instance of the standard built-in NumberFormat constructor.
+ */
+[[nodiscard]] extern NumberFormatObject* CreateNumberFormat(
+    JSContext* cx, JS::Handle<JS::Value> locales,
+    JS::Handle<JS::Value> options);
+
+/**
+ * Returns a possibly cached instance of the standard built-in NumberFormat
+ * constructor.
+ */
+[[nodiscard]] extern NumberFormatObject* GetOrCreateNumberFormat(
+    JSContext* cx, JS::Handle<JS::Value> locales,
+    JS::Handle<JS::Value> options);
+
+/**
+ * Returns a string representing the number x according to the effective locale
+ * and the formatting options of the given NumberFormat.
+ */
+[[nodiscard]] extern JSString* FormatNumber(
+    JSContext* cx, Handle<NumberFormatObject*> numberFormat, double x);
+
+/**
+ * Returns a string representing the BigInt x according to the effective locale
+ * and the formatting options of the given NumberFormat.
+ */
+[[nodiscard]] extern JSString* FormatBigInt(
+    JSContext* cx, Handle<NumberFormatObject*> numberFormat, Handle<BigInt*> x);
+
+using NumberFormatUnit = js::ImmutableTenuredPtr<PropertyName*> JSAtomState::*;
+
+[[nodiscard]] extern JSLinearString* FormatNumber(
+    JSContext* cx, mozilla::intl::NumberFormat* numberFormat, double x);
+
+[[nodiscard]] extern JSLinearString* FormatNumber(
+    JSContext* cx, mozilla::intl::NumberFormat* numberFormat,
+    std::string_view x);
+
+[[nodiscard]] extern ArrayObject* FormatNumberToParts(
+    JSContext* cx, mozilla::intl::NumberFormat* numberFormat, double x,
+    NumberFormatUnit unit = nullptr);
+
+[[nodiscard]] extern ArrayObject* FormatNumberToParts(
+    JSContext* cx, mozilla::intl::NumberFormat* numberFormat,
+    std::string_view x, NumberFormatUnit unit = nullptr);
+
+}  // namespace intl
 
 }  // namespace js
 

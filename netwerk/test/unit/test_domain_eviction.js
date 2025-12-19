@@ -24,7 +24,7 @@ function* do_run_test() {
   // Set the base domain limit to 50 so we have a known value.
   Services.prefs.setIntPref("network.cookie.maxPerHost", 50);
 
-  let futureExpiry = Math.floor(Date.now() / 1000 + 1000);
+  let futureExpiry = Date.now() + 1000 * 1000;
 
   // test eviction under the 50 cookies per base domain limit. this means
   // that cookies for foo.com and bar.foo.com should count toward this limit,
@@ -65,9 +65,9 @@ function* do_run_test() {
   }
 
   // Test that expired cookies for a domain are evicted before live ones.
-  let shortExpiry = Math.floor(Date.now() / 1000 + 2);
+  let shortExpiry = Date.now() + 1000 * 2;
   setCookies("captchart.com", 49, futureExpiry);
-  Services.cookies.add(
+  let cv = Services.cookies.add(
     "captchart.com",
     "",
     "test100",
@@ -77,14 +77,16 @@ function* do_run_test() {
     false,
     shortExpiry,
     {},
-    Ci.nsICookie.SAMESITE_NONE,
+    Ci.nsICookie.SAMESITE_UNSET,
     Ci.nsICookie.SCHEME_HTTPS
   );
+  Assert.equal(cv.result, Ci.nsICookieValidation.eOK, "Valid cookie");
+
   do_timeout(2100, continue_test);
   yield;
 
   Assert.equal(countCookies("captchart.com", "captchart.com"), 50);
-  Services.cookies.add(
+  cv = Services.cookies.add(
     "captchart.com",
     "",
     "test200",
@@ -94,13 +96,15 @@ function* do_run_test() {
     false,
     futureExpiry,
     {},
-    Ci.nsICookie.SAMESITE_NONE,
+    Ci.nsICookie.SAMESITE_UNSET,
     Ci.nsICookie.SCHEME_HTTPS
   );
+  Assert.equal(cv.result, Ci.nsICookieValidation.eOK, "Valid cookie");
+
   Assert.equal(countCookies("captchart.com", "captchart.com"), 50);
 
   for (let cookie of Services.cookies.getCookiesFromHost("captchart.com", {})) {
-    Assert.ok(cookie.expiry == futureExpiry);
+    Assert.equal(cookie.expiry, futureExpiry);
   }
 
   do_finish_generator_test(test_generator);
@@ -109,7 +113,7 @@ function* do_run_test() {
 // set 'aNumber' cookies with host 'aHost', with distinct names.
 function setCookies(aHost, aNumber, aExpiry) {
   for (let i = 0; i < aNumber; ++i) {
-    Services.cookies.add(
+    const cv = Services.cookies.add(
       aHost,
       "",
       "test" + i,
@@ -119,9 +123,10 @@ function setCookies(aHost, aNumber, aExpiry) {
       false,
       aExpiry,
       {},
-      Ci.nsICookie.SAMESITE_NONE,
+      Ci.nsICookie.SAMESITE_UNSET,
       Ci.nsICookie.SCHEME_HTTPS
     );
+    Assert.equal(cv.result, Ci.nsICookieValidation.eOK, "Valid cookie");
   }
 }
 

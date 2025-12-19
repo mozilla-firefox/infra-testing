@@ -11,7 +11,6 @@
 #include <stdint.h>
 #include <vector>
 #include <unordered_map>
-#include <unordered_set>
 
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/gfx/CompositorHitTestInfo.h"
@@ -132,7 +131,7 @@ class TransactionBuilder final {
 
   void ClearDisplayList(Epoch aEpoch, wr::WrPipelineId aPipeline);
 
-  void GenerateFrame(const VsyncId& aVsyncId, bool aPresent,
+  void GenerateFrame(const VsyncId& aVsyncId, bool aPresent, bool aTracked,
                      wr::RenderReasons aReasons);
 
   void InvalidateRenderedFrame(wr::RenderReasons aReasons);
@@ -207,6 +206,8 @@ class TransactionBuilder final {
   void DeleteFontInstance(wr::FontInstanceKey aKey);
 
   void UpdateQualitySettings(bool aForceSubpixelAAWherePossible);
+
+  void RenderOffscreen(wr::WrPipelineId aPipelineId);
 
   void Notify(wr::Checkpoint aWhen, UniquePtr<NotificationHandler> aHandler);
 
@@ -305,6 +306,7 @@ class WebRenderAPI final {
   uint32_t GetMaxTextureSize() const { return mMaxTextureSize; }
   bool GetUseANGLE() const { return mUseANGLE; }
   bool GetUseDComp() const { return mUseDComp; }
+  bool GetUseLayerCompositor() const { return mUseLayerCompositor; }
   bool GetUseTripleBuffering() const { return mUseTripleBuffering; }
   bool SupportsExternalBufferTextures() const {
     return mSupportsExternalBufferTextures;
@@ -338,16 +340,17 @@ class WebRenderAPI final {
                layers::WebRenderBackend aBackend,
                layers::WebRenderCompositor aCompositor,
                uint32_t aMaxTextureSize, bool aUseANGLE, bool aUseDComp,
-               bool aUseTripleBuffering, bool aSupportsExternalBufferTextures,
+               bool aUseLayerCompositor, bool aUseTripleBuffering,
+               bool aSupportsExternalBufferTextures,
                layers::SyncHandle aSyncHandle,
                wr::WebRenderAPI* aRootApi = nullptr,
                wr::WebRenderAPI* aRootDocumentApi = nullptr);
 
   ~WebRenderAPI();
-  // Should be used only for shutdown handling
-  void WaitFlushed();
 
-  void UpdateDebugFlags(uint32_t aFlags);
+  void WaitUntilPresentationFlushed();
+
+  void UpdateDebugFlags(uint64_t aFlags);
   bool CheckIsRemoteTextureReady(layers::RemoteTextureInfoList* aList,
                                  const TimeStamp& aTimeStamp);
   void WaitRemoteTextureReady(layers::RemoteTextureInfoList* aList);
@@ -480,6 +483,7 @@ class WebRenderAPI final {
   int32_t mMaxTextureSize;
   bool mUseANGLE;
   bool mUseDComp;
+  bool mUseLayerCompositor;
   bool mUseTripleBuffering;
   bool mSupportsExternalBufferTextures;
   bool mCaptureSequence;
@@ -599,8 +603,8 @@ class DisplayListBuilder final {
       const wr::RasterSpace& aRasterSpace);
   void PopStackingContext(bool aIsReferenceFrame);
 
-  wr::WrClipChainId DefineClipChain(const nsTArray<wr::WrClipId>& aClips,
-                                    bool aParentWithCurrentChain = false);
+  wr::WrClipChainId DefineClipChain(Span<const wr::WrClipId> aClips,
+                                    const Maybe<wr::WrClipChainId>& aParent);
 
   wr::WrClipId DefineImageMaskClip(const wr::ImageMask& aMask,
                                    const nsTArray<wr::LayoutPoint>&,
@@ -611,6 +615,8 @@ class DisplayListBuilder final {
                               wr::LayoutRect aClipRect);
 
   wr::WrSpatialId DefineStickyFrame(
+      const ActiveScrolledRoot* aStickyAsr,
+      Maybe<wr::WrSpatialId> aParentSpatialId,
       const wr::LayoutRect& aContentRect, const float* aTopMargin,
       const float* aRightMargin, const float* aBottomMargin,
       const float* aLeftMargin, const StickyOffsetBounds& aVerticalBounds,
@@ -620,6 +626,8 @@ class DisplayListBuilder final {
 
   Maybe<wr::WrSpatialId> GetScrollIdForDefinedScrollLayer(
       layers::ScrollableLayerGuid::ViewID aViewId) const;
+  Maybe<wr::WrSpatialId> GetSpatialIdForDefinedStickyLayer(
+      const ActiveScrolledRoot* aASR) const;
   wr::WrSpatialId DefineScrollLayer(
       const layers::ScrollableLayerGuid::ViewID& aViewId,
       const Maybe<wr::WrSpatialId>& aParent, const wr::LayoutRect& aContentRect,
@@ -643,7 +651,6 @@ class DisplayListBuilder final {
                    const layers::ScrollableLayerGuid::ViewID& aScrollId,
                    const gfx::CompositorHitTestInfo& aHitInfo,
                    SideBits aSideBits);
-  void PushClearRect(const wr::LayoutRect& aBounds);
 
   void PushBackdropFilter(const wr::LayoutRect& aBounds,
                           const wr::ComplexClipRegion& aRegion,
@@ -824,6 +831,12 @@ class DisplayListBuilder final {
     return mCurrentSpaceAndClipChain.clip_chain;
   }
 
+  Maybe<wr::WrClipChainId> CurrentClipChainIdIfNotRoot() const {
+    return mCurrentSpaceAndClipChain.clip_chain != wr::ROOT_CLIP_CHAIN
+               ? Some(mCurrentSpaceAndClipChain.clip_chain)
+               : Nothing();
+  }
+
   const wr::WrSpaceAndClipChain& CurrentSpaceAndClipChain() const {
     return mCurrentSpaceAndClipChain;
   }
@@ -912,6 +925,13 @@ class DisplayListBuilder final {
   // as that results in undefined behaviour in WR.
   std::unordered_map<layers::ScrollableLayerGuid::ViewID, wr::WrSpatialId>
       mScrollIds;
+
+  // Track spatial ids that we've created corresponding to ActiveScrolledRoot
+  // objects. Currently only used for sticky ASRs.
+  // FIXME(follow-up to bug 1730749): Use this for scroll ASRs as well,
+  // replacing mScrollIds.
+  std::unordered_map<const ActiveScrolledRoot*, wr::WrSpatialId>
+      mASRToSpatialIdMap;
 
   wr::WrSpaceAndClipChain mCurrentSpaceAndClipChain;
 

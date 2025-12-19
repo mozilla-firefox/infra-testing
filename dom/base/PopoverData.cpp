@@ -5,11 +5,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "PopoverData.h"
-#include "nsGenericHTMLElement.h"
-#include "mozilla/dom/Document.h"
+
 #include "mozilla/dom/CloseWatcher.h"
 #include "mozilla/dom/CloseWatcherManager.h"
-
+#include "mozilla/dom/Document.h"
+#include "nsGenericHTMLElement.h"
 #include "nsIDOMEventListener.h"
 
 namespace mozilla::dom {
@@ -41,7 +41,7 @@ class PopoverCloseWatcherListener : public nsIDOMEventListener {
 };
 NS_IMPL_ISUPPORTS(PopoverCloseWatcherListener, nsIDOMEventListener)
 
-CloseWatcher& PopoverData::EnsureCloseWatcher(nsGenericHTMLElement* aElement) {
+void PopoverData::EnsureCloseWatcher(nsGenericHTMLElement* aElement) {
   if (!mCloseWatcher) {
     RefPtr<Document> doc = aElement->OwnerDoc();
     if (doc->IsActive() && doc->IsCurrentActiveDocument()) {
@@ -52,30 +52,45 @@ CloseWatcher& PopoverData::EnsureCloseWatcher(nsGenericHTMLElement* aElement) {
         mCloseWatcher->AddSystemEventListener(u"close"_ns, eventListener,
                                               false /* aUseCapture */,
                                               false /* aWantsUntrusted */);
-        RefPtr manager = window->EnsureCloseWatcherManager();
-        manager->Add(*mCloseWatcher);
+
+        mCloseWatcher->AddToWindowsCloseWatcherManager();
       }
     }
   }
-  return *mCloseWatcher;
 }
 
 CloseWatcher* PopoverData::GetCloseWatcher() { return mCloseWatcher; }
 
+// https://html.spec.whatwg.org/#hide-popover-algorithm
+// Step 6.2
+void PopoverData::DestroyCloseWatcher() {
+  // 6.2. If element's popover close watcher is not null, then:
+  if (mCloseWatcher) {
+    // 6.2.1. Destroy element's popover close watcher.
+    mCloseWatcher->Destroy();
+    // 6.2.2. Set element's popover close watcher to null.
+    mCloseWatcher = nullptr;
+  }
+};
+
 PopoverToggleEventTask::PopoverToggleEventTask(nsWeakPtr aElement,
+                                               nsWeakPtr aSource,
                                                PopoverVisibilityState aOldState)
     : Runnable("PopoverToggleEventTask"),
       mElement(std::move(aElement)),
+      mSource(std::move(aSource)),
       mOldState(aOldState) {}
 
 NS_IMETHODIMP
 PopoverToggleEventTask::Run() {
   nsCOMPtr<Element> element = do_QueryReferent(mElement);
+  nsCOMPtr<Element> source = do_QueryReferent(mSource);
   if (!element) {
     return NS_OK;
   }
   if (auto* htmlElement = nsGenericHTMLElement::FromNode(element)) {
-    MOZ_KnownLive(htmlElement)->RunPopoverToggleEventTask(this, mOldState);
+    MOZ_KnownLive(htmlElement)
+        ->RunPopoverToggleEventTask(this, mOldState, source);
   }
   return NS_OK;
 };

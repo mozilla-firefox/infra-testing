@@ -1,7 +1,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* eslint-disable mozilla/valid-lazy */
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
@@ -10,7 +9,7 @@ const lazy = XPCOMUtils.declareLazy({
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   ClickHandlerParent: "resource:///actors/ClickHandlerParent.sys.mjs",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
+  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
   WebNavigationFrames: "resource://gre/modules/WebNavigationFrames.sys.mjs",
 });
 
@@ -27,7 +26,7 @@ export var WebNavigationManager = {
   /** @type {Map<string, Set<callback>>} */
   listeners: new Map(),
 
-  /** @type {WeakMap<XULBrowserElement, object>} */
+  /** @type {WeakMap<MozBrowser, object>} */
   recentTabTransitionData: new WeakMap(),
 
   init() {
@@ -127,9 +126,9 @@ export var WebNavigationManager = {
    *   The data for the autocompleted item.
    * @param {object} [acData.result]
    *   The result information associated with the navigation action.
-   * @param {typeof lazy.UrlbarUtils.RESULT_TYPE} [acData.result.type]
+   * @param {Items<typeof lazy.UrlbarUtils.RESULT_TYPE>} [acData.result.type]
    *   The result type associated with the navigation action.
-   * @param {typeof lazy.UrlbarUtils.RESULT_SOURCE} [acData.result.source]
+   * @param {Items<typeof lazy.UrlbarUtils.RESULT_SOURCE>} [acData.result.source]
    *   The result source associated with the navigation action.
    */
   onURLBarUserStartNavigation(acData) {
@@ -200,7 +199,9 @@ export var WebNavigationManager = {
    * @param {boolean} [tabTransitionData.typed]
    */
   setRecentTabTransitionData(tabTransitionData) {
-    let window = lazy.BrowserWindowTracker.getTopWindow();
+    let window = lazy.BrowserWindowTracker.getTopWindow({
+      allowFromInactiveWorkspace: true,
+    });
     if (
       window &&
       window.gBrowser &&
@@ -230,7 +231,7 @@ export var WebNavigationManager = {
    * collected when one of the `onCommitted`, `onHistoryStateUpdated`
    * or `onReferenceFragmentUpdated` events has been received.
    *
-   * @param {XULBrowserElement} browser
+   * @param {MozBrowser} browser
    * @returns {object}
    */
   getAndForgetRecentTabTransitionData(browser) {

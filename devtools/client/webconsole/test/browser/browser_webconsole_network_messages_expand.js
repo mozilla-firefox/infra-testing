@@ -32,7 +32,7 @@ add_task(async function task() {
 
   await testNetworkMessage(hud.toolbox, messageNode);
 
-  await closeToolbox();
+  await closeToolboxIfOpen();
 });
 
 add_task(async function task() {
@@ -74,7 +74,7 @@ add_task(async function task() {
   ok(!responseContent, "Response content is really not displayed");
 
   await waitForLazyRequests(hud.toolbox);
-  await closeToolbox();
+  await closeToolboxIfOpen();
 });
 
 async function doXhrAndExpand(hud) {
@@ -164,7 +164,7 @@ async function testRequest(messageNode) {
   const requestPanel = messageNode.querySelector("#request-panel");
   await waitForSourceEditor(requestPanel);
   const requestContent = requestPanel.querySelector(
-    ".panel-container .CodeMirror"
+    ".panel-container .cm-editor"
   );
   ok(requestContent, "Request content is available");
   ok(
@@ -184,7 +184,7 @@ async function testResponse(messageNode) {
   const responsePanel = messageNode.querySelector("#response-panel");
   await waitForSourceEditor(responsePanel);
   const responseContent = messageNode.querySelector(
-    "#response-panel .editor-row-container .CodeMirror"
+    "#response-panel .editor-row-container .cm-editor"
   );
   ok(responseContent, "Response content is available");
   ok(responseContent.textContent, "Response text is available");
@@ -237,12 +237,6 @@ async function testSecurity(messageNode) {
 
 async function waitForPayloadReady(hud) {
   return hud.ui.once("network-request-payload-ready");
-}
-
-async function waitForSourceEditor(panel) {
-  return waitUntil(() => {
-    return !!panel.querySelector(".CodeMirror");
-  });
 }
 
 async function waitForRequestUpdates(hud) {

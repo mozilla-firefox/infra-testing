@@ -664,11 +664,10 @@ class LogModuleManager {
           using MS = MarkerSchema;
           MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
           schema.SetTableLabel("({marker.data.module}) {marker.data.name}");
-          schema.AddKeyLabelFormatSearchable("module", "Module",
-                                             MS::Format::String,
-                                             MS::Searchable::Searchable);
-          schema.AddKeyLabelFormatSearchable("name", "Name", MS::Format::String,
-                                             MS::Searchable::Searchable);
+          schema.AddKeyLabelFormat("module", "Module", MS::Format::String,
+                                   MS::PayloadFlags::Searchable);
+          schema.AddKeyLabelFormat("name", "Name", MS::Format::String,
+                                   MS::PayloadFlags::Searchable);
           return schema;
         }
       };
@@ -878,8 +877,6 @@ void LogModule::SetIsSync(bool aIsSync) {
 void LogModule::SetCaptureStacks(bool aCaptureStacks) {
   sLogModuleManager->SetCaptureStacks(aCaptureStacks);
 }
-
-void LogModule::DisableModules() { sLogModuleManager->DisableModules(); }
 
 // This function is defined in gecko_logger/src/lib.rs
 // We mirror the level in rust code so we don't get forwarded all of the

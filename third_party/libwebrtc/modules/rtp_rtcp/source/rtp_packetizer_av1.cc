@@ -9,10 +9,9 @@
  */
 #include "modules/rtp_rtcp/source/rtp_packetizer_av1.h"
 
-#include <stddef.h>
-#include <stdint.h>
-
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <vector>
 
@@ -71,7 +70,7 @@ int MaxFragmentSize(int remaining_bytes) {
 
 }  // namespace
 
-RtpPacketizerAv1::RtpPacketizerAv1(rtc::ArrayView<const uint8_t> payload,
+RtpPacketizerAv1::RtpPacketizerAv1(ArrayView<const uint8_t> payload,
                                    RtpPacketizer::PayloadSizeLimits limits,
                                    VideoFrameType frame_type,
                                    bool is_last_frame_in_picture)
@@ -81,9 +80,9 @@ RtpPacketizerAv1::RtpPacketizerAv1(rtc::ArrayView<const uint8_t> payload,
       is_last_frame_in_picture_(is_last_frame_in_picture) {}
 
 std::vector<RtpPacketizerAv1::Obu> RtpPacketizerAv1::ParseObus(
-    rtc::ArrayView<const uint8_t> payload) {
+    ArrayView<const uint8_t> payload) {
   std::vector<Obu> result;
-  rtc::ByteBufferReader payload_reader(payload);
+  ByteBufferReader payload_reader(payload);
   while (payload_reader.Length() > 0) {
     Obu obu;
     payload_reader.ReadUInt8(&obu.header);
@@ -99,9 +98,9 @@ std::vector<RtpPacketizerAv1::Obu> RtpPacketizerAv1::ParseObus(
       ++obu.size;
     }
     if (!ObuHasSize(obu.header)) {
-      obu.payload = rtc::MakeArrayView(
-          reinterpret_cast<const uint8_t*>(payload_reader.Data()),
-          payload_reader.Length());
+      obu.payload =
+          MakeArrayView(reinterpret_cast<const uint8_t*>(payload_reader.Data()),
+                        payload_reader.Length());
       payload_reader.Consume(payload_reader.Length());
     } else {
       uint64_t size = 0;
@@ -112,7 +111,7 @@ std::vector<RtpPacketizerAv1::Obu> RtpPacketizerAv1::ParseObus(
                            << payload_reader.Length();
         return {};
       }
-      obu.payload = rtc::MakeArrayView(
+      obu.payload = MakeArrayView(
           reinterpret_cast<const uint8_t*>(payload_reader.Data()), size);
       payload_reader.Consume(size);
     }
@@ -148,7 +147,7 @@ int RtpPacketizerAv1::AdditionalBytesForPreviousObuElement(
 }
 
 std::vector<RtpPacketizerAv1::Packet> RtpPacketizerAv1::PacketizeInternal(
-    rtc::ArrayView<const Obu> obus,
+    ArrayView<const Obu> obus,
     PayloadSizeLimits limits) {
   std::vector<Packet> packets;
   if (obus.empty()) {
@@ -252,12 +251,12 @@ std::vector<RtpPacketizerAv1::Packet> RtpPacketizerAv1::PacketizeInternal(
          obu_offset + limits.max_payload_len < obu.size;
          obu_offset += limits.max_payload_len) {
       packets.emplace_back(/*first_obu_index=*/obu_index);
-      Packet& packet = packets.back();
-      packet.num_obu_elements = 1;
-      packet.first_obu_offset = obu_offset;
+      Packet& middle_packet = packets.back();
+      middle_packet.num_obu_elements = 1;
+      middle_packet.first_obu_offset = obu_offset;
       int middle_fragment_size = limits.max_payload_len;
-      packet.last_obu_size = middle_fragment_size;
-      packet.packet_size = middle_fragment_size;
+      middle_packet.last_obu_size = middle_fragment_size;
+      middle_packet.packet_size = middle_fragment_size;
     }
 
     // Add the last fragment of the obu.
@@ -282,11 +281,11 @@ std::vector<RtpPacketizerAv1::Packet> RtpPacketizerAv1::PacketizeInternal(
       last_fragment_size -= semi_last_fragment_size;
 
       packets.emplace_back(/*first_obu_index=*/obu_index);
-      Packet& packet = packets.back();
-      packet.num_obu_elements = 1;
-      packet.first_obu_offset = obu_offset;
-      packet.last_obu_size = semi_last_fragment_size;
-      packet.packet_size = semi_last_fragment_size;
+      Packet& second_last_packet = packets.back();
+      second_last_packet.num_obu_elements = 1;
+      second_last_packet.first_obu_offset = obu_offset;
+      second_last_packet.last_obu_size = semi_last_fragment_size;
+      second_last_packet.packet_size = semi_last_fragment_size;
       obu_offset += semi_last_fragment_size;
     }
     packets.emplace_back(/*first_obu_index=*/obu_index);
@@ -301,7 +300,7 @@ std::vector<RtpPacketizerAv1::Packet> RtpPacketizerAv1::PacketizeInternal(
 }
 
 std::vector<RtpPacketizerAv1::Packet> RtpPacketizerAv1::Packetize(
-    rtc::ArrayView<const Obu> obus,
+    ArrayView<const Obu> obus,
     PayloadSizeLimits limits) {
   std::vector<Packet> packets = PacketizeInternal(obus, limits);
   if (packets.size() <= 1) {

@@ -27,7 +27,89 @@
   <p id="textWithDifferentEmoji"><span>😍😏😍</span> abc def 😍😏</p>
   <!-- TODO: Add test case with `visibility: hidden` as soon as it's supported (bug 1950707) -->
   <p id="textWithInvisibleContent">Text with <span style="display: none">display:none </span>content</p>
+  <p id="wordBoundaryAtInlineBoundary">WordEnd <span>should not be part of text directive</span></p>
+  <p id="matchAtEndOfBlock">EndOfBlock</p>
+  <p id="prevMatchAtEndOfBlock">EndOfBlock</p>
+  <div id="emptyBlockAtBeginning"><div></div>AfterEmptyBlock</div>
+  <div id="emptyBlockAtEnd">BeforeEmptyBlock<div></div></div>
+  <div id="rangeBasedWithMultipleEndMatchesBegin">Begin and begin or begin with begin</div>
+  <div id="rangeBasedWithMultipleEndMatchesEnd">end or end and end at end</div>
+  <div>HereStartsATableAndThisIsHereToMakeSureTheTestResultsAreIndependentOfSurroundingContent</div>
+  <table>
+    <tr>
+      <td id="firstRow">first row</td></tr> <tr><td id="secondRow">second row</td>
+    </tr>
+  </table>
+  <div>HereEndsATableAndThisIsHereToMakeSureTheTestResultsAreIndependentOfSurroundingContent</div>
+
+  <span id="longWord">1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111</span>
+  <!-- Test case for Bug 1979588: Long URL with unbreakable segment at the end -->
+  <div id="longUrlForBug1979588">https://example.com/test?foo=bar#verylongnonbreakableurlsegmentthatcannotbebrokenintowordsbecauseiturlsegmentsdonotcontainspacesorothertraditionwordbreakingcharacterswhichcausesproblemsintextdirectivecreation</div>
+  <p id="loremIpsum">Contrary to popular belief, Lorem Ipsum is not simply random text. It has roots in a piece of classical Latin literature from 45 BC, making it over 2000 years old. Richard McClintock, a Latin professor at Hampden-Sydney College in Virginia, looked up one of the more obscure Latin words, consectetur, from a Lorem Ipsum passage, and going through the cites of the word in classical literature, discovered the undoubtable source.</p>
+  <p>
+    <span id="beforeEmptyTextNode">before empty text node</span>
+    <!-- empty text node will be inserted right here -->
+    <span id="afterEmptyTextNode">after empty text node</span>
+  </p>
+  <div id="nbsp">&nbsp;</div>
+  <div id="punctuationStartsRangeBasedTextDirective">"</div>
+  <div id="punctuationEndsRangeBasedTextDirective">text preceded by punctuation in a different block</div>
+  <!-- Test case for Bug 1976869. -->
+  <div>Foo Bar</div>
+  <div id="rangeBasedWithPrefixAtBlockBoundaries">Some text Foo Bar more text</div>
+  <div id="rangeBasedWithPrefixAtBlockBoundariesEnd">End of Range</div>
+  <!-- Test case for Bug 1976480. -->
+  <div id="quotationMark">"Quotation mark"</div>
+  LongSpacerWord
+  <!-- Test case for Bug 1979474 -->
+  <table>
+    <tr id="trWithEmptyTdInside">
+      <td id="tdFollowedByEmptyTd">}</td>
+      <td></td>
+      <td></td>
+    </tr>
+    <tr>
+      <td>foo</td>
+    </tr>
+  </table>
+  <!-- (crash)Test cases for Bug 1987845; example paragraph found on https://en.wikipedia.org/wiki/Nuclear_weapon-->
+  <p>Nuclear<!-- This is needed so that there is an additional match to consider --></p>
+  <p id="rangeBasedWihSpaceInTheMiddle">Nuclear weapons have only twice been used in warfare, both times by the United States against Japan at the end of World War II. On August 6, 1945, the United States Army Air Forces (USAAF) detonated a uranium gun-type fission bomb nicknamed "Little Boy" over the Japanese city of Hiroshima; three days later, on August 9, the USAAF[4] detonated a plutonium implosion-type fission bomb nicknamed "Fat Man" over the Japanese city of Nagasaki. These bombings caused injuries that resulted in the deaths of approximately 200,000 civilians and military personnel.[5] The ethics of these bombings and their role in Japan's surrender are to this day, still subjects of debate</p>
+  <!-- note that "text" must already exist in the page to trigger this. -->
+  <p id="rangeBasedWithPunctuationAfterFirstWordStart">Text: the colon</p>
+  <p id="rangeBasedWithPunctuationAfterFirstWordEnd">is important here</p>
+  <!-- (crash)Test case for bug 1989891 -->
+  <p>1 1111111111111
+1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+<span id="prefixAndSuffixHitMaxLength">test</span>
+1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+1111111111111 1
+</p>
   <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const empty = document.createTextNode("");
+      const afterEmptyTextNode = document.getElementById("afterEmptyTextNode");
+      afterEmptyTextNode.parentNode.insertBefore(empty, afterEmptyTextNode);
+    });
+
     SimpleTest.waitForExplicitFinish();
     function rAF() {
       return new Promise(resolve => {
@@ -179,7 +261,7 @@
           endContainer: textWithEmoji.firstChild.firstChild,
           endOffset: 4,
           content: "😍",
-          textDirective: "text=%F0%9F%98%8D,-abc",
+          textDirective: "text=%F0%9F%98%8D-,%F0%9F%98%8D",
         },
         {
           name: "Text directive contains emoji as prefix",
@@ -226,6 +308,196 @@
           content: "abc def ghi jkl abc. def ghi\n  foo",
           textDirective: "text=ghi-,abc,foo"
         },
+        {
+          name: "Range-based text directive, end term is at inline boundary",
+          startContainer: textWithInvisibleContent.firstChild,
+          startOffset: 0,
+          endContainer: wordBoundaryAtInlineBoundary.firstChild,
+          endOffset: 7,
+          content: "Text with display:none content\n  WordEnd",
+          textDirective: "text=Text,WordEnd"
+        },
+        {
+          name: "Finding text directive matches must correctly deal with block boundaries",
+          startContainer: prevMatchAtEndOfBlock.firstChild,
+          startOffset: 0,
+          endContainer: prevMatchAtEndOfBlock.firstChild,
+          endOffset: 10,
+          content: "EndOfBlock",
+          textDirective: "text=EndOfBlock-,EndOfBlock"
+        },
+        {
+          name: "Finding text directive across table rows",
+          startContainer: firstRow.firstChild,
+          startOffset: 0,
+          endContainer: secondRow.firstChild,
+          endOffset: secondRow.firstChild.length,
+          content: "first row second row",
+          textDirective: "text=first%20row,second%20row",
+        },
+        {
+          name: "Finding prefix in the correct order",
+          startContainer: loremIpsum.firstChild,
+          startOffset: 308,
+          endContainer: loremIpsum.firstChild,
+          endOffset: 313,
+          content: "Lorem",
+          textDirective: "text=a-,Lorem"
+        },
+        {
+          name: "Range-based text directive with multiple end matches 1 (first match)",
+          startContainer: rangeBasedWithMultipleEndMatchesBegin.firstChild,
+          startOffset: 0,
+          endContainer: rangeBasedWithMultipleEndMatchesEnd.firstChild,
+          endOffset: 3,
+          content: "Begin and begin or begin with begin\n  end",
+          textDirective: "text=Begin,end"
+        },
+        {
+          name: "Range-based text directive with multiple end matches 2 (use end because it's shorter)",
+          startContainer: rangeBasedWithMultipleEndMatchesBegin.firstChild,
+          startOffset: 0,
+          endContainer: rangeBasedWithMultipleEndMatchesEnd.firstChild,
+          endOffset: 10,
+          content: "Begin and begin or begin with begin\n  end or end",
+          textDirective: "text=Begin,or%20end"
+        },
+        {
+          name: "Range-based text directive with multiple end matches 3 (use suffix because it's shorter)",
+          startContainer: rangeBasedWithMultipleEndMatchesBegin.firstChild,
+          startOffset: 0,
+          endContainer: rangeBasedWithMultipleEndMatchesEnd.firstChild,
+          endOffset: 18,
+          content: "Begin and begin or begin with begin\n  end or end and end",
+          textDirective: "text=Begin,end,-at"
+        },
+        {
+          name: "Range-based text directive with multiple start matches 1 (use start because it's shorter)",
+          startContainer: rangeBasedWithMultipleEndMatchesBegin.firstChild,
+          startOffset: 10,
+          endContainer: rangeBasedWithMultipleEndMatchesEnd.firstChild,
+          endOffset: 18,
+          content: "begin or begin with begin\n  end or end and end",
+          textDirective: "text=begin%20or,end,-at"
+        },
+        {
+          name: "Range-based text directive with multiple start matches 2 (use prefix because it's shorter)",
+          startContainer: rangeBasedWithMultipleEndMatchesBegin.firstChild,
+          startOffset: 19,
+          endContainer: rangeBasedWithMultipleEndMatchesEnd.firstChild,
+          endOffset: 18,
+          content: "begin with begin\n  end or end and end",
+          textDirective: "text=or-,begin,end,-at"
+        },
+        {
+          name: "Empty text nodes need to be handled correctly when finding word boundary looking left",
+          startContainer: afterEmptyTextNode.firstChild,
+          startOffset: 0,
+          endContainer: afterEmptyTextNode.firstChild,
+          endOffset: 5,
+          content: "after",
+          textDirective: "text=after"
+        },
+        {
+          name: "Empty text nodes need to be handled correctly when finding word boundary looking right",
+          startContainer: beforeEmptyTextNode.firstChild,
+          startOffset: 18,
+          endContainer: beforeEmptyTextNode.firstChild,
+          endOffset: 22,
+          content: "node",
+          textDirective: "text=node"
+        },
+        {
+          name: "Range-based text directive with punctuation as start",
+          startContainer: punctuationStartsRangeBasedTextDirective.firstChild,
+          startOffset: 0,
+          endContainer: punctuationEndsRangeBasedTextDirective.firstChild,
+          endOffset: 4,
+          content: '"\n  text',
+          textDirective: "text=%22,text"
+        },
+        {
+          name: "Test for Bug 1976869 (edge cases for common string length computation)",
+          startContainer: rangeBasedWithPrefixAtBlockBoundaries.firstChild,
+          startOffset: 14,
+          endContainer: rangeBasedWithPrefixAtBlockBoundariesEnd.firstChild,
+          endOffset: 3,
+          content: "Bar more text\n  End",
+          textDirective: "text=Bar%20more,End"
+        },
+        {
+          name: "Test for Bug 1976480: Selected quotation mark should not be extended to the next word",
+          startContainer: quotationMark.firstChild,
+          startOffset: 0,
+          endContainer: quotationMark.firstChild,
+          endOffset: 1,
+          content: "\"",
+          textDirective: "text=Range-,%22"
+        },
+        {
+          name: "Test for Bug 1976480: Selected quotation mark should not be extended to the previous word",
+          startContainer: quotationMark.firstChild,
+          startOffset: 15,
+          endContainer: quotationMark.firstChild,
+          endOffset: 16,
+          content: "\"",
+          textDirective: "text=mark-,%22"
+        },
+        {
+          name: "Test for Bug 1976480: Text inside quotation marks should not have the selection extended to the quotation marks",
+          startContainer: quotationMark.firstChild,
+          startOffset: 1,
+          endContainer: quotationMark.firstChild,
+          endOffset: 15,
+          content: "Quotation mark",
+          textDirective: "text=Quotation%20mark"
+        },
+        {
+          name: "Test for Bug 1979474: Text directive with empty table cell",
+          startContainer: tdFollowedByEmptyTd.firstChild,
+          startOffset: 0,
+          endContainer: tdFollowedByEmptyTd.nextSibling,
+          endOffset: 0,
+          content: "}",
+          textDirective: "text=%7D",
+          dontCompareRangeBoundaries: true,
+        },
+        {
+          name: "Test for Bug 1979588: Long URL with unbreakable segment should not crash",
+          startContainer: longUrlForBug1979588.firstChild,
+          startOffset: 0,
+          endContainer: longUrlForBug1979588.firstChild,
+          endOffset: longUrlForBug1979588.firstChild.length,
+          content: "https://example.com/test?foo=bar#verylongnonbreakableurlsegmentthatcannotbebrokenintowordsbecauseiturlsegmentsdonotcontainspacesorothertraditionwordbreakingcharacterswhichcausesproblemsintextdirectivecreation",
+          textDirective: "text=https,verylongnonbreakableurlsegmentthatcannotbebrokenintowordsbecauseiturlsegmentsdonotcontainspacesorothertraditionwordbreakingcharacterswhichcausesproblemsintextdirectivecreation",
+        },
+        {
+          name: "Test for Bug 1987845: Long text with spaces in the middle",
+          startContainer: rangeBasedWihSpaceInTheMiddle.firstChild,
+          startOffset: 0,
+          endContainer: rangeBasedWihSpaceInTheMiddle.firstChild,
+          endOffset: rangeBasedWihSpaceInTheMiddle.firstChild.length,
+          content: "Nuclear weapons have only twice been used in warfare, both times by the United States against Japan at the end of World War II. On August 6, 1945, the United States Army Air Forces (USAAF) detonated a uranium gun-type fission bomb nicknamed \"Little Boy\" over the Japanese city of Hiroshima; three days later, on August 9, the USAAF[4] detonated a plutonium implosion-type fission bomb nicknamed \"Fat Man\" over the Japanese city of Nagasaki. These bombings caused injuries that resulted in the deaths of approximately 200,000 civilians and military personnel.[5] The ethics of these bombings and their role in Japan's surrender are to this day, still subjects of debate",
+          textDirective: "text=Nuclear%20weapons,debate",
+        },
+        {
+          name: "Test for Bug 1987845: Punctuation after first word of range",
+          startContainer: rangeBasedWithPunctuationAfterFirstWordStart.firstChild,
+          startOffset: 0,
+          endContainer: rangeBasedWithPunctuationAfterFirstWordEnd.firstChild,
+          endOffset: rangeBasedWithPunctuationAfterFirstWordEnd.firstChild.length,
+          content: "Text: the colon\n  is important here",
+          textDirective: "text=Text%3A%20the,here",
+        },
+        {
+          name: "Prefix and suffix hit max length at whitespace",
+          startContainer: prefixAndSuffixHitMaxLength.firstChild,
+          startOffset: 0,
+          endContainer: prefixAndSuffixHitMaxLength.firstChild,
+          endOffset: prefixAndSuffixHitMaxLength.firstChild.length,
+          content: "test",
+          textDirective: "text=test,-1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",
+        },
       ]) {
         const range = document.createRange();
         range.setStart(testCase.startContainer, testCase.startOffset);
@@ -235,7 +507,7 @@
           `${testCase.name}: Precondition - Range has expected value`
         );
 
-        const textDirective = await SpecialPowers.wrap(document).fragmentDirective.createTextDirective(range);
+        const textDirective = await SpecialPowers.wrap(document).fragmentDirective.createTextDirectiveForRanges([range]);
         is(
           textDirective, testCase.textDirective,
           `${testCase.name}: text directive has expected value '${testCase.textDirective}'`
@@ -253,12 +525,17 @@
 
         is(
           ranges[0].toString(), range.toString(),
-          `${testCase.name}: Ranges have the same content '${ranges[0].toString()}'`
+          `${testCase.name}: Ranges have the same content`
         );
-        ok(
-          rangeBoundariesAreEqual(range, ranges[0]),
-          `${testCase.name}: Ranges have the same boundary points`
-        );
+        if(!testCase.dontCompareRangeBoundaries) {
+          // For some test cases it's necessary that the range boundaries in the test case
+          // and the range boundaries of the created match are _not_ the same,
+          // e.g. if the test requires that the range contains empty nodes.
+          ok(
+            rangeBoundariesAreEqual(range, ranges[0]),
+            `${testCase.name}: Ranges have the same boundary points`
+          );
+        }
 
         // finally, remove all text directives to clean up for the next test.
         SpecialPowers.wrap(document).fragmentDirective.removeAllTextDirectives();
@@ -274,30 +551,33 @@
      * return an empty string, not an error.
      */
     async function testEmptyRange() {
-      const createDirectiveTimeStart = await GleanTest.domTextfragment.createDirective.testGetValue() ?? {count: 0};
 
-      const range = document.createRange();
-      let textDirective = await SpecialPowers.wrap(document).fragmentDirective.createTextDirective(range);
+      let textDirective = await SpecialPowers.wrap(document).fragmentDirective.createTextDirectiveForRanges([]);
       is(
         textDirective, null,
         "Empty input range: Produces empty text directive"
       );
+      const range = document.createRange();
       range.selectNode(abc);
       range.collapse(true);
-      textDirective = await SpecialPowers.wrap(document).fragmentDirective.createTextDirective(range);
+      textDirective = await SpecialPowers.wrap(document).fragmentDirective.createTextDirectiveForRanges([range]);
       is(
         textDirective, null,
         "Collapsed input range: Produces empty text directive"
       );
       range.selectNode(image);
-      textDirective = await SpecialPowers.wrap(document).fragmentDirective.createTextDirective(range);
+      textDirective = await SpecialPowers.wrap(document).fragmentDirective.createTextDirectiveForRanges([range]);
       is(
         textDirective, null,
         "Input range contains image only: Produces empty text directive"
       );
 
-      const createDirectiveTime = await GleanTest.domTextfragment.createDirective.testGetValue() ?? {count: 0};
-      is(createDirectiveTime.count, createDirectiveTimeStart.count + 1, "testEmptyRange: Glean should have recorded the time it took to create the text directive");
+      range.selectNode(nbsp);
+      textDirective = await SpecialPowers.wrap(document).fragmentDirective.createTextDirectiveForRanges([range]);
+      is(
+        textDirective, null,
+        "Input range contains nbsp only: Produces empty text directive"
+      );
     }
 
     async function testExpandRangeToWordBoundaries() {
@@ -385,7 +665,7 @@
           `${testCase.name}: Precondition - Range has expected value`
         );
 
-        const textDirective = await SpecialPowers.wrap(document).fragmentDirective.createTextDirective(range);
+        const textDirective = await SpecialPowers.wrap(document).fragmentDirective.createTextDirectiveForRanges([range]);
         is(
           textDirective, testCase.textDirective,
           `${testCase.name}: text directive has expected value '${textDirective}'`
@@ -427,24 +707,61 @@
       range.setStart(surroundedByBlockBoundaries.firstChild, 4);
       range.setEnd(surroundedByBlockBoundaries.firstChild, 7);
       is(range.toString(), "def", `${testCase}: Range has expected value`);
-      const textDirective = await SpecialPowers.wrap(document).fragmentDirective.createTextDirective(range);
+      const textDirective = await SpecialPowers.wrap(document).fragmentDirective.createTextDirectiveForRanges([range]);
       is(textDirective, null, `${testCase}: It's not possible to create a unique text directive`);
 
       const createDirectiveTime = await GleanTest.domTextfragment.createDirective.testGetValue() ?? {count: 0};
       is(createDirectiveTime.count, createDirectiveTimeStart.count + 1, `${testCase}: Glean should have recorded the time it took to create the text directive`);
     }
 
+    async function testRangeBasedWithEmptySurroundingBlocks() {
+      const testCase = "Empty blocks at beginning or end of range must be ignored";
+      const range = document.createRange();
+      range.setStart(emptyBlockAtBeginning, 0);
+      range.setEnd(emptyBlockAtEnd.nextSibling ,0);
+      const content = "AfterEmptyBlock\n  BeforeEmptyBlock";
+      const textDirectiveString = "text=AfterEmptyBlock,BeforeEmptyBlock";
+      is(range.toString(), content, `${testCase}: Range has expected value`);
+      const textDirective = await SpecialPowers.wrap(document).fragmentDirective.createTextDirectiveForRanges([range]);
+      is(textDirective, textDirectiveString, `${testCase}: text directive has expected value '${textDirectiveString}'`);
+      location.hash = `:~:${textDirective}`;
+      await rAF();
+      ranges = SpecialPowers.wrap(document).fragmentDirective.getTextDirectiveRanges();
+      is(ranges.length, 1, `${testCase}: There is one text fragment range on the document`);
+      is(ranges[0].toString(), range.toString(), `${testCase}: Ranges have the same content`);
+    }
+
+    async function testRangeBasedWithNonBreakableWord() {
+      const testCase = "Range-based text directive with non-breakable word";
+      const range = document.createRange();
+      range.setStart(longWord.firstChild, 0);
+      range.setEnd(longWord.firstChild, longWord.firstChild.length);
+      const textDirective = await SpecialPowers.wrap(document).fragmentDirective.createTextDirectiveForRanges([range]);
+      is(textDirective, null, `${testCase}: This test case should not produce a text directive`);
+    }
+
+    async function testMultipleRanges() {
+      let testCase = "Two single-word text directives";
+      const range1 = document.createRange();
+      range1.setStart(abc.firstChild, 0);
+      range1.setEnd(abc.firstChild, 3);
+      const range2 = document.createRange();
+      range2.setStart(foo.firstChild, 0);
+      range2.setEnd(foo.firstChild, 3);
+      const textDirective = await SpecialPowers.wrap(document).fragmentDirective.createTextDirectiveForRanges([range1, range2]);
+      is(textDirective, "text=abc&text=foo", `${testCase}: The text fragment has the expected value`);
+    }
+
     async function runTests() {
       try {
-        await SpecialPowers.pushPrefEnv({"set": [
-        ["dom.text_fragments.enabled", true],
-        ["dom.text_fragments.create_text_fragment.enabled", true],
-      ]});
         testRangeBoundariesAreEqual();
         await basicTests();
         await testEmptyRange();
         await testExpandRangeToWordBoundaries();
         await testNonUniqueTestSurroundedByBlockBoundaries();
+        await testRangeBasedWithEmptySurroundingBlocks();
+        await testRangeBasedWithNonBreakableWord();
+        await testMultipleRanges();
 
     }
     finally {

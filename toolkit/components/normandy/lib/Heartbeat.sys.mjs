@@ -35,29 +35,29 @@ CleanupManager.addCleanupHandler(() => {
  *
  * @param chromeWindow
  *        The chrome window that the heartbeat notification is displayed in.
- * @param {Object} options Options object.
- * @param {String} options.message
+ * @param {object} options Options object.
+ * @param {string} options.message
  *        The message, or question, to display on the notification.
- * @param {String} options.thanksMessage
+ * @param {string} options.thanksMessage
  *        The thank you message to display after user votes.
- * @param {String} options.flowId
+ * @param {string} options.flowId
  *        An identifier for this rating flow. Please note that this is only used to
  *        identify the notification box.
- * @param {String} [options.engagementButtonLabel=null]
+ * @param {string} [options.engagementButtonLabel=null]
  *        The text of the engagement button to use instead of stars. If this is null
  *        or invalid, rating stars are used.
- * @param {String} [options.learnMoreMessage=null]
+ * @param {string} [options.learnMoreMessage=null]
  *        The label of the learn more link. No link will be shown if this is null.
- * @param {String} [options.learnMoreUrl=null]
+ * @param {string} [options.learnMoreUrl=null]
  *        The learn more URL to open when clicking on the learn more link. No learn more
  *        will be shown if this is an invalid URL.
- * @param {String} [options.surveyId]
+ * @param {string} [options.surveyId]
  *        An ID for the survey, reflected in the Telemetry ping.
- * @param {Number} [options.surveyVersion]
+ * @param {number} [options.surveyVersion]
  *        Survey's version number, reflected in the Telemetry ping.
  * @param {boolean} [options.testing]
  *        Whether this is a test survey, reflected in the Telemetry ping.
- * @param {String} [options.postAnswerURL=null]
+ * @param {string} [options.postAnswerURL=null]
  *        The url to visit after the user answers the question.
  */
 export var Heartbeat = class {
@@ -284,6 +284,16 @@ export var Heartbeat = class {
         addClientId: true,
         addEnvironment: true,
       });
+
+      const gleanOmittedFields = ["version", "surveyVersion", "testing"];
+      for (const [k, v] of Object.entries(payload)) {
+        if (gleanOmittedFields.includes(k)) {
+          continue;
+        }
+        const metricName = k.endsWith("TS") ? k.slice(0, -2) : k;
+        Glean.heartbeat[metricName].set(v);
+      }
+      GleanPings.heartbeat.submit();
 
       // only for testing
       this.eventEmitter.emit("TelemetrySent", payload);

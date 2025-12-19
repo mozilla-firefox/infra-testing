@@ -8,9 +8,9 @@
 
 #include "Adts.h"
 #include "AnnexB.h"
+#include "GeckoProfiler.h"
 #include "H264.h"
 #include "H265.h"
-#include "GeckoProfiler.h"
 #include "ImageContainer.h"
 #include "MP4Decoder.h"
 #include "MediaInfo.h"
@@ -74,10 +74,17 @@ static bool IsBeingProfiledOrLogEnabled() {
 
 class H264ChangeMonitor : public MediaChangeMonitor::CodecChangeMonitor {
  public:
-  explicit H264ChangeMonitor(const VideoInfo& aInfo, bool aFullParsing)
-      : mCurrentConfig(aInfo), mFullParsing(aFullParsing) {
+  explicit H264ChangeMonitor(const CreateDecoderParams& aParams)
+      : mCurrentConfig(aParams.VideoConfig()),
+        mFullParsing(aParams.mOptions.contains(
+            CreateDecoderParams::Option::FullH264Parsing))
+#ifdef MOZ_WMF_MEDIA_ENGINE
+        ,
+        mIsMediaEnginePlayback(aParams.mMediaEngineId.isSome())
+#endif
+  {
     if (CanBeInstantiated()) {
-      UpdateConfigFromExtraData(aInfo.mExtraData);
+      UpdateConfigFromExtraData(mCurrentConfig.mExtraData);
       auto avcc = AVCCConfig::Parse(mCurrentConfig.mExtraData);
       if (avcc.isOk() && avcc.unwrap().NALUSize() != 4) {
         // `CheckForChange()` will use `AnnexB::ConvertSampleToAVCC()` to change
@@ -136,8 +143,14 @@ class H264ChangeMonitor : public MediaChangeMonitor::CodecChangeMonitor {
         return NS_OK;
       }
       extra_data = aSample->mExtraData;
-    } else if (H264::CompareExtraData(extra_data, mCurrentConfig.mExtraData)) {
-      return NS_OK;
+    } else {
+      // A situation where inband SPS exists in the sample.
+#ifdef MOZ_WMF_MEDIA_ENGINE
+      extra_data = MergeParameterSetsWhenInbandSPSExists(extra_data);
+#endif
+      if (H264::CompareExtraData(extra_data, mCurrentConfig.mExtraData)) {
+        return NS_OK;
+      }
     }
 
     // Store the sample's extradata so we don't trigger a false positive
@@ -169,14 +182,21 @@ class H264ChangeMonitor : public MediaChangeMonitor::CodecChangeMonitor {
     aSample->mTrackInfo = mTrackInfo;
 
     bool appendExtradata = aNeedKeyFrame;
-    if (aSample->mCrypto.IsEncrypted() && !mReceivedFirstEncryptedSample) {
-      LOG("Detected first encrypted sample [%" PRId64 ",%" PRId64
-          "], keyframe=%d",
-          aSample->mTime.ToMicroseconds(),
-          aSample->GetEndTime().ToMicroseconds(), aSample->mKeyframe);
-      mReceivedFirstEncryptedSample = true;
-      appendExtradata = true;
+#ifdef MOZ_WMF_MEDIA_ENGINE
+    // The error SPR_E_INVALID_H264_SLICE_HEADERS is caused by the media engine
+    // being unable to handle an IDR frame without a valid SPS. Therefore, we
+    // ensure that SPS should always be presented in the bytestream for all IDR
+    // frames.
+    if (mIsMediaEnginePlayback &&
+        H264::GetFrameType(aSample) == H264::FrameType::I_FRAME_IDR) {
+      RefPtr<MediaByteBuffer> extradata = H264::ExtractExtraData(aSample);
+      appendExtradata = aNeedKeyFrame || !H264::HasSPS(extradata);
+      LOG("%s need to append extradata for IDR sample [%" PRId64 ",%" PRId64
+          "]",
+          appendExtradata ? "Do" : "No", aSample->mTime.ToMicroseconds(),
+          aSample->GetEndTime().ToMicroseconds());
     }
+#endif
 
     if (aConversion == MediaDataDecoder::ConversionRequired::kNeedAnnexB) {
       auto res = AnnexB::ConvertAVCCSampleToAnnexB(aSample, appendExtradata);
@@ -188,8 +208,6 @@ class H264ChangeMonitor : public MediaChangeMonitor::CodecChangeMonitor {
 
     return NS_OK;
   }
-
-  void Flush() override { mReceivedFirstEncryptedSample = false; }
 
  private:
   void UpdateConfigFromExtraData(MediaByteBuffer* aExtraData) {
@@ -221,17 +239,64 @@ class H264ChangeMonitor : public MediaChangeMonitor::CodecChangeMonitor {
     mTrackInfo = new TrackInfoSharedPtr(mCurrentConfig, mStreamID++);
   }
 
+#ifdef MOZ_WMF_MEDIA_ENGINE
+  // Merge aExtraData, containing in-band parameter set updates having at least
+  // one SPS, with mCurrentConfig.mExtraData, and return the merged
+  // AVCDecoderConfigurationRecord. The existing PPSs (if any) are retained iff
+  // no new PPSs are in aExtraData. Partial updates of only some SPSs or of
+  // only some PPSs are not yet supported.
+  RefPtr<MediaByteBuffer> MergeParameterSetsWhenInbandSPSExists(
+      MediaByteBuffer* aExtraData) const {
+    // TODO : consider to enable this for other decoders if necessary in bug
+    // 1973611
+    if (!mIsMediaEnginePlayback) {
+      return aExtraData;
+    }
+
+    auto res = AVCCConfig::Parse(aExtraData);
+    MOZ_ASSERT(res.isOk());
+    auto avccNew = res.unwrap();
+    if (avccNew.NumPPS() != 0) {
+      // New extradata already has PPS.
+      return aExtraData;
+    }
+
+    // A case where the new extradata includes an SPS change but lacks a
+    // PPS. This implies that the PPS might be present in the previous
+    // extradata, making it a candidate for reuse. This refinement could
+    // potentially resolve the DRM_E_H264_SH_PPS_NOT_FOUND error.
+    res = AVCCConfig::Parse(mCurrentConfig.mExtraData);
+    if (res.isErr()) {
+      return aExtraData;
+    }
+    const auto avccOld = res.unwrap();
+    if (avccOld.NumPPS() == 0) {
+      // Still no PPS, there is nothing we can do.
+      return aExtraData;
+    }
+
+    // Reuse the previous PPS then generate a new extradata.
+    MOZ_ASSERT(avccNew.NumPPS() == 0 && avccOld.NumPPS() != 0);
+    avccNew.mPPSs.AppendElements(avccOld.mPPSs);
+    if (RefPtr<MediaByteBuffer> newExtraData = avccNew.CreateNewExtraData()) {
+      LOG("Refining extradata by inserting PPS to ensure both SPS and PPS "
+          "are present");
+      return newExtraData;
+    }
+    return aExtraData;
+  }
+#endif
+
   VideoInfo mCurrentConfig;
   uint32_t mStreamID = 0;
   const bool mFullParsing;
+#ifdef MOZ_WMF_MEDIA_ENGINE
+  // True if the playback is performed by Windows Media Foundation Engine.
+  const bool mIsMediaEnginePlayback;
+#endif
   bool mGotSPS = false;
   RefPtr<TrackInfoSharedPtr> mTrackInfo;
   RefPtr<MediaByteBuffer> mPreviousExtraData;
-
-  // This ensures the first encrypted sample always includes all necessary
-  // information for decoding, as some decoders, such as MediaEngine, require
-  // SPS/PPS to be appended during the clearlead-to-encrypted transition.
-  bool mReceivedFirstEncryptedSample = false;
 };
 
 class HEVCChangeMonitor : public MediaChangeMonitor::CodecChangeMonitor {
@@ -272,9 +337,14 @@ class HEVCChangeMonitor : public MediaChangeMonitor::CodecChangeMonitor {
         aSample->mKeyframe || !mSPS.IsEmpty()
             ? H265::ExtractHVCCExtraData(aSample)
             : nullptr;
+    if (!extraData || extraData->IsEmpty()) {
+      // No inband parameter set in sample bitstream. Try out-of-band extradata.
+      extraData = aSample->mExtraData;
+    }
     // Sample doesn't contain any SPS and we already have SPS, do nothing.
     auto curConfig = HVCCConfig::Parse(mCurrentConfig.mExtraData);
     if ((!extraData || extraData->IsEmpty()) && curConfig.unwrap().HasSPS()) {
+      LOG("No SPS in sample. Use existing config");
       return NS_OK;
     }
 
@@ -820,9 +890,7 @@ RefPtr<PlatformDecoderModule::CreateDecoderPromise> MediaChangeMonitor::Create(
       changeMonitor = MakeUnique<HEVCChangeMonitor>(config);
     } else {
       MOZ_ASSERT(MP4Decoder::IsH264(config.mMimeType));
-      changeMonitor = MakeUnique<H264ChangeMonitor>(
-          config, aParams.mOptions.contains(
-                      CreateDecoderParams::Option::FullH264Parsing));
+      changeMonitor = MakeUnique<H264ChangeMonitor>(aParams);
     }
   } else {
     MOZ_ASSERT(MP4Decoder::IsAAC(aParams.AudioConfig().mMimeType));

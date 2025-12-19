@@ -4,13 +4,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#if !defined(WMFPlatformDecoderModule_h_)
-#  define WMFPlatformDecoderModule_h_
+#ifndef WMFPlatformDecoderModule_h_
+#define WMFPlatformDecoderModule_h_
 
-#  include "PlatformDecoderModule.h"
-#  include "WMF.h"
-#  include "WMFUtils.h"
-#  include "mozilla/Atomics.h"
+#include "PlatformDecoderModule.h"
+#include "WMF.h"
+#include "WMFUtils.h"
 
 namespace mozilla {
 
@@ -18,6 +17,7 @@ class MFTDecoder;
 
 class WMFDecoderModule : public PlatformDecoderModule {
  public:
+  const char* Name() const override { return "WMF"; }
   static already_AddRefed<PlatformDecoderModule> Create();
 
   // Initializes the module, loads required dynamic libraries, etc.
@@ -39,15 +39,10 @@ class WMFDecoderModule : public PlatformDecoderModule {
       const SupportDecoderParams& aParams,
       DecoderDoctorDiagnostics* aDiagnostics) const override;
 
-  enum class Config {
-    None,
-    ForceEnableHEVC,
-  };
-
   // Can be called on any thread, but avoid calling this on the main thread
   // because the initialization takes long time and we don't want to block the
   // main thread.
-  static void Init(Config aConfig = Config::None);
+  static void Init();
 
   // Called from any thread, must call init first
   static int GetNumDecoderThreads();
@@ -56,16 +51,7 @@ class WMFDecoderModule : public PlatformDecoderModule {
                                   RefPtr<MFTDecoder>& aDecoder);
   static bool CanCreateMFTDecoder(const WMFStreamType& aType);
 
-  static void DisableForceEnableHEVC();
-
  private:
-  // This is used for GPU process only, where we can't set the preference
-  // directly (it can only set in the parent process) So we need a way to force
-  // enable the HEVC in order to report the support information via telemetry.
-  static inline Atomic<bool> sForceEnableHEVC{false};
-
-  static bool IsHEVCSupported();
-
   WMFDecoderModule() = default;
   virtual ~WMFDecoderModule() = default;
 

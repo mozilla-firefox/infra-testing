@@ -7,23 +7,24 @@
 #if !defined(PlatformEncoderModule_h_)
 #  define PlatformEncoderModule_h_
 
+#  include "EncoderConfig.h"
 #  include "MP4Decoder.h"
+#  include "MediaCodecsSupport.h"
 #  include "MediaResult.h"
 #  include "VPXDecoder.h"
+#  include "VideoUtils.h"
 #  include "mozilla/Maybe.h"
 #  include "mozilla/MozPromise.h"
 #  include "mozilla/RefPtr.h"
 #  include "mozilla/TaskQueue.h"
 #  include "mozilla/dom/ImageBitmapBinding.h"
 #  include "nsISupportsImpl.h"
-#  include "VideoUtils.h"
-#  include "EncoderConfig.h"
 
 namespace mozilla {
 
 class MediaDataEncoder;
 class MediaData;
-struct EncoderConfigurationChangeList;
+class EncoderConfigurationChangeList;
 
 class PlatformEncoderModule {
  public:
@@ -43,15 +44,17 @@ class PlatformEncoderModule {
                                           /* IsExclusive = */ true>;
 
   // Indicates if the PlatformDecoderModule supports encoding of a codec.
-  virtual bool Supports(const EncoderConfig& aConfig) const = 0;
-  virtual bool SupportsCodec(CodecType aCodecType) const = 0;
+  virtual media::EncodeSupportSet Supports(
+      const EncoderConfig& aConfig) const = 0;
+  virtual media::EncodeSupportSet SupportsCodec(CodecType aCodecType) const = 0;
 
   // Returns a readable name for this Platform Encoder Module
   virtual const char* GetName() const = 0;
 
   // Asychronously create an encoder
-  RefPtr<PlatformEncoderModule::CreateEncoderPromise> AsyncCreateEncoder(
-      const EncoderConfig& aEncoderConfig, const RefPtr<TaskQueue>& aTaskQueue);
+  virtual RefPtr<PlatformEncoderModule::CreateEncoderPromise>
+  AsyncCreateEncoder(const EncoderConfig& aEncoderConfig,
+                     const RefPtr<TaskQueue>& aTaskQueue);
 
  protected:
   PlatformEncoderModule() = default;
@@ -61,13 +64,6 @@ class PlatformEncoderModule {
 class MediaDataEncoder {
  public:
   NS_INLINE_DECL_PURE_VIRTUAL_REFCOUNTING
-
-  static bool IsVideo(const CodecType aCodec) {
-    return aCodec > CodecType::_BeginVideo_ && aCodec < CodecType::_EndVideo_;
-  }
-  static bool IsAudio(const CodecType aCodec) {
-    return aCodec > CodecType::_BeginAudio_ && aCodec < CodecType::_EndAudio_;
-  }
 
   using InitPromise = MozPromise<bool, MediaResult, /* IsExclusive = */ true>;
   using EncodedData = nsTArray<RefPtr<MediaRawData>>;
@@ -89,6 +85,17 @@ class MediaDataEncoder {
   // returns will be resolved with already encoded MediaRawData at the moment,
   // or empty when there is none available yet.
   virtual RefPtr<EncodePromise> Encode(const MediaData* aSample) = 0;
+
+  // Inserts a batch of samples into the encoder's encode pipeline. The
+  // EncodePromise it returns will be resolved with already encoded MediaRawData
+  // at the moment, or empty when there is none available yet.
+  virtual RefPtr<EncodePromise> Encode(nsTArray<RefPtr<MediaData>>&& aSamples) {
+    MOZ_ASSERT_UNREACHABLE("Encode samples in a batch is not implemented");
+    return EncodePromise::CreateAndReject(
+        MediaResult(NS_ERROR_NOT_IMPLEMENTED,
+                    "Encode samples in a batch is not implemented"),
+        __func__);
+  }
 
   // Attempt to reconfigure the encoder on the fly. This can fail if the
   // underlying PEM doesn't support this type of reconfiguration.
@@ -143,13 +150,16 @@ class MediaDataEncoder {
 template <typename T, typename Phantom>
 class StrongTypedef {
  public:
+  StrongTypedef() = default;
   explicit StrongTypedef(T const& value) : mValue(value) {}
   explicit StrongTypedef(T&& value) : mValue(std::move(value)) {}
   T& get() { return mValue; }
   T const& get() const { return mValue; }
 
  private:
-  T mValue;
+  T mValue{};
+
+  friend struct IPC::ParamTraits<StrongTypedef<T, Phantom>>;
 };
 
 // Dimensions of the video frames
@@ -190,7 +200,8 @@ using EncoderConfigurationItem =
 // A list of changes to an encoder configuration, that _might_ be able to change
 // on the fly. Not all encoder modules can adjust their configuration on the
 // fly.
-struct EncoderConfigurationChangeList {
+class EncoderConfigurationChangeList {
+ public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(EncoderConfigurationChangeList)
   bool Empty() const { return mChanges.IsEmpty(); }
   template <typename T>

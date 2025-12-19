@@ -7,17 +7,13 @@
 #include "SVGFilters.h"
 
 #include <algorithm>
-#include "DOMSVGAnimatedNumberList.h"
+
 #include "DOMSVGAnimatedLength.h"
-#include "nsGkAtoms.h"
-#include "nsCOMPtr.h"
-#include "nsIFrame.h"
-#include "nsLayoutUtils.h"
+#include "DOMSVGAnimatedNumberList.h"
 #include "SVGAnimatedEnumeration.h"
 #include "SVGAnimatedNumberPair.h"
 #include "SVGAnimatedString.h"
 #include "SVGNumberList.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/SVGContentUtils.h"
 #include "mozilla/SVGFilterInstance.h"
@@ -32,6 +28,10 @@
 #include "mozilla/dom/SVGFESpotLightElement.h"
 #include "mozilla/dom/SVGFilterElement.h"
 #include "mozilla/dom/SVGLengthBinding.h"
+#include "nsCOMPtr.h"
+#include "nsGkAtoms.h"
+#include "nsIFrame.h"
+#include "nsLayoutUtils.h"
 
 #if defined(XP_WIN)
 // Prevent Windows redefining LoadImage
@@ -119,13 +119,24 @@ bool SVGFilterPrimitiveElement::HasValidDimensions() const {
 Size SVGFilterPrimitiveElement::GetKernelUnitLength(
     SVGFilterInstance* aInstance, SVGAnimatedNumberPair* aKernelUnitLength) {
   if (!aKernelUnitLength->IsExplicitlySet()) {
-    return Size(1, 1);
+    return Size(aInstance->GetPrimitiveUserSpaceUnitValue(SVGContentUtils::X),
+                aInstance->GetPrimitiveUserSpaceUnitValue(SVGContentUtils::Y));
   }
 
   float kernelX = aInstance->GetPrimitiveNumber(
       SVGContentUtils::X, aKernelUnitLength, SVGAnimatedNumberPair::eFirst);
+  if (kernelX <= 0.0f) {
+    kernelX = aInstance->GetPrimitiveUserSpaceUnitValue(SVGContentUtils::X);
+  } else {
+    kernelX = std::min(kernelX, float(kReasonableSurfaceSize));
+  }
   float kernelY = aInstance->GetPrimitiveNumber(
       SVGContentUtils::Y, aKernelUnitLength, SVGAnimatedNumberPair::eSecond);
+  if (kernelY <= 0.0f) {
+    kernelY = aInstance->GetPrimitiveUserSpaceUnitValue(SVGContentUtils::Y);
+  } else {
+    kernelY = std::min(kernelY, float(kReasonableSurfaceSize));
+  }
   return Size(kernelX, kernelY);
 }
 
@@ -363,7 +374,7 @@ LightType SVGFELightingElement::ComputeLightAttributes(
 }
 
 bool SVGFELightingElement::AddLightingAttributes(
-    mozilla::gfx::DiffuseLightingAttributes* aAttributes,
+    mozilla::gfx::LightingAttributes* aAttributes,
     SVGFilterInstance* aInstance) {
   const auto* frame = GetPrimaryFrame();
   if (!frame) {
@@ -378,12 +389,8 @@ bool SVGFELightingElement::AddLightingAttributes(
   Size kernelUnitLength = GetKernelUnitLength(
       aInstance, &mNumberPairAttributes[KERNEL_UNIT_LENGTH]);
 
-  if (kernelUnitLength.width <= 0 || kernelUnitLength.height <= 0) {
-    // According to spec, A negative or zero value is an error. See link below
-    // for details.
-    // https://www.w3.org/TR/SVG/filters.html#feSpecularLightingKernelUnitLengthAttribute
-    return false;
-  }
+  MOZ_ASSERT(kernelUnitLength.width > 0.0f && kernelUnitLength.height > 0.0f,
+             "Expecting positive kernelUnitLength values");
 
   aAttributes->mLightType =
       ComputeLightAttributes(aInstance, aAttributes->mLightValues);

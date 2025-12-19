@@ -8,23 +8,22 @@
 #ifndef mozilla_dom_WebTaskScheduler_h
 #define mozilla_dom_WebTaskScheduler_h
 
-#include "nsThreadUtils.h"
-#include "nsPIDOMWindow.h"
-#include "nsWrapperCache.h"
-#include "nsClassHashtable.h"
-
 #include "TaskSignal.h"
 #include "mozilla/Variant.h"
-#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/AbortFollower.h"
+#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/TimeoutHandler.h"
 #include "mozilla/dom/WebTaskSchedulingBinding.h"
+#include "nsClassHashtable.h"
+#include "nsPIDOMWindow.h"
+#include "nsThreadUtils.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla::dom {
 
 // Keep tracks of the number of same-event-loop-high-priority-queues
 // (User_blocking or User_visible) that have at least one task scheduled.
-MOZ_CONSTINIT extern uint32_t
+constinit extern uint32_t
     gNumNormalOrHighPriorityQueuesHaveTaskScheduledMainThread;
 
 // https://wicg.github.io/scheduling-apis/#scheduling-state
@@ -45,9 +44,9 @@ class WebTaskSchedulingState {
   AbortSignal* GetAbortSource() { return mAbortSource; }
   TaskSignal* GetPrioritySource() { return mPrioritySource; }
 
-  void SetPrioritySource(TaskSignal* aPrioritySource) {
-    MOZ_ASSERT(aPrioritySource->IsTaskSignal());
+  void SetPrioritySource(already_AddRefed<TaskSignal> aPrioritySource) {
     mPrioritySource = aPrioritySource;
+    MOZ_ASSERT(mPrioritySource->IsTaskSignal());
   }
 
  private:

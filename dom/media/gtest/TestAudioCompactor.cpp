@@ -1,10 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#include "gtest/gtest.h"
 #include "AudioCompactor.h"
+#include "gtest/gtest.h"
 #include "nsDeque.h"
 #include "nsIMemoryReporter.h"
 
@@ -76,16 +76,24 @@ static void TestAudioCompactor(size_t aBytes) {
 }
 
 TEST(Media, AudioCompactor_4000)
-{ TestAudioCompactor(4000); }
+{
+  TestAudioCompactor(4000);
+}
 
 TEST(Media, AudioCompactor_4096)
-{ TestAudioCompactor(4096); }
+{
+  TestAudioCompactor(4096);
+}
 
 TEST(Media, AudioCompactor_5000)
-{ TestAudioCompactor(5000); }
+{
+  TestAudioCompactor(5000);
+}
 
 TEST(Media, AudioCompactor_5256)
-{ TestAudioCompactor(5256); }
+{
+  TestAudioCompactor(5256);
+}
 
 TEST(Media, AudioCompactor_NativeCopy)
 {

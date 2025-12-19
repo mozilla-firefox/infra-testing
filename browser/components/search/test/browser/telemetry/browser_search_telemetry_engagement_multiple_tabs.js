@@ -63,7 +63,10 @@ add_setup(async function () {
   SearchSERPTelemetry.overrideSearchTelemetryForTests(TEST_PROVIDER_INFO);
   await waitForIdle();
   await SpecialPowers.pushPrefEnv({
-    set: [["dom.ipc.processCount.webIsolated", MAX_IPC]],
+    set: [
+      ["test.wait300msAfterTabSwitch", true],
+      ["dom.ipc.processCount.webIsolated", MAX_IPC],
+    ],
   });
 
   registerCleanupFunction(async () => {
@@ -138,7 +141,7 @@ add_task(async function test_multiple_tabs_forward() {
     if (pid == null) {
       pid = currentPid;
     } else {
-      Assert.ok(pid == currentPid, "The process ID should be the same.");
+      Assert.equal(pid, currentPid, "The process ID should be the same.");
     }
   }
 
@@ -179,7 +182,7 @@ add_task(async function test_multiple_tabs_backward() {
     if (pid == null) {
       pid = currentPid;
     } else {
-      Assert.ok(pid == currentPid, "The process ID should be the same.");
+      Assert.equal(pid, currentPid, "The process ID should be the same.");
     }
   }
 

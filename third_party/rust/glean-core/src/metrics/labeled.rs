@@ -2,16 +2,22 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use std::any::Any;
 use std::borrow::Cow;
+use std::collections::HashSet;
 use std::collections::{hash_map::Entry, HashMap};
+use std::mem;
 use std::sync::{Arc, Mutex};
 
-use crate::common_metric_data::{CommonMetricData, CommonMetricDataInternal};
+use malloc_size_of::MallocSizeOf;
+
+use crate::common_metric_data::{CommonMetricData, CommonMetricDataInternal, DynamicLabelType};
 use crate::error_recording::{record_error, test_get_num_recorded_errors, ErrorType};
 use crate::histogram::HistogramType;
 use crate::metrics::{
     BooleanMetric, CounterMetric, CustomDistributionMetric, MemoryDistributionMetric, MemoryUnit,
-    Metric, MetricType, QuantityMetric, StringMetric, TimeUnit, TimingDistributionMetric,
+    Metric, MetricType, QuantityMetric, StringMetric, TestGetValue, TimeUnit,
+    TimingDistributionMetric,
 };
 use crate::Glean;
 
@@ -84,6 +90,32 @@ pub struct LabeledMetric<T> {
     /// A map from a unique ID for the labeled submetric to a handle of an instantiated
     /// metric type.
     label_map: Mutex<HashMap<String, Arc<T>>>,
+}
+
+impl<T: MallocSizeOf> ::malloc_size_of::MallocSizeOf for LabeledMetric<T> {
+    fn size_of(&self, ops: &mut malloc_size_of::MallocSizeOfOps) -> usize {
+        let map = self.label_map.lock().unwrap();
+
+        // Copy of `MallocShallowSizeOf` implementation for `HashMap<K, V>` in `wr_malloc_size_of`.
+        // Note: An instantiated submetric is behind an `Arc`.
+        // `size_of` should only be called from a single thread to avoid double-counting.
+        let shallow_size = if ops.has_malloc_enclosing_size_of() {
+            map.values()
+                .next()
+                .map_or(0, |v| unsafe { ops.malloc_enclosing_size_of(v) })
+        } else {
+            map.capacity()
+                * (mem::size_of::<String>() + mem::size_of::<T>() + mem::size_of::<usize>())
+        };
+
+        let mut map_size = shallow_size;
+        for (k, v) in map.iter() {
+            map_size += k.size_of(ops);
+            map_size += v.size_of(ops);
+        }
+
+        self.labels.size_of(ops) + self.submetric.size_of(ops) + map_size
+    }
 }
 
 /// Sealed traits protect against downstream implementations.
@@ -228,7 +260,7 @@ where
     ///
     /// This is used for dynamic labels where we have to actually validate and correct the
     /// label later when we have a Glean object.
-    fn new_metric_with_dynamic_label(&self, label: String) -> T {
+    fn new_metric_with_dynamic_label(&self, label: DynamicLabelType) -> T {
         self.submetric.with_dynamic_label(label)
     }
 
@@ -292,7 +324,8 @@ where
                             label,
                         ))
                     }
-                    None => self.new_metric_with_dynamic_label(label.to_string()),
+                    None => self
+                        .new_metric_with_dynamic_label(DynamicLabelType::Label(label.to_string())),
                 };
                 let metric = Arc::new(metric);
                 entry.insert(Arc::clone(&metric));
@@ -317,6 +350,28 @@ where
         crate::core::with_glean(|glean| {
             test_get_num_recorded_errors(glean, self.submetric.meta(), error).unwrap_or(0)
         })
+    }
+}
+
+impl<T, S> TestGetValue for LabeledMetric<T>
+where
+    T: AllowLabeled + TestGetValue<Output = S>,
+    S: Any,
+{
+    type Output = HashMap<String, S>;
+
+    fn test_get_value(&self, ping_name: Option<String>) -> Option<HashMap<String, S>> {
+        let mut out = HashMap::new();
+        let map = self.label_map.lock().unwrap();
+        map.iter().for_each(|(label, submetric)| {
+            if let Some(v) = submetric.test_get_value(ping_name.clone()) {
+                out.insert(
+                    label.replace(&format!("{}/", self.submetric.meta().base_identifier()), ""),
+                    v,
+                );
+            }
+        });
+        Some(out)
     }
 }
 
@@ -356,10 +411,10 @@ pub fn validate_dynamic_label(
         }
     }
 
-    let mut label_count = 0;
+    let mut labels = HashSet::new();
     let prefix = &key[..=base_identifier.len()];
-    let mut snapshotter = |_: &[u8], _: &Metric| {
-        label_count += 1;
+    let mut snapshotter = |metric_id: &[u8], _: &Metric| {
+        labels.insert(metric_id.to_vec());
     };
 
     let lifetime = meta.inner.lifetime;
@@ -369,6 +424,7 @@ pub fn validate_dynamic_label(
             .iter_store_from(lifetime, store, Some(prefix), &mut snapshotter);
     }
 
+    let label_count = labels.len();
     let error = if label_count >= MAX_LABELS {
         true
     } else if label.len() > MAX_LABEL_LENGTH {
@@ -377,10 +433,6 @@ pub fn validate_dynamic_label(
             label.len(),
             MAX_LABEL_LENGTH
         );
-        record_error(glean, meta, ErrorType::InvalidLabel, msg, None);
-        true
-    } else if label.chars().any(|c| !c.is_ascii() || c.is_ascii_control()) {
-        let msg = format!("label must be printable ascii, got '{}'", label);
         record_error(glean, meta, ErrorType::InvalidLabel, msg, None);
         true
     } else {

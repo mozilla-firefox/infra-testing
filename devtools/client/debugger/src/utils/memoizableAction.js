@@ -5,9 +5,9 @@
 import { asSettled } from "./async-value";
 import { validateContext } from "./context";
 
-/*
+/**
  * memoizableActon is a utility for actions that should only be performed
- * once per key. It is useful for loading sources, parsing symbols ...
+ * once per key. It is useful for loading sources
  *
  * @getValue - gets the result from the redux store
  * @createKey - creates a key for the requests map
@@ -25,7 +25,6 @@ import { validateContext } from "./context";
  *     action: ({ a }, thunkArgs) => doSetItem(a, thunkArgs)
  *   }
  * );
- *
  */
 export function memoizeableAction(name, { getValue, createKey, action }) {
   const requests = new Map();

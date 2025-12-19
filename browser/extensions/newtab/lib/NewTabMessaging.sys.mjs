@@ -11,16 +11,19 @@ export class NewTabMessaging {
   constructor() {
     this.initialized = false;
     this.ASRouterDispatch = null;
+    this.browserSet = new WeakSet();
   }
 
   init() {
     if (!this.initialized) {
-      Services.obs.addObserver(this, "newtab-message");
       this.initialized = true;
+      Services.obs.addObserver(this, "newtab-message");
+      Services.obs.addObserver(this, "newtab-message-query");
     }
   }
 
   uninit() {
+    Services.obs.removeObserver(this, "newtab-message-query");
     Services.obs.removeObserver(this, "newtab-message");
   }
 
@@ -29,6 +32,11 @@ export class NewTabMessaging {
       let { targetBrowser, message, dispatch } = subject.wrappedJSObject;
       this.ASRouterDispatch = dispatch;
       this.showMessage(targetBrowser, message);
+    } else if (topic === "newtab-message-query") {
+      let { browser } = subject.wrappedJSObject;
+      if (this.browserSet.has(browser.selectedBrowser)) {
+        subject.wrappedJSObject.activeNewtabMessage = true;
+      }
     }
   }
 
@@ -72,7 +80,7 @@ export class NewTabMessaging {
       this.store.dispatch(
         ac.AlsoToPreloaded({
           type: at.MESSAGE_TOGGLE_VISIBILITY,
-          data: false,
+          data: true,
         })
       );
     }
@@ -95,7 +103,8 @@ export class NewTabMessaging {
 
   /**
    * Send impression to ASRouter
-   * @param {Object} message
+   *
+   * @param {object} message
    */
   handleImpression(message) {
     this.sendTelemetry("IMPRESSION", message);
@@ -122,7 +131,22 @@ export class NewTabMessaging {
     });
   }
 
-  async onAction(action) {
+  notifyVisiblity(action) {
+    const { browser } = action._target;
+    if (browser) {
+      // isVisible
+      if (action.data) {
+        // we dont want to add the browser if it is already part of browserSet
+        if (!this.browserSet.has(browser)) {
+          this.browserSet.add(browser);
+        }
+      } else if (this.browserSet.has(browser)) {
+        this.browserSet.delete(browser);
+      }
+    }
+  }
+
+  onAction(action) {
     switch (action.type) {
       case at.INIT:
         this.init();
@@ -141,6 +165,9 @@ export class NewTabMessaging {
         break;
       case at.MESSAGE_BLOCK:
         this.blockMessage(action.data);
+        break;
+      case at.MESSAGE_NOTIFY_VISIBILITY:
+        this.notifyVisiblity(action);
         break;
     }
   }

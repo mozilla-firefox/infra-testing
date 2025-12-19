@@ -29,7 +29,17 @@ add_task(async () => {
   // completed. We may not be able to open one later once asynchronous writing
   // begins.
   Assert.ok(do_get_cookie_file(profile).exists());
+
+  // Close the profile.
+  await promise_close_profile();
+
+  // Remove the cookie file in order to create another database file.
+  do_get_cookie_file(profile).remove(false);
+
   let db = new CookieDatabaseConnection(do_get_cookie_file(profile), 12);
+
+  // Reload profile.
+  await promise_load_profile();
 
   let uri = NetUtil.newURI("http://foo.com/");
   let channel = NetUtil.newChannel({
@@ -57,7 +67,7 @@ add_task(async () => {
   // should be around 500k.
   let file = db.db.databaseFile;
   Assert.ok(file.exists());
-  Assert.ok(file.fileSize < 1e6);
+  Assert.less(file.fileSize, 1e6);
   db.close();
 
   // fake a profile change

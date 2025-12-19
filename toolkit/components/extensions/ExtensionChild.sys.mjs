@@ -3,7 +3,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* eslint-disable mozilla/valid-lazy */
 
 /**
  * This file handles addon logic that is independent of the chrome process and
@@ -744,7 +743,7 @@ export class ChildLocalAPIImplementation extends LocalAPIImplementation {
    */
   callAndLog(callable, args) {
     this.context.logActivity("api_call", this.fullname, { args });
-    let start = Cu.now();
+    let start = ChromeUtils.now();
     try {
       return callable();
     } finally {

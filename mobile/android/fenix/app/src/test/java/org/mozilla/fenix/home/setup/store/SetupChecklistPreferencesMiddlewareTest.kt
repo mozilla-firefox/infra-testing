@@ -4,11 +4,9 @@
 
 package org.mozilla.fenix.home.setup.store
 
-import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
-import mozilla.components.lib.state.MiddlewareContext
 import mozilla.components.lib.state.Store
 import mozilla.components.support.test.rule.MainCoroutineRule
 import org.junit.Assert.assertEquals
@@ -28,8 +26,6 @@ class SetupChecklistPreferencesMiddlewareTest {
     @get:Rule
     val mainCoroutineTestRule = MainCoroutineRule()
 
-    private val context: MiddlewareContext<AppState, AppAction> = mockk(relaxed = true)
-
     // tests for invoke action
     @Test
     fun `GIVEN init action WHEN invoked the repository is initialised`() {
@@ -37,8 +33,7 @@ class SetupChecklistPreferencesMiddlewareTest {
         val middleware = SetupChecklistPreferencesMiddleware(repository)
 
         val store: Store<AppState, AppAction> = mockk(relaxed = true)
-        every { context.store } returns store
-        middleware.invoke(context, {}, AppAction.SetupChecklistAction.Init)
+        middleware.invoke(store, {}, AppAction.SetupChecklistAction.Init)
 
         assertTrue(repository.initInvoked)
     }
@@ -50,7 +45,7 @@ class SetupChecklistPreferencesMiddlewareTest {
             val middleware = SetupChecklistPreferencesMiddleware(repository)
             val task = buildTask(type = it)
             middleware.invoke(
-                context,
+                mockk(),
                 {},
                 AppAction.SetupChecklistAction.ChecklistItemClicked(task),
             )
@@ -59,11 +54,11 @@ class SetupChecklistPreferencesMiddlewareTest {
                 ChecklistItem.Task.Type.SELECT_THEME,
                 ChecklistItem.Task.Type.CHANGE_TOOLBAR_PLACEMENT,
                 ChecklistItem.Task.Type.EXPLORE_EXTENSION,
+                ChecklistItem.Task.Type.INSTALL_SEARCH_WIDGET,
                 -> assertTrue(repository.setPreferenceInvoked)
 
                 ChecklistItem.Task.Type.SET_AS_DEFAULT,
                 ChecklistItem.Task.Type.SIGN_IN,
-                ChecklistItem.Task.Type.INSTALL_SEARCH_WIDGET,
                 -> assertFalse(repository.setPreferenceInvoked)
             }
         }
@@ -74,7 +69,7 @@ class SetupChecklistPreferencesMiddlewareTest {
         val repository = FakeRepository()
         val middleware = SetupChecklistPreferencesMiddleware(repository)
         middleware.invoke(
-            context,
+            mockk(),
             {},
             AppAction.SetupChecklistAction.ChecklistItemClicked(buildGroup()),
         )

@@ -6,7 +6,6 @@ Transform the beetmover task into an actual task description.
 """
 
 import logging
-from typing import List
 
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.dependencies import get_dependencies, get_primary_dependency
@@ -51,6 +50,7 @@ beetmover_description_schema = Schema(
         Optional("locale"): str,
         Required("shipping-phase"): task_description_schema["shipping-phase"],
         Optional("task-from"): task_description_schema["task-from"],
+        Optional("run-on-repo-type"): task_description_schema["run-on-repo-type"],
     }
 )
 
@@ -68,13 +68,13 @@ def remove_name(config, jobs):
 transforms.add_validate(beetmover_description_schema)
 
 
-def get_label_by_suffix(labels: List, suffix: str):
+def get_label_by_suffix(labels: list, suffix: str):
     """
     Given list of labels, returns the label with provided suffix
     Raises exception if more than one label is found.
 
     Args:
-        labels (List): List of labels
+        labels (list): List of labels
         suffix (str): Suffix for the desired label
 
     Returns
@@ -162,10 +162,12 @@ def make_task_description(config, jobs):
 
         dependencies = {
             "build": upstream_deps[build_name],
-            "repackage": upstream_deps[repackage_name],
             "signing": upstream_deps[signing_name],
-            "mar-signing": upstream_deps[mar_signing_name],
         }
+        if repackage_name in upstream_deps:
+            dependencies["repackage"] = upstream_deps[repackage_name]
+        if mar_signing_name in upstream_deps:
+            dependencies["mar-signing"] = upstream_deps[mar_signing_name]
         if "partials-signing" in upstream_deps:
             dependencies["partials-signing"] = upstream_deps["partials-signing"]
         if msi_signing_name in upstream_deps:
@@ -198,6 +200,7 @@ def make_task_description(config, jobs):
             "dependencies": dependencies,
             "attributes": attributes,
             "run-on-projects": dep_job.attributes.get("run_on_projects"),
+            "run-on-repo-type": job.get("run-on-repo-type", ["git", "hg"]),
             "treeherder": treeherder,
             "shipping-phase": job["shipping-phase"],
             "shipping-product": job.get("shipping-product"),

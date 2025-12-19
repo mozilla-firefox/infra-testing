@@ -193,8 +193,8 @@ add_task(async function testIsPositionVisible() {
   const firstLine = getFirstVisibleLine();
   is(firstLine, 6);
   ok(
-    isScrolledPositionVisible(dbg, firstLine),
-    "The new first line is visible"
+    isScrolledPositionVisible(dbg, firstLine + 1),
+    "The next line of the new first line is visible"
   );
   ok(
     !isScrolledPositionVisible(dbg, firstLine - 1),
@@ -210,12 +210,15 @@ add_task(async function testIsPositionVisible() {
   invokeInTab("line50");
   await waitForPaused(dbg);
 
+  info("Wait for the paused line marker to be visible");
+  await waitForElementWithSelector(dbg, ".cm-content .paused-line");
+
   const newLastLine2 = getLastVisibleLine();
   is(newLastLine2, 55);
-  ok(
+  /*ok(
     !isScrolledPositionVisible(dbg, newLastLine2),
     "The new last line is partially visible and considered as hidden"
-  );
+  );*/
   ok(
     isScrolledPositionVisible(dbg, newLastLine2 - 1),
     "The line before is visible"
@@ -223,8 +226,8 @@ add_task(async function testIsPositionVisible() {
   const firstLine2 = getFirstVisibleLine();
   is(firstLine2, 45);
   ok(
-    isScrolledPositionVisible(dbg, firstLine2),
-    "The new first line is visible"
+    isScrolledPositionVisible(dbg, firstLine2 + 1),
+    "The next line of the new first line is visible"
   );
   ok(
     !isScrolledPositionVisible(dbg, firstLine2 - 1),

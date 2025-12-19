@@ -6,14 +6,7 @@
 
 #include "mozilla/dom/PushSubscription.h"
 
-#include "nsGlobalWindowInner.h"
-#include "nsIPushService.h"
-#include "nsIScriptObjectPrincipal.h"
-#include "nsServiceManagerUtils.h"
-
 #include "mozilla/Base64.h"
-#include "mozilla/Unused.h"
-
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/PromiseWorkerProxy.h"
 #include "mozilla/dom/PushSubscriptionOptions.h"
@@ -22,6 +15,10 @@
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/dom/WorkerScope.h"
+#include "nsGlobalWindowInner.h"
+#include "nsIPushService.h"
+#include "nsIScriptObjectPrincipal.h"
+#include "nsServiceManagerUtils.h"
 
 namespace mozilla::dom {
 
@@ -291,7 +288,7 @@ already_AddRefed<Promise> PushSubscription::Unsubscribe(ErrorResult& aRv) {
   }
 
   RefPtr<UnsubscribeResultCallback> callback = new UnsubscribeResultCallback(p);
-  Unused << NS_WARN_IF(NS_FAILED(service->Unsubscribe(
+  (void)NS_WARN_IF(NS_FAILED(service->Unsubscribe(
       mScope, nsGlobalWindowInner::Cast(window)->GetClientPrincipal(),
       callback)));
 

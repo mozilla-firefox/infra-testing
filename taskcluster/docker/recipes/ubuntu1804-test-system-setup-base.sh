@@ -11,14 +11,12 @@ sed -i /APT::Install-Recommends/d /etc/apt/apt.conf.d/99taskcluster
 # build a list of packages to be installed nad call it in one go.
 apt_packages=()
 
-apt_packages+=('autoconf2.13')
 apt_packages+=('bluez-cups')
 apt_packages+=('build-essential')
 apt_packages+=('ca-certificates')
 apt_packages+=('ccache')
 apt_packages+=('compiz')
 apt_packages+=('curl')
-apt_packages+=('ffmpeg')
 apt_packages+=('fontconfig')
 apt_packages+=('fonts-kacst')
 apt_packages+=('fonts-kacst-one')

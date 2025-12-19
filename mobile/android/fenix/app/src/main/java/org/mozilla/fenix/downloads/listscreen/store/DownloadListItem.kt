@@ -5,8 +5,8 @@
 package org.mozilla.fenix.downloads.listscreen.store
 
 import androidx.annotation.DrawableRes
+import androidx.annotation.FloatRange
 import androidx.annotation.StringRes
-import mozilla.components.browser.state.state.content.DownloadState
 import org.mozilla.fenix.R
 
 /**
@@ -21,35 +21,29 @@ sealed interface DownloadListItem
  * @property url The full url to the content that should be downloaded
  * @property fileName File name of the download item
  * @property filePath Full path of the download item
- * @property formattedSize The formatted size of the download item
  * @property displayedShortUrl The shortened url of the download item
  * @property contentType The type of file the download is
- * @property status The status that represents every state that a download can be in
- * @property createdTime The time period the file was downloaded in
+ * @property status The download status of the item
+ * @property timeCategory The time period the file was downloaded in
+ * @property description The description of the file item on the downloads screen
  */
 data class FileItem(
     val id: String,
     val url: String,
     val fileName: String?,
     val filePath: String,
-    val formattedSize: String,
     val displayedShortUrl: String,
     val contentType: String?,
-    val status: DownloadState.Status,
-    val createdTime: CreatedTime,
+    val status: Status,
+    val timeCategory: TimeCategory,
+    val description: String,
 ) : DownloadListItem {
-
-    /**
-     * A concise description that combines the `formattedSize` and
-     * the base domain of the `url` in the format "formattedSize • baseDomainUrl".
-     */
-    val description = "$formattedSize • $displayedShortUrl"
 
     /**
      * The icon resource ID associated with this [FileItem].
      */
     @DrawableRes
-    val icon = getIcon()
+    val icon: Int = getIcon()
 
     /**
      * The content type filter based on the [contentType] of the [FileItem]
@@ -71,7 +65,7 @@ data class FileItem(
      * @property predicate The predicate for the content type filter
      */
     enum class ContentTypeFilter(
-        @StringRes val stringRes: Int,
+        @param:StringRes val stringRes: Int,
         val predicate: (String?) -> Boolean,
     ) {
         All(
@@ -126,23 +120,69 @@ data class FileItem(
             val interestingContentTypes = entries - All
         }
     }
+
+    /**
+     * The download status of the item.
+     */
+    sealed interface Status {
+
+        /**
+         * Indicates that the download is in the first state after creation but not yet [Downloading].
+         */
+        data object Initiated : Status
+
+        /**
+         * Indicates that an [Initiated] download is now actively being downloaded.
+         */
+        data class Downloading(
+            @param:FloatRange(from = 0.0, to = 1.0) val progress: Float?,
+        ) : Status
+
+        /**
+         * Indicates that the download that has been [Downloading] has been paused.
+         */
+        data class Paused(
+            @param:FloatRange(from = 0.0, to = 1.0) val progress: Float?,
+        ) : Status
+
+        /**
+         * Indicates that the download that has been [Downloading] has been cancelled.
+         */
+        data object Cancelled : Status
+
+        /**
+         * Indicates that the download that has been [Downloading] has moved to failed because
+         * something unexpected has happened.
+         */
+        data object Failed : Status
+
+        /**
+         * Indicates that the [Downloading] download has been completed.
+         */
+        data object Completed : Status
+    }
 }
 
 /**
  * Class representing a downloads section header
  *
- * @property createdTime The time period the header represents
+ * @property timeCategory The time period the header represents
  */
 data class HeaderItem(
-    val createdTime: CreatedTime,
+    val timeCategory: TimeCategory,
 ) : DownloadListItem
 
 /**
  * Enum class representing the time period used to group download items
  */
-enum class CreatedTime(
-    @StringRes val stringRes: Int,
+enum class TimeCategory(
+    @param:StringRes val stringRes: Int,
 ) {
+    /**
+     * Represents a download that is in progress
+     */
+    IN_PROGRESS(R.string.download_header_in_progress),
+
     /**
      * Represents the current day
      */

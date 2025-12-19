@@ -4,33 +4,37 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/ShadowRoot.h"
-#include "mozilla/dom/DocumentFragment.h"
+
 #include "ChildIterator.h"
-#include "nsContentUtils.h"
-#include "nsINode.h"
-#include "nsWindowSizes.h"
+#include "mozilla/DeclarationBlock.h"
+#include "mozilla/EventDispatcher.h"
+#include "mozilla/GlobalStyleSheetCache.h"
+#include "mozilla/IdentifierMapEntry.h"
+#include "mozilla/PresShell.h"
+#include "mozilla/PresShellInlines.h"
+#include "mozilla/ScopeExit.h"
+#include "mozilla/ServoBindings.h"
+#include "mozilla/ServoStyleRuleMap.h"
+#include "mozilla/StyleSheet.h"
+#include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/DirectionalityUtils.h"
+#include "mozilla/dom/DocumentFragment.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/ElementBinding.h"
 #include "mozilla/dom/HTMLDetailsElement.h"
 #include "mozilla/dom/HTMLSlotElement.h"
 #include "mozilla/dom/HTMLSummaryElement.h"
 #include "mozilla/dom/MutationObservers.h"
+#include "mozilla/dom/StyleSheetList.h"
 #include "mozilla/dom/Text.h"
 #include "mozilla/dom/TreeOrderedArrayInlines.h"
 #include "mozilla/dom/TrustedTypeUtils.h"
 #include "mozilla/dom/TrustedTypesConstants.h"
 #include "mozilla/dom/UnbindContext.h"
-#include "mozilla/EventDispatcher.h"
-#include "mozilla/IdentifierMapEntry.h"
-#include "mozilla/PresShell.h"
-#include "mozilla/PresShellInlines.h"
-#include "mozilla/ScopeExit.h"
-#include "mozilla/ServoStyleRuleMap.h"
-#include "mozilla/StyleSheet.h"
-#include "mozilla/dom/StyleSheetList.h"
+#include "nsContentUtils.h"
+#include "nsINode.h"
+#include "nsWindowSizes.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -67,7 +71,8 @@ ShadowRoot::ShadowRoot(Element* aElement, ShadowRootMode aMode,
       mIsAvailableToElementInternals(false),
       mIsDeclarative(aDeclarative),
       mIsClonable(aIsClonable),
-      mIsSerializable(aIsSerializable) {
+      mIsSerializable(aIsSerializable),
+      mReferenceTarget(nsGkAtoms::_empty) {
   // nsINode.h relies on this.
   MOZ_ASSERT(static_cast<nsINode*>(this) == reinterpret_cast<nsINode*>(this));
   MOZ_ASSERT(static_cast<nsIContent*>(this) ==
@@ -147,16 +152,6 @@ void ShadowRoot::CloneInternalDataFrom(ShadowRoot* aOther) {
     SetIsUAWidget();
   }
 
-  size_t sheetCount = aOther->SheetCount();
-  for (size_t i = 0; i < sheetCount; ++i) {
-    StyleSheet* sheet = aOther->SheetAt(i);
-    if (sheet->IsApplicable()) {
-      RefPtr<StyleSheet> clonedSheet = sheet->Clone(nullptr, this);
-      if (clonedSheet) {
-        AppendStyleSheet(*clonedSheet.get());
-      }
-    }
-  }
   CloneAdoptedSheetsFrom(*aOther);
 }
 
@@ -189,7 +184,7 @@ void ShadowRoot::Unbind() {
     OwnerDoc()->RemoveComposedDocShadowRoot(*this);
   }
 
-  UnbindContext context(*this);
+  UnbindContext context(*this, /* aBatchState = */ nullptr);
   for (nsIContent* child = GetFirstChild(); child;
        child = child->GetNextSibling()) {
     child->UnbindFromTree(context);
@@ -214,6 +209,13 @@ void ShadowRoot::InvalidateStyleAndLayoutOnSubtree(Element* aElement) {
   MOZ_ASSERT(aElement);
   Document* doc = GetComposedDoc();
   if (!doc) {
+    return;
+  }
+
+  if (!aElement->IsInComposedDoc()) {
+    // If RemoveSlot is called from UnbindFromTree while we're moving
+    // (moveBefore) the slot elsewhere, invalidating styles and layout tree
+    // is done explicitly elsewhere.
     return;
   }
 
@@ -409,12 +411,15 @@ void ShadowRoot::RuleRemoved(StyleSheet& aSheet, css::Rule& aRule) {
   ApplicableRulesChanged();
 }
 
-void ShadowRoot::RuleChanged(StyleSheet& aSheet, css::Rule*,
-                             const StyleRuleChange&) {
+void ShadowRoot::RuleChanged(StyleSheet& aSheet, css::Rule* aRule,
+                             const StyleRuleChange& aChange) {
   if (!aSheet.IsApplicable()) {
     return;
   }
-
+  if (mStyleRuleMap && aChange.mOldBlock != aChange.mNewBlock) {
+    mStyleRuleMap->RuleDeclarationsChanged(*aRule, aChange.mOldBlock->Raw(),
+                                           aChange.mNewBlock->Raw());
+  }
   MOZ_ASSERT(mServoStyles);
   Servo_AuthorStyles_ForceDirty(mServoStyles.get());
   ApplicableRulesChanged();
@@ -546,6 +551,15 @@ void ShadowRoot::StyleSheetApplicableStateChanged(StyleSheet& aSheet) {
     Servo_AuthorStyles_RemoveStyleSheet(mServoStyles.get(), &aSheet);
     ApplicableRulesChanged();
   }
+}
+
+void ShadowRoot::AppendBuiltInStyleSheet(BuiltInStyleSheet aSheet) {
+  auto* cache = GlobalStyleSheetCache::Singleton();
+  // NOTE(emilio): It's important to Clone() the stylesheet to avoid leaking,
+  // since the built-in sheet is kept alive forever, and AppendStyleSheet will
+  // set the associated global of the stylesheet.
+  RefPtr sheet = cache->BuiltInSheet(aSheet)->Clone(nullptr, nullptr);
+  AppendStyleSheet(*sheet);
 }
 
 void ShadowRoot::RemoveSheetFromStyles(StyleSheet& aSheet) {
@@ -810,7 +824,7 @@ nsINode* ShadowRoot::CreateElementAndAppendChildAt(nsINode& aParentNode,
   return aParentNode.AppendChild(*node, rv);
 }
 
-void ShadowRoot::MaybeUnslotHostChild(nsIContent& aChild) {
+void ShadowRoot::MaybeUnslotHostChild(nsIContent& aChild, bool aInBatch) {
   // Need to null-check the host because we may be unlinked already.
   MOZ_ASSERT(!GetHost() || aChild.GetParent() == GetHost());
 
@@ -823,15 +837,19 @@ void ShadowRoot::MaybeUnslotHostChild(nsIContent& aChild) {
                         "How did aChild end up assigned to a slot?");
   // If the slot is going to start showing fallback content, we need to tell
   // layout about it.
-  if (slot->AssignedNodes().Length() == 1 && slot->HasChildren()) {
+  if ((aInBatch || slot->AssignedNodes().Length() == 1) &&
+      slot->HasChildren()) {
     InvalidateStyleAndLayoutOnSubtree(slot);
   }
 
-  slot->RemoveAssignedNode(aChild);
   slot->EnqueueSlotChangeEvent();
-
-  if (mIsDetailsShadowTree && aChild.IsHTMLElement(nsGkAtoms::summary)) {
-    MaybeReassignMainSummary(SummaryChangeReason::Deletion);
+  if (aInBatch) {
+    slot->ClearAssignedNodes();
+  } else {
+    slot->RemoveAssignedNode(aChild);
+    if (mIsDetailsShadowTree && aChild.IsHTMLElement(nsGkAtoms::summary)) {
+      MaybeReassignMainSummary(SummaryChangeReason::Deletion);
+    }
   }
 }
 
@@ -884,10 +902,19 @@ nsresult ShadowRoot::Clone(dom::NodeInfo* aNodeInfo, nsINode** aResult) const {
   return NS_ERROR_DOM_NOT_SUPPORTED_ERR;
 }
 
+void ShadowRoot::SetHTML(const nsAString& aHTML, const SetHTMLOptions& aOptions,
+                         ErrorResult& aError) {
+  RefPtr<Element> host = GetHost();
+  nsContentUtils::SetHTML(this, host, aHTML, aOptions, aError);
+}
+
 void ShadowRoot::SetHTMLUnsafe(const TrustedHTMLOrString& aHTML,
+                               const SetHTMLUnsafeOptions& aOptions,
+                               nsIPrincipal* aSubjectPrincipal,
                                ErrorResult& aError) {
   RefPtr<Element> host = GetHost();
-  nsContentUtils::SetHTMLUnsafe(this, host, aHTML, true /*aIsShadowRoot*/,
+  nsContentUtils::SetHTMLUnsafe(this, host, aHTML, aOptions,
+                                true /*aIsShadowRoot*/, aSubjectPrincipal,
                                 aError);
 }
 
@@ -897,14 +924,15 @@ void ShadowRoot::GetInnerHTML(
 }
 
 MOZ_CAN_RUN_SCRIPT void ShadowRoot::SetInnerHTML(
-    const TrustedHTMLOrNullIsEmptyString& aInnerHTML, ErrorResult& aError) {
+    const TrustedHTMLOrNullIsEmptyString& aInnerHTML,
+    nsIPrincipal* aSubjectPrincipal, ErrorResult& aError) {
   constexpr nsLiteralString sink = u"ShadowRoot innerHTML"_ns;
 
   Maybe<nsAutoString> compliantStringHolder;
   const nsAString* compliantString =
       TrustedTypeUtils::GetTrustedTypesCompliantString(
           aInnerHTML, sink, kTrustedTypesOnlySinkGroup, *this,
-          compliantStringHolder, aError);
+          aSubjectPrincipal, compliantStringHolder, aError);
   if (aError.Failed()) {
     return;
   }
@@ -916,4 +944,8 @@ void ShadowRoot::GetHTML(const GetHTMLOptions& aOptions, nsAString& aResult) {
   nsContentUtils::SerializeNodeToMarkup<SerializeShadowRoots::Yes>(
       this, true, aResult, aOptions.mSerializableShadowRoots,
       aOptions.mShadowRoots);
+}
+void ShadowRoot::SetReferenceTarget(RefPtr<nsAtom> aTarget) {
+  MOZ_ASSERT(aTarget);
+  mReferenceTarget = std::move(aTarget);
 }

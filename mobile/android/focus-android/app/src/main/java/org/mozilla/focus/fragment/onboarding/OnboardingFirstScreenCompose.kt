@@ -4,6 +4,7 @@
 
 package org.mozilla.focus.fragment.onboarding
 
+import android.content.res.Configuration
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -12,14 +13,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.Button
-import androidx.compose.material.ButtonDefaults
-import androidx.compose.material.Text
-import androidx.compose.material.minimumInteractiveComponentSize
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -32,10 +33,8 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.withLink
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import mozilla.components.support.utils.ext.isLandscape
 import mozilla.components.ui.colors.PhotonColors
 import org.mozilla.focus.R
 import org.mozilla.focus.ui.theme.FocusTheme
@@ -44,6 +43,7 @@ import org.mozilla.focus.ui.theme.gradientBackground
 
 private const val TOP_SPACER_WEIGHT = 1f
 private const val MIDDLE_SPACER_WEIGHT = 0.7f
+private const val URL_TAG = "URL_TAG"
 
 @Composable
 @Preview
@@ -77,11 +77,11 @@ fun OnBoardingFirstScreenCompose(
 
         Image(
             painter = painterResource(R.drawable.onboarding_logo),
-            contentDescription = LocalContext.current.getString(R.string.app_name),
+            contentDescription = stringResource(R.string.app_name),
             modifier = Modifier
                 .size(150.dp, 150.dp)
                 .then(
-                    if (LocalContext.current.isLandscape()) {
+                    if (LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE) {
                         Modifier.weight(1f, false)
                     } else {
                         Modifier
@@ -95,19 +95,19 @@ fun OnBoardingFirstScreenCompose(
 
         LinkText(
             text = stringResource(
-                R.string.onboarding_first_screen_terms_of_use_text,
-                stringResource(R.string.onboarding_first_screen_terms_of_use_link),
+                R.string.onboarding_first_screen_terms_of_use_text_2,
+                stringResource(R.string.onboarding_first_screen_terms_of_use_link_2),
             ),
-            linkText = stringResource(R.string.onboarding_first_screen_terms_of_use_link),
+            linkText = stringResource(R.string.onboarding_first_screen_terms_of_use_link_2),
             onClick = termsOfServiceOnClick,
         )
 
         LinkText(
             text = stringResource(
-                R.string.onboarding_first_screen_privacy_notice_text,
-                stringResource(R.string.onboarding_first_screen_privacy_notice_link),
+                R.string.onboarding_first_screen_privacy_notice_text_2,
+                stringResource(R.string.onboarding_first_screen_privacy_notice_link_2),
             ),
-            linkText = stringResource(R.string.onboarding_first_screen_privacy_notice_link),
+            linkText = stringResource(R.string.onboarding_first_screen_privacy_notice_link_2),
             onClick = privacyNoticeOnClick,
         )
 
@@ -140,15 +140,20 @@ private fun TitleContent() {
 @Composable
 private fun LinkText(text: String, linkText: String, onClick: () -> Unit) {
     val textWithClickableLink = buildAnnotatedString {
-        val textWithoutLink =
-            text.replace(oldValue = linkText, newValue = "", ignoreCase = true)
-        append(textWithoutLink)
-        val link =
-            LinkAnnotation.Url(
-                "",
-                TextLinkStyles(SpanStyle(color = colorResource(R.color.preference_learn_more_link))),
-            ) { onClick() }
-        withLink(link) { append(linkText) }
+        append(text)
+
+        val textWithLink = LinkAnnotation.Clickable(
+            tag = URL_TAG,
+            styles = TextLinkStyles(SpanStyle(color = colorResource(R.color.preference_learn_more_link))),
+            linkInteractionListener = {
+                onClick()
+            },
+        )
+
+        text.indexOf(linkText).takeIf { it >= 0 }?.let { startIndex ->
+            val endIndex = startIndex + linkText.length
+            addLink(textWithLink, startIndex, endIndex)
+        }
     }
 
     val linkAvailableText = stringResource(id = R.string.a11y_link_available)
@@ -180,15 +185,11 @@ private fun ComponentGoToOnBoardingSecondScreen(goToOnBoardingSecondScreen: () -
             .padding(top = 16.dp, start = 16.dp, end = 16.dp, bottom = 74.dp)
             .fillMaxWidth(),
         colors = ButtonDefaults.textButtonColors(
-            backgroundColor = colorResource(R.color.onboardingButtonOneColor),
+            containerColor = colorResource(R.color.onboardingButtonOneColor),
         ),
     ) {
         Text(
-            text = AnnotatedString(
-                LocalContext.current.resources.getString(
-                    R.string.onboarding_first_screen_button_agree_and_continue,
-                ),
-            ),
+            text = AnnotatedString(stringResource(id = R.string.onboarding_first_screen_button_agree_and_continue_2)),
             color = PhotonColors.White,
         )
     }

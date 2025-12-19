@@ -18,7 +18,7 @@ namespace jit {
 // Possible register allocators which may be used.
 enum IonRegisterAllocator {
   RegisterAllocator_Backtracking,
-  RegisterAllocator_Testbed,
+  RegisterAllocator_Simple,
 };
 
 // Which register to use as base register to access stack slots: frame pointer,
@@ -37,8 +37,8 @@ static inline mozilla::Maybe<IonRegisterAllocator> LookupRegisterAllocator(
   if (!strcmp(name, "backtracking")) {
     return mozilla::Some(RegisterAllocator_Backtracking);
   }
-  if (!strcmp(name, "testbed")) {
-    return mozilla::Some(RegisterAllocator_Testbed);
+  if (!strcmp(name, "simple")) {
+    return mozilla::Some(RegisterAllocator_Simple);
   }
   return mozilla::Nothing();
 }
@@ -70,6 +70,7 @@ struct DefaultJitOptions {
   bool disableRedundantShapeGuards;
   bool disableRedundantGCBarriers;
   bool disableBailoutLoopCheck;
+  bool disableObjectKeysScalarReplacement;
 #ifdef ENABLE_PORTABLE_BASELINE_INTERP
   bool portableBaselineInterpreter;
 #endif
@@ -126,7 +127,6 @@ struct DefaultJitOptions {
   uint32_t ionMaxLocalsAndArgsMainThread;
   uint32_t wasmBatchBaselineThreshold;
   uint32_t wasmBatchIonThreshold;
-  mozilla::Maybe<IonRegisterAllocator> forcedRegisterAllocator;
 #ifdef ENABLE_JS_AOT_ICS
   bool enableAOTICs;
   bool enableAOTICEnforce;

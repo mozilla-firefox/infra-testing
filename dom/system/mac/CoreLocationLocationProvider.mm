@@ -4,34 +4,31 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsCOMPtr.h"
-#include "GeolocationPosition.h"
-#include "nsIConsoleService.h"
-#include "nsServiceManagerUtils.h"
 #include "CoreLocationLocationProvider.h"
-#include "prtime.h"
+#include "GeolocationPosition.h"
+#include "MLSFallback.h"
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/GeolocationPositionErrorBinding.h"
 #include "mozilla/glean/DomGeolocationMetrics.h"
-#include "MLSFallback.h"
+#include "nsCOMPtr.h"
+#include "nsIConsoleService.h"
+#include "nsServiceManagerUtils.h"
+#include "prtime.h"
 
 #include <CoreLocation/CLError.h>
 #include <CoreLocation/CLLocation.h>
 #include <CoreLocation/CLLocationManager.h>
 #include <CoreLocation/CLLocationManagerDelegate.h>
 
-#include <objc/objc.h>
 #include <objc/objc-runtime.h>
+#include <objc/objc.h>
 
 #include "nsObjCExceptions.h"
 
 using namespace mozilla;
 
-MOZ_RUNINIT static const CLLocationAccuracy kHIGH_ACCURACY =
-    kCLLocationAccuracyBest;
-MOZ_RUNINIT static const CLLocationAccuracy kDEFAULT_ACCURACY =
-    kCLLocationAccuracyNearestTenMeters;
+#define kDefaultAccuracy kCLLocationAccuracyNearestTenMeters
 
 @interface LocationDelegate : NSObject <CLLocationManagerDelegate> {
   CoreLocationLocationProvider* mProvider;
@@ -151,7 +148,7 @@ class CoreLocationObjects {
     mLocationDelegate = [[LocationDelegate alloc] init:aProvider];
     NS_ENSURE_TRUE(mLocationDelegate, NS_ERROR_NOT_AVAILABLE);
 
-    mLocationManager.desiredAccuracy = kDEFAULT_ACCURACY;
+    mLocationManager.desiredAccuracy = kDefaultAccuracy;
     mLocationManager.delegate = mLocationDelegate;
 
     return NS_OK;
@@ -227,7 +224,7 @@ CoreLocationLocationProvider::SetHighAccuracy(bool aEnable) {
   NS_ENSURE_STATE(mCLObjects);
 
   mCLObjects->mLocationManager.desiredAccuracy =
-      (aEnable ? kHIGH_ACCURACY : kDEFAULT_ACCURACY);
+      aEnable ? kCLLocationAccuracyBest : kDefaultAccuracy;
 
   return NS_OK;
 }

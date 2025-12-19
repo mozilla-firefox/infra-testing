@@ -3,6 +3,7 @@
 # file, # You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import logging
+import shutil
 import sys
 
 from mach.decorators import Command, CommandArgument, SubCommand
@@ -208,15 +209,23 @@ Please commit or stash these changes before vendoring, or re-run with `--ignore-
     "--issues-json",
     help="Path to a code-review issues.json file to write out",
 )
+@CommandArgument(
+    "--vcs-diff",
+    help="Path to a diff. file to write out, if there are uncommitted changes present after running",
+)
 def vendor_rust(command_context, **kwargs):
     from mozbuild.vendor.vendor_rust import VendorRust
 
     vendor_command = command_context._spawn(VendorRust)
     issues_json = kwargs.pop("issues_json", None)
+    vcs_diff = kwargs.pop("vcs_diff", None)
     ok = vendor_command.vendor(**kwargs)
     if issues_json:
         with open(issues_json, "w") as fh:
             fh.write(vendor_command.serialize_issues_json())
+    if vcs_diff:
+        with open(vcs_diff, "w", encoding="utf-8", newline="\n") as fh:
+            shutil.copyfileobj(vendor_command.generate_diff_stream(), fh)
     if ok:
         sys.exit(0)
     else:
@@ -234,7 +243,7 @@ def vendor_rust(command_context, **kwargs):
     "Some extra files like docs and tests will automatically be excluded."
     "Downloads the packages listed in third_party/python/pyproject.toml, along "
     "with their transitive dependencies, and adds them to version control.",
-    virtualenv_name="vendor",
+    virtualenv_name="uv",
 )
 @CommandArgument(
     "--keep-extra-files",
@@ -279,7 +288,7 @@ def vendor_python(
 ):
     from mozbuild.vendor.vendor_python import VendorPython
 
-    if upgrade or upgrade_package and add or remove:
+    if (upgrade or upgrade_package) and (add or remove):
         command_context.log(
             logging.ERROR,
             "vendor-python-upgrade-and-add-or-remove",
@@ -289,6 +298,17 @@ def vendor_python(
         return 1
 
     vendor_command = command_context._spawn(VendorPython)
-    vendor_command.vendor(
+    changes_made = vendor_command.vendor(
         keep_extra_files, add, remove, upgrade, upgrade_package, force
+    )
+
+    if not changes_made:
+        return 0
+
+    print(
+        "\nVendoring python dependencies finished successfully."
+        "\nPlease review and update any affected <site>.txt files, then run "
+        '"./mach generate-python-lockfiles" to verify no incompatibilities were introduced.'
+        "\n\nNote: If there are incompatibilities, it may be useful to re-run with the "
+        '"--keep-lockfiles" flag and inspect the lockfiles manually to determine the culprit(s).'
     )

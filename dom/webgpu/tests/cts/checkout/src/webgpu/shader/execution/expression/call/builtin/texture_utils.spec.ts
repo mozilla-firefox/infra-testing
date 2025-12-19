@@ -5,6 +5,7 @@ Tests for texture_utils.ts
 import { makeTestGroup } from '../../../../../../common/framework/test_group.js';
 import { assert } from '../../../../../../common/util/util.js';
 import {
+  getTextureFormatType,
   isTextureFormatPossiblyMultisampled,
   kDepthStencilFormats,
 } from '../../../../../format_info.js';
@@ -22,7 +23,6 @@ import {
   convertPerTexelComponentToResultFormat,
   createTextureWithRandomDataAndGetTexels,
   graphWeights,
-  isSupportedViewFormatCombo,
   makeRandomDepthComparisonTexelGenerator,
   queryMipLevelMixWeightsForDevice,
   readTextureToTexelViews,
@@ -47,12 +47,12 @@ g.test('createTextureWithRandomDataAndGetTexels_with_generator')
     u
       .combine('format', kDepthStencilFormats)
       .combine('viewDimension', ['2d', '2d-array', 'cube', 'cube-array'] as const)
-      .filter(t => isSupportedViewFormatCombo(t.format, t.viewDimension))
   )
   .fn(async t => {
     const { format, viewDimension } = t.params;
     t.skipIfTextureFormatNotSupported(format);
     t.skipIfTextureViewDimensionNotSupported(viewDimension);
+    t.skipIfTextureFormatAndViewDimensionNotCompatible(format, viewDimension);
     // choose an odd size (9) so we're more likely to test alignment issue.
     const size = chooseTextureSize({ minSize: 9, minBlocks: 4, format, viewDimension });
     t.debug(`size: ${size.map(v => v.toString()).join(', ')}`);
@@ -86,7 +86,6 @@ g.test('readTextureToTexelViews')
         { srcFormat: 'stencil8', texelViewFormat: 'stencil8' },
       ] as const)
       .combine('viewDimension', ['1d', '2d', '2d-array', '3d', 'cube', 'cube-array'] as const)
-      .filter(t => isSupportedViewFormatCombo(t.srcFormat, t.viewDimension))
       .combine('sampleCount', [1, 4] as const)
       .unless(
         t =>
@@ -97,6 +96,7 @@ g.test('readTextureToTexelViews')
   .fn(async t => {
     const { srcFormat, texelViewFormat, viewDimension, sampleCount } = t.params;
     t.skipIfTextureViewDimensionNotSupported(viewDimension);
+    t.skipIfTextureFormatAndViewDimensionNotCompatible(srcFormat, viewDimension);
     if (sampleCount > 1) {
       t.skipIfTextureFormatNotMultisampled(srcFormat);
     }
@@ -108,7 +108,12 @@ g.test('readTextureToTexelViews')
       dimension: getTextureDimensionFromView(viewDimension),
       size,
       mipLevelCount: viewDimension === '1d' || sampleCount > 1 ? 1 : 3,
-      usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING,
+      usage:
+        sampleCount > 1
+          ? GPUTextureUsage.COPY_DST |
+            GPUTextureUsage.TEXTURE_BINDING |
+            GPUTextureUsage.RENDER_ATTACHMENT
+          : GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING,
       sampleCount,
       ...(t.isCompatibility && { textureBindingViewDimension: viewDimension }),
     };
@@ -119,6 +124,16 @@ g.test('readTextureToTexelViews')
     const actualTexelViews = await readTextureToTexelViews(t, texture, descriptor, texelViewFormat);
 
     assert(actualTexelViews.length === expectedTexelViews.length, 'num mip levels match');
+
+    const type = getTextureFormatType(srcFormat, 'all');
+    const textureType =
+      type === 'depth'
+        ? 'texture_depth_2d'
+        : type === 'uint'
+        ? 'texture_2d<u32>'
+        : type === 'sint'
+        ? 'texture_2d<i32>'
+        : 'texture_2d<f32>';
 
     const errors = [];
     for (let mipLevel = 0; mipLevel < actualTexelViews.length; ++mipLevel) {
@@ -151,6 +166,9 @@ g.test('readTextureToTexelViews')
               const maxFractionalDiff = 0;
               if (
                 !texelsApproximatelyEqual(
+                  t.device,
+                  'textureLoad',
+                  textureType,
                   actualRGBA,
                   actualMipLevelTexelView.format,
                   expectedRGBA,

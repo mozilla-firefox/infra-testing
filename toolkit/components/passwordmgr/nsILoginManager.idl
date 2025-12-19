@@ -32,19 +32,6 @@ interface nsILoginManager : nsISupports {
   readonly attribute Promise initializationPromise;
 
   /**
-   * Store a new login in the login manager.
-   *
-   * @param aLogin
-   *        The login to be added.
-   * @return a clone of the login info with the guid set (even if it was not provided)
-   *
-   * Default values for the login's nsILoginMetaInfo properties will be
-   * created. However, if the caller specifies non-default values, they will
-   * be used instead.
-   */
-  nsILoginInfo addLogin(in nsILoginInfo aLogin);
-
-  /**
    * Like addLogin, but asynchronous.
    *
    * @param aLogin
@@ -84,6 +71,7 @@ interface nsILoginManager : nsISupports {
 
   /**
    * Modify an existing login in the login manager.
+   * Deprecated: use ModifyLoginAsync instead.
    *
    * @param oldLogin
    *        The login to be modified.
@@ -102,6 +90,29 @@ interface nsILoginManager : nsISupports {
    * login's timesUsed property will be incremented by the item's value.
    */
   void modifyLogin(in nsILoginInfo oldLogin, in nsISupports newLoginData);
+
+  /**
+   *Like modifyLogin, but asynchronous.
+   *
+   * Modify an existing login in the login manager.
+   *
+   * @param oldLogin
+   *        The login to be modified.
+   * @param newLoginData
+   *        The new login values (either a nsILoginInfo or nsIProperyBag)
+   *
+   * If newLoginData is a nsILoginInfo, all of the old login's nsILoginInfo
+   * properties are changed to the values from newLoginData (but the old
+   * login's nsILoginMetaInfo properties are unmodified).
+   *
+   * If newLoginData is a nsIPropertyBag, only the specified properties
+   * will be changed. The nsILoginMetaInfo properties of oldLogin can be
+   * changed in this manner.
+   *
+   * If the propertybag contains an item named "timesUsedIncrement", the
+   * login's timesUsed property will be incremented by the item's value.
+   */
+  Promise modifyLoginAsync(in nsILoginInfo oldLogin, in nsISupports newLoginData);
 
   /**
    * Record that the password of a saved login was used (e.g. submitted or copied).
@@ -162,6 +173,13 @@ interface nsILoginManager : nsISupports {
    *
    */
   void getAllLoginsWithCallback(in nsILoginSearchCallback aCallback);
+
+  /**
+   * For migration purposes, asynchronously reencrypt all logins in the
+   * background. If a login is updated externally during that reencryption, that
+   * update will take priority and will not be overwritten.
+   */
+  Promise reencryptAllLogins();
 
   /**
    * Obtain a list of all origins for which password saving is disabled.

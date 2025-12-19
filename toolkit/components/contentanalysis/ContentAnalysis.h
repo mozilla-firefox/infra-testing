@@ -6,11 +6,11 @@
 #ifndef mozilla_contentanalysis_h
 #define mozilla_contentanalysis_h
 
-#include "mozilla/MoveOnlyFunction.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/MaybeDiscarded.h"
 #include "mozilla/dom/Promise.h"
+#include "mozilla/glean/ContentanalysisMetrics.h"
 #include "mozilla/media/MediaUtils.h"
 #include "mozilla/WeakPtr.h"
 #include "nsIClipboard.h"
@@ -24,7 +24,6 @@
 
 #include <atomic>
 #include <regex>
-#include <string>
 
 #ifdef XP_WIN
 #  include <windows.h>
@@ -34,6 +33,7 @@ class nsBaseClipboard;
 class nsIPrincipal;
 class nsIPrintSettings;
 class ContentAnalysisTest;
+class ContentAnalysisTelemetryTest;
 
 namespace mozilla::dom {
 class CanonicalBrowsingContext;
@@ -103,10 +103,13 @@ class ContentAnalysisRequest final : public nsIContentAnalysisRequest {
   static nsresult GetFileDigest(const nsAString& aFilePath,
                                 nsCString& aDigestString);
 
+  static RefPtr<ContentAnalysisRequest> Clone(
+      nsIContentAnalysisRequest* aRequest);
+
  private:
   virtual ~ContentAnalysisRequest();
+  ContentAnalysisRequest() = default;
 
-  // Remove unneeded copy constructor/assignment
   ContentAnalysisRequest(const ContentAnalysisRequest&) = delete;
   ContentAnalysisRequest& operator=(ContentAnalysisRequest&) = delete;
 
@@ -152,9 +155,9 @@ class ContentAnalysisRequest final : public nsIContentAnalysisRequest {
   // Type of text to display, see nsIContentAnalysisRequest for values
   OperationType mOperationTypeForDisplay;
 
-  // String to display if mOperationTypeForDisplay is
-  // OPERATION_CUSTOMDISPLAYSTRING
-  nsString mOperationDisplayString;
+  // File name to display if mOperationTypeForDisplay is
+  // eUpload or eDownload.
+  nsString mFileNameForDisplay;
 
   // The name of the printer being printed to
   nsString mPrinterName;
@@ -179,6 +182,8 @@ class ContentAnalysisRequest final : public nsIContentAnalysisRequest {
   bool mTestOnlyAlwaysSubmitToAgent = false;
 
   friend class ::ContentAnalysisTest;
+  template <typename T, typename... Args>
+  friend RefPtr<T> mozilla::MakeRefPtr(Args&&...);
 };
 
 #define CONTENTANALYSIS_IID \
@@ -189,7 +194,7 @@ class ContentAnalysis final : public nsIContentAnalysis,
                               public nsIObserver,
                               public SupportsWeakPtr {
  public:
-  NS_DECLARE_STATIC_IID_ACCESSOR(CONTENTANALYSIS_IID)
+  NS_INLINE_DECL_STATIC_IID(CONTENTANALYSIS_IID)
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSICONTENTANALYSIS
   NS_DECL_NSIOBSERVER
@@ -253,8 +258,9 @@ class ContentAnalysis final : public nsIContentAnalysis,
   // user action ID of the first request generated.
   // Note that aURI is only necessary to pass in in gtests; otherwise we'll
   // get the URI from aWindow.
-  static RefPtr<FilesAllowedPromise> CheckFilesInBatchMode(
-      nsCOMArray<nsIFile>&& aFiles, mozilla::dom::WindowGlobalParent* aWindow,
+  static RefPtr<FilesAllowedPromise> CheckUploadsInBatchMode(
+      nsCOMArray<nsIFile>&& aFiles, bool aAutoAcknowledge,
+      mozilla::dom::WindowGlobalParent* aWindow,
       nsIContentAnalysisRequest::Reason aReason, nsIURI* aURI = nullptr);
 
   static RefPtr<ContentAnalysis> GetContentAnalysisFromService();
@@ -272,6 +278,13 @@ class ContentAnalysis final : public nsIContentAnalysis,
   // These are the MIME types that Content Analysis can analyze.
   static constexpr const char* kKnownClipboardTypes[] = {
       kTextMime, kHTMLMime, kCustomTypesMime, kFileMime};
+
+  // Returns whether we are currently creating a client. Only to be called
+  // from tests.
+  bool GetCreatingClientForTest() {
+    AssertIsOnMainThread();
+    return mCreatingClient;
+  }
 
  private:
   virtual ~ContentAnalysis();
@@ -300,6 +313,7 @@ class ContentAnalysis final : public nsIContentAnalysis,
   template <typename T, typename U>
   RefPtr<MozPromise<T, nsresult, true>> CallClientWithRetry(
       StaticString aMethodName, U&& aClientCallFunc);
+  void RecordConnectionSettingsTelemetry(const nsString& clientSignature);
 
   nsresult RunAnalyzeRequestTask(
       const RefPtr<nsIContentAnalysisRequest>& aRequest, bool aAutoAcknowledge,
@@ -321,12 +335,14 @@ class ContentAnalysis final : public nsIContentAnalysis,
   static void HandleResponseFromAgent(
       content_analysis::sdk::ContentAnalysisResponse&& aResponse);
 
-  struct UserActionIdAndAutoAcknowledge final {
+  struct BasicRequestInfo final {
     nsCString mUserActionId;
+    glean::TimerId mTimerId;
+    nsCString mAnalysisTypeStr;
     bool mAutoAcknowledge;
   };
-  DataMutex<nsTHashMap<nsCString, UserActionIdAndAutoAcknowledge>>
-      mRequestTokenToUserActionIdMap;
+  DataMutex<nsTHashMap<nsCString, BasicRequestInfo>>
+      mRequestTokenToBasicRequestInfoMap;
 
   void IssueResponse(ContentAnalysisResponse* response,
                      nsCString&& aUserActionId, bool aAcknowledge,
@@ -502,13 +518,14 @@ class ContentAnalysis final : public nsIContentAnalysis,
 
   friend class ContentAnalysisResponse;
   friend class ::ContentAnalysisTest;
+  friend class ::ContentAnalysisTelemetryTest;
 };
 
-NS_DEFINE_STATIC_IID_ACCESSOR(ContentAnalysis, CONTENTANALYSIS_IID)
-
-class ContentAnalysisResponse final : public nsIContentAnalysisResponse {
+class ContentAnalysisResponse final : public nsIContentAnalysisResponse,
+                                      public nsIClassInfo {
  public:
   NS_DECL_ISUPPORTS
+  NS_DECL_NSICLASSINFO
   NS_DECL_NSICONTENTANALYSISRESULT
   NS_DECL_NSICONTENTANALYSISRESPONSE
 
@@ -516,6 +533,9 @@ class ContentAnalysisResponse final : public nsIContentAnalysisResponse {
   void DoNotAcknowledge() { mDoNotAcknowledge = true; }
   void SetCancelError(CancelError aCancelError);
   void SetIsCachedResponse() { mIsCachedResponse = true; }
+  void SetIsSyntheticResponse(bool aIsSyntheticResponse) {
+    mIsSyntheticResponse = aIsSyntheticResponse;
+  }
 
  private:
   virtual ~ContentAnalysisResponse() = default;
@@ -565,11 +585,12 @@ class ContentAnalysisResponse final : public nsIContentAnalysisResponse {
   // so any dialogs (for block/warn) should not be shown.
   bool mIsCachedResponse = false;
 
-  // Whether this is a response from an agent or one synthesized by Firefox.
+  // Whether this is a synthesizic response from Firefox (as opposed to a
+  // response from a DLP agent).
   // Synthetic responses ignore browser.contentanalysis.show_blocked_result and
   // always show a blocked result for blocked content, since there is no agent
   // that could have shown one for us.
-  bool mIsAgentResponse = false;
+  bool mIsSyntheticResponse = false;
 
   friend class ContentAnalysis;
 };

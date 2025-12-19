@@ -68,20 +68,20 @@ support-files = [
 prefs = ["network.cookie.cookieBehavior=4"]
 
 ["browser_blobURLIsolation.js"]
-skip-if = ["verify && debug && os == 'win'"]
 
 ["browser_broadcastChannel.js"]
 
 ["browser_cache.js"]
 skip-if = [
-  "verify",
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && ccov",
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && ccov",
 ]
 
 ["browser_cacheAPI.js"]
 
 ["browser_clientAuth.js"]
-skip-if = ["verify"]
+skip-if = [
+  "verify-standalone",
+]
 
 ["browser_cookieIsolation.js"]
 

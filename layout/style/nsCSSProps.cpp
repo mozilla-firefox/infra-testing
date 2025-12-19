@@ -11,33 +11,27 @@
 
 #include "nsCSSProps.h"
 
-#include "mozilla/ArrayUtils.h"
-#include "mozilla/Casting.h"
-
 #include "gfxPlatform.h"
-#include "nsLayoutUtils.h"
-#include "nsIWidget.h"
-#include "nsStyleConsts.h"  // For system widget appearance types
-
-#include "mozilla/dom/Animation.h"
-#include "mozilla/dom/AnimationEffectBinding.h"  // for PlaybackDirection
-#include "mozilla/gfx/gfxVars.h"                 // for UseWebRender
-#include "mozilla/gfx/gfxVarReceiver.h"
+#include "mozilla/ClearOnShutdown.h"
 #include "mozilla/LookAndFeel.h"  // for system colors
-
-#include "nsString.h"
-#include "nsStaticNameTable.h"
-
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StaticPtr.h"
-#include "mozilla/ClearOnShutdown.h"
+#include "mozilla/dom/Animation.h"
+#include "mozilla/dom/AnimationEffectBinding.h"  // for PlaybackDirection
+#include "mozilla/gfx/gfxVarReceiver.h"
+#include "mozilla/gfx/gfxVars.h"  // for UseWebRender
+#include "nsIWidget.h"
+#include "nsLayoutUtils.h"
+#include "nsStaticNameTable.h"
+#include "nsString.h"
+#include "nsStyleConsts.h"  // For system widget appearance types
 
 using namespace mozilla;
 
 static StaticAutoPtr<nsStaticCaseInsensitiveNameTable> gFontDescTable;
 static StaticAutoPtr<nsStaticCaseInsensitiveNameTable> gCounterDescTable;
-static StaticAutoPtr<nsTHashMap<nsCStringHashKey, nsCSSPropertyID>>
+static StaticAutoPtr<nsTHashMap<nsCStringHashKey, NonCustomCSSPropertyId>>
     gPropertyIDLNameTable;
 
 static constexpr const char* const kCSSRawFontDescs[] = {
@@ -80,17 +74,17 @@ void nsCSSProps::RecomputeEnabledState(const char* aPref, void*) {
   MOZ_RELEASE_ASSERT(NS_IsMainThread());
   DebugOnly<bool> foundPref = false;
   for (const PropertyPref* pref = kPropertyPrefTable;
-       pref->mPropID != eCSSProperty_UNKNOWN; pref++) {
+       pref->mPropId != eCSSProperty_UNKNOWN; pref++) {
     if (!aPref || !strcmp(aPref, pref->mPref)) {
       foundPref = true;
-#ifdef FUZZING
-      gPropertyEnabled[pref->mPropID] = true;
-#else
-      gPropertyEnabled[pref->mPropID] = Preferences::GetBool(pref->mPref);
-      if (pref->mPropID == eCSSProperty_backdrop_filter) {
-        gPropertyEnabled[pref->mPropID] &=
+      gPropertyEnabled[pref->mPropId] = Preferences::GetBool(pref->mPref);
+      if (pref->mPropId == eCSSProperty_backdrop_filter) {
+        gPropertyEnabled[pref->mPropId] &=
             gfx::gfxVars::GetAllowBackdropFilterOrDefault();
       }
+#ifdef FUZZING
+      // In fuzzing builds we want to enable all properties unconditionally.
+      gPropertyEnabled[pref->mPropId] = true;
 #endif
     }
   }
@@ -106,9 +100,11 @@ void nsCSSProps::Init() {
   gCounterDescTable =
       CreateStaticTable(kCSSRawCounterDescs, eCSSCounterDesc_COUNT);
 
-  gPropertyIDLNameTable = new nsTHashMap<nsCStringHashKey, nsCSSPropertyID>;
-  for (nsCSSPropertyID p = nsCSSPropertyID(0);
-       size_t(p) < std::size(kIDLNameTable); p = nsCSSPropertyID(p + 1)) {
+  gPropertyIDLNameTable =
+      new nsTHashMap<nsCStringHashKey, NonCustomCSSPropertyId>;
+  for (NonCustomCSSPropertyId p = NonCustomCSSPropertyId(0);
+       size_t(p) < std::size(kIDLNameTable);
+       p = NonCustomCSSPropertyId(p + 1)) {
     if (kIDLNameTable[p]) {
       gPropertyIDLNameTable->InsertOrUpdate(
           nsDependentCString(kIDLNameTable[p]), p);
@@ -120,7 +116,7 @@ void nsCSSProps::Init() {
   ClearOnShutdown(&gPropertyIDLNameTable);
 
   for (const PropertyPref* pref = kPropertyPrefTable;
-       pref->mPropID != eCSSProperty_UNKNOWN; pref++) {
+       pref->mPropId != eCSSProperty_UNKNOWN; pref++) {
     // https://bugzilla.mozilla.org/show_bug.cgi?id=1472523
     // We need to use nsCString instead of substring because the preference
     // callback code stores them. Using AssignLiteral prevents any
@@ -138,10 +134,10 @@ bool nsCSSProps::IsCustomPropertyName(const nsACString& aProperty) {
          StringBeginsWith(aProperty, "--"_ns);
 }
 
-nsCSSPropertyID nsCSSProps::LookupPropertyByIDLName(
+NonCustomCSSPropertyId nsCSSProps::LookupPropertyByIDLName(
     const nsACString& aPropertyIDLName, EnabledState aEnabled) {
   MOZ_ASSERT(gPropertyIDLNameTable, "no lookup table, needs addref");
-  nsCSSPropertyID res;
+  NonCustomCSSPropertyId res;
   if (!gPropertyIDLNameTable->Get(aPropertyIDLName, &res)) {
     return eCSSProperty_UNKNOWN;
   }
@@ -177,8 +173,9 @@ const nsCString& nsCSSProps::GetStringValue(nsCSSCounterDesc aCounterDescID) {
   return sDescNullStr;
 }
 
-CSSPropFlags nsCSSProps::PropFlags(nsCSSPropertyID aProperty) {
-  MOZ_ASSERT(0 <= aProperty && aProperty < eCSSProperty_COUNT_with_aliases,
+CSSPropFlags nsCSSProps::PropFlags(NonCustomCSSPropertyId aProperty) {
+  MOZ_ASSERT(aProperty != eCSSProperty_UNKNOWN &&
+                 aProperty < eCSSProperty_COUNT_with_aliases,
              "out of range");
   return kFlagsTable[aProperty];
 }
@@ -222,7 +219,7 @@ class nsCSSPropsGfxVarReceiver final : public gfx::gfxVarReceiver {
  public:
   static gfx::gfxVarReceiver& GetInstance() { return sInstance; }
 
-  void OnVarChanged(const gfx::GfxVarUpdate&) override {
+  void OnVarChanged(const nsTArray<gfx::GfxVarUpdate>&) override {
     bool enabled = gfx::gfxVars::AllowBackdropFilter();
     if (sLastKnownAllowBackdropFilter != enabled) {
       sLastKnownAllowBackdropFilter = enabled;

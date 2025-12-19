@@ -12,13 +12,20 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <memory>
-#include <numeric>
+#include <optional>
 #include <tuple>
+#include <vector>
 
+#include "api/audio/audio_processing.h"
 #include "api/environment/environment.h"
 #include "api/environment/environment_factory.h"
+#include "modules/audio_coding/neteq/tools/input_audio_file.h"
 #include "modules/audio_processing/agc2/agc2_testing_common.h"
+#include "modules/audio_processing/agc2/cpu_features.h"
+#include "modules/audio_processing/agc2/input_volume_controller.h"
+#include "modules/audio_processing/agc2/vad_wrapper.h"
 #include "modules/audio_processing/audio_buffer.h"
 #include "modules/audio_processing/test/audio_buffer_tools.h"
 #include "modules/audio_processing/test/bitexactness_tools.h"
@@ -49,7 +56,7 @@ float RunAgc2WithConstantInput(GainController2& agc2,
                                int sample_rate_hz,
                                int num_channels = 1,
                                int applied_initial_volume = 0) {
-  const int num_samples = rtc::CheckedDivExact(sample_rate_hz, 100);
+  const int num_samples = CheckedDivExact(sample_rate_hz, 100);
   AudioBuffer ab(sample_rate_hz, num_channels, sample_rate_hz, num_channels,
                  sample_rate_hz, num_channels);
 
@@ -541,13 +548,16 @@ TEST(GainController2,
                            /*input_volume_changed=*/false,
                            &audio_buffer_reference);
     // Check the output buffers.
-    for (int i = 0; i < kStereo; ++i) {
-      for (int j = 0; j < static_cast<int>(audio_buffer.num_frames()); ++j) {
+    for (int channel = 0; channel < kStereo; ++channel) {
+      for (int frame_num = 0;
+           frame_num < static_cast<int>(audio_buffer.num_frames());
+           ++frame_num) {
         all_samples_zero &=
-            fabs(audio_buffer.channels_const()[i][j]) < kEpsilon;
+            fabs(audio_buffer.channels_const()[channel][frame_num]) < kEpsilon;
         all_samples_equal &=
-            fabs(audio_buffer.channels_const()[i][j] -
-                 audio_buffer_reference.channels_const()[i][j]) < kEpsilon;
+            fabs(audio_buffer.channels_const()[channel][frame_num] -
+                 audio_buffer_reference.channels_const()[channel][frame_num]) <
+            kEpsilon;
       }
     }
   }
@@ -611,10 +621,13 @@ TEST(GainController2,
     agc2.Process(speech_probability, /*input_volume_changed=*/false,
                  &audio_buffer);
     // Check the output buffer.
-    for (int i = 0; i < kStereo; ++i) {
-      for (int j = 0; j < static_cast<int>(audio_buffer.num_frames()); ++j) {
-        EXPECT_FLOAT_EQ(audio_buffer.channels_const()[i][j],
-                        audio_buffer_reference.channels_const()[i][j]);
+    for (int channel = 0; channel < kStereo; ++channel) {
+      for (int frame_num = 0;
+           frame_num < static_cast<int>(audio_buffer.num_frames());
+           ++frame_num) {
+        EXPECT_FLOAT_EQ(
+            audio_buffer.channels_const()[channel][frame_num],
+            audio_buffer_reference.channels_const()[channel][frame_num]);
       }
     }
   }

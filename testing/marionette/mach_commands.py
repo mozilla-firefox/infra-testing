@@ -8,8 +8,6 @@ import logging
 import os
 import sys
 
-from six import iteritems
-
 from mach.decorators import Command, CommandArgument
 from mozbuild.base import (
     MachCommandConditions as conditions,
@@ -42,7 +40,7 @@ def run_marionette(
     args.binary = binary
     args.logger = kwargs.pop("log", None)
 
-    for k, v in iteritems(kwargs):
+    for k, v in kwargs.items():
         setattr(args, k, v)
 
     parser.verify_usage(args)
@@ -80,7 +78,7 @@ def marionette_test(command_context, tests, allow_nonlocal_connections=False, **
     if "test_objects" in kwargs:
         tests = []
         for obj in kwargs["test_objects"]:
-            tests.append(obj["file_relpath"])
+            tests.append(obj["path"])
         del kwargs["test_objects"]
 
     if not tests:

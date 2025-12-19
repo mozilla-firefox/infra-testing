@@ -64,7 +64,11 @@ class BrowsingContextGroup;
   FIELD(IsSecure, bool)                                                  \
   /* Whether this window has registered a "beforeunload" event           \
    * handler */                                                          \
-  FIELD(HasBeforeUnload, bool)                                           \
+  FIELD(NeedsBeforeUnload, bool)                                         \
+  /* Whether this window's navigation object has registered any          \
+   * event handlers or has ongoing or upcoming method trackers. Only     \
+   * valid for the top-level context. */                                 \
+  FIELD(NeedsTraverse, bool)                                             \
   /* Controls whether the WindowContext is currently considered to be    \
    * activated by a gesture */                                           \
   FIELD(UserActivationStateAndModifiers,                                 \
@@ -98,7 +102,11 @@ class BrowsingContextGroup;
   /* If this field is `true`, it means that this WindowContext's         \
    * WindowState was saved to be stored in the legacy (non-SHIP) BFCache \
    * implementation. Always false for SHIP */                            \
-  FIELD(WindowStateSaved, bool)
+  FIELD(WindowStateSaved, bool)                                          \
+  /* If this field is `true`, it means that this WindowContext's         \
+   * CloseWatcherManager has active CloseWatchers, which some UIs may    \
+   * want to dismiss (for example the Android "back button"). */         \
+  FIELD(HasActiveCloseWatcher, bool)
 
 class WindowContext : public nsISupports, public nsWrapperCache {
   MOZ_DECL_SYNCED_CONTEXT(WindowContext, MOZ_EACH_WC_FIELD)
@@ -127,7 +135,9 @@ class WindowContext : public nsISupports, public nsWrapperCache {
 
   bool IsInProcess() const { return mIsInProcess; }
 
-  bool HasBeforeUnload() const { return GetHasBeforeUnload(); }
+  bool NeedsBeforeUnload() const { return GetNeedsBeforeUnload(); }
+
+  bool HasBeforeUnload() const { return NeedsBeforeUnload(); }
 
   bool IsLocalIP() const { return GetIsLocalIP(); }
 
@@ -229,6 +239,9 @@ class WindowContext : public nsISupports, public nsWrapperCache {
   // Consume the history-action user activation.
   void ConsumeHistoryActivation();
 
+  // Update the history-action user activation for this window context
+  void UpdateLastHistoryActivation();
+
   bool GetTransientUserGestureActivationModifiers(
       UserActivation::Modifiers* aModifiers);
 
@@ -238,6 +251,10 @@ class WindowContext : public nsISupports, public nsWrapperCache {
   bool CanExecuteScripts() const { return mCanExecuteScripts; }
 
   void TransientSetHasActivePeerConnections();
+
+  bool HasActiveCloseWatcher() const { return GetHasActiveCloseWatcher(); }
+
+  void ProcessCloseRequest();
 
  protected:
   WindowContext(BrowsingContext* aBrowsingContext, uint64_t aInnerWindowId,
@@ -272,7 +289,10 @@ class WindowContext : public nsISupports, public nsWrapperCache {
   bool CanSet(FieldIndex<IDX_IsSecure>, const bool& aIsSecure,
               ContentParent* aSource);
 
-  bool CanSet(FieldIndex<IDX_HasBeforeUnload>, const bool& aHasBeforeUnload,
+  bool CanSet(FieldIndex<IDX_NeedsBeforeUnload>, const bool& aHasBeforeUnload,
+              ContentParent* aSource);
+
+  bool CanSet(FieldIndex<IDX_NeedsTraverse>, const bool& aNeedsTraverse,
               ContentParent* aSource);
 
   bool CanSet(FieldIndex<IDX_CookieBehavior>, const Maybe<uint32_t>& aValue,
@@ -346,8 +366,14 @@ class WindowContext : public nsISupports, public nsWrapperCache {
 
   void DidSet(FieldIndex<IDX_SHEntryHasUserInteraction>, bool aOldValue);
 
+  void DidSet(FieldIndex<IDX_HasActivePeerConnections>, bool aOldValue);
+
   bool CanSet(FieldIndex<IDX_WindowStateSaved>, bool aValue,
               ContentParent* aSource);
+
+  bool CanSet(FieldIndex<IDX_HasActiveCloseWatcher>, bool, ContentParent*) {
+    return true;
+  }
 
   // Overload `DidSet` to get notifications for a particular field being set.
   //
@@ -421,25 +447,22 @@ using MaybeDiscardedWindowContext = MaybeDiscarded<WindowContext>;
 extern template class syncedcontext::Transaction<WindowContext>;
 
 }  // namespace dom
-
-namespace ipc {
-template <>
-struct IPDLParamTraits<dom::MaybeDiscarded<dom::WindowContext>> {
-  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
-                    const dom::MaybeDiscarded<dom::WindowContext>& aParam);
-  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
-                   dom::MaybeDiscarded<dom::WindowContext>* aResult);
-};
-
-template <>
-struct IPDLParamTraits<dom::WindowContext::IPCInitializer> {
-  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
-                    const dom::WindowContext::IPCInitializer& aInitializer);
-
-  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
-                   dom::WindowContext::IPCInitializer* aInitializer);
-};
-}  // namespace ipc
 }  // namespace mozilla
+
+namespace IPC {
+template <>
+struct ParamTraits<mozilla::dom::MaybeDiscarded<mozilla::dom::WindowContext>> {
+  using paramType = mozilla::dom::MaybeDiscarded<mozilla::dom::WindowContext>;
+  static void Write(MessageWriter* aWriter, const paramType& aParam);
+  static bool Read(MessageReader* aReader, paramType* aResult);
+};
+
+template <>
+struct ParamTraits<mozilla::dom::WindowContext::IPCInitializer> {
+  using paramType = mozilla::dom::WindowContext::IPCInitializer;
+  static void Write(MessageWriter* aWriter, const paramType& aInitializer);
+  static bool Read(MessageReader* aReader, paramType* aInitializer);
+};
+}  // namespace IPC
 
 #endif  // !defined(mozilla_dom_WindowContext_h)

@@ -7,9 +7,10 @@
 #include "WindowRenderer.h"
 
 #include "gfxPlatform.h"
+#include "mozilla/EffectSet.h"
 #include "mozilla/dom/Animation.h"  // for Animation
 #include "mozilla/dom/AnimationEffect.h"
-#include "mozilla/EffectSet.h"
+#include "mozilla/gfx/GPUProcessManager.h"
 #include "mozilla/layers/PersistentBufferProvider.h"  // for PersistentBufferProviderBasic, PersistentBufferProvider (ptr only)
 #include "nsDisplayList.h"
 
@@ -178,9 +179,7 @@ void WindowRenderer::UpdatePartialPrerenderedAnimations(
   }
 }
 
-void FallbackRenderer::SetTarget(gfxContext* aTarget) {
-  mTarget = aTarget;
-}
+void FallbackRenderer::SetTarget(gfxContext* aTarget) { mTarget = aTarget; }
 
 bool FallbackRenderer::BeginTransaction(const nsCString& aURL) {
   if (!mTarget) {
@@ -224,6 +223,35 @@ void FallbackRenderer::EndTransactionWithList(nsDisplayListBuilder* aBuilder,
     dt->DrawSurface(snapshot, Rect(dest->GetRect()), Rect(dest->GetRect()),
                     DrawSurfaceOptions(),
                     DrawOptions(1.0f, CompositionOp::OP_SOURCE));
+  }
+}
+
+BackgroundedFallbackRenderer::BackgroundedFallbackRenderer(nsIWidget* aWidget)
+    : mWidget(aWidget) {
+  MOZ_ASSERT(mWidget);
+  if (auto* gpm = gfx::GPUProcessManager::Get()) {
+    gpm->AddListener(this);
+  }
+}
+
+BackgroundedFallbackRenderer::~BackgroundedFallbackRenderer() { Destroy(); }
+
+void BackgroundedFallbackRenderer::Destroy() {
+  if (!mWidget) {
+    return;
+  }
+
+  if (auto* gpm = gfx::GPUProcessManager::Get()) {
+    gpm->RemoveListener(this);
+  }
+
+  mWidget = nullptr;
+}
+
+void BackgroundedFallbackRenderer::OnCompositorDestroyBackgrounded() {
+  // We may get freed after this but the caller has a strong reference.
+  if (RefPtr<nsIWidget> widget = mWidget) {
+    widget->NotifyCompositorSessionLost(/* aSession */ nullptr);
   }
 }
 

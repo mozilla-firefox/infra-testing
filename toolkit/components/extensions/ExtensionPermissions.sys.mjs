@@ -3,7 +3,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* eslint-disable mozilla/valid-lazy */
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
@@ -367,7 +366,7 @@ export var ExtensionPermissions = {
    * @typedef {object} Perms
    * @property {string[]} origins
    * @property {string[]} permissions
-   * @property {string[]} data_collection
+   * @property {string[]} [data_collection]
    *
    * @param {Perms} perms api permissions and origins to be added/removed.
    * @param {Perms} optional permissions and origins from the manifest.
@@ -607,7 +606,7 @@ export var ExtensionPermissions = {
 export var OriginControls = {
   /**
    * @typedef {object} NativeTab
-   * @property {XULBrowserElement} linkedBrowser
+   * @property {MozBrowser} linkedBrowser
    */
 
   /**

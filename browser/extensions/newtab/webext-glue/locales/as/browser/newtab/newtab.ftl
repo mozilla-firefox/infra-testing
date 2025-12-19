@@ -106,9 +106,6 @@ newtab-menu-delete-pocket = { -pocket-brand-name }-ৰ পৰা মচি প�
 newtab-menu-archive-pocket = { -pocket-brand-name }-ত আৰ্কাইভ কৰক
 newtab-menu-show-privacy-info = আমাৰ স্পঞ্চৰ আৰু আপোনাৰ গোপনিয়তা
 
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
-
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
 newtab-privacy-modal-button-done = হৈ গ'ল
@@ -182,9 +179,6 @@ newtab-section-header-recent-activity = শেহতীয়া কাৰ্যক
 #   $provider (string) - Name of the corresponding content provider.
 newtab-section-header-pocket = { $provider }-ৰ দ্বাৰা পৰামৰ্শিত
 
-## Empty Section States: These show when there are no more items in a section. Ex. When there are no more Pocket story recommendations, in the space where there would have been stories, this is shown instead.
-
-
 ## Empty Section (Content Discovery Experience). These show when there are no more stories or when some stories fail to load.
 
 newtab-discovery-empty-section-topstories-header = আপুনি সকলো চালে!
@@ -198,12 +192,6 @@ newtab-discovery-empty-section-topstories-timed-out = উস্! আমি এ�
 
 newtab-pocket-learn-more = অধিক জানক
 newtab-pocket-cta-button = { -pocket-brand-name } পাওক
-
-## Thumbs up and down buttons that shows over a newtab stories card thumbnail on hover.
-
-
-## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
-
 
 ## Error Fallback Content.
 ## This message and suggested action link are shown in each section of UI that fails to render.
@@ -221,43 +209,3 @@ newtab-custom-row-selector =
        *[other] { $num }টা শাৰী
     }
 newtab-custom-close-button = বন্ধ কৰক
-
-## New Tab Wallpapers
-
-
-## Solid Colors
-
-
-## Abstract
-
-
-## Celestial
-
-
-## Celestial
-
-
-## New Tab Weather
-
-
-## Topic Labels
-
-
-## Topic Selection Modal
-
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
-
-## Panel in the Customize menu section to manage followed and blocked topics
-

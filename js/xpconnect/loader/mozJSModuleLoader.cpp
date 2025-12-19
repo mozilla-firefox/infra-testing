@@ -7,7 +7,6 @@
 #include "ScriptLoadRequest.h"
 #include "mozilla/Assertions.h"  // MOZ_ASSERT, MOZ_ASSERT_IF
 #include "mozilla/Attributes.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/RefPtr.h"  // RefPtr, mozilla::StaticRefPtr
 #include "mozilla/Utf8.h"    // mozilla::Utf8Unit
 
@@ -52,6 +51,7 @@
 #include "xpcprivate.h"
 #include "xpcpublic.h"
 #include "nsContentUtils.h"
+#include "nsContentSecurityUtils.h"
 #include "nsXULAppAPI.h"
 #include "WrapperFactory.h"
 #include "JSServices.h"
@@ -65,7 +65,7 @@
 #include "mozilla/ProfilerMarkers.h"
 #include "mozilla/ResultExtensions.h"
 #include "mozilla/ScriptPreloader.h"
-#include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/Try.h"
 #include "mozilla/dom/AutoEntryScript.h"
 #include "mozilla/dom/ReferrerPolicyBinding.h"
@@ -74,7 +74,6 @@
 #include "mozilla/dom/WorkerPrivate.h"  // dom::WorkerPrivate, dom::AutoSyncLoopHolder
 #include "mozilla/dom/WorkerRef.h"  // dom::StrongWorkerRef, dom::ThreadSafeWorkerRef
 #include "mozilla/dom/WorkerRunnable.h"  // dom::MainThreadStopSyncLoopRunnable
-#include "mozilla/Unused.h"
 
 using namespace mozilla;
 using namespace mozilla::scache;
@@ -169,7 +168,7 @@ class MOZ_STACK_CLASS ModuleLoaderInfo {
   explicit ModuleLoaderInfo(const nsACString& aLocation)
       : mLocation(&aLocation) {}
   explicit ModuleLoaderInfo(JS::loader::ModuleLoadRequest* aRequest)
-      : mLocation(nullptr), mURI(aRequest->mURI) {}
+      : mLocation(nullptr), mURI(aRequest->URI()) {}
 
   nsIIOService* IOService() {
     MOZ_ASSERT(mIOService);
@@ -603,7 +602,7 @@ nsresult mozJSModuleLoader::LoadSingleModuleScriptOnWorker(
     SyncModuleLoader* aModuleLoader, JSContext* aCx,
     JS::loader::ModuleLoadRequest* aRequest, MutableHandleScript aScriptOut) {
   nsAutoCString location;
-  nsresult rv = aRequest->mURI->GetSpec(location);
+  nsresult rv = aRequest->URI()->GetSpec(location);
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCString data;
@@ -650,7 +649,7 @@ nsresult mozJSModuleLoader::LoadSingleModuleScript(
       "ChromeUtils.importESModule static import", JS,
       MarkerOptions(MarkerStack::Capture(),
                     MarkerInnerWindowIdFromJSContext(aCx)),
-      nsContentUtils::TruncatedURLForDisplay(aRequest->mURI));
+      nsContentUtils::TruncatedURLForDisplay(aRequest->URI()));
 
   if (!NS_IsMainThread()) {
     return LoadSingleModuleScriptOnWorker(aModuleLoader, aCx, aRequest,
@@ -665,7 +664,7 @@ nsresult mozJSModuleLoader::LoadSingleModuleScript(
   rv = GetSourceFile(info.ResolvedURI(), getter_AddRefs(sourceFile));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  bool realFile = LocationIsRealFile(aRequest->mURI);
+  bool realFile = LocationIsRealFile(aRequest->URI());
 
   RootedScript script(aCx);
   rv = GetScriptForLocation(aCx, info, sourceFile, realFile, aScriptOut);
@@ -841,8 +840,7 @@ nsresult mozJSModuleLoader::GetScriptForLocation(
         stencil = CompileModuleScriptToStencil(aCx, options, srcBuf);
       }
     } else {
-      nsCString str;
-      MOZ_TRY_VAR(str, ReadScript(aInfo));
+      nsCString str = MOZ_TRY(ReadScript(aInfo));
 
       JS::SourceText<mozilla::Utf8Unit> srcBuf;
       if (srcBuf.init(aCx, str.get(), str.Length(),
@@ -972,7 +970,7 @@ void mozJSModuleLoader::RecordImportStack(
   }
 
   nsAutoCString location;
-  nsresult rv = aRequest->mURI->GetSpec(location);
+  nsresult rv = aRequest->URI()->GetSpec(location);
   if (NS_FAILED(rv)) {
     return;
   }
@@ -1034,12 +1032,6 @@ nsresult mozJSModuleLoader::GetModuleImportStack(const nsACString& aLocation,
 #endif
 }
 
-/* static */
-bool mozJSModuleLoader::IsTrustedScheme(nsIURI* aURI) {
-  return aURI->SchemeIs("resource") || aURI->SchemeIs("chrome") ||
-         aURI->SchemeIs("moz-src");
-}
-
 nsresult mozJSModuleLoader::ImportESModule(
     JSContext* aCx, const nsACString& aLocation,
     JS::MutableHandleObject aModuleNamespace) {
@@ -1075,9 +1067,9 @@ nsresult mozJSModuleLoader::ImportESModule(
   nsresult rv = NS_NewURI(getter_AddRefs(uri), aLocation);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (!IsTrustedScheme(uri)) {
-    JS_ReportErrorASCII(
-        aCx, "System modules must be loaded from a trusted scheme");
+  if (!nsContentSecurityUtils::IsTrustedScheme(uri)) {
+    JS_ReportErrorASCII(aCx,
+                        "System modules must be loaded from a trusted scheme");
     return NS_ERROR_FAILURE;
   }
 
@@ -1091,17 +1083,12 @@ nsresult mozJSModuleLoader::ImportESModule(
 
   RefPtr<SyncLoadContext> context = new SyncLoadContext();
 
-  RefPtr<VisitedURLSet> visitedSet =
-      ModuleLoadRequest::NewVisitedSetForTopLevelImport(
-          uri, JS::ModuleType::JavaScript);
-
   RefPtr<ModuleLoadRequest> request = new ModuleLoadRequest(
-      uri, JS::ModuleType::JavaScript, dom::ReferrerPolicy::No_referrer,
-      options, dom::SRIMetadata(),
+      JS::ModuleType::JavaScript, dom::SRIMetadata(),
       /* aReferrer = */ nullptr, context, ModuleLoadRequest::Kind::TopLevel,
-      mModuleLoader, visitedSet, nullptr);
+      mModuleLoader, nullptr);
 
-  request->NoCacheEntryFound();
+  request->NoCacheEntryFound(dom::ReferrerPolicy::No_referrer, options, uri);
 
   rv = request->StartModuleLoad();
   if (NS_FAILED(rv)) {
@@ -1123,7 +1110,8 @@ nsresult mozJSModuleLoader::ImportESModule(
 
   // All modules are loaded. MaybeReportLoadError isn't necessary from here.
 
-  if (!request->InstantiateModuleGraph()) {
+  if (!request->mModuleScript->HasErrorToRethrow() &&
+      !request->InstantiateModuleGraph()) {
     return NS_ERROR_FAILURE;
   }
 

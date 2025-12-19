@@ -925,25 +925,28 @@ class MOZ_RAII CacheIRCompiler {
     gc::ReadBarrier(shape);
     return shape;
   }
-  GetterSetter* weakGetterSetterStubField(uint32_t offset) {
-    MOZ_ASSERT(stubFieldPolicy_ == StubFieldPolicy::Constant);
-    GetterSetter* gs =
-        (GetterSetter*)readStubWord(offset, StubField::Type::WeakGetterSetter);
-    gc::ReadBarrier(gs);
-    return gs;
-  }
   JSObject* objectStubField(uint32_t offset) {
     MOZ_ASSERT(stubFieldPolicy_ == StubFieldPolicy::Constant);
     return (JSObject*)readStubWord(offset, StubField::Type::JSObject);
   }
   JSObject* weakObjectStubField(uint32_t offset) {
     MOZ_ASSERT(stubFieldPolicy_ == StubFieldPolicy::Constant);
-    return (JSObject*)readStubWord(offset, StubField::Type::WeakObject);
+    JSObject* obj =
+        (JSObject*)readStubWord(offset, StubField::Type::WeakObject);
+    gc::ReadBarrier(obj);
+    return obj;
   }
   Value valueStubField(uint32_t offset) {
     MOZ_ASSERT(stubFieldPolicy_ == StubFieldPolicy::Constant);
     uint64_t raw = readStubInt64(offset, StubField::Type::Value);
     return Value::fromRawBits(raw);
+  }
+  Value weakValueStubField(uint32_t offset) {
+    MOZ_ASSERT(stubFieldPolicy_ == StubFieldPolicy::Constant);
+    uint64_t raw = readStubInt64(offset, StubField::Type::WeakValue);
+    Value v = Value::fromRawBits(raw);
+    gc::ValueReadBarrier(v);
+    return v;
   }
   double doubleStubField(uint32_t offset) {
     MOZ_ASSERT(stubFieldPolicy_ == StubFieldPolicy::Constant);
@@ -1047,6 +1050,7 @@ class MOZ_RAII AutoStubFrame {
 
   void enter(MacroAssembler& masm, Register scratch);
   void leave(MacroAssembler& masm);
+  void pushInlinedICScript(MacroAssembler& masm, Address icScriptAddr);
   void storeTracedValue(MacroAssembler& masm, ValueOperand val);
   void loadTracedValue(MacroAssembler& masm, uint8_t slotIndex,
                        ValueOperand result);
@@ -1278,11 +1282,6 @@ struct MapStubFieldToType<StubField::Type::WeakShape> {
   using WrappedType = WeakHeapPtr<Shape*>;
 };
 template <>
-struct MapStubFieldToType<StubField::Type::WeakGetterSetter> {
-  using RawType = GetterSetter*;
-  using WrappedType = WeakHeapPtr<GetterSetter*>;
-};
-template <>
 struct MapStubFieldToType<StubField::Type::JSObject> {
   using RawType = JSObject*;
   using WrappedType = GCPtr<JSObject*>;
@@ -1321,6 +1320,11 @@ template <>
 struct MapStubFieldToType<StubField::Type::Value> {
   using RawType = Value;
   using WrappedType = GCPtr<Value>;
+};
+template <>
+struct MapStubFieldToType<StubField::Type::WeakValue> {
+  using RawType = Value;
+  using WrappedType = WeakHeapPtr<Value>;
 };
 
 // See the 'Sharing Baseline stub code' comment in CacheIR.h for a description

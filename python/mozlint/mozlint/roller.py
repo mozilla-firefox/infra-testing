@@ -16,7 +16,6 @@ from math import ceil
 from multiprocessing import get_context
 from multiprocessing.queues import Queue
 from subprocess import CalledProcessError
-from typing import Dict, Set
 
 import mozpack.path as mozpath
 from mozbuild.util import cpu_count
@@ -46,10 +45,22 @@ logger.addHandler(handler)
 log = logging.LoggerAdapter(logger, {"lintname": "mozlint", "pid": os.getpid()})
 
 
+def _setup_logger(log, show_verbose):
+    if show_verbose:
+        formatter = logging.Formatter(
+            "%(asctime)s.%(msecs)03d %(lintname)s (%(pid)s) | %(message)s", "%H:%M:%S"
+        )
+        logger.handlers[0].setFormatter(formatter)
+        log.setLevel(logging.DEBUG)
+    else:
+        log.setLevel(logging.WARNING)
+
+
 def _run_worker(config, paths, **lintargs):
     log = logging.LoggerAdapter(
         logger, {"lintname": config.get("name"), "pid": os.getpid()}
     )
+    _setup_logger(log, lintargs.get("show_verbose"))
     lintargs["log"] = log
     result = ResultSummary(lintargs["root"])
 
@@ -116,7 +127,7 @@ class InterruptableQueue(Queue):
 
     def __init__(self, *args, **kwargs):
         kwargs["ctx"] = get_context()
-        super(InterruptableQueue, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
     def get(self, *args, **kwargs):
         try:
@@ -131,7 +142,7 @@ def _worker_sigint_handler(signum, frame):
     Tells workers not to process the extra jobs on the call queue that couldn't
     be canceled by the parent process.
     """
-    global SHUTDOWN
+    global SHUTDOWN  # noqa PLW0603
     SHUTDOWN = True
     orig_sigint(signum, frame)
 
@@ -189,14 +200,7 @@ class LintRoller:
         self.root = root
         self.exclude = exclude or []
 
-        if lintargs.get("show_verbose"):
-            formatter = logging.Formatter(
-                "%(asctime)s.%(msecs)d %(lintname)s (%(pid)s) | %(message)s", "%H:%M:%S"
-            )
-            logger.handlers[0].setFormatter(formatter)
-            logger.setLevel(logging.DEBUG)
-        else:
-            logger.setLevel(logging.WARNING)
+        _setup_logger(log, lintargs.get("show_verbose"))
 
     def read(self, paths):
         """Parse one or more linters and add them to the registry.
@@ -227,7 +231,7 @@ class LintRoller:
                 setupargs.update(self._setupargs)
                 setupargs["name"] = linter["name"]
                 setupargs["log"] = logging.LoggerAdapter(
-                    logger, {"lintname": linter["name"]}
+                    logger, {"lintname": linter["name"], "pid": os.getpid()}
                 )
                 if virtualenv_manager is not None:
                     setupargs["virtualenv_manager"] = virtualenv_manager
@@ -263,9 +267,14 @@ class LintRoller:
                 )
             )
             return 1
+
+        if not self.linters:
+            log.error("all linters were skipped due to setup, nothing to do!")
+            return 1
+
         return 0
 
-    def should_lint_entire_tree(self, vcs_paths: Set[str], linter: Dict) -> bool:
+    def should_lint_entire_tree(self, vcs_paths: set[str], linter: dict) -> bool:
         """Return `True` if the linter should be run on the entire tree."""
         # Don't lint the entire tree when `--fix` is passed to linters.
         if "fix" in self.lintargs and self.lintargs["fix"]:
@@ -319,7 +328,10 @@ class LintRoller:
             return
 
         # Merge this job's results with our global ones.
-        self.result.update(future.result())
+        try:
+            self.result.update(future.result())
+        except Exception:
+            log.exception("Sub-process raised an error:")
 
     def roll(self, paths=None, outgoing=None, workdir=None, rev=None, num_procs=None):
         """Run all of the registered linters against the specified file paths.

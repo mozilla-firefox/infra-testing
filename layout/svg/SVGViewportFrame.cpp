@@ -55,6 +55,12 @@ void SVGViewportFrame::ReflowSVG() {
   float x, y, width, height;
   static_cast<SVGViewportElement*>(GetContent())
       ->GetAnimatedLengthValues(&x, &y, &width, &height, nullptr);
+  if (width < 0.0f) {
+    width = 0.0f;
+  }
+  if (height < 0.0f) {
+    height = 0.0f;
+  }
   mRect = nsLayoutUtils::RoundGfxRectToAppRect(gfxRect(x, y, width, height),
                                                AppUnitsPerCSSPixel());
 
@@ -158,8 +164,7 @@ SVGBBox SVGViewportFrame::GetBBoxContribution(const Matrix& aToBBoxUserspace,
 }
 
 nsresult SVGViewportFrame::AttributeChanged(int32_t aNameSpaceID,
-                                            nsAtom* aAttribute,
-                                            int32_t aModType) {
+                                            nsAtom* aAttribute, AttrModType) {
   if (aNameSpaceID == kNameSpaceID_None &&
       !HasAnyStateBits(NS_FRAME_IS_NONDISPLAY)) {
     SVGViewportElement* content =

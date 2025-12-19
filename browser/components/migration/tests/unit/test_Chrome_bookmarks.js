@@ -1,11 +1,11 @@
 "use strict";
 
 const { CustomizableUI } = ChromeUtils.importESModule(
-  "resource:///modules/CustomizableUI.sys.mjs"
+  "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs"
 );
 
 const { PlacesUIUtils } = ChromeUtils.importESModule(
-  "resource:///modules/PlacesUIUtils.sys.mjs"
+  "moz-src:///browser/components/places/PlacesUIUtils.sys.mjs"
 );
 
 let rootDir = do_get_file("chromefiles/", true);

@@ -8,11 +8,11 @@
 "use strict";
 
 const TEST_URL = "http://example.com";
-const match = new UrlbarResult(
-  UrlbarUtils.RESULT_TYPE.TAB_SWITCH,
-  UrlbarUtils.RESULT_SOURCE.TABS,
-  { url: TEST_URL }
-);
+const match = new UrlbarResult({
+  type: UrlbarUtils.RESULT_TYPE.TAB_SWITCH,
+  source: UrlbarUtils.RESULT_SOURCE.TABS,
+  payload: { url: TEST_URL },
+});
 let controller;
 
 add_setup(async function () {
@@ -65,20 +65,20 @@ add_task(async function test_cancel_search() {
   );
 
   let delayResultsPromise = new Promise(resolve => {
-    controller.addQueryListener({
+    controller.addListener({
       async onQueryResults(queryContext) {
-        controller.removeQueryListener(this);
+        controller.removeListener(this);
         controller.cancelQuery(queryContext);
         resolve();
       },
     });
   });
 
-  let result = new UrlbarResult(
-    UrlbarUtils.RESULT_TYPE.URL,
-    UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-    { url: "https://example.com/1", title: "example" }
-  );
+  let result = new UrlbarResult({
+    type: UrlbarUtils.RESULT_TYPE.URL,
+    source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+    payload: { url: "https://example.com/1", title: "example" },
+  });
 
   // We are awaiting for asynchronous work on initialization.
   // For this test, we need the query objects to be created. We ensure this by

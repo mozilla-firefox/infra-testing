@@ -7,15 +7,16 @@
 #ifndef mozilla_dom_timeout_handler_h
 #define mozilla_dom_timeout_handler_h
 
-#include "nsCOMPtr.h"
-#include "nsIGlobalObject.h"
-#include "nsISupports.h"
-#include "nsCycleCollectionParticipant.h"
-#include "nsString.h"
+#include "js/Promise.h"  // JS::Dispatchable
 #include "mozilla/Attributes.h"
 #include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/SourceLocation.h"
 #include "mozilla/dom/FunctionBinding.h"
+#include "nsCOMPtr.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsIGlobalObject.h"
+#include "nsISupports.h"
+#include "nsString.h"
 
 namespace mozilla::dom {
 
@@ -74,7 +75,7 @@ class ScriptTimeoutHandler : public TimeoutHandler {
 
 class CallbackTimeoutHandler final : public TimeoutHandler {
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(CallbackTimeoutHandler)
 
   CallbackTimeoutHandler(JSContext* aCx, nsIGlobalObject* aGlobal,
@@ -93,6 +94,21 @@ class CallbackTimeoutHandler final : public TimeoutHandler {
   nsCOMPtr<nsIGlobalObject> mGlobal;
   RefPtr<Function> mFunction;
   nsTArray<JS::Heap<JS::Value>> mArgs;
+};
+
+class DelayedJSDispatchableHandler final : public TimeoutHandler {
+ public:
+  DelayedJSDispatchableHandler(JSContext* aCx,
+                               js::UniquePtr<JS::Dispatchable>&& aDispatchable)
+      : TimeoutHandler(aCx), mDispatchable(std::move(aDispatchable)) {}
+
+  NS_DECL_ISUPPORTS
+
+  MOZ_CAN_RUN_SCRIPT bool Call(const char* /* unused */) override;
+
+ private:
+  ~DelayedJSDispatchableHandler() override;
+  js::UniquePtr<JS::Dispatchable> mDispatchable;
 };
 
 }  // namespace mozilla::dom

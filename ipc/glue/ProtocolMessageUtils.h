@@ -8,12 +8,10 @@
 #define IPC_GLUE_PROTOCOLMESSAGEUTILS_H
 
 #include <stdint.h>
-#include <string>
 #include "base/string_util.h"
 #include "chrome/common/ipc_channel.h"
 #include "chrome/common/ipc_message_utils.h"
 #include "ipc/EnumSerializer.h"
-#include "mozilla/Assertions.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "mozilla/ipc/ProtocolUtils.h"
 
@@ -25,8 +23,6 @@ template <class PFooSide>
 class Endpoint;
 template <class PFooSide>
 class ManagedEndpoint;
-template <typename P>
-struct IPDLParamTraits;
 }  // namespace mozilla::ipc
 
 namespace IPC {
@@ -36,31 +32,17 @@ class MessageReader;
 class MessageWriter;
 
 template <>
-struct ParamTraits<Channel::Mode>
-    : ContiguousEnumSerializerInclusive<Channel::Mode, Channel::MODE_SERVER,
-                                        Channel::MODE_CLIENT> {};
-
-template <>
 struct ParamTraits<IPCMessageStart>
     : ContiguousEnumSerializer<IPCMessageStart, IPCMessageStart(0),
                                LastMsgIndex> {};
 
 template <>
-struct ParamTraits<mozilla::ipc::ActorHandle> {
-  typedef mozilla::ipc::ActorHandle paramType;
+struct ParamTraits<mozilla::ipc::IProtocol*> {
+  using paramType = mozilla::ipc::IProtocol*;
 
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    IPC::WriteParam(aWriter, aParam.mId);
-  }
+  static void Write(MessageWriter* aWriter, const paramType& aParam);
 
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    int id;
-    if (IPC::ReadParam(aReader, &id)) {
-      aResult->mId = id;
-      return true;
-    }
-    return false;
-  }
+  static bool Read(MessageReader* aReader, paramType* aResult);
 };
 
 template <>
@@ -91,46 +73,37 @@ struct ParamTraits<mozilla::ipc::EndpointProcInfo> {
   }
 };
 
-}  // namespace IPC
-
-namespace mozilla::ipc {
-
 template <>
-struct IPDLParamTraits<UntypedManagedEndpoint> {
-  using paramType = UntypedManagedEndpoint;
+struct ParamTraits<mozilla::ipc::UntypedManagedEndpoint> {
+  using paramType = mozilla::ipc::UntypedManagedEndpoint;
 
-  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
-                    paramType&& aParam);
-  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
-                   paramType* aResult);
+  static void Write(MessageWriter* aWriter, paramType&& aParam);
+  static bool Read(MessageReader* aReader, paramType* aResult);
 };
 
 template <class PFooSide>
-struct IPDLParamTraits<ManagedEndpoint<PFooSide>> {
-  using paramType = ManagedEndpoint<PFooSide>;
+struct ParamTraits<mozilla::ipc::ManagedEndpoint<PFooSide>> {
+  using paramType = mozilla::ipc::ManagedEndpoint<PFooSide>;
 
-  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
-                    paramType&& aParam) {
-    IPDLParamTraits<UntypedManagedEndpoint>::Write(aWriter, aActor,
-                                                   std::move(aParam));
+  static void Write(IPC::MessageWriter* aWriter, paramType&& aParam) {
+    ParamTraits<mozilla::ipc::UntypedManagedEndpoint>::Write(aWriter,
+                                                             std::move(aParam));
   }
 
-  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
-                   paramType* aResult) {
-    return IPDLParamTraits<UntypedManagedEndpoint>::Read(aReader, aActor,
-                                                         aResult);
+  static bool Read(IPC::MessageReader* aReader, paramType* aResult) {
+    return ParamTraits<mozilla::ipc::UntypedManagedEndpoint>::Read(aReader,
+                                                                   aResult);
   }
 };
 
 template <>
-struct IPDLParamTraits<FileDescriptor> {
-  typedef FileDescriptor paramType;
+struct ParamTraits<mozilla::ipc::FileDescriptor> {
+  using paramType = mozilla::ipc::FileDescriptor;
 
-  static void Write(IPC::MessageWriter* aWriter, IProtocol* aActor,
-                    const paramType& aParam);
-  static bool Read(IPC::MessageReader* aReader, IProtocol* aActor,
-                   paramType* aResult);
+  static void Write(MessageWriter* aWriter, const paramType& aParam);
+  static bool Read(MessageReader* aReader, paramType* aResult);
 };
-}  // namespace mozilla::ipc
+
+}  // namespace IPC
 
 #endif  // IPC_GLUE_PROTOCOLMESSAGEUTILS_H

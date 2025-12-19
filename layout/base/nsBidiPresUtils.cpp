@@ -6,36 +6,36 @@
 
 #include "nsBidiPresUtils.h"
 
-#include "mozilla/intl/Bidi.h"
+#include <algorithm>
+
+#include "RubyUtils.h"
+#include "gfxContext.h"
 #include "mozilla/Casting.h"
 #include "mozilla/IntegerRange.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/dom/Text.h"
-
-#include "gfxContext.h"
-#include "nsFontMetrics.h"
-#include "nsGkAtoms.h"
-#include "nsPresContext.h"
+#include "mozilla/intl/Bidi.h"
 #include "nsBidiUtils.h"
+#include "nsBlockFrame.h"
 #include "nsCSSFrameConstructor.h"
 #include "nsContainerFrame.h"
+#include "nsFirstLetterFrame.h"
+#include "nsFontMetrics.h"
+#include "nsGkAtoms.h"
+#include "nsIFrameInlines.h"
 #include "nsInlineFrame.h"
 #include "nsPlaceholderFrame.h"
 #include "nsPointerHashKeys.h"
-#include "nsFirstLetterFrame.h"
-#include "nsUnicodeProperties.h"
-#include "nsTextFrame.h"
-#include "nsBlockFrame.h"
-#include "nsIFrameInlines.h"
-#include "nsStyleStructInlines.h"
-#include "RubyUtils.h"
-#include "nsRubyFrame.h"
-#include "nsRubyBaseFrame.h"
-#include "nsRubyTextFrame.h"
+#include "nsPresContext.h"
 #include "nsRubyBaseContainerFrame.h"
+#include "nsRubyBaseFrame.h"
+#include "nsRubyFrame.h"
 #include "nsRubyTextContainerFrame.h"
-#include <algorithm>
+#include "nsRubyTextFrame.h"
+#include "nsStyleStructInlines.h"
+#include "nsTextFrame.h"
+#include "nsUnicodeProperties.h"
 
 #undef NOISY_BIDI
 #undef REALLY_NOISY_BIDI
@@ -632,9 +632,6 @@ static void SplitInlineAncestors(nsContainerFrame* aParent,
               parent, grandparent, false));
 
       nsFrameList tail = parent->StealFramesAfter(frame);
-
-      // Reparent views as necessary
-      nsContainerFrame::ReparentFrameViewList(tail, parent, newParent);
 
       // The parent's continuation adopts the siblings after the split.
       MOZ_ASSERT(!newParent->IsBlockFrameOrSubclass(),
@@ -1393,9 +1390,13 @@ void nsBidiPresUtils::TraverseFrames(nsIFrame* aCurrentFrame,
         // "...inline objects (such as graphics) are treated as if they are ...
         // U+FFFC"
         // <wbr>, however, is treated as U+200B ZERO WIDTH SPACE. See
-        // http://dev.w3.org/html5/spec/Overview.html#phrasing-content-1
-        aBpd->AppendUnichar(
-            content->IsHTMLElement(nsGkAtoms::wbr) ? kZWSP : kObjectSubstitute);
+        // http://dev.w3.org/html5/spec/Overview.html#phrasing-content-1.
+        // Empty inline frames are also treated as kZWSP, to avoid unexpected
+        // bidi reordering of the surrounding content.
+        aBpd->AppendUnichar(content->IsHTMLElement(nsGkAtoms::wbr) ||
+                                    (frame->IsInlineFrame() && frame->IsEmpty())
+                                ? kZWSP
+                                : kObjectSubstitute);
         if (!frame->IsInlineOutside()) {
           // if it is not inline, end the paragraph
           ResolveParagraphWithinBlock(aBpd);
@@ -1470,7 +1471,7 @@ bool nsBidiPresUtils::ChildListMayRequireBidi(nsIFrame* aFirstChild,
         dom::Text* content = frame->GetContent()->AsText();
         if (content != *aCurrContent) {
           *aCurrContent = content;
-          const nsTextFragment* txt = &content->TextFragment();
+          const dom::CharacterDataBuffer* txt = &content->DataBuffer();
           if (txt->Is2b() &&
               HasRTLChars(Span(txt->Get2b(), txt->GetLength()))) {
             return true;

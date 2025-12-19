@@ -79,15 +79,17 @@ class ASpdySession : public nsAHttpTransaction {
             code == NS_BINDING_ABORTED || code == NS_BINDING_REDIRECTED ||
             code == NS_ERROR_INVALID_CONTENT_ENCODING ||
             code == NS_BINDING_RETARGETED ||
-            code == NS_ERROR_CORRUPTED_CONTENT);
+            code == NS_ERROR_CORRUPTED_CONTENT ||
+            code == NS_ERROR_NET_TIMEOUT_EXTERNAL);
   }
 
   virtual void SetCleanShutdown(bool) = 0;
   virtual ExtendedCONNECTSupport GetExtendedCONNECTSupport() = 0;
 
-  virtual already_AddRefed<mozilla::net::nsHttpConnection> CreateTunnelStream(
-      nsAHttpTransaction* aHttpTransaction, nsIInterfaceRequestor* aCallbacks,
-      PRIntervalTime aRtt, bool aIsExtendedCONNECT = false) = 0;
+  virtual Result<already_AddRefed<mozilla::net::nsHttpConnection>, nsresult>
+  CreateTunnelStream(nsAHttpTransaction* aHttpTransaction,
+                     nsIInterfaceRequestor* aCallbacks, PRIntervalTime aRtt,
+                     bool aIsExtendedCONNECT = false) = 0;
 
   virtual WebTransportSessionBase* GetWebTransportSession(
       nsAHttpTransaction* aTransaction) = 0;

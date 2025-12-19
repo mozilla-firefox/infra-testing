@@ -2,7 +2,7 @@
 import { TestCaseRecorder } from '../framework/fixture.js';
 import { globalTestConfig } from '../framework/test_config.js';
 
-import { ErrorWithExtra, assert, objectEquals } from './util.js';
+import { ErrorWithExtra, assert, hasFeature, objectEquals } from './util.js';
 
 /**
  * Finds and returns the `navigator.gpu` object (or equivalent, for non-browser implementations).
@@ -164,7 +164,9 @@ export function getGPU(recorder: TestCaseRecorder | null): GPU {
           Object.defineProperty(adapter, 'features', {
             enumerable: false,
             value: new Set(
-              adapter.features.has('core-features-and-limits') ? ['core-features-and-limits'] : []
+              hasFeature(adapter.features, 'core-features-and-limits')
+                ? ['core-features-and-limits']
+                : []
             ),
           });
         }
@@ -177,6 +179,7 @@ export function getGPU(recorder: TestCaseRecorder | null): GPU {
         for (const [feature] of desc.requiredFeatures) {
           // Note: This adapter has had its features property over-ridden and will only return
           // have nothing or 'core-features-and-limits'.
+          // eslint-disable-next-line no-restricted-syntax
           if (!adapter.features.has(feature)) {
             throw new TypeError(`requested feature ${feature} does not exist on adapter`);
           }
@@ -197,22 +200,24 @@ export function getGPU(recorder: TestCaseRecorder | null): GPU {
 
   if (defaultRequestAdapterOptions) {
     // eslint-disable-next-line @typescript-eslint/unbound-method
-    const oldFn = impl.requestAdapter;
-    impl.requestAdapter = function (
-      options?: GPURequestAdapterOptions
-    ): Promise<GPUAdapter | null> {
-      const promise = oldFn.call(this, { ...defaultRequestAdapterOptions, ...options });
-      if (recorder) {
-        void promise.then(adapter => {
-          if (adapter) {
-            const adapterInfo = adapter.info;
-            const infoString = `Adapter: ${adapterInfo.vendor} / ${adapterInfo.architecture} / ${adapterInfo.device}`;
-            recorder.debug(new ErrorWithExtra(infoString, () => ({ adapterInfo })));
-          }
+    const origRequestAdapterFn = impl.requestAdapter;
+
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    Object.defineProperty(impl, 'requestAdapter', {
+      configurable: true,
+      async value(options?: GPURequestAdapterOptions) {
+        const adapter = await origRequestAdapterFn.call(this, {
+          ...defaultRequestAdapterOptions,
+          ...options,
         });
-      }
-      return promise;
-    };
+        if (recorder && adapter) {
+          const adapterInfo = adapter.info;
+          const infoString = `Adapter: ${adapterInfo.vendor} / ${adapterInfo.architecture} / ${adapterInfo.device}`;
+          recorder.debug(new ErrorWithExtra(infoString, () => ({ adapterInfo })));
+        }
+        return adapter;
+      },
+    });
   }
 
   return impl;

@@ -7,15 +7,16 @@
 #ifndef MOZILLA_DOM_OFFSCREENCANVASDISPLAYHELPER_H_
 #define MOZILLA_DOM_OFFSCREENCANVASDISPLAYHELPER_H_
 
-#include "ImageContainer.h"
 #include "GLContextTypes.h"
-#include "mozilla/dom/CanvasRenderingContextHelper.h"
-#include "mozilla/gfx/Point.h"
-#include "mozilla/layers/LayersTypes.h"
+#include "ImageContainer.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/dom/CanvasRenderingContextHelper.h"
+#include "mozilla/gfx/Point.h"
+#include "mozilla/ipc/ProtocolUtils.h"
+#include "mozilla/layers/LayersTypes.h"
 #include "nsISupportsImpl.h"
 #include "nsThreadUtils.h"
 
@@ -45,7 +46,8 @@ class OffscreenCanvasDisplayHelper final {
 
   void UpdateContext(OffscreenCanvas* aOffscreenCanvas,
                      RefPtr<ThreadSafeWorkerRef>&& aWorkerRef,
-                     CanvasContextType aType, const Maybe<int32_t>& aChildId);
+                     CanvasContextType aType,
+                     const Maybe<mozilla::ipc::ActorId>& aChildId);
 
   void FlushForDisplay();
 
@@ -55,13 +57,27 @@ class OffscreenCanvasDisplayHelper final {
   void DestroyCanvas();
   void DestroyElement();
 
+  bool IsWriteOnly() const {
+    MutexAutoLock lock(mMutex);
+    return mIsWriteOnly;
+  }
+
+  bool HasWorkerRef() const {
+    MutexAutoLock lock(mMutex);
+    return !!mWorkerRef;
+  }
+
+  void SetWriteOnly(nsIPrincipal* aExpandedReader = nullptr);
+  bool CallerCanRead(nsIPrincipal& aPrincipal) const;
+
   bool CanElementCaptureStream() const;
   bool UsingElementCaptureStream() const;
 
   already_AddRefed<mozilla::gfx::SourceSurface> GetSurfaceSnapshot();
   already_AddRefed<mozilla::layers::Image> GetAsImage();
-  UniquePtr<uint8_t[]> GetImageBuffer(int32_t* aOutFormat,
-                                      gfx::IntSize* aOutImageSize);
+  UniquePtr<uint8_t[]> GetImageBuffer(
+      CanvasUtils::ImageExtraction aExtractionBehavior, int32_t* aOutFormat,
+      gfx::IntSize* aOutImageSize);
 
  private:
   ~OffscreenCanvasDisplayHelper();
@@ -83,11 +99,13 @@ class OffscreenCanvasDisplayHelper final {
   OffscreenCanvasDisplayData mData MOZ_GUARDED_BY(mMutex);
   CanvasContextType mType MOZ_GUARDED_BY(mMutex) = CanvasContextType::NoContext;
   Maybe<uint32_t> mContextManagerId MOZ_GUARDED_BY(mMutex);
-  Maybe<int32_t> mContextChildId MOZ_GUARDED_BY(mMutex);
+  Maybe<mozilla::ipc::ActorId> mContextChildId MOZ_GUARDED_BY(mMutex);
   const mozilla::layers::ImageContainer::ProducerID mImageProducerID;
   mozilla::layers::ImageContainer::FrameID mLastFrameID MOZ_GUARDED_BY(mMutex) =
       0;
   bool mPendingInvalidate MOZ_GUARDED_BY(mMutex) = false;
+  bool mIsWriteOnly MOZ_GUARDED_BY(mMutex) = false;
+  RefPtr<nsIPrincipal> mExpandedReader MOZ_GUARDED_BY(mMutex);
 };
 
 }  // namespace mozilla::dom

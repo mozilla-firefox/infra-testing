@@ -5,12 +5,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/TextDecoder.h"
-#include "mozilla/dom/UnionTypes.h"
-#include "mozilla/Encoding.h"
-#include "mozilla/UniquePtrExtensions.h"
-#include "nsContentUtils.h"
 
 #include <stdint.h>
+
+#include "mozilla/Encoding.h"
+#include "mozilla/dom/BufferSourceBinding.h"
+#include "mozilla/dom/UnionTypes.h"
+#include "nsContentUtils.h"
 
 namespace mozilla::dom {
 
@@ -97,7 +98,7 @@ void TextDecoderCommon::DecodeNative(Span<const uint8_t> aInput,
   }
 }
 
-void TextDecoder::Decode(const Optional<ArrayBufferViewOrArrayBuffer>& aBuffer,
+void TextDecoder::Decode(const Optional<BufferSource>& aBuffer,
                          const TextDecodeOptions& aOptions,
                          nsAString& aOutDecodedString, ErrorResult& aRv) {
   if (!aBuffer.WasPassed()) {

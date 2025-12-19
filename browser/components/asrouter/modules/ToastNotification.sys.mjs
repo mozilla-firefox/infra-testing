@@ -7,12 +7,13 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
+  EnrollmentType: "resource://nimbus/ExperimentAPI.sys.mjs",
   RemoteL10n: "resource:///modules/asrouter/RemoteL10n.sys.mjs",
 });
 
 XPCOMUtils.defineLazyServiceGetters(lazy, {
-  AlertsService: ["@mozilla.org/alerts-service;1", "nsIAlertsService"],
+  AlertsService: ["@mozilla.org/alerts-service;1", Ci.nsIAlertsService],
 });
 
 export const ToastNotification = {
@@ -34,6 +35,7 @@ export const ToastNotification = {
 
   /**
    * Show a toast notification.
+   *
    * @param message             Message containing content to show.
    * @param dispatch            A function to dispatch resulting actions.
    * @return                    boolean value capturing if toast notification was displayed.
@@ -51,17 +53,13 @@ export const ToastNotification = {
     let { tag } = content;
 
     let experimentMetadata =
-      lazy.ExperimentAPI.getExperimentMetaData({
-        featureId: "backgroundTaskMessage",
-      }) || {};
+      lazy.NimbusFeatures.backgroundTaskMessage.getEnrollmentMetadata(
+        lazy.EnrollmentType.EXPERIMENT
+      );
 
-    if (
-      experimentMetadata?.active &&
-      experimentMetadata?.slug &&
-      experimentMetadata?.branch?.slug
-    ) {
+    if (experimentMetadata) {
       // Like `my-experiment:my-branch`.
-      tag = `${experimentMetadata?.slug}:${experimentMetadata?.branch?.slug}`;
+      tag = `${experimentMetadata.slug}:${experimentMetadata.branch}`;
     }
 
     // There are two events named `IMPRESSION` the first one refers to telemetry

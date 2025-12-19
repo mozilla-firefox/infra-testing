@@ -19,6 +19,10 @@ let editBookmarkPanelRemoveButtonRect;
 const TEST_URL = "data:text/html,<html><body></body></html>";
 
 add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["test.wait300msAfterTabSwitch", true]],
+  });
+
   win = await BrowserTestUtils.openNewBrowserWindow();
 
   win.StarUI._createPanelIfNeeded();
@@ -44,7 +48,7 @@ function mouseout() {
   );
   EventUtils.synthesizeNativeMouseEvent({
     type: "mousemove",
-    target: win.gURLBar.textbox,
+    target: win.gURLBar,
     offsetX: 0,
     offsetY: 0,
     win,
@@ -105,11 +109,7 @@ async function test_bookmarks_popup({
         if (popupEditFn) {
           await popupEditFn();
         }
-        Assert.equal(
-          bookmarkStar.getAttribute("starred"),
-          "true",
-          "Page is starred"
-        );
+        Assert.ok(bookmarkStar.hasAttribute("starred"), "Page is starred");
         Assert.equal(
           bookmarkPanelTitle.dataset.l10nId,
           isNewBookmark ? "bookmarks-add-bookmark" : "bookmarks-edit-bookmark",

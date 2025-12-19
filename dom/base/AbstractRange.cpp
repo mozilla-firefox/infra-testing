@@ -5,17 +5,19 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/AbstractRange.h"
-#include "mozilla/dom/AbstractRangeBinding.h"
-#include "mozilla/dom/ShadowIncludingTreeIterator.h"
 
 #include "mozilla/Assertions.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/RangeUtils.h"
+#include "mozilla/SelectionMovementUtils.h"
+#include "mozilla/dom/AbstractRangeBinding.h"
 #include "mozilla/dom/ChildIterator.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/StaticRange.h"
-#include "mozilla/dom/Selection.h"
 #include "mozilla/dom/CrossShadowBoundaryRange.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentInlines.h"
+#include "mozilla/dom/Selection.h"
+#include "mozilla/dom/ShadowIncludingTreeIterator.h"
+#include "mozilla/dom/StaticRange.h"
+#include "mozilla/dom/TreeIterator.h"
 #include "nsContentUtils.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsGkAtoms.h"
@@ -27,28 +29,33 @@ namespace mozilla::dom {
 
 template nsresult AbstractRange::SetStartAndEndInternal(
     const RangeBoundary& aStartBoundary, const RangeBoundary& aEndBoundary,
-    nsRange* aRange);
+    nsRange* aRange, AllowRangeCrossShadowBoundary aAllowCrossShadowBoundary);
 template nsresult AbstractRange::SetStartAndEndInternal(
     const RangeBoundary& aStartBoundary, const RawRangeBoundary& aEndBoundary,
-    nsRange* aRange);
+    nsRange* aRange, AllowRangeCrossShadowBoundary aAllowCrossShadowBoundary);
 template nsresult AbstractRange::SetStartAndEndInternal(
     const RawRangeBoundary& aStartBoundary, const RangeBoundary& aEndBoundary,
-    nsRange* aRange);
+    nsRange* aRange, AllowRangeCrossShadowBoundary aAllowCrossShadowBoundary);
 template nsresult AbstractRange::SetStartAndEndInternal(
     const RawRangeBoundary& aStartBoundary,
-    const RawRangeBoundary& aEndBoundary, nsRange* aRange);
+    const RawRangeBoundary& aEndBoundary, nsRange* aRange,
+    AllowRangeCrossShadowBoundary aAllowCrossShadowBoundary);
 template nsresult AbstractRange::SetStartAndEndInternal(
     const RangeBoundary& aStartBoundary, const RangeBoundary& aEndBoundary,
-    StaticRange* aRange);
+    StaticRange* aRange,
+    AllowRangeCrossShadowBoundary aAllowCrossShadowBoundary);
 template nsresult AbstractRange::SetStartAndEndInternal(
     const RangeBoundary& aStartBoundary, const RawRangeBoundary& aEndBoundary,
-    StaticRange* aRange);
+    StaticRange* aRange,
+    AllowRangeCrossShadowBoundary aAllowCrossShadowBoundary);
 template nsresult AbstractRange::SetStartAndEndInternal(
     const RawRangeBoundary& aStartBoundary, const RangeBoundary& aEndBoundary,
-    StaticRange* aRange);
+    StaticRange* aRange,
+    AllowRangeCrossShadowBoundary aAllowCrossShadowBoundary);
 template nsresult AbstractRange::SetStartAndEndInternal(
     const RawRangeBoundary& aStartBoundary,
-    const RawRangeBoundary& aEndBoundary, StaticRange* aRange);
+    const RawRangeBoundary& aEndBoundary, StaticRange* aRange,
+    AllowRangeCrossShadowBoundary aAllowCrossShadowBoundary);
 template bool AbstractRange::MaybeCacheToReuse(nsRange& aInstance);
 template bool AbstractRange::MaybeCacheToReuse(StaticRange& aInstance);
 template bool AbstractRange::MaybeCacheToReuse(
@@ -91,32 +98,65 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(AbstractRange)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mRegisteredClosestCommonInclusiveAncestor)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
-// When aMarkDesendants is true, Set
-// DescendantOfClosestCommonInclusiveAncestorForRangeInSelection flag for the
-// shadow including children of aNode. When aMarkDesendants is false, unset that
-// flag for the shadow including children of aNode.
-void UpdateDescendantsByShadowIncludingOrder(const nsIContent& aNode,
-                                             bool aMarkDesendants) {
-  ShadowIncludingTreeIterator iter(*const_cast<nsIContent*>(&aNode));
-  ++iter;  // We don't want to mark the root node
-
-  while (iter) {
-    nsINode* node = *iter;
+static void UpdateDescendantsInSameTree(const nsINode& aNode,
+                                        bool aMarkDesendants) {
+  MOZ_ASSERT(!StaticPrefs::dom_shadowdom_selection_across_boundary_enabled());
+  // don't set the Descendant bit on |aNode| itself
+  nsINode* node = aNode.GetNextNode(&aNode);
+  while (node) {
     if (aMarkDesendants) {
       node->SetDescendantOfClosestCommonInclusiveAncestorForRangeInSelection();
     } else {
       node->ClearDescendantOfClosestCommonInclusiveAncestorForRangeInSelection();
     }
 
-    if (node->IsClosestCommonInclusiveAncestorForRangeInSelection()) {
-      iter.SkipChildren();
-      continue;
+    if (!node->IsClosestCommonInclusiveAncestorForRangeInSelection()) {
+      node = node->GetNextNode(&aNode);
+    } else {
+      // We found an ancestor of an overlapping range, skip its descendants.
+      node = node->GetNextNonChildNode(&aNode);
     }
-    ++iter;
   }
 }
 
-void AbstractRange::MarkDescendants(const nsINode& aNode) {
+void AbstractRange::UpdateDescendantsInFlattenedTree(nsINode& aNode,
+                                                     bool aMarkDescendants) {
+  MOZ_ASSERT(StaticPrefs::dom_shadowdom_selection_across_boundary_enabled());
+
+  auto UpdateDescendant = [aMarkDescendants](nsINode* node) {
+    if (aMarkDescendants) {
+      node->SetDescendantOfClosestCommonInclusiveAncestorForRangeInSelection();
+    } else {
+      node->ClearDescendantOfClosestCommonInclusiveAncestorForRangeInSelection();
+    }
+  };
+
+  nsINode* target = &aNode;
+
+  if (target->IsDocument()) {
+    if (auto* rootElement = aNode.AsDocument()->GetRootElement()) {
+      target = rootElement;
+      UpdateDescendant(target);
+    }
+  }
+
+  if (!target || !target->IsContent()) {
+    return;
+  }
+
+  TreeIterator<FlattenedChildIterator> iter(*target->AsContent());
+  iter.GetNext();  // Skip aNode itself.
+  while (nsIContent* curNode = iter.GetCurrent()) {
+    UpdateDescendant(curNode);
+    if (curNode->IsClosestCommonInclusiveAncestorForRangeInSelection()) {
+      iter.GetNextSkippingChildren();
+    } else {
+      iter.GetNext();
+    }
+  }
+}
+
+void AbstractRange::MarkDescendants(nsINode& aNode) {
   // Set NodeIsDescendantOfClosestCommonInclusiveAncestorForRangeInSelection on
   // aNode's descendants unless aNode is already marked as a range common
   // ancestor or a descendant of one, in which case all of our descendants have
@@ -124,67 +164,37 @@ void AbstractRange::MarkDescendants(const nsINode& aNode) {
   if (!aNode.IsMaybeSelected()) {
     // If aNode has a web-exposed shadow root, use this shadow tree and ignore
     // the children of aNode.
-    if (aNode.GetShadowRootForSelection()) {
-      UpdateDescendantsByShadowIncludingOrder(*aNode.AsContent(), true);
-      return;
-    }
-    // don't set the Descendant bit on |aNode| itself
-    nsINode* node = aNode.GetNextNode(&aNode);
-    while (node) {
-      node->SetDescendantOfClosestCommonInclusiveAncestorForRangeInSelection();
-      if (!node->IsClosestCommonInclusiveAncestorForRangeInSelection()) {
-        if (StaticPrefs::dom_shadowdom_selection_across_boundary_enabled()) {
-          UpdateDescendantsByShadowIncludingOrder(*node->AsContent(), true);
-          // sub-tree of node has been marked already
-          node = node->GetNextNonChildNode(&aNode);
-        } else {
-          node = node->GetNextNode(&aNode);
-        }
-      } else {
-        // optimize: skip this sub-tree since it's marked already.
-        node = node->GetNextNonChildNode(&aNode);
-      }
+
+    if (StaticPrefs::dom_shadowdom_selection_across_boundary_enabled()) {
+      UpdateDescendantsInFlattenedTree(aNode, true /* aMarkDescendants */);
+    } else {
+      UpdateDescendantsInSameTree(aNode, true /* aMarkDescendants */);
     }
   }
 }
 
-void AbstractRange::UnmarkDescendants(const nsINode& aNode) {
+void AbstractRange::UnmarkDescendants(nsINode& aNode) {
   // Unset NodeIsDescendantOfClosestCommonInclusiveAncestorForRangeInSelection
   // on aNode's descendants unless aNode is a descendant of another range common
   // ancestor. Also, exclude descendants of range common ancestors (but not the
   // common ancestor itself).
   if (!aNode
            .IsDescendantOfClosestCommonInclusiveAncestorForRangeInSelection()) {
-    // If aNode has a web-exposed shadow root, use this shadow tree and ignore
-    // the children of aNode.
-    if (aNode.GetShadowRootForSelection()) {
-      UpdateDescendantsByShadowIncludingOrder(*aNode.AsContent(), false);
-      return;
-    }
-    // we know |aNode| doesn't have any bit set
-    nsINode* node = aNode.GetNextNode(&aNode);
-    while (node) {
-      node->ClearDescendantOfClosestCommonInclusiveAncestorForRangeInSelection();
-      if (!node->IsClosestCommonInclusiveAncestorForRangeInSelection()) {
-        if (StaticPrefs::dom_shadowdom_selection_across_boundary_enabled()) {
-          UpdateDescendantsByShadowIncludingOrder(*node->AsContent(), false);
-          // sub-tree has been marked already
-          node = node->GetNextNonChildNode(&aNode);
-        } else {
-          node = node->GetNextNode(&aNode);
-        }
-      } else {
-        // We found an ancestor of an overlapping range, skip its descendants.
-        node = node->GetNextNonChildNode(&aNode);
-      }
+    if (StaticPrefs::dom_shadowdom_selection_across_boundary_enabled()) {
+      UpdateDescendantsInFlattenedTree(aNode, false /* aMarkDescendants */);
+    } else {
+      UpdateDescendantsInSameTree(aNode, false /* aMarkDescendants */);
     }
   }
 }
 
 // NOTE: If you need to change default value of members of AbstractRange,
 //       update nsRange::Create(nsINode* aNode) and ClearForReuse() too.
-AbstractRange::AbstractRange(nsINode* aNode, bool aIsDynamicRange)
-    : mRegisteredClosestCommonInclusiveAncestor(nullptr),
+AbstractRange::AbstractRange(nsINode* aNode, bool aIsDynamicRange,
+                             TreeKind aBoundaryTreeKind)
+    : mStart(aBoundaryTreeKind),
+      mEnd(aBoundaryTreeKind),
+      mRegisteredClosestCommonInclusiveAncestor(nullptr),
       mIsPositioned(false),
       mIsGenerated(false),
       mCalledByJS(false),
@@ -249,17 +259,15 @@ nsINode* AbstractRange::GetClosestCommonInclusiveAncestor(
   if (!mIsPositioned) {
     return nullptr;
   }
-  nsINode* startContainer =
-      aAllowCrossShadowBoundary == AllowRangeCrossShadowBoundary::Yes
-          ? GetMayCrossShadowBoundaryStartContainer()
-          : GetStartContainer();
-  nsINode* endContainer =
-      aAllowCrossShadowBoundary == AllowRangeCrossShadowBoundary::Yes
-          ? GetMayCrossShadowBoundaryEndContainer()
-          : GetEndContainer();
+  nsINode* startContainer = ShadowDOMSelectionHelpers::GetStartContainer(
+      this, aAllowCrossShadowBoundary);
+  nsINode* endContainer = ShadowDOMSelectionHelpers::GetEndContainer(
+      this, aAllowCrossShadowBoundary);
 
-  if (MayCrossShadowBoundary() &&
-      aAllowCrossShadowBoundary == AllowRangeCrossShadowBoundary::Yes) {
+  if (aAllowCrossShadowBoundary == AllowRangeCrossShadowBoundary::Yes) {
+    if (startContainer == endContainer) {
+      return startContainer;
+    }
     // Since both the start container and the end container are
     // guaranteed to be in the same composed document.
     // If one of the boundary is a document, use that document
@@ -307,7 +315,8 @@ template <typename SPT, typename SRT, typename EPT, typename ERT,
           typename RangeType>
 nsresult AbstractRange::SetStartAndEndInternal(
     const RangeBoundaryBase<SPT, SRT>& aStartBoundary,
-    const RangeBoundaryBase<EPT, ERT>& aEndBoundary, RangeType* aRange) {
+    const RangeBoundaryBase<EPT, ERT>& aEndBoundary, RangeType* aRange,
+    AllowRangeCrossShadowBoundary aAllowCrossShadowBoundary) {
   if (NS_WARN_IF(!aStartBoundary.IsSet()) ||
       NS_WARN_IF(!aEndBoundary.IsSet())) {
     return NS_ERROR_INVALID_ARG;
@@ -365,17 +374,23 @@ nsresult AbstractRange::SetStartAndEndInternal(
       // Don't create the cross shadow bounday range if the one of the roots is
       // an UA widget regardless whether the boundaries are allowed to cross
       // shadow boundary or not.
-      if (!IsRootUAWidget(newStartRoot) && !IsRootUAWidget(newEndRoot)) {
+      if (aAllowCrossShadowBoundary == AllowRangeCrossShadowBoundary::Yes &&
+          !IsRootUAWidget(newStartRoot) && !IsRootUAWidget(newEndRoot)) {
         aRange->AsDynamicRange()
-            ->CreateOrUpdateCrossShadowBoundaryRangeIfNeeded(aStartBoundary,
-                                                             aEndBoundary);
+            ->CreateOrUpdateCrossShadowBoundaryRangeIfNeeded(
+                aStartBoundary.AsRangeBoundaryInFlatTree(),
+                aEndBoundary.AsRangeBoundaryInFlatTree());
       }
     }
     return NS_OK;
   }
 
   const Maybe<int32_t> pointOrder =
-      nsContentUtils::ComparePoints(aStartBoundary, aEndBoundary);
+      aAllowCrossShadowBoundary == AllowRangeCrossShadowBoundary::Yes &&
+              StaticPrefs::dom_shadowdom_selection_across_boundary_enabled()
+          ? nsContentUtils::ComparePoints<TreeKind::Flat>(aStartBoundary,
+                                                          aEndBoundary)
+          : nsContentUtils::ComparePoints(aStartBoundary, aEndBoundary);
   if (!pointOrder) {
     // Safely return a value but also detected this in debug builds.
     MOZ_ASSERT_UNREACHABLE();
@@ -391,6 +406,16 @@ nsresult AbstractRange::SetStartAndEndInternal(
 
   // Otherwise, set the range as specified.
   aRange->DoSetRange(aStartBoundary, aEndBoundary, newStartRoot);
+
+  if (aAllowCrossShadowBoundary == AllowRangeCrossShadowBoundary::Yes &&
+      aRange->IsDynamicRange()) {
+    auto startInFlat = aStartBoundary.AsRangeBoundaryInFlatTree();
+    auto endInFlat = aEndBoundary.AsRangeBoundaryInFlatTree();
+
+    aRange->AsDynamicRange()->CreateOrUpdateCrossShadowBoundaryRangeIfNeeded(
+        startInFlat, endInFlat);
+  }
+
   return NS_OK;
 }
 
@@ -595,8 +620,8 @@ bool AbstractRange::AreNormalRangeAndCrossShadowBoundaryRangeCollapsed() const {
 
 void AbstractRange::ClearForReuse() {
   mOwner = nullptr;
-  mStart = RangeBoundary();
-  mEnd = RangeBoundary();
+  mStart = RangeBoundary(mStart.GetTreeKind());
+  mEnd = RangeBoundary(mEnd.GetTreeKind());
   mIsPositioned = false;
   mIsGenerated = false;
   mCalledByJS = false;
@@ -610,4 +635,32 @@ bool AbstractRange::IsRootUAWidget(const nsINode* aRoot) {
   }
   return false;
 }
+
+already_AddRefed<StaticRange> AbstractRange::GetShrunkenRangeToVisibleLeaves()
+    const {
+  if (NS_WARN_IF(!IsPositioned()) || NS_WARN_IF(Collapsed()) ||
+      NS_WARN_IF(IsStaticRange() && !AsStaticRange()->IsValid())) {
+    return nullptr;
+  }
+
+  const RawRangeBoundary startBoundary =
+      SelectionMovementUtils::GetFirstVisiblePointAtLeaf(*this);
+  if (MOZ_UNLIKELY(!startBoundary.IsSet())) {
+    return nullptr;
+  }
+  const RawRangeBoundary endBoundary =
+      SelectionMovementUtils::GetLastVisiblePointAtLeaf(*this);
+  if (MOZ_UNLIKELY(!endBoundary.IsSet())) {
+    return nullptr;
+  }
+  IgnoredErrorResult error;
+  RefPtr<StaticRange> range =
+      StaticRange::Create(startBoundary, endBoundary, error);
+  if (NS_WARN_IF(error.Failed())) {
+    error.SuppressException();
+    return nullptr;
+  }
+  return range.forget();
+}
+
 }  // namespace mozilla::dom

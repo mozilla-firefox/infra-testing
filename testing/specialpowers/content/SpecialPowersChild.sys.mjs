@@ -251,11 +251,12 @@ export class SpecialPowersChild extends JSWindowActorChild {
         }
         break;
 
-      case "Spawn":
+      case "Spawn": {
         let { task, args, caller, taskId, imports } = message.data;
         return this._spawnTask(task, args, caller, taskId, imports);
+      }
 
-      case "EnsureFocus":
+      case "EnsureFocus": {
         // Ensure that the focus is in this child document. Returns a browsing
         // context of a child frame if a subframe should be focused or undefined
         // otherwise.
@@ -300,9 +301,11 @@ export class SpecialPowersChild extends JSWindowActorChild {
           });
         }
         break;
+      }
 
       case "Assert":
         {
+          // Handles info & Assert reports from SpecialPowersSandbox.sys.mjs.
           if ("info" in message.data) {
             (this.xpcshellScope || this.SimpleTest).info(message.data.info);
             break;
@@ -311,12 +314,11 @@ export class SpecialPowersChild extends JSWindowActorChild {
           // An assertion has been done in a mochitest chrome script
           let { name, passed, stack, diag, expectFail } = message.data;
 
-          let { SimpleTest } = this;
-          if (SimpleTest) {
-            let expected = expectFail ? "fail" : "pass";
-            SimpleTest.record(passed, name, diag, stack, expected);
-          } else if (this.xpcshellScope) {
+          if (this.xpcshellScope) {
             this.xpcshellScope.do_report_result(passed, name, stack);
+          } else if (this.SimpleTest) {
+            let expected = expectFail ? "fail" : "pass";
+            this.SimpleTest.record(passed, name, diag, stack, expected);
           } else {
             // Well, this is unexpected.
             dump(name + "\n");
@@ -529,7 +531,7 @@ export class SpecialPowersChild extends JSWindowActorChild {
       throw new Error(
         `Error while executing chrome script '${aUrl}':\n` +
           "The script doesn't exist. Ensure you have registered it in " +
-          "'support-files' in your mochitest.ini."
+          "'support-files' in your mochitest.toml."
       );
     }
 
@@ -1506,6 +1508,13 @@ export class SpecialPowersChild extends JSWindowActorChild {
    * The sandbox also has access to an Assert object, as provided by
    * Assert.sys.mjs. Any assertion methods called before the task resolves
    * will be relayed back to the test environment of the caller.
+   * Assertions triggered after a task returns may be relayed back if
+   * setAsDefaultAssertHandler() has been called, until this SpecialPowers
+   * instance is destroyed.
+   *
+   * If your assertions need to outlive this SpecialPowers instance,
+   * use SpecialPowersForProcess from SpecialPowersProcessActor.sys.mjs,
+   * which lives until the specified child process terminates.
    *
    * @param {BrowsingContext or FrameLoaderOwner or WindowProxy} target
    *        The target in which to run the task. This may be any element

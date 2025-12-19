@@ -3,6 +3,10 @@
 // This test checks whether the new tab page color properties work per-window.
 
 add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["test.wait300msAfterTabSwitch", true]],
+  });
+
   SpecialPowers.registerConsoleListener(function onConsoleMessage(msg) {
     if (msg.isWarning || !msg.errorMessage) {
       // Ignore warnings and non-errors.
@@ -53,8 +57,8 @@ function test_ntp_theme(browser, theme, isBrightText) {
         "New tab page should have lwt-newtab attribute"
       );
       ok(
-        doc.documentElement.hasAttribute("lwtheme"),
-        "New tab page should have lwtheme attribute"
+        !doc.documentElement.hasAttribute("lwtheme"),
+        "New tab page should not have lwtheme attribute"
       );
       is(
         doc.documentElement.hasAttribute("lwt-newtab-brighttext"),

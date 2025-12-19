@@ -13,7 +13,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   OpenInTabsUtils:
     "moz-src:///browser/components/tabbrowser/OpenInTabsUtils.sys.mjs",
   URILoadingHelper: "resource:///modules/URILoadingHelper.sys.mjs",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
+  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
 });
 
 export var ToolbarDropHandler = {
@@ -101,7 +101,8 @@ export var ToolbarDropHandler = {
     let where = aEvent.shiftKey ? "tabshifted" : "tab";
     let triggeringPrincipal =
       Services.droppedLinkHandler.getTriggeringPrincipal(aEvent);
-    let csp = Services.droppedLinkHandler.getCsp(aEvent);
+    let policyContainer =
+      Services.droppedLinkHandler.getPolicyContainer(aEvent);
     for (let link of links) {
       if (link.url) {
         let data = await lazy.UrlbarUtils.getShortcutOrURIAndPostData(link.url);
@@ -110,7 +111,7 @@ export var ToolbarDropHandler = {
           postData: data.postData,
           allowThirdPartyFixup: true,
           triggeringPrincipal,
-          csp,
+          policyContainer,
         });
       }
     }
@@ -135,7 +136,8 @@ export var ToolbarDropHandler = {
 
     let triggeringPrincipal =
       Services.droppedLinkHandler.getTriggeringPrincipal(aEvent);
-    let csp = Services.droppedLinkHandler.getCsp(aEvent);
+    let policyContainer =
+      Services.droppedLinkHandler.getPolicyContainer(aEvent);
     for (let link of links) {
       if (link.url) {
         let data = await lazy.UrlbarUtils.getShortcutOrURIAndPostData(link.url);
@@ -147,7 +149,7 @@ export var ToolbarDropHandler = {
           postData: data.postData,
           allowThirdPartyFixup: true,
           triggeringPrincipal,
-          csp,
+          policyContainer,
         });
       }
     }

@@ -9,11 +9,11 @@
 
 /* The aspect ratio of a box, in a "width / height" format. */
 
-#include "mozilla/Attributes.h"
-#include "mozilla/gfx/BaseSize.h"
-#include "nsCoord.h"
 #include <algorithm>
 #include <limits>
+
+#include "mozilla/gfx/BaseSize.h"
+#include "nsCoord.h"
 
 namespace IPC {
 template <typename T>
@@ -121,13 +121,8 @@ struct AspectRatio {
       nscoord aRatioDeterminingSize,
       const LogicalSize& aContentBoxSizeToBoxSizingAdjust) const;
 
-  bool operator==(const AspectRatio& aOther) const {
-    return mRatio == aOther.mRatio && mUseBoxSizing == aOther.mUseBoxSizing;
-  }
-
-  bool operator!=(const AspectRatio& aOther) const {
-    return !(*this == aOther);
-  }
+  bool operator==(const AspectRatio&) const = default;
+  bool operator!=(const AspectRatio&) const = default;
 
   bool operator<(const AspectRatio& aOther) const {
     MOZ_ASSERT(

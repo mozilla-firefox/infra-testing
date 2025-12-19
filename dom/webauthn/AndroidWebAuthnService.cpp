@@ -4,19 +4,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/StaticPtr.h"
-#include "mozilla/ipc/BackgroundParent.h"
-#include "mozilla/jni/GeckoBundleUtils.h"
-
 #include "AndroidWebAuthnService.h"
+
 #include "JavaBuiltins.h"
 #include "JavaExceptions.h"
-#include "WebAuthnPromiseHolder.h"
 #include "WebAuthnEnumStrings.h"
+#include "WebAuthnPromiseHolder.h"
 #include "WebAuthnResult.h"
 #include "mozilla/StaticPrefs_security.h"
+#include "mozilla/StaticPtr.h"
+#include "mozilla/ipc/BackgroundParent.h"
 #include "mozilla/java/WebAuthnTokenManagerWrappers.h"
 #include "mozilla/jni/Conversions.h"
+#include "mozilla/jni/GeckoBundleUtils.h"
 
 namespace mozilla {
 namespace jni {
@@ -58,11 +58,11 @@ AndroidWebAuthnService::MakeCredential(uint64_t aTransactionId,
           GECKOBUNDLE_START(rpBundle);
 
           nsString rpId;
-          Unused << aArgs->GetRpId(rpId);
+          (void)aArgs->GetRpId(rpId);
           GECKOBUNDLE_PUT(rpBundle, "id", jni::StringParam(rpId));
 
           nsString rpName;
-          Unused << aArgs->GetRpName(rpName);
+          (void)aArgs->GetRpName(rpName);
           GECKOBUNDLE_PUT(rpBundle, "name", jni::StringParam(rpName));
 
           GECKOBUNDLE_FINISH(rpBundle);
@@ -73,11 +73,11 @@ AndroidWebAuthnService::MakeCredential(uint64_t aTransactionId,
           GECKOBUNDLE_START(userBundle);
 
           nsString userName;
-          Unused << aArgs->GetUserName(userName);
+          (void)aArgs->GetUserName(userName);
           GECKOBUNDLE_PUT(userBundle, "name", jni::StringParam(userName));
 
           nsString userDisplayName;
-          Unused << aArgs->GetUserDisplayName(userDisplayName);
+          (void)aArgs->GetUserDisplayName(userDisplayName);
           GECKOBUNDLE_PUT(userBundle, "displayName",
                           jni::StringParam(userDisplayName));
 
@@ -86,11 +86,11 @@ AndroidWebAuthnService::MakeCredential(uint64_t aTransactionId,
         }
 
         nsString origin;
-        Unused << aArgs->GetOrigin(origin);
+        (void)aArgs->GetOrigin(origin);
         GECKOBUNDLE_PUT(credentialBundle, "origin", jni::StringParam(origin));
 
         uint32_t timeout;
-        Unused << aArgs->GetTimeoutMS(&timeout);
+        (void)aArgs->GetTimeoutMS(&timeout);
         GECKOBUNDLE_PUT(credentialBundle, "timeout",
                         java::sdk::Double::New(timeout));
 
@@ -101,19 +101,19 @@ AndroidWebAuthnService::MakeCredential(uint64_t aTransactionId,
         GECKOBUNDLE_FINISH(credentialBundle);
 
         nsTArray<uint8_t> userId;
-        Unused << aArgs->GetUserId(userId);
+        (void)aArgs->GetUserId(userId);
         jni::ByteBuffer::LocalRef uid = jni::ByteBuffer::New(
             const_cast<void*>(static_cast<const void*>(userId.Elements())),
             userId.Length());
 
         nsTArray<uint8_t> challBuf;
-        Unused << aArgs->GetChallenge(challBuf);
+        (void)aArgs->GetChallenge(challBuf);
         jni::ByteBuffer::LocalRef challenge = jni::ByteBuffer::New(
             const_cast<void*>(static_cast<const void*>(challBuf.Elements())),
             challBuf.Length());
 
         nsTArray<nsTArray<uint8_t>> excludeList;
-        Unused << aArgs->GetExcludeList(excludeList);
+        (void)aArgs->GetExcludeList(excludeList);
         jni::ObjectArray::LocalRef idList =
             jni::ObjectArray::New(excludeList.Length());
         int ix = 0;
@@ -128,49 +128,45 @@ AndroidWebAuthnService::MakeCredential(uint64_t aTransactionId,
         }
 
         nsTArray<uint8_t> transportBuf;
-        Unused << aArgs->GetExcludeListTransports(transportBuf);
+        (void)aArgs->GetExcludeListTransports(transportBuf);
         jni::ByteBuffer::LocalRef transportList = jni::ByteBuffer::New(
             const_cast<void*>(
                 static_cast<const void*>(transportBuf.Elements())),
             transportBuf.Length());
 
         nsTArray<uint8_t> clientDataHash;
-        Unused << aArgs->GetClientDataHash(clientDataHash);
+        (void)aArgs->GetClientDataHash(clientDataHash);
         jni::ByteBuffer::LocalRef hash = jni::ByteBuffer::New(
             const_cast<void*>(
                 static_cast<const void*>(clientDataHash.Elements())),
             clientDataHash.Length());
 
         nsTArray<int32_t> coseAlgs;
-        Unused << aArgs->GetCoseAlgs(coseAlgs);
+        (void)aArgs->GetCoseAlgs(coseAlgs);
         jni::IntArray::LocalRef algs =
             jni::IntArray::New(coseAlgs.Elements(), coseAlgs.Length());
 
         GECKOBUNDLE_START(authSelBundle);
 
         nsString residentKey;
-        Unused << aArgs->GetResidentKey(residentKey);
+        (void)aArgs->GetResidentKey(residentKey);
 
         // Get extensions
         bool requestedCredProps;
-        Unused << aArgs->GetCredProps(&requestedCredProps);
+        (void)aArgs->GetCredProps(&requestedCredProps);
 
         // Unfortunately, GMS's FIDO2 API has no option for Passkey. If using
         // residentKey, credential will be synced with Passkey via Google
         // account or credential provider service. So this is experimental.
-        Maybe<bool> credPropsResponse;
         if (requestedCredProps &&
             StaticPrefs::
                 security_webauthn_webauthn_enable_android_fido2_residentkey()) {
           GECKOBUNDLE_PUT(authSelBundle, "residentKey",
                           jni::StringParam(residentKey));
-          bool residentKeyRequired = residentKey.EqualsLiteral(
-              MOZ_WEBAUTHN_RESIDENT_KEY_REQUIREMENT_REQUIRED);
-          credPropsResponse = Some(residentKeyRequired);
         }
 
         nsString userVerification;
-        Unused << aArgs->GetUserVerification(userVerification);
+        (void)aArgs->GetUserVerification(userVerification);
         if (userVerification.EqualsLiteral(
                 MOZ_WEBAUTHN_USER_VERIFICATION_REQUIREMENT_REQUIRED)) {
           GECKOBUNDLE_PUT(authSelBundle, "requireUserVerification",
@@ -196,6 +192,9 @@ AndroidWebAuthnService::MakeCredential(uint64_t aTransactionId,
         GECKOBUNDLE_FINISH(authSelBundle);
 
         GECKOBUNDLE_START(extensionsBundle);
+        GECKOBUNDLE_PUT(extensionsBundle, "credProps",
+                        requestedCredProps ? java::sdk::Boolean::TRUE()
+                                           : java::sdk::Boolean::FALSE());
         GECKOBUNDLE_FINISH(extensionsBundle);
 
         auto result = java::WebAuthnTokenManager::WebAuthnMakeCredential(
@@ -208,11 +207,7 @@ AndroidWebAuthnService::MakeCredential(uint64_t aTransactionId,
                    true>::FromGeckoResult(geckoResult)
             ->Then(
                 GetCurrentSerialEventTarget(), __func__,
-                [aPromise, credPropsResponse = std::move(credPropsResponse)](
-                    RefPtr<WebAuthnRegisterResult>&& aValue) {
-                  if (credPropsResponse.isSome()) {
-                    Unused << aValue->SetCredPropsRk(credPropsResponse.ref());
-                  }
+                [aPromise](RefPtr<WebAuthnRegisterResult>&& aValue) {
                   aPromise->Resolve(aValue);
                 },
                 [aPromise](AndroidWebAuthnError&& aValue) {
@@ -231,7 +226,7 @@ AndroidWebAuthnService::GetAssertion(uint64_t aTransactionId,
   Reset();
 
   bool conditionallyMediated;
-  Unused << aArgs->GetConditionallyMediated(&conditionallyMediated);
+  (void)aArgs->GetConditionallyMediated(&conditionallyMediated);
   if (conditionallyMediated) {
     aPromise->Reject(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
     return NS_OK;
@@ -244,13 +239,13 @@ AndroidWebAuthnService::GetAssertion(uint64_t aTransactionId,
         AssertIsOnMainThread();
 
         nsTArray<uint8_t> challBuf;
-        Unused << aArgs->GetChallenge(challBuf);
+        (void)aArgs->GetChallenge(challBuf);
         jni::ByteBuffer::LocalRef challenge = jni::ByteBuffer::New(
             const_cast<void*>(static_cast<const void*>(challBuf.Elements())),
             challBuf.Length());
 
         nsTArray<nsTArray<uint8_t>> allowList;
-        Unused << aArgs->GetAllowList(allowList);
+        (void)aArgs->GetAllowList(allowList);
         jni::ObjectArray::LocalRef idList =
             jni::ObjectArray::New(allowList.Length());
         int ix = 0;
@@ -265,14 +260,14 @@ AndroidWebAuthnService::GetAssertion(uint64_t aTransactionId,
         }
 
         nsTArray<uint8_t> clientDataHash;
-        Unused << aArgs->GetClientDataHash(clientDataHash);
+        (void)aArgs->GetClientDataHash(clientDataHash);
         jni::ByteBuffer::LocalRef hash = jni::ByteBuffer::New(
             const_cast<void*>(
                 static_cast<const void*>(clientDataHash.Elements())),
             clientDataHash.Length());
 
         nsTArray<uint8_t> transportBuf;
-        Unused << aArgs->GetAllowListTransports(transportBuf);
+        (void)aArgs->GetAllowListTransports(transportBuf);
         jni::ByteBuffer::LocalRef transportList = jni::ByteBuffer::New(
             const_cast<void*>(
                 static_cast<const void*>(transportBuf.Elements())),
@@ -284,20 +279,22 @@ AndroidWebAuthnService::GetAssertion(uint64_t aTransactionId,
                         java::sdk::Integer::ValueOf(1));
 
         nsString rpId;
-        Unused << aArgs->GetRpId(rpId);
+        (void)aArgs->GetRpId(rpId);
         GECKOBUNDLE_PUT(assertionBundle, "rpId", jni::StringParam(rpId));
 
         nsString origin;
-        Unused << aArgs->GetOrigin(origin);
+        (void)aArgs->GetOrigin(origin);
         GECKOBUNDLE_PUT(assertionBundle, "origin", jni::StringParam(origin));
 
         uint32_t timeout;
-        Unused << aArgs->GetTimeoutMS(&timeout);
+        (void)aArgs->GetTimeoutMS(&timeout);
         GECKOBUNDLE_PUT(assertionBundle, "timeout",
                         java::sdk::Double::New(timeout));
 
-        // User Verification Requirement is not currently used in the
-        // Android FIDO API.
+        nsString userVerification;
+        (void)aArgs->GetUserVerification(userVerification);
+        GECKOBUNDLE_PUT(assertionBundle, "userVerification",
+                        jni::StringParam(userVerification));
 
         GECKOBUNDLE_FINISH(assertionBundle);
 
@@ -395,49 +392,51 @@ AndroidWebAuthnService::SelectionCallback(uint64_t aTransactionId,
 
 NS_IMETHODIMP
 AndroidWebAuthnService::AddVirtualAuthenticator(
-    const nsACString& protocol, const nsACString& transport,
-    bool hasResidentKey, bool hasUserVerification, bool isUserConsenting,
-    bool isUserVerified, uint64_t* _retval) {
+    const nsACString& aProtocol, const nsACString& aTransport,
+    bool aHasResidentKey, bool aHasUserVerification, bool aIsUserConsenting,
+    bool aIsUserVerified, nsACString& aRetval) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP
-AndroidWebAuthnService::RemoveVirtualAuthenticator(uint64_t authenticatorId) {
+AndroidWebAuthnService::RemoveVirtualAuthenticator(
+    const nsACString& aAuthenticatorId) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP
-AndroidWebAuthnService::AddCredential(uint64_t authenticatorId,
-                                      const nsACString& credentialId,
-                                      bool isResidentCredential,
-                                      const nsACString& rpId,
-                                      const nsACString& privateKey,
-                                      const nsACString& userHandle,
-                                      uint32_t signCount) {
+AndroidWebAuthnService::AddCredential(const nsACString& aAuthenticatorId,
+                                      const nsACString& aCredentialId,
+                                      bool aIsResidentCredential,
+                                      const nsACString& aRpId,
+                                      const nsACString& aPrivateKey,
+                                      const nsACString& aUserHandle,
+                                      uint32_t aSignCount) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP
 AndroidWebAuthnService::GetCredentials(
-    uint64_t authenticatorId,
-    nsTArray<RefPtr<nsICredentialParameters>>& _retval) {
+    const nsACString& aAuthenticatorId,
+    nsTArray<RefPtr<nsICredentialParameters>>& _aRetval) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP
-AndroidWebAuthnService::RemoveCredential(uint64_t authenticatorId,
-                                         const nsACString& credentialId) {
+AndroidWebAuthnService::RemoveCredential(const nsACString& aAuthenticatorId,
+                                         const nsACString& aCredentialId) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP
-AndroidWebAuthnService::RemoveAllCredentials(uint64_t authenticatorId) {
+AndroidWebAuthnService::RemoveAllCredentials(
+    const nsACString& aAuthenticatorId) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP
-AndroidWebAuthnService::SetUserVerified(uint64_t authenticatorId,
-                                        bool isUserVerified) {
+AndroidWebAuthnService::SetUserVerified(const nsACString& aAuthenticatorId,
+                                        bool aIsUserVerified) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -445,7 +444,7 @@ NS_IMETHODIMP
 AndroidWebAuthnService::Listen() { return NS_ERROR_NOT_IMPLEMENTED; }
 
 NS_IMETHODIMP
-AndroidWebAuthnService::RunCommand(const nsACString& cmd) {
+AndroidWebAuthnService::RunCommand(const nsACString& aCmd) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 

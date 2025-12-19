@@ -25,11 +25,13 @@ import mozilla.appservices.remotesettings.RemoteSettingsRecord
 import mozilla.appservices.remotesettings.RemoteSettingsResponse
 import mozilla.components.support.base.log.logger.Logger
 import mozilla.components.support.ktx.util.writeString
+import mozilla.components.support.rusterrors.reportRustError
 import org.json.JSONObject
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.IOException
 import java.net.URL
+import mozilla.appservices.remotesettings.InternalException as UniffiInternalException
 
 /**
  * Helper class to download collections from remote settings in app services.
@@ -74,6 +76,10 @@ class RemoteSettingsClient(
             RemoteSettingsResult.NetworkFailure(e)
         } catch (e: NullPointerException) {
             Logger.error(e.message.toString())
+            RemoteSettingsResult.NetworkFailure(e)
+        } catch (e: UniffiInternalException) {
+            Logger.error(e.toString())
+            reportRustError("remote-settings-internal-error", e.toString())
             RemoteSettingsResult.NetworkFailure(e)
         }
     }
@@ -262,4 +268,41 @@ private fun SerializableAttachment.toAttachment(): Attachment {
         hash = this.hash,
         size = this.size,
     )
+}
+
+/**
+ * Enum class representing the Remote Settings server that the client should use.
+ */
+sealed class RemoteSettingsServer {
+    /**
+     * Object representing Production RemoteSettingsServer
+     */
+    object Prod : RemoteSettingsServer()
+
+    /**
+     * Object representing Stage RemoteSettingsServer
+     */
+    object Stage : RemoteSettingsServer()
+
+    /**
+     * Object representing Dev RemoteSettingsServer
+     */
+    object Dev : RemoteSettingsServer()
+
+    /**
+     * Object representing Custom RemoteSettingsServer
+     */
+    data class Custom(val url: String) : RemoteSettingsServer()
+}
+
+/**
+ * Convert [RemoteSettingsServer] into [mozilla.appservices.remotesettings.RemoteSettingsServer].
+ */
+fun RemoteSettingsServer.into(): mozilla.appservices.remotesettings.RemoteSettingsServer {
+    return when (this) {
+        RemoteSettingsServer.Dev -> mozilla.appservices.remotesettings.RemoteSettingsServer.Dev
+        RemoteSettingsServer.Stage -> mozilla.appservices.remotesettings.RemoteSettingsServer.Stage
+        RemoteSettingsServer.Prod -> mozilla.appservices.remotesettings.RemoteSettingsServer.Prod
+        is RemoteSettingsServer.Custom -> mozilla.appservices.remotesettings.RemoteSettingsServer.Custom(this.url)
+    }
 }

@@ -5,6 +5,7 @@
 package org.mozilla.fenix.ui.robots
 
 import android.util.Log
+import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
@@ -15,8 +16,10 @@ import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.test.uiautomator.UiScrollable
 import androidx.test.uiautomator.UiSelector
 import org.mozilla.fenix.R
+import org.mozilla.fenix.helpers.Constants.RETRY_COUNT
 import org.mozilla.fenix.helpers.Constants.TAG
 import org.mozilla.fenix.helpers.DataGenerationHelper.getStringResource
 import org.mozilla.fenix.helpers.MatcherHelper.assertItemIsChecked
@@ -42,12 +45,14 @@ class SettingsTranslationsRobot(private val composeTestRule: ComposeTestRule) {
 
     @OptIn(ExperimentalTestApi::class)
     fun verifyDownloadedLanguage(downloadedLanguage: String) {
-        Log.i(TAG, "verifyDownloadedLanguage: Waiting for $waitingTime until the $downloadedLanguage language is downloaded")
-        composeTestRule.waitUntilAtLeastOneExists(hasContentDescription("$downloadedLanguage 17.94 MBDelete"), waitingTime)
-        Log.i(TAG, "verifyDownloadedLanguage: Waited for $waitingTime until the $downloadedLanguage language was downloaded")
-        Log.i(TAG, "verifyDownloadedLanguage: Trying to verify that $downloadedLanguage language is downloaded")
-        composeTestRule.onNodeWithContentDescription("$downloadedLanguage 17.94 MBDelete").assertIsDisplayed()
-        Log.i(TAG, "verifyDownloadedLanguage: Verified that $downloadedLanguage language is downloaded")
+        Log.i(TAG, "verifyDownloadedLanguage: Waiting until $downloadedLanguage is downloaded")
+        composeTestRule.waitUntil(timeoutMillis = 30_000) {
+            composeTestRule.onAllNodes(hasContentDescription("$downloadedLanguage", substring = true))
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        composeTestRule.onNodeWithContentDescription("$downloadedLanguage", substring = true)
+            .assertIsDisplayed()
+        Log.i(TAG, "verifyDownloadedLanguage: Verified that $downloadedLanguage is downloaded")
     }
 
     fun verifyDownloadLanguageInSavingModePrompt() {
@@ -115,16 +120,53 @@ class SettingsTranslationsRobot(private val composeTestRule: ComposeTestRule) {
 
     @OptIn(ExperimentalTestApi::class)
     fun verifyAlwaysAutomaticallyTranslateForLanguage(languageToTranslate: String) {
-        Log.i(TAG, "verifyAlwaysAutomaticallyTranslateForLanguage: Waiting for $waitingTime ms until $languageToTranslate language exists")
-        composeTestRule.waitUntilExactlyOneExists(hasText(languageToTranslate), waitingTime)
-        Log.i(TAG, "verifyAlwaysAutomaticallyTranslateForLanguage: Waited for $waitingTime ms until $languageToTranslate language exists")
+        for (i in 1..RETRY_COUNT) {
+            Log.i(TAG, "verifyAlwaysAutomaticallyTranslateForLanguage: Started try #$i")
+            try {
+                Log.i(TAG, "verifyAlwaysAutomaticallyTranslateForLanguage: Waiting for $waitingTime ms until $languageToTranslate language exists")
+                composeTestRule.waitUntilExactlyOneExists(hasText(languageToTranslate), waitingTime)
+                Log.i(TAG, "verifyAlwaysAutomaticallyTranslateForLanguage: Waited for $waitingTime ms until $languageToTranslate language exists")
+
+                break
+            } catch (e: ComposeTimeoutException) {
+                Log.i(TAG, "verifyAlwaysAutomaticallyTranslateForLanguage: ComposeTimeoutException caught, executing fallback methods")
+                if (i == RETRY_COUNT) {
+                    throw e
+                } else {
+                    Log.i(TAG, "verifyAlwaysAutomaticallyTranslateForLanguage: Trying to perform a one step scroll to end")
+                    UiScrollable(UiSelector().scrollable(true)).scrollToEnd(1)
+                    Log.i(TAG, "verifyAlwaysAutomaticallyTranslateForLanguage: Performed a one step scroll to end")
+                }
+            }
+        }
+
         Log.i(TAG, "verifyNeverAutomaticallyTranslateForLanguage: Trying to verify that $languageToTranslate language is set to \"Never translate\"")
         composeTestRule.onNodeWithText(languageToTranslate, useUnmergedTree = true)
             .assert(hasAnySibling(hasText(getStringResource(R.string.automatic_translation_option_always_translate_title_preference))))
         Log.i(TAG, "verifyNeverAutomaticallyTranslateForLanguage: Verified that $languageToTranslate language is set to \"Never translate\"")
     }
 
+    @OptIn(ExperimentalTestApi::class)
     fun verifyNeverAutomaticallyTranslateForLanguage(languageToTranslate: String) {
+        for (i in 1..RETRY_COUNT) {
+            Log.i(TAG, "verifyNeverAutomaticallyTranslateForLanguage: Started try #$i")
+            try {
+                Log.i(TAG, "verifyNeverAutomaticallyTranslateForLanguage: Waiting for $waitingTime ms until $languageToTranslate language exists")
+                composeTestRule.waitUntilExactlyOneExists(hasText(languageToTranslate), waitingTime)
+                Log.i(TAG, "verifyNeverAutomaticallyTranslateForLanguage: Waited for $waitingTime ms until $languageToTranslate language exists")
+
+                break
+            } catch (e: ComposeTimeoutException) {
+                Log.i(TAG, "verifyNeverAutomaticallyTranslateForLanguage: ComposeTimeoutException caught, executing fallback methods")
+                if (i == RETRY_COUNT) {
+                    throw e
+                } else {
+                    Log.i(TAG, "verifyNeverAutomaticallyTranslateForLanguage: Trying to perform a one step scroll to end")
+                    UiScrollable(UiSelector().scrollable(true)).scrollToEnd(1)
+                    Log.i(TAG, "verifyNeverAutomaticallyTranslateForLanguage: Performed a one step scroll to end")
+                }
+            }
+        }
         Log.i(TAG, "verifyNeverAutomaticallyTranslateForLanguage: Trying to verify that $languageToTranslate language is set to \"Never translate\"")
         composeTestRule.onNodeWithText(languageToTranslate, useUnmergedTree = true)
             .assert(hasAnySibling(hasText(getStringResource(R.string.automatic_translation_option_never_translate_title_preference))))

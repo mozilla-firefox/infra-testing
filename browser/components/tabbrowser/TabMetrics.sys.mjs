@@ -8,12 +8,18 @@
  * should be sent as extra data with tab-related metrics events.
  */
 const METRIC_SOURCE = Object.freeze({
+  // Tab overflow menu/"list all tabs" menu
   TAB_OVERFLOW_MENU: "tab_overflow",
+  // Tab group context menu (right-clicking on a tab group label)
   TAB_GROUP_MENU: "tab_group",
+  CANCEL_TAB_GROUP_CREATION: "cancel_create",
+  // Tab context menu (right-clicking on a tab)
   TAB_MENU: "tab_menu",
   TAB_STRIP: "tab_strip",
   DRAG_AND_DROP: "drag",
+  // "Search & Suggest," i.e. URL bar suggested actions while typing
   SUGGEST: "suggest",
+  // History > Recently Closed Tabs menu, undo recently closed tab, etc.
   RECENT_TABS: "recent",
   UNKNOWN: "unknown",
 });
@@ -26,6 +32,12 @@ const METRIC_TABS_LAYOUT = Object.freeze({
 const METRIC_REOPEN_TYPE = Object.freeze({
   SAVED: "saved",
   DELETED: "deleted",
+});
+
+const METRIC_GROUP_TYPE = Object.freeze({
+  EXPANDED: "expanded",
+  COLLAPSED: "collapsed",
+  SAVED: "saved",
 });
 
 /**
@@ -49,6 +61,7 @@ const METRIC_REOPEN_TYPE = Object.freeze({
  * @returns {TabMetricsContext}
  */
 function userTriggeredContext(telemetrySource) {
+  telemetrySource = telemetrySource || METRIC_SOURCE.UNKNOWN;
   return {
     isUserTriggered: true,
     telemetrySource,
@@ -59,5 +72,6 @@ export const TabMetrics = {
   METRIC_SOURCE,
   METRIC_TABS_LAYOUT,
   METRIC_REOPEN_TYPE,
+  METRIC_GROUP_TYPE,
   userTriggeredContext,
 };

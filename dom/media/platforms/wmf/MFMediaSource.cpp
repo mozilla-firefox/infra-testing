@@ -14,7 +14,6 @@
 #include "MFMediaEngineVideoStream.h"
 #include "VideoUtils.h"
 #include "WMF.h"
-#include "mozilla/Atomics.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/TaskQueue.h"
 
@@ -40,7 +39,7 @@ MFMediaSource::~MFMediaSource() {
 
 HRESULT MFMediaSource::RuntimeClassInitialize(
     const Maybe<AudioInfo>& aAudio, const Maybe<VideoInfo>& aVideo,
-    nsISerialEventTarget* aManagerThread, bool aIsEncrytpedCustomInit) {
+    nsISerialEventTarget* aManagerThread, bool aIsEncryptedCustomInit) {
   // On manager thread.
   MutexAutoLock lock(mMutex);
 
@@ -53,7 +52,7 @@ HRESULT MFMediaSource::RuntimeClassInitialize(
 
   if (aAudio) {
     mAudioStream.Attach(MFMediaEngineAudioStream::Create(
-        streamId++, *aAudio, aIsEncrytpedCustomInit, this));
+        streamId++, *aAudio, aIsEncryptedCustomInit, this));
     if (!mAudioStream) {
       NS_WARNING("Failed to create audio stream");
       return E_FAIL;
@@ -66,7 +65,7 @@ HRESULT MFMediaSource::RuntimeClassInitialize(
 
   if (aVideo) {
     mVideoStream.Attach(MFMediaEngineVideoStream::Create(
-        streamId++, *aVideo, aIsEncrytpedCustomInit, this));
+        streamId++, *aVideo, aIsEncryptedCustomInit, this));
     if (!mVideoStream) {
       NS_WARNING("Failed to create video stream");
       return E_FAIL;
@@ -290,6 +289,9 @@ IFACEMETHODIMP MFMediaSource::Shutdown() {
   // MF_E_SHUTDOWN.
   RETURN_IF_FAILED(mMediaEventQueue->Shutdown());
   mState = State::Shutdowned;
+#ifdef MOZ_WMF_CDM
+  mCDMProxy = nullptr;
+#endif
   LOG("Shutdowned media source");
   return S_OK;
 }
@@ -308,7 +310,7 @@ void MFMediaSource::ShutdownTaskQueue() {
     mVideoStream = nullptr;
     mVideoStreamEndedListener.DisconnectIfExists();
   }
-  Unused << mTaskQueue->BeginShutdown();
+  (void)mTaskQueue->BeginShutdown();
   mTaskQueue = nullptr;
 }
 

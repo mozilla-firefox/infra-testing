@@ -18,7 +18,7 @@ interface ServiceWorkerContainer : EventTarget {
   [Throws]
   readonly attribute Promise<ServiceWorkerRegistration> ready;
 
-  [NewObject, NeedsCallerType, Throws]
+  [NewObject, NeedsSubjectPrincipal=NonSystem, Throws]
   Promise<ServiceWorkerRegistration> register((TrustedScriptURL or USVString) scriptURL,
                                               optional RegistrationOptions options = {});
 
@@ -37,5 +37,6 @@ interface ServiceWorkerContainer : EventTarget {
 
 dictionary RegistrationOptions {
   USVString scope;
+  WorkerType type = "classic";
   ServiceWorkerUpdateViaCache updateViaCache = "imports";
 };

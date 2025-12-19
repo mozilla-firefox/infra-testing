@@ -14,6 +14,9 @@ from mozversioncontrol import MissingVCSExtension, get_repository_object
 
 
 def test_push_to_try(repo, monkeypatch):
+    if repo.vcs == "src":
+        pytest.skip("src repo cannot push")
+
     commit_message = "commit message"
     vcs = get_repository_object(repo.dir)
 
@@ -137,9 +140,9 @@ def test_push_to_try(repo, monkeypatch):
         assert repo.vcs == "jj"
         expected = [
             (str(vcs._git._tool), "cinnabar", "--version"),
+            (str(tool), "debug", "snapshot"),
             (
                 str(tool),
-                "--ignore-working-copy",
                 "operation",
                 "log",
                 "-n1",
@@ -147,7 +150,15 @@ def test_push_to_try(repo, monkeypatch):
                 "-T",
                 "id.short(16)",
             ),
-            (str(tool), "new", "-m", "commit message", "latest((@ | @-) ~ empty())"),
+            (
+                str(tool),
+                "new",
+                "-m",
+                "commit message",
+                'coalesce(@ ~ (empty() & description(exact:"")) ~ bookmarks(), @-)',
+            ),
+            (str(tool), "file", "track", "extra-file"),
+            (str(tool), "file", "track", "other/extra-file"),
             (str(tool), "log", "-n0"),
             (
                 str(tool),

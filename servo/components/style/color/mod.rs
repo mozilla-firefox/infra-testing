@@ -14,6 +14,7 @@ pub mod parsing;
 mod to_css;
 
 use self::parsing::ChannelKeyword;
+use crate::derives::*;
 pub use color_function::*;
 use component::ColorComponent;
 use cssparser::color::PredefinedColorSpace;
@@ -103,6 +104,9 @@ pub enum ColorSpace {
     /// A color specified with the color(..) function and the "display-p3"
     /// color space, e.g. "color(display-p3 0.84 0.19 0.72)".
     DisplayP3,
+    /// A color specified with the color(..) function and the "display-p3-linear"
+    /// color space.
+    DisplayP3Linear,
     /// A color specified with the color(..) function and the "a98-rgb" color
     /// space, e.g. "color(a98-rgb 0.44091 0.49971 0.37408)".
     A98Rgb,
@@ -140,14 +144,15 @@ impl ColorSpace {
     #[inline]
     pub fn is_rgb_or_xyz_like(&self) -> bool {
         match self {
-            Self::Srgb |
-            Self::SrgbLinear |
-            Self::DisplayP3 |
-            Self::A98Rgb |
-            Self::ProphotoRgb |
-            Self::Rec2020 |
-            Self::XyzD50 |
-            Self::XyzD65 => true,
+            Self::Srgb
+            | Self::SrgbLinear
+            | Self::DisplayP3
+            | Self::DisplayP3Linear
+            | Self::A98Rgb
+            | Self::ProphotoRgb
+            | Self::Rec2020
+            | Self::XyzD50
+            | Self::XyzD65 => true,
             _ => false,
         }
     }
@@ -191,7 +196,7 @@ bitflags! {
 
 /// An absolutely specified color, using either rgb(), rgba(), lab(), lch(),
 /// oklab(), oklch() or color().
-#[derive(Copy, Clone, Debug, MallocSizeOf, PartialEq, ToShmem)]
+#[derive(Copy, Clone, Debug, MallocSizeOf, PartialEq, ToShmem, ToTyped)]
 #[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
 #[repr(C)]
 pub struct AbsoluteColor {
@@ -504,11 +509,12 @@ impl AbsoluteColor {
                 ChannelKeyword::H => self.c2(),
                 _ => return Err(()),
             },
-            ColorSpace::SrgbLinear |
-            ColorSpace::DisplayP3 |
-            ColorSpace::A98Rgb |
-            ColorSpace::ProphotoRgb |
-            ColorSpace::Rec2020 => match channel_keyword {
+            ColorSpace::SrgbLinear
+            | ColorSpace::DisplayP3
+            | ColorSpace::DisplayP3Linear
+            | ColorSpace::A98Rgb
+            | ColorSpace::ProphotoRgb
+            | ColorSpace::Rec2020 => match channel_keyword {
                 ChannelKeyword::R => self.c0(),
                 ChannelKeyword::G => self.c1(),
                 ChannelKeyword::B => self.c2(),
@@ -576,6 +582,7 @@ impl AbsoluteColor {
                     Hwb => convert::to_xyz::<convert::Hwb>(&components),
                     SrgbLinear => convert::to_xyz::<convert::SrgbLinear>(&components),
                     DisplayP3 => convert::to_xyz::<convert::DisplayP3>(&components),
+                    DisplayP3Linear => convert::to_xyz::<convert::DisplayP3Linear>(&components),
                     A98Rgb => convert::to_xyz::<convert::A98Rgb>(&components),
                     ProphotoRgb => convert::to_xyz::<convert::ProphotoRgb>(&components),
                     Rec2020 => convert::to_xyz::<convert::Rec2020>(&components),
@@ -593,6 +600,9 @@ impl AbsoluteColor {
                     Hwb => convert::from_xyz::<convert::Hwb>(&xyz, white_point),
                     SrgbLinear => convert::from_xyz::<convert::SrgbLinear>(&xyz, white_point),
                     DisplayP3 => convert::from_xyz::<convert::DisplayP3>(&xyz, white_point),
+                    DisplayP3Linear => {
+                        convert::from_xyz::<convert::DisplayP3Linear>(&xyz, white_point)
+                    },
                     A98Rgb => convert::from_xyz::<convert::A98Rgb>(&xyz, white_point),
                     ProphotoRgb => convert::from_xyz::<convert::ProphotoRgb>(&xyz, white_point),
                     Rec2020 => convert::from_xyz::<convert::Rec2020>(&xyz, white_point),
@@ -630,6 +640,7 @@ impl From<PredefinedColorSpace> for ColorSpace {
             PredefinedColorSpace::Srgb => ColorSpace::Srgb,
             PredefinedColorSpace::SrgbLinear => ColorSpace::SrgbLinear,
             PredefinedColorSpace::DisplayP3 => ColorSpace::DisplayP3,
+            PredefinedColorSpace::DisplayP3Linear => ColorSpace::DisplayP3Linear,
             PredefinedColorSpace::A98Rgb => ColorSpace::A98Rgb,
             PredefinedColorSpace::ProphotoRgb => ColorSpace::ProphotoRgb,
             PredefinedColorSpace::Rec2020 => ColorSpace::Rec2020,

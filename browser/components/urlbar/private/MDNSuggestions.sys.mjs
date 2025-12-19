@@ -2,15 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { SuggestProvider } from "resource:///modules/urlbar/private/SuggestFeature.sys.mjs";
+import { SuggestProvider } from "moz-src:///browser/components/urlbar/private/SuggestFeature.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
+  QuickSuggest: "moz-src:///browser/components/urlbar/QuickSuggest.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
 });
 
 const RESULT_MENU_COMMAND = {
@@ -24,15 +24,11 @@ const RESULT_MENU_COMMAND = {
  */
 export class MDNSuggestions extends SuggestProvider {
   get enablingPreferences() {
-    return [
-      "mdn.featureGate",
-      "suggest.mdn",
-      "suggest.quicksuggest.nonsponsored",
-    ];
+    return ["mdn.featureGate", "suggest.mdn", "suggest.quicksuggest.all"];
   }
 
-  get primaryUserControlledPreference() {
-    return "suggest.mdn";
+  get primaryUserControlledPreferences() {
+    return ["suggest.mdn"];
   }
 
   get merinoProvider() {
@@ -59,34 +55,36 @@ export class MDNSuggestions extends SuggestProvider {
     );
     url.searchParams.set("utm_content", "treatment");
 
-    const payload = {
-      icon: "chrome://global/skin/icons/mdn.svg",
-      url: url.href,
-      originalUrl: suggestion.url,
-      title: [suggestion.title, lazy.UrlbarUtils.HIGHLIGHT.TYPED],
-      description: suggestion.description,
-      shouldShowUrl: true,
-      bottomTextL10n: { id: "firefox-suggest-mdn-bottom-text" },
-    };
-
-    return Object.assign(
-      new lazy.UrlbarResult(
-        lazy.UrlbarUtils.RESULT_TYPE.URL,
-        lazy.UrlbarUtils.RESULT_SOURCE.OTHER_NETWORK,
-        ...lazy.UrlbarResult.payloadAndSimpleHighlights(
-          queryContext.tokens,
-          payload
-        )
-      ),
-      {
-        isBestMatch: true,
-        showFeedbackMenu: true,
-      }
-    );
+    return new lazy.UrlbarResult({
+      type: lazy.UrlbarUtils.RESULT_TYPE.URL,
+      source: lazy.UrlbarUtils.RESULT_SOURCE.OTHER_NETWORK,
+      isBestMatch: true,
+      showFeedbackMenu: true,
+      payload: {
+        icon: "chrome://global/skin/icons/mdn.svg",
+        url: url.href,
+        originalUrl: suggestion.url,
+        title: suggestion.title,
+        description: suggestion.description,
+        shouldShowUrl: true,
+        bottomTextL10n: {
+          id: "firefox-suggest-mdn-bottom-text",
+        },
+      },
+      highlights: {
+        title: lazy.UrlbarUtils.HIGHLIGHT.TYPED,
+      },
+    });
   }
 
+  /**
+   * Gets the list of commands that should be shown in the result menu for a
+   * given result from the provider. All commands returned by this method should
+   * be handled by implementing `onEngagement()` with the possible exception of
+   * commands automatically handled by the urlbar, like "help".
+   */
   getResultCommands() {
-    return [
+    return /** @type {UrlbarResultCommand[]} */ ([
       {
         l10n: {
           id: "firefox-suggest-command-dont-show-mdn",
@@ -113,7 +111,7 @@ export class MDNSuggestions extends SuggestProvider {
           id: "urlbar-result-menu-manage-firefox-suggest",
         },
       },
-    ];
+    ]);
   }
 
   onEngagement(queryContext, controller, details, _searchString) {

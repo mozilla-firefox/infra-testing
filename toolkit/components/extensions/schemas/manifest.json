@@ -11,8 +11,7 @@
           "manifest_version": {
             "type": "integer",
             "minimum": 2,
-            "maximum": 3,
-            "postprocess": "manifestVersionCheck"
+            "maximum": 3
           },
 
           "applications": {
@@ -515,12 +514,13 @@
             "enum": [
               "authenticationInfo",
               "bookmarksInfo",
-              "browsingHistory",
+              "browsingActivity",
               "financialAndPaymentInfo",
               "healthInfo",
               "locationInfo",
               "personalCommunications",
               "personallyIdentifyingInfo",
+              "searchTerms",
               "websiteActivity",
               "websiteContent"
             ]
@@ -657,8 +657,14 @@
                 },
                 "optional": true,
                 "default": []
+              },
+              "has_previous_consent": {
+                "type": "boolean",
+                "optional": true,
+                "default": false
               }
-            }
+            },
+            "additionalProperties": { "$ref": "UnrecognizedProperty" }
           }
         },
         "additionalProperties": { "$ref": "UnrecognizedProperty" }
@@ -781,6 +787,11 @@
             "optional": true,
             "description": "The list of CSS files to inject",
             "items": { "$ref": "ExtensionURL" }
+          },
+          "css_origin": {
+            "$ref": "extensionTypes.CSSOrigin",
+            "default": "author",
+            "optional": true
           },
           "js": {
             "type": "array",

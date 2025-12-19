@@ -7,7 +7,6 @@
 /* API for getting a stack trace of the C/C++ stack on the current thread */
 
 #include "mozilla/Array.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/StackWalk.h"
@@ -108,10 +107,8 @@ class FrameSkipper {
 #  include <process.h>
 #  include <stdio.h>
 #  include <malloc.h>
-#  include "mozilla/ArrayUtils.h"
 #  include "mozilla/Atomics.h"
 #  include "mozilla/StackWalk_windows.h"
-#  include "mozilla/WindowsVersion.h"
 
 #  include <imagehlp.h>
 // We need a way to know if we are building for WXP (or later), as if we are, we
@@ -949,7 +946,8 @@ MFBT_API void MozStackWalk(MozWalkStackCallback aCallback,
 #    elif defined(ANDROID)
   pthread_attr_t sattr;
   pthread_attr_init(&sattr);
-  pthread_getattr_np(pthread_self(), &sattr);
+  int rc = pthread_getattr_np(pthread_self(), &sattr);
+  MOZ_RELEASE_ASSERT(rc == 0, "pthread_getattr_np failed");
   void* stackBase = stackEnd = nullptr;
   size_t stackSize = 0;
   if (gettid() != getpid()) {

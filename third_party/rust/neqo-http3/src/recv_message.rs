@@ -4,10 +4,17 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::{cell::RefCell, cmp::min, collections::VecDeque, fmt::Debug, rc::Rc};
+use std::{
+    cell::RefCell,
+    cmp::min,
+    collections::VecDeque,
+    fmt::{self, Debug, Display, Formatter},
+    rc::Rc,
+    time::Instant,
+};
 
 use neqo_common::{header::HeadersExt as _, qdebug, qinfo, qtrace, Header};
-use neqo_qpack::decoder::QPackDecoder;
+use neqo_qpack as qpack;
 use neqo_transport::{Connection, StreamId};
 
 use crate::{
@@ -67,9 +74,10 @@ struct PushInfo {
 #[derive(Debug)]
 pub struct RecvMessage {
     state: RecvMessageState,
+    stream_info: Http3StreamInfo,
     message_type: MessageType,
     stream_type: Http3StreamType,
-    qpack_decoder: Rc<RefCell<QPackDecoder>>,
+    qpack_decoder: Rc<RefCell<qpack::Decoder>>,
     conn_events: Box<dyn HttpRecvStreamEvents>,
     push_handler: Option<Rc<RefCell<PushController>>>,
     stream_id: StreamId,
@@ -77,8 +85,8 @@ pub struct RecvMessage {
     blocked_push_promise: VecDeque<PushInfo>,
 }
 
-impl ::std::fmt::Display for RecvMessage {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+impl Display for RecvMessage {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "RecvMessage stream_id:{}", self.stream_id)
     }
 }
@@ -86,7 +94,7 @@ impl ::std::fmt::Display for RecvMessage {
 impl RecvMessage {
     pub fn new(
         message_info: &RecvMessageInfo,
-        qpack_decoder: Rc<RefCell<QPackDecoder>>,
+        qpack_decoder: Rc<RefCell<qpack::Decoder>>,
         conn_events: Box<dyn HttpRecvStreamEvents>,
         push_handler: Option<Rc<RefCell<PushController>>>,
         priority_handler: PriorityHandler,
@@ -99,6 +107,7 @@ impl RecvMessage {
                         FrameReader::new_with_type(HFrameType(frame_type))
                     }),
             },
+            stream_info: Http3StreamInfo::new(message_info.stream_id, Http3StreamType::Http),
             message_type: message_info.message_type,
             stream_type: message_info.stream_type,
             qpack_decoder,
@@ -165,21 +174,21 @@ impl RecvMessage {
             return Err(Error::HttpGeneralProtocolStream);
         }
 
-        let is_web_transport = self.message_type == MessageType::Request
+        let is_extended_connect = self.message_type == MessageType::Request
             && headers.contains_header(":method", "CONNECT")
-            && headers.contains_header(":protocol", "webtransport");
-        if is_web_transport {
+            && headers.find_header(":protocol").is_some();
+        if is_extended_connect {
             self.conn_events
                 .extended_connect_new_session(self.stream_id, headers);
         } else {
             self.conn_events
-                .header_ready(self.get_stream_info(), headers, interim, fin);
+                .header_ready(&self.stream_info, headers, interim, fin);
         }
 
         if fin {
             self.set_closed();
         } else {
-            self.state = if is_web_transport {
+            self.state = if is_extended_connect {
                 self.stream_type = Http3StreamType::ExtendedConnect;
                 RecvMessageState::ExtendedConnect
             } else if interim {
@@ -211,7 +220,7 @@ impl RecvMessage {
             RecvMessageState::WaitingForData { .. }
             | RecvMessageState::WaitingForFinAfterTrailers { .. } => {
                 if post_readable_event {
-                    self.conn_events.data_readable(self.get_stream_info());
+                    self.conn_events.data_readable(&self.stream_info);
                 }
             }
             _ => unreachable!("Closing an already closed transaction"),
@@ -251,7 +260,12 @@ impl RecvMessage {
         Ok(())
     }
 
-    fn receive_internal(&mut self, conn: &mut Connection, post_readable_event: bool) -> Res<()> {
+    fn receive_internal(
+        &mut self,
+        conn: &mut Connection,
+        post_readable_event: bool,
+        now: Instant,
+    ) -> Res<()> {
         loop {
             qdebug!("[{self}] state={:?}", self.state);
             match &mut self.state {
@@ -259,10 +273,10 @@ impl RecvMessage {
                 RecvMessageState::WaitingForResponseHeaders { frame_reader }
                 | RecvMessageState::WaitingForData { frame_reader }
                 | RecvMessageState::WaitingForFinAfterTrailers { frame_reader } => {
-                    match frame_reader.receive(&mut StreamReaderConnectionWrapper::new(
-                        conn,
-                        self.stream_id,
-                    ))? {
+                    match frame_reader.receive(
+                        &mut StreamReaderConnectionWrapper::new(conn, self.stream_id),
+                        now,
+                    )? {
                         (None, true) => {
                             break self.set_state_to_close_pending(post_readable_event);
                         }
@@ -325,7 +339,7 @@ impl RecvMessage {
                 }
                 RecvMessageState::ReadingData { .. } => {
                     if post_readable_event {
-                        self.conn_events.data_readable(self.get_stream_info());
+                        self.conn_events.data_readable(&self.stream_info);
                     }
                     break Ok(());
                 }
@@ -349,7 +363,7 @@ impl RecvMessage {
         }
         self.state = RecvMessageState::Closed;
         self.conn_events
-            .recv_closed(self.get_stream_info(), CloseType::Done);
+            .recv_closed(&self.stream_info, CloseType::Done);
     }
 
     const fn closing(&self) -> bool {
@@ -357,10 +371,6 @@ impl RecvMessage {
             self.state,
             RecvMessageState::ClosePending | RecvMessageState::Closed
         )
-    }
-
-    const fn get_stream_info(&self) -> Http3StreamInfo {
-        Http3StreamInfo::new(self.stream_id, Http3StreamType::Http)
     }
 }
 
@@ -371,8 +381,8 @@ impl Stream for RecvMessage {
 }
 
 impl RecvStream for RecvMessage {
-    fn receive(&mut self, conn: &mut Connection) -> Res<(ReceiveOutput, bool)> {
-        self.receive_internal(conn, true)?;
+    fn receive(&mut self, conn: &mut Connection, now: Instant) -> Res<(ReceiveOutput, bool)> {
+        self.receive_internal(conn, true, now)?;
         Ok((
             ReceiveOutput::NoOutput,
             matches!(self.state, RecvMessageState::Closed),
@@ -385,13 +395,17 @@ impl RecvStream for RecvMessage {
                 .borrow_mut()
                 .cancel_stream(self.stream_id);
         }
-        self.conn_events
-            .recv_closed(self.get_stream_info(), close_type);
+        self.conn_events.recv_closed(&self.stream_info, close_type);
         self.state = RecvMessageState::Closed;
         Ok(())
     }
 
-    fn read_data(&mut self, conn: &mut Connection, buf: &mut [u8]) -> Res<(usize, bool)> {
+    fn read_data(
+        &mut self,
+        conn: &mut Connection,
+        buf: &mut [u8],
+        now: Instant,
+    ) -> Res<(usize, bool)> {
         let mut written = 0;
         loop {
             match self.state {
@@ -402,7 +416,7 @@ impl RecvStream for RecvMessage {
                     let (amount, fin) = conn
                         .stream_recv(self.stream_id, &mut buf[written..written + to_read])
                         .map_err(|e| Error::map_stream_recv_errors(&Error::from(e)))?;
-                    qlog::h3_data_moved_up(conn.qlog_mut(), self.stream_id, amount);
+                    qlog::h3_data_moved_up(conn.qlog_mut(), self.stream_id, amount, now);
 
                     debug_assert!(amount <= to_read);
                     *remaining_data_len -= amount;
@@ -418,7 +432,7 @@ impl RecvStream for RecvMessage {
                         self.state = RecvMessageState::WaitingForData {
                             frame_reader: FrameReader::new(),
                         };
-                        self.receive_internal(conn, false)?;
+                        self.receive_internal(conn, false, now)?;
                     } else {
                         break Ok((written, false));
                     }
@@ -438,7 +452,11 @@ impl RecvStream for RecvMessage {
 }
 
 impl HttpRecvStream for RecvMessage {
-    fn header_unblocked(&mut self, conn: &mut Connection) -> Res<(ReceiveOutput, bool)> {
+    fn header_unblocked(
+        &mut self,
+        conn: &mut Connection,
+        now: Instant,
+    ) -> Res<(ReceiveOutput, bool)> {
         while let Some(p) = self.blocked_push_promise.front() {
             if let Some(headers) = self
                 .qpack_decoder
@@ -456,7 +474,7 @@ impl HttpRecvStream for RecvMessage {
             }
         }
 
-        self.receive(conn)
+        self.receive(conn, now)
     }
 
     fn maybe_update_priority(&mut self, priority: Priority) -> Res<bool> {

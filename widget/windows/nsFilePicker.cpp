@@ -27,7 +27,6 @@
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/WindowsVersion.h"
 #include "nsArrayEnumerator.h"
 #include "nsCRT.h"
 #include "nsEnumeratorUtils.h"
@@ -738,8 +737,8 @@ nsFilePicker::CheckContentAnalysisService() {
       nsFilePicker::ContentAnalysisResponse::CreateAndReject(rv, __func__));
   // This will check all of the files even if BLOCK responses are received for
   // some of them, and the promise will resolve with the files that are ALLOWed.
-  return mozilla::contentanalysis::ContentAnalysis::CheckFilesInBatchMode(
-      std::move(files), windowGlobal,
+  return mozilla::contentanalysis::ContentAnalysis::CheckUploadsInBatchMode(
+      std::move(files), /* aAutoAcknowledge */ true, windowGlobal,
       nsIContentAnalysisRequest::Reason::eFilePickerDialog);
 };
 

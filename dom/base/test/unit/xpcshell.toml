@@ -27,27 +27,29 @@ support-files = [
 
 ["test_blockParsing.js"]
 prefs = ["dom.security.https_first=false"]
-run-if = ["!debug"] # We fail an assertion if we block parsing on a self-closing element
+run-if = [
+  "opt", # We fail an assertion if we block parsing on a self-closing element
+]
 
 ["test_bug553888.js"]
 
 ["test_bug737966.js"]
 prefs = ["network.xhr.block_sync_system_requests=false"] # Bug 721336
 
-["test_cancelPrefetch.js"]
-
 ["test_chromeutils_base64.js"]
+
+["test_chromeutils_callFunctionAndLogException.js"]
 
 ["test_chromeutils_defineLazyGetter.js"]
 
-["test_chromeutils_isJSIdentifier.js"]
-
 ["test_chromeutils_getXPCOMErrorName.js"]
+
+["test_chromeutils_isJSIdentifier.js"]
 
 ["test_chromeutils_shallowclone.js"]
 
 ["test_error_codes.js"]
-run-sequentially = "Hardcoded 4444 port."
+run-sequentially = ["true"] # Hardcoded 4444 port.
 
 ["test_generate_xpath.js"]
 head = "head_xml.js"
@@ -59,7 +61,9 @@ head = "head_xml.js"
 
 ["test_js_dev_error_interceptor.js"]
 # This feature is implemented only in NIGHTLY.
-run-if = ["nightly_build"]
+run-if = [
+  "nightly_build",
+]
 
 ["test_nodelist.js"]
 head = "head_xml.js"

@@ -73,9 +73,7 @@ class AntiTrackingUtils final {
   // and the storage permission key.
   static bool CheckStoragePermission(nsIPrincipal* aPrincipal,
                                      const nsAutoCString& aType,
-                                     bool aIsInPrivateBrowsing,
-                                     uint32_t* aRejectedReason,
-                                     uint32_t aBlockedReason);
+                                     bool aIsInPrivateBrowsing);
 
   // Returns the number of sites that give this principal's origin storage
   // access.
@@ -96,6 +94,20 @@ class AntiTrackingUtils final {
   static nsILoadInfo::StoragePermissionState GetStoragePermissionStateInParent(
       nsIChannel* aChannel);
 
+  // Upgrades the storage permission state from inactive to active. Used in
+  // Storage-Access-Headers
+  static nsresult ActivateStoragePermissionStateInParent(nsIChannel* aChannel);
+
+  // Parse Activate-Storage-Access response header, activate storage-access in
+  // frame if necessary returns whether the channel needs to reload after with
+  // access to unpartitioned cookies.
+  static bool ProcessStorageAccessHeadersShouldRetry(nsIChannel* aChannel);
+
+ private:
+  static nsresult ProcessStorageAccessHeaders(nsIChannel* aChannel,
+                                              bool* aOutReload);
+
+ public:
   // Returns the toplevel inner window id, returns 0 if this is a toplevel
   // window.
   static uint64_t GetTopLevelAntiTrackingWindowId(

@@ -22,13 +22,14 @@ add_task(async function test_PanelTestProvider() {
     cfr_doorhanger: 1,
     milestone_message: 0,
     update_action: 1,
-    spotlight: 6,
-    feature_callout: 5,
+    spotlight: 8,
+    feature_callout: 11,
     pb_newtab: 2,
     toast_notification: 3,
     bookmarks_bar_button: 1,
     menu_message: 1,
-    newtab_message: 1,
+    newtab_message: 2,
+    infobar: 1,
   };
 
   const EXPECTED_TOTAL_MESSAGE_COUNT = Object.values(
@@ -48,8 +49,9 @@ add_task(async function test_PanelTestProvider() {
 
   for (const message of messages) {
     const validator = MESSAGE_VALIDATORS[message.template];
-    Assert.ok(
-      typeof validator !== "undefined",
+    Assert.notStrictEqual(
+      typeof validator,
+      "undefined",
       typeof validator !== "undefined"
         ? `Schema validator found for ${message.template}`
         : `No schema validator found for template ${message.template}. Please update this test to add one.`

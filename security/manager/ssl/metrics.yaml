@@ -9,22 +9,6 @@ $schema: moz://mozilla.org/schemas/glean/metrics/2-0-0
 $tags:
   - 'Core :: Security: PSM'
 
-cert_storage:
-  memory:
-    type: memory_distribution
-    memory_unit: byte
-    description: >
-      Heap memory used by cert_storage.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1910500
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1910500
-    data_sensitivity:
-      - technical
-    notification_emails:
-      - jschanck@mozilla.com
-    expires: 142
-
 data_storage:
   alternate_services:
     type: quantity
@@ -92,9 +76,10 @@ tls:
       - https://bugzilla.mozilla.org/1933879
     data_reviews:
       - https://bugzilla.mozilla.org/1874963
+      - https://bugzilla.mozilla.org/1974141
     notification_emails:
       - jschanck@mozilla.com
-    expires: 143
+    expires: 149
     labels:
       - PR_CONNECT_RESET_ERROR
       - PR_END_OF_FILE_ERROR
@@ -232,6 +217,51 @@ pkcs11:
       - dkeeler@mozilla.com
     expires: never
     unit: modules
+
+  third_party_module_signature_type:
+    type: event
+    description: >
+      The filename (leaf name only) and macOS code signature type of a
+      third-party PKCS#11 module collected when the module is first loaded and
+      added to the profile. Only collected on macOS.
+    data_sensitivity:
+      - interaction
+    lifetime: ping
+    send_in_pings:
+      - default
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1905453
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1905453
+    notification_emails:
+      - haftandilian@mozilla.com
+    expires: 159
+    extra_keys:
+      filename:
+        type: string
+        description: Filename
+      signature:
+        type: string
+        description: Code signature type (Ad-hoc, App Store, Developer ID, etc.)
+
+  third_party_module_profile_entries:
+    type: string_list
+    description: >
+      A list of PKCS#11 module filenames (leaf names only) that are in the
+      profile at launch time.
+    data_sensitivity:
+      - interaction
+    lifetime: ping
+    send_in_pings:
+      - default
+    notification_emails:
+      - haftandilian@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1905453
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1905453
+    expires: 159
+
   external_trust_anchor_module_loaded:
     type: boolean
     description:
@@ -440,6 +470,35 @@ security:
     expires: never
     telemetry_mirror: CONTENT_SIGNATURE_VERIFICATION_STATUS
 
+  content_signature_verification_errors:
+    type: dual_labeled_counter
+    description: >
+      Result of the content signature verification keyed by application
+      (certificate fingerprint).
+    dual_labels:
+      key:
+        description: application (certificate fingerprint).
+      category:
+        labels:
+          - invalid
+          - otherError
+          - expiredCert
+          - certNotValidYet
+          - buildCertChainFailed
+          - eeCertForWrongHost
+          - extractKeyError
+          - vfyContextError
+        description: Possible signature verification errors.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1435713
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1862062
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1435713
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1862062
+    notification_emails:
+      - seceng-telemetry@mozilla.com
+    expires: never
+
   ntlm_module_used:
     type: custom_distribution
     description: >
@@ -487,14 +546,11 @@ cert:
     expires: never
     telemetry_mirror: CERT_EV_STATUS
 
-  validation_success_by_ca:
+  validation_success_by_ca_2:
     type: custom_distribution
     description: >
-      Successful SSL server cert validations by CA (see RootHashes.inc for names
-      of CAs)
-
-      This metric was generated to correspond to the Legacy Telemetry enumerated
-      histogram CERT_VALIDATION_SUCCESS_BY_CA_2.
+      Successful SSL server cert validations by CA (see KnownRootHashes.txt for
+      names of CAs).
     range_min: 0
     range_max: 256
     bucket_count: 257
@@ -504,16 +560,17 @@ cert:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1369747
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1441550
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1909978
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972339
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1364159
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1369747
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1441550
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1909978
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972339
     notification_emails:
       - seceng-telemetry@mozilla.com
       - dkeeler@mozilla.com
     expires: never
-    telemetry_mirror: CERT_VALIDATION_SUCCESS_BY_CA_2
 
   chain_key_size_status:
     type: custom_distribution
@@ -557,13 +614,10 @@ cert:
     telemetry_mirror: CERT_VALIDATION_HTTP_REQUEST_RESULT
 
 cert_pinning:
-  failures_by_ca:
+  failures_by_ca_2:
     type: custom_distribution
     description: >
-      Pinning failures by CA (see RootHashes.inc for names of CAs)
-
-      This metric was generated to correspond to the Legacy Telemetry enumerated
-      histogram CERT_PINNING_FAILURES_BY_CA_2.
+      Pinning failures by CA (see KnownRootHashes.txt for names of CAs).
     range_min: 0
     range_max: 256
     bucket_count: 257
@@ -571,14 +625,15 @@ cert_pinning:
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1862062
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1909978
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972339
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1862062
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1909978
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972339
     notification_emails:
       - pinning@mozilla.org
       - dkeeler@mozilla.com
     expires: never
-    telemetry_mirror: CERT_PINNING_FAILURES_BY_CA_2
 
   results:
     type: labeled_counter
@@ -1450,26 +1505,28 @@ ssl:
     expires: never
     telemetry_mirror: SSL_CERT_VERIFICATION_ERRORS
 
-  ct_policy_non_compliant_connections_by_ca:
+  ct_policy_non_compliant_connections_by_ca_2:
     type: custom_distribution
-    description: |
-      Number of successfully established TLS connections NOT compliant with the Certificate Transparency Policy, by CA. See https://searchfox.org/mozilla-central/source/security/manager/ssl/RootHashes.inc for names of CAs. Bucket zero holds CAs not present in the list.
-      This metric was generated to correspond to the Legacy Telemetry enumerated histogram SSL_CT_POLICY_NON_COMPLIANT_CONNECTIONS_BY_CA_2.
-    range_min: 0
+    description: >
+      Number of successfully established TLS connections NOT compliant with the
+      Certificate Transparency Policy, by CA. See KnownRootHashes.txt for names
+      of CAs.
+      range_min: 0
     range_max: 256
     bucket_count: 257
     histogram_type: linear
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1320567
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1909978
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972339
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1320567
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1909978
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1972339
     notification_emails:
       - seceng-telemetry@mozilla.com
       - dkeeler@mozilla.com
     expires: never
-    telemetry_mirror: SSL_CT_POLICY_NON_COMPLIANT_CONNECTIONS_BY_CA_2
 
   permanent_cert_error_overrides:
     type: custom_distribution
@@ -1540,19 +1597,63 @@ ssl:
     description: >
       Verification status of Signed Certificate Timestamps received (0=Decoding
       error, 1=Valid SCT, 2=SCT from unknown log, 3=Invalid SCT signature, 4=SCT
-      timestamp is in the future, 5=Valid SCT from a disqualified log)
-
-      This metric was generated to correspond to the Legacy Telemetry enumerated
-      histogram SSL_SCTS_VERIFICATION_STATUS.
+      timestamp is in the future, 5=Valid SCT from a disqualified log 6=SCT
+      timestamp is after the root's distrustAfter time).
     range_min: 0
     range_max: 10
     bucket_count: 11
     histogram_type: linear
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1293231
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1953221
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1293231
     notification_emails:
       - seceng-telemetry@mozilla.com
     expires: never
-    telemetry_mirror: SSL_SCTS_VERIFICATION_STATUS
+
+  scts_from_tiled_logs_per_connection:
+    type: custom_distribution
+    description: >
+      Histogram of the number of Signed Certificate Timestamps from tiled logs
+      per TLS connection from all sources (embedded / OCSP Stapling / TLS
+      handshake). Bucket 0 counts the cases when no SCTs from tiled logs were
+      received, or none were extracted due to parsing errors.
+    range_min: 0
+    range_max: 10
+    bucket_count: 11
+    histogram_type: linear
+    data_sensitivity:
+      - technical
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1985598
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1985598
+    notification_emails:
+      - seceng-telemetry@mozilla.com
+      - jschanck@mozilla.com
+    expires: never
+
+oskeystore:
+  return_codes:
+    type: event
+    description: >
+      Collects return codes from the different implementations of the key store
+      API. These are sometimes poorly documented and collection is the only way
+      to discover them.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1958791
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1958791
+    notification_emails:
+      - simon@mozilla.com
+    expires: 150
+    extra_keys:
+      function:
+        description: >
+          Which function returned the value.
+        type: string
+      result:
+        description: >
+          The error code, converted to a string.
+        type: string

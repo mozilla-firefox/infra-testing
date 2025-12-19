@@ -7,17 +7,22 @@
 use crate::color::AbsoluteColor;
 use crate::context::QuirksMode;
 use crate::custom_properties::CssEnvironment;
+use crate::derives::*;
 use crate::font_metrics::FontMetrics;
-use crate::queries::feature::{AllowsRanges, Evaluator, FeatureFlags, QueryFeatureDescription};
-use crate::queries::values::PrefersColorScheme;
 use crate::logical_geometry::WritingMode;
 use crate::media_queries::MediaType;
 use crate::properties::style_structs::Font;
 use crate::properties::ComputedValues;
-use crate::values::computed::{CSSPixelLength, Context, Length, LineHeight, NonNegativeLength, Resolution};
+use crate::queries::feature::{AllowsRanges, Evaluator, FeatureFlags, QueryFeatureDescription};
+use crate::queries::values::PrefersColorScheme;
 use crate::values::computed::font::GenericFontFamily;
+use crate::values::computed::{
+    CSSPixelLength, Context, Length, LineHeight, NonNegativeLength, Resolution,
+};
 use crate::values::specified::color::{ColorSchemeFlags, ForcedColors};
-use crate::values::specified::font::{FONT_MEDIUM_LINE_HEIGHT_PX, FONT_MEDIUM_PX};
+use crate::values::specified::font::{
+    QueryFontMetricsFlags, FONT_MEDIUM_LINE_HEIGHT_PX, FONT_MEDIUM_PX,
+};
 use crate::values::specified::ViewportVariant;
 use crate::values::KeyframesName;
 use app_units::{Au, AU_PER_PX};
@@ -38,8 +43,7 @@ pub trait FontMetricsProvider: Debug + Sync {
         vertical: bool,
         font: &Font,
         base_size: CSSPixelLength,
-        in_media_query: bool,
-        retrieve_math_scales: bool,
+        flags: QueryFontMetricsFlags,
     ) -> FontMetrics;
     /// Gets the base size given a generic font family.
     fn base_size_for_generic(&self, generic: GenericFontFamily) -> Length;
@@ -162,7 +166,8 @@ impl Device {
 
     /// Set the line height of the root element (for rlh), in zoom-independent CSS pixels.
     pub fn set_root_line_height(&self, size: f32) {
-        self.root_line_height.store(size.to_bits(), Ordering::Relaxed);
+        self.root_line_height
+            .store(size.to_bits(), Ordering::Relaxed);
     }
 
     /// Returns the computed line-height for the font in a given computed values instance.
@@ -179,7 +184,8 @@ impl Device {
             LineHeight::Normal => CSSPixelLength::new(0.),
             LineHeight::Number(number) => font.font_size.computed_size() * number.0,
             LineHeight::Length(length) => length.0,
-        }).into()
+        })
+        .into()
     }
 
     /// Get the quirks mode of the current device.
@@ -251,6 +257,11 @@ impl Device {
         (AU_PER_PX as f32 / self.device_pixel_ratio.0) as i32
     }
 
+    /// Returns the device pixel ratio, ignoring the full zoom factor.
+    pub fn device_pixel_ratio_ignoring_full_zoom(&self) -> Scale<f32, CSSPixel, DevicePixel> {
+        self.device_pixel_ratio
+    }
+
     /// Returns the device pixel ratio.
     pub fn device_pixel_ratio(&self) -> Scale<f32, CSSPixel, DevicePixel> {
         self.device_pixel_ratio
@@ -268,17 +279,11 @@ impl Device {
         vertical: bool,
         font: &Font,
         base_size: CSSPixelLength,
-        in_media_query: bool,
-        retrieve_math_scales: bool,
+        flags: QueryFontMetricsFlags,
     ) -> FontMetrics {
         self.used_font_metrics.store(true, Ordering::Relaxed);
-        self.font_metrics_provider.query_font_metrics(
-            vertical,
-            font,
-            base_size,
-            in_media_query,
-            retrieve_math_scales,
-        )
+        self.font_metrics_provider
+            .query_font_metrics(vertical, font, base_size, flags)
     }
 
     /// Return the media type of the current device.
@@ -327,7 +332,7 @@ impl Device {
                     || m == mime::IMAGE_JPEG
                     || m == "image/x-icon"
                     || m == "image/webp"
-            }
+            },
             _ => false,
         }
     }

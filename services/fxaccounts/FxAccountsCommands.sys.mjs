@@ -27,6 +27,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   PushCrypto: "resource://gre/modules/PushCrypto.sys.mjs",
   getRemoteCommandStore: "resource://services-sync/TabsStore.sys.mjs",
   RemoteCommand: "resource://services-sync/TabsStore.sys.mjs",
+  Resource: "resource://services-sync/resource.sys.mjs",
   Utils: "resource://services-sync/util.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
 });
@@ -46,7 +47,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "idleService",
   "@mozilla.org/widget/useridleservice;1",
-  "nsIUserIdleService"
+  Ci.nsIUserIdleService
 );
 
 const TOPIC_TABS_CHANGED = "services.sync.tabs.changed";
@@ -121,7 +122,7 @@ export class FxAccountsCommands {
    * This method can be called either in response to a Push message,
    * or by itself as a "commands recovery" mechanism.
    *
-   * @param {Number} notifiedIndex "Command received" push messages include
+   * @param {number} notifiedIndex "Command received" push messages include
    * the index of the command that triggered the message. We use it as a
    * hint when we have no "last command index" stored.
    */
@@ -464,7 +465,7 @@ export class SendTab extends Command {
 
   /**
    * @param {Device[]} to - Device objects (typically returned by fxAccounts.getDevicesList()).
-   * @param {Object} tab
+   * @param {object} tab
    * @param {string} tab.url
    * @param {string} tab.title
    * @returns A report object, in the shape of
@@ -490,10 +491,17 @@ export class SendTab extends Command {
         // of revealing that data to the FxA server.
         const payload = { encrypted };
         await this._commands.invoke(COMMAND_SENDTAB, device, payload);
+        const deviceId = this._fxai.telemetry.sanitizeDeviceId(device.id);
+        Glean.fxa.sendtabSent.record({
+          flow_id: flowID,
+          hashed_device_id: deviceId,
+          server_time: lazy.Resource.serverTime,
+          stream_id: streamID,
+        });
         this._fxai.telemetry.recordEvent(
           "command-sent",
           COMMAND_SENDTAB_TAIL,
-          this._fxai.telemetry.sanitizeDeviceId(device.id),
+          deviceId,
           { flowID, streamID }
         );
         report.succeeded.push(device);
@@ -518,10 +526,18 @@ export class SendTab extends Command {
     // `flowID` and `streamID` are in the top-level of the JSON, `entries` is
     // an array of "tabs" with `current` being what index is the one we care
     // about, or the last one if not specified.
+    const deviceId = this._fxai.telemetry.sanitizeDeviceId(senderID);
+    Glean.fxa.sendtabReceived.record({
+      flow_id: flowID,
+      hashed_device_id: deviceId,
+      reason,
+      server_time: lazy.Resource.serverTime,
+      stream_id: streamID,
+    });
     this._fxai.telemetry.recordEvent(
       "command-received",
       COMMAND_SENDTAB_TAIL,
-      this._fxai.telemetry.sanitizeDeviceId(senderID),
+      deviceId,
       { flowID, streamID, reason }
     );
 
@@ -542,7 +558,7 @@ export class CloseRemoteTab extends Command {
 
   /**
    * @param {Device} target - Device object (typically returned by fxAccounts.getDevicesList()).
-   * @param {String[]} urls - array of urls that should be closed on the remote device
+   * @param {string[]} urls - array of urls that should be closed on the remote device
    */
   async sendCloseTabsCommand(target, urls, flowID) {
     log.info(`Sending tab closures to ${target.id} device.`);
@@ -557,10 +573,17 @@ export class CloseRemoteTab extends Command {
       // of revealing that data to the FxA server.
       const payload = { encrypted };
       await this._commands.invoke(COMMAND_CLOSETAB, target, payload);
+      const deviceId = this._fxai.telemetry.sanitizeDeviceId(target.id);
+      Glean.fxa.closetabSent.record({
+        flow_id: flowID,
+        hashed_device_id: deviceId,
+        server_time: lazy.Resource.serverTime,
+        stream_id: streamID,
+      });
       this._fxai.telemetry.recordEvent(
         "command-sent",
         COMMAND_CLOSETAB_TAIL,
-        this._fxai.telemetry.sanitizeDeviceId(target.id),
+        deviceId,
         { flowID, streamID }
       );
       return true;
@@ -588,10 +611,18 @@ export class CloseRemoteTab extends Command {
     const data = JSON.parse(decoder.decode(bytes));
     // urls is an array of strings
     const { flowID, streamID, urls } = data;
+    const deviceId = this._fxai.telemetry.sanitizeDeviceId(senderID);
+    Glean.fxa.closetabReceived.record({
+      flow_id: flowID,
+      hashed_device_id: deviceId,
+      reason,
+      server_time: lazy.Resource.serverTime,
+      stream_id: streamID,
+    });
     this._fxai.telemetry.recordEvent(
       "command-received",
       COMMAND_CLOSETAB_TAIL,
-      this._fxai.telemetry.sanitizeDeviceId(senderID),
+      deviceId,
       { flowID, streamID, reason }
     );
 

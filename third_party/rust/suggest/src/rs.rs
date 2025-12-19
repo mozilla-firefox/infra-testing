@@ -37,7 +37,7 @@ use remote_settings::{
     Attachment, RemoteSettingsClient, RemoteSettingsError, RemoteSettingsRecord,
     RemoteSettingsService,
 };
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::{error::Error, query::full_keywords_to_fts_content, Result};
@@ -186,8 +186,6 @@ pub(crate) enum SuggestRecord {
     Wikipedia,
     #[serde(rename = "amo-suggestions")]
     Amo,
-    #[serde(rename = "pocket-suggestions")]
-    Pocket,
     #[serde(rename = "yelp-suggestions")]
     Yelp,
     #[serde(rename = "mdn-suggestions")]
@@ -200,8 +198,10 @@ pub(crate) enum SuggestRecord {
     Fakespot,
     #[serde(rename = "dynamic-suggestions")]
     Dynamic(DownloadedDynamicRecord),
-    #[serde(rename = "geonames")]
+    #[serde(rename = "geonames-2")] // version 2
     Geonames,
+    #[serde(rename = "geonames-alternates")]
+    GeonamesAlternates,
 }
 
 impl SuggestRecord {
@@ -222,7 +222,6 @@ pub enum SuggestRecordType {
     Amp,
     Wikipedia,
     Amo,
-    Pocket,
     Yelp,
     Mdn,
     Weather,
@@ -230,6 +229,7 @@ pub enum SuggestRecordType {
     Fakespot,
     Dynamic,
     Geonames,
+    GeonamesAlternates,
 }
 
 impl From<&SuggestRecord> for SuggestRecordType {
@@ -240,13 +240,13 @@ impl From<&SuggestRecord> for SuggestRecordType {
             SuggestRecord::Wikipedia => Self::Wikipedia,
             SuggestRecord::Icon => Self::Icon,
             SuggestRecord::Mdn => Self::Mdn,
-            SuggestRecord::Pocket => Self::Pocket,
             SuggestRecord::Weather => Self::Weather,
             SuggestRecord::Yelp => Self::Yelp,
             SuggestRecord::GlobalConfig(_) => Self::GlobalConfig,
             SuggestRecord::Fakespot => Self::Fakespot,
             SuggestRecord::Dynamic(_) => Self::Dynamic,
             SuggestRecord::Geonames => Self::Geonames,
+            SuggestRecord::GeonamesAlternates => Self::GeonamesAlternates,
         }
     }
 }
@@ -254,6 +254,12 @@ impl From<&SuggestRecord> for SuggestRecordType {
 impl fmt::Display for SuggestRecordType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.as_str())
+    }
+}
+
+impl ToSql for SuggestRecordType {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        Ok(ToSqlOutput::from(self.as_str()))
     }
 }
 
@@ -268,7 +274,6 @@ impl SuggestRecordType {
             Self::Amp,
             Self::Wikipedia,
             Self::Amo,
-            Self::Pocket,
             Self::Yelp,
             Self::Mdn,
             Self::Weather,
@@ -276,6 +281,7 @@ impl SuggestRecordType {
             Self::Fakespot,
             Self::Dynamic,
             Self::Geonames,
+            Self::GeonamesAlternates,
         ]
     }
 
@@ -285,14 +291,14 @@ impl SuggestRecordType {
             Self::Amp => "amp",
             Self::Wikipedia => "wikipedia",
             Self::Amo => "amo-suggestions",
-            Self::Pocket => "pocket-suggestions",
             Self::Yelp => "yelp-suggestions",
             Self::Mdn => "mdn-suggestions",
             Self::Weather => "weather",
             Self::GlobalConfig => "configuration",
             Self::Fakespot => "fakespot-suggestions",
             Self::Dynamic => "dynamic-suggestions",
-            Self::Geonames => "geonames",
+            Self::Geonames => "geonames-2",
+            Self::GeonamesAlternates => "geonames-alternates",
         }
     }
 }
@@ -364,6 +370,7 @@ pub(crate) struct DownloadedAmpSuggestion {
     #[serde(rename = "id")]
     pub block_id: i32,
     pub iab_category: String,
+    pub serp_categories: Option<Vec<i32>>,
     pub click_url: String,
     pub impression_url: String,
     #[serde(rename = "icon")]
@@ -391,7 +398,7 @@ pub fn iterate_keywords<'a>(
     let full_keywords_iter = full_keywords
         .iter()
         .flat_map(|(full_keyword, repeat_for)| {
-            std::iter::repeat(Some(full_keyword.as_str())).take(*repeat_for)
+            std::iter::repeat_n(Some(full_keyword.as_str()), *repeat_for)
         })
         .chain(std::iter::repeat(None)); // In case of insufficient full keywords, just fill in with infinite `None`s
                                          //
@@ -443,17 +450,6 @@ pub(crate) struct DownloadedAmoSuggestion {
     pub keywords: Vec<String>,
     pub score: f64,
 }
-/// A Pocket suggestion to ingest from a Pocket Suggestion Attachment
-#[derive(Clone, Debug, Deserialize)]
-pub(crate) struct DownloadedPocketSuggestion {
-    pub url: String,
-    pub title: String,
-    #[serde(rename = "lowConfidenceKeywords")]
-    pub low_confidence_keywords: Vec<String>,
-    #[serde(rename = "highConfidenceKeywords")]
-    pub high_confidence_keywords: Vec<String>,
-    pub score: f64,
-}
 /// Yelp location sign data type
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
@@ -474,6 +470,8 @@ impl ToSql for DownloadedYelpLocationSign {
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct DownloadedYelpSuggestion {
     pub subjects: Vec<String>,
+    #[serde(rename = "businessSubjects")]
+    pub business_subjects: Option<Vec<String>>,
     #[serde(rename = "preModifiers")]
     pub pre_modifiers: Vec<String>,
     #[serde(rename = "postModifiers")]
@@ -604,15 +602,6 @@ pub(crate) struct DownloadedGlobalConfigInner {
     /// The maximum number of times the user can click "Show less frequently"
     /// for a suggestion in the UI.
     pub show_less_frequently_cap: i32,
-}
-
-pub(crate) fn deserialize_f64_or_default<'de, D>(
-    deserializer: D,
-) -> std::result::Result<f64, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    String::deserialize(deserializer).map(|s| s.parse().ok().unwrap_or_default())
 }
 
 #[cfg(test)]

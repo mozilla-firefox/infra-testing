@@ -6,8 +6,6 @@
 #ifndef mozilla_image_decoders_icon_android_nsIconChannel_h
 #define mozilla_image_decoders_icon_android_nsIconChannel_h
 
-#include "mozilla/Attributes.h"
-
 #include "nsIChannel.h"
 #include "nsIURI.h"
 #include "nsCOMPtr.h"
@@ -30,7 +28,7 @@ class nsIconChannel final : public nsIChannel {
    * Must be called before calling any other function on this object.
    * If this method fails, no other function must be called on this object.
    */
-  nsresult Init(nsIURI* aURI);
+  nsresult Init(nsIURI* aURI, nsILoadInfo* aLoadInfo);
 
  private:
   ~nsIconChannel() {}

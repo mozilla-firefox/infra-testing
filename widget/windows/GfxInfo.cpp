@@ -18,12 +18,12 @@
 #include "xpcpublic.h"
 
 #include "mozilla/Components.h"
+#include "mozilla/PodOperations.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/gfx/DeviceManagerDx.h"
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/SSE.h"
-#include "mozilla/ArrayUtils.h"
-#include "mozilla/Unused.h"
+#include "mozilla/widget/WinRegistry.h"
 #include "mozilla/WindowsProcessMitigations.h"
 
 #include <intrin.h>
@@ -45,24 +45,6 @@ static void AssertNotWin32kLockdown() {
   // Check that we are not in Win32k lockdown
   MOZ_DIAGNOSTIC_ASSERT(!IsWin32kLockedDown(),
                         "Invalid Windows GfxInfo API with Win32k lockdown");
-}
-
-/* GetD2DEnabled and GetDwriteEnabled shouldn't be called until after
- * gfxPlatform initialization has occurred because they depend on it for
- * information. (See bug 591561) */
-nsresult GfxInfo::GetD2DEnabled(bool* aEnabled) {
-  // Telemetry queries this during XPCOM initialization, and there's no
-  // gfxPlatform by then. Just bail out if gfxPlatform isn't initialized.
-  if (!gfxPlatform::Initialized()) {
-    *aEnabled = false;
-    return NS_OK;
-  }
-
-  // We check gfxConfig rather than the actual render mode, since the UI
-  // process does not use Direct2D if the GPU process is enabled. However,
-  // content processes can still use Direct2D.
-  *aEnabled = gfx::gfxConfig::IsEnabled(gfx::Feature::DIRECT2D);
-  return NS_OK;
 }
 
 nsresult GfxInfo::GetDWriteEnabled(bool* aEnabled) {
@@ -451,9 +433,25 @@ nsresult GfxInfo::Init() {
   const char* spoofedWindowsVersion =
       PR_GetEnv("MOZ_GFX_SPOOF_WINDOWS_VERSION");
   if (spoofedWindowsVersion) {
-    Unused << PR_sscanf(spoofedWindowsVersion, "%x,%u", &mWindowsVersion,
-                        &mWindowsBuildNumber);
+    uint32_t major = 0;
+    uint32_t minor = 0;
+    uint32_t build = 0;
+    uint32_t ubr = 0;
+    (void)PR_sscanf(spoofedWindowsVersion, "%u,%u,%u,%u", &major, &minor,
+                    &build, &ubr);
+    mWindowsVersionEx = GfxVersionEx(major, minor, build, ubr);
+    mWindowsVersion = (major << 16) + minor;
+    mWindowsBuildNumber = build;
   } else {
+    uint32_t ubr = 0;
+    WinRegistry::Key ubrKey(
+        HKEY_LOCAL_MACHINE,
+        u"Software\\Microsoft\\Windows NT\\CurrentVersion"_ns,
+        WinRegistry::KeyMode::QueryValue);
+    if (ubrKey) {
+      ubr = ubrKey.GetValueAsDword(u"UBR"_ns).valueOr(0);
+    }
+
     OSVERSIONINFO vinfo;
     vinfo.dwOSVersionInfoSize = sizeof(vinfo);
 #ifdef _MSC_VER
@@ -466,6 +464,8 @@ nsresult GfxInfo::Init() {
 #endif
       mWindowsVersion = kWindowsUnknown;
     } else {
+      mWindowsVersionEx = GfxVersionEx(
+          vinfo.dwMajorVersion, vinfo.dwMinorVersion, vinfo.dwBuildNumber, ubr);
       mWindowsVersion =
           int32_t(vinfo.dwMajorVersion << 16) + vinfo.dwMinorVersion;
       mWindowsBuildNumber = vinfo.dwBuildNumber;
@@ -517,7 +517,7 @@ nsresult GfxInfo::Init() {
   // On Windows 8 and Server 2012 hosts, we want to not block RDP
   // sessions from attempting hardware acceleration.  RemoteFX
   // provides features and functionaltiy that can give a good D3D10 +
-  // D2D + DirectWrite experience emulated via a software GPU.
+  // DirectWrite experience emulated via a software GPU.
   //
   // Unfortunately, the Device ID is nullptr, and we can't enumerate
   // it using the setup infrastructure (SetupDiGetClassDevsW below
@@ -1151,7 +1151,7 @@ void GfxInfo::AddCrashReportAnnotations() {
 }
 
 static OperatingSystem WindowsVersionToOperatingSystem(
-    int32_t aWindowsVersion) {
+    int32_t aWindowsVersion, int32_t aWindowsBuildNumber) {
   switch (aWindowsVersion) {
     case kWindows7:
       return OperatingSystem::Windows7;
@@ -1160,7 +1160,10 @@ static OperatingSystem WindowsVersionToOperatingSystem(
     case kWindows8_1:
       return OperatingSystem::Windows8_1;
     case kWindows10:
-      return OperatingSystem::Windows10;
+      if (aWindowsBuildNumber < 22000) {
+        return OperatingSystem::Windows10;
+      }
+      return OperatingSystem::Windows11;
     case kWindowsUnknown:
     default:
       return OperatingSystem::Unknown;
@@ -1198,7 +1201,7 @@ static inline bool DetectBrokenAVX() {
 }
 #endif
 
-const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
+const nsTArray<RefPtr<GfxDriverInfo>>& GfxInfo::GetGfxDriverInfo() {
   if (!sDriverInfo->Length()) {
     /*
      * It should be noted here that more specialized rules on certain features
@@ -1273,7 +1276,7 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
     // gpu use with this particular (very old) driver, restricted
     // to Win10 since we only have reports from that platform.
     APPEND_TO_DRIVER_BLOCKLIST2(
-        OperatingSystem::Windows10, DeviceFamily::AtiAll,
+        OperatingSystem::Windows10or11, DeviceFamily::AtiAll,
         GfxDriverInfo::optionalFeatures,
         nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION, DRIVER_EQUAL,
         V(22, 19, 162, 4), "FEATURE_FAILURE_BUG_1587155");
@@ -1298,13 +1301,13 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
 
     // Bug 1267970
     APPEND_TO_DRIVER_BLOCKLIST_RANGE(
-        OperatingSystem::Windows10, DeviceFamily::AtiAll,
+        OperatingSystem::Windows10or11, DeviceFamily::AtiAll,
         nsIGfxInfo::FEATURE_HARDWARE_VIDEO_DECODING,
         nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION, DRIVER_BETWEEN_INCLUSIVE,
         V(15, 200, 0, 0), V(15, 301, 2301, 1002), "FEATURE_FAILURE_BUG_1267970",
         "15.200.0.0-15.301.2301.1002");
     APPEND_TO_DRIVER_BLOCKLIST_RANGE(
-        OperatingSystem::Windows10, DeviceFamily::AtiAll,
+        OperatingSystem::Windows10or11, DeviceFamily::AtiAll,
         nsIGfxInfo::FEATURE_HARDWARE_VIDEO_DECODING,
         nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION, DRIVER_BETWEEN_INCLUSIVE,
         V(16, 100, 0, 0), V(16, 300, 2311, 0), "FEATURE_FAILURE_BUG_1267970",
@@ -1324,7 +1327,7 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
      *  Bug 1599981 - crashes in AMD driver on Windows 10
      */
     APPEND_TO_DRIVER_BLOCKLIST2(
-        OperatingSystem::Windows10, DeviceFamily::RadeonCaicos,
+        OperatingSystem::Windows10or11, DeviceFamily::RadeonCaicos,
         nsIGfxInfo::FEATURE_DIRECT3D_11_LAYERS,
         nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION, DRIVER_LESS_THAN,
         V(15, 301, 1901, 0), "FEATURE_FAILURE_BUG_1599981");
@@ -1353,42 +1356,6 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
                               GfxDriverInfo::optionalFeatures,                 \
                               nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION,      \
                               DRIVER_LESS_THAN, driverVer, ruleId)
-
-#define IMPLEMENT_INTEL_DRIVER_BLOCKLIST_D2D(winVer, devFamily, driverVer,     \
-                                             ruleId)                           \
-  APPEND_TO_DRIVER_BLOCKLIST2(winVer, devFamily, nsIGfxInfo::FEATURE_DIRECT2D, \
-                              nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION,      \
-                              DRIVER_BUILD_ID_LESS_THAN, driverVer, ruleId)
-
-    IMPLEMENT_INTEL_DRIVER_BLOCKLIST_D2D(OperatingSystem::Windows7,
-                                         DeviceFamily::IntelGMA500, 2026,
-                                         "FEATURE_FAILURE_594877_7");
-    IMPLEMENT_INTEL_DRIVER_BLOCKLIST_D2D(
-        OperatingSystem::Windows7, DeviceFamily::IntelGMA900,
-        GfxDriverInfo::allDriverVersions, "FEATURE_FAILURE_594877_8");
-    IMPLEMENT_INTEL_DRIVER_BLOCKLIST_D2D(OperatingSystem::Windows7,
-                                         DeviceFamily::IntelGMA950, 1930,
-                                         "FEATURE_FAILURE_594877_9");
-    IMPLEMENT_INTEL_DRIVER_BLOCKLIST_D2D(OperatingSystem::Windows7,
-                                         DeviceFamily::IntelGMA3150, 2117,
-                                         "FEATURE_FAILURE_594877_10");
-    IMPLEMENT_INTEL_DRIVER_BLOCKLIST_D2D(OperatingSystem::Windows7,
-                                         DeviceFamily::IntelGMAX3000, 1930,
-                                         "FEATURE_FAILURE_594877_11");
-    IMPLEMENT_INTEL_DRIVER_BLOCKLIST_D2D(
-        OperatingSystem::Windows7, DeviceFamily::IntelHDGraphicsToSandyBridge,
-        2202, "FEATURE_FAILURE_594877_12");
-
-    /* Disable Direct2D on Intel GMAX4500 devices because of rendering
-     * corruption discovered in bug 1180379. These seems to affect even the most
-     * recent drivers. We're black listing all of the devices to be safe even
-     * though we've only confirmed the issue on the G45
-     */
-    APPEND_TO_DRIVER_BLOCKLIST2(
-        OperatingSystem::Windows, DeviceFamily::IntelGMAX4500HD,
-        nsIGfxInfo::FEATURE_DIRECT2D, nsIGfxInfo::FEATURE_BLOCKED_DEVICE,
-        DRIVER_LESS_THAN, GfxDriverInfo::allDriverVersions,
-        "FEATURE_FAILURE_1180379");
 
     IMPLEMENT_INTEL_DRIVER_BLOCKLIST(
         OperatingSystem::Windows7, DeviceFamily::IntelGMA500, V(5, 0, 0, 2026),
@@ -1443,16 +1410,6 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
                                "FEATURE_FAILURE_BUG_1018278", "X.X.X.2342");
 
     /**
-     * Disable D2D on Win7 on Intel Haswell for graphics drivers build id <=
-     * 4578. See bug 1432610
-     */
-    APPEND_TO_DRIVER_BLOCKLIST2(OperatingSystem::Windows7,
-                                DeviceFamily::IntelHaswell,
-                                nsIGfxInfo::FEATURE_DIRECT2D,
-                                nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION,
-                                DRIVER_BUILD_ID_LESS_THAN_OR_EQUAL, 4578,
-                                "FEATURE_FAILURE_BUG_1432610");
-    /**
      * Disable VP8 HW decoding on Windows 8.1 on Intel Haswel and a certain
      * driver version. See bug 1760464 comment 6 and bug 1761332.
      */
@@ -1467,33 +1424,6 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
         nsIGfxInfo::FEATURE_VP8_HW_DECODE, nsIGfxInfo::FEATURE_BLOCKED_DEVICE,
         DRIVER_EQUAL, V(10, 18, 14, 4264), "FEATURE_FAILURE_BUG_1761332");
 
-    /* Disable D2D on Win7 on Intel HD Graphics on driver <= 8.15.10.2302
-     * See bug 806786
-     */
-    APPEND_TO_DRIVER_BLOCKLIST2(
-        OperatingSystem::Windows7, DeviceFamily::IntelMobileHDGraphics,
-        nsIGfxInfo::FEATURE_DIRECT2D,
-        nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION, DRIVER_LESS_THAN_OR_EQUAL,
-        V(8, 15, 10, 2302), "FEATURE_FAILURE_BUG_806786");
-
-    /* Disable D2D on Win8 on Intel HD Graphics on driver <= 8.15.10.2302
-     * See bug 804144 and 863683
-     */
-    APPEND_TO_DRIVER_BLOCKLIST2(
-        OperatingSystem::Windows8, DeviceFamily::IntelMobileHDGraphics,
-        nsIGfxInfo::FEATURE_DIRECT2D,
-        nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION, DRIVER_LESS_THAN_OR_EQUAL,
-        V(8, 15, 10, 2302), "FEATURE_FAILURE_BUG_804144");
-
-    /* Disable D2D on Win7 on Intel HD Graphics on driver == 8.15.10.2418
-     * See bug 1433790
-     */
-    APPEND_TO_DRIVER_BLOCKLIST2(
-        OperatingSystem::Windows7, DeviceFamily::IntelHDGraphicsToSandyBridge,
-        nsIGfxInfo::FEATURE_DIRECT2D,
-        nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION, DRIVER_EQUAL,
-        V(8, 15, 10, 2418), "FEATURE_FAILURE_BUG_1433790");
-
     /* Disable D3D11 layers on Intel G41 express graphics and Intel GM965, Intel
      * X3100, for causing device resets. See bug 1116812.
      */
@@ -1504,45 +1434,23 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
         GfxDriverInfo::allDriverVersions, "FEATURE_FAILURE_BUG_1116812");
 
     /* Disable D3D11 layers on Intel GMA 3150 for failing to allocate a shared
-     * handle for textures. See bug 1207665. Additionally block D2D so we don't
-     * accidentally use WARP.
+     * handle for textures. See bug 1207665.
      */
     APPEND_TO_DRIVER_BLOCKLIST2(
         OperatingSystem::Windows, DeviceFamily::Bug1207665,
         nsIGfxInfo::FEATURE_DIRECT3D_11_LAYERS,
         nsIGfxInfo::FEATURE_BLOCKED_DEVICE, DRIVER_LESS_THAN,
         GfxDriverInfo::allDriverVersions, "FEATURE_FAILURE_BUG_1207665_1");
-    APPEND_TO_DRIVER_BLOCKLIST2(
-        OperatingSystem::Windows, DeviceFamily::Bug1207665,
-        nsIGfxInfo::FEATURE_DIRECT2D, nsIGfxInfo::FEATURE_BLOCKED_DEVICE,
-        DRIVER_LESS_THAN, GfxDriverInfo::allDriverVersions,
-        "FEATURE_FAILURE_BUG_1207665_2");
-
-    APPEND_TO_DRIVER_BLOCKLIST2(
-        OperatingSystem::Windows10, DeviceFamily::QualcommAll,
-        nsIGfxInfo::FEATURE_DIRECT2D,
-        nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION, DRIVER_LESS_THAN,
-        GfxDriverInfo::allDriverVersions, "FEATURE_FAILURE_QUALCOMM");
 
     // Bug 1548410. Disable hardware accelerated video decoding on
     // Qualcomm drivers used on Windows on ARM64 which are known to
     // cause BSOD's and output suprious green frames while decoding video.
     // Bug 1592826 expands the blocklist.
     APPEND_TO_DRIVER_BLOCKLIST2(
-        OperatingSystem::Windows10, DeviceFamily::QualcommAll,
+        OperatingSystem::Windows10or11, DeviceFamily::QualcommAll,
         nsIGfxInfo::FEATURE_HARDWARE_VIDEO_DECODING,
         nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION, DRIVER_LESS_THAN_OR_EQUAL,
         V(25, 18, 10440, 0), "FEATURE_FAILURE_BUG_1592826");
-
-    /* Disable D2D on AMD Catalyst 14.4 until 14.6
-     * See bug 984488
-     */
-    APPEND_TO_DRIVER_BLOCKLIST_RANGE(
-        OperatingSystem::Windows, DeviceFamily::AtiAll,
-        nsIGfxInfo::FEATURE_DIRECT2D,
-        nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION,
-        DRIVER_BETWEEN_INCLUSIVE_START, V(14, 1, 0, 0), V(14, 2, 0, 0),
-        "FEATURE_FAILURE_BUG_984488_1", "ATI Catalyst 14.6+");
 
     /* Disable D3D9 layers on NVIDIA 6100/6150/6200 series due to glitches
      * whilst scrolling. See bugs: 612007, 644787 & 645872.
@@ -1560,16 +1468,9 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
         nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION, DRIVER_LESS_THAN,
         V(6, 2, 0, 0), "< 6.2.0.0", "FEATURE_FAILURE_REMOTE_FX");
 
-    /* Bug 1008759: Optimus (NVidia) crash.  Disable D2D on NV 310M. */
-    APPEND_TO_DRIVER_BLOCKLIST2(
-        OperatingSystem::Windows, DeviceFamily::Nvidia310M,
-        nsIGfxInfo::FEATURE_DIRECT2D, nsIGfxInfo::FEATURE_BLOCKED_DEVICE,
-        DRIVER_LESS_THAN, GfxDriverInfo::allDriverVersions,
-        "FEATURE_FAILURE_BUG_1008759");
-
     /* Bug 1139503: DXVA crashes with ATI cards on windows 10. */
     APPEND_TO_DRIVER_BLOCKLIST2(
-        OperatingSystem::Windows10, DeviceFamily::AtiAll,
+        OperatingSystem::Windows10or11, DeviceFamily::AtiAll,
         nsIGfxInfo::FEATURE_HARDWARE_VIDEO_DECODING,
         nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION, DRIVER_EQUAL,
         V(15, 200, 1006, 0), "FEATURE_FAILURE_BUG_1139503");
@@ -1725,21 +1626,21 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
     // FEATURE_HW_DECODED_VIDEO_ZERO_COPY
 
     APPEND_TO_DRIVER_BLOCKLIST_RANGE(
-        OperatingSystem::Windows10, DeviceFamily::IntelSkylake,
+        OperatingSystem::Windows10or11, DeviceFamily::IntelSkylake,
         nsIGfxInfo::FEATURE_HW_DECODED_VIDEO_ZERO_COPY,
         nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION, DRIVER_BETWEEN_INCLUSIVE,
         V(20, 19, 15, 4285), V(20, 19, 15, 4390), "FEATURE_FAILURE_BUG_1763280",
         "Intel driver 20.19.15.*");
 
     APPEND_TO_DRIVER_BLOCKLIST_RANGE(
-        OperatingSystem::Windows10, DeviceFamily::IntelSkylake,
+        OperatingSystem::Windows10or11, DeviceFamily::IntelSkylake,
         nsIGfxInfo::FEATURE_HW_DECODED_VIDEO_ZERO_COPY,
         nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION, DRIVER_BETWEEN_INCLUSIVE,
         V(10, 18, 15, 4256), V(10, 18, 15, 4293), "FEATURE_FAILURE_BUG_1763280",
         "Intel driver 10.18.15.*");
 
     APPEND_TO_DRIVER_BLOCKLIST2(
-        OperatingSystem::Windows10, DeviceFamily::IntelKabyLake,
+        OperatingSystem::Windows10or11, DeviceFamily::IntelKabyLake,
         nsIGfxInfo::FEATURE_HW_DECODED_VIDEO_ZERO_COPY,
         nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION, DRIVER_LESS_THAN,
         GfxDriverInfo::allDriverVersions, "FEATURE_FAILURE_BUG_1802357");
@@ -1783,18 +1684,24 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
         nsIGfxInfo::FEATURE_ALLOW_ALWAYS, DRIVER_COMPARISON_IGNORED,
         V(0, 0, 0, 0), "FEATURE_ROLLOUT_ALL");
 
+    APPEND_TO_DRIVER_BLOCKLIST2(OperatingSystem::Windows, DeviceFamily::AtiAll,
+                                nsIGfxInfo::FEATURE_HW_DECODED_VIDEO_ZERO_COPY,
+                                nsIGfxInfo::FEATURE_ALLOW_ALWAYS,
+                                DRIVER_COMPARISON_IGNORED, V(0, 0, 0, 0),
+                                "FEATURE_ROLLOUT_ALL");
+
     ////////////////////////////////////
     // FEATURE_REUSE_DECODER_DEVICE
 
     APPEND_TO_DRIVER_BLOCKLIST_RANGE(
-        OperatingSystem::Windows10, DeviceFamily::IntelSkylake,
+        OperatingSystem::Windows10or11, DeviceFamily::IntelSkylake,
         nsIGfxInfo::FEATURE_REUSE_DECODER_DEVICE,
         nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION, DRIVER_BETWEEN_INCLUSIVE,
         V(20, 19, 15, 4285), V(20, 19, 15, 4390), "FEATURE_FAILURE_BUG_1833809",
         "Intel driver 20.19.15.*");
 
     APPEND_TO_DRIVER_BLOCKLIST_RANGE(
-        OperatingSystem::Windows10, DeviceFamily::IntelSkylake,
+        OperatingSystem::Windows10or11, DeviceFamily::IntelSkylake,
         nsIGfxInfo::FEATURE_REUSE_DECODER_DEVICE,
         nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION, DRIVER_BETWEEN_INCLUSIVE,
         V(10, 18, 15, 4256), V(10, 18, 15, 4293), "FEATURE_FAILURE_BUG_1833809",
@@ -1885,10 +1792,20 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
 #endif
 
     APPEND_TO_DRIVER_BLOCKLIST2(
-        OperatingSystem::Windows10, DeviceFamily::NvidiaPascal,
+        OperatingSystem::Windows10or11, DeviceFamily::NvidiaPascal,
         nsIGfxInfo::FEATURE_WEBRENDER_COMPOSITOR,
         nsIGfxInfo::FEATURE_BLOCKED_DEVICE, DRIVER_COMPARISON_IGNORED,
         V(0, 0, 0, 0), "FEATURE_FAILURE_BUG_1923697");
+
+    /* Disable DirectComposition for NVIDIA devices with a maximum mixed refresh
+     * rate over 60 due to rendering artifacts. See bug 1638709. */
+    APPEND_TO_DRIVER_BLOCKLIST_REFRESH_RATE(
+        OperatingSystem::Windows10, DeviceFamily::NvidiaAll,
+        nsIGfxInfo::FEATURE_WEBRENDER_DCOMP, nsIGfxInfo::FEATURE_BLOCKED_DEVICE,
+        RefreshRateStatus::Mixed,
+        /* minRefreshRate */ DRIVER_COMPARISON_IGNORED, 0, 0,
+        /* maxRefreshRate */ DRIVER_GREATER_THAN, 60, 0,
+        "NVIDIA_REFRESH_RATE_MIXED", "Monitor refresh rate too high/mixed");
 
     // WebRender is unable to use scissored clears in some cases
     APPEND_TO_DRIVER_BLOCKLIST2(
@@ -1912,18 +1829,19 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
 }
 
 OperatingSystem GfxInfo::GetOperatingSystem() {
-  return WindowsVersionToOperatingSystem(mWindowsVersion);
+  return WindowsVersionToOperatingSystem(mWindowsVersion, mWindowsBuildNumber);
 }
 
 nsresult GfxInfo::GetFeatureStatusImpl(
     int32_t aFeature, int32_t* aStatus, nsAString& aSuggestedDriverVersion,
-    const nsTArray<GfxDriverInfo>& aDriverInfo, nsACString& aFailureId,
+    const nsTArray<RefPtr<GfxDriverInfo>>& aDriverInfo, nsACString& aFailureId,
     OperatingSystem* aOS /* = nullptr */) {
   AssertNotWin32kLockdown();
 
   NS_ENSURE_ARG_POINTER(aStatus);
   aSuggestedDriverVersion.SetIsVoid(true);
-  OperatingSystem os = WindowsVersionToOperatingSystem(mWindowsVersion);
+  OperatingSystem os =
+      WindowsVersionToOperatingSystem(mWindowsVersion, mWindowsBuildNumber);
   *aStatus = nsIGfxInfo::FEATURE_STATUS_UNKNOWN;
   if (aOS) *aOS = os;
 
@@ -1962,7 +1880,8 @@ nsresult GfxInfo::GetFeatureStatusImpl(
             GfxDriverInfo::GetDeviceVendor(DeviceVendor::Microsoft),
             nsCaseInsensitiveStringComparator) &&
         !adapterVendorID.Equals(
-            GfxDriverInfo::GetDeviceVendor(DeviceVendor::MicrosoftRemoteDisplayAdapter),
+            GfxDriverInfo::GetDeviceVendor(
+                DeviceVendor::MicrosoftRemoteDisplayAdapter),
             nsCaseInsensitiveStringComparator) &&
         !adapterVendorID.Equals(
             GfxDriverInfo::GetDeviceVendor(DeviceVendor::Parallels),
@@ -2062,17 +1981,6 @@ void GfxInfo::DescribeFeatures(JSContext* aCx, JS::Handle<JSObject*> aObj) {
     val = JS::BooleanValue(blocklisted);
     JS_SetProperty(aCx, obj, "blocklisted", val);
   }
-
-  gfx::FeatureState& d2d = gfxConfig::GetFeature(Feature::DIRECT2D);
-  if (!InitFeatureObject(aCx, aObj, "d2d", d2d, &obj)) {
-    return;
-  }
-  {
-    const char* version = "1.1";
-    JS::Rooted<JSString*> str(aCx, JS_NewStringCopyZ(aCx, version));
-    JS::Rooted<JS::Value> val(aCx, JS::StringValue(str));
-    JS_SetProperty(aCx, obj, "version", val);
-  }
 }
 
 #ifdef DEBUG
@@ -2096,6 +2004,12 @@ NS_IMETHODIMP GfxInfo::SpoofDriverVersion(const nsAString& aDriverVersion) {
 
 NS_IMETHODIMP GfxInfo::SpoofOSVersion(uint32_t aVersion) {
   mWindowsVersion = aVersion;
+  return NS_OK;
+}
+
+NS_IMETHODIMP GfxInfo::SpoofOSVersionEx(uint32_t aMajor, uint32_t aMinor,
+                                        uint32_t aBuild, uint32_t aRevision) {
+  mWindowsVersionEx = GfxVersionEx(aMajor, aMinor, aBuild, aRevision);
   return NS_OK;
 }
 

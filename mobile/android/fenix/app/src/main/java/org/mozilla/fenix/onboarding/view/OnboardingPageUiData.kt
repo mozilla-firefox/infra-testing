@@ -12,13 +12,12 @@ import org.mozilla.fenix.nimbus.OnboardingCardData
  */
 data class OnboardingPageUiData(
     val type: Type,
-    @DrawableRes val imageRes: Int,
+    @param:DrawableRes val imageRes: Int,
     val title: String,
     val description: String,
     val primaryButtonLabel: String,
     val secondaryButtonLabel: String? = null,
     val privacyCaption: Caption? = null,
-    val addOns: List<OnboardingAddOn>? = null,
     val toolbarOptions: List<ToolbarOption>? = null,
     val themeOptions: List<ThemeOption>? = null,
     val termsOfService: OnboardingTermsOfService? = null,
@@ -43,9 +42,6 @@ data class OnboardingPageUiData(
         ),
         NOTIFICATION_PERMISSION(
             telemetryId = "notification",
-        ),
-        ADD_ONS(
-            telemetryId = "add_ons",
         ),
         TOOLBAR_PLACEMENT(
             telemetryId = "toolbar_placement",

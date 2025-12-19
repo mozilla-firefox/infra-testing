@@ -6,33 +6,33 @@
 
 #include "MutationObservers.h"
 
-#include "nsContentUtils.h"
-#include "nsCSSPseudoElements.h"
-#include "nsINode.h"
-#include "nsIContent.h"
-#include "nsIContentInlines.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/DocumentInlines.h"
-#include "mozilla/dom/Element.h"
-#include "nsIMutationObserver.h"
-#include "mozilla/EventListenerManager.h"
 #include "PLDHashTable.h"
-#include "nsCOMArray.h"
-#include "nsPIDOMWindow.h"
-#include "nsXULElement.h"
-#include "nsGenericHTMLElement.h"
 #include "mozilla/AnimationTarget.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/dom/Animation.h"
-#include "mozilla/dom/KeyframeEffect.h"
+#include "mozilla/EventListenerManager.h"
 #include "mozilla/PresShell.h"
-#include "nsWrapperCacheInlines.h"
-#include "nsDOMMutationObserver.h"
+#include "mozilla/dom/Animation.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/CustomElementRegistry.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentInlines.h"
+#include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLTemplateElement.h"
+#include "mozilla/dom/KeyframeEffect.h"
 #include "mozilla/dom/ShadowRoot.h"
+#include "nsCOMArray.h"
+#include "nsCSSPseudoElements.h"
+#include "nsContentUtils.h"
+#include "nsDOMMutationObserver.h"
+#include "nsGenericHTMLElement.h"
+#include "nsIContent.h"
+#include "nsIContentInlines.h"
+#include "nsIMutationObserver.h"
+#include "nsINode.h"
+#include "nsPIDOMWindow.h"
+#include "nsWrapperCacheInlines.h"
+#include "nsXULElement.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -132,7 +132,7 @@ void MutationObservers::NotifyCharacterDataChanged(
 void MutationObservers::NotifyAttributeWillChange(Element* aElement,
                                                   int32_t aNameSpaceID,
                                                   nsAtom* aAttribute,
-                                                  int32_t aModType) {
+                                                  AttrModType aModType) {
   Notify(aElement,
          NOTIFIER(AttributeWillChange, aElement, aNameSpaceID, aAttribute,
                   aModType),
@@ -142,7 +142,7 @@ void MutationObservers::NotifyAttributeWillChange(Element* aElement,
 void MutationObservers::NotifyAttributeChanged(Element* aElement,
                                                int32_t aNameSpaceID,
                                                nsAtom* aAttribute,
-                                               int32_t aModType,
+                                               AttrModType aModType,
                                                const nsAttrValue* aOldValue) {
   aElement->OwnerDoc()->Changed();
   Notify(aElement,
@@ -161,35 +161,37 @@ void MutationObservers::NotifyAttributeSetToCurrentValue(Element* aElement,
 }
 
 void MutationObservers::NotifyContentAppended(nsIContent* aContainer,
-                                              nsIContent* aFirstNewContent) {
+                                              nsIContent* aFirstNewContent,
+                                              const ContentAppendInfo& aInfo) {
   aContainer->OwnerDoc()->Changed();
-  Notify(aContainer, NOTIFIER(ContentAppended, aFirstNewContent),
+  Notify(aContainer, NOTIFIER(ContentAppended, aFirstNewContent, aInfo),
          nsIMutationObserver::kContentAppended);
 }
 
 void MutationObservers::NotifyContentInserted(nsINode* aContainer,
-                                              nsIContent* aChild) {
+                                              nsIContent* aChild,
+                                              const ContentInsertInfo& aInfo) {
   MOZ_ASSERT(aContainer->IsContent() || aContainer->IsDocument(),
              "container must be an nsIContent or an Document");
   aContainer->OwnerDoc()->Changed();
-  Notify(aContainer, NOTIFIER(ContentInserted, aChild),
+  Notify(aContainer, NOTIFIER(ContentInserted, aChild, aInfo),
          nsIMutationObserver::kContentInserted);
 }
 
 void MutationObservers::NotifyContentWillBeRemoved(
-    nsINode* aContainer, nsIContent* aChild, const BatchRemovalState* aState) {
+    nsINode* aContainer, nsIContent* aChild, const ContentRemoveInfo& aInfo) {
   MOZ_ASSERT(aContainer->IsContent() || aContainer->IsDocument(),
              "container must be an nsIContent or an Document");
   MOZ_ASSERT(aChild->GetParentNode() == aContainer,
              "We expect the parent link to be still around at this point");
   aContainer->OwnerDoc()->Changed();
-  Notify<NotifyPresShell::Before>(
-      aContainer, NOTIFIER(ContentWillBeRemoved, aChild, aState),
-      nsIMutationObserver::kContentWillBeRemoved);
+  Notify<NotifyPresShell::Before>(aContainer,
+                                  NOTIFIER(ContentWillBeRemoved, aChild, aInfo),
+                                  nsIMutationObserver::kContentWillBeRemoved);
 }
 
 void MutationObservers::NotifyARIAAttributeDefaultWillChange(
-    mozilla::dom::Element* aElement, nsAtom* aAttribute, int32_t aModType) {
+    mozilla::dom::Element* aElement, nsAtom* aAttribute, AttrModType aModType) {
   Notify<NotifyPresShell::No>(
       aElement,
       NOTIFIER(ARIAAttributeDefaultWillChange, aElement, aAttribute, aModType),
@@ -197,7 +199,7 @@ void MutationObservers::NotifyARIAAttributeDefaultWillChange(
 }
 
 void MutationObservers::NotifyARIAAttributeDefaultChanged(
-    mozilla::dom::Element* aElement, nsAtom* aAttribute, int32_t aModType) {
+    mozilla::dom::Element* aElement, nsAtom* aAttribute, AttrModType aModType) {
   Notify<NotifyPresShell::No>(
       aElement,
       NOTIFIER(ARIAAttributeDefaultChanged, aElement, aAttribute, aModType),

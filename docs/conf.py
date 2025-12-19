@@ -61,7 +61,8 @@ myst_enable_extensions = [
 # JSDoc must run successfully for dirs specified, so running
 # tree-wide (the default) will not work currently.
 # When adding more paths to this list, please ensure that they are not
-# excluded from valid-jsdoc in the top-level .eslintrc.js.
+# excluded from the valid-jsdoc and require-jsdoc sections in the top-level
+# eslint-rollouts.config.mjs.
 js_source_path = [
     "../browser/components/backup",
     "../browser/components/backup/actors",
@@ -70,8 +71,11 @@ js_source_path = [
     "../browser/components/extensions",
     "../browser/components/migration",
     "../browser/components/migration/content",
+    "../browser/components/mozcachedohttp",
+    "../browser/components/mozcachedohttp/actors",
     "../browser/components/uitour",
     "../browser/components/urlbar",
+    "../browser/components/urlbar/content",
     "../js/xpconnect/loader",
     "../remote/marionette",
     "../testing/mochitest/BrowserTestUtils",
@@ -88,7 +92,11 @@ js_source_path = [
     "../toolkit/components/prompts/src",
     "../toolkit/components/pictureinpicture",
     "../toolkit/components/pictureinpicture/content",
-    "../toolkit/components/search",
+    # This is limited to SearchService.sys.mjs for now, as we only need to
+    # generate docs for that file currently. Other search files
+    # (e.g. SearchEngineSelector) are failing due to
+    # https://github.com/pyodide/sphinx-js/issues/242 or a variant of it.
+    "../toolkit/components/search/SearchService.sys.mjs",
     "../toolkit/components/uniffi-bindgen-gecko-js/components/generated",
 ]
 root_for_relative_js_paths = ".."

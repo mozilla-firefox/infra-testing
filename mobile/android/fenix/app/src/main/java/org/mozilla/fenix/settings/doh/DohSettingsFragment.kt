@@ -12,12 +12,13 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.fragment.app.Fragment
 import androidx.navigation.NavHostController
 import androidx.navigation.fragment.findNavController
+import mozilla.components.lib.state.helpers.StoreProvider.Companion.fragmentStore
 import org.mozilla.fenix.HomeActivity
-import org.mozilla.fenix.components.StoreProvider
+import org.mozilla.fenix.R
 import org.mozilla.fenix.databinding.FragmentDohSettingsBinding
 import org.mozilla.fenix.ext.components
-import org.mozilla.fenix.ext.hideToolbar
 import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.ext.showToolbar
 import org.mozilla.fenix.theme.FirefoxTheme
 
 /**
@@ -42,40 +43,27 @@ internal class DohSettingsFragment : Fragment() {
 
         binding.composeView.apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
-            val buildStore = { navController: NavHostController ->
-                val store = StoreProvider.get(this@DohSettingsFragment) {
-                    val lifecycleHolder = LifecycleHolder(
-                        context = requireContext(),
-                        navController = this@DohSettingsFragment.findNavController(),
-                        composeNavController = navController,
-                        settingsProvider = DefaultDohSettingsProvider(
-                            engine = requireContext().components.core.engine,
-                            settings = requireContext().settings(),
-                        ),
-                        homeActivity = (requireActivity() as HomeActivity),
-                    )
+            val buildStore = { composeNavController: NavHostController ->
+                val homeActivity = (requireActivity() as HomeActivity)
+                val navController = findNavController()
+                val settingsProvider = DefaultDohSettingsProvider(
+                    engine = requireContext().components.core.engine,
+                    settings = requireContext().settings(),
+                )
+
+                val store by fragmentStore(DohSettingsState()) {
                     DohSettingsStore(
                         middleware = listOf(
                             DohSettingsMiddleware(
-                                getSettingsProvider = { lifecycleHolder.settingsProvider },
-                                getNavController = { lifecycleHolder.composeNavController },
-                                getHomeActivity = { lifecycleHolder.homeActivity },
-                                exitDohSettings = { lifecycleHolder.navController.popBackStack() },
+                                getSettingsProvider = { settingsProvider },
+                                getNavController = { composeNavController },
+                                getHomeActivity = { homeActivity },
+                                exitDohSettings = { navController.popBackStack() },
                             ),
                         ),
-                        lifecycleHolder = lifecycleHolder,
                     )
                 }
-                store.lifecycleHolder?.apply {
-                    this.context = requireContext()
-                    this.navController = this@DohSettingsFragment.findNavController()
-                    this.composeNavController = navController
-                    this.settingsProvider = DefaultDohSettingsProvider(
-                        engine = requireContext().components.core.engine,
-                        settings = requireContext().settings(),
-                    )
-                    this.homeActivity = (requireActivity() as HomeActivity)
-                }
+
                 store
             }
 
@@ -83,15 +71,25 @@ internal class DohSettingsFragment : Fragment() {
                 FirefoxTheme {
                     DohSettingsNavHost(
                         buildStore = buildStore,
+                        onUpdateToolbar = { titleResId ->
+                            safeShowToolbar(titleResId)
+                        },
                     )
                 }
             }
         }
     }
 
+    private fun safeShowToolbar(titleResId: Int) {
+        // Only update the toolbar if the Fragment is still visible
+        if (isResumed && isVisible) {
+            showToolbar(getString(titleResId))
+        }
+    }
+
     override fun onResume() {
         super.onResume()
-        hideToolbar()
+        showToolbar(getString(R.string.preference_doh_title))
     }
 
     override fun onDestroyView() {

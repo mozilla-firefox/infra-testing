@@ -6,13 +6,14 @@ package mozilla.components.feature.fxsuggest.facts
 
 import mozilla.components.browser.state.action.AwesomeBarAction
 import mozilla.components.browser.state.action.BrowserAction
+import mozilla.components.browser.state.search.RegionState
 import mozilla.components.browser.state.state.AwesomeBarState
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.concept.awesomebar.AwesomeBar
 import mozilla.components.feature.fxsuggest.FxSuggestInteractionInfo
 import mozilla.components.feature.fxsuggest.FxSuggestSuggestionProvider
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 import mozilla.components.support.base.facts.Fact
 
 /**
@@ -30,26 +31,31 @@ import mozilla.components.support.base.facts.Fact
  */
 class FxSuggestFactsMiddleware : Middleware<BrowserState, BrowserAction> {
     override fun invoke(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         next: (BrowserAction) -> Unit,
         action: BrowserAction,
     ) {
-        handleAction(context, action)
+        handleAction(store, action)
         next(action)
     }
 
     private fun handleAction(
-        context: MiddlewareContext<BrowserState, BrowserAction>,
+        store: Store<BrowserState, BrowserAction>,
         action: BrowserAction,
     ) = when (action) {
         is AwesomeBarAction.EngagementFinished -> emitSuggestionFacts(
-            awesomeBarState = context.state.awesomeBarState,
+            awesomeBarState = store.state.awesomeBarState,
+            clientCountry = store.state.search.region?.home ?: RegionState.Default.home,
             engagementAbandoned = action.abandoned,
         )
         else -> Unit
     }
 
-    private fun emitSuggestionFacts(awesomeBarState: AwesomeBarState, engagementAbandoned: Boolean) {
+    private fun emitSuggestionFacts(
+        awesomeBarState: AwesomeBarState,
+        clientCountry: String,
+        engagementAbandoned: Boolean,
+    ) {
         val visibilityState = awesomeBarState.visibilityState
         val clickedSuggestion = awesomeBarState.clickedSuggestion
         visibilityState.visibleProviderGroups.entries.forEachIndexed { groupIndex, (_, suggestions) ->
@@ -66,6 +72,7 @@ class FxSuggestFactsMiddleware : Middleware<BrowserState, BrowserAction> {
                         interactionInfo = it,
                         positionInAwesomeBar = positionInAwesomeBar,
                         isClicked = isClicked,
+                        clientCountry = clientCountry,
                         engagementAbandoned = engagementAbandoned,
                     )
                 }
@@ -75,7 +82,7 @@ class FxSuggestFactsMiddleware : Middleware<BrowserState, BrowserAction> {
                         FxSuggestSuggestionProvider.MetadataKeys.CLICK_INFO,
                     ) as? FxSuggestInteractionInfo
                     clickInfo?.let {
-                        emitSuggestionClickedFact(it, positionInAwesomeBar)
+                        emitSuggestionClickedFact(it, positionInAwesomeBar, clientCountry)
                     }
                 }
             }

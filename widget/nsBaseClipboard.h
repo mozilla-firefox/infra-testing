@@ -76,7 +76,8 @@ class nsBaseClipboard : public nsIClipboard {
       mozilla::dom::WindowContext* aRequestingWindowContext,
       nsIClipboardGetDataSnapshotCallback* aCallback);
 
-  using GetDataCallback = mozilla::MoveOnlyFunction<void(nsresult)>;
+  using GetNativeDataCallback = mozilla::MoveOnlyFunction<void(
+      mozilla::Result<nsCOMPtr<nsISupports>, nsresult>)>;
   using HasMatchingFlavorsCallback = mozilla::MoveOnlyFunction<void(
       mozilla::Result<nsTArray<nsCString>, nsresult>)>;
 
@@ -104,11 +105,12 @@ class nsBaseClipboard : public nsIClipboard {
   // Implement the native clipboard behavior.
   NS_IMETHOD SetNativeClipboardData(nsITransferable* aTransferable,
                                     ClipboardType aWhichClipboard) = 0;
-  NS_IMETHOD GetNativeClipboardData(nsITransferable* aTransferable,
-                                    ClipboardType aWhichClipboard) = 0;
-  virtual void AsyncGetNativeClipboardData(nsITransferable* aTransferable,
+  virtual mozilla::Result<nsCOMPtr<nsISupports>, nsresult>
+  GetNativeClipboardData(const nsACString& aFlavor,
+                         ClipboardType aWhichClipboard) = 0;
+  virtual void AsyncGetNativeClipboardData(const nsACString& aFlavor,
                                            ClipboardType aWhichClipboard,
-                                           GetDataCallback&& aCallback);
+                                           GetNativeDataCallback&& aCallback);
   virtual nsresult EmptyNativeClipboardData(ClipboardType aWhichClipboard) = 0;
   virtual mozilla::Result<bool, nsresult> HasNativeClipboardDataMatchingFlavors(
       const nsTArray<nsCString>& aFlavorList,
@@ -167,6 +169,12 @@ class nsBaseClipboard : public nsIClipboard {
    private:
     virtual ~ClipboardDataSnapshot() = default;
     bool IsValid();
+
+    using GetDataInternalCallback = mozilla::MoveOnlyFunction<void(nsresult)>;
+    void GetDataInternal(nsTArray<nsCString>&& aTypes,
+                         nsTArray<nsCString>::index_type aIndex,
+                         nsITransferable* aTransferable,
+                         GetDataInternalCallback&& aCallback);
 
     // The clipboard type defined in nsIClipboard.
     const nsIClipboard::ClipboardType mClipboardType;
@@ -243,6 +251,10 @@ class nsBaseClipboard : public nsIClipboard {
   MaybeCreateGetRequestFromClipboardCache(
       const nsTArray<nsCString>& aFlavorList, ClipboardType aClipboardType,
       mozilla::dom::WindowContext* aRequestingWindowContext);
+
+  // Clean up data in transferable for posting to clipboard or dragging.  This
+  // guarantees that text data does not include NUL characters.
+  static nsresult SanitizeForClipboard(nsITransferable* aTransferable);
 
   // Track the pending request for each clipboard type separately. And only need
   // to track the latest request for each clipboard type as the prior pending

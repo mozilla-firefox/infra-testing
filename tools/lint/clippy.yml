@@ -38,12 +38,21 @@ clippy:
         - toolkit/crashreporter/mozannotation_client/
         - toolkit/crashreporter/mozannotation_server/
         - toolkit/components/kvstore/
+        - toolkit/components/gecko-trace/
         - toolkit/components/glean/
+        - toolkit/components/uniffi-bindgen-gecko-js/
         - toolkit/library/rust/
         - tools/fuzzing/rust/
         - tools/profiler/rust-api/
         - xpcom/rust/gtest/bench-collections/
         - xpcom/rust/xpcom/xpcom_macros/
+    non_gkrust_crates:
+        # Crates to run clippy on that aren't part of the gkrust crate
+        # (`toolkit/library/rust/`). These have the form of
+        # [crate-name]: [crate-dir]
+        #
+        # Make sure to include the crate dir in `includes` as well.
+        uniffi-bindgen-gecko-js: toolkit/components/uniffi-bindgen-gecko-js/
     exclude:
         # Many are failing for the same reasons:
         # https://bugzilla.mozilla.org/show_bug.cgi?id=1606073
@@ -79,6 +88,7 @@ clippy:
         - xpcom/rust/gtest/nsstring/
         - security/manager/ssl/cert_storage/
         - intl/locale/rust/fluent-langneg-ffi/
+        - intl/locale/rust/locale_service_glue/
         - intl/locale/rust/unic-langid-ffi/
         - toolkit/components/places/bookmark_sync/
         - xpcom/rust/nserror/
@@ -106,5 +116,5 @@ clippy:
     # we use the date instead to facilitate the check
     # replacing - by . because Python packaging.version.Version expects this
     min_clippy_version: 2022.09.19
-    type: external
+    type: global
     payload: clippy:lint

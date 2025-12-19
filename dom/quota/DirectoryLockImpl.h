@@ -9,12 +9,10 @@
 
 #include <cstdint>
 #include <functional>
-#include <utility>
 
-#include "nsISupportsImpl.h"
-#include "nsTArray.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/EnumSet.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/NotNull.h"
 #include "mozilla/RefPtr.h"
@@ -29,6 +27,8 @@
 #include "mozilla/dom/quota/PersistenceScope.h"
 #include "mozilla/dom/quota/PersistenceType.h"
 #include "nsCOMPtr.h"
+#include "nsISupportsImpl.h"
+#include "nsTArray.h"
 
 class nsITimer;
 
@@ -94,6 +94,8 @@ class DirectoryLockImpl {
                     DirectoryLockCategory aCategory);
 
   NS_INLINE_DECL_REFCOUNTING(DirectoryLockImpl)
+
+  QuotaManager& MutableManagerRef() const { return *mQuotaManager; }
 
   int64_t Id() const { return mId; }
 
@@ -197,11 +199,6 @@ class DirectoryLockImpl {
   // some refactoring of the mutex locking.
   bool ShouldUpdateLockIdTable() const { return mShouldUpdateLockIdTable; }
 
-  bool ShouldUpdateLockTable() {
-    return !mInternal &&
-           mPersistenceScope.GetValue() != PERSISTENCE_TYPE_PERSISTENT;
-  }
-
   bool Overlaps(const DirectoryLockImpl& aLock) const;
 
   // Test whether this DirectoryLock needs to wait for the given lock.
@@ -260,6 +257,22 @@ class MOZ_RAII DirectoryLockImpl::PrepareInfo {
 
   const nsTArray<NotNull<DirectoryLockImpl*>>& BlockedOnRef() const {
     return mBlockedOn;
+  }
+
+  /**
+   * Returns true if this directory lock would be blocked by any other lock
+   * whose category is included in the given set.
+   *
+   * Used to detect whether an initialization operation should still run, even
+   * if the cached state indicates it has already been performed, because an
+   * in-progress or pending uninitialization operation will eventually
+   * invalidate that state.
+   */
+  bool IsBlockedBy(const EnumSet<DirectoryLockCategory>& aCategories) const {
+    return std::any_of(mBlockedOn.cbegin(), mBlockedOn.cend(),
+                       [&aCategories](const auto& lock) {
+                         return aCategories.contains(lock->Category());
+                       });
   }
 
  private:

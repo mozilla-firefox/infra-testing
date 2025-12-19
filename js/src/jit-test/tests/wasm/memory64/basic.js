@@ -1,11 +1,6 @@
-// |jit-test| heavy; allow-oom; test-also=--setpref=wasm_tail_calls=false
+// |jit-test| heavy; allow-oom
 
 // Basic tests around creating and linking memories with i64 indices
-
-const MaxMemory64PagesValidation = 0x1_0000_0000_0000n; // from spec
-const MaxTable64ElemsValidation = 0xFFFF_FFFF_FFFF_FFFFn; // from spec
-const MaxTableElemsRuntime = 10000000; // from WasmConstants.h
-const MaxUint32 = 0xFFFF_FFFF;
 
 // test the validity of different i64 memory types in validation, compilation,
 // and the JS-API.

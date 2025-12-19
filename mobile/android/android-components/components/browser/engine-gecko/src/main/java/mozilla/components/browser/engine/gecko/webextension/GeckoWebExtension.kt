@@ -368,10 +368,13 @@ class GeckoWebExtension(
                 requiredPermissions = it.requiredPermissions.toList(),
                 // Origins is marked as @NonNull but may be null: https://bugzilla.mozilla.org/show_bug.cgi?id=1629957
                 requiredOrigins = it.requiredOrigins.orEmpty().toList(),
+                requiredDataCollectionPermissions = it.requiredDataCollectionPermissions.toList(),
                 optionalPermissions = it.optionalPermissions.toList(),
+                optionalOrigins = it.optionalOrigins.toList(),
+                optionalDataCollectionPermissions = it.optionalDataCollectionPermissions.toList(),
                 grantedOptionalPermissions = it.grantedOptionalPermissions.toList(),
                 grantedOptionalOrigins = it.grantedOptionalOrigins.toList(),
-                optionalOrigins = it.optionalOrigins.toList(),
+                grantedOptionalDataCollectionPermissions = it.grantedOptionalDataCollectionPermissions.toList(),
                 disabledFlags = DisabledFlags.select(it.disabledFlags),
                 optionsPageUrl = it.optionsPageUrl,
                 openOptionsPageInTab = it.openOptionsPageInTab,
@@ -400,8 +403,18 @@ class GeckoWebExtension(
     }
 
     @VisibleForTesting
-    internal fun getIcon(size: Int): GeckoResult<Bitmap> {
-        return nativeExtension.metaData.icon.getBitmap(size)
+    internal fun getIcon(size: Int): GeckoResult<Bitmap?> {
+        return nativeExtension.metaData.icon.getBitmap(size).then(
+            { GeckoResult.fromValue(it) },
+            { GeckoResult.fromValue(null) },
+        )
+    }
+
+    /**
+     * Companion object for [GeckoWebExtension].
+     */
+    companion object {
+        val DATA_COLLECTION_PERMISSIONS: List<String> = GeckoNativeWebExtension.DATA_COLLECTION_PERMISSIONS
     }
 }
 
@@ -432,7 +445,12 @@ class GeckoPort(
 
 private fun GeckoNativeWebExtensionAction.convert(): Action {
     val loadIcon: (suspend (Int) -> Bitmap?)? = icon?.let {
-        { size -> icon?.getBitmap(size)?.await() }
+        { size ->
+            icon?.getBitmap(size)?.then(
+                { GeckoResult.fromValue(it) },
+                { GeckoResult.fromValue(null) },
+            )?.await()
+        }
     }
 
     val onClick = { click() }

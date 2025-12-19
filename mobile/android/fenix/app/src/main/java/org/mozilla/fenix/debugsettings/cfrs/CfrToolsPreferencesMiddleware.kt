@@ -9,7 +9,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 
 /**
  * [Middleware] that reacts to various [CfrToolsAction]s and updates any corresponding preferences.
@@ -22,9 +22,8 @@ class CfrToolsPreferencesMiddleware(
     private val coroutineScope: CoroutineScope = CoroutineScope(Dispatchers.Main),
 ) : Middleware<CfrToolsState, CfrToolsAction> {
 
-    @Suppress("LongMethod")
     override fun invoke(
-        context: MiddlewareContext<CfrToolsState, CfrToolsAction>,
+        store: Store<CfrToolsState, CfrToolsAction>,
         next: (CfrToolsAction) -> Unit,
         action: CfrToolsAction,
     ) {
@@ -36,40 +35,16 @@ class CfrToolsPreferencesMiddleware(
                     cfrPreferencesRepository.cfrPreferenceUpdates
                         .collect { cfrPreferenceUpdate ->
                             val updateAction = mapRepoUpdateToStoreAction(cfrPreferenceUpdate)
-                            context.store.dispatch(updateAction)
+                            store.dispatch(updateAction)
                         }
                 }
                 cfrPreferencesRepository.init()
-            }
-            is CfrToolsAction.HomepageSyncShownToggled -> {
-                cfrPreferencesRepository.updateCfrPreference(
-                    CfrPreferencesRepository.CfrPreferenceUpdate(
-                        preferenceType = CfrPreferencesRepository.CfrPreference.HomepageSync,
-                        value = context.state.homepageSyncShown,
-                    ),
-                )
-            }
-            is CfrToolsAction.HomepageNavToolbarShownToggled -> {
-                cfrPreferencesRepository.updateCfrPreference(
-                    CfrPreferencesRepository.CfrPreferenceUpdate(
-                        preferenceType = CfrPreferencesRepository.CfrPreference.HomepageNavToolbar,
-                        value = context.state.homepageNavToolbarShown,
-                    ),
-                )
             }
             is CfrToolsAction.HomepageSearchBarShownToggled -> {
                 cfrPreferencesRepository.updateCfrPreference(
                     CfrPreferencesRepository.CfrPreferenceUpdate(
                         preferenceType = CfrPreferencesRepository.CfrPreference.HomepageSearchBar,
-                        value = context.state.homepageSearchBarShown,
-                    ),
-                )
-            }
-            is CfrToolsAction.NavButtonsShownToggled -> {
-                cfrPreferencesRepository.updateCfrPreference(
-                    CfrPreferencesRepository.CfrPreferenceUpdate(
-                        preferenceType = CfrPreferencesRepository.CfrPreference.NavButtons,
-                        value = context.state.navButtonsShown,
+                        value = store.state.homepageSearchBarShown,
                     ),
                 )
             }
@@ -77,7 +52,7 @@ class CfrToolsPreferencesMiddleware(
                 cfrPreferencesRepository.updateCfrPreference(
                     CfrPreferencesRepository.CfrPreferenceUpdate(
                         preferenceType = CfrPreferencesRepository.CfrPreference.TabAutoCloseBanner,
-                        value = context.state.tabAutoCloseBannerShown,
+                        value = store.state.tabAutoCloseBannerShown,
                     ),
                 )
             }
@@ -85,7 +60,7 @@ class CfrToolsPreferencesMiddleware(
                 cfrPreferencesRepository.updateCfrPreference(
                     CfrPreferencesRepository.CfrPreferenceUpdate(
                         preferenceType = CfrPreferencesRepository.CfrPreference.InactiveTabs,
-                        value = context.state.inactiveTabsShown,
+                        value = store.state.inactiveTabsShown,
                     ),
                 )
             }
@@ -93,7 +68,7 @@ class CfrToolsPreferencesMiddleware(
                 cfrPreferencesRepository.updateCfrPreference(
                     CfrPreferencesRepository.CfrPreferenceUpdate(
                         preferenceType = CfrPreferencesRepository.CfrPreference.OpenInApp,
-                        value = context.state.openInAppShown,
+                        value = store.state.openInAppShown,
                     ),
                 )
             }
@@ -104,7 +79,7 @@ class CfrToolsPreferencesMiddleware(
             is CfrToolsAction.ResetLastCFRTimestampButtonClicked -> {
                 cfrPreferencesRepository.resetLastCfrTimestamp()
             }
-            is CfrToolsAction.CfrPreferenceUpdate -> {} // No-op
+            is CfrToolsAction.LoadCfrPreference -> {} // No-op
         }
     }
 
@@ -113,20 +88,14 @@ class CfrToolsPreferencesMiddleware(
         cfrPreferenceUpdate: CfrPreferencesRepository.CfrPreferenceUpdate,
     ): CfrToolsAction {
         return when (cfrPreferenceUpdate.preferenceType) {
-            CfrPreferencesRepository.CfrPreference.HomepageSync ->
-                CfrToolsAction.HomepageSyncCfrUpdated(newValue = !cfrPreferenceUpdate.value)
-            CfrPreferencesRepository.CfrPreference.HomepageNavToolbar ->
-                CfrToolsAction.HomepageNavToolbarCfrUpdated(newValue = !cfrPreferenceUpdate.value)
             CfrPreferencesRepository.CfrPreference.HomepageSearchBar ->
-                CfrToolsAction.HomepageSearchbarCfrUpdated(newValue = !cfrPreferenceUpdate.value)
-            CfrPreferencesRepository.CfrPreference.NavButtons ->
-                CfrToolsAction.NavButtonsCfrUpdated(newValue = !cfrPreferenceUpdate.value)
+                CfrToolsAction.HomepageSearchbarCfrLoaded(newValue = !cfrPreferenceUpdate.value)
             CfrPreferencesRepository.CfrPreference.TabAutoCloseBanner ->
-                CfrToolsAction.TabAutoCloseBannerCfrUpdated(newValue = !cfrPreferenceUpdate.value)
+                CfrToolsAction.TabAutoCloseBannerCfrLoaded(newValue = !cfrPreferenceUpdate.value)
             CfrPreferencesRepository.CfrPreference.InactiveTabs ->
-                CfrToolsAction.InactiveTabsCfrUpdated(newValue = !cfrPreferenceUpdate.value)
+                CfrToolsAction.InactiveTabsCfrLoaded(newValue = !cfrPreferenceUpdate.value)
             CfrPreferencesRepository.CfrPreference.OpenInApp ->
-                CfrToolsAction.OpenInAppCfrUpdated(newValue = !cfrPreferenceUpdate.value)
+                CfrToolsAction.OpenInAppCfrLoaded(newValue = !cfrPreferenceUpdate.value)
         }
     }
 }

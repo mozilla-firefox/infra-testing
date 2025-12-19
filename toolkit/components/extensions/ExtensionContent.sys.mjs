@@ -3,7 +3,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* eslint-disable mozilla/valid-lazy */
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
@@ -361,7 +360,7 @@ class Script {
    *        execution details. This is usually a plain WebExtensionContentScript
    *        except when the script is run via `tabs.executeScript` or
    *        `scripting.executeScript`. In this case, the object may have some
-   *        extra properties: wantReturnValue, removeCSS, cssOrigin
+   *        extra properties: wantReturnValue, removeCSS
    */
   constructor(extension, matcher) {
     this.scriptType = "content_script";
@@ -500,12 +499,13 @@ class Script {
     }
 
     try {
-      // In case of initial about:blank documents, inject immediately without
-      // awaiting the runAt logic in the blocks below, to avoid getting stuck
-      // due to https://bugzilla.mozilla.org/show_bug.cgi?id=1900222#c7
+      // In case of uncommitted initial about:blank documents, inject
+      // immediately without awaiting the runAt logic in the blocks below, to
+      // avoid getting stuck due to
+      // https://bugzilla.mozilla.org/show_bug.cgi?id=1900222#c7
       // This is only relevant for dynamic code execution because declarative
-      // content scripts do not run on initial about:blank - bug 1415539).
-      if (!window.document.isInitialDocument) {
+      // content scripts do not run on this about:blank - bug 1415539.
+      if (!window.document.isUncommittedInitialDocument) {
         if (this.runAt === "document_end") {
           await promiseDocumentReady(window.document);
         } else if (this.runAt === "document_idle") {
@@ -1456,7 +1456,6 @@ export var ExtensionContent = {
     Object.assign(matcher, {
       wantReturnValue: options.wantReturnValue,
       removeCSS: options.removeCSS,
-      cssOrigin: options.cssOrigin,
     });
     let script = contentScripts.get(matcher);
 

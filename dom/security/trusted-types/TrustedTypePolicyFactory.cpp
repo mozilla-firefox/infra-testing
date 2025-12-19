@@ -8,17 +8,18 @@
 
 #include <utility>
 
-#include "nsLiteralString.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/CSPViolationData.h"
+#include "mozilla/dom/PolicyContainer.h"
 #include "mozilla/dom/TrustedTypePolicy.h"
 #include "mozilla/dom/TrustedTypeUtils.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/dom/WorkerScope.h"
 #include "mozilla/dom/nsCSPUtils.h"
+#include "nsLiteralString.h"
 
 using namespace mozilla::dom::TrustedTypeUtils;
 
@@ -128,7 +129,8 @@ auto TrustedTypePolicyFactory::ShouldTrustedTypePolicyCreationBeBlockedByCSP(
   auto result = PolicyCreation::Allowed;
   auto location = JSCallingLocation::Get(aJSContext);
   if (auto* piDOMWindowInner = mGlobalObject->GetAsInnerWindow()) {
-    if (auto* csp = piDOMWindowInner->GetCsp()) {
+    if (auto* csp =
+            PolicyContainer::GetCSP(piDOMWindowInner->GetPolicyContainer())) {
       ReportPolicyCreationViolations(
           csp, nullptr /* aCSPEventListener */, location.FileName(),
           location.mLine, location.mColumn, mCreatedPolicyNames, aPolicyName);

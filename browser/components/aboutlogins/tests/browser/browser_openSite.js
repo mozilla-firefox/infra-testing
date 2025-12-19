@@ -7,6 +7,9 @@ add_setup(async function () {
     gBrowser,
     url: "about:logins",
   });
+  await SpecialPowers.pushPrefEnv({
+    set: [["toolkit.osKeyStore.unofficialBuildOnlyLogin", ""]],
+  });
   registerCleanupFunction(() => {
     BrowserTestUtils.removeTab(gBrowser.selectedTab);
     Services.logins.removeAllUserFacingLogins();
@@ -80,7 +83,7 @@ add_task(async function test_launch_login_item() {
     "passwordmgr-storage-changed",
     (_, data) => data == "modifyLogin"
   );
-  Services.logins.modifyLogin(TEST_LOGIN1, modifiedLogin);
+  await Services.logins.modifyLoginAsync(TEST_LOGIN1, modifiedLogin);
   await storageChangedPromised;
 
   BrowserTestUtils.removeTab(newTab);

@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources>
   <!-- Text for confirmation for a positive action in dialog -->
   <string name="mozac_feature_prompts_ok">OK</string>
@@ -70,7 +77,7 @@
   <string name="mozac_feature_prompts_dec">Dec</string>
   <!-- Strings shown in a dialog that appear when users try to refresh a certain kind of webpages -->
   <string name="mozac_feature_prompt_repost_title">i-Padala usab ang mga data dinhi nga site?</string>
-  <string name="mozac_feature_prompt_repost_message">Pag-refresh ani nga page posibleng maka-kopya sa bag-o nga mga aksyon, sama sa pagpadala ug bayad o pag-post sa usa ka komento makaduha. </string>
+  <string name="mozac_feature_prompt_repost_message">Pag-refresh ani nga page posibleng maka-kopya sa bag-o nga mga aksyon, sama sa pagpadala ug bayad o pag-post sa usa ka komento makaduha.</string>
   <!-- Pressing this will dismiss the dialog and reload the page sending again the previous data -->
   <string name="mozac_feature_prompt_repost_positive_button_text">Resend data</string>
   <!-- Pressing this will dismiss the dialog and not refresh the webpage -->

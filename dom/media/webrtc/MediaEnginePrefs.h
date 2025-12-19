@@ -10,6 +10,8 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "mozilla/dom/MediaStreamTrackBinding.h"
+
 namespace mozilla {
 
 /**
@@ -17,15 +19,17 @@ namespace mozilla {
  */
 class MediaEnginePrefs {
  public:
-  static const int DEFAULT_VIDEO_FPS = 30;
-  static const int DEFAULT_43_VIDEO_WIDTH = 640;
-  static const int DEFAULT_43_VIDEO_HEIGHT = 480;
-  static const int DEFAULT_169_VIDEO_WIDTH = 1280;
-  static const int DEFAULT_169_VIDEO_HEIGHT = 720;
+  static constexpr int DEFAULT_VIDEO_FPS = 30;
+  static constexpr int DEFAULT_43_VIDEO_WIDTH = 640;
+  static constexpr int DEFAULT_43_VIDEO_HEIGHT = 480;
+  static constexpr int DEFAULT_169_VIDEO_WIDTH = 1280;
+  static constexpr int DEFAULT_169_VIDEO_HEIGHT = 720;
 
   MediaEnginePrefs()
       : mWidth(0),
         mHeight(0),
+        mResizeModeEnabled(false),
+        mResizeMode(dom::VideoResizeModeEnum::None),
         mFPS(0),
         mFreq(0),
         mUsePlatformProcessing(false),
@@ -43,6 +47,8 @@ class MediaEnginePrefs {
 
   int32_t mWidth;
   int32_t mHeight;
+  bool mResizeModeEnabled;
+  dom::VideoResizeModeEnum mResizeMode;
   int32_t mFPS;
   int32_t mFreq;  // for test tones (fake:true)
   bool mUsePlatformProcessing;

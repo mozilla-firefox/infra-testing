@@ -10,6 +10,7 @@
 #define nsContentSecurityUtils_h___
 
 #include <utility>
+
 #include "mozilla/Maybe.h"
 #include "nsStringFwd.h"
 
@@ -17,6 +18,7 @@ struct JSContext;
 class nsIChannel;
 class nsIHttpChannel;
 class nsIPrincipal;
+class nsIURI;
 class NS_ConvertUTF8toUTF16;
 
 namespace mozilla::dom {
@@ -35,6 +37,10 @@ class nsContentSecurityUtils {
   // of simply calling aTriggeringPrincipal->Equals(aResultPrincipal).
   static bool IsConsideredSameOriginForUIR(nsIPrincipal* aTriggeringPrincipal,
                                            nsIPrincipal* aResultPrincipal);
+
+  // Check whether the scheme is trusted (for privileged code execution).
+  // @returns true, iff the scheme is chrome:, resource: or moz-src:
+  static bool IsTrustedScheme(nsIURI* aURI);
 
   static bool IsEvalAllowed(JSContext* cx, bool aIsSystemPrincipal,
                             const nsAString& aScript);
@@ -74,8 +80,7 @@ class nsContentSecurityUtils {
       const mozilla::dom::Element& aElement);
 
   // Helper function to Check if a Download is allowed;
-  static long ClassifyDownload(nsIChannel* aChannel,
-                               const nsAutoCString& aMimeTypeGuess);
+  static long ClassifyDownload(nsIChannel* aChannel);
 
   // Public only for testing
   static FilenameTypeAndDetails FilenameToFilenameType(
@@ -93,6 +98,8 @@ class nsContentSecurityUtils {
 #endif
 
   static bool ValidateScriptFilename(JSContext* cx, const char* aFilename);
+  static nsresult GetVeryFirstUnexpectedScriptFilename(nsACString& aFilename);
+
   // Helper Function to Post a message to the corresponding JS-Console
   static void LogMessageToConsole(nsIHttpChannel* aChannel, const char* aMsg);
 };

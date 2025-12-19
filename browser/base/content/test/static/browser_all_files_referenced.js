@@ -46,6 +46,9 @@ var gExceptionPaths = [
   "chrome://browser/content/asrouter/assets/fox-with-devices.svg",
   "chrome://browser/content/asrouter/assets/fox-with-locked-box.svg",
   "chrome://browser/content/asrouter/assets/fox-with-mobile.svg",
+  "chrome://browser/content/asrouter/assets/desktop-to-mobile-banner.svg",
+  "chrome://browser/content/asrouter/assets/desktop-to-mobile-non-eu-QR.svg",
+  "chrome://browser/content/asrouter/assets/desktop-to-mobile-eu-QR.svg",
 
   // toolkit/components/pdfjs/content/build/pdf.js
   "resource://pdf.js/web/images/",
@@ -120,9 +123,16 @@ var gExceptionPaths = [
   "resource://newtab/",
   "chrome://newtab/",
 
-  // Bug 1957102 - Temporarily ignore until used by the URLBar provider
-  "resource://gre/modules/PlacesSemanticHistoryManager.sys.mjs",
-  "resource://gre/modules/PlacesSemanticHistoryDatabase.sys.mjs",
+  // UniFFI test files.
+  "moz-src:///toolkit/components/uniffi-bindgen-gecko-js/tests/generated/",
+
+  // Used for Market suggestions on the urlbar. This is specified from Remote
+  // Settings.
+  "chrome://browser/skin/illustrations/market-opt-in.svg",
+
+  // Used for Yelp realtime suggestions on the urlbar. This is specified from
+  // Remote Settings.
+  "chrome://browser/skin/illustrations/yelpRealtime-opt-in.svg",
 ];
 
 // These are not part of the omni.ja file, so we find them only when running
@@ -175,9 +185,6 @@ var allowlist = [
     isFromDevTools: true,
   },
 
-  // used by devtools/client/memory/index.xhtml
-  { file: "chrome://global/content/third_party/d3/d3.js" },
-
   // SpiderMonkey parser API, currently unused in browser/ and toolkit/
   { file: "resource://gre/modules/reflect.sys.mjs" },
 
@@ -196,7 +203,6 @@ var allowlist = [
   { file: "resource://gre/greprefs.js" },
 
   // layout/mathml/nsMathMLChar.cpp
-  { file: "resource://gre/res/fonts/mathfontSTIXGeneral.properties" },
   { file: "resource://gre/res/fonts/mathfontUnicode.properties" },
 
   // toolkit/mozapps/extensions/AddonContentPolicy.cpp
@@ -211,19 +217,11 @@ var allowlist = [
     platforms: ["linux", "win"],
   },
   {
-    file: "resource://gre/chrome/en-US/locale/en-US/global-platform/mac/intl.properties",
-    platforms: ["linux", "win"],
-  },
-  {
     file: "resource://gre/chrome/en-US/locale/en-US/global-platform/mac/platformKeys.properties",
     platforms: ["linux", "win"],
   },
   {
     file: "resource://gre/chrome/en-US/locale/en-US/global-platform/unix/accessible.properties",
-    platforms: ["macosx", "win"],
-  },
-  {
-    file: "resource://gre/chrome/en-US/locale/en-US/global-platform/unix/intl.properties",
     platforms: ["macosx", "win"],
   },
   {
@@ -235,10 +233,6 @@ var allowlist = [
     platforms: ["linux", "macosx"],
   },
   {
-    file: "resource://gre/chrome/en-US/locale/en-US/global-platform/win/intl.properties",
-    platforms: ["linux", "macosx"],
-  },
-  {
     file: "resource://gre/chrome/en-US/locale/en-US/global-platform/win/platformKeys.properties",
     platforms: ["linux", "macosx"],
   },
@@ -247,18 +241,15 @@ var allowlist = [
   { file: "resource://pdf.js/web/debugger.mjs" },
   { file: "resource://pdf.js/web/debugger.css" },
 
+  // File from the ipp-activator add-on
+  { file: "resource://builtin-addons/ipp-activator/breakages/tab.json" },
+
   // Starting from here, files in the allowlist are bugs that need fixing.
   // Bug 1339424 (wontfix?)
   {
     file: "chrome://browser/locale/taskbar.properties",
     platforms: ["linux", "macosx"],
   },
-  // Bug 1344267
-  { file: "chrome://remote/content/marionette/test_dialog.properties" },
-  { file: "chrome://remote/content/marionette/test_dialog.xhtml" },
-  { file: "chrome://remote/content/marionette/test_menupopup.xhtml" },
-  { file: "chrome://remote/content/marionette/test_no_xul.xhtml" },
-  { file: "chrome://remote/content/marionette/test.xhtml" },
   // Bug 1348559
   { file: "chrome://pippki/content/resetpassword.xhtml" },
   // Bug 1337345
@@ -334,6 +325,52 @@ var allowlist = [
 
   // A QA and dev debug tool.
   { file: "chrome://browser/content/places/interactionsViewer.html" },
+
+  // Bug 1984409: We're doing backups to cloud-synced locations first. We'll do local backups eventually,
+  // and this file will be needed for that.
+  {
+    file: "resource://app/modules/backup/CookiesBackupResource.sys.mjs",
+  },
+  // Bug 2000945 - Move query intent detection to AI-window r?mardak (backed out due to unused file)
+  {
+    file: "moz-src:///browser/components/aiwindow/models/IntentClassifier.sys.mjs",
+  },
+  // Bug 2000961 - Add ChatStore.sys.mjs module
+  {
+    file: "moz-src:///browser/components/aiwindow/ui/modules/ChatStore.sys.mjs",
+  },
+  // Bug 2002840 - add function to return real time info injection message & tests (backed out due to unused file)
+  {
+    file: "moz-src:///browser/components/aiwindow/models/ChatUtils.sys.mjs",
+  },
+  // Bug 2003623 - Add assistant system prompt
+  {
+    file: "moz-src:///browser/components/aiwindow/models/prompts/AssistantPrompts.sys.mjs",
+  },
+  // Bug 2002638 - Move search browsing history to AI-window r?mardak (backed out due to unused file)
+  {
+    file: "moz-src:///browser/components/aiwindow/models/Tools.sys.mjs",
+  },
+  // Bug 2004888 - [FirstRun] Create Firstrun.html opening firstrun welcome screen
+  {
+    file: "chrome://browser/content/aiwindow/firstrun.html",
+  },
+  // Bug 2005768 - Insights scheduler for generation from history
+  {
+    file: "moz-src:///browser/components/aiwindow/models/InsightsHistoryScheduler.sys.mjs",
+  },
+  // Bug 2000987 - get user messages from chat source
+  {
+    file: "moz-src:///browser/components/aiwindow/models/InsightsChatSource.sys.mjs",
+  },
+  // Bug 2003303 - Implement Title Generation (backed out due to unused file)
+  {
+    file: "moz-src:///browser/components/aiwindow/models/TitleGeneration.sys.mjs",
+  },
+  // Bug 2006090 - Insight updation - Day 0 and incremental updates from Chat history
+  {
+    file: "moz-src:///browser/components/aiwindow/models/InsightsConversationScheduler.sys.mjs",
+  },
 ];
 
 if (AppConstants.NIGHTLY_BUILD) {
@@ -652,7 +689,7 @@ function parseCodeFile(fileUri) {
       );
 
       if (!urls) {
-        urls = line.match(/["']moz-src:\/\/\/[^"']+["']/g);
+        urls = line.match(/["']moz-src:\/\/[^"']+["']/g);
       }
 
       if (!urls) {
@@ -884,19 +921,18 @@ add_task(async function checkAllTheFiles() {
   const libxul = await IOUtils.read(PathUtils.xulLibraryPath);
   findChromeUrlsFromArray(libxul, "chrome://");
   findChromeUrlsFromArray(libxul, "resource://");
-  findChromeUrlsFromArray(libxul, "moz-src:///");
+  findChromeUrlsFromArray(libxul, "moz-src://");
   // Handle NS_LITERAL_STRING.
   let uint16 = new Uint16Array(libxul.buffer);
   findChromeUrlsFromArray(uint16, "chrome://");
   findChromeUrlsFromArray(uint16, "resource://");
-  findChromeUrlsFromArray(uint16, "moz-src:///");
+  findChromeUrlsFromArray(uint16, "moz-src://");
 
   const kCodeExtensions = [
     ".xml",
     ".xsl",
     ".mjs",
     ".js",
-    ".jsm",
     ".json",
     ".html",
     ".xhtml",
@@ -1022,7 +1058,8 @@ add_task(async function checkAllTheFiles() {
         if (isDevtools) {
           if (
             ref.startsWith("resource://app/components/") ||
-            (file.startsWith("chrome://") && ref.startsWith("resource://"))
+            (file.startsWith("chrome://") &&
+              (ref.startsWith("resource://") || ref.startsWith("moz-src://")))
           ) {
             return false;
           }

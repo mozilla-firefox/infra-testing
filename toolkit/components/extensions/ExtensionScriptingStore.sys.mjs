@@ -3,7 +3,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* eslint-disable mozilla/valid-lazy */
 
 import { ExtensionUtils } from "resource://gre/modules/ExtensionUtils.sys.mjs";
 import { StartupCache } from "resource://gre/modules/ExtensionParent.sys.mjs";
@@ -180,6 +179,7 @@ export const makeInternalContentScript = (
       // upfront.
       checkPermissions: true,
       cssPaths,
+      cssOrigin: options.cssOrigin || "author",
       excludeMatches: options.excludeMatches,
       jsPaths,
       matches: options.matches,
@@ -215,6 +215,7 @@ export const makePublicContentScript = (extension, internalScript) => {
     runAt: internalScript.runAt,
     world: internalScript.world,
     persistAcrossSessions: internalScript.persistAcrossSessions,
+    cssOrigin: internalScript.cssOrigin,
   };
 
   if (internalScript.cssPaths.length) {

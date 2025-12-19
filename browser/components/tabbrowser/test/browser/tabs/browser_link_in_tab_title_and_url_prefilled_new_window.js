@@ -11,6 +11,12 @@ Services.scriptloader.loadSubScript(
   this
 );
 
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["test.wait300msAfterTabSwitch", true]],
+  });
+});
+
 add_task(async function normal_page__blank_target() {
   await doTestWithNewWindow({
     link: "wait-a-bit--blank-target",
@@ -50,5 +56,12 @@ add_task(async function blank_page__by_script() {
   await doTestWithNewWindow({
     link: "blank-page--by-script",
     expectedSetURICalled: false,
+    async actionWhileLoading(_onTabLoaded) {
+      // window.open("about:blank") will cause a synchronous load that cannot
+      // be caught by listeners attached afterwards
+      info("Skip waiting for link target to load");
+      // catch a possible window unloaded while waiting for load error
+      _onTabLoaded.catch(() => {});
+    },
   });
 });

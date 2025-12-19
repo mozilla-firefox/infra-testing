@@ -17,12 +17,10 @@
 #ifdef MOZ_BACKGROUNDTASKS
 #  include "mozilla/BackgroundTasks.h"
 #endif
-#include "mozilla/HashFunctions.h"
 #include "mozilla/JSONStringWriteFuncs.h"
 #include "mozilla/Result.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Tokenizer.h"
-#include "mozilla/Unused.h"
 #include "mozilla/WindowsVersion.h"
 #include "mozilla/intl/Localization.h"
 #include "nsAppDirectoryServiceDefs.h"
@@ -294,7 +292,10 @@ void ToastNotificationHandler::UnregisterHandler() {
 
   mNotification = nullptr;
   mNotifier = nullptr;
+}
 
+void ToastNotificationHandler::HandleCloseFromBrowser() {
+  UnregisterHandler();
   SendFinished();
 }
 
@@ -310,7 +311,7 @@ nsresult ToastNotificationHandler::InitAlertAsync() {
     // which expects to have been initialized early and on the main thread.
     // Since background tasks run headless this never occurs. In this case we
     // force gfx initialization.
-    Unused << NS_WARN_IF(!gfxPlatform::GetPlatform());
+    (void)NS_WARN_IF(!gfxPlatform::GetPlatform());
   }
 #endif
 
@@ -342,8 +343,10 @@ nsString ToastNotificationHandler::ActionArgsJSONString(
       w.StringProperty("privilegedName", NS_ConvertUTF16toUTF8(mName));
     }
   } else {
-    if (!mHostPort.IsEmpty()) {
-      w.StringProperty("launchUrl", NS_ConvertUTF16toUTF8(mHostPort));
+    nsAutoCString origin;
+    nsresult rv = mAlertNotification->GetOrigin(origin);
+    if (NS_SUCCEEDED(rv) && !origin.IsVoid()) {
+      w.StringProperty("origin", origin);
     }
   }
 
@@ -543,8 +546,8 @@ ComPtr<IXmlDocument> ToastNotificationHandler::CreateToastXmlDocument() {
 
     AddActionNode(toastXml, actionsNode, disableButtonTitle,
                   // TODO: launch into `about:preferences`?
-                  launchArgWithoutAction, ActionArgsJSONString(u"snooze"_ns),
-                  u"contextmenu"_ns);
+                  launchArgWithoutAction,
+                  ActionArgsJSONString(kAlertActionDisable), u"contextmenu"_ns);
   }
 
   bool wantSettings = true;
@@ -563,7 +566,7 @@ ComPtr<IXmlDocument> ToastNotificationHandler::CreateToastXmlDocument() {
     success = AddActionNode(
         toastXml, actionsNode, settingsButtonTitle, launchArgWithoutAction,
         // TODO: launch into `about:preferences`?
-        ActionArgsJSONString(u"settings"_ns), u"contextmenu"_ns);
+        ActionArgsJSONString(kAlertActionSettings), u"contextmenu"_ns);
     NS_ENSURE_TRUE(success, nullptr);
   }
 
@@ -806,6 +809,11 @@ void ToastNotificationHandler::SendFinished() {
   mSentFinished = true;
 }
 
+void ToastNotificationHandler::HandleCloseFromSystem() {
+  SendFinished();
+  mBackend->RemoveHandler(mName, this);
+}
+
 HRESULT
 ToastNotificationHandler::OnActivate(
     const ComPtr<IToastNotification>& notification,
@@ -841,15 +849,15 @@ ToastNotificationHandler::OnActivate(
 
             while (parse.ReadUntil(Tokenizer16::Token::NewLine(), token)) {
               if (token == nsDependentString(kLaunchArgAction)) {
-                Unused << parse.ReadUntil(Tokenizer16::Token::EndOfFile(),
-                                          actionString);
+                (void)parse.ReadUntil(Tokenizer16::Token::EndOfFile(),
+                                      actionString);
               } else {
                 // Next line is a value in a key/value pair, skip.
                 parse.SkipUntil(Tokenizer16::Token::NewLine());
               }
               // Skip newline.
               Tokenizer16::Token unused;
-              Unused << parse.Next(unused);
+              (void)parse.Next(unused);
             }
           }
         }
@@ -863,9 +871,9 @@ ToastNotificationHandler::OnActivate(
       // dismiss action. For this case `arguments` only includes a keyword so we
       // don't need to compare with a parsed result.
       SendFinished();
-    } else if (actionString.EqualsLiteral("settings")) {
+    } else if (actionString == kAlertActionSettings) {
       mAlertListener->Observe(nullptr, "alertsettingscallback", mCookie.get());
-    } else if (actionString.EqualsLiteral("snooze")) {
+    } else if (actionString == kAlertActionDisable) {
       mAlertListener->Observe(nullptr, "alertdisablecallback", mCookie.get());
     } else if (mClickable) {
       // When clicking toast, focus moves to another process, but we want to set
@@ -909,7 +917,7 @@ ToastNotificationHandler::OnActivate(
       mAlertListener->Observe(alertAction, "alertclickcallback", mCookie.get());
     }
   }
-  mBackend->RemoveHandler(mName, this);
+  HandleCloseFromSystem();
   return S_OK;
 }
 
@@ -996,8 +1004,7 @@ ToastNotificationHandler::OnDismiss(
     return S_OK;
   }
 
-  SendFinished();
-  mBackend->RemoveHandler(mName, this);
+  HandleCloseFromSystem();
   return S_OK;
 }
 
@@ -1009,14 +1016,13 @@ ToastNotificationHandler::OnFail(const ComPtr<IToastNotification>& notification,
   MOZ_LOG(sWASLog, LogLevel::Error,
           ("Error creating notification, error: %ld", err));
 
-  SendFinished();
-  mBackend->RemoveHandler(mName, this);
+  HandleCloseFromSystem();
   return S_OK;
 }
 
 nsresult ToastNotificationHandler::TryShowAlert() {
   if (NS_WARN_IF(!ShowAlert())) {
-    mBackend->RemoveHandler(mName, this);
+    HandleCloseFromSystem();
     return NS_ERROR_FAILURE;
   }
   return NS_OK;

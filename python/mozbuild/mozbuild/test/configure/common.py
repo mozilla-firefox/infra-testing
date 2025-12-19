@@ -9,11 +9,11 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from io import StringIO
 
-import six
 from buildconfig import topobjdir, topsrcdir
+from mozfile import json
 from mozpack import path as mozpath
-from six import StringIO, string_types
 
 from mozbuild.configure import ConfigureSandbox
 from mozbuild.util import ReadOnlyNamespace, memoized_property
@@ -117,11 +117,11 @@ class ConfigureTestSandbox(ConfigureSandbox):
         os_contents["environ"] = dict(environ)
         self.imported_os = ReadOnlyNamespace(**os_contents)
 
-        super(ConfigureTestSandbox, self).__init__(config, environ, *args, **kwargs)
+        super().__init__(config, environ, *args, **kwargs)
 
     @memoized_property
     def _wrapped_mozfile(self):
-        return ReadOnlyNamespace(which=self.which)
+        return ReadOnlyNamespace(which=self.which, json=json)
 
     @memoized_property
     def _wrapped_os(self):
@@ -176,7 +176,7 @@ class ConfigureTestSandbox(ConfigureSandbox):
         return length
 
     def which(self, command, mode=None, path=None, exts=None):
-        if isinstance(path, string_types):
+        if isinstance(path, str):
             path = path.split(os.pathsep)
 
         for parent in path or self._search_path:
@@ -293,7 +293,7 @@ class BaseConfigureTest(unittest.TestCase):
 
         if mozconfig:
             fh, mozconfig_path = tempfile.mkstemp(text=True)
-            os.write(fh, six.ensure_binary(mozconfig))
+            os.write(fh, mozconfig.encode())
             os.close(fh)
         else:
             mozconfig_path = os.path.join(

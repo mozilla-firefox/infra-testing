@@ -6,8 +6,9 @@
 
 #include "MediaDecoderStateMachine.h"
 
-#include <algorithm>
 #include <stdint.h>
+
+#include <algorithm>
 #include <utility>
 
 #include "AudioSegment.h"
@@ -27,9 +28,6 @@
 #include "mediasink/DecodedStream.h"
 #include "mediasink/VideoSink.h"
 #include "mozilla/Logging.h"
-#include "mozilla/MathAlgorithms.h"
-#include "mozilla/NotNull.h"
-#include "mozilla/Preferences.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/ProfilerMarkerTypes.h"
 #include "mozilla/ProfilerMarkers.h"
@@ -135,33 +133,6 @@ static constexpr auto EXHAUSTED_DATA_MARGIN =
     TimeUnit::FromMicroseconds(100000);
 
 static const uint32_t MIN_VIDEO_QUEUE_SIZE = 3;
-static const uint32_t MAX_VIDEO_QUEUE_SIZE = 10;
-#ifdef MOZ_APPLEMEDIA
-static const uint32_t HW_VIDEO_QUEUE_SIZE = 10;
-#else
-static const uint32_t HW_VIDEO_QUEUE_SIZE = 3;
-#endif
-static const uint32_t VIDEO_QUEUE_SEND_TO_COMPOSITOR_SIZE = 9999;
-
-static uint32_t sVideoQueueDefaultSize = MAX_VIDEO_QUEUE_SIZE;
-static uint32_t sVideoQueueHWAccelSize = HW_VIDEO_QUEUE_SIZE;
-static uint32_t sVideoQueueSendToCompositorSize =
-    VIDEO_QUEUE_SEND_TO_COMPOSITOR_SIZE;
-
-static void InitVideoQueuePrefs() {
-  MOZ_ASSERT(NS_IsMainThread());
-  static bool sPrefInit = false;
-  if (!sPrefInit) {
-    sPrefInit = true;
-    sVideoQueueDefaultSize = Preferences::GetUint(
-        "media.video-queue.default-size", MAX_VIDEO_QUEUE_SIZE);
-    sVideoQueueHWAccelSize = Preferences::GetUint(
-        "media.video-queue.hw-accel-size", HW_VIDEO_QUEUE_SIZE);
-    sVideoQueueSendToCompositorSize =
-        Preferences::GetUint("media.video-queue.send-to-compositor-size",
-                             VIDEO_QUEUE_SEND_TO_COMPOSITOR_SIZE);
-  }
-}
 
 template <typename Type, typename Function>
 static void DiscardFramesFromTail(MediaQueue<Type>& aQueue,
@@ -751,10 +722,12 @@ class MediaDecoderStateMachine::DecodingState
   }
 
   uint32_t VideoPrerollFrames() const {
-    return std::min(
-        static_cast<uint32_t>(
-            mMaster->GetAmpleVideoFrames() / 2. * mMaster->mPlaybackRate + 1),
-        sVideoQueueDefaultSize);
+    uint32_t preroll = static_cast<uint32_t>(
+        mMaster->GetAmpleVideoFrames() / 2. * mMaster->mPlaybackRate + 1);
+    // Keep it under maximal queue size.
+    mMaster->mReader->GetMaxVideoQueueSize().apply(
+        [&preroll](const uint32_t& x) { preroll = std::min(preroll, x); });
+    return preroll;
   }
 
   bool DonePrerollingAudio() const {
@@ -887,7 +860,7 @@ class MediaDecoderStateMachine::LoopingDecodingState
 
     // We might be able to determine the duration already, let's check.
     if (mIsReachingAudioEOS || mIsReachingVideoEOS) {
-      Unused << DetermineOriginalDecodedDurationIfNeeded();
+      (void)DetermineOriginalDecodedDurationIfNeeded();
     }
 
     // If we've looped at least once before, then we need to update queue offset
@@ -2344,7 +2317,7 @@ class MediaDecoderStateMachine::NextFrameSeekingState
     RefPtr<Runnable> r = mAsyncSeekTask = new AysncNextFrameSeekTask(this);
     nsresult rv = OwnerThread()->Dispatch(r.forget());
     MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-    Unused << rv;
+    (void)rv;
   }
 
  private:
@@ -3446,8 +3419,6 @@ MediaDecoderStateMachine::MediaDecoderStateMachine(MediaDecoder* aDecoder,
   MOZ_COUNT_CTOR(MediaDecoderStateMachine);
   NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
 
-  InitVideoQueuePrefs();
-
   DDLINKCHILD("reader", aReader);
 }
 
@@ -3495,12 +3466,12 @@ void MediaDecoderStateMachine::AudioAudibleChanged(bool aAudible) {
 MediaSink* MediaDecoderStateMachine::CreateAudioSink() {
   if (mOutputCaptureState != MediaDecoder::OutputCaptureState::None) {
     DecodedStream* stream = new DecodedStream(
-        this,
+        OwnerThread(),
         mOutputCaptureState == MediaDecoder::OutputCaptureState::Capture
             ? mOutputDummyTrack.Ref()
             : nullptr,
-        mOutputTracks, mVolume, mPlaybackRate, mPreservesPitch, mAudioQueue,
-        mVideoQueue, mSinkDevice.Ref());
+        mOutputTracks, CanonicalOutputPrincipal(), mVolume, mPlaybackRate,
+        mPreservesPitch, mAudioQueue, mVideoQueue);
     mAudibleListener.DisconnectIfExists();
     mAudibleListener = stream->AudibleEvent().Connect(
         OwnerThread(), this, &MediaDecoderStateMachine::AudioAudibleChanged);
@@ -3524,9 +3495,9 @@ MediaSink* MediaDecoderStateMachine::CreateAudioSink() {
 already_AddRefed<MediaSink> MediaDecoderStateMachine::CreateMediaSink() {
   MOZ_ASSERT(OnTaskQueue());
   RefPtr<MediaSink> audioSink = CreateAudioSink();
-  RefPtr<MediaSink> mediaSink =
-      new VideoSink(mTaskQueue, audioSink, mVideoQueue, mVideoFrameContainer,
-                    *mFrameStats, sVideoQueueSendToCompositorSize);
+  RefPtr<MediaSink> mediaSink = new VideoSink(
+      mTaskQueue, audioSink, mVideoQueue, mVideoFrameContainer, *mFrameStats,
+      StaticPrefs::media_video_queue_send_to_compositor_size());
   if (mSecondaryVideoContainer.Ref()) {
     mediaSink->SetSecondaryVideoContainer(mSecondaryVideoContainer.Ref());
   }
@@ -4240,6 +4211,9 @@ void MediaDecoderStateMachine::FinishDecodeFirstFrame() {
   LOG("FinishDecodeFirstFrame");
 
   mMediaSink->Redraw(Info().mVideo);
+  mReader->GetSendToCompositorSize().apply([self = RefPtr{this}](uint32_t x) {
+    self->mMediaSink->SetVideoQueueSendToCompositorSize(x);
+  });
 
   LOG("Media duration %" PRId64 ", mediaSeekable=%d",
       Duration().ToMicroseconds(), mMediaSeekable);
@@ -4373,7 +4347,7 @@ void MediaDecoderStateMachine::ScheduleStateMachine() {
       NewRunnableMethod("MediaDecoderStateMachine::RunStateMachine", this,
                         &MediaDecoderStateMachine::RunStateMachine));
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-  Unused << rv;
+  (void)rv;
 }
 
 void MediaDecoderStateMachine::ScheduleStateMachineIn(const TimeUnit& aTime) {
@@ -4519,7 +4493,7 @@ void MediaDecoderStateMachine::InvokeSuspendMediaSink() {
       NewRunnableMethod("MediaDecoderStateMachine::SuspendMediaSink", this,
                         &MediaDecoderStateMachine::SuspendMediaSink));
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-  Unused << rv;
+  (void)rv;
 }
 
 void MediaDecoderStateMachine::SuspendMediaSink() {
@@ -4542,7 +4516,7 @@ void MediaDecoderStateMachine::InvokeResumeMediaSink() {
       NewRunnableMethod("MediaDecoderStateMachine::ResumeMediaSink", this,
                         &MediaDecoderStateMachine::ResumeMediaSink));
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-  Unused << rv;
+  (void)rv;
 }
 
 void MediaDecoderStateMachine::ResumeMediaSink() {
@@ -4656,9 +4630,23 @@ void MediaDecoderStateMachine::OnMediaSinkAudioError(nsresult aResult) {
 
 uint32_t MediaDecoderStateMachine::GetAmpleVideoFrames() const {
   MOZ_ASSERT(OnTaskQueue());
-  return mReader->VideoIsHardwareAccelerated()
-             ? std::max<uint32_t>(sVideoQueueHWAccelSize, MIN_VIDEO_QUEUE_SIZE)
-             : std::max<uint32_t>(sVideoQueueDefaultSize, MIN_VIDEO_QUEUE_SIZE);
+  if (mReader->VideoIsHardwareAccelerated()) {
+    // HW decoding should be fast so queue size can be as small as possible
+    // to lower frame latency.
+    uint32_t hw = std::max<uint32_t>(
+        StaticPrefs::media_video_queue_hw_accel_size(), MIN_VIDEO_QUEUE_SIZE);
+    mReader->GetMinVideoQueueSize().apply(
+        [&hw](const uint32_t& x) { hw = std::max(hw, x); });
+    return hw;
+  } else {
+    // SW decoding is slower and queuing more frames in advance reduces the
+    // chances of dropping late frames.
+    uint32_t sw = std::max<uint32_t>(
+        StaticPrefs::media_video_queue_default_size(), MIN_VIDEO_QUEUE_SIZE);
+    mReader->GetMaxVideoQueueSize().apply(
+        [&sw](const uint32_t& x) { sw = std::min(sw, x); });
+    return sw;
+  }
 }
 
 void MediaDecoderStateMachine::GetDebugInfo(
@@ -4700,7 +4688,7 @@ RefPtr<GenericPromise> MediaDecoderStateMachine::RequestDebugInfo(
                              }),
       AbstractThread::TailDispatch);
   MOZ_ASSERT(NS_SUCCEEDED(rv));
-  Unused << rv;
+  (void)rv;
   return p;
 }
 

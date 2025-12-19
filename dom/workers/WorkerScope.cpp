@@ -7,8 +7,10 @@
 #include "mozilla/dom/WorkerScope.h"
 
 #include <stdio.h>
+
 #include <new>
 #include <utility>
+
 #include "Crypto.h"
 #include "GeckoProfiler.h"
 #include "MainThreadUtils.h"
@@ -31,15 +33,12 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/Mutex.h"
-#include "mozilla/NotNull.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/Result.h"
 #include "mozilla/StaticAnalysisFunctions.h"
 #include "mozilla/StorageAccess.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/AutoEntryScript.h"
-#include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/BlobURLProtocolHandler.h"
@@ -50,23 +49,20 @@
 #include "mozilla/dom/Console.h"
 #include "mozilla/dom/CookieStore.h"
 #include "mozilla/dom/DOMMozPromiseRequestHolder.h"
+#include "mozilla/dom/DOMString.h"
 #include "mozilla/dom/DebuggerNotification.h"
 #include "mozilla/dom/DebuggerNotificationBinding.h"
 #include "mozilla/dom/DebuggerNotificationManager.h"
 #include "mozilla/dom/DedicatedWorkerGlobalScopeBinding.h"
-#include "mozilla/dom/DOMString.h"
 #include "mozilla/dom/Fetch.h"
 #include "mozilla/dom/FontFaceSet.h"
 #include "mozilla/dom/IDBFactory.h"
 #include "mozilla/dom/ImageBitmap.h"
 #include "mozilla/dom/ImageBitmapSource.h"
 #include "mozilla/dom/MessagePortBinding.h"
-#include "mozilla/ipc/PBackgroundChild.h"
-#include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "mozilla/dom/Performance.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/PromiseWorkerProxy.h"
-#include "mozilla/dom/WebTaskSchedulerWorker.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/SerializedStackHolder.h"
 #include "mozilla/dom/ServiceWorker.h"
@@ -78,25 +74,30 @@
 #include "mozilla/dom/ServiceWorkerUtils.h"
 #include "mozilla/dom/SharedWorkerGlobalScopeBinding.h"
 #include "mozilla/dom/SimpleGlobalObject.h"
-#include "mozilla/dom/TimeoutHandler.h"
 #include "mozilla/dom/TestUtils.h"
+#include "mozilla/dom/TimeoutHandler.h"
+#include "mozilla/dom/TimeoutManager.h"
 #include "mozilla/dom/TrustedTypeUtils.h"
 #include "mozilla/dom/TrustedTypesConstants.h"
+#include "mozilla/dom/VsyncWorkerChild.h"
+#include "mozilla/dom/WebTaskSchedulerWorker.h"
 #include "mozilla/dom/WindowOrWorkerGlobalScopeBinding.h"
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerDebuggerGlobalScopeBinding.h"
+#include "mozilla/dom/WorkerDocumentListener.h"
 #include "mozilla/dom/WorkerGlobalScopeBinding.h"
 #include "mozilla/dom/WorkerLocation.h"
 #include "mozilla/dom/WorkerNavigator.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRunnable.h"
-#include "mozilla/dom/WorkerDocumentListener.h"
-#include "mozilla/dom/VsyncWorkerChild.h"
 #include "mozilla/dom/cache/CacheStorage.h"
 #include "mozilla/dom/cache/Types.h"
 #include "mozilla/extensions/ExtensionBrowser.h"
 #include "mozilla/fallible.h"
 #include "mozilla/gfx/Rect.h"
+#include "mozilla/ipc/BackgroundChild.h"
+#include "mozilla/ipc/PBackgroundChild.h"
+#include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "nsAtom.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
@@ -110,8 +111,8 @@
 #include "nsJSUtils.h"
 #include "nsLiteralString.h"
 #include "nsQueryObject.h"
-#include "nsReadableUtils.h"
 #include "nsRFPService.h"
+#include "nsReadableUtils.h"
 #include "nsString.h"
 #include "nsTArray.h"
 #include "nsTLiteralString.h"
@@ -209,9 +210,8 @@ static const char* GetTimeoutReasonString(Timeout* aTimeout) {
       return "AbortSignal timeout";
     case Timeout::Reason::eDelayedWebTaskTimeout:
       return "delayedWebTaskCallback handler (timed out)";
-    default:
-      MOZ_CRASH("Unexpected enum value");
-      return "";
+    case Timeout::Reason::eJSTimeout:
+      return "JS timeout";
   }
   MOZ_CRASH("Unexpected enum value");
   return "";
@@ -269,10 +269,9 @@ WorkerGlobalScopeBase::WorkerGlobalScopeBase(
     : mWorkerPrivate(aWorkerPrivate),
       mClientSource(std::move(aClientSource)),
       mSerialEventTarget(aWorkerPrivate->HybridEventTarget()) {
-  if (StaticPrefs::dom_workers_timeoutmanager_AtStartup()) {
-    mTimeoutManager = MakeUnique<dom::TimeoutManager>(
-        *this, /* not used on workers */ 0, mSerialEventTarget);
-  }
+  mTimeoutManager = MakeUnique<dom::TimeoutManager>(
+      *this, /* not used on workers */ 0, mSerialEventTarget,
+      mWorkerPrivate->IsChromeWorker());
   LOG(("WorkerGlobalScopeBase::WorkerGlobalScopeBase [%p]", this));
   MOZ_ASSERT(mWorkerPrivate);
 #ifdef DEBUG
@@ -603,7 +602,12 @@ already_AddRefed<WorkerNavigator> WorkerGlobalScope::Navigator() {
   AssertIsOnWorkerThread();
 
   if (!mNavigator) {
-    mNavigator = WorkerNavigator::Create(mWorkerPrivate->OnLine());
+    bool onLine = mWorkerPrivate->OnLine();
+    if (mWorkerPrivate->ShouldResistFingerprinting(
+            RFPTarget::NetworkConnection)) {
+      onLine = true;
+    }
+    mNavigator = WorkerNavigator::Create(onLine);
     MOZ_ASSERT(mNavigator);
   }
 
@@ -651,7 +655,7 @@ void WorkerGlobalScope::SetOnerror(OnErrorEventHandlerNonNull* aHandler) {
 
 void WorkerGlobalScope::ImportScripts(
     JSContext* aCx, const Sequence<OwningTrustedScriptURLOrString>& aScriptURLs,
-    ErrorResult& aRv) {
+    nsIPrincipal* aSubjectPrincipal, ErrorResult& aRv) {
   AssertIsOnWorkerThread();
 
   UniquePtr<SerializedStackHolder> stack;
@@ -668,7 +672,7 @@ void WorkerGlobalScope::ImportScripts(
       const nsAString* compliantString =
           TrustedTypeUtils::GetTrustedTypesCompliantString(
               scriptURL, sink, kTrustedTypesOnlySinkGroup, *pinnedGlobal,
-              compliantStringHolder, aRv);
+              aSubjectPrincipal, compliantStringHolder, aRv);
       if (aRv.Failed()) {
         return;
       }
@@ -694,8 +698,9 @@ void WorkerGlobalScope::ImportScripts(
 int32_t WorkerGlobalScope::SetTimeout(
     JSContext* aCx, const FunctionOrTrustedScriptOrString& aHandler,
     const int32_t aTimeout, const Sequence<JS::Value>& aArguments,
-    ErrorResult& aRv) {
-  return SetTimeoutOrInterval(aCx, aHandler, aTimeout, aArguments, false, aRv);
+    nsIPrincipal* aSubjectPrincipal, ErrorResult& aRv) {
+  return SetTimeoutOrInterval(aCx, aHandler, aTimeout, aArguments, false,
+                              aSubjectPrincipal, aRv);
 }
 
 void WorkerGlobalScope::ClearTimeout(int32_t aHandle) {
@@ -709,8 +714,9 @@ void WorkerGlobalScope::ClearTimeout(int32_t aHandle) {
 int32_t WorkerGlobalScope::SetInterval(
     JSContext* aCx, const FunctionOrTrustedScriptOrString& aHandler,
     const int32_t aTimeout, const Sequence<JS::Value>& aArguments,
-    ErrorResult& aRv) {
-  return SetTimeoutOrInterval(aCx, aHandler, aTimeout, aArguments, true, aRv);
+    nsIPrincipal* aSubjectPrincipal, ErrorResult& aRv) {
+  return SetTimeoutOrInterval(aCx, aHandler, aTimeout, aArguments, true,
+                              aSubjectPrincipal, aRv);
 }
 
 void WorkerGlobalScope::ClearInterval(int32_t aHandle) {
@@ -724,7 +730,7 @@ void WorkerGlobalScope::ClearInterval(int32_t aHandle) {
 int32_t WorkerGlobalScope::SetTimeoutOrInterval(
     JSContext* aCx, const FunctionOrTrustedScriptOrString& aHandler,
     const int32_t aTimeout, const Sequence<JS::Value>& aArguments,
-    bool aIsInterval, ErrorResult& aRv) {
+    bool aIsInterval, nsIPrincipal* aSubjectPrincipal, ErrorResult& aRv) {
   AssertIsOnWorkerThread();
 
   DebuggerNotificationDispatch(
@@ -751,8 +757,8 @@ int32_t WorkerGlobalScope::SetTimeoutOrInterval(
   const nsAString* compliantString =
       TrustedTypeUtils::GetTrustedTypesCompliantString(
           aHandler, aIsInterval ? sinkSetInterval : sinkSetTimeout,
-          kTrustedTypesOnlySinkGroup, *pinnedGlobal, compliantStringHolder,
-          aRv);
+          kTrustedTypesOnlySinkGroup, *pinnedGlobal, aSubjectPrincipal,
+          compliantStringHolder, aRv);
   if (aRv.Failed()) {
     return 0;
   }
@@ -1194,9 +1200,6 @@ void DedicatedWorkerGlobalScope::OnVsync(const VsyncEvent& aVsync) {
     return;
   }
 
-  nsTArray<FrameRequest> callbacks;
-  mFrameRequestManager.Take(callbacks);
-
   RefPtr<DedicatedWorkerGlobalScope> scope(this);
   CallbackDebuggerNotificationGuard guard(
       scope, DebuggerNotificationType::RequestAnimationFrameCallback);
@@ -1216,8 +1219,10 @@ void DedicatedWorkerGlobalScope::OnVsync(const VsyncEvent& aVsync) {
         timeStamp, 0, this->GetRTPCallerType());
   }
 
-  for (auto& callback : callbacks) {
-    if (mFrameRequestManager.IsCanceled(callback.mHandle)) {
+  FrameRequestManager::FiringCallbacks callbacks(mFrameRequestManager);
+
+  for (auto& callback : callbacks.mList) {
+    if (callback.mCancelled) {
       continue;
     }
 

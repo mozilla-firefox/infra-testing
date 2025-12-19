@@ -5,6 +5,9 @@
 const { AppConstants } = ChromeUtils.importESModule(
   "resource://gre/modules/AppConstants.sys.mjs"
 );
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
+);
 
 const lazy = {};
 // Windows has a total path length of 259 characters so we have to calculate
@@ -24,6 +27,13 @@ ChromeUtils.defineESModuleGetters(lazy, {
   FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
   ScreenshotsUtils: "resource:///modules/ScreenshotsUtils.sys.mjs",
 });
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "useDownloadDir",
+  "browser.download.useDownloadDir",
+  true
+);
 
 /**
  * macOS and Linux have a max filename of 255.
@@ -60,6 +70,7 @@ function checkFilenameLength(filename, maxFilenameLength) {
 
 /**
  * Gets the filename automatically or by a file picker depending on "browser.download.useDownloadDir"
+ *
  * @param filenameTitle The title of the current page
  * @param browser The current browser
  * @returns Path of the chosen filename
@@ -138,15 +149,14 @@ export async function getFilename(filenameTitle, browser) {
 }
 
 /**
- * Gets the path to the download directory if "browser.download.useDownloadDir" is true
- * @returns Path to download directory or null if not available
+ * Gets the path to the preferred screenshots directory if "browser.download.useDownloadDir" is true
+ *
+ * @returns Path to preferred screenshots directory or null if not available
  */
 export async function getDownloadDirectory() {
-  let useDownloadDir = Services.prefs.getBoolPref(
-    "browser.download.useDownloadDir"
-  );
-  if (useDownloadDir) {
-    const downloadsDir = await lazy.Downloads.getPreferredDownloadsDirectory();
+  if (lazy.useDownloadDir) {
+    const downloadsDir =
+      await lazy.Downloads.getPreferredScreenshotsDirectory();
     if (await IOUtils.exists(downloadsDir)) {
       return downloadsDir;
     }
@@ -158,6 +168,7 @@ export async function getDownloadDirectory() {
 /**
  * Structure for holding info about a URL and the target filename it should be
  * saved to.
+ *
  * @param aFileName The target filename
  */
 class FileInfo {
@@ -257,6 +268,7 @@ function appendFiltersForContentType(
 /**
  * Given the Filepicker Parameters (aFpP), show the file picker dialog,
  * prompting the user to confirm (or change) the fileName.
+ *
  * @param aFpP
  *        A structure (see definition in internalSave(...) method)
  *        containing all the data used within this method.

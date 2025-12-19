@@ -82,9 +82,10 @@ using JS::SliceBudget;
  */
 
 static constexpr AllocKinds ForegroundObjectFinalizePhase = {
-    AllocKind::OBJECT0_FOREGROUND,  AllocKind::OBJECT2_FOREGROUND,
-    AllocKind::OBJECT4_FOREGROUND,  AllocKind::OBJECT8_FOREGROUND,
-    AllocKind::OBJECT12_FOREGROUND, AllocKind::OBJECT16_FOREGROUND};
+    AllocKind::OBJECT0_FOREGROUND, AllocKind::OBJECT2_FOREGROUND,
+    AllocKind::OBJECT4_FOREGROUND, AllocKind::OBJECT6_FOREGROUND,
+    AllocKind::OBJECT8_FOREGROUND, AllocKind::OBJECT12_FOREGROUND,
+    AllocKind::OBJECT16_FOREGROUND};
 
 static constexpr AllocKinds ForegroundNonObjectFinalizePhase = {
     AllocKind::SCRIPT, AllocKind::JITCODE};
@@ -92,38 +93,24 @@ static constexpr AllocKinds ForegroundNonObjectFinalizePhase = {
 static constexpr AllocKinds BackgroundObjectFinalizePhase = {
     AllocKind::OBJECT0_BACKGROUND, AllocKind::OBJECT2_BACKGROUND,
     AllocKind::ARRAYBUFFER4,       AllocKind::OBJECT4_BACKGROUND,
+    AllocKind::ARRAYBUFFER6,       AllocKind::OBJECT6_BACKGROUND,
     AllocKind::ARRAYBUFFER8,       AllocKind::OBJECT8_BACKGROUND,
     AllocKind::ARRAYBUFFER12,      AllocKind::OBJECT12_BACKGROUND,
     AllocKind::ARRAYBUFFER16,      AllocKind::OBJECT16_BACKGROUND};
 
 static constexpr AllocKinds BackgroundTrivialFinalizePhase = {
-    AllocKind::FUNCTION,
-    AllocKind::FUNCTION_EXTENDED,
-    AllocKind::OBJECT0,
-    AllocKind::OBJECT2,
-    AllocKind::OBJECT4,
-    AllocKind::OBJECT8,
-    AllocKind::OBJECT12,
-    AllocKind::OBJECT16,
-    AllocKind::BUFFER16,
-    AllocKind::BUFFER32,
-    AllocKind::BUFFER64,
-    AllocKind::BUFFER128,
-    AllocKind::SCOPE,
-    AllocKind::REGEXP_SHARED,
-    AllocKind::FAT_INLINE_STRING,
-    AllocKind::STRING,
-    AllocKind::EXTERNAL_STRING,
-    AllocKind::FAT_INLINE_ATOM,
-    AllocKind::ATOM,
-    AllocKind::SYMBOL,
-    AllocKind::BIGINT,
-    AllocKind::SHAPE,
-    AllocKind::BASE_SHAPE,
-    AllocKind::GETTER_SETTER,
-    AllocKind::COMPACT_PROP_MAP,
-    AllocKind::NORMAL_PROP_MAP,
-    AllocKind::DICT_PROP_MAP};
+    AllocKind::FUNCTION,        AllocKind::FUNCTION_EXTENDED,
+    AllocKind::OBJECT0,         AllocKind::OBJECT2,
+    AllocKind::OBJECT4,         AllocKind::OBJECT6,
+    AllocKind::OBJECT8,         AllocKind::OBJECT12,
+    AllocKind::OBJECT16,        AllocKind::SCOPE,
+    AllocKind::REGEXP_SHARED,   AllocKind::FAT_INLINE_STRING,
+    AllocKind::STRING,          AllocKind::EXTERNAL_STRING,
+    AllocKind::FAT_INLINE_ATOM, AllocKind::ATOM,
+    AllocKind::SYMBOL,          AllocKind::BIGINT,
+    AllocKind::SHAPE,           AllocKind::BASE_SHAPE,
+    AllocKind::GETTER_SETTER,   AllocKind::COMPACT_PROP_MAP,
+    AllocKind::NORMAL_PROP_MAP, AllocKind::DICT_PROP_MAP};
 
 static constexpr AllocKinds AllBackgroundSweptKinds =
     BackgroundObjectFinalizePhase + BackgroundTrivialFinalizePhase;
@@ -224,9 +211,8 @@ static inline bool FinalizeTypedArenas(JS::GCContext* gcx, ArenaList& src,
   size_t emptyCount = 0;
 
   GCRuntime* gc = &gcx->runtimeFromAnyThread()->gc;
-  auto updateMarkCount = mozilla::MakeScopeExit([&] {
-    gc->stats().addCount(gcstats::COUNT_CELLS_MARKED, markCount);
-  });
+  auto updateMarkCount = mozilla::MakeScopeExit(
+      [&] { gc->stats().addCount(gcstats::COUNT_CELLS_MARKED, markCount); });
 
   while (!src.isEmpty()) {
     Arena* arena = src.popFront();
@@ -335,14 +321,12 @@ void ArenaLists::backgroundFinalize(JS::GCContext* gcx, AllocKind kind,
 
   // Set the collectingArenaList to the possibly empty list of swept arenas
   // while holding the GC lock. Set concurrentUse to indicate to the main thread
-  // whether there are arenas to merge.
+  // that sweeping has finished.
   ArenaList sweptArenas = finalizedSorted.convertToArenaList();
-  bool wasEmpty = sweptArenas.isEmpty();
 
   AutoLockGC lock(gcx->runtimeFromAnyThread());
   collectingArenaList(kind) = std::move(sweptArenas);
-  concurrentUse(kind) = wasEmpty ? ConcurrentUse::None
-                                 : ConcurrentUse::BackgroundFinalizeFinished;
+  concurrentUse(kind) = ConcurrentUse::BackgroundFinalizeFinished;
 }
 
 void ArenaLists::mergeBackgroundSweptArenas() {
@@ -359,8 +343,8 @@ void ArenaLists::maybeMergeSweptArenas(AllocKind kind) {
   MOZ_ASSERT(concurrentUse(kind) != ConcurrentUse::BackgroundFinalize);
 
   if (concurrentUse(kind) == ConcurrentUse::BackgroundFinalizeFinished) {
-    mergeSweptArenas(kind, collectingArenaList(kind));
     concurrentUse(kind) = ConcurrentUse::None;
+    mergeSweptArenas(kind, collectingArenaList(kind));
   }
 
   MOZ_ASSERT(collectingArenaList(kind).isEmpty());
@@ -373,18 +357,16 @@ void ArenaLists::maybeMergeSweptArenas(AllocKind kind) {
 //  - arenas allocated during sweeping
 void ArenaLists::mergeSweptArenas(AllocKind kind, ArenaList& sweptArenas) {
   MOZ_ASSERT(CurrentThreadCanAccessRuntime(runtime()));
-  MOZ_ASSERT_IF(
-      IsBackgroundFinalized(kind),
-      concurrentUse(kind) == ConcurrentUse::BackgroundFinalizeFinished);
+  MOZ_ASSERT(concurrentUse(kind) == ConcurrentUse::None);
 
   arenaList(kind).prepend(std::move(sweptArenas));
 }
 
 void ArenaLists::queueForegroundThingsForSweep() {
   gcCompactPropMapArenasToUpdate =
-      collectingArenaList(AllocKind::COMPACT_PROP_MAP).first();
+      collectingArenaList(AllocKind::COMPACT_PROP_MAP).getFirst();
   gcNormalPropMapArenasToUpdate =
-      collectingArenaList(AllocKind::NORMAL_PROP_MAP).first();
+      collectingArenaList(AllocKind::NORMAL_PROP_MAP).getFirst();
 }
 
 void GCRuntime::sweepBackgroundThings(ZoneList& zones) {
@@ -463,18 +445,13 @@ Arena* GCRuntime::releaseSomeEmptyArenas(Zone* zone, Arena* emptyArenas) {
   size_t count = 0;
 
   size_t gcHeapBytesFreed = 0;
-  size_t mallocHeapBytesFreed = 0;
 
   // Take up to ArenaReleaseBatchSize arenas from emptyArenas list.
   for (size_t i = 0; emptyArenas && i < ArenaReleaseBatchSize; i++) {
     Arena* arena = emptyArenas;
     emptyArenas = arena->next;
 
-    if (IsBufferAllocKind(arena->getAllocKind())) {
-      mallocHeapBytesFreed += ArenaSize - arena->getFirstThingOffset();
-    } else {
-      gcHeapBytesFreed += ArenaSize;
-    }
+    gcHeapBytesFreed += ArenaSize;
 
     if (isAtomsZone) {
       atomsBitmapIndexes[i] = arena->atomBitmapStart();
@@ -488,7 +465,6 @@ Arena* GCRuntime::releaseSomeEmptyArenas(Zone* zone, Arena* emptyArenas) {
     count++;
   }
 
-  zone->mallocHeapSize.removeBytes(mallocHeapBytesFreed, true);
   zone->gcHeapSize.removeBytes(gcHeapBytesFreed, true, heapSize);
 
   AutoLockGC lock(this);
@@ -639,6 +615,31 @@ IncrementalProgress GCRuntime::markWeakReferences(
   auto leaveOnExit =
       mozilla::MakeScopeExit([&] { marker().leaveWeakMarkingMode(); });
 
+  // If enterWeakMarkingMode takes up at least 80% of a slice, finish marking
+  // completely in the next slice before yielding again. This avoids the problem
+  // where scanning gcEphemeronEdges (which must be done at the beginning of
+  // each slice) takes longer than a slice and therefore no (or little) progress
+  // can be made per slice.
+  double progressBeforeEnterWMM = budget.progress();
+  auto checkSlowEnter = mozilla::MakeScopeExit([&] {
+    // Called only when returning NotFinished.
+    if (budget.progress() - progressBeforeEnterWMM > 0.8) {
+      // Overran the budget. Finish the marking synchronously in the next slice.
+      // Repeatedly returning to the mutator would require re-scanning the full
+      // edge table in every slice, and we already know that this will take up
+      // most or all of a single slice budget.
+      finishMarkingDuringSweeping = true;
+    }
+  });
+
+  // The previous logic is for the first enterWeakMarkingMode slice. This logic
+  // then kicks in for the next slice, to update the budget to actually keep
+  // going.
+  if (!budget.isUnlimited() && finishMarkingDuringSweeping) {
+    JS_LOG(gc, Info, "enterWeakMarkingMode finishing marking in next slice");
+    budget.keepGoing = true;
+  }
+
   if (marker().enterWeakMarkingMode()) {
     // If there was an 'enter-weak-marking-mode' token in the queue, then it
     // and everything after it will still be in the queue so we can process
@@ -683,6 +684,7 @@ IncrementalProgress GCRuntime::markWeakReferences(
   }
 
   assertNoMarkingWork();
+  checkSlowEnter.release();  // No need to lengthen next slice.
 
   return Finished;
 }
@@ -807,12 +809,6 @@ bool Compartment::findSweepGroupEdges() {
 
 bool Zone::findSweepGroupEdges(Zone* atomsZone) {
   MOZ_ASSERT_IF(this != atomsZone, !isAtomsZone());
-
-#ifdef DEBUG
-  if (FinalizationObservers* observers = finalizationObservers()) {
-    observers->checkTables();
-  }
-#endif
 
   // Any zone may have a pointer to an atom in the atoms zone, and these aren't
   // in the cross compartment map.
@@ -949,6 +945,9 @@ void GCRuntime::moveToNextSweepGroup() {
       zone->arenas.unmarkPreMarkedFreeCells();
       zone->arenas.mergeArenasFromCollectingLists();
       zone->clearGCSliceThresholds();
+#ifdef DEBUG
+      zone->cellsToAssertNotGray().clearAndFree();
+#endif
     }
 
     for (SweepGroupCompartmentsIter comp(rt); !comp.done(); comp.next()) {
@@ -1171,26 +1170,6 @@ void js::NotifyGCNukeWrapper(JSContext* cx, JSObject* wrapper) {
    * remember to mark it.
    */
   RemoveFromGrayList(wrapper);
-
-  /*
-   * Clean up WeakRef maps which might include this wrapper.
-   */
-  JSObject* target = UncheckedUnwrapWithoutExpose(wrapper);
-  if (target->is<WeakRefObject>()) {
-    WeakRefObject* weakRef = &target->as<WeakRefObject>();
-    if (weakRef->target()) {
-      cx->runtime()->gc.nukeWeakRefWrapper(wrapper, weakRef);
-    }
-  }
-
-  /*
-   * Clean up FinalizationRecord record objects which might be the target of
-   * this wrapper.
-   */
-  if (target->is<FinalizationRecordObject>()) {
-    auto* record = &target->as<FinalizationRecordObject>();
-    cx->runtime()->gc.nukeFinalizationRecordWrapper(wrapper, record);
-  }
 }
 
 enum {
@@ -1248,7 +1227,6 @@ IncrementalProgress GCRuntime::beginMarkingSweepGroup(JS::GCContext* gcx,
   for (auto& marker : markers) {
     MOZ_ASSERT(marker->markColor() == MarkColor::Black);
   }
-  MOZ_ASSERT(cellsToAssertNotGray.ref().empty());
 #endif
 
   gcstats::AutoPhase ap(stats(), gcstats::PhaseKind::MARK);
@@ -1258,6 +1236,8 @@ IncrementalProgress GCRuntime::beginMarkingSweepGroup(JS::GCContext* gcx,
   // will be marked through, as they are not marked with
   // TraceCrossCompartmentEdge.
   for (SweepGroupZonesIter zone(this); !zone.done(); zone.next()) {
+    MOZ_ASSERT_IF(!zone->isGCMarkingBlackAndGray(),
+                  zone->cellsToAssertNotGray().empty());
     zone->changeGCState(zone->initialMarkingState(), Zone::MarkBlackAndGray);
   }
 
@@ -1333,6 +1313,9 @@ IncrementalProgress GCRuntime::endMarkingSweepGroup(JS::GCContext* gcx,
   // We must not yield after this point before we start sweeping the group.
   safeToYield = false;
 
+  // If we temporarily prevented yielding during marking, release the hold now.
+  budget.keepGoing = false;
+
   MaybeCheckWeakMapMarking(this);
 
   return Finished;
@@ -1366,19 +1349,13 @@ class ImmediateSweepWeakCacheTask : public GCParallelTask {
 };
 
 void GCRuntime::updateAtomsBitmap() {
-  size_t collectedZones = 0;
-  size_t uncollectedZones = 0;
-  for (ZonesIter zone(this, SkipAtoms); !zone.done(); zone.next()) {
-    if (zone->isCollecting()) {
-      collectedZones++;
-    } else {
-      uncollectedZones++;
-    }
+  atomMarking.refineZoneBitmapsForCollectedZones(this);
+
+  // Mark atoms used by uncollected zones after refining the atoms bitmaps.
+  auto& atomsToMark = atomsUsedByUncollectedZones.ref();
+  if (atomsToMark) {
+    atomMarking.markAtomsUsedByUncollectedZones(this, std::move(atomsToMark));
   }
-
-  atomMarking.refineZoneBitmapsForCollectedZones(this, collectedZones);
-
-  atomMarking.markAtomsUsedByUncollectedZones(this, uncollectedZones);
 
   // For convenience sweep these tables non-incrementally as part of bitmap
   // sweeping; they are likely to be much smaller than the main atoms table.
@@ -1665,6 +1642,7 @@ IncrementalProgress GCRuntime::beginSweepingSweepGroup(JS::GCContext* gcx,
   using namespace gcstats;
 
   AutoSCC scc(stats(), sweepGroupIndex);
+  finishMarkingDuringSweeping = false;
 
   bool sweepingAtoms = false;
   for (SweepGroupZonesIter zone(this); !zone.done(); zone.next()) {
@@ -1681,13 +1659,6 @@ IncrementalProgress GCRuntime::beginSweepingSweepGroup(JS::GCContext* gcx,
     }
   }
 
-#ifdef DEBUG
-  for (const auto* cell : cellsToAssertNotGray.ref()) {
-    JS::AssertCellIsNotGray(cell);
-  }
-  cellsToAssertNotGray.ref().clearAndFree();
-#endif
-
   // Updating the atom marking bitmaps. This marks atoms referenced by
   // uncollected zones so cannot be done in parallel with the other sweeping
   // work below.
@@ -1696,11 +1667,29 @@ IncrementalProgress GCRuntime::beginSweepingSweepGroup(JS::GCContext* gcx,
     updateAtomsBitmap();
   }
 
+#ifdef DEBUG
+  // Now that the final mark state has been computed check any gray marking
+  // assertions we delayed until this point.
+  for (SweepGroupZonesIter zone(this); !zone.done(); zone.next()) {
+    for (const auto* cell : zone->cellsToAssertNotGray()) {
+      JS::AssertCellIsNotGray(cell);
+    }
+    zone->cellsToAssertNotGray().clearAndFree();
+  }
+#endif
+
 #ifdef JS_GC_ZEAL
   validateIncrementalMarking();
 #endif
 
   AutoSetThreadIsSweeping threadIsSweeping;
+
+  // Disable incremental barriers for all zones while we are sweeping/finalizing
+  // zones in this sweep group. Set the |disableBarriersForSweeping| flag so we
+  // enable/disable the barriers on yield/resume.
+  MOZ_ASSERT(!disableBarriersForSweeping);
+  disableBarriersForSweeping = true;
+  disableIncrementalBarriers();
 
   // This must happen before sweeping realm globals.
   sweepDebuggerOnMainThread(gcx);
@@ -1860,6 +1849,12 @@ IncrementalProgress GCRuntime::endSweepingSweepGroup(JS::GCContext* gcx,
     }
   }
   queueZonesAndStartBackgroundSweep(std::move(zones));
+
+  // Re-enable incremental barriers for all zones now we are we done sweeping
+  // zones in this group.
+  MOZ_ASSERT(disableBarriersForSweeping);
+  disableBarriersForSweeping = false;
+  enableIncrementalBarriers();
 
   return Finished;
 }
@@ -2509,6 +2504,29 @@ void GCRuntime::prepareForSweepSlice(JS::GCReason reason) {
   rt->mainContextFromOwnThread()->traceWrapperGCRooters(marker().tracer());
 }
 
+// Ensure barriers are disabled if required when entering a sweep slice and
+// re-enabled when yielding to the mutator. |disableBarriersForSweeping| is set
+// in beginSweepingSweepGroup and cleared in endSweepingSweepGroup.
+class js::gc::AutoUpdateBarriersForSweeping {
+ public:
+  explicit AutoUpdateBarriersForSweeping(GCRuntime* gc) : gc(gc) {
+    MOZ_ASSERT(gc->state() == State::Sweep);
+    if (gc->disableBarriersForSweeping) {
+      gc->disableIncrementalBarriers();
+    }
+  }
+
+  ~AutoUpdateBarriersForSweeping() {
+    MOZ_ASSERT(gc->state() == State::Sweep);
+    if (gc->disableBarriersForSweeping) {
+      gc->enableIncrementalBarriers();
+    }
+  }
+
+ private:
+  GCRuntime* gc;
+};
+
 IncrementalProgress GCRuntime::performSweepActions(SliceBudget& budget) {
   MOZ_ASSERT_IF(storeBuffer().isEnabled(),
                 !storeBuffer().mayHavePointersToDeadCells());
@@ -2519,9 +2537,6 @@ IncrementalProgress GCRuntime::performSweepActions(SliceBudget& budget) {
   JS::GCContext* gcx = rt->gcContext();
   AutoSetThreadIsSweeping threadIsSweeping(gcx);
   AutoPoisonFreedJitCode pjc(gcx);
-
-  // Don't trigger pre-barriers when finalizing.
-  AutoDisableBarriers disableBarriers(this);
 
   // Drain the mark stack, possibly in a parallel task if we're in a part of
   // sweeping that allows it.
@@ -2540,6 +2555,9 @@ IncrementalProgress GCRuntime::performSweepActions(SliceBudget& budget) {
       return NotFinished;
     }
   }
+
+  // Don't trigger pre-barriers when sweeping or finalizing.
+  AutoUpdateBarriersForSweeping updateBarriers(this);
 
   // Then continue running sweep actions.
 
@@ -2561,14 +2579,12 @@ bool GCRuntime::allCCVisibleZonesWereCollected() {
   // The gray bits change from invalid to valid if we finished a full GC from
   // the point of view of the cycle collector. We ignore the following:
   //
-  //  - Helper thread zones, as these are not reachable from the main heap.
-  //  - The atoms zone, since strings and symbols are never marked gray.
   //  - Empty zones.
   //
-  // These exceptions ensure that when the CC requests a full GC the gray mark
-  // state ends up valid even it we don't collect all of the zones.
+  // This exception ensures that when the CC requests a full GC the gray mark
+  // state ends up valid even if we don't collect all of the zones.
 
-  for (ZonesIter zone(this, SkipAtoms); !zone.done(); zone.next()) {
+  for (ZonesIter zone(this, WithAtoms); !zone.done(); zone.next()) {
     if (!zone->isCollecting() && !zone->arenas.arenaListsAreEmpty()) {
       return false;
     }

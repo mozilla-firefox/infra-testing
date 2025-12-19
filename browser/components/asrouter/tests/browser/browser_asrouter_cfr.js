@@ -91,7 +91,7 @@ const createDummyRecommendation = ({
 };
 
 function checkCFRAddonsElements(notification) {
-  Assert.ok(notification.hidden === false, "Panel should be visible");
+  Assert.strictEqual(notification.hidden, false, "Panel should be visible");
   Assert.equal(
     notification.getAttribute("data-notification-category"),
     "addon_recommendation",
@@ -186,12 +186,6 @@ add_task(async function test_cfr_notification_show() {
     set: [["browser.newtabpage.activity-stream.telemetry", true]],
   });
 
-  let pingSubmitted = false;
-  GleanPings.messagingSystem.testBeforeNextSubmit(() => {
-    pingSubmitted = true;
-    Assert.equal(Glean.messagingSystem.source.testGetValue(), "CFR");
-  });
-
   // addRecommendation checks that scheme starts with http and host matches
   let browser = gBrowser.selectedBrowser;
   BrowserTestUtils.startLoadingURIString(browser, "http://example.com/");
@@ -204,17 +198,26 @@ add_task(async function test_cfr_notification_show() {
   );
 
   const oldFocus = document.activeElement;
-  const showPanel = BrowserTestUtils.waitForEvent(
-    PopupNotifications.panel,
-    "popupshown"
-  );
-  // Open the panel
-  document.getElementById("contextual-feature-recommendation").click();
-  await showPanel;
 
-  Assert.ok(
+  await GleanPings.messagingSystem.testSubmission(
+    () => {
+      Assert.equal(Glean.messagingSystem.source.testGetValue(), "CFR");
+    },
+    async () => {
+      // Open the panel
+      const showPanel = BrowserTestUtils.waitForEvent(
+        PopupNotifications.panel,
+        "popupshown"
+      );
+      document.getElementById("contextual-feature-recommendation").click();
+      await showPanel;
+    }
+  );
+
+  Assert.strictEqual(
     document.getElementById("contextual-feature-recommendation-notification")
-      .hidden === false,
+      .hidden,
+    false,
     "Panel should be visible"
   );
   Assert.equal(
@@ -244,7 +247,6 @@ add_task(async function test_cfr_notification_show() {
     "Should have removed the notification"
   );
 
-  Assert.ok(pingSubmitted, "Recorded an event");
   Services.fog.testResetFOG();
 });
 
@@ -280,9 +282,10 @@ add_task(async function test_cfr_notification_show() {
   document.getElementById("contextual-feature-recommendation").click();
   await showPanel;
 
-  Assert.ok(
+  Assert.strictEqual(
     document.getElementById("contextual-feature-recommendation-notification")
-      .hidden === false,
+      .hidden,
+    false,
     "Panel should be visible"
   );
 
@@ -331,8 +334,9 @@ add_task(async function test_cfr_notification_minimize() {
     () => gURLBar.hasAttribute("cfr-recommendation-state"),
     "Wait for the notification to show up and have a state"
   );
-  Assert.ok(
-    gURLBar.getAttribute("cfr-recommendation-state") === "expanded",
+  Assert.strictEqual(
+    gURLBar.getAttribute("cfr-recommendation-state"),
+    "expanded",
     "CFR recomendation state is correct"
   );
 
@@ -379,8 +383,9 @@ add_task(async function test_cfr_notification_minimize_2() {
     () => gURLBar.hasAttribute("cfr-recommendation-state"),
     "Wait for the notification to show up and have a state"
   );
-  Assert.ok(
-    gURLBar.getAttribute("cfr-recommendation-state") === "expanded",
+  Assert.strictEqual(
+    gURLBar.getAttribute("cfr-recommendation-state"),
+    "expanded",
     "CFR recomendation state is correct"
   );
 
@@ -413,7 +418,7 @@ add_task(async function test_cfr_notification_minimize_2() {
 
   Assert.ok(
     document.getElementById("contextual-feature-recommendation-notification"),
-    "The notification should not dissapear"
+    "The notification should not disappear"
   );
 
   await BrowserTestUtils.waitForCondition(
@@ -448,9 +453,10 @@ add_task(async function test_cfr_addon_install() {
   document.getElementById("contextual-feature-recommendation").click();
   await showPanel;
 
-  Assert.ok(
+  Assert.strictEqual(
     document.getElementById("contextual-feature-recommendation-notification")
-      .hidden === false,
+      .hidden,
+    false,
     "Panel should be visible"
   );
   checkCFRAddonsElements(
@@ -548,9 +554,10 @@ add_task(async function test_cfr_addon_and_features_show() {
   document.getElementById("contextual-feature-recommendation").click();
   await showPanel;
 
-  Assert.ok(
+  Assert.strictEqual(
     document.getElementById("contextual-feature-recommendation-notification")
-      .hidden === false,
+      .hidden,
+    false,
     "Panel should be visible"
   );
   checkCFRAddonsElements(
@@ -666,6 +673,62 @@ add_task(async function test_matchPattern() {
   Services.fog.testResetFOG();
 });
 
+add_task(async function test_matchRegex() {
+  let count = 0;
+  const triggerHandler = () => ++count;
+  const frequentVisitsTrigger = ASRouterTriggerListeners.get("frequentVisits");
+  await frequentVisitsTrigger.init(
+    triggerHandler,
+    [],
+    [],
+    ["example\\.com/?$"]
+  );
+
+  const browser = gBrowser.selectedBrowser;
+  BrowserTestUtils.startLoadingURIString(browser, "http://example.com/");
+  await BrowserTestUtils.browserLoaded(browser, false, "http://example.com/");
+
+  await BrowserTestUtils.waitForCondition(
+    () => frequentVisitsTrigger._visits.get("example.com").length === 1,
+    "Registered regex matched the current location"
+  );
+
+  BrowserTestUtils.startLoadingURIString(browser, "about:config");
+  await BrowserTestUtils.browserLoaded(browser, false, "about:config");
+
+  await BrowserTestUtils.waitForCondition(
+    () => frequentVisitsTrigger._visits.get("example.com").length === 1,
+    "Navigated to a new page but not a match"
+  );
+
+  BrowserTestUtils.startLoadingURIString(browser, "http://example.com/");
+  await BrowserTestUtils.browserLoaded(browser, false, "http://example.com/");
+
+  await BrowserTestUtils.waitForCondition(
+    () => frequentVisitsTrigger._visits.get("example.com").length === 1,
+    "Navigated to a location that matches the pattern but within 15 mins"
+  );
+
+  BrowserTestUtils.startLoadingURIString(browser, "http://www.example.com/");
+  await BrowserTestUtils.browserLoaded(
+    browser,
+    false,
+    "http://www.example.com/"
+  );
+
+  await BrowserTestUtils.waitForCondition(
+    () => frequentVisitsTrigger._visits.get("www.example.com").length === 1,
+    "www.example.com is a different host that also matches the pattern."
+  );
+  await BrowserTestUtils.waitForCondition(
+    () => frequentVisitsTrigger._visits.get("example.com").length === 1,
+    "www.example.com is a different host that also matches the pattern."
+  );
+
+  ASRouterTriggerListeners.get("frequentVisits").uninit();
+  Services.fog.testResetFOG();
+});
+
 add_task(async function test_providerNames() {
   const providersBranch =
     "browser.newtabpage.activity-stream.asrouter.providers.";
@@ -743,22 +806,6 @@ add_task(async function test_cfr_doorhanger_in_private_window() {
     set: [["browser.newtabpage.activity-stream.telemetry", true]],
   });
 
-  let pingSubmitted = false;
-  GleanPings.messagingSystem.testBeforeNextSubmit(() => {
-    pingSubmitted = true;
-    Assert.equal(Glean.messagingSystem.source.testGetValue(), "CFR");
-    Assert.equal(
-      Glean.messagingSystem.messageId.testGetValue(),
-      "n/a",
-      "Omitted message_id consistent with CFR telemetry policy"
-    );
-    Assert.equal(
-      Glean.messagingSystem.clientId.testGetValue(),
-      undefined,
-      "Omitted client_id consistent with CFR telemetry policy"
-    );
-  });
-
   const win = await BrowserTestUtils.openNewBrowserWindow({ private: true });
 
   const tab = await BrowserTestUtils.openNewForegroundTab(
@@ -781,12 +828,30 @@ add_task(async function test_cfr_doorhanger_in_private_window() {
     "CFR should be shown in a private window if show_in_private_browsing is true"
   );
 
-  const shownPromise = BrowserTestUtils.waitForEvent(
-    win.PopupNotifications.panel,
-    "popupshown"
+  await GleanPings.messagingSystem.testSubmission(
+    () => {
+      Assert.equal(Glean.messagingSystem.source.testGetValue(), "CFR");
+      Assert.equal(
+        Glean.messagingSystem.messageId.testGetValue(),
+        "n/a",
+        "Omitted message_id consistent with CFR telemetry policy"
+      );
+      Assert.equal(
+        Glean.messagingSystem.clientId.testGetValue(),
+        undefined,
+        "Omitted client_id consistent with CFR telemetry policy"
+      );
+    },
+    async () => {
+      const shownPromise = BrowserTestUtils.waitForEvent(
+        win.PopupNotifications.panel,
+        "popupshown"
+      );
+
+      win.document.getElementById("contextual-feature-recommendation").click();
+      await shownPromise;
+    }
   );
-  win.document.getElementById("contextual-feature-recommendation").click();
-  await shownPromise;
 
   const hiddenPromise = BrowserTestUtils.waitForEvent(
     win.PopupNotifications.panel,
@@ -799,7 +864,6 @@ add_task(async function test_cfr_doorhanger_in_private_window() {
   button.click();
   await hiddenPromise;
 
-  Assert.ok(pingSubmitted, "Submitted a CFR messaging system ping");
   await BrowserTestUtils.closeWindow(win);
   Services.fog.testResetFOG();
 });

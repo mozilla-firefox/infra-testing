@@ -12,7 +12,7 @@ ${helpers.predefined_type(
     initial_specified_value="specified::length::NonNegativeLengthOrAuto::auto()",
     servo_pref="layout.columns.enabled",
     spec="https://drafts.csswg.org/css-multicol/#propdef-column-width",
-    servo_restyle_damage="rebuild_and_reflow",
+    servo_restyle_damage="rebuild_box",
     affects="layout",
 )}
 
@@ -24,7 +24,7 @@ ${helpers.predefined_type(
     initial_specified_value="specified::ColumnCount::Auto",
     servo_pref="layout.columns.enabled",
     spec="https://drafts.csswg.org/css-multicol/#propdef-column-count",
-    servo_restyle_damage="rebuild_and_reflow",
+    servo_restyle_damage="rebuild_box",
     affects="layout",
 )}
 
@@ -41,7 +41,7 @@ ${helpers.single_keyword(
 ${helpers.predefined_type(
     "column-rule-width",
     "BorderSideWidth",
-    "app_units::Au::from_px(3)",
+    "computed::BorderSideWidth::medium()",
     engines="gecko",
     initial_specified_value="specified::BorderSideWidth::medium()",
     spec="https://drafts.csswg.org/css-multicol/#propdef-column-rule-width",

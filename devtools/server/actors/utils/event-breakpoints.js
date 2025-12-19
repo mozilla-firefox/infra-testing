@@ -6,12 +6,12 @@
 
 /**
  *
- * @param {String} groupID
- * @param {String} eventType
+ * @param {string} groupID
+ * @param {string} eventType
  * @param {Function} condition: Optional function that takes a Window as parameter. When
  *                   passed, the event will only be included if the result of the function
  *                   call is `true` (See `getAvailableEventBreakpoints`).
- * @returns {Object}
+ * @returns {object}
  */
 function generalEvent(groupID, eventType, condition) {
   return {
@@ -54,6 +54,14 @@ function xhrEvent(groupID, eventType) {
     ...generalEvent(groupID, eventType),
     message: `XHR '${eventType}' event`,
     targetTypes: ["xhr"],
+  };
+}
+
+function closeWatcherEvent(groupID, eventType) {
+  return {
+    ...generalEvent(groupID, eventType),
+    message: `CloseWatcher '${eventType}' event`,
+    targetTypes: ["closewatcher"],
   };
 }
 
@@ -133,6 +141,17 @@ const AVAILABLE_BREAKPOINTS = [
     ],
   },
   {
+    name: "CloseWatcher",
+    items: [
+      closeWatcherEvent("closewatcher", "cancel", () =>
+        Services.prefs.getBoolPref("dom.closewatcher.enabled")
+      ),
+      closeWatcherEvent("closewatcher", "close", () =>
+        Services.prefs.getBoolPref("dom.closewatcher.enabled")
+      ),
+    ],
+  },
+  {
     name: "Control",
     items: [
       generalEvent("control", "beforetoggle"),
@@ -141,11 +160,11 @@ const AVAILABLE_BREAKPOINTS = [
       generalEvent("control", "focus"),
       generalEvent("control", "focusin"),
       generalEvent("control", "focusout"),
-      // The condition should be removed when "dom.element.invokers.enabled" is removed
+      // The condition should be removed when "dom.element.commandfor.enabled" is removed
       generalEvent(
         "control",
-        "invoke",
-        global => global && "InvokeEvent" in global
+        "command",
+        global => global && "CommandEvent" in global
       ),
       generalEvent("control", "reset"),
       generalEvent("control", "resize"),
@@ -164,15 +183,6 @@ const AVAILABLE_BREAKPOINTS = [
       nodeEvent("dom-mutation", "DOMActivate"),
       nodeEvent("dom-mutation", "DOMFocusIn"),
       nodeEvent("dom-mutation", "DOMFocusOut"),
-
-      // Standard DOM mutation events.
-      nodeEvent("dom-mutation", "DOMAttrModified"),
-      nodeEvent("dom-mutation", "DOMCharacterDataModified"),
-      nodeEvent("dom-mutation", "DOMNodeInserted"),
-      nodeEvent("dom-mutation", "DOMNodeInsertedIntoDocument"),
-      nodeEvent("dom-mutation", "DOMNodeRemoved"),
-      nodeEvent("dom-mutation", "DOMNodeRemovedIntoDocument"),
-      nodeEvent("dom-mutation", "DOMSubtreeModified"),
 
       // DOM load events.
       nodeEvent("dom-mutation", "DOMContentLoaded"),
@@ -282,6 +292,7 @@ const AVAILABLE_BREAKPOINTS = [
       generalEvent("pointer", "pointerup"),
       generalEvent("pointer", "pointermove"),
       generalEvent("pointer", "pointercancel"),
+      generalEvent("pointer", "pointerrawupdate"),
       generalEvent("pointer", "gotpointercapture"),
       generalEvent("pointer", "lostpointercapture"),
     ],
@@ -484,7 +495,7 @@ exports.getAvailableEventBreakpoints = getAvailableEventBreakpoints;
  * Get all available event breakpoints
  *
  * @param {Window|WorkerGlobalScope} global
- * @returns {Array<Object>} An array containing object with a few properties :
+ * @returns {Array<object>} An array containing object with a few properties :
  *    - {String} id: unique identifier
  *    - {String} name: Description for the event to be displayed in UI (no translated)
  *    - {String} type: Either "simple" or "event"

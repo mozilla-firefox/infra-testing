@@ -19,6 +19,30 @@
 #ifdef MOZ_WAYLAND
 #  include <gdk/gdkwayland.h>
 #  include <xkbcommon/xkbcommon.h>
+#  ifndef XKB_VMOD_NAME_ALT
+#    define XKB_VMOD_NAME_ALT "Alt"
+#  endif
+#  ifndef XKB_VMOD_NAME_HYPER
+#    define XKB_VMOD_NAME_HYPER "Hyper"
+#  endif
+#  ifndef XKB_VMOD_NAME_LEVEL3
+#    define XKB_VMOD_NAME_LEVEL3 "LevelThree"
+#  endif
+#  ifndef XKB_VMOD_NAME_LEVEL5
+#    define XKB_VMOD_NAME_LEVEL5 "LevelFive"
+#  endif
+#  ifndef XKB_VMOD_NAME_META
+#    define XKB_VMOD_NAME_META "Meta"
+#  endif
+#  ifndef XKB_VMOD_NAME_NUM
+#    define XKB_VMOD_NAME_NUM "NumLock"
+#  endif
+#  ifndef XKB_VMOD_NAME_SCROLL
+#    define XKB_VMOD_NAME_SCROLL "ScrollLock"
+#  endif
+#  ifndef XKB_VMOD_NAME_SUPER
+#    define XKB_VMOD_NAME_SUPER "Super"
+#  endif
 #endif
 #include "X11UndefineNone.h"
 
@@ -116,7 +140,7 @@ class KeymapWrapper {
    * InitInputEvent() initializes the aInputEvent with aModifierState.
    */
   static void InitInputEvent(WidgetInputEvent& aInputEvent,
-                             guint aGdkModifierState);
+                             guint aGdkModifierState, bool isEraser = false);
 
   /**
    * InitKeyEvent() intializes aKeyEvent's modifier key related members
@@ -201,15 +225,9 @@ class KeymapWrapper {
   static void HandleKeymap(uint32_t format, int fd, uint32_t size);
 
   /**
-   * Wayland global focus handlers
-   */
-  static void SetFocusIn(wl_surface* aFocusSurface, uint32_t aFocusSerial);
-  static void SetFocusOut(wl_surface* aFocusSurface);
-  static void GetFocusInfo(wl_surface** aFocusSurface, uint32_t* aFocusSerial);
-
-  /**
    * Key repeat helpers for Wayland
    */
+  static void ResetRepeatState();
   static void KeyboardHandlerForWayland(uint32_t aSerial,
                                         uint32_t aHardwareKeycode,
                                         uint32_t aState);
@@ -375,7 +393,8 @@ class KeymapWrapper {
   /**
    * Signal handlers.
    */
-  static void OnKeysChanged(GdkKeymap* aKeymap, KeymapWrapper* aKeymapWrapper);
+  static void OnKeysChanged(GdkKeymap* aGdkKeymap,
+                            KeymapWrapper* aKeymapWrapper);
   static void OnDirectionChanged(GdkKeymap* aGdkKeymap,
                                  KeymapWrapper* aKeymapWrapper);
 
@@ -507,11 +526,6 @@ class KeymapWrapper {
    */
   void SetModifierMask(xkb_keymap* aKeymap, ModifierIndex aModifierIndex,
                        const char* aModifierName);
-#endif
-
-#ifdef MOZ_WAYLAND
-  wl_surface* mFocusSurface = nullptr;
-  uint32_t mFocusSerial = 0;
 #endif
 };
 

@@ -7,7 +7,6 @@
 #ifndef DOM_SMIL_SMILNULLTYPE_H_
 #define DOM_SMIL_SMILNULLTYPE_H_
 
-#include "mozilla/Attributes.h"
 #include "mozilla/SMILType.h"
 
 namespace mozilla {
@@ -20,8 +19,8 @@ class SMILNullType : public SMILType {
  protected:
   // SMILType Methods
   // -------------------
-  void Init(SMILValue& aValue) const override {}
-  void Destroy(SMILValue& aValue) const override {}
+  void InitValue(SMILValue& aValue) const override {}
+  void DestroyValue(SMILValue& aValue) const override {}
   nsresult Assign(SMILValue& aDest, const SMILValue& aSrc) const override;
 
   // The remaining methods should never be called, so although they're very

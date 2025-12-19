@@ -5,7 +5,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "D3D11ShareHandleImage.h"
-#include <memory>
 #include "DXVA2Manager.h"
 #include "WMF.h"
 #include "d3d11.h"
@@ -94,8 +93,15 @@ nsresult D3D11ShareHandleImage::BuildSurfaceDescriptorBuffer(
     return NS_ERROR_FAILURE;
   }
 
-  return gfx::Factory::CreateSdbForD3D11Texture(src, mSize, aSdBuffer,
-                                                aAllocate);
+  nsresult rv =
+      gfx::Factory::CreateSdbForD3D11Texture(src, mSize, aSdBuffer, aAllocate);
+  if (rv != NS_ERROR_NOT_IMPLEMENTED) {
+    // TODO(aosmond): We only support BGRA on this path, but depending on
+    // aFlags, we may be able to return a YCbCr format without conversion.
+    return rv;
+  }
+
+  return Image::BuildSurfaceDescriptorBuffer(aSdBuffer, aFlags, aAllocate);
 }
 
 ID3D11Texture2D* D3D11ShareHandleImage::GetTexture() const { return mTexture; }
@@ -190,8 +196,8 @@ already_AddRefed<TextureClient> D3D11RecycleAllocator::CreateOrRecycleClient(
   mImageDevice = device;
 
   auto* fencesHolderMap = CompositeProcessD3D11FencesHolderMap::Get();
-  // XXX enable fence
-  const bool useFence = false;
+  const bool useFence =
+      fencesHolderMap && FenceD3D11::IsSupported(mImageDevice);
   TextureAllocationFlags allocFlags = TextureAllocationFlags::ALLOC_DEFAULT;
   if (!useFence && (StaticPrefs::media_wmf_use_sync_texture_AtStartup() ||
                     mDevice == DeviceManagerDx::Get()->GetCompositorDevice())) {

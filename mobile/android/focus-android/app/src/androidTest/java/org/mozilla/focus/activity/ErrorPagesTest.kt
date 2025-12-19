@@ -16,13 +16,14 @@ import org.mozilla.focus.helpers.MainActivityFirstrunTestRule
 import org.mozilla.focus.helpers.TestHelper.getStringResource
 import org.mozilla.focus.helpers.TestHelper.setNetworkEnabled
 import org.mozilla.focus.helpers.TestSetup
+import mozilla.components.browser.errorpages.R as errorpagesR
 
 // This tests verify invalid URL and no network connection error pages
 @RunWith(AndroidJUnit4ClassRunner::class)
 class ErrorPagesTest : TestSetup() {
     private val featureSettingsHelper = FeatureSettingsHelper()
 
-    @get: Rule
+    @get:Rule
     val mActivityTestRule = MainActivityFirstrunTestRule(showFirstRun = false)
 
     @Before
@@ -42,7 +43,7 @@ class ErrorPagesTest : TestSetup() {
 
         searchScreen {
         }.loadPage(badURl) {
-            verifyPageContent(getStringResource(R.string.mozac_browser_errorpages_unknown_host_title))
+            verifyPageContent(getStringResource(errorpagesR.string.mozac_browser_errorpages_unknown_host_title))
             verifyPageContent("Try Again")
         }
     }
@@ -54,7 +55,7 @@ class ErrorPagesTest : TestSetup() {
         setNetworkEnabled(false)
         searchScreen {
         }.loadPage(pageUrl) {
-            verifyPageContent(getStringResource(R.string.mozac_browser_errorpages_unknown_host_title))
+            verifyPageContent(getStringResource(errorpagesR.string.mozac_browser_errorpages_unknown_host_title))
             verifyPageContent("Try Again")
             setNetworkEnabled(true)
         }

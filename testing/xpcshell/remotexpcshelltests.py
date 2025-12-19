@@ -21,6 +21,7 @@ import mozfile
 import mozinfo
 import runxpcshelltests as xpcshell
 from mozdevice import ADBDevice, ADBDeviceFactory, ADBTimeoutError
+from mozinfo.platforminfo import android_api_to_os_version
 from mozlog import commandline
 from xpcshellcommandline import parser_remote
 
@@ -386,8 +387,6 @@ class XPCShellRemote(xpcshell.XPCShellTests):
     def __init__(self, options, log):
         xpcshell.XPCShellTests.__init__(self, log)
 
-        options["threadCount"] = min(options["threadCount"] or 4, 4)
-
         self.options = options
         verbose = False
         if options["log_tbpl_level"] == "debug" or options["log_mach_level"] == "debug":
@@ -400,9 +399,14 @@ class XPCShellRemote(xpcshell.XPCShellTests):
         )
         self.remoteTestRoot = posixpath.join(self.device.test_root, "xpc")
         self.remoteLogFolder = posixpath.join(self.remoteTestRoot, "logs")
-        # Add Android version (SDK level) to mozinfo so that manifest entries
-        # can be conditional on android_version.
-        mozinfo.info["android_version"] = str(self.device.version)
+        # Use Android version (SDK level) to get os_version for mozinfo
+        # so that manifest entries can be conditional on os_version.
+        android_version = str(self.device.version)
+        os_version = android_api_to_os_version(android_version)
+        self.log.info(
+            f"Android sdk version '{android_version}' corresponds to os_version '{os_version}'; use os_version to filter manifests"
+        )
+        mozinfo.info["os_version"] = os_version
         mozinfo.info["is_emulator"] = self.device._device_serial.startswith("emulator-")
 
         self.localBin = options["localBin"]
@@ -535,7 +539,7 @@ class XPCShellRemote(xpcshell.XPCShellTests):
         RemoteProcessMonitor.freeProcess(test.selectedProcess)
 
     def buildPrefsFile(self, extraPrefs):
-        prefs = super(XPCShellRemote, self).buildPrefsFile(extraPrefs)
+        prefs = super().buildPrefsFile(extraPrefs)
         remotePrefsFile = posixpath.join(self.remoteTestRoot, "user.js")
         self.device.push(self.prefsFile, remotePrefsFile)
         self.device.chmod(remotePrefsFile)
@@ -688,7 +692,7 @@ class XPCShellRemote(xpcshell.XPCShellTests):
         self.device.chmod(self.remoteScriptsDir, recursive=True)
 
     def trySetupNode(self):
-        super(XPCShellRemote, self).trySetupNode()
+        super().trySetupNode()
         # make node host ports visible to device
         if "MOZHTTP2_PORT" in self.env:
             port = "tcp:{}".format(self.env["MOZHTTP2_PORT"])
@@ -704,7 +708,7 @@ class XPCShellRemote(xpcshell.XPCShellTests):
             self.log.info("reversed MOZNODE_EXEC_PORT connection for port " + port)
 
     def shutdownNode(self):
-        super(XPCShellRemote, self).shutdownNode()
+        super().shutdownNode()
 
         if "MOZHTTP2_PORT" in self.env:
             port = "tcp:{}".format(self.env["MOZHTTP2_PORT"])
@@ -762,7 +766,7 @@ def main():
     options = parser.parse_args()
 
     options = verifyRemoteOptions(parser, options)
-    log = commandline.setup_logging("Remote XPCShell", options, {"tbpl": sys.stdout})
+    log = commandline.setup_logging("Remote XPCShell", options, {"raw": sys.stdout})
 
     if options["interactive"] and not options["testPath"]:
         print(

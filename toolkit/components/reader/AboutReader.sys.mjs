@@ -1482,7 +1482,10 @@ AboutReader.prototype = {
       this._doc.title = article.title;
     }
 
-    this._containerElement.setAttribute("lang", article.lang);
+    let lang = article.lang ?? article.detectedLanguage;
+    if (lang) {
+      this._containerElement.setAttribute("lang", lang);
+    }
 
     this._headerElement.classList.add("reader-show-element");
 
@@ -1502,6 +1505,9 @@ AboutReader.prototype = {
     this._maybeSetTextDirection(article);
     this._languageDeferred.resolve(article.detectedLanguage);
 
+    if (article.textPlainDoc) {
+      this._contentElement.classList.add("plain-text-doc");
+    }
     this._contentElement.classList.add("reader-show-element");
     this._updateImageMargins();
     this._updateWideTables();

@@ -10,14 +10,15 @@ import android.content.Intent
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.withContext
 import mozilla.components.concept.base.crash.Breadcrumb
 import mozilla.components.lib.crash.db.CrashDao
 import mozilla.components.lib.crash.db.CrashDatabase
 import mozilla.components.lib.crash.db.CrashEntity
+import mozilla.components.lib.crash.db.CrashReporterUnableToRestoreException
 import mozilla.components.lib.crash.db.CrashType
+import mozilla.components.lib.crash.db.toCrash
+import mozilla.components.lib.crash.db.toEntity
 import mozilla.components.lib.crash.service.CrashReporterService
 import mozilla.components.lib.crash.service.CrashTelemetryService
 import mozilla.components.support.test.any
@@ -29,6 +30,7 @@ import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.test.rule.MainCoroutineRule
 import mozilla.components.support.test.rule.runTestOnMain
 import org.junit.After
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -49,12 +51,12 @@ import org.robolectric.annotation.Config
 import java.lang.Thread.sleep
 import java.lang.reflect.Modifier
 
-@ExperimentalCoroutinesApi
 @RunWith(AndroidJUnit4::class)
 class CrashReporterTest {
 
     @get:Rule
     val coroutinesTestRule = MainCoroutineRule()
+    private val dispatcher = coroutinesTestRule.testDispatcher
     private val scope = coroutinesTestRule.scope
 
     private lateinit var db: CrashDatabase
@@ -261,7 +263,8 @@ class CrashReporterTest {
             0,
             "dump.path",
             "extras.path",
-            processType = Crash.NativeCodeCrash.PROCESS_TYPE_MAIN,
+            processVisibility = Crash.NativeCodeCrash.PROCESS_VISIBILITY_MAIN,
+            processType = "main",
             breadcrumbs = arrayListOf(),
             remoteType = null,
         )
@@ -295,7 +298,8 @@ class CrashReporterTest {
             0,
             "dump.path",
             "extras.path",
-            processType = Crash.NativeCodeCrash.PROCESS_TYPE_MAIN,
+            processVisibility = Crash.NativeCodeCrash.PROCESS_VISIBILITY_MAIN,
+            processType = "main",
             breadcrumbs = arrayListOf(),
             remoteType = null,
         )
@@ -589,7 +593,8 @@ class CrashReporterTest {
                 0,
                 "",
                 "",
-                Crash.NativeCodeCrash.PROCESS_TYPE_FOREGROUND_CHILD,
+                Crash.NativeCodeCrash.PROCESS_VISIBILITY_FOREGROUND_CHILD,
+                processType = "content",
                 breadcrumbs = arrayListOf(),
                 remoteType = null,
             ),
@@ -644,7 +649,7 @@ class CrashReporterTest {
             testType,
         )
         reporter.recordCrashBreadcrumb(breadcrumb)
-        advanceUntilIdle()
+        dispatcher.scheduler.advanceUntilIdle()
 
         reporter.submitCaughtException(throwable).joinBlocking()
 
@@ -701,7 +706,7 @@ class CrashReporterTest {
             testType,
         )
         reporter.recordCrashBreadcrumb(breadcrumb)
-        advanceUntilIdle()
+        dispatcher.scheduler.advanceUntilIdle()
 
         reporter.submitCaughtException(throwable).joinBlocking()
 
@@ -738,7 +743,8 @@ class CrashReporterTest {
                 0,
                 "",
                 "",
-                Crash.NativeCodeCrash.PROCESS_TYPE_FOREGROUND_CHILD,
+                Crash.NativeCodeCrash.PROCESS_VISIBILITY_FOREGROUND_CHILD,
+                processType = "content",
                 breadcrumbs = arrayListOf(),
                 remoteType = null,
             ),
@@ -784,7 +790,8 @@ class CrashReporterTest {
             0,
             "dump.path",
             "extras.path",
-            processType = Crash.NativeCodeCrash.PROCESS_TYPE_FOREGROUND_CHILD,
+            processVisibility = Crash.NativeCodeCrash.PROCESS_VISIBILITY_FOREGROUND_CHILD,
+            processType = "content",
             breadcrumbs = arrayListOf(),
             remoteType = null,
         )
@@ -801,7 +808,7 @@ class CrashReporterTest {
         assertEquals("dump.path", receivedCrash.minidumpPath)
         assertEquals("extras.path", receivedCrash.extrasPath)
         assertEquals(false, receivedCrash.isFatal)
-        assertEquals(Crash.NativeCodeCrash.PROCESS_TYPE_FOREGROUND_CHILD, receivedCrash.processType)
+        assertEquals(Crash.NativeCodeCrash.PROCESS_VISIBILITY_FOREGROUND_CHILD, receivedCrash.processVisibility)
     }
 
     @Test
@@ -822,7 +829,8 @@ class CrashReporterTest {
             0,
             "dump.path",
             "extras.path",
-            processType = Crash.NativeCodeCrash.PROCESS_TYPE_MAIN,
+            processVisibility = Crash.NativeCodeCrash.PROCESS_VISIBILITY_MAIN,
+            processType = "main",
             breadcrumbs = arrayListOf(),
             remoteType = null,
         )
@@ -849,7 +857,8 @@ class CrashReporterTest {
             0,
             "dump.path",
             "extras.path",
-            processType = Crash.NativeCodeCrash.PROCESS_TYPE_BACKGROUND_CHILD,
+            processVisibility = Crash.NativeCodeCrash.PROCESS_VISIBILITY_BACKGROUND_CHILD,
+            processType = "gpu",
             breadcrumbs = arrayListOf(),
             remoteType = null,
         )
@@ -878,7 +887,8 @@ class CrashReporterTest {
             0,
             "dump.path",
             "extras.path",
-            processType = Crash.NativeCodeCrash.PROCESS_TYPE_FOREGROUND_CHILD,
+            processVisibility = Crash.NativeCodeCrash.PROCESS_VISIBILITY_FOREGROUND_CHILD,
+            processType = "content",
             breadcrumbs = arrayListOf(),
             remoteType = null,
         )
@@ -908,7 +918,8 @@ class CrashReporterTest {
             0,
             "dump.path",
             "extras.path",
-            processType = Crash.NativeCodeCrash.PROCESS_TYPE_FOREGROUND_CHILD,
+            processVisibility = Crash.NativeCodeCrash.PROCESS_VISIBILITY_FOREGROUND_CHILD,
+            processType = "content",
             breadcrumbs = arrayListOf(),
             remoteType = null,
         )
@@ -943,7 +954,7 @@ class CrashReporterTest {
         repeat(10) {
             crashReporter.recordCrashBreadcrumb(Breadcrumb(testMessage, testData, testCategory, testLevel, testType))
         }
-        advanceUntilIdle()
+        dispatcher.scheduler.advanceUntilIdle()
         assertEquals(crashReporter.crashBreadcrumbsCopy().size, 5)
 
         crashReporter = CrashReporter(
@@ -955,7 +966,7 @@ class CrashReporterTest {
         repeat(15) {
             crashReporter.recordCrashBreadcrumb(Breadcrumb(testMessage, testData, testCategory, testLevel, testType))
         }
-        advanceUntilIdle()
+        dispatcher.scheduler.advanceUntilIdle()
         assertEquals(crashReporter.crashBreadcrumbsCopy().size, 5)
     }
 
@@ -980,7 +991,7 @@ class CrashReporterTest {
             )
             sleep(10) // make sure time elapsed
         }
-        advanceUntilIdle()
+        dispatcher.scheduler.advanceUntilIdle()
 
         crashReporter.crashBreadcrumbsCopy().let {
             for (i in 0 until maxNum) {
@@ -1000,7 +1011,7 @@ class CrashReporterTest {
             )
             sleep(10) // make sure time elapsed
         }
-        advanceUntilIdle()
+        dispatcher.scheduler.advanceUntilIdle()
 
         crashReporter.crashBreadcrumbsCopy().let {
             for (i in 0 until maxNum) {
@@ -1072,6 +1083,7 @@ class CrashReporterTest {
             stacktrace = "<native crash>",
             throwableData = null,
             minidumpPath = null,
+            processVisibility = null,
             processType = null,
             extrasPath = null,
             remoteType = null,
@@ -1103,6 +1115,7 @@ class CrashReporterTest {
             stacktrace = "<native crash>",
             throwableData = null,
             minidumpPath = null,
+            processVisibility = null,
             processType = null,
             extrasPath = null,
             remoteType = null,
@@ -1116,6 +1129,7 @@ class CrashReporterTest {
             stacktrace = "<native crash>",
             throwableData = null,
             minidumpPath = null,
+            processVisibility = null,
             processType = null,
             extrasPath = null,
             remoteType = null,
@@ -1152,6 +1166,7 @@ class CrashReporterTest {
             stacktrace = "<native crash>",
             throwableData = null,
             minidumpPath = null,
+            processVisibility = null,
             processType = null,
             extrasPath = null,
             remoteType = null,
@@ -1165,6 +1180,7 @@ class CrashReporterTest {
             stacktrace = "<native crash>",
             throwableData = null,
             minidumpPath = null,
+            processVisibility = null,
             processType = null,
             extrasPath = null,
             remoteType = null,
@@ -1199,6 +1215,7 @@ class CrashReporterTest {
             stacktrace = "<native crash>",
             throwableData = null,
             minidumpPath = null,
+            processVisibility = null,
             processType = null,
             extrasPath = null,
             remoteType = null,
@@ -1233,7 +1250,7 @@ class CrashReporterTest {
             )
             sleep(10) // make sure time elapsed
         }
-        advanceUntilIdle()
+        dispatcher.scheduler.advanceUntilIdle()
 
         crashReporter.crashBreadcrumbsCopy().let {
             var time = it[0].date
@@ -1249,7 +1266,7 @@ class CrashReporterTest {
             )
             sleep(10) // make sure time elapsed
         }
-        advanceUntilIdle()
+        dispatcher.scheduler.advanceUntilIdle()
 
         crashReporter.crashBreadcrumbsCopy().let {
             var time = it[0].date
@@ -1259,12 +1276,212 @@ class CrashReporterTest {
             }
         }
     }
+
+    @Test
+    fun `GIVEN the crash reporter has unsent crashes WHEN calling findCrashReports WITH specific crashID that do not exists THEN return empty list`() = runTestOnMain {
+        val crashReporter = CrashReporter(
+            services = listOf(mock()),
+            scope = scope,
+            databaseProvider = { db },
+        )
+
+        val oldCrashEntity = CrashEntity(
+            crashType = CrashType.NATIVE,
+            uuid = "53a63dcb-c450-44a0-940c-e809c7fad474",
+            runtimeTags = mapOf(),
+            breadcrumbs = listOf(),
+            createdAt = 0L,
+            stacktrace = "<native crash>",
+            throwableData = null,
+            minidumpPath = "/data/data/org.mozilla.fenix.debug/files/mozilla/Crash Reports/pending/46c43391-3e08-4222-a334-80fe13e0433b.dmp",
+            processType = null,
+            processVisibility = null,
+            extrasPath = null,
+            remoteType = null,
+        )
+        val newCrashEntity = CrashEntity(
+            crashType = CrashType.NATIVE,
+            uuid = "cc698820-06e6-45e1-932a-94e29dcd280c",
+            runtimeTags = mapOf(),
+            breadcrumbs = listOf(),
+            createdAt = 0L,
+            stacktrace = "<native crash>",
+            throwableData = null,
+            minidumpPath = "/data/data/org.mozilla.fenix.debug/files/mozilla/Crash Reports/pending/1a64d53e-7d34-416a-9679-ffdc2c6e0ba8.dmp",
+            processType = null,
+            processVisibility = null,
+            extrasPath = null,
+            remoteType = null,
+        )
+
+        val crashIDs = arrayOf("b0cbe510-4bc0-4f2e-b561-b496351e316b")
+        val result = withContext(Dispatchers.IO) {
+            db.crashDao().insertCrash(oldCrashEntity)
+            db.crashDao().insertCrash(newCrashEntity)
+            crashReporter.findCrashReports(crashIDs)
+        }
+
+        assertEquals(result.size, 0)
+    }
+
+    @Test
+    fun `GIVEN the crash reporter has unsent crashes WHEN calling findCrashReports WITH specific crashID THEN return list of this crash`() = runTestOnMain {
+        val crashReporter = CrashReporter(
+            services = listOf(mock()),
+            scope = scope,
+            databaseProvider = { db },
+        )
+
+        val oldCrashEntity = CrashEntity(
+            crashType = CrashType.NATIVE,
+            uuid = "53a63dcb-c450-44a0-940c-e809c7fad474",
+            runtimeTags = mapOf(),
+            breadcrumbs = listOf(),
+            createdAt = 0L,
+            stacktrace = "<native crash>",
+            throwableData = null,
+            minidumpPath = "/data/data/org.mozilla.fenix.debug/files/mozilla/Crash Reports/pending/46c43391-3e08-4222-a334-80fe13e0433b.dmp",
+            processType = null,
+            processVisibility = null,
+            extrasPath = null,
+            remoteType = null,
+        )
+        val newCrashEntity = CrashEntity(
+            crashType = CrashType.NATIVE,
+            uuid = "cc698820-06e6-45e1-932a-94e29dcd280c",
+            runtimeTags = mapOf(),
+            breadcrumbs = listOf(),
+            createdAt = 0L,
+            stacktrace = "<native crash>",
+            throwableData = null,
+            minidumpPath = "/data/data/org.mozilla.fenix.debug/files/mozilla/Crash Reports/pending/1a64d53e-7d34-416a-9679-ffdc2c6e0ba8.dmp",
+            processType = null,
+            processVisibility = null,
+            extrasPath = null,
+            remoteType = null,
+        )
+
+        val crashIDs = arrayOf("/data/data/org.mozilla.fenix.debug/files/mozilla/Crash Reports/pending/1a64d53e-7d34-416a-9679-ffdc2c6e0ba8.dmp")
+
+        val result = withContext(Dispatchers.IO) {
+            db.crashDao().insertCrash(oldCrashEntity)
+            db.crashDao().insertCrash(newCrashEntity)
+            crashReporter.findCrashReports(crashIDs)
+        }
+
+        assertEquals(result.size, 1)
+        assertEquals(crashReporter.findCrashReports(crashIDs).first().uuid, newCrashEntity.uuid)
+    }
+
+    @Test
+    fun `GIVEN the crash reporter has unsent crashes WHEN calling findCrashReports WITH specific crashID THEN return list of those crashes`() = runTestOnMain {
+        val crashReporter = CrashReporter(
+            services = listOf(mock()),
+            scope = scope,
+            databaseProvider = { db },
+        )
+
+        val crashEntity1 = CrashEntity(
+            crashType = CrashType.NATIVE,
+            uuid = "53a63dcb-c450-44a0-940c-e809c7fad474",
+            runtimeTags = mapOf(),
+            breadcrumbs = listOf(),
+            createdAt = 0L,
+            stacktrace = "<native crash>",
+            throwableData = null,
+            minidumpPath = "/data/data/org.mozilla.fenix.debug/files/mozilla/Crash Reports/pending/46c43391-3e08-4222-a334-80fe13e0433b.dmp",
+            processType = null,
+            processVisibility = null,
+            extrasPath = null,
+            remoteType = null,
+        )
+        val crashEntity2 = CrashEntity(
+            crashType = CrashType.NATIVE,
+            uuid = "cc698820-06e6-45e1-932a-94e29dcd280c",
+            runtimeTags = mapOf(),
+            breadcrumbs = listOf(),
+            createdAt = 0L,
+            stacktrace = "<native crash>",
+            throwableData = null,
+            minidumpPath = "/data/data/org.mozilla.fenix.debug/files/mozilla/Crash Reports/pending/1a64d53e-7d34-416a-9679-ffdc2c6e0ba8.dmp",
+            processType = null,
+            processVisibility = null,
+            extrasPath = null,
+            remoteType = null,
+        )
+        val crashEntity3 = CrashEntity(
+            crashType = CrashType.NATIVE,
+            uuid = "68fe1af8-2008-4aa4-9ff4-b23aecf9cb7d",
+            runtimeTags = mapOf(),
+            breadcrumbs = listOf(),
+            createdAt = 0L,
+            stacktrace = "<native crash>",
+            throwableData = null,
+            minidumpPath = "/data/data/org.mozilla.fenix.debug/files/mozilla/Crash Reports/pending/4b8c7669-8bee-4785-b87d-5c58dbb27e8e.dmp",
+            processType = null,
+            processVisibility = null,
+            extrasPath = null,
+            remoteType = null,
+        )
+
+        val crashIDs = arrayOf("/data/data/org.mozilla.fenix.debug/files/mozilla/Crash Reports/pending/46c43391-3e08-4222-a334-80fe13e0433b.dmp", "/data/data/org.mozilla.fenix.debug/files/mozilla/Crash Reports/pending/4b8c7669-8bee-4785-b87d-5c58dbb27e8e.dmp")
+
+        val result = withContext(Dispatchers.IO) {
+            db.crashDao().insertCrash(crashEntity1)
+            db.crashDao().insertCrash(crashEntity2)
+            db.crashDao().insertCrash(crashEntity3)
+            crashReporter.findCrashReports(crashIDs)
+        }
+
+        assertEquals(result.size, 2)
+        assertEquals(crashReporter.findCrashReports(crashIDs).get(0).uuid, crashEntity1.uuid)
+        assertEquals(crashReporter.findCrashReports(crashIDs).get(1).uuid, crashEntity3.uuid)
+    }
+
+    @Test
+    fun `Round-trip through CrashEntity preserves (serializable) Throwable info`() {
+        val crash = createUncaughtExceptionCrash()
+
+        val entity = crash.toEntity()
+        val otherCrash = entity.toCrash() as Crash.UncaughtExceptionCrash
+
+        assertEquals(crash.throwable.javaClass, otherCrash.throwable.javaClass)
+        assertEquals(crash.throwable.message, otherCrash.throwable.message)
+        assertArrayEquals(crash.throwable.stackTrace, otherCrash.throwable.stackTrace)
+    }
+
+    @Test
+    fun `Round-trip through CrashEntity for unserializable Throwable preserves stack`() {
+        val crash = createUnserializableUncaughtExceptionCrash()
+        val expectedMessage = "${crash.throwable.javaClass.name}: This exception has a bad field!"
+
+        val entity = crash.toEntity()
+        val otherCrash = entity.toCrash() as Crash.UncaughtExceptionCrash
+
+        assertTrue(otherCrash.throwable is CrashReporterUnableToRestoreException)
+        assertEquals(expectedMessage, otherCrash.throwable.message)
+        assertArrayEquals(crash.throwable.stackTrace, otherCrash.throwable.stackTrace)
+    }
 }
 
 private fun createUncaughtExceptionCrash(): Crash.UncaughtExceptionCrash {
     return Crash.UncaughtExceptionCrash(
         0,
         RuntimeException(),
+        ArrayList(),
+    )
+}
+
+private class UnserializableException(
+    @Suppress("unused")
+    val badField: Thread = Thread.currentThread(),
+) : Exception("This exception has a bad field!")
+
+private fun createUnserializableUncaughtExceptionCrash(): Crash.UncaughtExceptionCrash {
+    val throwable = UnserializableException()
+    return Crash.UncaughtExceptionCrash(
+        0,
+        throwable,
         ArrayList(),
     )
 }

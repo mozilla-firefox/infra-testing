@@ -6,19 +6,24 @@ pub mod crash_annotations {
     include!(concat!(env!("OUT_DIR"), "/crash_annotations.rs"));
 }
 
+use super::{
+    breakpad_crash_generator::{BreakpadCrashGenerator, BreakpadProcessId},
+    phc::{self, StackTrace},
+};
+
+#[cfg(any(target_os = "android", target_os = "linux"))]
+mod linux;
+#[cfg(any(target_os = "android", target_os = "linux"))]
+pub(crate) use linux::get_auxv_info;
+
 #[cfg(target_os = "windows")]
 mod windows;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use crash_annotations::{
     should_include_annotation, type_of_annotation, CrashAnnotation, CrashAnnotationType,
 };
-use crash_helper_common::{
-    messages::{self, Message},
-    AncillaryData, BreakpadChar, BreakpadData, BreakpadString, Pid,
-};
-#[cfg(any(target_os = "android", target_os = "linux"))]
-use minidump_writer::minidump_writer::DirectAuxvDumpInfo;
+use crash_helper_common::{messages, BreakpadChar, BreakpadData, BreakpadString, Pid};
 use mozannotation_server::{AnnotationData, CAnnotation};
 use num_traits::FromPrimitive;
 use once_cell::sync::Lazy;
@@ -31,13 +36,6 @@ use std::{
     mem::size_of,
     path::{Path, PathBuf},
     sync::Mutex,
-};
-#[cfg(target_os = "windows")]
-use windows_sys::Win32::Foundation::HANDLE;
-
-use crate::{
-    breakpad_crash_generator::BreakpadCrashGenerator,
-    phc::{self, StackTrace},
 };
 
 struct CrashReport {
@@ -60,11 +58,6 @@ impl CrashReport {
 // order they've arrived.
 static CRASH_REPORTS: Lazy<Mutex<HashMap<Pid, Vec<CrashReport>>>> = Lazy::new(Default::default);
 
-// Table holding the information about the auxiliary vector of potentially
-// every process registered with the crash helper.
-#[cfg(any(target_os = "android", target_os = "linux"))]
-static AUXV_INFO_MAP: Lazy<Mutex<HashMap<Pid, DirectAuxvDumpInfo>>> = Lazy::new(Default::default);
-
 /******************************************************************************
  * Crash generator                                                            *
  ******************************************************************************/
@@ -79,12 +72,10 @@ pub(crate) struct CrashGenerator {
     // This will be used for generating hangs
     _minidump_path: OsString,
     breakpad_server: BreakpadCrashGenerator,
-    client_pid: Pid,
 }
 
 impl CrashGenerator {
     pub(crate) fn new(
-        client_pid: Pid,
         breakpad_data: BreakpadData,
         minidump_path: OsString,
     ) -> Result<CrashGenerator> {
@@ -92,95 +83,19 @@ impl CrashGenerator {
             breakpad_data,
             minidump_path.clone(),
             finalize_breakpad_minidump,
-            #[cfg(any(target_os = "android", target_os = "linux"))]
-            get_auxv_info,
         )?;
 
         Ok(CrashGenerator {
             _minidump_path: minidump_path,
             breakpad_server,
-            client_pid,
         })
     }
 
-    // Process a message received from the client. Return an optional reply
-    // that will be sent back to the client.
-    pub(crate) fn client_message(
-        &mut self,
-        kind: messages::Kind,
-        data: &[u8],
-        ancillary_data: Option<AncillaryData>,
-        pid: Pid,
-    ) -> Result<Option<Box<dyn Message>>> {
-        match kind {
-            messages::Kind::SetCrashReportPath => {
-                if pid != self.client_pid {
-                    panic!("Not connected or attempting to set the path from the wrong process");
-                }
-
-                let message = messages::SetCrashReportPath::decode(data, ancillary_data)?;
-                self.set_path(message.path);
-                Ok(None)
-            }
-            messages::Kind::TransferMinidump => {
-                if pid != self.client_pid {
-                    panic!(
-                        "Not connected or attempting to request a minidump from a child process"
-                    );
-                }
-
-                let message = messages::TransferMinidump::decode(data, ancillary_data)?;
-                Ok(Some(Box::new(self.transfer_minidump(message.pid))))
-            }
-            messages::Kind::GenerateMinidump => {
-                todo!("Implement all messages");
-            }
-            #[cfg(target_os = "windows")]
-            messages::Kind::WindowsErrorReporting => {
-                let message =
-                    messages::WindowsErrorReportingMinidump::decode(data, ancillary_data)?;
-                let _ = self.generate_wer_minidump(message);
-                Ok(Some(Box::new(
-                    messages::WindowsErrorReportingMinidumpReply::new(),
-                )))
-            }
-            #[cfg(any(target_os = "android", target_os = "linux"))]
-            messages::Kind::RegisterAuxvInfo => {
-                if pid != self.client_pid {
-                    panic!(
-                        "Attempting to register some auxiliary information from the wrong process"
-                    );
-                }
-
-                let message = messages::RegisterAuxvInfo::decode(data, ancillary_data)?;
-                let map = &mut AUXV_INFO_MAP.lock().unwrap();
-                map.insert(message.pid, message.auxv_info);
-
-                Ok(None)
-            }
-            #[cfg(any(target_os = "android", target_os = "linux"))]
-            messages::Kind::UnregisterAuxvInfo => {
-                if pid != self.client_pid {
-                    panic!("Attempting to unregister auxiliary information from the wrong process");
-                }
-
-                let message = messages::UnregisterAuxvInfo::decode(data, ancillary_data)?;
-                let map = &mut AUXV_INFO_MAP.lock().unwrap();
-                map.remove(&message.pid);
-
-                Ok(None)
-            }
-            kind => {
-                bail!("Unexpected message {:?}", kind);
-            }
-        }
-    }
-
-    fn set_path(&mut self, path: OsString) {
+    pub(crate) fn set_path(&mut self, path: OsString) {
         self.breakpad_server.set_path(path);
     }
 
-    fn transfer_minidump(&self, pid: Pid) -> messages::TransferMinidumpReply {
+    pub(crate) fn retrieve_minidump(&self, pid: Pid) -> messages::TransferMinidumpReply {
         let mut map = CRASH_REPORTS.lock().unwrap();
         if let Some(mut entry) = map.remove(&pid) {
             let crash_report = entry.remove(0);
@@ -265,15 +180,6 @@ fn serialize_phc_stack(stack_trace: &StackTrace) -> String {
     string
 }
 
-#[repr(C)]
-pub struct BreakpadProcessId {
-    pub pid: Pid,
-    #[cfg(target_os = "macos")]
-    pub task: u32,
-    #[cfg(target_os = "windows")]
-    pub handle: HANDLE,
-}
-
 /// This reads the crash annotations, writes them to the .extra file and
 /// finally stores the resulting minidump in the global hash table.
 extern "C" fn finalize_breakpad_minidump(
@@ -321,34 +227,12 @@ fn finalize_crash_report(
         .or_insert_with(|| vec![CrashReport::new(path, &error)]);
 }
 
-#[cfg(any(target_os = "android", target_os = "linux"))]
-extern "C" fn get_auxv_info(pid: Pid, auxv_info_ptr: *mut DirectAuxvDumpInfo) -> bool {
-    let map = &mut AUXV_INFO_MAP.lock().unwrap();
-
-    if let Some(auxv_info) = map.get(&pid) {
-        // SAFETY: The auxv_info_ptr is guaranteed to be valid by the caller.
-        unsafe { auxv_info_ptr.write(auxv_info.to_owned()) };
-        true
-    } else {
-        false
-    }
-}
-
 fn retrieve_annotations(
     process_id: &BreakpadProcessId,
     origin: MinidumpOrigin,
 ) -> Result<Vec<CAnnotation>> {
-    #[cfg(target_os = "windows")]
     let res = mozannotation_server::retrieve_annotations(
-        process_id.handle,
-        CrashAnnotation::Count as usize,
-    );
-    #[cfg(any(target_os = "linux", target_os = "android"))]
-    let res =
-        mozannotation_server::retrieve_annotations(process_id.pid, CrashAnnotation::Count as usize);
-    #[cfg(target_os = "macos")]
-    let res = mozannotation_server::retrieve_annotations(
-        process_id.task,
+        process_id.get_native(),
         CrashAnnotation::Count as usize,
     );
 

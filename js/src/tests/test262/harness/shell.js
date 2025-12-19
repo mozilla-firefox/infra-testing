@@ -44,7 +44,7 @@ defines: [asyncTest, assert.throwsAsync]
  * @returns {void}
  */
 function asyncTest(testFunc) {
-  if (!Object.hasOwn(globalThis, "$DONE")) {
+  if (!Object.prototype.hasOwnProperty.call(globalThis, "$DONE")) {
     throw new Test262Error("asyncTest called without async flag");
   }
   if (typeof testFunc !== "function") {
@@ -873,7 +873,7 @@ assert.deepEqual = function(actual, expected, message) {
 (function() {
 let getOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
 let join = arr => arr.join(', ');
-function stringFromTemplate(strings, ...subs) {
+function stringFromTemplate(strings, subs) {
   let parts = strings.map((str, i) => `${i === 0 ? '' : subs[i - 1]}${str}`);
   return parts.join('');
 }
@@ -936,7 +936,7 @@ assert.deepEqual.format = function(value, seen) {
     function acceptMappers(...mappers) {
       function toString() {
         let renderings = subs.map((sub, i) => (mappers[i] || String)(sub));
-        let rendered = stringFromTemplate(strings, ...renderings);
+        let rendered = stringFromTemplate(strings, renderings);
         if (usage.used) rendered += ` as #${usage.id}`;
         return rendered;
       }
@@ -950,7 +950,7 @@ assert.deepEqual.format = function(value, seen) {
 
   let format = assert.deepEqual.format;
   function lazyString(strings, ...subs) {
-    return { toString: () => stringFromTemplate(strings, ...subs) };
+    return { toString: () => stringFromTemplate(strings, subs) };
   }
 
   if (typeof value === 'function') {
@@ -1884,7 +1884,7 @@ const WellKnownIntrinsicObjects = [
   },
   {
     name: '%AsyncIteratorPrototype%',
-    source: '((async function * () {})())[Symbol.asyncIterator]()',
+    source: 'Object.getPrototypeOf(Object.getPrototypeOf(async function* () {}).prototype)',
   },
   {
     name: '%Atomics%',
@@ -2057,7 +2057,7 @@ const WellKnownIntrinsicObjects = [
   },
   {
     name: '%RegExpStringIteratorPrototype%',
-    source: 'RegExp.prototype[Symbol.matchAll]("")',
+    source: 'Object.getPrototypeOf(RegExp.prototype[Symbol.matchAll](""))',
   },
   {
     name: '%Set%',
@@ -2134,6 +2134,82 @@ const WellKnownIntrinsicObjects = [
   {
     name: '%WrapForValidIteratorPrototype%',
     source: 'Object.getPrototypeOf(Iterator.from({ [Symbol.iterator](){ return {}; } }))',
+  },
+
+  // Extensions to well-known intrinsic objects.
+  //
+  // https://tc39.es/ecma262/#sec-additional-properties-of-the-global-object
+  {
+    name: "%escape%",
+    source: "escape",
+  },
+  {
+    name: "%unescape%",
+    source: "unescape",
+  },
+
+  // Extensions to well-known intrinsic objects.
+  //
+  // https://tc39.es/ecma402/#sec-402-well-known-intrinsic-objects
+  {
+    name: "%Intl%",
+    source: "Intl",
+  },
+  {
+    name: "%Intl.Collator%",
+    source: "Intl.Collator",
+  },
+  {
+    name: "%Intl.DateTimeFormat%",
+    source: "Intl.DateTimeFormat",
+  },
+  {
+    name: "%Intl.DisplayNames%",
+    source: "Intl.DisplayNames",
+  },
+  {
+    name: "%Intl.DurationFormat%",
+    source: "Intl.DurationFormat",
+  },
+  {
+    name: "%Intl.ListFormat%",
+    source: "Intl.ListFormat",
+  },
+  {
+    name: "%Intl.Locale%",
+    source: "Intl.Locale",
+  },
+  {
+    name: "%Intl.NumberFormat%",
+    source: "Intl.NumberFormat",
+  },
+  {
+    name: "%Intl.PluralRules%",
+    source: "Intl.PluralRules",
+  },
+  {
+    name: "%Intl.RelativeTimeFormat%",
+    source: "Intl.RelativeTimeFormat",
+  },
+  {
+    name: "%Intl.Segmenter%",
+    source: "Intl.Segmenter",
+  },
+  {
+    name: "%IntlSegmentIteratorPrototype%",
+    source: "Object.getPrototypeOf(new Intl.Segmenter().segment()[Symbol.iterator]())",
+  },
+  {
+    name: "%IntlSegmentsPrototype%",
+    source: "Object.getPrototypeOf(new Intl.Segmenter().segment())",
+  },
+
+  // Extensions to well-known intrinsic objects.
+  //
+  // https://tc39.es/proposal-temporal/#sec-well-known-intrinsic-objects
+  {
+    name: "%Temporal%",
+    source: "Temporal",
   },
 ];
 

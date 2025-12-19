@@ -4,8 +4,10 @@
 
 use std::marker::PhantomData;
 
+use malloc_size_of::MallocSizeOf;
+
 use glean_core::metrics::{JsonValue, MetricIdentifier};
-use glean_core::traits;
+use glean_core::{traits, TestGetValue};
 
 use crate::ErrorType;
 
@@ -25,9 +27,28 @@ pub struct ObjectMetric<K> {
     object_type: PhantomData<K>,
 }
 
+impl<K> MallocSizeOf for ObjectMetric<K> {
+    fn size_of(&self, ops: &mut malloc_size_of::MallocSizeOfOps) -> usize {
+        self.inner.size_of(ops)
+    }
+}
+
 impl<'a, K> MetricIdentifier<'a> for ObjectMetric<K> {
     fn get_identifiers(&'a self) -> (&'a str, &'a str, Option<&'a str>) {
         self.inner.get_identifiers()
+    }
+}
+
+impl<K> TestGetValue for ObjectMetric<K> {
+    type Output = JsonValue;
+
+    /// **Test-only API (exported for FFI purposes).**
+    ///
+    /// Gets the currently stored value as JSON-encoded string.
+    ///
+    /// This doesn't clear the stored value.
+    fn test_get_value(&self, ping_name: Option<String>) -> Option<JsonValue> {
+        self.inner.test_get_value(ping_name)
     }
 }
 
@@ -70,16 +91,6 @@ impl<K: traits::ObjectSerialize> ObjectMetric<K> {
             }
         };
         self.set(data)
-    }
-
-    /// **Test-only API (exported for FFI purposes).**
-    ///
-    /// Gets the currently stored value as JSON-encoded string.
-    ///
-    /// This doesn't clear the stored value.
-    pub fn test_get_value<'a, S: Into<Option<&'a str>>>(&self, ping_name: S) -> Option<JsonValue> {
-        let ping_name = ping_name.into().map(|s| s.to_string());
-        self.inner.test_get_value(ping_name)
     }
 
     /// **Exported for test purposes.**

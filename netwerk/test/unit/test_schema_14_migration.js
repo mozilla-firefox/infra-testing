@@ -41,8 +41,7 @@ add_task(async function test_schema_14_migration() {
       false,
       false,
       {},
-      Ci.nsICookie.SAMESITE_NONE,
-      Ci.nsICookie.SAMESITE_NONE,
+      Ci.nsICookie.SAMESITE_UNSET,
       Ci.nsICookie.SCHEME_UNSET,
       !!(i % 2) // isPartitioned
     );
@@ -81,7 +80,7 @@ add_task(async function test_schema_14_migration() {
       do_get_cookie_file(profile)
     );
     const stmt = dbConnection.createStatement(
-      "SELECT COUNT(name) FROM moz_cookies WHERE expiry <= unixepoch() + 34560000"
+      "SELECT COUNT(name) FROM moz_cookies WHERE expiry <= (unixepoch() + 34560000) * 1000"
     );
     const success = stmt.executeStep();
     Assert.ok(success);

@@ -44,6 +44,7 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.min
 import kotlin.math.roundToInt
+import androidx.preference.R as preferenceR
 
 /**
  * Preference based on android.preference.SeekBarPreference but uses support preference as a base.
@@ -65,21 +66,21 @@ import kotlin.math.roundToInt
 class TextPercentageSeekBarPreference @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
-    defStyleAttr: Int = R.attr.seekBarPreferenceStyle,
+    defStyleAttr: Int = preferenceR.attr.seekBarPreferenceStyle,
     defStyleRes: Int = 0,
 ) : Preference(context, attrs, defStyleAttr, defStyleRes) {
-    /* synthetic access */
+    // synthetic access
     internal var mSeekBarValue: Int = 0
 
-    /* synthetic access */
+    // synthetic access
     internal var mMin: Int = 0
     private var mMax: Int = 0
     private var mSeekBarIncrement: Int = 0
 
-    /* synthetic access */
+    // synthetic access
     internal var mTrackingTouch: Boolean = false
 
-    /* synthetic access */
+    // synthetic access
     internal var mSeekBar: SeekBar? = null
     private var mSeekBarValueTextView: TextView? = null
     private var mExampleTextTextView: TextView? = null
@@ -87,7 +88,7 @@ class TextPercentageSeekBarPreference @JvmOverloads constructor(
     /**
      * Whether the SeekBar should respond to the left/right keys
      */
-    /* synthetic access */
+    // synthetic access
     var isAdjustable: Boolean = false
 
     /**
@@ -98,7 +99,7 @@ class TextPercentageSeekBarPreference @JvmOverloads constructor(
     /**
      * Whether the SeekBarPreference should continuously save the Seekbar value while it is being dragged.
      */
-    /* synthetic access */
+    // synthetic access
     var updatesContinuously: Boolean = false
 
     /**
@@ -170,23 +171,18 @@ class TextPercentageSeekBarPreference @JvmOverloads constructor(
         }
 
     /**
-     * Returns the amount of increment change via each arrow key click. This value is derived from
-     * user's specified increment value if it's not zero. Otherwise, the default value is picked
-     * from the default mKeyProgressIncrement value in [android.widget.AbsSeekBar].
-     * @return The amount of increment on the [SeekBar] performed after each user's arrow
-     * key press
+     * The amount of increment change applied to the [SeekBar] for each arrow key press.
+     *
+     * If the user-specified increment is non-zero, that value is used. Otherwise, the default
+     * increment comes from [android.widget.AbsSeekBar]'s `mKeyProgressIncrement`.
+     *
+     * When set, the value is clamped to the range `0..(mMax - mMin)` and its absolute value is used.
      */
     var seekBarIncrement: Int
         get() = mSeekBarIncrement
-
-        /**
-         * Sets the increment amount on the [SeekBar] for each arrow key press.
-         * @param seekBarIncrement The amount to increment or decrement when the user presses an
-         * arrow key.
-         */
-        set(seekBarIncrement) {
-            if (seekBarIncrement != mSeekBarIncrement) {
-                mSeekBarIncrement = min(mMax - mMin, abs(seekBarIncrement))
+        set(value) {
+            if (value != mSeekBarIncrement) {
+                mSeekBarIncrement = min(mMax - mMin, abs(value))
                 notifyChanged()
             }
         }
@@ -208,20 +204,12 @@ class TextPercentageSeekBarPreference @JvmOverloads constructor(
         }
 
     /**
-     * Gets whether the current [SeekBar] value is displayed to the user.
-     * @return Whether the current [SeekBar] value is displayed to the user
-     * @see .setShowSeekBarValue
+     * Whether the current [SeekBar] value is displayed to the user.
      */
     var showSeekBarValue: Boolean
         get() = mShowSeekBarValue
-
-        /**
-         * Sets whether the current [SeekBar] value is displayed to the user.
-         * @param showSeekBarValue Whether the current [SeekBar] value is displayed to the user
-         * @see .getShowSeekBarValue
-         */
-        set(showSeekBarValue) {
-            mShowSeekBarValue = showSeekBarValue
+        set(value) {
+            mShowSeekBarValue = value
             notifyChanged()
         }
 
@@ -327,7 +315,7 @@ class TextPercentageSeekBarPreference @JvmOverloads constructor(
      * Persist the [SeekBar]'s SeekBar value if callChangeListener returns true, otherwise
      * set the [SeekBar]'s value to the stored value.
      */
-    /* synthetic access */
+    // synthetic access
     internal fun syncValueInternal(seekBar: SeekBar) {
         val seekBarValue = mMin + seekBar.progress
         if (seekBarValue != mSeekBarValue) {
@@ -346,7 +334,7 @@ class TextPercentageSeekBarPreference @JvmOverloads constructor(
      *
      * @param labelValue the value to display next to the [SeekBar]
      */
-    /* synthetic access */
+    // synthetic access
     internal fun updateLabelValue(labelValue: Int) {
         var value = labelValue
         if (mSeekBarValueTextView != null) {
@@ -365,8 +353,14 @@ class TextPercentageSeekBarPreference @JvmOverloads constructor(
                 ) {
                     super.onInitializeAccessibilityNodeInfo(host, info)
                     val initialInfo = info.rangeInfo
+                    val percentageValueDescription = String.format(
+                        context.getString(R.string.a11y_preference_accessibility_font_size_percentage),
+                        value,
+                    )
+
                     info.rangeInfo = initialInfo?.let {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                            host.stateDescription = percentageValueDescription
                             RangeInfo(
                                 RangeInfo.RANGE_TYPE_PERCENT,
                                 MIN_VALUE.toFloat(),
@@ -495,6 +489,6 @@ class TextPercentageSeekBarPreference @JvmOverloads constructor(
         private const val MIN_VALUE = 50
         private const val DECIMAL_CONVERSION = 100f
         private const val TEXT_SIZE = 16f
-        private const val SEEK_BAR_MAX = 100
+        private const val SEEK_BAR_MAX = 200
     }
 }

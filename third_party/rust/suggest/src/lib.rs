@@ -11,7 +11,6 @@ mod error;
 mod fakespot;
 mod geoname;
 mod metrics;
-pub mod pocket;
 mod provider;
 mod query;
 mod rs;
@@ -26,7 +25,7 @@ mod yelp;
 
 pub use config::{SuggestGlobalConfig, SuggestProviderConfig};
 pub use error::{Error, SuggestApiError};
-pub use geoname::{Geoname, GeonameMatch, GeonameType};
+pub use geoname::{Geoname, GeonameMatch};
 pub use metrics::{LabeledTimingSample, SuggestIngestionMetrics};
 pub use provider::{AmpMatchingStrategy, SuggestionProvider, SuggestionProviderConstraints};
 pub use query::{QueryWithMetricsResult, SuggestionQuery};

@@ -3,7 +3,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* eslint-env mozilla/browser-window */
 
 /**
  * Handles the Downloads panel user interface for each browser window.
@@ -36,10 +35,12 @@ var { XPCOMUtils } = ChromeUtils.importESModule(
 );
 
 ChromeUtils.defineESModuleGetters(this, {
-  DownloadsViewUI: "resource:///modules/DownloadsViewUI.sys.mjs",
+  DownloadsViewUI:
+    "moz-src:///browser/components/downloads/DownloadsViewUI.sys.mjs",
   FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
   NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
 });
 
 const { Integration } = ChromeUtils.importESModule(
@@ -185,11 +186,6 @@ var DownloadsPanel = {
    */
   showPanel(openedManually = false, isKeyPress = false) {
     Glean.downloads.panelShown.add(1);
-    // GLAM EXPERIMENT
-    // This metric is temporary, disabled by default, and will be enabled only
-    // for the purpose of experimenting with client-side sampling of data for
-    // GLAM use. See Bug 1947604 for more information.
-    Glean.glamExperiment.panelShown.add(1);
 
     DownloadsCommon.log("Opening the downloads panel.");
 
@@ -234,6 +230,7 @@ var DownloadsPanel = {
 
   /**
    * Indicates whether the panel is showing.
+   *
    * @note this includes the hiding state.
    */
   get isPanelShowing() {
@@ -710,6 +707,24 @@ var DownloadsPanel = {
         if (!this._openedManually) {
           this._delayPopupItems();
         }
+
+        let isPrivate =
+          window && PrivateBrowsingUtils.isContentWindowPrivate(window);
+
+        if (
+          // If private, show message asking whether to delete files at end of session
+          isPrivate &&
+          Services.prefs.getBoolPref(
+            "browser.download.enableDeletePrivate",
+            false
+          ) &&
+          !Services.prefs.getBoolPref(
+            "browser.download.deletePrivate.chosen",
+            false
+          )
+        ) {
+          PrivateDownloadsSubview.openWhenReady();
+        }
       }, console.error);
     }, 0);
   },
@@ -1118,7 +1133,6 @@ var DownloadsView = {
     dataTransfer.effectAllowed = "copyMove";
     let spec = NetUtil.newURI(file).spec;
     dataTransfer.setData("text/uri-list", spec);
-    dataTransfer.setData("text/plain", spec);
     dataTransfer.addElement(element);
 
     aEvent.stopPropagation();
@@ -1343,7 +1357,11 @@ var DownloadsViewController = {
   // nsIController
 
   supportsCommand(aCommand) {
-    if (aCommand === "downloadsCmd_clearList") {
+    if (
+      aCommand === "downloadsCmd_clearList" ||
+      aCommand === "downloadsCmd_deletePrivate" ||
+      aCommand === "downloadsCmd_dismissDeletePrivate"
+    ) {
       return true;
     }
     // Firstly, determine if this is a command that we can handle.
@@ -1379,16 +1397,22 @@ var DownloadsViewController = {
 
   isCommandEnabled(aCommand) {
     // Handle commands that are not selection-specific.
-    if (aCommand == "downloadsCmd_clearList") {
-      return DownloadsCommon.getData(window).canRemoveFinished;
+    switch (aCommand) {
+      case "downloadsCmd_clearList": {
+        return DownloadsCommon.getData(window).canRemoveFinished;
+      }
+      case "downloadsCmd_deletePrivate":
+      case "downloadsCmd_dismissDeletePrivate":
+        return true;
+      default: {
+        // Other commands are selection-specific.
+        let element = DownloadsView.richListBox.selectedItem;
+        return (
+          element &&
+          DownloadsView.itemForElement(element).isCommandEnabled(aCommand)
+        );
+      }
     }
-
-    // Other commands are selection-specific.
-    let element = DownloadsView.richListBox.selectedItem;
-    return (
-      element &&
-      DownloadsView.itemForElement(element).isCommandEnabled(aCommand)
-    );
   },
 
   doCommand(aCommand) {
@@ -1426,6 +1450,14 @@ var DownloadsViewController = {
 
   downloadsCmd_clearList() {
     DownloadsCommon.getData(window).removeFinished();
+  },
+
+  downloadsCmd_deletePrivate() {
+    PrivateDownloadsSubview.choose(true /* deletePrivate */);
+  },
+
+  downloadsCmd_dismissDeletePrivate() {
+    PrivateDownloadsSubview.choose(false /* deletePrivate */);
   },
 };
 
@@ -1710,6 +1742,14 @@ var DownloadsBlockedSubview = {
     let e = this.elements;
     let s = DownloadsCommon.strings;
 
+    e.deleteButton.hidden =
+      download.error?.becauseBlockedByContentAnalysis &&
+      download.error?.reputationCheckVerdict === "Malware";
+
+    e.unblockButton.hidden =
+      download.error?.becauseBlockedByContentAnalysis &&
+      download.error?.reputationCheckVerdict === "Malware";
+
     title.l10n
       ? document.l10n.setAttributes(e.title, title.l10n.id, title.l10n.args)
       : (e.title.textContent = title);
@@ -1780,4 +1820,67 @@ XPCOMUtils.defineConstant(
   this,
   "DownloadsBlockedSubview",
   DownloadsBlockedSubview
+);
+
+/**
+ * Manages the private browsing downloads subview that appears when you download a file in private browsing mode
+ */
+var PrivateDownloadsSubview = {
+  /**
+   * Slides in the private downloads subview.
+   *
+   * @param element
+   *        The download richlistitem element that was clicked.
+   */
+  openWhenReady() {
+    DownloadsView.subViewOpen = true;
+    DownloadsViewController.updateCommands();
+
+    this.mainView.addEventListener("ViewShown", this, { once: true });
+    this.mainView.toggleAttribute("showing-private-browsing-choice", true);
+  },
+
+  handleEvent(event) {
+    // This is called when the main view is shown or the panel is hidden.
+
+    // Focus the proper element if we're going back to the main panel.
+    if (event.type == "ViewShown") {
+      this.panelMultiView.showSubView(this.subview);
+    }
+  },
+
+  /**
+   * Sets whether to delete files at the end of private download session
+   * Based on user response to download notification prompt
+   *
+   * @param deletePrivate
+   *        True if the user chose to delete files at the end of the session
+   */
+  choose(deletePrivate) {
+    if (deletePrivate) {
+      Services.prefs.setBoolPref("browser.download.deletePrivate", true);
+    }
+    Services.prefs.setBoolPref("browser.download.deletePrivate.chosen", true);
+    DownloadsView.subViewOpen = false;
+    this.mainView.toggleAttribute("showing-private-browsing-choice", false);
+    this.panelMultiView.goBack();
+  },
+};
+
+ChromeUtils.defineLazyGetter(PrivateDownloadsSubview, "panelMultiView", () =>
+  document.getElementById("downloadsPanel-multiView")
+);
+
+ChromeUtils.defineLazyGetter(PrivateDownloadsSubview, "mainView", () =>
+  document.getElementById("downloadsPanel-mainView")
+);
+
+ChromeUtils.defineLazyGetter(PrivateDownloadsSubview, "subview", () =>
+  document.getElementById("downloadsPanel-privateBrowsing")
+);
+
+XPCOMUtils.defineConstant(
+  this,
+  "PrivateDownloadsSubview",
+  PrivateDownloadsSubview
 );

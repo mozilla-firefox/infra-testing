@@ -37,7 +37,7 @@ describe("Network message reducer:", () => {
     packet.actor = "message1";
     updatePacket.actor = "message1";
     dispatch(actions.messagesAdd([packet]));
-    dispatch(actions.networkMessageUpdates([updatePacket], null));
+    dispatch(actions.networkMessageUpdates([updatePacket]));
   });
 
   describe("networkMessagesUpdateById", () => {
@@ -94,6 +94,7 @@ describe("Network message reducer:", () => {
           {
             id: "message1",
             data: {
+              securityState: "insecure",
               securityInfo,
             },
           },

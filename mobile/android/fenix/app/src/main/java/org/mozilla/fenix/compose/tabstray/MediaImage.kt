@@ -14,14 +14,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import com.google.accompanist.drawablepainter.rememberDrawablePainter
 import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.browser.state.state.createTab
-import mozilla.components.compose.base.annotation.LightDarkPreview
 import mozilla.components.concept.engine.mediasession.MediaSession.PlaybackState
 import org.mozilla.fenix.R
 import org.mozilla.fenix.theme.FirefoxTheme
+import mozilla.components.feature.media.R as mediaR
 
 /**
  * Controller buttons for the media (play/pause) state for the given [tab].
@@ -40,10 +41,10 @@ fun MediaImage(
 ) {
     val (icon, contentDescription) = when (tab.mediaSessionState?.playbackState) {
         PlaybackState.PAUSED -> {
-            R.drawable.media_state_play to R.string.mozac_feature_media_notification_action_play
+            R.drawable.media_state_play to mediaR.string.mozac_feature_media_notification_action_play
         }
         PlaybackState.PLAYING -> {
-            R.drawable.media_state_pause to R.string.mozac_feature_media_notification_action_pause
+            R.drawable.media_state_pause to mediaR.string.mozac_feature_media_notification_action_pause
         }
         else -> return
     }
@@ -60,7 +61,7 @@ fun MediaImage(
 }
 
 @Composable
-@LightDarkPreview
+@PreviewLightDark
 private fun ImagePreview() {
     FirefoxTheme {
         MediaImage(

@@ -108,7 +108,7 @@ class AMOAddonsProvider(
      * a connectivity problem or a timeout.
      */
     @Throws(IOException::class)
-    @Suppress("NestedBlockDepth")
+    @Suppress("NestedBlockDepth", "CognitiveComplexMethod")
     override suspend fun getFeaturedAddons(
         allowCache: Boolean,
         readTimeoutInSeconds: Long?,
@@ -149,6 +149,7 @@ class AMOAddonsProvider(
         }
     }
 
+    @Suppress("CognitiveComplexMethod")
     private suspend fun fetchFeaturedAddons(
         readTimeoutInSeconds: Long?,
         language: String?,
@@ -270,8 +271,7 @@ class AMOAddonsProvider(
         val currentCacheFileName = getBaseCacheFile(context, language, useFallbackFile = true).name
 
         context.filesDir
-            .listFiles {
-                    _, s ->
+            .listFiles { _, s ->
                 s.startsWith(COLLECTION_FILE_NAME_PREFIX) && s != currentCacheFileName
             }
             ?.forEach {

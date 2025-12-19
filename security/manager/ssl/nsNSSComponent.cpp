@@ -19,25 +19,20 @@
 #include "certdb.h"
 #include "mozilla/AppShutdown.h"
 #include "mozilla/Atomics.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Base64.h"
-#include "mozilla/Casting.h"
 #include "mozilla/EndianUtils.h"
 #include "mozilla/FilePreferences.h"
-#include "mozilla/PodOperations.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/ProfilerMarkers.h"
 #include "mozilla/PublicSSL.h"
-#include "mozilla/ScopeExit.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPrefs_security.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/Unused.h"
 #include "mozilla/Vector.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/glean/SecurityManagerSslMetrics.h"
@@ -83,6 +78,10 @@
 #  include <linux/magic.h>
 #  include <sys/vfs.h>
 #endif
+
+#ifndef MOZ_NO_SMART_CARDS
+#  include "mozilla/ipc/UtilityProcessManager.h"
+#endif  // !MOZ_NO_SMART_CARDS
 
 using namespace mozilla;
 using namespace mozilla::psm;
@@ -199,7 +198,7 @@ bool EnsureNSSInitializedChromeOrContent() {
     // If ipcclientcerts fails to load, client certificate authentication won't
     // work (if networking is done on the socket process). This is preferable
     // to stopping the program entirely, so treat this as best-effort.
-    Unused << NS_WARN_IF(!LoadIPCClientCerts());
+    (void)NS_WARN_IF(!LoadIPCClientCerts());
     initialized = true;
     return true;
   }
@@ -335,7 +334,7 @@ void nsNSSComponent::MaybeImportEnterpriseRoots() {
   if (importEnterpriseRoots) {
     RefPtr<BackgroundImportEnterpriseCertsTask> task =
         new BackgroundImportEnterpriseCertsTask(this);
-    Unused << task->Dispatch();
+    (void)task->Dispatch();
   }
 }
 
@@ -564,7 +563,7 @@ void AsyncLoadOrUnloadOSClientCertsModule(bool load) {
   if (load) {
     RefPtr<BackgroundLoadOSClientCertsModuleTask> task =
         new BackgroundLoadOSClientCertsModuleTask();
-    Unused << task->Dispatch();
+    (void)task->Dispatch();
   } else {
     UniqueSECMODModule osClientCertsModule(
         SECMOD_FindModule(kOSClientCertsModuleName.get()));
@@ -620,14 +619,14 @@ nsresult nsNSSComponent::CheckForSmartCardChanges() {
   }
   for (auto& module : modulesWithRemovableSlots) {
     // Best-effort.
-    Unused << SECMOD_UpdateSlotList(module.get());
+    (void)SECMOD_UpdateSlotList(module.get());
   }
   AutoSECMODListReadLock secmodLock;
   for (auto& module : modulesWithRemovableSlots) {
     for (int i = 0; i < module->slotCount; i++) {
       // We actually don't care about the return value here - we just need to
       // call this to get NSS to update its view of this slot.
-      Unused << PK11_IsPresent(module->slots[i]);
+      (void)PK11_IsPresent(module->slots[i]);
     }
   }
 #endif
@@ -879,6 +878,7 @@ nsresult CommonInit() {
   SSL_OptionSetDefault(
       SSL_ENABLE_DELEGATED_CREDENTIALS,
       StaticPrefs::security_tls_enable_delegated_credentials());
+  SSL_OptionSetDefault(SSL_DB_LOAD_CERTIFICATE_CHAIN, false);
 
   rv = InitializeCipherSuite();
   if (NS_FAILED(rv)) {
@@ -907,7 +907,7 @@ bool HandleTLSPrefChange(const nsCString& prefName) {
   if (prefName.EqualsLiteral("security.tls.version.min") ||
       prefName.EqualsLiteral("security.tls.version.max") ||
       prefName.EqualsLiteral("security.tls.version.enable-deprecated")) {
-    Unused << nsNSSComponent::SetEnabledTLSVersions();
+    (void)nsNSSComponent::SetEnabledTLSVersions();
   } else if (prefName.EqualsLiteral("security.tls.hello_downgrade_check")) {
     SSL_OptionSetDefault(SSL_ENABLE_HELLO_DOWNGRADE_CHECK,
                          StaticPrefs::security_tls_hello_downgrade_check());
@@ -1076,27 +1076,13 @@ void nsNSSComponent::setValidationOptions(
   CertVerifier::CertificateTransparencyConfig ctConfig(
       ctMode, std::move(skipCTForHosts), std::move(skipCTForSPKIHashes));
 
-  NetscapeStepUpPolicy netscapeStepUpPolicy = static_cast<NetscapeStepUpPolicy>(
-      StaticPrefs::security_pki_netscape_step_up_policy());
-  switch (netscapeStepUpPolicy) {
-    case NetscapeStepUpPolicy::AlwaysMatch:
-    case NetscapeStepUpPolicy::MatchBefore23August2016:
-    case NetscapeStepUpPolicy::MatchBefore23August2015:
-    case NetscapeStepUpPolicy::NeverMatch:
-      break;
-    default:
-      netscapeStepUpPolicy = NetscapeStepUpPolicy::AlwaysMatch;
-      break;
-  }
-
-  CRLiteMode defaultCRLiteMode = CRLiteMode::Disabled;
+  CRLiteMode defaultCRLiteMode = CRLiteMode::Enforce;
   CRLiteMode crliteMode =
       static_cast<CRLiteMode>(StaticPrefs::security_pki_crlite_mode());
   switch (crliteMode) {
     case CRLiteMode::Disabled:
     case CRLiteMode::TelemetryOnly:
     case CRLiteMode::Enforce:
-    case CRLiteMode::ConfirmRevocations:
       break;
     default:
       crliteMode = defaultCRLiteMode;
@@ -1114,7 +1100,7 @@ void nsNSSComponent::setValidationOptions(
 
   mDefaultCertVerifier = new SharedCertVerifier(
       odc, osc, softTimeout, hardTimeout, certShortLifetimeInDays,
-      netscapeStepUpPolicy, std::move(ctConfig), crliteMode, mEnterpriseCerts);
+      std::move(ctConfig), crliteMode, mEnterpriseCerts);
 }
 
 void nsNSSComponent::UpdateCertVerifierWithEnterpriseRoots() {
@@ -1133,8 +1119,7 @@ void nsNSSComponent::UpdateCertVerifierWithEnterpriseRoots() {
       oldCertVerifier->mOCSPStrict ? CertVerifier::ocspStrict
                                    : CertVerifier::ocspRelaxed,
       oldCertVerifier->mOCSPTimeoutSoft, oldCertVerifier->mOCSPTimeoutHard,
-      oldCertVerifier->mCertShortLifetimeInDays,
-      oldCertVerifier->mNetscapeStepUpPolicy, std::move(ctConfig),
+      oldCertVerifier->mCertShortLifetimeInDays, std::move(ctConfig),
       oldCertVerifier->mCRLiteMode, mEnterpriseCerts);
 }
 
@@ -1315,7 +1300,7 @@ static nsresult AttemptToRenamePKCS11ModuleDB(const nsACString& profilePath) {
   // This may fail on, e.g., a read-only file system. This would be unfortunate,
   // but again it isn't catastropic and we would want to fall back to
   // initializing NSS in no-DB mode.
-  Unused << dbFile->MoveToNative(profileDir, destModuleDBFilename);
+  (void)dbFile->MoveToNative(profileDir, destModuleDBFilename);
   return NS_OK;
 }
 #endif  // ifndef ANDROID
@@ -1478,7 +1463,7 @@ void UnmigrateOneCertDB(const nsCOMPtr<nsIFile>& profileDirectory,
   if (NS_FAILED(rv)) {
     return;
   }
-  Unused << prefixedDBFile->MoveToNative(nullptr, dbType);
+  (void)prefixedDBFile->MoveToNative(nullptr, dbType);
 }
 
 void UnmigrateFromPrefixedCertDBs() {
@@ -1496,7 +1481,7 @@ void UnmigrateFromPrefixedCertDBs() {
 nsresult nsNSSComponent::InitializeNSS() {
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("nsNSSComponent::InitializeNSS\n"));
   AUTO_PROFILER_LABEL("nsNSSComponent::InitializeNSS", OTHER);
-  AUTO_PROFILER_TRACING_MARKER("NSS", "nsNSSComponent::InitializeNSS", OTHER);
+  AUTO_PROFILER_MARKER("nsNSSComponent::InitializeNSS", OTHER);
 
   static_assert(
       nsINSSErrorsService::NSS_SEC_ERROR_BASE == SEC_ERROR_BASE &&
@@ -1538,6 +1523,44 @@ nsresult nsNSSComponent::InitializeNSS() {
     }
   }
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("inSafeMode: %u\n", inSafeMode));
+
+#if defined(NIGHTLY_BUILD) && !defined(MOZ_NO_SMART_CARDS)
+  if (!inSafeMode &&
+      StaticPrefs::security_utility_pkcs11_module_process_enabled_AtStartup()) {
+    auto manager = ipc::UtilityProcessManager::GetSingleton();
+    MOZ_ASSERT(manager);
+    if (manager) {
+      // You may need to store the launchPromise in the nsNSSComponent,
+      // depending on how you design its API.
+      auto launchPromise = manager->StartPKCS11Module();
+      launchPromise->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [](RefPtr<PKCS11ModuleParent>&& parent) {
+            MOZ_RELEASE_ASSERT(parent);
+            parent->SendLoadModule(u"MySecretModule"_ns)
+                ->Then(
+                    GetCurrentSerialEventTarget(), __func__,
+                    [](nsresult res) {
+                      // We have a result from the utility process!
+                      // Check that we successfully loaded MySecretModule.
+                      MOZ_RELEASE_ASSERT(NS_SUCCEEDED(res));
+                    },
+                    [](ipc::ResponseRejectReason reason) {
+                      // We ran into an IPC Error.
+                      MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+                              ("Loading MySecretModule failed: %d",
+                               static_cast<int>(reason)));
+                    });
+          },
+          [](base::LaunchError&& aError) {
+            // We ran into a launch error.
+            MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+                    ("Failed to start the PKCS#11 process: %s, %ld",
+                     aError.FunctionName().get(), aError.ErrorCode()));
+          });
+    }
+  }
+#endif  // NIGHTLY_BUILD && !MOZ_NO_SMART_CARDS
 
   rv = InitializeNSSWithFallbacks(profileStr, nocertdb, inSafeMode);
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
@@ -1618,8 +1641,15 @@ void nsNSSComponent::PrepareForShutdown() {
 
   // Release the default CertVerifier. This will cause any held NSS resources
   // to be released.
-  MutexAutoLock lock(mMutex);
-  mDefaultCertVerifier = nullptr;
+  {
+    MutexAutoLock lock(mMutex);
+    mDefaultCertVerifier = nullptr;
+  }
+
+  // Unload osclientcerts so it drops any held resources and stops its
+  // background thread.
+  AsyncLoadOrUnloadOSClientCertsModule(false);
+
   // We don't actually shut down NSS - XPCOM does, after all threads have been
   // joined and the component manager has been shut down (and so there shouldn't
   // be any XPCOM objects holding NSS resources).
@@ -1689,7 +1719,6 @@ nsNSSComponent::Observe(nsISupports* aSubject, const char* aTopic,
             "security.pki.certificate_transparency.disable_for_hosts") ||
         prefName.EqualsLiteral(
             "security.pki.certificate_transparency.disable_for_spki_hashes") ||
-        prefName.EqualsLiteral("security.pki.netscape_step_up_policy") ||
         prefName.EqualsLiteral("security.OCSP.timeoutMilliseconds.soft") ||
         prefName.EqualsLiteral("security.OCSP.timeoutMilliseconds.hard") ||
         prefName.EqualsLiteral("security.pki.crlite_mode")) {
@@ -1868,7 +1897,7 @@ nsNSSComponent::ClearSSLExternalAndInternalSessionCache() {
       mozilla::net::gIOService->CallOrWaitForSocketProcess([]() {
         RefPtr<mozilla::net::SocketProcessParent> socketParent =
             mozilla::net::SocketProcessParent::GetSingleton();
-        Unused << socketParent->SendClearSessionCache();
+        (void)socketParent->SendClearSessionCache();
       });
     }
   }
@@ -1902,7 +1931,7 @@ nsNSSComponent::AsyncClearSSLExternalAndInternalSessionCache(
                                                               promise}]() {
       RefPtr<mozilla::net::SocketProcessParent> socketParent =
           mozilla::net::SocketProcessParent::GetSingleton();
-      Unused << socketParent->SendClearSessionCache()->Then(
+      (void)socketParent->SendClearSessionCache()->Then(
           GetCurrentSerialEventTarget(), __func__,
           [promise = RefPtr{p}] { promise->MaybeResolveWithUndefined(); },
           [promise = RefPtr{p}] { promise->MaybeReject(NS_ERROR_UNEXPECTED); });
@@ -1978,7 +2007,7 @@ static inline void CopyCertificatesTo(UniqueCERTCertList& from,
     MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
             ("      provisionally adding '%s'", n->cert->subjectName));
     if (CERT_AddCertToListTail(to.get(), cert.get()) == SECSuccess) {
-      Unused << cert.release();
+      (void)cert.release();
     }
   }
 }

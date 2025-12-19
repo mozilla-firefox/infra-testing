@@ -4,48 +4,48 @@
 
 #include "AudioConduit.h"
 
-#include "common/browser_logging/CSFLog.h"
-#include "MediaConduitControl.h"
-#include "transport/SrtpFlow.h"  // For SRTP_MAX_EXPANSION
-#include "WebrtcCallWrapper.h"
-#include "libwebrtcglue/FrameTransformer.h"
 #include <vector>
+
 #include "CodecConfig.h"
-#include "mozilla/StateMirroring.h"
-#include <vector>
+#include "MediaConduitControl.h"
+#include "WebrtcCallWrapper.h"
+#include "common/browser_logging/CSFLog.h"
+#include "libwebrtcglue/FrameTransformer.h"
 #include "mozilla/MozPromise.h"
-#include "mozilla/RefPtr.h"
 #include "mozilla/RWLock.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/StateMirroring.h"
+#include "transport/SrtpFlow.h"  // For SRTP_MAX_EXPANSION
 
 // libwebrtc includes
-#include "api/audio_codecs/builtin_audio_encoder_factory.h"
-#include "audio/audio_receive_stream.h"
-#include "media/base/media_constants.h"
-#include "rtc_base/ref_counted_object.h"
+#include <stdint.h>
 
+#include <limits>
+#include <memory>
+#include <string>
+#include <utility>
+
+#include "MainThreadUtils.h"
+#include "MediaConduitErrors.h"
+#include "MediaConduitInterface.h"
 #include "api/audio/audio_frame.h"
 #include "api/audio/audio_mixer.h"
 #include "api/audio_codecs/audio_format.h"
+#include "api/audio_codecs/builtin_audio_encoder_factory.h"
 #include "api/call/transport.h"
 #include "api/media_types.h"
 #include "api/rtp_headers.h"
 #include "api/rtp_parameters.h"
 #include "api/transport/rtp/rtp_source.h"
-#include <utility>
+#include "audio/audio_receive_stream.h"
 #include "call/audio_receive_stream.h"
 #include "call/audio_send_stream.h"
 #include "call/call_basic_stats.h"
 #include "domstubs.h"
 #include "jsapi/RTCStatsReport.h"
-#include <limits>
-#include "MainThreadUtils.h"
-#include <map>
-#include "MediaConduitErrors.h"
-#include "MediaConduitInterface.h"
-#include <memory>
+#include "media/base/media_constants.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/Atomics.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/StateWatching.h"
 #include "nsCOMPtr.h"
@@ -54,8 +54,7 @@
 #include "nsThreadUtils.h"
 #include "rtc_base/copy_on_write_buffer.h"
 #include "rtc_base/network/sent_packet.h"
-#include <stdint.h>
-#include <string>
+#include "rtc_base/ref_counted_object.h"
 #include "transport/mediapacket.h"
 
 // for ntohs
@@ -79,7 +78,7 @@ static const char* acLogTag = "WebrtcAudioSessionConduit";
 #endif
 #define LOGTAG acLogTag
 
-using namespace cricket;
+using namespace webrtc;
 using LocalDirection = MediaSessionConduitLocalDirection;
 
 const char kCodecParamCbr[] = "cbr";
@@ -95,8 +94,16 @@ RefPtr<AudioSessionConduit> AudioSessionConduit::Create(
   CSFLogDebug(LOGTAG, "%s ", __FUNCTION__);
   MOZ_ASSERT(NS_IsMainThread());
 
-  return MakeRefPtr<WebrtcAudioConduit>(std::move(aCall),
-                                        std::move(aStsThread));
+  auto conduit =
+      MakeRefPtr<WebrtcAudioConduit>(std::move(aCall), std::move(aStsThread));
+  if (conduit->Init() != kMediaConduitNoError) {
+    CSFLogError(LOGTAG, "%s AudioConduit Init Failed ", __FUNCTION__);
+    return nullptr;
+  }
+
+  CSFLogDebug(LOGTAG, "%s Successfully created AudioConduit %p", __FUNCTION__,
+              conduit.get());
+  return conduit;
 }
 
 #define INIT_MIRROR(name, val) \
@@ -121,6 +128,10 @@ RefPtr<GenericPromise> WebrtcAudioConduit::Shutdown() {
   MOZ_ASSERT(NS_IsMainThread());
 
   mControl.mOnDtmfEventListener.DisconnectIfExists();
+  mReceiverRtpEventListener.DisconnectIfExists();
+  mReceiverRtcpEventListener.DisconnectIfExists();
+  mSenderRtcpEventListener.DisconnectIfExists();
+  mRtpSources.DisconnectIfConnected();
 
   return InvokeAsync(
       mCallThread, "WebrtcAudioConduit::Shutdown (main thread)",
@@ -145,11 +156,31 @@ RefPtr<GenericPromise> WebrtcAudioConduit::Shutdown() {
           DeleteSendStream();
           DeleteRecvStream();
         }
+        // Clear the stats send stream stats cache
+        mTransitionalSendStreamStats = Nothing();
+
+        SetIsShutdown();
 
         return GenericPromise::CreateAndResolve(
             true, "WebrtcAudioConduit::Shutdown (call thread)");
       });
 }
+
+bool WebrtcAudioConduit::IsShutdown() const {
+  MOZ_ASSERT(mCallThread->IsOnCurrentThread());
+  return mIsShutdown;
+}
+
+void WebrtcAudioConduit::SetIsShutdown() {
+  MOZ_ASSERT(mCallThread->IsOnCurrentThread());
+  mIsShutdown = true;
+}
+
+#define INIT_CANONICAL(name, val) \
+  name(mCallThread, val, "WebrtcAudioConduit::" #name " (Canonical)")
+#define INIT_MIRROR(name, val)            \
+  name(AbstractThread::MainThread(), val, \
+       "WebrtcAudioConduit::" #name " (Mirror)")
 
 WebrtcAudioConduit::WebrtcAudioConduit(
     RefPtr<WebrtcCallWrapper> aCall, nsCOMPtr<nsISerialEventTarget> aStsThread)
@@ -166,10 +197,14 @@ WebrtcAudioConduit::WebrtcAudioConduit(
       mCallThread(mCall->mCallThread),
       mStsThread(std::move(aStsThread)),
       mControl(mCall->mCallThread),
-      mWatchManager(this, mCall->mCallThread) {
+      mWatchManager(this, mCall->mCallThread),
+      INIT_CANONICAL(mCanonicalRtpSources, {}),
+      INIT_MIRROR(mRtpSources, {}) {
   mRecvStreamConfig.rtcp_send_transport = &mRecvTransport;
   mRecvStreamConfig.rtp.rtcp_event_observer = this;
 }
+#undef INIT_MIRROR
+#undef INIT_CANONICAL
 
 /**
  * Destruction defines for our super-classes
@@ -217,6 +252,12 @@ void WebrtcAudioConduit::InitControl(AudioConduitControlInterface* aControl) {
 }
 
 #undef CONNECT
+
+MediaConduitErrorCode WebrtcAudioConduit::Init() {
+  MOZ_ASSERT(NS_IsMainThread());
+  mRtpSources.Connect(&mCanonicalRtpSources);
+  return kMediaConduitNoError;
+}
 
 void WebrtcAudioConduit::OnDtmfEvent(const DtmfEvent& aEvent) {
   MOZ_ASSERT(mCallThread->IsOnCurrentThread());
@@ -313,6 +354,14 @@ void WebrtcAudioConduit::OnControlConfigChange() {
 
         webrtc::AudioSendStream::Config::SendCodecSpec spec(
             aConfig.mType, CodecConfigToLibwebrtcFormat(aConfig));
+        if (const auto& maxBps = mControl.mConfiguredSendCodec
+                                     ->mEncodingConstraints.maxBitrateBps) {
+          const auto& info =
+              mSendStreamConfig.encoder_factory->QueryAudioEncoder(spec.format);
+          spec.target_bitrate_bps =
+              std::clamp(AssertedCast<int>(*maxBps), info->min_bitrate_bps,
+                         info->max_bitrate_bps);
+        }
         mSendStreamConfig.send_codec_spec = spec;
 
         mDtmfEnabled = aConfig.mDtmfEnabled;
@@ -343,7 +392,7 @@ void WebrtcAudioConduit::OnControlConfigChange() {
         mControl.mFrameTransformerProxySend.Ref();
     if (!mSendStreamConfig.frame_transformer) {
       mSendStreamConfig.frame_transformer =
-          new rtc::RefCountedObject<FrameTransformer>(false);
+          new webrtc::RefCountedObject<FrameTransformer>(false);
       sendStreamRecreationNeeded = true;
     }
     static_cast<FrameTransformer*>(mSendStreamConfig.frame_transformer.get())
@@ -356,7 +405,7 @@ void WebrtcAudioConduit::OnControlConfigChange() {
         mControl.mFrameTransformerProxyRecv.Ref();
     if (!mRecvStreamConfig.frame_transformer) {
       mRecvStreamConfig.frame_transformer =
-          new rtc::RefCountedObject<FrameTransformer>(false);
+          new webrtc::RefCountedObject<FrameTransformer>(false);
       recvStreamRecreationNeeded = true;
     }
     static_cast<FrameTransformer*>(mRecvStreamConfig.frame_transformer.get())
@@ -388,6 +437,9 @@ void WebrtcAudioConduit::OnControlConfigChange() {
       CreateRecvStream();
     }
     if (sendStreamRecreationNeeded) {
+      if (mControl.mTransmitting) {
+        MemoSendStreamStats();
+      }
       DeleteSendStream();
     }
     if (mControl.mTransmitting) {
@@ -477,8 +529,11 @@ Maybe<webrtc::AudioSendStream::Stats> WebrtcAudioConduit::GetSenderStats()
     const {
   MOZ_ASSERT(mCallThread->IsOnCurrentThread());
   if (!mSendStream) {
-    return Nothing();
+    // Might be nothing
+    return mTransitionalSendStreamStats;
   }
+  // Successfully got stats, so clear the transitional stats.
+  mTransitionalSendStreamStats = Nothing();
   return Some(mSendStream->GetStats());
 }
 
@@ -502,23 +557,6 @@ void WebrtcAudioConduit::SetTransportActive(bool aActive) {
 
   // If false, This stops us from sending
   mTransportActive = aActive;
-
-  // We queue this because there might be notifications to these listeners
-  // pending, and we don't want to drop them by letting this jump ahead of
-  // those notifications. We move the listeners into the lambda in case the
-  // transport comes back up before we disconnect them. (The Connect calls
-  // happen in MediaPipeline)
-  // We retain a strong reference to ourself, because the listeners are holding
-  // a non-refcounted reference to us, and moving them into the lambda could
-  // conceivably allow them to outlive us.
-  if (!aActive) {
-    MOZ_ALWAYS_SUCCEEDS(mCallThread->Dispatch(NS_NewRunnableFunction(
-        __func__,
-        [self = RefPtr<WebrtcAudioConduit>(this),
-         recvRtpListener = std::move(mReceiverRtpEventListener)]() mutable {
-          recvRtpListener.DisconnectIfExists();
-        })));
-  }
 }
 
 // AudioSessionConduit Implementation
@@ -606,6 +644,16 @@ void WebrtcAudioConduit::OnRtpReceived(webrtc::RtpPacketReceived&& aPacket,
                                        webrtc::RTPHeader&& aHeader) {
   MOZ_ASSERT(mCallThread->IsOnCurrentThread());
 
+  // We should only be handling packets on this conduit if we are set to receive
+  // them.
+  if (!mControl.mReceiving) {
+    CSFLogVerbose(LOGTAG,
+                  "AudioConduit %p: Discarding packet SEQ# %u SSRC %u as not "
+                  "configured to receive.",
+                  this, aPacket.SequenceNumber(), aHeader.ssrc);
+    return;
+  }
+
   if (mAllowSsrcChange && mRecvStreamConfig.rtp.remote_ssrc != aHeader.ssrc) {
     CSFLogDebug(LOGTAG, "%s: switching from SSRC %u to %u", __FUNCTION__,
                 mRecvStreamConfig.rtp.remote_ssrc, aHeader.ssrc);
@@ -621,25 +669,8 @@ void WebrtcAudioConduit::OnRtpReceived(webrtc::RtpPacketReceived&& aPacket,
   // grab the value now while on the call thread, and dispatch to main
   // to store the cached value if we have new source information.
   // See Bug 1845621.
-  std::vector<webrtc::RtpSource> sources;
   if (mRecvStream) {
-    sources = mRecvStream->GetSources();
-  }
-
-  bool needsCacheUpdate = false;
-  {
-    AutoReadLock lock(mLock);
-    needsCacheUpdate = sources != mRtpSources;
-  }
-
-  // only dispatch to main if we have new data
-  if (needsCacheUpdate) {
-    GetMainThreadSerialEventTarget()->Dispatch(NS_NewRunnableFunction(
-        __func__, [this, rtpSources = std::move(sources),
-                   self = RefPtr<WebrtcAudioConduit>(this)]() {
-          AutoWriteLock lock(mLock);
-          mRtpSources = rtpSources;
-        }));
+    mCanonicalRtpSources = mRecvStream->GetSources();
   }
 
   mRtpPacketEvent.Notify();
@@ -654,6 +685,15 @@ void WebrtcAudioConduit::OnRtpReceived(webrtc::RtpPacketReceived&& aPacket,
               self.get(), packet.Ssrc(), packet.SequenceNumber());
           return false;
         });
+  }
+}
+
+void WebrtcAudioConduit::OnRtcpReceived(webrtc::CopyOnWriteBuffer&& aPacket) {
+  MOZ_ASSERT(mCallThread->IsOnCurrentThread());
+
+  if (mCall->Call()) {
+    mCall->Call()->Receiver()->DeliverRtcpPacket(
+        std::forward<webrtc::CopyOnWriteBuffer>(aPacket));
   }
 }
 
@@ -827,8 +867,8 @@ bool WebrtcAudioConduit::IsSamplingFreqSupported(int freq) const {
   return GetNum10msSamplesForFrequency(freq) != 0;
 }
 
-std::vector<webrtc::RtpSource> WebrtcAudioConduit::GetUpstreamRtpSources()
-    const {
+const std::vector<webrtc::RtpSource>&
+WebrtcAudioConduit::GetUpstreamRtpSources() const {
   MOZ_ASSERT(NS_IsMainThread());
   return mRtpSources;
 }
@@ -960,6 +1000,16 @@ void WebrtcAudioConduit::DeleteSendStream() {
   mRtpSendBaseSeqs.clear();
 }
 
+void WebrtcAudioConduit::MemoSendStreamStats() {
+  MOZ_ASSERT(mCallThread->IsOnCurrentThread());
+  // If we are going to be recreating the send stream, we hold onto stats until
+  // libwebrtc stats collection catches up.
+  if (mControl.mTransmitting && mSendStream) {
+    const auto stats = mSendStream->GetStats();
+    mTransitionalSendStreamStats = Some(stats);
+  }
+}
+
 void WebrtcAudioConduit::CreateSendStream() {
   MOZ_ASSERT(mCallThread->IsOnCurrentThread());
   MOZ_ASSERT(mLock.LockedForWritingByCurrentThread());
@@ -1011,7 +1061,7 @@ void WebrtcAudioConduit::SetJitterBufferTarget(DOMHighResTimeStamp aTargetMs) {
       })));
 }
 
-void WebrtcAudioConduit::DeliverPacket(rtc::CopyOnWriteBuffer packet,
+void WebrtcAudioConduit::DeliverPacket(webrtc::CopyOnWriteBuffer packet,
                                        PacketType type) {
   // Currently unused.
   MOZ_ASSERT(false);

@@ -21,7 +21,7 @@ class TestSessionRestore(SessionStoreTestCase):
     """
 
     def setUp(self):
-        super(TestSessionRestore, self).setUp(
+        super().setUp(
             startup_page=1,
             include_private=False,
             restore_on_demand=True,
@@ -227,19 +227,19 @@ class TestSessionRestore(SessionStoreTestCase):
             1,
             msg="Should have 1 window open.",
         )
-        self.assertFalse(
+        self.assertTrue(
             self.marionette.execute_script(
                 """
                 const window = BrowserWindowTracker.getTopWindow();
                 return window.SidebarController.sidebarContainer.hidden;
                 """
             ),
-            "Sidebar is visible before window is closed.",
+            "Sidebar is hidden before window is closed.",
         )
 
         self.marionette.restart()
 
-        self.assertFalse(
+        self.assertTrue(
             self.marionette.execute_script(
                 """
                 const window = BrowserWindowTracker.getTopWindow();
@@ -289,3 +289,18 @@ class TestSessionRestore(SessionStoreTestCase):
             "viewHistorySidebar",
             "Correct sidebar category has been restored.",
         )
+
+    def test_upgrade_profile_and_restore_sidebar_from_backup_pref(self):
+        # Bug 1963549 - Sidebar bookmarks no longer open automatically since the last update.
+        self.marionette.execute_script(
+            """
+            Services.prefs.setIntPref("browser.migration.version", 154);
+            Services.xulStore.setValue(
+                AppConstants.BROWSER_CHROME_URL,
+                "sidebar-box",
+                "checked",
+                "true"
+            );
+            """
+        )
+        self.test_restore_sidebar_open_from_backup_pref()

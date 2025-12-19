@@ -50,6 +50,18 @@ const sitePermissionsL10n = {
     window: "permissions-site-autoplay-window2",
     description: "permissions-site-autoplay-desc",
   },
+  localhost: {
+    window: "permissions-site-localhost-window",
+    description: "permissions-site-localhost-desc",
+    disableLabel: "permissions-site-localhost-disable-label",
+    disableDescription: "permissions-site-localhost-disable-desc",
+  },
+  "local-network": {
+    window: "permissions-site-local-network-window",
+    description: "permissions-site-local-network-desc",
+    disableLabel: "permissions-site-local-network-disable-label",
+    disableDescription: "permissions-site-local-network-disable-desc",
+  },
 };
 
 const sitePermissionsConfig = {
@@ -175,6 +187,9 @@ var gSitePermissionsManager = {
     this._removeButton = document.getElementById("removePermission");
     this._removeAllButton = document.getElementById("removeAllPermissions");
     this._searchBox = document.getElementById("searchBox");
+    this._searchBox.addEventListener("MozInputSearch:search", () =>
+      this.buildPermissionsList()
+    );
     this._checkbox = document.getElementById("permissionsDisableCheckbox");
     this._disableExtensionButton = document.getElementById(
       "disableNotificationsPermissionExtension"
@@ -284,9 +299,6 @@ var gSitePermissionsManager = {
         switch (event.target.id) {
           case "key_close":
             window.close();
-            break;
-          case "searchBox":
-            this.buildPermissionsList();
             break;
           case "removePermission":
             this.onPermissionDelete();

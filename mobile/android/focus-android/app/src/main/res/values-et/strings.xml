@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -55,7 +62,6 @@
   <string name="menu_settings">Sätted</string>
   <string name="menu_about">Teave</string>
   <string name="menu_help">Abi</string>
-  <string name="menu_rights" moz:removedIn="137">Sinu õigused</string>
   <!--
     Menu item: This is the label for a menu entry that shows how many trackers have been blocked
     for the currently loaded website. The number of blocked trackers is shown below this label.
@@ -119,16 +125,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote">&lt;p&gt;%1$s annab kontrolli sulle.&lt;/p&gt;
-&lt;p&gt;Kasuta seda kui privaatset brauserit:
-  &lt;ul&gt;
-    &lt;li&gt;Otsi ja lehitse otse äpis&lt;/li&gt;
-    &lt;li&gt;Bloki jälitajaid (või muuda sätteid, et mõni jälitaja lubada)&lt;/li&gt;
-    &lt;li&gt;Kustuta küpsised ja ka lehitsemise ajalugu&lt;/li&gt;
-  &lt;/ul&gt;
-&lt;/p&gt;
-&lt;p&gt;%1$s on Mozilla poolt toodetud. Meie missiooniks on edendada tervet ja avatud internetti.&lt;br/&gt;
-&lt;a href="%2$s"&gt;Rohkem teavet&lt;/a&gt;&lt;/p&gt;</string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s annab kontrolli sulle.</p>\n<p>Kasuta seda kui privaatset brauserit:\n<ul>\n<li>Otsi ja lehitse otse äpis</li>\n<li>Bloki jälitajaid (või muuda sätteid, et mõni jälitaja lubada)</li>\n<li>Kustuta küpsised ja ka lehitsemise ajalugu</li>\n</ul> </p>\n<p>%1$s on Mozilla poolt toodetud. Meie missiooniks on edendada tervet ja avatud internetti.<br/>\n<a href=\"%2$s\">Rohkem teavet</a></p>]]></string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">Privaatsus ja turvalisus</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -471,36 +468,6 @@
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
   -->
   <string name="download_firefox" tools:ignore="BrandUsage">Laadi alla Firefox</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-  -->
-  <string name="your_rights_content1" moz:removedIn="137">%1$s on Mozilla ja teiste kaasautorite poolt loodud vaba ja avatud tarkvara.</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-    %2$s will be replaced with a URL linking to the MPL (e.g. https://www.mozilla.org/en-US/MPL/)
-  -->
-  <string name="your_rights_content2" moz:removedIn="137" tools:ignore="IncorrectStraightDoubleQuote">%1$s on kättesaadavaks tehtud &lt;a href="%2$s"&gt;Mozilla avaliku litsentsi&lt;/a&gt; ja muude avatud lähtekoodi litsentside tingimuste alusel.</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-    %2$s will be replaced with a URL linking to the trademark policy (e.g. https://www.mozilla.org/foundation/trademarks/policy/)
-  -->
-  <string name="your_rights_content3" moz:removedIn="137" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote">Sulle ei anta mingeid õigusi ega litsentse Mozilla Foundationi ega ühegi osapoole kaubamärkidele, sealhulgas Mozilla, Firefoxi või %1$se nimedele või logodele. &lt;a href="%2$s"&gt;Lisateave&lt;/a&gt;.</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-    %2$s will be replaced with a URL linking to the list of licenses used by the dependencies.
-  -->
-  <string name="your_rights_content4" moz:removedIn="137" tools:ignore="IncorrectStraightDoubleQuote">%1$se täiendav lähtekood on saadaval mitmesuguste vaba ja avatud lähtekoodi &lt;a href="%2$s"&gt;litsentside&lt;/a&gt; alusel.</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-    %2$s will be replaced with a URL linking to the GPL
-    %3$s will be replaced with a URL linking to the tracking protection wiki page (e.g. https://wiki.mozilla.org/Security/Tracking_protection#Lists)
-  -->
-  <string name="your_rights_content5" moz:removedIn="137" tools:ignore="IncorrectStraightDoubleQuote">%1$s kasutab ka Disconnect, Inc. poolt pakutavat blokkimise nimekirja kui eraldiseisvat ja sõltumatut tööd &lt;a href="%2$s"&gt;GNU GPL v3 litsentsi&lt;/a&gt; all, mis on saadaval &lt;a href="%3$s"&gt;siin&lt;/a&gt;.</string>
   <!-- Text shown in prompts for GeckoView -->
   <string name="gv_prompt_username_hint">Kasutajanimi</string>
   <string name="gv_prompt_password_hint">Parool</string>
@@ -560,11 +527,11 @@
   <!-- First step for the allowing a permission -->
   <string name="phone_feature_blocked_step_settings">1. Mine Androidi sätetesse</string>
   <!-- Second step for the allowing a permission -->
-  <string name="phone_feature_blocked_step_permissions">2. Puuduta &lt;b&gt;Load&lt;/b&gt;</string>
+  <string name="phone_feature_blocked_step_permissions"><![CDATA[2. Puuduta <b>Load</b>]]></string>
   <!-- Button label that take the user to the Android App setting -->
   <string name="phone_feature_go_to_settings">Mine sätetesse</string>
   <!-- Third step for allowing a permission. %1$s is the permission name, for example, "Camera" -->
-  <string name="phone_feature_blocked_step_feature">3. Lülita &lt;b&gt;%1$s&lt;/b&gt; olekusse SEES</string>
+  <string name="phone_feature_blocked_step_feature"><![CDATA[3. Lülita <b>%1$s</b> olekusse SEES]]></string>
   <!-- Preference for altering the camera access for all websites -->
   <string name="preference_phone_feature_camera">Kaamera</string>
   <!-- Preference for altering the microphone access for all websites -->
@@ -591,20 +558,6 @@
   <string name="preference_block_autoplay_audio_only_summary">Soovitatud</string>
   <!-- Preference for block autoplay audio and video -->
   <string name="preference_block_autoplay_audio_video">Blokitakse heli ja video</string>
-  <!-- Preference for studies -->
-  <string name="preference_studies">Uuringud</string>
-  <!-- Preference for studies summary -->
-  <string name="preference_studies_summary" tools:ignore="BrandUsage">Firefox võib aegajalt paigaldada ja käivitada uuringuid.</string>
-  <!-- Learn more link for studies, links to an article for more information about studies. -->
-  <string name="studies_learn_more">Rohkem teavet</string>
-  <!-- Dialog message shown when some changes are made on studies -->
-  <string name="studies_restart_app" moz:removedIn="137">Muudatuste rakendamiseks äpp suletakse</string>
-  <!-- Title of the remove studies button -->
-  <string name="studies_remove">Eemalda</string>
-  <!-- Title of the active section on the studies list -->
-  <string name="studies_active">Aktiivne</string>
-  <!-- Title of the completed section on the studies list -->
-  <string name="studies_completed">Lõpetatud</string>
   <!-- Preference to enable remote debugging of the app via USB or Wi-Fi -->
   <string name="preference_remote_debugging">Kaugsilumine USB/Wi-Fi kaudu</string>
   <!-- Text Button for show biometric prompt -->
@@ -651,8 +604,7 @@
     Tip displayed on home view explaining how to disable tracking protection
     The new line here must be kept as the second half of the string is clickable for the user.
   -->
-  <string name="tip_disable_tracking_protection">Kas sait käitub ootamatult?\n
-    Proovi jälitamisvastane kaitse välja lülitada</string>
+  <string name="tip_disable_tracking_protection">Kas sait käitub ootamatult?\nProovi jälitamisvastane kaitse välja lülitada</string>
   <!--
     Tip displayed on home view explaining how to add sites to homescreen
     %1$s is replaced with a line break in the application.
@@ -663,23 +615,17 @@
     %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     The new line here must be kept as the second half of the string is clickable for the user.
   -->
-  <string name="tip_set_default_browser">Ava kõik lingid %1$ses\n
-        Määra %1$s vaikebrauseriks
-    </string>
+  <string name="tip_set_default_browser">Ava kõik lingid %1$ses\nMäära %1$s vaikebrauseriks</string>
   <!--
     Tip displayed on home view explaining how to add a custom autocomplete URL
     The new line here must be kept as the second half of the string is clickable for the user.
   -->
-  <string name="tip_autocomplete_url">Lõpeta enimkülastatud saitide URLid automaatselt\n
-        Puuduta pikalt mis tahes URLi aadressiribal
-    </string>
+  <string name="tip_autocomplete_url">Lõpeta enimkülastatud saitide URLid automaatselt\nPuuduta pikalt mis tahes URLi aadressiribal</string>
   <!--
     Tip displayed on home view explaining how to add a custom autocomplete URL
     The new line here must be kept as the second half of the string is clickable for the user.
   -->
-  <string name="tip_open_in_new_tab">Ava link uuel kaardil\n
-        Puuduta pikalt mis tahes linki lehel
-    </string>
+  <string name="tip_open_in_new_tab">Ava link uuel kaardil\nPuuduta pikalt mis tahes linki lehel</string>
   <!-- Tip displayed on home view explaining how to add a custom autocomplete URL -->
   <string name="tip_disable_tips2">Lülita näpunäited avakuval välja</string>
   <!-- Label for the snackbar when a user opens a new tab -->
@@ -760,7 +706,7 @@
     Text for context menu additional note.
     %1$s is a placeholder for the app name.
   -->
-  <string name="contextmenu_erased_images_note2">Salvestatud ja jagatud pilte &lt;b&gt;ei&lt;/b&gt; kustutata %1$se ajaloo kustutamisel</string>
+  <string name="contextmenu_erased_images_note2"><![CDATA[Salvestatud ja jagatud pilte <b>ei</b> kustutata %1$se ajaloo kustutamisel]]></string>
   <!--
     Theme Preferences
 

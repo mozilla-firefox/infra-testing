@@ -46,13 +46,11 @@ static int nr_stun_client_send_request(nr_stun_client_ctx *ctx);
 static void nr_stun_client_timer_expired_cb(NR_SOCKET s, int b, void *cb_arg);
 static int nr_stun_client_get_password(void *arg, nr_stun_message *msg, Data **password);
 
-#define NR_STUN_TRANSPORT_ADDR_CHECK_WILDCARD 1
-#define NR_STUN_TRANSPORT_ADDR_CHECK_LOOPBACK 2
-
-int nr_stun_client_ctx_create(char *label, nr_socket *sock, nr_transport_addr *peer, UINT4 RTO, nr_stun_client_ctx **ctxp)
+int nr_stun_client_ctx_create(char* label, nr_socket* sock,
+                              nr_transport_addr* peer, UINT4 RTO, int flags,
+                              nr_stun_client_ctx** ctxp)
   {
     nr_stun_client_ctx *ctx=0;
-    char allow_loopback;
     int r,_status;
 
     if ((r=nr_stun_startup()))
@@ -87,11 +85,7 @@ int nr_stun_client_ctx_create(char *label, nr_socket *sock, nr_transport_addr *p
     if (NR_reg_get_uint4(NR_STUN_REG_PREF_CLNT_FINAL_RETRANSMIT_BACKOFF, &ctx->maximum_transmits_timeout_ms))
       ctx->maximum_transmits_timeout_ms = 16 * ctx->rto_ms;
 
-    ctx->mapped_addr_check_mask = NR_STUN_TRANSPORT_ADDR_CHECK_WILDCARD;
-    if (NR_reg_get_char(NR_STUN_REG_PREF_ALLOW_LOOPBACK_ADDRS, &allow_loopback) ||
-        !allow_loopback) {
-      ctx->mapped_addr_check_mask |= NR_STUN_TRANSPORT_ADDR_CHECK_LOOPBACK;
-    }
+    ctx->mapped_addr_check_mask=flags;
 
     if (ctx->my_addr.protocol == IPPROTO_TCP) {
       /* Because TCP is reliable there is only one final timeout value.
@@ -132,6 +126,17 @@ int nr_stun_client_start(nr_stun_client_ctx *ctx, int mode, NR_async_cb finished
     if (ctx->state != NR_STUN_CLIENT_STATE_INITTED)
         ABORT(R_NOT_PERMITTED);
 
+    /* We allow wildcard here if this is TCP, because we don't set the
+     * destination address in many cases. */
+    int flags = ctx->mapped_addr_check_mask;
+    if (ctx->peer_addr.protocol == IPPROTO_TCP) {
+      flags &= ~NR_STUN_TRANSPORT_ADDR_CHECK_WILDCARD;
+    }
+    if ((r=nr_stun_transport_addr_check(&ctx->peer_addr, flags))) {
+        r_log(NR_LOG_STUN,LOG_WARNING,"STUN-CLIENT(%s): Peer address is bogus",ctx->label);
+        ABORT(r);
+    }
+
     ctx->mode=mode;
 
     ctx->state=NR_STUN_CLIENT_STATE_RUNNING;
@@ -149,30 +154,6 @@ int nr_stun_client_start(nr_stun_client_ctx *ctx, int mode, NR_async_cb finished
      nr_stun_client_fire_finished_cb(ctx);
     }
 
-    return(_status);
-  }
-
-  int nr_stun_client_restart(nr_stun_client_ctx* ctx,
-                             const nr_transport_addr* peer_addr) {
-    int r,_status;
-    int mode;
-    NR_async_cb finished_cb;
-    void *cb_arg;
-    if (ctx->state != NR_STUN_CLIENT_STATE_RUNNING)
-        ABORT(R_NOT_PERMITTED);
-
-    mode = ctx->mode;
-    finished_cb = ctx->finished_cb;
-    cb_arg = ctx->cb_arg;
-
-    nr_stun_client_reset(ctx);
-    nr_transport_addr_copy(&ctx->peer_addr, peer_addr);
-
-    if (r=nr_stun_client_start(ctx, mode, finished_cb, cb_arg))
-      ABORT(r);
-
-    _status=0;
-  abort:
     return(_status);
   }
 
@@ -377,6 +358,11 @@ static int nr_stun_client_send_request(nr_stun_client_ctx *ctx)
 
     assert(ctx->my_addr.protocol==ctx->peer_addr.protocol);
 
+    // Set request_time on the initial request, not retransmissions. (mjf)
+    if (!ctx->retransmit_ct) {
+      gettimeofday(&ctx->request_time, 0);
+    }
+
     if(r=nr_socket_sendto(ctx->sock, ctx->request->buffer, ctx->request->length, 0, &ctx->peer_addr)) {
       if (r != R_WOULDBLOCK) {
         ABORT(r);
@@ -435,6 +421,9 @@ int nr_stun_transport_addr_check(nr_transport_addr* addr, UINT4 check)
       return(R_BAD_DATA);
 
     if ((check & NR_STUN_TRANSPORT_ADDR_CHECK_LOOPBACK) && nr_transport_addr_is_loopback(addr))
+      return(R_BAD_DATA);
+
+    if ((check & NR_STUN_TRANSPORT_ADDR_CHECK_LINK_LOCAL) && nr_transport_addr_is_link_local(addr))
       return(R_BAD_DATA);
 
     return(0);
@@ -572,6 +561,18 @@ int nr_stun_client_process_response(nr_stun_client_ctx *ctx, UCHAR *msg, int len
     if ((r=nr_stun_receive_message(ctx->request, ctx->response))) {
         r_log(NR_LOG_STUN,LOG_DEBUG,"STUN-CLIENT(%s): Response is not for us",ctx->label);
         ABORT(r);
+    }
+
+    if (!ctx->rtt_valid) {
+      struct timeval now;
+      gettimeofday(&now, 0);
+      INT8 ms_rtt = 0;
+      if (!r_timeval_diff_ms(&now, &ctx->request_time, &ms_rtt)) {
+          /* It would be great if we had access to std::optional here instead
+             of using a "boolean" to indicate validity. */
+          ctx->rtt_valid = 1;
+          ctx->rtt_ms = ms_rtt;
+      }
     }
 
     r_log(NR_LOG_STUN,LOG_INFO,

@@ -23,8 +23,6 @@ import traceback
 from datetime import datetime
 from queue import Empty, Queue
 
-import six
-
 # Set the MOZPROCESS_DEBUG environment variable to 1 to see some debugging output
 MOZPROCESS_DEBUG = os.getenv("MOZPROCESS_DEBUG")
 
@@ -1098,11 +1096,22 @@ class ProcessReader:
 
     def _read_stream(self, stream, queue, callback):
         sentinel = "" if isinstance(stream, io.TextIOBase) else b""
-        for line in iter(stream.readline, sentinel):
-            queue.put((line, callback))
+        try:
+            for line in iter(stream.readline, sentinel):
+                queue.put((line, callback))
+        except ValueError as e:
+            if "I/O operation on closed file" in str(e):
+                # Stream was closed by the process, this is normal
+                pass
+            else:
+                raise
         # Give a chance to the reading loop to exit without a timeout.
         queue.put((b"", None))
-        stream.close()
+        try:
+            stream.close()
+        except ValueError:
+            # Stream might already be closed
+            pass
 
     def start(self, proc):
         queue = Queue()
@@ -1203,9 +1212,16 @@ class StreamOutput:
         self.text = text
 
     def __call__(self, line):
-        ensure = six.ensure_text if self.text else six.ensure_binary
+        if self.text:
+            if isinstance(line, bytes):
+                line = line.decode(errors="ignore")
+            line += "\n"
+        else:
+            if isinstance(line, str):
+                line = line.encode(errors="ignore")
+            line += b"\n"
         try:
-            self.stream.write(ensure(line, errors="ignore") + ensure("\n"))
+            self.stream.write(line)
         except TypeError:
             print(
                 "HEY! If you're reading this, you're about to encounter a "

@@ -4,6 +4,9 @@ Telemetry
 This document describes search telemetry recorded by Toolkit such as search
 service telemetry and telemetry related to fetching search suggestions.
 
+This document only covers Legacy telemetry, not Glean telemetry.
+Glean metrics are self-documenting and can be looked up in the Glean dictionary.
+
 Other important search-related telemetry is recorded by Firefox and is
 documented in :doc:`/browser/search/telemetry` in the Firefox documentation.
 
@@ -16,26 +19,58 @@ Scalars
 browser.searchinit.secure_opensearch_engine_count
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+  NOTE: This telemetry is no longer reported to legacy Telemetry. See changelog
+  below.
+
   Records the number of secure (i.e., using https) OpenSearch search
   engines a given user has installed.
+
+  Changelog
+    Firefox 144
+      Legacy ``browser.searchinit.secure_opensearch_engine_count`` telemetry
+      removed completely. (See bug 1984462)
 
 browser.searchinit.insecure_opensearch_engine_count
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+  NOTE: This telemetry is no longer reported to legacy Telemetry. See changelog
+  below.
+
   Records the number of insecure (i.e., using http) OpenSearch search
   engines a given user has installed.
+
+  Changelog
+    Firefox 144
+      Legacy ``browser.searchinit.insecure_opensearch_engine_count`` telemetry
+      removed completely. (See bug 1984462)
 
 browser.searchinit.secure_opensearch_update_count
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+  NOTE: This telemetry is no longer reported to legacy Telemetry. See changelog
+  below.
+
   Records the number of OpenSearch search engines with secure updates
   enabled (i.e., using https) a given user has installed.
+
+  Changelog
+    Firefox 144
+      Legacy ``browser.searchinit.secure_opensearch_update_count`` telemetry
+      removed completely. (See bug 1984462)
 
 browser.searchinit.insecure_opensearch_update_count
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+  NOTE: This telemetry is no longer reported to legacy Telemetry. See changelog
+  below.
+
   Records the number of OpenSearch search engines with insecure updates
   enabled (i.e., using http) a given user has installed.
+
+  Changelog
+    Firefox 144
+      Legacy ``browser.searchinit.insecure_opensearch_update_count`` telemetry
+      removed completely. (See bug 1984462)
 
 Keyed Scalars
 -------------
@@ -106,11 +141,10 @@ search.service.initializationStatus
 
   A counter for initialization successes on start up.
 
-search.suggestions.*
-~~~~~~~~~~~~~~~~~~~~
+search.suggestions.latency
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-  Labeled counters to count the number of suggestion requests sent from app-
-  provided search engines. There are three separate counters for the number of
-  successful, aborted and failed requests. Aborted requests can happen when
-  users type faster than the search engine responds and failed requests when
-  there is an HTTP or network error.
+  A labelled timing distribution that records the latencies (ms) of search
+  suggestions fetches per search engine. Keys in this histogram are the search
+  engine identifier for configuration provided search engines and 'other' for
+  search engines installed via other methods.

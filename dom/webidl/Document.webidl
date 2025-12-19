@@ -17,6 +17,7 @@
  */
 
 interface ContentSecurityPolicy;
+interface PolicyContainer;
 interface Principal;
 interface WindowProxy;
 interface nsISupports;
@@ -105,11 +106,6 @@ interface Document : Node {
   [NewObject, Throws]
   TreeWalker createTreeWalker(Node root, optional unsigned long whatToShow = 0xFFFFFFFF, optional NodeFilter? filter = null);
 
-  // NEW
-  // No support for prepend/append yet
-  // undefined prepend((Node or DOMString)... nodes);
-  // undefined append((Node or DOMString)... nodes);
-
   // These are not in the spec, but leave them for now for backwards compat.
   // So sort of like Gecko extensions
   [NewObject, Throws]
@@ -122,8 +118,8 @@ interface Document : Node {
 
 // https://html.spec.whatwg.org/multipage/dom.html#the-document-object
 partial interface Document {
-  [Pref="dom.webcomponents.shadowdom.declarative.enabled", Throws]
-  static Document parseHTMLUnsafe((TrustedHTML or DOMString) html);
+  [Throws, NeedsSubjectPrincipal=NonSystem]
+  static Document parseHTMLUnsafe((TrustedHTML or DOMString) html, optional SetHTMLUnsafeOptions options = {});
 
   [PutForwards=href, LegacyUnforgeable] readonly attribute Location? location;
   [SetterThrows]                           attribute DOMString domain;
@@ -159,9 +155,9 @@ partial interface Document {
   WindowProxy? open(UTF8String url, DOMString name, DOMString features);
   [CEReactions, Throws]
   undefined close();
-  [CEReactions, Throws]
+  [CEReactions, Throws, NeedsSubjectPrincipal=NonSystem]
   undefined write((TrustedHTML or DOMString)... text);
-  [CEReactions, Throws]
+  [CEReactions, Throws, NeedsSubjectPrincipal=NonSystem]
   undefined writeln((TrustedHTML or DOMString)... text);
 
   // user interaction
@@ -180,7 +176,7 @@ partial interface Document {
   boolean queryCommandIndeterm(DOMString commandId);
   [Throws]
   boolean queryCommandState(DOMString commandId);
-  [Throws, NeedsCallerType]
+  [Throws, NeedsSubjectPrincipal]
   boolean queryCommandSupported(DOMString commandId);
   [Throws]
   DOMString queryCommandValue(DOMString commandId);
@@ -252,13 +248,17 @@ partial interface Document {
   [ChromeOnly]
   readonly attribute ReferrerPolicy referrerPolicy;
 
-    /**
+  /**
    * Current referrer info, which holds all referrer related information
    * including referrer policy and raw referrer of document.
    */
   [ChromeOnly]
   readonly attribute nsIReferrerInfo referrerInfo;
 
+  // If true, forces the (-moz-native-theme) media query to evaluate to false
+  // on this document. Note this doesn't propagate to subdocuments.
+  [ChromeOnly]
+  attribute boolean forceNonNativeTheme;
 };
 
 // https://html.spec.whatwg.org/multipage/obsolete.html#other-elements%2C-attributes-and-apis
@@ -372,12 +372,6 @@ partial interface Document {
 
 //  Mozilla extensions of various sorts
 partial interface Document {
-  // @deprecated We are going to remove these (bug 1584269).
-  [Pref="dom.events.script_execute.enabled"]
-  attribute EventHandler onbeforescriptexecute;
-  [Pref="dom.events.script_execute.enabled"]
-  attribute EventHandler onafterscriptexecute;
-
   // Creates a new XUL element regardless of the document's default type.
   [ChromeOnly, CEReactions, NewObject, Throws]
   Element createXULElement(DOMString localName, optional (ElementCreationOptions or DOMString) options = {});
@@ -443,11 +437,19 @@ partial interface Document {
   [ChromeOnly]
   attribute boolean devToolsAnonymousAndShadowEventsEnabled;
 
+  [ChromeOnly]
+  attribute boolean pausedByDevTools;
+
   [ChromeOnly, BinaryName="contentLanguageForBindings"] readonly attribute DOMString contentLanguage;
 
   [ChromeOnly] readonly attribute nsILoadGroup? documentLoadGroup;
 
   // Blocks the initial document parser until the given promise is settled.
+  // Note: In order to prevent extension or test code from altering about:blank
+  // semantics, this cannot block about:blank.
+  //
+  // If the option `blockScriptCreated` is not set to `false` this alters
+  // the Web-exposed behavior of `document.open()`ed documents, which is bad.
   [ChromeOnly, NewObject]
   Promise<any> blockParsing(Promise<any> promise,
                             optional BlockParsingOptions options = {});
@@ -521,12 +523,8 @@ partial interface Document {
  * content on top of the current page displayed in the document.
  */
 partial interface Document {
-  /**
-   * If aForce is true, tries to update layout to be able to insert the element
-   * synchronously.
-   */
   [ChromeOnly, NewObject, Throws]
-  AnonymousContent insertAnonymousContent(optional boolean aForce = false);
+  AnonymousContent insertAnonymousContent();
 
   /**
    * Removes the element inserted into the CanvasFrame given an AnonymousContent
@@ -563,12 +561,6 @@ partial interface Document {
   Promise<undefined> requestStorageAccessForOrigin(DOMString thirdPartyOrigin, optional boolean requireUserInteraction = true);
 };
 
-// Extension to give chrome JS the ability to determine whether
-// the user has interacted with the document or not.
-partial interface Document {
-  [ChromeOnly] readonly attribute boolean userHasInteracted;
-};
-
 // Extension to give chrome JS the ability to simulate activate the document
 // by user gesture.
 partial interface Document {
@@ -595,11 +587,11 @@ partial interface Document {
   undefined setSuppressedEventListener(EventListener? aListener);
 };
 
-// Allows frontend code to query a CSP which needs to be passed for a
-// new load into docshell. Further, allows to query the CSP in JSON
+// Allows frontend code to query a policyContainer which needs to be passed
+// for a new load into docshell. Further, allows to query the CSP in JSON
 // format for testing purposes.
 partial interface Document {
-  [ChromeOnly] readonly attribute ContentSecurityPolicy? csp;
+  [ChromeOnly] readonly attribute PolicyContainer? policyContainer;
   [ChromeOnly] readonly attribute DOMString cspJSON;
 };
 
@@ -703,8 +695,28 @@ partial interface Document {
 
 // Extension to allow chrome code to detect initial about:blank documents.
 partial interface Document {
+  /**
+   * https://html.spec.whatwg.org/#is-initial-about:blank
+   *
+   * True if this is the initial about:blank document that the browsing context
+   * started with. Any web-observable browsing context starts out with such
+   * an empty document.
+   *
+   * This flag remains true for the entire lifetime of that document.
+   */
   [ChromeOnly]
   readonly attribute boolean isInitialDocument;
+
+  /**
+   * True if this is the initial about:blank document and it is still transient,
+   * i.e. it has not been committed to as a navigation destination.
+   *
+   * In this state, many actions (e.g. firing the load event) have not yet occurred.
+   * The browser may commit to it synchronously (causing those actions to run),
+   * but it could also remain transient or be replaced.
+   */
+  [ChromeOnly]
+  readonly attribute boolean isUncommittedInitialDocument;
 };
 
 // Extension to allow chrome code to get some wireframe-like structure.
@@ -752,14 +764,22 @@ partial interface Document {
     readonly attribute FragmentDirective fragmentDirective;
 };
 
-// https://drafts.csswg.org/css-view-transitions-1/#additions-to-document-api
-partial interface Document {
-  [Pref="dom.viewTransitions.enabled"]
-  ViewTransition startViewTransition(optional ViewTransitionUpdateCallback updateCallback);
+
+callback ViewTransitionUpdateCallback = Promise<any> ();
+dictionary StartViewTransitionOptions {
+  ViewTransitionUpdateCallback? update = null;
+  sequence<DOMString>? types = null;
 };
 
-// https://github.com/w3c/csswg-drafts/pull/10767 for the name divergence in the spec
-callback ViewTransitionUpdateCallback = Promise<any> ();
+// https://drafts.csswg.org/css-view-transitions-2/#idl-index
+partial interface Document {
+  [Pref="dom.viewTransitions.enabled"]
+  ViewTransition startViewTransition(
+    optional (ViewTransitionUpdateCallback or StartViewTransitionOptions) callbackOptions = {}
+  );
+  [Pref="dom.viewTransitions.enabled"]
+  readonly attribute ViewTransition? activeViewTransition;
+};
 
 // https://wicg.github.io/sanitizer-api/#sanitizer-api
 partial interface Document {

@@ -27,18 +27,13 @@
 #include "mozilla/mozalloc.h"
 #include "nsDebug.h"
 #include "nsError.h"
+#include "nsGlobalWindowInner.h"
 #include "nsIRunnable.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsMimeTypes.h"
 #include "nsPIDOMWindow.h"
-#include "nsGlobalWindowInner.h"
 #include "nsString.h"
 #include "nsThreadUtils.h"
-
-#ifdef MOZ_WIDGET_ANDROID
-#  include "AndroidBridge.h"
-#  include "mozilla/java/HardwareCodecCapabilityUtilsWrappers.h"
-#endif
 
 struct JSContext;
 class JSObject;
@@ -80,7 +75,7 @@ static bool IsVP9Forced(DecoderDoctorDiagnostics* aDiagnostics) {
   bool hwsupported = gfx::gfxVars::CanUseHardwareVideoDecoding();
 #ifdef MOZ_WIDGET_ANDROID
   return !mp4supported || !hwsupported ||
-         java::HardwareCodecCapabilityUtils::HasHWVP9(false /* aIsEncoder */);
+         gfx::gfxVars::VP9HwDecodeIsAccelerated();
 #else
   return !mp4supported || !hwsupported;
 #endif
@@ -179,12 +174,6 @@ void MediaSource::IsTypeSupported(const nsAString& aType,
   const MediaMIMEType& mimeType = containerType->Type();
   if (mimeType == MEDIAMIMETYPE("video/mp4") ||
       mimeType == MEDIAMIMETYPE("audio/mp4")) {
-    if (!StaticPrefs::media_mediasource_mp4_enabled() &&
-        !shouldResistFingerprinting) {
-      // Don't leak information about the fact that it's pref-disabled; just act
-      // like we can't play it.  Or should this throw "Unknown type"?
-      return aRv.ThrowNotSupportedError("Can't play type");
-    }
     if (!StaticPrefs::media_mediasource_vp9_enabled() && hasVP9 &&
         !IsVP9Forced(aDiagnostics) && !shouldResistFingerprinting) {
       // Don't leak information about the fact that it's pref-disabled; just act

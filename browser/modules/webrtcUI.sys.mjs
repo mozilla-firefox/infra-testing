@@ -213,7 +213,7 @@ export var webrtcUI = {
 
   _streams: [],
   // The boolean parameters indicate which streams should be included in the result.
-  getActiveStreams(aCamera, aMicrophone, aScreen, aWindow = false) {
+  getActiveStreams(aCamera, aMicrophone, aScreen, aTab, aWindow = false) {
     return webrtcUI._streams
       .filter(aStream => {
         let state = aStream.state;
@@ -221,6 +221,7 @@ export var webrtcUI = {
           (aCamera && state.camera) ||
           (aMicrophone && state.microphone) ||
           (aScreen && state.screen) ||
+          (aTab && state.browser) ||
           (aWindow && state.window)
         );
       })
@@ -536,7 +537,7 @@ export var webrtcUI = {
    * For camera and microphone streams, this will also revoke any associated
    * permissions from SitePermissions.
    *
-   * @param {Array<Object>} activeStreams - An array of streams obtained via webrtcUI.getActiveStreams.
+   * @param {Array<object>} activeStreams - An array of streams obtained via webrtcUI.getActiveStreams.
    * @param {boolean} stopCameras - True to stop the camera streams (defaults to true)
    * @param {boolean} stopMics - True to stop the microphone streams (defaults to true)
    * @param {boolean} stopScreens - True to stop the screen streams (defaults to true)
@@ -596,6 +597,7 @@ export var webrtcUI = {
   /**
    * Clears permissions and stops sharing (if active) for a list of device types
    * and a specific tab.
+   *
    * @param {("camera"|"microphone"|"screen")[]} types - Device types to stop
    * and clear permissions for.
    * @param tab - Tab of the devices to stop and clear permissions.
@@ -699,6 +701,7 @@ export var webrtcUI = {
    * child frames.
    * Note: activePerms is an internal WebRTC UI permission map and does not
    * reflect the PermissionManager or SitePermissions state.
+   *
    * @param aBrowser - Browser to clear active permissions for.
    */
   forgetActivePermissionsFromBrowser(aBrowser) {
@@ -713,6 +716,7 @@ export var webrtcUI = {
   /**
    * Shows the Permission Panel for the tab associated with the provided
    * active stream.
+   *
    * @param aActiveStream - The stream that the user wants to see permissions for.
    * @param aEvent - The user input event that is invoking the panel. This can be
    *        undefined / null if no such event exists.
@@ -965,11 +969,17 @@ export function showStreamSharingMenu(win, event, inclWindow = false) {
   let type = menu.getAttribute("type");
   let activeStreams;
   if (type == "Camera") {
-    activeStreams = webrtcUI.getActiveStreams(true, false, false);
+    activeStreams = webrtcUI.getActiveStreams(true, false, false, false);
   } else if (type == "Microphone") {
-    activeStreams = webrtcUI.getActiveStreams(false, true, false);
+    activeStreams = webrtcUI.getActiveStreams(false, true, false, false);
   } else if (type == "Screen") {
-    activeStreams = webrtcUI.getActiveStreams(false, false, true, inclWindow);
+    activeStreams = webrtcUI.getActiveStreams(
+      false,
+      false,
+      true,
+      inclWindow,
+      inclWindow
+    );
     type = webrtcUI.showScreenSharingIndicator;
   }
 
@@ -983,8 +993,10 @@ export function showStreamSharingMenu(win, event, inclWindow = false) {
     let stream = activeStreams[0];
 
     const sharingItem = doc.createXULElement("menuitem");
-    const streamTitle = stream.browser.contentTitle || stream.uri;
-    doc.l10n.setAttributes(sharingItem, l10nIds[0], { streamTitle });
+    const displayHost = getDisplayHostForStream(stream);
+    doc.l10n.setAttributes(sharingItem, l10nIds[0], {
+      streamTitle: displayHost,
+    });
     sharingItem.setAttribute("disabled", "true");
     menu.appendChild(sharingItem);
 
@@ -1008,11 +1020,11 @@ export function showStreamSharingMenu(win, event, inclWindow = false) {
 
     for (let stream of activeStreams) {
       const controlItem = doc.createXULElement("menuitem");
-      const streamTitle = stream.browser.contentTitle || stream.uri;
+      const displayHost = getDisplayHostForStream(stream);
       doc.l10n.setAttributes(
         controlItem,
         "webrtc-indicator-menuitem-control-sharing-on",
-        { streamTitle }
+        { streamTitle: displayHost }
       );
       controlItem.stream = stream;
       controlItem.addEventListener("command", this);
@@ -1021,8 +1033,27 @@ export function showStreamSharingMenu(win, event, inclWindow = false) {
   }
 }
 
+function getDisplayHostForStream(stream) {
+  let uri = Services.io.newURI(stream.uri);
+
+  let displayHost;
+
+  try {
+    displayHost = uri.displayHost;
+  } catch (ex) {
+    displayHost = null;
+  }
+
+  // Host getter threw or returned "". Fall back to spec.
+  if (displayHost == null || displayHost == "") {
+    displayHost = uri.displaySpec;
+  }
+
+  return displayHost;
+}
+
 function onTabSharingMenuPopupShowing(e) {
-  const streams = webrtcUI.getActiveStreams(true, true, true, true);
+  const streams = webrtcUI.getActiveStreams(true, true, true, true, true);
   for (let streamInfo of streams) {
     const names = streamInfo.devices.map(({ mediaSource }) => {
       const l10nId = MEDIA_SOURCE_L10NID_BY_TYPE.get(mediaSource);

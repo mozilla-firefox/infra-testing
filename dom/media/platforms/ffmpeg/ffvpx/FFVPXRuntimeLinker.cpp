@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "FFVPXRuntimeLinker.h"
+
 #include "FFmpegLibWrapper.h"
 #include "FFmpegLog.h"
 #include "mozilla/FileUtils.h"
@@ -68,11 +69,19 @@ static PRLibrary* MozAVLink(nsIFile* aFile) {
 }
 
 /* static */
+void FFVPXRuntimeLinker::PrefCallbackLogLevel(const char* aPref, void* aData) {
+  sFFVPXLib.UpdateLogLevel();
+}
+
+/* static */
 bool FFVPXRuntimeLinker::Init() {
   // Enter critical section to set up ffvpx.
   StaticMutexAutoLock lock(sMutex);
 
   if (sLinkStatus) {
+    if (sLinkStatus == LinkStatus_SUCCEEDED) {
+      FFmpegDecoderModule<FFVPX_VERSION>::Init(&sFFVPXLib);
+    }
     return sLinkStatus == LinkStatus_SUCCEEDED;
   }
 

@@ -7,9 +7,9 @@
 /* rendering object for CSS "display: ruby-base-container" */
 
 #include "nsRubyBaseContainerFrame.h"
-#include "nsRubyTextContainerFrame.h"
-#include "nsRubyBaseFrame.h"
-#include "nsRubyTextFrame.h"
+
+#include "RubyUtils.h"
+#include "gfxContext.h"
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Maybe.h"
@@ -18,10 +18,11 @@
 #include "nsLayoutUtils.h"
 #include "nsLineLayout.h"
 #include "nsPresContext.h"
+#include "nsRubyBaseFrame.h"
+#include "nsRubyTextContainerFrame.h"
+#include "nsRubyTextFrame.h"
 #include "nsStyleStructInlines.h"
 #include "nsTextFrame.h"
-#include "gfxContext.h"
-#include "RubyUtils.h"
 
 using namespace mozilla;
 using namespace mozilla::gfx;
@@ -241,10 +242,10 @@ bool nsRubyBaseContainerFrame::CanContinueTextRun() const { return true; }
 
 /* virtual */
 nsIFrame::SizeComputationResult nsRubyBaseContainerFrame::ComputeSize(
-    gfxContext* aRenderingContext, WritingMode aWM, const LogicalSize& aCBSize,
-    nscoord aAvailableISize, const LogicalSize& aMargin,
-    const LogicalSize& aBorderPadding, const StyleSizeOverrides& aSizeOverrides,
-    ComputeSizeFlags aFlags) {
+    const SizeComputationInput& aSizingInput, WritingMode aWM,
+    const LogicalSize& aCBSize, nscoord aAvailableISize,
+    const LogicalSize& aMargin, const LogicalSize& aBorderPadding,
+    const StyleSizeOverrides& aSizeOverrides, ComputeSizeFlags aFlags) {
   // Ruby base container frame is inline,
   // hence don't compute size before reflow.
   return {LogicalSize(aWM, NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE),

@@ -23,6 +23,14 @@ XPIDL_SOURCES += [
     "nsrootidl.idl",
 ]
 
+if CONFIG["OS_TARGET"] == "Linux":
+    XPIDL_SOURCES += [
+        "nsIAvailableMemoryWatcherTestingLinux.idl",
+    ]
+    EXPORTS += [
+        "nsIPSIProvider.h",
+    ]
+
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
     XPIDL_SOURCES += [
         "nsIMacPreferencesReader.idl",
@@ -30,6 +38,7 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
     EXPORTS.mozilla += [
         "MacHelpers.h",
         "nsMacPreferencesReader.h",
+        "nsMacUtilsImpl.h",
     ]
     UNIFIED_SOURCES += [
         "MacHelpers.mm",
@@ -82,7 +91,6 @@ EXPORTS += [
     "nsIInterfaceRequestorUtils.h",
     "nsINIParser.h",
     "nsInterfaceRequestorAgg.h",
-    "nsISizeOf.h",
     "nsISupportsImpl.h",
     "nsISupportsUtils.h",
     "nsIWeakReferenceUtils.h",
@@ -231,11 +239,35 @@ if CONFIG["OS_TARGET"] == "Linux":
 if CONFIG["MOZ_PHC"]:
     DEFINES["MOZ_PHC"] = True
 
-GeneratedFile("ErrorList.h", script="ErrorList.py", entry_point="error_list_h")
+extra_errors = []
+if CONFIG["MOZ_EXTRA_ERROR_DEFINITIONS"]:
+    extra_errors.append(CONFIG["MOZ_EXTRA_ERROR_DEFINITIONS"])
+
 GeneratedFile(
-    "ErrorNamesInternal.h", script="ErrorList.py", entry_point="error_names_internal_h"
+    "ErrorList.h",
+    script="ErrorList.py",
+    entry_point="error_list_h",
+    inputs=extra_errors,
 )
-GeneratedFile("error_list.rs", script="ErrorList.py", entry_point="error_list_rs")
+
+GeneratedFile(
+    "ErrorNamesInternal.h",
+    script="ErrorList.py",
+    entry_point="error_names_internal_h",
+    inputs=extra_errors,
+)
+GeneratedFile(
+    "error_list.rs",
+    script="ErrorList.py",
+    entry_point="error_list_rs",
+    inputs=extra_errors,
+)
+GeneratedFile(
+    "error_list.json",
+    script="ErrorList.py",
+    entry_point="error_list_json",
+    inputs=extra_errors,
+)
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
     SOURCES += [

@@ -6,11 +6,11 @@
 #ifndef MOZILLA_VIDEOSEGMENT_H_
 #define MOZILLA_VIDEOSEGMENT_H_
 
-#include "MediaSegment.h"
-#include "nsCOMPtr.h"
-#include "gfxPoint.h"
 #include "ImageContainer.h"
+#include "MediaSegment.h"
 #include "TimeUnits.h"
+#include "gfxPoint.h"
+#include "nsCOMPtr.h"
 
 namespace mozilla {
 
@@ -135,7 +135,6 @@ class VideoSegment : public MediaSegmentBase<VideoSegment, VideoChunk> {
                               const IntSize& aIntrinsicSize,
                               const PrincipalHandle& aPrincipalHandle,
                               bool aForceBlack, TimeStamp aTimeStamp,
-                              media::TimeUnit aProcessingDuration,
                               TimeStamp aWebrtcCaptureTime);
   void ExtendLastFrameBy(TrackTime aDuration) {
     if (aDuration <= 0) {

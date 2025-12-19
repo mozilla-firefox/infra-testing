@@ -1,7 +1,7 @@
 "use strict";
 
 const { CustomizableUI } = ChromeUtils.importESModule(
-  "resource:///modules/CustomizableUI.sys.mjs"
+  "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs"
 );
 
 add_task(async function () {
@@ -33,7 +33,7 @@ add_task(async function () {
       }
       if (expectedParentGuids.length) {
         let index = expectedParentGuids.indexOf(event.parentGuid);
-        Assert.ok(index != -1, "Found expected parent");
+        Assert.notEqual(index, -1, "Found expected parent");
         expectedParentGuids.splice(index, 1);
       }
     }

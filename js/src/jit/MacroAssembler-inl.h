@@ -124,8 +124,6 @@ void MacroAssembler::call(const wasm::CallSiteDesc& desc, wasm::Trap trap) {
 
 CodeOffset MacroAssembler::call(const wasm::CallSiteDesc& desc,
                                 wasm::SymbolicAddress imm) {
-  MOZ_ASSERT(wasm::NeedsBuiltinThunk(imm),
-             "only for functions which may appear in profiler");
   CodeOffset raOffset = call(imm);
   append(desc, raOffset);
   return raOffset;
@@ -205,6 +203,8 @@ ABIFunctionType MacroAssembler::signature() const {
     case Args_Double_DoubleDoubleDouble:
     case Args_Double_DoubleDoubleDoubleDouble:
     case Args_Int64_GeneralGeneral:
+    case Args_General_GeneralInt64GeneralGeneral:
+    case Args_General_GeneralFloat32GeneralGeneral:
       break;
     default:
       MOZ_CRASH("Unexpected type");
@@ -255,46 +255,43 @@ uint32_t MacroAssembler::callJit(ImmPtr callee) {
   return currentOffset();
 }
 
-void MacroAssembler::pushFrameDescriptor(FrameType type) {
-  uint32_t descriptor = MakeFrameDescriptor(type);
-  push(Imm32(descriptor));
+void MacroAssembler::push(FrameDescriptor descriptor) {
+  push(Imm32(descriptor.value()));
 }
 
-void MacroAssembler::PushFrameDescriptor(FrameType type) {
-  uint32_t descriptor = MakeFrameDescriptor(type);
-  Push(Imm32(descriptor));
+void MacroAssembler::Push(FrameDescriptor descriptor) {
+  Push(Imm32(descriptor.value()));
 }
 
-void MacroAssembler::pushFrameDescriptorForJitCall(FrameType type,
-                                                   uint32_t argc) {
-  uint32_t descriptor = MakeFrameDescriptorForJitCall(type, argc);
-  push(Imm32(descriptor));
-}
-
-void MacroAssembler::PushFrameDescriptorForJitCall(FrameType type,
-                                                   uint32_t argc) {
-  uint32_t descriptor = MakeFrameDescriptorForJitCall(type, argc);
-  Push(Imm32(descriptor));
+void MacroAssembler::makeFrameDescriptorForJitCall(FrameType type,
+                                                   Register argc, Register dest,
+                                                   bool hasInlineICScript) {
+  lshift32(Imm32(FrameDescriptor::NumActualArgsShift), argc, dest);
+  FrameDescriptor base(type, 0, hasInlineICScript);
+  if (base.value()) {
+    or32(Imm32(base.value()), dest);
+  }
 }
 
 void MacroAssembler::pushFrameDescriptorForJitCall(FrameType type,
                                                    Register argc,
-                                                   Register scratch) {
-  lshift32(Imm32(NUMACTUALARGS_SHIFT), argc, scratch);
-  or32(Imm32(int32_t(type)), scratch);
+                                                   Register scratch,
+                                                   bool hasInlineICScript) {
+  makeFrameDescriptorForJitCall(type, argc, scratch, hasInlineICScript);
   push(scratch);
 }
 
 void MacroAssembler::PushFrameDescriptorForJitCall(FrameType type,
                                                    Register argc,
-                                                   Register scratch) {
-  pushFrameDescriptorForJitCall(type, argc, scratch);
+                                                   Register scratch,
+                                                   bool hasInlineICScript) {
+  pushFrameDescriptorForJitCall(type, argc, scratch, hasInlineICScript);
   framePushed_ += sizeof(uintptr_t);
 }
 
 void MacroAssembler::loadNumActualArgs(Register framePtr, Register dest) {
   loadPtr(Address(framePtr, JitFrameLayout::offsetOfDescriptor()), dest);
-  rshift32(Imm32(NUMACTUALARGS_SHIFT), dest);
+  rshift32(Imm32(FrameDescriptor::NumActualArgsShift), dest);
 }
 
 void MacroAssembler::PushCalleeToken(Register callee, bool constructing) {
@@ -327,7 +324,7 @@ void MacroAssembler::loadFunctionFromCalleeToken(Address token, Register dest) {
 uint32_t MacroAssembler::buildFakeExitFrame(Register scratch) {
   mozilla::DebugOnly<uint32_t> initialDepth = framePushed();
 
-  PushFrameDescriptor(FrameType::IonJS);
+  Push(FrameDescriptor(FrameType::IonJS));
   uint32_t retAddr = pushFakeReturnAddress(scratch);
   Push(FramePointer);
 
@@ -553,9 +550,8 @@ void MacroAssembler::branchIfObjectEmulatesUndefined(Register objReg,
 
   Label done;
 
-  loadPtr(
-      AbsoluteAddress(runtime()->addressOfHasSeenObjectEmulateUndefinedFuse()),
-      scratch);
+  loadRuntimeFuse(RuntimeFuses::FuseIndex::HasSeenObjectEmulateUndefinedFuse,
+                  scratch);
   branchPtr(Assembler::Equal, scratch, ImmPtr(nullptr), &done);
 
   loadObjClassUnsafe(objReg, scratch);
@@ -646,51 +642,20 @@ void MacroAssembler::branchTestObjClass(Condition cond, Register obj,
   }
 }
 
-void MacroAssembler::branchTestClass(
-    Condition cond, Register clasp,
-    std::pair<const JSClass*, const JSClass*> classes, Label* label) {
+void MacroAssembler::branchTestClassIsFunction(Condition cond, Register clasp,
+                                               Label* label) {
   MOZ_ASSERT(cond == Assembler::Equal || cond == Assembler::NotEqual);
 
   if (cond == Assembler::Equal) {
-    branchPtr(Assembler::Equal, clasp, ImmPtr(classes.first), label);
-    branchPtr(Assembler::Equal, clasp, ImmPtr(classes.second), label);
+    branchPtr(Assembler::Equal, clasp, ImmPtr(&FunctionClass), label);
+    branchPtr(Assembler::Equal, clasp, ImmPtr(&ExtendedFunctionClass), label);
     return;
   }
 
   Label isClass;
-  branchPtr(Assembler::Equal, clasp, ImmPtr(classes.first), &isClass);
-  branchPtr(Assembler::NotEqual, clasp, ImmPtr(classes.second), label);
+  branchPtr(Assembler::Equal, clasp, ImmPtr(&FunctionClass), &isClass);
+  branchPtr(Assembler::NotEqual, clasp, ImmPtr(&ExtendedFunctionClass), label);
   bind(&isClass);
-}
-
-void MacroAssembler::branchTestObjClass(
-    Condition cond, Register obj,
-    std::pair<const JSClass*, const JSClass*> classes, Register scratch,
-    Register spectreRegToZero, Label* label) {
-  MOZ_ASSERT(scratch != spectreRegToZero);
-
-  branchTestObjClassNoSpectreMitigations(cond, obj, classes, scratch, label);
-
-  if (JitOptions.spectreObjectMitigations) {
-    spectreZeroRegister(cond, scratch, spectreRegToZero);
-  }
-}
-
-void MacroAssembler::branchTestObjClassNoSpectreMitigations(
-    Condition cond, Register obj,
-    std::pair<const JSClass*, const JSClass*> classes, Register scratch,
-    Label* label) {
-  MOZ_ASSERT(cond == Assembler::Equal || cond == Assembler::NotEqual);
-  MOZ_ASSERT(obj != scratch);
-
-  loadObjClassUnsafe(obj, scratch);
-  branchTestClass(cond, scratch, classes, label);
-}
-
-void MacroAssembler::branchTestClassIsFunction(Condition cond, Register clasp,
-                                               Label* label) {
-  return branchTestClass(cond, clasp, {&FunctionClass, &ExtendedFunctionClass},
-                         label);
 }
 
 void MacroAssembler::branchTestObjIsFunction(Condition cond, Register obj,
@@ -1057,6 +1022,44 @@ void MacroAssembler::loadObjProto(Register obj, Register dest) {
 
 void MacroAssembler::loadStringLength(Register str, Register dest) {
   load32(Address(str, JSString::offsetOfLength()), dest);
+}
+
+template <typename Table, typename Match>
+void MacroAssembler::lookupMFBT(Register hashTable, Register hashCode,
+                                Register scratch, Register scratch2,
+                                Register scratch3, Register scratch4,
+                                Register scratch5, Label* missing,
+                                Match match) {
+  // Inline implementation of |lookup| for mozilla::detail::HashTable
+
+  // If the hashtable is empty, we won't find an entry.
+  branch32(Assembler::Equal, Address(hashTable, Table::offsetOfEntryCount()),
+           Imm32(0), missing);
+
+  // Compute the primary hash address:
+  // HashNumber h1 = hash1(aKeyHash);
+  Register hash1 = scratch5;
+  computeHash1MFBT<Table>(hashTable, hashCode, hash1, scratch);
+
+  Label primaryCollision;
+  checkForMatchMFBT<Table>(hashTable, hash1, hashCode, scratch, scratch2,
+                           missing, &primaryCollision);
+  match();
+  bind(&primaryCollision);
+
+  // Otherwise, we've had a collision. Double-hash.
+  Register hash2 = scratch4;
+  Register sizeMask = scratch3;
+  computeHash2MFBT<Table>(hashTable, hashCode, hash2, sizeMask, scratch);
+
+  Label loop;
+  bind(&loop);
+
+  applyDoubleHashMFBT(hash1, hash2, sizeMask);
+  checkForMatchMFBT<Table>(hashTable, hash1, hashCode, scratch, scratch2,
+                           missing, &loop);
+  match();
+  jump(&loop);
 }
 
 void MacroAssembler::assertStackAlignment(uint32_t alignment,

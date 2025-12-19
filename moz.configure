@@ -28,7 +28,7 @@ option(
 )
 
 
-@depends("--enable-artifact-build-symbols", "MOZ_AUTOMATION", target)
+@depends("--enable-artifact-build-symbols", moz_automation, target)
 def enable_artifact_build_symbols(value, automation, target):
     if len(value):
         return value[0]
@@ -42,9 +42,9 @@ def enable_artifact_build_symbols(value, automation, target):
 set_config("MOZ_ARTIFACT_BUILD_SYMBOLS", enable_artifact_build_symbols)
 
 
-@depends("--enable-artifact-builds")
-def imply_disable_compile_environment(value):
-    if value:
+@depends("--enable-artifact-builds", build_project)
+def imply_disable_compile_environment(value, build_project):
+    if value or build_project == "browser/extensions":
         return False
 
 
@@ -75,7 +75,9 @@ option(
 
 set_config("MOZ_COPY_PDBS", depends_if("MOZ_COPY_PDBS")(lambda _: True))
 
-imply_option("--enable-compile-environment", imply_disable_compile_environment)
+imply_option(
+    "--enable-compile-environment", imply_disable_compile_environment, reason="default"
+)
 
 option("--disable-compile-environment", help="Disable compiler/library checks")
 
@@ -182,7 +184,7 @@ imply_option("--enable-release", mozilla_official)
 
 option(
     "--enable-release",
-    default=milestone.is_release_or_beta | depends("MOZ_AUTOMATION")(lambda x: bool(x)),
+    default=milestone.is_release_or_beta | moz_automation,
     help="{Build|Do not build} with more conservative, release "
     "engineering-oriented options.{ This may slow down builds.|}",
 )
@@ -221,9 +223,6 @@ include("build/moz.configure/bootstrap.configure")
 def check_prog(*args, **kwargs):
     kwargs["bootstrap_search_path"] = bootstrap_search_path
     return check_prog(*args, **kwargs)
-
-
-check_prog("WGET", ("wget",), allow_missing=True)
 
 
 include("build/moz.configure/toolchain.configure", when="--enable-compile-environment")
@@ -559,7 +558,7 @@ set_config("BUILD_BACKENDS", build_backends)
 @depends(
     build_project,
     target,
-    "MOZ_AUTOMATION",
+    moz_automation,
     enable_tests,
     when="--enable-compile-environment",
 )
@@ -585,29 +584,25 @@ set_config("LINK_GTEST_DURING_COMPILE", True, when="--enable-gtest-in-build")
 # ==============================================================
 option(
     "--enable-ui-locale",
+    env="MOZ_UI_LOCALE",
     default="en-US",
     help="Select the user interface locale (default: en-US)",
 )
 
-set_config("MOZ_UI_LOCALE", depends("--enable-ui-locale")(lambda x: x))
+
+@depends("--enable-ui-locale")
+def moz_ui_locale(value):
+    return value[0]
+
+
+set_config("MOZ_UI_LOCALE", moz_ui_locale)
+
 
 # clang-plugin location
 # ==============================================================
 include(
     "build/moz.configure/clang_plugin.configure", when="--enable-compile-environment"
 )
-
-
-# Awk detection
-# ==============================================================
-awk = check_prog("AWK", ("gawk", "mawk", "nawk", "awk"), paths=prefer_mozillabuild_path)
-
-# Until the AWK variable is not necessary in old-configure
-
-
-@depends(awk)
-def awk_for_old_configure(value):
-    return value
 
 
 # GNU make detection
@@ -627,7 +622,25 @@ def possible_makes(make, host):
     return candidates
 
 
-check_prog("GMAKE", possible_makes, bootstrap="mozmake")
+gmake = check_prog("GMAKE", possible_makes, bootstrap="mozmake")
+
+
+@depends(gmake)
+@checking("for gmake version")
+def gmake_version(prog):
+    out = check_cmd_output(prog, "--version")
+    version_line = out.splitlines()[0]
+    if not version_line.startswith("GNU Make"):
+        die("GNU make is required")
+    return Version(version_line[8:].strip())
+
+
+@depends(gmake_version)
+def check_gmake_version(version):
+    make_min_ver = Version("3.81")
+    if version < make_min_ver:
+        die(f"GNU Make {make_min_ver} or higher is required")
+
 
 # watchman detection
 # ==============================================================
@@ -704,13 +717,10 @@ def extra_programs(target):
             MKFSHFS=("newfs_hfs", "mkfs.hfsplus"),
             HFS_TOOL=("hfsplus",),
         )
-    if target.os == "GNU" and target.kernel == "Linux":
-        return namespace(RPMBUILD=("rpmbuild",))
 
 
 check_prog("MKFSHFS", extra_programs.MKFSHFS, allow_missing=True)
 check_prog("HFS_TOOL", extra_programs.HFS_TOOL, allow_missing=True)
-check_prog("RPMBUILD", extra_programs.RPMBUILD, allow_missing=True)
 
 
 nsis = check_prog(
@@ -927,7 +937,7 @@ set_config("MOZ_SYSTEM_ZLIB", True, when="--with-system-zlib")
 
 option(
     env="USE_LIBZ_RS",
-    default=milestone.is_nightly,
+    default=milestone.is_early_beta_or_earlier,
     help="Use libz-rs-sys instead of zlib",
     when=toolkit & ~with_system_zlib_option,
 )
@@ -977,7 +987,6 @@ def save_cache(build_environment, configure_cache):
 
 @depends(build_environment, build_project)
 @imports("__sandbox__")
-@imports("glob")
 @imports(_from="os.path", _import="exists")
 def config_status_deps(build_env, build_project):
     topsrcdir = build_env.topsrcdir
@@ -1009,7 +1018,6 @@ def config_status_deps(build_env, build_project):
             os.path.join(topsrcdir, "python", "sites", "mach.txt"),
             os.path.join(topsrcdir, "python", "mach", "mach", "site.py"),
         ]
-        + glob.glob(os.path.join(topsrcdir, "build", "autoconf", "*.m4"))
     )
 
 

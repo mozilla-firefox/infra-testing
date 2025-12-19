@@ -7,11 +7,14 @@
 #include "APZCBasicTester.h"
 #include "APZCTreeManagerTester.h"
 #include "APZTestCommon.h"
+#include "mozilla/RelativeTo.h"
 #include "mozilla/ScrollPositionUpdate.h"
 #include "mozilla/layers/ScrollableLayerGuid.h"
 #include "mozilla/layers/WebRenderScrollDataWrapper.h"
 
 #include "InputUtils.h"
+
+using LayersUpdateFlags = AsyncPanZoomController::LayersUpdateFlags;
 
 class APZCOverscrollTester : public APZCBasicTester {
  public:
@@ -671,8 +674,9 @@ TEST_F(APZCOverscrollTester, DisallowOverscrollInSingleLineTextControl) {
   metrics.SetScrollableRect(CSSRect(0, 0, 1000, 10));
   apzc->SetFrameMetrics(metrics);
   metadata.SetDisregardedDirection(Some(ScrollDirection::eVertical));
-  apzc->NotifyLayersUpdated(metadata, /*aIsFirstPaint=*/false,
-                            /*aThisLayerTreeUpdated=*/true);
+  apzc->NotifyLayersUpdated(
+      metadata,
+      LayersUpdateFlags{.mIsFirstPaint = false, .mThisLayerTreeUpdated = true});
 
   // Try to overscroll up and left with pan gestures.
   PanGesture(PanGestureInput::PANGESTURE_START, apzc, ScreenIntPoint(50, 5),
@@ -1513,7 +1517,9 @@ TEST_F(APZCOverscrollTester, DynamicallyLoadingContent) {
   CSSRect scrollableRect = metrics.GetScrollableRect();
   scrollableRect.height += 500;
   metrics.SetScrollableRect(scrollableRect);
-  apzc->NotifyLayersUpdated(metadata, false, true);
+  apzc->NotifyLayersUpdated(
+      metadata,
+      LayersUpdateFlags{.mIsFirstPaint = false, .mThisLayerTreeUpdated = true});
 
   // Check that the modified scrollable rect cleared the overscroll.
   EXPECT_FALSE(apzc->IsOverscrolled());
@@ -1534,7 +1540,9 @@ TEST_F(APZCOverscrollTester, DynamicallyLoadingContent) {
   scrollableRect = metrics.GetScrollableRect();
   scrollableRect.height += 500;
   metrics.SetScrollableRect(scrollableRect);
-  apzc->NotifyLayersUpdated(metadata, false, true);
+  apzc->NotifyLayersUpdated(
+      metadata,
+      LayersUpdateFlags{.mIsFirstPaint = false, .mThisLayerTreeUpdated = true});
 
   // Check that the modified scrollable rect did NOT clear overscroll at the
   // top.
@@ -1599,6 +1607,45 @@ TEST_F(APZCOverscrollTester, SmallAmountOfOverscroll) {
   // The small horizontal overscroll amount should be restored to zero.
   ParentLayerPoint expectedScrollOffset(0, scrollOffset.y);
   SampleAnimationUntilRecoveredFromOverscroll(expectedScrollOffset);
+}
+#endif
+
+#ifdef MOZ_WIDGET_ANDROID
+TEST_F(APZCOverscrollTester, StretchUpDown_Bug1892177) {
+  SCOPED_GFX_PREF_BOOL("apz.overscroll.enabled", true);
+
+  ScrollMetadata metadata;
+  FrameMetrics& metrics = metadata.GetMetrics();
+  metrics.SetCompositionBounds(ParentLayerRect(0, 0, 100, 100));
+  // Composition bounds show all of the horizontal space of that scrollable rect
+  metrics.SetScrollableRect(CSSRect(0, 0, 100, 1000));
+  apzc->SetFrameMetrics(metrics);
+
+  MockFunction<void(std::string checkPointName)> checkScroll;
+  {
+    // Motion of the scrollable screen:
+    // - Up to the vertical y limit of the page.
+    // - Right
+    InSequence s;
+    EXPECT_CALL(checkScroll, Call("Touch Scroll Diagonally Upwards Start"));
+
+    // Even though the touch gesture includes horizontal movement,
+    // do not show a horizontal overscroll effect because the page
+    // is not scrollable horizontally.
+    EXPECT_CALL(*mcc, UpdateOverscrollOffset(_, 0, _, _)).Times(AtLeast(1));
+
+    EXPECT_CALL(checkScroll, Call("Touch Scroll Diagonally Upwards End"));
+  }
+
+  checkScroll.Call("Touch Scroll Diagonally Upwards Start");
+  // Scroll up
+  ScreenIntPoint startPoint(10, 50);
+  ScreenIntPoint endPoint(20, 100);
+  Pan(apzc, startPoint, endPoint, PanOptions::KeepFingerDown);
+
+  checkScroll.Call("Touch Scroll Diagonally Upwards End");
+
+  EXPECT_TRUE(apzc->IsOverscrolled());
 }
 #endif
 
@@ -2129,8 +2176,9 @@ TEST_F(APZCOverscrollTester, FillOutGutterWhilePanning) {
   metadata.SetScrollUpdates(scrollUpdates);
   metadata.GetMetrics().SetScrollGeneration(
       scrollUpdates.LastElement().GetGeneration());
-  apzc->NotifyLayersUpdated(metadata, /*aIsFirstPaint=*/false,
-                            /*aThisLayerTreeUpdated=*/true);
+  apzc->NotifyLayersUpdated(
+      metadata,
+      LayersUpdateFlags{.mIsFirstPaint = false, .mThisLayerTreeUpdated = true});
 
   CSSPoint scrollOffset = metadata.GetMetrics().GetLayoutScrollOffset();
 
@@ -2146,8 +2194,9 @@ TEST_F(APZCOverscrollTester, FillOutGutterWhilePanning) {
   const CSSRect& scrollableRect = metrics.GetScrollableRect();
   metrics.SetScrollableRect(scrollableRect +
                             CSSSize(0, scrollableRect.height + 10));
-  apzc->NotifyLayersUpdated(metadata, /*aIsFirstPaint=*/false,
-                            /*aThisLayerTreeUpdated=*/true);
+  apzc->NotifyLayersUpdated(
+      metadata,
+      LayersUpdateFlags{.mIsFirstPaint = false, .mThisLayerTreeUpdated = true});
 
   // Now that the scroll position was shifted with the overscroll amount.
   EXPECT_EQ(apzc->GetScrollMetadata().GetMetrics().GetVisualScrollOffset().y,
@@ -2171,8 +2220,9 @@ TEST_F(APZCOverscrollTester, FillOutGutterWhileAnimating) {
   metadata.SetScrollUpdates(scrollUpdates);
   metadata.GetMetrics().SetScrollGeneration(
       scrollUpdates.LastElement().GetGeneration());
-  apzc->NotifyLayersUpdated(metadata, /*aIsFirstPaint=*/false,
-                            /*aThisLayerTreeUpdated=*/true);
+  apzc->NotifyLayersUpdated(
+      metadata,
+      LayersUpdateFlags{.mIsFirstPaint = false, .mThisLayerTreeUpdated = true});
 
   CSSPoint scrollOffset = metadata.GetMetrics().GetLayoutScrollOffset();
 
@@ -2201,8 +2251,9 @@ TEST_F(APZCOverscrollTester, FillOutGutterWhileAnimating) {
   const CSSRect& scrollableRect = metrics.GetScrollableRect();
   metrics.SetScrollableRect(scrollableRect +
                             CSSSize(0, scrollableRect.height + 10));
-  apzc->NotifyLayersUpdated(metadata, /*aIsFirstPaint=*/false,
-                            /*aThisLayerTreeUpdated=*/true);
+  apzc->NotifyLayersUpdated(
+      metadata,
+      LayersUpdateFlags{.mIsFirstPaint = false, .mThisLayerTreeUpdated = true});
 
   // Now that the scroll position was shifted with the overscroll amount.
   EXPECT_EQ(apzc->GetScrollMetadata().GetMetrics().GetVisualScrollOffset().y,
@@ -2224,14 +2275,15 @@ TEST_F(APZCOverscrollTester, ProgrammaticScroll) {
   scrollUpdates.AppendElement(ScrollPositionUpdate::NewSmoothScroll(
       ScrollMode::SmoothMsd, ScrollOrigin::Other,
       CSSPoint::ToAppUnits(CSSPoint(0, 100000)), ScrollTriggeredByScript::Yes,
-      nullptr));
+      nullptr, ViewportType::Visual));
   metadata.SetScrollUpdates(scrollUpdates);
   metadata.GetMetrics().SetScrollGeneration(
       scrollUpdates.LastElement().GetGeneration());
-  apzc->NotifyLayersUpdated(metadata, /*aIsFirstPaint=*/false,
-                            /*aThisLayerTreeUpdated=*/true);
+  apzc->NotifyLayersUpdated(
+      metadata,
+      LayersUpdateFlags{.mIsFirstPaint = false, .mThisLayerTreeUpdated = true});
 
-  apzc->AssertStateIsSmoothMsdScroll();
+  apzc->AssertInSmoothMsdScroll();
 
   while (SampleAnimationOneFrame()) {
     EXPECT_FALSE(apzc->IsOverscrolled());

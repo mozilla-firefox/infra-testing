@@ -5,18 +5,18 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/css/StreamLoader.h"
-#include "mozilla/StaticPrefs_network.h"
+
 #include "mozilla/Encoding.h"
-#include "mozilla/glean/NetwerkMetrics.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/TaskQueue.h"
-#include "mozilla/net/UrlClassifierFeatureFactory.h"
 #include "mozilla/dom/CacheExpirationTime.h"
+#include "mozilla/net/UrlClassifierFeatureFactory.h"
 #include "nsContentUtils.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
 #include "nsIChannel.h"
 #include "nsIInputStream.h"
-#include "nsIThreadRetargetableRequest.h"
 #include "nsIStreamTransportService.h"
+#include "nsIThreadRetargetableRequest.h"
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
 #include "nsProxyRelease.h"
@@ -105,13 +105,6 @@ StreamLoader::OnStopRequest(nsIRequest* aRequest, nsresult aStatus) {
     mSheetLoadData->mNetworkMetadata =
         new SubResourceNetworkMetadataHolder(aRequest);
 
-    if (mOnDataFinishedTime) {
-      // collect telemetry for the delta between OnDataFinished and
-      // OnStopRequest
-      TimeDuration delta = (TimeStamp::Now() - mOnDataFinishedTime);
-      glean::networking::http_content_cssloader_ondatafinished_to_onstop_delay
-          .AccumulateRawDuration(delta);
-    }
     mSheetLoadData->mSheet->UnblockParsePromise();
   } else {
     if (mSheetLoadData->mRecordErrors) {
@@ -242,9 +235,6 @@ NS_IMETHODIMP
 StreamLoader::OnDataFinished(nsresult aResult) {
   nsCOMPtr<nsIRequest> request = mRequest.forget();
   if (StaticPrefs::network_send_OnDataFinished_cssLoader()) {
-    MOZ_ASSERT(mOnDataFinishedTime.IsNull(),
-               "OnDataFinished should only be called once");
-    mOnDataFinishedTime = TimeStamp::Now();
     return OnStopRequest(request, aResult);
   }
 

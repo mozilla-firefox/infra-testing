@@ -9,6 +9,7 @@ ChromeUtils.defineESModuleGetters(this, {
   AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
   FileTestUtils: "resource://testing-common/FileTestUtils.sys.mjs",
   JSONFile: "resource://gre/modules/JSONFile.sys.mjs",
+  sinon: "resource://testing-common/Sinon.sys.mjs",
 });
 
 /**
@@ -29,6 +30,14 @@ const TEST_DATA = {
     prop2: 2,
   },
 };
+
+add_setup(
+  { skip_if: () => AppConstants.platform == "android" },
+  function test_setup() {
+    // We need to initialize it once, otherwise operations will be stuck in the pre-init queue.
+    Services.fog.initializeFOG();
+  }
+);
 
 // Tests
 
@@ -324,3 +333,104 @@ add_task(async function test_finalize_on_shutdown() {
   await storeForLoad.load();
   Assert.deepEqual(storeForLoad.data, TEST_DATA);
 });
+
+add_task(async function test_save_failure_handler() {
+  let path = getTempFile(TEST_STORE_FILE_NAME).path;
+  let saveFailureHandler = sinon.stub();
+  let storeForSave = new JSONFile({
+    path,
+    saveDelayMs: 10,
+    saveFailureHandler,
+  });
+  await storeForSave.load();
+
+  // Let's now add some invalid data that we'll fail to save.
+  let circularThing = {};
+  circularThing.circle = circularThing;
+
+  storeForSave.data = {
+    circularThing,
+  };
+  await storeForSave._save();
+  Assert.ok(saveFailureHandler.calledOnce, "Failure handler was called");
+  Assert.ok(
+    saveFailureHandler.calledWith(
+      sinon.match(error => {
+        return error.message == "cyclic object value";
+      })
+    ),
+    "Handler was passed Error"
+  );
+});
+
+if (AppConstants.platform != "android") {
+  add_task(async function test_load_error_telemetry() {
+    let file = getTempFile("idontexist.json");
+    let store = new JSONFile({
+      path: file.path,
+      sanitizedBasename: "logins",
+    });
+
+    await store.load();
+    let telemetryData = Glean.jsonfile.loadLogins.testGetValue();
+    console.log(
+      "Telemetry data after trying to read file that doesn't exist:",
+      JSON.stringify(telemetryData)
+    );
+    telemetryData = telemetryData?.filter(n =>
+      n.extra?.value?.startsWith("error")
+    );
+
+    Assert.equal(telemetryData.length, 1, "Telemetry should record one error.");
+    Assert.equal(
+      telemetryData[0]?.extra.value,
+      "error_notfounderror",
+      "Telemetry should record not found."
+    );
+
+    // Can't easily create a file we can't read on Windows.
+    if (AppConstants.platform != "win") {
+      Services.fog.testResetFOG();
+
+      store = new JSONFile({
+        path: file.path,
+        sanitizedBasename: "logins",
+      });
+
+      file.create(Ci.nsIFile.NORMAL_FILE_TYPE, 0o111);
+
+      await store.load();
+
+      telemetryData = Glean.jsonfile.loadLogins.testGetValue();
+      console.log(
+        "Telemetry data after trying to read unreadable file:",
+        JSON.stringify(telemetryData)
+      );
+      telemetryData = telemetryData?.filter(n =>
+        n.extra?.value?.startsWith("error")
+      );
+
+      Assert.equal(
+        telemetryData.length,
+        1,
+        "Telemetry should record one error."
+      );
+      Assert.equal(
+        telemetryData[0]?.extra.value,
+        "error_notallowederror",
+        "Telemetry should record permission denied."
+      );
+
+      Assert.ok(
+        await IOUtils.exists(store.path + ".corrupt"),
+        "A backup file should have been created (via move)."
+      );
+      await IOUtils.remove(store.path + ".corrupt");
+
+      Assert.ok(
+        !(await IOUtils.exists(store.path)),
+        "Original file should have been moved."
+      );
+    }
+  });
+}

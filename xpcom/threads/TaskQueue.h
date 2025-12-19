@@ -13,10 +13,15 @@
 #include "mozilla/MozPromise.h"
 #include "mozilla/Queue.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/TargetShutdownTaskSet.h"
 #include "mozilla/TaskDispatcher.h"
 #include "mozilla/ThreadSafeWeakPtr.h"
 #include "nsIDirectTaskDispatcher.h"
+#include "nsITargetShutdownTask.h"
 #include "nsThreadUtils.h"
+
+#define MOZILLA_TASKQUEUE_IID \
+  {0xb5181e3a, 0x39cf, 0x4d32, {0x81, 0x4a, 0xea, 0x86, 0x94, 0x16, 0x95, 0xd1}}
 
 namespace mozilla {
 
@@ -58,6 +63,7 @@ class TaskQueue final : public AbstractThread,
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSIDIRECTTASKDISPATCHER
   MOZ_DECLARE_REFCOUNTED_TYPENAME(TaskQueue)
+  NS_INLINE_DECL_STATIC_IID(MOZILLA_TASKQUEUE_IID)
 
   static RefPtr<TaskQueue> Create(already_AddRefed<nsIEventTarget> aTarget,
                                   const char* aName,
@@ -65,8 +71,15 @@ class TaskQueue final : public AbstractThread,
 
   TaskDispatcher& TailDispatcher() override;
 
+  NS_IMETHOD DispatchFromScript(nsIRunnable* aEvent,
+                                DispatchFlags aFlags) override {
+    return Dispatch(do_AddRef(aEvent), aFlags);
+  }
+
   NS_IMETHOD Dispatch(already_AddRefed<nsIRunnable> aEvent,
-                      uint32_t aFlags) override {
+                      DispatchFlags aFlags) override {
+    // NOTE: This dispatch implementation never leaks the runnable on failure,
+    // even if `NS_DISPATCH_FALLIBLE` is not specified.
     nsCOMPtr<nsIRunnable> runnable = aEvent;
     {
       MonitorAutoLock mon(mQueueMonitor);
@@ -123,20 +136,40 @@ class TaskQueue final : public AbstractThread,
   bool IsCurrentThreadIn() const override;
   using nsISerialEventTarget::IsOnCurrentThread;
 
+  class Observer {
+   public:
+    NS_INLINE_DECL_PURE_VIRTUAL_REFCOUNTING
+    // Called before an event is processed on the TaskQueue on its event target.
+    virtual void WillProcessEvent(TaskQueue* aQueue) = 0;
+    // Called after an event has been processed on the TaskQueue on its event
+    // target.
+    // Note that it is not safe to add direct tasks from DidProcessEvent().
+    virtual void DidProcessEvent(TaskQueue* aQueue) = 0;
+
+   protected:
+    virtual ~Observer() = default;
+  };
+
+  // Set an observer to be notified as this TaskQueue processes events.
+  // Callable from any thread. Transactional, i.e. WillProcess always comes
+  // first and is always matched by DidProcess.
+  void SetObserver(Observer* aObserver);
+
  private:
   friend class SupportsThreadSafeWeakPtr<TaskQueue>;
 
   TaskQueue(already_AddRefed<nsIEventTarget> aTarget, const char* aName,
             bool aSupportsTailDispatch);
 
-  virtual ~TaskQueue();
+  virtual ~TaskQueue() = default;
 
   // Blocks until all task finish executing. Called internally by methods
   // that need to wait until the task queue is idle.
   // mQueueMonitor must be held.
   void AwaitIdleLocked();
 
-  nsresult DispatchLocked(nsCOMPtr<nsIRunnable>& aRunnable, uint32_t aFlags,
+  nsresult DispatchLocked(nsCOMPtr<nsIRunnable>& aRunnable,
+                          DispatchFlags aFlags,
                           DispatchReason aReason = NormalDispatch);
 
   void MaybeResolveShutdown();
@@ -153,15 +186,14 @@ class TaskQueue final : public AbstractThread,
 
   typedef struct TaskStruct {
     nsCOMPtr<nsIRunnable> event;
-    uint32_t flags;
+    DispatchFlags flags;
   } TaskStruct;
 
   // Queue of tasks to run.
   Queue<TaskStruct> mTasks MOZ_GUARDED_BY(mQueueMonitor);
 
   // List of tasks to run during shutdown.
-  nsTArray<nsCOMPtr<nsITargetShutdownTask>> mShutdownTasks
-      MOZ_GUARDED_BY(mQueueMonitor);
+  TargetShutdownTaskSet mShutdownTasks MOZ_GUARDED_BY(mQueueMonitor);
 
   // The thread currently running the task queue. We store a reference
   // to this so that IsCurrentThreadIn() can tell if the current thread
@@ -176,8 +208,8 @@ class TaskQueue final : public AbstractThread,
   // RAII class that gets instantiated for each dispatched task.
   class AutoTaskGuard {
    public:
-    explicit AutoTaskGuard(TaskQueue* aQueue)
-        : mQueue(aQueue), mLastCurrentThread(nullptr) {
+    AutoTaskGuard(TaskQueue* aQueue, TaskQueue::Observer* aObserver)
+        : mQueue(aQueue), mObserver(aObserver), mLastCurrentThread(nullptr) {
       // NB: We don't hold the lock to aQueue here. Don't do anything that
       // might require it.
       MOZ_ASSERT(!mQueue->mTailDispatcher);
@@ -190,22 +222,40 @@ class TaskQueue final : public AbstractThread,
 
       MOZ_ASSERT(mQueue->mRunningThread == nullptr);
       mQueue->mRunningThread = PR_GetCurrentThread();
+
+      mEventTargetGuard.emplace(mQueue);
+
+      if (mObserver) {
+        mObserver->WillProcessEvent(mQueue);
+      }
     }
 
     ~AutoTaskGuard() {
       mTaskDispatcher->DrainDirectTasks();
+
+      if (mObserver) {
+        mObserver->DidProcessEvent(mQueue);
+        MOZ_ASSERT(!mTaskDispatcher->HaveDirectTasks(),
+                   "TaskQueue::Observer instance in "
+                   "DidProcessEvent(TaskQueue*) added direct tasks in error");
+      }
+
       mTaskDispatcher.reset();
+      mQueue->mTailDispatcher = nullptr;
+
+      mEventTargetGuard = Nothing();
 
       MOZ_ASSERT(mQueue->mRunningThread == PR_GetCurrentThread());
       mQueue->mRunningThread = nullptr;
 
       sCurrentThreadTLS.set(mLastCurrentThread);
-      mQueue->mTailDispatcher = nullptr;
     }
 
    private:
     Maybe<AutoTaskDispatcher> mTaskDispatcher;
+    Maybe<SerialEventTargetGuard> mEventTargetGuard;
     TaskQueue* mQueue;
+    TaskQueue::Observer* mObserver;
     AbstractThread* mLastCurrentThread;
   };
 
@@ -225,6 +275,8 @@ class TaskQueue final : public AbstractThread,
 
   SimpleTaskQueue mDirectTasks;
 
+  RefPtr<Observer> mObserver MOZ_GUARDED_BY(mQueueMonitor);
+
   class Runner : public Runnable {
    public:
     explicit Runner(TaskQueue* aQueue)
@@ -236,12 +288,8 @@ class TaskQueue final : public AbstractThread,
   };
 };
 
-#define MOZILLA_TASKQUEUETRACKER_IID                 \
-  {                                                  \
-    0x765c4b56, 0xd5f6, 0x4a9f, {                    \
-      0x91, 0xcf, 0x51, 0x47, 0xb3, 0xc1, 0x7e, 0xa6 \
-    }                                                \
-  }
+#define MOZILLA_TASKQUEUETRACKER_IID \
+  {0x765c4b56, 0xd5f6, 0x4a9f, {0x91, 0xcf, 0x51, 0x47, 0xb3, 0xc1, 0x7e, 0xa6}}
 
 // XPCOM "interface" which may be implemented by nsIEventTarget implementations
 // which want to keep track of what TaskQueue instances are currently targeting
@@ -253,7 +301,7 @@ class TaskQueue final : public AbstractThread,
 // are asynchronous, which is not a requirement of that interface.
 class TaskQueueTracker : public nsISupports {
  public:
-  NS_DECLARE_STATIC_IID_ACCESSOR(MOZILLA_TASKQUEUETRACKER_IID)
+  NS_INLINE_DECL_STATIC_IID(MOZILLA_TASKQUEUETRACKER_IID)
 
   // Get a strong reference to every TaskQueue currently tracked by this
   // TaskQueueTracker. May be called from any thraed.
@@ -268,8 +316,6 @@ class TaskQueueTracker : public nsISupports {
   Mutex mMutex{"TaskQueueTracker"};
   LinkedList<TaskQueueTrackerEntry> mEntries MOZ_GUARDED_BY(mMutex);
 };
-
-NS_DEFINE_STATIC_IID_ACCESSOR(TaskQueueTracker, MOZILLA_TASKQUEUETRACKER_IID)
 
 }  // namespace mozilla
 

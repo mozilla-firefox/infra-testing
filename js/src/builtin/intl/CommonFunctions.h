@@ -10,6 +10,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "js/GCVector.h"
 #include "js/RootingAPI.h"
 #include "js/Utility.h"
 
@@ -105,9 +106,6 @@ void AddICUCellMemory(JSObject* obj, size_t nbytes);
 void RemoveICUCellMemory(JSObject* obj, size_t nbytes);
 
 void RemoveICUCellMemory(JS::GCContext* gcx, JSObject* obj, size_t nbytes);
-
-JSLinearString* CanonicalizeTimeZone(JSContext* cx,
-                                     JS::Handle<JSString*> timeZone);
 }  // namespace intl
 
 }  // namespace js

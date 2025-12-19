@@ -5,9 +5,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/HTMLHeadingElement.h"
-#include "mozilla/dom/HTMLHeadingElementBinding.h"
 
 #include "mozilla/MappedDeclarationsBuilder.h"
+#include "mozilla/dom/HTMLHeadingElementBinding.h"
 #include "nsGkAtoms.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Heading)
@@ -34,6 +34,20 @@ bool HTMLHeadingElement::ParseAttribute(int32_t aNamespaceID,
 
   return nsGenericHTMLElement::ParseAttribute(aNamespaceID, aAttribute, aValue,
                                               aMaybeScriptedPrincipal, aResult);
+}
+
+void HTMLHeadingElement::UpdateLevel(bool aNotify) {
+  AutoStateChangeNotifier notifier(*this, aNotify);
+  RemoveStatesSilently(ElementState::HEADING_LEVEL_BITS);
+  uint64_t level = ComputedLevel();
+
+  // ElementState has 4 bits for the heading level, but they are not the LMB,
+  // so we need to shift the given level up to those bits.
+  MOZ_ASSERT(level > 0 && level < 16, "ComputedLevel() must fit into 4 bits!");
+  uint64_t bits = (level << HEADING_LEVEL_OFFSET);
+  MOZ_ASSERT((bits & ElementState::HEADING_LEVEL_BITS.bits) == bits);
+
+  AddStatesSilently(ElementState(bits));
 }
 
 void HTMLHeadingElement::MapAttributesIntoRule(

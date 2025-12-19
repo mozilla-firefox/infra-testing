@@ -21,9 +21,9 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.addons.AddonsManagementFragmentDirections.Companion.actionAddonsManagementFragmentToAddonDetailsFragment
 import org.mozilla.fenix.addons.AddonsManagementFragmentDirections.Companion.actionAddonsManagementFragmentToInstalledAddonDetails
 import org.mozilla.fenix.ext.directionsEq
-import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
+import org.robolectric.RobolectricTestRunner
 
-@RunWith(FenixRobolectricTestRunner::class)
+@RunWith(RobolectricTestRunner::class)
 class AddonsManagementViewTest {
 
     @RelaxedMockK private lateinit var navController: NavController
@@ -34,10 +34,11 @@ class AddonsManagementViewTest {
     private var onMoreAddonsButtonClicked: () -> Unit = { moreAddonsButtonClicked = true }
     private var moreAddonsButtonClicked = false
 
-    private var onLearnMoreLinkClicked: (AddonsManagerAdapterDelegate.LearnMoreLinks, Addon) -> Unit = {
-            _: AddonsManagerAdapterDelegate.LearnMoreLinks, _: Addon ->
-        learnMoreLinkClicked = true
-    }
+    private var onLearnMoreLinkClicked: (AddonsManagerAdapterDelegate.LearnMoreLinks, Addon) -> Unit =
+        { _: AddonsManagerAdapterDelegate.LearnMoreLinks, _: Addon ->
+            learnMoreLinkClicked = true
+        }
+
     private var learnMoreLinkClicked = false
 
     @Before

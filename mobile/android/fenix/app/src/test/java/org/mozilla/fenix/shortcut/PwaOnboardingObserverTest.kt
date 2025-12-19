@@ -17,7 +17,6 @@ import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.feature.pwa.WebAppUseCases
-import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.rule.MainCoroutineRule
 import org.junit.After
 import org.junit.Before
@@ -25,10 +24,10 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
-import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
 import org.mozilla.fenix.utils.Settings
+import org.robolectric.RobolectricTestRunner
 
-@RunWith(FenixRobolectricTestRunner::class)
+@RunWith(RobolectricTestRunner::class)
 class PwaOnboardingObserverTest {
 
     private lateinit var store: BrowserStore
@@ -82,7 +81,7 @@ class PwaOnboardingObserverTest {
         every { settings.lastKnownMode } returns BrowsingMode.Private
         pwaOnboardingObserver.start()
 
-        store.dispatch(ContentAction.UpdateWebAppManifestAction("1", mockk())).joinBlocking()
+        store.dispatch(ContentAction.UpdateWebAppManifestAction("1", mockk()))
         verify(exactly = 0) { settings.incrementVisitedInstallableCount() }
         verify(exactly = 0) { pwaOnboardingObserver.navigateToPwaOnboarding() }
     }
@@ -95,7 +94,7 @@ class PwaOnboardingObserverTest {
         every { settings.lastKnownMode } returns BrowsingMode.Normal
         pwaOnboardingObserver.start()
 
-        store.dispatch(ContentAction.UpdateWebAppManifestAction("1", mockk())).joinBlocking()
+        store.dispatch(ContentAction.UpdateWebAppManifestAction("1", mockk()))
         verify { settings.incrementVisitedInstallableCount() }
         verify(exactly = 0) { pwaOnboardingObserver.navigateToPwaOnboarding() }
     }
@@ -108,7 +107,7 @@ class PwaOnboardingObserverTest {
         every { settings.lastKnownMode } returns BrowsingMode.Normal
         pwaOnboardingObserver.start()
 
-        store.dispatch(ContentAction.UpdateWebAppManifestAction("1", mockk())).joinBlocking()
+        store.dispatch(ContentAction.UpdateWebAppManifestAction("1", mockk()))
         verify { settings.incrementVisitedInstallableCount() }
         verify { pwaOnboardingObserver.navigateToPwaOnboarding() }
     }
@@ -120,7 +119,7 @@ class PwaOnboardingObserverTest {
         every { settings.shouldShowPwaCfr } returns true
         pwaOnboardingObserver.start()
 
-        store.dispatch(ContentAction.UpdateWebAppManifestAction("1", mockk())).joinBlocking()
+        store.dispatch(ContentAction.UpdateWebAppManifestAction("1", mockk()))
         verify(exactly = 0) { settings.incrementVisitedInstallableCount() }
         verify(exactly = 0) { pwaOnboardingObserver.navigateToPwaOnboarding() }
     }

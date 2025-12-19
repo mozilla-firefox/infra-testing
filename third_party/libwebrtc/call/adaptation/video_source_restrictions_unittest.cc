@@ -10,6 +10,7 @@
 
 #include "call/adaptation/video_source_restrictions.h"
 
+#include <cstddef>
 #include <optional>
 
 #include "test/gtest.h"
@@ -17,7 +18,7 @@ namespace webrtc {
 
 namespace {
 
-const size_t kHdPixels = 1280 * 720;
+constexpr size_t kHdPixels = 1280 * 720;
 
 const VideoSourceRestrictions kUnlimited;
 const VideoSourceRestrictions k15fps(std::nullopt, std::nullopt, 15.0);

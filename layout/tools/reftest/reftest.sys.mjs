@@ -6,6 +6,8 @@ import { FileUtils } from "resource://gre/modules/FileUtils.sys.mjs";
 
 import { globals } from "resource://reftest/globals.sys.mjs";
 
+import { setTimeout } from "resource://gre/modules/Timer.sys.mjs";
+
 const {
   XHTML_NS,
   XUL_NS,
@@ -51,7 +53,7 @@ const lazy = {};
 XPCOMUtils.defineLazyServiceGetters(lazy, {
   proxyService: [
     "@mozilla.org/network/protocol-proxy-service;1",
-    "nsIProtocolProxyService",
+    Ci.nsIProtocolProxyService,
   ],
 });
 
@@ -1763,10 +1765,19 @@ function ResetRenderingState() {
 }
 
 async function RestoreChangedPreferences() {
-  if (!g.prefsToRestore.length) {
+  // Restore any preferences set via SpecialPowers in a previous test.
+  // On Android, g.containingWindow typically doesn't doesn't have a
+  // SpecialPowers property because it was created before SpecialPowers was
+  // registered.
+  // Get a parent actor so that there is less waiting than with a child.
+  let { requiresRefresh } =
+    g.containingWindow.browsingContext.currentWindowGlobal
+      .getActor("SpecialPowers")
+      .flushPrefEnv();
+
+  if (!g.prefsToRestore.length && !requiresRefresh) {
     return;
   }
-  var requiresRefresh = false;
   g.prefsToRestore.reverse();
   g.prefsToRestore.forEach(function (ps) {
     requiresRefresh = requiresRefresh || ps.requiresRefresh;
@@ -1935,8 +1946,13 @@ function RecvContentReady(info) {
     g.resolveContentReady();
     g.resolveContentReady = null;
   } else {
-    g.contentGfxInfo = info.gfx;
-    InitAndStartRefTests();
+    // Prevent a race with GeckoView:SetFocused, bug 1960620
+    // If about:blank loads synchronously, we'll RecvContentReady on the first tick,
+    // which is also the tick where GeckoViewContent processes messages from GeckoView.
+    setTimeout(() => {
+      g.contentGfxInfo = info.gfx;
+      InitAndStartRefTests();
+    }, 0);
   }
   return { remote: g.browserIsRemote };
 }

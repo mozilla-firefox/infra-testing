@@ -115,4 +115,22 @@
   CREATE_PLACES_IDX("referrerindex", "moz_places_metadata", \
                     "referrer_place_id", "")
 
+// moz_newtab_story
+#define CREATE_IDX_MOZ_NEWTAB_STORY_CLICK_TIMESTAMP                          \
+  CREATE_PLACES_IDX("newtab_click_timestampindex", "moz_newtab_story_click", \
+                    "timestamp_s", "")
+
+#define CREATE_IDX_MOZ_NEWTAB_IMPRESSION_TIMESTAMP      \
+  CREATE_PLACES_IDX("newtab_impression_timestampindex", \
+                    "moz_newtab_story_impression", "timestamp_s", "")
+
+// moz_newtab_shortcuts
+#define CREATE_IDX_MOZ_NEWTAB_SHORTCUTS_TIMESTAMP                         \
+  CREATE_PLACES_IDX("timestampindex", "moz_newtab_shortcuts_interaction", \
+                    "timestamp_s", "")
+
+#define CREATE_IDX_MOZ_NEWTAB_SHORTCUTS_PLACEID                         \
+  CREATE_PLACES_IDX("placeidindex", "moz_newtab_shortcuts_interaction", \
+                    "place_id", "")
+
 #endif  // nsPlacesIndexes_h__

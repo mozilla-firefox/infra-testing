@@ -8,7 +8,7 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   E10SUtils: "resource://gre/modules/E10SUtils.sys.mjs",
-  PlacesUIUtils: "resource:///modules/PlacesUIUtils.sys.mjs",
+  PlacesUIUtils: "moz-src:///browser/components/places/PlacesUIUtils.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   WebNavigationFrames: "resource://gre/modules/WebNavigationFrames.sys.mjs",
 });
@@ -114,7 +114,9 @@ export class ClickHandlerParent extends JSWindowActorParent {
       originPrincipal: data.originPrincipal,
       originStoragePrincipal: data.originStoragePrincipal,
       triggeringPrincipal: data.triggeringPrincipal,
-      csp: data.csp ? lazy.E10SUtils.deserializeCSP(data.csp) : null,
+      policyContainer: data.policyContainer
+        ? lazy.E10SUtils.deserializePolicyContainer(data.policyContainer)
+        : null,
       frameID: data.frameID,
       openerBrowser: browser,
       // The child ensures that untrusted events have a valid user activation.
@@ -131,6 +133,7 @@ export class ClickHandlerParent extends JSWindowActorParent {
         triggeringSponsoredURLVisitTimeMS: browser.getAttribute(
           "triggeringSponsoredURLVisitTimeMS"
         ),
+        triggeringSource: browser.getAttribute("triggeringSource"),
       };
     }
 

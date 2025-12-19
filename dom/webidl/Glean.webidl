@@ -4,7 +4,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-[Func="nsGlobalWindowInner::IsGleanNeeded", Exposed=Window]
+[Func="GleanWebidlEnabled", Exposed=Window]
 interface GleanCategory {
   /**
    * Get a metric by name.
@@ -15,7 +15,7 @@ interface GleanCategory {
   getter GleanMetric (DOMString identifier);
 };
 
-[Func="nsGlobalWindowInner::IsGleanNeeded", Exposed=Window]
+[Func="GleanWebidlEnabled", Exposed=Window]
 interface GleanImpl {
   /**
    * Get a metric category by name.
@@ -25,7 +25,9 @@ interface GleanImpl {
   getter GleanCategory (DOMString identifier);
 };
 
-[Func="nsGlobalWindowInner::IsGleanNeeded", Exposed=Window]
+typedef (boolean or unsigned long long or UTF8String or GleanDistributionData) GleanLabeledTestValue;
+
+[Func="GleanWebidlEnabled", Exposed=Window]
 interface GleanLabeled {
   /**
    * Get a specific metric for a given label.
@@ -40,4 +42,7 @@ interface GleanLabeled {
    * `OTHER_LABEL` label.
    */
   getter GleanMetric (DOMString identifier);
+
+  [Throws, ChromeOnly]
+  record<UTF8String, GleanLabeledTestValue>? testGetValue(optional UTF8String aPingName = "");
 };

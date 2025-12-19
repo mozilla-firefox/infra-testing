@@ -69,7 +69,13 @@ class ToastNotificationHandler final
   void HideAlert();
   bool IsPrivate();
 
+  // Called to stop listening events from Windows for this notification.
+  // This allows clearing up resources bound to the listener callbacks.
   void UnregisterHandler();
+  // Called when Alerts Service closes notification.
+  // This will clear up resources and also ping the observer for further
+  // downstream cleanup.
+  void HandleCloseFromBrowser();
 
   nsString ActionArgsJSONString(
       const nsString& aAction,
@@ -139,7 +145,11 @@ class ToastNotificationHandler final
   bool ShowAlert();
   nsresult AsyncSaveImage(imgIRequest* aRequest);
   nsresult OnWriteImageSuccess();
+  // Pings the alert observer with alertfinish.
   void SendFinished();
+  // Called either when Windows tells us the notification is closed or failed to
+  // open.
+  void HandleCloseFromSystem();
 
   bool CreateWindowsNotificationFromXml(ComPtr<IXmlDocument>& aToastXml);
   ComPtr<IXmlDocument> CreateToastXmlDocument();

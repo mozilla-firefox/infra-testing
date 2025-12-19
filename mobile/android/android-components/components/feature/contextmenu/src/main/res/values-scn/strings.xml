@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources>
   <!-- Text for context menu item to open the link in a new tab. -->
   <string name="mozac_feature_contextmenu_open_link_in_new_tab">Grapi a lijami nta na scheda nova</string>
@@ -31,7 +38,7 @@
   <!-- Action shown in a "snacbkar" after opening a new/private tab. Clicking this action will switch to the newly opened tab. -->
   <string name="mozac_feature_contextmenu_snackbar_action_switch">Cancia</string>
   <!-- Text for context menu item to open the link in an external app. -->
-  <string name="mozac_feature_contextmenu_open_link_in_external_app">Grapi lijami nta n\'applicazzioni di fora</string>
+  <string name="mozac_feature_contextmenu_open_link_in_external_app">Grapi lijami nta n’applicazzioni di fora</string>
   <!-- Text for context menu item to share the email with another app. -->
   <string name="mozac_feature_contextmenu_share_email_address">Sparti u nnirizzu e-mail</string>
   <!-- Text for context menu item to copy the email address to the clipboard. -->

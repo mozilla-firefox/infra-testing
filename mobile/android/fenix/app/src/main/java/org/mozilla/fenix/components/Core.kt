@@ -6,18 +6,13 @@ package org.mozilla.fenix.components
 
 import android.content.Context
 import android.content.res.Configuration
-import android.os.Build
-import android.os.StrictMode
 import androidx.core.content.ContextCompat
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import mozilla.appservices.search.SearchApplicationName
-import mozilla.appservices.search.SearchDeviceType
-import mozilla.appservices.search.SearchEngineSelector
-import mozilla.appservices.search.SearchUpdateChannel
 import mozilla.components.browser.domains.autocomplete.BaseDomainAutocompleteProvider
 import mozilla.components.browser.domains.autocomplete.ShippedDomainsProvider
 import mozilla.components.browser.engine.gecko.GeckoEngine
@@ -29,6 +24,7 @@ import mozilla.components.browser.icons.BrowserIcons
 import mozilla.components.browser.session.storage.SessionStorage
 import mozilla.components.browser.state.engine.EngineMiddleware
 import mozilla.components.browser.state.engine.middleware.SessionPrioritizationMiddleware
+import mozilla.components.browser.state.engine.middleware.TranslationsMiddleware
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.browser.storage.sync.PlacesBookmarksStorage
@@ -44,7 +40,10 @@ import mozilla.components.concept.engine.mediaquery.PreferredColorScheme
 import mozilla.components.concept.fetch.Client
 import mozilla.components.feature.awesomebar.provider.SessionAutocompleteProvider
 import mozilla.components.feature.customtabs.store.CustomTabsServiceStore
+import mozilla.components.feature.downloads.DateTimeProvider
+import mozilla.components.feature.downloads.DefaultDateTimeProvider
 import mozilla.components.feature.downloads.DefaultFileSizeFormatter
+import mozilla.components.feature.downloads.DownloadEstimator
 import mozilla.components.feature.downloads.DownloadMiddleware
 import mozilla.components.feature.downloads.FileSizeFormatter
 import mozilla.components.feature.fxsuggest.facts.FxSuggestFactsMiddleware
@@ -60,6 +59,9 @@ import mozilla.components.feature.pwa.WebAppShortcutManager
 import mozilla.components.feature.readerview.ReaderViewMiddleware
 import mozilla.components.feature.recentlyclosed.RecentlyClosedMiddleware
 import mozilla.components.feature.recentlyclosed.RecentlyClosedTabsStorage
+import mozilla.components.feature.search.SearchApplicationName
+import mozilla.components.feature.search.SearchDeviceType
+import mozilla.components.feature.search.SearchUpdateChannel
 import mozilla.components.feature.search.middleware.AdsTelemetryMiddleware
 import mozilla.components.feature.search.middleware.SearchExtraParams
 import mozilla.components.feature.search.middleware.SearchMiddleware
@@ -87,7 +89,6 @@ import mozilla.components.service.mars.MarsTopSitesRequestConfig
 import mozilla.components.service.mars.NEW_TAB_TILE_1_PLACEMENT_KEY
 import mozilla.components.service.mars.NEW_TAB_TILE_2_PLACEMENT_KEY
 import mozilla.components.service.mars.Placement
-import mozilla.components.service.mars.contile.ContileTopSitesProvider
 import mozilla.components.service.mars.contile.ContileTopSitesUpdater
 import mozilla.components.service.pocket.ContentRecommendationsRequestConfig
 import mozilla.components.service.pocket.PocketStoriesConfig
@@ -102,6 +103,7 @@ import mozilla.components.support.base.worker.Frequency
 import mozilla.components.support.ktx.android.content.appVersionName
 import mozilla.components.support.ktx.android.content.res.readJSONObject
 import mozilla.components.support.locale.LocaleManager
+import mozilla.components.support.utils.RunWhenReadyQueue
 import org.mozilla.fenix.AppRequestInterceptor
 import org.mozilla.fenix.BuildConfig
 import org.mozilla.fenix.Config
@@ -124,7 +126,6 @@ import org.mozilla.fenix.media.MediaSessionService
 import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.fenix.perf.StrictModeManager
 import org.mozilla.fenix.perf.lazyMonitored
-import org.mozilla.fenix.settings.SupportUtils
 import org.mozilla.fenix.settings.advanced.getSelectedLocale
 import org.mozilla.fenix.share.DefaultSentFromFirefoxManager
 import org.mozilla.fenix.share.DefaultSentFromStorage
@@ -144,6 +145,7 @@ class Core(
     private val context: Context,
     private val crashReporter: CrashReporting,
     strictMode: StrictModeManager,
+    visualCompletenessQueue: RunWhenReadyQueue,
 ) {
     /**
      * The browser engine component initialized based on the build
@@ -152,8 +154,7 @@ class Core(
     val engine: Engine by lazyMonitored {
         val defaultSettings = DefaultSettings(
             requestInterceptor = requestInterceptor,
-            remoteDebuggingEnabled = context.settings().isRemoteDebuggingEnabled &&
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.M,
+            remoteDebuggingEnabled = context.settings().isRemoteDebuggingEnabled,
             testingModeEnabled = false,
             trackingProtectionPolicy = trackingProtectionPolicyFactory.createTrackingProtectionPolicy(),
             historyTrackingDelegate = HistoryDelegate(lazyHistoryStorage),
@@ -166,7 +167,7 @@ class Core(
             enterpriseRootsEnabled = context.settings().allowThirdPartyRootCerts,
             clearColor = ContextCompat.getColor(
                 context,
-                R.color.fx_mobile_layer_color_1,
+                R.color.fx_mobile_surface,
             ),
             httpsOnlyMode = context.settings().getHttpsOnlyMode(),
             dohSettingsMode = context.settings().getDohSettingsMode(),
@@ -185,27 +186,35 @@ class Core(
             getDesktopMode = {
                 store.state.desktopMode
             },
-            webContentIsolationStrategy = WebContentIsolationStrategy.ISOLATE_HIGH_VALUE,
-            fetchPriorityEnabled = FxNimbus.features.networking.value().fetchPriorityEnabled,
+            webContentIsolationStrategy =
+                WebContentIsolationStrategy.fromValue(FxNimbus.features.fission.value().isolationStrategy),
+            fetchPriorityEnabled = true,
             parallelMarkingEnabled = FxNimbus.features.javascript.value().parallelMarkingEnabled,
             certificateTransparencyMode = FxNimbus.features.pki.value().certificateTransparencyMode,
             postQuantumKeyExchangeEnabled = FxNimbus.features.pqcrypto.value().postQuantumKeyExchangeEnabled,
+            dohAutoselectEnabled = FxNimbus.features.doh.value().autoselectEnabled,
+            bannedPorts = FxNimbus.features.networkingBannedPorts.value().bannedPortList,
+            lnaBlockingEnabled = context.settings().isLnaBlockingEnabled,
+            lnaFeatureEnabled = context.settings().isLnaFeatureEnabled,
+            lnaTrackerBlockingEnabled = context.settings().isLnaTrackerBlockingEnabled,
+            crliteChannel = FxNimbus.features.pki.value().crliteChannel,
         )
 
         // Apply fingerprinting protection overrides if the feature is enabled in Nimbus
         if (FxNimbus.features.fingerprintingProtection.value().enabled) {
             defaultSettings.fingerprintingProtectionOverrides =
                 FxNimbus.features.fingerprintingProtection.value().overrides
-        }
-
-        if (FxNimbus.features.fingerprintingProtection.value().enabled) {
             defaultSettings.fingerprintingProtection =
                 FxNimbus.features.fingerprintingProtection.value().enabledNormal
-        }
-
-        if (FxNimbus.features.fingerprintingProtection.value().enabled) {
             defaultSettings.fingerprintingProtectionPrivateBrowsing =
                 FxNimbus.features.fingerprintingProtection.value().enabledPrivate
+        }
+
+        if (FxNimbus.features.baselineFpp.value().featEnabled) {
+            defaultSettings.baselineFingerprintingProtection =
+                FxNimbus.features.baselineFpp.value().enabled
+            defaultSettings.baselineFingerprintingProtectionOverrides =
+                FxNimbus.features.baselineFpp.value().overrides
         }
 
         // Apply third-party cookie blocking settings if the Nimbus feature is
@@ -215,6 +224,12 @@ class Core(
                 FxNimbus.features.thirdPartyCookieBlocking.value().enabledNormal
             defaultSettings.cookieBehaviorOptInPartitioningPBM =
                 FxNimbus.features.thirdPartyCookieBlocking.value().enabledPrivate
+        }
+
+        // Apply Safe Browsing V5 settings if the Nimbus feature is enabled.
+        if (FxNimbus.features.safeBrowsingV5.value().featureEnabled) {
+            defaultSettings.safeBrowsingV5Enabled =
+                FxNimbus.features.safeBrowsingV5.value().enableV5
         }
 
         GeckoEngine(
@@ -301,10 +316,18 @@ class Core(
         }
 
         val middlewareList =
-            mutableListOf(
+            listOf(
+                ProfileMarkerMiddleware(markerName = "BrowserStore", profiler = engine.profiler),
+                LogMiddleware(tag = "BrowserStore", shouldIncludeDetailedData = { Config.channel.isDebug }),
                 LastAccessMiddleware(),
                 RecentlyClosedMiddleware(recentlyClosedTabsStorage, RECENTLY_CLOSED_MAX),
-                DownloadMiddleware(context, DownloadService::class.java),
+                DownloadMiddleware(
+                    applicationContext = context,
+                    downloadServiceClass = DownloadService::class.java,
+                    deleteFileFromStorage = {
+                       context.settings().shouldCleanUpDownloadsAutomatically()
+                    },
+                ),
                 ReaderViewMiddleware(),
                 TelemetryMiddleware(context, context.settings(), metrics, crashReporter),
                 ThumbnailsMiddleware(thumbnailStorage),
@@ -332,6 +355,18 @@ class Core(
                     ),
                 ),
                 ApplicationSearchMiddleware(context),
+                // We are disabling automatically initializing translations so that we can control when
+                // we start this process. For details, see:
+                // https://bugzilla.mozilla.org/show_bug.cgi?id=1958042
+                TranslationsMiddleware(engine, MainScope(), false),
+                StartupMiddleware(
+                    applicationContext = context,
+                    repository = DefaultHomepageAsANewTabPreferenceRepository(context.settings()),
+                ),
+                AboutHomeMiddleware(
+                    homepageTitle = context.getString(R.string.tab_tray_homepage_tab),
+                ),
+                BrowserVisualCompletenessMiddleware(visualCompletenessQueue),
             )
 
         BrowserStore(
@@ -345,10 +380,6 @@ class Core(
                 // https://github.com/mozilla-mobile/android-components/issues/11300
                 // https://github.com/mozilla-mobile/android-components/issues/11653
                 trimMemoryAutomatically = false,
-                // We are disabling automatically initializing translations so that we can control when
-                // we start this process. For details, see:
-                // https://bugzilla.mozilla.org/show_bug.cgi?id=1958042
-                automaticallyInitializeTranslations = false,
             ),
         ).apply {
             // Install the "icons" WebExtension to automatically load icons for every visited website.
@@ -397,6 +428,16 @@ class Core(
      * [FileSizeFormatter] used to format the size of the file items.
      */
     val fileSizeFormatter: FileSizeFormatter by lazyMonitored { DefaultFileSizeFormatter(context.applicationContext) }
+
+    /**
+     * [DateTimeProvider] used to provide date and time information.
+     */
+    val dateTimeProvider: DateTimeProvider by lazyMonitored { DefaultDateTimeProvider() }
+
+    /**
+     * [DateTimeProvider] used to provide date and time information.
+     */
+    val downloadEstimator: DownloadEstimator by lazyMonitored { DownloadEstimator(dateTimeProvider = dateTimeProvider) }
 
     /**
      * The [RelationChecker] checks Digital Asset Links relationships for Trusted Web Activities.
@@ -548,14 +589,6 @@ class Core(
     }
     val pocketStoriesService by lazyMonitored { PocketStoriesService(context, pocketStoriesConfig) }
 
-    val contileTopSitesProvider by lazyMonitored {
-        ContileTopSitesProvider(
-            context = context,
-            client = client,
-            maxCacheAgeInSeconds = CONTILE_MAX_CACHE_AGE,
-        )
-    }
-
     val marsTopSitesProvider by lazyMonitored {
         MarsTopSitesProvider(
             context = context,
@@ -582,56 +615,16 @@ class Core(
     val contileTopSitesUpdater by lazyMonitored {
         ContileTopSitesUpdater(
             context = context,
-            provider = if (context.settings().marsAPIEnabled) {
-                marsTopSitesProvider
-            } else {
-                contileTopSitesProvider
-            },
+            provider = marsTopSitesProvider,
             frequency = Frequency(3, TimeUnit.HOURS),
         )
     }
 
     val topSitesStorage by lazyMonitored {
-        val defaultTopSites = mutableListOf<Pair<String, String>>()
-
-        strictMode.resetAfter(StrictMode.allowThreadDiskReads()) {
-            if (!context.settings().defaultTopSitesAdded) {
-                defaultTopSites.add(
-                    Pair(
-                        context.getString(R.string.default_top_site_google),
-                        SupportUtils.GOOGLE_URL,
-                    ),
-                )
-
-                if (LocaleManager.getSelectedLocale(context).language == "en") {
-                    defaultTopSites.add(
-                        Pair(
-                            context.getString(R.string.pocket_pinned_top_articles),
-                            SupportUtils.POCKET_TRENDING_URL,
-                        ),
-                    )
-                }
-
-                defaultTopSites.add(
-                    Pair(
-                        context.getString(R.string.default_top_site_wikipedia),
-                        SupportUtils.WIKIPEDIA_URL,
-                    ),
-                )
-
-                context.settings().defaultTopSitesAdded = true
-            }
-        }
-
         DefaultTopSitesStorage(
             pinnedSitesStorage = pinnedSiteStorage,
             historyStorage = historyStorage,
-            topSitesProvider = if (context.settings().marsAPIEnabled) {
-                marsTopSitesProvider
-            } else {
-                contileTopSitesProvider
-            },
-            defaultTopSites = defaultTopSites,
+            topSitesProvider = marsTopSitesProvider,
         )
     }
 
@@ -701,7 +694,6 @@ class Core(
             deviceType = deviceType,
             experiment = "",
             updateChannel = updateChannel,
-            selector = SearchEngineSelector(),
             service = context.components.remoteSettingsService.value,
         )
     }
@@ -710,7 +702,6 @@ class Core(
         private const val KEY_STORAGE_NAME = "core_prefs"
         private const val RECENTLY_CLOSED_MAX = 10
         const val HISTORY_METADATA_MAX_AGE_IN_MS = 14 * 24 * 60 * 60 * 1000 // 14 days
-        private const val CONTILE_MAX_CACHE_AGE = 3600L // 60 minutes
         private const val MARS_TOP_SITES_MAX_CACHE_AGE = 1800L // 30 minutes
 
         // Maximum number of suggestions returned from the history search engine source.

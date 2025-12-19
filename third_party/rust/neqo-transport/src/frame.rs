@@ -8,15 +8,14 @@
 
 use std::ops::RangeInclusive;
 
-use neqo_common::{qtrace, Decoder, Encoder};
+use neqo_common::{qtrace, Buffer, Decoder, Encoder, MAX_VARINT};
 use strum::FromRepr;
 
 use crate::{
-    cid::MAX_CONNECTION_ID_LEN,
-    ecn,
-    packet::PacketType,
+    ecn, packet,
+    stateless_reset::Token as Srt,
     stream_id::{StreamId, StreamType},
-    AppError, CloseReason, Error, Res, TransportError,
+    AppError, ConnectionId, Error, Res, TransportError,
 };
 
 #[repr(u64)]
@@ -118,7 +117,7 @@ impl TryFrom<FrameType> for StreamType {
         match value {
             FrameType::MaxStreamsBiDi | FrameType::StreamsBlockedBiDi => Ok(Self::BiDi),
             FrameType::MaxStreamsUniDi | FrameType::StreamsBlockedUniDi => Ok(Self::UniDi),
-            _ => Err(Error::FrameEncodingError),
+            _ => Err(Error::FrameEncoding),
         }
     }
 }
@@ -138,25 +137,16 @@ impl CloseError {
     }
 }
 
-impl From<CloseReason> for CloseError {
-    fn from(err: CloseReason) -> Self {
-        match err {
-            CloseReason::Transport(c) => Self::Transport(c.code()),
-            CloseReason::Application(c) => Self::Application(c),
-        }
-    }
-}
-
 impl From<std::array::TryFromSliceError> for Error {
     fn from(_err: std::array::TryFromSliceError) -> Self {
-        Self::FrameEncodingError
+        Self::FrameEncoding
     }
 }
 
 #[derive(PartialEq, Eq, Debug, Default, Clone)]
 pub struct AckRange {
-    pub(crate) gap: u64,
-    pub(crate) range: u64,
+    gap: u64,
+    range: u64,
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
@@ -219,7 +209,7 @@ pub enum Frame<'a> {
         sequence_number: u64,
         retire_prior: u64,
         connection_id: &'a [u8],
-        stateless_reset_token: &'a [u8; 16],
+        stateless_reset_token: Srt,
     },
     RetireConnectionId {
         sequence_number: u64,
@@ -367,11 +357,11 @@ impl<'a> Frame<'a> {
         let mut acked_ranges = Vec::with_capacity(ack_ranges.len() + 1);
 
         if largest_acked < first_ack_range {
-            return Err(Error::FrameEncodingError);
+            return Err(Error::FrameEncoding);
         }
         acked_ranges.push((largest_acked - first_ack_range)..=largest_acked);
         if !ack_ranges.is_empty() && largest_acked < first_ack_range + 1 {
-            return Err(Error::FrameEncodingError);
+            return Err(Error::FrameEncoding);
         }
         let mut cur = if ack_ranges.is_empty() {
             0
@@ -380,12 +370,12 @@ impl<'a> Frame<'a> {
         };
         for r in ack_ranges {
             if cur < r.gap + 1 {
-                return Err(Error::FrameEncodingError);
+                return Err(Error::FrameEncoding);
             }
             cur = cur - r.gap - 1;
 
             if cur < r.range {
-                return Err(Error::FrameEncodingError);
+                return Err(Error::FrameEncoding);
             }
             acked_ranges.push((cur - r.range)..=cur);
 
@@ -424,7 +414,7 @@ impl<'a> Frame<'a> {
     }
 
     #[must_use]
-    pub fn is_allowed(&self, pt: PacketType) -> bool {
+    pub fn is_allowed(&self, pt: packet::Type) -> bool {
         match self {
             Self::Padding { .. } | Self::Ping => true,
             Self::Crypto { .. }
@@ -432,9 +422,9 @@ impl<'a> Frame<'a> {
             | Self::ConnectionClose {
                 error_code: CloseError::Transport(_),
                 ..
-            } => pt != PacketType::ZeroRtt,
-            Self::NewToken { .. } | Self::ConnectionClose { .. } => pt == PacketType::Short,
-            _ => pt == PacketType::ZeroRtt || pt == PacketType::Short,
+            } => pt != packet::Type::ZeroRtt,
+            Self::NewToken { .. } | Self::ConnectionClose { .. } => pt == packet::Type::Short,
+            _ => pt == packet::Type::ZeroRtt || pt == packet::Type::Short,
         }
     }
 
@@ -515,15 +505,11 @@ impl<'a> Frame<'a> {
         let t = t.try_into()?;
         match t {
             FrameType::Padding => {
-                let mut length: u16 = 1;
-                while let Some(b) = dec.peek_byte() {
-                    if b != u8::from(FrameType::Padding) {
-                        break;
-                    }
-                    length += 1;
-                    dec.skip(1);
-                }
-                Ok(Self::Padding(length))
+                // t itself + any additional `Frame::Padding`
+                (1 + dec.skip_while(u8::from(FrameType::Padding)))
+                    .try_into()
+                    .map(Self::Padding)
+                    .map_err(|_| Error::TooMuchData)
             }
             FrameType::Ping => Ok(Self::Ping),
             FrameType::ResetStream => Ok(Self::ResetStream {
@@ -543,15 +529,15 @@ impl<'a> Frame<'a> {
             FrameType::Crypto => {
                 let offset = dv(dec)?;
                 let data = d(dec.decode_vvec())?;
-                if offset + u64::try_from(data.len())? > ((1 << 62) - 1) {
-                    return Err(Error::FrameEncodingError);
+                if offset + u64::try_from(data.len())? > MAX_VARINT {
+                    return Err(Error::FrameEncoding);
                 }
                 Ok(Self::Crypto { offset, data })
             }
             FrameType::NewToken => {
                 let token = d(dec.decode_vvec())?;
                 if token.is_empty() {
-                    return Err(Error::FrameEncodingError);
+                    return Err(Error::FrameEncoding);
                 }
                 Ok(Self::NewToken { token })
             }
@@ -577,8 +563,8 @@ impl<'a> Frame<'a> {
                     qtrace!("STREAM frame, with length");
                     d(dec.decode_vvec())?
                 };
-                if o + u64::try_from(data.len())? > ((1 << 62) - 1) {
-                    return Err(Error::FrameEncodingError);
+                if o + u64::try_from(data.len())? > MAX_VARINT {
+                    return Err(Error::FrameEncoding);
                 }
                 Ok(Self::Stream {
                     fin: t.is_stream_with_fin(),
@@ -598,7 +584,7 @@ impl<'a> Frame<'a> {
             FrameType::MaxStreamsBiDi | FrameType::MaxStreamsUniDi => {
                 let m = dv(dec)?;
                 if m > (1 << 60) {
-                    return Err(Error::StreamLimitError);
+                    return Err(Error::StreamLimit);
                 }
                 Ok(Self::MaxStreams {
                     stream_type: t.try_into()?,
@@ -622,11 +608,10 @@ impl<'a> Frame<'a> {
                 let sequence_number = dv(dec)?;
                 let retire_prior = dv(dec)?;
                 let connection_id = d(dec.decode_vec(1))?;
-                if connection_id.len() > MAX_CONNECTION_ID_LEN {
-                    return Err(Error::FrameEncodingError);
+                if connection_id.len() > ConnectionId::MAX_LEN {
+                    return Err(Error::FrameEncoding);
                 }
-                let srt = d(dec.decode(16))?;
-                let stateless_reset_token = <&[_; 16]>::try_from(srt)?;
+                let stateless_reset_token = Srt::try_from(dec)?;
 
                 Ok(Self::NewConnectionId {
                     sequence_number,
@@ -669,13 +654,13 @@ impl<'a> Frame<'a> {
                 let seqno = dv(dec)?;
                 let tolerance = dv(dec)?;
                 if tolerance == 0 {
-                    return Err(Error::FrameEncodingError);
+                    return Err(Error::FrameEncoding);
                 }
                 let delay = dv(dec)?;
                 let ignore_order = match d(dec.decode_uint::<u8>())? {
                     0 => false,
                     1 => true,
-                    _ => return Err(Error::FrameEncodingError),
+                    _ => return Err(Error::FrameEncoding),
                 };
                 Ok(Self::AckFrequency {
                     seqno,
@@ -699,15 +684,52 @@ impl<'a> Frame<'a> {
     }
 }
 
+/// Extension trait for [`Encoder`] that automates writing to fuzzing corpus.
+pub trait FrameEncoder {
+    /// Encode a frame with the given type and encoding closure.
+    ///
+    /// This method:
+    /// 1. Encodes the frame type as a varint
+    /// 2. Calls the provided closure to encode the frame-specific data
+    /// 3. When fuzzing corpus collection is enabled, saves the frame to the corpus
+    ///
+    /// # Example
+    /// ```ignore
+    /// builder.encode_frame(FrameType::NewToken, |b| {
+    ///     b.encode_vvec(&token);
+    /// });
+    /// ```
+    fn encode_frame<T, F>(&mut self, frame_type: T, encode_fn: F) -> &mut Self
+    where
+        T: Into<u64>,
+        F: FnOnce(&mut Self);
+}
+
+impl<B: Buffer> FrameEncoder for Encoder<B> {
+    fn encode_frame<T, F>(&mut self, frame_type: T, encode_fn: F) -> &mut Self
+    where
+        T: Into<u64>,
+        F: FnOnce(&mut Self),
+    {
+        #[cfg(feature = "build-fuzzing-corpus")]
+        let frame_start = self.len();
+        self.encode_varint(frame_type.into());
+        encode_fn(self);
+        #[cfg(feature = "build-fuzzing-corpus")]
+        neqo_common::write_item_to_fuzzing_corpus("frame", &self.as_ref()[frame_start..]);
+        self
+    }
+}
+
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use neqo_common::{Decoder, Encoder};
 
     use crate::{
-        cid::MAX_CONNECTION_ID_LEN,
         ecn::Count,
         frame::{AckRange, Frame, FrameType},
-        CloseError, Error, StreamId, StreamType,
+        CloseError, ConnectionId, Error, StreamId, StreamType, Token as Srt,
     };
 
     fn just_dec(f: &Frame, s: &str) {
@@ -806,10 +828,7 @@ mod tests {
     #[test]
     fn empty_new_token() {
         let mut dec = Decoder::from(&[0x07, 0x00][..]);
-        assert_eq!(
-            Frame::decode(&mut dec).unwrap_err(),
-            Error::FrameEncodingError
-        );
+        assert_eq!(Frame::decode(&mut dec).unwrap_err(), Error::FrameEncoding);
     }
 
     #[test]
@@ -922,7 +941,7 @@ mod tests {
             sequence_number: 0x1234,
             retire_prior: 0,
             connection_id: &[0x01, 0x02],
-            stateless_reset_token: &[9; 16],
+            stateless_reset_token: Srt::new([9; Srt::LEN]),
         };
 
         just_dec(&f, "1852340002010209090909090909090909090909090909");
@@ -931,11 +950,11 @@ mod tests {
     #[test]
     fn too_large_new_connection_id() {
         let mut enc = Encoder::from_hex("18523400"); // up to the CID
-        enc.encode_vvec(&[0x0c; MAX_CONNECTION_ID_LEN + 10]);
+        enc.encode_vvec(&[0x0c; ConnectionId::MAX_LEN + 10]);
         enc.encode(&[0x11; 16][..]);
         assert_eq!(
             Frame::decode(&mut enc.as_decoder()).unwrap_err(),
-            Error::FrameEncodingError
+            Error::FrameEncoding
         );
     }
 
@@ -1035,7 +1054,7 @@ mod tests {
         let enc = Encoder::from_hex("40af0a0547d003"); // ignore_order of 3
         assert_eq!(
             Frame::decode(&mut enc.as_decoder()).unwrap_err(),
-            Error::FrameEncodingError
+            Error::FrameEncoding
         );
     }
 
@@ -1045,7 +1064,7 @@ mod tests {
         let enc = Encoder::from_hex("40af0a000101"); // packets of 0
         assert_eq!(
             Frame::decode(&mut enc.as_decoder()).unwrap_err(),
-            Error::FrameEncodingError
+            Error::FrameEncoding
         );
     }
 
@@ -1088,5 +1107,15 @@ mod tests {
         };
 
         just_dec(&f, "4030010203");
+    }
+
+    /// See bug in <https://github.com/mozilla/neqo/issues/2838>.
+    #[test]
+    fn padding_frame_u16_overflow() {
+        let mut e = Encoder::new();
+        e.encode_varint(FrameType::Padding);
+        // `Frame::Padding` uses u16 to store length. Try to overflow length.
+        e.pad_to(u16::MAX as usize + 1, 0);
+        assert_eq!(Frame::decode(&mut e.as_decoder()), Err(Error::TooMuchData));
     }
 }

@@ -11,15 +11,13 @@ import androidx.annotation.VisibleForTesting
 import mozilla.components.support.ktx.android.content.PreferencesHolder
 import mozilla.components.support.ktx.android.content.intPreference
 import org.mozilla.fenix.ext.components
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.nimbus.FxNimbus
 
 class FenixOnboarding(context: Context) : PreferencesHolder {
 
     private val strictMode = context.components.strictMode
-    private val settings = context.settings()
 
-    override val preferences: SharedPreferences = strictMode.resetAfter(StrictMode.allowThreadDiskReads()) {
+    override val preferences: SharedPreferences = strictMode.allowViolation(StrictMode::allowThreadDiskReads) {
         context.getSharedPreferences(
             PREF_NAME_ONBOARDING_KEY,
             Context.MODE_PRIVATE,
@@ -38,15 +36,11 @@ class FenixOnboarding(context: Context) : PreferencesHolder {
     }
 
     fun finish() {
-        // New users that goes through the first run onboarding do not need to see the home
-        // onboarding dialog.
-        settings.showHomeOnboardingDialog = false
-
         onboardedVersion = CURRENT_ONBOARDING_VERSION
     }
 
     fun userHasBeenOnboarded(): Boolean {
-        return strictMode.resetAfter(StrictMode.allowThreadDiskReads()) {
+        return strictMode.allowViolation(StrictMode::allowThreadDiskReads) {
             onboardedVersion == CURRENT_ONBOARDING_VERSION
         }
     }

@@ -27,6 +27,12 @@ const {
 
 loader.lazyRequireGetter(
   this,
+  "throttle",
+  "resource://devtools/shared/throttle.js",
+  true
+);
+loader.lazyRequireGetter(
+  this,
   "NetworkParentActor",
   "resource://devtools/server/actors/network-monitor/network-parent.js",
   true
@@ -56,6 +62,8 @@ loader.lazyRequireGetter(
   true
 );
 
+const RESOURCES_THROTTLING_DELAY = 100;
+
 exports.WatcherActor = class WatcherActor extends Actor {
   /**
    * Initialize a new WatcherActor which is the main entry point to debug
@@ -75,9 +83,9 @@ exports.WatcherActor = class WatcherActor extends Actor {
    * @param {object} sessionContext
    *        The Session Context to help know what is debugged.
    *        See devtools/server/actors/watcher/session-context.js
-   * @param {Number} sessionContext.browserId: If this is a "browser-element" context type,
+   * @param {number} sessionContext.browserId: If this is a "browser-element" context type,
    *        the "browserId" of the <browser> element we would like to debug.
-   * @param {Boolean} sessionContext.isServerTargetSwitchingEnabled: Flag to to know if we should
+   * @param {boolean} sessionContext.isServerTargetSwitchingEnabled: Flag to to know if we should
    *        spawn new top level targets for the debugged context.
    */
   constructor(conn, sessionContext) {
@@ -98,6 +106,19 @@ exports.WatcherActor = class WatcherActor extends Actor {
     }
 
     this.watcherConnectionPrefix = conn.allocID("watcher");
+
+    // Lists of resources available/updated/destroyed RDP packet
+    // currently queued which will be emitted after a throttle delay.
+    this.#throttledResources = {
+      available: [],
+      updated: [],
+      destroyed: [],
+    };
+
+    this.#throttledEmitResources = throttle(
+      this.emitResources.bind(this),
+      RESOURCES_THROTTLING_DELAY
+    );
 
     // Sometimes we get iframe targets before the top-level targets
     // mostly when doing bfcache navigations, lets cache the early iframes targets and
@@ -126,6 +147,9 @@ exports.WatcherActor = class WatcherActor extends Actor {
         : "DevToolsProcess";
   }
 
+  #throttledResources;
+  #throttledEmitResources;
+
   get sessionContext() {
     return this._sessionContext;
   }
@@ -142,8 +166,8 @@ exports.WatcherActor = class WatcherActor extends Actor {
     return this._browserElement;
   }
 
-  getAllBrowsingContexts(options) {
-    return getAllBrowsingContextsForContext(this.sessionContext, options);
+  getAllBrowsingContexts() {
+    return getAllBrowsingContextsForContext(this.sessionContext);
   }
 
   /**
@@ -194,7 +218,7 @@ exports.WatcherActor = class WatcherActor extends Actor {
     super.destroy();
   }
 
-  /*
+  /**
    * Get the list of the currently watched resources for this watcher.
    *
    * @return Array<String>
@@ -315,6 +339,7 @@ exports.WatcherActor = class WatcherActor extends Actor {
   /**
    * Flush any early iframe targets relating to this top level
    * window target.
+   *
    * @param {number} topInnerWindowID
    */
   _flushIframeTargets(topInnerWindowID) {
@@ -478,7 +503,53 @@ exports.WatcherActor = class WatcherActor extends Actor {
       return;
     }
 
-    this.emit(`resources-${updateType}-array`, [[resourceType, resources]]);
+    const shouldEmitSynchronously =
+      resourceType == Resources.TYPES.DOCUMENT_EVENT &&
+      resources.some(resource => resource.name == "will-navigate");
+
+    // If the last throttled resources were of the same resource type,
+    // augment the resources array with the new resources
+    const lastResourceInThrottleCache =
+      this.#throttledResources[updateType].at(-1);
+    if (
+      lastResourceInThrottleCache &&
+      lastResourceInThrottleCache[0] === resourceType
+    ) {
+      lastResourceInThrottleCache[1].push.apply(
+        lastResourceInThrottleCache[1],
+        resources
+      );
+    } else {
+      // Otherwise, add a new item in the throttle queue with the resource type
+      this.#throttledResources[updateType].push([resourceType, resources]);
+    }
+
+    // Force firing resources immediately when the DOCUMENT_EVENT's will-navigate is received
+    // This will force clearing resources on the client side ASAP.
+    // Otherwise we might emit some other RDP event (outside of resources),
+    // which will be cleared by the throttled/delayed will-navigate.
+    if (shouldEmitSynchronously) {
+      this.emitResources();
+    } else {
+      this.#throttledEmitResources();
+    }
+  }
+
+  /**
+   * Flush resources to DevTools transport layer, actually sending all resource update packets
+   */
+  emitResources() {
+    if (this.isDestroyed()) {
+      return;
+    }
+    for (const updateType of ["available", "updated", "destroyed"]) {
+      const resources = this.#throttledResources[updateType];
+      if (!resources.length) {
+        continue;
+      }
+      this.#throttledResources[updateType] = [];
+      this.emit(`resources-${updateType}-array`, resources);
+    }
   }
 
   /**
@@ -507,7 +578,7 @@ exports.WatcherActor = class WatcherActor extends Actor {
     );
 
     switch (this.sessionContext.type) {
-      case "all":
+      case "all": {
         const parentProcessTargetActor = actors.find(
           actor => actor.typeName === "parentProcessTarget"
         );
@@ -515,6 +586,7 @@ exports.WatcherActor = class WatcherActor extends Actor {
           return new Set([parentProcessTargetActor]);
         }
         return new Set();
+      }
       case "browser-element":
       case "webextension":
         // All target actors for browser-element and webextension sessions
@@ -685,7 +757,7 @@ exports.WatcherActor = class WatcherActor extends Actor {
   /**
    * Returns the network actor.
    *
-   * @return {Object} actor
+   * @return {object} actor
    *        The network actor.
    */
   getNetworkParentActor() {
@@ -699,7 +771,7 @@ exports.WatcherActor = class WatcherActor extends Actor {
   /**
    * Returns the blackboxing actor.
    *
-   * @return {Object} actor
+   * @return {object} actor
    *        The blackboxing actor.
    */
   getBlackboxingActor() {
@@ -713,7 +785,7 @@ exports.WatcherActor = class WatcherActor extends Actor {
   /**
    * Returns the breakpoint list actor.
    *
-   * @return {Object} actor
+   * @return {object} actor
    *        The breakpoint list actor.
    */
   getBreakpointListActor() {
@@ -727,7 +799,7 @@ exports.WatcherActor = class WatcherActor extends Actor {
   /**
    * Returns the target configuration actor.
    *
-   * @return {Object} actor
+   * @return {object} actor
    *        The configuration actor.
    */
   getTargetConfigurationActor() {
@@ -740,7 +812,7 @@ exports.WatcherActor = class WatcherActor extends Actor {
   /**
    * Returns the thread configuration actor.
    *
-   * @return {Object} actor
+   * @return {object} actor
    *        The configuration actor.
    */
   getThreadConfigurationActor() {
@@ -755,11 +827,11 @@ exports.WatcherActor = class WatcherActor extends Actor {
    * Used to agrement some new entries for a given data type (watchers target, resources,
    * breakpoints,...)
    *
-   * @param {String} type
+   * @param {string} type
    *        Data type to contribute to.
    * @param {Array<*>} entries
    *        List of values to add or set for this data type.
-   * @param {String} updateType
+   * @param {string} updateType
    *        "add" will only add the new entries in the existing data set.
    *        "set" will update the data set with the new entries.
    */
@@ -822,7 +894,7 @@ exports.WatcherActor = class WatcherActor extends Actor {
    * Used to remve some existing entries for a given data type (watchers target, resources,
    * breakpoints,...)
    *
-   * @param {String} type
+   * @param {string} type
    *        Data type to modify.
    * @param {Array<*>} entries
    *        List of values to remove from this data type.
@@ -850,7 +922,7 @@ exports.WatcherActor = class WatcherActor extends Actor {
   /**
    * Retrieve the current watched data for the provided type.
    *
-   * @param {String} type
+   * @param {string} type
    *        Data type to retrieve.
    */
   getSessionDataForType(type) {
@@ -862,7 +934,7 @@ exports.WatcherActor = class WatcherActor extends Actor {
    * This will notify the Service Worker JS Process Actors about the new top level page domain.
    * So that we start tracking that domain's workers.
    *
-   * @param {String} newTargetUrl
+   * @param {string} newTargetUrl
    */
   async updateDomainSessionDataForServiceWorkers(newTargetUrl) {
     // If the url could not be parsed the host defaults to an empty string.

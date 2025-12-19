@@ -4,18 +4,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/dom/WritableStreamDefaultController.h"
+
 #include "js/Exception.h"
 #include "js/TypeDecls.h"
 #include "js/Value.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/AbortSignal.h"
-#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/Promise-inl.h"
-#include "mozilla/dom/WritableStream.h"
-#include "mozilla/dom/WritableStreamDefaultController.h"
-#include "mozilla/dom/WritableStreamDefaultControllerBinding.h"
+#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/UnderlyingSinkBinding.h"
+#include "mozilla/dom/WritableStream.h"
+#include "mozilla/dom/WritableStreamDefaultControllerBinding.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsDebug.h"
 #include "nsISupports.h"
@@ -149,8 +150,10 @@ void SetUpWritableStreamDefaultController(
   ResetQueue(aController);
 
   // Step 6. Set controller.[[signal]] to a new AbortSignal.
-  RefPtr<AbortSignal> signal = new AbortSignal(aController->GetParentObject(),
-                                               false, JS::UndefinedHandleValue);
+  RefPtr<AbortSignal> signal =
+      AbortSignal::Create(aController->GetParentObject(), SignalAborted::No,
+                          JS::UndefinedHandleValue);
+
   aController->SetSignal(signal);
 
   // Step 7. Set controller.[[started]] to false.

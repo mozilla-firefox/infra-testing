@@ -8,7 +8,6 @@
 
 #include "mozilla/Sprintf.h"
 
-#include <algorithm>
 #include <stdarg.h>
 
 #include "jsapi.h"
@@ -126,6 +125,11 @@ class MOZ_RAII CacheIROpsJitSpewer {
   void spewRealmFuseIndexImm(const char* name, RealmFuses::FuseIndex index) {
     out_.printf("%s RealmFuseIndex(%u=%s)", name, unsigned(index),
                 RealmFuses::getFuseName(index));
+  }
+  void spewRuntimeFuseIndexImm(const char* name,
+                               RuntimeFuses::FuseIndex index) {
+    out_.printf("%s RuntimeFuseIndex(%u=%s)", name, unsigned(index),
+                RuntimeFuses::getFuseName(index));
   }
 
  public:
@@ -271,6 +275,9 @@ class MOZ_RAII CacheIROpsJSONSpewer {
     spewArgImpl(name, "Imm", unsigned(kind));
   }
   void spewRealmFuseIndexImm(const char* name, RealmFuses::FuseIndex kind) {
+    spewArgImpl(name, "Imm", unsigned(kind));
+  }
+  void spewRuntimeFuseIndexImm(const char* name, RuntimeFuses::FuseIndex kind) {
     spewArgImpl(name, "Imm", unsigned(kind));
   }
   void spewWasmValTypeImm(const char* name, wasm::ValType::Kind kind) {
@@ -637,6 +644,11 @@ class MOZ_RAII CacheIROpsAotSpewer {
   void spewRealmFuseIndexImm(const char* name, RealmFuses::FuseIndex index) {
     (void)name;
     out_.printf("REALMFUSE(%u)", unsigned(index));
+  }
+  void spewRuntimeFuseIndexImm(const char* name,
+                               RuntimeFuses::FuseIndex index) {
+    (void)name;
+    out_.printf("RUNTIMEFUSE(%u)", unsigned(index));
   }
 
  public:

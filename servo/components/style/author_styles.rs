@@ -5,14 +5,15 @@
 //! A set of author stylesheets and their computed representation, such as the
 //! ones used for ShadowRoot.
 
+use crate::derives::*;
 use crate::dom::TElement;
-use crate::invalidation::media_queries::ToMediaListKey;
 use crate::shared_lock::SharedRwLockReadGuard;
 use crate::stylesheet_set::AuthorStylesheetSet;
 use crate::stylesheets::StylesheetInDocument;
 use crate::stylist::CascadeData;
 use crate::stylist::Stylist;
 use servo_arc::Arc;
+use std::sync::LazyLock;
 
 /// A set of author stylesheets and their computed representation, such as the
 /// ones used for ShadowRoot.
@@ -31,9 +32,8 @@ where
 
 pub use self::GenericAuthorStyles as AuthorStyles;
 
-lazy_static! {
-    static ref EMPTY_CASCADE_DATA: Arc<CascadeData> = Arc::new_leaked(CascadeData::new());
-}
+static EMPTY_CASCADE_DATA: LazyLock<Arc<CascadeData>> =
+    LazyLock::new(|| Arc::new_leaked(CascadeData::new()));
 
 impl<S> GenericAuthorStyles<S>
 where
@@ -56,7 +56,6 @@ where
     pub fn flush<E>(&mut self, stylist: &mut Stylist, guard: &SharedRwLockReadGuard)
     where
         E: TElement,
-        S: ToMediaListKey,
     {
         let flusher = self
             .stylesheets

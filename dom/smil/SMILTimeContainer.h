@@ -7,11 +7,11 @@
 #ifndef DOM_SMIL_SMILTIMECONTAINER_H_
 #define DOM_SMIL_SMILTIMECONTAINER_H_
 
-#include "mozilla/dom/SVGAnimationElement.h"
 #include "mozilla/SMILMilestone.h"
 #include "mozilla/SMILTypes.h"
-#include "nscore.h"
+#include "mozilla/dom/SVGAnimationElement.h"
 #include "nsTPriorityQueue.h"
+#include "nscore.h"
 
 namespace mozilla {
 
@@ -52,6 +52,12 @@ class SMILTimeContainer {
    * to Resume with the same aType.
    */
   virtual void Pause(uint32_t aType);
+
+  /*
+   * Pause this time container when it reaches the specified time.
+   *
+   */
+  void PauseAt(SMILTime aTime);
 
   /*
    * Resume this time container
@@ -255,6 +261,9 @@ class SMILTimeContainer {
   //  Current time = parent time - mParentOffset
   //
   SMILTime mParentOffset;
+
+  // The time the time container will pause when it reaches this point.
+  Maybe<SMILTime> mPauseTime;
 
   // The timestamp in parent time when the container was paused
   SMILTime mPauseStart;

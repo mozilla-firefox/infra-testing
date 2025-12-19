@@ -7,17 +7,15 @@
 #ifndef mozilla_dom_quota_DecryptingInputStream_impl_h
 #define mozilla_dom_quota_DecryptingInputStream_impl_h
 
-#include "DecryptingInputStream.h"
-
 #include <algorithm>
 #include <cstdio>
-#include <type_traits>
 #include <utility>
+
 #include "CipherStrategy.h"
+#include "DecryptingInputStream.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/Result.h"
-#include "mozilla/ResultExtensions.h"
 #include "mozilla/Span.h"
 #include "mozilla/fallible.h"
 #include "mozilla/ipc/InputStreamUtils.h"
@@ -428,7 +426,7 @@ NS_IMETHODIMP DecryptingInputStream<CipherStrategy>::Seek(const int32_t aWhence,
                      savedPlainBytes = mPlainBytes, savedNextByte = mNextByte,
                      &plainBytes = mPlainBytes, &nextByte = mNextByte] {
         nsresult rv = baseSeekableStream->Seek(NS_SEEK_SET, savedBaseCurrent);
-        Unused << NS_WARN_IF(NS_FAILED(rv));
+        (void)NS_WARN_IF(NS_FAILED(rv));
         plainBytes = savedPlainBytes;
         nextByte = savedNextByte;
       });

@@ -11,14 +11,12 @@
 #  include "MediaCodecsSupport.h"
 #  include "PlatformDecoderModule.h"
 #  include "mozilla/AlreadyAddRefed.h"
-#  include "mozilla/EnumSet.h"
 #  include "mozilla/MozPromise.h"
 #  include "mozilla/RefPtr.h"
 #  include "mozilla/ipc/UtilityProcessSandboxing.h"
 #  include "nsISupports.h"
 #  include "nsStringFwd.h"
 #  include "nsTArray.h"
-#  include <utility>
 
 namespace mozilla {
 
@@ -29,7 +27,7 @@ class StaticMutex;
 struct CreateDecoderParams;
 struct CreateDecoderParamsForAsync;
 struct SupportDecoderParams;
-enum class RemoteDecodeIn;
+enum class RemoteMediaIn;
 
 using PDMCreateDecoderPromise = PlatformDecoderModule::CreateDecoderPromise;
 
@@ -64,12 +62,19 @@ class PDMFactory final {
   static media::MediaCodecsSupported Supported(bool aForceRefresh = false);
   static media::DecodeSupportSet SupportsMimeType(
       const nsACString& aMimeType,
-      const media::MediaCodecsSupported& aSupported, RemoteDecodeIn aLocation);
+      const media::MediaCodecsSupported& aSupported, RemoteMediaIn aLocation);
 
   static bool AllDecodersAreRemote();
 
+  // For GTests
+  class MOZ_RAII AutoForcePDM {
+   public:
+    explicit AutoForcePDM(PlatformDecoderModule* aPDM) { ForcePDM(aPDM); }
+    ~AutoForcePDM() { ForcePDM(nullptr); }
+  };
+
  private:
-  virtual ~PDMFactory();
+  ~PDMFactory();
 
   void CreatePDMs();
   void CreateNullPDM();
@@ -99,8 +104,11 @@ class PDMFactory final {
 
   DecoderDoctorDiagnostics::FlagsSet mFailureFlags;
 
+  static StaticMutex sSupportedMutex;
+
   friend class RemoteVideoDecoderParent;
   static void EnsureInit();
+  static void ForcePDM(PlatformDecoderModule* aPDM);
 };
 
 }  // namespace mozilla

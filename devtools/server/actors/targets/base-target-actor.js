@@ -30,6 +30,7 @@ class BaseTargetActor extends Actor {
 
     /**
      * Type of target, a string of Targets.TYPES.
+     *
      * @return {string}
      */
     this.targetType = targetType;
@@ -127,10 +128,6 @@ class BaseTargetActor extends Actor {
       return;
     }
 
-    if (this.devtoolsSpawnedBrowsingContextForWebExtension) {
-      this.overrideResourceBrowsingContextForWebExtension(resources);
-    }
-
     const shouldEmitSynchronously =
       resourceType == NETWORK_EVENT_STACKTRACE ||
       (resourceType == DOCUMENT_EVENT &&
@@ -158,10 +155,8 @@ class BaseTargetActor extends Actor {
     // This will force clearing resources on the client side ASAP.
     // Otherwise we might emit some other RDP event (outside of resources),
     // which will be cleared by the throttled/delayed will-navigate.
-    // * we receive NETWOR_EVENT_STACKTRACE which are meant to be dispatched *before*
-    // the related NETWORK_EVENT fired from the parent process. (we aren't throttling
-    // resources from the parent process, so it is even more likely to be dispatched
-    // in the wrong order)
+    // * we receive NETWORK_EVENT_STACKTRACE which are meant to be dispatched *before*
+    // the related NETWORK_EVENT fired from the parent process which are also throttled.
     if (shouldEmitSynchronously) {
       this.emitResources();
     } else {
@@ -186,23 +181,6 @@ class BaseTargetActor extends Actor {
     }
   }
 
-  /**
-   * For WebExtension, we have to hack all resource's browsingContextID
-   * in order to ensure emitting them with the fixed, original browsingContextID
-   * related to the fallback document created by devtools which always exists.
-   * The target's form will always be relating to that BrowsingContext IDs (browsing context ID and inner window id).
-   * Even if the target switches internally to another document via WindowGlobalTargetActor._setWindow.
-   *
-   * @param {Array<Objects>} List of resources
-   */
-  overrideResourceBrowsingContextForWebExtension(resources) {
-    const browsingContextID =
-      this.devtoolsSpawnedBrowsingContextForWebExtension.id;
-    resources.forEach(
-      resource => (resource.browsingContextID = browsingContextID)
-    );
-  }
-
   // List of actor prefixes (string) which have already been instantiated via getTargetScopedActor method.
   #instantiatedTargetScopedActors = new Set();
 
@@ -211,7 +189,7 @@ class BaseTargetActor extends Actor {
    * They are lazily instantiated and so will only be available
    * if the client called at least one of their method.
    *
-   * @param {String} prefix
+   * @param {string} prefix
    *        Prefix for the actor we would like to retrieve.
    *        Defined in devtools/server/actors/utils/actor-registry.js
    */
@@ -228,7 +206,7 @@ class BaseTargetActor extends Actor {
    * Returns true, if the related target scoped actor has already been queried
    * and instantiated via `getTargetScopedActor` method.
    *
-   * @param {String} prefix
+   * @param {string} prefix
    *        See getTargetScopedActor definition
    * @return Boolean
    *         True, if the actor has already been instantiated.
@@ -254,7 +232,7 @@ class BaseTargetActor extends Actor {
    * @param {JSON} options
    *        Configuration object provided by the client.
    *        See target-configuration actor.
-   * @param {Boolean} calledFromDocumentCreate
+   * @param {boolean} calledFromDocumentCreate
    *        True, when this is called with initial configuration when the related target
    *        actor is instantiated.
    */

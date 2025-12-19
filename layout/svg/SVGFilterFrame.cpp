@@ -9,14 +9,14 @@
 
 // Keep others in (case-insensitive) order:
 #include "AutoReferenceChainGuard.h"
+#include "SVGElement.h"
+#include "SVGFilterInstance.h"
+#include "SVGObserverUtils.h"
 #include "gfxUtils.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/dom/SVGFilterElement.h"
-#include "nsGkAtoms.h"
-#include "SVGObserverUtils.h"
-#include "SVGElement.h"
-#include "SVGFilterInstance.h"
 #include "nsContentUtils.h"
+#include "nsGkAtoms.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -139,7 +139,7 @@ SVGFilterFrame* SVGFilterFrame::GetReferencedFilter() {
 
 nsresult SVGFilterFrame::AttributeChanged(int32_t aNameSpaceID,
                                           nsAtom* aAttribute,
-                                          int32_t aModType) {
+                                          AttrModType aModType) {
   if (aNameSpaceID == kNameSpaceID_None &&
       (aAttribute == nsGkAtoms::x || aAttribute == nsGkAtoms::y ||
        aAttribute == nsGkAtoms::width || aAttribute == nsGkAtoms::height ||

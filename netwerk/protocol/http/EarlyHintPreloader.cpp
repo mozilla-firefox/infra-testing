@@ -314,13 +314,16 @@ void EarlyHintPreloader::MaybeCreateAndInsertPreload(
   // processing we have not yet created a document where we would normally store
   // the CSP.
 
-  // First we will create a load info,
-  // nsILoadInfo::SEC_ONLY_FOR_EXPLICIT_CONTENTSEC_CHECK
-  nsCOMPtr<nsILoadInfo> secCheckLoadInfo = new LoadInfo(
+  // First we will create a load info.
+  Result<nsCOMPtr<nsILoadInfo>, nsresult> maybeLoadInfo = LoadInfo::Create(
       aPrincipal,  // loading principal
       aPrincipal,  // triggering principal
       nullptr /* aLoadingContext node */,
       nsILoadInfo::SEC_ONLY_FOR_EXPLICIT_CONTENTSEC_CHECK, contentPolicyType);
+  if (NS_WARN_IF(maybeLoadInfo.isErr())) {
+    return;
+  }
+  nsCOMPtr<nsILoadInfo> secCheckLoadInfo = maybeLoadInfo.unwrap();
 
   if (aCSPHeader.Length() != 0) {
     // If the CSP header is present then create a new CSP and apply the header
@@ -360,12 +363,21 @@ void EarlyHintPreloader::MaybeCreateAndInsertPreload(
     ipc::CSPInfo cspInfo;
     rv = CSPToCSPInfo(csp, &cspInfo);
     NS_ENSURE_SUCCESS_VOID(rv);
-    clientInfo.SetCspInfo(cspInfo);
+
+    ipc::PolicyContainerArgs policyContainerArgs;
+    policyContainerArgs.csp() = Some(cspInfo);
+
+    clientInfo.SetPolicyContainerArgs(policyContainerArgs);
 
     // This ClientInfo is then set on the new loadInfo.
     // It can now be used to test the resource against the policy
     secCheckLoadInfo->SetClientInfo(clientInfo);
   }
+
+  dom::RequestMode requestMode =
+      nsContentSecurityManager::SecurityModeToRequestMode(
+          nsContentSecurityManager::ComputeSecurityMode(securityFlags));
+  secCheckLoadInfo->SetRequestMode(Some(requestMode));
 
   int16_t shouldLoad = nsIContentPolicy::ACCEPT;
   nsresult rv = NS_CheckContentLoadPolicy(uri, secCheckLoadInfo, &shouldLoad,
@@ -455,11 +467,11 @@ nsresult EarlyHintPreloader::OpenChannel(
 
 void EarlyHintPreloader::PriorizeAsPreload() {
   nsLoadFlags loadFlags = nsIRequest::LOAD_NORMAL;
-  Unused << mChannel->GetLoadFlags(&loadFlags);
-  Unused << mChannel->SetLoadFlags(loadFlags | nsIRequest::LOAD_BACKGROUND);
+  (void)mChannel->GetLoadFlags(&loadFlags);
+  (void)mChannel->SetLoadFlags(loadFlags | nsIRequest::LOAD_BACKGROUND);
 
   if (nsCOMPtr<nsIClassOfService> cos = do_QueryInterface(mChannel)) {
-    Unused << cos->AddClassFlags(nsIClassOfService::Unblocked);
+    (void)cos->AddClassFlags(nsIClassOfService::Unblocked);
   }
 }
 
@@ -631,7 +643,7 @@ EarlyHintPreloader::OnStartRequest(nsIRequest* aRequest) {
   MOZ_DIAGNOSTIC_ASSERT(mChannel);
 
   nsresult status = NS_OK;
-  Unused << aRequest->GetStatus(&status);
+  (void)aRequest->GetStatus(&status);
 
   if (mParent) {
     SetParentChannel();

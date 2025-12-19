@@ -14,13 +14,18 @@ import android.util.Base64
 import androidx.core.net.toUri
 import androidx.test.ext.junit.rules.ActivityScenarioRule
 import androidx.test.filters.MediumTest
-import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
 import org.hamcrest.Matcher
-import org.hamcrest.Matchers.* // ktlint-disable no-wildcard-imports
+import org.hamcrest.Matchers.arrayContainingInAnyOrder
+import org.hamcrest.Matchers.both
+import org.hamcrest.Matchers.containsString
+import org.hamcrest.Matchers.equalTo
+import org.hamcrest.Matchers.hasToString
+import org.hamcrest.Matchers.not
 import org.json.JSONArray
 import org.junit.Assume.assumeThat
 import org.junit.Before
+import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.RuleChain
@@ -33,7 +38,21 @@ import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSession.PromptDelegate
 import org.mozilla.geckoview.GeckoSession.SelectionActionDelegate
-import org.mozilla.geckoview.GeckoSession.SelectionActionDelegate.* // ktlint-disable no-wildcard-imports
+import org.mozilla.geckoview.GeckoSession.SelectionActionDelegate.ACTION_COLLAPSE_TO_END
+import org.mozilla.geckoview.GeckoSession.SelectionActionDelegate.ACTION_COLLAPSE_TO_START
+import org.mozilla.geckoview.GeckoSession.SelectionActionDelegate.ACTION_COPY
+import org.mozilla.geckoview.GeckoSession.SelectionActionDelegate.ACTION_CUT
+import org.mozilla.geckoview.GeckoSession.SelectionActionDelegate.ACTION_DELETE
+import org.mozilla.geckoview.GeckoSession.SelectionActionDelegate.ACTION_HIDE
+import org.mozilla.geckoview.GeckoSession.SelectionActionDelegate.ACTION_PASTE
+import org.mozilla.geckoview.GeckoSession.SelectionActionDelegate.ACTION_PASTE_AS_PLAIN_TEXT
+import org.mozilla.geckoview.GeckoSession.SelectionActionDelegate.ACTION_SELECT_ALL
+import org.mozilla.geckoview.GeckoSession.SelectionActionDelegate.ACTION_UNSELECT
+import org.mozilla.geckoview.GeckoSession.SelectionActionDelegate.ClipboardPermission
+import org.mozilla.geckoview.GeckoSession.SelectionActionDelegate.FLAG_IS_COLLAPSED
+import org.mozilla.geckoview.GeckoSession.SelectionActionDelegate.FLAG_IS_EDITABLE
+import org.mozilla.geckoview.GeckoSession.SelectionActionDelegate.HIDE_REASON_NO_SELECTION
+import org.mozilla.geckoview.GeckoSession.SelectionActionDelegate.Selection
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.AssertCalled
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.NullDelegate
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.WithDisplay
@@ -149,7 +168,6 @@ class SelectionActionDelegateTest : BaseSessionTest() {
         }
     }
 
-    @SdkSuppress(minSdkVersion = Build.VERSION_CODES.O)
     @Test
     fun request_html() {
         if (editable) {
@@ -252,7 +270,6 @@ class SelectionActionDelegateTest : BaseSessionTest() {
         }
     }
 
-    @SdkSuppress(minSdkVersion = Build.VERSION_CODES.O)
     @Test
     fun pasteAsPlainText() = assumingEditable(true) {
         assumeThat("Paste as plain text works on content editable", type, not(equalTo(ContentType.EDITABLE_ELEMENT)))
@@ -303,6 +320,7 @@ class SelectionActionDelegateTest : BaseSessionTest() {
         testThat(selectedContent, withResponse(ACTION_UNSELECT), clearsSelection())
     }
 
+    @Ignore("https://bugzilla.mozilla.org/show_bug.cgi?id=1988041")
     @Test fun multipleActions() = assumingEditable(false) {
         withClipboard("") {
             testThat(
@@ -378,8 +396,6 @@ class SelectionActionDelegateTest : BaseSessionTest() {
     fun clipboardReadAllow() {
         assumeThat("Unnecessary to run multiple times", id, equalTo("#text"))
 
-        sessionRule.setPrefsUntilTestEnd(mapOf("dom.events.asyncClipboard.readText" to true))
-
         withClipboard("clipboardReadAllow") {} // Reset clipboard data
 
         val url = createTestUrl(CLIPBOARD_READ_HTML_PATH)
@@ -423,8 +439,6 @@ class SelectionActionDelegateTest : BaseSessionTest() {
     fun clipboardReadDeny() {
         assumeThat("Unnecessary to run multiple times", id, equalTo("#text"))
 
-        sessionRule.setPrefsUntilTestEnd(mapOf("dom.events.asyncClipboard.readText" to true))
-
         withClipboard("clipboardReadDeny") {} // Reset clipboard data
 
         val url = createTestUrl(CLIPBOARD_READ_HTML_PATH)
@@ -466,8 +480,6 @@ class SelectionActionDelegateTest : BaseSessionTest() {
     @Test
     fun clipboardReadDeactivate() {
         assumeThat("Unnecessary to run multiple times", id, equalTo("#text"))
-
-        sessionRule.setPrefsUntilTestEnd(mapOf("dom.events.asyncClipboard.readText" to true))
 
         withClipboard("clipboardReadDeactivate") {} // Reset clipboard data
 
@@ -512,8 +524,6 @@ class SelectionActionDelegateTest : BaseSessionTest() {
     @Test
     fun clipboardReadDismiss() {
         assumeThat("Unnecessary to run multiple times", id, equalTo("#text"))
-
-        sessionRule.setPrefsUntilTestEnd(mapOf("dom.events.asyncClipboard.readText" to true))
 
         withClipboard("clipboardReadDismiss") {} // Reset clipboard data
 

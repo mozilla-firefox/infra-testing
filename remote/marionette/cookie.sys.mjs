@@ -13,9 +13,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
 const IPV4_PORT_EXPR = /:\d+$/;
 
 const SAMESITE_MAP = new Map([
-  ["None", Ci.nsICookie.SAMESITE_NONE],
-  ["Lax", Ci.nsICookie.SAMESITE_LAX],
-  ["Strict", Ci.nsICookie.SAMESITE_STRICT],
+  [Ci.nsICookie.SAMESITE_NONE, "None"],
+  [Ci.nsICookie.SAMESITE_LAX, "Lax"],
+  [Ci.nsICookie.SAMESITE_STRICT, "Strict"],
+  [Ci.nsICookie.SAMESITE_UNSET, "None"],
 ]);
 
 /** @namespace */
@@ -98,7 +99,7 @@ cookie.fromJSON = function (json) {
     );
   }
   if (typeof json.sameSite != "undefined") {
-    const validOptions = Array.from(SAMESITE_MAP.keys());
+    const validOptions = Array.from(SAMESITE_MAP.values());
     newCookie.sameSite = lazy.assert.in(
       json.sameSite,
       validOptions,
@@ -166,14 +167,22 @@ cookie.add = function (
   if (typeof newCookie.httpOnly == "undefined") {
     newCookie.httpOnly = false;
   }
+
   if (typeof newCookie.expiry == "undefined") {
     // The XPCOM interface requires the expiry field even for session cookies.
     newCookie.expiry = Number.MAX_SAFE_INTEGER;
     newCookie.session = true;
   } else {
     newCookie.session = false;
+    // Gecko expects the expiry value to be in milliseconds, WebDriver uses seconds.
+    // The maximum allowed value is capped at 400 days.
+    newCookie.expiry = Services.cookies.maybeCapExpiry(newCookie.expiry * 1000);
   }
-  newCookie.sameSite = SAMESITE_MAP.get(newCookie.sameSite || "None");
+
+  let sameSite = [...SAMESITE_MAP].find(
+    ([, value]) => newCookie.sameSite === value
+  );
+  newCookie.sameSite = sameSite ? sameSite[0] : Ci.nsICookie.SAMESITE_UNSET;
 
   let isIpAddress = false;
   try {
@@ -225,8 +234,9 @@ cookie.add = function (
   // TODO: Bug 814416
   newCookie.domain = newCookie.domain.replace(IPV4_PORT_EXPR, "");
 
+  let cv;
   try {
-    cookie.manager.add(
+    cv = cookie.manager.add(
       newCookie.domain,
       newCookie.path,
       newCookie.name,
@@ -241,6 +251,12 @@ cookie.add = function (
     );
   } catch (e) {
     throw new lazy.error.UnableToSetCookieError(e);
+  }
+
+  if (cv.result !== Ci.nsICookieValidation.eOK) {
+    throw new lazy.error.UnableToSetCookieError(
+      `Invalid cookie: ${cv.errorString}`
+    );
   }
 };
 
@@ -266,6 +282,9 @@ cookie.remove = function (toDelete) {
  *
  * @param {string} host
  *     Hostname to retrieve cookies for.
+ * @param {BrowsingContext=} [browsingContext=undefined] browsingContext
+ *     The BrowsingContext that is reading these cookies.
+ *     Used to get the correct partitioned cookies.
  * @param {string=} [currentPath="/"] currentPath
  *     Optionally filter the cookies for ``host`` for the specific path.
  *     Defaults to ``/``, meaning all cookies for ``host`` are included.
@@ -273,7 +292,7 @@ cookie.remove = function (toDelete) {
  * @returns {Iterable.<Cookie>}
  *     Iterator.
  */
-cookie.iter = function* (host, currentPath = "/") {
+cookie.iter = function* (host, browsingContext = undefined, currentPath = "/") {
   lazy.assert.string(
     host,
     lazy.pprint`Expected "host" to be a string, got ${host}`
@@ -286,6 +305,17 @@ cookie.iter = function* (host, currentPath = "/") {
   const isForCurrentPath = path => currentPath.includes(path);
 
   let cookies = cookie.manager.getCookiesFromHost(host, {});
+  if (browsingContext) {
+    let partitionedOriginAttributes = {
+      partitionKey:
+        browsingContext.currentWindowGlobal?.cookieJarSettings?.partitionKey,
+    };
+    let cookiesPartitioned = cookie.manager.getCookiesFromHost(
+      host,
+      partitionedOriginAttributes
+    );
+    cookies.push(...cookiesPartitioned);
+  }
   for (let cookie of cookies) {
     // take the hostname and progressively shorten
     let hostname = host;
@@ -304,12 +334,11 @@ cookie.iter = function* (host, currentPath = "/") {
         };
 
         if (!cookie.isSession) {
-          data.expiry = cookie.expiry;
+          // Internally expiry is in ms, WebDriver expects seconds.
+          data.expiry = Math.round(cookie.expiry / 1000);
         }
 
-        data.sameSite = [...SAMESITE_MAP].find(
-          ([, value]) => cookie.sameSite === value
-        )[0];
+        data.sameSite = SAMESITE_MAP.get(cookie.sameSite) || "None";
 
         yield data;
       }

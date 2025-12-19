@@ -7,8 +7,6 @@
 #include <ras.h>
 #include <wininet.h>
 
-#include "mozilla/ArrayUtils.h"
-#include "mozilla/Attributes.h"
 #include "nsISystemProxySettings.h"
 #include "mozilla/Components.h"
 #include "mozilla/ProfilerLabels.h"
@@ -162,6 +160,13 @@ nsresult nsWindowsSystemProxySettings::GetPACURI(nsACString& aResult) {
 
   if (NS_SUCCEEDED(rv)) aResult = NS_ConvertUTF16toUTF8(buf);
   return rv;
+}
+
+NS_IMETHODIMP nsWindowsSystemProxySettings::SetSystemProxyInfo(
+    const nsACString& aHost, int32_t aPort, const nsACString& aPacFileUrl,
+    const nsTArray<nsCString>& aExclusionList) {
+  MOZ_ASSERT(false, "Did not expect to be called on this platform");
+  return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 nsresult nsWindowsSystemProxySettings::GetProxyForURI(const nsACString& aSpec,

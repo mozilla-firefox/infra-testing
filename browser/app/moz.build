@@ -76,6 +76,7 @@ if CONFIG["CC_TYPE"] == "clang-cl":
 if CONFIG["OS_ARCH"] == "WINNT":
     RCINCLUDE = "splash.rc"
     DIRS += [
+        "installation_dir_layout",
         "pbproxy",
         "winlauncher",
     ]
@@ -112,6 +113,11 @@ if CONFIG["OS_ARCH"] == "WINNT":
     # only enable it for processes that are not using JIT in xul.dll.
     LINK_FLAGS["CETCOMPAT"] = []
 
+if CONFIG["DESKTOP_LAUNCHER_ENABLED"]:
+    DIRS += [
+        "desktop-launcher",
+    ]
+
 if CONFIG["OS_ARCH"] == "Darwin":
     OS_LIBS += [
         "-framework CoreFoundation",
@@ -134,6 +140,7 @@ if CONFIG["MOZ_SANDBOX"] and CONFIG["OS_ARCH"] == "WINNT":
     DELAYLOAD_DLLS += [
         "winmm.dll",
         "user32.dll",
+        "userenv.dll",
         "usp10.dll",
     ]
 
@@ -174,3 +181,8 @@ for icon in ("firefox", "document", "newwindow", "newtab", "pbmode", "document_p
         CONFIG["MOZ_BRANDING_DIRECTORY"],
         icon,
     )
+
+if CONFIG["MOZ_ASAN"] or CONFIG["MOZ_DEBUG"]:
+    WINCONSOLE = True
+else:
+    WINCONSOLE = False

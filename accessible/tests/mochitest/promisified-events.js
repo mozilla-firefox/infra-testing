@@ -15,7 +15,7 @@
             EVENT_DESCRIPTION_CHANGE, EVENT_NAME_CHANGE, EVENT_STATE_CHANGE,
             EVENT_VALUE_CHANGE, EVENT_TEXT_VALUE_CHANGE, EVENT_FOCUS,
             EVENT_DOCUMENT_RELOAD, EVENT_VIRTUALCURSOR_CHANGED, EVENT_ALERT,
-            EVENT_OBJECT_ATTRIBUTE_CHANGED, EVENT_MENUPOPUP_START, EVENT_MENUPOPUP_END,
+            EVENT_OBJECT_ATTRIBUTE_CHANGED, EVENT_MENUPOPUP_START, EVENT_MENUPOPUP_END, EVENT_ERRORMESSAGE_CHANGED,
             UnexpectedEvents, waitForEvent,
             waitForEvents, waitForOrderedEvents, waitForStateChange,
             stateChangeEventArgs */
@@ -55,6 +55,8 @@ const EVENT_OBJECT_ATTRIBUTE_CHANGED =
 const EVENT_INNER_REORDER = nsIAccessibleEvent.EVENT_INNER_REORDER;
 const EVENT_MENUPOPUP_START = nsIAccessibleEvent.EVENT_MENUPOPUP_START;
 const EVENT_MENUPOPUP_END = nsIAccessibleEvent.EVENT_MENUPOPUP_END;
+const EVENT_ERRORMESSAGE_CHANGED =
+  nsIAccessibleEvent.EVENT_ERRORMESSAGE_CHANGED;
 
 const EventsLogger = {
   enabled: false,
@@ -68,6 +70,7 @@ const EventsLogger = {
 
 /**
  * Describe an event in string format.
+ *
  * @param  {nsIAccessibleEvent}  event  event to strigify
  */
 function eventToString(event) {
@@ -96,13 +99,14 @@ function matchEvent(event, matchCriteria) {
 
   let acc = event.accessible;
   switch (typeof matchCriteria) {
-    case "string":
+    case "string": {
       let id = getAccessibleDOMNodeID(acc);
       if (id === matchCriteria) {
         EventsLogger.log(`Event matches DOMNode id: ${id}`);
         return true;
       }
       break;
+    }
     case "function":
       if (matchCriteria(event)) {
         EventsLogger.log(
@@ -132,12 +136,13 @@ function matchEvent(event, matchCriteria) {
  * A helper function that returns a promise that resolves when an accessible
  * event of the given type with the given target (defined by its id or
  * accessible) is observed.
- * @param  {Number}                eventType        expected accessible event
+ *
+ * @param  {number}                eventType        expected accessible event
  *                                                  type
- * @param  {String|nsIAccessible|Function}  matchCriteria  expected content
+ * @param  {string | nsIAccessible | Function}  matchCriteria  expected content
  *                                                         element id
  *                                                         for the event
- * @param  {String}                message          Message to prepend to logging.
+ * @param  {string}                message          Message to prepend to logging.
  * @return {Promise}                                promise that resolves to an
  *                                                  event
  */
@@ -215,11 +220,12 @@ class UnexpectedEvents {
 /**
  * A helper function that waits for a sequence of accessible events in
  * specified order.
+ *
  * @param {Array}   events          a list of events to wait (same format as
  *                                   waitForEvent arguments)
- * @param {String}  message         Message to prepend to logging.
- * @param {Boolean} ordered         Events need to be received in given order.
- * @param {Object}  invokerOrWindow a local window or a special content invoker
+ * @param {string}  message         Message to prepend to logging.
+ * @param {boolean} ordered         Events need to be received in given order.
+ * @param {object}  invokerOrWindow a local window or a special content invoker
  *                                   it takes a list of arguments and a task
  *                                   function.
  */
@@ -319,6 +325,7 @@ function waitForStateChange(id, state, isEnabled, isExtra = false) {
  * before setting focus to it. This simulates behavio with the keyboard when
  * tabbing to the element. This does explicitly what synthFocus did implicitly.
  * This should be called only if you really want this behavior.
+ *
  * @param  {string}  id  The element ID to focus
  */
 function selectAllTextAndFocus(id) {

@@ -23,7 +23,7 @@ pub enum KeyMechanism {
 impl KeyMechanism {
     fn mech(self) -> CK_MECHANISM_TYPE {
         CK_MECHANISM_TYPE::from(match self {
-            Self::Aead(Aead::Aes128Gcm) | Self::Aead(Aead::Aes256Gcm) => CKM_AES_GCM,
+            Self::Aead(Aead::Aes128Gcm | Aead::Aes256Gcm) => CKM_AES_GCM,
             Self::Aead(Aead::ChaCha20Poly1305) => CKM_CHACHA20_POLY1305,
             Self::Hkdf => CKM_HKDF_DERIVE,
         })
@@ -80,7 +80,7 @@ impl Hkdf {
             bExpand: CK_BBOOL::from(false),
             prfHashMechanism: self.mech(),
             ulSaltType: CK_ULONG::from(salt_type),
-            pSalt: salt.as_ptr() as *mut _, // const-cast = bad API
+            pSalt: salt.as_ptr().cast_mut(), // const-cast = bad API
             ulSaltLen: CK_ULONG::try_from(salt.len()).unwrap(),
             hSaltKey: CK_OBJECT_HANDLE::from(CK_INVALID_HANDLE),
             pInfo: null_mut(),
@@ -118,7 +118,7 @@ impl Hkdf {
             pSalt: null_mut(),
             ulSaltLen: 0,
             hSaltKey: CK_OBJECT_HANDLE::from(CK_INVALID_HANDLE),
-            pInfo: info.as_ptr() as *mut _, // const-cast = bad API
+            pInfo: info.as_ptr().cast_mut(), // const-cast = bad API
             ulInfoLen: CK_ULONG::try_from(info.len()).unwrap(),
         }
     }

@@ -36,8 +36,6 @@ that you don't get warnings about undefined or unused variables.
 * ``.sys.mjs`` - A system module, this is typically a singleton in the process it is loaded into.
 * ``.worker.(m)js`` - A file that is a web worker.
 
-  * Workers that use ctypes should use ``/* eslint-env mozilla/chrome-worker */``
-
 * Test files, see the section on :ref:`adding tests <adding-tests>`
 
 
@@ -102,7 +100,7 @@ cycle.
 
 * If you really can't match the directory name, e.g. like the
   ``browser/base/content/tests/*``, then you'll need to add a new entry in
-  :searchfox:`.eslintrc-test-paths.js <.eslintrc-test-paths.js>`.
+  :searchfox:`eslint-test-paths.config.mjs <eslint-test-paths.config.mjs>`.
 
 Please do not add new cases of multiple types of tests within a single directory,
 this is `difficult for ESLint to handle`_. Currently this may cause:
@@ -116,7 +114,7 @@ This code should neither be linted nor formatted
 
 * If it is a third-party piece of code, please add it to :searchfox:`ThirdPartyPaths.txt <tools/rewriting/ThirdPartyPaths.txt>`.
 * If it is a generated file, please add it to :searchfox:`Generated.txt <tools/rewriting/Generated.txt>`.
-* If intentionally invalid, please add it to :searchfox:`.eslintrc-ignores.js <.eslintrc-ignores.js>`.
+* If intentionally invalid, please add it to :searchfox:`eslint-ignores.config.mjs <eslint-ignores.config.mjs>`.
 
 This code shouldn't be formatted
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -134,13 +132,13 @@ See the `prettier ignore docs`_ for more information.
 I have valid code that is failing the ``no-undef`` rule or can't be parsed
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-* Please do not add this to :searchfox:`.eslintrc-ignores.js <.eslintrc-ignores.js>`. Generally
+* Please do not add this to :searchfox:`eslint-ignores.config.mjs <eslint-ignores.config.mjs>`. Generally
   this can be fixed, if the following tips don't help, please `seek help`_.
 * If you are adding a new test directory, see the :ref:`section above <adding-tests>`
 
-* If you are writing a script loaded into special environment (e.g. frame script) you may need to tell ESLint to use the `environment definitions`_ for each case:
-
-  * ``/* eslint-env mozilla/frame-script */``
+* If you are writing a script loaded into special environment (e.g. frame script) you may need to
+  name the file appropriately, or add it to the relevant lists in
+  :searchfox:`eslint-file-globals.config.mjs <eslint-file-globals.config.mjs>` to add the appropriate globals.
 
 * I use ``Services.scriptloader.loadSubScript``:
 
@@ -220,7 +218,6 @@ For test harness issues, file bugs in Developer Infrastructure :: Lint and Forma
 .. _informed that it is a module: https://searchfox.org/mozilla-central/rev/9399e5832979755cd340383f4ca4069dd5fc7774/browser/base/content/.eslintrc.js
 .. _seek help: ../index.html#getting-help
 .. _patterns in .eslintrc.js: https://searchfox.org/mozilla-central/rev/9399e5832979755cd340383f4ca4069dd5fc7774/.eslintrc.js#24-38
-.. _environment definitions: ./eslint-plugin-mozilla/environment.html
 .. _known ones: https://searchfox.org/mozilla-central/rev/287583a4a605eee8cd2d41381ffaea7a93d7b987/.eslintrc.js#24-40
 .. _difficult for ESLint to handle: https://bugzilla.mozilla.org/show_bug.cgi?id=1379669
 .. _prettier ignore docs: https://prettier.io/docs/en/ignore.html

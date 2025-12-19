@@ -5,6 +5,7 @@
 package mozilla.components.feature.awesomebar.provider
 
 import android.graphics.Bitmap
+import androidx.annotation.IntRange
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import mozilla.components.browser.state.search.SearchEngine
@@ -19,9 +20,9 @@ import mozilla.components.feature.search.ext.buildSearchUrl
 import java.util.UUID
 
 /**
- * Return 2 recent search suggestions by default. Same as on desktop.
+ * Number of recent search suggestions to return by default.
  */
-const val DEFAULT_RECENT_SEARCH_SUGGESTION_LIMIT = 2
+const val DEFAULT_RECENT_SEARCH_SUGGESTION_LIMIT = 5
 
 /**
  * Error message if clients are requesting for a too big number of suggestions.
@@ -50,7 +51,7 @@ class RecentSearchSuggestionsProvider(
     private val historyStorage: PlacesHistoryStorage,
     private val searchUseCase: SearchUseCase,
     private val searchEngine: SearchEngine?,
-    @androidx.annotation.IntRange(from = 0, to = SEARCH_TERMS_MAXIMUM_ALLOWED_SUGGESTIONS_LIMIT.toLong())
+    @param:IntRange(from = 0, to = SEARCH_TERMS_MAXIMUM_ALLOWED_SUGGESTIONS_LIMIT.toLong())
     private val maxNumberOfSuggestions: Int = DEFAULT_RECENT_SEARCH_SUGGESTION_LIMIT,
     private val icon: Bitmap? = null,
     private val engine: Engine? = null,

@@ -69,7 +69,7 @@ bool EmitterScope::checkEnvironmentChainLength(BytecodeEmitter* bce) {
     return false;
   }
 
-  environmentChainLength_ = mozilla::AssertedCast<uint8_t>(hops + 1);
+  environmentChainLength_ = mozilla::AssertedCast<uint16_t>(hops + 1);
   return true;
 }
 
@@ -147,7 +147,7 @@ bool EmitterScope::nameCanBeFree(BytecodeEmitter* bce,
 NameLocation EmitterScope::searchAndCache(BytecodeEmitter* bce,
                                           TaggedParserAtomIndex name) {
   Maybe<NameLocation> loc;
-  uint8_t hops = hasEnvironment() ? 1 : 0;
+  uint16_t hops = hasEnvironment() ? 1 : 0;
   DebugOnly<bool> inCurrentScript = enclosingInFrame();
 
   // Start searching in the current compilation.
@@ -341,18 +341,6 @@ bool EmitterScope::prepareForDisposableScopeBody(BytecodeEmitter* bce) {
     if (!usingEmitter_->prepareForDisposableScopeBody(blockKind_)) {
       return false;
     }
-
-    if (blockKind_ == BlockKind::Switch) {
-      // If there are disposables inside the switch case
-      // and if an exception is thrown we would need to unwind
-      // to the environment right before the switch statement for that
-      // purpose we emit a Dup code so that the switch statement consumes
-      // one and the stack remains balanced in case we have to jump out
-      // of the switch.
-      if (!bce->emit1(JSOp::Dup)) {
-        return false;
-      }
-    }
   }
   return true;
 }
@@ -366,30 +354,6 @@ bool EmitterScope::prepareForDisposableAssignment(UsingHint hint) {
   return usingEmitter_->prepareForAssignment(hint);
 }
 
-bool EmitterScope::emitSwitchBlockEndForDisposableScopeBodyEnd(
-    BytecodeEmitter* bce) {
-  MOZ_ASSERT(hasDisposables());
-
-  if (blockKind_ == BlockKind::Switch) {
-    // See `JSOp::Dup` in EmitterScope::prepareForDisposableScopeBody.
-    if (!bce->emit1(JSOp::Pop)) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-bool EmitterScope::emitDisposableScopeBodyEndForNonLocalJump(
-    BytecodeEmitter* bce) {
-  if (hasDisposables()) {
-    if (!emitSwitchBlockEndForDisposableScopeBodyEnd(bce)) {
-      return false;
-    }
-  }
-  return true;
-}
-
 bool EmitterScope::emitDisposableScopeBodyEnd(BytecodeEmitter* bce) {
   // For-of loops emit the dispose loop in the different place and timing.
   // (See ForOfEmitter::emitInitialize,
@@ -397,10 +361,6 @@ bool EmitterScope::emitDisposableScopeBodyEnd(BytecodeEmitter* bce) {
   // ForOfLoopControl::emitEndCodeNeedingIteratorClose())
   if (hasDisposables() && (blockKind_ != BlockKind::ForOf)) {
     if (!usingEmitter_->emitEnd()) {
-      return false;
-    }
-
-    if (!emitSwitchBlockEndForDisposableScopeBodyEnd(bce)) {
       return false;
     }
   }
@@ -1034,11 +994,7 @@ bool EmitterScope::leave(BytecodeEmitter* bce, bool nonLocal) {
     case ScopeKind::ClassBody:
 
 #ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
-      if (nonLocal) {
-        if (!emitDisposableScopeBodyEndForNonLocalJump(bce)) {
-          return false;
-        }
-      } else {
+      if (!nonLocal) {
         if (!emitDisposableScopeBodyEnd(bce)) {
           return false;
         }
@@ -1213,7 +1169,7 @@ Maybe<NameLocation> EmitterScope::locationBoundInScope(
     TaggedParserAtomIndex name, EmitterScope* target) {
   // The target scope must be an intra-frame enclosing scope of this
   // one. Count the number of extra hops to reach it.
-  uint8_t extraHops = 0;
+  uint16_t extraHops = 0;
   for (EmitterScope* es = this; es != target; es = es->enclosingInFrame()) {
     if (es->hasEnvironment()) {
       extraHops++;

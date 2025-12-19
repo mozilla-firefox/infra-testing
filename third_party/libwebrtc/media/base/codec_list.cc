@@ -12,18 +12,17 @@
 
 #include <cstddef>
 #include <map>
+#include <vector>
 
+#include "api/rtc_error.h"
 #include "media/base/codec.h"
 #include "media/base/media_constants.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/string_encode.h"
 
-namespace cricket {
+namespace webrtc {
 
-using webrtc::RTCError;
-using webrtc::RTCErrorOr;
-using webrtc::RTCErrorType;
 
 namespace {
 
@@ -34,18 +33,14 @@ RTCError CheckInputConsistency(const std::vector<Codec>& codecs) {
   for (size_t i = 0; i < codecs.size(); i++) {
     const Codec& codec = codecs[i];
     if (codec.id != Codec::kIdNotSet) {
-      // Not true - the test PeerConnectionMediaTest.RedFmtpPayloadMixed
-      // fails this check. In that case, the duplicates are identical.
-      // TODO: https://issues.webrtc.org/384756621 - fix test and enable check.
-      // RTC_DCHECK(pt_to_index.count(codec.id) == 0);
-      if (pt_to_index.count(codec.id) != 0) {
-        RTC_LOG(LS_WARNING) << "Surprising condition: Two codecs on same PT. "
-                            << "First: " << codecs[pt_to_index[codec.id]]
-                            << " Second: " << codec;
-        // Skip this codec in the map, and go on.
-        continue;
+      auto [it, success] = pt_to_index.insert({codec.id, i});
+      if (!success) {
+        RTC_LOG(LS_ERROR) << "Duplicate payload type in codec list, " << codec
+                          << " and " << codecs[it->second]
+                          << " have the same ID";
+        LOG_AND_RETURN_ERROR(RTCErrorType::INVALID_PARAMETER,
+                             "Duplicate payload type in codec list");
       }
-      pt_to_index.insert({codec.id, i});
     }
   }
   for (const Codec& codec : codecs) {
@@ -61,17 +56,29 @@ RTCError CheckInputConsistency(const std::vector<Codec>& codecs) {
         // TODO: https://issues.webrtc.org/384756622 - reject codec earlier and
         // enable check. RTC_DCHECK(apt_it != codec.params.end()); Until that is
         // fixed:
+        if (codec.id == Codec::kIdNotSet) {
+          // Should not have an apt parameter.
+          if (apt_it != codec.params.end()) {
+            RTC_LOG(LS_WARNING) << "Surprising condition: RTX codec without "
+                                << "PT has an apt parameter";
+          }
+          // Stop checking the associated PT.
+          break;
+        }
         if (apt_it == codec.params.end()) {
           RTC_LOG(LS_WARNING) << "Surprising condition: RTX codec without"
                               << " apt parameter: " << codec;
           break;
         }
         int associated_pt;
-        if (!(rtc::FromString(apt_it->second, &associated_pt))) {
+        if (!(FromString(apt_it->second, &associated_pt))) {
+          RTC_LOG(LS_ERROR) << "Non-numeric argument to rtx apt: " << codec
+                            << " apt=" << apt_it->second;
           LOG_AND_RETURN_ERROR(RTCErrorType::INVALID_PARAMETER,
                                "Non-numeric argument to rtx apt parameter");
         }
-        if (pt_to_index.count(associated_pt) != 1) {
+        if (codec.id != Codec::kIdNotSet &&
+            pt_to_index.count(associated_pt) != 1) {
           RTC_LOG(LS_WARNING)
               << "Surprising condition: RTX codec APT not found: " << codec
               << " points to a PT that occurs "
@@ -114,4 +121,4 @@ void CodecList::CheckConsistency() {
   RTC_DCHECK(CheckInputConsistency(codecs_).ok());
 }
 
-}  // namespace cricket
+}  // namespace webrtc

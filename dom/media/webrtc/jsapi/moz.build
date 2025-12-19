@@ -6,6 +6,7 @@
 include("/dom/media/webrtc/third_party_build/webrtc.mozbuild")
 
 LOCAL_INCLUDES += [
+    "!/dist/include/libwebrtc_overrides",
     "!/ipc/ipdl/_ipdlheaders",
     "/dom/base",
     "/dom/media",
@@ -13,6 +14,7 @@ LOCAL_INCLUDES += [
     "/ipc/chromium/src",
     "/media/webrtc",
     "/netwerk/dns",  # For nsDNSService2.h
+    "/netwerk/sctp/datachannel",
     "/third_party/abseil-cpp",
     "/third_party/libsrtp/src/include",
     "/third_party/libwebrtc",
@@ -27,6 +29,7 @@ UNIFIED_SOURCES += [
     "PeerConnectionCtx.cpp",
     "PeerConnectionImpl.cpp",
     "RemoteTrackSource.cpp",
+    "RTCDataChannel.cpp",
     "RTCDtlsTransport.cpp",
     "RTCDTMFSender.cpp",
     "RTCEncodedAudioFrame.cpp",
@@ -47,6 +50,8 @@ UNIFIED_SOURCES += [
 ]
 
 EXPORTS.mozilla.dom += [
+    "RTCDataChannel.h",
+    "RTCDataChannelDeclarations.h",
     "RTCDtlsTransport.h",
     "RTCDTMFSender.h",
     "RTCEncodedAudioFrame.h",

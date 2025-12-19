@@ -2,12 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/remote-page */
 /* eslint-disable import/no-unassigned-import */
 
 import { NetErrorCard } from "chrome://global/content/net-error-card.mjs";
 import {
   gIsCertError,
+  isCaptive,
   gErrorCode,
   gHasSts,
   searchParams,
@@ -16,16 +16,17 @@ import {
   getFailedCertificatesAsPEMString,
   recordSecurityUITelemetry,
   getCSSClass,
+  gNoConnectivity,
+  retryThis,
+  errorHasNoUserFix,
+  COOP_MDN_DOCS,
+  COEP_MDN_DOCS,
+  HTTPS_UPGRADES_MDN_DOCS,
 } from "chrome://global/content/aboutNetErrorHelpers.mjs";
 
 const formatter = new Intl.DateTimeFormat();
 
 const HOST_NAME = getHostName();
-
-const FELT_PRIVACY_REFRESH = RPMGetBoolPref(
-  "security.certerrors.felt-privacy-v1",
-  false
-);
 
 // Used to check if we have a specific localized message for an error.
 const KNOWN_ERROR_TITLE_IDS = new Set([
@@ -75,12 +76,6 @@ const KNOWN_ERROR_TITLE_IDS = new Set([
 /* global KNOWN_ERROR_MESSAGE_IDS */
 const ERROR_MESSAGES_FTL = "toolkit/neterror/nsserrors.ftl";
 
-const MDN_DOCS_HEADERS =
-  "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/";
-const COOP_MDN_DOCS = MDN_DOCS_HEADERS + "Cross-Origin-Opener-Policy";
-const COEP_MDN_DOCS = MDN_DOCS_HEADERS + "Cross-Origin-Embedder-Policy";
-const HTTPS_UPGRADES_MDN_DOCS = "https://support.mozilla.org/kb/https-upgrades";
-
 // If the location of the favicon changes, FAVICON_CERTERRORPAGE_URL and/or
 // FAVICON_ERRORPAGE_URL in toolkit/components/places/nsFaviconService.idl
 // should also be updated.
@@ -93,10 +88,6 @@ function getDescription() {
   return searchParams.get("d");
 }
 
-function isCaptive() {
-  return searchParams.get("captive") == "true";
-}
-
 /**
  * We don't actually know what the MitM is called (since we don't
  * maintain a list), so we'll try and display the common name of the
@@ -106,11 +97,6 @@ function isCaptive() {
  */
 function getMitmName(failedCertInfo) {
   return failedCertInfo.issuerCommonName;
-}
-
-function retryThis(buttonEl) {
-  RPMSendAsyncMessage("Browser:EnableOnlineMode");
-  buttonEl.disabled = true;
 }
 
 function showPrefChangeContainer() {
@@ -451,7 +437,6 @@ function initPage() {
   }
 
   const isTRROnlyFailure = gErrorCode == "dnsNotFound" && RPMIsTRROnlyFailure();
-  let noConnectivity = gErrorCode == "dnsNotFound" && !RPMHasConnectivity();
 
   const docTitle = document.querySelector("title");
   const shortDesc = document.getElementById("errorShortDesc");
@@ -502,7 +487,7 @@ function initPage() {
   );
 
   // We can handle the offline page separately.
-  if (noConnectivity) {
+  if (gNoConnectivity) {
     pageTitleId = "neterror-dns-not-found-title";
     bodyTitleId = "internet-connection-offline-title";
   }
@@ -515,7 +500,7 @@ function initPage() {
 
   // The TRR errors may present options that direct users to settings only available on Firefox Desktop
   if (RPMIsFirefox()) {
-    if (isTRROnlyFailure && !noConnectivity) {
+    if (isTRROnlyFailure && !gNoConnectivity) {
       pageTitleId = "neterror-dns-not-found-title";
       document.l10n.setAttributes(docTitle, pageTitleId);
       if (bodyTitle) {
@@ -643,7 +628,7 @@ function initPage() {
   setFocus("#netErrorButtonContainer > .try-again");
 
   if (longDesc) {
-    const parts = getNetErrorDescParts(noConnectivity);
+    const parts = getNetErrorDescParts(gNoConnectivity);
     setNetErrorMessageFromParts(longDesc, parts);
   }
 
@@ -1018,9 +1003,6 @@ function setCertErrorDetails() {
       ];
       break;
 
-    case "SEC_ERROR_OCSP_INVALID_SIGNING_CERT": // FIXME - this would have thrown?
-      break;
-
     case "SEC_ERROR_UNKNOWN_ISSUER":
       whatToDoParts = [
         ["p", "certerror-unknown-issuer-what-can-you-do-about-it-website"],
@@ -1030,29 +1012,6 @@ function setCertErrorDetails() {
         ],
       ];
       break;
-
-    // This error code currently only exists for the Symantec distrust
-    // in Firefox 63, so we add copy explaining that to the user.
-    // In case of future distrusts of that scale we might need to add
-    // additional parameters that allow us to identify the affected party
-    // without replicating the complex logic from certverifier code.
-    case "MOZILLA_PKIX_ERROR_ADDITIONAL_POLICY_CONSTRAINT_FAILED": {
-      document.l10n.setAttributes(
-        shortDesc2,
-        "cert-error-symantec-distrust-description",
-        { hostname: HOST_NAME }
-      );
-
-      // FIXME - this does nothing
-      const adminDesc = document.createElement("p");
-      document.l10n.setAttributes(
-        adminDesc,
-        "cert-error-symantec-distrust-admin"
-      );
-
-      learnMoreLink.href = baseURL + "symantec-warning";
-      break;
-    }
 
     case "MOZILLA_PKIX_ERROR_MITM_DETECTED": {
       const autoEnabledEnterpriseRoots = RPMGetBoolPref(
@@ -1194,24 +1153,18 @@ function setCertErrorDetails() {
       ];
       break;
     }
-    case "MOZILLA_PKIX_ERROR_INSUFFICIENT_CERTIFICATE_TRANSPARENCY":
-      whatToDoParts = [
-        [
-          "p",
-          "cert-error-trust-certificate-transparency-what-can-you-do-about-it",
-        ],
-      ];
-      break;
-    case "SEC_ERROR_REVOKED_CERTIFICATE":
-      whatToDoParts = [
-        [
-          "p",
-          // This string was added for the certificate transparency error case,
-          // but it applies in other cases as well, such as this one.
-          "cert-error-trust-certificate-transparency-what-can-you-do-about-it",
-        ],
-      ];
-      break;
+  }
+
+  if (errorHasNoUserFix(failedCertInfo.errorCodeString)) {
+    // "cert-error-trust-certificate-transparency-what-can-you-do-about-it" was
+    // originally added for certificate transparency errors, but it's general
+    // enough to apply in many cases.
+    whatToDoParts = [
+      [
+        "p",
+        "cert-error-trust-certificate-transparency-what-can-you-do-about-it",
+      ],
+    ];
   }
 
   if (whatToDoParts) {
@@ -1311,10 +1264,6 @@ function setTechnicalDetailsOnCertError(
           addLabel("cert-error-intro", { hostname });
           addLabel("cert-error-trust-self-signed");
           break;
-        case "MOZILLA_PKIX_ERROR_ADDITIONAL_POLICY_CONSTRAINT_FAILED":
-          addLabel("cert-error-intro", { hostname });
-          addLabel("cert-error-trust-symantec");
-          break;
         case "MOZILLA_PKIX_ERROR_INSUFFICIENT_CERTIFICATE_TRANSPARENCY":
           addLabel("cert-error-trust-certificate-transparency", { hostname });
           break;
@@ -1408,8 +1357,43 @@ function setTechnicalDetailsOnCertError(
       break;
   }
 
-  if (failedCertInfo.errorCodeString == "SEC_ERROR_REVOKED_CERTIFICATE") {
-    addLabel("cert-error-revoked", { hostname });
+  const nonoverridableErrorCodeToLabelMap = {
+    SEC_ERROR_BAD_DER: "cert-error-bad-der",
+    SEC_ERROR_BAD_SIGNATURE: "cert-error-bad-signature",
+    SEC_ERROR_CERT_NOT_IN_NAME_SPACE: "cert-error-cert-not-in-name-space",
+    SEC_ERROR_EXTENSION_VALUE_INVALID: "cert-error-extension-value-invalid",
+    SEC_ERROR_INADEQUATE_CERT_TYPE: "cert-error-inadequate-cert-type",
+    // NB: SEC_ERROR_INADEQUATE_KEY_USAGE intentionally uses the same error
+    // message as SEC_ERROR_INADEQUATE_CERT_TYPE
+    SEC_ERROR_INADEQUATE_KEY_USAGE: "cert-error-inadequate-cert-type",
+    SEC_ERROR_INVALID_KEY: "cert-error-invalid-key",
+    SEC_ERROR_PATH_LEN_CONSTRAINT_INVALID:
+      "cert-error-path-len-constraint-invalid",
+    SEC_ERROR_REVOKED_CERTIFICATE: "cert-error-revoked-certificate",
+    SEC_ERROR_UNKNOWN_CRITICAL_EXTENSION:
+      "cert-error-unknown-critical-extension",
+    // NB: SEC_ERROR_UNSUPPORTED_EC_POINT_FORM intentionally uses the same
+    // error message as SEC_ERROR_UNSUPPORTED_KEYALG
+    SEC_ERROR_UNSUPPORTED_EC_POINT_FORM: "cert-error-unsupported-keyalg",
+    // NB: SEC_ERROR_UNSUPPORTED_ELLIPTIC_CURVE intentionally uses the same
+    // error message as SEC_ERROR_UNSUPPORTED_KEYALG
+    SEC_ERROR_UNSUPPORTED_ELLIPTIC_CURVE: "cert-error-unsupported-keyalg",
+    SEC_ERROR_UNSUPPORTED_KEYALG: "cert-error-unsupported-keyalg",
+    SEC_ERROR_UNTRUSTED_CERT: "cert-error-untrusted-cert",
+    SEC_ERROR_UNTRUSTED_ISSUER: "cert-error-untrusted-issuer",
+    MOZILLA_PKIX_ERROR_INVALID_INTEGER_ENCODING:
+      "cert-error-invalid-integer-encoding",
+    MOZILLA_PKIX_ERROR_ISSUER_NO_LONGER_TRUSTED:
+      "cert-error-issuer-no-longer-trusted",
+    MOZILLA_PKIX_ERROR_KEY_PINNING_FAILURE: "cert-error-key-pinning-failure",
+    MOZILLA_PKIX_ERROR_SIGNATURE_ALGORITHM_MISMATCH:
+      "cert-error-signature-algorithm-mismatch",
+  };
+  if (failedCertInfo.errorCodeString in nonoverridableErrorCodeToLabelMap) {
+    addLabel(
+      nonoverridableErrorCodeToLabelMap[failedCertInfo.errorCodeString],
+      { hostname }
+    );
     addErrorCodeLink();
   }
 
@@ -1436,22 +1420,7 @@ function setFocus(selector, position = "afterbegin") {
   }
 }
 
-function shouldUseFeltPrivacyRefresh() {
-  if (!FELT_PRIVACY_REFRESH) {
-    return false;
-  }
-
-  let failedCertInfo;
-  try {
-    failedCertInfo = document.getFailedCertSecurityInfo();
-  } catch {
-    return false;
-  }
-
-  return NetErrorCard.ERROR_CODES.has(failedCertInfo.errorCodeString);
-}
-
-if (!shouldUseFeltPrivacyRefresh()) {
+if (!NetErrorCard.isSupported()) {
   for (let button of document.querySelectorAll(".try-again")) {
     button.addEventListener("click", function () {
       retryThis(this);

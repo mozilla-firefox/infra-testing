@@ -17,6 +17,9 @@ transforms:
 # (to use subdirectory clones of the proper directory), at which point we can
 # generate tasks for every docker image in the directory, secure in the
 # knowledge that unnecessary images will be omitted from the target task graph
+task-defaults:
+    run-on-repo-type: [hg]
+
 tasks:
     image_builder:
         symbol: I(ib)
@@ -49,6 +52,7 @@ tasks:
         symbol: I(ub18-base)
         parent: ubuntu1804-raw
         packages:
+            - ub18-coreutils
             - ub18-mercurial
             - ub18-python-zstandard
             - ub18-python-psutil
@@ -85,6 +89,11 @@ tasks:
         symbol: I(ub24-build-python-wheels)
         parent: ubuntu2404-base
         definition: build-python-wheels
+    ubuntu2404-arm64-build-python-wheels:
+        symbol: I(ub24-arm64-python-wheels)
+        parent: ubuntu2404-arm64-base
+        definition: build-python-wheels
+        arch: arm64
     # Neither the ubuntu2004-*raw nor the ubuntu2004-*packages images can have
     # packages dependencies.
     ubuntu2004-raw:
@@ -112,12 +121,14 @@ tasks:
         symbol: I(ub24-raw)
         definition: debian-raw
         args:
-            BASE_IMAGE: ubuntu:noble
+            BASE_IMAGE: ubuntu:noble-20250714
+            SNAPSHOT: 20250716T072533Z
     ubuntu2404-arm64-raw:
         symbol: I(ub24-a64-raw)
         definition: debian-raw
         args:
-            BASE_IMAGE: ubuntu:noble
+            BASE_IMAGE: ubuntu:noble-20250714
+            SNAPSHOT: 20250716T072533Z
         arch: arm64
     ubuntu2004-packages:
         symbol: I(ub20-pkg)
@@ -213,6 +224,20 @@ tasks:
         symbol: I(deb8-32-pkg)
         definition: debian-packages
         parent: debian8-i386-raw
+    # Neither the debian10-*raw nor the debian10-*packages images can have
+    # packages dependencies.
+    debian10-arm64-raw:
+        symbol: I(deb10-arm64-raw)
+        definition: debian-raw
+        args:
+            BASE_IMAGE: debian:buster-20230612
+            DIST: buster
+        arch: arm64
+    debian10-arm64-packages:
+        symbol: I(deb10-arm64-pkg)
+        definition: debian-packages
+        parent: debian10-arm64-raw
+        arch: arm64
     custom-v8:
         symbol: I(custom-v8)
         parent: debian12-base
@@ -278,9 +303,50 @@ tasks:
         definition: rpm-repackage
         packages:
             - deb12-mercurial
+    # Neither the debian13-raw nor the debian13-packages images can have
+    # packages dependencies.
+    debian13-raw:
+        symbol: I(deb13-raw)
+        definition: debian-raw
+        args:
+            BASE_IMAGE: debian:trixie-20251117
+            DIST: trixie
+            SNAPSHOT: '20251124T083047Z'
+    debian13-packages:
+        symbol: I(deb13-pkg)
+        definition: debian-packages
+        parent: debian13-raw
+    debian13-base:
+        symbol: I(deb13-base)
+        definition: debian-base
+        parent: debian13-raw
+    debian13-amd64-build:
+        symbol: I(deb13)
+        parent: debian13-base
+        definition: debian-build
+    debian13-repackage:
+        symbol: I(deb13-rpk)
+        parent: debian13-base
+        definition: debian-repackage
+    debian13-flatpak:
+        symbol: I(deb13-flatpak)
+        parent: debian13-base
+        definition: debian-flatpak
+    deb13-toolchain-build:
+        symbol: I(deb13-toolchain)
+        parent: debian13-base
+        definition: toolchain-build
+        args:
+            CLANG_VER: '19'
+    debian13-rpm-repackage:
+        symbol: I(deb13-rpm-rpk)
+        parent: debian13-base
+        definition: rpm-repackage
     android-build:
         symbol: I(agb)
         parent: debian12-base
+        packages:
+            - deb12-python-zstandard
     fetch:
         symbol: I(fetch)
         parent: debian12-raw
@@ -318,9 +384,6 @@ tasks:
     webrender:
         symbol: I(webrender)
         parent: debian12-base
-    condprof:
-        symbol: I(condprof)
-        parent: ubuntu1804-test
     sentry:
         symbol: I(sentry)
         parent: debian12-base
@@ -341,7 +404,7 @@ tasks:
         parent: debian12-base
     decision:
         symbol: I(decision)
-        parent: ubuntu2004-base
+        parent: debian12-base
     snap-build-core22:
         symbol: I(snap22-build)
         parent: ubuntu2204-base

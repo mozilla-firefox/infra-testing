@@ -8,9 +8,10 @@
 
 use std::{
     cell::RefCell,
-    collections::HashMap,
     fmt::{self, Display},
+    num::NonZeroUsize,
     rc::Rc,
+    slice,
     time::Instant,
 };
 
@@ -19,7 +20,8 @@ use neqo_crypto::{generate_ech_keys, random, AntiReplay};
 use neqo_http3::{
     Http3OrWebTransportStream, Http3Parameters, Http3Server, Http3ServerEvent, StreamId,
 };
-use neqo_transport::{server::ValidateAddress, ConnectionIdGenerator};
+use neqo_transport::{server::ValidateAddress, ConnectionIdGenerator, OutputBatch};
+use rustc_hash::FxHashMap as HashMap;
 
 use super::{qns_read_response, Args};
 use crate::send_data::SendData;
@@ -28,7 +30,8 @@ pub struct HttpServer {
     server: Http3Server,
     /// Progress writing to each stream.
     remaining_data: HashMap<StreamId, SendData>,
-    posts: HashMap<Http3OrWebTransportStream, usize>,
+    /// Tracks POST requests: (bytes received, optional response size from path)
+    posts: HashMap<Http3OrWebTransportStream, (usize, Option<usize>)>,
     is_qns_test: bool,
 }
 
@@ -40,8 +43,8 @@ impl HttpServer {
     ) -> Self {
         let mut server = Http3Server::new(
             args.now(),
-            &[args.key.clone()],
-            &[args.shared.alpn.clone()],
+            slice::from_ref(&args.key),
+            slice::from_ref(&args.shared.alpn),
             anti_replay,
             cid_mgr,
             Http3Parameters::default()
@@ -63,13 +66,12 @@ impl HttpServer {
             server
                 .enable_ech(random::<1>()[0], "public.example", &sk, &pk)
                 .unwrap();
-            let cfg = server.ech_config();
-            qinfo!("ECHConfigList: {}", hex(cfg));
+            qinfo!("ECHConfigList: {}", hex(server.ech_config()));
         }
         Self {
             server,
-            remaining_data: HashMap::new(),
-            posts: HashMap::new(),
+            remaining_data: HashMap::default(),
+            posts: HashMap::default(),
             is_qns_test: args.shared.qns_test.is_some(),
         }
     }
@@ -82,11 +84,17 @@ impl Display for HttpServer {
 }
 
 impl super::HttpServer for HttpServer {
-    fn process(&mut self, dgram: Option<Datagram<&mut [u8]>>, now: Instant) -> neqo_http3::Output {
-        self.server.process(dgram, now)
+    fn process_multiple<'a>(
+        &mut self,
+        dgrams: impl IntoIterator<Item = Datagram<&'a mut [u8]>>,
+        now: Instant,
+        max_datagrams: NonZeroUsize,
+    ) -> OutputBatch {
+        self.server.process_multiple(dgrams, now, max_datagrams)
     }
 
     fn process_events(&mut self, _now: Instant) {
+        let now = Instant::now();
         while let Some(event) = self.server.next_event() {
             match event {
                 Http3ServerEvent::Headers {
@@ -96,8 +104,15 @@ impl super::HttpServer for HttpServer {
                 } => {
                     qdebug!("Headers (request={stream} fin={fin}): {headers:?}");
 
-                    if headers.contains_header(":method", "POST") {
-                        self.posts.insert(stream, 0);
+                    if headers.contains_header(":method", b"POST") {
+                        let response_size = headers.find_header(":path").and_then(|path| {
+                            path.value_utf8()
+                                .ok()?
+                                .trim_matches('/')
+                                .parse::<usize>()
+                                .ok()
+                        });
+                        self.posts.insert(stream, (0, response_size));
                         continue;
                     }
 
@@ -109,21 +124,23 @@ impl super::HttpServer for HttpServer {
                     };
 
                     let mut response = if self.is_qns_test {
-                        match qns_read_response(path.value()) {
+                        let path_str = path.value_utf8().unwrap_or("/");
+                        match qns_read_response(path_str) {
                             Ok(data) => SendData::from(data),
                             Err(e) => {
-                                qerror!("Failed to read {}: {e}", path.value());
+                                qerror!("Failed to read {path_str}: {e}");
                                 stream
                                     .send_headers(&[Header::new(":status", "404")])
                                     .unwrap();
-                                stream.stream_close_send().unwrap();
+                                stream.stream_close_send(now).unwrap();
                                 continue;
                             }
                         }
-                    } else if let Ok(count) =
-                        path.value().trim_matches(|p| p == '/').parse::<usize>()
-                    {
-                        SendData::zeroes(count)
+                    } else if let Ok(path_str) = path.value_utf8() {
+                        path_str
+                            .trim_matches(|p| p == '/')
+                            .parse::<usize>()
+                            .map_or_else(|_| SendData::from(path.value()), SendData::zeroes)
                     } else {
                         SendData::from(path.value())
                     };
@@ -134,9 +151,9 @@ impl super::HttpServer for HttpServer {
                             Header::new("content-length", response.len().to_string()),
                         ])
                         .unwrap();
-                    let done = response.send(|chunk| stream.send_data(chunk).unwrap());
+                    let done = response.send(|chunk| stream.send_data(chunk, now).unwrap());
                     if done {
-                        stream.stream_close_send().unwrap();
+                        stream.stream_close_send(now).unwrap();
                     } else {
                         self.remaining_data.insert(stream.stream_id(), response);
                     }
@@ -144,27 +161,39 @@ impl super::HttpServer for HttpServer {
                 Http3ServerEvent::DataWritable { stream } => {
                     if self.posts.get_mut(&stream).is_none() {
                         if let Some(remaining) = self.remaining_data.get_mut(&stream.stream_id()) {
-                            let done = remaining.send(|chunk| stream.send_data(chunk).unwrap());
+                            let done =
+                                remaining.send(|chunk| stream.send_data(chunk, now).unwrap());
                             if done {
                                 self.remaining_data.remove(&stream.stream_id());
-                                stream.stream_close_send().unwrap();
+                                stream.stream_close_send(now).unwrap();
                             }
                         }
                     }
                 }
 
                 Http3ServerEvent::Data { stream, data, fin } => {
-                    if let Some(received) = self.posts.get_mut(&stream) {
+                    if let Some((received, _)) = self.posts.get_mut(&stream) {
                         *received += data.len();
                     }
                     if fin {
-                        if let Some(received) = self.posts.remove(&stream) {
-                            let msg = received.to_string().as_bytes().to_vec();
+                        if let Some((received, response_size)) = self.posts.remove(&stream) {
+                            let mut response = response_size.map_or_else(
+                                || SendData::from(received.to_string().into_bytes()),
+                                SendData::zeroes,
+                            );
+
                             stream
-                                .send_headers(&[Header::new(":status", "200")])
+                                .send_headers(&[
+                                    Header::new(":status", "200"),
+                                    Header::new("content-length", response.len().to_string()),
+                                ])
                                 .unwrap();
-                            stream.send_data(&msg).unwrap();
-                            stream.stream_close_send().unwrap();
+                            let done = response.send(|chunk| stream.send_data(chunk, now).unwrap());
+                            if done {
+                                stream.stream_close_send(now).unwrap();
+                            } else {
+                                self.remaining_data.insert(stream.stream_id(), response);
+                            }
                         }
                     }
                 }

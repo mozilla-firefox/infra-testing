@@ -7,6 +7,7 @@
 #ifndef MOZILLA_GFX_DCLAYER_TREE_H
 #define MOZILLA_GFX_DCLAYER_TREE_H
 
+#include <deque>
 #include <dxgiformat.h>
 #include <unordered_map>
 #include <vector>
@@ -24,6 +25,7 @@
 
 struct ID3D11Device;
 struct ID3D11DeviceContext;
+struct ID3D11Texture2D;
 struct ID3D11VideoDevice;
 struct ID3D11VideoContext;
 struct ID3D11VideoProcessor;
@@ -32,6 +34,7 @@ struct ID3D11VideoProcessorOutputView;
 struct IDCompositionColorMatrixEffect;
 struct IDCompositionFilterEffect;
 struct IDCompositionTableTransferEffect;
+struct IDCompositionTexture;
 struct IDCompositionDevice2;
 struct IDCompositionDevice3;
 struct IDCompositionSurface;
@@ -61,6 +64,7 @@ namespace wr {
 
 class DCLayerSurface;
 class DCTile;
+class DCLayerDCompositionTexture;
 class DCSurface;
 class DCSwapChain;
 class DCSurfaceVideo;
@@ -131,7 +135,12 @@ class DCLayerTree {
   void MaybeUpdateDebug();
   void MaybeCommit();
   void WaitForCommitCompletion();
+
+  bool UseNativeCompositor() const;
+  bool UseLayerCompositor() const;
   void DisableNativeCompositor();
+  bool EnableAsyncScreenshot();
+  bool GetAsyncScreenshotEnabled() const { return mEnableAsyncScreenshot; }
 
   // Interface for wr::Compositor
   void CompositorBeginFrame();
@@ -142,7 +151,7 @@ class DCLayerTree {
   void CreateSurface(wr::NativeSurfaceId aId, wr::DeviceIntPoint aVirtualOffset,
                      wr::DeviceIntSize aTileSize, bool aIsOpaque);
   void CreateSwapChainSurface(wr::NativeSurfaceId aId, wr::DeviceIntSize aSize,
-                              bool aIsOpaque);
+                              bool aIsOpaque, bool aNeedsSyncDcompCommit);
   void ResizeSwapChainSurface(wr::NativeSurfaceId aId, wr::DeviceIntSize aSize);
   void CreateExternalSurface(wr::NativeSurfaceId aId, bool aIsOpaque);
   void DestroySurface(NativeSurfaceId aId);
@@ -156,8 +165,12 @@ class DCLayerTree {
                   wr::ImageRendering aImageRendering,
                   wr::DeviceIntRect aRoundedClipRect,
                   wr::ClipRadius aClipRadius);
-  void BindSwapChain(wr::NativeSurfaceId aId);
-  void PresentSwapChain(wr::NativeSurfaceId aId);
+  void BindSwapChain(wr::NativeSurfaceId aId,
+                     const wr::DeviceIntRect* aDirtyRects,
+                     size_t aNumDirtyRects);
+  void PresentSwapChain(wr::NativeSurfaceId aId,
+                        const wr::DeviceIntRect* aDirtyRects,
+                        size_t aNumDirtyRects);
 
   gl::GLContext* GetGLContext() const { return mGL; }
   EGLConfig GetEGLConfig() const { return mEGLConfig; }
@@ -186,6 +199,7 @@ class DCLayerTree {
   DXGI_FORMAT GetOverlayFormatForSDR();
 
   bool SupportsSwapChainTearing();
+  bool SupportsDCompositionTexture();
 
   void SetUsedOverlayTypeInFrame(DCompOverlayTypes aTypes);
 
@@ -203,6 +217,11 @@ class DCLayerTree {
       wr::DeviceIntPoint aSurfaceOffset);
   void ReleaseNativeCompositorResources();
   layers::OverlayInfo GetOverlayInfo();
+
+  bool mUseNativeCompositor = true;
+  bool mEnableAsyncScreenshot = false;
+  bool mEnableAsyncScreenshotInNextFrame = false;
+  int mAsyncScreenshotLastFrameUsed = 0;
 
   RefPtr<gl::GLContext> mGL;
   EGLConfig mEGLConfig;
@@ -338,6 +357,15 @@ class DCSurface {
   virtual DCSurfaceHandle* AsDCSurfaceHandle() { return nullptr; }
   virtual DCLayerSurface* AsDCLayerSurface() { return nullptr; }
   virtual DCSwapChain* AsDCSwapChain() { return nullptr; }
+  virtual DCLayerDCompositionTexture* AsDCLayerDCompositionTexture() {
+    return nullptr;
+  }
+
+  bool IsUpdated(const wr::CompositorSurfaceTransform& aTransform,
+                 const wr::DeviceIntRect& aClipRect,
+                 const wr::ImageRendering aImageRendering,
+                 const wr::DeviceIntRect& aRoundedClipRect,
+                 const wr::ClipRadius& aClipRadius);
 
  protected:
   DCLayerTree* mDCLayerTree;
@@ -346,6 +374,25 @@ class DCSurface {
     std::size_t operator()(const TileKey& aId) const {
       return HashGeneric(aId.mX, aId.mY);
     }
+  };
+
+  struct DCSurfaceData {
+    DCSurfaceData(const wr::CompositorSurfaceTransform& aTransform,
+                  const wr::DeviceIntRect& aClipRect,
+                  const wr::ImageRendering aImageRendering,
+                  const wr::DeviceIntRect& aRoundedClipRect,
+                  const wr::ClipRadius& aClipRadius)
+        : mTransform(aTransform),
+          mClipRect(aClipRect),
+          mImageRendering(aImageRendering),
+          mRoundedClipRect(aRoundedClipRect),
+          mClipRadius(aClipRadius) {}
+
+    wr::CompositorSurfaceTransform mTransform;
+    wr::DeviceIntRect mClipRect;
+    wr::ImageRendering mImageRendering;
+    wr::DeviceIntRect mRoundedClipRect;
+    wr::ClipRadius mClipRadius;
   };
 
   // Each surface creates two visuals. The root is where it gets attached
@@ -371,6 +418,7 @@ class DCSurface {
   std::unordered_map<TileKey, UniquePtr<DCTile>, TileKeyHashFn> mDCTiles;
   wr::DeviceIntPoint mVirtualOffset;
   RefPtr<IDCompositionVirtualSurface> mVirtualSurface;
+  Maybe<DCSurfaceData> mDCSurfaceData;
 };
 
 class DCLayerSurface : public DCSurface {
@@ -380,29 +428,76 @@ class DCLayerSurface : public DCSurface {
                   aDCLayerTree) {}
   virtual ~DCLayerSurface() = default;
 
-  virtual void Bind() = 0;
+  virtual void Bind(const wr::DeviceIntRect* aDirtyRects,
+                    size_t aNumDirtyRects) = 0;
   virtual bool Resize(wr::DeviceIntSize aSize) = 0;
-  virtual void Present() = 0;
+  virtual void Present(const wr::DeviceIntRect* aDirtyRects,
+                       size_t aNumDirtyRects) = 0;
 
   DCLayerSurface* AsDCLayerSurface() override { return this; }
+};
+
+class DCLayerDCompositionTexture : public DCLayerSurface {
+ public:
+  DCLayerDCompositionTexture(wr::DeviceIntSize aSize, bool aIsOpaque,
+                             DCLayerTree* aDCLayerTree);
+  virtual ~DCLayerDCompositionTexture();
+
+  bool Initialize() override;
+
+  void Bind(const wr::DeviceIntRect* aDirtyRects,
+            size_t aNumDirtyRects) override;
+  bool Resize(wr::DeviceIntSize aSize) override;
+  void Present(const wr::DeviceIntRect* aDirtyRects,
+               size_t aNumDirtyRects) override;
+
+  DCLayerDCompositionTexture* AsDCLayerDCompositionTexture() override {
+    return this;
+  }
+
+  const size_t mSwapChainBufferCount;
+
+ private:
+  struct TextureHolder {
+    TextureHolder(ID3D11Texture2D* aTexture,
+                  IDCompositionTexture* aDCompositionTexture,
+                  EGLSurface aEGLSurface);
+    TextureHolder() = default;
+
+    RefPtr<ID3D11Texture2D> mTexture;
+    RefPtr<IDCompositionTexture> mDCompositionTexture;
+    EGLSurface mEGLSurface;
+  };
+
+  bool AllocateTextures();
+  void DestroyTextures();
+  UniquePtr<TextureHolder> GetNextTexture();
+  void UpdateCurrentTexture();
+
+  wr::DeviceIntSize mSize;
+  std::deque<UniquePtr<TextureHolder>> mAvailableTextureHolders;
+
+  UniquePtr<TextureHolder> mCurrentTextureHolder;
+  UniquePtr<TextureHolder> mPresentingTextureHolder;
 };
 
 class DCSwapChain : public DCLayerSurface {
  public:
   DCSwapChain(wr::DeviceIntSize aSize, bool aIsOpaque,
-              DCLayerTree* aDCLayerTree)
-      : DCLayerSurface(aIsOpaque, aDCLayerTree),
-        mSize(aSize),
-        mEGLSurface(EGL_NO_SURFACE) {}
+              DCLayerTree* aDCLayerTree);
   virtual ~DCSwapChain();
 
   bool Initialize() override;
 
-  void Bind() override;
+  void Bind(const wr::DeviceIntRect* aDirtyRects,
+            size_t aNumDirtyRects) override;
   bool Resize(wr::DeviceIntSize aSize) override;
-  void Present() override;
+  void Present(const wr::DeviceIntRect* aDirtyRects,
+               size_t aNumDirtyRects) override;
 
   DCSwapChain* AsDCSwapChain() override { return this; }
+
+  const int mSwapChainBufferCount;
 
  private:
   wr::DeviceIntSize mSize;
@@ -419,14 +514,17 @@ class DCLayerCompositionSurface : public DCLayerSurface {
 
   bool Initialize() override;
 
-  void Bind() override;
+  void Bind(const wr::DeviceIntRect* aDirtyRects,
+            size_t aNumDirtyRects) override;
   bool Resize(wr::DeviceIntSize aSize) override;
-  void Present() override;
+  void Present(const wr::DeviceIntRect* aDirtyRects,
+               size_t aNumDirtyRects) override;
 
  private:
   wr::DeviceIntSize mSize;
   EGLSurface mEGLSurface = EGL_NO_SURFACE;
   RefPtr<IDCompositionSurface> mCompositionSurface;
+  bool mFirstDraw = true;
 };
 
 /**

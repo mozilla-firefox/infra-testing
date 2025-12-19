@@ -11,14 +11,24 @@
 #ifndef P2P_TEST_FAKE_PACKET_TRANSPORT_H_
 #define P2P_TEST_FAKE_PACKET_TRANSPORT_H_
 
+#include <cstddef>
 #include <map>
+#include <optional>
 #include <string>
 
+#include "api/transport/ecn_marking.h"
+#include "api/units/timestamp.h"
 #include "p2p/base/packet_transport_internal.h"
+#include "rtc_base/async_packet_socket.h"
 #include "rtc_base/copy_on_write_buffer.h"
+#include "rtc_base/network/received_packet.h"
+#include "rtc_base/network/sent_packet.h"
+#include "rtc_base/network_route.h"
+#include "rtc_base/socket.h"
+#include "rtc_base/socket_address.h"
 #include "rtc_base/time_utils.h"
 
-namespace rtc {
+namespace webrtc {
 
 // Used to simulate a packet-based transport.
 class FakePacketTransport : public PacketTransportInternal {
@@ -59,7 +69,7 @@ class FakePacketTransport : public PacketTransportInternal {
   bool receiving() const override { return receiving_; }
   int SendPacket(const char* data,
                  size_t len,
-                 const PacketOptions& options,
+                 const AsyncSocketPacketOptions& options,
                  int /* flags */) override {
     if (!dest_ || error_ != 0) {
       return -1;
@@ -67,7 +77,7 @@ class FakePacketTransport : public PacketTransportInternal {
     CopyOnWriteBuffer packet(data, len);
     SendPacketInternal(packet, options);
 
-    SentPacket sent_packet(options.packet_id, TimeMillis());
+    SentPacketInfo sent_packet(options.packet_id, TimeMillis());
     SignalSentPacket(this, sent_packet);
     return static_cast<int>(len);
   }
@@ -96,7 +106,7 @@ class FakePacketTransport : public PacketTransportInternal {
   }
   void SetNetworkRoute(std::optional<NetworkRoute> network_route) {
     network_route_ = network_route;
-    SignalNetworkRouteChanged(network_route);
+    NotifyNetworkRouteChanged(network_route);
   }
 
   using PacketTransportInternal::NotifyOnClose;
@@ -109,9 +119,9 @@ class FakePacketTransport : public PacketTransportInternal {
     }
     writable_ = writable;
     if (writable_) {
-      SignalReadyToSend(this);
+      NotifyReadyToSend(this);
     }
-    SignalWritableState(this);
+    NotifyWritableState(this);
   }
 
   void set_receiving(bool receiving) {
@@ -119,16 +129,16 @@ class FakePacketTransport : public PacketTransportInternal {
       return;
     }
     receiving_ = receiving;
-    SignalReceivingState(this);
+    NotifyReceivingState(this);
   }
 
   void SendPacketInternal(const CopyOnWriteBuffer& packet,
-                          const rtc::PacketOptions& options) {
+                          const AsyncSocketPacketOptions& options) {
     last_sent_packet_ = packet;
     if (dest_) {
-      dest_->NotifyPacketReceived(rtc::ReceivedPacket(
-          packet, SocketAddress(), webrtc::Timestamp::Micros(rtc::TimeMicros()),
-          options.ecn_1 ? EcnMarking::kEct1 : EcnMarking::kNotEct));
+      dest_->NotifyPacketReceived(ReceivedIpPacket(
+          packet, SocketAddress(), Timestamp::Micros(TimeMicros()),
+          options.ect_1 ? EcnMarking::kEct1 : EcnMarking::kNotEct));
     }
   }
 
@@ -144,6 +154,7 @@ class FakePacketTransport : public PacketTransportInternal {
   std::optional<NetworkRoute> network_route_;
 };
 
-}  // namespace rtc
+}  //  namespace webrtc
+
 
 #endif  // P2P_TEST_FAKE_PACKET_TRANSPORT_H_

@@ -2,9 +2,7 @@
 // This code is governed by the BSD license found in the LICENSE file.
 
 /*---
-includes: [sm/non262.js, sm/non262-shell.js, sm/non262-Math-shell.js]
-flags:
-  - noStrict
+includes: [sm/non262-Math-shell.js]
 description: |
   pending
 esid: pending
@@ -22,8 +20,10 @@ var cbrt_data = [
     [ Math.SQRT2, 1.1224620483093728 ]
 ];
 
+var sloppy_tolerance = 3;
+
 for (var [x, y] of cbrt_data)
-    assertNear(Math.cbrt(x), y);
+    assertNear(Math.cbrt(x), y, sloppy_tolerance);
 
 
 reportCompare(0, 0);

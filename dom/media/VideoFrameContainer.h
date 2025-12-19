@@ -7,13 +7,13 @@
 #ifndef VIDEOFRAMECONTAINER_H_
 #define VIDEOFRAMECONTAINER_H_
 
-#include "mozilla/Mutex.h"
-#include "mozilla/TimeStamp.h"
-#include "gfxPoint.h"
-#include "nsCOMPtr.h"
 #include "ImageContainer.h"
 #include "MediaSegment.h"
 #include "VideoSegment.h"
+#include "gfxPoint.h"
+#include "mozilla/Mutex.h"
+#include "mozilla/TimeStamp.h"
+#include "nsCOMPtr.h"
 
 namespace mozilla {
 
@@ -96,6 +96,8 @@ class VideoFrameContainer {
     return mIntrinsicSize;
   }
 
+  bool SupportsOnly8BitImage() const { return mSupportsOnly8BitImage; }
+
  protected:
   void SetCurrentFramesLocked(
       const gfx::IntSize& aIntrinsicSize,
@@ -143,6 +145,9 @@ class VideoFrameContainer {
       MOZ_GUARDED_BY(mMutex);
 
   const RefPtr<AbstractThread> mMainThread;
+
+  // True when Android GL implementation support only 8-bit texture.
+  const bool mSupportsOnly8BitImage;
 };
 
 }  // namespace mozilla

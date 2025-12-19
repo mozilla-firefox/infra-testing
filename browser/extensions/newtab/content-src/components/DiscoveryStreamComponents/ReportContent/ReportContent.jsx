@@ -28,10 +28,7 @@ export const ReportContent = spocs => {
     const {
       card_type,
       corpus_item_id,
-      is_section_followed,
       position,
-      received_rank,
-      recommended_at,
       reporting_url,
       scheduled_corpus_item_id,
       section_position,
@@ -48,9 +45,6 @@ export const ReportContent = spocs => {
           data: {
             card_type,
             corpus_item_id,
-            is_section_followed,
-            received_rank,
-            recommended_at,
             report_reason: selectedReason,
             scheduled_corpus_item_id,
             section_position,
@@ -119,6 +113,20 @@ export const ReportContent = spocs => {
   useEffect(() => {
     if (report.visible && modal?.current) {
       modal.current.showModal();
+
+      // Clear any previously selected radio button
+      const radioGroup = radioGroupRef.current;
+      if (radioGroup) {
+        const selectedRadioButton =
+          radioGroup.querySelector("moz-radio[checked]");
+        if (selectedRadioButton) {
+          selectedRadioButton.removeAttribute("checked");
+        }
+      }
+
+      // Clear out the states
+      setValueSelected(false);
+      setSelectedReason(null);
     } else if (!report.visible && modal?.current?.open) {
       modal.current.close();
     }
@@ -178,6 +186,7 @@ export const ReportContent = spocs => {
               id="report-group"
               data-l10n-id="newtab-report-ads-why-reporting"
               className="report-ads-options"
+              headingLevel="3"
             >
               <moz-radio
                 data-l10n-id="newtab-report-ads-reason-not-interested"
@@ -201,6 +210,7 @@ export const ReportContent = spocs => {
               id="report-group"
               data-l10n-id="newtab-report-content-why-reporting-this"
               className="report-content-options"
+              headingLevel="3"
             >
               <moz-radio
                 data-l10n-id="newtab-report-content-wrong-category"

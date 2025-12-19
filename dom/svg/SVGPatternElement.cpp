@@ -6,12 +6,11 @@
 
 #include "mozilla/dom/SVGPatternElement.h"
 
+#include "DOMSVGAnimatedTransformList.h"
 #include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/dom/SVGLengthBinding.h"
 #include "mozilla/dom/SVGPatternElementBinding.h"
 #include "mozilla/dom/SVGUnitTypesBinding.h"
-#include "DOMSVGAnimatedTransformList.h"
 #include "nsGkAtoms.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(Pattern)
@@ -112,7 +111,8 @@ already_AddRefed<DOMSVGAnimatedLength> SVGPatternElement::Height() {
 }
 
 already_AddRefed<DOMSVGAnimatedString> SVGPatternElement::Href() {
-  return mStringAttributes[HREF].IsExplicitlySet()
+  return mStringAttributes[HREF].IsExplicitlySet() ||
+                 !mStringAttributes[XLINK_HREF].IsExplicitlySet()
              ? mStringAttributes[HREF].ToDOMAnimatedString(this)
              : mStringAttributes[XLINK_HREF].ToDOMAnimatedString(this);
 }

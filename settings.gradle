@@ -23,6 +23,8 @@ pluginManagement {
     includeBuild("${rootProject.projectDir.absolutePath}/mobile/android/android-components/plugins/dependencies")
     includeBuild("${rootProject.projectDir.absolutePath}/mobile/android/android-components/plugins/publicsuffixlist")
     includeBuild("${rootProject.projectDir.absolutePath}/mobile/android/fenix/plugins/apksize")
+    includeBuild("${rootProject.projectDir.absolutePath}/mobile/android/gradle/plugins/apilint")
+    includeBuild("${rootProject.projectDir.absolutePath}/mobile/android/gradle/plugins/nimbus-gradle-plugin")
 }
 
 plugins {
@@ -35,6 +37,10 @@ ext.topsrcdir = rootProject.projectDir.absolutePath
 
 apply from: "${topsrcdir}/mobile/android/shared-settings.gradle"
 apply from: "${topsrcdir}/mobile/android/autopublish-settings.gradle"
+
+if (gradle.ext.mozconfig.substs.MOZ_APPSERVICES_IN_TREE) {
+    apply from: "${topsrcdir}/services/app-services/settings.gradle"
+}
 
 // Set the Android SDK location.  This is the *least specific* mechanism, which
 // is unfortunate: we'd prefer to use the *most specific* mechanism.  That is,
@@ -62,16 +68,16 @@ if (!gradle.mozconfig.substs.MOZ_ANDROID_SUBPROJECT || gradle.mozconfig.substs.M
     project(':focus-android').projectDir = new File("${gradle.mozconfig.topsrcdir}/mobile/android/focus-android/app")
 }
 if (!gradle.mozconfig.substs.MOZ_ANDROID_SUBPROJECT || gradle.mozconfig.substs.MOZ_ANDROID_SUBPROJECT == "geckoview_example") {
-    include ':samples-browser'
-    include ':compose-browser'
-    include ':toolbar'
+    include ':components:samples-browser'
+    include ':components:samples-compose-browser'
+    include ':components:samples-toolbar'
     include ':geckoview_example'
     include ':test_runner'
     project(':test_runner').projectDir = new File("${gradle.mozconfig.topsrcdir}/mobile/android/test_runner")
     project(':geckoview_example').projectDir = new File("${gradle.mozconfig.topsrcdir}/mobile/android/geckoview_example")
-    project(':samples-browser').projectDir = new File("${gradle.mozconfig.topsrcdir}/mobile/android/android-components/samples/browser")
-    project(':compose-browser').projectDir = new File("${gradle.mozconfig.topsrcdir}/mobile/android/android-components/samples/compose-browser")
-    project(':toolbar').projectDir = new File("${gradle.mozconfig.topsrcdir}/mobile/android/android-components/samples/toolbar")
+    project(':components:samples-browser').projectDir = new File("${gradle.mozconfig.topsrcdir}/mobile/android/android-components/samples/browser")
+    project(':components:samples-compose-browser').projectDir = new File("${gradle.mozconfig.topsrcdir}/mobile/android/android-components/samples/compose-browser")
+    project(':components:samples-toolbar').projectDir = new File("${gradle.mozconfig.topsrcdir}/mobile/android/android-components/samples/toolbar")
 }
 
 if (hasProperty("androidFormatLintTest")) {

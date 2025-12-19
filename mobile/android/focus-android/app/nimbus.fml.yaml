@@ -43,6 +43,23 @@ features:
         value: {
           "is-cookie-handling-enabled": true
         }
+  remote-search-configuration:
+    description: Feature to use search configurations from remote servers.
+    variables:
+      enabled:
+        description: >
+          Uses search configuration from remote servers .
+        type: Boolean
+        default: false
+  pki:
+    description: Certificate verification configuration
+    variables:
+      certificateTransparencyMode:
+        description: >
+          What mode Certificate Transparency is in (0=disable, 1=telemetry only, 2=enforce).
+        type: Option<Int>
+        default: null
+
 types:
   objects: { }
   enums: { }

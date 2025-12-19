@@ -16,7 +16,7 @@
         allow_quirks="Yes",
         rule_types_allowed=DEFAULT_RULES_AND_POSITION_TRY,
         gecko_ffi_name="mOffset.{}".format(index),
-        servo_restyle_damage="reflow_out_of_flow",
+        servo_restyle_damage="rebuild_box",
         logical_group="inset",
         affects="layout",
     )}
@@ -43,6 +43,7 @@ ${helpers.predefined_type(
     engines="gecko servo",
     spec="https://www.w3.org/TR/CSS2/visuren.html#z-index",
     affects="paint",
+    servo_restyle_damage="rebuild_stacking_context",
 )}
 
 // CSS Flexible Box Layout Module Level 1
@@ -53,11 +54,10 @@ ${helpers.single_keyword(
     "flex-direction",
     "row row-reverse column column-reverse",
     engines="gecko servo",
-    servo_pref="layout.flexbox.enabled",
     spec="https://drafts.csswg.org/css-flexbox/#flex-direction-property",
     extra_prefixes="webkit",
     animation_type="discrete",
-    servo_restyle_damage = "reflow",
+    servo_restyle_damage = "rebuild_box",
     gecko_enum_prefix = "StyleFlexDirection",
     affects="layout",
 )}
@@ -66,48 +66,50 @@ ${helpers.single_keyword(
     "flex-wrap",
     "nowrap wrap wrap-reverse",
     engines="gecko servo",
-    servo_pref="layout.flexbox.enabled",
     spec="https://drafts.csswg.org/css-flexbox/#flex-wrap-property",
     extra_prefixes="webkit",
     animation_type="discrete",
-    servo_restyle_damage = "reflow",
+    servo_restyle_damage = "rebuild_box",
     gecko_enum_prefix = "StyleFlexWrap",
     affects="layout",
 )}
 
 ${helpers.predefined_type(
     "justify-content",
-    "JustifyContent",
-    "specified::JustifyContent(specified::ContentDistribution::normal())",
+    "ContentDistribution",
+    "specified::ContentDistribution::normal()",
     engines="gecko servo",
+    parse_method="parse_inline",
     spec="https://drafts.csswg.org/css-align/#propdef-justify-content",
     extra_prefixes="webkit",
     animation_type="discrete",
-    servo_restyle_damage="reflow",
+    servo_restyle_damage="rebuild_box",
     affects="layout",
 )}
 
 ${helpers.predefined_type(
     "align-content",
-    "AlignContent",
-    "specified::AlignContent(specified::ContentDistribution::normal())",
+    "ContentDistribution",
+    "specified::ContentDistribution::normal()",
+    parse_method="parse_block",
     engines="gecko servo",
     spec="https://drafts.csswg.org/css-align/#propdef-align-content",
     extra_prefixes="webkit",
     animation_type="discrete",
-    servo_restyle_damage="reflow",
+    servo_restyle_damage="rebuild_box",
     affects="layout",
 )}
 
 ${helpers.predefined_type(
     "align-items",
-    "AlignItems",
-    "specified::AlignItems::normal()",
+    "ItemPlacement",
+    "specified::ItemPlacement::normal()",
     engines="gecko servo",
+    parse_method="parse_block",
     spec="https://drafts.csswg.org/css-align/#propdef-align-items",
     extra_prefixes="webkit",
     animation_type="discrete",
-    servo_restyle_damage="reflow",
+    servo_restyle_damage="rebuild_box",
     affects="layout",
 )}
 
@@ -129,7 +131,7 @@ ${helpers.predefined_type(
     engines="gecko servo",
     spec="https://drafts.csswg.org/css-flexbox/#flex-grow-property",
     extra_prefixes="webkit",
-    servo_restyle_damage="reflow",
+    servo_restyle_damage="rebuild_box",
     affects="layout",
 )}
 
@@ -138,19 +140,19 @@ ${helpers.predefined_type(
     "NonNegativeNumber",
     "From::from(1.0)",
     engines="gecko servo",
-    servo_pref="layout.flexbox.enabled",
     spec="https://drafts.csswg.org/css-flexbox/#flex-shrink-property",
     extra_prefixes="webkit",
-    servo_restyle_damage = "reflow",
+    servo_restyle_damage = "rebuild_box",
     affects="layout",
 )}
 
 // https://drafts.csswg.org/css-align/#align-self-property
 ${helpers.predefined_type(
     "align-self",
-    "AlignSelf",
-    "specified::AlignSelf(specified::SelfAlignment::auto())",
+    "SelfAlignment",
+    "specified::SelfAlignment::auto()",
     engines="gecko servo",
+    parse_method="parse_block",
     spec="https://drafts.csswg.org/css-align/#align-self-property",
     extra_prefixes="webkit",
     animation_type="discrete",
@@ -159,8 +161,9 @@ ${helpers.predefined_type(
 )}
 ${helpers.predefined_type(
     "justify-self",
-    "JustifySelf",
-    "specified::JustifySelf(specified::SelfAlignment::auto())",
+    "SelfAlignment",
+    "specified::SelfAlignment::auto()",
+    parse_method="parse_inline",
     engines="gecko servo",
     spec="https://drafts.csswg.org/css-align/#justify-self-property",
     animation_type="discrete",
@@ -174,10 +177,9 @@ ${helpers.predefined_type(
     "Integer",
     "0",
     engines="gecko servo",
-    servo_pref="layout.flexbox.enabled",
     extra_prefixes="webkit",
     spec="https://drafts.csswg.org/css-flexbox/#order-property",
-    servo_restyle_damage="reflow",
+    servo_restyle_damage="rebuild_box",
     affects="layout",
 )}
 
@@ -186,10 +188,9 @@ ${helpers.predefined_type(
     "FlexBasis",
     "computed::FlexBasis::auto()",
     engines="gecko servo",
-    servo_pref="layout.flexbox.enabled",
     spec="https://drafts.csswg.org/css-flexbox/#flex-basis-property",
     extra_prefixes="webkit",
-    servo_restyle_damage="reflow",
+    servo_restyle_damage="rebuild_box",
     boxed=True,
     affects="layout",
 )}
@@ -209,9 +210,10 @@ ${helpers.predefined_type(
         logical=logical,
         logical_group="size",
         allow_quirks="No" if logical else "Yes",
+        parse_method="parse_size_for_width_or_height",
         spec=spec % size,
         rule_types_allowed=DEFAULT_RULES_AND_POSITION_TRY,
-        servo_restyle_damage="reflow",
+        servo_restyle_damage="rebuild_box",
         affects="layout",
     )}
     // min-width, min-height, min-block-size, min-inline-size
@@ -225,7 +227,7 @@ ${helpers.predefined_type(
         allow_quirks="No" if logical else "Yes",
         spec=spec % size,
         rule_types_allowed=DEFAULT_RULES_AND_POSITION_TRY,
-        servo_restyle_damage="reflow",
+        servo_restyle_damage="rebuild_box",
         affects="layout",
     )}
     ${helpers.predefined_type(
@@ -238,7 +240,7 @@ ${helpers.predefined_type(
         allow_quirks="No" if logical else "Yes",
         spec=spec % size,
         rule_types_allowed=DEFAULT_RULES_AND_POSITION_TRY,
-        servo_restyle_damage="reflow",
+        servo_restyle_damage="rebuild_box",
         affects="layout",
     )}
 % endfor
@@ -246,7 +248,7 @@ ${helpers.predefined_type(
 ${helpers.predefined_type(
     "position-anchor",
     "PositionAnchor",
-    "computed::PositionAnchor::auto()",
+    "computed::PositionAnchor::None",
     engines="gecko",
     animation_type="discrete",
     rule_types_allowed=DEFAULT_RULES_AND_POSITION_TRY,
@@ -271,9 +273,9 @@ ${helpers.predefined_type(
 ${helpers.predefined_type(
     "position-visibility",
     "PositionVisibility",
-    "computed::PositionVisibility::ALWAYS",
+    "computed::PositionVisibility::ANCHORS_VISIBLE",
     engines="gecko",
-    initial_specified_value="specified::PositionVisibility::ALWAYS",
+    initial_specified_value="specified::PositionVisibility::ANCHORS_VISIBLE",
     animation_type="discrete",
     gecko_pref="layout.css.anchor-positioning.enabled",
     spec="https://drafts.csswg.org/css-anchor-position-1/#propdef-position-visibility",
@@ -299,7 +301,7 @@ ${helpers.predefined_type(
     engines="gecko",
     initial_specified_value="specified::PositionTryOrder::normal()",
     animation_type="discrete",
-    gecko_pref="layout.css.anchor-positioning.enabled",
+    gecko_pref="layout.css.anchor-positioning.position-try-order.enabled",
     spec="https://drafts.csswg.org/css-anchor-position-1/#position-try-order-property",
     affects="layout",
 )}
@@ -313,7 +315,7 @@ ${helpers.single_keyword(
     gecko_enum_prefix="StyleBoxSizing",
     custom_consts={ "content-box": "Content", "border-box": "Border" },
     animation_type="discrete",
-    servo_restyle_damage = "reflow",
+    servo_restyle_damage = "rebuild_box",
     affects="layout",
 )}
 
@@ -413,9 +415,8 @@ ${helpers.predefined_type(
     "computed::length::NonNegativeLengthPercentageOrNormal::normal()",
     engines="gecko servo",
     aliases="grid-column-gap",
-    servo_pref="layout.flexbox.enabled",
     spec="https://drafts.csswg.org/css-align-3/#propdef-column-gap",
-    servo_restyle_damage="reflow",
+    servo_restyle_damage="rebuild_box",
     affects="layout",
 )}
 
@@ -426,9 +427,8 @@ ${helpers.predefined_type(
     "computed::length::NonNegativeLengthPercentageOrNormal::normal()",
     engines="gecko servo",
     aliases="grid-row-gap",
-    servo_pref="layout.flexbox.enabled",
     spec="https://drafts.csswg.org/css-align-3/#propdef-row-gap",
-    servo_restyle_damage="reflow",
+    servo_restyle_damage="rebuild_box",
     affects="layout",
 )}
 
@@ -438,7 +438,7 @@ ${helpers.predefined_type(
     "computed::AspectRatio::auto()",
     engines="gecko servo",
     spec="https://drafts.csswg.org/css-sizing-4/#aspect-ratio",
-    servo_restyle_damage="reflow",
+    servo_restyle_damage="rebuild_box",
     affects="layout",
 )}
 
@@ -450,7 +450,6 @@ ${helpers.predefined_type(
         engines="gecko",
         logical_group="contain-intrinsic-size",
         logical=logical,
-        gecko_pref="layout.css.contain-intrinsic-size.enabled",
         spec="https://drafts.csswg.org/css-sizing-4/#intrinsic-size-override",
         affects="layout",
     )}

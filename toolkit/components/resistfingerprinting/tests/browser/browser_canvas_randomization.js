@@ -417,7 +417,9 @@ function runExtractCanvasData(test, tab) {
 
 async function runTest(enabled) {
   // Enable/Disable CanvasRandomization by the RFP target overrides.
-  let RFPOverrides = enabled ? "+CanvasRandomization" : "-CanvasRandomization";
+  let RFPOverrides = enabled
+    ? "+CanvasRandomization,-EfficientCanvasRandomization"
+    : "-CanvasRandomization,-EfficientCanvasRandomization";
   await SpecialPowers.pushPrefEnv({
     set: [
       ["privacy.fingerprintingProtection", true],
@@ -535,6 +537,7 @@ add_setup(async function () {
   // Disable the fingerprinting randomization.
   await SpecialPowers.pushPrefEnv({
     set: [
+      ["test.wait300msAfterTabSwitch", true],
       ["privacy.fingerprintingProtection", false],
       ["privacy.fingerprintingProtection.pbmode", false],
       ["privacy.resistFingerprinting", false],

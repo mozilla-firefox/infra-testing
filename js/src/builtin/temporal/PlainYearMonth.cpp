@@ -7,9 +7,6 @@
 #include "builtin/temporal/PlainYearMonth.h"
 
 #include "mozilla/Assertions.h"
-#include "mozilla/EnumSet.h"
-
-#include <utility>
 
 #include "jspubtd.h"
 #include "NamespaceImports.h"
@@ -110,12 +107,12 @@ static PlainYearMonthObject* CreateTemporalYearMonth(
 
   // Step 4.
   auto packedDate = PackedDate::pack(isoDate);
-  object->setFixedSlot(PlainYearMonthObject::PACKED_DATE_SLOT,
-                       PrivateUint32Value(packedDate.value));
+  object->initFixedSlot(PlainYearMonthObject::PACKED_DATE_SLOT,
+                        PrivateUint32Value(packedDate.value));
 
   // Step 5.
-  object->setFixedSlot(PlainYearMonthObject::CALENDAR_SLOT,
-                       calendar.toSlotValue());
+  object->initFixedSlot(PlainYearMonthObject::CALENDAR_SLOT,
+                        calendar.toSlotValue());
 
   // Step 6.
   return object;
@@ -139,12 +136,12 @@ PlainYearMonthObject* js::temporal::CreateTemporalYearMonth(
 
   // Step 4.
   auto packedDate = PackedDate::pack(yearMonth);
-  object->setFixedSlot(PlainYearMonthObject::PACKED_DATE_SLOT,
-                       PrivateUint32Value(packedDate.value));
+  object->initFixedSlot(PlainYearMonthObject::PACKED_DATE_SLOT,
+                        PrivateUint32Value(packedDate.value));
 
   // Step 5.
-  object->setFixedSlot(PlainYearMonthObject::CALENDAR_SLOT,
-                       yearMonth.calendar().toSlotValue());
+  object->initFixedSlot(PlainYearMonthObject::CALENDAR_SLOT,
+                        yearMonth.calendar().toSlotValue());
 
   // Step 6.
   return object;
@@ -443,16 +440,22 @@ static bool DifferenceTemporalPlainYearMonth(JSContext* cx,
   if (settings.smallestUnit != TemporalUnit::Month ||
       settings.roundingIncrement != Increment{1}) {
     // Step 16.a.
-    auto destEpochNs = GetUTCEpochNanoseconds(ISODateTime{otherDate, {}});
+    auto isoDateTime = ISODateTime{thisDate, {}};
 
-    // Steps 16.b-c.
-    auto dateTime = ISODateTime{thisDate, {}};
+    // Step 16.b.
+    auto originEpochNs = GetUTCEpochNanoseconds(isoDateTime);
+
+    // Step 16.c.
+    auto isoDateTimeOther = ISODateTime{otherDate, {}};
 
     // Step 16.d.
+    auto destEpochNs = GetUTCEpochNanoseconds(isoDateTimeOther);
+
+    // Step 16.e.
     Rooted<TimeZoneValue> timeZone(cx, TimeZoneValue{});
     if (!RoundRelativeDuration(
-            cx, duration, destEpochNs, dateTime, timeZone, calendar,
-            settings.largestUnit, settings.roundingIncrement,
+            cx, duration, originEpochNs, destEpochNs, isoDateTime, timeZone,
+            calendar, settings.largestUnit, settings.roundingIncrement,
             settings.smallestUnit, settings.roundingMode, &duration)) {
       return false;
     }
@@ -1175,9 +1178,8 @@ static bool PlainYearMonth_toString(JSContext* cx, unsigned argc, Value* vp) {
  */
 static bool PlainYearMonth_toLocaleString(JSContext* cx, const CallArgs& args) {
   // Steps 3-4.
-  Handle<PropertyName*> required = cx->names().date;
-  Handle<PropertyName*> defaults = cx->names().date;
-  return TemporalObjectToLocaleString(cx, args, required, defaults);
+  return intl::TemporalObjectToLocaleString(cx, args,
+                                            intl::DateTimeFormatKind::Date);
 }
 
 /**

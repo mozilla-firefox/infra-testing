@@ -13,17 +13,17 @@
 #include "mozilla/Likely.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/RestyleManager.h"
-#include "mozilla/ServoStyleSet.h"
 #include "mozilla/SVGTextFrame.h"
-#include "nsLineLayout.h"
+#include "mozilla/ServoStyleSet.h"
 #include "nsBlockFrame.h"
-#include "nsLayoutUtils.h"
-#include "nsPlaceholderFrame.h"
-#include "nsGkAtoms.h"
-#include "nsPresContext.h"
-#include "nsPresContextInlines.h"
 #include "nsCSSAnonBoxes.h"
 #include "nsDisplayList.h"
+#include "nsGkAtoms.h"
+#include "nsLayoutUtils.h"
+#include "nsLineLayout.h"
+#include "nsPlaceholderFrame.h"
+#include "nsPresContext.h"
+#include "nsPresContextInlines.h"
 #include "nsStyleChangeList.h"
 
 #ifdef DEBUG
@@ -89,7 +89,7 @@ bool nsInlineFrame::IsSelfEmpty() {
   const nsStyleMargin* margin = StyleMargin();
   const nsStyleBorder* border = StyleBorder();
   const nsStylePadding* padding = StylePadding();
-  const auto positionProperty = StyleDisplay()->mPosition;
+  const auto anchorResolutionParams = AnchorPosResolutionParams::From(this);
   // Block-start and -end ignored, since they shouldn't affect things, but this
   // doesn't really match with nsLineLayout.cpp's setting of
   // ZeroEffectiveSpanBox, anymore, so what should this really be?
@@ -97,9 +97,9 @@ bool nsInlineFrame::IsSelfEmpty() {
   bool haveStart, haveEnd;
 
   const auto IsMarginZero = [](const nsStyleMargin& aStyleMargin,
-                               StylePositionProperty aProp,
-                               mozilla::Side aSide) {
-    const auto margin = aStyleMargin.GetMargin(aSide, aProp);
+                               mozilla::Side aSide,
+                               const AnchorPosResolutionParams& aParams) {
+    const auto margin = aStyleMargin.GetMargin(aSide, aParams);
     if (!margin->IsLengthPercentage()) {
       return true;
     }
@@ -110,7 +110,7 @@ bool nsInlineFrame::IsSelfEmpty() {
   auto HaveSide = [&](mozilla::Side aSide) -> bool {
     return border->GetComputedBorderWidth(aSide) != 0 ||
            !nsLayoutUtils::IsPaddingZero(padding->mPadding.Get(aSide)) ||
-           !IsMarginZero(*margin, positionProperty, aSide);
+           !IsMarginZero(*margin, aSide, anchorResolutionParams);
   };
   // Initially set up haveStart and haveEnd in terms of visual (LTR/TTB)
   // coordinates; we'll exchange them later if bidi-RTL is in effect to
@@ -262,10 +262,10 @@ void nsInlineFrame::AddInlinePrefISize(const IntrinsicSizeInput& aInput,
 
 /* virtual */
 nsIFrame::SizeComputationResult nsInlineFrame::ComputeSize(
-    gfxContext* aRenderingContext, WritingMode aWM, const LogicalSize& aCBSize,
-    nscoord aAvailableISize, const LogicalSize& aMargin,
-    const LogicalSize& aBorderPadding, const StyleSizeOverrides& aSizeOverrides,
-    ComputeSizeFlags aFlags) {
+    const SizeComputationInput& aSizingInput, WritingMode aWM,
+    const LogicalSize& aCBSize, nscoord aAvailableISize,
+    const LogicalSize& aMargin, const LogicalSize& aBorderPadding,
+    const StyleSizeOverrides& aSizeOverrides, ComputeSizeFlags aFlags) {
   // Inlines and text don't compute size before reflow.
   return {LogicalSize(aWM, NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE),
           AspectRatioUsage::None};
@@ -315,11 +315,6 @@ void nsInlineFrame::Reflow(nsPresContext* aPresContext,
     AutoFrameListPtr prevOverflowFrames(aPresContext,
                                         prevInFlow->StealOverflowFrames());
     if (prevOverflowFrames) {
-      // When pushing and pulling frames we need to check for whether any
-      // views need to be reparented.
-      nsContainerFrame::ReparentFrameViewList(*prevOverflowFrames, prevInFlow,
-                                              this);
-
       // Check if we should do the lazilySetParentPointer optimization.
       // Only do it in simple cases where we're being reflowed for the
       // first time, nothing (e.g. bidi resolution) has already given
@@ -377,7 +372,7 @@ void nsInlineFrame::Reflow(nsPresContext* aPresContext,
   if (mFrames.IsEmpty()) {
     // Try to pull over one frame before starting so that we know
     // whether we have an anonymous block or not.
-    Unused << PullOneFrame(aPresContext, irs);
+    (void)PullOneFrame(aPresContext, irs);
   }
 
   ReflowFrames(aPresContext, aReflowInput, irs, aReflowOutput, aStatus);
@@ -389,7 +384,8 @@ void nsInlineFrame::Reflow(nsPresContext* aPresContext,
 }
 
 nsresult nsInlineFrame::AttributeChanged(int32_t aNameSpaceID,
-                                         nsAtom* aAttribute, int32_t aModType) {
+                                         nsAtom* aAttribute,
+                                         AttrModType aModType) {
   nsresult rv =
       nsContainerFrame::AttributeChanged(aNameSpaceID, aAttribute, aModType);
 
@@ -458,9 +454,6 @@ void nsInlineFrame::PullOverflowsFromPrevInFlow() {
     AutoFrameListPtr prevOverflowFrames(presContext,
                                         prevInFlow->StealOverflowFrames());
     if (prevOverflowFrames) {
-      // Assume that our prev-in-flow has the same line container that we do.
-      nsContainerFrame::ReparentFrameViewList(*prevOverflowFrames, prevInFlow,
-                                              this);
       mFrames.InsertFrames(this, nullptr, std::move(*prevOverflowFrames));
     }
   }
@@ -785,7 +778,6 @@ nsIFrame* nsInlineFrame::PullOneFrame(nsPresContext* aPresContext,
       if (irs.mLineLayout) {
         irs.mLineLayout->SetDirtyNextLine();
       }
-      nsContainerFrame::ReparentFrameView(frame, nextInFlow, this);
       break;
     }
     nextInFlow = static_cast<nsInlineFrame*>(nextInFlow->GetNextInFlow());

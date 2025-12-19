@@ -23,14 +23,15 @@ namespace mozilla::dom::quota {
 OriginInfo::OriginInfo(GroupInfo* aGroupInfo, const nsACString& aOrigin,
                        const nsACString& aStorageOrigin, bool aIsPrivate,
                        const ClientUsageArray& aClientUsages, uint64_t aUsage,
-                       int64_t aAccessTime, bool aPersisted,
-                       bool aDirectoryExists)
-    : mClientUsages(aClientUsages.Clone()),
+                       int64_t aAccessTime, int32_t aMaintenanceDate,
+                       bool aPersisted, bool aDirectoryExists)
+    : mClientUsages(aClientUsages),
       mGroupInfo(aGroupInfo),
       mOrigin(aOrigin),
       mStorageOrigin(aStorageOrigin),
       mUsage(aUsage),
       mAccessTime(aAccessTime),
+      mMaintenanceDate(aMaintenanceDate),
       mIsPrivate(aIsPrivate),
       mAccessed(false),
       mPersisted(aPersisted),
@@ -67,10 +68,17 @@ OriginMetadata OriginInfo::FlattenToOriginMetadata() const {
           mGroupInfo->mPersistenceType};
 }
 
+OriginStateMetadata OriginInfo::LockedFlattenToOriginStateMetadata() const {
+  AssertCurrentThreadOwnsQuotaMutex();
+
+  return {mAccessTime, mMaintenanceDate, mAccessed, mPersisted};
+}
+
 FullOriginMetadata OriginInfo::LockedFlattenToFullOriginMetadata() const {
   AssertCurrentThreadOwnsQuotaMutex();
 
-  return {FlattenToOriginMetadata(), mPersisted, mAccessTime};
+  return {FlattenToOriginMetadata(), LockedFlattenToOriginStateMetadata(),
+          mClientUsages, mUsage, kCurrentQuotaVersion};
 }
 
 nsresult OriginInfo::LockedBindToStatement(
@@ -97,6 +105,8 @@ nsresult OriginInfo::LockedBindToStatement(
   QM_TRY(MOZ_TO_RESULT(aStatement->BindInt64ByName("usage"_ns, mUsage)));
   QM_TRY(MOZ_TO_RESULT(
       aStatement->BindInt64ByName("last_access_time"_ns, mAccessTime)));
+  QM_TRY(MOZ_TO_RESULT(aStatement->BindInt32ByName("last_maintenance_date"_ns,
+                                                   mMaintenanceDate)));
   QM_TRY(MOZ_TO_RESULT(aStatement->BindInt32ByName("accessed"_ns, mAccessed)));
   QM_TRY(
       MOZ_TO_RESULT(aStatement->BindInt32ByName("persisted"_ns, mPersisted)));

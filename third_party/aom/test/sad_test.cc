@@ -26,41 +26,41 @@
 #include "aom_mem/aom_mem.h"
 #include "aom_ports/mem.h"
 
-typedef unsigned int (*SadMxNFunc)(const uint8_t *src_ptr, int src_stride,
-                                   const uint8_t *ref_ptr, int ref_stride);
-typedef std::tuple<int, int, SadMxNFunc, int> SadMxNParam;
+using SadMxNFunc = unsigned int (*)(const uint8_t *src_ptr, int src_stride,
+                                    const uint8_t *ref_ptr, int ref_stride);
+using SadMxNParam = std::tuple<int, int, SadMxNFunc, int>;
 
-typedef unsigned int (*SadSkipMxNFunc)(const uint8_t *src_ptr, int src_stride,
-                                       const uint8_t *ref_ptr, int ref_stride);
-typedef std::tuple<int, int, SadSkipMxNFunc, int> SadSkipMxNParam;
+using SadSkipMxNFunc = unsigned int (*)(const uint8_t *src_ptr, int src_stride,
+                                        const uint8_t *ref_ptr, int ref_stride);
+using SadSkipMxNParam = std::tuple<int, int, SadSkipMxNFunc, int>;
 
-typedef uint32_t (*SadMxNAvgFunc)(const uint8_t *src_ptr, int src_stride,
-                                  const uint8_t *ref_ptr, int ref_stride,
-                                  const uint8_t *second_pred);
-typedef std::tuple<int, int, SadMxNAvgFunc, int> SadMxNAvgParam;
+using SadMxNAvgFunc = uint32_t (*)(const uint8_t *src_ptr, int src_stride,
+                                   const uint8_t *ref_ptr, int ref_stride,
+                                   const uint8_t *second_pred);
+using SadMxNAvgParam = std::tuple<int, int, SadMxNAvgFunc, int>;
 
-typedef unsigned int (*DistWtdSadMxhFunc)(const uint8_t *src_ptr,
-                                          int src_stride,
-                                          const uint8_t *ref_ptr,
-                                          int ref_stride, int width,
-                                          int height);
-typedef std::tuple<int, int, DistWtdSadMxhFunc, int> DistWtdSadMxhParam;
+using DistWtdSadMxhFunc = unsigned int (*)(const uint8_t *src_ptr,
+                                           int src_stride,
+                                           const uint8_t *ref_ptr,
+                                           int ref_stride, int width,
+                                           int height);
+using DistWtdSadMxhParam = std::tuple<int, int, DistWtdSadMxhFunc, int>;
 
-typedef void (*SadMxNx4Func)(const uint8_t *src_ptr, int src_stride,
-                             const uint8_t *const ref_ptr[], int ref_stride,
-                             uint32_t *sad_array);
-typedef std::tuple<int, int, SadMxNx4Func, int> SadMxNx4Param;
+using SadMxNx4Func = void (*)(const uint8_t *src_ptr, int src_stride,
+                              const uint8_t *const ref_ptr[], int ref_stride,
+                              uint32_t *sad_array);
+using SadMxNx4Param = std::tuple<int, int, SadMxNx4Func, int>;
 
-typedef void (*SadSkipMxNx4Func)(const uint8_t *src_ptr, int src_stride,
+using SadSkipMxNx4Func = void (*)(const uint8_t *src_ptr, int src_stride,
+                                  const uint8_t *const ref_ptr[],
+                                  int ref_stride, uint32_t *sad_array);
+using SadSkipMxNx4Param = std::tuple<int, int, SadSkipMxNx4Func, int>;
+
+using SadMxNx4AvgFunc = void (*)(const uint8_t *src_ptr, int src_stride,
                                  const uint8_t *const ref_ptr[], int ref_stride,
+                                 const uint8_t *second_pred,
                                  uint32_t *sad_array);
-typedef std::tuple<int, int, SadSkipMxNx4Func, int> SadSkipMxNx4Param;
-
-typedef void (*SadMxNx4AvgFunc)(const uint8_t *src_ptr, int src_stride,
-                                const uint8_t *const ref_ptr[], int ref_stride,
-                                const uint8_t *second_pred,
-                                uint32_t *sad_array);
-typedef std::tuple<int, int, SadMxNx4AvgFunc, int> SadMxNx4AvgParam;
+using SadMxNx4AvgParam = std::tuple<int, int, SadMxNx4AvgFunc, int>;
 
 using libaom_test::ACMRandom;
 
@@ -2922,5 +2922,66 @@ const SadMxNx4Param x3d_avx2_tests[] = {
 };
 INSTANTIATE_TEST_SUITE_P(AVX2, SADx3Test, ::testing::ValuesIn(x3d_avx2_tests));
 #endif  // HAVE_AVX2
+
+#if CONFIG_HIGHWAY && HAVE_AVX512
+const SadMxNParam avx512_tests[] = {
+  make_tuple(64, 128, &aom_sad64x128_avx512, -1),
+  make_tuple(128, 64, &aom_sad128x64_avx512, -1),
+  make_tuple(128, 128, &aom_sad128x128_avx512, -1),
+  make_tuple(64, 64, &aom_sad64x64_avx512, -1),
+  make_tuple(64, 32, &aom_sad64x32_avx512, -1),
+};
+INSTANTIATE_TEST_SUITE_P(AVX512, SADTest, ::testing::ValuesIn(avx512_tests));
+
+const SadSkipMxNParam skip_avx512_tests[] = {
+  make_tuple(128, 128, &aom_sad_skip_128x128_avx2, -1),
+  make_tuple(128, 64, &aom_sad_skip_128x64_avx2, -1),
+  make_tuple(64, 128, &aom_sad_skip_64x128_avx2, -1),
+  make_tuple(64, 64, &aom_sad_skip_64x64_avx2, -1),
+  make_tuple(64, 32, &aom_sad_skip_64x32_avx2, -1),
+};
+INSTANTIATE_TEST_SUITE_P(AVX512, SADSkipTest,
+                         ::testing::ValuesIn(skip_avx512_tests));
+
+const SadMxNAvgParam avg_avx512_tests[] = {
+  make_tuple(64, 128, &aom_sad64x128_avg_avx512, -1),
+  make_tuple(128, 64, &aom_sad128x64_avg_avx512, -1),
+  make_tuple(128, 128, &aom_sad128x128_avg_avx512, -1),
+  make_tuple(64, 64, &aom_sad64x64_avg_avx512, -1),
+  make_tuple(64, 32, &aom_sad64x32_avg_avx512, -1),
+};
+INSTANTIATE_TEST_SUITE_P(AVX512, SADavgTest,
+                         ::testing::ValuesIn(avg_avx512_tests));
+
+const SadMxNx4Param x4d_avx512_tests[] = {
+  make_tuple(128, 128, &aom_sad128x128x4d_avx512, -1),
+  make_tuple(128, 64, &aom_sad128x64x4d_avx512, -1),
+  make_tuple(64, 128, &aom_sad64x128x4d_avx512, -1),
+  make_tuple(64, 64, &aom_sad64x64x4d_avx512, -1),
+  make_tuple(64, 32, &aom_sad64x32x4d_avx512, -1),
+};
+INSTANTIATE_TEST_SUITE_P(AVX512, SADx4Test,
+                         ::testing::ValuesIn(x4d_avx512_tests));
+
+const SadMxNx4Param x3d_avx512_tests[] = {
+  make_tuple(128, 128, &aom_sad128x128x3d_avx512, -1),
+  make_tuple(128, 64, &aom_sad128x64x3d_avx512, -1),
+  make_tuple(64, 128, &aom_sad64x128x3d_avx512, -1),
+  make_tuple(64, 64, &aom_sad64x64x3d_avx512, -1),
+  make_tuple(64, 32, &aom_sad64x32x3d_avx512, -1),
+};
+INSTANTIATE_TEST_SUITE_P(AVX512, SADx3Test,
+                         ::testing::ValuesIn(x3d_avx512_tests));
+
+const SadSkipMxNx4Param skip_x4d_avx512_tests[] = {
+  make_tuple(128, 128, &aom_sad_skip_128x128x4d_avx512, -1),
+  make_tuple(128, 64, &aom_sad_skip_128x64x4d_avx512, -1),
+  make_tuple(64, 128, &aom_sad_skip_64x128x4d_avx512, -1),
+  make_tuple(64, 64, &aom_sad_skip_64x64x4d_avx512, -1),
+  make_tuple(64, 32, &aom_sad_skip_64x32x4d_avx512, -1),
+};
+INSTANTIATE_TEST_SUITE_P(AVX512, SADSkipx4Test,
+                         ::testing::ValuesIn(skip_x4d_avx512_tests));
+#endif  // CONFIG_HIGHWAY && HAVE_AVX512
 
 }  // namespace

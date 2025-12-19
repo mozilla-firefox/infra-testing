@@ -54,6 +54,13 @@ interface PermissionRequest {
     fun reject()
 
     fun containsVideoAndAudioSources() = false
+
+    /**
+     * Merge two permission requests when same permission is requested.
+     *
+     * @param permissionsRequest the permission request to merge this.
+     */
+    fun merge(permissionRequest: PermissionRequest)
 }
 
 /**
@@ -131,6 +138,14 @@ sealed class Permission {
     ) : Permission()
     data class ContentCrossOriginStorageAccess(
         override val id: String? = "ContentCrossOriginStorageAccess",
+        override val desc: String? = "",
+    ) : Permission()
+    data class ContentLocalDeviceAccess(
+        override val id: String? = "ContentLocalDeviceAccess",
+        override val desc: String? = "",
+    ) : Permission()
+    data class ContentLocalNetworkAccess(
+        override val id: String? = "ContentLocalNetworkAccess",
         override val desc: String? = "",
     ) : Permission()
 

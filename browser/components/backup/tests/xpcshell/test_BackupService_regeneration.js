@@ -3,9 +3,6 @@ https://creativecommons.org/publicdomain/zero/1.0/ */
 
 "use strict";
 
-const { setTimeout } = ChromeUtils.importESModule(
-  "resource://gre/modules/Timer.sys.mjs"
-);
 const { NetUtil } = ChromeUtils.importESModule(
   "resource://gre/modules/NetUtil.sys.mjs"
 );
@@ -94,7 +91,7 @@ function addTestCookie(isSessionCookie) {
   gCookieCounter++;
   let name = `Cookie name: ${gCookieCounter}`;
 
-  Services.cookies.add(
+  const cv = Services.cookies.add(
     COOKIE_HOST,
     COOKIE_PATH,
     name,
@@ -102,11 +99,12 @@ function addTestCookie(isSessionCookie) {
     false,
     false,
     isSessionCookie,
-    Date.now() / 1000 + 1,
+    Date.now() + 1000,
     COOKIE_ORIGIN_ATTRIBUTES,
-    Ci.nsICookie.SAMESITE_NONE,
+    Ci.nsICookie.SAMESITE_UNSET,
     Ci.nsICookie.SCHEME_HTTP
   );
+  Assert.equal(cv.result, Ci.nsICookieValidation.eOK);
 
   return name;
 }
@@ -131,19 +129,16 @@ async function expectRegeneration(taskFn, msg) {
 
   let bs = new BackupService();
 
-  // Now we set up some stubs on the BackupService to detect calls to
-  // deleteLastBackup and createbackupOnIdleDispatch, which are both called
-  // on regeneration.
-  let deleteDeferred = Promise.withResolvers();
-  sandbox.stub(bs, "deleteLastBackup").callsFake(() => {
-    Assert.ok(true, "Saw deleteLastBackup call");
-    deleteDeferred.resolve();
-    return Promise.resolve();
-  });
-
+  // Now we set up a stub on the BackupService to detect calls to
+  // createbackupOnIdleDispatch
   let createBackupDeferred = Promise.withResolvers();
-  sandbox.stub(bs, "createBackupOnIdleDispatch").callsFake(() => {
+  sandbox.stub(bs, "createBackupOnIdleDispatch").callsFake(options => {
     Assert.ok(true, "Saw createBackupOnIdleDispatch call");
+    Assert.equal(
+      options.reason,
+      "user deleted some data",
+      "Backup was recorded as being caused by user data deletion"
+    );
     createBackupDeferred.resolve();
     return Promise.resolve();
   });
@@ -151,6 +146,7 @@ async function expectRegeneration(taskFn, msg) {
   // Creating a new backup will only occur if scheduled backups are enabled,
   // so let's set the pref...
   Services.prefs.setBoolPref("browser.backup.scheduled.enabled", true);
+  Services.prefs.setBoolPref("browser.backup.archive.enabled", true);
   // But also stub out `onIdle` so that we don't get any interference during
   // our test by the idle service.
   sandbox.stub(bs, "onIdle").returns();
@@ -158,11 +154,6 @@ async function expectRegeneration(taskFn, msg) {
   bs.initBackupScheduler();
 
   await taskFn();
-
-  let regenerationPromises = [
-    deleteDeferred.promise,
-    createBackupDeferred.promise,
-  ];
 
   // We'll wait for 1 second before considering the regeneration a bust.
   let timeoutPromise = new Promise((resolve, reject) =>
@@ -173,13 +164,14 @@ async function expectRegeneration(taskFn, msg) {
   );
 
   try {
-    await Promise.race([Promise.all(regenerationPromises), timeoutPromise]);
+    await Promise.race([createBackupDeferred.promise, timeoutPromise]);
     Assert.ok(true, msg);
   } catch (e) {
     Assert.ok(false, "Timed out waiting for regeneration.");
   }
 
   bs.uninitBackupScheduler();
+  Services.prefs.clearUserPref("browser.backup.scheduled.enabled");
   sandbox.restore();
 }
 
@@ -226,7 +218,7 @@ async function expectNoRegeneration(taskFn, msg) {
   Services.prefs.setBoolPref("browser.backup.scheduled.enabled", true);
   // But also stub out `onIdle` so that we don't get any interference during
   // our test by the idle service.
-  sandbox.stub(bs, "onIdle").returns();
+  sandbox.stub(bs, "onIdle").resolves();
 
   bs.initBackupScheduler();
 
@@ -250,6 +242,7 @@ async function expectNoRegeneration(taskFn, msg) {
   }
 
   bs.uninitBackupScheduler();
+  Services.prefs.clearUserPref("browser.backup.scheduled.enabled");
   sandbox.restore();
 }
 
@@ -631,4 +624,40 @@ add_task(async function test_newtab_link_blocked() {
   await expectRegeneration(async () => {
     NewTabUtils.activityStreamLinks.blockURL("https://example.com");
   }, "Saw regeneration on the blocking of a newtab link");
+});
+
+/**
+ * Tests that backup regeneration occurs when sanitizeOnShutdown is enabled
+ * or disabled
+ */
+add_task(async function test_sanitizeOnShutdown_regeneration() {
+  await expectRegeneration(() => {
+    Services.prefs.setBoolPref("privacy.sanitize.sanitizeOnShutdown", true);
+  }, "Saw a regeneration when sanitizeOnShutdown was enabled");
+
+  await expectRegeneration(() => {
+    Services.prefs.setBoolPref("privacy.sanitize.sanitizeOnShutdown", false);
+  }, "Saw a regeneration when sanitizeOnShutdown was disabled");
+
+  Services.prefs.clearUserPref("privacy.sanitize.sanitizeOnShutdown");
+});
+
+/**
+ * Tests that setting up a regeneration without archiveEnabledStatus being true
+ * leads to NO regeneration upon data mutation
+ */
+add_task(async function test_enabledStatus_no_regeneration() {
+  let bookmark = await PlacesUtils.bookmarks.insert({
+    parentGuid: PlacesUtils.bookmarks.unfiledGuid,
+    url: "data:text/plain,Content",
+    title: "Regeneration Test Bookmark",
+  });
+
+  Services.prefs.setBoolPref("browser.backup.archive.enabled", false);
+
+  await expectNoRegeneration(async () => {
+    await PlacesUtils.bookmarks.remove(bookmark);
+  }, "Saw no regeneration on bookmark removed.");
+
+  Services.prefs.clearUserPref("browser.backup.archive.enabled");
 });

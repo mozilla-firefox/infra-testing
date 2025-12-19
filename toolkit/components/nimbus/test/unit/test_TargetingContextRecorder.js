@@ -16,6 +16,16 @@ const {
   "resource://nimbus/lib/TargetingContextRecorder.sys.mjs"
 );
 
+const { AddonTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/AddonTestUtils.sys.mjs"
+);
+const { ExtensionTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/ExtensionXPCShellUtils.sys.mjs"
+);
+
+AddonTestUtils.init(this);
+ExtensionTestUtils.init(this);
+
 const TARGETING_CONTEXT_METRICS = Object.keys(ATTRIBUTE_TRANSFORMS).map(
   normalizeAttributeName
 );
@@ -41,8 +51,8 @@ async function setupTest({ ...args } = {}) {
 
   return {
     ...ctx,
-    cleanup() {
-      baseCleanup();
+    async cleanup() {
+      await baseCleanup();
       Services.locale = localeService;
     },
   };
@@ -93,7 +103,11 @@ function assertRecordingFailures({
       Glean.nimbusTargetingEnvironment.prefTypeErrors[pref].testGetValue() ?? 0;
 
     if (prefTypeErrors.includes(pref)) {
-      Assert.ok(errorCount > 0, `An type error was reported for pref ${pref}`);
+      Assert.greater(
+        errorCount,
+        0,
+        `An type error was reported for pref ${pref}`
+      );
       Assert.ok(
         !Object.hasOwn(prefValues, normalizePrefName(pref)),
         `The pref ${pref} should not be recorded`
@@ -109,7 +123,11 @@ function assertRecordingFailures({
       Glean.nimbusTargetingEnvironment.attrEvalErrors[attr].testGetValue() ?? 0;
 
     if (attrEvalErrors.includes(attr)) {
-      Assert.ok(errorCount > 0, `An error was reported for attribute ${attr}`);
+      Assert.greater(
+        errorCount,
+        0,
+        `An error was reported for attribute ${attr}`
+      );
       Assert.ok(
         !Object.hasOwn(targetingContextMetrics, normalizeAttributeName(attr)),
         `The attribute ${attr} should not have been recorded`
@@ -124,23 +142,9 @@ function assertRecordingFailures({
   }
 }
 
-/**
- * Register a callback for the next submisison of the nimbus-targeting-context
- * ping and then trigger the recording of the Nimbus targeting context.
- *
- * FOG will be reset after this call.
- *
- * @param {() => void} testFn
- *        The callback to register with Glean.
- */
-async function recordAndTestPingSubmission(testFn) {
-  GleanPings.nimbusTargetingContext.testBeforeNextSubmit(testFn);
-  await recordTargetingContext();
-  Services.fog.testResetFOG();
-}
-
 add_setup(async function test_setup() {
   Services.fog.initializeFOG();
+  await ExtensionTestUtils.startAddonManager();
 });
 
 add_task(async function testAttributeTransforms() {
@@ -148,8 +152,9 @@ add_task(async function testAttributeTransforms() {
     "testing all attributes in ATTRIBUTE_TRANSFORMS have callable transforms"
   );
   for (const [attribute, transform] of Object.entries(ATTRIBUTE_TRANSFORMS)) {
-    Assert.ok(
-      typeof transform === "function",
+    Assert.strictEqual(
+      typeof transform,
+      "function",
       `Attribute ${attribute} has a callable transform`
     );
   }
@@ -162,38 +167,51 @@ add_task(async function testNimbusTargetingContextAllKeysPresent() {
 
   const { cleanup, manager, sandbox } = await setupTest();
 
-  // Glean doesn't serializer empty arrays, so lets put some entries into activeExperiments and
+  // Glean doesn't serialize empty arrays, so lets put some entries into activeExperiments and
   // activeRollouts so that they appear in the context.
-  manager.store.set("experiment", ExperimentFakes.experiment("experiment"));
-  manager.store.set("rollout", ExperimentFakes.rollout("rollout"));
+  await manager.enroll(
+    NimbusTestUtils.factories.recipe.withFeatureConfig("experiment", {
+      featureId: "no-feature-firefox-desktop",
+    }),
+    "test"
+  );
+  await manager.enroll(
+    NimbusTestUtils.factories.recipe.withFeatureConfig(
+      "rollout",
+      { featureId: "no-feature-firefox-desktop" },
+      { isRollout: true }
+    ),
+    "test"
+  );
 
   // Stub this for userMonthlyActivity
   sandbox
     .stub(NewTabUtils.activityStreamProvider, "getUserMonthlyActivity")
     .returns(Promise.resolve([[1, "1960-01-01"]]));
 
-  await recordAndTestPingSubmission(() => {
+  await GleanPings.nimbusTargetingContext.testSubmission(() => {
     assertRecordingFailures();
 
     const values = getRecordedTargetingContextMetrics();
 
-    Assert.ok(
-      Object.keys(values).length !== 0,
+    Assert.notStrictEqual(
+      Object.keys(values).length,
+      0,
       "nimbusTargetingContext metrics were recorded"
     );
 
     for (const metric of TARGETING_CONTEXT_METRICS) {
       Assert.ok(
         Object.hasOwn(values, metric),
-        `nimbusTargetingContext.${metric} was recorded`
+        `nimbusTargetingContext.${metric} was recorded ${JSON.stringify(values[metric])}`
       );
     }
-  });
+  }, recordTargetingContext);
 
-  manager.store._deleteForTests("experiment");
-  manager.store._deleteForTests("rollout");
+  manager.unenroll("experiment");
+  manager.unenroll("rollout");
 
-  cleanup();
+  await cleanup();
 });
 
 add_task(async function testNimbusTargetingEnvironmentUserSetPrefs() {
@@ -201,7 +219,7 @@ add_task(async function testNimbusTargetingEnvironmentUserSetPrefs() {
 
   const { cleanup } = await setupTest();
 
-  await recordAndTestPingSubmission(() => {
+  await GleanPings.nimbusTargetingContext.testSubmission(() => {
     assertRecordingFailures();
 
     const prefs = Glean.nimbusTargetingEnvironment.userSetPrefs.testGetValue();
@@ -213,7 +231,7 @@ add_task(async function testNimbusTargetingEnvironmentUserSetPrefs() {
       !prefs.includes("nimbus.testing.testSetString"),
       "nimbus.testing.testInt is not set and not in telemetry"
     );
-  });
+  }, recordTargetingContext);
 
   // This pref is a fallbackPref, so should not appear in the list.
   Services.prefs.setIntPref("nimbus.testing.testInt", 123);
@@ -221,7 +239,7 @@ add_task(async function testNimbusTargetingEnvironmentUserSetPrefs() {
   // These two prefs are setPref, and so should appear in the list.
   Services.prefs.setStringPref("nimbus.testing.testSetString", "test");
 
-  await recordAndTestPingSubmission(() => {
+  await GleanPings.nimbusTargetingContext.testSubmission(() => {
     assertRecordingFailures();
 
     const prefs = Glean.nimbusTargetingEnvironment.userSetPrefs.testGetValue();
@@ -234,12 +252,12 @@ add_task(async function testNimbusTargetingEnvironmentUserSetPrefs() {
       prefs.includes("nimbus.testing.testSetString"),
       "nimbus.testing.testSetString is set and in telemetry"
     );
-  });
+  }, recordTargetingContext);
 
   Services.prefs.deleteBranch("nimbus.testing.testInt");
   Services.prefs.deleteBranch("nimbus.testing.testSetString");
 
-  cleanup();
+  await cleanup();
 });
 
 add_task(async function testNimbusTargetingEnvironmentPrefValues() {
@@ -249,7 +267,7 @@ add_task(async function testNimbusTargetingEnvironmentPrefValues() {
   const PREF = "messaging-system-action.testday";
   const PREF_KEY = "messaging_system_action__testday";
 
-  await recordAndTestPingSubmission(() => {
+  await GleanPings.nimbusTargetingContext.testSubmission(() => {
     assertRecordingFailures();
 
     const prefs = Glean.nimbusTargetingEnvironment.prefValues.testGetValue();
@@ -257,11 +275,11 @@ add_task(async function testNimbusTargetingEnvironmentPrefValues() {
       !Object.hasOwn(prefs, PREF_KEY),
       `${PREF} not set and not present in telemetry`
     );
-  });
+  }, recordTargetingContext);
 
   Services.prefs.getDefaultBranch(null).setStringPref(PREF, "default");
 
-  await recordAndTestPingSubmission(() => {
+  await GleanPings.nimbusTargetingContext.testSubmission(() => {
     assertRecordingFailures();
 
     const prefs = Glean.nimbusTargetingEnvironment.prefValues.testGetValue();
@@ -270,11 +288,11 @@ add_task(async function testNimbusTargetingEnvironmentPrefValues() {
       "default",
       `${PREF} set on the default branch and present in telemetry`
     );
-  });
+  }, recordTargetingContext);
 
   Services.prefs.setStringPref(PREF, "user");
 
-  await recordAndTestPingSubmission(() => {
+  await GleanPings.nimbusTargetingContext.testSubmission(() => {
     assertRecordingFailures();
 
     const prefs = Glean.nimbusTargetingEnvironment.prefValues.testGetValue();
@@ -283,11 +301,11 @@ add_task(async function testNimbusTargetingEnvironmentPrefValues() {
       "user",
       `${PREF} set on the user branch and present in telemetry`
     );
-  });
+  }, recordTargetingContext);
 
   Services.prefs.deleteBranch(PREF);
 
-  cleanup();
+  await cleanup();
 });
 
 add_task(async function testExperimentMetrics() {
@@ -297,7 +315,7 @@ add_task(async function testExperimentMetrics() {
 
   const { cleanup, manager } = await setupTest();
 
-  await recordAndTestPingSubmission(() => {
+  await GleanPings.nimbusTargetingContext.testSubmission(() => {
     assertRecordingFailures();
 
     const values = getRecordedTargetingContextMetrics();
@@ -305,28 +323,37 @@ add_task(async function testExperimentMetrics() {
     Assert.deepEqual(values.activeExperiments, []);
     Assert.deepEqual(values.activeRollouts, []);
     Assert.deepEqual(values.enrollmentsMap, []);
-  });
+  }, recordTargetingContext);
 
-  manager.store.set(
-    "experiment-1",
-    ExperimentFakes.experiment("experiment-1", {
-      branch: ExperimentFakes.recipe.branches[0],
-    })
+  await manager.enroll(
+    NimbusTestUtils.factories.recipe.withFeatureConfig("experiment-1", {
+      branchSlug: "control",
+      featureId: "no-feature-firefox-desktop",
+    }),
+    "test"
   );
-  manager.store.set(
-    "experiment-2",
-    ExperimentFakes.experiment("experiment-2", {
-      branch: ExperimentFakes.recipe.branches[1],
-    })
+  await manager.enroll(
+    NimbusTestUtils.factories.recipe.withFeatureConfig("experiment-2", {
+      branchSlug: "treatment",
+      featureId: "no-feature-firefox-desktop",
+    }),
+    "test"
   );
-  manager.store.set(
-    "rollout-1",
-    ExperimentFakes.rollout("rollout-1", {
-      branch: { ...ExperimentFakes.recipe.branches[0], slug: "rollout" },
-    })
+  await manager.enroll(
+    NimbusTestUtils.factories.recipe.withFeatureConfig(
+      "rollout-1",
+      {
+        branchSlug: "rollout",
+        featureId: "no-feature-firefox-desktop",
+      },
+      {
+        isRollout: true,
+      }
+    ),
+    "test"
   );
 
-  await recordAndTestPingSubmission(() => {
+  await GleanPings.nimbusTargetingContext.testSubmission(() => {
     assertRecordingFailures();
 
     const values = getRecordedTargetingContextMetrics();
@@ -344,13 +371,13 @@ add_task(async function testExperimentMetrics() {
         { experimentSlug: "rollout-1", branchSlug: "rollout" },
       ].sort()
     );
-  });
+  }, recordTargetingContext);
 
-  manager.store.updateExperiment("experiment-1", { active: false });
-  manager.store.updateExperiment("experiment-2", { active: false });
-  manager.store.updateExperiment("rollout-1", { active: false });
+  manager.unenroll("experiment-1", { reason: "test" });
+  manager.unenroll("experiment-2", { reason: "test" });
+  manager.unenroll("rollout-1", { reason: "test" });
 
-  await recordAndTestPingSubmission(() => {
+  await GleanPings.nimbusTargetingContext.testSubmission(() => {
     assertRecordingFailures();
 
     const values = getRecordedTargetingContextMetrics();
@@ -365,13 +392,9 @@ add_task(async function testExperimentMetrics() {
         { experimentSlug: "rollout-1", branchSlug: "rollout" },
       ].sort()
     );
-  });
+  }, recordTargetingContext);
 
-  manager.store._deleteForTests("experiment-1");
-  manager.store._deleteForTests("experiment-2");
-  manager.store._deleteForTests("rollout-1");
-
-  cleanup();
+  await cleanup();
 });
 
 add_task(async function testErrorMetrics() {
@@ -392,7 +415,7 @@ add_task(async function testErrorMetrics() {
     `${PREF} not set on default branch`
   );
 
-  await recordAndTestPingSubmission(() => {
+  await GleanPings.nimbusTargetingContext.testSubmission(() => {
     assertRecordingFailures();
 
     const prefs = Glean.nimbusTargetingEnvironment.prefValues.testGetValue();
@@ -400,7 +423,7 @@ add_task(async function testErrorMetrics() {
       !Object.hasOwn(prefs, PREF_KEY),
       `${PREF_KEY} not set and not present in telemetry`
     );
-  });
+  }, recordTargetingContext);
 
   info(
     "testing prefs with the wrong type are recorded in the pref_type_errors metric"
@@ -408,7 +431,7 @@ add_task(async function testErrorMetrics() {
 
   Services.prefs.setIntPref(PREF, 123);
 
-  await recordAndTestPingSubmission(() => {
+  await GleanPings.nimbusTargetingContext.testSubmission(() => {
     assertRecordingFailures({
       prefTypeErrors: [PREF],
     });
@@ -418,7 +441,7 @@ add_task(async function testErrorMetrics() {
       !Object.hasOwn(prefs, PREF_KEY),
       "nimbus.qa.pref-1 not set and not present in telemetry"
     );
-  });
+  }, recordTargetingContext);
 
   Services.prefs.deleteBranch(PREF);
 
@@ -438,13 +461,13 @@ add_task(async function testErrorMetrics() {
     };
   });
 
-  await recordAndTestPingSubmission(() => {
+  await GleanPings.nimbusTargetingContext.testSubmission(() => {
     assertRecordingFailures({
       attrEvalErrors: ["currentDate", "isFirstStartup"],
     });
-  });
+  }, recordTargetingContext);
 
-  cleanup();
+  await cleanup();
 
   Services.prefs.deleteBranch(PREF);
 });
@@ -483,7 +506,7 @@ add_task(async function testRecordingErrors() {
     }
   }
 
-  await recordAndTestPingSubmission(() => {
+  await GleanPings.nimbusTargetingContext.testSubmission(() => {
     assertMetricErrors();
 
     Assert.equal(
@@ -491,7 +514,10 @@ add_task(async function testRecordingErrors() {
       null,
       "The targetingContextValue metric is not recorded by default."
     );
-  });
+  }, recordTargetingContext);
+
+  // We triggered glean to record error metrics. Ensure that we don't double count.
+  Services.fog.testResetFOG();
 
   // In the real world this would be done via the nimbusTelemetry feature.
   Services.fog.applyServerKnobsConfig(
@@ -502,13 +528,14 @@ add_task(async function testRecordingErrors() {
     })
   );
 
-  await recordAndTestPingSubmission(() => {
+  await GleanPings.nimbusTargetingContext.testSubmission(() => {
     assertMetricErrors();
 
     const stringifiedCtx =
       Glean.nimbusTargetingEnvironment.targetingContextValue.testGetValue();
-    Assert.ok(
-      typeof stringifiedCtx === "string",
+    Assert.strictEqual(
+      typeof stringifiedCtx,
+      "string",
       "The targetingContextValue metric is recorded"
     );
 
@@ -549,7 +576,111 @@ add_task(async function testRecordingErrors() {
       ],
       "activeExperiments should have the invalid value in the targetingContextValue metric"
     );
+  }, recordTargetingContext);
+
+  await cleanup();
+
+  // We applied server knobs config and triggered Glean recording errors.
+  Services.fog.testResetFOG();
+});
+
+add_task(async function testAddonsInfo() {
+  const { cleanup } = await setupTest();
+
+  await GleanPings.nimbusTargetingContext.testSubmission(() => {
+    const values = getRecordedTargetingContextMetrics();
+
+    Assert.ok(
+      Object.hasOwn(values, "addonsInfo"),
+      "addonsInfo in targeting Context"
+    );
+    Assert.equal(
+      values.addonsInfo.hasInstalledAddons,
+      false,
+      "hasInstalledAddons is false"
+    );
+    Assert.deepEqual(
+      values.addonsInfo.addons ?? [],
+      [],
+      "No recorded addon info"
+    );
+  }, recordTargetingContext);
+
+  const ext1 = ExtensionTestUtils.loadExtension({
+    useAddonManager: "temporary",
+    manifest: {
+      manifest_version: 2,
+      name: "test-addon",
+      version: "1.0",
+    },
   });
 
-  cleanup();
+  await ext1.startup();
+  await GleanPings.nimbusTargetingContext.testSubmission(() => {
+    const values = getRecordedTargetingContextMetrics();
+
+    Assert.ok(
+      Object.hasOwn(values, "addonsInfo"),
+      "addonsInfo in targeting Context"
+    );
+    Assert.equal(
+      values.addonsInfo.hasInstalledAddons,
+      true,
+      "hasInstalledAddons is true"
+    );
+    Assert.deepEqual(values.addonsInfo.addons, [ext1.id], "Has one addon");
+  }, recordTargetingContext);
+
+  const ext2 = ExtensionTestUtils.loadExtension({
+    useAddonManager: "temporary",
+    manifest: {
+      manifest_version: 2,
+      name: "test-addon-2",
+      version: "2.0",
+    },
+  });
+  await ext2.startup();
+
+  await GleanPings.nimbusTargetingContext.testSubmission(() => {
+    const values = getRecordedTargetingContextMetrics();
+
+    Assert.ok(
+      Object.hasOwn(values, "addonsInfo"),
+      "addonsInfo in targeting Context"
+    );
+    Assert.equal(
+      values.addonsInfo.hasInstalledAddons,
+      true,
+      "hasInstalledAddons is true"
+    );
+    Assert.deepEqual(
+      values.addonsInfo.addons,
+      [ext1.id, ext2.id].sort(),
+      "Has two addons"
+    );
+  }, recordTargetingContext);
+
+  await ext1.unload();
+  await ext2.unload();
+
+  await GleanPings.nimbusTargetingContext.testSubmission(() => {
+    const values = getRecordedTargetingContextMetrics();
+
+    Assert.ok(
+      Object.hasOwn(values, "addonsInfo"),
+      "addonsInfo in targeting Context"
+    );
+    Assert.equal(
+      values.addonsInfo.hasInstalledAddons,
+      false,
+      "hasInstalledAddons is false"
+    );
+    Assert.deepEqual(
+      values.addonsInfo.addons ?? [],
+      [],
+      "No recorded addon info"
+    );
+  }, recordTargetingContext);
+
+  await cleanup();
 });

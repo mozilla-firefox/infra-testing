@@ -4,16 +4,35 @@
 
 package mozilla.components.browser.engine.gecko.webnotifications
 
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import mozilla.components.concept.engine.webnotifications.WebNotification
+import mozilla.components.concept.engine.webnotifications.WebNotificationAction
 import mozilla.components.concept.engine.webnotifications.WebNotificationDelegate
 import org.mozilla.geckoview.WebNotification as GeckoViewWebNotification
 import org.mozilla.geckoview.WebNotificationDelegate as GeckoViewWebNotificationDelegate
 
 internal class GeckoWebNotificationDelegate(
     private val webNotificationDelegate: WebNotificationDelegate,
+    dispatcher: CoroutineDispatcher = Dispatchers.Main,
 ) : GeckoViewWebNotificationDelegate {
+
+    private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     override fun onShowNotification(webNotification: GeckoViewWebNotification) {
-        webNotificationDelegate.onShowNotification(webNotification.toWebNotification())
+        val deferred = webNotificationDelegate.onShowNotification(
+            webNotification.toWebNotification(),
+        )
+        scope.launch {
+            val succeeded = deferred.await()
+            if (succeeded) {
+                webNotification.show()
+            } else {
+                webNotification.dismiss()
+            }
+        }
     }
 
     override fun onCloseNotification(webNotification: GeckoViewWebNotification) {
@@ -34,6 +53,7 @@ internal class GeckoWebNotificationDelegate(
             privateBrowsing = privateBrowsing,
             engineNotification = this@toWebNotification,
             silent = silent,
+            actions = actions.map { WebNotificationAction(name = it.name, title = it.title) }.toTypedArray(),
         )
     }
 }

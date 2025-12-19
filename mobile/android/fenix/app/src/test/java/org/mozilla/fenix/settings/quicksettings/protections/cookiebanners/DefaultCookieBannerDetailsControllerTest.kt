@@ -7,10 +7,10 @@ package org.mozilla.fenix.settings.quicksettings.protections.cookiebanners
 import android.content.Context
 import androidx.fragment.app.Fragment
 import androidx.navigation.NavController
+import androidx.navigation.NavDirections
 import io.mockk.MockKAnnotations
 import io.mockk.Runs
 import io.mockk.coEvery
-import io.mockk.coVerify
 import io.mockk.coVerifyOrder
 import io.mockk.every
 import io.mockk.impl.annotations.MockK
@@ -18,7 +18,9 @@ import io.mockk.just
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.spyk
+import io.mockk.verify
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.TabSessionState
@@ -46,12 +48,12 @@ import org.mozilla.fenix.GleanMetrics.Pings
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.helpers.FenixGleanTestRule
-import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
 import org.mozilla.fenix.trackingprotection.CookieBannerUIMode
 import org.mozilla.fenix.trackingprotection.ProtectionsAction
 import org.mozilla.fenix.trackingprotection.ProtectionsStore
+import org.robolectric.RobolectricTestRunner
 
-@RunWith(FenixRobolectricTestRunner::class)
+@RunWith(RobolectricTestRunner::class)
 internal class DefaultCookieBannerDetailsControllerTest {
 
     private lateinit var context: Context
@@ -133,17 +135,21 @@ internal class DefaultCookieBannerDetailsControllerTest {
         }.answers { onComplete.captured.invoke(true) }
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class) // advanceUntilIdle
     @Test
     fun `WHEN handleBackPressed is called THEN should call popBackStack and navigate`() = runTestOnMain {
         every { context.settings().shouldUseCookieBannerPrivateMode } returns false
+        every { context.components.publicSuffixList } returns publicSuffixList
 
         controller.handleBackPressed()
 
-        coVerify {
-            navController.popBackStack()
-        }
+        advanceUntilIdle()
+
+        verify { navController.popBackStack() }
+        verify { navController.navigate(any<NavDirections>()) }
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class) // advanceUntilIdle
     @Test
     fun `GIVEN cookie banner is enabled WHEN handleTogglePressed THEN remove from the storage, send telemetry and reload the tab`() =
         runTestOnMain {
@@ -172,6 +178,7 @@ internal class DefaultCookieBannerDetailsControllerTest {
             assertNotNull(CookieBanners.exceptionRemoved.testGetValue())
         }
 
+    @OptIn(ExperimentalCoroutinesApi::class) // advanceUntilIdle
     @Test
     fun `GIVEN cookie banner is disabled WHEN handleTogglePressed THEN remove from the storage, send telemetry and reload the tab`() =
         runTestOnMain {
@@ -220,6 +227,7 @@ internal class DefaultCookieBannerDetailsControllerTest {
             }
         }
 
+    @OptIn(ExperimentalCoroutinesApi::class) // advanceUntilIdle
     @Test
     fun `GIVEN cookie banner mode is site not supported WHEN handleRequestSiteSupportPressed THEN request report site domain`() =
         runTestOnMain {
@@ -237,13 +245,14 @@ internal class DefaultCookieBannerDetailsControllerTest {
             coEvery { controller.getTabDomain(any()) } returns "mozilla.org"
             every { protectionsStore.dispatch(any()) } returns mockk()
 
-            controller.handleRequestSiteSupportPressed()
-
-            assertNotNull(CookieBanners.reportDomainSiteButton.testGetValue())
-            Pings.cookieBannerReportSite.testBeforeNextSubmit {
+            val job = Pings.cookieBannerReportSite.testBeforeNextSubmit {
                 assertNotNull(CookieBanners.reportSiteDomain.testGetValue())
                 assertEquals("mozilla.org", CookieBanners.reportSiteDomain.testGetValue())
             }
+            controller.handleRequestSiteSupportPressed()
+            job.join()
+
+            assertNotNull(CookieBanners.reportDomainSiteButton.testGetValue())
             advanceUntilIdle()
             coVerifyOrder {
                 protectionsStore.dispatch(

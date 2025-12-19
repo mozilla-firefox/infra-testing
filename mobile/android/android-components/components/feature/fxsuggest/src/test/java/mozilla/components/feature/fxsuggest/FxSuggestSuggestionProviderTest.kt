@@ -29,10 +29,12 @@ import org.mockito.Mockito.verify
 @RunWith(AndroidJUnit4::class)
 class FxSuggestSuggestionProviderTest {
     private lateinit var storage: FxSuggestStorage
+    private lateinit var sponsoredSuggestionDescription: String
 
     @Before
     fun setUp() {
         storage = mock()
+        sponsoredSuggestionDescription = "Sponsored"
         val suggestionProviderConfig = AwesomebarSuggestionProvider(
             availableSuggestionTypes = mapOf(
                 SuggestionType.AMP to true,
@@ -65,8 +67,8 @@ class FxSuggestSuggestionProviderTest {
         )
 
         val provider = FxSuggestSuggestionProvider(
-            resources = testContext.resources,
             loadUrlUseCase = mock(),
+            sponsoredSuggestionDescription = sponsoredSuggestionDescription,
             includeNonSponsoredSuggestions = true,
             includeSponsoredSuggestions = true,
         )
@@ -98,6 +100,7 @@ class FxSuggestSuggestionProviderTest {
                     blockId = 0,
                     advertiser = "Good Place Eats",
                     iabCategory = "8 - Food & Drink",
+                    categories = emptyList(),
                     impressionUrl = "https://example.com/impression_url",
                     clickUrl = "https://example.com/click_url",
                     rawClickUrl = "https://example.com/click_url",
@@ -108,8 +111,8 @@ class FxSuggestSuggestionProviderTest {
         )
 
         val provider = FxSuggestSuggestionProvider(
-            resources = testContext.resources,
             loadUrlUseCase = mock(),
+            sponsoredSuggestionDescription = sponsoredSuggestionDescription,
             includeNonSponsoredSuggestions = true,
             includeSponsoredSuggestions = true,
         )
@@ -138,8 +141,8 @@ class FxSuggestSuggestionProviderTest {
         doNothing().`when`(storage).cancelReads()
 
         val provider = FxSuggestSuggestionProvider(
-            resources = testContext.resources,
             loadUrlUseCase = mock(),
+            sponsoredSuggestionDescription = sponsoredSuggestionDescription,
             includeNonSponsoredSuggestions = true,
             includeSponsoredSuggestions = true,
         )
@@ -164,8 +167,8 @@ class FxSuggestSuggestionProviderTest {
         )
 
         val provider = FxSuggestSuggestionProvider(
-            resources = testContext.resources,
             loadUrlUseCase = mock(),
+            sponsoredSuggestionDescription = sponsoredSuggestionDescription,
             includeNonSponsoredSuggestions = true,
             includeSponsoredSuggestions = false,
             contextId = "c303282d-f2e6-46ca-a04a-35d3d873712d",
@@ -212,6 +215,7 @@ class FxSuggestSuggestionProviderTest {
                     blockId = 0,
                     advertiser = "Good Place Eats",
                     iabCategory = "8 - Food & Drink",
+                    categories = emptyList(),
                     impressionUrl = "https://example.com/impression_url",
                     clickUrl = "https://example.com/click_url",
                     rawClickUrl = "https://example.com/click_url",
@@ -222,8 +226,8 @@ class FxSuggestSuggestionProviderTest {
         )
 
         val provider = FxSuggestSuggestionProvider(
-            resources = testContext.resources,
             loadUrlUseCase = mock(),
+            sponsoredSuggestionDescription = sponsoredSuggestionDescription,
             includeNonSponsoredSuggestions = false,
             includeSponsoredSuggestions = true,
             contextId = "c303282d-f2e6-46ca-a04a-35d3d873712d",
@@ -286,6 +290,7 @@ class FxSuggestSuggestionProviderTest {
                     blockId = 0,
                     advertiser = "Good Place Eats",
                     iabCategory = "8 - Food & Drink",
+                    categories = emptyList(),
                     impressionUrl = "https://example.com/impression_url",
                     clickUrl = "https://example.com/click_url",
                     rawClickUrl = "https://example.com/click_url",
@@ -296,8 +301,8 @@ class FxSuggestSuggestionProviderTest {
         )
 
         val provider = FxSuggestSuggestionProvider(
-            resources = testContext.resources,
             loadUrlUseCase = mock(),
+            sponsoredSuggestionDescription = sponsoredSuggestionDescription,
             includeNonSponsoredSuggestions = false,
             includeSponsoredSuggestions = true,
             contextId = "c303282d-f2e6-46ca-a04a-35d3d873712d",
@@ -345,8 +350,8 @@ class FxSuggestSuggestionProviderTest {
         whenever(storage.query(any())).thenReturn(emptyList())
 
         val provider = FxSuggestSuggestionProvider(
-            resources = testContext.resources,
             loadUrlUseCase = mock(),
+            sponsoredSuggestionDescription = sponsoredSuggestionDescription,
             includeNonSponsoredSuggestions = false,
             includeSponsoredSuggestions = true,
             contextId = "c303282d-f2e6-46ca-a04a-35d3d873712d",
@@ -374,8 +379,8 @@ class FxSuggestSuggestionProviderTest {
         whenever(storage.query(any())).thenReturn(emptyList())
 
         val provider = FxSuggestSuggestionProvider(
-            resources = testContext.resources,
             loadUrlUseCase = mock(),
+            sponsoredSuggestionDescription = sponsoredSuggestionDescription,
             includeNonSponsoredSuggestions = true,
             includeSponsoredSuggestions = false,
             contextId = "c303282d-f2e6-46ca-a04a-35d3d873712d",

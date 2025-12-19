@@ -4,6 +4,10 @@
 
 package org.mozilla.fenix.browser.browsingmode
 
+import android.content.Intent
+import mozilla.components.support.utils.toSafeIntent
+import org.mozilla.fenix.HomeActivity.Companion.PRIVATE_BROWSING_MODE
+import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.utils.Settings
 
 /**
@@ -29,20 +33,54 @@ enum class BrowsingMode {
 
 interface BrowsingModeManager {
     var mode: BrowsingMode
+
+    /**
+     * Updates the [BrowsingMode] based on the [Intent] that started the activity.
+     *
+     * @param intent The [Intent] that started the activity.
+     */
+    fun updateMode(intent: Intent? = null)
 }
 
 /**
- * Wraps a [BrowsingMode] and executes a callback whenever [mode] is updated.
+ * Default implementation of [BrowsingModeManager] that tracks the current [BrowsingMode],
+ * persists it to [Settings], and synchronizes it with [AppStore].
+ *
+ * @param intent The [Intent] that started the activity.
+ * @param settings [Settings] used to persist the current browsing mode in storage.
+ * @param onModeChange Callback invoked when the browsing mode changes.
  */
 class DefaultBrowsingModeManager(
-    private var initialMode: BrowsingMode,
+    intent: Intent?,
     private val settings: Settings,
-    private val modeDidChange: (BrowsingMode) -> Unit,
+    private val onModeChange: (BrowsingMode) -> Unit,
 ) : BrowsingModeManager {
-    override var mode: BrowsingMode = initialMode
+    override var mode: BrowsingMode = BrowsingMode.Normal
         set(value) {
             field = value
-            modeDidChange(value)
             settings.lastKnownMode = value
+            onModeChange(value)
         }
+
+    init {
+        mode = getModeFromIntentOrLastKnown(intent)
+    }
+
+    override fun updateMode(intent: Intent?) {
+        mode = getModeFromIntentOrLastKnown(intent)
+    }
+
+    /**
+     * Returns the [BrowsingMode] set by the [intent] or the last known [BrowsingMode].
+     */
+    private fun getModeFromIntentOrLastKnown(intent: Intent?): BrowsingMode {
+        intent?.toSafeIntent()?.let {
+            if (it.hasExtra(PRIVATE_BROWSING_MODE)) {
+                val startPrivateMode = it.getBooleanExtra(PRIVATE_BROWSING_MODE, false)
+                return BrowsingMode.fromBoolean(isPrivate = startPrivateMode)
+            }
+        }
+
+        return settings.lastKnownMode
+    }
 }

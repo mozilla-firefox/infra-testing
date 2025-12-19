@@ -15,7 +15,9 @@ import { createSelector } from "devtools/client/shared/vendor/reselect";
 export const getSelectedFrame = createSelector(
   (state, thread) => state.pause.threads[thread || getCurrentThread(state)],
   threadPauseState => {
-    if (!threadPauseState) return null;
+    if (!threadPauseState) {
+      return null;
+    }
     const { selectedFrameId, frames } = threadPauseState;
     if (frames) {
       return frames.find(frame => frame.id == selectedFrameId);
@@ -303,7 +305,7 @@ export function getSelectedFrameInlinePreviews(state) {
 
 /**
  * This selector returns the inline previews object for the selected location.
- * It consider both paused and traced previews and will only return values
+ * It considers both paused and traced previews and will only return values
  * if it matches the currently selected location.
  */
 export function getInlinePreviews(state) {
@@ -319,6 +321,10 @@ export function getInlinePreviews(state) {
       if (selectedTraceSource.id == selectedSource.id) {
         return state.tracerFrames?.previews;
       }
+
+      // If the "selected" versus "tracing selected" sources don't match, it means that we selected the original source
+      // while the traced source is the generated one. We don't yet support showing inline previews in this configuration.
+      return null;
     }
   }
 

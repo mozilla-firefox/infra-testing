@@ -13,8 +13,6 @@
 GFXINFO_FEATURE(ALL, "ALL", "all")
 /* Wildcard to block all optional features, starting in 123. */
 GFXINFO_FEATURE(OPTIONAL, "OPTIONAL", "optional")
-/* Whether Direct2D is supported for content rendering, always present. */
-GFXINFO_FEATURE(DIRECT2D, "DIRECT2D", "direct2d")
 /* Whether Direct3D 9 is supported for layers, always present. */
 GFXINFO_FEATURE(DIRECT3D_9_LAYERS, "DIRECT3D_9_LAYERS", "layers.direct3d9")
 /* Whether Direct3D 10.0 is supported for layers, always present. */
@@ -29,8 +27,8 @@ GFXINFO_FEATURE(WEBGL_OPENGL, "WEBGL_OPENGL", "webgl.opengl")
 GFXINFO_FEATURE(WEBGL_ANGLE, "WEBGL_ANGLE", "webgl.angle")
 /* (Unused) Whether WebGL antialiasing is supported. */
 GFXINFO_FEATURE(UNUSED_WEBGL_MSAA, "WEBGL_MSAA", "webgl.msaa")
-/* Whether Stagefright is supported, starting in 17. */
-GFXINFO_FEATURE(STAGEFRIGHT, "STAGEFRIGHT", "stagefright")
+/* (Unused) Whether Stagefright is supported, starting in 17. */
+GFXINFO_FEATURE(UNUSED_STAGEFRIGHT, "STAGEFRIGHT", "stagefright")
 /* Whether Webrtc Hardware H.264 acceleration is supported, starting in 71. */
 GFXINFO_FEATURE(WEBRTC_HW_ACCELERATION_H264, "WEBRTC_HW_ACCELERATION_H264", "webrtc.hw.acceleration.h264")
 /* Whether Direct3D 11 is supported for layers, starting in 32. */
@@ -115,3 +113,25 @@ GFXINFO_FEATURE(OVERLAY_VP_AUTO_HDR, "FEATURE_OVERLAY_VP_AUTO_HDR", "overlay-vp-
 GFXINFO_FEATURE(OVERLAY_VP_SUPER_RESOLUTION, "FEATURE_OVERLAY_VP_SUPER_RESOLUTION", "overlay-vp-super-resolution")
 /* Whether DMABUF is supported when using WebGL, starting in 88. */
 GFXINFO_FEATURE(DMABUF_WEBGL, "DMABUF_WEBGL", "dmabuf-webgl")
+/* Whether DirectComposition is supported for compositing, starting in 141. */
+GFXINFO_FEATURE(WEBRENDER_DCOMP, "WEBRENDER_DCOMP", "webrender.dcomp")
+/* Whether hardware VP8 encoding is supported, starting in 140. */
+GFXINFO_FEATURE(VP8_HW_ENCODE, "VP8_HW_ENCODE", "vp8.hw-encode")
+/* Whether hardware VP9 encoding is supported, starting in 140. */
+GFXINFO_FEATURE(VP9_HW_ENCODE, "VP9_HW_ENCODE", "vp9.hw-encode")
+/* Whether hardware H264 encoding is supported, starting in 140. */
+GFXINFO_FEATURE(H264_HW_ENCODE, "H264_HW_ENCODE", "h264.hw-encode")
+/* Whether hardware AV1 encoding is supported, starting in 140. */
+GFXINFO_FEATURE(AV1_HW_ENCODE, "AV1_HW_ENCODE", "av1.hw-encode")
+/* Whether hardware HEVC encoding is supported, starting in 140. */
+GFXINFO_FEATURE(HEVC_HW_ENCODE, "HEVC_HW_ENCODE", "hevc.hw-encode")
+/* Whether Windows Media Fundation hardware DRM is supported, starting in 141. */
+GFXINFO_FEATURE(WMF_HW_DRM, "WMF_HW_DRM", "wmf.hw-drm")
+/* Whether OpenGL is allowed to use normalized 16-bit texture formats, starting in 141. */
+GFXINFO_FEATURE(GL_NORM16_TEXTURES, "GL_NORM16", "gl.norm16-textures")
+/* Whether hardware accelerated video encoding is supported, starting in 141. */
+GFXINFO_FEATURE(HARDWARE_VIDEO_ENCODING, "HARDWARE_VIDEO_ENCODING", "hardwarevideoencoding")
+/* Whether WebGPU's GPUExternalTexture API is supported, starting in 143. */
+GFXINFO_FEATURE(WEBGPU_EXTERNAL_TEXTURE, "WEBGPU_EXTERNAL_TEXTURE", "webgpu.external-texture")
+/* Whether Mesa threading is allowed, starting in 146. */
+GFXINFO_FEATURE(MESA_THREADING, "MESA_THREADING", "mesa.threading")

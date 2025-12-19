@@ -139,10 +139,10 @@ class Simulator {
     a5,
     a6,
     a7,
-    t0,
-    t1,
-    t2,
-    t3,
+    t4,
+    t5,
+    t6,
+    t7,
     s0,
     s1,
     s2,
@@ -409,6 +409,10 @@ class Simulator {
   void setCallResultDouble(double result);
   void setCallResultFloat(float result);
   void setCallResult(int64_t res);
+#  ifdef XP_DARWIN
+  // add a dedicated setCallResult for intptr_t on Darwin
+  void setCallResult(intptr_t res);
+#  endif
   void setCallResult(__int128 res);
 
   void callInternal(uint8_t* entry);

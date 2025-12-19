@@ -8,6 +8,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const rollouts = require("./stylelint-rollouts.config");
 
 function readFile(filePath) {
   return fs
@@ -28,6 +29,7 @@ module.exports = {
   plugins: [
     "./tools/lint/stylelint/stylelint-plugin-mozilla/index.mjs",
     "@stylistic/stylelint-plugin",
+    "stylelint-use-logical",
   ],
   ignoreFiles,
   rules: {
@@ -52,6 +54,7 @@ module.exports = {
         ignoreFunctions: [
           "light-dark" /* Used for color-scheme dependent colors */,
           "add" /* Used in mathml.css */,
+          "-moz-symbolic-icon" /* Used for GTK icons */,
         ],
       },
     ],
@@ -267,7 +270,13 @@ module.exports = {
         ignorePseudoElements: ["slider-track", "slider-fill", "slider-thumb"],
       },
     ],
+    // stylelint fixes for the use-logical rule will be addressed in Bug 1996168
+    // Remove this line setting `csscontrols/use-logical` to null after implementing fixes
+    "csstools/use-logical": null,
     "stylelint-plugin-mozilla/no-base-design-tokens": true,
+    "stylelint-plugin-mozilla/use-design-tokens": true,
+    "stylelint-plugin-mozilla/no-non-semantic-token-usage": true,
+    "stylelint-plugin-mozilla/use-size-tokens": true,
   },
 
   overrides: [
@@ -349,5 +358,113 @@ module.exports = {
         "value-no-vendor-prefix": null,
       },
     },
+    {
+      files: ["browser/extensions/newtab/**"],
+      rules: {
+        "declaration-property-value-disallowed-list": [
+          {
+            "font-size": [
+              "/^[0-9.]+(px|em|rem|%)$/",
+              "/^[0-9.]+$/",
+              "/^(small|medium|large|x-large|xx-large)$/",
+            ],
+            "border-radius": [
+              "/^[0-9.]+(px|em|rem|%)$/",
+              "/^(small|medium|large|x-large|xx-large)$/",
+            ],
+            // Validate to only allow variables and global values
+            "font-weight": [
+              "/^(?!var\\(|inherit$|initial$|unset$|revert$|revert-layer$).+$/",
+            ],
+            [/^(margin|padding|inset|gap|row-gap|column-gap|grid-row-gap|grid-column-gap|top|right|bottom|left)($|-)/]:
+              ["/[0-9.]+(px|em|rem)|\\$/"],
+          },
+          {
+            message:
+              "Avoid literal values. Use variables (e.g. var(--font-size-small)) or inherit/unset/etc.",
+          },
+        ],
+        "csstools/use-logical": [
+          "always",
+          {
+            // Bug 2003301: Do not enforce logical properties for any height/width properties
+            except: [/^(min-|max-)?width/i, /^(min-|max-)?height/i],
+            severity: "error",
+          },
+        ],
+      },
+    },
+    {
+      name: "design-token-rules-off",
+      files: [
+        // CSS files under browser/branding do not use design tokens
+        "browser/branding/**",
+        // CSS files under browser/components/extensions are not using design tokens
+        "browser/components/extensions/**",
+        // Webcompat interventions are not expected to use design tokens
+        // They are intended to override existing styles for specific extension
+        "browser/extensions/webcompat/injections/css/**",
+        // Most of devtools does not use design tokens, so turn the appropriate rules off for devtools.
+        // Stylelint does not support negating the file glob within an overrides section,
+        // so these rules get re-enabled for some devtools files in the section below
+        "devtools/**",
+        // FXR is no longer maintained and is not expected to use design tokens
+        "browser/fxr/**",
+        // Android does not use design tokens
+        "mobile/android/**",
+        // Docs do not use design tokens
+        "docs/**",
+        // DOM does not use design tokens
+        "dom/**",
+        // Layouts do not use design tokens
+        "layout/**",
+        // Testing does not use design tokens
+        "testing/**",
+        // UA Widgets should not use design tokens
+        "toolkit/themes/shared/media/pipToggle.css",
+        "toolkit/themes/shared/media/videocontrols.css",
+        "toolkit/content/widgets/datetimebox.css",
+        "toolkit/content/widgets/marquee.css",
+        "toolkit/themes/shared/media/textrecognition.css",
+        // The contents of backup/content/archive.css are injected as inline CSS
+        // into the HTML backup archive files that exist on a user's file system
+        // and can be opened in any browser.
+        "browser/components/backup/content/archive.css",
+      ],
+      rules: {
+        "stylelint-plugin-mozilla/use-design-tokens": null,
+        "stylelint-plugin-mozilla/no-non-semantic-token-usage": null,
+        "stylelint-plugin-mozilla/use-size-tokens": null,
+      },
+    },
+    {
+      name: "design-token-rules-on",
+      files: [
+        // Enable design token related rules only on the parts of devtools that can use them
+        "devtools/client/aboutdebugging/src/**",
+      ],
+      rules: {
+        "stylelint-plugin-mozilla/use-design-tokens": true,
+        "stylelint-plugin-mozilla/no-non-semantic-token-usage": true,
+        "stylelint-plugin-mozilla/use-size-tokens": true,
+      },
+    },
+    {
+      files: ["toolkit/**/*.css", "toolkit/**/*.scss"],
+      rules: {
+        "stylelint-plugin-mozilla/no-browser-refs-in-toolkit": true,
+      },
+    },
+    {
+      // non-logical properties make sense in devtools/ where physical positioning always makes sense
+      name: "logical-properties-rule-off",
+      files: ["devtools/**"],
+      rules: {
+        "csstools/use-logical": null,
+      },
+    },
+    // Rollouts should always be applied last in the overrides section
+    // to ensure that they take precedence over other overrides.
+    ...rollouts,
   ],
 };

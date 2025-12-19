@@ -2,8 +2,10 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+import datetime
 import json
 import os
+from unittest.mock import MagicMock
 
 import mozunit
 import pytest
@@ -17,7 +19,7 @@ def test_query_paths(run_mach, capfd, show_chunk_numbers):
         "fuzzy",
         "--no-push",
         "-q",
-        "^test-linux '64-qr/debug-mochitest-chrome-1proc-",
+        "^test-linux '64/debug-mochitest-chrome-1proc-",
         "caps/tests/mochitest/test_addonMayLoad.html",
     ]
     chunk = "*"
@@ -37,7 +39,7 @@ def test_query_paths(run_mach, capfd, show_chunk_numbers):
     # If there are more than one tasks here, it means that something went wrong
     # with the path filtering.
     tasks = result["parameters"]["try_task_config"]["tasks"]
-    assert tasks == ["test-linux1804-64-qr/debug-mochitest-chrome-1proc-%s" % chunk]
+    assert tasks == ["test-linux2404-64/debug-mochitest-chrome-1proc-%s" % chunk]
 
 
 @pytest.mark.skipif(os.name == "nt", reason="fzf not installed on host")
@@ -48,7 +50,7 @@ def test_query_paths_no_chunks(run_mach, capfd, show_chunk_numbers):
         "fuzzy",
         "--no-push",
         "-q",
-        "^test-linux '64-qr/debug-cppunittest",
+        "^test-linux '64/debug-cppunittest",
     ]
     if show_chunk_numbers:
         cmd.append("--show-chunk-numbers")
@@ -65,12 +67,24 @@ def test_query_paths_no_chunks(run_mach, capfd, show_chunk_numbers):
     # If there are more than one tasks here, it means that something went wrong
     # with the path filtering.
     tasks = result["parameters"]["try_task_config"]["tasks"]
-    assert tasks == ["test-linux1804-64-qr/debug-cppunittest-1proc"]
+    assert tasks == ["test-linux2404-64/debug-cppunittest-1proc"]
 
 
 @pytest.mark.skipif(os.name == "nt", reason="fzf not installed on host")
-@pytest.mark.parametrize("variant", ["", "spi-nw"])
-def test_query_paths_variants(run_mach, capfd, variant):
+@pytest.mark.parametrize("variant", [""])
+def test_query_paths_variants(monkeypatch, run_mach, capfd, variant):
+    # Freeze time to avoid test failures due to an expired variant
+    datetime_mock = MagicMock(wraps=datetime.datetime)
+    datetime_mock.today.return_value = datetime.datetime.strptime(
+        "2025-08-01", "%Y-%m-%d"
+    )
+    monkeypatch.setattr(datetime, "datetime", datetime_mock)
+    # also patch the cache key since faking the date means we don't want to reuse another graph
+    monkeypatch.setattr(
+        "tryselect.tasks.cache_key",
+        lambda attr, *args: f"{attr}-test_query_paths_variants",
+    )
+
     if variant:
         variant = "-%s" % variant
 
@@ -79,7 +93,7 @@ def test_query_paths_variants(run_mach, capfd, variant):
         "fuzzy",
         "--no-push",
         "-q",
-        "^test-linux '64-qr/debug-mochitest-browser-chrome%s-" % variant,
+        "^test-linux !ioi !vt '64/debug-mochitest-browser-chrome%s-" % variant,
     ]
     assert run_mach(cmd) == 0
 
@@ -87,13 +101,10 @@ def test_query_paths_variants(run_mach, capfd, variant):
     print(output)
 
     if variant:
-        expected = ["test-linux1804-64-qr/debug-mochitest-browser-chrome%s-*" % variant]
+        expected = ["test-linux2404-64/debug-mochitest-browser-chrome%s-*" % variant]
     else:
         expected = [
-            "test-linux1804-64-qr/debug-mochitest-browser-chrome-ioi",
-            "test-linux1804-64-qr/debug-mochitest-browser-chrome-spi-nw-*",
-            "test-linux1804-64-qr/debug-mochitest-browser-chrome-swr-*",
-            "test-linux1804-64-qr/debug-mochitest-browser-chrome-vt",
+            "test-linux2404-64/debug-mochitest-browser-chrome-swr-*",
         ]
 
     delim = "Calculated try_task_config.json:"
@@ -106,7 +117,7 @@ def test_query_paths_variants(run_mach, capfd, variant):
 @pytest.mark.skipif(os.name == "nt", reason="fzf not installed on host")
 @pytest.mark.parametrize("full", [True, False])
 def test_query(run_mach, capfd, full):
-    cmd = ["try", "fuzzy", "--no-push", "-q", "'source-test-python-taskgraph-tests-py3"]
+    cmd = ["try", "fuzzy", "--no-push", "-q", "'source-test-python-taskgraph-tests"]
     if full:
         cmd.append("--full")
     assert run_mach(cmd) == 0
@@ -120,7 +131,7 @@ def test_query(run_mach, capfd, full):
 
     # Should only ever mach one task exactly.
     tasks = result["parameters"]["try_task_config"]["tasks"]
-    assert tasks == ["source-test-python-taskgraph-tests-py3"]
+    assert tasks == ["source-test-python-taskgraph-tests"]
 
 
 @pytest.mark.skipif(os.name == "nt", reason="fzf not installed on host")
@@ -133,7 +144,7 @@ def test_query_tags(run_mach, capfd, tag):
         "--tag",
         tag,
         "-q",
-        "^test-linux '64-qr/debug- !http !spi !swr !nofis !headless !xorig !ioi",
+        "^test-linux '64/debug- !http !spi !swr !nofis !headless !xorig !async !ioi !vt",
     ]
     if tag == "not_a_valid_tag":
         assert run_mach(cmd) == 1
@@ -144,17 +155,19 @@ def test_query_tags(run_mach, capfd, tag):
         print(output)
 
         expected = [
-            "test-linux1804-64-qr/debug-mochitest-browser-chrome-vt",
-            "test-linux1804-64-qr/debug-mochitest-devtools-chrome-*",
-            "test-linux1804-64-qr/debug-mochitest-chrome-1proc-*",
-            "test-linux1804-64-qr/debug-mochitest-chrome-gpu-1proc",
-            "test-linux1804-64-qr/debug-mochitest-plain-*",
-            "test-linux1804-64-qr/debug-mochitest-plain-gpu",
-            "test-linux1804-64-qr/debug-xpcshell-*",
-            "test-linux1804-64-qr/debug-test-verify",
-            "test-linux1804-64-qr/debug-test-verify-gpu",
-            "test-linux1804-64-qr/debug-test-verify-wpt",
+            "test-linux2404-64/debug-mochitest-devtools-chrome-*",
+            "test-linux2404-64/debug-mochitest-chrome-1proc-*",
+            "test-linux2404-64/debug-mochitest-chrome-gpu-1proc",
+            "test-linux2404-64/debug-mochitest-plain-*",
+            "test-linux2404-64/debug-mochitest-plain-gpu",
+            "test-linux2404-64/debug-xpcshell-*",
+            "test-linux2404-64/debug-test-verify",
+            "test-linux2404-64/debug-test-verify-gpu",
+            "test-linux2404-64/debug-test-verify-wpt",
         ]
+
+        if tag == "webextensions":
+            expected.remove("test-linux2404-64/debug-mochitest-devtools-chrome-*")
 
         delim = "Calculated try_task_config.json:"
         index = output.find(delim)
@@ -182,7 +195,7 @@ def test_query_multiple_tags(run_mach, capfd, tag):
         "fuzzy",
         "--no-push",
         "-q",
-        "^test-linux '64-qr/debug- !http !spi !swr !nofis !headless !xorig",
+        "^test-linux '64/debug- !http !spi !swr !nofis !headless !xorig",
     ]
     for t in tag["tags"]:
         cmd.extend(["--tag", t])

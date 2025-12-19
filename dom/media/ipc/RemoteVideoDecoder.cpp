@@ -19,12 +19,16 @@
 #include "MediaDataDecoderProxy.h"
 #include "MediaInfo.h"
 #include "PDMFactory.h"
-#include "RemoteDecoderManagerParent.h"
+#include "RemoteCDMParent.h"
 #include "RemoteImageHolder.h"
+#include "RemoteMediaManagerParent.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/layers/ImageClient.h"
 #include "mozilla/layers/TextureClient.h"
 #include "mozilla/layers/VideoBridgeChild.h"
+#ifdef MOZ_WIDGET_ANDROID
+#  include "mozilla/layers/VideoBridgeParent.h"
+#endif
 
 namespace mozilla {
 
@@ -53,7 +57,7 @@ KnowsCompositorVideo::TryCreateForIdentifier(
   return knowsCompositor.forget();
 }
 
-RemoteVideoDecoderChild::RemoteVideoDecoderChild(RemoteDecodeIn aLocation)
+RemoteVideoDecoderChild::RemoteVideoDecoderChild(RemoteMediaIn aLocation)
     : RemoteDecoderChild(aLocation), mBufferRecycleBin(new BufferRecycleBin) {}
 
 MediaResult RemoteVideoDecoderChild::ProcessOutput(
@@ -91,23 +95,23 @@ MediaResult RemoteVideoDecoderChild::InitIPDL(
     const VideoInfo& aVideoInfo, float aFramerate,
     const CreateDecoderParams::OptionSet& aOptions,
     Maybe<layers::TextureFactoryIdentifier> aIdentifier,
-    const Maybe<uint64_t>& aMediaEngineId,
-    const Maybe<TrackingId>& aTrackingId) {
-  MOZ_ASSERT_IF(mLocation == RemoteDecodeIn::GpuProcess, aIdentifier);
+    const Maybe<uint64_t>& aMediaEngineId, const Maybe<TrackingId>& aTrackingId,
+    PRemoteCDMActor* aCDM) {
+  MOZ_ASSERT_IF(mLocation == RemoteMediaIn::GpuProcess, aIdentifier);
 
-  RefPtr<RemoteDecoderManagerChild> manager =
-      RemoteDecoderManagerChild::GetSingleton(mLocation);
+  RefPtr<RemoteMediaManagerChild> manager =
+      RemoteMediaManagerChild::GetSingleton(mLocation);
 
-  // The manager isn't available because RemoteDecoderManagerChild has been
+  // The manager isn't available because RemoteMediaManagerChild has been
   // initialized with null end points and we don't want to decode video on RDD
   // process anymore. Return false here so that we can fallback to other PDMs.
   if (!manager) {
     return MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
-                       RESULT_DETAIL("RemoteDecoderManager is not available."));
+                       RESULT_DETAIL("RemoteMediaManager is not available."));
   }
 
   if (!manager->CanSend()) {
-    if (mLocation == RemoteDecodeIn::GpuProcess) {
+    if (mLocation == RemoteMediaIn::GpuProcess) {
       // The manager doesn't support sending messages because we've just crashed
       // and are working on reinitialization. Don't initialize mIPDLSelfRef and
       // leave us in an error state. We'll then immediately reject the promise
@@ -118,25 +122,45 @@ MediaResult RemoteVideoDecoderChild::InitIPDL(
     }
 
     return MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
-                       RESULT_DETAIL("RemoteDecoderManager unable to send."));
+                       RESULT_DETAIL("RemoteMediaManager unable to send."));
+  }
+
+  // If we are given a remote CDM, we need to make sure that it has been remoted
+  // into the same process as the decoder.
+  PRemoteCDMChild* cdm = nullptr;
+  if (aCDM) {
+    if (aCDM->GetLocation() != mLocation) {
+      return MediaResult(
+          NS_ERROR_DOM_MEDIA_FATAL_ERR,
+          RESULT_DETAIL("PRemoteCDMActor is not in same process."));
+    }
+
+    cdm = aCDM->AsPRemoteCDMChild();
+    if (!cdm) {
+      return MediaResult(
+          NS_ERROR_DOM_MEDIA_FATAL_ERR,
+          RESULT_DETAIL("PRemoteCDMActor is not PRemoteCDMChild."));
+    }
   }
 
   mIPDLSelfRef = this;
   VideoDecoderInfoIPDL decoderInfo(aVideoInfo, aFramerate);
   MOZ_ALWAYS_TRUE(manager->SendPRemoteDecoderConstructor(
-      this, decoderInfo, aOptions, aIdentifier, aMediaEngineId, aTrackingId));
+      this, decoderInfo, aOptions, aIdentifier, aMediaEngineId, aTrackingId,
+      cdm));
 
   return NS_OK;
 }
 
 RemoteVideoDecoderParent::RemoteVideoDecoderParent(
-    RemoteDecoderManagerParent* aParent, const VideoInfo& aVideoInfo,
+    RemoteMediaManagerParent* aParent, const VideoInfo& aVideoInfo,
     float aFramerate, const CreateDecoderParams::OptionSet& aOptions,
     const Maybe<layers::TextureFactoryIdentifier>& aIdentifier,
     nsISerialEventTarget* aManagerThread, TaskQueue* aDecodeTaskQueue,
-    const Maybe<uint64_t>& aMediaEngineId, Maybe<TrackingId> aTrackingId)
+    const Maybe<uint64_t>& aMediaEngineId, Maybe<TrackingId> aTrackingId,
+    RemoteCDMParent* aCDM)
     : RemoteDecoderParent(aParent, aOptions, aManagerThread, aDecodeTaskQueue,
-                          aMediaEngineId, std::move(aTrackingId)),
+                          aMediaEngineId, std::move(aTrackingId), aCDM),
       mVideoInfo(aVideoInfo),
       mFramerate(aFramerate) {
   if (aIdentifier) {
@@ -159,10 +183,16 @@ IPCResult RemoteVideoDecoderParent::RecvConstruct(
     imageContainer->EnsureRecycleAllocatorForRDD(mKnowsCompositor);
   }
   auto params = CreateDecoderParams{
-      mVideoInfo,     mKnowsCompositor,
-      imageContainer, CreateDecoderParams::VideoFrameRate(mFramerate),
-      mOptions,       CreateDecoderParams::WrapperSet({/* No wrapper */}),
-      mMediaEngineId, mTrackingId,
+      mVideoInfo,
+      mKnowsCompositor,
+      imageContainer,
+      static_cast<PRemoteCDMActor*>(mCDM.get()),
+      CreateDecoderParams::VideoFrameRate(mFramerate),
+      mOptions,
+      CreateDecoderParams::WrapperSet({/* No wrapper */}),
+      mMediaEngineId,
+      mTrackingId,
+      mCDM,
   };
 
   mParent->EnsurePDMFactory().CreateDecoder(params)->Then(
@@ -269,7 +299,13 @@ MediaResult RemoteVideoDecoderParent::ProcessDecodedData(
             }
             return MemoryOrShmem();
           });
-      NS_ENSURE_SUCCESS(rv, rv);
+
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        if (sdBuffer.data().type() == MemoryOrShmem::TShmem) {
+          DeallocShmem(sdBuffer.data().get_Shmem());
+        }
+        return rv;
+      }
 
       sd = sdBuffer;
       size = image->GetSize();

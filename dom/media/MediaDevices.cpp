@@ -7,24 +7,25 @@
 #include "AudioDeviceInfo.h"
 #include "MediaEngine.h"
 #include "MediaEngineFake.h"
+#include "MediaTrackConstraints.h"
+#include "mozilla/MediaManager.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/FeaturePolicyUtils.h"
-#include "mozilla/dom/MediaStreamBinding.h"
 #include "mozilla/dom/MediaDeviceInfo.h"
 #include "mozilla/dom/MediaDevicesBinding.h"
+#include "mozilla/dom/MediaStreamBinding.h"
+#include "mozilla/dom/MediaTrackSupportedConstraintsBinding.h"
 #include "mozilla/dom/NavigatorBinding.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/WindowContext.h"
 #include "mozilla/intl/Localization.h"
-#include "mozilla/MediaManager.h"
-#include "mozilla/StaticPrefs_media.h"
-#include "MediaTrackConstraints.h"
 #include "nsContentUtils.h"
+#include "nsGlobalWindowInner.h"
 #include "nsINamed.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsPIDOMWindow.h"
-#include "nsGlobalWindowInner.h"
 #include "nsQueryObject.h"
 
 namespace mozilla::dom {
@@ -41,6 +42,15 @@ MediaDevices::MediaDevices(nsPIDOMWindowInner* aWindow)
 MediaDevices::~MediaDevices() {
   MOZ_ASSERT(NS_IsMainThread());
   mDeviceChangeListener.DisconnectIfExists();
+}
+
+// No code needed, unless controlled by prefs, as
+// MediaTrackSupportedConstraints members default to true.
+void MediaDevices::GetSupportedConstraints(
+    MediaTrackSupportedConstraints& aResult) {
+  if (Preferences::GetBool("media.navigator.video.resize_mode.enabled")) {
+    aResult.mResizeMode.Construct(true);
+  }
 }
 
 already_AddRefed<Promise> MediaDevices::GetUserMedia(
@@ -264,7 +274,8 @@ RefPtr<MediaDeviceSetRefCnt> MediaDevices::FilterExposedDevices(
   bool dropSpeakers =
       !Preferences::GetBool("media.setsinkid.enabled") ||
       !FeaturePolicyUtils::IsFeatureAllowed(doc, u"speaker-selection"_ns);
-
+  bool shouldResistFingerprinting =
+      window->AsGlobal()->ShouldResistFingerprinting(RFPTarget::MediaDevices);
   bool legacy = IsLegacyMode(window);
   bool outputIsDefault = true;  // First output is the default.
   bool haveDefaultOutput = false;
@@ -293,8 +304,10 @@ RefPtr<MediaDeviceSetRefCnt> MediaDevices::FilterExposedDevices(
       case MediaDeviceKind::Audiooutput:
         if (dropSpeakers ||
             (!mExplicitlyGrantedAudioOutputRawIds.Contains(device->mRawID) &&
-             // Assumes aDevices order has microphones before speakers.
-             !exposedMicrophoneGroupIds.Contains(device->mRawGroupID))) {
+             (!mCanExposeMicrophoneInfo ||
+              (shouldResistFingerprinting &&
+               // Assumes aDevices order has microphones before speakers.
+               !exposedMicrophoneGroupIds.Contains(device->mRawGroupID))))) {
           outputIsDefault = false;
           continue;
         }

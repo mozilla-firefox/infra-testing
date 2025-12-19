@@ -7,22 +7,23 @@
 /* rendering object for CSS :first-letter pseudo-element */
 
 #include "nsFirstLetterFrame.h"
-#include "nsPresContext.h"
-#include "nsPresContextInlines.h"
+
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellInlines.h"
 #include "mozilla/RestyleManager.h"
 #include "mozilla/ServoStyleSet.h"
 #include "mozilla/StaticPrefs_layout.h"
+#include "nsCSSFrameConstructor.h"
+#include "nsFrameManager.h"
+#include "nsGkAtoms.h"
 #include "nsIContent.h"
 #include "nsLayoutUtils.h"
 #include "nsLineLayout.h"
-#include "nsGkAtoms.h"
-#include "nsFrameManager.h"
 #include "nsPlaceholderFrame.h"
+#include "nsPresContext.h"
+#include "nsPresContextInlines.h"
 #include "nsTextFrame.h"
-#include "nsCSSFrameConstructor.h"
 
 using namespace mozilla;
 using namespace mozilla::layout;
@@ -130,17 +131,17 @@ nscoord nsFirstLetterFrame::IntrinsicISize(const IntrinsicSizeInput& aInput,
 
 /* virtual */
 nsIFrame::SizeComputationResult nsFirstLetterFrame::ComputeSize(
-    gfxContext* aRenderingContext, WritingMode aWM, const LogicalSize& aCBSize,
-    nscoord aAvailableISize, const LogicalSize& aMargin,
-    const LogicalSize& aBorderPadding, const StyleSizeOverrides& aSizeOverrides,
-    ComputeSizeFlags aFlags) {
+    const SizeComputationInput& aSizingInput, WritingMode aWM,
+    const LogicalSize& aCBSize, nscoord aAvailableISize,
+    const LogicalSize& aMargin, const LogicalSize& aBorderPadding,
+    const StyleSizeOverrides& aSizeOverrides, ComputeSizeFlags aFlags) {
   if (GetPrevInFlow()) {
     // We're wrapping the text *after* the first letter, so behave like an
     // inline frame.
     return {LogicalSize(aWM, NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE),
             AspectRatioUsage::None};
   }
-  return nsContainerFrame::ComputeSize(aRenderingContext, aWM, aCBSize,
+  return nsContainerFrame::ComputeSize(aSizingInput, aWM, aCBSize,
                                        aAvailableISize, aMargin, aBorderPadding,
                                        aSizeOverrides, aFlags);
 }
@@ -171,16 +172,16 @@ bool nsFirstLetterFrame::UseTightBounds() const {
 
   const auto wm = GetWritingMode();
   const auto* styleMargin = StyleMargin();
-  const auto positionProperty = StyleDisplay()->mPosition;
+  const auto anchorResolutionParams = AnchorPosResolutionParams::From(this);
   const auto bStart =
-      styleMargin->GetMargin(LogicalSide::BStart, wm, positionProperty);
+      styleMargin->GetMargin(LogicalSide::BStart, wm, anchorResolutionParams);
   // Currently, we only check for margins with negative *length* values;
   // negative percentages seem unlikely to be used/useful in this context.
   if (bStart->ConvertsToLength() && bStart->ToLength() < 0) {
     return false;
   }
   const auto bEnd =
-      styleMargin->GetMargin(LogicalSide::BEnd, wm, positionProperty);
+      styleMargin->GetMargin(LogicalSide::BEnd, wm, anchorResolutionParams);
   return !(bEnd->ConvertsToLength() && bEnd->ToLength() < 0);
 }
 
@@ -436,11 +437,6 @@ void nsFirstLetterFrame::DrainOverflowFrames(nsPresContext* aPresContext) {
                                     prevInFlow->StealOverflowFrames());
     if (overflowFrames) {
       NS_ASSERTION(mFrames.IsEmpty(), "bad overflow list");
-
-      // When pushing and pulling frames we need to check for whether any
-      // views need to be reparented.
-      nsContainerFrame::ReparentFrameViewList(*overflowFrames, prevInFlow,
-                                              this);
       mFrames.InsertFrames(this, nullptr, std::move(*overflowFrames));
     }
   }

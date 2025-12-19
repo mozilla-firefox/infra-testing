@@ -18,6 +18,7 @@
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ScopeExit.h"
+#include "mozilla/SharedLibrary.h"
 #include "mozilla/StaticPrefs_gl.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/layers/CompositorOptions.h"
@@ -97,7 +98,9 @@ bool WGLLibrary::EnsureInitialized() {
 #define SYMBOL(X)                 \
   {                               \
     (PRFuncPtr*)&mSymbols.f##X, { \
-      { "wgl" #X }                \
+      {                           \
+        "wgl" #X                  \
+      }                           \
     }                             \
   }
 #define END_OF_SYMBOLS \

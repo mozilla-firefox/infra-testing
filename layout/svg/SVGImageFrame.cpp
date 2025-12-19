@@ -7,29 +7,29 @@
 #include "SVGImageFrame.h"
 
 // Keep in (case-insensitive) order:
+#include "ImageRegion.h"
+#include "SVGGeometryProperty.h"
 #include "gfxContext.h"
 #include "gfxPlatform.h"
-#include "mozilla/ComputedStyleInlines.h"
-#include "mozilla/image/WebRenderImageProvider.h"
-#include "mozilla/layers/RenderRootStateManager.h"
-#include "mozilla/layers/WebRenderLayerManager.h"
 #include "imgIContainer.h"
-#include "ImageRegion.h"
-#include "nsContainerFrame.h"
-#include "nsIImageLoadingContent.h"
-#include "nsLayoutUtils.h"
 #include "imgINotificationObserver.h"
-#include "SVGGeometryProperty.h"
+#include "mozilla/ComputedStyleInlines.h"
 #include "mozilla/PresShell.h"
-#include "mozilla/StaticPrefs_image.h"
 #include "mozilla/SVGContentUtils.h"
 #include "mozilla/SVGImageContext.h"
 #include "mozilla/SVGObserverUtils.h"
 #include "mozilla/SVGUtils.h"
-#include "mozilla/dom/MutationEventBinding.h"
-#include "mozilla/dom/SVGImageElement.h"
+#include "mozilla/StaticPrefs_image.h"
 #include "mozilla/dom/LargestContentfulPaint.h"
+#include "mozilla/dom/SVGImageElement.h"
+#include "mozilla/image/WebRenderImageProvider.h"
+#include "mozilla/layers/RenderRootStateManager.h"
+#include "mozilla/layers/WebRenderLayerManager.h"
+#include "nsContainerFrame.h"
+#include "nsIImageLoadingContent.h"
+#include "nsIMutationObserver.h"
 #include "nsIReflowCallback.h"
+#include "nsLayoutUtils.h"
 
 using namespace mozilla::dom;
 using namespace mozilla::gfx;
@@ -179,7 +179,8 @@ bool SVGImageFrame::DoGetParentSVGTransforms(
 // nsIFrame methods:
 
 nsresult SVGImageFrame::AttributeChanged(int32_t aNameSpaceID,
-                                         nsAtom* aAttribute, int32_t aModType) {
+                                         nsAtom* aAttribute,
+                                         AttrModType aModType) {
   if (aNameSpaceID == kNameSpaceID_None) {
     if (aAttribute == nsGkAtoms::preserveAspectRatio) {
       // We don't paint the content of the image using display lists, therefore
@@ -190,7 +191,7 @@ nsresult SVGImageFrame::AttributeChanged(int32_t aNameSpaceID,
       return NS_OK;
     }
   }
-  if (aModType == dom::MutationEvent_Binding::REMOVAL &&
+  if (aModType == AttrModType::Removal &&
       (aNameSpaceID == kNameSpaceID_None ||
        aNameSpaceID == kNameSpaceID_XLink) &&
       aAttribute == nsGkAtoms::href) {
@@ -839,8 +840,11 @@ SVGBBox SVGImageFrame::GetBBoxContribution(const Matrix& aToBBoxUserspace,
 
   if ((aFlags & SVGUtils::eForGetClientRects) &&
       aToBBoxUserspace.PreservesAxisAlignedRectangles()) {
-    Rect rect = NSRectToRect(mRect, AppUnitsPerCSSPixel());
-    return aToBBoxUserspace.TransformBounds(rect);
+    if (!mRect.IsEmpty()) {
+      Rect rect = NSRectToRect(mRect, AppUnitsPerCSSPixel());
+      return aToBBoxUserspace.TransformBounds(rect);
+    }
+    return {};
   }
 
   auto* element = static_cast<SVGImageElement*>(GetContent());

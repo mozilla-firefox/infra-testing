@@ -296,6 +296,7 @@ using BigIntStencilVector = Vector<BigIntStencil, 0, js::SystemAllocPolicy>;
 
 class ScopeStencil {
   friend class StencilXDR;
+  friend struct ScopeStencilRef;
   friend class InputScope;
   friend class AbstractBindingIter<frontend::TaggedParserAtomIndex>;
   friend struct CompilationStencil;
@@ -469,7 +470,7 @@ class ScopeStencil {
  private:
   // Transfer ownership into a new UniquePtr.
   template <typename SpecificScopeType>
-  UniquePtr<typename SpecificScopeType::RuntimeData> createSpecificScopeData(
+  typename SpecificScopeType::RuntimeData* createSpecificScopeData(
       JSContext* cx, CompilationAtomCache& atomCache,
       BaseParserScopeData* baseData) const;
 

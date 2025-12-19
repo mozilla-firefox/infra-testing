@@ -6,14 +6,14 @@
 
 #include "SVGAnimatedIntegerPair.h"
 
-#include "nsCharSeparatedTokenizer.h"
-#include "nsError.h"
-#include "nsMathUtils.h"
 #include "SVGAttrTearoffTable.h"
 #include "SVGIntegerPairSMILType.h"
 #include "mozAutoDocUpdate.h"
 #include "mozilla/SMILValue.h"
 #include "mozilla/SVGContentUtils.h"
+#include "nsCharSeparatedTokenizer.h"
+#include "nsError.h"
+#include "nsMathUtils.h"
 
 using namespace mozilla::dom;
 
@@ -35,15 +35,15 @@ class MOZ_RAII AutoChangeIntegerPairNotifier {
 
     if (mDoSetAttr) {
       mUpdateBatch.emplace(aSVGElement->GetComposedDoc(), true);
-      mEmptyOrOldValue = mSVGElement->WillChangeIntegerPair(
-          mIntegerPair->mAttrEnum, mUpdateBatch.ref());
+      mSVGElement->WillChangeIntegerPair(mIntegerPair->mAttrEnum,
+                                         mUpdateBatch.ref());
     }
   }
 
   ~AutoChangeIntegerPairNotifier() {
     if (mDoSetAttr) {
       mSVGElement->DidChangeIntegerPair(mIntegerPair->mAttrEnum,
-                                        mEmptyOrOldValue, mUpdateBatch.ref());
+                                        mUpdateBatch.ref());
     }
     if (mIntegerPair->mIsAnimated) {
       mSVGElement->AnimationNeedsResample();
@@ -54,15 +54,14 @@ class MOZ_RAII AutoChangeIntegerPairNotifier {
   SVGAnimatedIntegerPair* const mIntegerPair;
   SVGElement* const mSVGElement;
   Maybe<mozAutoDocUpdate> mUpdateBatch;
-  nsAttrValue mEmptyOrOldValue;
   bool mDoSetAttr;
 };
 
-MOZ_CONSTINIT static SVGAttrTearoffTable<
-    SVGAnimatedIntegerPair, SVGAnimatedIntegerPair::DOMAnimatedInteger>
+constinit static SVGAttrTearoffTable<SVGAnimatedIntegerPair,
+                                     SVGAnimatedIntegerPair::DOMAnimatedInteger>
     sSVGFirstAnimatedIntegerTearoffTable;
-MOZ_CONSTINIT static SVGAttrTearoffTable<
-    SVGAnimatedIntegerPair, SVGAnimatedIntegerPair::DOMAnimatedInteger>
+constinit static SVGAttrTearoffTable<SVGAnimatedIntegerPair,
+                                     SVGAnimatedIntegerPair::DOMAnimatedInteger>
     sSVGSecondAnimatedIntegerTearoffTable;
 
 /* Implementation */

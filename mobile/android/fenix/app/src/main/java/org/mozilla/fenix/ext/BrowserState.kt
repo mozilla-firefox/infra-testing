@@ -8,8 +8,7 @@ import mozilla.components.browser.state.selector.normalTabs
 import mozilla.components.browser.state.selector.selectedNormalTab
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.TabSessionState
-import mozilla.components.feature.tabs.ext.hasMediaPlayed
-import org.mozilla.fenix.components.usecases.FenixBrowserUseCases.Companion.ABOUT_HOME
+import mozilla.components.concept.engine.utils.ABOUT_HOME_URL
 import org.mozilla.fenix.home.recenttabs.RecentTab
 import org.mozilla.fenix.tabstray.ext.isNormalTabInactive
 import org.mozilla.fenix.utils.Settings
@@ -31,7 +30,7 @@ val maxActiveTime = TimeUnit.DAYS.toMillis(DEFAULT_ACTIVE_DAYS)
  * @return A list of the last opened tab or an empty list.
  */
 fun BrowserState.asRecentTabs(): List<RecentTab> {
-    return lastOpenedNormalTab?.takeIf { it.content.url != ABOUT_HOME }?.let {
+    return lastOpenedNormalTab?.takeIf { it.content.url != ABOUT_HOME_URL }?.let {
         mutableListOf(RecentTab.Tab(it))
     } ?: mutableListOf()
 }
@@ -42,23 +41,6 @@ fun BrowserState.asRecentTabs(): List<RecentTab> {
  */
 val BrowserState.lastOpenedNormalTab: TabSessionState?
     get() = selectedNormalTab ?: normalTabs.maxByOrNull { it.lastAccess }
-
-/**
- *  Get the second-to-last accessed normal tab.
- */
-val BrowserState.secondToLastOpenedNormalTab: TabSessionState?
-    get() = when {
-        normalTabs.size <= 1 -> null
-        else -> normalTabs.sortedByDescending { it.lastAccess }[1]
-    }
-
-/**
- * Get the last tab with in progress media.
- */
-val BrowserState.inProgressMediaTab: TabSessionState?
-    get() = normalTabs
-        .filter { it.hasMediaPlayed() }
-        .maxByOrNull { it.lastMediaAccessState.lastMediaAccess }
 
 /**
  * List of all inactive tabs based on [maxActiveTime].

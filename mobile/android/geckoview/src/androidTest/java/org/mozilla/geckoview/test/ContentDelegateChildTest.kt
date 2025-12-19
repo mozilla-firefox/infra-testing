@@ -11,16 +11,19 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.os.Build
 import android.os.SystemClock
-import android.view.*
+import android.view.InputDevice
+import android.view.MotionEvent
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.MediumTest
 import androidx.test.platform.app.InstrumentationRegistry
-import org.hamcrest.Matchers.*
+import org.hamcrest.Matchers.arrayContainingInAnyOrder
+import org.hamcrest.Matchers.endsWith
+import org.hamcrest.Matchers.equalTo
+import org.hamcrest.Matchers.startsWith
 import org.junit.Assert.assertNull
-import org.junit.Assume.assumeThat
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mozilla.geckoview.*
+import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSession.ContentDelegate
 import org.mozilla.geckoview.GeckoSession.ContentDelegate.ContextElement
 import org.mozilla.geckoview.GeckoSession.SelectionActionDelegate
@@ -386,9 +389,15 @@ class ContentDelegateChildTest : BaseSessionTest() {
                         element.linkUri,
                         endsWith("hello.html"),
                     )
+                    @Suppress("DEPRECATION") // remove when textContent is removed
                     assertThat(
                         "The element link text content should be the text content of the anchor.",
                         element.textContent,
+                        equalTo("Hello World"),
+                    )
+                    assertThat(
+                        "The element link text should be the link text of the anchor.",
+                        element.linkText,
                         equalTo("Hello World"),
                     )
                 }
@@ -398,7 +407,7 @@ class ContentDelegateChildTest : BaseSessionTest() {
 
     @WithDisplay(width = 100, height = 100)
     @Test
-    fun requestContextMenuOnLinkText() {
+    fun requestContextMenuOnLinkTextLimits() {
         mainSession.loadTestPath(CONTEXT_MENU_LINK_TEXT_HTML_PATH)
         mainSession.waitForPageStop()
         sendLongPress(50f, 50f)
@@ -422,9 +431,15 @@ class ContentDelegateChildTest : BaseSessionTest() {
                         element.altText?.length,
                         equalTo(4096),
                     )
+                    @Suppress("DEPRECATION") // remove when textContent is removed
                     assertThat(
                         "The element link text content should not exceed a maximum of 4096 chars.",
                         element.textContent?.length,
+                        equalTo(4096),
+                    )
+                    assertThat(
+                        "The element link text should not exceed a maximum of 4096 chars.",
+                        element.linkText?.length,
                         equalTo(4096),
                     )
                 }
@@ -434,9 +449,56 @@ class ContentDelegateChildTest : BaseSessionTest() {
 
     @WithDisplay(width = 100, height = 100)
     @Test
+    fun requestContextMenuOnLinkText() {
+        mainSession.loadTestPath(CONTEXT_MENU_LINK_TEXT_HTML_NORMAL_LENGTH_PATH)
+        mainSession.waitForPageStop()
+        sendLongPress(50f, 50f)
+
+        mainSession.waitUntilCalled(
+            object : ContentDelegate {
+                @AssertCalled(count = 1)
+                override fun onContextMenu(
+                    session: GeckoSession,
+                    screenX: Int,
+                    screenY: Int,
+                    element: ContextElement,
+                ) {
+                    assertThat(
+                        "Type should be none.",
+                        element.type,
+                        equalTo(ContextElement.TYPE_NONE),
+                    )
+                    assertThat(
+                        "The element link title should be the title of the anchor.",
+                        element.title,
+                        equalTo("Lorem ipsum dolor sit amet cillum amet minim."),
+                    )
+                    assertThat(
+                        "The element link URI should be the href of the anchor.",
+                        element.linkUri,
+                        endsWith("hello.html"),
+                    )
+                    @Suppress("DEPRECATION") // remove when textContent is removed
+                    assertThat(
+                        "The element link text content should be the text content of the " +
+                                "anchor including white spaces.",
+                        element.textContent,
+                        equalTo("\n      Lorem ipsum dolor sit amet cillum amet minim."),
+                    )
+                    assertThat(
+                        "The element link text should be the link text of the " +
+                                "anchor without white spaces.",
+                        element.linkText,
+                        equalTo("Lorem ipsum dolor sit amet cillum amet minim."),
+                    )
+                }
+            },
+        )
+    }
+
+    @WithDisplay(width = 100, height = 100)
+    @Test
     fun requestContextMenuOnVideo() {
-        // Bug 1700243
-        assumeThat(sessionRule.env.isIsolatedProcess, equalTo(false))
         mainSession.loadTestPath(CONTEXT_MENU_VIDEO_HTML_PATH)
         mainSession.waitForPageStop()
         sendLongPress(50f, 50f)
@@ -516,9 +578,15 @@ class ContentDelegateChildTest : BaseSessionTest() {
                         element.linkUri,
                         endsWith("hello.html"),
                     )
+                    @Suppress("DEPRECATION") // remove when textContent is removed
                     assertThat(
                         "The element link text content should be the text content of the anchor.",
                         element.textContent,
+                        equalTo("Hello World"),
+                    )
+                    assertThat(
+                        "The element link text should be the link text of the anchor.",
+                        element.linkText,
                         equalTo("Hello World"),
                     )
                 }
@@ -563,9 +631,15 @@ class ContentDelegateChildTest : BaseSessionTest() {
                         element.linkUri,
                         endsWith("hello.html"),
                     )
+                    @Suppress("DEPRECATION") // remove when textContent is removed
                     assertThat(
                         "The element link text content should be the text content of the anchor.",
                         element.textContent,
+                        equalTo("Hello World"),
+                    )
+                    assertThat(
+                        "The element link text should be the link text of the anchor.",
+                        element.linkText,
                         equalTo("Hello World"),
                     )
                 }

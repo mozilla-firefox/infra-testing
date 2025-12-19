@@ -11,12 +11,14 @@
 use euclid::{vec2, size2};
 use api::{ColorF, ColorU, ExtendMode, GradientStop, PremultipliedColorF};
 use api::units::*;
+use crate::gpu_types::ImageBrushPrimitiveData;
 use crate::pattern::{Pattern, PatternBuilder, PatternBuilderContext, PatternBuilderState, PatternKind, PatternShaderInput, PatternTextureInput};
+use crate::prim_store::gradient::GradientKind;
 use crate::scene_building::IsVisible;
 use crate::frame_builder::FrameBuildingState;
 use crate::intern::{Internable, InternDebug, Handle as InternHandle};
 use crate::internal_types::LayoutPrimitiveInfo;
-use crate::prim_store::{BrushSegment, GradientTileRange, InternablePrimitive};
+use crate::prim_store::{BrushSegment, GradientTileRange, InternablePrimitive, VECS_PER_SEGMENT};
 use crate::prim_store::{PrimitiveInstanceKind, PrimitiveOpacity};
 use crate::prim_store::{PrimKeyCommonData, PrimTemplateCommonData, PrimitiveStore};
 use crate::prim_store::{NinePatchDescriptor, PointKey, SizeKey, FloatKey};
@@ -28,7 +30,8 @@ use crate::renderer::{GpuBufferAddress, GpuBufferBuilder};
 use std::{hash, ops::{Deref, DerefMut}};
 use super::{
     stops_and_min_alpha, GradientStopKey, GradientGpuBlockBuilder,
-    apply_gradient_local_clip,
+    apply_gradient_local_clip, gpu_gradient_stops_blocks,
+    write_gpu_gradient_stops_tree,
 };
 
 /// Hashable radial gradient parameters, for use during prim interning.
@@ -109,21 +112,33 @@ impl PatternBuilder for RadialGradientTemplate {
     fn build(
         &self,
         _sub_rect: Option<DeviceRect>,
-        _ctx: &PatternBuilderContext,
+        ctx: &PatternBuilderContext,
         state: &mut PatternBuilderState,
     ) -> Pattern {
         // The scaling parameter is used to compensate for when we reduce the size
         // of the render task for cached gradients. Here we aren't applying any.
         let no_scale = DeviceVector2D::one();
 
-        radial_gradient_pattern(
-            self.center,
-            no_scale,
-            &self.params,
-            self.extend_mode,
-            &self.stops,
-            state.frame_gpu_data,
-        )
+        if ctx.fb_config.precise_radial_gradients {
+            radial_gradient_pattern(
+                self.center,
+                no_scale,
+                &self.params,
+                self.extend_mode,
+                &self.stops,
+                ctx.fb_config.is_software,
+                state.frame_gpu_data,
+            )
+        } else {
+            radial_gradient_pattern_with_table(
+                self.center,
+                no_scale,
+                &self.params,
+                self.extend_mode,
+                &self.stops,
+                state.frame_gpu_data,
+            )
+        }
     }
 
     fn get_base_color(
@@ -214,27 +229,20 @@ impl RadialGradientTemplate {
         &mut self,
         frame_state: &mut FrameBuildingState,
     ) {
-        if let Some(mut request) =
-            frame_state.gpu_cache.request(&mut self.common.gpu_cache_handle) {
-            // write_prim_gpu_blocks
-            request.push(PremultipliedColorF::WHITE);
-            request.push(PremultipliedColorF::WHITE);
-            request.push([
-                self.stretch_size.width,
-                self.stretch_size.height,
-                0.0,
-                0.0,
-            ]);
+        let mut writer = frame_state.frame_gpu_data.f32.write_blocks(3 + self.brush_segments.len() * VECS_PER_SEGMENT);
 
-            // write_segment_gpu_blocks
-            for segment in &self.brush_segments {
-                // has to match VECS_PER_SEGMENT
-                request.write_segment(
-                    segment.local_rect,
-                    segment.extra_data,
-                );
-            }
+        // write_prim_gpu_blocks
+        writer.push(&ImageBrushPrimitiveData {
+            color: PremultipliedColorF::WHITE,
+            background_color: PremultipliedColorF::WHITE,
+            stretch_size: self.stretch_size,
+        });
+
+        // write_segment_gpu_blocks
+        for segment in &self.brush_segments {
+            segment.write_gpu_blocks(&mut writer);
         }
+        self.common.gpu_buffer_address = writer.finish();
 
         let task_size = self.task_size;
         let cache_key = RadialGradientCacheKey {
@@ -255,11 +263,10 @@ impl RadialGradientTemplate {
             }),
             false,
             RenderTaskParent::Surface,
-            frame_state.gpu_cache,
             &mut frame_state.frame_gpu_data.f32,
             frame_state.rg_builder,
             &mut frame_state.surface_builder,
-            &mut |rg_builder, gpu_buffer_builder, _| {
+            &mut |rg_builder, gpu_buffer_builder| {
                 let stops = GradientGpuBlockBuilder::build(
                     false,
                     gpu_buffer_builder,
@@ -327,7 +334,7 @@ impl InternablePrimitive for RadialGradient {
         PrimitiveInstanceKind::RadialGradient {
             data_handle,
             visible_tiles_range: GradientTileRange::empty(),
-            cached: true,
+            use_legacy_path: true,
         }
     }
 }
@@ -563,7 +570,7 @@ pub fn optimize_radial_gradient(
     tile_spacing.height += t + b;
 }
 
-pub fn radial_gradient_pattern(
+pub fn radial_gradient_pattern_with_table(
     center: DevicePoint,
     scale: DeviceVector2D,
     params: &RadialGradientParams,
@@ -599,6 +606,46 @@ pub fn radial_gradient_pattern(
         shader_input: PatternShaderInput(
             gradient_address.as_int(),
             stops_address.as_int(),
+        ),
+        texture_input: PatternTextureInput::default(),
+        base_color: ColorF::WHITE,
+        is_opaque,
+    }
+}
+
+pub fn radial_gradient_pattern(
+    center: DevicePoint,
+    scale: DeviceVector2D,
+    params: &RadialGradientParams,
+    extend_mode: ExtendMode,
+    stops: &[GradientStop],
+    _is_software: bool,
+    gpu_buffer_builder: &mut GpuBufferBuilder
+) -> Pattern {
+    let num_blocks = 2 + gpu_gradient_stops_blocks(stops.len());
+    let mut writer = gpu_buffer_builder.f32.write_blocks(num_blocks);
+    writer.push_one([
+        center.x,
+        center.y,
+        scale.x,
+        scale.y,
+    ]);
+    writer.push_one([
+        params.start_radius,
+        params.end_radius,
+        params.ratio_xy,
+        0.0,
+    ]);
+
+    let is_opaque = write_gpu_gradient_stops_tree(stops, GradientKind::Radial, extend_mode, &mut writer);
+
+    let gradient_address = writer.finish();
+
+    Pattern {
+        kind: PatternKind::Gradient,
+        shader_input: PatternShaderInput(
+            gradient_address.as_int(),
+            0,
         ),
         texture_input: PatternTextureInput::default(),
         base_color: ColorF::WHITE,

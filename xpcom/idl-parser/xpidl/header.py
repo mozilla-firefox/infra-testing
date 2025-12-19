@@ -195,7 +195,7 @@ def paramlistAsNative(m, empty="void", return_param=True):
         ):
             t = m.params[paramIter].type
             # Strings can't be optional, so this shouldn't happen, but let's make sure:
-            if t == "AString" or t == "ACString" or t == "AUTF8String":
+            if t in {"AString", "ACString", "AUTF8String"}:
                 break
             l[paramIter] += " = nullptr"
             paramIter -= 1
@@ -375,7 +375,7 @@ uuid_decoder = re.compile(
 iface_prolog = """ {
  public:
 
-  NS_DECLARE_STATIC_IID_ACCESSOR(%(defname)s_IID)
+  NS_INLINE_DECL_STATIC_IID(%(defname)s_IID)
 
 """
 
@@ -386,8 +386,7 @@ iface_scriptable = """\
 """
 
 iface_epilog = """};
-
-  NS_DEFINE_STATIC_IID_ACCESSOR(%(name)s, %(defname)s_IID)"""
+"""
 
 iface_decl = """
 
@@ -449,7 +448,7 @@ def infallibleDecl(member):
     realtype = member.realtype.nativeType("in")
     tmpl = builtin_infallible_tmpl
 
-    if member.realtype.kind != "builtin" and member.realtype.kind != "cenum":
+    if member.realtype.kind not in {"builtin", "cenum"}:
         assert realtype.endswith(" *"), "bad infallible type"
         tmpl = refcnt_infallible_tmpl
         realtype = realtype[:-2]  # strip trailing pointer

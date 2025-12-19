@@ -46,10 +46,13 @@ export class FormValidationParent extends JSWindowActorParent {
     this._obs = null;
   }
 
-  static hasOpenPopups() {
+  static hasOpenPopups(ownPanel = null) {
     for (let win of lazy.BrowserWindowTracker.orderedWindows) {
       let popups = win.document.querySelectorAll("panel,menupopup");
       for (let popup of popups) {
+        if (popup == ownPanel) {
+          continue; // Skip our own panel if provided.
+        }
         let { state } = popup;
         if (state == "open" || state == "showing") {
           return true;
@@ -78,7 +81,7 @@ export class FormValidationParent extends JSWindowActorParent {
 
   receiveMessage(aMessage) {
     switch (aMessage.name) {
-      case "FormValidation:ShowPopup":
+      case "FormValidation:ShowPopup": {
         let browser = this.browsingContext.top.embedderElement;
         let window = browser.ownerGlobal;
         let data = aMessage.data;
@@ -90,12 +93,17 @@ export class FormValidationParent extends JSWindowActorParent {
           return;
         }
 
-        if (FormValidationParent.hasOpenPopups()) {
+        // If any other popups are open, we don't show the form validation
+        // popup. We have to fall through for our own popup to make sure the
+        // popup is updated if we are asked to reshow it with a different
+        // message or for a different element.
+        if (FormValidationParent.hasOpenPopups(this._panel)) {
           return;
         }
 
         this._showPopup(browser, data);
         break;
+      }
       case "FormValidation:HidePopup":
         this._hidePopup();
         break;
@@ -131,7 +139,7 @@ export class FormValidationParent extends JSWindowActorParent {
     this._panel = null;
   }
 
-  /*
+  /**
    * Shows the form validation popup at a specified position or updates the
    * messaging and position if the popup is already displayed.
    *

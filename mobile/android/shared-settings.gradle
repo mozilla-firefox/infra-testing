@@ -2,7 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+
 import org.yaml.snakeyaml.Yaml
+
+import java.time.format.DateTimeFormatter
 
 buildscript {
     if (!gradle.root.hasProperty("mozconfig")){
@@ -41,48 +44,59 @@ class Config {
     public final String componentsVersion
     public final String componentsGroupId
     public final Integer jvmTargetCompatibility
-    public final Integer compileSdkVersion
+    public final Integer compileSdkMajorVersion
+    public final Integer compileSdkMinorVersion
     public final Integer minSdkVersion
     public final Integer targetSdkVersion
+    public final String ndkVersion
+
 
     Config(
             String componentsVersion,
             String componentsGroupId,
             Integer jvmTargetCompatibility,
-            Integer compileSdkVersion,
+            Integer compileSdkMajorVersion,
+            Integer compileSdkMinorVersion,
             Integer minSdkVersion,
-            Integer targetSdkVersion
+            Integer targetSdkVersion,
+            String ndkVersion
     ) {
         this.componentsVersion = componentsVersion
         this.componentsGroupId = componentsGroupId
         this.jvmTargetCompatibility = jvmTargetCompatibility
-        this.compileSdkVersion = compileSdkVersion
+        this.compileSdkMajorVersion = compileSdkMajorVersion
+        this.compileSdkMinorVersion = compileSdkMinorVersion
         this.minSdkVersion = minSdkVersion
         this.targetSdkVersion = targetSdkVersion
+        this.ndkVersion = ndkVersion
     }
 }
 
 def setupProject(name, path, description) {
     settings.include(":$name")
 
-    def projectPath = "/mobile/android/android-components/${path}"
-    if (rootDir.toString().endsWith("android-components") ||
-            rootDir.toString().endsWith("focus-android") ||
-            rootDir.toString().endsWith("fenix")
-    ) {
-        projectPath = "../android-components/${path}"
-    }
-
-    project(":$name").projectDir = new File(rootDir, projectPath)
+    project(":$name").projectDir = new File(gradle.mozconfig.topsrcdir, "mobile/android/android-components/${path}")
 
     // project(...) gives us a skeleton project that we can't set ext.* on
     gradle.beforeProject { project ->
         // However, the "afterProject" listener iterates over every project and gives us the actual project
         // So, once we filter for the project we care about, we can set whatever we want
-        if (project.name == name) {
+        if (project.path == ":$name") {
             project.ext.description = description
         }
     }
+}
+
+
+// Mimic Python: open(os.path.join(buildconfig.topobjdir, 'buildid.h')).readline().split()[2]
+def getBuildId() {
+    if (System.env.MOZ_BUILD_DATE) {
+        if (System.env.MOZ_BUILD_DATE.length() == 14) {
+            return System.env.MOZ_BUILD_DATE
+        }
+        logger.warn("Ignoring invalid MOZ_BUILD_DATE: ${System.env.MOZ_BUILD_DATE}")
+    }
+    return file("${gradle.mozconfig.topobjdir}/buildid.h").getText('utf-8').split()[2]
 }
 
 // Return a manifest version string that respects the Firefox version format,
@@ -95,22 +109,23 @@ def getManifestVersionString(componentsVersion) {
     String[] parts = componentsVersion.split("\\.").collect {
         part -> part.split("a|b")[0]
     };
-    // Note the single `H` to avoid leading zeros, which are not allowed.
-    String dateAndTime = new Date().format("YYYYMMdd.Hmmss");
+
+    // Per https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/version,
+    // each part can have up to 9 digits.  Note the single `H` when formatting the output avoid
+    // leading zeros, which are not allowed.
+    def buildDate = LocalDateTime.parse(getBuildId(), DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
+    def dateAndTime = buildDate.format(DateTimeFormatter.ofPattern("YYYYMMdd.Hmmss"));
 
     return "${parts[0]}.${parts[1]}.${dateAndTime}";
 }
 
-def buildConfigPath = '/mobile/android/android-components/.buildconfig.yml'
-if (rootDir.toString().endsWith("android-components") ||
-        rootDir.toString().endsWith("focus-android") ||
-        rootDir.toString().endsWith("fenix")
-) {
-    buildConfigPath = '../android-components/.buildconfig.yml'
-}
-
 def yaml = new Yaml()
-def buildconfig = yaml.load(new File(rootDir, buildConfigPath).newInputStream())
+def buildConfigFile = new File(gradle.mozconfig.topsrcdir, "mobile/android/android-components/.buildconfig.yml")
+def buildconfig = yaml.load(buildConfigFile.newInputStream())
+
+// Setup the parent ":components" project
+settings.include(":components")
+project(":components").projectDir = new File(gradle.mozconfig.topsrcdir, "mobile/android/android-components/components")
 
 buildconfig.projects.each { project ->
     // If we're building A-C, set up all projects, otherwise exclude samples e.g., if we're building Fenix or Focus.
@@ -121,20 +136,11 @@ buildconfig.projects.each { project ->
 }
 
 gradle.projectsLoaded { ->
-    def versionPath = './mobile/android/version.txt'
-    def configPath = './mobile/android/android-components/.config.yml'
+    def versionFile = new File(gradle.mozconfig.topsrcdir, "mobile/android/version.txt")
+    String version = versionFile.text.stripTrailing()
 
-    if (rootDir.toString().endsWith("android-components") ||
-        rootDir.toString().endsWith("focus-android") ||
-        rootDir.toString().endsWith("fenix")
-    ) {
-        versionPath = '../version.txt'
-        configPath = '../android-components/.config.yml'
-    }
-
-    def componentsVersion = gradle.rootProject.file(versionPath).text.stripTrailing()
-    def configData = yaml.load(gradle.rootProject.file(configPath).newInputStream())
-    String version = componentsVersion
+    def configDataFile = new File(gradle.mozconfig.topsrcdir, "mobile/android/android-components/.config.yml")
+    def configData = yaml.load(configDataFile.newInputStream())
 
     if (gradle.rootProject.hasProperty("nightlyVersion")) {
         version = gradle.rootProject.nightlyVersion
@@ -144,6 +150,8 @@ gradle.projectsLoaded { ->
     } else if (gradle.hasProperty("localProperties.branchBuild.android-components.version")) {
         version = gradle.getProperty("localProperties.branchBuild.android-components.version")
     }
+    // get the ndk version from the external build environment.
+    def ndkVersion = "${gradle.mozconfig.substs.ANDROID_NDK_MAJOR_VERSION}.${gradle.mozconfig.substs.ANDROID_NDK_MINOR_VERSION}"
 
     // Wait until root project is "loaded" before we set "config"
     // Note that since this is set on "rootProject.ext", it will be "in scope" during the evaluation of all projects'
@@ -152,9 +160,11 @@ gradle.projectsLoaded { ->
             version,
             configData.componentsGroupId,
             configData.jvmTargetCompatibility,
-            configData.compileSdkVersion,
+            configData.compileSdkMajorVersion,
+            configData.compileSdkMinorVersion,
             configData.minSdkVersion,
-            configData.targetSdkVersion
+            configData.targetSdkVersion,
+            ndkVersion
     )
 
     gradle.rootProject.ext.buildConfig = buildconfig
@@ -179,27 +189,23 @@ gradle.projectsLoaded { ->
     }
 
     // Initialize all project buildDirs to be in ${topobjdir} to follow
-    // conventions of mozilla-central build system. Android Components
-    // subproject continues to build in source tree to avoid breaking
-    // automation.
-    if (!rootDir.toString().endsWith("android-components")) {
-        gradle.rootProject.allprojects { project ->
-            def topSrcPath = file(gradle.mozconfig.topsrcdir).toPath()
-            def topObjPath = file(gradle.mozconfig.topobjdir).toPath()
+    // conventions of mozilla-central build system.
+    gradle.rootProject.allprojects { project ->
+        def topSrcPath = file(gradle.mozconfig.topsrcdir).toPath()
+        def topObjPath = file(gradle.mozconfig.topobjdir).toPath()
 
-            def sourcePath = project.getBuildFile().toPath().getParent()
-            def relativePath = topSrcPath.relativize(sourcePath)
+        def sourcePath = project.getBuildFile().toPath().getParent()
+        def relativePath = topSrcPath.relativize(sourcePath)
 
-            if (relativePath.startsWith("..")) {
-                // The project doesn't appear to be in topsrcdir so leave the
-                // buildDir alone.
-            } else {
-                // Transplant the project path into "${topobjdir}/gradle/build".
-                // This is consistent with existing gradle / taskcluster
-                // configurations but less consistent with the result of the
-                // non-gradle build system.
-                buildDir = topObjPath.resolve("gradle/build").resolve(relativePath)
-            }
+        if (relativePath.startsWith("..")) {
+            // The project doesn't appear to be in topsrcdir so leave the
+            // buildDir alone.
+        } else {
+            // Transplant the project path into "${topobjdir}/gradle/build".
+            // This is consistent with existing gradle / taskcluster
+            // configurations but less consistent with the result of the
+            // non-gradle build system.
+            project.layout.buildDirectory.set(topObjPath.resolve("gradle/build").resolve(relativePath).toFile())
         }
     }
 }

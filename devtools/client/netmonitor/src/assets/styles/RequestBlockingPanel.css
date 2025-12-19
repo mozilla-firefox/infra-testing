@@ -37,7 +37,7 @@
 }
 
 .request-blocking-editable-label {
-  cursor: text
+  cursor: text;
 }
 
 /* The "Enable Blocking Requests" bar */
@@ -113,10 +113,6 @@
   background-color: transparent;
 }
 
-.request-blocking-remove-button::-moz-focus-inner {
-  border: none;
-}
-
 .request-blocking-list li:hover .request-blocking-remove-button {
   opacity: 1;
 }
@@ -180,5 +176,5 @@
 }
 
 .request-blocking-notice-element::before {
-  content:"• ";
+  content: "• ";
 }

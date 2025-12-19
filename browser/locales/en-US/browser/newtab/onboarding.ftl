@@ -440,11 +440,17 @@ onboarding-checklist-sign-up = Sign up or sign in to your account
 
 tab-groups-onboarding-feature-callout-title = Try tab groups for less clutter, more focus
 tab-groups-onboarding-feature-callout-subtitle = Get organized by dragging one tab on top of another to create your first group.
-tab-groups-onboarding-create-group-title-2 = Find your tab groups here anytime.
+
+# The text "list all tabs" refers to the string tabs-toolbar-list-all-tabs
+tab-groups-onboarding-create-group-title-3 = Find your tab groups in the List All Tabs menu anytime.
 tab-groups-onboarding-create-group-no-alltabs-button-title = Find your groups by searching for them in the address bar.
-tab-groups-onboarding-saved-groups-title-2 = When you close a tab group, you can reopen it here anytime.
+
+# The text "list all tabs" refers to the string tabs-toolbar-list-all-tabs
+tab-groups-onboarding-saved-groups-title-3 = When you close a tab group, reopen it from the List All Tabs menu anytime.
 tab-groups-onboarding-saved-groups-no-alltabs-button-title-2 = Find your closed groups by searching for them in the address bar.
-tab-groups-onboarding-session-restore-title = Reopen your tab groups here anytime.
+
+# The text "list all tabs" refers to the string tabs-toolbar-list-all-tabs
+tab-groups-onboarding-session-restore-title-2 = Reopen your tab groups from the List All Tabs menu anytime.
 tab-groups-onboarding-dismiss = OK
 
 ## Multi Profiles feature onboarding messages
@@ -469,3 +475,101 @@ dismiss-button-label = Dismiss
 sync-to-mobile-button-label = Sync to mobile
 desktop-to-mobile-qr-code-alt =
   .aria-label = QR code to download { -brand-product-name } for mobile
+
+## Fx Backup onboarding: Create Backup spotlight
+
+create-backup-screen-1-title = Upgrading to Windows 11?
+    Let’s back up your { -brand-product-name } data.
+create-backup-screen-1-subtitle = Automatically protect your passwords, bookmarks, and more in 1–2 minutes.
+create-backup-screen-1-flair = Recommended
+create-backup-learn-more-link = <a data-l10n-name="learn-more-label">Learn more</a>
+create-backup-screen-1-sync-label = Sync with { -brand-product-name }
+create-backup-screen-1-sync-body = Backs up all signed in devices
+create-backup-screen-1-backup-label = Back up to PC
+create-backup-screen-1-backup-body = Saves to your device or OneDrive
+create-backup-select-tile-button-label = Select
+create-backup-back-button-label = Back
+create-backup-show-fewer =
+  .label = Show fewer like this
+create-backup-screen-2-title = Choose { -brand-product-name } data to back up
+create-backup-screen-2-subtitle = Only takes a minute. Your data is backed up once a day.
+# Label for the "Easy setup" backup option
+create-backup-screen-2-easy-label = Easy setup
+# Preceded by a green check mark indicating that these are included in "Easy setup" backup
+create-backup-screen-2-easy-list-1 = Bookmarks, history, settings, and more
+# Preceded by a red X indicating that these are not included in the "Easy setup" backup
+create-backup-screen-2-easy-list-2 = Doesn’t include passwords and payments
+# Preceded by a red X indicating that "Easy setup" backups are not encrypted
+create-backup-screen-2-easy-list-3 = Not encrypted
+# Label for the "All data" backup option
+create-backup-screen-2-all-label = All data
+# Preceded by a green check mark indicating that these are included in the "All data" backup
+create-backup-screen-2-all-list-2 = Includes passwords and payments
+# Preceded by a green check mark and shield indicating "All data" backups are encrypted
+create-backup-screen-2-all-list-3 = Encrypted with a password
+
+# Title for a screen asking users to choose a file location
+create-backup-screen-3-location = Where do you want your backup saved?
+# Title for a screen asking users to create a password that will encrypt the backup
+create-backup-screen-3-title = Create a backup file password
+create-backup-screen-3-subtitle = Required to encrypt your data. Store it in a place you’ll remember.
+
+# These strings appear in the embedded backup component.
+
+fx-backup-opt-in-header = Choose file location
+fx-backup-opt-in-filepath-label = Pick a place you plan to transfer to a new device, like OneDrive.
+fx-backup-opt-in-create-password-label = Enter password
+fx-backup-opt-in-confirm-btn-label = Continue
+fx-backup-opt-in-cancel-btn-label = Back
+
+## Fx Backup confirmation screen strings
+
+fx-backup-confirmation-screen-title = Your backup is scheduled
+fx-backup-confirmation-screen-close-button = Close
+
+## These strings appear as a confirmation of which items will or won't be included as part of the selected backup method.
+
+fx-backup-confirmation-screen-all-data-item-text-1 = All browsing data included
+fx-backup-confirmation-screen-all-data-item-text-2 = Saved to your device
+fx-backup-confirmation-screen-all-data-item-text-3 = Encrypted and password protected
+
+fx-backup-confirmation-screen-easy-setup-item-text-1 = Bookmarks, history, settings, and other data included
+fx-backup-confirmation-screen-easy-setup-item-text-2 = Saved to your device
+fx-backup-confirmation-screen-easy-setup-item-text-3 = Passwords and payments not included
+fx-backup-confirmation-screen-easy-setup-item-subtext-3 = Go to <a data-l10n-name="settings">Settings</a> to include sensitive data.
+
+fx-backup-confirmation-screen-item-subtext-1 = Your backup will start in a few minutes and will run once a day. You can check progress in <a data-l10n-name="settings">Settings</a>.
+fx-backup-confirmation-screen-item-subtext-2 = { -brand-short-name } will look for your backup if you need to reinstall.
+
+## Restore from Backup Flow about:welcome screens
+
+restore-from-backup-secondary-top-button = Restore from Backup
+restore-from-backup-title = Let’s get { -brand-short-name } back how you like it
+restore-from-backup-subtitle = Recover all your bookmarks, history, and other data to get back to browsing.
+restore-from-backup-secondary-button = Don’t restore
+
+## Restored from Backup spotlight
+
+restored-from-backup-success-title = We’re back! Your { -brand-short-name } data has been restored.
+restored-from-backup-success-with-checklist-subtitle = Want to keep your favorite privacy-focused browser one click away?
+restored-from-backup-success-no-checklist-subtitle = You can turn backup on for this device in <a data-l10n-name="settings">Settings</a>.
+restored-from-backup-success-with-checklist-primary-button = Save and continue
+restored-from-backup-success-with-checklist-secondary-button = Skip this step
+restored-from-backup-success-no-checklist-primary-button = Continue
+restored-from-backup-error-title = Hmm, there was a problem with your backup file.
+restored-from-backup-error-subtitle = If you have another { -brand-short-name } backup file, try restoring from that one. <a data-l10n-name="restore-problems">Still having problems?</a>
+restored-from-backup-error-primary-button = Close
+
+## Onboarding Personalization Screen
+## A screen shown to users during the onboarding process that asks them two qualifying questions about their use of the browser
+
+onboarding-personalization-title = Customize your { -brand-short-name } experience
+onboarding-personalization-subtitle = Answer a few questions and we’ll recommend features and extensions to enhance your use of { -brand-short-name }.
+onboarding-personalization-use-case-title = What will you use { -brand-short-name } for?
+onboarding-personalization-use-case-personal-option = Personal
+onboarding-personalization-use-case-school-option = School
+onboarding-personalization-use-case-work-option = Work
+onboarding-personalization-motivation-title = Which features of { -brand-short-name } are the most important to you?
+onboarding-personalization-motivation-privacy-option = Privacy and Security
+onboarding-personalization-motivation-productivity-option = Productivity
+onboarding-personalization-motivation-other-option = Other

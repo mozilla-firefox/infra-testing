@@ -62,6 +62,7 @@ ChromeUtils.importESModule("resource://services-sync/telemetry.sys.mjs");
 import { Svc, Utils } from "resource://services-sync/util.sys.mjs";
 
 import { getFxAccountsSingleton } from "resource://gre/modules/FxAccounts.sys.mjs";
+import { SCOPE_APP_SYNC } from "resource://gre/modules/FxAccountsCommon.sys.mjs";
 
 const fxAccounts = getFxAccountsSingleton();
 
@@ -116,6 +117,9 @@ Sync11Service.prototype = {
   _lock: Utils.lock,
   _locked: false,
   _loggedIn: false,
+  // There are some scenarios where we want to kick off another sync immediately
+  // after the current sync
+  _queuedSyncReason: null,
 
   infoURL: null,
   storageURL: null,
@@ -375,6 +379,7 @@ Sync11Service.prototype = {
     }
 
     Svc.Obs.add("weave:service:setup-complete", this);
+    Svc.Obs.add("weave:service:sync:finish", this);
     Svc.Obs.add("sync:collection_changed", this); // Pulled from FxAccountsCommon
     Svc.Obs.add("fxaccounts:device_disconnected", this);
     Services.prefs.addObserver(PREFS_BRANCH + "engine.", this);
@@ -573,13 +578,14 @@ Sync11Service.prototype = {
           });
         }
         break;
-      case "weave:service:setup-complete":
+      case "weave:service:setup-complete": {
         let status = this._checkSetup();
         if (status != STATUS_DISABLED && status != CLIENT_NOT_CONFIGURED) {
           this._startTracking();
         }
         break;
-      case "nsPref:changed":
+      }
+      case "nsPref:changed": {
         if (this._ignorePrefObserver) {
           return;
         }
@@ -590,6 +596,13 @@ Sync11Service.prototype = {
           return;
         }
         this._handleEngineStatusChanged(engine);
+        break;
+      }
+      case "weave:service:sync:finish":
+        if (this._queuedSyncReason) {
+          this.sync({ why: this._queuedSyncReason });
+          this._queuedSyncReason = null;
+        }
         break;
     }
   },
@@ -784,7 +797,8 @@ Sync11Service.prototype = {
         "No config or incomplete config in getMaxRecordPayloadSize." +
           " Are we running tests?"
       );
-      return 256 * 1024;
+      // should stay in sync with MAX_PAYLOAD_SIZE in the Rust tabs engine.
+      return 2 * 1024 * 1024;
     }
     let payloadMax = config.max_record_payload_bytes;
     if (config.max_post_bytes && payloadMax <= config.max_post_bytes) {
@@ -963,6 +977,12 @@ Sync11Service.prototype = {
     let user = await fxAccounts.getSignedInUser();
     if (!user) {
       throw new Error("No FxA user is signed in");
+    }
+    // Check if the user has sync keys. With OAuth-based authentication,
+    // keys cannot be fetched on demand - they must exist locally.
+    let hasKeys = await fxAccounts.keys.hasKeysForScope(SCOPE_APP_SYNC);
+    if (!hasKeys) {
+      throw new Error("User does not have sync keys");
     }
     this._log.info("Configuring sync with current FxA user");
     Svc.PrefBranch.setStringPref("username", user.email);
@@ -1316,6 +1336,15 @@ Sync11Service.prototype = {
     return reason;
   },
 
+  /**
+   * Perform a full sync (or of the given engines). While a sync is in progress,
+   * this call is ignored; to guarantee a follow-up you must call queueSync().
+   *
+   * @param {object} options
+   * @param {Array<string>} [options.engines] — names of engines to sync
+   * @param {string} [options.why] — reason for the sync
+   * @returns {Promise<void>}
+   */
   async sync({ engines, why } = {}) {
     let dateStr = Utils.formatTimestamp(new Date());
     this._log.debug("User-Agent: " + Utils.userAgent);
@@ -1364,6 +1393,21 @@ Sync11Service.prototype = {
   },
 
   /**
+   * Kick off a sync after the current one finishes, or immediately if idle.
+   *
+   * @param {string} why — reason for calling the sync
+   */
+  queueSync(why) {
+    if (this._locked) {
+      // A sync is already in flight; queue a follow-up.
+      this._queuedSyncReason = why;
+    } else {
+      // No sync right now, go ahead immediately.
+      this.sync({ why });
+    }
+  },
+
+  /**
    * Update the "declined" information in meta/global if necessary.
    */
   async _maybeUpdateDeclined() {
@@ -1392,6 +1436,7 @@ Sync11Service.prototype = {
 
   /**
    * Upload a fresh meta/global record
+   *
    * @throws the response object if the upload request was not a success
    */
   async _uploadNewMetaGlobal() {
@@ -1407,6 +1452,7 @@ Sync11Service.prototype = {
 
   /**
    * Upload meta/global, throwing the response on failure
+   *
    * @param {WBORecord} meta meta/global record
    * @throws the response object if the request was not a success
    */
@@ -1426,8 +1472,9 @@ Sync11Service.prototype = {
 
   /**
    * Upload crypto/keys
+   *
    * @param {WBORecord} cryptoKeys crypto/keys record
-   * @param {Number} lastModified known last modified timestamp (in decimal seconds),
+   * @param {number} lastModified known last modified timestamp (in decimal seconds),
    *                 will be used to set the X-If-Unmodified-Since header
    */
   async _uploadCryptoKeys(cryptoKeys, lastModified) {

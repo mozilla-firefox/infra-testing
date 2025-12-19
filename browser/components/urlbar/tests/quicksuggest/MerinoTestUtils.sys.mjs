@@ -4,11 +4,15 @@
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  MerinoClient: "resource:///modules/MerinoClient.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
+  MerinoClient: "moz-src:///browser/components/urlbar/MerinoClient.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
 });
 
 import { HttpServer } from "resource://testing-common/httpd.sys.mjs";
+
+/**
+ * @import {Assert} from "resource://testing-common/Assert.sys.mjs"
+ */
 
 // The following properties and methods are copied from the test scope to the
 // test utils object so they can be easily accessed. Be careful about assuming a
@@ -63,10 +67,24 @@ const WEATHER_SUGGESTION = {
   },
 };
 
+/** @typedef {() => Promise<void>} cleanupFunctionType */
+
 /**
  * Test utils for Merino.
  */
 class _MerinoTestUtils {
+  /** @type {Assert} */
+  Assert = undefined;
+
+  /** @type {object} */
+  EventUtils = undefined;
+
+  /** @type {(message:string) => void} */
+  info = undefined;
+
+  /** @type {(cleanupFn: cleanupFunctionType) => void} */
+  registerCleanupFunction = undefined;
+
   /**
    * Initializes the utils. Also disables caching in `MerinoClient` since
    * caching typically makes it harder to write tests.
@@ -235,6 +253,18 @@ class _MerinoTestUtils {
  * A mock Merino server with useful helper methods.
  */
 class MockMerinoServer {
+  /** @type {Assert} */
+  Assert = undefined;
+
+  /** @type {object} */
+  EventUtils = undefined;
+
+  /** @type {(message:string) => void} */
+  info = undefined;
+
+  /** @type {(cleanupFn: cleanupFunctionType) => void} */
+  registerCleanupFunction = undefined;
+
   /**
    * Until `start()` is called the server isn't started and `this.url` is null.
    *
@@ -365,7 +395,8 @@ class MockMerinoServer {
     let suggestion;
     while (!suggestion) {
       let response = await fetch(this.#url);
-      let body = await response?.json();
+      /** @type {{suggestions: string[]}} */
+      let body = /** @type {any} */ (await response?.json());
       suggestion = body?.suggestions?.[0];
     }
     this.reset();
@@ -564,10 +595,6 @@ class MockMerinoServer {
       "MockMerinoServer received request with query string: " +
         JSON.stringify(httpRequest.queryString)
     );
-    this.info(
-      "MockMerinoServer replying with response: " +
-        JSON.stringify(this.response)
-    );
 
     // Add the request to the list of received requests.
     this.#requests.push(httpRequest);
@@ -580,6 +607,10 @@ class MockMerinoServer {
     httpResponse.processAsync();
 
     let response = this.#requestHandler?.(httpRequest) || this.response;
+
+    this.info(
+      "MockMerinoServer replying with response: " + JSON.stringify(response)
+    );
 
     let finishResponse = () => {
       let status = response.status || 200;

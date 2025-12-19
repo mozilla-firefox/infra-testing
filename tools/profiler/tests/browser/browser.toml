@@ -3,10 +3,22 @@ support-files = [
   "../shared-head.js",
   "head.js",
 ]
-skip-if = ["tsan"] # Bug 1804081 - TSan times out on pretty much all of these tests
+skip-if = [
+  "tsan", # Bug 1804081 - TSan times out on pretty much all of these tests
+]
 
 ["browser_test_feature_ipcmessages.js"]
 support-files = ["simple.html"]
+
+["browser_test_feature_js_sourceindex.js"]
+support-files = ["simple.html", "tracing.html"]
+
+["browser_test_feature_js_sources_retrieval.js"]
+support-files = [
+  "simple.html",
+  "page_with_external_js.html",
+  "external_script.js"
+]
 
 ["browser_test_feature_jsallocations.js"]
 support-files = ["do_work_500ms.html"]
@@ -14,20 +26,29 @@ support-files = ["do_work_500ms.html"]
 ["browser_test_feature_jstracing.js"]
 support-files = ["tracing.html"]
 skip-if = [
-  # This features is only enabled on nightly via MOZ_EXECUTION_TRACING build flag
-  "!nightly_build"
+  "!nightly_build", # This features is only enabled on nightly via MOZ_EXECUTION_TRACING build flag
+]
+
+["browser_test_feature_jstracing_objtestutils.js"]
+support-files = [
+  "browser_test_feature_jstracing_objtestutils.snapshot.mjs",
+]
+skip-if = [
+  "!nightly_build", # This features is only enabled on nightly via MOZ_EXECUTION_TRACING build flag
+]
+
+["browser_test_feature_jstracing_values.js"]
+support-files = ["tracing_values.html"]
+skip-if = [
+  "!nightly_build", # This features is only enabled on nightly via MOZ_EXECUTION_TRACING build flag
 ]
 
 ["browser_test_feature_multiprocess_capture_with_signal.js"]
 support-files = ["do_work_500ms.html"]
 skip-if = [
-  # Enabling the JS feature leaks an 8-byte object. This causes failures when
-  # the leak checker is enabled, and run with test-verify (i.e. with both
-  # "debug" and "verify"). Having JS support for this feature is more important
-  # than these tests, so we're disabling them for now. See Bug 1904897.
+  "ccov", #            The signals for the profiler conflict with the ccov signals
+  "os == 'win'", # than these tests, so we're disabling them for now. See Bug 1904897.
   "verify && debug",
-  "ccov",            # The signals for the profiler conflict with the ccov signals
-  "os == 'win'",     # Not yet supported on windows - Bug 1867328
 ]
 
 ["browser_test_feature_nostacksampling.js"]
@@ -113,4 +134,6 @@ support-files = ["single_frame.html"]
 
 ["browser_test_profile_slow_capture.js"]
 support-files = ["single_frame.html"]
-run-if = ["debug"]
+run-if = [
+  "debug",
+]

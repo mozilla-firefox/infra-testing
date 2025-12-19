@@ -99,7 +99,6 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/EndianUtils.h"
-#include "mozilla/Likely.h"
 #include "mozilla/UniquePtrExtensions.h"
 
 #include "RasterImage.h"
@@ -852,6 +851,7 @@ LexerTransition<nsBMPDecoder::State> nsBMPDecoder::SeekColorProfile(
 
   // We need to skip ahead to search for the embedded color profile. We want
   // to return to this point once we read it.
+  MOZ_ASSERT(!mReturnIterator.isSome());
   mReturnIterator = mLexer.Clone(*mIterator, SIZE_MAX);
   if (!mReturnIterator) {
     return Transition::TerminateFailure();
@@ -870,6 +870,7 @@ LexerTransition<nsBMPDecoder::State> nsBMPDecoder::ReadColorProfile(
   }
 
   // Jump back to where we left off.
+  MOZ_ASSERT(mReturnIterator.isSome());
   mIterator = std::move(mReturnIterator);
   return Transition::To(State::ALLOCATE_SURFACE, 0);
 }
@@ -910,6 +911,15 @@ LexerTransition<nsBMPDecoder::State> nsBMPDecoder::AllocateSurface() {
 
   mPipe = std::move(*pipe);
   ClearRowBufferRemainder();
+
+  // We might want to back track to here if we have a corrupt bmp that points
+  // into the color table for image data, so save an iterator at this point.
+  MOZ_ASSERT(!mReturnIterator.isSome());
+  mReturnIterator = mLexer.Clone(*mIterator, SIZE_MAX);
+  if (!mReturnIterator) {
+    return Transition::TerminateFailure();
+  }
+
   return Transition::To(State::COLOR_TABLE, mNumColors * mBytesPerColor);
 }
 
@@ -946,14 +956,23 @@ LexerTransition<nsBMPDecoder::State> nsBMPDecoder::ReadColorTable(
   // of the gap (possibly zero) between the color table and the pixel data.
   //
   // If the gap is negative the file must be malformed (e.g. mH.mDataOffset
-  // points into the middle of the color palette instead of past the end) and
-  // we give up.
+  // points into the middle of the color palette instead of past the end).
   if (mPreGapLength > mH.mDataOffset) {
-    return Transition::TerminateFailure();
+    // Allow corrupt bmp that say the image data starts in the color table, but
+    // if the image data offset is even before the color tables thats too far
+    // back and give up.
+    if (mPreGapLength - aLength > mH.mDataOffset) {
+      return Transition::TerminateFailure();
+    }
+    MOZ_ASSERT(mReturnIterator.isSome());
+    mIterator = std::move(mReturnIterator);
+    uint32_t gapLength = mH.mDataOffset - (mPreGapLength - aLength);
+    return Transition::ToUnbuffered(State::AFTER_GAP, State::GAP, gapLength);
   }
 
-  uint32_t gapLength = mH.mDataOffset - mPreGapLength;
+  mReturnIterator.reset();
 
+  uint32_t gapLength = mH.mDataOffset - mPreGapLength;
   return Transition::ToUnbuffered(State::AFTER_GAP, State::GAP, gapLength);
 }
 

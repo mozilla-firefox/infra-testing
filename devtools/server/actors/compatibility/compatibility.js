@@ -57,15 +57,15 @@ class CompatibilityActor extends Actor {
   /**
    * Responsible for computing the compatibility issues for a list of CSS declaration blocks
    *
-   * @param {Array<Array<Object>>} domRulesDeclarations: An array of arrays of CSS declaration object
+   * @param {Array<Array<object>>} domRulesDeclarations: An array of arrays of CSS declaration object
    * @param {string} domRulesDeclarations[][].name: Declaration name
    * @param {string} domRulesDeclarations[][].value: Declaration value
-   * @param {Array<Object>} targetBrowsers: Array of target browsers () to be used to check CSS compatibility against
+   * @param {Array<object>} targetBrowsers: Array of target browsers () to be used to check CSS compatibility against
    * @param {string} targetBrowsers[].id: Browser id as specified in `devtools/shared/compatibility/datasets/browser.json`
    * @param {string} targetBrowsers[].name
    * @param {string} targetBrowsers[].version
    * @param {string} targetBrowsers[].status: Browser status - esr, current, beta, nightly
-   * @returns {Array<Array<Object>>} An Array of arrays of JSON objects with compatibility
+   * @returns {Array<Array<object>>} An Array of arrays of JSON objects with compatibility
    *                                 information in following form:
    *    {
    *      // Type of compatibility issue
@@ -94,6 +94,7 @@ class CompatibilityActor extends Actor {
   /**
    * Responsible for computing the compatibility issues in the
    * CSS declaration of the given node.
+   *
    * @param NodeActor node
    * @param targetBrowsers Array
    *   An Array of JSON object of target browser to check compatibility against in following form:
@@ -127,35 +128,28 @@ class CompatibilityActor extends Actor {
       skipPseudo: false,
     });
 
-    const declarationBlocks = styles.entries
-      .map(({ rule }) => {
-        // Replace form() with a function to get minimal subset
-        // of declarations from StyleRuleActor when such a
-        // function lands in the StyleRuleActor
-        const declarations = rule.form().declarations;
-        if (!declarations) {
-          return null;
-        }
-        return declarations.filter(d => !d.commentOffsets);
-      })
-      .filter(declarations => declarations && declarations.length);
+    const declarations = [];
+    const propertyNames = new Set();
 
-    return declarationBlocks
-      .map(declarationBlock =>
-        mdnCompatibility.getCSSDeclarationBlockIssues(
-          declarationBlock,
-          targetBrowsers
-        )
-      )
-      .flat()
-      .reduce((issues, issue) => {
-        // Get rid of duplicate issue
-        return issues.find(
-          i => i.type === issue.type && i.property === issue.property
-        )
-          ? issues
-          : [...issues, issue];
-      }, []);
+    for (const { rule } of styles.entries) {
+      for (const declaration of rule.parseRuleDeclarations({
+        parseComments: false,
+      })) {
+        // For now (see Bug 1636301), we only check compat issues based on the declaration
+        // name, so we can only pass a single declaration for a given property and save
+        // some time in getCSSDeclarationBlockIssues.
+        if (propertyNames.has(declaration.name)) {
+          continue;
+        }
+        propertyNames.add(declaration.name);
+        declarations.push(declaration);
+      }
+    }
+
+    return mdnCompatibility.getCSSDeclarationBlockIssues(
+      declarations,
+      targetBrowsers
+    );
   }
 }
 

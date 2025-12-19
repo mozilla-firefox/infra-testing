@@ -51,7 +51,7 @@ registerCleanupFunction(async function () {
   });
 });
 
-pushPref("devtools.webconsole.groupWarningMessages", false);
+pushPref("devtools.webconsole.groupSimilarMessages", false);
 
 add_task(async function testEnhancedTrackingProtectionMessage() {
   await UrlClassifierTestUtils.addTestTrackers();
@@ -70,7 +70,7 @@ add_task(async function testEnhancedTrackingProtectionMessage() {
 
   await testLearnMoreClickOpenNewTab(
     message,
-    "https://developer.mozilla.org/Firefox/Privacy/Guides/Tracking_Protection" +
+    "https://developer.mozilla.org/Web/Privacy/Guides/Firefox_tracking_protection" +
       DOCS_GA_PARAMS
   );
 });
@@ -95,7 +95,7 @@ add_task(async function testForeignCookieBlockedMessage() {
     message,
     getStorageErrorUrl("CookieBlockedForeign")
   );
-  // We explicitely destroy the toolbox in order to ensure waiting for its full destruction
+  // We explicitly destroy the toolbox in order to ensure waiting for its full destruction
   // and avoid leak / pending requests
   await hud.toolbox.destroy();
   win.close();
@@ -267,11 +267,6 @@ add_task(async function testCookieBlockedForUserContentResourceMessage() {
             const script = document.createElement("script");
             script.src = "https://example.com/${TEST_PATH}empty-with-cookie.js";
             document.body.appendChild(script);
-
-            // An iframe
-            const iframe = document.createElement("iframe");
-            iframe.src = "https://example.com/${TEST_PATH}test-blank-with-cookie.html";
-            document.body.appendChild(iframe);
           `,
     },
   });
@@ -295,17 +290,11 @@ add_task(async function testCookieBlockedForUserContentResourceMessage() {
         "Request to access cookie or storage on “https://example.com/" +
           `${TEST_PATH}empty-with-cookie.js” was blocked because we are ` +
           "blocking all storage access requests."
-      ) &&
-      findWarningMessage(
-        hud,
-        "Request to access cookie or storage on “https://example.com/" +
-          `${TEST_PATH}test-blank-with-cookie.html” was blocked because ` +
-          "we are blocking all storage access requests."
       )
   );
   ok(true, "Third-party storage access blocked message was displayed");
 
-  // We explicitely destroy the toolbox in order to ensure waiting for its full destruction
+  // We explicitly destroy the toolbox in order to ensure waiting for its full destruction
   // and avoid leak / pending requests
   await hud.toolbox.destroy();
   win.close();

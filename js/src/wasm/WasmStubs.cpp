@@ -19,17 +19,18 @@
 #include "wasm/WasmStubs.h"
 
 #include <algorithm>
-#include <iterator>
 #include <type_traits>
 
 #include "jit/ABIArgGenerator.h"
 #include "jit/JitFrames.h"
+#include "jit/JitRuntime.h"
 #include "jit/RegisterAllocator.h"
 #include "js/Printf.h"
 #include "util/Memory.h"
 #include "wasm/WasmCode.h"
 #include "wasm/WasmGenerator.h"
 #include "wasm/WasmInstance.h"
+#include "wasm/WasmPI.h"
 
 #include "jit/MacroAssembler-inl.h"
 #include "wasm/WasmInstance-inl.h"
@@ -167,7 +168,8 @@ void ABIResultIter::settlePrev() {
 #ifdef WASM_CODEGEN_DEBUG
 template <class Closure>
 static void GenPrint(DebugChannel channel, MacroAssembler& masm,
-                     const Maybe<Register>& taken, Closure passArgAndCall) {
+                     const Maybe<Register>& taken, SymbolicAddress builtin,
+                     Closure passArgAndCall) {
   if (!IsCodegenDebugEnabled(channel)) {
     return;
   }
@@ -186,7 +188,7 @@ static void GenPrint(DebugChannel channel, MacroAssembler& masm,
                "codegen debug checks require a jit context");
 #  ifdef JS_CODEGEN_ARM64
     if (IsCompilingWasm()) {
-      masm.setupWasmABICall();
+      masm.setupWasmABICall(builtin);
     } else {
       // JS ARM64 has an extra stack pointer which is not managed in WASM.
       masm.setupUnalignedABICall(temp);
@@ -207,52 +209,55 @@ static void GenPrintf(DebugChannel channel, MacroAssembler& masm,
   UniqueChars str = JS_vsmprintf(fmt, ap);
   va_end(ap);
 
-  GenPrint(channel, masm, Nothing(), [&](bool inWasm, Register temp) {
-    // If we've gone this far, it means we're actually using the debugging
-    // strings. In this case, we leak them! This is only for debugging, and
-    // doing the right thing is cumbersome (in Ion, it'd mean add a vec of
-    // strings to the IonScript; in wasm, it'd mean add it to the current
-    // Module and serialize it properly).
-    const char* text = str.release();
+  GenPrint(channel, masm, Nothing(), SymbolicAddress::PrintText,
+           [&](bool inWasm, Register temp) {
+             // If we've gone this far, it means we're actually using the
+             // debugging strings. In this case, we leak them! This is only for
+             // debugging, and doing the right thing is cumbersome (in Ion, it'd
+             // mean add a vec of strings to the IonScript; in wasm, it'd mean
+             // add it to the current Module and serialize it properly).
+             const char* text = str.release();
 
-    masm.movePtr(ImmPtr((void*)text, ImmPtr::NoCheckToken()), temp);
-    masm.passABIArg(temp);
-    if (inWasm) {
-      masm.callDebugWithABI(SymbolicAddress::PrintText);
-    } else {
-      using Fn = void (*)(const char* output);
-      masm.callWithABI<Fn, PrintText>(ABIType::General,
-                                      CheckUnsafeCallWithABI::DontCheckOther);
-    }
-  });
+             masm.movePtr(ImmPtr((void*)text, ImmPtr::NoCheckToken()), temp);
+             masm.passABIArg(temp);
+             if (inWasm) {
+               masm.callDebugWithABI(SymbolicAddress::PrintText);
+             } else {
+               using Fn = void (*)(const char* output);
+               masm.callWithABI<Fn, PrintText>(
+                   ABIType::General, CheckUnsafeCallWithABI::DontCheckOther);
+             }
+           });
 }
 
 static void GenPrintIsize(DebugChannel channel, MacroAssembler& masm,
                           const Register& src) {
-  GenPrint(channel, masm, Some(src), [&](bool inWasm, Register _temp) {
-    masm.passABIArg(src);
-    if (inWasm) {
-      masm.callDebugWithABI(SymbolicAddress::PrintI32);
-    } else {
-      using Fn = void (*)(int32_t val);
-      masm.callWithABI<Fn, PrintI32>(ABIType::General,
-                                     CheckUnsafeCallWithABI::DontCheckOther);
-    }
-  });
+  GenPrint(channel, masm, Some(src), SymbolicAddress::PrintI32,
+           [&](bool inWasm, Register _temp) {
+             masm.passABIArg(src);
+             if (inWasm) {
+               masm.callDebugWithABI(SymbolicAddress::PrintI32);
+             } else {
+               using Fn = void (*)(int32_t val);
+               masm.callWithABI<Fn, PrintI32>(
+                   ABIType::General, CheckUnsafeCallWithABI::DontCheckOther);
+             }
+           });
 }
 
 static void GenPrintPtr(DebugChannel channel, MacroAssembler& masm,
                         const Register& src) {
-  GenPrint(channel, masm, Some(src), [&](bool inWasm, Register _temp) {
-    masm.passABIArg(src);
-    if (inWasm) {
-      masm.callDebugWithABI(SymbolicAddress::PrintPtr);
-    } else {
-      using Fn = void (*)(uint8_t* val);
-      masm.callWithABI<Fn, PrintPtr>(ABIType::General,
-                                     CheckUnsafeCallWithABI::DontCheckOther);
-    }
-  });
+  GenPrint(channel, masm, Some(src), SymbolicAddress::PrintPtr,
+           [&](bool inWasm, Register _temp) {
+             masm.passABIArg(src);
+             if (inWasm) {
+               masm.callDebugWithABI(SymbolicAddress::PrintPtr);
+             } else {
+               using Fn = void (*)(uint8_t* val);
+               masm.callWithABI<Fn, PrintPtr>(
+                   ABIType::General, CheckUnsafeCallWithABI::DontCheckOther);
+             }
+           });
 }
 
 static void GenPrintI64(DebugChannel channel, MacroAssembler& masm,
@@ -270,30 +275,32 @@ static void GenPrintI64(DebugChannel channel, MacroAssembler& masm,
 
 static void GenPrintF32(DebugChannel channel, MacroAssembler& masm,
                         const FloatRegister& src) {
-  GenPrint(channel, masm, Nothing(), [&](bool inWasm, Register temp) {
-    masm.passABIArg(src, ABIType::Float32);
-    if (inWasm) {
-      masm.callDebugWithABI(SymbolicAddress::PrintF32);
-    } else {
-      using Fn = void (*)(float val);
-      masm.callWithABI<Fn, PrintF32>(ABIType::General,
-                                     CheckUnsafeCallWithABI::DontCheckOther);
-    }
-  });
+  GenPrint(channel, masm, Nothing(), SymbolicAddress::PrintF32,
+           [&](bool inWasm, Register temp) {
+             masm.passABIArg(src, ABIType::Float32);
+             if (inWasm) {
+               masm.callDebugWithABI(SymbolicAddress::PrintF32);
+             } else {
+               using Fn = void (*)(float val);
+               masm.callWithABI<Fn, PrintF32>(
+                   ABIType::General, CheckUnsafeCallWithABI::DontCheckOther);
+             }
+           });
 }
 
 static void GenPrintF64(DebugChannel channel, MacroAssembler& masm,
                         const FloatRegister& src) {
-  GenPrint(channel, masm, Nothing(), [&](bool inWasm, Register temp) {
-    masm.passABIArg(src, ABIType::Float64);
-    if (inWasm) {
-      masm.callDebugWithABI(SymbolicAddress::PrintF64);
-    } else {
-      using Fn = void (*)(double val);
-      masm.callWithABI<Fn, PrintF64>(ABIType::General,
-                                     CheckUnsafeCallWithABI::DontCheckOther);
-    }
-  });
+  GenPrint(channel, masm, Nothing(), SymbolicAddress::PrintF64,
+           [&](bool inWasm, Register temp) {
+             masm.passABIArg(src, ABIType::Float64);
+             if (inWasm) {
+               masm.callDebugWithABI(SymbolicAddress::PrintF64);
+             } else {
+               using Fn = void (*)(double val);
+               masm.callWithABI<Fn, PrintF64>(
+                   ABIType::General, CheckUnsafeCallWithABI::DontCheckOther);
+             }
+           });
 }
 
 #  ifdef ENABLE_WASM_SIMD
@@ -331,16 +338,9 @@ static bool FinishOffsets(MacroAssembler& masm, Offsets* offsets) {
   return !masm.oom();
 }
 
-static void AssertStackAlignment(MacroAssembler& masm, uint32_t alignment,
-                                 uint32_t addBeforeAssert = 0) {
-  MOZ_ASSERT(
-      (sizeof(Frame) + masm.framePushed() + addBeforeAssert) % alignment == 0);
-  masm.assertStackAlignment(alignment, addBeforeAssert);
-}
-
-template <class VectorT, template <class VecT> class ABIArgIterT>
-static unsigned StackArgBytesHelper(const VectorT& args) {
-  ABIArgIterT<VectorT> iter(args);
+template <class VectorT>
+static unsigned StackArgBytesHelper(const VectorT& args, ABIKind kind) {
+  ABIArgIter<VectorT> iter(args, kind);
   while (!iter.done()) {
     iter++;
   }
@@ -349,12 +349,12 @@ static unsigned StackArgBytesHelper(const VectorT& args) {
 
 template <class VectorT>
 static unsigned StackArgBytesForNativeABI(const VectorT& args) {
-  return StackArgBytesHelper<VectorT, ABIArgIter>(args);
+  return StackArgBytesHelper<VectorT>(args, ABIKind::System);
 }
 
 template <class VectorT>
 static unsigned StackArgBytesForWasmABI(const VectorT& args) {
-  return StackArgBytesHelper<VectorT, WasmABIArgIter>(args);
+  return StackArgBytesHelper<VectorT>(args, ABIKind::Wasm);
 }
 
 static unsigned StackArgBytesForWasmABI(const FuncType& funcType) {
@@ -371,7 +371,7 @@ static void SetupABIArguments(MacroAssembler& masm, const FuncExport& fe,
   // SetupABIArguments are only used for C++ -> wasm calls through callExport(),
   // and V128 and Ref types (other than externref) are not currently allowed.
   ArgTypeVector args(funcType);
-  for (WasmABIArgIter iter(args); !iter.done(); iter++) {
+  for (ABIArgIter iter(args, ABIKind::Wasm); !iter.done(); iter++) {
     unsigned argOffset = iter.index() * sizeof(ExportArg);
     Address src(argv, argOffset);
     MIRType type = iter.mirType();
@@ -720,7 +720,7 @@ static bool GenerateInterpEntry(MacroAssembler& masm, const FuncExport& fe,
   // Read the arguments of wasm::ExportFuncPtr according to the native ABI.
   // The entry stub's frame is 1 word.
   const unsigned argBase = sizeof(void*) + nonVolatileRegsPushSize;
-  ABIArgGenerator abi;
+  ABIArgGenerator abi(ABIKind::System);
   ABIArg arg;
 
   // arg 1: ExportArg*
@@ -1134,7 +1134,7 @@ static bool GenerateJitEntry(MacroAssembler& masm, size_t funcExportIndex,
 
   // Convert all the expected values to unboxed values on the stack.
   ArgTypeVector args(funcType);
-  for (WasmABIArgIter iter(args); !iter.done(); iter++) {
+  for (ABIArgIter iter(args, ABIKind::Wasm); !iter.done(); iter++) {
     Address argv(FramePointer, JitFrameLayout::offsetOfActualArg(iter.index()));
     bool isStackArg = iter->kind() == ABIArg::Stack;
     switch (iter.mirType()) {
@@ -1231,7 +1231,9 @@ static bool GenerateJitEntry(MacroAssembler& masm, size_t funcExportIndex,
   GenPrintf(DebugChannel::Function, masm, "wasm-function[%d]; returns ",
             fe.funcIndex());
 
-  // Pop frame.
+  // Pop frame. We set the stack pointer immediately after calling Wasm code
+  // because the current stack pointer might not match the one before the call
+  // if the callee performed a tail call.
   masm.moveToStackPtr(FramePointer);
   masm.setFramePushed(0);
 
@@ -1301,7 +1303,8 @@ static bool GenerateJitEntry(MacroAssembler& masm, size_t funcExportIndex,
 
     // Baseline and Ion call C++ runtime via BuiltinThunk with wasm abi, so to
     // unify the BuiltinThunk's interface we call it here with wasm abi.
-    jit::WasmABIArgIter<MIRTypeVector> argsIter(coerceArgTypes);
+    jit::ABIArgIter<MIRTypeVector> argsIter(
+        coerceArgTypes, ABIForBuiltin(SymbolicAddress::CoerceInPlace_JitEntry));
 
     // argument 0: function index.
     if (argsIter->kind() == ABIArg::GPR) {
@@ -1401,7 +1404,7 @@ void wasm::GenerateDirectCallFromJit(MacroAssembler& masm, const FuncExport& fe,
             fe.funcIndex());
 
   ArgTypeVector args(funcType);
-  for (WasmABIArgIter iter(args); !iter.done(); iter++) {
+  for (ABIArgIter iter(args, ABIKind::Wasm); !iter.done(); iter++) {
     MOZ_ASSERT_IF(iter->kind() == ABIArg::GPR, iter->gpr() != scratch);
     MOZ_ASSERT_IF(iter->kind() == ABIArg::GPR, iter->gpr() != FramePointer);
     if (iter->kind() != ABIArg::Stack) {
@@ -1641,16 +1644,15 @@ static void FillArgumentArrayForInterpExit(MacroAssembler& masm,
                                            const FuncType& funcType,
                                            unsigned argOffset,
                                            Register scratch) {
-  // This is `sizeof(FrameWithInstances) - ShadowStackSpace` because the latter
-  // is accounted for by the ABIArgIter.
-  const unsigned offsetFromFPToCallerStackArgs =
-      sizeof(FrameWithInstances) - jit::ShadowStackSpace;
+  // This is `sizeof(Frame)` because the wasm ABIArgIter handles adding the
+  // offsets of the shadow stack area and the instance slots.
+  const unsigned offsetFromFPToCallerStackArgs = sizeof(Frame);
 
   GenPrintf(DebugChannel::Import, masm, "wasm-import[%u]; arguments ",
             funcImportIndex);
 
   ArgTypeVector args(funcType);
-  for (ABIArgIter i(args); !i.done(); i++) {
+  for (ABIArgIter i(args, ABIKind::Wasm); !i.done(); i++) {
     Address dst(masm.getStackPointer(), argOffset + i.index() * sizeof(Value));
 
     MIRType type = i.mirType();
@@ -1738,10 +1740,9 @@ static void FillArgumentArrayForJitExit(MacroAssembler& masm, Register instance,
                                         Register scratch2, Label* throwLabel) {
   MOZ_ASSERT(scratch != scratch2);
 
-  // This is `sizeof(FrameWithInstances) - ShadowStackSpace` because the latter
-  // is accounted for by the ABIArgIter.
-  const unsigned offsetFromFPToCallerStackArgs =
-      sizeof(FrameWithInstances) - jit::ShadowStackSpace;
+  // This is `sizeof(Frame)` because the wasm ABIArgIter handles adding the
+  // offsets of the shadow stack area and the instance slots.
+  const unsigned offsetFromFPToCallerStackArgs = sizeof(Frame);
 
   // This loop does not root the values that are being constructed in
   // for the arguments. Allocations that are generated by code either
@@ -1750,7 +1751,7 @@ static void FillArgumentArrayForJitExit(MacroAssembler& masm, Register instance,
             funcImportIndex);
 
   ArgTypeVector args(funcType);
-  for (ABIArgIter i(args); !i.done(); i++) {
+  for (ABIArgIter i(args, ABIKind::Wasm); !i.done(); i++) {
     Address dst(masm.getStackPointer(), argOffset + i.index() * sizeof(Value));
 
     MIRType type = i.mirType();
@@ -1870,38 +1871,6 @@ static void FillArgumentArrayForJitExit(MacroAssembler& masm, Register instance,
   GenPrintf(DebugChannel::Import, masm, "\n");
 }
 
-static bool AddStackCheckForImportFunctionEntry(jit::MacroAssembler& masm,
-                                                unsigned reserve,
-                                                const FuncType& funcType,
-                                                StackMaps* stackMaps) {
-  std::pair<CodeOffset, uint32_t> pair =
-      masm.wasmReserveStackChecked(reserve, TrapSiteDesc());
-
-  // Attempt to create stack maps for masm.wasmReserveStackChecked.
-  ArgTypeVector argTypes(funcType);
-  RegisterOffsets trapExitLayout;
-  size_t trapExitLayoutNumWords;
-  GenerateTrapExitRegisterOffsets(&trapExitLayout, &trapExitLayoutNumWords);
-  CodeOffset trapInsnOffset = pair.first;
-  size_t nBytesReservedBeforeTrap = pair.second;
-  size_t nInboundStackArgBytes = StackArgAreaSizeUnaligned(argTypes);
-  wasm::StackMap* stackMap = nullptr;
-  if (!CreateStackMapForFunctionEntryTrap(
-          argTypes, trapExitLayout, trapExitLayoutNumWords,
-          nBytesReservedBeforeTrap, nInboundStackArgBytes, &stackMap)) {
-    return false;
-  }
-
-  // In debug builds, we'll always have a stack map, even if there are no
-  // refs to track.
-  MOZ_ASSERT(stackMap);
-  if (stackMap && !stackMaps->add(trapInsnOffset.offset(), stackMap)) {
-    stackMap->destroy();
-    return false;
-  }
-  return true;
-}
-
 // Generate a wrapper function with the standard intra-wasm call ABI which
 // simply calls an import. This wrapper function allows any import to be treated
 // like a normal wasm function for the purposes of exports and table calls. In
@@ -1927,10 +1896,8 @@ static bool GenerateImportFunction(jit::MacroAssembler& masm,
       sizeof(Frame),  // pushed by prologue
       StackArgBytesForWasmABI(funcType) + sizeOfInstanceSlot);
 
-  if (!AddStackCheckForImportFunctionEntry(masm, framePushed, funcType,
-                                           stackMaps)) {
-    return false;
-  }
+  Label stackOverflowTrap;
+  masm.wasmReserveStackChecked(framePushed, &stackOverflowTrap);
 
   MOZ_ASSERT(masm.framePushed() == framePushed);
 
@@ -1948,7 +1915,7 @@ static bool GenerateImportFunction(jit::MacroAssembler& masm,
   // fields of FrameWithInstances.
   unsigned offsetFromFPToCallerStackArgs = sizeof(Frame);
   ArgTypeVector args(funcType);
-  for (WasmABIArgIter i(args); !i.done(); i++) {
+  for (ABIArgIter i(args, ABIKind::Wasm); !i.done(); i++) {
     if (i->kind() != ABIArg::Stack) {
       continue;
     }
@@ -1977,6 +1944,11 @@ static bool GenerateImportFunction(jit::MacroAssembler& masm,
   masm.switchToWasmInstanceRealm(ABINonArgReturnReg0, ABINonArgReturnReg1);
 
   GenerateFunctionEpilogue(masm, framePushed, offsets);
+
+  // Emit the stack overflow trap as OOL code.
+  masm.bind(&stackOverflowTrap);
+  masm.wasmTrap(wasm::Trap::StackOverflow, wasm::TrapSiteDesc());
+
   return FinishOffsets(masm, offsets);
 }
 
@@ -2020,13 +1992,13 @@ static bool GenerateImportInterpExit(MacroAssembler& masm, const FuncImport& fi,
   // The abiArgCount includes a stack result pointer argument if needed.
   unsigned abiArgCount = ArgTypeVector(funcType).lengthWithStackResults();
   unsigned argBytes = std::max<size_t>(1, abiArgCount) * sizeof(Value);
-  unsigned framePushed =
-      StackDecrementForCall(ABIStackAlignment,
-                            sizeof(Frame),  // pushed by prologue
-                            argOffset + argBytes);
-
-  GenerateExitPrologue(masm, framePushed, ExitReason::Fixed::ImportInterp,
-                       offsets);
+  unsigned frameAlignment =
+      ComputeByteAlignment(sizeof(Frame), ABIStackAlignment);
+  unsigned framePushed = AlignBytes(argOffset + argBytes, ABIStackAlignment);
+  GenerateExitPrologue(masm, ExitReason::Fixed::ImportInterp,
+                       /*switchToMainStack*/ true,
+                       /*framePushedPreSwitch*/ frameAlignment,
+                       /*framePushedPostSwitch*/ framePushed, offsets);
 
   // Fill the argument array.
   Register scratch = ABINonArgReturnReg0;
@@ -2034,7 +2006,7 @@ static bool GenerateImportInterpExit(MacroAssembler& masm, const FuncImport& fi,
                                  scratch);
 
   // Prepare the arguments for the call to Instance::callImport_*.
-  ABIArgMIRTypeIter i(invokeArgTypes);
+  ABIArgMIRTypeIter i(invokeArgTypes, ABIKind::System);
 
   // argument 0: Instance*
   if (i->kind() == ABIArg::GPR) {
@@ -2077,7 +2049,7 @@ static bool GenerateImportInterpExit(MacroAssembler& masm, const FuncImport& fi,
   MOZ_ASSERT(i.done());
 
   // Make the call, test whether it succeeded, and extract the return value.
-  AssertStackAlignment(masm, ABIStackAlignment);
+  masm.assertStackAlignment(ABIStackAlignment);
   masm.call(SymbolicAddress::CallImport_General);
   masm.branchTest32(Assembler::Zero, ReturnReg, ReturnReg, throwLabel);
 
@@ -2145,8 +2117,8 @@ static bool GenerateImportInterpExit(MacroAssembler& masm, const FuncImport& fi,
   MOZ_ASSERT(NonVolatileRegs.has(HeapReg));
 #endif
 
-  GenerateExitEpilogue(masm, framePushed, ExitReason::Fixed::ImportInterp,
-                       offsets);
+  GenerateExitEpilogue(masm, ExitReason::Fixed::ImportInterp,
+                       /*switchToMainStack*/ true, offsets);
 
   return FinishOffsets(masm, offsets);
 }
@@ -2163,21 +2135,45 @@ static bool GenerateImportJitExit(MacroAssembler& masm,
   AutoCreatedBy acb(masm, "GenerateImportJitExit");
 
   AssertExpectedSP(masm);
-  masm.setFramePushed(0);
 
-  // JIT calls use the following stack layout:
+  // The JS ABI uses the following layout:
   //
-  //   | WasmToJSJitFrameLayout | this | arg1..N | saved instance | ...
-  //   ^
-  //   +-- sp
+  //   | caller's frame | <-  aligned to WasmStackAlignment
+  //   +----------------+
+  //   | return address | <- RetAddrAndFP
+  //   | caller fp      | <---- fp/current sp
+  //   +................+
+  //   | saved instance | <-- Stored relative to fp, not sp
+  //   | padding?       |
+  //   | undefined args?|
+  //   | ...            |
+  //   | defined args   |
+  //   | ...            |
+  //   | this           | <- If this is JitStack-aligned, the layout will be too
+  //   +................+
+  //   | callee token   | <- PreFrame
+  //   | descriptor     | <---- sp after allocating stack frame
+  //   +----------------+
+  //   | return address |
+  //   | frame pointer  | <- Must be JitStack-aligned
   //
-  // The JIT ABI requires that sp be JitStackAlignment-aligned after pushing
-  // the return address and frame pointer.
+  // Note: WasmStackAlignment requires that sp be WasmStackAlignment-aligned
+  // when calling, *before* pushing the return address and frame pointer. The JS
+  // ABI requires that sp be JitStackAlignment-aligned *after* pushing the
+  // return address and frame pointer.
   static_assert(WasmStackAlignment >= JitStackAlignment, "subsumes");
-  const unsigned sizeOfInstanceSlot = sizeof(void*);
+
+  // We allocate a full 8 bytes for the instance register, even on 32-bit,
+  // because alignment padding will round it up anyway. Treating it as 8 bytes
+  // is easier in the OOL underflow path.
+  const unsigned sizeOfInstanceSlot = sizeof(Value);
   const unsigned sizeOfRetAddrAndFP = 2 * sizeof(void*);
   const unsigned sizeOfPreFrame =
       WasmToJSJitFrameLayout::Size() - sizeOfRetAddrAndFP;
+
+  // These values are used if there is no arguments underflow.
+  // If we need to push extra undefined arguments, we calculate them
+  // dynamically in an out-of-line path.
   const unsigned sizeOfThisAndArgs =
       (1 + funcType.args().length()) * sizeof(Value);
   const unsigned totalJitFrameBytes = sizeOfRetAddrAndFP + sizeOfPreFrame +
@@ -2188,10 +2184,37 @@ static bool GenerateImportJitExit(MacroAssembler& masm,
                             totalJitFrameBytes) -
       sizeOfRetAddrAndFP;
 
-  GenerateJitExitPrologue(masm, jitFramePushed, fallbackOffset, offsets);
+  // Generate a minimal prologue. Don't allocate a stack frame until we know
+  // how big it should be.
+  GenerateJitExitPrologue(masm, fallbackOffset, offsets);
 
-  // 1. Descriptor.
+  // 1. Allocate the stack frame.
+  // 1.1. Get the callee. This must be a JSFunction if we're using this JIT
+  // exit.
+  Register callee = ABINonArgReturnReg0;
+  Register scratch = ABINonArgReturnReg1;
+  Register scratch2 = ABINonVolatileReg;
+  masm.loadPtr(
+      Address(InstanceReg, Instance::offsetInData(
+                               funcImportInstanceOffset +
+                               offsetof(FuncImportInstanceData, callable))),
+      callee);
+
+  // 1.2 Check to see if we are passing enough arguments. If not, we have to
+  // allocate a larger stack frame and push `undefined` for the extra args.
+  // (Passing too many arguments is not a problem; the JS ABI expects at *least*
+  // numFormals arguments.)
+  Label argUnderflow, argUnderflowRejoin;
+  Register numFormals = scratch2;
   unsigned argc = funcType.args().length();
+  masm.loadFunctionArgCount(callee, numFormals);
+  masm.branch32(Assembler::GreaterThan, numFormals, Imm32(argc), &argUnderflow);
+
+  // Otherwise, we can compute the stack frame size statically.
+  masm.subFromStackPtr(Imm32(jitFramePushed));
+  masm.bind(&argUnderflowRejoin);
+
+  // 2. Descriptor.
   size_t argOffset = 0;
   uint32_t descriptor =
       MakeFrameDescriptorForJitCall(FrameType::WasmToJSJit, argc);
@@ -2199,9 +2222,8 @@ static bool GenerateImportJitExit(MacroAssembler& masm,
                 Address(masm.getStackPointer(), argOffset));
   argOffset += sizeof(size_t);
 
-  // 2. Callee, part 1 -- need the callee register for argument filling, so
-  // record offset here and set up callee later.
-  size_t calleeArgOffset = argOffset;
+  // 3. Callee.
+  masm.storePtr(callee, Address(masm.getStackPointer(), argOffset));
   argOffset += sizeof(size_t);
   MOZ_ASSERT(argOffset == sizeOfPreFrame);
 
@@ -2210,47 +2232,19 @@ static bool GenerateImportJitExit(MacroAssembler& masm,
   argOffset += sizeof(Value);
 
   // 4. Fill the arguments.
-  Register scratch = ABINonArgReturnReg1;   // Repeatedly clobbered
-  Register scratch2 = ABINonArgReturnReg0;  // Reused as callee below
   FillArgumentArrayForJitExit(masm, InstanceReg, funcImportIndex, funcType,
                               argOffset, scratch, scratch2, throwLabel);
-  argOffset += funcType.args().length() * sizeof(Value);
-  MOZ_ASSERT(argOffset == sizeOfThisAndArgs + sizeOfPreFrame);
 
-  // Preserve instance because the JIT callee clobbers it.
-  const size_t savedInstanceOffset = argOffset;
-  masm.storePtr(InstanceReg,
-                Address(masm.getStackPointer(), savedInstanceOffset));
+  // 5. Preserve the instance register. We store it at a fixed negative offset
+  // to the frame pointer so that we can recover it after the call without
+  // needing to know how many arguments were passed.
+  Address savedInstanceReg(FramePointer, -int32_t(sizeof(size_t)));
+  masm.storePtr(InstanceReg, savedInstanceReg);
 
-  // 2. Callee, part 2 -- now that the register is free, set up the callee.
-  Register callee = ABINonArgReturnReg0;  // Live until call
-
-  // 2.1. Get the callee. This must be a JSFunction if we're using this JIT
-  // exit.
-  masm.loadPtr(
-      Address(InstanceReg, Instance::offsetInData(
-                               funcImportInstanceOffset +
-                               offsetof(FuncImportInstanceData, callable))),
-      callee);
-
-  // 2.2. Save callee.
-  masm.storePtr(callee, Address(masm.getStackPointer(), calleeArgOffset));
-
-  // 5. Check if we need to rectify arguments.
-  masm.loadFunctionArgCount(callee, scratch);
-
-  Label rectify;
-  masm.branch32(Assembler::Above, scratch, Imm32(funcType.args().length()),
-                &rectify);
-
-  // 6. If we haven't rectified arguments, load callee executable entry point.
-
+  // 6. Load callee executable entry point.
   masm.loadJitCodeRaw(callee, callee);
 
-  Label rejoinBeforeCall;
-  masm.bind(&rejoinBeforeCall);
-
-  AssertStackAlignment(masm, JitStackAlignment, sizeOfRetAddrAndFP);
+  masm.assertStackAlignment(JitStackAlignment, sizeOfRetAddrAndFP);
 #ifdef JS_CODEGEN_ARM64
   AssertExpectedSP(masm);
   // Manually resync PSP.  Omitting this causes eg tests/wasm/import-export.js
@@ -2268,18 +2262,16 @@ static bool GenerateImportJitExit(MacroAssembler& masm,
 
   // The JIT callee clobbers all registers other than the frame pointer, so
   // restore InstanceReg here.
-  AssertStackAlignment(masm, JitStackAlignment, sizeOfRetAddrAndFP);
-  masm.loadPtr(Address(masm.getStackPointer(), savedInstanceOffset),
-               InstanceReg);
+  masm.assertStackAlignment(JitStackAlignment, sizeOfRetAddrAndFP);
+  masm.loadPtr(savedInstanceReg, InstanceReg);
 
   // The frame was aligned for the JIT ABI such that
   //   (sp - 2 * sizeof(void*)) % JitStackAlignment == 0
   // But now we possibly want to call one of several different C++ functions,
   // so subtract 2 * sizeof(void*) so that sp is aligned for an ABI call.
   static_assert(ABIStackAlignment <= JitStackAlignment, "subsumes");
-  masm.reserveStack(sizeOfRetAddrAndFP);
-  unsigned nativeFramePushed = masm.framePushed();
-  AssertStackAlignment(masm, ABIStackAlignment);
+  masm.subFromStackPtr(Imm32(sizeOfRetAddrAndFP));
+  masm.assertStackAlignment(ABIStackAlignment);
 
 #ifdef DEBUG
   {
@@ -2340,19 +2332,62 @@ static bool GenerateImportJitExit(MacroAssembler& masm,
   Label done;
   masm.bind(&done);
 
-  GenerateJitExitEpilogue(masm, masm.framePushed(), offsets);
+  masm.moveToStackPtr(FramePointer);
+  GenerateJitExitEpilogue(masm, offsets);
 
-  {
-    // Call the arguments rectifier.
-    masm.bind(&rectify);
-    masm.loadPtr(Address(InstanceReg, Instance::offsetOfJSJitArgsRectifier()),
-                 callee);
-    masm.jump(&rejoinBeforeCall);
+  masm.bind(&argUnderflow);
+  // We aren't passing enough arguments.
+  //
+  // Compute the size of the stack frame (in Value-sized slots). On 32-bit, the
+  // instance reg slot is 4 bytes of data and 4 bytes of alignment padding.
+  Register numSlots = scratch;
+  static_assert(sizeof(WasmToJSJitFrameLayout) % JitStackAlignment == 0);
+  MOZ_ASSERT(sizeOfPreFrame % sizeof(Value) == 0);
+  const uint32_t numSlotsForPreFrame = sizeOfPreFrame / sizeof(Value);
+  const uint32_t extraSlots = numSlotsForPreFrame + 2;  // this + instance
+  if (JitStackValueAlignment == 1) {
+    // If we only need 8-byte alignment, no padding is necessary.
+    masm.add32(Imm32(extraSlots), numFormals, numSlots);
+  } else {
+    MOZ_ASSERT(JitStackValueAlignment == 2);
+    MOZ_ASSERT(sizeOfRetAddrAndFP == sizeOfPreFrame);
+    // We have to allocate space for the preframe, `this`, the arguments, and
+    // the saved instance. While doing so, we have to ensure that `this` is
+    // aligned to JitStackAlignment, which will in turn guarantee the correct
+    // alignment of the frame layout in the callee. To ensure alignment, we can
+    // add padding between the arguments and the saved instance. sp was aligned
+    // to WasmStackAlignment before pushing the return address / frame pointer
+    // for this stub.
+    //
+    //                           (this)  (args)           (instance)
+    // numSlots:        PreFrame + 1 + numFormals + padding + 1
+    // aligned if even:            1 + numFormals + padding + 1 + RetAddrAndFP
+    //
+    // Conveniently, since numSlotsForPreFrame and numSlotsForRetAddrAndFP are
+    // the same, these calculations give the same value. So we can ensure
+    // alignment by rounding numSlots up to the next even number.
+    masm.add32(Imm32(extraSlots + 1), numFormals, numSlots);
+    masm.and32(Imm32(~1), numSlots);
   }
+
+  // Adjust the stack pointer
+  masm.lshift32(Imm32(3), scratch);
+  masm.subFromStackPtr(scratch);
+
+  // Fill the undefined arguments.
+  Label loop;
+  masm.bind(&loop);
+  masm.sub32(Imm32(1), numFormals);
+  BaseValueIndex argAddr(masm.getStackPointer(), numFormals,
+                         2 * sizeof(uintptr_t) +  // descriptor + callee
+                             sizeof(Value));      // this
+  masm.storeValue(UndefinedValue(), BaseValueIndex(masm.getStackPointer(),
+                                                   numFormals, argOffset));
+  masm.branch32(Assembler::Above, numFormals, Imm32(argc), &loop);
+  masm.jump(&argUnderflowRejoin);
 
   if (oolConvert.used()) {
     masm.bind(&oolConvert);
-    masm.setFramePushed(nativeFramePushed);
 
     // Coercion calls use the following stack layout (sp grows to the left):
     //   | args | padding | Value argv[1] | padding | exit Frame |
@@ -2360,8 +2395,7 @@ static bool GenerateImportJitExit(MacroAssembler& masm,
     MOZ_ALWAYS_TRUE(coerceArgTypes.append(MIRType::Pointer));
     unsigned offsetToCoerceArgv =
         AlignBytes(StackArgBytesForNativeABI(coerceArgTypes), sizeof(Value));
-    MOZ_ASSERT(nativeFramePushed >= offsetToCoerceArgv + sizeof(Value));
-    AssertStackAlignment(masm, ABIStackAlignment);
+    masm.assertStackAlignment(ABIStackAlignment);
 
     // Store return value into argv[0].
     masm.storeValue(JSReturnOperand,
@@ -2373,10 +2407,11 @@ static bool GenerateImportJitExit(MacroAssembler& masm,
     // The JIT might have clobbered exitFP at this point. Since there's
     // going to be a CoerceInPlace call, pretend we're still doing the JIT
     // call by restoring our tagged exitFP.
-    SetExitFP(masm, ExitReason::Fixed::ImportJit, scratch);
+    LoadActivation(masm, InstanceReg, scratch);
+    SetExitFP(masm, ExitReason::Fixed::ImportJit, scratch, scratch2);
 
     // argument 0: argv
-    ABIArgMIRTypeIter i(coerceArgTypes);
+    ABIArgMIRTypeIter i(coerceArgTypes, ABIKind::System);
     Address argv(masm.getStackPointer(), offsetToCoerceArgv);
     if (i->kind() == ABIArg::GPR) {
       masm.computeEffectiveAddress(argv, i->gpr());
@@ -2390,7 +2425,7 @@ static bool GenerateImportJitExit(MacroAssembler& masm,
 
     // Call coercion function. Note that right after the call, the value of
     // FP is correct because FP is non-volatile in the native ABI.
-    AssertStackAlignment(masm, ABIStackAlignment);
+    masm.assertStackAlignment(ABIStackAlignment);
     const ValTypeVector& results = funcType.results();
     if (results.length() > 0) {
       // NOTE that once there can be more than one result and we can box some of
@@ -2437,13 +2472,11 @@ static bool GenerateImportJitExit(MacroAssembler& masm,
 
     // Maintain the invariant that exitFP is either unset or not set to a
     // wasm tagged exitFP, per the jit exit contract.
+    LoadActivation(masm, InstanceReg, scratch);
     ClearExitFP(masm, scratch);
 
     masm.jump(&done);
-    masm.setFramePushed(0);
   }
-
-  MOZ_ASSERT(masm.framePushed() == 0);
 
   return FinishOffsets(masm, offsets);
 }
@@ -2477,35 +2510,51 @@ struct ABIFunctionArgs {
 };
 
 bool wasm::GenerateBuiltinThunk(MacroAssembler& masm, ABIFunctionType abiType,
-                                ExitReason exitReason, void* funcPtr,
-                                CallableOffsets* offsets) {
+                                bool switchToMainStack, ExitReason exitReason,
+                                void* funcPtr, CallableOffsets* offsets) {
   AssertExpectedSP(masm);
   masm.setFramePushed(0);
 
   ABIFunctionArgs args(abiType);
-  uint32_t framePushed =
-      StackDecrementForCall(ABIStackAlignment,
-                            sizeof(Frame),  // pushed by prologue
-                            StackArgBytesForNativeABI(args));
+  unsigned frameAlignment =
+      ComputeByteAlignment(sizeof(Frame), ABIStackAlignment);
+  unsigned framePushed =
+      AlignBytes(StackArgBytesForNativeABI(args), ABIStackAlignment);
+  GenerateExitPrologue(masm, exitReason, switchToMainStack,
+                       /*framePushedPreSwitch*/ frameAlignment,
+                       /*framePushedPostSwitch*/ framePushed, offsets);
 
-  GenerateExitPrologue(masm, framePushed, exitReason, offsets);
-
-  // Copy out and convert caller arguments, if needed.
-
-  // This is `sizeof(FrameWithInstances) - ShadowStackSpace` because the latter
-  // is accounted for by the ABIArgIter.
-  unsigned offsetFromFPToCallerStackArgs =
-      sizeof(FrameWithInstances) - jit::ShadowStackSpace;
+  // Copy out and convert caller arguments, if needed. We are translating from
+  // the wasm ABI to the system ABI.
   Register scratch = ABINonArgReturnReg0;
-  for (ABIArgIter i(args); !i.done(); i++) {
-    if (i->argInRegister()) {
+
+  // Use two arg iterators to track the different offsets that arguments must
+  // go. We are translating from the wasm ABI to the system ABI.
+  ABIArgIter selfArgs(args, ABIKind::Wasm);
+  ABIArgIter callArgs(args, ABIKind::System);
+
+  // `selfArgs` gives us offsets from 'arg base' which is the SP immediately
+  // before our frame is added. We must add `sizeof(Frame)` now that the
+  // prologue has executed to access our stack args.
+  unsigned offsetFromFPToCallerStackArgs = sizeof(wasm::Frame);
+
+  for (; !selfArgs.done(); selfArgs++, callArgs++) {
+    // This loop doesn't handle all the possible cases of differing ABI's and
+    // relies on the wasm argument ABI being very close to the system ABI.
+    MOZ_ASSERT(!callArgs.done());
+    MOZ_ASSERT(selfArgs->argInRegister() == callArgs->argInRegister());
+    MOZ_ASSERT(selfArgs.mirType() == callArgs.mirType());
+
+    if (selfArgs->argInRegister()) {
 #ifdef JS_CODEGEN_ARM
-      // Non hard-fp passes the args values in GPRs.
-      if (!ARMFlags::UseHardFpABI() && IsFloatingPointType(i.mirType())) {
-        FloatRegister input = i->fpu();
-        if (i.mirType() == MIRType::Float32) {
+      // The system ABI may use soft-FP, while the wasm ABI will always use
+      // hard-FP. We must adapt FP args in this case.
+      if (!ARMFlags::UseHardFpABI() &&
+          IsFloatingPointType(selfArgs.mirType())) {
+        FloatRegister input = selfArgs->fpu();
+        if (selfArgs.mirType() == MIRType::Float32) {
           masm.ma_vxfer(input, Register::FromCode(input.id()));
-        } else if (i.mirType() == MIRType::Double) {
+        } else if (selfArgs.mirType() == MIRType::Double) {
           uint32_t regId = input.singleOverlay().id();
           masm.ma_vxfer(input, Register::FromCode(regId),
                         Register::FromCode(regId + 1));
@@ -2516,19 +2565,23 @@ bool wasm::GenerateBuiltinThunk(MacroAssembler& masm, ABIFunctionType abiType,
     }
 
     Address src(FramePointer,
-                offsetFromFPToCallerStackArgs + i->offsetFromArgBase());
-    Address dst(masm.getStackPointer(), i->offsetFromArgBase());
-    StackCopy(masm, i.mirType(), scratch, src, dst);
+                offsetFromFPToCallerStackArgs + selfArgs->offsetFromArgBase());
+    Address dst(masm.getStackPointer(), callArgs->offsetFromArgBase());
+    StackCopy(masm, selfArgs.mirType(), scratch, src, dst);
   }
+  // If selfArgs is done, callArgs must be done.
+  MOZ_ASSERT(callArgs.done());
 
-  AssertStackAlignment(masm, ABIStackAlignment);
+  // Call into the native builtin function
+  masm.assertStackAlignment(ABIStackAlignment);
   MoveSPForJitABI(masm);
   masm.call(ImmPtr(funcPtr, ImmPtr::NoCheckToken()));
 
 #if defined(JS_CODEGEN_X64)
   // No widening is required, as the caller will widen.
 #elif defined(JS_CODEGEN_X86)
-  // x86 passes the return value on the x87 FP stack.
+  // The wasm ABI always uses SSE for floating point returns, and so we must
+  // convert the x87 FP stack result over.
   Operand op(esp, 0);
   MIRType retType = ToMIRType(ABIType(
       std::underlying_type_t<ABIFunctionType>(abiType) & ABITypeArgMask));
@@ -2540,7 +2593,7 @@ bool wasm::GenerateBuiltinThunk(MacroAssembler& masm, ABIFunctionType abiType,
     masm.loadDouble(op, ReturnDoubleReg);
   }
 #elif defined(JS_CODEGEN_ARM)
-  // Non hard-fp passes the return values in GPRs.
+  // We must adapt the system soft-fp return value from a GPR to a FPR.
   MIRType retType = ToMIRType(ABIType(
       std::underlying_type_t<ABIFunctionType>(abiType) & ABITypeArgMask));
   if (!ARMFlags::UseHardFpABI() && IsFloatingPointType(retType)) {
@@ -2548,7 +2601,7 @@ bool wasm::GenerateBuiltinThunk(MacroAssembler& masm, ABIFunctionType abiType,
   }
 #endif
 
-  GenerateExitEpilogue(masm, framePushed, exitReason, offsets);
+  GenerateExitEpilogue(masm, exitReason, switchToMainStack, offsets);
   return FinishOffsets(masm, offsets);
 }
 
@@ -2664,26 +2717,72 @@ static bool GenerateTrapExit(MacroAssembler& masm, Label* throwLabel,
   masm.PushRegsInMask(RegsToPreserve);
   unsigned offsetOfReturnWord = masm.framePushed() - framePushedBeforePreserve;
 
+  // Load the instance register from the wasm::FrameWithInstances. Normally we
+  // are only guaranteed to have a valid instance there if the frame was a
+  // cross-instance call, however wasm::HandleTrap in the signal handler is
+  // kind enough to store the active instance into that slot for us.
+  masm.loadPtr(
+      Address(FramePointer, wasm::FrameWithInstances::calleeInstanceOffset()),
+      InstanceReg);
+
+  // Grab the stack pointer before we do any stack switches or dynamic
+  // alignment. Store it in a register that won't be used in the stack switch
+  // operation.
+  Register originalStackPointer = ABINonArgReg3;
+  masm.moveStackPtrTo(originalStackPointer);
+
+#ifdef ENABLE_WASM_JSPI
+  GenerateExitPrologueMainStackSwitch(masm, InstanceReg, ABINonArgReg0,
+                                      ABINonArgReg1, ABINonArgReg2);
+#endif
+
   // We know that StackPointer is word-aligned, but not necessarily
-  // stack-aligned, so we need to align it dynamically.
-  Register preAlignStackPointer = ABINonVolatileReg;
-  masm.moveStackPtrTo(preAlignStackPointer);
+  // stack-aligned, so we need to align it dynamically. After we've aligned the
+  // stack, we store the original stack pointer in a slot on the stack.
+  // We're careful to not break stack alignment with that slot.
   masm.andToStackPtr(Imm32(~(ABIStackAlignment - 1)));
+  masm.reserveStack(ABIStackAlignment);
+  masm.storePtr(originalStackPointer, Address(masm.getStackPointer(), 0));
+
+  // Push the shadow stack space for the call if we need to. This won't break
+  // stack alignment.
   if (ShadowStackSpace) {
     masm.subFromStackPtr(Imm32(ShadowStackSpace));
   }
 
+  // Call the WasmHandleTrap function.
   masm.assertStackAlignment(ABIStackAlignment);
   masm.call(SymbolicAddress::HandleTrap);
 
   // WasmHandleTrap returns null if control should transfer to the throw stub.
+  // That will unwind the stack, and so we don't need to pop anything from the
+  // stack ourselves.
   masm.branchTestPtr(Assembler::Zero, ReturnReg, ReturnReg, throwLabel);
+
+  // Remove the shadow stack space that we added.
+  if (ShadowStackSpace) {
+    masm.addToStackPtr(Imm32(ShadowStackSpace));
+  }
+
+#ifdef ENABLE_WASM_JSPI
+  // We don't need to reload the InstanceReg because it is non-volatile in the
+  // system ABI.
+  MOZ_ASSERT(NonVolatileRegs.has(InstanceReg));
+  LoadActivation(masm, InstanceReg, ABINonArgReturnReg0);
+  GenerateExitEpilogueMainStackReturn(masm, InstanceReg, ABINonArgReturnReg0,
+                                      ABINonArgReturnReg1);
+#endif
+
+  // Get the original stack pointer back for before we dynamically aligned it.
+  // This will switch the SP back to the original stack we were on. Be careful
+  // not to use the return register for this, which is live.
+  masm.loadPtr(Address(masm.getStackPointer(), 0), ABINonArgReturnReg0);
+  masm.moveToStackPtr(ABINonArgReturnReg0);
 
   // Otherwise, the return value is the TrapData::resumePC we must jump to.
   // We must restore register state before jumping, which will clobber
   // ReturnReg, so store ReturnReg in the above-reserved stack slot which we
   // use to jump to via ret.
-  masm.moveToStackPtr(preAlignStackPointer);
   masm.storePtr(ReturnReg, Address(masm.getStackPointer(), offsetOfReturnWord));
   masm.PopRegsInMask(RegsToPreserve);
 #ifdef JS_CODEGEN_ARM64
@@ -2783,7 +2882,7 @@ static bool GenerateThrowStub(MacroAssembler& masm, Label* throwLabel,
   masm.reserveStack(frameSize);
   masm.assertStackAlignment(ABIStackAlignment);
 
-  ABIArgMIRTypeIter i(handleThrowTypes);
+  ABIArgMIRTypeIter i(handleThrowTypes, ABIKind::System);
   if (i->kind() == ABIArg::GPR) {
     masm.movePtr(scratch1, i->gpr());
   } else {
@@ -2814,10 +2913,6 @@ static bool GenerateThrowStub(MacroAssembler& masm, Label* throwLabel,
   return FinishOffsets(masm, offsets);
 }
 
-static const LiveRegisterSet AllAllocatableRegs =
-    LiveRegisterSet(GeneralRegisterSet(Registers::AllocatableMask),
-                    FloatRegisterSet(FloatRegisters::AllMask));
-
 // Generate a stub that handles toggleable enter/leave frame traps or
 // breakpoints.  The stub records the frame pointer (via GenerateExitPrologue)
 // and saves most of registers, so as to not affect the code generated by
@@ -2828,10 +2923,8 @@ static bool GenerateDebugStub(MacroAssembler& masm, Label* throwLabel,
   masm.haltingAlign(CodeAlignment);
   masm.setFramePushed(0);
 
-  GenerateExitPrologue(masm, 0, ExitReason::Fixed::DebugStub, offsets);
-
-  // Save all registers used between baseline compiler operations.
-  masm.PushRegsInMask(AllAllocatableRegs);
+  GenerateExitPrologue(masm, ExitReason::Fixed::DebugStub,
+                       /*switchToMainStack*/ true, 0, 0, offsets);
 
   uint32_t framePushed = masm.framePushed();
 
@@ -2860,14 +2953,14 @@ static bool GenerateDebugStub(MacroAssembler& masm, Label* throwLabel,
     masm.addToStackPtr(Imm32(ShadowStackSpace));
   }
 #ifndef JS_CODEGEN_ARM64
-  masm.Pop(scratch);
+  masm.pop(scratch);
   masm.moveToStackPtr(scratch);
 #endif
 
   masm.setFramePushed(framePushed);
-  masm.PopRegsInMask(AllAllocatableRegs);
 
-  GenerateExitEpilogue(masm, 0, ExitReason::Fixed::DebugStub, offsets);
+  GenerateExitEpilogue(masm, ExitReason::Fixed::DebugStub,
+                       /*switchToMainStack*/ true, offsets);
 
   return FinishOffsets(masm, offsets);
 }
@@ -2886,10 +2979,8 @@ static bool GenerateRequestTierUpStub(MacroAssembler& masm,
   masm.haltingAlign(CodeAlignment);
   masm.setFramePushed(0);
 
-  GenerateExitPrologue(masm, 0, ExitReason::Fixed::RequestTierUp, offsets);
-
-  // Save all registers used between baseline compiler operations.
-  masm.PushRegsInMask(AllAllocatableRegs);
+  GenerateExitPrologue(masm, ExitReason::Fixed::RequestTierUp,
+                       /*switchToMainStack*/ false, 0, 0, offsets);
 
   uint32_t framePushed = masm.framePushed();
 
@@ -2914,7 +3005,7 @@ static bool GenerateRequestTierUpStub(MacroAssembler& masm,
   // Pass InstanceReg as the first (and only) arg to the C++ routine.  We
   // expect that the only target to pass the first integer arg in memory is
   // x86_32, and handle that specially.
-  ABIArgGenerator abi;
+  ABIArgGenerator abi(ABIKind::System);
   ABIArg arg = abi.next(MIRType::Pointer);
 #ifndef JS_CODEGEN_X86
   // The arg rides in a reg.
@@ -2944,14 +3035,14 @@ static bool GenerateRequestTierUpStub(MacroAssembler& masm,
     masm.addToStackPtr(Imm32(ShadowStackSpace));
   }
 #ifndef JS_CODEGEN_ARM64
-  masm.Pop(scratch);
+  masm.pop(scratch);
   masm.moveToStackPtr(scratch);
 #endif
 
   masm.setFramePushed(framePushed);
-  masm.PopRegsInMask(AllAllocatableRegs);
 
-  GenerateExitEpilogue(masm, 0, ExitReason::Fixed::RequestTierUp, offsets);
+  GenerateExitEpilogue(masm, ExitReason::Fixed::RequestTierUp,
+                       /*switchToMainStack*/ false, offsets);
 
   return FinishOffsets(masm, offsets);
 }

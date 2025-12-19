@@ -4,9 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Printf.h"
-#include "mozilla/UniquePtr.h"
 
 #include "ManifestParser.h"
 
@@ -87,8 +85,6 @@ static const ManifestDirective kParsingTable[] = {
     nullptr, &nsChromeRegistry::ManifestSkin,
   },
   {
-    // NB: note that while skin manifests can use this, they are only allowed
-    // to use it for chrome://../skin/ URLs
     "override",         2, true, false,
     nullptr, &nsChromeRegistry::ManifestOverride,
   },
@@ -531,13 +527,6 @@ void ParseManifest(NSLocationType aType, FileLocation& aFile, char* aBuf,
       LogMessageWithContext(
           aFile, line, "Ignoring unrecognized chrome manifest directive '%s'.",
           token);
-      continue;
-    }
-
-    if (!directive->ischrome && NS_BOOTSTRAPPED_LOCATION == aType) {
-      LogMessageWithContext(
-          aFile, line,
-          "Bootstrapped manifest not allowed to use '%s' directive.", token);
       continue;
     }
 

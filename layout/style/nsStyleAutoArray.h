@@ -7,8 +7,8 @@
 #ifndef nsStyleAutoArray_h_
 #define nsStyleAutoArray_h_
 
-#include "nsTArray.h"
 #include "mozilla/Assertions.h"
+#include "nsTArray.h"
 
 /**
  * An array of objects, similar to AutoTArray<T,1> but which is memmovable. It
@@ -44,9 +44,7 @@ class nsStyleAutoArray {
            mFirstElement == aOther.mFirstElement &&
            mOtherElements == aOther.mOtherElements;
   }
-  bool operator!=(const nsStyleAutoArray& aOther) const {
-    return !(*this == aOther);
-  }
+  bool operator!=(const nsStyleAutoArray&) const = default;
 
   size_t Length() const { return mOtherElements.Length() + 1; }
   const T& operator[](size_t aIndex) const {

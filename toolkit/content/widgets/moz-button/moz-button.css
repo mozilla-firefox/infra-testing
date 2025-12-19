@@ -2,10 +2,47 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+:host([hidden]) {
+  display: none !important;
+}
+
 :host {
   display: inline-block;
   height: fit-content;
   width: fit-content;
+  --button-alignment: center;
+}
+
+:host([type="split"]) {
+  display: flex;
+  justify-content: flex-start;
+  gap: var(--space-xxsmall);
+
+  button {
+    min-width: fit-content;
+  }
+
+  #main-button {
+    padding-inline-end: 0;
+  }
+
+  #chevron-button {
+    padding-inline-start: 0;
+  }
+
+  .button-background {
+    height: 100%;
+  }
+
+  #main-button .button-background {
+    border-start-end-radius: 0;
+    border-end-end-radius: 0;
+  }
+
+  #chevron-button .button-background {
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
+  }
 }
 
 button {
@@ -48,12 +85,13 @@ button {
   /* Ensure font-size isn't overridden by widget styling (e.g. in forms.css) */
   font-size: var(--button-font-size);
   display: flex;
-  justify-content: center;
+  justify-content: var(--button-alignment);
   align-items: center;
   position: relative;
 
-  &[size=small] {
+  &[size="small"] {
     min-height: var(--button-min-height-small);
+    padding-block: var(--space-xxsmall);
     font-size: var(--button-font-size-small);
   }
 
@@ -78,6 +116,12 @@ button {
     background-color: var(--button-background-color-active);
     border-color: var(--button-border-color-active);
     color: var(--button-text-color-active);
+  }
+
+  button:is([aria-expanded="true"], [aria-pressed="true"]):not(:hover, :disabled) > & {
+    background-color: var(--button-background-color-selected);
+    border-color: var(--button-border-color-selected);
+    color: var(--button-text-color-selected);
   }
 
   button:disabled > & {
@@ -109,6 +153,12 @@ button {
       color: var(--button-text-color-primary-active);
     }
 
+    button:is([aria-expanded="true"], [aria-pressed="true"]):not(:hover, :disabled) > & {
+      background-color: var(--button-background-color-primary-selected);
+      border-color: var(--button-border-color-primary-selected);
+      color: var(--button-text-color-primary-selected);
+    }
+
     button:disabled > & {
       background-color: var(--button-background-color-primary-disabled);
       border-color: var(--button-border-color-primary-disabled);
@@ -133,6 +183,12 @@ button {
       color: var(--button-text-color-destructive-active);
     }
 
+    button:is([aria-expanded="true"], [aria-pressed="true"]):not(:hover, :disabled) > & {
+      background-color: var(--button-background-color-destructive-selected);
+      border-color: var(--button-border-color-destructive-selected);
+      color: var(--button-text-color-destructive-selected);
+    }
+
     button:disabled > & {
       background-color: var(--button-background-color-destructive-disabled);
       border-color: var(--button-border-color-destructive-disabled);
@@ -140,7 +196,7 @@ button {
     }
   }
 
-  &[type~=ghost] {
+  &[type~="ghost"] {
     background-color: var(--button-background-color-ghost);
     border-color: var(--button-border-color-ghost);
     color: var(--button-text-color-ghost);
@@ -157,6 +213,12 @@ button {
       color: var(--button-text-color-ghost-active);
     }
 
+    button:is([aria-expanded="true"], [aria-pressed="true"]):not(:hover, :disabled) > & {
+      background-color: var(--button-background-color-ghost-selected);
+      border-color: var(--button-border-color-ghost-selected);
+      color: var(--button-text-color-ghost-selected);
+    }
+
     button:disabled > & {
       background-color: var(--button-background-color-ghost-disabled);
       border-color: var(--button-border-color-ghost-disabled);
@@ -165,37 +227,37 @@ button {
   }
 
   &.labelled {
-    gap: var(--space-small)
+    gap: var(--space-small);
   }
 
-  &[type~=icon]:not(.labelled) {
-    background-size: var(--icon-size-default);
+  &[type~="icon"]:not(.labelled) {
+    background-size: var(--icon-size);
     background-position: center;
     background-repeat: no-repeat;
   }
 
-  &[type~=icon]:not(.labelled),
+  &[type~="icon"]:not(.labelled),
   &:not(.labelled):has(img) {
     width: var(--button-size-icon);
     height: var(--button-size-icon);
     padding: var(--button-padding-icon);
 
-    &[size=small] {
+    &[size="small"] {
       width: var(--button-size-icon-small);
       height: var(--button-size-icon-small);
     }
   }
 
   img,
-  &[type~=icon]:not(.labelled) {
+  &[type~="icon"]:not(.labelled) {
     -moz-context-properties: fill, fill-opacity, stroke;
     fill: var(--button-icon-fill);
     stroke: var(--button-icon-stroke);
   }
 
   img {
-    width: var(--icon-size-default);
-    height: var(--icon-size-default);
+    width: var(--icon-size);
+    height: var(--icon-size);
     pointer-events: none;
   }
 }

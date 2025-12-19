@@ -14,7 +14,7 @@ import { connect } from "devtools/client/shared/vendor/react-redux";
 import { prefs } from "../utils/prefs";
 import { primaryPaneTabs } from "../constants";
 import actions from "../actions/index";
-import AccessibleImage from "./shared/AccessibleImage";
+import DebuggerImage from "./shared/DebuggerImage";
 
 import {
   getSelectedLocation,
@@ -72,7 +72,7 @@ class App extends Component {
       openQuickOpen: PropTypes.func.isRequired,
       orientation: PropTypes.oneOf(["horizontal", "vertical"]).isRequired,
       quickOpenEnabled: PropTypes.bool.isRequired,
-      selectedLocation: PropTypes.object,
+      showWelcomeBox: PropTypes.bool.isRequired,
       setActiveSearch: PropTypes.func.isRequired,
       setOrientation: PropTypes.func.isRequired,
       setPrimaryPaneTab: PropTypes.func.isRequired,
@@ -216,7 +216,7 @@ class App extends Component {
         { className: "editor-notification-footer", "aria-role": "status" },
         span(
           { className: "info icon" },
-          React.createElement(AccessibleImage, { className: "sourcemap" })
+          React.createElement(DebuggerImage, { name: "sourcemap" })
         ),
         `Source Map Error: ${this.props.sourceMapError}`,
         button({ className: "close-button", onClick: this.closeSourceMapError })
@@ -227,7 +227,7 @@ class App extends Component {
         { className: "editor-notification-footer", "aria-role": "status" },
         span(
           { className: "info icon" },
-          React.createElement(AccessibleImage, { className: "sourcemap" })
+          React.createElement(DebuggerImage, { name: "sourcemap" })
         ),
         L10N.getFormatStr(
           "editorNotificationFooter.noOriginalScopes",
@@ -259,7 +259,7 @@ class App extends Component {
           startPanelSize,
           endPanelSize,
         }),
-        !this.props.selectedLocation
+        this.props.showWelcomeBox
           ? React.createElement(WelcomeBox, {
               horizontal,
               toggleShortcutsModal: () => this.toggleShortcutsModal(),
@@ -377,7 +377,7 @@ const mapStateToProps = state => {
 
   return {
     showOriginalVariableMappingWarning,
-    selectedLocation,
+    showWelcomeBox: !selectedLocation,
     startPanelCollapsed: getPaneCollapse(state, "start"),
     endPanelCollapsed: getPaneCollapse(state, "end"),
     activeSearch: getActiveSearch(state),

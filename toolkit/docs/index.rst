@@ -7,8 +7,10 @@ This is the nascent documentation of the Toolkit code that is shared across Fire
 .. toctree::
    :maxdepth: 1
 
+   profile/index
    javascript-logging
    mozapps/extensions/addon-manager/index
+   components/autocomplete/docs/index
    components/backgroundtasks/index
    components/crashes/crash-manager/index
    crashreporter/crashreporter/index

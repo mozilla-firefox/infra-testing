@@ -81,7 +81,7 @@ const TESTS = [
   {
     setUp() {
       Services.cookies.removeAll();
-      Services.cookies.add(
+      const cv = Services.cookies.add(
         "www.bing.com",
         "/",
         "SRCHS",
@@ -91,9 +91,10 @@ const TESTS = [
         false,
         Date.now() + 1000 * 60 * 60,
         {},
-        Ci.nsICookie.SAMESITE_NONE,
+        Ci.nsICookie.SAMESITE_UNSET,
         Ci.nsICookie.SCHEME_HTTPS
       );
+      Assert.equal(cv.result, Ci.nsICookieValidation.eOK, "Valid cookie");
     },
     tearDown() {
       Services.cookies.removeAll();
@@ -138,7 +139,7 @@ const TESTS = [
   },
   {
     title: "DuckDuckGo organic",
-    trackingUrl: "https://duckduckgo.com/?q=test&t=other&ia=news",
+    trackingUrl: "https://duckduckgo.com/?q=test&t=other&ia=shopping",
     expectedSearchCountEntry: "duckduckgo:organic:other",
     expectedAdKey: "duckduckgo:organic",
     adUrls: ["https://duckduckgo.com/y.js?ad_provider=foo"],
@@ -146,7 +147,7 @@ const TESTS = [
   },
   {
     title: "DuckDuckGo expected organic code",
-    trackingUrl: "https://duckduckgo.com/?q=test&t=h_&ia=news",
+    trackingUrl: "https://duckduckgo.com/?q=test&t=h_&ia=shopping",
     expectedSearchCountEntry: "duckduckgo:organic:none",
     expectedAdKey: "duckduckgo:organic",
     adUrls: ["https://duckduckgo.com/y.js?ad_provider=foo"],
@@ -154,7 +155,7 @@ const TESTS = [
   },
   {
     title: "DuckDuckGo expected organic code 2",
-    trackingUrl: "https://duckduckgo.com/?q=test&t=hz&ia=news",
+    trackingUrl: "https://duckduckgo.com/?q=test&t=hz&ia=shopping",
     expectedSearchCountEntry: "duckduckgo:organic:none",
     expectedAdKey: "duckduckgo:organic",
     adUrls: ["https://duckduckgo.com/y.js?ad_provider=foo"],
@@ -162,7 +163,7 @@ const TESTS = [
   },
   {
     title: "DuckDuckGo organic no code",
-    trackingUrl: "https://duckduckgo.com/?q=test&ia=news",
+    trackingUrl: "https://duckduckgo.com/?q=test&ia=shopping",
     expectedSearchCountEntry: "duckduckgo:organic:none",
     expectedAdKey: "duckduckgo:organic",
     adUrls: ["https://duckduckgo.com/y.js?ad_provider=foo"],

@@ -8,14 +8,18 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 #include <iostream>
+#include <memory>
+#include <utility>
 
+#include "api/environment/environment_factory.h"
 #include "p2p/test/stun_server.h"
 #include "rtc_base/async_udp_socket.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/socket_address.h"
 #include "rtc_base/socket_server.h"
 #include "rtc_base/thread.h"
 
-using cricket::StunServer;
+using ::webrtc::StunServer;
 
 int main(int argc, char* argv[]) {
   if (argc != 2) {
@@ -23,28 +27,29 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  rtc::SocketAddress server_addr;
+  webrtc::SocketAddress server_addr;
   if (!server_addr.FromString(argv[1])) {
     std::cerr << "Unable to parse IP address: " << argv[1];
     return 1;
   }
 
-  rtc::Thread* pthMain = rtc::ThreadManager::Instance()->WrapCurrentThread();
+  webrtc::Thread* pthMain =
+      webrtc::ThreadManager::Instance()->WrapCurrentThread();
   RTC_DCHECK(pthMain);
 
-  rtc::AsyncUDPSocket* server_socket =
-      rtc::AsyncUDPSocket::Create(pthMain->socketserver(), server_addr);
+  std::unique_ptr<webrtc::AsyncUDPSocket> server_socket =
+      webrtc::AsyncUDPSocket::Create(webrtc::CreateEnvironment(), server_addr,
+                                     *pthMain->socketserver());
   if (!server_socket) {
     std::cerr << "Failed to create a UDP socket" << std::endl;
     return 1;
   }
 
-  StunServer* server = new StunServer(server_socket);
+  StunServer server(std::move(server_socket));
 
   std::cout << "Listening at " << server_addr.ToString() << std::endl;
 
   pthMain->Run();
 
-  delete server;
   return 0;
 }

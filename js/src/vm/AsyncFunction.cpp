@@ -153,6 +153,7 @@ static bool AsyncFunctionResume(JSContext* cx,
   FixedInvokeArgs<1> args(cx);
   args[0].set(valueOrReason);
   RootedValue generatorOrValue(cx, ObjectValue(*generator));
+  MOZ_RELEASE_ASSERT(cx->realm() == generator->nonCCWRealm());
   if (!CallSelfHostedFunction(cx, funName, generatorOrValue, args,
                               &generatorOrValue)) {
     if (!generator->isClosed()) {
@@ -283,9 +284,8 @@ JSFunction* NewHandler(JSContext* cx, Native handler,
   cx->check(target);
 
   JS::Handle<PropertyName*> funName = cx->names().empty_;
-  JS::Rooted<JSFunction*> handlerFun(
-      cx, NewNativeFunction(cx, handler, 0, funName,
-                            gc::AllocKind::FUNCTION_EXTENDED, GenericObject));
+  JSFunction* handlerFun = NewNativeFunction(
+      cx, handler, 0, funName, gc::AllocKind::FUNCTION_EXTENDED, GenericObject);
   if (!handlerFun) {
     return nullptr;
   }

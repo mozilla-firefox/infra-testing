@@ -102,6 +102,12 @@ async function setup(tabChangeEventName) {
   return { windows: [win0, win1, privateWin], cleanup };
 }
 
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["test.wait300msAfterTabSwitch", true]],
+  });
+});
+
 add_task(async function test_TabChanges() {
   const { windows, cleanup } = await setup("TabChange");
   const [win0, win1, privateWin] = windows;
@@ -133,11 +139,9 @@ add_task(async function test_TabChanges() {
     );
     const navigateUrl = "https://example.org/";
     BrowserTestUtils.startLoadingURIString(newTab.linkedBrowser, navigateUrl);
-    await BrowserTestUtils.browserLoaded(
-      newTab.linkedBrowser,
-      null,
-      navigateUrl
-    );
+    await BrowserTestUtils.browserLoaded(newTab.linkedBrowser, {
+      wantLoad: navigateUrl,
+    });
     // navigation in a tab changes the label which should produce a change event
     changeEvent = await tabChangeRaised;
     Assert.deepEqual(
@@ -398,26 +402,6 @@ add_task(async function test_TabRecencyChange() {
     sortedTabs[0],
     win1.gBrowser.selectedTab,
     "The most-recent non-private tab is the selected tab in the current window"
-  );
-
-  tabChangeRaised = BrowserTestUtils.waitForEvent(
-    NonPrivateTabs,
-    "TabRecencyChange"
-  );
-  // Add tab to group and collapse that group, which selects another tab,
-  // which should produce a recency change event.
-  let tabCount = NonPrivateTabs.getRecentTabs().length;
-  win0.gBrowser.addTabGroup([win0.gBrowser.selectedTab]).collapsed = true;
-  changeEvent = await tabChangeRaised;
-  Assert.deepEqual(
-    changeEvent.detail.windowIds,
-    [getWindowId(win0)],
-    "The event had the correct window id"
-  );
-  is(
-    tabCount,
-    NonPrivateTabs.getRecentTabs().length,
-    "Adding selected tab to group and collapsing that group doesn't remove tab from recent tabs"
   );
 
   await cleanup("TabRecencyChange");

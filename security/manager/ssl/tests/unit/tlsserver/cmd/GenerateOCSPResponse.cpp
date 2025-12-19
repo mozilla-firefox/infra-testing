@@ -10,10 +10,6 @@
  */
 
 #include <stdio.h>
-#include <string>
-#include <vector>
-
-#include "mozilla/ArrayUtils.h"
 
 #include "cert.h"
 #include "nspr.h"

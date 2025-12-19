@@ -8,7 +8,6 @@
 #define nsXREAppData_h
 
 #include <stdint.h>
-#include "mozilla/Attributes.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "nsCOMPtr.h"
 #include "nsCRTGlue.h"
@@ -186,7 +185,9 @@ class XREAppData {
   sandbox::BrokerServices* sandboxBrokerServices = nullptr;
 #endif
 
-  // Returns a name suitable for DBUS services.
+  // Returns a name suitable for DBUS services. In particular, it ensures that
+  // the name is a valid object-path element:
+  // https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-marshaling-object-path
   static void SanitizeNameForDBus(nsACString&);
   void GetDBusAppName(nsACString&) const;
 };

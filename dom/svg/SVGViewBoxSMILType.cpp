@@ -6,24 +6,25 @@
 
 #include "SVGViewBoxSMILType.h"
 
+#include <math.h>
+
+#include "SVGAnimatedViewBox.h"
 #include "mozilla/SMILValue.h"
 #include "nsDebug.h"
-#include "SVGAnimatedViewBox.h"
-#include <math.h>
 
 namespace mozilla {
 
 /*static*/
 SVGViewBoxSMILType SVGViewBoxSMILType::sSingleton;
 
-void SVGViewBoxSMILType::Init(SMILValue& aValue) const {
+void SVGViewBoxSMILType::InitValue(SMILValue& aValue) const {
   MOZ_ASSERT(aValue.IsNull(), "Unexpected value type");
 
   aValue.mU.mPtr = new SVGViewBox(0.0f, 0.0f, 0.0f, 0.0f);
   aValue.mType = this;
 }
 
-void SVGViewBoxSMILType::Destroy(SMILValue& aValue) const {
+void SVGViewBoxSMILType::DestroyValue(SMILValue& aValue) const {
   MOZ_ASSERT(aValue.mType == this, "Unexpected SMIL value");
   delete static_cast<SVGViewBox*>(aValue.mU.mPtr);
   aValue.mU.mPtr = nullptr;

@@ -11,10 +11,12 @@ object WebCompatTestData {
           "antitracking": {
             "blockList": "basic",
             "btpHasPurgedSite": false,
+            "etpCategory": "standard",
             "hasMixedActiveContentBlocked": false,
             "hasMixedDisplayContentBlocked": false,
             "hasTrackingContentBlocked": false,
-            "isPrivateBrowsing": false
+            "isPrivateBrowsing": false,
+            "blockedOrigins": ["https://blockedUrlExample.com"]
           },
           "browser": {
             "addons": [
@@ -33,17 +35,6 @@ object WebCompatTestData {
             "app": {
               "defaultUserAgent": "testDefaultUserAgent"
             },
-            "experiments": [
-              {
-                "branch": "branch1",
-                "slug": "slug1",
-                "kind": "kind1"
-              }, {
-                "branch": "branch2",
-                "slug": "slug2",
-                "kind": "kind2"
-              }
-            ],
             "graphics": {
               "devices": [
                 { "id": "device1" },
@@ -96,10 +87,12 @@ object WebCompatTestData {
           "antitracking": {
             "blockList": "basic",
             "btpHasPurgedSite": false,
+            "etpCategory": "standard",
             "hasMixedActiveContentBlocked": false,
             "hasMixedDisplayContentBlocked": false,
             "hasTrackingContentBlocked": false,
-            "isPrivateBrowsing": false
+            "isPrivateBrowsing": false,
+            "blockedOrigins": ["https://blockedUrlExample.com", "https://blockedUrlExample2.com"]
           },
           "browser": {
             "addons": [

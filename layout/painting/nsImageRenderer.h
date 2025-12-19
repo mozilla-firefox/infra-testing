@@ -7,10 +7,10 @@
 #ifndef nsImageRenderer_h__
 #define nsImageRenderer_h__
 
-#include "nsStyleStruct.h"
 #include "Units.h"
 #include "mozilla/AspectRatio.h"
 #include "mozilla/SurfaceFromElementResult.h"
+#include "nsStyleStruct.h"
 
 class gfxDrawable;
 
@@ -240,7 +240,7 @@ class nsImageRenderer {
   ImgDrawResult DrawShapeImage(nsPresContext* aPresContext,
                                gfxContext& aRenderingContext);
 
-  bool IsRasterImage();
+  bool IsRasterImage() const;
 
   /// Retrieves the image associated with this nsImageRenderer, if there is one.
   already_AddRefed<imgIContainer> GetImage();

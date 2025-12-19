@@ -5,26 +5,25 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "TextOverflow.h"
+
 #include <algorithm>
 
 // Please maintain alphabetical order below
+#include "TextDrawTarget.h"
 #include "gfxContext.h"
+#include "mozilla/PresShell.h"
+#include "mozilla/ScrollContainerFrame.h"
+#include "mozilla/dom/Selection.h"
 #include "nsBlockFrame.h"
+#include "nsCSSAnonBoxes.h"
 #include "nsCaret.h"
 #include "nsContentUtils.h"
-#include "nsCSSAnonBoxes.h"
 #include "nsFontMetrics.h"
+#include "nsIFrameInlines.h"
 #include "nsLayoutUtils.h"
 #include "nsPresContext.h"
 #include "nsRect.h"
 #include "nsTextFrame.h"
-#include "nsIFrameInlines.h"
-#include "mozilla/ArrayUtils.h"
-#include "mozilla/Likely.h"
-#include "mozilla/PresShell.h"
-#include "mozilla/ScrollContainerFrame.h"
-#include "mozilla/dom/Selection.h"
-#include "TextDrawTarget.h"
 
 using mozilla::layout::TextDrawTarget;
 
@@ -224,14 +223,14 @@ void nsDisplayTextOverflowMarker::PaintTextToContext(gfxContext* aCtx,
   if (wm.IsVertical()) {
     if (wm.IsVerticalLR()) {
       pt.x = NSToCoordFloor(
-          nsLayoutUtils::GetSnappedBaselineX(mFrame, aCtx, pt.x, mAscent));
+          nsLayoutUtils::GetMaybeSnappedBaselineX(mFrame, aCtx, pt.x, mAscent));
     } else {
-      pt.x = NSToCoordFloor(nsLayoutUtils::GetSnappedBaselineX(
+      pt.x = NSToCoordFloor(nsLayoutUtils::GetMaybeSnappedBaselineX(
           mFrame, aCtx, pt.x + mRect.width, -mAscent));
     }
   } else {
     pt.y = NSToCoordFloor(
-        nsLayoutUtils::GetSnappedBaselineY(mFrame, aCtx, pt.y, mAscent));
+        nsLayoutUtils::GetMaybeSnappedBaselineY(mFrame, aCtx, pt.y, mAscent));
   }
   pt += aOffsetFromRect;
 
@@ -837,8 +836,7 @@ bool TextOverflow::CanHaveOverflowMarkers(nsBlockFrame* aBlockFrame,
 
   // Skip the combobox anonymous block because it would clip the drop-down
   // arrow. The inner label inherits 'text-overflow' and does the right thing.
-  if (aBlockFrame->GetParent() &&
-      aBlockFrame->GetParent()->IsComboboxControlFrame()) {
+  if (aBlockFrame->IsComboboxControlFrame()) {
     return false;
   }
 

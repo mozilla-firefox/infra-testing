@@ -21,24 +21,29 @@ import org.mozilla.fenix.components.toolbar.ToolbarPosition
  * @param context [Context] used for various system interactions.
  * @property toolbarPosition Where the toolbar is positioned on the screen.
  * Depending on it's position (top / bottom) the snackbar will be shown below / above the toolbar.
+ * @param shouldUseExpandedToolbar Whether the expanded toolbar layout should be used.
  */
 class SnackbarBehavior<V : View>(
     context: Context,
     @get:VisibleForTesting internal val toolbarPosition: ToolbarPosition,
+    private val shouldUseExpandedToolbar: Boolean,
 ) : CoordinatorLayout.Behavior<V>(context, null) {
 
     // Priority list of possible anchors for the snackbar.
     private val dependenciesIds = buildList {
-        add(R.id.startDownloadDialogContainer)
-        add(R.id.viewDynamicDownloadDialog)
+        add(R.id.translationsBanner)
         add(R.id.loginSelectBar)
         add(R.id.suggestStrongPasswordBar)
         add(R.id.creditCardSelectBar)
         add(R.id.addressSelectBar)
-        add(R.id.toolbar_navbar_container)
-        if (toolbarPosition == ToolbarPosition.BOTTOM) {
+        add(R.id.navigation_bar)
+        if (
+            toolbarPosition == ToolbarPosition.BOTTOM ||
+            (toolbarPosition == ToolbarPosition.TOP && shouldUseExpandedToolbar)
+        ) {
             add(R.id.toolbarLayout)
             add(R.id.toolbar)
+            add(R.id.composable_toolbar)
         }
     }
 

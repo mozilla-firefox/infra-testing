@@ -30,6 +30,23 @@
       "required": ["name"],
       "type": "object"
     },
+    "os_schema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "title": "Operating system name",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "platform_version": {
+          "title": "Operating system version",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      }
+    },
     "framework_schema": {
       "properties": {
         "name": {
@@ -43,7 +60,8 @@
       "properties": {
         "name": {
           "title": "Subtest name",
-          "type": "string"
+          "type": "string",
+          "maxLength": 80
         },
         "publicName": {
           "title": "Public subtest name",
@@ -110,7 +128,8 @@
       "properties": {
         "name": {
           "title": "Suite name",
-          "type": "string"
+          "type": "string",
+          "maxLength": 80
         },
         "publicName": {
           "title": "Public suite name",
@@ -158,6 +177,15 @@
           "minLength": 1,
           "maxLength": 20
         },
+        "replicates": {
+          "title": "Suite replicates",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": -1000000000000.0,
+            "maximum": 1000000000000.0
+          }
+        },
         "lowerIsBetter": {
           "description": "Whether lower values are better for suite",
           "title": "Lower is better",
@@ -195,6 +223,21 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 255
+        },
+        "monitor": {
+          "description": "Enable non-sheriffed alerting (ignores shouldAlert settings)",
+          "title": "Monitor",
+          "type": "boolean"
+        },
+        "alertNotifyEmails": {
+          "type": "array",
+          "title": "Notify these emails for any alerts produced",
+          "items": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "uniqueItems": true,
+          "maxItems": 8
         }
       },
       "required": ["name", "subtests"],
@@ -206,6 +249,9 @@
   "properties": {
     "application": {
       "$ref": "#/definitions/application_schema"
+    },
+    "os": {
+      "$ref": "#/definitions/os_schema"
     },
     "framework": {
       "$ref": "#/definitions/framework_schema"

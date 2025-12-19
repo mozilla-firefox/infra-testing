@@ -37,6 +37,7 @@
 #include "modules/pacing/packet_router.h"
 #include "modules/rtp_rtcp/source/byte_io.h"
 #include "rtc_base/time_utils.h"
+#include "test/gmock.h"
 #include "test/gtest.h"
 #include "test/mock_audio_decoder_factory.h"
 #include "test/mock_transport.h"
@@ -64,58 +65,64 @@ AudioDecodingCallStats MakeAudioDecodeStatsForTest() {
   return audio_decode_stats;
 }
 
-const uint32_t kRemoteSsrc = 1234;
-const uint32_t kLocalSsrc = 5678;
-const int kJitterBufferDelay = -7;
-const int kPlayoutBufferDelay = 302;
-const unsigned int kSpeechOutputLevel = 99;
-const double kTotalOutputEnergy = 0.25;
-const double kTotalOutputDuration = 0.5;
-const int64_t kPlayoutNtpTimestampMs = 5678;
+constexpr uint32_t kRemoteSsrc = 1234;
+constexpr uint32_t kLocalSsrc = 5678;
+constexpr int kJitterBufferDelay = -7;
+constexpr int kPlayoutBufferDelay = 302;
+constexpr unsigned int kSpeechOutputLevel = 99;
+constexpr double kTotalOutputEnergy = 0.25;
+constexpr double kTotalOutputDuration = 0.5;
+constexpr int64_t kPlayoutNtpTimestampMs = 5678;
 
-const CallReceiveStatistics kCallStats = {678, 234, -12, 567, 78, 890, 123};
+const ChannelReceiveStatistics kChannelStats = {
+    .packets_lost = 678,
+    .jitter_ms = 234,
+    .payload_bytes_received = -12,
+    .header_and_padding_bytes_received = 567,
+    .packets_received = 78,
+    .packets_received_with_ect1 = 890,
+    .packets_received_with_ce = 123};
 const std::pair<int, SdpAudioFormat> kReceiveCodec = {
     123,
     {"codec_name_recv", 96000, 0}};
-const NetworkStatistics kNetworkStats = {
-    /*currentBufferSize=*/123,
-    /*preferredBufferSize=*/456,
-    /*jitterPeaksFound=*/false,
-    /*totalSamplesReceived=*/789012,
-    /*concealedSamples=*/3456,
-    /*silentConcealedSamples=*/123,
-    /*concealmentEvents=*/456,
-    /*jitterBufferDelayMs=*/789,
-    /*jitterBufferEmittedCount=*/543,
-    /*jitterBufferTargetDelayMs=*/123,
-    /*jitterBufferMinimumDelayMs=*/222,
-    /*insertedSamplesForDeceleration=*/432,
-    /*removedSamplesForAcceleration=*/321,
-    /*fecPacketsReceived=*/123,
-    /*fecPacketsDiscarded=*/101,
-    /*totalProcessingDelayMs=*/154,
-    /*packetsDiscarded=*/989,
-    /*currentExpandRate=*/789,
-    /*currentSpeechExpandRate=*/12,
-    /*currentPreemptiveRate=*/345,
-    /*currentAccelerateRate =*/678,
-    /*currentSecondaryDecodedRate=*/901,
-    /*currentSecondaryDiscardedRate=*/0,
-    /*meanWaitingTimeMs=*/-1,
-    /*maxWaitingTimeMs=*/-1,
-    /*packetBufferFlushes=*/0,
-    /*delayedPacketOutageSamples=*/0,
-    /*relativePacketArrivalDelayMs=*/135,
-    /*interruptionCount=*/-1,
-    /*totalInterruptionDurationMs=*/-1};
+const NetworkStatistics kNetworkStats = {.currentBufferSize = 123,
+                                         .preferredBufferSize = 456,
+                                         .jitterPeaksFound = false,
+                                         .totalSamplesReceived = 789012,
+                                         .concealedSamples = 3456,
+                                         .silentConcealedSamples = 123,
+                                         .concealmentEvents = 456,
+                                         .jitterBufferDelayMs = 789,
+                                         .jitterBufferTargetDelayMs = 543,
+                                         .jitterBufferMinimumDelayMs = 123,
+                                         .jitterBufferEmittedCount = 222,
+                                         .insertedSamplesForDeceleration = 432,
+                                         .removedSamplesForAcceleration = 321,
+                                         .fecPacketsReceived = 123,
+                                         .fecPacketsDiscarded = 101,
+                                         .totalProcessingDelayUs = 154,
+                                         .packetsDiscarded = 989,
+                                         .currentExpandRate = 789,
+                                         .currentSpeechExpandRate = 12,
+                                         .currentPreemptiveRate = 345,
+                                         .currentAccelerateRate = 678,
+                                         .currentSecondaryDecodedRate = 901,
+                                         .currentSecondaryDiscardedRate = 0,
+                                         .meanWaitingTimeMs = -1,
+                                         .maxWaitingTimeMs = -1,
+                                         .packetBufferFlushes = 0,
+                                         .delayedPacketOutageSamples = 0,
+                                         .relativePacketArrivalDelayMs = 135,
+                                         .interruptionCount = -1,
+                                         .totalInterruptionDurationMs = -1};
 const AudioDecodingCallStats kAudioDecodeStats = MakeAudioDecodeStatsForTest();
 
 struct ConfigHelper {
   explicit ConfigHelper(bool use_null_audio_processing)
-      : ConfigHelper(rtc::make_ref_counted<MockAudioMixer>(),
+      : ConfigHelper(make_ref_counted<MockAudioMixer>(),
                      use_null_audio_processing) {}
 
-  ConfigHelper(rtc::scoped_refptr<MockAudioMixer> audio_mixer,
+  ConfigHelper(scoped_refptr<MockAudioMixer> audio_mixer,
                bool use_null_audio_processing)
       : audio_mixer_(audio_mixer) {
     using ::testing::Invoke;
@@ -125,9 +132,9 @@ struct ConfigHelper {
     config.audio_processing =
         use_null_audio_processing
             ? nullptr
-            : rtc::make_ref_counted<NiceMock<MockAudioProcessing>>();
+            : make_ref_counted<NiceMock<MockAudioProcessing>>();
     config.audio_device_module =
-        rtc::make_ref_counted<testing::NiceMock<MockAudioDeviceModule>>();
+        make_ref_counted<testing::NiceMock<MockAudioDeviceModule>>();
     audio_state_ = AudioState::Create(config);
 
     channel_receive_ = new ::testing::StrictMock<MockChannelReceive>();
@@ -142,15 +149,13 @@ struct ConfigHelper {
         .WillRepeatedly(Invoke([](const std::map<int, SdpAudioFormat>& codecs) {
           EXPECT_THAT(codecs, ::testing::IsEmpty());
         }));
-    EXPECT_CALL(*channel_receive_, GetLocalSsrc())
-        .WillRepeatedly(Return(kLocalSsrc));
 
     stream_config_.rtp.local_ssrc = kLocalSsrc;
     stream_config_.rtp.remote_ssrc = kRemoteSsrc;
     stream_config_.rtp.nack.rtp_history_ms = 300;
     stream_config_.rtcp_send_transport = &rtcp_send_transport_;
     stream_config_.decoder_factory =
-        rtc::make_ref_counted<MockAudioDecoderFactory>();
+        make_ref_counted<MockAudioDecoderFactory>();
   }
 
   std::unique_ptr<AudioReceiveStreamImpl> CreateAudioReceiveStream() {
@@ -162,7 +167,7 @@ struct ConfigHelper {
   }
 
   AudioReceiveStreamInterface::Config& config() { return stream_config_; }
-  rtc::scoped_refptr<MockAudioMixer> audio_mixer() { return audio_mixer_; }
+  scoped_refptr<MockAudioMixer> audio_mixer() { return audio_mixer_; }
   MockChannelReceive* channel_receive() { return channel_receive_; }
 
   void SetupMockForGetStats() {
@@ -171,7 +176,7 @@ struct ConfigHelper {
 
     ASSERT_TRUE(channel_receive_);
     EXPECT_CALL(*channel_receive_, GetRTCPStatistics())
-        .WillOnce(Return(kCallStats));
+        .WillOnce(Return(kChannelStats));
     EXPECT_CALL(*channel_receive_, GetDelayEstimate())
         .WillOnce(Return(kJitterBufferDelay + kPlayoutBufferDelay));
     EXPECT_CALL(*channel_receive_, GetSpeechOutputLevelFullRange())
@@ -192,8 +197,8 @@ struct ConfigHelper {
 
  private:
   PacketRouter packet_router_;
-  rtc::scoped_refptr<AudioState> audio_state_;
-  rtc::scoped_refptr<MockAudioMixer> audio_mixer_;
+  scoped_refptr<AudioState> audio_state_;
+  scoped_refptr<MockAudioMixer> audio_mixer_;
   AudioReceiveStreamInterface::Config stream_config_;
   ::testing::StrictMock<MockChannelReceive>* channel_receive_ = nullptr;
   RtpStreamReceiverController rtp_stream_receiver_controller_;
@@ -243,7 +248,7 @@ TEST(AudioReceiveStreamTest, ReceiveRtcpPacket) {
     EXPECT_CALL(*helper.channel_receive(),
                 ReceivedRTCPPacket(&rtcp_packet[0], rtcp_packet.size()))
         .WillOnce(Return());
-    recv_stream->DeliverRtcp(&rtcp_packet[0], rtcp_packet.size());
+    recv_stream->DeliverRtcp(rtcp_packet);
     recv_stream->UnregisterFromTransport();
   }
 }
@@ -257,14 +262,15 @@ TEST(AudioReceiveStreamTest, GetStats) {
     AudioReceiveStreamInterface::Stats stats =
         recv_stream->GetStats(/*get_and_clear_legacy_stats=*/true);
     EXPECT_EQ(kRemoteSsrc, stats.remote_ssrc);
-    EXPECT_EQ(kCallStats.payload_bytes_received, stats.payload_bytes_received);
-    EXPECT_EQ(kCallStats.header_and_padding_bytes_received,
+    EXPECT_EQ(kChannelStats.payload_bytes_received,
+              stats.payload_bytes_received);
+    EXPECT_EQ(kChannelStats.header_and_padding_bytes_received,
               stats.header_and_padding_bytes_received);
-    EXPECT_EQ(static_cast<uint32_t>(kCallStats.packets_received),
+    EXPECT_EQ(static_cast<uint32_t>(kChannelStats.packets_received),
               stats.packets_received);
-    EXPECT_EQ(kCallStats.packets_lost, stats.packets_lost);
+    EXPECT_EQ(kChannelStats.packets_lost, stats.packets_lost);
     EXPECT_EQ(kReceiveCodec.second.name, stats.codec_name);
-    EXPECT_EQ(kCallStats.jitter_ms, stats.jitter_ms);
+    EXPECT_EQ(kChannelStats.jitter_ms, stats.jitter_ms);
     EXPECT_EQ(kNetworkStats.currentBufferSize, stats.jitter_buffer_ms);
     EXPECT_EQ(kNetworkStats.preferredBufferSize,
               stats.jitter_buffer_preferred_ms);
@@ -277,15 +283,15 @@ TEST(AudioReceiveStreamTest, GetStats) {
     EXPECT_EQ(kNetworkStats.concealedSamples, stats.concealed_samples);
     EXPECT_EQ(kNetworkStats.concealmentEvents, stats.concealment_events);
     EXPECT_EQ(static_cast<double>(kNetworkStats.jitterBufferDelayMs) /
-                  static_cast<double>(rtc::kNumMillisecsPerSec),
+                  static_cast<double>(kNumMillisecsPerSec),
               stats.jitter_buffer_delay_seconds);
     EXPECT_EQ(kNetworkStats.jitterBufferEmittedCount,
               stats.jitter_buffer_emitted_count);
     EXPECT_EQ(static_cast<double>(kNetworkStats.jitterBufferTargetDelayMs) /
-                  static_cast<double>(rtc::kNumMillisecsPerSec),
+                  static_cast<double>(kNumMillisecsPerSec),
               stats.jitter_buffer_target_delay_seconds);
     EXPECT_EQ(static_cast<double>(kNetworkStats.jitterBufferMinimumDelayMs) /
-                  static_cast<double>(rtc::kNumMillisecsPerSec),
+                  static_cast<double>(kNumMillisecsPerSec),
               stats.jitter_buffer_minimum_delay_seconds);
     EXPECT_EQ(kNetworkStats.insertedSamplesForDeceleration,
               stats.inserted_samples_for_deceleration);
@@ -294,7 +300,7 @@ TEST(AudioReceiveStreamTest, GetStats) {
     EXPECT_EQ(kNetworkStats.fecPacketsReceived, stats.fec_packets_received);
     EXPECT_EQ(kNetworkStats.fecPacketsDiscarded, stats.fec_packets_discarded);
     EXPECT_EQ(static_cast<double>(kNetworkStats.totalProcessingDelayUs) /
-                  static_cast<double>(rtc::kNumMicrosecsPerSec),
+                  static_cast<double>(kNumMicrosecsPerSec),
               stats.total_processing_delay_seconds);
     EXPECT_EQ(kNetworkStats.packetsDiscarded, stats.packets_discarded);
     EXPECT_EQ(Q14ToFloat(kNetworkStats.currentExpandRate), stats.expand_rate);
@@ -312,7 +318,7 @@ TEST(AudioReceiveStreamTest, GetStats) {
     EXPECT_EQ(kNetworkStats.delayedPacketOutageSamples,
               stats.delayed_packet_outage_samples);
     EXPECT_EQ(static_cast<double>(kNetworkStats.relativePacketArrivalDelayMs) /
-                  static_cast<double>(rtc::kNumMillisecsPerSec),
+                  static_cast<double>(kNumMillisecsPerSec),
               stats.relative_packet_arrival_delay_seconds);
     EXPECT_EQ(kNetworkStats.interruptionCount, stats.interruption_count);
     EXPECT_EQ(kNetworkStats.totalInterruptionDurationMs,
@@ -328,7 +334,7 @@ TEST(AudioReceiveStreamTest, GetStats) {
     EXPECT_EQ(kAudioDecodeStats.decoded_plc_cng, stats.decoding_plc_cng);
     EXPECT_EQ(kAudioDecodeStats.decoded_muted_output,
               stats.decoding_muted_output);
-    EXPECT_EQ(kCallStats.capture_start_ntp_time_ms,
+    EXPECT_EQ(kChannelStats.capture_start_ntp_time_ms,
               stats.capture_start_ntp_time_ms);
     EXPECT_EQ(kPlayoutNtpTimestampMs, stats.estimated_playout_ntp_timestamp_ms);
     recv_stream->UnregisterFromTransport();
@@ -417,8 +423,8 @@ TEST(AudioReceiveStreamTest, ReconfigureWithFrameDecryptor) {
     auto recv_stream = helper.CreateAudioReceiveStream();
 
     auto new_config_0 = helper.config();
-    rtc::scoped_refptr<FrameDecryptorInterface> mock_frame_decryptor_0(
-        rtc::make_ref_counted<MockFrameDecryptor>());
+    scoped_refptr<FrameDecryptorInterface> mock_frame_decryptor_0(
+        make_ref_counted<MockFrameDecryptor>());
     new_config_0.frame_decryptor = mock_frame_decryptor_0;
 
     // TODO(tommi): While this changes the internal config value, it doesn't
@@ -429,8 +435,8 @@ TEST(AudioReceiveStreamTest, ReconfigureWithFrameDecryptor) {
     recv_stream->ReconfigureForTesting(new_config_0);
 
     auto new_config_1 = helper.config();
-    rtc::scoped_refptr<FrameDecryptorInterface> mock_frame_decryptor_1(
-        rtc::make_ref_counted<MockFrameDecryptor>());
+    scoped_refptr<FrameDecryptorInterface> mock_frame_decryptor_1(
+        make_ref_counted<MockFrameDecryptor>());
     new_config_1.frame_decryptor = mock_frame_decryptor_1;
     new_config_1.crypto_options.sframe.require_frame_encryption = true;
     recv_stream->ReconfigureForTesting(new_config_1);

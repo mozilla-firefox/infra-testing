@@ -6,7 +6,13 @@ support-files = [
   "!/accessible/tests/mochitest/*.js",
   "!/accessible/tests/browser/*.mjs",
 ]
+prefs = [
+  # Required for the eval in invokeContentTask in shared-head.js
+  "security.allow_eval_with_system_principal=true"
+]
 
 ["browser_computedARIARole.js"]
 
 ["browser_minimumRole.js"]
+
+["browser_roles_generic.js"]

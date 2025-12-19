@@ -11,6 +11,7 @@ support-files = [
 prefs = [
   "browser.sessionstore.closedTabsFromAllWindows=true",
   "browser.sessionstore.closedTabsFromClosedWindows=true",
+  "sidebar.verticalTabs.dragToPinPromo.dismissed=true",
 ]
 
 ["browser_1936752_lock_tab_sizing.js"]
@@ -30,14 +31,24 @@ support-files = ["alltabslistener.html"]
 
 ["browser_audioTabIcon.js"]
 tags = "vertical-tabs"
-fail-if =  ["vertical_tab"] # Bug 1935548, fails in the "vertical-tabs" variant
+fail-if =  [
+  "vertical_tab", # Bug 1935548, fails in the "vertical-tabs" variant
+]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1988657
+]
 
 ["browser_beforeunload_duplicate_dialogs.js"]
 https_first_disabled = true
 
 ["browser_bfcache_exemption_about_pages.js"]
-run-if = ["fission"]
-skip-if = ["os == 'linux' && os_version == '18.04' && processor == 'x86_64' && debug"] # Bug 1934436
+run-if = [
+  "fission",
+]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug", # Bug 1934436
+  "verify-standalone",
+]
 
 ["browser_blank_tab_label.js"]
 tags = "vertical-tabs"
@@ -55,11 +66,12 @@ tags = "vertical-tabs"
 
 ["browser_contextmenu_openlink_after_tabnavigated.js"]
 https_first_disabled = true
-skip-if = ["verify && debug && os == 'linux'"]
 support-files = ["test_bug1358314.html"]
 tags = "vertical-tabs"
 
 ["browser_ctrlTab.js"]
+
+["browser_discarded_tab_move.js"]
 
 ["browser_dont_process_switch_204.js"]
 support-files = [
@@ -73,7 +85,6 @@ tags = "vertical-tabs"
 
 ["browser_e10s_about_page_triggeringprincipal.js"]
 https_first_disabled = true
-skip-if = ["verify"]
 support-files = [
   "file_about_child.html",
   "file_about_parent.html",
@@ -83,7 +94,9 @@ tags = "vertical-tabs"
 ["browser_e10s_about_process.js"]
 
 ["browser_e10s_chrome_process.js"]
-skip-if = ["debug"] # Bug 1444565, Bug 1457887
+skip-if = [
+  "debug", # Bug 1444565, Bug 1457887
+]
 
 ["browser_e10s_javascript.js"]
 
@@ -99,18 +112,23 @@ tags = "vertical-tabs"
 ["browser_file_to_http_script_closable.js"]
 support-files = ["tab_that_closes.html"]
 skip-if = [
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && debug && msix", # Bug 1775640
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug && msix", # Bug 1775640
 ]
 
 ["browser_hiddentab_contextmenu.js"]
 tags = "vertical-tabs"
 
 ["browser_lastAccessedTab.js"]
-skip-if = ["os == 'windows'"] # Disabled on Windows due to frequent failures (bug 969405)
+skip-if = [
+  "os == 'windows'", # Disabled on Windows due to frequent failures (bug 969405)
+]
 tags = "vertical-tabs"
 
 ["browser_lastSeenActive.js"]
 tags = "vertical-tabs"
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt", # Bug 1889774
+]
 
 ["browser_lazy_tab_browser_events.js"]
 tags = "vertical-tabs"
@@ -141,7 +159,9 @@ support-files = [
   "wait-a-bit.sjs",
 ]
 tags = "vertical-tabs"
-fail-if =  ["vertical_tab"] # Bug 1932786, fails in the "vertical-tabs" variant
+fail-if =  [
+  "vertical_tab", # Bug 1932786, fails in the "vertical-tabs" variant
+]
 
 ["browser_link_in_tab_title_and_url_prefilled_normal_page_by_script.js"]
 support-files = [
@@ -151,7 +171,9 @@ support-files = [
   "wait-a-bit.sjs",
 ]
 tags = "vertical-tabs"
-fail-if =  ["vertical_tab"] # Bug 1932786, fails in the "vertical-tabs" variant
+fail-if =  [
+  "vertical_tab", # Bug 1932786, fails in the "vertical-tabs" variant
+]
 
 ["browser_link_in_tab_title_and_url_prefilled_normal_page_no_target.js"]
 support-files = [
@@ -161,7 +183,9 @@ support-files = [
   "wait-a-bit.sjs",
 ]
 tags = "vertical-tabs"
-fail-if =  ["vertical_tab"] # Bug 1932786, fails in the "vertical-tabs" variant
+fail-if =  [
+  "vertical_tab", # Bug 1932786, fails in the "vertical-tabs" variant
+]
 
 ["browser_link_in_tab_title_and_url_prefilled_normal_page_other_target.js"]
 support-files = [
@@ -171,14 +195,23 @@ support-files = [
   "wait-a-bit.sjs",
 ]
 tags = "vertical-tabs"
-fail-if =  ["vertical_tab"] # Bug 1932786, fails in the "vertical-tabs" variant
+fail-if =  [
+  "vertical_tab", # Bug 1932786, fails in the "vertical-tabs" variant
+]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1904826
+]
 
 ["browser_long_data_url_label_truncation.js"]
 tags = "vertical-tabs"
 
 ["browser_middle_click_new_tab_button_loads_clipboard.js"]
 tags = "vertical-tabs"
-fail-if =  ["vertical_tab"] # Bug 1932787, fails in the "vertical-tabs" variant
+fail-if =  [
+  "vertical_tab", # Bug 1932787, fails in the "vertical-tabs" variant
+]
+
+["browser_move_externally_opened_tabs_telemetry.js"]
 
 ["browser_multiselect_tabs_active_tab_selected_by_default.js"]
 tags = "vertical-tabs"
@@ -205,6 +238,10 @@ tags = "vertical-tabs"
 
 ["browser_multiselect_tabs_close_using_shortcuts.js"]
 tags = "vertical-tabs"
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && socketprocess_networking", # Bug 1970731
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && swgl", # Bug 1970731
+]
 
 ["browser_multiselect_tabs_copy_through_drag_and_drop.js"]
 tags = "vertical-tabs"
@@ -223,6 +260,9 @@ tags = "vertical-tabs"
 
 ["browser_multiselect_tabs_move_to_another_window_drag.js"]
 tags = "vertical-tabs"
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1940606
+]
 
 ["browser_multiselect_tabs_move_to_new_window_contextmenu.js"]
 https_first_disabled = true
@@ -247,6 +287,10 @@ tags = "vertical-tabs"
 tags = "vertical-tabs"
 
 ["browser_multiselect_tabs_reorder.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1972003, only fails on try, not locally or when tested manually
+  "os == 'win'",
+]
 tags = "vertical-tabs"
 
 ["browser_multiselect_tabs_unload.js"]
@@ -254,7 +298,8 @@ tags = "vertical-tabs"
 
 ["browser_multiselect_tabs_unload_telemetry.js"]
 skip-if = [
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && opt", # Bug 1929417
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1935293
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && opt", # Bug 1929417
 ]
 tags = "vertical-tabs"
 
@@ -271,9 +316,13 @@ tags = "vertical-tabs"
 tags = "vertical-tabs"
 
 ["browser_multiselect_tabs_using_keyboard.js"]
-run-if = ["os != 'mac'"] # Skipped because macOS keyboard support requires changing system settings
+run-if = [
+  "os != 'mac'", # Skipped because macOS keyboard support requires changing system settings
+]
 tags = "vertical-tabs"
-fail-if =  ["vertical_tab"] # Bug 1932790, fails in the "vertical-tabs" variant
+fail-if =  [
+  "vertical_tab", # Bug 1932790, fails in the "vertical-tabs" variant
+]
 
 ["browser_multiselect_tabs_using_selectedTabs.js"]
 tags = "vertical-tabs"
@@ -285,10 +334,6 @@ tags = "vertical-tabs"
 ["browser_navigate_home_focuses_addressbar.js"]
 
 ["browser_navigate_through_urls_origin_attributes.js"]
-skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && verify",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && verify",
-]
 
 ["browser_new_file_whitelisted_http_tab.js"]
 https_first_disabled = true
@@ -303,9 +348,8 @@ https_first_disabled = true
 ["browser_new_tab_bookmarks_toolbar_height.js"]
 support-files = ["file_observe_height_changes.html"]
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'", # Bug 1872477
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # Bug 1872477
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'", # Bug 1929417
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # Bug 1872477
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1929417
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1872477
   "vertical_tab", # Bug 1936170
 ]
@@ -324,6 +368,11 @@ support-files = ["file_new_tab_page.html"]
 
 ["browser_newwindow_tabstrip_overflow.js"]
 tags = "vertical-tabs"
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && debug && socketprocess_networking", # Bug 1648512
+]
+
+["browser_openTabFromDiscardedOwner.js"]
 
 ["browser_openURI_background.js"]
 
@@ -335,10 +384,6 @@ https_first_disabled = true
 ["browser_origin_attrs_in_remote_type.js"]
 
 ["browser_origin_attrs_rel.js"]
-skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && verify",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && verify",
-]
 support-files = ["file_rel_opener_noopener.html"]
 
 ["browser_originalURI.js"]
@@ -351,7 +396,9 @@ support-files = [
 
 ["browser_overflowScroll.js"]
 tags = "vertical-tabs"
-skip-if =  ["vertical_tab"] # Bug 1932964, fails in the "vertical-tabs" variant
+skip-if =  [
+  "vertical_tab", # Bug 1932964, fails in the "vertical-tabs" variant
+]
 
 ["browser_paste_event_at_middle_click_on_link.js"]
 support-files = ["file_anchor_elements.html"]
@@ -365,12 +412,9 @@ tags = "vertical-tabs"
 ["browser_pinnedTabs_closeByKeyboard.js"]
 tags = "vertical-tabs"
 
+["browser_pinned_and_hidden_tabs.js"]
+
 ["browser_positional_attributes.js"]
-skip-if = [
-  "verify && os == 'win'",
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && verify",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && verify",
-]
 tags = "vertical-tabs"
 
 ["browser_preloadedBrowser_zoom.js"]
@@ -389,7 +433,11 @@ tags = "vertical-tabs"
 
 ["browser_reload_deleted_file.js"]
 tags = "vertical-tabs"
-skip-if = ["os == 'mac' && vertical_tab"] # Bug 1936168
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && vertical_tab", # Bug 1936168
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64' && vertical_tab", # Bug 1936168
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && vertical_tab", # Bug 1936168
+]
 
 ["browser_removeAllTabsBut.js"]
 tags = "vertical-tabs"
@@ -414,12 +462,14 @@ support-files = ["tab_that_opens_dialog.html"]
 tags = "vertical-tabs"
 
 ["browser_restore_isAppTab.js"]
-run-if = ["crashreporter"] # test requires crashreporter due to 1536221
+run-if = [
+  "crashreporter", # test requires crashreporter due to 1536221
+]
 tags = "vertical-tabs"
 
 ["browser_scroll_size_determination.js"]
 skip-if = [
-  "os == 'win' && os_version == '11.26100' && bits == 64 && debug", # Bug 1932653
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug", # Bug 1932653
 ]
 
 ["browser_selectTabAtIndex.js"]
@@ -432,12 +482,23 @@ tags = "vertical-tabs"
 ["browser_switch_by_scrolling.js"]
 tags = "vertical-tabs"
 
+["browser_switchtab_when_minimized.js"]
+
 ["browser_tabCloseProbes.js"]
 tags = "vertical-tabs"
-skip-if = ["os == 'mac' && vertical_tab"] # Bug 1932997
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # Bug 1932997
+  "os == 'mac' && os_version == '14.70' && arch == 'x86_64'", # Bug 1932997
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1932997
+]
+fail-if = [
+  "vertical_tab", # Bug 1976110, fails in the "vertical-tabs" variant
+]
 
 ["browser_tabCloseSpacer.js"]
-skip-if = ["true"] # Bug 1616418 Bug 1549985
+skip-if = [
+  "true", # Bug 1616418 Bug 1549985
+]
 
 ["browser_tabContextMenu_keyboard.js"]
 tags = "vertical-tabs"
@@ -452,9 +513,11 @@ tags = "vertical-tabs"
 ["browser_tabReorder_overflow.js"]
 tags = "vertical-tabs"
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && vertical_tab", # Bug 1938525
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && vertical_tab", # Bug 1928146
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && vertical_tab", # Bug 1938525
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && vertical_tab", # Bug 1928146
+]
+fail-if = [
+  "vertical_tab", # Bug 1976110, fails in the "vertical-tabs" variant
 ]
 
 ["browser_tabReorder_vertical.js"]
@@ -483,33 +546,44 @@ tags = "vertical-tabs"
 tags = "vertical-tabs"
 
 ["browser_tab_dragdrop.js"]
-skip-if = ["true"] # Bug 1312436, Bug 1388973
+skip-if = [
+  "true", # Bug 1312436, Bug 1388973
+]
 support-files = ["browser_tab_dragdrop_embed.html"]
 tags = "vertical-tabs"
 
 ["browser_tab_dragdrop2.js"]
-skip-if = ["win11_2009 && bits == 32 && !debug"] # high frequency win7 intermittent: crash
 support-files = ["browser_tab_dragdrop2_frame1.xhtml"]
+tags = "vertical-tabs"
+
+["browser_tab_group_menu.js"]
 tags = "vertical-tabs"
 
 ["browser_tab_groups.js"]
 support-files = ["file_new_tab_page.html"]
-skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'", # Bug 1920294
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && opt", # Bug 1929417 (secondary)
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && vertical_tab", # Bug 1928146
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && vertical_tab", # Bug 1928146
-  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && vertical_tab", # Bug 1928146
-  "win11_2009 && debug", # Bug 1928146 - frequent leaked window
-  "os == 'win' && os_version == '11.26100' && debug", # Bug 1928146
-]
 tags = "vertical-tabs"
 
 ["browser_tab_groups_a11y.js"]
 tags = "vertical-tabs"
 
+["browser_tab_groups_insertAfterCurrent.js"]
+tags = "vertical-tabs"
+
 ["browser_tab_groups_keyboard_focus.js"]
 tags = "vertical-tabs"
+
+["browser_tab_groups_tabContextMenu.js"]
+tags = "vertical-tabs"
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt", # Bug 1947600
+]
+
+["browser_tab_groups_tab_interactions_telemetry.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && swgl", # Bug 1968371
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1968371
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && ccov", # Bug 1968371
+]
 
 ["browser_tab_groups_telemetry.js"]
 
@@ -527,15 +601,14 @@ tags = "vertical-tabs"
 
 ["browser_tab_manager_groups.js"]
 tags = "vertical-tabs"
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1994900
+]
 
 ["browser_tab_manager_keyboard_access.js"]
 tags = "vertical-tabs"
-skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && socketprocess_networking && opt", # Bug 1903733
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && vertical_tab && opt", # Bug 1903733
-  ]
 
-["browser_tab_manger_synced_tabs.js"]
+["browser_tab_manager_synced_tabs.js"]
 tags = "vertical-tabs"
 
 ["browser_tab_move_active_tab.js"]
@@ -549,18 +622,28 @@ tags = "vertical-tabs"
 
 ["browser_tab_preview.js"]
 tags = "vertical-tabs"
+
+["browser_tab_splitview.js"]
+
+["browser_tab_splitview_about_opentabs.js"]
+
+["browser_tab_splitview_contextmenu.js"]
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && vertical_tab", # Bug 1928146
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && vertical_tab", # Bug 1928146
-  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && vertical_tab", # Bug 1928146
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt", # Bug 1996471
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64'", # Bug 1994508
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1996471
 ]
+
+["browser_tab_splitview_footer.js"]
+support-files = ["file_withicon.html"]
+
+["browser_tab_splitview_keyboard_focus.js"]
 
 ["browser_tab_tooltips.js"]
 tags = "vertical-tabs"
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && vertical_tab", # Bug 1928146
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && vertical_tab", # Bug 1928146
-  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && vertical_tab", # Bug 1928146
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && tsan", # Bug 1775653
+  "vertical_tab", # Bug 1976110, fails in the "vertical-tabs" variant
 ]
 
 ["browser_tabfocus.js"]
@@ -578,10 +661,15 @@ tags = "vertical-tabs"
 
 ["browser_tabs_isActive.js"]
 
+["browser_tabs_openURI_after_current.js"]
+
 ["browser_tabs_owner.js"]
 
 ["browser_tabswitch_contextmenu.js"]
 tags = "vertical-tabs"
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && vertical_tab", # Bug 1971008
+]
 
 ["browser_tabswitch_select.js"]
 support-files = ["open_window_in_new_tab.html"]
@@ -589,7 +677,7 @@ tags = "vertical-tabs"
 
 ["browser_tabswitch_updatecommands.js"]
 skip-if = [
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && debug && msix", # high frequency;
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug && msix", # high frequency;
 ]
 
 ["browser_tabswitch_window_focus.js"]
@@ -597,7 +685,9 @@ skip-if = [
 ["browser_testOpenNewRemoteTabsFromNonRemoteBrowsers.js"]
 
 ["browser_undo_close_tabs.js"]
-skip-if = ["true"] #bug 1642084
+skip-if = [
+  "true", # bug 1642084
+]
 
 ["browser_undo_close_tabs_at_start.js"]
 
@@ -616,13 +706,17 @@ tags = "vertical-tabs"
 tags = "vertical-tabs"
 
 ["browser_visibleTabs_tabPreview.js"]
-skip-if = ["os == 'win' && !debug"]
+skip-if = [
+  "os == 'win' && opt",
+]
 
 ["browser_window_open_modifiers.js"]
 support-files = ["file_window_open.html"]
 tags = "vertical-tabs"
 skip-if = [
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && vertical_tab", # Bug 1928146
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && vertical_tab", # Bug 1928146
+  "os == 'mac' && os_version == '10.15' && arch == 'x86_64' && vertical_tab", # Bug 1928146
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && vertical_tab", # Bug 1928146
+]
+fail-if = [
+  "vertical_tab", # Bug 1976110, fails in the "vertical-tabs" variant
 ]

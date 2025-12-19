@@ -10,11 +10,8 @@
 
 #include "vm/JSFunction-inl.h"
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/Range.h"
 
-#include <algorithm>
 #include <string.h>
 
 #include "jsapi.h"
@@ -104,7 +101,7 @@ static bool fun_enumerate(JSContext* cx, HandleObject obj) {
   return true;
 }
 
-bool IsFunction(HandleValue v) {
+static bool IsFunction(HandleValue v) {
   return v.isObject() && v.toObject().is<JSFunction>();
 }
 
@@ -170,7 +167,7 @@ static bool ArgumentsRestrictions(JSContext* cx, HandleFunction fun) {
   return true;
 }
 
-bool ArgumentsGetterImpl(JSContext* cx, const CallArgs& args) {
+static bool ArgumentsGetterImpl(JSContext* cx, const CallArgs& args) {
   MOZ_ASSERT(IsFunction(args.thisv()));
 
   RootedFunction fun(cx, &args.thisv().toObject().as<JSFunction>());
@@ -216,7 +213,7 @@ static bool ArgumentsGetter(JSContext* cx, unsigned argc, Value* vp) {
   return CallNonGenericMethod<IsFunction, ArgumentsGetterImpl>(cx, args);
 }
 
-bool ArgumentsSetterImpl(JSContext* cx, const CallArgs& args) {
+static bool ArgumentsSetterImpl(JSContext* cx, const CallArgs& args) {
   MOZ_ASSERT(IsFunction(args.thisv()));
 
   RootedFunction fun(cx, &args.thisv().toObject().as<JSFunction>());
@@ -252,7 +249,7 @@ static bool CallerRestrictions(JSContext* cx, HandleFunction fun) {
   return true;
 }
 
-bool CallerGetterImpl(JSContext* cx, const CallArgs& args) {
+static bool CallerGetterImpl(JSContext* cx, const CallArgs& args) {
   MOZ_ASSERT(IsFunction(args.thisv()));
 
   // Beware!  This function can be invoked on *any* function!  It can't
@@ -322,7 +319,7 @@ static bool CallerGetter(JSContext* cx, unsigned argc, Value* vp) {
   return CallNonGenericMethod<IsFunction, CallerGetterImpl>(cx, args);
 }
 
-bool CallerSetterImpl(JSContext* cx, const CallArgs& args) {
+static bool CallerSetterImpl(JSContext* cx, const CallArgs& args) {
   MOZ_ASSERT(IsFunction(args.thisv()));
 
   // We just have to return |undefined|, but first we call CallerGetterImpl
@@ -816,19 +813,12 @@ static void fun_trace(JSTracer* trc, JSObject* obj) {
 }
 
 static JSObject* CreateFunctionConstructor(JSContext* cx, JSProtoKey key) {
-  Rooted<GlobalObject*> global(cx, cx->global());
-  RootedObject functionProto(cx, &global->getPrototype(JSProto_Function));
+  RootedObject functionProto(cx, &cx->global()->getPrototype(JSProto_Function));
 
-  RootedObject functionCtor(
-      cx, NewFunctionWithProto(
-              cx, Function, 1, FunctionFlags::NATIVE_CTOR, nullptr,
-              Handle<PropertyName*>(cx->names().Function), functionProto,
-              gc::AllocKind::FUNCTION, TenuredObject));
-  if (!functionCtor) {
-    return nullptr;
-  }
-
-  return functionCtor;
+  return NewFunctionWithProto(
+      cx, Function, 1, FunctionFlags::NATIVE_CTOR, nullptr,
+      Handle<PropertyName*>(cx->names().Function), functionProto,
+      gc::AllocKind::FUNCTION, TenuredObject);
 }
 
 static bool FunctionPrototype(JSContext* cx, unsigned argc, Value* vp) {
@@ -838,9 +828,7 @@ static bool FunctionPrototype(JSContext* cx, unsigned argc, Value* vp) {
 }
 
 static JSObject* CreateFunctionPrototype(JSContext* cx, JSProtoKey key) {
-  Rooted<GlobalObject*> self(cx, cx->global());
-
-  RootedObject objectProto(cx, &self->getPrototype(JSProto_Object));
+  RootedObject objectProto(cx, &cx->global()->getPrototype(JSProto_Object));
 
   return NewFunctionWithProto(
       cx, FunctionPrototype, 0, FunctionFlags::NATIVE_FUN, nullptr,
@@ -1025,7 +1013,8 @@ JSString* js::FunctionToString(JSContext* cx, HandleFunction fun,
   return out.finishString();
 }
 
-JSString* fun_toStringHelper(JSContext* cx, HandleObject obj, bool isToSource) {
+JSString* js::fun_toStringHelper(JSContext* cx, HandleObject obj,
+                                 bool isToSource) {
   if (!obj->is<JSFunction>()) {
     if (JSFunToStringOp op = obj->getOpsFunToString()) {
       return op(cx, obj, isToSource);
@@ -1492,8 +1481,10 @@ static bool CreateDynamicFunction(JSContext* cx, const CallArgs& args,
   }
 
   // Block this call if security callbacks forbid it.
-  bool canCompileStrings = false;
-  if (!cx->isRuntimeCodeGenEnabled(JS::RuntimeCode::JS, functionText,
+  bool canCompileStrings = cx->bypassCSPForDebugger;
+
+  if (!canCompileStrings &&
+      !cx->isRuntimeCodeGenEnabled(JS::RuntimeCode::JS, functionText,
                                    JS::CompilationType::Function,
                                    parameterStrings, bodyString, parameterArgs,
                                    bodyArg, &canCompileStrings)) {
@@ -1705,7 +1696,7 @@ static bool NewFunctionEnvironmentIsWellFormed(JSContext* cx,
   // scope proxy. All other cases of polluting global scope behavior are
   // handled by EnvironmentObjects (viz. non-syntactic DynamicWithObject and
   // NonSyntacticVariablesObject).
-  RootedObject terminatingEnv(cx, SkipEnvironmentObjects(env));
+  JSObject* terminatingEnv = SkipEnvironmentObjects(env);
   return !terminatingEnv || terminatingEnv == cx->global() ||
          terminatingEnv->is<DebugEnvironmentProxy>();
 }
@@ -1882,7 +1873,9 @@ static bool CanReuseScriptForClone(JS::Realm* realm, HandleFunction fun,
 #endif
 
 static inline JSFunction* NewFunctionClone(JSContext* cx, HandleFunction fun,
-                                           HandleObject proto) {
+                                           HandleObject proto,
+                                           gc::Heap heap = gc::Heap::Default,
+                                           gc::AllocSite* site = nullptr) {
   MOZ_ASSERT(cx->realm() == fun->realm());
   MOZ_ASSERT(proto);
 
@@ -1905,8 +1898,7 @@ static inline JSFunction* NewFunctionClone(JSContext* cx, HandleFunction fun,
     }
   }
 
-  JSFunction* clone =
-      JSFunction::create(cx, allocKind, gc::Heap::Default, shape);
+  JSFunction* clone = JSFunction::create(cx, allocKind, heap, shape, site);
   if (!clone) {
     return nullptr;
   }
@@ -1930,14 +1922,15 @@ static inline JSFunction* NewFunctionClone(JSContext* cx, HandleFunction fun,
 
 JSFunction* js::CloneFunctionReuseScript(JSContext* cx, HandleFunction fun,
                                          HandleObject enclosingEnv,
-                                         HandleObject proto) {
+                                         HandleObject proto, gc::Heap heap,
+                                         gc::AllocSite* site) {
   MOZ_ASSERT(cx->realm() == fun->realm());
   MOZ_ASSERT(NewFunctionEnvironmentIsWellFormed(cx, enclosingEnv));
   MOZ_ASSERT(fun->isInterpreted());
   MOZ_ASSERT(fun->hasBaseScript());
   MOZ_ASSERT(CanReuseScriptForClone(cx->realm(), fun, enclosingEnv));
 
-  JSFunction* clone = NewFunctionClone(cx, fun, proto);
+  JSFunction* clone = NewFunctionClone(cx, fun, proto, heap, site);
   if (!clone) {
     return nullptr;
   }
@@ -2113,7 +2106,7 @@ JSFunction* js::DefineFunction(
 
 void js::ReportIncompatibleMethod(JSContext* cx, const CallArgs& args,
                                   const JSClass* clasp) {
-  RootedValue thisv(cx, args.thisv());
+  HandleValue thisv = args.thisv();
 
 #ifdef DEBUG
   switch (thisv.type()) {

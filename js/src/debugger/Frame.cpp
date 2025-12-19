@@ -6,15 +6,14 @@
 
 #include "debugger/Frame-inl.h"
 
-#include "mozilla/Assertions.h"   // for MOZ_ASSERT, MOZ_ASSERT_IF, MOZ_CRASH
-#include "mozilla/HashTable.h"    // for HashMapEntry
-#include "mozilla/Maybe.h"        // for Maybe
-#include "mozilla/Range.h"        // for Range
-#include "mozilla/RangedPtr.h"    // for RangedPtr
-#include "mozilla/Result.h"       // for Result
-#include "mozilla/ScopeExit.h"    // for ScopeExit
-#include "mozilla/ThreadLocal.h"  // for ThreadLocal
-#include "mozilla/Vector.h"       // for Vector
+#include "mozilla/Assertions.h"  // for MOZ_ASSERT, MOZ_ASSERT_IF, MOZ_CRASH
+#include "mozilla/HashTable.h"   // for HashMapEntry
+#include "mozilla/Maybe.h"       // for Maybe
+#include "mozilla/Range.h"       // for Range
+#include "mozilla/RangedPtr.h"   // for RangedPtr
+#include "mozilla/Result.h"      // for Result
+#include "mozilla/ScopeExit.h"   // for ScopeExit
+#include "mozilla/Vector.h"      // for Vector
 
 #include <stddef.h>  // for size_t
 #include <stdint.h>  // for int32_t
@@ -1005,6 +1004,8 @@ static bool EvaluateInEnv(
 #endif
 
   cx->check(envArg, frame);
+
+  AutoSetBypassCSPForDebugger setFlag(cx, evalOptions.bypassCSP());
 
   CompileOptions options(cx);
   const char* filename =

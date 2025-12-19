@@ -10,10 +10,9 @@
 #define nsGridContainerFrame_h___
 
 #include "mozilla/CSSOrderAwareFrameIterator.h"
-#include "mozilla/IntrinsicISizesCache.h"
-#include "mozilla/MathAlgorithms.h"
-#include "mozilla/Maybe.h"
 #include "mozilla/HashTable.h"
+#include "mozilla/IntrinsicISizesCache.h"
+#include "mozilla/Maybe.h"
 #include "nsAtomHashKeys.h"
 #include "nsContainerFrame.h"
 #include "nsILineIterator.h"
@@ -162,7 +161,8 @@ class nsGridContainerFrame final : public nsContainerFrame,
   int32_t GetNumLines() const final;
   bool IsLineIteratorFlowRTL() final;
   mozilla::Result<LineInfo, nsresult> GetLine(int32_t aLineNumber) final;
-  int32_t FindLineContaining(nsIFrame* aFrame, int32_t aStartLine = 0) final;
+  int32_t FindLineContaining(const nsIFrame* aFrame,
+                             int32_t aStartLine = 0) final;
   NS_IMETHOD FindFrameAt(int32_t aLineNumber, nsPoint aPos,
                          nsIFrame** aFrameFound, bool* aPosIsBeforeFirstFrame,
                          bool* aPosIsAfterLastFrame) final;
@@ -239,6 +239,18 @@ class nsGridContainerFrame final : public nsContainerFrame,
   }
 
   using nsContainerFrame::IsMasonry;
+
+  /**
+   * Return true if this frame has masonry layout in aAxis (in this frame's own
+   * writing mode).
+   */
+  bool IsMasonry(mozilla::LogicalAxis aAxis) const;
+  bool IsColMasonry() const {
+    return HasAnyStateBits(NS_STATE_GRID_IS_COL_MASONRY);
+  }
+  bool IsRowMasonry() const {
+    return HasAnyStateBits(NS_STATE_GRID_IS_ROW_MASONRY);
+  }
 
   /** Return true if this frame has masonry layout in any axis. */
   bool IsMasonry() const {
@@ -325,6 +337,8 @@ class nsGridContainerFrame final : public nsContainerFrame,
     // Does the above item span the first(last) track?
     bool mIsInEdgeTrack;
   };
+  class TrackPlan;
+  class ItemPlan;
 
   /** Return our parent grid container; |this| MUST be a subgrid. */
   nsGridContainerFrame* ParentGridContainerForSubgrid() const;
@@ -384,6 +398,10 @@ class nsGridContainerFrame final : public nsContainerFrame,
                          const LogicalRect& aContentArea,
                          const nsSize& aContainerSize,
                          ReflowOutput& aDesiredSize, nsReflowStatus& aStatus);
+  void ReflowAbsoluteChildren(GridReflowInput& aGridRI,
+                              const LogicalRect& aContentArea,
+                              nscoord aContentBSize, ReflowOutput& aDesiredSize,
+                              nsReflowStatus& aStatus);
 
   /**
    * Helper to implement IntrinsicISize().
@@ -523,20 +541,21 @@ class nsGridContainerFrame final : public nsContainerFrame,
                          const LogicalRect& aContentArea,
                          ReflowOutput& aDesiredSize, nsReflowStatus& aStatus);
 
-  // Helper for Reflow. This is intended to be called *before* the final call to
+  // Helper for Reflow. This is intended to be called *before* the first pass of
   // CalculateTrackSizesForAxis() for the block-axis.
   //
-  // @return The block-size that can be used to (re-)resolve the final row
-  // sizes.
+  // @return The block-size that can be used to resolve row sizes in the first
+  // pass.
   nscoord ComputeBSizeForResolvingRowSizes(
-      GridReflowInput& aGridRI, const Grid& aGrid, nscoord aComputedBSize,
+      GridReflowInput& aGridRI, nscoord aComputedBSize,
       const Maybe<nscoord>& aContainIntrinsicBSize) const;
 
   // Helper for Reflow. This is intended to be called *after* the final call to
   // CalculateTrackSizesForAxis() for the block-axis.
   //
-  // @param aBSizeForResolvingRowSizes the value returned by
-  // ComputeBSizeForResolvingRowSizes().
+  // @param aBSizeForResolvingRowSizes the definite block-size determined by
+  // ComputeBSizeForResolvingRowSizes() or after resolving row sizes in the
+  // first pass.
   // @return The intrinsic content block-size that can be used with other
   // logic in Reflow() to determine the content block-size.
   nscoord ComputeIntrinsicContentBSize(
@@ -563,8 +582,7 @@ class nsGridContainerFrame final : public nsContainerFrame,
   UsedTrackSizes* GetUsedTrackSizes() const;
 
   // Store the given TrackSizes in aAxis on a UsedTrackSizes frame property.
-  void StoreUsedTrackSizes(LogicalAxis aAxis,
-                           const nsTArray<TrackSize>& aSizes);
+  void StoreUsedTrackSizes(LogicalAxis aAxis, const TrackPlan& aSizes);
 
   // The internal implementation for AddImplicitNamedAreas().
   void AddImplicitNamedAreasInternal(LineNameList& aNameList,

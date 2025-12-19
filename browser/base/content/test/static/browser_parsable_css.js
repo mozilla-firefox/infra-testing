@@ -71,6 +71,19 @@ if (!Services.prefs.getBoolPref("layout.css.scroll-anchoring.enabled")) {
   });
 }
 
+if (!Services.prefs.getBoolPref("layout.css.text-decoration-inset.enabled")) {
+  ignoreList.push({
+    sourceName: /html\.css$/i,
+    errorMessage: /Unknown property .*text-decoration-inset/i,
+    isFromDevTools: false,
+  });
+  ignoreList.push({
+    sourceName: /ua\.css$/i,
+    errorMessage: /Unknown property .*text-decoration-inset/i,
+    isFromDevTools: false,
+  });
+}
+
 if (!Services.prefs.getBoolPref("dom.viewTransitions.enabled")) {
   // view-transition selectors
   ignoreList.push({
@@ -81,6 +94,14 @@ if (!Services.prefs.getBoolPref("dom.viewTransitions.enabled")) {
   ignoreList.push({
     sourceName: /\b(ua)\.css$/i,
     errorMessage: /Unknown property.*view-transition/i,
+    isFromDevTools: false,
+  });
+}
+
+if (!Services.prefs.getBoolPref("mathml.math_shift.enabled")) {
+  ignoreList.push({
+    sourceName: /\bmathml\.css$/i,
+    errorMessage: /Unknown property.*math-shift/i,
     isFromDevTools: false,
   });
 }
@@ -174,9 +195,6 @@ let propNameAllowlist = [
 
   /* Allow design tokens in devtools without all variables being used there */
   { sourceName: /\/design-system\/tokens-.*\.css$/, isFromDevTools: true },
-
-  // Bug 1908535 to refactor form components to use this token
-  { propName: "--input-space-block", isFromDevTools: false },
 
   // Ignore token properties that follow the pattern --color-[name]-[number]
   // This enables us to provide our full color palette for developers.

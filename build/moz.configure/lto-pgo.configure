@@ -258,7 +258,17 @@ option(
     help="Indicate that ld64 is free of symbol aliasing bugs",
 )
 
-imply_option("MOZ_LD64_KNOWN_GOOD", depends_if("MOZ_AUTOMATION")(lambda _: True))
+imply_option("MOZ_LD64_KNOWN_GOOD", moz_automation)
+
+use_fat_lto = cxx_compiler.try_link(
+    ldflags=depends(stlport_libs)(
+        lambda extra: ["-flto", "-ffat-lto-objects"] + (extra or [])
+    ),
+    check_msg="whether the C++ compiler supports fat lto objects",
+    when=depends(select_linker, "--enable-lto", enable_tests)(
+        lambda linker, lto, tests: linker and linker.KIND == "lld" and lto and tests
+    ),
+)
 
 
 @depends(
@@ -270,7 +280,8 @@ imply_option("MOZ_LD64_KNOWN_GOOD", depends_if("MOZ_AUTOMATION")(lambda _: True)
     "--enable-profile-generate",
     pass_manager.enabled,
     "--enable-profile-use",
-    "MOZ_AUTOMATION",
+    moz_automation,
+    use_fat_lto,
 )
 @imports("multiprocessing")
 def lto(
@@ -283,6 +294,7 @@ def lto(
     pass_manager,
     pgo_build,
     moz_automation,
+    fat,
 ):
     cflags = []
     ldflags = []
@@ -404,7 +416,7 @@ def lto(
     # Tell LTO not to inline functions above a certain size, to mitigate
     # binary size growth while still getting good performance.
     # (For hot functions, PGO will put a multiplier on this limit.)
-    if target.os == "WINNT":
+    if c_compiler.type == "clang-cl":
         ldflags.append("-mllvm:-import-instr-limit=10")
     elif target.kernel == "Darwin":
         ldflags.append("-Wl,-mllvm,-import-instr-limit=10")
@@ -415,7 +427,7 @@ def lto(
     # during LTO. Further we can use the resulting size savings to increase
     # the import limit in hot functions.
     if pass_manager:
-        if target.os == "WINNT":
+        if c_compiler.type == "clang-cl":
             if c_compiler.version >= "12.0.0" and c_compiler.version < "13.0.0":
                 ldflags.append("-opt:ltonewpassmanager")
             if c_compiler.version >= "12.0.0":
@@ -433,8 +445,13 @@ def lto(
     else:
         rust_lto = ""
 
+    if fat:
+        cflags.append("-ffat-lto-objects")
+        ldflags.append("-ffat-lto-objects")
+
     return namespace(
         enabled=True,
+        fat=fat,
         cflags=cflags,
         ldflags=ldflags,
         rust_lto=rust_lto,
@@ -457,3 +474,4 @@ set_define("MOZ_LTO", lto.enabled)
 set_config("MOZ_LTO_CFLAGS", lto.cflags)
 set_config("MOZ_LTO_LDFLAGS", lto.ldflags)
 set_config("MOZ_LTO_RUST_CROSS", lto.rust_lto)
+set_config("MOZ_LTO_FAT", lto.fat)

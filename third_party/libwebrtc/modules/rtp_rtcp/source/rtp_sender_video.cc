@@ -10,19 +10,17 @@
 
 #include "modules/rtp_rtcp/source/rtp_sender_video.h"
 
-#include <stdlib.h>
-#include <string.h>
-
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <optional>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "absl/algorithm/container.h"
 #include "absl/memory/memory.h"
-#include "absl/strings/match.h"
-#include "absl/types/variant.h"
 #include "api/array_view.h"
 #include "api/crypto/frame_encryptor_interface.h"
 #include "api/field_trials_view.h"
@@ -41,8 +39,6 @@
 #include "api/video/video_layers_allocation.h"
 #include "api/video/video_rotation.h"
 #include "api/video/video_timing.h"
-#include "common_video/corruption_detection_converters.h"
-#include "common_video/frame_instrumentation_data.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/absolute_capture_time_sender.h"
 #include "modules/rtp_rtcp/source/corruption_detection_extension.h"
@@ -90,7 +86,7 @@ void BuildRedPayload(const RtpPacketToSend& media_packet,
 
 bool MinimizeDescriptor(RTPVideoHeader* video_header) {
   if (auto* vp8 =
-          absl::get_if<RTPVideoHeaderVP8>(&video_header->video_type_header)) {
+          std::get_if<RTPVideoHeaderVP8>(&video_header->video_type_header)) {
     // Set minimum fields the RtpPacketizer is using to create vp8 packets.
     // nonReference is the only field that doesn't require extra space.
     bool non_reference = vp8->nonReference;
@@ -111,12 +107,12 @@ bool IsBaseLayer(const RTPVideoHeader& video_header) {
   switch (video_header.codec) {
     case kVideoCodecVP8: {
       const auto& vp8 =
-          absl::get<RTPVideoHeaderVP8>(video_header.video_type_header);
+          std::get<RTPVideoHeaderVP8>(video_header.video_type_header);
       return (vp8.temporalIdx == 0 || vp8.temporalIdx == kNoTemporalIdx);
     }
     case kVideoCodecVP9: {
       const auto& vp9 =
-          absl::get<RTPVideoHeaderVP9>(video_header.video_type_header);
+          std::get<RTPVideoHeaderVP9>(video_header.video_type_header);
       return (vp9.temporal_idx == 0 || vp9.temporal_idx == kNoTemporalIdx);
     }
     case kVideoCodecH264:
@@ -179,13 +175,13 @@ RTPSenderVideo::RTPSenderVideo(const Config& config)
       post_encode_overhead_bitrate_(/*max_window_size=*/TimeDelta::Seconds(1)),
       frame_encryptor_(config.frame_encryptor),
       require_frame_encryption_(config.require_frame_encryption),
-      generic_descriptor_auth_experiment_(!absl::StartsWith(
-          config.field_trials->Lookup("WebRTC-GenericDescriptorAuth"),
-          "Disabled")),
+      generic_descriptor_auth_experiment_(
+          !config.field_trials->IsDisabled("WebRTC-GenericDescriptorAuth")),
+      raw_packetization_(config.raw_packetization),
       absolute_capture_time_sender_(config.clock),
       frame_transformer_delegate_(
           config.frame_transformer
-              ? rtc::make_ref_counted<RTPSenderVideoFrameTransformerDelegate>(
+              ? make_ref_counted<RTPSenderVideoFrameTransformerDelegate>(
                     this,
                     config.frame_transformer,
                     rtp_sender_->SSRC(),
@@ -487,26 +483,9 @@ void RTPSenderVideo::AddRtpHeaderExtensions(const RTPVideoHeader& video_header,
   }
 
   if (last_packet && video_header.frame_instrumentation_data) {
-    std::optional<CorruptionDetectionMessage> message;
-    if (const auto* data = absl::get_if<FrameInstrumentationData>(
-            &(*video_header.frame_instrumentation_data))) {
-      message =
-          ConvertFrameInstrumentationDataToCorruptionDetectionMessage(*data);
-    } else if (const auto* sync_data =
-                   absl::get_if<FrameInstrumentationSyncData>(
-                       &(*video_header.frame_instrumentation_data))) {
-      message = ConvertFrameInstrumentationSyncDataToCorruptionDetectionMessage(
-          *sync_data);
-    } else {
-      RTC_DCHECK_NOTREACHED();
-    }
-
-    if (message.has_value()) {
-      packet->SetExtension<CorruptionDetectionExtension>(*message);
-    } else {
-      RTC_LOG(LS_WARNING) << "Failed to convert frame instrumentation data to "
-                             "corruption detection message.";
-    }
+    packet->SetExtension<CorruptionDetectionExtension>(
+        CorruptionDetectionMessage::FromFrameInstrumentationData(
+            *video_header.frame_instrumentation_data));
   }
 }
 
@@ -514,12 +493,15 @@ bool RTPSenderVideo::SendVideo(int payload_type,
                                std::optional<VideoCodecType> codec_type,
                                uint32_t rtp_timestamp,
                                Timestamp capture_time,
-                               rtc::ArrayView<const uint8_t> payload,
+                               ArrayView<const uint8_t> payload,
                                size_t encoder_output_size,
                                RTPVideoHeader video_header,
                                TimeDelta expected_retransmission_time,
                                std::vector<uint32_t> csrcs) {
   RTC_CHECK_RUNS_SERIALIZED(&send_checker_);
+
+  // TODO(b/446768451): Add a check that Codec type can only be absent when
+  // using raw packetization once downstream projects have been updated.
 
   if (video_header.frame_type == VideoFrameType::kEmptyFrame)
     return true;
@@ -667,10 +649,10 @@ bool RTPSenderVideo::SendVideo(int payload_type,
     MinimizeDescriptor(&video_header);
   }
 
-  rtc::Buffer encrypted_video_payload;
+  Buffer encrypted_video_payload;
   if (frame_encryptor_ != nullptr) {
     const size_t max_ciphertext_size =
-        frame_encryptor_->GetMaxCiphertextByteSize(cricket::MEDIA_TYPE_VIDEO,
+        frame_encryptor_->GetMaxCiphertextByteSize(MediaType::VIDEO,
                                                    payload.size());
     encrypted_video_payload.SetSize(max_ciphertext_size);
 
@@ -683,8 +665,8 @@ bool RTPSenderVideo::SendVideo(int payload_type,
     }
 
     if (frame_encryptor_->Encrypt(
-            cricket::MEDIA_TYPE_VIDEO, first_packet->Ssrc(), additional_data,
-            payload, encrypted_video_payload, &bytes_written) != 0) {
+            MediaType::VIDEO, first_packet->Ssrc(), additional_data, payload,
+            encrypted_video_payload, &bytes_written) != 0) {
       return false;
     }
 
@@ -697,7 +679,8 @@ bool RTPSenderVideo::SendVideo(int payload_type,
   }
 
   std::unique_ptr<RtpPacketizer> packetizer =
-      RtpPacketizer::Create(codec_type, payload, limits, video_header);
+      RtpPacketizer::Create(raw_packetization_ ? std::nullopt : codec_type,
+                            payload, limits, video_header);
 
   const size_t num_packets = packetizer->NumPackets();
 
@@ -805,17 +788,18 @@ bool RTPSenderVideo::SendEncodedImage(int payload_type,
                                       uint32_t rtp_timestamp,
                                       const EncodedImage& encoded_image,
                                       RTPVideoHeader video_header,
-                                      TimeDelta expected_retransmission_time) {
+                                      TimeDelta expected_retransmission_time,
+                                      const std::vector<uint32_t>& csrcs) {
   if (frame_transformer_delegate_) {
     // The frame will be sent async once transformed.
     return frame_transformer_delegate_->TransformFrame(
         payload_type, codec_type, rtp_timestamp, encoded_image, video_header,
-        expected_retransmission_time);
+        expected_retransmission_time, csrcs);
   }
   return SendVideo(payload_type, codec_type, rtp_timestamp,
                    encoded_image.CaptureTime(), encoded_image,
                    encoded_image.size(), video_header,
-                   expected_retransmission_time, /*csrcs=*/{});
+                   expected_retransmission_time, csrcs);
 }
 
 DataRate RTPSenderVideo::PostEncodeOverhead() const {
@@ -860,9 +844,9 @@ uint8_t RTPSenderVideo::GetTemporalId(const RTPVideoHeader& header) {
     uint8_t operator()(const RTPVideoHeaderLegacyGeneric&) {
       return kNoTemporalIdx;
     }
-    uint8_t operator()(const absl::monostate&) { return kNoTemporalIdx; }
+    uint8_t operator()(const std::monostate&) { return kNoTemporalIdx; }
   };
-  return absl::visit(TemporalIdGetter(), header.video_type_header);
+  return std::visit(TemporalIdGetter(), header.video_type_header);
 }
 
 bool RTPSenderVideo::UpdateConditionalRetransmit(

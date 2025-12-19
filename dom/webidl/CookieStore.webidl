@@ -59,6 +59,7 @@ dictionary CookieInit {
   USVString path = "/";
   CookieSameSite sameSite = "strict";
   boolean partitioned = false;
+  long long? maxAge = null;
 };
 
 dictionary CookieStoreDeleteOptions {
@@ -69,28 +70,10 @@ dictionary CookieStoreDeleteOptions {
 };
 
 dictionary CookieListItem {
-  USVString name;
-  USVString value;
+  /* UTF8String semantics match USVString */
 
-  /* Bug 1475599 - We decide to do not implement the entire cookie-store spec.
-   * Instead, we implement only the subset that is compatible with document.cookie */
-  // USVString? domain;
-  // USVString path;
-  // DOMHighResTimeStamp? expires;
-  // boolean secure;
-  // CookieSameSite sameSite;
-  // boolean partitioned;
+  UTF8String name;
+  UTF8String value;
 };
 
 typedef sequence<CookieListItem> CookieList;
-
-/* Bug 1475599 - We decide to do not implement the entire cookie-store spec.
- * Instead, we implement only the subset that is compatible with document.cookie
-[Exposed=(ServiceWorker,Window),
- SecureContext]
-interface CookieStoreManager {
-  Promise<undefined> subscribe(sequence<CookieStoreGetOptions> subscriptions);
-  Promise<sequence<CookieStoreGetOptions>> getSubscriptions();
-  Promise<undefined> unsubscribe(sequence<CookieStoreGetOptions> subscriptions);
-};
-*/

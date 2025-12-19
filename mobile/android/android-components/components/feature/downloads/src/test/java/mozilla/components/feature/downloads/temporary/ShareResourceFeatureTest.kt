@@ -5,8 +5,8 @@
 package mozilla.components.feature.downloads.temporary
 
 import android.content.Context
-import android.webkit.MimeTypeMap
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.state.action.ShareResourceAction
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.ContentState
@@ -20,7 +20,6 @@ import mozilla.components.concept.fetch.Request
 import mozilla.components.concept.fetch.Response
 import mozilla.components.support.test.any
 import mozilla.components.support.test.argumentCaptor
-import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.test.rule.MainCoroutineRule
@@ -39,7 +38,6 @@ import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.never
 import org.mockito.Mockito.spy
 import org.mockito.Mockito.verify
-import org.robolectric.Shadows.shadowOf
 import java.io.File
 import java.nio.charset.StandardCharsets
 
@@ -105,7 +103,7 @@ class ShareResourceFeatureTest {
         val action = ShareResourceAction.AddShareAction("123", download)
         shareFeature.start()
 
-        store.dispatch(action).joinBlocking()
+        store.dispatch(action)
         dispatcher.scheduler.advanceUntilIdle()
 
         verify(shareFeature).startSharing(download)
@@ -158,7 +156,7 @@ class ShareResourceFeatureTest {
     }
 
     @Test
-    fun `download() will persist in cache the response#body() if available`() {
+    fun `download() will persist in cache the response#body() if available`() = runTest {
         val shareFeature = ShareResourceFeature(context, mock(), null, mock(), dispatcher)
         val inputStream = "test".byteInputStream(StandardCharsets.UTF_8)
         val responseFromShareState = mock<Response>()
@@ -176,7 +174,7 @@ class ShareResourceFeatureTest {
     }
 
     @Test(expected = RuntimeException::class)
-    fun `download() will throw an error if the request is not successful`() {
+    fun `download() will throw an error if the request is not successful`() = runTest {
         val shareFeature = ShareResourceFeature(context, mock(), null, mock(), dispatcher)
         val inputStream = "test".byteInputStream(StandardCharsets.UTF_8)
         val responseFromShareState = mock<Response>()
@@ -189,7 +187,7 @@ class ShareResourceFeatureTest {
     }
 
     @Test
-    fun `download() will download from the provided url the response#body() if is unavailable`() {
+    fun `download() will download from the provided url the response#body() if is unavailable`() = runTest {
         val client: Client = mock()
         val inputStream = "clientTest".byteInputStream(StandardCharsets.UTF_8)
         doAnswer { Response("randomUrl", 200, MutableHeaders(), Response.Body(inputStream)) }
@@ -206,7 +204,7 @@ class ShareResourceFeatureTest {
     }
 
     @Test
-    fun `download() will create a not private Request if not in private mode`() {
+    fun `download() will create a not private Request if not in private mode`() = runTest {
         val client: Client = mock()
         val requestCaptor = argumentCaptor<Request>()
         val inputStream = "clientTest".byteInputStream(StandardCharsets.UTF_8)
@@ -221,7 +219,7 @@ class ShareResourceFeatureTest {
     }
 
     @Test
-    fun `download() will create a private Request if in private mode`() {
+    fun `download() will create a private Request if in private mode`() = runTest {
         val client: Client = mock()
         val requestCaptor = argumentCaptor<Request>()
         val inputStream = "clientTest".byteInputStream(StandardCharsets.UTF_8)
@@ -292,7 +290,6 @@ class ShareResourceFeatureTest {
         val shareFeature = ShareResourceFeature(context, mock(), null, mock(), dispatcher)
         val gifStream = (GIF_HEADER + "testImage").byteInputStream(StandardCharsets.UTF_8)
         // Add the gif mapping to a by default empty shadow of MimeTypeMap.
-        shadowOf(MimeTypeMap.getSingleton()).addExtensionMimeTypeMapping("gif", "image/gif")
 
         val result = shareFeature.getFileExtension(mock(), gifStream)
 
@@ -306,7 +303,6 @@ class ShareResourceFeatureTest {
             set(CONTENT_TYPE, "image/gif")
         }
         // Add the gif mapping to a by default empty shadow of MimeTypeMap.
-        shadowOf(MimeTypeMap.getSingleton()).addExtensionMimeTypeMapping("gif", "image/gif")
 
         val result = shareFeature.getFileExtension(gifHeaders, mock())
 

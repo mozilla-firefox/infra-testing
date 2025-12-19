@@ -5,9 +5,9 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/EndpointForReportParent.h"
+
 #include "mozilla/dom/ReportingHeader.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
-#include "mozilla/Unused.h"
 #include "nsIThread.h"
 #include "nsThreadUtils.h"
 
@@ -35,7 +35,7 @@ void EndpointForReportParent::Run(
         self->mPBackgroundThread->Dispatch(NS_NewRunnableFunction(
             "EndpointForReportParent::Answer", [self, uri]() {
               if (self->mActive) {
-                Unused << self->Send__delete__(self, uri);
+                (void)self->Send__delete__(self, uri);
               }
             }));
       }));

@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const AUTOFILL_PROVIDERNAME = "Autofill";
-const PLACES_PROVIDERNAME = "Places";
+const AUTOFILL_PROVIDERNAME = "UrlbarProviderAutofill";
+const PLACES_PROVIDERNAME = "UrlbarProviderPlaces";
 
 testEngine_setup();
 
@@ -20,7 +20,7 @@ add_task(async function test_casing_1() {
     matches: [
       makeVisitResult(context, {
         uri: "http://mozilla.org/",
-        fallbackTitle: UrlbarTestUtils.trimURL("http://mozilla.org"),
+        title: UrlbarTestUtils.trimURL("http://mozilla.org"),
         heuristic: true,
       }),
       makeVisitResult(context, {
@@ -136,7 +136,7 @@ add_task(async function test_untrimmed_casing() {
     matches: [
       makeVisitResult(context, {
         uri: "http://mozilla.org/",
-        fallbackTitle: UrlbarTestUtils.trimURL("http://mozilla.org"),
+        title: UrlbarTestUtils.trimURL("http://mozilla.org"),
         heuristic: true,
       }),
       makeVisitResult(context, {
@@ -162,7 +162,7 @@ add_task(async function test_untrimmed_www_casing() {
     matches: [
       makeVisitResult(context, {
         uri: "http://www.mozilla.org/",
-        fallbackTitle: UrlbarTestUtils.trimURL("http://www.mozilla.org"),
+        title: UrlbarTestUtils.trimURL("http://www.mozilla.org"),
         heuristic: true,
       }),
       makeVisitResult(context, {

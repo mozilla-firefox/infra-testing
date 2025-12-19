@@ -6,12 +6,14 @@
 
 #include "nsMathMLmrootFrame.h"
 
-#include "mozilla/PresShell.h"
-#include "nsLayoutUtils.h"
-#include "nsPresContext.h"
 #include <algorithm>
+
 #include "gfxContext.h"
 #include "gfxMathTable.h"
+#include "mozilla/PresShell.h"
+#include "mozilla/StaticPrefs_mathml.h"
+#include "nsLayoutUtils.h"
+#include "nsPresContext.h"
 
 using namespace mozilla;
 
@@ -87,17 +89,21 @@ nsMathMLmrootFrame::TransmitAutomaticData() {
     //    to "false", within index, but leaves both attributes unchanged within
     //    base.
     // 2. The TeXbook (Ch 17. p.141) says \sqrt is compressed
-    UpdatePresentationDataFromChildAt(1, 1, NS_MATHML_COMPRESSED,
-                                      NS_MATHML_COMPRESSED);
-    UpdatePresentationDataFromChildAt(0, 0, NS_MATHML_COMPRESSED,
-                                      NS_MATHML_COMPRESSED);
+    if (!StaticPrefs::mathml_math_shift_enabled()) {
+      UpdatePresentationDataFromChildAt(1, 1, NS_MATHML_COMPRESSED,
+                                        NS_MATHML_COMPRESSED);
+      UpdatePresentationDataFromChildAt(0, 0, NS_MATHML_COMPRESSED,
+                                        NS_MATHML_COMPRESSED);
+    }
 
     PropagateFrameFlagFor(mFrames.LastChild(),
                           NS_FRAME_MATHML_SCRIPT_DESCENDANT);
   } else {
     // The TeXBook (Ch 17. p.141) says that \sqrt is cramped
-    UpdatePresentationDataFromChildAt(0, -1, NS_MATHML_COMPRESSED,
-                                      NS_MATHML_COMPRESSED);
+    if (!StaticPrefs::mathml_math_shift_enabled()) {
+      UpdatePresentationDataFromChildAt(0, -1, NS_MATHML_COMPRESSED,
+                                        NS_MATHML_COMPRESSED);
+    }
   }
 
   return NS_OK;
@@ -159,9 +165,9 @@ void nsMathMLmrootFrame::GetRadicalXOffsets(nscoord aIndexWidth,
   }
 }
 
-nsresult nsMathMLmrootFrame::Place(DrawTarget* aDrawTarget,
-                                   const PlaceFlags& aFlags,
-                                   ReflowOutput& aDesiredSize) {
+void nsMathMLmrootFrame::Place(DrawTarget* aDrawTarget,
+                               const PlaceFlags& aFlags,
+                               ReflowOutput& aDesiredSize) {
   if (ShouldUseRowFallback()) {
     // report an error, encourage people to get their markups in order
     if (!aFlags.contains(PlaceFlag::MeasureOnly)) {
@@ -189,11 +195,7 @@ nsresult nsMathMLmrootFrame::Place(DrawTarget* aDrawTarget,
     PlaceFlags flags = aFlags + PlaceFlag::MeasureOnly +
                        PlaceFlag::IgnoreBorderPadding +
                        PlaceFlag::DoNotAdjustForWidthAndHeight;
-    nsresult rv = nsMathMLContainerFrame::Place(aDrawTarget, flags, baseSize);
-    if (NS_FAILED(rv)) {
-      DidReflowChildren(PrincipalChildList().FirstChild());
-      return rv;
-    }
+    nsMathMLContainerFrame::Place(aDrawTarget, flags, baseSize);
     bmBase = baseSize.mBoundingMetrics;
   }
 
@@ -385,8 +387,6 @@ nsresult nsMathMLmrootFrame::Place(DrawTarget* aDrawTarget,
 
   mReference.x = 0;
   mReference.y = aDesiredSize.BlockStartAscent();
-
-  return NS_OK;
 }
 
 void nsMathMLmrootFrame::DidSetComputedStyle(ComputedStyle* aOldStyle) {

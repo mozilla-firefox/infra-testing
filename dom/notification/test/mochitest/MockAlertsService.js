@@ -18,6 +18,9 @@ function mockServicesChromeScript() {
 
   let activeNotifications = Object.create(null);
 
+  let throwHistory = false;
+  let history = [];
+
   const mockAlertsService = {
     showAlert(alert, listener) {
       activeNotifications[alert.name] = {
@@ -29,6 +32,11 @@ function mockServicesChromeScript() {
       // fake async alert show event
       if (listener) {
         setTimeout(() => {
+          if (this.mockFailure) {
+            listener.observe(null, "alertfinished", alert.cookie);
+            return;
+          }
+
           listener.observe(null, "alertshow", alert.cookie);
           if (this.autoClick) {
             let subject;
@@ -43,25 +51,6 @@ function mockServicesChromeScript() {
       }
     },
 
-    showAlertNotification(
-      imageUrl,
-      title,
-      text,
-      textClickable,
-      cookie,
-      alertListener,
-      name
-    ) {
-      this.showAlert(
-        {
-          name,
-          cookie,
-          title,
-        },
-        alertListener
-      );
-    },
-
     closeAlert(name) {
       let alertNotification = activeNotifications[name];
       if (alertNotification) {
@@ -74,6 +63,13 @@ function mockServicesChromeScript() {
         }
         delete activeNotifications[name];
       }
+    },
+
+    getHistory() {
+      if (throwHistory) {
+        throw new Error("no history, sorry");
+      }
+      return history;
     },
 
     QueryInterface: ChromeUtils.generateQI(["nsIAlertsService"]),
@@ -142,9 +138,21 @@ function mockServicesChromeScript() {
     mockAlertsService.autoClick = action || true;
   });
 
+  addMessageListener("mock-alert-service:mock-failure", action => {
+    mockAlertsService.mockFailure = action || true;
+  });
+
   addMessageListener("mock-alert-service:get-notification-ids", () =>
     Object.keys(activeNotifications)
   );
+
+  addMessageListener("mock-alert-service:set-history", value => {
+    history = value;
+  });
+
+  addMessageListener("mock-alert-service:set-throw-history", value => {
+    throwHistory = value;
+  });
 
   sendAsyncMessage("mock-alert-service:registered");
 }
@@ -206,9 +214,27 @@ const MockAlertsService = {
       action
     );
   },
+  async mockFailure(action) {
+    await this._chromeScript.sendQuery(
+      "mock-alert-service:mock-failure",
+      action
+    );
+  },
   async getNotificationIds() {
     return await this._chromeScript.sendQuery(
       "mock-alert-service:get-notification-ids"
+    );
+  },
+  async setHistory(ids) {
+    return await this._chromeScript.sendQuery(
+      "mock-alert-service:set-history",
+      ids
+    );
+  },
+  async setThrowHistory(throws) {
+    return await this._chromeScript.sendQuery(
+      "mock-alert-service:set-throw-history",
+      throws
     );
   },
 };

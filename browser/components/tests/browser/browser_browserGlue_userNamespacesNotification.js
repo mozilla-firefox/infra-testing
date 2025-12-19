@@ -3,9 +3,6 @@
 
 "use strict";
 
-const kCID = "@mozilla.org/browser/browserglue;1";
-const BrowserGlue = Cc[kCID].getService(Ci.nsISupports).wrappedJSObject;
-
 const kNotificationSelector =
   'notification-message[message-bar-type="infobar"]' +
   '[value="sandbox-unprivileged-namespaces"]';
@@ -38,117 +35,128 @@ async function getNotification(shouldBeNull = false) {
   return document.querySelector(kNotificationSelector);
 }
 
-if (AppConstants.platform === "linux" && AppConstants.MOZ_SANDBOX) {
-  add_setup(async function setup() {
-    await SpecialPowers.pushPrefEnv({
-      set: [["security.sandbox.warn_unprivileged_namespaces", true]],
-    });
-    closeExistingNotification();
-    const originalValue = Services.sysinfo.getProperty("hasUserNamespaces");
-    registerCleanupFunction(() => {
-      Services.sysinfo
-        .QueryInterface(Ci.nsIWritablePropertyBag2)
-        .setPropertyAsBool("hasUserNamespaces", originalValue);
-    });
-  });
-
-  add_task(async function doNotShowNotificationCorrectly() {
-    Assert.equal(
-      null,
-      document.querySelector(kNotificationSelector),
-      "No existing notification"
+if (AppConstants.platform === "linux") {
+  if (AppConstants.MOZ_SANDBOX) {
+    let { SandboxUtils } = ChromeUtils.importESModule(
+      "resource://gre/modules/SandboxUtils.sys.mjs"
     );
-    setHasUsernamespaces(true);
-    BrowserGlue._verifySandboxUserNamespaces(window);
-
-    const notification = await getNotification(/* shouldBeNull */ true);
-    Assert.equal(
-      null,
-      notification,
-      "Notification is not shown when the feature is supported"
-    );
-  });
-
-  add_task(async function showNotificationCorrectly() {
-    Assert.equal(
-      null,
-      document.querySelector(kNotificationSelector),
-      "No existing notification"
-    );
-    setHasUsernamespaces(false);
-    BrowserGlue._verifySandboxUserNamespaces(window);
-
-    const notification = await getNotification();
-    Assert.notEqual(
-      null,
-      notification,
-      "Notification is shown when the feature is not supported"
-    );
-    closeExistingNotification();
-  });
-
-  add_task(async function prefDisablesNotification() {
-    Assert.equal(
-      null,
-      document.querySelector(kNotificationSelector),
-      "No existing notification"
-    );
-    await SpecialPowers.pushPrefEnv({
-      set: [["security.sandbox.warn_unprivileged_namespaces", false]],
-    });
-    setHasUsernamespaces(false);
-    BrowserGlue._verifySandboxUserNamespaces(window);
-
-    const notification = await getNotification(/* shouldBeNull */ true);
-    Assert.equal(
-      null,
-      notification,
-      "Notification is not shown when the feature is unsupported but pref disabled"
-    );
-  });
-
-  add_task(async function dontShowAgainTogglePref() {
-    Assert.equal(
-      null,
-      document.querySelector(kNotificationSelector),
-      "No existing notification"
-    );
-    await SpecialPowers.pushPrefEnv({
-      set: [["security.sandbox.warn_unprivileged_namespaces", true]],
+    add_setup(async function setup() {
+      await SpecialPowers.pushPrefEnv({
+        set: [["security.sandbox.warn_unprivileged_namespaces", true]],
+      });
+      closeExistingNotification();
+      const originalValue = Services.sysinfo.getProperty("hasUserNamespaces");
+      registerCleanupFunction(() => {
+        Services.sysinfo
+          .QueryInterface(Ci.nsIWritablePropertyBag2)
+          .setPropertyAsBool("hasUserNamespaces", originalValue);
+      });
     });
 
-    Assert.equal(
-      Services.prefs.getBoolPref(
-        "security.sandbox.warn_unprivileged_namespaces"
-      ),
-      true,
-      "Pref is enabled"
-    );
-    setHasUsernamespaces(false);
-    BrowserGlue._verifySandboxUserNamespaces(window);
+    add_task(async function doNotShowNotificationCorrectly() {
+      Assert.equal(
+        null,
+        document.querySelector(kNotificationSelector),
+        "No existing notification"
+      );
+      setHasUsernamespaces(true);
+      SandboxUtils.maybeWarnAboutMissingUserNamespaces(window);
 
-    const notification = await getNotification();
-    const dontShowAgain = notification.querySelector(".notification-button");
-    Assert.notEqual(null, dontShowAgain, "Found dismiss for ever button");
+      const notification = await getNotification(/* shouldBeNull */ true);
+      Assert.equal(
+        null,
+        notification,
+        "Notification is not shown when the feature is supported"
+      );
+    });
 
-    dontShowAgain.click();
-    Assert.equal(
-      Services.prefs.getBoolPref(
-        "security.sandbox.warn_unprivileged_namespaces"
-      ),
-      false,
-      "Pref is disabled"
-    );
-  });
+    add_task(async function showNotificationCorrectly() {
+      Assert.equal(
+        null,
+        document.querySelector(kNotificationSelector),
+        "No existing notification"
+      );
+      setHasUsernamespaces(false);
+      SandboxUtils.maybeWarnAboutMissingUserNamespaces(window);
+
+      const notification = await getNotification();
+      Assert.notEqual(
+        null,
+        notification,
+        "Notification is shown when the feature is not supported"
+      );
+      closeExistingNotification();
+    });
+
+    add_task(async function prefDisablesNotification() {
+      Assert.equal(
+        null,
+        document.querySelector(kNotificationSelector),
+        "No existing notification"
+      );
+      await SpecialPowers.pushPrefEnv({
+        set: [["security.sandbox.warn_unprivileged_namespaces", false]],
+      });
+      setHasUsernamespaces(false);
+      SandboxUtils.maybeWarnAboutMissingUserNamespaces(window);
+
+      const notification = await getNotification(/* shouldBeNull */ true);
+      Assert.equal(
+        null,
+        notification,
+        "Notification is not shown when the feature is unsupported but pref disabled"
+      );
+    });
+
+    add_task(async function dontShowAgainTogglePref() {
+      Assert.equal(
+        null,
+        document.querySelector(kNotificationSelector),
+        "No existing notification"
+      );
+      await SpecialPowers.pushPrefEnv({
+        set: [["security.sandbox.warn_unprivileged_namespaces", true]],
+      });
+
+      Assert.equal(
+        Services.prefs.getBoolPref(
+          "security.sandbox.warn_unprivileged_namespaces"
+        ),
+        true,
+        "Pref is enabled"
+      );
+      setHasUsernamespaces(false);
+      SandboxUtils.maybeWarnAboutMissingUserNamespaces(window);
+
+      const notification = await getNotification();
+      const dontShowAgain = notification.querySelector(".notification-button");
+      Assert.notEqual(null, dontShowAgain, "Found dismiss for ever button");
+
+      dontShowAgain.click();
+      Assert.equal(
+        Services.prefs.getBoolPref(
+          "security.sandbox.warn_unprivileged_namespaces"
+        ),
+        false,
+        "Pref is disabled"
+      );
+    });
+  } else {
+    add_task(async function doNotShowNotificationCorrectly() {
+      Assert.equal(
+        null,
+        document.querySelector(kNotificationSelector),
+        "No existing notification"
+      );
+      await Assert.rejects(
+        fetch("resource://gre/modules/SandboxUtils.sys.mjs"),
+        /NetworkError when attempting to fetch/,
+        "SandboxUtils should not be packaged."
+      );
+    });
+  }
 } else {
-  add_task(async function doNotShowNotificationCorrectly() {
-    Assert.equal(
-      null,
-      document.querySelector(kNotificationSelector),
-      "No existing notification"
-    );
-    BrowserGlue._verifySandboxUserNamespaces(window);
-    const notification = await getNotification(/* shouldBeNull */ true);
-    Assert.equal(null, notification, "Notification is not shown on non linux");
+  add_task(function notLinuxPlatform() {
+    Assert.ok(true, "This test only runs on Linux.");
   });
 }

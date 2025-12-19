@@ -3,7 +3,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* eslint-disable mozilla/valid-lazy */
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
@@ -79,6 +78,12 @@ export var NativeManifests = {
       );
     }
     if (!path) {
+      return null;
+    }
+    if (typeof path !== "string") {
+      Cu.reportError(
+        `Native manifest registry entry ${regPath} must be a string path`
+      );
       return null;
     }
 

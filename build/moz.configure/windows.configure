@@ -488,7 +488,7 @@ option(
 )
 
 
-@depends("--with-redist", "MOZ_AUTOMATION", c_compiler, vc_path, target)
+@depends("--with-redist", moz_automation, c_compiler, vc_path, target)
 @imports("os")
 def win32_redist_dir(redist, automation, c_compiler, vc_path, target):
     if len(redist):
@@ -586,10 +586,14 @@ with only_when(depends(c_compiler)(lambda c: c.type == "clang-cl")):
         when=depends(target)(lambda target: target.cpu != "x86"),
     )
     set_config("MSVC_CXX_RUNTIME_DLL", "msvcp140.dll")
+    set_config("MSVC_CXX_RUNTIME_ATOMIC_WAIT_DLL", "msvcp140_atomic_wait.dll")
 
     # Disable warnings about using MSVC-specific secure CRT functions.
     set_define("_CRT_SECURE_NO_WARNINGS", True)
     set_define("_CRT_NONSTDC_NO_WARNINGS", True)
+
+    # Work around issues with newer STL and older runtimes, see bug 1994496.
+    set_define("_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR", True)
 
     set_define("HAVE_SEH_EXCEPTIONS", True)
     set_define("HAVE_IO_H", True)
@@ -599,11 +603,11 @@ with only_when(depends(c_compiler)(lambda c: c.type == "clang-cl")):
 
     set_config(
         "WIN32_CONSOLE_EXE_LDFLAGS",
-        "-SUBSYSTEM:CONSOLE,{}".format(win32_subsystem_version()),
+        ["-SUBSYSTEM:CONSOLE,{}".format(win32_subsystem_version())],
     )
     set_config(
         "WIN32_GUI_EXE_LDFLAGS",
-        "-SUBSYSTEM:WINDOWS,{}".format(win32_subsystem_version()),
+        ["-SUBSYSTEM:WINDOWS,{}".format(win32_subsystem_version())],
     )
 
     add_flag("-Gy")
@@ -636,8 +640,8 @@ with only_when(target_is_windows & depends(c_compiler)(lambda c: c.type != "clan
     # causing problems with local implementations with the same name.
     set_define("STRSAFE_NO_DEPRECATE", True)
 
-    set_config("WIN32_CONSOLE_EXE_LDFLAGS", "-mconsole")
-    set_config("WIN32_GUI_EXE_LDFLAGS", "-mwindows")
+    set_config("WIN32_CONSOLE_EXE_LDFLAGS", ["-mconsole"])
+    set_config("WIN32_GUI_EXE_LDFLAGS", ["-mwindows"])
 
     # Silence problematic clang warnings
     add_flag("-Wno-incompatible-ms-struct", compiler=cxx_compiler)

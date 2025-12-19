@@ -7,7 +7,6 @@
 use crate::std::{
     cell::RefCell,
     path::PathBuf,
-    process::Command,
     sync::{
         atomic::{AtomicBool, Ordering::Relaxed},
         Arc, Mutex, Weak,
@@ -133,7 +132,7 @@ impl ReportCrash {
             extra: &self.extra,
             ping_dir: self.config.ping_dir.as_deref(),
             minidump_hash,
-            pingsender_path: self.config.installation_program_path("pingsender").as_ref(),
+            pingsender_path: crate::config::installation_program_path("pingsender").as_ref(),
         }
         .send()
     }
@@ -356,24 +355,7 @@ impl ReportCrash {
 
     /// Restart the program.
     fn restart_process(&self) {
-        if self.config.restart_command.is_none() {
-            // The restart button should be hidden in this case, so this error should not occur.
-            log::error!("no process configured for restart");
-            return;
-        }
-
-        let mut cmd = Command::new(self.config.restart_command.as_ref().unwrap());
-        cmd.args(&self.config.restart_args)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null());
-        if let Some(xul_app_file) = &self.config.app_file {
-            cmd.env("XUL_APP_FILE", xul_app_file);
-        }
-        log::debug!("restarting process: {:?}", cmd);
-        if let Err(e) = cmd.spawn() {
-            log::error!("failed to restart process: {e}");
-        }
+        self.config.restart_process();
     }
 
     /// Run the crash reporting UI.
@@ -615,23 +597,14 @@ impl ReportCrash {
             url,
         };
 
-        let report_response = report
-            .send()
-            .map(Some)
-            .unwrap_or_else(|e| {
-                log::error!("failed to initialize report transmission: {e}");
-                None
-            })
-            .and_then(|sender| {
-                // Normally we might want to do the following asynchronously since it will block,
-                // however we don't really need the Logic thread to do anything else (the UI
-                // becomes disabled from this point onward), so we just do it here. Same goes for
-                // the `std::thread::sleep` in close_window() later on.
-                sender.finish().map(Some).unwrap_or_else(|e| {
-                    log::error!("failed to send report: {e}");
-                    None
-                })
-            });
+        // Normally we might want to do the following asynchronously since it will block,
+        // however we don't really need the Logic thread to do anything else (the UI
+        // becomes disabled from this point onward), so we just do it here. Same goes for
+        // the `std::thread::sleep` in close_window() later on.
+        let report_response = report.send().map(Some).unwrap_or_else(|e| {
+            log::error!("failed to send report: {e:#}");
+            None
+        });
 
         let report_received = report_response.is_some();
         let crash_id = report_response.and_then(|response| {

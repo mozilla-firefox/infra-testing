@@ -3,13 +3,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/Logging.h"
+#include "KeyboardLayout.h"
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/AutoRestore.h"
+#include "mozilla/Logging.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/MiscEvents.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/StaticPrefs_ui.h"
+#include "mozilla/StaticPtr.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/widget/WinRegistry.h"
 
@@ -24,7 +26,6 @@
 #include "nsUnicharUtils.h"
 #include "nsWindowDbg.h"
 
-#include "KeyboardLayout.h"
 #include "WidgetUtils.h"
 #include "WinUtils.h"
 
@@ -323,8 +324,6 @@ static const char* const kVirtualKeyName[] = {
 
 static_assert(sizeof(kVirtualKeyName) / sizeof(const char*) == 0x100,
               "The virtual key name must be defined just 256 keys");
-
-static const char* GetBoolName(bool aBool) { return aBool ? "true" : "false"; }
 
 static const nsCString GetCharacterCodeName(WPARAM aCharCode) {
   switch (aCharCode) {
@@ -750,10 +749,10 @@ static const nsCString ToString(const MSG& aMSG) {
           "transition state=%s",
           GetVirtualKeyCodeName(aMSG.wParam).get(), aMSG.lParam & 0xFFFF,
           WinUtils::GetScanCode(aMSG.lParam),
-          GetBoolName(WinUtils::IsExtendedScanCode(aMSG.lParam)),
-          GetBoolName((aMSG.lParam & (1 << 29)) != 0),
-          GetBoolName((aMSG.lParam & (1 << 30)) != 0),
-          GetBoolName((aMSG.lParam & (1 << 31)) != 0));
+          TrueOrFalse(WinUtils::IsExtendedScanCode(aMSG.lParam)),
+          TrueOrFalse((aMSG.lParam & (1 << 29)) != 0),
+          TrueOrFalse((aMSG.lParam & (1 << 30)) != 0),
+          TrueOrFalse((aMSG.lParam & (1 << 31)) != 0));
       break;
     case WM_CHAR:
     case WM_DEADCHAR:
@@ -767,10 +766,10 @@ static const nsCString ToString(const MSG& aMSG) {
           "transition state=%s",
           GetCharacterCodeName(aMSG.wParam).get(), aMSG.lParam & 0xFFFF,
           WinUtils::GetScanCode(aMSG.lParam),
-          GetBoolName(WinUtils::IsExtendedScanCode(aMSG.lParam)),
-          GetBoolName((aMSG.lParam & (1 << 29)) != 0),
-          GetBoolName((aMSG.lParam & (1 << 30)) != 0),
-          GetBoolName((aMSG.lParam & (1 << 31)) != 0));
+          TrueOrFalse(WinUtils::IsExtendedScanCode(aMSG.lParam)),
+          TrueOrFalse((aMSG.lParam & (1 << 29)) != 0),
+          TrueOrFalse((aMSG.lParam & (1 << 30)) != 0),
+          TrueOrFalse((aMSG.lParam & (1 << 31)) != 0));
       break;
     case WM_APPCOMMAND:
       result.AppendPrintf(
@@ -1077,7 +1076,7 @@ Modifiers VirtualKey::ShiftStateToModifiers(ShiftState aShiftState) {
 }
 
 const DeadKeyTable* VirtualKey::MatchingDeadKeyTable(
-    const DeadKeyEntry* aDeadKeyArray, uint32_t aEntries) const {
+    const DeadKeyTable& aDeadKeyTable) const {
   if (!mIsDeadKey) {
     return nullptr;
   }
@@ -1087,7 +1086,7 @@ const DeadKeyTable* VirtualKey::MatchingDeadKeyTable(
       continue;
     }
     const DeadKeyTable* dkt = mShiftStates[shiftState].DeadKey.Table;
-    if (dkt && dkt->IsEqual(aDeadKeyArray, aEntries)) {
+    if (dkt && *dkt == aDeadKeyTable) {
       return dkt;
     }
   }
@@ -1319,11 +1318,11 @@ NativeKey::NativeKey(nsWindow* aWidget, const MSG& aMessage,
            ToString(mShiftedString).get(), ToString(mUnshiftedString).get(),
            GetCharacterCodeName(mShiftedLatinChar).get(),
            GetCharacterCodeName(mUnshiftedLatinChar).get(), mScanCode,
-           GetBoolName(mIsExtended), GetBoolName(mIsRepeat),
-           GetBoolName(mIsDeadKey), GetBoolName(mIsPrintableKey),
-           GetBoolName(mIsSkippableInRemoteProcess),
-           GetBoolName(mCharMessageHasGone),
-           GetBoolName(mIsOverridingKeyboardLayout)));
+           TrueOrFalse(mIsExtended), TrueOrFalse(mIsRepeat),
+           TrueOrFalse(mIsDeadKey), TrueOrFalse(mIsPrintableKey),
+           TrueOrFalse(mIsSkippableInRemoteProcess),
+           TrueOrFalse(mCharMessageHasGone),
+           TrueOrFalse(mIsOverridingKeyboardLayout)));
 }
 
 void NativeKey::InitIsSkippableForKeyOrChar(const MSG& aLastKeyMSG) {
@@ -1602,7 +1601,7 @@ void NativeKey::InitWithKeyOrChar() {
                this, ToString(charMsg).get()));
       NS_WARNING_ASSERTION(
           charMsg.hwnd == mMsg.hwnd,
-          "The retrieved char message was targeted to differnet window");
+          "The retrieved char message was targeted to different window");
       mFollowingCharMsgs.AppendElement(charMsg);
     }
     if (mFollowingCharMsgs.Length() == 1) {
@@ -2138,7 +2137,7 @@ nsEventStatus NativeKey::InitKeyEvent(
        GetDOMKeyCodeName(aKeyEvent.mKeyCode).get(),
        GetKeyLocationName(aKeyEvent.mLocation).get(),
        GetModifiersName(aKeyEvent.mModifiers).get(),
-       GetBoolName(aKeyEvent.DefaultPrevented())));
+       TrueOrFalse(aKeyEvent.DefaultPrevented())));
 
   return aKeyEvent.DefaultPrevented() ? nsEventStatus_eConsumeNoDefault
                                       : nsEventStatus_eIgnore;
@@ -2231,7 +2230,7 @@ bool NativeKey::DispatchCommandEvent(uint32_t aEventCommand) const {
       gKeyLog, LogLevel::Info,
       ("%p   NativeKey::DispatchCommandEvent(), dispatched app command event, "
        "result=%s, mWidget->Destroyed()=%s",
-       this, GetBoolName(ok), GetBoolName(mWidget->Destroyed())));
+       this, SucceededOrFailed(ok), TrueOrFalse(mWidget->Destroyed())));
   return ok;
 }
 
@@ -2307,7 +2306,7 @@ bool NativeKey::HandleAppCommandMessage() const {
     MOZ_LOG(gKeyLog, LogLevel::Info,
             ("%p   NativeKey::HandleAppCommandMessage(), keydown event was "
              "dispatched, consumed=%s",
-             this, GetBoolName(consumed)));
+             this, TrueOrFalse(consumed)));
     sDispatchedKeyOfAppCommand = mVirtualKeyCode;
     if (mWidget->Destroyed()) {
       MOZ_LOG(
@@ -2554,7 +2553,7 @@ bool NativeKey::HandleKeyDownMessage(bool* aEventDispatched) const {
         gKeyLog, LogLevel::Info,
         ("%p   NativeKey::HandleKeyDownMessage(), dispatched keydown event, "
          "dispatched=%s, defaultPrevented=%s",
-         this, GetBoolName(dispatched), GetBoolName(defaultPrevented)));
+         this, TrueOrFalse(dispatched), TrueOrFalse(defaultPrevented)));
 
     // If IMC wasn't associated to the window but is associated it now (i.e.,
     // focus is moved from a non-editable editor to an editor by keydown
@@ -2622,7 +2621,7 @@ bool NativeKey::HandleKeyDownMessage(bool* aEventDispatched) const {
             ("%p   NativeKey::HandleKeyDownMessage(), not dispatching keypress "
              "event because the key was already handled by IME, "
              "defaultPrevented=%s",
-             this, GetBoolName(defaultPrevented)));
+             this, TrueOrFalse(defaultPrevented)));
     return defaultPrevented;
   }
 
@@ -2826,7 +2825,7 @@ bool NativeKey::HandleCharMessage(const MSG& aCharMsg,
   MOZ_LOG(gKeyLog, LogLevel::Info,
           ("%p   NativeKey::HandleCharMessage(), dispatched keypress event, "
            "dispatched=%s, consumed=%s",
-           this, GetBoolName(dispatched), GetBoolName(consumed)));
+           this, TrueOrFalse(dispatched), TrueOrFalse(consumed)));
   return consumed;
 }
 
@@ -2899,7 +2898,7 @@ bool NativeKey::HandleKeyUpMessage(bool* aEventDispatched) const {
   MOZ_LOG(gKeyLog, LogLevel::Info,
           ("%p   NativeKey::HandleKeyUpMessage(), dispatched keyup event, "
            "dispatched=%s, consumed=%s",
-           this, GetBoolName(dispatched), GetBoolName(consumed)));
+           this, TrueOrFalse(dispatched), TrueOrFalse(consumed)));
   return consumed;
 }
 
@@ -3483,8 +3482,8 @@ void NativeKey::ComputeInputtingStringWithKeyboardLayout() {
   mUnshiftedString.Clear();
   mShiftedLatinChar = mUnshiftedLatinChar = 0;
 
-  // XXX How about when Win key is pressed?
-  if (!mModKeyState.IsControl() && !mModKeyState.IsAlt()) {
+  if (!mModKeyState.IsControl() && !mModKeyState.IsAlt() &&
+      !mModKeyState.IsWin()) {
     return;
   }
 
@@ -3593,8 +3592,8 @@ bool NativeKey::DispatchKeyPressEventsWithRetrievedCharMessages() const {
   ModifierKeyState modKeyState(mModKeyState);
   if (mCanIgnoreModifierStateAtKeyPress && IsFollowedByPrintableCharMessage()) {
     // If eKeyPress event should cause inputting text in focused editor,
-    // we need to remove Alt and Ctrl state.
-    modKeyState.Unset(MODIFIER_ALT | MODIFIER_CONTROL);
+    // we need to remove Alt and Ctrl and Meta state.
+    modKeyState.Unset(MODIFIER_ALT | MODIFIER_CONTROL | MODIFIER_META);
   }
   // We don't need to send char message here if there are two or more retrieved
   // messages because we need to set each message to each eKeyPress event.
@@ -3618,7 +3617,7 @@ bool NativeKey::DispatchKeyPressEventsWithRetrievedCharMessages() const {
   MOZ_LOG(gKeyLog, LogLevel::Info,
           ("%p   NativeKey::DispatchKeyPressEventsWithRetrievedCharMessages(), "
            "dispatched keypress event(s), dispatched=%s, consumed=%s",
-           this, GetBoolName(dispatched), GetBoolName(consumed)));
+           this, TrueOrFalse(dispatched), TrueOrFalse(consumed)));
   return consumed;
 }
 
@@ -3667,7 +3666,7 @@ bool NativeKey::DispatchKeyPressEventsWithoutCharMessage() const {
       gKeyLog, LogLevel::Info,
       ("%p   NativeKey::DispatchKeyPressEventsWithoutCharMessage(), dispatched "
        "keypress event(s), dispatched=%s, consumed=%s",
-       this, GetBoolName(dispatched), GetBoolName(consumed)));
+       this, TrueOrFalse(dispatched), TrueOrFalse(consumed)));
   return consumed;
 }
 
@@ -3890,7 +3889,6 @@ void KeyboardLayout::NotifyIdleServiceOfUserActivity() {
 }
 
 KeyboardLayout::KeyboardLayout() {
-  mDeadKeyTableListHead = nullptr;
   // A dead key sequence should be made from up to 5 keys.  Therefore, 4 is
   // enough and makes sense because the item is uint8_t.
   // (Although, even if it's possible to be 6 keys or more in a sequence,
@@ -4504,12 +4502,11 @@ void KeyboardLayout::LoadLayout(HKL aLayout) {
       int32_t vki = GetKeyIndex(virtualKey);
       if (vki >= 0 && mVirtualKeys[vki].IsDeadKey(shiftState)) {
         AutoTArray<DeadKeyEntry, 256> deadKeyArray;
-        uint32_t n = GetDeadKeyCombinations(
-            virtualKey, kbdState, shiftStatesWithBaseChars, deadKeyArray);
-        const DeadKeyTable* dkt =
-            mVirtualKeys[vki].MatchingDeadKeyTable(deadKeyArray.Elements(), n);
+        GetDeadKeyCombinations(virtualKey, kbdState, shiftStatesWithBaseChars,
+                               deadKeyArray);
+        const auto* dkt = mVirtualKeys[vki].MatchingDeadKeyTable(deadKeyArray);
         if (!dkt) {
-          dkt = AddDeadKeyTable(deadKeyArray.Elements(), n);
+          dkt = AddDeadKeyTable(deadKeyArray);
         }
         mVirtualKeys[vki].AttachDeadKeyTable(shiftState, dkt);
       }
@@ -4597,32 +4594,13 @@ inline int32_t KeyboardLayout::GetKeyIndex(uint8_t aVirtualKey) {
 }
 
 const DeadKeyTable* KeyboardLayout::AddDeadKeyTable(
-    const DeadKeyEntry* aDeadKeyArray, uint32_t aEntries) {
-  DeadKeyTableListEntry* next = mDeadKeyTableListHead;
-
-  const size_t bytes = offsetof(DeadKeyTableListEntry, data) +
-                       DeadKeyTable::SizeInBytes(aEntries);
-  uint8_t* p = new uint8_t[bytes];
-
-  mDeadKeyTableListHead = reinterpret_cast<DeadKeyTableListEntry*>(p);
-  mDeadKeyTableListHead->next = next;
-
-  DeadKeyTable* dkt =
-      reinterpret_cast<DeadKeyTable*>(mDeadKeyTableListHead->data);
-
-  dkt->Init(aDeadKeyArray, aEntries);
-
+    const DeadKeyTable& aDeadKeyTable) {
+  auto* dkt = new DeadKeyTable(aDeadKeyTable.Clone());
+  mDeadKeyTableList.AppendElement(dkt);
   return dkt;
 }
 
-void KeyboardLayout::ReleaseDeadKeyTables() {
-  while (mDeadKeyTableListHead) {
-    uint8_t* p = reinterpret_cast<uint8_t*>(mDeadKeyTableListHead);
-    mDeadKeyTableListHead = mDeadKeyTableListHead->next;
-
-    delete[] p;
-  }
-}
+void KeyboardLayout::ReleaseDeadKeyTables() { mDeadKeyTableList.Clear(); }
 
 bool KeyboardLayout::EnsureDeadKeyActive(bool aIsActive, uint8_t aDeadKey,
                                          const PBYTE aDeadKeyKbdState) {
@@ -4669,26 +4647,23 @@ void KeyboardLayout::DeactivateDeadKeyState() {
   mDeadKeyShiftStates.Clear();
 }
 
-bool KeyboardLayout::AddDeadKeyEntry(char16_t aBaseChar,
+void KeyboardLayout::AddDeadKeyEntry(char16_t aBaseChar,
                                      char16_t aCompositeChar,
-                                     nsTArray<DeadKeyEntry>& aDeadKeyArray) {
+                                     DeadKeyTable& aDeadKeyTable) {
   auto dke = DeadKeyEntry(aBaseChar, aCompositeChar);
-  for (uint32_t index = 0; index < aDeadKeyArray.Length(); index++) {
-    if (aDeadKeyArray[index] == dke) {
-      return false;
+  for (const auto& entry : aDeadKeyTable) {
+    if (entry == dke) {
+      return;
     }
   }
-
-  aDeadKeyArray.AppendElement(dke);
-
-  return true;
+  aDeadKeyTable.AppendElement(dke);
 }
 
-uint32_t KeyboardLayout::GetDeadKeyCombinations(
-    uint8_t aDeadKey, const PBYTE aDeadKeyKbdState,
-    uint16_t aShiftStatesWithBaseChars, nsTArray<DeadKeyEntry>& aDeadKeyArray) {
+void KeyboardLayout::GetDeadKeyCombinations(uint8_t aDeadKey,
+                                            const PBYTE aDeadKeyKbdState,
+                                            uint16_t aShiftStatesWithBaseChars,
+                                            DeadKeyTable& aDeadKeyTable) {
   bool deadKeyActive = false;
-  uint32_t entries = 0;
   BYTE kbdState[256];
   memset(kbdState, 0, sizeof(kbdState));
 
@@ -4727,16 +4702,14 @@ uint32_t KeyboardLayout::GetDeadKeyCombinations(
             char16_t baseChars[5];
             ret = ::ToUnicodeEx(virtualKey, 0, kbdState, (LPWSTR)baseChars,
                                 std::size(baseChars), 0, mKeyboardLayout);
-            if (entries < aDeadKeyArray.Capacity()) {
+            if (aDeadKeyTable.Length() < aDeadKeyTable.Capacity()) {
               switch (ret) {
                 case 1:
                   // Exactly one composite character produced. Now, when
                   // dead-key is not active, repeat the last character one more
                   // time to determine the base character.
-                  if (AddDeadKeyEntry(baseChars[0], compositeChars[0],
-                                      aDeadKeyArray)) {
-                    entries++;
-                  }
+                  AddDeadKeyEntry(baseChars[0], compositeChars[0],
+                                  aDeadKeyTable);
                   deadKeyActive = false;
                   break;
                 case -1: {
@@ -4760,10 +4733,9 @@ uint32_t KeyboardLayout::GetDeadKeyCombinations(
                       break;
                     }
                   }
-                  if (ret > 0 &&
-                      AddDeadKeyEntry(baseChars[0], compositeChars[0],
-                                      aDeadKeyArray)) {
-                    entries++;
+                  if (ret > 0) {
+                    AddDeadKeyEntry(baseChars[0], compositeChars[0],
+                                    aDeadKeyTable);
                   }
                   // Inactivate dead-key state for current virtual keycode.
                   EnsureDeadKeyActive(false, virtualKey, kbdState);
@@ -4810,9 +4782,7 @@ uint32_t KeyboardLayout::GetDeadKeyCombinations(
     deadKeyActive = EnsureDeadKeyActive(false, aDeadKey, aDeadKeyKbdState);
   }
 
-  aDeadKeyArray.Sort();
-
-  return entries;
+  aDeadKeyTable.Sort();
 }
 
 uint32_t KeyboardLayout::ConvertNativeKeyCodeToDOMKeyCode(
@@ -5432,26 +5402,6 @@ nsresult KeyboardLayout::SynthesizeNativeKeyEvent(
     ::UnloadKeyboardLayout(loadedLayout);
   }
   return NS_OK;
-}
-
-/*****************************************************************************
- * mozilla::widget::DeadKeyTable
- *****************************************************************************/
-
-char16_t DeadKeyTable::GetCompositeChar(char16_t aBaseChar) const {
-  // Dead-key table is sorted by BaseChar in ascending order.
-  // Usually they are too small to use binary search.
-
-  for (uint32_t index = 0; index < mEntries; index++) {
-    if (mTable[index].BaseChar == aBaseChar) {
-      return mTable[index].CompositeChar;
-    }
-    if (mTable[index].BaseChar > aBaseChar) {
-      break;
-    }
-  }
-
-  return 0;
 }
 
 /*****************************************************************************

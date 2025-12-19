@@ -19,7 +19,6 @@
 #include "js/ColumnNumber.h"  // JS::LimitedColumnNumberOneOrigin, JS::TaggedColumnNumberOneOrigin
 #include "js/GCAPI.h"              // JS::AutoSuppressGCAnalysis
 #include "js/Principals.h"         // JSSubsumesOp
-#include "js/RootingAPI.h"         // JS::Rooted
 #include "vm/Activation.h"         // js::Activation{,Iterator}
 #include "vm/EnvironmentObject.h"  // js::CallObject
 #include "vm/JitActivation.h"      // js::jit::JitActivation
@@ -43,7 +42,6 @@ class ArgumentsObject;
 }  // namespace js
 
 using JS::Realm;
-using JS::Rooted;
 using JS::Value;
 
 using js::AbstractFramePtr;
@@ -175,7 +173,13 @@ void JitFrameIter::settle() {
     wasm::Frame* prevFP = (wasm::Frame*)jitFrame.prevFp();
 
     if (mustUnwindActivation_) {
-      act_->setWasmExitFP(prevFP);
+      // The JS-JIT exit frame doesn't support stack switching and will only be
+      // used if original wasm func was on the main stack.
+#ifdef ENABLE_WASM_JSPI
+      MOZ_ASSERT(!act_->cx()->wasm().findSuspenderForStackAddress(
+          prevFP->wasmCaller()));
+#endif
+      act_->setWasmExitFP(prevFP, nullptr);
     }
 
     iter_.destroy();
@@ -828,7 +832,7 @@ bool FrameIter::matchCallee(JSContext* cx, JS::Handle<JSFunction*> fun) const {
   // Use the calleeTemplate to rule out a match without needing to invalidate to
   // find the actual callee. The real callee my be a clone of the template which
   // should *not* be considered a match.
-  Rooted<JSFunction*> currentCallee(cx, calleeTemplate());
+  JSFunction* currentCallee = calleeTemplate();
 
   if (currentCallee->nargs() != fun->nargs()) {
     return false;

@@ -10,8 +10,8 @@
 #include <CoreMedia/CoreMedia.h>
 #include <VideoToolbox/VideoToolbox.h>
 
-#include "apple/AppleUtils.h"
 #include "PlatformEncoderModule.h"
+#include "apple/AppleUtils.h"
 
 namespace mozilla {
 
@@ -38,15 +38,18 @@ class AppleVTEncoder final : public MediaDataEncoder {
 
   RefPtr<InitPromise> Init() override;
   RefPtr<EncodePromise> Encode(const MediaData* aSample) override;
+  RefPtr<EncodePromise> Encode(nsTArray<RefPtr<MediaData>>&& aSamples) override;
   RefPtr<ReconfigurationPromise> Reconfigure(
       const RefPtr<const EncoderConfigurationChangeList>& aConfigurationChanges)
       override;
   RefPtr<EncodePromise> Drain() override;
   RefPtr<ShutdownPromise> Shutdown() override;
   RefPtr<GenericPromise> SetBitrate(uint32_t aBitsPerSec) override;
+  bool IsHardwareAccelerated(nsACString& aFailureReason) const override {
+    return mIsHardwareAccelerated;
+  }
 
   nsCString GetDescriptionName() const override {
-    MOZ_ASSERT(mSession);
     return mIsHardwareAccelerated ? "apple hardware VT encoder"_ns
                                   : "apple software VT encoder"_ns;
   }
@@ -84,6 +87,9 @@ class AppleVTEncoder final : public MediaDataEncoder {
   bool IsSettingColorSpaceSupported() const;
   MediaResult SetColorSpace(const EncoderConfig::SampleFormat& aFormat);
 
+  void EncodeNextSample(nsTArray<RefPtr<MediaData>>&& aInputs,
+                        MediaDataEncoder::EncodedData&& aOutputs);
+
   void AssertOnTaskQueue() { MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn()); }
 
   EncoderConfig mConfig;
@@ -93,6 +99,8 @@ class AppleVTEncoder final : public MediaDataEncoder {
   EncodedData mEncodedData;
   // Accessed only in mTaskQueue.
   MozPromiseHolder<EncodePromise> mEncodePromise;
+  MozPromiseHolder<EncodePromise> mEncodeBatchPromise;
+  MozPromiseRequestHolder<EncodePromise> mEncodeBatchRequest;
   RefPtr<MediaByteBuffer> mAvcc;  // Stores latest avcC data.
   MediaResult mError;
 

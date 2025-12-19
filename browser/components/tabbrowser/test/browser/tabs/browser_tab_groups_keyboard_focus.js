@@ -2,7 +2,10 @@
 
 add_setup(() =>
   SpecialPowers.pushPrefEnv({
-    set: [["browser.tabs.groups.enabled", true]],
+    set: [
+      ["test.wait300msAfterTabSwitch", true],
+      ["browser.tabs.groups.enabled", true],
+    ],
   })
 );
 
@@ -42,10 +45,11 @@ function synthesizeKeyForKeyboardMovement(element, keyName) {
 }
 
 add_task(async function test_TabGroupKeyboardFocus() {
-  const tab1 = BrowserTestUtils.addTab(gBrowser, "about:blank");
-  const tab2 = BrowserTestUtils.addTab(gBrowser, "about:blank");
-  const tab3 = BrowserTestUtils.addTab(gBrowser, "about:blank");
-  const tab4 = BrowserTestUtils.addTab(gBrowser, "about:blank");
+  const URL = "about:blank";
+  const tab1 = BrowserTestUtils.addTab(gBrowser, URL);
+  const tab2 = BrowserTestUtils.addTab(gBrowser, URL);
+  const tab3 = BrowserTestUtils.addTab(gBrowser, URL);
+  const tab4 = BrowserTestUtils.addTab(gBrowser, URL);
 
   const tabGroup = gBrowser.addTabGroup([tab2, tab3], { insertBefore: tab2 });
 
@@ -122,11 +126,6 @@ add_task(async function test_TabGroupKeyboardFocus() {
     tabGroup.labelElement,
     "keyboard focus should remain on tab group label after collapse"
   );
-  is(
-    gBrowser.selectedTab,
-    tab4,
-    "active tab should automatically change to the next visible tab if the active tab is in a tab group that gets collapsed"
-  );
 
   await EventUtils.synthesizeKey("KEY_Enter");
   Assert.ok(!tabGroup.collapsed, "Tab group should be expanded");
@@ -159,12 +158,24 @@ add_task(async function test_TabGroupKeyboardFocus() {
     "Keyboard focus should remain on tab group label after closing the group menu context menu"
   );
 
-  info("Validate that keyboard focus skips over tabs in collapsed tab groups");
+  info(
+    "Verify that keyboard focus continues to the collapsed group's active tab"
+  );
+  await synthesizeKeyToChangeKeyboardFocus(tab2, "KEY_ArrowRight");
+  is(
+    gBrowser.tabContainer.ariaFocusedItem,
+    tab2,
+    "Keyboard focus moves from collapsed tab group label to the group's active tab"
+  );
+
+  info(
+    "Validate that keyboard focus skips over the collapsed group's remaining tabs"
+  );
   await synthesizeKeyToChangeKeyboardFocus(tab4, "KEY_ArrowRight");
   is(
     gBrowser.tabContainer.ariaFocusedItem,
     tab4,
-    "keyboard focus should move right collapsed tab group label to the first tab to the right of the tab group"
+    "Keyboard focus skips the collapsed group's hidden tab and continues to the first ungrouped tab"
   );
 
   await removeTabGroup(tabGroup);
@@ -173,10 +184,11 @@ add_task(async function test_TabGroupKeyboardFocus() {
 });
 
 add_task(async function test_TabGroupKeyboardMovement() {
-  const tab1 = BrowserTestUtils.addTab(gBrowser, "about:blank");
-  const tab2 = BrowserTestUtils.addTab(gBrowser, "about:blank");
-  const tab3 = BrowserTestUtils.addTab(gBrowser, "about:blank");
-  const tab4 = BrowserTestUtils.addTab(gBrowser, "about:blank");
+  const URL = "about:blank";
+  const tab1 = BrowserTestUtils.addTab(gBrowser, URL);
+  const tab2 = BrowserTestUtils.addTab(gBrowser, URL);
+  const tab3 = BrowserTestUtils.addTab(gBrowser, URL);
+  const tab4 = BrowserTestUtils.addTab(gBrowser, URL);
 
   const tabGroup = gBrowser.addTabGroup([tab2, tab3], { insertBefore: tab2 });
 
@@ -274,4 +286,89 @@ add_task(async function test_TabGroupKeyboardMovement() {
   await removeTabGroup(tabGroup);
   BrowserTestUtils.removeTab(tab1);
   BrowserTestUtils.removeTab(tab4);
+});
+
+add_task(async function test_TabGroupPreviewKeyboardMovement() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.tooltip.delay_ms", 0]],
+  });
+  const previewElement = document.getElementById("tabgroup-preview-panel");
+
+  let groupedTab = await addTab("about:blank");
+  let group = gBrowser.addTabGroup([groupedTab]);
+  let ungroupedTab = await addTab("about:blank");
+  await TabGroupTestUtils.toggleCollapsed(group, true);
+
+  // focus ungrouped tab
+  await BrowserTestUtils.switchTab(gBrowser, ungroupedTab);
+  Services.focus.setFocus(ungroupedTab, Services.focus.FLAG_BYKEY);
+  is(document.activeElement, ungroupedTab, "Ungrouped tab is focused");
+  is(
+    gBrowser.tabContainer.ariaFocusedItem,
+    ungroupedTab,
+    "Ungrouped tab is keyboard-focused"
+  );
+
+  // move focus to group label, triggering preview to open
+  let groupPreviewOpened = BrowserTestUtils.waitForPopupEvent(
+    previewElement,
+    "shown"
+  );
+  await synthesizeKeyForKeyboardMovement(group.labelElement, "KEY_ArrowLeft");
+  is(
+    gBrowser.tabContainer.ariaFocusedItem,
+    group.labelElement,
+    "group label is focused"
+  );
+  await groupPreviewOpened;
+  Assert.equal(
+    previewElement.state,
+    "open",
+    "Preview opens when focused by the keyboard"
+  );
+
+  // Cancel preview with esc key
+  let groupPreviewHidden = BrowserTestUtils.waitForPopupEvent(
+    previewElement,
+    "hidden"
+  );
+  await EventUtils.synthesizeKey("KEY_Escape");
+  await groupPreviewHidden;
+  is(previewElement.state, "closed", "Preview closes when esc is pressed");
+
+  // reopen preview
+  await synthesizeKeyForKeyboardMovement(ungroupedTab, "KEY_ArrowRight");
+  is(
+    gBrowser.tabContainer.ariaFocusedItem,
+    ungroupedTab,
+    "Focus moved back to ungrouped tab"
+  );
+  groupPreviewOpened = BrowserTestUtils.waitForPopupEvent(
+    previewElement,
+    "shown"
+  );
+  await synthesizeKeyForKeyboardMovement(group.labelElement, "KEY_ArrowLeft");
+  await groupPreviewOpened;
+  is(
+    previewElement.state,
+    "open",
+    "Preview opened again after toggling focus back to group label"
+  );
+
+  // select grouped tab in preview using the arrow keys
+  let groupedTabSelected = BrowserTestUtils.waitForEvent(window, "TabSelect");
+  await EventUtils.synthesizeKey("KEY_ArrowDown");
+  await EventUtils.synthesizeKey(" ");
+  await groupedTabSelected;
+
+  is(gBrowser.selectedTab, groupedTab, "Grouped tab is now the active tab");
+  is(
+    gBrowser.tabContainer.ariaFocusedItem,
+    group.labelElement,
+    "Group label remains keyboard focused"
+  );
+
+  await TabGroupTestUtils.removeTabGroup(group);
+  BrowserTestUtils.removeTab(ungroupedTab);
+  await SpecialPowers.popPrefEnv();
 });

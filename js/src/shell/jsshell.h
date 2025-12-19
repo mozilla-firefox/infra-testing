@@ -24,7 +24,7 @@
 
 // Some platform hooks must be implemented for single-step profiling.
 #if defined(JS_SIMULATOR_ARM) || defined(JS_SIMULATOR_MIPS64) || \
-    defined(JS_SIMULATOR_ARM64)
+    defined(JS_SIMULATOR_ARM64) || defined(JS_SIMULATOR_LOONG64)
 #  define SINGLESTEP_PROFILING
 #endif
 
@@ -113,7 +113,6 @@ extern bool enableWasm;
 extern bool enableSharedMemory;
 extern bool enableWasmBaseline;
 extern bool enableWasmOptimizing;
-extern bool enableWasmVerbose;
 extern bool enableTestWasmAwaitTier2;
 extern bool enableSourcePragmas;
 extern bool enableAsyncStacks;
@@ -129,7 +128,6 @@ extern bool enableArrayBufferTransfer;
 extern bool enableArrayBufferResizable;
 extern bool enableSymbolsAsWeakMapKeys;
 extern bool enableNewSetMethods;
-extern bool enableImportAttributes;
 extern bool enableDestructuringFuse;
 #ifdef JS_GC_ZEAL
 extern uint32_t gZealBits;
@@ -164,18 +162,23 @@ extern UniqueChars processWideModuleLoadPath;
 bool CreateAlias(JSContext* cx, const char* dstName,
                  JS::HandleObject namespaceObj, const char* srcName);
 
-class NonshrinkingGCObjectVector
-    : public GCVector<HeapPtr<JSObject*>, 0, SystemAllocPolicy> {
+class NonShrinkingValueVector
+    : public GCVector<HeapPtr<Value>, 0, SystemAllocPolicy> {
+  using Base = GCVector<HeapPtr<Value>, 0, SystemAllocPolicy>;
+
  public:
   bool traceWeak(JSTracer* trc) {
-    for (HeapPtr<JSObject*>& obj : *this) {
-      TraceWeakEdge(trc, &obj, "NonshrinkingGCObjectVector element");
+    for (HeapPtr<Value>& value : *this) {
+      if (value.isGCThing() &&
+          value.toGCThing()->zoneFromAnyThread()->isGCSweeping()) {
+        TraceWeakEdge(trc, &value, "NonShrinkingValueVector element");
+      }
     }
     return true;
   }
 };
 
-using MarkBitObservers = JS::WeakCache<NonshrinkingGCObjectVector>;
+using MarkBitObservers = JS::WeakCache<NonShrinkingValueVector>;
 
 #ifdef SINGLESTEP_PROFILING
 using StackChars = Vector<char16_t, 0, SystemAllocPolicy>;
@@ -245,9 +248,10 @@ struct ShellContext {
   js::Monitor offThreadMonitor MOZ_UNANNOTATED;
   Vector<OffThreadJob*, 0, SystemAllocPolicy> offThreadJobs;
 
-  // Queued finalization registry cleanup jobs.
-  using FunctionVector = GCVector<JSFunction*, 0, SystemAllocPolicy>;
-  JS::PersistentRooted<FunctionVector> finalizationRegistryCleanupCallbacks;
+  // Queued task callbacks that run after the microtask queue.
+
+  using ObjectVector = GCVector<JSObject*, 0, SystemAllocPolicy>;
+  JS::PersistentRooted<ObjectVector> taskCallbacks;
 };
 
 extern ShellContext* GetShellContext(JSContext* cx);

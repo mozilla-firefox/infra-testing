@@ -1,4 +1,4 @@
-/** Test for Bug 396843 **/
+/** Test for Bug 396843 */
 
 function testInDocument(doc, documentID) {
   var allNodes = [];
@@ -317,6 +317,10 @@ add_task(async function test1() {
 });
 
 async function newTabTest(location) {
+  await SpecialPowers.pushPrefEnv({
+    set: [["security.allow_eval_with_system_principal", true]],
+  });
+
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: location },
     async function (browser) {

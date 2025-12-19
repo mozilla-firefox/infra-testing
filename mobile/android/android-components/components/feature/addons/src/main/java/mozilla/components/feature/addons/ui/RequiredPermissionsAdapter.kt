@@ -437,6 +437,7 @@ class RequiredPermissionsAdapter(
                 )
             }
         }
+
         if (extraPermissionWarning != null) {
             displayList.add(RequiredPermissionsListItem.ExtraWarningItem(extraPermissionWarning))
         }

@@ -20,16 +20,6 @@ callout-firefox-view-recently-closed-title = Get back your closed tabs in a snap
 
 callout-firefox-view-recently-closed-subtitle = All your closed tabs will magically show up here. Never worry about accidentally closing a site again.
 
-callout-firefox-view-colorways-title = Add a splash of color
-
-# "Shade" refer to different color options in each colorway.
-callout-firefox-view-colorways-subtitle = Choose the shade that speaks to you with colorways. Only in { -brand-product-name }.
-
-callout-firefox-view-colorways-reminder-title = Explore our latest colorways
-
-# “Shades” refers to the different color options in each colorways
-callout-firefox-view-colorways-reminder-subtitle = Color your browser with these iconic shades, inspired by independent voices. Only in { -brand-product-name }.
-
 ## Continuous Onboarding - Firefox View: Tab pick up
 
 # “Boost your browsing” refers to the added benefit the user receives from having
@@ -67,6 +57,9 @@ fx-view-discoverability-secondary-button-label = Dismiss
 sidebar-button-callout-title = Show tab titles in the sidebar
 sidebar-button-callout-subtitle = Use the sidebar button to expand the sidebar, so you can see tab titles.
 sidebar-button-callout-vertical-tabs = To show your tabs, select the sidebar button in the toolbar.
+sidebar-deprecation-callout-title = Updated sidebar coming soon
+sidebar-deprecation-callout-subtitle = We’re phasing out the sidebar version you’re currently using. Try the updated sidebar. It’s faster and you get access to more tools.
+sidebar-deprecation-cta-button = Try it now
 
 ## Sidebar Vertical Tabs Strings
 
@@ -82,6 +75,17 @@ vertical-tabs-callout-2-subtitle = This layout makes it easy to quickly scan you
 sidebar-pins-callout-title = Losing track of your important tabs?
 sidebar-pins-callout-subtitle = Try pinning them, which keeps them at the top of your list of tabs. Right-click on a tab you want to pin, then choose Pin Tab.
 sidebar-pins-callout-cta-button = Pin tab
+
+## Pinning Tabs Strings
+
+pin-tabs-callout-1-title = Keep important tabs within reach
+pin-tabs-callout-1-subtitle = Drag a tab to the start of the tab strip to pin it. Or right-click and choose Pin Tab.
+pin-tabs-callout-cta-1-button = Pin this tab
+pin-tabs-callout-2-title = Pin tabs you visit the most
+pin-tabs-callout-2-subtitle = To pin any tab, drag it to the start of the tab strip. Or right-click and choose Pin Tab.
+pin-tabs-callout-cta-2-button = Pin this tab
+pin-tabs-callout-3-title = Keep important sites within reach
+pin-tabs-callout-4-title = Pin sites you visit the most
 
 ## Sidebar Onboarding Strings
 
@@ -201,3 +205,61 @@ perplexity-callout-theme-2-subtitle-2 = Ask questions. Get complete, well-cited 
 perplexity-callout-primary-label = Ask Perplexity
 perplexity-callout-secondary-label-1 = Dismiss
 perplexity-callout-secondary-label-2 = Got it
+
+## Account Adoption Passwords callout strings
+
+# Suggestion to backup passwords by signing up for Mozilla account and using sync
+fxa-adoption-passwords-title = Password saved. Let’s back it up.
+fxa-adoption-passwords-subtitle = Protect your passwords by syncing them to your devices with encryption.
+# Opens Mozilla accounts sign-up page
+fxa-adoption-passwords-primary-button-label = Sign up
+
+## Taskbar Tabs callout strings
+
+taskbar-tabs-social-callout-title = Keep your favorite feeds in your taskbar
+taskbar-tabs-social-callout-subtitle = Launch your social sites like an app in a streamlined window protected by { -brand-short-name }.
+
+taskbar-tabs-chat-callout-title = Chat from your taskbar
+taskbar-tabs-chat-callout-subtitle = Launch your chat sites like an app in a streamlined window protected by { -brand-short-name }.
+
+taskbar-tabs-email-callout-title = Keep your email in your taskbar
+taskbar-tabs-email-callout-subtitle = Launch your webmail like an app in a streamlined window protected by { -brand-short-name }.
+
+taskbar-tabs-media-callout-title = Get back to streaming from your taskbar
+taskbar-tabs-media-callout-subtitle = Launch your streaming sites like an app in a streamlined window protected by { -brand-short-name }.
+
+taskbar-tabs-value-prop-callout-title = Add this site to your taskbar
+taskbar-tabs-value-prop-callout-subtitle = Launch it in its own window and a simplified interface with a single click.
+
+## Windows 10 EoS Sync messages group 1 callouts
+
+windows-10-eos-sync-urgency-title-1 = Don’t lose everything you’ve saved when you move to Windows 11.
+windows-10-eos-sync-urgency-subtitle-1 = Sync now to keep your { -brand-short-name } bookmarks, passwords, and settings safe and easy to restore.
+windows-10-eos-sync-urgency-title-2 = Saying goodbye to Windows 10? Protect your data when you switch.
+windows-10-eos-sync-urgency-subtitle-2 = Even if you don’t use { -brand-short-name } daily, sync to keep bookmarks and passwords safe and accessible.
+
+windows-10-eos-sync-new-device-title-1 = Don’t risk starting over on your next device.
+windows-10-eos-sync-new-device-subtitle-1 = Sync to take your { -brand-short-name } bookmarks, passwords, and preferred settings with you when you move.
+windows-10-eos-sync-new-device-title-2 = Moving to a new device? Don’t lose what matters.
+windows-10-eos-sync-new-device-subtitle-2 = No matter how often you use { -brand-short-name }, syncing protects your bookmarks, passwords, and settings.
+windows-10-eos-sync-new-device-primary-label = Sync now
+
+windows-10-eos-sync-general-title-1 = Protect the { -brand-short-name } you’ve made yours.
+windows-10-eos-sync-general-subtitle-1 = Back up and sync your passwords, bookmarks, settings, and other data to preserve what you count on.
+windows-10-eos-sync-general-title-2 = Now’s a good time to back up your passwords and bookmarks.
+windows-10-eos-sync-general-subtitle-2 = Sync now to protect the stuff you trust { -brand-short-name } with — and get it back anywhere, anytime.
+
+windows-10-eos-sync-tour-title-1 = Too many tabs? Tidy up with tab groups.
+windows-10-eos-sync-tour-subtitle-1 = Drag one tab on top of another to create a group and keep things organized.
+windows-10-eos-sync-tour-title-2 = Get organized for Windows 11.
+windows-10-eos-sync-tour-subtitle-2 = Sync your bookmarks, passwords, and settings to back them up before you switch.
+
+windows-10-eos-sync-split-dismiss-button-show-fewer-option =
+    .label = Show fewer recommendations
+windows-10-eos-sync-dismiss-button-label = Dismiss
+windows-10-eos-sync-callout-primary-advance-button-label = Next
+
+## Link Preview Onboarding message callout strings
+
+link-preview-onboarding-callout-title = New: Click and hold to preview links
+link-preview-onboarding-callout-description = See a short description, reading time, and more to decide if a link is worth the click. Also available on right-click.

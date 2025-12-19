@@ -20,16 +20,22 @@ BUILDCONFIG_FILE_NAME = ".buildconfig.yml"
 logger = logging.getLogger(__name__)
 
 
+def _buildconfig_files_changed():
+    cmd = ["hg", "status", "-I", "**/.buildconfig.yml", "-m"]
+    p = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    for line in p.stdout.splitlines():
+        _, path = line.strip().split(None, 1)
+        yield path
+
+
 def _buildconfig_files_diff():
     cmd = [
         "hg",
         "diff",
-        "--rev",
-        "draft() and ancestors(.)",
         "-I",
         "**/.buildconfig.yml",
     ]
-    p = subprocess.run(cmd, capture_output=True, text=True)
+    p = subprocess.run(cmd, capture_output=True, text=True, check=True)
     return p.stdout
 
 
@@ -46,6 +52,8 @@ curl --location --compressed {artifact_url} | git apply
 Then commit and push!
 """
     logger.error(message)
+    for file in _buildconfig_files_changed():
+        logger.error(f"TEST-UNEXPECTED-FAIL | {file} | build config changed")
 
 
 def _execute_local_steps():

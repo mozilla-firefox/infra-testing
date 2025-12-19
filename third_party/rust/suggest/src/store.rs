@@ -9,7 +9,7 @@ use std::{
     sync::Arc,
 };
 
-use error_support::{breadcrumb, handle_error};
+use error_support::{breadcrumb, handle_error, trace};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use remote_settings::{self, RemoteSettingsError, RemoteSettingsServer, RemoteSettingsService};
@@ -20,7 +20,7 @@ use crate::{
     config::{SuggestGlobalConfig, SuggestProviderConfig},
     db::{ConnectionType, IngestedRecord, Sqlite3Extension, SuggestDao, SuggestDb},
     error::Error,
-    geoname::{Geoname, GeonameMatch, GeonameType},
+    geoname::{Geoname, GeonameAlternates, GeonameMatch},
     metrics::{MetricsContext, SuggestIngestionMetrics, SuggestQueryMetrics},
     provider::{SuggestionProvider, SuggestionProviderConstraints, DEFAULT_INGEST_PROVIDERS},
     rs::{
@@ -306,36 +306,26 @@ impl SuggestStore {
     /// Fetches geonames stored in the database. A geoname represents a
     /// geographic place.
     ///
-    /// `query` is a string that will be matched directly against geoname names.
-    /// It is not a query string in the usual Suggest sense. `match_name_prefix`
-    /// determines whether prefix matching is performed on names excluding
-    /// abbreviations and airport codes. When `true`, names that start with
-    /// `query` will match. When false, names that equal `query` will match.
-    ///
-    /// `geoname_type` restricts returned geonames to a [`GeonameType`].
-    ///
-    /// `filter` restricts returned geonames to certain cities or regions.
-    /// Cities can be restricted to regions by including the regions in
-    /// `filter`, and regions can be restricted to those containing certain
-    /// cities by including the cities in `filter`. This is especially useful
-    /// since city and region names are not unique. `filter` is disjunctive: If
-    /// any item in `filter` matches a geoname, the geoname will be filtered in.
-    ///
-    /// The query can match a single geoname in more than one way. For example,
-    /// it can match both a full name and an abbreviation. The returned vec of
-    /// [`GeonameMatch`] values will include all matches for a geoname, one
-    /// match per `match_type` per geoname. In other words, a matched geoname
-    /// can map to more than one `GeonameMatch`.
+    /// See `fetch_geonames` in `geoname.rs` for documentation.
     #[handle_error(Error)]
     pub fn fetch_geonames(
         &self,
         query: &str,
         match_name_prefix: bool,
-        geoname_type: Option<GeonameType>,
         filter: Option<Vec<Geoname>>,
     ) -> SuggestApiResult<Vec<GeonameMatch>> {
-        self.inner
-            .fetch_geonames(query, match_name_prefix, geoname_type, filter)
+        self.inner.fetch_geonames(query, match_name_prefix, filter)
+    }
+
+    /// Fetches a geoname's names stored in the database.
+    ///
+    /// See `fetch_geoname_alternates` in `geoname.rs` for documentation.
+    #[handle_error(Error)]
+    pub fn fetch_geoname_alternates(
+        &self,
+        geoname: &Geoname,
+    ) -> SuggestApiResult<GeonameAlternates> {
+        self.inner.fetch_geoname_alternates(geoname)
     }
 }
 
@@ -380,7 +370,6 @@ impl SuggestIngestionConstraints {
                 SuggestionProvider::Amp,
                 SuggestionProvider::Wikipedia,
                 SuggestionProvider::Amo,
-                SuggestionProvider::Pocket,
                 SuggestionProvider::Yelp,
                 SuggestionProvider::Mdn,
                 SuggestionProvider::Weather,
@@ -398,9 +387,7 @@ impl SuggestIngestionConstraints {
             .and_then(|c| c.dynamic_suggestion_types.as_ref())
         {
             None => false,
-            Some(suggestion_types) => suggestion_types
-                .iter()
-                .any(|t| *t == record.suggestion_type),
+            Some(suggestion_types) => suggestion_types.contains(&record.suggestion_type),
         }
     }
 
@@ -461,7 +448,6 @@ impl<S> SuggestStoreInner<S> {
                     SuggestionProvider::Amp => dao.fetch_amp_suggestions(&query),
                     SuggestionProvider::Wikipedia => dao.fetch_wikipedia_suggestions(&query),
                     SuggestionProvider::Amo => dao.fetch_amo_suggestions(&query),
-                    SuggestionProvider::Pocket => dao.fetch_pocket_suggestions(&query),
                     SuggestionProvider::Yelp => dao.fetch_yelp_suggestions(&query),
                     SuggestionProvider::Mdn => dao.fetch_mdn_suggestions(&query),
                     SuggestionProvider::Weather => dao.fetch_weather_suggestions(&query),
@@ -488,7 +474,15 @@ impl<S> SuggestStoreInner<S> {
 
     fn dismiss_by_suggestion(&self, suggestion: &Suggestion) -> Result<()> {
         if let Some(key) = suggestion.dismissal_key() {
-            self.dismiss_by_key(key)?;
+            match suggestion {
+                Suggestion::Dynamic {
+                    suggestion_type, ..
+                } => self
+                    .dbs()?
+                    .writer
+                    .write(|dao| dao.insert_dynamic_dismissal(suggestion_type, key))?,
+                _ => self.dismiss_by_key(key)?,
+            }
         }
         Ok(())
     }
@@ -510,7 +504,15 @@ impl<S> SuggestStoreInner<S> {
 
     fn is_dismissed_by_suggestion(&self, suggestion: &Suggestion) -> Result<bool> {
         if let Some(key) = suggestion.dismissal_key() {
-            self.dbs()?.reader.read(|dao| dao.has_dismissal(key))
+            match suggestion {
+                Suggestion::Dynamic {
+                    suggestion_type, ..
+                } => self
+                    .dbs()?
+                    .reader
+                    .read(|dao| dao.has_dynamic_dismissal(suggestion_type, key)),
+                _ => self.dbs()?.reader.read(|dao| dao.has_dismissal(key)),
+            }
         } else {
             Ok(false)
         }
@@ -569,17 +571,21 @@ impl<S> SuggestStoreInner<S> {
         &self,
         query: &str,
         match_name_prefix: bool,
-        geoname_type: Option<GeonameType>,
         filter: Option<Vec<Geoname>>,
     ) -> Result<Vec<GeonameMatch>> {
         self.dbs()?.reader.read(|dao| {
             dao.fetch_geonames(
                 query,
                 match_name_prefix,
-                geoname_type,
                 filter.as_ref().map(|f| f.iter().collect()),
             )
         })
+    }
+
+    pub fn fetch_geoname_alternates(&self, geoname: &Geoname) -> Result<GeonameAlternates> {
+        self.dbs()?
+            .reader
+            .read(|dao| dao.fetch_geoname_alternates(geoname))
     }
 }
 
@@ -664,7 +670,7 @@ where
         context: &mut MetricsContext,
     ) -> Result<()> {
         for record in &changes.new {
-            log::trace!("Ingesting record ID: {}", record.id.as_str());
+            trace!("Ingesting record ID: {}", record.id.as_str());
             self.process_record(dao, record, constraints, context)?;
         }
         for record in &changes.updated {
@@ -672,20 +678,20 @@ where
             // Suggestions in particular don't have a stable identifier, and
             // determining which suggestions in the record actually changed is
             // more complicated than dropping and re-ingesting all of them.
-            log::trace!("Reingesting updated record ID: {}", record.id.as_str());
+            trace!("Reingesting updated record ID: {}", record.id.as_str());
             dao.delete_record_data(&record.id)?;
             self.process_record(dao, record, constraints, context)?;
         }
         for record in &changes.unchanged {
             if self.should_reprocess_record(dao, record, constraints)? {
-                log::trace!("Reingesting unchanged record ID: {}", record.id.as_str());
+                trace!("Reingesting unchanged record ID: {}", record.id.as_str());
                 self.process_record(dao, record, constraints, context)?;
             } else {
-                log::trace!("Skipping unchanged record ID: {}", record.id.as_str());
+                trace!("Skipping unchanged record ID: {}", record.id.as_str());
             }
         }
         for record in &changes.deleted {
-            log::trace!("Deleting record ID: {:?}", record.id);
+            trace!("Deleting record ID: {:?}", record.id);
             dao.delete_record_data(&record.id)?;
         }
         dao.update_ingested_records(
@@ -737,11 +743,6 @@ where
                     dao.insert_amo_suggestions(record_id, suggestions)
                 })?;
             }
-            SuggestRecord::Pocket => {
-                self.download_attachment(dao, record, context, |dao, record_id, suggestions| {
-                    dao.insert_pocket_suggestions(record_id, suggestions)
-                })?;
-            }
             SuggestRecord::Yelp => {
                 self.download_attachment(dao, record, context, |dao, record_id, suggestions| {
                     match suggestions.first() {
@@ -776,7 +777,10 @@ where
                     )?;
                 }
             }
-            SuggestRecord::Geonames => self.process_geoname_record(dao, record, context)?,
+            SuggestRecord::Geonames => self.process_geonames_record(dao, record, context)?,
+            SuggestRecord::GeonamesAlternates => {
+                self.process_geonames_alternates_record(dao, record, context)?
+            }
         }
         Ok(())
     }
@@ -935,12 +939,12 @@ where
             .into_iter()
             .map(|name| {
                 let count: u32 = conn
-                    .query_one(&format!("SELECT COUNT(*) FROM {name}"))
+                    .conn_ext_query_one(&format!("SELECT COUNT(*) FROM {name}"))
                     .unwrap();
                 (name, count)
             })
             .collect();
-        table_names_with_counts.sort_by(|a, b| (b.1.cmp(&a.1)));
+        table_names_with_counts.sort_by(|a, b| b.1.cmp(&a.1));
         table_names_with_counts
     }
 
@@ -949,8 +953,10 @@ where
 
         let reader = &self.dbs().unwrap().reader;
         let conn = reader.conn.lock();
-        conn.query_one("SELECT page_size * page_count FROM pragma_page_count(), pragma_page_size()")
-            .unwrap()
+        conn.conn_ext_query_one(
+            "SELECT page_size * page_count FROM pragma_page_count(), pragma_page_size()",
+        )
+        .unwrap()
     }
 }
 
@@ -975,6 +981,7 @@ impl SuggestStoreDbs {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::suggestion::YelpSubjectType;
 
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -1028,9 +1035,13 @@ pub(crate) mod tests {
             self.inner.dbs().unwrap().reader.read(op)
         }
 
+        pub fn write<T>(&self, op: impl FnMut(&mut SuggestDao) -> Result<T>) -> Result<T> {
+            self.inner.dbs().unwrap().writer.write(op)
+        }
+
         pub fn count_rows(&self, table_name: &str) -> u64 {
             let sql = format!("SELECT count(*) FROM {table_name}");
-            self.read(|dao| Ok(dao.conn.query_one(&sql)?))
+            self.read(|dao| Ok(dao.conn.conn_ext_query_one(&sql)?))
                 .unwrap_or_else(|e| panic!("SQL error in count: {e}"))
         }
 
@@ -1061,11 +1072,10 @@ pub(crate) mod tests {
             &self,
             query: &str,
             match_name_prefix: bool,
-            geoname_type: Option<GeonameType>,
             filter: Option<Vec<Geoname>>,
         ) -> Vec<GeonameMatch> {
             self.inner
-                .fetch_geonames(query, match_name_prefix, geoname_type, filter)
+                .fetch_geonames(query, match_name_prefix, filter)
                 .expect("Error fetching geonames")
         }
     }
@@ -1716,16 +1726,24 @@ pub(crate) mod tests {
                     SuggestionProvider::Amp.record("data-2", json!([good_place_eats_amp()])),
                 )
                 .with_record(SuggestionProvider::Amp.icon(los_pollos_icon()))
-                .with_record(SuggestionProvider::Amp.icon(good_place_eats_icon())),
+                .with_record(SuggestionProvider::Amp.icon(good_place_eats_icon()))
+                .with_record(
+                    SuggestionProvider::Weather
+                        .record("weather-1", json!({ "keywords": ["abcde"], })),
+                ),
         );
         store.ingest(SuggestIngestionConstraints::all_providers());
         assert!(store.count_rows("suggestions") > 0);
         assert!(store.count_rows("keywords") > 0);
+        assert!(store.count_rows("keywords_i18n") > 0);
+        assert!(store.count_rows("keywords_metrics") > 0);
         assert!(store.count_rows("icons") > 0);
 
         store.inner.clear()?;
         assert!(store.count_rows("suggestions") == 0);
         assert!(store.count_rows("keywords") == 0);
+        assert!(store.count_rows("keywords_i18n") == 0);
+        assert!(store.count_rows("keywords_metrics") == 0);
         assert!(store.count_rows("icons") == 0);
 
         Ok(())
@@ -1749,10 +1767,6 @@ pub(crate) mod tests {
                     SuggestionProvider::Amo
                         .record("data-2", json!([relay_amo(), multimatch_amo(),])),
                 )
-                .with_record(
-                    SuggestionProvider::Pocket
-                        .record("data-3", json!([burnout_pocket(), multimatch_pocket(),])),
-                )
                 .with_record(SuggestionProvider::Yelp.record("data-4", json!([ramen_yelp(),])))
                 .with_record(SuggestionProvider::Mdn.record("data-5", json!([array_mdn(),])))
                 .with_record(SuggestionProvider::Amp.icon(good_place_eats_icon()))
@@ -1774,26 +1788,15 @@ pub(crate) mod tests {
         );
         assert_eq!(
             store.fetch_suggestions(SuggestionQuery::all_providers("multimatch")),
-            vec![
-                multimatch_pocket_suggestion(true),
-                multimatch_amo_suggestion(),
-                multimatch_wiki_suggestion(),
-            ]
+            vec![multimatch_amo_suggestion(), multimatch_wiki_suggestion(),]
         );
         assert_eq!(
             store.fetch_suggestions(SuggestionQuery::all_providers("MultiMatch")),
-            vec![
-                multimatch_pocket_suggestion(true),
-                multimatch_amo_suggestion(),
-                multimatch_wiki_suggestion(),
-            ]
+            vec![multimatch_amo_suggestion(), multimatch_wiki_suggestion(),]
         );
         assert_eq!(
-            store.fetch_suggestions(SuggestionQuery::all_providers("multimatch").limit(2)),
-            vec![
-                multimatch_pocket_suggestion(true),
-                multimatch_amo_suggestion(),
-            ],
+            store.fetch_suggestions(SuggestionQuery::all_providers("multimatch").limit(1)),
+            vec![multimatch_amo_suggestion(),],
         );
         assert_eq!(
             store.fetch_suggestions(SuggestionQuery::amp("la")),
@@ -1813,11 +1816,7 @@ pub(crate) mod tests {
         assert_eq!(
             store.fetch_suggestions(SuggestionQuery::with_providers(
                 "cal",
-                vec![
-                    SuggestionProvider::Amp,
-                    SuggestionProvider::Amo,
-                    SuggestionProvider::Pocket,
-                ]
+                vec![SuggestionProvider::Amp, SuggestionProvider::Amo,]
             )),
             vec![],
         );
@@ -1857,26 +1856,6 @@ pub(crate) mod tests {
                 "soft",
                 vec![SuggestionProvider::Amp, SuggestionProvider::Wikipedia]
             )),
-            vec![],
-        );
-        assert_eq!(
-            store.fetch_suggestions(SuggestionQuery::pocket("soft")),
-            vec![burnout_suggestion(false),],
-        );
-        assert_eq!(
-            store.fetch_suggestions(SuggestionQuery::pocket("soft l")),
-            vec![burnout_suggestion(false),],
-        );
-        assert_eq!(
-            store.fetch_suggestions(SuggestionQuery::pocket("sof")),
-            vec![],
-        );
-        assert_eq!(
-            store.fetch_suggestions(SuggestionQuery::pocket("burnout women")),
-            vec![burnout_suggestion(true),],
-        );
-        assert_eq!(
-            store.fetch_suggestions(SuggestionQuery::pocket("burnout person")),
             vec![],
         );
         assert_eq!(
@@ -2247,11 +2226,30 @@ pub(crate) mod tests {
             )
             .has_location_sign(false)],
         );
+        // Business subject.
+        assert_eq!(
+            store.fetch_suggestions(SuggestionQuery::yelp("the shop tokyo")),
+            vec![ramen_suggestion(
+                "the shop tokyo",
+                "https://www.yelp.com/search?find_desc=the+shop&find_loc=tokyo"
+            )
+            .has_location_sign(false)
+            .subject_type(YelpSubjectType::Business)]
+        );
+        assert_eq!(
+            store.fetch_suggestions(SuggestionQuery::yelp("the sho")),
+            vec![
+                ramen_suggestion("the shop", "https://www.yelp.com/search?find_desc=the+shop")
+                    .has_location_sign(false)
+                    .subject_exact_match(false)
+                    .subject_type(YelpSubjectType::Business)
+            ]
+        );
 
         Ok(())
     }
 
-    // Tests querying AMP / Wikipedia / Pocket
+    // Tests querying AMP / Wikipedia
     #[test]
     fn query_with_multiple_providers_and_diff_scores() -> anyhow::Result<()> {
         before_each();
@@ -2279,21 +2277,8 @@ pub(crate) mod tests {
                 .with_record(SuggestionProvider::Wikipedia.record(
                     "wikipedia-1",
                     json!([california_wiki().merge(json!({
-                        "keywords": ["amp wiki match", "pocket wiki match"],
+                        "keywords": ["amp wiki match", "wiki match"],
                     })),]),
-                ))
-                .with_record(SuggestionProvider::Pocket.record(
-                    "data-3",
-                    json!([
-                        burnout_pocket().merge(json!({
-                            "lowConfidenceKeywords": ["work-life balance", "pocket wiki match"],
-                            "score": 0.05,
-                        })),
-                        multimatch_pocket().merge(json!({
-                            "highConfidenceKeywords": ["pocket wiki match"],
-                            "score": 0.88,
-                        })),
-                    ]),
                 ))
                 .with_record(SuggestionProvider::Amp.icon(los_pollos_icon()))
                 .with_record(SuggestionProvider::Amp.icon(good_place_eats_icon()))
@@ -2318,24 +2303,8 @@ pub(crate) mod tests {
             ]
         );
         assert_eq!(
-            store.fetch_suggestions(SuggestionQuery::all_providers("pocket wiki match")),
-            vec![
-                multimatch_pocket_suggestion(true).with_score(0.88),
-                california_suggestion("pocket wiki match"),
-                burnout_suggestion(false).with_score(0.05),
-            ]
-        );
-        assert_eq!(
-            store.fetch_suggestions(SuggestionQuery::all_providers("pocket wiki match").limit(1)),
-            vec![multimatch_pocket_suggestion(true).with_score(0.88),]
-        );
-        // test duplicate providers
-        assert_eq!(
-            store.fetch_suggestions(SuggestionQuery::with_providers(
-                "work-life balance",
-                vec![SuggestionProvider::Pocket, SuggestionProvider::Pocket],
-            )),
-            vec![burnout_suggestion(false).with_score(0.05),]
+            store.fetch_suggestions(SuggestionQuery::all_providers("wiki match")),
+            vec![california_suggestion("wiki match"),]
         );
 
         Ok(())
@@ -2381,10 +2350,14 @@ pub(crate) mod tests {
         store.read(|dao| {
             assert_eq!(
                 dao.conn
-                    .query_one::<i64>("SELECT count(*) FROM suggestions")?,
+                    .conn_ext_query_one::<i64>("SELECT count(*) FROM suggestions")?,
                 0
             );
-            assert_eq!(dao.conn.query_one::<i64>("SELECT count(*) FROM icons")?, 0);
+            assert_eq!(
+                dao.conn
+                    .conn_ext_query_one::<i64>("SELECT count(*) FROM icons")?,
+                0
+            );
 
             Ok(())
         })?;
@@ -2405,7 +2378,7 @@ pub(crate) mod tests {
         );
 
         let constraints = SuggestIngestionConstraints {
-            providers: Some(vec![SuggestionProvider::Amp, SuggestionProvider::Pocket]),
+            providers: Some(vec![SuggestionProvider::Amp]),
             ..SuggestIngestionConstraints::all_providers()
         };
         store.ingest(constraints);
@@ -2628,12 +2601,6 @@ pub(crate) mod tests {
                     "amo-1",
                     json!([relay_amo().merge(json!({"keywords": ["cats"]})),]),
                 ))
-                .with_record(SuggestionProvider::Pocket.record(
-                    "pocket-1",
-                    json!([burnout_pocket().merge(json!({
-                        "lowConfidenceKeywords": ["cats"],
-                    }))]),
-                ))
                 .with_record(SuggestionProvider::Mdn.record(
                     "mdn-1",
                     json!([array_mdn().merge(json!({"keywords": ["cats"]})),]),
@@ -2646,7 +2613,7 @@ pub(crate) mod tests {
         // A query for cats should return all suggestions
         let query = SuggestionQuery::all_providers("cats");
         let results = store.fetch_suggestions(query.clone());
-        assert_eq!(results.len(), 5);
+        assert_eq!(results.len(), 4);
 
         assert!(!store.inner.any_dismissed_suggestions()?);
 
@@ -2665,7 +2632,7 @@ pub(crate) mod tests {
 
         // Clearing the dismissals should cause them to be returned again
         store.inner.clear_dismissed_suggestions()?;
-        assert_eq!(store.fetch_suggestions(query.clone()).len(), 5);
+        assert_eq!(store.fetch_suggestions(query.clone()).len(), 4);
 
         for result in &results {
             let dismissal_key = result.dismissal_key().unwrap();
@@ -3875,40 +3842,58 @@ pub(crate) mod tests {
     fn dynamic_dismissal() -> anyhow::Result<()> {
         before_each();
 
-        let store = TestStore::new(MockRemoteSettingsClient::default().with_record(
-            SuggestionProvider::Dynamic.full_record(
-                "dynamic-0",
-                Some(json!({
-                    "suggestion_type": "aaa",
-                })),
-                Some(MockAttachment::Json(json!([
-                    {
-                        "keywords": ["aaa"],
-                        "dismissal_key": "dk0",
-                    },
-                    {
-                        "keywords": ["aaa"],
-                        "dismissal_key": "dk1",
-                    },
-                    {
-                        "keywords": ["aaa"],
-                    },
-                ]))),
-            ),
-        ));
+        let store = TestStore::new(
+            MockRemoteSettingsClient::default()
+                .with_record(SuggestionProvider::Dynamic.full_record(
+                    "dynamic-0",
+                    Some(json!({
+                        "suggestion_type": "aaa",
+                    })),
+                    Some(MockAttachment::Json(json!([
+                        {
+                            "keywords": ["aaa"],
+                            "dismissal_key": "dk0",
+                        },
+                        {
+                            "keywords": ["aaa"],
+                            "dismissal_key": "dk1",
+                        },
+                        {
+                            "keywords": ["aaa"],
+                        },
+                    ]))),
+                ))
+                .with_record(SuggestionProvider::Dynamic.full_record(
+                    "dynamic-1",
+                    Some(json!({
+                        "suggestion_type": "bbb",
+                    })),
+                    Some(MockAttachment::Json(json!([
+                        {
+                            "keywords": ["bbb"],
+                            "dismissal_key": "dk0",
+                        },
+                    ]))),
+                )),
+        );
+
         store.ingest(SuggestIngestionConstraints {
             providers: Some(vec![SuggestionProvider::Dynamic]),
             provider_constraints: Some(SuggestionProviderConstraints {
-                dynamic_suggestion_types: Some(vec!["aaa".to_string()]),
+                dynamic_suggestion_types: Some(vec!["aaa".to_string(), "bbb".to_string()]),
                 ..SuggestionProviderConstraints::default()
             }),
             ..SuggestIngestionConstraints::all_providers()
         });
 
         // Make sure the suggestions are initially fetchable.
-        let suggestions = store.fetch_suggestions(SuggestionQuery::dynamic("aaa", &["aaa"]));
+        assert!(!store.inner.any_dismissed_suggestions()?);
+        let suggestions_0: Vec<Suggestion> =
+            store.fetch_suggestions(SuggestionQuery::dynamic("aaa", &["aaa"]));
+        let suggestions_1: Vec<Suggestion> =
+            store.fetch_suggestions(SuggestionQuery::dynamic("bbb", &["bbb"]));
         assert_eq!(
-            suggestions,
+            suggestions_0,
             vec![
                 Suggestion::Dynamic {
                     suggestion_type: "aaa".to_string(),
@@ -3932,8 +3917,11 @@ pub(crate) mod tests {
         );
 
         // Dismiss the first suggestion.
-        assert_eq!(suggestions[0].dismissal_key(), Some("dk0"));
-        store.inner.dismiss_by_suggestion(&suggestions[0])?;
+        assert_eq!(suggestions_0[0].dismissal_key(), Some("dk0"));
+        store.inner.dismiss_by_suggestion(&suggestions_0[0])?;
+
+        assert!(store.inner.any_dismissed_suggestions()?);
+        assert!(store.inner.is_dismissed_by_suggestion(&suggestions_0[0])?);
         assert_eq!(
             store.fetch_suggestions(SuggestionQuery::dynamic("aaa", &["aaa"])),
             vec![
@@ -3953,14 +3941,33 @@ pub(crate) mod tests {
         );
 
         // Dismiss the second suggestion.
-        assert_eq!(suggestions[1].dismissal_key(), Some("dk1"));
-        store.inner.dismiss_by_suggestion(&suggestions[1])?;
+        assert_eq!(suggestions_0[1].dismissal_key(), Some("dk1"));
+        store.inner.dismiss_by_suggestion(&suggestions_0[1])?;
+
+        assert!(store.inner.is_dismissed_by_suggestion(&suggestions_0[1])?);
         assert_eq!(
             store.fetch_suggestions(SuggestionQuery::dynamic("aaa", &["aaa"])),
             vec![Suggestion::Dynamic {
                 suggestion_type: "aaa".to_string(),
                 data: None,
                 dismissal_key: None,
+                score: DEFAULT_SUGGESTION_SCORE,
+            },],
+        );
+
+        // Make sure the bbb suggestion hasn't been dismissed even though it
+        // has the same key as the first aaa suggestion.
+        assert_eq!(
+            suggestions_1[0].dismissal_key(),
+            suggestions_0[0].dismissal_key()
+        );
+        assert!(!store.inner.is_dismissed_by_suggestion(&suggestions_1[0])?);
+        assert_eq!(
+            store.fetch_suggestions(SuggestionQuery::dynamic("bbb", &["bbb"])),
+            vec![Suggestion::Dynamic {
+                suggestion_type: "bbb".to_string(),
+                data: None,
+                dismissal_key: Some("dk0".to_string()),
                 score: DEFAULT_SUGGESTION_SCORE,
             },],
         );

@@ -5,8 +5,6 @@
 package org.mozilla.fenix.tabstray
 
 import mozilla.components.browser.state.state.createTab
-import mozilla.components.support.test.ext.joinBlocking
-import mozilla.components.support.test.libstate.ext.waitUntilIdle
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -20,8 +18,6 @@ class TabsTrayStoreTest {
 
         store.dispatch(TabsTrayAction.EnterSelectMode)
 
-        store.waitUntilIdle()
-
         assertTrue(store.state.mode.selectedTabs.isEmpty())
         assertTrue(store.state.mode is TabsTrayState.Mode.Select)
 
@@ -29,8 +25,6 @@ class TabsTrayStoreTest {
 
         store.dispatch(TabsTrayAction.ExitSelectMode)
         store.dispatch(TabsTrayAction.EnterSelectMode)
-
-        store.waitUntilIdle()
 
         assertTrue(store.state.mode.selectedTabs.isEmpty())
         assertTrue(store.state.mode is TabsTrayState.Mode.Select)
@@ -42,13 +36,9 @@ class TabsTrayStoreTest {
 
         store.dispatch(TabsTrayAction.EnterSelectMode)
 
-        store.waitUntilIdle()
-
         assertTrue(store.state.mode is TabsTrayState.Mode.Select)
 
         store.dispatch(TabsTrayAction.ExitSelectMode)
-
-        store.waitUntilIdle()
 
         assertTrue(store.state.mode is TabsTrayState.Mode.Normal)
     }
@@ -58,8 +48,6 @@ class TabsTrayStoreTest {
         val store = TabsTrayStore()
 
         store.dispatch(TabsTrayAction.AddSelectTab(createTab(url = "url", id = "tab1")))
-
-        store.waitUntilIdle()
 
         assertEquals("tab1", store.state.mode.selectedTabs.take(1).first().id)
     }
@@ -72,13 +60,9 @@ class TabsTrayStoreTest {
         store.dispatch(TabsTrayAction.AddSelectTab(tabForRemoval))
         store.dispatch(TabsTrayAction.AddSelectTab(createTab(url = "url", id = "tab2")))
 
-        store.waitUntilIdle()
-
         assertEquals(2, store.state.mode.selectedTabs.size)
 
         store.dispatch(TabsTrayAction.RemoveSelectTab(tabForRemoval))
-
-        store.waitUntilIdle()
 
         assertEquals(1, store.state.mode.selectedTabs.size)
         assertEquals("tab2", store.state.mode.selectedTabs.take(1).first().id)
@@ -99,18 +83,39 @@ class TabsTrayStoreTest {
 
         store.dispatch(TabsTrayAction.PageSelected(Page.SyncedTabs))
 
-        store.waitUntilIdle()
-
         assertEquals(Page.SyncedTabs, store.state.selectedPage)
     }
 
     @Test
-    fun `WHEN position is converted to page THEN page is correct`() {
-        assert(Page.positionToPage(0) == Page.NormalTabs)
-        assert(Page.positionToPage(1) == Page.PrivateTabs)
-        assert(Page.positionToPage(2) == Page.SyncedTabs)
-        assert(Page.positionToPage(3) == Page.SyncedTabs)
-        assert(Page.positionToPage(-1) == Page.SyncedTabs)
+    fun `GIVEN the tab manager enhancements are enabled WHEN position is converted to page THEN page is correct`() {
+        assert(Page.positionToPage(position = 0, enhancementsEnabled = true) == Page.PrivateTabs)
+        assert(Page.positionToPage(position = 1, enhancementsEnabled = true) == Page.NormalTabs)
+        assert(Page.positionToPage(position = 2, enhancementsEnabled = true) == Page.SyncedTabs)
+        assert(Page.positionToPage(position = 3, enhancementsEnabled = true) == Page.SyncedTabs)
+        assert(Page.positionToPage(position = -1, enhancementsEnabled = true) == Page.SyncedTabs)
+    }
+
+    @Test
+    fun `GIVEN the tab manager enhancements are disabled WHEN position is converted to page THEN page is correct`() {
+        assert(Page.positionToPage(position = 0, enhancementsEnabled = false) == Page.NormalTabs)
+        assert(Page.positionToPage(position = 1, enhancementsEnabled = false) == Page.PrivateTabs)
+        assert(Page.positionToPage(position = 2, enhancementsEnabled = false) == Page.SyncedTabs)
+        assert(Page.positionToPage(position = 3, enhancementsEnabled = false) == Page.SyncedTabs)
+        assert(Page.positionToPage(position = -1, enhancementsEnabled = false) == Page.SyncedTabs)
+    }
+
+    @Test
+    fun `GIVEN the tab manager enhancements are enabled WHEN Page is converted to an index THEN the index is correct`() {
+        assert(Page.pageToPosition(page = Page.PrivateTabs, enhancementsEnabled = true) == 0)
+        assert(Page.pageToPosition(page = Page.NormalTabs, enhancementsEnabled = true) == 1)
+        assert(Page.pageToPosition(page = Page.SyncedTabs, enhancementsEnabled = true) == 2)
+    }
+
+    @Test
+    fun `GIVEN the tab manager enhancements are disabled WHEN Page is converted to an index THEN the index is correct`() {
+        assert(Page.pageToPosition(page = Page.NormalTabs, enhancementsEnabled = false) == 0)
+        assert(Page.pageToPosition(page = Page.PrivateTabs, enhancementsEnabled = false) == 1)
+        assert(Page.pageToPosition(page = Page.SyncedTabs, enhancementsEnabled = false) == 2)
     }
 
     @Test
@@ -120,8 +125,6 @@ class TabsTrayStoreTest {
         assertFalse(store.state.syncing)
 
         store.dispatch(TabsTrayAction.SyncNow)
-
-        store.waitUntilIdle()
 
         assertTrue(store.state.syncing)
     }
@@ -134,8 +137,6 @@ class TabsTrayStoreTest {
 
         store.dispatch(TabsTrayAction.SyncCompleted)
 
-        store.waitUntilIdle()
-
         assertFalse(store.state.syncing)
     }
 
@@ -146,8 +147,6 @@ class TabsTrayStoreTest {
 
         store.dispatch(TabsTrayAction.UpdateSelectedTabId(tabId = expected))
 
-        store.waitUntilIdle()
-
         assertEquals(expected, store.state.selectedTabId)
     }
 
@@ -157,7 +156,7 @@ class TabsTrayStoreTest {
 
         assertFalse(tabsTrayStore.state.inactiveTabsExpanded)
 
-        tabsTrayStore.dispatch(TabsTrayAction.UpdateInactiveExpanded(true)).joinBlocking()
+        tabsTrayStore.dispatch(TabsTrayAction.UpdateInactiveExpanded(true))
 
         assertTrue(tabsTrayStore.state.inactiveTabsExpanded)
     }

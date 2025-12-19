@@ -20,19 +20,16 @@ class Document;
 class DocumentType;
 class Element;
 class ProcessingInstruction;
+class Text;
 }  // namespace dom
 }  // namespace mozilla
 
-#define NS_ICONTENTSERIALIZER_IID                    \
-  {                                                  \
-    0xb1ee32f2, 0xb8c4, 0x49b9, {                    \
-      0x93, 0xdf, 0xb6, 0xfa, 0xb5, 0xd5, 0x46, 0x88 \
-    }                                                \
-  }
+#define NS_ICONTENTSERIALIZER_IID \
+  {0xb1ee32f2, 0xb8c4, 0x49b9, {0x93, 0xdf, 0xb6, 0xfa, 0xb5, 0xd5, 0x46, 0x88}}
 
 class nsIContentSerializer : public nsISupports {
  public:
-  NS_DECLARE_STATIC_IID_ACCESSOR(NS_ICONTENTSERIALIZER_IID)
+  NS_INLINE_DECL_STATIC_IID(NS_ICONTENTSERIALIZER_IID)
 
   /**
    * @param aOutput The `Append*` methods will append to this string. The
@@ -43,11 +40,11 @@ class nsIContentSerializer : public nsISupports {
                   bool aIsWholeDocument, bool* aNeedsPerformatScanning,
                   nsAString& aOutput) = 0;
 
-  NS_IMETHOD AppendText(nsIContent* aText, int32_t aStartOffset,
+  NS_IMETHOD AppendText(mozilla::dom::Text* aText, int32_t aStartOffset,
                         int32_t aEndOffset) = 0;
 
-  NS_IMETHOD AppendCDATASection(nsIContent* aCDATASection, int32_t aStartOffset,
-                                int32_t aEndOffset) = 0;
+  NS_IMETHOD AppendCDATASection(mozilla::dom::Text* aCDATASection,
+                                int32_t aStartOffset, int32_t aEndOffset) = 0;
 
   NS_IMETHOD AppendProcessingInstruction(
       mozilla::dom::ProcessingInstruction* aPI, int32_t aStartOffset,
@@ -88,8 +85,6 @@ class nsIContentSerializer : public nsISupports {
   NS_IMETHOD ScanElementForPreformat(mozilla::dom::Element* aElement) = 0;
   NS_IMETHOD ForgetElementForPreformat(mozilla::dom::Element* aElement) = 0;
 };
-
-NS_DEFINE_STATIC_IID_ACCESSOR(nsIContentSerializer, NS_ICONTENTSERIALIZER_IID)
 
 #define NS_CONTENTSERIALIZER_CONTRACTID_PREFIX \
   "@mozilla.org/layout/contentserializer;1?mimetype="

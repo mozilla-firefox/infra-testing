@@ -42,7 +42,9 @@ body.hcm {
   transform: translate(-50%, calc(-50% - 2px));
   z-index: -1;
   border-bottom: 7px solid var(--narrate-word-highlight-color);
-  transition: left 0.1s ease, width 0.1s ease;
+  transition:
+    left 0.1s ease,
+    width 0.1s ease;
 }
 
 body.hcm .narrate-word-highlight {
@@ -176,7 +178,7 @@ body.hcm .narrate-word-highlight {
 /* Rate control */
 
 .narrate-rate-icon {
-  content: '';
+  content: "";
   width: 48px;
   height: 40px;
   background-position: center;
@@ -223,7 +225,7 @@ body.hcm .narrate-word-highlight {
     padding-inline: var(--space-medium);
     border-radius: var(--border-radius-small);
     background-color: var(--popup-button-background);
-    font-weight: var(--font-weight-bold);
+    font-weight: var(--font-weight-semibold);
     -moz-context-properties: fill;
     fill: currentColor;
 
@@ -238,9 +240,9 @@ body.hcm .narrate-word-highlight {
   > button.select-toggle::after {
     content: "";
     width: 24px;
-    height: var(--icon-size-default);
+    height: var(--icon-size);
     background-repeat: no-repeat;
-    background-size: var(--icon-size-default) auto;
+    background-size: var(--icon-size) auto;
   }
 
   > button.select-toggle::before {
@@ -263,11 +265,6 @@ body.hcm .narrate-word-highlight {
       background-color: transparent;
       text-align: start;
       padding-inline-start: var(--space-medium);
-    }
-
-    > button.option::-moz-focus-inner {
-      outline: none;
-      border: 0;
     }
 
     &:not(.hovering) > button.option:hover:not(:focus) {

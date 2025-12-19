@@ -541,7 +541,7 @@ class ArenaChunk : public ArenaChunkBase {
   void decommitFreeArenasWithoutUnlocking(const AutoLockGC& lock);
 
   static void* allocate(GCRuntime* gc, StallAndRetry stallAndRetry);
-  static ArenaChunk* emplace(void* ptr, GCRuntime* gc, bool allMemoryCommitted);
+  static ArenaChunk* init(void* ptr, GCRuntime* gc, bool allMemoryCommitted);
 
   /* Unlink and return the freeArenasHead. */
   Arena* fetchNextFreeArena(GCRuntime* gc);
@@ -604,7 +604,7 @@ struct alignas(gc::CellAlignBytes) NurseryCellHeader {
   static const uintptr_t TraceKindMask = 3;
 
   static uintptr_t MakeValue(AllocSite* const site, JS::TraceKind kind) {
-    MOZ_ASSERT(uintptr_t(kind) < TraceKindMask);
+    MOZ_ASSERT(uintptr_t(kind) <= TraceKindMask);
     MOZ_ASSERT((uintptr_t(site) & TraceKindMask) == 0);
     return uintptr_t(site) | uintptr_t(kind);
   }
@@ -634,6 +634,8 @@ static_assert(uintptr_t(JS::TraceKind::Object) <=
 static_assert(uintptr_t(JS::TraceKind::String) <=
               NurseryCellHeader::TraceKindMask);
 static_assert(uintptr_t(JS::TraceKind::BigInt) <=
+              NurseryCellHeader::TraceKindMask);
+static_assert(uintptr_t(JS::TraceKind::GetterSetter) <=
               NurseryCellHeader::TraceKindMask);
 
 } /* namespace gc */

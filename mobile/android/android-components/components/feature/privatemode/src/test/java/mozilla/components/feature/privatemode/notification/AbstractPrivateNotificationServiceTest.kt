@@ -14,9 +14,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.getSystemService
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
-import kotlinx.coroutines.test.advanceUntilIdle
 import mozilla.components.browser.state.action.LocaleAction
 import mozilla.components.browser.state.action.TabListAction
 import mozilla.components.browser.state.state.BrowserState
@@ -25,7 +23,6 @@ import mozilla.components.feature.privatemode.notification.AbstractPrivateNotifi
 import mozilla.components.feature.privatemode.notification.AbstractPrivateNotificationService.Companion.defaultIgnoreTaskActions
 import mozilla.components.support.base.android.NotificationsDelegate
 import mozilla.components.support.test.argumentCaptor
-import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.test.rule.MainCoroutineRule
@@ -46,7 +43,6 @@ import org.mockito.Mockito.spy
 import org.mockito.Mockito.verify
 import java.util.Locale
 
-@ExperimentalCoroutinesApi
 @RunWith(AndroidJUnit4::class)
 class AbstractPrivateNotificationServiceTest {
 
@@ -83,7 +79,7 @@ class AbstractPrivateNotificationServiceTest {
 
         val notification = argumentCaptor<Notification>()
         service.onCreate()
-        advanceUntilIdle()
+        dispatcher.scheduler.advanceUntilIdle()
 
         verify(service).startForeground(anyInt(), notification.capture())
         assertEquals(Notification.CATEGORY_STATUS, notification.value.category)
@@ -147,7 +143,7 @@ class AbstractPrivateNotificationServiceTest {
         service.onCreate()
 
         val mockLocale = Locale.forLanguageTag("English")
-        service.store.dispatch(LocaleAction.UpdateLocaleAction(mockLocale)).joinBlocking()
+        service.store.dispatch(LocaleAction.UpdateLocaleAction(mockLocale))
         dispatcher.scheduler.advanceUntilIdle()
 
         verify(service).notifyLocaleChanged()

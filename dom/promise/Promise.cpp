@@ -5,38 +5,37 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/Promise.h"
-#include "mozilla/dom/Promise-inl.h"
 
+#include "PromiseDebugging.h"
+#include "PromiseNativeHandler.h"
+#include "PromiseWorkerProxy.h"
+#include "WrapperFactory.h"
 #include "js/Debug.h"
-
-#include "mozilla/Atomics.h"
+#include "js/Exception.h"  // JS::ExceptionStack
+#include "js/Object.h"     // JS::GetCompartment
+#include "js/StructuredClone.h"
+#include "jsfriendapi.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/OwningNonNull.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/ResultExtensions.h"
-#include "mozilla/Unused.h"
-
 #include "mozilla/dom/AutoEntryScript.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/DOMExceptionBinding.h"
 #include "mozilla/dom/Exceptions.h"
 #include "mozilla/dom/MediaStreamError.h"
+#include "mozilla/dom/Promise-inl.h"
 #include "mozilla/dom/PromiseBinding.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/UserActivation.h"
 #include "mozilla/dom/WorkerPrivate.h"
-#include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/dom/WorkerRef.h"
-#include "mozilla/dom/WorkletImpl.h"
+#include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/dom/WorkletGlobalScope.h"
-
-#include "jsfriendapi.h"
-#include "js/Exception.h"  // JS::ExceptionStack
-#include "js/Object.h"     // JS::GetCompartment
-#include "js/StructuredClone.h"
+#include "mozilla/dom/WorkletImpl.h"
+#include "mozilla/webgpu/PipelineError.h"
 #include "nsContentUtils.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsDebug.h"
@@ -47,12 +46,8 @@
 #include "nsJSPrincipals.h"
 #include "nsJSUtils.h"
 #include "nsPIDOMWindow.h"
-#include "PromiseDebugging.h"
-#include "PromiseNativeHandler.h"
-#include "PromiseWorkerProxy.h"
-#include "WrapperFactory.h"
-#include "xpcpublic.h"
 #include "xpcprivate.h"
+#include "xpcpublic.h"
 
 namespace mozilla::dom {
 
@@ -264,15 +259,16 @@ NS_IMPL_CYCLE_COLLECTION_WITH_JS_MEMBERS(WaitForAllResults, (), (mResult))
 /* static */
 void Promise::WaitForAll(nsIGlobalObject* aGlobal,
                          const Span<RefPtr<Promise>>& aPromises,
-                         SuccessSteps aSuccessSteps,
-                         FailureSteps aFailureSteps) {
+                         SuccessSteps aSuccessSteps, FailureSteps aFailureSteps,
+                         nsISupports* aCycleCollectedArg) {
   // Step 1 and step 2 are in WaitForAllResults.
 
   // Step 3
   const auto& rejectionHandlerSteps =
       [aFailureSteps](JSContext* aCx, JS::Handle<JS::Value> aArg,
                       ErrorResult& aRv,
-                      const RefPtr<WaitForAllResults>& aResult) {
+                      const RefPtr<WaitForAllResults>& aResult,
+                      const nsCOMPtr<nsISupports>& aCycleCollectedArg) {
         // Step 3.1
         if (aResult->mRejected) {
           return nullptr;
@@ -304,13 +300,15 @@ void Promise::WaitForAll(nsIGlobalObject* aGlobal,
   // fulfillmentHandlerSteps we wrap it into a cycle collecting and tracing
   // object.
   RefPtr result = MakeAndAddRef<WaitForAllResults>(total);
+  nsCOMPtr arg = aCycleCollectedArg;
   // Step 9
   for (const auto& promise : aPromises) {
     // Step 9.1 and step 9.2
     const auto& fulfillmentHandlerSteps =
         [aSuccessSteps, promiseIndex = index](
             JSContext* aCx, JS::Handle<JS::Value> aArg, ErrorResult& aRv,
-            const RefPtr<WaitForAllResults>& aResult)
+            const RefPtr<WaitForAllResults>& aResult,
+            const nsCOMPtr<nsISupports>& aCycleCollectedArg)
         -> already_AddRefed<Promise> {
       // Step 9.2.1
       aResult->mResult[promiseIndex].set(aArg.get());
@@ -324,8 +322,18 @@ void Promise::WaitForAll(nsIGlobalObject* aGlobal,
       return nullptr;
     };
     // Step 9.4 (and actually also step 4 and step 9.3)
-    (void)promise->ThenCatchWithCycleCollectedArgs(
-        fulfillmentHandlerSteps, rejectionHandlerSteps, result);
+    Result resultPromise = promise->ThenCatchWithCycleCollectedArgs(
+        fulfillmentHandlerSteps, rejectionHandlerSteps, result, arg);
+
+    // https://tc39.es/ecma262/multipage/control-abstraction-objects.html#sec-performpromisethen
+    // Step 12
+    // Promise;:ThenCatchWithCycleCollectedArgs is fairly similar to, but not
+    // exactly the same as PerformPromiseThen, in particular the step that marks
+    // the promise as handled is missing. It's performed here to not change the
+    // existing behavior of ThenCatchWithCycleCollectedArgs.
+    if (resultPromise.isOk()) {
+      (void)resultPromise.unwrap()->SetAnyPromiseIsHandled();
+    }
 
     // Step 9.5
     index++;
@@ -418,7 +426,7 @@ void Promise::CreateWrapper(
     return;
   }
   if (aPropagateUserInteraction == ePropagateUserInteraction) {
-    Unused << MaybePropagateUserInputEventHandling();
+    (void)MaybePropagateUserInputEventHandling();
   }
 }
 
@@ -704,6 +712,12 @@ void Promise::MaybeResolveWithUndefined() {
 }
 
 void Promise::MaybeReject(const RefPtr<MediaStreamError>& aArg) {
+  NS_ASSERT_OWNINGTHREAD(Promise);
+
+  MaybeSomething(aArg, &Promise::MaybeReject);
+}
+
+void Promise::MaybeReject(const RefPtr<webgpu::PipelineError>& aArg) {
   NS_ASSERT_OWNINGTHREAD(Promise);
 
   MaybeSomething(aArg, &Promise::MaybeReject);

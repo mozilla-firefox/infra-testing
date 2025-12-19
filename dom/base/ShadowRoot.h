@@ -7,13 +7,14 @@
 #ifndef mozilla_dom_shadowroot_h__
 #define mozilla_dom_shadowroot_h__
 
+#include "mozilla/BindgenUniquePtr.h"
 #include "mozilla/DOMEventTargetHelper.h"
+#include "mozilla/ServoBindingTypes.h"
 #include "mozilla/dom/DocumentBinding.h"
 #include "mozilla/dom/DocumentFragment.h"
 #include "mozilla/dom/DocumentOrShadowRoot.h"
 #include "mozilla/dom/NameSpaceConstants.h"
 #include "mozilla/dom/ShadowRootBinding.h"
-#include "mozilla/ServoBindings.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsStubMutationObserver.h"
@@ -21,13 +22,18 @@
 
 class nsAtom;
 class nsIContent;
+class nsIPrincipal;
 
 namespace mozilla {
+
+struct StyleAuthorStyles;
+struct StyleRuleChange;
 
 class EventChainPreVisitor;
 class ServoStyleRuleMap;
 
 enum class StyleRuleChangeKind : uint32_t;
+enum class BuiltInStyleSheet : uint8_t;
 
 namespace css {
 class Rule;
@@ -70,7 +76,9 @@ class ShadowRoot final : public DocumentFragment, public DocumentOrShadowRoot {
   void MaybeSlotHostChild(nsIContent&);
   // Called when a direct child of our host is removed. Tries to un-slot the
   // child from the currently-assigned slot, if any.
-  void MaybeUnslotHostChild(nsIContent&);
+  // If aInBatch is true, we know all the host kids are getting removed (and
+  // thus we can just unassign all the kids at once).
+  void MaybeUnslotHostChild(nsIContent&, bool aInBatch);
 
   // Shadow DOM v1
   Element* Host() const {
@@ -96,6 +104,9 @@ class ShadowRoot final : public DocumentFragment, public DocumentOrShadowRoot {
   void ImportRuleLoaded(StyleSheet&);
   void SheetCloned(StyleSheet&);
   void StyleSheetApplicableStateChanged(StyleSheet&);
+
+  // Adds a built-in author style-sheet to the shadow tree.
+  void AppendBuiltInStyleSheet(BuiltInStyleSheet);
 
   /**
    * Clones internal state, for example stylesheets, of aOther to 'this'.
@@ -249,16 +260,35 @@ class ShadowRoot final : public DocumentFragment, public DocumentOrShadowRoot {
     mIsDeclarative = aIsDeclarative ? Declarative::Yes : Declarative::No;
   }
 
+  void SetHTML(const nsAString& aInnerHTML, const SetHTMLOptions& aOptions,
+               ErrorResult& aError);
+
   MOZ_CAN_RUN_SCRIPT
-  void SetHTMLUnsafe(const TrustedHTMLOrString& aHTML, ErrorResult& aError);
+  void SetHTMLUnsafe(const TrustedHTMLOrString& aHTML,
+                     const SetHTMLUnsafeOptions& aOptions,
+                     nsIPrincipal* aSubjectPrincipal, ErrorResult& aError);
 
   // @param aInnerHTML will always be of type `NullIsEmptyString`.
   void GetInnerHTML(OwningTrustedHTMLOrNullIsEmptyString& aInnerHTML);
 
   MOZ_CAN_RUN_SCRIPT void SetInnerHTML(
-      const TrustedHTMLOrNullIsEmptyString& aInnerHTML, ErrorResult& aError);
+      const TrustedHTMLOrNullIsEmptyString& aInnerHTML,
+      nsIPrincipal* aSubjectPrincipal, ErrorResult& aError);
 
   void GetHTML(const GetHTMLOptions& aOptions, nsAString& aResult);
+
+  void GetReferenceTarget(nsAString& aResult) const {
+    mReferenceTarget->ToString(aResult);
+  }
+  nsAtom* ReferenceTarget() const { return mReferenceTarget; }
+  void SetReferenceTarget(const nsAString& aValue) {
+    SetReferenceTarget(NS_Atomize(aValue));
+  }
+  void SetReferenceTarget(RefPtr<nsAtom> aTarget);
+  Element* GetReferenceTargetElement() const {
+    return mReferenceTarget->IsEmpty() ? nullptr
+                                       : GetElementById(mReferenceTarget);
+  }
 
  protected:
   // FIXME(emilio): This will need to become more fine-grained.
@@ -272,7 +302,7 @@ class ShadowRoot final : public DocumentFragment, public DocumentOrShadowRoot {
   // https://github.com/rust-lang/rust-bindgen/issues/380
 
   // The computed data from the style sheets.
-  UniquePtr<StyleAuthorStyles> mServoStyles;
+  BindgenUniquePtr<StyleAuthorStyles> mServoStyles;
   UniquePtr<mozilla::ServoStyleRuleMap> mStyleRuleMap;
 
   using SlotArray = TreeOrderedArray<HTMLSlotElement*>;
@@ -305,6 +335,8 @@ class ShadowRoot final : public DocumentFragment, public DocumentOrShadowRoot {
 
   // https://dom.spec.whatwg.org/#shadowroot-serializable
   const IsSerializable mIsSerializable;
+
+  RefPtr<nsAtom> mReferenceTarget;
 
   nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 };

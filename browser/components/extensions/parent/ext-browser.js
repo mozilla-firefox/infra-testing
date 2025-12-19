@@ -129,7 +129,7 @@ global.waitForTabLoaded = (tab, url) => {
 global.replaceUrlInTab = (gBrowser, tab, uri) => {
   let loaded = waitForTabLoaded(tab, uri.spec);
   gBrowser.loadURI(uri, {
-    flags: Ci.nsIWebNavigation.LOAD_FLAGS_REPLACE_HISTORY,
+    loadFlags: Ci.nsIWebNavigation.LOAD_FLAGS_REPLACE_HISTORY,
     triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(), // This is safe from this functions usage however it would be preferred not to dot his.
   });
   return loaded;
@@ -307,6 +307,9 @@ class WindowTracker extends WindowTrackerBase {
     if (!context.privateBrowsingAllowed) {
       options.private = false;
     }
+    // bug 1983854 - should this only look for windows on the current
+    // workspace?
+    options.allowFromInactiveWorkspace = true;
     return BrowserWindowTracker.getTopWindow(options);
   }
 }
@@ -523,7 +526,7 @@ class TabTracker extends TabTrackerBase {
     let nativeTab = event.target;
 
     switch (event.type) {
-      case "TabOpen":
+      case "TabOpen": {
         let { adoptedTab } = event.detail;
         if (adoptedTab) {
           // This tab is being created to adopt a tab from a different window.
@@ -554,8 +557,9 @@ class TabTracker extends TabTrackerBase {
           });
         }
         break;
+      }
 
-      case "TabClose":
+      case "TabClose": {
         let { adoptedBy } = event.detail;
         if (adoptedBy) {
           // This tab is being closed because it was adopted by a new window.
@@ -567,6 +571,7 @@ class TabTracker extends TabTrackerBase {
           this.emitRemoved(nativeTab, false);
         }
         break;
+      }
 
       case "TabSelect":
         // Because we are delaying calling emitCreated above, we also need to
@@ -624,8 +629,10 @@ class TabTracker extends TabTrackerBase {
       // by the first MozAfterPaint event. That code handles finally
       // adopting the tab, and clears it from the arguments list in the
       // process, so if we run later than it, we're too late.
-      let adoptedBy = window.gBrowser.tabs[0];
-      this.adopt(adoptedBy, tabToAdopt);
+      if (window.gBrowser.isTab(tabToAdopt)) {
+        let adoptedBy = window.gBrowser.tabs[0];
+        this.adopt(adoptedBy, tabToAdopt);
+      }
     } else {
       for (let nativeTab of window.gBrowser.tabs) {
         this.emitCreated(nativeTab);

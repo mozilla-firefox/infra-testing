@@ -13,22 +13,10 @@ ${helpers.two_properties_shorthand(
 )}
 
 ${helpers.two_properties_shorthand(
-    "overflow-clip-box",
-    "overflow-clip-box-block",
-    "overflow-clip-box-inline",
-    engines="gecko",
-    enabled_in="chrome",
-    gecko_pref="layout.css.overflow-clip-box.enabled",
-    spec="Internal, may be standardized in the future "
-         "(https://developer.mozilla.org/en-US/docs/Web/CSS/overflow-clip-box)",
-)}
-
-${helpers.two_properties_shorthand(
     "overscroll-behavior",
     "overscroll-behavior-x",
     "overscroll-behavior-y",
     engines="gecko",
-    gecko_pref="layout.css.overscroll-behavior.enabled",
     spec="https://wicg.github.io/overscroll-behavior/#overscroll-behavior-properties",
 )}
 
@@ -48,9 +36,9 @@ ${helpers.two_properties_shorthand(
         // match the spec.
         let container_name = ContainerName::parse(context, input)?;
         let container_type = if input.try_parse(|input| input.expect_delim('/')).is_ok() {
-            ContainerType::parse(input)?
+            ContainerType::parse(context, input)?
         } else {
-            ContainerType::Normal
+            ContainerType::NORMAL
         };
         Ok(expanded! {
             container_name: container_name,
@@ -235,5 +223,50 @@ ${helpers.two_properties_shorthand(
             }
             Ok(())
         }
+    }
+</%helpers:shorthand>
+
+<%helpers:shorthand name="-webkit-perspective"
+                    engines="gecko servo"
+                    sub_properties="perspective"
+                    derive_serialize="True"
+                    flags="IS_LEGACY_SHORTHAND"
+                    spec="https://github.com/whatwg/compat/issues/100">
+    pub fn parse_value<'i, 't>(
+        context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<Longhands, ParseError<'i>> {
+        use crate::values::specified::Length;
+        use crate::values::generics::NonNegative;
+        use crate::values::specified::AllowQuirks;
+        use crate::values::specified::Perspective;
+        use crate::properties::longhands::perspective;
+
+        if let Ok(l) = input.try_parse(|input| Length::parse_non_negative_quirky(context, input, AllowQuirks::Always)) {
+            Ok(expanded! {
+                perspective: Perspective::Length(NonNegative(l)),
+            })
+        } else {
+            Ok(expanded! {
+                perspective: perspective::parse(context, input)?
+            })
+        }
+    }
+</%helpers:shorthand>
+
+<%helpers:shorthand name="-webkit-transform"
+                    engines="gecko servo"
+                    sub_properties="transform"
+                    derive_serialize="True"
+                    flags="IS_LEGACY_SHORTHAND"
+                    spec="https://github.com/whatwg/compat/issues/100">
+    pub fn parse_value<'i, 't>(
+        context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<Longhands, ParseError<'i>> {
+        use crate::values::specified::Transform;
+        Ok(expanded! {
+            transform: Transform::parse_legacy(context, input)?,
+        })
     }
 </%helpers:shorthand>

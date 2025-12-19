@@ -8,16 +8,12 @@ import android.content.Context
 import android.content.Intent
 import android.database.Cursor
 import androidx.core.net.toUri
+import mozilla.components.support.base.log.logger.Logger
 import org.json.JSONException
 import org.json.JSONObject
 
-private const val FIREFOX_PACKAGE_NAME = "org.mozilla.firefox"
-private const val FIREFOX_BETA_PACKAGE_NAME = "org.mozilla.firefox_beta"
-private const val FIREFOX_NIGHTLY_PACKAGE_NAME = "org.mozilla.fenix"
-
 private const val ADJUST_CONTENT_PROVIDER_INTENT_ACTION = "com.attribution.REFERRAL_PROVIDER"
 
-private const val PACKAGE_NAME_COLUMN = "package_name"
 private const val ENCRYPTED_DATA_COLUMN = "encrypted_data"
 
 /**
@@ -30,13 +26,18 @@ interface DistributionProviderChecker {
     fun queryProvider(): String?
 }
 
+private val logger = Logger(DistributionProviderChecker::class.simpleName)
+
 /**
  * Default implementation for DistributionProviderChecker
  *
  * @param context application context used to get the packageManager and contentResolver
  */
 class DefaultDistributionProviderChecker(private val context: Context) : DistributionProviderChecker {
+    private val classVersion = "Default"
+
     override fun queryProvider(): String? {
+        logger.info("$classVersion - Starting check...")
         val adjustProviderIntent = Intent(ADJUST_CONTENT_PROVIDER_INTENT_ACTION)
         val contentProviders = context.packageManager.queryIntentContentProviders(adjustProviderIntent, 0)
         val contentResolver = context.contentResolver
@@ -45,13 +46,13 @@ class DefaultDistributionProviderChecker(private val context: Context) : Distrib
             val authority = resolveInfo.providerInfo.authority
             val uri = "content://$authority/trackers".toUri()
 
-            val projection = arrayOf(PACKAGE_NAME_COLUMN, ENCRYPTED_DATA_COLUMN)
+            val projection = arrayOf(ENCRYPTED_DATA_COLUMN)
 
             val contentResolverCursor = contentResolver.query(
                 uri,
                 projection,
-                null,
-                null,
+                "package_name=?",
+                arrayOf(context.packageName),
                 null,
             )
 
@@ -64,29 +65,24 @@ class DefaultDistributionProviderChecker(private val context: Context) : Distrib
     }
 
     private fun Cursor.getProvider(): String? {
+        logger.info("$classVersion - Cursor available")
         while (moveToNext()) {
-            val packageNameColumnIndex = getColumnIndex(PACKAGE_NAME_COLUMN)
             val dataColumnIndex = getColumnIndex(ENCRYPTED_DATA_COLUMN)
 
             // Check if columns exist
-            if (packageNameColumnIndex == -1 || dataColumnIndex == -1) {
+            if (dataColumnIndex == -1) {
                 break
             }
 
-            val packageName = getString(packageNameColumnIndex) ?: break
-
-            if (packageName == FIREFOX_PACKAGE_NAME ||
-                packageName == FIREFOX_BETA_PACKAGE_NAME ||
-                packageName == FIREFOX_NIGHTLY_PACKAGE_NAME
-            ) {
-                val data = getString(dataColumnIndex) ?: break
-                try {
-                    val jsonObject = JSONObject(data)
-                    val provider = jsonObject.getString("provider")
-                    return provider
-                } catch (e: JSONException) {
-                    break
-                }
+            val data = getString(dataColumnIndex) ?: break
+            try {
+                val jsonObject = JSONObject(data)
+                val provider = jsonObject.getString("provider")
+                logger.info("$classVersion - Provider found: $provider")
+                return provider
+            } catch (e: JSONException) {
+                logger.info("$classVersion - JSON expection: $e")
+                break
             }
         }
         return null

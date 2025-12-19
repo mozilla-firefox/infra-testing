@@ -265,7 +265,7 @@ extern "C" {
     fn LockFramebuffer(fbo: GLuint) -> *mut LockedTexture;
     fn LockTexture(tex: GLuint) -> *mut LockedTexture;
     fn LockResource(resource: *mut LockedTexture);
-    fn UnlockResource(resource: *mut LockedTexture);
+    fn UnlockResource(resource: *mut LockedTexture) -> i32;
     fn GetResourceBuffer(
         resource: *mut LockedTexture,
         width: *mut i32,
@@ -313,6 +313,10 @@ extern "C" {
         clip_y: GLint,
         clip_width: GLsizei,
         clip_height: GLsizei,
+    );
+    fn ApplyMask(
+        locked_dst: *mut LockedTexture,
+        locked_mask: *mut LockedTexture,
     );
     fn CreateContext() -> *mut c_void;
     fn ReferenceContext(ctx: *mut c_void);
@@ -434,7 +438,7 @@ impl Context {
     pub fn lock_framebuffer(&self, fbo: GLuint) -> Option<LockedResource> {
         unsafe {
             let resource = LockFramebuffer(fbo);
-            if resource != ptr::null_mut() {
+            if !resource.is_null() {
                 Some(LockedResource(resource))
             } else {
                 None
@@ -445,7 +449,7 @@ impl Context {
     pub fn lock_texture(&self, tex: GLuint) -> Option<LockedResource> {
         unsafe {
             let resource = LockTexture(tex);
-            if resource != ptr::null_mut() {
+            if !resource.is_null() {
                 Some(LockedResource(resource))
             } else {
                 None
@@ -494,7 +498,7 @@ fn calculate_length(width: GLsizei, height: GLsizei, format: GLenum, pixel_type:
         _ => panic!("unsupported pixel_type for read_pixels: {:?}", pixel_type),
     };
 
-    return (width * height * colors * depth) as usize;
+    (width * height * colors * depth) as usize
 }
 
 impl Gl for Context {
@@ -563,7 +567,7 @@ impl Gl for Context {
         //panic!();
         for s in strings {
             let u = str::from_utf8(s).unwrap();
-            const PREFIX: &'static str = "// shader: ";
+            const PREFIX: &str = "// shader: ";
             if let Some(start) = u.find(PREFIX) {
                 if let Some(end) = u[start..].find('\n') {
                     let name = u[start + PREFIX.len()..start + end].trim();
@@ -1945,9 +1949,9 @@ impl Gl for Context {
         unsafe {
             let llstr = GetString(which);
             if !llstr.is_null() {
-                return str::from_utf8_unchecked(CStr::from_ptr(llstr).to_bytes()).to_string();
+                str::from_utf8_unchecked(CStr::from_ptr(llstr).to_bytes()).to_string()
             } else {
-                return "".to_string();
+                "".to_string()
             }
         }
     }
@@ -2455,6 +2459,19 @@ impl LockedResource {
                 clip_y,
                 clip_width,
                 clip_height,
+            );
+        }
+    }
+
+    /// Apply an R8 alpha mask to this surface
+    pub fn apply_mask(
+        &self,
+        mask: &LockedResource,
+    ) {
+        unsafe {
+            ApplyMask(
+                self.0,
+                mask.0,
             );
         }
     }

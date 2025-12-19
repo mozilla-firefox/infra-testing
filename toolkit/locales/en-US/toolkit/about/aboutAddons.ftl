@@ -206,8 +206,8 @@ addon-sitepermission-host = Site Permissions for { $host }
 
 ## These are global warnings
 
-extensions-warning-safe-mode2 =
-    .message = All add-ons have been disabled by safe mode.
+extensions-warning-safe-mode3 =
+    .message = All add-ons have been disabled by Troubleshoot Mode.
 extensions-warning-check-compatibility2 =
     .message = Add-on compatibility checking is disabled. You may have incompatible add-ons.
 extensions-warning-check-compatibility-button = Enable
@@ -343,6 +343,11 @@ colorway-removal-notice-message =
         the add-ons site.
 colorway-removal-notice-learn-more = Learn more
 colorway-removal-notice-button = Get updated colorways themes
+
+# Notice to make user aware that themes are not applied in forced colors mode.
+# This notice is only visible on Windows.
+forced-colors-theme-notice =
+    .message = Your Windows contrast settings are overriding { -brand-short-name } themes. Turn off these settings to use themes in { -brand-short-name }.
 
 privacy-policy = Privacy Policy
 
@@ -509,9 +514,10 @@ recent-updates-heading = Recent Updates
 release-notes-loading = Loading…
 release-notes-error = Sorry, but there was an error loading the release notes.
 
+addon-permissions-heading = Permissions
 addon-permissions-empty2 = This extension doesn’t require any permissions.
-addon-permissions-required = Required permissions for core functionality:
-addon-permissions-optional = Optional permissions for added functionality:
+addon-permissions-required-label = Required:
+addon-permissions-optional-label = Optional:
 addon-permissions-learnmore = Learn more about permissions
 
 recommended-extensions-heading = Recommended Extensions
@@ -540,6 +546,9 @@ shortcuts-heading = Manage Extension Shortcuts
 default-heading-search-label = Find more add-ons
 addons-heading-search-input =
     .placeholder = Search addons.mozilla.org
+addons-heading-search-button =
+    .title = Search addons.mozilla.org
+    .aria-label = Search addons.mozilla.org
 
 addon-page-options-button =
     .title = Tools for all add-ons
@@ -565,14 +574,14 @@ details-notification-hard-blocked-other =
     .message = This add-on is blocked for violating Mozilla’s policies and has been disabled.
 details-notification-blocked-link2 = See Details
 
-details-notification-soft-blocked-extension-disabled =
-    .message = This extension is restricted for violating Mozilla’s policies and has been disabled. You can enable it, but this may be risky.
-details-notification-soft-blocked-extension-enabled =
-    .message = This extension violates Mozilla’s policies. Using it may be risky.
-details-notification-soft-blocked-other-disabled =
-    .message = This add-on is restricted for violating Mozilla’s policies and has been disabled. You can enable it, but this may be risky.
-details-notification-soft-blocked-other-enabled =
-    .message = This add-on violates Mozilla’s policies. Using it may be risky.
+details-notification-soft-blocked-extension-disabled2 =
+    .message = This extension is restricted and has been disabled. You can enable it, but this may be risky.
+details-notification-soft-blocked-extension-enabled2 =
+    .message = This extension is restricted. Using it may be risky.
+details-notification-soft-blocked-other-disabled2 =
+    .message = This add-on is restricted and has been disabled. You can enable it, but this may be risky.
+details-notification-soft-blocked-other-enabled2 =
+    .message = This add-on is restricted. Using it may be risky.
 details-notification-softblocked-link2 = See Details
 
 details-notification-gmp-pending2 =
@@ -588,3 +597,49 @@ plugins-openh264-description = This plugin is automatically installed by Mozilla
 
 plugins-widevine-name = Widevine Content Decryption Module provided by Google Inc.
 plugins-widevine-description = This plugin enables playback of encrypted media in compliance with the Encrypted Media Extensions specification. Encrypted media is typically used by sites to protect against copying of premium media content. Visit https://www.w3.org/TR/encrypted-media/ for more information on Encrypted Media Extensions.
+
+## Headings for the Permissions tab in `about:addons` when the data collection
+## feature is enabled.
+
+addon-permissions-data-collection-heading = Data Collection
+addon-permissions-data-collection-empty = The developer says this extension doesn’t require data collection.
+addon-data-collection-provided = Info provided by the extension developer
+addon-data-collection-learnmore = Learn more about data collection
+
+# Name of the Permissions tab in `about:addons` when the data collection feature is enabled.
+permissions-data-addon-button = Permissions and data
+
+# This is a description for extension that use this AI model
+# Variables:
+#   $extensionName (String) - Name of the extension
+mlmodel-extension-label = Used by the extension { $extensionName }
+
+## Mapping Engine IDs from AI models to how that feature represented by the engine Id is described in the used by section in local model management
+
+mlmodel-about-inference = { -brand-short-name } uses this on about:inference
+mlmodel-link-preview = { -brand-short-name } uses this to generate key points when you preview links
+mlmodel-pdfjs = { -brand-short-name } uses this to create alt text for images you add to PDFs
+mlmodel-smart-tab-topic-engine = { -brand-short-name } uses this to suggest names for your tab groups
+mlmodel-smart-tab-embedding-engine = { -brand-short-name } uses this to suggest tabs for your tab groups
+
+# AI Model will be downloaded on the users device and used locally
+addon-category-mlmodel = On-device AI
+addon-category-mlmodel-title =
+  .title = On-device AI
+
+mlmodel-heading = Manage On-Device AI Models
+mlmodel-description =
+  Some features and extensions in { -brand-short-name } are powered by AI models that work locally on your device. This approach protects your privacy and, in many cases, speeds up performance. <a data-l10n-name="learn-more">Learn more</a>
+
+# Label for button that when clicked removed local model
+mlmodel-remove-addon-button =
+  .aria-label = Remove
+# Label for the aggregated value of all files for a model
+mlmodel-addon-detail-totalsize-label = File size
+mlmodel-addon-detail-last-used-label = Last used
+# This is a section label to describe what extensions or features use a specific local AI model
+mlmodel-addon-detail-used-by-label = Used by
+# This is a section label to describe the link to the model card on the Hugging Face website
+mlmodel-addon-detail-model-card = Model card
+# This is a label for the Model Card link to Hugging face
+mlmodel-addon-detail-model-card-link-label = View on Hugging Face

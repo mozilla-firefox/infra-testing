@@ -18,7 +18,7 @@ function repeat_test() {
   // The test is probably going to fail because setting a batch of cookies took
   // a significant fraction of 'gPurgeAge'. Compensate by rerunning the
   // test with a larger purge age.
-  Assert.ok(gPurgeAge < 64);
+  Assert.less(gPurgeAge, 64);
   gPurgeAge *= 2;
   gShortExpiry *= 2;
 
@@ -56,7 +56,7 @@ function* do_run_test() {
   Services.prefs.setIntPref("network.cookie.purgeAge", gPurgeAge);
   Services.prefs.setIntPref("network.cookie.maxNumber", 100);
 
-  let expiry = Date.now() / 1000 + 1000;
+  let expiry = Date.now() + 1000 * 1000;
 
   // eviction is performed based on two limits: when the total number of cookies
   // exceeds maxNumber + 10% (110), and when cookies are older than purgeAge
@@ -157,7 +157,7 @@ function* do_run_test() {
   // 6) Excess and age are satisfied, but the cookie limit can be satisfied by
   // purging expired cookies.
   Services.cookies.removeAll();
-  let shortExpiry = Math.floor(Date.now() / 1000) + gShortExpiry;
+  let shortExpiry = Date.now() + 1000 * gShortExpiry;
   if (!set_cookies(0, 20, shortExpiry)) {
     repeat_test();
     return;
@@ -186,12 +186,12 @@ function* do_run_test() {
 // Set 'end - begin' total cookies, with consecutively increasing hosts numbered
 // 'begin' to 'end'.
 function set_cookies(begin, end, expiry) {
-  Assert.ok(begin != end);
+  Assert.notEqual(begin, end);
 
   let beginTime;
   for (let i = begin; i < end; ++i) {
     let host = "eviction." + i + ".tests";
-    Services.cookies.add(
+    const cv = Services.cookies.add(
       host,
       "",
       "test",
@@ -201,9 +201,10 @@ function set_cookies(begin, end, expiry) {
       false,
       expiry,
       {},
-      Ci.nsICookie.SAMESITE_NONE,
+      Ci.nsICookie.SAMESITE_UNSET,
       Ci.nsICookie.SCHEME_HTTPS
     );
+    Assert.equal(cv.result, Ci.nsICookieValidation.eOK, "Valid cookie");
 
     if (i == begin) {
       beginTime = get_creationTime(i);

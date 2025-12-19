@@ -12,7 +12,6 @@
 #include <inttypes.h>
 
 #include "X11UndefineNone.h"
-
 #include "gfxFontConstants.h"
 #include "mozilla/ServoStyleConsts.h"
 
@@ -192,15 +191,6 @@ enum class StyleDirection : uint8_t { Ltr, Rtl };
 // values here accidentally use it in their binary representation.)
 static constexpr uint8_t kWritingModeSidewaysMask = 4;
 
-enum class StyleWritingModeProperty : uint8_t {
-  HorizontalTb = 0,
-  VerticalRl = 1,
-  // HorizontalBT = 2,    // hypothetical
-  VerticalLr = 3,
-  SidewaysRl = VerticalRl | kWritingModeSidewaysMask,
-  SidewaysLr = VerticalLr | kWritingModeSidewaysMask,
-};
-
 // See nsStylePosition
 enum class StyleFlexDirection : uint8_t {
   Row,
@@ -251,6 +241,9 @@ enum class StyleMathVariant : uint8_t {
 
 // See nsStyleFont::mMathStyle
 enum class StyleMathStyle : uint8_t { Compact = 0, Normal = 1 };
+
+// See nsStyleFont::mMathShift
+enum class StyleMathShift : uint8_t { Compact = 0, Normal = 1 };
 
 enum class FrameBorderProperty : uint8_t { Yes, No, One, Zero };
 

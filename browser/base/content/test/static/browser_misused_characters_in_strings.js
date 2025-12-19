@@ -57,8 +57,38 @@ let gExceptionsList = [
     key: "MathML_DeprecatedMathVariantWarning",
     type: "single-quote",
   },
-  // These error messages contain references to the CSP keywords 'unsafe-eval'/'wasm-unsafe-eval',
+  // These error messages contain references to the CSP keywords like 'unsafe-eval',
   // and those keywords contain actual single-quotes: https://w3c.github.io/webappsec-csp/#grammardef-keyword-source
+  {
+    file: "csp.properties",
+    key: "CSPInlineStyleViolation2",
+    type: "single-quote",
+  },
+  {
+    file: "csp.properties",
+    key: "CSPROInlineStyleViolation2",
+    type: "single-quote",
+  },
+  {
+    file: "csp.properties",
+    key: "CSPInlineScriptViolation2",
+    type: "single-quote",
+  },
+  {
+    file: "csp.properties",
+    key: "CSPROInlineScriptViolation2",
+    type: "single-quote",
+  },
+  {
+    file: "csp.properties",
+    key: "CSPEventHandlerScriptViolation2",
+    type: "single-quote",
+  },
+  {
+    file: "csp.properties",
+    key: "CSPROEventHandlerScriptViolation2",
+    type: "single-quote",
+  },
   {
     file: "csp.properties",
     key: "CSPEvalScriptViolation",
@@ -187,47 +217,6 @@ add_task(async function checkAllTheProperties() {
       testForErrors(uri.spec, entity.key, entity.value);
     }
   }
-});
-
-var checkDTD = async function (aURISpec) {
-  let rawContents = await fetchFile(aURISpec);
-  // The regular expression below is adapted from:
-  // https://hg.mozilla.org/mozilla-central/file/68c0b7d6f16ce5bb023e08050102b5f2fe4aacd8/python/compare-locales/compare_locales/parser.py#l233
-  let entities = rawContents.match(
-    /<!ENTITY\s+([\w\.]*)\s+("[^"]*"|'[^']*')\s*>/g
-  );
-  if (!entities) {
-    // Some files have no entities defined.
-    return;
-  }
-  for (let entity of entities) {
-    let [, key, str] = entity.match(
-      /<!ENTITY\s+([\w\.]*)\s+("[^"]*"|'[^']*')\s*>/
-    );
-    // The matched string includes the enclosing quotation marks,
-    // we need to slice them off.
-    str = str.slice(1, -1);
-    testForErrors(aURISpec, key, str);
-  }
-};
-
-add_task(async function checkAllTheDTDs() {
-  let uris = await getAllTheFiles(".dtd");
-  ok(
-    uris.length,
-    `Found ${uris.length} .dtd files to scan for misused characters`
-  );
-  for (let uri of uris) {
-    await checkDTD(uri.spec);
-  }
-
-  // This support DTD file supplies a string with a newline to make sure
-  // the regex in checkDTD works correctly for that case.
-  let dtdLocation = gTestPath.replace(
-    /\/[^\/]*$/i,
-    "/bug1262648_string_with_newlines.dtd"
-  );
-  await checkDTD(dtdLocation);
 });
 
 add_task(async function checkAllTheFluents() {

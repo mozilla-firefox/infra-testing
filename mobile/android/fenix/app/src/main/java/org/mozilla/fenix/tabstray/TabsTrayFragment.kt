@@ -18,6 +18,9 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.annotation.UiThread
 import androidx.annotation.VisibleForTesting
 import androidx.appcompat.app.AppCompatDialogFragment
+import androidx.biometric.BiometricManager
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updateLayoutParams
@@ -36,17 +39,17 @@ import mozilla.components.concept.base.crash.Breadcrumb
 import mozilla.components.feature.accounts.push.CloseTabsUseCases
 import mozilla.components.feature.downloads.ui.DownloadCancelDialogFragment
 import mozilla.components.feature.tabs.tabstray.TabsFeature
+import mozilla.components.lib.state.ext.observeAsState
+import mozilla.components.lib.state.helpers.StoreProvider.Companion.storeProvider
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
+import mozilla.components.support.ktx.android.util.AndroidDisplayUnitConverter
 import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.fenix.Config
+import org.mozilla.fenix.GleanMetrics.PrivateBrowsingLocked
 import org.mozilla.fenix.GleanMetrics.TabsTray
 import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.NavGraphDirections
 import org.mozilla.fenix.R
-import org.mozilla.fenix.biometricauthentication.AuthenticationStatus
-import org.mozilla.fenix.biometricauthentication.BiometricAuthenticationManager
-import org.mozilla.fenix.browser.tabstrip.isTabStripEnabled
-import org.mozilla.fenix.components.StoreProvider
 import org.mozilla.fenix.compose.core.Action
 import org.mozilla.fenix.compose.snackbar.Snackbar
 import org.mozilla.fenix.compose.snackbar.SnackbarState
@@ -55,17 +58,26 @@ import org.mozilla.fenix.databinding.ComponentTabstray3FabBinding
 import org.mozilla.fenix.databinding.FragmentTabTrayDialogBinding
 import org.mozilla.fenix.ext.actualInactiveTabs
 import org.mozilla.fenix.ext.components
+import org.mozilla.fenix.ext.pixelSizeFor
+import org.mozilla.fenix.ext.registerForActivityResult
 import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.ext.runIfFragmentIsAttached
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.home.HomeScreenViewModel
-import org.mozilla.fenix.settings.biometric.bindBiometricsCredentialsPromptOrShowWarning
+import org.mozilla.fenix.navigation.DefaultNavControllerProvider
+import org.mozilla.fenix.navigation.NavControllerProvider
+import org.mozilla.fenix.pbmlock.registerForVerification
+import org.mozilla.fenix.pbmlock.verifyUser
+import org.mozilla.fenix.settings.biometric.DefaultBiometricUtils
+import org.mozilla.fenix.settings.biometric.ext.isAuthenticatorAvailable
+import org.mozilla.fenix.settings.biometric.ext.isHardwareAvailable
 import org.mozilla.fenix.share.ShareFragment
 import org.mozilla.fenix.tabstray.browser.TabSorter
 import org.mozilla.fenix.tabstray.syncedtabs.SyncedTabsIntegration
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.theme.Theme
 import org.mozilla.fenix.theme.ThemeManager
+import org.mozilla.fenix.utils.Settings
 import org.mozilla.fenix.utils.allowUndo
 import kotlin.math.abs
 import kotlin.math.max
@@ -81,12 +93,17 @@ enum class TabsTrayAccessPoint {
 @Suppress("TooManyFunctions", "LargeClass")
 class TabsTrayFragment : AppCompatDialogFragment() {
 
-    private lateinit var tabsTrayStore: TabsTrayStore
     private lateinit var tabsTrayDialog: TabsTrayDialog
     private lateinit var tabsTrayInteractor: TabsTrayInteractor
     private lateinit var tabsTrayController: DefaultTabsTrayController
     private lateinit var navigationInteractor: DefaultNavigationInteractor
-    private lateinit var startForResult: ActivityResultLauncher<Intent>
+    private lateinit var enablePbmPinLauncher: ActivityResultLauncher<Intent>
+
+    @VisibleForTesting
+    internal var verificationResultLauncher: ActivityResultLauncher<Intent> =
+        registerForVerification(onVerified = ::openPrivateTabsPage)
+
+    @VisibleForTesting internal lateinit var tabsTrayStore: TabsTrayStore
 
     @VisibleForTesting internal lateinit var trayBehaviorManager: TabSheetBehaviorManager
 
@@ -110,17 +127,238 @@ class TabsTrayFragment : AppCompatDialogFragment() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        context?.components?.analytics?.crashReporter?.recordCrashBreadcrumb(
-            Breadcrumb("TabsTrayFragment dismissTabsTray"),
-        )
+        recordBreadcrumb("TabsTrayFragment dismissTabsTray")
         setStyle(STYLE_NO_TITLE, R.style.TabTrayDialogStyle)
     }
 
+    @Suppress("LongMethod")
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val args by navArgs<TabsTrayFragmentArgs>()
         args.accessPoint.takeIf { it != TabsTrayAccessPoint.None }?.let {
             TabsTray.accessPoint[it.name.lowercase()].add()
         }
+
+        enablePbmPinLauncher = registerForActivityResult(
+            onSuccess = {
+                PrivateBrowsingLocked.authSuccess.record()
+                PrivateBrowsingLocked.featureEnabled.record()
+                requireContext().settings().privateBrowsingModeLocked = true
+            },
+            onFailure = {
+                PrivateBrowsingLocked.authFailure.record()
+            },
+        )
+
+        recordBreadcrumb("TabsTrayFragment onCreateDialog")
+
+        tabsTrayDialog = TabsTrayDialog(requireContext(), theme) { tabsTrayInteractor }
+        return tabsTrayDialog
+    }
+
+    override fun onPause() {
+        super.onPause()
+        recordBreadcrumb("TabsTrayFragment onPause")
+        dialog?.window?.setWindowAnimations(R.style.DialogFragmentRestoreAnimation)
+    }
+
+    @Suppress("LongMethod", "CognitiveComplexMethod")
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?,
+    ): View {
+        _tabsTrayDialogBinding = FragmentTabTrayDialogBinding.inflate(
+            inflater,
+            container,
+            false,
+        )
+
+        _tabsTrayComposeBinding = ComponentTabstray3Binding.inflate(
+            inflater,
+            tabsTrayDialogBinding.root,
+            true,
+        )
+
+        _fabButtonComposeBinding = ComponentTabstray3FabBinding.inflate(
+            inflater,
+            tabsTrayDialogBinding.root,
+            true,
+        )
+
+        setupUserInteractionsHandling()
+
+        tabsTrayComposeBinding.root
+            .setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+        tabsTrayComposeBinding.root.setContent {
+            val isPbmLocked by requireComponents.appStore.observeAsState(
+                initialValue = requireComponents.appStore.state.isPrivateScreenLocked,
+            ) { it.isPrivateScreenLocked }
+
+            FirefoxTheme(theme = Theme.getTheme(allowPrivateTheme = false)) {
+                TabsTray(
+                    tabsTrayStore = tabsTrayStore,
+                    displayTabsInGrid = requireContext().settings().gridTabView,
+                    isInDebugMode = Config.channel.isDebug ||
+                        requireComponents.settings.showSecretDebugMenuThisSession,
+                    shouldShowTabAutoCloseBanner = requireContext().settings().shouldShowAutoCloseTabsBanner &&
+                        requireContext().settings().canShowCfr,
+                    shouldShowLockPbmBanner = shouldShowLockPbmBanner(
+                        isPrivateMode = (activity as HomeActivity).browsingModeManager.mode.isPrivate,
+                        hasPrivateTabs = requireComponents.core.store.state.privateTabs.isNotEmpty(),
+                        biometricAvailable = BiometricManager.from(requireContext())
+                            .isHardwareAvailable(),
+                        privateLockEnabled = requireContext().settings().privateBrowsingModeLocked,
+                        shouldShowBanner = shouldShowBanner(requireContext().settings()),
+                    ),
+                    shouldShowInactiveTabsAutoCloseDialog =
+                        requireContext().settings()::shouldShowInactiveTabsAutoCloseDialog,
+                    isPbmLocked = isPbmLocked,
+                    onTabPageClick = { page ->
+                        onTabPageClick(
+                            tabsTrayInteractor = tabsTrayInteractor,
+                            page = page,
+                        )
+                    },
+                    onTabClose = { tab ->
+                        tabsTrayInteractor.onTabClosed(tab, TABS_TRAY_FEATURE_NAME)
+                    },
+                    onTabMediaClick = tabsTrayInteractor::onMediaClicked,
+                    onTabClick = { tab ->
+                        run outer@{
+                            if (!requireContext().settings().hasShownTabSwipeCFR &&
+                                !requireContext().settings().isTabStripEnabled &&
+                                requireContext().settings().isSwipeToolbarToSwitchTabsEnabled
+                            ) {
+                                val normalTabs = tabsTrayStore.state.normalTabs
+                                val currentTabId = tabsTrayStore.state.selectedTabId
+
+                                if (normalTabs.size >= 2) {
+                                    val currentTabPosition = currentTabId
+                                        ?.let { getTabPositionFromId(normalTabs, it) }
+                                        ?: return@outer
+                                    val newTabPosition =
+                                        getTabPositionFromId(normalTabs, tab.id)
+
+                                    if (abs(currentTabPosition - newTabPosition) == 1) {
+                                        requireContext().settings().shouldShowTabSwipeCFR = true
+                                    }
+                                }
+                            }
+                        }
+
+                        tabsTrayInteractor.onTabSelected(tab, TABS_TRAY_FEATURE_NAME)
+                    },
+                    onTabLongClick = tabsTrayInteractor::onTabLongClicked,
+                    onInactiveTabsHeaderClick = tabsTrayInteractor::onInactiveTabsHeaderClicked,
+                    onDeleteAllInactiveTabsClick = tabsTrayInteractor::onDeleteAllInactiveTabsClicked,
+                    onInactiveTabsAutoCloseDialogShown = {
+                        tabsTrayStore.dispatch(TabsTrayAction.TabAutoCloseDialogShown)
+                    },
+                    onInactiveTabAutoCloseDialogCloseButtonClick =
+                        tabsTrayInteractor::onAutoCloseDialogCloseButtonClicked,
+                    onEnableInactiveTabAutoCloseClick = {
+                        tabsTrayInteractor.onEnableAutoCloseClicked()
+                        showInactiveTabsAutoCloseConfirmationSnackbar()
+                    },
+                    onInactiveTabClick = tabsTrayInteractor::onInactiveTabClicked,
+                    onInactiveTabClose = tabsTrayInteractor::onInactiveTabClosed,
+                    onSyncedTabClick = tabsTrayInteractor::onSyncedTabClicked,
+                    onSyncedTabClose = tabsTrayInteractor::onSyncedTabClosed,
+                    onSaveToCollectionClick = tabsTrayInteractor::onAddSelectedTabsToCollectionClicked,
+                    onShareSelectedTabsClick = tabsTrayInteractor::onShareSelectedTabs,
+                    onShareAllTabsClick = {
+                        if (tabsTrayStore.state.selectedPage == Page.NormalTabs) {
+                            tabsTrayStore.dispatch(TabsTrayAction.ShareAllNormalTabs)
+                        } else if (tabsTrayStore.state.selectedPage == Page.PrivateTabs) {
+                            tabsTrayStore.dispatch(TabsTrayAction.ShareAllPrivateTabs)
+                        }
+
+                        navigationInteractor.onShareTabsOfTypeClicked(
+                            private = tabsTrayStore.state.selectedPage == Page.PrivateTabs,
+                        )
+                    },
+                    onTabSettingsClick = navigationInteractor::onTabSettingsClicked,
+                    onRecentlyClosedClick = navigationInteractor::onOpenRecentlyClosedClicked,
+                    onAccountSettingsClick = navigationInteractor::onAccountSettingsClicked,
+                    onDeleteAllTabsClick = {
+                        if (tabsTrayStore.state.selectedPage == Page.NormalTabs) {
+                            tabsTrayStore.dispatch(TabsTrayAction.CloseAllNormalTabs)
+                        } else if (tabsTrayStore.state.selectedPage == Page.PrivateTabs) {
+                            tabsTrayStore.dispatch(TabsTrayAction.CloseAllPrivateTabs)
+                        }
+
+                        navigationInteractor.onCloseAllTabsClicked(
+                            private = tabsTrayStore.state.selectedPage == Page.PrivateTabs,
+                        )
+                    },
+                    onDeleteSelectedTabsClick = tabsTrayInteractor::onDeleteSelectedTabsClicked,
+                    onBookmarkSelectedTabsClick = tabsTrayInteractor::onBookmarkSelectedTabsClicked,
+                    onForceSelectedTabsAsInactiveClick = tabsTrayInteractor::onForceSelectedTabsAsInactiveClicked,
+                    onTabsTrayDismiss = ::onTabsTrayDismissed,
+                    onTabsTrayPbmLockedClick = ::onTabsTrayPbmLockedClick,
+                    onTabsTrayPbmLockedDismiss = {
+                        requireContext().settings().shouldShowLockPbmBanner = false
+                        PrivateBrowsingLocked.bannerNegativeClicked.record()
+                    },
+                    onTabAutoCloseBannerViewOptionsClick = {
+                        navigationInteractor.onTabSettingsClicked()
+                        requireContext().settings().shouldShowAutoCloseTabsBanner = false
+                        requireContext().settings().lastCfrShownTimeInMillis = System.currentTimeMillis()
+                    },
+                    onTabAutoCloseBannerDismiss = {
+                        requireContext().settings().shouldShowAutoCloseTabsBanner = false
+                        requireContext().settings().lastCfrShownTimeInMillis = System.currentTimeMillis()
+                    },
+                    onTabAutoCloseBannerShown = {},
+                    onMove = tabsTrayInteractor::onTabsMove,
+                    shouldShowInactiveTabsCFR = {
+                        requireContext().settings().shouldShowInactiveTabsOnboardingPopup &&
+                            requireContext().settings().canShowCfr
+                    },
+                    onInactiveTabsCFRShown = {
+                        TabsTray.inactiveTabsCfrVisible.record(NoExtras())
+                    },
+                    onInactiveTabsCFRClick = {
+                        requireContext().settings().shouldShowInactiveTabsOnboardingPopup = false
+                        requireContext().settings().lastCfrShownTimeInMillis = System.currentTimeMillis()
+                        navigationInteractor.onTabSettingsClicked()
+                        TabsTray.inactiveTabsCfrSettings.record(NoExtras())
+                        onTabsTrayDismissed()
+                    },
+                    onInactiveTabsCFRDismiss = {
+                        requireContext().settings().shouldShowInactiveTabsOnboardingPopup = false
+                        requireContext().settings().lastCfrShownTimeInMillis = System.currentTimeMillis()
+                        TabsTray.inactiveTabsCfrDismissed.record(NoExtras())
+                    },
+                    onUnlockPbmClick = { verifyUser(fallbackVerification = verificationResultLauncher) },
+                )
+            }
+        }
+
+        fabButtonComposeBinding.root
+            .setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+        fabButtonComposeBinding.root.setContent {
+            val isPbmLocked by requireComponents.appStore.observeAsState(
+                initialValue = requireComponents.appStore.state.isPrivateScreenLocked,
+            ) { it.isPrivateScreenLocked }
+
+            FirefoxTheme(theme = Theme.getTheme(allowPrivateTheme = false)) {
+                TabsTrayFab(
+                    tabsTrayStore = tabsTrayStore,
+                    isSignedIn = requireContext().settings().signedInFxaAccount,
+                    isPbmLocked = isPbmLocked,
+                    onNormalTabsFabClicked = tabsTrayInteractor::onNormalTabsFabClicked,
+                    onPrivateTabsFabClicked = tabsTrayInteractor::onPrivateTabsFabClicked,
+                    onSyncedTabsFabClicked = tabsTrayInteractor::onSyncedTabsFabClicked,
+                )
+            }
+        }
+
+        return tabsTrayDialogBinding.root
+    }
+
+    private fun setupUserInteractionsHandling() {
+        val args by navArgs<TabsTrayFragmentArgs>()
         val initialMode = if (args.enterMultiselect) {
             TabsTrayState.Mode.Select(emptySet())
         } else {
@@ -131,10 +369,9 @@ class TabsTrayFragment : AppCompatDialogFragment() {
         val initialInactiveExpanded = requireComponents.appStore.state.inactiveTabsExpanded
         val inactiveTabs = requireComponents.core.store.state.actualInactiveTabs(requireContext().settings())
         val normalTabs = requireComponents.core.store.state.normalTabs - inactiveTabs.toSet()
-
-        tabsTrayStore = StoreProvider.get(this) {
+        tabsTrayStore = storeProvider.get { restoredState ->
             TabsTrayStore(
-                initialState = TabsTrayState(
+                initialState = restoredState ?: TabsTrayState(
                     selectedPage = initialPage,
                     mode = initialMode,
                     inactiveTabs = inactiveTabs,
@@ -144,7 +381,7 @@ class TabsTrayFragment : AppCompatDialogFragment() {
                     selectedTabId = requireComponents.core.store.state.selectedTabId,
                 ),
                 middlewares = listOf(
-                    TabsTrayTelemetryMiddleware(),
+                    TabsTrayTelemetryMiddleware(requireComponents.nimbus.events),
                 ),
             )
         }
@@ -188,188 +425,14 @@ class TabsTrayFragment : AppCompatDialogFragment() {
         tabsTrayInteractor = DefaultTabsTrayInteractor(
             controller = tabsTrayController,
         )
-
-        context?.components?.analytics?.crashReporter?.recordCrashBreadcrumb(
-            Breadcrumb("TabsTrayFragment onCreateDialog"),
-        )
-        tabsTrayDialog = TabsTrayDialog(requireContext(), theme) { tabsTrayInteractor }
-        return tabsTrayDialog
     }
 
-    override fun onPause() {
-        super.onPause()
-        context?.components?.analytics?.crashReporter?.recordCrashBreadcrumb(
-            Breadcrumb("TabsTrayFragment onPause"),
-        )
-        dialog?.window?.setWindowAnimations(R.style.DialogFragmentRestoreAnimation)
-    }
-
-    @Suppress("LongMethod")
-    override fun onCreateView(
-        inflater: LayoutInflater,
-        container: ViewGroup?,
-        savedInstanceState: Bundle?,
-    ): View {
-        _tabsTrayDialogBinding = FragmentTabTrayDialogBinding.inflate(
-            inflater,
-            container,
-            false,
-        )
-
-        _tabsTrayComposeBinding = ComponentTabstray3Binding.inflate(
-            inflater,
-            tabsTrayDialogBinding.root,
-            true,
-        )
-
-        _fabButtonComposeBinding = ComponentTabstray3FabBinding.inflate(
-            inflater,
-            tabsTrayDialogBinding.root,
-            true,
-        )
-
-        tabsTrayComposeBinding.root.setContent {
-            FirefoxTheme(theme = Theme.getTheme(allowPrivateTheme = false)) {
-                TabsTray(
-                    tabsTrayStore = tabsTrayStore,
-                    displayTabsInGrid = requireContext().settings().gridTabView,
-                    isInDebugMode = Config.channel.isDebug ||
-                        requireComponents.settings.showSecretDebugMenuThisSession,
-                    shouldShowTabAutoCloseBanner = requireContext().settings().shouldShowAutoCloseTabsBanner &&
-                        requireContext().settings().canShowCfr,
-                    shouldShowInactiveTabsAutoCloseDialog =
-                    requireContext().settings()::shouldShowInactiveTabsAutoCloseDialog,
-                    onTabPageClick = { page -> onTabPageClick(page) },
-                    onTabClose = { tab ->
-                        tabsTrayInteractor.onTabClosed(tab, TABS_TRAY_FEATURE_NAME)
-                    },
-                    onTabMediaClick = tabsTrayInteractor::onMediaClicked,
-                    onTabClick = { tab ->
-                        run outer@{
-                            if (!requireContext().settings().hasShownTabSwipeCFR &&
-                                !requireContext().isTabStripEnabled() &&
-                                requireContext().settings().isSwipeToolbarToSwitchTabsEnabled
-                            ) {
-                                val normalTabs = tabsTrayStore.state.normalTabs
-                                val currentTabId = tabsTrayStore.state.selectedTabId
-
-                                if (normalTabs.size >= 2) {
-                                    val currentTabPosition = currentTabId
-                                        ?.let { getTabPositionFromId(normalTabs, it) }
-                                        ?: return@outer
-                                    val newTabPosition =
-                                        getTabPositionFromId(normalTabs, tab.id)
-
-                                    if (abs(currentTabPosition - newTabPosition) == 1) {
-                                        requireContext().settings().shouldShowTabSwipeCFR = true
-                                    }
-                                }
-                            }
-                        }
-
-                        tabsTrayInteractor.onTabSelected(tab, TABS_TRAY_FEATURE_NAME)
-                    },
-                    onTabLongClick = tabsTrayInteractor::onTabLongClicked,
-                    onInactiveTabsHeaderClick = tabsTrayInteractor::onInactiveTabsHeaderClicked,
-                    onDeleteAllInactiveTabsClick = tabsTrayInteractor::onDeleteAllInactiveTabsClicked,
-                    onInactiveTabsAutoCloseDialogShown = {
-                        tabsTrayStore.dispatch(TabsTrayAction.TabAutoCloseDialogShown)
-                    },
-                    onInactiveTabAutoCloseDialogCloseButtonClick =
-                    tabsTrayInteractor::onAutoCloseDialogCloseButtonClicked,
-                    onEnableInactiveTabAutoCloseClick = {
-                        tabsTrayInteractor.onEnableAutoCloseClicked()
-                        showInactiveTabsAutoCloseConfirmationSnackbar()
-                    },
-                    onInactiveTabClick = tabsTrayInteractor::onInactiveTabClicked,
-                    onInactiveTabClose = tabsTrayInteractor::onInactiveTabClosed,
-                    onSyncedTabClick = tabsTrayInteractor::onSyncedTabClicked,
-                    onSyncedTabClose = tabsTrayInteractor::onSyncedTabClosed,
-                    onSaveToCollectionClick = tabsTrayInteractor::onAddSelectedTabsToCollectionClicked,
-                    onShareSelectedTabsClick = tabsTrayInteractor::onShareSelectedTabs,
-                    onShareAllTabsClick = {
-                        if (tabsTrayStore.state.selectedPage == Page.NormalTabs) {
-                            tabsTrayStore.dispatch(TabsTrayAction.ShareAllNormalTabs)
-                        } else if (tabsTrayStore.state.selectedPage == Page.PrivateTabs) {
-                            tabsTrayStore.dispatch(TabsTrayAction.ShareAllPrivateTabs)
-                        }
-
-                        navigationInteractor.onShareTabsOfTypeClicked(
-                            private = tabsTrayStore.state.selectedPage == Page.PrivateTabs,
-                        )
-                    },
-                    onTabSettingsClick = navigationInteractor::onTabSettingsClicked,
-                    onRecentlyClosedClick = navigationInteractor::onOpenRecentlyClosedClicked,
-                    onAccountSettingsClick = navigationInteractor::onAccountSettingsClicked,
-                    onDeleteAllTabsClick = {
-                        if (tabsTrayStore.state.selectedPage == Page.NormalTabs) {
-                            tabsTrayStore.dispatch(TabsTrayAction.CloseAllNormalTabs)
-                        } else if (tabsTrayStore.state.selectedPage == Page.PrivateTabs) {
-                            tabsTrayStore.dispatch(TabsTrayAction.CloseAllPrivateTabs)
-                        }
-
-                        navigationInteractor.onCloseAllTabsClicked(
-                            private = tabsTrayStore.state.selectedPage == Page.PrivateTabs,
-                        )
-                    },
-                    onDeleteSelectedTabsClick = tabsTrayInteractor::onDeleteSelectedTabsClicked,
-                    onBookmarkSelectedTabsClick = tabsTrayInteractor::onBookmarkSelectedTabsClicked,
-                    onForceSelectedTabsAsInactiveClick = tabsTrayInteractor::onForceSelectedTabsAsInactiveClicked,
-                    onTabsTrayDismiss = ::onTabsTrayDismissed,
-                    onTabAutoCloseBannerViewOptionsClick = {
-                        navigationInteractor.onTabSettingsClicked()
-                        requireContext().settings().shouldShowAutoCloseTabsBanner = false
-                        requireContext().settings().lastCfrShownTimeInMillis = System.currentTimeMillis()
-                    },
-                    onTabAutoCloseBannerDismiss = {
-                        requireContext().settings().shouldShowAutoCloseTabsBanner = false
-                        requireContext().settings().lastCfrShownTimeInMillis = System.currentTimeMillis()
-                    },
-                    onTabAutoCloseBannerShown = {},
-                    onMove = tabsTrayInteractor::onTabsMove,
-                    shouldShowInactiveTabsCFR = {
-                        requireContext().settings().shouldShowInactiveTabsOnboardingPopup &&
-                            requireContext().settings().canShowCfr
-                    },
-                    onInactiveTabsCFRShown = {
-                        TabsTray.inactiveTabsCfrVisible.record(NoExtras())
-                    },
-                    onInactiveTabsCFRClick = {
-                        requireContext().settings().shouldShowInactiveTabsOnboardingPopup = false
-                        requireContext().settings().lastCfrShownTimeInMillis = System.currentTimeMillis()
-                        navigationInteractor.onTabSettingsClicked()
-                        TabsTray.inactiveTabsCfrSettings.record(NoExtras())
-                        onTabsTrayDismissed()
-                    },
-                    onInactiveTabsCFRDismiss = {
-                        requireContext().settings().shouldShowInactiveTabsOnboardingPopup = false
-                        requireContext().settings().lastCfrShownTimeInMillis = System.currentTimeMillis()
-                        TabsTray.inactiveTabsCfrDismissed.record(NoExtras())
-                    },
-                )
-            }
-        }
-
-        fabButtonComposeBinding.root.setContent {
-            FirefoxTheme(theme = Theme.getTheme(allowPrivateTheme = false)) {
-                TabsTrayFab(
-                    tabsTrayStore = tabsTrayStore,
-                    isSignedIn = requireContext().settings().signedInFxaAccount,
-                    onNormalTabsFabClicked = tabsTrayInteractor::onNormalTabsFabClicked,
-                    onPrivateTabsFabClicked = tabsTrayInteractor::onPrivateTabsFabClicked,
-                    onSyncedTabsFabClicked = tabsTrayInteractor::onSyncedTabsFabClicked,
-                )
-            }
-        }
-
-        return tabsTrayDialogBinding.root
-    }
+    private fun shouldShowBanner(settings: Settings) =
+        with(settings) { privateBrowsingLockedFeatureEnabled && shouldShowLockPbmBanner }
 
     override fun onStart() {
         super.onStart()
-        context?.components?.analytics?.crashReporter?.recordCrashBreadcrumb(
-            Breadcrumb("TabsTrayFragment onStart"),
-        )
+        recordBreadcrumb("TabsTrayFragment onStart")
         findPreviousDialogFragment()?.let { dialog ->
             dialog.onAcceptClicked = ::onCancelDownloadWarningAccepted
         }
@@ -377,9 +440,7 @@ class TabsTrayFragment : AppCompatDialogFragment() {
 
     override fun onDestroyView() {
         super.onDestroyView()
-        context?.components?.analytics?.crashReporter?.recordCrashBreadcrumb(
-            Breadcrumb("TabsTrayFragment onDestroyView"),
-        )
+        recordBreadcrumb("TabsTrayFragment onDestroyView")
         _tabsTrayDialogBinding = null
         _tabsTrayComposeBinding = null
         _fabButtonComposeBinding = null
@@ -419,7 +480,9 @@ class TabsTrayFragment : AppCompatDialogFragment() {
             } else {
                 EXPAND_AT_LIST_SIZE
             },
-            displayMetrics = requireContext().resources.displayMetrics,
+            displayUnitConverter = AndroidDisplayUnitConverter(
+                requireContext().resources.displayMetrics,
+            ),
         )
 
         setupBackgroundDismissalListener {
@@ -510,9 +573,8 @@ class TabsTrayFragment : AppCompatDialogFragment() {
     }
 
     private fun showCancelledDownloadWarning(downloadCount: Int, tabId: String?, source: String?) {
-        context?.components?.analytics?.crashReporter?.recordCrashBreadcrumb(
-            Breadcrumb("DownloadCancelDialogFragment show"),
-        )
+        recordBreadcrumb("DownloadCancelDialogFragment show")
+
         val dialog = DownloadCancelDialogFragment.newInstance(
             downloadCount = downloadCount,
             tabId = tabId,
@@ -528,9 +590,8 @@ class TabsTrayFragment : AppCompatDialogFragment() {
                     R.attr.textOnColorPrimary,
                     requireContext(),
                 ),
-                positiveButtonRadius = (resources.getDimensionPixelSize(R.dimen.tab_corner_radius)).toFloat(),
+                positiveButtonRadius = pixelSizeFor(R.dimen.tab_corner_radius).toFloat(),
             ),
-
             onPositiveButtonClicked = ::onCancelDownloadWarningAccepted,
         )
         dialog.show(parentFragmentManager, DOWNLOAD_CANCEL_DIALOG_FRAGMENT_TAG)
@@ -555,7 +616,7 @@ class TabsTrayFragment : AppCompatDialogFragment() {
                 true -> getString(R.string.snackbar_private_tab_closed)
                 false -> getString(R.string.snackbar_tab_closed)
             }
-        val pagePosition = if (isPrivate) Page.PrivateTabs.ordinal else Page.NormalTabs.ordinal
+        val page = if (isPrivate) Page.PrivateTabs else Page.NormalTabs
 
         lifecycleScope.allowUndo(
             view = requireView(),
@@ -563,7 +624,7 @@ class TabsTrayFragment : AppCompatDialogFragment() {
             undoActionTitle = getString(R.string.snackbar_deleted_undo),
             onCancel = {
                 requireComponents.useCases.tabsUseCases.undo.invoke()
-                tabsTrayStore.dispatch(TabsTrayAction.PageSelected(Page.positionToPage(pagePosition)))
+                tabsTrayStore.dispatch(TabsTrayAction.PageSelected(page))
             },
             operation = { },
             elevation = ELEVATION,
@@ -584,7 +645,7 @@ class TabsTrayFragment : AppCompatDialogFragment() {
             undoActionTitle = getString(R.string.snackbar_deleted_undo),
             onCancel = {
                 requireComponents.useCases.tabsUseCases.undo.invoke()
-                tabsTrayStore.dispatch(TabsTrayAction.PageSelected(Page.positionToPage(Page.NormalTabs.ordinal)))
+                tabsTrayStore.dispatch(TabsTrayAction.PageSelected(Page.NormalTabs))
             },
             operation = { },
             elevation = ELEVATION,
@@ -605,10 +666,13 @@ class TabsTrayFragment : AppCompatDialogFragment() {
     internal val homeViewModel: HomeScreenViewModel by activityViewModels()
 
     @VisibleForTesting
-    internal fun navigateToHomeAndDeleteSession(sessionId: String) {
+    internal fun navigateToHomeAndDeleteSession(
+        sessionId: String,
+        navControllerProvider: NavControllerProvider = DefaultNavControllerProvider(),
+    ) {
         homeViewModel.sessionToDelete = sessionId
         val directions = NavGraphDirections.actionGlobalHome()
-        findNavController().navigate(directions)
+        navControllerProvider.getNavController(this).navigate(directions)
     }
 
     @VisibleForTesting
@@ -621,33 +685,37 @@ class TabsTrayFragment : AppCompatDialogFragment() {
     internal fun dismissTabsTray() {
         // This should always be the last thing we do because nothing (e.g. telemetry)
         // is guaranteed after that.
-        context?.components?.analytics?.crashReporter?.recordCrashBreadcrumb(
-            Breadcrumb("TabsTrayFragment dismissTabsTray"),
-        )
+        recordBreadcrumb("TabsTrayFragment dismissTabsTray")
         dismissAllowingStateLoss()
+    }
+
+    /**
+     * Records a breadcrumb for crash reporting.
+     *
+     * @param message The message to record.
+     */
+    @VisibleForTesting
+    internal fun recordBreadcrumb(message: String) {
+        context?.components?.analytics?.crashReporter?.recordCrashBreadcrumb(
+            Breadcrumb(message = message),
+        )
     }
 
     private fun showCollectionSnackbar(
         tabSize: Int,
         isNewCollection: Boolean = false,
     ) {
+        val messageResId = when {
+            isNewCollection -> R.string.create_collection_tabs_saved_new_collection_2
+            tabSize == 1 -> R.string.create_collection_tab_saved_2
+            else -> return // Don't show snackbar for multiple tabs
+        }
+
         runIfFragmentIsAttached {
             showSnackbar(
                 snackBarParentView = requireView(),
                 snackbarState = SnackbarState(
-                    message = getString(
-                        when {
-                            isNewCollection -> {
-                                R.string.create_collection_tabs_saved_new_collection
-                            }
-                            tabSize > 1 -> {
-                                R.string.create_collection_tabs_saved
-                            }
-                            else -> {
-                                R.string.create_collection_tab_saved
-                            }
-                        },
-                    ),
+                    message = getString(messageResId),
                     duration = SnackbarState.Duration.Preset.Long,
                 ),
             )
@@ -661,7 +729,7 @@ class TabsTrayFragment : AppCompatDialogFragment() {
         val displayFolderTitle = parentFolderTitle ?: getString(R.string.library_bookmarks)
         val displayResId = when {
             tabSize > 1 -> {
-                R.string.snackbar_message_bookmarks_saved_in
+                R.string.snackbar_message_bookmarks_saved_in_2
             }
             else -> {
                 R.string.bookmark_saved_in_folder_snackbar
@@ -717,57 +785,76 @@ class TabsTrayFragment : AppCompatDialogFragment() {
         }
     }
 
+    /**
+     * This can only turn the feature ON and should not handle turning the feature OFF.
+     */
+    private fun onTabsTrayPbmLockedClick(
+        navControllerProvider: NavControllerProvider = DefaultNavControllerProvider(),
+    ) {
+        val isAuthenticatorAvailable =
+            BiometricManager.from(requireContext()).isAuthenticatorAvailable()
+        if (!isAuthenticatorAvailable) {
+            navControllerProvider.getNavController(this)
+                .navigate(TabsTrayFragmentDirections.actionGlobalPrivateBrowsingFragment())
+        } else {
+            DefaultBiometricUtils.bindBiometricsCredentialsPromptOrShowWarning(
+                titleRes = R.string.pbm_authentication_enable_lock,
+                view = requireView(),
+                onShowPinVerification = { intent -> enablePbmPinLauncher.launch(intent) },
+                onAuthSuccess = {
+                    PrivateBrowsingLocked.bannerPositiveClicked.record()
+                    PrivateBrowsingLocked.authSuccess.record()
+                    PrivateBrowsingLocked.featureEnabled.record()
+                    requireContext().settings().privateBrowsingModeLocked = true
+                    requireContext().settings().shouldShowLockPbmBanner = false
+                },
+                onAuthFailure = {
+                    PrivateBrowsingLocked.authFailure.record()
+                },
+            )
+        }
+    }
+
     private fun onTabsTrayDismissed() {
-        context?.components?.analytics?.crashReporter?.recordCrashBreadcrumb(
-            Breadcrumb("TabsTrayFragment onTabsTrayDismissed"),
-        )
+        recordBreadcrumb("TabsTrayFragment onTabsTrayDismissed")
         TabsTray.closed.record(NoExtras())
         dismissAllowingStateLoss()
     }
 
-    private fun onTabPageClick(page: Page) {
-        val isPrivateTabPage = page == Page.PrivateTabs
-
-        if (shouldShowPrompt(isPrivateTabPage)) {
-            BiometricAuthenticationManager.biometricAuthenticationNeededInfo.authenticationStatus =
-                AuthenticationStatus.AUTHENTICATION_IN_PROGRESS
-
-            bindBiometricsCredentialsPromptOrShowWarning(
-                view = requireView(),
-                onShowPinVerification = { intent -> startForResult.launch(intent) },
-                onAuthSuccess = {
-                    BiometricAuthenticationManager.biometricAuthenticationNeededInfo.apply {
-                        authenticationStatus = AuthenticationStatus.AUTHENTICATED
-                    }
-
-                    tabsTrayInteractor.onTrayPositionSelected(page.ordinal, false)
-
-                    requireContext().settings().isPrivateScreenBlocked = false
-                },
-                onAuthFailure = {
-                    BiometricAuthenticationManager.biometricAuthenticationNeededInfo.apply {
-                        authenticationStatus = AuthenticationStatus.NOT_AUTHENTICATED
-                    }
-                },
-                titleRes = R.string.pbm_authentication_unlock_private_tabs,
-            )
-        } else {
-            // Reset authentication state when leaving PBM
-            if (!isPrivateTabPage) {
-                BiometricAuthenticationManager.biometricAuthenticationNeededInfo.apply {
-                    authenticationStatus = AuthenticationStatus.NOT_AUTHENTICATED
-                }
-            }
-            tabsTrayInteractor.onTrayPositionSelected(page.ordinal, false)
-        }
+    @VisibleForTesting
+    internal fun onTabPageClick(
+        tabsTrayInteractor: TabsTrayInteractor,
+        page: Page,
+    ) {
+        tabsTrayInteractor.onTabPageClicked(page)
     }
 
-    private fun shouldShowPrompt(isPrivateTabPage: Boolean): Boolean {
-        val hasPrivateTabs = requireComponents.core.store.state.privateTabs.isNotEmpty()
-        val biometricLockEnabled = requireContext().settings().privateBrowsingLockedEnabled
-        val authInfo = BiometricAuthenticationManager.biometricAuthenticationNeededInfo
+    private fun openPrivateTabsPage() {
+        tabsTrayInteractor.onTabPageClicked(Page.PrivateTabs)
+    }
 
-        return isPrivateTabPage && hasPrivateTabs && biometricLockEnabled && authInfo.shouldShowAuthenticationPrompt
+    /**
+     * Determines whether the Lock Private Browsing Mode banner should be shown.
+     *
+     * The banner is shown only when all of the following conditions are met:
+     * - The app is currently in private browsing mode
+     * - There are existing private tabs open
+     * - Biometric hardware is available on the device
+     * - The user has not already enabled the private browsing lock
+     * - The user has not already dismissed or acknowledged the Pbm banner from tabs tray
+     *
+     * We only want to show the banner when the feature is available,
+     * applicable, and relevant to the current user context.
+     */
+    @VisibleForTesting
+    internal fun shouldShowLockPbmBanner(
+        isPrivateMode: Boolean,
+        hasPrivateTabs: Boolean,
+        biometricAvailable: Boolean,
+        privateLockEnabled: Boolean,
+        shouldShowBanner: Boolean,
+    ): Boolean {
+        return isPrivateMode && hasPrivateTabs && biometricAvailable && !privateLockEnabled && shouldShowBanner
     }
 
     companion object {

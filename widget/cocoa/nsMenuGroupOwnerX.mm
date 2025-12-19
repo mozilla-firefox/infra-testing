@@ -68,23 +68,21 @@ void nsMenuGroupOwnerX::CharacterDataWillChange(
 void nsMenuGroupOwnerX::CharacterDataChanged(nsIContent* aContent,
                                              const CharacterDataChangeInfo&) {}
 
-void nsMenuGroupOwnerX::ContentAppended(nsIContent* aFirstNewContent) {
+void nsMenuGroupOwnerX::ContentAppended(nsIContent* aFirstNewContent,
+                                        const ContentAppendInfo& aInfo) {
   for (nsIContent* cur = aFirstNewContent; cur; cur = cur->GetNextSibling()) {
-    ContentInserted(cur);
+    ContentInserted(cur, aInfo);
   }
 }
 
 void nsMenuGroupOwnerX::NodeWillBeDestroyed(nsINode* aNode) {}
 
-void nsMenuGroupOwnerX::AttributeWillChange(dom::Element* aElement,
-                                            int32_t aNameSpaceID,
-                                            nsAtom* aAttribute,
-                                            int32_t aModType) {}
+void nsMenuGroupOwnerX::AttributeWillChange(dom::Element*, int32_t, nsAtom*,
+                                            AttrModType) {}
 
-void nsMenuGroupOwnerX::AttributeChanged(dom::Element* aElement,
-                                         int32_t aNameSpaceID,
-                                         nsAtom* aAttribute, int32_t aModType,
-                                         const nsAttrValue* aOldValue) {
+void nsMenuGroupOwnerX::AttributeChanged(dom::Element* aElement, int32_t,
+                                         nsAtom* aAttribute, AttrModType,
+                                         const nsAttrValue*) {
   nsCOMPtr<nsIMutationObserver> kungFuDeathGrip(this);
   nsChangeObserver* obs = LookupContentChangeObserver(aElement);
   if (obs) {
@@ -93,7 +91,7 @@ void nsMenuGroupOwnerX::AttributeChanged(dom::Element* aElement,
 }
 
 void nsMenuGroupOwnerX::ContentWillBeRemoved(nsIContent* aChild,
-                                             const BatchRemovalState*) {
+                                             const ContentRemoveInfo&) {
   nsIContent* container = aChild->GetParent();
   if (!container) {
     return;
@@ -117,7 +115,8 @@ void nsMenuGroupOwnerX::ContentWillBeRemoved(nsIContent* aChild,
   }
 }
 
-void nsMenuGroupOwnerX::ContentInserted(nsIContent* aChild) {
+void nsMenuGroupOwnerX::ContentInserted(nsIContent* aChild,
+                                        const ContentInsertInfo&) {
   nsIContent* container = aChild->GetParent();
   if (!container) {
     return;
@@ -143,11 +142,11 @@ void nsMenuGroupOwnerX::ContentInserted(nsIContent* aChild) {
 
 void nsMenuGroupOwnerX::ParentChainChanged(nsIContent* aContent) {}
 
-void nsMenuGroupOwnerX::ARIAAttributeDefaultWillChange(
-    mozilla::dom::Element* aElement, nsAtom* aAttribute, int32_t aModType) {}
+void nsMenuGroupOwnerX::ARIAAttributeDefaultWillChange(mozilla::dom::Element*,
+                                                       nsAtom*, AttrModType) {}
 
-void nsMenuGroupOwnerX::ARIAAttributeDefaultChanged(
-    mozilla::dom::Element* aElement, nsAtom* aAttribute, int32_t aModType) {}
+void nsMenuGroupOwnerX::ARIAAttributeDefaultChanged(mozilla::dom::Element*,
+                                                    nsAtom*, AttrModType) {}
 
 // For change management, we don't use a |nsSupportsHashtable| because
 // we know that the lifetime of all these items is bounded by the

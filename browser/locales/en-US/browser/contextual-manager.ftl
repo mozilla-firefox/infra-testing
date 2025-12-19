@@ -15,12 +15,13 @@ contextual-manager-more-options-popup =
 
 ## Passwords
 
+contextual-manager-passwords-title = Passwords
 contextual-manager-passwords-command-create = Add password
 contextual-manager-passwords-command-import-from-browser = Import from another browser…
 contextual-manager-passwords-command-import = Import from a file…
 contextual-manager-passwords-command-export = Export passwords
 contextual-manager-passwords-command-remove-all = Remove all passwords
-contextual-manager-passwords-command-settings = Settings
+contextual-manager-passwords-command-options = Options
 contextual-manager-passwords-command-help = Help
 
 contextual-manager-passwords-os-auth-dialog-caption = { -brand-full-name }
@@ -77,7 +78,9 @@ contextual-manager-passwords-import-success-heading =
 # Variables
 #   $added (number) - Number of added passwords
 #   $modified (number) - Number of modified passwords
-contextual-manager-passwords-import-success-message = New: { $added }, Updated: { $modified }
+#   $no_change (number) - Number of duplicate passwords
+#   $error (number) - Number of invalid passwords
+contextual-manager-passwords-import-success-message-2 = New: { $added }, Updated: { $modified }, Duplicates: { $no_change }, Errors: { $error }
 
 contextual-manager-passwords-import-detailed-report = View detailed report
 contextual-manager-passwords-import-success-button = Done
@@ -85,7 +88,7 @@ contextual-manager-passwords-import-success-button = Done
 contextual-manager-passwords-import-error-heading-and-message =
   .heading = Couldn’t import passwords
   .message = Make sure your file includes a column for websites, usernames, and passwords.
-contextual-manager-passwords-import-error-button-try-again = Try Again
+contextual-manager-passwords-import-error-button-try-again = Try again
 contextual-manager-passwords-import-error-button-cancel = Cancel
 contextual-manager-passwords-import-learn-more = Learn about importing passwords
 
@@ -180,6 +183,9 @@ contextual-manager-passwords-update-password-success-heading =
   .heading = Password saved
 contextual-manager-passwords-update-password-success-button = Done
 
+contextual-manager-passwords-update-username-success-heading-3 =
+  .heading = Username saved
+
 # Message to confirm successful removal of a password/passwords.
 #   $total (number) - Total number of passwords
 contextual-manager-passwords-delete-password-success-heading =
@@ -236,13 +242,14 @@ contextual-manager-passwords-add-username-button = Add username
 
 contextual-manager-passwords-create-label =
   .label = Add password
-contextual-manager-passwords-edit-label =
-  .label = Edit password
+
+contextual-manager-passwords-update-label =
+  .label = Update password
 contextual-manager-passwords-remove-label =
   .title = Remove password
 contextual-manager-passwords-origin-tooltip = Enter the exact address where you’ll sign in to this site.
 contextual-manager-passwords-username-tooltip = Enter the username, email address, or account number you use to sign in.
-contextual-manager-passwords-password-tooltip = Enter the password used to sign in to this account.
+contextual-manager-passwords-password-tooltip-2 = Enter the password to sign in to this account.
 
 ## Password Card
 
@@ -274,45 +281,57 @@ contextual-manager-origin-login-line-with-alert =
 # Variables
 #   $username (string) - The username associated with the login
 contextual-manager-username-login-line =
-  .aria-label = Copy Username { $username }
-  .title = Copy Username { $username }
+  .aria-label = Copy username { $username }
+  .title = Copy username { $username }
 # "(Warning)" indicates that a login's username field has an alert icon.
 # Variables
 #   $username (string) - The username associated with the login
 contextual-manager-username-login-line-with-alert =
-  .aria-label = Copy Username { $username } (Warning)
-  .title = Copy Username { $username } (Warning)
+  .aria-label = Copy username { $username } (Warning)
+  .title = Copy username { $username } (Warning)
 contextual-manager-password-login-line =
-  .aria-label = Copy Password
-  .title = Copy Password
+  .aria-label = Copy password
+  .title = Copy password
 # "(Warning)" indicates that a login's password field has an alert icon.
 contextual-manager-password-login-line-with-alert =
-  .aria-label = Copy Password (Warning)
-  .title = Copy Password (Warning)
+  .aria-label = Copy password (Warning)
+  .title = Copy password (Warning)
 contextual-manager-edit-login-button = Edit
-  .tooltiptext = Edit Password
-contextual-manager-view-alert-heading =
-  .heading = View alert
-contextual-manager-view-alert-button =
-  .tooltiptext = Review alert
+  .tooltiptext = Edit password
+# Variables
+#   $count (number) - The number of active alerts associated with the login
+contextual-manager-view-alert-heading-2 =
+  .heading =
+    { $count ->
+      [1] View alert
+     *[other] View alerts
+    }
+# Variables
+#   $count (number) - The number of active alerts associated with the login
+contextual-manager-view-alert-button-2 =
+  .tooltiptext =
+    { $count ->
+      [1] Review alert
+     *[other] Review alerts
+    }
 
 contextual-manager-show-password-button =
-  .aria-label = Show Password
-  .title = Show Password
+  .aria-label = Show password
+  .title = Show password
 contextual-manager-hide-password-button =
-  .aria-label = Hide Password
-  .title = Hide Password
+  .aria-label = Hide password
+  .title = Hide password
 
 # The message displayed when the search text does not match any of the user's saved logins.
 contextual-manager-passwords-no-passwords-found-header =
   .heading = No passwords found
-contextual-manager-passwords-no-passwords-found-message = No passwords found. Search a different term and try again.
+contextual-manager-passwords-no-passwords-found-message-2 = Try a different term and search again.
 
 ## When the user has no saved passwords, we display the following messages to inform the user they can save
 ## their passwords safely and securely in Firefox:
 
 # This string encourages the user to save their passwords in Firefox (the "safe spot").
-contextual-manager-passwords-no-passwords-header = Save your passwords to a safe spot.
+contextual-manager-passwords-no-passwords-header-2 = Save your passwords to a safe spot
 # This string informs that we (Firefox) store all passwords securely and will notify them of any breaches and alerts their
 # passwords may be involved in.
 contextual-manager-passwords-no-passwords-message = All passwords are encrypted and we’ll watch out for breaches and alerts if you’re affected.
@@ -336,3 +355,9 @@ contextual-manager-passwords-remove-all-passwords-checkbox =
      [1] Yes, remove password
     *[other] Yes, remove passwords
   }
+
+# This string informs the user they need to provide their primary password for FireFox to access their saved passwords in Firefox.
+contextual-manager-primary-password-reauth-header = To see your saved passwords, enter your primary password.
+# This string informs the user their primary password is used to authenticate and access their passwords
+contextual-manager-primary-password-reauth-button = Enter primary password
+contextual-manager-primary-password-learn-more-link = Learn more

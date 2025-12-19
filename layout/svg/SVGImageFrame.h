@@ -8,14 +8,14 @@
 #define LAYOUT_SVG_SVGIMAGEFRAME_H_
 
 // Keep in (case-insensitive) order:
-#include "mozilla/gfx/2D.h"
-#include "mozilla/DisplaySVGItem.h"
-#include "mozilla/ISVGDisplayableFrame.h"
 #include "gfxContext.h"
 #include "gfxPlatform.h"
 #include "imgIContainer.h"
-#include "nsContainerFrame.h"
 #include "imgINotificationObserver.h"
+#include "mozilla/DisplaySVGItem.h"
+#include "mozilla/ISVGDisplayableFrame.h"
+#include "mozilla/gfx/2D.h"
+#include "nsContainerFrame.h"
 #include "nsIReflowCallback.h"
 
 namespace mozilla {
@@ -73,7 +73,7 @@ class SVGImageFrame final : public nsIFrame,
                         const nsDisplayListSet& aLists) override;
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
   void OnVisibilityChange(
       Visibility aNewVisibility,

@@ -6,9 +6,7 @@
 
 #include "wasm/WasmGcObject-inl.h"
 
-#include <algorithm>
-
-#include "gc/Marking.h"
+#include "gc/Tracer.h"
 #include "js/CharacterEncoding.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/PropertySpec.h"
@@ -26,6 +24,7 @@
 #include "vm/TypedArrayObject.h"
 #include "vm/Uint8Clamped.h"
 
+#include "gc/BufferAllocator-inl.h"
 #include "gc/GCContext-inl.h"  // GCContext::removeCellMemory
 #include "gc/ObjectKind-inl.h"
 #include "vm/JSContext-inl.h"
@@ -35,126 +34,21 @@ using namespace wasm;
 
 // [SMDOC] Management of OOL storage areas for Wasm{Array,Struct}Object.
 //
-// WasmArrayObject always has its payload data stored in a block the C++-heap,
-// which is pointed to from the WasmArrayObject.  The same is true for
-// WasmStructObject in the case where the fields cannot fit in the object
-// itself.  These C++ blocks are in some places referred to as "trailer blocks".
+// WasmArrayObject always has its payload data stored in a block which is
+// pointed to from the WasmArrayObject. The same is true for WasmStructObject in
+// the case where the fields cannot fit in the object itself. These blocks are
+// in some places referred to as "trailer blocks".
 //
-// The presence of trailer blocks complicates the use of generational GC (that
-// is, Nursery allocation) of Wasm{Array,Struct}Object.  In particular:
+// These blocks are allocated in the same way as JSObects slots and element
+// buffers, either using the GC's buffer allocator or directly in the nursery if
+// they are small enough.
 //
-// (1) For objects which do not get tenured at minor collection, there must be
-//     a way to free the associated trailer, but there is no way to visit
-//     non-tenured blocks during minor collection.
+// They require the use of WasmArrayObject/WasmStructObject::obj_moved hooks to
+// update the pointer and mark the allocation when the object gets tenured, and
+// also update the pointer in case it is an internal pointer when the object is
+// moved.
 //
-// (2) Even if (1) were solved, calling js_malloc/js_free for every object
-//     creation-death cycle is expensive, possibly around 400 machine
-//     instructions, and we expressly want to avoid that in a generational GC
-//     scenario.
-//
-// The following scheme is therefore employed.
-//
-// (a) gc::Nursery maintains a pool of available C++-heap-allocated blocks --
-//     a js::MallocedBlockCache -- and the intention is that trailers are
-//     allocated from this pool and freed back into it whenever possible.
-//
-// (b) WasmArrayObject::createArrayNonEmpty and
-//     WasmStructObject::createStructOOL always request trailer allocation
-//     from the nursery's cache (a).  If the cache cannot honour the request
-//     directly it will allocate directly from js_malloc; we hope this happens
-//     only infrequently.
-//
-// (c) The allocated block is returned as a js::PointerAndUint7, a pair that
-//     holds the trailer block pointer and an auxiliary tag that the
-//     js::MallocedBlockCache needs to see when the block is freed.
-//
-//     The raw trailer block pointer (a `void*`) is stored in the
-//     Wasm{Array,Struct}Object OOL data field.  These objects are not aware
-//     of and do not interact with js::PointerAndUint7, and nor does any
-//     JIT-generated code.
-//
-// (d) Still in WasmArrayObject::createArrayNonEmpty and
-//     WasmStructObject::createStructOOL, if the object was allocated in the
-//     nursery, then the resulting js::PointerAndUint7 is "registered" with
-//     the nursery by handing it to Nursery::registerTrailer.
-//
-// (e) When a minor collection happens (Nursery::doCollection), we are
-//     notified of objects that are moved by calls to the ::obj_moved methods
-//     in this file.  For those objects that have been tenured, the raw
-//     trailer pointer is "unregistered" with the nursery by handing it to
-//     Nursery::unregisterTrailer.
-//
-// (f) Still during minor collection: The nursery now knows both the set of
-//     trailer blocks added, and those removed because the corresponding
-//     object has been tenured.  The difference between these two sets (that
-//     is, `added - removed`) is the set of trailer blocks corresponding to
-//     blocks that didn't get tenured.  That set is computed and freed (back
-//     to the nursery's js::MallocedBlockCache) by Nursery::freeTrailerBlocks.
-//
-// (g) At the end of minor collection, the added and removed sets are made
-//     empty, and the cycle begins again.
-//
-// (h) Also at the end of minor collection, a call to
-//     `mallocedBlockCache_.preen` hands a few blocks in the cache back to
-//     js_free.  This mechanism exists so as to ensure that unused blocks do
-//     not remain in the cache indefinitely.
-//
-// (i) In order that the tenured heap is collected "often enough" in the case
-//     where the trailer blocks are large (relative to their owning objects),
-//     we have to tell the tenured heap about the sizes of trailers entering
-//     and leaving it.  This is done via calls to AddCellMemory and
-//     GCContext::removeCellMemory.
-//
-// (j) For objects that got tenured, we are eventually notified of their death
-//     by a call to the ::obj_finalize methods below.  At that point we hand
-//     their block pointers to js_free.
-//
-// (k) When the nursery is eventually destroyed, all blocks in its block cache
-//     are handed to js_free.  Hence, at process exit, provided all nurseries
-//     are first collected and then their destructors run, no C++ heap blocks
-//     are leaked.
-//
-// As a result of this scheme, trailer blocks associated with what we hope is
-// the frequent case -- objects that are allocated but never make it out of
-// the nursery -- are cycled through the nursery's block cache.
-//
-// Trailers associated with tenured blocks cannot participate though; they are
-// always returned to js_free.  Making them participate is difficult: it would
-// require changing their owning object's OOL data pointer to be a
-// js::PointerAndUint7 rather than a raw `void*`, so that then the blocks
-// could be released to the cache in the ::obj_finalize methods.  This would
-// however require changes in the generated code for array element and OOL
-// struct element accesses.
-//
-// It would also lead to threading difficulties, because the ::obj_finalize
-// methods run on a background thread, whilst allocation from the cache
-// happens on the main thread, but the MallocedBlockCache is not thread safe.
-// Making it thread safe would entail adding a locking mechanism, but that's
-// potentially slow and so negates the point of having a cache at all.
-//
-// Here's a short summary of the trailer block life cycle:
-//
-// * allocated:
-//
-//   - in WasmArrayObject::createArrayNonEmpty
-//     and WasmStructObject::createStructOOL
-//
-//   - by calling the nursery's MallocBlockCache alloc method
-//
-// * deallocated:
-//
-//   - for non-tenured objects, in the collector itself,
-//     in Nursery::doCollection calling Nursery::freeTrailerBlocks,
-//     releasing to the nursery's block cache
-//
-//   - for tenured objects, in the ::obj_finalize methods, releasing directly
-//     to js_free
-//
-// If this seems confusing ("why is it ok to allocate from the cache but
-// release to js_free?"), remember that the cache holds blocks previously
-// obtained from js_malloc but which are *not* currently in use.  Hence it is
-// fine to give them back to js_free; that just makes the cache a bit emptier
-// but has no effect on correctness.
+// The blocks are freed by the GC when no longer referenced.
 
 //=========================================================================
 // WasmGcObject
@@ -356,9 +250,27 @@ static void WriteValTo(const Val& val, StorageType ty, void* dest) {
 // WasmArrayObject
 
 /* static */
+size_t js::WasmArrayObject::sizeOfExcludingThis() const {
+  if (!isDataInline() || !gc::IsBufferAlloc(dataHeader())) {
+    return 0;
+  }
+
+  return gc::GetAllocSize(zone(), dataHeader());
+}
+
+/* static */
 void WasmArrayObject::obj_trace(JSTracer* trc, JSObject* object) {
   WasmArrayObject& arrayObj = object->as<WasmArrayObject>();
   uint8_t* data = arrayObj.data_;
+
+  if (!arrayObj.isDataInline()) {
+    uint8_t* outlineAlloc = (uint8_t*)dataHeaderFromDataPointer(arrayObj.data_);
+    uint8_t* prior = outlineAlloc;
+    TraceBufferEdge(trc, &arrayObj, &outlineAlloc, "WasmArrayObject storage");
+    if (outlineAlloc != prior) {
+      arrayObj.data_ = (uint8_t*)(((DataHeader*)outlineAlloc) + 1);
+    }
+  }
 
   const auto& typeDef = arrayObj.typeDef();
   const auto& arrayType = typeDef.arrayType();
@@ -375,61 +287,80 @@ void WasmArrayObject::obj_trace(JSTracer* trc, JSObject* object) {
 }
 
 /* static */
-void WasmArrayObject::obj_finalize(JS::GCContext* gcx, JSObject* object) {
-  // This method, and also ::obj_moved and the WasmStructObject equivalents,
-  // assumes that the object's TypeDef (as reachable via its SuperTypeVector*)
-  // stays alive at least as long as the object.
-  WasmArrayObject& arrayObj = object->as<WasmArrayObject>();
-  if (!arrayObj.isDataInline()) {
-    // Free the trailer block.  Unfortunately we can't give it back to the
-    // malloc'd block cache because we might not be running on the main
-    // thread, and the cache isn't thread-safe.
-    js_free(arrayObj.dataHeader());
-    // And tell the tenured-heap accounting machinery that the trailer has
-    // been freed.
-    const TypeDef& typeDef = arrayObj.typeDef();
-    MOZ_ASSERT(typeDef.isArrayType());
-    // arrayObj.numElements_ was validated to not overflow when constructing the
-    // array
-    size_t trailerSize = calcStorageBytesUnchecked(
-        typeDef.arrayType().elementType().size(), arrayObj.numElements_);
-    // Ensured by WasmArrayObject::createArrayNonEmpty.
-    MOZ_RELEASE_ASSERT(trailerSize <= size_t(MaxArrayPayloadBytes));
-    gcx->removeCellMemory(&arrayObj, trailerSize + TrailerBlockOverhead,
-                          MemoryUse::WasmTrailerBlock);
-    // For safety
-    arrayObj.data_ = nullptr;
-  }
-}
+size_t WasmArrayObject::obj_moved(JSObject* objNew, JSObject* objOld) {
+  // This gets called for array objects, both with and without OOL areas.
+  // Dealing with the no-OOL case is simple.  Thereafter, the logic for the OOL
+  // case is essentially the same as for WasmStructObject::obj_moved, since
+  // that routine is only used for WasmStructObjects that have OOL storage.
+  MOZ_ASSERT(objNew != objOld);
 
-/* static */
-size_t WasmArrayObject::obj_moved(JSObject* obj, JSObject* old) {
-  // Moving inline arrays requires us to update the data pointer.
-  WasmArrayObject& arrayObj = obj->as<WasmArrayObject>();
-  WasmArrayObject& oldArrayObj = old->as<WasmArrayObject>();
-  if (oldArrayObj.isDataInline()) {
-    // The old array had inline storage, which has been copied.
-    // Fix up the data pointer on the new array to point to it.
-    arrayObj.data_ = WasmArrayObject::addressOfInlineData(&arrayObj);
-  }
-  MOZ_ASSERT(arrayObj.isDataInline() == oldArrayObj.isDataInline());
+  WasmArrayObject& arrayNew = objNew->as<WasmArrayObject>();
+  WasmArrayObject& arrayOld = objOld->as<WasmArrayObject>();
 
-  if (IsInsideNursery(old)) {
-    Nursery& nursery = obj->runtimeFromMainThread()->gc.nursery();
-    // It's been tenured.
-    if (!arrayObj.isDataInline()) {
-      const TypeDef& typeDef = arrayObj.typeDef();
-      MOZ_ASSERT(typeDef.isArrayType());
-      // arrayObj.numElements_ was validated not to overflow when constructing
-      // the array
-      size_t trailerSize = calcStorageBytesUnchecked(
-          typeDef.arrayType().elementType().size(), arrayObj.numElements_);
-      // Ensured by WasmArrayObject::createArrayOOL.
-      MOZ_RELEASE_ASSERT(trailerSize <= size_t(MaxArrayPayloadBytes));
-      nursery.trackTrailerOnPromotion(arrayObj.dataHeader(), obj, trailerSize,
-                                      TrailerBlockOverhead,
-                                      MemoryUse::WasmTrailerBlock);
-    }
+  const TypeDef* typeDefNew = &arrayNew.typeDef();
+  mozilla::DebugOnly<const TypeDef*> typeDefOld = &arrayOld.typeDef();
+  MOZ_ASSERT(typeDefNew->isArrayType());
+  MOZ_ASSERT(typeDefOld == typeDefNew);
+
+  // At this point, the object has been copied, but the OOL storage area, if
+  // any, has not been copied, nor has the data_ pointer been updated.  Hence:
+  MOZ_ASSERT(arrayNew.data_ == arrayOld.data_);
+
+  if (arrayOld.isDataInline()) {
+    // The old array had inline storage, which has been copied.  Fix up the
+    // data pointer in the new array to point to it, and we're done.
+    arrayNew.data_ = WasmArrayObject::addressOfInlineData(&arrayNew);
+    MOZ_ASSERT(arrayNew.isDataInline());
+    return 0;
+  }
+
+  // The array has OOL storage.  This means the logic that follows is similar
+  // to that for WasmStructObject::obj_moved, since that routine is only used
+  // for WasmStructObjects that have OOL storage.
+
+  bool newIsInNursery = IsInsideNursery(objNew);
+  bool oldIsInNursery = IsInsideNursery(objOld);
+
+  // Tenured -> Tenured
+  if (!oldIsInNursery && !newIsInNursery) {
+    // The object already was in the tenured heap and has merely been moved
+    // somewhere else in the the tenured heap.  This isn't interesting to us.
+    return 0;
+  }
+
+  // Tenured -> Nursery: this transition isn't possible.
+  MOZ_RELEASE_ASSERT(oldIsInNursery);
+
+  // Nursery -> Nursery and Nursery -> Tenured
+  // The object is being moved, either within the nursery or from the nursery
+  // to the tenured heap.  Either way, we have to ask the nursery if it wants
+  // to move the OOL block too, and if so set up a forwarding record for it.
+
+  // arrayNew.numElements_ was validated not to overflow when constructing
+  // the array.
+  size_t oolBlockSize = calcStorageBytesUnchecked(
+      typeDefNew->arrayType().elementType().size(), arrayNew.numElements_);
+  // Ensured by WasmArrayObject::createArrayOOL.
+  MOZ_RELEASE_ASSERT(oolBlockSize <= size_t(MaxArrayPayloadBytes) +
+                                         sizeof(WasmArrayObject::DataHeader));
+
+  // Ask the nursery if it wants to relocate the OOL block, and if so capture
+  // its new location in `oolHeaderNew`.  Note, at this point `arrayNew.data_`
+  // has not been updated; hence the computation for `oolHeaderOld` is correct.
+  DataHeader* oolHeaderOld = dataHeaderFromDataPointer(arrayNew.data_);
+  DataHeader* oolHeaderNew = oolHeaderOld;
+  Nursery& nursery = objNew->runtimeFromMainThread()->gc.nursery();
+  nursery.maybeMoveBufferOnPromotion(&oolHeaderNew, objNew, oolBlockSize);
+
+  if (oolHeaderNew != oolHeaderOld) {
+    // The OOL block has been moved.  Fix up the data pointer in the new
+    // object.
+    arrayNew.data_ = dataHeaderToDataPointer(oolHeaderNew);
+    // Set up forwarding for the OOL block.  Use indirect forwarding.
+    // Unfortunately, if the call to `.setForwardingPointer..` OOMs, there's no
+    // way to recover.
+    nursery.setForwardingPointerWhileTenuring(oolHeaderOld, oolHeaderNew,
+                                              /*direct=*/false);
   }
 
   return 0;
@@ -460,11 +391,11 @@ static const JSClassOps WasmArrayObjectClassOps = {
     nullptr, /* delProperty */
     nullptr, /* enumerate   */
     WasmGcObject::obj_newEnumerate,
-    nullptr,                       /* resolve     */
-    nullptr,                       /* mayResolve  */
-    WasmArrayObject::obj_finalize, /* finalize    */
-    nullptr,                       /* call        */
-    nullptr,                       /* construct   */
+    nullptr, /* resolve     */
+    nullptr, /* mayResolve  */
+    nullptr, /* finalize    */
+    nullptr, /* call        */
+    nullptr, /* construct   */
     WasmArrayObject::obj_trace,
 };
 static const ClassExtension WasmArrayObjectClassExt = {
@@ -472,8 +403,7 @@ static const ClassExtension WasmArrayObjectClassExt = {
 };
 const JSClass WasmArrayObject::class_ = {
     "WasmArrayObject",
-    JSClass::NON_NATIVE | JSCLASS_DELAY_METADATA_BUILDER |
-        JSCLASS_BACKGROUND_FINALIZE | JSCLASS_SKIP_NURSERY_FINALIZE,
+    JSClass::NON_NATIVE | JSCLASS_DELAY_METADATA_BUILDER,
     &WasmArrayObjectClassOps,
     JS_NULL_CLASS_SPEC,
     &WasmArrayObjectClassExt,
@@ -513,6 +443,15 @@ js::gc::AllocKind js::WasmStructObject::allocKindForTypeDef(
   return gc::GetGCObjectKindForBytes(nbytes);
 }
 
+/* static */
+size_t js::WasmStructObject::sizeOfExcludingThis() const {
+  if (!outlineData_ || !gc::IsBufferAlloc(outlineData_)) {
+    return 0;
+  }
+
+  return gc::GetAllocSize(zone(), outlineData_);
+}
+
 bool WasmStructObject::getField(JSContext* cx, uint32_t index,
                                 MutableHandle<Value> val) {
   const StructType& resultType = typeDef().structType();
@@ -533,48 +472,74 @@ void WasmStructObject::obj_trace(JSTracer* trc, JSObject* object) {
         reinterpret_cast<AnyRef*>(structObj.inlineData() + offset);
     TraceManuallyBarrieredEdge(trc, fieldPtr, "wasm-struct-field");
   }
-  for (uint32_t offset : structType.outlineTraceOffsets_) {
-    AnyRef* fieldPtr =
-        reinterpret_cast<AnyRef*>(structObj.outlineData_ + offset);
-    TraceManuallyBarrieredEdge(trc, fieldPtr, "wasm-struct-field");
-  }
-}
 
-/* static */
-void WasmStructObject::obj_finalize(JS::GCContext* gcx, JSObject* object) {
-  // See corresponding comments in WasmArrayObject::obj_finalize.
-  WasmStructObject& structObj = object->as<WasmStructObject>();
   if (structObj.outlineData_) {
-    js_free(structObj.outlineData_);
-    const TypeDef& typeDef = structObj.typeDef();
-    MOZ_ASSERT(typeDef.isStructType());
-    uint32_t totalBytes = typeDef.structType().size_;
-    uint32_t inlineBytes, outlineBytes;
-    WasmStructObject::getDataByteSizes(totalBytes, &inlineBytes, &outlineBytes);
-    MOZ_ASSERT(inlineBytes == WasmStructObject_MaxInlineBytes);
-    MOZ_ASSERT(outlineBytes > 0);
-    gcx->removeCellMemory(&structObj, outlineBytes + TrailerBlockOverhead,
-                          MemoryUse::WasmTrailerBlock);
-    structObj.outlineData_ = nullptr;
+    TraceBufferEdge(trc, &structObj, &structObj.outlineData_,
+                    "WasmStructObject outline data");
+
+    for (uint32_t offset : structType.outlineTraceOffsets_) {
+      AnyRef* fieldPtr =
+          reinterpret_cast<AnyRef*>(structObj.outlineData_ + offset);
+      TraceManuallyBarrieredEdge(trc, fieldPtr, "wasm-struct-field");
+    }
   }
 }
 
 /* static */
-size_t WasmStructObject::obj_moved(JSObject* obj, JSObject* old) {
-  // See also, corresponding comments in WasmArrayObject::obj_moved.
-  if (IsInsideNursery(old)) {
-    Nursery& nursery = obj->runtimeFromMainThread()->gc.nursery();
-    WasmStructObject& structObj = obj->as<WasmStructObject>();
-    const TypeDef& typeDef = structObj.typeDef();
-    MOZ_ASSERT(typeDef.isStructType());
-    uint32_t totalBytes = typeDef.structType().size_;
-    uint32_t inlineBytes, outlineBytes;
-    WasmStructObject::getDataByteSizes(totalBytes, &inlineBytes, &outlineBytes);
-    MOZ_ASSERT(inlineBytes == WasmStructObject_MaxInlineBytes);
-    MOZ_ASSERT(outlineBytes > 0);
-    nursery.trackTrailerOnPromotion(structObj.outlineData_, obj, outlineBytes,
-                                    TrailerBlockOverhead,
-                                    MemoryUse::WasmTrailerBlock);
+size_t WasmStructObject::obj_moved(JSObject* objNew, JSObject* objOld) {
+  // This gets called only for struct objects that have an OOL area.  Compare
+  // WasmStructObjectInlineClassExt vs WasmStructObjectOutlineClassExt below.
+  MOZ_ASSERT(objNew != objOld);
+
+  WasmStructObject& structNew = objNew->as<WasmStructObject>();
+  WasmStructObject& structOld = objOld->as<WasmStructObject>();
+  MOZ_ASSERT(structNew.outlineData_ && structOld.outlineData_);
+
+  const TypeDef* typeDefNew = &structNew.typeDef();
+  mozilla::DebugOnly<const TypeDef*> typeDefOld = &structOld.typeDef();
+  MOZ_ASSERT(typeDefNew->isStructType());
+  MOZ_ASSERT(typeDefOld == typeDefNew);
+
+  // At this point, the object has been copied, but the OOL storage area has
+  // not been copied, nor has the outlineData_ pointer been updated.  Hence:
+  MOZ_ASSERT(structNew.outlineData_ == structOld.outlineData_);
+
+  bool newIsInNursery = IsInsideNursery(objNew);
+  bool oldIsInNursery = IsInsideNursery(objOld);
+
+  // Tenured -> Tenured
+  if (!oldIsInNursery && !newIsInNursery) {
+    // The object already was in the tenured heap and has merely been moved
+    // somewhere else in the the tenured heap.  This isn't interesting to us.
+    return 0;
+  }
+
+  // Tenured -> Nursery: this transition isn't possible.
+  MOZ_RELEASE_ASSERT(oldIsInNursery);
+
+  // Nursery -> Nursery and Nursery -> Tenured
+  // The object is being moved, either within the nursery or from the nursery
+  // to the tenured heap.  Either way, we have to ask the nursery if it wants
+  // to move the OOL block too, and if so set up a forwarding record for it.
+
+  uint32_t totalBytes = typeDefNew->structType().size_;
+  uint32_t inlineBytes, outlineBytes;
+  WasmStructObject::getDataByteSizes(totalBytes, &inlineBytes, &outlineBytes);
+  MOZ_ASSERT(inlineBytes == WasmStructObject_MaxInlineBytes);
+  MOZ_ASSERT(outlineBytes > 0);
+
+  // Ask the nursery if it wants to relocate the OOL area, and if so capture
+  // its new location in `structNew.outlineData_`.
+  Nursery& nursery = structNew.runtimeFromMainThread()->gc.nursery();
+  nursery.maybeMoveBufferOnPromotion(&structNew.outlineData_, objNew,
+                                     outlineBytes);
+  // Set up forwarding for the OOL area.  Use indirect forwarding.  As in
+  // WasmArrayObject::obj_moved, if the call to `.setForwardingPointer..` OOMs,
+  // there's no way to recover.
+  if (structOld.outlineData_ != structNew.outlineData_) {
+    nursery.setForwardingPointerWhileTenuring(structOld.outlineData_,
+                                              structNew.outlineData_,
+                                              /*direct=*/false);
   }
 
   return 0;
@@ -606,11 +571,11 @@ static const JSClassOps WasmStructObjectOutlineClassOps = {
     nullptr, /* delProperty */
     nullptr, /* enumerate   */
     WasmGcObject::obj_newEnumerate,
-    nullptr,                        /* resolve     */
-    nullptr,                        /* mayResolve  */
-    WasmStructObject::obj_finalize, /* finalize    */
-    nullptr,                        /* call        */
-    nullptr,                        /* construct   */
+    nullptr, /* resolve     */
+    nullptr, /* mayResolve  */
+    nullptr, /* finalize    */
+    nullptr, /* call        */
+    nullptr, /* construct   */
     WasmStructObject::obj_trace,
 };
 static const ClassExtension WasmStructObjectOutlineClassExt = {
@@ -618,8 +583,7 @@ static const ClassExtension WasmStructObjectOutlineClassExt = {
 };
 const JSClass WasmStructObject::classOutline_ = {
     "WasmStructObject",
-    JSClass::NON_NATIVE | JSCLASS_DELAY_METADATA_BUILDER |
-        JSCLASS_BACKGROUND_FINALIZE | JSCLASS_SKIP_NURSERY_FINALIZE,
+    JSClass::NON_NATIVE | JSCLASS_DELAY_METADATA_BUILDER,
     &WasmStructObjectOutlineClassOps,
     JS_NULL_CLASS_SPEC,
     &WasmStructObjectOutlineClassExt,

@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint valid-jsdoc: ["error", { "requireReturn": false }] */
-
 // create namespace
 if (typeof Mozilla == "undefined") {
   var Mozilla = {};
@@ -324,7 +322,6 @@ if (typeof Mozilla == "undefined") {
    *
    * @see Mozilla.UITour.showMenu
    * @see Mozilla.UITour.hideMenu
-   * @see Mozilla.UITour.openSearchPanel
    */
 
   /**
@@ -755,20 +752,6 @@ if (typeof Mozilla == "undefined") {
   Mozilla.UITour.setSearchTerm = function (term) {
     _sendEvent("setSearchTerm", {
       term,
-    });
-  };
-
-  /**
-   * @summary Opens the search box's panel.
-   *
-   * @description This should have been implemented via `showMenu("search", …)`.
-   *
-   * @param {Function} callback - Called once the panel has opened.
-   * @since 34
-   */
-  Mozilla.UITour.openSearchPanel = function (callback) {
-    _sendEvent("openSearchPanel", {
-      callbackID: _waitForCallback(callback),
     });
   };
 

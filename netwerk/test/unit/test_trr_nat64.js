@@ -8,6 +8,10 @@ const override = Cc["@mozilla.org/network/native-dns-override;1"].getService(
   Ci.nsINativeDNSResolverOverride
 );
 
+Services.prefs.setBoolPref(
+  "network.connectivity-service.wait_for_idle_startup",
+  false
+);
 trr_test_setup();
 registerCleanupFunction(async () => {
   Services.prefs.clearUserPref("network.connectivity-service.nat64-prefix");
@@ -18,7 +22,7 @@ registerCleanupFunction(async () => {
 /**
  * Waits for an observer notification to fire.
  *
- * @param {String} topic The notification topic.
+ * @param {string} topic The notification topic.
  * @returns {Promise} A promise that fulfills when the notification is fired.
  */
 function promiseObserverNotification(topic, matchFunc) {

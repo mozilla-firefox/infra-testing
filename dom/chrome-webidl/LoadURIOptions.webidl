@@ -2,11 +2,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-interface ContentSecurityPolicy;
+interface PolicyContainer;
 interface Principal;
 interface URI;
 interface InputStream;
 interface ReferrerInfo;
+
+enum ForceMediaDocument {
+  "none",
+  "image",
+  "video",
+};
 
 /**
  * This dictionary holds load arguments for docshell loads.
@@ -19,13 +25,13 @@ dictionary LoadURIOptions {
   Principal? triggeringPrincipal = null;
 
   /**
-   * The CSP to be used for the load. That is *not* the CSP that will
-   * be applied to subresource loads within that document but the CSP
-   * for the document load itself. E.g. if that CSP includes
-   * upgrade-insecure-requests, then the new top-level load will
+   * The policyContainer to be used for the load. That is *not* the policyContainer
+   * that will be applied to subresource loads within that document but the
+   * policyContainer for the document load itself. E.g. if that policyContainer's
+   * CSP includes upgrade-insecure-requests, then the new top-level load will
    * be upgraded to HTTPS.
    */
-  ContentSecurityPolicy? csp = null;
+  PolicyContainer? policyContainer = null;
 
   /**
    * Flags modifying load behaviour.  This parameter is a bitwise
@@ -118,4 +124,23 @@ dictionary LoadURIOptions {
    * This holds enum values for SchemelessInputType from nsILoadInfo.idl.
    */
   octet schemelessInput = 0;
+
+  /**
+   * If this is not none, the result document will be forced to to load as either
+   * an ImageDocument or VideoDocument.
+   */
+  ForceMediaDocument forceMediaDocument = "none";
+
+  /**
+  * The app-link intent launch type of the page load. Defaults to 0 (UNKNOWN).
+  * The launch type can be COLD, WARM, HOT or UNKNOWN.
+  * COLD = 1, WARM = 2, HOT = 3, UNKNOWN = 0.
+  */
+  unsigned long appLinkLaunchType = 0;
+
+  /**
+   * Whether this is a captive portal tab. Used to grant local network access
+   * permissions without prompting the user.
+   */
+  boolean isCaptivePortalTab = false;
 };

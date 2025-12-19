@@ -15,15 +15,14 @@ import "chrome://global/content/elements/moz-label.mjs";
  * @property {boolean} disabled - Whether or not the element is disabled.
  * @property {string} label - The label text.
  * @property {string} description - The description text.
- * @property {string} ariaLabel
- *  The aria-label text for cases where there is no visible label.
+ * @property {string} ariaLabel - The aria-label text when there is no visible label.
+ * @property {string} ariaDescription - The aria-description text when there is no visible description.
  * @slot support-link - Used to append a moz-support-link to the description.
  * @fires toggle
  *  Custom event indicating that the toggle's pressed state has changed.
  */
 export default class MozToggle extends MozBaseInputElement {
   static properties = {
-    ariaLabel: { type: String, mapped: true },
     pressed: { type: Boolean, reflect: true },
   };
 
@@ -61,6 +60,9 @@ export default class MozToggle extends MozBaseInputElement {
       aria-pressed=${pressed}
       aria-label=${ifDefined(ariaLabel ?? undefined)}
       aria-describedby="description"
+      aria-description=${ifDefined(
+        this.hasDescription ? undefined : this.ariaDescription
+      )}
       accesskey=${ifDefined(this.accessKey)}
       @click=${handleClick}
     ></button>`;

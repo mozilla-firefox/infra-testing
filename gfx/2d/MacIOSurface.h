@@ -39,7 +39,6 @@ typedef realGLboolean GLboolean;
 
 #  include "2D.h"
 #  include "mozilla/RefCounted.h"
-#  include "mozilla/RefPtr.h"
 
 class MacIOSurface final
     : public mozilla::external::AtomicRefCounted<MacIOSurface> {
@@ -75,6 +74,8 @@ class MacIOSurface final
       IOSurfaceID aSurfaceID, bool aHasAlpha = true,
       mozilla::gfx::YUVColorSpace aColorSpace =
           mozilla::gfx::YUVColorSpace::Identity);
+  static mozilla::gfx::SurfaceFormat SurfaceFormatForPixelFormat(
+      OSType aPixelFormat, bool aHasAlpha);
 
   explicit MacIOSurface(CFTypeRefPtr<IOSurfaceRef> aIOSurfaceRef,
                         bool aHasAlpha = true,

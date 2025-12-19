@@ -4,64 +4,72 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsError.h"
 #include "nsJSEnvironment.h"
-#include "nsIScriptGlobalObject.h"
-#include "nsIScriptObjectPrincipal.h"
-#include "nsPIDOMWindow.h"
-#include "nsDOMCID.h"
-#include "nsIXPConnect.h"
+
+#include "mozilla/EventDispatcher.h"
+#include "mozilla/HoldDropJSObjects.h"
+#include "nsAtom.h"
 #include "nsCOMPtr.h"
-#include "nsISupportsPrimitives.h"
-#include "nsReadableUtils.h"
+#include "nsContentUtils.h"
+#include "nsCycleCollector.h"
+#include "nsDOMCID.h"
 #include "nsDOMJSUtils.h"
-#include "nsJSUtils.h"
+#include "nsError.h"
+#include "nsIConsoleService.h"
+#include "nsIContent.h"
 #include "nsIDocShell.h"
 #include "nsIDocShellTreeItem.h"
-#include "nsPresContext.h"
-#include "nsIConsoleService.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIObserverService.h"
+#include "nsIScriptGlobalObject.h"
+#include "nsIScriptObjectPrincipal.h"
+#include "nsISupportsPrimitives.h"
 #include "nsITimer.h"
-#include "nsAtom.h"
-#include "nsContentUtils.h"
-#include "mozilla/EventDispatcher.h"
-#include "mozilla/HoldDropJSObjects.h"
-#include "nsIContent.h"
-#include "nsCycleCollector.h"
-#include "nsXPCOMCIDInternal.h"
+#include "nsIXPConnect.h"
+#include "nsJSUtils.h"
+#include "nsPIDOMWindow.h"
+#include "nsPresContext.h"
+#include "nsReadableUtils.h"
 #include "nsServiceManagerUtils.h"
 #include "nsTextFormatter.h"
+#include "nsXPCOMCIDInternal.h"
 #ifdef XP_WIN
 #  include <process.h>
 #  define getpid _getpid
 #else
 #  include <unistd.h>  // for getpid()
 #endif
-#include "xpcpublic.h"
-
-#include "jsapi.h"
+#include "AccessCheck.h"
+#include "CCGCScheduler.h"
+#include "WrapperFactory.h"
 #include "js/Array.h"               // JS::NewArrayObject
 #include "js/PropertyAndElement.h"  // JS_DefineProperty
 #include "js/PropertySpec.h"
 #include "js/SliceBudget.h"
 #include "js/Wrapper.h"
-#include "nsIArray.h"
-#include "CCGCScheduler.h"
-#include "WrapperFactory.h"
-#include "nsGlobalWindowInner.h"
-#include "nsGlobalWindowOuter.h"
+#include "jsapi.h"
+#include "mozilla/Attributes.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/BasePrincipal.h"
+#include "mozilla/ContentEvents.h"
+#include "mozilla/CycleCollectedJSContext.h"
+#include "mozilla/CycleCollectedJSRuntime.h"
 #include "mozilla/CycleCollectorStats.h"
+#include "mozilla/EventStateManager.h"
+#include "mozilla/Logging.h"
 #include "mozilla/MainThreadIdlePeriod.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/ProfilerLabels.h"
+#include "mozilla/ProfilerMarkers.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_javascript.h"
 #include "mozilla/StaticPtr.h"
+#include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/BrowsingContext.h"
+#include "mozilla/dom/CanvasRenderingContext2DBinding.h"
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/DOMExceptionBinding.h"
 #include "mozilla/dom/Element.h"
@@ -70,25 +78,17 @@
 #include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/SerializedStackHolder.h"
-#include "mozilla/CycleCollectedJSRuntime.h"
-#include "nsRefreshDriver.h"
-#include "nsJSPrincipals.h"
-#include "AccessCheck.h"
-#include "mozilla/Logging.h"
-#include "prthread.h"
-
-#include "mozilla/Preferences.h"
+#include "mozilla/dom/TimeoutHandler.h"
+#include "mozilla/dom/TimeoutManager.h"
 #include "mozilla/glean/DomMetrics.h"
-#include "mozilla/dom/BindingUtils.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/dom/CanvasRenderingContext2DBinding.h"
-#include "mozilla/ContentEvents.h"
-#include "mozilla/CycleCollectedJSContext.h"
 #include "nsCycleCollectionNoteRootCallback.h"
-#include "nsViewManager.h"
-#include "mozilla/EventStateManager.h"
-#include "mozilla/ProfilerLabels.h"
-#include "mozilla/ProfilerMarkers.h"
+#include "nsGlobalWindowInner.h"
+#include "nsGlobalWindowOuter.h"
+#include "nsIArray.h"
+#include "nsJSPrincipals.h"
+#include "nsRefreshDriver.h"
+#include "prthread.h"
+#include "xpcpublic.h"
 #if defined(MOZ_MEMORY)
 #  include "mozmemory.h"
 #endif
@@ -1379,16 +1379,6 @@ void nsJSContext::MaybeRunNextCollectorSlice(nsIDocShell* aDocShell,
     return;
   }
 
-  PresShell* presShell = rootDocument->GetPresShell();
-  if (!presShell) {
-    return;
-  }
-
-  nsViewManager* vm = presShell->GetViewManager();
-  if (!vm) {
-    return;
-  }
-
   if (!sScheduler->IsUserActive() &&
       (sScheduler->InIncrementalGC() || sScheduler->IsCollectingCycles())) {
     Maybe<TimeStamp> next = nsRefreshDriver::GetNextTickHint();
@@ -1697,9 +1687,10 @@ class JSDispatchableRunnable final : public Runnable {
   ~JSDispatchableRunnable() { MOZ_ASSERT(!mDispatchable); }
 
  public:
-  explicit JSDispatchableRunnable(JS::Dispatchable* aDispatchable)
+  explicit JSDispatchableRunnable(
+      js::UniquePtr<JS::Dispatchable>&& aDispatchable)
       : mozilla::Runnable("JSDispatchableRunnable"),
-        mDispatchable(aDispatchable) {
+        mDispatchable(std::move(aDispatchable)) {
     MOZ_ASSERT(mDispatchable);
   }
 
@@ -1714,18 +1705,51 @@ class JSDispatchableRunnable final : public Runnable {
         sShuttingDown ? JS::Dispatchable::ShuttingDown
                       : JS::Dispatchable::NotShuttingDown;
 
-    mDispatchable->run(jsapi.cx(), maybeShuttingDown);
-    mDispatchable = nullptr;  // mDispatchable may delete itself
+    JS::Dispatchable::Run(jsapi.cx(), std::move(mDispatchable),
+                          maybeShuttingDown);
+    // mDispatchable is no longer valid after this point.
 
     return NS_OK;
   }
 
  private:
-  JS::Dispatchable* mDispatchable;
+  js::UniquePtr<JS::Dispatchable> mDispatchable;
 };
 
-static bool DispatchToEventLoop(void* closure,
-                                JS::Dispatchable* aDispatchable) {
+static bool DelayedDispatchToEventLoop(
+    void* closure, js::UniquePtr<JS::Dispatchable>&& aDispatchable,
+    uint32_t aDelay) {
+  MOZ_ASSERT(!closure);
+
+  // Unlike DispatchToEventLoop, this is used exclusively on the Main Thread.
+  MOZ_ASSERT(NS_IsMainThread());
+
+  nsIGlobalObject* global = GetCurrentGlobal();
+
+  TimeoutManager* timeoutManager = global->GetTimeoutManager();
+  if (timeoutManager) {
+    JSContext* cx = nsContentUtils::GetCurrentJSContext();
+    RefPtr<TimeoutHandler> handler =
+        new DelayedJSDispatchableHandler(cx, std::move(aDispatchable));
+
+    int32_t handle;
+    timeoutManager->SetTimeout(handler, aDelay, /* aIsInterval */ false,
+                               Timeout::Reason::eJSTimeout, &handle);
+  } else {
+    // Currently only used for waitAsync timeout implementation.
+    // We end up in this branch if the global does not have a
+    // timeout manager (for example, no innerWindow global).
+    // In this case, we reuse the ReleaseFailedTask machinery to
+    // cancel the pending associated notify task.
+    JS::Dispatchable::ReleaseFailedTask(std::move(aDispatchable));
+    return false;
+  }
+
+  return true;
+}
+
+static bool DispatchToEventLoop(
+    void* closure, js::UniquePtr<JS::Dispatchable>&& aDispatchable) {
   MOZ_ASSERT(!closure);
 
   // This callback may execute either on the main thread or a random JS-internal
@@ -1735,10 +1759,15 @@ static bool DispatchToEventLoop(void* closure,
 
   nsCOMPtr<nsIEventTarget> mainTarget = GetMainThreadSerialEventTarget();
   if (!mainTarget) {
+    // if we have not transfered ownership of the dispatchable to the
+    // dispatchable runnable, release it here, so that the JS engine will
+    // handle deleting it on JS context shutdown.
+    JS::Dispatchable::ReleaseFailedTask(std::move(aDispatchable));
     return false;
   }
 
-  RefPtr<JSDispatchableRunnable> r = new JSDispatchableRunnable(aDispatchable);
+  RefPtr<JSDispatchableRunnable> r =
+      new JSDispatchableRunnable(std::move(aDispatchable));
   MOZ_ALWAYS_SUCCEEDS(mainTarget->Dispatch(r.forget(), NS_DISPATCH_NORMAL));
   return true;
 }
@@ -1777,7 +1806,10 @@ void nsJSContext::EnsureStatics() {
 
   JS::SetCreateGCSliceBudgetCallback(jsapi.cx(), CreateGCSliceBudget);
 
-  JS::InitDispatchToEventLoop(jsapi.cx(), DispatchToEventLoop, nullptr);
+  JS::InitAsyncTaskCallbacks(jsapi.cx(), DispatchToEventLoop,
+                             DelayedDispatchToEventLoop, nullptr, nullptr,
+                             nullptr);
+
   JS::InitConsumeStreamCallback(jsapi.cx(), ConsumeStream,
                                 FetchUtil::ReportJSStreamError);
 
@@ -1935,6 +1967,11 @@ void nsJSContext::EnsureStatics() {
       SetMemoryPrefChangedCallbackInt,
       "javascript.options.mem.nursery_eager_collection_timeout_ms",
       (void*)JSGC_NURSERY_EAGER_COLLECTION_TIMEOUT_MS);
+
+  Preferences::RegisterCallbackAndCall(
+      SetMemoryPrefChangedCallbackInt,
+      "javascript.options.mem.nursery_max_time_goal_ms",
+      (void*)JSGC_NURSERY_MAX_TIME_GOAL_MS);
 
   nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
   if (!obs) {

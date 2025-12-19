@@ -1,6 +1,9 @@
 "use strict";
 
 add_task(async function test_about_compat_loads_properly() {
+  // wait for all interventions to load before testing (can be quite slow on tsan builds).
+  await WebCompatExtension.noOngoingInterventionChanges();
+
   const tab = await BrowserTestUtils.openNewForegroundTab({
     gBrowser,
     opening: "about:compat",
@@ -8,6 +11,12 @@ add_task(async function test_about_compat_loads_properly() {
   });
 
   await SpecialPowers.spawn(tab.linkedBrowser, [], async function () {
+    is(
+      content.origin,
+      "moz-extension://9a310967-e580-48bf-b3e8-4eafebbc122d",
+      "Expected origin of about:compat"
+    );
+
     await ContentTaskUtils.waitForCondition(
       () => content.document.querySelector("#interventions tr[data-id]"),
       "interventions are listed"
@@ -38,7 +47,7 @@ add_task(async function test_about_compat_loads_properly() {
     }
 
     // both should have their content scripts registered at startup
-    const interventionRCSId = `webcompat intervention for ${interventionWithContentScripts.label}`;
+    const interventionRCSId = `webcompat intervention for ${interventionWithContentScripts.label}: ${JSON.stringify(interventionWithContentScripts.interventions[0].content_scripts)}`;
     const shimRCSId = `shim-${shimWithContentScripts.id}-0`;
     ok(
       await findRegisteredScript(interventionRCSId),

@@ -64,6 +64,12 @@ if not CONFIG["JS_DISABLE_SHELL"]:
             "fuzz-tests",
         ]
 
+LegacyTest(
+    f"%{CONFIG['PYTHON3']}",
+    "/config/check_js_msg_encoding.py",
+    depends=["/config/check_js_msg_encoding.py"],
+)
+
 if CONFIG["FUZZING_INTERFACES"] and CONFIG["LIBFUZZER"]:
     # In addition to regular coverage provided by trace-pc-guard,
     # LibFuzzer can use trace-cmp to instrument various compare instructions.
@@ -96,10 +102,6 @@ CONFIGURE_DEFINE_FILES += [
 CONFIGURE_DEFINE_FILES += [
     "js-config.h",
 ]
-
-if CONFIG["HAVE_DTRACE"]:
-    GeneratedFile("javascript-trace.h")
-    EXPORTS += ["!javascript-trace.h"]
 
 # Changes to internal header files, used externally, massively slow down
 # browser builds.  Don't add new files here unless you know what you're
@@ -136,6 +138,7 @@ EXPORTS.js += [
     "../public/Conversions.h",
     "../public/Date.h",
     "../public/Debug.h",
+    "../public/DOMEventDispatch.h",
     "../public/EnvironmentChain.h",
     "../public/Equality.h",
     "../public/ErrorInterceptor.h",
@@ -173,6 +176,7 @@ EXPORTS.js += [
     "../public/Printf.h",
     "../public/ProfilingCategory.h",
     "../public/ProfilingFrameIterator.h",
+    "../public/ProfilingSources.h",
     "../public/ProfilingStack.h",
     "../public/Promise.h",
     "../public/PropertyAndElement.h",
@@ -264,6 +268,7 @@ EXPORTS.js.friend += [
     "../public/friend/ErrorMessages.h",
     "../public/friend/ErrorNumbers.msg",
     "../public/friend/JSMEnvironment.h",
+    "../public/friend/MicroTask.h",
     "../public/friend/PerformanceHint.h",
     "../public/friend/StackLimits.h",
     "../public/friend/UsageStatistics.h",
@@ -363,6 +368,7 @@ UNIFIED_SOURCES += [
     "vm/Compression.cpp",
     "vm/ConcurrentDelazification.cpp",
     "vm/DateTime.cpp",
+    "vm/DOMEventDispatch.cpp",
     "vm/EnvironmentObject.cpp",
     "vm/EqualityOperations.cpp",
     "vm/ErrorMessages.cpp",
@@ -379,6 +385,7 @@ UNIFIED_SOURCES += [
     "vm/HelperThreads.cpp",
     "vm/Id.cpp",
     "vm/Initialization.cpp",
+    "vm/Int128.cpp",
     "vm/InternalThreadPool.cpp",
     "vm/InvalidatingFuse.cpp",
     "vm/Iteration.cpp",
@@ -396,6 +403,7 @@ UNIFIED_SOURCES += [
     "vm/MemoryMetrics.cpp",
     "vm/Modules.cpp",
     "vm/NativeObject.cpp",
+    "vm/ObjectFuse.cpp",
     "vm/ObjectWithStashedPointer.cpp",
     "vm/OffThreadPromiseRuntimeState.cpp",
     "vm/PlainObject.cpp",
@@ -411,6 +419,7 @@ UNIFIED_SOURCES += [
     "vm/RegExpObject.cpp",
     "vm/RegExpStatics.cpp",
     "vm/Runtime.cpp",
+    "vm/RuntimeFuses.cpp",
     "vm/SavedStacks.cpp",
     "vm/Scope.cpp",
     "vm/SelfHosting.cpp",
@@ -475,10 +484,12 @@ if CONFIG["JS_HAS_INTL_API"]:
         "builtin/intl/DateTimeFormat.cpp",
         "builtin/intl/DisplayNames.cpp",
         "builtin/intl/DurationFormat.cpp",
+        "builtin/intl/GlobalIntlData.cpp",
         "builtin/intl/IntlObject.cpp",
         "builtin/intl/LanguageTag.cpp",
         "builtin/intl/ListFormat.cpp",
         "builtin/intl/Locale.cpp",
+        "builtin/intl/LocaleNegotiation.cpp",
         "builtin/intl/NumberFormat.cpp",
         "builtin/intl/PluralRules.cpp",
         "builtin/intl/RelativeTimeFormat.cpp",
@@ -514,7 +525,7 @@ else:
 
 if CONFIG["JS_HAS_INTL_API"]:
     LOCAL_INCLUDES += [
-        "/intl/icu_capi/bindings/c",
+        "/intl/icu_capi/bindings/cpp",
     ]
 
 if CONFIG["JS_HAS_CTYPES"]:
@@ -565,6 +576,8 @@ if CONFIG["JS_HAS_INTL_API"]:
 if CONFIG["CC_TYPE"] == "clang":
     CXXFLAGS += ["-fstandalone-debug"]
 
+CXXFLAGS += CONFIG["MOZ_ZLIB_CFLAGS"]
+
 # Bug 1722102 - This should never be enabled in Release without explicit
 # security and SpiderMonkey review.
 # See https://bugzilla.mozilla.org/show_bug.cgi?id=1722102#c16
@@ -588,8 +601,6 @@ selfhosted_inputs = [
     "builtin/Array.js",
     "builtin/AsyncFunction.js",
     "builtin/AsyncIteration.js",
-    "builtin/BigInt.js",
-    "builtin/Date.js",
     "builtin/Error.js",
     "builtin/Generator.js",
     "builtin/Iterator.js",

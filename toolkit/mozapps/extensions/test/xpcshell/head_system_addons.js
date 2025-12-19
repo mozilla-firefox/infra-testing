@@ -131,6 +131,51 @@ function getSystemAddonXPI(num, version) {
   return _systemXPIs.get(key);
 }
 
+async function promiseUpdateSystemAddonsSet(systemAddonUpdates) {
+  const waitForStartupIDs = new Set();
+
+  let promises = [];
+  let updates = [];
+  for (const { id, version, waitForStartup = true } of systemAddonUpdates) {
+    let xpi = AddonTestUtils.createTempWebExtensionFile({
+      manifest: {
+        version,
+        browser_specific_settings: {
+          gecko: { id },
+        },
+      },
+    });
+    updates.push({ id, version, xpi, path: xpi.leafName });
+
+    if (waitForStartup) {
+      waitForStartupIDs.add(id);
+    } else {
+      // If we're not expecting a startup we need to wait for install to end.
+      promises.push(
+        AddonTestUtils.promiseAddonEvent(
+          "onInstalled",
+          addon => addon.id === id
+        )
+      );
+    }
+  }
+
+  let xml = buildSystemAddonUpdates(updates);
+  promises.push(installSystemAddons(xml, Array.from(waitForStartupIDs)));
+  return Promise.all(promises);
+}
+
+async function promiseUpdateSystemAddon(id, version, waitForStartup = true) {
+  const ADDON_ID = "updates@test";
+  return promiseUpdateSystemAddonsSet([
+    {
+      id: id ?? ADDON_ID,
+      version,
+      waitForStartup,
+    },
+  ]);
+}
+
 async function getSystemBuiltin(num, addon_version, res_url) {
   const id = `system${num}@tests.mozilla.org`;
   const version = addon_version ?? "1.0";
@@ -264,7 +309,7 @@ async function buildPrefilledUpdatesDir() {
 /**
  * Check currently installed ssystem add-ons against a set of conditions.
  *
- * @param {Array<Object>} conditions - an array of objects of the form { isUpgrade: false, version: null}
+ * @param {Array<object>} conditions - an array of objects of the form { isUpgrade: false, version: null}
  * @param {nsIFile} distroDir - the system add-on distribution directory (the "features" dir in the app directory)
  */
 async function checkInstalledSystemAddons(conditions, distroDir) {
@@ -422,12 +467,27 @@ async function setupSystemAddonConditions(setup, distroDir) {
   await checkInstalledSystemAddons(setup.initialState, distroDir);
 }
 
+// Verifies the add-ons listed in the extensions.systemAddonSet pref.
+function verifySystemAddonSetPref(expectedAddons) {
+  let addonSet = Services.prefs.getCharPref(PREF_SYSTEM_ADDON_SET);
+  let addonSetDir = JSON.parse(addonSet).directory;
+  Assert.equal(
+    addonSet,
+    JSON.stringify({
+      schema: 1,
+      directory: addonSetDir,
+      addons: expectedAddons,
+    }),
+    "Got the expected addons listed in the extensions.systemAddonSet pref"
+  );
+}
+
 /**
  * Verify state of system add-ons after installation.
  *
- * @param {Array<Object>} initialState - an array of objects of the form {isUpgrade: false, version: null}
- * @param {Array<Object>} finalState - an array of objects of the form {isUpgrade: false, version: null}
- * @param {Boolean} alreadyUpgraded - whether a restartless upgrade has already been performed.
+ * @param {Array<object>} initialState - an array of objects of the form {isUpgrade: false, version: null}
+ * @param {Array<object>} finalState - an array of objects of the form {isUpgrade: false, version: null}
+ * @param {boolean} alreadyUpgraded - whether a restartless upgrade has already been performed.
  * @param {nsIFile} distroDir - the system add-on distribution directory (the "features" dir in the app directory)
  */
 async function verifySystemAddonState(
@@ -514,12 +574,12 @@ async function verifySystemAddonState(
 /**
  * Run system add-on tests and compare the results against a set of expected conditions.
  *
- * @param {String} setupName - name of the current setup conditions.
+ * @param {string} setupName - name of the current setup conditions.
  * @param {Object<function, Array<Object>} setup -  Defines the set of initial conditions to run each test against. Each should
  *                                                  define the following properties:
  *    setup:        A task to setup the profile into the initial state.
  *    initialState: The initial expected system add-on state after setup has run.
- * @param {Array<Object>} test -  The test to run. Each test must define an updateList or test. The following
+ * @param {Array<object>} test -  The test to run. Each test must define an updateList or test. The following
  *                                properties are used:
  *    updateList: The set of add-ons the server should respond with.
  *    test:       A function to run to perform the update check (replaces

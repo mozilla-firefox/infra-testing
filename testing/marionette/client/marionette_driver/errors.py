@@ -4,10 +4,7 @@
 
 import traceback
 
-import six
 
-
-@six.python_2_unicode_compatible
 class MarionetteException(Exception):
     """Raised when a generic non-recoverable exception has occured."""
 
@@ -120,9 +117,7 @@ class ElementNotVisibleException(MarionetteException):
         stacktrace=None,
         cause=None,
     ):
-        super(ElementNotVisibleException, self).__init__(
-            message, cause=cause, stacktrace=stacktrace
-        )
+        super().__init__(message, cause=cause, stacktrace=stacktrace)
 
 
 class ElementNotAccessibleException(MarionetteException):

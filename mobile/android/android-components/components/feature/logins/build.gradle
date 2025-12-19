@@ -8,21 +8,9 @@ apply plugin: 'com.google.devtools.ksp'
 
 android {
     defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-
         ksp {
             arg("room.schemaLocation", "$projectDir/schemas".toString())
             arg("room.generateKotlin", "true")
-        }
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
 
@@ -34,34 +22,35 @@ android {
 }
 
 dependencies {
-    implementation project(':support-ktx')
-    implementation project(':support-base')
-    implementation project(':feature-prompts')
+    implementation project(':components:feature-prompts')
+    implementation project(':components:support-base')
+    implementation project(':components:support-ktx')
 
-    implementation libs.kotlin.coroutines
-
-    implementation libs.androidx.paging
     implementation libs.androidx.lifecycle.livedata
-
+    implementation libs.androidx.paging
     implementation libs.androidx.room.runtime
     ksp libs.androidx.room.compiler
+    implementation libs.kotlinx.coroutines
 
-    testImplementation project(':support-test')
+    testImplementation project(':components:support-test')
 
     testImplementation libs.androidx.test.core
-    testImplementation libs.junit.vintage
-    testImplementation libs.testing.robolectric
-    testImplementation libs.kotlin.coroutines
+    testImplementation platform(libs.junit.bom)
+    testImplementation libs.junit4
+    testRuntimeOnly libs.junit.platform.launcher
+    testRuntimeOnly libs.junit.vintage
+    testImplementation libs.kotlinx.coroutines
+    testImplementation libs.robolectric
 
-    androidTestImplementation project(':support-android-test')
+    androidTestImplementation project(':components:support-android-test')
 
-    androidTestImplementation libs.androidx.room.testing
     androidTestImplementation libs.androidx.arch.core.testing
+    androidTestImplementation libs.androidx.room.testing
     androidTestImplementation libs.androidx.test.core
-    androidTestImplementation libs.androidx.test.runner
     androidTestImplementation libs.androidx.test.rules
+    androidTestImplementation libs.androidx.test.runner
 }
 
-apply from: '../../../android-lint.gradle'
+apply from: '../../../common-config.gradle'
 apply from: '../../../publish.gradle'
 ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

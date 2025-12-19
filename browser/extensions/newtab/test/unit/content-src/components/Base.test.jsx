@@ -1,7 +1,7 @@
 import {
   _Base as Base,
   BaseContent,
-  PrefsButton,
+  WithDsAdmin,
 } from "content-src/components/Base/Base";
 import { DiscoveryStreamAdmin } from "content-src/components/DiscoveryStreamAdmin/DiscoveryStreamAdmin";
 import { ErrorBoundary } from "content-src/components/ErrorBoundary/ErrorBoundary";
@@ -52,24 +52,24 @@ describe("<Base>", () => {
     );
   });
 
-  it("should render an DiscoveryStreamAdmin if the devtools pref is true", () => {
+  it("should render an WithDsAdmin if the devtools pref is true", () => {
     const wrapper = shallow(
       <Base
         {...DEFAULT_PROPS}
         Prefs={{ values: { "asrouter.devtoolsEnabled": true } }}
       />
     );
-    assert.lengthOf(wrapper.find(DiscoveryStreamAdmin), 1);
+    assert.lengthOf(wrapper.find(WithDsAdmin), 1);
   });
 
-  it("should not render an DiscoveryStreamAdmin if the devtools pref is false", () => {
+  it("should not render an WithDsAdmin if the devtools pref is false", () => {
     const wrapper = shallow(
       <Base
         {...DEFAULT_PROPS}
         Prefs={{ values: { "asrouter.devtoolsEnabled": false } }}
       />
     );
-    assert.lengthOf(wrapper.find(DiscoveryStreamAdmin), 0);
+    assert.lengthOf(wrapper.find(WithDsAdmin), 0);
   });
 });
 
@@ -79,7 +79,8 @@ describe("<BaseContent>", () => {
     App: { initialized: true },
     Prefs: { values: {} },
     Sections: [],
-    DiscoveryStream: { config: { enabled: false } },
+    DiscoveryStream: { config: { enabled: false }, spocs: {} },
+    Weather: {},
     dispatch: () => {},
     document: {
       visibilityState: "visible",
@@ -193,15 +194,30 @@ describe("<BaseContent>", () => {
   });
 });
 
-describe("<PrefsButton>", () => {
-  it("should render icon-settings if props.icon is empty", () => {
-    const wrapper = shallow(<PrefsButton icon="" />);
+describe("WithDsAdmin", () => {
+  describe("rendering inner content", () => {
+    it("should not set devtoolsCollapsed state for about:newtab (no hash)", () => {
+      const wrapper = shallow(<WithDsAdmin hash="" />);
+      assert.isTrue(
+        wrapper.find(DiscoveryStreamAdmin).prop("devtoolsCollapsed")
+      );
+      assert.lengthOf(wrapper.find(BaseContent), 1);
+    });
 
-    assert.isTrue(wrapper.find("button").hasClass("icon-settings"));
-  });
-  it("should render props.icon as a className", () => {
-    const wrapper = shallow(<PrefsButton icon="icon-happy" />);
+    it("should set devtoolsCollapsed state for about:newtab#devtools", () => {
+      const wrapper = shallow(<WithDsAdmin hash="#devtools" />);
+      assert.isFalse(
+        wrapper.find(DiscoveryStreamAdmin).prop("devtoolsCollapsed")
+      );
+      assert.lengthOf(wrapper.find(BaseContent), 0);
+    });
 
-    assert.isTrue(wrapper.find("button").hasClass("icon-happy"));
+    it("should set devtoolsCollapsed state for about:newtab#devtools subroutes", () => {
+      const wrapper = shallow(<WithDsAdmin hash="#devtools-foo" />);
+      assert.isFalse(
+        wrapper.find(DiscoveryStreamAdmin).prop("devtoolsCollapsed")
+      );
+      assert.lengthOf(wrapper.find(BaseContent), 0);
+    });
   });
 });

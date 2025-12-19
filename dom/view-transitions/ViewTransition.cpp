@@ -4,41 +4,49 @@
 
 #include "ViewTransition.h"
 
-#include "mozilla/gfx/2D.h"
+#include "Units.h"
 #include "WindowRenderer.h"
-#include "mozilla/layers/WebRenderLayerManager.h"
-#include "mozilla/layers/RenderRootStateManager.h"
+#include "mozilla/AnimationEventDispatcher.h"
+#include "mozilla/EffectSet.h"
+#include "mozilla/ElementAnimationData.h"
+#include "mozilla/FlowMarkers.h"
+#include "mozilla/SVGIntegrationUtils.h"
+#include "mozilla/ServoStyleConsts.h"
+#include "mozilla/WritingModes.h"
 #include "mozilla/dom/BindContext.h"
-#include "mozilla/layers/WebRenderBridgeChild.h"
-#include "mozilla/gfx/DataSurfaceHelpers.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/DocumentTimeline.h"
 #include "mozilla/dom/Promise-inl.h"
 #include "mozilla/dom/ViewTransitionBinding.h"
+#include "mozilla/dom/ViewTransitionTypeSet.h"
 #include "mozilla/image/WebRenderImageProvider.h"
+#include "mozilla/layers/RenderRootStateManager.h"
+#include "mozilla/layers/WebRenderBridgeChild.h"
+#include "mozilla/layers/WebRenderLayerManager.h"
 #include "mozilla/webrender/WebRenderAPI.h"
-#include "mozilla/AnimationEventDispatcher.h"
-#include "mozilla/EffectSet.h"
-#include "mozilla/ElementAnimationData.h"
-#include "mozilla/ServoStyleConsts.h"
-#include "mozilla/SVGIntegrationUtils.h"
-#include "mozilla/WritingModes.h"
+#include "nsCanvasFrame.h"
 #include "nsDisplayList.h"
 #include "nsFrameState.h"
 #include "nsITimer.h"
 #include "nsLayoutUtils.h"
 #include "nsPresContext.h"
-#include "nsCanvasFrame.h"
 #include "nsString.h"
-#include "nsViewManager.h"
-#include "Units.h"
 
 namespace mozilla::dom {
 
 LazyLogModule gViewTransitionsLog("ViewTransitions");
 
-static void SetCaptured(nsIFrame* aFrame, bool aCaptured) {
+NS_DECLARE_FRAME_PROPERTY_RELEASABLE(ViewTransitionCaptureName, nsAtom)
+
+static void SetCaptured(nsIFrame* aFrame, bool aCaptured,
+                        nsAtom* aNameIfCaptured) {
   aFrame->AddOrRemoveStateBits(NS_FRAME_CAPTURED_IN_VIEW_TRANSITION, aCaptured);
+  if (aCaptured) {
+    aFrame->AddProperty(ViewTransitionCaptureName(),
+                        do_AddRef(aNameIfCaptured).take());
+  } else {
+    aFrame->RemoveProperty(ViewTransitionCaptureName());
+  }
   aFrame->InvalidateFrameSubtree();
   if (aFrame->Style()->IsRootElementStyle()) {
     aFrame->PresShell()->GetRootFrame()->InvalidateFrameSubtree();
@@ -54,84 +62,68 @@ static void SetCaptured(nsIFrame* aFrame, bool aCaptured) {
 //
 // TODO(emilio): This might need revision.
 static CSSToCSSMatrix4x4Flagged EffectiveTransform(nsIFrame* aFrame) {
-  CSSToCSSMatrix4x4Flagged matrix;
   if (aFrame->GetSize().IsEmpty() || aFrame->Style()->IsRootElementStyle()) {
-    return matrix;
+    return {};
   }
 
-  CSSSize untransformedSize = CSSSize::FromAppUnits(aFrame->GetSize());
-  CSSRect boundingRect = CSSRect::FromAppUnits(aFrame->GetBoundingClientRect());
-  if (boundingRect.Size() != untransformedSize) {
-    float sx = boundingRect.width / untransformedSize.width;
-    float sy = boundingRect.height / untransformedSize.height;
-    matrix = CSSToCSSMatrix4x4Flagged::Scaling(sx, sy, 0.0f);
-  }
-  auto inkOverflowOffset = aFrame->InkOverflowRectRelativeToSelf().TopLeft();
-  if (inkOverflowOffset != nsPoint()) {
-    auto cssOffset = CSSPoint::FromAppUnits(inkOverflowOffset);
-    matrix.PostTranslate(cssOffset.x, cssOffset.y, 0.0f);
-  }
-  if (boundingRect.TopLeft() != CSSPoint()) {
-    matrix.PostTranslate(boundingRect.x, boundingRect.y, 0.0f);
-  }
+  auto matrix = CSSToCSSMatrix4x4Flagged::FromUnknownMatrix(
+      nsLayoutUtils::GetTransformToAncestor(
+          RelativeTo{aFrame},
+          RelativeTo{nsLayoutUtils::GetContainingBlockForClientRect(aFrame)},
+          nsIFrame::IN_CSS_UNITS, nullptr));
+
+  // Compensate for the default transform-origin of 50% 50% using border box
+  // dimensions.
+  auto borderBoxRect = CSSRect::FromAppUnits(aFrame->GetRect());
+  matrix.ChangeBasis(-borderBoxRect.Width() / 2, -borderBoxRect.Height() / 2,
+                     0.0f);
   return matrix;
 }
 
-static RefPtr<gfx::DataSourceSurface> CaptureFallbackSnapshot(
-    nsIFrame* aFrame) {
-  VT_LOG_DEBUG("CaptureFallbackSnapshot(%s)", aFrame->ListTag().get());
-  nsPresContext* pc = aFrame->PresContext();
-  const bool isRoot = aFrame->Style()->IsRootElementStyle();
-  nsIFrame* frameToCapture =
-      isRoot ? pc->PresShell()->GetCanvasFrame() : aFrame;
-  const nsRect rect = isRoot ? ViewTransition::SnapshotContainingBlockRect(pc)
-                             : aFrame->InkOverflowRectRelativeToSelf();
-  const auto surfaceRect = LayoutDeviceIntRect::FromAppUnitsToOutside(
-      rect, pc->AppUnitsPerDevPixel());
+enum class CapturedRectType { BorderBox, InkOverflowBox };
 
-  // TODO: Should we use the DrawTargetRecorder infra or what not?
-  const auto format = gfx::SurfaceFormat::B8G8R8A8;
-  RefPtr<gfx::DrawTarget> dt = gfx::Factory::CreateDrawTarget(
-      gfxPlatform::GetPlatform()->GetSoftwareBackend(),
-      surfaceRect.Size().ToUnknownSize(), format);
-  if (NS_WARN_IF(!dt) || NS_WARN_IF(!dt->IsValid())) {
-    return nullptr;
+static inline nsRect SnapRect(const nsRect& aRect, nscoord aAppUnitsPerPixel) {
+  return LayoutDeviceIntRect::ToAppUnits(
+      LayoutDeviceIntRect::FromUnknownRect(
+          aRect.ToOutsidePixels(aAppUnitsPerPixel)),
+      aAppUnitsPerPixel);
+}
+
+static inline nsRect CapturedRect(const nsIFrame* aFrame,
+                                  const nsSize& aSnapshotContainingBlockSize,
+                                  CapturedRectType aType) {
+  if (aFrame->Style()->IsRootElementStyle()) {
+    return nsRect(nsPoint(), aSnapshotContainingBlockSize);
   }
 
-  {
-    using PaintFrameFlags = nsLayoutUtils::PaintFrameFlags;
-    gfxContext thebes(dt);
-    // TODO: This matches the drawable code we use for -moz-element(), but is
-    // this right?
-    const PaintFrameFlags flags = PaintFrameFlags::InTransform;
-    nsLayoutUtils::PaintFrame(&thebes, frameToCapture, rect,
-                              NS_RGBA(0, 0, 0, 0),
-                              nsDisplayListBuilderMode::Painting, flags);
+  if (aType == CapturedRectType::BorderBox) {
+    return aFrame->GetRectRelativeToSelf();
   }
 
-  RefPtr<gfx::SourceSurface> surf = dt->GetBackingSurface();
-  if (NS_WARN_IF(!surf)) {
-    return nullptr;
-  }
-  return surf->GetDataSurface();
+  return SnapRect(aFrame->InkOverflowRectRelativeToSelf(),
+                  aFrame->PresContext()->AppUnitsPerDevPixel());
+}
+
+static StyleViewTransitionClass DocumentScopedClassListFor(
+    const nsIFrame* aFrame) {
+  return aFrame->StyleUIReset()->mViewTransitionClass;
 }
 
 static constexpr wr::ImageKey kNoKey{{0}, 0};
-
 struct OldSnapshotData {
   wr::ImageKey mImageKey = kNoKey;
-  nsSize mSize;
-  RefPtr<gfx::DataSourceSurface> mFallback;
+  // Snapshot size should match the captured element’s InkOverflowBox size,
+  // snapped.
+  nsRect mSnapshotRect;
   RefPtr<layers::RenderRootStateManager> mManager;
+  bool mUsed = false;
 
   OldSnapshotData() = default;
 
-  explicit OldSnapshotData(nsIFrame* aFrame)
-      : mSize(aFrame->InkOverflowRectRelativeToSelf().Size()) {
-    if (!StaticPrefs::dom_viewTransitions_wr_old_capture()) {
-      mFallback = CaptureFallbackSnapshot(aFrame);
-    }
-  }
+  explicit OldSnapshotData(nsIFrame* aFrame,
+                           const nsSize& aSnapshotContainingBlockSize)
+      : mSnapshotRect(CapturedRect(aFrame, aSnapshotContainingBlockSize,
+                                   CapturedRectType::InkOverflowBox)) {}
 
   void EnsureKey(layers::RenderRootStateManager* aManager,
                  wr::IpcResourceUpdateQueue& aResources) {
@@ -139,32 +131,19 @@ struct OldSnapshotData {
       MOZ_ASSERT(mManager == aManager, "Stale manager?");
       return;
     }
-    if (StaticPrefs::dom_viewTransitions_wr_old_capture()) {
-      mManager = aManager;
-      mImageKey = aManager->WrBridge()->GetNextImageKey();
-      aResources.AddSnapshotImage(wr::SnapshotImageKey{mImageKey});
-      return;
-    }
-    if (NS_WARN_IF(!mFallback)) {
-      return;
-    }
-    gfx::DataSourceSurface::ScopedMap map(mFallback,
-                                          gfx::DataSourceSurface::READ);
-    if (NS_WARN_IF(!map.IsMapped())) {
-      return;
-    }
     mManager = aManager;
     mImageKey = aManager->WrBridge()->GetNextImageKey();
-    auto size = mFallback->GetSize();
-    auto format = mFallback->GetFormat();
-    wr::ImageDescriptor desc(size, format);
-    Range<uint8_t> bytes(map.GetData(), map.GetStride() * size.height);
-    Unused << NS_WARN_IF(!aResources.AddImage(mImageKey, desc, bytes));
+    aResources.AddSnapshotImage(wr::SnapshotImageKey{mImageKey});
   }
 
   ~OldSnapshotData() {
     if (mManager) {
-      mManager->AddImageKeyForDiscard(mImageKey);
+      wr::SnapshotImageKey key = {mImageKey};
+      if (mUsed) {
+        mManager->AddSnapshotImageKeyForDiscard(key);
+      } else {
+        mManager->AddUnusedSnapshotImageKeyForDiscard(key);
+      }
     }
   }
 };
@@ -175,8 +154,7 @@ struct CapturedElementOldState {
   // snapshot, so this might not be the same as !!mImage.
   bool mTriedImage = false;
 
-  // Encompasses width and height.
-  nsSize mSize;
+  nsSize mBorderBoxSize;
   CSSToCSSMatrix4x4Flagged mTransform;
   StyleWritingModeProperty mWritingMode =
       StyleWritingModeProperty::HorizontalTb;
@@ -191,11 +169,11 @@ struct CapturedElementOldState {
 
   CapturedElementOldState(nsIFrame* aFrame,
                           const nsSize& aSnapshotContainingBlockSize)
-      : mSnapshot(aFrame),
+      : mSnapshot(aFrame, aSnapshotContainingBlockSize),
         mTriedImage(true),
-        mSize(aFrame->Style()->IsRootElementStyle()
-                  ? aSnapshotContainingBlockSize
-                  : aFrame->InkOverflowRect().Size()),
+        mBorderBoxSize(CapturedRect(aFrame, aSnapshotContainingBlockSize,
+                                    CapturedRectType::BorderBox)
+                           .Size()),
         mTransform(EffectiveTransform(aFrame)),
         mWritingMode(aFrame->StyleVisibility()->mWritingMode),
         mDirection(aFrame->StyleVisibility()->mDirection),
@@ -212,12 +190,17 @@ struct ViewTransition::CapturedElement {
   CapturedElementOldState mOldState;
   RefPtr<Element> mNewElement;
   wr::SnapshotImageKey mNewSnapshotKey{kNoKey};
-  nsSize mNewSnapshotSize;
+  // Snapshot size + offset, should match the captured element’s InkOverflowBox
+  // size, snapped.
+  nsRect mNewSnapshotRect;
+  nsSize mNewBorderBoxSize;
 
   CapturedElement() = default;
 
-  CapturedElement(nsIFrame* aFrame, const nsSize& aSnapshotContainingBlockSize)
-      : mOldState(aFrame, aSnapshotContainingBlockSize) {}
+  CapturedElement(nsIFrame* aFrame, const nsSize& aSnapshotContainingBlockSize,
+                  StyleViewTransitionClass&& aClassList)
+      : mOldState(aFrame, aSnapshotContainingBlockSize),
+        mClassList(std::move(aClassList)) {}
 
   // https://drafts.csswg.org/css-view-transitions-1/#captured-element-style-definitions
   nsTArray<Keyframe> mGroupKeyframes;
@@ -229,6 +212,19 @@ struct ViewTransition::CapturedElement {
   RefPtr<StyleLockedDeclarationBlock> mOldRule;
   // The rules for ::view-transition-new(<name>).
   RefPtr<StyleLockedDeclarationBlock> mNewRule;
+
+  // The view-transition-class associated with this captured element.
+  // https://drafts.csswg.org/css-view-transitions-2/#captured-element-class-list
+  StyleViewTransitionClass mClassList;
+
+  // If snapshots are very large, compute active rects to restrict their
+  // bounds, based on what's most likely visible during the transition.
+  Maybe<nsRect> mOldActiveRect;
+  Maybe<nsRect> mNewActiveRect;
+
+  void CaptureClassList(StyleViewTransitionClass&& aClassList) {
+    mClassList = std::move(aClassList);
+  }
 
   ~CapturedElement() {
     if (wr::AsImageKey(mNewSnapshotKey) != kNoKey) {
@@ -249,8 +245,8 @@ static inline void ImplCycleCollectionTraverse(
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(ViewTransition, mDocument,
                                       mUpdateCallback,
                                       mUpdateCallbackDonePromise, mReadyPromise,
-                                      mFinishedPromise, mNamedElements,
-                                      mViewTransitionRoot)
+                                      mFinishedPromise, mNamedElements, mTypes,
+                                      mSnapshotContainingBlock)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(ViewTransition)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
@@ -261,28 +257,69 @@ NS_IMPL_CYCLE_COLLECTING_ADDREF(ViewTransition)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(ViewTransition)
 
 ViewTransition::ViewTransition(Document& aDoc,
-                               ViewTransitionUpdateCallback* aCb)
-    : mDocument(&aDoc), mUpdateCallback(aCb) {}
+                               ViewTransitionUpdateCallback* aCb,
+                               TypeList&& aTypeList)
+    : mDocument(&aDoc), mUpdateCallback(aCb), mTypeList(std::move(aTypeList)) {}
 
 ViewTransition::~ViewTransition() { ClearTimeoutTimer(); }
 
-Maybe<nsSize> ViewTransition::GetOldSize(nsAtom* aName) const {
+Element* ViewTransition::GetViewTransitionTreeRoot() const {
+  return mSnapshotContainingBlock
+             ? mSnapshotContainingBlock->GetFirstElementChild()
+             : nullptr;
+}
+
+void ViewTransition::GetCapturedFrames(
+    nsTArray<nsIFrame*>& aCapturedFrames) const {
+  if (mOldCaptureElements) {
+    for (const auto& [f, _] : *mOldCaptureElements) {
+      aCapturedFrames.AppendElement(f);
+    }
+  }
+
+  for (const auto& entry : mNamedElements) {
+    CapturedElement& capturedElement = *entry.GetData();
+    if (capturedElement.mNewElement &&
+        capturedElement.mNewElement->GetPrimaryFrame()) {
+      aCapturedFrames.AppendElement(
+          capturedElement.mNewElement->GetPrimaryFrame());
+    }
+  }
+}
+
+Maybe<nsRect> ViewTransition::GetOldInkOverflowRect(nsAtom* aName) const {
   auto* el = mNamedElements.Get(aName);
   if (NS_WARN_IF(!el)) {
     return {};
   }
-  return Some(el->mOldState.mSnapshot.mSize);
+  return Some(el->mOldState.mSnapshot.mSnapshotRect);
 }
 
-Maybe<nsSize> ViewTransition::GetNewSize(nsAtom* aName) const {
+Maybe<nsRect> ViewTransition::GetNewInkOverflowRect(nsAtom* aName) const {
   auto* el = mNamedElements.Get(aName);
   if (NS_WARN_IF(!el)) {
     return {};
   }
-  return Some(el->mNewSnapshotSize);
+  return Some(el->mNewSnapshotRect);
 }
 
-const wr::ImageKey* ViewTransition::GetOldImageKey(
+Maybe<nsSize> ViewTransition::GetOldBorderBoxSize(nsAtom* aName) const {
+  auto* el = mNamedElements.Get(aName);
+  if (NS_WARN_IF(!el)) {
+    return {};
+  }
+  return Some(el->mOldState.mBorderBoxSize);
+}
+
+Maybe<nsSize> ViewTransition::GetNewBorderBoxSize(nsAtom* aName) const {
+  auto* el = mNamedElements.Get(aName);
+  if (NS_WARN_IF(!el)) {
+    return {};
+  }
+  return Some(el->mNewBorderBoxSize);
+}
+
+const wr::ImageKey* ViewTransition::GetOrCreateOldImageKey(
     nsAtom* aName, layers::RenderRootStateManager* aManager,
     wr::IpcResourceUpdateQueue& aResources) const {
   auto* el = mNamedElements.Get(aName);
@@ -290,6 +327,18 @@ const wr::ImageKey* ViewTransition::GetOldImageKey(
     return nullptr;
   }
   el->mOldState.mSnapshot.EnsureKey(aManager, aResources);
+  return &el->mOldState.mSnapshot.mImageKey;
+}
+
+const wr::ImageKey* ViewTransition::ReadOldImageKey(
+    nsAtom* aName, layers::RenderRootStateManager* aManager,
+    wr::IpcResourceUpdateQueue& aResources) const {
+  auto* el = mNamedElements.Get(aName);
+  if (NS_WARN_IF(!el)) {
+    return nullptr;
+  }
+
+  el->mOldState.mSnapshot.mUsed = true;
   return &el->mOldState.mSnapshot.mImageKey;
 }
 
@@ -307,12 +356,8 @@ const wr::ImageKey* ViewTransition::GetImageKeyForCapturedFrame(
   MOZ_ASSERT(aFrame);
   MOZ_ASSERT(aFrame->HasAnyStateBits(NS_FRAME_CAPTURED_IN_VIEW_TRANSITION));
 
-  if (!StaticPrefs::dom_viewTransitions_live_capture()) {
-    return nullptr;
-  }
-
-  nsAtom* name = aFrame->StyleUIReset()->mViewTransitionName._0.AsAtom();
-  if (NS_WARN_IF(name->IsEmpty())) {
+  nsAtom* name = aFrame->GetProperty(ViewTransitionCaptureName());
+  if (NS_WARN_IF(!name)) {
     return nullptr;
   }
   const bool isOld = mPhase < Phase::Animating;
@@ -321,7 +366,7 @@ const wr::ImageKey* ViewTransition::GetImageKeyForCapturedFrame(
          nsAtomCString(name).get(), isOld);
 
   if (isOld) {
-    const auto* key = GetOldImageKey(name, aManager, aResources);
+    const auto* key = GetOrCreateOldImageKey(name, aManager, aResources);
     VT_LOG(" > old image is %s", key ? ToString(*key).c_str() : "null");
     return key;
   }
@@ -372,6 +417,8 @@ Promise* ViewTransition::GetFinished(ErrorResult& aRv) {
 // This performs the step 5 in setup view transition.
 // https://drafts.csswg.org/css-view-transitions-1/#setup-view-transition
 void ViewTransition::MaybeScheduleUpdateCallback() {
+  AUTO_PROFILER_FLOW_MARKER("ViewTransition::MaybeScheduleUpdateCallback",
+                            LAYOUT, Flow::FromPointer(this));
   // 1. If transition’s phase is "done", then abort these steps.
   // Note: This happens if transition was skipped before this point.
   if (mPhase == Phase::Done) {
@@ -395,6 +442,9 @@ void ViewTransition::CallUpdateCallback(ErrorResult& aRv) {
   MOZ_ASSERT(mPhase == Phase::Done ||
              UnderlyingValue(mPhase) <
                  UnderlyingValue(Phase::UpdateCallbackCalled));
+  VT_LOG("ViewTransition::CallUpdateCallback(%d)\n", int(mPhase));
+  AUTO_PROFILER_FLOW_MARKER("ViewTransition::CallUpdateCallback", LAYOUT,
+                            Flow::FromPointer(this));
 
   // Step 5: If transition's phase is not "done", then set transition's phase
   // to "update-callback-called".
@@ -427,6 +477,8 @@ void ViewTransition::CallUpdateCallback(ErrorResult& aRv) {
   callbackPromise->AddCallbacksWithCycleCollectedArgs(
       [](JSContext*, JS::Handle<JS::Value>, ErrorResult& aRv,
          ViewTransition* aVt) {
+        AUTO_PROFILER_FLOW_MARKER("ViewTransition::UpdateCallbackResolve",
+                                  LAYOUT, Flow::FromPointer(aVt));
         // We clear the timeout when we are ready to activate. Otherwise, any
         // animations with the duration longer than
         // StaticPrefs::dom_viewTransitions_timeout_ms() will be interrupted.
@@ -457,6 +509,8 @@ void ViewTransition::CallUpdateCallback(ErrorResult& aRv) {
       },
       [](JSContext*, JS::Handle<JS::Value> aReason, ErrorResult& aRv,
          ViewTransition* aVt) {
+        AUTO_PROFILER_FLOW_MARKER("ViewTransition::UpdateCallbackReject",
+                                  LAYOUT, Flow::FromPointer(aVt));
         // Clear the timeout because we are ready to skip the view transitions.
         aVt->ClearTimeoutTimer();
 
@@ -492,7 +546,7 @@ void ViewTransition::CallUpdateCallback(ErrorResult& aRv) {
   mTimeoutTimer = NS_NewTimer();
   mTimeoutTimer->InitWithNamedFuncCallback(
       TimeoutCallback, this, StaticPrefs::dom_viewTransitions_timeout_ms(),
-      nsITimer::TYPE_ONE_SHOT, "ViewTransition::TimeoutCallback");
+      nsITimer::TYPE_ONE_SHOT, "ViewTransition::TimeoutCallback"_ns);
 }
 
 void ViewTransition::ClearTimeoutTimer() {
@@ -519,8 +573,7 @@ static already_AddRefed<Element> MakePseudo(Document& aDoc,
                                             PseudoStyleType aType,
                                             nsAtom* aName) {
   RefPtr<Element> el = aDoc.CreateHTMLElement(nsGkAtoms::div);
-  if (!aName) {
-    MOZ_ASSERT(aType == PseudoStyleType::viewTransition);
+  if (aType == PseudoStyleType::mozSnapshotContainingBlock) {
     el->SetIsNativeAnonymousRoot();
   }
   el->SetPseudoElementType(aType);
@@ -535,21 +588,23 @@ static already_AddRefed<Element> MakePseudo(Document& aDoc,
 }
 
 static bool SetProp(StyleLockedDeclarationBlock* aDecls, Document* aDoc,
-                    nsCSSPropertyID aProp, const nsACString& aValue) {
+                    NonCustomCSSPropertyId aProp, const nsACString& aValue) {
   return Servo_DeclarationBlock_SetPropertyById(
       aDecls, aProp, &aValue,
       /* is_important = */ false, aDoc->DefaultStyleAttrURLData(),
       StyleParsingMode::DEFAULT, eCompatibility_FullStandards,
-      aDoc->CSSLoader(), StyleCssRuleType::Style, {});
+      &aDoc->EnsureCSSLoader(), StyleCssRuleType::Style, {});
 }
 
 static bool SetProp(StyleLockedDeclarationBlock* aDecls, Document*,
-                    nsCSSPropertyID aProp, float aLength, nsCSSUnit aUnit) {
+                    NonCustomCSSPropertyId aProp, float aLength,
+                    nsCSSUnit aUnit) {
   return Servo_DeclarationBlock_SetLengthValue(aDecls, aProp, aLength, aUnit);
 }
 
 static bool SetProp(StyleLockedDeclarationBlock* aDecls, Document*,
-                    nsCSSPropertyID aProp, const CSSToCSSMatrix4x4Flagged& aM) {
+                    NonCustomCSSPropertyId aProp,
+                    const CSSToCSSMatrix4x4Flagged& aM) {
   MOZ_ASSERT(aProp == eCSSProperty_transform);
   AutoTArray<StyleTransformOperation, 1> ops;
   ops.AppendElement(
@@ -560,37 +615,40 @@ static bool SetProp(StyleLockedDeclarationBlock* aDecls, Document*,
 }
 
 static bool SetProp(StyleLockedDeclarationBlock* aDecls, Document* aDoc,
-                    nsCSSPropertyID aProp, const StyleWritingModeProperty aWM) {
+                    NonCustomCSSPropertyId aProp,
+                    const StyleWritingModeProperty aWM) {
   return Servo_DeclarationBlock_SetKeywordValue(aDecls, aProp, (int32_t)aWM);
 }
 
 static bool SetProp(StyleLockedDeclarationBlock* aDecls, Document* aDoc,
-                    nsCSSPropertyID aProp, const StyleDirection aDirection) {
+                    NonCustomCSSPropertyId aProp,
+                    const StyleDirection aDirection) {
   return Servo_DeclarationBlock_SetKeywordValue(aDecls, aProp,
                                                 (int32_t)aDirection);
 }
 
 static bool SetProp(StyleLockedDeclarationBlock* aDecls, Document* aDoc,
-                    nsCSSPropertyID aProp,
+                    NonCustomCSSPropertyId aProp,
                     const StyleTextOrientation aTextOrientation) {
   return Servo_DeclarationBlock_SetKeywordValue(aDecls, aProp,
                                                 (int32_t)aTextOrientation);
 }
 
 static bool SetProp(StyleLockedDeclarationBlock* aDecls, Document* aDoc,
-                    nsCSSPropertyID aProp, const StyleBlend aBlend) {
+                    NonCustomCSSPropertyId aProp, const StyleBlend aBlend) {
   return Servo_DeclarationBlock_SetKeywordValue(aDecls, aProp, (int32_t)aBlend);
 }
 
 static bool SetProp(
-    StyleLockedDeclarationBlock* aDecls, Document*, nsCSSPropertyID aProp,
+    StyleLockedDeclarationBlock* aDecls, Document*,
+    NonCustomCSSPropertyId aProp,
     const StyleOwnedSlice<mozilla::StyleFilter>& aBackdropFilters) {
   return Servo_DeclarationBlock_SetBackdropFilter(aDecls, aProp,
                                                   &aBackdropFilters);
 }
 
 static bool SetProp(StyleLockedDeclarationBlock* aDecls, Document*,
-                    nsCSSPropertyID aProp,
+                    NonCustomCSSPropertyId aProp,
                     const StyleColorScheme& aColorScheme) {
   return Servo_DeclarationBlock_SetColorScheme(aDecls, aProp, &aColorScheme);
 }
@@ -603,49 +661,61 @@ static StyleLockedDeclarationBlock* EnsureRule(
   return aRule.get();
 }
 
-// TODO: backdrop-filter support.
 static nsTArray<Keyframe> BuildGroupKeyframes(
     Document* aDoc, const CSSToCSSMatrix4x4Flagged& aTransform,
-    const nsSize& aSize) {
-  nsTArray<Keyframe> result;
-  auto& firstKeyframe = *result.AppendElement();
+    const nsSize& aSize, const StyleOwnedSlice<StyleFilter>& aBackdropFilters) {
+  Keyframe firstKeyframe;
   firstKeyframe.mOffset = Some(0.0);
   PropertyValuePair transform{
-      AnimatedPropertyID(eCSSProperty_transform),
+      CSSPropertyId(eCSSProperty_transform),
       Servo_DeclarationBlock_CreateEmpty().Consume(),
   };
   SetProp(transform.mServoDeclarationBlock, aDoc, eCSSProperty_transform,
           aTransform);
   PropertyValuePair width{
-      AnimatedPropertyID(eCSSProperty_width),
+      CSSPropertyId(eCSSProperty_width),
       Servo_DeclarationBlock_CreateEmpty().Consume(),
   };
   CSSSize cssSize = CSSSize::FromAppUnits(aSize);
   SetProp(width.mServoDeclarationBlock, aDoc, eCSSProperty_width, cssSize.width,
           eCSSUnit_Pixel);
   PropertyValuePair height{
-      AnimatedPropertyID(eCSSProperty_height),
+      CSSPropertyId(eCSSProperty_height),
       Servo_DeclarationBlock_CreateEmpty().Consume(),
   };
   SetProp(height.mServoDeclarationBlock, aDoc, eCSSProperty_height,
           cssSize.height, eCSSUnit_Pixel);
+  PropertyValuePair backdropFilters{
+      CSSPropertyId(eCSSProperty_backdrop_filter),
+      Servo_DeclarationBlock_CreateEmpty().Consume(),
+  };
+  SetProp(backdropFilters.mServoDeclarationBlock, aDoc,
+          eCSSProperty_backdrop_filter, aBackdropFilters);
   firstKeyframe.mPropertyValues.AppendElement(std::move(transform));
   firstKeyframe.mPropertyValues.AppendElement(std::move(width));
   firstKeyframe.mPropertyValues.AppendElement(std::move(height));
+  firstKeyframe.mPropertyValues.AppendElement(std::move(backdropFilters));
 
-  auto& lastKeyframe = *result.AppendElement();
+  Keyframe lastKeyframe;
   lastKeyframe.mOffset = Some(1.0);
   lastKeyframe.mPropertyValues.AppendElement(
-      PropertyValuePair{AnimatedPropertyID(eCSSProperty_transform)});
+      PropertyValuePair{CSSPropertyId(eCSSProperty_transform)});
   lastKeyframe.mPropertyValues.AppendElement(
-      PropertyValuePair{AnimatedPropertyID(eCSSProperty_width)});
+      PropertyValuePair{CSSPropertyId(eCSSProperty_width)});
   lastKeyframe.mPropertyValues.AppendElement(
-      PropertyValuePair{AnimatedPropertyID(eCSSProperty_height)});
+      PropertyValuePair{CSSPropertyId(eCSSProperty_height)});
+  lastKeyframe.mPropertyValues.AppendElement(
+      PropertyValuePair{CSSPropertyId(eCSSProperty_backdrop_filter)});
+
+  nsTArray<Keyframe> result;
+  result.AppendElement(std::move(firstKeyframe));
+  result.AppendElement(std::move(lastKeyframe));
   return result;
 }
 
-bool ViewTransition::GetGroupKeyframes(nsAtom* aAnimationName,
-                                       nsTArray<Keyframe>& aResult) const {
+bool ViewTransition::GetGroupKeyframes(
+    nsAtom* aAnimationName, const StyleComputedTimingFunction& aTimingFunction,
+    nsTArray<Keyframe>& aResult) {
   MOZ_ASSERT(StringBeginsWith(nsDependentAtomString(aAnimationName),
                               kGroupAnimPrefix));
   RefPtr<nsAtom> transitionName = NS_Atomize(Substring(
@@ -655,12 +725,62 @@ bool ViewTransition::GetGroupKeyframes(nsAtom* aAnimationName,
     return false;
   }
   aResult = el->mGroupKeyframes.Clone();
+  // We assign the timing function always to make sure we don't use the default
+  // linear timing function.
+  MOZ_ASSERT(aResult.Length() == 2);
+  aResult[0].mTimingFunction = Some(aTimingFunction);
+  aResult[1].mTimingFunction = Some(aTimingFunction);
   return true;
 }
 
+// Matches the class list in the captured element.
+// https://drafts.csswg.org/css-view-transitions-2/#pseudo-element-class-additions
+bool ViewTransition::MatchClassList(
+    nsAtom* aTransitionName,
+    const nsTArray<StyleAtom>& aPtNameAndClassSelector) const {
+  MOZ_ASSERT(aPtNameAndClassSelector.Length() > 1);
+
+  const auto* el = mNamedElements.Get(aTransitionName);
+  MOZ_ASSERT(el);
+  const auto& classList = el->mClassList._0.AsSpan();
+  auto hasClass = [&classList](nsAtom* aClass) {
+    // LInear search. The css class list shouldn't be very large in most cases.
+    for (const auto& ident : classList) {
+      if (ident.AsAtom() == aClass) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  // A named view transition pseudo-element selector which has one or more
+  // <custom-ident> values in its <pt-class-selector> would only match an
+  // element if the class list value in named elements for the pseudo-element’s
+  // view-transition-name contains all of those values.
+  // i.e. |aPtNameAndClassSelector| should be a subset of |mClassList|.
+  for (const auto& atom : Span(aPtNameAndClassSelector).From(1)) {
+    if (!hasClass(atom.AsAtom())) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// In general, we are trying to generate the following pseudo-elements tree:
+// ::-moz-snapshot-containing-block
+// └─ ::view-transition
+//    ├─ ::view-transition-group(name)
+//    │  └─ ::view-transition-image-pair(name)
+//    │     ├─ ::view-transition-old(name)
+//    │     └─ ::view-transition-new(name)
+//    └─ ...other groups...
+//
+// ::-moz-snapshot-containing-block is the top-layer of the tree. It is the
+// wrapper of the view transition pseudo-elements tree for the snapshot
+// containing block concept. And it is the child of the document element.
 // https://drafts.csswg.org/css-view-transitions-1/#setup-transition-pseudo-elements
 void ViewTransition::SetupTransitionPseudoElements() {
-  MOZ_ASSERT(!mViewTransitionRoot);
+  MOZ_ASSERT(!mSnapshotContainingBlock);
 
   nsAutoScriptBlocker scriptBlocker;
 
@@ -669,33 +789,38 @@ void ViewTransition::SetupTransitionPseudoElements() {
     return;
   }
 
+  // We don't need to notify while constructing the tree.
+  constexpr bool kNotify = false;
+
   // Step 1 is a declaration.
 
   // Step 2: Set document's show view transition tree to true.
   // (we lazily create this pseudo-element so we don't need the flag for now at
   // least).
-  mViewTransitionRoot =
+  // Note: Use mSnapshotContainingBlock to wrap the pseudo-element tree.
+  mSnapshotContainingBlock = MakePseudo(
+      *mDocument, PseudoStyleType::mozSnapshotContainingBlock, nullptr);
+  RefPtr<Element> root =
       MakePseudo(*mDocument, PseudoStyleType::viewTransition, nullptr);
+  mSnapshotContainingBlock->AppendChildTo(root, kNotify, IgnoreErrors());
 #ifdef DEBUG
   // View transition pseudos don't care about frame tree ordering, so can be
   // restyled just fine.
-  mViewTransitionRoot->SetProperty(nsGkAtoms::restylableAnonymousNode,
-                                   reinterpret_cast<void*>(true));
+  mSnapshotContainingBlock->SetProperty(nsGkAtoms::restylableAnonymousNode,
+                                        reinterpret_cast<void*>(true));
 #endif
 
   MOZ_ASSERT(mNames.Length() == mNamedElements.Count());
   // Step 3: For each transitionName -> capturedElement of transition’s named
   // elements:
   for (nsAtom* transitionName : mNames) {
-    // We don't need to notify while constructing the tree.
-    constexpr bool kNotify = false;
     CapturedElement& capturedElement = *mNamedElements.Get(transitionName);
     // Let group be a new ::view-transition-group(), with its view transition
     // name set to transitionName.
     RefPtr<Element> group = MakePseudo(
         *mDocument, PseudoStyleType::viewTransitionGroup, transitionName);
     // Append group to transition’s transition root pseudo-element.
-    mViewTransitionRoot->AppendChildTo(group, kNotify, IgnoreErrors());
+    root->AppendChildTo(group, kNotify, IgnoreErrors());
     // Let imagePair be a new ::view-transition-image-pair(), with its view
     // transition name set to transitionName.
     RefPtr<Element> imagePair = MakePseudo(
@@ -741,7 +866,8 @@ void ViewTransition::SetupTransitionPseudoElements() {
       // Moved around from "update pseudo-element styles" because it's a one
       // time operation.
       auto* rule = EnsureRule(capturedElement.mGroupRule);
-      auto oldRect = CSSPixel::FromAppUnits(capturedElement.mOldState.mSize);
+      auto oldRect =
+          CSSPixel::FromAppUnits(capturedElement.mOldState.mBorderBoxSize);
       SetProp(rule, mDocument, eCSSProperty_width, oldRect.width,
               eCSSUnit_Pixel);
       SetProp(rule, mDocument, eCSSProperty_height, oldRect.height,
@@ -764,13 +890,15 @@ void ViewTransition::SetupTransitionPseudoElements() {
     // If both of capturedElement's old image and new element are not null,
     // then:
     if (capturedElement.mOldState.mTriedImage && capturedElement.mNewElement) {
-      NS_ConvertUTF16toUTF8 dynamicAnimationName(
-          kGroupAnimPrefix + nsDependentAtomString(transitionName));
-
+      nsAutoCString dynamicAnimationName;
+      nsStyleUtil::AppendQuotedCSSString(
+          NS_ConvertUTF16toUTF8(kGroupAnimPrefix +
+                                nsDependentAtomString(transitionName)),
+          dynamicAnimationName);
       capturedElement.mGroupKeyframes =
           BuildGroupKeyframes(mDocument, capturedElement.mOldState.mTransform,
-                              capturedElement.mOldState.mSize);
-
+                              capturedElement.mOldState.mBorderBoxSize,
+                              capturedElement.mOldState.mBackdropFilters);
       // Set capturedElement's group animation name rule to ...
       SetProp(EnsureRule(capturedElement.mGroupRule), mDocument,
               eCSSProperty_animation_name, dynamicAnimationName);
@@ -791,16 +919,17 @@ void ViewTransition::SetupTransitionPseudoElements() {
     }
   }
   BindContext context(*docElement, BindContext::ForNativeAnonymous);
-  if (NS_FAILED(mViewTransitionRoot->BindToTree(context, *docElement))) {
-    mViewTransitionRoot->UnbindFromTree();
-    mViewTransitionRoot = nullptr;
+  if (NS_FAILED(mSnapshotContainingBlock->BindToTree(context, *docElement))) {
+    mSnapshotContainingBlock->UnbindFromTree();
+    mSnapshotContainingBlock = nullptr;
     return;
   }
   if (mDocument->DevToolsAnonymousAndShadowEventsEnabled()) {
-    mViewTransitionRoot->QueueDevtoolsAnonymousEvent(/* aIsRemove = */ false);
+    mSnapshotContainingBlock->QueueDevtoolsAnonymousEvent(
+        /* aIsRemove = */ false);
   }
   if (PresShell* ps = mDocument->GetPresShell()) {
-    ps->ContentAppended(mViewTransitionRoot);
+    ps->ContentAppended(mSnapshotContainingBlock, {});
   }
 }
 
@@ -828,15 +957,14 @@ bool ViewTransition::UpdatePseudoElementStyles(bool aNeedsInvalidation) {
       return false;
     }
     auto* rule = EnsureRule(capturedElement.mGroupRule);
-    // Let newRect be snapshot containing block if capturedElement is the
-    // document element, otherwise, capturedElement’s border box.
-    // NOTE: Needs ink overflow rect instead to get the correct rendering, see
-    // https://github.com/w3c/csswg-drafts/issues/12092.
-    // TODO(emilio, bug 1961139): Maybe revisit this.
-    auto newRect = frame->Style()->IsRootElementStyle()
-                       ? SnapshotContainingBlockRect()
-                       : frame->InkOverflowRectRelativeToSelf();
-    auto size = CSSPixel::FromAppUnits(newRect);
+    // Note: mInitialSnapshotContainingBlockSize should be the same as the
+    // current snapshot containing block size because the caller checks it
+    // before calling us.
+    const auto newBorderBoxSize =
+        CapturedRect(frame, mInitialSnapshotContainingBlockSize,
+                     CapturedRectType::BorderBox)
+            .Size();
+    auto size = CSSPixel::FromAppUnits(newBorderBoxSize);
     // NOTE(emilio): Intentionally not short-circuiting. Int cast is needed to
     // silence warning.
     bool groupStyleChanged =
@@ -870,10 +998,14 @@ bool ViewTransition::UpdatePseudoElementStyles(bool aNeedsInvalidation) {
 
     // 5. Live capturing (nothing to do here regarding the capture itself, but
     // if the size has changed, then we need to invalidate the new frame).
-    auto oldSize = capturedElement.mNewSnapshotSize;
-    capturedElement.mNewSnapshotSize =
-        frame->InkOverflowRectRelativeToSelf().Size();
-    if (oldSize != capturedElement.mNewSnapshotSize && aNeedsInvalidation) {
+    const auto newSnapshotRect =
+        CapturedRect(frame, mInitialSnapshotContainingBlockSize,
+                     CapturedRectType::InkOverflowBox);
+    auto oldRect = capturedElement.mNewSnapshotRect;
+    capturedElement.mNewSnapshotRect = newSnapshotRect;
+    capturedElement.mNewBorderBoxSize = newBorderBoxSize;
+    if (!oldRect.IsEqualEdges(capturedElement.mNewSnapshotRect) &&
+        aNeedsInvalidation) {
       frame->PresShell()->FrameNeedsReflow(
           frame, IntrinsicDirty::FrameAndAncestors, NS_FRAME_IS_DIRTY);
     }
@@ -883,11 +1015,15 @@ bool ViewTransition::UpdatePseudoElementStyles(bool aNeedsInvalidation) {
 
 // https://drafts.csswg.org/css-view-transitions-1/#activate-view-transition
 void ViewTransition::Activate() {
+  AUTO_PROFILER_FLOW_MARKER("ViewTransition::Activate", LAYOUT,
+                            Flow::FromPointer(this));
   // Step 1: If transition's phase is "done", then return.
   if (mPhase == Phase::Done) {
     return;
   }
 
+  // Step 2: Set transition’s relevant global object’s associated document’s
+  // rendering suppression for view transitions to false.
   mDocument->SetRenderingSuppressedForViewTransitions(false);
 
   // Step 3: If transition's initial snapshot containing block size is not
@@ -938,6 +1074,8 @@ void ViewTransition::Activate() {
 void ViewTransition::PerformPendingOperations() {
   MOZ_ASSERT(mDocument);
   MOZ_ASSERT(mDocument->GetActiveViewTransition() == this);
+  AUTO_PROFILER_FLOW_MARKER("ViewTransition::PerformPendingOperations", LAYOUT,
+                            Flow::FromPointer(this));
 
   // Flush the update callback queue.
   // Note: this ensures that any changes to the DOM scheduled by other skipped
@@ -958,7 +1096,9 @@ void ViewTransition::PerformPendingOperations() {
 
 // https://drafts.csswg.org/css-view-transitions/#snapshot-containing-block
 nsRect ViewTransition::SnapshotContainingBlockRect(nsPresContext* aPc) {
-  return aPc ? aPc->GetVisibleArea() : nsRect();
+  return aPc ? nsRect(aPc->GetVisibleArea().TopLeft(),
+                      aPc->GetSizeForViewportUnits())
+             : nsRect();
 }
 
 // https://drafts.csswg.org/css-view-transitions/#snapshot-containing-block
@@ -967,11 +1107,22 @@ nsRect ViewTransition::SnapshotContainingBlockRect() const {
   return SnapshotContainingBlockRect(pc);
 }
 
+nsRect ViewTransition::CapturedInkOverflowRectForFrame(nsIFrame* aFrame,
+                                                       bool aIsRoot) {
+  auto snapshotCb = SnapshotContainingBlockRect(aFrame->PresContext());
+  if (aIsRoot) {
+    return snapshotCb;
+  }
+  return CapturedRect(aFrame, snapshotCb.Size(),
+                      CapturedRectType::InkOverflowBox);
+}
+
 Element* ViewTransition::FindPseudo(const PseudoStyleRequest& aRequest) const {
-  Element* root = GetRoot();
+  Element* root = GetViewTransitionTreeRoot();
   if (!root) {
     return nullptr;
   }
+  MOZ_ASSERT(root->GetPseudoElementType() == PseudoStyleType::viewTransition);
 
   if (aRequest.mType == PseudoStyleType::viewTransition) {
     return root;
@@ -1055,24 +1206,74 @@ const StyleLockedDeclarationBlock* ViewTransition::GetDynamicRuleFor(
   }
 }
 
-// FIXME(emilio): This should actually iterate in paint order.
+// This function collects frames in the same stacking context. We only put
+// the frames which may create a new create stacking context in the list because
+// they (and their descendants) are candidates for captured elements (i.e. with
+// a valid view-transition-name).
+static void CollectDescendantStackingContexts(nsIFrame* aStackingContextRoot,
+                                              nsTArray<nsIFrame*>& aList) {
+  for (auto& [list, id] : aStackingContextRoot->ChildLists()) {
+    for (nsIFrame* f : list) {
+      // FIXME: We probably can skip more frames, e.g. scrollbar or scrollcorner
+      // to save some time.
+
+      // We only want to sort the frames form a new stacking context in the
+      // current stacking context (including the root stacking context). If it
+      // creates a new stacking context, its descendants should be traversed
+      // (and sorted) independently. Also, if a frame has view-transition-name,
+      // it should create a stacking context as well, so this check must include
+      // frames with view-transition-name.
+      // Note: the root frame may not be the root element, so we still have to
+      // check if |f| is the root element.
+      if (f->Style()->IsRootElementStyle() || f->IsStackingContext()) {
+        aList.AppendElement(f);
+        // We will continue to traverse its descendants after we sort |aList|.
+        continue;
+      }
+
+      // If any flat tree ancestor of this element skips its contents, then
+      // continue.
+      if (f->IsHiddenByContentVisibilityOnAnyAncestor()) {
+        continue;
+      }
+
+      // If |insertionFrame| doesn't create stacking context, we have to check
+      // its descendants because they are still in the current stacking context.
+      CollectDescendantStackingContexts(f, aList);
+    }
+  }
+}
+
+struct ZOrderComparator {
+  bool LessThan(const nsIFrame* aLeft, const nsIFrame* aRight) const {
+    return aLeft->ZIndex().valueOr(0) < aRight->ZIndex().valueOr(0);
+  }
+};
+
 template <typename Callback>
-static bool ForEachChildFrame(nsIFrame* aFrame, const Callback& aCb) {
-  if (!aCb(aFrame)) {
+static bool ForEachDescendantWithViewTransitionNameInPaintOrder(
+    nsIFrame* aFrame, const Callback& aCb) {
+  // Call the callback if it specifies view-transition-name.
+  if (!aFrame->StyleUIReset()->mViewTransitionName.IsNone() && !aCb(aFrame)) {
     return false;
   }
-  for (auto& [list, id] : aFrame->ChildLists()) {
-    for (nsIFrame* f : list) {
-      if (!ForEachChildFrame(f, aCb)) {
-        return false;
-      }
+
+  nsTArray<nsIFrame*> descendantStackingContexts;
+  CollectDescendantStackingContexts(aFrame, descendantStackingContexts);
+  // Sort by z-index to make sure we call the callback in paint order.
+  descendantStackingContexts.StableSort(ZOrderComparator());
+
+  for (nsIFrame* f : descendantStackingContexts) {
+    if (!ForEachDescendantWithViewTransitionNameInPaintOrder(f, aCb)) {
+      return false;
     }
   }
   return true;
 }
 
 template <typename Callback>
-static void ForEachFrame(Document* aDoc, const Callback& aCb) {
+static void ForEachFrameWithViewTransitionName(Document* aDoc,
+                                               const Callback& aCb) {
   PresShell* ps = aDoc->GetPresShell();
   if (!ps) {
     return;
@@ -1081,20 +1282,7 @@ static void ForEachFrame(Document* aDoc, const Callback& aCb) {
   if (!root) {
     return;
   }
-  ForEachChildFrame(root, aCb);
-}
-
-// https://drafts.csswg.org/css-view-transitions-1/#document-scoped-view-transition-name
-static nsAtom* DocumentScopedTransitionNameFor(nsIFrame* aFrame) {
-  auto* name = aFrame->StyleUIReset()->mViewTransitionName._0.AsAtom();
-  if (name->IsEmpty()) {
-    return nullptr;
-  }
-  // TODO(emilio): This isn't quite correct, per spec we're supposed to only
-  // honor names coming from the document, but that's quite some magic,
-  // and it's getting actively discussed, see:
-  // https://github.com/w3c/csswg-drafts/issues/10808 and related
-  return name;
+  ForEachDescendantWithViewTransitionNameInPaintOrder(root, aCb);
 }
 
 // https://drafts.csswg.org/css-view-transitions/#capture-the-old-state
@@ -1105,7 +1293,7 @@ Maybe<SkipTransitionReason> ViewTransition::CaptureOldState() {
   // Step 3: Let usedTransitionNames be a new set of strings.
   nsTHashSet<nsAtom*> usedTransitionNames;
   // Step 4: Let captureElements be a new list of elements.
-  AutoTArray<std::pair<nsIFrame*, nsAtom*>, 32> captureElements;
+  OldCaptureFramesArray captureElements;
 
   // Step 5: If the snapshot containing block size exceeds an
   // implementation-defined maximum, then return failure.
@@ -1118,16 +1306,11 @@ Maybe<SkipTransitionReason> ViewTransition::CaptureOldState() {
   // Step 7: For each element of every element that is connected, and has a node
   // document equal to document, in paint order:
   Maybe<SkipTransitionReason> result;
-  ForEachFrame(mDocument, [&](nsIFrame* aFrame) {
-    auto* name = DocumentScopedTransitionNameFor(aFrame);
+  ForEachFrameWithViewTransitionName(mDocument, [&](nsIFrame* aFrame) {
+    RefPtr<nsAtom> name = DocumentScopedTransitionNameFor(aFrame);
     if (!name) {
       // As a fast path we check for v-t-n first.
       // If transitionName is none, or element is not rendered, then continue.
-      return true;
-    }
-    if (aFrame->IsHiddenByContentVisibilityOnAnyAncestor()) {
-      // If any flat tree ancestor of this element skips its contents, then
-      // continue.
       return true;
     }
     if (aFrame->GetPrevContinuation() || aFrame->GetNextContinuation()) {
@@ -1135,19 +1318,23 @@ Maybe<SkipTransitionReason> ViewTransition::CaptureOldState() {
       return true;
     }
     if (!usedTransitionNames.EnsureInserted(name)) {
+      // We don't expect to see a duplicate transition name when using
+      // match-element.
+      MOZ_ASSERT(!aFrame->StyleUIReset()->mViewTransitionName.IsMatchElement());
+
       // If usedTransitionNames contains transitionName, then return failure.
       result.emplace(
           SkipTransitionReason::DuplicateTransitionNameCapturingOldState);
       return false;
     }
-    SetCaptured(aFrame, true);
-    captureElements.AppendElement(std::make_pair(aFrame, name));
+    SetCaptured(aFrame, true, name.get());
+    captureElements.AppendElement(std::make_pair(aFrame, std::move(name)));
     return true;
   });
 
   if (result) {
     for (auto& [f, name] : captureElements) {
-      SetCaptured(f, false);
+      SetCaptured(f, false, nullptr);
     }
     return result;
   }
@@ -1158,29 +1345,35 @@ Maybe<SkipTransitionReason> ViewTransition::CaptureOldState() {
   for (auto& [f, name] : captureElements) {
     MOZ_ASSERT(f);
     MOZ_ASSERT(f->GetContent()->IsElement());
-    auto capture =
-        MakeUnique<CapturedElement>(f, mInitialSnapshotContainingBlockSize);
+    // Capture the view-transition-class.
+    // https://drafts.csswg.org/css-view-transitions-2/#vt-class-algorithms
+    auto capture = MakeUnique<CapturedElement>(
+        f, mInitialSnapshotContainingBlockSize, DocumentScopedClassListFor(f));
     mNamedElements.InsertOrUpdate(name, std::move(capture));
     mNames.AppendElement(name);
   }
 
-  if (StaticPrefs::dom_viewTransitions_wr_old_capture()) {
+  if (!captureElements.IsEmpty()) {
+    AutoRestore guard{mOldCaptureElements};
+    mOldCaptureElements = &captureElements;
     // When snapshotting an iframe, we need to paint from the root subdoc.
     if (RefPtr<PresShell> ps =
             nsContentUtils::GetInProcessSubtreeRootDocument(mDocument)
                 ->GetPresShell()) {
-      VT_LOG("ViewTransitions::CaptureOldState(), requesting composite");
       // Build a display list and send it to WR in order to perform the
       // capturing of old content.
-      RefPtr<nsViewManager> vm = ps->GetViewManager();
-      ps->PaintAndRequestComposite(vm->GetRootView(),
-                                   PaintFlags::PaintCompositeOffscreen);
-      VT_LOG("ViewTransitions::CaptureOldState(), requesting composite end");
+      if (RefPtr widget = ps->GetRootWidget()) {
+        VT_LOG("ViewTransitions::CaptureOldState(), requesting composite");
+        ps->PaintAndRequestComposite(ps->GetRootFrame(),
+                                     widget->GetWindowRenderer(),
+                                     PaintFlags::PaintCompositeOffscreen);
+        VT_LOG("ViewTransitions::CaptureOldState(), requesting composite end");
+      }
     }
   }
 
   for (auto& [f, name] : captureElements) {
-    SetCaptured(f, false);
+    SetCaptured(f, false, nullptr);
   }
   return result;
 }
@@ -1189,15 +1382,10 @@ Maybe<SkipTransitionReason> ViewTransition::CaptureOldState() {
 Maybe<SkipTransitionReason> ViewTransition::CaptureNewState() {
   nsTHashSet<nsAtom*> usedTransitionNames;
   Maybe<SkipTransitionReason> result;
-  ForEachFrame(mDocument, [&](nsIFrame* aFrame) {
+  ForEachFrameWithViewTransitionName(mDocument, [&](nsIFrame* aFrame) {
     // As a fast path we check for v-t-n first.
-    auto* name = DocumentScopedTransitionNameFor(aFrame);
+    RefPtr<nsAtom> name = DocumentScopedTransitionNameFor(aFrame);
     if (!name) {
-      return true;
-    }
-    if (aFrame->IsHiddenByContentVisibilityOnAnyAncestor()) {
-      // If any flat tree ancestor of this element skips its contents, then
-      // continue.
       return true;
     }
     if (aFrame->GetPrevContinuation() || aFrame->GetNextContinuation()) {
@@ -1205,6 +1393,9 @@ Maybe<SkipTransitionReason> ViewTransition::CaptureNewState() {
       return true;
     }
     if (!usedTransitionNames.EnsureInserted(name)) {
+      // We don't expect to see a duplicate transition name when using
+      // match-element.
+      MOZ_ASSERT(!aFrame->StyleUIReset()->mViewTransitionName.IsMatchElement());
       result.emplace(
           SkipTransitionReason::DuplicateTransitionNameCapturingNewState);
       return false;
@@ -1218,9 +1409,23 @@ Maybe<SkipTransitionReason> ViewTransition::CaptureNewState() {
       mNames.AppendElement(name);
     }
     capturedElement->mNewElement = aFrame->GetContent()->AsElement();
-    capturedElement->mNewSnapshotSize =
-        aFrame->InkOverflowRectRelativeToSelf().Size();
-    SetCaptured(aFrame, true);
+    auto capturedRect =
+        CapturedRect(aFrame, mInitialSnapshotContainingBlockSize,
+                     CapturedRectType::InkOverflowBox);
+    // Note: mInitialSnapshotContainingBlockSize should be the same as the
+    // current snapshot containing block size at this moment because the caller
+    // checks it before calling us.
+    capturedElement->mNewSnapshotRect = capturedRect;
+    capturedElement->mNewBorderBoxSize =
+        CapturedRect(aFrame, mInitialSnapshotContainingBlockSize,
+                     CapturedRectType::BorderBox)
+            .Size();
+    // Update its class list. This may override the existing class list because
+    // the users may change view-transition-class in the callback function. We
+    // have to use the latest one.
+    // https://drafts.csswg.org/css-view-transitions-2/#vt-class-algorithms
+    capturedElement->CaptureClassList(DocumentScopedClassListFor(aFrame));
+    SetCaptured(aFrame, true, name);
     return true;
   });
   return result;
@@ -1228,6 +1433,8 @@ Maybe<SkipTransitionReason> ViewTransition::CaptureNewState() {
 
 // https://drafts.csswg.org/css-view-transitions/#setup-view-transition
 void ViewTransition::Setup() {
+  AUTO_PROFILER_FLOW_MARKER("ViewTransition::Setup", LAYOUT,
+                            Flow::FromPointer(this));
   // Step 2: Capture the old state for transition.
   if (auto skipReason = CaptureOldState()) {
     // If failure is returned, then skip the view transition for transition
@@ -1256,6 +1463,8 @@ void ViewTransition::HandleFrame() {
 
   // Step 4: If hasActiveAnimations is false:
   if (!hasActiveAnimations) {
+    AUTO_PROFILER_TERMINATING_FLOW_MARKER("ViewTransition::HandleFrameFinish",
+                                          LAYOUT, Flow::FromPointer(this));
     // 4.1: Set transition's phase to "done".
     mPhase = Phase::Done;
     // 4.2: Clear view transition transition.
@@ -1266,6 +1475,10 @@ void ViewTransition::HandleFrame() {
     }
     return;
   }
+
+  AUTO_PROFILER_FLOW_MARKER("ViewTransition::HandleFrame", LAYOUT,
+                            Flow::FromPointer(this));
+
   // Step 5: If transition’s initial snapshot containing block size is not equal
   // to the snapshot containing block size, then skip the view transition for
   // transition with an "InvalidStateError" DOMException in transition’s
@@ -1393,7 +1606,7 @@ void ViewTransition::ClearNamedElements() {
   for (auto& entry : mNamedElements) {
     if (auto* element = entry.GetData()->mNewElement.get()) {
       if (nsIFrame* f = element->GetPrimaryFrame()) {
-        SetCaptured(f, false);
+        SetCaptured(f, false, nullptr);
       }
     }
   }
@@ -1419,21 +1632,28 @@ void ViewTransition::ClearActiveTransition(bool aIsDocumentHidden) {
   MOZ_ASSERT(mDocument);
   MOZ_ASSERT(mDocument->GetActiveViewTransition() == this);
 
+  // Ensure that any styles associated with :active-view-transition no longer
+  // apply.
+  if (auto* root = mDocument->GetRootElement()) {
+    root->RemoveStates(ElementState::ACTIVE_VIEW_TRANSITION);
+  }
+
   // Step 3
   ClearNamedElements();
 
   // Step 4: Clear show transition tree flag (we just destroy the pseudo tree,
   // see SetupTransitionPseudoElements).
-  if (mViewTransitionRoot) {
+  if (mSnapshotContainingBlock) {
     nsAutoScriptBlocker scriptBlocker;
     if (mDocument->DevToolsAnonymousAndShadowEventsEnabled()) {
-      mViewTransitionRoot->QueueDevtoolsAnonymousEvent(/* aIsRemove = */ true);
+      mSnapshotContainingBlock->QueueDevtoolsAnonymousEvent(
+          /* aIsRemove = */ true);
     }
     if (PresShell* ps = mDocument->GetPresShell()) {
-      ps->ContentWillBeRemoved(mViewTransitionRoot, nullptr);
+      ps->ContentWillBeRemoved(mSnapshotContainingBlock, {});
     }
-    mViewTransitionRoot->UnbindFromTree();
-    mViewTransitionRoot = nullptr;
+    mSnapshotContainingBlock->UnbindFromTree();
+    mSnapshotContainingBlock = nullptr;
 
     // If the document is being destroyed, we cannot get the animation data
     // (e.g. it may crash when using nsINode::GetBoolFlag()), so we have to skip
@@ -1462,6 +1682,9 @@ void ViewTransition::SkipTransition(
   MOZ_ASSERT_IF(aReason != SkipTransitionReason::JS, mPhase != Phase::Done);
   MOZ_ASSERT_IF(aReason != SkipTransitionReason::UpdateCallbackRejected,
                 aUpdateCallbackRejectReason == JS::UndefinedHandleValue);
+  VT_LOG("ViewTransition::SkipTransition(%d, %d)\n", int(mPhase), int(aReason));
+  AUTO_PROFILER_TERMINATING_FLOW_MARKER("ViewTransition::SkipTransition",
+                                        LAYOUT, Flow::FromPointer(this));
   if (mPhase == Phase::Done) {
     return;
   }
@@ -1511,6 +1734,14 @@ void ViewTransition::SkipTransition(
         readyPromise->MaybeRejectWithInvalidStateError(
             "Duplicate view-transition-name value while capturing new state");
         break;
+      case SkipTransitionReason::RootRemoved:
+        readyPromise->MaybeRejectWithInvalidStateError(
+            "Skipped view transition due to root element going away");
+        break;
+      case SkipTransitionReason::PageSwap:
+        readyPromise->MaybeRejectWithInvalidStateError(
+            "Skipped view transition due to page swap");
+        break;
       case SkipTransitionReason::Resize:
         readyPromise->MaybeRejectWithInvalidStateError(
             "Skipped view transition due to viewport resize");
@@ -1518,6 +1749,10 @@ void ViewTransition::SkipTransition(
       case SkipTransitionReason::PseudoUpdateFailure:
         readyPromise->MaybeRejectWithInvalidStateError(
             "Skipped view transition due to hidden new element");
+        break;
+      case SkipTransitionReason::ResetRendering:
+        readyPromise->MaybeRejectWithInvalidStateError(
+            "Skipped view transition due to graphics process or device reset");
         break;
       case SkipTransitionReason::UpdateCallbackRejected:
         readyPromise->MaybeReject(aUpdateCallbackRejectReason);
@@ -1562,9 +1797,232 @@ void ViewTransition::SkipTransition(
   }
 }
 
+Maybe<uint64_t> ViewTransition::GetElementIdentifier(Element* aElement) const {
+  return mElementIdentifiers.MaybeGet(aElement);
+}
+
+uint64_t ViewTransition::EnsureElementIdentifier(Element* aElement) {
+  static uint64_t sLastIdentifier = 0;
+  return mElementIdentifiers.WithEntryHandle(aElement, [&](auto&& entry) {
+    return entry.OrInsertWith([&]() { return sLastIdentifier++; });
+  });
+}
+
+already_AddRefed<nsAtom> ViewTransition::DocumentScopedTransitionNameFor(
+    nsIFrame* aFrame) {
+  // TODO(emilio): Bug 1970954. These aren't quite correct, per spec we're
+  // supposed to only honor names and classes coming from the document, but
+  // that's quite some magic, and it's getting actively discussed, see:
+  // https://github.com/w3c/csswg-drafts/issues/10808 and related
+  // https://drafts.csswg.org/css-view-transitions-1/#document-scoped-view-transition-name
+  // https://drafts.csswg.org/css-view-transitions-2/#additions-to-vt-name
+  // 1. Let computed be the computed value of view-transition-name.
+  const auto& computed = aFrame->StyleUIReset()->mViewTransitionName;
+
+  // 2. If computed is none, return null.
+  if (computed.IsNone()) {
+    return nullptr;
+  }
+
+  // As a special case, if we're a <table> element, the table wrapper is what's
+  // captured.
+  if (aFrame->IsTableFrame()) {
+    return nullptr;
+  }
+
+  // 3. If computed is a <custom-ident>, return computed.
+  if (computed.IsIdent()) {
+    return RefPtr<nsAtom>{computed.AsIdent().AsAtom()}.forget();
+  }
+
+  // 4. Assert: computed is auto or match-element.
+  // TODO: Bug 1918218. Implement auto or others, depending on the spec issue.
+  // https://github.com/w3c/csswg-drafts/issues/12091
+  MOZ_ASSERT(computed.IsMatchElement());
+
+  // 5. If computed is auto, element has an associated id, and computed is
+  // associated with the same root as element’s root, then return a unique
+  // string starting with "-ua-". Two elements with the same id must return the
+  // same string, regardless of their node document.
+  // TODO: Bug 1918218. auto keyword may be changed. See the spec issue
+  // mentioned above..
+
+  // 6. Return a unique string starting with "-ua-". The string should remain
+  // consistent and unique for this element and Document, at least for the
+  // lifetime of element’s node document’s active view transition.
+  nsIContent* content = aFrame->GetContent();
+  if (MOZ_UNLIKELY(!content || !content->IsElement())) {
+    return nullptr;
+  }
+
+  uint64_t id = EnsureElementIdentifier(content->AsElement());
+
+  // FIXME: We may have to revist here when working on cross document because we
+  // may have to return a warning and nullptr, per the comment in the design
+  // review.
+  // https://github.com/w3ctag/design-reviews/issues/1001#issuecomment-2750966335
+  nsCString name;
+  // Note: Add the "view-transition-name" in the prefix so we know this is for
+  // auto-generated view-transition-name.
+  name.AppendLiteral("-ua-view-transition-name-");
+  name.AppendInt(id);
+  return NS_Atomize(name);
+}
+
 JSObject* ViewTransition::WrapObject(JSContext* aCx,
                                      JS::Handle<JSObject*> aGivenProto) {
   return ViewTransition_Binding::Wrap(aCx, this, aGivenProto);
+}
+
+static void ComputeActiveRect1D(nscoord aViewMin, nscoord aViewSize,
+                                nscoord& aCaptureMin, nscoord& aCaptureSize) {
+  nscoord captureMax = aCaptureMin + aCaptureSize;
+  nscoord viewMax = aViewMin + aViewSize;
+
+  nscoord min;
+  nscoord max;
+
+  if (aCaptureSize < aViewSize) {
+    // The snapshot area is small enough on this axis, don't clip it.
+    min = aCaptureMin;
+    max = min + aCaptureSize;
+  } else if (aViewMin < aCaptureMin) {
+    // The view is before the capture area. Restrict the cpature size while
+    // snaping it to the beginning of its range.
+    min = aCaptureMin;
+    max = min + aViewSize;
+  } else if (viewMax > captureMax) {
+    // The view is after the capture area. Restrict the cpature size while
+    // snaping it to the end of its range.
+    max = captureMax;
+    min = max - aViewSize;
+  } else {
+    // The snapshot area extends beyond the viewport on both sides,
+    // set it to the viewport.
+    min = aViewMin;
+    max = viewMax;
+  }
+
+  aCaptureMin = min;
+  aCaptureSize = max - min;
+}
+
+void ViewTransition::UpdateActiveRectForCapturedFrame(
+    nsIFrame* aCapturedFrame, const gfx::MatrixScales& aInheritedScale,
+    nsRect& aOutCaptureRect) {
+  nsAtom* name = aCapturedFrame->GetProperty(ViewTransitionCaptureName());
+  if (NS_WARN_IF(!name)) {
+    return;
+  }
+
+  auto* el = mNamedElements.Get(name);
+  if (NS_WARN_IF(!el)) {
+    return;
+  }
+
+  const bool isOld = mPhase < Phase::Animating;
+
+  // The active rect to update (old or new).
+  Maybe<nsRect>* activeRect;
+  if (isOld) {
+    activeRect = &el->mOldActiveRect;
+    // We don't rely on it, but as a sanity check, since we only capture
+    // the old state once so we aren't expecting it to already contain an
+    // active rect.
+    MOZ_ASSERT(activeRect->isNothing());
+  } else {
+    activeRect = &el->mNewActiveRect;
+  }
+
+  // Reset the active rect in case we early out and had previously
+  // updated it.
+  activeRect->reset();
+
+  auto presShell = aCapturedFrame->PresShell();
+  if (!presShell->IsVisualViewportSizeSet()) {
+    return;
+  }
+
+  nsPresContext* pc = aCapturedFrame->PresContext();
+
+  auto rootViewportSize = presShell->GetVisualViewportSize();
+  auto auPerDevPx = pc->AppUnitsPerDevPixel();
+  auto vvpSize = LayoutDeviceSize::FromAppUnits(rootViewportSize, auPerDevPx);
+  auto capSize =
+      LayoutDeviceSize::FromAppUnits(aOutCaptureRect.Size(), auPerDevPx);
+  capSize.width *= aInheritedScale.xScale;
+  capSize.height *= aInheritedScale.yScale;
+
+  // If the capture size is smaller than the visual viewport, it's a good
+  // indication that it is not unreasonably large, so we can early out.
+  if (capSize.width < vvpSize.width && capSize.height < vvpSize.height) {
+    return;
+  }
+
+  // viewport is relative to the root frame.
+  // auto rootViewportOrigin = presShell->GetVisualViewportOffset();
+  auto rootViewportOrigin = nsPoint(0, 0);
+  nsRect viewport = nsRect(rootViewportOrigin, rootViewportSize);
+
+  // Inflate the viewport rect to give a bit of extra headroom in case the user
+  // scrolls a bit during the transition or the transition has some motion to
+  // it. But at the same time we want to avoid the margin pushing the snapshot
+  // size over 4k pixels since that will cause WebRender to render it
+  // downscaled.
+  float scale = std::max(aInheritedScale.xScale, aInheritedScale.yScale);
+  nscoord margin = NSFloatPixelsToAppUnits(512.0 / scale, auPerDevPx);
+  nscoord maxSize = NSFloatPixelsToAppUnits(4096.0 / scale, auPerDevPx);
+  margin = std::min(
+      margin,
+      std::max(0, maxSize - std::max(viewport.width, viewport.height)) / 2);
+
+  viewport.Inflate(margin);
+
+  nsIFrame* rootFrame = pc->GetPresShell()->GetRootFrame();
+
+  const auto SUCCESS = nsLayoutUtils::TransformResult::TRANSFORM_SUCCEEDED;
+  if (!rootFrame || nsLayoutUtils::TransformRect(rootFrame, aCapturedFrame,
+                                                 viewport) != SUCCESS) {
+    return;
+  }
+  // viewport is now relative to aCapturedFrame.
+
+  ComputeActiveRect1D(viewport.x, viewport.width, aOutCaptureRect.x,
+                      aOutCaptureRect.width);
+  ComputeActiveRect1D(viewport.y, viewport.height, aOutCaptureRect.y,
+                      aOutCaptureRect.height);
+
+  // Store the active rect for later when we create the image items.
+  *activeRect = Some(aOutCaptureRect);
+}
+
+Maybe<nsRect> ViewTransition::GetOldActiveRect(nsAtom* aName) const {
+  auto* el = mNamedElements.Get(aName);
+  if (NS_WARN_IF(!el)) {
+    return Nothing();
+  }
+
+  return el->mOldActiveRect;
+}
+
+Maybe<nsRect> ViewTransition::GetNewActiveRect(nsAtom* aName) const {
+  auto* el = mNamedElements.Get(aName);
+  if (NS_WARN_IF(!el)) {
+    return Nothing();
+  }
+
+  return el->mNewActiveRect;
+}
+
+ViewTransitionTypeSet* ViewTransition::Types() {
+  if (!mTypes) {
+    mTypes = new ViewTransitionTypeSet(*this);
+    for (const auto& type : mTypeList) {
+      ViewTransitionTypeSet_Binding::SetlikeHelpers::Add(
+          mTypes, nsDependentAtomString(type), IgnoreErrors());
+    }
+  }
+  return mTypes;
 }
 
 };  // namespace mozilla::dom

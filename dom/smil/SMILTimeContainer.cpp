@@ -6,11 +6,12 @@
 
 #include "SMILTimeContainer.h"
 
+#include <algorithm>
+
 #include "mozilla/AutoRestore.h"
 #include "mozilla/CheckedInt.h"
-#include "mozilla/SMILTimedElement.h"
 #include "mozilla/SMILTimeValue.h"
-#include <algorithm>
+#include "mozilla/SMILTimedElement.h"
 
 namespace mozilla {
 
@@ -82,6 +83,10 @@ void SMILTimeContainer::Pause(uint32_t aType) {
   if (didStartPause) {
     NotifyTimeChange();
   }
+}
+
+void SMILTimeContainer::PauseAt(SMILTime aTime) {
+  mPauseTime = Some(std::max<SMILTime>(0, aTime));
 }
 
 void SMILTimeContainer::Resume(uint32_t aType) {
@@ -161,8 +166,11 @@ void SMILTimeContainer::Sample() {
 
   UpdateCurrentTime();
   DoSample();
-
   mNeedsPauseSample = false;
+
+  if (mPauseTime && mCurrentTime >= mPauseTime.value()) {
+    Pause(PAUSE_SCRIPT);
+  }
 }
 
 nsresult SMILTimeContainer::SetParent(SMILTimeContainer* aParent) {

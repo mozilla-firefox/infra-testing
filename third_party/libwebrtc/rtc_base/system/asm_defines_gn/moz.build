@@ -16,6 +16,7 @@ DEFINES["RTC_ENABLE_VP9"] = True
 DEFINES["WEBRTC_ARCH_ARM"] = True
 DEFINES["WEBRTC_ARCH_ARM_V7"] = True
 DEFINES["WEBRTC_ENABLE_PROTOBUF"] = "0"
+DEFINES["WEBRTC_ENCODER_PSNR_STATS"] = True
 DEFINES["WEBRTC_HAS_NEON"] = True
 DEFINES["WEBRTC_LIBRARY_IMPL"] = True
 DEFINES["WEBRTC_LINUX"] = True
@@ -31,6 +32,7 @@ FINAL_LIBRARY = "xul"
 
 
 LOCAL_INCLUDES += [
+    "!/dist/include/libwebrtc_overrides",
     "!/ipc/ipdl/_ipdlheaders",
     "!/third_party/libwebrtc/gen",
     "/ipc/chromium/src",
@@ -53,28 +55,20 @@ if CONFIG["MOZ_DEBUG"] == "1":
 if CONFIG["OS_TARGET"] == "Android":
 
     DEFINES["ANDROID"] = True
-    DEFINES["ANDROID_NDK_VERSION_ROLL"] = "r22_1"
+    DEFINES["ANDROID_NDK_VERSION_ROLL"] = "r27_1"
     DEFINES["HAVE_SYS_UIO_H"] = True
     DEFINES["WEBRTC_ANDROID"] = True
     DEFINES["WEBRTC_ANDROID_OPENSLES"] = True
-
-    OS_LIBS += [
-        "unwind"
-    ]
+    DEFINES["__ANDROID_UNAVAILABLE_SYMBOLS_ARE_WEAK__"] = True
 
 if CONFIG["OS_TARGET"] == "Linux":
 
     DEFINES["USE_AURA"] = "1"
     DEFINES["USE_GLIB"] = "1"
-    DEFINES["USE_NSS_CERTS"] = "1"
     DEFINES["USE_OZONE"] = "1"
     DEFINES["USE_UDEV"] = True
     DEFINES["_FILE_OFFSET_BITS"] = "64"
     DEFINES["_LARGEFILE64_SOURCE"] = True
     DEFINES["_LARGEFILE_SOURCE"] = True
-
-if CONFIG["MOZ_X11"] == "1" and CONFIG["OS_TARGET"] == "Linux":
-
-    DEFINES["USE_X11"] = "1"
 
 Library("asm_defines_gn")

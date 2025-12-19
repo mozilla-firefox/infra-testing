@@ -11,6 +11,7 @@ import androidx.preference.SwitchPreference
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
 import mozilla.components.concept.storage.Address
 import mozilla.components.concept.storage.CreditCard
@@ -29,10 +30,11 @@ import org.junit.runner.RunWith
 import org.mozilla.fenix.R
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.getPreferenceKey
-import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
+import org.mozilla.fenix.settings.requirePreference
 import org.robolectric.Robolectric
+import org.robolectric.RobolectricTestRunner
 
-@RunWith(FenixRobolectricTestRunner::class)
+@RunWith(RobolectricTestRunner::class)
 class AutofillSettingFragmentTest {
 
     @get:Rule
@@ -40,14 +42,17 @@ class AutofillSettingFragmentTest {
     private lateinit var autofillSettingFragment: AutofillSettingFragment
     private val navController: NavController = mockk(relaxed = true)
 
+    @OptIn(ExperimentalCoroutinesApi::class) // advanceUntilIdle
     @Before
     fun setUp() = runTestOnMain {
         every { testContext.components.settings } returns mockk(relaxed = true)
         every { testContext.components.core } returns mockk(relaxed = true)
 
+        every { testContext.components.settings.enableComposeAutofillSettings } returns false
         every { testContext.components.settings.addressFeature } returns true
         every { testContext.components.settings.shouldAutofillCreditCardDetails } returns true
         every { testContext.components.settings.shouldAutofillAddressDetails } returns true
+        every { testContext.components.settings.isAddressSyncEnabled } returns true
 
         autofillSettingFragment = AutofillSettingFragment()
 
@@ -181,6 +186,42 @@ class AutofillSettingFragmentTest {
 
         assertNotNull(autofillAddressesPreference)
         assertTrue(autofillAddressesPreference?.isChecked!!)
+    }
+
+    @Test
+    fun `GIVEN the autofill addresses feature & sync are enabled THEN the sync addresses preference is visible`() = runTestOnMain {
+        every { testContext.components.settings.isAddressSyncEnabled } returns true
+
+        autofillSettingFragment.updateAddressPreference(
+            hasAddresses = false,
+            navController = navController,
+        )
+        val addressSyncPreference = autofillSettingFragment.requirePreference<Preference>(
+            R.string.pref_key_addresses_sync_cards_across_devices,
+        )
+
+        assertTrue(
+            "Address sync preference should be visible when address sync is enabled",
+            addressSyncPreference.isVisible,
+        )
+    }
+
+    @Test
+    fun `GIVEN the autofill addresses feature AND sync is not enabled THEN the sync addresses preference is hidden`() = runTestOnMain {
+        every { testContext.components.settings.isAddressSyncEnabled } returns false
+
+        autofillSettingFragment.updateAddressPreference(
+            hasAddresses = false,
+            navController = navController,
+        )
+        val addressSyncPreference = autofillSettingFragment.requirePreference<Preference>(
+            R.string.pref_key_addresses_sync_cards_across_devices,
+        )
+
+        assertFalse(
+            "Address sync preference should not be visible when address sync is disabled",
+            addressSyncPreference.isVisible,
+        )
     }
 
     @Test

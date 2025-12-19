@@ -12,12 +12,10 @@ import io.mockk.just
 import io.mockk.mockk
 import io.mockk.spyk
 import io.mockk.verify
-import mozilla.components.service.pocket.PocketStoriesService
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.utils.toSafeIntent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -26,7 +24,6 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.GleanMetrics.Metrics
-import org.mozilla.fenix.HomeActivity.Companion.PRIVATE_BROWSING_MODE
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
 import org.mozilla.fenix.browser.browsingmode.BrowsingModeManager
 import org.mozilla.fenix.components.AppStore
@@ -35,11 +32,11 @@ import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.getIntentSource
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.helpers.FenixGleanTestRule
-import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
 import org.mozilla.fenix.helpers.perf.TestStrictModeManager
 import org.mozilla.fenix.utils.Settings
+import org.robolectric.RobolectricTestRunner
 
-@RunWith(FenixRobolectricTestRunner::class)
+@RunWith(RobolectricTestRunner::class)
 class HomeActivityTest {
     @get:Rule
     val gleanTestRule = FenixGleanTestRule(testContext)
@@ -76,27 +73,6 @@ class HomeActivityTest {
 
         val otherIntent = Intent().toSafeIntent()
         assertNull(activity.getIntentSource(otherIntent))
-    }
-
-    @Test
-    fun `getModeFromIntentOrLastKnown returns mode from settings when intent does not set`() {
-        every { testContext.settings() } returns Settings(testContext)
-        every { activity.applicationContext } returns testContext
-        testContext.settings().lastKnownMode = BrowsingMode.Private
-
-        assertEquals(testContext.settings().lastKnownMode, activity.getModeFromIntentOrLastKnown(null))
-    }
-
-    @Test
-    fun `getModeFromIntentOrLastKnown returns mode from intent when set`() {
-        every { testContext.settings() } returns Settings(testContext)
-        testContext.settings().lastKnownMode = BrowsingMode.Normal
-
-        val intent = Intent()
-        intent.putExtra(PRIVATE_BROWSING_MODE, true)
-
-        assertNotEquals(testContext.settings().lastKnownMode, activity.getModeFromIntentOrLastKnown(intent))
-        assertEquals(BrowsingMode.Private, activity.getModeFromIntentOrLastKnown(intent))
     }
 
     @Test
@@ -184,22 +160,6 @@ class HomeActivityTest {
         every { activity.applicationContext } returns testContext
 
         assertFalse(activity.shouldStartOnHome(startingIntent))
-    }
-
-    @Test
-    fun `WHEN Pocket sponsored stories profile is migrated to MARS API THEN delete the old Pocket profile`() {
-        val pocketStoriesService: PocketStoriesService = mockk(relaxed = true)
-        every { testContext.settings() } returns Settings(testContext)
-        every { activity.applicationContext } returns testContext
-        testContext.settings().hasPocketSponsoredStoriesProfileMigrated = false
-
-        activity.migratePocketSponsoredStoriesProfile(pocketStoriesService)
-
-        assertTrue(testContext.settings().hasPocketSponsoredStoriesProfileMigrated)
-
-        verify {
-            pocketStoriesService.deleteProfile()
-        }
     }
 
     @Test

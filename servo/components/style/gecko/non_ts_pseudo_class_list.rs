@@ -45,6 +45,7 @@ macro_rules! apply_non_ts_list {
                 ("focus-visible", FocusVisible, FOCUSRING, _),
                 ("has-slotted", HasSlotted, HAS_SLOTTED, _),
                 ("hover", Hover, HOVER, _),
+                ("active-view-transition", ActiveViewTransition, ACTIVE_VIEW_TRANSITION, _),
                 ("-moz-drag-over", MozDragOver, DRAGOVER, _),
                 ("target", Target, URLTARGET, _),
                 ("indeterminate", Indeterminate, INDETERMINATE, _),
@@ -64,6 +65,7 @@ macro_rules! apply_non_ts_list {
                 ("-moz-autofill-preview", MozAutofillPreview, AUTOFILL_PREVIEW, PSEUDO_CLASS_ENABLED_IN_UA_SHEETS_AND_CHROME),
                 ("-moz-value-empty", MozValueEmpty, VALUE_EMPTY, PSEUDO_CLASS_ENABLED_IN_UA_SHEETS),
                 ("-moz-revealed", MozRevealed, REVEALED, PSEUDO_CLASS_ENABLED_IN_UA_SHEETS),
+                ("-moz-suppress-for-print-selection", MozSuppressForPrintSelection, SUPPRESS_FOR_PRINT_SELECTION, PSEUDO_CLASS_ENABLED_IN_UA_SHEETS),
 
                 ("-moz-math-increment-script-level", MozMathIncrementScriptLevel, INCREMENT_SCRIPT_LEVEL, _),
 

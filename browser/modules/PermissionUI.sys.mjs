@@ -72,19 +72,21 @@ ChromeUtils.defineESModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   SitePermissions: "resource:///modules/SitePermissions.sys.mjs",
+  clearTimeout: "resource://gre/modules/Timer.sys.mjs",
+  setTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
 
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "IDNService",
   "@mozilla.org/network/idn-service;1",
-  "nsIIDNService"
+  Ci.nsIIDNService
 );
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "ContentPrefService2",
   "@mozilla.org/content-pref/service;1",
-  "nsIContentPrefService2"
+  Ci.nsIContentPrefService2
 );
 
 ChromeUtils.defineLazyGetter(lazy, "gBrandBundle", function () {
@@ -99,6 +101,10 @@ ChromeUtils.defineLazyGetter(lazy, "gBrowserBundle", function () {
   );
 });
 
+ChromeUtils.defineLazyGetter(lazy, "gFluentStrings", function () {
+  return new Localization(["browser/permissions.ftl"], true /* aSync */);
+});
+
 import { SITEPERMS_ADDON_PROVIDER_PREF } from "resource://gre/modules/addons/siteperms-addon-utils.sys.mjs";
 
 XPCOMUtils.defineLazyPreferenceGetter(
@@ -106,6 +112,13 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "sitePermsAddonsProviderEnabled",
   SITEPERMS_ADDON_PROVIDER_PREF,
   false
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "lnaPromptTimeoutMs",
+  "network.lna.prompt.timeout",
+  300000
 );
 
 /**
@@ -732,7 +745,7 @@ class SitePermsAddonInstallRequest extends PermissionPromptForRequest {
    * This should be overriden by children classes.
    *
    * @param {Components.Exception} err
-   * @returns {String} The error message
+   * @returns {string} The error message
    */
   getInstallErrorMessage() {
     return null;
@@ -1005,6 +1018,163 @@ class XRPermissionPrompt extends PermissionPromptForRequest {
 }
 
 /**
+ * Base class for Local Network Access (LNA) permission prompts.
+ * Provides automatic timeout handling for LNA prompts.
+ *
+ * If the user doesn't respond to the prompt within the timeout period,
+ * the prompt is automatically cancelled and the network request fails.
+ */
+class LNAPermissionPromptBase extends PermissionPromptForRequest {
+  static DEFAULT_PROMPT_TIMEOUT_MS = 300000;
+
+  #timeoutTimer = null;
+
+  constructor(request) {
+    super();
+    this.request = request;
+  }
+
+  onShown() {
+    this.#startTimeoutTimer();
+  }
+
+  onAfterShow() {
+    this.#clearTimeoutTimer();
+  }
+
+  cancel() {
+    super.cancel();
+  }
+
+  allow(choices) {
+    super.allow(choices);
+  }
+
+  #startTimeoutTimer() {
+    this.#clearTimeoutTimer();
+
+    this.#timeoutTimer = lazy.setTimeout(() => {
+      let scriptError = Cc["@mozilla.org/scripterror;1"].createInstance(
+        Ci.nsIScriptError
+      );
+      scriptError.initWithWindowID(
+        `LNA permission prompt timed out after ${lazy.lnaPromptTimeoutMs / 1000} seconds`,
+        null,
+        0,
+        0,
+        Ci.nsIScriptError.warningFlag,
+        "content javascript",
+        this.browser.browsingContext.currentWindowGlobal.innerWindowId
+      );
+      Services.console.logMessage(scriptError);
+
+      this.#removePrompt();
+      this.cancel();
+    }, lazy.lnaPromptTimeoutMs);
+  }
+
+  #removePrompt() {
+    let chromeWin = this.browser?.ownerGlobal;
+    let notification = chromeWin?.PopupNotifications.getNotification(
+      this.notificationID,
+      this.browser
+    );
+    if (notification) {
+      chromeWin.PopupNotifications.remove(notification);
+    }
+  }
+
+  #clearTimeoutTimer() {
+    if (this.#timeoutTimer) {
+      lazy.clearTimeout(this.#timeoutTimer);
+      this.#timeoutTimer = null;
+    }
+  }
+}
+
+/**
+ * Creates a PermissionPrompt for a nsIContentPermissionRequest for
+ * the Local Host Access.
+ *
+ * @param request (nsIContentPermissionRequest)
+ *        The request for a permission from content.
+ */
+class LocalHostPermissionPrompt extends LNAPermissionPromptBase {
+  get type() {
+    return "localhost";
+  }
+
+  get permissionKey() {
+    return "localhost";
+  }
+
+  get popupOptions() {
+    let options = {
+      learnMoreURL: Services.urlFormatter.formatURLPref(
+        "browser.lna.warning.infoURL"
+      ),
+      displayURI: false,
+      name: this.getPrincipalName(),
+    };
+
+    // Don't offer "always remember" action in PB mode
+    options.checkbox = {
+      show: !lazy.PrivateBrowsingUtils.isWindowPrivate(
+        this.browser.ownerGlobal
+      ),
+    };
+
+    if (this.request.isRequestDelegatedToUnsafeThirdParty) {
+      // Second name should be the third party origin
+      options.secondName = this.getPrincipalName(this.request.principal);
+      options.checkbox = { show: false };
+    }
+
+    if (options.checkbox.show) {
+      options.checkbox.label = lazy.gBrowserBundle.GetStringFromName(
+        "localhost.remember2"
+      );
+    }
+
+    return options;
+  }
+
+  get notificationID() {
+    return "localhost";
+  }
+
+  get anchorID() {
+    return "localhost-notification-icon";
+  }
+
+  get message() {
+    return lazy.gBrowserBundle.formatStringFromName(
+      "localhost.allowWithSite2",
+      ["<>"]
+    );
+  }
+
+  get promptActions() {
+    return [
+      {
+        label: lazy.gBrowserBundle.GetStringFromName("localhost.allowlabel"),
+        accessKey: lazy.gBrowserBundle.GetStringFromName(
+          "localhost.allow.accesskey"
+        ),
+        action: lazy.SitePermissions.ALLOW,
+      },
+      {
+        label: lazy.gBrowserBundle.GetStringFromName("localhost.blocklabel"),
+        accessKey: lazy.gBrowserBundle.GetStringFromName(
+          "localhost.block.accesskey"
+        ),
+        action: lazy.SitePermissions.BLOCK,
+      },
+    ];
+  }
+}
+
+/**
  * Creates a PermissionPrompt for a nsIContentPermissionRequest for
  * the Desktop Notification API.
  *
@@ -1144,6 +1314,87 @@ class DesktopNotificationPermissionPrompt extends PermissionPromptForRequest {
 
 /**
  * Creates a PermissionPrompt for a nsIContentPermissionRequest for
+ * the Local Network Access.
+ *
+ * @param request (nsIContentPermissionRequest)
+ *        The request for a permission from content.
+ */
+class LocalNetworkPermissionPrompt extends LNAPermissionPromptBase {
+  get type() {
+    return "local-network";
+  }
+
+  get permissionKey() {
+    return "local-network";
+  }
+
+  get popupOptions() {
+    let options = {
+      learnMoreURL: Services.urlFormatter.formatURLPref(
+        "browser.lna.warning.infoURL"
+      ),
+      displayURI: false,
+      name: this.getPrincipalName(),
+    };
+
+    // Don't offer "always remember" action in PB mode
+    options.checkbox = {
+      show: !lazy.PrivateBrowsingUtils.isWindowPrivate(
+        this.browser.ownerGlobal
+      ),
+    };
+
+    if (this.request.isRequestDelegatedToUnsafeThirdParty) {
+      // Second name should be the third party origin
+      options.secondName = this.getPrincipalName(this.request.principal);
+      options.checkbox = { show: false };
+    }
+
+    if (options.checkbox.show) {
+      options.checkbox.label = lazy.gBrowserBundle.GetStringFromName(
+        "localNetwork.remember2"
+      );
+    }
+
+    return options;
+  }
+
+  get notificationID() {
+    return "local-network";
+  }
+
+  get anchorID() {
+    return "local-network-notification-icon";
+  }
+
+  get message() {
+    return lazy.gBrowserBundle.formatStringFromName(
+      "localNetwork.allowWithSite2",
+      ["<>"]
+    );
+  }
+
+  get promptActions() {
+    return [
+      {
+        label: lazy.gBrowserBundle.GetStringFromName("localNetwork.allowLabel"),
+        accessKey: lazy.gBrowserBundle.GetStringFromName(
+          "localNetwork.allow.accesskey"
+        ),
+        action: lazy.SitePermissions.ALLOW,
+      },
+      {
+        label: lazy.gBrowserBundle.GetStringFromName("localNetwork.blockLabel"),
+        accessKey: lazy.gBrowserBundle.GetStringFromName(
+          "localNetwork.block.accesskey"
+        ),
+        action: lazy.SitePermissions.BLOCK,
+      },
+    ];
+  }
+}
+/**
+ * Creates a PermissionPrompt for a nsIContentPermissionRequest for
  * the persistent-storage API.
  *
  * @param request (nsIContentPermissionRequest)
@@ -1167,11 +1418,25 @@ class PersistentStoragePermissionPrompt extends PermissionPromptForRequest {
     let learnMoreURL =
       Services.urlFormatter.formatURLPref("app.support.baseURL") +
       "storage-permissions";
-    return {
+    let options = {
       learnMoreURL,
       displayURI: false,
       name: this.getPrincipalName(),
     };
+
+    options.checkbox = {
+      show: !lazy.PrivateBrowsingUtils.isWindowPrivate(
+        this.browser.ownerGlobal
+      ),
+    };
+
+    if (options.checkbox.show) {
+      options.checkbox.label = lazy.gFluentStrings.formatValueSync(
+        "perm-persistent-storage-remember"
+      );
+    }
+
+    return options;
   }
 
   get notificationID() {
@@ -1317,7 +1582,7 @@ class MIDIPermissionPrompt extends SitePermsAddonInstallRequest {
   /**
    * @override
    * @param {Components.Exception} err
-   * @returns {String}
+   * @returns {string}
    */
   getInstallErrorMessage(err) {
     return `WebMIDI access request was denied: ❝${err.message}❞. See https://developer.mozilla.org/docs/Web/API/Navigator/requestMIDIAccess for more information`;
@@ -1466,4 +1731,6 @@ export const PermissionUI = {
   PersistentStoragePermissionPrompt,
   MIDIPermissionPrompt,
   StorageAccessPermissionPrompt,
+  LocalHostPermissionPrompt,
+  LocalNetworkPermissionPrompt,
 };

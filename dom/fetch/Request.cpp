@@ -7,24 +7,21 @@
 #include "Request.h"
 
 #include "js/Value.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/StaticPrefs_network.h"
+#include "mozilla/dom/Fetch.h"
+#include "mozilla/dom/FetchUtil.h"
+#include "mozilla/dom/Headers.h"
+#include "mozilla/dom/Promise.h"
+#include "mozilla/dom/ReadableStreamDefaultReader.h"
+#include "mozilla/dom/URL.h"
+#include "mozilla/dom/WindowContext.h"
+#include "mozilla/dom/WorkerPrivate.h"
+#include "mozilla/dom/WorkerRunnable.h"
+#include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "nsIURI.h"
 #include "nsNetUtil.h"
 #include "nsPIDOMWindow.h"
-
-#include "mozilla/ErrorResult.h"
-#include "mozilla/StaticPrefs_network.h"
-#include "mozilla/dom/Headers.h"
-#include "mozilla/dom/Fetch.h"
-#include "mozilla/dom/FetchUtil.h"
-#include "mozilla/dom/Promise.h"
-#include "mozilla/dom/URL.h"
-#include "mozilla/dom/WorkerPrivate.h"
-#include "mozilla/dom/WorkerRunnable.h"
-#include "mozilla/dom/WindowContext.h"
-#include "mozilla/ipc/PBackgroundSharedTypes.h"
-#include "mozilla/Unused.h"
-
-#include "mozilla/dom/ReadableStreamDefaultReader.h"
 
 namespace mozilla::dom {
 
@@ -63,7 +60,10 @@ Request::Request(nsIGlobalObject* aOwner, SafeRefPtr<InternalRequest> aRequest,
     // If we don't have a signal as argument, we will create it when required by
     // content, otherwise the Request's signal must follow what has been passed.
     AutoTArray<OwningNonNull<AbortSignal>, 1> array{OwningNonNull(*aSignal)};
-    mSignal = AbortSignal::Any(aOwner, mozilla::Span{array});
+    mSignal = AbortSignal::Any(aOwner, array, [](nsIGlobalObject* aGlobal) {
+      return AbortSignal::Create(aGlobal, SignalAborted::No,
+                                 JS::UndefinedHandleValue);
+    });
   }
 }
 
@@ -104,7 +104,7 @@ void GetRequestURL(nsIGlobalObject* aGlobal, const nsACString& aInput,
   // This fails with URIs with weird protocols, even when they are valid,
   // so we ignore the failure
   nsAutoCString credentials;
-  Unused << resolvedURI->GetUserPass(credentials);
+  (void)resolvedURI->GetUserPass(credentials);
   if (!credentials.IsEmpty()) {
     aRv.ThrowTypeError<MSG_URL_HAS_CREDENTIALS>(aInput);
     return;
@@ -507,7 +507,8 @@ Headers* Request::Headers_() {
 
 AbortSignal* Request::GetOrCreateSignal() {
   if (!mSignal) {
-    mSignal = new AbortSignal(mOwner, false, JS::UndefinedHandleValue);
+    mSignal = AbortSignal::Create(mOwner, SignalAborted::No,
+                                  JS::UndefinedHandleValue);
   }
 
   return mSignal;

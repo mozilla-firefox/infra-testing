@@ -345,9 +345,7 @@ function getDisplayedPopupItems(
   } = browser;
   const listItemElems = itemsBox.querySelectorAll(selector);
 
-  return [...listItemElems].filter(
-    item => item.getAttribute("collapsed") != "true"
-  );
+  return [...listItemElems].filter(item => !item.hasAttribute("collapsed"));
 }
 
 async function sleep(ms = 500) {
@@ -971,7 +969,10 @@ async function testDialog(url, testFn, arg = undefined) {
     arg.record["cc-number-encrypted"]
   ) {
     arg.record = Object.assign({}, arg.record, {
-      "cc-number": await OSKeyStore.decrypt(arg.record["cc-number-encrypted"]),
+      "cc-number": await OSKeyStore.decrypt(
+        arg.record["cc-number-encrypted"],
+        "testing"
+      ),
     });
   }
   const win = window.openDialog(url, null, "width=600,height=600", {
@@ -1216,7 +1217,10 @@ async function verifyPreviewResult(browser, section, expectedSection) {
       if (content.HTMLSelectElement.isInstance(element)) {
         if (obj.expected) {
           for (let idx = 0; idx < element.options.length; idx++) {
-            if (element.options[idx].value == obj.expected) {
+            if (
+              element.options[idx].value == obj.expected &&
+              element.previewValue == element.options[idx].text
+            ) {
               obj.expected = element.options[idx].text;
               break;
             }
@@ -1704,40 +1708,24 @@ async function add_heuristic_tests(
 }
 
 async function add_capture_heuristic_tests(patterns, fixturePathPrefix = "") {
-  const oldValue = FormAutofillUtils.getOSAuthEnabled(
-    FormAutofillUtils.AUTOFILL_CREDITCARDS_REAUTH_PREF
-  );
+  const oldValue = FormAutofillUtils.getOSAuthEnabled();
 
-  FormAutofillUtils.setOSAuthEnabled(
-    FormAutofillUtils.AUTOFILL_CREDITCARDS_REAUTH_PREF,
-    false
-  );
+  FormAutofillUtils.setOSAuthEnabled(false);
 
   registerCleanupFunction(() => {
-    FormAutofillUtils.setOSAuthEnabled(
-      FormAutofillUtils.AUTOFILL_CREDITCARDS_REAUTH_PREF,
-      oldValue
-    );
+    FormAutofillUtils.setOSAuthEnabled(oldValue);
   });
 
   add_heuristic_tests(patterns, fixturePathPrefix, { testCapture: true });
 }
 
 async function add_autofill_heuristic_tests(patterns, fixturePathPrefix = "") {
-  const oldValue = FormAutofillUtils.getOSAuthEnabled(
-    FormAutofillUtils.AUTOFILL_CREDITCARDS_REAUTH_PREF
-  );
+  const oldValue = FormAutofillUtils.getOSAuthEnabled();
 
-  FormAutofillUtils.setOSAuthEnabled(
-    FormAutofillUtils.AUTOFILL_CREDITCARDS_REAUTH_PREF,
-    false
-  );
+  FormAutofillUtils.setOSAuthEnabled(false);
 
   registerCleanupFunction(() => {
-    FormAutofillUtils.setOSAuthEnabled(
-      FormAutofillUtils.AUTOFILL_CREDITCARDS_REAUTH_PREF,
-      oldValue
-    );
+    FormAutofillUtils.setOSAuthEnabled(oldValue);
   });
 
   add_heuristic_tests(patterns, fixturePathPrefix, { testAutofill: true });

@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "BroadcastChannelChild.h"
+
 #include "BroadcastChannel.h"
 
 namespace mozilla {
@@ -25,7 +26,8 @@ mozilla::ipc::IPCResult BroadcastChannelChild::RecvNotify(
     return IPC_OK();
   }
 
-  mBC->MessageReceived(aData);
+  RefPtr<BroadcastChannel> self = mBC;
+  self->MessageReceived(aData);
   return IPC_OK();
 }
 
@@ -36,7 +38,8 @@ mozilla::ipc::IPCResult BroadcastChannelChild::RecvRefMessageDelivered(
     return IPC_OK();
   }
 
-  mBC->MessageDelivered(aMessageID, aOtherBCs);
+  RefPtr<BroadcastChannel> self = mBC;
+  self->MessageDelivered(aMessageID, aOtherBCs);
   return IPC_OK();
 }
 

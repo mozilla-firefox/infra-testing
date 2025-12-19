@@ -123,24 +123,27 @@ NS_IMPL_ISUPPORTS(Http3WebTransportStream, nsIInputStreamCallback,
                   nsIOutputStreamCallback)
 
 Http3WebTransportStream::Http3WebTransportStream(
-    Http3Session* aSession, uint64_t aSessionId, WebTransportStreamType aType,
+    Http3SessionBase* aSession, uint64_t aSessionId,
+    WebTransportStreamType aType,
     std::function<void(Result<RefPtr<WebTransportStreamBase>, nsresult>&&)>&&
         aCallback)
-    : WebTransportStreamBase(aSessionId, aType, std::move(aCallback)),
+    : WebTransportStreamBase(aSessionId, std::move(aCallback)),
       Http3StreamBase(new DummyWebTransportStreamTransaction(), aSession) {
   LOG(("Http3WebTransportStream outgoing ctor %p", this));
   mStreamRole = OUTGOING;
+  mStreamType = aType;
 }
 
-Http3WebTransportStream::Http3WebTransportStream(Http3Session* aSession,
+Http3WebTransportStream::Http3WebTransportStream(Http3SessionBase* aSession,
                                                  uint64_t aSessionId,
                                                  WebTransportStreamType aType,
                                                  uint64_t aStreamId)
-    : WebTransportStreamBase(aSessionId, aType, nullptr),
+    : WebTransportStreamBase(aSessionId, nullptr),
       Http3StreamBase(new DummyWebTransportStreamTransaction(), aSession) {
   LOG(("Http3WebTransportStream incoming ctor %p", this));
   mStreamId = aStreamId;
   mStreamRole = INCOMING;
+  mStreamType = aType;
   // WAITING_DATA indicates we are waiting
   // Http3WebTransportStream::OnInputStreamReady to be called.
   mSendState = WAITING_DATA;
@@ -150,7 +153,11 @@ Http3WebTransportStream::~Http3WebTransportStream() {
   LOG(("Http3WebTransportStream dtor %p", this));
 }
 
-uint64_t Http3WebTransportStream::StreamId() const {
+StreamId Http3WebTransportStream::WebTransportStreamId() const {
+  return StreamId::From(Http3StreamBase::StreamId());
+}
+
+uint64_t Http3WebTransportStream::GetStreamId() const {
   return Http3StreamBase::StreamId();
 }
 
@@ -490,7 +497,7 @@ nsresult Http3WebTransportStream::WriteSegments() {
     if (NS_FAILED(rv)) {
       if (rv == NS_BASE_STREAM_WOULD_BLOCK) {
         nsCOMPtr<nsIEventTarget> target;
-        Unused << gHttpHandler->GetSocketThreadTarget(getter_AddRefs(target));
+        (void)gHttpHandler->GetSocketThreadTarget(getter_AddRefs(target));
         if (target) {
           mReceiveStreamPipeOut->AsyncWait(this, 0, 0, target);
           rv = NS_OK;
@@ -636,6 +643,9 @@ void Http3WebTransportStream::SendStopSending(uint8_t aErrorCode) {
 }
 
 void Http3WebTransportStream::SetSendOrder(Maybe<int64_t> aSendOrder) {
+  if (!mSession) {
+    return;
+  }
   mSession->SetSendOrder(this, aSendOrder);
 }
 

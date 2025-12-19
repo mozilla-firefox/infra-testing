@@ -9,6 +9,7 @@
 
 #include "gc/Barrier.h"
 #include "gc/Cell.h"
+#include "gc/Policy.h"
 #include "js/TypeDecls.h"
 #include "js/UbiNode.h"
 #include "js/Utility.h"  // JS::UniqueChars
@@ -1174,6 +1175,44 @@ struct SharedChildrenHasher {
     uint32_t newIndex = SharedPropMap::indexOfNextProperty(index);
     return index == l.index && map->matchProperty(newIndex, l.key, l.prop);
   }
+};
+
+// An iterator that walks a shared prop map in property definition order
+class MOZ_RAII SharedPropMapIter {
+ public:
+  // Iterate over all properties of propMap.
+  SharedPropMapIter(JSContext* cx, SharedPropMapAndIndex propMap);
+
+  // Iterate over all properties after (but not including) startAfter.
+  SharedPropMapIter(JSContext* cx, SharedPropMapAndIndex startAfter,
+                    SharedPropMapAndIndex end);
+
+  PropertyKey key() const {
+    MOZ_ASSERT(!done());
+    return maps_[mapIdx_]->getKey(propIdx_);
+  }
+  PropertyInfo prop() const {
+    MOZ_ASSERT(!done());
+    return maps_[mapIdx_]->getPropertyInfo(propIdx_);
+  }
+
+  bool done() const { return mapIdx_ == 0 && propIdx_ > endIdx_; }
+  void next() {
+    MOZ_ASSERT(!done());
+    if (++propIdx_ == PropMap::Capacity && mapIdx_ > 0) {
+      propIdx_ = 0;
+      mapIdx_--;
+    }
+  }
+
+ private:
+  SharedPropMapIter(JSContext* cx, mozilla::Maybe<SharedPropMapAndIndex> start,
+                    SharedPropMapAndIndex end);
+
+  JS::RootedVector<SharedPropMap*> maps_;
+  uint32_t mapIdx_;
+  uint32_t propIdx_;
+  uint32_t endIdx_;
 };
 
 }  // namespace js

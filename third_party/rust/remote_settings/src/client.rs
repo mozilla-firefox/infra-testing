@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use crate::config::{BaseUrl, RemoteSettingsConfig};
-use crate::error::{Error, Result};
+use crate::error::{debug, trace, Error, Result};
 use crate::jexl_filter::JexlFilter;
 #[cfg(feature = "signatures")]
 use crate::signatures;
@@ -88,10 +88,13 @@ struct RemoteSettingsClientInner<C> {
 impl<C: ApiClient> RemoteSettingsClient<C> {
     // One line per bucket + collection
     packaged_collections! {
+        ("main", "regions"),
         ("main", "search-config-icons"),
         ("main", "search-config-v2"),
         ("main", "search-telemetry-v2"),
-        ("main", "regions"),
+        ("main", "summarizer-models-config"),
+        ("main", "translations-models"),
+        ("main", "translations-wasm"),
     }
 
     // You have to specify
@@ -159,6 +162,7 @@ impl<C: ApiClient> RemoteSettingsClient<C> {
             "95ed201d-4ab8-4cb8-831d-454f53cab0f8",
             "96327a73-c433-5eb4-a16d-b090cadfb80b",
             "9802e63d-05ec-48ba-93f9-746e0981ad98",
+            "9d96547d-7575-49ca-8908-1e046b8ea90e",
             "a06db97d-1210-ea2e-5474-0e2f7d295bfd",
             "a06dc3fd-4bdb-41f3-2ebc-4cbed06a9bd3",
             "a2c7d4e9-f770-51e1-0963-3c2c8401631d",
@@ -176,10 +180,14 @@ impl<C: ApiClient> RemoteSettingsClient<C> {
             "e7547f62-187b-b641-d462-e54a3f813d9a",
             "eb62e768-151b-45d1-9fe5-9e1d2a5991c5",
             "f312610a-ebfb-a106-ea92-fd643c5d3636",
+            "f943d7bc-872e-4a81-810f-94d26465da69",
             "fa0fc42c-d91d-fca7-34eb-806ff46062dc",
             "fca3e3ee-56cd-f474-dc31-307fd24a891d",
             "fe75ce3f-1545-400c-b28c-ad771054e69f",
             "fed4f021-ff3e-942a-010e-afa43fda2136",
+        ],
+        ("main", "translations-wasm") => [
+            "4fd32605-9889-4dd9-9fc7-577ad1136746",
         ]
     }
 }
@@ -294,6 +302,12 @@ impl<C: ApiClient> RemoteSettingsClient<C> {
         })
     }
 
+    pub fn get_last_modified_timestamp(&self) -> Result<Option<u64>> {
+        let mut inner = self.inner.lock();
+        let collection_url = inner.api_client.collection_url();
+        inner.storage.get_last_modified_timestamp(&collection_url)
+    }
+
     /// Synchronizes the local collection with the remote server by performing the following steps:
     /// 1. Fetches the last modified timestamp of the collection from local storage.
     /// 2. Fetches the changeset from the remote server based on the last modified timestamp.
@@ -303,7 +317,7 @@ impl<C: ApiClient> RemoteSettingsClient<C> {
         let collection_url = inner.api_client.collection_url();
         let timestamp = inner.storage.get_last_modified_timestamp(&collection_url)?;
         let changeset = inner.api_client.fetch_changeset(timestamp)?;
-        log::debug!(
+        debug!(
             "{0}: apply {1} change(s) locally.",
             self.collection_name,
             changeset.changes.len()
@@ -321,7 +335,7 @@ impl<C: ApiClient> RemoteSettingsClient<C> {
         self.perform_sync_operation()?;
         // Verify that inserted data has valid signature
         if self.verify_signature().is_err() {
-            log::debug!(
+            debug!(
                 "{0}: signature verification failed. Reset and retry.",
                 self.collection_name
             );
@@ -335,12 +349,12 @@ impl<C: ApiClient> RemoteSettingsClient<C> {
                     .expect("Failed to reset storage after verification failure");
             })?;
         }
-        log::trace!("{0}: sync done.", self.collection_name);
+        trace!("{0}: sync done.", self.collection_name);
         Ok(())
     }
 
     fn reset_storage(&self) -> Result<()> {
-        log::trace!("{0}: reset local storage.", self.collection_name);
+        trace!("{0}: reset local storage.", self.collection_name);
         let mut inner = self.inner.lock();
         let collection_url = inner.api_client.collection_url();
         // Clear existing storage
@@ -348,7 +362,7 @@ impl<C: ApiClient> RemoteSettingsClient<C> {
         // Load packaged data only for production
         if inner.api_client.is_prod_server()? {
             if let Some(packaged_data) = self.load_packaged_data() {
-                log::trace!("{0}: restore packaged dump.", self.collection_name);
+                trace!("{0}: restore packaged dump.", self.collection_name);
                 inner.storage.insert_collection_content(
                     &collection_url,
                     &packaged_data.data,
@@ -366,7 +380,7 @@ impl<C: ApiClient> RemoteSettingsClient<C> {
 
     #[cfg(not(feature = "signatures"))]
     fn verify_signature(&self) -> Result<()> {
-        log::debug!("{0}: signature verification skipped.", self.collection_name);
+        debug!("{0}: signature verification skipped.", self.collection_name);
         Ok(())
     }
 
@@ -409,15 +423,12 @@ impl<C: ApiClient> RemoteSettingsClient<C> {
                     &expected_leaf_cname,
                 )
                 .inspect_err(|err| {
-                    log::debug!(
+                    debug!(
                         "{0}: bad signature ({1:?}) using certificate {2} and signer '{3}'",
-                        self.collection_name,
-                        err,
-                        &metadata.signature.x5u,
-                        expected_leaf_cname
+                        self.collection_name, err, &metadata.signature.x5u, expected_leaf_cname
                     );
                 })?;
-                log::trace!("{0}: signature verification success.", self.collection_name);
+                trace!("{0}: signature verification success.", self.collection_name);
                 Ok(())
             }
             _ => {
@@ -507,9 +518,15 @@ impl RemoteSettingsClient<ViaductApiClient> {
         Self::new_from_parts(collection_name, storage, jexl_filter, api_client)
     }
 
-    pub fn update_config(&self, server_url: BaseUrl, bucket_name: String) -> Result<()> {
+    pub fn update_config(
+        &self,
+        server_url: BaseUrl,
+        bucket_name: String,
+        context: Option<RemoteSettingsContext>,
+    ) -> Result<()> {
         let mut inner = self.inner.lock();
         inner.api_client = ViaductApiClient::new(server_url, &bucket_name, &self.collection_name);
+        inner.jexl_filter = JexlFilter::new(context);
         inner.storage.empty()
     }
 }
@@ -553,13 +570,13 @@ impl ViaductApiClient {
     }
 
     fn make_request(&mut self, url: Url) -> Result<Response> {
-        log::trace!("make_request: {url}");
-        self.ensure_no_backoff()?;
+        trace!("make_request: {url}");
+        self.remote_state.ensure_no_backoff()?;
 
         let req = Request::get(url);
         let resp = req.send()?;
 
-        self.handle_backoff_hint(&resp)?;
+        self.remote_state.handle_backoff_hint(&resp)?;
 
         if resp.is_success() {
             Ok(resp)
@@ -569,46 +586,6 @@ impl ViaductApiClient {
                 resp.status
             )))
         }
-    }
-
-    fn ensure_no_backoff(&mut self) -> Result<()> {
-        if let BackoffState::Backoff {
-            observed_at,
-            duration,
-        } = self.remote_state.backoff
-        {
-            let elapsed_time = observed_at.elapsed();
-            if elapsed_time >= duration {
-                self.remote_state.backoff = BackoffState::Ok;
-            } else {
-                let remaining = duration - elapsed_time;
-                return Err(Error::BackoffError(remaining.as_secs()));
-            }
-        }
-        Ok(())
-    }
-
-    fn handle_backoff_hint(&mut self, response: &Response) -> Result<()> {
-        let extract_backoff_header = |header| -> Result<u64> {
-            Ok(response
-                .headers
-                .get_as::<u64, _>(header)
-                .transpose()
-                .unwrap_or_default() // Ignore number parsing errors.
-                .unwrap_or(0))
-        };
-        // In practice these two headers are mutually exclusive.
-        let backoff = extract_backoff_header(HEADER_BACKOFF)?;
-        let retry_after = extract_backoff_header(HEADER_RETRY_AFTER)?;
-        let max_backoff = backoff.max(retry_after);
-
-        if max_backoff > 0 {
-            self.remote_state.backoff = BackoffState::Backoff {
-                observed_at: Instant::now(),
-                duration: Duration::from_secs(max_backoff),
-            };
-        }
-        Ok(())
     }
 }
 
@@ -803,14 +780,14 @@ impl Client {
 
     fn make_request(&self, url: Url) -> Result<Response> {
         let mut current_remote_state = self.remote_state.lock();
-        self.ensure_no_backoff(&mut current_remote_state.backoff)?;
+        current_remote_state.ensure_no_backoff()?;
         drop(current_remote_state);
 
         let req = Request::get(url);
         let resp = req.send()?;
 
         let mut current_remote_state = self.remote_state.lock();
-        self.handle_backoff_hint(&resp, &mut current_remote_state.backoff)?;
+        current_remote_state.handle_backoff_hint(&resp)?;
 
         if resp.is_success() {
             Ok(resp)
@@ -820,50 +797,6 @@ impl Client {
                 resp.status
             )))
         }
-    }
-
-    fn ensure_no_backoff(&self, current_state: &mut BackoffState) -> Result<()> {
-        if let BackoffState::Backoff {
-            observed_at,
-            duration,
-        } = *current_state
-        {
-            let elapsed_time = observed_at.elapsed();
-            if elapsed_time >= duration {
-                *current_state = BackoffState::Ok;
-            } else {
-                let remaining = duration - elapsed_time;
-                return Err(Error::BackoffError(remaining.as_secs()));
-            }
-        }
-        Ok(())
-    }
-
-    fn handle_backoff_hint(
-        &self,
-        response: &Response,
-        current_state: &mut BackoffState,
-    ) -> Result<()> {
-        let extract_backoff_header = |header| -> Result<u64> {
-            Ok(response
-                .headers
-                .get_as::<u64, _>(header)
-                .transpose()
-                .unwrap_or_default() // Ignore number parsing errors.
-                .unwrap_or(0))
-        };
-        // In practice these two headers are mutually exclusive.
-        let backoff = extract_backoff_header(HEADER_BACKOFF)?;
-        let retry_after = extract_backoff_header(HEADER_RETRY_AFTER)?;
-        let max_backoff = backoff.max(retry_after);
-
-        if max_backoff > 0 {
-            *current_state = BackoffState::Backoff {
-                observed_at: Instant::now(),
-                duration: Duration::from_secs(max_backoff),
-            };
-        }
-        Ok(())
     }
 }
 
@@ -1027,6 +960,48 @@ impl Default for RemoteState {
     }
 }
 
+impl RemoteState {
+    pub fn handle_backoff_hint(&mut self, response: &Response) -> Result<()> {
+        let extract_backoff_header = |header| -> Result<u64> {
+            Ok(response
+                .headers
+                .get_as::<u64, _>(header)
+                .transpose()
+                .unwrap_or_default() // Ignore number parsing errors.
+                .unwrap_or(0))
+        };
+        // In practice these two headers are mutually exclusive.
+        let backoff = extract_backoff_header(HEADER_BACKOFF)?;
+        let retry_after = extract_backoff_header(HEADER_RETRY_AFTER)?;
+        let max_backoff = backoff.max(retry_after);
+
+        if max_backoff > 0 {
+            self.backoff = BackoffState::Backoff {
+                observed_at: Instant::now(),
+                duration: Duration::from_secs(max_backoff),
+            };
+        }
+        Ok(())
+    }
+
+    pub fn ensure_no_backoff(&mut self) -> Result<()> {
+        if let BackoffState::Backoff {
+            observed_at,
+            duration,
+        } = self.backoff
+        {
+            let elapsed_time = observed_at.elapsed();
+            if elapsed_time >= duration {
+                self.backoff = BackoffState::Ok;
+            } else {
+                let remaining = duration - elapsed_time;
+                return Err(Error::BackoffError(remaining.as_secs()));
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Used in handling backoff responses from the Remote Settings server.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum BackoffState {
@@ -1167,7 +1142,7 @@ impl GetItemsOptions {
     }
 
     /// Returns an iterator of (name, value) query pairs for these options.
-    pub fn iter_query_pairs(&self) -> impl Iterator<Item = (Cow<str>, Cow<str>)> {
+    pub fn iter_query_pairs(&self) -> impl Iterator<Item = (Cow<'_, str>, Cow<'_, str>)> {
         self.filters
             .iter()
             .map(Filter::as_query_pair)
@@ -1227,7 +1202,7 @@ enum Filter {
 }
 
 impl Filter {
-    fn as_query_pair(&self) -> (Cow<str>, Cow<str>) {
+    fn as_query_pair(&self) -> (Cow<'_, str>, Cow<'_, str>) {
         // For filters (https://docs.kinto-storage.org/en/latest/api/1.x/filtering.html),
         // the query pair syntax is `[operator_]field=value` for each field.
         match self {
@@ -1249,7 +1224,7 @@ impl Filter {
 struct Sort(String, SortOrder);
 
 impl Sort {
-    fn as_query_value(&self) -> Cow<str> {
+    fn as_query_value(&self) -> Cow<'_, str> {
         match self.1 {
             SortOrder::Ascending => self.0.as_str().into(),
             SortOrder::Descending => format!("-{}", self.0).into(),
@@ -1309,7 +1284,7 @@ mod test {
 
     #[test]
     fn test_attachment_can_be_downloaded() {
-        viaduct_reqwest::use_reqwest_backend();
+        viaduct_dev::init_backend_dev();
         let server_info_m = mock("GET", "/v1/")
             .with_body(attachment_metadata(mockito::server_url()))
             .with_status(200)
@@ -1348,7 +1323,7 @@ mod test {
 
     #[test]
     fn test_attachment_errors_if_server_not_configured_for_attachments() {
-        viaduct_reqwest::use_reqwest_backend();
+        viaduct_dev::init_backend_dev();
         let server_info_m = mock("GET", "/v1/")
             .with_body(NO_ATTACHMENTS_METADATA)
             .with_status(200)
@@ -1384,7 +1359,7 @@ mod test {
 
     #[test]
     fn test_backoff() {
-        viaduct_reqwest::use_reqwest_backend();
+        viaduct_dev::init_backend_dev();
         let m = mock(
             "GET",
             "/v1/buckets/the-bucket/collections/the-collection/records",
@@ -1413,7 +1388,7 @@ mod test {
 
     #[test]
     fn test_500_retry_after() {
-        viaduct_reqwest::use_reqwest_backend();
+        viaduct_dev::init_backend_dev();
         let m = mock(
             "GET",
             "/v1/buckets/the-bucket/collections/the-collection/records",
@@ -1439,7 +1414,7 @@ mod test {
 
     #[test]
     fn test_options() {
-        viaduct_reqwest::use_reqwest_backend();
+        viaduct_dev::init_backend_dev();
         let m = mock(
             "GET",
             "/v1/buckets/the-bucket/collections/the-collection/records",
@@ -1510,15 +1485,9 @@ mod test {
                             },
                         ),
                         fields: {
-                            "title": String(
-                                "jpg-attachment",
-                            ),
-                            "content": String(
-                                "content",
-                            ),
-                            "schema": Number(
-                                1677694447771,
-                            ),
+                            "title": String("jpg-attachment"),
+                            "content": String("content"),
+                            "schema": Number(1677694447771),
                         },
                     },
                     RemoteSettingsRecord {
@@ -1535,15 +1504,9 @@ mod test {
                             },
                         ),
                         fields: {
-                            "title": String(
-                                "with-attachment",
-                            ),
-                            "content": String(
-                                "content",
-                            ),
-                            "schema": Number(
-                                1677694447771,
-                            ),
+                            "title": String("with-attachment"),
+                            "content": String("content"),
+                            "schema": Number(1677694447771),
                         },
                     },
                     RemoteSettingsRecord {
@@ -1552,15 +1515,9 @@ mod test {
                         deleted: false,
                         attachment: None,
                         fields: {
-                            "title": String(
-                                "no-attachment",
-                            ),
-                            "content": String(
-                                "content",
-                            ),
-                            "schema": Number(
-                                1677694447771,
-                            ),
+                            "title": String("no-attachment"),
+                            "content": String("content"),
+                            "schema": Number(1677694447771),
                         },
                     },
                     RemoteSettingsRecord {
@@ -1581,7 +1538,7 @@ mod test {
 
     #[test]
     fn test_backoff_recovery() {
-        viaduct_reqwest::use_reqwest_backend();
+        viaduct_dev::init_backend_dev();
         let m = mock(
             "GET",
             "/v1/buckets/the-bucket/collections/the-collection/records",
@@ -1624,7 +1581,7 @@ mod test {
 
     #[test]
     fn test_record_fields() {
-        viaduct_reqwest::use_reqwest_backend();
+        viaduct_dev::init_backend_dev();
         let m = mock(
             "GET",
             "/v1/buckets/the-bucket/collections/the-collection/records",
@@ -1661,15 +1618,9 @@ mod test {
                             },
                         ),
                         fields: {
-                            "title": String(
-                                "jpg-attachment",
-                            ),
-                            "content": String(
-                                "content",
-                            ),
-                            "schema": Number(
-                                1677694447771,
-                            ),
+                            "title": String("jpg-attachment"),
+                            "content": String("content"),
+                            "schema": Number(1677694447771),
                         },
                     },
                     RemoteSettingsRecord {
@@ -1686,15 +1637,9 @@ mod test {
                             },
                         ),
                         fields: {
-                            "title": String(
-                                "with-attachment",
-                            ),
-                            "content": String(
-                                "content",
-                            ),
-                            "schema": Number(
-                                1677694447771,
-                            ),
+                            "title": String("with-attachment"),
+                            "content": String("content"),
+                            "schema": Number(1677694447771),
                         },
                     },
                     RemoteSettingsRecord {
@@ -1703,15 +1648,9 @@ mod test {
                         deleted: false,
                         attachment: None,
                         fields: {
-                            "title": String(
-                                "no-attachment",
-                            ),
-                            "content": String(
-                                "content",
-                            ),
-                            "schema": Number(
-                                1677694447771,
-                            ),
+                            "title": String("no-attachment"),
+                            "content": String("content"),
+                            "schema": Number(1677694447771),
                         },
                     },
                     RemoteSettingsRecord {
@@ -1730,7 +1669,7 @@ mod test {
 
     #[test]
     fn test_missing_etag() {
-        viaduct_reqwest::use_reqwest_backend();
+        viaduct_dev::init_backend_dev();
         let m = mock(
             "GET",
             "/v1/buckets/the-bucket/collections/the-collection/records",
@@ -1761,7 +1700,7 @@ mod test {
 
     #[test]
     fn test_invalid_etag() {
-        viaduct_reqwest::use_reqwest_backend();
+        viaduct_dev::init_backend_dev();
         let m = mock(
             "GET",
             "/v1/buckets/the-bucket/collections/the-collection/records",
@@ -2040,6 +1979,76 @@ mod jexl_tests {
             Some(vec![])
         );
     }
+
+    #[test]
+    fn test_update_jexl_context() {
+        let mut api_client = MockApiClient::new();
+        let records = vec![RemoteSettingsRecord {
+            id: "record-0001".into(),
+            last_modified: 100,
+            deleted: false,
+            attachment: None,
+            fields: serde_json::json!({
+                "filter_expression": "env.country == \"US\""
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        }];
+        let changeset = ChangesetResponse {
+            changes: records.clone(),
+            timestamp: 42,
+            metadata: CollectionMetadata::default(),
+        };
+        api_client.expect_collection_url().returning(|| {
+            "http://rs.example.com/v1/buckets/main/collections/test-collection".into()
+        });
+        api_client.expect_fetch_changeset().returning({
+            let changeset = changeset.clone();
+            move |timestamp| {
+                assert_eq!(timestamp, None);
+                Ok(changeset.clone())
+            }
+        });
+        api_client.expect_is_prod_server().returning(|| Ok(false));
+
+        let context = RemoteSettingsContext {
+            country: Some("US".to_string()),
+            ..Default::default()
+        };
+
+        let mut storage = Storage::new(":memory:".into());
+        let _ = storage.insert_collection_content(
+            "http://rs.example.com/v1/buckets/main/collections/test-collection",
+            &records,
+            42,
+            CollectionMetadata::default(),
+        );
+
+        let rs_client = RemoteSettingsClient::new_from_parts(
+            "test-collection".into(),
+            storage,
+            JexlFilter::new(Some(context)),
+            api_client,
+        );
+
+        assert_eq!(
+            rs_client.get_records(false).expect("Error getting records"),
+            Some(records)
+        );
+
+        // We can't call `update_config` directly, since that only works with a real API client.
+        // Instead, just execute the code from that method that updates the JEXL filter.
+        rs_client.inner.lock().jexl_filter = JexlFilter::new(Some(RemoteSettingsContext {
+            country: Some("UK".to_string()),
+            ..Default::default()
+        }));
+
+        assert_eq!(
+            rs_client.get_records(false).expect("Error getting records"),
+            Some(vec![])
+        );
+    }
 }
 
 #[cfg(feature = "signatures")]
@@ -2232,7 +2241,7 @@ IKdcFKAt3fFrpyMhlfIKkLfmm0iDjmfmIXbDGBJw9SE=
     fn test_valid_signature_after_retry() -> Result<()> {
         ensure_initialized();
         run_client_sync(
-            &vec![RemoteSettingsRecord {
+            &[RemoteSettingsRecord {
                 id: "bad-record".to_string(),
                 last_modified: 9999,
                 deleted: true,

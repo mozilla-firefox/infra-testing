@@ -5,8 +5,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/ArrayUtils.h"
-
 #include "nsArrayUtils.h"
 #include "nsClipboard.h"
 #if defined(MOZ_X11)
@@ -34,7 +32,7 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/Services.h"
-#include "mozilla/StaticPrefs_widget.h"
+#include "mozilla/StaticPrefs_clipboard.h"
 #include "mozilla/TimeStamp.h"
 #include "GRefPtr.h"
 #include "WidgetUtilsGtk.h"
@@ -66,8 +64,12 @@ static const char kHTMLMarkupPrefix[] =
 
 static const char kURIListMime[] = "text/uri-list";
 
-MOZ_CONSTINIT ClipboardTargets nsRetrievalContext::sClipboardTargets;
-MOZ_CONSTINIT ClipboardTargets nsRetrievalContext::sPrimaryTargets;
+// MIME to exclude sensitive data (password) from the clipboard history on not
+// just KDE.
+static const char kKDEPasswordManagerHintMime[] = "x-kde-passwordManagerHint";
+
+constinit ClipboardTargets nsRetrievalContext::sClipboardTargets;
+constinit ClipboardTargets nsRetrievalContext::sPrimaryTargets;
 
 // Callback when someone asks us for the data
 static void clipboard_get_cb(GtkClipboard* aGtkClipboard,
@@ -83,18 +85,6 @@ static void clipboard_owner_change_cb(GtkClipboard* aGtkClipboard,
                                       gpointer aUserData);
 
 static bool GetHTMLCharset(Span<const char> aData, nsCString& str);
-
-static void SetTransferableData(nsITransferable* aTransferable,
-                                const nsACString& aFlavor,
-                                const char* aClipboardData,
-                                uint32_t aClipboardDataLength) {
-  MOZ_CLIPBOARD_LOG("SetTransferableData MIME %s\n",
-                    PromiseFlatCString(aFlavor).get());
-  nsCOMPtr<nsISupports> wrapper;
-  nsPrimitiveHelpers::CreatePrimitiveForData(
-      aFlavor, aClipboardData, aClipboardDataLength, getter_AddRefs(wrapper));
-  aTransferable->SetTransferData(PromiseFlatCString(aFlavor).get(), wrapper);
-}
 
 ClipboardTargets ClipboardTargets::Clone() {
   ClipboardTargets ret;
@@ -325,6 +315,13 @@ nsClipboard::SetNativeClipboardData(nsITransferable* aTransferable,
     gtk_target_list_add(list, atom, 0, 0);
   }
 
+  // Try to exclude private data from clipboard history.
+  if (!StaticPrefs::clipboard_copyPrivateDataToClipboardCloudOrHistory() &&
+      aTransferable->GetIsPrivateData()) {
+    GdkAtom atom = gdk_atom_intern(kKDEPasswordManagerHintMime, FALSE);
+    gtk_target_list_add(list, atom, 0, 0);
+  }
+
   // Get GTK clipboard (CLIPBOARD or PRIMARY)
   GtkClipboard* gtkClipboard =
       gtk_clipboard_get(GetSelectionAtom(aWhichClipboard));
@@ -344,31 +341,34 @@ nsClipboard::SetNativeClipboardData(nsITransferable* aTransferable,
 
   ClearCachedTargets(aWhichClipboard);
 
+  // On Wayland, track when we're setting clipboard data to avoid double
+  // sequence number increment in OwnerChangedEvent
+  MarkNextOwnerClipboardChange(aWhichClipboard, /* aOurChange */ true);
+
   // Set getcallback and request to store data after an application exit
   if (gtk_clipboard_set_with_data(gtkClipboard, gtkTargets, numTargets,
                                   clipboard_get_cb, clipboard_clear_cb, this)) {
+    IncrementSequenceNumber(aWhichClipboard);
     // We managed to set-up the clipboard so update internal state
     // We have to set it now because gtk_clipboard_set_with_data() calls
     // clipboard_clear_cb() which reset our internal state
     if (aWhichClipboard == kSelectionClipboard) {
-      mSelectionSequenceNumber++;
       mSelectionTransferable = aTransferable;
     } else {
-      mGlobalSequenceNumber++;
       mGlobalTransferable = aTransferable;
       gtk_clipboard_set_can_store(gtkClipboard, gtkTargets, numTargets);
     }
-
+    MOZ_CLIPBOARD_LOG("     sequence %d", GetSequenceNumber(aWhichClipboard));
     rv = NS_OK;
   } else {
-    MOZ_CLIPBOARD_LOG("    gtk_clipboard_set_with_data() failed!\n");
+    MOZ_CLIPBOARD_LOG("     gtk_clipboard_set_with_data() failed!\n");
     EmptyNativeClipboardData(aWhichClipboard);
+    MOZ_CLIPBOARD_LOG("     sequence %d", GetSequenceNumber(aWhichClipboard));
     rv = NS_ERROR_FAILURE;
   }
 
   gtk_target_table_free(gtkTargets, numTargets);
   gtk_target_list_unref(list);
-
   return rv;
 }
 
@@ -380,27 +380,20 @@ nsClipboard::GetNativeClipboardSequenceNumber(ClipboardType aWhichClipboard) {
                                                 : mGlobalSequenceNumber;
 }
 
-static bool IsMIMEAtFlavourList(const nsTArray<nsCString>& aFlavourList,
-                                const char* aMime) {
-  for (const auto& flavorStr : aFlavourList) {
-    if (flavorStr.Equals(aMime)) {
-      return true;
-    }
-  }
-  return false;
-}
-
 // When clipboard contains only images, X11/Gtk tries to convert them
 // to text when we request text instead of just fail to provide the data.
 // So if clipboard contains images only remove text MIME offer.
-bool nsClipboard::FilterImportedFlavors(int32_t aWhichClipboard,
-                                        nsTArray<nsCString>& aFlavors) {
-  MOZ_CLIPBOARD_LOG("nsClipboard::FilterImportedFlavors");
+bool nsClipboard::HasSuitableData(int32_t aWhichClipboard,
+                                  const nsACString& aFlavor) {
+  MOZ_CLIPBOARD_LOG("%s for %s", __FUNCTION__,
+                    PromiseFlatCString(aFlavor).get());
 
   auto targets = mContext->GetTargets(aWhichClipboard);
   if (!targets) {
     MOZ_CLIPBOARD_LOG("    X11: no targes at clipboard (null), quit.\n");
-    return true;
+    // It is possible that clipboard owner doesn't provide TARGETS properly, but
+    // the text data is still available.
+    return aFlavor.EqualsLiteral(kTextMime);
   }
 
   for (const auto& atom : targets.AsSpan()) {
@@ -424,74 +417,41 @@ bool nsClipboard::FilterImportedFlavors(int32_t aWhichClipboard,
     }
     // We have some other MIME type on clipboard which can be hopefully
     // converted to text without any problem.
+    // XXX should only return true for text/plain type?
     MOZ_CLIPBOARD_LOG(
         "    X11: text types in clipboard, no need to filter them.\n");
     return true;
   }
 
   // So make sure we offer only types we have at clipboard.
-  nsTArray<nsCString> clipboardFlavors;
   for (const auto& atom : targets.AsSpan()) {
     GUniquePtr<gchar> atom_name(gdk_atom_name(atom));
     if (!atom_name) {
       continue;
     }
-    if (IsMIMEAtFlavourList(aFlavors, atom_name.get())) {
-      clipboardFlavors.AppendElement(nsCString(atom_name.get()));
+    if (aFlavor.Equals(atom_name.get())) {
+      return true;
     }
   }
-  aFlavors.SwapElements(clipboardFlavors);
-#ifdef MOZ_LOGGING
-  MOZ_CLIPBOARD_LOG("    X11: Flavors which match clipboard content:\n");
-  for (uint32_t i = 0; i < aFlavors.Length(); i++) {
-    MOZ_CLIPBOARD_LOG("    %s\n", aFlavors[i].get());
-  }
-#endif
-  return true;
+
+  MOZ_CLIPBOARD_LOG("    X11: no suitable data in clipboard, quit.\n");
+  return false;
 }
 
-static nsresult GetTransferableFlavors(nsITransferable* aTransferable,
-                                       nsTArray<nsCString>& aFlavors) {
-  if (!aTransferable) {
-    return NS_ERROR_FAILURE;
-  }
-  // Get a list of flavors this transferable can import
-  nsresult rv = aTransferable->FlavorsTransferableCanImport(aFlavors);
-  if (NS_FAILED(rv)) {
-    MOZ_CLIPBOARD_LOG("  FlavorsTransferableCanImport falied!\n");
-    return rv;
-  }
-#ifdef MOZ_LOGGING
-  MOZ_CLIPBOARD_LOG("  Flavors which can be imported:");
-  for (const auto& flavor : aFlavors) {
-    MOZ_CLIPBOARD_LOG("    %s", flavor.get());
-  }
-#endif
-  return NS_OK;
-}
-
-static bool TransferableSetFile(nsITransferable* aTransferable,
-                                const nsACString& aURIList) {
-  nsresult rv;
+static already_AddRefed<nsIFile> GetFileData(const nsACString& aURIList) {
+  nsCOMPtr<nsIFile> file;
   nsTArray<nsCString> uris = mozilla::widget::ParseTextURIList(aURIList);
   if (!uris.IsEmpty()) {
     nsCOMPtr<nsIURI> fileURI;
     NS_NewURI(getter_AddRefs(fileURI), uris[0]);
-    if (nsCOMPtr<nsIFileURL> fileURL = do_QueryInterface(fileURI, &rv)) {
-      nsCOMPtr<nsIFile> file;
-      rv = fileURL->GetFile(getter_AddRefs(file));
-      if (NS_SUCCEEDED(rv)) {
-        aTransferable->SetTransferData(kFileMime, file);
-        MOZ_CLIPBOARD_LOG("  successfully set file to clipboard\n");
-        return true;
-      }
+    if (nsCOMPtr<nsIFileURL> fileURL = do_QueryInterface(fileURI)) {
+      fileURL->GetFile(getter_AddRefs(file));
     }
   }
-  return false;
+  return file.forget();
 }
 
-static bool TransferableSetHTML(nsITransferable* aTransferable,
-                                Span<const char> aData) {
+static already_AddRefed<nsISupports> GetHTMLData(Span<const char> aData) {
   nsLiteralCString mimeType(kHTMLMime);
 
   // Convert text/html into our text format
@@ -503,16 +463,14 @@ static bool TransferableSetHTML(nsITransferable* aTransferable,
     charset.AssignLiteral("utf-8");
   }
 
-  MOZ_CLIPBOARD_LOG("TransferableSetHTML: HTML detected charset %s",
-                    charset.get());
+  MOZ_CLIPBOARD_LOG("GetHTMLData: HTML detected charset %s", charset.get());
   // app which use "text/html" to copy&paste
   // get the decoder
   auto encoding = Encoding::ForLabelNoReplacement(charset);
   if (!encoding) {
-    MOZ_CLIPBOARD_LOG(
-        "TransferableSetHTML: get unicode decoder error (charset: %s)",
-        charset.get());
-    return false;
+    MOZ_CLIPBOARD_LOG("GetHTMLData: get unicode decoder error (charset: %s)",
+                      charset.get());
+    return nullptr;
   }
 
   // According to spec html UTF-16BE/LE should be switched to UTF-8
@@ -535,151 +493,142 @@ static bool TransferableSetHTML(nsITransferable* aTransferable,
   if (enc != UTF_8_ENCODING && MOZ_CLIPBOARD_LOG_ENABLED()) {
     nsCString decoderName;
     enc->Name(decoderName);
-    MOZ_CLIPBOARD_LOG("TransferableSetHTML: expected UTF-8 decoder but got %s",
+    MOZ_CLIPBOARD_LOG("GetHTMLData: expected UTF-8 decoder but got %s",
                       decoderName.get());
   }
 #endif
   if (NS_FAILED(rv)) {
-    MOZ_CLIPBOARD_LOG("TransferableSetHTML: failed to decode HTML");
-    return false;
+    MOZ_CLIPBOARD_LOG("GetHTMLData: failed to decode HTML");
+    return nullptr;
   }
-  SetTransferableData(aTransferable, mimeType,
-                      (const char*)unicodeData.BeginReading(),
-                      unicodeData.Length() * sizeof(char16_t));
-  return true;
+
+  nsCOMPtr<nsISupports> wrapper;
+  nsPrimitiveHelpers::CreatePrimitiveForData(
+      mimeType, (const char*)unicodeData.BeginReading(),
+      unicodeData.Length() * sizeof(char16_t), getter_AddRefs(wrapper));
+  return wrapper.forget();
 }
 
-NS_IMETHODIMP
-nsClipboard::GetNativeClipboardData(nsITransferable* aTransferable,
+mozilla::Result<nsCOMPtr<nsISupports>, nsresult>
+nsClipboard::GetNativeClipboardData(const nsACString& aFlavor,
                                     ClipboardType aWhichClipboard) {
-  MOZ_DIAGNOSTIC_ASSERT(aTransferable);
   MOZ_DIAGNOSTIC_ASSERT(
       nsIClipboard::IsClipboardTypeSupported(aWhichClipboard));
 
   MOZ_CLIPBOARD_LOG(
-      "nsClipboard::GetNativeClipboardData (%s)\n",
-      aWhichClipboard == kSelectionClipboard ? "primary" : "clipboard");
+      "nsClipboard::GetNativeClipboardData (%s) for %s sequence num %d",
+      aWhichClipboard == kSelectionClipboard ? "primary" : "clipboard",
+      PromiseFlatCString(aFlavor).get(), GetSequenceNumber(aWhichClipboard));
 
   // TODO: Ensure we don't re-enter here.
   if (!mContext) {
-    return NS_ERROR_FAILURE;
+    return Err(NS_ERROR_FAILURE);
   }
-
-  nsTArray<nsCString> flavors;
-  nsresult rv = GetTransferableFlavors(aTransferable, flavors);
-  NS_ENSURE_SUCCESS(rv, rv);
 
   // Filter out MIME types on X11 to prevent unwanted conversions,
   // see Bug 1611407
-  if (widget::GdkIsX11Display() &&
-      !FilterImportedFlavors(aWhichClipboard, flavors)) {
+  if (widget::GdkIsX11Display() && !HasSuitableData(aWhichClipboard, aFlavor)) {
     MOZ_CLIPBOARD_LOG("    Missing suitable clipboard data, quit.");
-    return NS_OK;
+    return nsCOMPtr<nsISupports>{};
   }
 
-  for (uint32_t i = 0; i < flavors.Length(); i++) {
-    nsCString& flavorStr = flavors[i];
-
-    if (flavorStr.EqualsLiteral(kJPEGImageMime) ||
-        flavorStr.EqualsLiteral(kJPGImageMime) ||
-        flavorStr.EqualsLiteral(kPNGImageMime) ||
-        flavorStr.EqualsLiteral(kGIFImageMime)) {
-      // Emulate support for image/jpg
-      if (flavorStr.EqualsLiteral(kJPGImageMime)) {
-        flavorStr.Assign(kJPEGImageMime);
-      }
-
-      MOZ_CLIPBOARD_LOG("    Getting image %s MIME clipboard data\n",
-                        flavorStr.get());
-
-      auto clipboardData =
-          mContext->GetClipboardData(flavorStr.get(), aWhichClipboard);
-      if (!clipboardData) {
-        MOZ_CLIPBOARD_LOG("    %s type is missing\n", flavorStr.get());
-        continue;
-      }
-
-      nsCOMPtr<nsIInputStream> byteStream;
-      NS_NewByteInputStream(getter_AddRefs(byteStream), clipboardData.AsSpan(),
-                            NS_ASSIGNMENT_COPY);
-      aTransferable->SetTransferData(flavorStr.get(), byteStream);
-      MOZ_CLIPBOARD_LOG("    got %s MIME data\n", flavorStr.get());
-      return NS_OK;
-    }
-
-    // Special case text/plain since we can convert any
-    // string into text/plain
-    if (flavorStr.EqualsLiteral(kTextMime)) {
-      MOZ_CLIPBOARD_LOG("    Getting text %s MIME clipboard data\n",
-                        flavorStr.get());
-
-      auto clipboardData = mContext->GetClipboardText(aWhichClipboard);
-      if (!clipboardData) {
-        MOZ_CLIPBOARD_LOG("    failed to get text data\n");
-        // If the type was text/plain and we couldn't get
-        // text off the clipboard, run the next loop
-        // iteration.
-        continue;
-      }
-
-      // Convert utf-8 into our text format.
-      NS_ConvertUTF8toUTF16 ucs2string(clipboardData.get());
-      SetTransferableData(aTransferable, flavorStr,
-                          (const char*)ucs2string.BeginReading(),
-                          ucs2string.Length() * 2);
-
-      MOZ_CLIPBOARD_LOG("    got text data, length %zd\n", ucs2string.Length());
-      return NS_OK;
-    }
-
-    if (flavorStr.EqualsLiteral(kFileMime)) {
-      MOZ_CLIPBOARD_LOG("    Getting %s file clipboard data\n",
-                        flavorStr.get());
-
-      auto clipboardData =
-          mContext->GetClipboardData(kURIListMime, aWhichClipboard);
-      if (!clipboardData) {
-        MOZ_CLIPBOARD_LOG("    text/uri-list type is missing\n");
-        continue;
-      }
-
-      nsDependentCSubstring fileName(clipboardData.AsSpan());
-      if (!TransferableSetFile(aTransferable, fileName)) {
-        continue;
-      }
-      return NS_OK;
-    }
-
-    MOZ_CLIPBOARD_LOG("    Getting %s MIME clipboard data\n", flavorStr.get());
+  if (aFlavor.EqualsLiteral(kJPEGImageMime) ||
+      aFlavor.EqualsLiteral(kJPGImageMime) ||
+      aFlavor.EqualsLiteral(kPNGImageMime) ||
+      aFlavor.EqualsLiteral(kGIFImageMime)) {
+    // Emulate support for image/jpg
+    nsAutoCString flavor(aFlavor.EqualsLiteral(kJPGImageMime)
+                             ? kJPEGImageMime
+                             : PromiseFlatCString(aFlavor).get());
+    MOZ_CLIPBOARD_LOG("    Getting image %s MIME clipboard data\n",
+                      flavor.get());
 
     auto clipboardData =
-        mContext->GetClipboardData(flavorStr.get(), aWhichClipboard);
-
-#ifdef MOZ_LOGGING
+        mContext->GetClipboardData(flavor.get(), aWhichClipboard);
     if (!clipboardData) {
-      MOZ_CLIPBOARD_LOG("    %s type is missing\n", flavorStr.get());
+      MOZ_CLIPBOARD_LOG("    %s type is missing\n", flavor.get());
+      return nsCOMPtr<nsISupports>{};
     }
-#endif
 
-    if (clipboardData) {
-      MOZ_CLIPBOARD_LOG("    got %s mime type data.\n", flavorStr.get());
+    nsCOMPtr<nsIInputStream> byteStream;
+    NS_NewByteInputStream(getter_AddRefs(byteStream), clipboardData.AsSpan(),
+                          NS_ASSIGNMENT_COPY);
 
-      // Special case text/html since we can convert into UCS2
-      if (flavorStr.EqualsLiteral(kHTMLMime)) {
-        if (!TransferableSetHTML(aTransferable, clipboardData.AsSpan())) {
-          continue;
-        }
-      } else {
-        auto span = clipboardData.AsSpan();
-        SetTransferableData(aTransferable, flavorStr, span.data(),
-                            span.Length());
-      }
-      return NS_OK;
-    }
+    MOZ_CLIPBOARD_LOG("    got %s MIME data\n", flavor.get());
+    return nsCOMPtr<nsISupports>(std::move(byteStream));
   }
 
-  MOZ_CLIPBOARD_LOG("    failed to get clipboard content.\n");
-  return NS_OK;
+  // Special case text/plain since we can convert any
+  // string into text/plain
+  if (aFlavor.EqualsLiteral(kTextMime)) {
+    MOZ_CLIPBOARD_LOG("    Getting text %s MIME clipboard data\n",
+                      PromiseFlatCString(aFlavor).get());
+
+    auto clipboardData = mContext->GetClipboardText(aWhichClipboard);
+    if (!clipboardData) {
+      MOZ_CLIPBOARD_LOG("    failed to get text data\n");
+      // If the type was text/plain and we couldn't get
+      // text off the clipboard, run the next loop
+      // iteration.
+      return nsCOMPtr<nsISupports>{};
+    }
+
+    // Convert utf-8 into our text format.
+    NS_ConvertUTF8toUTF16 ucs2string(clipboardData.get());
+
+    nsCOMPtr<nsISupports> wrapper;
+    nsPrimitiveHelpers::CreatePrimitiveForData(
+        aFlavor, (const char*)ucs2string.BeginReading(),
+        ucs2string.Length() * 2, getter_AddRefs(wrapper));
+
+    MOZ_CLIPBOARD_LOG("    got text data, length %zd\n", ucs2string.Length());
+    return wrapper;
+  }
+
+  if (aFlavor.EqualsLiteral(kFileMime)) {
+    MOZ_CLIPBOARD_LOG("    Getting file %s MIME clipboard data\n",
+                      PromiseFlatCString(aFlavor).get());
+
+    auto clipboardData =
+        mContext->GetClipboardData(kURIListMime, aWhichClipboard);
+    if (!clipboardData) {
+      MOZ_CLIPBOARD_LOG("    text/uri-list type is missing\n");
+      return nsCOMPtr<nsISupports>{};
+    }
+
+    nsDependentCSubstring fileName(clipboardData.AsSpan());
+    if (nsCOMPtr<nsIFile> file = GetFileData(fileName)) {
+      MOZ_CLIPBOARD_LOG("    got file data\n");
+      return nsCOMPtr<nsISupports>(std::move(file));
+    }
+
+    MOZ_CLIPBOARD_LOG("    failed to get file data\n");
+    return nsCOMPtr<nsISupports>{};
+  }
+
+  MOZ_CLIPBOARD_LOG("    Getting %s MIME clipboard data\n",
+                    PromiseFlatCString(aFlavor).get());
+
+  auto clipboardData = mContext->GetClipboardData(
+      PromiseFlatCString(aFlavor).get(), aWhichClipboard);
+  if (!clipboardData) {
+    MOZ_CLIPBOARD_LOG("    failed to get clipboard content.\n");
+    return nsCOMPtr<nsISupports>{};
+  }
+
+  MOZ_CLIPBOARD_LOG("    got %s mime type data.\n",
+                    PromiseFlatCString(aFlavor).get());
+
+  // Special case text/html since we can convert into UCS2
+  auto span = clipboardData.AsSpan();
+  if (aFlavor.EqualsLiteral(kHTMLMime)) {
+    return nsCOMPtr<nsISupports>(GetHTMLData(span));
+  }
+
+  nsCOMPtr<nsISupports> wrapper;
+  nsPrimitiveHelpers::CreatePrimitiveForData(
+      aFlavor, span.data(), span.Length(), getter_AddRefs(wrapper));
+  return wrapper;
 }
 
 enum DataType {
@@ -690,17 +639,14 @@ enum DataType {
 };
 
 struct DataCallbackHandler {
-  RefPtr<nsITransferable> mTransferable;
-  nsBaseClipboard::GetDataCallback mDataCallback;
+  nsBaseClipboard::GetNativeDataCallback mDataCallback;
   nsCString mMimeType;
   DataType mDataType;
 
-  explicit DataCallbackHandler(RefPtr<nsITransferable> aTransferable,
-                               nsBaseClipboard::GetDataCallback&& aDataCallback,
-                               const char* aMimeType,
-                               DataType aDataType = DATATYPE_RAW)
-      : mTransferable(std::move(aTransferable)),
-        mDataCallback(std::move(aDataCallback)),
+  DataCallbackHandler(nsBaseClipboard::GetNativeDataCallback&& aDataCallback,
+                      const nsACString& aMimeType,
+                      DataType aDataType = DATATYPE_RAW)
+      : mDataCallback(std::move(aDataCallback)),
         mMimeType(aMimeType),
         mDataType(aDataType) {
     MOZ_COUNT_CTOR(DataCallbackHandler);
@@ -713,9 +659,9 @@ struct DataCallbackHandler {
   }
 };
 
-static void AsyncGetTextImpl(nsITransferable* aTransferable,
-                             int32_t aWhichClipboard,
-                             nsBaseClipboard::GetDataCallback&& aCallback) {
+static void AsyncGetTextImpl(
+    int32_t aWhichClipboard,
+    nsBaseClipboard::GetNativeDataCallback&& aCallback) {
   MOZ_CLIPBOARD_LOG("AsyncGetText() type '%s'",
                     aWhichClipboard == nsClipboard::kSelectionClipboard
                         ? "primary"
@@ -731,47 +677,41 @@ static void AsyncGetTextImpl(nsITransferable* aTransferable,
         size_t dataLength = aText ? strlen(aText) : 0;
         if (dataLength <= 0) {
           MOZ_CLIPBOARD_LOG("  quit, text is not available");
-          ref->mDataCallback(NS_OK);
+          ref->mDataCallback(nsCOMPtr<nsISupports>{});
           return;
         }
 
         // Convert utf-8 into our unicode format.
         NS_ConvertUTF8toUTF16 utf16string(aText, dataLength);
         nsLiteralCString flavor(kTextMime);
-        SetTransferableData(ref->mTransferable, flavor,
-                            (const char*)utf16string.BeginReading(),
-                            utf16string.Length() * 2);
+
+        nsCOMPtr<nsISupports> wrapper;
+        nsPrimitiveHelpers::CreatePrimitiveForData(
+            flavor, (const char*)utf16string.BeginReading(),
+            utf16string.Length() * 2, getter_AddRefs(wrapper));
+
         MOZ_CLIPBOARD_LOG("  text is set, length = %d", (int)dataLength);
-        ref->mDataCallback(NS_OK);
+        ref->mDataCallback(wrapper);
       },
-      new DataCallbackHandler(aTransferable, std::move(aCallback), kTextMime));
+      new DataCallbackHandler(std::move(aCallback),
+                              nsLiteralCString(kTextMime)));
 }
 
-static void AsyncGetDataImpl(nsITransferable* aTransferable,
-                             int32_t aWhichClipboard, const char* aMimeType,
-                             DataType aDataType,
-                             nsBaseClipboard::GetDataCallback&& aCallback) {
+static void AsyncGetDataImpl(
+    int32_t aWhichClipboard, const nsACString& aMimeType, DataType aDataType,
+    nsBaseClipboard::GetNativeDataCallback&& aCallback) {
   MOZ_CLIPBOARD_LOG("AsyncGetData() type '%s'",
                     aWhichClipboard == nsClipboard::kSelectionClipboard
                         ? "primary"
                         : "clipboard");
 
-  const char* gtkMIMEType = nullptr;
-  switch (aDataType) {
-    case DATATYPE_FILE:
-      // Don't ask Gtk for application/x-moz-file
-      gtkMIMEType = kURIListMime;
-      break;
-    case DATATYPE_IMAGE:
-    case DATATYPE_HTML:
-    case DATATYPE_RAW:
-      gtkMIMEType = aMimeType;
-      break;
-  }
-
   gtk_clipboard_request_contents(
       gtk_clipboard_get(GetSelectionAtom(aWhichClipboard)),
-      gdk_atom_intern(gtkMIMEType, FALSE),
+      // Don't ask Gtk for application/x-moz-file.
+      gdk_atom_intern((aDataType == DATATYPE_FILE)
+                          ? kURIListMime
+                          : PromiseFlatCString(aMimeType).get(),
+                      FALSE),
       [](GtkClipboard* aClipboard, GtkSelectionData* aSelection,
          gpointer aData) -> void {
         UniquePtr<DataCallbackHandler> ref(
@@ -781,130 +721,120 @@ static void AsyncGetDataImpl(nsITransferable* aTransferable,
 
         int dataLength = gtk_selection_data_get_length(aSelection);
         if (dataLength <= 0) {
-          ref->mDataCallback(NS_OK);
+          ref->mDataCallback(nsCOMPtr<nsISupports>{});
           return;
         }
         const char* data = (const char*)gtk_selection_data_get_data(aSelection);
         if (!data) {
-          ref->mDataCallback(NS_OK);
+          ref->mDataCallback(nsCOMPtr<nsISupports>{});
           return;
         }
         switch (ref->mDataType) {
           case DATATYPE_IMAGE: {
-            MOZ_CLIPBOARD_LOG("  set image clipboard data");
+            MOZ_CLIPBOARD_LOG("  get image clipboard data");
             nsCOMPtr<nsIInputStream> byteStream;
             NS_NewByteInputStream(getter_AddRefs(byteStream),
                                   Span(data, dataLength), NS_ASSIGNMENT_COPY);
-            ref->mTransferable->SetTransferData(ref->mMimeType.get(),
-                                                byteStream);
-            break;
+            ref->mDataCallback(nsCOMPtr<nsISupports>(byteStream));
+            return;
           }
           case DATATYPE_FILE: {
-            MOZ_CLIPBOARD_LOG("  set file clipboard data");
-            nsDependentCSubstring file(data, dataLength);
-            TransferableSetFile(ref->mTransferable, file);
+            MOZ_CLIPBOARD_LOG("  get file clipboard data");
+            nsDependentCSubstring uriList(data, dataLength);
+            if (nsCOMPtr<nsIFile> file = GetFileData(uriList)) {
+              MOZ_CLIPBOARD_LOG("  successfully get file data\n");
+              ref->mDataCallback(nsCOMPtr<nsISupports>(file));
+              return;
+            }
             break;
           }
           case DATATYPE_HTML: {
             MOZ_CLIPBOARD_LOG("  html clipboard data");
             Span dataSpan(data, dataLength);
-            TransferableSetHTML(ref->mTransferable, dataSpan);
+            if (nsCOMPtr<nsISupports> data = GetHTMLData(dataSpan)) {
+              MOZ_CLIPBOARD_LOG("  successfully get HTML data\n");
+              ref->mDataCallback(nsCOMPtr<nsISupports>(data));
+              return;
+            }
             break;
           }
           case DATATYPE_RAW: {
             MOZ_CLIPBOARD_LOG("  raw clipboard data %s", ref->mMimeType.get());
-            SetTransferableData(ref->mTransferable, ref->mMimeType, data,
-                                dataLength);
-            break;
+
+            nsCOMPtr<nsISupports> wrapper;
+            nsPrimitiveHelpers::CreatePrimitiveForData(
+                ref->mMimeType, data, dataLength, getter_AddRefs(wrapper));
+            ref->mDataCallback(nsCOMPtr<nsISupports>(wrapper));
+            return;
           }
         }
-        ref->mDataCallback(NS_OK);
+        ref->mDataCallback(nsCOMPtr<nsISupports>{});
       },
-      new DataCallbackHandler(aTransferable, std::move(aCallback), aMimeType,
-                              aDataType));
+      new DataCallbackHandler(std::move(aCallback), aMimeType, aDataType));
 }
 
-static void AsyncGetDataFlavor(nsITransferable* aTransferable,
-                               int32_t aWhichClipboard, nsCString& aFlavorStr,
-                               nsBaseClipboard::GetDataCallback&& aCallback) {
+static void AsyncGetDataFlavor(
+    int32_t aWhichClipboard, const nsACString& aFlavorStr,
+    nsBaseClipboard::GetNativeDataCallback&& aCallback) {
   if (aFlavorStr.EqualsLiteral(kJPEGImageMime) ||
       aFlavorStr.EqualsLiteral(kJPGImageMime) ||
       aFlavorStr.EqualsLiteral(kPNGImageMime) ||
       aFlavorStr.EqualsLiteral(kGIFImageMime)) {
     // Emulate support for image/jpg
-    if (aFlavorStr.EqualsLiteral(kJPGImageMime)) {
-      aFlavorStr.Assign(kJPEGImageMime);
-    }
-    MOZ_CLIPBOARD_LOG("  Getting image %s MIME clipboard data",
-                      aFlavorStr.get());
-    AsyncGetDataImpl(aTransferable, aWhichClipboard, aFlavorStr.get(),
-                     DATATYPE_IMAGE, std::move(aCallback));
+    nsAutoCString flavor(aFlavorStr.EqualsLiteral(kJPGImageMime)
+                             ? kJPEGImageMime
+                             : PromiseFlatCString(aFlavorStr).get());
+    MOZ_CLIPBOARD_LOG("  Getting image %s MIME clipboard data", flavor.get());
+    AsyncGetDataImpl(aWhichClipboard, flavor, DATATYPE_IMAGE,
+                     std::move(aCallback));
     return;
   }
   // Special case text/plain since we can convert any
   // string into text/plain
   if (aFlavorStr.EqualsLiteral(kTextMime)) {
     MOZ_CLIPBOARD_LOG("  Getting unicode clipboard data");
-    AsyncGetTextImpl(aTransferable, aWhichClipboard, std::move(aCallback));
+    AsyncGetTextImpl(aWhichClipboard, std::move(aCallback));
     return;
   }
   if (aFlavorStr.EqualsLiteral(kFileMime)) {
     MOZ_CLIPBOARD_LOG("  Getting file clipboard data\n");
-    AsyncGetDataImpl(aTransferable, aWhichClipboard, aFlavorStr.get(),
-                     DATATYPE_FILE, std::move(aCallback));
+    AsyncGetDataImpl(aWhichClipboard, aFlavorStr, DATATYPE_FILE,
+                     std::move(aCallback));
     return;
   }
   if (aFlavorStr.EqualsLiteral(kHTMLMime)) {
     MOZ_CLIPBOARD_LOG("  Getting HTML clipboard data");
-    AsyncGetDataImpl(aTransferable, aWhichClipboard, aFlavorStr.get(),
-                     DATATYPE_HTML, std::move(aCallback));
+    AsyncGetDataImpl(aWhichClipboard, aFlavorStr, DATATYPE_HTML,
+                     std::move(aCallback));
     return;
   }
-  MOZ_CLIPBOARD_LOG("  Getting raw %s MIME clipboard data\n", aFlavorStr.get());
-  AsyncGetDataImpl(aTransferable, aWhichClipboard, aFlavorStr.get(),
-                   DATATYPE_RAW, std::move(aCallback));
+  MOZ_CLIPBOARD_LOG("  Getting raw %s MIME clipboard data\n",
+                    PromiseFlatCString(aFlavorStr).get());
+  AsyncGetDataImpl(aWhichClipboard, aFlavorStr, DATATYPE_RAW,
+                   std::move(aCallback));
 }
 
-void nsClipboard::AsyncGetNativeClipboardData(nsITransferable* aTransferable,
-                                              ClipboardType aWhichClipboard,
-                                              GetDataCallback&& aCallback) {
-  MOZ_DIAGNOSTIC_ASSERT(aTransferable);
+void nsClipboard::AsyncGetNativeClipboardData(
+    const nsACString& aFlavor, ClipboardType aWhichClipboard,
+    GetNativeDataCallback&& aCallback) {
   MOZ_DIAGNOSTIC_ASSERT(
       nsIClipboard::IsClipboardTypeSupported(aWhichClipboard));
 
-  MOZ_CLIPBOARD_LOG("nsClipboard::AsyncGetNativeClipboardData (%s)",
+  MOZ_CLIPBOARD_LOG("nsClipboard::AsyncGetNativeClipboardData (%s) for %s",
                     aWhichClipboard == nsClipboard::kSelectionClipboard
                         ? "primary"
-                        : "clipboard");
-  nsTArray<nsCString> importedFlavors;
-  nsresult rv = GetTransferableFlavors(aTransferable, importedFlavors);
-  if (NS_FAILED(rv)) {
-    aCallback(rv);
-    return;
-  }
-
-  auto flavorsNum = importedFlavors.Length();
-  if (!flavorsNum) {
-    aCallback(NS_OK);
-    return;
-  }
-#ifdef MOZ_LOGGING
-  if (flavorsNum > 1) {
-    MOZ_CLIPBOARD_LOG(
-        "  Only first MIME type (%s) will be imported from clipboard!",
-        importedFlavors[0].get());
-  }
-#endif
+                        : "clipboard",
+                    PromiseFlatCString(aFlavor).get());
 
   // Filter out MIME types on X11 to prevent unwanted conversions,
   // see Bug 1611407
   if (widget::GdkIsX11Display()) {
     AsyncHasNativeClipboardDataMatchingFlavors(
-        importedFlavors, aWhichClipboard,
-        [aWhichClipboard, transferable = nsCOMPtr{aTransferable},
+        nsTArray<nsCString>{PromiseFlatCString(aFlavor)}, aWhichClipboard,
+        [aWhichClipboard,
          callback = std::move(aCallback)](auto aResultOrError) mutable {
           if (aResultOrError.isErr()) {
-            callback(aResultOrError.unwrapErr());
+            callback(Err(aResultOrError.unwrapErr()));
             return;
           }
 
@@ -912,19 +842,18 @@ void nsClipboard::AsyncGetNativeClipboardData(nsITransferable* aTransferable,
               std::move(aResultOrError.unwrap());
           if (!clipboardFlavors.Length()) {
             MOZ_CLIPBOARD_LOG("  no flavors in clipboard, quit.");
-            callback(NS_OK);
+            callback(nsCOMPtr<nsISupports>{});
             return;
           }
 
-          AsyncGetDataFlavor(transferable, aWhichClipboard, clipboardFlavors[0],
+          AsyncGetDataFlavor(aWhichClipboard, clipboardFlavors[0],
                              std::move(callback));
         });
     return;
   }
 
   // Read clipboard directly on Wayland
-  AsyncGetDataFlavor(aTransferable, aWhichClipboard, importedFlavors[0],
-                     std::move(aCallback));
+  AsyncGetDataFlavor(aWhichClipboard, aFlavor, std::move(aCallback));
 }
 
 nsresult nsClipboard::EmptyNativeClipboardData(ClipboardType aWhichClipboard) {
@@ -938,11 +867,13 @@ nsresult nsClipboard::EmptyNativeClipboardData(ClipboardType aWhichClipboard) {
     if (mSelectionTransferable) {
       gtk_clipboard_clear(gtk_clipboard_get(GDK_SELECTION_PRIMARY));
       MOZ_ASSERT(!mSelectionTransferable);
+      MarkNextOwnerClipboardChange(aWhichClipboard, /* aOurChange */ true);
     }
   } else {
     if (mGlobalTransferable) {
       gtk_clipboard_clear(gtk_clipboard_get(GDK_SELECTION_CLIPBOARD));
       MOZ_ASSERT(!mGlobalTransferable);
+      MarkNextOwnerClipboardChange(aWhichClipboard, /* aOurChange */ true);
     }
   }
   ClearCachedTargets(aWhichClipboard);
@@ -950,11 +881,10 @@ nsresult nsClipboard::EmptyNativeClipboardData(ClipboardType aWhichClipboard) {
 }
 
 void nsClipboard::ClearTransferable(int32_t aWhichClipboard) {
+  IncrementSequenceNumber(aWhichClipboard);
   if (aWhichClipboard == kSelectionClipboard) {
-    mSelectionSequenceNumber++;
     mSelectionTransferable = nullptr;
   } else {
-    mGlobalSequenceNumber++;
     mGlobalTransferable = nullptr;
   }
 }
@@ -965,14 +895,12 @@ static bool FlavorMatchesTarget(const nsACString& aFlavor, GdkAtom aTarget) {
     return false;
   }
   if (aFlavor.Equals(atom_name.get())) {
-    MOZ_CLIPBOARD_LOG("    has %s\n", atom_name.get());
     return true;
   }
   // X clipboard supports image/jpeg, but we want to emulate support
   // for image/jpg as well
   if (aFlavor.EqualsLiteral(kJPGImageMime) &&
       !strcmp(atom_name.get(), kJPEGImageMime)) {
-    MOZ_CLIPBOARD_LOG("    has image/jpg\n");
     return true;
   }
   // application/x-moz-file should be treated like text/uri-list
@@ -996,21 +924,30 @@ nsClipboard::HasNativeClipboardDataMatchingFlavors(
       aWhichClipboard == kSelectionClipboard ? "primary" : "clipboard");
 
   if (!mContext) {
+    MOZ_CLIPBOARD_LOG("    nsRetrievalContext is not available\n");
     return Err(NS_ERROR_FAILURE);
   }
 
   auto targets = mContext->GetTargets(aWhichClipboard);
   if (!targets) {
     MOZ_CLIPBOARD_LOG("    no targes at clipboard (null)\n");
+    // If TARGETS is not available, fallback to checking for text data directly,
+    // as the clipboard owner might not set TARGETS properly, but the text is
+    // still available.
+    for (auto& flavor : aFlavorList) {
+      if (flavor.EqualsLiteral(kTextMime)) {
+        MOZ_CLIPBOARD_LOG("    try text data\n");
+        if (auto clipboardData = mContext->GetClipboardText(aWhichClipboard)) {
+          return true;
+        }
+        MOZ_CLIPBOARD_LOG("    no text data\n");
+      }
+    }
     return false;
   }
 
 #ifdef MOZ_LOGGING
   if (MOZ_CLIPBOARD_LOG_ENABLED()) {
-    MOZ_CLIPBOARD_LOG("    Asking for content:\n");
-    for (auto& flavor : aFlavorList) {
-      MOZ_CLIPBOARD_LOG("        MIME %s\n", flavor.get());
-    }
     MOZ_CLIPBOARD_LOG("    Clipboard content (target nums %zu):\n",
                       targets.AsSpan().Length());
     for (const auto& target : targets.AsSpan()) {
@@ -1031,7 +968,6 @@ nsClipboard::HasNativeClipboardDataMatchingFlavors(
     if (flavor.EqualsLiteral(kTextMime) &&
         gtk_targets_include_text(targets.AsSpan().data(),
                                  targets.AsSpan().Length())) {
-      MOZ_CLIPBOARD_LOG("    has kTextMime\n");
       return true;
     }
     for (const auto& target : targets.AsSpan()) {
@@ -1041,7 +977,7 @@ nsClipboard::HasNativeClipboardDataMatchingFlavors(
     }
   }
 
-  MOZ_CLIPBOARD_LOG("    no targes at clipboard (bad match)\n");
+  MOZ_CLIPBOARD_LOG("    no matched targes at clipboard\n");
   return false;
 }
 
@@ -1079,44 +1015,73 @@ void nsClipboard::AsyncHasNativeClipboardDataMatchingFlavors(
         UniquePtr<TragetCallbackHandler> handler(
             static_cast<TragetCallbackHandler*>(aData));
 
-        GdkAtom* targets = nullptr;
-        gint targetsNum = 0;
         if (gtk_selection_data_get_length(aSelection) > 0) {
+          GdkAtom* targets = nullptr;
+          gint targetsNum = 0;
           gtk_selection_data_get_targets(aSelection, &targets, &targetsNum);
 
+          if (targetsNum > 0) {
 #ifdef MOZ_LOGGING
-          if (MOZ_CLIPBOARD_LOG_ENABLED()) {
-            MOZ_CLIPBOARD_LOG("  Clipboard content (target nums %d):\n",
-                              targetsNum);
-            for (int i = 0; i < targetsNum; i++) {
-              GUniquePtr<gchar> atom_name(gdk_atom_name(targets[i]));
-              if (!atom_name) {
-                MOZ_CLIPBOARD_LOG("    failed to get MIME\n");
+            if (MOZ_CLIPBOARD_LOG_ENABLED()) {
+              MOZ_CLIPBOARD_LOG("    Clipboard content (target nums %d):\n",
+                                targetsNum);
+              for (int i = 0; i < targetsNum; i++) {
+                GUniquePtr<gchar> atom_name(gdk_atom_name(targets[i]));
+                if (!atom_name) {
+                  MOZ_CLIPBOARD_LOG("        failed to get MIME\n");
+                  continue;
+                }
+                MOZ_CLIPBOARD_LOG("        MIME %s\n", atom_name.get());
+              }
+            }
+#endif
+
+            nsTArray<nsCString> results;
+            for (auto& flavor : handler->mAcceptedFlavorList) {
+              if (flavor.EqualsLiteral(kTextMime) &&
+                  gtk_targets_include_text(targets, targetsNum)) {
+                results.AppendElement(flavor);
                 continue;
               }
-              MOZ_CLIPBOARD_LOG("    MIME %s\n", atom_name.get());
-            }
-          }
-#endif
-        }
-        nsTArray<nsCString> results;
-        if (targetsNum) {
-          for (auto& flavor : handler->mAcceptedFlavorList) {
-            MOZ_CLIPBOARD_LOG("  looking for %s", flavor.get());
-            if (flavor.EqualsLiteral(kTextMime) &&
-                gtk_targets_include_text(targets, targetsNum)) {
-              results.AppendElement(flavor);
-              MOZ_CLIPBOARD_LOG("    has kTextMime\n");
-              continue;
-            }
-            for (int i = 0; i < targetsNum; i++) {
-              if (FlavorMatchesTarget(flavor, targets[i])) {
-                results.AppendElement(flavor);
+              for (int i = 0; i < targetsNum; i++) {
+                if (FlavorMatchesTarget(flavor, targets[i])) {
+                  results.AppendElement(flavor);
+                }
               }
             }
+            handler->mCallback(std::move(results));
+            return;
           }
         }
-        handler->mCallback(std::move(results));
+
+        // If TARGETS is not available, fallback to checking for text data
+        // directly, as the clipboard owner might not set TARGETS properly, but
+        // the text is still available.
+        MOZ_CLIPBOARD_LOG("    no targets found\n");
+        for (auto& flavor : handler->mAcceptedFlavorList) {
+          if (flavor.EqualsLiteral(kTextMime)) {
+            MOZ_CLIPBOARD_LOG("    try text data\n");
+            gtk_clipboard_request_text(
+                aClipboard,
+                [](GtkClipboard* aClipboard, const gchar* aText,
+                   gpointer aData) -> void {
+                  MOZ_CLIPBOARD_LOG(
+                      "gtk_clipboard_request_text async handler (%p)", aData);
+                  UniquePtr<TragetCallbackHandler> handler(
+                      static_cast<TragetCallbackHandler*>(aData));
+
+                  nsTArray<nsCString> results;
+                  if (aText) {
+                    results.AppendElement(kTextMime);
+                  }
+                  handler->mCallback(std::move(results));
+                },
+                handler.release());
+            return;
+          }
+        }
+
+        handler->mCallback(nsTArray<nsCString>{});
       },
       new TragetCallbackHandler(aFlavorList, std::move(aCallback)));
 }
@@ -1138,7 +1103,6 @@ void nsClipboard::SelectionGetEvent(GtkClipboard* aClipboard,
   // that we want to do is see if that something includes text.  If
   // it does, try to give it text/plain after converting it to
   // utf-8.
-
   int32_t whichClipboard;
 
   // which clipboard?
@@ -1315,6 +1279,23 @@ void nsClipboard::SelectionGetEvent(GtkClipboard* aClipboard,
     return;
   }
 
+  if (!StaticPrefs::clipboard_copyPrivateDataToClipboardCloudOrHistory() &&
+      selectionTarget == gdk_atom_intern(kKDEPasswordManagerHintMime, FALSE)) {
+    if (!trans->GetIsPrivateData()) {
+      MOZ_CLIPBOARD_LOG(
+          "  requested %s, but the data isn't actually private!\n",
+          kKDEPasswordManagerHintMime);
+      return;
+    }
+
+    static const char* kSecret = "secret";
+    MOZ_CLIPBOARD_LOG("  Setting data to '%s' for %s\n", kSecret,
+                      kKDEPasswordManagerHintMime);
+    gtk_selection_data_set(aSelectionData, selectionTarget, 8,
+                           (const guchar*)kSecret, strlen(kSecret));
+    return;
+  }
+
   MOZ_CLIPBOARD_LOG("  Try if we have anything at GetTransferData() for %s\n",
                     GUniquePtr<gchar>(gdk_atom_name(selectionTarget)).get());
 
@@ -1377,27 +1358,20 @@ void nsClipboard::OwnerChangedEvent(GtkClipboard* aGtkClipboard,
   if (whichClipboard.isNothing()) {
     return;
   }
-  MOZ_CLIPBOARD_LOG(
-      "nsClipboard::OwnerChangedEvent (%s)\n",
-      *whichClipboard == kSelectionClipboard ? "primary" : "clipboard");
-  GtkWidget* gtkWidget = [aEvent]() -> GtkWidget* {
-    if (!aEvent->owner) {
-      return nullptr;
-    }
-    gpointer user_data = nullptr;
-    gdk_window_get_user_data(aEvent->owner, &user_data);
-    return GTK_WIDGET(user_data);
-  }();
-  // If we can get GtkWidget from the current clipboard owner, this
-  // owner-changed event must be triggered by ourself via calling
-  // gtk_clipboard_set_with_data, the sequence number should already be handled.
-  if (!gtkWidget) {
-    if (*whichClipboard == kSelectionClipboard) {
-      mSelectionSequenceNumber++;
-    } else {
-      mGlobalSequenceNumber++;
-    }
+
+  bool shouldIncrementSequence = !IsOurOwnerClipboardChange(*whichClipboard);
+  MarkNextOwnerClipboardChange(*whichClipboard, /* aOurChange */ false);
+
+  if (shouldIncrementSequence) {
+    IncrementSequenceNumber(*whichClipboard);
   }
+
+  MOZ_CLIPBOARD_LOG(
+      "nsClipboard::OwnerChangedEvent (%s) %s sequence %d\n",
+      *whichClipboard == kSelectionClipboard ? "primary" : "clipboard",
+      shouldIncrementSequence ? "external change" : "internal change",
+      *whichClipboard == kSelectionClipboard ? mSelectionSequenceNumber
+                                             : mGlobalSequenceNumber);
 
   ClearCachedTargets(*whichClipboard);
 }

@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 import { EventEmitter } from "resource://gre/modules/EventEmitter.sys.mjs";
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
@@ -15,6 +16,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   AppMenuNotifications: "resource://gre/modules/AppMenuNotifications.sys.mjs",
   ExtensionData: "resource://gre/modules/Extension.sys.mjs",
   ExtensionPermissions: "resource://gre/modules/ExtensionPermissions.sys.mjs",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   OriginControls: "resource://gre/modules/ExtensionPermissions.sys.mjs",
   QuarantinedDomains: "resource://gre/modules/ExtensionPermissions.sys.mjs",
 });
@@ -67,7 +69,7 @@ export var ExtensionsUI = {
 
   async init() {
     Services.obs.addObserver(this, "webextension-permission-prompt");
-    Services.obs.addObserver(this, "webextension-update-permissions");
+    Services.obs.addObserver(this, "webextension-update-permission-prompt");
     Services.obs.addObserver(this, "webextension-install-notify");
     Services.obs.addObserver(this, "webextension-optional-permission-prompt");
     Services.obs.addObserver(this, "webextension-defaultsearch-prompt");
@@ -223,15 +225,21 @@ export var ExtensionsUI = {
 
       info.unsigned =
         info.addon.signedState <= lazy.AddonManager.SIGNEDSTATE_MISSING;
+      // In local builds (or automation), when this pref is set, pretend the
+      // file is correctly signed even if it isn't so that the UI looks like
+      // what users would normally see.
       if (
         info.unsigned &&
-        Cu.isInAutomation &&
+        (Cu.isInAutomation || !AppConstants.MOZILLA_OFFICIAL) &&
         Services.prefs.getBoolPref(
-          "extensions.ui.showAddonIconForUnsigned",
+          "extensions.ui.disableUnsignedWarnings",
           false
         )
       ) {
         info.unsigned = false;
+        lazy.logConsole.warn(
+          `Add-on ${info.addon.id} is unsigned (${info.addon.signedState}), pretending that it *is* signed because of the extensions.ui.disableUnsignedWarnings pref.`
+        );
       }
 
       let strings = this._buildStrings(info);
@@ -281,7 +289,7 @@ export var ExtensionsUI = {
           info.reject();
         }
       });
-    } else if (topic == "webextension-update-permissions") {
+    } else if (topic == "webextension-update-permission-prompt") {
       let info = subject.wrappedJSObject;
       info.type = "update";
       let strings = this._buildStrings(info);
@@ -413,8 +421,14 @@ export var ExtensionsUI = {
       !!strings.dataCollectionPermissions?.collectsTechnicalAndInteractionData;
 
     const incognitoPermissionName = "internal:privateBrowsingAllowed";
-    let grantPrivateBrowsingAllowed = false;
-    if (showIncognitoCheckbox) {
+    let grantPrivateBrowsingAllowed =
+      lazy.PrivateBrowsingUtils.permanentPrivateBrowsing;
+    if (
+      showIncognitoCheckbox &&
+      // Usually false, unless the user tries to install a XPI file whose ID
+      // matches an already-installed add-on.
+      (await lazy.AddonManager.getAddonByID(addon.id))
+    ) {
       let { permissions } = await lazy.ExtensionPermissions.get(addon.id);
       grantPrivateBrowsingAllowed = permissions.includes(
         incognitoPermissionName
@@ -703,6 +717,9 @@ export var ExtensionsUI = {
           onDismissed: () => {
             lazy.AppMenuNotifications.removeNotification("addon-installed");
             resolve();
+          },
+          customElementOptions: {
+            addonId: addon.id,
           },
         };
         lazy.AppMenuNotifications.showNotification(

@@ -37,6 +37,14 @@ const CHROME_URL_PREFIX = "chrome://mochitests/content/browser/";
 const DIR_PATH = "toolkit/components/translations/tests/browser/";
 
 /**
+ * @template D, T
+ * @typedef {(
+ *   fn: (selectors: Record<string, string>, data: D) => Promise<void>,
+ *   data: T
+ * ) => Promise<T>} RunInPageFn
+ */
+
+/**
  * Use a utility function to make this easier to read.
  *
  * @param {string} path
@@ -46,6 +54,7 @@ function _url(path) {
   return URL_COM_PREFIX + DIR_PATH + path;
 }
 
+const BLANK_PAGE_URL = _url("translations-tester-blank.html");
 const SPANISH_PAGE_URL = _url("translations-tester-es.html");
 const SPANISH_PAGE_URL_2 = _url("translations-tester-es-2.html");
 const SPANISH_PAGE_SHORT_URL = _url("translations-tester-es-short.html");
@@ -59,7 +68,7 @@ const NO_LANGUAGE_URL = _url("translations-tester-no-tag.html");
 const PDF_TEST_PAGE_URL = _url("translations-tester-pdf-file.pdf");
 const SELECT_TEST_PAGE_URL = _url("translations-tester-select.html");
 const TEXT_CLEANING_URL = _url("translations-text-cleaning.html");
-const SPANISH_BENCHMARK_PAGE_URL = _url("translations-bencher-es.html");
+const ENGLISH_BENCHMARK_PAGE_URL = _url("translations-bencher-en.html");
 
 const SPANISH_PAGE_URL_DOT_ORG =
   URL_ORG_PREFIX + DIR_PATH + "translations-tester-es.html";
@@ -82,6 +91,29 @@ const NEVER_TRANSLATE_LANGS_PREF =
 const USE_LEXICAL_SHORTLIST_PREF = "browser.translations.useLexicalShortlist";
 
 /**
+ * Provide a uniform way to log actions. This abuses the Error stack to get the callers
+ * of the action. This should help in test debugging.
+ */
+function logAction(...params) {
+  const error = new Error();
+  const stackLines = error.stack.split("\n");
+  const actionName = stackLines[1]?.split("@")[0] ?? "";
+  const taskFileLocation = stackLines[2]?.split("@")[1] ?? "";
+  if (taskFileLocation.includes("head.js")) {
+    // Only log actions that were done at the test level.
+    return;
+  }
+
+  info(`Action: ${actionName}(${params.join(", ")})`);
+  info(
+    `Source: ${taskFileLocation.replace(
+      "chrome://mochitests/content/browser/",
+      ""
+    )}`
+  );
+}
+
+/**
  * Generates a sorted list of Translation model file names for the given language pairs.
  *
  * @param {Array<{ fromLang: string, toLang: string }>} languagePairs - An array of language pair objects.
@@ -101,45 +133,26 @@ function languageModelNames(languagePairs) {
 }
 
 /**
+ * Loads a new page in the given browser at the given URL.
+ *
+ * @param {object} browser
+ * @param {string} url
+ */
+async function loadNewPage(browser, url) {
+  BrowserTestUtils.startLoadingURIString(browser, url);
+  await BrowserTestUtils.browserLoaded(
+    browser,
+    /* includeSubFrames */ false,
+    url
+  );
+}
+
+/**
  * The mochitest runs in the parent process. This function opens up a new tab,
  * opens up about:translations, and passes the test requirements into the content process.
  *
- * @template T
- *
- * @param {object} options
- *
- * @param {T} options.dataForContent
- * The data must support structural cloning and will be passed into the
- * content process.
- *
- * @param {boolean} [options.disabled]
- * Disable the panel through a pref.
- *
- * @param {Array<{ fromLang: string, toLang: string }>} options.languagePairs
- * The translation languages pairs to mock for the test.
- *
- * @param {Array<[string, string]>} options.prefs
- * Prefs to push on for the test.
- *
- * @param {boolean} [options.autoDownloadFromRemoteSettings=true]
- * Initiate the mock model downloads when this function is invoked instead of
- * waiting for the resolveDownloads or rejectDownloads to be externally invoked
- *
- * @returns {object} object
- *
- * @returns {(args: { dataForContent: T, selectors: Record<string, string> }) => Promise<void>} object.runInPage
- * This function must not capture any values, as it will be cloned in the content process.
- * Any required data should be passed in using the "dataForContent" parameter. The
- * "selectors" property contains any useful selectors for the content.
- *
- * @returns {() => Promise<void>} object.cleanup
- *
- * @returns {(count: number) => Promise<void>} object.resolveDownloads
- *
- * @returns {(count: number) => Promise<void>} object.rejectDownloads
  */
 async function openAboutTranslations({
-  dataForContent,
   disabled,
   languagePairs = LANGUAGE_PAIRS,
   prefs,
@@ -160,18 +173,18 @@ async function openAboutTranslations({
    * Collect any relevant selectors for the page here.
    */
   const selectors = {
-    pageHeader: '[data-l10n-id="about-translations-header"]',
-    fromLanguageSelect: "select#language-from",
-    toLanguageSelect: "select#language-to",
-    languageSwapButton: "button#language-swap",
-    translationTextarea: "textarea#translation-from",
-    translationResult: "#translation-to",
-    translationResultBlank: "#translation-to-blank",
-    translationInfo: "#translation-info",
-    translationResultsPlaceholder: "#translation-results-placeholder",
-    noSupportMessage: "[data-l10n-id='about-translations-no-support']",
+    pageHeader: "header#about-translations-header",
+    mainUserInterface: "section#about-translations-main-user-interface",
+    sourceLanguageSelector: "select#about-translations-source-select",
+    targetLanguageSelector: "select#about-translations-target-select",
+    detectLanguageOption: "option#about-translations-detect-language-option",
+    swapLanguagesButton: "moz-button#about-translations-swap-languages-button",
+    sourceTextArea: "textarea#about-translations-source-textarea",
+    targetTextArea: "textarea#about-translations-target-textarea",
+    unsupportedInfoMessage:
+      "moz-message-bar#about-translations-unsupported-info-message",
     languageLoadErrorMessage:
-      "[data-l10n-id='about-translations-language-load-error']",
+      "moz-message-bar#about-translations-language-load-error-message",
   };
 
   // Start the tab at a blank page.
@@ -187,11 +200,12 @@ async function openAboutTranslations({
   });
 
   // Now load the about:translations page, since the actor could be mocked.
-  BrowserTestUtils.startLoadingURIString(
-    tab.linkedBrowser,
-    "about:translations"
-  );
-  await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+  await loadNewPage(tab.linkedBrowser, "about:translations");
+
+  // Ensure the window always opens with a horizontal page layout.
+  // Divide everything by sqrt(2) to halve the overall content size.
+  await ensureWindowSize(window, 1600 * Math.SQRT1_2, 900 * Math.SQRT1_2);
+  FullZoom.setZoom(Math.SQRT1_2, tab.linkedBrowser);
 
   /**
    * @param {number} count - Count of the language pairs expected.
@@ -213,14 +227,31 @@ async function openAboutTranslations({
     );
   };
 
+  const runInPage = (callback, data = {}) => {
+    return ContentTask.spawn(
+      tab.linkedBrowser,
+      { selectors, contentData: data, callbackSource: callback.toString() }, // Data to inject.
+      function ({ selectors, contentData, callbackSource }) {
+        // eslint-disable-next-line no-eval
+        const contentCallback = eval(`(${callbackSource})`);
+        return contentCallback(selectors, contentData);
+      }
+    );
+  };
+
+  const aboutTranslationsTestUtils = new AboutTranslationsTestUtils(
+    runInPage,
+    resolveDownloads,
+    rejectDownloads,
+    autoDownloadFromRemoteSettings
+  );
+
+  if (!disabled) {
+    await aboutTranslationsTestUtils.waitForReady();
+  }
+
   return {
-    runInPage(callback) {
-      return ContentTask.spawn(
-        tab.linkedBrowser,
-        { dataForContent, selectors }, // Data to inject.
-        callback
-      );
-    },
+    aboutTranslationsTestUtils,
     async cleanup() {
       await loadBlankPage();
       BrowserTestUtils.removeTab(tab);
@@ -232,8 +263,6 @@ async function openAboutTranslations({
       TestTranslationsTelemetry.reset();
       Services.fog.testResetFOG();
     },
-    resolveDownloads,
-    rejectDownloads,
   };
 }
 
@@ -324,6 +353,1210 @@ function upperCaseNode(node) {
 }
 
 /**
+ * Test utility class for translations settings UI tests.
+ * Provides methods for interacting with and asserting the state of
+ * the translations settings page in about:preferences.
+ */
+class TranslationsSettingsTestUtils {
+  /**
+   * @param {Document} document - The settings document
+   */
+  constructor(document) {
+    this.document = document;
+  }
+
+  async openTranslationsSubpageFromDocument() {
+    const manageButton = await waitForCondition(
+      () => this.document.getElementById("translationsManageButton"),
+      "Waiting for translationsManageButton"
+    );
+    manageButton.scrollIntoView({ behavior: "instant", block: "center" });
+
+    await this.assertEvents(
+      {
+        expected: [[TranslationsSettingsTestUtils.Events.Initialized]],
+      },
+      async () => {
+        click(manageButton, "Open translations subpage");
+      }
+    );
+  }
+
+  /**
+   * Opens the translations settings subpage and returns helpers.
+   *
+   * @param {Array} [lexicalShortlistPrefs]
+   * @returns {Promise<{cleanup: Function, remoteClients: object, translationsSettingsTestUtils: TranslationsSettingsTestUtils}>}
+   */
+  static async openTranslationsSettingsSubpage(lexicalShortlistPrefs = []) {
+    const { cleanup, remoteClients, translationsSettingsTestUtils } =
+      await setupAboutPreferences(LANGUAGE_PAIRS, {
+        prefs: [
+          ["browser.settings-redesign.enabled", true],
+          ...lexicalShortlistPrefs,
+        ],
+      });
+
+    const document = gBrowser.selectedBrowser.contentDocument;
+    const manageButton = await waitForCondition(
+      () => document.getElementById("translationsManageButton"),
+      "Waiting for translationsManageButton"
+    );
+    manageButton.scrollIntoView({ behavior: "instant", block: "center" });
+
+    await translationsSettingsTestUtils.assertEvents(
+      {
+        expected: [[TranslationsSettingsTestUtils.Events.Initialized]],
+      },
+      async () => {
+        click(manageButton, "Open translations subpage");
+      }
+    );
+
+    return { cleanup, remoteClients, translationsSettingsTestUtils };
+  }
+
+  static getLanguageModelNames(langTag) {
+    return languageModelNames([
+      { fromLang: langTag, toLang: "en" },
+      { fromLang: "en", toLang: langTag },
+    ]);
+  }
+
+  /**
+   * Returns origins sorted alphabetically while ignoring schemes.
+   *
+   * @param {string[]} origins
+   * @returns {string[]}
+   */
+  static sortOrigins(origins) {
+    const stripScheme = origin =>
+      origin.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "");
+    return [...origins].sort((originA, originB) =>
+      stripScheme(originA).localeCompare(stripScheme(originB))
+    );
+  }
+
+  /**
+   * Static Events class for event name constants.
+   */
+  static Events = class Events {
+    static AlwaysTranslateLanguagesRendered =
+      "TranslationsSettingsTest:AlwaysTranslateLanguagesRendered";
+    static NeverTranslateLanguagesRendered =
+      "TranslationsSettingsTest:NeverTranslateLanguagesRendered";
+    static NeverTranslateSitesRendered =
+      "TranslationsSettingsTest:NeverTranslateSitesRendered";
+    static DownloadedLanguagesRendered =
+      "TranslationsSettingsTest:DownloadedLanguagesRendered";
+
+    static AlwaysTranslateLanguagesEmptyStateShown =
+      "TranslationsSettingsTest:AlwaysTranslateLanguagesEmptyStateShown";
+    static AlwaysTranslateLanguagesEmptyStateHidden =
+      "TranslationsSettingsTest:AlwaysTranslateLanguagesEmptyStateHidden";
+    static NeverTranslateLanguagesEmptyStateShown =
+      "TranslationsSettingsTest:NeverTranslateLanguagesEmptyStateShown";
+    static NeverTranslateLanguagesEmptyStateHidden =
+      "TranslationsSettingsTest:NeverTranslateLanguagesEmptyStateHidden";
+    static NeverTranslateSitesEmptyStateShown =
+      "TranslationsSettingsTest:NeverTranslateSitesEmptyStateShown";
+    static NeverTranslateSitesEmptyStateHidden =
+      "TranslationsSettingsTest:NeverTranslateSitesEmptyStateHidden";
+    static DownloadedLanguagesEmptyStateShown =
+      "TranslationsSettingsTest:DownloadedLanguagesEmptyStateShown";
+    static DownloadedLanguagesEmptyStateHidden =
+      "TranslationsSettingsTest:DownloadedLanguagesEmptyStateHidden";
+    static AlwaysTranslateLanguagesAddButtonEnabled =
+      "TranslationsSettingsTest:AlwaysTranslateLanguagesAddButtonEnabled";
+    static AlwaysTranslateLanguagesAddButtonDisabled =
+      "TranslationsSettingsTest:AlwaysTranslateLanguagesAddButtonDisabled";
+
+    static AlwaysTranslateLanguagesSelectOptionsUpdated =
+      "TranslationsSettingsTest:AlwaysTranslateLanguagesSelectOptionsUpdated";
+    static NeverTranslateLanguagesSelectOptionsUpdated =
+      "TranslationsSettingsTest:NeverTranslateLanguagesSelectOptionsUpdated";
+    static DownloadedLanguagesSelectOptionsUpdated =
+      "TranslationsSettingsTest:DownloadedLanguagesSelectOptionsUpdated";
+    static NeverTranslateLanguagesAddButtonEnabled =
+      "TranslationsSettingsTest:NeverTranslateLanguagesAddButtonEnabled";
+    static NeverTranslateLanguagesAddButtonDisabled =
+      "TranslationsSettingsTest:NeverTranslateLanguagesAddButtonDisabled";
+
+    static DownloadStarted = "TranslationsSettingsTest:DownloadStarted";
+    static DownloadProgress = "TranslationsSettingsTest:DownloadProgress";
+    static DownloadCompleted = "TranslationsSettingsTest:DownloadCompleted";
+    static DownloadFailed = "TranslationsSettingsTest:DownloadFailed";
+    static DownloadDeleted = "TranslationsSettingsTest:DownloadDeleted";
+
+    static Initialized = "TranslationsSettingsTest:Initialized";
+    static InitializationFailed =
+      "TranslationsSettingsTest:InitializationFailed";
+
+    static DownloadLanguageButtonEnabled =
+      "TranslationsSettingsTest:DownloadLanguageButtonEnabled";
+    static DownloadLanguageButtonDisabled =
+      "TranslationsSettingsTest:DownloadLanguageButtonDisabled";
+  };
+
+  /**
+   * Waits for a translations settings event to be dispatched.
+   *
+   * @param {string} eventName - The event name to wait for
+   * @param {object} options
+   * @param {object} [options.expectedDetail] - Expected detail properties
+   * @returns {Promise<CustomEvent>}
+   */
+  async waitForEvent(eventName, options = {}) {
+    const { expectedDetail } = options;
+
+    return BrowserTestUtils.waitForEvent(
+      this.document,
+      eventName,
+      false,
+      event => {
+        if (expectedDetail) {
+          for (const key of Object.keys(expectedDetail)) {
+            const actual = event.detail?.[key];
+            const expected = expectedDetail[key];
+            if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+              return false;
+            }
+          }
+        }
+        return true;
+      }
+    );
+  }
+
+  /**
+   * Asserts that specific events occur (or don't occur) during an action.
+   *
+   * @param {object} assertions
+   * @param {Array<[string, object?]>} assertions.expected - Events that must occur
+   * @param {Array<string>} [assertions.unexpected] - Events that must not occur
+   * @param {number} [assertions.timeout=10000] - Timeout in milliseconds
+   * @param {Function} callback - The action to perform
+   * @returns {Promise<void>}
+   */
+  async assertEvents(
+    { expected = [], unexpected = [], timeout = 10000 },
+    callback
+  ) {
+    const firedEvents = [];
+    const unexpectedEventsFired = [];
+
+    const handlers = new Map();
+
+    const isInitializedFlagSet =
+      this.document?.defaultView?.wrappedJSObject?.TranslationsSettings
+        ?.initialized;
+
+    const preseedEventsIfAlreadySatisfied = () => {
+      for (const [eventName] of expected) {
+        if (
+          eventName === TranslationsSettingsTestUtils.Events.Initialized &&
+          isInitializedFlagSet &&
+          !firedEvents.some(([name]) => name === eventName)
+        ) {
+          firedEvents.push([eventName, null]);
+        }
+      }
+    };
+
+    preseedEventsIfAlreadySatisfied();
+
+    const maybeAddSyntheticInitializationEvent = () => {
+      if (
+        expected.some(
+          ([name]) => name === TranslationsSettingsTestUtils.Events.Initialized
+        ) &&
+        !firedEvents.some(
+          ([name]) => name === TranslationsSettingsTestUtils.Events.Initialized
+        ) &&
+        this.document?.defaultView?.wrappedJSObject?.TranslationsSettings
+          ?.initialized
+      ) {
+        firedEvents.push([
+          TranslationsSettingsTestUtils.Events.Initialized,
+          null,
+        ]);
+      }
+    };
+
+    for (const [eventName] of expected) {
+      const handler = event => {
+        firedEvents.push([eventName, event.detail]);
+      };
+      handlers.set(eventName, handler);
+      this.document.addEventListener(eventName, handler);
+    }
+
+    for (const eventName of unexpected) {
+      const handler = event => {
+        unexpectedEventsFired.push([eventName, event.detail]);
+      };
+      handlers.set(eventName, handler);
+      this.document.addEventListener(eventName, handler);
+    }
+
+    try {
+      await callback();
+
+      maybeAddSyntheticInitializationEvent();
+      preseedEventsIfAlreadySatisfied();
+
+      const interval = 100;
+      const maxTries = Math.ceil(timeout / interval);
+      const expectedEventNames = expected.map(([name]) => name).join(", ");
+      try {
+        await TestUtils.waitForCondition(
+          () => {
+            maybeAddSyntheticInitializationEvent();
+            return firedEvents.length >= expected.length;
+          },
+          `Waiting for ${expected.length} expected event(s): ${expectedEventNames}`,
+          interval,
+          maxTries
+        );
+      } catch (error) {
+        throw new Error(
+          error?.message ??
+            error ??
+            `Timed out waiting for expected event(s): ${expectedEventNames}`
+        );
+      }
+
+      for (let i = 0; i < expected.length; i++) {
+        const [expectedEventName, expectedDetail] = expected[i];
+        const [firedEventName, firedDetail] = firedEvents[i] || [];
+
+        is(
+          firedEventName,
+          expectedEventName,
+          `Expected event ${i}: ${expectedEventName}`
+        );
+
+        if (expectedDetail) {
+          for (const key of Object.keys(expectedDetail)) {
+            Assert.deepEqual(
+              firedDetail?.[key],
+              expectedDetail[key],
+              `Event ${expectedEventName} detail.${key} matches`
+            );
+          }
+        }
+      }
+
+      const unexpectedNames = unexpectedEventsFired
+        .map(([name]) => name)
+        .join(", ");
+      is(
+        unexpectedEventsFired.length,
+        0,
+        `No unexpected events should fire. Fired: ${unexpectedNames}`
+      );
+    } finally {
+      for (const [eventName, handler] of handlers.entries()) {
+        this.document.removeEventListener(eventName, handler);
+      }
+    }
+  }
+
+  /**
+   * Gets the translations setting pane element.
+   *
+   * @returns {HTMLElement|null}
+   */
+  getTranslationsPane() {
+    return this.document.querySelector(
+      'setting-pane[data-category="paneTranslations"]'
+    );
+  }
+
+  /**
+   * Gets the translations subpage back button element.
+   *
+   * @returns {HTMLElement|null}
+   */
+  getBackButton() {
+    return this.getTranslationsPane()?.pageHeaderEl?.backButtonEl ?? null;
+  }
+
+  /**
+   * Clicks the translations subpage back button and waits for the main pane.
+   *
+   * @returns {Promise<void>}
+   */
+  async clickBackButton() {
+    const pane = this.getTranslationsPane();
+    if (!pane) {
+      throw new Error("Translations pane not found");
+    }
+
+    if (pane.getUpdateComplete) {
+      await pane.getUpdateComplete();
+    }
+
+    const backButton = pane.pageHeaderEl?.backButtonEl;
+    if (!backButton) {
+      throw new Error("Translations back button not found");
+    }
+
+    const paneShown = BrowserTestUtils.waitForEvent(
+      this.document,
+      "paneshown",
+      event => event.detail?.category === "paneGeneral"
+    );
+
+    await click(backButton, "Navigate back to main settings");
+    await paneShown;
+
+    await TestUtils.waitForCondition(
+      () => pane.hidden,
+      "Waiting for translations pane to hide"
+    );
+  }
+
+  /**
+   * Gets the always-translate languages select element.
+   *
+   * @returns {HTMLSelectElement|null}
+   */
+  getAlwaysTranslateLanguagesSelect() {
+    return this.document.getElementById(
+      "translationsAlwaysTranslateLanguagesSelect"
+    );
+  }
+
+  /**
+   * Gets the always-translate languages add button.
+   *
+   * @returns {HTMLButtonElement|null}
+   */
+  getAlwaysTranslateLanguagesAddButton() {
+    return this.document.getElementById(
+      "translationsAlwaysTranslateLanguagesButton"
+    );
+  }
+
+  /**
+   * Gets the never-translate languages select element.
+   *
+   * @returns {HTMLSelectElement|null}
+   */
+  getNeverTranslateLanguagesSelect() {
+    return this.document.getElementById(
+      "translationsNeverTranslateLanguagesSelect"
+    );
+  }
+
+  /**
+   * Gets the never-translate languages add button.
+   *
+   * @returns {HTMLButtonElement|null}
+   */
+  getNeverTranslateLanguagesAddButton() {
+    return this.document.getElementById(
+      "translationsNeverTranslateLanguagesButton"
+    );
+  }
+
+  /**
+   * Gets the download languages select element.
+   *
+   * @returns {HTMLSelectElement|null}
+   */
+  getDownloadedLanguagesSelect() {
+    return this.document.getElementById("translationsDownloadLanguagesSelect");
+  }
+
+  getSelectedDownloadLanguage() {
+    return this.getDownloadedLanguagesSelect()?.value ?? "";
+  }
+
+  /**
+   * Gets the download button element.
+   *
+   * @returns {HTMLButtonElement|null}
+   */
+  getDownloadLanguageButton() {
+    return this.document.getElementById("translationsDownloadLanguagesButton");
+  }
+
+  /**
+   * Gets the download languages group element.
+   *
+   * @returns {HTMLElement|null}
+   */
+  getDownloadedLanguagesGroup() {
+    return this.document.getElementById("translationsDownloadLanguagesGroup");
+  }
+
+  /**
+   * Selects a language in the download dropdown.
+   *
+   * @param {string} langTag
+   */
+  async selectDownloadLanguage(langTag) {
+    const dropdown = this.getDownloadedLanguagesSelect();
+    dropdown.value = langTag;
+    dropdown.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  async downloadLanguage({
+    langTag,
+    remoteClients,
+    inProgressLanguages,
+    finalLanguages,
+  }) {
+    await this.selectDownloadLanguage(langTag);
+
+    const started = this.waitForEvent(
+      TranslationsSettingsTestUtils.Events.DownloadStarted,
+      { expectedDetail: { langTag } }
+    );
+    const renderInProgress = this.waitForEvent(
+      TranslationsSettingsTestUtils.Events.DownloadedLanguagesRendered,
+      {
+        expectedDetail: {
+          languages: inProgressLanguages,
+          count: inProgressLanguages.length,
+          downloading: [langTag],
+        },
+      }
+    );
+    const optionsUpdated = this.waitForEvent(
+      TranslationsSettingsTestUtils.Events
+        .DownloadedLanguagesSelectOptionsUpdated
+    );
+
+    await click(this.getDownloadLanguageButton(), `Start ${langTag} download`);
+    await Promise.all([started, renderInProgress, optionsUpdated]);
+
+    const completed = this.waitForEvent(
+      TranslationsSettingsTestUtils.Events.DownloadCompleted,
+      { expectedDetail: { langTag } }
+    );
+    const renderComplete = this.waitForEvent(
+      TranslationsSettingsTestUtils.Events.DownloadedLanguagesRendered,
+      {
+        expectedDetail: {
+          languages: finalLanguages,
+          count: finalLanguages.length,
+          downloading: [],
+        },
+      }
+    );
+    const optionsAfter = this.waitForEvent(
+      TranslationsSettingsTestUtils.Events
+        .DownloadedLanguagesSelectOptionsUpdated
+    );
+
+    await remoteClients.translationModels.resolvePendingDownloads(
+      TranslationsSettingsTestUtils.getLanguageModelNames(langTag).length
+    );
+    await Promise.all([completed, renderComplete, optionsAfter]);
+  }
+
+  /**
+   * Starts a download expected to fail and waits for the failure state.
+   *
+   * @param {object} options
+   * @param {string} options.langTag
+   * @param {object} options.remoteClients
+   * @param {string[]} [options.inProgressLanguages]
+   * @param {string[]} [options.failedLanguages]
+   */
+  async startDownloadFailure({
+    langTag,
+    remoteClients,
+    inProgressLanguages = [langTag],
+    failedLanguages = [langTag],
+  }) {
+    await this.selectDownloadLanguage(langTag);
+
+    const started = this.waitForEvent(
+      TranslationsSettingsTestUtils.Events.DownloadStarted,
+      { expectedDetail: { langTag } }
+    );
+    const renderInProgress = this.waitForEvent(
+      TranslationsSettingsTestUtils.Events.DownloadedLanguagesRendered,
+      {
+        expectedDetail: {
+          languages: inProgressLanguages,
+          count: inProgressLanguages.length,
+          downloading: [langTag],
+        },
+      }
+    );
+    const optionsUpdated = this.waitForEvent(
+      TranslationsSettingsTestUtils.Events
+        .DownloadedLanguagesSelectOptionsUpdated
+    );
+
+    await click(
+      this.getDownloadLanguageButton(),
+      `Start ${langTag} download (expect failure)`
+    );
+    await Promise.all([started, renderInProgress, optionsUpdated]);
+
+    const spinnerButton = this.getDownloadRemoveButton(langTag);
+    ok(spinnerButton, "Spinner button should be visible while downloading");
+    is(
+      spinnerButton.getAttribute("type"),
+      "icon ghost",
+      "Spinner button should use ghost styling while downloading"
+    );
+
+    const failed = this.waitForEvent(
+      TranslationsSettingsTestUtils.Events.DownloadFailed,
+      { expectedDetail: { langTag } }
+    );
+    const renderFailed = this.waitForEvent(
+      TranslationsSettingsTestUtils.Events.DownloadedLanguagesRendered,
+      {
+        expectedDetail: {
+          languages: failedLanguages,
+          count: failedLanguages.length,
+          downloading: [],
+        },
+      }
+    );
+    const optionsAfterFail = this.waitForEvent(
+      TranslationsSettingsTestUtils.Events
+        .DownloadedLanguagesSelectOptionsUpdated
+    );
+
+    const modelNames =
+      TranslationsSettingsTestUtils.getLanguageModelNames(langTag);
+    await remoteClients.translationModels.waitForPendingDownloads(
+      modelNames.length
+    );
+    await remoteClients.translationModels.rejectPendingDownloads(
+      modelNames.length
+    );
+    await Promise.all([failed, renderFailed, optionsAfterFail]);
+  }
+
+  /**
+   * Waits for a language to appear in the download languages list.
+   *
+   * @param {string} langTag
+   * @returns {Promise<Element>}
+   */
+  async waitForDownloadedLanguageItem(langTag) {
+    return waitForCondition(
+      () =>
+        this.document.querySelector(
+          `.translations-download-language-item[data-lang-tag="${langTag}"]`
+        ),
+      `Waiting for downloaded language item: ${langTag}`
+    );
+  }
+
+  /**
+   * Asserts the current state of the downloaded languages list.
+   *
+   * @param {object} expected
+   * @param {string[]} [expected.languages] - Expected language tags
+   * @param {string[]} [expected.downloading] - Expected language tags that are downloading
+   * @param {number} [expected.count] - Expected count of languages
+   * @returns {Promise<void>}
+   */
+  async assertDownloadedLanguages({ languages, downloading, count }) {
+    const items = this.document.querySelectorAll(
+      ".translations-download-language-item"
+    );
+
+    if (count !== undefined) {
+      is(items.length, count, `Should have ${count} downloaded language(s)`);
+    }
+
+    const langTags = Array.from(items).map(item => item.dataset.langTag);
+
+    if (languages) {
+      Assert.deepEqual(
+        langTags.sort(),
+        [...languages].sort(),
+        "Downloaded languages match"
+      );
+    }
+
+    if (downloading) {
+      const downloadingLangs = Array.from(items)
+        .filter(item =>
+          item
+            .querySelector(".translations-download-remove-button")
+            ?.hasAttribute("disabled")
+        )
+        .map(item => item.dataset.langTag);
+      Assert.deepEqual(
+        downloadingLangs.sort(),
+        [...downloading].sort(),
+        "Downloading languages match"
+      );
+    }
+  }
+
+  /**
+   * Asserts the current order of the downloaded languages list.
+   *
+   * @param {object} expected
+   * @param {string[]} expected.languages - Expected language tags in order
+   * @returns {Promise<void>}
+   */
+  async assertDownloadedLanguagesOrder({ languages }) {
+    const items = this.document.querySelectorAll(
+      ".translations-download-language-item"
+    );
+    const actualLanguages = Array.from(items).map(item => item.dataset.langTag);
+    Assert.deepEqual(
+      actualLanguages,
+      languages,
+      "Downloaded languages order matches"
+    );
+  }
+
+  /**
+   * Asserts the visibility state of the downloaded languages empty state.
+   *
+   * @param {object} expected
+   * @param {boolean} expected.visible - Whether empty state should be visible
+   * @returns {Promise<void>}
+   */
+  async assertDownloadedLanguagesEmptyState({ visible }) {
+    const emptyRow = this.document.getElementById(
+      "translationsDownloadLanguagesNoneRow"
+    );
+    if (visible) {
+      ok(
+        emptyRow && !emptyRow.hidden,
+        "Downloaded languages empty state should be visible"
+      );
+    } else {
+      ok(
+        !emptyRow || emptyRow.hidden,
+        "Downloaded languages empty state should be hidden"
+      );
+    }
+  }
+
+  /**
+   * Removes a language from the downloaded languages list.
+   *
+   * @param {string} langTag
+   * @returns {Promise<void>}
+   */
+  async removeDownloadedLanguage(langTag) {
+    const removeButton = await waitForCondition(
+      () => this.getDownloadDeleteIconButton(langTag),
+      `Waiting for download delete icon button for ${langTag}`
+    );
+    removeButton.click();
+    await waitForCondition(
+      () => this.getDownloadDeleteConfirmButton(langTag),
+      `Waiting for delete confirmation for ${langTag}`
+    );
+  }
+
+  getDownloadRemoveButton(langTag) {
+    return this.document.querySelector(
+      `[data-lang-tag="${langTag}"].translations-download-remove-button`
+    );
+  }
+
+  getDownloadDeleteConfirmButton(langTag) {
+    return this.document.querySelector(
+      `[data-lang-tag="${langTag}"].translations-download-delete-confirm-button`
+    );
+  }
+
+  getDownloadDeleteCancelButton(langTag) {
+    return this.document.querySelector(
+      `[data-lang-tag="${langTag}"].translations-download-delete-cancel-button`
+    );
+  }
+
+  getDownloadRetryButton(langTag) {
+    return this.document.querySelector(
+      `[data-lang-tag="${langTag}"].translations-download-retry-button`
+    );
+  }
+
+  getDownloadErrorButton(langTag) {
+    return this.document.querySelector(
+      `[data-lang-tag="${langTag}"].translations-download-remove-button[iconsrc*="error"]`
+    );
+  }
+
+  getDownloadWarningButton(langTag) {
+    return this.document.querySelector(
+      `[data-lang-tag="${langTag}"].translations-download-remove-button[iconsrc*="warning"]`
+    );
+  }
+
+  getDownloadDeleteIconButton(langTag) {
+    return this.document.querySelector(
+      `[data-lang-tag="${langTag}"].translations-download-remove-button[iconsrc*="delete"]`
+    );
+  }
+
+  async openDownloadDeleteConfirmation(langTag) {
+    const removeButton = await waitForCondition(
+      () => this.getDownloadDeleteIconButton(langTag),
+      `Waiting for download delete icon button for ${langTag}`
+    );
+    removeButton.click();
+    await waitForCondition(
+      () => this.getDownloadDeleteConfirmButton(langTag),
+      `Waiting for delete confirmation for ${langTag}`
+    );
+  }
+
+  async cancelDownloadDelete(langTag) {
+    const cancelButton = await waitForCondition(
+      () => this.getDownloadDeleteCancelButton(langTag),
+      `Waiting for delete cancel button for ${langTag}`
+    );
+    cancelButton.click();
+    await waitForCondition(
+      () => this.getDownloadDeleteIconButton(langTag),
+      `Waiting for delete icon button to return for ${langTag}`
+    );
+  }
+
+  async confirmDownloadDelete(langTag) {
+    const confirmButton = await waitForCondition(
+      () => this.getDownloadDeleteConfirmButton(langTag),
+      `Waiting for delete confirm button for ${langTag}`
+    );
+    const deleted = this.waitForEvent(
+      TranslationsSettingsTestUtils.Events.DownloadDeleted,
+      { expectedDetail: { langTag } }
+    );
+    confirmButton.click();
+    await deleted;
+  }
+
+  async clickDownloadRetry(langTag) {
+    const retryButton = await waitForCondition(
+      () => this.getDownloadRetryButton(langTag),
+      `Waiting for retry button for ${langTag}`
+    );
+    const started = this.waitForEvent(
+      TranslationsSettingsTestUtils.Events.DownloadStarted,
+      { expectedDetail: { langTag } }
+    );
+    retryButton.click();
+    await started;
+  }
+
+  /**
+   * Adds a language to the always-translate list.
+   *
+   * @param {string} langTag
+   * @returns {Promise<void>}
+   */
+  async addAlwaysTranslateLanguage(langTag) {
+    const dropdown = this.getAlwaysTranslateLanguagesSelect();
+    dropdown.value = langTag;
+    dropdown.dispatchEvent(new Event("change", { bubbles: true }));
+
+    const addButton = await waitForCondition(
+      () => this.getAlwaysTranslateLanguagesAddButton(),
+      "Waiting for always-translate add button"
+    );
+    if (addButton.disabled) {
+      const addButtonEnabled = this.waitForEvent(
+        TranslationsSettingsTestUtils.Events
+          .AlwaysTranslateLanguagesAddButtonEnabled
+      );
+      await addButtonEnabled;
+    }
+    addButton.click();
+
+    const addedLanguage = this.waitForAlwaysTranslateLanguageItem(langTag);
+    const addButtonDisabledPromise = addButton.disabled
+      ? Promise.resolve()
+      : this.waitForEvent(
+          TranslationsSettingsTestUtils.Events
+            .AlwaysTranslateLanguagesAddButtonDisabled
+        );
+    await Promise.all([addedLanguage, addButtonDisabledPromise]);
+  }
+
+  /**
+   * Removes a language from the always-translate list.
+   *
+   * @param {string} langTag
+   * @returns {Promise<void>}
+   */
+  async removeAlwaysTranslateLanguage(langTag) {
+    const removeButton = this.document.querySelector(
+      `[data-lang-tag="${langTag}"].translations-always-translate-remove-button`
+    );
+    if (!removeButton) {
+      throw new Error(`Remove button not found for language: ${langTag}`);
+    }
+    const rendered = this.waitForEvent(
+      TranslationsSettingsTestUtils.Events.AlwaysTranslateLanguagesRendered
+    );
+    removeButton.click();
+    await rendered;
+  }
+
+  /**
+   * Waits for a language to appear in the always-translate languages list.
+   *
+   * @param {string} langTag
+   * @returns {Promise<Element>}
+   */
+  async waitForAlwaysTranslateLanguageItem(langTag) {
+    return TestUtils.waitForCondition(
+      () =>
+        this.document.querySelector(
+          `[data-lang-tag="${langTag}"].translations-always-translate-language-item`
+        ),
+      `Waiting for always-translate language item: ${langTag}`
+    );
+  }
+
+  /**
+   * Asserts the current state of the always-translate languages list.
+   *
+   * @param {object} expected
+   * @param {string[]} [expected.languages] - Expected language tags
+   * @param {number} [expected.count] - Expected count of languages
+   * @returns {Promise<void>}
+   */
+  async assertAlwaysTranslateLanguages({ languages, count }) {
+    const items = this.document.querySelectorAll(
+      ".translations-always-translate-language-item"
+    );
+
+    if (count !== undefined) {
+      is(
+        items.length,
+        count,
+        `Should have ${count} always-translate language(s)`
+      );
+    }
+
+    if (languages) {
+      const actualLanguages = Array.from(items).map(
+        item => item.dataset.langTag
+      );
+      Assert.deepEqual(
+        actualLanguages.sort(),
+        [...languages].sort(),
+        "Always-translate languages match"
+      );
+    }
+  }
+
+  /**
+   * Asserts the current order of the always-translate languages list.
+   *
+   * @param {object} expected
+   * @param {string[]} expected.languages - Expected language tags in order
+   * @returns {Promise<void>}
+   */
+  async assertAlwaysTranslateLanguagesOrder({ languages }) {
+    const items = this.document.querySelectorAll(
+      ".translations-always-translate-language-item"
+    );
+    const actualLanguages = Array.from(items).map(item => item.dataset.langTag);
+    Assert.deepEqual(
+      actualLanguages,
+      languages,
+      "Always-translate languages order matches"
+    );
+  }
+
+  /**
+   * Asserts the visibility state of the always-translate languages empty state.
+   *
+   * @param {object} expected
+   * @param {boolean} expected.visible - Whether empty state should be visible
+   * @returns {Promise<void>}
+   */
+  async assertAlwaysTranslateLanguagesEmptyState({ visible }) {
+    const emptyRow = this.document.getElementById(
+      "translationsAlwaysTranslateLanguagesNoneRow"
+    );
+    if (visible) {
+      ok(
+        emptyRow && !emptyRow.hidden,
+        "Always-translate languages empty state should be visible"
+      );
+    } else {
+      ok(
+        !emptyRow || emptyRow.hidden,
+        "Always-translate languages empty state should be hidden"
+      );
+    }
+  }
+
+  /**
+   * Adds a language to the never-translate list.
+   *
+   * @param {string} langTag
+   * @returns {Promise<void>}
+   */
+  async addNeverTranslateLanguage(langTag) {
+    const dropdown = this.getNeverTranslateLanguagesSelect();
+    dropdown.value = langTag;
+    dropdown.dispatchEvent(new Event("change", { bubbles: true }));
+
+    const addButton = await waitForCondition(
+      () => this.getNeverTranslateLanguagesAddButton(),
+      "Waiting for never-translate add button"
+    );
+    if (addButton.disabled) {
+      const addButtonEnabled = this.waitForEvent(
+        TranslationsSettingsTestUtils.Events
+          .NeverTranslateLanguagesAddButtonEnabled
+      );
+      await addButtonEnabled;
+    }
+    addButton.click();
+
+    const addedLanguage = this.waitForNeverTranslateLanguageItem(langTag);
+    const addButtonDisabledPromise = addButton.disabled
+      ? Promise.resolve()
+      : this.waitForEvent(
+          TranslationsSettingsTestUtils.Events
+            .NeverTranslateLanguagesAddButtonDisabled
+        );
+    await Promise.all([addedLanguage, addButtonDisabledPromise]);
+  }
+
+  /**
+   * Removes a language from the never-translate list.
+   *
+   * @param {string} langTag
+   * @returns {Promise<void>}
+   */
+  async removeNeverTranslateLanguage(langTag) {
+    const removeButton = this.document.querySelector(
+      `[data-lang-tag="${langTag}"].translations-never-translate-remove-button`
+    );
+    if (!removeButton) {
+      throw new Error(`Remove button not found for language: ${langTag}`);
+    }
+    const rendered = this.waitForEvent(
+      TranslationsSettingsTestUtils.Events.NeverTranslateLanguagesRendered
+    );
+    removeButton.click();
+    await rendered;
+  }
+
+  /**
+   * Waits for a language to appear in the never-translate languages list.
+   *
+   * @param {string} langTag
+   * @returns {Promise<Element>}
+   */
+  async waitForNeverTranslateLanguageItem(langTag) {
+    return TestUtils.waitForCondition(
+      () =>
+        this.document.querySelector(
+          `[data-lang-tag="${langTag}"].translations-never-translate-language-item`
+        ),
+      `Waiting for never-translate language item: ${langTag}`
+    );
+  }
+
+  /**
+   * Asserts the current state of the never-translate languages list.
+   *
+   * @param {object} expected
+   * @param {string[]} [expected.languages] - Expected language tags
+   * @param {number} [expected.count] - Expected count of languages
+   * @returns {Promise<void>}
+   */
+  async assertNeverTranslateLanguages({ languages, count }) {
+    const items = this.document.querySelectorAll(
+      ".translations-never-translate-language-item"
+    );
+
+    if (count !== undefined) {
+      is(
+        items.length,
+        count,
+        `Should have ${count} never-translate language(s)`
+      );
+    }
+
+    if (languages) {
+      const actualLanguages = Array.from(items).map(
+        item => item.dataset.langTag
+      );
+      Assert.deepEqual(
+        actualLanguages.sort(),
+        [...languages].sort(),
+        "Never-translate languages match"
+      );
+    }
+  }
+
+  /**
+   * Asserts the current order of the never-translate languages list.
+   *
+   * @param {object} expected
+   * @param {string[]} expected.languages - Expected language tags in order
+   * @returns {Promise<void>}
+   */
+  async assertNeverTranslateLanguagesOrder({ languages }) {
+    const items = this.document.querySelectorAll(
+      ".translations-never-translate-language-item"
+    );
+    const actualLanguages = Array.from(items).map(item => item.dataset.langTag);
+    Assert.deepEqual(
+      actualLanguages,
+      languages,
+      "Never-translate languages order matches"
+    );
+  }
+
+  /**
+   * Asserts the visibility state of the never-translate languages empty state.
+   *
+   * @param {object} expected
+   * @param {boolean} expected.visible - Whether empty state should be visible
+   * @returns {Promise<void>}
+   */
+  async assertNeverTranslateLanguagesEmptyState({ visible }) {
+    const emptyRow = this.document.getElementById(
+      "translationsNeverTranslateLanguagesNoneRow"
+    );
+    if (visible) {
+      ok(
+        emptyRow && !emptyRow.hidden,
+        "Never-translate languages empty state should be visible"
+      );
+    } else {
+      ok(
+        !emptyRow || emptyRow.hidden,
+        "Never-translate languages empty state should be hidden"
+      );
+    }
+  }
+
+  /**
+   * Gets the never-translate sites list element.
+   *
+   * @returns {HTMLElement|null}
+   */
+  getNeverTranslateSitesGroup() {
+    return this.document.getElementById("translationsNeverTranslateSitesGroup");
+  }
+
+  /**
+   * Waits for a site to appear in the never-translate sites list.
+   *
+   * @param {string} origin
+   * @returns {Promise<Element>}
+   */
+  async waitForNeverTranslateSiteItem(origin) {
+    return waitForCondition(
+      () =>
+        this.document.querySelector(
+          `[data-origin="${origin}"].translations-never-translate-site-item`
+        ),
+      `Waiting for never-translate site item: ${origin}`
+    );
+  }
+
+  /**
+   * Removes a site from the never-translate list.
+   *
+   * @param {string} origin
+   * @returns {Promise<void>}
+   */
+  async removeNeverTranslateSite(origin) {
+    const removeButton = await waitForCondition(
+      () =>
+        this.document.querySelector(
+          `[data-origin="${origin}"].translations-never-translate-site-remove-button`
+        ),
+      `Waiting for remove button for ${origin}`
+    );
+    const rendered = this.waitForEvent(
+      TranslationsSettingsTestUtils.Events.NeverTranslateSitesRendered
+    );
+    removeButton.click();
+    await rendered;
+  }
+
+  /**
+   * Asserts the current state of the never-translate sites list.
+   *
+   * @param {object} expected
+   * @param {string[]} [expected.sites] - Expected site origins
+   * @param {number} [expected.count] - Expected count of sites
+   * @returns {Promise<void>}
+   */
+  async assertNeverTranslateSites({ sites, count }) {
+    const items = this.document.querySelectorAll(
+      ".translations-never-translate-site-item"
+    );
+
+    if (count !== undefined) {
+      is(items.length, count, `Should have ${count} never-translate site(s)`);
+    }
+
+    if (sites) {
+      const actualSites = Array.from(items).map(item => item.dataset.origin);
+      Assert.deepEqual(
+        actualSites.sort(),
+        [...sites].sort(),
+        "Never-translate sites match"
+      );
+    }
+  }
+
+  /**
+   * Asserts the current order of the never-translate sites list.
+   *
+   * @param {object} expected
+   * @param {string[]} expected.sites - Expected site origins in order
+   * @returns {Promise<void>}
+   */
+  async assertNeverTranslateSitesOrder({ sites }) {
+    const items = this.document.querySelectorAll(
+      ".translations-never-translate-site-item"
+    );
+    const actualSites = Array.from(items).map(item => item.dataset.origin);
+    Assert.deepEqual(actualSites, sites, "Never-translate sites order matches");
+  }
+
+  /**
+   * Asserts the visibility state of the never-translate sites empty state.
+   *
+   * @param {object} expected
+   * @param {boolean} expected.visible - Whether empty state should be visible
+   * @returns {Promise<void>}
+   */
+  async assertNeverTranslateSitesEmptyState({ visible }) {
+    const emptyRow = this.document.getElementById(
+      "translationsNeverTranslateSitesNoneRow"
+    );
+    if (visible) {
+      ok(
+        emptyRow && !emptyRow.hidden,
+        "Never-translate sites empty state should be visible"
+      );
+    } else {
+      ok(
+        !emptyRow || emptyRow.hidden,
+        "Never-translate sites empty state should be hidden"
+      );
+    }
+  }
+}
+
+/**
  * Recursively transforms all child nodes to have diacriticized text. This is useful
  * to spot multiple translations.
  *
@@ -359,7 +1592,7 @@ function createMockedTranslatorPort(transformNode = upperCaseNode, delay = 0) {
       await TestUtils.waitForTick();
 
       switch (message.type) {
-        case "TranslationsPort:GetEngineStatusRequest":
+        case "TranslationsPort:GetEngineStatusRequest": {
           mockedPort.onmessage({
             data: {
               type: "TranslationsPort:GetEngineStatusResponse",
@@ -367,6 +1600,33 @@ function createMockedTranslatorPort(transformNode = upperCaseNode, delay = 0) {
             },
           });
           break;
+        }
+        case "TranslationsPort:Passthrough": {
+          const { translationId } = message;
+
+          mockedPort.onmessage({
+            data: {
+              type: "TranslationsPort:TranslationResponse",
+              translationId,
+              targetText: null,
+            },
+          });
+
+          break;
+        }
+        case "TranslationsPort:CachedTranslation": {
+          const { cachedTranslation, translationId } = message;
+
+          mockedPort.onmessage({
+            data: {
+              type: "TranslationsPort:TranslationResponse",
+              translationId,
+              targetText: cachedTranslation,
+            },
+          });
+
+          break;
+        }
         case "TranslationsPort:TranslationRequest": {
           const { translationId, sourceText } = message;
 
@@ -382,13 +1642,16 @@ function createMockedTranslatorPort(transformNode = upperCaseNode, delay = 0) {
               translationId,
             },
           });
+          break;
+        }
+        default: {
+          throw new Error("Unexpected mock translator message:", message.type);
         }
       }
     },
   };
   return mockedPort;
 }
-
 class TranslationResolver {
   resolvers = Promise.withResolvers();
   resolveCount = 0;
@@ -406,28 +1669,67 @@ function createControlledTranslatorPort() {
   const parser = new DOMParser();
 
   const canceledTranslations = new Set();
-  let resolvers = Promise.withResolvers();
-  let translationCount = 0;
 
-  async function resolveRequests() {
-    info("Resolving all pending translation requests");
-    await TestUtils.waitForTick();
-    resolvers.resolve();
-    resolvers = Promise.withResolvers();
-    await TestUtils.waitForTick();
-    const count = translationCount;
-    translationCount = 0;
-    return count;
+  let resolvers = [];
+
+  let engineStatusCount = 0;
+  let cancelCount = 0;
+  let passthroughCount = 0;
+  let cachedCount = 0;
+  let requestCount = 0;
+
+  function resolveRequests() {
+    const resolvedCount = resolvers.length;
+
+    let resolver = resolvers.pop();
+    while (resolver) {
+      let { translationId, resolve, debugText } = resolver;
+      info(`Resolving promise for request (id:${translationId}): ${debugText}`);
+      resolve();
+
+      resolver = resolvers.pop();
+    }
+
+    return resolvedCount;
+  }
+
+  function resetPortData() {
+    if (resolveRequests() > 0) {
+      throw new Error(
+        "Attempt to collect port data with pending translation requests."
+      );
+    }
+
+    engineStatusCount = 0;
+    cancelCount = 0;
+    passthroughCount = 0;
+    cachedCount = 0;
+    requestCount = 0;
+  }
+
+  function collectPortData(resetCounters = true) {
+    info("Collecting data from port messages");
+    const portData = {
+      engineStatusCount,
+      cancelCount,
+      passthroughCount,
+      cachedCount,
+      requestCount,
+    };
+
+    if (resetCounters) {
+      resetPortData();
+    }
+
+    return portData;
   }
 
   const mockedTranslatorPort = {
     async postMessage(message) {
       switch (message.type) {
-        case "TranslationsPort:CancelSingleTranslation":
-          info("Canceling translation id:" + message.translationId);
-          canceledTranslations.add(message.translationId);
-          break;
-        case "TranslationsPort:GetEngineStatusRequest":
+        case "TranslationsPort:GetEngineStatusRequest": {
+          engineStatusCount++;
+
           mockedTranslatorPort.onmessage({
             data: {
               type: "TranslationsPort:GetEngineStatusResponse",
@@ -435,7 +1737,88 @@ function createControlledTranslatorPort() {
             },
           });
           break;
+        }
+        case "TranslationsPort:CancelSingleTranslation": {
+          cancelCount++;
+
+          info("Canceling translation id:" + message.translationId);
+          canceledTranslations.add(message.translationId);
+          break;
+        }
+        case "TranslationsPort:Passthrough": {
+          passthroughCount++;
+
+          const { translationId } = message;
+
+          // Create a short debug version of the text.
+          let debugText = null;
+
+          info(
+            `Translation requested for (id:${translationId}): "${debugText}"`
+          );
+
+          const { promise, resolve } = Promise.withResolvers();
+
+          resolvers.push({ translationId, resolve, debugText });
+
+          info(
+            `Waiting for promise for (id:${translationId}) to resolve: "${debugText}`
+          );
+
+          await promise;
+
+          info(`Promise for (id:${translationId}) resolved: "${debugText}`);
+
+          mockedTranslatorPort.onmessage({
+            data: {
+              type: "TranslationsPort:TranslationResponse",
+              translationId,
+              targetText: null,
+            },
+          });
+
+          break;
+        }
+        case "TranslationsPort:CachedTranslation": {
+          cachedCount++;
+
+          const { cachedTranslation, translationId } = message;
+
+          // Create a short debug version of the text.
+          let debugText = cachedTranslation.trim().replaceAll("\n", "");
+          if (debugText.length > 50) {
+            debugText = debugText.slice(0, 50) + "...";
+          }
+
+          info(
+            `Translation requested for (id:${translationId}): "${debugText}"`
+          );
+
+          const { promise, resolve } = Promise.withResolvers();
+
+          resolvers.push({ translationId, resolve, debugText });
+
+          info(
+            `Waiting for promise for (id:${translationId}) to resolve: "${debugText}`
+          );
+
+          await promise;
+
+          info(`Promise for (id:${translationId}) resolved: "${debugText}`);
+
+          mockedTranslatorPort.onmessage({
+            data: {
+              type: "TranslationsPort:TranslationResponse",
+              translationId,
+              targetText: cachedTranslation,
+            },
+          });
+
+          break;
+        }
         case "TranslationsPort:TranslationRequest": {
+          requestCount++;
+
           const { translationId, sourceText } = message;
 
           // Create a short debug version of the text.
@@ -445,21 +1828,31 @@ function createControlledTranslatorPort() {
           }
 
           info(
-            `Translation requested (id:${message.translationId}) "${debugText}"`
+            `Translation requested for (id:${translationId}): "${debugText}"`
           );
-          await resolvers.promise;
+
+          const { promise, resolve } = Promise.withResolvers();
+
+          resolvers.push({ translationId, resolve, debugText });
+
+          info(
+            `Waiting for promise for (id:${translationId}) to resolve: "${debugText}`
+          );
+
+          await promise;
+
+          info(`Promise for (id:${translationId}) resolved: "${debugText}`);
 
           if (canceledTranslations.has(translationId)) {
-            info("Cancelled translation id:" + translationId);
+            info(`Cancelled translation for request (id:${translationId})`);
           } else {
-            info(
-              "Translation completed, responding id:" + message.translationId
-            );
-            translationCount++;
+            info(`Translation completed for request (id:${translationId})`);
+
             const translatedDoc = parser.parseFromString(
               sourceText,
               "text/html"
             );
+
             diacriticizeNode(translatedDoc.body);
             const targetText =
               translatedDoc.body.innerHTML.trim() + ` (id:${translationId})`;
@@ -478,7 +1871,7 @@ function createControlledTranslatorPort() {
     },
   };
 
-  return { mockedTranslatorPort, resolveRequests };
+  return { mockedTranslatorPort, resolveRequests, collectPortData };
 }
 
 /**
@@ -489,13 +1882,27 @@ const { TranslationsDocument, LRUCache } = ChromeUtils.importESModule(
 );
 
 /**
- * @param {string} html
- * @param {{
- *  mockedTranslatorPort?: (message: string) => Promise<string>,
- *  mockedReportVisibleChange?: () => void
- * }} [options]
+ * Creates a translated document from the provided HTML string.
+ *
+ * @param {string} html - The HTML source to translate.
+ * @param {object} [options] - Optional configuration.
+ * @param {string} [options.sourceLanguage="en"] - Source language code (default: "en").
+ * @param {string} [options.targetLanguage="en"] - Target language code (default: "en").
+ * @param {DOMParserSupportedType} [options.parserType="text/html"] - Parser type for the source content.
+ * @param {(message: string) => Promise<string>} [options.mockedTranslatorPort] - Optional mock translation function.
+ * @param {() => void} [options.mockedReportVisibleChange] - Optional callback for visibility reporting.
+ * @returns {Promise<void>} Resolves when the document translation is complete.
  */
-async function createTranslationsDoc(html, options) {
+async function createTranslationsDoc(
+  html,
+  {
+    sourceLanguage = "en",
+    targetLanguage = "es",
+    parserType = "text/html",
+    mockedTranslatorPort,
+    mockedReportVisibleChange,
+  } = {}
+) {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.translations.enable", true],
@@ -505,53 +1912,207 @@ async function createTranslationsDoc(html, options) {
   });
 
   const parser = new DOMParser();
-  const document = parser.parseFromString(html, "text/html");
+  const document = parser.parseFromString(html, parserType);
 
   // For some reason, the document <body> here from the DOMParser is "display: flex" by
   // default. Ensure that it is "display: block" instead, otherwise the children of the
   // <body> will not be "display: inline".
-  document.body.style.display = "block";
+  if (document.body) {
+    document.body.style.display = "block";
+  }
+
+  let translationsDoc = null;
 
   const translate = () => {
     info("Creating the TranslationsDocument.");
-    return new TranslationsDocument(
+    translationsDoc = new TranslationsDocument(
       document,
-      "en",
-      "EN",
+      sourceLanguage,
+      targetLanguage,
       0, // This is a fake innerWindowID
-      options?.mockedTranslatorPort ?? createMockedTranslatorPort(),
+      mockedTranslatorPort ?? createMockedTranslatorPort(),
       () => {
         throw new Error("Cannot request a new port");
       },
-      options?.mockedReportVisibleChange ?? (() => {}),
-      performance.now(),
-      () => performance.now(),
-      new LRUCache()
+      mockedReportVisibleChange ?? (() => {}),
+      new LRUCache(),
+      false
     );
+
+    translationsDoc.simulateIntersectionObservationForNonPendingNodes();
+    return translationsDoc;
   };
 
   /**
-   * Test utility to check that the document matches the expected markup
+   * Converts a string of expected HTML output into a regex that we can
+   * use to match the actual HTML output.
+   *
+   * The expected HTML string may use double curly braces to escape a
+   * {{ regex literal }} within the HTML itself, which will be preserved
+   * in the final expression.
+   *
+   * For example, converts the HTML string:
+   * `
+   * <div>
+   *   M̅u̅t̅a̅t̅i̅o̅n̅ 5 o̅n̅ e̅l̅e̅m̅e̅n̅t̅ (id:{{ [1-5] }})
+   * </div>
+   * `
+   *
+   * Into the following regex:
+   *
+   * /^\s*<div>\s*M̅u̅t̅a̅t̅i̅o̅n̅ 5 o̅n̅ e̅l̅e̅m̅e̅n̅t̅ \(id:[1-5]\)\s*<\/div>\s*$/su
+   *
+   * Which allows us to match the actual HTML to the expected HTML
+   * regardless of whether the translation id was 1, 2, 3, 4, or 5.
+   *
+   * @param {string} html
+   * @returns {RegExp}
+   */
+  function expectedHtmlToRegex(html) {
+    // All characters that will need to be escaped with a backslash in the
+    // final regex if they are contained within the HTML string.
+    const ESCAPABLE_CHARACTERS = /[.*+?^${}()|[\]\\]/g;
+
+    // Our own escape syntax to signify a {{ regex literal }} within the
+    // HTML string that should be preserved in its original form.
+    const REGEX_LITERAL = /\{\{(.*?)\}\}/gsu;
+
+    // The same matcher as above, after escaping the curly braces with backslash.
+    const ESCAPED_REGEX_LITERAL = /\\\{\\\{.*?\\\}\\\}/su;
+
+    // Collect all regex literals that were escaped by using {{ literal }}
+    // syntax into a single array. We will place them back in at the end.
+    const regexLiterals = [...html.matchAll(REGEX_LITERAL)].map(
+      match => match[1]
+    );
+
+    let pattern = html
+      // Escape each character that needs it with a backslash.
+      .replaceAll(ESCAPABLE_CHARACTERS, "\\$&")
+      // Add a 0+ blank space matcher \s* before each opening angle bracket <
+      .replaceAll(/\s*</g, "\\s*<")
+      // Add a 0+ blank space matcher \s* after each closing angle bracket >
+      .replaceAll(/>\s*/g, ">\\s*")
+      // Collapse more than one blank space into a 1+ matcher
+      .replaceAll(/\s\s+/g, "\\s+")
+      // Replace a 1+ blank space matcher at the beginning with a 0+ matcher.
+      .replace(/^\\s\+/, "\\s*")
+      // Replace a 1+ blank space matcher at the end with a 0+ matcher.
+      .replace(/\\s\+$/, "\\s*");
+
+    // Go back through and replace each {{ regex literal }} that we preserved
+    // at the start with its captured content.
+    for (const regexLiteral of regexLiterals) {
+      pattern = pattern.replace(ESCAPED_REGEX_LITERAL, regexLiteral.trim());
+    }
+
+    return new RegExp(`^${pattern}$`, "su");
+  }
+
+  /**
+   * Test utility to check that the document matches the expected markup.
+   * If `html` is a string, the prettified innerHTML must match exactly.
+   * If `html` is a RegExp, the prettified innerHTML must satisfy the
+   * regular expression.
    *
    * @param {string} message
-   * @param {string} html
+   * @param {string} expectedHtml
+   * @param {Document} [sourceDoc]
+   * @param {() => void} [resolveRequests]
    */
-  async function htmlMatches(message, html, element = document.body) {
-    const expected = naivelyPrettify(html);
-    try {
-      await waitForCondition(
-        () => naivelyPrettify(element.innerHTML) === expected,
-        "Waiting for HTML to match."
+  async function htmlMatches(
+    message,
+    expectedHtml,
+    sourceDoc = document,
+    resolveRequests
+  ) {
+    const prettyHtml = naivelyPrettify(expectedHtml);
+    const expected = expectedHtmlToRegex(expectedHtml);
+
+    let didSimulateIntersectionObservation = false;
+
+    const getHTMLSource = () => {
+      return (
+        sourceDoc.body?.innerHTML ?? sourceDoc.documentElement?.outerHTML ?? ""
       );
+    };
+
+    try {
+      await waitForCondition(async () => {
+        await waitForCondition(
+          () => !translationsDoc.hasPendingCallbackOnEventLoop()
+        );
+
+        while (
+          translationsDoc.hasPendingCallbackOnEventLoop() ||
+          translationsDoc.hasPendingTranslationRequests()
+        ) {
+          if (resolveRequests) {
+            // Since resolveRequests is defined, we must manually resolve
+            // them as the scheduler sends them until all are fulfilled.
+            await waitForCondition(
+              () =>
+                resolveRequests() ||
+                (!translationsDoc.hasPendingCallbackOnEventLoop() &&
+                  !translationsDoc.hasPendingTranslationRequests()),
+              "Manually resolving requests as they come in..."
+            );
+          } else {
+            // Since resolveRequests is not defined, requests will resolve
+            // automatically when the scheduler sends them. We simply have
+            // to wait until they are all fulfilled.
+            await waitForCondition(
+              () =>
+                !translationsDoc.hasPendingCallbackOnEventLoop() &&
+                !translationsDoc.hasPendingTranslationRequests(),
+              "Waiting for all requests to come in..."
+            );
+          }
+        }
+
+        await waitForCondition(
+          () => !translationsDoc.hasPendingCallbackOnEventLoop()
+        );
+
+        const actualHtml = naivelyPrettify(getHTMLSource());
+        const htmlMatches = expected.test(actualHtml);
+
+        if (!htmlMatches && !didSimulateIntersectionObservation) {
+          // If all of the requests have been resolved, and the HTML doesn't match,
+          // then it may be because the request was never sent to the scheduler,
+          // so we need to manually simulate intersection observation.
+          //
+          // This is a valid case, and not a bug. For example, if an attribute is mutated,
+          // then it will not be scheduled for translation until it is observed.
+          // However, we should never have to do this more than one time.
+          didSimulateIntersectionObservation = true;
+          translationsDoc.simulateIntersectionObservationForNonPendingNodes();
+        }
+
+        if (htmlMatches) {
+          await waitForCondition(
+            () =>
+              !translationsDoc.hasPendingCallbackOnEventLoop() &&
+              !translationsDoc.hasPendingTranslationRequests() &&
+              !translationsDoc.isObservingAnyElementForContentIntersection() &&
+              !translationsDoc.isObservingAnyElementForAttributeIntersection(),
+            "Ensuring that the entire document is translated."
+          );
+        }
+
+        return htmlMatches;
+      }, "Waiting for HTML to match.");
       ok(true, message);
     } catch (error) {
       console.error(error);
 
       // Provide a nice error message.
-      const actual = naivelyPrettify(element.innerHTML);
+      const actual = naivelyPrettify(getHTMLSource());
       ok(
         false,
-        `${message}\n\nExpected HTML:\n\n${expected}\n\nActual HTML:\n\n${actual}\n\n`
+        `${message}\n\nExpected HTML:\n\n${
+          prettyHtml
+        }\n\nActual HTML:\n\n${actual}\n\n${String(error)}`
       );
     }
   }
@@ -651,8 +2212,8 @@ function createdReorderingMockedTranslatorPort() {
 /**
  * @returns {import("../../actors/TranslationsParent.sys.mjs").TranslationsParent}
  */
-function getTranslationsParent() {
-  return TranslationsParent.getTranslationsActor(gBrowser.selectedBrowser);
+function getTranslationsParent(win = window) {
+  return TranslationsParent.getTranslationsActor(win.gBrowser.selectedBrowser);
 }
 
 /**
@@ -885,7 +2446,7 @@ async function pathExists(path) {
  *
  * @returns {Promise<object>} - An object containing the removeMocks function and remoteClients.
  */
-async function createFileSystemRemoteSettings(languagePairs) {
+async function createFileSystemRemoteSettings(languagePairs, architecture) {
   const { removeMocks, remoteClients } = await createAndMockRemoteSettings({
     languagePairs,
     useMockedTranslator: false,
@@ -920,19 +2481,24 @@ async function createFileSystemRemoteSettings(languagePairs) {
 
   const download = async record => {
     const recordPath = normalizePathForOS(
-      `${artifactDirectory}/${record.name}`
+      record.name === "bergamot-translator"
+        ? `${artifactDirectory}/${record.name}.zst`
+        : `${artifactDirectory}/${architecture}.${record.name}.zst`
     );
 
     if (!(await pathExists(recordPath))) {
       throw new Error(`
-        The record ${record.name} was not found in ${artifactDirectory} specified by MOZ_FETCHES_DIR.
+        The record ${record.name} was not found in ${artifactDirectory} specified by MOZ_FETCHES_DIR at the expected path: ${recordPath}
         If you are running a Translations end-to-end test locally, you will need to download the required artifacts to MOZ_FETCHES_DIR.
         To configure MOZ_FETCHES_DIR to run Translations end-to-end tests locally, please run toolkit/components/translations/tests/scripts/download-translations-artifacts.py
       `);
     }
 
+    const file = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile);
+    file.initWithPath(recordPath);
+
     return {
-      buffer: (await IOUtils.read(recordPath)).buffer,
+      blob: await File.createFromNsIFile(file),
     };
   };
 
@@ -1017,6 +2583,34 @@ class MockedA11yUtils {
   }
 }
 
+/**
+ * Ensures that the window size is within 50px of the given dimensions.
+ *
+ * @param {WindowProxy} win
+ * @param {number} width
+ * @param {number} height
+ *
+ * @returns {Promise<void>}
+ */
+async function ensureWindowSize(win, width, height) {
+  if (
+    Math.abs(win.outerWidth - width) <= 1 &&
+    Math.abs(win.outerHeight - height) <= 1
+  ) {
+    return;
+  }
+
+  info(
+    `Resizing to ${width}x${height} (currently ${win.outerWidth}x${win.outerHeight})`
+  );
+
+  const resizePromise = BrowserTestUtils.waitForEvent(win, "resize");
+
+  win.resizeTo(width, height);
+
+  await resizePromise;
+}
+
 async function loadTestPage({
   languagePairs,
   endToEndTest = false,
@@ -1028,6 +2622,8 @@ async function loadTestPage({
   systemLocales = ["en"],
   appLocales,
   webLanguages,
+  architecture,
+  contentEagerMode = false,
   win = window,
 }) {
   info(`Loading test page starting at url: ${page}`);
@@ -1041,6 +2637,8 @@ async function loadTestPage({
   const restoreA11yUtils = MockedA11yUtils.mockForWindow(win);
 
   if (isFirstTimeSetup) {
+    await ensureWindowSize(win, 1000, 600);
+
     // Ensure no engine is being carried over from a previous test.
     await EngineProcess.destroyTranslationsEngine();
 
@@ -1079,7 +2677,7 @@ async function loadTestPage({
     );
 
     const result = endToEndTest
-      ? await createFileSystemRemoteSettings(languagePairs)
+      ? await createFileSystemRemoteSettings(languagePairs, architecture)
       : await createAndMockRemoteSettings({
           languagePairs,
           autoDownloadFromRemoteSettings,
@@ -1108,8 +2706,23 @@ async function loadTestPage({
     true // waitForLoad
   );
 
-  BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, page);
-  await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+  if (contentEagerMode) {
+    info("Triggering content-eager translations mode by opening the find bar.");
+    await openFindBar(tab);
+
+    // We cannot access the TranslationsParent actor on BLANK_PAGE because the
+    // data scheme is disallowed for the TranslationsParent actor, so we will load
+    // our blank https:// page to ensure that the actor has registered its findBar.
+    await loadNewPage(tab.linkedBrowser, BLANK_PAGE_URL);
+
+    const actor = getTranslationsParent(win);
+    await waitForCondition(
+      () => actor.findBar,
+      "Waiting for the TranslationsParent actor to register its findBar"
+    );
+  }
+
+  await loadNewPage(tab.linkedBrowser, page);
 
   if (autoOffer && TranslationsParent.shouldAlwaysOfferTranslations()) {
     info("Waiting for the popup to be automatically shown.");
@@ -1227,8 +2840,7 @@ async function loadTestPage({
      * a string, and run in the page. The `translations-test.mjs` module is made
      * available to the page.
      *
-     * @param {(TranslationsTest: import("./translations-test.mjs")) => any} callback
-     * @returns {Promise<void>}
+     * @type {RunInPageFn}
      */
     runInPage(callback, data = {}) {
       return ContentTask.spawn(
@@ -1273,6 +2885,46 @@ async function captureTranslationsError(callback) {
 }
 
 /**
+ * Opens the FindBar in the given tab for the current window.
+ */
+async function openFindBar(tab, win = window) {
+  info("Opening the find bar in the current tab.");
+  const findBar = await win.gBrowser.getFindBar(tab);
+  const { promise, resolve } = Promise.withResolvers();
+
+  findBar.addEventListener(
+    "findbaropen",
+    () => {
+      resolve();
+    },
+    { once: true }
+  );
+
+  findBar.open();
+  await promise;
+}
+
+/**
+ * Opens the FindBar in the given tab for the current window.
+ */
+async function closeFindBar(tab, win = window) {
+  info("Closing the find bar in the current tab.");
+  const findBar = await win.gBrowser.getFindBar(tab);
+  const { promise, resolve } = Promise.withResolvers();
+
+  findBar.addEventListener(
+    "findbarclose",
+    () => {
+      resolve();
+    },
+    { once: true }
+  );
+
+  findBar.close();
+  await promise;
+}
+
+/**
  * Load a test page and run
  *
  * @param {object} options - The options for `loadTestPage` plus a `runInPage` function.
@@ -1288,6 +2940,7 @@ async function autoTranslatePage(options) {
     ],
     ...otherOptions,
   });
+
   await runInPage(options.runInPage);
   await cleanup();
 }
@@ -1312,6 +2965,7 @@ function createAttachmentMock(
   autoDownloadFromRemoteSettings
 ) {
   const pendingDownloads = [];
+
   client.attachments.download = record =>
     new Promise((resolve, reject) => {
       console.log("Download requested:", client.collectionName, record.name);
@@ -1341,11 +2995,56 @@ function createAttachmentMock(
       `Intentionally rejecting ${expectedDownloadCount} mocked downloads for "${client.collectionName}"`
     );
 
-    // Add 1 to account for the original attempt.
-    const attempts = TranslationsParent.MAX_DOWNLOAD_RETRIES + 1;
-    return downloadHandler(expectedDownloadCount * attempts, download =>
-      download.reject(new Error("Intentionally rejecting downloads."))
-    );
+    const names = [];
+    const waitTick = () => new Promise(resolve => setTimeout(resolve, 0));
+
+    const rejectNext = () => {
+      const download = pendingDownloads.shift();
+      if (!download) {
+        return false;
+      }
+      console.log(`Handling download:`, client.collectionName);
+      download.reject(new Error("Intentionally rejecting downloads."));
+      names.push(download.record.name);
+      return true;
+    };
+
+    // Wait for the expected downloads to start arriving and reject them as they do.
+    while (names.length < expectedDownloadCount) {
+      try {
+        await waitForPendingDownloads(names.length + 1);
+        while (names.length < expectedDownloadCount && rejectNext()) {
+          // Keep rejecting until we reach the expected count.
+        }
+      } catch (error) {
+        // Timeout waiting for downloads - this can happen if downloads aren't
+        // requested or if they complete through a different path. Log and continue.
+        info(
+          `Timeout or error waiting for download ${names.length + 1}: ${error.message}`
+        );
+        break;
+      }
+    }
+
+    // Drain any retries until the queue stays empty for a short idle window.
+    let idleTicks = 0;
+    const idleWindow = 20;
+    while (idleTicks < idleWindow) {
+      await waitTick();
+      if (rejectNext()) {
+        idleTicks = 0;
+      } else {
+        idleTicks++;
+      }
+    }
+
+    if (pendingDownloads.length) {
+      throw new Error(
+        `An unexpected download was found, only expected ${expectedDownloadCount} downloads`
+      );
+    }
+
+    return names.sort((a, b) => a.localeCompare(b));
   }
 
   async function downloadHandler(expectedDownloadCount, action) {
@@ -1386,12 +3085,22 @@ function createAttachmentMock(
     );
   }
 
+  function waitForPendingDownloads(expectedCount) {
+    return waitForCondition(
+      () => pendingDownloads.length >= expectedCount,
+      `Waiting for ${expectedCount} pending downloads for "${client.collectionName}"`,
+      100,
+      10
+    );
+  }
+
   return {
     client,
     pendingDownloads,
     resolvePendingDownloads,
     rejectPendingDownloads,
     assertNoNewDownloads,
+    waitForPendingDownloads,
   };
 }
 
@@ -1432,15 +3141,6 @@ function createRecordsForLanguagePair(fromLang, toLang, splitVocab = false) {
       : [{ fileType: "vocab", name: `vocab.${lang}.spm` }]),
   ];
 
-  const attachment = {
-    hash: `${crypto.randomUUID()}`,
-    size: `123`,
-    filename: `model.${lang}.intgemm.alphas.bin`,
-    location: `main-workspace/translations-models/${crypto.randomUUID()}.bin`,
-    mimetype: "application/octet-stream",
-    isDownloaded: false,
-  };
-
   const expectedLength = splitVocab
     ? RECORDS_PER_LANGUAGE_PAIR_SPLIT_VOCAB
     : RECORDS_PER_LANGUAGE_PAIR_SHARED_VOCAB;
@@ -1452,16 +3152,25 @@ function createRecordsForLanguagePair(fromLang, toLang, splitVocab = false) {
   );
 
   for (const { fileType, name } of models) {
+    const attachment = {
+      hash: `${crypto.randomUUID()}`,
+      size: "123",
+      filename: name,
+      location: `main-workspace/translations-models/${crypto.randomUUID()}.bin`,
+      mimetype: "application/octet-stream",
+      isDownloaded: false,
+    };
+
     records.push({
       id: crypto.randomUUID(),
       name,
-      fromLang,
-      toLang,
+      sourceLanguage: fromLang,
+      targetLanguage: toLang,
       fileType,
       version: TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX + ".0",
       last_modified: Date.now(),
       schema: Date.now(),
-      attachment: JSON.parse(JSON.stringify(attachment)), // Making a deep copy.
+      attachment: JSON.parse(JSON.stringify(attachment)), // Making a deep copy
     });
   }
   return records;
@@ -1824,29 +3533,18 @@ async function setupAboutPreferences(
     true // waitForLoad
   );
 
-  let initTranslationsEvent;
-  if (Services.prefs.getBoolPref("browser.translations.newSettingsUI.enable")) {
-    initTranslationsEvent = BrowserTestUtils.waitForEvent(
-      document,
-      "translationsSettingsInit"
-    );
-  }
-
   const { remoteClients, removeMocks } = await createAndMockRemoteSettings({
     languagePairs,
   });
 
-  BrowserTestUtils.startLoadingURIString(
-    tab.linkedBrowser,
-    "about:preferences"
-  );
-  await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+  await loadNewPage(tab.linkedBrowser, "about:preferences");
 
   const elements = await selectAboutPreferencesElements();
 
-  if (Services.prefs.getBoolPref("browser.translations.newSettingsUI.enable")) {
-    await initTranslationsEvent;
-  }
+  const document = gBrowser.selectedBrowser.contentDocument;
+  const translationsSettingsTestUtils = new TranslationsSettingsTestUtils(
+    document
+  );
 
   async function cleanup() {
     Services.prefs.setCharPref(NEVER_TRANSLATE_LANGS_PREF, "");
@@ -1865,6 +3563,7 @@ async function setupAboutPreferences(
     cleanup,
     remoteClients,
     elements,
+    translationsSettingsTestUtils,
   };
 }
 
@@ -1924,6 +3623,10 @@ async function mockLocales({ systemLocales, appLocales, webLanguages }) {
   const { availableLocales, requestedLocales } = Services.locale;
 
   if (appLocales) {
+    await SpecialPowers.pushPrefEnv({
+      set: [["intl.locale.requested", "en"]],
+    });
+
     const appLocaleChanged = waitForAppLocaleChanged();
 
     info("Mocking locales, so expect potential .ftl resource errors.");
@@ -1941,8 +3644,8 @@ async function mockLocales({ systemLocales, appLocales, webLanguages }) {
 
   return async () => {
     // Reset back to the originals.
-    if (systemLocales) {
-      TranslationsParent.mockedSystemLocales = null;
+    if (webLanguages) {
+      await SpecialPowers.popPrefEnv();
     }
 
     if (appLocales) {
@@ -1952,10 +3655,12 @@ async function mockLocales({ systemLocales, appLocales, webLanguages }) {
       Services.locale.requestedLocales = requestedLocales;
 
       await appLocaleChanged;
+
+      await SpecialPowers.popPrefEnv();
     }
 
-    if (webLanguages) {
-      await SpecialPowers.popPrefEnv();
+    if (systemLocales) {
+      TranslationsParent.mockedSystemLocales = null;
     }
   };
 }
@@ -2081,7 +3786,7 @@ class TestTranslationsTelemetry {
           if (typeof expected === "function") {
             ok(
               expected(event.extra[key]),
-              `Telemetry event ${name} value for ${key} should match the expected predicate`
+              `Telemetry event ${name} value for ${key} should match the expected predicate: got ${event.extra[key]}`
             );
           } else {
             is(
@@ -2104,7 +3809,7 @@ class TestTranslationsTelemetry {
         if (typeof expected === "function") {
           ok(
             expected(events[eventCount - 1].extra[key]),
-            `Telemetry event ${name} value for ${key} should match the expected predicate`
+            `Telemetry event ${name} value for ${key} should match the expected predicate: got ${events[eventCount - 1].extra[key]}`
           );
         } else {
           is(
@@ -2188,12 +3893,15 @@ class TestTranslationsTelemetry {
  *
  * @param {Function} callback
  * @param {string} message
+ * @param {number} [interval=100] - Interval in milliseconds between condition checks
+ * @param {number} [maxTries=null] - Maximum number of tries
  */
-function waitForCondition(callback, message) {
-  const interval = 100;
+function waitForCondition(callback, message, interval = 100, maxTries = null) {
   // Use 4 times the defaults to guard against intermittents. Many of the tests rely on
   // communication between the parent and child process, which is inherently async.
-  const maxTries = 50 * 4;
+  if (maxTries === null) {
+    maxTries = 50 * 4;
+  }
   return TestUtils.waitForCondition(callback, message, interval, maxTries);
 }
 
@@ -2330,8 +4038,7 @@ function promiseLoadSubDialog(aURL) {
  * unintentional state left over from test case.
  */
 async function loadBlankPage() {
-  BrowserTestUtils.startLoadingURIString(gBrowser.selectedBrowser, BLANK_PAGE);
-  await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
+  await loadNewPage(gBrowser.selectedBrowser, BLANK_PAGE);
 }
 
 /**
@@ -2339,4 +4046,1157 @@ async function loadBlankPage() {
  */
 async function destroyTranslationsEngine() {
   await EngineProcess.destroyTranslationsEngine();
+}
+
+class AboutTranslationsTestUtils {
+  /**
+   * A collection of custom events that the about:translations document may dispatch.
+   */
+  static Events = class Events {
+    /**
+     * Event fired when the detected language updates.
+     *
+     * @type {string}
+     */
+    static DetectedLanguageUpdated =
+      "AboutTranslationsTest:DetectedLanguageUpdated";
+
+    /**
+     * Event fired when the swap-languages button becomes disabled.
+     *
+     * @type {string}
+     */
+    static SwapLanguagesButtonDisabled =
+      "AboutTranslationsTest:SwapLanguagesButtonDisabled";
+
+    /**
+     * Event fired when the swap-languages button becomes enabled.
+     *
+     * @type {string}
+     */
+    static SwapLanguagesButtonEnabled =
+      "AboutTranslationsTest:SwapLanguagesButtonEnabled";
+
+    /**
+     * Event fired when the translating placeholder message is shown.
+     *
+     * @type {string}
+     */
+    static ShowTranslatingPlaceholder =
+      "AboutTranslationsTest:ShowTranslatingPlaceholder";
+
+    /**
+     * Event fired after the URL has been updated from UI interactions.
+     *
+     * @type {string}
+     */
+    static URLUpdatedFromUI = "AboutTranslationsTest:URLUpdatedFromUI";
+
+    /**
+     * Event fired when a translation is requested.
+     *
+     * @type {string}
+     */
+    static TranslationRequested = "AboutTranslationsTest:TranslationRequested";
+
+    /**
+     * Event fired when a translation completes.
+     *
+     * @type {string}
+     */
+    static TranslationComplete = "AboutTranslationsTest:TranslationComplete";
+
+    /**
+     * Event fired when the page layout changes.
+     *
+     * @type {string}
+     */
+    static PageOrientationChanged =
+      "AboutTranslationsTest:PageOrientationChanged";
+
+    /**
+     * Event fired when the source/target textarea heights change.
+     *
+     * @type {string}
+     */
+    static TextAreaHeightsChanged =
+      "AboutTranslationsTest:TextAreaHeightsChanged";
+
+    /**
+     * Event fired when the target text is cleared programmatically.
+     *
+     * @type {string}
+     */
+    static ClearTargetText = "AboutTranslationsTest:ClearTargetText";
+  };
+
+  /**
+   * A function that runs a closure in the content page.
+   *
+   * @type {RunInPageFn}
+   */
+  #runInPage;
+
+  /**
+   * A function that resolves download requests for tests.
+   *
+   * @type {(number) => Promise<void>}
+   */
+  #resolveDownloads;
+
+  /**
+   * A function that rejects download requests for tests.
+   *
+   * @type {(number) => Promise<void>}
+   */
+  #rejectDownloads;
+
+  /**
+   * Whether or not download requests should be resolved automatically,
+   * or manually resolved/rejected by the test code.
+   *
+   * @type {boolean}
+   */
+  #autoDownloadFromRemoteSettings;
+
+  /**
+   * @param {RunInPageFn} runInPage
+   *   A function that runs a closure in the content page.
+   * @param {(number) => Promise<void>} resolveDownloads
+   *   A function that resolves download requests for tests.
+   * @param {(number) => Promise<void>} rejectDownloads
+   *   A function that rejects download requests for tests.
+   * @param {boolean} autoDownloadFromRemoteSettings
+   *   Whether download requests should be resolved automatically
+   *   or manually resolved by the test code.
+   */
+  constructor(
+    runInPage,
+    resolveDownloads,
+    rejectDownloads,
+    autoDownloadFromRemoteSettings
+  ) {
+    this.#runInPage = runInPage;
+    this.#resolveDownloads = resolveDownloads;
+    this.#rejectDownloads = rejectDownloads;
+    this.#autoDownloadFromRemoteSettings = autoDownloadFromRemoteSettings;
+  }
+
+  /**
+   * Reports any error as a test failure.
+   * This will show up more nicely in the test logs.
+   *
+   * @param {Error} error
+   */
+  static #reportTestFailure(error) {
+    ok(false, String(error));
+  }
+
+  /**
+   * Waits for the about:translations page to fully initialize.
+   *
+   * @returns {Promise<void>}
+   */
+  async waitForReady() {
+    try {
+      await this.#runInPage(async () => {
+        const { document } = content;
+        await ContentTaskUtils.waitForCondition(
+          () => document.body.hasAttribute("ready-for-testing"),
+          "Waiting for the about:translations document to be ready for tests."
+        );
+      });
+      ok(true, "about:translations is ready.");
+    } catch (error) {
+      AboutTranslationsTestUtils.#reportTestFailure(error);
+    }
+  }
+
+  /**
+   * Loads a fresh about:translations document with optional URL-hash parameters.
+   *
+   * @param {object}  [options={}]
+   * @param {string}  [options.sourceLanguage] - Value for the "src" hash parameter.
+   * @param {string}  [options.targetLanguage] - Value for the "trg" hash parameter.
+   * @param {string}  [options.sourceText]     - Value for the "text" hash parameter.
+   * @returns {Promise<void>}
+   */
+  async loadNewPage({ sourceLanguage, targetLanguage, sourceText } = {}) {
+    const url = new URL("about:translations");
+    const searchParams = new URLSearchParams();
+
+    if (sourceLanguage) {
+      searchParams.set("src", sourceLanguage);
+    }
+
+    if (targetLanguage) {
+      searchParams.set("trg", targetLanguage);
+    }
+
+    if (sourceText) {
+      searchParams.set("text", sourceText);
+    }
+
+    const hashString = searchParams.toString();
+    url.hash = hashString ? hashString : "src=detect";
+
+    logAction(url);
+
+    await this.#runInPage(
+      async (_, { url }) => {
+        const { window, document: oldDocument } = content;
+
+        window.location.assign(url);
+        window.location.reload();
+
+        await ContentTaskUtils.waitForCondition(
+          () => window.document !== oldDocument,
+          "Waiting for the old document to be destroyed."
+        );
+      },
+      { url }
+    );
+
+    await this.waitForReady();
+  }
+
+  /**
+   * Sets a new delay timer for the debounce on reacting to input.
+   *
+   * @param {number} ms - The delay milliseconds.
+   * @returns {Promise<void>}
+   */
+  async setDebounceDelay(ms) {
+    logAction(ms);
+    try {
+      await this.#runInPage(
+        (_, { ms }) => {
+          const { window } = content;
+          Cu.waiveXrays(window).DEBOUNCE_DELAY = ms;
+        },
+        { ms }
+      );
+    } catch (error) {
+      AboutTranslationsTestUtils.#reportTestFailure(error);
+    }
+  }
+
+  /**
+   * Manually resolves pending RemoteSettings download requests during tests.
+   *
+   * @param {number} count
+   */
+  async resolveDownloads(count) {
+    if (this.#autoDownloadFromRemoteSettings) {
+      throw new Error(
+        "Cannot manually resolve downloads when autoDownloadFromRemoteSettings is enabled."
+      );
+    }
+    try {
+      this.#resolveDownloads(count);
+    } catch (error) {
+      AboutTranslationsTestUtils.#reportTestFailure(error);
+    }
+  }
+
+  /**
+   * Manually rejects pending RemoteSettings download requests during tests.
+   *
+   * @param {number} requestCount
+   */
+  async rejectDownloads(requestCount) {
+    if (this.#autoDownloadFromRemoteSettings) {
+      throw new Error(
+        "Cannot manually reject downloads when autoDownloadFromRemoteSettings is enabled."
+      );
+    }
+    try {
+      this.#rejectDownloads(requestCount);
+    } catch (error) {
+      AboutTranslationsTestUtils.#reportTestFailure(error);
+    }
+  }
+
+  /**
+   * Sets the source-language selector to the given value in the about:translations UI.
+   *
+   * @param {string} language
+   */
+  async setSourceLanguageSelectorValue(language) {
+    logAction(language);
+    try {
+      await this.#runInPage(
+        (selectors, { language }) => {
+          const selector = content.document.querySelector(
+            selectors.sourceLanguageSelector
+          );
+          selector.value = language;
+          selector.dispatchEvent(new content.Event("input"));
+        },
+        { language }
+      );
+    } catch (error) {
+      AboutTranslationsTestUtils.#reportTestFailure(error);
+    }
+  }
+
+  /**
+   * Sets the target-language selector to the given value in the about:translations UI.
+   *
+   * @param {string} language
+   */
+  async setTargetLanguageSelectorValue(language) {
+    logAction(language);
+    try {
+      await this.#runInPage(
+        (selectors, { language }) => {
+          const selector = content.document.querySelector(
+            selectors.targetLanguageSelector
+          );
+          selector.value = language;
+          selector.dispatchEvent(new content.Event("input"));
+        },
+        { language }
+      );
+    } catch (error) {
+      AboutTranslationsTestUtils.#reportTestFailure(error);
+    }
+  }
+
+  /**
+   * Sets the source textarea value in the about:translations UI.
+   *
+   * @param {string} value
+   */
+  async setSourceTextAreaValue(value) {
+    logAction(value);
+    try {
+      await this.#runInPage(
+        (selectors, { value }) => {
+          const textArea = content.document.querySelector(
+            selectors.sourceTextArea
+          );
+          textArea.value = value;
+          textArea.dispatchEvent(new content.Event("input"));
+        },
+        { value }
+      );
+    } catch (error) {
+      AboutTranslationsTestUtils.#reportTestFailure(error);
+    }
+  }
+
+  /**
+   * Clicks the swap-languages button in the about:translations UI.
+   */
+  async clickSwapLanguagesButton() {
+    logAction();
+    try {
+      await this.#runInPage(selectors => {
+        const button = content.document.querySelector(
+          selectors.swapLanguagesButton
+        );
+        button.click();
+      });
+    } catch (error) {
+      AboutTranslationsTestUtils.#reportTestFailure(error);
+    }
+  }
+
+  /**
+   * Waits for the specified AboutTranslations event to fire, then returns its detail payload.
+   * Rejects if the event doesn’t fire within three seconds.
+   *
+   * @param {string} eventName
+   * @returns {Promise<any>}
+   */
+  async waitForEvent(eventName) {
+    const detail = await this.#runInPage(
+      (_, { eventName }) => {
+        const { document } = content;
+        const eventPromise = new Promise(resolve => {
+          document.addEventListener(
+            eventName,
+            event => resolve({ ...(event.detail ?? {}) }),
+            { once: true }
+          );
+        });
+
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(
+            () =>
+              reject(
+                new Error(
+                  `Event "${eventName}" did not fire within three seconds.`
+                )
+              ),
+            3000
+          );
+        });
+
+        return Promise.race([eventPromise, timeoutPromise]);
+      },
+      { eventName }
+    );
+
+    return detail;
+  }
+
+  /**
+   * Asserts that expected AboutTranslations events fire (with optional details)
+   * and that unexpected events do not fire during as a result of the given callback.
+   *
+   * @param {object} [options={}]
+   * @param {Array.<[string, any]>} [options.expected=[]] — An array of
+   *        `[eventName, expectedDetail?]` pairs. `expectedDetail` is optional;
+   *        if omitted, only the fact of the event firing is asserted.
+   * @param {Array.<string>} [options.unexpected=[]] — An array of event names
+   *        that should *not* fire during the execution of `callback`.
+   * @param {() => Promise<void>} callback — Async function to execute while
+   *        listening for events.
+   * @returns {Promise<void>}
+   */
+  async assertEvents({ expected = [], unexpected = [] } = {}, callback) {
+    // This helps the test visually render at each step without significantly slowing test speed.
+    await doubleRaf(document);
+
+    try {
+      const expectedEventWaiters = Object.fromEntries(
+        expected.map(([eventName]) => [eventName, this.waitForEvent(eventName)])
+      );
+
+      const unexpectedEventMap = {};
+      for (const eventName of unexpected) {
+        unexpectedEventMap[eventName] = false;
+        this.waitForEvent(eventName)
+          .then(() => {
+            unexpectedEventMap[eventName] = true;
+          })
+          .catch(() => {
+            // The waitForEvent() timeout race triggered, which is okay
+            // since we didn't expect this event to fire anyway.
+          });
+      }
+
+      await callback();
+
+      for (const [eventName, expectedDetail] of expected) {
+        const actualDetail = await expectedEventWaiters[eventName];
+        is(
+          JSON.stringify(actualDetail ?? {}),
+          JSON.stringify(expectedDetail ?? {}),
+          `Expected detail for "${eventName}" to match.`
+        );
+      }
+
+      await TestUtils.waitForTick();
+      await TestUtils.waitForTick();
+
+      for (const eventName of unexpected) {
+        if (unexpectedEventMap[eventName]) {
+          throw new Error(
+            `Unexpected event ${eventName} fired during callback.`
+          );
+        }
+      }
+    } catch (error) {
+      AboutTranslationsTestUtils.#reportTestFailure(error);
+    }
+
+    // This helps the test visually render at each step without significantly slowing test speed.
+    await doubleRaf(document);
+  }
+
+  /**
+   * Asserts properties of the source textarea.
+   *
+   * @param {object} options
+   * @param {string}  [options.value]
+   * @param {boolean} [options.showsPlaceholder]
+   * @param {string}  [options.scriptDirection]
+   * @returns {Promise<void>}
+   */
+  async assertSourceTextArea({
+    value,
+    showsPlaceholder,
+    scriptDirection,
+  } = {}) {
+    // This helps the test visually render at each step without significantly slowing test speed.
+    await doubleRaf(document);
+
+    let pageResult = {};
+    try {
+      pageResult = await this.#runInPage(
+        selectors => {
+          const textArea = content.document.querySelector(
+            selectors.sourceTextArea
+          );
+          return {
+            hasPlaceholder: textArea.hasAttribute("placeholder"),
+            actualValue: textArea.value,
+            actualScriptDirection: textArea.getAttribute("dir"),
+          };
+        },
+        { value, showsPlaceholder, scriptDirection }
+      );
+    } catch (error) {
+      AboutTranslationsTestUtils.#reportTestFailure(error);
+    }
+
+    const { hasPlaceholder, actualValue, actualScriptDirection } = pageResult;
+
+    if (showsPlaceholder !== undefined) {
+      if (showsPlaceholder) {
+        ok(hasPlaceholder, "Expected placeholder on source textarea.");
+        is(
+          actualValue,
+          "",
+          "Expected source textarea to have no value when showing placeholder."
+        );
+      } else {
+        ok(actualValue, "Expected source textarea to have a value.");
+      }
+    }
+
+    if (value !== undefined) {
+      is(
+        actualValue,
+        value,
+        `Expected source textarea value to be "${value}", but got "${actualValue}".`
+      );
+    }
+
+    if (scriptDirection !== undefined) {
+      is(
+        actualScriptDirection,
+        scriptDirection,
+        `Expected source textarea "dir" attribute to be "${scriptDirection}", but got "${actualScriptDirection}".`
+      );
+    }
+  }
+
+  /**
+   * Asserts properties of the target textarea.
+   *
+   * @param {object} options
+   * @param {string}  [options.value]
+   * @param {boolean} [options.showsPlaceholder]
+   * @param {string}  [options.scriptDirection]
+   * @returns {Promise<void>}
+   */
+  async assertTargetTextArea({
+    value,
+    showsPlaceholder,
+    scriptDirection,
+  } = {}) {
+    // This helps the test visually render at each step without significantly slowing test speed.
+    await doubleRaf(document);
+
+    let pageResult = {};
+    try {
+      pageResult = await this.#runInPage(
+        selectors => {
+          const textArea = content.document.querySelector(
+            selectors.targetTextArea
+          );
+          return {
+            hasPlaceholder: textArea.hasAttribute("placeholder"),
+            actualValue: textArea.value,
+            actualScriptDirection: textArea.getAttribute("dir"),
+          };
+        },
+        { value, showsPlaceholder, scriptDirection }
+      );
+    } catch (error) {
+      AboutTranslationsTestUtils.#reportTestFailure(error);
+    }
+
+    const { hasPlaceholder, actualValue, actualScriptDirection } = pageResult;
+
+    if (showsPlaceholder !== undefined) {
+      if (showsPlaceholder) {
+        ok(hasPlaceholder, "Expected placeholder on target textarea.");
+        is(
+          actualValue,
+          "",
+          "Expected target textarea to have no value when showing placeholder."
+        );
+      } else {
+        ok(actualValue, "Expected target textarea to have a value.");
+      }
+    }
+
+    if (value !== undefined) {
+      is(
+        actualValue,
+        value,
+        `Expected target textarea value to be "${value}", but got "${actualValue}".`
+      );
+    }
+
+    if (scriptDirection !== undefined) {
+      is(
+        actualScriptDirection,
+        scriptDirection,
+        `Expected target textarea "dir" attribute to be "${scriptDirection}", but got "${actualScriptDirection}".`
+      );
+    }
+  }
+
+  /**
+   * Asserts properties of the source-language selector.
+   *
+   * @param {object}   options
+   * @param {string}   [options.value]
+   * @param {string[]} [options.options]
+   * @param {string}   [options.detectedLanguage]
+   * @returns {Promise<void>}
+   */
+  async assertSourceLanguageSelector({
+    value,
+    options,
+    detectedLanguage,
+  } = {}) {
+    // This helps the test visually render at each step without significantly slowing test speed.
+    await doubleRaf(document);
+
+    let pageResult = {};
+    try {
+      pageResult = await this.#runInPage(selectors => {
+        const selector = content.document.querySelector(
+          selectors.sourceLanguageSelector
+        );
+        const detectOptionElement = content.document.querySelector(
+          selectors.detectLanguageOption
+        );
+        return {
+          actualValue: selector.value,
+          optionValues: Array.from(selector.options).map(
+            option => option.value
+          ),
+          detectLanguageAttribute:
+            detectOptionElement?.getAttribute("language") ?? null,
+        };
+      });
+    } catch (error) {
+      AboutTranslationsTestUtils.#reportTestFailure(error);
+    }
+
+    const { actualValue, optionValues, detectLanguageAttribute } = pageResult;
+
+    if (value !== undefined) {
+      is(
+        actualValue,
+        value,
+        `Expected source-language selector value to be "${value}", but got "${actualValue}".`
+      );
+    }
+
+    if (Array.isArray(options)) {
+      is(
+        optionValues.length,
+        options.length,
+        `Expected source-language selector to have ${options.length} options, but got ${optionValues.length}.`
+      );
+      for (let index = 0; index < options.length; index++) {
+        is(
+          optionValues[index],
+          options[index],
+          `Expected source-language selector option at index ${index} to be "${options[index]}", but got "${optionValues[index]}".`
+        );
+      }
+    }
+
+    if (detectedLanguage !== undefined) {
+      is(
+        actualValue,
+        "detect",
+        `With detectedLanguage set, expected selector value to be "detect", but got "${actualValue}".`
+      );
+      is(
+        detectLanguageAttribute,
+        detectedLanguage,
+        `Expected detect-language option "language" attribute to be "${detectedLanguage}", but got "${detectLanguageAttribute}".`
+      );
+    }
+  }
+
+  /**
+   * Asserts properties of the target-language selector.
+   *
+   * @param {object}   options
+   * @param {string}   [options.value]
+   * @param {string[]} [options.options]
+   * @returns {Promise<void>}
+   */
+  async assertTargetLanguageSelector({ value, options } = {}) {
+    // This helps the test visually render at each step without significantly slowing test speed.
+    await doubleRaf(document);
+
+    let pageResult = {};
+    try {
+      pageResult = await this.#runInPage(
+        selectors => {
+          const selector = content.document.querySelector(
+            selectors.targetLanguageSelector
+          );
+          const optionValues = Array.from(selector.options).map(
+            option => option.value
+          );
+          return {
+            actualValue: selector.value,
+            optionValues,
+          };
+        },
+        { value, options }
+      );
+    } catch (error) {
+      AboutTranslationsTestUtils.#reportTestFailure(error);
+    }
+
+    const { actualValue, optionValues } = pageResult;
+
+    if (value !== undefined) {
+      is(
+        actualValue,
+        value,
+        `Expected target-language selector value to be "${value}", but got "${actualValue}".`
+      );
+    }
+
+    if (Array.isArray(options)) {
+      is(
+        optionValues.length,
+        options.length,
+        `Expected target-language selector to have ${options.length} options, but got ${optionValues.length}.`
+      );
+      for (let index = 0; index < options.length; index++) {
+        is(
+          optionValues[index],
+          options[index],
+          `Expected target-language selector option at index ${index} to be "${options[index]}", but got "${optionValues[index]}".`
+        );
+      }
+    }
+  }
+
+  /**
+   * Asserts properties of the detect-language option in the source-language selector.
+   *
+   * @param {object}  options
+   * @param {boolean} [options.isSelected]
+   * @param {boolean} [options.defaultValue]
+   * @param {string}  [options.language]
+   * @returns {Promise<void>}
+   */
+  async assertDetectLanguageOption({
+    isSelected,
+    defaultValue,
+    language,
+  } = {}) {
+    // This helps the test visually render at each step without significantly slowing test speed.
+    await doubleRaf(document);
+
+    if (language !== undefined && defaultValue) {
+      throw new Error(
+        "assertDetectLanguageOption: `language` and `defaultValue: true` are mutually exclusive."
+      );
+    }
+
+    if (isSelected !== undefined) {
+      if (isSelected) {
+        await this.assertSourceLanguageSelector({ value: "detect" });
+      } else {
+        let pageResult = {};
+        try {
+          pageResult = await this.#runInPage(selectors => {
+            const selector = content.document.querySelector(
+              selectors.sourceLanguageSelector
+            );
+            return { actualValue: selector.value };
+          });
+        } catch (error) {
+          AboutTranslationsTestUtils.#reportTestFailure(error);
+        }
+
+        const { actualValue } = pageResult;
+        Assert.notStrictEqual(
+          actualValue,
+          "detect",
+          `Expected source-language selector value not to be "detect", but got "${actualValue}".`
+        );
+      }
+    }
+
+    let pageResult = {};
+    try {
+      pageResult = await this.#runInPage(
+        selectors => {
+          const detectOptionElement = content.document.querySelector(
+            selectors.detectLanguageOption
+          );
+          return {
+            localizationId: detectOptionElement?.getAttribute("data-l10n-id"),
+            languageAttributeValue:
+              detectOptionElement?.getAttribute("language"),
+          };
+        },
+        { defaultValue, language }
+      );
+    } catch (error) {
+      AboutTranslationsTestUtils.#reportTestFailure(error);
+    }
+
+    const { localizationId, languageAttributeValue } = pageResult;
+
+    if (defaultValue !== undefined) {
+      const expectedIdentifier = defaultValue
+        ? "about-translations-detect-default"
+        : "about-translations-detect-language";
+      is(
+        localizationId,
+        expectedIdentifier,
+        `Expected detect-language option "data-l10n-id" to be "${expectedIdentifier}", but got "${localizationId}".`
+      );
+    }
+
+    if (language !== undefined) {
+      is(
+        languageAttributeValue,
+        language,
+        `Expected detect-language option "language" attribute to be "${language}", but got "${languageAttributeValue}".`
+      );
+    }
+  }
+
+  /**
+   * Asserts properties of the the swap-languages button.
+   *
+   * @param {object} options
+   * @param {boolean} [options.enabled]
+   * @returns {Promise<void>}
+   */
+  async assertSwapLanguagesButton({ enabled } = {}) {
+    // This helps the test visually render at each step without significantly slowing test speed.
+    await doubleRaf(document);
+
+    let pageResult = {};
+    try {
+      pageResult = await this.#runInPage(
+        selectors => {
+          const button = content.document.querySelector(
+            selectors.swapLanguagesButton
+          );
+          return {
+            isDisabled: button.hasAttribute("disabled"),
+          };
+        },
+        { enabled }
+      );
+    } catch (error) {
+      AboutTranslationsTestUtils.#reportTestFailure(error);
+    }
+
+    const { isDisabled } = pageResult;
+
+    if (enabled !== undefined) {
+      if (enabled) {
+        ok(!isDisabled, "Expected swap-languages button to be enabled.");
+      } else {
+        ok(isDisabled, "Expected swap-languages button to be disabled.");
+      }
+    }
+  }
+
+  /**
+   * Asserts that the target textarea shows the translating placeholder.
+   *
+   * @returns {Promise<void>}
+   */
+  async assertTranslatingPlaceholder() {
+    // This helps the test visually render at each step without significantly slowing test speed.
+    await doubleRaf(document);
+
+    let actualValue;
+    try {
+      actualValue = await this.#runInPage(selectors => {
+        const textarea = content.document.querySelector(
+          selectors.targetTextArea
+        );
+        return textarea.value;
+      });
+    } catch (error) {
+      AboutTranslationsTestUtils.#reportTestFailure(error);
+    }
+
+    is(
+      actualValue,
+      "Translating…",
+      `Expected target textarea to show "Translating…", but got "${actualValue}".`
+    );
+  }
+
+  /**
+   * Asserts that a translation completes with expected text.
+   *
+   * @param {object} options
+   * @param {string} [options.sourceLanguage]   - Explicit source language.
+   * @param {string} [options.detectedLanguage] - Language detected when the selector is set to "detect".
+   * @param {string} options.targetLanguage
+   * @param {string} options.sourceText
+   * @returns {Promise<void>}
+   */
+  async assertTranslatedText({
+    sourceLanguage,
+    detectedLanguage,
+    targetLanguage,
+    sourceText,
+  }) {
+    // This helps the test visually render at each step without significantly slowing test speed.
+    await doubleRaf(document);
+
+    if (sourceLanguage !== undefined && detectedLanguage !== undefined) {
+      throw new Error(
+        "assertTranslatedText: sourceLanguage and detectedLanguage are mutually exclusive assertion options."
+      );
+    }
+
+    if (detectedLanguage !== undefined) {
+      await this.assertSourceLanguageSelector({ detectedLanguage });
+    } else {
+      await this.assertSourceLanguageSelector({ value: sourceLanguage });
+    }
+
+    await this.assertTargetLanguageSelector({ value: targetLanguage });
+    await this.assertSourceTextArea({ value: sourceText });
+
+    const actualSourceLanguage = detectedLanguage ?? sourceLanguage;
+    const expectedValue =
+      actualSourceLanguage === targetLanguage
+        ? // Expect a passthrough translation if the source and target are the same.
+          sourceText
+        : // Otherwise it will have a full translation with the mock translator.
+          `${sourceText.toUpperCase()} [${actualSourceLanguage} to ${targetLanguage}]`;
+
+    let actualValue;
+    try {
+      actualValue = await this.#runInPage(selectors => {
+        const textarea = content.document.querySelector(
+          selectors.targetTextArea
+        );
+        return textarea.value;
+      });
+    } catch (error) {
+      AboutTranslationsTestUtils.#reportTestFailure(error);
+    }
+
+    is(
+      actualValue,
+      expectedValue,
+      `Expected translated text to be "${expectedValue}", but got "${actualValue}".`
+    );
+  }
+
+  /**
+   * Asserts that the UI values and URL parameters all match
+   * the provided arguments.
+   *
+   * @param {object}  options
+   * @param {string} [options.sourceLanguage="detect"] - Expected value for the source-language selector and “src” URL parameter.
+   * @param {string} [options.targetLanguage=""]       - Expected value for the target-language selector and “trg” URL parameter.
+   * @param {string} [options.sourceText=""]           - Expected value for the source textarea and “text” URL parameter.
+   * @returns {Promise<void>}
+   */
+  async assertURLMatchesUI({
+    sourceLanguage = "detect",
+    targetLanguage = "",
+    sourceText = "",
+  } = {}) {
+    // This helps the test visually render at each step without significantly slowing test speed.
+    await doubleRaf(document);
+
+    try {
+      // First verify that the UI controls contain the expected values.
+      await this.assertSourceLanguageSelector({ value: sourceLanguage });
+      await this.assertTargetLanguageSelector({ value: targetLanguage });
+      await this.assertSourceTextArea({ value: sourceText });
+
+      // Then inspect the URL from within the content page.
+      const { href, sourceParam, targetParam, textParam } =
+        await this.#runInPage(() => {
+          const { location } = content.window;
+          const currentURL = new URL(location.href);
+          const hashSubstring = currentURL.hash.startsWith("#")
+            ? currentURL.hash.slice(1)
+            : currentURL.hash;
+          const urlSearchParams = new URLSearchParams(hashSubstring);
+          return {
+            href: currentURL.href,
+            sourceParam: urlSearchParams.get("src") ?? "detect",
+            targetParam: urlSearchParams.get("trg") ?? "",
+            textParam: urlSearchParams.get("text") ?? "",
+          };
+        });
+
+      // Assert individual hash parameters.
+      is(
+        sourceParam,
+        sourceLanguage,
+        `Expected URL parameter "src" to be "${sourceLanguage}", but got "${sourceParam}".`
+      );
+      is(
+        targetParam,
+        targetLanguage,
+        `Expected URL parameter "trg" to be "${targetLanguage}", but got "${targetParam}".`
+      );
+      is(
+        textParam,
+        sourceText,
+        `Expected URL parameter "text" to be "${sourceText}", but got "${textParam}".`
+      );
+
+      const expectedURL = new URL("about:translations");
+      const expectedParams = new URLSearchParams();
+
+      if (sourceLanguage) {
+        expectedParams.set("src", sourceLanguage);
+      }
+
+      if (targetLanguage) {
+        expectedParams.set("trg", targetLanguage);
+      }
+
+      if (sourceText) {
+        expectedParams.set("text", sourceText);
+      }
+
+      expectedURL.hash = expectedParams.toString();
+
+      is(
+        href,
+        expectedURL.href,
+        `Expected full URL to be "${expectedURL.href}", but got "${href}".`
+      );
+    } catch (error) {
+      AboutTranslationsTestUtils.#reportTestFailure(error);
+    }
+  }
+
+  /**
+   * Asserts visibility of each element based on the provided options.
+   *
+   * @param {object}  options
+   * @param {boolean} [options.pageHeader=false]
+   * @param {boolean} [options.mainUserInterface=false]
+   * @param {boolean} [options.sourceLanguageSelector=false]
+   * @param {boolean} [options.targetLanguageSelector=false]
+   * @param {boolean} [options.swapLanguagesButton=false]
+   * @param {boolean} [options.sourceTextArea=false]
+   * @param {boolean} [options.targetTextArea=false]
+   * @param {boolean} [options.unsupportedInfoMessage=false]
+   * @param {boolean} [options.languageLoadErrorMessage=false]
+   * @returns {Promise<void>}
+   */
+  async assertIsVisible({
+    pageHeader = false,
+    mainUserInterface = false,
+    sourceLanguageSelector = false,
+    targetLanguageSelector = false,
+    swapLanguagesButton = false,
+    sourceTextArea = false,
+    targetTextArea = false,
+    unsupportedInfoMessage = false,
+    languageLoadErrorMessage = false,
+  } = {}) {
+    // This helps the test visually render at each step without significantly slowing test speed.
+    await doubleRaf(document);
+
+    try {
+      const visibilityMap = await this.#runInPage(selectors => {
+        const { document, window } = content;
+        const isElementVisible = selector => {
+          const element = document.querySelector(selector);
+          if (element.offsetParent === null) {
+            return false;
+          }
+
+          const computedStyle = window.getComputedStyle(element);
+          if (!computedStyle) {
+            return false;
+          }
+
+          const { display, visibility } = computedStyle;
+          return !(display === "none" || visibility === "hidden");
+        };
+        return {
+          pageHeader: isElementVisible(selectors.pageHeader),
+          mainUserInterface: isElementVisible(selectors.mainUserInterface),
+          sourceLanguageSelector: isElementVisible(
+            selectors.sourceLanguageSelector
+          ),
+          targetLanguageSelector: isElementVisible(
+            selectors.targetLanguageSelector
+          ),
+          swapLanguagesButton: isElementVisible(selectors.swapLanguagesButton),
+          sourceTextArea: isElementVisible(selectors.sourceTextArea),
+          targetTextArea: isElementVisible(selectors.targetTextArea),
+          unsupportedInfoMessage: isElementVisible(
+            selectors.unsupportedInfoMessage
+          ),
+          languageLoadErrorMessage: isElementVisible(
+            selectors.languageLoadErrorMessage
+          ),
+        };
+      });
+
+      const assertVisibility = (expectedVisibility, actualVisibility, label) =>
+        expectedVisibility
+          ? ok(actualVisibility, `Expected ${label} to be visible.`)
+          : ok(!actualVisibility, `Expected ${label} to be hidden.`);
+
+      assertVisibility(pageHeader, visibilityMap.pageHeader, "page header");
+      assertVisibility(
+        mainUserInterface,
+        visibilityMap.mainUserInterface,
+        "main user interface"
+      );
+      assertVisibility(
+        sourceLanguageSelector,
+        visibilityMap.sourceLanguageSelector,
+        "source-language selector"
+      );
+      assertVisibility(
+        targetLanguageSelector,
+        visibilityMap.targetLanguageSelector,
+        "target-language selector"
+      );
+      assertVisibility(
+        swapLanguagesButton,
+        visibilityMap.swapLanguagesButton,
+        "swap-languages button"
+      );
+      assertVisibility(
+        sourceTextArea,
+        visibilityMap.sourceTextArea,
+        "source textarea"
+      );
+      assertVisibility(
+        targetTextArea,
+        visibilityMap.targetTextArea,
+        "target textarea"
+      );
+      assertVisibility(
+        unsupportedInfoMessage,
+        visibilityMap.unsupportedInfoMessage,
+        "unsupported info message"
+      );
+      assertVisibility(
+        languageLoadErrorMessage,
+        visibilityMap.languageLoadErrorMessage,
+        "language-load error message"
+      );
+    } catch (error) {
+      AboutTranslationsTestUtils.#reportTestFailure(error);
+    }
+  }
 }

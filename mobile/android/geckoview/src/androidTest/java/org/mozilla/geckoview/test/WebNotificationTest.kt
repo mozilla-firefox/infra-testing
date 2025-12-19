@@ -3,9 +3,12 @@ package org.mozilla.geckoview.test
 import android.os.Parcel
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.MediumTest
-import org.hamcrest.Matchers.* // ktlint-disable no-wildcard-imports
+import org.hamcrest.Matchers.endsWith
+import org.hamcrest.Matchers.equalTo
+import org.hamcrest.Matchers.not
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeThat
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -55,6 +58,8 @@ class WebNotificationTest : BaseSessionTest() {
                 assertThat("Silent should match", notification.silent, equalTo(true))
                 assertThat("Vibrate should match", notification.vibrate, equalTo(intArrayOf()))
                 assertThat("Source should match", notification.source, equalTo(createTestUrl(HELLO_HTML_PATH)))
+                assertThat("Origin should match", notification.origin, equalTo(GeckoSessionTestRule.TEST_ENDPOINT))
+                notification.show()
                 notificationResult.complete(null)
             }
         })
@@ -82,6 +87,13 @@ class WebNotificationTest : BaseSessionTest() {
         assertThat("Vibrate should match", notification.vibrate, equalTo(intArrayOf(1, 2, 3, 4)))
         assertThat("Silent should match", notification.silent, equalTo(false))
         assertThat("Source should match", notification.source, equalTo(createTestUrl(HELLO_HTML_PATH)))
+
+        val origin = if (notification.privateBrowsing) {
+            GeckoSessionTestRule.TEST_ENDPOINT + "^privateBrowsingId=1"
+        } else {
+            GeckoSessionTestRule.TEST_ENDPOINT
+        }
+        assertThat("Origin should match", notification.origin, equalTo(origin))
     }
 
     @GeckoSessionTestRule.Setting.List(
@@ -102,6 +114,7 @@ class WebNotificationTest : BaseSessionTest() {
             override fun onShowNotification(notification: WebNotification) {
                 assertNotificationData(notification, requireInteraction)
                 assertThat("privateBrowsing should match", notification.privateBrowsing, equalTo(true))
+                notification.show()
                 notificationResult.complete(null)
             }
         })
@@ -200,6 +213,7 @@ class WebNotificationTest : BaseSessionTest() {
         sessionRule.delegateDuringNextWait(object : WebNotificationDelegate {
             @GeckoSessionTestRule.AssertCalled
             override fun onShowNotification(notification: WebNotification) {
+                notification.show()
                 notificationResult.complete(notification)
             }
         })
@@ -258,6 +272,7 @@ class WebNotificationTest : BaseSessionTest() {
         sessionRule.delegateDuringNextWait(object : WebNotificationDelegate {
             @GeckoSessionTestRule.AssertCalled
             override fun onShowNotification(notification: WebNotification) {
+                notification.show()
                 notificationResult.complete(notification)
             }
         })
@@ -307,6 +322,7 @@ class WebNotificationTest : BaseSessionTest() {
             @GeckoSessionTestRule.AssertCalled
             override fun onShowNotification(notification: WebNotification) {
                 notificationShown = notification
+                notification.show()
                 notificationResult.complete(null)
             }
         })
@@ -336,6 +352,7 @@ class WebNotificationTest : BaseSessionTest() {
             @GeckoSessionTestRule.AssertCalled
             override fun onShowNotification(notification: WebNotification) {
                 notificationShown = notification
+                notification.show()
                 notificationResult.complete(null)
             }
         })
@@ -363,6 +380,7 @@ class WebNotificationTest : BaseSessionTest() {
         sessionRule.delegateDuringNextWait(object : WebNotificationDelegate {
             @GeckoSessionTestRule.AssertCalled
             override fun onShowNotification(notification: WebNotification) {
+                notification.show()
                 notificationResult.complete(notification)
             }
         })
@@ -388,7 +406,7 @@ class WebNotificationTest : BaseSessionTest() {
         val parcel = Parcel.obtain()
         notification.writeToParcel(
             parcel,
-            /* ignored */
+            // ignored
             -1,
         )
 
@@ -401,6 +419,7 @@ class WebNotificationTest : BaseSessionTest() {
         sessionRule.delegateDuringNextWait(object : WebNotificationDelegate {
             @GeckoSessionTestRule.AssertCalled
             override fun onShowNotification(notification: WebNotification) {
+                notification.show()
                 notificationResult.complete(notification)
             }
         })
@@ -431,7 +450,7 @@ class WebNotificationTest : BaseSessionTest() {
         val parcel = Parcel.obtain()
         notification.writeToParcel(
             parcel,
-            /* ignored */
+            // ignored
             -1,
         )
         parcel.setDataPosition(0)
@@ -440,5 +459,60 @@ class WebNotificationTest : BaseSessionTest() {
         assertTrue(serializedNotification.imageUrl!!.isBlank())
 
         assertThat("Promise should have been resolved.", promiseResult.value as Double, equalTo(1.0))
+    }
+
+    private fun openNotificationAction(): GeckoResult<WebNotification> {
+        mainSession.loadTestPath(CLICK_ACTION_PATH)
+        mainSession.waitForPageStop()
+
+        val notificationResult = GeckoResult<WebNotification>()
+
+        sessionRule.delegateDuringNextWait(object : WebNotificationDelegate {
+            @GeckoSessionTestRule.AssertCalled
+            override fun onShowNotification(notification: WebNotification) {
+                notificationResult.complete(notification)
+            }
+        })
+
+        return notificationResult
+    }
+
+    @Test fun openWithActionsAndClickAction() {
+        assumeThat(sessionRule.env.isNightly, equalTo(true))
+
+        val notificationResult = openNotificationAction()
+        val promiseResult = mainSession.evaluatePromiseJS("showNotification()")
+        sessionRule.waitForResult(notificationResult)
+
+        notificationResult.accept { it!!.click("action1") }
+
+        assertThat("Promise should have been resolved.", promiseResult.value as String, equalTo("action1"))
+    }
+
+    @Test fun openWithActionsAndClickTitle() {
+        assumeThat(sessionRule.env.isNightly, equalTo(true))
+
+        val notificationResult = openNotificationAction()
+        val promiseResult = mainSession.evaluatePromiseJS("showNotification()")
+        sessionRule.waitForResult(notificationResult)
+
+        notificationResult.accept { it!!.click() }
+
+        assertThat("Promise should have been resolved.", promiseResult.value as String, equalTo(""))
+    }
+
+    @Test fun openWithActionsAndClickUnknownAction() {
+        assumeThat(sessionRule.env.isNightly, equalTo(true))
+
+        val notificationResult = openNotificationAction()
+        val promiseResult = mainSession.evaluatePromiseJS("showNotification()")
+        sessionRule.waitForResult(notificationResult)
+
+        // This may happen when a tagged notification is replaced with a different set of actions
+        // but at the same time the user clicks the existing notification action just before the
+        // system replaces it.
+        notificationResult.accept { it!!.click("action-unknown") }
+
+        assertThat("Promise should have been resolved.", promiseResult.value as String, equalTo(""))
     }
 }

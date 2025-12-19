@@ -6,6 +6,8 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
   ReaderMode: "moz-src:///toolkit/components/reader/ReaderMode.sys.mjs",
+  Readerable: "resource://gre/modules/Readerable.sys.mjs",
+  isProbablyReaderable: "resource://gre/modules/Readerable.sys.mjs",
 });
 
 /**
@@ -67,11 +69,11 @@ export class LinkPreviewChild extends JSWindowActorChild {
     const { promise, resolve, reject } = Promise.withResolvers();
     const MAX_CONTENT_LENGTH = 5 * 1024 * 1024; // 5 MB limit
 
-    let charset = "utf-8";
+    let charset = null;
     const byteChunks = [];
     let totalLength = 0;
     channel.asyncOpen({
-      onDataAvailable(request, stream, offset, count) {
+      onDataAvailable: (request, stream, offset, count) => {
         totalLength += count;
         if (totalLength > MAX_CONTENT_LENGTH) {
           request.cancel(Cr.NS_ERROR_FILE_TOO_BIG);
@@ -79,7 +81,7 @@ export class LinkPreviewChild extends JSWindowActorChild {
           byteChunks.push(lazy.NetUtil.readInputStream(stream, count));
         }
       },
-      onStartRequest(request) {
+      onStartRequest: request => {
         const http = request.QueryInterface(Ci.nsIHttpChannel);
 
         // Enforce text/html if provided by server
@@ -104,7 +106,7 @@ export class LinkPreviewChild extends JSWindowActorChild {
           }
         } catch (ex) {}
       },
-      onStopRequest(_request, status) {
+      onStopRequest: (_request, status) => {
         if (Components.isSuccessCode(status)) {
           const bytes = new Uint8Array(totalLength);
           let offset = 0;
@@ -113,14 +115,112 @@ export class LinkPreviewChild extends JSWindowActorChild {
             offset += chunk.byteLength;
           }
 
-          const decoder = new TextDecoder(charset);
-          resolve(decoder.decode(bytes));
+          const effectiveCharset = this.sniffCharset(bytes, charset);
+          let decoded;
+          try {
+            // Use a non-fatal decode to be more robust to minor encoding errors.
+            decoded = new TextDecoder(effectiveCharset).decode(bytes);
+          } catch (e) {
+            // Fallback to UTF-8 on decode errors or if the label was unsupported.
+            decoded = new TextDecoder("utf-8").decode(bytes);
+          }
+          resolve(decoded);
         } else {
           reject(Components.Exception("Failed to fetch HTML", status));
         }
       },
     });
     return promise;
+  }
+
+  /**
+   * Sniff an effective charset for the given response bytes using the HTML standard's precedence:
+   *   1) Byte Order Mark (BOM)
+   *   2) <meta charset> or http-equiv in the first 8KB of the document
+   *   3) HTTP Content-Type header charset (if provided and valid)
+   *   4) Default to utf-8
+   *
+   * @param {Uint8Array} bytes - The raw response bytes.
+   * @param {string} headerCharset - The charset from the Content-Type header.
+   * @returns {string} A validated, effective charset label for TextDecoder.
+   */
+  sniffCharset(bytes, headerCharset = "") {
+    // 1. BOM detection (highest priority)
+    if (
+      bytes.length >= 3 &&
+      bytes[0] === 0xef &&
+      bytes[1] === 0xbb &&
+      bytes[2] === 0xbf
+    ) {
+      return "utf-8";
+    }
+    if (bytes.length >= 2) {
+      if (bytes[0] === 0xfe && bytes[1] === 0xff) {
+        return "utf-16be";
+      }
+      if (bytes[0] === 0xff && bytes[1] === 0xfe) {
+        return "utf-16le";
+      }
+    }
+
+    // 2. Scan the first 8KB for a meta-declared charset. This is checked before
+    // the HTTP header as a heuristic for misconfigured servers where the HTML
+    // is more likely to be correct.
+    try {
+      const headLen = Math.min(bytes.length, 8192);
+      const head = new TextDecoder("windows-1252").decode(
+        bytes.subarray(0, headLen)
+      );
+
+      const metaCharsetRegex = /<meta\s+charset\s*=\s*["']?([a-z0-9_-]+)/i;
+      let match = head.match(metaCharsetRegex);
+
+      if (!match) {
+        const httpEquivRegex =
+          /<meta\s+http-equiv\s*=\s*["']?content-type["']?[^>]*content\s*=\s*["'][^"']*charset\s*=\s*([a-z0-9_-]+)/i;
+        match = head.match(httpEquivRegex);
+      }
+
+      if (match && match[1]) {
+        const norm = this.normalizeAndValidateEncodingLabel(match[1]);
+        if (norm) {
+          return norm;
+        }
+      }
+    } catch (e) {
+      // Ignore errors during meta scan and fall through.
+    }
+
+    // 3. Use charset from HTTP header if it's valid.
+    if (headerCharset) {
+      const norm = this.normalizeAndValidateEncodingLabel(headerCharset);
+      if (norm) {
+        return norm;
+      }
+    }
+
+    // 4. Default to UTF-8 if no other charset is found.
+    return "utf-8";
+  }
+
+  /**
+   * Normalizes a charset label and validates it is supported by TextDecoder.
+   *
+   * @param {string} label - The raw encoding label from headers or meta tags.
+   * @returns {string|null} The normalized, validated label, or null if invalid.
+   */
+  normalizeAndValidateEncodingLabel(label) {
+    const l = (label || "").trim();
+    if (!l) {
+      return null;
+    }
+    try {
+      // TextDecoder constructor handles aliases and validation.
+      return new TextDecoder(l).encoding;
+    } catch (e) {
+      // The label was invalid or unsupported.
+    }
+    return null;
   }
 
   /**
@@ -143,7 +243,10 @@ export class LinkPreviewChild extends JSWindowActorChild {
       const doc = parser.parseFromString(htmlCode, "text/html");
       ret.rawMetaInfo = this.parseMetaTagsFromDoc(doc);
 
-      if (!this.isProbablyReaderable(doc)) {
+      if (
+        !lazy.Readerable.shouldCheckUri(lazy.NetUtil.newURI(url)) ||
+        !lazy.isProbablyReaderable(doc)
+      ) {
         // Add normalized metadata even if the document isn't reader-able
         ret.meta = this.extractNormalizedMetadata(ret.rawMetaInfo);
         return ret;
@@ -252,11 +355,12 @@ export class LinkPreviewChild extends JSWindowActorChild {
     ];
 
     metaTags.forEach(tag => {
-      const name = tag.getAttribute("name") || tag.getAttribute("property");
+      const rawName = tag.getAttribute("name") || tag.getAttribute("property");
       const content = tag.getAttribute("content");
-      if (name && content) {
-        if (desiredMetaNames.includes(name.toLowerCase())) {
-          metaInfo[name] = content;
+      const key = rawName ? rawName.toLowerCase() : null;
+      if (key && content) {
+        if (desiredMetaNames.includes(key)) {
+          metaInfo[key] = content;
         }
       }
     });
@@ -297,9 +401,7 @@ export class LinkPreviewChild extends JSWindowActorChild {
           .getService(Ci.nsIParserUtils)
           .convertToPlainText(
             content,
-            Ci.nsIDocumentEncoder.OutputSelectionOnly | // Use only selected reader-view fragment
-              Ci.nsIDocumentEncoder.OutputAbsoluteLinks |
-              Ci.nsIDocumentEncoder.OutputFormatted, // Pretty-print formatting
+            null,
             0 // No line-wrapping
           );
 
@@ -320,112 +422,5 @@ export class LinkPreviewChild extends JSWindowActorChild {
     }
 
     return {};
-  }
-
-  /**
-   * Decides whether or not the document is reader-able without parsing the whole thing.
-   *
-   * @param {Document} doc - The document to check for readability
-   * @param {object} [options={}] Configuration object.
-   * @param {number} [options.minContentLength=140] The minimum node content length used to decide if the document is readerable.
-   * @param {number} [options.minScore=20] The minumum cumulated 'score' used to determine if the document is readerable.
-   * @param {Function} [options.visibilityChecker=isNodeVisible] The function used to determine if a node is visible.
-   * @returns {boolean} Whether or not we suspect Readability.parse() will suceeed at returning an article object.
-   */
-  isProbablyReaderable(doc, options = {}) {
-    // For backward compatibility reasons 'options' can either be a configuration object or the function used
-    // to determine if a node is visible.
-    if (typeof options == "function") {
-      options = { visibilityChecker: options };
-    }
-
-    var defaultOptions = {
-      minScore: 20,
-      minContentLength: 140,
-      visibilityChecker: this.isNodeVisible,
-    };
-    options = Object.assign(defaultOptions, options);
-
-    var nodes = doc.querySelectorAll("p, pre, article");
-
-    // Get <div> nodes which have <br> node(s) and append them into the `nodes` variable.
-    // Some articles' DOM structures might look like
-    // <div>
-    //   Sentences<br>
-    //   <br>
-    //   Sentences<br>
-    // </div>
-    var brNodes = doc.querySelectorAll("div > br");
-    if (brNodes.length) {
-      var set = new Set(nodes);
-      [].forEach.call(brNodes, function (node) {
-        set.add(node.parentNode);
-      });
-      nodes = Array.from(set);
-    }
-
-    var score = 0;
-    // This is a little cheeky, we use the accumulator 'score' to decide what to return from
-    // this callback:
-    return [].some.call(nodes, function (node) {
-      if (!options.visibilityChecker(node)) {
-        return false;
-      }
-
-      var REGEXPS = {
-        // NOTE: These two regular expressions are duplicated in
-        // Readability.js. Please keep both copies in sync.
-        unlikelyCandidates:
-          /-ad-|ai2html|banner|breadcrumbs|combx|comment|community|cover-wrap|disqus|extra|footer|gdpr|header|legends|menu|related|remark|replies|rss|shoutbox|sidebar|skyscraper|social|sponsor|supplemental|ad-break|agegate|pagination|pager|popup|yom-remote/i,
-        okMaybeItsACandidate: /and|article|body|column|content|main|shadow/i,
-      };
-      var matchString = node.className + " " + node.id;
-      if (
-        REGEXPS.unlikelyCandidates.test(matchString) &&
-        !REGEXPS.okMaybeItsACandidate.test(matchString)
-      ) {
-        return false;
-      }
-
-      if (node.matches("li p")) {
-        return false;
-      }
-
-      var textContentLength = node.textContent.trim().length;
-      if (textContentLength < options.minContentLength) {
-        return false;
-      }
-
-      score += Math.sqrt(textContentLength - options.minContentLength);
-
-      if (score > options.minScore) {
-        return true;
-      }
-      return false;
-    });
-  }
-  /**
-   * Determines whether a node is visible in the document.
-   *
-   * @param {Node} node - The DOM node to check for visibility
-   * @returns {boolean} True if the node is considered visible, false otherwise
-   *
-   * This method checks several visibility attributes:
-   * - Verifies the node's display style is not 'none'
-   * - Checks that the node doesn't have a 'hidden' attribute
-   * - Ensures the aria-hidden attribute is not 'true' (with an exception for fallback images)
-   */
-  isNodeVisible(node) {
-    // Have to null-check node.style and node.className.includes to deal with SVG and MathML nodes.
-    return (
-      (!node.style || node.style.display != "none") &&
-      !node.hasAttribute("hidden") &&
-      //check for "fallback-image" so that wikimedia math images are displayed
-      (!node.hasAttribute("aria-hidden") ||
-        node.getAttribute("aria-hidden") != "true" ||
-        (node.className &&
-          node.className.includes &&
-          node.className.includes("fallback-image")))
-    );
   }
 }

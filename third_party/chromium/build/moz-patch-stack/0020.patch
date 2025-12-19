@@ -1,28 +1,37 @@
+From 8e4789150a58704b56686573d93863b7a9104059 Mon Sep 17 00:00:00 2001
 From: Michael Froman <mfroman@mozilla.com>
-Date: Wed, 4 Oct 2023 22:29:00 +0000
-Subject: Bug 1855330 - pt3 - add shim targets to limit BUILD.gn changes.
- r=ng,webrtc-reviewers
+Date: Fri, 7 Nov 2025 12:13:00 -0600
+Subject: Bug 1997515 - remove hardening settings from
+ third_party/chromium/build r?ng!
 
-Adding these shim targets reduces the need to modify many BUILD.gn
-files by removing those deps.  We can retroactively fix the places
-we're already removing those deps in a future bug.
-
-Depends on D190094
-
-Differential Revision: https://phabricator.services.mozilla.com/D190095
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/a150bc95a2e914da08d6c0e0cfb0f4887f5b9ae7
+In bug 1974813 we updated the third_party/chromium/build directory which
+added hardening settings to the moz.build files under libwebrtc (and
+abseil-cpp) but we really should be getting these settings from
+build/moz.configure/toolchain.configure.  We currently see warnings
+during (at least) builds on macOS due to conflicting settings.
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/d9db1d783e13f2c288c4f195830851ab2ee27209
 ---
  config/compiler/BUILD.gn | 3 +++
  1 file changed, 3 insertions(+)
 
 diff --git a/config/compiler/BUILD.gn b/config/compiler/BUILD.gn
-index a1293bc43..9a91ad87c 100644
+index a59a5df6e..c4c706052 100644
 --- a/config/compiler/BUILD.gn
 +++ b/config/compiler/BUILD.gn
-@@ -2646,3 +2646,6 @@ config("cet_shadow_stack") {
-     ldflags = [ "/CETCOMPAT" ]
+@@ -1099,6 +1099,8 @@ config("disallow_unstable_features") {
+ }
+ 
+ config("libcxx_hardening") {
++# Mozilla - these settings come from third_party/chromium/build/config/compiler/BUILD.gn
++if (false) {
+   # Normally, this would be defined in the `runtime_library` config but NaCl
+   # saigo libc++ does not use the custom hermetic libc++. Unfortunately, there
+   # isn't really a better config to add this define for the define to
+@@ -1119,6 +1121,7 @@ config("libcxx_hardening") {
+     defines += [ "_GLIBCXX_ASSERTIONS=1" ]
    }
  }
-+
-+# moz shim target to limit widespread BUILD.gn changes
-+config("prevent_unsafe_narrowing") {}
++}
+ 
+ # The BUILDCONFIG file sets this config on targets by default, which means when
+ # building with ThinLTO, no optimization is performed in the link step.

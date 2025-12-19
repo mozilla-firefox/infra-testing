@@ -29,12 +29,17 @@
 # do ok(true, "Type not supported") and stop the test.
 
 [DEFAULT]
+skip-if = [
+  "isolated_process", # Bug 1709948
+]
 subsuite = "media"
 tags = "media-engine-compatible media-gpu"
 prefs = ["media.hevc.enabled=1"] # for test_hevc_playback
 support-files = [
   "16bit_wave_extrametadata.wav",
   "16bit_wave_extrametadata.wav^headers^",
+  "1967133.mp4",
+  "1967133.mp4^headers^",
   "VID_0001.ogg",
   "VID_0001.ogg^headers^",
   "adts.aac",
@@ -59,6 +64,15 @@ support-files = [
   "aspect_ratio_5_2_hevc.mp4^headers^",
   "av1.mp4",
   "av1.mp4^headers^",
+  # ffmpeg -n -f lavfi -i testsrc=duration=0.1:size=640x480:rate=30 -pix_fmt yuv444p10 -c:v libaom-av1 av1-yuv444p10.webm
+  "av1-yuv444p10.webm", # High profile
+  "av1-yuv444p10.webm^headers^",
+  # ffmpeg -n -f lavfi -i testsrc=duration=0.1:size=640x480:rate=30 -pix_fmt yuv422p10 -c:v libaom-av1 av1-yuv422p10.webm
+  "av1-yuv422p10.webm", # Professional profile
+  "av1-yuv422p10.webm^headers^",
+  # ffmpeg -n -f lavfi -i testsrc=duration=0.1:size=640x480:rate=30 -pix_fmt yuv444p12 -c:v libaom-av1 av1-yuv444p12.webm
+  "av1-yuv444p12.webm", # Professional profile
+  "av1-yuv444p12.webm^headers^",
   "avc-2bytes-nalu.mp4",
   "background_video.js",
   "badtags.ogg",
@@ -682,6 +696,10 @@ support-files = [
   "video-overhang.ogg^headers^",
   "vp9-superframes.webm",
   "vp9-superframes.webm^headers^",
+  "vp9-yuv420p10.webm",
+  "vp9-yuv420p10.webm^headers^",
+  "vp9-yuv420p12.webm",
+  "vp9-yuv420p12.webm^headers^",
   "vp9.webm",
   "vp9.webm^headers^",
   "vp9-short.webm",
@@ -752,7 +770,9 @@ support-files = [
 ["test_audio2.html"]
 
 ["test_audioDocumentTitle.html"]
-skip-if = ["true"] # bug 475110 - disabled since we don't play Wave files standalone
+skip-if = [
+  "true", # bug 475110 - disabled since we don't play Wave files standalone
+]
 
 ["test_buffered.html"]
 
@@ -775,9 +795,8 @@ skip-if = ["true"] # bug 475110 - disabled since we don't play Wave files standa
 # Android devices that aren't an emulator hit a device-specific decoder limit,
 # that make the test fail.
 skip-if = [
-   "os == 'android' && !is_emulator", # Bug 1860492
-   "os == 'win' && os_version == '11.2009' && bits == 64 && !debug", # Bug 1889375
-   "os == 'win' && os_version == '11.26100' && bits == 64 && wmfme", # Bug 1889375
+  "os == 'android' && !is_emulator", # Bug 1860492
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && wmfme", # Bug 1889375
 ]
 
 ["test_constants.html"]
@@ -804,8 +823,7 @@ skip-if = [
 
 ["test_delay_load.html"]
 skip-if = [
-  "os == 'win' && os_version == '11.2009' && processor == 'x86_64'", # Bug 1889376
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64'", # Bug 1889376
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64'", # Bug 1889376
 ]
 
 ["test_duration_after_error.html"]
@@ -822,20 +840,24 @@ skip-if = [
 
 ["test_hevc_playback.html"]
 run-if = [
-  "os == 'win'",
-  "os == 'mac' && os_version != '10.15'", # Bug 1942396
   "os == 'android'",
+  "os == 'mac' && os_version != '10.15'", # Bug 1942396
+  "os == 'win'",
 ]
-skip-if = ["!mda_gpu"]
+skip-if = [
+  "!mda_gpu",
+]
 scheme = "https"
 
 ["test_hevc_support.html"]
 run-if = [
-  "os == 'win'",
-  "os == 'mac' && os_version != '10.15'", # Bug 1942396
   "os == 'android'",
+  "os == 'mac' && os_version != '10.15'", # Bug 1942396
+  "os == 'win'",
 ]
-skip-if = ["!mda_gpu"]
+skip-if = [
+  "!mda_gpu",
+]
 scheme = "https"
 
 ["test_info_leak.html"]
@@ -848,6 +870,8 @@ scheme = "https"
 
 ["test_load_candidates.html"]
 
+["test_load_no_preload.html"]
+
 ["test_load_same_resource.html"]
 
 ["test_load_source.html"]
@@ -855,7 +879,9 @@ scheme = "https"
 ["test_load_source_empty_type.html"]
 
 ["test_loop.html"]
-skip-if = ["wmfme"] # Bug 1781539
+skip-if = [
+  "wmfme", # Bug 1781539
+]
 
 ["test_looping_eventsOrder.html"]
 
@@ -863,13 +889,18 @@ skip-if = ["wmfme"] # Bug 1781539
 
 ["test_mediatrack_events.html"]
 scheme = "https"
-skip-if = ["os == 'mac' && os_version == '15.30' && arch == 'aarch64' && debug"] # TIMEOUT
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && debug", # TIMEOUT
+]
 
 ["test_mediatrack_parsing_ogg.html"]
 
 ["test_metadata.html"]
 
 ["test_mozHasAudio.html"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && debug && wmfme && verify-standalone",
+]
 
 ["test_mp3_with_multiple_ID3v2.html"]
 
@@ -878,6 +909,8 @@ skip-if = ["os == 'mac' && os_version == '15.30' && arch == 'aarch64' && debug"]
 ["test_new_audio.html"]
 
 ["test_no_load_event.html"]
+
+["test_non_8bit_video.html"]
 
 ["test_not_reset_playbackRate_when_removing_nonloaded_media_from_document.html"]
 
@@ -944,7 +977,9 @@ tags = "promise-play"
 tags = "promise-play"
 
 ["test_play_twice.html"]
-skip-if = ["appname == 'seamonkey'"] #  Seamonkey: Bug 598252, bug 1307337, bug 1143695
+run-if = [
+  "appname != 'seamonkey'", #  Seamonkey: Bug 598252, bug 1307337, bug 1143695
+]
 # If encountering intermittents in test_playback.html please consider disabling
 # the individual faulting file via `manifest.js` as disabling the whole test on
 # a platform removes a lot of coverage.
@@ -957,8 +992,6 @@ skip-if = ["appname == 'seamonkey'"] #  Seamonkey: Bug 598252, bug 1307337, bug 
 
 ["test_preload_actions.html"]
 
-["test_preload_attribute.html"]
-
 ["test_preload_suspend.html"]
 
 ["test_preserve_playbackrate_after_ui_play.html"]
@@ -966,17 +999,15 @@ skip-if = ["appname == 'seamonkey'"] #  Seamonkey: Bug 598252, bug 1307337, bug 
 ["test_progress.html"]
 
 ["test_reactivate.html"]
-skip-if = ["true"] # see bug 1319725
+skip-if = [
+  "true", # see bug 1319725
+]
 
 ["test_readyState.html"]
 
 ["test_referer.html"]
 
 ["test_reset_src.html"]
-skip-if = [
-  "win10_2009 && debug && verify",
-  "win11_2009 && debug && verify",
-]
 
 ["test_source.html"]
 

@@ -44,6 +44,11 @@ Quality
    considering the expense of computing and recording log output.
    [Fennec: Checking for log levels is expensive unless you're using
    Logger.]
+-  Error messages that appear in web platform environments should
+   explain the reason for the error, and use web platform terminology
+   (as opposed to internal Firefox terminology). More details can be
+   found in the :ref:`helpful error messages guide
+   <Helpful error messages for web developers>`.
 
 
 Style
@@ -56,11 +61,7 @@ Style
    isn't formally documented.
 -  New files have license declarations and modelines.
 -  New JS files should use strict mode.
--  Trailing whitespace (git diff and splinter view both highlight this,
-   as does hg with the color extension enabled). Whitespace can be fixed
-   easily in Mercurial using the `CheckFiles
-   extension <https://www.mercurial-scm.org/wiki/CheckFilesExtension>`__.
-   In git, you can use git rebase --whitespace=fix.
+-  Trailing whitespace (git diff highlight this). You can use git rebase --whitespace=fix.
 
 
 Security issues

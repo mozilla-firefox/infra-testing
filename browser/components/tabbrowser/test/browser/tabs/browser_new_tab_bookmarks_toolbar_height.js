@@ -4,6 +4,12 @@
 
 "use strict";
 
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["test.wait300msAfterTabSwitch", true]],
+  });
+});
+
 // Tests that showing the bookmarks toolbar for new tabs only doesn't affect
 // the view port height in background tabs.
 
@@ -56,8 +62,8 @@ async function expectBmToolbarVisibilityChange(triggerFn, visible, msg) {
   triggerFn();
   await collapsedState;
   is(
-    BookmarkingUI.toolbar.getAttribute("collapsed"),
-    (!visible).toString(),
+    BookmarkingUI.toolbar.hasAttribute("collapsed"),
+    !visible,
     `${msg}; collapsed attribute state`
   );
   if (visible) {

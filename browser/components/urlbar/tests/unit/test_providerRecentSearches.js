@@ -5,7 +5,7 @@
 
 ChromeUtils.defineESModuleGetters(this, {
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
 });
 
 let ENABLED_PREF = "recentsearches.featureGate";
@@ -45,8 +45,11 @@ add_setup(async () => {
 
   let oldCurrentEngine = Services.search.defaultEngine;
 
-  registerCleanupFunction(() => {
-    Services.search.defaultEngine = oldCurrentEngine;
+  registerCleanupFunction(async () => {
+    await Services.search.setDefault(
+      oldCurrentEngine,
+      Ci.nsISearchService.CHANGE_REASON_ADDON_INSTALL
+    );
     UrlbarPrefs.clear(ENABLED_PREF);
     UrlbarPrefs.clear(SUGGESTS_PREF);
   });
@@ -115,7 +118,6 @@ add_task(async function test_per_engine() {
 
   let context = createContext("", {
     isPrivate: false,
-    formHistoryName: "test",
   });
   await check_results({
     context,

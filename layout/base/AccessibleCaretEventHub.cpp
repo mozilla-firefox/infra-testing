@@ -8,7 +8,6 @@
 
 #include "AccessibleCaretLogger.h"
 #include "AccessibleCaretManager.h"
-
 #include "mozilla/AutoRestore.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs_layout.h"
@@ -568,7 +567,7 @@ void AccessibleCaretEventHub::LaunchLongTapInjector() {
   int32_t longTapDelay = StaticPrefs::ui_click_hold_context_menus_delay();
   mLongTapInjectorTimer->InitWithNamedFuncCallback(
       FireLongTap, this, longTapDelay, nsITimer::TYPE_ONE_SHOT,
-      "AccessibleCaretEventHub::LaunchLongTapInjector");
+      "AccessibleCaretEventHub::LaunchLongTapInjector"_ns);
 }
 
 void AccessibleCaretEventHub::CancelLongTapInjector() {

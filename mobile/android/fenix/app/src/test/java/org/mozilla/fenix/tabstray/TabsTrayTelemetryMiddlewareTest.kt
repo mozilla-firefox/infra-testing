@@ -5,7 +5,6 @@
 package org.mozilla.fenix.tabstray
 
 import io.mockk.mockk
-import mozilla.components.support.test.libstate.ext.waitUntilIdle
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -17,20 +16,22 @@ import org.junit.runner.RunWith
 import org.mozilla.fenix.GleanMetrics.Metrics
 import org.mozilla.fenix.GleanMetrics.TabsTray
 import org.mozilla.fenix.helpers.FenixGleanTestRule
-import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
+import org.mozilla.fenix.nimbus.FakeNimbusEventStore
+import org.robolectric.RobolectricTestRunner
 
-@RunWith(FenixRobolectricTestRunner::class) // for gleanTestRule
+@RunWith(RobolectricTestRunner::class) // for gleanTestRule
 class TabsTrayTelemetryMiddlewareTest {
 
     private lateinit var store: TabsTrayStore
     private lateinit var tabsTrayTelemetryMiddleware: TabsTrayTelemetryMiddleware
+    private val eventStore = FakeNimbusEventStore()
 
     @get:Rule
     val gleanTestRule = FenixGleanTestRule(testContext)
 
     @Before
     fun setup() {
-        tabsTrayTelemetryMiddleware = TabsTrayTelemetryMiddleware()
+        tabsTrayTelemetryMiddleware = TabsTrayTelemetryMiddleware(eventStore)
         store = TabsTrayStore(
             middlewares = listOf(tabsTrayTelemetryMiddleware),
             initialState = TabsTrayState(),
@@ -43,7 +44,6 @@ class TabsTrayTelemetryMiddlewareTest {
         assertNull(Metrics.inactiveTabsCount.testGetValue())
 
         store.dispatch(TabsTrayAction.UpdateInactiveTabs(emptyList()))
-        store.waitUntilIdle()
         assertNotNull(TabsTray.hasInactiveTabs.testGetValue())
         assertNotNull(Metrics.inactiveTabsCount.testGetValue())
         assertEquals(0L, Metrics.inactiveTabsCount.testGetValue())
@@ -54,7 +54,6 @@ class TabsTrayTelemetryMiddlewareTest {
         assertNull(TabsTray.enterMultiselectMode.testGetValue())
 
         store.dispatch(TabsTrayAction.EnterSelectMode)
-        store.waitUntilIdle()
 
         assertNotNull(TabsTray.enterMultiselectMode.testGetValue())
         val snapshot = TabsTray.enterMultiselectMode.testGetValue()!!
@@ -65,7 +64,6 @@ class TabsTrayTelemetryMiddlewareTest {
     @Test
     fun `WHEN multi select mode by long press is entered THEN relevant metrics are collected`() {
         store.dispatch(TabsTrayAction.AddSelectTab(mockk()))
-        store.waitUntilIdle()
 
         assertNotNull(TabsTray.enterMultiselectMode.testGetValue())
         val snapshot = TabsTray.enterMultiselectMode.testGetValue()!!
@@ -78,7 +76,6 @@ class TabsTrayTelemetryMiddlewareTest {
         assertNull(TabsTray.autoCloseSeen.testGetValue())
 
         store.dispatch(TabsTrayAction.TabAutoCloseDialogShown)
-        store.waitUntilIdle()
 
         assertNotNull(TabsTray.autoCloseSeen.testGetValue())
     }
@@ -88,7 +85,6 @@ class TabsTrayTelemetryMiddlewareTest {
         assertNull(TabsTray.shareAllTabs.testGetValue())
 
         store.dispatch(TabsTrayAction.ShareAllNormalTabs)
-        store.waitUntilIdle()
 
         assertNotNull(TabsTray.shareAllTabs.testGetValue())
     }
@@ -98,7 +94,6 @@ class TabsTrayTelemetryMiddlewareTest {
         assertNull(TabsTray.shareAllTabs.testGetValue())
 
         store.dispatch(TabsTrayAction.ShareAllPrivateTabs)
-        store.waitUntilIdle()
 
         assertNotNull(TabsTray.shareAllTabs.testGetValue())
     }
@@ -108,7 +103,6 @@ class TabsTrayTelemetryMiddlewareTest {
         assertNull(TabsTray.closeAllTabs.testGetValue())
 
         store.dispatch(TabsTrayAction.CloseAllNormalTabs)
-        store.waitUntilIdle()
 
         assertNotNull(TabsTray.closeAllTabs.testGetValue())
     }
@@ -118,8 +112,46 @@ class TabsTrayTelemetryMiddlewareTest {
         assertNull(TabsTray.closeAllTabs.testGetValue())
 
         store.dispatch(TabsTrayAction.CloseAllPrivateTabs)
-        store.waitUntilIdle()
 
         assertNotNull(TabsTray.closeAllTabs.testGetValue())
+    }
+
+    @Test
+    fun `GIVEN one tab selected WHEN the bookmark selected tabs button is clicked THEN the metric is reported`() {
+        assertNull(TabsTray.bookmarkSelectedTabs.testGetValue())
+
+        store.dispatch(TabsTrayAction.BookmarkSelectedTabs(1))
+
+        assertNotNull(TabsTray.bookmarkSelectedTabs.testGetValue())
+        val snapshot = TabsTray.bookmarkSelectedTabs.testGetValue()!!
+        assertEquals(1, snapshot.size)
+        assertEquals("1", snapshot.single().extra?.getValue("tab_count"))
+        assertEquals(1, Metrics.bookmarksAdd["tabs_tray"].testGetValue())
+
+        eventStore.assertSingleEventEquals("bookmark_added")
+    }
+
+    @Test
+    fun `GIVEN multiple tabs selected WHEN the bookmark selected tabs button is clicked THEN the metric is reported`() {
+        assertNull(TabsTray.bookmarkSelectedTabs.testGetValue())
+
+        store.dispatch(TabsTrayAction.BookmarkSelectedTabs(2))
+
+        assertNotNull(TabsTray.bookmarkSelectedTabs.testGetValue())
+        val snapshot = TabsTray.bookmarkSelectedTabs.testGetValue()!!
+        assertEquals(1, snapshot.size)
+        assertEquals("2", snapshot.single().extra?.getValue("tab_count"))
+        assertEquals(2, Metrics.bookmarksAdd["tabs_tray"].testGetValue())
+
+        eventStore.assertEventsEqual(listOf("bookmark_added", "bookmark_added"))
+    }
+
+    @Test
+    fun `WHEN the three dot button's menu is shown THEN the metric is reported`() {
+        assertNull(TabsTray.menuOpened.testGetValue())
+
+        store.dispatch(TabsTrayAction.ThreeDotMenuShown)
+
+        assertNotNull(TabsTray.menuOpened.testGetValue())
     }
 }

@@ -3,18 +3,20 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "gtest/gtest.h"
+#include <thread>
 
+#include "SpecialSystemDirectory.h"
+#include "gtest/gtest.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/dom/BlobImpl.h"
 #include "mozilla/dom/Directory.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/GetFilesHelper.h"
 #include "mozilla/dom/UnionTypes.h"
-#include "mozilla/ErrorResult.h"
+#include "mozilla/gtest/MozAssertions.h"
 #include "mozilla/media/MediaUtils.h"
-#include "mozilla/SpinEventLoopUntil.h"
 #include "nsIFile.h"
-#include "SpecialSystemDirectory.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -33,9 +35,16 @@ nsCOMPtr<nsIFile> MakeFileFromPathSegments(
 
 nsresult AppendFileOrDirectory(nsTArray<OwningFileOrDirectory>& aDirectories,
                                const nsTArray<const char*>& aPathSegments) {
+  bool exists = false;
+  int retryCount = 5;
   nsCOMPtr<nsIFile> file = MakeFileFromPathSegments(aPathSegments);
-  bool exists;
-  MOZ_ALWAYS_SUCCEEDS(file->Exists(&exists));
+  while (retryCount--) {
+    if (NS_SUCCEEDED(file->Exists(&exists))) {
+      break;
+    }
+    // May require retrying (bug 1963029)
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  }
   NS_ENSURE_TRUE(exists, NS_ERROR_FILE_NOT_FOUND);
   bool isDir;
   MOZ_ALWAYS_SUCCEEDS(file->IsDirectory(&isDir));
@@ -154,7 +163,7 @@ void ExpectGetFilesHelperResponse(
 TEST(GetFilesHelper, TestSingleDirectory)
 {
   nsTArray<OwningFileOrDirectory> directories;
-  MOZ_ALWAYS_SUCCEEDS(
+  ASSERT_NS_SUCCEEDED(
       AppendFileOrDirectory(directories, {"getfiles", "inner2"}));
 
   ErrorResult error;
@@ -171,7 +180,7 @@ TEST(GetFilesHelper, TestSingleDirectory)
 TEST(GetFilesHelper, TestSingleNestedDirectory)
 {
   nsTArray<OwningFileOrDirectory> directories;
-  MOZ_ALWAYS_SUCCEEDS(
+  ASSERT_NS_SUCCEEDED(
       AppendFileOrDirectory(directories, {"getfiles", "inner1"}));
 
   ErrorResult error;
@@ -190,7 +199,7 @@ TEST(GetFilesHelper, TestSingleNestedDirectory)
 TEST(GetFilesHelper, TestSingleNestedDirectoryNoRecursion)
 {
   nsTArray<OwningFileOrDirectory> directories;
-  MOZ_ALWAYS_SUCCEEDS(
+  ASSERT_NS_SUCCEEDED(
       AppendFileOrDirectory(directories, {"getfiles", "inner1"}));
 
   ErrorResult error;
@@ -207,7 +216,7 @@ TEST(GetFilesHelper, TestSingleNestedDirectoryNoRecursion)
 TEST(GetFilesHelper, TestSingleDirectoryWithMultipleNestedChildren)
 {
   nsTArray<OwningFileOrDirectory> directories;
-  MOZ_ALWAYS_SUCCEEDS(AppendFileOrDirectory(directories, {"getfiles"}));
+  ASSERT_NS_SUCCEEDED(AppendFileOrDirectory(directories, {"getfiles"}));
 
   ErrorResult error;
   RefPtr<GetFilesHelper> helper =
@@ -229,7 +238,7 @@ TEST(GetFilesHelper, TestSingleDirectoryWithMultipleNestedChildren)
 TEST(GetFilesHelper, TestSingleFile)
 {
   nsTArray<OwningFileOrDirectory> directories;
-  MOZ_ALWAYS_SUCCEEDS(AppendFileOrDirectory(
+  ASSERT_NS_SUCCEEDED(AppendFileOrDirectory(
       directories, {"getfiles", "inner1", "fileinner1.txt"}));
 
   ErrorResult error;
@@ -246,9 +255,9 @@ TEST(GetFilesHelper, TestSingleFile)
 TEST(GetFilesHelper, TestMultipleFiles)
 {
   nsTArray<OwningFileOrDirectory> directories;
-  MOZ_ALWAYS_SUCCEEDS(AppendFileOrDirectory(
+  ASSERT_NS_SUCCEEDED(AppendFileOrDirectory(
       directories, {"getfiles", "inner1", "fileinner1.txt"}));
-  MOZ_ALWAYS_SUCCEEDS(AppendFileOrDirectory(
+  ASSERT_NS_SUCCEEDED(AppendFileOrDirectory(
       directories, {"getfiles", "inner2", "fileinner2.txt"}));
 
   ErrorResult error;
@@ -269,9 +278,9 @@ TEST(GetFilesHelper, TestMultipleFiles)
 TEST(GetFilesHelper, TestMultipleDirectories)
 {
   nsTArray<OwningFileOrDirectory> directories;
-  MOZ_ALWAYS_SUCCEEDS(
+  ASSERT_NS_SUCCEEDED(
       AppendFileOrDirectory(directories, {"getfiles", "inner1"}));
-  MOZ_ALWAYS_SUCCEEDS(
+  ASSERT_NS_SUCCEEDED(
       AppendFileOrDirectory(directories, {"getfiles", "inner2"}));
 
   ErrorResult error;

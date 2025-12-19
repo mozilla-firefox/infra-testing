@@ -6,19 +6,8 @@
 
 #include "mozilla/dom/DOMParser.h"
 
-#include "nsNetUtil.h"
-#include "nsDOMString.h"
 #include "MainThreadUtils.h"
 #include "SystemPrincipal.h"
-#include "nsIScriptGlobalObject.h"
-#include "nsIStreamListener.h"
-#include "nsStringStream.h"
-#include "nsCRT.h"
-#include "nsStreamUtils.h"
-#include "nsContentUtils.h"
-#include "nsDOMJSUtils.h"
-#include "nsError.h"
-#include "nsPIDOMWindow.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/LoadInfo.h"
 #include "mozilla/NullPrincipal.h"
@@ -27,6 +16,17 @@
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/TrustedTypeUtils.h"
 #include "mozilla/dom/TrustedTypesConstants.h"
+#include "nsCRT.h"
+#include "nsContentUtils.h"
+#include "nsDOMJSUtils.h"
+#include "nsDOMString.h"
+#include "nsError.h"
+#include "nsIScriptGlobalObject.h"
+#include "nsIStreamListener.h"
+#include "nsNetUtil.h"
+#include "nsPIDOMWindow.h"
+#include "nsStreamUtils.h"
+#include "nsStringStream.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -101,7 +101,8 @@ already_AddRefed<Document> DOMParser::ParseFromStringInternal(
 }
 
 already_AddRefed<Document> DOMParser::ParseFromString(
-    const TrustedHTMLOrString& aStr, SupportedType aType, ErrorResult& aRv) {
+    const TrustedHTMLOrString& aStr, SupportedType aType,
+    nsIPrincipal* aSubjectPrincipal, ErrorResult& aRv) {
   constexpr nsLiteralString sink = u"DOMParser parseFromString"_ns;
 
   MOZ_ASSERT(mOwner);
@@ -110,7 +111,7 @@ already_AddRefed<Document> DOMParser::ParseFromString(
   const nsAString* compliantString =
       TrustedTypeUtils::GetTrustedTypesCompliantString(
           aStr, sink, kTrustedTypesOnlySinkGroup, *pinnedOwner,
-          compliantStringHolder, aRv);
+          aSubjectPrincipal, compliantStringHolder, aRv);
   if (aRv.Failed()) {
     return nullptr;
   }
@@ -325,9 +326,9 @@ already_AddRefed<Document> DOMParser::SetUpDocument(DocumentFlavor aFlavor,
   NS_ASSERTION(mDocumentURI, "Must have document URI by now");
 
   nsCOMPtr<Document> doc;
-  nsresult rv = NS_NewDOMDocument(getter_AddRefs(doc), u""_ns, u""_ns, nullptr,
-                                  mDocumentURI, mDocumentURI, mPrincipal, true,
-                                  scriptHandlingObject, aFlavor);
+  nsresult rv = NS_NewDOMDocument(
+      getter_AddRefs(doc), u""_ns, u""_ns, nullptr, mDocumentURI, mDocumentURI,
+      mPrincipal, LoadedAsData::AsData, scriptHandlingObject, aFlavor);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     aRv.Throw(rv);
     return nullptr;

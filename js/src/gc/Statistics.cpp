@@ -11,6 +11,7 @@
 #include "mozilla/TimeStamp.h"
 
 #include <algorithm>
+#include <cmath>
 #include <stdarg.h>
 #include <stdio.h>
 #include <type_traits>
@@ -144,7 +145,6 @@ static FILE* MaybeOpenFileFromEnv(const char* env,
 
 struct PhaseKindInfo {
   Phase firstPhase;
-  uint8_t telemetryBucket;
   const char* name;
 };
 
@@ -641,22 +641,6 @@ UniqueChars Statistics::renderNurseryJson() const {
   return printer.release();
 }
 
-#ifdef DEBUG
-void Statistics::log(const char* fmt, ...) {
-  va_list args;
-  va_start(args, fmt);
-  if (gcDebugFile) {
-    TimeDuration sinceStart =
-        TimeBetween(TimeStamp::FirstTimeStamp(), TimeStamp::Now());
-    fprintf(gcDebugFile, "%12.3f: ", sinceStart.ToMicroseconds());
-    vfprintf(gcDebugFile, fmt, args);
-    fprintf(gcDebugFile, "\n");
-    fflush(gcDebugFile);
-  }
-  va_end(args);
-}
-#endif
-
 UniqueChars Statistics::renderJsonMessage() const {
   /*
    * The format of the JSON message is specified by the GCMajorMarkerPayload
@@ -790,7 +774,6 @@ void Statistics::formatJsonPhaseTimes(const PhaseTimes& phaseTimes,
 Statistics::Statistics(GCRuntime* gc)
     : gc(gc),
       gcTimerFile(nullptr),
-      gcDebugFile(nullptr),
       nonincrementalReason_(GCAbortReason::None),
       creationTime_(TimeStamp::Now()),
       tenuredAllocsSinceMinorGC(0),
@@ -831,7 +814,6 @@ Statistics::Statistics(GCRuntime* gc)
   MOZ_ALWAYS_TRUE(suspendedPhases.reserve(MAX_SUSPENDED_PHASES));
 
   gcTimerFile = MaybeOpenFileFromEnv("MOZ_GCTIMER");
-  gcDebugFile = MaybeOpenFileFromEnv("JS_GC_DEBUG");
   gcProfileFile = MaybeOpenFileFromEnv("JS_GC_PROFILE_FILE", stderr);
 
   gc::ReadProfileEnv("JS_GC_PROFILE",
@@ -846,9 +828,6 @@ Statistics::Statistics(GCRuntime* gc)
 Statistics::~Statistics() {
   if (gcTimerFile && gcTimerFile != stdout && gcTimerFile != stderr) {
     fclose(gcTimerFile);
-  }
-  if (gcDebugFile && gcDebugFile != stdout && gcDebugFile != stderr) {
-    fclose(gcDebugFile);
   }
 }
 
@@ -879,10 +858,6 @@ bool Statistics::initialize() {
   }
   for (auto i : AllPhaseKinds()) {
     MOZ_ASSERT(phases[phaseKinds[i].firstPhase].phaseKind == i);
-    for (auto j : AllPhaseKinds()) {
-      MOZ_ASSERT_IF(i != j, phaseKinds[i].telemetryBucket !=
-                                phaseKinds[j].telemetryBucket);
-    }
   }
 #endif
 
@@ -1184,6 +1159,13 @@ void Statistics::sendGCTelemetry() {
 void Statistics::beginNurseryCollection() {
   count(COUNT_MINOR_GC);
   startingMinorGCNumber = gc->minorGCCount();
+  TimeStamp currentTime = TimeStamp::Now();
+  JSRuntime* runtime = gc->rt;
+
+  if (gc->nursery().lastCollectionEndTime()) {
+    runtime->metrics().GC_TIME_BETWEEN_MINOR_MS(
+        TimeBetween(gc->nursery().lastCollectionEndTime(), currentTime));
+  }
 }
 
 void Statistics::endNurseryCollection() { tenuredAllocsSinceMinorGC = 0; }
@@ -1247,8 +1229,6 @@ void Statistics::beginSlice(const ZoneGCStats& zoneStats, JS::GCOptions options,
     }
     (*sliceCallback)(cx, JS::GC_SLICE_BEGIN, desc);
   }
-
-  log("begin slice");
 }
 
 void Statistics::endSlice() {
@@ -1260,8 +1240,6 @@ void Statistics::endSlice() {
     slice.end = TimeStamp::Now();
     slice.endFaults = GetPageFaultCount();
     slice.finalState = gc->state();
-
-    log("end slice");
 
     sendSliceTelemetry(slice);
 
@@ -1354,28 +1332,18 @@ void Statistics::sendSliceTelemetry(const SliceData& slice) {
       // Record the longest phase in any long slice.
       if (wasLongSlice) {
         PhaseKind longest = LongestPhaseSelfTimeInMajorGC(slice.phaseTimes);
-        reportLongestPhaseInMajorGC(
-            longest,
-            [runtime](auto sample) {
-              runtime->metrics().GC_SLOW_PHASE(sample);
-            },
-            [runtime](auto sample) {
-              runtime->metrics().GC_GLEAN_SLOW_PHASE(sample);
-            });
+        reportLongestPhaseInMajorGC(longest, [runtime](auto sample) {
+          runtime->metrics().GC_SLOW_PHASE(sample);
+        });
 
         // If the longest phase was waiting for parallel tasks then record the
         // longest task.
         if (longest == PhaseKind::JOIN_PARALLEL_TASKS) {
           PhaseKind longestParallel =
               FindLongestPhaseKind(slice.maxParallelTimes);
-          reportLongestPhaseInMajorGC(
-              longestParallel,
-              [runtime](auto sample) {
-                runtime->metrics().GC_SLOW_TASK(sample);
-              },
-              [runtime](auto sample) {
-                runtime->metrics().GC_GLEAN_SLOW_TASK(sample);
-              });
+          reportLongestPhaseInMajorGC(longestParallel, [runtime](auto sample) {
+            runtime->metrics().GC_SLOW_TASK(sample);
+          });
         }
       }
     }
@@ -1385,13 +1353,10 @@ void Statistics::sendSliceTelemetry(const SliceData& slice) {
   }
 }
 
-template <typename LegacyFn, typename GleanFn>
+template <typename GleanFn>
 void Statistics::reportLongestPhaseInMajorGC(PhaseKind longest,
-                                             LegacyFn legacyReportFn,
                                              GleanFn gleanReportFn) {
   if (longest != PhaseKind::NONE) {
-    uint8_t bucket = phaseKinds[longest].telemetryBucket;
-    legacyReportFn(bucket);
     gleanReportFn(static_cast<uint32_t>(longest));
   }
 }
@@ -1493,7 +1458,6 @@ void Statistics::recordPhaseBegin(Phase phase) {
 
   phaseStack.infallibleAppend(phase);
   phaseStartTimes[phase] = now;
-  log("begin: %s", phases[phase].path);
 }
 
 void Statistics::recordPhaseEnd(Phase phase) {
@@ -1549,7 +1513,6 @@ void Statistics::recordPhaseEnd(Phase phase) {
 
 #ifdef DEBUG
   phaseEndTimes[phase] = now;
-  log("end: %s", phases[phase].path);
 #endif
 }
 
@@ -1572,7 +1535,7 @@ void Statistics::recordParallelPhase(PhaseKind phaseKind,
                                      TimeDuration duration) {
   MOZ_ASSERT(CurrentThreadCanAccessRuntime(gc->rt));
 
-  if (aborted) {
+  if (slices_.empty()) {
     return;
   }
 
@@ -1842,8 +1805,12 @@ const char* Statistics::formatBudget(const SliceData& slice) {
 void Statistics::printProfileTimes(const ProfileDurations& times,
                                    Sprinter& sprinter) {
   for (auto time : times) {
-    int64_t millis = int64_t(time.ToMilliseconds());
-    sprinter.printf(" %6" PRIi64, millis);
+    double millis = time.ToMilliseconds();
+    if (millis < 0.001 || millis >= 1.0) {
+      sprinter.printf(" %6ld", std::lround(millis));
+    } else {
+      sprinter.printf(" %6.3f", millis);
+    }
   }
 
   sprinter.put("\n");

@@ -7,9 +7,9 @@
 #ifndef DOM_SVG_SVGLENGTH_H_
 #define DOM_SVG_SVGLENGTH_H_
 
-#include "nsDebug.h"
 #include "mozilla/dom/SVGAnimatedLength.h"
 #include "mozilla/dom/SVGLengthBinding.h"
+#include "nsDebug.h"
 
 enum nsCSSUnit : uint32_t;
 
@@ -135,6 +135,10 @@ class SVGLength {
   static float GetPixelsPerUnit(const dom::UserSpaceMetrics& aMetrics,
                                 uint8_t aUnitType, uint8_t aAxis,
                                 bool aApplyZoom);
+
+  static float GetPixelsPerCSSUnit(const dom::UserSpaceMetrics& aMetrics,
+                                   nsCSSUnit aCSSUnit, uint8_t aAxis,
+                                   bool aApplyZoom);
 
  private:
   float mValue;

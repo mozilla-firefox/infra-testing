@@ -25,8 +25,11 @@ experimental_api!(SSL_SecretCallback(
 ));
 
 #[derive(Clone, Copy, Debug, FromRepr)]
-#[cfg_attr(windows, repr(i32))] // Windows has to be different, of course.
-#[cfg_attr(not(windows), repr(u32))]
+// Use i32 for Windows MSVC, unless it is MinGW (see
+// https://bugzilla.mozilla.org/show_bug.cgi?id=1960482). All other platforms
+// use u32.
+#[cfg_attr(all(windows, not(target_env = "gnu")), repr(i32))]
+#[cfg_attr(not(all(windows, not(target_env = "gnu"))), repr(u32))]
 pub enum SecretDirection {
     Read = SSLSecretDirection::ssl_secret_read,
     Write = SSLSecretDirection::ssl_secret_write,
@@ -47,6 +50,10 @@ impl DirectionalSecrets {
     fn put(&mut self, epoch: Epoch, key: SymKey) {
         debug_assert!(epoch != Epoch::Initial);
         self.secrets[epoch] = key;
+    }
+
+    pub fn has(&self, epoch: Epoch) -> bool {
+        !self.secrets[epoch].is_null()
     }
 
     pub fn take(&mut self, epoch: Epoch) -> Option<SymKey> {
@@ -111,6 +118,10 @@ impl SecretHolder {
     pub fn register(&mut self, fd: *mut PRFileDesc) -> Res<()> {
         let p = as_c_void(&mut self.secrets);
         unsafe { SSL_SecretCallback(fd, Some(Secrets::secret_available), p) }
+    }
+
+    pub fn has(&self, epoch: Epoch) -> bool {
+        self.secrets.r.has(epoch)
     }
 
     pub fn take_read(&mut self, epoch: Epoch) -> Option<SymKey> {

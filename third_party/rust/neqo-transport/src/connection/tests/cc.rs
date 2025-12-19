@@ -6,7 +6,7 @@
 
 use std::time::Duration;
 
-use neqo_common::{qdebug, qinfo, Datagram, IpTosEcn};
+use neqo_common::{qdebug, qinfo, Datagram, Ecn};
 
 use super::{
     super::Output, ack_bytes, assert_full_cwnd, connect_rtt_idle, cwnd, cwnd_avail, cwnd_packets,
@@ -15,7 +15,7 @@ use super::{
 };
 use crate::{
     connection::tests::{connect_with_rtt, new_client, new_server, now},
-    packet::PacketNumber,
+    packet,
     recovery::{ACK_ONLY_SIZE_LIMIT, PACKET_THRESHOLD},
     sender::PACING_BURST_SIZE,
     stream_id::StreamType,
@@ -58,7 +58,9 @@ enum CongestionSignal {
 }
 
 fn cc_slow_start_to_cong_avoidance_recovery_period(congestion_signal: CongestionSignal) {
-    let mut client = default_client();
+    // This test needs to calculate largest_acked, which is difficult if packet number
+    // randomization is enabled.
+    let mut client = new_client(ConnectionParameters::default().randomize_first_pn(false));
     let mut server = default_server();
     let now = connect_rtt_idle(&mut client, &mut server, DEFAULT_RTT);
 
@@ -73,7 +75,7 @@ fn cc_slow_start_to_cong_avoidance_recovery_period(congestion_signal: Congestion
     // We have already sent packets in `connect_rtt_idle`,
     // so include a fudge factor.
     let flight1_largest =
-        PacketNumber::try_from(c_tx_dgrams.len() + CLIENT_HANDSHAKE_1RTT_PACKETS).unwrap();
+        packet::Number::try_from(c_tx_dgrams.len() + CLIENT_HANDSHAKE_1RTT_PACKETS).unwrap();
 
     // Server: Receive and generate ack
     now += DEFAULT_RTT / 2;
@@ -105,7 +107,7 @@ fn cc_slow_start_to_cong_avoidance_recovery_period(congestion_signal: Congestion
             c_tx_dgrams.remove(0);
         }
         CongestionSignal::EcnCe => {
-            c_tx_dgrams.last_mut().unwrap().set_tos(IpTosEcn::Ce.into());
+            c_tx_dgrams.last_mut().unwrap().set_tos(Ecn::Ce.into());
         }
     }
     let s_ack = ack_bytes(&mut server, stream_id, c_tx_dgrams, now);
@@ -259,7 +261,11 @@ fn cc_cong_avoidance_recovery_period_to_cong_avoidance(cc_algorithm: CongestionC
         client.process_input(s_ack, now);
     }
 
-    assert!(cwnd_before_loss < cwnd(&client));
+    assert!(
+        cwnd_before_loss < cwnd(&client),
+        "cwnd_before_loss = {cwnd_before_loss} cwnd(&client) = {}",
+        cwnd(&client)
+    );
 }
 
 #[test]

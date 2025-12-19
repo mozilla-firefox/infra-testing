@@ -15,52 +15,50 @@ const MAX_SUGGESTIONS = 15;
 /**
  * Converts any input field into a document search box.
  *
- * @param {InspectorPanel} inspector
- *        The InspectorPanel to access the inspector commands for
- *        search and document traversal.
- * @param {DOMNode} input
- *        The input element to which the panel will be attached and from where
- *        search input will be taken.
- * @param {DOMNode} clearBtn
- *        The clear button in the input field that will clear the input value.
- * @param {DOMNode} prevBtn
- *        The prev button in the search label that will move
- *        selection to previous match.
- * @param {DOMNode} nextBtn
- *        The next button in the search label that will move
- *        selection to next match.
- *
  * Emits the following events:
  * - search-cleared: when the search box is emptied
  * - search-result: when a search is made and a result is selected
  */
-function InspectorSearch(inspector, input, clearBtn, prevBtn, nextBtn) {
-  this.inspector = inspector;
-  this.searchBox = input;
-  this.searchClearButton = clearBtn;
-  this.searchPrevButton = prevBtn;
-  this.searchNextButton = nextBtn;
-  this._lastSearched = null;
+class InspectorSearch {
+  /**
+   * @param {InspectorPanel} inspector
+   *        The InspectorPanel to access the inspector commands for
+   *        search and document traversal.
+   * @param {HTMLElement} input
+   *        The input element to which the panel will be attached and from where
+   *        search input will be taken.
+   * @param {HTMLElement} clearBtn
+   *        The clear button in the input field that will clear the input value.
+   * @param {HTMLElement} prevBtn
+   *        The prev button in the search label that will move
+   *        selection to previous match.
+   * @param {HTMLElement} nextBtn
+   *        The next button in the search label that will move
+   *        selection to next match.
+   */
+  constructor(inspector, input, clearBtn, prevBtn, nextBtn) {
+    this.inspector = inspector;
+    this.searchBox = input;
+    this.searchClearButton = clearBtn;
+    this.searchPrevButton = prevBtn;
+    this.searchNextButton = nextBtn;
+    this._lastSearched = null;
 
-  this._onKeyDown = this._onKeyDown.bind(this);
-  this._onInput = this._onInput.bind(this);
-  this.findPrev = this.findPrev.bind(this);
-  this.findNext = this.findNext.bind(this);
-  this._onClearSearch = this._onClearSearch.bind(this);
+    this._onKeyDown = this._onKeyDown.bind(this);
+    this._onInput = this._onInput.bind(this);
+    this.findPrev = this.findPrev.bind(this);
+    this.findNext = this.findNext.bind(this);
+    this._onClearSearch = this._onClearSearch.bind(this);
 
-  this.searchBox.addEventListener("keydown", this._onKeyDown, true);
-  this.searchBox.addEventListener("input", this._onInput, true);
-  this.searchPrevButton.addEventListener("click", this.findPrev, true);
-  this.searchNextButton.addEventListener("click", this.findNext, true);
-  this.searchClearButton.addEventListener("click", this._onClearSearch);
+    this.searchBox.addEventListener("keydown", this._onKeyDown, true);
+    this.searchBox.addEventListener("input", this._onInput, true);
+    this.searchPrevButton.addEventListener("click", this.findPrev, true);
+    this.searchNextButton.addEventListener("click", this.findNext, true);
+    this.searchClearButton.addEventListener("click", this._onClearSearch);
 
-  this.autocompleter = new SelectorAutocompleter(inspector, input);
-  EventEmitter.decorate(this);
-}
-
-exports.InspectorSearch = InspectorSearch;
-
-InspectorSearch.prototype = {
+    this.autocompleter = new SelectorAutocompleter(inspector, input);
+    EventEmitter.decorate(this);
+  }
   destroy() {
     this.searchBox.removeEventListener("keydown", this._onKeyDown, true);
     this.searchBox.removeEventListener("input", this._onInput, true);
@@ -72,11 +70,11 @@ InspectorSearch.prototype = {
     this.searchNextButton = null;
     this.searchClearButton = null;
     this.autocompleter.destroy();
-  },
+  }
 
   _onSearch(reverse = false) {
     this.doFullTextSearch(this.searchBox.value, reverse).catch(console.error);
-  },
+  }
 
   async doFullTextSearch(query, reverse) {
     const lastSearched = this._lastSearched;
@@ -107,6 +105,7 @@ InspectorSearch.prototype = {
     if (res) {
       this.inspector.selection.setNodeFront(res.node, {
         reason: "inspectorsearch",
+        searchQuery: query,
       });
       searchContainer.classList.remove("devtools-searchbox-no-match");
       res.query = query;
@@ -115,7 +114,7 @@ InspectorSearch.prototype = {
       searchContainer.classList.add("devtools-searchbox-no-match");
       this.emit("search-result");
     }
-  },
+  }
 
   _onInput() {
     if (this.searchBox.value.length === 0) {
@@ -124,7 +123,7 @@ InspectorSearch.prototype = {
     } else {
       this.searchClearButton.hidden = false;
     }
-  },
+  }
 
   _onKeyDown(event) {
     if (event.keyCode === KeyCodes.DOM_VK_RETURN) {
@@ -137,15 +136,27 @@ InspectorSearch.prototype = {
       this._onSearch(event.shiftKey);
       event.preventDefault();
     }
-  },
+
+    // The search box is a `<input type="search">`, which would clear on pressing Escape.
+    // Prevent the clear action from happening when the autocomplete popup is visible and
+    // only hide it. The preventDefault has to be called during keydown and not keypress
+    // to avoid the input clearance.
+    if (
+      event.keyCode === KeyCodes.DOM_VK_ESCAPE &&
+      this.autocompleter.searchPopup?.isOpen
+    ) {
+      event.preventDefault();
+      this.autocompleter.hidePopup();
+    }
+  }
 
   findNext() {
     this._onSearch();
-  },
+  }
 
   findPrev() {
     this._onSearch(true);
-  },
+  }
 
   _onClearSearch() {
     this.searchBox.parentNode.classList.remove("devtools-searchbox-no-match");
@@ -153,8 +164,10 @@ InspectorSearch.prototype = {
     this.searchBox.focus();
     this.searchClearButton.hidden = true;
     this.emit("search-cleared");
-  },
-};
+  }
+}
+
+exports.InspectorSearch = InspectorSearch;
 
 /**
  * Converts any input box on a page to a CSS selector search and suggestion box.
@@ -162,16 +175,16 @@ InspectorSearch.prototype = {
  * Emits 'processing-done' event when it is done processing the current
  * keypress, search request or selection from the list, whether that led to a
  * search or not.
- *
- * @constructor
- * @param InspectorPanel inspector
- *        The InspectorPanel to access the inspector commands for
- *        search and document traversal.
- * @param nsiInputElement inputNode
- *        The input element to which the panel will be attached and from where
- *        search input will be taken.
  */
 class SelectorAutocompleter extends EventEmitter {
+  /**
+   * @param {InspectorPanel} inspector
+   *        The InspectorPanel to access the inspector commands for
+   *        search and document traversal.
+   * @param {HTMLElement} inputNode
+   *        The input element to which the panel will be attached and from where
+   *        search input will be taken.
+   */
   constructor(inspector, inputNode) {
     super();
 
@@ -190,7 +203,7 @@ class SelectorAutocompleter extends EventEmitter {
     };
 
     // The popup will be attached to the toolbox document.
-    this.searchPopup = new AutocompletePopup(inspector._toolbox.doc, options);
+    this.searchPopup = new AutocompletePopup(inspector.toolbox.doc, options);
 
     this.searchBox.addEventListener("input", this.showSuggestions, true);
     this.searchBox.addEventListener("keypress", this.#onSearchKeypress, true);
@@ -202,6 +215,11 @@ class SelectorAutocompleter extends EventEmitter {
     ID: "id",
     TAG: "tag",
     ATTRIBUTE: "attribute",
+    // This is for pseudo classes (e.g. `:active`, `:not()`). We keep it as "pseudo" as
+    // the server handles both pseudo elements and pseudo classes under the same type
+    PSEUDO_CLASS: "pseudo",
+    // This is for pseudo element (e.g. `::selection`)
+    PSEUDO_ELEMENT: "pseudo-element",
   };
 
   // The current state of the query.
@@ -263,6 +281,10 @@ class SelectorAutocompleter extends EventEmitter {
             this.#state = this.States.ID;
           } else if (lastChar === "[") {
             this.#state = this.States.ATTRIBUTE;
+          } else if (lastChar === ":") {
+            this.#state = this.States.PSEUDO_CLASS;
+          } else if (lastChar === ")") {
+            this.#state = null;
           } else {
             this.#state = this.States.TAG;
           }
@@ -278,6 +300,10 @@ class SelectorAutocompleter extends EventEmitter {
               this.#state = this.States.ID;
             } else if (lastChar === "[") {
               this.#state = this.States.ATTRIBUTE;
+            } else if (lastChar === ":") {
+              this.#state = this.States.PSEUDO_CLASS;
+            } else if (lastChar === ")") {
+              this.#state = null;
             } else {
               this.#state = this.States.CLASS;
             }
@@ -294,6 +320,10 @@ class SelectorAutocompleter extends EventEmitter {
               this.#state = this.States.CLASS;
             } else if (lastChar === "[") {
               this.#state = this.States.ATTRIBUTE;
+            } else if (lastChar === ":") {
+              this.#state = this.States.PSEUDO_CLASS;
+            } else if (lastChar === ")") {
+              this.#state = null;
             } else {
               this.#state = this.States.ID;
             }
@@ -309,9 +339,32 @@ class SelectorAutocompleter extends EventEmitter {
               this.#state = this.States.CLASS;
             } else if (lastChar === "#") {
               this.#state = this.States.ID;
+            } else if (lastChar === ":") {
+              this.#state = this.States.PSEUDO_CLASS;
+            } else if (lastChar === ")") {
+              this.#state = null;
             } else {
               this.#state = this.States.ATTRIBUTE;
             }
+          }
+          break;
+
+        case this.States.PSEUDO_CLASS:
+          if (lastChar === ":" && secondLastChar === ":") {
+            // We don't support searching for pseudo elements, so bail out when we
+            // see `::`
+            this.#state = this.States.PSEUDO_ELEMENT;
+            return this.#state;
+          }
+
+          if (lastChar === "(") {
+            this.#state = null;
+          } else if (lastChar === ".") {
+            this.#state = this.States.CLASS;
+          } else if (lastChar === "#") {
+            this.#state = this.States.ID;
+          } else {
+            this.#state = this.States.PSEUDO_CLASS;
           }
           break;
       }
@@ -406,16 +459,20 @@ class SelectorAutocompleter extends EventEmitter {
   /**
    * Populates the suggestions list and show the suggestion popup.
    *
+   * @param {Array} suggestions: List of suggestions
+   * @param {string | null} popupState: One of SelectorAutocompleter.States
    * @return {Promise} promise that will resolve when the autocomplete popup is fully
    * displayed or hidden.
    */
-  #showPopup(list, popupState) {
+  #showPopup(suggestions, popupState) {
     let total = 0;
     const query = this.searchBox.value;
     const items = [];
 
-    for (let [value, , state] of list) {
-      if (query.match(/[\s>+~]$/)) {
+    for (let [value, state] of suggestions) {
+      if (popupState === this.States.PSEUDO_CLASS) {
+        value = query.substring(0, query.lastIndexOf(":")) + value;
+      } else if (query.match(/[\s>+~]$/)) {
         // for cases like 'div ', 'div >', 'div+' or 'div~'
         value = query + value;
       } else if (query.match(/[\s>+~][\.#a-zA-Z][^\s>+~\.#\[]*$/)) {
@@ -485,12 +542,19 @@ class SelectorAutocompleter extends EventEmitter {
     const originalQuery = this.searchBox.value;
 
     const state = this.state;
-    let firstPart = "";
+    let completing = "";
 
-    if (query.endsWith("*") || state === this.States.ATTRIBUTE) {
-      // Hide the popup if the query ends with * (because we don't want to
-      // suggest all nodes) or if it is an attribute selector (because
-      // it would give a lot of useless results).
+    if (
+      // Hide the popup if:
+      // - the query is empty
+      !query ||
+      // - the query ends with * (because we don't want to suggest all nodes)
+      query.endsWith("*") ||
+      // - if it is an attribute selector (because it would give a lot of useless results).
+      state === this.States.ATTRIBUTE ||
+      // - if it is a pseudo element selector (we don't support it, see Bug 1097991)
+      state === this.States.PSEUDO_ELEMENT
+    ) {
       this.hidePopup();
       this.emitForTests("processing-done", { query: originalQuery });
       return;
@@ -505,16 +569,20 @@ class SelectorAutocompleter extends EventEmitter {
       // - 'div.foo ~ s' returns 's'
       // - 'div.foo x-el_1' returns 'x-el_1'
       const matches = query.match(/[\s>+~]?(?<tag>[a-zA-Z0-9_-]*)$/);
-      firstPart = matches.groups.tag;
-      query = query.slice(0, query.length - firstPart.length);
+      completing = matches.groups.tag;
+      query = query.slice(0, query.length - completing.length);
     } else if (state === this.States.CLASS) {
       // gets the class that is being completed. For ex. '.foo.b' returns 'b'
-      firstPart = query.match(/\.([^\.]*)$/)[1];
-      query = query.slice(0, query.length - firstPart.length - 1);
+      completing = query.match(/\.([^\.]*)$/)[1];
+      query = query.slice(0, query.length - completing.length - 1);
     } else if (state === this.States.ID) {
       // gets the id that is being completed. For ex. '.foo#b' returns 'b'
-      firstPart = query.match(/#([^#]*)$/)[1];
-      query = query.slice(0, query.length - firstPart.length - 1);
+      completing = query.match(/#([^#]*)$/)[1];
+      query = query.slice(0, query.length - completing.length - 1);
+    } else if (state === this.States.PSEUDO_CLASS) {
+      // The getSuggestionsForQuery expects a pseudo element without the : prefix
+      completing = query.substring(query.lastIndexOf(":") + 1);
+      query = "";
     }
     // TODO: implement some caching so that over the wire request is not made
     // everytime.
@@ -525,19 +593,25 @@ class SelectorAutocompleter extends EventEmitter {
     let suggestions =
       await this.inspector.commands.inspectorCommand.getSuggestionsForQuery(
         query,
-        firstPart,
+        completing,
         state
       );
 
     if (state === this.States.CLASS) {
-      firstPart = "." + firstPart;
+      completing = "." + completing;
     } else if (state === this.States.ID) {
-      firstPart = "#" + firstPart;
+      completing = "#" + completing;
+    } else if (state === this.States.PSEUDO_CLASS) {
+      completing = ":" + completing;
+      // Remove pseudo-element suggestions, since the search does not work with them (Bug 1097991)
+      suggestions = suggestions.filter(
+        suggestion => !suggestion[0].startsWith("::")
+      );
     }
 
     // If there is a single tag match and it's what the user typed, then
     // don't need to show a popup.
-    if (suggestions.length === 1 && suggestions[0][0] === firstPart) {
+    if (suggestions.length === 1 && suggestions[0][0] === completing) {
       suggestions = [];
     }
 

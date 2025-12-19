@@ -8,11 +8,18 @@
 newtab-page-title = زبانهٔ جدید
 newtab-settings-button =
     .title = صفحهٔ زبانهٔ جدید را سفارشی کنید
+newtab-personalize-settings-icon-label =
+    .title = شخصی‌سازی زبانه جدید
+    .aria-label = تنظیمات
+newtab-settings-dialog-label =
+    .aria-label = تنظیمات
 newtab-personalize-icon-label =
     .title = شحصی‌سازی زبانهٔ جدید
     .aria-label = شحصی‌سازی زبانهٔ جدید
 newtab-personalize-dialog-label =
     .aria-label = شخصی‌سازی
+newtab-logo-and-wordmark =
+    .aria-label = { -brand-full-name }
 
 ## Search box component.
 
@@ -45,13 +52,17 @@ newtab-topsites-add-search-engine-header = افزودن موتور جستجو
 newtab-topsites-add-shortcut-header = میانبر جدید
 newtab-topsites-edit-topsites-header = ویرایش سایت برتر
 newtab-topsites-edit-shortcut-header = ویرایش میانبر
+newtab-topsites-add-shortcut-label = افزودن میان‌بر
+newtab-topsites-add-shortcut-title =
+    .title = افزودن میان‌بر
+    .aria-label = افزودن میان‌بر
 newtab-topsites-title-label = عنوان
 newtab-topsites-title-input =
     .placeholder = عنوان را وارد کنید
-newtab-topsites-url-label = نشانی
+newtab-topsites-url-label = نشانی اینترنتی
 newtab-topsites-url-input =
     .placeholder = یک نشانی بنویسید یا بچسبانید
-newtab-topsites-url-validation = نشانی معتبر الزامی است
+newtab-topsites-url-validation = نشانی اینترنتی معتبر الزامی است
 newtab-topsites-image-url-label = نشانیِ سفارشی عکس
 newtab-topsites-use-image-link = استفاده از یک عکس سفارشی…
 newtab-topsites-image-validation = بارگیری عکس شکست خورد. آدرس دیگری امتحان کنید.
@@ -92,8 +103,8 @@ newtab-menu-content-tooltip =
     .aria-label = بازکردن فهرست زمینه برای { $title }
 # Tooltip on an empty topsite box to open the New Top Site dialog.
 newtab-menu-topsites-placeholder-tooltip =
-    .title = ویرایش این سایت
-    .aria-label = ویرایش این سایت
+    .title = ویرایش این وبگاه
+    .aria-label = ویرایش این وبگاه
 
 ## Context Menu: These strings are displayed in a context menu and are meant as a call to action for a given page.
 
@@ -108,9 +119,6 @@ newtab-menu-save-to-pocket = ذخیره‌سازی در { -pocket-brand-name }
 newtab-menu-delete-pocket = حذف از { -pocket-brand-name }
 newtab-menu-archive-pocket = آرشیو در { -pocket-brand-name }
 newtab-menu-show-privacy-info = حامیان ما و حریم خصوصی شما
-
-## Context menu options for sponsored stories and new ad formats on New Tab.
-
 
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
@@ -232,9 +240,6 @@ newtab-pocket-pocket-firefox-family = { -pocket-brand-name } بخشی از خا�
 newtab-pocket-save = ذخیره
 newtab-pocket-saved = ذخیره شد
 
-## Thumbs up and down buttons that shows over a newtab stories card thumbnail on hover.
-
-
 ## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
 
 newtab-pocket-onboarding-discover = بهترین‌های وب را کشف کنید
@@ -266,9 +271,6 @@ newtab-custom-pocket-sponsored = محتواهایی از حامیان مالی
 newtab-custom-pocket-show-recent-saves = نمایش ذخیره‌های اخیر
 newtab-custom-recent-title = فعالیت‌های اخیر
 newtab-custom-recent-subtitle = منتخبی از سایت‌ها و مطالب اخیر
-newtab-custom-recent-toggle =
-    .label = فعالیت‌های اخیر
-    .description = منتخبی از سایت‌ها و مطالب اخیر
 newtab-custom-weather-toggle =
     .label = آب و هوا
     .description = پیش‌بینی آب و هوای امروز به طور خلاصه
@@ -302,15 +304,9 @@ newtab-wallpaper-dark-purple = بنفش تیره
 newtab-wallpaper-dark-green = سبز تیره
 newtab-wallpaper-brown = قهوه‌ای
 
-## Abstract
-
-
-## Celestial
+## Firefox
 
 newtab-wallpaper-white-mountains = کوه‌های سفید
-
-## Celestial
-
 
 ## New Tab Weather
 
@@ -320,27 +316,8 @@ newtab-wallpaper-white-mountains = کوه‌های سفید
 newtab-weather-menu-weather-display-option-simple = ساده
 newtab-weather-menu-learn-more = بیشتر بدانید
 
-## Topic Labels
-
-
 ## Topic Selection Modal
 
 newtab-topic-selection-save-button = ذخیره
 newtab-topic-selection-cancel-button = انصراف
 newtab-topic-selection-button-maybe-later = شاید بعداً
-
-## Content Feed Sections
-## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
-## e.g. Following the travel section of stories.
-
-
-## Button to block/unblock listed topics
-## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
-## e.g. Blocked the politics section of stories.
-
-
-## Confirmation modal for blocking a section
-
-
-## Panel in the Customize menu section to manage followed and blocked topics
-

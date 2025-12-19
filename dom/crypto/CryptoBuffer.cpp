@@ -5,9 +5,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CryptoBuffer.h"
-#include "secitem.h"
+
 #include "mozilla/Base64.h"
+#include "mozilla/dom/BufferSourceBinding.h"
 #include "mozilla/dom/UnionTypes.h"
+#include "secitem.h"
 
 namespace mozilla::dom {
 
@@ -47,13 +49,13 @@ uint8_t* CryptoBuffer::Assign(const ArrayBufferView& aData) {
   return aData.AppendDataTo(*this) ? Elements() : nullptr;
 }
 
-uint8_t* CryptoBuffer::Assign(const ArrayBufferViewOrArrayBuffer& aData) {
+uint8_t* CryptoBuffer::Assign(const BufferSource& aData) {
   Clear();
 
   return AppendTypedArrayDataTo(aData, *this) ? Elements() : nullptr;
 }
 
-uint8_t* CryptoBuffer::Assign(const OwningArrayBufferViewOrArrayBuffer& aData) {
+uint8_t* CryptoBuffer::Assign(const OwningBufferSource& aData) {
   Clear();
 
   return AppendTypedArrayDataTo(aData, *this) ? Elements() : nullptr;

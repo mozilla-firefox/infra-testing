@@ -102,7 +102,7 @@ Getting the source
 ^^^^^^^^^^^^^^^^^^
 
 Using that or any later revision, all you need to do is to :ref:`get yourself
-a clone of mozilla-central <Mercurial overview>`.
+a clone of mozilla-central <Firefox Contributors' Quick Reference>`.
 
 Adjusting the build configuration
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -197,7 +197,6 @@ subdirectory with that name.
    elif [ -d $1 ] ; then
         echo "directory $1 already exists"
    else
-        autoconf2.13
         mkdir $1
         cd $1
         CC="/path/to/mozbuild/clang" \

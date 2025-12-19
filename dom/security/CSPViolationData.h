@@ -7,14 +7,14 @@
 #ifndef DOM_SECURITY_CSPVIOLATION_H_
 #define DOM_SECURITY_CSPVIOLATION_H_
 
+#include <cstdint>
+
+#include "mozilla/RefPtr.h"
+#include "mozilla/Variant.h"
 #include "nsCOMPtr.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsIURI.h"
 #include "nsString.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/Variant.h"
-
-#include <cstdint>
 
 class nsIURI;
 
@@ -40,11 +40,15 @@ struct CSPViolationData {
   // line-numbers are expected to be 1-origin.
   //
   // @param aSample Will be truncated if necessary.
+  // @param aHashSHA256 The source code sha256 hash (encoded as base64) for
+  // inline scripts and styles.
+  //                    https://w3c.github.io/webappsec-csp/#grammardef-hash-source
   CSPViolationData(uint32_t aViolatedPolicyIndex, Resource&& aResource,
                    const CSPDirective aEffectiveDirective,
                    const nsACString& aSourceFile, uint32_t aLineNumber,
                    uint32_t aColumnNumber, Element* aElement,
-                   const nsAString& aSample);
+                   const nsAString& aSample,
+                   const nsACString& aHashSHA256 = ""_ns);
 
   ~CSPViolationData();
 
@@ -52,15 +56,16 @@ struct CSPViolationData {
       const nsAString& aSample);
   BlockedContentSource BlockedContentSourceOrUnknown() const;
 
-  const uint32_t mViolatedPolicyIndex;
-  const Resource mResource;
-  const CSPDirective mEffectiveDirective;
+  uint32_t mViolatedPolicyIndex;
+  Resource mResource;
+  CSPDirective mEffectiveDirective;
   // String representation of the URL. The empty string represents a null-URL.
-  const nsCString mSourceFile;
-  const uint32_t mLineNumber;
-  const uint32_t mColumnNumber;
+  nsCString mSourceFile;
+  uint32_t mLineNumber;
+  uint32_t mColumnNumber;
   RefPtr<Element> mElement;
-  const nsString mSample;
+  nsString mSample;
+  nsCString mHashSHA256;
 };
 }  // namespace mozilla::dom
 

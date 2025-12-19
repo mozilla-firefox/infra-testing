@@ -11,6 +11,7 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.usecases.FenixBrowserUseCases
+import org.mozilla.fenix.ext.nav
 import org.mozilla.fenix.home.HomeFragment
 import org.mozilla.fenix.home.HomeFragmentDirections
 import org.mozilla.fenix.home.recentsyncedtabs.RecentSyncedTab
@@ -77,12 +78,22 @@ class DefaultRecentSyncedTabController(
 
     override fun handleSyncedTabShowAllClicked() {
         RecentSyncedTabs.showAllSyncedTabsClicked.add()
-        navController.navigate(
-            HomeFragmentDirections.actionGlobalTabsTrayFragment(
-                page = Page.SyncedTabs,
-                accessPoint = accessPoint,
-            ),
-        )
+        if (settings.tabManagerEnhancementsEnabled) {
+            navController.nav(
+                R.id.homeFragment,
+                HomeFragmentDirections.actionGlobalTabManagementFragment(
+                    page = Page.SyncedTabs,
+                    accessPoint = accessPoint,
+                ),
+            )
+        } else {
+            navController.navigate(
+                HomeFragmentDirections.actionGlobalTabsTrayFragment(
+                    page = Page.SyncedTabs,
+                    accessPoint = accessPoint,
+                ),
+            )
+        }
     }
 
     override fun handleRecentSyncedTabRemoved(tab: RecentSyncedTab) {

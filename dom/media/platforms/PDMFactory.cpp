@@ -23,18 +23,17 @@
 #include "VideoUtils.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/RemoteDecodeUtils.h"
-#include "mozilla/RemoteDecoderManagerChild.h"
 #include "mozilla/RemoteDecoderModule.h"
+#include "mozilla/RemoteMediaManagerChild.h"
 #include "mozilla/SharedThreadPool.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/TaskQueue.h"
 #include "mozilla/gfx/gfxVars.h"
+#include "mozilla/ipc/UtilityMediaServiceParent.h"
 #include "nsIXULRuntime.h"  // for BrowserTabsRemoteAutostart
 #include "nsPrintfCString.h"
-
-#include "mozilla/ipc/UtilityAudioDecoderParent.h"
 
 #ifdef XP_WIN
 #  include "WMFDecoderModule.h"
@@ -57,9 +56,9 @@
 #ifdef MOZ_OMX
 #  include "OmxDecoderModule.h"
 #endif
-#include "FFVPXRuntimeLinker.h"
-
 #include <functional>
+
+#include "FFVPXRuntimeLinker.h"
 
 using DecodeSupport = mozilla::media::DecodeSupport;
 using DecodeSupportSet = mozilla::media::DecodeSupportSet;
@@ -74,6 +73,9 @@ namespace mozilla {
   MOZ_LOG(sPDMLog, LogLevel::Debug, ("PDMInitializer, " msg, ##__VA_ARGS__))
 
 extern already_AddRefed<PlatformDecoderModule> CreateNullDecoderModule();
+
+MOZ_RUNINIT static StaticDataMutex<StaticRefPtr<PlatformDecoderModule>>
+    sForcedPDM("Forced PDM");
 
 class PDMInitializer final {
  public:
@@ -130,8 +132,7 @@ class PDMInitializer final {
       FFVPXRuntimeLinker::Init();
     }
 #ifdef MOZ_FFMPEG
-    if (StaticPrefs::media_utility_ffmpeg_enabled() &&
-        kind == ipc::SandboxingKind::GENERIC_UTILITY) {
+    if (kind == ipc::SandboxingKind::GENERIC_UTILITY) {
       FFmpegRuntimeLinker::Init();
     }
 #endif
@@ -144,9 +145,7 @@ class PDMInitializer final {
 #ifdef XP_WIN
 #  ifdef MOZ_WMF
       if (!StaticPrefs::media_rdd_process_enabled() ||
-          !StaticPrefs::media_rdd_wmf_enabled() ||
-          !StaticPrefs::media_utility_process_enabled() ||
-          !StaticPrefs::media_utility_wmf_enabled()) {
+          !StaticPrefs::media_rdd_wmf_enabled()) {
         WMFDecoderModule::Init();
       }
 #  endif
@@ -165,7 +164,7 @@ class PDMInitializer final {
     }
 #endif  // !defined(MOZ_WIDGET_ANDROID)
 
-    RemoteDecoderManagerChild::Init();
+    RemoteMediaManagerChild::Init();
   }
 
   static void InitDefaultPDMs() {
@@ -315,7 +314,7 @@ void PDMFactory::EnsureInit() {
     // Ensure that all system variables are initialized.
     gfx::gfxVars::Initialize();
     // Prime the preferences system from the main thread.
-    Unused << BrowserTabsRemoteAutostart();
+    (void)BrowserTabsRemoteAutostart();
   };
   // There are some initialization needed to be done on the main thread.
   if (!gfx::gfxVars::IsInitialized()) {
@@ -485,7 +484,20 @@ DecodeSupportSet PDMFactory::Supports(
   return current->Supports(aParams, aDiagnostics);
 }
 
+/* static */
+void PDMFactory::ForcePDM(PlatformDecoderModule* aPDM) {
+  auto forced = sForcedPDM.Lock();
+  *forced = aPDM;
+}
+
 void PDMFactory::CreatePDMs() {
+  {
+    auto forced = sForcedPDM.Lock();
+    if (*forced) {
+      StartupPDM(do_AddRef(*forced));
+      return;
+    }
+  }
   if (StaticPrefs::media_use_blank_decoder()) {
     StartupPDM(BlankDecoderModule::Create());
     // The Blank PDM SupportsMimeType reports true for all codecs; the creation
@@ -564,30 +576,31 @@ void PDMFactory::CreateRddPDMs() {
 #endif
   StartupPDM(AgnosticDecoderModule::Create(),
              StaticPrefs::media_prefer_non_ffvpx());
+
+  PDM_INIT_LOG("RDD PDM order:");
+  int i = 0;
+  for (const auto& pdm : mCurrentPDMs) {
+    PDM_INIT_LOG("%d: %s", i++, pdm->Name());
+  }
 }
 
 void PDMFactory::CreateUtilityPDMs() {
   const ipc::SandboxingKind aKind = GetCurrentSandboxingKind();
 #ifdef XP_WIN
   if (StaticPrefs::media_wmf_enabled() &&
-      StaticPrefs::media_utility_wmf_enabled() &&
       aKind == ipc::SandboxingKind::UTILITY_AUDIO_DECODING_WMF) {
     StartupPDM(WMFDecoderModule::Create());
   }
 #endif
 #ifdef MOZ_APPLEMEDIA
-  if (StaticPrefs::media_utility_applemedia_enabled() &&
-      aKind == ipc::SandboxingKind::UTILITY_AUDIO_DECODING_APPLE_MEDIA) {
+  if (aKind == ipc::SandboxingKind::UTILITY_AUDIO_DECODING_APPLE_MEDIA) {
     StartupPDM(AppleDecoderModule::Create());
   }
 #endif
   if (aKind == ipc::SandboxingKind::GENERIC_UTILITY) {
-    if (StaticPrefs::media_utility_ffvpx_enabled()) {
-      StartupPDM(FFVPXRuntimeLinker::CreateDecoder());
-    }
+    StartupPDM(FFVPXRuntimeLinker::CreateDecoder());
 #ifdef MOZ_FFMPEG
     if (StaticPrefs::media_ffmpeg_enabled() &&
-        StaticPrefs::media_utility_ffmpeg_enabled() &&
         !StartupPDM(FFmpegRuntimeLinker::CreateDecoder())) {
       mFailureFlags += GetFailureFlagBasedOnFFmpegStatus(
           FFmpegRuntimeLinker::LinkStatusCode());
@@ -609,34 +622,40 @@ void PDMFactory::CreateUtilityPDMs() {
     }
   }
 #endif
+
+  PDM_INIT_LOG("Utility PDM order:");
+  int i = 0;
+  for (const auto& pdm : mCurrentPDMs) {
+    PDM_INIT_LOG("%d: %s", i++, pdm->Name());
+  }
 }
 
 void PDMFactory::CreateContentPDMs() {
   if (StaticPrefs::media_gpu_process_decoder()) {
-    StartupPDM(RemoteDecoderModule::Create(RemoteDecodeIn::GpuProcess));
+    StartupPDM(RemoteDecoderModule::Create(RemoteMediaIn::GpuProcess));
   }
 
   if (StaticPrefs::media_rdd_process_enabled()) {
-    StartupPDM(RemoteDecoderModule::Create(RemoteDecodeIn::RddProcess));
+    StartupPDM(RemoteDecoderModule::Create(RemoteMediaIn::RddProcess));
   }
 
   if (StaticPrefs::media_utility_process_enabled()) {
 #ifdef MOZ_APPLEMEDIA
     StartupPDM(
-        RemoteDecoderModule::Create(RemoteDecodeIn::UtilityProcess_AppleMedia));
+        RemoteDecoderModule::Create(RemoteMediaIn::UtilityProcess_AppleMedia));
 #endif
 #ifdef XP_WIN
-    StartupPDM(RemoteDecoderModule::Create(RemoteDecodeIn::UtilityProcess_WMF));
+    StartupPDM(RemoteDecoderModule::Create(RemoteMediaIn::UtilityProcess_WMF));
 #endif
     // WMF and AppleMedia should be created before Generic because the order
     // affects what decoder module would be chose first.
     StartupPDM(
-        RemoteDecoderModule::Create(RemoteDecodeIn::UtilityProcess_Generic));
+        RemoteDecoderModule::Create(RemoteMediaIn::UtilityProcess_Generic));
   }
 #ifdef MOZ_WMF_MEDIA_ENGINE
   if (StaticPrefs::media_wmf_media_engine_enabled()) {
     StartupPDM(RemoteDecoderModule::Create(
-        RemoteDecodeIn::UtilityProcess_MFMediaEngineCDM));
+        RemoteMediaIn::UtilityProcess_MFMediaEngineCDM));
   }
 #endif
 
@@ -683,7 +702,7 @@ void PDMFactory::CreateContentPDMs() {
 
   // Android still needs this, the actual decoder is remoted on java side
 #ifdef MOZ_WIDGET_ANDROID
-  if (StaticPrefs::media_android_media_codec_enabled()) {
+  if (AndroidDecoderModule::IsJavaDecoderModuleAllowed()) {
     StartupPDM(AndroidDecoderModule::Create(),
                StaticPrefs::media_android_media_codec_preferred());
   }
@@ -693,6 +712,11 @@ void PDMFactory::CreateContentPDMs() {
       !StartupPDM(GMPDecoderModule::Create(),
                   StaticPrefs::media_gmp_decoder_preferred())) {
     mFailureFlags += DecoderDoctorDiagnostics::Flags::GMPPDMFailedToStartup;
+  }
+  PDM_INIT_LOG("Content PDM order:");
+  int i = 0;
+  for (const auto& pdm : mCurrentPDMs) {
+    PDM_INIT_LOG("%d: %s", i++, pdm->Name());
   }
 }
 
@@ -724,7 +748,7 @@ void PDMFactory::CreateDefaultPDMs() {
   }
 #endif
 #ifdef MOZ_WIDGET_ANDROID
-  if (StaticPrefs::media_android_media_codec_enabled()) {
+  if (AndroidDecoderModule::IsJavaDecoderModuleAllowed()) {
     StartupPDM(AndroidDecoderModule::Create(),
                StaticPrefs::media_android_media_codec_preferred());
   }
@@ -737,6 +761,12 @@ void PDMFactory::CreateDefaultPDMs() {
       !StartupPDM(GMPDecoderModule::Create(),
                   StaticPrefs::media_gmp_decoder_preferred())) {
     mFailureFlags += DecoderDoctorDiagnostics::Flags::GMPPDMFailedToStartup;
+  }
+
+  PDM_INIT_LOG("Default PDM order:");
+  int i = 0;
+  for (const auto& pdm : mCurrentPDMs) {
+    PDM_INIT_LOG("%d: %s", i++, pdm->Name());
   }
 }
 
@@ -782,7 +812,8 @@ void PDMFactory::SetCDMProxy(CDMProxy* aProxy) {
   MOZ_ASSERT(aProxy);
 
 #ifdef MOZ_WIDGET_ANDROID
-  if (IsWidevineKeySystem(aProxy->KeySystem())) {
+  if (IsWidevineKeySystem(aProxy->KeySystem()) &&
+      AndroidDecoderModule::IsJavaDecoderModuleAllowed()) {
     mEMEPDM = AndroidDecoderModule::Create(aProxy);
     return;
   }
@@ -794,7 +825,7 @@ void PDMFactory::SetCDMProxy(CDMProxy* aProxy) {
        aProxy->IsHardwareDecryptionSupported()) ||
       IsWMFClearKeySystemAndSupported(aProxy->KeySystem())) {
     mEMEPDM = RemoteDecoderModule::Create(
-        RemoteDecodeIn::UtilityProcess_MFMediaEngineCDM);
+        RemoteMediaIn::UtilityProcess_MFMediaEngineCDM);
     return;
   }
 #endif
@@ -802,7 +833,7 @@ void PDMFactory::SetCDMProxy(CDMProxy* aProxy) {
   mEMEPDM = MakeRefPtr<EMEDecoderModule>(aProxy, m);
 }
 
-StaticMutex sSupportedMutex;
+StaticMutex PDMFactory::sSupportedMutex;
 
 /* static */
 media::MediaCodecsSupported PDMFactory::Supported(bool aForceRefresh) {
@@ -824,7 +855,9 @@ media::MediaCodecsSupported PDMFactory::Supported(bool aForceRefresh) {
           cd.codec, pdm->SupportsMimeType(nsCString(cd.mimeTypeString)));
     }
 #ifdef MOZ_WIDGET_ANDROID
-    supported += AndroidDecoderModule::GetSupportedCodecs();
+    if (AndroidDecoderModule::IsJavaDecoderModuleAllowed()) {
+      supported += AndroidDecoderModule::GetSupportedCodecs();
+    }
 #endif
     return supported;
   };
@@ -840,11 +873,11 @@ media::MediaCodecsSupported PDMFactory::Supported(bool aForceRefresh) {
 /* static */
 DecodeSupportSet PDMFactory::SupportsMimeType(
     const nsACString& aMimeType, const MediaCodecsSupported& aSupported,
-    RemoteDecodeIn aLocation) {
+    RemoteMediaIn aLocation) {
   const TrackSupportSet supports =
-      RemoteDecoderManagerChild::GetTrackSupport(aLocation);
+      RemoteMediaManagerChild::GetTrackSupport(aLocation);
 
-  if (supports.contains(TrackSupport::Video)) {
+  if (supports.contains(TrackSupport::DecodeVideo)) {
     if (MP4Decoder::IsH264(aMimeType)) {
       return MCSInfo::GetDecodeSupportSet(MediaCodec::H264, aSupported);
     }
@@ -864,7 +897,7 @@ DecodeSupportSet PDMFactory::SupportsMimeType(
     }
   }
 
-  if (supports.contains(TrackSupport::Audio)) {
+  if (supports.contains(TrackSupport::DecodeAudio)) {
     if (MP4Decoder::IsAAC(aMimeType)) {
       return MCSInfo::GetDecodeSupportSet(MediaCodec::AAC, aSupported);
     }

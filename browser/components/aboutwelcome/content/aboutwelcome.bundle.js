@@ -119,6 +119,16 @@ const AboutWelcomeUtils = {
         return obj;
       }, {});
   },
+  getTileStyle(tile, validStyle) {
+    const preferredTileStyle = tile?.style;
+    const legacyTileStyle = tile?.tiles?.style ?? null;
+
+    return this.getValidStyle(
+      preferredTileStyle ?? legacyTileStyle,
+      validStyle,
+      true
+    );
+  },
 };
 
 
@@ -141,7 +151,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _MultiStageProtonScreen__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(6);
 /* harmony import */ var _LanguageSwitcher__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(7);
 /* harmony import */ var _SubmenuButton__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(12);
-/* harmony import */ var _lib_addUtmParams_mjs__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(23);
+/* harmony import */ var _lib_addUtmParams_mjs__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(28);
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -158,6 +168,7 @@ __webpack_require__.r(__webpack_exports__);
 const TRANSITION_OUT_TIME = 1000;
 const LANGUAGE_MISMATCH_SCREEN_ID = "AW_LANGUAGE_MISMATCH";
 const MultiStageAboutWelcome = props => {
+  const gateInitialPaint = props.gateInitialPaint ?? false;
   let {
     defaultScreens
   } = props;
@@ -166,6 +177,8 @@ const MultiStageAboutWelcome = props => {
   const [screens, setScreens] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(defaultScreens);
   const [index, setScreenIndex] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(props.startScreen);
   const [previousOrder, setPreviousOrder] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(props.startScreen - 1);
+  // Gate first paint until we've finished the initial filtering pass.
+  const [ready, setReady] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false);
   (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(() => {
     (async () => {
       // If we want to load index from history state, we don't want to send impression yet
@@ -184,7 +197,11 @@ const MultiStageAboutWelcome = props => {
       // Use existing screen for the filtered screen to carry over any modification
       // e.g. if AW_LANGUAGE_MISMATCH exists, use it from existing screens
       setScreens(filteredScreens.map(filtered => screens.find(s => s.id === filtered.id) ?? filtered));
-      didFilter.current = true;
+      // Mark the initial filter pass complete and allow the first paint.
+      if (!didFilter.current) {
+        didFilter.current = true;
+        setReady(true);
+      }
 
       // After completing screen filtering, trigger any unhandled campaign
       // action present in the attribution campaign data. This updates the
@@ -249,7 +266,7 @@ const MultiStageAboutWelcome = props => {
   }, [transition]);
 
   // Transition to next screen, opening about:home on last screen button CTA
-  const handleTransition = () => {
+  const handleTransition = goBack => {
     // Only handle transitioning out from a screen once.
     if (transition === "out") {
       return;
@@ -260,7 +277,10 @@ const MultiStageAboutWelcome = props => {
 
     // Actually move forwards after all transitions finish.
     setTimeout(() => {
-      if (index < screens.length - 1) {
+      if (goBack) {
+        setTransition(props.transitions ? "in" : "");
+        setScreenIndex(prevState => prevState - 1);
+      } else if (index < screens.length - 1) {
         setTransition(props.transitions ? "in" : "");
         setScreenIndex(prevState => prevState + 1);
       } else {
@@ -316,11 +336,11 @@ const MultiStageAboutWelcome = props => {
   // multi select screen.
   const [activeMultiSelects, setActiveMultiSelects] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)({});
 
-  // Save the active single select state for each screen as string value keyed
+  // Save the active single select state for each screen as an object keyed
   // by screen id. Similar to above, this allows us to remember the state of
   // each screen's single select picker when navigating back and forth between
-  // screens.
-  const [activeSingleSelects, setActiveSingleSelects] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)({});
+  // screens, and allows us to have multiple single selects on a screen.
+  const [activeSingleSelectSelections, setActiveSingleSelectSelections] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)({});
 
   // Get the active theme so the rendering code can make it selected
   // by default.
@@ -348,6 +368,12 @@ const MultiStageAboutWelcome = props => {
       setInstalledAddons(addons);
     })();
   }, [index]);
+
+  // Do not render anything until the first filtering pass completes if gating
+  // initial paint is enabled.
+  if (gateInitialPaint && !ready) {
+    return null;
+  }
   return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement((react__WEBPACK_IMPORTED_MODULE_0___default().Fragment), null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
     className: `outer-wrapper onboardingContainer proton transition-${transition}`,
     style: props.backdrop ? {
@@ -382,10 +408,18 @@ const MultiStageAboutWelcome = props => {
         };
       });
     };
-    const setActiveSingleSelect = valueOrFn => setActiveSingleSelects(prevState => ({
-      ...prevState,
-      [currentScreen.id]: typeof valueOrFn === "function" ? valueOrFn(prevState[currentScreen.id]) : valueOrFn
-    }));
+    const setActiveSingleSelectSelection = (valueOrFn, singleSelectId) => {
+      setActiveSingleSelectSelections(prevState => {
+        const currentScreenSelections = prevState[currentScreen.id] || {};
+        return {
+          ...prevState,
+          [currentScreen.id]: {
+            ...currentScreenSelections,
+            [singleSelectId]: typeof valueOrFn === "function" ? valueOrFn(prevState[currentScreen.id]) : valueOrFn
+          }
+        };
+      });
+    };
     return index === order ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(WelcomeScreen, {
       key: currentScreen.id + order,
       id: currentScreen.id,
@@ -409,8 +443,8 @@ const MultiStageAboutWelcome = props => {
       activeMultiSelect: activeMultiSelects[currentScreen.id],
       setActiveMultiSelect: setActiveMultiSelect,
       autoAdvance: currentScreen.auto_advance,
-      activeSingleSelect: activeSingleSelects[currentScreen.id],
-      setActiveSingleSelect: setActiveSingleSelect,
+      activeSingleSelectSelections: activeSingleSelectSelections[currentScreen.id],
+      setActiveSingleSelectSelection: setActiveSingleSelectSelection,
       negotiatedLanguage: negotiatedLanguage,
       langPackInstallPhase: langPackInstallPhase,
       forceHideStepsIndicator: currentScreen.force_hide_steps_indicator,
@@ -428,55 +462,135 @@ const MultiStageAboutWelcome = props => {
     }) : null;
   })));
 };
-const SecondaryCTA = props => {
-  const targetElement = props.position ? `secondary_button_${props.position}` : `secondary_button`;
-  let buttonStyling = props.content.secondary_button?.has_arrow_icon ? `secondary arrow-icon` : `secondary`;
-  const isPrimary = props.content.secondary_button?.style === "primary";
-  const isTextLink = !["split", "callout"].includes(props.content.position) && props.content.tiles?.type !== "addons-picker" && !isPrimary;
-  const isSplitButton = props.content.submenu_button?.attached_to === targetElement;
+const renderSingleSecondaryCTAButton = ({
+  content,
+  button,
+  targetElement,
+  position,
+  handleAction,
+  activeMultiSelect,
+  isArrayItem,
+  index = null
+}) => {
+  let buttonStyling = button?.has_arrow_icon ? `secondary arrow-icon` : `secondary`;
+  const isPrimary = button?.style === "primary";
+  const isTextLink = !["split", "callout"].includes(content.position) && content.tiles?.type !== "addons-picker" && !isPrimary;
+  const isSplitButton = content.submenu_button?.attached_to === targetElement;
   let className = "secondary-cta";
-  if (props.position) {
-    className += ` ${props.position}`;
+  if (position) {
+    className += ` ${position}`;
   }
   if (isSplitButton) {
     className += " split-button-container";
   }
-  const isDisabled = react__WEBPACK_IMPORTED_MODULE_0___default().useCallback(disabledValue => {
+  const computeDisabled = disabledValue => {
     if (disabledValue === "hasActiveMultiSelect") {
-      if (!props.activeMultiSelect) {
+      if (!activeMultiSelect) {
         return true;
       }
-      for (const key in props.activeMultiSelect) {
-        if (props.activeMultiSelect[key]?.length > 0) {
+      for (const key in activeMultiSelect) {
+        if (activeMultiSelect[key]?.length > 0) {
           return false;
         }
       }
       return true;
     }
     return disabledValue;
-  }, [props.activeMultiSelect]);
+  };
   if (isTextLink) {
     buttonStyling += " text-link";
   }
   if (isPrimary) {
-    buttonStyling = props.content.secondary_button?.has_arrow_icon ? `primary arrow-icon` : `primary`;
+    buttonStyling = button?.has_arrow_icon ? `primary arrow-icon` : `primary`;
   }
+
+  // We have to provide handleAction with the expected action here,
+  // since the data doesn't actually exist in JSON content
+  const shimmedHandleAction = event => {
+    if (isArrayItem && button?.action) {
+      return handleAction(event, button.action);
+    }
+    return handleAction(event);
+  };
+  let buttonId = "secondary_button";
+  buttonId += index !== null ? `_${index}` : "";
   return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    className: className
+    className: className,
+    key: targetElement
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
-    text: props.content[targetElement].text
+    text: button?.text
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", null)), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
-    text: props.content[targetElement].label
+    text: button?.label
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", {
-    id: "secondary_button",
+    id: buttonId,
     className: buttonStyling,
     value: targetElement,
-    disabled: isDisabled(props.content.secondary_button?.disabled),
-    onClick: props.handleAction
+    disabled: computeDisabled(button?.disabled),
+    onClick: shimmedHandleAction
   })), isSplitButton ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_SubmenuButton__WEBPACK_IMPORTED_MODULE_5__.SubmenuButton, {
-    content: props.content,
-    handleAction: props.handleAction
+    content: content,
+    handleAction: handleAction
   }) : null);
+};
+const SecondaryCTA = props => {
+  const {
+    content,
+    position
+  } = props;
+  const targetElement = position ? `secondary_button_${position}` : "secondary_button";
+  const buttonData = content[targetElement];
+  if (!buttonData) {
+    return null;
+  }
+  const buttons = react__WEBPACK_IMPORTED_MODULE_0___default().useMemo(() => Array.isArray(buttonData) ? buttonData : [buttonData], [buttonData]);
+  const [visibleButtons, setVisibleButtons] = react__WEBPACK_IMPORTED_MODULE_0___default().useState([]);
+  react__WEBPACK_IMPORTED_MODULE_0___default().useEffect(() => {
+    (async () => {
+      const filteredButtons = [];
+      for (const button of buttons) {
+        // No targeting, show by default for backwards compatibility
+        if (!button?.targeting) {
+          filteredButtons.push(button);
+          continue;
+        }
+        try {
+          const shouldShowButton = await window.AWEvaluateAttributeTargeting(button.targeting);
+          if (shouldShowButton) {
+            filteredButtons.push(button);
+          }
+        } catch (e) {
+          console.error("SecondaryCTA targeting failed:", button.targeting, e);
+        }
+      }
+      setVisibleButtons(filteredButtons);
+    })();
+  }, [buttons]);
+  if (!visibleButtons.length) {
+    return null;
+  }
+  if (Array.isArray(buttonData)) {
+    return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+      className: "secondary-buttons-top-container"
+    }, visibleButtons.map((button, index) => renderSingleSecondaryCTAButton({
+      content,
+      button,
+      targetElement: `${targetElement}_${index}`,
+      position,
+      handleAction: props.handleAction,
+      activeMultiSelect: props.activeMultiSelect,
+      isArrayItem: true,
+      index
+    })));
+  }
+  return renderSingleSecondaryCTAButton({
+    content,
+    button: visibleButtons[0],
+    targetElement,
+    position,
+    handleAction: props.handleAction,
+    activeMultiSelect: props.activeMultiSelect,
+    isArrayItem: false
+  });
 };
 const StepsIndicator = props => {
   let steps = [];
@@ -532,7 +646,10 @@ class WelcomeScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCo
       }
       data = {
         ...data,
-        extraParams: params
+        extraParams: {
+          ...params,
+          ...data?.extraParams
+        }
       };
     } else if (type === "OPEN_URL") {
       let url = new URL(data.args);
@@ -552,22 +669,12 @@ class WelcomeScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCo
       data
     });
   }
-  async handleAction(event) {
-    let {
-      props
-    } = this;
-    const value = event.currentTarget.value ?? event.currentTarget.getAttribute("value");
-    const source = event.source || value;
-    let targetContent = props.content[value] || props.content.tiles || props.content.languageSwitcher;
-    if (value === "submenu_button" && event.action) {
-      targetContent = {
-        action: event.action
-      };
-    }
-    if (!(targetContent && targetContent.action)) {
-      return;
-    }
-    // Send telemetry before waiting on actions
+  logTelemetry({
+    value,
+    event,
+    source,
+    props
+  }) {
     _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_2__.AboutWelcomeUtils.sendActionTelemetry(props.messageId, source, event.name);
 
     // Send additional telemetry if a messaging surface like feature callout is
@@ -576,9 +683,77 @@ class WelcomeScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCo
     if (value === "dismiss_button" && !event.name) {
       _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_2__.AboutWelcomeUtils.sendDismissTelemetry(props.messageId, source);
     }
-    let {
-      action
-    } = targetContent;
+  }
+  async handleMigrationIfNeeded(action, props) {
+    const hasMigrate = a => a.type === "SHOW_MIGRATION_WIZARD" || a.type === "MULTI_ACTION" && a.data?.actions?.some(hasMigrate);
+    if (hasMigrate(action)) {
+      await window.AWWaitForMigrationClose();
+      _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_2__.AboutWelcomeUtils.sendActionTelemetry(props.messageId, "migrate_close");
+    }
+  }
+  applyThemeIfNeeded(action, event) {
+    if (!action.theme) {
+      return;
+    }
+    const themeToUse = action.theme === "<event>" ? event.currentTarget.value : this.props.initialTheme || action.theme;
+    this.props.setActiveTheme(themeToUse);
+    window.AWSelectTheme(themeToUse);
+  }
+  handlePickerAction(value) {
+    const tileGroups = Array.isArray(this.props.content.tiles) ? this.props.content.tiles : [this.props.content.tiles];
+    for (const tile of tileGroups) {
+      if (!tile?.data) {
+        continue;
+      }
+      for (const opt of tile.data) {
+        if (opt.id === value) {
+          _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_2__.AboutWelcomeUtils.handleUserAction(opt.action);
+          return;
+        }
+      }
+    }
+  }
+  resolveActionFromContent(value, event, props) {
+    if ((value === "submenu_button" || value === "tile_button") && event.action) {
+      return event.action;
+    }
+    const {
+      content
+    } = props;
+    const targetContent = content[value] || content.tiles || content.languageSwitcher;
+    if (!targetContent) {
+      return null;
+    }
+    if (Array.isArray(targetContent)) {
+      for (const tile of targetContent) {
+        const matchedTile = tile.data.find(t => t.id === value);
+        if (matchedTile?.action) {
+          return matchedTile.action;
+        }
+      }
+      return null;
+    }
+    return targetContent.action ?? null;
+  }
+  async handleAction(event, providedAction = null) {
+    const {
+      props
+    } = this;
+    const value = event.currentTarget.value ?? event.currentTarget.getAttribute("value");
+    const source = event.source || value;
+    let action = providedAction || this.resolveActionFromContent(value, event, props);
+    if (!action) {
+      console.error("Failed to resolve action");
+      return;
+    }
+
+    // Send telemetry before waiting on actions
+    this.logTelemetry({
+      value,
+      event,
+      source,
+      props
+    });
     action = JSON.parse(JSON.stringify(action));
     if (action.collectSelect) {
       this.setMultiSelectActions(action);
@@ -607,26 +782,13 @@ class WelcomeScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCo
         _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_2__.AboutWelcomeUtils.handleUserAction(action);
       }
       // Wait until migration closes to complete the action
-      const hasMigrate = a => a.type === "SHOW_MIGRATION_WIZARD" || a.type === "MULTI_ACTION" && a.data?.actions?.some(hasMigrate);
-      if (hasMigrate(action)) {
-        await window.AWWaitForMigrationClose();
-        _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_2__.AboutWelcomeUtils.sendActionTelemetry(props.messageId, "migrate_close");
-      }
+      await this.handleMigrationIfNeeded(action, props);
     }
 
     // A special tiles.action.theme value indicates we should use the event's value vs provided value.
-    if (action.theme) {
-      let themeToUse = action.theme === "<event>" ? event.currentTarget.value : this.props.initialTheme || action.theme;
-      this.props.setActiveTheme(themeToUse);
-      window.AWSelectTheme(themeToUse);
-    }
+    this.applyThemeIfNeeded(action, event);
     if (action.picker) {
-      let options = props.content.tiles.data;
-      options.forEach(opt => {
-        if (opt.id === value) {
-          _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_2__.AboutWelcomeUtils.handleUserAction(opt.action);
-        }
-      });
+      this.handlePickerAction(value);
     }
 
     // If the action has persistActiveTheme: true, we set the initial theme to the currently active theme
@@ -635,7 +797,7 @@ class WelcomeScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCo
       this.props.setInitialTheme(this.props.activeTheme);
     }
 
-    // `navigate` and `dismiss` can be true/false/undefined, or they can be a
+    // `navigate`, `goBack` and `dismiss` can be true/false/undefined, or they can be a
     // string "actionResult" in which case we should use the actionResult
     // (boolean resolved by handleUserAction)
     const shouldDoBehavior = behavior => {
@@ -649,7 +811,7 @@ class WelcomeScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCo
       return false;
     };
     if (shouldDoBehavior(action.navigate)) {
-      props.navigate();
+      props.navigate(action.goBack);
     }
 
     // Used by FeatureCallout to advance screens by re-rendering the whole
@@ -740,8 +902,8 @@ class WelcomeScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCo
       setScreenMultiSelects: this.props.setScreenMultiSelects,
       activeMultiSelect: this.props.activeMultiSelect,
       setActiveMultiSelect: this.props.setActiveMultiSelect,
-      activeSingleSelect: this.props.activeSingleSelect,
-      setActiveSingleSelect: this.props.setActiveSingleSelect,
+      activeSingleSelectSelections: this.props.activeSingleSelectSelections,
+      setActiveSingleSelectSelection: this.props.setActiveSingleSelectSelection,
       totalNumberOfScreens: this.props.totalNumberOfScreens,
       appAndSystemLocaleInfo: this.props.appAndSystemLocaleInfo,
       negotiatedLanguage: this.props.negotiatedLanguage,
@@ -783,7 +945,7 @@ __webpack_require__.r(__webpack_exports__);
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 
-const CONFIGURABLE_STYLES = ["color", "fontSize", "fontWeight", "letterSpacing", "lineHeight", "marginBlock", "marginInline", "paddingBlock", "paddingInline", "textAlign", "whiteSpace"];
+const CONFIGURABLE_STYLES = ["color", "display", "fontSize", "fontWeight", "letterSpacing", "lineHeight", "marginBlock", "marginBlockStart", "marginBlockEnd", "marginInline", "paddingBlock", "paddingBlockStart", "paddingBlockEnd", "paddingInline", "paddingInlineStart", "paddingInlineEnd", "textAlign", "whiteSpace", "width", "borderBlockStart", "borderBlockEnd", "top", "bottom", "left", "right", "inset", "insetBlock", "insetInline", "minHeight", "minWidth"];
 const ZAP_SIZE_THRESHOLD = 160;
 
 /**
@@ -948,6 +1110,17 @@ const MultiStageProtonScreen = props => {
     // Clear narrow attribute in case it was set by a previous screen
     document.querySelector("#multi-stage-message-root")?.removeAttribute("narrow");
   }
+  function useMediaQuery(query) {
+    const [doesMatch, setDoesMatch] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(() => window.matchMedia(query).matches);
+    (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(() => {
+      const mediaQueryList = window.matchMedia(query);
+      const onChange = event => setDoesMatch(event.matches);
+      mediaQueryList.addEventListener("change", onChange);
+      return () => mediaQueryList.removeEventListener("change", onChange);
+    }, [query]);
+    return doesMatch;
+  }
+  const isWideScreen = useMediaQuery("(min-width: 800px)");
   return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(ProtonScreen, {
     content: props.content,
     id: props.id,
@@ -958,8 +1131,8 @@ const MultiStageProtonScreen = props => {
     setScreenMultiSelects: props.setScreenMultiSelects,
     activeMultiSelect: props.activeMultiSelect,
     setActiveMultiSelect: props.setActiveMultiSelect,
-    activeSingleSelect: props.activeSingleSelect,
-    setActiveSingleSelect: props.setActiveSingleSelect,
+    activeSingleSelectSelections: props.activeSingleSelectSelections,
+    setActiveSingleSelectSelection: props.setActiveSingleSelectSelection,
     totalNumberOfScreens: props.totalNumberOfScreens,
     handleAction: props.handleAction,
     isFirstScreen: props.isFirstScreen,
@@ -979,7 +1152,8 @@ const MultiStageProtonScreen = props => {
     langPackInstallPhase: props.langPackInstallPhase,
     forceHideStepsIndicator: props.forceHideStepsIndicator,
     ariaRole: props.ariaRole,
-    aboveButtonStepsIndicator: props.aboveButtonStepsIndicator
+    aboveButtonStepsIndicator: props.aboveButtonStepsIndicator,
+    isWideScreen: isWideScreen
   });
 };
 const ProtonScreenActionButtons = props => {
@@ -1080,17 +1254,24 @@ const ProtonScreenActionButtons = props => {
 };
 class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureComponent) {
   componentDidMount() {
+    // Don't focus on main content if it is a feature callout
+    // See Bug 1985939
+    if (this.props.content?.position === "callout") {
+      return;
+    }
     this.mainContentHeader.focus();
   }
-  getScreenClassName(isFirstScreen, isLastScreen, includeNoodles, isVideoOnboarding, isAddonsPicker) {
-    const screenClass = `screen-${this.props.order % 2 !== 0 ? 1 : 2}`;
+  getScreenClassName(includeNoodles, isVideoOnboarding, isAddonsPicker) {
     if (isVideoOnboarding) {
       return "with-video";
     }
     if (isAddonsPicker) {
       return "addons-picker";
     }
-    return `${isFirstScreen ? `dialog-initial` : ``} ${isLastScreen ? `dialog-last` : ``} ${includeNoodles ? `with-noodles` : ``} ${screenClass}`;
+    const screenClass = `screen-${this.props.order % 2 !== 0 ? 1 : 2}`;
+    const dialogInitial = this.props.isFirstScreen && this.props.previousOrder < 0 ? `dialog-initial` : ``;
+    const dialogLast = this.props.isLastScreen ? `dialog-last` : ``;
+    return `${screenClass} ${dialogInitial} ${dialogLast} ${includeNoodles ? `with-noodles` : ``}`;
   }
   renderTitle({
     title,
@@ -1326,18 +1507,52 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
       role: "presentation"
     }));
   }
+  getCombinedInnerStyles(content, isWideScreen) {
+    const CONFIGURABLE_STYLES = ["overflow", "display", "paddingInline", "paddingInlineStart", "paddingInlineEnd", "paddingBlock", "paddingBlockStart", "paddingBlockEnd"];
+    const innerContentStyles = isWideScreen ? content.main_content_style || {} : content.main_content_style_narrow || {};
+    const validInnerStyles = _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_2__.AboutWelcomeUtils.getValidStyle(innerContentStyles, CONFIGURABLE_STYLES) || {};
+    return {
+      ...validInnerStyles,
+      justifyContent: content.split_content_justify_content
+    };
+  }
+  getActionButtonsPosition(content) {
+    const VALID_POSITIONS = ["after_subtitle", "after_supporting_content", "end"];
+    if (VALID_POSITIONS.includes(content.action_buttons_position)) {
+      return content.action_buttons_position;
+    }
+    // Legacy mapping
+    if (content.action_buttons_above_content) {
+      return "after_subtitle";
+    }
+    // Default
+    return "end";
+  }
+  renderActionButtons(position, content) {
+    return this.getActionButtonsPosition(content) === position ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(ProtonScreenActionButtons, {
+      content: content,
+      isRtamo: this.props.isRtamo,
+      installedAddons: this.props.installedAddons,
+      addonId: this.props.addonId,
+      addonName: this.props.addonName,
+      addonType: this.props.addonType,
+      handleAction: this.props.handleAction,
+      activeMultiSelect: this.props.activeMultiSelect
+    }) : null;
+  }
+
+  // eslint-disable-next-line complexity
   render() {
     const {
       autoAdvance,
       content,
       isRtamo,
       addonType,
-      isFirstScreen,
-      isLastScreen,
       isSingleScreen,
       forceHideStepsIndicator,
       ariaRole,
-      aboveButtonStepsIndicator
+      aboveButtonStepsIndicator,
+      isWideScreen
     } = this.props;
     const includeNoodles = content.has_noodles;
     // The default screen position is "center"
@@ -1346,9 +1561,10 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
     const textColorClass = content.text_color ? `${content.text_color}-text` : "";
     // Assign proton screen style 'screen-1' or 'screen-2' to centered screens
     // by checking if screen order is even or odd.
-    const screenClassName = isCenterPosition ? this.getScreenClassName(isFirstScreen, isLastScreen, includeNoodles, content?.video_container, content.tiles?.type === "addons-picker") : "";
+    const screenClassName = isCenterPosition ? this.getScreenClassName(includeNoodles, content?.video_container, content.tiles?.type === "addons-picker") : "";
     const isEmbeddedMigration = content.tiles?.type === "migration-wizard";
     const isSystemPromptStyleSpotlight = content.isSystemPromptStyleSpotlight === true;
+    const combinedStyles = this.getCombinedInnerStyles(content, isWideScreen);
     return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("main", {
       className: `screen ${this.props.id || ""}
           ${screenClassName} ${textColorClass}`,
@@ -1368,7 +1584,7 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
       className: `section-main ${isEmbeddedMigration ? "embedded-migration" : ""}${isSystemPromptStyleSpotlight ? "system-prompt-spotlight" : ""}`,
       "hide-secondary-section": content.hide_secondary_section ? String(content.hide_secondary_section) : null,
       role: "document",
-      style: content.screen_style && _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_2__.AboutWelcomeUtils.getValidStyle(content.screen_style, ["width", "padding"])
+      style: content.screen_style && _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_2__.AboutWelcomeUtils.getValidStyle(content.screen_style, ["width", "padding", "height"])
     }, content.secondary_button_top ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MultiStageAboutWelcome__WEBPACK_IMPORTED_MODULE_3__.SecondaryCTA, {
       content: content,
       handleAction: this.props.handleAction,
@@ -1383,9 +1599,7 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
       }
     }, content.logo && !content.fullscreen ? this.renderPicture(content.logo) : null, isRtamo && !content.fullscreen ? this.renderRTAMOIcon(addonType, this.props.themeScreenshots, this.props.addonIconURL) : null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
       className: "main-content-inner",
-      style: {
-        justifyContent: content.split_content_justify_content
-      }
+      style: combinedStyles
     }, content.logo && content.fullscreen ? this.renderPicture(content.logo) : null, isRtamo && content.fullscreen ? this.renderRTAMOIcon(addonType, this.props.themeScreenshots, this.props.addonIconURL) : null, content.title || content.subtitle ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
       id: "multi-stage-message-welcome-text",
       className: `welcome-text ${content.title_style || ""}`
@@ -1398,31 +1612,13 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
       }),
       "aria-flowto": this.props.messageId?.includes("FEATURE_TOUR") ? "steps" : "",
       id: "mainContentSubheader"
-    })) : null, content.action_buttons_above_content && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(ProtonScreenActionButtons, {
-      content: content,
-      isRtamo: this.props.isRtamo,
-      installedAddons: this.props.installedAddons,
-      addonId: this.props.addonId,
-      addonName: this.props.addonName,
-      addonType: this.props.addonType,
-      handleAction: this.props.handleAction,
-      activeMultiSelect: this.props.activeMultiSelect
-    }), content.cta_paragraph ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_CTAParagraph__WEBPACK_IMPORTED_MODULE_5__.CTAParagraph, {
+    })) : null, this.renderActionButtons("after_subtitle", content), content.cta_paragraph ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_CTAParagraph__WEBPACK_IMPORTED_MODULE_5__.CTAParagraph, {
       content: content.cta_paragraph,
       handleAction: this.props.handleAction
     }) : null) : null, content.video_container ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_OnboardingVideo__WEBPACK_IMPORTED_MODULE_7__.OnboardingVideo, {
       content: content.video_container,
       handleAction: this.props.handleAction
-    }) : null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_ContentTiles__WEBPACK_IMPORTED_MODULE_10__.ContentTiles, this.props), this.renderLanguageSwitcher(), content.above_button_content ? this.renderOrderedContent(content.above_button_content) : null, !hideStepsIndicator && aboveButtonStepsIndicator ? this.renderStepsIndicator() : null, !content.action_buttons_above_content && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(ProtonScreenActionButtons, {
-      content: content,
-      isRtamo: this.props.isRtamo,
-      installedAddons: this.props.installedAddons,
-      addonId: this.props.addonId,
-      addonName: this.props.addonName,
-      addonType: this.props.addonType,
-      handleAction: this.props.handleAction,
-      activeMultiSelect: this.props.activeMultiSelect
-    }),
+    }) : null, this.renderLanguageSwitcher(), content?.tiles_container?.position !== "after_supporting_content" ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_ContentTiles__WEBPACK_IMPORTED_MODULE_10__.ContentTiles, this.props) : null, content.above_button_content ? this.renderOrderedContent(content.above_button_content) : null, this.renderActionButtons("after_supporting_content", content), content?.tiles_container?.position === "after_supporting_content" ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_ContentTiles__WEBPACK_IMPORTED_MODULE_10__.ContentTiles, this.props) : null, !hideStepsIndicator && aboveButtonStepsIndicator ? this.renderStepsIndicator() : null, this.renderActionButtons("end", content),
     /* Fullscreen dot-style step indicator should sit inside the
     main inner content to share its padding, which will be
     configurable with Bug 1956042 */
@@ -1703,9 +1899,11 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
 /* harmony import */ var _MSLocalized__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(5);
+/* harmony import */ var _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(3);
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 
 
 
@@ -1717,22 +1915,27 @@ const CTAParagraph = props => {
   if (!content?.text) {
     return null;
   }
+  const onClick = react__WEBPACK_IMPORTED_MODULE_0___default().useCallback(event => {
+    handleAction(event);
+    event.preventDefault();
+  }, [handleAction]);
   return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("h2", {
-    className: "cta-paragraph"
+    className: "cta-paragraph",
+    style: {
+      ..._lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_2__.AboutWelcomeUtils.getValidStyle(content?.style, _MSLocalized__WEBPACK_IMPORTED_MODULE_1__.CONFIGURABLE_STYLES)
+    }
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
     text: content.text
   }, content.text.string_name && typeof handleAction === "function" ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", {
     "data-l10n-id": content.text.string_id,
-    onClick: handleAction,
-    onKeyUp: event => ["Enter", " "].includes(event.key) ? handleAction(event) : null,
-    value: "cta_paragraph",
+    onClick: onClick,
+    onKeyUp: event => ["Enter", " "].includes(event.key) ? onClick(event) : null,
+    value: "cta_paragraph"
+  }, " ", /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("a", {
+    "data-l10n-name": content.text.string_name,
     tabIndex: "0",
     role: "link"
-  }, " ", /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("a", {
-    href: "",
-    tabIndex: "0",
-    "data-l10n-name": content.text.string_name
-  }, " ")) : null));
+  })) : null));
 };
 
 /***/ }),
@@ -1916,34 +2119,38 @@ function addMenuitems(items, popup) {
         popup.appendChild(document.createXULElement("menuseparator"));
         break;
       case "menu":
-        let menu = document.createXULElement("menu");
-        menu.className = "fxms-multi-stage-menu";
-        translateMenuitem(item, menu);
-        if (item.id) {
-          menu.value = item.id;
+        {
+          let menu = document.createXULElement("menu");
+          menu.className = "fxms-multi-stage-menu";
+          translateMenuitem(item, menu);
+          if (item.id) {
+            menu.value = item.id;
+          }
+          if (item.icon) {
+            menu.classList.add("menu-iconic");
+            menu.setAttribute("image", item.icon);
+          }
+          popup.appendChild(menu);
+          let submenuPopup = document.createXULElement("menupopup");
+          menu.appendChild(submenuPopup);
+          addMenuitems(item.submenu, submenuPopup);
+          break;
         }
-        if (item.icon) {
-          menu.classList.add("menu-iconic");
-          menu.setAttribute("image", item.icon);
-        }
-        popup.appendChild(menu);
-        let submenuPopup = document.createXULElement("menupopup");
-        menu.appendChild(submenuPopup);
-        addMenuitems(item.submenu, submenuPopup);
-        break;
       case "action":
-        let menuitem = document.createXULElement("menuitem");
-        translateMenuitem(item, menuitem);
-        menuitem.config = item;
-        if (item.id) {
-          menuitem.value = item.id;
+        {
+          let menuitem = document.createXULElement("menuitem");
+          translateMenuitem(item, menuitem);
+          menuitem.config = item;
+          if (item.id) {
+            menuitem.value = item.id;
+          }
+          if (item.icon) {
+            menuitem.classList.add("menuitem-iconic");
+            menuitem.setAttribute("image", item.icon);
+          }
+          popup.appendChild(menuitem);
+          break;
         }
-        if (item.icon) {
-          menuitem.classList.add("menuitem-iconic");
-          menuitem.setAttribute("image", item.icon);
-        }
-        popup.appendChild(menuitem);
-        break;
     }
   }
 }
@@ -2094,12 +2301,15 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _MSLocalized__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(5);
 /* harmony import */ var _AddonsPicker__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(15);
 /* harmony import */ var _SingleSelect__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(17);
-/* harmony import */ var _MobileDownloads__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(18);
-/* harmony import */ var _MultiSelect__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(19);
-/* harmony import */ var _EmbeddedMigrationWizard__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(20);
-/* harmony import */ var _ActionChecklist__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(21);
-/* harmony import */ var _EmbeddedBrowser__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(22);
-/* harmony import */ var _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(3);
+/* harmony import */ var _MobileDownloads__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(20);
+/* harmony import */ var _MultiSelect__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(21);
+/* harmony import */ var _EmbeddedMigrationWizard__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(22);
+/* harmony import */ var _EmbeddedFxBackupOptIn__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(23);
+/* harmony import */ var _ActionChecklist__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(24);
+/* harmony import */ var _EmbeddedBrowser__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(25);
+/* harmony import */ var _ConfirmationChecklist__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(26);
+/* harmony import */ var _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_11__ = __webpack_require__(3);
+/* harmony import */ var _EmbeddedBackupRestore__WEBPACK_IMPORTED_MODULE_12__ = __webpack_require__(27);
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -2114,8 +2324,12 @@ __webpack_require__.r(__webpack_exports__);
 
 
 
+
+
+
 const HEADER_STYLES = ["backgroundColor", "border", "padding", "margin", "width", "height"];
 const TILE_STYLES = ["marginBlock", "marginInline", "paddingBlock", "paddingInline"];
+const CONTAINER_STYLES = ["padding", "margin", "marginBlock", "marginInline", "paddingBlock", "paddingInline", "flexDirection", "flexWrap", "flexFlow", "flexGrow", "flexShrink", "justifyContent", "alignItems", "gap"];
 const ContentTiles = props => {
   const {
     content
@@ -2156,14 +2370,86 @@ const ContentTiles = props => {
     }
   }, [tiles]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(() => {
+    /**
+     * In Spotlight dialogs, the VO cursor can move without changing DOM focus.
+     * When a user lands on content tiles, or a tile re-renders, DOM focus often
+     * stays on or "snaps back" to the dialog’s first tabbable control by
+     * SubDialog’s focus enforcement. Pressing Space/Enter then activates that
+     * outside control instead of the VO target.
+     *
+     * To address this, we remember the last real DOM-focused element inside
+     * #content-tiles-container. If focus jumps outside tiles without a recent
+     * tab, such as with a VO focus move, restore focus to that element on the
+     * next rAF. Tab navigation is unaffected.
+     */
+    const page = document.querySelector("#multi-stage-message-root.onboardingContainer[data-page]")?.dataset.page || document.location.href;
+    if (page !== "spotlight") {
+      return () => {};
+    }
+    const tilesEl = document.getElementById("content-tiles-container");
+    const dialog = tilesEl?.closest('main[role="alertdialog"]') || null;
+    if (!tilesEl || !dialog) {
+      return () => {};
+    }
+
+    // We use 250ms to tell “intentional tab navigation” from a programmatic
+    // snap. It’s long enough to cover a human Tab press (and a quick double-tab
+    // / key repeat), but short enough that we don’t delay correcting unintended
+    // focus jumps.
+    const TAB_GRACE_WINDOW_MS = 250;
+    let lastTilesEl = null;
+    let lastTabAt = 0;
+    let restoring = false;
+    function onKeyDown(e) {
+      if (e.key === "Tab") {
+        lastTabAt = performance.now();
+      }
+    }
+    function onFocusIn(event) {
+      const {
+        target
+      } = event;
+
+      // Track true DOM focus inside tiles.
+      if (tilesEl.contains(target)) {
+        lastTilesEl = target;
+        return;
+      }
+
+      // If focus left tiles without a recent tab, treat as a programmatic snap.
+      const tabRecently = performance.now() - lastTabAt < TAB_GRACE_WINDOW_MS;
+      if (tabRecently || !lastTilesEl || !document.contains(lastTilesEl) || restoring) {
+        return;
+      }
+
+      // Restore immediately (before paint) to avoid visible flicker.
+      restoring = true;
+      try {
+        lastTilesEl.focus({
+          preventScroll: true
+        });
+      } finally {
+        restoring = false;
+      }
+    }
+
+    // Preempt other dialog handlers.
+    dialog.addEventListener("keydown", onKeyDown, true);
+    dialog.addEventListener("focusin", onFocusIn, true);
+    return () => {
+      dialog.removeEventListener("keydown", onKeyDown, true);
+      dialog.removeEventListener("focusin", onFocusIn, true);
+    };
+  }, []);
   const toggleTile = (index, tile) => {
     const tileId = `${tile.type}${tile.id ? "_" : ""}${tile.id ?? ""}_header`;
     setExpandedTileIndex(prevIndex => prevIndex === index ? null : index);
-    _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_9__.AboutWelcomeUtils.sendActionTelemetry(props.messageId, tileId);
+    _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_11__.AboutWelcomeUtils.sendActionTelemetry(props.messageId, tileId);
   };
   const toggleTiles = () => {
     setTilesHeaderExpanded(prev => !prev);
-    _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_9__.AboutWelcomeUtils.sendActionTelemetry(props.messageId, "content_tiles_header");
+    _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_11__.AboutWelcomeUtils.sendActionTelemetry(props.messageId, "content_tiles_header");
   };
   function getTileMultiSelects(screenMultiSelects, index) {
     return screenMultiSelects?.[`tile-${index}`];
@@ -2181,13 +2467,13 @@ const ContentTiles = props => {
     return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
       key: index,
       className: `content-tile ${header ? "has-header" : ""}`,
-      style: _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_9__.AboutWelcomeUtils.getValidStyle(tile.style, TILE_STYLES)
+      style: _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_11__.AboutWelcomeUtils.getTileStyle(tile, TILE_STYLES)
     }, header?.title && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", {
       className: "tile-header secondary",
       onClick: () => toggleTile(index, tile),
       "aria-expanded": isExpanded,
       "aria-controls": `tile-content-${index}`,
-      style: _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_9__.AboutWelcomeUtils.getValidStyle(header.style, HEADER_STYLES)
+      style: _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_11__.AboutWelcomeUtils.getValidStyle(header.style, HEADER_STYLES)
     }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
       className: "header-text-container"
     }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
@@ -2229,8 +2515,9 @@ const ContentTiles = props => {
       },
       activeTheme: props.activeTheme,
       handleAction: props.handleAction,
-      activeSingleSelect: props.activeSingleSelect,
-      setActiveSingleSelect: props.setActiveSingleSelect
+      activeSingleSelectSelections: props.activeSingleSelectSelections,
+      setActiveSingleSelectSelection: props.setActiveSingleSelectSelection,
+      singleSelectId: `single-select-${index}`
     }), tile.type === "mobile_downloads" && tile.data && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MobileDownloads__WEBPACK_IMPORTED_MODULE_4__.MobileDownloads, {
       data: tile.data,
       handleAction: props.handleAction
@@ -2248,18 +2535,37 @@ const ContentTiles = props => {
       content: {
         tiles: tile
       }
-    }), tile.type === "action_checklist" && tile.data && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_ActionChecklist__WEBPACK_IMPORTED_MODULE_7__.ActionChecklist, {
+    }), tile.type === "action_checklist" && tile.data && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_ActionChecklist__WEBPACK_IMPORTED_MODULE_8__.ActionChecklist, {
       content: content,
       message_id: props.messageId
-    }), tile.type === "embedded_browser" && tile.data?.url && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_EmbeddedBrowser__WEBPACK_IMPORTED_MODULE_8__.EmbeddedBrowser, {
+    }), tile.type === "embedded_browser" && tile.data?.url && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_EmbeddedBrowser__WEBPACK_IMPORTED_MODULE_9__.EmbeddedBrowser, {
       url: tile.data.url,
       style: tile.data.style
+    }), tile.type === "backup_restore" && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_EmbeddedBackupRestore__WEBPACK_IMPORTED_MODULE_12__.EmbeddedBackupRestore, {
+      handleAction: props.handleAction,
+      content: {
+        tiles: tile
+      },
+      skipButton: props.content.skip_button
+    }), tile.type === "fx_backup_file_path" && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_EmbeddedFxBackupOptIn__WEBPACK_IMPORTED_MODULE_7__.EmbeddedFxBackupOptIn, {
+      handleAction: props.handleAction,
+      isEncryptedBackup: content.isEncryptedBackup,
+      options: tile.options
+    }), tile.type === "fx_backup_password" && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_EmbeddedFxBackupOptIn__WEBPACK_IMPORTED_MODULE_7__.EmbeddedFxBackupOptIn, {
+      handleAction: props.handleAction,
+      isEncryptedBackup: content.isEncryptedBackup,
+      options: tile.options
+    }), tile.type === "confirmation-checklist" && tile.data && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_ConfirmationChecklist__WEBPACK_IMPORTED_MODULE_10__.ConfirmationChecklist, {
+      content: tile.data,
+      handleAction: props.handleAction
     })) : null);
   };
   const renderContentTiles = () => {
     if (Array.isArray(tiles)) {
+      const containerStyle = content?.tiles_container?.style;
       return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-        id: "content-tiles-container"
+        id: "content-tiles-container",
+        style: _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_11__.AboutWelcomeUtils.getValidStyle(containerStyle, CONTAINER_STYLES)
       }, tiles.map((tile, index) => renderContentTile(tile, index)));
     }
     // If tiles is not an array render the tile alone without a container
@@ -2519,7 +2825,9 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
 /* harmony import */ var _MSLocalized__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(5);
-/* harmony import */ var _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(3);
+/* harmony import */ var _TileButton__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(18);
+/* harmony import */ var _TileList__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(19);
+/* harmony import */ var _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(3);
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -2528,13 +2836,17 @@ __webpack_require__.r(__webpack_exports__);
 
 
 
+
+
 // This component was formerly "Themes" and continues to support theme
 const SingleSelect = ({
-  activeSingleSelect,
+  activeSingleSelectSelections = {},
+  // This now holds all active selections keyed by `singleSelectId`
   activeTheme,
   content,
   handleAction,
-  setActiveSingleSelect
+  setActiveSingleSelectSelection,
+  singleSelectId
 }) => {
   const category = content.tiles?.category?.type || content.tiles?.type;
   const isSingleSelect = category === "single-select";
@@ -2561,9 +2873,9 @@ const SingleSelect = ({
   // When screen renders for first time or user navigates back, update state to
   // check default option.
   (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(() => {
-    if (isSingleSelect && !activeSingleSelect) {
+    if (isSingleSelect && !activeSingleSelectSelections[singleSelectId]) {
       let newActiveSingleSelect = content.tiles?.selected || content.tiles?.data[0].id;
-      setActiveSingleSelect(newActiveSingleSelect);
+      setActiveSingleSelectSelection(newActiveSingleSelect, singleSelectId);
       let selectedTile = content.tiles?.data.find(opt => opt.id === newActiveSingleSelect);
       // If applicable, automatically trigger the action for the default
       // selected tile.
@@ -2575,11 +2887,11 @@ const SingleSelect = ({
         });
       }
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeSingleSelectSelections]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const CONFIGURABLE_STYLES = ["background", "borderRadius", "height", "marginBlock", "marginInline", "paddingBlock", "paddingInline", "width"];
+  const CONFIGURABLE_STYLES = ["background", "borderRadius", "height", "marginBlock", "marginBlockStart", "marginBlockEnd", "marginInline", "paddingBlock", "paddingBlockStart", "paddingBlockEnd", "paddingInline", "paddingInlineStart", "paddingInlineEnd", "width"];
   return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    className: "tiles-single-select-container"
+    className: `tiles-single-select-container`
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("fieldset", {
     className: `tiles-single-select-section ${category}`
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
@@ -2588,24 +2900,28 @@ const SingleSelect = ({
     className: "sr-only"
   })), content.tiles.data.map(({
     description,
+    inert,
     icon,
     id,
     label = "",
+    body = "",
     theme,
     tooltip,
     type = "",
-    flair
+    flair,
+    style,
+    tilebutton
   }) => {
     const value = id || theme;
-    let inputName = "select-item";
+    let inputName = `select-item-${id}`;
     if (!isSingleSelect) {
       inputName = category === "theme" ? "theme" : id; // unique names per item are currently used in the wallpaper picker
     }
-    const selected = theme && theme === activeTheme || isSingleSelect && activeSingleSelect === value;
+    const selected = theme && theme === activeTheme || isSingleSelect && activeSingleSelectSelections[singleSelectId] === value;
     const valOrObj = val => typeof val === "object" ? val : {};
     const handleClick = evt => {
       if (isSingleSelect) {
-        setActiveSingleSelect(value);
+        setActiveSingleSelectSelection(value, singleSelectId); // Update selection for the specific component
       }
       handleAction(evt);
     };
@@ -2621,15 +2937,17 @@ const SingleSelect = ({
       text: valOrObj(tooltip)
     }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("label", {
       className: `select-item ${type}`,
-      title: value,
       onKeyDown: e => handleKeyDown(e),
-      style: icon?.width ? {
-        minWidth: icon.width
-      } : {}
+      style: {
+        ..._lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_4__.AboutWelcomeUtils.getValidStyle(style, CONFIGURABLE_STYLES),
+        ...(icon?.width ? {
+          minWidth: icon.width
+        } : {})
+      }
     }, flair ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
       text: valOrObj(flair.text)
     }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("span", {
-      className: "flair"
+      className: `flair ${flair.centered ? "centered" : ""} ${flair.spacer ? "spacer" : ""} ${type}`
     })) : "", /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
       text: valOrObj(description)
     }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("input", {
@@ -2638,20 +2956,127 @@ const SingleSelect = ({
       name: inputName,
       checked: selected,
       className: "sr-only input",
+      disabled: inert,
       onClick: e => handleClick(e)
     })), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
       className: `icon ${selected ? " selected" : ""} ${value}`,
-      style: _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_2__.AboutWelcomeUtils.getValidStyle(icon, CONFIGURABLE_STYLES)
+      style: _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_4__.AboutWelcomeUtils.getValidStyle(icon, CONFIGURABLE_STYLES)
     }), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
       text: label
     }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-      className: "text"
-    }))));
+      className: "text label-text"
+    })), body.items ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_TileList__WEBPACK_IMPORTED_MODULE_3__.TileList, {
+      content: body
+    }) : /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
+      text: body
+    }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+      className: "text body-text"
+    })), tilebutton ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_TileButton__WEBPACK_IMPORTED_MODULE_2__.TileButton, {
+      content: tilebutton,
+      handleAction: handleAction,
+      inputName: inputName
+    }) : ""));
   }))));
 };
 
 /***/ }),
 /* 18 */
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   TileButton: () => (/* binding */ TileButton)
+/* harmony export */ });
+/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
+/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
+/* harmony import */ var _MSLocalized__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(5);
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+
+
+const TileButton = props => {
+  const {
+    content,
+    handleAction,
+    inputName
+  } = props;
+  const ref = (0,react__WEBPACK_IMPORTED_MODULE_0__.useRef)(null);
+  if (!content) {
+    return null;
+  }
+  function onClick(event) {
+    let mockEvent = {
+      currentTarget: ref.current,
+      source: event.target.id,
+      name: "command",
+      action: content.action
+    };
+    handleAction(mockEvent);
+  }
+  return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
+    text: content.label
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", {
+    id: `tile-button-${inputName}`,
+    onClick: onClick,
+    value: "tile_button",
+    ref: ref,
+    className: `${content.style} tile-button slim`
+  }));
+};
+
+/***/ }),
+/* 19 */
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   TileList: () => (/* binding */ TileList)
+/* harmony export */ });
+/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
+/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
+/* harmony import */ var _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(3);
+/* harmony import */ var _MSLocalized__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(5);
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+
+
+
+const TileList = props => {
+  const {
+    content
+  } = props;
+  if (!content) {
+    return null;
+  }
+  const CONFIGURABLE_STYLES = ["background", "borderRadius", "height", "marginBlock", "marginBlockStart", "marginBlockEnd", "marginInline", "paddingBlock", "paddingBlockStart", "paddingBlockEnd", "paddingInline", "paddingInlineStart", "paddingInlineEnd", "width"];
+  return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    className: "tile-list-container"
+  }, content.items.map(({
+    icon,
+    text
+  }, index) => /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    key: index,
+    className: "tile-list-item"
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    className: "tile-list-icon-wrapper"
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    className: "tile-list-icon",
+    style: _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_1__.AboutWelcomeUtils.getValidStyle(icon, CONFIGURABLE_STYLES)
+  })), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    className: "tile-list-text"
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_2__.Localized, {
+    text: text
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    className: "text body-text"
+  }))))));
+};
+
+/***/ }),
+/* 20 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -2713,7 +3138,7 @@ const MobileDownloads = props => {
 };
 
 /***/ }),
-/* 19 */
+/* 21 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -2781,7 +3206,7 @@ const MultiSelect = ({
     return getOrderedIds().map(id => data.find(item => item.id === id));
   }, [] // eslint-disable-line react-hooks/exhaustive-deps
   );
-  const containerStyle = (0,react__WEBPACK_IMPORTED_MODULE_0__.useMemo)(() => _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_2__.AboutWelcomeUtils.getValidStyle(content.tiles.style, MULTI_SELECT_STYLES, true), [content.tiles.style]);
+  const containerStyle = (0,react__WEBPACK_IMPORTED_MODULE_0__.useMemo)(() => _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_2__.AboutWelcomeUtils.getTileStyle(content.tiles, MULTI_SELECT_STYLES), [content.tiles]);
   const PickerIcon = ({
     emoji,
     bgColor,
@@ -2883,6 +3308,7 @@ const MultiSelect = ({
     onChange: handleChange,
     ref: el => refs.current[id] = el,
     "aria-describedby": description ? `${id}-description` : null,
+    "aria-labelledby": description ? `${id}-label` : null,
     tabIndex: isPicker ? "-1" : "0"
   }), isPicker && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(PickerIcon, {
     emoji: pickerEmoji,
@@ -2891,6 +3317,7 @@ const MultiSelect = ({
   }), label ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
     text: label
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("label", {
+    id: `${id}-label`,
     htmlFor: id
   })) : null, description ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
     text: description
@@ -2900,7 +3327,7 @@ const MultiSelect = ({
 };
 
 /***/ }),
-/* 20 */
+/* 22 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -2971,7 +3398,108 @@ const EmbeddedMigrationWizard = ({
 };
 
 /***/ }),
-/* 21 */
+/* 23 */
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   EmbeddedFxBackupOptIn: () => (/* binding */ EmbeddedFxBackupOptIn)
+/* harmony export */ });
+/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
+/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+
+const EmbeddedFxBackupOptIn = ({
+  handleAction,
+  isEncryptedBackup,
+  options
+}) => {
+  const backupRef = (0,react__WEBPACK_IMPORTED_MODULE_0__.useRef)(null);
+  const {
+    // hide_password_input means it is the file chooser screen
+    hide_password_input,
+    hide_secondary_button,
+    file_path_label,
+    turn_on_backup_header,
+    create_password_label,
+    turn_on_backup_confirm_btn_label,
+    turn_on_backup_cancel_btn_label
+  } = options || {};
+  (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(() => {
+    const {
+      current
+    } = backupRef;
+    const handleEnableScheduledBackups = () => {
+      handleAction({
+        currentTarget: {
+          value: "tile_button"
+        },
+        action: {
+          navigate: true
+        },
+        source: "backup_enabled"
+      });
+    };
+    const handleAdvanceScreens = () => {
+      handleAction({
+        currentTarget: {
+          value: "tile_button"
+        },
+        action: {
+          navigate: true
+        },
+        source: "advance_screens"
+      });
+    };
+    const handleStateUpdate = ({
+      detail: {
+        state
+      }
+    }) => {
+      if (!current || !state) {
+        return;
+      }
+      let {
+        fileName,
+        path,
+        iconURL
+      } = state.defaultParent;
+      current.setAttribute("defaultlabel", fileName);
+      current.setAttribute("defaultpath", path);
+      current.setAttribute("defaulticonurl", iconURL);
+      current.supportBaseLink = state.supportBaseLink;
+    };
+    current?.addEventListener("BackupUI:StateWasUpdated", handleStateUpdate);
+    current?.addEventListener("BackupUI:EnableScheduledBackups", handleEnableScheduledBackups);
+    current?.addEventListener("SpotlightOnboardingAdvanceScreens", handleAdvanceScreens);
+    return () => {
+      current?.removeEventListener("BackupUI:EnableScheduledBackups", handleEnableScheduledBackups);
+      current?.removeEventListener("BackupUI:StateWasUpdated", handleStateUpdate);
+      current?.removeEventListener("SpotlightOnboardingAdvanceScreens", handleAdvanceScreens);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("turn-on-scheduled-backups", {
+    ref: backupRef,
+    "hide-headers": "",
+    "hide-password-input": !isEncryptedBackup || hide_password_input ? "" : undefined,
+    "hide-secondary-button": !isEncryptedBackup || hide_secondary_button ? "" : undefined,
+    "hide-file-path-chooser": isEncryptedBackup && !hide_password_input ? "" : undefined,
+    "embedded-fx-backup-opt-in": "",
+    "backup-is-encrypted": isEncryptedBackup ? "" : undefined,
+    "file-path-label-l10n-id": file_path_label,
+    "turn-on-backup-header-l10n-id": turn_on_backup_header,
+    "create-password-label-l10n-id": create_password_label,
+    "turn-on-backup-confirm-btn-l10n-id": turn_on_backup_confirm_btn_label,
+    "turn-on-backup-cancel-btn-l10n-id": turn_on_backup_cancel_btn_label
+  });
+};
+
+/***/ }),
+/* 24 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -3129,7 +3657,7 @@ const ActionChecklist = ({
 };
 
 /***/ }),
-/* 22 */
+/* 25 */
 /***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -3197,7 +3725,149 @@ const EmbeddedBrowserInner = ({
 /* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = (EmbeddedBrowser);
 
 /***/ }),
-/* 23 */
+/* 26 */
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   ConfirmationChecklist: () => (/* binding */ ConfirmationChecklist)
+/* harmony export */ });
+/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
+/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
+/* harmony import */ var _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(3);
+/* harmony import */ var _MSLocalized__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(5);
+/* harmony import */ var _LinkParagraph__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(13);
+/* This Source Code Form is subject to the terms of the Mozilla Public * License, v. 2.0. If a copy of the MPL was not distributed with this file, * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+
+
+
+const ConfirmationChecklist = props => {
+  const {
+    content,
+    handleAction
+  } = props;
+  if (!content) {
+    return null;
+  }
+  const CONFIGURABLE_STYLES = ["background", "borderRadius", "display", "height", "marginBlock", "marginBlockStart", "marginBlockEnd", "marginInline", "paddingBlock", "paddingBlockStart", "paddingBlockEnd", "paddingInline", "paddingInlineStart", "paddingInlineEnd", "width"];
+  return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    className: `confirmation-checklist-section`
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    className: `confirmation-checklist-container`,
+    style: _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_1__.AboutWelcomeUtils.getValidStyle(content.style, CONFIGURABLE_STYLES)
+  }, content.items.map(({
+    icon,
+    text,
+    subtext,
+    link_keys
+  }, index) => /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    key: index,
+    className: "confirmation-checklist-item"
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    className: "confirmation-checklist-icon-wrapper"
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    className: "confirmation-checklist-icon",
+    style: _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_1__.AboutWelcomeUtils.getValidStyle(icon, CONFIGURABLE_STYLES)
+  }), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    className: "confirmation-checklist-text"
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_2__.Localized, {
+    text: text
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    className: "text body-text"
+  })))), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    className: "confirmation-checklist-subtext"
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_LinkParagraph__WEBPACK_IMPORTED_MODULE_3__.LinkParagraph, {
+    text_content: {
+      text: subtext,
+      link_keys
+    },
+    handleAction: handleAction
+  }))))));
+};
+
+/***/ }),
+/* 27 */
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   EmbeddedBackupRestore: () => (/* binding */ EmbeddedBackupRestore)
+/* harmony export */ });
+/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
+/* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
+/* harmony import */ var _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(3);
+/* harmony import */ var _MSLocalized__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(5);
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+
+
+
+const EmbeddedBackupRestore = ({
+  handleAction,
+  skipButton
+}) => {
+  const [recoveryInProgress, setRecoveryInProgress] = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false);
+  const ref = (0,react__WEBPACK_IMPORTED_MODULE_0__.useRef)(null);
+  (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(() => {
+    const loadRestore = async () => {
+      await window.AWFindBackupsInWellKnownLocations?.({
+        validateFile: true,
+        multipleFiles: true
+      });
+    };
+    loadRestore();
+    // Clear the pref used to target the restore screen so that users will not
+    // automatically see it again the next time they visit about:welcome.
+    _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_1__.AboutWelcomeUtils.handleUserAction({
+      type: "SET_PREF",
+      data: {
+        pref: {
+          name: "showRestoreFromBackup",
+          value: false
+        }
+      }
+    });
+  }, []);
+  const onRecoveryProgressChange = (0,react__WEBPACK_IMPORTED_MODULE_0__.useCallback)(e => {
+    setRecoveryInProgress(e.detail.recoveryInProgress);
+  }, []);
+  (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(() => {
+    const backupRef = ref.current;
+    if (backupRef.backupServiceState) {
+      setRecoveryInProgress(backupRef.backupServiceState.recoveryInProgress);
+    }
+    backupRef.addEventListener("BackupUI:RecoveryProgress", onRecoveryProgressChange);
+    return () => {
+      backupRef.removeEventListener("BackupUI:RecoveryProgress", onRecoveryProgressChange);
+    };
+  }, [onRecoveryProgressChange]);
+  return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    className: "embedded-backup-restore-container"
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("restore-from-backup", {
+    aboutWelcomeEmbedded: "true",
+    labelFontWeight: "600",
+    ref: ref
+  }), skipButton ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    className: "action-buttons"
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    className: "secondary-cta"
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_2__.Localized, {
+    text: skipButton.label
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", {
+    id: "secondary_button",
+    className: skipButton?.has_arrow_icon ? "secondary arrow-icon" : "secondary",
+    value: "skip_button",
+    disabled: recoveryInProgress,
+    "aria-busy": recoveryInProgress || undefined,
+    onClick: handleAction
+  })))) : null);
+};
+
+/***/ }),
+/* 28 */
 /***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
 
 __webpack_require__.r(__webpack_exports__);
@@ -3234,7 +3904,9 @@ function addUtmParams(url, utmTerm) {
       returnUrl.searchParams.append(key, value);
     }
   }
-  returnUrl.searchParams.append("utm_term", utmTerm);
+  if (!returnUrl.searchParams.has("utm_term")) {
+    returnUrl.searchParams.append("utm_term", utmTerm);
+  }
   return returnUrl;
 }
 
@@ -3318,7 +3990,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var react_dom__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__webpack_require__.n(react_dom__WEBPACK_IMPORTED_MODULE_1__);
 /* harmony import */ var _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(3);
 /* harmony import */ var _components_MultiStageAboutWelcome__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(4);
-function _extends() { _extends = Object.assign ? Object.assign.bind() : function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -3395,7 +4067,8 @@ class AboutWelcome extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
       backdrop: props.backdrop,
       startScreen: props.startScreen || 0,
       appAndSystemLocaleInfo: props.appAndSystemLocaleInfo,
-      ariaRole: props.aria_role
+      ariaRole: props.aria_role,
+      gateInitialPaint: true
     });
   }
 }

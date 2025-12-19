@@ -262,6 +262,11 @@
   );
   --button-secondary-hover-fg-color:var(--button-secondary-fg-color);
   --button-secondary-hover-border-color:var(--button-secondary-hover-bg-color);
+  --button-secondary-disabled-bg-color:var(--button-secondary-bg-color);
+  --button-secondary-disabled-border-color:var(
+    --button-secondary-border-color
+  );
+  --button-secondary-disabled-fg-color:var(--button-secondary-fg-color);
 
   --button-primary-bg-color:light-dark(#0060df, #0df);
   --button-primary-fg-color:light-dark(#fbfbfe, #15141a);
@@ -272,15 +277,17 @@
   --button-primary-hover-bg-color:light-dark(#0250bb, #80ebff);
   --button-primary-hover-fg-color:var(--button-primary-fg-color);
   --button-primary-hover-border-color:var(--button-primary-hover-bg-color);
-
-  --button-disabled-bg-color:color-mix(in srgb, currentcolor, transparent 60%);
-  --button-disabled-fg-color:var(--button-disabled-bg-color);
+  --button-primary-disabled-bg-color:var(--button-primary-bg-color);
+  --button-primary-disabled-border-color:var(--button-primary-border-color);
+  --button-primary-disabled-fg-color:var(--button-primary-fg-color);
+  --button-disabled-opacity:0.4;
 
   --input-text-bg-color:light-dark(white, #42414d);
   --input-text-fg-color:var(--text-primary-color);
 
   @media (prefers-color-scheme: dark){
     --hover-filter:brightness(1.4);
+    --button-disabled-opacity:0.6;
   }
 
   @media screen and (forced-colors: active){
@@ -303,7 +310,7 @@
     --radio-border-color:ButtonText;
     --radio-checked-border-color:ButtonText;
 
-    --button-secondary-bg-color:HighlightText;
+    --button-secondary-bg-color:ButtonFace;
     --button-secondary-fg-color:ButtonText;
     --button-secondary-border-color:ButtonText;
     --button-secondary-active-bg-color:HighlightText;
@@ -312,9 +319,11 @@
     --button-secondary-hover-bg-color:HighlightText;
     --button-secondary-hover-fg-color:SelectedItem;
     --button-secondary-hover-border-color:SelectedItem;
+    --button-secondary-disabled-fg-color:GrayText;
+    --button-secondary-disabled-border-color:GrayText;
 
     --button-primary-bg-color:ButtonText;
-    --button-primary-fg-color:HighlightText;
+    --button-primary-fg-color:ButtonFace;
     --button-primary-border-color:ButtonText;
     --button-primary-active-bg-color:SelectedItem;
     --button-primary-active-fg-color:HighlightText;
@@ -322,11 +331,12 @@
     --button-primary-hover-bg-color:SelectedItem;
     --button-primary-hover-fg-color:HighlightText;
     --button-primary-hover-border-color:SelectedItem;
+    --button-primary-disabled-bg-color:GrayText;
+    --button-primary-disabled-fg-color:ButtonFace;
+    --button-primary-disabled-border-color:GrayText;
+    --button-disabled-opacity:1;
 
-    --button-disabled-bg-color:GrayText;
-    --button-disabled-fg-color:ButtonFace;
-
-    --input-text-bg-color:HighlightText;
+    --input-text-bg-color:Field;
     --input-text-fg-color:FieldText;
   }
 
@@ -460,6 +470,13 @@
           background-color:var(--button-secondary-active-bg-color);
           border-color:var(--button-secondary-active-border-color);
         }
+
+        &:disabled{
+          background-color:var(--button-secondary-disabled-bg-color);
+          border-color:var(--button-secondary-disabled-border-color);
+          color:var(--button-secondary-disabled-fg-color);
+          opacity:var(--button-disabled-opacity);
+        }
       }
 
       &.primaryButton{
@@ -479,12 +496,16 @@
           background-color:var(--button-primary-active-bg-color);
           border-color:var(--button-primary-active-border-color);
         }
+
+        &:disabled{
+          background-color:var(--button-primary-disabled-bg-color);
+          border-color:var(--button-primary-disabled-border-color);
+          color:var(--button-primary-disabled-fg-color);
+          opacity:var(--button-disabled-opacity);
+        }
       }
 
       &:disabled{
-        color:var(--button-disabled-fg-color) !important;
-        background-color:var(--button-disabled-bg-color);
-        border-color:var(--button-disabled-bg-color);
         pointer-events:none;
       }
     }
@@ -605,10 +626,24 @@
     cursor:text;
     transform-origin:0% 0%;
   }
+  --min-font-size:1;
+  --text-scale-factor:calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv:calc(1 / var(--min-font-size));
 
   > :not(.markedContent),
   .markedContent span:not(.markedContent){
     z-index:1;
+
+    --font-height:0;
+    font-size:calc(var(--text-scale-factor) * var(--font-height));
+
+    --scale-x:1;
+    --rotate:0deg;
+    transform:rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+  }
+
+  .markedContent{
+    display:contents;
   }
 
   span[role="img"]{
@@ -790,6 +825,16 @@
         display:none;
       }
     }
+
+    .overlaidText{
+      position:absolute;
+      top:0;
+      left:0;
+      width:0;
+      height:0;
+      display:inline-block;
+      overflow:hidden;
+    }
   }
 
   .textLayer.selecting ~ & section{
@@ -809,7 +854,6 @@
     > a:hover{
     opacity:0.2;
     background-color:rgb(255 255 0);
-    box-shadow:0 2px 10px rgb(255 255 0);
   }
 
   .linkAnnotation.hasBorder:hover{
@@ -990,8 +1034,9 @@
     display:inline-block;
   }
 
-  .popup > .header h1{
+  .popup > .header > .title{
     display:inline;
+    font-weight:bold;
   }
 
   .popup > .header .popupDate{
@@ -1013,6 +1058,10 @@
 
   .popupTriggerArea{
     cursor:pointer;
+
+    &:hover{
+      backdrop-filter:var(--hcm-highlight-filter);
+    }
   }
 
   section svg{
@@ -1441,6 +1490,10 @@
       .structTree{
         contain:strict;
       }
+
+      &.detailView{
+        image-rendering:pixelated;
+      }
     }
   }
 }
@@ -1536,12 +1589,6 @@
 }
 
 :root{
-  --dir-factor:1;
-  --scale-select-width:140px;
-
-  --toolbar-icon-opacity:1;
-  --doorhanger-icon-opacity:0.9;
-
   --main-color:light-dark(rgb(12 12 13), rgb(249 249 250));
   --body-bg-color:light-dark(rgb(212 212 215), rgb(42 42 46));
   --scrollbar-color:light-dark(auto, rgb(121 121 123));
@@ -1564,10 +1611,6 @@
   --toolbar-border-width:1px;
 
   --toolbarButton-download-icon:url(images/gv-toolbarButton-download.svg);
-}
-
-:root:dir(rtl){
-  --dir-factor:-1;
 }
 
 @media screen and (forced-colors: active){

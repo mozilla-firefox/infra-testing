@@ -13,10 +13,11 @@
 #include "mozilla/ContentEvents.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/EventListenerManager.h"
+#include "mozilla/ProfilerMarkers.h"
 #include "mozilla/Variant.h"
 #include "mozilla/dom/AnimationPlaybackEvent.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/KeyframeEffect.h"
-#include "mozilla/ProfilerMarkers.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsPresContext.h"
 
@@ -47,7 +48,7 @@ struct AnimationEventInfo {
 
   struct CssTransitionData : public CssAnimationOrTransitionData {
     // For transition events only.
-    const AnimatedPropertyID mProperty;
+    const CSSPropertyId mProperty;
   };
 
   struct WebAnimationData {
@@ -110,7 +111,7 @@ struct AnimationEventInfo {
   }
 
   // For CSS transition events
-  AnimationEventInfo(const AnimatedPropertyID& aProperty,
+  AnimationEventInfo(const CSSPropertyId& aProperty,
                      const NonOwningAnimationTarget& aTarget,
                      EventMessage aMessage, double aElapsedTime,
                      uint64_t aTransitionGeneration,

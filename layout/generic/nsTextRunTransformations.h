@@ -7,11 +7,10 @@
 #ifndef NSTEXTRUNTRANSFORMATIONS_H_
 #define NSTEXTRUNTRANSFORMATIONS_H_
 
-#include "mozilla/Attributes.h"
-#include "mozilla/MemoryReporting.h"
-#include "mozilla/UniquePtr.h"
 #include "gfxTextRun.h"
 #include "mozilla/ComputedStyle.h"
+#include "mozilla/MemoryReporting.h"
+#include "mozilla/UniquePtr.h"
 #include "nsPresContext.h"
 #include "nsStyleStruct.h"
 

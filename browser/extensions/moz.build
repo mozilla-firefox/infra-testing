@@ -5,9 +5,13 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 DIRS += [
+    "data-leak-blocker",
     "formautofill",
+    "ipp-activator",
     "webcompat",
     "pictureinpicture",
     "search-detection",
     "newtab",
 ]
+
+JAR_MANIFESTS += ["jar.mn"]

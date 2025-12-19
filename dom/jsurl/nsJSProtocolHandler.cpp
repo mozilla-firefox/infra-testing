@@ -4,59 +4,59 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "js/CompilationAndEvaluation.h"
-#include "nsCOMPtr.h"
-#include "jsapi.h"
-#include "js/Wrapper.h"
-#include "nsCRT.h"
-#include "nsError.h"
-#include "nsString.h"
-#include "nsGlobalWindowInner.h"
-#include "nsReadableUtils.h"
 #include "nsJSProtocolHandler.h"
-#include "nsStringStream.h"
-#include "nsNetUtil.h"
 
-#include "nsIClassInfoImpl.h"
-#include "nsIStreamListener.h"
-#include "nsIURI.h"
-#include "nsIScriptContext.h"
-#include "nsIScriptGlobalObject.h"
-#include "nsIPrincipal.h"
-#include "nsIInterfaceRequestor.h"
-#include "nsIInterfaceRequestorUtils.h"
-#include "nsPIDOMWindow.h"
-#include "nsEscape.h"
-#include "nsIWebNavigation.h"
-#include "nsIDocShell.h"
-#include "nsIDocumentViewer.h"
-#include "nsContentUtils.h"
-#include "nsJSUtils.h"
-#include "nsThreadUtils.h"
-#include "nsIScriptChannel.h"
-#include "mozilla/dom/Document.h"
-#include "nsIObjectInputStream.h"
-#include "nsIObjectOutputStream.h"
-#include "nsIWritablePropertyBag2.h"
-#include "nsIContentSecurityPolicy.h"
-#include "nsSandboxFlags.h"
-#include "nsTextToSubURI.h"
+#include "DefaultURI.h"
+#include "js/CompilationAndEvaluation.h"
+#include "js/Wrapper.h"
+#include "jsapi.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/SourceLocation.h"
-#include "mozilla/dom/AutoEntryScript.h"
-#include "mozilla/dom/DOMSecurityMonitor.h"
-#include "mozilla/dom/JSExecutionUtils.h"  // mozilla::dom::Compile, mozilla::dom::EvaluationExceptionToNSResult
-#include "mozilla/dom/ScriptSettings.h"
-#include "mozilla/dom/PopupBlocker.h"
-#include "nsContentSecurityManager.h"
-#include "DefaultURI.h"
-
 #include "mozilla/LoadInfo.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/SourceLocation.h"
 #include "mozilla/TextUtils.h"
+#include "mozilla/dom/AutoEntryScript.h"
+#include "mozilla/dom/DOMSecurityMonitor.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/JSExecutionUtils.h"  // mozilla::dom::Compile, mozilla::dom::EvaluationExceptionToNSResult
+#include "mozilla/dom/PolicyContainer.h"
+#include "mozilla/dom/PopupBlocker.h"
+#include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/ipc/URIUtils.h"
+#include "nsCOMPtr.h"
+#include "nsCRT.h"
+#include "nsContentSecurityManager.h"
+#include "nsContentUtils.h"
+#include "nsError.h"
+#include "nsEscape.h"
+#include "nsGlobalWindowInner.h"
+#include "nsIClassInfoImpl.h"
+#include "nsIContentSecurityPolicy.h"
+#include "nsIDocShell.h"
+#include "nsIDocumentViewer.h"
+#include "nsIInterfaceRequestor.h"
+#include "nsIInterfaceRequestorUtils.h"
+#include "nsIObjectInputStream.h"
+#include "nsIObjectOutputStream.h"
+#include "nsIPrincipal.h"
+#include "nsIScriptChannel.h"
+#include "nsIScriptContext.h"
+#include "nsIScriptGlobalObject.h"
+#include "nsIStreamListener.h"
+#include "nsIURI.h"
+#include "nsIWebNavigation.h"
+#include "nsIWritablePropertyBag2.h"
+#include "nsJSUtils.h"
+#include "nsNetUtil.h"
+#include "nsPIDOMWindow.h"
+#include "nsReadableUtils.h"
+#include "nsSandboxFlags.h"
+#include "nsString.h"
+#include "nsStringStream.h"
+#include "nsTextToSubURI.h"
+#include "nsThreadUtils.h"
 
 using mozilla::IsAscii;
 using mozilla::dom::AutoEntryScript;
@@ -179,61 +179,44 @@ static bool AllowedByCSP(nsIContentSecurityPolicy* aCSP,
   return (NS_SUCCEEDED(rv) && allowsInlineScript);
 }
 
-static bool IsPromiseValue(JSContext* aCx, JS::Handle<JS::Value> aValue) {
-  if (!aValue.isObject()) {
-    return false;
-  }
-
-  // We only care about Promise here, so CheckedUnwrapStatic is fine.
-  JS::Rooted<JSObject*> obj(aCx, js::CheckedUnwrapStatic(&aValue.toObject()));
-  if (!obj) {
-    return false;
-  }
-
-  return JS::IsPromiseObject(obj);
-}
-
-// Execute the compiled script a get the return value, coerced to a string.
+// https://html.spec.whatwg.org/#evaluate-a-javascript:-url
+// Steps 7-10.
 //
-// Copy the returned value into the mutable handle argument. In case of a
-// evaluation failure either during the execution or the conversion of the
-// result to a string, the nsresult is be set to the corresponding result
-// code and the mutable handle argument remains unchanged.
+// If the execution result is a string, |aRv| is set to success, and
+// |aRetValue| is set to the string.
 //
-// The value returned in the mutable handle argument is part of |aCx|'s
-// compartment. If the caller is in a different compartment, then the out-param
-// value should be wrapped by calling |JS_WrapValue|.
+// If the execution result is not a string, |aRv| is set to success, and
+// |aRetValue| is set to undefined.
 //
-static void ExecScriptAndCoerceToString(JSContext* aCx,
-                                        JS::Handle<JSScript*> aScript,
-                                        JS::MutableHandle<JS::Value> aRetValue,
-                                        mozilla::ErrorResult& aRv) {
+// In case of a evaluation failure during the execution, |aRv| is set to the
+// corresponding result code and |aRetValue| remains unchanged.
+static void ExecScriptAndGetString(JSContext* aCx,
+                                   JS::Handle<JSScript*> aScript,
+                                   JS::MutableHandle<JS::Value> aRetValue,
+                                   mozilla::ErrorResult& aRv) {
   MOZ_ASSERT(aScript);
 
+  // Step 7. Let evaluationStatus be the result of running the classic script
+  //         script.
   if (!JS_ExecuteScript(aCx, aScript, aRetValue)) {
     aRv.NoteJSContextException(aCx);
     return;
   }
 
-  if (IsPromiseValue(aCx, aRetValue)) {
-    // We're a javascript: url and we should treat Promise return values as
-    // undefined.
-    //
-    // Once bug 1477821 is fixed this code might be able to go away, or will
-    // become enshrined in the spec, depending.
-    aRetValue.setUndefined();
+  // Step 8. Let result be null.
+  // Step 9. If evaluationStatus is a normal completion, and
+  //         evaluationStatus.[[Value]] is a String, then set result to
+  //         evaluationStatus.[[Value]].
+  if (aRetValue.isString()) {
+    return;
   }
 
-  if (!aRetValue.isUndefined()) {
-    JSString* str = JS::ToString(aCx, aRetValue);
-    if (!str) {
-      // ToString can be a function call, so an exception can be raised while
-      // executing the function.
-      aRv.NoteJSContextException(aCx);
-      return;
-    }
-    aRetValue.set(JS::StringValue(str));
-  }
+  // Step 10. Otherwise, return null.
+  //
+  // NOTE: The `null` here is the return value of the entire algorithm.
+  //       This function returns `undefined` for all cases and let the caller
+  //       handle it.
+  aRetValue.setUndefined();
 }
 
 nsresult JSURLInputStream::EvaluateScript(
@@ -291,7 +274,10 @@ nsresult JSURLInputStream::EvaluateScript(
   // (which is the CSPToInherit of the loadinfo) and the CSP of the
   // target document.  The target document check is performed below,
   // once we have determined the target document.
-  nsCOMPtr<nsIContentSecurityPolicy> csp = loadInfo->GetCspToInherit();
+  nsCOMPtr<nsIPolicyContainer> policyContainer =
+      loadInfo->GetPolicyContainerToInherit();
+  nsCOMPtr<nsIContentSecurityPolicy> csp =
+      PolicyContainer::GetCSP(policyContainer);
 
   if (!AllowedByCSP(csp, mURL, aJSCallingLocation)) {
     return NS_ERROR_DOM_RETVAL_UNDEFINED;
@@ -342,7 +328,8 @@ nsresult JSURLInputStream::EvaluateScript(
     // principal, or the principal of the document we started the load
     // against if the triggering principal is system.
     if (targetDoc->NodePrincipal()->Subsumes(loadInfo->TriggeringPrincipal())) {
-      nsCOMPtr<nsIContentSecurityPolicy> targetCSP = targetDoc->GetCsp();
+      nsCOMPtr<nsIContentSecurityPolicy> targetCSP =
+          PolicyContainer::GetCSP(targetDoc->GetPolicyContainer());
       if (!AllowedByCSP(targetCSP, mURL, aJSCallingLocation)) {
         return NS_ERROR_DOM_RETVAL_UNDEFINED;
       }
@@ -416,15 +403,16 @@ nsresult JSURLInputStream::EvaluateScript(
 
       if (!erv.Failed()) {
         MOZ_ASSERT(!options.noScriptRval);
-        ExecScriptAndCoerceToString(cx, compiledScript, &v, erv);
+        ExecScriptAndGetString(cx, compiledScript, &v, erv);
       }
     }
     rv = mozilla::dom::EvaluationExceptionToNSResult(erv);
   }
 
   js::AssertSameCompartment(cx, v);
+  MOZ_ASSERT(v.isString() || v.isUndefined());
 
-  if (NS_FAILED(rv) || !(v.isString() || v.isUndefined())) {
+  if (NS_FAILED(rv)) {
     return NS_ERROR_MALFORMED_URI;
   }
   if (v.isUndefined()) {
@@ -892,6 +880,8 @@ void nsJSChannel::EvaluateScript() {
           // return from the javascript: URL...
           mStatus = NS_ERROR_DOM_RETVAL_UNDEFINED;
         }
+        // Note: `docShell` may have been destroyed in `PermitUnload`, so don't
+        // add uses of `docShell` later in this method!
       }
     }
 

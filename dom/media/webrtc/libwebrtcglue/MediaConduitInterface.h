@@ -5,22 +5,22 @@
 #ifndef MEDIA_CONDUIT_ABSTRACTION_
 #define MEDIA_CONDUIT_ABSTRACTION_
 
-#include <vector>
 #include <functional>
 #include <map>
+#include <vector>
 
 #include "CodecConfig.h"
 #include "ImageContainer.h"
-#include "jsapi/RTCStatsReport.h"
-#include "MediaConduitErrors.h"
-#include "mozilla/media/MediaUtils.h"
-#include "mozilla/MozPromise.h"
-#include "WebrtcVideoCodecFactory.h"
-#include "nsTArray.h"
-#include "mozilla/dom/RTCRtpSourcesBinding.h"
-#include "PerformanceRecorder.h"
-#include "transport/mediapacket.h"
 #include "MediaConduitControl.h"
+#include "MediaConduitErrors.h"
+#include "PerformanceRecorder.h"
+#include "WebrtcVideoCodecFactory.h"
+#include "jsapi/RTCStatsReport.h"
+#include "mozilla/MozPromise.h"
+#include "mozilla/dom/RTCRtpSourcesBinding.h"
+#include "mozilla/media/MediaUtils.h"
+#include "nsTArray.h"
+#include "transport/mediapacket.h"
 
 // libwebrtc includes
 #include "api/audio/audio_frame.h"
@@ -47,10 +47,6 @@ namespace dom {
 struct RTCRtpSourceEntry;
 }
 
-namespace dom {
-struct RTCRtpSourceEntry;
-}
-
 enum class MediaSessionConduitLocalDirection : int { kSend, kRecv };
 
 class VideoSessionConduit;
@@ -71,13 +67,6 @@ class VideoRenderer {
   virtual ~VideoRenderer() {}
 
  public:
-  /**
-   * Callback Function reportng any change in the video-frame dimensions
-   * @param width:  current width of the video @ decoder
-   * @param height: current height of the video @ decoder
-   */
-  virtual void FrameSizeChange(unsigned int width, unsigned int height) = 0;
-
   /**
    * Callback Function reporting decoded frame for processing.
    * @param video_frame: reference to decoded video frame
@@ -135,6 +124,12 @@ class MediaSessionConduit {
       MediaEventSourceExc<webrtc::RtpPacketReceived, webrtc::RTPHeader>&
           aEvent) = 0;
 
+  virtual void ConnectReceiverRtcpEvent(
+      MediaEventSourceExc<webrtc::CopyOnWriteBuffer>& aEvent) = 0;
+
+  virtual void ConnectSenderRtcpEvent(
+      MediaEventSourceExc<webrtc::CopyOnWriteBuffer>& aEvent) = 0;
+
   // Sts thread only.
   virtual Maybe<uint16_t> RtpSendBaseSeqFor(uint32_t aSsrc) const = 0;
 
@@ -160,10 +155,12 @@ class MediaSessionConduit {
   virtual bool SendSenderRtcp(const uint8_t* aData, size_t aLength) = 0;
   virtual bool SendReceiverRtcp(const uint8_t* aData, size_t aLength) = 0;
 
-  virtual void DeliverPacket(rtc::CopyOnWriteBuffer packet,
+  virtual void DeliverPacket(webrtc::CopyOnWriteBuffer packet,
                              PacketType type) = 0;
 
   virtual RefPtr<GenericPromise> Shutdown() = 0;
+  // Call thread only. Is set at the end of Shutdown()
+  virtual bool IsShutdown() const = 0;
 
   virtual Maybe<RefPtr<AudioSessionConduit>> AsAudioSessionConduit() = 0;
   virtual Maybe<RefPtr<VideoSessionConduit>> AsVideoSessionConduit() = 0;
@@ -185,7 +182,8 @@ class MediaSessionConduit {
                                              const uint8_t aAudioLevel);
 
  protected:
-  virtual std::vector<webrtc::RtpSource> GetUpstreamRtpSources() const = 0;
+  virtual const std::vector<webrtc::RtpSource>& GetUpstreamRtpSources()
+      const = 0;
 
  private:
   void UpdateRtpSources(const std::vector<webrtc::RtpSource>& aSources) const;
@@ -241,11 +239,12 @@ class WebrtcSendTransport : public webrtc::Transport {
  public:
   explicit WebrtcSendTransport(MediaSessionConduit* aConduit)
       : mConduit(aConduit) {}
-  bool SendRtp(rtc::ArrayView<const uint8_t> aPacket,
+  bool SendRtp(webrtc::ArrayView<const uint8_t> aPacket,
                const webrtc::PacketOptions& aOptions) {
     return mConduit->SendRtp(aPacket.data(), aPacket.size(), aOptions);
   }
-  bool SendRtcp(rtc::ArrayView<const uint8_t> aPacket) {
+  bool SendRtcp(webrtc::ArrayView<const uint8_t> aPacket,
+                const webrtc::PacketOptions& aOptions) {
     return mConduit->SendSenderRtcp(aPacket.data(), aPacket.size());
   }
 };
@@ -257,11 +256,12 @@ class WebrtcReceiveTransport : public webrtc::Transport {
  public:
   explicit WebrtcReceiveTransport(MediaSessionConduit* aConduit)
       : mConduit(aConduit) {}
-  bool SendRtp(rtc::ArrayView<const uint8_t> aPacket,
+  bool SendRtp(webrtc::ArrayView<const uint8_t> aPacket,
                const webrtc::PacketOptions& aOptions) {
     MOZ_CRASH("Unexpected RTP packet");
   }
-  bool SendRtcp(rtc::ArrayView<const uint8_t> aPacket) {
+  bool SendRtcp(webrtc::ArrayView<const uint8_t> aPacket,
+                const webrtc::PacketOptions& aOptions) {
     return mConduit->SendReceiverRtcp(aPacket.data(), aPacket.size());
   }
 };
@@ -392,6 +392,7 @@ class VideoSessionConduit : public MediaSessionConduit {
   virtual Maybe<Ssrc> GetAssociatedLocalRtxSSRC(Ssrc aSsrc) const = 0;
 
   virtual Maybe<gfx::IntSize> GetLastResolution() const = 0;
+  virtual AbstractCanonical<Maybe<gfx::IntSize>>* CanonicalReceivingSize() = 0;
 
   virtual void RequestKeyFrame(FrameTransformerProxy* aProxy) = 0;
   virtual void GenerateKeyFrame(const Maybe<std::string>& aRid,

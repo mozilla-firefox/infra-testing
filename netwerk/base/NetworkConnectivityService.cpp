@@ -225,6 +225,11 @@ void NetworkConnectivityService::PerformChecks() {
     }
   }
 
+  if (StaticPrefs::network_connectivity_service_wait_for_idle_startup() &&
+      !mIdleStartupDone) {
+    return;
+  }
+
   RecheckDNS();
   RecheckIPConnectivity();
 }
@@ -356,7 +361,7 @@ NetworkConnectivityService::RecheckDNS() {
   if (nsIOService::UseSocketProcess()) {
     RefPtr<SocketProcessParent> parent = SocketProcessParent::GetSingleton();
     if (parent) {
-      Unused << parent->SendRecheckDNS();
+      (void)parent->SendRecheckDNS();
     }
   }
 
@@ -438,6 +443,7 @@ NetworkConnectivityService::Observe(nsISupports* aSubject, const char* aTopic,
                   .Equals(aData)) {
     PerformChecks();
   } else if (!strcmp(aTopic, "browser-idle-startup-tasks-finished")) {
+    mIdleStartupDone = true;
     PerformChecks();
   }
 
@@ -526,7 +532,7 @@ NetworkConnectivityService::RecheckIPConnectivity() {
   if (nsIOService::UseSocketProcess()) {
     RefPtr<SocketProcessParent> parent = SocketProcessParent::GetSingleton();
     if (parent) {
-      Unused << parent->SendRecheckIPConnectivity();
+      (void)parent->SendRecheckIPConnectivity();
     }
   }
 
@@ -620,7 +626,7 @@ NetworkConnectivityService::OnDataAvailable(nsIRequest* aRequest,
     mCheckedNetworkId = true;
   }
 
-  Unused << NS_ReadInputStreamToString(aInputStream, data, aCount);
+  (void)NS_ReadInputStreamToString(aInputStream, data, aCount);
   return NS_OK;
 }
 

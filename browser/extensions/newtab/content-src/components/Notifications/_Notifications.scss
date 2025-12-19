@@ -2,7 +2,7 @@
   position: fixed;
   inset-inline-end: var(--space-medium);
   inset-block-end: var(--space-medium);
-  z-index: 1;
+  z-index: 10;
 }
 
 .notification-feed-item {
@@ -13,11 +13,11 @@
 @keyframes toastSlideInSlideOut {
   0%, 100% {
     opacity: 0;
-    top: 50%;
+    inset-block-start: 50%;
   }
 
   15%, 85% {
     opacity: 1;
-    top: 0;
+    inset-block-start: 0;
   }
 }

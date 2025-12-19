@@ -5,11 +5,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsOpenURIInFrameParams.h"
-#include "nsIContentSecurityPolicy.h"
-#include "nsIOpenWindowInfo.h"
+
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/ToJSValue.h"
+#include "nsIContentSecurityPolicy.h"
+#include "nsIOpenWindowInfo.h"
+#include "nsIPolicyContainer.h"
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsOpenURIInFrameParams)
   NS_INTERFACE_MAP_ENTRY(nsIOpenURIInFrameParams)
@@ -68,15 +70,17 @@ nsOpenURIInFrameParams::SetTriggeringPrincipal(
 }
 
 NS_IMETHODIMP
-nsOpenURIInFrameParams::GetCsp(nsIContentSecurityPolicy** aCsp) {
-  NS_IF_ADDREF(*aCsp = mCsp);
+nsOpenURIInFrameParams::GetPolicyContainer(
+    nsIPolicyContainer** aPolicyContainer) {
+  NS_IF_ADDREF(*aPolicyContainer = mPolicyContainer);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsOpenURIInFrameParams::SetCsp(nsIContentSecurityPolicy* aCsp) {
-  NS_ENSURE_TRUE(aCsp, NS_ERROR_INVALID_ARG);
-  mCsp = aCsp;
+nsOpenURIInFrameParams::SetPolicyContainer(
+    nsIPolicyContainer* aPolicyContainer) {
+  NS_ENSURE_TRUE(aPolicyContainer, NS_ERROR_INVALID_ARG);
+  mPolicyContainer = aPolicyContainer;
   return NS_OK;
 }
 

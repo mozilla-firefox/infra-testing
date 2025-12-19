@@ -12,17 +12,15 @@
 #include <cstdint>
 #include <new>
 #include <utility>
+
 #include "ContentChild.h"
 #include "ErrorList.h"
-#include "mozilla/ProfilerLabels.h"
-#include "mozilla/Unused.h"
 #include "base/process_util.h"
 #include "chrome/common/ipc_channel.h"
 #include "js/CallAndConstruct.h"  // JS::IsCallable, JS_CallFunctionValue
 #include "js/CompilationAndEvaluation.h"
 #include "js/CompileOptions.h"
 #include "js/EnvironmentChain.h"  // JS::EnvironmentChain
-#include "js/experimental/JSStencil.h"
 #include "js/GCVector.h"
 #include "js/JSON.h"
 #include "js/PropertyAndElement.h"  // JS_GetProperty
@@ -32,21 +30,20 @@
 #include "js/TypeDecls.h"
 #include "js/Utility.h"  // JS::FreePolicy
 #include "js/Wrapper.h"
+#include "js/experimental/JSStencil.h"
 #include "jsapi.h"
 #include "jsfriendapi.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/MacroForEach.h"
-#include "mozilla/NotNull.h"
 #include "mozilla/OwningNonNull.h"
+#include "mozilla/ProfilerLabels.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/ScriptPreloader.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/TypedEnumBits.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/AutoEntryScript.h"
 #include "mozilla/dom/BindingDeclarations.h"
@@ -58,6 +55,7 @@
 #include "mozilla/dom/MessageBroadcaster.h"
 #include "mozilla/dom/MessageListenerManager.h"
 #include "mozilla/dom/MessageManagerBinding.h"
+#include "mozilla/dom/MessageManagerCallback.h"
 #include "mozilla/dom/MessagePort.h"
 #include "mozilla/dom/ParentProcessMessageManager.h"
 #include "mozilla/dom/ProcessMessageManager.h"
@@ -66,7 +64,6 @@
 #include "mozilla/dom/ScriptLoader.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/ToJSValue.h"
-#include "mozilla/dom/MessageManagerCallback.h"
 #include "mozilla/dom/ipc/SharedMap.h"
 #include "mozilla/dom/ipc/StructuredCloneData.h"
 #include "mozilla/scache/StartupCacheUtils.h"
@@ -78,7 +75,6 @@
 #include "nsContentUtils.h"
 #include "nsCycleCollectionNoteChild.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsTHashMap.h"
 #include "nsDebug.h"
 #include "nsError.h"
 #include "nsHashKeys.h"
@@ -108,6 +104,7 @@
 #include "nsStringFlags.h"
 #include "nsStringFwd.h"
 #include "nsTArray.h"
+#include "nsTHashMap.h"
 #include "nsTLiteralString.h"
 #include "nsTObserverArray.h"
 #include "nsTPromiseFlatString.h"
@@ -144,12 +141,11 @@ struct FrameMessageMarker {
   static MarkerSchema MarkerTypeDisplay() {
     using MS = MarkerSchema;
     MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
-    schema.AddKeyLabelFormatSearchable("name", "Message Name",
-                                       MS::Format::UniqueString,
-                                       MS::Searchable::Searchable);
+    schema.AddKeyLabelFormat("name", "Message Name", MS::Format::UniqueString,
+                             MS::PayloadFlags::Searchable);
     schema.AddKeyLabelFormat("sync", "Sync", MS::Format::String);
     schema.SetTooltipLabel("FrameMessage - {marker.name}");
-    schema.SetTableLabel("{marker.name} - {marker.data.name}");
+    schema.SetTableLabel("{marker.data.name}");
     return schema;
   }
 };
@@ -538,7 +534,7 @@ void nsFrameMessageManager::SendSyncMessage(JSContext* aCx,
     return;
   }
 
-  nsTArray<StructuredCloneData> retval;
+  nsTArray<UniquePtr<StructuredCloneData>> retval;
 
   sSendingSyncMessage = true;
   bool ok = mCallback->DoSendBlockingMessage(aMessageName, data, &retval);
@@ -552,7 +548,7 @@ void nsFrameMessageManager::SendSyncMessage(JSContext* aCx,
   aResult.SetCapacity(len);
   for (uint32_t i = 0; i < len; ++i) {
     JS::Rooted<JS::Value> ret(aCx);
-    retval[i].Read(aCx, &ret, aError);
+    retval[i]->Read(aCx, &ret, aError);
     if (aError.Failed()) {
       MOZ_ASSERT(false, "Unable to read structured clone in SendMessage");
       return;
@@ -626,7 +622,7 @@ class MMListenerRemover {
 void nsFrameMessageManager::ReceiveMessage(
     nsISupports* aTarget, nsFrameLoader* aTargetFrameLoader, bool aTargetClosed,
     const nsAString& aMessage, bool aIsSync, StructuredCloneData* aCloneData,
-    nsTArray<StructuredCloneData>* aRetVal, ErrorResult& aError) {
+    nsTArray<UniquePtr<StructuredCloneData>>* aRetVal, ErrorResult& aError) {
   MOZ_ASSERT(aTarget);
   profiler_add_marker("ReceiveMessage", geckoprofiler::category::IPC, {},
                       FrameMessageMarker{}, aMessage, aIsSync);
@@ -787,9 +783,10 @@ void nsFrameMessageManager::ReceiveMessage(
       }
 
       if (aRetVal) {
-        StructuredCloneData* data = aRetVal->AppendElement();
-        data->InitScope(JS::StructuredCloneScope::DifferentProcess);
-        data->Write(cx, rval, aError);
+        UniquePtr<StructuredCloneData>* data =
+            aRetVal->AppendElement(MakeUnique<StructuredCloneData>());
+        (*data)->InitScope(JS::StructuredCloneScope::DifferentProcess);
+        (*data)->Write(cx, rval, aError);
         if (NS_WARN_IF(aError.Failed())) {
           aRetVal->RemoveLastElement();
           nsString msg = aMessage +
@@ -1215,7 +1212,7 @@ void nsMessageManagerScriptExecutor::LoadScriptInternal(
         if (!envChain.append(aMessageManager)) {
           return;
         }
-        Unused << JS_ExecuteScript(cx, envChain, script, &rval);
+        (void)JS_ExecuteScript(cx, envChain, script, &rval);
       }
     }
   }
@@ -1450,9 +1447,9 @@ class ChildProcessMessageManagerCallback : public MessageManagerCallback {
     MOZ_COUNT_DTOR(ChildProcessMessageManagerCallback);
   }
 
-  bool DoSendBlockingMessage(const nsAString& aMessage,
-                             StructuredCloneData& aData,
-                             nsTArray<StructuredCloneData>* aRetVal) override {
+  bool DoSendBlockingMessage(
+      const nsAString& aMessage, StructuredCloneData& aData,
+      nsTArray<UniquePtr<StructuredCloneData>>* aRetVal) override {
     mozilla::dom::ContentChild* cc = mozilla::dom::ContentChild::GetSingleton();
     if (!cc) {
       return true;
@@ -1507,9 +1504,9 @@ class SameChildProcessMessageManagerCallback : public MessageManagerCallback {
     MOZ_COUNT_DTOR(SameChildProcessMessageManagerCallback);
   }
 
-  bool DoSendBlockingMessage(const nsAString& aMessage,
-                             StructuredCloneData& aData,
-                             nsTArray<StructuredCloneData>* aRetVal) override {
+  bool DoSendBlockingMessage(
+      const nsAString& aMessage, StructuredCloneData& aData,
+      nsTArray<UniquePtr<StructuredCloneData>>* aRetVal) override {
     SameProcessMessageQueue* queue = SameProcessMessageQueue::Get();
     queue->Flush();
 

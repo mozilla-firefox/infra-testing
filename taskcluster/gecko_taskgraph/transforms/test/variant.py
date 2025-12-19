@@ -81,7 +81,9 @@ def split_variants(config, tasks):
     def replace_task_items(task_key, variant_key):
         for item in variant_key:
             if isinstance(variant_key[item], dict):
-                task_key[item] = replace_task_items(task_key[item], variant_key[item])
+                task_key[item] = replace_task_items(
+                    task_key.get(item, {}), variant_key[item]
+                )
             else:
                 task_key[item] = variant_key[item]
         return task_key
@@ -114,7 +116,7 @@ def split_variants(config, tasks):
             variant=name,
         )
 
-        return merge(task, variant.get("merge", {}))
+        return merge(task, deepcopy(variant.get("merge", {})))
 
     expired_variants = find_expired_variants(TEST_VARIANTS)
     for task in tasks:
@@ -122,7 +124,7 @@ def split_variants(config, tasks):
         variants = remove_expired(variants, expired_variants)
 
         if task.pop("run-without-variant"):
-            taskv = deepcopy(task)
+            taskv = deepcopy(task) if variants else task
             taskv["attributes"]["unittest_variant"] = None
             yield taskv
 

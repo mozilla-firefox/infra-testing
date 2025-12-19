@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this file,
+  You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources>
   <!-- Title of the crash reporter dialog. %1$s will be replaced with the name of the app (e.g. Firefox Focus). -->
   <string name="mozac_lib_crash_dialog_title">ਅਫ਼ਸੋਸ ਹੈ। %1$s ਨੂੰ ਸਮੱਸਿਆ ਆਈ ਤੇ ਕਰੈਸ਼ ਹੋ ਗਿਆ ਹੈ।</string>
@@ -26,4 +33,10 @@
   <string name="mozac_lib_crash_no_crashes">ਕੋਈ ਕਰੈਸ਼ ਰਿਪੋਰਟ ਨਹੀਂ ਦਿੱਤੀ ਗਈ</string>
   <!-- Text link that will show an app chooser to share a crash report with a third-party app (e.g. gmail) -->
   <string name="mozac_lib_crash_share">ਸਾਂਝਾ ਕਰੋ</string>
+  <!-- String for Ask before sending crash reports radio button in Data Collection Screen -->
+  <string name="crash_reporting_ask">ਭੇਜਣ ਤੋਂ ਪਹਿਲਾਂ ਪੁੱਛੋ</string>
+  <!-- String for Send crash reports automatically radio button in Data Collection Screen -->
+  <string name="crash_reporting_auto">ਆਪਣੇ-ਆਪ ਭੇਜੋ</string>
+  <!-- String for Never sending crash reports radio button in Data Collection Screen -->
+  <string name="crash_reporting_never">ਕਦੇ ਵੀ ਨਾ ਭੇਜੋ</string>
 </resources>

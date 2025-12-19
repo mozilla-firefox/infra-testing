@@ -17,6 +17,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   FormAutofillNameUtils:
     "resource://gre/modules/shared/FormAutofillNameUtils.sys.mjs",
   LabelUtils: "resource://gre/modules/shared/LabelUtils.sys.mjs",
+  PhoneNumber: "resource://gre/modules/shared/PhoneNumber.sys.mjs",
   clearTimeout: "resource://gre/modules/Timer.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
@@ -70,6 +71,7 @@ export class FormAutofillHandler {
 
   #formMutationObserver = null;
 
+  #visibilityObserver = null;
   #visibilityStateObserverByElement = new WeakMap();
 
   /**
@@ -221,20 +223,10 @@ export class FormAutofillHandler {
     return this.#filledStateByElement.get(element);
   }
 
-  isVisiblityStateObserverSetUpByElement(element) {
-    return this.#visibilityStateObserverByElement.has(element);
-  }
-
-  setVisibilityStateObserverByElement(element, observer) {
-    this.#visibilityStateObserverByElement.set(element, observer);
-  }
-
-  clearVisibilityStateObserverByElement(element) {
-    if (this.isVisiblityStateObserverSetUpByElement(element)) {
-      const observer = this.#visibilityStateObserverByElement.get(element);
-      observer.disconnect();
-      this.#visibilityStateObserverByElement.delete(element);
-    }
+  #clearVisibilityObserver() {
+    this.#visibilityObserver.disconnect();
+    this.#visibilityObserver = null;
+    this.#visibilityStateObserverByElement = new WeakMap();
   }
 
   /**
@@ -427,7 +419,11 @@ export class FormAutofillHandler {
 
       let value = this.getFilledValueFromProfile(fieldDetail, profile);
       if (!value) {
-        this.changeFieldState(fieldDetail, FIELD_STATES.NORMAL);
+        // A field could have been filled by a previous fill, so only
+        // clear when in the preview state.
+        if (element.autofillState == FIELD_STATES.PREVIEW) {
+          this.changeFieldState(fieldDetail, FIELD_STATES.NORMAL);
+        }
         continue;
       }
 
@@ -441,7 +437,10 @@ export class FormAutofillHandler {
         // Unlike text input, select element is always previewed even if
         // the option is already selected.
         const option = this.matchSelectOptions(fieldDetail, profile);
-        value = option?.text ?? "";
+        if (!option) {
+          continue;
+        }
+        value = option.text ?? "";
       } else {
         continue;
       }
@@ -540,7 +539,7 @@ export class FormAutofillHandler {
 
     this.registerFormChangeHandler();
 
-    this.ensureValuesRefilledIfCleared(filledValuesByElement);
+    this.reassignValuesIfModified(filledValuesByElement, false);
   }
 
   registerFormChangeHandler() {
@@ -597,39 +596,45 @@ export class FormAutofillHandler {
   }
 
   /**
-   * Re-fills any previously autofilled element if the website cleared the element
-   * immediately after it has been autofilled (not if cleared by the user).
-   * This is to avoid having elements that are empty but highlighted.
+   * After a refill or clear action, the website might adjust the value of an
+   * element immediately afterwards. If this happens, fill or clear the value
+   * a second time to avoid having elements that are empty but highlighted, or
+   * vice versa.
    *
    * @param {Map<HTMLElement,string>} filledValuesByElement
+   * @param {boolean} onClear true for a clear action
    */
-  ensureValuesRefilledIfCleared(filledValuesByElement) {
+  reassignValuesIfModified(filledValuesByElement, onClear) {
     if (!FormAutofill.refillOnSiteClearingFields) {
       return;
     }
 
-    const filledElementValues = this.fieldDetails
-      .filter(fd => fd.element.autofillState == FIELD_STATES.AUTO_FILLED)
-      // Using the cached filled value here instead of fd.element.value, because
-      // fd.element.value is not always the property that the site stores the value at.
-      .map(fd => [fd.element, filledValuesByElement.get(fd.element) ?? ""]);
-
     this.#refillTimeoutId = lazy.setTimeout(() => {
-      for (let [e, v] of filledElementValues) {
-        if (e.autofillState == FIELD_STATES.AUTO_FILLED && e.value === v) {
+      for (let [e, v] of filledValuesByElement) {
+        if (onClear) {
+          if (e.autofillState != FIELD_STATES.NORMAL || e.value !== v) {
+            // Only reclear if the value was changed back to the original value.
+            continue;
+          }
+        } else if (e.autofillState == FIELD_STATES.NORMAL || e.value) {
           // Nothing to do if the autofilled value wasn't cleared or the
           // element's autofill state has changed to NORMAL in the meantime
           continue;
         }
 
         this.#isAutofillInProgress = true;
-        FormAutofillHandler.fillFieldValue(e, v, { ignoreFocus: true });
+        FormAutofillHandler.fillFieldValue(e, onClear ? "" : v, {
+          ignoreFocus: true,
+        });
         // Although the field should already be in the autofilled state at this point,
         // still setting autofilled state to re-highlight the element.
-        e.autofillState = FIELD_STATES.AUTO_FILLED;
+        e.autofillState = onClear
+          ? FIELD_STATES.NORMAL
+          : FIELD_STATES.AUTO_FILLED;
         this.#isAutofillInProgress = false;
-        this.#refillTimeoutId = null;
       }
+
+      this.#refillTimeoutId = null;
     }, FormAutofill.refillOnSiteClearingFieldsTimeout);
   }
 
@@ -662,87 +667,93 @@ export class FormAutofillHandler {
     this.setUpFormNodesMutationObserver();
   }
 
+  #initializeIntersectionObserver() {
+    this.#visibilityObserver ??= new this.window.IntersectionObserver(
+      (entries, _observer) => {
+        const nowVisible = [];
+        const nowInvisible = [];
+        entries.forEach(entry => {
+          let observedElement = entry.target;
+
+          let oldState =
+            this.#visibilityStateObserverByElement.get(observedElement);
+          let newState = FormAutofillUtils.isFieldVisible(observedElement);
+          if (oldState == newState) {
+            return;
+          }
+
+          if (newState) {
+            nowVisible.push(observedElement);
+          } else {
+            nowInvisible.push(observedElement);
+          }
+        });
+
+        if (!nowVisible.length && !nowInvisible.length) {
+          return;
+        }
+
+        let changes = {};
+        if (nowVisible.length) {
+          changes[FORM_CHANGE_REASON.ELEMENT_VISIBLE] = nowVisible;
+        }
+        if (nowInvisible.length) {
+          changes[FORM_CHANGE_REASON.ELEMENT_INVISIBLE] = nowInvisible;
+        }
+
+        // Clear all of the observer state. The notification will add a new
+        // observer if needed.
+        this.#clearVisibilityObserver();
+
+        const formChangedEvent = new CustomEvent("form-changed", {
+          detail: {
+            form: this.form.rootElement,
+            changes,
+          },
+          bubbles: true,
+        });
+        this.form.ownerDocument.dispatchEvent(formChangedEvent);
+      },
+      {
+        root: this.form.rootElement,
+        // intersection ratio between 0.0 (invisible element) and 1.0 (visible element)
+        threshold: [0, 1],
+      }
+    );
+  }
+
   /**
-   * Iterates through handler.form.elements and sets up an IntersectionObserver for each (in-)visible
-   * address/cc input element that is not observed yet (see handler.#visibilityStateObserverByElement).
-   * The observer notifies of intersections between the (in-)visible element and the intersection target (handler.form).
-   * This is the case if e.g. a visible element becomes invisible or an invisible element becomes visible.
-   * If a visibility state change is observed, a "form-changes" event is dispatched.
+   * Sets up an IntersectionObserver to handle each (in-)visible address/cc input element
+   * in a form. The observer notifies of intersections between the (in-)visible element and
+   * the intersection target (handler.form). This is the case if e.g. a visible element becomes
+   * invisible or an invisible element becomes visible. If a visibility state change is observed,
+   * a "form-changes" event is dispatched.
    */
   setUpElementVisibilityObserver() {
-    const VISIBILITY_STATE = {
-      VISIBLE: true,
-      INVISIBLE: false,
-    };
-
-    // Setting up an observer for an element's changing visibility state
-    const setUpIntersectionObserver = (element, visibilityState) => {
-      const visibilityStateObserver = new this.window.IntersectionObserver(
-        (entries, observer) => {
-          entries.forEach(entry => {
-            if (entry.isIntersecting != visibilityState) {
-              return;
-            }
-            if (
-              entry.target.checkVisibility({
-                checkOpacity: true,
-                checkVisibilityCSS: true,
-              }) != visibilityState
-            ) {
-              // The observer notified that the element reached the intersection threshold
-              // (meaning the element's visibility state changed to either visible or invisible.
-              // But checkVisibility doesn't confirm that.
-              // For these mismatches we disconnect the observer to avoid an infinite loop.
-              observer.disconnect();
-              return;
-            }
-            const changes = {};
-            const reason =
-              visibilityState == VISIBILITY_STATE.VISIBLE
-                ? FORM_CHANGE_REASON.ELEMENT_VISIBLE
-                : FORM_CHANGE_REASON.ELEMENT_INVISIBLE;
-            changes[reason] = [entry.target];
-
-            const formChangedEvent = new CustomEvent("form-changed", {
-              detail: {
-                form: this.form.rootElement,
-                changes,
-              },
-              bubbles: true,
-            });
-            this.form.ownerDocument.dispatchEvent(formChangedEvent);
-
-            this.clearVisibilityStateObserverByElement(element);
-            observer.disconnect();
-          });
-        },
-        {
-          root: this.form.rootElement,
-          // intersection reatio between 0.0 (invisible element) and 1.0 (visible element)
-          threshold: visibilityState === VISIBILITY_STATE.INVISIBLE ? 0 : 1,
-        }
-      );
-      visibilityStateObserver.observe(element);
-      this.setVisibilityStateObserverByElement(
-        element,
-        visibilityStateObserver
-      );
-    };
-
     for (let element of this.form.elements) {
       if (!FormAutofillUtils.isCreditCardOrAddressFieldType(element)) {
         continue;
       }
-      if (this.isVisiblityStateObserverSetUpByElement(element)) {
+
+      if (this.#visibilityStateObserverByElement.has(element)) {
         continue;
       }
-      if (FormAutofillUtils.isFieldVisible(element)) {
-        // Setting up an observer that notifies when the visible element becomes invisible
-        setUpIntersectionObserver(element, VISIBILITY_STATE.INVISIBLE);
-      } else {
-        // Setting up an observer that notifies when the invisible element becomes visible
-        setUpIntersectionObserver(element, VISIBILITY_STATE.VISIBLE);
+
+      let state = FormAutofillUtils.isFieldVisible(element);
+      if (state) {
+        // We don't care about visibility state changes for fields that are not recognized
+        // by our heuristics. We only handle this for visible fields because we currently
+        // don't run field detection heuristics for invisible fields.
+        const fieldDetail = this.getFieldDetailByElement(element);
+        if (!fieldDetail.fieldName) {
+          continue;
+        }
       }
+
+      this.#initializeIntersectionObserver();
+
+      this.#visibilityObserver.observe(element);
+      this.#visibilityStateObserverByElement.set(element, state);
     }
   }
 
@@ -856,9 +867,7 @@ export class FormAutofillHandler {
       return;
     }
     // Disconnect intersection observers
-    for (let element of this.form.elements) {
-      this.clearVisibilityStateObserverByElement(element);
-    }
+    this.#clearVisibilityObserver();
     // Disconnect mutation observer
     this.#formMutationObserver.disconnect();
     this.#isObservingFormMutations = false;
@@ -917,29 +926,6 @@ export class FormAutofillHandler {
     return value;
   }
 
-  /*
-   * Apply both address and credit card related transformers.
-   *
-   * @param {Object} profile
-   *        A profile for adjusting credit card related value.
-   * @override
-   */
-  applyTransformers(profile) {
-    this.addressTransformer(profile);
-    this.telTransformer(profile);
-    this.creditCardExpiryDateTransformer(profile);
-    this.creditCardExpMonthAndYearTransformer(profile);
-    this.creditCardNameTransformer(profile);
-    this.adaptFieldMaxLength(profile);
-  }
-
-  getAdaptedProfiles(originalProfiles) {
-    for (let profile of originalProfiles) {
-      this.applyTransformers(profile);
-    }
-    return originalProfiles;
-  }
-
   /**
    * Match the select option for a field if we autofill with the given profile.
    * This function caches the matching result in the `#matchingSelectionOption`
@@ -964,12 +950,31 @@ export class FormAutofillHandler {
     }
 
     const cache = this.#matchingSelectOption.get(element) || {};
-    const value = profile[fieldName];
+
+    let value;
+    if (fieldName == "tel-country-code") {
+      // Since some telephone country codes are for multiple countries, search
+      // the options by the country name instead.
+      let countries = lazy.PhoneNumber.FindCountriesForCountryCode(
+        profile[fieldName]
+      );
+      if (countries.length > 1 && countries.includes(profile.country)) {
+        value = profile.country;
+      } else {
+        value = countries[0];
+      }
+    } else {
+      value = profile[fieldName];
+    }
 
     let option = cache[value]?.deref();
-
     if (!option || !option.isConnected) {
-      option = FormAutofillUtils.findSelectOption(element, profile, fieldName);
+      option = FormAutofillUtils.findSelectOption(
+        element,
+        profile,
+        fieldName,
+        value
+      );
 
       if (option) {
         cache[value] = new WeakRef(option);
@@ -983,331 +988,12 @@ export class FormAutofillHandler {
     return option;
   }
 
-  adaptFieldMaxLength(profile) {
-    for (let key in profile) {
-      let detail = this.getFieldDetailByName(key);
-      if (!detail || detail.part) {
-        continue;
-      }
-
-      let element = detail.element;
-      if (!element) {
-        continue;
-      }
-
-      let maxLength = element.maxLength;
-      if (
-        maxLength === undefined ||
-        maxLength < 0 ||
-        profile[key].toString().length <= maxLength
-      ) {
-        continue;
-      }
-
-      if (maxLength) {
-        switch (typeof profile[key]) {
-          case "string":
-            // If this is an expiration field and our previous
-            // adaptations haven't resulted in a string that is
-            // short enough to satisfy the field length, and the
-            // field is constrained to a length of 4 or 5, then we
-            // assume it is intended to hold an expiration of the
-            // form "MMYY" or "MM/YY".
-            if (key == "cc-exp" && (maxLength == 4 || maxLength == 5)) {
-              const month2Digits = (
-                "0" + profile["cc-exp-month"].toString()
-              ).slice(-2);
-              const year2Digits = profile["cc-exp-year"].toString().slice(-2);
-              const separator = maxLength == 5 ? "/" : "";
-              profile[key] = `${month2Digits}${separator}${year2Digits}`;
-            } else if (key == "cc-number") {
-              // We want to show the last four digits of credit card so that
-              // the masked credit card previews correctly and appears correctly
-              // in the autocomplete menu
-              profile[key] = profile[key].substr(
-                profile[key].length - maxLength
-              );
-            } else {
-              profile[key] = profile[key].substr(0, maxLength);
-            }
-            break;
-          case "number":
-            // There's no way to truncate a number smaller than a
-            // single digit.
-            if (maxLength < 1) {
-              maxLength = 1;
-            }
-            // The only numbers we store are expiration month/year,
-            // and if they truncate, we want the final digits, not
-            // the initial ones.
-            profile[key] = profile[key] % Math.pow(10, maxLength);
-            break;
-          default:
-        }
-      } else {
-        delete profile[key];
-        delete profile[`${key}-formatted`];
-      }
+  getAdaptedProfiles(originalProfiles) {
+    for (let profile of originalProfiles) {
+      let transformer = new ProfileTransformer(this, profile);
+      transformer.applyTransformers();
     }
-  }
-
-  /**
-   * Handles credit card expiry date transformation when
-   * the expiry date exists in a cc-exp field.
-   *
-   * @param {object} profile
-   */
-  creditCardExpiryDateTransformer(profile) {
-    if (!profile["cc-exp"]) {
-      return;
-    }
-
-    const element = this.getFieldDetailByName("cc-exp")?.element;
-    if (!element) {
-      return;
-    }
-
-    function updateExpiry(_string, _month, _year) {
-      // Bug 1687681: This is a short term fix to other locales having
-      // different characters to represent year.
-      // - FR locales may use "A" to represent year.
-      // - DE locales may use "J" to represent year.
-      // - PL locales may use "R" to represent year.
-      // This approach will not scale well and should be investigated in a follow up bug.
-      const monthChars = "m";
-      const yearChars = "yy|aa|jj|rr";
-      const expiryDateFormatRegex = (firstChars, secondChars) =>
-        new RegExp(
-          "(?:\\b|^)((?:[" +
-            firstChars +
-            "]{2}){1,2})\\s*([\\-/])\\s*((?:[" +
-            secondChars +
-            "]{2}){1,2})(?:\\b|$)",
-          "i"
-        );
-
-      // If the month first check finds a result, where placeholder is "mm - yyyy",
-      // the result will be structured as such: ["mm - yyyy", "mm", "-", "yyyy"]
-      let result = expiryDateFormatRegex(monthChars, yearChars).exec(_string);
-      if (result) {
-        return (
-          _month.padStart(result[1].length, "0") +
-          result[2] +
-          _year.substr(-1 * result[3].length)
-        );
-      }
-
-      // If the year first check finds a result, where placeholder is "yyyy mm",
-      // the result will be structured as such: ["yyyy mm", "yyyy", " ", "mm"]
-      result = expiryDateFormatRegex(yearChars, monthChars).exec(_string);
-      if (result) {
-        return (
-          _year.substr(-1 * result[1].length) +
-          result[2] +
-          _month.padStart(result[3].length, "0")
-        );
-      }
-      return null;
-    }
-
-    let newExpiryString = null;
-    const month = profile["cc-exp-month"].toString();
-    const year = profile["cc-exp-year"].toString();
-    if (element.localName == "input") {
-      // Use the placeholder or label to determine the expiry string format.
-      const possibleExpiryStrings = [];
-      if (element.placeholder) {
-        possibleExpiryStrings.push(element.placeholder);
-      }
-      const labels = lazy.LabelUtils.findLabelElements(element);
-      if (labels) {
-        // Not consider multiple lable for now.
-        possibleExpiryStrings.push(element.labels[0]?.textContent);
-      }
-      if (element.previousElementSibling?.localName == "label") {
-        possibleExpiryStrings.push(element.previousElementSibling.textContent);
-      }
-
-      possibleExpiryStrings.some(string => {
-        newExpiryString = updateExpiry(string, month, year);
-        return !!newExpiryString;
-      });
-    }
-
-    // Bug 1688576: Change YYYY-MM to MM/YYYY since MM/YYYY is the
-    // preferred presentation format for credit card expiry dates.
-    profile["cc-exp"] = newExpiryString ?? `${month.padStart(2, "0")}/${year}`;
-  }
-
-  /**
-   * Handles credit card expiry date transformation when the expiry date exists in
-   * the separate cc-exp-month and cc-exp-year fields
-   *
-   * @param {object} profile
-   */
-  creditCardExpMonthAndYearTransformer(profile) {
-    const getInputElementByField = (field, self) => {
-      if (!field) {
-        return null;
-      }
-      const detail = self.getFieldDetailByName(field);
-      if (!detail) {
-        return null;
-      }
-      const element = detail.element;
-      return element.localName === "input" ? element : null;
-    };
-    const month = getInputElementByField("cc-exp-month", this);
-    if (month) {
-      // Transform the expiry month to MM since this is a common format needed for filling.
-      profile["cc-exp-month-formatted"] = profile["cc-exp-month"]
-        ?.toString()
-        .padStart(2, "0");
-    }
-    const year = getInputElementByField("cc-exp-year", this);
-    // If the expiration year element is an input,
-    // then we examine any placeholder to see if we should format the expiration year
-    // as a zero padded string in order to autofill correctly.
-    if (year) {
-      const placeholder = year.placeholder;
-
-      // Checks for 'YY'|'AA'|'JJ'|'RR' placeholder and converts the year to a two digit string using the last two digits.
-      const result = /\b(yy|aa|jj|rr)\b/i.test(placeholder);
-      if (result) {
-        profile["cc-exp-year-formatted"] = profile["cc-exp-year"]
-          ?.toString()
-          .substring(2);
-      }
-    }
-  }
-
-  /**
-   * Handles credit card name transformation when the name exists in
-   * the separate cc-given-name, cc-middle-name, and cc-family name fields
-   *
-   * @param {object} profile
-   */
-  creditCardNameTransformer(profile) {
-    const name = profile["cc-name"];
-    if (!name) {
-      return;
-    }
-
-    const given = this.getFieldDetailByName("cc-given-name");
-    const middle = this.getFieldDetailByName("cc-middle-name");
-    const family = this.getFieldDetailByName("cc-family-name");
-    if (given || middle || family) {
-      const nameParts = lazy.FormAutofillNameUtils.splitName(name);
-      if (given && nameParts.given) {
-        profile["cc-given-name"] = nameParts.given;
-      }
-      if (middle && nameParts.middle) {
-        profile["cc-middle-name"] = nameParts.middle;
-      }
-      if (family && nameParts.family) {
-        profile["cc-family-name"] = nameParts.family;
-      }
-    }
-  }
-
-  addressTransformer(profile) {
-    if (profile["street-address"]) {
-      // "-moz-street-address-one-line" is used by the labels in
-      // ProfileAutoCompleteResult.
-      profile["-moz-street-address-one-line"] =
-        FormAutofillUtils.toOneLineAddress(profile["street-address"]);
-      let streetAddressDetail = this.getFieldDetailByName("street-address");
-      if (
-        streetAddressDetail &&
-        FormAutofillUtils.isTextControl(streetAddressDetail.element)
-      ) {
-        profile["street-address"] = profile["-moz-street-address-one-line"];
-      }
-
-      let waitForConcat = [];
-      for (let f of ["address-line3", "address-line2", "address-line1"]) {
-        waitForConcat.unshift(profile[f]);
-        if (this.getFieldDetailByName(f)) {
-          if (waitForConcat.length > 1) {
-            profile[f] = FormAutofillUtils.toOneLineAddress(waitForConcat);
-          }
-          waitForConcat = [];
-        }
-      }
-    }
-
-    // If a house number field exists, split the address up into house number
-    // and street name.
-    if (this.getFieldDetailByName("address-housenumber")) {
-      let address = lazy.AddressParser.parseStreetAddress(
-        profile["street-address"]
-      );
-      if (address) {
-        profile["address-housenumber"] = address.street_number;
-        let field = this.getFieldDetailByName("address-line1")
-          ? "address-line1"
-          : "street-address";
-        profile[field] = address.street_name;
-      }
-    }
-  }
-
-  /**
-   * Replace tel with tel-national if tel violates the input element's
-   * restriction.
-   *
-   * @param {object} profile
-   *        A profile to be converted.
-   */
-  telTransformer(profile) {
-    if (!profile.tel || !profile["tel-national"]) {
-      return;
-    }
-
-    let detail = this.getFieldDetailByName("tel");
-    if (!detail) {
-      return;
-    }
-
-    let element = detail.element;
-    let _pattern;
-    let testPattern = str => {
-      if (!_pattern) {
-        // The pattern has to match the entire value.
-        _pattern = new RegExp("^(?:" + element.pattern + ")$", "u");
-      }
-      return _pattern.test(str);
-    };
-    if (element.pattern) {
-      if (testPattern(profile.tel)) {
-        return;
-      }
-    } else if (element.maxLength) {
-      if (
-        detail.reason == "autocomplete" &&
-        profile.tel.length <= element.maxLength
-      ) {
-        return;
-      }
-    }
-
-    if (detail.reason != "autocomplete") {
-      // Since we only target people living in US and using en-US websites in
-      // MVP, it makes more sense to fill `tel-national` instead of `tel`
-      // if the field is identified by heuristics and no other clues to
-      // determine which one is better.
-      // TODO: [Bug 1407545] This should be improved once more countries are
-      // supported.
-      profile.tel = profile["tel-national"];
-    } else if (element.pattern) {
-      if (testPattern(profile["tel-national"])) {
-        profile.tel = profile["tel-national"];
-      }
-    } else if (element.maxLength) {
-      if (profile["tel-national"].length <= element.maxLength) {
-        profile.tel = profile["tel-national"];
-      }
-    }
+    return originalProfiles;
   }
 
   /**
@@ -1382,6 +1068,9 @@ export class FormAutofillHandler {
     const fieldDetails = elementIds.map(id =>
       this.getFieldDetailByElementId(id)
     );
+
+    const filledValuesByElement = new Map();
+
     for (const fieldDetail of fieldDetails) {
       const element = fieldDetail?.element;
       if (!element) {
@@ -1401,7 +1090,10 @@ export class FormAutofillHandler {
             option.hasAttribute("selected")
           );
           value = selected ? selected.value : element.options[0].value;
+        } else {
+          filledValuesByElement.set(element, element.value);
         }
+
         FormAutofillHandler.fillFieldValue(element, value);
         this.changeFieldState(fieldDetail, FIELD_STATES.NORMAL);
       }
@@ -1409,6 +1101,8 @@ export class FormAutofillHandler {
 
     this.focusPreviouslyFocusedElement(focusedId);
     this.#isAutofillInProgress = false;
+
+    this.reassignValuesIfModified(filledValuesByElement, true);
   }
 
   focusPreviouslyFocusedElement(focusedId) {
@@ -1445,5 +1139,451 @@ export class FormAutofillHandler {
       return !!profile[fieldDetail.fieldName];
     }
     return !!this.matchSelectOptions(fieldDetail, profile);
+  }
+}
+
+/**
+ * Apply some transformations to the fields on the profile based
+ *  on the fields that appear in the form. The original values are
+ *  saved and used if the transformer is used again.
+ */
+class ProfileTransformer {
+  // The FormAutofillHandler
+  #handler = null;
+
+  // A profile for adjusting credit card and address related values.
+  #profile = null;
+
+  constructor(handler, profile) {
+    this.#handler = handler;
+    this.#profile = profile;
+  }
+
+  // Get the original unmodified value of a field if it exists.
+  getField(fieldName) {
+    if (this.#profile._original) {
+      let value = this.#profile._original[fieldName];
+      if (value) {
+        return value;
+      }
+    }
+
+    return this.#profile[fieldName];
+  }
+
+  // Get the modified value of a field if it exists, or the
+  // original value.
+  getUpdatedField(fieldName) {
+    return this.#profile[fieldName];
+  }
+
+  // Modify a field's value, but store the original value for
+  // use later.
+  setField(fieldName, value) {
+    let originalValue = this.#profile[fieldName];
+    if (originalValue) {
+      if (!this.#profile._original) {
+        this.#profile._original = {};
+      }
+      if (!this.#profile._original[fieldName]) {
+        this.#profile._original[fieldName] = originalValue;
+      }
+    }
+
+    this.#profile[fieldName] = value;
+  }
+
+  // Delete the modified value of a field, but leave the stored
+  // original value.
+  deleteField(fieldName) {
+    delete this.#profile[fieldName];
+  }
+
+  getFieldDetailByName(fieldName) {
+    return this.#handler.getFieldDetailByName(fieldName);
+  }
+
+  applyTransformers() {
+    this.#addressTransformer();
+    this.#telTransformer();
+    this.#creditCardExpiryDateTransformer();
+    this.#creditCardExpMonthAndYearTransformer();
+    this.#creditCardNameTransformer();
+    this.#addressLevelOneTransformer();
+    this.#adaptFieldMaxLength();
+  }
+
+  /**
+   * Replaces an abbreviated address-level1 code (e.g. "B") with the full
+   * region name (e.g. "Buenos Aires") if the target field is a text input.
+   */
+  #addressLevelOneTransformer() {
+    const fieldName = "address-level1";
+    const fieldDetail = this.getFieldDetailByName(fieldName);
+    if (!fieldDetail || !FormAutofillUtils.isTextControl(fieldDetail.element)) {
+      return;
+    }
+
+    const element = fieldDetail.element;
+    const abbreviatedValue = this.getField(fieldName);
+    const country = this.getField("country");
+
+    const fullSubregionName = FormAutofillUtils.getFullSubregionName(
+      abbreviatedValue,
+      country
+    );
+
+    if (!fullSubregionName || fullSubregionName === abbreviatedValue) {
+      return;
+    }
+
+    // No point in using full subregion name if allowed string length is too small.
+    if (
+      element.maxLength !== -1 &&
+      fullSubregionName.length > element.maxLength
+    ) {
+      return;
+    }
+
+    this.setField(fieldName, fullSubregionName);
+  }
+
+  // This function mostly uses getUpdatedField as it relies on the modified
+  // values of fields from the previous functions.
+  #adaptFieldMaxLength() {
+    for (let key in this.#profile) {
+      let detail = this.getFieldDetailByName(key);
+      if (!detail || detail.part) {
+        continue;
+      }
+
+      let element = detail.element;
+      if (!element) {
+        continue;
+      }
+
+      let maxLength = element.maxLength;
+      if (
+        maxLength === undefined ||
+        maxLength < 0 ||
+        this.getUpdatedField(key).toString().length <= maxLength
+      ) {
+        continue;
+      }
+
+      if (maxLength) {
+        switch (typeof this.getUpdatedField(key)) {
+          case "string":
+            // If this is an expiration field and our previous
+            // adaptations haven't resulted in a string that is
+            // short enough to satisfy the field length, and the
+            // field is constrained to a length of 4 or 5, then we
+            // assume it is intended to hold an expiration of the
+            // form "MMYY" or "MM/YY".
+            if (key == "cc-exp" && (maxLength == 4 || maxLength == 5)) {
+              const month2Digits = (
+                "0" + this.getField("cc-exp-month").toString()
+              ).slice(-2);
+              const year2Digits = this.getField("cc-exp-year")
+                .toString()
+                .slice(-2);
+              const separator = maxLength == 5 ? "/" : "";
+              this.setField(key, `${month2Digits}${separator}${year2Digits}`);
+            } else if (key == "cc-number") {
+              // We want to show the last four digits of credit card so that
+              // the masked credit card previews correctly and appears correctly
+              // in the autocomplete menu
+              let value = this.getField(key);
+              this.setField(key, value.substr(value.length - maxLength));
+            } else {
+              this.setField(
+                key,
+                this.getUpdatedField(key).substr(0, maxLength)
+              );
+            }
+            break;
+          case "number":
+            // There's no way to truncate a number smaller than a
+            // single digit.
+            if (maxLength < 1) {
+              maxLength = 1;
+            }
+            // The only numbers we store are expiration month/year,
+            // and if they truncate, we want the final digits, not
+            // the initial ones.
+            this.setField(
+              key,
+              this.getUpdatedField(key) % Math.pow(10, maxLength)
+            );
+            break;
+          default:
+        }
+      } else {
+        // This code only seems to run when maxlength = 0, an edge case which
+        // hardly seems worth handling.
+        this.deleteField(key);
+        this.deleteField(`${key}-formatted`);
+      }
+    }
+  }
+
+  /**
+   * Handles credit card expiry date transformation when
+   * the expiry date exists in a cc-exp field.
+   */
+  #creditCardExpiryDateTransformer() {
+    if (!this.getField("cc-exp")) {
+      return;
+    }
+
+    const element = this.getFieldDetailByName("cc-exp")?.element;
+    if (!element) {
+      return;
+    }
+
+    function updateExpiry(_string, _month, _year) {
+      // Bug 1687681: This is a short term fix to other locales having
+      // different characters to represent year.
+      // - FR locales may use "A" to represent year.
+      // - DE locales may use "J" to represent year.
+      // - PL locales may use "R" to represent year.
+      // This approach will not scale well and should be investigated in a follow up bug.
+      const monthChars = "m";
+      const yearChars = "yy|aa|jj|rr";
+      const expiryDateFormatRegex = (firstChars, secondChars) =>
+        new RegExp(
+          "(?:\\b|^)((?:[" +
+            firstChars +
+            "]{2}){1,2})\\s*([\\-/])\\s*((?:[" +
+            secondChars +
+            "]{2}){1,2})(?:\\b|$)",
+          "i"
+        );
+
+      // If the month first check finds a result, where placeholder is "mm - yyyy",
+      // the result will be structured as such: ["mm - yyyy", "mm", "-", "yyyy"]
+      let result = expiryDateFormatRegex(monthChars, yearChars).exec(_string);
+      if (result) {
+        return (
+          _month.padStart(result[1].length, "0") +
+          result[2] +
+          _year.substr(-1 * result[3].length)
+        );
+      }
+
+      // If the year first check finds a result, where placeholder is "yyyy mm",
+      // the result will be structured as such: ["yyyy mm", "yyyy", " ", "mm"]
+      result = expiryDateFormatRegex(yearChars, monthChars).exec(_string);
+      if (result) {
+        return (
+          _year.substr(-1 * result[1].length) +
+          result[2] +
+          _month.padStart(result[3].length, "0")
+        );
+      }
+      return null;
+    }
+
+    let newExpiryString = null;
+    const month = this.getField("cc-exp-month").toString();
+    const year = this.getField("cc-exp-year").toString();
+    if (element.localName == "input") {
+      // Use the placeholder or label to determine the expiry string format.
+      const possibleExpiryStrings = [];
+      if (element.placeholder) {
+        possibleExpiryStrings.push(element.placeholder);
+      }
+      const labels = lazy.LabelUtils.findLabelElements(element);
+      if (labels) {
+        // Not consider multiple lable for now.
+        possibleExpiryStrings.push(element.labels[0]?.textContent);
+      }
+      if (element.previousElementSibling?.localName == "label") {
+        possibleExpiryStrings.push(element.previousElementSibling.textContent);
+      }
+
+      possibleExpiryStrings.some(string => {
+        newExpiryString = updateExpiry(string, month, year);
+        return !!newExpiryString;
+      });
+    }
+
+    // Bug 1688576: Change YYYY-MM to MM/YYYY since MM/YYYY is the
+    // preferred presentation format for credit card expiry dates.
+    this.setField(
+      "cc-exp",
+      newExpiryString ?? `${month.padStart(2, "0")}/${year}`
+    );
+  }
+
+  /**
+   * Handles credit card expiry date transformation when the expiry date exists in
+   * the separate cc-exp-month and cc-exp-year fields
+   */
+  #creditCardExpMonthAndYearTransformer() {
+    const getInputElementByField = (field, self) => {
+      if (!field) {
+        return null;
+      }
+      const detail = self.getFieldDetailByName(field);
+      if (!detail) {
+        return null;
+      }
+      const element = detail.element;
+      return element.localName === "input" ? element : null;
+    };
+    const month = getInputElementByField("cc-exp-month", this);
+    if (month) {
+      // Transform the expiry month to MM since this is a common format needed for filling.
+      this.setField(
+        "cc-exp-month-formatted",
+        this.getField("cc-exp-month")?.toString().padStart(2, "0")
+      );
+    }
+    const year = getInputElementByField("cc-exp-year", this);
+    // If the expiration year element is an input,
+    // then we examine any placeholder to see if we should format the expiration year
+    // as a zero padded string in order to autofill correctly.
+    if (year) {
+      const placeholder = year.placeholder;
+
+      // Checks for 'YY'|'AA'|'JJ'|'RR' placeholder and converts the year to a two digit string using the last two digits.
+      const result = /\b(yy|aa|jj|rr)\b/i.test(placeholder);
+      if (result) {
+        this.setField(
+          "cc-exp-year-formatted",
+          this.getField("cc-exp-year")?.toString().substring(2)
+        );
+      }
+    }
+  }
+
+  /**
+   * Handles credit card name transformation when the name exists in
+   * the separate cc-given-name, cc-middle-name, and cc-family name fields
+   */
+  #creditCardNameTransformer() {
+    const name = this.getField("cc-name");
+    if (!name) {
+      return;
+    }
+
+    const given = this.getFieldDetailByName("cc-given-name");
+    const middle = this.getFieldDetailByName("cc-middle-name");
+    const family = this.getFieldDetailByName("cc-family-name");
+    if (given || middle || family) {
+      const nameParts = lazy.FormAutofillNameUtils.splitName(name);
+      if (given && nameParts.given) {
+        this.setField("cc-given-name", nameParts.given);
+      }
+      if (middle && nameParts.middle) {
+        this.setField("cc-middle-name", nameParts.middle);
+      }
+      if (family && nameParts.family) {
+        this.setField("cc-family-name", nameParts.family);
+      }
+    }
+  }
+
+  #addressTransformer() {
+    let streetAddress = this.getField("street-address");
+    if (streetAddress) {
+      // "-moz-street-address-one-line" is used by the labels in
+      // ProfileAutoCompleteResult.
+      this.setField(
+        "-moz-street-address-one-line",
+        FormAutofillUtils.toOneLineAddress(streetAddress)
+      );
+      let streetAddressDetail = this.getFieldDetailByName("street-address");
+      if (
+        streetAddressDetail &&
+        FormAutofillUtils.isTextControl(streetAddressDetail.element)
+      ) {
+        this.setField(
+          "street-address",
+          this.getField("-moz-street-address-one-line")
+        );
+      }
+
+      let waitForConcat = [];
+      for (let f of ["address-line3", "address-line2", "address-line1"]) {
+        waitForConcat.unshift(this.getField(f));
+        if (this.getFieldDetailByName(f)) {
+          if (waitForConcat.length > 1) {
+            this.setField(f, FormAutofillUtils.toOneLineAddress(waitForConcat));
+          }
+          waitForConcat = [];
+        }
+      }
+    }
+
+    // If a house number field exists, split the address up into house number
+    // and street name.
+    if (this.getFieldDetailByName("address-housenumber")) {
+      let address = lazy.AddressParser.parseStreetAddress(
+        this.getField("street-address")
+      );
+      if (address) {
+        this.setField("address-housenumber", address.street_number);
+        let field = this.getFieldDetailByName("address-line1")
+          ? "address-line1"
+          : "street-address";
+        this.setField(field, address.street_name);
+      }
+    }
+  }
+
+  /**
+   * Replace tel with tel-national if tel violates the input element's
+   * restriction.
+   */
+  #telTransformer() {
+    let tel = this.getField("tel");
+    let telNational = this.getField("tel-national");
+    if (!tel || !telNational) {
+      return;
+    }
+
+    let detail = this.getFieldDetailByName("tel");
+    if (!detail) {
+      return;
+    }
+
+    let element = detail.element;
+    let _pattern;
+    let testPattern = str => {
+      if (!_pattern) {
+        // The pattern has to match the entire value.
+        _pattern = new RegExp("^(?:" + element.pattern + ")$", "u");
+      }
+      return _pattern.test(str);
+    };
+    if (element.pattern) {
+      if (testPattern(tel)) {
+        return;
+      }
+    } else if (element.maxLength) {
+      if (detail.reason == "autocomplete" && tel.length <= element.maxLength) {
+        return;
+      }
+    }
+
+    if (detail.reason != "autocomplete") {
+      // Since we only target people living in US and using en-US websites in
+      // MVP, it makes more sense to fill `tel-national` instead of `tel`
+      // if the field is identified by heuristics and no other clues to
+      // determine which one is better.
+      // TODO: [Bug 1407545] This should be improved once more countries are
+      // supported.
+      this.setField("tel", telNational);
+    } else if (element.pattern) {
+      if (testPattern(telNational)) {
+        this.setField("tel", telNational);
+      }
+    } else if (element.maxLength) {
+      if (telNational.length <= element.maxLength) {
+        this.setField("tel", telNational);
+      }
+    }
   }
 }

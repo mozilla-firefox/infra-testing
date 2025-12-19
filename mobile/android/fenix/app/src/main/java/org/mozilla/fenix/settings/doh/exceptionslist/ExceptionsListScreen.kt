@@ -4,36 +4,38 @@
 
 package org.mozilla.fenix.settings.doh.exceptionslist
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.Icon
-import androidx.compose.material.IconButton
-import androidx.compose.material.Scaffold
-import androidx.compose.material.Text
-import androidx.compose.material.TopAppBar
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import mozilla.components.compose.base.annotation.FlexibleWindowLightDarkPreview
-import mozilla.components.compose.base.button.TertiaryButton
+import mozilla.components.compose.base.button.DestructiveButton
 import org.mozilla.fenix.R
 import org.mozilla.fenix.compose.list.FaviconListItem
+import org.mozilla.fenix.compose.list.IconListItem
 import org.mozilla.fenix.settings.doh.DohSettingsState
 import org.mozilla.fenix.settings.doh.ProtectionLevel
 import org.mozilla.fenix.theme.FirefoxTheme
+import org.mozilla.fenix.theme.Theme
+import mozilla.components.ui.icons.R as iconsR
 
 /**
  * Composable function that displays the exceptions list screen of DoH settings.
  *
  * @param state The current [DohSettingsState].
- * @param onNavigateUp Invoked when the user clicks the navigate up (back) button.
  * @param onAddExceptionsClicked Invoked when the user wants to add an exception.
  * @param onRemoveClicked Invoked when the user wants to remove a specific exception.
  * @param onRemoveAllClicked Invoked when the user wants to remove all exceptions.
@@ -41,67 +43,47 @@ import org.mozilla.fenix.theme.FirefoxTheme
 @Composable
 internal fun ExceptionsListScreen(
     state: DohSettingsState,
-    onNavigateUp: () -> Unit = {},
     onAddExceptionsClicked: () -> Unit = {},
     onRemoveClicked: (String) -> Unit = {},
     onRemoveAllClicked: () -> Unit = {},
 ) {
-    Scaffold(
-        topBar = {
-            Toolbar(onToolbarBackClick = onNavigateUp)
-        },
-        backgroundColor = FirefoxTheme.colors.layer1,
-    ) { paddingValues ->
+    Surface {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues),
+                .verticalScroll(rememberScrollState()),
         ) {
-            Row(
-                modifier = Modifier
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
-            ) {
-                Text(
-                    text = stringResource(
-                        R.string.preference_doh_exceptions_summary,
-                        stringResource(id = R.string.app_name),
-                    ),
-                    color = FirefoxTheme.colors.textSecondary,
-                    style = FirefoxTheme.typography.body2,
-                )
-            }
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = stringResource(
+                    R.string.preference_doh_exceptions_summary,
+                    stringResource(id = R.string.app_name),
+                ),
+                modifier = Modifier.padding(horizontal = 16.dp),
+                color = MaterialTheme.colorScheme.onSurface,
+                style = FirefoxTheme.typography.body1,
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
 
             state.exceptionsList.forEach { exception ->
                 FaviconListItem(
                     label = exception,
                     url = exception,
-                    iconPainter = painterResource(R.drawable.ic_close),
+                    iconPainter = painterResource(iconsR.drawable.mozac_ic_cross_24),
                     onIconClick = { onRemoveClicked(exception) },
                 )
             }
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 6.dp)
-                    .clickable { onAddExceptionsClicked() },
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.mozac_ic_plus_24),
-                    contentDescription = stringResource(R.string.preference_doh_add_site_description),
-                    tint = FirefoxTheme.colors.iconPrimary,
-                    modifier = Modifier.padding(16.dp),
-                )
+            IconListItem(
+                label = stringResource(R.string.preference_doh_exceptions_add),
+                onClick = onAddExceptionsClicked,
+                beforeIconPainter = painterResource(iconsR.drawable.mozac_ic_plus_24),
+                beforeIconDescription = stringResource(R.string.preference_doh_add_site_description),
+            )
 
-                Text(
-                    text = stringResource(R.string.preference_doh_exceptions_add),
-                    color = FirefoxTheme.colors.textPrimary,
-                    style = FirefoxTheme.typography.subtitle1,
-                )
-            }
-
-            TertiaryButton(
+            DestructiveButton(
                 text = stringResource(R.string.preference_doh_exceptions_remove_all_exceptions),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -115,51 +97,40 @@ internal fun ExceptionsListScreen(
     }
 }
 
-@Composable
-private fun Toolbar(onToolbarBackClick: () -> Unit) {
-    TopAppBar(
-        backgroundColor = FirefoxTheme.colors.layer1,
-        title = {
-            Text(
-                color = FirefoxTheme.colors.textPrimary,
-                style = FirefoxTheme.typography.headline6,
-                text = stringResource(R.string.preference_doh_exceptions),
-            )
-        },
-        navigationIcon = {
-            IconButton(onClick = onToolbarBackClick) {
-                Icon(
-                    painter = painterResource(R.drawable.mozac_ic_back_24),
-                    contentDescription = stringResource(R.string.preference_doh_up_description),
-                    tint = FirefoxTheme.colors.iconPrimary,
-                )
-            }
-        },
-    )
-}
+private fun createState() = DohSettingsState(
+    allProtectionLevels = listOf(
+        ProtectionLevel.Default,
+        ProtectionLevel.Increased,
+        ProtectionLevel.Max,
+        ProtectionLevel.Off,
+    ),
+    selectedProtectionLevel = ProtectionLevel.Off,
+    providers = emptyList(),
+    selectedProvider = null,
+    exceptionsList = listOf(
+        "example1.com",
+        "example2.com",
+        "example3.com",
+    ),
+    isUserExceptionValid = true,
+)
 
 @Composable
 @FlexibleWindowLightDarkPreview
 private fun ExceptionsListScreenPreview() {
     FirefoxTheme {
         ExceptionsListScreen(
-            state = DohSettingsState(
-                allProtectionLevels = listOf(
-                    ProtectionLevel.Default,
-                    ProtectionLevel.Increased,
-                    ProtectionLevel.Max,
-                    ProtectionLevel.Off,
-                ),
-                selectedProtectionLevel = ProtectionLevel.Off,
-                providers = emptyList(),
-                selectedProvider = null,
-                exceptionsList = listOf(
-                    "example1.com",
-                    "example2.com",
-                    "example3.com",
-                ),
-                isUserExceptionValid = true,
-            ),
+            state = createState(),
+        )
+    }
+}
+
+@Composable
+@Preview
+private fun ExceptionsListScreenPrivatePreview() {
+    FirefoxTheme(theme = Theme.Private) {
+        ExceptionsListScreen(
+            state = createState(),
         )
     }
 }

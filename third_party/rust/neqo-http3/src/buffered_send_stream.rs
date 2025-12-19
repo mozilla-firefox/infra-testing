@@ -4,7 +4,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use neqo_common::qtrace;
+use std::time::Instant;
+
+use neqo_common::Encoder;
 use neqo_transport::{Connection, StreamId};
 
 use crate::{qlog, Res};
@@ -17,12 +19,6 @@ pub enum BufferedStream {
         stream_id: StreamId,
         buf: Vec<u8>,
     },
-}
-
-impl ::std::fmt::Display for BufferedStream {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        write!(f, "BufferedStream {:?}", Option::<StreamId>::from(self))
-    }
 }
 
 impl BufferedStream {
@@ -45,6 +41,14 @@ impl BufferedStream {
         };
     }
 
+    pub fn encode_with<F: FnOnce(&mut Encoder<&mut Vec<u8>>)>(&mut self, f: F) {
+        if let Self::Initialized { buf, .. } = self {
+            f(&mut Encoder::new_borrowed_vec(buf));
+        } else {
+            debug_assert!(false, "Do not encode data before the stream is initialized");
+        }
+    }
+
     /// # Panics
     ///
     /// This function cannot be called before the `BufferedStream` is initialized.
@@ -52,22 +56,20 @@ impl BufferedStream {
         if let Self::Initialized { buf, .. } = self {
             buf.extend_from_slice(to_buf);
         } else {
-            debug_assert!(false, "Do not buffer date before the stream is initialized");
+            debug_assert!(false, "Do not buffer data before the stream is initialized");
         }
     }
 
     /// # Errors
     ///
     /// Returns `neqo_transport` errors.
-    pub fn send_buffer(&mut self, conn: &mut Connection) -> Res<usize> {
-        let label = format!("{self}");
+    pub fn send_buffer(&mut self, conn: &mut Connection, now: Instant) -> Res<usize> {
         let Self::Initialized { stream_id, buf } = self else {
             return Ok(0);
         };
         if buf.is_empty() {
             return Ok(0);
         }
-        qtrace!("[{label}] sending data");
         let sent = conn.stream_send(*stream_id, &buf[..])?;
         if sent == 0 {
             return Ok(0);
@@ -77,27 +79,71 @@ impl BufferedStream {
             let b = buf.split_off(sent);
             *buf = b;
         }
-        qlog::h3_data_moved_down(conn.qlog_mut(), *stream_id, sent);
+        qlog::h3_data_moved_down(conn.qlog_mut(), *stream_id, sent, now);
         Ok(sent)
+    }
+
+    /// Flush the buffer and return the stream ID and buffer if ready to send atomically.
+    fn prepare_atomic_send(
+        &mut self,
+        conn: &mut Connection,
+        now: Instant,
+    ) -> Res<Option<(StreamId, &mut Vec<u8>)>> {
+        self.send_buffer(conn, now)?;
+        let Self::Initialized { stream_id, buf } = self else {
+            return Ok(None);
+        };
+        if !buf.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some((*stream_id, buf)))
     }
 
     /// # Errors
     ///
     /// Returns `neqo_transport` errors.
-    pub fn send_atomic(&mut self, conn: &mut Connection, to_send: &[u8]) -> Res<bool> {
-        // First try to send anything that is in the buffer.
-        self.send_buffer(conn)?;
-        let Self::Initialized { stream_id, buf } = self else {
+    pub fn send_atomic(
+        &mut self,
+        conn: &mut Connection,
+        to_send: &[u8],
+        now: Instant,
+    ) -> Res<bool> {
+        let Some((stream_id, _)) = self.prepare_atomic_send(conn, now)? else {
             return Ok(false);
         };
-        if !buf.is_empty() {
+        let sent = conn.stream_send_atomic(stream_id, to_send)?;
+        if sent {
+            qlog::h3_data_moved_down(conn.qlog_mut(), stream_id, to_send.len(), now);
+        }
+        Ok(sent)
+    }
+
+    /// Encode data using the provided closure and send it atomically.
+    ///
+    /// This avoids allocating a temporary encoder at the call site by reusing
+    /// the stream's internal buffer as scratch space.
+    ///
+    /// # Errors
+    ///
+    /// Returns `neqo_transport` errors.
+    pub fn send_atomic_with<F: FnOnce(&mut Encoder<&mut Vec<u8>>)>(
+        &mut self,
+        conn: &mut Connection,
+        f: F,
+        now: Instant,
+    ) -> Res<bool> {
+        let Some((stream_id, buf)) = self.prepare_atomic_send(conn, now)? else {
             return Ok(false);
+        };
+        f(&mut Encoder::new_borrowed_vec(buf));
+        let len = buf.len();
+        let res = conn.stream_send_atomic(stream_id, buf);
+        buf.clear();
+        let sent = res?;
+        if sent {
+            qlog::h3_data_moved_down(conn.qlog_mut(), stream_id, len, now);
         }
-        let res = conn.stream_send_atomic(*stream_id, to_send)?;
-        if res {
-            qlog::h3_data_moved_down(conn.qlog_mut(), *stream_id, to_send.len());
-        }
-        Ok(res)
+        Ok(sent)
     }
 
     #[must_use]

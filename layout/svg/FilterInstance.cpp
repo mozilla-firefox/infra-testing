@@ -11,28 +11,26 @@
 #include "mozilla/UniquePtr.h"
 
 // Keep others in (case-insensitive) order:
+#include "CSSFilterInstance.h"
 #include "FilterSupport.h"
 #include "ImgDrawResult.h"
 #include "SVGContentUtils.h"
+#include "SVGIntegrationUtils.h"
 #include "gfx2DGlue.h"
 #include "gfxContext.h"
 #include "gfxPlatform.h"
-
 #include "gfxUtils.h"
-#include "mozilla/Unused.h"
+#include "mozilla/ISVGDisplayableFrame.h"
+#include "mozilla/SVGFilterInstance.h"
+#include "mozilla/SVGObserverUtils.h"
+#include "mozilla/SVGUtils.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/gfx/Filters.h"
 #include "mozilla/gfx/Helpers.h"
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/gfx/PatternHelpers.h"
-#include "mozilla/ISVGDisplayableFrame.h"
-#include "mozilla/StaticPrefs_gfx.h"
-#include "mozilla/SVGFilterInstance.h"
-#include "mozilla/SVGObserverUtils.h"
-#include "mozilla/SVGUtils.h"
-#include "mozilla/dom/Document.h"
 #include "nsLayoutUtils.h"
-#include "CSSFilterInstance.h"
-#include "SVGIntegrationUtils.h"
 
 using namespace mozilla::dom;
 using namespace mozilla::gfx;
@@ -296,9 +294,7 @@ WrFiltersStatus FilterInstance::BuildWebRenderFiltersImpl(
 
       sRGBColor color = shadow.mColor;
       if (!primNeedsSrgb) {
-        color = sRGBColor(gsRGBToLinearRGBMap[uint8_t(color.r * 255)],
-                          gsRGBToLinearRGBMap[uint8_t(color.g * 255)],
-                          gsRGBToLinearRGBMap[uint8_t(color.b * 255)], color.a);
+        color = FilterWrappers::SRGBToLinearRGB(color);
       }
       wr::Shadow wrShadow;
       wrShadow.offset = {shadow.mOffset.x, shadow.mOffset.y};
@@ -323,8 +319,7 @@ WrFiltersStatus FilterInstance::BuildWebRenderFiltersImpl(
       wr::FilterOp filterOp = {wr::FilterOp::Tag::ComponentTransfer};
       wr::WrFilterData filterData;
       aWrFilters.values.AppendElement(nsTArray<float>());
-      nsTArray<float>* values =
-          &aWrFilters.values[aWrFilters.values.Length() - 1];
+      nsTArray<float>* values = &aWrFilters.values.LastElement();
       values->SetCapacity(numValues);
 
       filterData.funcR_type = FuncTypeToWr(attributes.mTypes[0]);
@@ -366,7 +361,7 @@ WrFiltersStatus FilterInstance::BuildWebRenderFiltersImpl(
       return WrFiltersStatus::BLOB_FALLBACK;
     }
 
-    if (filterIsNoop && aWrFilters.filters.Length() > 0 &&
+    if (filterIsNoop && !aWrFilters.filters.IsEmpty() &&
         (aWrFilters.filters.LastElement().tag ==
              wr::FilterOp::Tag::SrgbToLinear ||
          aWrFilters.filters.LastElement().tag ==
@@ -378,7 +373,7 @@ WrFiltersStatus FilterInstance::BuildWebRenderFiltersImpl(
       // css/filter-effects/filter-scale-001.html for which the needless
       // sRGB->linear->no-op->sRGB roundtrip introduces a slight error and we
       // cannot add fuzziness to the test.
-      Unused << aWrFilters.filters.PopLastElement();
+      (void)aWrFilters.filters.PopLastElement();
       srgb = previousSrgb;
     }
 
@@ -645,7 +640,7 @@ static WrFiltersStatus WrFilterOpSVGFEComponentTransfer(
     }
   }
   aWrFilters.values.AppendElement(nsTArray<float>());
-  nsTArray<float>& values = aWrFilters.values[aWrFilters.values.Length() - 1];
+  nsTArray<float>& values = aWrFilters.values.LastElement();
   values.SetCapacity(stops * 4);
 
   // Set the FilterData funcs for whether or not to interpolate the values
@@ -690,7 +685,7 @@ static WrFiltersStatus WrFilterOpSVGFEComponentTransfer(
   for (size_t c = 0; c < 4; c++) {
     auto f = aAttributes.mTypes[c];
     // Check if there's no data (we have crashtests for this).
-    if (aAttributes.mValues[c].Length() < 1 &&
+    if (aAttributes.mValues[c].IsEmpty() &&
         f != SVG_FECOMPONENTTRANSFER_SAME_AS_R) {
       f = SVG_FECOMPONENTTRANSFER_TYPE_IDENTITY;
     }
@@ -1649,17 +1644,16 @@ nsresult FilterInstance::BuildPrimitives(
 
   uint32_t filterIndex = 0;
 
-  for (uint32_t i = 0; i < aFilterChain.Length(); i++) {
-    if (aFilterChain[i].IsUrl() && aFilterFrames.IsEmpty()) {
+  for (const auto& filter : aFilterChain) {
+    if (filter.IsUrl() && aFilterFrames.IsEmpty()) {
       return NS_ERROR_FAILURE;
     }
-    auto* filterFrame =
-        aFilterChain[i].IsUrl() ? aFilterFrames[filterIndex++] : nullptr;
+    auto* filterFrame = filter.IsUrl() ? aFilterFrames[filterIndex++] : nullptr;
     bool inputIsTainted = primitiveDescriptions.IsEmpty()
                               ? aFilterInputIsTainted
                               : primitiveDescriptions.LastElement().IsTainted();
-    nsresult rv = BuildPrimitivesForFilter(
-        aFilterChain[i], filterFrame, inputIsTainted, primitiveDescriptions);
+    nsresult rv = BuildPrimitivesForFilter(filter, filterFrame, inputIsTainted,
+                                           primitiveDescriptions);
     if (NS_FAILED(rv)) {
       return rv;
     }
@@ -1709,6 +1703,10 @@ nsresult FilterInstance::BuildPrimitivesForFilter(
 static void UpdateNeededBounds(const nsIntRegion& aRegion, nsIntRect& aBounds) {
   aBounds = aRegion.GetBounds();
 
+  if (aBounds.IsEmpty()) {
+    return;
+  }
+
   bool overflow;
   IntSize surfaceSize =
       SVGUtils::ConvertToSurfaceSize(SizeDouble(aBounds.Size()), &overflow);
@@ -1730,7 +1728,7 @@ void FilterInstance::ComputeNeededBoxes() {
       mFilterDescription, mPostFilterDirtyRegion, sourceGraphicNeededRegion,
       fillPaintNeededRegion, strokePaintNeededRegion);
 
-  sourceGraphicNeededRegion.And(sourceGraphicNeededRegion, mTargetBounds);
+  sourceGraphicNeededRegion.AndWith(mTargetBounds);
 
   UpdateNeededBounds(sourceGraphicNeededRegion, mSourceGraphic.mNeededBounds);
   UpdateNeededBounds(fillPaintNeededRegion, mFillPaint.mNeededBounds);
@@ -1945,12 +1943,11 @@ nsRect FilterInstance::ComputeSourceNeededRect() {
 }
 
 nsIntRect FilterInstance::OutputFilterSpaceBounds() const {
-  uint32_t numPrimitives = mFilterDescription.mPrimitives.Length();
-  if (numPrimitives <= 0) {
+  if (mFilterDescription.mPrimitives.IsEmpty()) {
     return nsIntRect();
   }
 
-  return mFilterDescription.mPrimitives[numPrimitives - 1].PrimitiveSubregion();
+  return mFilterDescription.mPrimitives.LastElement().PrimitiveSubregion();
 }
 
 nsIntRect FilterInstance::FrameSpaceToFilterSpace(const nsRect* aRect) const {
@@ -1991,7 +1988,7 @@ nsIntRegion FilterInstance::FrameSpaceToFilterSpace(
   for (auto iter = aRegion->RectIter(); !iter.Done(); iter.Next()) {
     // FrameSpaceToFilterSpace rounds out, so this works.
     nsRect rect = iter.Get();
-    result.Or(result, FrameSpaceToFilterSpace(&rect));
+    result.OrWith(FrameSpaceToFilterSpace(&rect));
   }
   return result;
 }
@@ -2001,7 +1998,7 @@ nsRegion FilterInstance::FilterSpaceToFrameSpace(
   nsRegion result;
   for (auto iter = aRegion.RectIter(); !iter.Done(); iter.Next()) {
     // FilterSpaceToFrameSpace rounds out, so this works.
-    result.Or(result, FilterSpaceToFrameSpace(iter.Get()));
+    result.OrWith(FilterSpaceToFrameSpace(iter.Get()));
   }
   return result;
 }

@@ -39,9 +39,6 @@ struct Register;
 
 enum class ICAttachResult { Attached, DuplicateStub, TooLarge, OOM };
 
-bool TryFoldingStubs(JSContext* cx, ICFallbackStub* fallback, JSScript* script,
-                     ICScript* icScript);
-
 ICAttachResult AttachBaselineCacheIRStub(JSContext* cx,
                                          const CacheIRWriter& writer,
                                          CacheKind kind, JSScript* outerScript,
@@ -69,14 +66,20 @@ class MOZ_RAII BaselineCacheIRCompiler : public CacheIRCompiler {
                                          ValOperandId rhsId);
   [[nodiscard]] bool emitAddAndStoreSlotShared(
       CacheOp op, ObjOperandId objId, uint32_t offsetOffset, ValOperandId rhsId,
-      uint32_t newShapeOffset, mozilla::Maybe<uint32_t> numNewSlotsOffset);
+      uint32_t newShapeOffset, mozilla::Maybe<uint32_t> numNewSlotsOffset,
+      bool preserveWrapper);
 
-  bool updateArgc(CallFlags flags, Register argcReg, Register scratch);
+  bool updateArgc(CallFlags flags, Register argcReg, uint32_t argcFixed,
+                  Register scratch);
   void loadStackObject(ArgumentKind kind, CallFlags flags, Register argcReg,
                        Register dest);
   void pushArguments(Register argcReg, Register calleeReg, Register scratch,
                      Register scratch2, CallFlags flags, uint32_t argcFixed,
                      bool isJitCall);
+  void prepareForArguments(Register argcReg, Register calleeReg,
+                           Register scratch, Register scratch2, CallFlags flags,
+                           uint32_t argcFixed);
+  void pushNewTarget();
   void pushStandardArguments(Register argcReg, Register scratch,
                              Register scratch2, uint32_t argcFixed,
                              bool isJitCall, bool isConstructing);
@@ -118,14 +121,18 @@ class MOZ_RAII BaselineCacheIRCompiler : public CacheIRCompiler {
   void emitAtomizeString(Register str, Register temp, Label* failure);
 
   bool emitCallScriptedGetterShared(ValOperandId receiverId,
-                                    uint32_t getterOffset, bool sameRealm,
+                                    ObjOperandId calleeId, bool sameRealm,
                                     uint32_t nargsAndFlagsOffset,
                                     mozilla::Maybe<uint32_t> icScriptOffset);
   bool emitCallScriptedSetterShared(ObjOperandId receiverId,
-                                    uint32_t setterOffset, ValOperandId rhsId,
+                                    ObjOperandId calleeId, ValOperandId rhsId,
                                     bool sameRealm,
                                     uint32_t nargsAndFlagsOffset,
                                     mozilla::Maybe<uint32_t> icScriptOffset);
+  bool emitCallScriptedFunctionShared(ObjOperandId calleeId,
+                                      Int32OperandId argcId, CallFlags flags,
+                                      uint32_t argcFixed,
+                                      mozilla::Maybe<uint32_t> icScriptOffset);
 
   template <typename IdType>
   bool emitCallScriptedProxyGetShared(ValOperandId targetId,
@@ -158,19 +165,6 @@ class MOZ_RAII BaselineCacheIRCompiler : public CacheIRCompiler {
 
  private:
   CACHE_IR_COMPILER_UNSHARED_GENERATED
-};
-
-// Special object used for storing a list of shapes to guard against. These are
-// only used in the fields of CacheIR stubs and do not escape.
-class ShapeListObject : public ListObject {
- public:
-  static const JSClass class_;
-  static const JSClassOps classOps_;
-  static ShapeListObject* create(JSContext* cx);
-  static void trace(JSTracer* trc, JSObject* obj);
-
-  Shape* get(uint32_t index);
-  bool traceWeak(JSTracer* trc);
 };
 
 }  // namespace jit

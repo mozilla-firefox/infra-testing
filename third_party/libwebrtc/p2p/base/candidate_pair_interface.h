@@ -13,7 +13,7 @@
 
 #include "api/candidate.h"
 
-namespace cricket {
+namespace webrtc {
 
 class CandidatePairInterface {
  public:
@@ -35,6 +35,7 @@ struct CandidatePair final : public CandidatePairInterface {
   Candidate remote;
 };
 
-}  // namespace cricket
+}  //  namespace webrtc
+
 
 #endif  // P2P_BASE_CANDIDATE_PAIR_INTERFACE_H_

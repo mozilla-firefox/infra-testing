@@ -4,9 +4,12 @@
 
 package org.mozilla.geckoview;
 
+import android.util.Base64;
 import android.util.Log;
+import java.security.Principal;
 import java.util.HashMap;
 import java.util.Map;
+import javax.security.auth.x500.X500Principal;
 import org.json.JSONException;
 import org.mozilla.gecko.util.EventCallback;
 import org.mozilla.gecko.util.GeckoBundle;
@@ -37,6 +40,7 @@ import org.mozilla.geckoview.GeckoSession.PromptDelegate.IdentityCredential.Prov
 import org.mozilla.geckoview.GeckoSession.PromptDelegate.PopupPrompt;
 import org.mozilla.geckoview.GeckoSession.PromptDelegate.PromptInstanceDelegate;
 import org.mozilla.geckoview.GeckoSession.PromptDelegate.PromptResponse;
+import org.mozilla.geckoview.GeckoSession.PromptDelegate.RedirectPrompt;
 import org.mozilla.geckoview.GeckoSession.PromptDelegate.RepostConfirmPrompt;
 import org.mozilla.geckoview.GeckoSession.PromptDelegate.SharePrompt;
 import org.mozilla.geckoview.GeckoSession.PromptDelegate.TextPrompt;
@@ -257,7 +261,25 @@ import org.mozilla.geckoview.GeckoSession.PromptDelegate.TextPrompt;
   private static final class CertificateHandler implements PromptHandler<CertificateRequest> {
     @Override
     public CertificateRequest newPrompt(final GeckoBundle info, final Observer observer) {
-      return new CertificateRequest(info.getString("id"), observer, info.getString("host"));
+      final String[] issuersEncoded = info.getStringArray("issuers");
+      Principal[] issuers = null;
+      if (issuersEncoded != null && issuersEncoded.length > 0) {
+        issuers = new Principal[issuersEncoded.length];
+        for (int i = 0; i < issuersEncoded.length; i++) {
+          // The encoded issuers have already been decoded by NSS, but if NSS
+          // is more permissive than X500Principal, decoding could fail. In
+          // that case, fail open by not filtering by issuer at all.
+          try {
+            issuers[i] = new X500Principal(Base64.decode(issuersEncoded[i], Base64.DEFAULT));
+          } catch (final IllegalArgumentException ex) {
+            Log.e(LOGTAG, "Error decoding issuer '" + issuersEncoded[i] + "'", ex);
+            issuers = null;
+            break;
+          }
+        }
+      }
+      return new CertificateRequest(
+          info.getString("id"), observer, info.getString("host"), issuers);
     }
 
     @Override
@@ -424,6 +446,19 @@ import org.mozilla.geckoview.GeckoSession.PromptDelegate.TextPrompt;
     public GeckoResult<PromptResponse> callDelegate(
         final PopupPrompt prompt, final GeckoSession session, final PromptDelegate delegate) {
       return delegate.onPopupPrompt(session, prompt);
+    }
+  }
+
+  private static final class RedirectHandler implements PromptHandler<RedirectPrompt> {
+    @Override
+    public RedirectPrompt newPrompt(final GeckoBundle info, final Observer observer) {
+      return new RedirectPrompt(info.getString("id"), info.getString("targetUri"), observer);
+    }
+
+    @Override
+    public GeckoResult<PromptResponse> callDelegate(
+        final RedirectPrompt prompt, final GeckoSession session, final PromptDelegate delegate) {
+      return delegate.onRedirectPrompt(session, prompt);
     }
   }
 
@@ -765,6 +800,7 @@ import org.mozilla.geckoview.GeckoSession.PromptDelegate.TextPrompt;
     sPromptHandlers.register(new FileHandler(), "file");
     sPromptHandlers.register(new FolderUploadHandler(), "folderUpload");
     sPromptHandlers.register(new PopupHandler(), "popup");
+    sPromptHandlers.register(new RedirectHandler(), "redirect");
     sPromptHandlers.register(new RepostHandler(), "repost");
     sPromptHandlers.register(new ShareHandler(), "share");
     sPromptHandlers.register(new LoginSaveHandler(), "Autocomplete:Save:Login");

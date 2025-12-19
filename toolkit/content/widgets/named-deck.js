@@ -36,22 +36,24 @@
    */
   class NamedDeckButton extends HTMLButtonElement {
     connectedCallback() {
+      this._rootNode = this.getRootNode();
       this.id = `${this.deckId}-button-${this.name}`;
       if (!this.hasAttribute("role")) {
         this.setAttribute("role", "tab");
       }
       this.setSelectedFromDeck();
       this.addEventListener("click", this);
-      this.getRootNode().addEventListener("view-changed", this, {
+      this._rootNode.addEventListener("view-changed", this, {
         capture: true,
       });
     }
 
     disconnectedCallback() {
       this.removeEventListener("click", this);
-      this.getRootNode().removeEventListener("view-changed", this, {
+      this._rootNode.removeEventListener("view-changed", this, {
         capture: true,
       });
+      this._rootNode = null;
     }
 
     attributeChangedCallback(name, oldVal, newVal) {
@@ -69,7 +71,7 @@
     }
 
     get deck() {
-      return this.getRootNode().querySelector(`#${this.deckId}`);
+      return this._rootNode.querySelector(`#${this.deckId}`);
     }
 
     handleEvent(e) {
@@ -118,6 +120,7 @@
     }
 
     connectedCallback() {
+      this._rootNode = this.getRootNode();
       this.setAttribute("role", "tablist");
 
       if (!this.observer) {
@@ -128,6 +131,11 @@
               if (this.activeChild == node) {
                 // Ensure there's still an active child.
                 this.activeChild = this.firstElementChild;
+              }
+            }
+            for (let node of change.addedNodes) {
+              if (!this.activeChild) {
+                this.activeChild = node;
               }
             }
           }
@@ -145,7 +153,7 @@
       this.addEventListener("button-group:selected", this);
       this.addEventListener("keydown", this);
       this.addEventListener("mousedown", this);
-      this.getRootNode().addEventListener("keypress", this);
+      this._rootNode.addEventListener("keypress", this);
     }
 
     disconnectedCallback() {
@@ -153,7 +161,8 @@
       this.removeEventListener("button-group:selected", this);
       this.removeEventListener("keydown", this);
       this.removeEventListener("mousedown", this);
-      this.getRootNode().removeEventListener("keypress", this);
+      this._rootNode.removeEventListener("keypress", this);
+      this._rootNode = null;
     }
 
     attributeChangedCallback(name) {
@@ -187,6 +196,10 @@
         newActiveChild = node;
       } else {
         newActiveChild = this.firstElementChild;
+      }
+
+      if (!(newActiveChild instanceof Element)) {
+        return;
       }
 
       this._activeChild = newActiveChild;
@@ -274,7 +287,7 @@
                 return NodeFilter.FILTER_REJECT;
               }
               node.focus();
-              return this.getRootNode().activeElement == node
+              return this._rootNode.activeElement == node
                 ? NodeFilter.FILTER_ACCEPT
                 : NodeFilter.FILTER_REJECT;
             },

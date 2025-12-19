@@ -108,6 +108,8 @@
             use crate::values::animated::ToAnimatedValue;
             #[allow(unused_imports)]
             use crate::values::resolved::ToResolvedValue;
+            #[allow(unused_imports)]
+            use crate::derives::*;
             pub use super::single_value::computed_value as single_value;
             pub use self::single_value::T as SingleComputedValue;
             % if not allow_empty:
@@ -148,7 +150,7 @@
             /// Making this type generic allows the compiler to figure out the
             /// animated value for us, instead of having to implement it
             /// manually for every type we care about.
-            #[derive(Clone, Debug, MallocSizeOf, PartialEq, ToAnimatedValue, ToResolvedValue, ToCss)]
+            #[derive(Clone, Debug, MallocSizeOf, PartialEq, ToAnimatedValue, ToResolvedValue, ToCss, ToTyped)]
             % if separator == "Comma":
             #[css(comma)]
             % endif
@@ -168,7 +170,7 @@
             % else:
             pub use self::ComputedList as List;
 
-            #[derive(Clone, Debug, MallocSizeOf, PartialEq, ToCss)]
+            #[derive(Clone, Debug, MallocSizeOf, PartialEq, ToCss, ToTyped)]
             % if separator == "Comma":
             #[css(comma)]
             % endif
@@ -184,7 +186,7 @@
                 pub UnderlyingList<single_value::T>,
             );
 
-            type ResolvedList = OwnedList<<single_value::T as ToResolvedValue>::ResolvedValue>;
+            type ResolvedList = <OwnedList<single_value::T> as ToResolvedValue>::ResolvedValue;
             impl ToResolvedValue for ComputedList {
                 type ResolvedValue = ResolvedList;
 
@@ -231,7 +233,7 @@
             // FIXME(emilio): For some reason rust thinks that this alias is
             // unused, even though it's clearly used below?
             #[allow(unused)]
-            type AnimatedList = OwnedList<<single_value::T as ToAnimatedValue>::AnimatedValue>;
+            type AnimatedList = <OwnedList<single_value::T> as ToAnimatedValue>::AnimatedValue;
             % if is_shared_list:
             impl ToAnimatedValue for ComputedList {
                 type AnimatedValue = AnimatedList;
@@ -282,7 +284,7 @@
         }
 
         /// The specified value of ${name}.
-        #[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToShmem)]
+        #[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToShmem, ToTyped)]
         % if none_value:
         #[value_info(other_values = "none")]
         % endif
@@ -373,6 +375,8 @@
     /// ${property.spec}
     pub mod ${property.ident} {
         #[allow(unused_imports)]
+        use crate::derives::*;
+        #[allow(unused_imports)]
         use cssparser::{Parser, BasicParseError, Token};
         #[allow(unused_imports)]
         use crate::parser::{Parse, ParserContext};
@@ -438,16 +442,33 @@
                         CSSWideKeyword::Unset |
                         % endif
                         CSSWideKeyword::Inherit => {
-                            % if property.style_struct.inherited:
-                                declaration.debug_crash("Unexpected inherit or unset for inherited property");
-                            % else:
+                            % if not property.style_struct.inherited:
                                 context.rule_cache_conditions.borrow_mut().set_uncacheable();
+                            % endif
+                            % if property.is_zoom_dependent():
+                                if !context.builder.effective_zoom_for_inheritance.is_one() {
+                                    let old_zoom = context.builder.effective_zoom;
+                                    context.builder.effective_zoom = context.builder.effective_zoom_for_inheritance;
+                                    let computed = context.builder.inherited_style.clone_${property.ident}();
+                                    let specified = ToComputedValue::from_computed_value(&computed);
+                                    % if property.boxed:
+                                    let specified = Box::new(specified);
+                                    % endif
+                                    let decl = PropertyDeclaration::${property.camel_case}(specified);
+                                    cascade_property(&decl, context);
+                                    context.builder.effective_zoom = old_zoom;
+                                    return;
+                                }
+                            % endif
+                            % if property.style_struct.inherited:
+                                declaration.debug_crash("Unexpected inherit or unset for non-zoom-dependent inherited property");
+                            % else:
                                 context.builder.inherit_${property.ident}();
                             % endif
                         }
                         CSSWideKeyword::RevertLayer |
                         CSSWideKeyword::Revert => {
-                            declaration.debug_crash("Found revert/revert-layer not deal with");
+                            declaration.debug_crash("Found revert/revert-layer not dealt with");
                         },
                     }
                     return;
@@ -598,8 +619,10 @@
     <%def name="inner_body(keyword, needs_conversion=False)">
         pub use self::computed_value::T as SpecifiedValue;
         pub mod computed_value {
+            #[allow(unused_imports)]
+            use crate::derives::*;
             #[cfg_attr(feature = "servo", derive(Deserialize, Hash, Serialize))]
-            #[derive(Clone, Copy, Debug, Eq, FromPrimitive, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToAnimatedValue, ToComputedValue, ToCss, ToResolvedValue, ToShmem)]
+            #[derive(Clone, Copy, Debug, Eq, FromPrimitive, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToAnimatedValue, ToComputedValue, ToCss, ToResolvedValue, ToShmem, ToTyped)]
             pub enum T {
             % for variant in keyword.values_for(engine):
             <%
@@ -677,6 +700,8 @@
         use style_traits::{ParseError, StyleParseErrorKind};
         #[allow(unused_imports)]
         use style_traits::{CssWriter, KeywordsCollectFn, SpecifiedValueInfo, ToCss};
+        #[allow(unused_imports)]
+        use style_derive::{Animate, ComputeSquaredDistance, ToAnimatedValue, Parse, ToAnimatedZero, ToComputedValue, ToResolvedValue, ToCss, SpecifiedValueInfo, ToTyped};
 
         % if derive_value_info:
         #[derive(SpecifiedValueInfo)]
@@ -720,7 +745,7 @@
                 // Define all of the expected variables that correspond to the shorthand
                 % for sub_property in shorthand.sub_properties:
                     let mut ${sub_property.ident} =
-                        None::< &'a longhands::${sub_property.ident}::SpecifiedValue>;
+                        None::<&'a longhands::${sub_property.ident}::SpecifiedValue>;
                 % endfor
 
                 // Attempt to assign the incoming declarations to the expected variables
@@ -787,7 +812,7 @@
         }
 
         /// Try to serialize a given shorthand to a string.
-        pub fn to_css(declarations: &[&PropertyDeclaration], dest: &mut crate::str::CssStringWriter) -> fmt::Result {
+        pub fn to_css(declarations: &[&PropertyDeclaration], dest: &mut style_traits::CssStringWriter) -> fmt::Result {
             match LonghandsToSerialize::from_iter(declarations.iter().cloned()) {
                 Ok(longhands) => longhands.to_css(&mut CssWriter::new(dest)),
                 Err(_) => Ok(())

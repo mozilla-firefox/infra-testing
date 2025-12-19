@@ -7,12 +7,12 @@
 #include "mozilla/dom/SVGTests.h"
 
 #include "DOMSVGStringList.h"
+#include "mozilla/dom/SVGSwitchElement.h"
+#include "mozilla/intl/LocaleService.h"
+#include "mozilla/intl/oxilangtag_ffi_generated.h"
 #include "nsCharSeparatedTokenizer.h"
 #include "nsIContent.h"
 #include "nsIContentInlines.h"
-#include "mozilla/dom/SVGSwitchElement.h"
-#include "mozilla/intl/oxilangtag_ffi_generated.h"
-#include "mozilla/Preferences.h"
 
 namespace mozilla::dom {
 
@@ -64,11 +64,11 @@ bool SVGTests::IsConditionalProcessingAttribute(
 static int32_t FindBestLanguage(const nsTArray<nsCString>& aAvailLangs,
                                 const Document* aDoc) {
   AutoTArray<nsCString, 16> reqLangs;
-  if (nsContentUtils::SpoofLocaleEnglish(aDoc)) {
+  if (aDoc->ShouldResistFingerprinting(RFPTarget::JSLocale)) {
     reqLangs.AppendElements(Span(std::array{"en-US", "en"}));
   } else {
     nsCString acceptLangs;
-    Preferences::GetLocalizedCString("intl.accept_languages", acceptLangs);
+    intl::LocaleService::GetInstance()->GetAcceptLanguages(acceptLangs);
     nsCCharSeparatedTokenizer languageTokenizer(acceptLangs, ',');
     while (languageTokenizer.hasMoreTokens()) {
       reqLangs.AppendElement(languageTokenizer.nextToken());

@@ -15,18 +15,18 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "gNetworkLinkService",
   "@mozilla.org/network/network-link-service;1",
-  "nsINetworkLinkService"
+  Ci.nsINetworkLinkService
 );
 
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "gParentalControlsService",
   "@mozilla.org/parental-controls-service;1",
-  "nsIParentalControlsService"
+  Ci.nsIParentalControlsService
 );
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  DoHConfigController: "resource://gre/modules/DoHConfig.sys.mjs",
+  DoHConfigController: "moz-src:///toolkit/components/doh/DoHConfig.sys.mjs",
 });
 
 const GLOBAL_CANARY = "use-application-dns.net.";
@@ -53,7 +53,6 @@ export const Heuristics = {
       zscalerCanary: zscaler,
       canary,
       browserParent: await parentalControls(),
-      thirdPartyRoots: await thirdPartyRoots(),
       policy: await enterprisePolicy(),
       vpn: platformChecks.vpn,
       proxy: platformChecks.proxy,
@@ -89,8 +88,6 @@ export const Heuristics = {
       modifiedRoots: Ci.nsITRRSkipReason.TRR_HEURISTIC_TRIPPED_MODIFIED_ROOTS,
       browserParent:
         Ci.nsITRRSkipReason.TRR_HEURISTIC_TRIPPED_PARENTAL_CONTROLS,
-      thirdPartyRoots:
-        Ci.nsITRRSkipReason.TRR_HEURISTIC_TRIPPED_THIRD_PARTY_ROOTS,
       policy: Ci.nsITRRSkipReason.TRR_HEURISTIC_TRIPPED_ENTERPRISE_POLICY,
       vpn: Ci.nsITRRSkipReason.TRR_HEURISTIC_TRIPPED_VPN,
       proxy: Ci.nsITRRSkipReason.TRR_HEURISTIC_TRIPPED_PROXY,
@@ -234,15 +231,47 @@ async function dnsListLookup(domainList) {
 }
 
 // TODO: Confirm the expected behavior when filtering is on
-async function globalCanary() {
+export async function globalCanary() {
+  // Check that a commonly used domain resolves before and after
+  // checking the global canary.
+  // If this check fails, the globalCanary isn't to be trusted, as it's
+  // an indication it might have failed due to DNS being unavailable.
+  async function preconditionCheck(domain) {
+    let { addresses, err } = await dnsLookup(domain);
+    if (err === NXDOMAIN_ERR || !addresses.length) {
+      return false;
+    }
+    return true;
+  }
+
+  let preCheckSuccess = await preconditionCheck("firefox.com.");
+  if (!preCheckSuccess) {
+    return "enable_doh";
+  }
+
+  // Actual global canary check
   let { addresses, err } = await dnsLookup(GLOBAL_CANARY);
+
+  let postCheckSuccess = await preconditionCheck("mozilla.org.");
+  if (!postCheckSuccess) {
+    return "enable_doh";
+  }
+
+  function isLocal(addr) {
+    // hostnameIsLocalIPAddress does not return true for loopback addresses
+    // so we specifically handle these.
+    if (addr == "127.0.0.1" || addr == "::1" || addr == "0.0.0.0") {
+      return true;
+    }
+    return Services.io.hostnameIsLocalIPAddress(
+      Services.io.newURI(`http://${addr}`)
+    );
+  }
 
   if (
     err === NXDOMAIN_ERR ||
     !addresses.length ||
-    addresses.every(addr =>
-      Services.io.hostnameIsLocalIPAddress(Services.io.newURI(`http://${addr}`))
-    )
+    addresses.every(addr => isLocal(addr))
   ) {
     return "disable_doh";
   }
@@ -252,26 +281,6 @@ async function globalCanary() {
 
 export async function parentalControls() {
   if (lazy.gParentalControlsService.parentalControlsEnabled) {
-    return "disable_doh";
-  }
-
-  return "enable_doh";
-}
-
-async function thirdPartyRoots() {
-  if (Cu.isInAutomation) {
-    return "enable_doh";
-  }
-
-  let certdb = Cc["@mozilla.org/security/x509certdb;1"].getService(
-    Ci.nsIX509CertDB
-  );
-
-  let hasThirdPartyRoots = await new Promise(resolve => {
-    certdb.asyncHasThirdPartyRoots(resolve);
-  });
-
-  if (hasThirdPartyRoots) {
     return "disable_doh";
   }
 

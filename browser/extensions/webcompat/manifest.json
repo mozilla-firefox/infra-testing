@@ -2,7 +2,7 @@
   "manifest_version": 2,
   "name": "Web Compatibility Interventions",
   "description": "Urgent post-release fixes for web compatibility.",
-  "version": "140.0.0",
+  "version": "148.0.0",
   "browser_specific_settings": {
     "gecko": {
       "id": "webcompat@mozilla.org",
@@ -48,20 +48,20 @@
         "paths": [["matchPatterns"]]
       }
     },
+    "remoteSettings": {
+      "schema": "experiment-apis/remoteSettings.json",
+      "parent": {
+        "scopes": ["addon_parent"],
+        "script": "experiment-apis/remoteSettings.js",
+        "paths": [["remoteSettings"]]
+      }
+    },
     "systemManufacturer": {
       "schema": "experiment-apis/systemManufacturer.json",
       "child": {
         "scopes": ["addon_child"],
         "script": "experiment-apis/systemManufacturer.js",
         "paths": [["systemManufacturer"]]
-      }
-    },
-    "testUtils": {
-      "schema": "experiment-apis/testUtils.json",
-      "parent": {
-        "scopes": ["addon_parent"],
-        "script": "experiment-apis/testUtils.js",
-        "paths": [["testUtils"]]
       }
     },
     "trackingProtection": {
@@ -89,6 +89,7 @@
 
   "background": {
     "scripts": [
+      "lib/remote_settings_update_check.js",
       "lib/messaging_helper.js",
       "lib/ua_helpers.js",
       "lib/intervention_helpers.js",
@@ -110,16 +111,17 @@
     "shims/adnexus-prebid.js",
     "shims/adsafeprotected-ima.js",
     "shims/apstag.js",
-    "shims/blogger.js",
-    "shims/bloggerAccount.js",
+    "shims/artstationLogin.js",
     "shims/bmauth.js",
     "shims/botd.mjs",
     "shims/branch.js",
+    "shims/cambridgeDictionaryLogin.js",
     "shims/chartbeat.js",
     "shims/crave-ca.js",
     "shims/criteo.js",
     "shims/cxense.js",
     "shims/doubleverify.js",
+    "shims/disqus.svg",
     "shims/eluminate.js",
     "shims/embed-test-shim.js",
     "shims/empty-script.js",
@@ -141,6 +143,7 @@
     "shims/iam.js",
     "shims/iaspet.js",
     "shims/instagram-embed.js",
+    "shims/disqus-embed.js",
     "shims/instagram.js",
     "shims/instagram.svg",
     "shims/jira-zendesk-support.js",
@@ -149,6 +152,7 @@
     "shims/maxmind-geoip.js",
     "shims/messengerLogin.js",
     "shims/microsoftLogin.js",
+    "shims/microsoftOfficeAuth.js",
     "shims/microsoftVirtualAssistant.js",
     "shims/moat.js",
     "shims/mochitest-shim-1.js",
@@ -169,7 +173,6 @@
     "shims/twitter-embed.js",
     "shims/vast2.xml",
     "shims/vast3.xml",
-    "shims/vidible.js",
     "shims/vmad.xml",
     "shims/webtrends.js",
     "shims/x-logo.svg",

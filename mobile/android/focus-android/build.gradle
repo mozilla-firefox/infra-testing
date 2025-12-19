@@ -18,9 +18,9 @@ buildscript {
     }
 
     dependencies {
-        classpath libs.tools.androidgradle
+        classpath libs.android.gradle.plugin
+        classpath libs.mozilla.glean.gradle.plugin
         classpath libs.osslicenses.plugin
-        classpath "org.mozilla.telemetry:glean-gradle-plugin:${libs.versions.mozilla.glean.get()}"
         classpath "${ApplicationServicesConfig.groupId}:tooling-nimbus-gradle:${ApplicationServicesConfig.version}"
 
         // NOTE: Do not place your application dependencies here; they belong
@@ -90,6 +90,10 @@ allprojects {
         }
     }
 
+    ext {
+        gleanVersion = libs.versions.glean.get()
+    }
+
     tasks.withType(KotlinCompile).configureEach {
         compilerOptions.allWarningsAsErrors = true
     }
@@ -97,8 +101,10 @@ allprojects {
 
 subprojects {
     afterEvaluate {
-        kotlin {
-            jvmToolchain(config.jvmTargetCompatibility)
+        if (it.hasProperty('kotlin')) {
+            kotlin {
+                jvmToolchain(config.jvmTargetCompatibility)
+            }
         }
 
         if (it.hasProperty('android')) {
@@ -114,13 +120,13 @@ subprojects {
             if (details.requested.group == 'org.mozilla.telemetry'
                     && details.requested.name.contains('glean') ) {
                 def requested = details.requested.version.tokenize(".")
-                    def defined = libs.versions.mozilla.glean.get().tokenize(".")
+                    def defined = project.ext.gleanVersion.tokenize(".")
                     // Check the major version
                     if (requested[0] != defined[0]) {
-                        throw new AssertionError("Cannot resolve to a single Glean version. Requested: ${details.requested.version}, A-C uses: ${libs.versions.mozilla.glean.get()}")
+                        throw new AssertionError("Cannot resolve to a single Glean version. Requested: ${details.requested.version}, A-C uses: ${project.ext.gleanVersion}")
                     } else {
                         // Enforce that all (transitive) dependencies are using the defined Glean version
-                        details.useVersion libs.versions.mozilla.glean.get()
+                        details.useVersion project.ext.gleanVersion
                     }
             }
         }
@@ -180,7 +186,7 @@ configurations {
 }
 
 dependencies {
-    ktlint("com.pinterest:ktlint:${libs.versions.ktlint.get()}") {
+    ktlint(libs.ktlint) {
         attributes {
             attribute(Bundling.BUNDLING_ATTRIBUTE, getObjects().named(Bundling, Bundling.EXTERNAL))
         }

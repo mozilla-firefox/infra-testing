@@ -152,7 +152,7 @@ const nsCString ToString(CodeNameIndex aCodeNameIndex);
 
 #define NS_DEFINE_INPUTTYPE(aCPPName, aDOMName) e##aCPPName,
 
-typedef uint8_t EditorInputTypeType;
+using EditorInputTypeType = uint8_t;
 enum class EditorInputType : EditorInputTypeType {
 #include "mozilla/InputTypeList.h"
   // If a DOM input event is synthesized by script, this is used.  Then,
@@ -160,6 +160,22 @@ enum class EditorInputType : EditorInputTypeType {
   // value.
   eUnknown,
 };
+
+#undef NS_DEFINE_INPUTTYPE
+
+#define NS_DEFINE_INPUTTYPE(aCPPName, aDOMName) \
+  case EditorInputType::e##aCPPName:            \
+    return aStream << ("EditorInputType::e" #aCPPName);
+
+inline const std::ostream& operator<<(std::ostream& aStream,
+                                      const EditorInputType& aInputType) {
+  switch (aInputType) {
+#include "mozilla/InputTypeList.h"
+    case EditorInputType::eUnknown:
+      return aStream << "EditorInputType::eUnknown";
+  }
+  return aStream << "<Invalid EditorInputType>";
+}
 
 #undef NS_DEFINE_INPUTTYPE
 
@@ -404,7 +420,7 @@ const char* ToChar(Command aCommand);
  *                              additional parameter and sets this to nullptr,
  *                              will return Command::DoNothing with warning.
  */
-Command GetInternalCommand(const char* aCommandName,
+Command GetInternalCommand(const nsACString& aCommandName,
                            const nsCommandParams* aCommandParams = nullptr);
 
 }  // namespace mozilla
@@ -506,6 +522,8 @@ inline MouseButtonsFlag MouseButtonsFlagToChange(MouseButton aMouseButton) {
       return MouseButtonsFlag::eNoButtons;
   }
 }
+
+nsCString InputSourceToString(uint16_t aInputSource);
 
 enum class TextRangeType : RawTextRangeType;
 

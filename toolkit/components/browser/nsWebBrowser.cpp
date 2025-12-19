@@ -7,6 +7,10 @@
 // Local Includes
 #include "nsWebBrowser.h"
 
+// Hack: nsIOpenWindowInfo depends on this without being able to include it
+#include "mozilla/Assertions.h"
+#include "mozilla/dom/BrowserParent.h"
+
 // Helper Classes
 #include "nsGfxCIID.h"
 #include "nsWidgetsCID.h"
@@ -31,6 +35,7 @@
 #include "nsDocShell.h"
 #include "nsServiceManagerUtils.h"
 #include "WindowRenderer.h"
+#include "nsOpenWindowInfo.h"
 
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/BrowsingContext.h"
@@ -60,7 +65,6 @@ nsWebBrowser::nsWebBrowser(int aItemType)
       mShouldEnableHistory(true),
       mWillChangeProcess(false),
       mProgressListener(nullptr),
-      mWidgetListenerDelegate(this),
       mBackgroundColor(0),
       mPersistCurrentState(nsIWebBrowserPersist::PERSIST_STATE_READY),
       mPersistResult(NS_OK),
@@ -73,34 +77,22 @@ nsWebBrowser::nsWebBrowser(int aItemType)
 nsWebBrowser::~nsWebBrowser() { InternalDestroy(); }
 
 nsIWidget* nsWebBrowser::EnsureWidget() {
-  if (mParentWidget) {
-    return mParentWidget;
-  }
-
-  mInternalWidget = nsIWidget::CreateChildWindow();
-  if (NS_WARN_IF(!mInternalWidget)) {
-    return nullptr;
-  }
-
-  widget::InitData widgetInit;
-  widgetInit.mClipChildren = true;
-  widgetInit.mWindowType = widget::WindowType::Child;
-  LayoutDeviceIntRect bounds(0, 0, 0, 0);
-
-  mInternalWidget->SetWidgetListener(&mWidgetListenerDelegate);
-  NS_ENSURE_SUCCESS(mInternalWidget->Create(mParentWidget, bounds, &widgetInit),
-                    nullptr);
-
-  return mInternalWidget;
+  MOZ_DIAGNOSTIC_ASSERT(mParentWidget);
+  return mParentWidget;
 }
 
 /* static */
 already_AddRefed<nsWebBrowser> nsWebBrowser::Create(
     nsIWebBrowserChrome* aContainerWindow, nsIWidget* aParentWidget,
     dom::BrowsingContext* aBrowsingContext,
-    dom::WindowGlobalChild* aInitialWindowChild) {
+    dom::WindowGlobalChild* aInitialWindowChild,
+    nsIOpenWindowInfo* aOpenWindowInfo) {
+  MOZ_ASSERT(aOpenWindowInfo, "Must have openwindowinfo");
   MOZ_ASSERT_IF(aInitialWindowChild,
                 aInitialWindowChild->BrowsingContext() == aBrowsingContext);
+  MOZ_ASSERT_IF(aInitialWindowChild,
+                aInitialWindowChild->DocumentPrincipal() ==
+                    aOpenWindowInfo->PrincipalToInheritForAboutBlank());
 
   RefPtr<nsWebBrowser> browser = new nsWebBrowser(
       aBrowsingContext->IsContent() ? typeContentWrapper : typeChromeWrapper);
@@ -138,8 +130,8 @@ already_AddRefed<nsWebBrowser> nsWebBrowser::Create(
   // registration can go away, and nsDocShellTreeOwner can stop implementing
   // nsIWebProgressListener.
   RefPtr<nsDocShellTreeOwner> docShellTreeOwner = browser->mDocShellTreeOwner;
-  Unused << docShell->AddProgressListener(docShellTreeOwner,
-                                          nsIWebProgress::NOTIFY_ALL);
+  (void)docShell->AddProgressListener(docShellTreeOwner,
+                                      nsIWebProgress::NOTIFY_ALL);
 
   docShell->SetTreeOwner(docShellTreeOwner);
 
@@ -147,7 +139,8 @@ already_AddRefed<nsWebBrowser> nsWebBrowser::Create(
   // events from subframes. To solve that we install our own chrome event
   // handler that always gets called (even for subframes) for any bubbling
   // event.
-  nsresult rv = docShell->InitWindow(docShellParentWidget, 0, 0, 0, 0);
+  nsresult rv = docShell->InitWindow(docShellParentWidget, 0, 0, 0, 0,
+                                     aOpenWindowInfo, aInitialWindowChild);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return nullptr;
   }
@@ -155,20 +148,10 @@ already_AddRefed<nsWebBrowser> nsWebBrowser::Create(
   docShellTreeOwner->AddToWatcher();  // evil twin of Remove in SetDocShell(0)
   docShellTreeOwner->AddChromeListeners();
 
-  if (aInitialWindowChild) {
-    docShell->CreateDocumentViewerForActor(aInitialWindowChild);
-  }
-
   return browser.forget();
 }
 
 void nsWebBrowser::InternalDestroy() {
-  if (mInternalWidget) {
-    mInternalWidget->SetWidgetListener(nullptr);
-    mInternalWidget->Destroy();
-    mInternalWidget = nullptr;  // Force release here.
-  }
-
   SetDocShell(nullptr);
 
   if (mDocShellTreeOwner) {
@@ -831,7 +814,7 @@ nsWebBrowser::SaveDocument(nsISupports* aDocumentish, nsISupports* aFile,
   mPersist = do_CreateInstance(NS_WEBBROWSERPERSIST_CONTRACTID, &rv);
   NS_ENSURE_SUCCESS(rv, rv);
   RefPtr<nsIWebBrowserPersist> localPersist(mPersist);
-  Unused << localPersist;
+  (void)localPersist;
   mPersist->SetProgressListener(this);
   mPersist->SetPersistFlags(mPersistFlags);
   mPersist->GetCurrentState(&mPersistCurrentState);
@@ -862,15 +845,6 @@ nsWebBrowser::Cancel(nsresult aReason) {
 //*****************************************************************************
 // nsWebBrowser::nsIBaseWindow
 //*****************************************************************************
-
-NS_IMETHODIMP
-nsWebBrowser::InitWindow(nsIWidget* aParentWidget, int32_t aX, int32_t aY,
-                         int32_t aCX, int32_t aCY) {
-  // nsIBaseWindow::InitWindow and nsIBaseWindow::Create
-  // implementations have been merged into nsWebBrowser::Create
-  MOZ_DIAGNOSTIC_CRASH("Superceded by nsWebBrowser::Create()");
-  return NS_ERROR_NULL_POINTER;
-}
 
 NS_IMETHODIMP
 nsWebBrowser::Destroy() {
@@ -941,14 +915,7 @@ nsWebBrowser::SetPositionAndSize(int32_t aX, int32_t aY, int32_t aCX,
   int32_t doc_x = aX;
   int32_t doc_y = aY;
 
-  // If there is an internal widget we need to make the docShell coordinates
-  // relative to the internal widget rather than the calling app's parent.
   // We also need to resize our widget then.
-  if (mInternalWidget) {
-    doc_x = doc_y = 0;
-    mInternalWidget->Resize(aX, aY, aCX, aCY,
-                            !!(aFlags & nsIBaseWindow::eRepaint));
-  }
   // Now reposition/ resize the doc
   NS_ENSURE_SUCCESS(
       mDocShell->SetPositionAndSize(doc_x, doc_y, aCX, aCY, aFlags),
@@ -960,24 +927,6 @@ nsWebBrowser::SetPositionAndSize(int32_t aX, int32_t aY, int32_t aCX,
 NS_IMETHODIMP
 nsWebBrowser::GetPositionAndSize(int32_t* aX, int32_t* aY, int32_t* aCX,
                                  int32_t* aCY) {
-  if (mInternalWidget) {
-    LayoutDeviceIntRect bounds = mInternalWidget->GetBounds();
-
-    if (aX) {
-      *aX = bounds.X();
-    }
-    if (aY) {
-      *aY = bounds.Y();
-    }
-    if (aCX) {
-      *aCX = bounds.Width();
-    }
-    if (aCY) {
-      *aCY = bounds.Height();
-    }
-    return NS_OK;
-  }
-
   // Can directly return this as it is the
   // same interface, thus same returns.
   return mDocShell->GetPositionAndSize(aX, aY, aCX, aCY);
@@ -992,14 +941,6 @@ NS_IMETHODIMP
 nsWebBrowser::GetDimensions(DimensionKind aDimensionKind, int32_t* aX,
                             int32_t* aY, int32_t* aCX, int32_t* aCY) {
   return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
-nsWebBrowser::Repaint(bool aForce) {
-  NS_ENSURE_STATE(mDocShell);
-  // Can directly return this as it is the
-  // same interface, thus same returns.
-  return mDocShell->Repaint(aForce);
 }
 
 NS_IMETHODIMP
@@ -1041,45 +982,21 @@ NS_IMETHODIMP
 nsWebBrowser::SetVisibility(bool aVisibility) {
   if (mDocShell) {
     NS_ENSURE_SUCCESS(mDocShell->SetVisibility(aVisibility), NS_ERROR_FAILURE);
-    if (mInternalWidget) {
-      mInternalWidget->Show(aVisibility);
-    }
   }
 
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsWebBrowser::GetEnabled(bool* aEnabled) {
-  if (mInternalWidget) {
-    *aEnabled = mInternalWidget->IsEnabled();
-    return NS_OK;
-  }
-
-  return NS_ERROR_FAILURE;
-}
+nsWebBrowser::GetEnabled(bool* aEnabled) { return NS_ERROR_FAILURE; }
 
 NS_IMETHODIMP
-nsWebBrowser::SetEnabled(bool aEnabled) {
-  if (mInternalWidget) {
-    mInternalWidget->Enable(aEnabled);
-    return NS_OK;
-  }
-  return NS_ERROR_FAILURE;
-}
+nsWebBrowser::SetEnabled(bool aEnabled) { return NS_ERROR_FAILURE; }
 
 NS_IMETHODIMP
 nsWebBrowser::GetMainWidget(nsIWidget** aMainWidget) {
   NS_ENSURE_ARG_POINTER(aMainWidget);
-
-  if (mInternalWidget) {
-    *aMainWidget = mInternalWidget;
-  } else {
-    *aMainWidget = mParentWidget;
-  }
-
-  NS_IF_ADDREF(*aMainWidget);
-
+  NS_IF_ADDREF(*aMainWidget = mParentWidget);
   return NS_OK;
 }
 
@@ -1109,7 +1026,7 @@ void nsWebBrowser::SetDocShell(nsDocShell* aDocShell) {
   // We need to keep the docshell alive while we perform the changes, but we
   // don't need to call any methods on it.
   nsCOMPtr<nsIDocShell> kungFuDeathGrip(mDocShell);
-  mozilla::Unused << kungFuDeathGrip;
+  (void)kungFuDeathGrip;
 
   if (aDocShell) {
     MOZ_ASSERT(!mDocShell, "Should not overwrite an existing value!");
@@ -1143,42 +1060,6 @@ void nsWebBrowser::EnsureDocShellTreeOwner() {
   mDocShellTreeOwner->WebBrowser(this);
 }
 
-void nsWebBrowser::WindowActivated() {
-#if defined(DEBUG_smaug)
-  RefPtr<dom::Document> document = mDocShell->GetDocument();
-  nsAutoString documentURI;
-  document->GetDocumentURI(documentURI);
-  printf("nsWebBrowser::NS_ACTIVATE %p %s\n", (void*)this,
-         NS_ConvertUTF16toUTF8(documentURI).get());
-#endif
-  FocusActivate(nsFocusManager::GenerateFocusActionId());
-}
-
-void nsWebBrowser::WindowDeactivated() {
-#if defined(DEBUG_smaug)
-  RefPtr<dom::Document> document = mDocShell->GetDocument();
-  nsAutoString documentURI;
-  document->GetDocumentURI(documentURI);
-  printf("nsWebBrowser::NS_DEACTIVATE %p %s\n", (void*)this,
-         NS_ConvertUTF16toUTF8(documentURI).get());
-#endif
-  FocusDeactivate(nsFocusManager::GenerateFocusActionId());
-}
-
-bool nsWebBrowser::PaintWindow(nsIWidget* aWidget,
-                               LayoutDeviceIntRegion aRegion) {
-  WindowRenderer* renderer = aWidget->GetWindowRenderer();
-  NS_ASSERTION(renderer, "Must be in paint event");
-  if (FallbackRenderer* fallback = renderer->AsFallback()) {
-    if (fallback->BeginTransaction()) {
-      fallback->EndTransactionWithColor(aRegion.GetBounds().ToUnknownRect(),
-                                        ToDeviceColor(mBackgroundColor));
-    }
-    return true;
-  }
-  return false;
-}
-
 void nsWebBrowser::FocusActivate(uint64_t aActionId) {
   if (RefPtr<nsFocusManager> fm = nsFocusManager::GetFocusManager()) {
     if (nsCOMPtr<nsPIDOMWindowOuter> window = GetWindow()) {
@@ -1200,20 +1081,4 @@ void nsWebBrowser::SetWillChangeProcess() {
   if (mDocShell) {
     nsDocShell::Cast(mDocShell)->SetWillChangeProcess();
   }
-}
-
-void nsWebBrowser::WidgetListenerDelegate::WindowActivated() {
-  RefPtr<nsWebBrowser> holder = mWebBrowser;
-  holder->WindowActivated();
-}
-
-void nsWebBrowser::WidgetListenerDelegate::WindowDeactivated() {
-  RefPtr<nsWebBrowser> holder = mWebBrowser;
-  holder->WindowDeactivated();
-}
-
-bool nsWebBrowser::WidgetListenerDelegate::PaintWindow(
-    nsIWidget* aWidget, mozilla::LayoutDeviceIntRegion aRegion) {
-  RefPtr<nsWebBrowser> holder = mWebBrowser;
-  return holder->PaintWindow(aWidget, aRegion);
 }

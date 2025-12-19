@@ -7,11 +7,11 @@
 #ifndef mozilla_LayerAnimationInfo_h
 #define mozilla_LayerAnimationInfo_h
 
-#include "nsChangeHint.h"
-#include "nsCSSPropertyID.h"
-#include "nsCSSPropertyIDSet.h"
-#include "nsDisplayItemTypes.h"  // For nsDisplayItem::Type
+#include "NonCustomCSSPropertyId.h"
 #include "mozilla/Array.h"
+#include "nsCSSPropertyIDSet.h"
+#include "nsChangeHint.h"
+#include "nsDisplayItemTypes.h"  // For nsDisplayItem::Type
 
 namespace mozilla {
 
@@ -21,7 +21,7 @@ struct LayerAnimationInfo {
   // Returns DisplayItemType::TYPE_ZERO if |aProperty| cannot be animated on the
   // compositor.
   static DisplayItemType GetDisplayItemTypeForProperty(
-      nsCSSPropertyID aProperty);
+      NonCustomCSSPropertyId aProperty);
 
   // Returns the corresponding CSS properties for |aDisplayItemType|.
   //

@@ -3,6 +3,9 @@
 
 "use strict";
 
+// This test might take a very long time on slow platforms such as TSAN.
+requestLongerTimeout(2);
+
 /* import-globals-from network-overrides-test-helpers.js */
 Services.scriptloader.loadSubScript(
   CHROME_URL_ROOT + "network-overrides-test-helpers.js",
@@ -157,8 +160,9 @@ async function testScriptOverrideWithOptions(options) {
     OVERRIDDEN_SCRIPT,
     // If cache is used and the navigation cache is enabled, the response is
     // not available.
-    Services.prefs.getBoolPref("dom.script_loader.navigation_cache") &&
-      options.enableCache
+    Services.prefs.getBoolPref(
+      "dom.script_loader.experimental.navigation_cache"
+    ) && options.enableCache
   );
 
   // Assert override column is checked but disabled in context menu

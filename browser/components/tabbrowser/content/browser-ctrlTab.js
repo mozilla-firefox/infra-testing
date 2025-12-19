@@ -2,9 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// This file is loaded into the browser window scope.
-/* eslint-env mozilla/browser-window */
-
 /**
  * Tab previews utility, produces thumbnails
  */
@@ -23,7 +20,8 @@ var tabPreviews = {
    * to load. If the browser is discarded and there is no stored thumbnail, the
    * image URL will fail to load and this method will return null after 1s.
    * Callers should handle this case by doing nothing or using a fallback image.
-   * @param {String} uri The page URL.
+   *
+   * @param {string} uri The page URL.
    * @returns {Promise<Image|null>}
    */
   loadImage: async function tabPreviews_loadImage(uri) {
@@ -54,6 +52,7 @@ var tabPreviews = {
    * For a given tab, retrieve a preview thumbnail (a canvas or an image) from
    * storage or capture a new one. If the tab's URL has changed since the
    * previous call, the thumbnail will be regenerated.
+   *
    * @param {MozTabbrowserTab} aTab The tab to get a preview for.
    * @returns {Promise<HTMLCanvasElement|Image|null>} Resolves to...
    * @resolves {HTMLCanvasElement} If a thumbnail can NOT be captured and stored
@@ -96,8 +95,9 @@ var tabPreviews = {
   /**
    * For a given tab, capture a preview thumbnail (a canvas), optionally cache
    * it in aTab.__thumbnail, and possibly store it in thumbnail storage.
+   *
    * @param {MozTabbrowserTab} aTab The tab to capture a preview for.
-   * @param {Boolean} aShouldCache Cache/store the captured thumbnail?
+   * @param {boolean} aShouldCache Cache/store the captured thumbnail?
    * @returns {Promise<HTMLCanvasElement|null>} Resolves to...
    * @resolves {HTMLCanvasElement} A snapshot of the tab's content. If the
    *   snapshot is safe for storage and aShouldCache is true, the snapshot is
@@ -345,19 +345,25 @@ var ctrlTab = {
       let canvas = aPreview._canvas;
       let canvasWidth = this.canvasWidth;
       let canvasHeight = this.canvasHeight;
-      canvas.setAttribute("width", canvasWidth);
-      canvas.style.minWidth = canvasWidth + "px";
-      canvas.style.maxWidth = canvasWidth + "px";
-      canvas.style.minHeight = canvasHeight + "px";
-      canvas.style.maxHeight = canvasHeight + "px";
+      let existingPreview = canvas.firstChild;
+      if (!existingPreview) {
+        let placeholder = document.createElement("img");
+        placeholder.className = "ctrlTab-placeholder";
+        placeholder.setAttribute("width", canvasWidth);
+        placeholder.setAttribute("height", canvasHeight);
+        placeholder.setAttribute("alt", "");
+        canvas.appendChild(placeholder);
+        existingPreview = placeholder;
+      }
       tabPreviews
         .get(aTab)
         .then(img => {
           switch (aPreview._tab) {
             case aTab:
-              this._clearCanvas(canvas);
               if (img) {
-                canvas.appendChild(img);
+                img.style.width = canvasWidth + "px";
+                img.style.height = canvasHeight + "px";
+                canvas.replaceChild(img, existingPreview);
               }
               break;
             case null:
@@ -390,9 +396,7 @@ var ctrlTab = {
 
   // Remove previous preview images from the canvas box.
   _clearCanvas(canvas) {
-    while (canvas.firstElementChild) {
-      canvas.firstElementChild.remove();
-    }
+    canvas.replaceChildren();
   },
 
   advanceFocus: function ctrlTab_advanceFocus(aForward) {
@@ -421,12 +425,6 @@ var ctrlTab = {
       clearTimeout(this._timer);
       this._timer = null;
       this._openPanel();
-    }
-  },
-
-  _mouseOverFocus: function ctrlTab_mouseOverFocus(aPreview) {
-    if (this._trackMouseOver) {
-      aPreview.focus();
     }
   },
 
@@ -541,19 +539,6 @@ var ctrlTab = {
   setupGUI: function ctrlTab_setupGUI() {
     this.selected.focus();
     this._selectedIndex = -1;
-
-    // Wait for two animation frames before tracking mouse movement as we might
-    // get a synthetic mousemove event when a Ctrl-Tab item happens to be under
-    // the mouse pointer initially as the panel opens, which we don't want to
-    // interpret as the user selecting that item.
-    this._trackMouseOver = false;
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        if (this.isOpen) {
-          this._trackMouseOver = true;
-        }
-      });
-    });
   },
 
   suspendGUI: function ctrlTab_suspendGUI() {
@@ -669,7 +654,7 @@ var ctrlTab = {
           }
         }
         break;
-      case "TabSelect":
+      case "TabSelect": {
         this.attachTab(event.target, 0);
         // If the previous tab was hidden (e.g. Firefox View), remove it from
         // the list when it's deselected.
@@ -678,6 +663,7 @@ var ctrlTab = {
           this.detachTab(previousTab);
         }
         break;
+      }
       case "TabOpen":
         this.attachTab(event.target, 1);
         break;
@@ -720,7 +706,11 @@ var ctrlTab = {
         }
         break;
       case "mouseover":
-        this._mouseOverFocus(event.currentTarget);
+        // relatedTarget is the element the mouse came from. It is null when we
+        // get a synthetic mouse event.
+        if (event.relatedTarget) {
+          event.currentTarget.focus();
+        }
         break;
       case "command":
         this.pick(event.currentTarget);

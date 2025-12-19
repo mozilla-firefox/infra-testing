@@ -98,7 +98,7 @@ NSDictionary* StringAttributesFromAccAttributes(AccAttributes* aAttributes,
   NSMutableDictionary* fontAttrDict = [[NSMutableDictionary alloc] init];
   [attrDict setObject:fontAttrDict forKey:@"AXFont"];
   for (auto iter : *aAttributes) {
-    if (iter.Name() == nsGkAtoms::backgroundColor) {
+    if (iter.Name() == nsGkAtoms::background_color) {
       if (Maybe<Color> value = iter.Value<Color>()) {
         NSColor* color = ColorFromColor(*value);
         [attrDict setObject:(__bridge id)color.CGColor
@@ -169,6 +169,22 @@ NSDictionary* StringAttributesFromAccAttributes(AccAttributes* aAttributes,
   }
 
   return attrDict;
+}
+
+NSScreen* GetNSScreenForAcc(mozAccessible* aAcc) {
+  if (!aAcc) {
+    return nil;
+  }
+
+  NSWindow* window = [aAcc moxWindow];
+  NSScreen* screen = window ? [window screen] : nil;
+  if (!screen) {
+    // default to the main screen if we can't find one
+    // specific to the window
+    screen = [[NSScreen screens] objectAtIndex:0];
+  }
+
+  return screen;
 }
 }  // namespace utils
 }  // namespace a11y

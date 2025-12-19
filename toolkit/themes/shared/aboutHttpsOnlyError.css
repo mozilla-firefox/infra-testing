@@ -6,7 +6,7 @@
   padding: 0;
   margin: 0;
   font-size: 17px;
-  font-weight: 500;
+  font-weight: var(--heading-font-weight);
 }
 
 .title {
@@ -15,7 +15,7 @@
 
 em {
   font-style: normal;
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 
 #insecure-explanation-unavailable {
@@ -67,7 +67,7 @@ ul > li {
   padding: 0;
   margin: 0;
   font-size: 17px;
-  font-weight: 500;
+  font-weight: var(--heading-font-weight);
 }
 
 @media (max-width: 970px) {
@@ -85,4 +85,11 @@ ul > li {
   to {
     opacity: 1;
   }
+}
+
+/* We need this extra class instead of just adding a "disabled" attribute to the
+ * button, as we still need to receive JS events from it. */
+button.disabled {
+  opacity: var(--button-opacity-disabled);
+  color: var(--button-text-color-disabled);
 }

@@ -23,7 +23,9 @@ import {
 import { setBreakpointPositions } from "./breakpointPositions";
 import { setSkipPausing } from "../pause/skipPausing";
 
-import { PROMISE } from "../utils/middleware/promise";
+const {
+  PROMISE,
+} = require("resource://devtools/client/shared/redux/middleware/promise.js");
 import { recordEvent } from "../../utils/telemetry";
 import { comparePosition } from "../../utils/location";
 import { getTextAtPosition, isLineBlackboxed } from "../../utils/source";
@@ -129,6 +131,9 @@ export function addBreakpoint(
     // No position is found if the `initialLocation` is on a non-breakable line or
     // the line no longer exists.
     if (!position) {
+      console.error(
+        `Unable to add breakpoint at non-breakable location "${JSON.stringify(initialLocation)}"`
+      );
       return null;
     }
 
@@ -213,7 +218,7 @@ export function removeBreakpoint(initialBreakpoint) {
  * Remove all installed, pending, and client breakpoints associated with a
  * target generated location.
  *
- * @param {Object} target
+ * @param {object} target
  *        Location object where to remove breakpoints.
  */
 export function removeBreakpointAtGeneratedLocation(target) {
@@ -291,7 +296,7 @@ export function disableBreakpoint(initialBreakpoint) {
  * @static
  * @param {SourceLocation} location
  *        @see DebuggerController.Breakpoints.addBreakpoint
- * @param {Object} options
+ * @param {object} options
  *        Any options to set on the breakpoint
  */
 export function setBreakpointOptions(location, options = {}) {

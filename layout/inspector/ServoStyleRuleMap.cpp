@@ -6,17 +6,18 @@
 
 #include "mozilla/ServoStyleRuleMap.h"
 
+#include "mozilla/IntegerRange.h"
+#include "mozilla/ServoBindings.h"
+#include "mozilla/ServoStyleSet.h"
+#include "mozilla/StyleSheetInlines.h"
 #include "mozilla/css/GroupRule.h"
 #include "mozilla/dom/CSSImportRule.h"
+#include "mozilla/dom/CSSNestedDeclarations.h"
 #include "mozilla/dom/CSSRuleBinding.h"
 #include "mozilla/dom/CSSStyleRule.h"
-#include "mozilla/dom/CSSNestedDeclarations.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/ShadowRoot.h"
-#include "mozilla/IntegerRange.h"
-#include "mozilla/ServoStyleSet.h"
-#include "mozilla/StyleSheetInlines.h"
 
 using namespace mozilla::dom;
 
@@ -95,6 +96,7 @@ void ServoStyleRuleMap::RuleRemoved(StyleSheet& aStyleSheet,
       mTable.Clear();
       break;
     }
+    case StyleCssRuleType::CustomMedia:
     case StyleCssRuleType::LayerStatement:
     case StyleCssRuleType::FontFace:
     case StyleCssRuleType::Page:
@@ -161,6 +163,7 @@ void ServoStyleRuleMap::FillTableFromRule(css::Rule& aRule) {
       }
       break;
     }
+    case StyleCssRuleType::CustomMedia:
     case StyleCssRuleType::LayerStatement:
     case StyleCssRuleType::FontFace:
     case StyleCssRuleType::Page:

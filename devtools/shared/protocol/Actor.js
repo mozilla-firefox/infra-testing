@@ -6,6 +6,14 @@
 
 var { Pool } = require("resource://devtools/shared/protocol/Pool.js");
 
+// Lazy load this symbol in order to prevent a dependency cycle between Actor and types.
+loader.lazyRequireGetter(
+  this,
+  "BULK_RESPONSE",
+  "resource://devtools/shared/protocol/types.js",
+  true
+);
+
 /**
  * Keep track of which actorSpecs have been created. If a replica of a spec
  * is created, it can be caught, and specs which inherit from other specs will
@@ -93,6 +101,7 @@ class Actor extends Pool {
 
   /**
    * Override this method in subclasses to serialize the actor.
+   *
    * @returns A jsonable object.
    */
   form() {
@@ -145,9 +154,10 @@ class Actor extends Pool {
   /**
    * Throw an error with the passed message and attach an `error` property to the Error
    * object so it can be consumed by the writeError function.
-   * @param {String} error: A string (usually a single word serving as an id) that will
+   *
+   * @param {string} error: A string (usually a single word serving as an id) that will
    *                        be assign to error.error.
-   * @param {String} message: The string that will be passed to the Error constructor.
+   * @param {string} message: The string that will be passed to the Error constructor.
    * @throws This always throw.
    */
   throwError(error, message) {
@@ -164,10 +174,10 @@ exports.Actor = Actor;
  * When a RDP packet is received for calling an actor method, this lookup for
  * the method name in this object and call the function holded on this attribute.
  *
- * @params {Object} actorSpec
+ * @params {object} actorSpec
  *         The procotol-js actor specific coming from devtools/shared/specs/*.js files
  *         This describes the types for methods and events implemented by all actors.
- * @return {Object} requestTypes
+ * @return {object} requestTypes
  *         An object where attributes are actor method names
  *         and values are function implementing these methods.
  *         These methods receive a RDP Packet (JSON-serializable object) and a DevToolsServerConnection.
@@ -180,7 +190,7 @@ var generateRequestTypes = function (actorSpec) {
   actorSpec.methods.forEach(spec => {
     const handler = function (packet, conn) {
       try {
-        const startTime = isWorker ? null : Cu.now();
+        const startTime = isWorker ? null : ChromeUtils.now();
         let args;
         try {
           args = spec.request.read(packet, this);
@@ -195,11 +205,33 @@ var generateRequestTypes = function (actorSpec) {
               ` method that isn't implemented by the actor`
           );
         }
+
+        // If this method is flaged to be returning a bulk response,
+        // expose a method as last argument which will initiate the bulk response
+        // and return a promise resolving to a StreamCopier instance.
+        const isBulkResponse = spec.response.template === BULK_RESPONSE;
+        if (isBulkResponse) {
+          args.push(length => {
+            return this.conn.startBulkSend({
+              actor: this.actorID,
+              length,
+            });
+          });
+        }
         const ret = this[spec.name].apply(this, args);
 
         const sendReturn = retToSend => {
           if (spec.oneway) {
             // No need to send a response.
+            return;
+          }
+          if (isBulkResponse) {
+            if (retToSend) {
+              throw new Actor(
+                `Actor method '${this.typeName}.${spec.name}' is supposed to return a bulk response, but returned some value.`
+              );
+            }
+            // Bulk response are one-way requests and are not replying any JSON packet.
             return;
           }
           if (this.isDestroyed()) {

@@ -36,7 +36,6 @@
 #include "DNSAdditionalInfo.h"
 #include "TRRService.h"
 
-#include "mozilla/Attributes.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/net/NeckoCommon.h"
 #include "mozilla/net/ChildDNSService.h"
@@ -45,8 +44,8 @@
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/SyncRunnable.h"
-#include "mozilla/TextUtils.h"
-#include "mozilla/Utf8.h"
+// Put DNSLogging.h at the end to avoid LOG being overwritten by other headers.
+#include "DNSLogging.h"
 
 using namespace mozilla;
 using namespace mozilla::net;
@@ -364,6 +363,12 @@ NS_IMETHODIMP nsDNSRecord::GetTrrSkipReason(
 NS_IMETHODIMP
 nsDNSRecord::GetTtl(uint32_t* aTtl) { return mHostRecord->GetTtl(aTtl); }
 
+NS_IMETHODIMP
+nsDNSRecord::GetLastUpdate(mozilla::TimeStamp* aLastUpdate) {
+  MutexAutoLock lock(mHostRecord->addr_info_lock);
+  return mHostRecord->GetLastUpdate(aLastUpdate);
+}
+
 class nsDNSByTypeRecord : public nsIDNSByTypeRecord,
                           public nsIDNSTXTRecord,
                           public nsIDNSHTTPSSVCRecord {
@@ -529,6 +534,7 @@ void nsDNSAsyncRequest::OnResolveHostComplete(nsHostResolver* resolver,
     }
   }
 
+  LOG(("OnResolveHostComplete: %s", mHost.get()));
   mListener->OnLookupComplete(this, rec, status);
   mListener = nullptr;
 }
@@ -566,18 +572,53 @@ nsDNSAsyncRequest::Cancel(nsresult reason) {
 
 //-----------------------------------------------------------------------------
 
-class nsDNSSyncRequest : public nsResolveHostCallback {
+class DNSCacheRequest : public nsResolveHostCallback {
+ public:
   NS_DECL_THREADSAFE_ISUPPORTS
+
+  DNSCacheRequest() = default;
+
+  void OnResolveHostComplete(nsHostResolver* resolver, nsHostRecord* hostRecord,
+                             nsresult status) override {
+    mStatus = status;
+    mHostRecord = hostRecord;
+  }
+
+  bool EqualsAsyncListener(nsIDNSListener* aListener) override {
+    // Sync request: no listener to compare
+    return false;
+  }
+
+  size_t SizeOfIncludingThis(
+      mozilla::MallocSizeOf mallocSizeOf) const override {
+    size_t n = mallocSizeOf(this);
+
+    // The following fields aren't measured.
+    // - mHostRecord, because it's a non-owning pointer
+
+    // Measurement of the following members may be added later if DMD finds it
+    // is worthwhile:
+    // - nsDNSSyncRequest::mMonitor
+
+    return n;
+  }
+
+  nsresult mStatus = NS_OK;
+  RefPtr<nsHostRecord> mHostRecord;
+
+ protected:
+  virtual ~DNSCacheRequest() = default;
+};
+
+NS_IMPL_ISUPPORTS0(DNSCacheRequest)
+
+class nsDNSSyncRequest : public DNSCacheRequest {
  public:
   explicit nsDNSSyncRequest(PRMonitor* mon) : mMonitor(mon) {}
 
   void OnResolveHostComplete(nsHostResolver*, nsHostRecord*, nsresult) override;
-  bool EqualsAsyncListener(nsIDNSListener* aListener) override;
-  size_t SizeOfIncludingThis(mozilla::MallocSizeOf) const override;
 
   bool mDone = false;
-  nsresult mStatus = NS_OK;
-  RefPtr<nsHostRecord> mHostRecord;
 
  private:
   virtual ~nsDNSSyncRequest() = default;
@@ -585,36 +626,15 @@ class nsDNSSyncRequest : public nsResolveHostCallback {
   PRMonitor* mMonitor = nullptr;
 };
 
-NS_IMPL_ISUPPORTS0(nsDNSSyncRequest)
-
 void nsDNSSyncRequest::OnResolveHostComplete(nsHostResolver* resolver,
                                              nsHostRecord* hostRecord,
                                              nsresult status) {
   // store results, and wake up nsDNSService::Resolve to process results.
   PR_EnterMonitor(mMonitor);
   mDone = true;
-  mStatus = status;
-  mHostRecord = hostRecord;
+  DNSCacheRequest::OnResolveHostComplete(resolver, hostRecord, status);
   PR_Notify(mMonitor);
   PR_ExitMonitor(mMonitor);
-}
-
-bool nsDNSSyncRequest::EqualsAsyncListener(nsIDNSListener* aListener) {
-  // Sync request: no listener to compare
-  return false;
-}
-
-size_t nsDNSSyncRequest::SizeOfIncludingThis(MallocSizeOf mallocSizeOf) const {
-  size_t n = mallocSizeOf(this);
-
-  // The following fields aren't measured.
-  // - mHostRecord, because it's a non-owning pointer
-
-  // Measurement of the following members may be added later if DMD finds it
-  // is worthwhile:
-  // - mMonitor
-
-  return n;
 }
 
 class NotifyDNSResolution : public Runnable {
@@ -646,11 +666,15 @@ NS_IMPL_ISUPPORTS(DNSServiceWrapper, nsIDNSService, nsPIDNSService)
 already_AddRefed<nsIDNSService> DNSServiceWrapper::GetSingleton() {
   if (!gDNSServiceWrapper) {
     gDNSServiceWrapper = new DNSServiceWrapper();
+    // Not strictly needed, but simple and avoids bypassing lock-checking
+    MutexAutoLock lock(gDNSServiceWrapper->mLock);
     gDNSServiceWrapper->mDNSServiceInUse = ChildDNSService::GetSingleton();
     if (gDNSServiceWrapper->mDNSServiceInUse) {
       ClearOnShutdown(&gDNSServiceWrapper);
       nsDNSPrefetch::Initialize(gDNSServiceWrapper);
     } else {
+      MutexAutoUnlock unlock(
+          gDNSServiceWrapper->mLock);  // don't destroy with held lock
       gDNSServiceWrapper = nullptr;
     }
   }
@@ -696,13 +720,21 @@ NS_IMPL_ISUPPORTS_INHERITED(nsDNSService, DNSServiceBase, nsIDNSService,
 static StaticRefPtr<nsDNSService> gDNSService;
 static Atomic<bool> gInited(false);
 
+// Note: be careful of races!  Called from multiple threads
 already_AddRefed<nsIDNSService> GetOrInitDNSService() {
   if (gInited) {
     return nsDNSService::GetXPCOMSingleton();
   }
 
   nsCOMPtr<nsIDNSService> dns = nullptr;
-  auto initTask = [&dns]() { dns = do_GetService(NS_DNSSERVICE_CID); };
+  auto initTask = [&dns]() {
+    // In case someone inited it while we were waiting
+    if (gInited) {
+      dns = nsDNSService::GetXPCOMSingleton();
+      return;
+    }
+    dns = do_GetService(NS_DNSSERVICE_CID);
+  };
   if (!NS_IsMainThread()) {
     // Forward to the main thread synchronously.
     RefPtr<nsIThread> mainThread = do_GetMainThread();
@@ -791,6 +823,7 @@ void nsDNSService::ReadPrefs(const char* name) {
     }
   }
   if (!name || !strcmp(name, kPrefIPv4OnlyDomains)) {
+    MutexAutoLock lock(mLock);
     Preferences::GetCString(kPrefIPv4OnlyDomains, mIPv4OnlyDomains);
   }
   if (!name || !strcmp(name, kPrefDnsLocalDomains)) {
@@ -825,7 +858,6 @@ void nsDNSService::ReadPrefs(const char* name) {
 
 NS_IMETHODIMP
 nsDNSService::Init() {
-  MOZ_ASSERT(!mResolver);
   MOZ_ASSERT(NS_IsMainThread());
 
   ReadPrefs(nullptr);
@@ -843,6 +875,7 @@ nsDNSService::Init() {
   if (NS_SUCCEEDED(rv)) {
     // now, set all of our member variables while holding the lock
     MutexAutoLock lock(mLock);
+    MOZ_ASSERT(!mResolver);
     mResolver = res;
   }
 
@@ -868,7 +901,12 @@ nsDNSService::Init() {
       do_GetService("@mozilla.org/network/oblivious-http-service;1"));
 
   mTrrService = new TRRService();
-  if (NS_FAILED(mTrrService->Init(mResolver->IsNativeHTTPSEnabled()))) {
+  bool httpsEnabled;
+  {
+    MutexAutoLock lock(mLock);
+    httpsEnabled = mResolver->IsNativeHTTPSEnabled();
+  }
+  if (NS_FAILED(mTrrService->Init(httpsEnabled))) {
     mTrrService = nullptr;
   }
 
@@ -1106,6 +1144,7 @@ nsDNSService::AsyncResolve(const nsACString& aHostname,
                            nsICancelable** result) {
   OriginAttributes attrs;
 
+  LOG(("DNSService::AsyncResolve %s", PromiseFlatCString(aHostname).get()));
   if (aArgc == 1) {
     if (!aOriginAttributes.isObject() || !attrs.Init(aCx, aOriginAttributes)) {
       return NS_ERROR_INVALID_ARG;
@@ -1185,8 +1224,10 @@ nsDNSService::ResolveNative(const nsACString& aHostname,
                             nsIDNSService::DNSFlags flags,
                             const OriginAttributes& aOriginAttributes,
                             nsIDNSRecord** result) {
-  // Synchronous resolution is not available on the main thread.
-  if (NS_IsMainThread()) {
+  // Synchronous resolution is not allowed on the main thread.
+  // However, if RESOLVE_OFFLINE is set, we're only reading from the DNS cache,
+  // so it's safe to allow this on the main thread.
+  if (NS_IsMainThread() && !(flags & nsIDNSService::RESOLVE_OFFLINE)) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
@@ -1231,6 +1272,20 @@ nsresult nsDNSService::ResolveInternal(
 
   if (DNSForbiddenByActiveProxy(aHostname, flags)) {
     return NS_ERROR_UNKNOWN_PROXY_HOST;
+  }
+
+  //  Since RESOLVE_OFFLINE is set, we can use DNSCacheRequest to retrieve the
+  //  cached result directly.
+  if (flags & RESOLVE_OFFLINE) {
+    RefPtr<DNSCacheRequest> req = new DNSCacheRequest();
+    uint16_t af = GetAFForLookup(hostname, flags);
+    rv = res->ResolveHost(hostname, ""_ns, -1, RESOLVE_TYPE_DEFAULT,
+                          aOriginAttributes, flags, af, req);
+    if (NS_SUCCEEDED(rv)) {
+      RefPtr<nsDNSRecord> rec = new nsDNSRecord(req->mHostRecord);
+      rec.forget(result);
+    }
+    return rv;
   }
 
   //
@@ -1394,7 +1449,7 @@ NS_IMETHODIMP
 nsDNSService::ClearCache(bool aTrrToo) {
   RefPtr<nsHostResolver> resolver = GetResolverLocked();
   NS_ENSURE_TRUE(resolver, NS_ERROR_NOT_INITIALIZED);
-  resolver->FlushCache(aTrrToo);
+  resolver->FlushCache(aTrrToo, true);
   return NS_OK;
 }
 
@@ -1487,14 +1542,14 @@ nsresult nsDNSService::GetTRRDomainKey(nsACString& aTRRDomain) {
   return NS_OK;
 }
 
-size_t nsDNSService::SizeOfIncludingThis(
-    mozilla::MallocSizeOf mallocSizeOf) const {
+size_t nsDNSService::SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) {
   // Measurement of the following members may be added later if DMD finds it
   // is worthwhile:
   // - mIDN
   // - mLock
 
   size_t n = mallocSizeOf(this);
+  MutexAutoLock lock(mLock);
   n += mResolver ? mResolver->SizeOfIncludingThis(mallocSizeOf) : 0;
   n += mIPv4OnlyDomains.SizeOfExcludingThisIfUnshared(mallocSizeOf);
   n += mLocalDomains.SizeOfExcludingThis(mallocSizeOf);

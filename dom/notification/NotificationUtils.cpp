@@ -17,7 +17,10 @@
 #include "nsINotificationStorage.h"
 #include "nsIPermissionManager.h"
 #include "nsIPushService.h"
+#include "nsNetUtil.h"
 #include "nsServiceManagerUtils.h"
+
+static bool gTriedStorageCleanup = false;
 
 namespace mozilla::dom::notification {
 
@@ -95,7 +98,8 @@ bool IsNotificationForbiddenFor(nsIPrincipal* aPrincipal,
   if (outForeignByAncestorContext) {
     // nested first party
     ReportTelemetry(GleanLabel::eNestedFirstParty, aPurpose);
-    return false;
+    return StaticPrefs::
+        dom_webnotifications_forbid_nested_first_party_enabled();
   }
 
   // third party
@@ -166,6 +170,71 @@ nsCOMPtr<nsINotificationStorage> GetNotificationStorage(bool isPrivate) {
                                  : NS_NOTIFICATION_STORAGE_CONTRACTID);
 }
 
+class NotificationsCallback : public nsINotificationStorageCallback {
+ public:
+  NS_DECL_ISUPPORTS
+
+  already_AddRefed<NotificationsPromise> Promise() {
+    return mPromiseHolder.Ensure(__func__);
+  }
+
+  NS_IMETHOD Done(
+      const nsTArray<RefPtr<nsINotificationStorageEntry>>& aEntries) final {
+    AssertIsOnMainThread();
+
+    nsTArray<IPCNotification> notifications(aEntries.Length());
+    for (const auto& entry : aEntries) {
+      auto result = NotificationStorageEntry::ToIPC(*entry);
+      if (result.isErr()) {
+        continue;
+      }
+      MOZ_ASSERT(!result.inspect().id().IsEmpty());
+      notifications.AppendElement(result.unwrap());
+    }
+
+    mPromiseHolder.Resolve(std::move(notifications), __func__);
+    return NS_OK;
+  }
+
+ protected:
+  virtual ~NotificationsCallback() {
+    // We may be shutting down prematurely without getting the result, so make
+    // sure to settle the promise.
+    mPromiseHolder.RejectIfExists(NS_ERROR_DOM_INVALID_STATE_ERR, __func__);
+  };
+
+  MozPromiseHolder<NotificationsPromise> mPromiseHolder;
+};
+
+NS_IMPL_ISUPPORTS(NotificationsCallback, nsINotificationStorageCallback)
+
+already_AddRefed<NotificationsPromise> GetStoredNotificationsForScope(
+    nsIPrincipal* aPrincipal, const nsACString& aScope, const nsAString& aTag) {
+  nsString origin;
+  nsresult rv = GetOrigin(aPrincipal, origin);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return NotificationsPromise::CreateAndReject(rv, __func__).forget();
+  }
+
+  RefPtr<NotificationsCallback> callback = new NotificationsCallback();
+  RefPtr<NotificationsPromise> promise = callback->Promise();
+
+  nsCOMPtr<nsINotificationStorage> notificationStorage =
+      GetNotificationStorage(aPrincipal->GetIsInPrivateBrowsing());
+  if (!notificationStorage) {
+    return NotificationsPromise::CreateAndReject(NS_ERROR_NOT_AVAILABLE,
+                                                 __func__)
+        .forget();
+  }
+
+  rv = notificationStorage->Get(origin, NS_ConvertUTF8toUTF16(aScope), aTag,
+                                callback);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return NotificationsPromise::CreateAndReject(rv, __func__).forget();
+  }
+  return promise.forget();
+}
+
 nsresult PersistNotification(nsIPrincipal* aPrincipal,
                              const IPCNotification& aNotification,
                              const nsString& aScope) {
@@ -206,12 +275,46 @@ nsresult UnpersistNotification(nsIPrincipal* aPrincipal, const nsString& aId) {
   return NS_ERROR_FAILURE;
 }
 
+nsresult UnpersistAllNotificationsExcept(const nsTArray<nsString>& aIds) {
+  // Cleanup makes only sense for on-disk storage
+  if (nsCOMPtr<nsINotificationStorage> notificationStorage =
+          GetNotificationStorage(false)) {
+    return notificationStorage->DeleteAllExcept(aIds);
+  }
+  return NS_ERROR_FAILURE;
+}
+
 void UnregisterNotification(nsIPrincipal* aPrincipal, const nsString& aId) {
-  // XXX: unpersist only when explicitly closed, bug 1095073
   UnpersistNotification(aPrincipal, aId);
   if (nsCOMPtr<nsIAlertsService> alertService = components::Alerts::Service()) {
     alertService->CloseAlert(aId, /* aContextClosed */ false);
   }
+}
+
+nsresult ShowAlertWithCleanup(nsIAlertNotification* aAlert,
+                              nsIObserver* aAlertListener) {
+  nsCOMPtr<nsIAlertsService> alertService = components::Alerts::Service();
+  if (!gTriedStorageCleanup ||
+      StaticPrefs::
+          dom_webnotifications_testing_force_storage_cleanup_enabled()) {
+    // The below may fail, but retry probably won't make it work
+    gTriedStorageCleanup = true;
+
+    // Get the list of currently displayed notifications known to the
+    // notification backend and unpersist all other notifications from
+    // NotificationDB.
+    // (This won't affect the following persist call by ShowAlert, as the DB
+    // maintains a job queue)
+    // Note that we ignore the result of GetHistory - we still go ahead and
+    // clears notifications even if it fails, as the failure implies there's no
+    // history and thus we should clear everything.
+    nsTArray<nsString> history;
+    (void)alertService->GetHistory(history);
+    UnpersistAllNotificationsExcept(history);
+  }
+
+  MOZ_TRY(alertService->ShowAlert(aAlert, aAlertListener));
+  return NS_OK;
 }
 
 nsresult RemovePermission(nsIPrincipal* aPrincipal) {
@@ -307,8 +410,13 @@ NS_IMETHODIMP NotificationStorageEntry::GetTag(nsAString& aTag) {
   return NS_OK;
 }
 
-NS_IMETHODIMP NotificationStorageEntry::GetIcon(nsAString& aIcon) {
-  aIcon = mIPCNotification.options().icon();
+NS_IMETHODIMP NotificationStorageEntry::GetIcon(nsACString& aIcon) {
+  nsIURI* iconUri = mIPCNotification.options().icon();
+  if (!iconUri) {
+    aIcon.Truncate();
+    return NS_OK;
+  }
+  iconUri->GetSpec(aIcon);
   return NS_OK;
 }
 
@@ -343,6 +451,15 @@ NS_IMETHODIMP NotificationStorageEntry::GetActions(
   return NS_OK;
 }
 
+NS_IMETHODIMP NotificationStorageEntry::GetServiceWorkerRegistrationScope(
+    nsAString& aScope) {
+  // Scope is only provided from JS, for now
+  // TODO(krosylight): Change nsINotificationStorage::Put to provide scope via
+  // storage entry?
+  aScope.SetIsVoid(true);
+  return NS_OK;
+}
+
 Result<IPCNotification, nsresult> NotificationStorageEntry::ToIPC(
     nsINotificationStorageEntry& aEntry) {
   IPCNotification notification;
@@ -358,7 +475,13 @@ Result<IPCNotification, nsresult> NotificationStorageEntry::ToIPC(
   MOZ_TRY(aEntry.GetLang(options.lang()));
   MOZ_TRY(aEntry.GetBody(options.body()));
   MOZ_TRY(aEntry.GetTag(options.tag()));
-  MOZ_TRY(aEntry.GetIcon(options.icon()));
+
+  nsAutoCString iconUrl;
+  MOZ_TRY(aEntry.GetIcon(iconUrl));
+  if (!iconUrl.IsEmpty()) {
+    MOZ_TRY(NS_NewURI(getter_AddRefs(notification.options().icon()), iconUrl));
+  }
+
   MOZ_TRY(aEntry.GetRequireInteraction(&options.requireInteraction()));
   MOZ_TRY(aEntry.GetSilent(&options.silent()));
   MOZ_TRY(aEntry.GetDataSerialized(options.dataSerialized()));
@@ -367,8 +490,8 @@ Result<IPCNotification, nsresult> NotificationStorageEntry::ToIPC(
   MOZ_TRY(aEntry.GetActions(actionEntries));
   nsTArray<IPCNotificationAction> actions(actionEntries.Length());
   for (const auto& actionEntry : actionEntries) {
-    IPCNotificationAction action;
-    MOZ_TRY_VAR(action, NotificationActionStorageEntry::ToIPC(*actionEntry));
+    IPCNotificationAction action =
+        MOZ_TRY(NotificationActionStorageEntry::ToIPC(*actionEntry));
     actions.AppendElement(std::move(action));
   }
   options.actions() = std::move(actions);

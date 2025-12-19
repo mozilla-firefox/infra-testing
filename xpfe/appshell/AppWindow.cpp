@@ -60,6 +60,7 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/Services.h"
 #include "mozilla/SpinEventLoopUntil.h"
+#include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/dom/BarProps.h"
 #include "mozilla/dom/DOMRect.h"
 #include "mozilla/dom/Element.h"
@@ -160,7 +161,8 @@ NS_INTERFACE_MAP_END
 nsresult AppWindow::Initialize(nsIAppWindow* aParent, nsIAppWindow* aOpener,
                                int32_t aInitialWidth, int32_t aInitialHeight,
                                bool aIsHiddenWindow,
-                               widget::InitData& widgetInitData) {
+                               widget::InitData& widgetInitData,
+                               nsIOpenWindowInfo* aOpenWindowInfo) {
   nsresult rv;
   nsCOMPtr<nsIWidget> parentWidget;
 
@@ -204,16 +206,15 @@ nsresult AppWindow::Initialize(nsIAppWindow* aParent, nsIAppWindow* aOpener,
      to be closed. This would mimic the behaviour of OSes that support
      top-level child windows in OSes that do not. Later.
   */
-  nsCOMPtr<nsIBaseWindow> parentAsWin(do_QueryInterface(aParent));
-  if (parentAsWin) {
-    parentAsWin->GetMainWidget(getter_AddRefs(parentWidget));
+  if (nsCOMPtr<nsIBaseWindow> parent = do_QueryInterface(aParent)) {
+    parentWidget = parent->GetMainWidget();
     mParentWindow = do_GetWeakReference(aParent);
   }
 
   mWindow->SetWidgetListener(&mWidgetListenerDelegate);
   rv = mWindow->Create(parentWidget.get(),  // Parent nsIWidget
                        deskRect,            // Widget dimensions
-                       &widgetInitData);    // Widget initialization data
+                       widgetInitData);     // Widget initialization data
   NS_ENSURE_SUCCESS(rv, rv);
 
   LayoutDeviceIntRect r = mWindow->GetClientBounds();
@@ -238,9 +239,9 @@ nsresult AppWindow::Initialize(nsIAppWindow* aParent, nsIAppWindow* aOpener,
   mDocShell->SetTreeOwner(mChromeTreeOwner);
 
   r.MoveTo(0, 0);
-  NS_ENSURE_SUCCESS(
-      mDocShell->InitWindow(mWindow, r.X(), r.Y(), r.Width(), r.Height()),
-      NS_ERROR_FAILURE);
+  NS_ENSURE_SUCCESS(mDocShell->InitWindow(mWindow, r.X(), r.Y(), r.Width(),
+                                          r.Height(), aOpenWindowInfo, nullptr),
+                    NS_ERROR_FAILURE);
 
   // Attach a WebProgress listener.during initialization...
   mDocShell->AddProgressListener(this, nsIWebProgress::NOTIFY_STATE_NETWORK);
@@ -500,13 +501,6 @@ NS_IMETHODIMP AppWindow::RollupAllPopups() {
 // AppWindow::nsIBaseWindow
 //*****************************************************************************
 
-NS_IMETHODIMP AppWindow::InitWindow(nsIWidget* parentWidget, int32_t x,
-                                    int32_t y, int32_t cx, int32_t cy) {
-  // XXX First Check In
-  NS_ASSERTION(false, "Not Yet Implemented");
-  return NS_OK;
-}
-
 NS_IMETHODIMP AppWindow::Destroy() {
   nsCOMPtr<nsIAppWindow> kungFuDeathGrip(this);
 
@@ -545,6 +539,18 @@ NS_IMETHODIMP AppWindow::Destroy() {
   // interactions with destroyed windows on X11 either.
 #ifndef MOZ_WIDGET_GTK
   if (mWindow) mWindow->Show(false);
+#endif
+
+  // Raise and focus our parent explicitly on Windows, if visible. Apparently
+  // Windows gets the z-order and focus wrong otherwise for nested modal
+  // windows, see bug 1977581.
+#ifdef XP_WIN
+  if (nsCOMPtr<nsIBaseWindow> parent = do_QueryReferent(mParentWindow)) {
+    if (nsCOMPtr<nsIWidget> parentWidget = parent->GetMainWidget();
+        parentWidget && parentWidget->IsVisible()) {
+      parentWidget->SetFocus(nsIWidget::Raise::Yes, dom::CallerType::System);
+    }
+  }
 #endif
 
   RemoveTooltipSupport();
@@ -704,15 +710,14 @@ nsresult AppWindow::MoveResize(const Maybe<DesktopPoint>& aPosition,
   }
 
   if (aPosition && aSize) {
-    mWindow->Resize(aPosition->x, aPosition->y, aSize->width, aSize->height,
-                    aRepaint);
+    mWindow->Resize(DesktopRect(*aPosition, *aSize), aRepaint);
     dirtyAttributes = {PersistentAttribute::Size,
                        PersistentAttribute::Position};
   } else if (aSize) {
-    mWindow->Resize(aSize->width, aSize->height, aRepaint);
+    mWindow->Resize(*aSize, aRepaint);
     dirtyAttributes = {PersistentAttribute::Size};
   } else if (aPosition) {
-    mWindow->Move(aPosition->x, aPosition->y);
+    mWindow->Move(*aPosition);
     dirtyAttributes = {PersistentAttribute::Position};
   }
 
@@ -740,8 +745,8 @@ nsresult AppWindow::MoveResize(const Maybe<DesktopPoint>& aPosition,
   return NS_OK;
 }
 
-NS_IMETHODIMP AppWindow::Center(nsIAppWindow* aRelative, bool aScreen,
-                                bool aAlert) {
+nsresult AppWindow::CenterImpl(nsIAppWindow* aRelative, bool aScreen,
+                               bool aAlert, bool aAllowCenteringForSizeChange) {
   DesktopIntRect rect;
   bool screenCoordinates = false, windowCoordinates = false;
   nsresult result;
@@ -809,16 +814,18 @@ NS_IMETHODIMP AppWindow::Center(nsIAppWindow* aRelative, bool aScreen,
   SetPositionDesktopPix(newPos.x, newPos.y);
 
   // If moving the window caused it to change size, re-do the centering.
-  if (GetSize() != ourDevSize) {
-    return Center(aRelative, aScreen, aAlert);
+  // Allow only one recursion here.
+  if (GetSize() != ourDevSize && aAllowCenteringForSizeChange) {
+    return CenterImpl(aRelative, aScreen, aAlert,
+                      /* aAllowCenteringForSizeChange */ false);
   }
   return NS_OK;
 }
 
-NS_IMETHODIMP AppWindow::Repaint(bool aForce) {
-  // XXX First Check In
-  NS_ASSERTION(false, "Not Yet Implemented");
-  return NS_OK;
+NS_IMETHODIMP AppWindow::Center(nsIAppWindow* aRelative, bool aScreen,
+                                bool aAlert) {
+  return CenterImpl(aRelative, aScreen, aAlert,
+                    /* aAllowCenteringForSizeChange */ true);
 }
 
 NS_IMETHODIMP AppWindow::GetParentWidget(nsIWidget** aParentWidget) {
@@ -836,19 +843,14 @@ NS_IMETHODIMP AppWindow::SetParentWidget(nsIWidget* aParentWidget) {
 }
 
 NS_IMETHODIMP AppWindow::GetNativeHandle(nsAString& aNativeHandle) {
-  nsCOMPtr<nsIWidget> mainWidget;
-  NS_ENSURE_SUCCESS(GetMainWidget(getter_AddRefs(mainWidget)),
-                    NS_ERROR_FAILURE);
-
-  if (mainWidget) {
-    nativeWindow nativeWindowPtr = mainWidget->GetNativeData(NS_NATIVE_WINDOW);
+  if (mWindow) {
+    nativeWindow nativeWindowPtr = mWindow->GetNativeData(NS_NATIVE_WINDOW);
     /* the nativeWindow pointer is converted to and exposed as a string. This
        is a more reliable way not to lose information (as opposed to JS
        |Number| for instance) */
     aNativeHandle =
         NS_ConvertASCIItoUTF16(nsPrintfCString("0x%p", nativeWindowPtr));
   }
-
   return NS_OK;
 }
 
@@ -1087,6 +1089,10 @@ void AppWindow::OnChromeLoaded() {
     mChromeLoaded = true;
     ApplyChromeFlags();
     SyncAttributesToWidget();
+    if (RefPtr ps = GetPresShell()) {
+      // Sync window properties now, before showing the window.
+      ps->SyncWindowPropertiesIfNeeded();
+    }
     if (mWindow) {
       SizeShell();
       if (mShowAfterLoad) {
@@ -1565,8 +1571,9 @@ void AppWindow::SyncAttributesToWidget() {
     NS_ENSURE_TRUE_VOID(mWindow);
   }
 
-  // "drawtitle" attribute
-  mWindow->SetDrawsTitle(windowElement->GetBoolAttr(nsGkAtoms::drawtitle));
+  // "hidetitlebarseparator" attribute
+  mWindow->SetHideTitlebarSeparator(
+      windowElement->GetBoolAttr(nsGkAtoms::hidetitlebarseparator));
   NS_ENSURE_TRUE_VOID(mWindow);
 
   // "toggletoolbar" attribute
@@ -1868,7 +1875,7 @@ nsresult AppWindow::MaybeSaveEarlyWindowPersistentValues(
 
   settings.verticalTabs = Preferences::GetBool("sidebar.verticalTabs", false);
 
-  Unused << PersistPreXULSkeletonUIValues(settings);
+  (void)PersistPreXULSkeletonUIValues(settings);
 #endif
 
   return NS_OK;
@@ -1946,7 +1953,7 @@ void AppWindow::MaybeSavePersistentPositionAndSize(
       sizeString.AppendInt(NSToIntRound(rect.X() / posScale.scale));
       aRootElement.SetAttr(nsGkAtoms::screenX, sizeString, IgnoreErrors());
       if (aShouldPersist) {
-        Unused << SetPersistentValue(nsGkAtoms::screenX, sizeString);
+        (void)SetPersistentValue(nsGkAtoms::screenX, sizeString);
       }
     }
     if (aPersistString.Find(u"screenY") >= 0) {
@@ -1954,7 +1961,7 @@ void AppWindow::MaybeSavePersistentPositionAndSize(
       sizeString.AppendInt(NSToIntRound(rect.Y() / posScale.scale));
       aRootElement.SetAttr(nsGkAtoms::screenY, sizeString, IgnoreErrors());
       if (aShouldPersist) {
-        Unused << SetPersistentValue(nsGkAtoms::screenY, sizeString);
+        (void)SetPersistentValue(nsGkAtoms::screenY, sizeString);
       }
     }
   }
@@ -1967,7 +1974,7 @@ void AppWindow::MaybeSavePersistentPositionAndSize(
       sizeString.AppendInt(NSToIntRound(innerRect.Width() / sizeScale.scale));
       aRootElement.SetAttr(nsGkAtoms::width, sizeString, IgnoreErrors());
       if (aShouldPersist) {
-        Unused << SetPersistentValue(nsGkAtoms::width, sizeString);
+        (void)SetPersistentValue(nsGkAtoms::width, sizeString);
       }
     }
     if (aPersistString.Find(u"height") >= 0) {
@@ -1975,12 +1982,12 @@ void AppWindow::MaybeSavePersistentPositionAndSize(
       sizeString.AppendInt(NSToIntRound(innerRect.Height() / sizeScale.scale));
       aRootElement.SetAttr(nsGkAtoms::height, sizeString, IgnoreErrors());
       if (aShouldPersist) {
-        Unused << SetPersistentValue(nsGkAtoms::height, sizeString);
+        (void)SetPersistentValue(nsGkAtoms::height, sizeString);
       }
     }
   }
 
-  Unused << MaybeSaveEarlyWindowPersistentValues(rect);
+  (void)MaybeSaveEarlyWindowPersistentValues(rect);
 }
 
 void AppWindow::MaybeSavePersistentMiscAttributes(
@@ -2002,7 +2009,7 @@ void AppWindow::MaybeSavePersistentMiscAttributes(
     }
     aRootElement.SetAttr(nsGkAtoms::sizemode, sizeString, IgnoreErrors());
     if (aShouldPersist && aPersistString.Find(u"sizemode") >= 0) {
-      Unused << SetPersistentValue(nsGkAtoms::sizemode, sizeString);
+      (void)SetPersistentValue(nsGkAtoms::sizemode, sizeString);
     }
   }
   aRootElement.SetAttribute(u"gtktiledwindow"_ns,
@@ -2295,12 +2302,11 @@ NS_IMETHODIMP AppWindow::GetHasPrimaryContent(bool* aResult) {
 }
 
 void AppWindow::EnableParent(bool aEnable) {
-  nsCOMPtr<nsIBaseWindow> parentWindow;
-  nsCOMPtr<nsIWidget> parentWidget;
-
-  parentWindow = do_QueryReferent(mParentWindow);
-  if (parentWindow) parentWindow->GetMainWidget(getter_AddRefs(parentWidget));
-  if (parentWidget) parentWidget->Enable(aEnable);
+  if (nsCOMPtr<nsIBaseWindow> parentWindow = do_QueryReferent(mParentWindow)) {
+    if (nsCOMPtr<nsIWidget> parentWidget = parentWindow->GetMainWidget()) {
+      parentWidget->Enable(aEnable);
+    }
+  }
 }
 
 void AppWindow::SetContentScrollbarVisibility(bool aVisible) {
@@ -2314,8 +2320,8 @@ void AppWindow::SetContentScrollbarVisibility(bool aVisible) {
 }
 
 void AppWindow::ApplyChromeFlags() {
-  nsCOMPtr<dom::Element> window = GetWindowDOMElement();
-  if (!window) {
+  nsCOMPtr<dom::Element> root = GetWindowDOMElement();
+  if (!root) {
     return;
   }
 
@@ -2356,7 +2362,19 @@ void AppWindow::ApplyChromeFlags() {
   // Note that if we're not actually changing the value this will be a no-op,
   // so no need to compare to the old value.
   IgnoredErrorResult rv;
-  window->SetAttribute(u"chromehidden"_ns, newvalue, rv);
+  root->SetAttribute(u"chromehidden"_ns, newvalue, rv);
+
+  // Also set the IsDocumentPiP on the chrome browsing context
+  if ((mChromeFlags &
+       nsIWebBrowserChrome::CHROME_DOCUMENT_PICTURE_IN_PICTURE) ==
+      nsIWebBrowserChrome::CHROME_DOCUMENT_PICTURE_IN_PICTURE) {
+    nsCOMPtr<mozIDOMWindowProxy> windowProxy;
+    GetWindowDOMWindow(getter_AddRefs(windowProxy));
+    if (nsCOMPtr<nsPIDOMWindowOuter> window = do_QueryInterface(windowProxy)) {
+      nsresult rv = window->GetBrowsingContext()->SetIsDocumentPiP(true);
+      NS_ENSURE_SUCCESS_VOID(rv);
+    }
+  }
 }
 
 NS_IMETHODIMP
@@ -2392,6 +2410,12 @@ AppWindow::NeedFastSnaphot() {
 void AppWindow::LoadPersistentWindowState() {
   nsCOMPtr<dom::Element> docShellElement = GetWindowDOMElement();
   if (!docShellElement) {
+    return;
+  }
+
+  // Disable state restoration, allowing the kiosk desktop environment
+  // to manage state and position.
+  if (StaticPrefs::browser_restoreWindowState_disabled()) {
     return;
   }
 
@@ -2440,8 +2464,8 @@ void AppWindow::IntrinsicallySizeShell(const CSSIntSize& aWindowDiff,
       // TODO: Make this more generic perhaps?
       if (prefWidthAttr.EqualsLiteral("min-width")) {
         if (auto* f = element->GetPrimaryFrame(FlushType::Frames)) {
-          const auto coord =
-              f->StylePosition()->GetMinWidth(f->StyleDisplay()->mPosition);
+          const auto coord = f->StylePosition()->GetMinWidth(
+              AnchorPosResolutionParams::From(f));
           if (coord->ConvertsToLength()) {
             prefWidth = CSSPixel::FromAppUnitsRounded(coord->ToLength());
           }
@@ -2597,9 +2621,8 @@ PresShell* AppWindow::GetPresShell() {
   return mDocShell->GetPresShell();
 }
 
-bool AppWindow::WindowMoved(nsIWidget* aWidget, int32_t x, int32_t y) {
-  nsXULPopupManager* pm = nsXULPopupManager::GetInstance();
-  if (pm) {
+void AppWindow::WindowMoved(nsIWidget*, const LayoutDeviceIntPoint&) {
+  if (nsXULPopupManager* pm = nsXULPopupManager::GetInstance()) {
     nsCOMPtr<nsPIDOMWindowOuter> window =
         mDocShell ? mDocShell->GetWindow() : nullptr;
     pm->AdjustPopupsOnWindowChange(window);
@@ -2617,14 +2640,13 @@ bool AppWindow::WindowMoved(nsIWidget* aWidget, int32_t x, int32_t y) {
   // Persist position, but not immediately, in case this OS is firing
   // repeated move events as the user drags the window
   PersistentAttributesDirty(PersistentAttribute::Position, Async);
-  return false;
 }
 
-bool AppWindow::WindowResized(nsIWidget* aWidget, int32_t aWidth,
-                              int32_t aHeight) {
+void AppWindow::WindowResized(nsIWidget* aWidget,
+                              const LayoutDeviceIntSize& aSize) {
   mDominantClientSize = false;
   if (mDocShell) {
-    mDocShell->SetPositionAndSize(0, 0, aWidth, aHeight, 0);
+    mDocShell->SetPositionAndSize(0, 0, aSize.width, aSize.height, 0);
   }
   // Persist size, but not immediately, in case this OS is firing
   // repeated size events as the user drags the sizing handle
@@ -2646,7 +2668,6 @@ bool AppWindow::WindowResized(nsIWidget* aWidget, int32_t aWidth,
     case FullscreenChangeState::NotChanging:
       break;
   }
-  return true;
 }
 
 bool AppWindow::RequestWindowClose(nsIWidget* aWidget) {
@@ -2888,7 +2909,7 @@ static bool sWaitingForHiddenWindowToLoadNativeMenus =
 #  endif
     ;
 
-MOZ_RUNINIT static nsTArray<LoadNativeMenusListener> sLoadNativeMenusListeners;
+constinit static nsTArray<LoadNativeMenusListener> sLoadNativeMenusListeners;
 
 static void BeginLoadNativeMenus(Document* aDoc, nsIWidget* aParentWindow);
 
@@ -2897,15 +2918,8 @@ static void LoadNativeMenus(Document* aDoc, nsIWidget* aParentWindow) {
 
   // Find the menubar tag (if there is more than one, we ignore all but
   // the first).
-  nsCOMPtr<nsINodeList> menubarElements = aDoc->GetElementsByTagNameNS(
-      u"http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"_ns,
-      u"menubar"_ns);
-
-  RefPtr<Element> menubar;
-  if (menubarElements) {
-    menubar = Element::FromNodeOrNull(menubarElements->Item(0));
-  }
-
+  RefPtr<Element> menubar =
+      aDoc->QuerySelector("menubar:not([nonnative])"_ns, IgnoreErrors());
   widget::NativeMenuSupport::CreateNativeMenuBar(aParentWindow, menubar);
 
   if (sWaitingForHiddenWindowToLoadNativeMenus) {
@@ -3175,18 +3189,16 @@ PresShell* AppWindow::WidgetListenerDelegate::GetPresShell() {
   return mAppWindow->GetPresShell();
 }
 
-bool AppWindow::WidgetListenerDelegate::WindowMoved(nsIWidget* aWidget,
-                                                    int32_t aX, int32_t aY,
-                                                    ByMoveToRect) {
+void AppWindow::WidgetListenerDelegate::WindowMoved(
+    nsIWidget* aWidget, const LayoutDeviceIntPoint& aPoint, ByMoveToRect) {
   RefPtr<AppWindow> holder = mAppWindow;
-  return holder->WindowMoved(aWidget, aX, aY);
+  holder->WindowMoved(aWidget, aPoint);
 }
 
-bool AppWindow::WidgetListenerDelegate::WindowResized(nsIWidget* aWidget,
-                                                      int32_t aWidth,
-                                                      int32_t aHeight) {
+void AppWindow::WidgetListenerDelegate::WindowResized(
+    nsIWidget* aWidget, const LayoutDeviceIntSize& aSize) {
   RefPtr<AppWindow> holder = mAppWindow;
-  return holder->WindowResized(aWidget, aWidth, aHeight);
+  holder->WindowResized(aWidget, aSize);
 }
 
 bool AppWindow::WidgetListenerDelegate::RequestWindowClose(nsIWidget* aWidget) {

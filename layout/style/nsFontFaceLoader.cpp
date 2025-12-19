@@ -6,26 +6,23 @@
 
 /* code for loading in @font-face defined font data */
 
-#include "mozilla/IntegerPrintfMacros.h"
-#include "mozilla/Logging.h"
-
 #include "nsFontFaceLoader.h"
 
-#include "nsError.h"
+#include "FontFaceSet.h"
 #include "mozilla/AutoRestore.h"
+#include "mozilla/IntegerPrintfMacros.h"
+#include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/TaskQueue.h"
+#include "mozilla/gfx/2D.h"
 #include "mozilla/glean/GfxMetrics.h"
-#include "mozilla/Unused.h"
-#include "FontFaceSet.h"
-#include "nsPresContext.h"
+#include "nsContentPolicyUtils.h"
+#include "nsError.h"
 #include "nsIHttpChannel.h"
 #include "nsIThreadRetargetableRequest.h"
-#include "nsContentPolicyUtils.h"
 #include "nsNetCID.h"
-
-#include "mozilla/gfx/2D.h"
+#include "nsPresContext.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -103,7 +100,7 @@ void nsFontFaceLoader::StartedLoading(nsIStreamLoader* aStreamLoader) {
   if (loadTimeout > 0) {
     NS_NewTimerWithFuncCallback(getter_AddRefs(mLoadTimer), LoadTimerCallback,
                                 static_cast<void*>(this), loadTimeout,
-                                nsITimer::TYPE_ONE_SHOT, "LoadTimerCallback",
+                                nsITimer::TYPE_ONE_SHOT, "LoadTimerCallback"_ns,
                                 GetMainThreadSerialEventTarget());
   } else {
     mUserFontEntry->mFontDataLoadingState = gfxUserFontEntry::LOADING_SLOWLY;
@@ -157,7 +154,8 @@ void nsFontFaceLoader::LoadTimerCallback(nsITimer* aTimer, void* aClosure) {
           loader->mLoadTimer->GetDelay(&delay);
           loader->mLoadTimer->InitWithNamedFuncCallback(
               LoadTimerCallback, static_cast<void*>(loader), delay >> 1,
-              nsITimer::TYPE_ONE_SHOT, "nsFontFaceLoader::LoadTimerCallback");
+              nsITimer::TYPE_ONE_SHOT,
+              "nsFontFaceLoader::LoadTimerCallback"_ns);
           updateUserFontSet = false;
           LOG(("userfonts (%p) 75%% done, resetting timer\n", loader));
         }
@@ -196,7 +194,8 @@ void nsFontFaceLoader::LoadTimerCallback(nsITimer* aTimer, void* aClosure) {
     AutoTArray<RefPtr<gfxUserFontSet>, 4> fontSets;
     ufe->GetUserFontSets(fontSets);
     for (gfxUserFontSet* fontSet : fontSets) {
-      if (nsPresContext* ctx = FontFaceSetImpl::GetPresContextFor(fontSet)) {
+      if (FontVisibilityProvider* ctx =
+              FontFaceSetImpl::GetFontVisibilityProviderFor(fontSet)) {
         fontSet->IncrementGeneration();
         ctx->UserFontSetUpdated(ufe);
         LOG(("userfonts (%p) timeout reflow for pres context %p display %d\n",
@@ -327,7 +326,7 @@ nsFontFaceLoader::OnStartRequest(nsIRequest* aRequest) {
         do_GetService(NS_STREAMTRANSPORTSERVICE_CONTRACTID);
     RefPtr<TaskQueue> queue =
         TaskQueue::Create(sts.forget(), "nsFontFaceLoader STS Delivery Queue");
-    Unused << NS_WARN_IF(NS_FAILED(req->RetargetDeliveryTo(queue)));
+    (void)NS_WARN_IF(NS_FAILED(req->RetargetDeliveryTo(queue)));
   }
   return NS_OK;
 }

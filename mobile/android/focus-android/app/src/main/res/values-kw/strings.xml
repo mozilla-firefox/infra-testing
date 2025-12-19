@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -55,7 +62,6 @@
   <string name="menu_settings">Dewisyow</string>
   <string name="menu_about">A-dro</string>
   <string name="menu_help">Gweres</string>
-  <string name="menu_rights" moz:removedIn="137">Dha Wiryow</string>
   <!--
     Menu item: This is the label for a menu entry that shows how many trackers have been blocked
     for the currently loaded website. The number of blocked trackers is shown below this label.
@@ -149,16 +155,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote">&lt;p&gt;Gans %1$s yth esos\'ta ow kul maystri.&lt;/p&gt;
-&lt;p&gt;Gwra hy usya avel peurell brivedh:
-  &lt;ul&gt;
-    &lt;li&gt;Hwilas ha peuri a-berth y\'n dowlen&lt;/li&gt;
-    &lt;li&gt;Lettya helerghellow (po nowedhi settyansow dhe amyttya helerghellow)&lt;/li&gt;
-    &lt;li&gt;Dilea pastiow, keffrys hag istori hwilas ha peuri&lt;/li&gt;
-  &lt;/ul&gt;
-&lt;/p&gt;
-&lt;p&gt;Askorrys gans Mozilla yw %1$s. Agan amkan yw maga kesrosweyth yagh hag ygor.&lt;br/&gt;
-&lt;a href="%2$s"&gt;Dyski moy&lt;/a&gt;&lt;/p&gt;</string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>Gans %1$s yth esos\'ta ow kul maystri.</p>\n<p>Gwra hy usya avel peurell brivedh:\n<ul>\n<li>Hwilas ha peuri a-berth y\'n dowlen</li>\n<li>Lettya helerghellow (po nowedhi settyansow dhe amyttya helerghellow)</li>\n<li>Dilea pastiow, keffrys hag istori hwilas ha peuri</li>\n</ul> </p>\n<p>Askorrys gans Mozilla yw %1$s. Agan amkan yw maga kesrosweyth yagh hag ygor.<br/>\n<a href=\"%2$s\">Dyski moy</a></p>]]></string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">Privetter &amp; Diogeledh</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -274,7 +271,7 @@
   <string name="preference_privacy_block_analytics">Lettya helerghellow dielvenna</string>
   <string name="preference_privacy_block_analytics_summary">Usys dhe guntel, dielvenna, ha musura gwriansow kepar ha tappya ha rolya</string>
   <string name="preference_privacy_block_social">Lettya helerghellow sosyel</string>
-  <string name="preference_privacy_block_social_summary">Goworrys yn gwiasvaow dhe helerghi dha vysytyansow ha displetya nasweyth kepar ha botonys kevrenna </string>
+  <string name="preference_privacy_block_social_summary">Goworrys yn gwiasvaow dhe helerghi dha vysytyansow ha displetya nasweyth kepar ha botonys kevrenna</string>
   <string name="preference_privacy_block_content">Lettya helerghellow dalgh erel</string>
   <string name="preference_privacy_block_content_summary2">Gallosegi a yll lettya nebes folennow rag omdhegi yn hwaytyadow</string>
   <string name="preference_privacy_category_cookies">Lettya pastiow</string>
@@ -460,8 +457,6 @@
   <string name="onboarding_first_screen_title">Dynnargh dhe %1$s</string>
   <!-- New Onboarding flow first screen subtitle the one that appears under title -->
   <string name="onboarding_first_screen_subtitle">Uskis. Privedh. Distennansow vyth.</string>
-  <!-- New Onboarding flow first screen button label -->
-  <string name="onboarding_first_screen_button_text" moz:removedIn="137" tools:ignore="UnusedResources">Deus ha dalleth</string>
   <!--
     Onboarding second screen: Title
 
@@ -537,36 +532,6 @@
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
   -->
   <string name="download_firefox" tools:ignore="BrandUsage">Iskarga Firefox</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-  -->
-  <string name="your_rights_content1" moz:removedIn="137">%1$s yw medhelweyth rydh ha fenten ygor gwrys gans Mozilla ha kevriysi erel.</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-    %2$s will be replaced with a URL linking to the MPL (e.g. https://www.mozilla.org/en-US/MPL/)
-  -->
-  <string name="your_rights_content2" moz:removedIn="137" tools:ignore="IncorrectStraightDoubleQuote">Y hwrer %1$s kavadow dhis der ambosow an &lt;a href="%2$s"&gt;Leshyans Poblek Mozilla&lt;/a&gt; ha leshyansow fenten-ygor erel.</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-    %2$s will be replaced with a URL linking to the trademark policy (e.g. https://www.mozilla.org/foundation/trademarks/policy/)
-  -->
-  <string name="your_rights_content3" moz:removedIn="137" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote">Nyns yw grontys dhis gwiryow po leshyansow vytholl dhe werthnosow an Fondyans Mozilla po py rannbarth pynag, ynna an henwyn po avenyow Mozilla, Firefox, po %1$s. Y hyllir kavos kedhlow ynwedhek &lt;a href="%2$s"&gt;omma&lt;/a&gt;.</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-    %2$s will be replaced with a URL linking to the list of licenses used by the dependencies.
-  -->
-  <string name="your_rights_content4" moz:removedIn="137" tools:ignore="IncorrectStraightDoubleQuote">Kod pennfenten a %1$s yw kavadow yn-dann lies &lt;a href="%2$s"&gt;leshyans&lt;/a&gt; rydh ha fenten-ygor.</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-    %2$s will be replaced with a URL linking to the GPL
-    %3$s will be replaced with a URL linking to the tracking protection wiki page (e.g. https://wiki.mozilla.org/Security/Tracking_protection#Lists)
-  -->
-  <string name="your_rights_content5" moz:removedIn="137" tools:ignore="IncorrectStraightDoubleQuote">%1$s a wra devnydh ynwedh a lies rol-lettya proviys gans Disconnect, Inc. avel oberennow dihaval hag anserghek yn-dann an &lt;a href="%2$s"&gt;Leshyans Poblek Ollgemmyn GNU v3&lt;/a&gt; ha kavadow &lt;a href="%3$s"&gt;omma&lt;/a&gt;.</string>
   <!-- Text shown in prompts for GeckoView -->
   <string name="gv_prompt_username_hint">Hanow devnydhyer</string>
   <string name="gv_prompt_password_hint">Ger tremena</string>
@@ -676,11 +641,11 @@
   <!-- First step for the allowing a permission -->
   <string name="phone_feature_blocked_step_settings">1. Ke dhe Dewisyow Android</string>
   <!-- Second step for the allowing a permission -->
-  <string name="phone_feature_blocked_step_permissions">2. Tapp war &lt;b&gt;Kumyasow&lt;/b&gt;</string>
+  <string name="phone_feature_blocked_step_permissions"><![CDATA[2. Tapp war <b>Kumyasow</b>]]></string>
   <!-- Button label that take the user to the Android App setting -->
   <string name="phone_feature_go_to_settings">Ke dhe Dewisyow</string>
   <!-- Third step for allowing a permission. %1$s is the permission name, for example, "Camera" -->
-  <string name="phone_feature_blocked_step_feature">3. Hig &lt;b&gt;%1$s&lt;/b&gt; dhe BYW</string>
+  <string name="phone_feature_blocked_step_feature"><![CDATA[3. Hig <b>%1$s</b> dhe BYW]]></string>
   <!-- Preference for altering the camera access for all websites -->
   <string name="preference_phone_feature_camera">Kamera</string>
   <!-- Preference for altering the microphone access for all websites -->
@@ -707,20 +672,6 @@
   <string name="preference_block_autoplay_audio_only_summary">Profys</string>
   <!-- Preference for block autoplay audio and video -->
   <string name="preference_block_autoplay_audio_video">Lettya sonadow ha gwydhyow</string>
-  <!-- Preference for studies -->
-  <string name="preference_studies">Studhyansow</string>
-  <!-- Preference for studies summary -->
-  <string name="preference_studies_summary" tools:ignore="BrandUsage">Possybyl yw y hwra lea ha gweythresa Firefox studhyansow a dermyn dhe dermyn.</string>
-  <!-- Learn more link for studies, links to an article for more information about studies. -->
-  <string name="studies_learn_more">Dyski moy</string>
-  <!-- Dialog message shown when some changes are made on studies -->
-  <string name="studies_restart_app" moz:removedIn="137">An gweythyn a wra degea dhe weytha chanjyow</string>
-  <!-- Title of the remove studies button -->
-  <string name="studies_remove">Dilea</string>
-  <!-- Title of the active section on the studies list -->
-  <string name="studies_active">Gweythresek</string>
-  <!-- Title of the completed section on the studies list -->
-  <string name="studies_completed">Kowlwrys</string>
   <!-- Preference to enable remote debugging of the app via USB or Wi-Fi -->
   <string name="preference_remote_debugging">Dispryvya a-bell dre USB/Wi-Fi</string>
   <!-- Text Button for show biometric prompt -->
@@ -767,7 +718,7 @@
     Tip displayed on home view explaining how to disable tracking protection
     The new line here must be kept as the second half of the string is clickable for the user.
   -->
-  <string name="tip_disable_tracking_protection">Gwiva owth omdhegi yn anwaytyadow?\n Assay disweythresa Difresyans Helerghi</string>
+  <string name="tip_disable_tracking_protection">Gwiva owth omdhegi yn anwaytyadow?\nAssay disweythresa Difresyans Helerghi</string>
   <!--
     Tip displayed on home view explaining how to add sites to homescreen
     %1$s is replaced with a line break in the application.
@@ -778,13 +729,12 @@
     %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     The new line here must be kept as the second half of the string is clickable for the user.
   -->
-  <string name="tip_set_default_browser">Ygeri pub kevren yn %1$s\n Sett %1$s avel peurell skwir</string>
+  <string name="tip_set_default_browser">Ygeri pub kevren yn %1$s\nSett %1$s avel peurell skwir</string>
   <!--
     Tip displayed on home view explaining how to add a custom autocomplete URL
     The new line here must be kept as the second half of the string is clickable for the user.
   -->
-  <string name="tip_autocomplete_url">Eskowlwul DAK rag gwivaow a usydh yn fenowgh\n
-        Hirwask py DAK pynag y\'n barr trigva</string>
+  <string name="tip_autocomplete_url">Eskowlwul DAK rag gwivaow a usydh yn fenowgh\nHirwask py DAK pynag y\'n barr trigva</string>
   <!--
     Tip displayed on home view explaining how to add a custom autocomplete URL
     The new line here must be kept as the second half of the string is clickable for the user.
@@ -870,7 +820,7 @@
     Text for context menu additional note.
     %1$s is a placeholder for the app name.
   -->
-  <string name="contextmenu_erased_images_note2">&lt;b&gt;Ny vydh diles&lt;/b&gt; imajys gwithys ha kevrennys pan dhilei istori %1$s</string>
+  <string name="contextmenu_erased_images_note2"><![CDATA[<b>Ny vydh diles</b> imajys gwithys ha kevrennys pan dhilei istori %1$s]]></string>
   <!--
     Theme Preferences
 
@@ -891,22 +841,13 @@
     The text of the error page for websites that do not support HTTPS when HTTPS-Only is turned on. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar"),
     %2$s is a URL to a support article. Contains a button that will redirect the user to Privacy & Security Screen.
   -->
-  <string name="errorpage_httpsonly_message2" tools:ignore="IncorrectStraightDoubleQuote">%1$s a assay usya junyans HTTPS peskweyth may fo possybyl a-barth gwell diogeledh.
- &lt;a href="%2$s"&gt;Dyski moy&lt;/a&gt;&lt;br/&gt;&lt;br/&gt;
- Chanjya an dewis ma yn Dewisyow &gt;Privetter &amp;amp; Diogeledh &gt; Diogeledh.</string>
+  <string name="errorpage_httpsonly_message2" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[%1$s a assay usya junyans HTTPS peskweyth may fo possybyl a-barth gwell diogeledh. <a href=\"%2$s\">Dyski moy</a><br/><br/> Chanjya an dewis ma yn Dewisyow >Privetter &amp; Diogeledh > Diogeledh.]]></string>
   <!-- The document title and heading of the error page shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_title">Junyans andhiogel</string>
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_message">
- Martesen yth yw problem gans kefurvyans an servyer, po bos nebonan owth assaya omwul an servyer. &lt;br/&gt;&lt;br/&gt;
- Mar kwruss\'ta junya dhe\'n servyer ma yn sewen seulabrys, martesen yth yw an gwall anparghus.
- </string>
+  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Martesen yth yw problem gans kefurvyans an servyer, po bos nebonan owth assaya omwul an servyer. <br/><br/>\nMar kwruss\'ta junya dhe\'n servyer ma yn sewen seulabrys, martesen yth yw an gwall anparghus.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo">
- &lt;label&gt;Martesen yma nebonan owth assaya omwul an wiasva ha peryllus via pesya.&lt;/label&gt;
- &lt;br&gt;&lt;br&gt;
- &lt;label&gt;Ny wra %1$s trestya dhe &lt;b&gt;%2$s&lt;/b&gt; rag bos anwodhvos y dyller y destskrif, bos omsinys an testskrif, po nag usi an servyer ow tanvon an testskrifow kresel ewn.&lt;/label&gt;
- </string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Martesen yma nebonan owth assaya omwul an wiasva ha peryllus via pesya.</label> <br><br>\n<label>Ny wra %1$s trestya dhe <b>%2$s</b> rag bos anwodhvos y dyller y destskrif, bos omsinys an testskrif, po nag usi an servyer ow tanvon an testskrifow kresel ewn.</label>]]></string>
   <!--
     Sessions List
 

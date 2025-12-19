@@ -94,7 +94,7 @@ async function cookieInjectorTestSetup() {
  * A helper function returns a promise which resolves when the banner clicking
  * is finished for the given domain.
  *
- * @param {String} domain the domain that should run the banner clicking.
+ * @param {string} domain the domain that should run the banner clicking.
  */
 function promiseBannerClickingFinish(domain) {
   return new Promise(resolve => {
@@ -149,8 +149,8 @@ async function verifyBannerState(bc, visible, expected, bannerId = "banner") {
  * A helper function to open the test page and verify the banner state.
  *
  * @param {Window} [win] - the chrome window object.
- * @param {String} domain - the domain of the testing page.
- * @param {String} testURL - the url of the testing page.
+ * @param {string} domain - the domain of the testing page.
+ * @param {string} testURL - the url of the testing page.
  * @param {boolean} visible - if the banner should be visible.
  * @param {boolean} expected - the expected banner click state.
  * @param {string} [bannerId] - id of the cookie banner element.
@@ -190,8 +190,8 @@ async function openPageAndVerify({
  * state in the iframe.
  *
  * @param {Window} win - the chrome window object.
- * @param {String} domain - the domain of the testing iframe page.
- * @param {String} testURL - the url of the testing iframe page.
+ * @param {string} domain - the domain of the testing iframe page.
+ * @param {string} testURL - the url of the testing iframe page.
  * @param {boolean} visible - if the banner should be visible.
  * @param {boolean} expected - the expected banner click state.
  */
@@ -330,7 +330,7 @@ function insertTestCookieRules() {
     false,
     false,
     false,
-    0,
+    Ci.nsICookie.SAMESITE_UNSET,
     0
   );
   ruleA.addCookie(
@@ -344,7 +344,7 @@ function insertTestCookieRules() {
     false,
     false,
     false,
-    0,
+    Ci.nsICookie.SAMESITE_UNSET,
     0
   );
 
@@ -366,13 +366,14 @@ function insertTestCookieRules() {
     false,
     false,
     true,
-    0,
+    Ci.nsICookie.SAMESITE_UNSET,
     0
   );
 }
 
 /**
  * Triggers a cookie banner handling feature and tests the events dispatched.
+ *
  * @param {*} options - Test options.
  * @param {nsICookieBannerService::Modes} options.mode - The cookie banner
  * service mode to test with.

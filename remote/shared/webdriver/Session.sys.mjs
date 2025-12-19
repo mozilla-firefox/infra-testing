@@ -2,16 +2,23 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
+
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+
   accessibility:
     "chrome://remote/content/shared/webdriver/Accessibility.sys.mjs",
-  allowAllCerts: "chrome://remote/content/marionette/cert.sys.mjs",
   Capabilities: "chrome://remote/content/shared/webdriver/Capabilities.sys.mjs",
+  Certificates: "chrome://remote/content/shared/webdriver/Certificates.sys.mjs",
   error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
+  FilePickerHandler:
+    "chrome://remote/content/shared/webdriver/FilePickerHandler.sys.mjs",
   generateUUID: "chrome://remote/content/shared/UUID.sys.mjs",
   Log: "chrome://remote/content/shared/Log.sys.mjs",
+  NavigableManager: "chrome://remote/content/shared/NavigableManager.sys.mjs",
   registerProcessDataActor:
     "chrome://remote/content/shared/webdriver/process-actors/WebDriverProcessDataParent.sys.mjs",
   RootMessageHandler:
@@ -28,6 +35,23 @@ ChromeUtils.defineESModuleGetters(lazy, {
 });
 
 ChromeUtils.defineLazyGetter(lazy, "logger", () => lazy.Log.get());
+
+// Bug 1999693: This preference is a temporary workaround until clients can use
+// the unhandledPromptBehavior capability to decide if file pickers should be
+// dismissed or not.
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "dismissFilePickersEnabled",
+  "remote.bidi.dismiss_file_pickers.enabled",
+  false
+);
+
+XPCOMUtils.defineLazyServiceGetter(
+  lazy,
+  "aomStartup",
+  "@mozilla.org/addons/addon-manager-startup;1",
+  Ci.amIAddonManagerStartup
+);
 
 // Global singleton that holds active WebDriver sessions
 const webDriverSessions = new Map();
@@ -52,10 +76,12 @@ const webDriverSessions = new Map();
 export class WebDriverSession {
   #bidi;
   #capabilities;
+  #chromeProtocolHandles;
   #connections;
   #http;
   #id;
   #messageHandler;
+  #navigableSeenNodes;
   #path;
 
   static SESSION_FLAG_BIDI = "bidi";
@@ -101,9 +127,6 @@ export class WebDriverSession {
    *
    *  <dt><code>moz:accessibilityChecks</code> (boolean)
    *  <dd>(HTTP only) Run a11y checks when clicking elements.
-   *
-   *  <dt><code>moz:debuggerAddress</code> (boolean)
-   *  <dd>Indicate that the Chrome DevTools Protocol (CDP) has to be enabled.
    *
    *  <dt><code>moz:webdriverClick</code> (boolean)
    *  <dd>(HTTP only) Use a WebDriver conforming <i>WebDriver::ElementClick</i>.
@@ -204,6 +227,9 @@ export class WebDriverSession {
    *     If, for whatever reason, a session could not be created.
    */
   constructor(capabilities, flags, connection) {
+    // List of handles for registered chrome:// URLs
+    this.#chromeProtocolHandles = new Map();
+
     // WebSocket connections that use this session. This also accounts for
     // possible disconnects due to network outages, which require clients
     // to reconnect.
@@ -244,7 +270,7 @@ export class WebDriverSession {
       lazy.logger.warn(
         "TLS certificate errors will be ignored for this session"
       );
-      lazy.allowAllCerts.enable();
+      lazy.Certificates.disableSecurityChecks();
     }
 
     // If we are testing accessibility with marionette, start a11y service in
@@ -263,9 +289,12 @@ export class WebDriverSession {
 
     // Maps a Navigable (browsing context or content browser for top-level
     // browsing contexts) to a Set of nodeId's.
-    this.navigableSeenNodes = new WeakMap();
+    this.#navigableSeenNodes = new WeakMap();
 
     lazy.registerProcessDataActor();
+
+    // Start the tracking of browsing contexts to create Navigable ids.
+    lazy.NavigableManager.startTracking();
 
     webDriverSessions.set(this.#id, this);
   }
@@ -273,11 +302,15 @@ export class WebDriverSession {
   destroy() {
     webDriverSessions.delete(this.#id);
 
+    // Stop the tracking of browsing contexts when no WebDriver
+    // session exists anymore.
+    lazy.NavigableManager.stopTracking();
+
     lazy.unregisterProcessDataActor();
 
-    this.navigableSeenNodes = null;
+    this.#navigableSeenNodes = null;
 
-    lazy.allowAllCerts.disable();
+    lazy.Certificates.enableSecurityChecks();
 
     // Close all open connections which unregister themselves.
     this.#connections.forEach(connection => connection.close());
@@ -287,6 +320,10 @@ export class WebDriverSession {
       );
     }
 
+    // For the WebDriver BiDi session cleanup, the root network module is
+    // responsible for resuming requests in the blocked request map.
+    // See root NetworkModule.destroy().
+
     // Destroy the dedicated MessageHandler instance if we created one.
     if (this.#messageHandler) {
       this.#messageHandler.off(
@@ -294,6 +331,16 @@ export class WebDriverSession {
         this._onMessageHandlerProtocolEvent
       );
       this.#messageHandler.destroy();
+
+      // Note: do not check lazy.dismissFilePickersEnabled, the preference might
+      // have been updated at runtime. allowFilePickers(this) is safe to call,
+      // if there was no corresponding dismissFilePickers(this), it will be a
+      // no-op.
+      lazy.FilePickerHandler.allowFilePickers(this);
+    }
+
+    for (const id of this.#chromeProtocolHandles.keys()) {
+      this.unregisterChromeHandler(id);
     }
   }
 
@@ -335,9 +382,22 @@ export class WebDriverSession {
         "message-handler-protocol-event",
         this._onMessageHandlerProtocolEvent
       );
+
+      // Bug 2005673: Only enable dismissing file pickers lazily if the session
+      // explicitly starts handling BiDi commands.
+      if (lazy.dismissFilePickersEnabled) {
+        // Temporarily dismiss all file pickers.
+        // Bug 1999693: File pickers should only be dismissed when the unhandled
+        // prompt behaviour for type "file" is not set to "ignore".
+        lazy.FilePickerHandler.dismissFilePickers(this);
+      }
     }
 
     return this.#messageHandler;
+  }
+
+  get navigableSeenNodes() {
+    return this.#navigableSeenNodes;
   }
 
   get pageLoadStrategy() {
@@ -396,6 +456,59 @@ export class WebDriverSession {
   }
 
   /**
+   * Register a chrome protocol handler for a directory containing XHTML or XUL
+   * files, allowing them to be loaded via the chrome:// protocol.
+   *
+   * @param {string} manifestPath
+   *     The base manifest path for the entries. URL values are resolved
+   *     relative to this path.
+   * @param {Array<Array<string, string, string>>} entries
+   *     An array of arrays, each containing a registry entry (type, namespace,
+   *     path, options) as it would appear in a chrome.manifest file. Only the
+   *     following entry types are currently accepted:
+   *
+   *         - "content" A URL entry. Must be a 3-element array.
+   *         - "override" A URL override entry. Must be a 3-element array.
+   *         - "locale" A locale package entry. Must be a 4-element array.
+   *
+   * @returns {string} id
+   *     The identifier for the registered chrome protocol handler.
+   */
+  registerChromeHandler(manifestPath, entries) {
+    const manifest = new lazy.FileUtils.File(manifestPath);
+    const rootURI = Services.io.newFileURI(manifest.parent);
+    const manifestURI = Services.io.newURI(manifest.leafName, null, rootURI);
+
+    const handle = lazy.aomStartup.registerChrome(manifestURI, entries);
+    const id = lazy.generateUUID();
+
+    this.#chromeProtocolHandles.set(id, handle);
+
+    return id;
+  }
+
+  /**
+   * Unregister a previously registered chrome protocol handler.
+   *
+   * @param {string} id
+   *     The identifier returned when the chrome protocol handler was registered.
+   *
+   * @throws {UnknownError}
+   *     If there is no such registered chrome protocol handler.
+   */
+  unregisterChromeHandler(id) {
+    if (!this.#chromeProtocolHandles.has(id)) {
+      throw new lazy.error.UnknownError(
+        `Id ${id} is not a known chrome protocol handler`
+      );
+    }
+
+    const handle = this.#chromeProtocolHandles.get(id);
+    this.#chromeProtocolHandles.delete(id);
+    handle.destruct();
+  }
+
+  /**
    * Remove the specified WebDriver BiDi connection.
    *
    * @param {WebDriverBiDiConnection} connection
@@ -443,9 +556,7 @@ export class WebDriverSession {
 
   // XPCOM
 
-  get QueryInterface() {
-    return ChromeUtils.generateQI(["nsIHttpRequestHandler"]);
-  }
+  QueryInterface = ChromeUtils.generateQI(["nsIHttpRequestHandler"]);
 }
 
 /**
@@ -467,7 +578,7 @@ export function getSeenNodesForBrowsingContext(sessionId, browsingContext) {
   }
 
   const navigable =
-    lazy.TabManager.getNavigableForBrowsingContext(browsingContext);
+    lazy.NavigableManager.getNavigableForBrowsingContext(browsingContext);
   const session = getWebDriverSessionById(sessionId);
 
   if (!session.navigableSeenNodes.has(navigable)) {

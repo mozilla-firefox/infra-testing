@@ -6,7 +6,8 @@
 
 use std::{
     cell::RefCell,
-    ops::{Deref, DerefMut},
+    fmt::{self, Debug, Formatter},
+    ops::Deref,
     os::raw::c_uint,
     ptr::null_mut,
     slice::Iter as SliceIter,
@@ -19,12 +20,17 @@ use crate::{
     null_safe_slice,
 };
 
-#[expect(
+#[allow(
+    clippy::allow_attributes,
+    clippy::allow_attributes_without_reason,
+    clippy::needless_raw_strings,
+    clippy::derive_partial_eq_without_eq,
     dead_code,
     non_snake_case,
     non_upper_case_globals,
     non_camel_case_types,
     clippy::unreadable_literal,
+    clippy::use_self,
     reason = "For included bindgen code."
 )]
 mod nss_p11 {
@@ -46,7 +52,11 @@ macro_rules! scoped_ptr {
             /// # Errors
             ///
             /// When passed a null pointer generates an error.
-            #[allow(clippy::allow_attributes, dead_code, reason = "False positive.")]
+            #[allow(
+                clippy::allow_attributes,
+                dead_code,
+                reason = "False positive; is used in code calling the macro."
+            )]
             pub fn from_ptr(ptr: *mut $target) -> Result<Self, $crate::err::Error> {
                 if ptr.is_null() {
                     Err($crate::err::Error::last_nss_error())
@@ -60,12 +70,6 @@ macro_rules! scoped_ptr {
             type Target = *mut $target;
             fn deref(&self) -> &*mut $target {
                 &self.ptr
-            }
-        }
-
-        impl DerefMut for $scoped {
-            fn deref_mut(&mut self) -> &mut *mut $target {
-                &mut self.ptr
             }
         }
 
@@ -114,8 +118,8 @@ impl Clone for PublicKey {
     }
 }
 
-impl std::fmt::Debug for PublicKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl Debug for PublicKey {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         if let Ok(b) = self.key_data() {
             write!(f, "PublicKey {}", hex_with_len(b))
         } else {
@@ -168,8 +172,8 @@ impl Clone for PrivateKey {
     }
 }
 
-impl std::fmt::Debug for PrivateKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl Debug for PrivateKey {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         if let Ok(b) = self.key_data() {
             write!(f, "PrivateKey {}", hex_with_len(b))
         } else {
@@ -201,7 +205,7 @@ impl SymKey {
         let key_item = unsafe { PK11_GetKeyData(self.ptr) };
         // This is accessing a value attached to the key, so we can treat this as a borrow.
         match unsafe { key_item.as_mut() } {
-            None => Err(Error::InternalError),
+            None => Err(Error::Internal),
             Some(key) => Ok(unsafe { null_safe_slice(key.data, key.len) }),
         }
     }
@@ -215,8 +219,8 @@ impl Clone for SymKey {
     }
 }
 
-impl std::fmt::Debug for SymKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl Debug for SymKey {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         if let Ok(b) = self.as_bytes() {
             write!(f, "SymKey {}", hex_with_len(b))
         } else {
@@ -397,6 +401,7 @@ pub fn random<const N: usize>() -> [u8; N] {
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod test {
     use test_fixture::fixture_init;
 

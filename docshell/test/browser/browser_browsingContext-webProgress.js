@@ -3,6 +3,12 @@
 
 "use strict";
 
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["test.wait300msAfterTabSwitch", true]],
+  });
+});
+
 add_task(async function () {
   const tab = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
@@ -31,19 +37,11 @@ add_task(async function () {
   const isBfcacheInParentEnabled =
     SpecialPowers.Services.appinfo.sessionHistoryInParent &&
     SpecialPowers.Services.prefs.getBoolPref("fission.bfcacheInParent");
-  if (isBfcacheInParentEnabled) {
-    isnot(
-      aboutBlankBrowsingContext,
-      firstPageBrowsingContext,
-      "With bfcache in parent, navigations spawn a new BrowsingContext"
-    );
-  } else {
-    is(
-      aboutBlankBrowsingContext,
-      firstPageBrowsingContext,
-      "Without bfcache in parent, navigations reuse the same BrowsingContext"
-    );
-  }
+  is(
+    aboutBlankBrowsingContext,
+    firstPageBrowsingContext,
+    "The first navigation away from the initial about:blank reuses the BrowsingContext with or without bfcacheInParent"
+  );
 
   info("Wait for onLocationChange to be fired");
   {

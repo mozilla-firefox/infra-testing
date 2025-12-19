@@ -4,7 +4,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::mem;
+use std::{
+    fmt::{self, Display, Formatter},
+    mem,
+};
 
 use neqo_common::{qdebug, qtrace};
 
@@ -13,7 +16,7 @@ use crate::{
         ENCODER_CAPACITY, ENCODER_DUPLICATE, ENCODER_INSERT_WITH_NAME_LITERAL,
         ENCODER_INSERT_WITH_NAME_REF_DYNAMIC, ENCODER_INSERT_WITH_NAME_REF_STATIC, NO_PREFIX,
     },
-    qpack_send_buf::QpackData,
+    qpack_send_buf::Encoder,
     reader::{IntReader, LiteralReader, ReadByte, Reader},
     Res,
 };
@@ -49,7 +52,7 @@ pub enum EncoderInstruction<'a> {
 }
 
 impl EncoderInstruction<'_> {
-    pub(crate) fn marshal(&self, enc: &mut QpackData, use_huffman: bool) {
+    pub(crate) fn marshal<T: Encoder>(&self, enc: &mut T, use_huffman: bool) {
         match self {
             Self::Capacity { value } => {
                 enc.encode_prefixed_encoded_int(ENCODER_CAPACITY, *value);
@@ -135,8 +138,8 @@ pub struct EncoderInstructionReader {
     instruction: DecodedEncoderInstruction,
 }
 
-impl ::std::fmt::Display for EncoderInstructionReader {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+impl Display for EncoderInstructionReader {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(
             f,
             "EncoderInstructionReader state={:?} instruction:{:?}",
@@ -291,16 +294,17 @@ impl EncoderInstructionReader {
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod test {
 
-    use super::{EncoderInstruction, EncoderInstructionReader, QpackData};
+    use super::{EncoderInstruction, EncoderInstructionReader};
     use crate::{reader::test_receiver::TestReceiver, Error};
 
     fn test_encoding_decoding(instruction: &EncoderInstruction, use_huffman: bool) {
-        let mut buf = QpackData::default();
+        let mut buf = neqo_common::Encoder::default();
         instruction.marshal(&mut buf, use_huffman);
         let mut test_receiver: TestReceiver = TestReceiver::default();
-        test_receiver.write(&buf);
+        test_receiver.write(buf.as_ref());
         let mut reader = EncoderInstructionReader::new();
         assert_eq!(
             reader.read_instructions(&mut test_receiver).unwrap(),
@@ -391,18 +395,18 @@ mod test {
     }
 
     fn test_encoding_decoding_slow_reader(instruction: &EncoderInstruction, use_huffman: bool) {
-        let mut buf = QpackData::default();
+        let mut buf = neqo_common::Encoder::default();
         instruction.marshal(&mut buf, use_huffman);
         let mut test_receiver: TestReceiver = TestReceiver::default();
         let mut decoder = EncoderInstructionReader::new();
         for i in 0..buf.len() - 1 {
-            test_receiver.write(&buf[i..=i]);
+            test_receiver.write(&buf.as_ref()[i..=i]);
             assert_eq!(
                 decoder.read_instructions(&mut test_receiver),
                 Err(Error::NeedMoreData)
             );
         }
-        test_receiver.write(&buf[buf.len() - 1..buf.len()]);
+        test_receiver.write(&buf.as_ref()[buf.len() - 1..buf.len()]);
         assert_eq!(
             decoder.read_instructions(&mut test_receiver).unwrap(),
             instruction.into()
@@ -521,7 +525,7 @@ mod test {
         let mut decoder = EncoderInstructionReader::new();
         assert_eq!(
             decoder.read_instructions(&mut test_receiver),
-            Err(Error::HuffmanDecompressionFailed)
+            Err(Error::HuffmanDecompression)
         );
     }
 }

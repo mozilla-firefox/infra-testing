@@ -8,7 +8,7 @@ import { features, prefs } from "../prefs";
 /**
  * Create a SourceEditor
  *
- * @param {Object} config: SourceEditor config object
+ * @param {object} config: SourceEditor config object
  * @returns
  */
 export function createEditor(config = { cm6: false }) {
@@ -19,8 +19,10 @@ export function createEditor(config = { cm6: false }) {
   }
 
   return new SourceEditor({
-    mode: SourceEditor.modes.js,
+    mode: SourceEditor.modes.javascript,
     foldGutter: features.codeFolding,
+    disableSearchAddon: false,
+    useSearchAddonPanel: false,
     enableCodeFolding: features.codeFolding,
     readOnly: true,
     lineNumbers: true,
@@ -49,11 +51,10 @@ export function createEditor(config = { cm6: false }) {
 /**
  * Create an headless editor (can be used for syntax highlighting for example)
  *
- * @param {Boolean} useCm6: Should the headless editor use CodeMirror 6
  * @returns {CodeMirror}
  */
-export function createHeadlessEditor(useCm6) {
-  const editor = createEditor({ cm6: useCm6 });
+export function createHeadlessEditor() {
+  const editor = createEditor({ cm6: true });
   editor.appendToLocalElement(document.createElement("div"));
   return editor;
 }

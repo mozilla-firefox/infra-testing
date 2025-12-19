@@ -8,13 +8,13 @@
 #define mozilla_dom_IdentityNetworkHelpers_h
 
 #include "mozilla/Components.h"
-#include "mozilla/dom/Promise.h"
+#include "mozilla/MozPromise.h"
+#include "mozilla/dom/IdentityCredentialBinding.h"
 #include "mozilla/dom/Promise-inl.h"
+#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/Request.h"
 #include "mozilla/dom/Response.h"
 #include "mozilla/dom/WindowGlobalParent.h"
-#include "mozilla/MozPromise.h"
-#include "mozilla/dom/IdentityCredentialBinding.h"
 #include "nsICredentialChooserService.h"
 
 namespace mozilla::dom {
@@ -24,14 +24,17 @@ class IdentityNetworkHelpers {
   static RefPtr<MozPromise<IdentityProviderWellKnown, nsresult, true>>
   FetchWellKnownHelper(nsIURI* aWellKnown, nsIPrincipal* aTriggeringPrincipal);
 
-  static RefPtr<MozPromise<IdentityProviderAPIConfig, nsresult, true>>
-  FetchConfigHelper(nsIURI* aConfig, nsIPrincipal* aTriggeringPrincipal);
+  static RefPtr<MozPromise<
+      std::tuple<Maybe<IdentityProviderWellKnown>, IdentityProviderAPIConfig>,
+      nsresult, true>>
+  FetchConfigHelper(nsIURI* aConfig, nsIPrincipal* aTriggeringPrincipal,
+                    Maybe<IdentityProviderWellKnown> aWellKnownConfig);
 
   static RefPtr<MozPromise<IdentityProviderAccountList, nsresult, true>>
   FetchAccountsHelper(nsIURI* aAccountsEndpoint,
                       nsIPrincipal* aTriggeringPrincipal);
 
-  static RefPtr<MozPromise<IdentityProviderToken, nsresult, true>>
+  static RefPtr<MozPromise<IdentityAssertionResponse, nsresult, true>>
   FetchTokenHelper(nsIURI* aAccountsEndpoint, const nsCString& aBody,
                    nsIPrincipal* aTriggeringPrincipal);
 

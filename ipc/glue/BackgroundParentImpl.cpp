@@ -58,6 +58,7 @@
 #include "mozilla/dom/quota/ActorsParent.h"
 #include "mozilla/dom/quota/QuotaParent.h"
 #include "mozilla/dom/simpledb/ActorsParent.h"
+#include "mozilla/dom/cache/BoundStorageKeyParent.h"
 #include "mozilla/dom/VsyncParent.h"
 #include "mozilla/ipc/BackgroundParent.h"
 #include "mozilla/ipc/BackgroundUtils.h"
@@ -580,7 +581,7 @@ mozilla::ipc::IPCResult BackgroundParentImpl::RecvPFileCreatorConstructor(
   // We allow the creation of File via this IPC call only for the 'file' process
   // or for testing.
   if (!isFileRemoteType && !StaticPrefs::dom_file_createInChild()) {
-    Unused << dom::FileCreatorParent::Send__delete__(
+    (void)dom::FileCreatorParent::Send__delete__(
         actor, dom::FileCreationErrorResult(NS_ERROR_DOM_INVALID_STATE_ERR));
     return IPC_OK();
   }
@@ -881,7 +882,8 @@ BackgroundParentImpl::RecvShutdownServiceWorkerRegistrar() {
 already_AddRefed<PCacheStorageParent>
 BackgroundParentImpl::AllocPCacheStorageParent(
     const Namespace& aNamespace, const PrincipalInfo& aPrincipalInfo) {
-  return dom::cache::AllocPCacheStorageParent(this, aNamespace, aPrincipalInfo);
+  return dom::cache::AllocPCacheStorageParent(this, nullptr, aNamespace,
+                                              aPrincipalInfo);
 }
 
 PMessagePortParent* BackgroundParentImpl::AllocPMessagePortParent(
@@ -1091,6 +1093,25 @@ BackgroundParentImpl::RecvPHttpBackgroundChannelConstructor(
 
   if (NS_WARN_IF(NS_FAILED(aParent->Init(aChannelId)))) {
     return IPC_FAIL_NO_REASON(this);
+  }
+
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult BackgroundParentImpl::RecvCreateBoundStorageKeyParent(
+    Endpoint<::mozilla::dom::cache::PBoundStorageKeyParent>&& aEndpoint,
+    const Namespace& aNamespace, const PrincipalInfo& aPrincipalInfo) {
+  AssertIsInMainProcess();
+  AssertIsOnBackgroundThread();
+
+  if (!aEndpoint.IsValid()) {
+    return IPC_FAIL(this, "Invalid endpoint for BoundStorageKeyParent");
+  }
+
+  auto* pActor = new dom::cache::BoundStorageKeyParent(this);
+  if (!aEndpoint.Bind(pActor)) {
+    return IPC_FAIL(this,
+                    "Failed to bind endpoint for BoundStorageKeyParent actor");
   }
 
   return IPC_OK();
@@ -1317,20 +1338,20 @@ mozilla::ipc::IPCResult
 BackgroundParentImpl::RecvEnsureRDDProcessAndCreateBridge(
     EnsureRDDProcessAndCreateBridgeResolver&& aResolver) {
   using Type = std::tuple<const nsresult&,
-                          Endpoint<mozilla::PRemoteDecoderManagerChild>&&>;
+                          Endpoint<mozilla::PRemoteMediaManagerChild>&&>;
 
   RefPtr<ThreadsafeContentParentHandle> parent =
       BackgroundParent::GetContentParentHandle(this);
   if (NS_WARN_IF(!parent)) {
     aResolver(
-        Type(NS_ERROR_NOT_AVAILABLE, Endpoint<PRemoteDecoderManagerChild>()));
+        Type(NS_ERROR_NOT_AVAILABLE, Endpoint<PRemoteMediaManagerChild>()));
     return IPC_OK();
   }
 
   RDDProcessManager* rdd = RDDProcessManager::Get();
   if (!rdd) {
     aResolver(
-        Type(NS_ERROR_NOT_AVAILABLE, Endpoint<PRemoteDecoderManagerChild>()));
+        Type(NS_ERROR_NOT_AVAILABLE, Endpoint<PRemoteMediaManagerChild>()));
     return IPC_OK();
   }
 
@@ -1342,7 +1363,7 @@ BackgroundParentImpl::RecvEnsureRDDProcessAndCreateBridge(
                      ResolveOrRejectValue&& aValue) mutable {
                if (aValue.IsReject()) {
                  resolver(Type(aValue.RejectValue(),
-                               Endpoint<PRemoteDecoderManagerChild>()));
+                               Endpoint<PRemoteMediaManagerChild>()));
                  return;
                }
                resolver(Type(NS_OK, std::move(aValue.ResolveValue())));
@@ -1352,7 +1373,7 @@ BackgroundParentImpl::RecvEnsureRDDProcessAndCreateBridge(
 
 mozilla::ipc::IPCResult
 BackgroundParentImpl::RecvEnsureUtilityProcessAndCreateBridge(
-    const RemoteDecodeIn& aLocation,
+    const RemoteMediaIn& aLocation,
     EnsureUtilityProcessAndCreateBridgeResolver&& aResolver) {
   EndpointProcInfo otherProcInfo = OtherEndpointProcInfo();
   RefPtr<ThreadsafeContentParentHandle> parent =
@@ -1370,16 +1391,15 @@ BackgroundParentImpl::RecvEnsureUtilityProcessAndCreateBridge(
       [aResolver, managerThread, otherProcInfo, childId, aLocation]() {
         RefPtr<UtilityProcessManager> upm =
             UtilityProcessManager::GetSingleton();
-        using Type =
-            std::tuple<const nsresult&,
-                       Endpoint<mozilla::PRemoteDecoderManagerChild>&&>;
+        using Type = std::tuple<const nsresult&,
+                                Endpoint<mozilla::PRemoteMediaManagerChild>&&>;
         if (!upm) {
           managerThread->Dispatch(NS_NewRunnableFunction(
               "BackgroundParentImpl::RecvEnsureUtilityProcessAndCreateBridge::"
               "Failure",
               [aResolver]() {
                 aResolver(Type(NS_ERROR_NOT_AVAILABLE,
-                               Endpoint<PRemoteDecoderManagerChild>()));
+                               Endpoint<PRemoteMediaManagerChild>()));
               }));
         } else {
           SandboxingKind sbKind = GetSandboxingKindFromLocation(aLocation);
@@ -1394,7 +1414,7 @@ BackgroundParentImpl::RecvEnsureUtilityProcessAndCreateBridge(
                          // the RejectValue() has something that might be an
                          // nsresult, but our sole caller discards it anyway
                          resolver(Type(NS_ERROR_FAILURE,
-                                       Endpoint<PRemoteDecoderManagerChild>()));
+                                       Endpoint<PRemoteMediaManagerChild>()));
                          return;
                        }
                        resolver(Type(NS_OK, std::move(aValue.ResolveValue())));

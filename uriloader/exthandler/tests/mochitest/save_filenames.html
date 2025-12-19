@@ -5,7 +5,7 @@
 <body>
 <style>
   img { padding: 10px; border: 1px solid red; }
-  a { padding-left: 10px; }
+  a { padding-left: 10px; white-space: pre; }
 </style>
 
 <span id="items">
@@ -37,15 +37,15 @@
 
 <!-- long filename -->
 <img id="i8" src="http://localhost:8000/save_filename.sjs?type=png&filename=averylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilename.png"
-     data-filename="averylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongf.png">
+     data-filename="averylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylon.png">
 
 <!-- long filename with invalid extension -->
 <img id="i9" src="http://localhost:8000/save_filename.sjs?type=png&filename=bverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilename.exe"
-     data-filename="bverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongf.png">
+     data-filename="bverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylon.png">
 
 <!-- long filename with invalid extension -->
 <img id="i10" src="http://localhost:8000/save_filename.sjs?type=png&filename=cverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilename.exe.jpg"
-     data-filename="cverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongf.png">
+     data-filename="cverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylongfilenameverylon.png">
 
 <!-- jpeg with jpg extension -->
 <img id="i11" src="http://localhost:8000/save_filename.sjs?type=jpeg&filename=thejpg.jpg" data-filename="thejpg.jpg">
@@ -97,7 +97,7 @@
 
 <!-- script with long filename -->
 <script id="i25" src="http://localhost:8000/save_filename.sjs?type=js&filename=script123456789script123456789script123456789script123456789script123456789script123456789script123456789script123456789script123456789script123456789script123456789script123456789script123456789script123456789script123456789script123456789script123456789script123456789.js"
-        data-filename="script123456789script123456789script123456789script123456789script123456789script123456789script123456789script123456789script123456789script123456789script123456789script123456789script123456789script123456789script123456789script123456789script12345.js"></script>
+        data-filename="script123456789script123456789script123456789script123456789script123456789script123456789script123456789script123456789script123456789script123456789script123456789script123456789script123456789script123456789script123456789script123456789script12.js"></script>
 
 <!-- binary with exe extension -->
 <object id="i26" data="http://localhost:8000/save_filename.sjs?type=binary&filename=download1.exe"
@@ -188,7 +188,7 @@
      data-nodrag="true" data-filename="text3.gonk">
 
 <!-- text with long filename -->
-<img id="i50" src="http://localhost:8000/text3.gonk?type=text&filename=text0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789text0123456789zztext0123456789zztext0123456789zztext01234567.exe.txt" data-nodrag="true" data-filename="text0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext012345.txt">
+<img id="i50" src="http://localhost:8000/text3.gonk?type=text&filename=text0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789text0123456789zztext0123456789zztext0123456789zztext01234567.exe.txt" data-nodrag="true" data-filename="text0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123456789zztext0123.txt">
 
 <!-- webp image -->
 <img id="i51" src="http://localhost:8000/save_filename.sjs?type=webp&filename=webpimage.webp"
@@ -251,7 +251,7 @@
 
 <!-- reserved filename with extension on Windows -->
 <img id="i66" src="http://localhost:8000/save_filename.sjs?type=text&filename=com2.any"
-     data-nodrag="true" data-filename="com2.any" data-filename-platformwin="Untitled">
+     data-nodrag="true" data-filename="com2.any" data-filename-platformwin="Untitled.any">
 
 <!-- simple zip file -->
 <object id="i67" data="http://localhost:8000/save_filename.sjs?type=zip&filename=simple.zip" data-filename="simple.zip"
@@ -318,6 +318,21 @@
      data-nodrag="true" data-unknown="typeonly"
      data-filename="longshortcutnamelongshortcutnamelongshortcutnamelongshortcutnamelongshortcutnamelongshortcutnamelongshortcutnamelongshortcutnamelongshortcutnamelongshortcutnamelongshortcutnamelongshortcutnamelongshortcutnamelongshortcutnamelongshortcutnamelongshort1234567890.lnk.download">
 
+<!-- mp2 file sniffed as audio/mpeg should retain extension -->
+<object id="i83" data="http://localhost:8000/save_filename.sjs?type=mp2&filename=music.mp2"
+        data-unknown="true" data-filename="music.mp2"></object>
+
+<!-- mp2 file sniffed as audio/x-wav should retain extension (1805365) -->
+<object id="i84" data="http://localhost:8000/save_filename.sjs?type=wav&filename=music2.mp2"
+        data-unknown="true" data-filename="music2.mp2"></object>
+
+<!-- mp4 file served as audio/mp4 should retain extension (1789321) -->
+<object id="i85" data="http://localhost:8000/save_filename.sjs?type=m4a&filename=music3.mp4"
+        data-unknown="true" data-filename="music3.mp4"></object>
+
+<!-- m4a file served as video/mp4 should retain extension (1789321) -->
+<object id="i86" data="http://localhost:8000/save_filename.sjs?type=mp4&filename=music4.m4a"
+        data-unknown="true" data-filename="music4.m4a"></object>
 </span>
 
 <!-- This set is used to test filenames that are changed within the file picker. -->

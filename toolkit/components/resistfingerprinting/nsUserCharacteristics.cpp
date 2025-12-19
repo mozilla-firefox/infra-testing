@@ -5,6 +5,7 @@
 
 #include "nsUserCharacteristics.h"
 
+#include "nsComponentManagerUtils.h"
 #include "nsICryptoHash.h"
 #include "nsID.h"
 #include "nsIGfxInfo.h"
@@ -19,7 +20,6 @@
 #include "jsapi.h"
 #include "mozilla/Components.h"
 #include "mozilla/dom/Promise-inl.h"
-#include "mozilla/Variant.h"
 
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_dom.h"
@@ -34,6 +34,7 @@
 #include "mozilla/RelativeLuminanceUtils.h"
 #include "mozilla/ServoStyleConsts.h"
 #include "mozilla/dom/ScreenBinding.h"
+#include "mozilla/intl/LocaleService.h"
 #include "mozilla/intl/OSPreferences.h"
 #include "mozilla/intl/TimeZone.h"
 #include "mozilla/widget/ScreenManager.h"
@@ -50,7 +51,6 @@
 #include "mozilla/MozPromise.h"
 #include "nsThreadUtils.h"
 #include "mozilla/dom/Navigator.h"
-#include "nsIGSettingsService.h"
 #include "nsIPropertyBag2.h"
 #include "nsITimer.h"
 #include "gfxConfig.h"
@@ -66,6 +66,10 @@
 #elif defined(XP_MACOSX)
 #  include "nsMacUtilsImpl.h"
 #  include <CoreFoundation/CoreFoundation.h>
+#  include "CFTypeRefPtr.h"
+#endif
+#ifdef MOZ_WIDGET_GTK
+#  include "mozilla/widget/GSettings.h"
 #endif
 
 using namespace mozilla;
@@ -265,8 +269,7 @@ void PopulateScreenProperties() {
     return;
   }
 
-  nsCOMPtr<nsIWidget> mainWidget;
-  treeOwnerAsWin->GetMainWidget(getter_AddRefs(mainWidget));
+  nsCOMPtr<nsIWidget> mainWidget = treeOwnerAsWin->GetMainWidget();
   if (!mainWidget) {
     return;
   }
@@ -380,7 +383,7 @@ already_AddRefed<PopulatePromise> PopulateFingerprintedFonts() {
 
 void PopulatePrefs() {
   nsAutoCString acceptLang;
-  Preferences::GetLocalizedCString("intl.accept_languages", acceptLang);
+  intl::LocaleService::GetInstance()->GetAcceptLanguages(acceptLang);
   glean::characteristics::prefs_intl_accept_languages.Set(acceptLang);
 
   glean::characteristics::prefs_media_eme_enabled.Set(
@@ -487,11 +490,11 @@ void PopulateFontPrefs() {
     return;
   }
 
-  nsCString defaultLanguageGroup;
-  Preferences::GetLocalizedCString("font.language.group", defaultLanguageGroup);
+  nsCString fontLanguageGroup;
+  intl::LocaleService::GetInstance()->GetFontLanguageGroup(fontLanguageGroup);
 
 #define FONT_PREF(PREF_NAME, METRIC_NAME)                                   \
-  CollectFontPrefValue(prefRootBranch, defaultLanguageGroup, PREF_NAME,     \
+  CollectFontPrefValue(prefRootBranch, fontLanguageGroup, PREF_NAME,        \
                        glean::characteristics::METRIC_NAME##_western,       \
                        glean::characteristics::METRIC_NAME##_default_group, \
                        glean::characteristics::METRIC_NAME##_modified)
@@ -586,7 +589,7 @@ void PopulateLanguages() {
   // sufficient to only collect this information as the other properties are
   // just reformats of Navigator::GetAcceptLanguages.
   nsTArray<nsString> languages;
-  dom::Navigator::GetAcceptLanguages(languages);
+  dom::Navigator::GetAcceptLanguages(languages, nullptr);
   nsCString output = "["_ns;
 
   for (const auto& language : languages) {
@@ -614,33 +617,31 @@ void PopulateTextAntiAliasing() {
   }
 #elif defined(XP_MACOSX)
   uint32_t value = 2;  // default = medium
-  CFNumberRef prefValue = (CFNumberRef)CFPreferencesCopyAppValue(
-      CFSTR("AppleFontSmoothing"), kCFPreferencesAnyApplication);
+  auto prefValue = CFTypeRefPtr<CFPropertyListRef>::WrapUnderCreateRule(
+      CFPreferencesCopyAppValue(CFSTR("AppleFontSmoothing"),
+                                kCFPreferencesAnyApplication));
   if (prefValue) {
-    if (!CFNumberGetValue(prefValue, kCFNumberIntType, &value)) {
-      value = 2;
+    if (CFGetTypeID(prefValue.get()) == CFNumberGetTypeID()) {
+      if (!CFNumberGetValue(static_cast<CFNumberRef>(prefValue.get()),
+                            kCFNumberIntType, &value)) {
+        value = 2;  // default = medium
+      }
+    } else if (CFGetTypeID(prefValue.get()) == CFStringGetTypeID()) {
+      // For some reason, the value can be a string
+      value = CFStringGetIntValue(static_cast<CFStringRef>(prefValue.get()));
     }
-    CFRelease(prefValue);
   }
   levels.AppendElement(value);
-#elif defined(XP_LINUX)
+#elif defined(MOZ_WIDGET_GTK)
   nsAutoCString level;
-  nsCOMPtr<nsIGSettingsService> gsettings =
-      do_GetService("@mozilla.org/gsettings-service;1");
-  if (gsettings) {
-    nsCOMPtr<nsIGSettingsCollection> antiAliasing;
-    gsettings->GetCollectionForSchema("org.gnome.desktop.interface"_ns,
-                                      getter_AddRefs(antiAliasing));
-    if (antiAliasing) {
-      antiAliasing->GetString("font-antialiasing"_ns, level);
-      if (level == "rgba") {  // Subpixel
-        levels.AppendElement(2);
-      } else if (level == "grayscale") {  // Standard
-        levels.AppendElement(1);
-      } else if (level == "none") {
-        levels.AppendElement(0);
-      }
-    }
+  mozilla::widget::GSettings::GetString("org.gnome.desktop.interface"_ns,
+                                        "font-antialiasing"_ns, level);
+  if (level == "rgba") {  // Subpixel
+    levels.AppendElement(2);
+  } else if (level == "grayscale") {  // Standard
+    levels.AppendElement(1);
+  } else if (level == "none") {
+    levels.AppendElement(0);
   }
 #endif
 
@@ -780,7 +781,7 @@ const RefPtr<PopulatePromise>& TimoutPromise(
         // NOTE: has no effect if `promise` has already been resolved.
         REJECT(promise, funcName, NS_ERROR_FAILURE, "TIMEOUT");
       },
-      delay, nsITimer::TYPE_ONE_SHOT, "UserCharacteristicsPromiseTimeout");
+      delay, nsITimer::TYPE_ONE_SHOT, "UserCharacteristicsPromiseTimeout"_ns);
   if (NS_FAILED(rv)) {
     REJECT(promise, funcName, rv, "TIMEOUT_CREATION");
   }
@@ -845,12 +846,6 @@ nsresult PopulateEssentials() {
   nsAutoCString uuidString;
   nsresult rv = Preferences::GetCString(kUUIDPref, uuidString);
   if (NS_FAILED(rv) || uuidString.Length() == 0) {
-    nsCOMPtr<nsIUUIDGenerator> uuidgen =
-        do_GetService("@mozilla.org/uuid-generator;1", &rv);
-    if (NS_FAILED(rv)) {
-      return rv;
-    }
-
     nsIDToCString id(nsID::GenerateUUID());
     uuidString = id.get();
     Preferences::SetCString(kUUIDPref, uuidString);

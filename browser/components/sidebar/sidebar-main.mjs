@@ -12,14 +12,15 @@ import {
 } from "chrome://global/content/vendor/lit.all.mjs";
 import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
 
+// eslint-disable-next-line import/no-unassigned-import
+import "chrome://browser/content/sidebar/sidebar-pins-promo.mjs";
+
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   ASRouter: "resource:///modules/asrouter/ASRouter.sys.mjs",
   ShortcutUtils: "resource://gre/modules/ShortcutUtils.sys.mjs",
   GenAI: "resource:///modules/GenAI.sys.mjs",
 });
-
-const TOOLS_OVERFLOW_LIMIT = 5;
 
 /**
  * Sidebar with expanded and collapsed states that provides entry points
@@ -32,18 +33,28 @@ export default class SidebarMain extends MozLitElement {
     selectedView: { type: String },
     sidebarItems: { type: Array },
     open: { type: Boolean },
+    shouldShowOverflowButton: { type: Boolean },
+    isOverflowMenuOpen: { type: Boolean },
   };
 
   static queries = {
     allButtons: { all: "moz-button" },
     extensionButtons: { all: ".tools-and-extensions > moz-button[extension]" },
-    toolButtons: { all: ".tools-and-extensions > moz-button:not([extension])" },
+    toolButtons: {
+      all: ".tools-and-extensions > moz-button[view]:not([extension])",
+    },
     customizeButton: ".bottom-actions > moz-button[view=viewCustomizeSidebar]",
+    buttonGroup: ".actions-list:not(.bottom-actions):not(.overflow-button)",
+    moreToolsButton: ".more-tools-button",
+    buttonsWrapper: ".buttons-wrapper",
   };
 
   get fluentStrings() {
     if (!this._fluentStrings) {
-      this._fluentStrings = new Localization(["browser/sidebar.ftl"], true);
+      this._fluentStrings = new Localization(
+        ["browser/sidebar.ftl", "preview/genai.ftl"],
+        true
+      );
     }
     return this._fluentStrings;
   }
@@ -59,6 +70,8 @@ export default class SidebarMain extends MozLitElement {
       genai: 0,
       totalToolsMinusGenai: 0,
     };
+    this.shouldShowOverflowButton = false;
+    this.overflowMenuOpen = false;
   }
 
   tooltips = {
@@ -86,6 +99,9 @@ export default class SidebarMain extends MozLitElement {
     this._sidebarBox = document.getElementById("sidebar-box");
     this._sidebarMain = document.getElementById("sidebar-main");
     this._contextMenu = document.getElementById("sidebar-context-menu");
+    this._toolsOverflowMenu = document.getElementById("sidebar-tools-overflow");
+    this._toolsOverflowButtonGroup =
+      this._toolsOverflowMenu.querySelector("button-group");
     this._manageExtensionMenuItem = document.getElementById(
       "sidebar-context-menu-manage-extension"
     );
@@ -94,6 +110,9 @@ export default class SidebarMain extends MozLitElement {
     );
     this._reportExtensionMenuItem = document.getElementById(
       "sidebar-context-menu-report-extension"
+    );
+    this._unpinExtensionMenuItem = document.getElementById(
+      "sidebar-context-menu-unpin-extension"
     );
     this._hideSidebarMenuItem = document.getElementById(
       "sidebar-context-menu-hide-sidebar"
@@ -104,18 +123,23 @@ export default class SidebarMain extends MozLitElement {
     this._customizeSidebarMenuItem = document.getElementById(
       "sidebar-context-menu-customize-sidebar"
     );
+    this._menuseparator = this._contextMenu.querySelector("menuseparator");
 
     this._sidebarBox.addEventListener("sidebar-show", this);
     this._sidebarBox.addEventListener("sidebar-hide", this);
     this._sidebarMain.addEventListener("contextmenu", this);
     this._contextMenu.addEventListener("popuphidden", this);
     this._contextMenu.addEventListener("command", this);
+    this._toolsOverflowMenu.addEventListener("popupshown", this);
+    this._toolsOverflowMenu.addEventListener("popuphidden", this);
 
     window.addEventListener("SidebarItemAdded", this);
     window.addEventListener("SidebarItemChanged", this);
     window.addEventListener("SidebarItemRemoved", this);
 
     this.setCustomize();
+    this.createSplitter();
+    this.createToolsObservers();
   }
 
   disconnectedCallback() {
@@ -125,13 +149,144 @@ export default class SidebarMain extends MozLitElement {
     this._sidebarMain.removeEventListener("contextmenu", this);
     this._contextMenu.removeEventListener("popuphidden", this);
     this._contextMenu.removeEventListener("command", this);
+    this._toolsOverflowMenu.removeEventListener("popupshown", this);
+    this._toolsOverflowMenu.removeEventListener("popuphidden", this);
 
     window.removeEventListener("SidebarItemAdded", this);
     window.removeEventListener("SidebarItemChanged", this);
     window.removeEventListener("SidebarItemRemoved", this);
+
+    this._toolsIntersectionObserver?.disconnect();
+    this._toolsResizeObserver?.disconnect();
+    this.ownerDocument
+      .getElementById("drag-to-pin-promo-card")
+      ?.disconnectedCallback();
   }
 
-  onSidebarPopupShowing(event) {
+  get isToolsDragging() {
+    return this.toolsSplitter.getAttribute("state") === "dragging";
+  }
+
+  createToolsObservers() {
+    this._toolsIntersectionObserver = new IntersectionObserver(
+      entries => {
+        this.shouldShowOverflowButton = entries.some(
+          entry =>
+            !entry.isIntersecting &&
+            window.SidebarController.sidebarVerticalTabsEnabled
+        );
+        let panelButtonGroup = document.getElementById("tools-overflow-list");
+        for (const entry of entries) {
+          let view = entry.target.getAttribute("view");
+          let copyButton;
+          copyButton = panelButtonGroup.querySelector(`[view='${view}']`);
+          let buttonAlreadyAddedToOverflow = !!copyButton;
+          if (!entry.isIntersecting && !buttonAlreadyAddedToOverflow) {
+            // We can't move the original tools/extension buttons into the overflow panel
+            // because Lit will lose the original references to them. We instead create copies of
+            // these buttons to add to the overflow panel
+            let newCopyButton = this.createCopyButton(view);
+            panelButtonGroup.appendChild(newCopyButton);
+
+            // Hide original button
+            entry.target.style.visibility = "hidden";
+            for (const button of this.buttonGroup.children) {
+              const style = window.getComputedStyle(button);
+              if (style.display !== "none" && style.visibility !== "hidden") {
+                this.buttonGroup.activeChild = button;
+                break;
+              }
+            }
+          } else if (entry.isIntersecting && buttonAlreadyAddedToOverflow) {
+            // Remove copy button from the panel
+            copyButton.remove();
+
+            // Show original button
+            entry.target.style.visibility = "visible";
+          }
+        }
+      },
+      {
+        root: this.buttonGroup,
+        rootMargin: "0px",
+        threshold: 0.5,
+      }
+    );
+
+    this._toolsResizeObserver = new ResizeObserver(() => {
+      if (this.isToolsDragging) {
+        window.SidebarController._state.toolsDragActive = true;
+      }
+    });
+
+    this._toolsDropHandler = () =>
+      (window.SidebarController._state.toolsDragActive = false);
+    this.toolsSplitter.addEventListener("command", this._toolsDropHandler);
+  }
+
+  createSplitter() {
+    let toolsSplitter = document.createXULElement("splitter");
+    toolsSplitter.setAttribute("orient", "vertical");
+    toolsSplitter.setAttribute("id", "sidebar-tools-and-extensions-splitter");
+    toolsSplitter.setAttribute("resizebefore", "none");
+    toolsSplitter.setAttribute("resizeafter", "sibling");
+    this.toolsSplitter = toolsSplitter;
+  }
+
+  createCopyButton(view) {
+    let newButtonAction;
+    if (view === "viewCustomizeSidebar") {
+      newButtonAction = this.bottomActions[0];
+    } else {
+      newButtonAction = this.getToolsAndExtensions().get(view);
+    }
+    let newButtonValues = this.getEntrypointValues(newButtonAction);
+    let newButton = document.createElement("moz-button");
+    if (newButtonValues) {
+      newButton.classList.add("expanded-button");
+      newButton.setAttribute("view", newButtonValues.action.view);
+      newButton.setAttribute("aria-pressed", newButtonValues.isActiveView);
+      newButton.setAttribute(
+        "type",
+        newButtonValues.isActiveView ? "icon" : "icon ghost"
+      );
+      newButton.addEventListener("click", async () => {
+        await this.showView(newButtonValues.action.view);
+        this.resetPanelButtonValues();
+        const isActiveView =
+          this.open && newButtonValues.action.view === this.selectedView;
+        newButton.setAttribute("aria-pressed", isActiveView);
+        newButton.setAttribute("type", isActiveView ? "icon" : "icon ghost");
+        this._toolsOverflowMenu.hidePopup();
+      });
+      newButton.setAttribute("title", newButtonValues.tooltip);
+      newButton.iconSrc = newButtonValues.action.iconUrl;
+      newButton.textContent = newButtonValues.actionLabel;
+      if (newButtonValues.action.view?.includes("-sidebar-action")) {
+        newButton.setAttribute("extension", "");
+      }
+      if (newButtonValues.action.extensionId) {
+        newButton.setAttribute(
+          "extensionId",
+          newButtonValues.action.extensionId
+        );
+      }
+    }
+    return newButton;
+  }
+
+  resetPanelButtonValues() {
+    let panelButtonGroup = document.getElementById("tools-overflow-list");
+    for (const panelButton of Array.from(panelButtonGroup.children)) {
+      // reset aria-pressed and button type for all panel buttons
+      const isActiveView =
+        this.open && panelButton.getAttribute("view") === this.selectedView;
+      panelButton.setAttribute("aria-pressed", isActiveView);
+      panelButton.setAttribute("type", isActiveView ? "icon" : "icon ghost");
+    }
+  }
+
+  async onSidebarPopupShowing(event) {
     // Store the context menu target which holds the id required for managing sidebar items
     let targetHost = event.explicitOriginalTarget.getRootNode().host;
     let toolbarContextMenuTarget =
@@ -163,25 +318,104 @@ export default class SidebarMain extends MozLitElement {
       this.updateExtensionContextMenuItems();
       return;
     }
+
+    if (this.contextMenuTarget?.hasAttribute("contextMenu")) {
+      this.hideExistingMenuItem();
+
+      const toolId = this.contextMenuTarget.getAttribute("contextMenu");
+      await this.buildToolContextMenuItems(event, toolId);
+
+      const items = this._contextMenu.querySelectorAll(
+        "[customized-tool='true']"
+      );
+
+      if (items?.length) {
+        // Since we are dynamically building/customizing the sidebar context menu for tools
+        // This ensures that the menu is fully updated before showing.
+        this._contextMenu.openPopupAtScreen(event.screenX, event.screenY, true);
+        return;
+      }
+    }
+
     event.preventDefault();
   }
 
-  updateSidebarContextMenuItems() {
+  async buildToolContextMenuItems(event, toolId) {
+    const menu = this._contextMenu;
+    // Clear previously added custom menuitems
+    menu
+      .querySelectorAll("[customized-tool='true']")
+      .forEach(node => node.remove());
+
+    const menuBuilders = {
+      aichat: async () => {
+        if (Services.prefs.getBoolPref("browser.ml.chat.page")) {
+          await lazy.GenAI.buildAskChatMenu(this._contextMenu, {
+            browser: window.gBrowser.selectedBrowser,
+            selectionInfo: null,
+            source: "tool",
+          });
+        }
+      },
+    };
+
+    const builder = menuBuilders[toolId];
+    if (typeof builder === "function") {
+      const originalAppendChild = menu.appendChild.bind(menu);
+
+      menu.appendChild = child => {
+        child.setAttribute("customized-tool", true);
+        return originalAppendChild(child);
+      };
+
+      await builder(menu);
+      menu.appendChild = originalAppendChild;
+    }
+
+    return menu;
+  }
+
+  hideToolMenuItems() {
+    const customMenuItems = this._contextMenu.querySelectorAll(
+      "[customized-tool='true']"
+    );
+    customMenuItems.forEach(item => (item.hidden = true));
+  }
+
+  hideExistingMenuItem() {
+    this._customizeSidebarMenuItem.hidden = true;
+    this._enableVerticalTabsMenuItem.hidden = true;
+    this._hideSidebarMenuItem.hidden = true;
+    this._unpinExtensionMenuItem.hidden = true;
     this._manageExtensionMenuItem.hidden = true;
     this._removeExtensionMenuItem.hidden = true;
     this._reportExtensionMenuItem.hidden = true;
+    // Prevent the menu separator visible in Window and Linux
+    this._menuseparator.hidden = true;
+  }
+
+  updateSidebarContextMenuItems() {
+    this._menuseparator.hidden = true;
+    this._manageExtensionMenuItem.hidden = true;
+    this._removeExtensionMenuItem.hidden = true;
+    this._reportExtensionMenuItem.hidden = true;
+    this._unpinExtensionMenuItem.hidden = true;
     this._customizeSidebarMenuItem.hidden = false;
     this._enableVerticalTabsMenuItem.hidden = false;
     this._hideSidebarMenuItem.hidden = false;
+    this.hideToolMenuItems();
   }
 
   async updateExtensionContextMenuItems() {
     this._customizeSidebarMenuItem.hidden = true;
     this._enableVerticalTabsMenuItem.hidden = true;
     this._hideSidebarMenuItem.hidden = true;
+    this._menuseparator.hidden = false;
+    this._unpinExtensionMenuItem.hidden = false;
     this._manageExtensionMenuItem.hidden = false;
     this._removeExtensionMenuItem.hidden = false;
     this._reportExtensionMenuItem.hidden = false;
+    this.hideToolMenuItems();
     const extensionId = this.contextMenuTarget.getAttribute("extensionId");
     if (!extensionId) {
       return;
@@ -220,6 +454,12 @@ export default class SidebarMain extends MozLitElement {
     await window.BrowserAddonUI.reportAddon(
       this.contextMenuTarget.getAttribute("extensionId"),
       "sidebar-context-menu"
+    );
+  }
+
+  unpinExtension() {
+    window.SidebarController.toggleTool(
+      this.contextMenuTarget.getAttribute("view")
     );
   }
 
@@ -272,6 +512,9 @@ export default class SidebarMain extends MozLitElement {
           case "sidebar-context-menu-remove-extension":
             await this.removeExtension();
             break;
+          case "sidebar-context-menu-unpin-extension":
+            this.unpinExtension();
+            break;
           case "sidebar-context-menu-hide-sidebar":
             if (
               window.SidebarController._animationEnabled &&
@@ -296,11 +539,25 @@ export default class SidebarMain extends MozLitElement {
             e.target.id
           )
         ) {
-          this.onSidebarPopupShowing(e);
+          this.onSidebarPopupShowing(e).then(() => {
+            // populating the context menu can be async, so dispatch an event when ready
+            this.dispatchEvent(new CustomEvent("sidebar-contextmenu-ready"));
+          });
         }
         break;
       case "popuphidden":
-        this.contextMenuTarget = null;
+        if (e.target === this._contextMenu) {
+          this.contextMenuTarget = null;
+        } else if (e.target === this._toolsOverflowMenu) {
+          this.isOverflowMenuOpen = false;
+          window.removeEventListener("keydown", this.handleOverflowKeypress);
+        }
+        break;
+      case "popupshown":
+        if (e.target === this._toolsOverflowMenu) {
+          this.isOverflowMenuOpen = true;
+          window.addEventListener("keydown", this.handleOverflowKeypress);
+        }
         break;
       case "sidebar-show":
         this.selectedView = e.detail.viewId;
@@ -316,6 +573,19 @@ export default class SidebarMain extends MozLitElement {
         break;
     }
   }
+
+  handleOverflowKeypress = e => {
+    if (
+      (e.key == "ArrowDown" || e.key == "ArrowUp") &&
+      !this._toolsOverflowButtonGroup.matches(":focus-within")
+    ) {
+      if (e.key == "ArrowUp") {
+        this._toolsOverflowButtonGroup.activeChild =
+          this._toolsOverflowButtonGroup.walker.lastChild();
+      }
+      this._toolsOverflowButtonGroup.activeChild.focus();
+    }
+  };
 
   async checkShouldShowCalloutSurveys(view) {
     if (view == "viewGenaiChatSidebar") {
@@ -350,24 +620,49 @@ export default class SidebarMain extends MozLitElement {
     }
   }
 
-  isToolsOverflowing() {
-    if (
-      !this.expanded ||
-      !window.SidebarController.sidebarVerticalTabsEnabled
-    ) {
-      return false;
-    }
+  enabledToolsAndExtensionsCount() {
     let enabledToolsAndExtensionsCount = 0;
     for (const tool of window.SidebarController.toolsAndExtensions.values()) {
       if (!tool.disabled) {
         enabledToolsAndExtensionsCount++;
       }
     }
-    // Add 1 to enabledToolsAndExtensionsCount to account for 'Customize sidebar'
-    return enabledToolsAndExtensionsCount + 1 > TOOLS_OVERFLOW_LIMIT;
+    return enabledToolsAndExtensionsCount;
   }
 
-  entrypointTemplate(action) {
+  isToolsOverflowing() {
+    return this.expanded && window.SidebarController.sidebarVerticalTabsEnabled;
+  }
+
+  willUpdate() {
+    this._toolsIntersectionObserver?.disconnect();
+    this._toolsResizeObserver?.disconnect();
+  }
+
+  updated() {
+    if (
+      window.SidebarController.sidebarRevampVisibility !== "expand-on-hover"
+    ) {
+      for (const buttonEl of this.allButtons) {
+        if (buttonEl.hasAttribute("view")) {
+          this._toolsIntersectionObserver.observe(buttonEl);
+        }
+      }
+
+      this._toolsResizeObserver.observe(this.buttonGroup);
+    } else {
+      this.shouldShowOverflowButton = !this.expanded;
+      for (const buttonEl of this.allButtons) {
+        if (buttonEl.style.visibility === "hidden") {
+          buttonEl.style.visibility = "visible";
+        }
+      }
+      this._toolsIntersectionObserver.disconnect();
+      this._toolsResizeObserver.disconnect();
+    }
+  }
+
+  getEntrypointValues(action) {
     let providerInfo;
     if (action.view === "viewGenaiChatSidebar") {
       providerInfo = lazy.GenAI.currentChatProviderInfo;
@@ -419,25 +714,84 @@ export default class SidebarMain extends MozLitElement {
     }
 
     let toolsOverflowing = this.isToolsOverflowing();
-    return html`<moz-button
-      class=${classMap({
-        "expanded-button": this.expanded,
-        "tools-overflow": toolsOverflowing,
-      })}
-      type=${isActiveView ? "icon" : "icon ghost"}
-      aria-pressed=${isActiveView}
-      view=${action.view}
-      @click=${async () => await this.showView(action.view)}
-      title=${tooltip}
-      .iconSrc=${action.iconUrl}
-      ?extension=${action.view?.includes("-sidebar-action")}
-      extensionId=${ifDefined(action.extensionId)}
-    >
-      ${this.expanded && !toolsOverflowing ? actionLabel : nothing}
-    </moz-button>`;
+    return { action, isActiveView, toolsOverflowing, tooltip, actionLabel };
+  }
+
+  entrypointTemplate(action) {
+    let buttonValues = this.getEntrypointValues(action);
+    return html`${when(
+      buttonValues,
+      () => html`
+        <moz-button
+          class=${classMap({
+            "tools-overflow": buttonValues.toolsOverflowing,
+          })}
+          type=${buttonValues.isActiveView ? "icon" : "icon ghost"}
+          aria-pressed=${buttonValues.isActiveView}
+          view=${buttonValues.action.view}
+          @click=${async () => await this.showView(buttonValues.action.view)}
+          title=${buttonValues.tooltip}
+          .iconSrc=${buttonValues.action.iconUrl}
+          ?extension=${buttonValues.action.view?.includes("-sidebar-action")}
+          extensionId=${ifDefined(buttonValues.action.extensionId)}
+          ?attention=${!!action?.attention}
+          contextMenu=${action?.contextMenu || nothing}
+        >
+        </moz-button>
+      `
+    )}`;
+  }
+
+  showOverflowMenu(e) {
+    let panel = document.getElementById("sidebar-tools-overflow");
+    this.resetPanelButtonValues();
+    let isKeyboardEvent = e.detail == 0;
+    panel.addEventListener(
+      "popupshown",
+      () => {
+        let group = panel.querySelector("button-group");
+        group.activeChild = group.firstElementChild;
+        if (isKeyboardEvent) {
+          group.activeChild.focus();
+        }
+      },
+      { once: true }
+    );
+
+    if (isKeyboardEvent) {
+      panel.addEventListener(
+        "popuphidden",
+        () => {
+          this.moreToolsButton.focus();
+        },
+        { once: true }
+      );
+    }
+
+    panel.openPopup(
+      this.moreToolsButton.shadowRoot.querySelector(".button-background"),
+      window.SidebarController._positionStart
+        ? "bottomright bottomleft"
+        : "bottomleft bottomright"
+    );
+  }
+
+  shouldUpdate() {
+    const container = window.SidebarController.sidebarContainer;
+    return container && !container.hidden;
   }
 
   render() {
+    /* Add 1 to tools and extensions count for "Customize sidebar" option */
+    let enabledToolsAndExtensionsCount =
+      this.enabledToolsAndExtensionsCount() + 1;
+    let messages = this.fluentStrings.formatMessagesSync([
+      "sidebar-menu-more-tools-label",
+    ]);
+    const attributes = messages?.[0]?.attributes;
+    let moreToolsTooltip = attributes?.find(
+      attr => attr.name === "label"
+    )?.value;
     return html`
       <link
         rel="stylesheet"
@@ -449,43 +803,76 @@ export default class SidebarMain extends MozLitElement {
       />
       <div class="wrapper">
         <slot name="tabstrip"></slot>
-        <button-group
-          class="tools-and-extensions actions-list"
-          orientation=${this.isToolsOverflowing() ? "horizontal" : "vertical"}
-        >
-          ${when(!this.isToolsOverflowing(), () =>
-            repeat(
-              this.getToolsAndExtensions().values(),
-              action => action.view,
-              action => this.entrypointTemplate(action)
-            )
-          )}
-          ${when(window.SidebarController.sidebarVerticalTabsEnabled, () =>
-            repeat(
-              this.bottomActions,
-              action => action.view,
-              action => this.entrypointTemplate(action)
-            )
-          )}
-          ${when(this.isToolsOverflowing(), () =>
-            repeat(
-              this.getToolsAndExtensions().values(),
-              action => action.view,
-              action => this.entrypointTemplate(action)
-            )
-          )}
-        </button-group>
         ${when(
-          !window.SidebarController.sidebarVerticalTabsEnabled,
-          () =>
-            html` <div class="bottom-actions actions-list">
-              ${repeat(
+          ((enabledToolsAndExtensionsCount > 2 && !this.expanded) ||
+            this.expanded) &&
+            window.SidebarController.sidebarRevampVisibility !==
+              "expand-on-hover" &&
+            window.SidebarController.sidebarVerticalTabsEnabled,
+          () => html`${this.toolsSplitter}`
+        )}
+        <div
+          class="buttons-wrapper"
+          ?overflowing=${this.shouldShowOverflowButton}
+        >
+          <button-group
+            class="tools-and-extensions actions-list"
+            orientation=${this.isToolsOverflowing() ? "horizontal" : "vertical"}
+            overflowing=${ifDefined(this.shouldShowOverflowButton)}
+          >
+            ${when(!this.isToolsOverflowing(), () =>
+              repeat(
+                this.getToolsAndExtensions().values(),
+                action => action.view,
+                action => this.entrypointTemplate(action)
+              )
+            )}
+            ${when(window.SidebarController.sidebarVerticalTabsEnabled, () =>
+              repeat(
                 this.bottomActions,
                 action => action.view,
                 action => this.entrypointTemplate(action)
-              )}
-            </div>`
-        )}
+              )
+            )}
+            ${when(this.isToolsOverflowing(), () =>
+              repeat(
+                this.getToolsAndExtensions().values(),
+                action => action.view,
+                action => this.entrypointTemplate(action)
+              )
+            )}
+          </button-group>
+          ${when(
+            !window.SidebarController.sidebarVerticalTabsEnabled,
+            () =>
+              html` <div class="bottom-actions actions-list">
+                ${repeat(
+                  this.bottomActions,
+                  action => action.view,
+                  action => this.entrypointTemplate(action)
+                )}
+              </div>`
+          )}
+          <button-group
+            class="tools-and-extensions actions-list overflow-button"
+            orientation="vertical"
+            part="overflow-button"
+            ?hidden=${!this.shouldShowOverflowButton}
+          >
+            <moz-button
+              class="more-tools-button"
+              type=${this.isOverflowMenuOpen ? "icon" : "icon ghost"}
+              aria-pressed=${this.isOverflowMenuOpen}
+              @click=${window.SidebarController.sidebarRevampVisibility ===
+              "expand-on-hover"
+                ? nothing
+                : this.showOverflowMenu}
+              title=${moreToolsTooltip}
+              .iconSrc=${"chrome://global/skin/icons/chevron.svg"}
+            >
+            </moz-button>
+          </button-group>
+        </div>
       </div>
     `;
   }

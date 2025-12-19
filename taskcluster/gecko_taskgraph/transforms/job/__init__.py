@@ -9,14 +9,14 @@ the job at a higher level, using a "run" field that can be interpreted by
 run-using handlers in `taskcluster/gecko_taskgraph/transforms/job`.
 """
 
-
-import json
 import logging
+import os
 
 import mozpack.path as mozpath
 from packaging.version import Version
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.transforms.run import rewrite_when_to_optimization
+from taskgraph.util import json
 from taskgraph.util.copy import deepcopy
 from taskgraph.util.python_path import import_sibling_modules
 from taskgraph.util.schema import Schema, validate_schema
@@ -56,6 +56,7 @@ job_description_schema = Schema(
         Optional("extra"): task_description_schema["extra"],
         Optional("treeherder"): task_description_schema["treeherder"],
         Optional("index"): task_description_schema["index"],
+        Optional("run-on-repo-type"): task_description_schema["run-on-repo-type"],
         Optional("run-on-projects"): task_description_schema["run-on-projects"],
         Optional("shipping-phase"): task_description_schema["shipping-phase"],
         Optional("shipping-product"): task_description_schema["shipping-product"],
@@ -65,6 +66,8 @@ job_description_schema = Schema(
         ],
         Optional("use-sccache"): task_description_schema["use-sccache"],
         Optional("use-python"): Any("system", "default", Coerce(Version)),
+        # Fetch uv binary and add it to PATH
+        Optional("use-uv"): bool,
         Optional("priority"): task_description_schema["priority"],
         # The "when" section contains descriptions of the circumstances under which
         # this task should be included in the task graph.  This will be converted
@@ -184,6 +187,20 @@ def get_attribute(dict, key, attributes, attribute_name):
         dict[key] = value
 
 
+def get_platform(job):
+    if "win" in job["worker"]["os"]:
+        return "win64"
+    elif "linux" in job["worker"]["os"]:
+        platform = "linux64"
+        if "aarch64" in job["worker-type"] or "arm64" in job["worker-type"]:
+            return f"{platform}-aarch64"
+        return platform
+    elif "macosx" in job["worker"]["os"]:
+        return "macosx64"
+    else:
+        raise ValueError(f"unexpected worker.os value {job['worker']['os']}")
+
+
 @transforms.add
 def use_system_python(config, jobs):
     for job in jobs:
@@ -198,18 +215,7 @@ def use_system_python(config, jobs):
 
             fetches = job.setdefault("fetches", {})
             toolchain = fetches.setdefault("toolchain", [])
-            if "win" in job["worker"]["os"]:
-                platform = "win64"
-            elif "linux" in job["worker"]["os"]:
-                platform = "linux64"
-                if "aarch64" in job["worker-type"] or "arm64" in job["worker-type"]:
-                    platform = f"{platform}-aarch64"
-            elif "macosx" in job["worker"]["os"]:
-                platform = "macosx64"
-            else:
-                raise ValueError(
-                    "unexpected worker.os value {}".format(job["worker"]["os"])
-                )
+            platform = get_platform(job)
 
             toolchain.append(f"{platform}-{python_version}")
 
@@ -221,6 +227,53 @@ def use_system_python(config, jobs):
             env["MOZ_PYTHON_HOME"] = moz_python_home
 
             yield job
+
+
+@transforms.add
+def use_uv(config, jobs):
+    for job in jobs:
+        if not job.pop("use-uv", False):
+            yield job
+        else:
+            fetches = job.setdefault("fetches", {})
+            toolchain = fetches.setdefault("toolchain", [])
+            platform = get_platform(job)
+
+            toolchain.append(f"{platform}-uv")
+
+            worker = job.setdefault("worker", {})
+            env = worker.setdefault("env", {})
+            moz_fetches_dir = env.get("MOZ_FETCHES_DIR", "fetches")
+            env["MOZ_UV_HOME"] = os.path.join(moz_fetches_dir, "uv")
+
+            yield job
+
+
+@transforms.add
+def add_perfherder_fetch_content_artifact(config, jobs):
+    for job in jobs:
+        if not job.get("fetches"):
+            yield job
+            continue
+
+        worker = job.setdefault("worker", {})
+        env = worker.setdefault("env", {})
+        artifacts = worker.setdefault("artifacts", [])
+        perfherder_fetch_content_json_path = (
+            "/builds/worker/perf/perfherder-data-fetch-content.json"
+            if worker.get("implementation") == "docker-worker"
+            else "./perf/perfherder-data-fetch-content.json"
+        )
+        artifacts.append(
+            {
+                "type": "file",
+                "name": "public/fetch/perfherder-data-fetch-content.json",
+                "path": perfherder_fetch_content_json_path,
+            }
+        )
+        env["PERFHERDER_FETCH_CONTENT_JSON_PATH"] = perfherder_fetch_content_json_path
+
+        yield job
 
 
 @transforms.add

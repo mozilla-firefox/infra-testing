@@ -15,11 +15,9 @@
 #include "nsIServiceManager.h"
 #include "nsIFile.h"
 #include "mozilla/ArenaAllocator.h"
-#include "mozilla/Atomics.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Module.h"
 #include "mozilla/Monitor.h"
-#include "mozilla/UniquePtr.h"
 #include "nsXULAppAPI.h"
 #include "nsIFactory.h"
 #include "nsIInterfaceRequestor.h"
@@ -42,12 +40,12 @@
 struct nsFactoryEntry;
 struct PRThread;
 
-#define NS_COMPONENTMANAGER_CID                      \
-  { /* 91775d60-d5dc-11d2-92fb-00e09805570f */       \
-    0x91775d60, 0xd5dc, 0x11d2, {                    \
-      0x92, 0xfb, 0x00, 0xe0, 0x98, 0x05, 0x57, 0x0f \
-    }                                                \
-  }
+#define NS_COMPONENTMANAGER_CID               \
+  {/* 91775d60-d5dc-11d2-92fb-00e09805570f */ \
+   0x91775d60,                                \
+   0xd5dc,                                    \
+   0x11d2,                                    \
+   {0x92, 0xfb, 0x00, 0xe0, 0x98, 0x05, 0x57, 0x0f}}
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -125,14 +123,6 @@ class nsComponentManagerImpl final : public nsIComponentManager,
   struct ComponentLocation {
     NSLocationType type;
     mozilla::FileLocation location;
-  };
-
-  class ComponentLocationComparator {
-   public:
-    bool Equals(const ComponentLocation& aA,
-                const ComponentLocation& aB) const {
-      return (aA.type == aB.type && aA.location.Equals(aB.location));
-    }
   };
 
   static nsTArray<ComponentLocation>* sModuleLocations;

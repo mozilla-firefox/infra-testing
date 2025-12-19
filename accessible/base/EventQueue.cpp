@@ -130,7 +130,7 @@ bool EventQueue::PushNameOrDescriptionChange(AccEvent* aOrigEvent) {
         bool fireNameChange = parent->IsHTMLFileInput();
         if (!fireNameChange) {
           nsAutoString name;
-          ENameValueFlag nameFlag = parent->Name(name);
+          ENameValueFlag nameFlag = parent->DirectName(name);
           switch (nameFlag) {
             case eNameOK:
               // Descendants of subtree may have been removed, making the name
@@ -145,6 +145,9 @@ bool EventQueue::PushNameOrDescriptionChange(AccEvent* aOrigEvent) {
               // If the descendants of this accessible were removed, the name
               // may be calculated using the tooltip. We can guess that the name
               // was obtained from the subtree before.
+              fireNameChange = true;
+              break;
+            case eNameFromRelations:
               fireNameChange = true;
               break;
             default:

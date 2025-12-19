@@ -1435,12 +1435,12 @@ bool BytecodeEmitter::emitThisEnvironmentCallee() {
   size_t numHops = countThisEnvironmentHops();
 
   static_assert(
-      ENVCOORD_HOPS_LIMIT - 1 <= UINT8_MAX,
+      ENVCOORD_HOPS_LIMIT - 1 <= UINT16_MAX,
       "JSOp::EnvCallee operand size should match ENVCOORD_HOPS_LIMIT");
 
   MOZ_ASSERT(numHops < ENVCOORD_HOPS_LIMIT - 1);
 
-  return emit2(JSOp::EnvCallee, numHops);
+  return emitUint16Operand(JSOp::EnvCallee, numHops);
 }
 
 bool BytecodeEmitter::emitSuperBase() {
@@ -1859,10 +1859,6 @@ bool BytecodeEmitter::emitCallIncDec(UnaryNode* incDec) {
     //              [stack] CALLRESULT
     return false;
   }
-  if (!emit1(JSOp::ToNumeric)) {
-    //              [stack] N
-    return false;
-  }
 
   // The increment/decrement has no side effects, so proceed to throw for
   // invalid assignment target.
@@ -2166,6 +2162,9 @@ bool BytecodeEmitter::emitYieldOp(JSOp op) {
     return false;
   }
 
+  // InitialYield is always the first yield node.
+  MOZ_ASSERT_IF(op == JSOp::InitialYield, bytecodeSection().numYields() == 0);
+
   if (op == JSOp::InitialYield || op == JSOp::Yield) {
     bytecodeSection().addNumYields();
   }
@@ -2174,6 +2173,11 @@ bool BytecodeEmitter::emitYieldOp(JSOp op) {
   if (!allocateResumeIndex(bytecodeSection().offset(), &resumeIndex)) {
     return false;
   }
+
+  // InitialYield is the first resumable instruction.
+  MOZ_ASSERT_IF(
+      op == JSOp::InitialYield,
+      resumeIndex == AbstractGeneratorObject::RESUME_INDEX_INITIAL_YIELD);
 
   SET_RESUMEINDEX(bytecodeSection().code(off), resumeIndex);
 
@@ -2202,7 +2206,7 @@ bool BytecodeEmitter::emitSetThis(BinaryNode* setThisNode) {
     lexicalLoc = NameLocation::FrameSlot(BindingKind::Let, loc.frameSlot());
   } else if (loc.kind() == NameLocation::Kind::EnvironmentCoordinate) {
     EnvironmentCoordinate coord = loc.environmentCoordinate();
-    uint8_t hops = AssertedCast<uint8_t>(coord.hops());
+    uint16_t hops = AssertedCast<uint16_t>(coord.hops());
     lexicalLoc = NameLocation::EnvironmentCoordinate(BindingKind::Let, hops,
                                                      coord.slot());
   } else {
@@ -2739,7 +2743,8 @@ bool BytecodeEmitter::emitSetOrInitializeDestructuring(
   switch (target->getKind()) {
     case ParseNodeKind::ArrayExpr:
     case ParseNodeKind::ObjectExpr:
-      if (!emitDestructuringOps(&target->as<ListNode>(), flav)) {
+      if (!emitDestructuringOps(&target->as<ListNode>(), flav,
+                                SelfHostedIter::Deny)) {
         return false;
       }
       // emitDestructuringOps leaves the assigned (to-be-destructured) value on
@@ -2841,9 +2846,8 @@ JSOp BytecodeEmitter::getIterCallOp(JSOp callOp,
 }
 
 bool BytecodeEmitter::emitIteratorNext(
-    const Maybe<uint32_t>& callSourceCoordOffset,
-    IteratorKind iterKind /* = IteratorKind::Sync */,
-    SelfHostedIter selfHostedIter /* = SelfHostedIter::Deny */) {
+    const Maybe<uint32_t>& callSourceCoordOffset, IteratorKind iterKind,
+    SelfHostedIter selfHostedIter) {
   MOZ_ASSERT(selfHostedIter != SelfHostedIter::Deny ||
                  emitterMode != BytecodeEmitter::SelfHosting,
              ".next() iteration is prohibited in self-hosted code because it"
@@ -2872,11 +2876,10 @@ bool BytecodeEmitter::emitIteratorNext(
   return true;
 }
 
-bool BytecodeEmitter::emitIteratorCloseInScope(
-    EmitterScope& currentScope,
-    IteratorKind iterKind /* = IteratorKind::Sync */,
-    CompletionKind completionKind /* = CompletionKind::Normal */,
-    SelfHostedIter selfHostedIter /* = SelfHostedIter::Deny */) {
+bool BytecodeEmitter::emitIteratorCloseInScope(EmitterScope& currentScope,
+                                               IteratorKind iterKind,
+                                               CompletionKind completionKind,
+                                               SelfHostedIter selfHostedIter) {
   MOZ_ASSERT(selfHostedIter != SelfHostedIter::Deny ||
                  emitterMode != BytecodeEmitter::SelfHosting,
              ".close() on iterators is prohibited in self-hosted code because "
@@ -3162,10 +3165,8 @@ bool BytecodeEmitter::emitInitializer(ParseNode* initializer,
 }
 
 bool BytecodeEmitter::emitDestructuringOpsArray(ListNode* pattern,
-                                                DestructuringFlavor flav) {
-  MOZ_ASSERT(getSelfHostedIterFor(pattern) == SelfHostedIter::Deny,
-             "array destructuring is prohibited in self-hosted code because it"
-             "can run user-modifiable iteration code");
+                                                DestructuringFlavor flav,
+                                                SelfHostedIter selfHostedIter) {
   MOZ_ASSERT(pattern->isKind(ParseNodeKind::ArrayExpr));
   MOZ_ASSERT(bytecodeSection().stackDepth() != 0);
 
@@ -3428,7 +3429,7 @@ bool BytecodeEmitter::emitDestructuringOpsArray(ListNode* pattern,
     }
   }
 
-  if (!emitIterator(SelfHostedIter::Deny)) {
+  if (!emitIterator(selfHostedIter)) {
     //              [stack] ... OBJ NEXT ITER
     return false;
   }
@@ -3445,7 +3446,8 @@ bool BytecodeEmitter::emitDestructuringOpsArray(ListNode* pattern,
       return false;
     }
 
-    if (!emitIteratorCloseInInnermostScope()) {
+    if (!emitIteratorCloseInInnermostScope(
+            IteratorKind::Sync, CompletionKind::Normal, selfHostedIter)) {
       //            [stack] ... OBJ
       return false;
     }
@@ -3639,7 +3641,8 @@ bool BytecodeEmitter::emitDestructuringOpsArray(ListNode* pattern,
       //            [stack] ... OBJ NEXT ITER LREF* NEXT
       return false;
     }
-    if (!emitIteratorNext(Some(pattern->pn_pos.begin))) {
+    if (!emitIteratorNext(Some(pattern->pn_pos.begin), IteratorKind::Sync,
+                          selfHostedIter)) {
       //            [stack] ... OBJ NEXT ITER LREF* RESULT
       return false;
     }
@@ -3755,7 +3758,8 @@ bool BytecodeEmitter::emitDestructuringOpsArray(ListNode* pattern,
     //              [stack] ... OBJ ITER
     return false;
   }
-  if (!emitIteratorCloseInInnermostScope()) {
+  if (!emitIteratorCloseInInnermostScope(
+          IteratorKind::Sync, CompletionKind::Normal, selfHostedIter)) {
     //              [stack] ... OBJ
     return false;
   }
@@ -4087,9 +4091,10 @@ bool BytecodeEmitter::emitDestructuringObjRestExclusionSet(
 }
 
 bool BytecodeEmitter::emitDestructuringOps(ListNode* pattern,
-                                           DestructuringFlavor flav) {
+                                           DestructuringFlavor flav,
+                                           SelfHostedIter selfHostedIter) {
   if (pattern->isKind(ParseNodeKind::ArrayExpr)) {
-    return emitDestructuringOpsArray(pattern, flav);
+    return emitDestructuringOpsArray(pattern, flav, selfHostedIter);
   }
   return emitDestructuringOpsObject(pattern, flav);
 }
@@ -4185,7 +4190,8 @@ bool BytecodeEmitter::emitDeclarationList(ListNode* declList) {
       }
 
       if (!emitDestructuringOps(&pattern->as<ListNode>(),
-                                DestructuringFlavor::Declaration)) {
+                                DestructuringFlavor::Declaration,
+                                getSelfHostedIterFor(initializer))) {
         return false;
       }
 
@@ -4629,12 +4635,16 @@ bool BytecodeEmitter::emitAssignmentOrInit(ParseNodeKind kind, ParseNode* lhs,
       }
       break;
     case ParseNodeKind::ArrayExpr:
-    case ParseNodeKind::ObjectExpr:
+    case ParseNodeKind::ObjectExpr: {
+      auto selfHostedIter =
+          rhs ? getSelfHostedIterFor(rhs) : SelfHostedIter::Deny;
       if (!emitDestructuringOps(&lhs->as<ListNode>(),
-                                DestructuringFlavor::Assignment)) {
+                                DestructuringFlavor::Assignment,
+                                selfHostedIter)) {
         return false;
       }
       break;
+    }
     default:
       MOZ_ASSERT(0);
   }
@@ -4970,7 +4980,8 @@ bool BytecodeEmitter::emitCatch(BinaryNode* catchClause) {
       case ParseNodeKind::ArrayExpr:
       case ParseNodeKind::ObjectExpr:
         if (!emitDestructuringOps(&param->as<ListNode>(),
-                                  DestructuringFlavor::Declaration)) {
+                                  DestructuringFlavor::Declaration,
+                                  SelfHostedIter::Deny)) {
           return false;
         }
         if (!emit1(JSOp::Pop)) {
@@ -5660,20 +5671,10 @@ bool BytecodeEmitter::emitAsyncIterator(SelfHostedIter selfHostedIter) {
 }
 
 bool BytecodeEmitter::emitSpread(SelfHostedIter selfHostedIter) {
-  // [stack] NEXT ITER ARR I
-  return emitSpread(selfHostedIter, 2, JSOp::InitElemInc);
-  // [stack] ARR FINAL_INDEX
-}
-
-bool BytecodeEmitter::emitSpread(SelfHostedIter selfHostedIter,
-                                 int spreadeeStackItems, JSOp storeElementOp) {
   LoopControl loopInfo(this, StatementKind::Spread);
-  // In the [stack] annotations, (spreadee) can be "ARR I" (when spreading
-  // into an array or into call parameters, or "TUPLE" (when spreading into a
-  // tuple)
 
   if (!loopInfo.emitLoopHead(this, Nothing())) {
-    //              [stack] NEXT ITER (spreadee)
+    //              [stack] NEXT ITER ARR I
     return false;
   }
 
@@ -5685,39 +5686,39 @@ bool BytecodeEmitter::emitSpread(SelfHostedIter selfHostedIter,
     // Spread operations can't contain |continue|, so don't bother setting loop
     // and enclosing "update" offsets, as we do with for-loops.
 
-    if (!emitDupAt(spreadeeStackItems + 1, 2)) {
-      //            [stack] NEXT ITER (spreadee) NEXT ITER
+    if (!emitDupAt(3, 2)) {
+      //            [stack] NEXT ITER ARR I NEXT ITER
       return false;
     }
     if (!emitIteratorNext(Nothing(), IteratorKind::Sync, selfHostedIter)) {
-      //            [stack] NEXT ITER (spreadee) RESULT
+      //            [stack] NEXT ITER ARR I RESULT
       return false;
     }
     if (!emit1(JSOp::Dup)) {
-      //            [stack] NEXT ITER (spreadee) RESULT RESULT
+      //            [stack] NEXT ITER ARR I RESULT RESULT
       return false;
     }
     if (!emitAtomOp(JSOp::GetProp, TaggedParserAtomIndex::WellKnown::done())) {
-      //            [stack] NEXT ITER (spreadee) RESULT DONE
+      //            [stack] NEXT ITER ARR I RESULT DONE
       return false;
     }
     if (!emitJump(JSOp::JumpIfTrue, &loopInfo.breaks)) {
-      //            [stack] NEXT ITER (spreadee) RESULT
+      //            [stack] NEXT ITER ARR I RESULT
       return false;
     }
 
     // Emit code to assign result.value to the iteration variable.
     if (!emitAtomOp(JSOp::GetProp, TaggedParserAtomIndex::WellKnown::value())) {
-      //            [stack] NEXT ITER (spreadee) VALUE
+      //            [stack] NEXT ITER ARR I VALUE
       return false;
     }
-    if (!emit1(storeElementOp)) {
-      //            [stack] NEXT ITER (spreadee)
+    if (!emit1(JSOp::InitElemInc)) {
+      //            [stack] NEXT ITER ARR I
       return false;
     }
 
     if (!loopInfo.emitLoopEnd(this, JSOp::Goto, TryNoteKind::ForOf)) {
-      //            [stack] NEXT ITER (spreadee)
+      //            [stack] NEXT ITER ARR I
       return false;
     }
 
@@ -5732,17 +5733,17 @@ bool BytecodeEmitter::emitSpread(SelfHostedIter selfHostedIter,
   // No continues should occur in spreads.
   MOZ_ASSERT(!loopInfo.continues.offset.valid());
 
-  if (!emit2(JSOp::Pick, spreadeeStackItems + 2)) {
-    //              [stack] ITER (spreadee) RESULT NEXT
+  if (!emit2(JSOp::Pick, 4)) {
+    //              [stack] ITER ARR I RESULT NEXT
     return false;
   }
-  if (!emit2(JSOp::Pick, spreadeeStackItems + 2)) {
-    //              [stack] (spreadee) RESULT NEXT ITER
+  if (!emit2(JSOp::Pick, 4)) {
+    //              [stack] ARR I RESULT NEXT ITER
     return false;
   }
 
   return emitPopN(3);
-  //                [stack] (spreadee)
+  //                [stack] ARR I
 }
 
 bool BytecodeEmitter::emitInitializeForInOrOfTarget(TernaryNode* forHead) {
@@ -5838,7 +5839,8 @@ bool BytecodeEmitter::emitInitializeForInOrOfTarget(TernaryNode* forHead) {
   MOZ_ASSERT(target->isKind(ParseNodeKind::ArrayExpr) ||
              target->isKind(ParseNodeKind::ObjectExpr));
   return emitDestructuringOps(&target->as<ListNode>(),
-                              DestructuringFlavor::Declaration);
+                              DestructuringFlavor::Declaration,
+                              SelfHostedIter::Deny);
 }
 
 bool BytecodeEmitter::emitForOf(ForNode* forOfLoop,
@@ -6909,7 +6911,8 @@ bool BytecodeEmitter::emitYieldStar(ParseNode* iter) {
     //
     // If the iterator does not have a "throw" method, it calls IteratorClose
     // and then throws a TypeError.
-    if (!emitIteratorCloseInInnermostScope(iterKind, CompletionKind::Normal)) {
+    if (!emitIteratorCloseInInnermostScope(iterKind, CompletionKind::Normal,
+                                           SelfHostedIter::Deny)) {
       //            [stack] NEXT ITER RECEIVED ITER
       return false;
     }
@@ -8716,15 +8719,15 @@ bool BytecodeEmitter::emitRightAssociative(ListNode* node) {
   return true;
 }
 
-Maybe<ConstantCompareOperand> ParseNodeToConstantCompareOperand(
-    ParseNode* constant) {
+Maybe<ConstantCompareOperand>
+BytecodeEmitter::parseNodeToConstantCompareOperand(ParseNode* constant) {
   switch (constant->getKind()) {
     case ParseNodeKind::NumberExpr: {
       double d = constant->as<NumericLiteral>().value();
       int32_t ival;
       if (NumberEqualsInt32(d, &ival)) {
         if (ConstantCompareOperand::CanEncodeInt32ValueAsOperand(ival)) {
-          return Some(ConstantCompareOperand((int8_t)ival));
+          return Some(ConstantCompareOperand(int8_t(ival)));
         }
       }
       return Nothing();
@@ -8739,6 +8742,24 @@ Maybe<ConstantCompareOperand> ParseNodeToConstantCompareOperand(
     case ParseNodeKind::RawUndefinedExpr:
       return Some(ConstantCompareOperand(
           ConstantCompareOperand::EncodedType::Undefined));
+    case ParseNodeKind::Name: {
+      MOZ_ASSERT(constant->as<NameNode>().name() ==
+                 TaggedParserAtomIndex::WellKnown::undefined());
+      NameLocation loc = lookupName(constant->as<NameNode>().name());
+      switch (loc.kind()) {
+        case NameLocation::Kind::Global:
+          if (!sc->hasNonSyntacticScope()) {
+            return Some(ConstantCompareOperand(
+                ConstantCompareOperand::EncodedType::Undefined));
+          }
+          return Nothing();
+        case NameLocation::Kind::Intrinsic:
+          return Some(ConstantCompareOperand(
+              ConstantCompareOperand::EncodedType::Undefined));
+        default:
+          return Nothing();
+      }
+    }
     default:
       return Nothing();
   }
@@ -8771,10 +8792,10 @@ bool BytecodeEmitter::tryEmitConstantEq(ListNode* node, JSOp op,
 
   ParseNode* expressionNode;
   ParseNode* constantNode;
-  if (left->isConstant()) {
+  if (left->isConstant() || left->isUndefinedLiteral()) {
     expressionNode = right;
     constantNode = left;
-  } else if (right->isConstant()) {
+  } else if (right->isConstant() || right->isUndefinedLiteral()) {
     expressionNode = left;
     constantNode = right;
   } else {
@@ -8783,7 +8804,7 @@ bool BytecodeEmitter::tryEmitConstantEq(ListNode* node, JSOp op,
   }
 
   Maybe<ConstantCompareOperand> operand =
-      ParseNodeToConstantCompareOperand(constantNode);
+      parseNodeToConstantCompareOperand(constantNode);
   if (operand.isNothing()) {
     *emitted = false;
     return true;
@@ -11606,15 +11627,20 @@ bool BytecodeEmitter::emitTypeof(UnaryNode* typeofNode, JSOp op) {
 }
 
 bool BytecodeEmitter::tryEmitTypeofEq(ListNode* node, bool* emitted) {
-  // Emit specialized opcode for `typeof val == "type` or `typeof val != "type`
-  // if possible.
+  // Emit specialized opcode for the following if possible:
+  //  * typeof val == "type"
+  //  * typeof val != "type"
+  //  * typeof val > "u"     # minified `typeof val === "undefined"`
+  //  * typeof val < "u"     # minified `typeof val !== "undefined"`
   //
   // NOTE: Given the comparison is done for string, `==` and `===` have
   //       no difference. Same for `!=` and `!==`.
   MOZ_ASSERT(node->isKind(ParseNodeKind::StrictEqExpr) ||
              node->isKind(ParseNodeKind::EqExpr) ||
              node->isKind(ParseNodeKind::StrictNeExpr) ||
-             node->isKind(ParseNodeKind::NeExpr));
+             node->isKind(ParseNodeKind::NeExpr) ||
+             node->isKind(ParseNodeKind::LtExpr) ||
+             node->isKind(ParseNodeKind::GtExpr));
 
   if (node->count() != 2) {
     *emitted = false;
@@ -11628,50 +11654,88 @@ bool BytecodeEmitter::tryEmitTypeofEq(ListNode* node, bool* emitted) {
   UnaryNode* typeofNode;
   NameNode* typenameNode;
   JSOp op;
-
-  if (node->isKind(ParseNodeKind::StrictEqExpr) ||
-      node->isKind(ParseNodeKind::EqExpr)) {
-    op = JSOp::Eq;
-  } else {
-    op = JSOp::Ne;
-  }
-
-  // NOTE: ParseNodeKind::TypeOfExpr cannot use JSOp::TypeofEq.
-  //       See JSOp::GetName document.
-  if (left->isKind(ParseNodeKind::TypeOfNameExpr) &&
-      right->isKind(ParseNodeKind::StringExpr)) {
-    typeofNode = &left->as<UnaryNode>();
-    typenameNode = &right->as<NameNode>();
-  } else if (right->isKind(ParseNodeKind::TypeOfNameExpr) &&
-             left->isKind(ParseNodeKind::StringExpr)) {
-    typeofNode = &right->as<UnaryNode>();
-    typenameNode = &left->as<NameNode>();
-  } else {
-    *emitted = false;
-    return true;
-  }
-
   JSType type;
-  TaggedParserAtomIndex typeName = typenameNode->atom();
-  if (typeName == TaggedParserAtomIndex::WellKnown::undefined()) {
-    type = JSTYPE_UNDEFINED;
-  } else if (typeName == TaggedParserAtomIndex::WellKnown::object()) {
-    type = JSTYPE_OBJECT;
-  } else if (typeName == TaggedParserAtomIndex::WellKnown::function()) {
-    type = JSTYPE_FUNCTION;
-  } else if (typeName == TaggedParserAtomIndex::WellKnown::string()) {
-    type = JSTYPE_STRING;
-  } else if (typeName == TaggedParserAtomIndex::WellKnown::number()) {
-    type = JSTYPE_NUMBER;
-  } else if (typeName == TaggedParserAtomIndex::WellKnown::boolean()) {
-    type = JSTYPE_BOOLEAN;
-  } else if (typeName == TaggedParserAtomIndex::WellKnown::symbol()) {
-    type = JSTYPE_SYMBOL;
-  } else if (typeName == TaggedParserAtomIndex::WellKnown::bigint()) {
-    type = JSTYPE_BIGINT;
+
+  if (node->isKind(ParseNodeKind::LtExpr) ||
+      node->isKind(ParseNodeKind::GtExpr)) {
+    if (left->isKind(ParseNodeKind::TypeOfNameExpr) &&
+        right->isKind(ParseNodeKind::StringExpr)) {
+      typeofNode = &left->as<UnaryNode>();
+      typenameNode = &right->as<NameNode>();
+
+      if (node->isKind(ParseNodeKind::LtExpr)) {
+        op = JSOp::Ne;
+      } else {
+        op = JSOp::Eq;
+      }
+    } else if (left->isKind(ParseNodeKind::TypeOfNameExpr) &&
+               right->isKind(ParseNodeKind::StringExpr)) {
+      typeofNode = &left->as<UnaryNode>();
+      typenameNode = &right->as<NameNode>();
+
+      if (node->isKind(ParseNodeKind::LtExpr)) {
+        op = JSOp::Eq;
+      } else {
+        op = JSOp::Ne;
+      }
+    } else {
+      *emitted = false;
+      return true;
+    }
+
+    TaggedParserAtomIndex typeName = typenameNode->atom();
+    if (typeName.isLength1StaticParserString() &&
+        typeName.toLength1StaticParserString() ==
+            Length1StaticParserString('u')) {
+      type = JSTYPE_UNDEFINED;
+    } else {
+      *emitted = false;
+      return true;
+    }
   } else {
-    *emitted = false;
-    return true;
+    if (node->isKind(ParseNodeKind::StrictEqExpr) ||
+        node->isKind(ParseNodeKind::EqExpr)) {
+      op = JSOp::Eq;
+    } else {
+      op = JSOp::Ne;
+    }
+
+    // NOTE: ParseNodeKind::TypeOfExpr cannot use JSOp::TypeofEq.
+    //       See JSOp::GetName document.
+    if (left->isKind(ParseNodeKind::TypeOfNameExpr) &&
+        right->isKind(ParseNodeKind::StringExpr)) {
+      typeofNode = &left->as<UnaryNode>();
+      typenameNode = &right->as<NameNode>();
+    } else if (right->isKind(ParseNodeKind::TypeOfNameExpr) &&
+               left->isKind(ParseNodeKind::StringExpr)) {
+      typeofNode = &right->as<UnaryNode>();
+      typenameNode = &left->as<NameNode>();
+    } else {
+      *emitted = false;
+      return true;
+    }
+
+    TaggedParserAtomIndex typeName = typenameNode->atom();
+    if (typeName == TaggedParserAtomIndex::WellKnown::undefined()) {
+      type = JSTYPE_UNDEFINED;
+    } else if (typeName == TaggedParserAtomIndex::WellKnown::object()) {
+      type = JSTYPE_OBJECT;
+    } else if (typeName == TaggedParserAtomIndex::WellKnown::function()) {
+      type = JSTYPE_FUNCTION;
+    } else if (typeName == TaggedParserAtomIndex::WellKnown::string()) {
+      type = JSTYPE_STRING;
+    } else if (typeName == TaggedParserAtomIndex::WellKnown::number()) {
+      type = JSTYPE_NUMBER;
+    } else if (typeName == TaggedParserAtomIndex::WellKnown::boolean()) {
+      type = JSTYPE_BOOLEAN;
+    } else if (typeName == TaggedParserAtomIndex::WellKnown::symbol()) {
+      type = JSTYPE_SYMBOL;
+    } else if (typeName == TaggedParserAtomIndex::WellKnown::bigint()) {
+      type = JSTYPE_BIGINT;
+    } else {
+      *emitted = false;
+      return true;
+    }
   }
 
   if (!updateSourceCoordNotes(typeofNode->pn_pos.begin)) {
@@ -11729,7 +11793,8 @@ bool BytecodeEmitter::emitFunctionFormalParameters(ParamsBodyNode* paramsBody) {
       //            [stack] ARG
 
       if (!this->emitDestructuringOps(&bindingElement->as<ListNode>(),
-                                      DestructuringFlavor::Declaration)) {
+                                      DestructuringFlavor::Declaration,
+                                      SelfHostedIter::Deny)) {
         //          [stack] ARG
         return false;
       }
@@ -12598,7 +12663,9 @@ bool BytecodeEmitter::emitTree(
     case ParseNodeKind::StrictEqExpr:
     case ParseNodeKind::EqExpr:
     case ParseNodeKind::StrictNeExpr:
-    case ParseNodeKind::NeExpr: {
+    case ParseNodeKind::NeExpr:
+    case ParseNodeKind::LtExpr:
+    case ParseNodeKind::GtExpr: {
       bool emitted;
       if (!tryEmitTypeofEq(&pn->as<ListNode>(), &emitted)) {
         return false;
@@ -12614,9 +12681,7 @@ bool BytecodeEmitter::emitTree(
     case ParseNodeKind::BitOrExpr:
     case ParseNodeKind::BitXorExpr:
     case ParseNodeKind::BitAndExpr:
-    case ParseNodeKind::LtExpr:
     case ParseNodeKind::LeExpr:
-    case ParseNodeKind::GtExpr:
     case ParseNodeKind::GeExpr:
     case ParseNodeKind::InExpr:
     case ParseNodeKind::InstanceOfExpr:

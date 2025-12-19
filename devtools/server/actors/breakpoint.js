@@ -7,7 +7,7 @@
 "use strict";
 
 const {
-  logEvent,
+  evalAndLogEvent,
   getThrownMessage,
 } = require("resource://devtools/server/actors/utils/logEvent.js");
 
@@ -209,11 +209,12 @@ class BreakpointActor {
     }
 
     if (logValue) {
-      return logEvent({
+      return evalAndLogEvent({
         threadActor: this.threadActor,
         frame,
         level: "logPoint",
         expression: `[${logValue}]`,
+        showStacktrace: this.options.showStacktrace,
       });
     }
 

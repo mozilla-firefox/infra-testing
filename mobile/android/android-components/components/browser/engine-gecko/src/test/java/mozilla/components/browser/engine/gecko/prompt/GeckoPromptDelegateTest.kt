@@ -318,10 +318,10 @@ class GeckoPromptDelegateTest {
             assertEquals(maximumDate, "2019-11-30".toDate("yyyy-MM-dd"))
         }
         val selectedDate = "2019-11-28".toDate("yyyy-MM-dd")
-        (timeSelectionRequest as PromptRequest.TimeSelection).onConfirm(selectedDate)
+        timeSelectionRequest.onConfirm(selectedDate)
         verify(geckoPrompt).confirm(confirmCaptor.capture())
         assertEquals(confirmCaptor.value.toDate("yyyy-MM-dd"), selectedDate)
-        assertEquals((timeSelectionRequest as PromptRequest.TimeSelection).title, "title")
+        assertEquals(timeSelectionRequest.title, "title")
     }
 
     @Test
@@ -385,10 +385,10 @@ class GeckoPromptDelegateTest {
             assertEquals(maximumDate, "2019-11".toDate("yyyy-MM"))
         }
         val selectedDate = "2019-11".toDate("yyyy-MM")
-        (timeSelectionRequest as PromptRequest.TimeSelection).onConfirm(selectedDate)
+        timeSelectionRequest.onConfirm(selectedDate)
         verify(geckoPrompt).confirm(confirmCaptor.capture())
         assertEquals(confirmCaptor.value.toDate("yyyy-MM"), selectedDate)
-        assertEquals((timeSelectionRequest as PromptRequest.TimeSelection).title, "title")
+        assertEquals(timeSelectionRequest.title, "title")
     }
 
     @Test
@@ -450,10 +450,10 @@ class GeckoPromptDelegateTest {
             assertEquals(maximumDate, "2018-W26".toDate("yyyy-'W'ww"))
         }
         val selectedDate = "2018-W26".toDate("yyyy-'W'ww")
-        (timeSelectionRequest as PromptRequest.TimeSelection).onConfirm(selectedDate)
+        timeSelectionRequest.onConfirm(selectedDate)
         verify(geckoPrompt).confirm(confirmCaptor.capture())
         assertEquals(confirmCaptor.value.toDate("yyyy-'W'ww"), selectedDate)
-        assertEquals((timeSelectionRequest as PromptRequest.TimeSelection).title, "title")
+        assertEquals(timeSelectionRequest.title, "title")
     }
 
     @Test
@@ -515,10 +515,10 @@ class GeckoPromptDelegateTest {
             assertEquals(maximumDate, "18:00".toDate("HH:mm"))
         }
         val selectedDate = "17:00".toDate("HH:mm")
-        (timeSelectionRequest as PromptRequest.TimeSelection).onConfirm(selectedDate)
+        timeSelectionRequest.onConfirm(selectedDate)
         verify(geckoPrompt).confirm(confirmCaptor.capture())
         assertEquals(confirmCaptor.value.toDate("HH:mm"), selectedDate)
-        assertEquals((timeSelectionRequest as PromptRequest.TimeSelection).title, "title")
+        assertEquals(timeSelectionRequest.title, "title")
     }
 
     @Test
@@ -563,7 +563,7 @@ class GeckoPromptDelegateTest {
 
         selectedTime = "17:00:25"
         assertNotNull(timeSelectionRequest)
-        (timeSelectionRequest as PromptRequest.TimeSelection).onConfirm(selectedTime.toDate("HH:mm:ss"))
+        timeSelectionRequest.onConfirm(selectedTime.toDate("HH:mm:ss"))
         verify(secondsGeckoPrompt).confirm(confirmCaptor.capture())
         assertEquals(selectedTime, confirmCaptor.value)
 
@@ -571,7 +571,7 @@ class GeckoPromptDelegateTest {
 
         selectedTime = "17:00:20.100"
         assertNotNull(timeSelectionRequest)
-        (timeSelectionRequest as PromptRequest.TimeSelection).onConfirm(selectedTime.toDate("HH:mm:ss.SSS"))
+        timeSelectionRequest.onConfirm(selectedTime.toDate("HH:mm:ss.SSS"))
         verify(millisecondsGeckoPrompt).confirm(confirmCaptor.capture())
         assertEquals(selectedTime, confirmCaptor.value)
     }
@@ -659,10 +659,10 @@ class GeckoPromptDelegateTest {
             assertEquals(maximumDate, "2018-06-14T00:00".toDate("yyyy-MM-dd'T'HH:mm"))
         }
         val selectedDate = "2018-06-12T19:30".toDate("yyyy-MM-dd'T'HH:mm")
-        (timeSelectionRequest as PromptRequest.TimeSelection).onConfirm(selectedDate)
+        timeSelectionRequest.onConfirm(selectedDate)
         verify(geckoPrompt).confirm(confirmCaptor.capture())
         assertEquals(confirmCaptor.value.toDate("yyyy-MM-dd'T'HH:mm"), selectedDate)
-        assertEquals((timeSelectionRequest as PromptRequest.TimeSelection).title, "title")
+        assertEquals(timeSelectionRequest.title, "title")
     }
 
     @Test(expected = InvalidParameterException::class)
@@ -774,6 +774,47 @@ class GeckoPromptDelegateTest {
             PromptRequest.File.FacingMode.FRONT_CAMERA,
             filePickerRequest.captureMode,
         )
+    }
+
+    @Test
+    fun `Calling onFilePrompt for folder must provide a FilePicker PromptRequest`() {
+        // Calling onSelected
+        val context = spy(testContext)
+        val mockSession = GeckoEngineSession(runtime)
+        val mockUri: Uri = mock()
+        var onSelectedWasCalled = false
+        var onDismissWasCalled = false
+        var request: PromptRequest.Folder = mock()
+        val promptDelegate = spy(GeckoPromptDelegate(mockSession))
+
+        mockSession.register(
+            object : EngineSession.Observer {
+                override fun onPromptRequest(promptRequest: PromptRequest) {
+                    request = promptRequest as PromptRequest.Folder
+                }
+            },
+        )
+
+        var geckoPrompt = geckoFolderPrompt()
+        var geckoResult = promptDelegate.onFilePrompt(mock(), geckoPrompt)
+        geckoResult!!.accept {
+            onSelectedWasCalled = true
+        }
+
+        request.onSelected(context, mockUri)
+        shadowOf(getMainLooper()).idle()
+        assertTrue(onSelectedWasCalled)
+
+        // Calling onDismiss
+        geckoPrompt = geckoFolderPrompt()
+        geckoResult = promptDelegate.onFilePrompt(mock(), geckoPrompt)
+        geckoResult!!.accept {
+            onDismissWasCalled = true
+        }
+
+        request.onDismiss()
+        shadowOf(getMainLooper()).idle()
+        assertTrue(onDismissWasCalled)
     }
 
     @Test
@@ -1474,11 +1515,51 @@ class GeckoPromptDelegateTest {
         geckoPrompt = geckoPopupPrompt()
         promptDelegate.onPopupPrompt(mock(), geckoPrompt)
 
-        request!!.onDeny()
+        request.onDeny()
         verify(geckoPrompt, times(1)).confirm(eq(AllowOrDeny.DENY))
         whenever(geckoPrompt.isComplete).thenReturn(true)
 
-        request!!.onDeny()
+        request.onDeny()
+        verify(geckoPrompt, times(1)).confirm(eq(AllowOrDeny.DENY))
+    }
+
+    @Test
+    fun `onRedirectRequest must provide a Redirect PromptRequest`() {
+        val mockSession = GeckoEngineSession(runtime)
+        var request: PromptRequest.Redirect? = null
+
+        val promptDelegate = GeckoPromptDelegate(mockSession)
+
+        mockSession.register(
+            object : EngineSession.Observer {
+                override fun onPromptRequest(promptRequest: PromptRequest) {
+                    request = promptRequest as PromptRequest.Redirect
+                }
+            },
+        )
+
+        var geckoPrompt = geckoRedirectPrompt(targetUri = "www.framebustingtest.com/")
+        promptDelegate.onRedirectPrompt(mock(), geckoPrompt)
+
+        with(request!!) {
+            assertEquals(targetUri, "www.framebustingtest.com/")
+
+            onAllow()
+            verify(geckoPrompt, times(1)).confirm(eq(AllowOrDeny.ALLOW))
+            whenever(geckoPrompt.isComplete).thenReturn(true)
+
+            onAllow()
+            verify(geckoPrompt, times(1)).confirm(eq(AllowOrDeny.ALLOW))
+        }
+
+        geckoPrompt = geckoRedirectPrompt()
+        promptDelegate.onRedirectPrompt(mock(), geckoPrompt)
+
+        request.onDeny()
+        verify(geckoPrompt, times(1)).confirm(eq(AllowOrDeny.DENY))
+        whenever(geckoPrompt.isComplete).thenReturn(true)
+
+        request.onDeny()
         verify(geckoPrompt, times(1)).confirm(eq(AllowOrDeny.DENY))
     }
 
@@ -1500,21 +1581,21 @@ class GeckoPromptDelegateTest {
         promptDelegate.onBeforeUnloadPrompt(mock(), geckoPrompt)
         assertEquals(request!!.title, "")
 
-        request!!.onLeave()
+        request.onLeave()
         verify(geckoPrompt, times(1)).confirm(eq(AllowOrDeny.ALLOW))
         whenever(geckoPrompt.isComplete).thenReturn(true)
 
-        request!!.onLeave()
+        request.onLeave()
         verify(geckoPrompt, times(1)).confirm(eq(AllowOrDeny.ALLOW))
 
         geckoPrompt = geckoBeforeUnloadPrompt()
         promptDelegate.onBeforeUnloadPrompt(mock(), geckoPrompt)
 
-        request!!.onStay()
+        request.onStay()
         verify(geckoPrompt, times(1)).confirm(eq(AllowOrDeny.DENY))
         whenever(geckoPrompt.isComplete).thenReturn(true)
 
-        request!!.onStay()
+        request.onStay()
         verify(geckoPrompt, times(1)).confirm(eq(AllowOrDeny.DENY))
     }
 
@@ -1590,13 +1671,13 @@ class GeckoPromptDelegateTest {
             onFailureWasCalled = true
         }
 
-        request!!.onFailure()
+        request.onFailure()
         shadowOf(getMainLooper()).idle()
         assertTrue(onFailureWasCalled)
         whenever(geckoPrompt.isComplete).thenReturn(true)
 
         onFailureWasCalled = false
-        request!!.onFailure()
+        request.onFailure()
         shadowOf(getMainLooper()).idle()
 
         assertFalse(onFailureWasCalled)
@@ -1607,7 +1688,7 @@ class GeckoPromptDelegateTest {
             onDismissWasCalled = true
         }
 
-        request!!.onDismiss()
+        request.onDismiss()
         shadowOf(getMainLooper()).idle()
         assertTrue(onDismissWasCalled)
     }
@@ -1921,6 +2002,47 @@ class GeckoPromptDelegateTest {
         assertFalse(isOnConfirmCalled)
     }
 
+    @Test
+    fun `onFolderUploadPrompt must provide a Confirm PromptRequest`() {
+        // Calling onCofirm
+        val mockSession = GeckoEngineSession(runtime)
+        var request: PromptRequest.FolderUploadPrompt = mock()
+        var onPositiveButtonWasCalled = false
+        var onNegativeButtonWasCalled = false
+
+        mockSession.register(
+            object : EngineSession.Observer {
+                override fun onPromptRequest(promptRequest: PromptRequest) {
+                    request = promptRequest as PromptRequest.FolderUploadPrompt
+                }
+            },
+        )
+
+        val promptDelegate = GeckoPromptDelegate(mockSession)
+
+        var geckoPrompt = geckoFolderUploadPrompt()
+        var geckoResult = promptDelegate.onFolderUploadPrompt(mock(), geckoPrompt)
+        geckoResult!!.accept {
+            onPositiveButtonWasCalled = true
+        }
+        request.onConfirm()
+        shadowOf(getMainLooper()).idle()
+        assertTrue(onPositiveButtonWasCalled)
+        whenever(geckoPrompt.isComplete).thenReturn(true)
+        onPositiveButtonWasCalled = false
+
+        // Calling onDismiss
+        geckoPrompt = geckoFolderUploadPrompt()
+        geckoResult = promptDelegate.onFolderUploadPrompt(mock(), geckoPrompt)
+        geckoResult!!.accept {
+            onNegativeButtonWasCalled = true
+        }
+        request.onDismiss()
+        shadowOf(getMainLooper()).idle()
+        assertTrue(onNegativeButtonWasCalled)
+        whenever(geckoPrompt.isComplete).thenReturn(true)
+    }
+
     private fun geckoChoicePrompt(
         title: String,
         message: String,
@@ -1974,6 +2096,12 @@ class GeckoPromptDelegateTest {
         ReflectionUtils.setField(prompt, "type", type)
         ReflectionUtils.setField(prompt, "capture", capture)
         ReflectionUtils.setField(prompt, "mimeTypes", mimeTypes)
+        return prompt
+    }
+
+    private fun geckoFolderPrompt(): GeckoSession.PromptDelegate.FilePrompt {
+        val prompt: GeckoSession.PromptDelegate.FilePrompt = mock()
+        ReflectionUtils.setField(prompt, "type", GECKO_PROMPT_FILE_TYPE.FOLDER)
         return prompt
     }
 
@@ -2046,7 +2174,19 @@ class GeckoPromptDelegateTest {
         return prompt
     }
 
+    private fun geckoRedirectPrompt(
+        targetUri: String = "targetUri",
+    ): GeckoSession.PromptDelegate.RedirectPrompt {
+        val prompt: GeckoSession.PromptDelegate.RedirectPrompt = mock()
+        ReflectionUtils.setField(prompt, "targetUri", targetUri)
+        return prompt
+    }
+
     private fun geckoBeforeUnloadPrompt(): GeckoSession.PromptDelegate.BeforeUnloadPrompt {
+        return mock()
+    }
+
+    private fun geckoFolderUploadPrompt(): GeckoSession.PromptDelegate.FolderUploadPrompt {
         return mock()
     }
 

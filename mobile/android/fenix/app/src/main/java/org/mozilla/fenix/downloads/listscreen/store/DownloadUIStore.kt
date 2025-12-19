@@ -6,7 +6,6 @@ package org.mozilla.fenix.downloads.listscreen.store
 
 import mozilla.components.lib.state.Middleware
 import mozilla.components.lib.state.Store
-import mozilla.components.lib.state.UiStore
 import org.mozilla.fenix.downloads.listscreen.store.DownloadUIState.Mode
 
 /**
@@ -15,7 +14,7 @@ import org.mozilla.fenix.downloads.listscreen.store.DownloadUIState.Mode
 class DownloadUIStore(
     initialState: DownloadUIState,
     middleware: List<Middleware<DownloadUIState, DownloadUIAction>> = emptyList(),
-) : UiStore<DownloadUIState, DownloadUIAction>(
+) : Store<DownloadUIState, DownloadUIAction>(
     initialState = initialState,
     reducer = ::downloadStateReducer,
     middleware = middleware,
@@ -29,6 +28,7 @@ class DownloadUIStore(
 /**
  * The DownloadState Reducer.
  */
+@Suppress("LongMethod")
 private fun downloadStateReducer(
     state: DownloadUIState,
     action: DownloadUIAction,
@@ -41,7 +41,11 @@ private fun downloadStateReducer(
 
         is DownloadUIAction.AddAllItemsForRemoval -> {
             state.copy(
-                mode = Mode.Editing(state.itemsMatchingFilters.toSet()),
+                mode = Mode.Editing(
+                    selectedItems = state.itemsMatchingFilters
+                        .filter { it.status == FileItem.Status.Completed }
+                        .toSet(),
+                ),
             )
         }
 
@@ -58,18 +62,12 @@ private fun downloadStateReducer(
 
         is DownloadUIAction.ExitEditMode -> state.copy(mode = Mode.Normal)
         is DownloadUIAction.AddPendingDeletionSet ->
-            state.copy(
-                pendingDeletionIds = state.pendingDeletionIds + action.itemIds,
-            )
+            state.copy(pendingDeletionIds = state.pendingDeletionIds + action.itemIds)
 
         is DownloadUIAction.UndoPendingDeletionSet ->
-            state.copy(
-                pendingDeletionIds = state.pendingDeletionIds - action.itemIds,
-            )
+            state.copy(pendingDeletionIds = state.pendingDeletionIds - action.itemIds)
 
-        is DownloadUIAction.UpdateFileItems -> state.copy(
-            items = action.items.filter { it.id !in state.pendingDeletionIds },
-        )
+        is DownloadUIAction.UpdateFileItems -> state.copy(items = action.items)
 
         is DownloadUIAction.ContentTypeSelected -> state.copy(userSelectedContentTypeFilter = action.contentTypeFilter)
 
@@ -81,6 +79,11 @@ private fun downloadStateReducer(
         DownloadUIAction.Init -> state
         is DownloadUIAction.ShareUrlClicked -> state
         is DownloadUIAction.ShareFileClicked -> state
+        is DownloadUIAction.UndoPendingDeletion -> state
+        is DownloadUIAction.PauseDownload -> state
+        is DownloadUIAction.ResumeDownload -> state
+        is DownloadUIAction.RetryDownload -> state
+        is DownloadUIAction.CancelDownload -> state
 
         is DownloadUIAction.SearchBarDismissRequest -> state.copy(
             isSearchFieldRequested = false,

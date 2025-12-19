@@ -6,6 +6,7 @@
 
 /**
  * UI reducer
+ *
  * @module reducers/ui
  */
 
@@ -31,7 +32,6 @@ export const initialUIState = () => ({
   isLogPoint: false,
   orientation: "horizontal",
   viewport: null,
-  cursorPosition: null,
   inlinePreviewEnabled: features.inlinePreview,
   editorWrappingEnabled: prefs.editorWrapping,
   javascriptEnabled: true,
@@ -59,6 +59,7 @@ export const initialUIState = () => ({
   hideIgnoredSources: prefs.hideIgnoredSources,
   sourceMapsEnabled: prefs.clientSourceMapsEnabled,
   sourceMapIgnoreListEnabled: prefs.sourceMapIgnoreListEnabled,
+  pausedOverlayEnabled: prefs.pausedOverlayEnabled,
 });
 
 function update(state = initialUIState(), action) {
@@ -140,18 +141,14 @@ function update(state = initialUIState(), action) {
       return { ...state, viewport: action.viewport };
     }
 
-    case "SET_CURSOR_POSITION": {
-      return { ...state, cursorPosition: action.cursorPosition };
-    }
-
     case "NAVIGATE": {
       return { ...state, highlightedLineRange: null };
     }
 
-    case "REMOVE_THREAD": {
+    case "REMOVE_SOURCES": {
       // Reset the highlighted range if the related source has been removed
-      const sourceId = state.highlightedLineRange?.sourceId;
-      if (sourceId && action.sources.some(s => s.id == sourceId)) {
+      const source = state.highlightedLineRange?.source;
+      if (source && action.sources.includes(source)) {
         return { ...state, highlightedLineRange: null };
       }
       return state;
@@ -188,6 +185,15 @@ function update(state = initialUIState(), action) {
       if (shouldEnable !== state.sourceMapIgnoreListEnabled) {
         prefs.sourceMapIgnoreListEnabled = shouldEnable;
         return { ...state, sourceMapIgnoreListEnabled: shouldEnable };
+      }
+      return state;
+    }
+
+    case "ENABLE_PAUSED_OVERLAY": {
+      const { shouldEnable } = action;
+      if (shouldEnable !== state.pausedOverlayEnabled) {
+        prefs.pausedOverlayEnabled = shouldEnable;
+        return { ...state, pausedOverlayEnabled: shouldEnable };
       }
       return state;
     }

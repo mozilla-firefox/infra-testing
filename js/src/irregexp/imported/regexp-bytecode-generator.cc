@@ -172,9 +172,9 @@ void RegExpBytecodeGenerator::AdvanceCurrentPosition(int by) {
   advance_current_end_ = pc_;
 }
 
-void RegExpBytecodeGenerator::CheckGreedyLoop(
+void RegExpBytecodeGenerator::CheckFixedLengthLoop(
     Label* on_tos_equals_current_position) {
-  Emit(BC_CHECK_GREEDY, 0);
+  Emit(BC_CHECK_FIXED_LENGTH, 0);
   EmitOrLink(on_tos_equals_current_position);
 }
 
@@ -191,8 +191,7 @@ void RegExpBytecodeGenerator::LoadCurrentCharacterImpl(int cp_offset,
     check_bounds = false;  // Load below doesn't need to check.
   }
 
-  DCHECK_LE(kMinCPOffset, cp_offset);
-  DCHECK_GE(kMaxCPOffset, cp_offset);
+  CHECK(base::IsInRange(cp_offset, kMinCPOffset, kMaxCPOffset));
   int bytecode;
   if (check_bounds) {
     if (characters == 4) {

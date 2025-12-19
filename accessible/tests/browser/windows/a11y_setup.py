@@ -15,7 +15,7 @@ from dataclasses import dataclass
 import comtypes.automation
 import comtypes.client
 import psutil
-from comtypes import COMError, IServiceProvider
+from comtypes import GUID, COMError, IServiceProvider
 
 CHILDID_SELF = 0
 COWAIT_DEFAULT = 0
@@ -23,10 +23,45 @@ EVENT_OBJECT_FOCUS = 0x8005
 EVENT_SYSTEM_SCROLLINGSTART = 0x12
 GA_ROOT = 2
 NAVRELATION_EMBEDS = 0x1009
+OBJID_CARET = -8
 OBJID_CLIENT = -4
 RPC_S_CALLPENDING = -2147417835
 WINEVENT_OUTOFCONTEXT = 0
 WM_CLOSE = 0x0010
+
+
+def registerIa2Proxy():
+    """Register the IAccessible2 proxy.
+    This is only used on CI because we don't want to mess with the registry on
+    local developer machines. Developers should register the proxy themselves
+    using regsvr32.
+    This registers in HKEY_CURRENT_USER rather than HKEY_LOCAL_MACHINE so that
+    this can be done without administrator privileges. regsvr32 registers in
+    HKEY_LOCAL_MACHINE, so we can't use that here.
+    """
+    import winreg
+
+    dll = os.path.join(os.getcwd(), "IA2Marshal.dll")
+    if not os.path.isfile(dll):
+        raise RuntimeError(f"Couldn't find IAccessible2 proxy dll: {dll}")
+    # This must be kept in sync with accessible/interfaces/ia2/moz.build.
+    clsid = "{F9A6CC32-B0EF-490B-B102-179DDEEB08ED}"
+    with winreg.CreateKey(
+        winreg.HKEY_CURRENT_USER, rf"SOFTWARE\Classes\CLSID\{clsid}\InProcServer32"
+    ) as key:
+        winreg.SetValue(key, None, winreg.REG_SZ, dll)
+    for interface in (
+        # IA2 interfaces that aren't included in the proxy dll bundled with
+        # Windows.
+        # IAccessibleTextSelectionContainer
+        "{2118B599-733F-43D0-A569-0B31D125ED9A}",
+    ):
+        with winreg.CreateKey(
+            winreg.HKEY_CURRENT_USER,
+            rf"SOFTWARE\Classes\Interface\{interface}\ProxyStubClsid32",
+        ) as key:
+            winreg.SetValue(key, None, winreg.REG_SZ, clsid)
+
 
 user32 = ctypes.windll.user32
 oleacc = ctypes.oledll.oleacc
@@ -47,6 +82,7 @@ ia2Tlb = os.path.join(
 if not os.path.isfile(ia2Tlb):
     # This is the path if running in CI.
     ia2Tlb = os.path.join(os.getcwd(), "ia2Typelib.tlb")
+    registerIa2Proxy()
 ia2Mod = comtypes.client.GetModule(ia2Tlb)
 del ia2Tlb
 # Shove all the IAccessible* interfaces and IA2_* constants directly
@@ -63,6 +99,24 @@ uiaClient = comtypes.CoCreateInstance(
     interface=uiaMod.IUIAutomation,
     clsctx=comtypes.CLSCTX_INPROC_SERVER,
 )
+
+# Register UIA custom properties.
+# IUIAutomationRegistrar is in a different type library.
+uiaCoreMod = comtypes.client.GetModule(("{930299ce-9965-4dec-b0f4-a54848d4b667}",))
+uiaReg = comtypes.CoCreateInstance(
+    uiaCoreMod.CUIAutomationRegistrar._reg_clsid_,
+    interface=uiaCoreMod.IUIAutomationRegistrar,
+)
+uiaAccessibleActionsPropertyId = uiaReg.RegisterProperty(
+    byref(
+        uiaCoreMod.UIAutomationPropertyInfo(
+            GUID("{8C787AC3-0405-4C94-AC09-7A56A173F7EF}"),
+            "AccessibleActions",
+            uiaCoreMod.UIAutomationType_ElementArray,
+        )
+    )
+)
+del uiaReg, uiaCoreMod
 
 _threadLocal = threading.local()
 

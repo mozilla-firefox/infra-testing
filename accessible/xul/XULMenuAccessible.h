@@ -22,7 +22,9 @@ class XULMenuitemAccessible : public AccessibleWrap {
   XULMenuitemAccessible(nsIContent* aContent, DocAccessible* aDoc);
 
   // LocalAccessible
-  virtual void Description(nsString& aDescription) const override;
+  virtual ENameValueFlag DirectName(nsString& aName) const override;
+  virtual EDescriptionValueFlag Description(
+      nsString& aDescription) const override;
   virtual a11y::role NativeRole() const override;
   virtual uint64_t NativeState() const override;
   virtual uint64_t NativeInteractiveState() const override;

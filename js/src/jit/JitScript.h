@@ -69,7 +69,7 @@ static_assert((CompilingScript & SpecialScriptBit) != 0);
 static BaselineScript* const BaselineDisabledScriptPtr =
     reinterpret_cast<BaselineScript*>(DisabledScript);
 static BaselineScript* const BaselineQueuedScriptPtr =
-    reinterpret_cast<BaselineScript*>(DisabledScript);
+    reinterpret_cast<BaselineScript*>(QueuedScript);
 static BaselineScript* const BaselineCompilingScriptPtr =
     reinterpret_cast<BaselineScript*>(CompilingScript);
 
@@ -180,6 +180,10 @@ class alignas(uintptr_t) ICScript final : public TrailingArray<ICScript> {
     return numElements<ICEntry>(icEntriesOffset(), fallbackStubsOffset());
   }
 
+  static constexpr Offset offsetOfEnvAllocSite() {
+    return offsetof(ICScript, envAllocSite_);
+  }
+
   ICEntry* interpreterICEntryFromPCOffset(uint32_t pcOffset);
 
   ICEntry& icEntryFromPCOffset(uint32_t pcOffset);
@@ -201,13 +205,16 @@ class alignas(uintptr_t) ICScript final : public TrailingArray<ICScript> {
 
   gc::AllocSite* getOrCreateAllocSite(JSScript* outerScript, uint32_t pcOffset);
 
+  void ensureEnvAllocSite(JSScript* outerScript);
+  gc::AllocSite* maybeEnvAllocSite() const { return envAllocSite_; }
+
   void prepareForDestruction(Zone* zone);
 
   void trace(JSTracer* trc);
   bool traceWeak(JSTracer* trc);
 
 #ifdef DEBUG
-  mozilla::HashNumber hash();
+  mozilla::HashNumber hash(JSContext* cx);
 #endif
 
  private:
@@ -231,6 +238,9 @@ class alignas(uintptr_t) ICScript final : public TrailingArray<ICScript> {
   static constexpr size_t AllocSiteChunkSize = 256;
   LifoAlloc allocSitesSpace_{AllocSiteChunkSize, js::BackgroundMallocArena};
   Vector<gc::AllocSite*, 0, SystemAllocPolicy> allocSites_;
+
+  // Optional alloc site to use when allocating environment chain objects.
+  gc::AllocSite* envAllocSite_ = nullptr;
 
   // Number of times this copy of the script has been called or has had
   // backedges taken.  Reset if the script's JIT code is forcibly discarded.
@@ -352,6 +362,7 @@ class alignas(uintptr_t) JitScript final
   struct Flags {
     // True if this script entered Ion via OSR at a loop header.
     bool hadIonOSR : 1;
+    bool ranBytecodeAnalysis : 1;
   };
   Flags flags_ = {};  // Zero-initialize flags.
 
@@ -392,6 +403,9 @@ class alignas(uintptr_t) JitScript final
   void setHadIonOSR() { flags_.hadIonOSR = true; }
   bool hadIonOSR() const { return flags_.hadIonOSR; }
 
+  void setRanBytecodeAnalysis() { flags_.ranBytecodeAnalysis = true; }
+  bool ranBytecodeAnalysis() const { return flags_.ranBytecodeAnalysis; }
+
   uint32_t numICEntries() const { return icScript_.numICEntries(); }
 
 #ifdef DEBUG
@@ -400,6 +414,7 @@ class alignas(uintptr_t) JitScript final
   void resetAllActiveFlags();
 
   void ensureProfileString(JSContext* cx, JSScript* script);
+  void ensureProfilerScriptSource(JSContext* cx, JSScript* script);
 
   const char* profileString() const {
     MOZ_ASSERT(profileString_);
@@ -469,6 +484,8 @@ class alignas(uintptr_t) JitScript final
 
   void updateLastICStubCounter() { warmUpCountAtLastICStub_ = warmUpCount(); }
   uint32_t warmUpCountAtLastICStub() const { return warmUpCountAtLastICStub_; }
+
+  bool hasEnvAllocSite() const { return icScript_.envAllocSite_; }
 
  private:
   // Methods to set baselineScript_ to a BaselineScript*, nullptr, or

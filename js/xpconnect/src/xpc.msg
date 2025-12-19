@@ -139,8 +139,8 @@ XPC_MSG_DEF(NS_ERROR_FIRST_HEADER_FIELD_COMPONENT_EMPTY, "Couldn't extract first
 XPC_MSG_DEF(NS_ERROR_ALREADY_CONNECTED              , "The connection is already established")
 XPC_MSG_DEF(NS_ERROR_NOT_CONNECTED                  , "The connection does not exist")
 XPC_MSG_DEF(NS_ERROR_CONNECTION_REFUSED             , "The connection was refused")
-XPC_MSG_DEF(NS_ERROR_SUPERFLUOS_AUTH                , "User refused navigation to potentially unsafe URL with embedded credentials/superfluos authentication")
 XPC_MSG_DEF(NS_ERROR_BASIC_HTTP_AUTH_DISABLED       , "User attempted basic HTTP authentication when it is disabled")
+XPC_MSG_DEF(NS_ERROR_LOCAL_NETWORK_ACCESS_DENIED    , "The access to local network is denied")
 
 /* Error codes return from the proxy */
 XPC_MSG_DEF(NS_ERROR_PROXY_CONNECTION_REFUSED           , "The connection to the proxy server was refused")
@@ -190,6 +190,9 @@ XPC_MSG_DEF(NS_ERROR_INSUFFICIENT_DOMAIN_LEVELS     , "The requested number of d
 XPC_MSG_DEF(NS_ERROR_HOST_IS_IP_ADDRESS             , "The host string is an IP address")
 XPC_MSG_DEF(NS_ERROR_NOT_SAME_THREAD                , "Can't access a wrapped JS object from a different thread")
 
+XPC_MSG_DEF(NS_ERROR_DOM_BAD_URI                    , "Access to restricted URI denied")
+XPC_MSG_DEF(NS_ERROR_WEBSOCKET_CONNECTION_REFUSED   , "Opening the Websocket failed")
+
 /* storage related codes (from mozStorage.h) */
 XPC_MSG_DEF(NS_ERROR_STORAGE_BUSY                   , "SQLite database connection is busy")
 XPC_MSG_DEF(NS_ERROR_STORAGE_IOERR                  , "SQLite encountered an IO error")
@@ -212,6 +215,12 @@ XPC_MSG_DEF(NS_ERROR_SIGNED_JAR_ENTRY_INVALID       , "An entry in the JAR is in
 XPC_MSG_DEF(NS_ERROR_SIGNED_JAR_MANIFEST_INVALID    , "The JAR's manifest or signature file is invalid.")
 XPC_MSG_DEF(NS_ERROR_CMS_VERIFY_NO_CONTENT_INFO     , "The PKCS#7 signature is malformed or invalid.")
 XPC_MSG_DEF(NS_ERROR_CMS_VERIFY_NOT_SIGNED          , "The PKCS#7 information is not signed.")
+
+/* Codes related to pdf signature verification */
+XPC_MSG_DEF(NS_ERROR_CMS_VERIFY_ERROR_PROCESSING    , "The PKCS#7 parsing has failed.")
+XPC_MSG_DEF(NS_ERROR_CMS_VERIFY_NOT_YET_ATTEMPTED   , "The PKCS#7 certificate verification was cancelled.")
+XPC_MSG_DEF(NS_ERROR_CMS_VERIFY_BAD_SIGNATURE       , "Invalid signature.")
+XPC_MSG_DEF(NS_ERROR_CMS_VERIFY_NOCERT              , "No certificate was found.")
 
 /* Codes related to signed manifests */
 XPC_MSG_DEF(NS_ERROR_SIGNED_APP_MANIFEST_INVALID   , "The signed app manifest or signature file is invalid.")
@@ -250,6 +259,7 @@ XPC_MSG_DEF(NS_ERROR_FINGERPRINTING_URI               , "The URI is fingerprinti
 XPC_MSG_DEF(NS_ERROR_CRYPTOMINING_URI                 , "The URI is cryptomining")
 XPC_MSG_DEF(NS_ERROR_SOCIALTRACKING_URI               , "The URI is social tracking")
 XPC_MSG_DEF(NS_ERROR_EMAILTRACKING_URI                , "The URI is email tracking")
+XPC_MSG_DEF(NS_ERROR_HARMFULADDON_URI                 , "The URI is not available for add-ons")
 
 /* Profile manager error codes */
 XPC_MSG_DEF(NS_ERROR_DATABASE_CHANGED                 , "Flushing the profiles to disk would have overwritten changes made elsewhere.")
@@ -262,3 +272,6 @@ XPC_MSG_DEF(NS_ERROR_WDBA_NO_PROGID                   , "The ProgID classes had 
 XPC_MSG_DEF(NS_ERROR_WDBA_HASH_CHECK                  , "The existing UserChoice Hash could not be verified.")
 XPC_MSG_DEF(NS_ERROR_WDBA_REJECTED                    , "UserChoice was set, but checking the default did not return our ProgID.")
 XPC_MSG_DEF(NS_ERROR_WDBA_BUILD                       , "The existing UserChoice Hash was verified, but we're on an older, unsupported Windows build, so do not attempt to update the UserChoice hash.")
+
+/* Codes related to QuotaManager */
+XPC_MSG_DEF(NS_ERROR_DOM_QM_CLIENT_INIT_ORIGIN_UNINITIALIZED, "Client initialization attempted before origin has been initialized.")

@@ -49,6 +49,17 @@ close-tabs-to-the-end-vertical =
 close-other-tabs =
     .label = Close Other Tabs
     .accesskey = o
+
+## Variables:
+##  $tabCount (Number): the number of tabs that are affected by the action.
+
+tab-context-unload-n-tabs =
+    .label =
+        { $tabCount ->
+            [1] Unload Tab
+           *[other] Unload { $tabCount } Tabs
+        }
+    .accesskey = U
 reload-tabs =
     .label = Reload Tabs
     .accesskey = R
@@ -82,6 +93,10 @@ move-to-end =
 move-to-new-window =
     .label = Move to New Window
     .accesskey = W
+# Variables
+#  $profileName (string): The name of the profile to move tab to
+move-to-new-profile =
+    .label = Move to { $profileName }
 tab-context-close-multiple-tabs =
     .label = Close Multiple Tabs
     .accesskey = M
@@ -117,10 +132,11 @@ tab-context-move-tabs =
         }
     .accesskey = v
 
-tab-context-send-tabs-to-device =
+# The following string intentionally omits the word "Tab" from the singular and includes it in the plural.
+tab-context-send-to-device =
     .label =
         { $tabCount ->
-            [1] Send Tab to Device
+            [1] Send to Device
            *[other] Send { $tabCount } Tabs to Device
         }
     .accesskey = n

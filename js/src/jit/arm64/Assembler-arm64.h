@@ -7,8 +7,6 @@
 #ifndef A64_ASSEMBLER_A64_H_
 #define A64_ASSEMBLER_A64_H_
 
-#include <iterator>
-
 #include "jit/arm64/vixl/Assembler-vixl.h"
 
 #include "jit/CompactBuffer.h"
@@ -360,7 +358,6 @@ static constexpr Register IntArgReg4{Registers::x4};
 static constexpr Register IntArgReg5{Registers::x5};
 static constexpr Register IntArgReg6{Registers::x6};
 static constexpr Register IntArgReg7{Registers::x7};
-static constexpr Register HeapReg{Registers::x21};
 
 // Define unsized Registers.
 #define DEFINE_UNSIZED_REGISTERS(N) \
@@ -665,49 +662,46 @@ class Assembler : public vixl::Assembler {
 static const uint32_t NumIntArgRegs = 8;
 static const uint32_t NumFloatArgRegs = 8;
 
-class ABIArgGenerator {
+class ABIArgGenerator : public ABIArgGeneratorShared {
  public:
-  ABIArgGenerator()
-      : intRegIndex_(0), floatRegIndex_(0), stackOffset_(0), current_() {}
+  explicit ABIArgGenerator(ABIKind kind)
+      : ABIArgGeneratorShared(kind),
+        intRegIndex_(0),
+        floatRegIndex_(0),
+        current_() {}
 
   ABIArg next(MIRType argType);
   ABIArg& current() { return current_; }
-  uint32_t stackBytesConsumedSoFar() const { return stackOffset_; }
-  void increaseStackOffset(uint32_t bytes) { stackOffset_ += bytes; }
 
  protected:
   unsigned intRegIndex_;
   unsigned floatRegIndex_;
-  uint32_t stackOffset_;
   ABIArg current_;
 };
 
-// These registers may be volatile or nonvolatile.
+// See "ABI special registers" in Assembler-shared.h for more information.
 static constexpr Register ABINonArgReg0 = r8;
 static constexpr Register ABINonArgReg1 = r9;
 static constexpr Register ABINonArgReg2 = r10;
 static constexpr Register ABINonArgReg3 = r11;
 
-// This register may be volatile or nonvolatile. Avoid d31 which is the
-// ScratchDoubleReg_.
+// See "ABI special registers" in Assembler-shared.h for more information.
+// Avoid d31 which is the ScratchDoubleReg_.
 static constexpr FloatRegister ABINonArgDoubleReg = {FloatRegisters::s16,
                                                      FloatRegisters::Single};
 
-// These registers may be volatile or nonvolatile.
-// Note: these three registers are all guaranteed to be different
+// See "ABI special registers" in Assembler-shared.h for more information.
 static constexpr Register ABINonArgReturnReg0 = r8;
 static constexpr Register ABINonArgReturnReg1 = r9;
 static constexpr Register ABINonVolatileReg{Registers::x19};
 
-// This register is guaranteed to be clobberable during the prologue and
-// epilogue of an ABI call which must preserve both ABI argument, return
-// and non-volatile registers.
-static constexpr Register ABINonArgReturnVolatileReg = lr;
+// See "ABI special registers" in Assembler-shared.h for more information.
+static constexpr Register ABINonArgReturnVolatileReg = r8;
 
-// Instance pointer argument register for WebAssembly functions. This must not
-// alias any other register used for passing function arguments or return
-// values. Preserved by WebAssembly functions.  Must be nonvolatile.
+// See "ABI special registers" in Assembler-shared.h, and "The WASM ABIs" in
+// WasmFrame.h for more information.
 static constexpr Register InstanceReg{Registers::x23};
+static constexpr Register HeapReg{Registers::x21};
 
 // Registers used for wasm table calls. These registers must be disjoint
 // from the ABI argument registers, InstanceReg and each other.

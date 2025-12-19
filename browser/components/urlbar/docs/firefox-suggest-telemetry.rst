@@ -5,6 +5,9 @@ This document describes the telemetry that Firefox records for the Firefox
 Suggest feature. That is, it describes Firefox Suggest telemetry recorded on the
 client. It also discusses the data that Firefox sends to the Merino service.
 
+This document only covers Legacy telemetry, not Glean telemetry.
+Glean metrics are self-documenting and can be looked up in the Glean dictionary.
+
 For information on other telemetry related to the address bar, see the general
 address bar :doc:`telemetry` document. For information on all telemetry in
 Firefox, see the toolkit :doc:`/toolkit/components/telemetry/index` document.
@@ -1328,7 +1331,11 @@ Changelog
   Firefox 94.0.2
     Introduced. [Bug 1735976_]
 
+  Firefox 146.0
+    Removed. [Bug 1995362_]
+
 .. _1735976: https://bugzilla.mozilla.org/show_bug.cgi?id=1735976
+.. _1995362: https://bugzilla.mozilla.org/show_bug.cgi?id=1995362
 
 browser.urlbar.suggest.quicksuggest
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1368,8 +1375,12 @@ Changelog
     all other users, it will default to true when/if they are enrolled in
     online. [Bug 1740965_]
 
+  Firefox 146.0
+    Removed. [Bug 1995574_]
+
 .. _1735976: https://bugzilla.mozilla.org/show_bug.cgi?id=1735976
 .. _1740965: https://bugzilla.mozilla.org/show_bug.cgi?id=1740965
+.. _1995574: https://bugzilla.mozilla.org/show_bug.cgi?id=1995574
 
 browser.urlbar.suggest.quicksuggest.sponsored
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

@@ -6,7 +6,9 @@ package org.mozilla.geckoview.test
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.MediumTest
-import org.hamcrest.Matchers.* // ktlint-disable no-wildcard-imports
+import org.hamcrest.Matchers.equalTo
+import org.hamcrest.Matchers.greaterThanOrEqualTo
+import org.hamcrest.Matchers.lessThanOrEqualTo
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -42,14 +44,14 @@ class LocaleTest : BaseSessionTest() {
     }
 
     @Test
-    fun acceptLangaugeFormat() {
+    fun acceptLanguageFormat() {
         // No way to override default language settings from unit test.
         // So we only test this on current settings.
 
-        val intlAcceptLanauge = "intl.accept_languages"
-        val prefValue = (sessionRule.getPrefs(intlAcceptLanauge)[0] as String).split(",")
+        val intlAcceptLanguage = "intl.accept_languages"
+        val prefValue = (sessionRule.getPrefs(intlAcceptLanguage)[0] as String).split(",")
         for (value in prefValue) {
-            assertThat("Accept-Lanauge format should be language or language-region", value.filter { it == '-' }.count(), lessThanOrEqualTo(1))
+            assertThat("Accept-Language format should be language or language-region", value.filter { it == '-' }.count(), lessThanOrEqualTo(1))
         }
     }
 }

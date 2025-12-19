@@ -41,7 +41,7 @@ include protocol PURLClassifier;
 include protocol PURLClassifierLocal;
 include protocol PURLClassifierLocalByName;
 include protocol PVRManager;
-include protocol PRemoteDecoderManager;
+include protocol PRemoteMediaManager;
 include protocol PRemoteWorkerDebuggerManager;
 include protocol PRemoteWorkerService;
 include protocol PProfiler;
@@ -53,6 +53,7 @@ include WindowGlobalTypes;
 include IPCBlob;
 include IPCStream;
 include IPCTransferable;
+include JSIPCValue;
 include PPrintingTypes;
 include PTabContext;
 include ProtocolTypes;
@@ -110,7 +111,7 @@ using mozilla::LayoutDeviceIntPoint from "Units.h";
 using mozilla::ImagePoint from "Units.h";
 using mozilla::widget::ThemeChangeKind from "mozilla/widget/WidgetMessageUtils.h";
 using class mozilla::dom::MessagePort from "mozilla/dom/MessagePort.h";
-[MoveOnly=data] using class mozilla::dom::ipc::StructuredCloneData from "mozilla/dom/ipc/StructuredCloneData.h";
+using class mozilla::dom::ipc::StructuredCloneData from "mozilla/dom/ipc/StructuredCloneData.h";
 using mozilla::OriginAttributes from "mozilla/ipc/BackgroundUtils.h";
 using mozilla::OriginAttributesPattern from "mozilla/dom/quota/SerializationHelpers.h";
 using struct mozilla::layers::TextureFactoryIdentifier from "mozilla/layers/CompositorTypes.h";
@@ -122,6 +123,7 @@ using mozilla::Telemetry::ScalarAction from "mozilla/TelemetryComms.h";
 using mozilla::Telemetry::KeyedScalarAction from "mozilla/TelemetryComms.h";
 using mozilla::Telemetry::DynamicScalarDefinition from "mozilla/TelemetryComms.h";
 using mozilla::Telemetry::ChildEventData from "mozilla/TelemetryComms.h";
+using mozilla::TimeStamp from "mozilla/TimeStamp.h";
 using mozilla::dom::geolocation::SystemGeolocationPermissionBehavior from "mozilla/dom/GeolocationIPCUtils.h";
 using mozilla::dom::geolocation::GeolocationPermissionStatus from "mozilla/dom/GeolocationIPCUtils.h";
 
@@ -132,7 +134,7 @@ using mozilla::dom::geolocation::GeolocationPermissionStatus from "mozilla/dom/G
 #endif  // defined(XP_WIN)
 
 using mozilla::Telemetry::DiscardedData from "mozilla/TelemetryComms.h";
-using mozilla::glean::perf::PageLoadExtra from "mozilla/glean/DomMetrics.h";
+using mozilla::performance::pageload_event::PageloadEventData from "mozilla/PageloadEvent.h";
 [MoveOnly] using mozilla::CrossProcessMutexHandle from "mozilla/ipc/CrossProcessMutex.h";
 using mozilla::dom::MaybeDiscardedBrowsingContext from "mozilla/dom/BrowsingContext.h";
 using mozilla::dom::BrowsingContextTransaction from "mozilla/dom/BrowsingContext.h";
@@ -162,7 +164,7 @@ using class mozilla::dom::SessionHistoryInfo from "mozilla/dom/SessionHistoryEnt
 using struct nsPoint from "nsPoint.h";
 using struct mozilla::dom::LoadingSessionHistoryInfo from "mozilla/dom/SessionHistoryEntry.h";
 using mozilla::media::MediaCodecsSupported from "MediaCodecsSupport.h";
-using mozilla::RemoteDecodeIn from "mozilla/RemoteDecoderManagerChild.h";
+using mozilla::RemoteMediaIn from "mozilla/RemoteMediaManagerChild.h";
 using mozilla::dom::PerformanceTimingData from "mozilla/dom/PerformanceTiming.h";
 using mozilla::dom::MaybeFeaturePolicyInfo from "mozilla/dom/FeaturePolicy.h";
 using mozilla::dom::Wireframe from "mozilla/dom/DocumentBinding.h";
@@ -173,6 +175,10 @@ using mozilla::dom::UserActivation::Modifiers from "mozilla/dom/UserActivation.h
 using mozilla::dom::PrivateAttributionImpressionType from "mozilla/dom/PrivateAttributionIPCUtils.h";
 using nsIClipboard::ClipboardType from "nsIClipboard.h";
 using nsIUrlClassifierFeature::listType from "nsIUrlClassifierFeature.h";
+
+#ifdef MOZ_WMF_CDM
+using nsIOriginStatusEntry from "nsIWindowsMediaFoundationCDMOriginsListService.h";
+#endif
 
 union ChromeRegistryItem
 {
@@ -381,6 +387,7 @@ struct XPCOMInitData
     GfxVarUpdate[] gfxNonDefaultVarUpdates;
     ContentDeviceData contentDeviceData;
     GfxInfoFeatureStatus[] gfxFeatureStatus;
+    nsCString[] sysLocales;
     nsCString[] appLocales;
     nsCString[] requestedLocales;
     L10nFileSourceDescriptor[] l10nFileSources;
@@ -471,6 +478,13 @@ struct BroadcastBlobURLUnregistrationRequest {
     nsCString url;
     nullable nsIPrincipal principal;
 };
+
+#ifdef MOZ_WMF_CDM
+struct IPCOriginStatusEntry {
+    nsCString origin;
+    int32_t status;
+};
+#endif
 
 /**
  * The PContent protocol is a top-level protocol between the UI process
@@ -569,8 +583,8 @@ both:
     async PWebBrowserPersistDocument(nullable PBrowser aBrowser,
                                      MaybeDiscardedBrowsingContext aContext);
 
-    async RawMessage(JSActorMessageMeta aMetadata, ClonedMessageData? aData,
-                     ClonedMessageData? aStack);
+    async RawMessage(JSActorMessageMeta aMetadata, JSIPCValue aData,
+                     UniquePtr<ClonedMessageData> aStack);
 
 child:
     async InitGMPService(Endpoint<PGMPServiceChild> service);
@@ -582,7 +596,7 @@ child:
       Endpoint<PCompositorManagerChild> compositor,
       Endpoint<PImageBridgeChild> imageBridge,
       Endpoint<PVRManagerChild> vr,
-      Endpoint<PRemoteDecoderManagerChild> video,
+      Endpoint<PRemoteMediaManagerChild> video,
       uint32_t[] namespaces);
 
     // Re-create the rendering stack using the given endpoints. This is sent
@@ -592,7 +606,7 @@ child:
       Endpoint<PCompositorManagerChild> compositor,
       Endpoint<PImageBridgeChild> bridge,
       Endpoint<PVRManagerChild> vr,
-      Endpoint<PRemoteDecoderManagerChild> video,
+      Endpoint<PRemoteMediaManagerChild> video,
       uint32_t[] namespaces);
 
     async NetworkLinkTypeChange(uint32_t type);
@@ -613,6 +627,8 @@ child:
                               bool minimizeMemoryUsage,
                               FileDescriptor? DMDFile)
         returns (uint32_t aGeneration);
+
+    async DecodeImage(nsIURI aURI, ImageIntSize aSize) returns (nsresult rv, IPCImage? image);
 
 #if defined(XP_WIN)
     /**
@@ -672,6 +688,8 @@ child:
                            OriginAttributesPattern? aPattern,
                            nsCString? aURL);
 
+    async InvalidateScriptCache();
+
     async SetOffline(bool offline);
     async SetConnectivity(bool connectivity);
     async SetCaptivePortalState(int32_t aState);
@@ -686,7 +704,7 @@ child:
     async ThemeChanged(FullLookAndFeel lookAndFeelData, ThemeChangeKind aKind);
 
     async PreferenceUpdate(Pref pref);
-    async VarUpdate(GfxVarUpdate var);
+    async VarUpdate(GfxVarUpdate[] var);
 
     async UpdatePerfStatsCollectionMask(uint64_t aMask);
     async CollectPerfStatsJSON() returns (nsCString aStats);
@@ -807,7 +825,7 @@ child:
     async UnregisterJSProcessActor(nsCString name);
 
     async SetXPCOMProcessAttributes(XPCOMInitData xpcomInit,
-                                    StructuredCloneData initialData,
+                                    UniquePtr<StructuredCloneData> initialData,
                                     FullLookAndFeel lookAndFeeldata,
                                     /* used on MacOSX/Linux/Android only: */
                                     SystemFontList systemFontList,
@@ -834,12 +852,6 @@ child:
     async NotifyIdleObserver(uint64_t observerId, nsCString topic, nsString str);
 
     async DomainSetChanged(uint32_t aSetType, uint32_t aChangeType, nullable nsIURI aDomain);
-
-    /**
-     * Notify the child that it will soon be asked to shutdown.
-     * This is sent with high priority right before the normal shutdown.
-     */
-    [Priority=control] async ShutdownConfirmedHP();
 
     /**
      * Notify the child to shutdown. The child will in turn call FinishShutdown
@@ -1044,12 +1056,18 @@ child:
 
     // Dispatches a "beforeunload" event to each in-process content window in the
     // subtree beginning at `aStartingAt`, and returns the result as documented in
-    // the `PermitUnloadResult` enum.
-    async DispatchBeforeUnloadToSubtree(MaybeDiscardedBrowsingContext aStartingAt)
+    // the `PermitUnloadResult` enum. If `aStartingAt` is an in-process, top-level
+    // browsing context, then a "navigate" event will also be dispatched.
+    // See https://html.spec.whatwg.org/#preventing-navigation:fire-a-traverse-navigate-event
+    async DispatchBeforeUnloadToSubtree(MaybeDiscardedBrowsingContext aStartingAt, SessionHistoryInfo? info)
+        returns (PermitUnloadResult result);
+
+    // Only dispatches "navigate" to the traversable. Used in case we don't want to dispatch beforeunload.
+    async DispatchNavigateToTraversable(MaybeDiscardedBrowsingContext aTraversable, SessionHistoryInfo? info)
         returns (PermitUnloadResult result);
 
     // Update the cached list of codec supported in the given process.
-    async UpdateMediaCodecsSupported(RemoteDecodeIn aLocation, MediaCodecsSupported aSupported);
+    async UpdateMediaCodecsSupported(RemoteMediaIn aLocation, MediaCodecsSupported aSupported);
 
     // Used to initialize the global variable in content processes with the
     // latched value in the parent process. See dom/LocalStorageCommon.h for more
@@ -1057,6 +1075,15 @@ child:
     async InitNextGenLocalStorageEnabled(bool enabled);
 
     async PRemotePrintJob();
+
+#ifdef MOZ_WMF_CDM
+    async UpdateMFCDMOriginEntries(IPCOriginStatusEntry[] aEntries);
+#endif
+
+both:
+    // Update the "History Action Activation" timestamp for all parents in the
+    // subtree beginning at `aTop`.
+    async ConsumeHistoryActivation(MaybeDiscardedBrowsingContext aTop);
 
 parent:
     async SynchronizeLayoutHistoryState(MaybeDiscardedBrowsingContext aContext,
@@ -1082,9 +1109,8 @@ parent:
     async GetLoadingSessionHistoryInfoFromParent(MaybeDiscardedBrowsingContext aContext)
         returns (LoadingSessionHistoryInfo? aLoadingInfo);
 
-    async GetContiguousSessionHistoryInfos(MaybeDiscardedBrowsingContext aContext,
-                                           SessionHistoryInfo aInfo)
-        returns (SessionHistoryInfo[] infos);
+    async SynchronizeNavigationAPIState(MaybeDiscardedBrowsingContext aContext,
+        ClonedMessageData aState);
 
     async RemoveFromBFCache(MaybeDiscardedBrowsingContext aContext);
 
@@ -1148,7 +1174,7 @@ parent:
     async ExtProtocolChannelConnectParent(uint64_t registrarId);
 
     sync SyncMessage(nsString aMessage, ClonedMessageData aData)
-      returns (StructuredCloneData[] retval);
+      returns (UniquePtr<StructuredCloneData>[] retval);
 
     async AddSecurityState(MaybeDiscardedWindowContext aContext, uint32_t aStateFlags);
 
@@ -1522,7 +1548,7 @@ parent:
                        nsCString aFeatures,
                        Modifiers aModifiers,
                        nullable nsIPrincipal aTriggeringPrincipal,
-                       nullable nsIContentSecurityPolicy aCsp,
+                       nullable nsIPolicyContainer aPolicyContainer,
                        nullable nsIReferrerInfo aReferrerInfo,
                        OriginAttributes aOriginAttributes,
                        bool aUserActivation,
@@ -1540,7 +1566,7 @@ parent:
       Modifiers aModifiers,
       nsString aName,
       nullable nsIPrincipal aTriggeringPrincipal,
-      nullable nsIContentSecurityPolicy aCsp,
+      nullable nsIPolicyContainer aPolicyContainer,
       nullable nsIReferrerInfo aReferrerInfo,
       OriginAttributes aOriginAttributes,
       bool aUserActivation,
@@ -1569,7 +1595,7 @@ parent:
     /**
      * Messages for communicating child Glean data to the parent process
      */
-    async RecordPageLoadEvent(PageLoadExtra event);
+    async RecordPageLoadEvent(PageloadEventData event, TimeStamp navigationStartTime, uint64_t aAndroidAppLinkLoadIdentifier);
 
     /**
      * Messages for communicating child Telemetry to the parent process
@@ -1763,12 +1789,18 @@ parent:
 
     async HistoryCommit(MaybeDiscardedBrowsingContext aContext,
                         uint64_t aLoadID, nsID aChangeID, uint32_t aLoadType,
-                        bool aPersist, bool aCloneEntryChildren,
+                        bool aCloneEntryChildren,
                         bool aChannelExpired, uint32_t aCacheKey);
 
     async HistoryGo(MaybeDiscardedBrowsingContext aContext, int32_t aOffset,
                     uint64_t aHistoryEpoch, bool aRequireUserInteraction,
-                    bool aUserActivation) returns(int32_t? requestedIndex);
+                    bool aUserActivation, bool aCheckForCancelation)
+      returns(int32_t? requestedIndex);
+
+    async NavigationTraverse(MaybeDiscardedBrowsingContext aContext, nsID aKey,
+                             uint64_t aHistoryEpoch, bool aUserActivation,
+                             bool aCheckForCancelation)
+      returns(nsresult result);
 
     async BlobURLDataRequest(nsCString aBlobURL,
                              nsIPrincipal aTriggeringPrincipal,
@@ -1925,6 +1957,9 @@ parent:
     // Buffer contains bincoded Rust structs.
     async FOGData(ByteBuf buf);
 
+parent:
+    async GeckoTraceExport(ByteBuf aBuf);
+
 child:
     // Temporary (bug 1641989) conduit for Glean data in content processes.
     // Tells the child to flush any pending data. Used in tests and ping
@@ -1954,6 +1989,11 @@ parent:
     // This can in particular be used to wait for a particular event in a
     // test document before taking the snapshot and starting e.g. IPC fuzzing.
     async SignalFuzzingReady();
+#endif
+
+#ifdef FUZZING
+    // Used by the child process to signal restarting the GPU process.
+    async KillGPUProcess();
 #endif
 
   async AttributionEvent(nsCString aSourceHost,

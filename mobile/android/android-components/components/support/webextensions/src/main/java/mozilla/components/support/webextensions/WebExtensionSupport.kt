@@ -38,6 +38,7 @@ import mozilla.components.lib.state.ext.flowScoped
 import mozilla.components.support.base.log.logger.Logger
 import mozilla.components.support.ktx.kotlin.isExtensionUrl
 import mozilla.components.support.ktx.kotlinx.coroutines.flow.filterChanged
+import mozilla.components.support.webextensions.WebExtensionSupport.initialize
 import mozilla.components.support.webextensions.facts.emitWebExtensionsInitializedFact
 import java.util.concurrent.ConcurrentHashMap
 
@@ -45,9 +46,10 @@ import java.util.concurrent.ConcurrentHashMap
  * Function to relay the permission request to the app / user.
  */
 typealias onUpdatePermissionRequest = (
-    current: WebExtension,
-    updated: WebExtension,
+    extension: WebExtension,
     newPermissions: List<String>,
+    newOrigins: List<String>,
+    newDataCollectionPermissions: List<String>,
     onPermissionsGranted: ((Boolean) -> Unit),
 ) -> Unit
 
@@ -167,6 +169,7 @@ object WebExtensionSupport {
      * engine. Note that the UI (browser/page actions etc.) may not be initialized at this point.
      * System add-ons (built-in extensions) will not be passed along.
      */
+    @Suppress("CognitiveComplexMethod")
     fun initialize(
         runtime: WebExtensionRuntime,
         store: BrowserStore,
@@ -174,7 +177,7 @@ object WebExtensionSupport {
         onNewTabOverride: ((WebExtension?, EngineSession, String) -> String)? = null,
         onCloseTabOverride: ((WebExtension?, String) -> Unit)? = null,
         onSelectTabOverride: ((WebExtension?, String) -> Unit)? = null,
-        onUpdatePermissionRequest: onUpdatePermissionRequest? = { _, _, _, _ -> },
+        onUpdatePermissionRequest: onUpdatePermissionRequest? = { _, _, _, _, _ -> },
         onExtensionsLoaded: ((List<WebExtension>) -> Unit)? = null,
     ) {
         this.onUpdatePermissionRequest = onUpdatePermissionRequest
@@ -308,6 +311,7 @@ object WebExtensionSupport {
                     extension: WebExtension,
                     permissions: List<String>,
                     origins: List<String>,
+                    dataCollectionPermissions: List<String>,
                     onConfirm: (PermissionPromptResponse) -> Unit,
                 ) {
                     store.dispatch(
@@ -316,6 +320,7 @@ object WebExtensionSupport {
                                 extension,
                                 permissions,
                                 origins,
+                                dataCollectionPermissions,
                                 onConfirm,
                             ),
                         ),
@@ -323,15 +328,17 @@ object WebExtensionSupport {
                 }
 
                 override fun onUpdatePermissionRequest(
-                    current: WebExtension,
-                    updated: WebExtension,
+                    extension: WebExtension,
                     newPermissions: List<String>,
+                    newOrigins: List<String>,
+                    newDataCollectionPermissions: List<String>,
                     onPermissionsGranted: ((Boolean) -> Unit),
                 ) {
                     this@WebExtensionSupport.onUpdatePermissionRequest?.invoke(
-                        current,
-                        updated,
+                        extension,
                         newPermissions,
+                        newOrigins,
+                        newDataCollectionPermissions,
                         onPermissionsGranted,
                     )
                 }
@@ -340,6 +347,7 @@ object WebExtensionSupport {
                     extension: WebExtension,
                     permissions: List<String>,
                     origins: List<String>,
+                    dataCollectionPermissions: List<String>,
                     onPermissionsGranted: ((Boolean) -> Unit),
                 ) {
                     store.dispatch(
@@ -348,6 +356,7 @@ object WebExtensionSupport {
                                 extension,
                                 permissions,
                                 origins,
+                                dataCollectionPermissions,
                                 onPermissionsGranted,
                             ),
                         ),
@@ -378,16 +387,14 @@ object WebExtensionSupport {
      */
     private fun registerInstalledExtensions(store: BrowserStore, runtime: WebExtensionRuntime) {
         runtime.listInstalledWebExtensions(
-            onSuccess = {
-                    extensions ->
+            onSuccess = { extensions ->
                 extensions.forEach { registerInstalledExtension(store, it) }
                 emitWebExtensionsInitializedFact(extensions)
                 closeUnsupportedTabs(store, extensions)
                 initializationResult.complete(Unit)
                 onExtensionsLoaded?.invoke(extensions.filter { !it.isBuiltIn() })
             },
-            onError = {
-                    throwable ->
+            onError = { throwable ->
                 logger.error("Failed to query installed extension", throwable)
                 initializationResult.completeExceptionally(throwable)
             },

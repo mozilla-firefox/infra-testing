@@ -112,7 +112,7 @@ class NotificationMessageBar extends MozLitElement {
       onDismiss: this.#handleDismiss,
       messageHandler: this.messageHandler,
       dataL10nId: "contextual-manager-passwords-import-success-heading",
-      messageL10nId: "contextual-manager-passwords-import-success-message",
+      messageL10nId: "contextual-manager-passwords-import-success-message-2",
       messageL10nArgs: this.notification.l10nArgs,
       type: "success",
       link: {
@@ -120,7 +120,7 @@ class NotificationMessageBar extends MozLitElement {
         dataL10nId: "contextual-manager-passwords-import-detailed-report",
       },
       primaryAction: {
-        type: "primary",
+        type: "default",
         telemetryType: "dismiss",
         telemetryId: this.notification.id,
         slot: "actions",
@@ -167,7 +167,7 @@ class NotificationMessageBar extends MozLitElement {
         dataL10nId: "contextual-manager-passwords-export-success-heading",
         type: "success",
         primaryAction: {
-          type: "primary",
+          type: "default",
           telemetryType: "dismiss",
           telemetryId: this.notification.id,
           slot: "actions",
@@ -187,7 +187,7 @@ class NotificationMessageBar extends MozLitElement {
         dataL10nArgs: JSON.stringify(this.notification.l10nArgs),
         type: "success",
         primaryAction: {
-          type: "primary",
+          type: "default",
           telemetryType: "nav_record",
           telemetryId: this.notification.id,
           slot: "actions",
@@ -212,7 +212,7 @@ class NotificationMessageBar extends MozLitElement {
         dataL10nArgs: JSON.stringify(this.notification.l10nArgs),
         type: "warning",
         primaryAction: {
-          type: "primary",
+          type: "default",
           telemetryType: "nav_record",
           telemetryId: this.notification.id,
           slot: "actions",
@@ -228,16 +228,19 @@ class NotificationMessageBar extends MozLitElement {
     `;
   }
 
-  #renderUpdateLoginSuccess() {
+  #renderUpdateLoginSuccess(id) {
+    const dataL10nId =
+      id == "update-username-success"
+        ? "contextual-manager-passwords-update-username-success-heading-3"
+        : "contextual-manager-passwords-update-password-success-heading";
     return html`
       ${notificationShell({
         onDismiss: this.#handleDismiss,
-        dataL10nId:
-          "contextual-manager-passwords-update-password-success-heading",
+        dataL10nId,
         dataL10nAttrs: "heading",
         type: "success",
         primaryAction: {
-          type: "primary",
+          type: "default",
           telemetryType: "dismiss",
           telemetryId: this.notification.id,
           slot: "actions",
@@ -260,7 +263,7 @@ class NotificationMessageBar extends MozLitElement {
         dataL10nAttrs: "heading",
         type: "success",
         primaryAction: {
-          type: "primary",
+          type: "default",
           telemetryType: "dismiss",
           telemetryId: this.notification.id,
           slot: "actions",
@@ -286,11 +289,7 @@ class NotificationMessageBar extends MozLitElement {
         dataL10nId: "contextual-manager-passwords-discard-changes-close-button",
         onClick: () => {
           this.messageHandler("Cancel", {}, this.notification.passwordIndex);
-          this.messageHandler("ConfirmDiscardChanges", {
-            value: {
-              fromSidebar: this.notification.fromSidebar,
-            },
-          });
+          this.messageHandler("ConfirmDiscardChanges");
         },
       },
       secondaryAction: {
@@ -372,6 +371,7 @@ class NotificationMessageBar extends MozLitElement {
       })}
     `;
   }
+
   render() {
     switch (this.notification?.id) {
       case "import-success":
@@ -385,7 +385,8 @@ class NotificationMessageBar extends MozLitElement {
       case "login-already-exists-warning":
         return this.#renderAddLoginAlreadyExistsWarning();
       case "update-login-success":
-        return this.#renderUpdateLoginSuccess();
+      case "update-username-success":
+        return this.#renderUpdateLoginSuccess(this.notification?.id);
       case "delete-login-success":
         return this.#renderDeleteLoginSuccess();
       case "discard-changes":

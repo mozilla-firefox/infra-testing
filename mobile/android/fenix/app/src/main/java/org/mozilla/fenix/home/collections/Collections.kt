@@ -8,7 +8,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.Surface
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.key
@@ -16,8 +17,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
-import mozilla.components.compose.base.annotation.LightDarkPreview
 import mozilla.components.feature.tab.collections.Tab
 import mozilla.components.feature.tab.collections.TabCollection
 import org.mozilla.fenix.R
@@ -108,44 +109,42 @@ private fun getMenuItems(
     return listOfNotNull(
         MenuItem(
             title = stringResource(R.string.collection_open_tabs),
-            color = FirefoxTheme.colors.textPrimary,
+            color = MaterialTheme.colorScheme.onSurface,
         ) {
             onOpenTabsTapped(collection)
         },
         MenuItem(
             title = stringResource(R.string.collection_rename),
-            color = FirefoxTheme.colors.textPrimary,
+            color = MaterialTheme.colorScheme.onSurface,
         ) {
             onRenameCollectionTapped(collection)
         },
-
         if (showAddTabs) {
             MenuItem(
                 title = stringResource(R.string.add_tab),
-                color = FirefoxTheme.colors.textPrimary,
+                color = MaterialTheme.colorScheme.onSurface,
             ) {
                 onAddTabTapped(collection)
             }
         } else {
             null
         },
-
         MenuItem(
             title = stringResource(R.string.collection_delete),
-            color = FirefoxTheme.colors.textCritical,
+            color = MaterialTheme.colorScheme.error,
         ) {
             onDeleteCollectionTapped(collection)
         },
     )
 }
 
-@LightDarkPreview
+@PreviewLightDark
 @Composable
 private fun CollectionsPreview() {
     val expandedCollections: MutableState<Set<Long>> = remember { mutableStateOf(setOf(1L)) }
 
     FirefoxTheme {
-        Surface(color = FirefoxTheme.colors.layer1) {
+        Surface {
             Collections(
                 modifier = Modifier.padding(8.dp),
                 collections = listOf(

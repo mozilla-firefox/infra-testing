@@ -2,6 +2,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+// We use importESModule here instead of static import so that
+// the Karma test environment won't choke on this module. This
+// is because the Karma test environment already stubs out
+// AppConstants, and overrides importESModule to be a no-op (which
+// can't be done for a static import statement).
+
+// eslint-disable-next-line mozilla/use-static-import
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
+);
+
 import {
   actionCreators as ac,
   actionTypes as at,
@@ -18,21 +29,25 @@ import {
   SEARCH_SHORTCUTS_HAVE_PINNED_PREF,
   checkHasSearchEngine,
   getSearchProvider,
-} from "resource://gre/modules/SearchShortcuts.sys.mjs";
+} from "moz-src:///toolkit/components/search/SearchShortcuts.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  ContextId: "moz-src:///browser/modules/ContextId.sys.mjs",
   FilterAdult: "resource:///modules/FilterAdult.sys.mjs",
   LinksCache: "resource:///modules/LinksCache.sys.mjs",
   NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
+  ObliviousHTTP: "resource://gre/modules/ObliviousHTTP.sys.mjs",
   PageThumbs: "resource://gre/modules/PageThumbs.sys.mjs",
   PersistentCache: "resource://newtab/lib/PersistentCache.sys.mjs",
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   Region: "resource://gre/modules/Region.sys.mjs",
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
   Sampling: "resource://gre/modules/components-utils/Sampling.sys.mjs",
   Screenshots: "resource://newtab/lib/Screenshots.sys.mjs",
+  Utils: "resource://services-settings/Utils.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "log", () => {
@@ -42,21 +57,23 @@ ChromeUtils.defineLazyGetter(lazy, "log", () => {
   return new Logger("TopSitesFeed");
 });
 
-// `contextId` is a unique identifier used by Contextual Services
-const CONTEXT_ID_PREF = "browser.contextual-services.contextId";
-ChromeUtils.defineLazyGetter(lazy, "contextId", () => {
-  let _contextId = Services.prefs.getStringPref(CONTEXT_ID_PREF, null);
-  if (!_contextId) {
-    _contextId = String(Services.uuid.generateUUID());
-    Services.prefs.setStringPref(CONTEXT_ID_PREF, _contextId);
+ChromeUtils.defineLazyGetter(lazy, "pageFrecencyThreshold", () => {
+  // @backward-compat { version 147 }
+  // Frecency was changed in 147 Nightly.
+  if (Services.vc.compare(AppConstants.MOZ_APP_VERSION, "147.0a1") >= 0) {
+    // 30 days ago, 5 visits. The threshold avoids one non-typed visit from
+    // immediately being included in recent history to mimic the original
+    // threshold which aimed to prevent first-run visits from being included in
+    // Top Sites.
+    return lazy.PlacesUtils.history.pageFrecencyThreshold(30, 5, false);
   }
-  return _contextId;
+  // The old threshold used for classic frecency: Slightly over one visit.
+  return 101;
 });
 
 const DEFAULT_SITES_PREF = "default.sites";
 const SHOWN_ON_NEWTAB_PREF = "feeds.topsites";
 export const DEFAULT_TOP_SITES = [];
-const FRECENCY_THRESHOLD = 100 + 1; // 1 visit (skip first-run/one-time pages)
 const MIN_FAVICON_SIZE = 96;
 const CACHED_LINK_PROPS_TO_MIGRATE = ["screenshot", "customScreenshot"];
 const PINNED_FAVICON_PROPS_TO_MIGRATE = [
@@ -79,8 +96,6 @@ const NIMBUS_VARIABLE_MAX_SPONSORED = "topSitesMaxSponsored";
 //considered for Top Sites.
 const NIMBUS_VARIABLE_ADDITIONAL_TILES =
   "topSitesUseAdditionalTilesFromContile";
-// Nimbus variable to enable the SOV feature for sponsored tiles.
-const NIMBUS_VARIABLE_CONTILE_SOV_ENABLED = "topSitesContileSovEnabled";
 // Nimbu variable for the total number of sponsor topsite that come from Contile
 // The default will be `CONTILE_MAX_NUM_SPONSORED` if variable is unspecified.
 const NIMBUS_VARIABLE_CONTILE_MAX_NUM_SPONSORED = "topSitesContileMaxSponsored";
@@ -91,8 +106,14 @@ const PREF_UNIFIED_ADS_PLACEMENTS = "discoverystream.placements.tiles";
 const PREF_UNIFIED_ADS_COUNTS = "discoverystream.placements.tiles.counts";
 const PREF_UNIFIED_ADS_BLOCKED_LIST = "unifiedAds.blockedAds";
 const PREF_UNIFIED_ADS_ADSFEED_ENABLED = "unifiedAds.adsFeed.enabled";
-const PREF_UNIFIED_ADS_ADSFEED_TILES_ENABLED =
-  "unifiedAds.adsFeed.tiles.enabled";
+
+const PREF_SOV_ENABLED = "sov.enabled";
+const PREF_SOV_FRECENCY_EXPOSURE = "sov.frecency.exposure";
+const PREF_SOV_NAME = "sov.name";
+const PREF_SOV_AMP_ALLOCATION = "sov.amp.allocation";
+const PREF_SOV_FRECENCY_ALLOCATION = "sov.frecency.allocation";
+const DEFAULT_SOV_SLOT_COUNT = 3;
+const DEFAULT_SOV_NUM_ITEMS = 200;
 
 // Search experiment stuff
 const FILTER_DEFAULT_SEARCH_PREF = "improvesearch.noDefaultSearchTile";
@@ -127,14 +148,38 @@ const CONTILE_CACHE_VALID_FOR_FALLBACK = 3 * 60 * 60; // 3 hours in seconds
 // Partners of sponsored tiles.
 const SPONSORED_TILE_PARTNER_AMP = "amp";
 const SPONSORED_TILE_PARTNER_MOZ_SALES = "moz-sales";
+const SPONSORED_TILE_PARTNER_FREC_BOOST = "frec-boost";
 const SPONSORED_TILE_PARTNERS = new Set([
   SPONSORED_TILE_PARTNER_AMP,
   SPONSORED_TILE_PARTNER_MOZ_SALES,
+  SPONSORED_TILE_PARTNER_FREC_BOOST,
 ]);
 
 const DISPLAY_FAIL_REASON_OVERSOLD = "oversold";
 const DISPLAY_FAIL_REASON_DISMISSED = "dismissed";
 const DISPLAY_FAIL_REASON_UNRESOLVED = "unresolved";
+
+const RS_FALLBACK_BASE_URL =
+  "https://firefox-settings-attachments.cdn.mozilla.net/";
+
+ChromeUtils.defineLazyGetter(lazy, "userAgent", () => {
+  return Cc["@mozilla.org/network/protocol;1?name=http"].getService(
+    Ci.nsIHttpProtocolHandler
+  ).userAgent;
+});
+
+// Smart shortcuts
+import { RankShortcutsProvider } from "resource://newtab/lib/SmartShortcutsRanker/RankShortcuts.mjs";
+
+const PREF_SYSTEM_SHORTCUTS_PERSONALIZATION =
+  "discoverystream.shortcuts.personalization.enabled";
+
+function smartshortcutsEnabled(values) {
+  const systemPref = values[PREF_SYSTEM_SHORTCUTS_PERSONALIZATION];
+  const experimentVariable = values.trainhopConfig?.smartShortcuts?.enabled;
+  return systemPref || experimentVariable;
+}
+const OVERSAMPLE_MULTIPLIER = 2;
 
 function getShortHostnameForCurrentSearch() {
   return lazy.NewTabUtils.shortHostname(
@@ -376,7 +421,7 @@ export class ContileIntegration {
   /**
    * Filter the tiles whose sponsor is on the Top Sites sponsor blocklist.
    *
-   * @param {array} tiles
+   * @param {Array} tiles
    *   An array of the tile objects
    */
   _filterBlockedSponsors(tiles) {
@@ -481,6 +526,7 @@ export class ContileIntegration {
           image_url: tile.image_url,
           impression_url: tile.callbacks.impression,
           image_size: 200,
+          attribution: tile.attributions || null,
         };
 
         formattedTileData.push(formattedData);
@@ -488,6 +534,71 @@ export class ContileIntegration {
     }
 
     return { tiles: formattedTileData };
+  }
+
+  sovEnabled() {
+    const { values } = this._topSitesFeed.store.getState().Prefs;
+    const trainhopSovEnabled = values?.trainhopConfig?.sov?.enabled;
+    return trainhopSovEnabled || values?.[PREF_SOV_ENABLED];
+  }
+
+  csvToInts(val) {
+    if (!val) {
+      return [];
+    }
+
+    return val
+      .split(",")
+      .map(s => s.trim())
+      .filter(item => item)
+      .map(item => parseInt(item, 10));
+  }
+
+  /**
+   * Builds a Share of Voice (SOV) config.
+   *
+   * @example input data from prefs/trainhopConfig
+   * // name: "SOV-20251122215625"
+   * // amp:  "100, 100, 100"
+   * // frec: "0, 0, 0"
+   *
+   * @returns {{
+   *   name: string,
+   *   allocations: Array<{
+   *     position: number,
+   *     allocation: Array<{
+   *       partner: string,
+   *       percentage: number,
+   *     }>,
+   *   }>,
+   * }}
+   */
+  generateSov() {
+    const { values } = this._topSitesFeed.store.getState().Prefs;
+    const trainhopSovConfig = values?.trainhopConfig?.sov || {};
+    const name = trainhopSovConfig.name || values[PREF_SOV_NAME];
+    const amp = this.csvToInts(
+      trainhopSovConfig.amp || values[PREF_SOV_AMP_ALLOCATION]
+    );
+    const frec = this.csvToInts(
+      trainhopSovConfig.frec || values[PREF_SOV_FRECENCY_ALLOCATION]
+    );
+
+    const allocations = Array.from(
+      { length: DEFAULT_SOV_SLOT_COUNT },
+      (val, i) => ({
+        position: i + 1, // 1-based
+        allocation: [
+          { partner: SPONSORED_TILE_PARTNER_AMP, percentage: amp[i] || 0 },
+          {
+            partner: SPONSORED_TILE_PARTNER_FREC_BOOST,
+            percentage: frec[i] || 0,
+          },
+        ],
+      })
+    );
+
+    return { name, allocations };
   }
 
   // eslint-disable-next-line max-statements
@@ -515,20 +626,53 @@ export class ContileIntegration {
 
     const adsFeedEnabled = state.Prefs.values[PREF_UNIFIED_ADS_ADSFEED_ENABLED];
 
-    const adsFeedTilesEnabled =
-      state.Prefs.values[PREF_UNIFIED_ADS_ADSFEED_TILES_ENABLED];
-
     const debugServiceName = unifiedAdsTilesEnabled ? "MARS" : "Contile";
 
     try {
       // Fetch Data via TopSitesFeed.sys.mjs
-      if (!adsFeedEnabled || !adsFeedTilesEnabled) {
+      if (!adsFeedEnabled) {
         // Fetch tiles via UAPI service directly from TopSitesFeed.sys.mjs
         if (unifiedAdsTilesEnabled) {
+          let fetchPromise;
+          const marsOhttpEnabled = Services.prefs.getBoolPref(
+            "browser.newtabpage.activity-stream.unifiedAds.ohttp.enabled",
+            false
+          );
+          const ohttpRelayURL = Services.prefs.getStringPref(
+            "browser.newtabpage.activity-stream.discoverystream.ohttp.relayURL",
+            ""
+          );
+          const ohttpConfigURL = Services.prefs.getStringPref(
+            "browser.newtabpage.activity-stream.discoverystream.ohttp.configURL",
+            ""
+          );
           const headers = new Headers();
           headers.append("content-type", "application/json");
 
           const endpointBaseUrl = state.Prefs.values[PREF_UNIFIED_ADS_ENDPOINT];
+
+          // We need some basic data that we can pass along to the ohttp request.
+          // We purposefully don't use ohttp on this request. We also expect to
+          // mostly hit the HTTP cache rather than the network with these requests.
+          if (marsOhttpEnabled) {
+            const preflightResponse = await this._topSitesFeed.fetch(
+              `${endpointBaseUrl}v1/ads-preflight`,
+              {
+                method: "GET",
+              }
+            );
+            const preFlight = await preflightResponse.json();
+
+            if (preFlight) {
+              // If we don't get a normalized_ua, it means it matched the default userAgent.
+              headers.append(
+                "X-User-Agent",
+                preFlight.normalized_ua || lazy.userAgent
+              );
+              headers.append("X-Geoname-ID", preFlight.geoname_id);
+              headers.append("X-Geo-Location", preFlight.geo_location);
+            }
+          }
 
           let blockedSponsors =
             this._topSitesFeed.store.getState().Prefs.values[
@@ -550,18 +694,57 @@ export class ContileIntegration {
             .filter(item => item)
             .map(item => parseInt(item, 10));
 
-          response = await this._topSitesFeed.fetch(fetchUrl, {
+          const controller = new AbortController();
+          const { signal } = controller;
+
+          const options = {
             method: "POST",
             headers,
             body: JSON.stringify({
-              context_id: lazy.contextId,
+              context_id: await lazy.ContextId.request(),
               placements: placementsArray.map((placement, index) => ({
                 placement,
                 count: countsArray[index],
               })),
               blocks: blockedSponsors.split(","),
             }),
-          });
+            credentials: "omit",
+            signal,
+          };
+
+          if (marsOhttpEnabled && ohttpConfigURL && ohttpRelayURL) {
+            const config =
+              await lazy.ObliviousHTTP.getOHTTPConfig(ohttpConfigURL);
+            if (!config) {
+              console.error(
+                new Error(
+                  `OHTTP was configured for ${fetchUrl} but we couldn't fetch a valid config`
+                )
+              );
+              return null;
+            }
+
+            // ObliviousHTTP.ohttpRequest only accepts a key/value object, and not
+            // a Headers instance. We normalize any headers to a key/value object.
+            //
+            // We use instanceof here since isInstance isn't available for
+            // Headers, it seems.
+            // eslint-disable-next-line mozilla/use-isInstance
+            if (options.headers && options.headers instanceof Headers) {
+              options.headers = Object.fromEntries(options.headers);
+            }
+
+            fetchPromise = lazy.ObliviousHTTP.ohttpRequest(
+              ohttpRelayURL,
+              config,
+              fetchUrl,
+              options
+            );
+          } else {
+            fetchPromise = this._topSitesFeed.fetch(fetchUrl, options);
+          }
+
+          response = await fetchPromise;
         } else {
           // (Default) Fetch tiles via Contile service from TopSitesFeed.sys.mjs
           const fetchUrl = Services.prefs.getStringPref(CONTILE_ENDPOINT_PREF);
@@ -611,9 +794,9 @@ export class ContileIntegration {
 
       // If using UAPI, normalize the data
       if (unifiedAdsTilesEnabled) {
-        if (adsFeedEnabled && adsFeedTilesEnabled) {
+        if (adsFeedEnabled) {
           // IMPORTANT: Ignore all previous fetch logic and get ads data from AdsFeed
-          const { tiles } = state.Ads.topsites;
+          const { tiles } = state.Ads;
           body = { tiles };
         } else {
           // Converts UAPI response into normalized tiles[] array
@@ -624,6 +807,8 @@ export class ContileIntegration {
       // Logic below runs the same regardless of ad source
       if (body?.sov) {
         this._sov = JSON.parse(atob(body.sov));
+      } else if (this.sovEnabled()) {
+        this._sov = this.generateSov();
       }
 
       if (body?.tiles && Array.isArray(body.tiles)) {
@@ -700,11 +885,14 @@ export class TopSitesFeed {
     this._telemetryUtility = new TopSitesTelemetry();
     this._contile = new ContileIntegration(this);
     this._tippyTopProvider = new TippyTopProvider();
+    this._frecencyBoostedSponsors = new Map();
+    this._frecencyBoostRS = null;
     ChromeUtils.defineLazyGetter(
       this,
       "_currentSearchHostname",
       getShortHostnameForCurrentSearch
     );
+    this.ranker = new RankShortcutsProvider();
 
     this.dedupe = new Dedupe(this._dedupeKey);
     this.frecentCache = new lazy.LinksCache(
@@ -870,6 +1058,7 @@ export class TopSitesFeed {
           sponsored_tile_id: site.id,
           partner: SPONSORED_TILE_PARTNER_AMP,
           block_key: site.id,
+          attribution: site.attribution,
         };
         if (site.image_url && site.image_size >= MIN_FAVICON_SIZE) {
           // Only use the image from Contile if it's hi-res, otherwise, fallback
@@ -1088,10 +1277,11 @@ export class TopSitesFeed {
   }
 
   /**
-   * _maybeInsertSearchShortcuts - if the search shortcuts experiment is running,
-   *                               insert search shortcuts if needed
+   * If the search shortcuts experiment is running, insert search shortcuts if
+   * needed.
+   *
    * @param {Array} plainPinnedSites (from the pinnedSitesCache)
-   * @returns {Boolean} Did we insert any search shortcuts?
+   * @returns {boolean} Did we insert any search shortcuts?
    */
   async _maybeInsertSearchShortcuts(plainPinnedSites) {
     // Only insert shortcuts if the experiment is running
@@ -1179,6 +1369,252 @@ export class TopSitesFeed {
     return fetch(...args);
   }
 
+  get _frecencyBoostRemoteSettings() {
+    if (!this._frecencyBoostRS) {
+      this._frecencyBoostRS = lazy.RemoteSettings(
+        "newtab-frecency-boosted-sponsors"
+      );
+    }
+    return this._frecencyBoostRS;
+  }
+
+  /**
+   * Import all sponsors from Remote Settings and save their favicons.
+   * This is called lazily when frecency boosted spocs are first requested.
+   * We fetch all favicons regardless of whether the user has visited these sites.
+   */
+  async _importFrecencyBoostedSponsors() {
+    const records = await this._frecencyBoostRemoteSettings.get();
+
+    const userRegion = lazy.Region.home || "";
+    const regionRecords = records.filter(
+      record => record.region === userRegion
+    );
+
+    await Promise.all(
+      regionRecords.map(record =>
+        this._importFrecencyBoostedSponsor(record).catch(error => {
+          lazy.log.warn(
+            `Failed to import sponsor ${record.title || "unknown"}`,
+            error
+          );
+        })
+      )
+    );
+  }
+
+  /**
+   * Import a single sponsor record and fetch its favicon as data URI.
+   *
+   * @param {object} record - Remote Settings record with title, domain, redirect_url, and attachment
+   */
+  async _importFrecencyBoostedSponsor(record) {
+    const { title, domain, redirect_url, attachment } = record;
+    const faviconDataURI = await this._fetchSponsorFaviconAsDataURI(attachment);
+    const { hostname } = new URL(domain);
+
+    const sponsorData = {
+      title,
+      domain,
+      hostname,
+      redirectURL: redirect_url,
+      faviconDataURI,
+    };
+
+    this._frecencyBoostedSponsors.set(hostname, sponsorData);
+  }
+
+  /**
+   * Fetch favicon from Remote Settings attachment and return as data URI.
+   *
+   * @param {object} attachment - Remote Settings attachment object
+   * @returns {Promise<string|null>} Favicon data URI, or null on error
+   */
+  async _fetchSponsorFaviconAsDataURI(attachment) {
+    let baseAttachmentURL = RS_FALLBACK_BASE_URL;
+    try {
+      baseAttachmentURL = await lazy.Utils.baseAttachmentsURL();
+    } catch (error) {
+      lazy.log.warn(
+        `Error fetching remote settings base url from CDN. Falling back to ${RS_FALLBACK_BASE_URL}`,
+        error
+      );
+    }
+
+    const faviconURL = baseAttachmentURL + attachment.location;
+    const response = await fetch(faviconURL);
+
+    const blob = await response.blob();
+    const dataURI = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.addEventListener("load", () => resolve(reader.result));
+      reader.addEventListener("error", reject);
+      reader.readAsDataURL(blob);
+    });
+
+    return dataURI;
+  }
+
+  /**
+   * Dedupe sponsored domains against organic topsites.
+   *
+   * @param {Array} sponsors - List of sponsor domain objects
+   * @returns {Array} Filtered list of sponsors not in organic topsites
+   */
+  dedupeSponsorsAgainstTopsites(sponsors = []) {
+    const topSitesCount =
+      this.store.getState().Prefs.values[ROWS_PREF] *
+      TOP_SITES_MAX_SITES_PER_ROW;
+
+    const linksWithDefaults = this._linksWithDefaults || [];
+    const topsites = new Set(
+      linksWithDefaults
+        .slice(0, topSitesCount)
+        .filter(site => site.type !== "frecency-boost")
+        .map(site => {
+          try {
+            return (
+              site.label?.toLowerCase() ||
+              site.hostname ||
+              lazy.NewTabUtils.shortURL(site)
+            );
+          } catch (e) {
+            return null;
+          }
+        })
+        .filter(Boolean)
+    );
+
+    return sponsors.filter(
+      ({ hostname }) =>
+        !topsites.has(lazy.NewTabUtils.shortURL({ url: `https://${hostname}` }))
+    );
+  }
+
+  normalizeUrl(url) {
+    let normalized = url;
+    if (normalized.startsWith("https://")) {
+      normalized = normalized.slice(8);
+    } else if (normalized.startsWith("http://")) {
+      normalized = normalized.slice(7);
+    }
+    if (normalized.startsWith("www.")) {
+      normalized = normalized.slice(4);
+    }
+    return normalized;
+  }
+
+  /**
+   * Build frecency-boosted spocs from a list of sponsor domains by checking Places history.
+   * Checks if domains exist in history, dedupes against organic topsites,
+   * and returns all matches sorted by frecency.
+   *
+   * @param {Array} sponsors - List of sponsor domain objects with hostname and title
+   * @returns {Array} Array of sponsored tile objects sorted by frecency, or empty array
+   */
+  async buildFrecencyBoostedSpocs(sponsors) {
+    if (!sponsors || !sponsors.length) {
+      return [];
+    }
+
+    const sponsorsToCheck = this.dedupeSponsorsAgainstTopsites(sponsors);
+
+    if (!sponsorsToCheck.length) {
+      return [];
+    }
+
+    const { values } = this.store.getState().Prefs;
+    const numItems =
+      values?.trainhopConfig?.sov?.numItems || DEFAULT_SOV_NUM_ITEMS;
+    const topsiteFrecency = lazy.pageFrecencyThreshold;
+
+    // Get all frecent sites from history.
+    const frecent = await this.frecentCache.request({
+      numItems,
+      topsiteFrecency,
+    });
+
+    const candidates = [];
+    frecent.forEach(site => {
+      const normalizedSiteUrl = this.normalizeUrl(site.url);
+
+      for (const domainObj of sponsorsToCheck) {
+        const normalizedDomain = this.normalizeUrl(domainObj.domain);
+
+        if (
+          !normalizedSiteUrl.startsWith(normalizedDomain) ||
+          lazy.NewTabUtils.blockedLinks.isBlocked({ url: domainObj.domain })
+        ) {
+          continue;
+        }
+
+        const sponsorData = this._frecencyBoostedSponsors.get(
+          domainObj.hostname
+        );
+
+        candidates.push({
+          hostname: domainObj.hostname,
+          url: domainObj.redirectURL,
+          label: domainObj.title,
+          partner: SPONSORED_TILE_PARTNER_FREC_BOOST,
+          type: "frecency-boost",
+          frecency: site.frecency,
+          show_sponsored_label: true,
+          favicon: sponsorData.faviconDataURI,
+          faviconSize: 96,
+        });
+      }
+    });
+
+    // If we have a matched set of candidates,
+    // we can check if it's an exposure event.
+    if (candidates.length) {
+      this.frecencyBoostedSpocsExposureEvent();
+    }
+
+    candidates.sort((a, b) => b.frecency - a.frecency);
+    return candidates;
+  }
+
+  /**
+   * Fetch topsites spocs that are frecency boosted.
+   *
+   * @returns {Array} An array of sponsored tile objects.
+   */
+  async fetchFrecencyBoostedSpocs() {
+    if (
+      !this._contile.sovEnabled() ||
+      !this._linksWithDefaults?.length ||
+      !this.store.getState().Prefs.values[SHOW_SPONSORED_PREF]
+    ) {
+      return [];
+    }
+
+    if (this._frecencyBoostedSponsors.size === 0) {
+      await this._importFrecencyBoostedSponsors();
+    }
+
+    const domainList = Array.from(this._frecencyBoostedSponsors.values());
+
+    // Find all matches from the sponsor domains, sorted by frecency
+    return this.buildFrecencyBoostedSpocs(domainList);
+  }
+
+  /**
+   * Flip exposure event pref,
+   * if the user is in a SOV experiment,
+   * for both control and treatment,
+   * and had frecency boosted spocs because of it.
+   */
+  frecencyBoostedSpocsExposureEvent() {
+    const { values } = this.store.getState().Prefs;
+    const trainhopSovEnabled = values?.trainhopConfig?.sov?.enabled;
+
+    if (trainhopSovEnabled) {
+      this.store.dispatch(ac.SetPref(PREF_SOV_FRECENCY_EXPOSURE, true));
+    }
+  }
+
   /**
    * Fetch topsites spocs from the DiscoveryStream feed.
    *
@@ -1260,6 +1696,15 @@ export class TopSitesFeed {
   // eslint-disable-next-line max-statements
   async getLinksWithDefaults(isStartup = false) {
     const prefValues = this.store.getState().Prefs.values;
+    // switch on top_sites thompson sampling experiment
+    const overSampleMultiplier =
+      prefValues?.trainhopConfig?.smartShortcuts?.over_sample_multiplier ??
+      OVERSAMPLE_MULTIPLIER;
+    const numFetch =
+      (smartshortcutsEnabled(this.store.getState().Prefs.values)
+        ? overSampleMultiplier
+        : 1) *
+      (prefValues[ROWS_PREF] * TOP_SITES_MAX_SITES_PER_ROW);
     const numItems = prefValues[ROWS_PREF] * TOP_SITES_MAX_SITES_PER_ROW;
     const searchShortcutsExperiment = prefValues[SEARCH_SHORTCUTS_EXPERIMENT];
     // We must wait for search services to initialize in order to access default
@@ -1276,8 +1721,8 @@ export class TopSitesFeed {
     let frecent = [];
     const cache = await this.frecentCache.request({
       // We need to overquery due to the top 5 alexa search + default search possibly being removed
-      numItems: numItems + SEARCH_FILTERS.length + 1,
-      topsiteFrecency: FRECENCY_THRESHOLD,
+      numItems: numFetch + SEARCH_FILTERS.length + 1,
+      topsiteFrecency: lazy.pageFrecencyThreshold,
     });
     for (let link of cache) {
       const hostname = lazy.NewTabUtils.shortURL(link);
@@ -1343,11 +1788,13 @@ export class TopSitesFeed {
     );
 
     const discoverySponsored = this.fetchDiscoveryStreamSpocs();
+    const frecencyBoostedSponsored = await this.fetchFrecencyBoostedSpocs();
     this._telemetryUtility.setTiles(discoverySponsored);
 
     const sponsored = this._mergeSponsoredLinks({
       [SPONSORED_TILE_PARTNER_AMP]: contileSponsored,
       [SPONSORED_TILE_PARTNER_MOZ_SALES]: discoverySponsored,
+      [SPONSORED_TILE_PARTNER_FREC_BOOST]: frecencyBoostedSponsored,
     });
 
     this._maybeCapSponsoredLinks(sponsored);
@@ -1430,8 +1877,22 @@ export class TopSitesFeed {
     // Remove adult sites if we need to
     const checkedAdult = lazy.FilterAdult.filter(dedupedUnpinned);
 
+    // Sample topsites via thompson sampling, if in experiment
+    let sampledSites;
+    if (smartshortcutsEnabled(this.store.getState().Prefs.values)) {
+      sampledSites = await this.ranker.rankTopSites(
+        checkedAdult,
+        prefValues,
+        isStartup,
+        dedupedSponsored.length
+      );
+    } else {
+      sampledSites = checkedAdult;
+    }
+
     // Insert the original pinned sites into the deduped frecent and defaults.
-    let withPinned = insertPinned(checkedAdult, pinned);
+    let withPinned = insertPinned(sampledSites, pinned);
+
     // Insert sponsored sites at their desired position.
     dedupedSponsored.forEach(link => {
       if (!link) {
@@ -1498,19 +1959,13 @@ export class TopSitesFeed {
    * If the chosen partner doesn't have a tile to serve, another tile from a different
    * partner is used as the replacement.
    *
-   * @param {Object} sponsoredLinks An object with sponsored links from all the partners.
+   * @param {object} sponsoredLinks An object with sponsored links from all the partners.
    * @returns {Array} An array of merged sponsored links.
    */
   _mergeSponsoredLinks(sponsoredLinks) {
     const { positions: allocatedPositions, ready: sovReady } =
       this.store.getState().TopSites.sov || {};
-    if (
-      !this._contile.sov ||
-      !sovReady ||
-      !lazy.NimbusFeatures.pocketNewtab.getVariable(
-        NIMBUS_VARIABLE_CONTILE_SOV_ENABLED
-      )
-    ) {
+    if (!this._contile.sov || !sovReady) {
       return Object.values(sponsoredLinks).flat();
     }
 
@@ -1519,7 +1974,6 @@ export class TopSitesFeed {
       sponsoredLinks[SPONSORED_TILE_PARTNER_AMP].filter(Boolean);
 
     let sponsored = [];
-    let chosenPartners = [];
 
     for (const allocation of allocatedPositions) {
       let link = null;
@@ -1547,11 +2001,6 @@ export class TopSitesFeed {
 
         if (!link) {
           // No more links to be added across all the partners, just return.
-          if (chosenPartners.length) {
-            Glean.newtab.sovAllocation.set(
-              chosenPartners.map(entry => JSON.stringify(entry))
-            );
-          }
           return sponsored;
         }
       }
@@ -1563,18 +2012,6 @@ export class TopSitesFeed {
         link.pos = allocation.position - 1;
       }
       sponsored.push(link);
-
-      chosenPartners.push({
-        pos: allocation.position,
-        assigned: assignedPartner, // The assigned partner based on SOV
-        chosen: link.partner,
-      });
-    }
-    // Record chosen partners to glean
-    if (chosenPartners.length) {
-      Glean.newtab.sovAllocation.set(
-        chosenPartners.map(entry => JSON.stringify(entry))
-      );
     }
 
     // add the remaining contile sponsoredLinks when nimbus variable present
@@ -1591,6 +2028,7 @@ export class TopSitesFeed {
 
   /**
    * Refresh the top sites data for content.
+   *
    * @param {bool} options.broadcast Should the update be broadcasted.
    * @param {bool} options.isStartup Being called while TopSitesFeed is initting.
    */
@@ -1632,9 +2070,11 @@ export class TopSitesFeed {
     if (!this._contile.sov) {
       return;
     }
+
     // This sample input should ensure we return the same result for this allocation,
     // even if called from other parts of the code.
-    const sampleInput = `${lazy.contextId}-${this._contile.sov.name}`;
+    let contextId = await lazy.ContextId.request();
+    const sampleInput = `${contextId}-${this._contile.sov.name}`;
     const allocatedPositions = [];
     for (const allocation of this._contile.sov.allocations) {
       const allocatedPosition = {
@@ -1732,6 +2172,7 @@ export class TopSitesFeed {
 
   /**
    * Fetch, cache and broadcast a screenshot for a specific topsite.
+   *
    * @param link cached topsite object
    * @param url where to fetch the image from
    * @param isStartup Whether the screenshot is fetched while initting TopSitesFeed.
@@ -1763,6 +2204,7 @@ export class TopSitesFeed {
 
   /**
    * Dispatch screenshot preview to target or notify if request failed.
+   *
    * @param customScreenshotURL {string} The URL used to capture the screenshot
    * @param target {string} Id of content process where to dispatch the result
    */
@@ -1799,6 +2241,7 @@ export class TopSitesFeed {
 
   /**
    * Pin a site at a specific position saving only the desired keys.
+   *
    * @param customScreenshotURL {string} User set URL of preview image for site
    * @param label {string} User set string of custom site name
    */
@@ -2030,6 +2473,7 @@ export class TopSitesFeed {
         this.updateCustomSearchShortcuts(true /* isStartup */);
         break;
       case at.DISCOVERY_STREAM_DEV_SYSTEM_TICK:
+      case at.DISCOVERY_STREAM_DEV_EXPIRE_CACHE:
       case at.SYSTEM_TICK:
         this.refresh({ broadcast: false });
         this._contile.periodicUpdate();
@@ -2110,12 +2554,8 @@ export class TopSitesFeed {
       case at.UPDATE_PINNED_SEARCH_SHORTCUTS:
         this.updatePinnedSearchShortcuts(action.data);
         break;
-      case at.ADS_UPDATE_DATA:
+      case at.ADS_UPDATE_TILES:
         this._contile.refresh();
-        break;
-      case at.DISCOVERY_STREAM_SPOCS_UPDATE:
-        // Refresh to update sponsored topsites.
-        this.refresh({ broadcast: true, isStartup: action.meta.isStartup });
         break;
       case at.UNINIT:
         this.uninit();

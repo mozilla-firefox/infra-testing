@@ -18,22 +18,10 @@ var clickHoldDelay = Services.prefs.getIntPref(
   500
 );
 
-// Touch state constants are derived from values defined in: nsIDOMWindowUtils.idl
-const TOUCH_CONTACT = 0x02;
-const TOUCH_REMOVE = 0x04;
-
-const TOUCH_STATES = {
-  touchstart: TOUCH_CONTACT,
-  touchmove: TOUCH_CONTACT,
-  touchend: TOUCH_REMOVE,
-};
-
 const EVENTS_TO_HANDLE = [
   "mousedown",
   "mousemove",
   "mouseup",
-  "touchstart",
-  "touchend",
   "mouseenter",
   "mouseover",
   "mouseout",
@@ -47,12 +35,14 @@ const kStateHover = 0x00000004; // ElementState::HOVER
  */
 class TouchSimulator {
   /**
-   * @param {ChromeEventHandler} simulatorTarget: The object we'll use to listen for click
-   *                             and touch events to handle.
+   * @param {WindowGlobalTargetActor} windowTarget: The window object we'll use
+   *                                  to listen for click and touch events to handle.
    */
-  constructor(simulatorTarget) {
-    this.simulatorTarget = simulatorTarget;
+  constructor(windowTarget) {
+    this.windowTarget = windowTarget;
+    this.simulatorTarget = windowTarget.chromeEventHandler;
     this._currentPickerMap = new Map();
+    this.previousScreenY = 0;
   }
 
   enabled = false;
@@ -96,9 +86,9 @@ class TouchSimulator {
    * In theory only one picker can ever be active at a time, but tracking the
    * different pickers independantly avoids race issues in the client code.
    *
-   * @param {Boolean} state
+   * @param {boolean} state
    *        True if the picker is currently active, false otherwise.
-   * @param {String} pickerType
+   * @param {string} pickerType
    *        One of PICKER_TYPES.
    */
   setElementPickerState(state, pickerType) {
@@ -119,55 +109,6 @@ class TouchSimulator {
 
     const content = this.getContent(evt.target);
     if (!content) {
-      return;
-    }
-
-    // App touchstart & touchend should also be dispatched on the system app
-    // to match on-device behavior.
-    if (evt.type.startsWith("touch")) {
-      const sysFrame = content.realFrameElement;
-      if (!sysFrame) {
-        return;
-      }
-      const sysDocument = sysFrame.ownerDocument;
-      const sysWindow = sysDocument.defaultView;
-
-      const touchEvent = sysDocument.createEvent("touchevent");
-      const touch = evt.touches[0] || evt.changedTouches[0];
-      const point = sysDocument.createTouch(
-        sysWindow,
-        sysFrame,
-        0,
-        touch.pageX,
-        touch.pageY,
-        touch.screenX,
-        touch.screenY,
-        touch.clientX,
-        touch.clientY,
-        1,
-        1,
-        0,
-        0
-      );
-
-      const touches = sysDocument.createTouchList(point);
-      const targetTouches = touches;
-      const changedTouches = touches;
-      touchEvent.initTouchEvent(
-        evt.type,
-        true,
-        true,
-        sysWindow,
-        0,
-        false,
-        false,
-        false,
-        false,
-        touches,
-        targetTouches,
-        changedTouches
-      );
-      sysFrame.dispatchEvent(touchEvent);
       return;
     }
 
@@ -208,13 +149,12 @@ class TouchSimulator {
           this._contextMenuTimeout = this.sendContextMenu(evt);
         }
 
-        this.startX = evt.pageX;
-        this.startY = evt.pageY;
+        this.previousScreenY = evt.screenY;
 
         type = "touchstart";
         break;
 
-      case "mousemove":
+      case "mousemove": {
         if (!eventTarget) {
           // Don't propagate mousemove event when touchstart event isn't fired
           evt.stopPropagation();
@@ -222,7 +162,11 @@ class TouchSimulator {
         }
 
         type = "touchmove";
+        const deltaY = evt.screenY - this.previousScreenY;
+        this.previousScreenY = evt.screenY;
+        this.windowTarget.emit("contentScrolled", deltaY);
         break;
+      }
 
       case "mouseup":
         if (!eventTarget) {
@@ -247,7 +191,7 @@ class TouchSimulator {
 
     const target = eventTarget || this.target;
     if (target && type) {
-      this.synthesizeNativeTouch(content, evt.screenX, evt.screenY, type);
+      this.sendTouchEvent(content, evt.clientX, evt.clientY, type);
     }
 
     evt.preventDefault();
@@ -274,24 +218,34 @@ class TouchSimulator {
   }
 
   /**
-   * Synthesizes a native touch action on a given target element.
+   * Sends a touch action on a given target element.
    *
    * @param {Window} win
    *        The target window.
-   * @param {Number} screenX
-   *        The `x` screen coordinate relative to the screen origin.
-   * @param {Number} screenY
-   *        The `y` screen coordinate relative to the screen origin.
-   * @param {String} type
-   *        A key appearing in the TOUCH_STATES associative array.
+   * @param {number} clientX
+   *        The `x` screen coordinate relative to the viewport origin.
+   * @param {number} clientY
+   *        The `y` screen coordinate relative to the viewport origin.
+   * @param {string} type
+   *        The type of the touch event.
    */
-  synthesizeNativeTouch(win, screenX, screenY, type) {
-    // Native events work in device pixels.
+  sendTouchEvent(win, clientX, clientY, type) {
     const utils = win.windowUtils;
-    const deviceScale = win.devicePixelRatio;
-    const pt = { x: screenX * deviceScale, y: screenY * deviceScale };
-
-    utils.sendNativeTouchPoint(0, TOUCH_STATES[type], pt.x, pt.y, 1, 90, null);
+    utils.sendTouchEvent(
+      type,
+      [0],
+      [clientX],
+      [clientY],
+      [0],
+      [0],
+      [0],
+      [0],
+      [0],
+      [0],
+      [0],
+      0,
+      utils.ASYNC_ENABLED
+    );
     return true;
   }
 

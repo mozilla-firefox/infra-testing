@@ -441,7 +441,7 @@ async function doTest({
     keywords.filter(
       ({ keyword }) => keyword == context.trimmedLowerCaseSearchString
     );
-  provider.isActive = context => {
+  provider.isActive = async context => {
     return !!getMatchingKeywords(context).length;
   };
   provider.startQuery = (context, addCallback) => {
@@ -455,8 +455,10 @@ async function doTest({
       }
       addCallback(
         provider,
-        new UrlbarResult(UrlbarUtils.RESULT_TYPE.URL, source, {
-          url: "https://example.com/",
+        new UrlbarResult({
+          type: UrlbarUtils.RESULT_TYPE.URL,
+          source,
+          payload: { url: "https://example.com/" },
         })
       );
     }

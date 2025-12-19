@@ -99,7 +99,7 @@ add_task(async () => {
   info("Reopening windows");
   let restoredWindows = [];
   while (SessionStore.getClosedWindowCount() > 0) {
-    restoredWindows.unshift(undoCloseWindow());
+    restoredWindows.unshift(SessionWindowUI.undoCloseWindow());
   }
   is(restoredWindows.length, 2, "Reopened correct number of windows");
 
@@ -114,6 +114,14 @@ add_task(async () => {
 
   info("About to wait for tabs to be restored");
   await Promise.all([win1Restored, win2Restored]);
+
+  const sessionRestoreInitialized =
+    Glean.sessionRestore.startupTimeline.sessionRestoreInitialized.testGetValue();
+  Assert.greater(
+    sessionRestoreInitialized,
+    0,
+    "Session store initialize recorded."
+  );
 
   is(
     restoredWindows[0].gBrowser.tabs.length,

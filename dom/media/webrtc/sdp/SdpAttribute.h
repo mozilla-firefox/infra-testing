@@ -9,21 +9,19 @@
 
 #include <algorithm>
 #include <cctype>
-#include <vector>
-#include <ostream>
-#include <sstream>
 #include <cstring>
 #include <iomanip>
+#include <ostream>
+#include <sstream>
 #include <string>
+#include <vector>
 
-#include "mozilla/UniquePtr.h"
-#include "mozilla/Attributes.h"
+#include "common/EncodingConstraints.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/UniquePtr.h"
 #include "nsString.h"
-
 #include "sdp/SdpEnum.h"
-#include "common/EncodingConstraints.h"
 
 namespace mozilla {
 
@@ -41,6 +39,7 @@ class SdpAttribute {
     kDtlsMessageAttribute,
     kEndOfCandidatesAttribute,
     kExtmapAttribute,
+    kExtmapAllowMixedAttribute,
     kFingerprintAttribute,
     kFmtpAttribute,
     kGroupAttribute,
@@ -929,7 +928,7 @@ class SdpRidAttributeList : public SdpAttribute {
     std::string id;
     sdp::Direction direction;
     std::vector<uint16_t> formats;  // Empty implies all
-    EncodingConstraints constraints;
+    VideoEncodingConstraints constraints;
     std::vector<std::string> dependIds;
   };
 
@@ -947,7 +946,7 @@ class SdpRidAttributeList : public SdpAttribute {
 
   void PushEntry(const std::string& id, sdp::Direction dir,
                  const std::vector<uint16_t>& formats,
-                 const EncodingConstraints& constraints,
+                 const VideoEncodingConstraints& constraints,
                  const std::vector<std::string>& dependIds);
 
   std::vector<Rid> mRids;

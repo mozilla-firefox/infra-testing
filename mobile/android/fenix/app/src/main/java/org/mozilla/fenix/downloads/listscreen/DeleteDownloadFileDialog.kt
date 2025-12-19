@@ -4,18 +4,16 @@
 
 package org.mozilla.fenix.downloads.listscreen
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.AlertDialog
-import androidx.compose.material.Text
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.tooling.preview.Preview
 import mozilla.components.compose.base.annotation.FlexibleWindowLightDarkPreview
 import mozilla.components.compose.base.button.TextButton
 import org.mozilla.fenix.R
 import org.mozilla.fenix.theme.FirefoxTheme
+import org.mozilla.fenix.theme.Theme
 
 /**
 * This dialog is used to prompt the user to confirm if they want to delete
@@ -31,16 +29,11 @@ fun DeleteDownloadFileDialog(
 ) {
     AlertDialog(
         onDismissRequest = {},
-        modifier = Modifier.background(
-            color = FirefoxTheme.colors.layer2,
-            shape = RoundedCornerShape(8.dp),
-        ),
         text = {
             Text(
                 text = stringResource(
                     R.string.download_delete_multi_select_dialog_confirmation,
                 ),
-                color = FirefoxTheme.colors.textPrimary,
                 style = FirefoxTheme.typography.body2,
             )
         },
@@ -56,7 +49,6 @@ fun DeleteDownloadFileDialog(
                 onClick = { onCancel() },
             )
         },
-        backgroundColor = FirefoxTheme.colors.layer2,
     )
 }
 
@@ -64,6 +56,17 @@ fun DeleteDownloadFileDialog(
 @FlexibleWindowLightDarkPreview
 private fun DeleteDownloadFileDialogPreview() {
     FirefoxTheme {
+        DeleteDownloadFileDialog(
+            onConfirmDelete = {},
+            onCancel = {},
+        )
+    }
+}
+
+@Composable
+@Preview
+private fun DeleteDownloadFileDialogPrivatePreview() {
+    FirefoxTheme(theme = Theme.Private) {
         DeleteDownloadFileDialog(
             onConfirmDelete = {},
             onCancel = {},

@@ -4,14 +4,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/EventDispatcher.h"
-#include "mozilla/Maybe.h"
 #include "mozilla/dom/HTMLOptGroupElement.h"
+
+#include "mozilla/EventDispatcher.h"
 #include "mozilla/dom/HTMLOptGroupElementBinding.h"
 #include "mozilla/dom/HTMLSelectElement.h"  // SafeOptionListMutation
 #include "nsGkAtoms.h"
-#include "nsStyleConsts.h"
 #include "nsIFrame.h"
+#include "nsStyleConsts.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(OptGroup)
 
@@ -34,15 +34,6 @@ NS_IMPL_ELEMENT_CLONE(HTMLOptGroupElement)
 
 void HTMLOptGroupElement::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
   aVisitor.mCanHandle = false;
-
-  if (nsIFrame* frame = GetPrimaryFrame()) {
-    // FIXME(emilio): This poking at the style of the frame is broken unless we
-    // flush before every event handling, which we don't really want to.
-    if (frame->StyleUI()->UserInput() == StyleUserInput::None) {
-      return;
-    }
-  }
-
   nsGenericHTMLElement::GetEventTargetParent(aVisitor);
 }
 
@@ -54,23 +45,26 @@ Element* HTMLOptGroupElement::GetSelect() {
   return parent;
 }
 
-void HTMLOptGroupElement::InsertChildBefore(nsIContent* aKid,
-                                            nsIContent* aBeforeThis,
-                                            bool aNotify, ErrorResult& aRv) {
+void HTMLOptGroupElement::InsertChildBefore(
+    nsIContent* aKid, nsIContent* aBeforeThis, bool aNotify, ErrorResult& aRv,
+    nsINode* aOldParent, MutationEffectOnScript aMutationEffectOnScript) {
   const uint32_t index =
       aBeforeThis ? *ComputeIndexOf(aBeforeThis) : GetChildCount();
   SafeOptionListMutation safeMutation(GetSelect(), this, aKid, index, aNotify);
-  nsGenericHTMLElement::InsertChildBefore(aKid, aBeforeThis, aNotify, aRv);
+  nsGenericHTMLElement::InsertChildBefore(aKid, aBeforeThis, aNotify, aRv,
+                                          aOldParent, aMutationEffectOnScript);
   if (aRv.Failed()) {
     safeMutation.MutationFailed();
   }
 }
 
-void HTMLOptGroupElement::RemoveChildNode(nsIContent* aKid, bool aNotify,
-                                          const BatchRemovalState*) {
+void HTMLOptGroupElement::RemoveChildNode(
+    nsIContent* aKid, bool aNotify, const BatchRemovalState* aState,
+    nsINode* aNewParent, MutationEffectOnScript aMutationEffectOnScript) {
   SafeOptionListMutation safeMutation(GetSelect(), this, nullptr,
                                       *ComputeIndexOf(aKid), aNotify);
-  nsGenericHTMLElement::RemoveChildNode(aKid, aNotify);
+  nsGenericHTMLElement::RemoveChildNode(aKid, aNotify, aState, aNewParent,
+                                        aMutationEffectOnScript);
 }
 
 void HTMLOptGroupElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,

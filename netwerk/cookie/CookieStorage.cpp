@@ -35,44 +35,46 @@
 // in order to keep our metrics consistent
 // we only send metrics when the pref hasn't been manipulated from the default
 static const uint32_t kChipsPartitionByteCapacityDefault = 10240;
+static const double kChipsHardLimitFactor = 1.2;
 
 namespace mozilla {
 namespace net {
 
-namespace {
-
 // comparator class for lastaccessed times of cookies.
-class CompareCookiesByAge {
+class CookieStorage::CompareCookiesByAge {
  public:
   static bool Equals(const CookieListIter& a, const CookieListIter& b) {
-    return a.Cookie()->LastAccessed() == b.Cookie()->LastAccessed() &&
-           a.Cookie()->CreationTime() == b.Cookie()->CreationTime();
+    return a.Cookie()->LastAccessedInUSec() ==
+               b.Cookie()->LastAccessedInUSec() &&
+           a.Cookie()->CreationTimeInUSec() == b.Cookie()->CreationTimeInUSec();
   }
 
   static bool LessThan(const CookieListIter& a, const CookieListIter& b) {
-    // compare by lastAccessed time, and tiebreak by creationTime.
-    int64_t result = a.Cookie()->LastAccessed() - b.Cookie()->LastAccessed();
+    // compare by lastAccessedInUSec time, and tiebreak by creationTimeInUSec.
+    int64_t result =
+        a.Cookie()->LastAccessedInUSec() - b.Cookie()->LastAccessedInUSec();
     if (result != 0) {
       return result < 0;
     }
 
-    return a.Cookie()->CreationTime() < b.Cookie()->CreationTime();
+    return a.Cookie()->CreationTimeInUSec() < b.Cookie()->CreationTimeInUSec();
   }
 };
 
 // Cookie comparator for the priority queue used in FindStaleCookies.
 // Note that the expired cookie has the highest priority.
 // Other non-expired cookies are sorted by their age.
-class CookieIterComparator {
+class CookieStorage::CookieIterComparator {
  private:
-  int64_t mCurrentTime;
+  int64_t mCurrentTimeInMSec;
 
  public:
-  explicit CookieIterComparator(int64_t aTime) : mCurrentTime(aTime) {}
+  explicit CookieIterComparator(int64_t aTimeInMSec)
+      : mCurrentTimeInMSec(aTimeInMSec) {}
 
   bool LessThan(const CookieListIter& lhs, const CookieListIter& rhs) {
-    bool lExpired = lhs.Cookie()->Expiry() <= mCurrentTime;
-    bool rExpired = rhs.Cookie()->Expiry() <= mCurrentTime;
+    bool lExpired = lhs.Cookie()->ExpiryInMSec() <= mCurrentTimeInMSec;
+    bool rExpired = rhs.Cookie()->ExpiryInMSec() <= mCurrentTimeInMSec;
     if (lExpired && !rExpired) {
       return true;
     }
@@ -81,12 +83,12 @@ class CookieIterComparator {
       return false;
     }
 
-    return mozilla::net::CompareCookiesByAge::LessThan(lhs, rhs);
+    return CompareCookiesByAge::LessThan(lhs, rhs);
   }
 };
 
 // comparator class for sorting cookies by entry and index.
-class CompareCookiesByIndex {
+class CookieStorage::CompareCookiesByIndex {
  public:
   static bool Equals(const CookieListIter& a, const CookieListIter& b) {
     NS_ASSERTION(a.entry != b.entry || a.index != b.index,
@@ -103,8 +105,6 @@ class CompareCookiesByIndex {
     return a.index < b.index;
   }
 };
-
-}  // namespace
 
 // ---------------------------------------------------------------------------
 // CookieEntry
@@ -179,6 +179,20 @@ void CookieStorage::GetSessionCookies(
       }
     }
   }
+}
+
+// find an exact cookie specified by host, name, and path that hasn't expired.
+already_AddRefed<Cookie> CookieStorage::FindCookie(
+    const nsACString& aBaseDomain, const OriginAttributes& aOriginAttributes,
+    const nsACString& aHost, const nsACString& aName, const nsACString& aPath) {
+  CookieListIter iter{};
+
+  if (!FindCookie(aBaseDomain, aOriginAttributes, aHost, aName, aPath, iter)) {
+    return nullptr;
+  }
+
+  RefPtr<Cookie> cookie = iter.Cookie();
+  return cookie.forget();
 }
 
 // find an exact cookie specified by host, name, and path that hasn't expired.
@@ -322,13 +336,19 @@ void CookieStorage::RemoveCookie(const nsACString& aBaseDomain,
                                  const OriginAttributes& aOriginAttributes,
                                  const nsACString& aHost,
                                  const nsACString& aName,
-                                 const nsACString& aPath,
+                                 const nsACString& aPath, bool aFromHttp,
                                  const nsID* aOperationID) {
   CookieListIter matchIter{};
   RefPtr<Cookie> cookie;
   if (FindCookie(aBaseDomain, aOriginAttributes, aHost, aName, aPath,
                  matchIter)) {
     cookie = matchIter.Cookie();
+
+    // If the old cookie is httponly, make sure we're not coming from script.
+    if (cookie && !aFromHttp && cookie->IsHttpOnly()) {
+      return;
+    }
+
     RemoveCookieFromList(matchIter);
   }
 
@@ -521,72 +541,106 @@ void CookieStorage::NotifyChanged(nsISupports* aSubject,
   NotifyChangedInternal(notification, aOldCookieIsSession);
 }
 
-// return true if we finish within the partition byte limit
-bool CookieStorage::RemoveCookiesFromBackUntilUnderLimit(
-    nsTArray<CookieListIter>& aCookieListIter, Cookie* aCookie,
-    const nsACString& aBaseDomain, nsCOMPtr<nsIArray>& aPurgedList) {
-  MOZ_ASSERT(aCookie);
-  auto it = aCookieListIter.rbegin();
-  while (it != aCookieListIter.rend()) {
-    RefPtr<Cookie> evictedCookie = (*it).Cookie();
-    COOKIE_LOGEVICTED(evictedCookie,
-                      "Too many cookie bytes for this partition");
+void CookieStorage::RemoveCookiesFromBack(
+    nsTArray<CookieListIter>& aCookieIters, nsCOMPtr<nsIArray>& aPurgedList) {
+  for (auto it = aCookieIters.rbegin(); it != aCookieIters.rend(); ++it) {
+    RefPtr<Cookie> cookie = (*it).Cookie();
+    MOZ_ASSERT(cookie);
+    COOKIE_LOGEVICTED(cookie, "Too many cookie bytes for this partition");
     RemoveCookieFromList(*it);
-    CreateOrUpdatePurgeList(aPurgedList, evictedCookie);
+    CreateOrUpdatePurgeList(aPurgedList, cookie);
+
+    // if a sole cookie is ever removed, we would remove the entire entry
+    // but practically speaking,
+    // we should never be in a scenario when we remove the final cookie
+    // unless a single cookie puts us over the limit
+    // for that to occur a user would have to adjust the CHIPS limit to be < 4
+    // KB
     MOZ_ASSERT((*it).entry);
-    if (PartitionLimitExceededBytes(aCookie, aBaseDomain, false) <= 0) {
-      return true;
-    }
   }
-  return false;
 }
 
-void CookieStorage::RemoveOlderCookiesUntilUnderLimit(
-    CookieEntry* aEntry, Cookie* aCookie, const nsACString& aBaseDomain,
-    nsCOMPtr<nsIArray>& aPurgedList) {
-  MOZ_ASSERT(aEntry);
-  // remove insecure older cookies until we are within the byte limit
-  // so CHIPS-partitioned cookies will not be detected here since they must be
-  // secure
+uint32_t CookieStorage::RemoveOldestCookies(CookieEntry* aEntry, bool aSecure,
+                                            uint32_t aBytesToRemove,
+                                            nsCOMPtr<nsIArray>& aPurgedList) {
   const CookieEntry::ArrayType& cookies = aEntry->GetCookies();
   using MaybePurgeList = nsTArray<CookieListIter>;
-  MaybePurgeList maybePurgeListInsecure(aEntry->GetCookies().Length());
+
+  // note that because the maybePurgeList is populated exclusively by
+  // pre-existing cookie list, we will never remove the cookie that is currently
+  // being added
+  MaybePurgeList maybePurgeList(aEntry->GetCookies().Length());
   for (CookieEntry::IndexType i = 0; i < cookies.Length(); ++i) {
     CookieListIter iter(aEntry, i);
-    if (!iter.Cookie()->IsSecure()) {
-      maybePurgeListInsecure.AppendElement(iter);
-    }
-  }
-  maybePurgeListInsecure.Sort(CompareCookiesByAge());
-  maybePurgeListInsecure.Reverse();
-  bool underLimit = RemoveCookiesFromBackUntilUnderLimit(
-      maybePurgeListInsecure, aCookie, aBaseDomain, aPurgedList);
-
-  // remove secure older cookies until we are within the byte limit
-  if (!underLimit) {
-    MOZ_LOG(gCookieLog, LogLevel::Debug,
-            ("Still too many cookies for partition, purging secure\n"));
-    MaybePurgeList maybePurgeList(aEntry->GetCookies().Length());
-    for (CookieEntry::IndexType i = 0; i < cookies.Length(); ++i) {
-      CookieListIter iter(aEntry, i);
+    // assumes that secure cookie removal will always happen after insecure
+    // cookie removal
+    // Ie. this function will will only be called with aSecure == true
+    // after it has already been called with aSecure == false
+    if (aSecure || !iter.Cookie()->IsSecure()) {
       maybePurgeList.AppendElement(iter);
     }
-    maybePurgeList.Sort(CompareCookiesByAge());
-    maybePurgeList.Reverse();
-    Unused << RemoveCookiesFromBackUntilUnderLimit(maybePurgeList, aCookie,
-                                                   aBaseDomain, aPurgedList);
+  }
+
+  // sort by age to prep oldest cookies first
+  // since the underlying cookie list doesn't guarantee age-order because age
+  // is primarily determined by lastAccessed, not creation time
+  // todo: write test to assert oldest first
+  maybePurgeList.Sort(CompareCookiesByAge());
+
+  // truncate the list if we don't need to remove all cookies
+  uint32_t bytesRemoved = 0;
+  uint32_t count = 0;
+  for (auto iter : maybePurgeList) {
+    bytesRemoved += iter.Cookie()->NameAndValueBytes();
+    count++;
+    if (bytesRemoved >= static_cast<uint32_t>(aBytesToRemove)) {
+      maybePurgeList.SetLength(count);
+      break;
+    }
+  }
+  // sort for safe, orderly removal (by index)
+  // because CookieIters effectively are just pointers to the underlying cookie
+  // list we must remove them from the back (largest index first)
+  maybePurgeList.Sort(CompareCookiesByIndex());
+  RemoveCookiesFromBack(maybePurgeList, aPurgedList);
+  return bytesRemoved;
+}
+
+void CookieStorage::RemoveOlderCookiesByBytes(CookieEntry* aEntry,
+                                              uint32_t removeBytes,
+                                              nsCOMPtr<nsIArray>& aPurgedList) {
+  MOZ_ASSERT(aEntry);
+
+  // remove insecure older cookies until we are within the byte limit
+  // (CHIPS cookies will not be detected here since they must be secure)
+  uint32_t bytesRemoved =
+      RemoveOldestCookies(aEntry, false, removeBytes, aPurgedList);
+
+  // remove secure cookies if we still have cookies to remove
+  if (bytesRemoved <= removeBytes) {
+    // remove secure older cookies until we are within the byte limit
+    MOZ_LOG(gCookieLog, LogLevel::Debug,
+            ("Still too many cookies for partition, purging secure\n"));
+    uint32_t bytesStillToRemove = removeBytes - bytesRemoved;
+    RemoveOldestCookies(aEntry, true, bytesStillToRemove, aPurgedList);
   }
 }
 
-int32_t CookieStorage::PartitionLimitExceededBytes(
-    Cookie* aCookie, const nsACString& aBaseDomain, bool aHardMax) {
-  uint32_t newCount = CountCookieBytesNotMatchingCookie(*aCookie, aBaseDomain) +
-                      aCookie->NameAndValueBytes();
-  double factor = aHardMax ? 1.2 : 1;
+CookieStorage::ChipsLimitExcess CookieStorage::PartitionLimitExceededBytes(
+    Cookie* aCookie, const nsACString& aBaseDomain) {
+  uint32_t newByteCount =
+      CountCookieBytesNotMatchingCookie(*aCookie, aBaseDomain) +
+      aCookie->NameAndValueBytes();
+  ChipsLimitExcess res{.hard = 0, .soft = 0};
+  uint32_t softLimit =
+      StaticPrefs::network_cookie_chips_partitionLimitByteCapacity();
   // shouldn't expect more the 4000 cookies * 4000 bytes/cookie -> 16MB
-  return static_cast<int32_t>(
-      newCount -
-      StaticPrefs::network_cookie_chips_partitionLimitByteCapacity() * factor);
+  uint32_t hardLimit = static_cast<uint32_t>(softLimit * kChipsHardLimitFactor);
+  if (newByteCount > hardLimit) {
+    res.hard = newByteCount - hardLimit;
+    res.soft = newByteCount - softLimit;
+  }
+  return res;
 }
 
 // this is a backend function for adding a cookie to the list, via SetCookie.
@@ -607,13 +661,11 @@ void CookieStorage::AddCookie(CookieParser* aCookieParser,
     COOKIE_LOGFAILURE(SET_COOKIE, aHostURI, aCookieHeader,
                       "Invalid first-party partitioned cookie without "
                       "partitioned cookie attribution.");
-    mozilla::glean::networking::set_invalid_first_party_partitioned_cookie.Add(
-        1);
     MOZ_ASSERT(false);
     return;
   }
 
-  int64_t currentTime = aCurrentTimeInUsec / PR_USEC_PER_SEC;
+  int64_t currentTimeInMSec = aCurrentTimeInUsec / PR_USEC_PER_MSEC;
 
   CookieListIter exactIter{};
   bool foundCookie = false;
@@ -659,8 +711,8 @@ void CookieStorage::AddCookie(CookieParser* aCookieParser,
     // need to be careful about the semantics of removing it and adding the new
     // cookie: we want the behavior wrt adding the new cookie to be the same as
     // if it didn't exist, but we still want to fire a removal notification.
-    if (oldCookie->Expiry() <= currentTime) {
-      if (aCookie->Expiry() <= currentTime) {
+    if (oldCookie->ExpiryInMSec() <= currentTimeInMSec) {
+      if (aCookie->ExpiryInMSec() <= currentTimeInMSec) {
         // The new cookie has expired and the old one is stale. Nothing to do.
         COOKIE_LOGFAILURE(SET_COOKIE, aHostURI, aCookieHeader,
                           "cookie has already expired");
@@ -696,19 +748,18 @@ void CookieStorage::AddCookie(CookieParser* aCookieParser,
       // isHttpOnly and SameSite flags then we can just keep the old one.
       // Only if any of these differ we would want to override the cookie.
       if (oldCookie->Value().Equals(aCookie->Value()) &&
-          oldCookie->Expiry() == aCookie->Expiry() &&
+          oldCookie->ExpiryInMSec() == aCookie->ExpiryInMSec() &&
           oldCookie->IsSecure() == aCookie->IsSecure() &&
           oldCookie->IsSession() == aCookie->IsSession() &&
           oldCookie->IsHttpOnly() == aCookie->IsHttpOnly() &&
           oldCookie->SameSite() == aCookie->SameSite() &&
-          oldCookie->RawSameSite() == aCookie->RawSameSite() &&
           oldCookie->SchemeMap() == aCookie->SchemeMap() &&
           // We don't want to perform this optimization if the cookie is
           // considered stale, since in this case we would need to update the
           // database.
           !oldCookie->IsStale()) {
         // Update the last access time on the old cookie.
-        oldCookie->SetLastAccessed(aCookie->LastAccessed());
+        oldCookie->SetLastAccessedInUSec(aCookie->LastAccessedInUSec());
         UpdateCookieOldestTime(oldCookie);
         return;
       }
@@ -722,7 +773,7 @@ void CookieStorage::AddCookie(CookieParser* aCookieParser,
 
       // If the new cookie has expired -- i.e. the intent was simply to delete
       // the old cookie -- then we're done.
-      if (aCookie->Expiry() <= currentTime) {
+      if (aCookie->ExpiryInMSec() <= currentTimeInMSec) {
         COOKIE_LOGFAILURE(SET_COOKIE, aHostURI, aCookieHeader,
                           "previously stored cookie was deleted");
         NotifyChanged(oldCookie, nsICookieNotification::COOKIE_DELETED,
@@ -732,7 +783,7 @@ void CookieStorage::AddCookie(CookieParser* aCookieParser,
       }
 
       // Preserve creation time of cookie for ordering purposes.
-      aCookie->SetCreationTime(oldCookie->CreationTime());
+      aCookie->SetCreationTimeInUSec(oldCookie->CreationTimeInUSec());
     }
 
     // check for CHIPS-partitioned exceeding byte limit
@@ -742,26 +793,25 @@ void CookieStorage::AddCookie(CookieParser* aCookieParser,
       CookieEntry* entry =
           mHostTable.GetEntry(CookieKey(aBaseDomain, aOriginAttributes));
       if (entry) {
-        int32_t exceededBytes =
-            PartitionLimitExceededBytes(aCookie, aBaseDomain, true);
-        if (exceededBytes > 0) {
+        ChipsLimitExcess exceededBytes =
+            PartitionLimitExceededBytes(aCookie, aBaseDomain);
+        if (exceededBytes.hard > 0) {
           MOZ_LOG(gCookieLog, LogLevel::Debug,
                   ("Partition byte limit exceeded on cookie overwrite\n"));
           if (!StaticPrefs::network_cookie_chips_partitionLimitDryRun()) {
-            RemoveOlderCookiesUntilUnderLimit(entry, aCookie, aBaseDomain,
-                                              purgedList);
+            RemoveOlderCookiesByBytes(entry, exceededBytes.soft, purgedList);
           }
           if (StaticPrefs::network_cookie_chips_partitionLimitByteCapacity() ==
               kChipsPartitionByteCapacityDefault) {
             mozilla::glean::networking::cookie_chips_partition_limit_overflow
-                .AccumulateSingleSample(exceededBytes);
+                .AccumulateSingleSample(exceededBytes.hard);
           }
         }
       }
     }
   } else {
     // check if cookie has already expired
-    if (aCookie->Expiry() <= currentTime) {
+    if (aCookie->ExpiryInMSec() <= currentTimeInMSec) {
       COOKIE_LOGFAILURE(SET_COOKIE, aHostURI, aCookieHeader,
                         "cookie has already expired");
       return;
@@ -770,7 +820,7 @@ void CookieStorage::AddCookie(CookieParser* aCookieParser,
     // check if we have to delete an old cookie.
     CookieEntry* entry =
         mHostTable.GetEntry(CookieKey(aBaseDomain, aOriginAttributes));
-    int32_t partitionLimitExceededBytes = 0;
+    ChipsLimitExcess partitionLimitExceededBytes{};
     // we haven't yet added the new cookie so we compare cookie list with >=
     if (entry && entry->GetCookies().Length() >= mMaxCookiesPerHost) {
       nsTArray<CookieListIter> removedIterList;
@@ -781,11 +831,12 @@ void CookieStorage::AddCookie(CookieParser* aCookieParser,
       uint32_t limit = mMaxCookiesPerHost - mCookieQuotaPerHost + excess;
       // Prioritize evicting insecure cookies.
       // (draft-ietf-httpbis-cookie-alone section 3.3)
-      FindStaleCookies(entry, currentTime, false, removedIterList, limit);
+      FindStaleCookies(entry, currentTimeInMSec, false, removedIterList, limit);
       if (removedIterList.Length() == 0) {
         if (aCookie->IsSecure()) {
           // It's valid to evict a secure cookie for another secure cookie.
-          FindStaleCookies(entry, currentTime, true, removedIterList, limit);
+          FindStaleCookies(entry, currentTimeInMSec, true, removedIterList,
+                           limit);
         } else {
           COOKIE_LOGEVICTED(aCookie,
                             "Too many cookies for this domain and the new "
@@ -814,18 +865,20 @@ void CookieStorage::AddCookie(CookieParser* aCookieParser,
     } else if (CookieCommons::ChipsLimitEnabledAndChipsCookie(
                    *aCookie, aBrowsingContext) &&
                entry &&
-               (partitionLimitExceededBytes = PartitionLimitExceededBytes(
-                    aCookie, aBaseDomain, true)) > 0) {
+               (partitionLimitExceededBytes =
+                    PartitionLimitExceededBytes(aCookie, aBaseDomain))
+                       .hard > 0) {
       MOZ_LOG(gCookieLog, LogLevel::Debug,
               ("Partition byte limit exceeded on cookie add\n"));
+
       if (!StaticPrefs::network_cookie_chips_partitionLimitDryRun()) {
-        RemoveOlderCookiesUntilUnderLimit(entry, aCookie, aBaseDomain,
-                                          purgedList);
+        RemoveOlderCookiesByBytes(entry, partitionLimitExceededBytes.soft,
+                                  purgedList);
       }
       if (StaticPrefs::network_cookie_chips_partitionLimitByteCapacity() ==
           kChipsPartitionByteCapacityDefault) {
         mozilla::glean::networking::cookie_chips_partition_limit_overflow
-            .AccumulateSingleSample(partitionLimitExceededBytes);
+            .AccumulateSingleSample(partitionLimitExceededBytes.hard);
       }
     } else if (mCookieCount >= ADD_TEN_PERCENT(mMaxNumberOfCookies)) {
       int64_t maxAge = aCurrentTimeInUsec - mCookieOldestTime;
@@ -871,8 +924,8 @@ void CookieStorage::AddCookie(CookieParser* aCookieParser,
 }
 
 void CookieStorage::UpdateCookieOldestTime(Cookie* aCookie) {
-  if (aCookie->LastAccessed() < mCookieOldestTime) {
-    mCookieOldestTime = aCookie->LastAccessed();
+  if (aCookie->LastAccessedInUSec() < mCookieOldestTime) {
+    mCookieOldestTime = aCookie->LastAccessedInUSec();
   }
 }
 
@@ -910,10 +963,10 @@ already_AddRefed<nsIArray> CookieStorage::CreatePurgeList(nsICookie* aCookie) {
 }
 
 // Given the output iter array and the count limit, find cookies
-// sort by expiry and lastAccessed time.
+// sort by expiry and lastAccessedInUSec time.
 // static
-void CookieStorage::FindStaleCookies(CookieEntry* aEntry, int64_t aCurrentTime,
-                                     bool aIsSecure,
+void CookieStorage::FindStaleCookies(CookieEntry* aEntry,
+                                     int64_t aCurrentTimeInMSec, bool aIsSecure,
                                      nsTArray<CookieListIter>& aOutput,
                                      uint32_t aLimit) {
   MOZ_ASSERT(aLimit);
@@ -921,13 +974,13 @@ void CookieStorage::FindStaleCookies(CookieEntry* aEntry, int64_t aCurrentTime,
   const CookieEntry::ArrayType& cookies = aEntry->GetCookies();
   aOutput.Clear();
 
-  CookieIterComparator comp(aCurrentTime);
+  CookieIterComparator comp(aCurrentTimeInMSec);
   nsTPriorityQueue<CookieListIter, CookieIterComparator> queue(comp);
 
   for (CookieEntry::IndexType i = 0; i < cookies.Length(); ++i) {
     Cookie* cookie = cookies[i];
 
-    if (cookie->Expiry() <= aCurrentTime) {
+    if (cookie->ExpiryInMSec() <= aCurrentTimeInMSec) {
       queue.Push(CookieListIter(aEntry, i));
       continue;
     }
@@ -988,7 +1041,7 @@ already_AddRefed<nsIArray> CookieStorage::PurgeCookiesWithCallbacks(
   nsCOMPtr<nsIMutableArray> removedList =
       do_CreateInstance(NS_ARRAY_CONTRACTID);
 
-  int64_t currentTime = aCurrentTimeInUsec / PR_USEC_PER_SEC;
+  int64_t currentTimeInMSec = aCurrentTimeInUsec / PR_USEC_PER_MSEC;
   int64_t purgeTime = aCurrentTimeInUsec - aCookiePurgeAge;
   int64_t oldestTime = INT64_MAX;
 
@@ -1002,7 +1055,7 @@ already_AddRefed<nsIArray> CookieStorage::PurgeCookiesWithCallbacks(
       Cookie* cookie = cookies[i];
 
       // check if the cookie has expired
-      if (cookie->Expiry() <= currentTime) {
+      if (cookie->ExpiryInMSec() <= currentTimeInMSec) {
         removedList->AppendElement(cookie);
         COOKIE_LOGEVICTED(cookie, "Cookie expired");
 
@@ -1014,12 +1067,12 @@ already_AddRefed<nsIArray> CookieStorage::PurgeCookiesWithCallbacks(
         }
       } else {
         // check if the cookie is over the age limit
-        if (cookie->LastAccessed() <= purgeTime) {
+        if (cookie->LastAccessedInUSec() <= purgeTime) {
           purgeList.AppendElement(iter);
 
-        } else if (cookie->LastAccessed() < oldestTime) {
+        } else if (cookie->LastAccessedInUSec() < oldestTime) {
           // reset our indicator
-          oldestTime = cookie->LastAccessed();
+          oldestTime = cookie->LastAccessedInUSec();
         }
 
         ++i;
@@ -1040,7 +1093,7 @@ already_AddRefed<nsIArray> CookieStorage::PurgeCookiesWithCallbacks(
                         : 0;
   if (purgeList.Length() > excess) {
     // We're not purging everything in the list, so update our indicator.
-    oldestTime = purgeList[excess].Cookie()->LastAccessed();
+    oldestTime = purgeList[excess].Cookie()->LastAccessedInUSec();
 
     purgeList.SetLength(excess);
   }

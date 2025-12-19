@@ -39,26 +39,14 @@ urlbar-group-addon =
 urlbar-group-mdn =
   .label = Recommended resource
 
-# Label shown above a Pocket suggestion in the urlbar results.
-urlbar-group-pocket =
-  .label = Recommended reads
-
 # A label shown above urlbar suggestions for businesses and other locations
 # in the user's city or a city they included in their search string (e.g., Yelp
 # suggestions).
 urlbar-group-local =
   .label = Local recommendations
 
-# Label shown above sponsored suggestions in the urlbar results.
-urlbar-group-sponsored =
-  .label = Sponsored
-
 # A message that replaces a result when the user dismisses a single suggestion.
 firefox-suggest-dismissal-acknowledgment-one = Thanks for your feedback. You won’t see this suggestion again.
-
-# A message that replaces a result when the user dismisses all suggestions of a
-# particular type.
-firefox-suggest-dismissal-acknowledgment-all = Thanks for your feedback. You won’t see these suggestions anymore.
 
 # A message that replaces a result when the user dismisses a single MDN
 # suggestion.
@@ -74,14 +62,8 @@ firefox-suggest-dismissal-acknowledgment-one-yelp = Thanks for your feedback. Yo
 # A message that replaces a result when the user dismisses all Yelp suggestions.
 firefox-suggest-dismissal-acknowledgment-all-yelp = Thanks for your feedback. You won’t see { -yelp-brand-name } suggestions anymore.
 
-# A message that replaces a result when the user dismisses a single Fakespot
-# suggestion.
-firefox-suggest-dismissal-acknowledgment-one-fakespot = Thanks for your feedback. You won’t see this { -fakespot-brand-name } suggestion again.
-
-# A message that replaces a result when the user dismisses all Fakespot suggestions.
-firefox-suggest-dismissal-acknowledgment-all-fakespot = Thanks for your feedback. You won’t see { -fakespot-brand-name } suggestions anymore.
-
-## These strings are used for weather suggestions in the urlbar.
+## These strings are used for urlbar weather suggestions in the "simpler" and
+## "full" weather UIs.
 
 # This string is displayed above the current temperature
 firefox-suggest-weather-currently = Currently
@@ -91,17 +73,6 @@ firefox-suggest-weather-currently = Currently
 #   $value (number) - The temperature value
 #   $unit (String) - The unit for the temperature
 firefox-suggest-weather-temperature = { $value }°{ $unit }
-
-# This string is the title of the weather summary used for the "simplest" UI
-# treatment. The temperature and unit substring should be in a <strong> tag. If
-# the temperature and unit are not adjacent in the string, then it's OK to
-# include only the temperature in the tag.
-# Variables:
-#   $temperature (number) - The temperature value
-#   $unit (String) - The unit for the temperature
-#   $city (String) - The name of the city the weather data is for
-#   $region (String) - The name of the region (e.g., U.S. state)
-firefox-suggest-weather-title-simplest = <strong>{ $temperature }°{ $unit }</strong> in { $city }, { $region }
 
 # This string is the title of the weather summary used for the "full" and
 # "simpler" UI treatments.
@@ -123,11 +94,6 @@ firefox-suggest-weather-summary-text = { $currentConditions }; { $forecast }
 #   $low (number) - The number for the low temperature
 firefox-suggest-weather-high-low = High: { $high }°{ $unit } · Low: { $low }°{ $unit }
 
-# This string displays the name of the weather provider
-# Variables:
-#   $provider (String) - The name of the weather provider
-firefox-suggest-weather-sponsored = { $provider } · Sponsored
-
 ## These strings are used as labels of menu items in the result menu.
 
 firefox-suggest-command-dont-show-this =
@@ -138,8 +104,6 @@ firefox-suggest-command-not-relevant =
   .label = Not relevant
 firefox-suggest-command-not-interested =
   .label = Not interested
-firefox-suggest-command-manage-fakespot =
-  .label = Manage { -fakespot-brand-name } suggestions
 firefox-suggest-command-dont-show-this-suggestion =
   .label = Don’t show this suggestion
 firefox-suggest-command-dont-show-any-suggestions =
@@ -156,55 +120,17 @@ firefox-suggest-addons-recommended = Recommended
 # MDN.
 firefox-suggest-mdn-bottom-text = { -mdn-brand-name }
 
-## These strings are used for Pocket suggestions in the urlbar.
-
-# This string is shown in Pocket suggestions and indicates the suggestion is
-# from Pocket and is related to a particular keyword that matches the user's
-# search string.
-# Variables:
-#   $keywordSubstringTyped (string) - The part of the suggestion keyword that the user typed
-#   $keywordSubstringNotTyped (string) - The part of the suggestion keyword that the user did not yet type
-firefox-suggest-pocket-bottom-text = { -pocket-brand-name } · Related to <strong>{ $keywordSubstringTyped }</strong>{ $keywordSubstringNotTyped }
-
 ## These strings are used for Yelp suggestions in the urlbar.
+
+# This string is shown as the title in Yelp suggestions when the suggestion
+# subject is a general service instead of a business name.
+# Variables:
+#   $service (string) - The title of the service, e.g., "coffee shops".
+firefox-suggest-yelp-service-title = Top results for { $service }
 
 # This string is shown in Yelp suggestions and indicates the suggestion is for
 # Yelp.
-firefox-suggest-yelp-bottom-text = Yelp · Sponsored
-
-## These strings are used for Fakespot suggestions in the urlbar.
-
-# This string displays inside of the badge in Fakespot suggestion.
-firefox-suggest-fakespot-badge = RELIABLE REVIEWS
-
-## This string displays rating and total reviews as a label.
-## Variables:
-##  $rating (number) - The number of rating for the suggestion.
-##  $totalReviews (number) - The number of total reviews for the suggestion.
-
-# Show the exact number of reviews.
-firefox-suggest-fakespot-rating-and-total-reviews =
-  { $totalReviews ->
-     [one] { $rating } · ({ $totalReviews } review)
-    *[other] { $rating } · ({ $totalReviews } reviews)
-  }
-# Show an approximate number of reviews (e.g. 100,000+ reviews).
-firefox-suggest-fakespot-rating-and-total-reviews-overflow =
-  { $totalReviews ->
-     [one] { $rating } · ({ $totalReviews }+ review)
-    *[other] { $rating } · ({ $totalReviews }+ reviews)
-  }
-
-# This string is shown in Fakespot suggestion and indicates the suggestion is
-# sponsored.
-firefox-suggest-fakespot-sponsored = { -fakespot-brand-name } · Sponsored
-
-# These strings are used for a toggle switch in the settings UI that opts the
-# user into "online" Firefox Suggest, allowing them to receive suggestions from
-# Mozilla's Merino server.
-addressbar-firefox-suggest-data-collection =
-  .label = Improve the { -firefox-suggest-brand-name } experience
-  .description = Share search query data with { -vendor-short-name } to create a richer search experience.
+firefox-suggest-yelp-bottom-text = { -yelp-brand-name } · Sponsored
 
 ## Used as title on the introduction pane. The text can be formatted to span
 ## multiple lines as needed (line breaks are significant).
@@ -312,21 +238,145 @@ urlbar-search-mode-tabs-en = Tabs
 urlbar-search-mode-history-en = History
 urlbar-search-mode-actions-en = Actions
 
-## Add search engine dialog
-## These strings will be moved to search.ftl once the dialog is finished.
+## These strings are used for Yelp realtime suggestions in the urlbar.
+## Yelp realtime suggestions shows shops, places information etc nearby.
 
-add-engine-suggest-url = Search suggestion URL, use %s in place of the search term
+# This string is shown as title when Yelp realtime suggestion are disabled.
+urlbar-result-yelp-realtime-opt-in-title = Find great places nearby and more
 
+# This string is shown as description when Yelp realtime suggestion are disabled.
+urlbar-result-yelp-realtime-opt-in-description = Get suggestions for nearby places and services — plus updates on stocks, sports scores, and more from our partners by sharing search query data with { -vendor-short-name }. <a data-l10n-name="learn-more-link">Learn more</a>
+
+# This string is shown in the result menu.
+urlbar-result-menu-dont-show-yelp-realtime =
+  .label = Don’t show { -yelp-brand-name } suggestions
+
+# A message that replaces a result when the user dismisses Yelp realtime
+# suggestions.
+urlbar-result-dismissal-acknowledgment-yelp-realtime = Thanks for your feedback. You won’t see { -yelp-brand-name } suggestions anymore.
+
+# This string is shown as group label for Yelp realtime suggestions.
+urlbar-result-yelp-realtime-group-label =
+  .label = { -yelp-brand-name } · Sponsored
+
+
+# This string is shown as the business hours information in cases where the shop
+# is opening.
+# e.g. <span>Open</span> until 3pm.
+# The <span> is needed to change the text color by the status (open/closed).
 # Variables:
-#   $name (string) - Name of a search engine.
-edit-engine-name-warning-duplicate = There already is a search engine with the name “{ $name }”. Please choose another name.
+#   $timeUntil (string) - The time that this state is kept.
+urlbar-result-yelp-realtime-business-hours-open =
+    <span>Open</span> until { $timeUntil }
 
-edit-engine-dialog =
-    .buttonlabelaccept = Save Engine
-    .buttonaccesskeyaccept = S
+# This string is shown as the business hours information in cases where the shop
+# is closed.
+# closed.
+# e.g. <span>Closed</span> until 3pm.
+# The <span> is needed to change the text color by the status (open/closed).
+# Variables:
+#   $timeUntil (string) - The time that this state is kept.
+urlbar-result-yelp-realtime-business-hours-closed =
+    <span>Closed</span> until { $timeUntil }
 
-edit-engine-window =
-    .title = Edit Search Engine
-    .style = min-width: 32em;
+# This string is shown as popularity by the rating and the review count.
+# Variables:
+#   $rating (float) - The rating of this.
+#   $review_count (integer) - The review count of this.
+urlbar-result-yelp-realtime-popularity = { $rating } ({ $review_count })
 
-add-engine-post-data = Post data
+# This a11y label is read by screen readers when an item in the row is selected.
+urlbar-result-aria-group-yelp-realtime =
+  .aria-label = { -yelp-brand-name } suggestions
+
+## These strings are used for flight status suggestions in the urlbar.
+## The flight status suggestions shows the flight time, origin and destination
+## and the status like delayed, etc.
+
+# This string is shown in the result menu.
+urlbar-result-menu-dont-show-flight-status =
+  .label = Don’t show flight status suggestions
+
+# A message that replaces a result when the user dismisses flight status
+# suggestions.
+urlbar-result-dismissal-acknowledgment-flight-status = Thanks for your feedback. You won’t see flight status suggestions anymore.
+
+# This string is shown as the statis of 'On time'.
+urlbar-result-flight-status-status-ontime = On time
+
+# This string is shown as the statis of 'In flight'.
+urlbar-result-flight-status-status-inflight = In flight
+
+# This string is shown as the statis of 'Arrived'.
+urlbar-result-flight-status-status-arrived = Arrived
+
+# This string is shown as the statis of 'Cancelled'.
+urlbar-result-flight-status-status-cancelled = Cancelled
+
+# This string is shown as the statis of 'Delayed'.
+# This label needs to show the estimated departure time too.
+# e.g. Delayed until 5:50pm
+# Variables:
+#   $departureEstimatedTime (string) - The estimated departure time.
+urlbar-result-flight-status-status-delayed =
+    Delayed until { $departureEstimatedTime }
+
+# This string is shown as the time remaining in an in-progress flight.
+# e.g. 30 min left
+# Variables:
+#   $timeLeft (string) - Localized duration string, e.g., "1 hr, 30 min"
+urlbar-result-flight-status-time-left = { $timeLeft } left
+
+# This string is shown as the airport.
+# e.g. Los Angeles (LAX) to New York (JFK)
+# Variables:
+#   $city (string) - The city of the airport.
+#   $code (string) - The code of the airport.
+urlbar-result-flight-status-airport = { $city } ({ $code })
+
+# This string is shown as the flight number with the airline name.
+# e.g. AC 8170, (Air Canada)
+# Variables:
+#   $flightNumber (string) - The flight number.
+#   $airlineName (string) - The airline name.
+urlbar-result-flight-status-flight-number-with-airline = { $flightNumber }, { $airlineName }
+
+# This a11y label is read by screen readers when an item in the row is selected.
+urlbar-result-aria-group-flight-status =
+  .aria-label = Flight status suggestions
+
+## These strings are used for sports suggestions in the urlbar. Sports
+## suggestions show team names, scores, game times, etc.
+
+# This string is shown for a scheduled future game. In English, "Team 1 at Team
+# 2" means the game is taking place at Team 2's home venue, and we say Team 1 is
+# the "away" team and Team 2 is the "home" team. If your language doesn't have a
+# similar phrase, use your equivalent of "vs." or even just "and".
+# Variables:
+#   $awayTeam (string) - Name of the visting team.
+#   $homeTeam (string) - Name of the home team.
+urlbar-result-sports-team-names = { $awayTeam } at { $homeTeam }
+
+# This string is shown when the game is today, in the near future, or in the
+# recent past.
+# Variables:
+#   $date (string) - Localized date string, e.g., "Today", "Oct 31"
+#   $time (string) - Localized time
+urlbar-result-sports-game-date-with-time = { $date } at { $time }
+
+# This status is shown when the game is in progress.
+urlbar-result-sports-status-live = Live
+
+# This status is shown when the game is over.
+urlbar-result-sports-status-final = Final
+
+# This string is shown in the result menu.
+urlbar-result-menu-dont-show-sports =
+  .label = Don’t show sports suggestions
+
+# A message that replaces a result when the user dismisses sports suggestions.
+urlbar-result-dismissal-acknowledgment-sports = Thanks for your feedback. You won’t see sports suggestions anymore.
+
+# This a11y label is read by screen readers when an item in the row is selected.
+urlbar-result-aria-group-sports =
+  .aria-label = Sports suggestions

@@ -32,7 +32,7 @@ using namespace std;
 #ifdef DISABLE_LIBAAUDIO_DLOPEN
 #define WRAP(x) x
 #else
-#define WRAP(x) (*cubeb_##x)
+#define WRAP(x) AAudioLibrary::get().x
 #define LIBAAUDIO_API_VISIT(X)                                                 \
   X(AAudio_convertResultToText)                                                \
   X(AAudio_convertStreamStateToText)                                           \
@@ -70,27 +70,67 @@ using namespace std;
   X(AAudioStreamBuilder_setUsage)                                              \
   X(AAudioStreamBuilder_setFramesPerDataCallback)
 
-// not needed or added later on                      \
-  // X(AAudioStreamBuilder_setDeviceId)              \
-  // X(AAudioStreamBuilder_setSamplesPerFrame)       \
-  // X(AAudioStream_getSamplesPerFrame)              \
-  // X(AAudioStream_getDeviceId)                     \
-  // X(AAudioStream_write)                           \
-  // X(AAudioStream_getChannelCount)                 \
-  // X(AAudioStream_getFormat)                       \
-  // X(AAudioStream_getXRunCount)                    \
-  // X(AAudioStream_isMMapUsed)                      \
-  // X(AAudioStreamBuilder_setContentType)           \
-  // X(AAudioStreamBuilder_setSessionId)             \
-  // X(AAudioStream_getUsage)                        \
-  // X(AAudioStream_getContentType)                  \
-  // X(AAudioStream_getInputPreset)                  \
-  // X(AAudioStream_getSessionId)                    \
-// END: not needed or added later on
+class AAudioLibrary {
+public:
+  static AAudioLibrary & get()
+  {
+    static AAudioLibrary singleton;
+    return singleton;
+  }
 
-#define MAKE_TYPEDEF(x) static decltype(x) * cubeb_##x;
-LIBAAUDIO_API_VISIT(MAKE_TYPEDEF)
-#undef MAKE_TYPEDEF
+  bool load()
+  {
+    lock_guard lock(mutex);
+    if (state != State::Uninitialized) {
+      return state == State::Loaded;
+    }
+
+    libaaudio = dlopen("libaaudio.so", RTLD_NOW);
+    if (!libaaudio) {
+      LOG("AAudio: Failed to open libaaudio.so: %s", dlerror());
+      state = State::Failed;
+      return false;
+    }
+
+#define LOAD(x)                                                                \
+  x = reinterpret_cast<decltype(::x) *>(dlsym(libaaudio, #x));                 \
+  if (!x) {                                                                    \
+    LOG("AAudio: Failed to load symbol %s: %s", #x, dlerror());                \
+    dlclose(libaaudio);                                                        \
+    libaaudio = nullptr;                                                       \
+    state = State::Failed;                                                     \
+    return false;                                                              \
+  }
+    LIBAAUDIO_API_VISIT(LOAD)
+#undef LOAD
+
+    state = State::Loaded;
+    return true;
+  }
+
+#define DECLARE(x) decltype(::x) * x = nullptr;
+  LIBAAUDIO_API_VISIT(DECLARE)
+#undef DECLARE
+
+private:
+  enum class State { Uninitialized, Loaded, Failed };
+
+  AAudioLibrary() = default;
+
+  ~AAudioLibrary()
+  {
+    if (libaaudio) {
+      dlclose(libaaudio);
+    }
+  }
+
+  AAudioLibrary(const AAudioLibrary &) = delete;
+  AAudioLibrary & operator=(const AAudioLibrary &) = delete;
+
+  void * libaaudio = nullptr;
+  State state = State::Uninitialized;
+  mutex mutex;
+};
 #endif
 
 const uint8_t MAX_STREAMS = 16;
@@ -322,7 +362,6 @@ struct cubeb_stream {
 
 struct cubeb {
   struct cubeb_ops const * ops{};
-  void * libaaudio{};
 
   struct {
     // The state thread: it waits for state changes and stops
@@ -377,7 +416,7 @@ wait_for_state_change(AAudioStream * aaudio_stream,
   *desired_state = new_state;
 
   LOG("wait_for_state_change: current state now: %s",
-      cubeb_AAudio_convertStreamStateToText(new_state));
+      WRAP(AAudio_convertStreamStateToText)(new_state));
 
   return CUBEB_OK;
 }
@@ -445,10 +484,11 @@ update_state(cubeb_stream * stm)
     return;
   }
 
-  // If the main thread currently operates on this thread, we don't
-  // have to wait for it
+  // Requeue a state update if stream is already locked.
   unique_lock lock(stm->mutex, std::try_to_lock);
   if (!lock.owns_lock()) {
+    stm->context->state.waiting.store(true);
+    stm->context->state.cond.notify_one();
     return;
   }
 
@@ -515,7 +555,7 @@ update_state(cubeb_stream * stm)
         ostate == AAUDIO_STREAM_STATE_UNKNOWN ||
         ostate == AAUDIO_STREAM_STATE_DISCONNECTED) {
       LOG("Unexpected android output stream state %s",
-          WRAP(AAudio_convertStreamStateToText)(istate));
+          WRAP(AAudio_convertStreamStateToText)(ostate));
       shutdown_with_error(stm);
       return;
     }
@@ -586,9 +626,16 @@ update_state(cubeb_stream * stm)
       }
       break;
     case stream_state::STOPPING:
-      assert(!istate || istate == AAUDIO_STREAM_STATE_PAUSING ||
+      // If stream_stop happens while the stream is still starting, we may see
+      // STARTING/STARTED, ignore these and handle STATE_STOPPED once we reach
+      // PAUSED.
+      assert(!istate || istate == AAUDIO_STREAM_STATE_STARTING ||
+             istate == AAUDIO_STREAM_STATE_STARTED ||
+             istate == AAUDIO_STREAM_STATE_PAUSING ||
              istate == AAUDIO_STREAM_STATE_PAUSED);
-      assert(!ostate || ostate == AAUDIO_STREAM_STATE_PAUSING ||
+      assert(!ostate || ostate == AAUDIO_STREAM_STATE_STARTING ||
+             ostate == AAUDIO_STREAM_STATE_STARTED ||
+             ostate == AAUDIO_STREAM_STATE_PAUSING ||
              ostate == AAUDIO_STREAM_STATE_PAUSED);
       if ((!istate || istate == AAUDIO_STREAM_STATE_PAUSED) &&
           (!ostate || ostate == AAUDIO_STREAM_STATE_PAUSED)) {
@@ -718,11 +765,6 @@ aaudio_destroy(cubeb * ctx)
   if (ctx->state.notifier.joinable()) {
     ctx->state.notifier.join();
   }
-#ifndef DISABLE_LIBAAUDIO_DLOPEN
-  if (ctx->libaaudio) {
-    dlclose(ctx->libaaudio);
-  }
-#endif
   delete ctx;
 }
 
@@ -806,7 +848,7 @@ aaudio_get_latency(cubeb_stream * stm, aaudio_direction_t direction,
                            : signed_tstamp_ns - app_frame_hw_time;
   int64_t latency_frames = stm->sample_rate * latency_ns / NS_PER_S;
 
-  LOGV("Latency in frames (%s): %d (%dms)", is_output ? "output" : "input",
+  LOGV("Latency in frames (%s): %ld (%fms)", is_output ? "output" : "input",
        latency_frames, latency_ns / 1e6);
 
   return latency_frames;
@@ -884,12 +926,14 @@ aaudio_duplex_data_cb(AAudioStream * astream, void * user_data,
   long in_num_frames =
       WRAP(AAudioStream_read)(stm->istream, stm->in_buf.data(), num_frames, 0);
   if (in_num_frames < 0) { // error
-    if (in_num_frames == AAUDIO_STREAM_STATE_DISCONNECTED) {
+    if (in_num_frames == AAUDIO_ERROR_DISCONNECTED) {
       LOG("AAudioStream_read: %s (reinitializing)",
           WRAP(AAudio_convertResultToText)(in_num_frames));
       reinitialize_stream(stm);
     } else {
       stm->state.store(stream_state::ERROR);
+      stm->context->state.waiting.store(true);
+      stm->context->state.cond.notify_one();
     }
     LOG("AAudioStream_read: %s",
         WRAP(AAudio_convertResultToText)(in_num_frames));
@@ -897,7 +941,7 @@ aaudio_duplex_data_cb(AAudioStream * astream, void * user_data,
   }
 
   ALOGV("aaudio duplex data cb on stream %p: state %ld (in: %d, out: %d), "
-        "num_frames: %ld, read: %ld",
+        "num_frames: %d, read: %ld",
         (void *)stm, state, istate, ostate, num_frames, in_num_frames);
 
   compute_and_report_latency_metrics(stm);
@@ -925,6 +969,8 @@ aaudio_duplex_data_cb(AAudioStream * astream, void * user_data,
   if (done_frames < 0 || done_frames > num_frames) {
     LOG("Error in data callback or resampler: %ld", done_frames);
     stm->state.store(stream_state::ERROR);
+    stm->context->state.waiting.store(true);
+    stm->context->state.cond.notify_one();
     return AAUDIO_CALLBACK_RESULT_STOP;
   }
   if (done_frames < num_frames) {
@@ -955,7 +1001,7 @@ aaudio_output_data_cb(AAudioStream * astream, void * user_data,
 
   stream_state state = stm->state.load();
   int ostate = WRAP(AAudioStream_getState)(stm->ostream);
-  ALOGV("aaudio output data cb on stream %p: state %ld (%d), num_frames: %ld",
+  ALOGV("aaudio output data cb on stream %p: state %ld (%d), num_frames: %d",
         stm, state, ostate, num_frames);
 
   // all other states may happen since the callback might be called
@@ -976,6 +1022,8 @@ aaudio_output_data_cb(AAudioStream * astream, void * user_data,
   if (done_frames < 0 || done_frames > num_frames) {
     LOG("Error in data callback or resampler: %ld", done_frames);
     stm->state.store(stream_state::ERROR);
+    stm->context->state.waiting.store(true);
+    stm->context->state.cond.notify_one();
     return AAUDIO_CALLBACK_RESULT_STOP;
   }
 
@@ -1007,7 +1055,7 @@ aaudio_input_data_cb(AAudioStream * astream, void * user_data,
 
   stream_state state = stm->state.load();
   int istate = WRAP(AAudioStream_getState)(stm->istream);
-  ALOGV("aaudio input data cb on stream %p: state %ld (%d), num_frames: %ld",
+  ALOGV("aaudio input data cb on stream %p: state %ld (%d), num_frames: %d",
         stm, state, istate, num_frames);
 
   // all other states may happen since the callback might be called
@@ -1029,6 +1077,8 @@ aaudio_input_data_cb(AAudioStream * astream, void * user_data,
   if (done_frames < 0 || done_frames > num_frames) {
     LOG("Error in data callback or resampler: %ld", done_frames);
     stm->state.store(stream_state::ERROR);
+    stm->context->state.waiting.store(true);
+    stm->context->state.cond.notify_one();
     return AAUDIO_CALLBACK_RESULT_STOP;
   }
 
@@ -1083,6 +1133,8 @@ reinitialize_stream(cubeb_stream * stm)
       LOG("aaudio_stream_init_impl error while reiniting: %s",
           WRAP(AAudio_convertResultToText)(err));
       stm->state.store(stream_state::ERROR);
+      stm->context->state.waiting.store(true);
+      stm->context->state.cond.notify_one();
       return;
     }
 
@@ -1094,6 +1146,8 @@ reinitialize_stream(cubeb_stream * stm)
         LOG("aaudio_stream_start error while reiniting: %s",
             WRAP(AAudio_convertResultToText)(err));
         stm->state.store(stream_state::ERROR);
+        stm->context->state.waiting.store(true);
+        stm->context->state.cond.notify_one();
         return;
       }
     }
@@ -1115,6 +1169,8 @@ aaudio_error_cb(AAudioStream * astream, void * user_data, aaudio_result_t error)
 
   LOG("AAudio error callback: %s", WRAP(AAudio_convertResultToText)(error));
   stm->state.store(stream_state::ERROR);
+  stm->context->state.waiting.store(true);
+  stm->context->state.cond.notify_one();
 }
 
 static int
@@ -1620,9 +1676,11 @@ aaudio_stream_start_locked(cubeb_stream * stm, lock_guard<mutex> & lock)
 
   if (success) {
     stm->pos_estimate.start(now_ns());
-    stm->context->state.waiting.store(true);
-    stm->context->state.cond.notify_one();
   }
+
+  // Wake the state thread to trigger STARTED/ERROR state callback.
+  stm->context->state.waiting.store(true);
+  stm->context->state.cond.notify_one();
 
   return ret;
 }
@@ -1648,8 +1706,8 @@ aaudio_stream_stop_locked(cubeb_stream * stm, lock_guard<mutex> & lock)
                                      ? WRAP(AAudioStream_getState)(stm->ostream)
                                      : AAUDIO_STREAM_STATE_UNINITIALIZED;
   LOG("STOPPING stream %p: %d (in: %s out: %s)", (void *)stm, state,
-      cubeb_AAudio_convertStreamStateToText(istate),
-      cubeb_AAudio_convertStreamStateToText(ostate));
+      WRAP(AAudio_convertStreamStateToText)(istate),
+      WRAP(AAudio_convertStreamStateToText)(ostate));
 
   switch (state) {
   case stream_state::STOPPED:
@@ -1968,31 +2026,14 @@ aaudio_init(cubeb ** context, char const * /* context_name */)
   if (android_get_device_api_level() <= 30) {
     return CUBEB_ERROR;
   }
-  // load api
-  void * libaaudio = nullptr;
 #ifndef DISABLE_LIBAAUDIO_DLOPEN
-  libaaudio = dlopen("libaaudio.so", RTLD_NOW);
-  if (!libaaudio) {
+  if (!AAudioLibrary::get().load()) {
     return CUBEB_ERROR;
   }
-
-#define LOAD(x)                                                                \
-  {                                                                            \
-    cubeb_##x = (decltype(x) *)(dlsym(libaaudio, #x));                         \
-    if (!WRAP(x)) {                                                            \
-      LOG("AAudio: Failed to load %s", #x);                                    \
-      dlclose(libaaudio);                                                      \
-      return CUBEB_ERROR;                                                      \
-    }                                                                          \
-  }
-
-  LIBAAUDIO_API_VISIT(LOAD);
-#undef LOAD
 #endif
 
   cubeb * ctx = new cubeb;
   ctx->ops = &aaudio_ops;
-  ctx->libaaudio = libaaudio;
 
   ctx->state.thread = std::thread(state_thread, ctx);
 

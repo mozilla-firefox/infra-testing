@@ -4,8 +4,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "gtest/gtest.h"
-#include "mozilla/dom/CCGCScheduler.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/dom/CCGCScheduler.h"
 
 // This is a test for mozilla::CCGCScheduler.
 
@@ -344,4 +344,6 @@ TEST(TestScheduler, Idle)
 }
 
 TEST(TestScheduler, NonIdle)
-{ EXPECT_TRUE(BasicScenario(scheduler, &gc, &ccNonIdle)); }
+{
+  EXPECT_TRUE(BasicScenario(scheduler, &gc, &ccNonIdle));
+}

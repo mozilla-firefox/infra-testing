@@ -5,14 +5,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/EncodedVideoChunk.h"
+
 #include <utility>
-#include "mozilla/dom/EncodedVideoChunkBinding.h"
 
 #include "MediaData.h"
 #include "TimeUnits.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/Logging.h"
 #include "mozilla/PodOperations.h"
+#include "mozilla/dom/BufferSourceBinding.h"
+#include "mozilla/dom/EncodedVideoChunkBinding.h"
 #include "mozilla/dom/StructuredCloneHolder.h"
 #include "mozilla/dom/StructuredCloneTags.h"
 #include "mozilla/dom/WebCodecsUtils.h"
@@ -153,15 +155,15 @@ already_AddRefed<EncodedVideoChunk> EncodedVideoChunk::Constructor(
     return nullptr;
   }
 
-  auto buffer = ProcessTypedArrays(
+  auto res = ProcessTypedArrays(
       aInit.mData,
-      [&](const Span<uint8_t>& aData,
-          JS::AutoCheckCannotGC&&) -> RefPtr<MediaAlignedByteBuffer> {
+      [&](const Span<uint8_t>& aData, JS::AutoCheckCannotGC&&)
+          -> Result<RefPtr<MediaAlignedByteBuffer>, MediaResult> {
         // Make sure it's in uint32_t's range.
         CheckedUint32 byteLength(aData.Length());
         if (!byteLength.isValid()) {
-          aRv.Throw(NS_ERROR_INVALID_ARG);
-          return nullptr;
+          return Err(MediaResult(NS_ERROR_INVALID_ARG,
+                                 "requested size exceeds uint32_t limit"));
         }
         if (aData.Length() == 0) {
           LOGW("Buffer for constructing EncodedVideoChunk is empty!");
@@ -172,12 +174,21 @@ already_AddRefed<EncodedVideoChunk> EncodedVideoChunk::Constructor(
         // Instead of checking *buf, size comparision is used to allow
         // constructing a zero-sized EncodedVideoChunk.
         if (!buf || buf->Size() != aData.Length()) {
-          aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
-          return nullptr;
+          return Err(MediaResult(NS_ERROR_OUT_OF_MEMORY,
+                                 "failed to allocate buffer: OOM or "
+                                 "exceeds internal size limit"));
         }
         return buf;
       });
 
+  if (res.isErr()) {
+    MediaResult err = res.unwrapErr();
+    LOGE("Failed to process buffer for EncodedVideoChunk constructor: %s",
+         err.Description().get());
+    aRv.Throw(err.Code());
+    return nullptr;
+  }
+  RefPtr<MediaAlignedByteBuffer> buffer = res.unwrap();
   RefPtr<EncodedVideoChunk> chunk(new EncodedVideoChunk(
       global, buffer.forget(), aInit.mType, aInit.mTimestamp,
       OptionalToMaybe(aInit.mDuration)));

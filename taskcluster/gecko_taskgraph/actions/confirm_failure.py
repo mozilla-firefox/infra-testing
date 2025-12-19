@@ -3,12 +3,13 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
-import json
 import logging
 from functools import partial
 
+from taskgraph.util import json
 from taskgraph.util.taskcluster import get_artifact, get_task_definition, list_artifacts
 
+from ..util.constants import TEST_KINDS
 from .registry import register_callback_action
 from .retrigger import retrigger_action
 from .util import add_args_to_command, create_tasks, fetch_graph_and_labels
@@ -35,7 +36,7 @@ def get_failures(task_id, task_definition):
             test = test.replace(".window.html", ".window.js")
 
         if test.startswith("/_mozilla"):
-            test = "testing/web-platform/mozilla/tests" + test[len("_mozilla") :]
+            test = "testing/web-platform/mozilla/tests" + test[len("/_mozilla") :]
         else:
             test = "testing/web-platform/tests/" + test.strip("/")
         # some wpt tests have params, those are not supported
@@ -197,7 +198,7 @@ def confirm_modifier(task, input):
     symbol="cf",
     description="Re-run Tests for original manifest, directories or tests for failing tests.",
     order=150,
-    context=[{"kind": "test"}],
+    context=[{"kind": kind} for kind in TEST_KINDS],
     schema={
         "type": "object",
         "properties": {

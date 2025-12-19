@@ -5,9 +5,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/SVGFEBlendElement.h"
-#include "mozilla/dom/SVGFEBlendElementBinding.h"
-#include "mozilla/dom/Document.h"
+
 #include "mozilla/dom/BindContext.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/SVGFEBlendElementBinding.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(FEBlend)
 
@@ -27,8 +28,8 @@ SVGEnumMapping SVGFEBlendElement::sModeMap[] = {
     {nsGkAtoms::darken, SVG_FEBLEND_MODE_DARKEN},
     {nsGkAtoms::lighten, SVG_FEBLEND_MODE_LIGHTEN},
     {nsGkAtoms::overlay, SVG_FEBLEND_MODE_OVERLAY},
-    {nsGkAtoms::colorDodge, SVG_FEBLEND_MODE_COLOR_DODGE},
-    {nsGkAtoms::colorBurn, SVG_FEBLEND_MODE_COLOR_BURN},
+    {nsGkAtoms::color_dodge, SVG_FEBLEND_MODE_COLOR_DODGE},
+    {nsGkAtoms::color_burn, SVG_FEBLEND_MODE_COLOR_BURN},
     {nsGkAtoms::hardLight, SVG_FEBLEND_MODE_HARD_LIGHT},
     {nsGkAtoms::softLight, SVG_FEBLEND_MODE_SOFT_LIGHT},
     {nsGkAtoms::difference, SVG_FEBLEND_MODE_DIFFERENCE},

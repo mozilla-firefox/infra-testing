@@ -12,7 +12,9 @@
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/CloseWatcherManager.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentPictureInPicture.h"
 #include "mozilla/dom/UserActivationIPCUtils.h"
+#include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/PermissionDelegateIPCUtils.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPtr.h"
@@ -213,7 +215,7 @@ uint32_t WindowContext::NonSyntheticLightDOMChildrenCount() {
 void WindowContext::SendCommitTransaction(ContentParent* aParent,
                                           const BaseTransaction& aTxn,
                                           uint64_t aEpoch) {
-  Unused << aParent->SendCommitWindowContextTransaction(this, aTxn, aEpoch);
+  (void)aParent->SendCommitWindowContextTransaction(this, aTxn, aEpoch);
 }
 
 void WindowContext::SendCommitTransaction(ContentChild* aChild,
@@ -239,9 +241,14 @@ bool WindowContext::CanSet(FieldIndex<IDX_IsSecure>, const bool& aIsSecure,
   return CheckOnlyOwningProcessCanSet(aSource);
 }
 
-bool WindowContext::CanSet(FieldIndex<IDX_HasBeforeUnload>,
+bool WindowContext::CanSet(FieldIndex<IDX_NeedsBeforeUnload>,
                            const bool& aHasBeforeUnload,
                            ContentParent* aSource) {
+  return CheckOnlyOwningProcessCanSet(aSource);
+}
+
+bool WindowContext::CanSet(FieldIndex<IDX_NeedsTraverse>,
+                           const bool& aNeedsTraverse, ContentParent* aSource) {
   return CheckOnlyOwningProcessCanSet(aSource);
 }
 
@@ -358,6 +365,17 @@ bool WindowContext::CanSet(FieldIndex<IDX_HasActivePeerConnections>, bool,
   return XRE_IsParentProcess() && IsTop();
 }
 
+void WindowContext::ProcessCloseRequest() {
+  MOZ_ASSERT(XRE_IsParentProcess(), "Window must be Global Parent");
+  BrowsingContext* top = mBrowsingContext->Top();
+  top->PreOrderWalk([&](BrowsingContext* aBrowsingContext) {
+    CanonicalBrowsingContext* canonical = aBrowsingContext->Canonical();
+    if (WindowGlobalParent* parent = canonical->GetCurrentWindowGlobal()) {
+      (void)parent->SendProcessCloseRequest(aBrowsingContext);
+    }
+  });
+}
+
 void WindowContext::RecomputeCanExecuteScripts(bool aApplyChanges) {
   const bool old = mCanExecuteScripts;
   if (!AllowJavascript()) {
@@ -403,6 +421,26 @@ void WindowContext::DidSet(FieldIndex<IDX_SHEntryHasUserInteraction>,
   }
 }
 
+void WindowContext::DidSet(FieldIndex<IDX_HasActivePeerConnections>,
+                           bool aOldValue) {
+  MOZ_ASSERT(
+      TopWindowContext() == this,
+      "IDX_HasActivePeerConnections can only be set on the top window context");
+
+  BrowsingContext* top = mBrowsingContext->Top();
+
+  top->PreOrderWalk([&](BrowsingContext* aBrowsingContext) {
+    WindowContext* windowContext = aBrowsingContext->GetCurrentWindowContext();
+    if (windowContext) {
+      auto* win{windowContext->GetInnerWindow()};
+      if (win && (aOldValue != win->HasActivePeerConnections())) {
+        dom::UpdateWorkersPeerConnections(*win,
+                                          win->HasActivePeerConnections());
+      }
+    }
+  });
+}
+
 void WindowContext::DidSet(FieldIndex<IDX_UserActivationStateAndModifiers>) {
   MOZ_ASSERT_IF(!IsInProcess(), mLastActivationTimestamp.IsNull());
   USER_ACTIVATION_LOG("Set user gesture activation 0x%02" PRIu8
@@ -429,7 +467,7 @@ void WindowContext::DidSet(FieldIndex<IDX_HasReportedShadowDOMUsage>,
       Document* topLevelDoc = mBrowsingContext->GetDocument();
       if (topLevelDoc) {
         nsAutoString uri;
-        Unused << topLevelDoc->GetDocumentURI(uri);
+        (void)topLevelDoc->GetDocumentURI(uri);
         if (!uri.IsEmpty()) {
           nsAutoString msg = u"Shadow DOM used in ["_ns + uri +
                              u"] or in some of its subdocuments."_ns;
@@ -531,13 +569,13 @@ void WindowContext::NotifyUserGestureActivation(
   if (auto* innerWindow = GetInnerWindow()) {
     innerWindow->EnsureCloseWatcherManager()->NotifyUserInteraction();
   }
-  Unused << SetUserActivationStateAndModifiers(stateAndModifiers.GetRawData());
+  (void)SetUserActivationStateAndModifiers(stateAndModifiers.GetRawData());
 }
 
 void WindowContext::NotifyResetUserGestureActivation() {
   UserActivation::StateAndModifiers stateAndModifiers;
   stateAndModifiers.SetState(UserActivation::State::None);
-  Unused << SetUserActivationStateAndModifiers(stateAndModifiers.GetRawData());
+  (void)SetUserActivationStateAndModifiers(stateAndModifiers.GetRawData());
 }
 
 bool WindowContext::HasBeenUserGestureActivated() {
@@ -577,12 +615,51 @@ bool WindowContext::HasValidTransientUserGestureActivation() {
          (TimeStamp::Now() - mLastActivationTimestamp) <= timeout;
 }
 
+template <typename F>
+static void ConsumeUserGestureActivationBetweenPiP(BrowsingContext* aTop,
+                                                   F&& aCallback) {
+  // https://wicg.github.io/document-picture-in-picture/#user-activation-propagation
+  // Monkey patch to consume user activation
+  if (aTop->GetIsDocumentPiP()) {
+    // 4. If top is a PIP window, then extend navigables with the opener
+    // window's inclusive decendant navigables
+    RefPtr<BrowsingContext> opener = aTop->GetOpener();
+    if (!opener) {
+      return;
+    }
+    opener->GetBrowsingContext()->PreOrderWalk(aCallback);
+  } else {
+    // 5. Get top-level navigable's last opened PiP window
+    nsPIDOMWindowOuter* outer = aTop->GetDOMWindow();
+    NS_ENSURE_TRUE_VOID(outer);
+    nsPIDOMWindowInner* inner = outer->GetCurrentInnerWindow();
+    NS_ENSURE_TRUE_VOID(inner);
+    DocumentPictureInPicture* dpip = inner->GetExtantDocumentPictureInPicture();
+    if (!dpip) {
+      return;
+    }
+    nsGlobalWindowInner* pip = dpip->GetWindow();
+    if (!pip) {
+      return;
+    }
+
+    // 6. Extend navigables with the inclusive descendant navigables of the PIP
+    // window.
+    BrowsingContext* pipBC = pip->GetBrowsingContext();
+    NS_ENSURE_TRUE_VOID(pipBC);
+    WindowContext* pipWC = pipBC->GetCurrentWindowContext();
+    NS_ENSURE_TRUE_VOID(pipWC);
+    pipBC->PreOrderWalk(aCallback);
+  }
+}
+
 // https://html.spec.whatwg.org/#consume-user-activation
 bool WindowContext::ConsumeTransientUserGestureActivation() {
   MOZ_ASSERT(IsInProcess());
-  MOZ_ASSERT(IsCurrent());
-
   // 1. If W's navigable is null, then return.
+  if (!IsCurrent()) {
+    return false;
+  }
 
   if (!HasValidTransientUserGestureActivation()) {
     return false;
@@ -593,7 +670,7 @@ bool WindowContext::ConsumeTransientUserGestureActivation() {
 
   // 3. Let navigables be the inclusive descendant navigables of top's active
   // document.
-  top->PreOrderWalk([&](BrowsingContext* aBrowsingContext) {
+  auto callback = [&](BrowsingContext* aBrowsingContext) {
     // 4. Let windows be the list of Window objects constructed by taking the
     // active window of each item in navigables.
     WindowContext* windowContext = aBrowsingContext->GetCurrentWindowContext();
@@ -609,10 +686,13 @@ bool WindowContext::ConsumeTransientUserGestureActivation() {
       // DidSet(FieldIndex<IDX_UserActivationStateAndModifiers>),
       // which in turn updates mLastActivationTimestamp.
       stateAndModifiers.SetState(UserActivation::State::HasBeenActivated);
-      Unused << windowContext->SetUserActivationStateAndModifiers(
+      (void)windowContext->SetUserActivationStateAndModifiers(
           stateAndModifiers.GetRawData());
     }
-  });
+  };
+  top->PreOrderWalk(callback);
+
+  ConsumeUserGestureActivationBetweenPiP(top, callback);
 
   return true;
 }
@@ -624,13 +704,27 @@ bool WindowContext::HasValidHistoryActivation() const {
 }
 
 // https://html.spec.whatwg.org/multipage/interaction.html#consume-history-action-user-activation
+// Step 1-2
 void WindowContext::ConsumeHistoryActivation() {
   MOZ_ASSERT(IsInProcess());
 
-  if (!HasValidHistoryActivation()) {
-    return;
-  }
+  // 1. If W's navigable is null, then return.
 
+  // 2. Let top be W's navigable's top-level traversable.
+  RefPtr<BrowsingContext> top = mBrowsingContext->Top();
+
+  // Consuming a history activation must happen across all child processes,
+  // including for example cross-origin iframes. As such we need to send an
+  // message over the IPC boundary to ensure out of processes contexts also
+  // consume their activations.
+  MOZ_ASSERT(XRE_IsContentProcess());
+  ContentChild::GetSingleton()->SendConsumeHistoryActivation(top);
+
+  // Update the local process children immediately.
+  top->ConsumeHistoryActivation();
+}
+
+void WindowContext::UpdateLastHistoryActivation() {
   mHistoryActivation = mLastActivationTimestamp;
 }
 
@@ -729,27 +823,29 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(WindowContext)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 }  // namespace dom
+}  // namespace mozilla
 
-namespace ipc {
+namespace IPC {
 
-void IPDLParamTraits<dom::MaybeDiscarded<dom::WindowContext>>::Write(
-    IPC::MessageWriter* aWriter, IProtocol* aActor,
-    const dom::MaybeDiscarded<dom::WindowContext>& aParam) {
+using mozilla::dom::MaybeDiscarded;
+using mozilla::dom::WindowContext;
+
+void ParamTraits<MaybeDiscarded<WindowContext>>::Write(
+    MessageWriter* aWriter, const MaybeDiscarded<WindowContext>& aParam) {
   uint64_t id = aParam.ContextId();
-  WriteIPDLParam(aWriter, aActor, id);
+  WriteParam(aWriter, id);
 }
 
-bool IPDLParamTraits<dom::MaybeDiscarded<dom::WindowContext>>::Read(
-    IPC::MessageReader* aReader, IProtocol* aActor,
-    dom::MaybeDiscarded<dom::WindowContext>* aResult) {
+bool ParamTraits<MaybeDiscarded<WindowContext>>::Read(
+    MessageReader* aReader, MaybeDiscarded<WindowContext>* aResult) {
   uint64_t id = 0;
-  if (!ReadIPDLParam(aReader, aActor, &id)) {
+  if (!ReadParam(aReader, &id)) {
     return false;
   }
 
   if (id == 0) {
     *aResult = nullptr;
-  } else if (RefPtr<dom::WindowContext> wc = dom::WindowContext::GetById(id)) {
+  } else if (RefPtr<WindowContext> wc = WindowContext::GetById(id)) {
     *aResult = std::move(wc);
   } else {
     aResult->SetDiscarded(id);
@@ -757,27 +853,24 @@ bool IPDLParamTraits<dom::MaybeDiscarded<dom::WindowContext>>::Read(
   return true;
 }
 
-void IPDLParamTraits<dom::WindowContext::IPCInitializer>::Write(
-    IPC::MessageWriter* aWriter, IProtocol* aActor,
-    const dom::WindowContext::IPCInitializer& aInit) {
+void ParamTraits<WindowContext::IPCInitializer>::Write(
+    MessageWriter* aWriter, const WindowContext::IPCInitializer& aInit) {
   // Write actor ID parameters.
-  WriteIPDLParam(aWriter, aActor, aInit.mInnerWindowId);
-  WriteIPDLParam(aWriter, aActor, aInit.mOuterWindowId);
-  WriteIPDLParam(aWriter, aActor, aInit.mBrowsingContextId);
-  WriteIPDLParam(aWriter, aActor, aInit.mFields);
+  WriteParam(aWriter, aInit.mInnerWindowId);
+  WriteParam(aWriter, aInit.mOuterWindowId);
+  WriteParam(aWriter, aInit.mBrowsingContextId);
+  WriteParam(aWriter, aInit.mFields);
 }
 
-bool IPDLParamTraits<dom::WindowContext::IPCInitializer>::Read(
-    IPC::MessageReader* aReader, IProtocol* aActor,
-    dom::WindowContext::IPCInitializer* aInit) {
+bool ParamTraits<WindowContext::IPCInitializer>::Read(
+    MessageReader* aReader, WindowContext::IPCInitializer* aInit) {
   // Read actor ID parameters.
-  return ReadIPDLParam(aReader, aActor, &aInit->mInnerWindowId) &&
-         ReadIPDLParam(aReader, aActor, &aInit->mOuterWindowId) &&
-         ReadIPDLParam(aReader, aActor, &aInit->mBrowsingContextId) &&
-         ReadIPDLParam(aReader, aActor, &aInit->mFields);
+  return ReadParam(aReader, &aInit->mInnerWindowId) &&
+         ReadParam(aReader, &aInit->mOuterWindowId) &&
+         ReadParam(aReader, &aInit->mBrowsingContextId) &&
+         ReadParam(aReader, &aInit->mFields);
 }
 
-template struct IPDLParamTraits<dom::WindowContext::BaseTransaction>;
+template struct ParamTraits<WindowContext::BaseTransaction>;
 
-}  // namespace ipc
-}  // namespace mozilla
+}  // namespace IPC

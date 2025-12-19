@@ -69,7 +69,10 @@ add_task(async function keySelection() {
 
   await withProvider(result, async () => {
     // Ordered list of class names of the elements that should be selected.
-    let expectedClassNames = ["urlbarView-row-inner", "urlbarView-button-menu"];
+    let expectedClassNames = [
+      "urlbarView-row-inner",
+      "urlbarView-button-result-menu",
+    ];
 
     await UrlbarTestUtils.promiseAutocompleteResultPopup({
       window,
@@ -140,11 +143,11 @@ async function checkBestMatchRow({ result, hasHelpUrl = false }) {
   Assert.ok(url.textContent, "Row URL has non-empty textContext");
   Assert.equal(
     url.textContent,
-    result.payload.displayUrl,
+    result.getDisplayableValueAndHighlights("url", { isURL: true }).value,
     "Row URL is correct"
   );
 
-  let button = row._buttons.get("menu");
+  let button = row._buttons.get("result-menu");
   Assert.equal(
     !!result.payload.helpUrl,
     hasHelpUrl,
@@ -174,16 +177,14 @@ async function withProvider(result, callback) {
 }
 
 function makeBestMatchResult(payloadExtra = {}) {
-  return Object.assign(
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.SEARCH,
-      ...UrlbarResult.payloadAndSimpleHighlights([], {
-        title: "Test best match",
-        url: "https://example.com/best-match",
-        ...payloadExtra,
-      })
-    ),
-    { isBestMatch: true }
-  );
+  return new UrlbarResult({
+    type: UrlbarUtils.RESULT_TYPE.URL,
+    source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+    isBestMatch: true,
+    payload: {
+      title: "Test best match",
+      url: "https://example.com/best-match",
+      ...payloadExtra,
+    },
+  });
 }

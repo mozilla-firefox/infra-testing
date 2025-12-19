@@ -25,7 +25,7 @@ const TEST_PATH = getRootDirectory(gTestPath).replace(
 let chooseCertificateCalled = false;
 
 const clientAuthDialogService = {
-  chooseCertificate(hostname, certArray, loadContext, callback) {
+  chooseCertificate(hostname, certArray, loadContext, caNames, callback) {
     is(
       certArray.length,
       1,
@@ -45,6 +45,7 @@ const clientAuthDialogService = {
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
+      ["test.wait300msAfterTabSwitch", true],
       // Enable speculative connections.
       ["network.http.speculative-parallel-limit", 6],
       // Always ask to select a client authentication certificate.

@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -55,7 +62,7 @@
   <string name="menu_settings">Настройки</string>
   <string name="menu_about">Относно</string>
   <string name="menu_help">Помощ</string>
-  <string name="menu_rights" moz:removedIn="137">Вашите права</string>
+  <string name="menu_terms_of_use">Условия за ползване</string>
   <!--
     Menu item: This is the label for a menu entry that shows how many trackers have been blocked
     for the currently loaded website. The number of blocked trackers is shown below this label.
@@ -70,7 +77,7 @@
   -->
   <string name="menu_trackers_blocked_subtitle">Изключването на тази функция би могла да реши някои проблеми със сайта</string>
   <!-- Menu item: This is the label for turning off content blocking for the current website. -->
-  <string name="menu_content_blocking">Блокиране на съдържанието</string>
+  <string name="menu_content_blocking">Блокиране на съдържание</string>
   <!-- This is the subtitle content blocking toggle -->
   <string name="menu_content_blocking_subtitle">Изключете, за да поправите някои сайтове</string>
   <!--
@@ -149,16 +156,9 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote">&lt;p&gt;%1$s ви дава контрол.&lt;/p&gt;
-&lt;p&gt;Използвайте го, за да разглеждате поверително:
-  &lt;ul&gt;
-    &lt;li&gt;Търсене и разглеждане изцяло в приложението&lt;/li&gt;
-    &lt;li&gt;Спиране на проследяването (или позволяване с промяна в настройките)&lt;/li&gt;
-    &lt;li&gt;Изчистване на бисквитките, търсенията и историята на разглеждане&lt;/li&gt;
-  &lt;/ul&gt;
-&lt;/p&gt;
-&lt;p&gt;%1$s се разработва от Mozilla. Нашата мисия е да развиваме здрав и отворен Интернет.&lt;br/&gt;
-&lt;a href="%2$s"&gt;Научете повече&lt;/a&gt;&lt;/p&gt;</string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s ви дава контрол.</p>\n<p>Използвайте го, за да разглеждате поверително:\n<ul>\n<li>Търсене и разглеждане изцяло в приложението</li>\n<li>Спиране на проследяването (или позволяване с промяна в настройките)</li>\n<li>Изчистване на бисквитките, търсенията и историята на разглеждане</li>\n</ul> </p>\n<p>%1$s се разработва от Mozilla. Нашата мисия е да развиваме здрав и отворен Интернет.<br/>\n<a href=\"%2$s\">Научете повече</a></p>]]></string>
+  <!-- A link to SUMO at the bottom of About Focus screen. -->
+  <string name="about_screen_learn_more">Научете повече</string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">Поверителност и защита</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -272,9 +272,9 @@
   <string name="preference_privacy_block_ads">Спиране на следене от реклами</string>
   <string name="preference_privacy_block_ads_summary">Някои реклами проследяват посещенията, даже и да не натискате върху тях</string>
   <string name="preference_privacy_block_analytics">Спиране на следене с цел анализ</string>
-  <string name="preference_privacy_block_analytics_summary">Използват го, за да събират, анализират и измерват дейности като докосване и плъзгане</string>
+  <string name="preference_privacy_block_analytics_summary">Използва се, за да се събират, анализират и измерват дейности като докосване и плъзгане</string>
   <string name="preference_privacy_block_social">Спиране на следене от социални мрежи</string>
-  <string name="preference_privacy_block_social_summary">Вградени в сайтове, за да ви проследява и да показва функционални елементи, като например бутони за споделяне</string>
+  <string name="preference_privacy_block_social_summary">Вградени елементи в сайтове, които проследяват вашите посещения и показват функционални елементи като бутони за споделяне с приятели</string>
   <string name="preference_privacy_block_content">Спиране на следене през друго съдържание</string>
   <string name="preference_privacy_block_content_summary2">Активирането може да предизвика неочаквано поведение на някои страници</string>
   <string name="preference_privacy_category_cookies">Забраняване на бисквитки</string>
@@ -329,12 +329,18 @@
   <string name="preference_mozilla_telemetry_summary">Научете повече</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
   <string name="preference_mozilla_telemetry_summary2">Mozilla се старае да събира само нужните данни за подобряване на %1$s.</string>
+  <!-- Preference switch for daily usage ping data collection -->
+  <string name="preference_daily_usage_ping_title">Ежедневна употреба</string>
+  <string name="preference_daily_usage_ping_description">Това помага на Mozilla да оцени активните потребители.</string>
+  <string name="preference_daily_usage_ping_learn_more">Научете повече</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Политика на поверителност</string>
   <!-- In-app link (in settings) to Focus licensing information. -->
   <string name="preference_licensing_info">Лицензна информация</string>
   <!-- Link to Focus licensing information from other libraries that we use. -->
   <string name="preference_libraries_we_use">Използвани библиотеки</string>
+  <!-- Link to Focus Crash reports list. -->
+  <string name="preference_crashes">Сривове</string>
   <!-- Open Source Licenses page title. %s is the name of the app (for example "Firefox Focus" or "Firefox Klar"). -->
   <string name="open_source_licenses_title">%s | библиотеки с отворен код</string>
   <!-- Item in Preferences that shows the about page. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar"). -->
@@ -342,7 +348,7 @@
   <!-- Header for the list of installed search engines -->
   <string name="preference_search_installed_search_engines">Инсталирани търсачки</string>
   <!-- Header for the list of installed search engines -->
-  <string name="preference_choose_search_engine">Избиране на търсеща машина</string>
+  <string name="preference_choose_search_engine">Избор на търсачка</string>
   <!-- Action for restoring the default list of search engines -->
   <string name="preference_search_restore">Възстановяване на стандартните търсачки</string>
   <!--
@@ -460,8 +466,30 @@
   <string name="onboarding_first_screen_title">Добре дошли при %1$s</string>
   <!-- New Onboarding flow first screen subtitle the one that appears under title -->
   <string name="onboarding_first_screen_subtitle">Бързо. Поверително. Без разсейване.</string>
+  <!--
+    New Onboarding flow first screen 'terms of use' text
+
+    %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
+  -->
+  <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">Продължавайки, вие се съгласявате с %1$s.</string>
+  <!--
+    New Onboarding flow first screen 'terms of use link'
+
+    Text for the link used in onboarding_first_screen_terms_of_use_text
+  -->
+  <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">Условия за ползване на Firefox</string>
+  <!--
+    New Onboarding flow first screen 'privacy notice' text
+
+    %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
+  -->
+  <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Firefox се грижи за вашата поверителност. Научете повече в нашия %1$s.</string>
+  <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
+  <string name="onboarding_first_screen_privacy_notice_link_2">Политика на поверителност</string>
   <!-- New Onboarding flow first screen button label -->
-  <string name="onboarding_first_screen_button_text" moz:removedIn="137" tools:ignore="UnusedResources">Въведение</string>
+  <string name="onboarding_first_screen_button_agree_and_continue_2">Продължаване</string>
+  <!-- In the first screen of new onboarding flow, additional accessibility description for content that contain urls. -->
+  <string name="a11y_link_available">Налична връзка</string>
   <!--
     Onboarding second screen: Title
 
@@ -539,36 +567,6 @@
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
   -->
   <string name="download_firefox" tools:ignore="BrandUsage">Изтегляне на Firefox</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-  -->
-  <string name="your_rights_content1" moz:removedIn="137">%1$s е свободен софтуер с отворен код, направен от Mozilla и други участници.</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-    %2$s will be replaced with a URL linking to the MPL (e.g. https://www.mozilla.org/en-US/MPL/)
-  -->
-  <string name="your_rights_content2" moz:removedIn="137" tools:ignore="IncorrectStraightDoubleQuote">%1$s е достъпен под условията на &lt;a href="%2$s"&gt;Mozilla Public License&lt;/a&gt; и други лицензи за отворен код.</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-    %2$s will be replaced with a URL linking to the trademark policy (e.g. https://www.mozilla.org/foundation/trademarks/policy/)
-  -->
-  <string name="your_rights_content3" moz:removedIn="137" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote">Не ви се предоставят права или лицензи за търговските марки на Mozilla Foundation или друга страна, включително Mozilla, Firefox или имената и емблемите на %1$s. Допълнителна информация може да бъде намерена &lt;a href="%2$s"&gt;тук&lt;/a&gt;.</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-    %2$s will be replaced with a URL linking to the list of licenses used by the dependencies.
-  -->
-  <string name="your_rights_content4" moz:removedIn="137" tools:ignore="IncorrectStraightDoubleQuote">Изходният код на %1$s е достъпен под различни &lt;a href="%2$s"&gt;лицензи&lt;/a&gt; – безплатни и с отворен код.</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-    %2$s will be replaced with a URL linking to the GPL
-    %3$s will be replaced with a URL linking to the tracking protection wiki page (e.g. https://wiki.mozilla.org/Security/Tracking_protection#Lists)
-  -->
-  <string name="your_rights_content5" moz:removedIn="137" tools:ignore="IncorrectStraightDoubleQuote">Също така %1$s използва блокиращ списък, осигуряван от Disconnect, Inc., като отделна и независима разработка под условията на &lt;a href="%2$s"&gt;GNU General Public License v3&lt;/a&gt;, също достъпен &lt;a href="%3$s"&gt;тук&lt;/a&gt;.</string>
   <!-- Text shown in prompts for GeckoView -->
   <string name="gv_prompt_username_hint">Потребителско име</string>
   <string name="gv_prompt_password_hint">Парола</string>
@@ -678,11 +676,11 @@
   <!-- First step for the allowing a permission -->
   <string name="phone_feature_blocked_step_settings">1. Отворете Настройки на Android</string>
   <!-- Second step for the allowing a permission -->
-  <string name="phone_feature_blocked_step_permissions">2. Докоснете &lt;b&gt;Разрешения&lt;/b&gt;</string>
+  <string name="phone_feature_blocked_step_permissions"><![CDATA[2. Докоснете <b>Разрешения</b>]]></string>
   <!-- Button label that take the user to the Android App setting -->
   <string name="phone_feature_go_to_settings">Към настройките</string>
   <!-- Third step for allowing a permission. %1$s is the permission name, for example, "Camera" -->
-  <string name="phone_feature_blocked_step_feature">3. Превключете &lt;b&gt;%1$s&lt;/b&gt; в положение ВКЛЮЧЕНО</string>
+  <string name="phone_feature_blocked_step_feature"><![CDATA[3. Превключете <b>%1$s</b> в положение ВКЛЮЧЕНО]]></string>
   <!-- Preference for altering the camera access for all websites -->
   <string name="preference_phone_feature_camera">Камера</string>
   <!-- Preference for altering the microphone access for all websites -->
@@ -709,20 +707,6 @@
   <string name="preference_block_autoplay_audio_only_summary">Препоръчани</string>
   <!-- Preference for block autoplay audio and video -->
   <string name="preference_block_autoplay_audio_video">Без звук и видео</string>
-  <!-- Preference for studies -->
-  <string name="preference_studies">Проучвания</string>
-  <!-- Preference for studies summary -->
-  <string name="preference_studies_summary" tools:ignore="BrandUsage">Firefox може, от време на време, да инсталира и извършва проучвания.</string>
-  <!-- Learn more link for studies, links to an article for more information about studies. -->
-  <string name="studies_learn_more">Научете повече</string>
-  <!-- Dialog message shown when some changes are made on studies -->
-  <string name="studies_restart_app" moz:removedIn="137">Приложението ще се затвори, за да приложи промените</string>
-  <!-- Title of the remove studies button -->
-  <string name="studies_remove">Премахване</string>
-  <!-- Title of the active section on the studies list -->
-  <string name="studies_active">Включен</string>
-  <!-- Title of the completed section on the studies list -->
-  <string name="studies_completed">Завършено</string>
   <!-- Preference to enable remote debugging of the app via USB or Wi-Fi -->
   <string name="preference_remote_debugging">Отдалечено отстраняване на дефекти през USB/Wi-Fi</string>
   <!-- Text Button for show biometric prompt -->
@@ -769,7 +753,7 @@
     Tip displayed on home view explaining how to disable tracking protection
     The new line here must be kept as the second half of the string is clickable for the user.
   -->
-  <string name="tip_disable_tracking_protection">Сайтът се държи неочаквано?\n Опитайте да изключите защитата от проследяване</string>
+  <string name="tip_disable_tracking_protection">Сайтът се държи неочаквано?\nОпитайте да изключите защитата от проследяване</string>
   <!--
     Tip displayed on home view explaining how to add sites to homescreen
     %1$s is replaced with a line break in the application.
@@ -780,17 +764,17 @@
     %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     The new line here must be kept as the second half of the string is clickable for the user.
   -->
-  <string name="tip_set_default_browser">Отваряйте всяка препратка в %1$s\n Задайте %1$s като стандартен четец</string>
+  <string name="tip_set_default_browser">Отваряйте всяка препратка в %1$s\nЗадайте %1$s като стандартен четец</string>
   <!--
     Tip displayed on home view explaining how to add a custom autocomplete URL
     The new line here must be kept as the second half of the string is clickable for the user.
   -->
-  <string name="tip_autocomplete_url">Автоматизирано завършвайте адреси на често посещавани сайтове\n Натиснете продължително върху адрес в адресната лента</string>
+  <string name="tip_autocomplete_url">Автоматизирано завършвайте адреси на често посещавани сайтове\nНатиснете продължително върху адрес в адресната лента</string>
   <!--
     Tip displayed on home view explaining how to add a custom autocomplete URL
     The new line here must be kept as the second half of the string is clickable for the user.
   -->
-  <string name="tip_open_in_new_tab">Отваряйте препратки в нов раздел\n Натиснете продължително върху препратка в страница</string>
+  <string name="tip_open_in_new_tab">Отваряйте препратки в нов раздел\nНатиснете продължително върху препратка в страница</string>
   <!-- Tip displayed on home view explaining how to add a custom autocomplete URL -->
   <string name="tip_disable_tips2">Изключване на съветите на началния екран</string>
   <!-- Label for the snackbar when a user opens a new tab -->
@@ -871,7 +855,7 @@
     Text for context menu additional note.
     %1$s is a placeholder for the app name.
   -->
-  <string name="contextmenu_erased_images_note2">Запазените и споделените изображения &lt;b&gt;няма да бъдат&lt;/b&gt; изтрити, когато изтриете историята на %1$s</string>
+  <string name="contextmenu_erased_images_note2"><![CDATA[Запазените и споделените изображения <b>няма да бъдат</b> изтрити, когато изтриете историята на %1$s]]></string>
   <!--
     Theme Preferences
 
@@ -892,22 +876,13 @@
     The text of the error page for websites that do not support HTTPS when HTTPS-Only is turned on. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar"),
     %2$s is a URL to a support article. Contains a button that will redirect the user to Privacy & Security Screen.
   -->
-  <string name="errorpage_httpsonly_message2" tools:ignore="IncorrectStraightDoubleQuote">%1$s се опитва да използва HTTPS връзка винаги, когато е възможно за повече сигурност.
-     &lt;a href="%2$s"&gt;Научете повече&lt;/a&gt; &lt;br/&gt;&lt;br/&gt;
-     Променете тази настройка в  Настройки &gt; Поверителност &amp;amp; Сигурност &gt; Сигурност.</string>
+  <string name="errorpage_httpsonly_message2" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[%1$s се опитва да използва HTTPS връзка винаги, когато е възможно за повече сигурност. <a href=\"%2$s\">Научете повече</a> <br/><br/> Променете тази настройка в Настройки > Поверителност &amp; Сигурност > Сигурност.]]></string>
   <!-- The document title and heading of the error page shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_title">Връзката не е защитена</string>
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_message">
-    Това може да е проблем с конфигурацията на сървъра или може някой да се опитва да се представя за сървъра. &lt;br/&gt;&lt;br/&gt;
-    Ако сте се свързвали успешно с този сървър в миналото, грешката може да е временна.
-    </string>
+  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Това може да е проблем с конфигурацията на сървъра или може някой да се опитва да се представя за сървъра. <br/><br/> Ако сте се свързвали успешно с този сървър в миналото, грешката може да е временна.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo">
-        &lt;label&gt;Някой може да се опитва да се представя за сайта и продължаването да бъде рисковано.&lt;/label&gt;
-        &lt;br&gt;&lt;br&gt;
-        &lt;label&gt;%1$s не вярва на &lt;b&gt;%2$s&lt;/b&gt;, защото издателят на сертификата му е неизвестен, сертификатът е самоподписан или сървърът не изпраща правилните междинни сертификати.&lt;/label&gt;
-    </string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Някой може да се опитва да се представя за сайта и продължаването да бъде рисковано.</label> <br><br>\n<label>%1$s не вярва на <b>%2$s</b>, защото издателят на сертификата му е неизвестен, сертификатът е самоподписан или сървърът не изпраща правилните междинни сертификати.</label>]]></string>
   <!--
     Sessions List
 

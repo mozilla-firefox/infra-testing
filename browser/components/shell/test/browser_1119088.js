@@ -13,9 +13,7 @@ if (AppConstants.isPlatformAndVersionAtLeast("macosx", 23.0)) {
 
 const kDesktopCheckerScriptPath =
   "browser/browser/components/shell/test/mac_desktop_image.py";
-const kDefaultBackgroundImage_10_14 =
-  "/Library/Desktop Pictures/Solid Colors/Teal.png";
-const kDefaultBackgroundImage_10_15 =
+const kDefaultBackgroundImage =
   "/System/Library/Desktop Pictures/Solid Colors/Teal.png";
 
 ChromeUtils.defineESModuleGetters(this, {
@@ -71,23 +69,25 @@ function setAndCheckDesktopBackgroundCLI(imagePath) {
   Assert.ok(FileUtils.File(imagePath).exists(), `${imagePath} exists`);
 
   let setExitCode = setDesktopBackgroundCLI(imagePath);
-  Assert.ok(setExitCode == 0, `Setting background via CLI to ${imagePath}`);
+  Assert.equal(setExitCode, 0, `Setting background via CLI to ${imagePath}`);
 
   let checkExitCode = checkDesktopBackgroundCLI(imagePath);
-  Assert.ok(checkExitCode == 0, `Checking background via CLI is ${imagePath}`);
+  Assert.equal(checkExitCode, 0, `Checking background via CLI is ${imagePath}`);
 }
 
 // Restore the automation default background image. i.e., the default used
 // in the automated test environment, not the OS default.
 function restoreDefaultBackground() {
   let defaultBackgroundPath;
-  if (AppConstants.isPlatformAndVersionAtLeast("macosx", 19)) {
-    defaultBackgroundPath = kDefaultBackgroundImage_10_15;
-  } else {
-    defaultBackgroundPath = kDefaultBackgroundImage_10_14;
-  }
+  defaultBackgroundPath = kDefaultBackgroundImage;
   setAndCheckDesktopBackgroundCLI(defaultBackgroundPath);
 }
+
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["test.wait300msAfterTabSwitch", true]],
+  });
+});
 
 /**
  * Tests "Set As Desktop Background" platform implementation on macOS.
@@ -161,7 +161,7 @@ add_task(async function () {
 
       // Check that the desktop background image is the image we set above.
       let exitCode = checkDesktopBackgroundCLI(backgroundImage.path);
-      Assert.ok(exitCode == 0, `background should be ${backgroundImage.path}`);
+      Assert.equal(exitCode, 0, `background should be ${backgroundImage.path}`);
 
       // Restore the background image to the Mac default.
       restoreDefaultBackground();

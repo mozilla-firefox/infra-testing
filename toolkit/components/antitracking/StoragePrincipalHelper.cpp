@@ -59,14 +59,14 @@ bool ChooseOriginAttributes(nsIChannel* aChannel, OriginAttributes& aAttrs,
 
   nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
   nsCOMPtr<nsICookieJarSettings> cjs;
-  Unused << loadInfo->GetCookieJarSettings(getter_AddRefs(cjs));
+  (void)loadInfo->GetCookieJarSettings(getter_AddRefs(cjs));
 
   if (!aForcePartitionedPrincipal && !ShouldPartitionChannel(aChannel, cjs)) {
     return false;
   }
 
   nsAutoString partitionKey;
-  Unused << cjs->GetPartitionKey(partitionKey);
+  (void)cjs->GetPartitionKey(partitionKey);
 
   if (!partitionKey.IsEmpty()) {
     aAttrs.SetPartitionKey(partitionKey);
@@ -211,7 +211,7 @@ nsresult StoragePrincipalHelper::CreatePartitionedPrincipalForServiceWorker(
   OriginAttributes attrs = aPrincipal->OriginAttributesRef();
 
   nsAutoString partitionKey;
-  Unused << aCookieJarSettings->GetPartitionKey(partitionKey);
+  (void)aCookieJarSettings->GetPartitionKey(partitionKey);
 
   if (!partitionKey.IsEmpty()) {
     attrs.SetPartitionKey(partitionKey);
@@ -263,7 +263,7 @@ nsresult StoragePrincipalHelper::GetPrincipal(nsIChannel* aChannel,
 
   nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
   nsCOMPtr<nsICookieJarSettings> cjs;
-  Unused << loadInfo->GetCookieJarSettings(getter_AddRefs(cjs));
+  (void)loadInfo->GetCookieJarSettings(getter_AddRefs(cjs));
 
   nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
   MOZ_DIAGNOSTIC_ASSERT(ssm);
@@ -479,7 +479,7 @@ bool StoragePrincipalHelper::GetOriginAttributes(
       break;
 
     case eForeignPartitionedPrincipal:
-      Unused << loadInfo->GetCookieJarSettings(getter_AddRefs(cjs));
+      (void)loadInfo->GetCookieJarSettings(getter_AddRefs(cjs));
 
       // We only support foreign partitioned principal when dFPI is enabled.
       // Otherwise, we will use the regular principal.
@@ -541,31 +541,19 @@ bool StoragePrincipalHelper::GetRegularPrincipalOriginAttributes(
 // static
 bool StoragePrincipalHelper::GetOriginAttributesForNetworkState(
     nsIChannel* aChannel, OriginAttributes& aAttributes) {
-  return StoragePrincipalHelper::GetOriginAttributes(
-      aChannel, aAttributes,
-      StaticPrefs::privacy_partition_network_state() ? ePartitionedPrincipal
-                                                     : eRegularPrincipal);
+  return StoragePrincipalHelper::GetOriginAttributes(aChannel, aAttributes,
+                                                     ePartitionedPrincipal);
 }
 
 // static
 void StoragePrincipalHelper::GetOriginAttributesForNetworkState(
     dom::Document* aDocument, OriginAttributes& aAttributes) {
-  aAttributes = aDocument->NodePrincipal()->OriginAttributesRef();
-
-  if (!StaticPrefs::privacy_partition_network_state()) {
-    return;
-  }
-
   aAttributes = aDocument->PartitionedPrincipal()->OriginAttributesRef();
 }
 
 // static
 void StoragePrincipalHelper::UpdateOriginAttributesForNetworkState(
     nsIURI* aFirstPartyURI, OriginAttributes& aAttributes) {
-  if (!StaticPrefs::privacy_partition_network_state()) {
-    return;
-  }
-
   aAttributes.SetPartitionKey(aFirstPartyURI, false);
 }
 
@@ -717,7 +705,7 @@ nsString StoragePrincipalHelper::PartitionKeyForExpandedPrincipal(
 
     nsCOMPtr<nsIURI> uri;
     nsresult rv = BasePrincipal::Cast(principal)->GetURI(getter_AddRefs(uri));
-    if (NS_WARN_IF(NS_FAILED(rv))) {
+    if (NS_WARN_IF(NS_FAILED(rv)) || !uri) {
       continue;
     }
 

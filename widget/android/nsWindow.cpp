@@ -53,7 +53,6 @@
 #include "nsTArray.h"
 #include "nsThreadUtils.h"
 #include "nsUserIdleService.h"
-#include "nsViewManager.h"
 #include "nsWidgetsCID.h"
 #include "nsWindow.h"
 
@@ -63,6 +62,7 @@
 #include "nsIPrintSettings.h"
 #include "nsIPrintSettingsService.h"
 
+#include "mozilla/PresShell.h"
 #include "mozilla/Logging.h"
 #include "mozilla/MiscEvents.h"
 #include "mozilla/MouseEvents.h"
@@ -71,7 +71,6 @@
 #include "mozilla/StaticPrefs_ui.h"
 #include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/TouchEvents.h"
-#include "mozilla/WeakPtr.h"
 #include "mozilla/WheelHandlingHelper.h"  // for WheelDeltaAdjustmentStrategy
 #include "mozilla/a11y/SessionAccessibility.h"
 #include "mozilla/dom/BrowsingContext.h"
@@ -105,6 +104,7 @@
 #include "mozilla/layers/LayersTypes.h"
 #include "mozilla/layers/UiCompositorControllerChild.h"
 #include "mozilla/layers/IAPZCTreeManager.h"
+#include "mozilla/net/AsyncUrlChannelClassifier.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/widget/AndroidVsync.h"
 #include "mozilla/widget/Screen.h"
@@ -131,13 +131,7 @@ static mozilla::LazyLogModule sGVSupportLog("GeckoViewSupport");
 // All the toplevel windows that have been created; these are in
 // stacking order, so the window at gTopLevelWindows[0] is the topmost
 // one.
-MOZ_RUNINIT static nsTArray<nsWindow*> gTopLevelWindows;
-
-static bool sFailedToCreateGLContext = false;
-
-// Multitouch swipe thresholds in inches
-static const double SWIPE_MAX_PINCH_DELTA_INCHES = 0.4;
-static const double SWIPE_MIN_DISTANCE_INCHES = 0.6;
+constinit static nsTArray<nsWindow*> gTopLevelWindows;
 
 static const double kTouchResampleVsyncAdjustMs = 5.0;
 
@@ -1349,7 +1343,7 @@ class LayerViewSupport final
       return;
     }
 
-    gkWindow->Resize(aLeft, aTop, aWidth, aHeight, /* repaint */ false);
+    gkWindow->DoResize(aLeft, aTop, aWidth, aHeight, /* repaint */ false);
   }
 
   void NotifyMemoryPressure() {
@@ -1807,12 +1801,17 @@ void GeckoViewSupport::Open(
     jni::String::Param aChromeURI, bool aPrivateMode) {
   MOZ_ASSERT(NS_IsMainThread());
 
+  PROFILER_MARKER_TEXT("Applink Startup", OTHER, {},
+                       "GeckoViewSupport::Open"_ns);
+
   AUTO_PROFILER_LABEL("mozilla::widget::GeckoViewSupport::Open", OTHER);
 
   // We'll need gfxPlatform to be initialized to create a compositor later.
   // Might as well do that now so that the GPU process launch can get a head
   // start.
   gfxPlatform::GetPlatform();
+
+  mozilla::net::AsyncUrlChannelClassifier::WarmUp();
 
   nsCOMPtr<nsIWindowWatcher> ww = do_GetService(NS_WINDOWWATCHER_CONTRACTID);
   MOZ_RELEASE_ASSERT(ww);
@@ -1830,7 +1829,7 @@ void GeckoViewSupport::Open(
   // Prepare an nsIGeckoViewView to pass as argument to the window.
   RefPtr<AndroidView> androidView = new AndroidView();
   androidView->mEventDispatcher->Attach(
-      java::EventDispatcher::Ref::From(aDispatcher), nullptr);
+      java::EventDispatcher::Ref::From(aDispatcher));
   androidView->mInitData = java::GeckoBundle::Ref::From(aInitData);
 
   nsAutoCString chromeFlags("chrome,dialog=0,remote,resizable,scrollbars");
@@ -1897,6 +1896,8 @@ void GeckoViewSupport::Transfer(const GeckoSession::Window::LocalRef& inst,
                                 jni::Object::Param aDispatcher,
                                 jni::Object::Param aSessionAccessibility,
                                 jni::Object::Param aInitData) {
+  AssertIsOnMainThread();
+
   mWindow->mNPZCSupport.Detach();
 
   auto compositor = GeckoSession::Compositor::LocalRef(
@@ -1929,7 +1930,7 @@ void GeckoViewSupport::Transfer(const GeckoSession::Window::LocalRef& inst,
 
   MOZ_ASSERT(mWindow->mAndroidView);
   mWindow->mAndroidView->mEventDispatcher->Attach(
-      java::EventDispatcher::Ref::From(aDispatcher), mDOMWindow);
+      java::EventDispatcher::Ref::From(aDispatcher));
 
   RefPtr<jni::DetachPromise> promise = mWindow->mSessionAccessibility.Detach();
   if (aSessionAccessibility) {
@@ -1961,7 +1962,7 @@ void GeckoViewSupport::Transfer(const GeckoSession::Window::LocalRef& inst,
     mWindow->mAndroidView->mInitData = java::GeckoBundle::Ref::From(aInitData);
     OnReady(aQueue);
     mWindow->mAndroidView->mEventDispatcher->Dispatch(
-        u"GeckoView:UpdateInitData");
+        u"GeckoView:UpdateInitData"_ns, JS::NullHandleValue);
   }
 
   DispatchToUiThread("GeckoViewSupport::Transfer",
@@ -2242,7 +2243,7 @@ nsWindow::~nsWindow() {
   ALOG("nsWindow %p destructor", (void*)this);
   // The mCompositorSession should have been cleaned up in nsWindow::Destroy()
   // DestroyLayerManager() will call DestroyCompositor() which will crash if
-  // called from nsBaseWidget destructor. See Bug 1392705
+  // called from nsIWidget destructor. See Bug 1392705
   MOZ_ASSERT(!mCompositorSession);
 }
 
@@ -2252,7 +2253,7 @@ bool nsWindow::IsTopLevel() {
 }
 
 nsresult nsWindow::Create(nsIWidget* aParent, const LayoutDeviceIntRect& aRect,
-                          InitData* aInitData) {
+                          const InitData& aInitData) {
   ALOG("nsWindow[%p]::Create %p [%d %d %d %d]", (void*)this, (void*)aParent,
        aRect.x, aRect.y, aRect.width, aRect.height);
 
@@ -2269,8 +2270,7 @@ nsresult nsWindow::Create(nsIWidget* aParent, const LayoutDeviceIntRect& aRect,
   mBounds = rect;
   SetSizeConstraints(SizeConstraints());
 
-  MOZ_DIAGNOSTIC_ASSERT(!aInitData ||
-                        aInitData->mWindowType != WindowType::Invisible);
+  MOZ_DIAGNOSTIC_ASSERT(aInitData.mWindowType != WindowType::Invisible);
 
   BaseCreate(aParent, aInitData);
   MOZ_ASSERT_IF(!IsTopLevel(), aParent);
@@ -2289,7 +2289,7 @@ nsresult nsWindow::Create(nsIWidget* aParent, const LayoutDeviceIntRect& aRect,
 void nsWindow::Destroy() {
   MutexAutoLock lock(mDestroyMutex);
 
-  nsBaseWidget::mOnDestroyCalled = true;
+  nsIWidget::mOnDestroyCalled = true;
 
   // Disassociate our native object from GeckoView.
   mGeckoViewSupport.Detach();
@@ -2299,15 +2299,15 @@ void nsWindow::Destroy() {
 
   // Ensure the compositor has been shutdown before this nsWindow is potentially
   // deleted
-  nsBaseWidget::DestroyCompositor();
+  nsIWidget::DestroyCompositor();
 
-  nsBaseWidget::Destroy();
+  nsIWidget::Destroy();
 
   if (IsTopLevel()) {
     gTopLevelWindows.RemoveElement(this);
   }
 
-  nsBaseWidget::OnDestroy();
+  nsIWidget::OnDestroy();
 
 #ifdef DEBUG_ANDROID_WIDGET
   DumpWindows();
@@ -2322,10 +2322,8 @@ mozilla::widget::EventDispatcher* nsWindow::GetEventDispatcher() const {
 }
 
 void nsWindow::RedrawAll() {
-  if (mAttachedWidgetListener) {
-    mAttachedWidgetListener->RequestRepaint();
-  } else if (mWidgetListener) {
-    mWidgetListener->RequestRepaint();
+  if (auto* ps = GetPresShell()) {
+    ps->SchedulePaint();
   }
 }
 
@@ -2469,7 +2467,7 @@ void nsWindow::Show(bool aState) {
 bool nsWindow::IsVisible() const { return mIsVisible; }
 
 void nsWindow::ConstrainPosition(DesktopIntPoint& aPoint) {
-  ALOG("nsWindow[%p]::ConstrainPosition [%d %d]", (void*)this, aPoint.x.value,
+  ALOG("nsWindow[%p]::ConstrainPosition [%d %d]", this, aPoint.x.value,
        aPoint.y.value);
 
   // Constrain toplevel windows; children we don't care about
@@ -2478,19 +2476,25 @@ void nsWindow::ConstrainPosition(DesktopIntPoint& aPoint) {
   }
 }
 
-void nsWindow::Move(double aX, double aY) {
-  if (IsTopLevel()) return;
+void nsWindow::Move(const DesktopPoint& aPoint) {
+  if (IsTopLevel()) {
+    return;
+  }
 
-  Resize(aX, aY, mBounds.width, mBounds.height, true);
+  DoResize(aPoint.x, aPoint.y, mBounds.width, mBounds.height, true);
 }
 
-void nsWindow::Resize(double aWidth, double aHeight, bool aRepaint) {
-  Resize(mBounds.x, mBounds.y, aWidth, aHeight, aRepaint);
+void nsWindow::Resize(const DesktopSize& aSize, bool aRepaint) {
+  DoResize(mBounds.x, mBounds.y, aSize.width, aSize.height, aRepaint);
 }
 
-void nsWindow::Resize(double aX, double aY, double aWidth, double aHeight,
-                      bool aRepaint) {
-  ALOG("nsWindow[%p]::Resize [%f %f %f %f] (repaint %d)", (void*)this, aX, aY,
+void nsWindow::Resize(const DesktopRect& aRect, bool aRepaint) {
+  DoResize(aRect.x, aRect.y, aRect.width, aRect.height, aRepaint);
+}
+
+void nsWindow::DoResize(double aX, double aY, double aWidth, double aHeight,
+                        bool aRepaint) {
+  ALOG("nsWindow[%p]::DoResize [%f %f %f %f] (repaint %d)", this, aX, aY,
        aWidth, aHeight, aRepaint);
 
   LayoutDeviceIntRect oldBounds = mBounds;
@@ -2506,11 +2510,11 @@ void nsWindow::Resize(double aX, double aY, double aWidth, double aHeight,
   bool needSizeDispatch = mBounds.Size() != oldBounds.Size();
 
   if (needSizeDispatch) {
-    OnSizeChanged(mBounds.Size().ToUnknownSize());
+    OnSizeChanged(mBounds.Size());
   }
 
   if (needPositionDispatch) {
-    NotifyWindowMoved(mBounds.x, mBounds.y);
+    NotifyWindowMoved(mBounds.TopLeft());
   }
 
   // Should we skip honoring aRepaint here?
@@ -2620,29 +2624,18 @@ LayoutDeviceIntPoint nsWindow::WidgetToScreenOffset() {
   return p;
 }
 
-nsresult nsWindow::DispatchEvent(WidgetGUIEvent* aEvent,
-                                 nsEventStatus& aStatus) {
-  aStatus = DispatchEvent(aEvent);
-  return NS_OK;
-}
-
-nsEventStatus nsWindow::DispatchEvent(WidgetGUIEvent* aEvent) {
-  if (mAttachedWidgetListener) {
-    return mAttachedWidgetListener->HandleEvent(aEvent, mUseAttachedEvents);
-  } else if (mWidgetListener) {
-    return mWidgetListener->HandleEvent(aEvent, mUseAttachedEvents);
-  }
-  return nsEventStatus_eIgnore;
-}
-
 nsresult nsWindow::MakeFullScreen(bool aFullScreen) {
+  AssertIsOnMainThread();
+
   if (!mAndroidView) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
   mIsFullScreen = aFullScreen;
-  mAndroidView->mEventDispatcher->Dispatch(
-      aFullScreen ? u"GeckoView:FullScreenEnter" : u"GeckoView:FullScreenExit");
+  mAndroidView->mEventDispatcher->Dispatch(aFullScreen
+                                               ? u"GeckoView:FullScreenEnter"_ns
+                                               : u"GeckoView:FullScreenExit"_ns,
+                                           JS::NullHandleValue);
 
   nsIWidgetListener* listener = GetWidgetListener();
   if (listener) {
@@ -2688,15 +2681,13 @@ void nsWindow::CreateLayerManager() {
               }
             });
       }
-
       return;
     }
-
-    // If we get here, then off main thread compositing failed to initialize.
-    sFailedToCreateGLContext = true;
   }
 
-  if (!ComputeShouldAccelerate() || sFailedToCreateGLContext) {
+  if (ComputeShouldAccelerate()) {
+    mWindowRenderer = CreateBackgroundedFallbackRenderer();
+  } else {
     printf_stderr(" -- creating basic, not accelerated\n");
     mWindowRenderer = CreateFallbackRenderer();
   }
@@ -2704,7 +2695,7 @@ void nsWindow::CreateLayerManager() {
 
 void nsWindow::NotifyCompositorSessionLost(
     mozilla::layers::CompositorSession* aSession) {
-  nsBaseWidget::NotifyCompositorSessionLost(aSession);
+  nsIWidget::NotifyCompositorSessionLost(aSession);
 
   DispatchToUiThread("nsWindow::NotifyCompositorSessionLost",
                      [lvs = mLayerViewSupport] {
@@ -2851,21 +2842,20 @@ void nsWindow::UpdateDragImage(java::sdk::Bitmap::LocalRef aBitmap) {
   }
 }
 
-void nsWindow::OnSizeChanged(const gfx::IntSize& aSize) {
+void nsWindow::OnSizeChanged(const LayoutDeviceIntSize& aSize) {
   ALOG("nsWindow: %p OnSizeChanged [%d %d]", (void*)this, aSize.width,
        aSize.height);
 
   if (mWidgetListener) {
-    mWidgetListener->WindowResized(this, aSize.width, aSize.height);
+    mWidgetListener->WindowResized(this, aSize);
   }
 
   if (mAttachedWidgetListener) {
-    mAttachedWidgetListener->WindowResized(this, aSize.width, aSize.height);
+    mAttachedWidgetListener->WindowResized(this, aSize);
   }
 
   if (mCompositorWidgetDelegate) {
-    mCompositorWidgetDelegate->NotifyClientSizeChanged(
-        LayoutDeviceIntSize::FromUnknownSize(aSize));
+    mCompositorWidgetDelegate->NotifyClientSizeChanged(aSize);
   }
 }
 
@@ -2955,8 +2945,7 @@ void nsWindow::DispatchHitTest(const WidgetTouchEvent& aEvent) {
     WidgetMouseEvent hittest(true, eMouseHitTest, this,
                              WidgetMouseEvent::eReal);
     hittest.mRefPoint = aEvent.mTouches[0]->mRefPoint;
-    nsEventStatus status;
-    DispatchEvent(&hittest, status);
+    DispatchEvent(&hittest);
   }
 }
 
@@ -3073,13 +3062,23 @@ InputContext nsWindow::GetInputContext() {
   return acc->GetInputContext();
 }
 
-nsresult nsWindow::SynthesizeNativeTouchPoint(uint32_t aPointerId,
-                                              TouchPointerState aPointerState,
-                                              LayoutDeviceIntPoint aPoint,
-                                              double aPointerPressure,
-                                              uint32_t aPointerOrientation,
-                                              nsIObserver* aObserver) {
-  mozilla::widget::AutoObserverNotifier notifier(aObserver, "touchpoint");
+void nsWindow::PostHandleKeyEvent(mozilla::WidgetKeyboardEvent* aEvent) {
+  nsWindow* top = FindTopLevel();
+  MOZ_ASSERT(top);
+
+  auto acc(top->mEditableSupport.Access());
+  if (!acc) {
+    return;
+  }
+
+  return acc->PostHandleKeyEvent(aEvent);
+}
+
+nsresult nsWindow::SynthesizeNativeTouchPoint(
+    uint32_t aPointerId, TouchPointerState aPointerState,
+    LayoutDeviceIntPoint aPoint, double aPointerPressure,
+    uint32_t aPointerOrientation, nsISynthesizedEventCallback* aCallback) {
+  mozilla::widget::AutoSynthesizedEventCallbackNotifier notifier(aCallback);
 
   int eventType;
   switch (aPointerState) {
@@ -3122,8 +3121,8 @@ nsresult nsWindow::SynthesizeNativeTouchPoint(uint32_t aPointerId,
 nsresult nsWindow::SynthesizeNativeMouseEvent(
     LayoutDeviceIntPoint aPoint, NativeMouseMessage aNativeMessage,
     MouseButton aButton, nsIWidget::Modifiers aModifierFlags,
-    nsIObserver* aObserver) {
-  mozilla::widget::AutoObserverNotifier notifier(aObserver, "mouseevent");
+    nsISynthesizedEventCallback* aCallback) {
+  mozilla::widget::AutoSynthesizedEventCallbackNotifier notifier(aCallback);
 
   MOZ_ASSERT(mNPZCSupport.IsAttached());
   auto npzcSup(mNPZCSupport.Access());
@@ -3186,11 +3185,11 @@ nsresult nsWindow::SynthesizeNativeMouseEvent(
   return NS_OK;
 }
 
-nsresult nsWindow::SynthesizeNativeMouseMove(LayoutDeviceIntPoint aPoint,
-                                             nsIObserver* aObserver) {
+nsresult nsWindow::SynthesizeNativeMouseMove(
+    LayoutDeviceIntPoint aPoint, nsISynthesizedEventCallback* aCallback) {
   return SynthesizeNativeMouseEvent(
       aPoint, NativeMouseMessage::Move, MouseButton::eNotPressed,
-      nsIWidget::Modifiers::NO_MODIFIERS, aObserver);
+      nsIWidget::Modifiers::NO_MODIFIERS, aCallback);
 }
 
 void nsWindow::SetCompositorWidgetDelegate(CompositorWidgetDelegate* delegate) {
@@ -3242,7 +3241,7 @@ uint32_t nsWindow::GetMaxTouchPoints() const {
 void nsWindow::UpdateZoomConstraints(
     const uint32_t& aPresShellId, const ScrollableLayerGuid::ViewID& aViewId,
     const mozilla::Maybe<ZoomConstraints>& aConstraints) {
-  nsBaseWidget::UpdateZoomConstraints(aPresShellId, aViewId, aConstraints);
+  nsIWidget::UpdateZoomConstraints(aPresShellId, aViewId, aConstraints);
 }
 
 CompositorBridgeChild* nsWindow::GetCompositorBridgeChild() const {
@@ -3499,10 +3498,6 @@ static int32_t GetCursorType(nsCursor aCursor) {
 }
 
 void nsWindow::SetCursor(const Cursor& aCursor) {
-  if (mozilla::jni::GetAPIVersion() < 24) {
-    return;
-  }
-
   // Only change cursor if it's actually been changed
   if (!mUpdateCursor && mCursor == aCursor) {
     return;

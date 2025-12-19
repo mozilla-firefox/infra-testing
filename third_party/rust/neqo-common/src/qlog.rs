@@ -4,11 +4,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![allow(
-    clippy::module_name_repetitions,
-    reason = "<https://github.com/mozilla/neqo/issues/2284#issuecomment-2782711813>"
-)]
-
 use std::{
     cell::RefCell,
     fmt::{self, Display},
@@ -26,27 +21,33 @@ use qlog::{
 use crate::Role;
 
 #[derive(Debug, Clone, Default)]
-pub struct NeqoQlog {
-    inner: Rc<RefCell<Option<NeqoQlogShared>>>,
+pub struct Qlog {
+    /// Both the inner and the outer `Option` are set to `None`
+    /// on failure. The inner `None` will disable qlog for all other
+    /// references (correctness). The outer `None` will prevent
+    /// the local instance from de-referencing the `Rc` again
+    /// (performance).
+    inner: Option<Rc<RefCell<Option<SharedStreamer>>>>,
 }
 
-pub struct NeqoQlogShared {
+pub struct SharedStreamer {
     qlog_path: PathBuf,
     streamer: QlogStreamer,
 }
 
-impl NeqoQlog {
-    /// Create an enabled `NeqoQlog` configuration backed by a file.
+impl Qlog {
+    /// Create an enabled `Qlog` configuration backed by a file.
     ///
     /// # Errors
     ///
     /// Will return `qlog::Error` if it cannot write to the new file.
-    pub fn enabled_with_file(
+    pub fn enabled_with_file<D: Display>(
         mut qlog_path: PathBuf,
         role: Role,
         title: Option<String>,
         description: Option<String>,
-        file_prefix: impl Display,
+        file_prefix: D,
+        now: Instant,
     ) -> Result<Self, qlog::Error> {
         qlog_path.push(format!("{file_prefix}.sqlog"));
 
@@ -55,15 +56,14 @@ impl NeqoQlog {
             // As a server, the original DCID is chosen by the client. Using
             // create_new() prevents attackers from overwriting existing logs.
             .create_new(true)
-            .open(&qlog_path)
-            .map_err(qlog::Error::IoError)?;
+            .open(&qlog_path)?;
 
         let streamer = QlogStreamer::new(
             qlog::QLOG_VERSION.to_string(),
             title,
             description,
             None,
-            Instant::now(),
+            now,
             new_trace(role),
             qlog::events::EventImportance::Base,
             Box::new(BufWriter::new(file)),
@@ -71,7 +71,10 @@ impl NeqoQlog {
         Self::enabled(streamer, qlog_path)
     }
 
-    /// Create an enabled `NeqoQlog` configuration.
+    /// Create an enabled `Qlog` configuration.
+    ///
+    /// This needs to be called before the connection is used, because otherwise `Qlog`-logging will
+    /// remain disabled (for performance reasons).
     ///
     /// # Errors
     ///
@@ -80,39 +83,21 @@ impl NeqoQlog {
         streamer.start_log()?;
 
         Ok(Self {
-            inner: Rc::new(RefCell::new(Some(NeqoQlogShared {
+            inner: Some(Rc::new(RefCell::new(Some(SharedStreamer {
                 qlog_path,
                 streamer,
-            }))),
+            })))),
         })
     }
 
-    #[must_use]
-    pub fn inner(&self) -> Rc<RefCell<Option<NeqoQlogShared>>> {
-        Rc::clone(&self.inner)
-    }
-
-    /// Create a disabled `NeqoQlog` configuration.
+    /// Create a disabled `Qlog` configuration.
     #[must_use]
     pub fn disabled() -> Self {
         Self::default()
     }
 
     /// If logging enabled, closure may generate an event to be logged.
-    pub fn add_event_with_instant<F>(&self, f: F, now: Instant)
-    where
-        F: FnOnce() -> Option<qlog::events::Event>,
-    {
-        self.add_event_with_stream(|s| {
-            if let Some(evt) = f() {
-                s.add_event_with_instant(evt, now)?;
-            }
-            Ok(())
-        });
-    }
-
-    /// If logging enabled, closure may generate an event to be logged.
-    pub fn add_event_data_with_instant<F>(&self, f: F, now: Instant)
+    pub fn add_event_at<F>(&mut self, f: F, now: Instant)
     where
         F: FnOnce() -> Option<qlog::events::EventData>,
     {
@@ -124,52 +109,47 @@ impl NeqoQlog {
         });
     }
 
-    /// If logging enabled, closure may generate an event to be logged.
-    ///
-    /// This function is similar to [`NeqoQlog::add_event_data_with_instant`],
-    /// but it does not take `now: Instant` as an input parameter. Instead, it
-    /// internally calls [`std::time::Instant::now`]. Prefer calling
-    /// [`NeqoQlog::add_event_data_with_instant`] when `now` is available, as it
-    /// ensures consistency with the current time, which might differ from
-    /// [`std::time::Instant::now`] (e.g., when using simulated time instead of
-    /// real time).
-    pub fn add_event_data_now<F>(&self, f: F)
-    where
-        F: FnOnce() -> Option<qlog::events::EventData>,
-    {
-        self.add_event_with_stream(|s| {
-            if let Some(ev_data) = f() {
-                s.add_event_data_now(ev_data)?;
-            }
-            Ok(())
-        });
-    }
-
     /// If logging enabled, closure is given the Qlog stream to write events and
     /// frames to.
-    pub fn add_event_with_stream<F>(&self, f: F)
+    pub fn add_event_with_stream<F>(&mut self, f: F)
     where
         F: FnOnce(&mut QlogStreamer) -> Result<(), qlog::Error>,
     {
-        if let Some(inner) = self.inner.borrow_mut().as_mut() {
-            if let Err(e) = f(&mut inner.streamer) {
-                log::error!("Qlog event generation failed with error {e}; closing qlog.");
-                *self.inner.borrow_mut() = None;
-            }
+        let Some(inner) = self.inner.as_mut() else {
+            return;
+        };
+
+        let mut borrow = inner.borrow_mut();
+
+        let Some(shared_streamer) = borrow.as_mut() else {
+            drop(borrow);
+            // Set the outer Option to None to prevent future dereferences.
+            self.inner = None;
+            return;
+        };
+
+        if let Err(e) = f(&mut shared_streamer.streamer) {
+            log::error!("Qlog event generation failed with error {e}; closing qlog.");
+            // Set the inner Option to None to disable future logging for other references.
+            *borrow = None;
+            // Explicitly drop the RefCell borrow to release the mutable borrow.
+            drop(borrow);
+            // Set the outer Option to None to prevent future dereferences.
+            self.inner = None;
         }
     }
 }
 
-impl fmt::Debug for NeqoQlogShared {
+impl fmt::Debug for SharedStreamer {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "NeqoQlog writing to {}", self.qlog_path.display())
+        write!(f, "Qlog writing to {}", self.qlog_path.display())
     }
 }
 
-impl Drop for NeqoQlogShared {
+impl Drop for SharedStreamer {
     fn drop(&mut self) {
         if let Err(e) = self.streamer.finish_log() {
-            log::error!("Error dropping NeqoQlog: {e}");
+            log::error!("Error dropping Qlog: {e}");
         }
     }
 }
@@ -204,10 +184,8 @@ pub fn new_trace(role: Role) -> TraceSeq {
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod test {
-    use std::time::Instant;
-
-    use qlog::events::Event;
     use regex::Regex;
     use test_fixture::EXPECTED_LOG_HEADER;
 
@@ -229,9 +207,9 @@ mod test {
     }
 
     #[test]
-    fn add_event_with_instant() {
-        let (log, contents) = test_fixture::new_neqo_qlog();
-        log.add_event_with_instant(|| Some(Event::with_time(0.0, EV_DATA)), Instant::now());
+    fn add_event_at() {
+        let (mut log, contents) = test_fixture::new_neqo_qlog();
+        log.add_event_at(|| Some(EV_DATA), test_fixture::now());
         assert_eq!(
             Regex::new("\"time\":[0-9]+.[0-9]+,")
                 .unwrap()

@@ -11,10 +11,8 @@ import {
   appendRTLClassNameIfNeeded,
   maybeEscapePropertyName,
   wrapRender,
-} from "resource://devtools/client/shared/components/reps/reps/rep-utils.mjs";
-import { MODE } from "resource://devtools/client/shared/components/reps/reps/constants.mjs";
-import * as Grip from "resource://devtools/client/shared/components/reps/reps/grip.mjs";
-import { Rep } from "resource://devtools/client/shared/components/reps/reps/rep.mjs";
+} from "./rep-utils.mjs";
+import { MODE } from "./constants.mjs";
 
 /**
  * Property for Obj (local JS objects), Grip (remote JS objects)
@@ -43,7 +41,7 @@ PropRep.propTypes = {
  * Function that given a name, a delimiter and an object returns an array
  * of React elements representing an object property (e.g. `name: value`)
  *
- * @param {Object} props
+ * @param {object} props
  * @return {Array} Array of React elements.
  */
 
@@ -68,12 +66,12 @@ function PropRep(props) {
       name
     );
   } else {
-    key = Rep({
+    key = props.Rep({
       ...props,
       className,
       object: name,
       mode: mode || MODE.TINY,
-      defaultRep: Grip,
+      defaultRep: undefined,
     });
   }
 
@@ -85,7 +83,7 @@ function PropRep(props) {
       },
       equal
     ),
-    Rep({ ...props }),
+    props.Rep({ ...props }),
   ];
 }
 

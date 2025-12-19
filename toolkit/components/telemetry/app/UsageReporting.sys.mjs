@@ -15,6 +15,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "resource://gre/modules/components-utils/ClientEnvironment.sys.mjs",
   ClientID: "resource://gre/modules/ClientID.sys.mjs",
   ProfileAge: "resource://gre/modules/ProfileAge.sys.mjs",
+  ShellService: "moz-src:///browser/components/shell/ShellService.sys.mjs",
   TelemetryUtils: "resource://gre/modules/TelemetryUtils.sys.mjs",
 });
 
@@ -34,12 +35,13 @@ export var UsageReporting = {
 
     this._initPromise = (async () => {
       let profileID = await lazy.ClientID.getUsageProfileID();
+      let profileGroupID = await lazy.ClientID.getUsageProfileGroupID();
       const uploadEnabled = Services.prefs.getBoolPref(
         "datareporting.usage.uploadEnabled",
         false
       );
       this._log.trace(
-        `${SLUG}: uploadEnabled=${uploadEnabled}, profileID='${profileID}'`
+        `${SLUG}: uploadEnabled=${uploadEnabled}, profileID='${profileID}', profileGroupID='${profileGroupID}'`
       );
 
       // Usage deletion requests can always be sent.  They are
@@ -54,14 +56,14 @@ export var UsageReporting = {
         uploadEnabled &&
         profileID == lazy.TelemetryUtils.knownUsageProfileID
       ) {
-        await lazy.ClientID.resetUsageProfileIdentifier();
-        this._log.info(`${SLUG}: Reset usage profile identifier.`);
+        await lazy.ClientID.resetUsageProfileIdentifiers();
+        this._log.info(`${SLUG}: Reset usage profile identifiers.`);
       } else if (
         !uploadEnabled &&
         profileID != lazy.TelemetryUtils.knownUsageProfileID
       ) {
-        await lazy.ClientID.setCanaryUsageProfileIdentifier();
-        this._log.info(`${SLUG}: Set canary usage profile identifier.`);
+        await lazy.ClientID.setCanaryUsageProfileIdentifiers();
+        this._log.info(`${SLUG}: Set canary usage profile identifiers.`);
       } else {
         // Great!  We've got a consistent state.  Glean has our profile
         // identifier to include in pings, if enabled.
@@ -74,6 +76,33 @@ export var UsageReporting = {
       Glean.usage.osVersion.set(os.version);
       if (os.isWindows) {
         Glean.usage.windowsBuildNumber.set(os.windowsBuildNumber);
+        try {
+          Glean.usage.windowsUserProfileAgeInDays.set(
+            await lazy.ShellService.getOSUserProfileAgeInDays()
+          );
+        } catch (err) {
+          this._log.info(
+            `${SLUG}: Unable to determine the age of the windows user profile: ${err}`
+          );
+        }
+        try {
+          let wrk = Cc["@mozilla.org/windows-registry-key;1"].createInstance(
+            Ci.nsIWindowsRegKey
+          );
+          wrk.open(
+            wrk.ROOT_KEY_CURRENT_USER,
+            "Software\\Microsoft\\Windows\\CurrentVersion\\AppListBackup",
+            wrk.ACCESS_ALL
+          );
+          Glean.usage.windowsBackupEnabled.set(
+            wrk.readIntValue("IsBackupEnabledAndMSAAttached") != 0
+          );
+          wrk.close();
+        } catch (err) {
+          this._log.info(
+            `${SLUG}: Unable to detect Windows Backup state: ${err}`
+          );
+        }
       }
       Glean.usage.appBuild.set(Services.appinfo.appBuildID);
       Glean.usage.appDisplayVersion.set(lazy.ClientEnvironmentBase.version);
@@ -82,7 +111,10 @@ export var UsageReporting = {
         lazy.ClientEnvironmentBase.isDefaultBrowser
       );
       Glean.usage.distributionId.set(lazy.ClientEnvironmentBase.distribution);
-      Glean.usage.firstRunDate.set(lazy.ProfileAge.firstUse);
+      // Get profile firstUse (ms) and convert to µs for recording
+      let profileAccessor = await lazy.ProfileAge();
+      let usageFirstRunUs = (await profileAccessor.firstUse) * 1_000;
+      Glean.usage.firstRunDate.set(usageFirstRunUs);
     })();
     return this._initPromise;
   },
@@ -115,9 +147,9 @@ export var UsageReporting = {
           "and resetting identifier."
       );
       // Must be _after_ the usage reporting ping is enabled, or the next
-      // submission may not contain the new identifier.  This call will enable
+      // submission may not contain the new identifiers.  This call will enable
       // the ping.
-      await lazy.ClientID.resetUsageProfileIdentifier();
+      await lazy.ClientID.resetUsageProfileIdentifiers();
     } else {
       // Falling edge: disable "usage-reporting" ping, send "usage-deletion-request" ping.
       this._log.trace(
@@ -127,8 +159,8 @@ export var UsageReporting = {
       GleanPings.usageDeletionRequest.submit("set_upload_enabled");
 
       // Must be _after_ the deletion request is sent, or the request will not
-      // contain the previous identifier.  This call will disable the ping.
-      await lazy.ClientID.setCanaryUsageProfileIdentifier();
+      // contain the previous identifiers.  This call will disable the ping.
+      await lazy.ClientID.setCanaryUsageProfileIdentifiers();
     }
   },
 

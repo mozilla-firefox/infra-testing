@@ -5,14 +5,18 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "FragmentDirective.h"
+
 #include <cstdint>
-#include "RangeBoundary.h"
-#include "mozilla/Assertions.h"
+
 #include "BasePrincipal.h"
 #include "Document.h"
+#include "RangeBoundary.h"
 #include "TextDirectiveCreator.h"
 #include "TextDirectiveFinder.h"
 #include "TextDirectiveUtil.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/CycleCollectedUniquePtr.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/ResultVariant.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/BrowsingContextGroup.h"
@@ -21,7 +25,6 @@
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/Selection.h"
 #include "mozilla/glean/DomMetrics.h"
-#include "mozilla/PresShell.h"
 #include "nsContentUtils.h"
 #include "nsDocShell.h"
 #include "nsICSSDeclaration.h"
@@ -33,7 +36,8 @@
 
 namespace mozilla::dom {
 
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(FragmentDirective, mDocument)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(FragmentDirective, mDocument, mFinder)
+
 NS_IMPL_CYCLE_COLLECTING_ADDREF(FragmentDirective)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(FragmentDirective)
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(FragmentDirective)
@@ -55,8 +59,8 @@ void FragmentDirective::SetTextDirectives(
     nsTArray<TextDirective>&& aTextDirectives) {
   MOZ_ASSERT(mDocument);
   if (!aTextDirectives.IsEmpty()) {
-    mFinder =
-        MakeUnique<TextDirectiveFinder>(*mDocument, std::move(aTextDirectives));
+    mFinder.reset(
+        new TextDirectiveFinder(mDocument, std::move(aTextDirectives)));
   } else {
     mFinder = nullptr;
   }
@@ -137,7 +141,7 @@ void FragmentDirective::ParseAndRemoveFragmentDirectiveFromFragment(
   if (!hasRemovedFragmentDirective) {
     return;
   }
-  Unused << NS_MutateURI(aURI).SetRef(hash).Finalize(aURI);
+  (void)NS_MutateURI(aURI).SetRef(hash).Finalize(aURI);
   TEXT_FRAGMENT_LOG("Updated hash of the URL. New URL: {}",
                     aURI->GetSpecOrDefault());
 }
@@ -424,40 +428,74 @@ void FragmentDirective::RemoveAllTextDirectives(ErrorResult& aRv) {
   }
   targetTextSelection->RemoveAllRanges(aRv);
 }
-already_AddRefed<Promise> FragmentDirective::CreateTextDirective(
-    nsRange& aRange) {
+
+already_AddRefed<Promise> FragmentDirective::CreateTextDirectiveForRanges(
+    const Sequence<OwningNonNull<nsRange>>& aRanges) {
   RefPtr<Promise> resultPromise =
       Promise::Create(mDocument->GetOwnerGlobal(), IgnoreErrors());
   if (!resultPromise) {
     return nullptr;
   }
-  if (!StaticPrefs::dom_text_fragments_create_text_fragment_enabled() ||
-      !StaticPrefs::dom_text_fragments_enabled()) {
+  if (!StaticPrefs::dom_text_fragments_enabled()) {
     TEXT_FRAGMENT_LOG("Creating text fragments is disabled.");
     resultPromise->MaybeResolve(JS::NullHandleValue);
     return resultPromise.forget();
   }
-  if (aRange.Collapsed()) {
-    TEXT_FRAGMENT_LOG("Collapsed range. Nothing to do here...");
+  if (aRanges.IsEmpty()) {
+    TEXT_FRAGMENT_LOG("No ranges. Nothing to do here...");
     resultPromise->MaybeResolve(JS::NullHandleValue);
     return resultPromise.forget();
   }
+  TEXT_FRAGMENT_LOG("Creating text directive for {} ranges.", aRanges.Length());
+
+  nsTArray<nsCString> textDirectives;
+  textDirectives.SetCapacity(aRanges.Length());
 
   const TimeStamp start = TimeStamp::Now();
+  RefPtr<TimeoutWatchdog> watchdog = new TimeoutWatchdog();
+  uint32_t rangeIndex = 0;
+  for (const auto& range : aRanges) {
+    ++rangeIndex;
 
-  Result<nsCString, ErrorResult> textDirective =
-      TextDirectiveCreator::CreateTextDirectiveFromRange(*mDocument, &aRange);
-  if (textDirective.isOk()) {
-    nsCString textDirectiveString = textDirective.unwrap();
-    if (textDirectiveString.IsEmpty()) {
-      mDocument->SetUseCounter(eUseCounter_custom_TextDirectiveNotCreated);
-      resultPromise->MaybeResolve(JS::NullHandleValue);
-    } else {
-      resultPromise->MaybeResolve(std::move(textDirectiveString));
+    if (range->Collapsed()) {
+      TEXT_FRAGMENT_LOG("Skipping collapsed range {}.", rangeIndex);
+      continue;
     }
+    Result<nsCString, ErrorResult> maybeTextDirective =
+        TextDirectiveCreator::CreateTextDirectiveFromRange(mDocument, range,
+                                                           watchdog);
+    if (MOZ_UNLIKELY(maybeTextDirective.isErr())) {
+      TEXT_FRAGMENT_LOG("Failed to create text directive for range {}.",
+                        rangeIndex);
+      resultPromise->MaybeReject(maybeTextDirective.unwrapErr());
+      return resultPromise.forget();
+    }
+    nsCString textDirective = maybeTextDirective.unwrap();
+    if (textDirective.IsEmpty() || textDirective.IsVoid()) {
+      TEXT_FRAGMENT_LOG("Skipping empty text directive for range {}.",
+                        rangeIndex);
+      continue;
+    }
+    textDirectives.AppendElement(std::move(textDirective));
+    TEXT_FRAGMENT_LOG("Created text directive for range {}: {}", rangeIndex,
+                      textDirectives.LastElement());
+  }
+
+  if (watchdog->IsDone()) {
+    TEXT_FRAGMENT_LOG("Hitting timeout while creating text directives.");
+    resultPromise->MaybeResolve(JS::NullHandleValue);
+  } else if (textDirectives.IsEmpty()) {
+    TEXT_FRAGMENT_LOG("No text directives created.");
+    mDocument->SetUseCounter(eUseCounter_custom_TextDirectiveNotCreated);
+    resultPromise->MaybeResolve(JS::NullHandleValue);
   } else {
-    ErrorResult rv = textDirective.unwrapErr();
-    resultPromise->MaybeReject(std::move(rv));
+    TEXT_FRAGMENT_LOG("Created {} text directives in total.",
+                      textDirectives.Length());
+    nsAutoCString textDirectivesString;
+    StringJoinAppend(textDirectivesString, "&"_ns, textDirectives);
+    TEXT_FRAGMENT_LOG("Created text directive string: '{}'.",
+                      textDirectivesString);
+    resultPromise->MaybeResolve(textDirectivesString);
   }
 
   glean::dom_textfragment::create_directive.AccumulateRawDuration(

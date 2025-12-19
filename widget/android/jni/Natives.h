@@ -15,7 +15,6 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/RWLock.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/Unused.h"
 #include "mozilla/WeakPtr.h"
 #include "mozilla/jni/Accessors.h"
 #include "mozilla/jni/Refs.h"
@@ -279,11 +278,10 @@ class NativePtrPicker {
   // so we only enable this overload if Impl is refcounted AND it does not
   // implement OnWeakNonIntrusiveDetach. Yields type REFPTR.
   template <typename I>
-  static auto Test(void*)
-      -> std::enable_if_t<
-          std::conjunction_v<IsRefCounted<I>,
-                             std::negation<HasWeakNonIntrusiveDetach<I>>>,
-          ResultTypeT<NativePtrType::REFPTR>>;
+  static auto Test(void*) -> std::enable_if_t<
+      std::conjunction_v<IsRefCounted<I>,
+                         std::negation<HasWeakNonIntrusiveDetach<I>>>,
+      ResultTypeT<NativePtrType::REFPTR>>;
 
   // This overload uses '...' as its param to make its arguments less specific;
   // the compiler prefers more-specific overloads to less-specific ones.
@@ -1140,7 +1138,7 @@ class ProxyNativeCall {
   void Clear(JNIEnv* env, std::index_sequence<Indices...>) {
     int dummy[] = {
         (ProxyArg<Args>::Clear(env, std::get<Indices>(mArgs)), 0)...};
-    mozilla::Unused << dummy;
+    (void)dummy;
   }
 
   static decltype(auto) GetNativeObject(Class::Param thisArg) {

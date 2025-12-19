@@ -22,6 +22,7 @@ import time
 import urllib
 from collections import defaultdict
 from pathlib import Path
+from shlex import quote as shlex_quote
 
 import mozpack.path as mozpath
 from mach.util import get_state_dir
@@ -31,7 +32,6 @@ from mozpack.files import FileFinder, JarFinder
 from mozpack.manifests import InstallManifest
 from mozpack.mozjar import JarReader
 from mozpack.packager.unpack import UnpackFinder
-from six.moves import shlex_quote
 
 from mozbuild.configure import confvars
 from mozbuild.dirutils import ensureParentDir
@@ -59,7 +59,7 @@ def log_copy_result(log, elapsed, destdir, result):
 _MSIX_ARCH = {"x86": "x86", "x86_64": "x64", "aarch64": "arm64"}
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def sdk_tool_search_path():
     from mozbuild.configure import ConfigureSandbox
 
@@ -354,6 +354,7 @@ def repackage_msix(
     if channel not in (
         "official",
         "beta",
+        "esr",
         "aurora",
         "nightly",
         "unofficial",
@@ -412,9 +413,17 @@ def repackage_msix(
     if not displayname:
         displayname = f"Mozilla {first}"
 
+        # Release (official) and Beta share branding.  Differentiate Beta a little bit.
         if channel == "beta":
-            # Release (official) and Beta share branding.  Differentiate Beta a little bit.
-            displayname += " Beta"
+            suffix = " Beta"
+            if not displayname.endswith(suffix):
+                displayname += suffix
+
+        elif channel == "esr":
+            # Release (official) and ESR share branding.  Differentiate ESR a little bit.
+            suffix = " ESR"
+            if not displayname.endswith(suffix):
+                displayname += suffix
 
     second = next(values)
     vendor = vendor or second
@@ -472,9 +481,17 @@ def repackage_msix(
     _, _, brandFullName = brandFullName.partition("=")
     brandFullName = brandFullName.strip()
 
+    # Release (official) and Beta share branding.  Differentiate Beta a little bit.
     if channel == "beta":
-        # Release (official) and Beta share branding.  Differentiate Beta a little bit.
-        brandFullName += " Beta"
+        suffix = " Beta"
+        if not brandFullName.endswith(suffix):
+            brandFullName += suffix
+
+    elif channel == "esr":
+        # Release (official) and ESR share branding.  Differentiate ESR a little bit.
+        suffix = " ESR"
+        if not brandFullName.endswith(suffix):
+            brandFullName += suffix
 
     branding = get_branding(
         use_official_branding, topsrcdir, build_app, unpack_finder, log
@@ -969,9 +986,9 @@ def _sign_msix_posix(output, force, log, verbose):
     if not openssl:
         raise ValueError("openssl is required; " "set OPENSSL or PATH")
 
-    if "sign" not in subprocess.run(makeappx, capture_output=True).stdout.decode(
-        "utf-8"
-    ):
+    if "sign" not in subprocess.run(
+        makeappx, check=False, capture_output=True
+    ).stdout.decode("utf-8"):
         raise ValueError(
             "makeappx must support 'sign' operation. ",
             "You probably need to build Mozilla's version of it: ",

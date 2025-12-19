@@ -3,12 +3,12 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
-import json
 import logging
 import re
 import sys
 from functools import partial
 
+from taskgraph.util import json
 from taskgraph.util.taskcluster import get_task_definition
 
 from .registry import register_callback_action
@@ -25,6 +25,14 @@ from .util import (
 logger = logging.getLogger(__name__)
 SYMBOL_REGEX = re.compile("^(.*)-[a-z0-9]{11}-bk$")
 GROUP_SYMBOL_REGEX = re.compile("^(.*)-bk$")
+
+# Allowed browser applications for performance test backfills
+# Only Firefox and Geckoview should be backfilled for regression detection
+ALLOWED_PERFTEST_BACKFILL_APPS = (
+    "firefox",
+    "geckoview",
+    "fenix",
+)
 
 
 def input_for_support_action(revision, task, times=1, retrigger=True):
@@ -114,6 +122,19 @@ def backfill_action(parameters, graph_config, input, task_group_id, task_id):
     https://taskcluster-taskgraph.readthedocs.io/en/latest/howto/create-actions.html#testing-actions
     """
     task = get_task_definition(task_id)
+
+    # Only backfill allowed browser applications for performance tests
+    task_label = task.get("metadata", {}).get("name", "")
+    is_browsertime = "browsertime" in task_label
+
+    if is_browsertime and not any(
+        app in task_label for app in ALLOWED_PERFTEST_BACKFILL_APPS
+    ):
+        logger.warning(
+            f"Skipping backfill for non-allowed raptor-browsertime task: {task_label}"
+        )
+        return
+
     pushes = get_pushes_from_params_input(parameters, input)
     failed = False
     input_for_action = input_for_support_action(
@@ -380,8 +401,6 @@ def filter_raptor_jobs(full_task_graph, label_to_taskid, project):
             project, entry.attributes.get("run_on_projects", [])
         ):
             continue
-        if "macosx1400" in entry.attributes.get("test_platform", ""):
-            continue
         if "macosx1500" in entry.attributes.get("test_platform", ""):
             continue
         if "browsertime" not in entry.attributes.get("raptor_try_name", ""):
@@ -394,13 +413,17 @@ def filter_raptor_jobs(full_task_graph, label_to_taskid, project):
         exceptions = ("live", "profiling", "youtube-playback")
         if any(e in entry.attributes.get("raptor_try_name", "") for e in exceptions):
             continue
-        if "firefox" in entry.attributes.get(
-            "raptor_try_name", ""
-        ) and entry.attributes.get("test_platform", "").endswith("64-shippable-qr/opt"):
+        # Only run on allowed browser applications.
+        raptor_try_name = entry.attributes.get("raptor_try_name", "")
+        if not any(app in raptor_try_name for app in ALLOWED_PERFTEST_BACKFILL_APPS):
+            continue
+        if "firefox" in raptor_try_name and entry.attributes.get(
+            "test_platform", ""
+        ).endswith("64-shippable-qr/opt"):
             # add the browsertime test
             if label not in label_to_taskid:
                 to_run.append(label)
-        if "geckoview" in entry.attributes.get("raptor_try_name", ""):
+        if "geckoview" in raptor_try_name:
             # add the pageload test
             if label not in label_to_taskid:
                 to_run.append(label)

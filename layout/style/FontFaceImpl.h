@@ -7,11 +7,11 @@
 #ifndef mozilla_dom_FontFaceImpl_h
 #define mozilla_dom_FontFaceImpl_h
 
-#include "mozilla/dom/FontFaceBinding.h"
+#include "gfxUserFontSet.h"
 #include "mozilla/FontPropertyTypes.h"
 #include "mozilla/RWLock.h"
 #include "mozilla/ServoStyleConsts.h"
-#include "gfxUserFontSet.h"
+#include "mozilla/dom/FontFaceBinding.h"
 #include "nsTHashSet.h"
 
 class gfxFontFaceBufferSource;
@@ -98,8 +98,9 @@ class FontFaceImpl final {
 
   StyleLockedFontFaceRule* GetRule() { return mRule; }
 
-  bool HasLocalSrc() const;
-
+  static bool GetAttributesFromRule(
+      StyleLockedFontFaceRule*, gfxUserFontAttributes& aAttr,
+      const Maybe<gfxCharacterMap*>& aKnownCharMap = Nothing());
   bool GetAttributes(gfxUserFontAttributes& aAttr);
   gfxUserFontEntry* CreateUserFontEntry();
   gfxUserFontEntry* GetUserFontEntry() const { return mUserFontEntry; }
@@ -127,6 +128,13 @@ class FontFaceImpl final {
    * @font-face rule.
    */
   bool HasRule() const { return mRule; }
+
+  /** Set the font-face block we're reflecting when reusing a FontFace object */
+  void SetRule(StyleLockedFontFaceRule* aData) {
+    MOZ_ASSERT(HasRule());
+    AssertIsOnOwningThread();
+    mRule = aData;
+  }
 
   /**
    * Breaks the connection between this FontFace and its @font-face rule.
@@ -202,6 +210,11 @@ class FontFaceImpl final {
   bool SetDescriptors(const nsACString& aFamily,
                       const FontFaceDescriptors& aDescriptors);
 
+  StyleLockedFontFaceRule* GetData() const {
+    AssertIsOnOwningThread();
+    return HasRule() ? mRule : mDescriptors;
+  }
+
  private:
   ~FontFaceImpl();
 
@@ -227,11 +240,6 @@ class FontFaceImpl final {
   void SetStatus(FontFaceLoadStatus aStatus);
 
   void GetDesc(nsCSSFontDesc aDescID, nsACString& aResult) const;
-
-  StyleLockedFontFaceRule* GetData() const {
-    AssertIsOnOwningThread();
-    return HasRule() ? mRule : mDescriptors;
-  }
 
   /**
    * Returns and takes ownership of the buffer storing the font data.

@@ -6,13 +6,16 @@
 
 EXPORTS.mozilla.net += [
     "DataChannel.h",
-    "DataChannelListener.h",
+    "DataChannelDcSctp.h",
     "DataChannelLog.h",
     "DataChannelProtocol.h",
+    "DataChannelUsrsctp.h",
 ]
 
 SOURCES += [
     "DataChannel.cpp",
+    "DataChannelDcSctp.cpp",
+    "DataChannelUsrsctp.cpp",
 ]
 
 include("/ipc/chromium/chromium-config.mozbuild")
@@ -20,6 +23,7 @@ include("/ipc/chromium/chromium-config.mozbuild")
 FINAL_LIBRARY = "xul"
 
 LOCAL_INCLUDES += [
+    "!/dist/include/libwebrtc_overrides",
     "/dom/media/webrtc",
     "/dom/media/webrtc/transport",
     "/media/webrtc",

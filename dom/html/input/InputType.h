@@ -8,13 +8,14 @@
 #define mozilla_dom_InputType_h__
 
 #include <stdint.h>
+
 #include "mozilla/Decimal.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/TextControlState.h"
 #include "mozilla/UniquePtr.h"
+#include "nsError.h"
 #include "nsIConstraintValidation.h"
 #include "nsString.h"
-#include "nsError.h"
 
 // This must come outside of any namespace, or else it won't overload with the
 // double based version in nsMathUtils.h
@@ -95,18 +96,20 @@ class InputType {
   virtual StringToNumberResult ConvertStringToNumber(
       const nsAString& aValue) const;
 
+  enum class Localized : bool { No = false, Yes };
   /**
    * Convert a Decimal to a string in a type specific way, ie convert a
    * timestamp to a date string if type=date or append the number string
    * representing the value if type=number.
    *
    * @param aValue the Decimal to be converted
+   * @param Localized whether the value should be localized.
    * @param aResultString [out] the string representing the Decimal
    * @return whether the function succeeded, it will fail if the current input's
    *         type is not supported or the number can't be converted to a string
    *         as expected by the type.
    */
-  virtual bool ConvertNumberToString(Decimal aValue,
+  virtual bool ConvertNumberToString(Decimal aValue, Localized,
                                      nsAString& aResultString) const;
 
  protected:

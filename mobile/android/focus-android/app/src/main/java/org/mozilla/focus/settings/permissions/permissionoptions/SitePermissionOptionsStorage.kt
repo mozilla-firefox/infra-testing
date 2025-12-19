@@ -1,6 +1,7 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 package org.mozilla.focus.settings.permissions.permissionoptions
 
 import android.content.Context
@@ -14,7 +15,6 @@ import org.mozilla.focus.R
 import org.mozilla.focus.settings.permissions.AutoplayOption
 import org.mozilla.focus.settings.permissions.SitePermissionOption
 
-@Suppress("TooManyFunctions")
 class SitePermissionOptionsStorage(private val context: Context) {
 
     /**
@@ -34,17 +34,7 @@ class SitePermissionOptionsStorage(private val context: Context) {
     }
 
     fun getSitePermissionLabel(sitePermission: SitePermission): String {
-        return when (sitePermission) {
-            SitePermission.CAMERA -> context.getString(R.string.preference_phone_feature_camera)
-            SitePermission.LOCATION -> context.getString(R.string.preference_phone_feature_location)
-            SitePermission.MICROPHONE -> context.getString(R.string.preference_phone_feature_microphone)
-            SitePermission.NOTIFICATION -> context.getString(R.string.preference_phone_feature_notification)
-            SitePermission.MEDIA_KEY_SYSTEM_ACCESS -> context.getString(
-                R.string.preference_phone_feature_media_key_system_access,
-            )
-            SitePermission.AUTOPLAY, SitePermission.AUTOPLAY_AUDIBLE, SitePermission.AUTOPLAY_INAUDIBLE ->
-                context.getString(R.string.preference_autoplay)
-        }
+        return context.getString(sitePermission.labelRes)
     }
 
     /**
@@ -188,6 +178,8 @@ class SitePermissionOptionsStorage(private val context: Context) {
         persistentStorage = SitePermissionsRules.Action.BLOCKED,
         mediaKeySystemAccess = getSitePermissionRules(SitePermission.MEDIA_KEY_SYSTEM_ACCESS),
         crossOriginStorageAccess = SitePermissionsRules.Action.ASK_TO_ALLOW,
+        localDeviceAccess = SitePermissionsRules.Action.ASK_TO_ALLOW,
+        localNetworkAccess = SitePermissionsRules.Action.ASK_TO_ALLOW,
     )
 
     private fun getSitePermissionRules(sitePermission: SitePermission): SitePermissionsRules.Action {

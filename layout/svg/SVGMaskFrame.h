@@ -7,12 +7,11 @@
 #ifndef LAYOUT_SVG_SVGMASKFRAME_H_
 #define LAYOUT_SVG_SVGMASKFRAME_H_
 
-#include "mozilla/Attributes.h"
-#include "mozilla/RefPtr.h"
+#include "gfxMatrix.h"
+#include "gfxPattern.h"
+#include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/SVGContainerFrame.h"
 #include "mozilla/gfx/2D.h"
-#include "gfxPattern.h"
-#include "gfxMatrix.h"
 
 class gfxContext;
 
@@ -74,7 +73,7 @@ class SVGMaskFrame final : public SVGContainerFrame {
   gfxRect GetMaskArea(nsIFrame* aMaskedFrame);
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
 #ifdef DEBUG
   void Init(nsIContent* aContent, nsContainerFrame* aParent,

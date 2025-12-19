@@ -2,8 +2,25 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+// The following globals are defined in dom/webidl/ONNX.webidl
+/* global Tensor, InferenceSession */
+
 /**
  * @typedef {import("../../content/Utils.sys.mjs").ProgressAndStatusCallbackParams} ProgressAndStatusCallbackParams
+ */
+
+/**
+ * @typedef {object} PipelineMetrics
+ * @property {number} [preprocessingTime] - Time spent preprocessing inputs (ms).
+ * @property {number} [tokenizingTime] - Time spent tokenizing (same as preprocessingTime, for Glean consistency) (ms).
+ * @property {number} [inferenceTime] - Time spent running the model (ms).
+ * @property {number} [decodingTime] - Time spent decoding outputs (ms).
+ * @property {number} inputTokens - Number of tokens in the input.
+ * @property {number} outputTokens - Number of tokens in the output.
+ * @property {number|null} [timeToFirstToken] - Time to the first generated token (ms).
+ * @property {number} [tokensPerSecond] - Inference throughput (tokens/s).
+ * @property {number} [timePerOutputToken] - Latency per output token (ms).
+ * @property {Array<object>} [runTimestamps] - Timeline of execution events.
  */
 
 /* eslint-disable-next-line mozilla/reject-import-system-module-from-non-system */
@@ -26,7 +43,7 @@ const lazy = {};
 ChromeUtils.defineLazyGetter(lazy, "console", () => {
   return console.createInstance({
     maxLogLevel: _logLevel, // we can't use maxLogLevelPref in workers.
-    prefix: "ML:ONNXPipeline",
+    prefix: "GeckoMLONNXPipeline",
   });
 });
 
@@ -34,28 +51,67 @@ ChromeUtils.defineESModuleGetters(
   lazy,
   {
     Progress: "chrome://global/content/ml/Utils.sys.mjs",
+    setLogLevel: "chrome://global/content/ml/Utils.sys.mjs",
   },
   { global: "current" }
 );
 
-/**
- * Conditional import for Transformer.js
- *
- * The library will be lazily await on first usage in the Pipeline constructor.
- * If we are in Nightly, we are using the non-minified version.
- */
-let transformersPromise;
-let transformers = null;
-let transformersDev;
+const NATIVE_BACKEND = "onnx-native";
+const WASM_BACKEND = "onnx";
 
-if (AppConstants.NIGHTLY_BUILD) {
-  transformersPromise = import(
-    "chrome://global/content/ml/transformers-dev.js"
-  );
-  transformersDev = true;
-} else {
-  transformersPromise = import("chrome://global/content/ml/transformers.js");
-  transformersDev = false;
+/**
+ * A global reference to the Transformers library.
+ * Initially `null` until `importTransformers` sets it.
+ *
+ * @global
+ * @type {object | null}
+ */
+let transformers = null;
+
+/**
+ * Conditionally imports the Transformers library (transformers.js or transformers-dev.js)
+ * on first usage, depending on the environment. If the "onnx-native" backend is used,
+ * it exposes the `onnxruntime` object on the global scope under `Symbol.for("onnxruntime")`.
+ *
+ * @async
+ * @function importTransformers
+ * @param {string} backend - The backend to use (e.g. "onnx-native" or "onnx").
+ * @returns {Promise<import("chrome://global/content/ml/transformers-dev.js")>}
+ * A promise that resolves once the Transformers library is imported.
+ */
+export async function importTransformers(backend) {
+  if (transformers) {
+    return transformers;
+  }
+
+  lazy.console.debug(`Using backend ${backend}`);
+
+  if (backend === NATIVE_BACKEND) {
+    // check if we have the native backend.
+    if (typeof InferenceSession === "undefined") {
+      throw new Error("onnx-native backend not supported");
+    }
+
+    // Exposing an onnxruntime object to the Transformers lib.
+    const onnxruntime = {
+      InferenceSession,
+      Tensor,
+      supportedDevices: ["cpu"],
+      defaultDevices: ["cpu"],
+    };
+    globalThis[Symbol.for("onnxruntime")] = onnxruntime;
+  }
+  if (AppConstants.NIGHTLY_BUILD) {
+    lazy.console.debug("Nightly detected. Using transformers-dev.js");
+    transformers = await import(
+      "chrome://global/content/ml/transformers-dev.js"
+    );
+  } else {
+    lazy.console.debug("Beta or Release detected, using transformers.js");
+    transformers = await import("chrome://global/content/ml/transformers.js");
+  }
+
+  return transformers;
 }
 
 /**
@@ -121,7 +177,10 @@ async function echo(request, _model, _tokenizer, _processor, config) {
 
   return {
     metrics: {
-      tokenizingTime: 0,
+      preprocessingTime: 0,
+      decodingTime: 0,
+      inputTokens: 0,
+      outputTokens: 0,
     },
     output: result,
   };
@@ -147,10 +206,16 @@ async function imageToText(request, model, tokenizer, processor, _config) {
   let result = {
     metrics: {
       inferenceTime: 0,
-      tokenizingTime: 0,
+      preprocessingTime: 0,
+      decodingTime: 0,
+      inputTokens: null,
+      outputTokens: 0,
     },
   };
-  let start = Date.now();
+  // Destructure to simplify assignments
+  const { metrics } = result;
+
+  let startLoad = ChromeUtils.now();
   let rawImage;
 
   if ("url" in request) {
@@ -164,27 +229,28 @@ async function imageToText(request, model, tokenizer, processor, _config) {
     );
   }
 
-  lazy.console.debug("Image loaded in ", Date.now() - start);
+  lazy.console.debug("Image loaded in ", ChromeUtils.now() - startLoad);
 
+  const startProcessing = ChromeUtils.now();
   const { pixel_values } = await processor(rawImage);
-  result.metrics.tokenizingTime += Date.now() - start;
+  metrics.preprocessingTime += ChromeUtils.now() - startProcessing;
   const toReturn = [];
   const streamer = request.options?.streamer;
   for (const batch of pixel_values) {
     batch.dims = [1, ...batch.dims];
-    start = Date.now();
+    const startInference = ChromeUtils.now();
     const output = await model.generate({ inputs: batch, streamer });
-    result.metrics.inferenceTime += Date.now() - start;
-    start = Date.now();
+    metrics.inferenceTime += ChromeUtils.now() - startInference;
+    const startDecoding = ChromeUtils.now();
     const decoded = tokenizer
       .batch_decode(output, {
         skip_special_tokens: true,
       })
       .map(x => ({ generated_text: x.trim() }));
-    result.metrics.tokenizingTime += Date.now() - start;
+    metrics.decodingTime += ChromeUtils.now() - startDecoding;
     toReturn.push(decoded);
   }
-  lazy.console.debug("Inference done in ", Date.now() - start);
+  lazy.console.debug("Inference done in ", ChromeUtils.now() - startProcessing);
   result.output = toReturn[0][0].generated_text;
 
   // Bug 1918220 - replace the result for models with that bug
@@ -192,6 +258,110 @@ async function imageToText(request, model, tokenizer, processor, _config) {
     lazy.console.debug("Replacing `T` with `Text document.`");
     result.output = "Text document.";
   }
+  return result;
+}
+
+async function getDomainId(domain, domainVocab) {
+  return domainVocab[domain] ?? domainVocab["<unk>"];
+}
+
+/**
+ * Converts a query or webpage title into a goal embedding using a multi-task ONNX model.
+ *
+ * Accepts either:
+ * - Query: just `text`
+ * - Page: requires both `text` and `domain`
+ *
+ * @param {object} request - The input request to the pipeline.
+ * @param {Array} request.inputArgs - The input arguments: [texts], [taskTypes], [domains?]
+ * @param {object} model - The ONNX model session.
+ * @param {object} tokenizer - The tokenizer instance.
+ * @param {object} _processor - (Unused)
+ * @param {object} config - The engine configuration options
+ * @param {object} modelConfig - The model configuration options
+ * @returns {object} - Inference result with embedding(s)
+ */
+async function textToGoal(
+  request,
+  model,
+  tokenizer,
+  _processor,
+  config,
+  modelConfig
+) {
+  const result = {
+    metrics: {
+      preprocessingTime: 0,
+      inferenceTime: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+    },
+    output: [],
+  };
+  const { metrics } = result;
+
+  const texts = request.args?.[0] ?? [];
+  const taskTypes = request.args?.[1] ?? []; // ["query", "page", ...]
+  const domains = request.args?.[2] ?? []; // Optional (needed for "page")
+
+  for (let i = 0; i < texts.length; i++) {
+    const text = texts[i];
+    const task = taskTypes[i] ?? "query";
+    const domain = domains[i] ?? "";
+
+    const startToken = ChromeUtils.now();
+
+    const encoded = await tokenizer(text, {
+      padding: "max_length",
+      truncation: true,
+      max_length: 64,
+      return_attention_mask: true,
+    });
+    metrics.preprocessingTime += ChromeUtils.now() - startToken;
+    const input_ids = encoded.input_ids.ort_tensor;
+    const attention_mask = encoded.attention_mask.ort_tensor;
+    const domain_vocab = modelConfig["transformers.js_config"].domain_vocab;
+    const domain_id =
+      task === "page" ? await getDomainId(domain, domain_vocab) : 0;
+    // choose Tensor based on WASM or ONNX-NATIVE backend respectively
+    const tensorFactory =
+      config.backend === WASM_BACKEND ? transformers.Tensor : globalThis.Tensor;
+
+    const domain_ids = new tensorFactory(
+      "int64",
+      BigInt64Array.from([BigInt(domain_id)]),
+      [1]
+    );
+    const task_type = new tensorFactory(
+      "int64",
+      BigInt64Array.from([task === "query" ? 0n : 1n]),
+      [1]
+    );
+
+    const inputs = {
+      input_ids,
+      attention_mask,
+      domain_ids,
+      task_type,
+    };
+
+    const startInfer = ChromeUtils.now();
+    const session = model.sessions.model;
+    const output = await session.run(inputs);
+    metrics.inferenceTime += ChromeUtils.now() - startInfer;
+    metrics.inputTokens += encoded.input_ids.ort_tensor.dims[1];
+
+    result.output.push({
+      embedding: Array.from(output.embedding.data),
+      task,
+      domain,
+    });
+  }
+
+  if (result.output.length === 1) {
+    result.output = result.output[0];
+  }
+
   return result;
 }
 
@@ -230,6 +400,13 @@ const ENGINE_CONFIGURATION = {
     processorId: null,
     processorClass: null,
     pipelineFunction: echo,
+  },
+  "moz-text-to-goal": {
+    modelId: "mozilla/iab-multitask-inference",
+    modelClass: "AutoModel",
+    tokenizerId: "mozilla/iab-multitask-inference",
+    tokenizerClass: "AutoTokenizer",
+    pipelineFunction: textToGoal,
   },
 };
 
@@ -305,16 +482,23 @@ export class ONNXPipeline {
   #isReady = false;
   #config = null;
   #metrics = null;
+  #errorFactory = null;
+  #modelConfig = null;
 
   /**
    * Creates an instance of a Pipeline.
    *
    * @param {object} mlEngineWorker - Implements the Cache interface and used to get models
    * @param {object} config - The configuration options
+   * @param {*} errorFactory - error class passed by the backend factory.
    */
-  constructor(mlEngineWorker, config) {
+  constructor(mlEngineWorker, config, errorFactory) {
+    this.#errorFactory = errorFactory;
     this.#mlEngineWorker = mlEngineWorker;
     this.#metrics = [];
+    let device;
+    let session_options = {};
+
     // Setting up the Transformers.js environment
     // See https://huggingface.co/docs/transformers.js/api/env
 
@@ -330,31 +514,44 @@ export class ONNXPipeline {
     transformers.env.customCache = this.#mlEngineWorker;
     // using `NO_LOCAL` so when the custom cache is used, we don't try to fetch it (see MLEngineWorker.match)
     transformers.env.localModelPath = "NO_LOCAL";
-    transformers.env.backends.onnx.wasm.numThreads = config.numThreads;
 
-    // ONNX runtime - we set up the wasm runtime we got from RS for the ONNX backend to pick
-    transformers.env.backends.onnx.wasm.wasmPaths = {};
-    transformers.env.backends.onnx.wasm.wasmBinary = config.runtime;
+    if (config.backend === WASM_BACKEND) {
+      transformers.env.backends.onnx.wasm.numThreads = config.numThreads;
 
-    // Set the onnxruntime-web log/verbosity.
-    // onnx log levels are "error" | "verbose" | "info" | "warning" | "fatal"
-    // the default level is "warning"
-    switch (config.logLevel) {
-      case "All":
-      case "Trace":
-        transformers.env.backends.onnx.logLevel = "verbose";
-        transformers.env.backends.onnx.trace = true;
-        transformers.env.backends.onnx.debug = true;
-        break;
-      case "Debug":
-        transformers.env.backends.onnx.logLevel = "verbose";
-        transformers.env.backends.onnx.debug = true;
-        break;
-      default:
-        transformers.env.backends.onnx.logLevel = "warning";
-        transformers.env.backends.onnx.trace = false;
-        transformers.env.backends.onnx.debug = false;
-        break;
+      // ONNX runtime - we set up the wasm runtime we got from RS for the ONNX backend to pick
+      transformers.env.backends.onnx.wasm.wasmPaths = {};
+      transformers.env.backends.onnx.wasm.wasmBinary = config.runtime;
+
+      // Set the onnxruntime-web log/verbosity.
+      // onnx log levels are "error" | "verbose" | "info" | "warning" | "fatal"
+      // the default level is "warning"
+      switch (config.logLevel) {
+        case "All":
+        case "Trace":
+          transformers.env.backends.onnx.logLevel = "verbose";
+          transformers.env.backends.onnx.trace = true;
+          transformers.env.backends.onnx.debug = true;
+          break;
+        case "Debug":
+          transformers.env.backends.onnx.logLevel = "verbose";
+          transformers.env.backends.onnx.debug = true;
+          break;
+        default:
+          transformers.env.backends.onnx.logLevel = "warning";
+          transformers.env.backends.onnx.trace = false;
+          transformers.env.backends.onnx.debug = false;
+          break;
+      }
+      lazy.console.debug("Transformers.js env", transformers.env);
+      if (config.device === "cpu") {
+        config.device = "wasm";
+      }
+      device = config.device || "wasm";
+    } else {
+      device = "cpu";
+      session_options.intraOpNumThreads = config.numThreads;
+      session_options.interOpNumThreads = config.numThreads;
+      session_options.execution_mode = "sequential";
     }
 
     transformers.NoBadWordsLogitsProcessor.prototype._call =
@@ -362,8 +559,6 @@ export class ONNXPipeline {
 
     lazy.console.debug("Transformers.js env", transformers.env);
 
-    // Defaults for transformers.js if they are null in PipelineOptions.
-    const device = (config.device = config.device || "wasm");
     const dtype = (config.dtype = config.dtype || "q8");
     const modelRevision = (config.modelRevision =
       config.modelRevision || "main");
@@ -374,6 +569,19 @@ export class ONNXPipeline {
 
     if (config.pipelineFunction && config.taskName != "test-echo") {
       lazy.console.debug("Using internal inference function");
+
+      //moz-text-to-goal customizes feature-extraction
+      if (config.taskName === "moz-text-to-goal") {
+        config.taskName = "feature-extraction";
+        //obtain modelConfig options using AutoConfig
+        this.#modelConfig = transformers.AutoConfig.from_pretrained(
+          config.modelId,
+          { revision: config.modelRevision }
+        );
+        lazy.console.debug(
+          `Switching  config.taskName from  moz-text-to-goal to ${config.taskName}`
+        );
+      }
 
       // use the model revision of the tokenizer or processor don't have one
       if (!config.tokenizerRevision) {
@@ -428,6 +636,7 @@ export class ONNXPipeline {
             device,
             dtype,
             use_external_data_format: config.useExternalDataFormat,
+            session_options,
           }
         );
       } else {
@@ -438,16 +647,9 @@ export class ONNXPipeline {
     lazy.console.debug("Pipeline initialized");
   }
 
-  async #metricsSnapShot({ name, snapshot, collectMemory = true }) {
-    if (!snapshot) {
-      if (collectMemory) {
-        snapshot = await this.#mlEngineWorker.getInferenceProcessInfo();
-      } else {
-        snapshot = {};
-      }
-    }
+  async #metricsSnapShot({ name, snapshot = {} }) {
     if (!("when" in snapshot)) {
-      snapshot.when = Date.now();
+      snapshot.when = ChromeUtils.now();
     }
     this.#metrics.push({ name, ...snapshot });
   }
@@ -460,16 +662,17 @@ export class ONNXPipeline {
    * @param {object} mlEngineWorker - Implements the Cache interface and used to get models
    * @param {ArrayBuffer} runtime - The runtime wasm file.
    * @param {PipelineOptions} options - The options for initialization.
+   * @param {*} errorFactory - error class passed by the backend factory.
    * @returns {Promise<Pipeline>} The initialized pipeline instance.
    */
-  static async initialize(mlEngineWorker, runtime, options) {
+  static async initialize(mlEngineWorker, runtime, options, errorFactory) {
     let snapShot = {
-      when: Date.now(),
-      ...(await mlEngineWorker.getInferenceProcessInfo()),
+      when: ChromeUtils.now(),
     };
 
     if (options.logLevel) {
       _logLevel = options.logLevel;
+      lazy.setLogLevel(options.logLevel); // setting Utils log level
     }
     const taskName = options.taskName;
     lazy.console.debug(`Initializing Pipeline for task ${taskName}`);
@@ -490,21 +693,15 @@ export class ONNXPipeline {
 
     // Overriding the defaults with the options
     options.applyToConfig(config);
+    config.backend = config.backend || "onnx";
 
-    if (!transformers) {
-      if (transformersDev) {
-        lazy.console.debug("Nightly detected. Using transformers-dev.js");
-      } else {
-        lazy.console.debug("Beta or Release detected, using transformers.js");
-      }
-      transformers = await transformersPromise;
-    }
+    await importTransformers(config.backend);
 
     // reapply logLevel if it has changed.
     if (lazy.console.logLevel != config.logLevel) {
       lazy.console.logLevel = config.logLevel;
     }
-    const pipeline = new ONNXPipeline(mlEngineWorker, config);
+    const pipeline = new ONNXPipeline(mlEngineWorker, config, errorFactory);
     await pipeline.ensurePipelineIsReady();
     await pipeline.#metricsSnapShot({
       name: "initializationStart",
@@ -538,18 +735,27 @@ export class ONNXPipeline {
           this.#config.modelId != "test-echo"
         ) {
           lazy.console.debug("Initializing pipeline");
-          this.#genericPipelineFunction = await this.#genericPipelineFunction;
+          try {
+            this.#genericPipelineFunction = await this.#genericPipelineFunction;
+          } catch (error) {
+            lazy.console.debug("Error initializing pipeline", error);
+            throw this.#errorFactory(error);
+          }
         } else {
           lazy.console.debug("Initializing model, tokenizer and processor");
 
           try {
-            [this.#model, this.#tokenizer, this.#processor] = await Promise.all(
-              [this.#model, this.#tokenizer, this.#processor]
-            );
+            [this.#model, this.#tokenizer, this.#processor, this.#modelConfig] =
+              await Promise.all([
+                this.#model,
+                this.#tokenizer,
+                this.#processor,
+                this.#modelConfig,
+              ]);
             this.#isReady = true;
           } catch (error) {
             lazy.console.debug("Error initializing pipeline", error);
-            throw error;
+            throw this.#errorFactory(error);
           }
         }
       } finally {
@@ -582,11 +788,51 @@ export class ONNXPipeline {
   async run(request, requestId, inferenceProgressCallback = null) {
     lazy.console.debug("Running task: ", this.#config.taskName);
 
-    let result;
-    await this.#metricsSnapShot({ name: "runStart" });
+    /** @type {PipelineMetrics} */
+    const metrics = {
+      inputTokens: 0,
+      outputTokens: 0,
+      preprocessingTime: 0,
+      tokenizingTime: 0, // Same as preprocessingTime, but named for Glean consistency
+      inferenceTime: 0,
+      decodingTime: 0,
+      timeToFirstToken: null,
+      tokensPerSecond: 0,
+      timePerOutputToken: 0,
+      runTimestamps: [],
+    };
+
+    /**
+     * Helper to record a timestamp in the metrics timeline.
+     *
+     * @param {string} name
+     */
+    const snapshot = name => {
+      metrics.runTimestamps.push({ name, when: ChromeUtils.now() });
+    };
+
+    const runStartTime = ChromeUtils.now();
+    snapshot("runStart");
 
     const tokenizer =
       this.#genericPipelineFunction?.tokenizer ?? this.#tokenizer;
+
+    if (this.#genericPipelineFunction && tokenizer && request.args?.[0]) {
+      try {
+        const inputs = [request.args[0]].flat();
+        for (const text of inputs) {
+          if (typeof text === "string") {
+            const encoded = await tokenizer.encode(text);
+            metrics.inputTokens += encoded.length;
+          }
+        }
+      } catch (e) {
+        lazy.console.debug(
+          "Could not count input tokens for generic pipeline",
+          e
+        );
+      }
+    }
 
     const progressInfo = {
       ok: true,
@@ -594,74 +840,62 @@ export class ONNXPipeline {
     };
 
     const streamerOptions = {
-      perTokens: false,
+      perTokens: true,
       skipPrompt: true,
       returnTokens: false,
       ...request.streamerOptions,
     };
 
-    let streamer = undefined;
+    let streamer;
     let chunkTokens = [];
-    let chunkText = "";
-    let nextTokensArePrompt = !streamerOptions.skipPrompt;
-    let restoreTokenizer = false;
+    // Removed unused chunkText declaration here
 
-    if (tokenizer && inferenceProgressCallback) {
-      const flushPrompts = _tokens => {
-        streamer.token_cache = _tokens;
-        streamer.end();
-        streamer.tokenizer = {
-          decode: () => {
-            streamer.token_cache = [];
-            return "";
-          },
-        };
-        restoreTokenizer = true;
-        streamer.next_tokens_are_prompt = false;
-      };
+    let firstTokenTimestamp = null;
+    if (tokenizer) {
       streamer = new transformers.TextStreamer(tokenizer, {
         skip_prompt: streamerOptions.skipPrompt,
         decode_kwargs: {
           skip_special_tokens: true,
         },
         token_callback_function: tokens => {
-          if (restoreTokenizer) {
-            streamer.tokenizer = tokenizer;
-            restoreTokenizer = false;
+          // Record Time To First Token on the very first callback
+          const now = ChromeUtils.now();
+          if (metrics.timeToFirstToken === null) {
+            metrics.timeToFirstToken = now - runStartTime;
+            firstTokenTimestamp = now;
+          }
+
+          metrics.outputTokens += tokens.length;
+
+          // Only proceed with buffering if we have a callback to call
+          if (!inferenceProgressCallback) {
+            return;
+          }
+
+          if (streamerOptions.perTokens) {
+            // Logic handled in callback_function
+          } else {
+            // Append newly received tokens.
+            chunkTokens.push(tokens);
+          }
+        },
+        // Per-word (or per-token if perTokens=true) callback function
+        callback_function: text => {
+          if (!inferenceProgressCallback) {
+            return;
           }
           if (streamerOptions.perTokens) {
-            if (nextTokensArePrompt) {
-              flushPrompts(tokens);
-            }
-
             inferenceProgressCallback({
               ...progressInfo,
               metadata: {
-                text: chunkText,
-                tokens: streamerOptions.returnTokens ? tokens : null,
-                isPrompt: nextTokensArePrompt,
+                text,
+                tokens: streamerOptions.returnTokens ? chunkTokens : null,
                 requestId,
+                isPrompt: false, // skipping prompt, so assumed false
               },
               type: lazy.Progress.ProgressType.INFERENCE,
               statusText: lazy.Progress.ProgressStatusText.IN_PROGRESS,
             });
-
-            // We have sent the text, now resetting it
-            chunkText = "";
-          } else {
-            // Append newly received tokens.
-            chunkTokens.push(tokens);
-
-            if (nextTokensArePrompt) {
-              flushPrompts(tokens);
-            }
-          }
-          nextTokensArePrompt = false;
-        },
-        // Per-word callback function
-        callback_function: text => {
-          if (streamerOptions.perTokens) {
-            chunkText = text;
           } else {
             inferenceProgressCallback({
               ...progressInfo,
@@ -669,7 +903,7 @@ export class ONNXPipeline {
                 text,
                 tokens: streamerOptions.returnTokens ? chunkTokens : null,
                 requestId,
-                isPrompt: nextTokensArePrompt,
+                isPrompt: false,
               },
               type: lazy.Progress.ProgressType.INFERENCE,
               statusText: lazy.Progress.ProgressStatusText.IN_PROGRESS,
@@ -681,13 +915,13 @@ export class ONNXPipeline {
       });
     }
 
-    // Override streamer in options
-    const requestWithCallback = inferenceProgressCallback
-      ? {
-          ...request,
-          options: { ...request.options, streamer },
-        }
-      : request;
+    // Inject streamer into request options
+    const requestWithCallback = {
+      ...request,
+      options: { ...request.options, streamer },
+    };
+
+    let result;
 
     if (this.#genericPipelineFunction) {
       if (this.#config.modelId === "test-echo") {
@@ -695,15 +929,19 @@ export class ONNXPipeline {
           output: requestWithCallback.args,
           config: this.#config,
           multiThreadSupported: isMultiThreadSupported(),
+          metrics: { ...metrics },
         };
       } else {
-        result = await this.#genericPipelineFunction(
+        const start = ChromeUtils.now();
+        let output = await this.#genericPipelineFunction(
           ...requestWithCallback.args,
           requestWithCallback.options || {}
         );
-        if (result instanceof transformers.Tensor) {
-          result = result.tolist();
+        metrics.inferenceTime = ChromeUtils.now() - start;
+        if (output instanceof transformers.Tensor) {
+          output = output.tolist();
         }
+        result = output;
       }
     } else {
       result = await this.#pipelineFunction(
@@ -711,11 +949,52 @@ export class ONNXPipeline {
         this.#model,
         this.#tokenizer,
         this.#processor,
-        this.#config
+        this.#config,
+        this.#modelConfig
       );
+      result.metrics ??= {};
     }
-    await this.#metricsSnapShot({ name: "runEnd" });
-    result.metrics = this.#metrics;
+
+    if (result.metrics) {
+      for (const [key, value] of Object.entries(result.metrics)) {
+        if (value !== undefined && value !== null) {
+          metrics[key] = value;
+        }
+      }
+    }
+
+    snapshot("runEnd");
+    const runEndTime = ChromeUtils.now();
+
+    // Calculate metrics
+    try {
+      // If we streamed, decoding time is Time(End) - Time(FirstToken).
+      // Otherwise, we fallback to inferenceTime (e.g. for embeddings or image-to-text without streaming).
+      if (metrics.timeToFirstToken !== null && firstTokenTimestamp !== null) {
+        metrics.decodingTime = runEndTime - firstTokenTimestamp;
+      } else {
+        metrics.decodingTime = metrics.inferenceTime;
+      }
+
+      // Sync tokenizingTime with preprocessingTime for Glean metrics consistency
+      metrics.tokenizingTime = metrics.preprocessingTime;
+
+      // Calculate throughput metrics if we have the necessary data
+      if (metrics.inferenceTime > 0 && metrics.outputTokens > 0) {
+        metrics.tokensPerSecond =
+          metrics.outputTokens / (metrics.inferenceTime / 1000);
+        metrics.timePerOutputToken =
+          metrics.inferenceTime / metrics.outputTokens;
+      }
+    } catch (e) {
+      lazy.console.debug("Error computing throughput metrics", e);
+    }
+
+    // Merge initialization snapshots from this.#metrics into runTimestamps
+    // so tests can access all timing data
+    metrics.runTimestamps = [...this.#metrics, ...metrics.runTimestamps];
+
+    result.metrics = metrics;
 
     if (streamer) {
       inferenceProgressCallback?.({

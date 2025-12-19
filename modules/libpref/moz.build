@@ -7,8 +7,7 @@
 with Files("**"):
     BUG_COMPONENT = ("Core", "Preferences: Backend")
 
-if CONFIG["ENABLE_TESTS"]:
-    DIRS += ["test/gtest"]
+TEST_DIRS += ["test/gtest"]
 
 XPCSHELL_TESTS_MANIFESTS += [
     "test/unit/xpcshell.toml",
@@ -20,6 +19,7 @@ BROWSER_CHROME_MANIFESTS += ["test/browser/browser.toml"]
 XPIDL_SOURCES += [
     "nsIPrefBranch.idl",
     "nsIPrefLocalizedString.idl",
+    "nsIPrefOverrideMap.idl",
     "nsIPrefService.idl",
     "nsIRelativeFilePref.idl",
 ]
@@ -102,6 +102,11 @@ if CONFIG["OS_TARGET"] == "Android":
     ]
 if CONFIG["FUZZING"]:
     pref_groups += ["fuzzing"]
+if CONFIG["MOZ_THUNDERBIRD"]:
+    pref_groups += [
+        "mail",
+        "mailnews",
+    ]
 pref_groups = tuple(sorted(pref_groups))
 
 # Note: generate_static_pref_list.py relies on StaticPrefListAll.h being first.
@@ -130,11 +135,14 @@ UNIFIED_SOURCES += [
 
 gen_all_tuple = tuple(gen_h + gen_cpp + gen_rs)
 
+gen_inputs = ["init/StaticPrefList.yaml"]
+if CONFIG["MOZ_THUNDERBIRD"]:
+    gen_inputs += ["/comm/mail/app/StaticPrefList.yaml"]
 GeneratedFile(
     *gen_all_tuple,
     script="init/generate_static_pref_list.py",
     entry_point="emit_code",
-    inputs=["init/StaticPrefList.yaml"]
+    inputs=gen_inputs
 )
 
 PYTHON_UNITTEST_MANIFESTS += [
@@ -156,9 +164,6 @@ DEFINES["MOZ_WIDGET_TOOLKIT"] = CONFIG["MOZ_WIDGET_TOOLKIT"]
 
 if CONFIG["MOZ_SERVICES_SYNC"]:
     DEFINES["MOZ_SERVICES_SYNC"] = True
-
-if CONFIG["MOZ_BUILD_APP"] == "browser":
-    DEFINES["MOZ_BUILD_APP_IS_BROWSER"] = True
 
 if CONFIG["MOZ_WEBEXT_WEBIDL_ENABLED"]:
     DEFINES["MOZ_WEBEXT_WEBIDL_ENABLED"] = True

@@ -4,7 +4,7 @@
 Texture Usages Validation Tests in Same or Different Render Pass Encoders.
 `;import { makeTestGroup } from '../../../../../common/framework/test_group.js';
 import { assert, unreachable } from '../../../../../common/util/util.js';
-import { AllFeaturesMaxLimitsValidationTest } from '../../validation_test.js';
+import { AllFeaturesMaxLimitsGPUTest } from '../../../../gpu_test.js';
 
 
 
@@ -17,11 +17,11 @@ export const kTextureBindingTypes = [
 'readonly-storage-texture',
 'readwrite-storage-texture'];
 
-export function IsReadOnlyTextureBindingType(t) {
+export function isReadOnlyTextureBindingType(t) {
   return t === 'sampled-texture' || t === 'readonly-storage-texture';
 }
 
-class F extends AllFeaturesMaxLimitsValidationTest {
+class F extends AllFeaturesMaxLimitsGPUTest {
   getColorAttachment(
   texture,
   textureViewDescriptor)
@@ -533,7 +533,7 @@ fn((t) => {
   }
 
   const bothReadOnly =
-  IsReadOnlyTextureBindingType(bgUsage0) && IsReadOnlyTextureBindingType(bgUsage1);
+  isReadOnlyTextureBindingType(bgUsage0) && isReadOnlyTextureBindingType(bgUsage1);
   const isMipLevelNotOverlapped = t.isRangeNotOverlapped(
     bg0Levels.base,
     bg0Levels.base + bg0Levels.count - 1,

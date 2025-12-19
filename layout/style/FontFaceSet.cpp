@@ -6,26 +6,16 @@
 
 #include "FontFaceSet.h"
 
+#include "FontPreloader.h"
+#include "ReferrerInfo.h"
 #include "gfxFontConstants.h"
 #include "gfxFontSrcPrincipal.h"
 #include "gfxFontSrcURI.h"
 #include "gfxFontUtils.h"
-#include "FontPreloader.h"
-#include "mozilla/css/Loader.h"
-#include "mozilla/dom/CSSFontFaceRule.h"
-#include "mozilla/dom/DocumentInlines.h"
-#include "mozilla/dom/Event.h"
-#include "mozilla/dom/FontFaceImpl.h"
-#include "mozilla/dom/FontFaceSetBinding.h"
-#include "mozilla/dom/FontFaceSetDocumentImpl.h"
-#include "mozilla/dom/FontFaceSetWorkerImpl.h"
-#include "mozilla/dom/FontFaceSetIterator.h"
-#include "mozilla/dom/FontFaceSetLoadEvent.h"
-#include "mozilla/dom/FontFaceSetLoadEventBinding.h"
-#include "mozilla/dom/Promise.h"
-#include "mozilla/FontPropertyTypes.h"
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/BasePrincipal.h"
+#include "mozilla/FontPropertyTypes.h"
+#include "mozilla/LoadInfo.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
@@ -35,28 +25,37 @@
 #include "mozilla/ServoStyleSet.h"
 #include "mozilla/ServoUtils.h"
 #include "mozilla/Sprintf.h"
-#include "mozilla/LoadInfo.h"
+#include "mozilla/css/Loader.h"
+#include "mozilla/dom/CSSFontFaceRule.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentInlines.h"
+#include "mozilla/dom/Event.h"
+#include "mozilla/dom/FontFaceImpl.h"
+#include "mozilla/dom/FontFaceSetBinding.h"
+#include "mozilla/dom/FontFaceSetDocumentImpl.h"
+#include "mozilla/dom/FontFaceSetIterator.h"
+#include "mozilla/dom/FontFaceSetLoadEvent.h"
+#include "mozilla/dom/FontFaceSetLoadEventBinding.h"
+#include "mozilla/dom/FontFaceSetWorkerImpl.h"
+#include "mozilla/dom/Promise.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentPolicyUtils.h"
 #include "nsContentUtils.h"
+#include "nsDOMNavigationTiming.h"
 #include "nsDeviceContext.h"
 #include "nsFontFaceLoader.h"
 #include "nsIConsoleService.h"
 #include "nsIContentPolicy.h"
 #include "nsIDocShell.h"
-#include "mozilla/dom/Document.h"
+#include "nsIInputStream.h"
 #include "nsILoadContext.h"
-#include "nsINetworkPredictor.h"
 #include "nsIPrincipal.h"
 #include "nsIWebNavigation.h"
-#include "nsNetUtil.h"
-#include "nsIInputStream.h"
 #include "nsLayoutUtils.h"
+#include "nsNetUtil.h"
 #include "nsPresContext.h"
 #include "nsPrintfCString.h"
 #include "nsUTF8Utils.h"
-#include "nsDOMNavigationTiming.h"
-#include "ReferrerInfo.h"
 
 using namespace mozilla;
 using namespace mozilla::css;
@@ -141,10 +140,18 @@ already_AddRefed<Promise> FontFaceSet::Load(JSContext* aCx,
 
   nsTArray<RefPtr<Promise>> promises;
 
-  nsTArray<FontFace*> faces;
-  mImpl->FindMatchingFontFaces(aFont, aText, faces, aRv);
-  if (aRv.Failed()) {
-    return nullptr;
+  nsTArray<RefPtr<FontFace>> faces;
+  {
+    nsTArray<FontFace*> weakFaces;
+    mImpl->FindMatchingFontFaces(aFont, aText, weakFaces, aRv);
+    if (aRv.Failed()) {
+      return nullptr;
+    }
+    if (!faces.AppendElements(weakFaces, fallible) ||
+        !promises.SetCapacity(weakFaces.Length(), fallible)) {
+      aRv.Throw(NS_ERROR_FAILURE);
+      return nullptr;
+    }
   }
 
   for (FontFace* f : faces) {
@@ -152,10 +159,7 @@ already_AddRefed<Promise> FontFaceSet::Load(JSContext* aCx,
     if (aRv.Failed()) {
       return nullptr;
     }
-    if (!promises.AppendElement(promise, fallible)) {
-      aRv.Throw(NS_ERROR_FAILURE);
-      return nullptr;
-    }
+    promises.AppendElement(promise);
   }
 
   return Promise::All(aCx, promises, aRv);
@@ -218,8 +222,6 @@ bool FontFaceSet::HasRuleFontFace(FontFace* aFontFace) {
 #endif
 
 void FontFaceSet::Add(FontFace& aFontFace, ErrorResult& aRv) {
-  FlushUserFontSet();
-
   FontFaceImpl* fontImpl = aFontFace.GetImpl();
   MOZ_ASSERT(fontImpl);
 

@@ -25,7 +25,6 @@
 #include "nsXPCOMCIDInternal.h"
 
 #include "mozilla/LookAndFeel.h"
-#include "mozilla/Unused.h"
 
 #include "nsIObserverService.h"
 #include "mozilla/AppShutdown.h"
@@ -451,7 +450,7 @@ static void SendManifestEntry(const ChromeRegistryItem& aItem) {
   if (!parents.Length()) return;
 
   for (uint32_t i = 0; i < parents.Length(); i++) {
-    Unused << parents[i]->SendRegisterChromeItem(aItem);
+    (void)parents[i]->SendRegisterChromeItem(aItem);
   }
 }
 
@@ -585,26 +584,6 @@ void nsChromeRegistryChrome::ManifestOverride(ManifestProcessingContext& cx,
                           nsIScriptError::warningFlag,
                           "During chrome registration, unable to create URI.");
     return;
-  }
-
-  if (cx.mType == NS_SKIN_LOCATION) {
-    bool chromeSkinOnly =
-        chromeuri->SchemeIs("chrome") && resolveduri->SchemeIs("chrome");
-    if (chromeSkinOnly) {
-      nsAutoCString chromePath, resolvedPath;
-      chromeuri->GetPathQueryRef(chromePath);
-      resolveduri->GetPathQueryRef(resolvedPath);
-      chromeSkinOnly = StringBeginsWith(chromePath, "/skin/"_ns) &&
-                       StringBeginsWith(resolvedPath, "/skin/"_ns);
-    }
-    if (!chromeSkinOnly) {
-      LogMessageWithContext(
-          cx.GetManifestURI(), lineno, nsIScriptError::warningFlag,
-          "Cannot register non-chrome://.../skin/ URIs '%s' and '%s' as "
-          "overrides and/or to be overridden from a skin manifest.",
-          chrome, resolved);
-      return;
-    }
   }
 
   if (!CanLoadResource(resolveduri)) {

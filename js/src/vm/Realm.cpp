@@ -29,6 +29,7 @@
 #include "vm/DateTime.h"
 #include "vm/Iteration.h"
 #include "vm/JSContext.h"
+#include "wasm/WasmInstance.h"
 
 #include "gc/Marking-inl.h"
 #include "vm/JSObject-inl.h"
@@ -147,7 +148,7 @@ ObjectRealm::getOrCreateNonSyntacticLexicalEnvironment(JSContext* cx,
   MOZ_ASSERT(&ObjectRealm::get(enclosing) == this);
 
   if (!nonSyntacticLexicalEnvironments_) {
-    auto map = cx->make_unique<ObjectWeakMap>(cx);
+    auto map = cx->make_unique<NonSyntacticLexialEnvironmentsMap>(cx);
     if (!map) {
       return nullptr;
     }
@@ -163,8 +164,8 @@ ObjectRealm::getOrCreateNonSyntacticLexicalEnvironment(JSContext* cx,
   MOZ_ASSERT(key->is<NonSyntacticVariablesObject>() ||
              !key->is<EnvironmentObject>());
 
-  Rooted<NonSyntacticLexicalEnvironmentObject*> lexicalEnv(
-      cx, NonSyntacticLexicalEnvironmentObject::create(cx, enclosing, thisv));
+  NonSyntacticLexicalEnvironmentObject* lexicalEnv =
+      NonSyntacticLexicalEnvironmentObject::create(cx, enclosing, thisv);
   if (!lexicalEnv) {
     return nullptr;
   }
@@ -381,6 +382,9 @@ void Realm::setAllocationMetadataBuilder(
     }
   }
 
+  for (wasm::Instance* instance : wasm.instances()) {
+    instance->setAllocationMetadataBuilder(builder);
+  }
   allocationMetadataBuilder_ = builder;
 }
 
@@ -398,6 +402,9 @@ void Realm::forgetAllocationMetadataBuilder() {
 
   zone()->decNumRealmsWithAllocMetadataBuilder();
 
+  for (wasm::Instance* instance : wasm.instances()) {
+    instance->setAllocationMetadataBuilder(nullptr);
+  }
   allocationMetadataBuilder_ = nullptr;
 }
 
@@ -412,7 +419,7 @@ void Realm::setNewObjectMetadata(JSContext* cx, HandleObject obj) {
     cx->check(metadata);
 
     if (!objects_.objectMetadataTable) {
-      auto table = cx->make_unique<ObjectWeakMap>(cx);
+      auto table = cx->make_unique<ObjectRealm::ObjectMetadataTable>(cx);
       if (!table) {
         oomUnsafe.crash("setNewObjectMetadata");
       }
@@ -523,11 +530,46 @@ void Realm::clearScriptCounts() { zone()->clearScriptCounts(this); }
 void Realm::clearScriptLCov() { zone()->clearScriptLCov(this); }
 
 const char* Realm::getLocale() const {
-  if (RefPtr<LocaleString> locale = creationOptions_.locale()) {
+  if (RefPtr<LocaleString> locale = behaviors_.localeOverride()) {
     return locale->chars();
   }
-
   return runtime_->getDefaultLocale();
+}
+
+void Realm::setLocaleOverride(const char* locale) {
+  // Clear any jitcode in the runtime, because compiled code doesn't handle
+  // updates to a realm's locale override.
+  ReleaseAllJITCode(runtime_->gcContext());
+
+  behaviors_.setLocaleOverride(locale);
+}
+
+js::DateTimeInfo* Realm::getDateTimeInfo() {
+#if JS_HAS_INTL_API
+  if (RefPtr<TimeZoneString> timeZone = behaviors_.timeZoneOverride()) {
+    if (!dateTimeInfo_) {
+      AutoEnterOOMUnsafeRegion oomUnsafe;
+
+      // Crash on OOM because we don't have a good way to handle it here.
+      dateTimeInfo_ = js::MakeUnique<js::DateTimeInfo>(timeZone);
+      if (!dateTimeInfo_) {
+        oomUnsafe.crash("getDateTimeInfo");
+      }
+    } else {
+      dateTimeInfo_->updateTimeZoneOverride(timeZone);
+    }
+    return dateTimeInfo_.get();
+  }
+#endif
+  return nullptr;
+}
+
+void Realm::setTimeZoneOverride(const char* timeZone) {
+  // Clear any jitcode in the runtime, because compiled code doesn't handle
+  // updates to a realm's time zone override.
+  ReleaseAllJITCode(runtime_->gcContext());
+
+  behaviors_.setTimeZoneOverride(timeZone);
 }
 
 void ObjectRealm::addSizeOfExcludingThis(
@@ -651,6 +693,10 @@ JS_PUBLIC_API JS::Realm* JS::GetObjectRealmOrNull(JSObject* obj) {
 
 JS_PUBLIC_API void* JS::GetRealmPrivate(JS::Realm* realm) {
   return realm->realmPrivate();
+}
+
+JS_PUBLIC_API bool JS::HasRealmInitializedGlobal(JS::Realm* realm) {
+  return realm->hasInitializedGlobal();
 }
 
 JS_PUBLIC_API void JS::SetRealmPrivate(JS::Realm* realm, void* data) {

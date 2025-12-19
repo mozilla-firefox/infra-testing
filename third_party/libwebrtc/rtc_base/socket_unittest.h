@@ -14,21 +14,20 @@
 #include <cstddef>
 
 #include "absl/strings/string_view.h"
+#include "api/environment/environment.h"
 #include "rtc_base/ip_address.h"
 #include "rtc_base/socket_factory.h"
 #include "test/gtest.h"
 
-namespace rtc {
+namespace webrtc {
 
 // Generic socket tests, to be used when testing individual socket servers.
 // Derive your specific test class from SocketTest, install your
 // socketserver, and call the SocketTest test methods.
 class SocketTest : public ::testing::Test {
  protected:
-  explicit SocketTest(rtc::SocketFactory* socket_factory)
-      : kIPv4Loopback(INADDR_LOOPBACK),
-        kIPv6Loopback(in6addr_loopback),
-        socket_factory_(socket_factory) {}
+  explicit SocketTest(SocketFactory* socket_factory);
+
   void TestConnectIPv4();
   void TestConnectIPv6();
   void TestConnectWithDnsLookupIPv4();
@@ -101,6 +100,7 @@ class SocketTest : public ::testing::Test {
   void UdpSocketRecvTimestampUseRtcEpoch(const IPAddress& loopback);
   void SocketSendRecvWithEcn(const IPAddress& loopback);
 
+  const Environment env_;
   SocketFactory* socket_factory_;
 };
 
@@ -108,6 +108,7 @@ class SocketTest : public ::testing::Test {
 // values on Windows, but an empty address of the same family on Linux/MacOS X.
 bool IsUnspecOrEmptyIP(const IPAddress& address);
 
-}  // namespace rtc
+}  //  namespace webrtc
+
 
 #endif  // RTC_BASE_SOCKET_UNITTEST_H_

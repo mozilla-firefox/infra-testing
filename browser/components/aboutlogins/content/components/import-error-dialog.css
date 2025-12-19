@@ -10,7 +10,7 @@
 }
 
 .error-title {
-  font-weight: 600;
+  font-weight: var(--heading-font-weight);
   margin-top: 20px;
 }
 
@@ -19,10 +19,10 @@
 }
 
 .error-learn-more-link {
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 
 .warning-icon {
   -moz-context-properties: fill;
-  fill: #FFBF00;
+  fill: #ffbf00;
 }

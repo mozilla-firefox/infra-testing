@@ -34,7 +34,6 @@
 #include "nsWindowSizes.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/Telemetry.h"
 #include "mozilla/Services.h"
 #include "mozilla/dom/ScriptLoader.h"
 #include "mozilla/dom/ScriptSettings.h"
@@ -66,13 +65,10 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/FetchUtil.h"
 #include "mozilla/dom/WindowBinding.h"
-#include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/ProcessHangMonitor.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/Sprintf.h"
-#include "mozilla/UniquePtrExtensions.h"
-#include "mozilla/Unused.h"
 #include "AccessCheck.h"
 #include "nsGlobalWindowInner.h"
 #include "nsAboutProtocolUtils.h"
@@ -1465,11 +1461,6 @@ static void ReportZoneStats(const JS::ZoneStats& zStats,
                  zStats.regExpSharedsMallocHeap,
                  "Shared compiled regexp data.");
 
-  // zStats.smallBuffersGCHeap is not reported as a separate item here as it's
-  // reported as part of the owning cell. We must still count it as part of the
-  // total heap size.
-  gcTotal += zStats.smallBuffersGCHeap;
-
   ZRREPORT_BYTES(pathPrefix + "zone-object"_ns, zStats.zoneObject,
                  "The JS::Zone object itself.");
 
@@ -1480,6 +1471,9 @@ static void ReportZoneStats(const JS::ZoneStats& zStats,
 
   ZRREPORT_BYTES(pathPrefix + "cacheir-stubs"_ns, zStats.cacheIRStubs,
                  "The JIT's IC stubs (excluding code).");
+
+  ZRREPORT_BYTES(pathPrefix + "object-fuses"_ns, zStats.objectFuses,
+                 "Information about constant object properties.");
 
   ZRREPORT_BYTES(pathPrefix + "script-counts-map"_ns, zStats.scriptCountsMap,
                  "Profiling-related information for scripts.");
@@ -1828,9 +1822,8 @@ static void ReportRealmStats(const JS::RealmStats& realmStats,
   ZRREPORT_BYTES(realmJSPathPrefix + "realm-object"_ns, realmStats.realmObject,
                  "The JS::Realm object itself.");
 
-  ZRREPORT_BYTES(
-      realmJSPathPrefix + "realm-tables"_ns, realmStats.realmTables,
-      "Realm-wide tables storing object group information and wasm instances.");
+  ZRREPORT_BYTES(realmJSPathPrefix + "realm-tables"_ns, realmStats.realmTables,
+                 "Realm-wide tables storing wasm instances.");
 
   ZRREPORT_BYTES(realmJSPathPrefix + "inner-views"_ns,
                  realmStats.innerViewsTable,
@@ -2075,7 +2068,7 @@ class JSMainRuntimeRealmsReporter final : public nsIMemoryReporter {
     path.Insert(js::IsSystemRealm(realm) ? "js-main-runtime-realms/system/"_ns
                                          : "js-main-runtime-realms/user/"_ns,
                 0);
-    mozilla::Unused << data->paths.append(path);
+    (void)data->paths.append(path);
   }
 
   NS_IMETHOD CollectReports(nsIHandleReportCallback* handleReport,
@@ -2496,11 +2489,6 @@ void JSReporter::CollectReports(WindowPaths* windowPaths,
       KIND_OTHER, rtStats.zTotals.regExpSharedsGCHeap,
       "Used regexpshared cells.");
 
-  MREPORT_BYTES(
-      "js-main-runtime-gc-heap-committed/used/gc-things/small-buffers"_ns,
-      KIND_OTHER, rtStats.zTotals.smallBuffersGCHeap,
-      "Used small buffer cells.");
-
   MOZ_ASSERT(gcThingTotal == rtStats.gcHeapGCThings);
   (void)gcThingTotal;
 
@@ -2562,17 +2550,21 @@ void JSReporter::CollectReports(WindowPaths* windowPaths,
                "The memory used by the JSContexts in HelperThreadState.");
 }
 
-static nsresult JSSizeOfTab(JSObject* objArg, size_t* jsObjectsSize,
+static nsresult JSSizeOfTab(JSObject* obj, size_t* jsObjectsSize,
                             size_t* jsStringsSize, size_t* jsPrivateSize,
                             size_t* jsOtherSize) {
   JSContext* cx = XPCJSContext::Get()->Context();
-  JS::RootedObject obj(cx, objArg);
+  JS::Zone* zone = JS::GetObjectZone(obj);
+  if (JS::IsIncrementalGCInProgress(cx)) {
+    JS::FinishIncrementalGC(cx, JS::GCReason::PREPARE_FOR_TRACING);
+  }
+  JS::AutoCheckCannotGC nogc(cx);
 
   TabSizes sizes;
   OrphanReporter orphanReporter(XPCConvert::GetISupportsFromJSObject);
-  NS_ENSURE_TRUE(
-      JS::AddSizeOfTab(cx, obj, moz_malloc_size_of, &orphanReporter, &sizes),
-      NS_ERROR_OUT_OF_MEMORY);
+  NS_ENSURE_TRUE(JS::AddSizeOfTab(cx, zone, moz_malloc_size_of, &orphanReporter,
+                                  &sizes, nogc),
+                 NS_ERROR_OUT_OF_MEMORY);
 
   *jsObjectsSize = sizes.objects_;
   *jsStringsSize = sizes.strings_;
@@ -2583,48 +2575,8 @@ static nsresult JSSizeOfTab(JSObject* objArg, size_t* jsObjectsSize,
 
 }  // namespace xpc
 
-// Temporary workaround until bug 1949494 can land.
-namespace TelemetryHistogram {
-void Accumulate(mozilla::Telemetry::HistogramID aHistogram, uint32_t aSample);
-}
-
 static void AccumulateTelemetryCallback(JSMetric id, uint32_t sample) {
-  // clang-format off
   switch (id) {
-#define CASE_ACCUMULATE(NAME, _)                                \
-    case JSMetric::NAME:                                        \
-      TelemetryHistogram::Accumulate(Telemetry::NAME, sample);  \
-      break;
-
-    FOR_EACH_JS_LEGACY_METRIC(CASE_ACCUMULATE)
-#undef CASE_ACCUMULATE
-
-    default:
-      break;
-  }
-  // clang-format on
-
-  switch (id) {
-// Disable clone.deserialize metrics on Android for perf (bug 1898515).
-#ifndef MOZ_WIDGET_ANDROID
-    case JSMetric::DESERIALIZE_BYTES:
-      glean::performance_clone_deserialize::size.Accumulate(sample);
-      break;
-    case JSMetric::DESERIALIZE_ITEMS:
-      glean::performance_clone_deserialize::items.AccumulateSingleSample(
-          sample);
-      break;
-    case JSMetric::DESERIALIZE_US:
-      glean::performance_clone_deserialize::time.AccumulateRawDuration(
-          TimeDuration::FromMicroseconds(sample));
-      // GLAM EXPERIMENT
-      // This metric is temporary, disabled by default, and will be enabled only
-      // for the purpose of experimenting with client-side sampling of data for
-      // GLAM use. See Bug 1947604 for more information.
-      glean::glam_experiment::time.AccumulateRawDuration(
-          TimeDuration::FromMicroseconds(sample));
-      break;
-#endif  // MOZ_WIDGET_ANDROID
     case JSMetric::GC_MS:
       glean::javascript_gc::total_time.AccumulateRawDuration(
           TimeDuration::FromMilliseconds(sample));
@@ -2691,6 +2643,10 @@ static void AccumulateTelemetryCallback(JSMetric id, uint32_t sample) {
       break;
     case JSMetric::GC_TIME_BETWEEN_SLICES_MS:
       glean::javascript_gc::time_between_slices.AccumulateRawDuration(
+          TimeDuration::FromMilliseconds(sample));
+      break;
+    case JSMetric::GC_TIME_BETWEEN_MINOR_MS:
+      glean::javascript_gc::time_between_minor.AccumulateRawDuration(
           TimeDuration::FromMilliseconds(sample));
       break;
     case JSMetric::GC_TASK_START_DELAY_US:
@@ -2809,11 +2765,12 @@ static void AccumulateTelemetryCallback(JSMetric id, uint32_t sample) {
       break;
     case JSMetric::GC_REASON_2: {
       // Assert that every reason has an associated glean label.
-      static_assert(static_cast<uint8_t>(JS::GCReason::LAST_FIREFOX_REASON) ==
-                        static_cast<uint8_t>(
-                            glean::javascript_gc::ReasonLabel::e__Other__),
-                    "GC reason enum and glean::javascript_gc::reason labels do "
-                    "not match.");
+      static_assert(
+          static_cast<uint8_t>(JS::GCReason::LAST_FIREFOX_REASON) + 1 ==
+              static_cast<uint8_t>(
+                  glean::javascript_gc::ReasonLabel::e__Other__),
+          "GC reason enum and glean::javascript_gc::reason labels do "
+          "not match.");
       MOZ_ASSERT(static_cast<JS::GCReason>(sample) <=
                      JS::GCReason::LAST_FIREFOX_REASON,
                  "Invalid GC Reason.");
@@ -2842,7 +2799,7 @@ static void AccumulateTelemetryCallback(JSMetric id, uint32_t sample) {
     case JSMetric::GC_MINOR_REASON: {
       // Assert that every reason has an associated glean label.
       static_assert(
-          static_cast<uint8_t>(JS::GCReason::LAST_FIREFOX_REASON) ==
+          static_cast<uint8_t>(JS::GCReason::LAST_FIREFOX_REASON) + 1 ==
               static_cast<uint8_t>(
                   glean::javascript_gc::MinorReasonLabel::e__Other__),
           "GC reason enum and glean::javascript_gc::reason labels do not "
@@ -2858,7 +2815,7 @@ static void AccumulateTelemetryCallback(JSMetric id, uint32_t sample) {
     case JSMetric::GC_MINOR_REASON_LONG: {
       // Assert that every reason has an associated glean label.
       static_assert(
-          static_cast<uint8_t>(JS::GCReason::LAST_FIREFOX_REASON) ==
+          static_cast<uint8_t>(JS::GCReason::LAST_FIREFOX_REASON) + 1 ==
               static_cast<uint8_t>(
                   glean::javascript_gc::MinorReasonLongLabel::e__Other__),
           "GC reason enum and glean::javascript_gc::reason labels do not "
@@ -2871,14 +2828,14 @@ static void AccumulateTelemetryCallback(JSMetric id, uint32_t sample) {
           JS::ExplainGCReason(static_cast<JS::GCReason>(sample)));
       glean::javascript_gc::minor_reason_long.Get(reason).Add(1);
     } break;
-    case JSMetric::GC_GLEAN_SLOW_PHASE: {
+    case JSMetric::GC_SLOW_PHASE: {
       MOZ_ASSERT(sample < static_cast<uint32_t>(
                               glean::javascript_gc::SlowPhaseLabel::e__Other__),
                  "Phase does not exist in the slow_phase labels list.");
       nsAutoCString phase(JS::GetGCPhaseName(sample));
       glean::javascript_gc::slow_phase.Get(phase).Add(1);
     } break;
-    case JSMetric::GC_GLEAN_SLOW_TASK: {
+    case JSMetric::GC_SLOW_TASK: {
       MOZ_ASSERT(sample < static_cast<uint32_t>(
                               glean::javascript_gc::SlowTaskLabel::e__Other__),
                  "Phase does not exist in the slow_task labels list.");
@@ -2899,6 +2856,9 @@ static void SetUseCounterCallback(JSObject* obj, JSUseCounter counter) {
       return;
     case JSUseCounter::WASM:
       SetUseCounter(obj, eUseCounter_custom_JS_wasm);
+      return;
+    case JSUseCounter::USE_ASM:
+      SetUseCounter(obj, eUseCounter_custom_JS_use_asm);
       return;
     case JSUseCounter::WASM_LEGACY_EXCEPTIONS:
       SetUseCounter(obj, eUseCounter_custom_JS_wasm_legacy_exceptions);
@@ -2936,30 +2896,11 @@ static void SetUseCounterCallback(JSObject* obj, JSUseCounter counter) {
     case JSUseCounter::IC_STUB_OOM:
       SetUseCounter(obj, eUseCounter_custom_JS_ic_stub_oom);
       return;
-    case JSUseCounter::ERRORSTACK_GETTER:
-      SetUseCounter(obj, eUseCounter_custom_JS_errorstack_getter);
-      return;
-    case JSUseCounter::ERRORSTACK_GETTER_NO_ERRORDATA:
-      SetUseCounter(obj, eUseCounter_custom_JS_errorstack_getter_no_errordata);
-      return;
-    case JSUseCounter::ERRORSTACK_SETTER:
-      SetUseCounter(obj, eUseCounter_custom_JS_errorstack_setter);
-      return;
-    case JSUseCounter::ERRORSTACK_SETTER_NONSTRING:
-      SetUseCounter(obj, eUseCounter_custom_JS_errorstack_setter_nonstring);
-      return;
-    case JSUseCounter::ERRORSTACK_SETTER_NO_ERRORDATA:
-      SetUseCounter(obj, eUseCounter_custom_JS_errorstack_setter_no_errordata);
-      return;
     case JSUseCounter::DATEPARSE:
       SetUseCounter(obj, eUseCounter_custom_JS_dateparse);
       return;
     case JSUseCounter::DATEPARSE_IMPL_DEF:
       SetUseCounter(obj, eUseCounter_custom_JS_dateparse_impl_def);
-      return;
-    case JSUseCounter::REGEXP_SYMBOL_PROTOCOL_ON_PRIMITIVE:
-      SetUseCounter(obj,
-                    eUseCounter_custom_JS_regexp_symbol_protocol_on_primitive);
       return;
     case JSUseCounter::COUNT:
       break;

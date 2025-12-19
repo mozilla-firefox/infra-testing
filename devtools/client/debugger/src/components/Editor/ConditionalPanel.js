@@ -2,19 +2,20 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import { PureComponent } from "devtools/client/shared/vendor/react";
+import React, { PureComponent } from "devtools/client/shared/vendor/react";
 import {
   div,
-  textarea,
+  input,
+  button,
+  form,
+  label,
 } from "devtools/client/shared/vendor/react-dom-factories";
 import ReactDOM from "devtools/client/shared/vendor/react-dom";
 import PropTypes from "devtools/client/shared/vendor/react-prop-types";
 import { connect } from "devtools/client/shared/vendor/react-redux";
 import { toEditorLine } from "../../utils/editor/index";
 import { createEditor } from "../../utils/editor/create-editor";
-import { prefs, features } from "../../utils/prefs";
 import actions from "../../actions/index";
-import { markerTypes } from "../../constants";
 
 import {
   getClosestBreakpoint,
@@ -35,6 +36,7 @@ export class ConditionalPanel extends PureComponent {
     super();
     this.cbPanel = null;
     this.breakpointPanelEditor = null;
+    this.formRef = React.createRef();
   }
 
   static get propTypes() {
@@ -67,17 +69,47 @@ export class ConditionalPanel extends PureComponent {
     }
   }
 
+  onFormSubmit = e => {
+    if (e && e.preventDefault) {
+      e.preventDefault();
+    }
+    const formData = new FormData(this.formRef.current);
+    const showStacktrace = formData.get("showStacktrace") === "on";
+
+    if (
+      !this.breakpointPanelEditor ||
+      this.breakpointPanelEditor.isDestroyed()
+    ) {
+      return;
+    }
+    const expression = this.breakpointPanelEditor.getText(null);
+    this.saveAndClose(expression, showStacktrace);
+  };
+
+  onPanelBlur = e => {
+    // if the focus is outside of the conditional panel,
+    // close/hide the conditional panel
+    if (
+      e.relatedTarget &&
+      e.relatedTarget.closest(".conditional-breakpoint-panel-container")
+    ) {
+      return;
+    }
+    this.props.closeConditionalPanel();
+  };
+
   /**
    * Set the breakpoint/logpoint if expression isn't empty, and close the panel.
    *
-   * @param {String} expression: The expression that will be used for setting the
+   * @param {string} expression: The expression that will be used for setting the
    *        conditional breakpoint/logpoint
+   * @param {boolean} showStacktrace: Whether to show the stacktrace for the logpoint
    */
-  saveAndClose = (expression = null) => {
+  saveAndClose = (expression = null, showStacktrace = false) => {
     if (typeof expression === "string") {
       const trimmedExpression = expression.trim();
       if (trimmedExpression) {
-        this.setBreakpoint(trimmedExpression);
+        this.setBreakpoint(trimmedExpression, showStacktrace);
       } else if (this.props.breakpoint) {
         // if the user was editing the condition/log of an existing breakpoint,
         // we remove the condition/log.
@@ -95,7 +127,8 @@ export class ConditionalPanel extends PureComponent {
    */
   onKey = e => {
     if (e.key === "Enter" && !e.shiftKey) {
-      this.saveAndClose(this.input?.value);
+      e.preventDefault();
+      this.formRef.current.requestSubmit();
     } else if (e.key === "Escape") {
       this.props.closeConditionalPanel();
     }
@@ -107,13 +140,22 @@ export class ConditionalPanel extends PureComponent {
    * @param {Event} e: The blur event
    */
   onBlur = e => {
+    let explicitOriginalTarget = e?.explicitOriginalTarget;
+    // The explicit original target can be a text node, in such case retrieve its parent
+    // element so we can use `closest` on it.
+    if (explicitOriginalTarget && !Element.isInstance(explicitOriginalTarget)) {
+      explicitOriginalTarget = explicitOriginalTarget.parentElement;
+    }
+
     if (
       // if there is no event
       // or if the focus is the conditional panel
       // do not close the conditional panel
       !e ||
-      (e?.relatedTarget &&
-        e.relatedTarget.closest(".conditional-breakpoint-panel"))
+      (explicitOriginalTarget &&
+        explicitOriginalTarget.closest(
+          ".conditional-breakpoint-panel-container"
+        ))
     ) {
       return;
     }
@@ -121,7 +163,7 @@ export class ConditionalPanel extends PureComponent {
     this.props.closeConditionalPanel();
   };
 
-  setBreakpoint(value) {
+  setBreakpoint(value, showStacktrace) {
     const { log, breakpoint } = this.props;
     // If breakpoint is `pending`, props will not contain a breakpoint.
     // If source is a URL without location, breakpoint will contain no generatedLocation.
@@ -134,6 +176,7 @@ export class ConditionalPanel extends PureComponent {
     return this.props.setBreakpointOptions(location, {
       ...options,
       [type]: value,
+      showStacktrace,
     });
   }
 
@@ -156,24 +199,25 @@ export class ConditionalPanel extends PureComponent {
 
   showConditionalPanel(prevProps) {
     const { location, log, editor, breakpoint, selectedSource } = this.props;
+
     if (!selectedSource || !location) {
       this.removeBreakpointPanelEditor();
       return;
     }
     // When breakpoint is removed
     if (prevProps?.breakpoint && !breakpoint) {
-      editor.removeLineContentMarker(markerTypes.CONDITIONAL_BP_MARKER);
+      editor.removeLineContentMarker(editor.markerTypes.CONDITIONAL_BP_MARKER);
       this.removeBreakpointPanelEditor();
       return;
     }
     if (selectedSource.id !== location.source.id) {
-      editor.removeLineContentMarker(markerTypes.CONDITIONAL_BP_MARKER);
+      editor.removeLineContentMarker(editor.markerTypes.CONDITIONAL_BP_MARKER);
       this.removeBreakpointPanelEditor();
       return;
     }
     const line = toEditorLine(location.source, location.line || 0);
     editor.setLineContentMarker({
-      id: markerTypes.CONDITIONAL_BP_MARKER,
+      id: editor.markerTypes.CONDITIONAL_BP_MARKER,
       lines: [{ line }],
       renderAsBlock: true,
       createLineElementNode: () => {
@@ -182,13 +226,14 @@ export class ConditionalPanel extends PureComponent {
         const onEnterKeyMapConfig = {
           preventDefault: true,
           stopPropagation: true,
-          run: () => this.saveAndClose(breakpointPanelEditor.getText(null)),
+          run: () => this.formRef.current.requestSubmit(),
         };
 
         const breakpointPanelEditor = createEditor({
-          cm6: features.codemirrorNext,
+          cm6: true,
           readOnly: false,
           lineNumbers: false,
+          lineWrapping: true,
           placeholder: L10N.getStr(
             log
               ? "editor.conditionalPanel.logPoint.placeholder2"
@@ -220,24 +265,11 @@ export class ConditionalPanel extends PureComponent {
 
   // FIXME: https://bugzilla.mozilla.org/show_bug.cgi?id=1774507
   UNSAFE_componentWillMount() {
-    if (features.codemirrorNext) {
-      this.showConditionalPanel();
-    } else {
-      this.renderToWidget(this.props);
-    }
-  }
-
-  // FIXME: https://bugzilla.mozilla.org/show_bug.cgi?id=1774507
-  UNSAFE_componentWillUpdate() {
-    if (!features.codemirrorNext) {
-      this.clearConditionalPanel();
-    }
+    this.showConditionalPanel();
   }
 
   componentDidUpdate(prevProps) {
-    if (features.codemirrorNext) {
-      this.showConditionalPanel(prevProps);
-    }
+    this.showConditionalPanel(prevProps);
     this.keepFocusOnInput();
   }
 
@@ -246,11 +278,16 @@ export class ConditionalPanel extends PureComponent {
     // user closes the conditional panel. Clear the widget, and re-render it
     // as soon as this component gets remounted
     const { editor } = this.props;
-    if (features.codemirrorNext) {
-      editor.removeLineContentMarker(markerTypes.CONDITIONAL_BP_MARKER);
-      this.removeBreakpointPanelEditor();
-    } else {
-      this.clearConditionalPanel();
+    editor.removeLineContentMarker(editor.markerTypes.CONDITIONAL_BP_MARKER);
+    this.removeBreakpointPanelEditor();
+  }
+
+  componentDidMount() {
+    if (this.formRef && this.formRef.current) {
+      const checkbox = this.formRef.current.querySelector("#showStacktrace");
+      if (checkbox) {
+        checkbox.checked = this.props.breakpoint?.options?.showStacktrace;
+      }
     }
   }
 
@@ -277,7 +314,7 @@ export class ConditionalPanel extends PureComponent {
       let parent = this.input.parentNode;
       while (parent) {
         if (
-          parent instanceof HTMLElement &&
+          HTMLElement.isInstance(parent) &&
           parent.classList.contains("CodeMirror-scroll")
         ) {
           this.scrollParent = parent;
@@ -294,47 +331,12 @@ export class ConditionalPanel extends PureComponent {
   }
 
   setupAndAppendInlineEditor = (el, editor) => {
-    const { log } = this.props;
+    editor.appendToLocalElement(el);
+    editor.on("blur", e => this.onBlur(e));
 
-    if (features.codemirrorNext) {
-      editor.appendToLocalElement(el);
-      editor.on("blur", e => this.onBlur(e));
-
-      editor.setText(this.getDefaultValue());
-      editor.focus();
-      editor.selectAll();
-    } else {
-      const codeMirror = editor.CodeMirror.fromTextArea(el, {
-        mode: "javascript",
-        theme: "mozilla",
-        placeholder: L10N.getStr(
-          log
-            ? "editor.conditionalPanel.logPoint.placeholder2"
-            : "editor.conditionalPanel.placeholder2"
-        ),
-        cursorBlinkRate: prefs.cursorBlinkRate,
-      });
-
-      codeMirror.on("keydown", (cm, e) => {
-        if (e.key === "Enter") {
-          e.codemirrorIgnore = true;
-        }
-      });
-
-      codeMirror.on("blur", (cm, e) => this.onBlur(e));
-
-      const codeMirrorWrapper = codeMirror.getWrapperElement();
-
-      codeMirrorWrapper.addEventListener("keydown", e => {
-        codeMirror.save();
-        this.onKey(e);
-      });
-
-      this.input = el;
-      this.codeMirror = codeMirror;
-      codeMirror.focus();
-      codeMirror.execCommand("selectAll");
-    }
+    editor.setText(this.getDefaultValue());
+    editor.focus();
+    editor.selectAll();
   };
 
   getDefaultValue() {
@@ -346,39 +348,97 @@ export class ConditionalPanel extends PureComponent {
 
   renderConditionalPanel(props, editor) {
     const { log } = props;
-    const defaultValue = this.getDefaultValue();
-
     const panel = document.createElement("div");
+    const isWindows = Services.appinfo.OS.startsWith("WINNT");
+
+    const isCreating = !this.props.breakpoint;
+
+    const saveButton = button(
+      {
+        type: "submit",
+        id: "save-logpoint",
+        className: "devtools-button conditional-breakpoint-panel-save-button",
+      },
+      L10N.getStr(
+        isCreating
+          ? "editor.conditionalPanel.create"
+          : "editor.conditionalPanel.update"
+      )
+    );
+
+    const cancelButton = button(
+      {
+        type: "button",
+        className: "devtools-button conditional-breakpoint-panel-cancel-button",
+        onClick: () => this.props.closeConditionalPanel(),
+      },
+      L10N.getStr("editor.conditionalPanel.cancel")
+    );
+
     // CodeMirror6 can't have margin on a block widget, so we need to wrap the actual
     // panel inside a container which won't have any margin
     const reactElPanel = div(
-      { className: "conditional-breakpoint-panel-container" },
-      div(
+      {
+        className: "conditional-breakpoint-panel-container",
+        onBlur: this.onPanelBlur,
+        tabIndex: -1,
+      },
+      form(
         {
           className: classnames("conditional-breakpoint-panel", {
             "log-point": log,
           }),
-          onClick: () => this.keepFocusOnInput(),
-          ref: node => (this.panelNode = node),
+          onSubmit: this.onFormSubmit,
+          ref: this.formRef,
         },
         div(
           {
-            className: "prompt",
+            className: "input-container",
           },
-          "»"
+          div(
+            {
+              className: "prompt",
+            },
+            "»"
+          ),
+          div({
+            className: "inline-codemirror-container",
+            ref: el => this.setupAndAppendInlineEditor(el, editor),
+          })
         ),
-        features.codemirrorNext
-          ? div({
-              className: "inline-codemirror-container",
-              ref: el => this.setupAndAppendInlineEditor(el, editor),
-            })
-          : textarea({
-              defaultValue,
-              ref: input => this.setupAndAppendInlineEditor(input, editor),
-            })
+        div(
+          {
+            className: "conditional-breakpoint-panel-controls",
+          },
+          log
+            ? label(
+                {
+                  className: "conditional-breakpoint-panel-checkbox-label",
+                  htmlFor: "showStacktrace",
+                },
+                input({
+                  type: "checkbox",
+                  id: "showStacktrace",
+                  name: "showStacktrace",
+                  defaultChecked:
+                    this.props.breakpoint?.options?.showStacktrace,
+                  "aria-label": L10N.getStr(
+                    "editor.conditionalPanel.logPoint.showStacktrace"
+                  ),
+                }),
+                L10N.getStr("editor.conditionalPanel.logPoint.showStacktrace")
+              )
+            : null,
+          div(
+            {
+              className: "conditional-breakpoint-panel-buttons",
+            },
+            isWindows ? saveButton : cancelButton,
+            isWindows ? cancelButton : saveButton
+          )
+        )
       )
     );
-
     ReactDOM.render(reactElPanel, panel);
     return panel;
   }

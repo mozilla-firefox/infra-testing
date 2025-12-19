@@ -20,14 +20,12 @@ import mozilla.components.browser.state.state.recover.RecoverableTab
 import mozilla.components.browser.state.state.recover.TabState
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.menu.MenuController
-import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.test.rule.MainCoroutineRule
 import mozilla.components.support.test.whenever
-import mozilla.components.ui.tabcounter.R
-import mozilla.components.ui.tabcounter.TabCounter
 import mozilla.components.ui.tabcounter.TabCounterMenu
+import mozilla.components.ui.tabcounter.TabCounterView
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -40,6 +38,7 @@ import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.eq
 import org.mockito.Mockito.spy
 import org.mockito.Mockito.verify
+import mozilla.components.ui.tabcounter.R as tabcounterR
 
 @RunWith(AndroidJUnit4::class)
 class TabCounterToolbarButtonTest {
@@ -76,8 +75,8 @@ class TabCounterToolbarButtonTest {
             ),
         )
 
-        val view = button.createView(LinearLayout(testContext) as ViewGroup) as TabCounter
-        val counterText: TextView = view.findViewById(R.id.counter_text)
+        val view = button.createView(LinearLayout(testContext) as ViewGroup) as TabCounterView
+        val counterText: TextView = view.findViewById(tabcounterR.id.counter_text)
         assertEquals("0", counterText.text)
     }
 
@@ -94,8 +93,8 @@ class TabCounterToolbarButtonTest {
             ),
         )
 
-        val view = button.createView(LinearLayout(testContext) as ViewGroup) as TabCounter
-        val counterMask: View = view.findViewById(R.id.counter_mask)
+        val view = button.createView(LinearLayout(testContext) as ViewGroup) as TabCounterView
+        val counterMask: View = view.findViewById(tabcounterR.id.counter_mask)
         assertFalse(counterMask.isVisible)
     }
 
@@ -114,8 +113,8 @@ class TabCounterToolbarButtonTest {
             ),
         )
 
-        val view = button.createView(LinearLayout(testContext) as ViewGroup) as TabCounter
-        val counterMask: View = view.findViewById(R.id.counter_mask)
+        val view = button.createView(LinearLayout(testContext) as ViewGroup) as TabCounterView
+        val counterMask: View = view.findViewById(tabcounterR.id.counter_mask)
         assertTrue(counterMask.isVisible)
     }
 
@@ -133,11 +132,11 @@ class TabCounterToolbarButtonTest {
         )
 
         whenever(button.updateCount(anyInt())).then { }
-        button.createView(LinearLayout(testContext) as ViewGroup) as TabCounter
+        button.createView(LinearLayout(testContext) as ViewGroup) as TabCounterView
 
         store.dispatch(
             TabListAction.AddTabAction(createTab("https://www.mozilla.org")),
-        ).joinBlocking()
+        )
 
         verify(button).updateCount(eq(1))
     }
@@ -156,7 +155,7 @@ class TabCounterToolbarButtonTest {
         )
 
         whenever(button.updateCount(anyInt())).then { }
-        button.createView(LinearLayout(testContext) as ViewGroup) as TabCounter
+        button.createView(LinearLayout(testContext) as ViewGroup) as TabCounterView
 
         store.dispatch(
             TabListAction.RestoreAction(
@@ -168,7 +167,7 @@ class TabCounterToolbarButtonTest {
                 ),
                 restoreLocation = TabListAction.RestoreAction.RestoreLocation.BEGINNING,
             ),
-        ).joinBlocking()
+        )
 
         verify(button).updateCount(eq(1))
     }
@@ -188,9 +187,9 @@ class TabCounterToolbarButtonTest {
         )
 
         whenever(button.updateCount(anyInt())).then { }
-        button.createView(LinearLayout(testContext) as ViewGroup) as TabCounter
+        button.createView(LinearLayout(testContext) as ViewGroup) as TabCounterView
 
-        store.dispatch(TabListAction.RemoveTabAction(tab.id)).joinBlocking()
+        store.dispatch(TabListAction.RemoveTabAction(tab.id))
         verify(button).updateCount(eq(0))
     }
 
@@ -210,11 +209,11 @@ class TabCounterToolbarButtonTest {
         whenever(button.updateCount(anyInt())).then { }
         whenever(button.isPrivate(store)).then { true }
 
-        button.createView(LinearLayout(testContext) as ViewGroup) as TabCounter
+        button.createView(LinearLayout(testContext) as ViewGroup) as TabCounterView
 
         store.dispatch(
             TabListAction.AddTabAction(createTab("https://www.mozilla.org", private = true)),
-        ).joinBlocking()
+        )
 
         verify(button).updateCount(eq(1))
     }
@@ -236,9 +235,9 @@ class TabCounterToolbarButtonTest {
         whenever(button.updateCount(anyInt())).then { }
         whenever(button.isPrivate(store)).then { true }
 
-        button.createView(LinearLayout(testContext) as ViewGroup) as TabCounter
+        button.createView(LinearLayout(testContext) as ViewGroup) as TabCounterView
 
-        store.dispatch(TabListAction.RemoveTabAction(tab.id)).joinBlocking()
+        store.dispatch(TabListAction.RemoveTabAction(tab.id))
         verify(button).updateCount(eq(0))
     }
 
@@ -261,7 +260,7 @@ class TabCounterToolbarButtonTest {
         val parent = spy(LinearLayout(testContext))
         doReturn(true).`when`(parent).isAttachedToWindow
 
-        val view = button.createView(parent) as TabCounter
+        val view = button.createView(parent) as TabCounterView
         view.performClick()
         assertTrue(callbackInvoked)
     }

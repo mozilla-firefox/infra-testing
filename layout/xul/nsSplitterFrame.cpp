@@ -11,35 +11,35 @@
 // See documentation in associated header file
 //
 
+#include "nsSplitterFrame.h"
+
 #include "LayoutConstants.h"
 #include "SimpleXULLeafFrame.h"
 #include "gfxContext.h"
-#include "mozilla/ReflowInput.h"
-#include "nsSplitterFrame.h"
-#include "nsGkAtoms.h"
-#include "nsXULElement.h"
-#include "nsPresContext.h"
-#include "mozilla/dom/Document.h"
-#include "nsNameSpaceManager.h"
-#include "nsScrollbarButtonFrame.h"
-#include "nsIDOMEventListener.h"
-#include "nsICSSDeclaration.h"
-#include "nsFrameList.h"
-#include "nsHTMLParts.h"
-#include "mozilla/ComputedStyle.h"
 #include "mozilla/CSSOrderAwareFrameIterator.h"
-#include "nsContainerFrame.h"
-#include "nsLayoutUtils.h"
-#include "nsDisplayList.h"
-#include "nsContentUtils.h"
-#include "nsFlexContainerFrame.h"
+#include "mozilla/ComputedStyle.h"
+#include "mozilla/MouseEvents.h"
+#include "mozilla/PresShell.h"
+#include "mozilla/ReflowInput.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/MouseEvent.h"
-#include "mozilla/MouseEvents.h"
-#include "mozilla/PresShell.h"
-#include "mozilla/UniquePtr.h"
+#include "nsContainerFrame.h"
+#include "nsContentUtils.h"
+#include "nsDOMCSSDeclaration.h"
+#include "nsDisplayList.h"
+#include "nsFlexContainerFrame.h"
+#include "nsFrameList.h"
+#include "nsGkAtoms.h"
+#include "nsHTMLParts.h"
+#include "nsIDOMEventListener.h"
+#include "nsLayoutUtils.h"
+#include "nsNameSpaceManager.h"
+#include "nsPresContext.h"
+#include "nsScrollbarButtonFrame.h"
 #include "nsStyledElement.h"
+#include "nsXULElement.h"
 
 using namespace mozilla;
 
@@ -226,7 +226,7 @@ void nsSplitterFrame::Destroy(DestroyContext& aContext) {
 
 nsresult nsSplitterFrame::AttributeChanged(int32_t aNameSpaceID,
                                            nsAtom* aAttribute,
-                                           int32_t aModType) {
+                                           AttrModType aModType) {
   nsresult rv =
       SimpleXULLeafFrame::AttributeChanged(aNameSpaceID, aAttribute, aModType);
   if (aAttribute == nsGkAtoms::state) {
@@ -598,9 +598,9 @@ nsresult nsSplitterFrameInner::MouseDown(Event* aMouseEvent) {
         }
 
         // We need to check for hidden attribute too, since treecols with
-        // the hidden="true" attribute are not really hidden, just collapsed
+        // the hidden attribute are not really hidden, just collapsed
         if (element->GetXULBoolAttr(nsGkAtoms::fixed) ||
-            element->GetXULBoolAttr(nsGkAtoms::hidden)) {
+            element->GetBoolAttr(nsGkAtoms::hidden)) {
           return false;
         }
       }
@@ -637,15 +637,18 @@ nsresult nsSplitterFrameInner::MouseDown(Event* aMouseEvent) {
 
     nsSize curSize = childBox->GetSize();
     const auto& pos = *childBox->StylePosition();
-    const auto positionProperty = childBox->StyleDisplay()->mPosition;
-    nsSize minSize = ToLengthWithFallback(*pos.GetMinWidth(positionProperty),
-                                          *pos.GetMinHeight(positionProperty));
-    nsSize maxSize = ToLengthWithFallback(*pos.GetMaxWidth(positionProperty),
-                                          *pos.GetMaxHeight(positionProperty),
-                                          NS_UNCONSTRAINEDSIZE);
-    nsSize prefSize(
-        ToLengthWithFallback(*pos.GetWidth(positionProperty), curSize.width),
-        ToLengthWithFallback(*pos.GetHeight(positionProperty), curSize.height));
+    const auto anchorResolutionParams =
+        AnchorPosResolutionParams::From(childBox);
+    nsSize minSize =
+        ToLengthWithFallback(*pos.GetMinWidth(anchorResolutionParams),
+                             *pos.GetMinHeight(anchorResolutionParams));
+    nsSize maxSize = ToLengthWithFallback(
+        *pos.GetMaxWidth(anchorResolutionParams),
+        *pos.GetMaxHeight(anchorResolutionParams), NS_UNCONSTRAINEDSIZE);
+    nsSize prefSize(ToLengthWithFallback(*pos.GetWidth(anchorResolutionParams),
+                                         curSize.width),
+                    ToLengthWithFallback(*pos.GetHeight(anchorResolutionParams),
+                                         curSize.height));
 
     maxSize.width = std::max(maxSize.width, minSize.width);
     maxSize.height = std::max(maxSize.height, minSize.height);
@@ -906,7 +909,7 @@ void nsSplitterFrameInner::SetPreferredSize(nsIFrame* aChildBox,
   element->SetAttr(aIsHorizontal ? nsGkAtoms::width : nsGkAtoms::height,
                    attrValue, IgnoreErrors());
 
-  nsCOMPtr<nsICSSDeclaration> decl = element->Style();
+  nsCOMPtr<nsDOMCSSDeclaration> decl = element->Style();
 
   nsAutoCString cssValue;
   cssValue.AppendInt(pixels);

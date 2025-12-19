@@ -5,8 +5,7 @@
 import React from "react";
 import { actionCreators as ac } from "common/Actions.mjs";
 import { SectionsMgmtPanel } from "../SectionsMgmtPanel/SectionsMgmtPanel";
-import { WallpapersSection } from "../../WallpapersSection/WallpapersSection";
-import { WallpaperCategories } from "../../WallpapersSection/WallpaperCategories";
+import { WallpaperCategories } from "../../WallpaperCategories/WallpaperCategories";
 
 export class ContentSection extends React.PureComponent {
   constructor(props) {
@@ -29,7 +28,7 @@ export class ContentSection extends React.PureComponent {
   }
 
   onPreferenceSelect(e) {
-    // eventSource: WEATHER | TOP_SITES | TOP_STORIES
+    // eventSource: WEATHER | TOP_SITES | TOP_STORIES | WIDGET_LISTS | WIDGET_TIMER
     const { preference, eventSource } = e.target.dataset;
     let value;
     if (e.target.nodeName === "SELECT") {
@@ -79,11 +78,13 @@ export class ContentSection extends React.PureComponent {
     }
 
     if (drawerRef) {
+      // Use measured height if valid, otherwise use a large fallback
+      // since overflow:hidden on the parent safely hides the drawer
       let drawerHeight =
-        parseFloat(window.getComputedStyle(drawerRef)?.height) || 0;
+        parseFloat(window.getComputedStyle(drawerRef)?.height) || 100;
 
       if (isOpen) {
-        drawerRef.style.marginTop = "var(--space-large)";
+        drawerRef.style.marginTop = "var(--space-small)";
       } else {
         drawerRef.style.marginTop = `-${drawerHeight + 3}px`;
       }
@@ -93,51 +94,104 @@ export class ContentSection extends React.PureComponent {
   render() {
     const {
       enabledSections,
+      enabledWidgets,
       pocketRegion,
       mayHaveInferredPersonalization,
-      mayHaveRecentSaves,
       mayHaveWeather,
+      mayHaveWidgets,
+      mayHaveTimerWidget,
+      mayHaveListsWidget,
       openPreferences,
       wallpapersEnabled,
-      wallpapersV2Enabled,
       activeWallpaper,
       setPref,
       mayHaveTopicSections,
       exitEventFired,
+      onSubpanelToggle,
+      toggleSectionsMgmtPanel,
+      showSectionsMgmtPanel,
     } = this.props;
     const {
       topSitesEnabled,
       pocketEnabled,
       weatherEnabled,
       showInferredPersonalizationEnabled,
-      showRecentSavesEnabled,
       topSitesRowsCount,
     } = enabledSections;
+    const { timerEnabled, listsEnabled } = enabledWidgets;
 
     return (
       <div className="home-section">
-        {!wallpapersV2Enabled && wallpapersEnabled && (
-          <div className="wallpapers-section">
-            <WallpapersSection
-              setPref={setPref}
-              activeWallpaper={activeWallpaper}
-            />
-          </div>
-        )}
-        {wallpapersV2Enabled && (
+        {wallpapersEnabled && (
           <>
             <div className="wallpapers-section">
               <WallpaperCategories
                 setPref={setPref}
                 activeWallpaper={activeWallpaper}
                 exitEventFired={exitEventFired}
+                onSubpanelToggle={onSubpanelToggle}
               />
             </div>
-            <span className="divider" role="separator"></span>
+            {/* If widgets section is visible, hide this divider */}
+            {!mayHaveWidgets && (
+              <span className="divider" role="separator"></span>
+            )}
           </>
         )}
+        {mayHaveWidgets && (
+          <div className="widgets-section">
+            <div className="category-header">
+              <h2 data-l10n-id="newtab-custom-widget-section-title"></h2>
+            </div>
+            <div className="settings-widgets">
+              {/* Weather */}
+              {mayHaveWeather && (
+                <div id="weather-section" className="section">
+                  <moz-toggle
+                    id="weather-toggle"
+                    pressed={weatherEnabled || null}
+                    onToggle={this.onPreferenceSelect}
+                    data-preference="showWeather"
+                    data-eventSource="WEATHER"
+                    data-l10n-id="newtab-custom-widget-weather-toggle"
+                  />
+                </div>
+              )}
+
+              {/* Lists */}
+              {mayHaveListsWidget && (
+                <div id="lists-widget-section" className="section">
+                  <moz-toggle
+                    id="lists-toggle"
+                    pressed={listsEnabled || null}
+                    onToggle={this.onPreferenceSelect}
+                    data-preference="widgets.lists.enabled"
+                    data-eventSource="WIDGET_LISTS"
+                    data-l10n-id="newtab-custom-widget-lists-toggle"
+                  />
+                </div>
+              )}
+
+              {/* Timer */}
+              {mayHaveTimerWidget && (
+                <div id="timer-widget-section" className="section">
+                  <moz-toggle
+                    id="timer-toggle"
+                    pressed={timerEnabled || null}
+                    onToggle={this.onPreferenceSelect}
+                    data-preference="widgets.focusTimer.enabled"
+                    data-eventSource="WIDGET_TIMER"
+                    data-l10n-id="newtab-custom-widget-timer-toggle"
+                  />
+                </div>
+              )}
+              <span className="divider" role="separator"></span>
+            </div>
+          </div>
+        )}
         <div className="settings-toggles">
-          {mayHaveWeather && (
+          {/* Note: If widgets are enabled, the weather toggle will be moved under Widgets subsection */}
+          {!mayHaveWidgets && mayHaveWeather && (
             <div id="weather-section" className="section">
               <moz-toggle
                 id="weather-toggle"
@@ -211,12 +265,17 @@ export class ContentSection extends React.PureComponent {
                 aria-describedby="custom-pocket-subtitle"
                 data-preference="feeds.section.topstories"
                 data-eventSource="TOP_STORIES"
-                data-l10n-id="newtab-custom-stories-toggle"
+                {...(mayHaveInferredPersonalization
+                  ? {
+                      "data-l10n-id":
+                        "newtab-custom-stories-personalized-toggle",
+                    }
+                  : {
+                      "data-l10n-id": "newtab-custom-stories-toggle",
+                    })}
               >
                 <div slot="nested">
-                  {(mayHaveRecentSaves ||
-                    mayHaveInferredPersonalization ||
-                    mayHaveTopicSections) && (
+                  {(mayHaveInferredPersonalization || mayHaveTopicSections) && (
                     <div className="more-info-pocket-wrapper">
                       <div
                         className="more-information"
@@ -237,33 +296,18 @@ export class ContentSection extends React.PureComponent {
                             <label
                               className="customize-menu-checkbox-label"
                               htmlFor="inferred-personalization"
-                            >
-                              Recommendations inferred from your activity with
-                              the feed
-                            </label>
+                              data-l10n-id="newtab-custom-stories-personalized-checkbox-label"
+                            />
                           </div>
                         )}
                         {mayHaveTopicSections && (
-                          <SectionsMgmtPanel exitEventFired={exitEventFired} />
-                        )}
-                        {mayHaveRecentSaves && (
-                          <div className="check-wrapper" role="presentation">
-                            <input
-                              id="recent-saves-pocket"
-                              className="customize-menu-checkbox"
-                              disabled={!pocketEnabled}
-                              checked={showRecentSavesEnabled}
-                              type="checkbox"
-                              onChange={this.onPreferenceSelect}
-                              data-preference="showRecentSaves"
-                              data-eventSource="POCKET_RECENT_SAVES"
-                            />
-                            <label
-                              className="customize-menu-checkbox-label"
-                              htmlFor="recent-saves-pocket"
-                              data-l10n-id="newtab-custom-pocket-show-recent-saves"
-                            />
-                          </div>
+                          <SectionsMgmtPanel
+                            exitEventFired={exitEventFired}
+                            pocketEnabled={pocketEnabled}
+                            onSubpanelToggle={onSubpanelToggle}
+                            togglePanel={toggleSectionsMgmtPanel}
+                            showPanel={showSectionsMgmtPanel}
+                          />
                         )}
                       </div>
                     </div>

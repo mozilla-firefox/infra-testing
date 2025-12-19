@@ -103,11 +103,34 @@ public class WebExtension {
 
   private static final String LOGTAG = "WebExtension";
 
+  /**
+   * The list of data collection permission names.
+   *
+   * <p>This list should be kept in sync with the WebExtensions JSON schema defined at the gecko
+   * toolkit level. It is made public so that upper Android layers can have access to a list of data
+   * collection permissions that is guaranteed to match the gecko one, which can be useful in tests
+   * for instance.
+   */
+  public static final List<String> DATA_COLLECTION_PERMISSIONS =
+      List.of(
+          "authenticationInfo",
+          "bookmarksInfo",
+          "browsingActivity",
+          "financialAndPaymentInfo",
+          "healthInfo",
+          "locationInfo",
+          "none",
+          "personalCommunications",
+          "personallyIdentifyingInfo",
+          "searchTerms",
+          "technicalAndInteraction",
+          "websiteActivity",
+          "websiteContent");
+
   // Keep in sync with GeckoViewWebExtension.sys.mjs
+  /** Flags that can be used to configure WebExtension behavior. */
   public static class Flags {
-    /*
-     * Default flags for this WebExtension.
-     */
+    /** Default flags for this WebExtension. */
     public static final long NONE = 0;
 
     /**
@@ -116,10 +139,11 @@ public class WebExtension {
      */
     public static final long ALLOW_CONTENT_MESSAGING = 1 << 0;
 
-    // Do not instantiate this class.
+    /** Do not instantiate this class. */
     protected Flags() {}
   }
 
+  /** Defines the valid flags that can be applied to a WebExtension. */
   @Retention(RetentionPolicy.SOURCE)
   @LongDef(
       flag = true,
@@ -132,7 +156,11 @@ public class WebExtension {
     flags = bundle.getInt("webExtensionFlags", 0);
     isBuiltIn = bundle.getBoolean("isBuiltIn", false);
     if (bundle.containsKey("metaData")) {
-      metaData = new MetaData(bundle.getBundle("metaData"));
+      try {
+        metaData = new MetaData(bundle.getBundle("metaData"));
+      } catch (final Exception e) {
+        throw new InvalidMetaDataException(e, id);
+      }
     } else {
       metaData = null;
     }
@@ -184,6 +212,7 @@ public class WebExtension {
     mDelegateController.onMessageDelegate(nativeApp, messageDelegate);
   }
 
+  /** Browsing data type definitions for extensions. */
   @Retention(RetentionPolicy.SOURCE)
   @LongDef(
       value = {
@@ -284,14 +313,28 @@ public class WebExtension {
 
     /** Types of data that a browser "Clear Data" UI might have access to. */
     class Type {
+      /** Utility class; do not instantiate. */
       protected Type() {}
 
+      /** Cache entries. */
       public static final long CACHE = 1 << 0;
+
+      /** Cookie data. */
       public static final long COOKIES = 1 << 1;
+
+      /** Downloads data. */
       public static final long DOWNLOADS = 1 << 2;
+
+      /** Form data. */
       public static final long FORM_DATA = 1 << 3;
+
+      /** Browsing history. */
       public static final long HISTORY = 1 << 4;
+
+      /** Local storage. */
       public static final long LOCAL_STORAGE = 1 << 5;
+
+      /** Saved passwords. */
       public static final long PASSWORDS = 1 << 6;
     }
 
@@ -794,12 +837,22 @@ public class WebExtension {
     mDelegateController.onTabDelegate(delegate);
   }
 
+  /**
+   * Returns the delegate handling browsing-data operations for this extension.
+   *
+   * @return the current BrowsingDataDelegate, or null if none set
+   */
   @UiThread
   @Nullable
   public BrowsingDataDelegate getBrowsingDataDelegate() {
     return mDelegateController.getBrowsingDataDelegate();
   }
 
+  /**
+   * Sets the delegate to handle browsing-data operations (clear, remove, get settings).
+   *
+   * @param delegate the BrowsingDataDelegate to receive browsing-data calls; may be null
+   */
   @UiThread
   public void setBrowsingDataDelegate(final @Nullable BrowsingDataDelegate delegate) {
     mDelegateController.onBrowsingDataDelegate(delegate);
@@ -830,7 +883,7 @@ public class WebExtension {
     }
   }
 
-  // Public wrapper for Listener
+  /** Controller for WebExtension session-related APIs (tabs, browsingData, downloads, etc.). */
   public static class SessionController {
     private final Listener<SessionTabDelegate> mListener;
 
@@ -1107,6 +1160,7 @@ public class WebExtension {
      */
     public final @Nullable GeckoSession session;
 
+    /** Environment type definitions for WebExtension messaging. */
     @Retention(RetentionPolicy.SOURCE)
     @IntDef({ENV_TYPE_UNKNOWN, ENV_TYPE_EXTENSION, ENV_TYPE_CONTENT_SCRIPT})
     public @interface EnvType {}
@@ -1279,6 +1333,7 @@ public class WebExtension {
     /* package */ static final int TYPE_BROWSER_ACTION = 1;
     /* package */ static final int TYPE_PAGE_ACTION = 2;
 
+    /** Action type definitions for WebExtension actions. */
     @Retention(RetentionPolicy.SOURCE)
     @IntDef({TYPE_BROWSER_ACTION, TYPE_PAGE_ACTION})
     public @interface ActionType {}
@@ -1344,7 +1399,7 @@ public class WebExtension {
           + "}";
     }
 
-    // For testing
+    /** Create a default Action for testing purposes. */
     protected Action() {
       type = TYPE_BROWSER_ACTION;
       mExtension = null;
@@ -1535,8 +1590,27 @@ public class WebExtension {
     }
   }
 
+  /**
+   * Exception thrown when GeckoView receives unexpected invalid WebExtension metadata from Gecko
+   * (e.g. when metadata properties in the bundle are not matching the type expected by GeckoView).
+   */
+  public static class InvalidMetaDataException extends RuntimeException {
+    /** For testing */
+    protected InvalidMetaDataException() {
+      super("InvalidMetaDataException");
+    }
+
+    /* package */ InvalidMetaDataException(
+        final @Nullable Throwable cause, final @Nullable String extensionId) {
+      super(
+          "InvalidMetaDataException" + (extensionId != null ? " for add-on id " + extensionId : ""),
+          cause);
+    }
+  }
+
   /** Extension thrown when an error occurs during extension installation. */
   public static class InstallException extends Exception {
+    /** Error code definitions for extension installation failures. */
     public static class ErrorCodes {
       /** The download failed due to network problems. */
       public static final int ERROR_NETWORK_FAILURE = -1;
@@ -1617,6 +1691,7 @@ public class WebExtension {
       }
     }
 
+    /** Error code type definitions for WebExtension installation exceptions. */
     @Retention(RetentionPolicy.SOURCE)
     @IntDef(
         value = {
@@ -1754,6 +1829,7 @@ public class WebExtension {
     /* package */ static final int LAST = PRIVILEGED;
   }
 
+  /** Signed state type definitions for WebExtension verification status. */
   @Retention(RetentionPolicy.SOURCE)
   @IntDef({
     SignedStateFlags.UNKNOWN,
@@ -1794,6 +1870,7 @@ public class WebExtension {
     public static final int VULNERABLE_NO_UPDATE = 5;
   }
 
+  /** Blocklist state definitions for extensions. */
   @Retention(RetentionPolicy.SOURCE)
   @IntDef({
     BlocklistStateFlags.NOT_BLOCKED,
@@ -1805,6 +1882,7 @@ public class WebExtension {
   })
   public @interface BlocklistState {}
 
+  /** Flags indicating reasons why an extension is disabled. */
   public static class DisabledFlags {
     /** The extension has been disabled by the user */
     public static final int USER = 1 << 1;
@@ -1837,6 +1915,7 @@ public class WebExtension {
     public static final int SOFT_BLOCKLIST = 1 << 6;
   }
 
+  /** Enabled/disabled flag definitions for WebExtensions. */
   @Retention(RetentionPolicy.SOURCE)
   @IntDef(
       flag = true,
@@ -1876,6 +1955,9 @@ public class WebExtension {
      */
     public final @NonNull String[] requiredOrigins;
 
+    /** Required data collection permissions for this extension. */
+    public final @NonNull String[] requiredDataCollectionPermissions;
+
     /**
      * Optional permissions for this extension.
      *
@@ -1911,6 +1993,12 @@ public class WebExtension {
      * Host permissions </a>.
      */
     public final @NonNull String[] grantedOptionalOrigins;
+
+    /** Optional data collection permissions for this extension. */
+    public final @NonNull String[] optionalDataCollectionPermissions;
+
+    /** Granted optional data collection permissions for this extension. */
+    public final @NonNull String[] grantedOptionalDataCollectionPermissions;
 
     /**
      * Branding name for this extension.
@@ -2084,10 +2172,13 @@ public class WebExtension {
       icon = null;
       requiredPermissions = null;
       requiredOrigins = null;
+      requiredDataCollectionPermissions = null;
       optionalPermissions = null;
       optionalOrigins = null;
+      optionalDataCollectionPermissions = null;
       grantedOptionalPermissions = null;
       grantedOptionalOrigins = null;
+      grantedOptionalDataCollectionPermissions = null;
       name = null;
       description = null;
       version = null;
@@ -2117,10 +2208,16 @@ public class WebExtension {
     /* package */ MetaData(final GeckoBundle bundle) {
       requiredPermissions = bundle.getStringArray("requiredPermissions");
       requiredOrigins = bundle.getStringArray("requiredOrigins");
+      requiredDataCollectionPermissions =
+          bundle.getStringArray("requiredDataCollectionPermissions");
       optionalPermissions = bundle.getStringArray("optionalPermissions");
       optionalOrigins = bundle.getStringArray("optionalOrigins");
+      optionalDataCollectionPermissions =
+          bundle.getStringArray("optionalDataCollectionPermissions");
       grantedOptionalPermissions = bundle.getStringArray("grantedOptionalPermissions");
       grantedOptionalOrigins = bundle.getStringArray("grantedOptionalOrigins");
+      grantedOptionalDataCollectionPermissions =
+          bundle.getStringArray("grantedOptionalDataCollectionPermissions");
       description = bundle.getString("description");
       version = bundle.getString("version");
       creatorName = bundle.getString("creatorName");
@@ -2184,6 +2281,7 @@ public class WebExtension {
 
   // TODO: make public bug 1595822
 
+  /** Context flag definitions for menu items. */
   @Retention(RetentionPolicy.SOURCE)
   @IntDef(
       flag = true,
@@ -2293,6 +2391,7 @@ public class WebExtension {
    */
   static class MenuItem {
 
+    /** Menu item type definitions. */
     @Retention(RetentionPolicy.SOURCE)
     @IntDef(
         flag = false,
@@ -2409,6 +2508,7 @@ public class WebExtension {
     }
   }
 
+  /** Handles download requests from WebExtensions. */
   public interface DownloadDelegate {
     /**
      * Method that is called when Web Extension requests a download (when downloads.download() is
@@ -2609,34 +2709,83 @@ public class WebExtension {
     public @interface DownloadInterruptReason {}
 
     // File-related errors
+    /** No interruption. */
     public static final int INTERRUPT_REASON_NO_INTERRUPT = 0;
+
+    /** Generic file error. */
     public static final int INTERRUPT_REASON_FILE_FAILED = 1;
+
+    /** File access denied. */
     public static final int INTERRUPT_REASON_FILE_ACCESS_DENIED = 2;
+
+    /** Insufficient disk space. */
     public static final int INTERRUPT_REASON_FILE_NO_SPACE = 3;
+
+    /** File name too long. */
     public static final int INTERRUPT_REASON_FILE_NAME_TOO_LONG = 4;
+
+    /** File too large. */
     public static final int INTERRUPT_REASON_FILE_TOO_LARGE = 5;
+
+    /** File infected by virus. */
     public static final int INTERRUPT_REASON_FILE_VIRUS_INFECTED = 6;
+
+    /** Transient file error. */
     public static final int INTERRUPT_REASON_FILE_TRANSIENT_ERROR = 7;
+
+    /** File blocked. */
     public static final int INTERRUPT_REASON_FILE_BLOCKED = 8;
+
+    /** File security check failed. */
     public static final int INTERRUPT_REASON_FILE_SECURITY_CHECK_FAILED = 9;
+
+    /** File download too short. */
     public static final int INTERRUPT_REASON_FILE_TOO_SHORT = 10;
+
     // Network-related errors
+    /** Network request failed. */
     public static final int INTERRUPT_REASON_NETWORK_FAILED = 11;
+
+    /** Network timed out. */
     public static final int INTERRUPT_REASON_NETWORK_TIMEOUT = 12;
+
+    /** Network disconnected. */
     public static final int INTERRUPT_REASON_NETWORK_DISCONNECTED = 13;
+
+    /** Server is down. */
     public static final int INTERRUPT_REASON_NETWORK_SERVER_DOWN = 14;
+
+    /** Invalid network request. */
     public static final int INTERRUPT_REASON_NETWORK_INVALID_REQUEST = 15;
+
     // Server-related errors
+    /** Server returned a generic error. */
     public static final int INTERRUPT_REASON_SERVER_FAILED = 16;
+
+    /** Server does not support range requests. */
     public static final int INTERRUPT_REASON_SERVER_NO_RANGE = 17;
+
+    /** Server returned bad content. */
     public static final int INTERRUPT_REASON_SERVER_BAD_CONTENT = 18;
+
+    /** Server unauthorized request. */
     public static final int INTERRUPT_REASON_SERVER_UNAUTHORIZED = 19;
+
+    /** Server certificate problem. */
     public static final int INTERRUPT_REASON_SERVER_CERT_PROBLEM = 20;
+
+    /** Server forbidden request. */
     public static final int INTERRUPT_REASON_SERVER_FORBIDDEN = 21;
+
     // User-related errors
+    /** Download canceled by user. */
     public static final int INTERRUPT_REASON_USER_CANCELED = 22;
+
+    /** Download terminated due to user shutdown. */
     public static final int INTERRUPT_REASON_USER_SHUTDOWN = 23;
+
     // Miscellaneous
+    /** Download interrupted by crash. */
     public static final int INTERRUPT_REASON_CRASH = 24;
 
     /**
@@ -2840,6 +2989,7 @@ public class WebExtension {
      */
     public final boolean allowHttpErrors;
 
+    /** Conflict action flag definitions for downloads. */
     @Retention(RetentionPolicy.SOURCE)
     @IntDef(
         flag = true,
@@ -2855,6 +3005,11 @@ public class WebExtension {
     /** The app should prompt the user, asking them to choose whether to uniquify or overwrite */
     public static final int CONFLICT_ACTION_PROMPT = 1 << 1;
 
+    /**
+     * Create a DownloadRequest from the given builder.
+     *
+     * @param builder The builder containing the request configuration.
+     */
     protected DownloadRequest(final DownloadRequest.Builder builder) {
       this.request = builder.mRequest;
       this.downloadFlags = builder.mDownloadFlags;
@@ -2976,9 +3131,18 @@ public class WebExtension {
 
   /** Represents initial information on a download provided to Web Extension */
   public static class DownloadInitData {
+    /** The download object associated with this data. */
     @NonNull public final WebExtension.Download download;
+
+    /** The initial download information. */
     @NonNull public final Download.Info initData;
 
+    /**
+     * Create a DownloadInitData with the given download and info.
+     *
+     * @param download The download object.
+     * @param initData The initial download information.
+     */
     public DownloadInitData(final Download download, final Download.Info initData) {
       this.download = download;
       this.initData = initData;
@@ -2996,17 +3160,24 @@ public class WebExtension {
     /** Whether the user granted access in private mode or not. */
     @Nullable public final Boolean isPrivateModeGranted;
 
+    /** Whether the user granted access to technical and interaction data collection. */
+    @Nullable public final Boolean isTechnicalAndInteractionDataGranted;
+
     /**
      * Creates a new PermissionPromptResponse with the given fields.
      *
      * @param isPermissionsGranted Whether the user granted permissions or not.
      * @param isPrivateModeGranted Whether the user granted access in private mode or not.
+     * @param isTechnicalAndInteractionDataGranted Whether the user granted access to technical and
+     *     interaction data collection.
      */
     public PermissionPromptResponse(
-        final @Nullable Boolean isPermissionsGranted,
-        final @Nullable Boolean isPrivateModeGranted) {
+        final Boolean isPermissionsGranted,
+        final Boolean isPrivateModeGranted,
+        final Boolean isTechnicalAndInteractionDataGranted) {
       this.isPermissionsGranted = isPermissionsGranted;
       this.isPrivateModeGranted = isPrivateModeGranted;
+      this.isTechnicalAndInteractionDataGranted = isTechnicalAndInteractionDataGranted;
     }
   }
 }

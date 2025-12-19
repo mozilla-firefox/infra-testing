@@ -23,7 +23,6 @@
 #include "mozilla/webrender/RenderThread.h"
 #include "mozilla/widget/CompositorWidget.h"
 #include "mozilla/widget/WinCompositorWidget.h"
-#include "mozilla/WindowsVersion.h"
 #include "mozilla/glean/GfxMetrics.h"
 #include "nsPrintfCString.h"
 #include "FxROutputHandler.h"
@@ -139,12 +138,6 @@ bool RenderCompositorANGLE::Initialize(nsACString& aError) {
     return false;
   }
 
-  // Disable native compositor when fast snapshot is needed.
-  // Taking snapshot of native compositor is very slow on Windows.
-  if (mWidget->GetCompositorOptions().NeedFastSnaphot()) {
-    mUseNativeCompositor = false;
-  }
-
   // Create DCLayerTree when DirectComposition is used.
   if (gfx::gfxVars::UseWebRenderDCompWin()) {
     HWND compositorHwnd = GetCompositorHwnd();
@@ -158,6 +151,12 @@ bool RenderCompositorANGLE::Initialize(nsACString& aError) {
       aError.Assign("RcANGLE(no compositor window)"_ns);
       return false;
     }
+  }
+
+  // Disable native compositor when fast snapshot is needed.
+  // Taking snapshot of native compositor is very slow on Windows.
+  if (mDCLayerTree && mWidget->GetCompositorOptions().NeedFastSnaphot()) {
+    mDCLayerTree->DisableNativeCompositor();
   }
 
   // Create SwapChain when compositor is not used
@@ -828,21 +827,23 @@ gfx::DeviceResetReason RenderCompositorANGLE::IsContextLost(bool aForce) {
 }
 
 bool RenderCompositorANGLE::UseCompositor() const {
-  return mUseNativeCompositor && mDCLayerTree &&
-         gfx::gfxVars::UseWebRenderCompositor();
+  return mDCLayerTree && mDCLayerTree->UseNativeCompositor();
+}
+
+bool RenderCompositorANGLE::UseLayerCompositor() const {
+  return mDCLayerTree && mDCLayerTree->UseLayerCompositor();
 }
 
 bool RenderCompositorANGLE::SupportAsyncScreenshot() {
-#ifdef NIGHTLY_BUILD
-  if (StaticPrefs::gfx_webrender_layer_compositor_AtStartup()) {
-    return true;
-  }
-#endif
   return !UseCompositor() && !mDisablingNativeCompositor;
 }
 
 bool RenderCompositorANGLE::ShouldUseNativeCompositor() {
   return UseCompositor();
+}
+
+bool RenderCompositorANGLE::ShouldUseLayerCompositor() const {
+  return UseLayerCompositor();
 }
 
 void RenderCompositorANGLE::CompositorBeginFrame() {
@@ -862,11 +863,15 @@ void RenderCompositorANGLE::Bind(wr::NativeTileId aId,
 
 void RenderCompositorANGLE::Unbind() { mDCLayerTree->Unbind(); }
 
-void RenderCompositorANGLE::BindSwapChain(wr::NativeSurfaceId aId) {
-  mDCLayerTree->BindSwapChain(aId);
+void RenderCompositorANGLE::BindSwapChain(wr::NativeSurfaceId aId,
+                                          const wr::DeviceIntRect* aDirtyRects,
+                                          size_t aNumDirtyRects) {
+  mDCLayerTree->BindSwapChain(aId, aDirtyRects, aNumDirtyRects);
 }
-void RenderCompositorANGLE::PresentSwapChain(wr::NativeSurfaceId aId) {
-  mDCLayerTree->PresentSwapChain(aId);
+void RenderCompositorANGLE::PresentSwapChain(
+    wr::NativeSurfaceId aId, const wr::DeviceIntRect* aDirtyRects,
+    size_t aNumDirtyRects) {
+  mDCLayerTree->PresentSwapChain(aId, aDirtyRects, aNumDirtyRects);
 }
 
 void RenderCompositorANGLE::CreateSurface(wr::NativeSurfaceId aId,
@@ -878,8 +883,10 @@ void RenderCompositorANGLE::CreateSurface(wr::NativeSurfaceId aId,
 
 void RenderCompositorANGLE::CreateSwapChainSurface(wr::NativeSurfaceId aId,
                                                    wr::DeviceIntSize aSize,
-                                                   bool aIsOpaque) {
-  mDCLayerTree->CreateSwapChainSurface(aId, aSize, aIsOpaque);
+                                                   bool aIsOpaque,
+                                                   bool aNeedsSyncDcompCommit) {
+  mDCLayerTree->CreateSwapChainSurface(aId, aSize, aIsOpaque,
+                                       aNeedsSyncDcompCommit);
 }
 
 void RenderCompositorANGLE::ResizeSwapChainSurface(wr::NativeSurfaceId aId,
@@ -934,6 +941,9 @@ void RenderCompositorANGLE::GetCompositorCapabilities(
 
 void RenderCompositorANGLE::GetWindowProperties(WindowProperties* aProperties) {
   aProperties->is_opaque = !ShouldUseAlpha();
+  const bool enable_screenshot =
+      mDCLayerTree && mDCLayerTree->GetAsyncScreenshotEnabled();
+  aProperties->enable_screenshot = enable_screenshot;
 }
 
 void RenderCompositorANGLE::EnableNativeCompositor(bool aEnable) {
@@ -946,7 +956,6 @@ void RenderCompositorANGLE::EnableNativeCompositor(bool aEnable) {
     return;
   }
 
-  mUseNativeCompositor = false;
   mDCLayerTree->DisableNativeCompositor();
 
   if (!RecreateNonNativeCompositorSwapChain()) {
@@ -956,6 +965,13 @@ void RenderCompositorANGLE::EnableNativeCompositor(bool aEnable) {
   }
 
   mDisablingNativeCompositor = true;
+}
+
+bool RenderCompositorANGLE::EnableAsyncScreenshot() {
+  if (!UseLayerCompositor()) {
+    return false;
+  }
+  return mDCLayerTree->EnableAsyncScreenshot();
 }
 
 bool RenderCompositorANGLE::RecreateNonNativeCompositorSwapChain() {
@@ -990,7 +1006,13 @@ void RenderCompositorANGLE::InitializeUsePartialPresent() {
 
 bool RenderCompositorANGLE::UsePartialPresent() { return mUsePartialPresent; }
 
-bool RenderCompositorANGLE::RequestFullRender() { return mFullRender; }
+bool RenderCompositorANGLE::RequestFullRender() {
+  // XXX Remove when partial update is supported.
+  if (UseLayerCompositor() && mDCLayerTree->SupportsDCompositionTexture()) {
+    return true;
+  }
+  return mFullRender;
+}
 
 uint32_t RenderCompositorANGLE::GetMaxPartialPresentRects() {
   if (!mUsePartialPresent) {

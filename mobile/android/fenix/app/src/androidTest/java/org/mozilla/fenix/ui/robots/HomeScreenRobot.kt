@@ -8,57 +8,50 @@ package org.mozilla.fenix.ui.robots
 
 import android.util.Log
 import android.view.View
-import android.widget.EditText
 import android.widget.TextView
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertIsNotSelected
-import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertIsNotDisplayed
+import androidx.compose.ui.test.filter
+import androidx.compose.ui.test.hasAnyChild
+import androidx.compose.ui.test.hasAnySibling
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.ComposeTestRule
-import androidx.compose.ui.test.onChildAt
+import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.recyclerview.widget.RecyclerView
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTouchInput
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.action.ViewActions
-import androidx.test.espresso.action.ViewActions.click
-import androidx.test.espresso.action.ViewActions.longClick
-import androidx.test.espresso.assertion.PositionAssertions.isCompletelyAbove
 import androidx.test.espresso.assertion.PositionAssertions.isPartiallyBelow
 import androidx.test.espresso.assertion.ViewAssertions.matches
-import androidx.test.espresso.contrib.RecyclerViewActions.actionOnItem
 import androidx.test.espresso.matcher.RootMatchers
 import androidx.test.espresso.matcher.ViewMatchers
-import androidx.test.espresso.matcher.ViewMatchers.Visibility
-import androidx.test.espresso.matcher.ViewMatchers.hasDescendant
-import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
-import androidx.test.espresso.matcher.ViewMatchers.withEffectiveVisibility
 import androidx.test.espresso.matcher.ViewMatchers.withId
 import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiScrollable
 import androidx.test.uiautomator.UiSelector
-import androidx.test.uiautomator.Until
-import androidx.test.uiautomator.Until.findObject
-import com.google.android.material.textfield.TextInputEditText
+import mozilla.components.compose.browser.toolbar.concept.BrowserToolbarTestTags.ADDRESSBAR_URL_BOX
+import mozilla.components.compose.browser.toolbar.concept.BrowserToolbarTestTags.TABS_COUNTER
 import org.hamcrest.CoreMatchers.allOf
-import org.hamcrest.CoreMatchers.containsString
-import org.hamcrest.CoreMatchers.instanceOf
-import org.hamcrest.Matchers
 import org.junit.Assert.assertTrue
 import org.mozilla.fenix.R
-import org.mozilla.fenix.helpers.Constants.LISTS_MAXSWIPES
 import org.mozilla.fenix.helpers.Constants.RETRY_COUNT
 import org.mozilla.fenix.helpers.Constants.TAG
 import org.mozilla.fenix.helpers.DataGenerationHelper.getStringResource
-import org.mozilla.fenix.helpers.HomeActivityComposeTestRule
 import org.mozilla.fenix.helpers.MatcherHelper.assertItemIsChecked
 import org.mozilla.fenix.helpers.MatcherHelper.assertUIObjectExists
-import org.mozilla.fenix.helpers.MatcherHelper.assertUIObjectIsGone
 import org.mozilla.fenix.helpers.MatcherHelper.itemContainingText
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithClassNameAndIndex
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithDescription
@@ -67,22 +60,30 @@ import org.mozilla.fenix.helpers.MatcherHelper.itemWithResId
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResIdAndIndex
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResIdAndText
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResIdContainingText
-import org.mozilla.fenix.helpers.MatcherHelper.itemWithText
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTime
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTimeLong
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTimeShort
 import org.mozilla.fenix.helpers.TestHelper.appName
 import org.mozilla.fenix.helpers.TestHelper.mDevice
 import org.mozilla.fenix.helpers.TestHelper.packageName
-import org.mozilla.fenix.helpers.TestHelper.scrollToElementByText
-import org.mozilla.fenix.helpers.click
-import org.mozilla.fenix.helpers.ext.waitNotNull
+import org.mozilla.fenix.home.topsites.TopSitesTestTag
+import org.mozilla.fenix.home.topsites.TopSitesTestTag.TOP_SITE_CARD_FAVICON
+import org.mozilla.fenix.home.ui.HomepageTestTag.HOMEPAGE
+import org.mozilla.fenix.home.ui.HomepageTestTag.HOMEPAGE_PRIVATE_BROWSING_LEARN_MORE_LINK
+import org.mozilla.fenix.home.ui.HomepageTestTag.HOMEPAGE_STORY
+import org.mozilla.fenix.home.ui.HomepageTestTag.HOMEPAGE_WORDMARK_LOGO
+import org.mozilla.fenix.home.ui.HomepageTestTag.HOMEPAGE_WORDMARK_TEXT
+import org.mozilla.fenix.home.ui.HomepageTestTag.PRIVATE_BROWSING_HOMEPAGE_BUTTON
 import org.mozilla.fenix.tabstray.TabsTrayTestTag
+import org.mozilla.fenix.ui.util.PositionOnScreenMatcher.Position.BOTTOM
+import org.mozilla.fenix.ui.util.PositionOnScreenMatcher.Position.TOP
+import org.mozilla.fenix.ui.util.isAtPosition
+import mozilla.components.browser.menu.R as menuR
 
 /**
  * Implementation of Robot Pattern for the home screen menu.
  */
-class HomeScreenRobot {
+class HomeScreenRobot(private val composeTestRule: ComposeTestRule) {
     fun verifyNavigationToolbar() = assertUIObjectExists(navigationToolbar())
 
     fun verifyHomeScreen() = assertUIObjectExists(homeScreen())
@@ -91,94 +92,53 @@ class HomeScreenRobot {
         verifyHomeScreenAppBarItems()
         assertUIObjectExists(
             itemContainingText(
-                "$appName clears your search and browsing history from private tabs when you close them" +
-                    " or quit the app. While this doesn’t make you anonymous to websites or your internet" +
-                    " service provider, it makes it easier to keep what you do online private from anyone" +
-                    " else who uses this device.",
+                getStringResource(R.string.felt_privacy_desc_card_title),
             ),
         )
-        verifyCommonMythsLink()
     }
 
     fun verifyHomeScreenAppBarItems() =
-        assertUIObjectExists(homeScreen(), privateBrowsingButton(), homepageWordmark())
+        assertUIObjectExists(homeScreen(), privateBrowsingButton(), homepageWordmarkLogo(), homepageWordmarkText())
 
     fun verifyHomePrivateBrowsingButton() = assertUIObjectExists(privateBrowsingButton())
     fun verifyHomeMenuButton() = assertUIObjectExists(menuButton())
-    fun verifyTabButton() {
-        Log.i(TAG, "verifyTabButton: Trying to verify tab counter button is visible")
-        onView(allOf(withId(R.id.tab_button), isDisplayed())).check(
-            matches(
-                withEffectiveVisibility(
-                    Visibility.VISIBLE,
-                ),
-            ),
-        )
-        Log.i(TAG, "verifyTabButton: Verified tab counter button is visible")
-    }
     fun verifyCollectionsHeader() {
         Log.i(TAG, "verifyCollectionsHeader: Trying to verify collections header is visible")
-        onView(allOf(withText("Collections"))).check(matches(withEffectiveVisibility(Visibility.VISIBLE)))
+        this@HomeScreenRobot.composeTestRule.onNodeWithText(getStringResource(R.string.collections_header)).assertIsDisplayed()
         Log.i(TAG, "verifyCollectionsHeader: Verified collections header is visible")
     }
     fun verifyNoCollectionsText() {
         Log.i(TAG, "verifyNoCollectionsText: Trying to verify empty collections placeholder text is displayed")
-        onView(
-            withText(
-                containsString(
-                    "Collect the things that matter to you.\n" +
-                        "Group together similar searches, sites, and tabs for quick access later.",
-                ),
-            ),
-        ).check(matches(isDisplayed()))
+        this@HomeScreenRobot.composeTestRule.onNodeWithText(getStringResource(R.string.no_collections_description2)).assertIsDisplayed()
         Log.i(TAG, "verifyNoCollectionsText: Verified empty collections placeholder text is displayed")
     }
 
     fun verifyHomeWordmark() {
-        Log.i(TAG, "verifyHomeWordmark: Trying to scroll 3x to the beginning of the home screen")
-        homeScreenList().scrollToBeginning(3)
         Log.i(TAG, "verifyHomeWordmark: Scrolled 3x to the beginning of the home screen")
-        assertUIObjectExists(homepageWordmark())
+        assertUIObjectExists(homepageWordmarkLogo(), homepageWordmarkText())
     }
     fun verifyHomeComponent() {
         Log.i(TAG, "verifyHomeComponent: Trying to verify home screen view is visible")
-        onView(ViewMatchers.withResourceName("sessionControlRecyclerView"))
-            .check(matches(withEffectiveVisibility(Visibility.VISIBLE)))
+        this@HomeScreenRobot.composeTestRule.onNodeWithTag(HOMEPAGE).assertIsDisplayed()
         Log.i(TAG, "verifyHomeComponent: Verified home screen view is visible")
     }
 
-    fun verifyTabCounter(numberOfOpenTabs: String) =
-        onView(
-            allOf(
-                withId(R.id.counter_text),
-                withText(numberOfOpenTabs),
-                withEffectiveVisibility(Visibility.VISIBLE),
-            ),
-        ).check(matches(isDisplayed()))
-
-    fun verifyWallpaperImageApplied(isEnabled: Boolean) =
-        assertUIObjectExists(itemWithResId("$packageName:id/wallpaperImageView"), exists = isEnabled)
-
-    // Upgrading users onboarding dialog
-    fun verifyUpgradingUserOnboardingFirstScreen(testRule: ComposeTestRule) {
-        testRule.also {
-            Log.i(TAG, "verifyUpgradingUserOnboardingFirstScreen: Trying to verify that the upgrading user first onboarding screen title is displayed")
-            it.onNodeWithText(getStringResource(R.string.onboarding_home_welcome_title_2))
+    fun verifyTabCounter(numberOfOpenTabs: String, isPrivateBrowsingEnabled: Boolean = false) {
+        if (isPrivateBrowsingEnabled) {
+            Log.i(TAG, "verifyTabCounter: Trying to verify that the number of open private tabs is : $numberOfOpenTabs")
+            composeTestRule.onNodeWithContentDescription("Private Tabs Open: $numberOfOpenTabs. Tap to switch tabs.")
                 .assertIsDisplayed()
-            Log.i(TAG, "verifyUpgradingUserOnboardingFirstScreen: Verified that the upgrading user first onboarding screen title is displayed")
-            Log.i(TAG, "verifyUpgradingUserOnboardingFirstScreen: Trying to verify that the upgrading user first onboarding screen description is displayed")
-            it.onNodeWithText(getStringResource(R.string.onboarding_home_welcome_description))
+            Log.i(TAG, "verifyTabCounter: Verified that the number of open private tabs is : $numberOfOpenTabs")
+        } else {
+            Log.i(TAG, "verifyTabCounter: Trying to verify that the number of open tabs is : $numberOfOpenTabs")
+            composeTestRule.onNodeWithContentDescription("Non-private Tabs Open: $numberOfOpenTabs. Tap to switch tabs.")
                 .assertIsDisplayed()
-            Log.i(TAG, "verifyUpgradingUserOnboardingFirstScreen: Verified that the upgrading user first onboarding screen description is displayed")
-            Log.i(TAG, "verifyUpgradingUserOnboardingFirstScreen: Trying to verify that the upgrading user first onboarding \"Get started\" button is displayed")
-            it.onNodeWithText(getStringResource(R.string.onboarding_home_get_started_button))
-                .assertIsDisplayed()
-            Log.i(TAG, "verifyUpgradingUserOnboardingFirstScreen: Verified that the upgrading user first onboarding  \"Get started\" button is displayed")
+            Log.i(TAG, "verifyTabCounter: Verified that the number of open tabs is : $numberOfOpenTabs")
         }
     }
 
-    fun verifyFirstOnboardingCard(composeTestRule: ComposeTestRule) {
-        composeTestRule.also {
+    fun verifyFirstOnboardingCard() {
+        this@HomeScreenRobot.composeTestRule.also {
             Log.i(TAG, "verifyFirstOnboardingCard: Trying to verify that the first onboarding screen title exists")
             it.onNodeWithText(
                 getStringResource(R.string.juno_onboarding_default_browser_title_nimbus_2),
@@ -202,8 +162,8 @@ class HomeScreenRobot {
         }
     }
 
-    fun verifySecondOnboardingCard(composeTestRule: ComposeTestRule) {
-        composeTestRule.also {
+    fun verifySecondOnboardingCard() {
+        this@HomeScreenRobot.composeTestRule.also {
             Log.i(TAG, "verifySecondOnboardingCard: Trying to verify that the second onboarding screen title exists")
             it.onNodeWithText(
                 getStringResource(R.string.juno_onboarding_add_search_widget_title),
@@ -227,8 +187,8 @@ class HomeScreenRobot {
         }
     }
 
-    fun verifyThirdOnboardingCard(composeTestRule: ComposeTestRule) {
-        composeTestRule.also {
+    fun verifyThirdOnboardingCard() {
+        this@HomeScreenRobot.composeTestRule.also {
             Log.i(TAG, "verifyThirdOnboardingCard: Trying to verify that the third onboarding screen title exists")
             it.onNodeWithText(
                 getStringResource(R.string.juno_onboarding_sign_in_title_2),
@@ -252,25 +212,25 @@ class HomeScreenRobot {
         }
     }
 
-    fun clickDefaultCardNotNowOnboardingButton(composeTestRule: ComposeTestRule) {
+    fun clickDefaultCardNotNowOnboardingButton() {
         Log.i(TAG, "clickNotNowOnboardingButton: Trying to click \"Not now\" onboarding button")
-        composeTestRule.onNodeWithTag(
+        this@HomeScreenRobot.composeTestRule.onNodeWithTag(
             getStringResource(R.string.juno_onboarding_default_browser_title_nimbus_2) + "onboarding_card.negative_button",
         ).performClick()
         Log.i(TAG, "clickNotNowOnboardingButton: Clicked \"Not now\" onboarding button")
     }
 
-    fun clickAddSearchWidgetNotNowOnboardingButton(composeTestRule: ComposeTestRule) {
+    fun clickAddSearchWidgetNotNowOnboardingButton() {
         Log.i(TAG, "clickNotNowOnboardingButton: Trying to click \"Not now\" onboarding button")
-        composeTestRule.onNodeWithTag(
+        this@HomeScreenRobot.composeTestRule.onNodeWithTag(
             getStringResource(R.string.juno_onboarding_add_search_widget_title) + "onboarding_card.negative_button",
         ).performClick()
         Log.i(TAG, "clickNotNowOnboardingButton: Clicked \"Not now\" onboarding button")
     }
 
-    fun clickSyncSignInWidgetNotNowOnboardingButton(composeTestRule: ComposeTestRule) {
+    fun clickSyncSignInWidgetNotNowOnboardingButton() {
         Log.i(TAG, "clickNotNowOnboardingButton: Trying to click \"Not now\" onboarding button")
-        composeTestRule.onNodeWithTag(
+        this@HomeScreenRobot.composeTestRule.onNodeWithTag(
             getStringResource(R.string.juno_onboarding_sign_in_title_2) + "onboarding_card.negative_button",
         ).performClick()
         Log.i(TAG, "clickNotNowOnboardingButton: Clicked \"Not now\" onboarding button")
@@ -286,66 +246,33 @@ class HomeScreenRobot {
         Log.i(TAG, "swipeSecondOnboardingCardToRight: Performed swipe right action on second onboarding card")
     }
 
-    fun clickGetStartedButton(testRule: ComposeTestRule) {
-        Log.i(TAG, "clickGetStartedButton: Trying to click \"Get started\" onboarding button")
-        testRule.onNodeWithText(getStringResource(R.string.onboarding_home_get_started_button))
-            .performClick()
-        Log.i(TAG, "clickGetStartedButton: Clicked \"Get started\" onboarding button")
-    }
-
     fun clickCloseButton(testRule: ComposeTestRule) {
         Log.i(TAG, "clickCloseButton: Trying to click close onboarding button")
         testRule.onNode(hasContentDescription("Close")).performClick()
         Log.i(TAG, "clickCloseButton: Clicked close onboarding button")
     }
 
-    fun verifyUpgradingUserOnboardingSecondScreen(testRule: ComposeTestRule) {
-        testRule.also {
-            Log.i(TAG, "verifyUpgradingUserOnboardingSecondScreen: Trying to verify that the upgrading user second onboarding screen title is displayed")
-            it.onNodeWithText(getStringResource(R.string.onboarding_home_sync_title_3))
-                .assertIsDisplayed()
-            Log.i(TAG, "verifyUpgradingUserOnboardingSecondScreen: Verified that the upgrading user second onboarding screen title is displayed")
-            Log.i(TAG, "verifyUpgradingUserOnboardingSecondScreen: Trying to verify that the upgrading user second onboarding screen description is displayed")
-            it.onNodeWithText(getStringResource(R.string.onboarding_home_sync_description))
-                .assertIsDisplayed()
-            Log.i(TAG, "verifyUpgradingUserOnboardingSecondScreen: Verified that the upgrading user second onboarding screen description is displayed")
-            Log.i(TAG, "verifyUpgradingUserOnboardingSecondScreen: Trying to verify that the upgrading user second onboarding \"Sign in\" button is displayed")
-            it.onNodeWithText(getStringResource(R.string.onboarding_home_sign_in_button))
-                .assertIsDisplayed()
-            Log.i(TAG, "verifyUpgradingUserOnboardingSecondScreen: Verified that the upgrading user second onboarding \"Sign in\" button is displayed")
-            Log.i(TAG, "verifyUpgradingUserOnboardingSecondScreen: Trying to that the verify upgrading user second onboarding \"Skip\" button is displayed")
-            it.onNodeWithText(getStringResource(R.string.onboarding_home_skip_button))
-                .assertIsDisplayed()
-            Log.i(TAG, "verifyUpgradingUserOnboardingSecondScreen: Verified that the upgrading user second onboarding \"Skip\" button is displayed")
+    @OptIn(ExperimentalTestApi::class)
+    fun verifyExistingTopSitesList() {
+        Log.i(TAG, "verifyExistingTopSitesList: Waiting for $waitingTime ms until the top sites list exists")
+        this@HomeScreenRobot.composeTestRule.waitUntilAtLeastOneExists(hasTestTag(TopSitesTestTag.TOP_SITES), timeoutMillis = waitingTime)
+        Log.i(TAG, "verifyExistingTopSitesList: Waited for $waitingTime ms until the top sites list to exists")
+        Log.i(TAG, "verifyExistingTopSitesList: Trying to verify that the top sites list is displayed")
+        this@HomeScreenRobot.composeTestRule.onNodeWithTag(TopSitesTestTag.TOP_SITES).assertIsDisplayed()
+        Log.i(TAG, "verifyExistingTopSitesList: Verified that the top sites list is displayed")
+    }
+
+    fun verifyNotExistingTopSiteItem(vararg titles: String) {
+        titles.forEach { title ->
+            Log.i(TAG, "verifyNotExistingTopSiteItem: Waiting for $waitingTime ms for top site with title: $title to exist")
+            itemContainingText(title).waitForExists(waitingTime)
+            Log.i(TAG, "verifyNotExistingTopSiteItem: Waited for $waitingTime ms for top site with title: $title to exist")
+            Log.i(TAG, "verifyNotExistingTopSiteItem: Trying to verify that top site with title: $title does not exist")
+            this@HomeScreenRobot.composeTestRule.topSiteItem(title).assertDoesNotExist()
+            Log.i(TAG, "verifyNotExistingTopSiteItem: Verified that top site with title: $title does not exist")
         }
     }
 
-    fun clickSkipButton(testRule: ComposeTestRule) {
-        Log.i(TAG, "clickSkipButton: Trying to click \"Skip\" onboarding button")
-        testRule
-            .onNodeWithText(getStringResource(R.string.onboarding_home_skip_button))
-            .performClick()
-        Log.i(TAG, "clickSkipButton: Clicked \"Skip\" onboarding button")
-    }
-
-    fun verifyCommonMythsLink() =
-        assertUIObjectExists(itemContainingText(getStringResource(R.string.private_browsing_common_myths)))
-
-    fun verifyExistingTopSitesList() =
-        assertUIObjectExists(itemWithResId("$packageName:id/top_sites_list"))
-
-    fun verifyNotExistingTopSitesList(title: String) {
-        Log.i(TAG, "verifyNotExistingTopSitesList: Waiting for $waitingTime ms for top site: $title to be gone")
-        mDevice.findObject(UiSelector().text(title)).waitUntilGone(waitingTime)
-        Log.i(TAG, "verifyNotExistingTopSitesList: Waited for $waitingTime ms for top site: $title to be gone")
-        assertUIObjectExists(
-            itemWithResIdContainingText(
-                "$packageName:id/top_site_title",
-                title,
-            ),
-            exists = false,
-        )
-    }
     fun verifySponsoredShortcutDoesNotExist(sponsoredShortcutTitle: String, position: Int) =
         assertUIObjectExists(
             itemWithResIdAndIndex("$packageName:id/top_site_item", index = position - 1)
@@ -357,77 +284,86 @@ class HomeScreenRobot {
         )
     fun verifyNotExistingSponsoredTopSitesList() =
         assertUIObjectExists(
-            itemWithResIdContainingText(
-                "$packageName:id/top_site_subtitle",
-                getStringResource(R.string.top_sites_sponsored_label),
-            ),
+            mDevice.findObject(UiSelector().resourceId("top_sites_list.top_site_item"))
+                .getChild(
+                    UiSelector().textContains(getStringResource(R.string.top_sites_sponsored_label)),
+                ),
             exists = false,
         )
 
-    fun verifyExistingTopSitesTabs(title: String) {
-        Log.i(TAG, "verifyExistingTopSitesTabs: Trying to scroll into view the top sites list")
-        homeScreenList().scrollIntoView(itemWithResId("$packageName:id/top_sites_list"))
-        Log.i(TAG, "verifyExistingTopSitesTabs: Scrolled into view the top sites list")
-        Log.i(TAG, "verifyExistingTopSitesTabs: Waiting for $waitingTimeLong ms for top site: $title to exist")
-        mDevice.findObject(
-            UiSelector()
-                .resourceId("$packageName:id/top_site_title")
-                .textContains(title),
-        ).waitForExists(waitingTimeLong)
-        Log.i(TAG, "verifyExistingTopSitesTabs: Waited for $waitingTimeLong ms for top site: $title to exist")
-        Log.i(TAG, "verifyExistingTopSitesTabs: Trying to verify top site: $title is visible")
-        onView(allOf(withId(R.id.top_sites_list)))
-            .check(matches(hasDescendant(withText(title))))
-            .check(matches(withEffectiveVisibility(Visibility.VISIBLE)))
-        Log.i(TAG, "verifyExistingTopSitesTabs: Verified top site: $title is visible")
+    @OptIn(ExperimentalTestApi::class)
+    fun verifyExistingTopSitesTabs(vararg titles: String) {
+        titles.forEach { title ->
+            Log.i(TAG, "verifyExistingTopSiteItem: Waiting for $waitingTime ms until the top site with title: $title exists")
+            this@HomeScreenRobot.composeTestRule.waitUntilAtLeastOneExists(
+                hasTestTag(TopSitesTestTag.TOP_SITE_ITEM_ROOT).and(hasAnyChild(hasText(title))),
+                timeoutMillis = waitingTimeLong,
+            )
+            Log.i(TAG, "verifyExistingTopSiteItem: Waited for $waitingTimeLong ms until the top site with title: $title exists")
+            Log.i(TAG, "verifyExistingTopSiteItem: Trying to verify that the top site with title: $title exists")
+            this@HomeScreenRobot.composeTestRule.topSiteItem(title).assertExists()
+            Log.i(TAG, "verifyExistingTopSiteItem: Verified that the top site with title: $title exists")
+        }
     }
+
     fun verifySponsoredShortcutDetails(sponsoredShortcutTitle: String, position: Int) {
         assertUIObjectExists(
-            itemWithResIdAndIndex(resourceId = "$packageName:id/top_site_item", index = position - 1)
+            itemWithResIdAndIndex(resourceId = "top_sites_list.top_site_item", index = position - 1)
                 .getChild(
                     UiSelector()
-                        .resourceId("$packageName:id/favicon_card"),
+                        .resourceId(TOP_SITE_CARD_FAVICON),
                 ),
         )
         assertUIObjectExists(
-            itemWithResIdAndIndex(resourceId = "$packageName:id/top_site_item", index = position - 1)
+            itemWithResIdAndIndex(resourceId = "top_sites_list.top_site_item", index = position - 1)
                 .getChild(
                     UiSelector()
                         .textContains(sponsoredShortcutTitle),
                 ),
         )
         assertUIObjectExists(
-            itemWithResIdAndIndex(resourceId = "$packageName:id/top_site_item", index = position - 1)
+            itemWithResIdAndIndex(resourceId = "top_sites_list.top_site_item", index = position - 1)
                 .getChild(
                     UiSelector()
-                        .resourceId("$packageName:id/top_site_subtitle"),
+                        .textContains(getStringResource(R.string.top_sites_sponsored_label)),
                 ),
         )
     }
     fun verifyTopSiteContextMenuItems() {
-        mDevice.waitNotNull(
-            findObject(By.text("Open in private tab")),
-            waitingTime,
-        )
-        mDevice.waitNotNull(
-            findObject(By.text("Edit")),
-            waitingTime,
-        )
-        mDevice.waitNotNull(
-            findObject(By.text("Remove")),
-            waitingTime,
-        )
+        verifyTopSiteContextMenuOpenInPrivateTabButton()
+        verifyTopSiteContextMenuRemoveButton()
+        verifyTopSiteContextMenuEditButton()
     }
+
+    fun verifyTopSiteContextMenuOpenInPrivateTabButton() {
+        Log.i(TAG, "verifyTopSiteContextMenuOpenInPrivateTabButton: Trying to verify that the \"Open in private tab\" menu button exists")
+        this@HomeScreenRobot.composeTestRule.contextMenuItemOpenInPrivateTab().assertExists()
+        Log.i(TAG, "verifyTopSiteContextMenuOpenInPrivateTabButton: Verified that the \"Open in private tab\" menu button exists")
+    }
+
+    fun verifyTopSiteContextMenuEditButton() {
+        Log.i(TAG, "verifyTopSiteContextMenuEditButton: Trying to verify that the \"Edit\" menu button exists")
+        this@HomeScreenRobot.composeTestRule.contextMenuItemEdit().assertExists()
+        Log.i(TAG, "verifyTopSiteContextMenuEditButton: Verified that the \"Edit\" menu button exists")
+    }
+
+    fun verifyTopSiteContextMenuRemoveButton() {
+        Log.i(TAG, "verifyTopSiteContextMenuRemoveButton: Trying to verify that the \"Remove\" menu button exists")
+        this@HomeScreenRobot.composeTestRule.contextMenuItemRemove().assertExists()
+        Log.i(TAG, "verifyTopSiteContextMenuRemoveButton: Verified that the \"Remove\" menu button exists")
+    }
+
     fun verifyTopSiteContextMenuUrlErrorMessage() {
         assertUIObjectExists(itemContainingText(getStringResource(R.string.top_sites_edit_dialog_url_error)))
     }
 
     fun verifyJumpBackInSectionIsDisplayed() {
-        scrollToElementByText(getStringResource(R.string.recent_tabs_header))
         assertUIObjectExists(itemContainingText(getStringResource(R.string.recent_tabs_header)))
     }
+
     fun verifyJumpBackInSectionIsNotDisplayed() =
-        assertUIObjectExists(itemContainingText(getStringResource(R.string.recent_tabs_header)), exists = false)
+        this@HomeScreenRobot.composeTestRule.onNodeWithText(getStringResource(R.string.recent_tabs_header)).assertIsNotDisplayed()
+
     fun verifyJumpBackInItemTitle(testRule: ComposeTestRule, itemTitle: String) {
         Log.i(TAG, "verifyJumpBackInItemTitle: Trying to verify jump back in item with title: $itemTitle")
         testRule.onNodeWithTag("recent.tab.title", useUnmergedTree = true)
@@ -448,57 +384,54 @@ class HomeScreenRobot {
     fun verifyRecentlyVisitedSearchGroupDisplayed(shouldBeDisplayed: Boolean, searchTerm: String, groupSize: Int) {
         // checks if the search group exists in the Recently visited section
         if (shouldBeDisplayed) {
-            scrollToElementByText("Recently visited")
-            assertUIObjectExists(
-                itemContainingText(searchTerm)
-                    .getFromParent(UiSelector().text("$groupSize pages")),
-            )
+            Log.i(TAG, "verifyRecentlyVisitedSearchGroupDisplayed: Trying to verify that the \"Recently visited\" section is displayed")
+            this@HomeScreenRobot.composeTestRule.onNodeWithText("Recently visited").assertIsDisplayed()
+            Log.i(TAG, "verifyRecentlyVisitedSearchGroupDisplayed: Verified that the \"Recently visited\" section is displayed")
+            Log.i(TAG, "verifyRecentlyVisitedSearchGroupDisplayed: Trying to verify that the search group: $searchTerm has $groupSize pages")
+            this@HomeScreenRobot.composeTestRule.onNodeWithText(searchTerm, useUnmergedTree = true).assert(hasAnySibling(hasText("$groupSize pages")))
+            Log.i(TAG, "verifyRecentlyVisitedSearchGroupDisplayed: Verified that the search group: $searchTerm has $groupSize pages")
         } else {
-            assertUIObjectIsGone(
-                itemContainingText(searchTerm)
-                    .getFromParent(UiSelector().text("$groupSize pages")),
-            )
+            Log.i(TAG, "verifyRecentlyVisitedSearchGroupDisplayed: Trying to verify that the search group: $searchTerm is not displayed")
+            this@HomeScreenRobot.composeTestRule.onNodeWithText(searchTerm, useUnmergedTree = true).assertIsNotDisplayed()
+            Log.i(TAG, "verifyRecentlyVisitedSearchGroupDisplayed: Verified that the search group: $searchTerm is not displayed")
         }
     }
 
     // Collections elements
+    @OptIn(ExperimentalTestApi::class)
     fun verifyCollectionIsDisplayed(title: String, collectionExists: Boolean = true) {
         if (collectionExists) {
-            assertUIObjectExists(itemContainingText(title))
+            this@HomeScreenRobot.composeTestRule.waitUntilExactlyOneExists(hasText(title), waitingTime)
+            Log.i(TAG, "verifyCollectionIsDisplayed: Trying to verify that collection with title: $title is displayed")
+            this@HomeScreenRobot.composeTestRule.onNodeWithText(title).assertIsDisplayed()
+            Log.i(TAG, "verifyCollectionIsDisplayed: Verified that collection with title: $title is displayed")
         } else {
-            assertUIObjectIsGone(itemWithText(title))
+            this@HomeScreenRobot.composeTestRule.waitUntilDoesNotExist(hasText(title), waitingTime)
+            Log.i(TAG, "verifyCollectionIsDisplayed: Trying to verify that collection with title: $title is not displayed")
+            this@HomeScreenRobot.composeTestRule.onNodeWithText(title).assertIsNotDisplayed()
+            Log.i(TAG, "verifyCollectionIsDisplayed: Verified that collection with title: $title is not displayed")
         }
     }
 
     fun togglePrivateBrowsingModeOnOff() {
         Log.i(TAG, "togglePrivateBrowsingModeOnOff: Trying to click private browsing home screen button")
-        onView(ViewMatchers.withResourceName("privateBrowsingButton"))
-            .perform(click())
+        this@HomeScreenRobot.composeTestRule.onNodeWithContentDescription(getStringResource(R.string.content_description_private_browsing)).performClick()
         Log.i(TAG, "togglePrivateBrowsingModeOnOff: Clicked private browsing home screen button")
     }
 
     fun verifyThoughtProvokingStories(enabled: Boolean) {
         if (enabled) {
-            scrollToElementByText(getStringResource(R.string.pocket_stories_header_1))
-            assertUIObjectExists(itemContainingText(getStringResource(R.string.pocket_stories_header_1)))
+            assertUIObjectExists(itemContainingText(getStringResource(R.string.pocket_stories_header_2)))
         } else {
-            Log.i(TAG, "verifyThoughtProvokingStories: Trying to perform ${LISTS_MAXSWIPES}x a scroll action to the end of the home screen")
-            homeScreenList().scrollToEnd(LISTS_MAXSWIPES)
-            Log.i(TAG, "verifyThoughtProvokingStories: Performed ${LISTS_MAXSWIPES}x a scroll action to the end of the home screen")
-            assertUIObjectExists(itemContainingText(getStringResource(R.string.pocket_stories_header_1)), exists = false)
+            assertUIObjectExists(itemContainingText(getStringResource(R.string.pocket_stories_header_2)), exists = false)
         }
     }
 
-    fun scrollToPocketProvokingStories() {
-        Log.i(TAG, "scrollToPocketProvokingStories: Trying to scroll into view the featured pocket stories")
-        homeScreenList().scrollIntoView(
-            mDevice.findObject(UiSelector().resourceId("pocket.recommended.story").index(2)),
-        )
-        Log.i(TAG, "scrollToPocketProvokingStories: Scrolled into view the featured pocket stories")
-    }
-
     fun verifyPocketRecommendedStoriesItems() {
-        for (position in 0..8) {
+        Log.i(TAG, "verifyPocketRecommendedStoriesItems: Trying to scroll into view the \"Stories\" pocket section")
+        this@HomeScreenRobot.composeTestRule.onNodeWithTag("homepage.view").performScrollToNode(hasTestTag("pocket.stories"))
+        Log.i(TAG, "verifyPocketRecommendedStoriesItems: Scrolled into view the \"Stories\" pocket section")
+        for (position in 0..7) {
             Log.i(TAG, "verifyPocketRecommendedStoriesItems: Trying to scroll into view the featured pocket story from position: $position")
             pocketStoriesList().scrollIntoView(UiSelector().index(position))
             Log.i(TAG, "verifyPocketRecommendedStoriesItems: Scrolled into view the featured pocket story from position: $position")
@@ -511,124 +444,32 @@ class HomeScreenRobot {
 //    fun verifyPocketSponsoredStoriesItems(vararg positions: Int) {
 //        positions.forEach {
 //            pocketStoriesList
-//                .scrollIntoView(UiSelector().resourceId("pocket.sponsored.story").index(it - 1))
+//                .scrollIntoView(UiSelector().resourceId(HOMEPAGE_SPONSORED_STORY).index(it - 1))
 //
 //            assertTrue(
 //                "Pocket story item at position $it not found.",
-//                mDevice.findObject(UiSelector().index(it - 1).resourceId("pocket.sponsored.story"))
+//                mDevice.findObject(UiSelector().index(it - 1).resourceId(HOMEPAGE_SPONSORED_STORY))
 //                    .waitForExists(waitingTimeShort),
 //            )
 //        }
 //    }
 
-    fun verifyDiscoverMoreStoriesButton() {
-        Log.i(TAG, "verifyDiscoverMoreStoriesButton: Trying to scroll into view the \"Powered By Pocket\" home screen section")
-        homeScreenList().scrollIntoView(mDevice.findObject(UiSelector().resourceId("pocket.header")))
-        Log.i(TAG, "verifyDiscoverMoreStoriesButton: Scrolled into view the \"Powered By Pocket\" home screen section")
-        Log.i(TAG, "verifyDiscoverMoreStoriesButton: Trying to scroll into view the Pocket \"Discover more\" button")
-        pocketStoriesList().scrollIntoView(UiSelector().text("Discover more"))
-        Log.i(TAG, "verifyDiscoverMoreStoriesButton: Scrolled into view the Pocket \"Discover more\" button")
-        assertUIObjectExists(itemWithText("Discover more"))
-    }
-
-    fun verifyStoriesByTopic(enabled: Boolean) {
-        if (enabled) {
-            scrollToElementByText(getStringResource(R.string.pocket_stories_categories_header))
-            assertUIObjectExists(itemContainingText(getStringResource(R.string.pocket_stories_categories_header)))
-        } else {
-            Log.i(TAG, "verifyStoriesByTopic: Trying to perform ${LISTS_MAXSWIPES}x a scroll action to the end of the home screen")
-            homeScreenList().scrollToEnd(LISTS_MAXSWIPES)
-            Log.i(TAG, "verifyStoriesByTopic: Performed ${LISTS_MAXSWIPES}x a scroll action to the end of the home screen")
-            assertUIObjectExists(itemContainingText(getStringResource(R.string.pocket_stories_categories_header)), exists = false)
-        }
-    }
-
-    fun verifyStoriesByTopicItems() {
-        Log.i(TAG, "verifyStoriesByTopicItems: Trying to scroll into view the stories by topic home screen section")
-        homeScreenList().scrollIntoView(UiSelector().resourceId("pocket.categories"))
-        Log.i(TAG, "verifyStoriesByTopicItems: Scrolled into view the stories by topic home screen section")
-        Log.i(TAG, "verifyStoriesByTopicItems: Trying to verify that there are more than 1 \"Stories by topic\" categories")
-        assertTrue(mDevice.findObject(UiSelector().resourceId("pocket.categories")).childCount > 1)
-        Log.i(TAG, "verifyStoriesByTopicItems: Verified that there are more than 1 \"Stories by topic\" categories")
-    }
-
-    fun verifyStoriesByTopicItemState(composeTestRule: ComposeTestRule, isSelected: Boolean, position: Int) {
-        Log.i(TAG, "verifyStoriesByTopicItemState: Trying to scroll into view \"Powered By Pocket\" home screen section")
-        homeScreenList().scrollIntoView(mDevice.findObject(UiSelector().resourceId("pocket.header")))
-        Log.i(TAG, "verifyStoriesByTopicItemState: Scrolled into view \"Powered By Pocket\" home screen section")
-
-        if (isSelected) {
-            Log.i(TAG, "verifyStoriesByTopicItemState: Trying verify that the stories by topic home screen section is displayed")
-            composeTestRule.onNodeWithTag("pocket.categories").assertIsDisplayed()
-            Log.i(TAG, "verifyStoriesByTopicItemState: Verified that the stories by topic home screen section is displayed")
-            Log.i(TAG, "verifyStoriesByTopicItemState: Trying verify that the stories by topic item at position: $position is selected")
-            storyByTopicItem(composeTestRule, position).assertIsSelected()
-            Log.i(TAG, "verifyStoriesByTopicItemState: Verified that the stories by topic item at position: $position is selected")
-        } else {
-            Log.i(TAG, "verifyStoriesByTopicItemState: Trying verify that the stories by topic home screen section is displayed")
-            composeTestRule.onNodeWithTag("pocket.categories").assertIsDisplayed()
-            Log.i(TAG, "verifyStoriesByTopicItemState: Verified that the stories by topic home screen section is displayed")
-            Log.i(TAG, "verifyStoriesByTopicItemState: Trying to verify that the stories by topic item at position: $position is not selected")
-            storyByTopicItem(composeTestRule, position).assertIsNotSelected()
-            Log.i(TAG, "verifyStoriesByTopicItemState: Verified that the stories by topic item at position: $position is not selected")
-        }
-    }
-
-    fun clickStoriesByTopicItem(composeTestRule: ComposeTestRule, position: Int) {
-        Log.i(TAG, "clickStoriesByTopicItem: Trying to click stories by topic item from position: $position")
-        storyByTopicItem(composeTestRule, position).performClick()
-        Log.i(TAG, "clickStoriesByTopicItem: Clicked stories by topic item from position: $position")
-    }
-
-    fun verifyPoweredByPocket() {
-        Log.i(TAG, "verifyPoweredByPocket: Trying to scroll into view \"Powered By Pocket\" home screen section")
-        homeScreenList().scrollIntoView(mDevice.findObject(UiSelector().resourceId("pocket.header")))
-        Log.i(TAG, "verifyPoweredByPocket: Scrolled into view \"Powered By Pocket\" home screen section")
-        assertUIObjectExists(itemWithResId("pocket.header.title"))
-    }
-
-    fun verifyCustomizeHomepageButton(enabled: Boolean) {
-        if (enabled) {
-            scrollToElementByText(getStringResource(R.string.browser_menu_customize_home_1))
-            assertUIObjectExists(itemContainingText("Customize homepage"))
-        } else {
-            Log.i(TAG, "verifyCustomizeHomepageButton: Trying to perform ${LISTS_MAXSWIPES}x a scroll action to the end of the home screen")
-            homeScreenList().scrollToEnd(LISTS_MAXSWIPES)
-            Log.i(TAG, "verifyCustomizeHomepageButton: Performed ${LISTS_MAXSWIPES}x a scroll action to the end of the home screen")
-            assertUIObjectExists(itemContainingText("Customize homepage"), exists = false)
-        }
-    }
-
-    fun getProvokingStoryPublisher(position: Int): String {
-        val publisher = mDevice.findObject(
-            UiSelector()
-                .className("android.view.View")
-                .index(position - 1),
-        ).getChild(
-            UiSelector()
-                .className("android.widget.TextView")
-                .index(1),
-        ).text
-
-        return publisher
-    }
-
-    fun verifyAddressBarPosition(bottomPosition: Boolean) {
-        Log.i(TAG, "verifyAddressBarPosition: Trying to verify toolbar is set to top: $bottomPosition")
-        onView(withId(R.id.toolbarLayout))
+    fun verifyToolbarPosition(bottomPosition: Boolean) {
+        Log.i(TAG, "verifyToolbarPosition: Trying to verify toolbar is set to top: $bottomPosition")
+        onView(withId(R.id.composable_toolbar))
             .check(
                 if (bottomPosition) {
-                    isPartiallyBelow(withId(R.id.sessionControlRecyclerView))
+                    matches(isAtPosition(BOTTOM))
                 } else {
-                    isCompletelyAbove(withId(R.id.homeAppBar))
+                    matches(isAtPosition(TOP))
                 },
             )
-        Log.i(TAG, "verifyAddressBarPosition: Verified toolbar position is set to top: $bottomPosition")
+        Log.i(TAG, "verifyToolbarPosition: Verified toolbar position is set to top: $bottomPosition")
     }
 
     fun verifyNavigationToolbarIsSetToTheBottomOfTheHomeScreen() {
         Log.i(TAG, "verifyAddressBarPosition: Trying to verify that the navigation toolbar is set to bottom")
-        onView(withId(R.id.toolbar_navbar_container)).check(isPartiallyBelow(withId(R.id.sessionControlRecyclerView)))
+        onView(withId(R.id.navigation_bar)).check(isPartiallyBelow(withId(R.id.homepageView)))
         Log.i(TAG, "verifyAddressBarPosition: Verified that the navigation toolbar is set to bottom")
     }
 
@@ -667,9 +508,9 @@ class HomeScreenRobot {
         )
     }
 
-    class Transition {
+    class Transition(private val composeTestRule: ComposeTestRule) {
 
-        fun openTabDrawerFromRedesignedToolbar(composeTestRule: HomeActivityComposeTestRule, interact: TabDrawerRobot.() -> Unit): TabDrawerRobot.Transition {
+        fun openTabDrawerFromRedesignedToolbar(interact: TabDrawerRobot.() -> Unit): TabDrawerRobot.Transition {
             for (i in 1..RETRY_COUNT) {
                 try {
                     Log.i(TAG, "openTabDrawerFromRedesignedToolbar: Started try #$i")
@@ -678,7 +519,7 @@ class HomeScreenRobot {
                     tabsCounter().click()
                     Log.i(TAG, "openTabDrawerFromRedesignedToolbar: Clicked the tab counter button")
                     Log.i(TAG, "openTabDrawerFromRedesignedToolbar: Trying to verify the tabs tray exists")
-                    composeTestRule.onNodeWithTag(TabsTrayTestTag.tabsTray).assertExists()
+                    composeTestRule.onNodeWithTag(TabsTrayTestTag.TABS_TRAY).assertExists()
                     Log.i(TAG, "openTabDrawer: Verified the tabs tray exists")
 
                     break
@@ -694,86 +535,47 @@ class HomeScreenRobot {
                 }
             }
             Log.i(TAG, "openTabDrawerFromRedesignedToolbar: Trying to verify the tabs tray new tab FAB button exists")
-            composeTestRule.onNodeWithTag(TabsTrayTestTag.fab).assertExists()
+            composeTestRule.onNodeWithTag(TabsTrayTestTag.FAB).assertExists()
             Log.i(TAG, "openTabDrawerFromRedesignedToolbar: Verified the tabs tray new tab FAB button exists")
 
             TabDrawerRobot(composeTestRule).interact()
             return TabDrawerRobot.Transition(composeTestRule)
         }
 
-        fun openTabDrawer(composeTestRule: HomeActivityComposeTestRule, interact: TabDrawerRobot.() -> Unit): TabDrawerRobot.Transition {
-            Log.i(TAG, "openTabDrawer: Waiting for device to be idle for $waitingTime ms")
-            mDevice.waitForIdle(waitingTime)
-            Log.i(TAG, "openTabDrawer: Device was idle for $waitingTime ms")
-            Log.i(TAG, "openTabDrawer: Trying to click tab counter button")
-            onView(withId(R.id.tab_button)).click()
-            Log.i(TAG, "openTabDrawer: Clicked tab counter button")
+        fun openTabDrawer(interact: TabDrawerRobot.() -> Unit): TabDrawerRobot.Transition {
+            Log.i(TAG, "openTabDrawer: Trying to click the tab counter button")
+            composeTestRule.onNodeWithTag(TABS_COUNTER).performClick()
+            Log.i(TAG, "openTabDrawer: Clicked the tab counter button")
             Log.i(TAG, "openTabDrawer: Trying to verify the tabs tray exists")
-            composeTestRule.onNodeWithTag(TabsTrayTestTag.tabsTray).assertExists()
+            composeTestRule.onNodeWithTag(TabsTrayTestTag.TABS_TRAY).assertExists()
             Log.i(TAG, "openTabDrawer: Verified the tabs tray exists")
+            Log.i(TAG, "openTabDrawer: Trying to verify the tabs tray new tab FAB button exists")
+            composeTestRule.onNodeWithTag(TabsTrayTestTag.FAB).assertExists()
+            Log.i(TAG, "openTabDrawer: Verified the tabs tray new tab FAB button exists")
 
             TabDrawerRobot(composeTestRule).interact()
             return TabDrawerRobot.Transition(composeTestRule)
         }
 
         fun openThreeDotMenu(interact: ThreeDotMenuMainRobot.() -> Unit): ThreeDotMenuMainRobot.Transition {
-            // Issue: https://github.com/mozilla-mobile/fenix/issues/21578
-            try {
-                Log.i(TAG, "openThreeDotMenu: Try block")
-                mDevice.waitNotNull(
-                    Until.findObject(By.res("$packageName:id/menuButton")),
-                    waitingTime,
-                )
-            } catch (e: AssertionError) {
-                Log.i(TAG, "openThreeDotMenu: Catch block")
-                Log.i(TAG, "openThreeDotMenu: Trying to click device back button")
-                mDevice.pressBack()
-                Log.i(TAG, "openThreeDotMenu: Clicked device back button")
-            } finally {
-                Log.i(TAG, "openThreeDotMenu: Finally block")
-                Log.i(TAG, "openThreeDotMenu: Trying to click main menu button")
-                threeDotButton().perform(click())
-                Log.i(TAG, "openThreeDotMenu: Clicked main menu button")
-            }
+            Log.i(TAG, "openThreeDotMenu: Trying to click main menu button")
+            composeTestRule.onNodeWithContentDescription(getStringResource(R.string.content_description_menu)).performClick()
+            Log.i(TAG, "openThreeDotMenu: Clicked main menu button")
+            assertUIObjectExists(itemWithResId("$packageName:id/design_bottom_sheet"))
 
-            ThreeDotMenuMainRobot().interact()
-            return ThreeDotMenuMainRobot.Transition()
+            ThreeDotMenuMainRobot(composeTestRule).interact()
+            return ThreeDotMenuMainRobot.Transition(composeTestRule)
         }
 
-        fun openThreeDotMenuFromRedesignedToolbar(composeTestRule: ComposeTestRule, interact: ThreeDotMenuMainRobotCompose.() -> Unit): ThreeDotMenuMainRobotCompose.Transition {
-            Log.i(TAG, "openThreeDotMenuFromRedesignedToolbar: Trying to click main menu button")
-            itemWithDescription(getStringResource(R.string.content_description_menu)).click()
-            Log.i(TAG, "openThreeDotMenuFromRedesignedToolbar: Clicked main menu button")
-
-            ThreeDotMenuMainRobotCompose(composeTestRule).interact()
-            return ThreeDotMenuMainRobotCompose.Transition(composeTestRule)
-        }
-
+        @OptIn(ExperimentalTestApi::class)
         fun openSearch(interact: SearchRobot.() -> Unit): SearchRobot.Transition {
-            Log.i(TAG, "openSearch: Waiting for $waitingTime ms for the navigation toolbar to exist")
-            navigationToolbar().waitForExists(waitingTime)
-            Log.i(TAG, "openSearch: Waited for $waitingTime ms for the navigation toolbar to exist")
+            composeTestRule.waitUntilAtLeastOneExists(hasTestTag(ADDRESSBAR_URL_BOX), waitingTime)
             Log.i(TAG, "openSearch: Trying to click navigation toolbar")
-            navigationToolbar().click()
+            composeTestRule.onNodeWithTag(ADDRESSBAR_URL_BOX).performClick()
             Log.i(TAG, "openSearch: Clicked navigation toolbar")
-            Log.i(TAG, "openSearch: Waiting for device to be idle")
-            mDevice.waitForIdle()
-            Log.i(TAG, "openSearch: Device was idle")
 
-            SearchRobot().interact()
-            return SearchRobot.Transition()
-        }
-
-        fun clickUpgradingUserOnboardingSignInButton(
-            testRule: ComposeTestRule,
-            interact: SyncSignInRobot.() -> Unit,
-        ): SyncSignInRobot.Transition {
-            Log.i(TAG, "clickUpgradingUserOnboardingSignInButton: Trying to click the upgrading user onboarding \"Sign in\" button")
-            testRule.onNodeWithText("Sign in").performClick()
-            Log.i(TAG, "clickUpgradingUserOnboardingSignInButton: Clicked the upgrading user onboarding \"Sign in\" button")
-
-            SyncSignInRobot().interact()
-            return SyncSignInRobot.Transition()
+            SearchRobot(composeTestRule).interact()
+            return SearchRobot.Transition(composeTestRule)
         }
 
         fun togglePrivateBrowsingMode(switchPBModeOn: Boolean = true) {
@@ -813,8 +615,8 @@ class HomeScreenRobot {
                 Log.i(TAG, "triggerPrivateBrowsingShortcutPrompt: Clicked private browsing button")
             }
 
-            AddToHomeScreenRobot().interact()
-            return AddToHomeScreenRobot.Transition()
+            AddToHomeScreenRobot(composeTestRule).interact()
+            return AddToHomeScreenRobot.Transition(composeTestRule)
         }
 
         fun pressBack() {
@@ -823,66 +625,34 @@ class HomeScreenRobot {
             Log.i(TAG, "pressBack: Clicked device back button")
         }
 
-        fun openNavigationToolbar(interact: NavigationToolbarRobot.() -> Unit): NavigationToolbarRobot.Transition {
-            Log.i(TAG, "openNavigationToolbar: Waiting for $waitingTime ms for navigation the toolbar to exist")
-            mDevice.findObject(UiSelector().resourceId("$packageName:id/toolbar"))
-                .waitForExists(waitingTime)
-            Log.i(TAG, "openNavigationToolbar: Waited for $waitingTime ms for the navigation toolbar to exist")
-            Log.i(TAG, "openNavigationToolbar: Trying to click the navigation toolbar")
-            navigationToolbar().click()
-            Log.i(TAG, "openNavigationToolbar: Clicked the navigation toolbar")
-
-            NavigationToolbarRobot().interact()
-            return NavigationToolbarRobot.Transition()
-        }
-
         fun openContextMenuOnTopSitesWithTitle(
             title: String,
             interact: HomeScreenRobot.() -> Unit,
         ): Transition {
+            Log.i(TAG, "openContextMenuOnTopSitesWithTitle: Trying to scroll to top site with title: $title")
+            composeTestRule.topSiteItem(title).performScrollTo()
+            Log.i(TAG, "openContextMenuOnTopSitesWithTitle: Scrolled to top site with title: $title")
             Log.i(TAG, "openContextMenuOnTopSitesWithTitle: Trying to long click top site with title: $title")
-            onView(withId(R.id.top_sites_list)).perform(
-                actionOnItem<RecyclerView.ViewHolder>(
-                    hasDescendant(withText(title)),
-                    ViewActions.longClick(),
-                ),
-            )
+            composeTestRule.topSiteItem(title).performTouchInput { longClick() }
             Log.i(TAG, "openContextMenuOnTopSitesWithTitle: Long clicked top site with title: $title")
 
-            HomeScreenRobot().interact()
-            return Transition()
-        }
-
-        fun openContextMenuOnSponsoredShortcut(sponsoredShortcutTitle: String, interact: HomeScreenRobot.() -> Unit): Transition {
-            Log.i(TAG, "openContextMenuOnSponsoredShortcut: Trying to long click: $sponsoredShortcutTitle sponsored shortcut")
-            sponsoredShortcut(sponsoredShortcutTitle).perform(longClick())
-            Log.i(TAG, "openContextMenuOnSponsoredShortcut: Long clicked: $sponsoredShortcutTitle sponsored shortcut")
-
-            HomeScreenRobot().interact()
-            return Transition()
+            HomeScreenRobot(composeTestRule).interact()
+            return Transition(composeTestRule)
         }
 
         fun openTopSiteTabWithTitle(
             title: String,
             interact: BrowserRobot.() -> Unit,
         ): BrowserRobot.Transition {
-            Log.i(TAG, "openTopSiteTabWithTitle: Trying to click top site with title $title")
-            onView(withId(R.id.top_sites_list)).perform(
-                actionOnItem<RecyclerView.ViewHolder>(hasDescendant(withText(title)), click()),
-            )
-            Log.i(TAG, "openTopSiteTabWithTitle:Clicked top site with title $title")
+            Log.i(TAG, "openTopSiteTabWithTitle: Trying to scroll to top site with title: $title")
+            composeTestRule.topSiteItem(title).performScrollTo()
+            Log.i(TAG, "openTopSiteTabWithTitle: Scrolled to top site with title: $title")
+            Log.i(TAG, "openTopSiteTabWithTitle: Trying to click top site with title: $title")
+            composeTestRule.topSiteItem(title).performClick()
+            Log.i(TAG, "openTopSiteTabWithTitle: Clicked top site with title: $title")
 
-            BrowserRobot().interact()
-            return BrowserRobot.Transition()
-        }
-
-        fun openSponsoredShortcut(sponsoredShortcutTitle: String, interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
-            Log.i(TAG, "openSponsoredShortcut: Trying to click sponsored top site with title: $sponsoredShortcutTitle")
-            sponsoredShortcut(sponsoredShortcutTitle).click()
-            Log.i(TAG, "openSponsoredShortcut: Clicked sponsored top site with title: $sponsoredShortcutTitle")
-
-            BrowserRobot().interact()
-            return BrowserRobot.Transition()
+            BrowserRobot(composeTestRule).interact()
+            return BrowserRobot.Transition(composeTestRule)
         }
 
         fun editTopSite(
@@ -890,158 +660,122 @@ class HomeScreenRobot {
             url: String,
             interact: HomeScreenRobot.() -> Unit,
         ): Transition {
-            Log.i(TAG, "editTopSite: Trying to click context menu \"Edit\" button")
-            onView(withText("Edit"))
-                .check((matches(withEffectiveVisibility(Visibility.VISIBLE))))
-                .perform(click())
-            Log.i(TAG, "editTopSite: Clicked context menu \"Edit\" button")
-            Log.i(TAG, "editTopSite: Trying to set top site title to: $title")
-            onView(Matchers.allOf(withId(R.id.top_site_title), instanceOf(EditText::class.java)))
-                .perform(ViewActions.replaceText(title))
-            Log.i(TAG, "editTopSite: Set top site title to: $title")
-            Log.i(TAG, "editTopSite: Trying to set top site URL to: $url")
-            onView(Matchers.allOf(withId(R.id.top_site_url), instanceOf(TextInputEditText::class.java)))
-                .perform(ViewActions.replaceText(url))
-            Log.i(TAG, "editTopSite: Set top site title to: $title")
-            Log.i(TAG, "editTopSite: Trying to click \"Save\" edit top site dialog button")
-            onView(withId(android.R.id.button1)).perform((click()))
-            Log.i(TAG, "editTopSite: Clicked \"Save\" edit top site dialog button")
+            Log.i(TAG, "editTopSite: Trying to click the \"Edit\" menu button")
+            composeTestRule.contextMenuItemEdit().performClick()
+            Log.i(TAG, "editTopSite: Clicked the \"Edit\" menu button")
+            itemWithResId("$packageName:id/top_site_title")
+                .also {
+                    Log.i(TAG, "editTopSite: Waiting for $waitingTimeShort ms for top site name text box to exist")
+                    it.waitForExists(waitingTimeShort)
+                    Log.i(TAG, "editTopSite: Waited for $waitingTimeShort ms for top site name text box to exist")
+                    Log.i(TAG, "editTopSite: Trying to set top site name text box text to: $title")
+                    it.setText(title)
+                    Log.i(TAG, "editTopSite: Top site name text box text was set to: $title")
+                }
+            itemWithResId("$packageName:id/top_site_url")
+                .also {
+                    Log.i(TAG, "editTopSite: Waiting for $waitingTimeShort ms for top site url text box to exist")
+                    it.waitForExists(waitingTimeShort)
+                    Log.i(TAG, "editTopSite: Waited for $waitingTimeShort ms for top site url text box to exist")
+                    Log.i(TAG, "editTopSite: Trying to set top site url text box text to: $url")
+                    it.setText(url)
+                    Log.i(TAG, "editTopSite: Top site url text box text was set to: $url")
+                }
+            Log.i(TAG, "editTopSite: Trying to click the \"Save\" dialog button")
+            itemWithResIdContainingText("android:id/button1", "Save").click()
+            Log.i(TAG, "editTopSite: Clicked the \"Save\" dialog button")
 
-            HomeScreenRobot().interact()
-            return Transition()
+            HomeScreenRobot(composeTestRule).interact()
+            return Transition(composeTestRule)
         }
 
+        @OptIn(ExperimentalTestApi::class)
         fun removeTopSite(interact: HomeScreenRobot.() -> Unit): Transition {
-            Log.i(TAG, "removeTopSite: Trying to click context menu \"Remove\" button")
-            onView(withText("Remove"))
-                .check((matches(withEffectiveVisibility(Visibility.VISIBLE))))
-                .perform(click())
-            Log.i(TAG, "removeTopSite: Clicked context menu \"Remove\" button")
+            Log.i(TAG, "removeTopSite: Trying to click the \"Remove\" menu button")
+            composeTestRule.contextMenuItemRemove().performClick()
+            Log.i(TAG, "removeTopSite: Clicked the \"Remove\" menu button")
+            Log.i(TAG, "removeTopSite: Waiting for $waitingTime ms until the \"Remove\" menu button does not exist")
+            composeTestRule.waitUntilDoesNotExist(hasTestTag(TopSitesTestTag.REMOVE), waitingTime)
+            Log.i(TAG, "removeTopSite: Waited for $waitingTime ms until the \"Remove\" menu button does not exist")
 
-            HomeScreenRobot().interact()
-            return Transition()
+            HomeScreenRobot(composeTestRule).interact()
+            return Transition(composeTestRule)
         }
 
-        fun deleteTopSiteFromHistory(interact: HomeScreenRobot.() -> Unit): Transition {
-            Log.i(TAG, "deleteTopSiteFromHistory: Waiting for $waitingTime ms for context menu \"Remove from history\" button to exist")
-            mDevice.findObject(
-                UiSelector().resourceId("$packageName:id/simple_text"),
-            ).waitForExists(waitingTime)
-            Log.i(TAG, "deleteTopSiteFromHistory: Waited for $waitingTime ms for context menu \"Remove from history\" button to exist")
-            Log.i(TAG, "deleteTopSiteFromHistory: Trying to click context menu \"Remove from history\" button")
-            deleteFromHistory().click()
-            Log.i(TAG, "deleteTopSiteFromHistory: Clicked context menu \"Remove from history\" button")
+        fun openTopSiteInPrivateTab(
+            interact: BrowserRobot.() -> Unit,
+        ): BrowserRobot.Transition {
+            Log.i(TAG, "openTopSiteInPrivateTab: Trying to click the \"Open in private tab\" menu button")
+            composeTestRule.contextMenuItemOpenInPrivateTab().performClick()
+            Log.i(TAG, "openTopSiteInPrivateTab: Clicked the \"Open in private tab\" menu button")
+            composeTestRule.waitForIdle()
 
-            HomeScreenRobot().interact()
-            return Transition()
-        }
-
-        fun openTopSiteInPrivateTab(interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
-            Log.i(TAG, "openTopSiteInPrivateTab: Trying to click context menu \"Open in private tab\" button")
-            onView(withText("Open in private tab"))
-                .check((matches(withEffectiveVisibility(Visibility.VISIBLE))))
-                .perform(click())
-            Log.i(TAG, "openTopSiteInPrivateTab: Clicked context menu \"Open in private tab\" button")
-
-            BrowserRobot().interact()
-            return BrowserRobot.Transition()
+            BrowserRobot(composeTestRule).interact()
+            return BrowserRobot.Transition(composeTestRule)
         }
 
         fun clickSponsorsAndPrivacyButton(interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
-            Log.i(TAG, "clickSponsorsAndPrivacyButton: Waiting for $waitingTime ms for context menu \"Our sponsors & your privacy\" button to exist")
-            sponsorsAndPrivacyButton().waitForExists(waitingTime)
-            Log.i(TAG, "clickSponsorsAndPrivacyButton: Waited for $waitingTime ms for context menu \"Our sponsors & your privacy\" button to exist")
             Log.i(TAG, "clickSponsorsAndPrivacyButton: Trying to click \"Our sponsors & your privacy\" context menu button and wait for $waitingTime ms for a new window")
-            sponsorsAndPrivacyButton().clickAndWaitForNewWindow(waitingTime)
+            composeTestRule.onNodeWithText(getStringResource(R.string.top_sites_menu_sponsor_privacy)).performClick()
             Log.i(TAG, "clickSponsorsAndPrivacyButton: Clicked \"Our sponsors & your privacy\" context menu button and waited for $waitingTime ms for a new window")
 
-            BrowserRobot().interact()
-            return BrowserRobot.Transition()
+            BrowserRobot(composeTestRule).interact()
+            return BrowserRobot.Transition(composeTestRule)
         }
 
         fun clickSponsoredShortcutsSettingsButton(interact: SettingsSubMenuHomepageRobot.() -> Unit): SettingsSubMenuHomepageRobot.Transition {
-            Log.i(TAG, "clickSponsoredShortcutsSettingsButton: Waiting for $waitingTime ms for context menu \"Settings\" button to exist")
-            sponsoredShortcutsSettingsButton().waitForExists(waitingTime)
-            Log.i(TAG, "clickSponsoredShortcutsSettingsButton: Waited for $waitingTime ms for context menu \"Settings\" button to exist")
             Log.i(TAG, "clickSponsoredShortcutsSettingsButton: Trying to click \"Settings\" context menu button and wait for $waitingTime for a new window")
-            sponsoredShortcutsSettingsButton().clickAndWaitForNewWindow(waitingTime)
+            composeTestRule.onNodeWithText(getStringResource(R.string.top_sites_menu_settings)).performClick()
             Log.i(TAG, "clickSponsoredShortcutsSettingsButton: Clicked \"Settings\" context menu button and waited for $waitingTime for a new window")
 
             SettingsSubMenuHomepageRobot().interact()
             return SettingsSubMenuHomepageRobot.Transition()
         }
 
-        fun openCommonMythsLink(interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
-            Log.i(TAG, "openCommonMythsLink: Trying to click private browsing home screen common myths link")
-            mDevice.findObject(
-                UiSelector()
-                    .textContains(
-                        getStringResource(R.string.private_browsing_common_myths),
-                    ),
-            ).also { it.click() }
-            Log.i(TAG, "openCommonMythsLink: Clicked private browsing home screen common myths link")
+        fun openPrivateBrowsingModeLearnMoreLink(interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
+            Log.i(TAG, "openPrivateBrowsingModeLearnMoreLink: Trying to click private browsing home screen link")
+            composeTestRule.onNodeWithTag(HOMEPAGE_PRIVATE_BROWSING_LEARN_MORE_LINK).performClick()
+            Log.i(TAG, "openPrivateBrowsingModeLearnMoreLink: Clicked private browsing home screen link")
 
-            BrowserRobot().interact()
-            return BrowserRobot.Transition()
+            BrowserRobot(composeTestRule).interact()
+            return BrowserRobot.Transition(composeTestRule)
         }
 
-        fun clickSaveTabsToCollectionButton(composeTestRule: HomeActivityComposeTestRule, interact: TabDrawerRobot.() -> Unit): TabDrawerRobot.Transition {
-            scrollToElementByText(getStringResource(R.string.no_collections_description2))
+        fun clickSaveTabsToCollectionButton(interact: TabDrawerRobot.() -> Unit): TabDrawerRobot.Transition {
             Log.i(TAG, "clickSaveTabsToCollectionButton: Trying to click save tabs to collection button")
-            saveTabsToCollectionButton().click()
+            saveTabsToCollectionButton(composeTestRule).performClick()
             Log.i(TAG, "clickSaveTabsToCollectionButton: Clicked save tabs to collection button")
             TabDrawerRobot(composeTestRule).interact()
             return TabDrawerRobot.Transition(composeTestRule)
         }
 
         fun expandCollection(title: String, interact: CollectionRobot.() -> Unit): CollectionRobot.Transition {
-            assertUIObjectExists(itemContainingText(title))
-            Log.i(TAG, "expandCollection: Trying to click collection with title: $title and wait for $waitingTimeShort ms for a new window")
-            itemContainingText(title).clickAndWaitForNewWindow(waitingTimeShort)
-            Log.i(TAG, "expandCollection: Clicked collection with title: $title and waited for $waitingTimeShort ms for a new window")
-            assertUIObjectExists(itemWithDescription(getStringResource(R.string.remove_tab_from_collection)))
+            Log.i(TAG, "expandCollection: Trying to click collection with title: $title")
+            composeTestRule.onNodeWithText(title).performClick()
+            Log.i(TAG, "expandCollection: Clicked collection with title: $title")
+            Log.i(TAG, "expandCollection: Waiting for compose test rule to be idle")
+            composeTestRule.waitForIdle()
+            Log.i(TAG, "expandCollection: Waited for compose test rule to be idle")
 
-            CollectionRobot().interact()
-            return CollectionRobot.Transition()
+            CollectionRobot(composeTestRule).interact()
+            return CollectionRobot.Transition(composeTestRule)
         }
 
         fun openRecentlyVisitedSearchGroupHistoryList(title: String, interact: HistoryRobot.() -> Unit): HistoryRobot.Transition {
-            scrollToElementByText("Recently visited")
-            val searchGroup = mDevice.findObject(UiSelector().text(title))
-            Log.i(TAG, "openRecentlyVisitedSearchGroupHistoryList: Waiting for $waitingTimeShort ms for recently visited search group with title: $title to exist")
-            searchGroup.waitForExists(waitingTimeShort)
-            Log.i(TAG, "openRecentlyVisitedSearchGroupHistoryList: Waited for $waitingTimeShort ms for recently visited search group with title: $title to exist")
             Log.i(TAG, "openRecentlyVisitedSearchGroupHistoryList: Trying to click recently visited search group with title: $title")
-            searchGroup.click()
+            composeTestRule.onNodeWithText(title).performClick()
             Log.i(TAG, "openRecentlyVisitedSearchGroupHistoryList: Clicked recently visited search group with title: $title")
 
             HistoryRobot().interact()
-            return HistoryRobot.Transition()
+            return HistoryRobot.Transition(composeTestRule)
         }
 
-        fun openCustomizeHomepage(interact: SettingsSubMenuHomepageRobot.() -> Unit): SettingsSubMenuHomepageRobot.Transition {
-            Log.i(TAG, "openCustomizeHomepage: Trying to perform ${LISTS_MAXSWIPES}x a scroll action to the end of the home screen")
-            homeScreenList().scrollToEnd(LISTS_MAXSWIPES)
-            Log.i(TAG, "openCustomizeHomepage: Performed ${LISTS_MAXSWIPES}x a scroll action to the end of the home screen")
-            Log.i(TAG, "openCustomizeHomepage: Trying to click \"Customize homepage\" button and wait for $waitingTime ms for a new window")
-            mDevice.findObject(
-                UiSelector()
-                    .textContains(
-                        "Customize homepage",
-                    ),
-            ).clickAndWaitForNewWindow(waitingTime)
-            Log.i(TAG, "openCustomizeHomepage: Clicked \"Customize homepage\" button and wait for $waitingTime ms for a new window")
-
-            SettingsSubMenuHomepageRobot().interact()
-            return SettingsSubMenuHomepageRobot.Transition()
-        }
-
-        fun clickJumpBackInShowAllButton(composeTestRule: HomeActivityComposeTestRule, interact: TabDrawerRobot.() -> Unit): TabDrawerRobot.Transition {
+        fun clickJumpBackInShowAllButton(interact: TabDrawerRobot.() -> Unit): TabDrawerRobot.Transition {
             Log.i(TAG, "clickJumpBackInShowAllButton: Trying to click \"Show all\" button and wait for $waitingTime ms for a new window")
             mDevice
                 .findObject(
                     UiSelector()
-                        .textContains(getStringResource(R.string.recent_tabs_show_all)),
+                        .descriptionContains(getStringResource(R.string.recent_tabs_show_all_content_description_2)),
                 ).clickAndWaitForNewWindow(waitingTime)
             Log.i(TAG, "clickJumpBackInShowAllButton: Clicked \"Show all\" button and wait for $waitingTime ms for a new window")
 
@@ -1049,48 +783,20 @@ class HomeScreenRobot {
             return TabDrawerRobot.Transition(composeTestRule)
         }
 
-        fun clickPocketStoryItem(publisher: String, position: Int, interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
-            Log.i(TAG, "clickPocketStoryItem: Trying to click pocket story item published by: $publisher at position: $position and wait for $waitingTime ms for a new window")
+        fun clickPocketStoryItem(position: Int, interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
+            Log.i(TAG, "clickPocketStoryItem: Trying to click pocket story item at position: $position and wait for $waitingTime ms for a new window")
             mDevice.findObject(
                 UiSelector()
-                    .className("android.view.View")
+                    .resourceId(HOMEPAGE_STORY)
                     .index(position - 1),
-            ).getChild(
-                UiSelector()
-                    .className("android.widget.TextView")
-                    .index(1)
-                    .textContains(publisher),
             ).clickAndWaitForNewWindow(waitingTime)
-            Log.i(TAG, "clickPocketStoryItem: Clicked pocket story item published by: $publisher at position: $position and wait for $waitingTime ms for a new window")
+            Log.i(TAG, "clickPocketStoryItem: Clicked pocket story item published at position: $position and wait for $waitingTime ms for a new window")
 
-            BrowserRobot().interact()
-            return BrowserRobot.Transition()
-        }
-
-        fun clickPocketDiscoverMoreButton(composeTestRule: ComposeTestRule, interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
-            Log.i(TAG, "clickPocketDiscoverMoreButton: Trying to scroll into view the \"Discover more\" button")
-            pocketStoriesList().scrollToEnd(3)
-            Log.i(TAG, "clickPocketDiscoverMoreButton: Scrolled into view the \"Discover more\" button")
-
-            Log.i(TAG, "clickPocketDiscoverMoreButton: Trying to click the \"Discover more\" button")
-            composeTestRule.onNodeWithTag("pocket.discover.more.story").performClick()
-            Log.i(TAG, "clickPocketDiscoverMoreButton: Clicked the \"Discover more\" button")
-
-            BrowserRobot().interact()
-            return BrowserRobot.Transition()
-        }
-
-        fun clickPocketLearnMoreLink(composeTestRule: ComposeTestRule, interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
-            Log.i(TAG, "clickPocketLearnMoreLink: Trying to click pocket \"Learn more\" link")
-            composeTestRule.onNodeWithTag("pocket.header.subtitle", true).performClick()
-            Log.i(TAG, "clickPocketLearnMoreLink: Clicked pocket \"Learn more\" link")
-
-            BrowserRobot().interact()
-            return BrowserRobot.Transition()
+            BrowserRobot(composeTestRule).interact()
+            return BrowserRobot.Transition(composeTestRule)
         }
 
         fun clickSetAsDefaultBrowserOnboardingButton(
-            composeTestRule: ComposeTestRule,
             interact: SettingsRobot.() -> Unit,
         ): SettingsRobot.Transition {
             Log.i(TAG, "clickSetAsDefaultBrowserOnboardingButton: Trying to click \"Set as default browser\" onboarding button")
@@ -1104,7 +810,6 @@ class HomeScreenRobot {
         }
 
         fun clickSignInOnboardingButton(
-            composeTestRule: ComposeTestRule,
             interact: SyncSignInRobot.() -> Unit,
         ): SyncSignInRobot.Transition {
             Log.i(TAG, "clickSignInOnboardingButton: Trying to click \"Sign in\" onboarding button")
@@ -1114,31 +819,27 @@ class HomeScreenRobot {
             Log.i(TAG, "clickSignInOnboardingButton: Clicked \"Sign in\" onboarding button")
 
             SyncSignInRobot().interact()
-            return SyncSignInRobot.Transition()
+            return SyncSignInRobot.Transition(composeTestRule)
         }
     }
 }
 
-fun homeScreen(interact: HomeScreenRobot.() -> Unit): HomeScreenRobot.Transition {
-    HomeScreenRobot().interact()
-    return HomeScreenRobot.Transition()
-}
-
-fun homeScreenWithComposeTopSites(composeTestRule: HomeActivityComposeTestRule, interact: TopSitesRobotCompose.() -> Unit): TopSitesRobotCompose.Transition {
-    TopSitesRobotCompose(composeTestRule).interact()
-    return TopSitesRobotCompose.Transition(composeTestRule)
+fun homeScreen(composeTestRule: ComposeTestRule, interact: HomeScreenRobot.() -> Unit): HomeScreenRobot.Transition {
+    HomeScreenRobot(composeTestRule).interact()
+    return HomeScreenRobot.Transition(composeTestRule)
 }
 
 private fun homeScreenList() =
     UiScrollable(
         UiSelector()
-            .resourceId("$packageName:id/sessionControlRecyclerView")
+            .resourceId(HOMEPAGE)
             .scrollable(true),
     ).setAsVerticalList()
 
 private fun threeDotButton() = onView(allOf(withId(R.id.menuButton)))
 
-private fun saveTabsToCollectionButton() = onView(withId(R.id.add_tabs_to_collections_button))
+private fun saveTabsToCollectionButton(composeTestRule: ComposeTestRule) =
+    composeTestRule.onNodeWithText(getStringResource(R.string.tabs_menu_save_to_collection1))
 
 private fun tabsCounterFromRedesignedToolbar() = itemWithResId("$packageName:id/counter_box")
 
@@ -1153,50 +854,34 @@ private fun sponsoredShortcut(sponsoredShortcutTitle: String) =
         ),
     )
 
-private fun storyByTopicItem(composeTestRule: ComposeTestRule, position: Int) =
-    composeTestRule.onNodeWithTag("pocket.categories").onChildAt(position - 1)
-
 private fun homeScreen() =
-    itemWithResId("$packageName:id/homeLayout")
+    itemWithResId("$packageName:id/homepageView")
 private fun privateBrowsingButton() =
-    itemWithResId("$packageName:id/privateBrowsingButton")
+    itemWithResId(PRIVATE_BROWSING_HOMEPAGE_BUTTON)
 
 private fun isPrivateModeEnabled(): Boolean =
-    itemWithResId("$packageName:id/privateBrowsingButton").isChecked
+    itemWithResId(PRIVATE_BROWSING_HOMEPAGE_BUTTON).isChecked
 
-private fun homepageWordmark() =
-    itemWithResId("$packageName:id/wordmark")
+private fun homepageWordmarkLogo() =
+    itemWithResId(HOMEPAGE_WORDMARK_LOGO)
+
+private fun homepageWordmarkText() =
+    itemWithResId(HOMEPAGE_WORDMARK_TEXT)
 
 private fun navigationToolbar() =
-    itemWithResId("$packageName:id/toolbar")
+    itemWithResId("$packageName:id/composable_toolbar")
 private fun menuButton() =
-    itemWithResId("$packageName:id/menuButton")
+    itemWithDescription(getStringResource(R.string.content_description_menu))
 private fun tabCounter(numberOfOpenTabs: String) =
     itemWithResIdAndText("$packageName:id/counter_text", numberOfOpenTabs)
 
 fun deleteFromHistory() =
     onView(
         allOf(
-            withId(R.id.simple_text),
+            withId(menuR.id.simple_text),
             withText(R.string.delete_from_history),
         ),
     ).inRoot(RootMatchers.isPlatformPopup())
-
-private fun sponsoredShortcutsSettingsButton() =
-    mDevice
-        .findObject(
-            UiSelector()
-                .textContains(getStringResource(R.string.top_sites_menu_settings))
-                .resourceId("$packageName:id/simple_text"),
-        )
-
-private fun sponsorsAndPrivacyButton() =
-    mDevice
-        .findObject(
-            UiSelector()
-                .textContains(getStringResource(R.string.top_sites_menu_sponsor_privacy))
-                .resourceId("$packageName:id/simple_text"),
-        )
 
 private fun pocketStoriesList() =
     UiScrollable(UiSelector().resourceId("pocket.stories")).setAsHorizontalList()
@@ -1208,3 +893,12 @@ private fun firefoxOptionSetAsDefaultBrowserDialogRadioButton() =
     ).getFromParent(
         UiSelector().className("android.widget.LinearLayout").index(1),
     )
+
+private fun ComposeTestRule.topSiteItem(title: String) =
+    onAllNodesWithTag(TopSitesTestTag.TOP_SITE_ITEM_ROOT).filter(hasAnyChild(hasText(title))).onFirst()
+
+private fun ComposeTestRule.contextMenuItemOpenInPrivateTab() = onAllNodesWithTag(TopSitesTestTag.OPEN_IN_PRIVATE_TAB).onFirst()
+
+private fun ComposeTestRule.contextMenuItemEdit() = onAllNodesWithTag(TopSitesTestTag.EDIT).onFirst()
+
+private fun ComposeTestRule.contextMenuItemRemove() = onAllNodesWithTag(TopSitesTestTag.REMOVE).onFirst()

@@ -13,18 +13,22 @@ function run_test() {
   );
   const g = createTestGlobal("test1");
 
-  const dbg = makeDebugger();
+  const dbg = makeDebugger({
+    shouldAddNewGlobalAsDebuggee() {
+      return true;
+    },
+  });
   dbg.uncaughtExceptionHook = testExceptionHook;
 
   dbg.addDebuggee(g);
   dbg.onDebuggerStatement = function (frame) {
-    Assert.ok(frame === dbg.getNewestFrame());
+    Assert.strictEqual(frame, dbg.getNewestFrame());
     // Execute from the nested event loop, dbg.getNewestFrame() won't
     // be working anymore.
 
     executeSoon(function () {
       try {
-        Assert.ok(frame === dbg.getNewestFrame());
+        Assert.strictEqual(frame, dbg.getNewestFrame());
       } finally {
         xpcInspector.exitNestedEventLoop("test");
       }

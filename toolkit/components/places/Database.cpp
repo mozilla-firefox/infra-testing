@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/ArrayUtils.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/SpinEventLoopUntil.h"
@@ -33,7 +31,6 @@
 #include "nsPrintfCString.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
-#include "mozilla/Unused.h"
 #include "mozIStorageService.h"
 #include "prtime.h"
 
@@ -86,9 +83,6 @@
 #define DATABASE_JOURNAL_OVERHEAD_BYTES 2048000
 
 #define BYTES_PER_KIBIBYTE 1024
-
-// How much time Sqlite can wait before returning a SQLITE_BUSY error.
-#define DATABASE_BUSY_TIMEOUT_MS 100
 
 // This annotation is no longer used & is obsolete, but here for migration.
 #define LAST_USED_ANNO "bookmarkPropertiesDialog/folderLastUsed"_ns
@@ -353,7 +347,7 @@ nsresult AttachDatabase(nsCOMPtr<mozIStorageConnection>& aDBConn,
   nsAutoCString journalSizePragma("PRAGMA favicons.journal_size_limit = ");
   journalSizePragma.AppendInt(DATABASE_MAX_WAL_BYTES +
                               DATABASE_JOURNAL_OVERHEAD_BYTES);
-  Unused << aDBConn->ExecuteSimpleSQL(journalSizePragma);
+  (void)aDBConn->ExecuteSimpleSQL(journalSizePragma);
 
   return NS_OK;
 }
@@ -776,7 +770,7 @@ nsresult Database::EnsureFaviconsDatabaseAttached(
     // in a transaction for performances.
     mozStorageTransaction transaction(conn, false);
     // XXX Handle the error, bug 1696133.
-    Unused << NS_WARN_IF(NS_FAILED(transaction.Start()));
+    (void)NS_WARN_IF(NS_FAILED(transaction.Start()));
     rv = conn->ExecuteSimpleSQL(CREATE_MOZ_ICONS);
     NS_ENSURE_SUCCESS(rv, rv);
     rv = conn->ExecuteSimpleSQL(CREATE_IDX_MOZ_ICONS_ICONURLHASH);
@@ -847,8 +841,8 @@ nsresult Database::BackupAndReplaceDatabaseFile(
     }
 
     nsCOMPtr<nsIFile> backup;
-    Unused << BackupDatabaseFile(databaseFile, corruptFilename, profDir,
-                                 getter_AddRefs(backup));
+    (void)BackupDatabaseFile(databaseFile, corruptFilename, profDir,
+                             getter_AddRefs(backup));
   }
 
   // If anything fails from this point on, we have a stale connection or
@@ -944,7 +938,7 @@ nsresult Database::TryToCloneTablesFromCorruptDatabase(
   nsCOMPtr<mozIStorageConnection> conn;
   auto guard = MakeScopeExit([&]() {
     if (conn) {
-      Unused << conn->Close();
+      (void)conn->Close();
     }
     RemoveFileSwallowsErrors(recoverFile);
   });
@@ -959,7 +953,7 @@ nsresult Database::TryToCloneTablesFromCorruptDatabase(
   mozStorageTransaction transaction(conn, false);
 
   // XXX Handle the error, bug 1696133.
-  Unused << NS_WARN_IF(NS_FAILED(transaction.Start()));
+  (void)NS_WARN_IF(NS_FAILED(transaction.Start()));
 
   // Copy the schema version.
   nsCOMPtr<mozIStorageStatement> stmt;
@@ -1160,7 +1154,7 @@ nsresult Database::InitSchema(bool* aDatabaseMigrated) {
   mozStorageTransaction transaction(mMainConn, false);
 
   // XXX Handle the error, bug 1696133.
-  Unused << NS_WARN_IF(NS_FAILED(transaction.Start()));
+  (void)NS_WARN_IF(NS_FAILED(transaction.Start()));
 
   if (databaseInitialized) {
     // Migration How-to:
@@ -1328,6 +1322,44 @@ nsresult Database::InitSchema(bool* aDatabaseMigrated) {
 
       // Firefox 132 uses schema version 78
 
+      if (currentSchemaVersion < 79) {
+        rv = MigrateV79Up();
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
+
+      // Firefox 140 uses schema version 79
+
+      if (currentSchemaVersion < 80) {
+        rv = MigrateV80Up();
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
+
+      // Firefox 140 uses schema version 80
+
+      if (currentSchemaVersion < 81) {
+        rv = MigrateV81Up();
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
+
+      if (currentSchemaVersion < 82) {
+        rv = MigrateV82Up();
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
+
+      // Firefox 141 uses schema version 82
+
+      if (currentSchemaVersion < 83) {
+        rv = MigrateV83Up();
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
+
+      if (currentSchemaVersion < 84) {
+        rv = MigrateV84Up();
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
+
+      // Firefox 147 uses schema version 84
+
       // Schema Upgrades must add migration code here.
       // >>> IMPORTANT! <<<
       // NEVER MIX UP SYNC AND ASYNC EXECUTION IN MIGRATORS, YOU MAY LOCK THE
@@ -1438,6 +1470,29 @@ nsresult Database::InitSchema(bool* aDatabaseMigrated) {
 
     // moz_previews_tombstones
     rv = mMainConn->ExecuteSimpleSQL(CREATE_MOZ_PREVIEWS_TOMBSTONES);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    // moz_newtab_story
+    rv = mMainConn->ExecuteSimpleSQL(CREATE_MOZ_NEWTAB_STORY_CLICK);
+    NS_ENSURE_SUCCESS(rv, rv);
+    rv = mMainConn->ExecuteSimpleSQL(CREATE_MOZ_NEWTAB_STORY_IMPRESSION);
+    NS_ENSURE_SUCCESS(rv, rv);
+    // Add newtab_story timestamp index.
+    rv = mMainConn->ExecuteSimpleSQL(
+        CREATE_IDX_MOZ_NEWTAB_STORY_CLICK_TIMESTAMP);
+    NS_ENSURE_SUCCESS(rv, rv);
+    rv =
+        mMainConn->ExecuteSimpleSQL(CREATE_IDX_MOZ_NEWTAB_IMPRESSION_TIMESTAMP);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    // moz_newtab_shortcuts_interaction
+    rv = mMainConn->ExecuteSimpleSQL(CREATE_MOZ_NEWTAB_SHORTCUTS_INTERACTION);
+    NS_ENSURE_SUCCESS(rv, rv);
+    // Add moz_newtab_shortcuts_interaction timestamp index.
+    rv = mMainConn->ExecuteSimpleSQL(CREATE_IDX_MOZ_NEWTAB_SHORTCUTS_TIMESTAMP);
+    NS_ENSURE_SUCCESS(rv, rv);
+    // Add moz_newtab_shortcuts_interaction place_id index
+    rv = mMainConn->ExecuteSimpleSQL(CREATE_IDX_MOZ_NEWTAB_SHORTCUTS_PLACEID);
     NS_ENSURE_SUCCESS(rv, rv);
 
     // The bookmarks roots get initialized in CheckRoots().
@@ -1616,7 +1671,7 @@ nsresult Database::EnsureBookmarkRoots(const int32_t startPosition,
       "END"));
   if (NS_FAILED(rv)) return rv;
   auto guard = MakeScopeExit([&]() {
-    Unused << mMainConn->ExecuteSimpleSQL(
+    (void)mMainConn->ExecuteSimpleSQL(
         "DROP TRIGGER moz_ensure_bookmark_roots_trigger"_ns);
   });
 
@@ -1677,8 +1732,6 @@ nsresult Database::InitFunctions(mozIStorageConnection* aMainConn) {
   rv = GetHostAndPortFunction::create(aMainConn);
   NS_ENSURE_SUCCESS(rv, rv);
   rv = StripPrefixAndUserinfoFunction::create(aMainConn);
-  NS_ENSURE_SUCCESS(rv, rv);
-  rv = IsFrecencyDecayingFunction::create(aMainConn);
   NS_ENSURE_SUCCESS(rv, rv);
   rv = NoteSyncChangeFunction::create(aMainConn);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -1765,26 +1818,38 @@ nsresult Database::InitTempEntities() {
   rv = mMainConn->ExecuteSimpleSQL(CREATE_PLACES_METADATA_AFTERDELETE_TRIGGER);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (StaticPrefs::places_frecency_pages_alternative_featureGate_AtStartup()) {
-    int32_t viewTimeMs =
-        StaticPrefs::
-            places_frecency_pages_alternative_interactions_viewTimeSeconds_AtStartup() *
-        1000;
-    int32_t viewTimeIfManyKeypressesMs =
-        StaticPrefs::
-            places_frecency_pages_alternative_interactions_viewTimeIfManyKeypressesSeconds_AtStartup() *
-        1000;
-    int32_t manyKeypresses = StaticPrefs::
-        places_frecency_pages_alternative_interactions_manyKeypresses_AtStartup();
+  // Thresholds chosen for elevating a visit to a higher bucket.
+  bool useAlternative =
+      StaticPrefs::places_frecency_pages_alternative_featureGate_AtStartup();
+  int32_t viewTimeMs =
+      (useAlternative
+           ? StaticPrefs::
+                     places_frecency_pages_alternative_interactions_viewTimeSeconds_AtStartup() *
+                 1000
+           : StaticPrefs::
+                     places_frecency_pages_interactions_viewTimeSeconds_AtStartup() *
+                 1000);
+  int32_t viewTimeIfManyKeypressesMs =
+      (useAlternative
+           ? StaticPrefs::
+                     places_frecency_pages_alternative_interactions_viewTimeIfManyKeypressesSeconds_AtStartup() *
+                 1000
+           : StaticPrefs::
+                     places_frecency_pages_interactions_viewTimeIfManyKeypressesSeconds_AtStartup() *
+                 1000);
+  int32_t manyKeypresses =
+      (useAlternative
+           ? StaticPrefs::
+                 places_frecency_pages_alternative_interactions_manyKeypresses_AtStartup()
+           : StaticPrefs::
+                 places_frecency_pages_interactions_manyKeypresses_AtStartup());
+  rv = mMainConn->ExecuteSimpleSQL(CREATE_PLACES_METADATA_AFTERINSERT_TRIGGER(
+      viewTimeMs, viewTimeIfManyKeypressesMs, manyKeypresses));
+  NS_ENSURE_SUCCESS(rv, rv);
 
-    rv = mMainConn->ExecuteSimpleSQL(CREATE_PLACES_METADATA_AFTERINSERT_TRIGGER(
-        viewTimeMs, viewTimeIfManyKeypressesMs, manyKeypresses));
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    rv = mMainConn->ExecuteSimpleSQL(CREATE_PLACES_METADATA_AFTERUPDATE_TRIGGER(
-        viewTimeMs, viewTimeIfManyKeypressesMs, manyKeypresses));
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
+  rv = mMainConn->ExecuteSimpleSQL(CREATE_PLACES_METADATA_AFTERUPDATE_TRIGGER(
+      viewTimeMs, viewTimeIfManyKeypressesMs, manyKeypresses));
+  NS_ENSURE_SUCCESS(rv, rv);
 
   // Create triggers to remove rows with empty json
   rv = mMainConn->ExecuteSimpleSQL(CREATE_MOZ_PLACES_EXTRA_AFTERUPDATE_TRIGGER);
@@ -2154,6 +2219,82 @@ nsresult Database::MigrateV78Up() {
   return NS_OK;
 }
 
+nsresult Database::MigrateV79Up() {
+  // Add newtab_story tables for moz_newtab_story_click and
+  // moz_newtab_story_impression
+  nsCOMPtr<mozIStorageStatement> stmt;
+  nsresult rv = mMainConn->CreateStatement(
+      "SELECT feature FROM moz_newtab_story_click"_ns, getter_AddRefs(stmt));
+  if (NS_FAILED(rv)) {
+    nsresult rv = mMainConn->ExecuteSimpleSQL(CREATE_MOZ_NEWTAB_STORY_CLICK);
+    NS_ENSURE_SUCCESS(rv, rv);
+    rv = mMainConn->ExecuteSimpleSQL(CREATE_MOZ_NEWTAB_STORY_IMPRESSION);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+  return NS_OK;
+}
+
+nsresult Database::MigrateV80Up() {
+  // v79 indices had a typo so we're recreating them here.
+  nsresult rv =
+      mMainConn->ExecuteSimpleSQL(CREATE_IDX_MOZ_NEWTAB_STORY_CLICK_TIMESTAMP);
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = mMainConn->ExecuteSimpleSQL(CREATE_IDX_MOZ_NEWTAB_IMPRESSION_TIMESTAMP);
+  NS_ENSURE_SUCCESS(rv, rv);
+  return NS_OK;
+}
+
+nsresult Database::MigrateV81Up() {
+  // v79 indices had a typo, v80 tried to remove them but it got the names
+  // wrong, so we're effectively removing them here.
+  nsresult rv = mMainConn->ExecuteSimpleSQL(
+      "DROP INDEX IF EXISTS moz_newtab_story_click_idx_newtab_click_timestamp"_ns);
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = mMainConn->ExecuteSimpleSQL(
+      "DROP INDEX IF EXISTS moz_newtab_story_click_idx_newtab_impression_timestamp"_ns);
+  NS_ENSURE_SUCCESS(rv, rv);
+  return NS_OK;
+}
+
+nsresult Database::MigrateV82Up() {
+  // Create moz_newtab_shortcuts_interaction table and associated indexes.
+  nsCOMPtr<mozIStorageStatement> stmt;
+  nsresult rv = mMainConn->CreateStatement(
+      "SELECT id FROM moz_newtab_shortcuts_interaction"_ns,
+      getter_AddRefs(stmt));
+  if (NS_FAILED(rv)) {
+    rv = mMainConn->ExecuteSimpleSQL(CREATE_MOZ_NEWTAB_SHORTCUTS_INTERACTION);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    // Add moz_newtab_shortcuts_interaction timestamp index
+    rv = mMainConn->ExecuteSimpleSQL(CREATE_IDX_MOZ_NEWTAB_SHORTCUTS_TIMESTAMP);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    // Add moz_newtab_shortcuts_interaction place_id index
+    rv = mMainConn->ExecuteSimpleSQL(CREATE_IDX_MOZ_NEWTAB_SHORTCUTS_PLACEID);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+  return NS_OK;
+}
+
+nsresult Database::MigrateV83Up() {
+  // Recalculate frecency due to changing calculate_frecency.
+  nsresult rv = mMainConn->ExecuteSimpleSQL(
+      "UPDATE moz_places SET recalc_frecency = 1 WHERE frecency > 0"_ns);
+  NS_ENSURE_SUCCESS(rv, rv);
+  return NS_OK;
+}
+
+nsresult Database::MigrateV84Up() {
+  // Recalculate frecency due to changing calculate_frecency.
+  nsresult rv = mMainConn->ExecuteSimpleSQL(
+      "UPDATE moz_origins "
+      "SET recalc_frecency = 1 "
+      "WHERE frecency > 1"_ns);
+  NS_ENSURE_SUCCESS(rv, rv);
+  return NS_OK;
+}
+
 int64_t Database::CreateMobileRoot() {
   MOZ_ASSERT(NS_IsMainThread());
 
@@ -2308,8 +2449,7 @@ void Database::Shutdown() {
       "PRAGMA optimize(0x02)"_ns, nullptr, getter_AddRefs(ps)));
 
   if (NS_FAILED(mMainConn->AsyncClose(connectionShutdown))) {
-    mozilla::Unused << connectionShutdown->Complete(NS_ERROR_UNEXPECTED,
-                                                    nullptr);
+    (void)connectionShutdown->Complete(NS_ERROR_UNEXPECTED, nullptr);
   }
   mMainConn = nullptr;
 }

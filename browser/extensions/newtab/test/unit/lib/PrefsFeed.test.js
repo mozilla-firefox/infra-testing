@@ -90,6 +90,29 @@ describe("PrefsFeed", () => {
     const [{ data }] = feed.store.dispatch.firstCall.args;
     assert.deepEqual(data.featureConfig, { prefsButtonIcon: "icon-foo" });
   });
+  it("should dispatch PREFS_INITIAL_VALUES with trainhopConfig", () => {
+    const testObject = {
+      meta: { isRollout: false },
+      value: {
+        type: "testExperiment",
+        payload: { enabled: true },
+      },
+    };
+    sandbox
+      .stub(global.NimbusFeatures.newtabTrainhop, "getAllEnrollments")
+      .returns([testObject]);
+
+    feed.onAction({ type: at.INIT });
+
+    assert.equal(
+      feed.store.dispatch.firstCall.args[0].type,
+      at.PREFS_INITIAL_VALUES
+    );
+    const [{ data }] = feed.store.dispatch.firstCall.args;
+    assert.deepEqual(data.trainhopConfig, {
+      testExperiment: { enabled: true },
+    });
+  });
   it("should dispatch PREFS_INITIAL_VALUES with an empty object if no experiment is returned", () => {
     sandbox.stub(global.NimbusFeatures.newtab, "getAllVariables").returns(null);
     feed.onAction({ type: at.INIT });
@@ -192,11 +215,269 @@ describe("PrefsFeed", () => {
       })
     );
   });
+  describe("newtabTrainhop", () => {
+    it("should send a PREF_CHANGED actions when onTrainhopExperimentUpdated is called", () => {
+      const testObject = {
+        meta: {
+          isRollout: false,
+        },
+        value: {
+          type: "testExperiment",
+          payload: {
+            enabled: true,
+          },
+        },
+      };
+      sandbox
+        .stub(global.NimbusFeatures.newtabTrainhop, "getAllEnrollments")
+        .returns([testObject]);
+      feed.onTrainhopExperimentUpdated();
+      assert.calledWith(
+        feed.store.dispatch,
+        ac.BroadcastToContent({
+          type: at.PREF_CHANGED,
+          data: {
+            name: "trainhopConfig",
+            value: {
+              testExperiment: testObject.value.payload,
+            },
+          },
+        })
+      );
+    });
+    it("should handle and dedupe multiple experiments and rollouts", () => {
+      const testObject1 = {
+        meta: {
+          isRollout: false,
+        },
+        value: {
+          type: "testExperiment1",
+          payload: {
+            enabled: true,
+          },
+        },
+      };
+      const testObject2 = {
+        meta: {
+          isRollout: false,
+        },
+        value: {
+          type: "testExperiment1",
+          payload: {
+            enabled: false,
+          },
+        },
+      };
+      const testObject3 = {
+        meta: {
+          isRollout: true,
+        },
+        value: {
+          type: "testExperiment2",
+          payload: {
+            enabled: true,
+          },
+        },
+      };
+      const testObject4 = {
+        meta: {
+          isRollout: false,
+        },
+        value: {
+          type: "testExperiment2",
+          payload: {
+            enabled: false,
+          },
+        },
+      };
+      sandbox
+        .stub(global.NimbusFeatures.newtabTrainhop, "getAllEnrollments")
+        .returns([testObject1, testObject2, testObject3, testObject4]);
+      feed.onTrainhopExperimentUpdated();
+      assert.calledWith(
+        feed.store.dispatch,
+        ac.BroadcastToContent({
+          type: at.PREF_CHANGED,
+          data: {
+            name: "trainhopConfig",
+            value: {
+              testExperiment1: testObject1.value.payload,
+              testExperiment2: testObject4.value.payload,
+            },
+          },
+        })
+      );
+    });
+    it("should handle multi-payload format with single enrollment", () => {
+      const testObject = {
+        meta: {
+          isRollout: false,
+        },
+        value: {
+          type: "multi-payload",
+          payload: [
+            {
+              type: "testExperiment",
+              payload: {
+                enabled: true,
+                name: "test-name",
+              },
+            },
+          ],
+        },
+      };
+      sandbox
+        .stub(global.NimbusFeatures.newtabTrainhop, "getAllEnrollments")
+        .returns([testObject]);
+      feed.onTrainhopExperimentUpdated();
+      assert.calledWith(
+        feed.store.dispatch,
+        ac.BroadcastToContent({
+          type: at.PREF_CHANGED,
+          data: {
+            name: "trainhopConfig",
+            value: {
+              testExperiment: {
+                enabled: true,
+                name: "test-name",
+              },
+            },
+          },
+        })
+      );
+    });
+    it("should handle multi-payload format with multiple items in single enrollment", () => {
+      const testObject = {
+        meta: {
+          isRollout: false,
+        },
+        value: {
+          type: "multi-payload",
+          payload: [
+            {
+              type: "testExperiment1",
+              payload: {
+                enabled: true,
+              },
+            },
+            {
+              type: "testExperiment2",
+              payload: {
+                enabled: false,
+              },
+            },
+          ],
+        },
+      };
+      sandbox
+        .stub(global.NimbusFeatures.newtabTrainhop, "getAllEnrollments")
+        .returns([testObject]);
+      feed.onTrainhopExperimentUpdated();
+      assert.calledWith(
+        feed.store.dispatch,
+        ac.BroadcastToContent({
+          type: at.PREF_CHANGED,
+          data: {
+            name: "trainhopConfig",
+            value: {
+              testExperiment1: {
+                enabled: true,
+              },
+              testExperiment2: {
+                enabled: false,
+              },
+            },
+          },
+        })
+      );
+    });
+    it("should dedupe multi-payload format with experiment taking precedence over rollout", () => {
+      const rollout = {
+        meta: {
+          isRollout: true,
+        },
+        value: {
+          type: "multi-payload",
+          payload: [
+            {
+              type: "testExperiment",
+              payload: {
+                enabled: false,
+                name: "rollout-name",
+              },
+            },
+          ],
+        },
+      };
+      const experiment = {
+        meta: {
+          isRollout: false,
+        },
+        value: {
+          type: "multi-payload",
+          payload: [
+            {
+              type: "testExperiment",
+              payload: {
+                enabled: true,
+                name: "experiment-name",
+              },
+            },
+          ],
+        },
+      };
+      sandbox
+        .stub(global.NimbusFeatures.newtabTrainhop, "getAllEnrollments")
+        .returns([rollout, experiment]);
+      feed.onTrainhopExperimentUpdated();
+      assert.calledWith(
+        feed.store.dispatch,
+        ac.BroadcastToContent({
+          type: at.PREF_CHANGED,
+          data: {
+            name: "trainhopConfig",
+            value: {
+              testExperiment: {
+                enabled: true,
+                name: "experiment-name",
+              },
+            },
+          },
+        })
+      );
+    });
+  });
+  it("should dispatch PREF_CHANGED when onWidgetsUpdated is called", () => {
+    sandbox
+      .stub(global.NimbusFeatures.newtabWidgets, "getAllVariables")
+      .returns({
+        enabled: true,
+        listsEnabled: true,
+        timerEnabled: false,
+      });
 
+    feed.onWidgetsUpdated();
+
+    assert.calledWith(
+      feed.store.dispatch,
+      ac.BroadcastToContent({
+        type: at.PREF_CHANGED,
+        data: {
+          name: "widgetsConfig",
+          value: {
+            enabled: true,
+            listsEnabled: true,
+            timerEnabled: false,
+          },
+        },
+      })
+    );
+  });
   it("should remove all events on removeListeners", () => {
     feed.geo = "";
     sandbox.spy(global.NimbusFeatures.pocketNewtab, "offUpdate");
     sandbox.spy(global.NimbusFeatures.newtab, "offUpdate");
+    sandbox.spy(global.NimbusFeatures.newtabTrainhop, "offUpdate");
     feed.removeListeners();
     assert.calledWith(
       global.NimbusFeatures.pocketNewtab.offUpdate,
@@ -205,6 +486,10 @@ describe("PrefsFeed", () => {
     assert.calledWith(
       global.NimbusFeatures.newtab.offUpdate,
       feed.onExperimentUpdated
+    );
+    assert.calledWith(
+      global.NimbusFeatures.newtabTrainhop.offUpdate,
+      feed.onTrainhopExperimentUpdated
     );
     assert.calledWith(
       ServicesStub.obs.removeObserver,

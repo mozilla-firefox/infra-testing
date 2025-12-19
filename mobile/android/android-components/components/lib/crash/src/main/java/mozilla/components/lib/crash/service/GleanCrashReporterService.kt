@@ -35,6 +35,7 @@ import mozilla.components.lib.crash.GleanMetrics.Pings
 import mozilla.components.lib.crash.MinidumpAnalyzer
 import mozilla.components.lib.crash.db.Breadcrumb
 import mozilla.components.lib.crash.db.toBreadcrumb
+import mozilla.components.lib.crash.service.CrashReport.Annotation
 import mozilla.components.support.base.log.logger.Logger
 import mozilla.components.support.ktx.android.content.isMainProcess
 import mozilla.telemetry.glean.private.BooleanMetricType
@@ -62,7 +63,10 @@ class GleanCrashReporterService(
     val context: Context,
     @get:VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
     internal val file: File = File(context.applicationInfo.dataDir, CRASH_FILE_NAME),
-) : CrashTelemetryService {
+    private val appChannel: String? = null,
+    private val appVersion: String? = null,
+    private val appBuildId: String? = null,
+    ) : CrashTelemetryService {
     companion object {
         // This file is stored in the application's data directory, so it should be located in the
         // same location as the application.
@@ -127,41 +131,47 @@ class GleanCrashReporterService(
                     // We ignore RemoteType and UptimeTS from extras as we have that information in
                     // the Crash object or tracked manually (respectively).
 
-                    GleanCrash.appChannel.setIfNonNull(extras["ReleaseChannel"])
-                    GleanCrash.appDisplayVersion.setIfNonNull(extras["Version"])
-                    GleanCrash.appBuild.setIfNonNull(extras["BuildID"])
-                    GleanCrash.asyncShutdownTimeout.setAsyncShutdownTimeoutIfNonNull(extras["AsyncShutdownTimeout"])
-                    GleanCrash.backgroundTaskName.setIfNonNull(extras["BackgroundTaskName"])
-                    GleanCrash.eventLoopNestingLevel.setIfNonNull(extras["EventLoopNestingLevel"])
-                    GleanCrash.fontName.setIfNonNull(extras["FontName"])
-                    GleanCrash.gpuProcessLaunch.setIfNonNull(extras["GPUProcessLaunchCount"])
-                    GleanCrash.ipcChannelError.setIfNonNull(extras["ipc_channel_error"])
-                    GleanCrash.isGarbageCollecting.setIfNonNull(extras["IsGarbageCollecting"])
-                    GleanCrash.mainThreadRunnableName.setIfNonNull(extras["MainThreadRunnableName"])
-                    GleanCrash.mozCrashReason.setIfNonNull(extras["MozCrashReason"])
-                    GleanCrash.profilerChildShutdownPhase.setIfNonNull(extras["ProfilerChildShutdownPhase"])
-                    GleanCrash.quotaManagerShutdownTimeout.setQuotaManagerShutdownTimeoutIfNonNull(
-                        extras["QuotaManagerShutdownTimeout"],
+                    val read: (Annotation) -> JsonElement? = { a -> extras[a.toString()] }
+
+                    GleanCrash.appChannel.setIfNonNull(read(Annotation.ReleaseChannel))
+                    GleanCrash.appDisplayVersion.setIfNonNull(read(Annotation.Version))
+                    GleanCrash.appBuild.setIfNonNull(read(Annotation.BuildID))
+                    GleanCrash.asyncShutdownTimeout.setAsyncShutdownTimeoutIfNonNull(
+                        read(Annotation.AsyncShutdownTimeout),
                     )
-                    GleanCrash.shutdownProgress.setIfNonNull(extras["ShutdownProgress"])
-                    GleanCrash.stackTraces.setStackTracesIfNonNull(extras["StackTraces"])
+                    GleanCrash.backgroundTaskName.setIfNonNull(read(Annotation.BackgroundTaskName))
+                    GleanCrash.eventLoopNestingLevel.setIfNonNull(read(Annotation.EventLoopNestingLevel))
+                    GleanCrash.fontName.setIfNonNull(read(Annotation.FontName))
+                    GleanCrash.gpuProcessLaunch.setIfNonNull(read(Annotation.GPUProcessLaunchCount))
+                    GleanCrash.ipcChannelError.setIfNonNull(read(Annotation.ipc_channel_error))
+                    GleanCrash.isGarbageCollecting.setIfNonNull(read(Annotation.IsGarbageCollecting))
+                    GleanCrash.mainThreadRunnableName.setIfNonNull(read(Annotation.MainThreadRunnableName))
+                    GleanCrash.mozCrashReason.setIfNonNull(read(Annotation.MozCrashReason))
+                    GleanCrash.profilerChildShutdownPhase.setIfNonNull(read(Annotation.ProfilerChildShutdownPhase))
+                    GleanCrash.quotaManagerShutdownTimeout.setQuotaManagerShutdownTimeoutIfNonNull(
+                        read(Annotation.QuotaManagerShutdownTimeout),
+                    )
+                    GleanCrash.shutdownProgress.setIfNonNull(read(Annotation.ShutdownProgress))
+                    GleanCrash.stackTraces.setStackTracesIfNonNull(read(Annotation.StackTraces))
                     // Overrides the original `startup` parameter to `Ping` when present
-                    GleanCrash.startup.setIfNonNull(extras["StartupCrash"])
+                    GleanCrash.startup.setIfNonNull(read(Annotation.StartupCrash))
 
-                    GleanEnvironment.headlessMode.setIfNonNull(extras["HeadlessMode"])
+                    GleanEnvironment.headlessMode.setIfNonNull(read(Annotation.HeadlessMode))
 
-                    GleanMemory.availableCommit.setIfNonNull(extras["AvailablePageFile"])
-                    GleanMemory.availablePhysical.setIfNonNull(extras["AvailablePhysicalMemory"])
-                    GleanMemory.availableSwap.setIfNonNull(extras["AvailableSwapMemory"])
-                    GleanMemory.availableVirtual.setIfNonNull(extras["AvailableVirtualMemory"])
-                    GleanMemory.lowPhysical.setIfNonNull(extras["LowPhysicalMemoryEvents"])
-                    GleanMemory.oomAllocationSize.setIfNonNull(extras["OOMAllocationSize"])
-                    GleanMemory.purgeablePhysical.setIfNonNull(extras["PurgeablePhysicalMemory"])
-                    GleanMemory.systemUsePercentage.setIfNonNull(extras["SystemMemoryUsePercentage"])
-                    GleanMemory.texture.setIfNonNull(extras["TextureUsage"])
-                    GleanMemory.totalPageFile.setIfNonNull(extras["TotalPageFile"])
-                    GleanMemory.totalPhysical.setIfNonNull(extras["TotalPhysicalMemory"])
-                    GleanMemory.totalVirtual.setIfNonNull(extras["TotalVirtualMemory"])
+                    GleanMemory.availableCommit.setIfNonNull(read(Annotation.AvailablePageFile))
+                    GleanMemory.availablePhysical.setIfNonNull(read(Annotation.AvailablePhysicalMemory))
+                    GleanMemory.availableSwap.setIfNonNull(read(Annotation.AvailableSwapMemory))
+                    GleanMemory.availableVirtual.setIfNonNull(read(Annotation.AvailableVirtualMemory))
+                    GleanMemory.jsLargeAllocationFailure.setIfNonNull(read(Annotation.JSLargeAllocationFailure))
+                    GleanMemory.jsOutOfMemory.setIfNonNull(read(Annotation.JSOutOfMemory))
+                    GleanMemory.lowPhysical.setIfNonNull(read(Annotation.LowPhysicalMemoryEvents))
+                    GleanMemory.oomAllocationSize.setIfNonNull(read(Annotation.OOMAllocationSize))
+                    GleanMemory.purgeablePhysical.setIfNonNull(read(Annotation.PurgeablePhysicalMemory))
+                    GleanMemory.systemUsePercentage.setIfNonNull(read(Annotation.SystemMemoryUsePercentage))
+                    GleanMemory.texture.setIfNonNull(read(Annotation.TextureUsage))
+                    GleanMemory.totalPageFile.setIfNonNull(read(Annotation.TotalPageFile))
+                    GleanMemory.totalPhysical.setIfNonNull(read(Annotation.TotalPhysicalMemory))
+                    GleanMemory.totalVirtual.setIfNonNull(read(Annotation.TotalVirtualMemory))
                 }
 
                 private fun StringMetricType.setIfNonNull(element: JsonElement?) {
@@ -296,10 +306,15 @@ class GleanCrashReporterService(
             @SerialName("java_exception")
             data class JavaException(
                 val throwableJson: JsonElement,
-                val breadcrumbs: List<Breadcrumb>? = null,
+                val appChannel: String? = null,
+                val appVersion: String? = null,
+                val appBuildId: String? = null,
             ) : PingCause() {
                 override fun setMetrics() {
                     GleanCrash.cause.set("java_exception")
+                    appChannel?.let { GleanCrash.appChannel.set(it) }
+                    appBuildId?.let { GleanCrash.appBuild.set(it) }
+                    appVersion?.let { GleanCrash.appDisplayVersion.set(it) }
                     GleanCrash.javaException.set(
                         Json.decodeFromJsonElement<GleanCrash.JavaExceptionObject>(throwableJson),
                     )
@@ -319,6 +334,14 @@ class GleanCrashReporterService(
             val startup: Boolean = false,
         ) : GleanCrashAction() {
             override fun submit() {
+                // Disabling and enabling the crash ping will clear the
+                // associated stored metrics. We want to clear the metrics in
+                // case a previous crash submission attempt was aborted due to
+                // an unexpected exception and the metrics were left
+                // partially-populated. See bug 1961202.
+                Pings.crash.setEnabled(false)
+                Pings.crash.setEnabled(true)
+
                 GleanEnvironment.uptime.setRawNanos(uptimeNanos)
                 GleanCrash.processType.set(processType)
                 GleanCrash.time.set(Date(timeMillis))
@@ -434,7 +457,6 @@ class GleanCrashReporterService(
      * could happen, for instance, if the application crashed again before the file could be
      * processed.
      */
-    @Suppress("ComplexMethod")
     @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
     internal fun parseCrashFile() {
         try {
@@ -444,7 +466,15 @@ class GleanCrashReporterService(
                 DecodeSequenceMode.WHITESPACE_SEPARATED,
             )
             for (action in actionSequence) {
-                action.submit()
+                // We do not expect an exception to occur, however if the worst should happen, it's
+                // essential that we don't allow the exception to interfere with other actions that
+                // need to be submitted.
+                @Suppress("TooGenericExceptionCaught")
+                try {
+                    action.submit()
+                } catch (e: Exception) {
+                    logger.error("Error submitting crash action", e)
+                }
             }
         } catch (e: IOException) {
             logger.error("Error reading crash file", e)
@@ -494,13 +524,22 @@ class GleanCrashReporterService(
 
     override fun record(crash: Crash.UncaughtExceptionCrash) {
         recordCrashAction(GleanCrashAction.Count(UNCAUGHT_EXCEPTION_KEY))
+
+        val appVersion = crash.versionName.takeIf { it != "N/A" } ?: appVersion
+        val appBuildId = crash.buildId.takeIf { it != "N/A" } ?: appBuildId
+
         recordCrashAction(
             GleanCrashAction.Ping(
                 uptimeNanos = uptime(),
                 processType = "main",
                 timeMillis = crash.timestamp,
                 reason = Pings.crashReasonCodes.crash,
-                cause = GleanCrashAction.PingCause.JavaException(crash.throwable.toJson()),
+                cause = GleanCrashAction.PingCause.JavaException(
+                    throwableJson = crash.throwable.toJson(),
+                    appChannel = appChannel,
+                    appVersion = appVersion,
+                    appBuildId = appBuildId,
+                ),
                 breadcrumbs = crash.breadcrumbs.map { it.toBreadcrumb() },
             ),
         )
@@ -582,16 +621,16 @@ class GleanCrashReporterService(
     }
 
     override fun record(crash: Crash.NativeCodeCrash) {
-        when (crash.processType) {
-            Crash.NativeCodeCrash.PROCESS_TYPE_MAIN ->
+        when (crash.processVisibility) {
+            Crash.NativeCodeCrash.PROCESS_VISIBILITY_MAIN ->
                 recordCrashAction(GleanCrashAction.Count(MAIN_PROCESS_NATIVE_CODE_CRASH_KEY))
-            Crash.NativeCodeCrash.PROCESS_TYPE_FOREGROUND_CHILD ->
+            Crash.NativeCodeCrash.PROCESS_VISIBILITY_FOREGROUND_CHILD ->
                 recordCrashAction(
                     GleanCrashAction.Count(
                         FOREGROUND_CHILD_PROCESS_NATIVE_CODE_CRASH_KEY,
                     ),
                 )
-            Crash.NativeCodeCrash.PROCESS_TYPE_BACKGROUND_CHILD ->
+            Crash.NativeCodeCrash.PROCESS_VISIBILITY_BACKGROUND_CHILD ->
                 recordCrashAction(
                     GleanCrashAction.Count(
                         BACKGROUND_CHILD_PROCESS_NATIVE_CODE_CRASH_KEY,
@@ -599,29 +638,7 @@ class GleanCrashReporterService(
                 )
         }
 
-        // The `processType` property on a crash is a bit confusing because it does not map to the actual process types
-        // (like main, content, gpu, etc.). This property indicates what UI we should show to users given that "main"
-        // crashes essentially kill the app, "foreground child" crashes are likely tab crashes, and "background child"
-        // crashes are occurring in other processes (like GPU and extensions) for which users shouldn't notice anything
-        // (because there shouldn't be any noticeable impact in the app and the processes will be recreated
-        // automatically).
-        val processType = when (crash.processType) {
-            Crash.NativeCodeCrash.PROCESS_TYPE_MAIN -> "main"
-
-            Crash.NativeCodeCrash.PROCESS_TYPE_BACKGROUND_CHILD -> {
-                when (crash.remoteType) {
-                    // The extensions process is a content process as per:
-                    // https://firefox-source-docs.mozilla.org/dom/ipc/process_model.html#webextensions
-                    "extension" -> "content"
-
-                    else -> "utility"
-                }
-            }
-
-            Crash.NativeCodeCrash.PROCESS_TYPE_FOREGROUND_CHILD -> "content"
-
-            else -> "main"
-        }
+        val processType = crash.processType ?: "main"
 
         if (crash.minidumpPath != null && crash.extrasPath != null) {
             MinidumpAnalyzer.load()?.run(crash.minidumpPath, crash.extrasPath, false)

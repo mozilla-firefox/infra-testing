@@ -4,14 +4,15 @@
 
 package org.mozilla.geckoview.test
 
-import android.graphics.* // ktlint-disable no-wildcard-imports
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
 import android.os.SystemClock
 import android.view.MotionEvent
 import androidx.core.graphics.createBitmap
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.MediumTest
-import org.hamcrest.Matchers.* // ktlint-disable no-wildcard-imports
 import org.hamcrest.Matchers.closeTo
 import org.hamcrest.Matchers.equalTo
 import org.junit.Assume.assumeThat
@@ -1054,6 +1055,51 @@ class DynamicToolbarTest : BaseSessionTest() {
         )
 
         // Simulate the dynamic toolbar being hidden by the scroll
+        sessionRule.display?.run { setVerticalClipping(-dynamicToolbarMaxHeight) }
+
+        mainSession.flushApzRepaints()
+        mainSession.flushApzRepaints()
+
+        sessionRule.display?.let {
+            assertScreenshotResult(it.capturePixels(), reference)
+        }
+    }
+
+    // Adapted off test bug1909181(). Generally ::-moz-snapshot-containing-block matches
+    // the viewport frame size, but on mobile we verify it includes the dynamic toolbar height.
+    @WithDisplay(height = SCREEN_HEIGHT, width = SCREEN_WIDTH)
+    @Test
+    fun viewTransitionSnapshotSize() {
+        sessionRule.setPrefsUntilTestEnd(
+            mapOf(
+                "dom.viewTransitions.enabled" to true,
+            ),
+        )
+
+        val reference = getComparisonScreenshot(SCREEN_WIDTH, SCREEN_HEIGHT)
+
+        val dynamicToolbarMaxHeight = SCREEN_HEIGHT / 2
+        sessionRule.display?.run { setDynamicToolbarMaxHeight(dynamicToolbarMaxHeight) }
+
+        // Set active since setVerticalClipping call affects only for foreground tab.
+        mainSession.setActive(true)
+
+        mainSession.loadTestPath(BaseSessionTest.VIEW_TRANSITION_SNAPSHOT_SIZE)
+        mainSession.waitForPageStop()
+
+        // Wait for the view transition to start.
+        val promise = mainSession.evaluatePromiseJS(
+            """
+            new Promise(resolve => {
+                document.startViewTransition(() => {}).ready
+                    .then(() => resolve(true))
+                    .catch(() => resolve(false));
+            });
+            """.trimIndent(),
+        )
+        assertThat("View transition is ready", promise.value as Boolean, equalTo(true))
+
+        // Simulate the dynamic toolbar being hidden by the scroll.
         sessionRule.display?.run { setVerticalClipping(-dynamicToolbarMaxHeight) }
 
         mainSession.flushApzRepaints()

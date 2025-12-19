@@ -1,7 +1,7 @@
 .sections-list {
   .section-list {
     display: grid;
-    grid-gap: $base-gutter;
+    grid-gap: var(--space-xxlarge);
     grid-template-columns: repeat(auto-fit, $card-width);
     margin: 0;
 
@@ -31,8 +31,8 @@
   }
 
   .section-empty-state {
-    border: $border-secondary;
-    border-radius: $border-radius;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-small);
     display: flex;
     height: $card-height;
     width: 100%;
@@ -43,8 +43,8 @@
 
       .empty-state-message {
         color: var(--newtab-text-primary-color);
-        font-size: 13px;
-        margin-bottom: 0;
+        font-size: var(--font-size-small);
+        margin-block-end: 0;
         text-align: center;
       }
     }
@@ -57,46 +57,34 @@
 
 .top-stories-bottom-container {
   color: var(--newtab-text-primary-color);
-  font-size: 12px;
-  line-height: 1.6;
-  margin-top: $topic-margin-top;
+  font-size: var(--font-size-small);
+  margin-block-start: var(--space-medium);
   display: flex;
   justify-content: space-between;
 
   a {
     color: var(--newtab-primary-action-background);
-    font-weight: bold;
+
+    /**
+     * @backward-compat { version 146 }
+     *
+     * Replace this with `--font-weight-semibold` once 146 hits release.
+     */
+    font-weight: var(--heading-font-weight);
 
     &.more-recommendations {
-      font-weight: normal;
-      font-size: 13px;
+      font-weight: var(--font-weight);
+      font-size: var(--font-size-small);
     }
   }
 
-  .wrapper-topics,
-  .wrapper-cta + .wrapper-more-recommendations {
+  .wrapper-topics {
     @media (max-width: $break-point-large - 1) {
       display: none;
     }
   }
 
   @media (max-width: $break-point-medium - 1) {
-    .wrapper-cta {
-      text-align: center;
-
-      .pocket-logged-in-cta {
-        display: block;
-        margin-inline-end: 0;
-
-        .pocket-cta-button {
-          max-width: none;
-          display: block;
-          margin-inline-end: 0;
-          margin: 5px 0 10px;
-        }
-      }
-    }
-
     .wrapper-more-recommendations {
       width: 100%;
 

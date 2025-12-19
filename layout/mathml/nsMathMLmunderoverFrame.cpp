@@ -5,17 +5,20 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsMathMLmunderoverFrame.h"
-#include "nsLayoutUtils.h"
-#include "nsPresContext.h"
-#include "nsMathMLmmultiscriptsFrame.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/MathMLElement.h"
+
 #include <algorithm>
+
 #include "gfxContext.h"
 #include "gfxMathTable.h"
 #include "gfxTextRun.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs_mathml.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/MathMLElement.h"
+#include "nsIMathMLFrame.h"
+#include "nsLayoutUtils.h"
+#include "nsMathMLmmultiscriptsFrame.h"
+#include "nsPresContext.h"
 
 using namespace mozilla;
 
@@ -38,7 +41,7 @@ nsMathMLmunderoverFrame::~nsMathMLmunderoverFrame() = default;
 
 nsresult nsMathMLmunderoverFrame::AttributeChanged(int32_t aNameSpaceID,
                                                    nsAtom* aAttribute,
-                                                   int32_t aModType) {
+                                                   AttrModType aModType) {
   if (aNameSpaceID == kNameSpaceID_None &&
       (nsGkAtoms::accent == aAttribute ||
        nsGkAtoms::accentunder == aAttribute)) {
@@ -229,6 +232,13 @@ XXX The winner is the outermost setting in conflicting settings like these:
       } else if (value.LowerCaseEqualsLiteral("false")) {
         mEmbellishData.flags &= ~NS_MATHML_EMBELLISH_ACCENTUNDER;
       }
+    } else if (NS_MATHML_EMBELLISH_IS_ACCENTUNDER(mEmbellishData.flags)) {
+      AutoTArray<nsString, 1> params;
+      params.AppendElement(mContent->NodeInfo()->NodeName());
+      PresContext()->Document()->WarnOnceAbout(
+          dom::DeprecatedOperations::
+              eMathML_DeprecatedMunderNonExplicitAccentunder,
+          false, params);
     }
   }
 
@@ -250,6 +260,12 @@ XXX The winner is the outermost setting in conflicting settings like these:
       } else if (value.LowerCaseEqualsLiteral("false")) {
         mEmbellishData.flags &= ~NS_MATHML_EMBELLISH_ACCENTOVER;
       }
+    } else if (NS_MATHML_EMBELLISH_IS_ACCENTOVER(mEmbellishData.flags)) {
+      AutoTArray<nsString, 1> params;
+      params.AppendElement(mContent->NodeInfo()->NodeName());
+      PresContext()->Document()->WarnOnceAbout(
+          dom::DeprecatedOperations::eMathML_DeprecatedMoverNonExplicitAccent,
+          false, params);
     }
   }
 
@@ -284,9 +300,6 @@ XXX The winner is the outermost setting in conflicting settings like these:
   */
   if (mContent->IsAnyOfMathMLElements(nsGkAtoms::mover,
                                       nsGkAtoms::munderover)) {
-    uint32_t compress = NS_MATHML_EMBELLISH_IS_ACCENTOVER(mEmbellishData.flags)
-                            ? NS_MATHML_COMPRESSED
-                            : 0;
     mIncrementOver = !NS_MATHML_EMBELLISH_IS_ACCENTOVER(mEmbellishData.flags) ||
                      subsupDisplay;
     SetIncrementScriptLevel(mContent->IsMathMLElement(nsGkAtoms::mover) ? 1 : 2,
@@ -294,7 +307,13 @@ XXX The winner is the outermost setting in conflicting settings like these:
     if (mIncrementOver) {
       PropagateFrameFlagFor(overscriptFrame, NS_FRAME_MATHML_SCRIPT_DESCENDANT);
     }
-    PropagatePresentationDataFor(overscriptFrame, compress, compress);
+    if (!StaticPrefs::mathml_math_shift_enabled()) {
+      uint32_t compress =
+          NS_MATHML_EMBELLISH_IS_ACCENTOVER(mEmbellishData.flags)
+              ? NS_MATHML_COMPRESSED
+              : 0;
+      PropagatePresentationDataFor(overscriptFrame, compress, compress);
+    }
   }
   /*
      The TeXBook treats 'under' like a subscript, so p.141 or Rule 13a
@@ -310,8 +329,10 @@ XXX The winner is the outermost setting in conflicting settings like these:
       PropagateFrameFlagFor(underscriptFrame,
                             NS_FRAME_MATHML_SCRIPT_DESCENDANT);
     }
-    PropagatePresentationDataFor(underscriptFrame, NS_MATHML_COMPRESSED,
-                                 NS_MATHML_COMPRESSED);
+    if (!StaticPrefs::mathml_math_shift_enabled()) {
+      PropagatePresentationDataFor(underscriptFrame, NS_MATHML_COMPRESSED,
+                                   NS_MATHML_COMPRESSED);
+    }
   }
 
   /* Set flags for dtls font feature settings.
@@ -358,9 +379,9 @@ i.e.,:
 */
 
 /* virtual */
-nsresult nsMathMLmunderoverFrame::Place(DrawTarget* aDrawTarget,
-                                        const PlaceFlags& aFlags,
-                                        ReflowOutput& aDesiredSize) {
+void nsMathMLmunderoverFrame::Place(DrawTarget* aDrawTarget,
+                                    const PlaceFlags& aFlags,
+                                    ReflowOutput& aDesiredSize) {
   float fontSizeInflation = nsLayoutUtils::FontSizeInflationFor(this);
   if (NS_MATHML_EMBELLISH_IS_MOVABLELIMITS(mEmbellishData.flags) &&
       StyleFont()->mMathStyle == StyleMathStyle::Compact) {
@@ -725,7 +746,6 @@ nsresult nsMathMLmunderoverFrame::Place(DrawTarget* aDrawTarget,
                         dy, ReflowChildFlags::Default);
     }
   }
-  return NS_OK;
 }
 
 bool nsMathMLmunderoverFrame::IsMathContentBoxHorizontallyCentered() const {

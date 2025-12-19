@@ -9,13 +9,23 @@
  * state, and an init method.  A separate object is easier.
  */
 
+/**
+ * @typedef {typeof import("UrlbarUtils.sys.mjs").UrlbarUtils.RESULT_SOURCE} RESULT_SOURCE
+ */
+
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
-const lazy = {};
-
-ChromeUtils.defineESModuleGetters(lazy, {
-  UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.sys.mjs",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
+const lazy = XPCOMUtils.declareLazy({
+  UrlUtils: "resource://gre/modules/UrlUtils.sys.mjs",
+  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
+  separatePrivateDefaultUIEnabled: {
+    pref: "browser.search.separatePrivateDefault.ui.enabled",
+    default: false,
+  },
+  separatePrivateDefault: {
+    pref: "browser.search.separatePrivateDefault",
+    default: false,
+  },
 });
 
 const SEARCH_ENGINE_TOPIC = "browser-search-engine-modified";
@@ -30,18 +40,6 @@ class SearchUtils {
       "nsIObserver",
       "nsISupportsWeakReference",
     ]);
-    XPCOMUtils.defineLazyPreferenceGetter(
-      this,
-      "separatePrivateDefaultUIEnabled",
-      "browser.search.separatePrivateDefault.ui.enabled",
-      false
-    );
-    XPCOMUtils.defineLazyPreferenceGetter(
-      this,
-      "separatePrivateDefault",
-      "browser.search.separatePrivateDefault",
-      false
-    );
   }
 
   /**
@@ -65,7 +63,7 @@ class SearchUtils {
    *   Match at each sub domain, for example "a.b.c.com" will be matched at
    *   "a.b.c.com", "b.c.com", and "c.com". Partial matches are always returned
    *   after perfect matches.
-   * @returns {Array<nsISearchEngine>}
+   * @returns {Promise<nsISearchEngine[]>}
    *   An array of all matching engines. An empty array if there are none.
    */
   async enginesForDomainPrefix(prefix, { matchAllDomainLevels = false } = {}) {
@@ -140,7 +138,7 @@ class SearchUtils {
    * @param {string} [searchString]
    *   Optional. If provided, we also enforce that there must be a space after
    *   the alias in the search string.
-   * @returns {nsISearchEngine}
+   * @returns {Promise<nsISearchEngine>}
    *   The matching engine or null if there isn't one.
    */
   async engineForAlias(alias, searchString = null) {
@@ -155,7 +153,7 @@ class SearchUtils {
       let query = lazy.UrlbarUtils.substringAfter(searchString, alias);
       // Match an alias only when it has a space after it.  If there's no trailing
       // space, then continue to treat it as part of the search string.
-      if (!lazy.UrlbarTokenizer.REGEXP_SPACES_START.test(query)) {
+      if (!lazy.UrlUtils.REGEXP_SPACES_START.test(query)) {
         return null;
       }
     }
@@ -163,11 +161,8 @@ class SearchUtils {
   }
 
   /**
-   * The list of engines with token ("@") aliases.
-   *
-   * @returns {Array}
-   *   Array of objects { engine, tokenAliases } for token alias engines or
-   *   null if SearchService has not initialized.
+   * The list of engines with token ("@") aliases. May be empty if the search
+   * service has not initialized.
    */
   async tokenAliasEngines() {
     try {
@@ -226,11 +221,27 @@ class SearchUtils {
       return null;
     }
 
-    return this.separatePrivateDefaultUIEnabled &&
-      this.separatePrivateDefault &&
+    return lazy.separatePrivateDefaultUIEnabled &&
+      lazy.separatePrivateDefault &&
       isPrivate
       ? Services.search.defaultPrivateEngine
       : Services.search.defaultEngine;
+  }
+
+  /**
+   * Returns true if the UI is enabled for allowing a separate default search
+   * engine in private windows.
+   */
+  get separatePrivateDefaultUIEnabled() {
+    return lazy.separatePrivateDefaultUIEnabled;
+  }
+
+  /**
+   * Returns true if there is potentially a different engine set for searches
+   * in private windows.
+   */
+  get separatePrivateDefault() {
+    return lazy.separatePrivateDefault;
   }
 
   /**
@@ -248,9 +259,9 @@ class SearchUtils {
     if (searchMode.engineName) {
       let engine = Services.search.getEngineByName(searchMode.engineName);
       let resultDomain = engine.searchUrlDomain;
-      // For built-in engines, sanitize the data in a few special cases to make
+      // For config engines, sanitize the data in a few special cases to make
       // analysis easier.
-      if (!engine.isAppProvided) {
+      if (!engine.isConfigEngine) {
         scalarKey = "other";
       } else if (resultDomain.includes("amazon.")) {
         // Group all the localized Amazon sites together.
@@ -268,6 +279,28 @@ class SearchUtils {
     }
 
     return scalarKey;
+  }
+
+  /**
+   *
+   * @param {UrlbarResult} result
+   *   The result to evaluate
+   * @param {Array<RESULT_SOURCE>} [allowedSources]
+   *   Array of allowed result sources. if defined, the result must be from one
+   *   of these sources to be evaluated as a SERP, otherwise this will return
+   *   false.
+   *
+   * @returns {boolean} Whether it may be a SERP
+   */
+  resultIsSERP(result, allowedSources = null) {
+    if (allowedSources && !allowedSources?.includes(result.source)) {
+      return false;
+    }
+    try {
+      return !!Services.search.parseSubmissionURL(result.payload.url)?.engine;
+    } catch (ex) {
+      return false;
+    }
   }
 
   async _initInternal() {

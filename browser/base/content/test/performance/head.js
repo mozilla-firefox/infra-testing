@@ -356,8 +356,9 @@ function computeMaxTabCount() {
 
   let maxTabCount =
     Math.floor(availableTabStripWidth / tabMinWidth) - currentTabCount;
-  Assert.ok(
-    maxTabCount > 0,
+  Assert.greater(
+    maxTabCount,
+    0,
     "Tabstrip needs to be wide enough to accomodate at least 1 more tab " +
       "without overflowing."
   );
@@ -488,7 +489,10 @@ async function recordFrames(testPromise, win = window) {
   win.addEventListener("MozAfterPaint", afterPaintListener);
 
   // If the test is using an existing window, capture a frame immediately.
-  if (win.document.readyState == "complete") {
+  if (
+    win.document.readyState == "complete" &&
+    win.location.href != "about:blank"
+  ) {
     afterPaintListener();
   }
 
@@ -502,8 +506,10 @@ async function recordFrames(testPromise, win = window) {
 }
 
 // How many identical pixels to accept between 2 rects when deciding to merge
-// them.
-const kMaxEmptyPixels = 3;
+// them. This needs to be at least as big as the size of the margin between 2
+// tabs so 2 consecutive tabs being repainted at once are counted as a single
+// changed rect.
+const kMaxEmptyPixels = 4;
 function compareFrames(frame, previousFrame) {
   // Accessing the Math global is expensive as the test executes in a
   // non-syntactic scope. Accessing it as a lexical variable is enough
@@ -744,9 +750,9 @@ async function withPerfObserver(testFn, exceptions = {}, win = window) {
  *
  * @param {bool} keyed
  *        Pass true to synthesize typing the search string one key at a time.
- * @param {array} expectedReflowsFirstOpen
+ * @param {Array} expectedReflowsFirstOpen
  *        The array of expected reflow stacks when the panel is first opened.
- * @param {array} [expectedReflowsSecondOpen]
+ * @param {Array} [expectedReflowsSecondOpen]
  *        The array of expected reflow stacks when the panel is subsequently
  *        opened, if you're testing opening the panel twice.
  */
@@ -764,6 +770,10 @@ async function runUrlbarTest(
 
   URLBar.focus();
   URLBar.value = SEARCH_TERM;
+
+  let SHADOW_OVERFLOW_LEFT, SHADOW_OVERFLOW_RIGHT, SHADOW_OVERFLOW_TOP;
+  let INLINE_MARGIN, VERTICAL_OFFSET;
+
   let testFn = async function () {
     let popup = URLBar.view;
     let oldOnQueryResults = popup.onQueryResults.bind(popup);
@@ -814,22 +824,69 @@ async function runUrlbarTest(
       await waitExtra();
     }
 
+    let shadowElem = win.document.querySelector("#urlbar > .urlbar-background");
+    let shadow = getComputedStyle(shadowElem).boxShadow;
+
+    let inlineElem = win.document.querySelector("#urlbar");
+    let inlineMargin = getComputedStyle(inlineElem).marginInlineStart;
+
+    let offsetElem = win.document.querySelector("#urlbar-container");
+    let verticalOffset = getComputedStyle(offsetElem).paddingTop;
+
+    function extractPixelValue(value) {
+      if (value) {
+        return parseInt(value.replace("px", ""), 10);
+      }
+      return 0;
+    }
+
+    function calculateShadowOverflow(boxShadow) {
+      const regex = /-?\d+px/g;
+      const matches = boxShadow.match(regex);
+
+      if (matches && matches.length >= 2) {
+        // Parse shadow values, defaulting missing values to 0.
+        const [offsetX, offsetY, blurRadius = 0, spreadRadius = 0] =
+          matches.map(value => parseInt(value.replace("px", ""), 10));
+
+        const left = Math.max(0, -offsetX + blurRadius + spreadRadius);
+        const right = Math.max(0, offsetX + blurRadius + spreadRadius);
+        const top = Math.max(0, -offsetY + blurRadius + spreadRadius);
+        const bottom = Math.max(0, offsetY + blurRadius + spreadRadius);
+
+        return { left, right, top, bottom };
+      }
+
+      return { left: 0, right: 0, top: 0, bottom: 0 };
+    }
+
+    let overflow = calculateShadowOverflow(shadow);
+    const FUZZ_FACTOR = 4;
+    // The blur/spread/offset of the box shadow, plus fudge factors depending on platform.
+    SHADOW_OVERFLOW_LEFT = overflow.left + FUZZ_FACTOR;
+    SHADOW_OVERFLOW_RIGHT = overflow.right + FUZZ_FACTOR;
+    SHADOW_OVERFLOW_TOP = overflow.top + FUZZ_FACTOR;
+
+    // Margin applied to the breakout-extend urlbar
+    INLINE_MARGIN = -extractPixelValue(inlineMargin); // Flip symbol since this CSS value is negative.
+    // The popover positioning requires this offset
+    VERTICAL_OFFSET = -extractPixelValue(verticalOffset); // Flip symbol since this CSS value is positive.
+
     await UrlbarTestUtils.promisePopupClose(win);
+    URLBar.value = "";
   };
 
-  let urlbarRect = URLBar.textbox.getBoundingClientRect();
-  // To isolate unexpected repaints, we need to filter out the rectangle of
-  // pixels changed by showing the urlbar popover
-  const SHADOW_SIZE = 17; // The blur/spread of the box shadow, plus 1px fudge factor
-  const INLINE_MARGIN = 5; // Margin applied to the breakout-extend urlbar
-  const VERTICAL_OFFSET = -4; // The popover positioning requires this offset
+  let urlbarRect = URLBar.getBoundingClientRect();
+  await testFn();
   let expectedRects = {
     filter: rects => {
       const referenceRect = {
-        x1: Math.floor(urlbarRect.left) - INLINE_MARGIN - SHADOW_SIZE,
-        x2: Math.ceil(urlbarRect.right) + INLINE_MARGIN + SHADOW_SIZE,
-        y1: Math.floor(urlbarRect.top) + VERTICAL_OFFSET - SHADOW_SIZE,
+        x1: Math.floor(urlbarRect.left) - INLINE_MARGIN - SHADOW_OVERFLOW_LEFT,
+        x2:
+          Math.floor(urlbarRect.right) + INLINE_MARGIN + SHADOW_OVERFLOW_RIGHT,
+        y1: Math.floor(urlbarRect.top) + VERTICAL_OFFSET - SHADOW_OVERFLOW_TOP,
       };
+
       // We put text into the urlbar so expect its textbox to change.
       // We expect many changes in the results view.
       // So we just allow changes anywhere in the urlbar. We don't check the
@@ -865,6 +922,7 @@ async function runUrlbarTest(
   }
 
   await BrowserTestUtils.closeWindow(win);
+  await TestUtils.waitForTick();
 }
 
 /**
@@ -1010,7 +1068,7 @@ async function checkLoadedScripts({
 // window for some reason. See bug 1445161. This function allows to deal with
 // that in a central place.
 function isLikelyFocusChange(rects, frame) {
-  if (rects.length > 3 && rects.every(r => r.y2 < 100)) {
+  if (rects.length >= 3 && rects.every(r => r.y2 < 100)) {
     // There are at least 4 areas that changed near the top of the screen.
     // Note that we need a bit more leeway than the titlebar height, because on
     // OSX other toolbarbuttons in the navigation toolbar also get disabled
@@ -1024,4 +1082,18 @@ function isLikelyFocusChange(rects, frame) {
     return true;
   }
   return false;
+}
+
+// See if the rect might match the coordinates of the bottom-border of an element
+// given its DOMRect.
+function rectMatchesBottomBorder(r, domRect) {
+  return (
+    r.h <= 2 &&
+    r.x1 >= domRect.x &&
+    r.x1 < domRect.x + domRect.width &&
+    r.x2 > domRect.x &&
+    r.x2 <= domRect.x + domRect.width &&
+    r.y1 >= domRect.bottom - 1.5 &&
+    r.y2 <= domRect.bottom + 1.5
+  );
 }

@@ -8,8 +8,10 @@
 
 #include <utility>
 
-#include "nsDebug.h"
-
+#include "RemoteWorkerControllerParent.h"
+#include "RemoteWorkerManager.h"
+#include "RemoteWorkerNonLifeCycleOpControllerParent.h"
+#include "RemoteWorkerParent.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Maybe.h"
@@ -21,10 +23,7 @@
 #include "mozilla/dom/ServiceWorkerCloneData.h"
 #include "mozilla/dom/ServiceWorkerShutdownState.h"
 #include "mozilla/ipc/BackgroundParent.h"
-#include "RemoteWorkerControllerParent.h"
-#include "RemoteWorkerManager.h"
-#include "RemoteWorkerNonLifeCycleOpControllerParent.h"
-#include "RemoteWorkerParent.h"
+#include "nsDebug.h"
 
 namespace mozilla {
 
@@ -177,7 +176,7 @@ void RemoteWorkerController::CancelAllPendingOps() {
 
 void RemoteWorkerController::Shutdown() {
   AssertIsOnBackgroundThread();
-  Unused << NS_WARN_IF(mIsServiceWorker && !mPendingOps.IsEmpty());
+  (void)NS_WARN_IF(mIsServiceWorker && !mPendingOps.IsEmpty());
 
   if (mState == eTerminated) {
     MOZ_ASSERT(mPendingOps.IsEmpty());
@@ -206,7 +205,7 @@ void RemoteWorkerController::Shutdown() {
   if (mIsServiceWorker) {
     mActor->MaybeSendDelete();
   } else {
-    Unused << mActor->SendExecOp(SharedWorkerTerminateOpArgs());
+    (void)mActor->SendExecOp(SharedWorkerTerminateOpArgs());
   }
 
   mActor = nullptr;
@@ -386,16 +385,16 @@ bool RemoteWorkerController::PendingSharedWorkerOp::MaybeStart(
       aOwner->Shutdown();
       break;
     case eSuspend:
-      Unused << aOwner->mActor->SendExecOp(SharedWorkerSuspendOpArgs());
+      (void)aOwner->mActor->SendExecOp(SharedWorkerSuspendOpArgs());
       break;
     case eResume:
-      Unused << aOwner->mActor->SendExecOp(SharedWorkerResumeOpArgs());
+      (void)aOwner->mActor->SendExecOp(SharedWorkerResumeOpArgs());
       break;
     case eFreeze:
-      Unused << aOwner->mActor->SendExecOp(SharedWorkerFreezeOpArgs());
+      (void)aOwner->mActor->SendExecOp(SharedWorkerFreezeOpArgs());
       break;
     case eThaw:
-      Unused << aOwner->mActor->SendExecOp(SharedWorkerThawOpArgs());
+      (void)aOwner->mActor->SendExecOp(SharedWorkerThawOpArgs());
       break;
     case ePortIdentifier:
       // mNonLifeCycleOpController can be nullptr if the Worker is in "Killing."
@@ -409,15 +408,15 @@ bool RemoteWorkerController::PendingSharedWorkerOp::MaybeStart(
       if (!aOwner->mNonLifeCycleOpController->CanSend()) {
         return false;
       }
-      Unused << aOwner->mNonLifeCycleOpController->SendExecOp(
+      (void)aOwner->mNonLifeCycleOpController->SendExecOp(
           SharedWorkerPortIdentifierOpArgs(mPortIdentifier));
       break;
     case eAddWindowID:
-      Unused << aOwner->mActor->SendExecOp(
+      (void)aOwner->mActor->SendExecOp(
           SharedWorkerAddWindowIDOpArgs(mWindowID));
       break;
     case eRemoveWindowID:
-      Unused << aOwner->mActor->SendExecOp(
+      (void)aOwner->mActor->SendExecOp(
           SharedWorkerRemoveWindowIDOpArgs(mWindowID));
       break;
     default:
@@ -476,6 +475,7 @@ bool RemoteWorkerController::PendingServiceWorkerOp::MaybeStart(
     if (mArgs.type() ==
         ServiceWorkerOpArgs::TServiceWorkerTerminateWorkerOpArgs) {
       aOwner->CancelAllPendingOps();
+      MaybeReportServiceWorkerShutdownProgress(mArgs, true);
       Cancel();
 
       aOwner->mState = RemoteWorkerController::eTerminated;

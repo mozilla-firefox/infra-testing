@@ -32,6 +32,7 @@
 namespace js {
 
 class JS_PUBLIC_API GenericPrinter;
+class IteratorProperty;
 class PropertyResult;
 
 namespace gc {
@@ -855,12 +856,12 @@ class NativeObject : public JSObject {
    * ArrayObjects don't use this limit and can have a lower slot capacity,
    * since they normally don't have a lot of slots.
    */
-  static const uint32_t SLOT_CAPACITY_MIN = 5;
+  static const uint32_t SLOT_CAPACITY_MIN = 6;
 
   /*
    * Minimum size for dynamically allocated elements in normal Objects.
    */
-  static const uint32_t ELEMENT_CAPACITY_MIN = 5;
+  static const uint32_t ELEMENT_CAPACITY_MIN = 6;
 
   HeapSlot* fixedSlots() const {
     return reinterpret_cast<HeapSlot*>(uintptr_t(this) + sizeof(NativeObject));
@@ -948,6 +949,10 @@ class NativeObject : public JSObject {
   }
   bool hadGetterSetterChange() const {
     return hasFlag(ObjectFlag::HadGetterSetterChange);
+  }
+
+  static bool setHasObjectFuse(JSContext* cx, Handle<NativeObject*> obj) {
+    return setFlag(cx, obj, js::ObjectFlag::HasObjectFuse);
   }
 
   bool allocateInitialSlots(JSContext* cx, uint32_t capacity);
@@ -1517,7 +1522,7 @@ class NativeObject : public JSObject {
                                 uint32_t count);
 
   inline void initDenseElements(const Value* src, uint32_t count);
-  inline void initDenseElements(JSLinearString** src, uint32_t count);
+  inline void initDenseElements(IteratorProperty* src, uint32_t count);
   inline void initDenseElements(NativeObject* src, uint32_t srcStart,
                                 uint32_t count);
 
@@ -1728,6 +1733,11 @@ class NativeObject : public JSObject {
     }
     return TaggedSlotOffset((slot - nfixed) * sizeof(Value),
                             /* isFixedSlot = */ false);
+  }
+
+  bool hasUnpreservedWrapper() const {
+    return getClass()->preservesWrapper() &&
+           !shape()->hasObjectFlag(ObjectFlag::HasPreservedWrapper);
   }
 
   /* JIT Accessors */

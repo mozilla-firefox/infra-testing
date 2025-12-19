@@ -78,8 +78,10 @@ bool RenderCompositorSWGL::AllocateMappedBuffer(
   MOZ_ASSERT(!mDT);
   mDT = mWidget->StartRemoteDrawingInRegion(mDirtyRegion);
   if (!mDT) {
+#if !defined(MOZ_WAYLAND)
     gfxCriticalNoteOnce
         << "RenderCompositorSWGL failed mapping default framebuffer, no dt";
+#endif
     return false;
   }
   // Attempt to lock the underlying buffer directly from the draw target.
@@ -263,18 +265,19 @@ RenderedFrameId RenderCompositorSWGL::EndFrame(
 }
 
 bool RenderCompositorSWGL::RequestFullRender() {
-#ifdef MOZ_WIDGET_ANDROID
+#if defined(MOZ_WIDGET_ANDROID)
   // XXX Add partial present support.
   return true;
-#endif
-#ifdef MOZ_WIDGET_GTK
+#elif defined(MOZ_WIDGET_GTK)
   // We're requested to do full render after Resume() on Wayland.
   if (mRequestFullRender) {
     mRequestFullRender = false;
     return true;
   }
-#endif
   return false;
+#else
+  return false;
+#endif
 }
 
 void RenderCompositorSWGL::Pause() {}

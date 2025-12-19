@@ -18,13 +18,13 @@ import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.EngineView
 import mozilla.components.concept.engine.prompt.ShareData
 import mozilla.components.feature.tabs.TabsUseCases
+import mozilla.components.support.ktx.kotlin.isContentUrl
 import mozilla.components.support.ktx.kotlin.isUrl
-import mozilla.components.support.utils.ext.isContentUrl
 import mozilla.components.ui.tabcounter.TabCounterMenu
 import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.fenix.GleanMetrics.Events
-import org.mozilla.fenix.GleanMetrics.NavigationBar
 import org.mozilla.fenix.GleanMetrics.ReaderMode
+import org.mozilla.fenix.GleanMetrics.Toolbar
 import org.mozilla.fenix.GleanMetrics.Translations
 import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.NavGraphDirections
@@ -38,14 +38,16 @@ import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.appstate.AppAction.SnackbarAction
 import org.mozilla.fenix.components.menu.MenuAccessPoint
 import org.mozilla.fenix.components.toolbar.interactor.BrowserToolbarInteractor
-import org.mozilla.fenix.components.toolbar.navbar.shouldAddNavigationBar
 import org.mozilla.fenix.components.usecases.FenixBrowserUseCases
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.nav
 import org.mozilla.fenix.ext.navigateSafe
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.home.HomeScreenViewModel
-import org.mozilla.fenix.home.HomeScreenViewModel.Companion.ALL_PRIVATE_TABS
+import org.mozilla.fenix.telemetry.ACTION_ADD_NEW_TAB
+import org.mozilla.fenix.telemetry.ACTION_ADD_NEW_TAB_LONG_CLICKED
+import org.mozilla.fenix.telemetry.ACTION_HOME_CLICKED
+import org.mozilla.fenix.telemetry.SOURCE_ADDRESS_BAR
 import org.mozilla.fenix.utils.Settings
 
 /**
@@ -64,11 +66,6 @@ interface BrowserToolbarController {
      * @see [BrowserToolbarInteractor.onHomeButtonClicked]
      */
     fun handleHomeButtonClick()
-
-    /**
-     * @see [BrowserToolbarInteractor.onEraseButtonClicked]
-     */
-    fun handleEraseButtonClick()
 
     /**
      * @see [BrowserToolbarInteractor.onTranslationsButtonClicked]
@@ -226,19 +223,19 @@ class DefaultBrowserToolbarController(
     }
 
     override fun handleHomeButtonClick() {
-        Events.browserToolbarHomeTapped.record(NoExtras())
-        browserAnimator.captureEngineViewAndDrawStatically {
-            navController.navigate(
-                BrowserFragmentDirections.actionGlobalHome(),
-            )
-        }
-    }
+        Toolbar.buttonTapped.record(
+            Toolbar.ButtonTappedExtra(source = SOURCE_ADDRESS_BAR, item = ACTION_HOME_CLICKED),
+        )
 
-    override fun handleEraseButtonClick() {
-        Events.browserToolbarEraseTapped.record(NoExtras())
-        homeViewModel.sessionToDelete = ALL_PRIVATE_TABS
-        val directions = BrowserFragmentDirections.actionGlobalHome()
-        navController.navigate(directions)
+        if (settings.enableHomepageAsNewTab) {
+            fenixBrowserUseCases.navigateToHomepage()
+        } else {
+            browserAnimator.captureEngineViewAndDrawStatically {
+                navController.navigate(
+                    BrowserFragmentDirections.actionGlobalHome(),
+                )
+            }
+        }
     }
 
     override fun handleTranslationsButtonClick() {
@@ -258,7 +255,7 @@ class DefaultBrowserToolbarController(
         }
 
         if (url?.isContentUrl() == true) {
-            val tab = sessionId.let { store.state.findTab(it) } ?: return
+            val tab = store.state.findTab(sessionId) ?: return
 
             store.dispatch(
                 ShareResourceAction.AddShareAction(
@@ -288,11 +285,9 @@ class DefaultBrowserToolbarController(
             )
         }
 
-        if (activity.shouldAddNavigationBar()) {
-            NavigationBar.browserNewTabTapped.record(NoExtras())
-        } else {
-            Events.browserToolbarAction.record(Events.BrowserToolbarActionExtra("new_tab"))
-        }
+        Toolbar.buttonTapped.record(
+            Toolbar.ButtonTappedExtra(source = SOURCE_ADDRESS_BAR, item = ACTION_ADD_NEW_TAB),
+        )
 
         browserAnimator.captureEngineViewAndDrawStatically {
             navController.navigate(
@@ -302,11 +297,9 @@ class DefaultBrowserToolbarController(
     }
 
     override fun handleNewTabButtonLongClick() {
-        if (activity.shouldAddNavigationBar()) {
-            NavigationBar.browserNewTabLongTapped.record(NoExtras())
-        } else {
-            Events.browserToolbarAction.record(Events.BrowserToolbarActionExtra("new_tab_long_press"))
-        }
+        Toolbar.buttonTapped.record(
+            Toolbar.ButtonTappedExtra(source = SOURCE_ADDRESS_BAR, item = ACTION_ADD_NEW_TAB_LONG_CLICKED),
+        )
     }
 
     override fun handleMenuButtonClicked(
@@ -321,10 +314,6 @@ class DefaultBrowserToolbarController(
                 isSandboxCustomTab = isSandboxCustomTab,
             ),
         )
-    }
-
-    companion object {
-        internal const val TELEMETRY_BROWSER_IDENTIFIER = "browserMenu"
     }
 }
 

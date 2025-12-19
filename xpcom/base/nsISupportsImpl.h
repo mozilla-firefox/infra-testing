@@ -22,9 +22,6 @@
 #include <type_traits>
 #include "mozilla/Attributes.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/Atomics.h"
-#include "mozilla/Compiler.h"
-#include "mozilla/Likely.h"
 #include "mozilla/MacroArgs.h"
 #include "mozilla/MacroForEach.h"
 
@@ -492,10 +489,10 @@ class InterfaceNeedsThreadSafeRefCnt : public std::false_type {};
                                                     \
  public:
 
-#define NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL  \
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_META(final)  \
-  NS_IMETHOD_(void) DeleteCycleCollectable(void); \
-                                                  \
+#define NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL \
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_META(final) \
+  NS_METHOD_(void) DeleteCycleCollectable(void); \
+                                                 \
  public:
 
 #define NS_DECL_CYCLE_COLLECTING_ISUPPORTS_META(...)                         \
@@ -1075,7 +1072,7 @@ constexpr const nsIID& GetImplementedIID() {
                   "Cannot implement a threadsafe interface with "
                   "non-threadsafe refcounting!");
   }
-  return NS_GET_TEMPLATE_IID(Interface);
+  return NS_GET_IID(Interface);
 }
 
 template <typename Class, typename Interface>

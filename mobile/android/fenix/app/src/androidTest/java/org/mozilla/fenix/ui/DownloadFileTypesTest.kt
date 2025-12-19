@@ -11,8 +11,10 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.Parameterized
 import org.mozilla.fenix.customannotations.SmokeTest
+import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.HomeActivityTestRule
 import org.mozilla.fenix.helpers.TestSetup
+import org.mozilla.fenix.ui.robots.browserScreen
 import org.mozilla.fenix.ui.robots.downloadRobot
 
 /**
@@ -23,14 +25,14 @@ import org.mozilla.fenix.ui.robots.downloadRobot
  **/
 @RunWith(Parameterized::class)
 class DownloadFileTypesTest(fileName: String) : TestSetup() {
-    /* Remote test page managed by Mozilla Mobile QA team at https://github.com/mozilla-mobile/testapp */
+    // Remote test page managed by Mozilla Mobile QA team at https://github.com/mozilla-mobile/testapp
     private val downloadTestPage = "https://storage.googleapis.com/mobile_test_assets/test_app/downloads.html"
     private var downloadFile: String = fileName
 
     @get:Rule
-    val activityTestRule =
+    val composeTestRule =
         AndroidComposeTestRule(
-            HomeActivityTestRule.withDefaultSettingsOverrides(),
+            HomeActivityIntentTestRule.withDefaultSettingsOverrides(),
         ) { it.activity }
 
     companion object {
@@ -54,13 +56,16 @@ class DownloadFileTypesTest(fileName: String) : TestSetup() {
     @SmokeTest
     @Test
     fun allFilesAppearInDownloadsMenuTest() {
-        downloadRobot {
+        downloadRobot(composeTestRule) {
             openPageAndDownloadFile(url = downloadTestPage.toUri(), downloadFile = downloadFile)
-            verifyDownloadCompleteNotificationPopup()
-        }.closeDownloadPrompt {
+            verifyDownloadCompleteSnackbar(fileName = downloadFile)
+        }
+
+        browserScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openDownloadsManager() {
-            verifyDownloadedFileExistsInDownloadsList(activityTestRule, downloadFile)
-        }.exitDownloadsManagerToBrowser(activityTestRule) { }
+        }.clickDownloadsButton {
+            verifyDownloadedFileExistsInDownloadsList(downloadFile)
+        }.exitDownloadsManagerToBrowser {
+        }
     }
-}
+    }

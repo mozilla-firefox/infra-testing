@@ -639,9 +639,11 @@ bool js::TestIntegrityLevel(JSContext* cx, HandleObject obj,
       return false;
     }
 
-    // Typed array elements are configurable, writable properties, so if any
-    // elements are present, the typed array can neither be sealed nor frozen.
+    // Typed array elements are configurable, writable properties if the backing
+    // buffer is mutable, so if any elements are present, the typed array can
+    // neither be sealed nor frozen.
     if (nobj->is<TypedArrayObject>() &&
+        !nobj->is<ImmutableTypedArrayObject>() &&
         nobj->as<TypedArrayObject>().length().valueOr(0) > 0) {
       *result = false;
       return true;
@@ -2196,12 +2198,17 @@ JS_PUBLIC_API bool js::ShouldIgnorePropertyDefinition(JSContext* cx,
          id == NameToId(cx->names().fromHex))) {
       return true;
     }
-    if (!JS::Prefs::experimental_promise_try() &&
-        id == NameToId(cx->names().try_)) {
-      return true;
-    }
     if (!JS::Prefs::experimental_error_iserror() &&
         id == NameToId(cx->names().isError)) {
+      return true;
+    }
+    if (!JS::Prefs::experimental_iterator_sequencing() &&
+        id == NameToId(cx->names().concat)) {
+      return true;
+    }
+    if (!JS::Prefs::experimental_joint_iteration() &&
+        (id == NameToId(cx->names().zip) ||
+         id == NameToId(cx->names().zipKeyed))) {
       return true;
     }
   }
@@ -2222,13 +2229,9 @@ JS_PUBLIC_API bool js::ShouldIgnorePropertyDefinition(JSContext* cx,
         (id == NameToId(cx->names().range))) {
       return true;
     }
-    if (!JS::Prefs::experimental_joint_iteration() &&
-        (id == NameToId(cx->names().zip) ||
-         id == NameToId(cx->names().zipKeyed))) {
-      return true;
-    }
-    if (!JS::Prefs::experimental_iterator_sequencing() &&
-        id == NameToId(cx->names().concat)) {
+    if (!JS::Prefs::experimental_promise_allkeyed() &&
+        (id == NameToId(cx->names().allKeyed) ||
+         id == NameToId(cx->names().allSettledKeyed))) {
       return true;
     }
   }
@@ -2236,6 +2239,25 @@ JS_PUBLIC_API bool js::ShouldIgnorePropertyDefinition(JSContext* cx,
     if (!JS::Prefs::experimental_upsert() &&
         (id == NameToId(cx->names().getOrInsert) ||
          id == NameToId(cx->names().getOrInsertComputed))) {
+      return true;
+    }
+  }
+  if (key == JSProto_ArrayBuffer &&
+      !JS::Prefs::experimental_arraybuffer_immutable()) {
+    if (id == NameToId(cx->names().immutable) ||
+        id == NameToId(cx->names().sliceToImmutable) ||
+        id == NameToId(cx->names().transferToImmutable)) {
+      return true;
+    }
+  }
+  if (key == JSProto_Iterator && !JS::Prefs::experimental_iterator_chunking()) {
+    if (id == NameToId(cx->names().chunks) ||
+        id == NameToId(cx->names().windows)) {
+      return true;
+    }
+  }
+  if (key == JSProto_Iterator && !JS::Prefs::experimental_iterator_join()) {
+    if (id == NameToId(cx->names().join)) {
       return true;
     }
   }
@@ -2247,13 +2269,6 @@ JS_PUBLIC_API bool js::ShouldIgnorePropertyDefinition(JSContext* cx,
     return true;
   }
 
-  if (key == JSProto_JSON &&
-      !JS::Prefs::experimental_json_parse_with_source() &&
-      (id == NameToId(cx->names().isRawJSON) ||
-       id == NameToId(cx->names().rawJSON))) {
-    return true;
-  }
-
   if (key == JSProto_Math && !JS::Prefs::experimental_math_sumprecise() &&
       id == NameToId(cx->names().sumPrecise)) {
     return true;
@@ -2261,6 +2276,10 @@ JS_PUBLIC_API bool js::ShouldIgnorePropertyDefinition(JSContext* cx,
 
   if (key == JSProto_Atomics && !JS::Prefs::experimental_atomics_pause() &&
       id == NameToId(cx->names().pause)) {
+    return true;
+  }
+  if (key == JSProto_Atomics && !JS::Prefs::atomics_wait_async() &&
+      id == NameToId(cx->names().waitAsync)) {
     return true;
   }
 
@@ -2447,10 +2466,11 @@ bool js::ToPrimitiveSlow(JSContext* cx, JSType preferredType,
   // (2015 Mar 17) 7.1.1 ToPrimitive.
   MOZ_ASSERT(preferredType == JSTYPE_UNDEFINED ||
              preferredType == JSTYPE_STRING || preferredType == JSTYPE_NUMBER);
-  RootedObject obj(cx, &vp.toObject());
+  RootedTuple<JSObject*, Value, Value> roots(cx);
+  RootedField<JSObject*, 0> obj(roots, &vp.toObject());
 
   // Steps 4-5.
-  RootedValue method(cx);
+  RootedField<Value, 1> method(roots);
   if (!GetInterestingSymbolProperty(cx, obj, cx->wellKnownSymbols().toPrimitive,
                                     &method)) {
     return false;
@@ -2466,8 +2486,8 @@ bool js::ToPrimitiveSlow(JSContext* cx, JSType preferredType,
     }
 
     // Steps 1-3, 6.a-b.
-    RootedValue arg0(
-        cx,
+    RootedField<Value, 2> arg0(
+        roots,
         StringValue(preferredType == JSTYPE_STRING   ? cx->names().string
                     : preferredType == JSTYPE_NUMBER ? cx->names().number
                                                      : cx->names().default_));
@@ -3141,7 +3161,7 @@ js::gc::AllocKind JSObject::allocKindForTenure(
   MOZ_ASSERT(IsInsideNursery(this));
 
   if (is<NativeObject>()) {
-    if (canHaveFixedElements()) {
+    if (is<ArrayObject>()) {
       const NativeObject& nobj = as<NativeObject>();
       MOZ_ASSERT(nobj.numFixedSlots() == 0);
 
@@ -3246,6 +3266,12 @@ void JSObject::addSizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf,
   } else if (is<WeakCollectionObject>()) {
     info->objectsMallocHeapMisc +=
         as<WeakCollectionObject>().sizeOfExcludingThis(mallocSizeOf);
+  } else if (is<WasmStructObject>()) {
+    const WasmStructObject& s = as<WasmStructObject>();
+    info->objectsMallocHeapSlots += s.sizeOfExcludingThis();
+  } else if (is<WasmArrayObject>()) {
+    const WasmArrayObject& a = as<WasmArrayObject>();
+    info->objectsMallocHeapElementsNormal += a.sizeOfExcludingThis();
   }
 #ifdef JS_HAS_CTYPES
   else {
@@ -3256,9 +3282,8 @@ void JSObject::addSizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf,
 #endif
 }
 
-size_t JSObject::sizeOfIncludingThisInNursery() const {
-  // This function doesn't concern itself yet with typed objects (bug 1133593).
-
+size_t JSObject::sizeOfIncludingThisInNursery(
+    mozilla::MallocSizeOf mallocSizeOf) const {
   MOZ_ASSERT(!isTenured());
 
   const Nursery& nursery = runtimeFromMainThread()->gc.nursery();
@@ -3278,6 +3303,12 @@ size_t JSObject::sizeOfIncludingThisInNursery() const {
     if (is<ArgumentsObject>()) {
       size += as<ArgumentsObject>().sizeOfData();
     }
+  } else if (is<WasmStructObject>()) {
+    const WasmStructObject& s = as<WasmStructObject>();
+    size += s.sizeOfExcludingThis();
+  } else if (is<WasmArrayObject>()) {
+    const WasmArrayObject& a = as<WasmArrayObject>();
+    size += a.sizeOfExcludingThis();
   }
 
   return size;
@@ -3288,7 +3319,7 @@ JS::ubi::Node::Size JS::ubi::Concrete<JSObject>::size(
   JSObject& obj = get();
 
   if (!obj.isTenured()) {
-    return obj.sizeOfIncludingThisInNursery();
+    return obj.sizeOfIncludingThisInNursery(mallocSizeOf);
   }
 
   JS::ClassInfo info;
@@ -3526,6 +3557,11 @@ void JSObject::debugCheckNewObject(Shape* shape, js::gc::AllocKind allocKind,
                     clasp->isProxyObject());
 
   MOZ_ASSERT(!shape->isDictionary());
+
+  // If the class has the JSCLASS_DELAY_METADATA_BUILDER flag, the caller must
+  // use AutoSetNewObjectMetadata.
+  MOZ_ASSERT_IF(clasp->shouldDelayMetadataBuilder(),
+                shape->realm()->hasActiveAutoSetNewObjectMetadata());
   MOZ_ASSERT(!shape->realm()->hasObjectPendingMetadata());
 
   // Non-native classes manage their own data and slots, so numFixedSlots is

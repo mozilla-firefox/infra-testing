@@ -6,40 +6,40 @@
   flex-direction: column;
 
   .ds-topics-widget-header {
-    font-size: 18px;
-    line-height: 20px;
+    font-size: var(--font-size-large);
   }
 
   hr {
-    background-color: color-mix(in srgb, var(--newtab-border-color) 52%, transparent);
+    // Bug 2001446: We are incorrectly using a border color token as the background color, but the
+    // intent of this element is to appear a 1px solid border line.
+    background-color: var(--border-color-deemphasized);
     height: 1px;
     border: 0;
-    margin: 10px 0 0;
+    margin: var(--space-small) 0 0;
   }
 
   .ds-topics-widget-list-container {
     flex-grow: 1;
 
     ul {
-      margin: 14px 0 0;
+      margin: var(--space-large) 0 0;
       padding: 0;
       display: flex;
       align-items: center;
-      grid-gap: 10px;
+      grid-gap: var(--space-small);
       flex-wrap: wrap;
 
       li {
         display: flex;
 
         a {
-          font-size: 14px;
-          line-height: 16px;
+          font-size: var(--font-size-small);
           text-decoration: none;
-          padding: 8px 15px;
+          padding: var(--space-small) var(--space-medium);
           background: var(--newtab-background-color-secondary);
-          border: 1px solid color-mix(in srgb, var(--newtab-border-color) 52%, transparent);
+          border: 1px solid var(--border-color-deemphasized);
           color: var(--newtab-text-primary-color);
-          border-radius: 8px;
+          border-radius: var(--border-radius-medium);
 
           &:hover {
             background: var(--newtab-element-hover-color);
@@ -68,12 +68,11 @@
   }
 
   .ds-topics-widget-button {
-    margin: 14px 0 0;
-    font-size: 16px;
-    line-height: 24px;
+    margin: var(--space-large) 0 0;
+    font-size: inherit;
     text-align: center;
-    padding: 8px;
-    border-radius: 4px;
+    padding: var(--space-small);
+    border-radius: var(--border-radius-small);
     background-color: var(--newtab-primary-action-background-pocket);
     border: 0;
 

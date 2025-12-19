@@ -6,19 +6,8 @@
 
 #include "ServiceWorkerContainer.h"
 
-#include "nsContentSecurityManager.h"
-#include "nsContentUtils.h"
-#include "nsIServiceWorkerManager.h"
-#include "nsIScriptError.h"
-#include "nsThreadUtils.h"
-#include "nsNetUtil.h"
-#include "nsPIDOMWindow.h"
-#include "mozilla/Components.h"
-
-#include "nsCycleCollectionParticipant.h"
-#include "nsGlobalWindowInner.h"
-#include "nsServiceManagerUtils.h"
 #include "mozilla/BasePrincipal.h"
+#include "mozilla/Components.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/StaticPrefs_extensions.h"
 #include "mozilla/StaticPrefs_privacy.h"
@@ -41,6 +30,16 @@
 #include "mozilla/dom/ipc/StructuredCloneData.h"
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/PBackgroundChild.h"
+#include "nsContentSecurityManager.h"
+#include "nsContentUtils.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsGlobalWindowInner.h"
+#include "nsIScriptError.h"
+#include "nsIServiceWorkerManager.h"
+#include "nsNetUtil.h"
+#include "nsPIDOMWindow.h"
+#include "nsServiceManagerUtils.h"
+#include "nsThreadUtils.h"
 
 // This is defined to something else on Windows
 #ifdef DispatchMessage
@@ -166,7 +165,7 @@ JSObject* ServiceWorkerContainer::WrapObject(
 
 already_AddRefed<Promise> ServiceWorkerContainer::Register(
     const TrustedScriptURLOrUSVString& aScriptURL,
-    const RegistrationOptions& aOptions, const CallerType aCallerType,
+    const RegistrationOptions& aOptions, nsIPrincipal* aSubjectPrincipal,
     ErrorResult& aRv) {
   AUTO_PROFILER_MARKER_UNTYPED("SWC Register", DOM, {});
 
@@ -196,7 +195,7 @@ already_AddRefed<Promise> ServiceWorkerContainer::Register(
   const nsAString* compliantString =
       TrustedTypeUtils::GetTrustedTypesCompliantString(
           aScriptURL, sink, kTrustedTypesOnlySinkGroup, *global,
-          compliantStringHolder, aRv);
+          aSubjectPrincipal, compliantStringHolder, aRv);
   if (aRv.Failed()) {
     return nullptr;
   }
@@ -289,7 +288,7 @@ already_AddRefed<Promise> ServiceWorkerContainer::Register(
   // Verify that the global is valid and has permission to store
   // data.  We perform this late so that we can report the final
   // scope URL in any error message.
-  Unused << GetGlobalIfValid(aRv, [&](nsIGlobalObject* aGlobal) {
+  (void)GetGlobalIfValid(aRv, [&](nsIGlobalObject* aGlobal) {
     AutoTArray<nsString, 1> param;
     CopyUTF8toUTF16(cleanedScopeURL, *param.AppendElement());
     aGlobal->ReportToConsole(nsIScriptError::errorFlag, "Service Workers"_ns,
@@ -319,7 +318,7 @@ already_AddRefed<Promise> ServiceWorkerContainer::Register(
   }
 
   mActor->SendRegister(
-      clientInfo.ref().ToIPC(), nsCString(cleanedScopeURL),
+      clientInfo.ref().ToIPC(), nsCString(cleanedScopeURL), aOptions.mType,
       nsCString(cleanedScriptURL), aOptions.mUpdateViaCache,
       [self,
        outer](const IPCServiceWorkerRegistrationDescriptorOrCopyableErrorResult&
@@ -511,7 +510,7 @@ already_AddRefed<Promise> ServiceWorkerContainer::GetRegistration(
             //  If rv is a failure then this is an application layer error.
             //  Note, though, we also reject with NS_OK to indicate that we just
             //  didn't find a registration.
-            Unused << self->GetGlobalIfValid(rv);
+            (void)self->GetGlobalIfValid(rv);
             if (!rv.Failed()) {
               outer->MaybeResolveWithUndefined();
               return;

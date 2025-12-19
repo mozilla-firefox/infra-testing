@@ -98,9 +98,9 @@ use api::units::*;
 use crate::image_tiling::{self, Repetition};
 use crate::border::{ensure_no_corner_overlap, BorderRadiusAu};
 use crate::box_shadow::{BLUR_SAMPLE_SCALE, BoxShadowClipSource, BoxShadowCacheKey};
+use crate::renderer::GpuBufferBuilderF;
 use crate::spatial_tree::{SpatialTree, SpatialNodeIndex};
 use crate::ellipse::Ellipse;
-use crate::gpu_cache::GpuCache;
 use crate::gpu_types::{BoxShadowStretchMode};
 use crate::intern;
 use crate::internal_types::{FastHashMap, FastHashSet, LayoutPrimitiveInfo};
@@ -525,10 +525,16 @@ impl ClipTreeBuilder {
         &mut self,
         clip_chain_id: Option<ClipChainId>,
         reset_seen: bool,
+        ignore_ancestor_clips: bool,
     ) {
         let (mut clip_node_id, mut seen_clips) = {
             let prev = self.clip_stack.last().unwrap();
-            (prev.clip_node_id, prev.seen_clips.clone())
+            let clip_node_id = if ignore_ancestor_clips {
+                ClipNodeId::NONE
+            } else {
+                prev.clip_node_id
+            };
+            (clip_node_id, prev.seen_clips.clone())
         };
 
         if let Some(clip_chain_id) = clip_chain_id {
@@ -1086,7 +1092,7 @@ impl ClipNodeInfo {
         &self,
         node: &ClipNode,
         clipped_rect: &LayoutRect,
-        gpu_cache: &mut GpuCache,
+        gpu_buffer: &mut GpuBufferBuilderF,
         resource_cache: &mut ResourceCache,
         mask_tiles: &mut Vec<VisibleMaskImageTile>,
         spatial_tree: &SpatialTree,
@@ -1152,12 +1158,12 @@ impl ClipNodeInfo {
                             if request_resources {
                                 resource_cache.request_image(
                                     req,
-                                    gpu_cache,
+                                    gpu_buffer,
                                 );
                             }
 
                             let task_id = rg_builder.add().init(
-                                RenderTask::new_image(props.descriptor.size, req)
+                                RenderTask::new_image(props.descriptor.size, req, false)
                             );
 
                             mask_tiles.push(VisibleMaskImageTile {
@@ -1170,13 +1176,13 @@ impl ClipNodeInfo {
                     visible_tiles = Some(tile_range_start..mask_tiles.len());
                 } else {
                     if request_resources {
-                        resource_cache.request_image(request, gpu_cache);
+                        resource_cache.request_image(request, gpu_buffer);
                     }
 
                     let tile_range_start = mask_tiles.len();
 
                     let task_id = rg_builder.add().init(
-                        RenderTask::new_image(props.descriptor.size, request)
+                        RenderTask::new_image(props.descriptor.size, request, false)
                     );
 
                     mask_tiles.push(VisibleMaskImageTile {
@@ -1345,7 +1351,7 @@ impl ClipStore {
         let mut local_clip_rect = clip_leaf.local_clip_rect;
         let mut current = clip_leaf.node_id;
 
-        while current != clip_root {
+        while current != clip_root && current != ClipNodeId::NONE {
             let node = clip_tree.get_node(current);
 
             if !add_clip_node_to_current_chain(
@@ -1493,7 +1499,7 @@ impl ClipStore {
         prim_to_pic_mapper: &SpaceMapper<LayoutPixel, PicturePixel>,
         pic_to_vis_mapper: &SpaceMapper<PicturePixel, VisPixel>,
         spatial_tree: &SpatialTree,
-        gpu_cache: &mut GpuCache,
+        gpu_buffer: &mut GpuBufferBuilderF,
         resource_cache: &mut ResourceCache,
         device_pixel_scale: DevicePixelScale,
         culling_rect: &VisRect,
@@ -1561,7 +1567,7 @@ impl ClipStore {
                     if let Some(instance) = node_info.create_instance(
                         node,
                         &local_bounding_rect,
-                        gpu_cache,
+                        gpu_buffer,
                         resource_cache,
                         &mut self.mask_tiles,
                         spatial_tree,
@@ -2112,23 +2118,6 @@ impl ClipItemKind {
             ClipItemKind::BoxShadow { .. } => {
                 ClipResult::Partial
             }
-        }
-    }
-}
-
-/// Represents a local rect and a device space
-/// rectangles that are either outside or inside bounds.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Geometry {
-    pub local_rect: LayoutRect,
-    pub device_rect: DeviceIntRect,
-}
-
-impl From<LayoutRect> for Geometry {
-    fn from(local_rect: LayoutRect) -> Self {
-        Geometry {
-            local_rect,
-            device_rect: DeviceIntRect::zero(),
         }
     }
 }

@@ -4,7 +4,10 @@
 
 package mozilla.components.compose.browser.toolbar.store
 
+import androidx.annotation.StringRes
 import mozilla.components.compose.browser.toolbar.concept.PageOrigin
+import mozilla.components.compose.browser.toolbar.ui.BrowserToolbarQuery
+import mozilla.components.concept.toolbar.AutocompleteResult
 import mozilla.components.lib.state.Action
 import mozilla.components.compose.browser.toolbar.concept.Action as ToolbarAction
 
@@ -13,11 +16,23 @@ import mozilla.components.compose.browser.toolbar.concept.Action as ToolbarActio
  */
 sealed interface BrowserToolbarAction : Action {
     /**
-     * Updates whether the toolbar is in "display" or "edit" mode.
+     * Allow typing a search term or URL.
      *
-     * @property editMode Whether or not the toolbar is in "edit" mode.
+     * @property isPrivate [Boolean] Indicates that the toolbar is used for private mode / incognito queries.
      */
-    data class ToggleEditMode(val editMode: Boolean) : BrowserToolbarAction
+    data class EnterEditMode(val isPrivate: Boolean) : BrowserToolbarAction
+
+    /**
+     * Show the current URL.
+     */
+    object ExitEditMode : BrowserToolbarAction
+
+    /**
+     * The toolbar was moved to a different position on screen.
+     *
+     * @property gravity [ToolbarGravity] for where the toolbar is positioned on the screen.
+     */
+    data class ToolbarGravityUpdated(val gravity: ToolbarGravity) : BrowserToolbarAction
 
     /**
      * Initialize the toolbar with the provided data.
@@ -25,12 +40,23 @@ sealed interface BrowserToolbarAction : Action {
      * @property mode The initial mode of the toolbar.
      * @property displayState The initial state of the display toolbar.
      * @property editState The initial state of the edit toolbar.
+     * @property gravity The initial gravity of the toolbar.
      */
     data class Init(
         val mode: Mode = Mode.DISPLAY,
         val displayState: DisplayState = DisplayState(),
         val editState: EditState = EditState(),
+        val gravity: ToolbarGravity = ToolbarGravity.Top,
     ) : BrowserToolbarAction
+
+    /**
+     * Commits the currently edited URL/text and typically switches back to display mode.
+     * This action is dispatched when the user submits their input (e.g., by pressing enter
+     * or tapping a submit button) in the edit toolbar.
+     *
+     * @property text The text to commit as the final URL or search query.
+     */
+    data class CommitUrl(val text: String) : BrowserToolbarAction
 }
 
 /**
@@ -82,6 +108,13 @@ sealed class BrowserDisplayToolbarAction : BrowserToolbarAction {
      * @property config The new configuration for what progress bar to show.
      */
     data class UpdateProgressBarConfig(val config: ProgressBarConfig?) : BrowserDisplayToolbarAction()
+
+    /**
+     * Replaces the currently displayed list of navigation actions with the provided list of actions.
+     *
+     * @property actions The new list of [ToolbarAction]s.
+     */
+    data class NavigationActionsUpdated(val actions: List<ToolbarAction>) : BrowserDisplayToolbarAction()
 }
 
 /**
@@ -91,21 +124,43 @@ sealed class BrowserEditToolbarAction : BrowserToolbarAction {
     /**
      * Updates the text of the toolbar that is currently being edited (in "edit" mode).
      *
-     * @property text The text in the toolbar that is being edited.
+     * @property query Information about the text in the toolbar that is being edited.
+     * @property isQueryPrefilled Whether the new text in [query] is prefilled and not user entered.
      */
-    data class UpdateEditText(val text: String) : BrowserEditToolbarAction()
+    data class SearchQueryUpdated(
+        val query: BrowserToolbarQuery,
+        val isQueryPrefilled: Boolean = false,
+    ) : BrowserEditToolbarAction()
 
     /**
-     * Adds an [Action] to be displayed at the start of the URL in the browser edit toolbar.
+     * Indicates that a new autocomplete suggestion is available or that the previous one is not valid anymore.
      *
-     * @property action The [Action] to be added.
+     * @property autocompletedSuggestion The new autocomplete suggestion. `null` if none is available.
      */
-    data class AddEditActionStart(val action: ToolbarAction) : BrowserEditToolbarAction()
+    data class AutocompleteSuggestionUpdated(
+        val autocompletedSuggestion: AutocompleteResult?,
+    ) : BrowserEditToolbarAction()
 
     /**
-     * Adds an [Action] to be displayed at the end of the URL in the browser edit toolbar.
+     * Replaces the currently displayed list of start actions while searching with the provided list of actions.
+     * These are displayed to the start of the input query, in the same bounding box.
      *
-     * @property action The [Action] to be added.
+     * @property actions The new list of [ToolbarAction]s.
      */
-    data class AddEditActionEnd(val action: ToolbarAction) : BrowserEditToolbarAction()
+    data class SearchActionsStartUpdated(val actions: List<ToolbarAction>) : BrowserEditToolbarAction()
+
+    /**
+     * Replaces the currently displayed list of end actions while searching with the provided list of actions.
+     * These are displayed to the end of the input query, in the same bounding box.
+     *
+     * @property actions The new list of [ToolbarAction]s.
+     */
+    data class SearchActionsEndUpdated(val actions: List<ToolbarAction>) : BrowserEditToolbarAction()
+
+    /**
+     * Update the placeholder hint resource ID in edit mode.
+     */
+    data class HintUpdated(
+        @param:StringRes val hint: Int,
+    ) : BrowserEditToolbarAction()
 }

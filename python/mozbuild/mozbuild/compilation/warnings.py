@@ -9,7 +9,6 @@ import os
 import re
 
 import mozpack.path as mozpath
-import six
 
 from mozbuild.util import hash_file
 
@@ -140,8 +139,7 @@ class WarningsDatabase:
 
     def __iter__(self):
         for value in self._files.values():
-            for warning in value["warnings"]:
-                yield warning
+            yield from value["warnings"]
 
     def __contains__(self, item):
         for value in self._files.values():
@@ -155,8 +153,7 @@ class WarningsDatabase:
     def warnings(self):
         """All the CompilerWarning instances in this database."""
         for value in self._files.values():
-            for w in value["warnings"]:
-                yield w
+            yield from value["warnings"]
 
     def type_counts(self, dirpath=None):
         """Returns a mapping of warning types to their counts."""
@@ -184,8 +181,7 @@ class WarningsDatabase:
         """Obtain the warnings for the specified file."""
         f = self._files.get(filename, {"warnings": []})
 
-        for warning in f["warnings"]:
-            yield warning
+        yield from f["warnings"]
 
     def insert(self, warning, compute_hash=True):
         assert isinstance(warning, CompilerWarning)
@@ -253,7 +249,7 @@ class WarningsDatabase:
                     normalized = list(v2)
                 obj["files"][k][k2] = normalized
 
-        to_write = six.ensure_text(json.dumps(obj, indent=2))
+        to_write = json.dumps(obj, indent=2)
         fh.write(to_write)
 
     def deserialize(self, fh):

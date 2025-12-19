@@ -4,6 +4,7 @@
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import datetime
+import errno
 import functools
 import glob
 import os
@@ -50,7 +51,7 @@ class AndroidMixin:
         self.use_gles3 = False
         self.use_root = True
         self.xre_path = None
-        super(AndroidMixin, self).__init__(**kwargs)
+        super().__init__(**kwargs)
 
     @property
     def adb_path(self):

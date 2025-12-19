@@ -36,14 +36,15 @@ class Location final : public nsISupports,
 
   explicit Location(nsPIDOMWindowInner* aWindow);
 
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(Location)
 
   // WebIDL API:
   void Assign(const nsACString& aUrl, nsIPrincipal& aSubjectPrincipal,
               ErrorResult& aError);
 
-  void Reload(bool aForceget, nsIPrincipal& aSubjectPrincipal,
+  MOZ_CAN_RUN_SCRIPT
+  void Reload(JSContext* aCx, bool aForceget, nsIPrincipal& aSubjectPrincipal,
               ErrorResult& aError);
 
   void GetHref(nsACString& aHref, nsIPrincipal& aSubjectPrincipal,
@@ -113,7 +114,7 @@ class Location final : public nsISupports,
   void ClearCachedValues();
 
  protected:
-  virtual ~Location();
+  ~Location();
 
   BrowsingContext* GetBrowsingContext() override;
   nsIDocShell* GetDocShell() override;

@@ -6,21 +6,30 @@
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  AmpSuggestions: "resource:///modules/urlbar/private/AmpSuggestions.sys.mjs",
+  AmpSuggestions:
+    "moz-src:///browser/components/urlbar/private/AmpSuggestions.sys.mjs",
   ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
-  ExperimentFakes: "resource://testing-common/NimbusTestUtils.sys.mjs",
-  ExperimentManager: "resource://nimbus/lib/ExperimentManager.sys.mjs",
-  QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
+  NimbusTestUtils: "resource://testing-common/NimbusTestUtils.sys.mjs",
+  QuickSuggest: "moz-src:///browser/components/urlbar/QuickSuggest.sys.mjs",
   Region: "resource://gre/modules/Region.sys.mjs",
   RemoteSettingsServer:
     "resource://testing-common/RemoteSettingsServer.sys.mjs",
-  SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
-  Suggestion: "resource://gre/modules/RustSuggest.sys.mjs",
+  SearchUtils: "moz-src:///toolkit/components/search/SearchUtils.sys.mjs",
+  SharedRemoteSettingsService:
+    "resource://gre/modules/RustSharedRemoteSettingsService.sys.mjs",
+  Suggestion:
+    "moz-src:///toolkit/components/uniffi-bindgen-gecko-js/components/generated/RustSuggest.sys.mjs",
   TestUtils: "resource://testing-common/TestUtils.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
+  YelpSubjectType:
+    "moz-src:///toolkit/components/uniffi-bindgen-gecko-js/components/generated/RustSuggest.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
+
+/**
+ * @import {Assert} from "resource://testing-common/Assert.sys.mjs"
+ */
 
 let gTestScope;
 
@@ -94,10 +103,24 @@ const TEST_SCOPE_PROPERTIES = [
   "registerCleanupFunction",
 ];
 
+/** @typedef {() => Promise<void>} cleanupFunctionType */
+
 /**
  * Test utils for quick suggest.
  */
 class _QuickSuggestTestUtils {
+  /** @type {Assert} */
+  Assert = undefined;
+
+  /** @type {object} */
+  EventUtils = undefined;
+
+  /** @type {(message:string) => void} */
+  info = undefined;
+
+  /** @type {(cleanupFn: cleanupFunctionType) => void} */
+  registerCleanupFunction = undefined;
+
   /**
    * Initializes the utils.
    *
@@ -154,9 +177,9 @@ class _QuickSuggestTestUtils {
    * Sets up local remote settings and Merino servers, registers test
    * suggestions, and initializes Suggest.
    *
-   * @param {object} options
+   * @param {object} [options]
    *   Options object
-   * @param {Array} options.remoteSettingsRecords
+   * @param {Array} [options.remoteSettingsRecords]
    *   Array of remote settings records. Each item in this array should be a
    *   realistic remote settings record with some exceptions as noted below.
    *   For details see `RemoteSettingsServer.addRecords()`.
@@ -164,17 +187,17 @@ class _QuickSuggestTestUtils {
    *       and not its metadata. It should be a JSONable object.
    *     - `record.collection` - Optional. The name of the RS collection that
    *       the record should be added to. Defaults to "quicksuggest-other".
-   * @param {Array} options.merinoSuggestions
+   * @param {Array} [options.merinoSuggestions]
    *   Array of Merino suggestion objects. If given, this function will start
-   *   the mock Merino server and set `quicksuggest.dataCollection.enabled` to
-   *   true so that `UrlbarProviderQuickSuggest` will fetch suggestions from it.
-   *   Otherwise Merino will not serve suggestions, but you can still set up
-   *   Merino without using this function by using `MerinoTestUtils` directly.
-   * @param {object} options.config
+   *   the mock Merino server and set appropriate online prefs so that Suggest
+   *   will fetch suggestions from it. Otherwise Merino will not serve
+   *   suggestions, but you can still set up Merino without using this function
+   *   by using `MerinoTestUtils` directly.
+   * @param {object} [options.config]
    *   The Suggest configuration object. This should not be the full remote
    *   settings record; only pass the object that should be set to the nested
    *   `configuration` object inside the record.
-   * @param {Array} options.prefs
+   * @param {Array} [options.prefs]
    *   An array of Suggest-related prefs to set. This is useful because setting
    *   some prefs, like feature gates, can cause Suggest to sync from remote
    *   settings; this function will set them, wait for sync to finish, and clear
@@ -182,7 +205,7 @@ class _QuickSuggestTestUtils {
    *   itself be a two-element array `[prefName, prefValue]` similar to the
    *   `set` array passed to `SpecialPowers.pushPrefEnv()`, except here pref
    *   names are relative to `browser.urlbar`.
-   * @returns {Function}
+   * @returns {Promise<(() => void) | (() => Promise<void>)>}
    *   An async cleanup function. This function is automatically registered as a
    *   cleanup function, so you only need to call it if your test needs to clean
    *   up Suggest before it ends, for example if you have a small number of
@@ -198,8 +221,8 @@ class _QuickSuggestTestUtils {
   } = {}) {
     this.#log("ensureQuickSuggestInit", "Started");
 
-    this.#log("ensureQuickSuggestInit", "Awaiting ExperimentManager.onStartup");
-    await lazy.ExperimentManager.onStartup();
+    this.#log("ensureQuickSuggestInit", "Awaiting ExperimentAPI.init");
+    const initializedExperimentAPI = await lazy.ExperimentAPI.init();
 
     this.#log("ensureQuickSuggestInit", "Awaiting ExperimentAPI.ready");
     await lazy.ExperimentAPI.ready();
@@ -225,23 +248,29 @@ class _QuickSuggestTestUtils {
     await this.#remoteSettingsServer.start();
     this.#log("ensureQuickSuggestInit", "Remote settings server started");
 
-    // Init Suggest and set prefs. Do this after setting up remote settings
+    // Init Suggest and force the region to US and the locale to en-US, which
+    // will cause Suggest to be enabled along with all suggestion types that are
+    // enabled in the US by default. Do this after setting up remote settings
     // because the Rust backend will immediately try to sync.
     this.#log(
       "ensureQuickSuggestInit",
       "Calling QuickSuggest.init() and setting prefs"
     );
-    await lazy.QuickSuggest.init();
-    prefs.push(["quicksuggest.enabled", true]);
+    await lazy.QuickSuggest.init({ region: "US", locale: "en-US" });
+
+    // Set prefs requested by the caller.
     for (let [name, value] of prefs) {
       lazy.UrlbarPrefs.set(name, value);
     }
 
     // Tell the Rust backend to use the local remote setting server.
-    await lazy.QuickSuggest.rustBackend._test_setRemoteSettingsConfig({
+    lazy.SharedRemoteSettingsService.updateServer({
+      url: this.#remoteSettingsServer.url.toString(),
       bucketName: "main",
-      serverUrl: this.#remoteSettingsServer.url.toString(),
     });
+    await lazy.QuickSuggest.rustBackend._test_setRemoteSettingsService(
+      lazy.SharedRemoteSettingsService.rustService()
+    );
 
     // Wait for the Rust backend to finish syncing.
     await this.forceSync();
@@ -251,7 +280,8 @@ class _QuickSuggestTestUtils {
       this.#log("ensureQuickSuggestInit", "Setting up Merino server");
       await lazy.MerinoTestUtils.server.start();
       lazy.MerinoTestUtils.server.response.body.suggestions = merinoSuggestions;
-      lazy.UrlbarPrefs.set("quicksuggest.dataCollection.enabled", true);
+      lazy.UrlbarPrefs.set("quicksuggest.online.available", true);
+      lazy.UrlbarPrefs.set("quicksuggest.online.enabled", true);
       this.#log("ensureQuickSuggestInit", "Done setting up Merino server");
     }
 
@@ -260,6 +290,12 @@ class _QuickSuggestTestUtils {
       if (!cleanupCalled) {
         cleanupCalled = true;
         await this.#uninitQuickSuggest(prefs, !!merinoSuggestions);
+
+        if (initializedExperimentAPI) {
+          // Only reset if we're in an xpcshell-test and actually initialized
+          // the ExperimentAPI.
+          lazy.ExperimentAPI._resetForTests();
+        }
       }
     };
     this.registerCleanupFunction?.(cleanup);
@@ -268,7 +304,7 @@ class _QuickSuggestTestUtils {
     return cleanup;
   }
 
-  async #uninitQuickSuggest(prefs, clearDataCollectionEnabled) {
+  async #uninitQuickSuggest(prefs, clearOnlinePrefs) {
     this.#log("#uninitQuickSuggest", "Started");
 
     // Reset prefs, which can cause the Rust backend to start syncing. Wait for
@@ -281,11 +317,12 @@ class _QuickSuggestTestUtils {
     this.#log("#uninitQuickSuggest", "Stopping remote settings server");
     await this.#remoteSettingsServer.stop();
 
-    if (clearDataCollectionEnabled) {
-      lazy.UrlbarPrefs.clear("quicksuggest.dataCollection.enabled");
+    if (clearOnlinePrefs) {
+      lazy.UrlbarPrefs.clear("quicksuggest.online.available");
+      lazy.UrlbarPrefs.clear("quicksuggest.online.enabled");
     }
 
-    await lazy.QuickSuggest.rustBackend._test_setRemoteSettingsConfig(null);
+    await lazy.QuickSuggest.rustBackend._test_setRemoteSettingsService(null);
 
     this.#log("#uninitQuickSuggest", "Done");
   }
@@ -296,9 +333,9 @@ class _QuickSuggestTestUtils {
    *
    * @param {Array} records
    *   Array of remote settings records. See `ensureQuickSuggestInit()`.
-   * @param {object} options
+   * @param {object} [options]
    *   Options object.
-   * @param {boolean} options.forceSync
+   * @param {boolean} [options.forceSync]
    *   Whether to force Suggest to sync after updating the records.
    */
   async setRemoteSettingsRecords(records, { forceSync = true } = {}) {
@@ -426,11 +463,15 @@ class _QuickSuggestTestUtils {
     blockId = 1,
     advertiser = "Amp",
     iabCategory = "22 - Shopping",
+    // Note that many callers use -1 here because they test without
+    // the search suggestion provider.
     suggestedIndex = 0,
     isSuggestedIndexRelativeToGroup = true,
     isBestMatch = false,
     requestId = undefined,
+    dismissalKey = undefined,
     descriptionL10n = { id: "urlbar-result-action-sponsored" },
+    categories = [],
   } = {}) {
     let result = {
       suggestedIndex,
@@ -440,15 +481,13 @@ class _QuickSuggestTestUtils {
       source: lazy.UrlbarUtils.RESULT_SOURCE.SEARCH,
       heuristic: false,
       payload: {
-        title,
+        title: fullKeyword ? `${fullKeyword} — ${title}` : title,
         url,
         originalUrl,
         requestId,
         source,
         provider,
-        displayUrl: url.replace(/^https:\/\//, ""),
         isSponsored: true,
-        qsSuggestion: fullKeyword ?? keyword,
         sponsoredImpressionUrl: impressionUrl,
         sponsoredClickUrl: clickUrl,
         sponsoredBlockId: blockId,
@@ -466,24 +505,28 @@ class _QuickSuggestTestUtils {
 
     if (result.payload.source == "rust") {
       result.payload.iconBlob = iconBlob;
-      result.payload.suggestionObject = new lazy.Suggestion.Amp(
+      result.payload.suggestionObject = new lazy.Suggestion.Amp({
         title,
         url,
-        originalUrl, // rawUrl
-        null, // icon,
-        null, // iconMimetype
+        rawUrl: originalUrl,
+        icon: null,
+        iconMimetype: null,
         fullKeyword,
         blockId,
         advertiser,
         iabCategory,
+        categories,
         impressionUrl,
         clickUrl,
-        clickUrl, // rawClickUrl
-        0.3, // score
-        null // ftsMatchInfo
-      );
+        rawClickUrl: clickUrl,
+        score: 0.3,
+        ftsMatchInfo: null,
+      });
     } else {
       result.payload.icon = icon;
+      if (typeof dismissalKey == "string") {
+        result.payload.dismissalKey = dismissalKey;
+      }
     }
 
     return result;
@@ -517,7 +560,7 @@ class _QuickSuggestTestUtils {
   }
 
   /**
-   * Returns an expected Wikipedia (non-sponsored) result that can be passed to
+   * Returns an expected Wikipedia result that can be passed to
    * `check_results()` in xpcshell tests.
    *
    * @returns {object}
@@ -530,9 +573,11 @@ class _QuickSuggestTestUtils {
     fullKeyword = keyword,
     title = "Wikipedia Suggestion",
     url = "https://example.com/wikipedia",
+    icon = null,
     iconBlob = null,
     suggestedIndex = -1,
     isSuggestedIndexRelativeToGroup = true,
+    telemetryType = "adm_nonsponsored",
   } = {}) {
     let result = {
       suggestedIndex,
@@ -541,73 +586,30 @@ class _QuickSuggestTestUtils {
       source: lazy.UrlbarUtils.RESULT_SOURCE.SEARCH,
       heuristic: false,
       payload: {
-        title,
+        title: fullKeyword ? `${fullKeyword} — ${title}` : title,
         url,
+        icon,
         iconBlob,
         source,
         provider,
-        displayUrl: url.replace(/^https:\/\//, ""),
+        telemetryType,
         isSponsored: false,
-        qsSuggestion: fullKeyword ?? keyword,
-        sponsoredAdvertiser: "Wikipedia",
-        sponsoredIabCategory: "5 - Education",
         isBlockable: true,
         isManageable: true,
-        telemetryType: "adm_nonsponsored",
       },
     };
 
     if (source == "rust") {
-      result.payload.suggestionObject = new lazy.Suggestion.Wikipedia(
+      result.payload.suggestionObject = new lazy.Suggestion.Wikipedia({
         title,
         url,
-        null, // icon
-        null, // iconMimetype
-        fullKeyword
-      );
+        icon: null,
+        iconMimeType: null,
+        fullKeyword,
+      });
     }
 
     return result;
-  }
-
-  /**
-   * Returns an expected dynamic Wikipedia (non-sponsored) result that can be
-   * passed to `check_results()` in xpcshell tests.
-   *
-   * @returns {object}
-   *   An object that can be passed to `check_results()`.
-   */
-  dynamicWikipediaResult({
-    source = "merino",
-    provider = "wikipedia",
-    keyword = "wikipedia",
-    fullKeyword = keyword,
-    title = "Wikipedia Suggestion",
-    url = "https://example.com/wikipedia",
-    icon = null,
-    suggestedIndex = -1,
-    isSuggestedIndexRelativeToGroup = true,
-  } = {}) {
-    return {
-      suggestedIndex,
-      isSuggestedIndexRelativeToGroup,
-      type: lazy.UrlbarUtils.RESULT_TYPE.URL,
-      source: lazy.UrlbarUtils.RESULT_SOURCE.SEARCH,
-      heuristic: false,
-      payload: {
-        title,
-        url,
-        source,
-        provider,
-        icon,
-        displayUrl: url.replace(/^https:\/\//, ""),
-        isSponsored: false,
-        qsSuggestion: fullKeyword ?? keyword,
-        isBlockable: true,
-        isManageable: true,
-        telemetryType: "wikipedia",
-      },
-    };
   }
 
   /**
@@ -647,184 +649,254 @@ class _QuickSuggestTestUtils {
     min_keyword_length = undefined,
     score = 0.29,
   } = {}) {
-    let [maxLen, maxWordCount] = keywords.reduce(
-      ([len, wordCount], kw) => [
-        Math.max(len, kw.length),
-        Math.max(wordCount, kw.split(/\s+/).filter(s => !!s).length),
-      ],
-      [0, 0]
-    );
     return {
       type: "weather",
       attachment: {
         keywords,
         min_keyword_length,
         score,
-        max_keyword_length: maxLen,
-        max_keyword_word_count: maxWordCount,
       },
     };
   }
 
   /**
-   * Returns a remote settings geonames record populated with some cities.
+   * Returns remote settings records containing geonames populated with some
+   * cities.
    *
-   * @returns {object}
-   *   A geonames record for storing in remote settings.
+   * @returns {Array}
+   *   One or more geonames records for storing in remote settings.
    */
-  geonamesRecord() {
+  geonamesRecords() {
     let geonames = [
+      // United States
+      {
+        id: 6252001,
+        name: "United States",
+        feature_class: "A",
+        feature_code: "PCLI",
+        country: "US",
+        admin1: "00",
+        population: 327167434,
+        latitude: "39.76",
+        longitude: "-98.5",
+      },
       // Waterloo, AL
       {
-        id: 1,
+        id: 4096497,
         name: "Waterloo",
-        latitude: "34.91814",
-        longitude: "-88.0642",
         feature_class: "P",
         feature_code: "PPL",
-        country_code: "US",
-        admin1_code: "AL",
+        country: "US",
+        admin1: "AL",
+        admin2: "077",
         population: 200,
-        alternate_names: ["waterloo"],
-        alternate_names_2: [{ name: "waterloo" }],
+        latitude: "34.91814",
+        longitude: "-88.0642",
       },
       // AL
       {
-        id: 2,
+        id: 4829764,
         name: "Alabama",
-        latitude: "32.75041",
-        longitude: "-86.75026",
         feature_class: "A",
         feature_code: "ADM1",
-        country_code: "US",
-        admin1_code: "AL",
+        country: "US",
+        admin1: "AL",
         population: 4530315,
-        alternate_names: ["al", "alabama"],
-        alternate_names_2: [
-          { name: "alabama" },
-          { name: "al", iso_language: "abbr" },
-        ],
+        latitude: "32.75041",
+        longitude: "-86.75026",
       },
       // Waterloo, IA
       {
-        id: 3,
+        id: 4880889,
         name: "Waterloo",
-        latitude: "42.49276",
-        longitude: "-92.34296",
         feature_class: "P",
         feature_code: "PPLA2",
-        country_code: "US",
-        admin1_code: "IA",
+        country: "US",
+        admin1: "IA",
+        admin2: "013",
+        admin3: "94597",
         population: 68460,
-        alternate_names: ["waterloo"],
-        alternate_names_2: [{ name: "waterloo" }],
+        latitude: "42.49276",
+        longitude: "-92.34296",
       },
       // IA
       {
-        id: 4,
+        id: 4862182,
         name: "Iowa",
-        latitude: "42.00027",
-        longitude: "-93.50049",
         feature_class: "A",
         feature_code: "ADM1",
-        country_code: "US",
-        admin1_code: "IA",
+        country: "US",
+        admin1: "IA",
         population: 2955010,
-        alternate_names: ["ia", "iowa"],
-        alternate_names_2: [
-          { name: "iowa" },
-          { name: "ia", iso_language: "abbr" },
-        ],
+        latitude: "42.00027",
+        longitude: "-93.50049",
       },
+
       // Made-up cities with the same name in the US and CA. The CA city has a
       // larger population.
       {
         id: 100,
         name: "US CA City",
-        latitude: "38.06084",
-        longitude: "-97.92977",
         feature_class: "P",
         feature_code: "PPL",
-        country_code: "US",
-        admin1_code: "IA",
+        country: "US",
+        admin1: "IA",
         population: 1,
-        alternate_names: ["us ca city"],
-        alternate_names_2: [{ name: "us ca city" }],
+        latitude: "38.06084",
+        longitude: "-97.92977",
       },
       {
         id: 101,
         name: "US CA City",
-        latitude: "45.50884",
-        longitude: "-73.58781",
         feature_class: "P",
         feature_code: "PPL",
-        country_code: "CA",
-        admin1_code: "08",
+        country: "CA",
+        admin1: "08",
         population: 2,
-        alternate_names: ["us ca city"],
-        alternate_names_2: [{ name: "us ca city" }],
+        latitude: "45.50884",
+        longitude: "-73.58781",
       },
+
       // Made-up cities that are only ~1.5 km apart.
       {
         id: 102,
         name: "Twin City A",
-        latitude: "33.748889",
-        longitude: "-84.39",
         feature_class: "P",
         feature_code: "PPL",
-        country_code: "US",
-        admin1_code: "GA",
+        country: "US",
+        admin1: "GA",
         population: 1,
-        alternate_names: ["twin city a"],
-        alternate_names_2: [{ name: "twin city a" }],
+        latitude: "33.748889",
+        longitude: "-84.39",
       },
       {
         id: 103,
         name: "Twin City B",
-        latitude: "33.76",
-        longitude: "-84.4",
         feature_class: "P",
         feature_code: "PPL",
-        country_code: "US",
-        admin1_code: "GA",
+        country: "US",
+        admin1: "GA",
         population: 2,
-        alternate_names: ["twin city b"],
-        alternate_names_2: [{ name: "twin city b" }],
+        latitude: "33.76",
+        longitude: "-84.4",
       },
+
+      // Tokyo
       {
         id: 1850147,
         name: "Tokyo",
-        latitude: "35.6895",
-        longitude: "139.69171",
         feature_class: "P",
         feature_code: "PPLC",
-        country_code: "JP",
-        admin1_code: "Tokyo-to",
-        population: 8336599,
-        alternate_names: ["tokyo"],
-        alternate_names_2: [{ name: "tokyo" }],
+        country: "JP",
+        admin1: "Tokyo-to",
+        population: 9733276,
+        latitude: "35.6895",
+        longitude: "139.69171",
+      },
+
+      // UK
+      {
+        id: 2635167,
+        name: "United Kingdom of Great Britain and Northern Ireland",
+        feature_class: "A",
+        feature_code: "PCLI",
+        country: "GB",
+        admin1: "00",
+        population: 66488991,
+        latitude: "54.75844",
+        longitude: "-2.69531",
+      },
+      // England
+      {
+        id: 6269131,
+        name: "England",
+        feature_class: "A",
+        feature_code: "ADM1",
+        country: "GB",
+        admin1: "ENG",
+        population: 57106398,
+        latitude: "52.16045",
+        longitude: "-0.70312",
+      },
+      // Liverpool (metropolitan borough, admin2 for Liverpool city)
+      {
+        id: 3333167,
+        name: "Liverpool",
+        feature_class: "A",
+        feature_code: "ADM2",
+        country: "GB",
+        admin1: "ENG",
+        admin2: "H8",
+        population: 484578,
+        latitude: "53.41667",
+        longitude: "-2.91667",
+      },
+      // Liverpool (city)
+      {
+        id: 2644210,
+        name: "Liverpool",
+        feature_class: "P",
+        feature_code: "PPLA2",
+        country: "GB",
+        admin1: "ENG",
+        admin2: "H8",
+        population: 864122,
+        latitude: "53.41058",
+        longitude: "-2.97794",
       },
     ];
-    let [maxLen, maxWordCount] = geonames.reduce(
-      ([len, wordCount], geoname) => [
-        Math.max(len, ...geoname.alternate_names.map(n => n.length)),
-        Math.max(
-          wordCount,
-          ...geoname.alternate_names.map(
-            n => n.split(/\s+/).filter(s => !!s).length
-          )
-        ),
-      ],
-      [0, 0]
-    );
-    return {
-      type: "geonames",
-      attachment: {
-        geonames,
-        max_alternate_name_length: maxLen,
-        max_alternate_name_word_count: maxWordCount,
+
+    return [
+      {
+        type: "geonames-2",
+        attachment: geonames,
       },
-    };
+    ];
+  }
+
+  /**
+   * Returns remote settings records containing geonames alternates (alternate
+   * names) populated with some names.
+   *
+   * @returns {Array}
+   *   One or more geonames alternates records for storing in remote settings.
+   */
+  geonamesAlternatesRecords() {
+    return [
+      {
+        type: "geonames-alternates",
+        attachment: [
+          {
+            language: "abbr",
+            alternates_by_geoname_id: [
+              [4829764, ["AL"]],
+              [4862182, ["IA"]],
+              [2635167, ["UK"]],
+            ],
+          },
+        ],
+      },
+      {
+        type: "geonames-alternates",
+        attachment: [
+          {
+            language: "en",
+            alternates_by_geoname_id: [
+              [
+                2635167,
+                [
+                  {
+                    name: "United Kingdom",
+                    is_preferred: true,
+                    is_short: true,
+                  },
+                ],
+              ],
+            ],
+          },
+        ],
+      },
+    ];
   }
 
   /**
@@ -845,10 +917,10 @@ class _QuickSuggestTestUtils {
     setUtmParams = true,
   }) {
     if (setUtmParams) {
-      url = new URL(url);
-      url.searchParams.set("utm_medium", "firefox-desktop");
-      url.searchParams.set("utm_source", "firefox-suggest");
-      url = url.href;
+      let parsedUrl = new URL(url);
+      parsedUrl.searchParams.set("utm_medium", "firefox-desktop");
+      parsedUrl.searchParams.set("utm_source", "firefox-suggest");
+      url = parsedUrl.href;
     }
 
     let result = {
@@ -865,26 +937,27 @@ class _QuickSuggestTestUtils {
         url,
         originalUrl,
         icon,
-        displayUrl: url.replace(/^https:\/\//, ""),
         isSponsored: false,
         shouldShowUrl: true,
-        bottomTextL10n: { id: "firefox-suggest-addons-recommended" },
+        bottomTextL10n: {
+          id: "firefox-suggest-addons-recommended",
+        },
         helpUrl: lazy.QuickSuggest.HELP_URL,
         telemetryType: "amo",
       },
     };
 
     if (source == "rust") {
-      result.payload.suggestionObject = new lazy.Suggestion.Amo(
+      result.payload.suggestionObject = new lazy.Suggestion.Amo({
         title,
-        originalUrl, // url
-        icon,
+        url: originalUrl,
+        iconUrl: icon,
         description,
-        "4.7", // rating
-        1, // numberOfRatings
-        "amo-suggestion@example.com", // guid
-        0.2 // score
-      );
+        rating: "4.7",
+        numberOfRatings: 1,
+        guid: "amo-suggestion@example.com",
+        score: 0.2,
+      });
     }
 
     return result;
@@ -918,20 +991,21 @@ class _QuickSuggestTestUtils {
         title,
         url: finalUrl.href,
         originalUrl: url,
-        displayUrl: finalUrl.href.replace(/^https:\/\//, ""),
         isSponsored: false,
         description,
         icon: "chrome://global/skin/icons/mdn.svg",
         shouldShowUrl: true,
-        bottomTextL10n: { id: "firefox-suggest-mdn-bottom-text" },
+        bottomTextL10n: {
+          id: "firefox-suggest-mdn-bottom-text",
+        },
         source: "rust",
         provider: "Mdn",
-        suggestionObject: new lazy.Suggestion.Mdn(
+        suggestionObject: new lazy.Suggestion.Mdn({
           title,
           url,
           description,
-          0.2 // score
-        ),
+          score: 0.2,
+        }),
       },
     };
   }
@@ -945,16 +1019,19 @@ class _QuickSuggestTestUtils {
    */
   yelpResult({
     url,
-    title,
+    title = undefined,
+    titleL10n = undefined,
     source = "rust",
     provider = "Yelp",
     isTopPick = false,
-    // The default Yelp suggestedIndex is 0, unlike most other Suggest
-    // suggestion types, which use -1.
+    // The logic for the default Yelp `suggestedIndex` is complex and depends on
+    // whether `UrlbarProviderSearchSuggestions` is active and whether search
+    // suggestions are shown first. By default -- when the answer to both of
+    // those questions is Yes -- Yelp's `suggestedIndex` is 0.
     suggestedIndex = 0,
     isSuggestedIndexRelativeToGroup = true,
     originalUrl = undefined,
-    displayUrl = undefined,
+    suggestedType = lazy.YelpSubjectType.SERVICE,
   }) {
     const utmParameters = "&utm_medium=partner&utm_source=mozilla";
 
@@ -962,13 +1039,6 @@ class _QuickSuggestTestUtils {
     originalUrl = new URL(originalUrl);
     originalUrl.searchParams.delete("find_loc");
     originalUrl = originalUrl.toString();
-
-    displayUrl =
-      (displayUrl ??
-        url
-          .replace(/^https:\/\/www[.]/, "")
-          .replace("%20", " ")
-          .replace("%2C", ",")) + utmParameters;
 
     url += utmParameters;
 
@@ -988,27 +1058,36 @@ class _QuickSuggestTestUtils {
         source,
         provider,
         telemetryType: "yelp",
-        bottomTextL10n: { id: "firefox-suggest-yelp-bottom-text" },
+        bottomTextL10n: {
+          id: "firefox-suggest-yelp-bottom-text",
+        },
         url,
         originalUrl,
         title,
-        displayUrl,
+        titleL10n,
         icon: null,
         isSponsored: true,
       },
     };
 
     if (source == "rust") {
-      result.payload.suggestionObject = new lazy.Suggestion.Yelp(
-        originalUrl, // url
-        title,
-        null, // icon
-        null, // iconMimetype
-        0.2, // score
-        false, // hasLocationSign
-        false, // subjectExactMatch
-        "find_loc" // locationParam
-      );
+      result.payload.suggestionObject = new lazy.Suggestion.Yelp({
+        url: originalUrl,
+        // `title` will be undefined if the caller passed in `titleL10n`
+        // instead, but the Rust suggestion must be created with a string title.
+        // The Rust suggestion title doesn't actually matter since no test
+        // relies on it directly or indirectly. Pick an arbitrary string, and
+        // make it distinctive so it's easier to track down bugs in case it does
+        // start to matter at some point.
+        title: title ?? "<QuickSuggestTestUtils Yelp suggestion>",
+        icon: null,
+        iconMimeType: null,
+        score: 0.2,
+        hasLocationSign: false,
+        subjectExactMatch: false,
+        subjectType: suggestedType,
+        locationParam: "find_loc",
+      });
     }
 
     return result;
@@ -1024,14 +1103,35 @@ class _QuickSuggestTestUtils {
   weatherResult({
     source = "rust",
     provider = "Weather",
-    city = null,
-    region = null,
+    titleL10n = undefined,
     temperatureUnit = undefined,
   } = {}) {
     if (!temperatureUnit) {
       temperatureUnit =
         Services.locale.regionalPrefsLocales[0] == "en-US" ? "f" : "c";
     }
+
+    if (!titleL10n) {
+      titleL10n = {
+        id: "urlbar-result-weather-title",
+        args: {
+          city: lazy.MerinoTestUtils.WEATHER_SUGGESTION.city_name,
+          region: lazy.MerinoTestUtils.WEATHER_SUGGESTION.region_code,
+        },
+      };
+    }
+    titleL10n = {
+      ...titleL10n,
+      args: {
+        ...titleL10n.args,
+        temperature:
+          lazy.MerinoTestUtils.WEATHER_SUGGESTION.current_conditions
+            .temperature[temperatureUnit],
+        unit: temperatureUnit.toUpperCase(),
+      },
+      parseMarkup: true,
+    };
+
     return {
       type: lazy.UrlbarUtils.RESULT_TYPE.URL,
       source: lazy.UrlbarUtils.RESULT_SOURCE.SEARCH,
@@ -1040,26 +1140,11 @@ class _QuickSuggestTestUtils {
       isRichSuggestion: true,
       richSuggestionIconVariation: "6",
       payload: {
+        titleL10n,
         url: lazy.MerinoTestUtils.WEATHER_SUGGESTION.url,
-        titleL10n: {
-          id: "firefox-suggest-weather-title-simplest",
-          args: {
-            temperature:
-              lazy.MerinoTestUtils.WEATHER_SUGGESTION.current_conditions
-                .temperature[temperatureUnit],
-            unit: temperatureUnit.toUpperCase(),
-            city: city || lazy.MerinoTestUtils.WEATHER_SUGGESTION.city_name,
-            region:
-              region || lazy.MerinoTestUtils.WEATHER_SUGGESTION.region_code,
-          },
-          parseMarkup: true,
-          cacheable: true,
-          excludeArgsFromCacheKey: true,
-        },
         bottomTextL10n: {
-          id: "firefox-suggest-weather-sponsored",
+          id: "urlbar-result-weather-provider-sponsored",
           args: { provider: "AccuWeather®" },
-          cacheable: true,
         },
         source,
         provider,
@@ -1073,7 +1158,7 @@ class _QuickSuggestTestUtils {
   /**
    * Asserts a result is a quick suggest result.
    *
-   * @param {object} [options]
+   * @param {object} options
    *   The options object.
    * @param {string} options.url
    *   The expected URL. At least one of `url` and `originalUrl` must be given.
@@ -1094,7 +1179,7 @@ class _QuickSuggestTestUtils {
    * @param {boolean} [options.hasSponsoredLabel]
    *   Whether the result is expected to show the "Sponsored" label below the
    *   title.
-   * @returns {result}
+   * @returns {Promise<object>}
    *   The quick suggest result.
    */
   async assertIsQuickSuggest({
@@ -1106,7 +1191,7 @@ class _QuickSuggestTestUtils {
     isBestMatch = false,
     isManageable = true,
     hasSponsoredLabel = isSponsored || isBestMatch,
-  } = {}) {
+  }) {
     this.Assert.ok(
       url || originalUrl,
       "At least one of url and originalUrl is specified"
@@ -1194,7 +1279,7 @@ class _QuickSuggestTestUtils {
     }
 
     this.Assert.ok(
-      row._buttons.get("menu"),
+      row._buttons.get("result-menu"),
       "The menu button should be present"
     );
 
@@ -1308,8 +1393,8 @@ class _QuickSuggestTestUtils {
    *   Options for the mock experiment.
    * @param {Function} options.callback
    *   The callback to call while enrolled in the mock experiment.
-   * @param {object} options.options
-   *   See {@link enrollExperiment}.
+   * @param {object} options.valueOverrides
+   *   Values for feature variables.
    */
   async withExperiment({ callback, ...options }) {
     let doExperimentCleanup = await this.enrollExperiment(options);
@@ -1332,7 +1417,7 @@ class _QuickSuggestTestUtils {
     await lazy.ExperimentAPI.ready();
 
     let doExperimentCleanup =
-      await lazy.ExperimentFakes.enrollWithFeatureConfig({
+      await lazy.NimbusTestUtils.enrollWithFeatureConfig({
         enabled: true,
         featureId: "urlbar",
         value: valueOverrides,
@@ -1340,107 +1425,200 @@ class _QuickSuggestTestUtils {
 
     return async () => {
       this.#log("enrollExperiment.cleanup", "Awaiting experiment cleanup");
-      doExperimentCleanup();
+      await doExperimentCleanup();
     };
   }
 
   /**
-   * Sets the app's home region and locales, calls your callback, and resets
-   * the region and locales.
+   * Sets the app's home region and locale, calls your callback, and resets the
+   * region and locale.
    *
    * @param {object} options
    *   Options object.
-   * @param {Array} options.locales
-   *   An array of locale strings. The entire array will be set as the available
-   *   locales, and the first locale in the array will be set as the requested
-   *   locale.
    * @param {Function} options.callback
-   *  The callback to be called with the {@link locales} set. This function can
-   *  be async.
-   * @param {string} options.homeRegion
-   *   The home region to set, an all-caps country code, e.g., "US", "CA", "DE".
-   *   Leave undefined to skip setting a region.
+   *  The callback to call.
+   * @param {string} [options.region]
+   *   The region to set. See `setRegionAndLocale`.
+   * @param {string} [options.locale]
+   *   The locale to set. See `setRegionAndLocale`.
+   * @param {boolean} [options.skipSuggestReset]
+   *   Whether Suggest reset should be skipped after setting the new region and
+   *   locale. See `setRegionAndLocale`.
    */
-  async withLocales({ locales, callback, homeRegion = undefined }) {
-    let promiseChanges = async desiredLocales => {
+  async withRegionAndLocale({
+    callback,
+    region = undefined,
+    locale = undefined,
+    skipSuggestReset = false,
+  }) {
+    this.#log("withRegionAndLocale", "Calling setRegionAndLocale");
+    let cleanup = await this.setRegionAndLocale({
+      region,
+      locale,
+      skipSuggestReset,
+    });
+
+    this.#log("withRegionAndLocale", "Calling callback");
+    await callback();
+
+    this.#log("withRegionAndLocale", "Calling cleanup");
+    await cleanup();
+
+    this.#log("withRegionAndLocale", "Done");
+  }
+
+  /**
+   * Sets the app's home region and locale and waits for all relevant
+   * notifications. Returns an async cleanup function that should be called to
+   * restore the previous region and locale.
+   *
+   * See also `withRegionAndLocale`.
+   *
+   * @param {object} options
+   *   Options object.
+   * @param {string} [options.region]
+   *   The home region to set. If falsey, the current region will remain
+   *   unchanged.
+   * @param {string} [options.locale]
+   *   The locale to set. If falsey, the current locale will remain unchanged.
+   * @param {Array} [options.availableLocales]
+   *   Normally this should be left undefined. If defined,
+   *   `Services.locale.availableLocales` will be set to this array. Otherwise
+   *   it will be set to `[locale]`.
+   * @param {boolean} [options.skipSuggestReset]
+   *   Normally this function resets `QuickSuggest` after the new region and
+   *   locale are set, which will cause all Suggest prefs to be set according to
+   *   the new region and locale. That's undesirable in some cases, for example
+   *   when you're testing region/locale combinations where Suggest or one of
+   *   its features isn't enabled by default. Pass in true to skip reset.
+   * @returns {Promise<Function>}
+   *   An async cleanup function.
+   */
+  async setRegionAndLocale({
+    region = undefined,
+    locale = undefined,
+    availableLocales = undefined,
+    skipSuggestReset = false,
+  }) {
+    let oldRegion = lazy.Region.home;
+    let newRegion = region ?? oldRegion;
+    let regionPromise = this.#waitForAllRegionChanges(newRegion);
+    if (region) {
+      this.#log("setRegionAndLocale", "Setting region: " + region);
+      lazy.Region._setHomeRegion(region, true);
+    }
+
+    let {
+      availableLocales: oldAvailableLocales,
+      requestedLocales: oldRequestedLocales,
+    } = Services.locale;
+    let newLocale = locale ?? oldRequestedLocales[0];
+    let localePromise = this.#waitForAllLocaleChanges(newLocale);
+    if (locale) {
+      this.#log("setRegionAndLocale", "Setting locale: " + locale);
+      Services.locale.availableLocales = availableLocales ?? [locale];
+      Services.locale.requestedLocales = [locale];
+    }
+
+    this.#log("setRegionAndLocale", "Waiting for region and locale changes");
+    await Promise.all([regionPromise, localePromise]);
+
+    this.Assert.equal(
+      lazy.Region.home,
+      newRegion,
+      "Region is now " + newRegion
+    );
+    this.Assert.equal(
+      Services.locale.appLocaleAsBCP47,
+      newLocale,
+      "App locale is now " + newLocale
+    );
+
+    if (!skipSuggestReset) {
+      this.#log("setRegionAndLocale", "Waiting for _test_reset");
+      await lazy.QuickSuggest._test_reset();
+    }
+
+    if (this.#remoteSettingsServer) {
+      this.#log("setRegionAndLocale", "Waiting for forceSync");
+      await this.forceSync();
+    }
+
+    this.#log("setRegionAndLocale", "Done");
+
+    return async () => {
       this.#log(
-        "withLocales",
-        "Changing locales from " +
-          JSON.stringify(Services.locale.requestedLocales) +
-          " to " +
-          JSON.stringify(desiredLocales)
+        "setRegionAndLocale",
+        "Cleanup started, calling setRegionAndLocale with old region and locale"
       );
+      await this.setRegionAndLocale({
+        skipSuggestReset,
+        region: oldRegion,
+        locale: oldRequestedLocales[0],
+        availableLocales: oldAvailableLocales,
+      });
+      this.#log("setRegionAndLocale", "Cleanup done");
+    };
+  }
 
-      if (desiredLocales[0] == Services.locale.requestedLocales[0]) {
-        // Nothing happens when the locale doesn't actually change.
-        this.#log("withLocales", "Locale is already " + desiredLocales[0]);
-        return;
-      }
+  async #waitForAllRegionChanges(region) {
+    await lazy.TestUtils.waitForCondition(
+      () => lazy.SharedRemoteSettingsService.country == region,
+      "Waiting for SharedRemoteSettingsService.country to be " + region
+    );
+  }
 
-      this.#log("withLocales", "Waiting for intl:requested-locales-changed");
-      await lazy.TestUtils.topicObserved("intl:requested-locales-changed");
-      this.#log("withLocales", "Observed intl:requested-locales-changed");
+  async #waitForAllLocaleChanges(locale) {
+    let promises = [
+      lazy.TestUtils.waitForCondition(
+        () => lazy.SharedRemoteSettingsService.locale == locale,
+        "#waitForAllLocaleChanges: Waiting for SharedRemoteSettingsService.locale to be " +
+          locale
+      ),
+    ];
+
+    if (locale == Services.locale.requestedLocales[0]) {
+      // "intl:app-locales-changed" isn't sent when the locale doesn't change.
+      this.#log("#waitForAllLocaleChanges", "Locale is already " + locale);
+    } else {
+      this.#log(
+        "#waitForAllLocaleChanges",
+        "Waiting for intl:app-locales-changed"
+      );
+      promises.push(lazy.TestUtils.topicObserved("intl:app-locales-changed"));
 
       // Wait for the search service to reload engines. Otherwise tests can fail
       // in strange ways due to internal search service state during shutdown.
       // It won't always reload engines but it's hard to tell in advance when it
       // won't, so also set a timeout.
-      this.#log("withLocales", "Waiting for TOPIC_SEARCH_SERVICE");
-      await Promise.race([
-        lazy.TestUtils.topicObserved(
-          lazy.SearchUtils.TOPIC_SEARCH_SERVICE,
-          (subject, data) => {
-            this.#log(
-              "withLocales",
-              "Observed TOPIC_SEARCH_SERVICE with data: " + data
-            );
-            return data == "engines-reloaded";
-          }
-        ),
-        new Promise(resolve => {
-          lazy.setTimeout(() => {
-            this.#log(
-              "withLocales",
-              "Timed out waiting for TOPIC_SEARCH_SERVICE"
-            );
-            resolve();
-          }, 2000);
-        }),
-      ]);
-
-      this.#log("withLocales", "Done waiting for locale changes");
-    };
-
-    let originalHome = lazy.Region.home;
-    if (homeRegion) {
-      lazy.Region._setHomeRegion(homeRegion, false);
+      this.#log("#waitForAllLocaleChanges", "Waiting for TOPIC_SEARCH_SERVICE");
+      promises.push(
+        Promise.race([
+          lazy.TestUtils.topicObserved(
+            lazy.SearchUtils.TOPIC_SEARCH_SERVICE,
+            (subject, data) => {
+              this.#log(
+                "#waitForAllLocaleChanges",
+                "Observed TOPIC_SEARCH_SERVICE with data: " + data
+              );
+              return data == "engines-reloaded";
+            }
+          ),
+          new Promise(resolve => {
+            lazy.setTimeout(() => {
+              this.#log(
+                "#waitForAllLocaleChanges",
+                "Timed out waiting for TOPIC_SEARCH_SERVICE (not an error)"
+              );
+              resolve();
+            }, 1000);
+          }),
+        ])
+      );
     }
 
-    let available = Services.locale.availableLocales;
-    let requested = Services.locale.requestedLocales;
-
-    let newRequested = locales.slice(0, 1);
-    let promise = promiseChanges(newRequested);
-    Services.locale.availableLocales = locales;
-    Services.locale.requestedLocales = newRequested;
-    await promise;
-
-    this.Assert.equal(
-      Services.locale.appLocaleAsBCP47,
-      locales[0],
-      "App locale is now " + locales[0]
-    );
-
-    await callback();
-
-    if (homeRegion) {
-      lazy.Region._setHomeRegion(originalHome, false);
-    }
-
-    promise = promiseChanges(requested);
-    Services.locale.availableLocales = available;
-    Services.locale.requestedLocales = requested;
-    await promise;
+    await Promise.all(promises);
+    this.#log("#waitForAllLocaleChanges", "Done");
   }
 
   #log(fnName, msg) {

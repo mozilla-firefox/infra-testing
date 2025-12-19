@@ -13,16 +13,28 @@ const { AppConstants } = ChromeUtils.importESModule(
   "resource://gre/modules/AppConstants.sys.mjs"
 );
 
+// eslint-disable-next-line mozilla/use-static-import
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
+);
+
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  AboutNewTabParent: "resource:///actors/AboutNewTabParent.sys.mjs",
   AboutPreferences: "resource://newtab/lib/AboutPreferences.sys.mjs",
   AdsFeed: "resource://newtab/lib/AdsFeed.sys.mjs",
+  InferredPersonalizationFeed:
+    "resource://newtab/lib/InferredPersonalizationFeed.sys.mjs",
+  SmartShortcutsFeed: "resource://newtab/lib/SmartShortcutsFeed.sys.mjs",
   DEFAULT_SITES: "resource://newtab/lib/DefaultSites.sys.mjs",
   DefaultPrefs: "resource://newtab/lib/ActivityStreamPrefs.sys.mjs",
   DiscoveryStreamFeed: "resource://newtab/lib/DiscoveryStreamFeed.sys.mjs",
   FaviconFeed: "resource://newtab/lib/FaviconFeed.sys.mjs",
   HighlightsFeed: "resource://newtab/lib/HighlightsFeed.sys.mjs",
+  ListsFeed: "resource://newtab/lib/Widgets/ListsFeed.sys.mjs",
+  NewTabAttributionFeed: "resource://newtab/lib/NewTabAttributionFeed.sys.mjs",
+  NewTabActorRegistry: "resource://newtab/lib/NewTabActorRegistry.sys.mjs",
   NewTabInit: "resource://newtab/lib/NewTabInit.sys.mjs",
   NewTabMessaging: "resource://newtab/lib/NewTabMessaging.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
@@ -32,14 +44,23 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "resource://newtab/lib/RecommendationProvider.sys.mjs",
   Region: "resource://gre/modules/Region.sys.mjs",
   SectionsFeed: "resource://newtab/lib/SectionsManager.sys.mjs",
+  StartupCacheInit: "resource://newtab/lib/StartupCacheInit.sys.mjs",
   Store: "resource://newtab/lib/Store.sys.mjs",
   SystemTickFeed: "resource://newtab/lib/SystemTickFeed.sys.mjs",
   TelemetryFeed: "resource://newtab/lib/TelemetryFeed.sys.mjs",
+  TimerFeed: "resource://newtab/lib/Widgets/TimerFeed.sys.mjs",
   TopSitesFeed: "resource://newtab/lib/TopSitesFeed.sys.mjs",
   TopStoriesFeed: "resource://newtab/lib/TopStoriesFeed.sys.mjs",
-  WallpaperFeed: "resource://newtab/lib/WallpaperFeed.sys.mjs",
+  WallpaperFeed: "resource://newtab/lib/Wallpapers/WallpaperFeed.sys.mjs",
   WeatherFeed: "resource://newtab/lib/WeatherFeed.sys.mjs",
 });
+
+XPCOMUtils.defineLazyServiceGetter(
+  lazy,
+  "ProxyService",
+  "@mozilla.org/network/protocol-proxy-service;1",
+  Ci.nsIProtocolProxyService
+);
 
 // NB: Eagerly load modules that will be loaded/constructed/initialized in the
 // common case to avoid the overhead of wrapping and detecting lazy loading.
@@ -52,6 +73,10 @@ const REGION_INFERRED_PERSONALIZATION_CONFIG =
   "browser.newtabpage.activity-stream.discoverystream.sections.personalization.inferred.region-config";
 const LOCALE_INFERRED_PERSONALIZATION_CONFIG =
   "browser.newtabpage.activity-stream.discoverystream.sections.personalization.inferred.locale-config";
+const REGION_SOV_CONFIG =
+  "browser.newtabpage.activity-stream.sov.region-config";
+const LOCALE_SOV_CONFIG =
+  "browser.newtabpage.activity-stream.sov.locale-config";
 
 const REGION_WEATHER_CONFIG =
   "browser.newtabpage.activity-stream.discoverystream.region-weather-config";
@@ -70,27 +95,68 @@ const LOCALE_TOPIC_LABEL_CONFIG =
 const REGION_BASIC_CONFIG =
   "browser.newtabpage.activity-stream.discoverystream.region-basic-config";
 
-const REGION_THUMBS_CONFIG =
-  "browser.newtabpage.activity-stream.discoverystream.thumbsUpDown.region-thumbs-config";
-const LOCALE_THUMBS_CONFIG =
-  "browser.newtabpage.activity-stream.discoverystream.thumbsUpDown.locale-thumbs-config";
-
-const REGION_CONTEXTUAL_CONTENT_CONFIG =
-  "browser.newtabpage.activity-stream.discoverystream.contextualContent.region-content-config";
-const LOCALE_CONTEXTUAL_CONTENT_CONFIG =
-  "browser.newtabpage.activity-stream.discoverystream.contextualContent.locale-content-config";
+const REGION_CONTEXTUAL_AD_CONFIG =
+  "browser.newtabpage.activity-stream.discoverystream.sections.contextualAds.region-config";
+const LOCALE_CONTEXTUAL_AD_CONFIG =
+  "browser.newtabpage.activity-stream.discoverystream.sections.contextualAds.locale-config";
 
 const REGION_SECTIONS_CONFIG =
   "browser.newtabpage.activity-stream.discoverystream.sections.region-content-config";
 const LOCALE_SECTIONS_CONFIG =
   "browser.newtabpage.activity-stream.discoverystream.sections.locale-content-config";
 
+const PREF_SHOULD_AS_INITIALIZE_FEEDS =
+  "browser.newtabpage.activity-stream.testing.shouldInitializeFeeds";
+
+const PREF_INFERRED_ENABLED =
+  "discoverystream.sections.personalization.inferred.enabled";
+
+const PREF_IMAGE_PROXY_ENABLED =
+  "browser.newtabpage.activity-stream.discoverystream.imageProxy.enabled";
+
+const PREF_IMAGE_PROXY_ENABLED_STORE = "discoverystream.imageProxy.enabled";
+
+export const WEATHER_OPTIN_REGIONS = [
+  "AT", // Austria
+  "BE", // Belgium
+  "BG", // Bulgaria
+  "HR", // Croatia
+  "CY", // Cyprus
+  "CZ", // Czechia
+  "DK", // Denmark
+  "EE", // Estonia
+  "FI", // Finland
+  "FR", // France
+  "DE", // Germany
+  "GB", // United Kingdom
+  "GR", // Greece
+  "HU", // Hungary
+  "IS", // Iceland
+  "IE", // Ireland
+  "IT", // Italy
+  "LV", // Latvia
+  "LI", // Liechtenstein
+  "LT", // Lithuania
+  "MT", // Malta
+  "NL", // Netherlands
+  "NO", // Norway
+  "PL", // Poland
+  "PT", // Portugal
+  "RO", // Romania
+  "SG", // Singapore
+  "SK", // Slovakia
+  "SI", // Slovenia
+  "ES", // Spain
+  "SE", // Sweden
+  "CH", // Switzerland
+];
+
 export function csvPrefHasValue(stringPrefName, value) {
   if (typeof stringPrefName !== "string") {
     throw new Error(`The stringPrefName argument is not a string`);
   }
 
-  const pref = Services.prefs.getStringPref(stringPrefName) || "";
+  const pref = Services.prefs.getStringPref(stringPrefName, "") || "";
   const prefValues = pref
     .split(",")
     .map(s => s.trim())
@@ -99,10 +165,35 @@ export function csvPrefHasValue(stringPrefName, value) {
   return prefValues.includes(value);
 }
 
+export function shouldInitializeFeeds(defaultValue = true) {
+  // For tests/automation: when false, newtab won't initialize
+  // select feeds in this session.
+  // Flipping after initialization has no effect on the current session.
+  const shouldInitialize = Services.prefs.getBoolPref(
+    PREF_SHOULD_AS_INITIALIZE_FEEDS,
+    defaultValue
+  );
+  return shouldInitialize;
+}
+
 function useInferredPersonalization({ geo, locale }) {
   return (
     csvPrefHasValue(REGION_INFERRED_PERSONALIZATION_CONFIG, geo) &&
     csvPrefHasValue(LOCALE_INFERRED_PERSONALIZATION_CONFIG, locale)
+  );
+}
+
+function useSov({ geo, locale }) {
+  return (
+    csvPrefHasValue(REGION_SOV_CONFIG, geo) &&
+    csvPrefHasValue(LOCALE_SOV_CONFIG, locale)
+  );
+}
+
+function useContextualAds({ geo, locale }) {
+  return (
+    csvPrefHasValue(REGION_CONTEXTUAL_AD_CONFIG, geo) &&
+    csvPrefHasValue(LOCALE_CONTEXTUAL_AD_CONFIG, locale)
   );
 }
 
@@ -121,6 +212,10 @@ function showWeather({ geo, locale }) {
   );
 }
 
+function showWeatherOptIn({ geo }) {
+  return WEATHER_OPTIN_REGIONS.includes(geo);
+}
+
 function showTopicsSelection({ geo, locale }) {
   return (
     csvPrefHasValue(REGION_TOPICS_CONFIG, geo) &&
@@ -132,20 +227,6 @@ function showTopicLabels({ geo, locale }) {
   return (
     csvPrefHasValue(REGION_TOPIC_LABEL_CONFIG, geo) &&
     csvPrefHasValue(LOCALE_TOPIC_LABEL_CONFIG, locale)
-  );
-}
-
-function showThumbsUpDown({ geo, locale }) {
-  return (
-    csvPrefHasValue(REGION_THUMBS_CONFIG, geo) &&
-    csvPrefHasValue(LOCALE_THUMBS_CONFIG, locale)
-  );
-}
-
-function showContextualContent({ geo, locale }) {
-  return (
-    csvPrefHasValue(REGION_CONTEXTUAL_CONTENT_CONFIG, geo) &&
-    csvPrefHasValue(LOCALE_CONTEXTUAL_CONTENT_CONFIG, locale)
   );
 }
 
@@ -166,31 +247,6 @@ export const PREFS_CONFIG = new Map([
         "Comma-separated list of default top sites to fill in behind visited sites",
       getValue: ({ geo }) =>
         lazy.DEFAULT_SITES.get(lazy.DEFAULT_SITES.has(geo) ? geo : ""),
-    },
-  ],
-  [
-    "feeds.section.topstories.options",
-    {
-      title: "Configuration options for top stories feed",
-      // This is a dynamic pref as it depends on the feed being shown or not
-      getValue: args =>
-        JSON.stringify({
-          api_key_pref: "extensions.pocket.oAuthConsumerKey",
-          // Use the opposite value as what default value the feed would have used
-          hidden: !PREFS_CONFIG.get("feeds.system.topstories").getValue(args),
-          provider_icon: "chrome://global/skin/icons/pocket.svg",
-          provider_name: "Pocket",
-          read_more_endpoint:
-            "https://getpocket.com/explore/trending?src=fx_new_tab",
-          stories_endpoint: `https://getpocket.cdn.mozilla.net/v3/firefox/global-recs?version=3&consumer_key=$apiKey&locale_lang=${
-            args.locale
-          }&feed_variant=${
-            showSpocs(args) ? "default_spocs_on" : "default_spocs_off"
-          }`,
-          stories_referrer: "https://getpocket.com/recommendations",
-          topics_endpoint: `https://getpocket.cdn.mozilla.net/v3/firefox/trending-topics?version=2&consumer_key=$apiKey&locale_lang=${args.locale}`,
-          show_spocs: showSpocs(args),
-        }),
     },
   ],
   [
@@ -262,26 +318,32 @@ export const PREFS_CONFIG = new Map([
     },
   ],
   [
+    "discoverystream.refinedCardsLayout.enabled",
+    {
+      title:
+        "Boolean flag enable layout and styling refinements for content and ad cards across different card sizes",
+      value: false,
+    },
+  ],
+  [
+    "discoverystream.merino-provider.ohttp.enabled",
+    {
+      title: "Enables the Merino requests and images sent over OHTTP",
+      value: false,
+    },
+  ],
+  [
+    "unifiedAds.ohttp.enabled",
+    {
+      title: "Enables the MARS requests and images sent over OHTTP",
+      value: false,
+    },
+  ],
+  [
     "unifiedAds.adsFeed.enabled",
     {
       title:
         "Use AdsFeed.sys.mjs to fetch/cache/serve Mozilla Ad Routing Service (MARS) unified ads ",
-      value: false,
-    },
-  ],
-  [
-    "unifiedAds.adsFeed.tiles.enabled",
-    {
-      title:
-        "Use AdsFeed.sys.mjs to fetch/cache/serve sponsored top sites tiles",
-      value: false,
-    },
-  ],
-  [
-    "unifiedAds.adsFeed.spocs.enabled",
-    {
-      title:
-        "Use AdsFeed.sys.mjs to fetch/cache/serve sponsored content in recommended stories",
       value: false,
     },
   ],
@@ -332,6 +394,45 @@ export const PREFS_CONFIG = new Map([
     },
   ],
   [
+    "system.showWeatherOptIn",
+    {
+      title: "system.showWeatherOptIn",
+      // pref is dynamic
+      getValue: showWeatherOptIn,
+    },
+  ],
+  [
+    "discoverystream.optIn-region-weather-config",
+    {
+      title: "Regions for weather opt-in.",
+      value: "DE,GB,FR,ES,IT,CH,AT,BE,IE,NL,PL,CZ,SE,SG,HU,SK,FI,DK,NO,PT",
+    },
+  ],
+  [
+    "weather.optInDisplayed",
+    {
+      title:
+        "Enable opt-in dialog to display for weather widget in GDPR regions.",
+      value: true,
+    },
+  ],
+  [
+    "weather.optInAccepted",
+    {
+      title:
+        "User choice made when prompted with the opt-in dialog for weather.",
+      value: false,
+    },
+  ],
+  [
+    "weather.staticData.enabled",
+    {
+      title:
+        "Static weather data shown when user has not set/enabled location from opt-in.",
+      value: true,
+    },
+  ],
+  [
     "weather.query",
     {
       title: "weather.query",
@@ -358,6 +459,14 @@ export const PREFS_CONFIG = new Map([
       title:
         "Toggle the weather widget to include a text summary of the current conditions",
       value: "simple",
+    },
+  ],
+  [
+    "weather.placement",
+    {
+      title:
+        "weather widget can be rendered in a variety of positions. Either in `header` or `sections`",
+      value: "header",
     },
   ],
   [
@@ -431,6 +540,27 @@ export const PREFS_CONFIG = new Map([
     },
   ],
   [
+    "telemetry.surfaceId",
+    {
+      title: "surface id",
+    },
+  ],
+  [
+    "telemetry.privatePing.redactNewtabPing.enabled",
+    {
+      title: "Redacts content interaction ids from original New Tab ping",
+      value: false,
+    },
+  ],
+  [
+    "telemetry.privatePing.inferredInterests.enabled",
+    {
+      title:
+        "Includes interest vector with private ping when user has enabeled inferred personalization",
+      value: false,
+    },
+  ],
+  [
     "section.highlights.includeVisited",
     {
       title:
@@ -443,14 +573,6 @@ export const PREFS_CONFIG = new Map([
     {
       title:
         "Boolean flag that decides whether or not to show bookmarks in highlights.",
-      value: true,
-    },
-  ],
-  [
-    "section.highlights.includePocket",
-    {
-      title:
-        "Boolean flag that decides whether or not to show saved Pocket stories in highlights.",
       value: true,
     },
   ],
@@ -487,13 +609,6 @@ export const PREFS_CONFIG = new Map([
     "newtabWallpapers.enabled",
     {
       title: "Boolean flag to turn wallpaper functionality on and off",
-      value: false,
-    },
-  ],
-  [
-    "newtabWallpapers.v2.enabled",
-    {
-      title: "Boolean flag to turn wallpaper v2 functionality on and off",
       value: false,
     },
   ],
@@ -542,17 +657,10 @@ export const PREFS_CONFIG = new Map([
     },
   ],
   [
-    "newtabAdSize.variant-a",
+    "newtabWallpapers.customWallpaper.theme",
     {
-      title: "Boolean flag to turn ad size variant A on and off",
-      value: false,
-    },
-  ],
-  [
-    "newtabAdSize.variant-b",
-    {
-      title: "Boolean flag to turn ad size variant B on and off",
-      value: false,
+      title: "theme ('light' | 'dark') of user uploaded wallpaper",
+      value: "",
     },
   ],
   [
@@ -593,23 +701,16 @@ export const PREFS_CONFIG = new Map([
     },
   ],
   [
-    "newtabLayouts.variant-a",
+    "discoverystream.promoCard.enabled",
     {
-      title: "Boolean flag to turn layout variant A on and off",
+      title: "Boolean flag to turn the promo card on and off",
       value: false,
     },
   ],
   [
-    "newtabLayouts.variant-b",
+    "discoverystream.promoCard.visible",
     {
-      title: "Boolean flag to turn layout variant B on and off",
-      value: false,
-    },
-  ],
-  [
-    "newtabShortcuts.refresh",
-    {
-      title: "Boolean flag to change sizes and spacing of new tab shortcuts",
+      title: "Boolean flag whether the promo card is visible or not",
       value: false,
     },
   ],
@@ -645,6 +746,13 @@ export const PREFS_CONFIG = new Map([
     },
   ],
   [
+    "discoverystream.sections.contextualAds.enabled",
+    {
+      title: "Boolean flag to enable contextual ads",
+      getValue: useContextualAds,
+    },
+  ],
+  [
     "discoverystream.sections.personalization.inferred.enabled",
     {
       title: "Boolean flag to enable inferred personalizaton",
@@ -653,18 +761,45 @@ export const PREFS_CONFIG = new Map([
     },
   ],
   [
-    "discoverystream.sections.personalization.inferred.position",
+    "discoverystream.sections.personalization.inferred.interests.override",
     {
       title:
-        "Position of inferred personalizaton card. Should correlate to a row in Card Sections",
-      value: "1",
+        "Testing feature to allow specification of specific user interests",
     },
   ],
   [
-    "discoverystream.sections.personalization.inferred.blocked",
+    "discoverystream.dailyBrief.enabled",
+    {
+      title: "Boolean flag to enable the daily brief section",
+      value: false,
+    },
+  ],
+  [
+    "discoverystream.dailyBrief.sectionId",
+    {
+      title: "sectionId for the Daily brief section",
+      value: "top_stories_section",
+    },
+  ],
+  [
+    "discoverystream.shortcuts.personalization.enabled",
+    {
+      title: "Boolean flag to enable shortcuts personalization",
+      value: false,
+    },
+  ],
+  [
+    "discoverystream.shortcuts.force_log.enabled",
     {
       title:
-        "Boolean determining if personalized card is dismissed or visible on the page",
+        "Boolean flag to enable logging shortcuts interactions even if enabled is off",
+      value: false,
+    },
+  ],
+  [
+    "discoverystream.attribution.enabled",
+    {
+      title: "Boolean flag to enable newtab attribution",
       value: false,
     },
   ],
@@ -676,11 +811,10 @@ export const PREFS_CONFIG = new Map([
     },
   ],
   [
-    "discoverystream.sections.cards.thumbsUpDown.enabled",
+    "discoverystream.sections.personalization.inferred.model.override",
     {
       title:
-        "Boolean flag to enable thumbs up/down buttons in the new card UI in recommended stories",
-      value: true,
+        "Override inferred personalization model JSON string that typically comes from rec API. Or 'TEST' for a test model",
     },
   ],
   [
@@ -726,6 +860,36 @@ export const PREFS_CONFIG = new Map([
     },
   ],
   [
+    "discoverystream.placements.contextualSpocs",
+    {
+      title:
+        "CSV string of spoc placement ids on newtab Pocket grid. A placement id tells our ad server where the ads are intended to be displayed.",
+    },
+  ],
+  [
+    "discoverystream.placements.contextualSpocs.counts",
+    {
+      title:
+        "CSV string of spoc placement counts on newtab Pocket grid. The count tells the ad server how many ads to return for this position and placement.",
+    },
+  ],
+  [
+    "discoverystream.placements.contextualBanners",
+    {
+      title:
+        "CSV string of the banner placement ids on newtab Pocket grid. This placement id tells us which banner is visible when contexual ads are on",
+      value: "",
+    },
+  ],
+  [
+    "discoverystream.placements.contextualBanners.counts",
+    {
+      title:
+        "CSV string of AdBanner placement counts on newtab Pocket grid. The count tells the ad server how many banners to return for this position and placement.",
+      value: "",
+    },
+  ],
+  [
     "discoverystream.placements.spocs",
     {
       title:
@@ -751,6 +915,13 @@ export const PREFS_CONFIG = new Map([
     {
       title:
         "CSV string of tiles placement counts on newtab tiles section. The count tells the ad server how many ads to return for this position and placement.",
+    },
+  ],
+  [
+    "discoverystream.imageProxy.enabled",
+    {
+      title: "Boolean flag to enable image proxying for images on newtab",
+      value: false,
     },
   ],
   [
@@ -801,6 +972,151 @@ export const PREFS_CONFIG = new Map([
     {
       title: "Currently set wallpaper",
       value: "",
+    },
+  ],
+  [
+    "sov.enabled",
+    {
+      title: "Enables share of voice (SOV)",
+      getValue: useSov,
+    },
+  ],
+  [
+    "sov.name",
+    {
+      title:
+        "A unique id, usually this is a timestamp for the day it was generated",
+      value: "SOV-20251122215625",
+    },
+  ],
+  [
+    "sov.frecency.exposure",
+    {
+      title:
+        "Is or was the user eligible for frecency ranked sponsored shortcuts",
+      value: false,
+    },
+  ],
+  [
+    "sov.amp.allocation",
+    {
+      title: "How many positions can be filled from amp",
+      value: "100, 100, 100",
+    },
+  ],
+  [
+    "sov.frecency.allocation",
+    {
+      title: "How many positions can be filled by frecency",
+      value: "0, 0, 0",
+    },
+  ],
+  [
+    "widgets.system.enabled",
+    {
+      title: "Enables visibility of all widgets and controls to enable them",
+      value: false,
+    },
+  ],
+  [
+    "widgets.enabled",
+    {
+      title: "Allows users to toggle all widgets on and off at once",
+      value: false,
+    },
+  ],
+  [
+    "widgets.lists.enabled",
+    {
+      title: "Enables the to-do lists widget",
+      value: true,
+    },
+  ],
+  [
+    "widgets.lists.maxLists",
+    {
+      title: "Maximum number of lists that can be created",
+      value: 10,
+    },
+  ],
+  [
+    "widgets.lists.maxListItems",
+    {
+      title:
+        "Maximum number of items that can be created on an individual list",
+      value: 100,
+    },
+  ],
+  [
+    "widgets.system.lists.enabled",
+    {
+      title: "Enables the to-do lists widget experiment in Nimbus",
+      value: false,
+    },
+  ],
+  [
+    "widgets.lists.interaction",
+    {
+      title:
+        "Boolean flag for determining if a user has interacted with the lists widget",
+      value: false,
+    },
+  ],
+  [
+    "widgets.lists.badge.enabled",
+    {
+      title: "Show badge on lists widget to indicate new/beta feature",
+      value: false,
+    },
+  ],
+  [
+    "widgets.lists.badge.label",
+    {
+      title: "Label type for lists widget badge (New or Beta)",
+      value: "",
+    },
+  ],
+  [
+    "widgets.maximized",
+    {
+      title: "Toggles maximized state for all widgets in the widgets section",
+      value: false,
+    },
+  ],
+  [
+    "widgets.system.maximized",
+    {
+      title: "Enables the maximize widget feature experiment in Nimbus",
+      value: false,
+    },
+  ],
+  [
+    "widgets.focusTimer.enabled",
+    {
+      title: "Enables the focus timer widget",
+      value: true,
+    },
+  ],
+  [
+    "widgets.system.focusTimer.enabled",
+    {
+      title: "Enables the focus timer widget experiment in Nimbus",
+      value: false,
+    },
+  ],
+  [
+    "widgets.focusTimer.interaction",
+    {
+      title:
+        "Boolean flag for determining if a user has interacted with the timer widget",
+      value: false,
+    },
+  ],
+  [
+    "widgets.focusTimer.showSystemNotifications",
+    {
+      title: "Enables the focus timer widget to show system notifications",
+      value: false,
     },
   ],
   [
@@ -864,7 +1180,6 @@ export const PREFS_CONFIG = new Map([
       title: "Configuration for the new pocket new tab",
       getValue: () => {
         return JSON.stringify({
-          api_key_pref: "extensions.pocket.oAuthConsumerKey",
           collapsible: true,
           enabled: true,
         });
@@ -878,38 +1193,6 @@ export const PREFS_CONFIG = new Map([
         "Endpoint prefixes (comma-separated) that are allowed to be requested",
       value:
         "https://getpocket.cdn.mozilla.net/,https://firefox-api-proxy.cdn.mozilla.net/,https://spocs.getpocket.com/,https://merino.services.mozilla.com/,https://ads.mozilla.org/",
-    },
-  ],
-  [
-    "discoverystream.isCollectionDismissible",
-    {
-      title: "Allows Pocket story collections to be dismissed",
-      value: false,
-    },
-  ],
-  [
-    "discoverystream.onboardingExperience.dismissed",
-    {
-      title: "Allows the user to dismiss the new Pocket onboarding experience",
-      skipBroadcast: true,
-      alsoToPreloaded: true,
-      value: false,
-    },
-  ],
-  [
-    "discoverystream.thumbsUpDown.enabled",
-    {
-      title: "Allow users to give thumbs up/down on recommended stories",
-      // pref is dynamic
-      getValue: showThumbsUpDown,
-    },
-  ],
-  [
-    "discoverystream.thumbsUpDown.searchTopsitesCompact",
-    {
-      title:
-        "A compact layout of the search/topsites/stories sections to account for new height from thumbs up/down icons ",
-      value: false,
     },
   ],
   [
@@ -1041,10 +1324,10 @@ export const PREFS_CONFIG = new Map([
     },
   ],
   [
-    "showRecentSaves",
+    "discoverystream.spocs.onDemand",
     {
-      title: "Control whether a user wants recent saves visible on Newtab",
-      value: true,
+      title: "Set sponsored content to only update cache when requested.",
+      value: false,
     },
   ],
   [
@@ -1061,73 +1344,16 @@ export const PREFS_CONFIG = new Map([
     },
   ],
   [
-    "discoverystream.contextualContent.enabled",
-    {
-      title: "Controls if contextual content (List feed) is displayed",
-      getValue: showContextualContent,
-    },
-  ],
-  [
-    "discoverystream.contextualContent.feeds",
-    {
-      title: "CSV list of possible topics for the contextual content feed",
-      value: "need_to_know, fakespot",
-    },
-  ],
-  [
-    "discoverystream.contextualContent.selectedFeed",
-    {
-      title:
-        "currently selected feed (one of discoverystream.contextualContent.feeds) to display in listfeed",
-      value: "need_to_know",
-    },
-  ],
-  [
-    "discoverystream.contextualContent.listFeedTitle",
-    {
-      title: "Title for currently selected feed",
-      value: "",
-    },
-  ],
-  [
-    "discoverystream.contextualContent.fakespot.defaultCategoryTitle",
-    {
-      title: "Title default category from fakespot endpoint",
-      value: "",
-    },
-  ],
-  [
-    "discoverystream.contextualContent.fakespot.footerCopy",
-    {
-      title: "footer copy for fakespot feed",
-      value: "",
-    },
-  ],
-  [
-    "discoverystream.contextualContent.fakespot.enabled",
-    {
-      title: "User controlled pref that displays fakespot feed",
-      value: true,
-    },
-  ],
-  [
-    "discoverystream.contextualContent.fakespot.ctaCopy",
-    {
-      title: "cta copy for fakespot feed",
-      value: "",
-    },
-  ],
-  [
-    "discoverystream.contextualContent.fakespot.ctaUrl",
-    {
-      title: "cta link for fakespot feed",
-      value: "",
-    },
-  ],
-  [
     "discoverystream.publisherFavicon.enabled",
     {
-      title: "Enables publihser favicons on recommended stories",
+      title: "Enables publisher favicons on recommended stories",
+      value: false,
+    },
+  ],
+  [
+    "discoverystream.sections.clientLayout.enabled",
+    {
+      title: "Enables client side layout for recommended stories",
       value: false,
     },
   ],
@@ -1165,6 +1391,14 @@ export const PREFS_CONFIG = new Map([
       },
     },
   ],
+  [
+    "showSponsoredCheckboxes",
+    {
+      title:
+        "'Support Firefox' pref on 'about:settings#home' page. Toggles all sponsored results on and off at the same time",
+      value: true,
+    },
+  ],
 ]);
 
 // Array of each feed's FEEDS_CONFIG factory and values to add to PREFS_CONFIG
@@ -1197,6 +1431,12 @@ const FEEDS_DATA = [
     name: "sections",
     factory: () => new lazy.SectionsFeed(),
     title: "Manages sections",
+    value: true,
+  },
+  {
+    name: "startupcacheinit",
+    factory: () => new lazy.StartupCacheInit(),
+    title: "Sends a copy of the state to the startup cache newtab",
     value: true,
   },
   {
@@ -1315,14 +1555,47 @@ const FEEDS_DATA = [
     value: true,
   },
   {
+    name: "inferredpersonalizationfeed",
+    factory: () => new lazy.InferredPersonalizationFeed(),
+    title:
+      "Handles generating and caching an interest vector for inferred personalization",
+    value: true,
+  },
+  {
+    name: "smartshortcutsfeed",
+    factory: () => new lazy.SmartShortcutsFeed(),
+    title:
+      "Handles generating and caching an interest vector for shortcuts personalization",
+    value: true,
+  },
+  {
+    name: "newtabattributionfeed",
+    factory: () => new lazy.NewTabAttributionFeed(),
+    title: "Handles a local DB for story and shortcuts clicks and impressions",
+    value: true,
+  },
+  {
     name: "newtabmessaging",
     factory: () => new lazy.NewTabMessaging(),
     title: "Handles fetching and triggering ASRouter messages in newtab",
     value: true,
   },
+  {
+    name: "listsfeed",
+    factory: () => new lazy.ListsFeed(),
+    title: "Handles the data for the Todo list widget",
+    value: true,
+  },
+  {
+    name: "timerfeed",
+    factory: () => new lazy.TimerFeed(),
+    title: "Handles the data for the Timer widget",
+    value: true,
+  },
 ];
 
 const FEEDS_CONFIG = new Map();
+
 for (const config of FEEDS_DATA) {
   const pref = `feeds.${config.name}`;
   FEEDS_CONFIG.set(pref, config.factory);
@@ -1336,33 +1609,31 @@ export class ActivityStream {
   constructor() {
     this.initialized = false;
     this.store = new lazy.Store();
-    this.feeds = FEEDS_CONFIG;
     this._defaultPrefs = new lazy.DefaultPrefs(PREFS_CONFIG);
+    this._proxyRegistered = false;
+  }
+
+  get feeds() {
+    if (shouldInitializeFeeds()) {
+      return FEEDS_CONFIG;
+    }
+
+    // We currently make excpetions for topsites, and prefs feeds
+    // because they currently impacts tests timing for places initialization.
+    // See bug 1999166.
+    const feeds = new Map([
+      ["feeds.system.topsites", FEEDS_CONFIG.get("feeds.system.topsites")],
+      ["feeds.prefs", FEEDS_CONFIG.get("feeds.prefs")],
+    ]);
+    return feeds;
   }
 
   init() {
     this._updateDynamicPrefs();
     this._defaultPrefs.init();
     Services.obs.addObserver(this, "intl:app-locales-changed");
-
-    // Look for outdated user pref values that might have been accidentally
-    // persisted when restoring the original pref value at the end of an
-    // experiment across versions with a different default value.
-    const DS_CONFIG =
-      "browser.newtabpage.activity-stream.discoverystream.config";
-    if (
-      Services.prefs.prefHasUserValue(DS_CONFIG) &&
-      [
-        // Firefox 66
-        `{"api_key_pref":"extensions.pocket.oAuthConsumerKey","enabled":false,"show_spocs":true,"layout_endpoint":"https://getpocket.com/v3/newtab/layout?version=1&consumer_key=$apiKey&layout_variant=basic"}`,
-        // Firefox 67
-        `{"api_key_pref":"extensions.pocket.oAuthConsumerKey","enabled":false,"show_spocs":true,"layout_endpoint":"https://getpocket.cdn.mozilla.net/v3/newtab/layout?version=1&consumer_key=$apiKey&layout_variant=basic"}`,
-        // Firefox 68
-        `{"api_key_pref":"extensions.pocket.oAuthConsumerKey","collapsible":true,"enabled":false,"show_spocs":true,"hardcoded_layout":true,"personalized":false,"layout_endpoint":"https://getpocket.cdn.mozilla.net/v3/newtab/layout?version=1&consumer_key=$apiKey&layout_variant=basic"}`,
-      ].includes(Services.prefs.getStringPref(DS_CONFIG))
-    ) {
-      Services.prefs.clearUserPref(DS_CONFIG);
-    }
+    Services.prefs.addObserver(PREF_IMAGE_PROXY_ENABLED, this);
+    lazy.NewTabActorRegistry.init();
 
     // Hook up the store and let all feeds and pages initialize
     this.store.init(
@@ -1380,7 +1651,124 @@ export class ActivityStream {
     );
 
     this.initialized = true;
+
+    this.registerNetworkProxy();
   }
+
+  /**
+   * Registers network proxy channel filter for image requests.
+   * This enables privacy-preserving image proxy for newtab when
+   * inferred personalization is enabled.
+   */
+  registerNetworkProxy() {
+    const enabled = Services.prefs.getBoolPref(PREF_IMAGE_PROXY_ENABLED, false);
+    if (!this._proxyRegistered && enabled) {
+      lazy.ProxyService.registerChannelFilter(this, 0);
+      this._proxyRegistered = true;
+    }
+  }
+
+  /**
+   * Unregisters network proxy channel filter.
+   */
+  unregisterNetworkProxy() {
+    if (this._proxyRegistered) {
+      lazy.ProxyService.unregisterChannelFilter(this);
+      this._proxyRegistered = false;
+    }
+  }
+
+  /**
+   * Retrieves and validates image proxy configuration from prefs/nimbus.
+   *
+   * @returns {object|null} Image proxy config object, or null if disabled/invalid.
+   */
+  getImageProxyConfig() {
+    try {
+      if (!this.store || !this.initialized) {
+        return null;
+      }
+
+      const state = this.store.getState();
+      if (!state || !state.Prefs) {
+        return null;
+      }
+
+      const { values } = state.Prefs;
+
+      const config = values?.trainhopConfig?.imageProxy;
+      if (
+        !config ||
+        !config.enabled ||
+        !config.proxyHost ||
+        !config.proxyPort ||
+        !config.proxyAuthHeader ||
+        !values?.[PREF_INFERRED_ENABLED] ||
+        !values?.[PREF_IMAGE_PROXY_ENABLED_STORE]
+      ) {
+        return null;
+      }
+      return {
+        proxyHost: config.proxyHost,
+        proxyPort: config.proxyPort,
+        proxyAuthHeader: config.proxyAuthHeader,
+        connectionIsolationKey: config.connectionIsolationKey || "",
+        failoverProxy: config.failoverProxy,
+        imageProxyHosts: (config.imageProxyHosts || "")
+          .split(",")
+          .map(host => host.trim()),
+      };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /**
+   * nsIProtocolProxyChannelFilter implementation. Applies MASQUE proxy
+   * to image requests from newtab when configured.
+   *
+   * @param {nsIChannel} channel
+   * @param {nsIProxyInfo} proxyInfo
+   * @param {nsIProtocolProxyChannelFilter} callback
+   */
+  applyFilter(channel, proxyInfo, callback) {
+    const { browsingContext } = channel.loadInfo;
+    let browser = browsingContext?.top?.embedderElement;
+
+    if (!browser || !lazy.AboutNewTabParent.loadedTabs.has(browser)) {
+      callback.onProxyFilterResult(proxyInfo);
+      return;
+    }
+
+    const config = this.getImageProxyConfig();
+
+    if (!config) {
+      callback.onProxyFilterResult(proxyInfo);
+      return;
+    }
+
+    if (
+      config.imageProxyHosts.includes(channel.URI.host) &&
+      channel.URI?.scheme === "https"
+    ) {
+      callback.onProxyFilterResult(
+        lazy.ProxyService.newProxyInfo(
+          "https" /* aType */,
+          config.proxyHost /* aHost */,
+          config.proxyPort /* aPort */,
+          config.proxyAuthHeader /* aProxyAuthorizationHeader */,
+          config.connectionIsolationKey /* aConnectionIsolationKey */,
+          0 /* aFlags */,
+          5000 /* aFailoverTimeout */,
+          config.failoverProxy /* aFailoverProxy */
+        )
+      );
+    } else {
+      callback.onProxyFilterResult(proxyInfo);
+    }
+  }
+
+  QueryInterface = ChromeUtils.generateQI([Ci.nsIProtocolProxyChannelFilter]);
 
   /**
    * Check if an old pref has a custom value to migrate. Clears the pref so that
@@ -1418,16 +1806,23 @@ export class ActivityStream {
     if (this.geo === "") {
       Services.obs.removeObserver(this, lazy.Region.REGION_TOPIC);
     }
+    delete this.geo;
 
     Services.obs.removeObserver(this, "intl:app-locales-changed");
+    Services.prefs.removeObserver(PREF_IMAGE_PROXY_ENABLED, this);
 
     this.store.uninit();
+    this.unregisterNetworkProxy();
     this.initialized = false;
   }
 
   _updateDynamicPrefs() {
     // Save the geo pref if we have it
     if (lazy.Region.home) {
+      if (this.geo === "") {
+        // The observer has become obsolete.
+        Services.obs.removeObserver(this, lazy.Region.REGION_TOPIC);
+      }
       this.geo = lazy.Region.home;
     } else if (this.geo !== "") {
       // Watch for geo changes and use a dummy value for now
@@ -1473,11 +1868,24 @@ export class ActivityStream {
     }
   }
 
-  observe(subject, topic) {
+  observe(subject, topic, data) {
     switch (topic) {
       case "intl:app-locales-changed":
       case lazy.Region.REGION_TOPIC:
         this._updateDynamicPrefs();
+        break;
+      case "nsPref:changed":
+        if (data === PREF_IMAGE_PROXY_ENABLED) {
+          const enabled = Services.prefs.getBoolPref(
+            PREF_IMAGE_PROXY_ENABLED,
+            false
+          );
+          if (enabled) {
+            this.registerNetworkProxy();
+          } else {
+            this.unregisterNetworkProxy();
+          }
+        }
         break;
     }
   }

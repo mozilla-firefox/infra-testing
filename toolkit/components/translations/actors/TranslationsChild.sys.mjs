@@ -8,8 +8,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "chrome://global/content/translations/translations-document.sys.mjs",
   LRUCache:
     "chrome://global/content/translations/translations-document.sys.mjs",
-  LanguageDetector:
-    "resource://gre/modules/translations/LanguageDetector.sys.mjs",
 });
 
 /**
@@ -21,6 +19,10 @@ export class TranslationsChild extends JSWindowActorChild {
    */
   #translatedDoc = null;
 
+  get translatedDoc() {
+    return this.#translatedDoc;
+  }
+
   /**
    * This cache is shared across TranslationsChild instances. This means
    * that it will be shared across multiple page loads in the same origin.
@@ -29,14 +31,26 @@ export class TranslationsChild extends JSWindowActorChild {
    */
   static #translationsCache = null;
 
+  #isDestroyed = false;
+
   handleEvent(event) {
-    switch (event.type) {
-      case "DOMContentLoaded":
-        this.sendAsyncMessage("Translations:ReportLangTags", {
-          documentElementLang: this.document.documentElement.lang,
-        });
-        break;
+    if (this.#isDestroyed) {
+      return;
     }
+
+    if (event.type === "DOMContentLoaded") {
+      this.sendAsyncMessage("Translations:DOMContentLoaded", {
+        htmlLangAttribute: this.document.documentElement.lang,
+      });
+    } else if (event.type === "load") {
+      this.sendAsyncMessage("Translations:Load");
+    }
+  }
+
+  didDestroy() {
+    this.#isDestroyed = true;
+    this.#translatedDoc?.destroy();
+    this.#translatedDoc = null;
   }
 
   addProfilerMarker(message, startTime) {
@@ -51,9 +65,44 @@ export class TranslationsChild extends JSWindowActorChild {
   }
 
   async receiveMessage({ name, data }) {
+    if (this.#isDestroyed) {
+      return undefined;
+    }
+
     switch (name) {
+      case "Translations:FindBarOpen": {
+        this.#translatedDoc?.enterContentEagerTranslationsMode();
+        return undefined;
+      }
+      case "Translations:FindBarClose": {
+        this.#translatedDoc?.enterLazyTranslationsMode();
+        return undefined;
+      }
+      case "Translations:ExtractPageText": {
+        const { document } = this;
+        if (!document) {
+          return "";
+        }
+
+        const { sufficientLength } = data;
+
+        const encoder = Cu.createDocumentEncoder("text/plain");
+        encoder.init(
+          document,
+          "text/plain",
+          Ci.nsIDocumentEncoder.OutputBodyOnly |
+            Ci.nsIDocumentEncoder.SkipInvisibleContent |
+            Ci.nsIDocumentEncoder.AllowCrossShadowBoundary |
+            Ci.nsIDocumentEncoder.OutputForPlainTextClipboardCopy |
+            Ci.nsIDocumentEncoder.OutputDisallowLineBreaking |
+            Ci.nsIDocumentEncoder.OutputDropInvisibleBreak |
+            Ci.nsIDocumentEncoder.OutputLFLineBreak
+        );
+
+        return encoder.encodeToStringWithMaxLength(sufficientLength);
+      }
       case "Translations:TranslatePage": {
-        if (this.#translatedDoc?.translator.engineStatus === "error") {
+        if (this.#translatedDoc?.engineStatus === "error") {
           this.#translatedDoc.destroy();
           this.#translatedDoc = null;
         }
@@ -63,7 +112,8 @@ export class TranslationsChild extends JSWindowActorChild {
           return undefined;
         }
 
-        const { languagePair, port, translationsStart } = data;
+        const { isFindBarOpen, languagePair, port } = data;
+
         if (
           !TranslationsChild.#translationsCache ||
           !TranslationsChild.#translationsCache.matches(languagePair)
@@ -81,36 +131,18 @@ export class TranslationsChild extends JSWindowActorChild {
           port,
           () => this.sendAsyncMessage("Translations:RequestPort"),
           () => this.sendAsyncMessage("Translations:ReportFirstVisibleChange"),
-          translationsStart,
-          () => this.docShell.now(),
-          TranslationsChild.#translationsCache
+          TranslationsChild.#translationsCache,
+          isFindBarOpen
         );
 
         return undefined;
       }
-      case "Translations:GetDocumentElementLang":
+      case "Translations:GetDocumentElementLang": {
         return this.document.documentElement.lang;
-      case "Translations:IdentifyLanguage": {
-        // Wait for idle callback as the page will be more settled if it has
-        // dynamic content, like on a React app.
-        if (this.contentWindow) {
-          await new Promise(resolve => {
-            this.contentWindow.requestIdleCallback(resolve);
-          });
-        }
-
-        const startTime = Cu.now();
-        const detectionResult =
-          await lazy.LanguageDetector.detectLanguageFromDocument(this.document);
-        this.addProfilerMarker(
-          `Detect language from document: ${detectionResult.language}`,
-          startTime
-        );
-        return detectionResult;
       }
       case "Translations:AcquirePort": {
         this.addProfilerMarker("Acquired a port, resuming translations");
-        this.#translatedDoc.translator.acquirePort(data.port);
+        this.#translatedDoc.acquirePort(data.port);
         return undefined;
       }
       default:

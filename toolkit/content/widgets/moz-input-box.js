@@ -107,6 +107,13 @@
           event.stopPropagation();
         }
       });
+
+      this.dispatchEvent(
+        new CustomEvent("moz-input-box-rebuilt", {
+          bubbles: true,
+          composed: false,
+        })
+      );
     }
 
     _doPopupItemEnablingSpell(event) {
@@ -213,10 +220,7 @@
     }
 
     get _input() {
-      return (
-        this.getElementsByAttribute("anonid", "input")[0] ||
-        this.querySelector(".textbox-input")
-      );
+      return this.querySelector(".textbox-input");
     }
   }
 

@@ -23,7 +23,7 @@ ChromeUtils.defineESModuleGetters(this, {
   PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
 });
 
-const COOKIE_EXPIRY = Math.round(Date.now() / 1000) + 60;
+const COOKIE_EXPIRY = Date.now() + 60000;
 const COOKIE_NAME = "testcookie";
 const COOKIE_PATH = "/";
 
@@ -46,7 +46,7 @@ const PREFERENCE_NAME = "test-pref";
  */
 function add_cookie(aDomain) {
   check_cookie_exists(aDomain, false);
-  Services.cookies.add(
+  const cv = Services.cookies.add(
     aDomain,
     COOKIE_PATH,
     COOKIE_NAME,
@@ -56,9 +56,10 @@ function add_cookie(aDomain) {
     false,
     COOKIE_EXPIRY,
     {},
-    Ci.nsICookie.SAMESITE_NONE,
+    Ci.nsICookie.SAMESITE_UNSET,
     Ci.nsICookie.SCHEME_HTTPS
   );
+  Assert.equal(cv.result, Ci.nsICookieValidation.eOK, "Valid cookie");
   check_cookie_exists(aDomain, true);
 }
 

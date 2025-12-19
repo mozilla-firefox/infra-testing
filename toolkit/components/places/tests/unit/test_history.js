@@ -12,9 +12,10 @@ var histsvc = Cc["@mozilla.org/browser/nav-history-service;1"].getService(
 /**
  * Checks to see that a URI is in the database.
  *
- * @param aURI
- *        The URI to check.
- * @returns true if the URI is in the DB, false otherwise.
+ * @param {nsIURI} aURI
+ *   The URI to check.
+ * @returns {boolean}
+ *   true if the URI is in the DB, false otherwise.
  */
 function uri_in_db(aURI) {
   var options = histsvc.getNewQueryOptions();
@@ -153,6 +154,6 @@ add_task(async function test_execute() {
   result = histsvc.executeQuery(query, options);
   root = result.root;
   root.containerOpen = true;
-  Assert.ok(root.childCount > 0);
+  Assert.greater(root.childCount, 0);
   root.containerOpen = false;
 });

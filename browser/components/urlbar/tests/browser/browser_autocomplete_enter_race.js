@@ -169,9 +169,9 @@ add_task(
     gURLBar.focus();
     gURLBar.value = "e";
     let recievedResult = new Promise(resolve => {
-      gURLBar.controller.addQueryListener({
+      gURLBar.controller.addListener({
         onQueryResults(queryContext) {
-          gURLBar.controller.removeQueryListener(this);
+          gURLBar.controller.removeListener(this);
           Assert.ok(
             queryContext.heuristicResult,
             "Recieved a heuristic result."
@@ -185,11 +185,11 @@ add_task(
         },
       });
     });
-    let start = Cu.now();
+    let start = ChromeUtils.now();
     EventUtils.sendString("x");
     EventUtils.synthesizeKey("KEY_Enter");
     await recievedResult;
-    Assert.ok(Cu.now() - start < TIMEOUT);
+    Assert.less(ChromeUtils.now() - start, TIMEOUT);
   })
 );
 

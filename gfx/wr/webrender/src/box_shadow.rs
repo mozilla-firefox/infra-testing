@@ -17,7 +17,7 @@ use crate::render_task::{BlurTask, MaskSubPass, PrimTask, RenderTask, RenderTask
 use crate::scene_building::{SceneBuilder, IsVisible};
 use crate::segment::EdgeAaSegmentMask;
 use crate::spatial_tree::SpatialNodeIndex;
-use crate::gpu_types::{BoxShadowStretchMode, TransformPaletteId, UvRectKind};
+use crate::gpu_types::{BoxShadowStretchMode, TransformPaletteId, UvRectKind, BlurEdgeMode};
 use crate::render_task_graph::RenderTaskId;
 use crate::internal_types::LayoutPrimitiveInfo;
 use crate::util::{extract_inner_rect_k, ScaleOffset};
@@ -101,8 +101,8 @@ impl PatternBuilder for BoxShadowTemplate {
 
         let pattern_prim_address_f = quad::write_prim_blocks(
             &mut state.frame_gpu_data.f32,
-            pattern_rect,
-            pattern_rect,
+            pattern_rect.to_untyped(),
+            pattern_rect.to_untyped(),
             color_pattern.base_color,
             color_pattern.texture_input.task_id,
             &[],
@@ -141,6 +141,7 @@ impl PatternBuilder for BoxShadowTemplate {
                 blur_std_deviation: blur_radius,
                 target_kind: RenderTargetKind::Color,
                 blur_region: task_size,
+                edge_mode: BlurEdgeMode::Duplicate,
             }),
         ));
         state.rg_builder.add_dependency(blur_task_v, pattern_task_id);
@@ -151,6 +152,7 @@ impl PatternBuilder for BoxShadowTemplate {
                 blur_std_deviation: blur_radius,
                 target_kind: RenderTargetKind::Color,
                 blur_region: task_size,
+                edge_mode: BlurEdgeMode::Duplicate,
             }),
         ).with_uv_rect_kind(uv_rect_kind));
         state.rg_builder.add_dependency(blur_task_h, blur_task_v);

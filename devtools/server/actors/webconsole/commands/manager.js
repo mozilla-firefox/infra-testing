@@ -58,10 +58,10 @@ const WebConsoleCommandsManager = {
   /**
    * Register a new command.
    *
-   * @param {Object} options
+   * @param {object} options
    * @param {string} options.name
    *        The command name (exemple: "$", "screenshot",...))
-   * @param {Boolean} isSideEffectFree
+   * @param {boolean} isSideEffectFree
    *        Tells if the command is free of any side effect to know
    *        if it can run in eager console evaluation.
    * @param {function|object} options.command
@@ -124,7 +124,7 @@ const WebConsoleCommandsManager = {
   /**
    * Return the name of all registered commands.
    *
-   * @return {array} List of all command names.
+   * @return {Array} List of all command names.
    */
   getAllCommandNames() {
     return [...this._registeredCommands.keys()];
@@ -890,7 +890,7 @@ WebConsoleCommandsManager.register({
   validArguments: ["url"],
 });
 
-/*
+/**
  * Unblock a blocked a resource
  *
  * @param object filter
@@ -920,7 +920,7 @@ WebConsoleCommandsManager.register({
   validArguments: ["url"],
 });
 
-/*
+/**
  * Toggle JavaScript tracing
  *
  * @param object args

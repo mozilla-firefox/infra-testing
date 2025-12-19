@@ -2,12 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/*
+/**
  * Implements a service used to access storage and communicate with content.
  *
  * A "fields" array is used to communicate with FormAutofillChild. Each item
  * represents a single input field in the content page as well as its
- * @autocomplete properties. The schema is as below. Please refer to
+ * `@autocomplete` properties. The schema is as below. Please refer to
  * FormAutofillChild.js for more details.
  *
  * [
@@ -50,7 +50,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
   FormAutofillPrompter: "resource://autofill/FormAutofillPrompter.sys.mjs",
   FirefoxRelay: "resource://gre/modules/FirefoxRelay.sys.mjs",
   LoginHelper: "resource://gre/modules/LoginHelper.sys.mjs",
-  MLAutofill: "resource://autofill/MLAutofill.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   OSKeyStore: "resource://gre/modules/OSKeyStore.sys.mjs",
 });
@@ -113,6 +112,7 @@ export let FormAutofillStatus = {
 
     Services.obs.removeObserver(this, "privacy-pane-loaded");
     Services.prefs.removeObserver(ENABLED_AUTOFILL_ADDRESSES_PREF, this);
+    Services.obs.removeObserver(this, "formautofill-storage-changed");
     Services.wm.removeListener(this);
 
     if (FormAutofill.isAutofillCreditCardsAvailable) {
@@ -205,11 +205,7 @@ export let FormAutofillStatus = {
       case "privacy-pane-loaded": {
         let formAutofillPreferences = new lazy.FormAutofillPreferences();
         let document = subject.document;
-        let prefFragment = formAutofillPreferences.init(document);
-        let formAutofillGroupBox = document.getElementById(
-          "formAutofillGroupBox"
-        );
-        formAutofillGroupBox.appendChild(prefFragment);
+        formAutofillPreferences.init(document);
         break;
       }
 
@@ -544,10 +540,6 @@ export class FormAutofillParent extends JSWindowActorParent {
     // in a form are changed, we treat the "updated" section as a new detected section.
     sections.forEach(section => section.onDetected());
 
-    if (FormAutofill.isMLExperimentEnabled) {
-      sections.forEach(section => lazy.MLAutofill.runInference(section));
-    }
-
     // Inform all the child actors of the updated 'fieldDetails'
     const detailsByBC =
       lazy.FormAutofillSection.groupFieldDetailsByBrowsingContext(fieldDetails);
@@ -875,10 +867,6 @@ export class FormAutofillParent extends JSWindowActorParent {
     // from the new address.
     let newRecord = {};
     if (mergeableFields.length) {
-      // TODO: This is only temporarily, should be removed after Bug 1836438 is fixed
-      if (mergeableFields.includes("name")) {
-        mergeableFields.push("given-name", "additional-name", "family-name");
-      }
       mergeableFields.forEach(f => {
         if (f in newAddress.record) {
           newRecord[f] = newAddress.record[f];
@@ -1042,7 +1030,9 @@ export class FormAutofillParent extends JSWindowActorParent {
   async onAutoCompleteEntrySelected(message, data) {
     switch (message) {
       case "FormAutofill:OpenPreferences": {
-        const win = lazy.BrowserWindowTracker.getTopWindow();
+        const win = lazy.BrowserWindowTracker.getTopWindow({
+          allowFromInactiveWorkspace: true,
+        });
         win.openPreferences("privacy-form-autofill");
         break;
       }

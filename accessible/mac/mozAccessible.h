@@ -88,10 +88,7 @@ enum CheckedState {
 // filtered out in Platform::PlatformEvent or AccessibleWrap::HandleAccEvent!
 - (void)handleAccessibleEvent:(uint32_t)eventType;
 
-- (void)handleAccessibleTextChangeEvent:(NSString*)change
-                               inserted:(BOOL)isInserted
-                            inContainer:(mozilla::a11y::Accessible*)container
-                                     at:(int32_t)start;
+- (void)maybePostValidationErrorChanged;
 
 // internal method to retrieve a child at a given index.
 - (id)childAt:(uint32_t)i;
@@ -183,7 +180,19 @@ enum CheckedState {
 - (NSString*)moxHelp;
 
 // override
+- (NSArray*)moxCustomContent;
+
+// override
+- (NSArray*)moxCustomActions;
+
+// override
 - (NSNumber*)moxEnabled;
+
+// override
+- (NSString*)moxInvalid;
+
+// override
+- (NSString*)moxErrorMessageElements;
 
 // override
 - (NSNumber*)moxFocused;
@@ -247,6 +256,9 @@ enum CheckedState {
 
 // override
 - (NSString*)moxLanguage;
+
+// override
+- (NSString*)moxKeyShortcutsValue;
 
 #ifndef RELEASE_OR_BETA
 // override

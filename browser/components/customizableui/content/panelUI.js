@@ -7,7 +7,8 @@ ChromeUtils.defineESModuleGetters(this, {
   ASRouter: "resource:///modules/asrouter/ASRouter.sys.mjs",
   MenuMessage: "resource:///modules/asrouter/MenuMessage.sys.mjs",
   NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
-  PanelMultiView: "resource:///modules/PanelMultiView.sys.mjs",
+  PanelMultiView:
+    "moz-src:///browser/components/customizableui/PanelMultiView.sys.mjs",
   updateZoomUI: "resource:///modules/ZoomUI.sys.mjs",
 });
 
@@ -82,6 +83,16 @@ const PanelUI = {
       autoHidePref => autoHidePref && Services.appinfo.OS !== "Darwin"
     );
 
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this,
+      "isAIWindowEnabled",
+      "browser.aiwindow.enabled",
+      false,
+      (_pref, _previousValue, _newValue) => {
+        this._showAIMenuItem();
+      }
+    );
+
     if (this.autoHideToolbarInFullScreen) {
       window.addEventListener("fullscreen", this);
     } else {
@@ -109,6 +120,7 @@ const PanelUI = {
       "refresh"
     );
 
+    this._showAIMenuItem();
     this._initialized = true;
   },
 
@@ -489,6 +501,7 @@ const PanelUI = {
       return;
     }
 
+    this._ensureShortcutsShown(viewNode);
     this.ensurePanicViewInitialized(viewNode);
 
     let container = aAnchor.closest("panelmultiview");
@@ -516,9 +529,7 @@ const PanelUI = {
         tempPanel.setAttribute("animate", "false");
       }
       tempPanel.setAttribute("context", "");
-      document
-        .getElementById(CustomizableUI.AREA_NAVBAR)
-        .appendChild(tempPanel);
+      document.getElementById("mainPopupSet").appendChild(tempPanel);
 
       let multiView = document.createXULElement("panelmultiview");
       multiView.setAttribute("id", "customizationui-widget-multiview");
@@ -1050,6 +1061,21 @@ const PanelUI = {
 
     popupnotification.notification = notification;
     popupnotification.show();
+  },
+
+  _showAIMenuItem() {
+    const isAIWindowActive = document.documentElement.hasAttribute("ai-window");
+    const aiMenuItem = PanelMultiView.getViewNode(
+      document,
+      "appMenu-new-ai-window-button"
+    );
+    const classicWindowMenuItem = PanelMultiView.getViewNode(
+      document,
+      "appMenu-new-classic-window-button"
+    );
+
+    aiMenuItem.hidden = !this.isAIWindowEnabled || isAIWindowActive;
+    classicWindowMenuItem.hidden = !this.isAIWindowEnabled || !isAIWindowActive;
   },
 
   _showBadge(notification) {

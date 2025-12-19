@@ -8,14 +8,16 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use crate::common_metric_data::CommonMetricDataInternal;
+use malloc_size_of_derive::MallocSizeOf;
+
+use crate::common_metric_data::{CommonMetricDataInternal, DynamicLabelType};
 use crate::error_recording::{record_error, test_get_num_recorded_errors, ErrorType};
 use crate::histogram::{Functional, Histogram};
 use crate::metrics::time_unit::TimeUnit;
 use crate::metrics::{DistributionData, Metric, MetricType};
 use crate::storage::StorageManager;
-use crate::CommonMetricData;
 use crate::Glean;
+use crate::{CommonMetricData, TestGetValue};
 
 // The base of the logarithm used to determine bucketing
 const LOG_BASE: f64 = 2.0;
@@ -36,7 +38,7 @@ const MAX_SAMPLE_TIME: u64 = 1000 * 1000 * 1000 * 60 * 10;
 ///
 /// Its internals are considered private,
 /// but due to UniFFI's behavior we expose its field for now.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, MallocSizeOf)]
 pub struct TimerId {
     /// This timer's id.
     pub id: u64,
@@ -63,6 +65,17 @@ pub struct TimingDistributionMetric {
     time_unit: TimeUnit,
     next_id: Arc<AtomicUsize>,
     start_times: Arc<Mutex<HashMap<TimerId, u64>>>,
+}
+
+impl ::malloc_size_of::MallocSizeOf for TimingDistributionMetric {
+    fn size_of(&self, ops: &mut malloc_size_of::MallocSizeOfOps) -> usize {
+        // Note: This is behind an `Arc`.
+        // `size_of` should only be called on the main thread to avoid double-counting.
+        self.meta.size_of(ops)
+            + self.time_unit.size_of(ops)
+            + self.next_id.size_of(ops)
+            + self.start_times.lock().unwrap().size_of(ops)
+    }
 }
 
 /// Create a snapshot of the histogram with a time unit.
@@ -98,7 +111,7 @@ impl MetricType for TimingDistributionMetric {
         }
     }
 
-    fn with_dynamic_label(&self, label: String) -> Self {
+    fn with_dynamic_label(&self, label: DynamicLabelType) -> Self {
         let mut meta = (*self.meta).clone();
         meta.inner.dynamic_label = Some(label);
         Self {
@@ -140,7 +153,7 @@ impl TimingDistributionMetric {
     ///
     /// A unique [`TimerId`] for the new timer.
     pub fn start(&self) -> TimerId {
-        let start_time = time::precise_time_ns();
+        let start_time = zeitstempel::now_awake();
         let id = self.next_id.fetch_add(1, Ordering::SeqCst).into();
         let metric = self.clone();
         crate::launch_with_glean(move |_glean| metric.set_start(id, start_time));
@@ -148,7 +161,7 @@ impl TimingDistributionMetric {
     }
 
     pub(crate) fn start_sync(&self) -> TimerId {
-        let start_time = time::precise_time_ns();
+        let start_time = zeitstempel::now_awake();
         let id = self.next_id.fetch_add(1, Ordering::SeqCst).into();
         let metric = self.clone();
         metric.set_start(id, start_time);
@@ -179,7 +192,7 @@ impl TimingDistributionMetric {
     ///   same timespan metric.
     /// * `stop_time` - Timestamp in nanoseconds.
     pub fn stop_and_accumulate(&self, id: TimerId) {
-        let stop_time = time::precise_time_ns();
+        let stop_time = zeitstempel::now_awake();
         let metric = self.clone();
         crate::launch_with_glean(move |glean| metric.set_stop_and_accumulate(glean, id, stop_time));
     }
@@ -540,25 +553,6 @@ impl TimingDistributionMetric {
         }
     }
 
-    /// **Test-only API (exported for FFI purposes).**
-    ///
-    /// Gets the currently stored value as an integer.
-    ///
-    /// This doesn't clear the stored value.
-    ///
-    /// # Arguments
-    ///
-    /// * `ping_name` - the optional name of the ping to retrieve the metric
-    ///                 for. Defaults to the first value in `send_in_pings`.
-    ///
-    /// # Returns
-    ///
-    /// The stored value or `None` if nothing stored.
-    pub fn test_get_value(&self, ping_name: Option<String>) -> Option<DistributionData> {
-        crate::block_on_dispatcher();
-        crate::core::with_glean(|glean| self.get_value(glean, ping_name.as_deref()))
-    }
-
     /// **Exported for test purposes.**
     ///
     /// Gets the number of recorded errors for the given metric and error type.
@@ -616,6 +610,29 @@ impl TimingDistributionMetric {
                     Metric::TimingDistribution(hist)
                 });
         });
+    }
+}
+
+impl TestGetValue for TimingDistributionMetric {
+    type Output = DistributionData;
+
+    /// **Test-only API (exported for FFI purposes).**
+    ///
+    /// Gets the currently stored value as an integer.
+    ///
+    /// This doesn't clear the stored value.
+    ///
+    /// # Arguments
+    ///
+    /// * `ping_name` - the optional name of the ping to retrieve the metric
+    ///                 for. Defaults to the first value in `send_in_pings`.
+    ///
+    /// # Returns
+    ///
+    /// The stored value or `None` if nothing stored.
+    fn test_get_value(&self, ping_name: Option<String>) -> Option<DistributionData> {
+        crate::block_on_dispatcher();
+        crate::core::with_glean(|glean| self.get_value(glean, ping_name.as_deref()))
     }
 }
 

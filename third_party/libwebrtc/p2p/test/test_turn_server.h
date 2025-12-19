@@ -11,34 +11,42 @@
 #ifndef P2P_TEST_TEST_TURN_SERVER_H_
 #define P2P_TEST_TEST_TURN_SERVER_H_
 
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "absl/strings/string_view.h"
+#include "api/environment/environment.h"
 #include "api/sequence_checker.h"
 #include "api/transport/stun.h"
 #include "p2p/base/basic_packet_socket_factory.h"
+#include "p2p/base/port_interface.h"
 #include "p2p/test/turn_server.h"
 #include "rtc_base/async_udp_socket.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/net_helpers.h"
+#include "rtc_base/socket.h"
+#include "rtc_base/socket_address.h"
+#include "rtc_base/socket_factory.h"
 #include "rtc_base/ssl_adapter.h"
 #include "rtc_base/ssl_identity.h"
+#include "rtc_base/ssl_stream_adapter.h"
 #include "rtc_base/thread.h"
 
-namespace cricket {
+namespace webrtc {
 
 static const char kTestRealm[] = "example.org";
 static const char kTestSoftware[] = "TestTurnServer";
 
 class TestTurnRedirector : public TurnRedirectInterface {
  public:
-  explicit TestTurnRedirector(const std::vector<rtc::SocketAddress>& addresses)
+  explicit TestTurnRedirector(const std::vector<SocketAddress>& addresses)
       : alternate_server_addresses_(addresses),
         iter_(alternate_server_addresses_.begin()) {}
 
-  virtual bool ShouldRedirect(const rtc::SocketAddress&,
-                              rtc::SocketAddress* out) {
+  virtual bool ShouldRedirect(const SocketAddress&, SocketAddress* out) {
     if (!out || iter_ == alternate_server_addresses_.end()) {
       return false;
     }
@@ -47,23 +55,24 @@ class TestTurnRedirector : public TurnRedirectInterface {
   }
 
  private:
-  const std::vector<rtc::SocketAddress>& alternate_server_addresses_;
-  std::vector<rtc::SocketAddress>::const_iterator iter_;
+  const std::vector<SocketAddress>& alternate_server_addresses_;
+  std::vector<SocketAddress>::const_iterator iter_;
 };
 
 class TestTurnServer : public TurnAuthInterface {
  public:
-  TestTurnServer(rtc::Thread* thread,
-                 rtc::SocketFactory* socket_factory,
-                 const rtc::SocketAddress& int_addr,
-                 const rtc::SocketAddress& udp_ext_addr,
+  TestTurnServer(const Environment& env,
+                 Thread* thread,
+                 SocketFactory* socket_factory,
+                 const SocketAddress& int_addr,
+                 const SocketAddress& udp_ext_addr,
                  ProtocolType int_protocol = PROTO_UDP,
                  bool ignore_bad_cert = true,
                  absl::string_view common_name = "test turn server")
-      : server_(thread), socket_factory_(socket_factory) {
+      : env_(env), server_(env, thread), socket_factory_(socket_factory) {
     AddInternalSocket(int_addr, int_protocol, ignore_bad_cert, common_name);
     server_.SetExternalSocketFactory(
-        new rtc::BasicPacketSocketFactory(socket_factory), udp_ext_addr);
+        new BasicPacketSocketFactory(socket_factory), udp_ext_addr);
     server_.set_realm(kTestRealm);
     server_.set_software(kTestSoftware);
     server_.set_auth_hook(this);
@@ -91,35 +100,36 @@ class TestTurnServer : public TurnAuthInterface {
     server_.set_enable_permission_checks(enable);
   }
 
-  void AddInternalSocket(const rtc::SocketAddress& int_addr,
+  void AddInternalSocket(const SocketAddress& int_addr,
                          ProtocolType proto,
                          bool ignore_bad_cert = true,
                          absl::string_view common_name = "test turn server") {
     RTC_DCHECK(thread_checker_.IsCurrent());
-    if (proto == cricket::PROTO_UDP) {
+    if (proto == PROTO_UDP) {
       server_.AddInternalSocket(
-          rtc::AsyncUDPSocket::Create(socket_factory_, int_addr), proto);
-    } else if (proto == cricket::PROTO_TCP || proto == cricket::PROTO_TLS) {
+          AsyncUDPSocket::Create(env_, int_addr, *socket_factory_), proto);
+    } else if (proto == PROTO_TCP || proto == PROTO_TLS) {
       // For TCP we need to create a server socket which can listen for incoming
       // new connections.
-      rtc::Socket* socket = socket_factory_->CreateSocket(AF_INET, SOCK_STREAM);
+      std::unique_ptr<Socket> socket =
+          socket_factory_->Create(AF_INET, SOCK_STREAM);
       socket->Bind(int_addr);
       socket->Listen(5);
-      if (proto == cricket::PROTO_TLS) {
+      if (proto == PROTO_TLS) {
         // For TLS, wrap the TCP socket with an SSL adapter. The adapter must
         // be configured with a self-signed certificate for testing.
         // Additionally, the client will not present a valid certificate, so we
         // must not fail when checking the peer's identity.
-        std::unique_ptr<rtc::SSLAdapterFactory> ssl_adapter_factory =
-            rtc::SSLAdapterFactory::Create();
-        ssl_adapter_factory->SetRole(rtc::SSL_SERVER);
+        std::unique_ptr<SSLAdapterFactory> ssl_adapter_factory =
+            SSLAdapterFactory::Create();
+        ssl_adapter_factory->SetRole(SSL_SERVER);
         ssl_adapter_factory->SetIdentity(
-            rtc::SSLIdentity::Create(common_name, rtc::KeyParams()));
+            SSLIdentity::Create(common_name, KeyParams()));
         ssl_adapter_factory->SetIgnoreBadCert(ignore_bad_cert);
-        server_.AddInternalServerSocket(socket, proto,
+        server_.AddInternalServerSocket(std::move(socket), proto,
                                         std::move(ssl_adapter_factory));
       } else {
-        server_.AddInternalServerSocket(socket, proto);
+        server_.AddInternalServerSocket(std::move(socket), proto);
       }
     } else {
       RTC_DCHECK_NOTREACHED() << "Unknown protocol type: " << proto;
@@ -128,7 +138,7 @@ class TestTurnServer : public TurnAuthInterface {
 
   // Finds the first allocation in the server allocation map with a source
   // ip and port matching the socket address provided.
-  TurnServerAllocation* FindAllocation(const rtc::SocketAddress& src) {
+  TurnServerAllocation* FindAllocation(const SocketAddress& src) {
     RTC_DCHECK(thread_checker_.IsCurrent());
     const TurnServer::AllocationMap& map = server_.allocations();
     for (TurnServer::AllocationMap::const_iterator it = map.begin();
@@ -151,11 +161,13 @@ class TestTurnServer : public TurnAuthInterface {
                                      std::string(username), key);
   }
 
+  const Environment env_;
   TurnServer server_;
-  rtc::SocketFactory* socket_factory_;
-  webrtc::SequenceChecker thread_checker_;
+  SocketFactory* socket_factory_;
+  SequenceChecker thread_checker_;
 };
 
-}  // namespace cricket
+}  //  namespace webrtc
+
 
 #endif  // P2P_TEST_TEST_TURN_SERVER_H_

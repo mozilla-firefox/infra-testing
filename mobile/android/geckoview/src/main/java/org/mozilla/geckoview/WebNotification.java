@@ -10,6 +10,8 @@ import android.os.Parcelable;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.UiThread;
+import androidx.core.os.ParcelCompat;
+import java.util.Arrays;
 import java.util.Objects;
 import org.mozilla.gecko.GeckoAppShell;
 import org.mozilla.gecko.annotation.WrapForJNI;
@@ -113,6 +115,15 @@ public class WebNotification implements Parcelable {
    */
   public final @NonNull int[] vibrate;
 
+  /** Array of actions available for this notification. */
+  public final @NonNull WebNotificationAction[] actions;
+
+  /**
+   * Similar to {@link #source} but includes the full origin information, corresponding to
+   * `nsIPrincipal.origin`.
+   */
+  public final @NonNull String origin;
+
   @WrapForJNI
   /* package */ WebNotification(
       @Nullable final String title,
@@ -126,7 +137,9 @@ public class WebNotification implements Parcelable {
       @NonNull final String source,
       final boolean silent,
       final boolean privateBrowsing,
-      @NonNull final int[] vibrate) {
+      @NonNull final int[] vibrate,
+      @NonNull final Object[] actions,
+      @NonNull final String origin) {
     this.tag = tag;
     this.mCookie = cookie;
     this.title = title;
@@ -139,6 +152,18 @@ public class WebNotification implements Parcelable {
     this.silent = silent;
     this.vibrate = vibrate;
     this.privateBrowsing = privateBrowsing;
+    this.actions = Arrays.copyOf(actions, actions.length, WebNotificationAction[].class);
+    this.origin = origin;
+  }
+
+  /**
+   * This should be called when the app starts showing the notification. This is important, as it
+   * tells the result of the notification request to Web Content.
+   */
+  @UiThread
+  public void show() {
+    ThreadUtils.assertOnUiThread();
+    GeckoAppShell.onNotificationShow(tag, mCookie, origin);
   }
 
   /**
@@ -149,7 +174,20 @@ public class WebNotification implements Parcelable {
   @UiThread
   public void click() {
     ThreadUtils.assertOnUiThread();
-    GeckoAppShell.onNotificationClick(tag, mCookie);
+    GeckoAppShell.onNotificationClick(tag, null, origin);
+  }
+
+  /**
+   * This should be called when the user taps or clicks a notification action. Note that this does
+   * not automatically dismiss the notification as far as Web Content is concerned. For that, see
+   * {@link #dismiss()}.
+   *
+   * @param action The action name if an action button is clicked, otherwise null.
+   */
+  @UiThread
+  public void click(final @NonNull String action) {
+    ThreadUtils.assertOnUiThread();
+    GeckoAppShell.onNotificationClick(tag, action, origin);
   }
 
   /**
@@ -159,11 +197,11 @@ public class WebNotification implements Parcelable {
   @UiThread
   public void dismiss() {
     ThreadUtils.assertOnUiThread();
-    GeckoAppShell.onNotificationClose(tag, mCookie);
+    GeckoAppShell.onNotificationClose(tag, origin);
   }
 
   // Increment this value whenever anything changes in the parcelable representation.
-  private static final int VERSION = 1;
+  private static final int VERSION = 3;
 
   // To avoid TransactionTooLargeException, we only store small imageUrls
   private static final int IMAGE_URL_LENGTH_MAX = 150;
@@ -192,9 +230,15 @@ public class WebNotification implements Parcelable {
     dest.writeInt(silent ? 1 : 0);
     dest.writeInt(privateBrowsing ? 1 : 0);
     dest.writeIntArray(vibrate);
+    dest.writeParcelableArray(actions, 0);
+    dest.writeString(origin);
   }
 
   private WebNotification(final Parcel in) {
+    final int version = in.readInt();
+    if (version < 1 || version > 3) {
+      throw new ParcelFormatException("Mismatched version: " + version + " expected: " + VERSION);
+    }
     title = in.readString();
     tag = Objects.requireNonNull(in.readString());
     mCookie = in.readString();
@@ -207,17 +251,35 @@ public class WebNotification implements Parcelable {
     silent = in.readInt() == 1;
     privateBrowsing = in.readInt() == 1;
     vibrate = Objects.requireNonNull(in.createIntArray());
+
+    // TODO: This exists for existing notifications opened from older releases before app updates.
+    // We should be able to remove version 1 support after a few release cycles.
+    // See bug 1970892.
+    if (version == 1) {
+      actions = new WebNotificationAction[0];
+      origin = "";
+      return;
+    }
+
+    final Parcelable[] actionParcels =
+        Objects.requireNonNull(
+            ParcelCompat.readParcelableArrayTyped(
+                in, WebNotificationAction.class.getClassLoader(), WebNotificationAction.class));
+    actions = Arrays.copyOf(actionParcels, actionParcels.length, WebNotificationAction[].class);
+
+    if (version == 2) {
+      origin = "";
+      return;
+    }
+
+    origin = Objects.requireNonNull(in.readString());
   }
 
+  /** Parcelable creator for WebNotification instances. */
   public static final Creator<WebNotification> CREATOR =
       new Creator<>() {
         @Override
         public WebNotification createFromParcel(final Parcel in) {
-          final int version = in.readInt();
-          if (version != VERSION) {
-            throw new ParcelFormatException(
-                "Mismatched version: " + version + " expected: " + VERSION);
-          }
           return new WebNotification(in);
         }
 

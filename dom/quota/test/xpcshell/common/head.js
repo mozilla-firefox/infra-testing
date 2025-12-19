@@ -46,8 +46,9 @@ if (!this.runTest) {
     // In order to support converting tests to using async functions from using
     // generator functions, we detect async functions by checking the name of
     // function's constructor.
-    Assert.ok(
-      typeof testSteps === "function",
+    Assert.strictEqual(
+      typeof testSteps,
+      "function",
       "There should be a testSteps function"
     );
     if (testSteps.constructor.name === "AsyncFunction") {
@@ -64,8 +65,9 @@ if (!this.runTest) {
       // async test.
       run_next_test();
     } else {
-      Assert.ok(
-        testSteps.constructor.name === "GeneratorFunction",
+      Assert.strictEqual(
+        testSteps.constructor.name,
+        "GeneratorFunction",
         "Unsupported function type"
       );
 
@@ -218,11 +220,18 @@ function initPersistentClient(principal, client, callback) {
   return request;
 }
 
-function initTemporaryClient(persistence, principal, client, callback) {
+function initTemporaryClient(
+  persistence,
+  principal,
+  client,
+  createIfNonExistent = true,
+  callback
+) {
   let request = SpecialPowers._getQuotaManager().initializeTemporaryClient(
     persistence,
     principal,
-    client
+    client,
+    createIfNonExistent
   );
   request.callback = callback;
 

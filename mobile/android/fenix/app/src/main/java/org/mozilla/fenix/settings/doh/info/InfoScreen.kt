@@ -9,18 +9,18 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.Icon
-import androidx.compose.material.IconButton
-import androidx.compose.material.Scaffold
-import androidx.compose.material.Text
-import androidx.compose.material.TopAppBar
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import mozilla.components.compose.base.annotation.FlexibleWindowLightDarkPreview
 import org.mozilla.fenix.R
@@ -28,19 +28,18 @@ import org.mozilla.fenix.compose.LinkText
 import org.mozilla.fenix.compose.LinkTextState
 import org.mozilla.fenix.settings.SupportUtils
 import org.mozilla.fenix.theme.FirefoxTheme
+import org.mozilla.fenix.theme.Theme
 
 /**
  * Composable function that displays the info screen of DoH settings.
  *
  * @param infoScreenTopic The [infoScreenTopic] that we would like to display.
- * @param onNavigateUp Invoked when the user clicks the navigate up (back) button.
  * @param onLearnMoreClicked Invoked when the user wants to visit an external doc about DoH.
  */
 @Composable
 @Suppress("SpreadOperator")
 internal fun InfoScreen(
     infoScreenTopic: InfoScreenTopic,
-    onNavigateUp: () -> Unit = {},
     onLearnMoreClicked: (String) -> Unit = {},
 ) {
     val title = stringResource(infoScreenTopic.titleId)
@@ -60,19 +59,9 @@ internal fun InfoScreen(
         bulletText to sumoTopic
     }
 
-    Scaffold(
-        topBar = {
-            Toolbar(
-                title = title,
-                onToolbarBackClick = onNavigateUp,
-            )
-        },
-        backgroundColor = FirefoxTheme.colors.layer1,
-    ) { paddingValues ->
+    Surface {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues),
+            modifier = Modifier.fillMaxSize(),
         ) {
             Title(
                 title = title,
@@ -93,32 +82,6 @@ internal fun InfoScreen(
 }
 
 @Composable
-private fun Toolbar(
-    title: String,
-    onToolbarBackClick: () -> Unit,
-) {
-    TopAppBar(
-        backgroundColor = FirefoxTheme.colors.layer1,
-        title = {
-            Text(
-                color = FirefoxTheme.colors.textPrimary,
-                style = FirefoxTheme.typography.headline6,
-                text = title,
-            )
-        },
-        navigationIcon = {
-            IconButton(onClick = onToolbarBackClick) {
-                Icon(
-                    painter = painterResource(R.drawable.mozac_ic_back_24),
-                    contentDescription = stringResource(R.string.preference_doh_up_description),
-                    tint = FirefoxTheme.colors.iconPrimary,
-                )
-            }
-        },
-    )
-}
-
-@Composable
 private fun Title(
     title: String,
 ) {
@@ -133,7 +96,7 @@ private fun Title(
     ) {
         Text(
             text = title,
-            color = FirefoxTheme.colors.textAccent,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = FirefoxTheme.typography.headline8,
         )
     }
@@ -142,59 +105,48 @@ private fun Title(
 @Composable
 private fun BulletTextWithOptionalLink(
     text: String,
-    learnMoreUrl: String? = null,
     onLearnMoreClicked: (String) -> Unit,
-    modifier: Modifier = Modifier
-        .padding(
-            start = 72.dp,
-            top = 6.dp,
-            end = 16.dp,
-            bottom = 6.dp,
-        ),
-    color: Color = FirefoxTheme.colors.textPrimary,
-    style: TextStyle = FirefoxTheme.typography.subtitle1,
+    modifier: Modifier = Modifier,
+    learnMoreUrl: String? = null,
+    color: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    style: TextStyle = FirefoxTheme.typography.body2, // Follows the same TextStyle of LinkText
 ) {
     Row(
-        modifier = modifier,
+        modifier = modifier
+            .padding(
+                start = 72.dp,
+                top = 6.dp,
+                end = 16.dp,
+                bottom = 6.dp,
+            ),
     ) {
-        Text(
-            text = "•",
-            modifier = Modifier.padding(end = 8.dp),
-            color = color,
-        )
-
-        if (learnMoreUrl == null) {
+        CompositionLocalProvider(LocalContentColor provides color) {
             Text(
-                text = text,
-                color = color,
+                text = "•",
+                modifier = Modifier.padding(end = 8.dp),
                 style = style,
             )
-        } else {
-            LinkText(
-                text = text,
-                linkTextStates = listOf(
-                    LinkTextState(
-                        text = stringResource(R.string.preference_doh_learn_more),
-                        url = learnMoreUrl,
-                        onClick = { onLearnMoreClicked(it) },
-                    ),
-                ),
-                linkTextDecoration = TextDecoration.Underline,
-                style = style.copy(
-                    color = color,
-                ),
-            )
-        }
-    }
-}
 
-@Composable
-@FlexibleWindowLightDarkPreview
-private fun InfoScreenPreview() {
-    FirefoxTheme {
-        InfoScreen(
-            infoScreenTopic = InfoScreenTopic.DEFAULT,
-        )
+            if (learnMoreUrl == null) {
+                Text(
+                    text = text,
+                    style = style,
+                )
+            } else {
+                LinkText(
+                    text = text,
+                    linkTextStates = listOf(
+                        LinkTextState(
+                            text = stringResource(R.string.preference_doh_learn_more),
+                            url = learnMoreUrl,
+                            onClick = { onLearnMoreClicked(it) },
+                        ),
+                    ),
+                    linkTextDecoration = TextDecoration.Underline,
+                    style = style,
+                )
+            }
+        }
     }
 }
 
@@ -203,7 +155,7 @@ private fun InfoScreenPreview() {
  * that you want to use as placeholders.
  */
 internal data class BulletPoint(
-    @StringRes val textRes: Int,
+    @param:StringRes val textRes: Int,
     val placeholders: List<Int> = emptyList(),
 )
 
@@ -214,9 +166,8 @@ internal data class BulletPoint(
  * This enum is used to categorize the level or mode of an info screen.
  */
 internal enum class InfoScreenTopic(
-    @StringRes val titleId: Int,
-    val bulletPoints:
-    List<Pair<BulletPoint, SupportUtils.SumoTopic?>>,
+    @param:StringRes val titleId: Int,
+    val bulletPoints: List<Pair<BulletPoint, SupportUtils.SumoTopic?>>,
 ) {
     DEFAULT(
         titleId = R.string.preference_doh_default_protection,
@@ -254,4 +205,24 @@ internal enum class InfoScreenTopic(
             BulletPoint(R.string.preference_doh_max_protection_info_3) to null,
         ),
     ),
+}
+
+@Composable
+@FlexibleWindowLightDarkPreview
+private fun InfoScreenPreview() {
+    FirefoxTheme {
+        InfoScreen(
+            infoScreenTopic = InfoScreenTopic.DEFAULT,
+        )
+    }
+}
+
+@Composable
+@Preview
+private fun InfoScreenPrivatePreview() {
+    FirefoxTheme(theme = Theme.Private) {
+        InfoScreen(
+            infoScreenTopic = InfoScreenTopic.DEFAULT,
+        )
+    }
 }

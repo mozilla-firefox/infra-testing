@@ -5,7 +5,6 @@
 package org.mozilla.fenix.downloads.listscreen.store
 
 import mozilla.components.lib.state.State
-import org.mozilla.fenix.Config
 import org.mozilla.fenix.downloads.listscreen.store.DownloadUIState.Mode
 
 /**
@@ -17,7 +16,6 @@ import org.mozilla.fenix.downloads.listscreen.store.DownloadUIState.Mode
  * @property isDeleteDialogVisible Flag indicating whether the delete confirmation dialog is currently visible.
  * @property searchQuery The search query entered by the user. This is used to filter the list of items.
  * @param isSearchFieldRequested Indicates whether the search field is requested to be shown.
- * @param isSearchEnabled Feature flag for search functionality.
  * @param userSelectedContentTypeFilter The user selected [FileItem.ContentTypeFilter].
  */
 data class DownloadUIState(
@@ -27,7 +25,6 @@ data class DownloadUIState(
     val isDeleteDialogVisible: Boolean = false,
     val searchQuery: String = "",
     private val isSearchFieldRequested: Boolean = false,
-    private val isSearchEnabled: Boolean = Config.channel.isNightlyOrDebug,
     private val userSelectedContentTypeFilter: FileItem.ContentTypeFilter = FileItem.ContentTypeFilter.All,
 ) : State {
 
@@ -44,6 +41,10 @@ data class DownloadUIState(
     val selectedContentTypeFilter: FileItem.ContentTypeFilter
         get() {
             val selectedTypeContainsItems = itemsNotPendingDeletion
+                .filter {
+                    userSelectedContentTypeFilter == FileItem.ContentTypeFilter.All ||
+                    it.status == FileItem.Status.Completed
+                }
                 .any { download -> userSelectedContentTypeFilter.predicate(download.contentType) }
 
             return if (selectedTypeContainsItems) {
@@ -53,31 +54,27 @@ data class DownloadUIState(
             }
         }
 
-    private val searchQueryPredicate: (FileItem) -> Boolean = {
-        if (isSearchEnabled) {
-            it.stringToMatchForSearchQuery.contains(searchQuery, ignoreCase = true)
-        } else {
-            true
-        }
-    }
-
     /**
      * The list of items to display grouped by the created time of the item.
      * The ungrouped list of items to display, excluding any items that are pending deletion and
      * that match the selected content type filter and the search query.
      */
     val itemsMatchingFilters = itemsNotPendingDeletion
+        .filter {
+            selectedContentTypeFilter == FileItem.ContentTypeFilter.All ||
+            it.status == FileItem.Status.Completed
+        }
         .filter { selectedContentTypeFilter.predicate(it.contentType) }
-        .filter(searchQueryPredicate)
+        .filter { it.stringToMatchForSearchQuery.contains(searchQuery, ignoreCase = true) }
 
     /**
      * The list of items to display grouped by the created time of the item.
      */
     private val itemsToDisplay: List<DownloadListItem> = itemsMatchingFilters
-        .groupBy { it.createdTime }
+        .groupBy { it.timeCategory }
         .toSortedMap()
-        .flatMap { (key, value) ->
-            listOf(HeaderItem(key)) + value
+        .flatMap { (createdTime, fileItems) ->
+            listOf(HeaderItem(createdTime)) + fileItems
         }
 
     /**
@@ -85,6 +82,7 @@ data class DownloadUIState(
      */
     private val matchingFilters: List<FileItem.ContentTypeFilter> =
         itemsNotPendingDeletion
+            .filter { it.status == FileItem.Status.Completed }
             .map { it.matchingContentTypeFilter }
             .distinct()
             .sorted()
@@ -106,7 +104,13 @@ data class DownloadUIState(
     }
 
     val isSearchFieldVisible: Boolean
-        get() = isSearchEnabled && isSearchFieldRequested && mode is Mode.Normal
+        get() = isSearchFieldRequested && mode is Mode.Normal
+
+    val isSearchIconVisible: Boolean
+        get() = itemsNotPendingDeletion.isNotEmpty() && !isSearchFieldVisible && mode is Mode.Normal
+
+    val isBackHandlerEnabled: Boolean
+        get() = isSearchFieldRequested || mode is Mode.Editing
 
     /**
      * @see [DownloadUIState].

@@ -74,6 +74,15 @@ interface Location {
 interface Node {
 }
 
+interface TestChromeOnlyInterface {
+}
+
+declare var TestChromeOnlyInterface: {
+    prototype: TestChromeOnlyInterface;
+    new(): TestChromeOnlyInterface;
+    isInstance: IsInstance<TestChromeOnlyInterface>;
+};
+
 interface TestFunctions {
     allowSharedArrayBuffer: ArrayBuffer;
     allowSharedArrayBufferView: ArrayBufferView;
@@ -108,8 +117,9 @@ interface TestFunctions {
     testNotAllowShared(buffer: string): void;
     testThrowNsresult(): void;
     testThrowNsresultFromNative(): void;
-    testUnionOfAllowSharedBuffferSource(foo: ArrayBuffer | ArrayBufferView): void;
-    testUnionOfBuffferSource(foo: ArrayBuffer | ArrayBufferView | string): void;
+    testUnionOfAllowSharedBufferSource(foo: AllowSharedBufferSource): void;
+    testUnionOfBufferSource(foo: ArrayBuffer | ArrayBufferView | string): void;
+    testUnionWithAllowShared(foo: Int8Array | Int16Array): void;
     toJSON(): any;
 }
 
@@ -117,6 +127,7 @@ declare var TestFunctions: {
     prototype: TestFunctions;
     new(): TestFunctions;
     isInstance: IsInstance<TestFunctions>;
+    createTestChromeOnlyInterface(): TestChromeOnlyInterface;
     passThroughCallbackPromise(callback: PromiseReturner): Promise<any>;
     passThroughPromise(arg: any): Promise<any>;
     throwToRejectPromise(): Promise<any>;
@@ -419,6 +430,7 @@ interface MathMLElementTagNameMap {
 /** @deprecated Directly use HTMLElementTagNameMap or SVGElementTagNameMap as appropriate, instead. */
 type ElementTagNameMap = HTMLElementTagNameMap & Pick<SVGElementTagNameMap, Exclude<keyof SVGElementTagNameMap, keyof HTMLElementTagNameMap>>;
 
+type AllowSharedBufferSource = ArrayBuffer | ArrayBufferView;
 type StringType = "inline" | "literal" | "other" | "stringbuffer";
 
 /////////////////////////////

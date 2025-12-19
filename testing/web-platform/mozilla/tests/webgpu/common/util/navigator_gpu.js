@@ -2,7 +2,7 @@
 * AUTO-GENERATED - DO NOT EDIT. Source: https://github.com/gpuweb/cts
 **/import { globalTestConfig } from '../framework/test_config.js';
 
-import { ErrorWithExtra, assert, objectEquals } from './util.js';
+import { ErrorWithExtra, assert, hasFeature, objectEquals } from './util.js';
 
 /**
  * Finds and returns the `navigator.gpu` object (or equivalent, for non-browser implementations).
@@ -164,7 +164,9 @@ export function getGPU(recorder) {
           Object.defineProperty(adapter, 'features', {
             enumerable: false,
             value: new Set(
-              adapter.features.has('core-features-and-limits') ? ['core-features-and-limits'] : []
+              hasFeature(adapter.features, 'core-features-and-limits') ?
+              ['core-features-and-limits'] :
+              []
             )
           });
         }
@@ -177,6 +179,7 @@ export function getGPU(recorder) {
         for (const [feature] of desc.requiredFeatures) {
           // Note: This adapter has had its features property over-ridden and will only return
           // have nothing or 'core-features-and-limits'.
+
           if (!adapter.features.has(feature)) {
             throw new TypeError(`requested feature ${feature} does not exist on adapter`);
           }
@@ -197,22 +200,24 @@ export function getGPU(recorder) {
 
   if (defaultRequestAdapterOptions) {
 
-    const oldFn = impl.requestAdapter;
-    impl.requestAdapter = function (
-    options)
-    {
-      const promise = oldFn.call(this, { ...defaultRequestAdapterOptions, ...options });
-      if (recorder) {
-        void promise.then((adapter) => {
-          if (adapter) {
-            const adapterInfo = adapter.info;
-            const infoString = `Adapter: ${adapterInfo.vendor} / ${adapterInfo.architecture} / ${adapterInfo.device}`;
-            recorder.debug(new ErrorWithExtra(infoString, () => ({ adapterInfo })));
-          }
+    const origRequestAdapterFn = impl.requestAdapter;
+
+
+    Object.defineProperty(impl, 'requestAdapter', {
+      configurable: true,
+      async value(options) {
+        const adapter = await origRequestAdapterFn.call(this, {
+          ...defaultRequestAdapterOptions,
+          ...options
         });
+        if (recorder && adapter) {
+          const adapterInfo = adapter.info;
+          const infoString = `Adapter: ${adapterInfo.vendor} / ${adapterInfo.architecture} / ${adapterInfo.device}`;
+          recorder.debug(new ErrorWithExtra(infoString, () => ({ adapterInfo })));
+        }
+        return adapter;
       }
-      return promise;
-    };
+    });
   }
 
   return impl;

@@ -1,4 +1,4 @@
-// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
+// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
 // Copyright (C) 2022 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -10,32 +10,27 @@ description: >
 features: [BigInt, Symbol, Temporal]
 ---*/
 
-const primitiveTests = [
+const timeZone = "UTC";
+const wrongTypeTests = [
   [null, "null"],
   [true, "boolean"],
-  ["", "empty string"],
-  [1, "number that doesn't convert to a valid ISO string"],
+  [1, "number"],
   [1n, "bigint"],
-];
-
-for (const [calendar, description] of primitiveTests) {
-  const arg = { year: 2019, monthCode: "M11", day: 1, calendar };
-  assert.throws(
-    typeof calendar === 'string' ? RangeError : TypeError,
-    () => Temporal.ZonedDateTime.from(arg),
-    `${description} does not convert to a valid ISO string`
-  );
-}
-
-const typeErrorTests = [
+  [19970327, "large number"],
+  [-19970327, "negative number"],
+  [1234567890, "very large integer"],
   [Symbol(), "symbol"],
   [{}, "object"],
   [new Temporal.Duration(), "duration instance"],
 ];
 
-for (const [calendar, description] of typeErrorTests) {
-  const arg = { year: 2019, monthCode: "M11", day: 1, calendar };
-  assert.throws(TypeError, () => Temporal.ZonedDateTime.from(arg), `${description} is not a valid property bag and does not convert to a string`);
+for (const [calendar, description] of wrongTypeTests) {
+  const arg = { year: 1970, monthCode: "M01", day: 1, timeZone, calendar };
+  assert.throws(
+    TypeError,
+    () => Temporal.ZonedDateTime.from(arg),
+    `${description} is not a valid calendar`
+  );
 }
 
 reportCompare(0, 0);

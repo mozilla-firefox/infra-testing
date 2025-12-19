@@ -106,37 +106,53 @@ void NativeLayerRootWayland::Init() {
   if (!gfx::gfxVars::UseDMABufSurfaceExport()) {
     RefPtr<DMABufFormats> formats = WaylandDisplayGet()->GetDMABufFormats();
     if (formats) {
-      mDRMFormat = formats->GetFormat(GBM_FORMAT_ARGB8888,
-                                      /* aScanoutFormat */ true);
+      if (!(mDRMFormat = formats->GetFormat(GBM_FORMAT_ARGB8888,
+                                            /* aScanoutFormat */ true))) {
+        LOGVERBOSE(
+            "NativeLayerRootWayland::Init() missing scanout format, use global "
+            "one");
+        mDRMFormat = formats->GetFormat(GBM_FORMAT_ARGB8888,
+                                        /* aScanoutFormat */ false);
+      }
     }
     if (!mDRMFormat) {
+      LOGVERBOSE(
+          "NativeLayerRootWayland::Init() fallback to format without "
+          "modifiers");
       mDRMFormat = new DRMFormat(GBM_FORMAT_ARGB8888);
     }
   }
 
   // Unmap all layers if nsWindow is unmapped
-  WaylandSurfaceLock lock(mSurface);
-  mSurface->SetUnmapCallbackLocked(lock, [this, self = RefPtr{this}]() -> void {
-    MutexAutoLock lock(mMutex);
-    LOG("NativeLayerRootWayland Unmap callback");
-    for (RefPtr<NativeLayerWayland>& layer : mSublayers) {
-      if (layer->IsMapped()) {
-        layer->Unmap();
-        layer->MainThreadUnmap();
-      }
-    }
-  });
-
-  mSurface->SetGdkCommitCallbackLocked(
+  WaylandSurfaceLock lock(mRootSurface);
+  mRootSurface->SetUnmapCallbackLocked(
       lock, [this, self = RefPtr{this}]() -> void {
-        LOGVERBOSE("SetGdkCommitCallbackLocked");
-
-        // Try to update on main thread if we need it
-        UpdateLayersOnMainThread();
-
-        MutexAutoLock lock(mMutex);
+        LOG("NativeLayerRootWayland Unmap callback");
+        WaylandSurfaceLock lock(mRootSurface);
         for (RefPtr<NativeLayerWayland>& layer : mSublayers) {
-          layer->ForceCommit();
+          if (layer->IsMapped()) {
+            layer->Unmap();
+            layer->MainThreadUnmap();
+          }
+        }
+      });
+
+  mRootSurface->SetGdkCommitCallbackLocked(
+      lock, [this, self = RefPtr{this}]() -> void {
+        LOGVERBOSE("GdkCommitCallback()");
+        // Try to update on main thread if we
+        // need it
+        UpdateLayersOnMainThread();
+      });
+
+  // Propagate frame callback state (enabled/disabled) to all layers
+  // to save resources.
+  mRootSurface->SetFrameCallbackStateHandlerLocked(
+      lock, [this, self = RefPtr{this}](bool aState) -> void {
+        LOGVERBOSE("FrameCallbackStateHandler()");
+        mRootSurface->AssertCurrentThreadOwnsMutex();
+        for (RefPtr<NativeLayerWayland>& layer : mSublayers) {
+          layer->SetFrameCallbackState(aState);
         }
       });
 
@@ -155,8 +171,8 @@ void NativeLayerRootWayland::Init() {
 #ifdef NIGHTLY_BUILD
   if (!gfx::gfxVars::UseDMABufSurfaceExport() &&
       StaticPrefs::widget_dmabuf_feedback_enabled_AtStartup()) {
-    mSurface->EnableDMABufFormatsLocked(lock, [this, self = RefPtr{this}](
-                                                  DMABufFormats* aFormats) {
+    mRootSurface->EnableDMABufFormatsLocked(lock, [this, self = RefPtr{this}](
+                                                      DMABufFormats* aFormats) {
       if (DRMFormat* format = aFormats->GetFormat(GBM_FORMAT_ARGB8888,
                                                   /* aScanoutFormat */ true)) {
         LOG("NativeLayerRootWayland DMABuf format refresh: we have scanout "
@@ -180,39 +196,46 @@ void NativeLayerRootWayland::Init() {
 
 void NativeLayerRootWayland::Shutdown() {
   LOG("NativeLayerRootWayland::Shutdown()");
+  AssertIsOnMainThread();
+
+  UpdateLayersOnMainThread();
 
   {
-    WaylandSurfaceLock lock(mSurface);
-    if (mSurface->IsMapped()) {
-      mSurface->RemoveAttachedBufferLocked(lock);
+    WaylandSurfaceLock lock(mRootSurface);
+    if (mRootSurface->IsMapped()) {
+      mRootSurface->RemoveAttachedBufferLocked(lock);
     }
-    mSurface->ClearUnmapCallbackLocked(lock);
-    mSurface->ClearGdkCommitCallbackLocked(lock);
-    mSurface->DisableDMABufFormatsLocked(lock);
+    mRootSurface->ClearUnmapCallbackLocked(lock);
+    mRootSurface->ClearGdkCommitCallbackLocked(lock);
+    mRootSurface->DisableDMABufFormatsLocked(lock);
   }
-  mSurface = nullptr;
+
+  mRootSurface = nullptr;
   mTmpBuffer = nullptr;
   mDRMFormat = nullptr;
 }
 
 NativeLayerRootWayland::NativeLayerRootWayland(
     RefPtr<WaylandSurface> aWaylandSurface)
-    : mMutex("NativeLayerRootWayland"), mSurface(aWaylandSurface) {
+    : mRootSurface(aWaylandSurface) {
 #ifdef MOZ_LOGGING
-  mLoggingWidget = mSurface->GetLoggingWidget();
-  mSurface->SetLoggingWidget(this);
+  mLoggingWidget = mRootSurface->GetLoggingWidget();
+  mRootSurface->SetLoggingWidget(this);
   LOG("NativeLayerRootWayland::NativeLayerRootWayland() nsWindow [%p] mapped "
       "%d",
-      mLoggingWidget, mSurface->IsMapped());
+      mLoggingWidget, mRootSurface->IsMapped());
 #endif
-  MOZ_DIAGNOSTIC_ASSERT(WaylandSurface::IsOpaqueRegionEnabled(),
-                        "Can't work without opaque region!");
+  if (!WaylandSurface::IsOpaqueRegionEnabled()) {
+    NS_WARNING(
+        "Wayland opaque region disabled, expect poor rendering performance!");
+  }
 }
 
 NativeLayerRootWayland::~NativeLayerRootWayland() {
   LOG("NativeLayerRootWayland::~NativeLayerRootWayland()");
   MOZ_DIAGNOSTIC_ASSERT(
-      !mSurface, "NativeLayerRootWayland destroyed without Shutdown() call!");
+      !mRootSurface,
+      "NativeLayerRootWayland destroyed without Shutdown() call!");
 }
 
 #ifdef MOZ_LOGGING
@@ -248,8 +271,21 @@ void NativeLayerRootWayland::RemoveLayer(NativeLayer* aLayer) {
   MOZ_CRASH("NativeLayerRootWayland::RemoveLayer() not implemented.");
 }
 
-bool NativeLayerRootWayland::IsEmptyLocked(const MutexAutoLock& aProofOfLock) {
+bool NativeLayerRootWayland::IsEmptyLocked(
+    const WaylandSurfaceLock& aProofOfLock) {
   return mSublayers.IsEmpty();
+}
+
+void NativeLayerRootWayland::ClearLayersLocked(
+    const widget::WaylandSurfaceLock& aProofOfLock) {
+  LOG("NativeLayerRootWayland::ClearLayersLocked() layers num [%d]",
+      (int)mRemovedSublayers.Length());
+  for (const RefPtr<NativeLayerWayland>& layer : mRemovedSublayers) {
+    LOG("  Unmap removed child layer [%p]", layer.get());
+    layer->Unmap();
+  }
+  mMainThreadUpdateSublayers.AppendElements(std::move(mRemovedSublayers));
+  RequestUpdateOnMainThreadLocked(aProofOfLock);
 }
 
 void NativeLayerRootWayland::SetLayers(
@@ -257,17 +293,12 @@ void NativeLayerRootWayland::SetLayers(
   // Removing all layers can destroy us so hold ref
   RefPtr<NativeLayerRoot> kungfuDeathGrip = this;
 
-  MutexAutoLock lock(mMutex);
+  WaylandSurfaceLock lock(mRootSurface);
 
   // Take shortcut if all layers are removed
   if (aLayers.IsEmpty()) {
-    LOG("NativeLayerRootWayland::SetLayers() clear layers");
-    for (const RefPtr<NativeLayerWayland>& layer : mSublayers) {
-      LOG("  Unmap removed child layer [%p]", layer.get());
-      layer->Unmap();
-    }
-    mMainThreadUpdateSublayers.AppendElements(std::move(mSublayers));
-    RequestUpdateOnMainThreadLocked(lock);
+    mRemovedSublayers.AppendElements(std::move(mSublayers));
+    ClearLayersLocked(lock);
     return;
   }
 
@@ -299,22 +330,22 @@ void NativeLayerRootWayland::SetLayers(
   for (const RefPtr<NativeLayerWayland>& layer : mSublayers) {
     if (layer->IsRemoved()) {
       LOG("  Unmap removed child layer [%p]", layer.get());
-      layer->Unmap();
-      mMainThreadUpdateSublayers.AppendElement(layer);
+      mRemovedSublayers.AppendElement(layer);
     }
   }
 
   // Map newly added layers only if root surface itself is mapped.
   // We lock it to make sure root surface stays mapped.
-  WaylandSurfaceLock surfaceLock(mSurface, /* force commit */ true);
-  if (mSurface->IsMapped()) {
+  lock.RequestForceCommit();
+
+  if (mRootSurface->IsMapped()) {
     for (const RefPtr<NativeLayerWayland>& layer : newLayers) {
       if (layer->IsNew()) {
         LOG("  Map new child layer [%p]", layer.get());
-        if (!layer->Map(&surfaceLock)) {
+        if (!layer->Map(&lock)) {
           continue;
         }
-        if (layer->IsOpaque()) {
+        if (layer->IsOpaque() && WaylandSurface::IsOpaqueRegionEnabled()) {
           LOG("  adding new opaque layer [%p]", layer.get());
           mMainThreadUpdateSublayers.AppendElement(layer);
         }
@@ -323,7 +354,10 @@ void NativeLayerRootWayland::SetLayers(
   }
 
   mSublayers = std::move(newLayers);
-  mNeedsLayerUpdate = true;
+  mRootMutatedStackingOrder = true;
+
+  mRootAllLayersRendered = false;
+  mRootSurface->SetCommitStateLocked(lock, mRootAllLayersRendered);
 
   // We need to process a part of map event on main thread as we use Gdk
   // code there. Ask for the processing now.
@@ -335,9 +369,17 @@ void NativeLayerRootWayland::SetLayers(
 // surfaces.
 void NativeLayerRootWayland::UpdateLayersOnMainThread() {
   AssertIsOnMainThread();
+
+  // We're called after Shutdown so do nothing.
+  if (!mRootSurface) {
+    return;
+  }
+
   LOG("NativeLayerRootWayland::UpdateLayersOnMainThread()");
-  MutexAutoLock lock(mMutex);
+  WaylandSurfaceLock lock(mRootSurface);
   for (const RefPtr<NativeLayerWayland>& layer : mMainThreadUpdateSublayers) {
+    LOGVERBOSE("NativeLayerRootWayland::UpdateLayersOnMainThread() [%p]",
+               layer.get());
     layer->UpdateOnMainThread();
   }
   mMainThreadUpdateSublayers.Clear();
@@ -345,7 +387,7 @@ void NativeLayerRootWayland::UpdateLayersOnMainThread() {
 }
 
 void NativeLayerRootWayland::RequestUpdateOnMainThreadLocked(
-    const MutexAutoLock& aProofOfLock) {
+    const WaylandSurfaceLock& aProofOfLock) {
   if (!mMainThreadUpdateSublayers.Length() || mMainThreadUpdateQueued) {
     return;
   }
@@ -359,37 +401,9 @@ void NativeLayerRootWayland::RequestUpdateOnMainThreadLocked(
       updateLayersRunnable.forget(), EventQueuePriority::Normal));
 }
 
-// Process all active layers, update position/scale and commit them.
-// TODO: Process only changed ones
-bool NativeLayerRootWayland::UpdateLayersLocked(
-    const MutexAutoLock& aProofOfLock) {
-  if (mNeedsLayerUpdate) {
-    NativeLayerWayland* previousWaylandSurface = nullptr;
-    for (RefPtr<NativeLayerWayland>& layer : mSublayers) {
-      if (previousWaylandSurface) {
-        layer->PlaceAbove(previousWaylandSurface);
-      }
-      previousWaylandSurface = layer;
-    }
-    mNeedsLayerUpdate = false;
-  }
-
-  // scale < 1 means we're missing any scale info (even from monitor).
-  // Use default scale in such case.
-  double scale = mSurface->GetScale();
-  if (scale < 1) {
-    scale = 1.0;
-  }
-
-  // TODO: Do recalc only if there's a change
-  for (RefPtr<NativeLayerWayland>& layer : mSublayers) {
-    layer->UpdateLayer(scale);
-  }
-  return true;
-}
-
 #ifdef MOZ_LOGGING
-void NativeLayerRootWayland::LogStatsLocked(const MutexAutoLock& aProofOfLock) {
+void NativeLayerRootWayland::LogStatsLocked(
+    const WaylandSurfaceLock& aProofOfLock) {
   if (!MOZ_LOG_TEST(gWidgetCompositorLog, mozilla::LogLevel::Verbose)) {
     return;
   }
@@ -400,6 +414,8 @@ void NativeLayerRootWayland::LogStatsLocked(const MutexAutoLock& aProofOfLock) {
   int layersMappedOpaqueSet = 0;
   int layersBufferAttached = 0;
   int layersVisible = 0;
+  int layersRendered = 0;
+  int layersRenderedLastCycle = 0;
 
   for (RefPtr<NativeLayerWayland>& layer : mSublayers) {
     layersNum++;
@@ -418,28 +434,29 @@ void NativeLayerRootWayland::LogStatsLocked(const MutexAutoLock& aProofOfLock) {
     if (layer->State()->mIsVisible) {
       layersVisible++;
     }
+    if (layer->State()->mIsRendered) {
+      layersRendered++;
+    }
+    if (layer->State()->mRenderedLastCycle) {
+      layersRenderedLastCycle++;
+    }
   }
   LOGVERBOSE(
-      "Layers [%d] mapped [%d] attached [%d] visible [%d] opaque [%d] opaque "
-      "set [%d]",
-      layersNum, layersMapped, layersBufferAttached, layersVisible,
-      layersMappedOpaque, layersMappedOpaqueSet);
+      "Rendering stats: all rendered [%d] layers [%d] mapped [%d] attached "
+      "[%d] visible [%d] "
+      "rendered [%d] last [%d] opaque [%d] opaque set [%d] fullscreen [%d]",
+      mRootAllLayersRendered, layersNum, layersMapped, layersBufferAttached,
+      layersVisible, layersRendered, layersRenderedLastCycle,
+      layersMappedOpaque, layersMappedOpaqueSet, mIsFullscreen);
 }
 #endif
 
 bool NativeLayerRootWayland::CommitToScreen() {
-  MutexAutoLock lock(mMutex);
-  return CommitToScreenLocked(lock);
-}
+  WaylandSurfaceLock lock(mRootSurface);
 
-bool NativeLayerRootWayland::CommitToScreenLocked(
-    const MutexAutoLock& aProofOfLock) {
   mFrameInProcess = false;
 
-  // Lock root surface to make sure it stays mapped while we're processing
-  // child surfaces.
-  WaylandSurfaceLock surfaceLock(mSurface, /* force commit */ true);
-  if (!mSurface->IsMapped()) {
+  if (!mRootSurface->IsMapped()) {
     // TODO: Register frame callback to paint again? Are we hidden?
     LOG("NativeLayerRootWayland::CommitToScreen() root surface is not mapped");
     return false;
@@ -449,31 +466,77 @@ bool NativeLayerRootWayland::CommitToScreenLocked(
 
   // Attach empty tmp buffer to root layer (nsWindow).
   // We need to have any content to attach child layers to it.
-  if (!mSurface->HasBufferAttached()) {
-    mSurface->AttachLocked(surfaceLock, mTmpBuffer);
-    mSurface->ClearOpaqueRegionLocked(surfaceLock);
+  if (!mRootSurface->HasBufferAttached()) {
+    mRootSurface->AttachLocked(lock, mTmpBuffer);
+    mRootSurface->ClearOpaqueRegionLocked(lock);
   }
 
   // Try to map all missing surfaces
   for (RefPtr<NativeLayerWayland>& layer : mSublayers) {
-    if (!layer->IsMapped() && layer->Map(&surfaceLock) && layer->IsOpaque()) {
-      mMainThreadUpdateSublayers.AppendElement(layer);
-      mNeedsLayerUpdate = true;
+    if (!layer->IsMapped()) {
+      if (!layer->Map(&lock)) {
+        LOGVERBOSE(
+            "NativeLayerRootWayland::CommitToScreen() failed to map layer [%p]",
+            layer.get());
+        continue;
+      }
+      if (layer->IsOpaque() && WaylandSurface::IsOpaqueRegionEnabled()) {
+        mMainThreadUpdateSublayers.AppendElement(layer);
+      }
+      mRootMutatedStackingOrder = true;
     }
   }
 
-  if (mNeedsLayerUpdate) {
-    RequestUpdateOnMainThreadLocked(aProofOfLock);
+  if (mRootMutatedStackingOrder) {
+    RequestUpdateOnMainThreadLocked(lock);
   }
 
-  // Update layers position / scale / size
-  if (!UpdateLayersLocked(aProofOfLock)) {
-    return false;
+  const double scale = mRootSurface->GetScale();
+  mRootAllLayersRendered = true;
+  for (RefPtr<NativeLayerWayland>& layer : mSublayers) {
+    layer->RenderLayer(scale);
+    if (layer->State()->mMutatedStackingOrder) {
+      mRootMutatedStackingOrder = true;
+    }
+    if (layer->State()->mIsVisible && !layer->State()->mIsRendered) {
+      LOG("NativeLayerRootWayland::CommitToScreen() layer [%p] is not rendered",
+          layer.get());
+      mRootAllLayersRendered = false;
+    }
   }
+
+  if (mRootMutatedStackingOrder) {
+    LOGVERBOSE(
+        "NativeLayerRootWayland::CommitToScreen(): changed stacking order");
+    NativeLayerWayland* previousWaylandSurface = nullptr;
+    for (RefPtr<NativeLayerWayland>& layer : mSublayers) {
+      if (layer->State()->mIsVisible) {
+        MOZ_DIAGNOSTIC_ASSERT(layer->IsMapped());
+        if (previousWaylandSurface) {
+          layer->PlaceAbove(previousWaylandSurface);
+        }
+        previousWaylandSurface = layer;
+      }
+      layer->State()->mMutatedStackingOrder = false;
+    }
+    mRootMutatedStackingOrder = false;
+  }
+
+  LOGVERBOSE("NativeLayerRootWayland::CommitToScreen(): %s root commit",
+             mRootAllLayersRendered ? "enabled" : "disabled");
+  mRootSurface->SetCommitStateLocked(lock, mRootAllLayersRendered);
 
 #ifdef MOZ_LOGGING
-  LogStatsLocked(aProofOfLock);
+  LogStatsLocked(lock);
 #endif
+
+  // Commit all layers changes now so we can unmap removed layers without
+  // flickering.
+  lock.Commit();
+
+  if (mRootAllLayersRendered && !mRemovedSublayers.IsEmpty()) {
+    ClearLayersLocked(lock);
+  }
 
   return true;
 }
@@ -485,7 +548,7 @@ void NativeLayerRootWayland::FrameCallbackHandler(uint32_t aTime) {
     // Child layer wl_subsurface already requested next frame callback
     // and we need to commit to root surface too as we're in
     // wl_subsurface synced mode.
-    WaylandSurfaceLock lock(mSurface, /* force commit */ true);
+    WaylandSurfaceLock lock(mRootSurface);
   }
 
   if (aTime <= mLastFrameCallbackTime) {
@@ -498,30 +561,61 @@ void NativeLayerRootWayland::FrameCallbackHandler(uint32_t aTime) {
   mLastFrameCallbackTime = aTime;
 
   LOGVERBOSE("NativeLayerRootWayland::FrameCallbackHandler() time %d", aTime);
-  mSurface->FrameCallbackHandler(nullptr, aTime,
-                                 /* aRoutedFromChildSurface */ true);
+  mRootSurface->FrameCallbackHandler(nullptr, aTime,
+                                     /* aRoutedFromChildSurface */ true);
 }
 
 // We don't need to lock access to GdkWindow() as we process all Gdk/Gtk
 // events on main thread only.
 GdkWindow* NativeLayerRootWayland::GetGdkWindow() const {
   AssertIsOnMainThread();
-  return mSurface->GetGdkWindow();
+  return mRootSurface->GetGdkWindow();
+}
+
+// Try to match stored wl_buffer with provided DMABufSurface or create
+// a new one.
+RefPtr<WaylandBuffer> NativeLayerRootWayland::BorrowExternalBuffer(
+    RefPtr<DMABufSurface> aDMABufSurface) {
+  LOG("NativeLayerRootWayland::BorrowExternalBuffer() WaylandSurface [%p] UID "
+      "%d PID %d mExternalBuffers num %d",
+      aDMABufSurface.get(), aDMABufSurface->GetUID(), aDMABufSurface->GetPID(),
+      (int)mExternalBuffers.Length());
+
+  RefPtr waylandBuffer =
+      widget::WaylandBufferDMABUF::CreateExternal(aDMABufSurface);
+  for (auto& b : mExternalBuffers) {
+    if (b.Matches(aDMABufSurface)) {
+      LOG("NativeLayerRootWayland::BorrowExternalBuffer() wl_buffer matches, "
+          "recycling");
+      waylandBuffer->SetExternalWLBuffer(b.GetWLBuffer());
+      return waylandBuffer.forget();
+    }
+  }
+
+  wl_buffer* wlbuffer = waylandBuffer->CreateWlBuffer();
+  if (!wlbuffer) {
+    return nullptr;
+  }
+
+  LOG("NativeLayerRootWayland::BorrowExternalBuffer() adding new wl_buffer");
+  waylandBuffer->SetExternalWLBuffer(wlbuffer);
+  mExternalBuffers.EmplaceBack(aDMABufSurface, wlbuffer);
+  return waylandBuffer.forget();
 }
 
 NativeLayerWayland::NativeLayerWayland(NativeLayerRootWayland* aRootLayer,
                                        const IntSize& aSize, bool aIsOpaque)
-    : mMutex("NativeLayerWayland"),
-      mRootLayer(aRootLayer),
-      mIsOpaque(aIsOpaque),
-      mSize(aSize) {
-  mSurface = new WaylandSurface(mRootLayer->GetWaylandSurface(), mSize);
+    : mRootLayer(aRootLayer), mIsOpaque(aIsOpaque), mSize(aSize) {
+  mSurface = new WaylandSurface(mRootLayer->GetRootWaylandSurface());
 #ifdef MOZ_LOGGING
   mSurface->SetLoggingWidget(this);
 #endif
   LOG("NativeLayerWayland::NativeLayerWayland() WaylandSurface [%p] size [%d, "
       "%d] opaque %d",
       mSurface.get(), mSize.width, mSize.height, aIsOpaque);
+
+  mState.mMutatedStackingOrder = true;
+  mState.mMutatedPlacement = true;
 }
 
 NativeLayerWayland::~NativeLayerWayland() {
@@ -533,78 +627,85 @@ NativeLayerWayland::~NativeLayerWayland() {
 bool NativeLayerWayland::IsMapped() { return mSurface->IsMapped(); }
 
 void NativeLayerWayland::SetSurfaceIsFlipped(bool aIsFlipped) {
-  MutexAutoLock lock(mMutex);
+  WaylandSurfaceLock lock(mSurface);
   if (aIsFlipped != mSurfaceIsFlipped) {
     mSurfaceIsFlipped = aIsFlipped;
+    mState.mMutatedPlacement = true;
   }
 }
 
 bool NativeLayerWayland::SurfaceIsFlipped() {
-  MutexAutoLock lock(mMutex);
+  WaylandSurfaceLock lock(mSurface);
   return mSurfaceIsFlipped;
 }
 
 IntSize NativeLayerWayland::GetSize() {
-  MutexAutoLock lock(mMutex);
+  WaylandSurfaceLock lock(mSurface);
   return mSize;
 }
 
 void NativeLayerWayland::SetPosition(const IntPoint& aPosition) {
-  MutexAutoLock lock(mMutex);
+  WaylandSurfaceLock lock(mSurface);
   if (aPosition != mPosition) {
     LOG("NativeLayerWayland::SetPosition() [%d, %d]", (int)aPosition.x,
         (int)aPosition.y);
     mPosition = aPosition;
+    mState.mMutatedPlacement = true;
   }
 }
 
 IntPoint NativeLayerWayland::GetPosition() {
-  MutexAutoLock lock(mMutex);
+  WaylandSurfaceLock lock(mSurface);
   return mPosition;
 }
 
 void NativeLayerWayland::PlaceAbove(NativeLayerWayland* aLowerLayer) {
+  WaylandSurfaceLock lock(mSurface);
+  WaylandSurfaceLock lowerSurfacelock(aLowerLayer->mSurface);
+
   MOZ_DIAGNOSTIC_ASSERT(IsMapped());
   MOZ_DIAGNOSTIC_ASSERT(aLowerLayer->IsMapped());
   MOZ_DIAGNOSTIC_ASSERT(this != aLowerLayer);
 
-  WaylandSurfaceLock lock(mSurface);
-  WaylandSurfaceLock lowerSurfacelock(aLowerLayer->mSurface);
   mSurface->PlaceAboveLocked(lock, lowerSurfacelock);
+  mState.mMutatedStackingOrder = true;
 }
 
 void NativeLayerWayland::SetTransform(const Matrix4x4& aTransform) {
-  MutexAutoLock lock(mMutex);
+  WaylandSurfaceLock lock(mSurface);
   MOZ_DIAGNOSTIC_ASSERT(aTransform.IsRectilinear());
   if (aTransform != mTransform) {
     mTransform = aTransform;
+    mState.mMutatedPlacement = true;
   }
 }
 
-void NativeLayerWayland::SetSamplingFilter(SamplingFilter aSamplingFilter) {
-  MutexAutoLock lock(mMutex);
+void NativeLayerWayland::SetSamplingFilter(
+    gfx::SamplingFilter aSamplingFilter) {
+  WaylandSurfaceLock lock(mSurface);
   if (aSamplingFilter != mSamplingFilter) {
     mSamplingFilter = aSamplingFilter;
   }
 }
 
 Matrix4x4 NativeLayerWayland::GetTransform() {
-  MutexAutoLock lock(mMutex);
+  WaylandSurfaceLock lock(mSurface);
   return mTransform;
 }
 
 IntRect NativeLayerWayland::GetRect() {
-  MutexAutoLock lock(mMutex);
+  WaylandSurfaceLock lock(mSurface);
   return IntRect(mPosition, mSize);
 }
 
+// TODO: remove lock?
 bool NativeLayerWayland::IsOpaque() {
-  MutexAutoLock lock(mMutex);
+  WaylandSurfaceLock lock(mSurface);
   return mIsOpaque;
 }
 
 void NativeLayerWayland::SetClipRect(const Maybe<IntRect>& aClipRect) {
-  MutexAutoLock lock(mMutex);
+  WaylandSurfaceLock lock(mSurface);
   if (aClipRect != mClipRect) {
 #if MOZ_LOGGING
     if (aClipRect) {
@@ -614,24 +715,56 @@ void NativeLayerWayland::SetClipRect(const Maybe<IntRect>& aClipRect) {
     }
 #endif
     mClipRect = aClipRect;
+    mState.mMutatedPlacement = true;
   }
 }
 
 Maybe<IntRect> NativeLayerWayland::ClipRect() {
-  MutexAutoLock lock(mMutex);
+  WaylandSurfaceLock lock(mSurface);
   return mClipRect;
 }
 
+void NativeLayerWayland::SetRoundedClipRect(
+    const Maybe<gfx::RoundedRect>& aClip) {
+  WaylandSurfaceLock lock(mSurface);
+  if (aClip != mRoundedClipRect) {
+    // TODO(gw): Support rounded clips on wayland
+    mRoundedClipRect = aClip;
+  }
+}
+
+Maybe<gfx::RoundedRect> NativeLayerWayland::RoundedClipRect() {
+  WaylandSurfaceLock lock(mSurface);
+  return mRoundedClipRect;
+}
+
 IntRect NativeLayerWayland::CurrentSurfaceDisplayRect() {
-  MutexAutoLock lock(mMutex);
+  WaylandSurfaceLock lock(mSurface);
   return mDisplayRect;
 }
 
-void NativeLayerWayland::UpdateLayer(double aScale) {
+void NativeLayerWayland::SetScalelocked(
+    const widget::WaylandSurfaceLock& aProofOfLock, double aScale) {
   MOZ_DIAGNOSTIC_ASSERT(aScale > 0);
-  MOZ_DIAGNOSTIC_ASSERT(IsMapped());
+  if (aScale != mScale) {
+    mScale = aScale;
+    mState.mMutatedPlacement = true;
+  }
+}
 
-  MutexAutoLock lock(mMutex);
+void NativeLayerWayland::UpdateLayerPlacementLocked(
+    const widget::WaylandSurfaceLock& aProofOfLock) {
+  // It's possible that NativeLayerWayland is unmapped/waiting to unmap.
+  if (!IsMapped()) {
+    return;
+  }
+
+  if (!mState.mMutatedPlacement) {
+    return;
+  }
+  mState.mMutatedPlacement = false;
+
+  LOGVERBOSE("NativeLayerWayland::UpdateLayerPlacementLocked()");
 
   MOZ_RELEASE_ASSERT(mTransform.Is2D());
   auto transform2D = mTransform.As2D();
@@ -646,43 +779,93 @@ void NativeLayerWayland::UpdateLayer(double aScale) {
     surfaceRectClipped = surfaceRectClipped.Intersect(Rect(mClipRect.value()));
   }
 
-  WaylandSurfaceLock surfaceLock(mSurface);
-  mState.mIsVisible = (roundf(surfaceRectClipped.width) > 0 &&
-                       roundf(surfaceRectClipped.height) > 0);
-  if (mState.mIsVisible) {
-    LOGVERBOSE("NativeLayerWayland::UpdateLayer() is visible");
-
-    mSurface->SetTransformFlippedLocked(surfaceLock, transform2D._11 < 0.0,
-                                        transform2D._22 < 0.0);
-    gfx::IntPoint pos((int)floor(surfaceRectClipped.x / aScale),
-                      (int)floor(surfaceRectClipped.y / aScale));
-    mSurface->MoveLocked(surfaceLock, pos);
-
-    gfx::IntSize size((int)ceil(surfaceRectClipped.width / aScale),
-                      (int)ceil(surfaceRectClipped.height / aScale));
-    mSurface->SetViewPortDestLocked(surfaceLock, size);
-
-    auto transform2DInversed = transform2D.Inverse();
-    Rect bufferClip = transform2DInversed.TransformBounds(surfaceRectClipped);
-    mSurface->SetViewPortSourceRectLocked(
-        surfaceLock,
-        bufferClip.Intersect(Rect(0, 0, mSize.width, mSize.height)));
-
-    CommitSurfaceToScreenLocked(lock, surfaceLock);
-  } else {
-    LOGVERBOSE("NativeLayerWayland::UpdateLayer() is hidden");
-    RemoveAttachedBufferLocked(lock, surfaceLock);
+  const bool visible = !surfaceRectClipped.IsEmpty();
+  if (mState.mIsVisible != visible) {
+    mState.mIsVisible = visible;
+    mState.mMutatedVisibility = true;
+    mState.mMutatedStackingOrder = true;
+    if (!mState.mIsVisible) {
+      LOGVERBOSE("NativeLayerWayland become hidden");
+      mSurface->RemoveAttachedBufferLocked(aProofOfLock);
+      return;
+    }
+    LOGVERBOSE("NativeLayerWayland become visible");
   }
+
+  mSurface->SetTransformFlippedLocked(aProofOfLock, transform2D._11 < 0.0,
+                                      transform2D._22 < 0.0);
+
+  // TODO! Downscale introduces rounding errors here.
+  auto unscaledRect =
+      gfx::RoundedToInt(surfaceRectClipped / UnknownScaleFactor(mScale));
+  auto rect = DesktopIntRect::FromUnknownRect(unscaledRect);
+  mSurface->MoveLocked(aProofOfLock, rect.TopLeft());
+  mSurface->SetViewPortDestLocked(aProofOfLock, rect.Size());
+
+  LOGVERBOSE(
+      "NativeLayerWayland::UpdateLayerPlacement(): destination [%d,%d] -> [%d "
+      "x %d]",
+      rect.x, rect.y, rect.width, rect.height);
+
+  auto transform2DInversed = transform2D.Inverse();
+  Rect bufferClip = transform2DInversed.TransformBounds(surfaceRectClipped);
+  auto viewportRect = gfx::RoundedToInt(
+      bufferClip.Intersect(Rect(0, 0, mSize.width, mSize.height)));
+
+  LOGVERBOSE(
+      "NativeLayerWayland::UpdateLayerPlacement(): source [%d,%d] -> [%d x %d]",
+      viewportRect.x, viewportRect.y, viewportRect.width, viewportRect.height);
+
+  mSurface->SetViewPortSourceRectLocked(
+      aProofOfLock, DesktopIntRect::FromUnknownRect(viewportRect));
 }
 
-void NativeLayerWayland::RemoveAttachedBufferLocked(
-    const MutexAutoLock& aProofOfLock, WaylandSurfaceLock& aSurfaceLock) {
-  LOG("NativeLayerWayland::RemoveAttachedBufferLocked()");
-  mSurface->RemoveAttachedBufferLocked(aSurfaceLock);
+void NativeLayerWayland::RenderLayer(double aScale) {
+  WaylandSurfaceLock lock(mSurface);
+
+  LOG("NativeLayerWayland::RenderLayer()");
+
+  SetScalelocked(lock, aScale);
+  UpdateLayerPlacementLocked(lock);
+
+  mState.mRenderedLastCycle = false;
+
+  // Don't operate over hidden layers
+  if (!mState.mIsVisible) {
+    LOG("NativeLayerWayland::RenderLayer() quit, not visible");
+    return;
+  }
+
+  // Return if front buffer didn't changed (or changed area is empty)
+  // and there isn't any visibility change.
+  if (!IsFrontBufferChanged() && !mState.mMutatedVisibility) {
+    LOG("NativeLayerWayland::RenderLayer() quit "
+        "IsFrontBufferChanged [%d] "
+        "mState.mMutatedVisibility [%d] rendered [%d]",
+        IsFrontBufferChanged(), mState.mMutatedVisibility, mState.mIsRendered);
+    return;
+  }
+
+  if (!mFrontBuffer) {
+    LOG("NativeLayerWayland::RenderLayer() - missing front buffer!");
+    return;
+  }
+
+  mState.mIsRendered = mState.mRenderedLastCycle =
+      CommitFrontBufferToScreenLocked(lock);
+
+  mState.mMutatedFrontBuffer = false;
+  mState.mMutatedVisibility = false;
+
+  if (mState.mIsVisible) {
+    MOZ_DIAGNOSTIC_ASSERT(mSurface->HasBufferAttached());
+  }
+
+  LOG("NativeLayerWayland::RenderLayer(): rendered [%d]", mState.mIsRendered);
 }
 
 bool NativeLayerWayland::Map(WaylandSurfaceLock* aParentWaylandSurfaceLock) {
-  MutexAutoLock lock(mMutex);
+  WaylandSurfaceLock surfaceLock(mSurface);
 
   if (mNeedsMainThreadUpdate == MainThreadUpdate::Unmap) {
     LOG("NativeLayerWayland::Map() waiting to MainThreadUpdate::Unmap");
@@ -691,13 +874,12 @@ bool NativeLayerWayland::Map(WaylandSurfaceLock* aParentWaylandSurfaceLock) {
 
   LOG("NativeLayerWayland::Map() parent %p", mRootLayer.get());
 
-  WaylandSurfaceLock surfaceLock(mSurface);
   MOZ_DIAGNOSTIC_ASSERT(!mSurface->IsMapped());
   MOZ_DIAGNOSTIC_ASSERT(mNeedsMainThreadUpdate != MainThreadUpdate::Map);
 
   if (!mSurface->MapLocked(surfaceLock, aParentWaylandSurfaceLock,
-                           gfx::IntPoint(0, 0))) {
-    LOG("NativeLayerWayland::Map() failed!");
+                           DesktopIntPoint())) {
+    gfxCriticalError() << "NativeLayerWayland::Map() failed!";
     return false;
   }
   mSurface->DisableUserInputLocked(surfaceLock);
@@ -709,7 +891,7 @@ bool NativeLayerWayland::Map(WaylandSurfaceLock* aParentWaylandSurfaceLock) {
   //
   // aTime param is used to identify duplicate events.
   //
-  mSurface->AddPersistentFrameCallbackLocked(
+  mSurface->SetFrameCallbackLocked(
       surfaceLock,
       [this, self = RefPtr{this}](wl_callback* aCallback,
                                   uint32_t aTime) -> void {
@@ -722,15 +904,37 @@ bool NativeLayerWayland::Map(WaylandSurfaceLock* aParentWaylandSurfaceLock) {
     mSurface->EnableColorManagementLocked(surfaceLock);
   }
 
+  if (auto* external = AsNativeLayerWaylandExternal()) {
+    if (RefPtr surface = external->GetSurface()) {
+      if (auto* surfaceYUV = surface->GetAsDMABufSurfaceYUV()) {
+        mSurface->SetColorRepresentationLocked(
+            surfaceLock, surfaceYUV->GetYUVColorSpace(),
+            surfaceYUV->IsFullRange(), surfaceYUV->GetWPChromaLocation());
+      }
+    }
+  }
+
   mNeedsMainThreadUpdate = MainThreadUpdate::Map;
+  mState.mMutatedStackingOrder = true;
+  mState.mMutatedVisibility = true;
+  mState.mMutatedPlacement = true;
+  mState.mIsRendered = false;
   return true;
+}
+
+void NativeLayerWayland::SetFrameCallbackState(bool aState) {
+  LOGVERBOSE("NativeLayerWayland::SetFrameCallbackState() %d", aState);
+  WaylandSurfaceLock lock(mSurface);
+  mSurface->SetFrameCallbackStateLocked(lock, aState);
 }
 
 void NativeLayerWayland::MainThreadMap() {
   AssertIsOnMainThread();
   MOZ_DIAGNOSTIC_ASSERT(IsOpaque());
+  MOZ_DIAGNOSTIC_ASSERT(mNeedsMainThreadUpdate == MainThreadUpdate::Map);
+
+  WaylandSurfaceLock lock(mSurface);
   if (!mSurface->IsOpaqueSurfaceHandlerSet()) {
-    WaylandSurfaceLock lock(mSurface);
     // Don't register commit handler, we do it for all surfaces at
     // GdkCommitCallback() handler.
     mSurface->AddOpaqueSurfaceHandlerLocked(lock, mRootLayer->GetGdkWindow(),
@@ -741,24 +945,33 @@ void NativeLayerWayland::MainThreadMap() {
 }
 
 void NativeLayerWayland::Unmap() {
+  WaylandSurfaceLock surfaceLock(mSurface);
+
   if (!mSurface->IsMapped()) {
     return;
   }
 
-  MutexAutoLock lock(mMutex);
   LOG("NativeLayerWayland::Unmap()");
 
-  WaylandSurfaceLock surfaceLock(mSurface);
   mSurface->UnmapLocked(surfaceLock);
-
+  // Clear reference to this added at NativeLayerWayland::Map() by
+  // callback handler.
+  mSurface->ClearFrameCallbackHandlerLocked(surfaceLock);
+  mState.mMutatedStackingOrder = true;
+  mState.mMutatedVisibility = true;
+  mState.mIsRendered = false;
+  mState.mIsVisible = false;
+  DiscardBackbuffersLocked(surfaceLock);
   mNeedsMainThreadUpdate = MainThreadUpdate::Unmap;
 }
 
 void NativeLayerWayland::MainThreadUnmap() {
-  MOZ_DIAGNOSTIC_ASSERT(!mSurface->IsMapped());
+  WaylandSurfaceLock lock(mSurface);
+
+  MOZ_DIAGNOSTIC_ASSERT(mNeedsMainThreadUpdate == MainThreadUpdate::Unmap);
   AssertIsOnMainThread();
+
   if (mSurface->IsPendingGdkCleanup()) {
-    WaylandSurfaceLock lock(mSurface);
     mSurface->GdkCleanUpLocked(lock);
     // TODO: Do we need to clear opaque region?
   }
@@ -778,13 +991,13 @@ void NativeLayerWayland::UpdateOnMainThread() {
 }
 
 void NativeLayerWayland::DiscardBackbuffers() {
-  MutexAutoLock lock(mMutex);
+  WaylandSurfaceLock lock(mSurface);
   DiscardBackbuffersLocked(lock);
 }
 
 void NativeLayerWayland::ForceCommit() {
+  WaylandSurfaceLock lock(mSurface);
   if (mSurface->IsMapped()) {
-    WaylandSurfaceLock lock(mSurface);
     mSurface->CommitLocked(lock, /* force commit */ true);
   }
 }
@@ -800,34 +1013,49 @@ NativeLayerWaylandRender::NativeLayerWaylandRender(
 
 void NativeLayerWaylandRender::AttachExternalImage(
     wr::RenderTextureHost* aExternalImage) {
-  MOZ_RELEASE_ASSERT(
-      false,
-      "NativeLayerWaylandRender::AttachExternalImage() not implemented.");
+  MOZ_CRASH("NativeLayerWaylandRender::AttachExternalImage() not implemented.");
+}
+
+bool NativeLayerWaylandRender::IsFrontBufferChanged() {
+  return mState.mMutatedFrontBuffer && !mDirtyRegion.IsEmpty();
 }
 
 RefPtr<DrawTarget> NativeLayerWaylandRender::NextSurfaceAsDrawTarget(
     const IntRect& aDisplayRect, const IntRegion& aUpdateRegion,
     BackendType aBackendType) {
-  MutexAutoLock lock(mMutex);
-
   LOG("NativeLayerWaylandRender::NextSurfaceAsDrawTarget()");
 
-  mDisplayRect = IntRect(aDisplayRect);
-  mDirtyRegion = IntRegion(aUpdateRegion);
+  WaylandSurfaceLock lock(mSurface);
+
+  if (!mDisplayRect.IsEqualEdges(aDisplayRect)) {
+    mDisplayRect = aDisplayRect;
+    mState.mMutatedPlacement = true;
+  }
+  mDirtyRegion = aUpdateRegion;
 
   MOZ_DIAGNOSTIC_ASSERT(!mInProgressBuffer);
   if (mFrontBuffer && !mFrontBuffer->IsAttached()) {
+    LOGVERBOSE(
+        "NativeLayerWaylandRender::NextSurfaceAsDrawTarget(): use front buffer "
+        "for rendering");
     // the Wayland compositor released the buffer early, we can reuse it
     mInProgressBuffer = std::move(mFrontBuffer);
   } else {
+    LOGVERBOSE(
+        "NativeLayerWaylandRender::NextSurfaceAsDrawTarget(): use progress "
+        "buffer for rendering");
     mInProgressBuffer = mSurfacePoolHandle->ObtainBufferFromPool(
         mSize, mRootLayer->GetDRMFormat());
     if (mFrontBuffer) {
-      HandlePartialUpdateLocked(lock);
+      LOGVERBOSE(
+          "NativeLayerWaylandRender::NextSurfaceAsDrawTarget(): read-back from "
+          "front buffer");
+      ReadBackFrontBuffer(lock);
       mSurfacePoolHandle->ReturnBufferToPool(mFrontBuffer);
+      mFrontBuffer = nullptr;
     }
   }
-  mFrontBuffer = nullptr;
+  MOZ_DIAGNOSTIC_ASSERT(!mFrontBuffer);
 
   if (!mInProgressBuffer) {
     gfxCriticalError() << "Failed to obtain buffer";
@@ -836,44 +1064,64 @@ RefPtr<DrawTarget> NativeLayerWaylandRender::NextSurfaceAsDrawTarget(
     return nullptr;
   }
 
+  MOZ_DIAGNOSTIC_ASSERT(!mInProgressBuffer->IsAttached(),
+                        "Reusing attached buffer!");
+
   return mInProgressBuffer->Lock();
 }
 
 Maybe<GLuint> NativeLayerWaylandRender::NextSurfaceAsFramebuffer(
     const IntRect& aDisplayRect, const IntRegion& aUpdateRegion,
     bool aNeedsDepth) {
-  MutexAutoLock lock(mMutex);
-
   LOG("NativeLayerWaylandRender::NextSurfaceAsFramebuffer()");
 
-  mDisplayRect = IntRect(aDisplayRect);
+  WaylandSurfaceLock lock(mSurface);
+
+  if (!mDisplayRect.IsEqualEdges(aDisplayRect)) {
+    mDisplayRect = aDisplayRect;
+    mState.mMutatedPlacement = true;
+  }
   mDirtyRegion = IntRegion(aUpdateRegion);
 
   MOZ_DIAGNOSTIC_ASSERT(!mInProgressBuffer);
   if (mFrontBuffer && !mFrontBuffer->IsAttached()) {
+    LOGVERBOSE(
+        "NativeLayerWaylandRender::NextSurfaceAsFramebuffer(): use front "
+        "buffer for rendering");
     // the Wayland compositor released the buffer early, we can reuse it
     mInProgressBuffer = std::move(mFrontBuffer);
-    mFrontBuffer = nullptr;
   } else {
+    LOGVERBOSE(
+        "NativeLayerWaylandRender::NextSurfaceAsFramebuffer(): use progress "
+        "buffer for rendering");
     mInProgressBuffer = mSurfacePoolHandle->ObtainBufferFromPool(
         mSize, mRootLayer->GetDRMFormat());
   }
 
+  MOZ_DIAGNOSTIC_ASSERT(mInProgressBuffer,
+                        "NativeLayerWaylandRender: Failed to obtain buffer");
   if (!mInProgressBuffer) {
-    gfxCriticalError() << "Failed to obtain buffer";
-    wr::RenderThread::Get()->HandleWebRenderError(
-        wr::WebRenderError::NEW_SURFACE);
     return Nothing();
   }
+
+  MOZ_DIAGNOSTIC_ASSERT(!mInProgressBuffer->IsAttached(),
+                        "Reusing attached buffer!");
 
   // get the framebuffer before handling partial damage so we don't accidently
   // create one without depth buffer
   Maybe<GLuint> fbo = mSurfacePoolHandle->GetFramebufferForBuffer(
       mInProgressBuffer, aNeedsDepth);
-  MOZ_RELEASE_ASSERT(fbo, "GetFramebufferForBuffer failed.");
+  MOZ_DIAGNOSTIC_ASSERT(
+      fbo, "NativeLayerWaylandRender: Failed to create framebuffer!");
+  if (!fbo) {
+    return Nothing();
+  }
 
   if (mFrontBuffer) {
-    HandlePartialUpdateLocked(lock);
+    LOGVERBOSE(
+        "NativeLayerWaylandRender::NextSurfaceAsFramebuffer(): read-back from "
+        "front buffer");
+    ReadBackFrontBuffer(lock);
     mSurfacePoolHandle->ReturnBufferToPool(mFrontBuffer);
     mFrontBuffer = nullptr;
   }
@@ -881,12 +1129,14 @@ Maybe<GLuint> NativeLayerWaylandRender::NextSurfaceAsFramebuffer(
   return fbo;
 }
 
-void NativeLayerWaylandRender::HandlePartialUpdateLocked(
-    const MutexAutoLock& aProofOfLock) {
+// Front buffer is still used by compositor so we can't paint into it.
+// Read it back to progress buffer and paint next frame to progress buffer.
+void NativeLayerWaylandRender::ReadBackFrontBuffer(
+    const WaylandSurfaceLock& aProofOfLock) {
   IntRegion copyRegion = IntRegion(mDisplayRect);
   copyRegion.SubOut(mDirtyRegion);
 
-  LOG("NativeLayerWaylandRender::HandlePartialUpdateLocked()");
+  LOG("NativeLayerWaylandRender::ReadBackFrontBuffer()");
 
   if (!copyRegion.IsEmpty()) {
     if (mSurfacePoolHandle->gl()) {
@@ -895,9 +1145,20 @@ void NativeLayerWaylandRender::HandlePartialUpdateLocked(
         gfx::IntRect r = iter.Get();
         Maybe<GLuint> sourceFB =
             mSurfacePoolHandle->GetFramebufferForBuffer(mFrontBuffer, false);
+        MOZ_DIAGNOSTIC_ASSERT(sourceFB,
+                              "NativeLayerWaylandRender: Failed to get "
+                              "mFrontBuffer framebuffer!");
+        if (!sourceFB) {
+          return;
+        }
         Maybe<GLuint> destFB = mSurfacePoolHandle->GetFramebufferForBuffer(
             mInProgressBuffer, false);
-        MOZ_RELEASE_ASSERT(sourceFB && destFB);
+        MOZ_DIAGNOSTIC_ASSERT(destFB,
+                              "NativeLayerWaylandRender: Failed to get "
+                              "mInProgressBuffer framebuffer!");
+        if (!destFB) {
+          return;
+        }
         mSurfacePoolHandle->gl()->BlitHelper()->BlitFramebufferToFramebuffer(
             sourceFB.value(), destFB.value(), r, r, LOCAL_GL_NEAREST);
       }
@@ -917,41 +1178,58 @@ void NativeLayerWaylandRender::HandlePartialUpdateLocked(
   }
 }
 
-void NativeLayerWaylandRender::CommitSurfaceToScreenLocked(
-    const MutexAutoLock& aProofOfLock, WaylandSurfaceLock& aSurfaceLock) {
-  if (!mFrontBuffer) {
-    LOG("NativeLayerWaylandRender::CommitSurfaceToScreenLocked() - missing "
-        "front buffer!");
-    return;
-  }
-  if (mDirtyRegion.IsEmpty() && mSurface->HasBufferAttached()) {
-    return;
-  }
+bool NativeLayerWaylandRender::CommitFrontBufferToScreenLocked(
+    const WaylandSurfaceLock& aProofOfLock) {
+  // Don't operate over hidden layers
+  LOG("NativeLayerWaylandRender::CommitFrontBufferToScreenLocked()");
 
-  LOG("NativeLayerWaylandRender::CommitSurfaceToScreenLocked()");
-  mSurface->InvalidateRegionLocked(aSurfaceLock, mDirtyRegion);
+  if (mState.mMutatedVisibility) {
+    mSurface->InvalidateLocked(aProofOfLock);
+  } else {
+    mSurface->InvalidateRegionLocked(aProofOfLock, mDirtyRegion);
+  }
   mDirtyRegion.SetEmpty();
 
-  mSurface->AttachLocked(aSurfaceLock, mFrontBuffer);
+  auto* buffer = mFrontBuffer->AsWaylandBufferDMABUF();
+  if (buffer) {
+    buffer->GetSurface()->FenceWait();
+  }
+
+  mSurface->AttachLocked(aProofOfLock, mFrontBuffer);
+  return true;
 }
 
 void NativeLayerWaylandRender::NotifySurfaceReady() {
   LOG("NativeLayerWaylandRender::NotifySurfaceReady()");
-  MutexAutoLock lock(mMutex);
+
+  WaylandSurfaceLock lock(mSurface);
+
   MOZ_DIAGNOSTIC_ASSERT(!mFrontBuffer);
   MOZ_DIAGNOSTIC_ASSERT(mInProgressBuffer);
+
   mFrontBuffer = std::move(mInProgressBuffer);
+  if (mSurfacePoolHandle->gl()) {
+    auto* buffer = mFrontBuffer->AsWaylandBufferDMABUF();
+    if (buffer) {
+      buffer->GetSurface()->FenceSet();
+    }
+    mSurfacePoolHandle->gl()->FlushIfHeavyGLCallsSinceLastFlush();
+  }
+
+  mState.mMutatedFrontBuffer = true;
 }
 
 void NativeLayerWaylandRender::DiscardBackbuffersLocked(
-    const MutexAutoLock& aProofOfLock, bool aForce) {
-  LOG("NativeLayerWaylandRender::DiscardBackbuffersLocked()");
-
+    const WaylandSurfaceLock& aProofOfLock, bool aForce) {
+  LOGVERBOSE(
+      "NativeLayerWaylandRender::DiscardBackbuffersLocked() force %d progress "
+      "%p front %p",
+      aForce, mInProgressBuffer.get(), mFrontBuffer.get());
   if (mInProgressBuffer && (!mInProgressBuffer->IsAttached() || aForce)) {
     mSurfacePoolHandle->ReturnBufferToPool(mInProgressBuffer);
     mInProgressBuffer = nullptr;
   }
-  if (mFrontBuffer && (mFrontBuffer->IsAttached() || aForce)) {
+  if (mFrontBuffer && (!mFrontBuffer->IsAttached() || aForce)) {
     mSurfacePoolHandle->ReturnBufferToPool(mFrontBuffer);
     mFrontBuffer = nullptr;
   }
@@ -959,9 +1237,12 @@ void NativeLayerWaylandRender::DiscardBackbuffersLocked(
 
 NativeLayerWaylandRender::~NativeLayerWaylandRender() {
   LOG("NativeLayerWaylandRender::~NativeLayerWaylandRender()");
-
-  MutexAutoLock lock(mMutex);
+  WaylandSurfaceLock lock(mSurface);
   DiscardBackbuffersLocked(lock, /* aForce */ true);
+}
+
+RefPtr<DMABufSurface> NativeLayerWaylandExternal::GetSurface() {
+  return mTextureHost ? mTextureHost->GetSurface() : nullptr;
 }
 
 NativeLayerWaylandExternal::NativeLayerWaylandExternal(
@@ -970,7 +1251,7 @@ NativeLayerWaylandExternal::NativeLayerWaylandExternal(
 
 void NativeLayerWaylandExternal::AttachExternalImage(
     wr::RenderTextureHost* aExternalImage) {
-  MutexAutoLock lock(mMutex);
+  WaylandSurfaceLock lock(mSurface);
 
   wr::RenderDMABUFTextureHost* texture =
       aExternalImage->AsRenderDMABUFTextureHost();
@@ -981,26 +1262,36 @@ void NativeLayerWaylandExternal::AttachExternalImage(
     return;
   }
 
-  if (mTextureHost && mTextureHost->GetSurface() == texture->GetSurface()) {
+  if (mSize != texture->GetSize(0)) {
+    mSize = texture->GetSize(0);
+    mDisplayRect = IntRect(IntPoint{}, mSize);
+    mState.mMutatedPlacement = true;
+  }
+
+  mState.mMutatedFrontBuffer =
+      (!mTextureHost || mTextureHost->GetSurface() != texture->GetSurface());
+  if (!mState.mMutatedFrontBuffer) {
     return;
   }
   mTextureHost = texture;
-  mSize = texture->GetSize(0);
-  mDisplayRect = IntRect(IntPoint{}, mSize);
-  mBufferInvalided = true;
-  mFrontBuffer =
-      widget::WaylandBufferDMABUF::CreateExternal(mTextureHost->GetSurface());
-  mIsHDR = mTextureHost->GetSurface()->IsHDRSurface();
+
+  auto surface = mTextureHost->GetSurface();
+  mIsHDR = surface->IsHDRSurface();
 
   LOG("NativeLayerWaylandExternal::AttachExternalImage() host [%p] "
-      "DMABufSurface [%p] DMABuf UID %d [%d x %d] HDR %d Opaque %d",
+      "DMABufSurface [%p] DMABuf UID %d [%d x %d] HDR %d Opaque %d recycle "
+      "%d",
       mTextureHost.get(), mTextureHost->GetSurface().get(),
       mTextureHost->GetSurface()->GetUID(), mSize.width, mSize.height, mIsHDR,
-      mIsOpaque);
+      mIsOpaque, surface->CanRecycle());
+
+  mFrontBuffer = surface->CanRecycle()
+                     ? mRootLayer->BorrowExternalBuffer(surface)
+                     : widget::WaylandBufferDMABUF::CreateExternal(surface);
 }
 
 void NativeLayerWaylandExternal::DiscardBackbuffersLocked(
-    const MutexAutoLock& aProofOfLock, bool aForce) {
+    const WaylandSurfaceLock& aProofOfLock, bool aForce) {
   LOG("NativeLayerWaylandRender::DiscardBackbuffersLocked()");
 
   // Buffers attached to compositor are still tracked by WaylandSurface
@@ -1012,8 +1303,7 @@ void NativeLayerWaylandExternal::DiscardBackbuffersLocked(
 RefPtr<DrawTarget> NativeLayerWaylandExternal::NextSurfaceAsDrawTarget(
     const IntRect& aDisplayRect, const IntRegion& aUpdateRegion,
     BackendType aBackendType) {
-  MOZ_RELEASE_ASSERT(
-      false,
+  MOZ_CRASH(
       "NativeLayerWaylandExternal::NextSurfaceAsDrawTarget() not implemented!");
   return nullptr;
 }
@@ -1021,26 +1311,22 @@ RefPtr<DrawTarget> NativeLayerWaylandExternal::NextSurfaceAsDrawTarget(
 Maybe<GLuint> NativeLayerWaylandExternal::NextSurfaceAsFramebuffer(
     const IntRect& aDisplayRect, const IntRegion& aUpdateRegion,
     bool aNeedsDepth) {
-  MOZ_RELEASE_ASSERT(false,
-                     "NativeLayerWaylandExternal::NextSurfaceAsFramebuffer() "
-                     "not implemented!");
+  MOZ_CRASH(
+      "NativeLayerWaylandExternal::NextSurfaceAsFramebuffer() "
+      "not implemented!");
   return Nothing();
 }
 
-void NativeLayerWaylandExternal::CommitSurfaceToScreenLocked(
-    const MutexAutoLock& aProofOfLock, WaylandSurfaceLock& aSurfaceLock) {
-  if (!mFrontBuffer) {
-    LOG("NativeLayerWaylandExternal::CommitSurfaceToScreenLocked() - missing "
-        "front buffer!");
-    return;
-  }
+bool NativeLayerWaylandExternal::IsFrontBufferChanged() {
+  return mState.mMutatedFrontBuffer;
+}
 
-  if (mBufferInvalided) {
-    LOG("NativeLayerWaylandExternal::CommitSurfaceToScreenLocked()");
-    mSurface->InvalidateLocked(aSurfaceLock);
-    mSurface->AttachLocked(aSurfaceLock, mFrontBuffer);
-    mBufferInvalided = false;
-  }
+bool NativeLayerWaylandExternal::CommitFrontBufferToScreenLocked(
+    const WaylandSurfaceLock& aProofOfLock) {
+  LOG("NativeLayerWaylandExternal::CommitFrontBufferToScreenLocked()");
+  mSurface->InvalidateLocked(aProofOfLock);
+  mSurface->AttachLocked(aProofOfLock, mFrontBuffer);
+  return true;
 }
 
 NativeLayerWaylandExternal::~NativeLayerWaylandExternal() {

@@ -8,9 +8,9 @@
 #define mozilla_dom_HTMLIFrameElement_h
 
 #include "mozilla/Attributes.h"
+#include "nsDOMTokenList.h"
 #include "nsGenericHTMLElement.h"
 #include "nsGenericHTMLFrameElement.h"
-#include "nsDOMTokenList.h"
 
 namespace mozilla::dom {
 
@@ -65,6 +65,7 @@ class HTMLIFrameElement final : public nsGenericHTMLFrameElement {
   void GetSrcdoc(OwningTrustedHTMLOrString& aSrcdoc);
 
   MOZ_CAN_RUN_SCRIPT void SetSrcdoc(const TrustedHTMLOrString& aSrcdoc,
+                                    nsIPrincipal* aSubjectPrincipal,
                                     ErrorResult& aError);
 
   void GetName(DOMString& aName) { GetHTMLAttr(nsGkAtoms::name, aName); }

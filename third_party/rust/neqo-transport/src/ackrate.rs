@@ -8,11 +8,15 @@
 
 use std::{cmp::max, time::Duration};
 
-use neqo_common::qtrace;
+use neqo_common::{qtrace, Buffer};
 
 use crate::{
-    connection::params::ACK_RATIO_SCALE, frame::FrameType, packet::PacketBuilder,
-    recovery::RecoveryToken, stats::FrameStats, tracking::DEFAULT_REMOTE_ACK_DELAY,
+    connection::params::ConnectionParameters,
+    frame::FrameType,
+    packet,
+    recovery::{self},
+    stats::FrameStats,
+    tracking::DEFAULT_REMOTE_ACK_DELAY,
 };
 
 #[derive(Debug, Clone)]
@@ -25,12 +29,12 @@ pub struct AckRate {
 
 impl AckRate {
     pub fn new(minimum: Duration, ratio: u8, cwnd: usize, mtu: usize, rtt: Duration) -> Self {
-        const PACKET_RATIO: usize = ACK_RATIO_SCALE as usize;
+        const PACKET_RATIO: usize = ConnectionParameters::ACK_RATIO_SCALE as usize;
         // At worst, ask for an ACK for every other packet.
         const MIN_PACKETS: usize = 2;
         // At worst, require an ACK every 256 packets.
         const MAX_PACKETS: usize = 256;
-        const RTT_RATIO: u32 = ACK_RATIO_SCALE as u32;
+        const RTT_RATIO: u32 = ConnectionParameters::ACK_RATIO_SCALE as u32;
         const MAX_DELAY: Duration = Duration::from_millis(50);
 
         let packets = cwnd * PACKET_RATIO / mtu / usize::from(ratio);
@@ -41,7 +45,7 @@ impl AckRate {
         Self { packets, delay }
     }
 
-    pub fn write_frame(&self, builder: &mut PacketBuilder, seqno: u64) -> bool {
+    pub fn write_frame<B: Buffer>(&self, builder: &mut packet::Builder<B>, seqno: u64) -> bool {
         builder.write_varint_frame(&[
             u64::from(FrameType::AckFrequency),
             seqno,
@@ -83,7 +87,7 @@ impl FlexibleAckRate {
         rtt: Duration,
     ) -> Self {
         qtrace!("FlexibleAckRate: {max_ack_delay:?} {min_ack_delay:?} {ratio}");
-        let ratio = max(ACK_RATIO_SCALE, ratio); // clamp it
+        let ratio = max(ConnectionParameters::ACK_RATIO_SCALE, ratio); // clamp it
         Self {
             current: AckRate {
                 packets: 1,
@@ -97,10 +101,10 @@ impl FlexibleAckRate {
         }
     }
 
-    fn write_frames(
+    fn write_frames<B: Buffer>(
         &mut self,
-        builder: &mut PacketBuilder,
-        tokens: &mut Vec<RecoveryToken>,
+        builder: &mut packet::Builder<B>,
+        tokens: &mut recovery::Tokens,
         stats: &mut FrameStats,
     ) {
         if !self.frame_outstanding
@@ -110,7 +114,7 @@ impl FlexibleAckRate {
             qtrace!("FlexibleAckRate: write frame {:?}", self.target);
             self.frame_outstanding = true;
             self.next_frame_seqno += 1;
-            tokens.push(RecoveryToken::AckFrequency(self.target.clone()));
+            tokens.push(recovery::Token::AckFrequency(self.target.clone()));
             stats.ack_frequency += 1;
         }
     }
@@ -163,10 +167,10 @@ impl PeerAckDelay {
         ))
     }
 
-    pub fn write_frames(
+    pub fn write_frames<B: Buffer>(
         &mut self,
-        builder: &mut PacketBuilder,
-        tokens: &mut Vec<RecoveryToken>,
+        builder: &mut packet::Builder<B>,
+        tokens: &mut recovery::Tokens,
         stats: &mut FrameStats,
     ) {
         if let Self::Flexible(rate) = self {

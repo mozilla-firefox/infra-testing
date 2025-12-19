@@ -281,6 +281,11 @@ class BackgroundParentImpl : public PBackgroundParent {
   mozilla::ipc::IPCResult RecvPClientManagerConstructor(
       PClientManagerParent* aActor) override;
 
+  mozilla::ipc::IPCResult RecvCreateBoundStorageKeyParent(
+      Endpoint<::mozilla::dom::cache::PBoundStorageKeyParent>&& aEndpoint,
+      const Namespace& aNamespace,
+      const PrincipalInfo& aPrincipalInfo) override;
+
   mozilla::ipc::IPCResult RecvCreateMIDIPort(
       Endpoint<PMIDIPortParent>&& aEndpoint, const MIDIPortInfo& aPortInfo,
       const bool& aSysexEnabled) override;
@@ -336,7 +341,7 @@ class BackgroundParentImpl : public PBackgroundParent {
       EnsureRDDProcessAndCreateBridgeResolver&& aResolver) override;
 
   mozilla::ipc::IPCResult RecvEnsureUtilityProcessAndCreateBridge(
-      const RemoteDecodeIn& aLocation,
+      const RemoteMediaIn& aLocation,
       EnsureUtilityProcessAndCreateBridgeResolver&& aResolver) override;
 
   mozilla::ipc::IPCResult RecvRequestCameraAccess(

@@ -12,7 +12,7 @@ PARAMS.update(
     {
         "head_repository": "https://hg.mozilla.org/try",
         "project": "try",
-        "target_kind": "test",
+        "target_kind": "mochitest",
         # These ensure this isn't considered a backstop. The pushdate must
         # be slightly higher than the one in data/pushes.json, and
         # pushlog_id must not be a multiple of 10.
@@ -26,7 +26,7 @@ PARAMS_NEW_CONFIG.update(
     {
         "head_repository": "https://hg.mozilla.org/try",
         "project": "try",
-        "target_kind": "test",
+        "target_kind": "mochitest",
         # These ensure this isn't considered a backstop. The pushdate must
         # be slightly higher than the one in data/pushes.json, and
         # pushlog_id must not be a multiple of 10.
@@ -45,14 +45,16 @@ PARAMS_NEW_CONFIG.update(
     (
         pytest.param(
             lambda t: (
-                t.kind == "test"
+                t.kind == "mochitest"
                 and t.attributes["unittest_suite"] == "mochitest-browser-chrome"
-                and t.attributes["test_platform"] == "linux1804-64-qr/opt"
+                and t.attributes["test_platform"] == "linux2404-64/opt"
                 and (
                     "spi-nw" not in t.label
                     and "a11y-checks" not in t.label
                     and "vt" not in t.label
                     and "ioi" not in t.label
+                    and "trainhop" not in t.label
+                    and "tsan" not in t.label
                 )
             ),
             32,
@@ -76,14 +78,16 @@ def test_tasks_new_config_false(full_task_graph, filter_tasks, func, min_expecte
     (
         pytest.param(
             lambda t: (
-                t.kind == "test"
+                t.kind == "mochitest"
                 and t.attributes["unittest_suite"] == "mochitest-browser-chrome"
-                and t.attributes["test_platform"] == "linux1804-64-qr/opt"
+                and t.attributes["test_platform"] == "linux2404-64/opt"
                 and (
                     "spi-nw" not in t.label
                     and "a11y-checks" not in t.label
                     and "vt" not in t.label
                     and "ioi" not in t.label
+                    and "trainhop" not in t.label
+                    and "tsan" not in t.label
                 )
             ),
             32,

@@ -9,9 +9,8 @@
 #ifndef DOM_SVG_SVGMOTIONSMILTYPE_H_
 #define DOM_SVG_SVGMOTIONSMILTYPE_H_
 
-#include "mozilla/gfx/2D.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/SMILType.h"
+#include "mozilla/gfx/2D.h"
 
 namespace mozilla {
 
@@ -43,8 +42,8 @@ class SVGMotionSMILType : public SMILType {
  protected:
   // SMILType Methods
   // -------------------
-  void Init(SMILValue& aValue) const override;
-  void Destroy(SMILValue& aValue) const override;
+  void InitValue(SMILValue& aValue) const override;
+  void DestroyValue(SMILValue& aValue) const override;
   nsresult Assign(SMILValue& aDest, const SMILValue& aSrc) const override;
   bool IsEqual(const SMILValue& aLeft, const SMILValue& aRight) const override;
   nsresult Add(SMILValue& aDest, const SMILValue& aValueToAdd,

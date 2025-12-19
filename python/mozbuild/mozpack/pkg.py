@@ -9,7 +9,6 @@ import struct
 import subprocess
 from pathlib import Path
 from string import Template
-from typing import List
 from urllib.parse import quote
 
 import mozfile
@@ -105,6 +104,7 @@ def create_payload(destination: Path, root_path: Path, cpio_tool: str):
                     "--owner",
                     "0:80",  # clean ownership
                 ],
+                check=False,
                 stdout=tmp_payload,
                 stderr=subprocess.PIPE,
                 input="\n".join(file_list) + "\n",
@@ -179,7 +179,7 @@ def create_bom(bom_path: Path, root_path: Path, mkbom_tool: Path):
     print(f"Created BOM File size: {bom_path.stat().st_size // 1024}kb")
 
 
-def get_relative_glob_list(source: Path, glob: str) -> List[str]:
+def get_relative_glob_list(source: Path, glob: str) -> list[str]:
     """
     Given a source path, return a list of relative path based on glob
 

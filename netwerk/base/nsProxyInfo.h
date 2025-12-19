@@ -10,15 +10,14 @@
 #include "nsIProxyInfo.h"
 #include "nsString.h"
 #include "mozilla/Atomics.h"
-#include "mozilla/Attributes.h"
 
 // Use to support QI nsIProxyInfo to nsProxyInfo
-#define NS_PROXYINFO_IID                             \
-  { /* ed42f751-825e-4cc2-abeb-3670711a8b85 */       \
-    0xed42f751, 0x825e, 0x4cc2, {                    \
-      0xab, 0xeb, 0x36, 0x70, 0x71, 0x1a, 0x8b, 0x85 \
-    }                                                \
-  }
+#define NS_PROXYINFO_IID                      \
+  {/* ed42f751-825e-4cc2-abeb-3670711a8b85 */ \
+   0xed42f751,                                \
+   0x825e,                                    \
+   0x4cc2,                                    \
+   {0xab, 0xeb, 0x36, 0x70, 0x71, 0x1a, 0x8b, 0x85}}
 
 namespace mozilla {
 namespace net {
@@ -29,7 +28,7 @@ class ProxyInfoCloneArgs;
 // to the nsIProxyInfo attributes.
 class nsProxyInfo final : public nsIProxyInfo {
  public:
-  NS_DECLARE_STATIC_IID_ACCESSOR(NS_PROXYINFO_IID)
+  NS_INLINE_DECL_STATIC_IID(NS_PROXYINFO_IID)
 
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIPROXYINFO
@@ -37,6 +36,7 @@ class nsProxyInfo final : public nsIProxyInfo {
   // Cheap accessors for use within Necko
   const nsCString& Host() const { return mHost; }
   int32_t Port() const { return mPort; }
+  const nsCString& MasqueTemplate() const { return mMasqueTemplate; }
   const char* Type() const { return mType; }
   uint32_t Flags() const { return mFlags; }
   const nsCString& Username() const { return mUsername; }
@@ -54,6 +54,7 @@ class nsProxyInfo final : public nsIProxyInfo {
   bool IsHTTP();
   bool IsHTTPS();
   bool IsSOCKS();
+  bool IsHttp3Proxy();
 
   static void SerializeProxyInfo(nsProxyInfo* aProxyInfo,
                                  nsTArray<ProxyInfoCloneArgs>& aResult);
@@ -62,6 +63,8 @@ class nsProxyInfo final : public nsIProxyInfo {
 
   already_AddRefed<nsProxyInfo> CloneProxyInfoWithNewResolveFlags(
       uint32_t aResolveFlags);
+
+  already_AddRefed<nsProxyInfo> CreateFallbackProxyInfo();
 
  private:
   friend class nsProtocolProxyService;
@@ -72,7 +75,8 @@ class nsProxyInfo final : public nsIProxyInfo {
               const nsACString& aUsername, const nsACString& aPassword,
               uint32_t aFlags, uint32_t aTimeout, uint32_t aResolveFlags,
               const nsACString& aProxyAuthorizationHeader,
-              const nsACString& aConnectionIsolationKey);
+              const nsACString& aConnectionIsolationKey,
+              const nsACString& aUriTemplate);
 
   ~nsProxyInfo() { NS_IF_RELEASE(mNext); }
 
@@ -83,6 +87,7 @@ class nsProxyInfo final : public nsIProxyInfo {
   nsCString mProxyAuthorizationHeader;
   nsCString mConnectionIsolationKey;
   nsCString mSourceId;
+  nsCString mMasqueTemplate;
   int32_t mPort{-1};
   uint32_t mFlags{0};
   // We need to read on multiple threads, but don't need to sync on anything
@@ -91,8 +96,6 @@ class nsProxyInfo final : public nsIProxyInfo {
   uint32_t mTimeout{UINT32_MAX};
   nsProxyInfo* mNext{nullptr};
 };
-
-NS_DEFINE_STATIC_IID_ACCESSOR(nsProxyInfo, NS_PROXYINFO_IID)
 
 }  // namespace net
 }  // namespace mozilla

@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -29,7 +36,7 @@
   -->
   <string name="search_hint">ፈልግ ስለ %1$s</string>
   <!-- Menu item: Share the currently visible page -->
-  <string name="menu_share">ያጋሩ…\n\n</string>
+  <string name="menu_share">ያጋሩ…</string>
   <!-- Menu item: Report an issue on the current site -->
   <string name="menu_report_site_issue">የድረ-ገጹን ችግር አመልክት</string>
   <!--
@@ -55,7 +62,6 @@
   <string name="menu_settings">ቅንብሮች</string>
   <string name="menu_about">ስለ</string>
   <string name="menu_help">እገዛ</string>
-  <string name="menu_rights" moz:removedIn="137">የእርስዎ መብቶች</string>
   <string name="menu_terms_of_use">የአጠቃቀም ውል</string>
   <!--
     Menu item: This is the label for a menu entry that shows how many trackers have been blocked
@@ -150,16 +156,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote">&lt;p&gt;%1$s እርስዎን ውሣኔ ሰጪ ያደርግዎታል።&lt;/p&gt;
-&lt;p&gt;እንደ የግል አሳሽ ይጠቀሙበት፡-
-  &lt;ul&gt;
-    &lt;li&gt;በመተግበሪያው ውስጥ ይፈልጉ እና ያስሱ&lt;/li&gt;
-    &lt;li&gt;መከታተያዎችን ያግዱ (ወይም መከታተያዎችን ለመፍቀድ ቅንብሮችን ያዘምኑ)&lt;/li&gt;
-    &lt;li&gt;ኩኪዎችን እንዲሁም የፍለጋ እና የአሰሳ ታሪክን ለማጥፋት ይደምስሱ&lt;/li&gt;
-  &lt;/ul&gt;
-&lt;/p&gt;
-&lt;p&gt;%1$s የሚመረተው በሞዚላ ነው። የእኛ ተልዕኮ ጤናማ እና ክፍት በይነመረብን ማዳበር ነው።&lt;br/&gt;
-&lt;a href="%2$s"&gt;የበለጠ ለመረዳት&lt;/a&gt;&lt;/p&gt;</string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s እርስዎን ውሣኔ ሰጪ ያደርግዎታል።</p>\n<p>እንደ የግል አሳሽ ይጠቀሙበት፡-\n<ul>\n<li>በመተግበሪያው ውስጥ ይፈልጉ እና ያስሱ</li>\n<li>መከታተያዎችን ያግዱ (ወይም መከታተያዎችን ለመፍቀድ ቅንብሮችን ያዘምኑ)</li>\n<li>ኩኪዎችን እንዲሁም የፍለጋ እና የአሰሳ ታሪክን ለማጥፋት ይደምስሱ</li>\n</ul> </p>\n<p>%1$s የሚመረተው በሞዚላ ነው። የእኛ ተልዕኮ ጤናማ እና ክፍት በይነመረብን ማዳበር ነው።<br/>\n<a href=\"%2$s\">የበለጠ ለመረዳት</a></p>]]></string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">ግላዊነት እና ደህንነት</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -271,12 +268,12 @@
   <string name="preference_language_systemdefault">የስርዓት ነባሪ</string>
   <string name="preference_category_privacy">የግል መብት መጠበቅ</string>
   <string name="preference_privacy_block_ads">የማስታወቂያ መከታተያዎችን አግድ</string>
-  <string name="preference_privacy_block_ads_summary">"ማስታወቂያዎች ባይጫኑ እንኳን አንዳንድ የማስታወቂያ መከታተያዎች የጣቢያ ጉብኝቶችን ይከታተላሉ "</string>
+  <string name="preference_privacy_block_ads_summary">\"ማስታወቂያዎች ባይጫኑ እንኳን አንዳንድ የማስታወቂያ መከታተያዎች የጣቢያ ጉብኝቶችን ይከታተላሉ \"</string>
   <string name="preference_privacy_block_analytics">መተንተኛ ተቆጣጣሪዎች ያግዱ</string>
   <string name="preference_privacy_block_analytics_summary">እንደ ማሸብለል እና መታ በማድረግ ያሉ እንቅስቃሴዎችን ለመተንተን እና ለመለካት ጥቅም ላይ የዋለ</string>
   <string name="preference_privacy_block_social">ማህበራዊ ሚዲያ መከታተያዎችን አግድ\n</string>
   <string name="preference_privacy_block_social_summary">የእርስዎን ጉብኝቶች ለመከታተል እና እንደ የአጋራ አዝራሮች ያሉ ተግባሮችን ለማሳየት በጣቢያዎች ላይ የተካተተ</string>
-  <string name="preference_privacy_block_content">ሌሎች የይዘት መከታተያዎችን ያግዱ\n</string>
+  <string name="preference_privacy_block_content">ሌሎች የይዘት መከታተያዎችን ያግዱ</string>
   <string name="preference_privacy_block_content_summary2">ማስቻል አንዳንድ ገፆችን ያልታሰበ ፀባይ እንዲፈጽሙ ሊያደርጋቸው ይችላል</string>
   <string name="preference_privacy_category_cookies">ኩኪዎችን አግድ</string>
   <!--
@@ -313,7 +310,7 @@
   <string name="preference_category_performance">አፈፃፀም</string>
   <string name="preference_performance_block_webfonts">የድር ቅርጸ ቁምፊዎችን አግድ</string>
   <!-- This text is shown below the setting for disabling web fonts. Some websites use icons/images from a font and those do not show up if fonts are blocked. -->
-  <string name="preference_performance_block_webfonts_summary">አዶዎችን ወይም ምስሎችን የጠፉ ሊያስከትል ይችላል\n</string>
+  <string name="preference_performance_block_webfonts_summary">የአዶዎችን ወይም የምስሎችን መጥፋት ሊያስከትል ይችላል</string>
   <string name="preference_performance_block_javascript">ጃቫ-ስክሪፕት አግድ</string>
   <!-- This text is shown below setting for disabling JavaScript. Some websites may not work correctly when JavaScript is disabled -->
   <string name="preference_performance_block_javascript_summary">ገፆች በፍጥነት ሊከፍቱ ይችላሉ፣ ግን ደግሞ ያልተጠበቀ ባህሪ ሊኖራቸው ይችላል</string>
@@ -364,7 +361,7 @@
   <!-- Explanation text above the list of search engines -->
   <string name="preference_select_preferred_engine">የእርስዎን ተመራጭ ፍርግም ይምረጡ፡-</string>
   <!-- Clickable action text that shows when user long-presses on a search engine search field (this is similar to paste or copy when long-pressing a text field) -->
-  <string name="action_option_add_search_engine">የፍለጋ ፕሮግራም አክል\n</string>
+  <string name="action_option_add_search_engine">የፍለጋ ፍርግም አክል</string>
   <string name="search_add_manually_name_hint">የመፈለጊያ ማሸን ስም</string>
   <string name="search_add_manually_string">የሚጠቀሙ ሕብረ ቁምፊዎችን ፈልግ</string>
   <string name="search_add_manually_save">አስቀምጥ</string>
@@ -372,7 +369,7 @@
   <string name="search_add_manually_example">ለምሳሌ: ለምሳሌ.com /search/?q=%s</string>
   <string name="search_add_confirmation">አዲስ የፍለጋ ፕሮግራም ታክሏል</string>
   <string name="search_add_error_empty_name">የፍለጋውን ስም አስገባ</string>
-  <string name="search_add_error_duplicate_name">አንድ የተጫነ የፍለጋ ፕሮግራም አስቀድሞ በዚያ ስም እየተጠቀመ ነው\n</string>
+  <string name="search_add_error_duplicate_name">አንድ የተጫነ የፍለጋ ፍርግም አስቀድሞ ያንን ስም እየተጠቀመ ነው።</string>
   <string name="search_add_error_empty_search">የፍለጋ ህብረ ቁምፊ ያስገቡ</string>
   <string name="search_add_error_format">የፍለጋ ሕብረቁምፊ ና የምሳሌ ቅርጸት እንደ ሚመሳሰሉ አረጋግጥ</string>
   <!-- Content description (not visible, for screen readers etc.): Clear text in URL bar -->
@@ -472,25 +469,23 @@
 
     %1$s will be replaced by a link using onboarding_first_screen_terms_of_use_link as text
   -->
-  <string name="onboarding_first_screen_terms_of_use_text" tools:ignore="UnusedResources">በመቀጠል፣ በ%1$s ተስማምተዋል</string>
+  <string name="onboarding_first_screen_terms_of_use_text_2" tools:ignore="UnusedResources">በመቀጠል፣ በ%1$s ተስማምተዋል።</string>
   <!--
     New Onboarding flow first screen 'terms of use link'
 
     Text for the link used in onboarding_first_screen_terms_of_use_text
   -->
-  <string name="onboarding_first_screen_terms_of_use_link" tools:ignore="BrandUsage">የFirefox የአጠቃቀም ውል።</string>
+  <string name="onboarding_first_screen_terms_of_use_link_2" tools:ignore="BrandUsage">የFirefox የአጠቃቀም ውል</string>
   <!--
     New Onboarding flow first screen 'privacy notice' text
 
     %1$s will be replaced by a link using onboarding_first_screen_privacy_notice_link as text
   -->
-  <string name="onboarding_first_screen_privacy_notice_text" tools:ignore="BrandUsage">Firefox የእርስዎን ግላዊነት ያስባል። በእኛ %1$s ውስጥ የበለጠ ይወቁ</string>
+  <string name="onboarding_first_screen_privacy_notice_text_2" tools:ignore="BrandUsage">Firefox የእርስዎን ግላዊነት ያስባል። በእኛ %1$s ውስጥ የበለጠ ይወቁ።</string>
   <!-- Text for the link used in onboarding_first_screen_privacy_notice_text -->
-  <string name="onboarding_first_screen_privacy_notice_link">የግላዊነት ማስታወቂያ።</string>
+  <string name="onboarding_first_screen_privacy_notice_link_2">የግላዊነት ማስታወቂያ</string>
   <!-- New Onboarding flow first screen button label -->
-  <string name="onboarding_first_screen_button_text" moz:removedIn="137" tools:ignore="UnusedResources">ይጀምሩ </string>
-  <!-- New Onboarding flow first screen button label -->
-  <string name="onboarding_first_screen_button_agree_and_continue">እስማማለሁ እና ቀጥል</string>
+  <string name="onboarding_first_screen_button_agree_and_continue_2">ቀጥል</string>
   <!-- In the first screen of new onboarding flow, additional accessibility description for content that contain urls. -->
   <string name="a11y_link_available">ማገናኛ ይገኛል</string>
   <!--
@@ -570,36 +565,6 @@
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
   -->
   <string name="download_firefox" tools:ignore="BrandUsage">ፋየርፎክስ አውርድ</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-  -->
-  <string name="your_rights_content1" moz:removedIn="137">%1$s ሞዚላ እና ሌሎች አስተዋፅዖ አድራጊዎች የተሰሩ ነጻ እና ግልጽ ምንጭ ሶፍትዌሮች ናቸው</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-    %2$s will be replaced with a URL linking to the MPL (e.g. https://www.mozilla.org/en-US/MPL/)
-  -->
-  <string name="your_rights_content2" moz:removedIn="137" tools:ignore="IncorrectStraightDoubleQuote">%1$s ለእርስዎ የቀረበው በ&lt;a href="%2$s"&gt;ሞዚላ የሕዝብ ፈቃድ&lt;/a&gt; እና ሌሎች የክፍት ምንጭ ፈቃዶች ውል መሠረት ነው።</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-    %2$s will be replaced with a URL linking to the trademark policy (e.g. https://www.mozilla.org/foundation/trademarks/policy/)
-  -->
-  <string name="your_rights_content3" moz:removedIn="137" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote">የሞዚላ፣ ፋየርፎክስ ወይም %1$s ስሞችን ወይም ዓርማዎችን ጨምሮ የሞዚላ ፋውንዴሽን ወይም የማንኛውም አካል የንግድ ምልክቶች ምንም ዓይነት መብት ወይም ፍቃድ አልተሰጠዎትም። ተጨማሪ መረጃ &lt;a href="%2$s"&gt;እዚህ&lt;/a&gt; ሊገኝ ይችላል።</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-    %2$s will be replaced with a URL linking to the list of licenses used by the dependencies.
-  -->
-  <string name="your_rights_content4" moz:removedIn="137" tools:ignore="IncorrectStraightDoubleQuote">የ%1$s ተጨማሪ ምንጭ ኮድ በተለያዩ ነፃ እና ክፍት ምንጭ &lt;a href="%2$s"&gt;ፈቃዶች&lt;/a&gt; ስር ይገኛል።</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-    %2$s will be replaced with a URL linking to the GPL
-    %3$s will be replaced with a URL linking to the tracking protection wiki page (e.g. https://wiki.mozilla.org/Security/Tracking_protection#Lists)
-  -->
-  <string name="your_rights_content5" moz:removedIn="137" tools:ignore="IncorrectStraightDoubleQuote">%1$s በተጨማሪም በ Disconnect, Inc. የሚቀርቡ የእግድ ዝርዝሮችን በ&lt;a href="%2$s"&gt;በጂኤንዩ አጠቃላይ የህዝብ ፍቃድ v3&lt;/a&gt; ስር እንደ ገለልተኛ ስራዎች ይጠቀማል፤ እና &lt;a href="%3$s"&gt;እዚህ&lt;/a&gt; ይገኛል።</string>
   <!-- Text shown in prompts for GeckoView -->
   <string name="gv_prompt_username_hint">የተጠቃሚ ስም</string>
   <string name="gv_prompt_password_hint">የይለፍ ቃል</string>
@@ -709,11 +674,11 @@
   <!-- First step for the allowing a permission -->
   <string name="phone_feature_blocked_step_settings">1. ወደ አንድሮይድ መቼቶች ይሂዱ</string>
   <!-- Second step for the allowing a permission -->
-  <string name="phone_feature_blocked_step_permissions">2. &lt;b&gt;ፍቃዶችን&lt;/b&gt; መታ ያድርጉ</string>
+  <string name="phone_feature_blocked_step_permissions"><![CDATA[2. <b>ፍቃዶችን</b> መታ ያድርጉ]]></string>
   <!-- Button label that take the user to the Android App setting -->
   <string name="phone_feature_go_to_settings">ወደ ቅንብሮች ይሂዱ</string>
   <!-- Third step for allowing a permission. %1$s is the permission name, for example, "Camera" -->
-  <string name="phone_feature_blocked_step_feature">3. &lt;b&gt;%1$s&lt;/b&gt; ን ወደ አብራ ቀይር</string>
+  <string name="phone_feature_blocked_step_feature"><![CDATA[3. <b>%1$s</b> ን ወደ አብራ ቀይር]]></string>
   <!-- Preference for altering the camera access for all websites -->
   <string name="preference_phone_feature_camera">ካሜራ</string>
   <!-- Preference for altering the microphone access for all websites -->
@@ -740,20 +705,6 @@
   <string name="preference_block_autoplay_audio_only_summary">የሚመከር</string>
   <!-- Preference for block autoplay audio and video -->
   <string name="preference_block_autoplay_audio_video">ድምፅ እና ተንቀሳቃሽ ምሥል አግድ</string>
-  <!-- Preference for studies -->
-  <string name="preference_studies">ጥናቶች</string>
-  <!-- Preference for studies summary -->
-  <string name="preference_studies_summary" tools:ignore="BrandUsage">ፋየርፎክስ ከጊዜ ወደ ጊዜ ጥናቶችን ሊጭን እና ሊያሄድ ይችላል።</string>
-  <!-- Learn more link for studies, links to an article for more information about studies. -->
-  <string name="studies_learn_more">ተጨማሪ ይወቁ</string>
-  <!-- Dialog message shown when some changes are made on studies -->
-  <string name="studies_restart_app" moz:removedIn="137">ለውጦችን ለመተግበር መተግበርያው ያቆማል</string>
-  <!-- Title of the remove studies button -->
-  <string name="studies_remove">አስወግድ</string>
-  <!-- Title of the active section on the studies list -->
-  <string name="studies_active">ንቁ</string>
-  <!-- Title of the completed section on the studies list -->
-  <string name="studies_completed">የተጠናቀቀ</string>
   <!-- Preference to enable remote debugging of the app via USB or Wi-Fi -->
   <string name="preference_remote_debugging">በUSB/Wi-Fi በኩል የርቀት ማረም</string>
   <!-- Text Button for show biometric prompt -->
@@ -785,7 +736,7 @@
     Description for the prompt to enable search suggestions
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
-  <string name="enable_search_suggestion_description"> ጥቆማዎችን ለማግኘት %1$s በአድራሻ አሞሌው ላይ የሚተይቡትን ወደ ፍለጋ ፍርግም መላክ አለበት።</string>
+  <string name="enable_search_suggestion_description">ጥቆማዎችን ለማግኘት %1$s በአድራሻ አሞሌው ላይ የሚተይቡትን ወደ ፍለጋ ፍርግም መላክ አለበት።</string>
   <!-- Label used for the "NO button" for the prompt to enable search suggestions -->
   <string name="enable_search_suggestions_no">ይቅር</string>
   <!-- Label used for the "YES button" for the prompt to enable search suggestions -->
@@ -800,8 +751,7 @@
     Tip displayed on home view explaining how to disable tracking protection
     The new line here must be kept as the second half of the string is clickable for the user.
   -->
-  <string name="tip_disable_tracking_protection">ድረ-ገፁ ያልተጠበቀ ባህሪ አለው?\n
-    የክትትል ጥበቃን በማጥፋት ይሞክሩ</string>
+  <string name="tip_disable_tracking_protection">ድረ-ገፁ ያልተጠበቀ ባህሪ አለው?\nየክትትል ጥበቃን በማጥፋት ይሞክሩ</string>
   <!--
     Tip displayed on home view explaining how to add sites to homescreen
     %1$s is replaced with a line break in the application.
@@ -812,20 +762,17 @@
     %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     The new line here must be kept as the second half of the string is clickable for the user.
   -->
-  <string name="tip_set_default_browser">እያንዳንዱን አገናኝ በ %1$s ክፈት\n
-        %1$sን ነባሪ አሳሽ አድርግ</string>
+  <string name="tip_set_default_browser">እያንዳንዱን አገናኝ በ %1$s ክፈት\n%1$sን ነባሪ አሳሽ አድርግ</string>
   <!--
     Tip displayed on home view explaining how to add a custom autocomplete URL
     The new line here must be kept as the second half of the string is clickable for the user.
   -->
-  <string name="tip_autocomplete_url">በብዛት ለሚጠቀሙባቸው ድረ-ገፆች ዩአርኤሎችን በራስ ሰር ያጠናቅቁ\n
-        በአድራሻ አሞሌው ውስጥ ማንኛውንም ዩአርኤል በረጅሙ ይጫኑ</string>
+  <string name="tip_autocomplete_url">በብዛት ለሚጠቀሙባቸው ድረ-ገፆች ዩአርኤሎችን በራስ ሰር ያጠናቅቁ\nበአድራሻ አሞሌው ውስጥ ማንኛውንም ዩአርኤል በረጅሙ ይጫኑ</string>
   <!--
     Tip displayed on home view explaining how to add a custom autocomplete URL
     The new line here must be kept as the second half of the string is clickable for the user.
   -->
-  <string name="tip_open_in_new_tab">በአዲስ ትር ውስጥ አገናኝ ክፈት\n
-        በገጽ ላይ ያለውን ማንኛውንም አገናኝ በረጅሙ ይጫኑ</string>
+  <string name="tip_open_in_new_tab">በአዲስ ትር ውስጥ አገናኝ ክፈት\nበገጽ ላይ ያለውን ማንኛውንም አገናኝ በረጅሙ ይጫኑ</string>
   <!-- Tip displayed on home view explaining how to add a custom autocomplete URL -->
   <string name="tip_disable_tips2">በመነሻ ማያ ገጹ ላይ ጠቃሚ ምክሮችን አጥፋ</string>
   <!-- Label for the snackbar when a user opens a new tab -->
@@ -867,7 +814,7 @@
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->
-  <string name="trackers_count_note">ከ%s ጀምሮ የታገዱ መከታተያዎች </string>
+  <string name="trackers_count_note">ከ%s ጀምሮ የታገዱ መከታተያዎች</string>
   <!-- Category of trackers (content) that can be blocked by Enhanced Tracking Protection. -->
   <string name="content">ይዘት</string>
   <!-- Category of trackers (advertising) that can be blocked by Enhanced Tracking Protection. -->
@@ -887,7 +834,7 @@
   <!-- Label that indicates a site is using a insecure connection. -->
   <string name="insecure_connection">ግንኙነት ደህንነቱ የተጠበቀ አይደለም</string>
   <!-- Title for the list of trackers enhanced tracking protection can block. -->
-  <string name="trackers_and_scripts">መከታተያዎች እና ስክሪፕቶች ለማገድ </string>
+  <string name="trackers_and_scripts">መከታተያዎች እና ስክሪፕቶች ለማገድ</string>
   <!-- Content description (not visible, for screen readers etc.): Navigate back button description. -->
   <string name="go_back">ተመለስ</string>
   <!--
@@ -906,7 +853,7 @@
     Text for context menu additional note.
     %1$s is a placeholder for the app name.
   -->
-  <string name="contextmenu_erased_images_note2">የተቀመጡ እና የተጋሩ ምስሎች የ%1$s ታሪክን ሲደመስሱ &lt;b&gt;አይጠፉም&lt;/b&gt;</string>
+  <string name="contextmenu_erased_images_note2"><![CDATA[የተቀመጡ እና የተጋሩ ምስሎች የ%1$s ታሪክን ሲደመስሱ <b>አይጠፉም</b>]]></string>
   <!--
     Theme Preferences
 
@@ -927,22 +874,13 @@
     The text of the error page for websites that do not support HTTPS when HTTPS-Only is turned on. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar"),
     %2$s is a URL to a support article. Contains a button that will redirect the user to Privacy & Security Screen.
   -->
-  <string name="errorpage_httpsonly_message2" tools:ignore="IncorrectStraightDoubleQuote">%1$s ለበለጠ ደህንነት በተቻለ መጠን የHTTPS ግንኙነት ለመጠቀም ይሞክራል።
-     &lt;a href="%2$s"&gt;የበለጠ ለመረዳት&lt;/a&gt; &lt;br/&gt;&lt;br/&gt;
-     ይህን ቅንብር በቅንብሮች&gt; ግላዊነት &amp;amp; ደህንነት &gt; ደህንነት።</string>
+  <string name="errorpage_httpsonly_message2" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[%1$s ለበለጠ ደህንነት በተቻለ መጠን የHTTPS ግንኙነት ለመጠቀም ይሞክራል። <a href=\"%2$s\">የበለጠ ለመረዳት</a> <br/><br/> ይህን ቅንብር በቅንብሮች> ግላዊነት &amp; ደህንነት > ደህንነት።]]></string>
   <!-- The document title and heading of the error page shown when a website has an invalid or expired SSL certificate. -->
   <string name="mozac_browser_errorpages_security_bad_cert_title">ግንኙነት ደህንነቱ የተጠበቀ አይደለም</string>
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_message">
-    ይህ የሰርቨር  ውቅር ችግር ሊሆን ይችላል፣ ወይም ሰርቨሩን ለመምሰል የሚሞክር ሰው ሊሆን ይችላል። &lt;br/&gt;&lt;br/&gt;
-    ከዚህ ሰርቨር ጋር ከዚህ ቀደም በተሳካ ሁኔታ ከተገናኙ፤ ስህተቱ ጊዜያዊ ሊሆን ይችላል።
-    </string>
+  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[ይህ የሰርቨር ውቅር ችግር ሊሆን ይችላል፣ ወይም ሰርቨሩን ለመምሰል የሚሞክር ሰው ሊሆን ይችላል። <br/><br/> ከዚህ ሰርቨር ጋር ከዚህ ቀደም በተሳካ ሁኔታ ከተገናኙ፤ ስህተቱ ጊዜያዊ ሊሆን ይችላል።]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo">
-        &lt;label&gt;አንድ ሰው ድረ-ገፁን ለማስመሰል እየሞከረ ሊሆን ይችላል እና መቀጠል አደገኛ ሊሆን ይችላል።&lt;/label&gt;
-        &lt;br&gt;&lt;br&gt;
-        &lt;label&gt;%1$s &lt;b&gt;%2$s&lt;/b&gt;ን አያምንም ምክንያቱም የእውቅና ማረጋገጫ ሰጪው ስለማይታወቅ፣ የእውቅና ማረጋገጫው በራሱ የተፈረመ ነው ወይም ሰርቨሩ ትክክለኛ መካከለኛ የእውቅና ማረጋገጫዎችን እየላከ አይደለም።&lt;/label&gt;
-    </string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>አንድ ሰው ድረ-ገፁን ለማስመሰል እየሞከረ ሊሆን ይችላል እና መቀጠል አደገኛ ሊሆን ይችላል።</label> <br><br>\n<label>%1$s <b>%2$s</b>ን አያምንም ምክንያቱም የእውቅና ማረጋገጫ ሰጪው ስለማይታወቅ፣ የእውቅና ማረጋገጫው በራሱ የተፈረመ ነው ወይም ሰርቨሩ ትክክለኛ መካከለኛ የእውቅና ማረጋገጫዎችን እየላከ አይደለም።</label>]]></string>
   <!--
     Sessions List
 

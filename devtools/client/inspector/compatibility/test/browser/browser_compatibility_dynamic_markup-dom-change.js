@@ -14,10 +14,10 @@ const {
 
 // Test the behavior rules are dynamically added
 
-const ISSUE_OUTLINE_RADIUS = {
+const ISSUE_DEPRECATED = {
   type: COMPATIBILITY_ISSUE_TYPE.CSS_PROPERTY,
-  property: "-moz-user-input",
-  url: "https://developer.mozilla.org/docs/Web/CSS/-moz-user-input",
+  property: "-moz-user-focus",
+  url: "https://developer.mozilla.org/docs/Web/CSS/Reference/Properties/-moz-user-focus",
   deprecated: true,
   experimental: false,
 };
@@ -25,7 +25,7 @@ const ISSUE_OUTLINE_RADIUS = {
 const ISSUE_SCROLLBAR_COLOR = {
   type: COMPATIBILITY_ISSUE_TYPE.CSS_PROPERTY,
   property: "scrollbar-color",
-  url: "https://developer.mozilla.org/docs/Web/CSS/scrollbar-color",
+  url: "https://developer.mozilla.org/docs/Web/CSS/Reference/Properties/scrollbar-color",
   deprecated: false,
   experimental: false,
 };
@@ -33,7 +33,7 @@ const ISSUE_SCROLLBAR_COLOR = {
 const TEST_URI = `
   <style>
     div {
-      -moz-user-input: none;
+      -moz-user-focus: none;
     }
   </style>
   <body>
@@ -54,22 +54,20 @@ add_task(async function () {
 
   info("Check initial issues");
   await assertIssueList(allElementsPane, [
-    ISSUE_OUTLINE_RADIUS,
+    ISSUE_DEPRECATED,
     ISSUE_SCROLLBAR_COLOR,
   ]);
 
   info("Delete node whose child node has CSS compatibility issue");
   await testNodeRemoval(".parent", inspector, allElementsPane, [
-    ISSUE_OUTLINE_RADIUS,
+    ISSUE_DEPRECATED,
   ]);
 
   info("Delete node that has CSS compatibility issue");
   await testNodeRemoval("div", inspector, allElementsPane, []);
 
   info("Add node that has CSS compatibility issue");
-  await testNodeAddition("div", inspector, allElementsPane, [
-    ISSUE_OUTLINE_RADIUS,
-  ]);
+  await testNodeAddition("div", inspector, allElementsPane, [ISSUE_DEPRECATED]);
 
   await removeTab(tab);
 });
@@ -79,7 +77,8 @@ add_task(async function () {
  * that corresponds to the selector passed.
  * This overrides the definition in inspector/test/head.js which times
  * out when the container to be clicked is already the selected node.
- * @param {String|NodeFront} selector
+ *
+ * @param {string | NodeFront} selector
  * @param {InspectorPanel} inspector The instance of InspectorPanel currently
  * loaded in the toolbox
  * @return {Promise} Resolves when the node has been selected.

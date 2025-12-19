@@ -114,7 +114,7 @@ function parseVueScript(code) {
   return ast;
 }
 
-export function parseConsoleScript(text, opts) {
+export function parseConsoleScript(text) {
   try {
     return _parse(text, {
       plugins: [
@@ -127,9 +127,10 @@ export function parseConsoleScript(text, opts) {
         "nullishCoalescingOperator",
         "optionalChaining",
         "regexpUnicodeSets",
+        "topLevelAwait",
       ],
-      ...opts,
-      allowAwaitOutsideFunction: true,
+      sourceType: "module",
+      strictMode: false,
     });
   } catch (e) {
     return null;
@@ -191,33 +192,6 @@ export function clearASTs(sourceIds) {
   for (const sourceId of sourceIds) {
     ASTs.delete(sourceId);
   }
-}
-
-export function traverseAst(sourceId, visitor, state) {
-  const ast = getAst(sourceId);
-  if (!ast || !Object.keys(ast).length) {
-    return null;
-  }
-
-  t.traverse(ast, visitor, state);
-  return ast;
-}
-
-export function hasNode(rootNode, predicate) {
-  try {
-    t.traverse(rootNode, {
-      enter: (node, ancestors) => {
-        if (predicate(node, ancestors)) {
-          throw new Error("MATCH");
-        }
-      },
-    });
-  } catch (e) {
-    if (e.message === "MATCH") {
-      return true;
-    }
-  }
-  return false;
 }
 
 export function replaceNode(ancestors, node) {

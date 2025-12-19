@@ -90,6 +90,11 @@ CTPolicyCompliance EmbeddedSCTsCompliant(const VerifiedSCTList& verifiedScts,
         !LogWasQualifiedForSct(verifiedSct, certIssuanceTime)) {
       continue;
     }
+    // SCTs from tiled logs "MUST" have a valid leaf index extension.
+    if (verifiedSct.logFormat == CTLogFormat::Tiled &&
+        verifiedSct.sct.leafIndex.isNothing()) {
+      continue;
+    }
     // Note that a single SCT can count for both the "from a log that was
     // admissible" case and the "from a log that was admissible or retired"
     // case.
@@ -128,6 +133,11 @@ CTPolicyCompliance NonEmbeddedSCTsCompliant(
       continue;
     }
     if (verifiedSct.logState != CTLogState::Admissible) {
+      continue;
+    }
+    // SCTs from tiled logs "MUST" have a valid leaf index extension.
+    if (verifiedSct.logFormat == CTLogFormat::Tiled &&
+        verifiedSct.sct.leafIndex.isNothing()) {
       continue;
     }
     admissibleCount++;

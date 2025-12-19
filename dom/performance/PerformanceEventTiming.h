@@ -7,12 +7,12 @@
 #ifndef mozilla_dom_PerformanceEventTiming_h___
 #define mozilla_dom_PerformanceEventTiming_h___
 
-#include "mozilla/dom/PerformanceEntry.h"
-#include "mozilla/EventForwards.h"
-#include "nsRFPService.h"
 #include "Performance.h"
-#include "nsIWeakReferenceUtils.h"
+#include "mozilla/EventForwards.h"
+#include "mozilla/dom/PerformanceEntry.h"
 #include "nsINode.h"
+#include "nsIWeakReferenceUtils.h"
+#include "nsRFPService.h"
 
 namespace mozilla {
 class WidgetEvent;
@@ -62,6 +62,10 @@ class PerformanceEventTiming final
   uint64_t InteractionId() const { return mInteractionId.valueOr(0); }
   bool HasKnownInteractionId() const { return mInteractionId.isSome(); }
 
+  void SetInteractionId(Maybe<uint64_t> aInteractionId) {
+    mInteractionId = aInteractionId;
+  }
+
   void SetInteractionId(uint64_t aInteractionId) {
     mInteractionId = Some(aInteractionId);
   }
@@ -69,18 +73,22 @@ class PerformanceEventTiming final
   nsINode* GetTarget() const;
 
   void SetDuration(const DOMHighResTimeStamp aDuration) {
-    mDuration = aDuration;
+    mDuration = Some(aDuration);
   }
 
   // nsRFPService::ReduceTimePrecisionAsMSecs might causes
   // some memory overhead, using the raw timestamp internally
   // to avoid calling in unnecessarily.
-  DOMHighResTimeStamp RawDuration() const { return mDuration; }
+  Maybe<DOMHighResTimeStamp> RawDuration() const { return mDuration; }
 
   DOMHighResTimeStamp Duration() const override {
     if (mCachedDuration.isNothing()) {
+      // Round the duration to the nearest 8ms.
+      // https://w3c.github.io/event-timing/#set-event-timing-entry-duration
+      DOMHighResTimeStamp roundedDuration =
+          std::round(mDuration.valueOr(0) / 8) * 8;
       mCachedDuration.emplace(nsRFPService::ReduceTimePrecisionAsMSecs(
-          mDuration, mPerformance->GetRandomTimelineSeed(),
+          roundedDuration, mPerformance->GetRandomTimelineSeed(),
           mPerformance->GetRTPCallerType()));
     }
     return mCachedDuration.value();
@@ -110,8 +118,8 @@ class PerformanceEventTiming final
 
  private:
   PerformanceEventTiming(Performance* aPerformance, const nsAString& aName,
-                         const TimeStamp& aStartTime, bool aIsCacelable,
-                         Maybe<uint64_t> aInteractionId, EventMessage aMessage);
+                         const TimeStamp& aStartTime, bool aIsCancelable,
+                         EventMessage aMessage);
 
   PerformanceEventTiming(const PerformanceEventTiming& aEventTimingEntry);
 
@@ -130,7 +138,7 @@ class PerformanceEventTiming final
   DOMHighResTimeStamp mStartTime;
   mutable Maybe<DOMHighResTimeStamp> mCachedStartTime;
 
-  DOMHighResTimeStamp mDuration;
+  Maybe<DOMHighResTimeStamp> mDuration;
   mutable Maybe<DOMHighResTimeStamp> mCachedDuration;
 
   bool mCancelable;

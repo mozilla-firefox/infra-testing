@@ -10,8 +10,6 @@ import androidx.work.Configuration
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.testing.WorkManagerTestInitHelper
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import mozilla.appservices.places.PlacesReaderConnection
 import mozilla.appservices.places.PlacesWriterConnection
@@ -55,11 +53,11 @@ import org.robolectric.annotation.Config
 import java.io.File
 import java.util.concurrent.TimeUnit
 
-@ExperimentalCoroutinesApi // for runTestOnMain
 @RunWith(AndroidJUnit4::class)
 class PlacesHistoryStorageTest {
     @get:Rule
     val coroutinesTestRule = MainCoroutineRule()
+    private val dispatcher = coroutinesTestRule.testDispatcher
 
     private lateinit var history: PlacesHistoryStorage
 
@@ -112,9 +110,15 @@ class PlacesHistoryStorageTest {
         // Can use WebView-style getVisited API.
         assertEquals(
             listOf(
-                "http://www.firefox.com/1", "http://www.firefox.com/2", "http://www.firefox.com/3",
-                "http://www.firefox.com/4", "http://www.firefox.com/5", "http://www.firefox.com/6",
-                "http://www.firefox.com/7", "http://www.firefox.com/8", "http://www.firefox.com/9",
+                "http://www.firefox.com/1",
+                "http://www.firefox.com/2",
+                "http://www.firefox.com/3",
+                "http://www.firefox.com/4",
+                "http://www.firefox.com/5",
+                "http://www.firefox.com/6",
+                "http://www.firefox.com/7",
+                "http://www.firefox.com/8",
+                "http://www.firefox.com/9",
             ),
             history.getVisited(),
         )
@@ -125,10 +129,16 @@ class PlacesHistoryStorageTest {
             history.getVisited(
                 listOf(
                     "http://www.mozilla.com",
-                    "http://www.firefox.com/1", "http://www.firefox.com/2", "http://www.firefox.com/3",
-                    "http://www.firefox.com/4", "http://www.firefox.com/5", "http://www.firefox.com/6",
+                    "http://www.firefox.com/1",
+                    "http://www.firefox.com/2",
+                    "http://www.firefox.com/3",
+                    "http://www.firefox.com/4",
+                    "http://www.firefox.com/5",
+                    "http://www.firefox.com/6",
                     "http://www.firefox.com/oops",
-                    "http://www.firefox.com/7", "http://www.firefox.com/8", "http://www.firefox.com/9",
+                    "http://www.firefox.com/7",
+                    "http://www.firefox.com/8",
+                    "http://www.firefox.com/9",
                 ),
             ),
         )
@@ -549,9 +559,9 @@ class PlacesHistoryStorageTest {
     @Test
     fun `store can delete by 'range'`() = runTestOnMain {
         history.recordVisit("http://www.mozilla.org/1", PageVisit(VisitType.TYPED))
-        advanceUntilIdle()
+        dispatcher.scheduler.advanceUntilIdle()
         history.recordVisit("http://www.mozilla.org/2", PageVisit(VisitType.DOWNLOAD))
-        advanceUntilIdle()
+        dispatcher.scheduler.advanceUntilIdle()
         history.recordVisit("http://www.mozilla.org/3", PageVisit(VisitType.BOOKMARK))
 
         var visits = history.getDetailedVisits(0, Long.MAX_VALUE)
@@ -603,7 +613,7 @@ class PlacesHistoryStorageTest {
     }
 
     @Test
-    @Config(sdk = [Build.VERSION_CODES.M])
+    @Config(sdk = [Build.VERSION_CODES.O])
     fun `When periodicStorageWorkRequest is called, worker with input specs is created`() {
         val request = history.periodicStorageWorkRequest<PlacesHistoryStorageWorker>(
             tag = PlacesHistoryStorageWorker.UNIQUE_NAME,
@@ -621,7 +631,7 @@ class PlacesHistoryStorageTest {
     }
 
     @Test
-    @Config(sdk = [Build.VERSION_CODES.M])
+    @Config(sdk = [Build.VERSION_CODES.O])
     fun `When storage maintenance work request is registered, the worker is enqueued`() {
         val config = Configuration.Builder().build()
         WorkManagerTestInitHelper.initializeTestWorkManager(testContext, config)
@@ -694,10 +704,10 @@ class PlacesHistoryStorageTest {
         storage.sync(SyncAuthInfo("kid", "token", 123L, "key", "serverUrl"))
 
         assertEquals("kid", passedAuthInfo!!.kid)
-        assertEquals("serverUrl", passedAuthInfo!!.tokenServerUrl)
-        assertEquals("token", passedAuthInfo!!.fxaAccessToken)
-        assertEquals(123L, passedAuthInfo!!.fxaAccessTokenExpiresAt)
-        assertEquals("key", passedAuthInfo!!.syncKey)
+        assertEquals("serverUrl", passedAuthInfo.tokenServerUrl)
+        assertEquals("token", passedAuthInfo.fxaAccessToken)
+        assertEquals(123L, passedAuthInfo.fxaAccessTokenExpiresAt)
+        assertEquals("key", passedAuthInfo.syncKey)
     }
 
     @Test

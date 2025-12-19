@@ -8,11 +8,13 @@
 #define mozilla_dom_AbortFollower_h
 
 #include "jsapi.h"
+#include "mozilla/WeakPtr.h"
 #include "nsISupportsImpl.h"
 #include "nsTObserverArray.h"
-#include "mozilla/WeakPtr.h"
 
 namespace mozilla::dom {
+
+enum class SignalAborted { No, Yes };
 
 class AbortSignal;
 class AbortSignalImpl;
@@ -54,7 +56,8 @@ class AbortFollower : public nsISupports {
  */
 class AbortSignalImpl : public nsISupports, public SupportsWeakPtr {
  public:
-  explicit AbortSignalImpl(bool aAborted, JS::Handle<JS::Value> aReason);
+  explicit AbortSignalImpl(SignalAborted aAborted,
+                           JS::Handle<JS::Value> aReason);
 
   bool Aborted() const;
 
@@ -99,7 +102,7 @@ class AbortSignalImpl : public nsISupports, public SupportsWeakPtr {
   // abort algorithms) empty this and make all contained followers |Unfollow()|.
   nsTObserverArray<RefPtr<AbortFollower>> mFollowers;
 
-  bool mAborted;
+  SignalAborted mAborted;
 };
 
 }  // namespace mozilla::dom

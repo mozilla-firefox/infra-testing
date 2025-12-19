@@ -71,13 +71,13 @@
 
 .frames div[role="listbox"] .frame:hover,
 .frames div[role="listbox"] .frame:focus {
-    background-color: var(--theme-toolbar-background-alt);
+  background-color: var(--theme-toolbar-background-alt);
 }
 
 .frames div[role="listbox"] .location-async-cause:hover,
-.frames div[role="listbox"] .location-async-cause:focus
+.frames div[role="listbox"] .location-async-cause:focus,
 .frames div[role="listbox"] .location-async-cause:hover .async-label,
-.frames div[role="listbox"] .location-async-cause:focus .async-label{
+.frames div[role="listbox"] .location-async-cause:focus .async-label {
   background-color: var(--theme-body-background);
 }
 
@@ -99,7 +99,6 @@
 .frames div[role="listbox"] .frame.inactive.async-label {
   background-color: light-dark(var(--theme-toolbar-background-alt), var(--theme-body-alternate-emphasized-background));
 }
-
 
 .frames div[role="listbox"] .frame.selected i.annotation-logo svg path {
   fill: var(--theme-selection-color);
@@ -131,7 +130,7 @@
   background-color: var(--theme-toolbar-background-hover);
 }
 
-.frames .img.annotation-logo {
+.frames .dbg-img.annotation-logo {
   margin-inline-end: 4px;
   background-color: currentColor;
 }
@@ -139,7 +138,7 @@
 /*
  * We also show the library icon in locations, which are forced to RTL.
  */
-.frames .location .img.annotation-logo {
+.frames .location .dbg-img.annotation-logo {
   margin-inline-start: 4px;
 }
 
@@ -177,7 +176,6 @@
   &::after {
     flex: 1;
   }
-
 }
 
 .frames-group .location-async-cause {

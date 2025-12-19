@@ -129,9 +129,9 @@ async function testCookies(options) {
         options.secure,
         false,
         false,
-        options.expiry,
+        options.expiry * 1000,
         {},
-        Ci.nsICookie.SAMESITE_NONE,
+        Ci.nsICookie.SAMESITE_UNSET,
         options.url.startsWith("https")
           ? Ci.nsICookie.SCHEME_HTTPS
           : Ci.nsICookie.SCHEME_HTTP
@@ -145,9 +145,9 @@ async function testCookies(options) {
         options.secure,
         false,
         false,
-        options.expiry,
+        options.expiry * 1000,
         {},
-        Ci.nsICookie.SAMESITE_NONE,
+        Ci.nsICookie.SAMESITE_UNSET,
         options.url.startsWith("https")
           ? Ci.nsICookie.SCHEME_HTTPS
           : Ci.nsICookie.SCHEME_HTTP
@@ -161,9 +161,9 @@ async function testCookies(options) {
         options.secure,
         false,
         false,
-        options.expiry,
+        options.expiry * 1000,
         {},
-        Ci.nsICookie.SAMESITE_NONE,
+        Ci.nsICookie.SAMESITE_UNSET,
         options.url.startsWith("https")
           ? Ci.nsICookie.SCHEME_HTTPS
           : Ci.nsICookie.SCHEME_HTTP
@@ -193,9 +193,9 @@ async function testCookies(options) {
         options.secure,
         false,
         false,
-        options.expiry,
+        options.expiry * 1000,
         {},
-        Ci.nsICookie.SAMESITE_NONE,
+        Ci.nsICookie.SAMESITE_UNSET,
         options.url.startsWith("https")
           ? Ci.nsICookie.SCHEME_HTTPS
           : Ci.nsICookie.SCHEME_HTTP
@@ -209,9 +209,9 @@ async function testCookies(options) {
         options.secure,
         false,
         false,
-        options.expiry,
+        options.expiry * 1000,
         {},
-        Ci.nsICookie.SAMESITE_NONE,
+        Ci.nsICookie.SAMESITE_UNSET,
         options.url.startsWith("https")
           ? Ci.nsICookie.SCHEME_HTTPS
           : Ci.nsICookie.SCHEME_HTTP

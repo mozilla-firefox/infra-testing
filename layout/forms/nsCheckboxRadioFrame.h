@@ -7,7 +7,6 @@
 #ifndef nsCheckboxRadioFrame_h___
 #define nsCheckboxRadioFrame_h___
 
-#include "mozilla/Attributes.h"
 #include "nsAtomicContainerFrame.h"
 #include "nsDisplayList.h"
 
@@ -29,7 +28,7 @@ class nsCheckboxRadioFrame final : public nsAtomicContainerFrame {
                          mozilla::IntrinsicISizeType aType) override;
 
   mozilla::LogicalSize ComputeAutoSize(
-      gfxContext* aRenderingContext, mozilla::WritingMode aWM,
+      const SizeComputationInput& aSizingInput, mozilla::WritingMode aWM,
       const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
       const mozilla::LogicalSize& aMargin,
       const mozilla::LogicalSize& aBorderPadding,

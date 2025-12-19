@@ -14,11 +14,6 @@ const {
 const TEST_URI = URL_ROOT + "doc_browser_fontinspector.html";
 const originalTheme = getTheme();
 
-registerCleanupFunction(() => {
-  info(`Restoring theme to '${originalTheme}.`);
-  setTheme(originalTheme);
-});
-
 add_task(async function () {
   const { inspector, view } = await openFontInspectorForURL(TEST_URI);
   const viewDoc = view.document;
@@ -57,8 +52,8 @@ add_task(async function () {
 /**
  * Sets the current theme and waits for fontinspector-updated event.
  *
- * @param {String} theme - the new theme
- * @param {Object} inspector - the inspector panel
+ * @param {string} theme - the new theme
+ * @param {object} inspector - the inspector panel
  */
 async function setThemeAndWaitForUpdate(theme, inspector) {
   const onUpdated = inspector.once("fontinspector-updated");

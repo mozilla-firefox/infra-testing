@@ -154,11 +154,16 @@ struct RTC_EXPORT TransportLossReport {
 };
 
 // Packet level feedback
-
 struct RTC_EXPORT PacketResult {
   class ReceiveTimeOrder {
    public:
     bool operator()(const PacketResult& lhs, const PacketResult& rhs);
+  };
+
+  struct RtpPacketInfo {
+    uint32_t ssrc = 0;
+    uint16_t rtp_sequence_number = 0;
+    bool is_retransmission = false;
   };
 
   PacketResult();
@@ -170,6 +175,9 @@ struct RTC_EXPORT PacketResult {
   SentPacket sent_packet;
   Timestamp receive_time = Timestamp::PlusInfinity();
   EcnMarking ecn = EcnMarking::kNotEct;
+
+  // `rtp_packet_info` is only set if the feedback is related to a RTP packet.
+  std::optional<RtpPacketInfo> rtp_packet_info;
 };
 
 struct RTC_EXPORT TransportPacketsFeedback {
@@ -181,6 +189,11 @@ struct RTC_EXPORT TransportPacketsFeedback {
   DataSize data_in_flight = DataSize::Zero();
   bool transport_supports_ecn = false;
   std::vector<PacketResult> packet_feedbacks;
+  // Smoothed RTT calculated on the current network route.
+  // Calculated similarly as RFC 6298 using exponentially weighted moving
+  // average with alpha 1/8. Note that it is not calculated for all feedback
+  // types.
+  TimeDelta smoothed_rtt = TimeDelta::PlusInfinity();
 
   // Arrival times for messages without send time information.
   std::vector<Timestamp> sendless_arrival_times;
@@ -232,7 +245,6 @@ struct RTC_EXPORT TargetTransferRate {
   // The estimate on which the target rate is based on.
   NetworkEstimate network_estimate;
   DataRate target_rate = DataRate::Zero();
-  DataRate stable_target_rate = DataRate::Zero();
   double cwnd_reduce_ratio = 0;
 };
 

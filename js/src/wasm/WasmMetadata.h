@@ -7,8 +7,6 @@
 #ifndef wasm_WasmMetadata_h
 #define wasm_WasmMetadata_h
 
-#include "mozilla/Atomics.h"
-
 #include "wasm/WasmBinaryTypes.h"
 #include "wasm/WasmHeuristics.h"
 #include "wasm/WasmInstanceData.h"  // various of *InstanceData
@@ -182,7 +180,8 @@ struct CodeMetadata : public ShareableBase<CodeMetadata> {
 
   bool hugeMemoryEnabled(uint32_t memoryIndex) const {
     return !isAsmJS() && memoryIndex < memories.length() &&
-           IsHugeMemoryEnabled(memories[memoryIndex].addressType());
+           IsHugeMemoryEnabled(memories[memoryIndex].addressType(),
+                               memories[memoryIndex].pageSize());
   }
   bool usesSharedMemory(uint32_t memoryIndex) const {
     return memoryIndex < memories.length() && memories[memoryIndex].isShared();
@@ -226,7 +225,7 @@ struct CodeMetadata : public ShareableBase<CodeMetadata> {
 
   size_t codeSectionSize() const {
     if (codeSectionRange) {
-      return codeSectionRange->size;
+      return codeSectionRange->size();
     }
     return 0;
   }

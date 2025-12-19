@@ -5,6 +5,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WebAuthnArgs.h"
+
 #include "WebAuthnEnumStrings.h"
 #include "WebAuthnUtil.h"
 #include "mozilla/dom/PWebAuthnTransactionParent.h"
@@ -245,6 +246,12 @@ WebAuthnRegisterArgs::GetLargeBlobSupportRequired(
   return NS_ERROR_NOT_AVAILABLE;
 }
 
+NS_IMETHODIMP
+WebAuthnRegisterArgs::GetHints(nsTArray<nsString>& aHints) {
+  aHints.Assign(mInfo.Hints());
+  return NS_OK;
+}
+
 NS_IMPL_ISUPPORTS(WebAuthnSignArgs, nsIWebAuthnSignArgs)
 
 NS_IMETHODIMP
@@ -482,6 +489,12 @@ WebAuthnSignArgs::GetLargeBlobWrite(nsTArray<uint8_t>& aLargeBlobWrite) {
     return NS_OK;
   }
   return NS_ERROR_NOT_AVAILABLE;
+}
+
+NS_IMETHODIMP
+WebAuthnSignArgs::GetHints(nsTArray<nsString>& aHints) {
+  aHints.Assign(mInfo.Hints());
+  return NS_OK;
 }
 
 }  // namespace mozilla::dom

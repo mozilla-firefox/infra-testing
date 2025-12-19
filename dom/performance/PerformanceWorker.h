@@ -82,7 +82,8 @@ class PerformanceWorker final : public Performance {
     MOZ_CRASH("This should not be called on workers.");
   }
 
-  Maybe<uint64_t> ComputeInteractionId(const WidgetEvent* aEvent) override {
+  void SetInteractionId(PerformanceEventTiming* aEventTiming,
+                        const WidgetEvent* aEvent) override {
     MOZ_CRASH("This should not be called on workers.");
   }
 
@@ -99,7 +100,7 @@ class PerformanceWorker final : public Performance {
 
   void InsertUserEntry(PerformanceEntry* aEntry) override;
 
-  void DispatchBufferFullEvent() override {
+  void DispatchResourceTimingBufferFullEvent() override {
     // Nothing to do here. See bug 1432758.
   }
 };

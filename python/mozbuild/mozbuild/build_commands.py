@@ -12,7 +12,7 @@ from mach.decorators import Command, CommandArgument
 
 from mozbuild.backend import backends
 from mozbuild.mozconfig import MozconfigLoader
-from mozbuild.util import MOZBUILD_METRICS_PATH
+from mozbuild.util import MOZBUILD_METRICS_PATH, ensure_l10n_central
 
 BUILD_WHAT_HELP = """
 What to build. Can be a top-level make target or a relative directory. If
@@ -157,16 +157,21 @@ def build(
     configure_args = mozconfig["configure_args"]
     doing_pgo = configure_args and "MOZ_PGO=1" in configure_args
     # Force verbosity on automation.
-    verbose = verbose or bool(os.environ.get("MOZ_AUTOMATION", False))
+    verbose = verbose or bool(os.environ.get("MOZ_AUTOMATION"))
     # Keep going by default on automation so that we exhaust as many errors as
     # possible.
-    keep_going = keep_going or bool(os.environ.get("MOZ_AUTOMATION", False))
+    keep_going = keep_going or bool(os.environ.get("MOZ_AUTOMATION"))
     append_env = None
 
     # By setting the current process's priority, by default our child processes
     # will also inherit this same priority.
     if not _set_priority(priority, verbose):
         print("--priority not supported on this platform.")
+
+    for target in what:
+        if target.startswith("installers-"):
+            ensure_l10n_central(command_context)
+            break
 
     if doing_pgo:
         if what:

@@ -75,7 +75,8 @@ void main() {
     clippy::derive_partial_eq_without_eq,
     clippy::needless_borrowed_reference,
     clippy::single_match,
-    clippy::enum_variant_names
+    clippy::enum_variant_names,
+    clippy::result_large_err
 )]
 #![warn(
     trivial_casts,
@@ -100,20 +101,7 @@ void main() {
 )]
 #![no_std]
 
-#[cfg(any(
-    test,
-    spv_out,
-
-    // Need OnceLock
-    hlsl_out,
-    msl_out,
-    wgsl_out,
-
-    feature = "spv-in",
-    feature = "wgsl-in",
-
-    feature = "stderr",
-))]
+#[cfg(std)]
 extern crate std;
 
 extern crate alloc;
@@ -121,7 +109,6 @@ extern crate alloc;
 mod arena;
 pub mod back;
 pub mod common;
-#[cfg(feature = "compact")]
 pub mod compact;
 pub mod diagnostic_filter;
 pub mod error;
@@ -130,6 +117,7 @@ pub mod ir;
 pub mod keywords;
 mod non_max_u32;
 pub mod proc;
+mod racy_lock;
 mod span;
 pub mod valid;
 

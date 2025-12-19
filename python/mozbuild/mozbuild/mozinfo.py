@@ -69,6 +69,7 @@ def build_dict(config, env=os.environ):
         d["bits"] = 32
     # other CPUs will wind up with unknown bits
 
+    d["mingw"] = substs.get("CC_TYPE") == "clang" and d["os"] == "win"
     d["debug"] = substs.get("MOZ_DEBUG") == "1"
     d["nightly_build"] = substs.get("NIGHTLY_BUILD") == "1"
     d["early_beta_or_earlier"] = substs.get("EARLY_BETA_OR_EARLIER") == "1"
@@ -119,8 +120,6 @@ def build_dict(config, env=os.environ):
             return p
 
         if d["buildapp"] == "mobile/android":
-            if d["processor"] == "x86":
-                return "android-x86"
             if d["processor"] == "x86_64":
                 return "android-x86_64"
             if d["processor"] == "aarch64":

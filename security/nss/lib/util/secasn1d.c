@@ -581,7 +581,7 @@ sec_asn1d_init_state_based_on_template(sec_asn1d_state *state)
             dest = state->dest;
             if (encode_kind & SEC_ASN1_INLINE) {
                 /* check that there are no extraneous bits */
-                PORT_Assert(encode_kind == SEC_ASN1_INLINE && !optional);
+                PORT_Assert(encode_kind == SEC_ASN1_INLINE);
                 state->place = afterInline;
             } else {
                 state->place = afterImplicit;
@@ -2398,24 +2398,9 @@ sec_asn1d_absorb_child(sec_asn1d_state *state)
          * consumed should be what was left pending.
          */
         if (state->pending != state->child->consumed) {
-            if (state->pending < state->child->consumed) {
-                PORT_SetError(SEC_ERROR_BAD_DER);
-                state->top->status = decodeError;
-                return;
-            }
-            /*
-             * Okay, this is a hack.  It *should* be an error whether
-             * pending is too big or too small, but it turns out that
-             * we had a bug in our *old* DER encoder that ended up
-             * counting an explicit header twice in the case where
-             * the underlying type was an ANY.  So, because we cannot
-             * prevent receiving these (our own certificate server can
-             * send them to us), we need to be lenient and accept them.
-             * To do so, we need to pretend as if we read all of the
-             * bytes that the header said we would find, even though
-             * we actually came up short.
-             */
-            state->consumed += (state->pending - state->child->consumed);
+            PORT_SetError(SEC_ERROR_BAD_DER);
+            state->top->status = decodeError;
+            return;
         }
         state->pending = 0;
     }
@@ -2548,8 +2533,10 @@ sec_asn1d_before_choice(sec_asn1d_state *state)
         state->dest = (char *)dest + state->theTemplate->offset;
     }
 
+    char *dest = state->dest ? (char *)state->dest - state->theTemplate->offset : NULL;
+
     child = sec_asn1d_push_state(state->top, state->theTemplate + 1,
-                                 (char *)state->dest - state->theTemplate->offset,
+                                 dest,
                                  PR_FALSE);
     if ((sec_asn1d_state *)NULL == child) {
         return (sec_asn1d_state *)NULL;
@@ -2600,7 +2587,7 @@ sec_asn1d_during_choice(sec_asn1d_state *state)
             return NULL;
         }
 
-        dest = (char *)child->dest - child->theTemplate->offset;
+        dest = child->dest ? (char *)child->dest - child->theTemplate->offset : NULL;
         child->theTemplate++;
 
         if (0 == child->theTemplate->kind) {
@@ -2609,7 +2596,7 @@ sec_asn1d_during_choice(sec_asn1d_state *state)
             state->top->status = decodeError;
             return (sec_asn1d_state *)NULL;
         }
-        child->dest = (char *)dest + child->theTemplate->offset;
+        child->dest = dest ? (char *)dest + child->theTemplate->offset : NULL;
 
         /* cargo'd from next_in_sequence innards */
         if (state->pending) {
@@ -2749,7 +2736,7 @@ dump_states(SEC_ASN1DecoderContext *cx)
         printf("%s: tmpl kind %s",
                (state == cx->current) ? "STATE" : "State",
                kindBuf);
-        printf(" %s", (state->place >= 0 && state->place <= notInUse) ? place_names[state->place] : "(undefined)");
+        printf(" %s", (state->place <= notInUse) ? place_names[state->place] : "(undefined)");
         if (!i)
             printf(", expect 0x%02lx",
                    state->expect_tag_number | state->expect_tag_modifiers);
@@ -2782,7 +2769,7 @@ SEC_ASN1DecoderUpdate(SEC_ASN1DecoderContext *cx,
         consumed = 0;
 #ifdef DEBUG_ASN1D_STATES
         printf("\nPLACE = %s, next byte = 0x%02x, %p[%lu]\n",
-               (state->place >= 0 && state->place <= notInUse) ? place_names[state->place] : "(undefined)",
+               (state->place <= notInUse) ? place_names[state->place] : "(undefined)",
                len ? (unsigned int)((unsigned char *)buf)[consumed] : 0,
                buf, consumed);
         dump_states(cx);
@@ -2946,9 +2933,8 @@ SEC_ASN1DecoderUpdate(SEC_ASN1DecoderContext *cx,
 
             depth = state->depth;
             if (what == SEC_ASN1_EndOfContents && !state->indefinite) {
-                PORT_Assert(state->parent != NULL && state->parent->indefinite);
                 depth--;
-                PORT_Assert(depth == state->parent->depth);
+                PORT_Assert(depth == sec_asn1d_get_enclosing_construct(state)->depth);
             }
             (*state->top->filter_proc)(state->top->filter_arg,
                                        buf, consumed, depth, what);

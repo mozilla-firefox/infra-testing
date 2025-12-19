@@ -2,84 +2,158 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { html, ifDefined } from "chrome://global/content/vendor/lit.all.mjs";
-import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
+import { html } from "chrome://global/content/vendor/lit.all.mjs";
+import {
+  SettingElement,
+  spread,
+} from "chrome://browser/content/preferences/widgets/setting-element.mjs";
 
-export class SettingGroup extends MozLitElement {
+/** @import { SettingElementConfig } from "chrome://browser/content/preferences/widgets/setting-element.mjs" */
+/** @import { SettingControlConfig, SettingControlEvent } from "../setting-control/setting-control.mjs" */
+/** @import { Preferences } from "chrome://global/content/preferences/Preferences.mjs" */
+
+/**
+ * @typedef {object} SettingGroupConfigExtensions
+ * @property {SettingControlConfig[]} items Array of SettingControlConfigs to render.
+ * @property {number} [headingLevel] A heading level to create the legend as (1-6).
+ * @property {boolean} [inProgress]
+ * Hide this section unless the browser.settings-redesign.enabled or
+ * browser.settings-redesign.<groupid>.enabled prefs are true.
+ */
+/** @typedef {SettingElementConfig & SettingGroupConfigExtensions} SettingGroupConfig */
+
+const CLICK_HANDLERS = new Set([
+  "dialog-button",
+  "moz-box-button",
+  "moz-box-item",
+  "moz-box-link",
+  "moz-button",
+  "moz-box-group",
+]);
+
+/**
+ * Enumish of attribute names used for changing setting-group and groupbox
+ * visibilities based on the visibility of child setting-controls.
+ */
+const HiddenAttr = Object.freeze({
+  /** Attribute used to hide elements without using the hidden attribute. */
+  Self: "data-hidden-by-setting-group",
+  /** Attribute used to signal that this element should not be searchable. */
+  Search: "data-hidden-from-search",
+});
+
+export class SettingGroup extends SettingElement {
+  constructor() {
+    super();
+
+    /**
+     * @type {Preferences['getSetting'] | undefined}
+     */
+    this.getSetting = undefined;
+
+    /**
+     * @type {SettingGroupConfig | undefined}
+     */
+    this.config = undefined;
+  }
+
   static properties = {
     config: { type: Object },
     groupId: { type: String },
-    // getSetting should be Preferences.getSetting from preferencesBindings.js
     getSetting: { type: Function },
+  };
+
+  static queries = {
+    controlEls: { all: "setting-control" },
   };
 
   createRenderRoot() {
     return this;
   }
 
-  itemTemplate(item) {
-    let setting = this.getSetting(item.id);
-    if (!setting.visible) {
-      return "";
+  async handleVisibilityChange() {
+    await this.updateComplete;
+    // @ts-expect-error bug 1997478
+    let hasVisibleControls = [...this.controlEls].some(el => !el.hidden);
+    let groupbox = /** @type {XULElement} */ (this.closest("groupbox"));
+    if (hasVisibleControls) {
+      if (this.hasAttribute(HiddenAttr.Self)) {
+        this.removeAttribute(HiddenAttr.Self);
+        this.removeAttribute(HiddenAttr.Search);
+      }
+      if (groupbox && groupbox.hasAttribute(HiddenAttr.Self)) {
+        groupbox.removeAttribute(HiddenAttr.Search);
+        groupbox.removeAttribute(HiddenAttr.Self);
+      }
+    } else {
+      this.setAttribute(HiddenAttr.Self, "");
+      this.setAttribute(HiddenAttr.Search, "true");
+      if (groupbox && !groupbox.hasAttribute(HiddenAttr.Search)) {
+        groupbox.setAttribute(HiddenAttr.Search, "true");
+        groupbox.setAttribute(HiddenAttr.Self, "");
+      }
     }
-    return html`<setting-control
-      .setting=${setting}
-      .config=${item}
-    ></setting-control>`;
   }
 
-  xulCheckboxTemplate(item, setting) {
-    let result;
-    let checkbox = document.createXULElement("checkbox");
-    checkbox.id = item.id;
-    document.l10n.setAttributes(checkbox, item.l10nId);
-    checkbox.addEventListener("command", e =>
-      setting.userChange(e.target.checked)
-    );
-    setting.on("change", () => (checkbox.checked = setting.value));
-    checkbox.checked = setting.value;
-    if (item.supportPage) {
-      let container = document.createXULElement("hbox");
-      container.setAttribute("align", "center");
-      let supportLink = document.createElement("a", { is: "moz-support-link" });
-      supportLink.supportPage = item.supportPage;
-      checkbox.classList.add("tail-with-learn-more");
-      container.append(checkbox, supportLink);
-      result = container;
-    } else {
-      result = checkbox;
-    }
-    if (item.subcategory) {
-      result.dataset.subcategory = item.subcategory;
-    }
+  async getUpdateComplete() {
+    let result = await super.getUpdateComplete();
+    // @ts-expect-error bug 1997478
+    await Promise.all([...this.controlEls].map(el => el.updateComplete));
     return result;
   }
 
-  xulItemTemplate(item) {
+  /**
+   * Notify child controls when their input has fired an event. When controls
+   * are nested the parent receives events for the nested controls, so this is
+   * actually easier to manage here; it also registers fewer listeners.
+   *
+   * @param {SettingControlEvent<InputEvent>} e
+   */
+  onChange(e) {
+    let inputEl = e.target;
+    inputEl.control?.onChange(inputEl);
+  }
+
+  /**
+   * Notify child controls when their input has been clicked. When controls
+   * are nested the parent receives events for the nested controls, so this is
+   * actually easier to manage here; it also registers fewer listeners.
+   *
+   * @param {SettingControlEvent<MouseEvent>} e
+   */
+  onClick(e) {
+    let inputEl = e.target;
+    if (!CLICK_HANDLERS.has(inputEl.localName)) {
+      return;
+    }
+    inputEl.control?.onClick(e);
+  }
+
+  /**
+   * @param {SettingControlConfig} item
+   */
+  itemTemplate(item) {
     let setting = this.getSetting(item.id);
-    if (!setting.visible) {
-      return "";
-    }
-    switch (item.control) {
-      case "checkbox":
-      default:
-        return this.xulCheckboxTemplate(item, setting);
-    }
+    return html`<setting-control
+      .setting=${setting}
+      .config=${item}
+      .getSetting=${this.getSetting}
+    ></setting-control>`;
   }
 
   render() {
     if (!this.config) {
       return "";
     }
-    if (
-      window.IS_STORYBOOK ||
-      Services.prefs.getBoolPref("settings.revamp.design", false)
-    ) {
-      return html`<moz-fieldset data-l10n-id=${ifDefined(this.config.l10nId)}
-        >${this.config.items.map(item => this.itemTemplate(item))}</moz-fieldset
-      >`;
-    }
-    return this.config.items.map(item => this.xulItemTemplate(item));
+    return html`<moz-fieldset
+      .headingLevel=${this.config.headingLevel}
+      @change=${this.onChange}
+      @toggle=${this.onChange}
+      @click=${this.onClick}
+      @visibility-change=${this.handleVisibilityChange}
+      ${spread(this.getCommonPropertyMapping(this.config))}
+      >${this.config.items.map(item => this.itemTemplate(item))}</moz-fieldset
+    >`;
   }
 }
 customElements.define("setting-group", SettingGroup);

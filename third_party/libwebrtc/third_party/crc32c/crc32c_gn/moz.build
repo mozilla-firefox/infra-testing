@@ -19,6 +19,7 @@ FINAL_LIBRARY = "xul"
 
 
 LOCAL_INCLUDES += [
+    "!/dist/include/libwebrtc_overrides",
     "!/ipc/ipdl/_ipdlheaders",
     "!/third_party/libwebrtc/gen",
     "/ipc/chromium/src",
@@ -46,11 +47,12 @@ if CONFIG["MOZ_DEBUG"] == "1":
 if CONFIG["OS_TARGET"] == "Android":
 
     DEFINES["ANDROID"] = True
-    DEFINES["ANDROID_NDK_VERSION_ROLL"] = "r22_1"
+    DEFINES["ANDROID_NDK_VERSION_ROLL"] = "r27_1"
     DEFINES["HAVE_STRONG_GETAUXVAL"] = "1"
     DEFINES["HAVE_SYS_UIO_H"] = True
     DEFINES["HAVE_WEAK_GETAUXVAL"] = "1"
     DEFINES["_GNU_SOURCE"] = True
+    DEFINES["__ANDROID_UNAVAILABLE_SYMBOLS_ARE_WEAK__"] = True
     DEFINES["__STDC_CONSTANT_MACROS"] = True
     DEFINES["__STDC_FORMAT_MACROS"] = True
 
@@ -58,8 +60,6 @@ if CONFIG["OS_TARGET"] == "Darwin":
 
     DEFINES["HAVE_STRONG_GETAUXVAL"] = "0"
     DEFINES["HAVE_WEAK_GETAUXVAL"] = "0"
-    DEFINES["_LIBCPP_HAS_NO_ALIGNED_ALLOCATION"] = True
-    DEFINES["__ASSERT_MACROS_DEFINE_VERSIONS_WITHOUT_UNDERSCORES"] = "0"
     DEFINES["__STDC_CONSTANT_MACROS"] = True
     DEFINES["__STDC_FORMAT_MACROS"] = True
 
@@ -69,7 +69,6 @@ if CONFIG["OS_TARGET"] == "Linux":
     DEFINES["HAVE_WEAK_GETAUXVAL"] = "1"
     DEFINES["USE_AURA"] = "1"
     DEFINES["USE_GLIB"] = "1"
-    DEFINES["USE_NSS_CERTS"] = "1"
     DEFINES["USE_OZONE"] = "1"
     DEFINES["USE_UDEV"] = True
     DEFINES["_FILE_OFFSET_BITS"] = "64"
@@ -84,7 +83,6 @@ if CONFIG["OS_TARGET"] == "OpenBSD":
     DEFINES["HAVE_WEAK_GETAUXVAL"] = "0"
     DEFINES["USE_GLIB"] = "1"
     DEFINES["USE_OZONE"] = "1"
-    DEFINES["USE_X11"] = "1"
     DEFINES["_FILE_OFFSET_BITS"] = "64"
     DEFINES["_LARGEFILE64_SOURCE"] = True
     DEFINES["_LARGEFILE_SOURCE"] = True
@@ -106,6 +104,7 @@ if CONFIG["OS_TARGET"] == "WINNT":
     DEFINES["WINAPI_FAMILY"] = "WINAPI_FAMILY_DESKTOP_APP"
     DEFINES["WINVER"] = "0x0A00"
     DEFINES["_ATL_NO_OPENGL"] = True
+    DEFINES["_CRT_NONSTDC_NO_WARNINGS"] = True
     DEFINES["_CRT_RAND_S"] = True
     DEFINES["_CRT_SECURE_NO_DEPRECATE"] = True
     DEFINES["_HAS_EXCEPTIONS"] = "0"
@@ -115,11 +114,13 @@ if CONFIG["OS_TARGET"] == "WINNT":
     DEFINES["_UNICODE"] = True
     DEFINES["_WIN32_WINNT"] = "0x0A00"
     DEFINES["_WINDOWS"] = True
+    DEFINES["_WINSOCK_DEPRECATED_NO_WARNINGS"] = True
     DEFINES["__STD_C"] = True
 
 if CONFIG["TARGET_CPU"] == "aarch64":
 
     DEFINES["HAVE_MM_PREFETCH"] = "0"
+    DEFINES["__ARM_NEON__"] = "1"
 
 if CONFIG["TARGET_CPU"] == "arm":
 
@@ -179,16 +180,6 @@ if CONFIG["MOZ_DEBUG"] == "1" and CONFIG["OS_TARGET"] == "OpenBSD":
 if CONFIG["MOZ_DEBUG"] == "1" and CONFIG["OS_TARGET"] == "WINNT":
 
     DEFINES["_HAS_ITERATOR_DEBUGGING"] = "0"
-
-if CONFIG["MOZ_X11"] == "1" and CONFIG["OS_TARGET"] == "Linux":
-
-    DEFINES["USE_X11"] = "1"
-
-if CONFIG["OS_TARGET"] == "Android" and CONFIG["TARGET_CPU"] == "arm":
-
-    OS_LIBS += [
-        "unwind"
-    ]
 
 if CONFIG["OS_TARGET"] == "Android" and CONFIG["TARGET_CPU"] == "x86":
 

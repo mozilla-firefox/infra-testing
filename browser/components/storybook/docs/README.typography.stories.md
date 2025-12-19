@@ -244,6 +244,17 @@ Type setting relies on design tokens for font size and font weight.
         <code>unset</code>
       </td>
     </tr>
+    <tr>
+      <th>
+        <code>--font-size-xsmall</code>
+      </th>
+      <td>
+        <code>0.733rem</code>
+      </td>
+      <td>
+        <code>unset</code>
+      </td>
+    </tr>
   </tbody>
 </table>
 
@@ -271,7 +282,7 @@ Type setting relies on design tokens for font size and font weight.
     </tr>
     <tr>
       <th>
-        <code>--font-weight-bold</code>
+        <code>--font-weight-semibold</code>
       </th>
       <td>
         <code>600</code>
@@ -280,16 +291,27 @@ Type setting relies on design tokens for font size and font weight.
         <code>600</code>
       </td>
     </tr>
+    <tr>
+      <th>
+        <code>--font-weight-bold</code>
+      </th>
+      <td>
+        <code>700</code>
+      </td>
+      <td>
+        <code>700</code>
+      </td>
+    </tr>
   </tbody>
 </table>
 
 ## Helpers
 ### text-and-typography.css
 
-The text and typography stylesheet found in `toolkit/themes/shared/design-system/text-and-typography.css` contains type setting declarations, and text and typography helper classes:
+The text and typography stylesheet found in `toolkit/themes/shared/design-system/src/text-and-typography.css` contains type setting declarations, and text and typography helper classes:
 
 -  It applies the design system's type scale by default, therefore it styles the `root` and headings automatically.
--  It comes with helper classes for contexts where designers may visually prefer an `h1` to start at the "medium" heading size instead of "large" (e.g. Shopping sidebar). It also contains text related helpers for truncating and deemphasizing text.
+-  It comes with helper classes for contexts where designers may visually prefer an `h1` to start at the "medium" heading size instead of "large". It also contains text related helpers for truncating and deemphasizing text.
 
 You should rely on typography helper classes and the defaults set by the design system.
 
@@ -315,8 +337,8 @@ This file is imported into `common-shared.css` and `global-shared.css` so that b
 ```css story
 h1,
 .heading-xlarge {
-  font-weight: var(--font-weight-bold);
-  font-size: var(--font-size-xxlarge);
+  font-weight: var(--heading-font-weight);
+  font-size: var(--heading-font-size-xlarge);
 }
 ```
 
@@ -330,8 +352,8 @@ h1,
 ```css story
 h2,
 .heading-large {
-  font-weight: var(--font-weight-bold);
-  font-size: var(--font-size-xlarge);
+  font-weight: var(--heading-font-weight);
+  font-size: var(--heading-font-size-large);
 }
 ```
 
@@ -343,8 +365,8 @@ h2,
 ```css story
 h3,
 .heading-medium {
-  font-weight: var(--font-weight-bold);
-  font-size: var(--font-size-large);
+  font-weight: var(--heading-font-weight);
+  font-size: var(--heading-font-size-medium);
 }
 ```
 

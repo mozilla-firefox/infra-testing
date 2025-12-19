@@ -7,10 +7,10 @@
 #ifndef LAYOUT_SVG_SVGMARKERFRAME_H_
 #define LAYOUT_SVG_SVGMARKERFRAME_H_
 
-#include "mozilla/Attributes.h"
-#include "mozilla/SVGContainerFrame.h"
 #include "gfxMatrix.h"
 #include "gfxRect.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/SVGContainerFrame.h"
 #include "nsIFrame.h"
 #include "nsLiteralString.h"
 #include "nsQueryFrame.h"
@@ -65,7 +65,7 @@ class SVGMarkerFrame final : public SVGContainerFrame {
                         const nsDisplayListSet& aLists) override {}
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
 #ifdef DEBUG_FRAME_DUMP
   nsresult GetFrameName(nsAString& aResult) const override {

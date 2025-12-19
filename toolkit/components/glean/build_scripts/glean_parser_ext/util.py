@@ -7,7 +7,6 @@ Utility functions for the glean_parser-based code generator
 """
 import copy
 from hashlib import sha1
-from typing import Dict, List, Tuple
 
 from glean_parser import util
 
@@ -87,12 +86,12 @@ def get_metrics(objs):
     return ret
 
 
-def type_ids_and_categories(objs) -> Tuple[Dict[str, Tuple[int, List[str]]], List[str]]:
+def type_ids_and_categories(objs) -> tuple[dict[str, tuple[int, list[str]]], list[str]]:
     """
     Iterates over the metrics in objs, constructing two metadata structures:
-     - metric_types: Dict[str, Tuple[int, List[str]]] - map from a metric
+     - metric_types: dict[str, tuple[int, list[str]]] - map from a metric
        type (snake_case) to its metric type id and ordered list of arguments.
-     - categories: List[str] - category names (snake_case)
+     - categories: list[str] - category names (snake_case)
 
     Is stable across invocations: Will generate same ids for same objs.
     (If it doesn't, JOG's factory disagreeing with GleanJSMetricsLookup
@@ -102,15 +101,24 @@ def type_ids_and_categories(objs) -> Tuple[Dict[str, Tuple[int, List[str]]], Lis
     (If it didn't, it would supply args in the wrong order to metric type
     constructors with multiple extra args (e.g. custom_distribution)).
     """
+    metric_types = set()
     metric_type_ids = {}
     categories = []
 
-    for category_name, objs in get_metrics(objs).items():
+    for category_name, objects in get_metrics(objs).items():
+        for metric in objects.values():
+            if metric.type not in metric_type_ids:
+                metric_types.add(metric.type)
+    metric_types = sorted(metric_types)
+
+    for category_name, objects in get_metrics(objs).items():
         categories.append(category_name)
 
-        for metric in objs.values():
+        for metric in objects.values():
             if metric.type not in metric_type_ids:
-                type_id = len(metric_type_ids) + 1
+                type_id = (
+                    next(i for i, v in enumerate(metric_types) if v == metric.type) + 1
+                )
                 args = util.common_metric_args.copy()
                 for arg_name in util.extra_metric_args:
                     if hasattr(metric, arg_name):

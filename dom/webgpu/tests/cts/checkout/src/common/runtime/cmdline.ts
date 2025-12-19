@@ -1,7 +1,5 @@
 /* eslint-disable no-console, n/no-restricted-import */
 
-import * as fs from 'fs';
-
 import { dataCache } from '../framework/data_cache.js';
 import { getResourcePath, setBaseResourcePath } from '../framework/resources.js';
 import { globalTestConfig } from '../framework/test_config.js';
@@ -115,6 +113,10 @@ for (let i = 0; i < sys.args.length; ++i) {
       globalTestConfig.enforceDefaultLimits = true;
     } else if (a === '--block-all-features') {
       globalTestConfig.blockAllFeatures = true;
+    } else if (a === '--subcases-between-attempting-gc') {
+      globalTestConfig.subcasesBetweenAttemptingGC = Number(sys.args[++i]);
+    } else if (a === '--cases-between-replacing-device') {
+      globalTestConfig.casesBetweenReplacingDevice = Number(sys.args[++i]);
     } else if (a === '--log-to-websocket') {
       globalTestConfig.logToWebSocket = true;
     } else {
@@ -152,13 +154,16 @@ Did you remember to build with code coverage instrumentation enabled?`
 dataCache.setStore({
   load: (path: string) => {
     return new Promise<Uint8Array>((resolve, reject) => {
-      fs.readFile(getResourcePath(`cache/${path}`), (err, data) => {
-        if (err !== null) {
-          reject(err.message);
-        } else {
-          resolve(data);
+      sys.readFile(
+        getResourcePath(`cache/${path}`),
+        (err: { message: string }, data: Uint8Array) => {
+          if (err !== null) {
+            reject(err.message);
+          } else {
+            resolve(data);
+          }
         }
-      });
+      );
     });
   },
 });

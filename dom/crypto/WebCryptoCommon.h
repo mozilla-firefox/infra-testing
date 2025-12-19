@@ -12,8 +12,9 @@
 
 #include <cstdint>
 #include <cstring>
+
+#include "ScopedNSSTypes.h"
 #include "js/StructuredClone.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/dom/CryptoBuffer.h"
 #include "mozilla/fallible.h"
@@ -27,7 +28,6 @@
 #include "secitem.h"
 #include "secoid.h"
 #include "secoidt.h"
-#include "ScopedNSSTypes.h"
 
 struct JSStructuredCloneReader;
 struct JSStructuredCloneWriter;
@@ -120,6 +120,11 @@ struct JSStructuredCloneWriter;
 #define JWK_ALG_ECDSA_P_256 "ES256"
 #define JWK_ALG_ECDSA_P_384 "ES384"
 #define JWK_ALG_ECDSA_P_521 "ES512"
+// The Fully-Specified Algorithms for JOSE and COSE identifies both EdDSA and
+// Ed25519 as valid values for the "alg" JWK member.
+// https://datatracker.ietf.org/doc/draft-ietf-jose-fully-specified-algorithms/
+#define JWK_ALG_EDDSA "EdDSA"
+#define JWK_ALG_ED25519 "Ed25519"
 
 // JWK usages
 #define JWK_USE_ENC "enc"

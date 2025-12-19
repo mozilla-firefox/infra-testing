@@ -28,6 +28,32 @@
   width: var(--menu-panel-width-wide);
 }
 
+#unified-extensions-empty-state {
+  > img {
+    /* The parent is a vbox using flexbox, which causes the img to grow to the full width by default. Avoid that: */
+    align-self: center;
+  }
+  > h2 {
+    color: inherit; /* undo var(--text-color-deemphasized) from panelUI-shared.css */
+    font-weight: var(--heading-font-weight); /* undo inherit from panelUI-shared.css that overrode h2's font-weight */
+  }
+
+  > description {
+    /* Horizontally align the text with the "Manage extensions" button/item at the bottom */
+    margin: var(--arrowpanel-menuitem-margin);
+    padding: var(--arrowpanel-menuitem-padding);
+  }
+}
+
+#unified-extensions-discover-extensions {
+  width: auto; /* full width instead of fit-content */
+
+  + toolbarseparator,
+  + toolbarseparator + #unified-extensions-manage-extensions {
+    display: none;
+  }
+}
+
 /* Align extensions rendered with custom elements. */
 unified-extensions-item {
   display: flex;
@@ -137,7 +163,7 @@ unified-extensions-item {
 .unified-extensions-item-name,
 .unified-extensions-item-message {
   margin: 0;
-  padding-inline-start: .5em;
+  padding-inline-start: 0.5em;
   word-break: break-word;
 }
 
@@ -148,8 +174,7 @@ unified-extensions-item {
 .unified-extensions-item-menu-button.subviewbutton {
   list-style-image: url("chrome://global/skin/icons/settings.svg");
   /* subtract the child's ~1px border from the block padding */
-  padding: calc(var(--arrowpanel-menuitem-margin-inline) - 1px)
-    var(--arrowpanel-menuitem-margin-inline);
+  padding: calc(var(--arrowpanel-menuitem-margin-inline) - 1px) var(--arrowpanel-menuitem-margin-inline);
   padding-inline-end: 0;
   border-radius: 0;
   /* override panelUI-shared.css */
@@ -176,7 +201,7 @@ unified-extensions-item {
   &:hover:active > .toolbarbutton-icon {
     color: var(--uei-button-active-color);
     background-color: var(--uei-button-active-bgcolor);
-    box-shadow: 0 1px 0 hsla(210,4%,10%,.03) inset;
+    box-shadow: 0 1px 0 hsla(210, 4%, 10%, 0.03) inset;
   }
 
   &:focus-visible > .toolbarbutton-icon {

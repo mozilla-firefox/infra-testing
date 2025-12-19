@@ -87,50 +87,6 @@ const MIRROR_SCHEMA_VERSION = 9;
 // Use a shared jankYielder in these functions
 ChromeUtils.defineLazyGetter(lazy, "yieldState", () => lazy.Async.yieldState());
 
-/** Adapts a `Log.sys.mjs` logger to a `mozIServicesLogSink`. */
-class LogAdapter {
-  constructor(log) {
-    this.log = log;
-  }
-
-  get maxLevel() {
-    let level = this.log.level;
-    if (level <= lazy.Log.Level.All) {
-      return Ci.mozIServicesLogSink.LEVEL_TRACE;
-    }
-    if (level <= lazy.Log.Level.Info) {
-      return Ci.mozIServicesLogSink.LEVEL_DEBUG;
-    }
-    if (level <= lazy.Log.Level.Warn) {
-      return Ci.mozIServicesLogSink.LEVEL_WARN;
-    }
-    if (level <= lazy.Log.Level.Error) {
-      return Ci.mozIServicesLogSink.LEVEL_ERROR;
-    }
-    return Ci.mozIServicesLogSink.LEVEL_OFF;
-  }
-
-  trace(message) {
-    this.log.trace(message);
-  }
-
-  debug(message) {
-    this.log.debug(message);
-  }
-
-  warn(message) {
-    this.log.warn(message);
-  }
-
-  error(message) {
-    this.log.error(message);
-  }
-
-  info(message) {
-    this.log.info(message);
-  }
-}
-
 /**
  * A helper to track the progress of a merge for telemetry and shutdown hang
  * reporting.
@@ -269,7 +225,6 @@ export class SyncedBookmarksMirror {
     this.merger.db = db.unsafeRawConnection.QueryInterface(
       Ci.mozIStorageConnection
     );
-    this.merger.logger = new LogAdapter(lazy.MirrorLog);
 
     // Automatically close the database connection on shutdown. `progress`
     // tracks state for shutdown hang reporting.
@@ -479,10 +434,15 @@ export class SyncedBookmarksMirror {
    *        mirror is finalized.
    */
   async store(records, { needsMerge = true, signal = null } = {}) {
+    let finalizeOrInterruptSignal = signal
+      ? AbortSignal.any([this.finalizeController.signal, signal])
+      : this.finalizeController.signal;
+
     let options = {
       needsMerge,
-      signal: anyAborted(this.finalizeController.signal, signal),
+      signal: finalizeOrInterruptSignal,
     };
+
     await this.db.executeBeforeShutdown("SyncedBookmarksMirror: store", db =>
       db.executeTransaction(async () => {
         for (let record of records) {
@@ -575,10 +535,9 @@ export class SyncedBookmarksMirror {
     // block shutdown. Since all new items are in the mirror, we'll just try
     // to merge again on the next sync.
 
-    let finalizeOrInterruptSignal = anyAborted(
-      this.finalizeController.signal,
-      signal
-    );
+    let finalizeOrInterruptSignal = signal
+      ? AbortSignal.any([this.finalizeController.signal, signal])
+      : this.finalizeController.signal;
 
     let changeRecords;
     try {
@@ -2118,9 +2077,9 @@ function validateTag(rawTag) {
 async function withTiming(name, func, recordTiming) {
   lazy.MirrorLog.debug(name);
 
-  let startTime = Cu.now();
+  let startTime = ChromeUtils.now();
   let result = await func();
-  let elapsedTime = Cu.now() - startTime;
+  let elapsedTime = ChromeUtils.now() - startTime;
 
   lazy.MirrorLog.debug(`${name} took ${elapsedTime.toFixed(3)}ms`);
   if (typeof recordTiming == "function") {
@@ -2583,38 +2542,6 @@ function bagToNamedCounts(bag, names) {
     }
   }
   return counts;
-}
-
-/**
- * Returns an `AbortSignal` that aborts if either `finalizeSignal` or
- * `interruptSignal` aborts. This is like `Promise.race`, but for
- * cancellations.
- *
- * @param  {AbortSignal} finalizeSignal
- * @param  {AbortSignal?} interruptSignal
- * @returns {AbortSignal}
- */
-function anyAborted(finalizeSignal, interruptSignal = null) {
-  if (finalizeSignal.aborted || !interruptSignal) {
-    // If the mirror was already finalized, or we don't have an interrupt
-    // signal for this merge, just use the finalize signal.
-    return finalizeSignal;
-  }
-  if (interruptSignal.aborted) {
-    // If the merge was interrupted, return its already-aborted signal.
-    return interruptSignal;
-  }
-  // Otherwise, we return a new signal that aborts if either the mirror is
-  // finalized, or the merge is interrupted, whichever happens first.
-  let controller = new AbortController();
-  function onAbort() {
-    finalizeSignal.removeEventListener("abort", onAbort);
-    interruptSignal.removeEventListener("abort", onAbort);
-    controller.abort();
-  }
-  finalizeSignal.addEventListener("abort", onAbort);
-  interruptSignal.addEventListener("abort", onAbort);
-  return controller.signal;
 }
 
 // Common unknown fields for places items

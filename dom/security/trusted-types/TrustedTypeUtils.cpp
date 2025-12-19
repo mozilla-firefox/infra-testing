@@ -6,37 +6,35 @@
 
 #include "mozilla/dom/TrustedTypeUtils.h"
 
+#include "js/RootingAPI.h"
+#include "mozilla/ErrorResult.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/StaticPrefs_dom.h"
-
-#include "js/RootingAPI.h"
-
-#include "mozilla/ErrorResult.h"
+#include "mozilla/dom/CSPViolationData.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/ElementBinding.h"
+#include "mozilla/dom/HTMLScriptElementBinding.h"
+#include "mozilla/dom/PolicyContainer.h"
 #include "mozilla/dom/TrustedHTML.h"
 #include "mozilla/dom/TrustedScript.h"
 #include "mozilla/dom/TrustedScriptURL.h"
 #include "mozilla/dom/TrustedTypePolicy.h"
 #include "mozilla/dom/TrustedTypePolicyFactory.h"
 #include "mozilla/dom/TrustedTypesConstants.h"
+#include "mozilla/dom/UnionTypes.h"
+#include "mozilla/dom/WindowOrWorkerGlobalScopeBinding.h"
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/dom/WorkerScope.h"
+#include "mozilla/dom/nsCSPUtils.h"
+#include "mozilla/extensions/WebExtensionPolicy.h"
+#include "nsContentUtils.h"
 #include "nsGlobalWindowInner.h"
+#include "nsIContentSecurityPolicy.h"
 #include "nsLiteralString.h"
 #include "nsTArray.h"
 #include "xpcpublic.h"
-
-#include "mozilla/dom/CSPViolationData.h"
-#include "mozilla/dom/ElementBinding.h"
-#include "mozilla/dom/HTMLScriptElementBinding.h"
-#include "mozilla/dom/UnionTypes.h"
-#include "mozilla/dom/WindowOrWorkerGlobalScopeBinding.h"
-#include "mozilla/dom/nsCSPUtils.h"
-
-#include "nsContentUtils.h"
-#include "nsIContentSecurityPolicy.h"
 
 namespace mozilla::dom::TrustedTypeUtils {
 
@@ -71,11 +69,13 @@ static constexpr nsLiteralString kAsyncFunctionStarAnonymousPrefix =
 
 // Implement reporting of sink type mismatch violations.
 // https://w3c.github.io/trusted-types/dist/spec/#abstract-opdef-should-sink-type-mismatch-violation-be-blocked-by-content-security-policy
-static void ReportSinkTypeMismatchViolations(
-    nsIContentSecurityPolicy* aCSP, nsICSPEventListener* aCSPEventListener,
-    const nsCString& aFileName, uint32_t aLine, uint32_t aColumn,
-    const nsAString& aSink, const nsAString& aSinkGroup,
-    const nsAString& aSource) {
+void ReportSinkTypeMismatchViolations(nsIContentSecurityPolicy* aCSP,
+                                      nsICSPEventListener* aCSPEventListener,
+                                      const nsCString& aFileName,
+                                      uint32_t aLine, uint32_t aColumn,
+                                      const nsAString& aSink,
+                                      const nsAString& aSinkGroup,
+                                      const nsAString& aSource) {
   MOZ_ASSERT(aSinkGroup == kTrustedTypesOnlySinkGroup);
   MOZ_ASSERT(aCSP);
   MOZ_ASSERT(aCSP->GetRequireTrustedTypesForDirectiveState() !=
@@ -292,7 +292,7 @@ static inline bool IsString(const TrustedTypeOrStringArg& aInput) {
     return aInput.IsUSVString();
   }
   if constexpr (std::is_same_v<TrustedTypeOrStringArg, const nsAString*>) {
-    Unused << aInput;
+    (void)aInput;
     return true;
   }
   MOZ_ASSERT_UNREACHABLE();
@@ -352,7 +352,7 @@ static inline bool IsTrustedType(const TrustedTypeOrStringArg& aInput) {
     return aInput.IsTrustedScriptURL();
   }
   if constexpr (std::is_same_v<TrustedTypeOrStringArg, const nsAString*>) {
-    Unused << aInput;
+    (void)aInput;
     return false;
   }
   MOZ_ASSERT_UNREACHABLE();
@@ -396,7 +396,7 @@ static inline const nsAString* GetAsTrustedType(
     MOZ_ASSERT(aInput.IsTrustedScriptURL());
     return &aInput.GetAsTrustedScriptURL().mData;
   }
-  Unused << aInput;
+  (void)aInput;
   MOZ_ASSERT_UNREACHABLE();
   return &EmptyString();
 };
@@ -407,21 +407,24 @@ static inline const nsAString* GetContent(
   return IsString(aInput) ? GetAsString(aInput) : GetAsTrustedType(aInput);
 }
 
-template <typename ExpectedType, typename TrustedTypeOrString,
-          typename NodeOrGlobalObject>
-MOZ_CAN_RUN_SCRIPT inline const nsAString* GetTrustedTypesCompliantString(
-    const TrustedTypeOrString& aInput, const nsAString& aSink,
-    const nsAString& aSinkGroup, NodeOrGlobalObject& aNodeOrGlobalObject,
-    Maybe<nsAutoString>& aResultHolder, ErrorResult& aError) {
-  MOZ_ASSERT(aSinkGroup == kTrustedTypesOnlySinkGroup);
+template <typename NodeOrGlobalObject>
+inline bool PrepareExecutionOfTrustedTypesDefaultPolicy(
+    NodeOrGlobalObject& aNodeOrGlobalObject, nsIPrincipal* aPrincipalOrNull,
+    nsIGlobalObject*& aGlobalObject, nsPIDOMWindowInner*& aPIDOMWindowInner,
+    RequireTrustedTypesForDirectiveState* aRequireTrustedTypesForDirectiveState,
+    ErrorResult& aError) {
   if (!StaticPrefs::dom_security_trusted_types_enabled()) {
     // A trusted type might've been created before the pref was set to `false`,
     // so we cannot assume aInput.IsString().
-    return GetContent(aInput);
+    return false;
   }
 
-  if (IsTrustedType(aInput)) {
-    return GetAsTrustedType(aInput);
+  // Exempt web extension content scripts from trusted types policies defined by
+  // the page in which they are running.
+  if (auto* principal = BasePrincipal::Cast(aPrincipalOrNull)) {
+    if (principal->ContentScriptAddonPolicyCore()) {
+      return false;
+    }
   }
 
   // Below, we use fast paths when there are no require-trusted-types-for
@@ -434,28 +437,31 @@ MOZ_CAN_RUN_SCRIPT inline const nsAString* GetTrustedTypesCompliantString(
   nsIGlobalObject* globalObject = nullptr;
   nsPIDOMWindowInner* piDOMWindowInner = nullptr;
   if constexpr (std::is_same_v<NodeOrGlobalObjectArg, nsINode>) {
+    if (aNodeOrGlobalObject.HasBeenInUAWidget()) {
+      return false;
+    }
     Document* ownerDoc = aNodeOrGlobalObject.OwnerDoc();
     const bool ownerDocLoadedAsData = ownerDoc->IsLoadedAsData();
     if (!ownerDoc->HasPolicyWithRequireTrustedTypesForDirective() &&
         !ownerDocLoadedAsData) {
-      return GetAsString(aInput);
+      return false;
     }
     globalObject = ownerDoc->GetScopeObject();
     if (!globalObject) {
       aError.ThrowTypeError("No global object");
-      return nullptr;
+      return false;
     }
     piDOMWindowInner = globalObject->GetAsInnerWindow();
     if (!piDOMWindowInner) {
       // Global object is not a Window. This can happen when DOM APIs are used
       // in some contexts where Trusted Types don't apply (e.g. bug 1942517),
       // so just return the input string.
-      return GetAsString(aInput);
+      return false;
     }
     if (ownerDocLoadedAsData && piDOMWindowInner->GetExtantDoc() &&
         !piDOMWindowInner->GetExtantDoc()
              ->HasPolicyWithRequireTrustedTypesForDirective()) {
-      return GetAsString(aInput);
+      return false;
     }
   } else if constexpr (std::is_same_v<NodeOrGlobalObjectArg, nsIGlobalObject>) {
     piDOMWindowInner = aNodeOrGlobalObject.GetAsInnerWindow();
@@ -463,7 +469,7 @@ MOZ_CAN_RUN_SCRIPT inline const nsAString* GetTrustedTypesCompliantString(
       const Document* extantDoc = piDOMWindowInner->GetExtantDoc();
       if (extantDoc &&
           !extantDoc->HasPolicyWithRequireTrustedTypesForDirective()) {
-        return GetAsString(aInput);
+        return false;
       }
     }
     globalObject = &aNodeOrGlobalObject;
@@ -477,13 +483,13 @@ MOZ_CAN_RUN_SCRIPT inline const nsAString* GetTrustedTypesCompliantString(
   // (https://w3c.github.io/trusted-types/dist/spec/#abstract-opdef-does-sink-type-require-trusted-types)
   // and "Should sink type mismatch violation be blocked by CSP?"
   // (https://w3c.github.io/trusted-types/dist/spec/#should-block-sink-type-mismatch).
-  RefPtr<nsIContentSecurityPolicy> csp;
   RequireTrustedTypesForDirectiveState requireTrustedTypesForDirectiveState =
       RequireTrustedTypesForDirectiveState::NONE;
   if (piDOMWindowInner) {
-    csp = piDOMWindowInner->GetCsp();
+    RefPtr<nsIContentSecurityPolicy> csp =
+        PolicyContainer::GetCSP(piDOMWindowInner->GetPolicyContainer());
     if (!csp) {
-      return GetAsString(aInput);
+      return false;
     }
     requireTrustedTypesForDirectiveState =
         csp->GetRequireTrustedTypesForDirectiveState();
@@ -499,13 +505,53 @@ MOZ_CAN_RUN_SCRIPT inline const nsAString* GetTrustedTypesCompliantString(
         cspInfo.requireTrustedTypesForDirectiveState();
     if (requireTrustedTypesForDirectiveState ==
         RequireTrustedTypesForDirectiveState::NONE) {
-      return GetAsString(aInput);
+      return false;
     }
   } else {
     // Global object is neither Window nor WorkerGlobalScope. This can happen
     // when DOM APIs are used in some contexts where Trusted Types don't apply
     // (e.g. bugs 1942517 and 1936219), so just return the input string.
-    return GetAsString(aInput);
+    return false;
+  }
+
+  aGlobalObject = globalObject;
+  aPIDOMWindowInner = piDOMWindowInner;
+  *aRequireTrustedTypesForDirectiveState = requireTrustedTypesForDirectiveState;
+  return true;
+}
+
+bool CanSkipTrustedTypesEnforcement(const nsINode& aNode) {
+  nsIGlobalObject* dummyGlobal = nullptr;
+  nsPIDOMWindowInner* dummyWindow = nullptr;
+  RequireTrustedTypesForDirectiveState dummyState;
+  // Specify a null principal, as ScriptElement::UpdateTrustWorthiness() has
+  // already checked whether this is running in an isolated web extension
+  // context.
+  return !PrepareExecutionOfTrustedTypesDefaultPolicy(
+      aNode, nullptr /* aPrincipalOrNull */, dummyGlobal, dummyWindow,
+      &dummyState, IgnoreErrors());
+}
+
+template <typename ExpectedType, typename TrustedTypeOrString,
+          typename NodeOrGlobalObject>
+MOZ_CAN_RUN_SCRIPT inline const nsAString* GetTrustedTypesCompliantString(
+    const TrustedTypeOrString& aInput, const nsAString& aSink,
+    const nsAString& aSinkGroup, NodeOrGlobalObject& aNodeOrGlobalObject,
+    nsIPrincipal* aPrincipalOrNull, Maybe<nsAutoString>& aResultHolder,
+    ErrorResult& aError) {
+  MOZ_ASSERT(aSinkGroup == kTrustedTypesOnlySinkGroup);
+
+  if (IsTrustedType(aInput)) {
+    return GetAsTrustedType(aInput);
+  }
+
+  nsIGlobalObject* globalObject = nullptr;
+  nsPIDOMWindowInner* piDOMWindowInner = nullptr;
+  RequireTrustedTypesForDirectiveState requireTrustedTypesForDirectiveState;
+  if (!PrepareExecutionOfTrustedTypesDefaultPolicy(
+          aNodeOrGlobalObject, aPrincipalOrNull, globalObject, piDOMWindowInner,
+          &requireTrustedTypesForDirectiveState, aError)) {
+    return aError.Failed() ? nullptr : GetAsString(aInput);
   }
 
   RefPtr<ExpectedType> convertedInput;
@@ -521,6 +567,8 @@ MOZ_CAN_RUN_SCRIPT inline const nsAString* GetTrustedTypesCompliantString(
   if (!convertedInput) {
     auto location = JSCallingLocation::Get();
     if (piDOMWindowInner) {
+      RefPtr<nsIContentSecurityPolicy> csp =
+          PolicyContainer::GetCSP(piDOMWindowInner->GetPolicyContainer());
       ReportSinkTypeMismatchViolations(csp, nullptr /* aCSPEventListener */,
                                        location.FileName(), location.mLine,
                                        location.mColumn, aSink, aSinkGroup,
@@ -557,9 +605,11 @@ MOZ_CAN_RUN_SCRIPT inline const nsAString* GetTrustedTypesCompliantString(
   const nsAString* GetTrustedTypesCompliantString(                        \
       const _trustedTypeOrString& aInput, const nsAString& aSink,         \
       const nsAString& aSinkGroup, _nodeOrGlobalObject& aNodeOrGlobal,    \
-      Maybe<nsAutoString>& aResultHolder, ErrorResult& aError) {          \
+      nsIPrincipal* aPrincipalOrNull, Maybe<nsAutoString>& aResultHolder, \
+      ErrorResult& aError) {                                              \
     return GetTrustedTypesCompliantString<_expectedType>(                 \
-        aInput, aSink, aSinkGroup, aNodeOrGlobal, aResultHolder, aError); \
+        aInput, aSink, aSinkGroup, aNodeOrGlobal, aPrincipalOrNull,       \
+        aResultHolder, aError);                                           \
   }
 
 IMPL_GET_TRUSTED_TYPES_COMPLIANT_STRING(TrustedHTMLOrString, TrustedHTML,
@@ -578,6 +628,8 @@ IMPL_GET_TRUSTED_TYPES_COMPLIANT_STRING(TrustedScriptURLOrString,
                                         TrustedScriptURL, const nsINode);
 IMPL_GET_TRUSTED_TYPES_COMPLIANT_STRING(TrustedScriptURLOrUSVString,
                                         TrustedScriptURL, nsIGlobalObject);
+IMPL_GET_TRUSTED_TYPES_COMPLIANT_STRING(TrustedScriptURLOrUSVString,
+                                        TrustedScriptURL, const nsINode);
 IMPL_GET_TRUSTED_TYPES_COMPLIANT_STRING(OwningTrustedScriptURLOrString,
                                         TrustedScriptURL, nsIGlobalObject);
 
@@ -586,19 +638,36 @@ GetTrustedTypesCompliantStringForTrustedHTML(const nsAString& aInput,
                                              const nsAString& aSink,
                                              const nsAString& aSinkGroup,
                                              const nsINode& aNode,
+                                             nsIPrincipal* aPrincipalOrNull,
                                              Maybe<nsAutoString>& aResultHolder,
                                              ErrorResult& aError) {
-  return GetTrustedTypesCompliantString<TrustedHTML>(
-      &aInput, aSink, aSinkGroup, aNode, aResultHolder, aError);
+  return GetTrustedTypesCompliantString<TrustedHTML>(&aInput, aSink, aSinkGroup,
+                                                     aNode, aPrincipalOrNull,
+                                                     aResultHolder, aError);
 }
 
 MOZ_CAN_RUN_SCRIPT const nsAString*
 GetTrustedTypesCompliantStringForTrustedScript(
     const nsAString& aInput, const nsAString& aSink,
     const nsAString& aSinkGroup, nsIGlobalObject& aGlobalObject,
-    Maybe<nsAutoString>& aResultHolder, ErrorResult& aError) {
+    nsIPrincipal* aPrincipalOrNull, Maybe<nsAutoString>& aResultHolder,
+    ErrorResult& aError) {
   return GetTrustedTypesCompliantString<TrustedScript>(
-      &aInput, aSink, aSinkGroup, aGlobalObject, aResultHolder, aError);
+      &aInput, aSink, aSinkGroup, aGlobalObject, aPrincipalOrNull,
+      aResultHolder, aError);
+}
+
+MOZ_CAN_RUN_SCRIPT const nsAString*
+GetTrustedTypesCompliantStringForTrustedScript(
+    const nsAString& aInput, const nsAString& aSink,
+    const nsAString& aSinkGroup, const nsINode& aNode,
+    Maybe<nsAutoString>& aResultHolder, ErrorResult& aError) {
+  // Specify a null principal, as ScriptElement::UpdateTrustWorthiness() has
+  // already checked whether this is running in an isolated web extension
+  // context.
+  return GetTrustedTypesCompliantString<TrustedScript>(
+      &aInput, aSink, aSinkGroup, aNode, nullptr /* aPrincipalOrNull */,
+      aResultHolder, aError);
 }
 
 bool GetTrustedTypeDataForAttribute(const nsAtom* aElementName,
@@ -662,7 +731,8 @@ template <typename TrustedTypeOrStringArg>
 MOZ_CAN_RUN_SCRIPT const nsAString* GetTrustedTypesCompliantAttributeValue(
     const nsINode& aElement, nsAtom* aAttributeName,
     int32_t aAttributeNamespaceID, const TrustedTypeOrStringArg& aNewValue,
-    Maybe<nsAutoString>& aResultHolder, ErrorResult& aError) {
+    nsIPrincipal* aPrincipalOrNull, Maybe<nsAutoString>& aResultHolder,
+    ErrorResult& aError) {
   if (!StaticPrefs::dom_security_trusted_types_enabled()) {
     // A trusted type might've been created before the pref was set to `false`,
     // so we cannot assume aNewValue.IsString().
@@ -706,16 +776,16 @@ MOZ_CAN_RUN_SCRIPT const nsAString* GetTrustedTypesCompliantAttributeValue(
   switch (expectedType) {
     case TrustedType::TrustedHTML:
       return GetTrustedTypesCompliantString<TrustedHTML>(
-          input, sink, kTrustedTypesOnlySinkGroup, aElement, aResultHolder,
-          aError);
+          input, sink, kTrustedTypesOnlySinkGroup, aElement, aPrincipalOrNull,
+          aResultHolder, aError);
     case TrustedType::TrustedScript:
       return GetTrustedTypesCompliantString<TrustedScript>(
-          input, sink, kTrustedTypesOnlySinkGroup, aElement, aResultHolder,
-          aError);
+          input, sink, kTrustedTypesOnlySinkGroup, aElement, aPrincipalOrNull,
+          aResultHolder, aError);
     case TrustedType::TrustedScriptURL:
       return GetTrustedTypesCompliantString<TrustedScriptURL>(
-          input, sink, kTrustedTypesOnlySinkGroup, aElement, aResultHolder,
-          aError);
+          input, sink, kTrustedTypesOnlySinkGroup, aElement, aPrincipalOrNull,
+          aResultHolder, aError);
   }
   MOZ_ASSERT_UNREACHABLE();
   return nullptr;
@@ -725,20 +795,22 @@ MOZ_CAN_RUN_SCRIPT const nsAString* GetTrustedTypesCompliantAttributeValue(
     const nsINode& aElement, nsAtom* aAttributeName,
     int32_t aAttributeNamespaceID,
     const TrustedHTMLOrTrustedScriptOrTrustedScriptURLOrString& aNewValue,
-    Maybe<nsAutoString>& aResultHolder, ErrorResult& aError) {
+    nsIPrincipal* aPrincipalOrNull, Maybe<nsAutoString>& aResultHolder,
+    ErrorResult& aError) {
   return GetTrustedTypesCompliantAttributeValue<
       TrustedHTMLOrTrustedScriptOrTrustedScriptURLOrString>(
-      aElement, aAttributeName, aAttributeNamespaceID, aNewValue, aResultHolder,
-      aError);
+      aElement, aAttributeName, aAttributeNamespaceID, aNewValue,
+      aPrincipalOrNull, aResultHolder, aError);
 }
 
 MOZ_CAN_RUN_SCRIPT const nsAString* GetTrustedTypesCompliantAttributeValue(
     const nsINode& aElement, nsAtom* aAttributeName,
     int32_t aAttributeNamespaceID, const nsAString& aNewValue,
-    Maybe<nsAutoString>& aResultHolder, ErrorResult& aError) {
+    nsIPrincipal* aPrincipalOrNull, Maybe<nsAutoString>& aResultHolder,
+    ErrorResult& aError) {
   return GetTrustedTypesCompliantAttributeValue<const nsAString*>(
       aElement, aAttributeName, aAttributeNamespaceID, &aNewValue,
-      aResultHolder, aError);
+      aPrincipalOrNull, aResultHolder, aError);
 }
 
 bool HostGetCodeForEval(JSContext* aCx, JS::Handle<JSObject*> aCode,
@@ -763,7 +835,8 @@ bool AreArgumentsTrustedForEnsureCSPDoesNotBlockStringCompilation(
     JS::Handle<JS::StackGCVector<JSString*>> aParameterStrings,
     JS::Handle<JSString*> aBodyString,
     JS::Handle<JS::StackGCVector<JS::Value>> aParameterArgs,
-    JS::Handle<JS::Value> aBodyArg, ErrorResult& aError) {
+    JS::Handle<JS::Value> aBodyArg, nsIPrincipal* aPrincipalOrNull,
+    ErrorResult& aError) {
   // EnsureCSPDoesNotBlockStringCompilation is essentially HTML's implementation
   // of HostEnsureCanCompileStrings, so we only consider the cases described in
   // the Dynamic Code Brand Checks spec. The algorithm is also supposed to be
@@ -894,8 +967,8 @@ bool AreArgumentsTrustedForEnsureCSPDoesNotBlockStringCompilation(
           codeString,
           aCompilationType == JS::CompilationType::Function ? functionSink
                                                             : evalSink,
-          kTrustedTypesOnlySinkGroup, *pinnedGlobal, compliantStringHolder,
-          aError);
+          kTrustedTypesOnlySinkGroup, *pinnedGlobal, aPrincipalOrNull,
+          compliantStringHolder, aError);
 
   // Step 2.7-2.8.
   // Callers will take care of throwing an EvalError when we return false.
@@ -904,6 +977,31 @@ bool AreArgumentsTrustedForEnsureCSPDoesNotBlockStringCompilation(
     return false;
   }
   return compliantString->Equals(codeString);
+}
+
+MOZ_CAN_RUN_SCRIPT const nsAString*
+GetConvertedScriptSourceForPreNavigationCheck(
+    nsIGlobalObject& aGlobalObject, const nsAString& aEncodedScriptSource,
+    const nsAString& aSink, Maybe<nsAutoString>& aResultHolder,
+    ErrorResult& aError) {
+  RefPtr<TrustedScript> convertedScriptSource;
+  nsCOMPtr<nsIGlobalObject> pinnedGlobalObject = &aGlobalObject;
+  ProcessValueWithADefaultPolicy<TrustedScript>(
+      *pinnedGlobalObject, aEncodedScriptSource, aSink,
+      getter_AddRefs(convertedScriptSource), aError);
+
+  // If that algorithm threw an error or convertedScriptSource is not a
+  // TrustedScript object, return "Blocked" and abort further steps.
+  if (aError.Failed()) {
+    return nullptr;
+  }
+  if (!convertedScriptSource) {
+    aError.ThrowTypeError("Pre-Navigation check Blocked"_ns);
+    return nullptr;
+  }
+
+  aResultHolder = Some(convertedScriptSource->mData);
+  return aResultHolder.ptr();
 }
 
 }  // namespace mozilla::dom::TrustedTypeUtils

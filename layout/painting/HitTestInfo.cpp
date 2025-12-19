@@ -7,10 +7,10 @@
 #include "HitTestInfo.h"
 
 #include "mozilla/StaticPtr.h"
+#include "mozilla/layers/ScrollableLayerGuid.h"
 #include "mozilla/webrender/WebRenderAPI.h"
 #include "nsDisplayList.h"
 #include "nsIFrame.h"
-#include "mozilla/layers/ScrollableLayerGuid.h"
 
 using namespace mozilla::gfx;
 
@@ -42,8 +42,10 @@ ViewID HitTestInfo::GetViewId(wr::DisplayListBuilder& aBuilder,
     return *fixedTarget;
   }
 
+  // If the input ASR is non-null and we have a parent scroll ASR, return the
+  // view id from that ASR.
   if (aASR) {
-    return aASR->GetViewId();
+    return aASR->GetNearestScrollASRViewId();
   }
 
   return layers::ScrollableLayerGuid::NULL_SCROLL_ID;

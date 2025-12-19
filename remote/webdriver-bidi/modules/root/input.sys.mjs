@@ -10,8 +10,9 @@ ChromeUtils.defineESModuleGetters(lazy, {
   actions: "chrome://remote/content/shared/webdriver/Actions.sys.mjs",
   assert: "chrome://remote/content/shared/webdriver/Assert.sys.mjs",
   error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
+  event: "chrome://remote/content/shared/webdriver/Event.sys.mjs",
+  NavigableManager: "chrome://remote/content/shared/NavigableManager.sys.mjs",
   pprint: "chrome://remote/content/shared/Format.sys.mjs",
-  TabManager: "chrome://remote/content/shared/TabManager.sys.mjs",
 });
 
 class InputModule extends RootBiDiModule {
@@ -36,6 +37,7 @@ class InputModule extends RootBiDiModule {
       dispatchEvent: this.#dispatchEvent.bind(this),
       getClientRects: this.#getClientRects.bind(this),
       getInViewCentrePoint: this.#getInViewCentrePoint.bind(this),
+      toBrowserWindowCoordinates: this.#toBrowserWindowCoordinates.bind(this),
     };
   }
 
@@ -75,11 +77,51 @@ class InputModule extends RootBiDiModule {
    * @returns {Promise}
    *     Promise that resolves once the event is dispatched.
    */
-  #dispatchEvent(eventName, context, details) {
-    return this._forwardToWindowGlobal("_dispatchEvent", context.id, {
-      eventName,
-      details,
-    });
+  async #dispatchEvent(eventName, context, details) {
+    details.eventData.asyncEnabled =
+      (eventName === "synthesizeWheelAtPoint" &&
+        lazy.actions.useAsyncWheelEvents) ||
+      (eventName == "synthesizeMouseAtPoint" &&
+        lazy.actions.useAsyncMouseEvents);
+
+    // TODO: Call the _dispatchEvent method of the windowglobal module once
+    // chrome support was added for the message handler.
+    if (details.eventData.asyncEnabled) {
+      if (!context || context.isDiscarded) {
+        const id = lazy.NavigableManager.getIdForBrowsingContext(context);
+        throw new lazy.error.NoSuchFrameError(
+          `Browsing Context with id ${id} not found`
+        );
+      }
+
+      switch (eventName) {
+        case "synthesizeMouseAtPoint":
+          await lazy.event.synthesizeMouseAtPoint(
+            details.x,
+            details.y,
+            details.eventData,
+            context.topChromeWindow
+          );
+          break;
+        case "synthesizeWheelAtPoint":
+          await lazy.event.synthesizeWheelAtPoint(
+            details.x,
+            details.y,
+            details.eventData,
+            context.topChromeWindow
+          );
+          break;
+        default:
+          throw new Error(
+            `${eventName} is not a supported type for dispatching`
+          );
+      }
+    } else {
+      await this._forwardToWindowGlobal("_dispatchEvent", context.id, {
+        eventName,
+        details,
+      });
+    }
   }
 
   /**
@@ -87,12 +129,16 @@ class InputModule extends RootBiDiModule {
    *
    * @param {BrowsingContext} context
    *     The browsing context to forward the command to.
-   *
-   * @returns {Promise}
-   *     Promise that resolves when the finalization is done.
    */
-  #finalizeAction(context) {
-    return this._forwardToWindowGlobal("_finalizeAction", context.id);
+  async #finalizeAction(context) {
+    try {
+      await this._forwardToWindowGlobal("_finalizeAction", context.id);
+    } catch (e) {
+      // Ignore the error if the underlying browsing context is already gone.
+      if (e.name !== "DiscardedBrowsingContextError") {
+        throw e;
+      }
+    }
   }
 
   /**
@@ -197,6 +243,23 @@ class InputModule extends RootBiDiModule {
   }
 
   /**
+   * Convert a position or rect in browser coordinates of CSS units.
+   *
+   * @param {object} position - Object with the coordinates to convert.
+   * @param {number} position.x - X coordinate.
+   * @param {number} position.y - Y coordinate.
+   * @param {BrowsingContext} context - The Browsing Context to convert the
+   *     coordinates for.
+   */
+  #toBrowserWindowCoordinates(position, context) {
+    return this._forwardToWindowGlobal(
+      "_toBrowserWindowCoordinates",
+      context.id,
+      { position }
+    );
+  }
+
+  /**
    * Perform a series of grouped actions at the specified points in time.
    *
    * @param {object} options
@@ -222,12 +285,7 @@ class InputModule extends RootBiDiModule {
       lazy.pprint`Expected "context" to be a string, got ${contextId}`
     );
 
-    const context = lazy.TabManager.getBrowsingContextById(contextId);
-    if (!context) {
-      throw new lazy.error.NoSuchFrameError(
-        `Browsing context with id ${contextId} not found`
-      );
-    }
+    const context = this._getNavigable(contextId);
 
     // Bug 1821460: Fetch top-level browsing context.
     const inputState = this.#getInputState(context);
@@ -268,12 +326,7 @@ class InputModule extends RootBiDiModule {
       lazy.pprint`Expected "context" to be a string, got ${contextId}`
     );
 
-    const context = lazy.TabManager.getBrowsingContextById(contextId);
-    if (!context) {
-      throw new lazy.error.NoSuchFrameError(
-        `Browsing context with id ${contextId} not found`
-      );
-    }
+    const context = this._getNavigable(contextId);
 
     // Bug 1821460: Fetch top-level browsing context.
     const inputState = this.#getInputState(context);
@@ -321,12 +374,7 @@ class InputModule extends RootBiDiModule {
       lazy.pprint`Expected "context" to be a string, got ${contextId}`
     );
 
-    const context = lazy.TabManager.getBrowsingContextById(contextId);
-    if (!context) {
-      throw new lazy.error.NoSuchFrameError(
-        `Browsing context with id ${contextId} not found`
-      );
-    }
+    const context = this._getNavigable(contextId);
 
     lazy.assert.array(
       files,
@@ -347,7 +395,7 @@ class InputModule extends RootBiDiModule {
   }
 
   static get supportedEvents() {
-    return [];
+    return ["input.fileDialogOpened"];
   }
 }
 

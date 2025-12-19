@@ -8,6 +8,9 @@
 newtab-page-title = Nový panel
 newtab-settings-button =
     .title = Přizpůsobení stránky nového panelu
+newtab-customize-panel-icon-button =
+    .title = Přizpůsobte si tuto stránku
+newtab-customize-panel-icon-button-label = Přizpůsobit
 newtab-personalize-settings-icon-label =
     .title = Přizpůsobení nového panelu
     .aria-label = Nastavení
@@ -53,6 +56,9 @@ newtab-topsites-add-shortcut-header = Nová zkratka
 newtab-topsites-edit-topsites-header = Upravit top stránku
 newtab-topsites-edit-shortcut-header = Upravit zkratku
 newtab-topsites-add-shortcut-label = Přidat zkratku
+newtab-topsites-add-shortcut-title =
+    .title = Přidat zkratku
+    .aria-label = Přidat zkratku
 newtab-topsites-title-label = Název stránky
 newtab-topsites-title-input =
     .placeholder = Zadejte název
@@ -81,6 +87,14 @@ newtab-confirm-delete-history-p2 = Tuto akci nelze vzít zpět.
 ## Top Sites - Sponsored label
 
 newtab-topsite-sponsored = Sponzorováno
+
+## Label used by screen readers for pinned top sites
+
+# Variables:
+#   $title (string) - The label or hostname of the site.
+topsite-label-pinned =
+    .aria-label = { $title } (připnuta)
+    .title = { $title }
 
 ## Context Menu - Action Tooltips.
 
@@ -117,7 +131,8 @@ newtab-menu-delete-pocket = Smazat z { -pocket-brand-name(case: "gen") }
 newtab-menu-archive-pocket = Archivovat do { -pocket-brand-name(case: "gen") }
 newtab-menu-show-privacy-info = Naši sponzoři a vaše soukromí
 newtab-menu-about-fakespot = Co je { -fakespot-brand-name }
-newtab-menu-report-content = Nahlásit tento obsah
+# Report is a verb (i.e. report issue with the content).
+newtab-menu-report = Nahlásit
 # Context menu option to personalize New Tab recommended stories by blocking a section of stories,
 # e.g. "Sports". "Block" is a verb here.
 newtab-menu-section-block = Blokovat
@@ -193,6 +208,8 @@ newtab-label-sponsored-by = Sponzorováno společností { $sponsor }
 #   $source (string) - The name of a company or their domain
 #   $timeToRead (number) - The estimated number of minutes to read this story
 newtab-label-source-read-time = { $source } · { $timeToRead } min.
+# This string is used under fixed size ads to indicate sponsored content
+newtab-label-sponsored-fixed = Sponzorováno
 
 ## Section Menu: These strings are displayed in the section context menu and are
 ## meant as a call to action for the given section.
@@ -255,9 +272,6 @@ newtab-pocket-learn-more = Zjistit více
 newtab-pocket-cta-button = Získejte { -pocket-brand-name(case: "acc") }
 newtab-pocket-cta-text = Ukládejte si články do { -pocket-brand-name(case: "gen") } a užívejte si skvělé čtení.
 newtab-pocket-pocket-firefox-family = { -pocket-brand-name } je součástí rodiny { -brand-product-name(case: "gen") }
-# A save to Pocket button that shows over the card thumbnail on hover.
-newtab-pocket-image =
-    .aria-label = { -pocket-brand-name }
 newtab-pocket-save = Uložit
 newtab-pocket-saved = Uloženo
 
@@ -312,16 +326,32 @@ newtab-custom-pocket-subtitle = Výjimečný obsah vybraný službou { -pocket-b
 newtab-custom-stories-toggle =
     .label = Doporučené články
     .description = Výjimečný obsah spravovaný rodinou { -brand-product-name(case: "gen") }
+newtab-custom-stories-personalized-toggle =
+    .label = Články
+newtab-custom-stories-personalized-checkbox-label = Personalizované příběhy na základě vaší aktivity
 newtab-custom-pocket-sponsored = Sponzorované články
 newtab-custom-pocket-show-recent-saves = Zobrazit nedávno uložené
 newtab-custom-recent-title = Nedávná aktivita
 newtab-custom-recent-subtitle = Výběr z nedávných stránek a obsahu
-newtab-custom-recent-toggle =
-    .label = Nedávná aktivita
-    .description = Výběr z nedávných stránek a obsahu
 newtab-custom-weather-toggle =
     .label = Počasí
     .description = Dnešní předpověď ve zkratce
+newtab-custom-trending-search-toggle =
+    .label = Trendy ve vyhledávání
+    .description = Oblíbená a často vyhledávaná témata
+newtab-custom-widget-weather-toggle =
+    .label = Počasí
+newtab-custom-widget-trending-search-toggle =
+    .label = Trendy ve vyhledávání
+newtab-custom-widget-lists-toggle =
+    .label = Seznamy
+newtab-custom-widget-timer-toggle =
+    .label = Časovač
+newtab-custom-widget-section-title = Widgety
+# Tooltip for close button
+newtab-custom-close-menu-button =
+    .title = Zavřít
+    .aria-label = Zavřít nabídku
 newtab-custom-close-button = Zavřít
 newtab-custom-settings = Další nastavení
 
@@ -334,6 +364,7 @@ newtab-wallpaper-custom-color = Vybrat barvu
 # Variables
 #   $file_size (number) - The number of the maximum image file size (in MB) that may be uploaded
 newtab-wallpaper-error-max-file-size = Obrázek překročil limit velikosti souboru { $file_size } MB. Zkuste nahrát menší soubor.
+newtab-wallpaper-error-upload-file-type = Váš soubor se nám nepodařilo nahrát. Zkuste to prosím znovu se souborem obrázku.
 newtab-wallpaper-error-file-type = Váš soubor se nám nepodařilo nahrát. Zkuste to prosím znovu s jiným typem souboru.
 newtab-wallpaper-light-red-panda = Panda červená
 newtab-wallpaper-light-mountain = Bílá hora
@@ -352,7 +383,7 @@ newtab-wallpaper-light-fox-anniversary = Liška na louce se zamlženou horskou k
 
 ## Solid Colors
 
-newtab-wallpaper-category-title-colors = Plné barvy
+newtab-wallpaper-category-title-colors = Jednobarevné
 newtab-wallpaper-blue = Modrá
 newtab-wallpaper-light-blue = Světle modrá
 newtab-wallpaper-light-purple = Světle fialová
@@ -383,7 +414,7 @@ newtab-wallpaper-abstract-purple-green = Přechod fialové a zelené barvy
 newtab-wallpaper-abstract-blue-purple-waves = Modré a fialové zvlněné tvary
 newtab-wallpaper-abstract-black-waves = Černé zvlněné tvary
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Fotografie
 newtab-wallpaper-beach-at-sunrise = Pláž při východu slunce
@@ -398,7 +429,6 @@ newtab-wallpaper-suspension-bridge = Šedivé fotografování celé visuté můs
 newtab-wallpaper-sand-dunes = Bílé písečné duny
 newtab-wallpaper-palm-trees = Silueta kokosových palem během zlaté hodiny
 newtab-wallpaper-blue-flowers = Detailní fotografie modrých okvětních lístků v květu
-newtab-wallpaper-forest-trees = Stromy v mlze
 # Variables
 #   $author_string (String) - The name of the creator of the photo.
 #   $webpage_string (String) - The name of the webpage where the photo is located.
@@ -413,6 +443,10 @@ feature-highlight-dismiss-button =
 feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
+
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
 
 ## Celestial
 
@@ -440,7 +474,6 @@ newtab-weather-menu-change-location = Změnit místo
 newtab-weather-change-location-search-input-placeholder =
     .placeholder = Hledat umístění
     .aria-label = Hledat umístění
-newtab-weather-change-location-search-input = Hledat umístění
 newtab-weather-menu-weather-display = Zobrazení počasí
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
@@ -456,8 +489,16 @@ newtab-weather-menu-change-temperature-units-fahrenheit = Přepnout na stupně F
 newtab-weather-menu-change-temperature-units-celsius = Přepnout na stupně Celsia
 newtab-weather-menu-hide-weather = Skrýt počasí na novém panelu
 newtab-weather-menu-learn-more = Zjistit více
+newtab-weather-menu-detect-my-location = Zjistit mou polohu
 # This message is shown if user is working offline
 newtab-weather-error-not-available = Údaje o počasí nejsou momentálně dostupné.
+newtab-weather-opt-in-see-weather = Chcete vidět počasí pro vaši oblast?
+newtab-weather-opt-in-not-now =
+    .label = Teď ne
+newtab-weather-opt-in-yes =
+    .label = Ano
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = New York
 
 ## Topic Labels
 
@@ -506,6 +547,9 @@ newtab-topic-selection-button-pick-interests = Vyberte, co vás zajímá
 newtab-section-follow-button = Sledovat
 newtab-section-following-button = Sledované
 newtab-section-unfollow-button = Přestat sledovat
+# A modal may appear next to the Follow button, directing users to try out the feature
+newtab-section-follow-highlight-title = Dolaďte si svůj kanál
+newtab-section-follow-highlight-subtitle = Sledujte své zájmy a uvidíte víc toho, co se vám líbí.
 
 ## Button to block/unblock listed topics
 ## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
@@ -524,7 +568,7 @@ newtab-section-confirm-block-topic-p2 = Zablokovaná témata se již nebudou zob
 #   $topic (string) - Name of topic that user is blocking
 newtab-section-block-topic-button = Blokovat { $topic }
 
-## Panel in the Customize menu section to manage followed and blocked topics
+## Strings for custom wallpaper highlight
 
 newtab-section-mangage-topics-title = Témata
 newtab-section-manage-topics-button-v2 =
@@ -541,3 +585,159 @@ newtab-custom-wallpaper-subtitle =
        *[no-cases] Nahrajte si vlastní tapetu nebo si vyberte vlastní barvu, aby aplikace { -brand-product-name } byla podle vás.
     }
 newtab-custom-wallpaper-cta = Vyzkoušejte ho
+
+## Strings for new user activation custom wallpaper highlight
+
+newtab-new-user-custom-wallpaper-title =
+    { -brand-product-name.case-status ->
+        [with-cases] Vyberte si tapetu, kterou chcete, aby byl { -brand-product-name } podle vás
+       *[no-cases] Vyberte si tapetu, kterou chcete, aby byla aplikace { -brand-product-name } podle vás
+    }
+newtab-new-user-custom-wallpaper-subtitle = Zajistěte, aby se každý nový panel cítil jako doma pomocí vlastních tapet a barev.
+newtab-new-user-custom-wallpaper-cta = Vyzkoušejte nyní
+
+## Strings for download mobile highlight
+
+newtab-download-mobile-highlight-title =
+    { -brand-product-name.case-status ->
+        [with-cases] Stáhnout { -brand-product-name(case: "acc") } pro mobily
+       *[no-cases] Stáhnout aplikaci { -brand-product-name } pro mobily
+    }
+# "Scan the code" refers to scanning the QR code that appears above the body text that leads to Firefox for mobile download.
+newtab-download-mobile-highlight-body-variant-a = Naskenujte kód a bezpečně prohlížejte internet i na cestách.
+newtab-download-mobile-highlight-body-variant-b = Se synchronizací svých panelů, hesel a dalších věcí můžete pokračovat tam, kde jste skončili.
+newtab-download-mobile-highlight-body-variant-c =
+    { -brand-product-name.case-status ->
+        [with-cases] Víte, že { -brand-product-name(case: "acc") } si můžete vzít s sebou? Stejný prohlížeč. Do vaší kapsy.
+       *[no-cases] Víte, že aplikaci { -brand-product-name } si můžete vzít s sebou? Stejný prohlížeč. Do vaší kapsy.
+    }
+newtab-download-mobile-highlight-image =
+    .aria-label =
+        { -brand-product-name.case-status ->
+            [with-cases] QR kód pro stažení { -brand-product-name(case: "gen") } pro mobily
+           *[no-cases] QR kód pro stažení aplikace { -brand-product-name } pro mobily
+        }
+
+## Strings for shortcuts highlight
+
+newtab-shortcuts-highlight-title = Vaše oblíbené položky na dosah ruky
+newtab-shortcuts-highlight-subtitle = Přidejte si zkratky, abyste měli oblíbené weby dostupné na jedno klepnutí.
+
+## Strings for reporting ads and content
+
+newtab-report-content-why-reporting-this =
+    .label = Proč to nahlašujete?
+newtab-report-ads-reason-not-interested =
+    .label = Nemám zájem
+newtab-report-ads-reason-inappropriate =
+    .label = Je to nevhodné
+newtab-report-ads-reason-seen-it-too-many-times =
+    .label = Už jsem to viděl(a) mockrát
+newtab-report-content-wrong-category =
+    .label = Špatná kategorie
+newtab-report-content-outdated =
+    .label = Zastaralé
+newtab-report-content-inappropriate-offensive =
+    .label = Nevhodné nebo urážlivé
+newtab-report-content-spam-misleading =
+    .label = Nevyžádaný příspěvek nebo klamavá zpráva
+newtab-report-cancel = Zrušit
+newtab-report-submit = Odeslat
+newtab-toast-thanks-for-reporting =
+    .message = Děkujeme za nahlášení.
+
+## Strings for trending searches
+
+newtab-trending-searches-show-trending =
+    .title = Zobrazit populární vyhledávání
+newtab-trending-searches-hide-trending =
+    .title = Skrýt populární vyhledávání
+newtab-trending-searches-learn-more = Zjistit více
+newtab-trending-searches-dismiss = Skrýt populární vyhledávání
+# "Trending searches refers to popular searches from search engines
+newtab-trending-searches-title = Trendy ve vyhledávání
+
+## Strings for task / to-do list productivity widget
+
+# "Add one" means adding a new task to the list (e.g., "Walk the dog")
+newtab-widget-lists-empty-cta = Možnosti jsou nekonečné. Přidejte si svůj.
+# A simple label next to the default list name letting users know this is a new / beta feature
+newtab-widget-lists-label-new =
+    .label = Nový
+newtab-widget-lists-label-beta =
+    .label = Beta
+# When tasks have been previous marked as complete, they will appear in their own separate list beneath incomplete items
+# Variables:
+#   $number (number) - Amount of list items marked complete
+newtab-widget-lists-completed-list = Dokončeno ({ $number })
+newtab-widget-task-list-menu-copy = Kopírovat
+newtab-widget-lists-menu-edit = Upravit název seznamu
+newtab-widget-lists-menu-create = Vytvoření nového seznamu
+newtab-widget-lists-menu-delete = Smazat tento seznam
+newtab-widget-lists-menu-copy = Zkopírovat seznam do schránky
+newtab-widget-lists-menu-hide = Skrýt všechny seznamy
+newtab-widget-lists-menu-learn-more = Zjistit více
+newtab-widget-lists-input-add-an-item =
+    .placeholder = Přidat položku
+newtab-widget-lists-input-error = Položku přidáte zadáním textu.
+newtab-widget-lists-input-menu-open-link = Otevřít odkaz
+newtab-widget-lists-input-menu-move-up = Posunout výše
+newtab-widget-lists-input-menu-move-down = Posunout níže
+newtab-widget-lists-input-menu-delete = Smazat
+newtab-widget-lists-input-menu-edit = Upravit
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + Vytvořit nový seznam
+newtab-widget-lists-name-label-default =
+    .label = Seznam úkolů
+newtab-widget-lists-name-placeholder-default =
+    .placeholder = Seznam úkolů
+# The placeholder value of the name field for a newly created list
+newtab-widget-lists-name-placeholder-new =
+    .placeholder = Nový seznam
+newtab-widget-section-title = Widgety
+# Tooltip for hide all widgets button
+newtab-widget-section-hide-all-button =
+    .title = Skrýt widgety
+    .aria-label = Skrýt všechny widgety
+newtab-widget-section-maximize =
+    .title = Rozbalit widgety
+    .aria-label = Rozbalení všech widgetů na plnou velikost
+newtab-widget-section-minimize =
+    .title = Minimalizovat wigety
+    .aria-label = Sbalení všech widgetů na kompaktní velikost
+
+## Strings for timer productivity widget
+## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
+
+newtab-widget-timer-notification-title = Časovač
+newtab-widget-timer-notification-focus = Čas soustředění vypršel. Pěkná práce. Potřebujete přestávku?
+newtab-widget-timer-notification-break = Vaše přestávka skončila. Jste připraveni se soustředit?
+newtab-widget-timer-notification-warning = Oznámení jsou vypnutá
+newtab-widget-timer-mode-focus =
+    .label = Soustředění
+newtab-widget-timer-mode-break =
+    .label = Přestávka
+newtab-widget-timer-label-play =
+    .label = Spustit
+newtab-widget-timer-label-pause =
+    .label = Pozastavit
+newtab-widget-timer-reset =
+    .title = Obnovit
+newtab-widget-timer-menu-notifications = Vypnout oznámení
+newtab-widget-timer-menu-notifications-on = Zapnout oznámení
+newtab-widget-timer-menu-hide = Skrýt časovač
+newtab-widget-timer-menu-learn-more = Zjistit více
+newtab-widget-message-title = Soustřeďte se díky seznamům a vestavěnému časovači
+# to-dos stands for "things to do".
+newtab-widget-message-copy = Od rychlých připomínek po každodenní úkoly, od soustředění po přestávky na protažení - plňte úkoly včas.
+newtab-promo-card-title =
+    { -brand-product-name.case-status ->
+        [with-cases] Podpořit { -brand-product-name(case: "acc") }
+       *[no-cases] Podpořit aplikaci { -brand-product-name }
+    }
+newtab-promo-card-body = Naši sponzoři podporují naši misi budovat lepší web.
+newtab-promo-card-cta = Zjistit více
+newtab-promo-card-dismiss-button =
+    .title = Zavřít
+    .aria-label = Zavřít

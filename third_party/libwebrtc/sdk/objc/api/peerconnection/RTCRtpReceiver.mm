@@ -28,7 +28,7 @@ RtpReceiverDelegateAdapter::RtpReceiverDelegateAdapter(
 }
 
 void RtpReceiverDelegateAdapter::OnFirstPacketReceived(
-    cricket::MediaType media_type) {
+    webrtc::MediaType media_type) {
   RTCRtpMediaType packet_media_type =
       [RTC_OBJC_TYPE(RTCRtpReceiver) mediaTypeForNativeMediaType:media_type];
   RTC_OBJC_TYPE(RTCRtpReceiver) *receiver = receiver_;
@@ -40,7 +40,7 @@ void RtpReceiverDelegateAdapter::OnFirstPacketReceived(
 
 @implementation RTC_OBJC_TYPE (RTCRtpReceiver) {
   RTC_OBJC_TYPE(RTCPeerConnectionFactory) * _factory;
-  rtc::scoped_refptr<webrtc::RtpReceiverInterface> _nativeRtpReceiver;
+  webrtc::scoped_refptr<webrtc::RtpReceiverInterface> _nativeRtpReceiver;
   std::unique_ptr<webrtc::RtpReceiverDelegateAdapter> _observer;
 }
 
@@ -56,7 +56,7 @@ void RtpReceiverDelegateAdapter::OnFirstPacketReceived(
 }
 
 - (nullable RTC_OBJC_TYPE(RTCMediaStreamTrack) *)track {
-  rtc::scoped_refptr<webrtc::MediaStreamTrackInterface> nativeTrack(
+  webrtc::scoped_refptr<webrtc::MediaStreamTrackInterface> nativeTrack(
       _nativeRtpReceiver->track());
   if (nativeTrack) {
     return
@@ -112,20 +112,20 @@ void RtpReceiverDelegateAdapter::OnFirstPacketReceived(
 #pragma mark - Native
 
 - (void)setFrameDecryptor:
-    (rtc::scoped_refptr<webrtc::FrameDecryptorInterface>)frameDecryptor {
+    (webrtc::scoped_refptr<webrtc::FrameDecryptorInterface>)frameDecryptor {
   _nativeRtpReceiver->SetFrameDecryptor(frameDecryptor);
 }
 
 #pragma mark - Private
 
-- (rtc::scoped_refptr<webrtc::RtpReceiverInterface>)nativeRtpReceiver {
+- (webrtc::scoped_refptr<webrtc::RtpReceiverInterface>)nativeRtpReceiver {
   return _nativeRtpReceiver;
 }
 
 - (instancetype)
       initWithFactory:(RTC_OBJC_TYPE(RTCPeerConnectionFactory) *)factory
     nativeRtpReceiver:
-        (rtc::scoped_refptr<webrtc::RtpReceiverInterface>)nativeRtpReceiver {
+        (webrtc::scoped_refptr<webrtc::RtpReceiverInterface>)nativeRtpReceiver {
   self = [super init];
   if (self) {
     _factory = factory;
@@ -140,29 +140,33 @@ void RtpReceiverDelegateAdapter::OnFirstPacketReceived(
 }
 
 + (RTCRtpMediaType)mediaTypeForNativeMediaType:
-    (cricket::MediaType)nativeMediaType {
+    (webrtc::MediaType)nativeMediaType {
   switch (nativeMediaType) {
-    case cricket::MEDIA_TYPE_AUDIO:
+    case webrtc::MediaType::AUDIO:
       return RTCRtpMediaTypeAudio;
-    case cricket::MEDIA_TYPE_VIDEO:
+    case webrtc::MediaType::VIDEO:
       return RTCRtpMediaTypeVideo;
-    case cricket::MEDIA_TYPE_DATA:
+    case webrtc::MediaType::DATA:
       return RTCRtpMediaTypeData;
-    case cricket::MEDIA_TYPE_UNSUPPORTED:
+    case webrtc::MediaType::UNSUPPORTED:
       return RTCRtpMediaTypeUnsupported;
+    case webrtc::MediaType::ANY:
+      return RTCRtpMediaTypeAny;
   }
 }
 
-+ (cricket::MediaType)nativeMediaTypeForMediaType:(RTCRtpMediaType)mediaType {
++ (webrtc::MediaType)nativeMediaTypeForMediaType:(RTCRtpMediaType)mediaType {
   switch (mediaType) {
     case RTCRtpMediaTypeAudio:
-      return cricket::MEDIA_TYPE_AUDIO;
+      return webrtc::MediaType::AUDIO;
     case RTCRtpMediaTypeVideo:
-      return cricket::MEDIA_TYPE_VIDEO;
+      return webrtc::MediaType::VIDEO;
     case RTCRtpMediaTypeData:
-      return cricket::MEDIA_TYPE_DATA;
+      return webrtc::MediaType::DATA;
     case RTCRtpMediaTypeUnsupported:
-      return cricket::MEDIA_TYPE_UNSUPPORTED;
+      return webrtc::MediaType::UNSUPPORTED;
+    case RTCRtpMediaTypeAny:
+      return webrtc::MediaType::ANY;
   }
 }
 
@@ -176,6 +180,8 @@ void RtpReceiverDelegateAdapter::OnFirstPacketReceived(
       return @"DATA";
     case RTCRtpMediaTypeUnsupported:
       return @"UNSUPPORTED";
+    case RTCRtpMediaTypeAny:
+      return @"ANY";
   }
 }
 

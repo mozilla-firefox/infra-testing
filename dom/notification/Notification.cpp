@@ -8,14 +8,16 @@
 
 #include <utility>
 
-#include "mozilla/Encoding.h"
+#include "Navigator.h"
+#include "NotificationUtils.h"
 #include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/OwningNonNull.h"
 #include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/UseCounter.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/Document.h"
-#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/Promise-inl.h"
+#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/ServiceWorkerGlobalScopeBinding.h"
 #include "mozilla/dom/WorkerRunnable.h"
@@ -24,10 +26,9 @@
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/ipc/PBackgroundChild.h"
-#include "Navigator.h"
-#include "NotificationUtils.h"
 #include "nsContentPermissionHelper.h"
 #include "nsContentUtils.h"
+#include "nsGlobalWindowInner.h"
 #include "nsIContentPermissionPrompt.h"
 #include "nsIScriptError.h"
 #include "nsNetUtil.h"
@@ -36,18 +37,6 @@
 namespace mozilla::dom {
 
 using namespace notification;
-
-struct NotificationStrings {
-  const nsString mID;
-  const nsString mTitle;
-  const nsString mDir;
-  const nsString mLang;
-  const nsString mBody;
-  const nsString mTag;
-  const nsString mIcon;
-  const nsString mData;
-  const nsString mServiceWorkerRegistrationScope;
-};
 
 class NotificationPermissionRequest : public ContentPermissionRequestBase,
                                       public nsIRunnable,
@@ -144,6 +133,9 @@ NotificationPermissionRequest::Run() {
                  mWindow->IsSecureContext(),
                  PermissionCheckPurpose::PermissionRequest,
                  mWindow->GetExtantDoc())) {
+    mPermission = NotificationPermission::Denied;
+  } else if (!StaticPrefs::dom_webnotifications_allowcrossoriginiframe() &&
+             !mPrincipal->Subsumes(mTopLevelPrincipal)) {
     mPermission = NotificationPermission::Denied;
   }
 
@@ -354,6 +346,16 @@ static Result<nsString, nsresult> SerializeDataAsBase64(
   return result;
 }
 
+#define SetUseCounterIf(wasUsed, memberName)                             \
+  if (wasUsed) {                                                         \
+    if (NS_IsMainThread()) {                                             \
+      SetUseCounter(aGlobal->GetGlobalJSObject(),                        \
+                    eUseCounter_NotificationOptions_##memberName);       \
+    } else {                                                             \
+      SetUseCounter(UseCounterWorker::NotificationOptions_##memberName); \
+    }                                                                    \
+  }
+
 /* static */
 // https://notifications.spec.whatwg.org/#create-a-notification
 already_AddRefed<Notification> Notification::ValidateAndCreate(
@@ -361,6 +363,14 @@ already_AddRefed<Notification> Notification::ValidateAndCreate(
     const NotificationOptions& aOptions, const nsAString& aScope,
     ErrorResult& aRv) {
   MOZ_ASSERT(aGlobal);
+
+  SetUseCounterIf(aOptions.mNavigate.WasPassed(), navigate);
+  SetUseCounterIf(aOptions.mBadge.WasPassed(), badge);
+  SetUseCounterIf(aOptions.mVibrate.WasPassed(), vibrate);
+  SetUseCounterIf(aOptions.mTimestamp.WasPassed(), timestamp);
+  SetUseCounterIf(aOptions.mRenotify, renotify);
+  SetUseCounterIf(aOptions.mRequireInteraction, requireInteraction);
+  SetUseCounterIf(!aOptions.mActions.IsEmpty(), actions);
 
   // Step 4: Set notification’s data to
   // StructuredSerializeForStorage(options["data"]).
@@ -404,8 +414,7 @@ already_AddRefed<Notification> Notification::ValidateAndCreate(
   // Step 12: If options["icon"] exists, then parse it using baseURL, and if
   // that does not return failure, set notification’s icon URL to the return
   // value. (Otherwise icon URL is not set.)
-  nsAutoString iconUrl;
-  ResolveIconURL(aGlobal, aOptions.mIcon, iconUrl);
+  RefPtr<nsIURI> iconUrl = ResolveIconURL(aGlobal, aOptions.mIcon);
 
   // Step 19: Set notification’s actions to « ».
   nsTArray<IPCNotificationAction> actions;
@@ -434,7 +443,7 @@ already_AddRefed<Notification> Notification::ValidateAndCreate(
                       nsString(aTitle), aOptions.mDir, nsString(aOptions.mLang),
                       nsString(aOptions.mBody), nsString(aOptions.mTag),
                       iconUrl, aOptions.mRequireInteraction, silent, vibrate,
-                      nsString(dataResult.unwrap()), std::move(actions)));
+                      nsString(dataResult.unwrap()), actions));
 
   RefPtr<Notification> notification =
       new Notification(aGlobal, ipcNotification, aScope);
@@ -572,90 +581,26 @@ uint32_t Notification::MaxActions(const GlobalObject& aGlobal) {
   return kMaxActions;
 }
 
-nsresult Notification::ResolveIconURL(nsIGlobalObject* aGlobal,
-                                      const nsAString& aIconUrl,
-                                      nsString& aDecodedUrl) {
+already_AddRefed<nsIURI> Notification::ResolveIconURL(
+    nsIGlobalObject* aGlobal, const nsACString& aIconUrl) {
   nsresult rv = NS_OK;
 
   if (aIconUrl.IsEmpty()) {
-    return rv;
+    return nullptr;
   }
 
-  nsCOMPtr<nsIURI> baseUri = nullptr;
-
-  // XXXnsm If I understand correctly, the character encoding for resolving
-  // URIs in new specs is dictated by the URL spec, which states that unless
-  // the URL parser is passed an override encoding, the charset to be used is
-  // UTF-8. The new Notification icon/sound specification just says to use the
-  // Fetch API, where the Request constructor defers to URL parsing specifying
-  // the API base URL and no override encoding. So we've to use UTF-8 on
-  // workers, but for backwards compat keeping it document charset on main
-  // thread.
-  auto encoding = UTF_8_ENCODING;
-
-  if (nsCOMPtr<nsPIDOMWindowInner> window = aGlobal->GetAsInnerWindow()) {
-    if (RefPtr<Document> doc = window->GetExtantDoc()) {
-      baseUri = doc->GetBaseURI();
-      encoding = doc->GetDocumentCharacterSet();
-    } else {
-      NS_WARNING("No document found for main thread notification!");
-      return NS_ERROR_FAILURE;
-    }
-  } else if (WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate()) {
-    baseUri = workerPrivate->GetBaseURI();
-  }
-
+  nsCOMPtr<nsIURI> baseUri = aGlobal->GetBaseURI();
   if (!baseUri) {
-    return rv;
+    return nullptr;
   }
 
   nsCOMPtr<nsIURI> srcUri;
-  rv = NS_NewURI(getter_AddRefs(srcUri), aIconUrl, encoding, baseUri);
-  if (NS_SUCCEEDED(rv)) {
-    nsAutoCString src;
-    srcUri->GetSpec(src);
-    // XXX(krosylight): We should be able to pass UTF8 as-is, or ideally the URI object itself.
-    CopyUTF8toUTF16(src, aDecodedUrl);
+  rv = NS_NewURI(getter_AddRefs(srcUri), aIconUrl, nullptr, baseUri);
+  if (NS_FAILED(rv)) {
+    return nullptr;
   }
 
-  if (encoding == UTF_8_ENCODING) {
-    return rv;
-  }
-
-  // If it was not UTF8, let's try UTF8 and see whether the result differs. If
-  // no difference is found then we can just use UTF8 everywhere.
-  // See: https://github.com/whatwg/notifications/issues/209
-  glean::web_notification::IconUrlEncodingLabel label =
-      glean::web_notification::IconUrlEncodingLabel::eNeitherWay;
-
-  nsCOMPtr<nsIURI> srcUriUtf8;
-  nsresult rvUtf8 =
-      NS_NewURI(getter_AddRefs(srcUriUtf8), aIconUrl, UTF_8_ENCODING, baseUri);
-
-  if (NS_SUCCEEDED(rv)) {
-    if (NS_SUCCEEDED(rvUtf8)) {
-      bool equals = false;
-      if (NS_SUCCEEDED(srcUri->Equals(srcUriUtf8, &equals))) {
-        if (equals) {
-          // Okay to be parsed with UTF8
-          label = glean::web_notification::IconUrlEncodingLabel::eUtf8;
-        } else {
-          // Can be parsed either way but with difference, unclear which one is
-          // intended without fetching
-          label = glean::web_notification::IconUrlEncodingLabel::eEitherWay;
-        }
-      }
-    } else {
-      label = glean::web_notification::IconUrlEncodingLabel::eDocumentCharset;
-    }
-  } else if (NS_SUCCEEDED(rvUtf8)) {
-    // Can be only parsed with UTF8
-    label = glean::web_notification::IconUrlEncodingLabel::eUtf8;
-  }
-
-  glean::web_notification::icon_url_encoding.EnumGet(label).Add();
-
-  return rv;
+  return srcUri.forget();
 }
 
 JSObject* Notification::WrapObject(JSContext* aCx,

@@ -5,25 +5,27 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsStyledElement.h"
+
 #include "mozAutoDocUpdate.h"
-#include "nsGkAtoms.h"
-#include "nsAttrValue.h"
-#include "nsAttrValueInlines.h"
+#include "mozilla/DeclarationBlock.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/css/Loader.h"
 #include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/CustomElementRegistry.h"
-#include "mozilla/dom/ElementInlines.h"
-#include "mozilla/dom/MutationEventBinding.h"
-#include "mozilla/dom/MutationObservers.h"
-#include "mozilla/InternalMutationEvent.h"
-#include "nsDOMCSSDeclaration.h"
-#include "nsDOMCSSAttrDeclaration.h"
-#include "nsServiceManagerUtils.h"
 #include "mozilla/dom/Document.h"
-#include "mozilla/DeclarationBlock.h"
-#include "mozilla/css/Loader.h"
-#include "nsXULElement.h"
+#include "mozilla/dom/ElementInlines.h"
+#include "mozilla/dom/MutationObservers.h"
+#include "mozilla/dom/StylePropertyMap.h"
+#include "nsAttrValue.h"
+#include "nsAttrValueInlines.h"
 #include "nsContentUtils.h"
+#include "nsDOMCSSAttrDeclaration.h"
+#include "nsDOMCSSDeclaration.h"
+#include "nsGkAtoms.h"
+#include "nsIMutationObserver.h"
+#include "nsServiceManagerUtils.h"
 #include "nsStyleUtil.h"
+#include "nsXULElement.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -82,8 +84,7 @@ void nsStyledElement::InlineStyleDeclarationWillChange(
   }
 
   aData.mModType =
-      modification ? static_cast<uint8_t>(MutationEvent_Binding::MODIFICATION)
-                   : static_cast<uint8_t>(MutationEvent_Binding::ADDITION);
+      modification ? AttrModType::Modification : AttrModType::Addition;
   MutationObservers::NotifyAttributeWillChange(
       this, kNameSpaceID_None, nsGkAtoms::style, aData.mModType);
 
@@ -98,9 +99,6 @@ nsresult nsStyledElement::SetInlineStyleDeclaration(
   MOZ_ASSERT(OwnerDoc()->UpdateNestingLevel(),
              "Should be inside document update!");
 
-  // Avoid dispatching mutation events for style attribute changes from CSSOM
-  const bool hasMutationEventListeners = false;
-
   nsAttrValue attrValue(do_AddRef(&aDeclaration), nullptr);
   SetMayHaveStyle();
 
@@ -108,14 +106,14 @@ nsresult nsStyledElement::SetInlineStyleDeclaration(
   mozAutoDocUpdate updateBatch(document, true);
   return SetAttrAndNotify(kNameSpaceID_None, nsGkAtoms::style, nullptr,
                           aData.mOldValue.ptrOr(nullptr), attrValue, nullptr,
-                          aData.mModType, hasMutationEventListeners, true,
-                          kDontCallAfterSetAttr, document, updateBatch);
+                          aData.mModType, true, kDontCallAfterSetAttr, document,
+                          updateBatch);
 }
 
 // ---------------------------------------------------------------
 // Others and helpers
 
-nsICSSDeclaration* nsStyledElement::Style() {
+nsDOMCSSDeclaration* nsStyledElement::Style() {
   Element::nsDOMSlots* slots = DOMSlots();
 
   if (!slots->mStyle) {
@@ -127,6 +125,17 @@ nsICSSDeclaration* nsStyledElement::Style() {
   }
 
   return slots->mStyle;
+}
+
+StylePropertyMap* nsStyledElement::AttributeStyleMap() {
+  nsDOMSlots* slots = DOMSlots();
+
+  if (!slots->mAttributeStyleMap) {
+    slots->mAttributeStyleMap =
+        MakeRefPtr<StylePropertyMap>(this, /* aComputed */ false);
+  }
+
+  return slots->mAttributeStyleMap;
 }
 
 nsresult nsStyledElement::ReparseStyleAttribute(bool aForceInDataDoc) {
@@ -145,15 +154,14 @@ nsresult nsStyledElement::ReparseStyleAttribute(bool aForceInDataDoc) {
     // Don't bother going through SetInlineStyleDeclaration; we don't
     // want to fire off mutation events or document notifications anyway
     bool oldValueSet;
-    nsresult rv =
-        mAttrs.SetAndSwapAttr(nsGkAtoms::style, attrValue, &oldValueSet);
+    nsresult rv = SetAndSwapAttr(nsGkAtoms::style, attrValue, &oldValueSet);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
   return NS_OK;
 }
 
-nsICSSDeclaration* nsStyledElement::GetExistingStyle() {
+nsDOMCSSDeclaration* nsStyledElement::GetExistingStyle() {
   Element::nsDOMSlots* slots = GetExistingDOMSlots();
   if (!slots) {
     return nullptr;

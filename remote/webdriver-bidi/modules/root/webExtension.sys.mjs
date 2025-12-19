@@ -9,6 +9,7 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   Addon: "chrome://remote/content/shared/Addon.sys.mjs",
   assert: "chrome://remote/content/shared/webdriver/Assert.sys.mjs",
+  error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
   pprint: "chrome://remote/content/shared/Format.sys.mjs",
 });
 
@@ -139,6 +140,12 @@ class WebExtensionModule extends RootBiDiModule {
           lazy.pprint`Expected "extensionData.path" to be a string, got ${path}`
         );
 
+        if (permanent && type == ExtensionDataType.Path) {
+          throw new lazy.error.InvalidWebExtensionError(
+            "Permanent installation of unpacked extensions is not supported"
+          );
+        }
+
         extensionId = await lazy.Addon.installWithPath(path, !permanent, false);
     }
 
@@ -170,6 +177,12 @@ class WebExtensionModule extends RootBiDiModule {
       addonId,
       lazy.pprint`Expected "extension" to be a string, got ${addonId}`
     );
+
+    if (addonId === "") {
+      throw new lazy.error.NoSuchWebExtensionError(
+        `Expected "extension" to be a non-empty string, got ${addonId}`
+      );
+    }
 
     await lazy.Addon.uninstall(addonId);
   }

@@ -21,7 +21,6 @@
 #  include <shobjidl.h>
 #  include "mozilla/ipc/WindowsMessageLoop.h"
 #  ifdef MOZ_SANDBOX
-#    include "mozilla/RandomNum.h"
 #  endif
 #  include "mozilla/ScopeExit.h"
 #  include "mozilla/WinDllServices.h"
@@ -351,17 +350,10 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
   bool exceptionHandlerIsSet = false;
   if (!CrashReporter::IsDummy()) {
     auto crashReporterArg = geckoargs::sCrashReporter.Get(aArgc, aArgv);
-    if (crashReporterArg) {
-      CrashReporter::ProcessId crashHelperPid = base::kInvalidProcessId;
-#if defined(XP_LINUX) && !defined(MOZ_WIDGET_ANDROID)
-      auto crashHelperPidArg = geckoargs::sCrashHelperPid.Get(aArgc, aArgv);
-      MOZ_ASSERT(crashHelperPidArg);
-      crashHelperPid =
-          static_cast<CrashReporter::ProcessId>(*crashHelperPidArg);
-#endif  // defined(XP_LINUX) && !defined(MOZ_WIDGET_ANDROID)
-
+    auto crashHelperArg = geckoargs::sCrashHelper.Get(aArgc, aArgv);
+    if (crashReporterArg && crashHelperArg) {
       exceptionHandlerIsSet = CrashReporter::SetRemoteExceptionHandler(
-          std::move(*crashReporterArg), crashHelperPid);
+          std::move(*crashReporterArg), std::move(*crashHelperArg));
       MOZ_ASSERT(exceptionHandlerIsSet,
                  "Should have been able to set remote exception handler");
 
@@ -442,9 +434,19 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
   Maybe<base::ProcessId> parentPID = geckoargs::sParentPid.Get(aArgc, aArgv);
   Maybe<const char*> initialChannelIdString =
       geckoargs::sInitialChannelID.Get(aArgc, aArgv);
+  if (NS_WARN_IF(!parentPID || !initialChannelIdString)) {
+    return NS_ERROR_FAILURE;
+  }
+
   Maybe<IPC::Channel::ChannelHandle> clientChannel =
       geckoargs::sIPCHandle.Get(aArgc, aArgv);
-  if (NS_WARN_IF(!parentPID || !initialChannelIdString || !clientChannel)) {
+#ifdef XP_DARWIN
+  MOZ_ASSERT_IF(clientChannel, !geckoargs::sIPCPort.IsPresent(aArgc, aArgv));
+  if (!clientChannel) {
+    clientChannel = geckoargs::sIPCPort.Get(aArgc, aArgv);
+  }
+#endif
+  if (NS_WARN_IF(!clientChannel)) {
     return NS_ERROR_FAILURE;
   }
 

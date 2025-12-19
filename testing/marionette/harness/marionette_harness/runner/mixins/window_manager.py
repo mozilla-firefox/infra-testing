@@ -5,7 +5,6 @@
 import sys
 
 from marionette_driver import Wait
-from six import reraise
 
 
 class WindowManagerMixin(object):
@@ -71,11 +70,9 @@ class WindowManagerMixin(object):
                     )
         except Exception:
             exc_cls, exc, tb = sys.exc_info()
-            reraise(
-                exc_cls,
-                exc_cls("Failed to trigger opening a new tab: {}".format(exc)),
-                tb,
-            )
+            raise exc_cls(
+                "Failed to trigger opening a new tab: {}".format(exc)
+            ).with_traceback(tb)
         else:
             Wait(self.marionette).until(
                 lambda mn: len(mn.window_handles) == len(current_tabs) + 1,
@@ -92,13 +89,34 @@ class WindowManagerMixin(object):
 
         def loaded(handle):
             with self.marionette.using_context("chrome"):
-                return self.marionette.execute_script(
+                return self.marionette.execute_async_script(
                     """
-                  const { windowManager } = ChromeUtils.importESModule(
-                    "chrome://remote/content/shared/WindowManager.sys.mjs"
+                  const [handle, resolve] = arguments;
+
+                  const { NavigableManager } = ChromeUtils.importESModule(
+                    "chrome://remote/content/shared/NavigableManager.sys.mjs"
                   );
-                  const win = windowManager.findWindowByHandle(arguments[0]).win;
-                  return win.document.readyState == "complete";
+
+                  const isLoaded = window =>
+                    window?.document.readyState === "complete" &&
+                    !window?.document.isUncommittedInitialDocument;
+
+                  const browsingContext = NavigableManager.getBrowsingContextById(handle);
+                  const targetWindow = browsingContext?.window;
+
+                  if (isLoaded(targetWindow)) {
+                    resolve();
+                  } else {
+                    const onLoad = () => {
+                      if (isLoaded(targetWindow)) {
+                        targetWindow.removeEventListener("load", onLoad);
+                        resolve();
+                      } else {
+                        dump(`** Target window not loaded yet.  Waiting for the next "load" event\n`);
+                      }
+                    };
+                    targetWindow.addEventListener("load", onLoad);
+                  }
                 """,
                     script_args=[handle],
                 )
@@ -118,11 +136,9 @@ class WindowManagerMixin(object):
                     )
         except Exception:
             exc_cls, exc, tb = sys.exc_info()
-            reraise(
-                exc_cls,
-                exc_cls("Failed to trigger opening a new window: {}".format(exc)),
-                tb,
-            )
+            raise exc_cls(
+                "Failed to trigger opening a new window: {}".format(exc)
+            ).with_traceback(tb)
         else:
             Wait(self.marionette).until(
                 lambda mn: len(mn.chrome_window_handles) == len(current_windows) + 1,
@@ -134,12 +150,7 @@ class WindowManagerMixin(object):
             )
 
             # Before continuing ensure the window has been completed loading
-            Wait(self.marionette).until(
-                lambda _: loaded(new_window),
-                message="Window with handle '{}'' did not finish loading".format(
-                    new_window
-                ),
-            )
+            loaded(new_window)
 
             # Bug 1507771 - Return the correct handle based on the currently selected context
             # as long as "WebDriver:NewWindow" is not handled separtely in chrome context

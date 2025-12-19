@@ -94,6 +94,15 @@ const uint8_t Arena::ThingsPerArena[] = {
 };
 
 bool Arena::allocated() const {
+#if defined(DEBUG) && defined(MOZ_VALGRIND)
+  // In debug builds, valgrind complains about the access to `allocKind` even
+  // though it is legitimate, so temporarily disable reporting of addressing
+  // errors in that range.  Note this doesn't change the state of the address
+  // range, as tracked by valgrind, so subsequent checking against its state is
+  // unaffected.  See bug 1932412.
+  VALGRIND_DISABLE_ADDR_ERROR_REPORTING_IN_RANGE(&allocKind, sizeof(void*));
+#endif
+
   size_t arenaIndex = ArenaChunk::arenaIndex(this);
   size_t pageIndex = ArenaChunk::arenaToPageIndex(arenaIndex);
   bool result = !chunk()->decommittedPages[pageIndex] &&
@@ -101,11 +110,16 @@ bool Arena::allocated() const {
                 IsValidAllocKind(allocKind);
   MOZ_ASSERT_IF(result, zone_);
   MOZ_ASSERT_IF(result, (uintptr_t(zone_) & 7) == 0);
+
+#if defined(DEBUG) && defined(MOZ_VALGRIND)
+  // Reenable error reporting for the range we just said to ignore.
+  VALGRIND_ENABLE_ADDR_ERROR_REPORTING_IN_RANGE(&allocKind, sizeof(void*));
+#endif
   return result;
 }
 
 void Arena::unmarkAll() {
-  MarkBitmapWord* arenaBits = chunk()->markBits.arenaBits(this);
+  AtomicBitmapWord* arenaBits = chunk()->markBits.arenaBits(this);
   for (size_t i = 0; i < ArenaBitmapWords; i++) {
     arenaBits[i] = 0;
   }
@@ -464,6 +478,8 @@ void ArenaChunk::updateCurrentChunkAfterAlloc(GCRuntime* gc) {
   info.numArenasFreeCommitted--;
   info.numArenasFree--;
 
+  verify();
+
   if (MOZ_UNLIKELY(isFull())) {
     AutoLockGC lock(gc);
     mergePendingFreeArenas(gc, lock);
@@ -556,6 +572,8 @@ void ArenaChunk::mergePendingFreeArenas(GCRuntime* gc, const AutoLockGC& lock) {
 
   info.numArenasFree += count;
   info.numArenasFreeCommitted += count;
+
+  verify();
 }
 
 ArenaChunk* ChunkPool::pop() {

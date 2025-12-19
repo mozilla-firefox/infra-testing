@@ -11,14 +11,13 @@
 #ifndef mozilla_dom_ScriptLoadHandler_h
 #define mozilla_dom_ScriptLoadHandler_h
 
-#include "nsIIncrementalStreamLoader.h"
-#include "nsIChannelEventSink.h"
-#include "nsIInterfaceRequestor.h"
-#include "nsISupports.h"
 #include "mozilla/Encoding.h"
-#include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
+#include "nsIChannelEventSink.h"
+#include "nsIIncrementalStreamLoader.h"
+#include "nsIInterfaceRequestor.h"
+#include "nsISupports.h"
 
 namespace JS::loader {
 class ScriptLoadRequest;
@@ -108,8 +107,8 @@ class ScriptLoadHandler final : public nsIIncrementalStreamLoaderObserver,
                      uint32_t aDataLength, bool aEndOfStream);
 
   /*
-   * When streaming bytecode, we have the opportunity to fallback early if SRI
-   * does not match the expectation of the document.
+   * When streaming serialized Stencil, we have the opportunity to fallback
+   * early if SRI does not match the expectation of the document.
    *
    * If SRI hash is decoded, `sriLength` is set to the length of the hash.
    */

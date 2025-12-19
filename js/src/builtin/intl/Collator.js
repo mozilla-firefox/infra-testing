@@ -171,7 +171,7 @@ function InitializeCollator(collator, locales, options) {
   lazyCollatorData.usage = u;
 
   // Step 8.
-  var opt = new_Record();
+  var opt = NEW_RECORD();
   lazyCollatorData.opt = opt;
 
   // Steps 9-10.
@@ -244,26 +244,6 @@ function InitializeCollator(collator, locales, options) {
   // We've done everything that must be done now: mark the lazy data as fully
   // computed and install it.
   initializeIntlObject(collator, "Collator", lazyCollatorData);
-}
-
-/**
- * Returns the subset of the given locale list for which this locale list has a
- * matching (possibly fallback) locale. Locales appear in the same order in the
- * returned list as in the input list.
- *
- * Spec: ECMAScript Internationalization API Specification, 10.2.2.
- */
-function Intl_Collator_supportedLocalesOf(locales /*, options*/) {
-  var options = ArgumentsLength() > 1 ? GetArgument(1) : undefined;
-
-  // Step 1.
-  var availableLocales = "Collator";
-
-  // Step 2.
-  var requestedLocales = CanonicalizeLocaleList(locales);
-
-  // Step 3.
-  return SupportedLocales(availableLocales, requestedLocales, options);
 }
 
 /**

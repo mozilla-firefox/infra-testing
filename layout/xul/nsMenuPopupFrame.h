@@ -11,18 +11,18 @@
 #ifndef nsMenuPopupFrame_h__
 #define nsMenuPopupFrame_h__
 
+#include "Units.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/gfx/Types.h"
 #include "mozilla/StaticPrefs_ui.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/gfx/Types.h"
 #include "nsAtom.h"
-#include "nsCOMPtr.h"
-#include "nsIDOMEventListener.h"
-#include "nsXULPopupManager.h"
-
 #include "nsBlockFrame.h"
-
-#include "Units.h"
+#include "nsCOMPtr.h"
+#include "nsExpirationState.h"
+#include "nsIDOMEventListener.h"
+#include "nsIWidgetListener.h"
+#include "nsXULPopupManager.h"
 
 class nsIWidget;
 
@@ -103,7 +103,6 @@ enum class MenuPopupAnchorType : uint8_t {
 nsIFrame* NS_NewMenuPopupFrame(mozilla::PresShell* aPresShell,
                                mozilla::ComputedStyle* aStyle);
 
-class nsView;
 class nsMenuPopupFrame;
 
 // this class is used for dispatching popupshown events asynchronously.
@@ -129,7 +128,7 @@ class nsXULPopupShownEvent final : public mozilla::Runnable,
   const RefPtr<nsPresContext> mPresContext;
 };
 
-class nsMenuPopupFrame final : public nsBlockFrame {
+class nsMenuPopupFrame final : public nsBlockFrame, public nsIWidgetListener {
   using PopupLevel = mozilla::widget::PopupLevel;
   using PopupType = mozilla::widget::PopupType;
 
@@ -196,15 +195,35 @@ class nsMenuPopupFrame final : public nsBlockFrame {
             nsIFrame* aPrevInFlow) override;
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
+
+  // nsIWidgetListener
+  mozilla::PresShell* GetPresShell() override { return PresShell(); }
+  nsMenuPopupFrame* GetAsMenuPopupFrame() override { return this; }
+  void WindowMoved(nsIWidget*, const mozilla::LayoutDeviceIntPoint&,
+                   ByMoveToRect) override;
+  void WindowResized(nsIWidget*, const mozilla::LayoutDeviceIntSize&) override;
+  bool RequestWindowClose(nsIWidget*) override;
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
+  nsEventStatus HandleEvent(mozilla::WidgetGUIEvent* aEvent) override;
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
+  void PaintWindow(nsIWidget* aWidget) override;
+  void DidCompositeWindow(mozilla::layers::TransactionId aTransactionId,
+                          const mozilla::TimeStamp& aCompositeStart,
+                          const mozilla::TimeStamp& aCompositeEnd) override;
+  bool ShouldNotBeVisible() override { return !IsOpen(); }
+  using nsIFrame::HandleEvent;  // Needed to silence warning.
 
   // FIXME: This shouldn't run script (this can end up calling HidePopup).
   MOZ_CAN_RUN_SCRIPT_BOUNDARY void Destroy(DestroyContext&) override;
 
   bool HasRemoteContent() const;
 
-  // Whether we should create a widget on Init().
-  bool ShouldCreateWidgetUpfront() const;
+  // Whether this is a drag popup to show drag feedback.
+  bool IsDragPopup() const;
+
+  // Whether we should have a widget even when we're not shown.
+  bool ShouldHaveWidgetWhenHidden() const;
 
   // Whether we should expand the menu to take the size of the parent menulist.
   bool ShouldExpandToInflowParentOrAnchor() const;
@@ -223,7 +242,8 @@ class nsMenuPopupFrame final : public nsBlockFrame {
 
   MOZ_CAN_RUN_SCRIPT void EnsureActiveMenuListItemIsVisible();
 
-  nsresult CreateWidgetForView(nsView* aView);
+  void CreateWidget();
+  void DestroyWidget();
   mozilla::WindowShadow GetShadowStyle() const;
 
   void DidSetComputedStyle(ComputedStyle* aOldStyle) override;
@@ -264,14 +284,15 @@ class nsMenuPopupFrame final : public nsBlockFrame {
     return mPopupState == ePopupOpening || mPopupState == ePopupVisible ||
            mPopupState == ePopupShown;
   }
-  bool IsVisible() {
+  bool IsVisible() const {
     return mPopupState == ePopupVisible || mPopupState == ePopupShown;
   }
-  bool IsVisibleOrShowing() {
+  bool IsVisibleOrShowing() const {
     return IsOpen() || mPopupState == ePopupPositioning ||
            mPopupState == ePopupShowing;
   }
   bool IsNativeMenu() const { return mIsNativeMenu; }
+  bool CanSkipLayout() const;
   bool IsMouseTransparent() const;
 
   // Return true if the popup is for a menulist.
@@ -279,6 +300,10 @@ class nsMenuPopupFrame final : public nsBlockFrame {
 
   bool IsDragSource() const { return mIsDragSource; }
   void SetIsDragSource(bool aIsDragSource) { mIsDragSource = aIsDragSource; }
+
+  bool PendingWidgetMoveResize() const { return mPendingWidgetMoveResize; }
+  void ClearPendingWidgetMoveResize() { mPendingWidgetMoveResize = false; }
+  void SchedulePendingWidgetMoveResize();
 
   static nsIContent* GetTriggerContent(nsMenuPopupFrame* aMenuPopupFrame);
   void ClearTriggerContent() { mTriggerContent = nullptr; }
@@ -367,8 +392,6 @@ class nsMenuPopupFrame final : public nsBlockFrame {
     bool mHFlip = false;
     bool mVFlip = false;
     bool mConstrainedByLayout = false;
-    // The client offset of our widget.
-    mozilla::LayoutDeviceIntPoint mClientOffset;
     nsPoint mViewPoint;
   };
 
@@ -398,9 +421,7 @@ class nsMenuPopupFrame final : public nsBlockFrame {
     return mozilla::CSSRect::FromAppUnitsRounded(mScreenRect);
   }
 
-  mozilla::LayoutDeviceIntPoint GetLastClientOffset() const {
-    return mLastClientOffset;
-  }
+  mozilla::LayoutDeviceIntRect CalcWidgetBounds() const;
 
   // Return the alignment of the popup
   int8_t GetAlignmentPosition() const;
@@ -497,13 +518,6 @@ class nsMenuPopupFrame final : public nsBlockFrame {
   // attributes.
   void MoveToAttributePosition();
 
-  // Create a popup view for this frame. The view is added a child of the root
-  // view, and is initially hidden.
-  void CreatePopupView();
-
-  nsView* GetViewInternal() const override { return mView; }
-  void SetViewInternal(nsView* aView) override { mView = aView; }
-
   // Returns true if the popup should try to remain at the same relative
   // location as the anchor while it is open. If the anchor becomes hidden
   // either directly or indirectly because a parent popup or other element
@@ -550,13 +564,14 @@ class nsMenuPopupFrame final : public nsBlockFrame {
   int8_t GetPopupAnchor() const { return mPopupAnchor; }
   FlipType GetFlipType() const { return mFlip; }
 
-  void WidgetPositionOrSizeDidChange();
-
   uint64_t GetAPZFocusSequenceNumber() const { return mAPZFocusSequenceNumber; }
 
   void UpdateAPZFocusSequenceNumber(uint64_t aNewNumber) {
     mAPZFocusSequenceNumber = aNewNumber;
   }
+
+  void DestroyWidgetIfNeeded();
+  nsExpirationState* GetExpirationState() { return &mExpirationState; }
 
  protected:
   nsString mIncrementalString;  // for incremental typing navigation
@@ -569,7 +584,7 @@ class nsMenuPopupFrame final : public nsBlockFrame {
   // was clicked. It will be cleared when the popup is hidden.
   nsCOMPtr<nsIContent> mTriggerContent;
 
-  nsView* mView = nullptr;
+  RefPtr<nsIWidget> mWidget;
 
   RefPtr<nsXULPopupShownEvent> mPopupShownDispatcher;
 
@@ -598,11 +613,6 @@ class nsMenuPopupFrame final : public nsBlockFrame {
   // positioned at this offset (along either the x or y axis, depending on
   // mPosition)
   nscoord mAlignmentOffset = 0;
-
-  // The value of the client offset of our widget the last time we positioned
-  // ourselves. We store this so that we can detect when it changes but the
-  // position of our widget didn't change.
-  mozilla::LayoutDeviceIntPoint mLastClientOffset;
 
   // The focus sequence number of the last processed input event
   uint64_t mAPZFocusSequenceNumber = 0;
@@ -649,6 +659,9 @@ class nsMenuPopupFrame final : public nsBlockFrame {
   // popup on Wayland as it cancel whole D&D operation.
   bool mIsDragSource = false;
 
+  // Whether there's a pending move-resize of our widget.
+  bool mPendingWidgetMoveResize = false;
+
   // When POPUPPOSITION_SELECTION is used, this indicates the vertical offset
   // that the original selected item was. This needs to be used in case the
   // popup gets changed so that we can keep the popup at the same vertical
@@ -661,8 +674,8 @@ class nsMenuPopupFrame final : public nsBlockFrame {
 
   nsRect mOverrideConstraintRect;
 
+  nsExpirationState mExpirationState;
   static mozilla::TimeStamp sLastKeyTime;
-
 };  // class nsMenuPopupFrame
 
 #endif

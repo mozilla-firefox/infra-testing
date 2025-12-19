@@ -24,14 +24,6 @@ let release_or_beta = getBuildConfiguration("release_or_beta");
 let nightly = !release_or_beta;
 
 let nightlyOnlyFeatures = [
-  [
-    'relaxed-simd',
-    wasmRelaxedSimdEnabled(),
-    `(module (func (result v128)
-      unreachable
-      i16x8.relaxed_laneselect
-    ))`
-  ],
 ];
 
 for (let [name, enabled, test] of nightlyOnlyFeatures) {
@@ -50,7 +42,15 @@ for (let [name, enabled, test] of nightlyOnlyFeatures) {
 
 let releasedFeaturesMaybeDisabledAnyway = [
   // SIMD will be disabled dynamically on x86/x64 if the hardware isn't SSE4.1+.
-  ['simd', wasmSimdEnabled(), `(module (func (result v128) i32.const 0 i8x16.splat))`]
+  ['simd', wasmSimdEnabled(), `(module (func (result v128) i32.const 0 i8x16.splat))`],
+  [
+    'relaxed-simd',
+    wasmRelaxedSimdEnabled(),
+    `(module (func (result v128)
+      unreachable
+      i16x8.relaxed_laneselect
+    ))`
+  ],
 ];
 
 for (let [name, enabled, test] of releasedFeaturesMaybeDisabledAnyway) {
@@ -65,33 +65,11 @@ for (let [name, enabled, test] of releasedFeaturesMaybeDisabledAnyway) {
 
 let releasedFeatures = [
   ['threads', wasmThreadsEnabled(), `(module (memory 1 1 shared))`],
-  [
-    'multi-memory',
-    wasmMultiMemoryEnabled(),
-    `(module (memory 0) (memory 0))`,
-  ],
-  [
-    'exnref',
-    wasmExnRefEnabled(),
-    `(module (func try_table end))`
-  ],
-  [
-    'memory64',
-    wasmMemory64Enabled(),
-    `(module (memory i64 0))`,
-  ],
-  [
-    'js-string-builtins',
-    wasmJSStringBuiltinsEnabled(),
-    `(module
-      (import "wasm:js-string" "concat"
-        (func
-          (param externref externref)
-          (result (ref extern)))
-      )
-    )`,
-    {builtins: ['js-string']}
-  ]
+  ['branch-hinting', wasmBranchHintingEnabled(),
+    `(func
+      i32.const 0
+      (@metadata.code.branch_hint "\\00") if
+    end)`],
 ];
 
 for (let [name, enabled, test, options] of releasedFeatures) {

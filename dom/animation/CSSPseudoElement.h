@@ -8,9 +8,8 @@
 #define mozilla_dom_CSSPseudoElement_h
 
 #include "js/TypeDecls.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/dom/BindingDeclarations.h"
 #include "nsCSSPseudoElements.h"
 #include "nsWrapperCache.h"
 

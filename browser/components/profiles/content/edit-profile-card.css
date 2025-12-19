@@ -4,30 +4,36 @@
 
 @import url("chrome://browser/content/profiles/profiles-pages.css");
 
-#profile-content {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-xlarge);
+:host(:not([iscopy])) {
+  #profile-content {
+    gap: var(--space-xlarge);
+  }
 }
 
-#profile-content h2[data-l10n-id="edit-profile-page-header"] {
+#profile-content h1[data-l10n-id="edit-profile-page-header"] {
   margin-block: 0;
 }
 
-#header-avatar {
-  -moz-context-properties: fill, stroke;
+.avatar-header-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-small);
+  align-items: center;
 
-  width: var(--header-avatar-size);
-  height: var(--header-avatar-size);
-  border-radius: var(--border-radius-circle);
-  margin-inline-end: var(--space-xxlarge);
+  .avatar-selector-parent {
+    position: relative;
+  }
+
+  profile-avatar-selector {
+    position: absolute;
+    inset-inline-start: -140px;
+  }
 }
 
 #profile-name-area {
   display: flex;
   flex-direction: column;
   gap: var(--space-xsmall);
-  margin-block: 0 var(--space-large);
 }
 
 #profile-name-area label {
@@ -44,21 +50,13 @@
   }
 }
 
-.message-parent {
-  position: relative;
-  margin-block-end: var(--space-medium);
-}
-
 .message {
   display: inline-flex;
   gap: var(--space-xsmall);
   padding: var(--space-xsmall);
 
-  position: absolute;
-  inset-inline-start: 0;
-
   &[hidden] {
-    visibility: hidden;
+    display: none;
   }
 
   > .message-icon {
@@ -78,18 +76,10 @@
   color: var(--icon-color-success);
 }
 
-#themes::part(inputs) {
-  margin-top: var(--space-medium);
+.avatar-item {
+  --visual-picker-item-border-radius: var(--border-radius-circle);
 }
 
-#avatars::part(inputs) {
-  margin-top: var(--space-medium);
-}
-
-#avatars::part(inputs),
-#themes::part(inputs) {
-  flex-direction: row;
-  flex-wrap: wrap;
-  row-gap: var(--space-small);
-  column-gap: var(--space-medium);
+.theme-item {
+  --visual-picker-item-border-radius: 10px;
 }

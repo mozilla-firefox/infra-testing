@@ -14,8 +14,10 @@
 #include <memory>
 #include <optional>
 
+#include "absl/strings/str_cat.h"
 #include "api/crypto/crypto_options.h"
 #include "api/dtls_transport_interface.h"
+#include "api/environment/environment.h"
 #include "api/scoped_refptr.h"
 #include "api/test/rtc_error_matchers.h"
 #include "api/units/time_delta.h"
@@ -36,15 +38,17 @@
 #include "rtc_base/ssl_fingerprint.h"
 #include "rtc_base/ssl_identity.h"
 #include "rtc_base/ssl_stream_adapter.h"
-#include "rtc_base/string_encode.h"
 #include "rtc_base/thread.h"
+#include "test/create_test_environment.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
-#include "test/scoped_key_value_config.h"
 #include "test/wait_until.h"
 
-const int kRtpAuthTagLen = 10;
-static const int kTimeout = 10000;
+namespace webrtc {
+namespace {
+
+constexpr int kRtpAuthTagLen = 10;
+constexpr int kTimeout = 10000;
 
 /* A test using a DTLS-SRTP transport on one side and
  * SrtpTransport+DtlsTransport on the other side, connected by a
@@ -53,14 +57,14 @@ static const int kTimeout = 10000;
 class DtlsSrtpTransportIntegrationTest : public ::testing::Test {
  protected:
   DtlsSrtpTransportIntegrationTest()
-      : client_ice_transport_(MakeIceTransport(cricket::ICEROLE_CONTROLLING)),
-        server_ice_transport_(MakeIceTransport(cricket::ICEROLE_CONTROLLED)),
+      : client_ice_transport_(MakeIceTransport(webrtc::ICEROLE_CONTROLLING)),
+        server_ice_transport_(MakeIceTransport(webrtc::ICEROLE_CONTROLLED)),
         client_dtls_transport_(MakeDtlsTransport(client_ice_transport_.get())),
         server_dtls_transport_(MakeDtlsTransport(server_ice_transport_.get())),
         client_certificate_(MakeCertificate()),
         server_certificate_(MakeCertificate()),
-        dtls_srtp_transport_(false, field_trials_),
-        srtp_transport_(false, field_trials_) {
+        dtls_srtp_transport_(false, env_.field_trials()),
+        srtp_transport_(false, env_.field_trials()) {
     dtls_srtp_transport_.SetDtlsTransports(server_dtls_transport_.get(),
                                            nullptr);
     srtp_transport_.SetRtpPacketTransport(client_ice_transport_.get());
@@ -72,37 +76,37 @@ class DtlsSrtpTransportIntegrationTest : public ::testing::Test {
     srtp_transport_.RegisterRtpDemuxerSink(demuxer_criteria,
                                            &srtp_transport_observer_);
   }
-  ~DtlsSrtpTransportIntegrationTest() {
+  ~DtlsSrtpTransportIntegrationTest() override {
     dtls_srtp_transport_.UnregisterRtpDemuxerSink(
         &dtls_srtp_transport_observer_);
     srtp_transport_.UnregisterRtpDemuxerSink(&srtp_transport_observer_);
   }
 
-  rtc::scoped_refptr<rtc::RTCCertificate> MakeCertificate() {
-    return rtc::RTCCertificate::Create(
-        rtc::SSLIdentity::Create("test", rtc::KT_DEFAULT));
+  webrtc::scoped_refptr<webrtc::RTCCertificate> MakeCertificate() {
+    return webrtc::RTCCertificate::Create(
+        webrtc::SSLIdentity::Create("test", webrtc::KT_DEFAULT));
   }
-  std::unique_ptr<cricket::FakeIceTransport> MakeIceTransport(
-      cricket::IceRole role) {
-    auto ice_transport = std::make_unique<cricket::FakeIceTransport>(
-        "fake_" + rtc::ToString(static_cast<int>(role)), 0);
+  std::unique_ptr<webrtc::FakeIceTransport> MakeIceTransport(
+      webrtc::IceRole role) {
+    auto ice_transport = std::make_unique<webrtc::FakeIceTransport>(
+        "fake_" + absl::StrCat(static_cast<int>(role)), 0);
     ice_transport->SetAsync(true);
     ice_transport->SetAsyncDelay(0);
     ice_transport->SetIceRole(role);
     return ice_transport;
   }
 
-  std::unique_ptr<cricket::DtlsTransport> MakeDtlsTransport(
-      cricket::FakeIceTransport* ice_transport) {
-    return std::make_unique<cricket::DtlsTransport>(
-        ice_transport, webrtc::CryptoOptions(),
-        /*event_log=*/nullptr, rtc::SSL_PROTOCOL_DTLS_12);
+  std::unique_ptr<webrtc::DtlsTransportInternalImpl> MakeDtlsTransport(
+      webrtc::FakeIceTransport* ice_transport) {
+    return std::make_unique<webrtc::DtlsTransportInternalImpl>(
+        env_, ice_transport, webrtc::CryptoOptions(),
+        webrtc::SSL_PROTOCOL_DTLS_12);
   }
   void SetRemoteFingerprintFromCert(
-      cricket::DtlsTransport* transport,
-      const rtc::scoped_refptr<rtc::RTCCertificate>& cert) {
-    std::unique_ptr<rtc::SSLFingerprint> fingerprint =
-        rtc::SSLFingerprint::CreateFromCertificate(*cert);
+      webrtc::DtlsTransportInternalImpl* transport,
+      const webrtc::scoped_refptr<webrtc::RTCCertificate>& cert) {
+    std::unique_ptr<webrtc::SSLFingerprint> fingerprint =
+        webrtc::SSLFingerprint::CreateFromCertificate(*cert);
 
     transport->SetRemoteParameters(
         fingerprint->algorithm,
@@ -112,9 +116,9 @@ class DtlsSrtpTransportIntegrationTest : public ::testing::Test {
 
   void Connect() {
     client_dtls_transport_->SetLocalCertificate(client_certificate_);
-    client_dtls_transport_->SetDtlsRole(rtc::SSL_SERVER);
+    client_dtls_transport_->SetDtlsRole(webrtc::SSL_SERVER);
     server_dtls_transport_->SetLocalCertificate(server_certificate_);
-    server_dtls_transport_->SetDtlsRole(rtc::SSL_CLIENT);
+    server_dtls_transport_->SetDtlsRole(webrtc::SSL_CLIENT);
 
     SetRemoteFingerprintFromCert(server_dtls_transport_.get(),
                                  client_certificate_);
@@ -147,16 +151,16 @@ class DtlsSrtpTransportIntegrationTest : public ::testing::Test {
         server_dtls_transport_->GetSrtpCryptoSuite(&selected_crypto_suite));
     int key_len;
     int salt_len;
-    ASSERT_TRUE(rtc::GetSrtpKeyAndSaltLengths((selected_crypto_suite), &key_len,
-                                              &salt_len));
+    ASSERT_TRUE(webrtc::GetSrtpKeyAndSaltLengths((selected_crypto_suite),
+                                                 &key_len, &salt_len));
 
     // Extract the keys. The order depends on the role!
-    rtc::ZeroOnFreeBuffer<uint8_t> dtls_buffer(key_len * 2 + salt_len * 2);
+    webrtc::ZeroOnFreeBuffer<uint8_t> dtls_buffer(key_len * 2 + salt_len * 2);
     ASSERT_TRUE(server_dtls_transport_->ExportSrtpKeyingMaterial(dtls_buffer));
 
-    rtc::ZeroOnFreeBuffer<unsigned char> client_write_key(
+    webrtc::ZeroOnFreeBuffer<unsigned char> client_write_key(
         &dtls_buffer[0], key_len, key_len + salt_len);
-    rtc::ZeroOnFreeBuffer<unsigned char> server_write_key(
+    webrtc::ZeroOnFreeBuffer<unsigned char> server_write_key(
         &dtls_buffer[key_len], key_len, key_len + salt_len);
     client_write_key.AppendData(&dtls_buffer[key_len + key_len], salt_len);
     server_write_key.AppendData(&dtls_buffer[key_len + key_len + salt_len],
@@ -167,10 +171,10 @@ class DtlsSrtpTransportIntegrationTest : public ::testing::Test {
         client_write_key, {}));
   }
 
-  rtc::CopyOnWriteBuffer CreateRtpPacket() {
+  webrtc::CopyOnWriteBuffer CreateRtpPacket() {
     size_t rtp_len = sizeof(kPcmuFrame);
     size_t packet_size = rtp_len + kRtpAuthTagLen;
-    rtc::Buffer rtp_packet_buffer(packet_size);
+    webrtc::Buffer rtp_packet_buffer(packet_size);
     char* rtp_packet_data = rtp_packet_buffer.data<char>();
     memcpy(rtp_packet_data, kPcmuFrame, rtp_len);
 
@@ -178,11 +182,11 @@ class DtlsSrtpTransportIntegrationTest : public ::testing::Test {
   }
 
   void SendRtpPacketFromSrtpToDtlsSrtp() {
-    rtc::PacketOptions options;
-    rtc::CopyOnWriteBuffer packet = CreateRtpPacket();
+    webrtc::AsyncSocketPacketOptions options;
+    webrtc::CopyOnWriteBuffer packet = CreateRtpPacket();
 
     EXPECT_TRUE(srtp_transport_.SendRtpPacket(&packet, options,
-                                              cricket::PF_SRTP_BYPASS));
+                                              webrtc::PF_SRTP_BYPASS));
     EXPECT_THAT(webrtc::WaitUntil(
                     [&] { return dtls_srtp_transport_observer_.rtp_count(); },
                     ::testing::Eq(1),
@@ -198,11 +202,11 @@ class DtlsSrtpTransportIntegrationTest : public ::testing::Test {
   }
 
   void SendRtpPacketFromDtlsSrtpToSrtp() {
-    rtc::PacketOptions options;
-    rtc::CopyOnWriteBuffer packet = CreateRtpPacket();
+    webrtc::AsyncSocketPacketOptions options;
+    webrtc::CopyOnWriteBuffer packet = CreateRtpPacket();
 
     EXPECT_TRUE(dtls_srtp_transport_.SendRtpPacket(&packet, options,
-                                                   cricket::PF_SRTP_BYPASS));
+                                                   webrtc::PF_SRTP_BYPASS));
     EXPECT_THAT(
         webrtc::WaitUntil([&] { return srtp_transport_observer_.rtp_count(); },
                           ::testing::Eq(1),
@@ -217,18 +221,18 @@ class DtlsSrtpTransportIntegrationTest : public ::testing::Test {
   }
 
  private:
-  rtc::AutoThread main_thread_;
-  rtc::ScopedFakeClock fake_clock_;
-  webrtc::test::ScopedKeyValueConfig field_trials_;
+  webrtc::AutoThread main_thread_;
+  webrtc::ScopedFakeClock fake_clock_;
+  const Environment env_ = CreateTestEnvironment();
 
-  std::unique_ptr<cricket::FakeIceTransport> client_ice_transport_;
-  std::unique_ptr<cricket::FakeIceTransport> server_ice_transport_;
+  std::unique_ptr<webrtc::FakeIceTransport> client_ice_transport_;
+  std::unique_ptr<webrtc::FakeIceTransport> server_ice_transport_;
 
-  std::unique_ptr<cricket::DtlsTransport> client_dtls_transport_;
-  std::unique_ptr<cricket::DtlsTransport> server_dtls_transport_;
+  std::unique_ptr<webrtc::DtlsTransportInternalImpl> client_dtls_transport_;
+  std::unique_ptr<webrtc::DtlsTransportInternalImpl> server_dtls_transport_;
 
-  rtc::scoped_refptr<rtc::RTCCertificate> client_certificate_;
-  rtc::scoped_refptr<rtc::RTCCertificate> server_certificate_;
+  webrtc::scoped_refptr<webrtc::RTCCertificate> client_certificate_;
+  webrtc::scoped_refptr<webrtc::RTCCertificate> server_certificate_;
 
   webrtc::DtlsSrtpTransport dtls_srtp_transport_;
   webrtc::SrtpTransport srtp_transport_;
@@ -248,3 +252,6 @@ TEST_F(DtlsSrtpTransportIntegrationTest, SendRtpFromDtlsSrtpToSrtp) {
   SetupClientKeysManually();
   SendRtpPacketFromDtlsSrtpToSrtp();
 }
+
+}  // namespace
+}  // namespace webrtc

@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:moz="http://mozac.org/tools" xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!--
     #######################################################################################
 
@@ -55,7 +62,6 @@
   <string name="menu_settings">Nustatymai</string>
   <string name="menu_about">Apie</string>
   <string name="menu_help">Žinynas</string>
-  <string name="menu_rights" moz:removedIn="137">Jūsų teisės</string>
   <!--
     Menu item: This is the label for a menu entry that shows how many trackers have been blocked
     for the currently loaded website. The number of blocked trackers is shown below this label.
@@ -119,16 +125,7 @@
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote">&lt;p&gt;„%1$s“ suteikia jums kontrolę.&lt;/p&gt;
-&lt;p&gt;Naudokite ją kaip privačią naršyklę:
-  &lt;ul&gt;
-    &lt;li&gt;Ieškokite ir naršykite pačioje programoje&lt;/li&gt;
-    &lt;li&gt;Blokuokite stebėjimo elementus (arba pakeiskite nustatymus, jeigu norite juos leisti)&lt;/li&gt;
-    &lt;li&gt;Išvalykite, norėdami pašalinti slapukus, paieškos ir naršymo žurnalus&lt;/li&gt;
-  &lt;/ul&gt;
-&lt;/p&gt;
-&lt;p&gt;„%1$s“ yra „Mozillos“ kūrinys. Mūsų misija yra skatinti sveiką, atvirą internetą.&lt;br/&gt;
-&lt;a href="%2$s"&gt;Sužinoti daugiau&lt;/a&gt;&lt;/p&gt;</string>
+  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>„%1$s“ suteikia jums kontrolę.</p>\n<p>Naudokite ją kaip privačią naršyklę:\n<ul>\n<li>Ieškokite ir naršykite pačioje programoje</li>\n<li>Blokuokite stebėjimo elementus (arba pakeiskite nustatymus, jeigu norite juos leisti)</li>\n<li>Išvalykite, norėdami pašalinti slapukus, paieškos ir naršymo žurnalus</li>\n</ul> </p>\n<p>„%1$s“ yra „Mozillos“ kūrinys. Mūsų misija yra skatinti sveiką, atvirą internetą.<br/>\n<a href=\"%2$s\">Sužinoti daugiau</a></p>]]></string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">Privatumas ir saugumas</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -464,36 +461,6 @@
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
   -->
   <string name="download_firefox" tools:ignore="BrandUsage">Parsisiųsti „Firefox“</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-  -->
-  <string name="your_rights_content1" moz:removedIn="137">„%1$s“ yra laisvoji atviroji programa, kuriama „Mozillos“ ir kitų bendradarbių.</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-    %2$s will be replaced with a URL linking to the MPL (e.g. https://www.mozilla.org/en-US/MPL/)
-  -->
-  <string name="your_rights_content2" moz:removedIn="137" tools:ignore="IncorrectStraightDoubleQuote">Jums leidžiama naudotis „%1$s“ programa, vadovaujantis &lt;a href="%2$s"&gt;„Mozillos“ viešąja licencija&lt;/a&gt; ir kitomis atviromis licencijomis.</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-    %2$s will be replaced with a URL linking to the trademark policy (e.g. https://www.mozilla.org/foundation/trademarks/policy/)
-  -->
-  <string name="your_rights_content3" moz:removedIn="137" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote">Jums nesuteikiamos jokios prekės ženklo teisės ar licencijos į „Mozilla Foundation“ ar kitų šalių prekės ženklus, tame tarpe – į „Mozilla“, „Firefox“ ar „%1$s“ vardus ar logotipus. Papildomą informaciją apie prekės ženklus galite rasti &lt;a href="%2$s"&gt;čia&lt;/a&gt;.</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-    %2$s will be replaced with a URL linking to the list of licenses used by the dependencies.
-  -->
-  <string name="your_rights_content4" moz:removedIn="137" tools:ignore="IncorrectStraightDoubleQuote">Papildoma „%1$s“ pirminis kodas yra pateikiamas su įvairiomis kitomis, laisvomis ir atviromis &lt;a href="%2$s"&gt;licencijomis&lt;/a&gt;.</string>
-  <!--
-    Text shown in the "Your rights" screen.
-    %1$s will be replaced with the name of the app (e.g. Firefox Focus)
-    %2$s will be replaced with a URL linking to the GPL
-    %3$s will be replaced with a URL linking to the tracking protection wiki page (e.g. https://wiki.mozilla.org/Security/Tracking_protection#Lists)
-  -->
-  <string name="your_rights_content5" moz:removedIn="137" tools:ignore="IncorrectStraightDoubleQuote">„%1$s“ naudoja blokavimo sąrašus, kuriuos teikia „Disconnect, Inc.“, kaip atskirus ir nepriklausomus darbus vadovaujantis &lt;a href="%2$s"&gt;„GNU General Public License v3“&lt;/a&gt; licencija, ir pasiekiamus &lt;a href="%3$s"&gt;čia&lt;/a&gt;.</string>
   <!-- Text shown in prompts for GeckoView -->
   <string name="gv_prompt_username_hint">Naudotojo vardas</string>
   <string name="gv_prompt_password_hint">Slaptažodis</string>
@@ -556,20 +523,6 @@
   <string name="preference_block_autoplay_audio_only_summary">Rekomenduojama</string>
   <!-- Preference for block autoplay audio and video -->
   <string name="preference_block_autoplay_audio_video">Blokuoti garsus ir vaizdo įrašus</string>
-  <!-- Preference for studies -->
-  <string name="preference_studies">Tyrimai</string>
-  <!-- Preference for studies summary -->
-  <string name="preference_studies_summary" tools:ignore="BrandUsage">„Firefox“ retkarčiais gali įdiegti ir vykdyti tyrimus.</string>
-  <!-- Learn more link for studies, links to an article for more information about studies. -->
-  <string name="studies_learn_more">Sužinoti daugiau</string>
-  <!-- Dialog message shown when some changes are made on studies -->
-  <string name="studies_restart_app" moz:removedIn="137">Norint pritaikyti pakeitimus, programa bus uždaryta</string>
-  <!-- Title of the remove studies button -->
-  <string name="studies_remove">Pašalinti</string>
-  <!-- Title of the active section on the studies list -->
-  <string name="studies_active">Aktyvūs</string>
-  <!-- Title of the completed section on the studies list -->
-  <string name="studies_completed">Užbaigti</string>
   <!-- Preference to enable remote debugging of the app via USB or Wi-Fi -->
   <string name="preference_remote_debugging">Nuotolinis derinimas per USB arba belaidį tinklą</string>
   <!--
@@ -610,7 +563,7 @@
     Tip displayed on home view explaining how to disable tracking protection
     The new line here must be kept as the second half of the string is clickable for the user.
   -->
-  <string name="tip_disable_tracking_protection">Svetainė veikia netinkamai?\n Pabandykite išjungti apsaugą nuo stebėjimo</string>
+  <string name="tip_disable_tracking_protection">Svetainė veikia netinkamai?\nPabandykite išjungti apsaugą nuo stebėjimo</string>
   <!--
     Tip displayed on home view explaining how to add sites to homescreen
     %1$s is replaced with a line break in the application.
@@ -621,17 +574,17 @@
     %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     The new line here must be kept as the second half of the string is clickable for the user.
   -->
-  <string name="tip_set_default_browser">Atverkite visus saitus „%1$s“ programoje\n Paskirkite „%1$s“ numatytąja naršykle</string>
+  <string name="tip_set_default_browser">Atverkite visus saitus „%1$s“ programoje\nPaskirkite „%1$s“ numatytąja naršykle</string>
   <!--
     Tip displayed on home view explaining how to add a custom autocomplete URL
     The new line here must be kept as the second half of the string is clickable for the user.
   -->
-  <string name="tip_autocomplete_url">Automatiškai užbaikite lankomiausių svetainių adresus\n Spustelėkite ir palaikykite bet kurį URL adresą adreso lauke</string>
+  <string name="tip_autocomplete_url">Automatiškai užbaikite lankomiausių svetainių adresus\nSpustelėkite ir palaikykite bet kurį URL adresą adreso lauke</string>
   <!--
     Tip displayed on home view explaining how to add a custom autocomplete URL
     The new line here must be kept as the second half of the string is clickable for the user.
   -->
-  <string name="tip_open_in_new_tab">Atverkite saitą naujoje kortelėje\n Spustelėkite ir palaikykite bet kurį saitą tinklalapyje</string>
+  <string name="tip_open_in_new_tab">Atverkite saitą naujoje kortelėje\nSpustelėkite ir palaikykite bet kurį saitą tinklalapyje</string>
   <!-- Tip displayed on home view explaining how to add a custom autocomplete URL -->
   <string name="tip_disable_tips2">Išjungti patarimus pradžios ekrane</string>
   <!-- Label for the snackbar when a user opens a new tab -->
@@ -712,7 +665,7 @@
     Text for context menu additional note.
     %1$s is a placeholder for the app name.
   -->
-  <string name="contextmenu_erased_images_note2">Įrašyti ir pasidalinti paveikslai &lt;b&gt;nebus&lt;/b&gt; pašalinti jums išvalius „%1$s“ žurnalą</string>
+  <string name="contextmenu_erased_images_note2"><![CDATA[Įrašyti ir pasidalinti paveikslai <b>nebus</b> pašalinti jums išvalius „%1$s“ žurnalą]]></string>
   <!--
     Theme Preferences
 

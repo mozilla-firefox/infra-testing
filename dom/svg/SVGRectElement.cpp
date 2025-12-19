@@ -5,15 +5,17 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/SVGRectElement.h"
+
+#include <algorithm>
+
+#include "SVGGeometryProperty.h"
 #include "mozilla/dom/SVGLengthBinding.h"
 #include "mozilla/dom/SVGRectElementBinding.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Matrix.h"
-#include "mozilla/gfx/Rect.h"
 #include "mozilla/gfx/PathHelpers.h"
+#include "mozilla/gfx/Rect.h"
 #include "nsGkAtoms.h"
-#include "SVGGeometryProperty.h"
-#include <algorithm>
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(Rect)
 
@@ -226,12 +228,7 @@ already_AddRefed<Path> SVGRectElement::BuildPath(PathBuilder* aBuilder) {
 
   if (rx == 0 && ry == 0) {
     // Optimization for the no rounded corners case.
-    Rect r(x, y, width, height);
-    aBuilder->MoveTo(r.TopLeft());
-    aBuilder->LineTo(r.TopRight());
-    aBuilder->LineTo(r.BottomRight());
-    aBuilder->LineTo(r.BottomLeft());
-    aBuilder->Close();
+    AppendRectToPath(aBuilder, Rect(x, y, width, height));
   } else {
     // Clamp rx and ry to half the rect's width and height respectively:
     rx = std::min(rx, width / 2);
@@ -257,7 +254,8 @@ bool SVGRectElement::IsLengthChangedViaCSS(const ComputedStyle& aNewStyle,
          newSVGReset.mRy != oldSVGReset.mRy;
 }
 
-nsCSSPropertyID SVGRectElement::GetCSSPropertyIdForAttrEnum(uint8_t aAttrEnum) {
+NonCustomCSSPropertyId SVGRectElement::GetCSSPropertyIdForAttrEnum(
+    uint8_t aAttrEnum) {
   switch (aAttrEnum) {
     case ATTR_X:
       return eCSSProperty_x;

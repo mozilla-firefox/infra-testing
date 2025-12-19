@@ -57,8 +57,6 @@ static const char kPrefCookiePurgeAge[] = "network.cookie.purgeAge";
 static const uint32_t kMaxCookiesPerHost = 180;
 static const uint32_t kCookieQuotaPerHost = 150;
 static const uint32_t kMaxNumberOfCookies = 3000;
-static const uint32_t kMaxBytesPerCookie = 4096;
-static const uint32_t kMaxBytesPerPath = 1024;
 
 static const int64_t kCookiePurgeAge =
     int64_t(30 * 24 * 60 * 60) * PR_USEC_PER_SEC;  // 30 days in microseconds
@@ -91,14 +89,6 @@ class CookieCommons final {
                              uint32_t aRejectedReason,
                              CookieOperation aOperation);
 
-  static bool CheckPathSize(const CookieStruct& aCookieData);
-
-  static bool CheckNameAndValueSize(const CookieStruct& aCookieData);
-
-  static bool CheckName(const CookieStruct& aCookieData);
-
-  static bool CheckValue(const CookieStruct& aCookieData);
-
   static bool CheckCookiePermission(nsIChannel* aChannel,
                                     CookieStruct& aCookieData);
 
@@ -115,15 +105,16 @@ class CookieCommons final {
   static already_AddRefed<nsICookieJarSettings> GetCookieJarSettings(
       nsIChannel* aChannel);
 
-  static bool ShouldIncludeCrossSiteCookie(Cookie* aCookie,
+  static bool ShouldIncludeCrossSiteCookie(Cookie* aCookie, nsIURI* aHostURI,
                                            bool aPartitionForeign,
                                            bool aInPrivateBrowsing,
                                            bool aUsingStorageAccess,
                                            bool aOn3pcbException);
 
   static bool ShouldIncludeCrossSiteCookie(
-      int32_t aSameSiteAttr, bool aCookiePartitioned, bool aPartitionForeign,
-      bool aInPrivateBrowsing, bool aUsingStorageAccess, bool aOn3pcbException);
+      nsIURI* aHostURI, int32_t aSameSiteAttr, bool aCookiePartitioned,
+      bool aPartitionForeign, bool aInPrivateBrowsing, bool aUsingStorageAccess,
+      bool aOn3pcbException);
 
   static bool IsFirstPartyPartitionedCookieWithoutCHIPS(
       Cookie* aCookie, const nsACString& aBaseDomain,
@@ -182,6 +173,23 @@ class CookieCommons final {
   static SecurityChecksResult CheckGlobalAndRetrieveCookiePrincipals(
       mozilla::dom::Document* aDocument, nsIPrincipal** aCookiePrincipal,
       nsIPrincipal** aCookiePartitionedPrincipal);
+
+  // Return a reduced expiry attribute value if needed.
+  static int64_t MaybeCapExpiry(int64_t aCurrentTimeInMSec,
+                                int64_t aExpiryInMSec);
+
+  // Return a reduced expiry value starting from the max-age attribute and the
+  // current time.
+  static int64_t MaybeCapMaxAge(int64_t aCurrentTimeInMSec,
+                                int64_t aMaxAgeInSec);
+
+  // returns true if 'a' is equal to or a subdomain of 'b',
+  // assuming no leading dots are present.
+  static bool IsSubdomainOf(const nsACString& a, const nsACString& b);
+
+  // Returns the current time in USecs using a nsIChannel, which corresponds to
+  // the response start time.
+  static int64_t GetCurrentTimeInUSecFromChannel(nsIChannel* aChannel);
 };
 
 }  // namespace net

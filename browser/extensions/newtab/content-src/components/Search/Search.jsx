@@ -2,22 +2,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* globals ContentSearchUIController, ContentSearchHandoffUIController */
+/* globals ContentSearchHandoffUIController */
 
 import { actionCreators as ac, actionTypes as at } from "common/Actions.mjs";
 import { connect } from "react-redux";
-import { IS_NEWTAB } from "content-src/lib/constants";
 import { Logo } from "content-src/components/Logo/Logo";
 import React from "react";
 
 export class _Search extends React.PureComponent {
   constructor(props) {
     super(props);
-    this.onSearchClick = this.onSearchClick.bind(this);
     this.onSearchHandoffClick = this.onSearchHandoffClick.bind(this);
     this.onSearchHandoffPaste = this.onSearchHandoffPaste.bind(this);
     this.onSearchHandoffDrop = this.onSearchHandoffDrop.bind(this);
-    this.onInputMount = this.onInputMount.bind(this);
     this.onInputMountHandoff = this.onInputMountHandoff.bind(this);
     this.onSearchHandoffButtonMount =
       this.onSearchHandoffButtonMount.bind(this);
@@ -28,10 +25,6 @@ export class _Search extends React.PureComponent {
     if (event.detail.type === "Search") {
       this.props.dispatch(ac.UserEvent({ event: "SEARCH" }));
     }
-  }
-
-  onSearchClick(event) {
-    window.gContentSearchController.search(event);
   }
 
   doSearchHandoff(text) {
@@ -86,42 +79,6 @@ export class _Search extends React.PureComponent {
     }
   }
 
-  componentWillUnmount() {
-    delete window.gContentSearchController;
-  }
-
-  onInputMount(input) {
-    if (input) {
-      // The "healthReportKey" and needs to be "newtab" or "abouthome" so that
-      // BrowserUsageTelemetry.sys.mjs knows to handle events with this name, and
-      // can add the appropriate telemetry probes for search. Without the correct
-      // name, certain tests like browser_UsageTelemetry_content.js will fail
-      // (See github ticket #2348 for more details)
-      const healthReportKey = IS_NEWTAB ? "newtab" : "abouthome";
-
-      // The "searchSource" needs to be "newtab" or "homepage" and is sent with
-      // the search data and acts as context for the search request (See
-      // nsISearchEngine.getSubmission). It is necessary so that search engine
-      // plugins can correctly atribute referrals. (See github ticket #3321 for
-      // more details)
-      const searchSource = IS_NEWTAB ? "newtab" : "homepage";
-
-      // gContentSearchController needs to exist as a global so that tests for
-      // the existing about:home can find it; and so it allows these tests to pass.
-      // In the future, when activity stream is default about:home, this can be renamed
-      window.gContentSearchController = new ContentSearchUIController(
-        input,
-        input.parentNode,
-        healthReportKey,
-        searchSource
-      );
-      addEventListener("ContentSearchClient", this);
-    } else {
-      window.gContentSearchController = null;
-      removeEventListener("ContentSearchClient", this);
-    }
-  }
-
   onInputMountHandoff(input) {
     if (input) {
       // The handoff UI controller helps us set the search icon and reacts to
@@ -152,50 +109,31 @@ export class _Search extends React.PureComponent {
     return (
       <div className={wrapperClassName}>
         {this.props.showLogo && <Logo />}
-        {!this.props.handoffEnabled && (
-          <div className="search-inner-wrapper">
+        <div className="search-inner-wrapper">
+          <button
+            className="search-handoff-button"
+            ref={this.onSearchHandoffButtonMount}
+            onClick={this.onSearchHandoffClick}
+            tabIndex="-1"
+          >
+            <div className="fake-textbox" />
             <input
-              id="newtab-search-text"
-              data-l10n-id="newtab-search-box-input"
-              maxLength="256"
-              ref={this.onInputMount}
               type="search"
-            />
-            <button
-              id="searchSubmit"
-              className="search-button"
-              data-l10n-id="newtab-search-box-search-button"
-              onClick={this.onSearchClick}
-            />
-          </div>
-        )}
-        {this.props.handoffEnabled && (
-          <div className="search-inner-wrapper">
-            <button
-              className="search-handoff-button"
-              ref={this.onSearchHandoffButtonMount}
-              onClick={this.onSearchHandoffClick}
+              className="fake-editable"
               tabIndex="-1"
-            >
-              <div className="fake-textbox" />
-              <input
-                type="search"
-                className="fake-editable"
-                tabIndex="-1"
-                aria-hidden="true"
-                onDrop={this.onSearchHandoffDrop}
-                onPaste={this.onSearchHandoffPaste}
-                ref={this.onInputMountHandoff}
-              />
-              <div
-                className="fake-caret"
-                ref={el => {
-                  this.fakeCaret = el;
-                }}
-              />
-            </button>
-          </div>
-        )}
+              aria-hidden="true"
+              onDrop={this.onSearchHandoffDrop}
+              onPaste={this.onSearchHandoffPaste}
+              ref={this.onInputMountHandoff}
+            />
+            <div
+              className="fake-caret"
+              ref={el => {
+                this.fakeCaret = el;
+              }}
+            />
+          </button>
+        </div>
       </div>
     );
   }

@@ -6,13 +6,13 @@ import logging
 import os
 import re
 from collections import defaultdict, namedtuple
+from functools import reduce
+from io import StringIO
 from itertools import chain
 from operator import itemgetter
 
 import mozpack.path as mozpath
-import six
 from mozpack.manifests import InstallManifest
-from six import StringIO
 
 from mozbuild import frontend
 from mozbuild.frontend.context import (
@@ -47,6 +47,7 @@ from ..frontend.data import (
     HostSources,
     InstallationTarget,
     JARManifest,
+    LegacyRunTests,
     Linkable,
     LocalInclude,
     LocalizedFiles,
@@ -166,8 +167,7 @@ class BackendMakeFile:
         self.fh.write(buf)
 
     def write_once(self, buf):
-        buf = six.ensure_text(buf)
-        if "\n" + buf not in six.ensure_text(self.fh.getvalue()):
+        if "\n" + buf not in self.fh.getvalue().decode():
             self.write(buf)
 
     # For compatibility with makeutil.Makefile
@@ -208,8 +208,8 @@ class RecursiveMakeTraversal:
     SubDirectoriesTuple = namedtuple("SubDirectories", SubDirectoryCategories)
 
     class SubDirectories(SubDirectoriesTuple):
-        def __new__(self):
-            return RecursiveMakeTraversal.SubDirectoriesTuple.__new__(self, [], [])
+        def __new__(cls):
+            return RecursiveMakeTraversal.SubDirectoriesTuple.__new__(cls, [], [])
 
     def __init__(self):
         self._traversal = {}
@@ -302,11 +302,9 @@ class RecursiveMakeTraversal:
         if start not in self._traversal:
             return
         for node in parallel:
-            for n in self.traverse(node, filter):
-                yield n
+            yield from self.traverse(node, filter)
         for dir in sequential:
-            for d in self.traverse(dir, filter):
-                yield d
+            yield from self.traverse(dir, filter)
 
     def get_subdirs(self, dir):
         """
@@ -386,7 +384,7 @@ class RecursiveMakeBackend(MakeBackend):
         }
 
     def summary(self):
-        summary = super(RecursiveMakeBackend, self).summary()
+        summary = super().summary()
         summary.extend(
             "; {makefile_in:d} -> {makefile_out:d} Makefile",
             makefile_in=self._makefile_in_count,
@@ -523,6 +521,14 @@ class RecursiveMakeBackend(MakeBackend):
                     backend_file.write("%s := %s\n" % (k, path))
                 else:
                     backend_file.write("%s := %s\n" % (k, v))
+
+            # Directories with a Makefile containing XPI_PKGNAME can't be
+            # skipped and must run during the 'tools' tier.
+            if "XPI_PKGNAME" in obj.variables:
+                self._no_skip["tools"].add(backend_file.relobjdir)
+            if "XPI_TESTDIR" in obj.variables:
+                self._no_skip["misc"].add(backend_file.relobjdir)
+
         elif isinstance(obj, HostDefines):
             self._process_defines(obj, backend_file, which="HOST_DEFINES")
         elif isinstance(obj, Defines):
@@ -584,6 +590,9 @@ class RecursiveMakeBackend(MakeBackend):
 
         elif isinstance(obj, RustTests):
             self._process_rust_tests(obj, backend_file)
+
+        elif isinstance(obj, LegacyRunTests):
+            self._process_legacy_run_tests(obj, backend_file)
 
         elif isinstance(obj, Program):
             self._process_program(obj, backend_file)
@@ -762,7 +771,7 @@ class RecursiveMakeBackend(MakeBackend):
             rule.add_dependencies(["%s/pre-compile" % relobjdir])
 
         all_compile_deps = (
-            six.moves.reduce(lambda x, y: x | y, self._compile_graph.values())
+            reduce(lambda x, y: x | y, self._compile_graph.values())
             if self._compile_graph
             else set()
         )
@@ -992,29 +1001,19 @@ class RecursiveMakeBackend(MakeBackend):
                 obj.config = bf.environment
                 self._create_makefile(obj, stub=stub)
                 with open(obj.output_path, encoding="utf-8") as fh:
+                    topobjdir = self.environment.topobjdir
                     content = fh.read()
-                    # Directories with a Makefile containing a tools target, or
-                    # XPI_PKGNAME can't be skipped and must run during the
-                    # 'tools' tier.
-                    for t in ("XPI_PKGNAME", "tools"):
-                        if t not in content:
-                            continue
-                        if t == "tools" and not re.search(
-                            r"(?:^|\s)tools.*::", content, re.M
-                        ):
-                            continue
-                        if objdir == self.environment.topobjdir:
-                            continue
-                        self._no_skip["tools"].add(
-                            mozpath.relpath(objdir, self.environment.topobjdir)
-                        )
+                    # Directories with a Makefile containing a tools target
+                    # can't be skipped and must run during the 'tools' tier.
+                    if objdir != topobjdir and re.search(
+                        r"(?:^|\s)tools.*::", content, re.M
+                    ):
+                        self._no_skip["tools"].add(mozpath.relpath(objdir, topobjdir))
 
                     # Directories with a Makefile containing a check target
                     # can't be skipped and must run during the 'check' tier.
                     if re.search(r"(?:^|\s)check.*::", content, re.M):
-                        self._no_skip["check"].add(
-                            mozpath.relpath(objdir, self.environment.topobjdir)
-                        )
+                        self._no_skip["check"].add(mozpath.relpath(objdir, topobjdir))
 
                     # Detect any Makefile.ins that contain variables on the
                     # moz.build-only list
@@ -1242,6 +1241,45 @@ class RecursiveMakeBackend(MakeBackend):
         backend_file.write_once("CARGO_FILE := $(srcdir)/Cargo.toml\n")
         backend_file.write_once("RUST_TESTS := %s\n" % " ".join(obj.names))
         backend_file.write_once("RUST_TEST_FEATURES := %s\n" % " ".join(obj.features))
+
+    def _process_legacy_run_tests(self, obj, backend_file):
+        self._no_skip["check"].add(backend_file.relobjdir)
+        rules = Makefile()
+        for i, test in enumerate(obj.tests):
+            backend_file.write(f"check:: force-run-test{i}\n")
+            program, *args = test["args"]
+            program = self._pretty_path(Path(obj._context, program), backend_file)
+            args = [
+                (
+                    arg
+                    if arg.startswith("-")
+                    else self._pretty_path(Path(obj._context, arg), backend_file)
+                )
+                for arg in args
+            ]
+            args = [shell_quote(arg) for arg in args]
+            rule = rules.create_rule([f"force-run-test{i}"])
+            depends = [program] + [
+                self._pretty_path(Path(obj._context, dep), backend_file)
+                for dep in test["depends"]
+            ]
+            rule.add_dependencies(depends)
+
+            commands = []
+            if description := test["description"]:
+                commands.append(f"@echo Running {description}")
+            if env := test["env"]:
+                envargs = " ".join(
+                    make_quote(shell_quote(f"{k}={v}")) for k, v in env.items()
+                )
+                command = f"env {envargs} "
+            else:
+                command = ""
+            command += f"{program} "
+            command += " ".join(args)
+            commands.append(command)
+            rule.add_commands(commands)
+        rules.dump(backend_file.fh)
 
     def _process_simple_program(self, obj, backend_file):
         if obj.is_unit_test:
@@ -1475,7 +1513,7 @@ class RecursiveMakeBackend(MakeBackend):
             backend_file.write_once("%s: %s\n" % (obj_target, obj.symbols_file))
 
         for lib in shared_libs:
-            assert obj.KIND != "host" and obj.KIND != "wasm"
+            assert obj.KIND not in {"host", "wasm"}
             backend_file.write_once(
                 "SHARED_LIBS += %s\n" % self._pretty_path(lib.import_path, backend_file)
             )
@@ -1550,8 +1588,8 @@ class RecursiveMakeBackend(MakeBackend):
         install_manifest = self._install_manifests[manifest]
         reltarget = mozpath.relpath(target, path)
 
-        for path, files in files.walk():
-            target_var = (mozpath.join(target, path) if path else target).replace(
+        for subpath, subfiles in files.walk():
+            target_var = (mozpath.join(target, subpath) if subpath else target).replace(
                 "/", "_"
             )
             # We don't necessarily want to combine these, because non-wildcard
@@ -1561,9 +1599,9 @@ class RecursiveMakeBackend(MakeBackend):
             objdir_files = []
             absolute_files = []
 
-            for f in files:
+            for f in subfiles:
                 assert not isinstance(f, RenamedSourcePath)
-                dest_dir = mozpath.join(reltarget, path)
+                dest_dir = mozpath.join(reltarget, subpath)
                 dest_file = mozpath.join(dest_dir, f.target_basename)
                 if not isinstance(f, ObjDirPath):
                     if "*" in f:
@@ -1579,7 +1617,9 @@ class RecursiveMakeBackend(MakeBackend):
                         else:
                             install_manifest.add_pattern_link(f.srcdir, f, dest_dir)
                     elif isinstance(f, AbsolutePath):
-                        if not f.full_path.lower().endswith((".dll", ".pdb", ".so")):
+                        if not f.full_path.lower().endswith(
+                            (".dll", ".pdb", ".so", ".dylib")
+                        ):
                             raise Exception(
                                 "Absolute paths installed to FINAL_TARGET_FILES must"
                                 " only be shared libraries or associated debug"
@@ -1592,7 +1632,7 @@ class RecursiveMakeBackend(MakeBackend):
                 else:
                     install_manifest.add_optional_exists(dest_file)
                     objdir_files.append(self._pretty_path(f, backend_file))
-            install_location = "$(DEPTH)/%s" % mozpath.join(target, path)
+            install_location = "$(DEPTH)/%s" % mozpath.join(target, subpath)
             if objdir_files:
                 tier = "export" if obj.install_target == "dist/include" else "misc"
                 # We cannot generate multilocale.txt during misc at the moment.
@@ -1624,16 +1664,16 @@ class RecursiveMakeBackend(MakeBackend):
         # Note that if this becomes a manifest, OBJDIR_PP_FILES will likely
         # still need to use PP_TARGETS internally because we can't have an
         # install manifest for the root of the objdir.
-        for i, (path, files) in enumerate(files.walk()):
+        for i, (walk_path, walk_files) in enumerate(files.walk()):
             self._no_skip["misc"].add(backend_file.relobjdir)
             var = "%s_%d" % (name, i)
-            for f in files:
+            for f in walk_files:
                 backend_file.write(
                     "%s += %s\n" % (var, self._pretty_path(f, backend_file))
                 )
             backend_file.write(
                 "%s_PATH := $(DEPTH)/%s\n"
-                % (var, mozpath.join(obj.install_target, path))
+                % (var, mozpath.join(obj.install_target, walk_path))
             )
             backend_file.write("%s_TARGET := misc\n" % var)
             backend_file.write("PP_TARGETS += %s\n" % var)
@@ -1665,13 +1705,13 @@ class RecursiveMakeBackend(MakeBackend):
         path = mozpath.basedir(target, ("dist/bin",))
         if not path:
             raise Exception("Cannot install localized files to " + target)
-        for i, (path, files) in enumerate(files.walk()):
+        for i, (walk_path, walk_files) in enumerate(files.walk()):
             name = "LOCALIZED_FILES_%d" % i
             self._no_skip["misc"].add(backend_file.relobjdir)
-            self._write_localized_files_files(files, name + "_FILES", backend_file)
+            self._write_localized_files_files(walk_files, name + "_FILES", backend_file)
             # Use FINAL_TARGET here because some l10n repack rules set
             # XPI_NAME to generate langpacks.
-            backend_file.write("%s_DEST = $(FINAL_TARGET)/%s\n" % (name, path))
+            backend_file.write("%s_DEST = $(FINAL_TARGET)/%s\n" % (name, walk_path))
             backend_file.write("%s_TARGET := misc\n" % name)
             backend_file.write("INSTALL_TARGETS += %s\n" % name)
 
@@ -1680,10 +1720,10 @@ class RecursiveMakeBackend(MakeBackend):
         path = mozpath.basedir(target, ("dist/bin",))
         if not path:
             raise Exception("Cannot install localized files to " + target)
-        for i, (path, files) in enumerate(files.walk()):
+        for i, (path, file_list) in enumerate(files.walk()):
             name = "LOCALIZED_PP_FILES_%d" % i
             self._no_skip["misc"].add(backend_file.relobjdir)
-            self._write_localized_files_files(files, name, backend_file)
+            self._write_localized_files_files(file_list, name, backend_file)
             # Use FINAL_TARGET here because some l10n repack rules set
             # XPI_NAME to generate langpacks.
             backend_file.write("%s_PATH = $(FINAL_TARGET)/%s\n" % (name, path))
@@ -1700,9 +1740,9 @@ class RecursiveMakeBackend(MakeBackend):
         # We can't use an install manifest for the root of the objdir, since it
         # would delete all the other files that get put there by the build
         # system.
-        for i, (path, files) in enumerate(files.walk()):
+        for i, (path, file_list) in enumerate(files.walk()):
             self._no_skip["misc"].add(backend_file.relobjdir)
-            for f in files:
+            for f in file_list:
                 backend_file.write(
                     "OBJDIR_%d_FILES += %s\n" % (i, self._pretty_path(f, backend_file))
                 )
@@ -1813,7 +1853,15 @@ class RecursiveMakeBackend(MakeBackend):
             basename = os.path.basename(source)
             sorted_nonstatic_ipdl_basenames.append(basename)
             rule = mk.create_rule([basename])
-            rule.add_dependencies([source])
+            rule.add_dependencies(
+                [
+                    source,
+                    "backend.mk",
+                    "Makefile",
+                    "$(DEPTH)/config/autoconf.mk",
+                    "$(topsrcdir)/config/config.mk",
+                ]
+            )
             rule.add_commands(
                 [
                     "$(RM) $@",
@@ -1895,10 +1943,15 @@ class RecursiveMakeBackend(MakeBackend):
         for source in sorted(webidls.all_preprocessed_sources()):
             basename = os.path.basename(source)
             rule = mk.create_rule([basename])
-            # GLOBAL_DEPS would be used here, but due to the include order of
-            # our makefiles it's not set early enough to be useful, so we use
-            # WEBIDL_PP_DEPS, which has analagous content.
-            rule.add_dependencies([source, "$(WEBIDL_PP_DEPS)"])
+            rule.add_dependencies(
+                [
+                    source,
+                    "backend.mk",
+                    "Makefile",
+                    "$(DEPTH)/config/autoconf.mk",
+                    "$(topsrcdir)/config/config.mk",
+                ]
+            )
             rule.add_commands(
                 [
                     # Remove the file before writing so bindings that go from

@@ -12,9 +12,10 @@
  */
 
 #include "nsStubMutationObserver.h"
+
 #include "mozilla/RefCountType.h"
-#include "nsISupports.h"
 #include "nsINode.h"
+#include "nsISupports.h"
 
 /******************************************************************************
  * nsStubMutationObserver
@@ -58,13 +59,13 @@ class MutationObserverWrapper final : public nsIMutationObserver {
 
   void AttributeWillChange(mozilla::dom::Element* aElement,
                            int32_t aNameSpaceID, nsAtom* aAttribute,
-                           int32_t aModType) override {
+                           AttrModType aModType) override {
     MOZ_ASSERT(mOwner);
     mOwner->AttributeWillChange(aElement, aNameSpaceID, aAttribute, aModType);
   }
 
   void AttributeChanged(mozilla::dom::Element* aElement, int32_t aNameSpaceID,
-                        nsAtom* aAttribute, int32_t aModType,
+                        nsAtom* aAttribute, AttrModType aModType,
                         const nsAttrValue* aOldValue) override {
     MOZ_ASSERT(mOwner);
     mOwner->AttributeChanged(aElement, aNameSpaceID, aAttribute, aModType,
@@ -78,20 +79,22 @@ class MutationObserverWrapper final : public nsIMutationObserver {
     mOwner->AttributeSetToCurrentValue(aElement, aNameSpaceID, aAttribute);
   }
 
-  void ContentAppended(nsIContent* aFirstNewContent) override {
+  void ContentAppended(nsIContent* aFirstNewContent,
+                       const ContentAppendInfo& aInfo) override {
     MOZ_ASSERT(mOwner);
-    mOwner->ContentAppended(aFirstNewContent);
+    mOwner->ContentAppended(aFirstNewContent, aInfo);
   }
 
-  void ContentInserted(nsIContent* aChild) override {
+  void ContentInserted(nsIContent* aChild,
+                       const ContentInsertInfo& aInfo) override {
     MOZ_ASSERT(mOwner);
-    mOwner->ContentInserted(aChild);
+    mOwner->ContentInserted(aChild, aInfo);
   }
 
   void ContentWillBeRemoved(nsIContent* aChild,
-                            const BatchRemovalState* aState) override {
+                            const ContentRemoveInfo& aInfo) override {
     MOZ_ASSERT(mOwner);
-    mOwner->ContentWillBeRemoved(aChild, aState);
+    mOwner->ContentWillBeRemoved(aChild, aInfo);
   }
 
   void NodeWillBeDestroyed(nsINode* aNode) override {
@@ -111,14 +114,14 @@ class MutationObserverWrapper final : public nsIMutationObserver {
 
   void ARIAAttributeDefaultWillChange(mozilla::dom::Element* aElement,
                                       nsAtom* aAttribute,
-                                      int32_t aModType) override {
+                                      AttrModType aModType) override {
     MOZ_ASSERT(mOwner);
     mOwner->ARIAAttributeDefaultWillChange(aElement, aAttribute, aModType);
   }
 
   void ARIAAttributeDefaultChanged(mozilla::dom::Element* aElement,
                                    nsAtom* aAttribute,
-                                   int32_t aModType) override {
+                                   AttrModType aModType) override {
     MOZ_ASSERT(mOwner);
     mOwner->ARIAAttributeDefaultChanged(aElement, aAttribute, aModType);
   }

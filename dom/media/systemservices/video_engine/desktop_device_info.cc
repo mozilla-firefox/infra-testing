@@ -3,6 +3,14 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "desktop_device_info.h"
+
+#include <cstddef>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <map>
+#include <memory>
+
 #include "VideoEngine.h"
 #include "modules/desktop_capture/desktop_capture_options.h"
 #include "modules/desktop_capture/desktop_capturer.h"
@@ -10,13 +18,7 @@
 #include "mozilla/SyncRunnable.h"
 #include "nsIBrowserWindowTracker.h"
 #include "nsImportModule.h"
-
-#include <cstddef>
-#include <cstdlib>
-#include <cstdio>
-#include <cstring>
-#include <map>
-#include <memory>
+#include "nsPrintfCString.h"
 
 using mozilla::camera::CaptureDeviceType;
 
@@ -107,7 +109,8 @@ static std::map<intptr_t, TabSource> InitializeTabList() {
       int64_t browserId;
       browserTab->GetBrowserId(&browserId);
 
-      auto result = tabList.try_emplace(static_cast<intptr_t>(browserId));
+      auto result =
+          tabList.try_emplace(mozilla::AssertedCast<intptr_t>(browserId));
       auto& [iter, inserted] = result;
       if (!inserted) {
         MOZ_ASSERT_UNREACHABLE("Duplicate browser ids");

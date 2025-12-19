@@ -23,6 +23,7 @@
 
 #include "absl/base/nullability.h"
 #include "api/array_view.h"
+#include "api/environment/environment.h"
 #include "api/test/network_emulation/cross_traffic.h"
 #include "api/test/network_emulation/network_emulation_interfaces.h"
 #include "api/test/network_emulation_manager.h"
@@ -32,7 +33,6 @@
 #include "rtc_base/ip_address.h"
 #include "rtc_base/task_queue_for_test.h"
 #include "rtc_base/task_utils/repeating_task.h"
-#include "system_wrappers/include/clock.h"
 #include "test/network/cross_traffic.h"
 #include "test/network/emulated_network_manager.h"
 #include "test/network/emulated_turn_server.h"
@@ -81,16 +81,16 @@ class NetworkEmulationManagerImpl : public NetworkEmulationManager {
       std::unique_ptr<CrossTrafficGenerator> generator) override;
   void StopCrossTraffic(CrossTrafficGenerator* generator) override;
 
-  absl::Nonnull<EmulatedNetworkManagerInterface*>
+  EmulatedNetworkManagerInterface* absl_nonnull
   CreateEmulatedNetworkManagerInterface(
       const std::vector<EmulatedEndpoint*>& endpoints) override;
 
   void GetStats(
-      rtc::ArrayView<EmulatedEndpoint* const> endpoints,
+      ArrayView<EmulatedEndpoint* const> endpoints,
       std::function<void(EmulatedNetworkStats)> stats_callback) override;
 
   void GetStats(
-      rtc::ArrayView<EmulatedNetworkNode* const> nodes,
+      ArrayView<EmulatedNetworkNode* const> nodes,
       std::function<void(EmulatedNetworkNodeStats)> stats_callback) override;
 
   TimeController* time_controller() override { return time_controller_.get(); }
@@ -106,19 +106,19 @@ class NetworkEmulationManagerImpl : public NetworkEmulationManager {
   using CrossTrafficSource =
       std::pair<std::unique_ptr<CrossTrafficGenerator>, RepeatingTaskHandle>;
 
-  std::optional<rtc::IPAddress> GetNextIPv4Address();
+  std::optional<IPAddress> GetNextIPv4Address();
 
   const TimeMode time_mode_;
   const EmulatedNetworkStatsGatheringMode stats_gathering_mode_;
   const std::unique_ptr<TimeController> time_controller_;
-  Clock* const clock_;
+  const Environment env_;
   const bool fake_dtls_handshake_sizes_;
   int next_node_id_;
 
   RepeatingTaskHandle process_task_handle_;
 
   uint32_t next_ip4_address_;
-  std::set<rtc::IPAddress> used_ip_addresses_;
+  std::set<IPAddress> used_ip_addresses_;
 
   // All objects can be added to the manager only when it is idle.
   std::vector<std::unique_ptr<EmulatedEndpoint>> endpoints_;

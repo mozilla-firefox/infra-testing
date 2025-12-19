@@ -7,17 +7,18 @@
 #ifndef nsWrapperCache_h___
 #define nsWrapperCache_h___
 
-#include "nsCycleCollectionParticipant.h"
-#include "mozilla/Assertions.h"
-#include "mozilla/ServoUtils.h"
-#include "mozilla/RustCell.h"
+#include <type_traits>
+
 #include "js/HeapAPI.h"
 #include "js/RootingAPI.h"
 #include "js/TracingAPI.h"
 #include "js/TypeDecls.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/RustCell.h"
+#include "mozilla/ServoUtils.h"
+#include "nsCycleCollectionParticipant.h"
 #include "nsISupports.h"
 #include "nsISupportsUtils.h"
-#include <type_traits>
 
 namespace mozilla::dom::binding_detail {
 class CastableToWrapperCacheHelper;
@@ -84,7 +85,7 @@ static_assert(sizeof(void*) == 4, "Only support 32-bit and 64-bit");
 
 class JS_HAZ_ROOTED nsWrapperCache {
  public:
-  NS_DECLARE_STATIC_IID_ACCESSOR(NS_WRAPPERCACHE_IID)
+  NS_INLINE_DECL_STATIC_IID(NS_WRAPPERCACHE_IID)
 
   nsWrapperCache() = default;
   ~nsWrapperCache() {
@@ -321,6 +322,10 @@ class JS_HAZ_ROOTED nsWrapperCache {
 
   void ReleaseWrapper(void* aScriptObjectHolder);
 
+  // Special case version of ReleaseWrapper. For use by
+  // Rule::UnlinkDeclarationWrapper only.
+  void ReleaseWrapperWithoutDrop();
+
   void TraceWrapper(JSTracer* aTrc, const char* name) {
     if (mWrapper) {
       js::UnsafeTraceManuallyBarrieredEdge(aTrc, &mWrapper, name);
@@ -338,6 +343,8 @@ class JS_HAZ_ROOTED nsWrapperCache {
 
  private:
   void SetWrapperJSObject(JSObject* aWrapper);
+
+  void ReleaseWrapperAndMaybeDropHolder(void* aScriptObjectHolderToDrop);
 
   // We'd like to assert that these aren't used from servo threads, but we don't
   // have a great way to do that because:
@@ -411,8 +418,6 @@ class JS_HAZ_ROOTED nsWrapperCache {
 };
 
 enum { WRAPPER_CACHE_FLAGS_BITS_USED = 1 };
-
-NS_DEFINE_STATIC_IID_ACCESSOR(nsWrapperCache, NS_WRAPPERCACHE_IID)
 
 #define NS_WRAPPERCACHE_INTERFACE_TABLE_ENTRY           \
   if (aIID.Equals(NS_GET_IID(nsWrapperCache))) {        \

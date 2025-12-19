@@ -7,16 +7,15 @@
 #ifndef LAYOUT_SVG_SVGOBSERVERUTILS_H_
 #define LAYOUT_SVG_SVGOBSERVERUTILS_H_
 
-#include "mozilla/Attributes.h"
+#include "FrameProperties.h"
 #include "mozilla/SVGIntegrationUtils.h"
 #include "mozilla/dom/IDTracker.h"
-#include "FrameProperties.h"
 #include "nsID.h"
 #include "nsIFrame.h"  // only for LayoutFrameType
 #include "nsIMutationObserver.h"
+#include "nsIReferrerInfo.h"
 #include "nsISupports.h"
 #include "nsISupportsImpl.h"
-#include "nsIReferrerInfo.h"
 #include "nsStringFwd.h"
 #include "nsStubMutationObserver.h"
 #include "nsStyleStruct.h"
@@ -37,7 +36,9 @@ class SVGPaintServerFrame;
 namespace dom {
 class CanvasRenderingContext2D;
 class Element;
+class SVGFEImageElement;
 class SVGGeometryElement;
+class SVGGraphicsElement;
 class SVGMPathElement;
 }  // namespace dom
 }  // namespace mozilla
@@ -49,7 +50,7 @@ namespace mozilla {
 
 class ISVGFilterObserverList : public nsISupports {
  public:
-  NS_DECLARE_STATIC_IID_ACCESSOR(MOZILLA_ICANVASFILTEROBSERVER_IID)
+  NS_INLINE_DECL_STATIC_IID(MOZILLA_ICANVASFILTEROBSERVER_IID)
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS(ISVGFilterObserverList)
 
@@ -59,9 +60,6 @@ class ISVGFilterObserverList : public nsISupports {
  protected:
   virtual ~ISVGFilterObserverList() = default;
 };
-
-NS_DEFINE_STATIC_IID_ACCESSOR(ISVGFilterObserverList,
-                              MOZILLA_ICANVASFILTEROBSERVER_IID)
 
 /**
  * This interface allows us to be notified when a piece of SVG content is
@@ -163,6 +161,7 @@ class SVGObserverUtils {
   using CanvasRenderingContext2D = dom::CanvasRenderingContext2D;
   using Element = dom::Element;
   using SVGGeometryElement = dom::SVGGeometryElement;
+  using SVGGraphicsElement = dom::SVGGraphicsElement;
   using HrefToTemplateCallback = const std::function<void(nsAString&)>&;
 
   /**
@@ -370,6 +369,17 @@ class SVGObserverUtils {
    * SVGGeometryElement that it references, if any.
    */
   static void RemoveTextPathObserver(nsIFrame* aTextPathFrame);
+
+  /**
+   * Get the SVGGraphicsElement that is referenced by aSVGFEImageElement, and
+   * make aSVGFEImageElement start observing rendering changes to that element.
+   */
+  static SVGGraphicsElement* GetAndObserveFEImageContent(
+      dom::SVGFEImageElement* aSVGFEImagrElement);
+
+  static void TraverseFEImageObserver(
+      dom::SVGFEImageElement* aSVGFEImageElement,
+      nsCycleCollectionTraversalCallback* aCB);
 
   /**
    * Get the SVGGeometryElement that is referenced by aSVGMPathElement, and

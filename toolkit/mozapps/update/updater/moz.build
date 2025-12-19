@@ -12,8 +12,7 @@ else:
 updater_rel_path = ""
 include("updater-common.build")
 DIRS += ["updater-dep"]
-if CONFIG["ENABLE_TESTS"]:
-    DIRS += ["updater-xpcshell"]
+TEST_DIRS += ["updater-xpcshell"]
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
     LDFLAGS += [
@@ -62,6 +61,7 @@ elif CONFIG["MOZ_UPDATE_CHANNEL"] in (
     "aurora",
     "nightly-elm",
     "nightly-pine",
+    "nightly-cypress",
     "nightly-profiling",
     "nightly-oak",
     "nightly-ux",
@@ -76,6 +76,12 @@ else:
 dep1_cert.inputs += ["dep1.der"]
 dep2_cert.inputs += ["dep2.der"]
 xpcshell_cert.inputs += ["xpcshellCertificate.der"]
+
+if CONFIG["MOZ_DEBUG"]:
+    WINCONSOLE = True
+else:
+    WINCONSOLE = False
+
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
     FINAL_TARGET_FILES.icons += ["updater.png"]

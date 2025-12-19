@@ -15,6 +15,7 @@ extern crate app_units;
 #[cfg(feature = "euclid")]
 extern crate euclid;
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{BuildHasher, Hash};
 use std::mem::size_of;
 use std::ops::Range;
@@ -306,6 +307,58 @@ macro_rules! malloc_size_of_hash_map {
 
 malloc_size_of_hash_map!(std::collections::HashMap<K, V, S>);
 
+impl<K, V> MallocShallowSizeOf for BTreeMap<K, V> {
+    fn shallow_size_of(&self, ops: &mut MallocSizeOfOps) -> usize {
+        if ops.has_malloc_enclosing_size_of() {
+            self.values()
+                .next()
+                .map_or(0, |v| unsafe { ops.malloc_enclosing_size_of(v) })
+        } else {
+            self.len() * (size_of::<V>() + size_of::<K>() + size_of::<usize>())
+        }
+    }
+}
+
+impl<K, V> MallocSizeOf for BTreeMap<K, V>
+where
+    K: MallocSizeOf,
+    V: MallocSizeOf,
+{
+    fn size_of(&self, ops: &mut MallocSizeOfOps) -> usize {
+        let mut n = self.shallow_size_of(ops);
+        for (k, v) in self.iter() {
+            n += k.size_of(ops);
+            n += v.size_of(ops);
+        }
+        n
+    }
+}
+
+impl<T> MallocShallowSizeOf for BTreeSet<T> {
+    fn shallow_size_of(&self, ops: &mut MallocSizeOfOps) -> usize {
+        if ops.has_malloc_enclosing_size_of() {
+            self.iter()
+                .next()
+                .map_or(0, |v| unsafe { ops.malloc_enclosing_size_of(v) })
+        } else {
+            self.len() * (size_of::<T>() + size_of::<usize>())
+        }
+    }
+}
+
+impl<T> MallocSizeOf for BTreeSet<T>
+where
+    T: MallocSizeOf,
+{
+    fn size_of(&self, ops: &mut MallocSizeOfOps) -> usize {
+        let mut n = self.shallow_size_of(ops);
+        for v in self.iter() {
+            n += v.size_of(ops);
+        }
+        n
+    }
+}
+
 // PhantomData is always 0.
 impl<T> MallocSizeOf for std::marker::PhantomData<T> {
     fn size_of(&self, _ops: &mut MallocSizeOfOps) -> usize {
@@ -448,6 +501,18 @@ malloc_size_of_is_0!(f32, f64);
 malloc_size_of_is_0!(std::sync::atomic::AtomicBool);
 malloc_size_of_is_0!(std::sync::atomic::AtomicIsize);
 malloc_size_of_is_0!(std::sync::atomic::AtomicUsize);
+malloc_size_of_is_0!(
+    std::sync::atomic::AtomicU8,
+    std::sync::atomic::AtomicU16,
+    std::sync::atomic::AtomicU32,
+    std::sync::atomic::AtomicU64
+);
+malloc_size_of_is_0!(
+    std::sync::atomic::AtomicI8,
+    std::sync::atomic::AtomicI16,
+    std::sync::atomic::AtomicI32,
+    std::sync::atomic::AtomicI64
+);
 
 malloc_size_of_is_0!(std::num::NonZeroUsize);
 malloc_size_of_is_0!(std::num::NonZeroU32);

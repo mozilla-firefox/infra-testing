@@ -3,6 +3,12 @@
 
 "use strict";
 
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["test.wait300msAfterTabSwitch", true]],
+  });
+});
+
 /**
  * This test case open 5 tabs across 2 windows, requesting a translation to a different language in all 5 tabs before
  * resolving all of the downloads at once. It then goes one by one through each open tab and ensures that they all show
@@ -41,7 +47,9 @@ add_task(
       "The button is present and shows only the icon.",
       window1
     );
-    await FullPageTranslationsTestUtils.assertPageIsUntranslated(runInEsEnPage);
+    await FullPageTranslationsTestUtils.assertPageIsNotTranslated(
+      runInEsEnPage
+    );
     await FullPageTranslationsTestUtils.openPanel({
       win: window1,
       expectedFromLanguage: "es",
@@ -72,7 +80,9 @@ add_task(
       "The button is present and shows only the icon.",
       window2
     );
-    await FullPageTranslationsTestUtils.assertPageIsUntranslated(runInEsFaPage);
+    await FullPageTranslationsTestUtils.assertPageIsNotTranslated(
+      runInEsFaPage
+    );
     await FullPageTranslationsTestUtils.openPanel({
       win: window2,
       expectedFromLanguage: "es",
@@ -106,7 +116,9 @@ add_task(
       "The button is present and shows only the icon.",
       window1
     );
-    await FullPageTranslationsTestUtils.assertPageIsUntranslated(runInEsSlPage);
+    await FullPageTranslationsTestUtils.assertPageIsNotTranslated(
+      runInEsSlPage
+    );
     await FullPageTranslationsTestUtils.openPanel({
       win: window1,
       expectedFromLanguage: "es",
@@ -140,7 +152,9 @@ add_task(
       "The button is present and shows only the icon.",
       window2
     );
-    await FullPageTranslationsTestUtils.assertPageIsUntranslated(runInEsUkPage);
+    await FullPageTranslationsTestUtils.assertPageIsNotTranslated(
+      runInEsUkPage
+    );
     await FullPageTranslationsTestUtils.openPanel({
       win: window2,
       expectedFromLanguage: "es",
@@ -221,7 +235,7 @@ add_task(
       await TranslationsTest.assertTranslationResult(
         "The French page's H1 is translated from fr to es",
         getH1,
-        "CET ÉLÉMENT D'EN-TÊTE HTML EST ÉCRIT EN FRANÇAIS. [fr to es, html]"
+        "CET ÉLÉMENT D'EN-TÊTE HTML EST ÉCRIT EN FRANÇAIS. [fr to es]"
       );
     });
     await FullPageTranslationsTestUtils.openPanel({
@@ -233,13 +247,15 @@ add_task(
     info("Ensuring that the es-uk tab is translated correctly");
 
     await focusWindow(window2);
-    await FullPageTranslationsTestUtils.assertPageIsTranslated({
-      fromLanguage: "es",
-      toLanguage: "uk",
-      runInPage: runInEsUkPage,
-      message: "The es-uk page should be translated to uk",
-      win: window2,
-    });
+    await FullPageTranslationsTestUtils.assertOnlyIntersectingNodesAreTranslated(
+      {
+        fromLanguage: "es",
+        toLanguage: "uk",
+        runInPage: runInEsUkPage,
+        message: "The es-uk page should be translated to uk",
+        win: window2,
+      }
+    );
     await FullPageTranslationsTestUtils.openPanel({
       win: window2,
       expectedToLanguage: "sl",
@@ -249,13 +265,15 @@ add_task(
     info("Ensuring that the es-sl tab is translated correctly");
 
     await focusWindow(window1);
-    await FullPageTranslationsTestUtils.assertPageIsTranslated({
-      fromLanguage: "es",
-      toLanguage: "sl",
-      runInPage: runInEsSlPage,
-      message: "The es-sl page should be translated to sl",
-      win: window1,
-    });
+    await FullPageTranslationsTestUtils.assertOnlyIntersectingNodesAreTranslated(
+      {
+        fromLanguage: "es",
+        toLanguage: "sl",
+        runInPage: runInEsSlPage,
+        message: "The es-sl page should be translated to sl",
+        win: window1,
+      }
+    );
     await FullPageTranslationsTestUtils.openPanel({
       win: window1,
       expectedToLanguage: "uk",
@@ -265,13 +283,15 @@ add_task(
     info("Ensuring that the es-fa tab is translated correctly");
 
     await focusWindow(window2);
-    await FullPageTranslationsTestUtils.assertPageIsTranslated({
-      fromLanguage: "es",
-      toLanguage: "fa",
-      runInPage: runInEsFaPage,
-      message: "The es-fa page should be translated to fa",
-      win: window2,
-    });
+    await FullPageTranslationsTestUtils.assertOnlyIntersectingNodesAreTranslated(
+      {
+        fromLanguage: "es",
+        toLanguage: "fa",
+        runInPage: runInEsFaPage,
+        message: "The es-fa page should be translated to fa",
+        win: window2,
+      }
+    );
     await FullPageTranslationsTestUtils.openPanel({
       win: window2,
       expectedToLanguage: "uk",
@@ -280,13 +300,15 @@ add_task(
     info("Ensuring that the es-en tab is translated correctly");
 
     await focusWindow(window1);
-    await FullPageTranslationsTestUtils.assertPageIsTranslated({
-      fromLanguage: "es",
-      toLanguage: "en",
-      runInPage: runInEsEnPage,
-      message: "The es-en page should be translated to en",
-      win: window1,
-    });
+    await FullPageTranslationsTestUtils.assertOnlyIntersectingNodesAreTranslated(
+      {
+        fromLanguage: "es",
+        toLanguage: "en",
+        runInPage: runInEsEnPage,
+        message: "The es-en page should be translated to en",
+        win: window1,
+      }
+    );
     await FullPageTranslationsTestUtils.openPanel({
       win: window1,
       expectedToLanguage: "uk",

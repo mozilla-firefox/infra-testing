@@ -42,6 +42,9 @@ registerCleanupFunction(() => {
 });
 
 const pps = Cc["@mozilla.org/network/protocol-proxy-service;1"].getService();
+const { NodeServer } = ChromeUtils.importESModule(
+  "resource://testing-common/NodeServer.sys.mjs"
+);
 
 let proxy_port;
 let filter;
@@ -372,10 +375,6 @@ add_task(async function setup() {
   );
 
   Services.prefs.setBoolPref("network.http.http2.enabled", true);
-
-  // Even with network state isolation active, we don't end up using the
-  // partitioned principal.
-  Services.prefs.setBoolPref("privacy.partition.network_state", true);
 
   // make all native resolve calls "secretly" resolve localhost instead
   Services.prefs.setBoolPref("network.dns.native-is-localhost", true);

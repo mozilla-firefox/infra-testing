@@ -2,7 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/browser-window */
+ChromeUtils.defineESModuleGetters(this, {
+  ExtensionUtils: "resource://gre/modules/ExtensionUtils.sys.mjs",
+});
 
 /**
  * Utility object to handle manipulations of the identity indicators in the UI
@@ -617,6 +619,9 @@ var gIdentityHandler = {
       if (this._popupInitialized) {
         PanelMultiView.hidePopup(this._identityPopup);
       }
+      // Ensure the browser is focused again, otherwise we may not trigger the
+      // security delay on a potential error page following this reload.
+      gBrowser.selectedBrowser.focus();
       return;
     }
     // Otherwise we just refresh the interface
@@ -807,7 +812,7 @@ var gIdentityHandler = {
       !this._uriHasHost &&
       this._uri &&
       isBlankPageURL(this._uri.spec) &&
-      !this._uri.schemeIs("moz-extension")
+      !ExtensionUtils.isExtensionUrl(this._uri)
     );
   },
 
@@ -968,7 +973,12 @@ var gIdentityHandler = {
       "identity-popup-mainView"
     );
     identityPopupPanelView.removeAttribute("footerVisible");
-    if (this._uriHasHost && !this._pageExtensionPolicy) {
+    // Bug 1754172 - Only show the clear site data footer if we're not in private browsing.
+    if (
+      !PrivateBrowsingUtils.isWindowPrivate(window) &&
+      this._uriHasHost &&
+      !this._pageExtensionPolicy
+    ) {
       SiteDataManager.hasSiteData(this._uri.asciiHost).then(hasData => {
         this._clearSiteDataFooter.hidden = !hasData;
         identityPopupPanelView.setAttribute("footerVisible", hasData);

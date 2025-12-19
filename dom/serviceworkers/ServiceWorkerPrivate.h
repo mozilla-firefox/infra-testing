@@ -8,7 +8,6 @@
 #define mozilla_dom_serviceworkerprivate_h
 
 #include <functional>
-#include <type_traits>
 
 #include "mozilla/Attributes.h"
 #include "mozilla/Maybe.h"
@@ -39,6 +38,10 @@ template <typename T>
 class Maybe;
 
 class JSObjectHolder;
+
+namespace net {
+class CookieStruct;
+}
 
 namespace dom {
 
@@ -106,8 +109,8 @@ class ServiceWorkerPrivate final : public RemoteWorkerObserver {
       const RefPtr<LifeCycleEventCallback>& aCallback);
 
   nsresult SendCookieChangeEvent(
-      const nsAString& aCookieName, const nsAString& aCookieValue,
-      bool aCookieDeleted, RefPtr<ServiceWorkerRegistrationInfo> aRegistration);
+      const net::CookieStruct& aCookie, bool aCookieDeleted,
+      RefPtr<ServiceWorkerRegistrationInfo> aRegistration);
 
   nsresult SendPushEvent(const nsAString& aMessageId,
                          const Maybe<nsTArray<uint8_t>>& aData,
@@ -116,12 +119,10 @@ class ServiceWorkerPrivate final : public RemoteWorkerObserver {
   nsresult SendPushSubscriptionChangeEvent(
       const RefPtr<nsIPushSubscription>& aOldSubscription);
 
-  nsresult SendNotificationClickEvent(const nsAString& aScope,
-                                      const IPCNotification& aNotification,
+  nsresult SendNotificationClickEvent(const IPCNotification& aNotification,
                                       const nsAString& aAction);
 
-  nsresult SendNotificationCloseEvent(const nsAString& aScope,
-                                      const IPCNotification& aNotification);
+  nsresult SendNotificationCloseEvent(const IPCNotification& aNotification);
 
   nsresult SendFetchEvent(nsCOMPtr<nsIInterceptedChannel> aChannel,
                           nsILoadGroup* aLoadGroup, const nsAString& aClientId,

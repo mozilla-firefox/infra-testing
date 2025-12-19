@@ -3,9 +3,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #import <MediaPlayer/MediaPlayer.h>
 
-#include "gtest/gtest.h"
 #include "MediaHardwareKeysEventSourceMacMediaCenter.h"
 #include "MediaKeyListenerTest.h"
+#include "gtest/gtest.h"
 #include "mozilla/TimeStamp.h"
 #include "nsCocoaUtils.h"
 #include "prinrval.h"
@@ -286,12 +286,6 @@ TEST(MediaHardwareKeysEventSourceMacMediaCenter, TestMediaCenterSetPosition)
            5.0) < 0.1);
   ASSERT_TRUE([center.nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate]
       isEqualToNumber:@1.0]);
-
-  source->SetPlaybackState(MediaSessionPlaybackState::Paused);
-
-  PR_Sleep(PR_SecondsToInterval(1));
-  ASSERT_TRUE([center.nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate]
-      isEqualToNumber:@0.0]);
 }
 
 NS_ASSUME_NONNULL_END

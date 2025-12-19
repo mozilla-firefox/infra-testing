@@ -43,31 +43,18 @@
       {
         lwtProperty: "ntp_text",
         processColor(rgbaChannels, element) {
-          // We only have access to the browser when we're in a chrome
-          // docshell, so for now only set the color scheme in that case, and
-          // use the `lwt-newtab-brighttext` attribute as a fallback mechanism.
-          let browserStyle =
-            element.ownerGlobal?.docShell?.chromeEventHandler.style;
-
           element.toggleAttribute("lwt-newtab", !!rgbaChannels);
           if (!rgbaChannels) {
             element.toggleAttribute(
               "lwt-newtab-brighttext",
               prefersDarkQuery.matches
             );
-            if (browserStyle) {
-              browserStyle.colorScheme = "";
-            }
             return null;
           }
 
           const { r, g, b, a } = rgbaChannels;
           let darkMode = !_isTextColorDark(r, g, b);
           element.toggleAttribute("lwt-newtab-brighttext", darkMode);
-          if (browserStyle) {
-            browserStyle.colorScheme = darkMode ? "dark" : "light";
-          }
-
           return `rgba(${r}, ${g}, ${b}, ${a})`;
         },
       },
@@ -82,7 +69,7 @@
       },
     ],
     [
-      "--lwt-sidebar-background-color",
+      "--sidebar-background-color",
       {
         lwtProperty: "sidebar",
         processColor(rgbaChannels) {
@@ -96,7 +83,7 @@
       },
     ],
     [
-      "--lwt-sidebar-text-color",
+      "--sidebar-text-color",
       {
         lwtProperty: "sidebar_text",
         processColor(rgbaChannels, element) {
@@ -160,7 +147,8 @@
     /**
      * Handle theme updates from the LightweightThemeChild actor or due to
      * changes to the prefers-color-scheme media query.
-     * @param {Object} event object containing the theme or query update.
+     *
+     * @param {object} event object containing the theme or query update.
      */
     handleEvent(event) {
       if (event.type == "LightweightTheme:Set") {
@@ -177,6 +165,7 @@
 
     /**
      * Set a CSS variable to a given value
+     *
      * @param {Element} elem The element where the CSS variable should be added.
      * @param {string} variableName The CSS variable to set.
      * @param {string} value The new value of the CSS variable.
@@ -191,11 +180,11 @@
 
     /**
      * Apply theme data to an element
-     * @param {Object} themeData The theme data.
+     *
+     * @param {object} themeData The theme data.
      */
     _setProperties(themeData) {
       const root = document.documentElement;
-      root.toggleAttribute("lwtheme", themeData.hasTheme);
       for (let [cssVarName, definition] of inContentVariableMap) {
         const { lwtProperty, processColor } = definition;
         let value = themeData[lwtProperty];

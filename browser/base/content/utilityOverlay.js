@@ -13,14 +13,17 @@ var { XPCOMUtils } = ChromeUtils.importESModule(
 
 ChromeUtils.defineESModuleGetters(this, {
   AboutNewTab: "resource:///modules/AboutNewTab.sys.mjs",
+  AIWindow:
+    "moz-src:///browser/components/aiwindow/ui/modules/AIWindow.sys.mjs",
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   ContextualIdentityService:
     "resource://gre/modules/ContextualIdentityService.sys.mjs",
   ExtensionSettingsStore:
     "resource://gre/modules/ExtensionSettingsStore.sys.mjs",
+  ExtensionUtils: "resource://gre/modules/ExtensionUtils.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
-  ShellService: "resource:///modules/ShellService.sys.mjs",
+  ShellService: "moz-src:///browser/components/shell/ShellService.sys.mjs",
   URILoadingHelper: "resource:///modules/URILoadingHelper.sys.mjs",
 });
 
@@ -57,10 +60,13 @@ Object.defineProperty(this, "BROWSER_NEW_TAB_URL", {
       if (
         !privateAllowed &&
         (extensionControlled ||
-          AboutNewTab.newTabURL.startsWith("moz-extension://"))
+          ExtensionUtils.isExtensionUrl(AboutNewTab.newTabURL))
       ) {
         return "about:privatebrowsing";
       }
+    }
+    if (AIWindow.isAIWindowActive(window)) {
+      return AIWindow.newTabURL;
     }
     return AboutNewTab.newTabURL;
   },
@@ -272,7 +278,8 @@ function closeMenus(node) {
   }
 }
 
-/** This function takes in a key element and compares it to the keys pressed during an event.
+/**
+ * This function takes in a key element and compares it to the keys pressed during an event.
  *
  * @param aEvent
  *        The KeyboardEvent event you want to compare against your key.

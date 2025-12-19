@@ -13,9 +13,15 @@ export class _CustomizeMenu extends React.PureComponent {
     super(props);
     this.onEntered = this.onEntered.bind(this);
     this.onExited = this.onExited.bind(this);
+    this.onSubpanelToggle = this.onSubpanelToggle.bind(this);
     this.state = {
       exitEventFired: false,
+      subpanelOpen: false,
     };
+  }
+
+  onSubpanelToggle(isOpen) {
+    this.setState({ subpanelOpen: isOpen });
   }
 
   onEntered() {
@@ -42,16 +48,24 @@ export class _CustomizeMenu extends React.PureComponent {
           appear={true}
         >
           <button
-            className="icon icon-settings personalize-button"
+            className="personalize-button"
+            data-l10n-id="newtab-customize-panel-icon-button"
             onClick={() => this.props.onOpen()}
             onKeyDown={e => {
               if (e.key === "Enter") {
                 this.props.onOpen();
               }
             }}
-            data-l10n-id="newtab-personalize-settings-icon-label"
             ref={c => (this.openButton = c)}
-          />
+          >
+            <label data-l10n-id="newtab-customize-panel-icon-button-label" />
+            <div>
+              <img
+                role="presentation"
+                src="chrome://global/skin/icons/edit-outline.svg"
+              />
+            </div>
+          </button>
         </CSSTransition>
         <CSSTransition
           timeout={250}
@@ -61,36 +75,47 @@ export class _CustomizeMenu extends React.PureComponent {
           onExited={this.onExited}
           appear={true}
         >
-          <div
-            className="customize-menu"
-            role="dialog"
-            data-l10n-id="newtab-settings-dialog-label"
-          >
-            <div className="close-button-wrapper">
-              <button
-                onClick={() => this.props.onClose()}
-                className="close-button"
-                data-l10n-id="newtab-custom-close-button"
-                ref={c => (this.closeButton = c)}
+          <div className="customize-menu-animate-wrapper">
+            <div
+              className={`customize-menu ${
+                this.state.subpanelOpen ? "subpanel-open" : ""
+              }`}
+              role="dialog"
+              data-l10n-id="newtab-settings-dialog-label"
+            >
+              <div className="close-button-wrapper">
+                <moz-button
+                  onClick={() => this.props.onClose()}
+                  id="close-button"
+                  type="icon ghost"
+                  data-l10n-id="newtab-custom-close-menu-button"
+                  iconsrc="chrome://global/skin/icons/close.svg"
+                  ref={c => (this.closeButton = c)}
+                ></moz-button>
+              </div>
+              <ContentSection
+                openPreferences={this.props.openPreferences}
+                setPref={this.props.setPref}
+                enabledSections={this.props.enabledSections}
+                enabledWidgets={this.props.enabledWidgets}
+                wallpapersEnabled={this.props.wallpapersEnabled}
+                activeWallpaper={this.props.activeWallpaper}
+                pocketRegion={this.props.pocketRegion}
+                mayHaveTopicSections={this.props.mayHaveTopicSections}
+                mayHaveInferredPersonalization={
+                  this.props.mayHaveInferredPersonalization
+                }
+                mayHaveWeather={this.props.mayHaveWeather}
+                mayHaveWidgets={this.props.mayHaveWidgets}
+                mayHaveTimerWidget={this.props.mayHaveTimerWidget}
+                mayHaveListsWidget={this.props.mayHaveListsWidget}
+                dispatch={this.props.dispatch}
+                exitEventFired={this.state.exitEventFired}
+                onSubpanelToggle={this.onSubpanelToggle}
+                toggleSectionsMgmtPanel={this.props.toggleSectionsMgmtPanel}
+                showSectionsMgmtPanel={this.props.showSectionsMgmtPanel}
               />
             </div>
-            <ContentSection
-              openPreferences={this.props.openPreferences}
-              setPref={this.props.setPref}
-              enabledSections={this.props.enabledSections}
-              wallpapersEnabled={this.props.wallpapersEnabled}
-              wallpapersV2Enabled={this.props.wallpapersV2Enabled}
-              activeWallpaper={this.props.activeWallpaper}
-              pocketRegion={this.props.pocketRegion}
-              mayHaveTopicSections={this.props.mayHaveTopicSections}
-              mayHaveInferredPersonalization={
-                this.props.mayHaveInferredPersonalization
-              }
-              mayHaveRecentSaves={this.props.DiscoveryStream.recentSavesEnabled}
-              mayHaveWeather={this.props.mayHaveWeather}
-              dispatch={this.props.dispatch}
-              exitEventFired={this.state.exitEventFired}
-            />
           </div>
         </CSSTransition>
       </span>

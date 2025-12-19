@@ -20,13 +20,12 @@ import org.mozilla.experiments.nimbus.NimbusEventStore
 import org.mozilla.fenix.GleanMetrics.Events
 import org.mozilla.fenix.GleanMetrics.Metrics
 import org.mozilla.fenix.components.metrics.MetricsUtilsTest.Companion.ENGINE_SOURCE_IDENTIFIER
-import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
+import org.robolectric.RobolectricTestRunner
 
 /**
  * Just the Robolectric tests for MetricsUtil. Splitting these files out means our other tests will run more quickly.
- * FenixRobolectricTestRunner also breaks our ability to use mockkStatic on Base64.
  */
-@RunWith(FenixRobolectricTestRunner::class) // for gleanTestRule
+@RunWith(RobolectricTestRunner::class) // for gleanTestRule
 class MetricsUtilsTestRobolectric {
 
     @get:Rule
@@ -309,6 +308,53 @@ class MetricsUtilsTestRobolectric {
         val snapshot = Events.performedSearch.testGetValue()!!
         assertEquals(1, snapshot.size)
         assertEquals("shortcut.widget", snapshot.single().extra?.getValue("source"))
+        verify { nimbusEventStore.recordEvent("performed_search") }
+    }
+
+    @Test
+    fun `given a search engine with NO telemetry suffix, when recording a search then the telemetry id is the engine id`() {
+        val searchEngineId = "engine-id"
+        assertNull(Metrics.searchCount["$searchEngineId.shortcut"].testGetValue())
+
+        val engine: SearchEngine = mockk(relaxed = true)
+        val nimbusEventStore: NimbusEventStore = mockk(relaxed = true)
+
+        every { engine.id } returns searchEngineId
+        every { engine.type } returns SearchEngine.Type.BUNDLED
+        every { engine.telemetrySuffix } returns null
+
+        MetricsUtils.recordSearchMetrics(
+            engine,
+            false,
+            MetricsUtils.Source.SHORTCUT,
+            nimbusEventStore,
+        )
+
+        assertNotNull(Metrics.searchCount["$searchEngineId.shortcut"].testGetValue())
+        verify { nimbusEventStore.recordEvent("performed_search") }
+    }
+
+    @Test
+    fun `given a search engine with a telemetry suffix, when recording a search then the telemetry id is the engine id with the suffix`() {
+        val searchEngineId = "engine-id"
+        val telemetrySuffix = "telemetry-suffix"
+        assertNull(Metrics.searchCount["$searchEngineId-$telemetrySuffix.shortcut"].testGetValue())
+
+        val engine: SearchEngine = mockk(relaxed = true)
+        val nimbusEventStore: NimbusEventStore = mockk(relaxed = true)
+
+        every { engine.id } returns searchEngineId
+        every { engine.type } returns SearchEngine.Type.BUNDLED
+        every { engine.telemetrySuffix } returns telemetrySuffix
+
+        MetricsUtils.recordSearchMetrics(
+            engine,
+            false,
+            MetricsUtils.Source.SHORTCUT,
+            nimbusEventStore,
+        )
+
+        assertNotNull(Metrics.searchCount["$searchEngineId-$telemetrySuffix.shortcut"].testGetValue())
         verify { nimbusEventStore.recordEvent("performed_search") }
     }
 }

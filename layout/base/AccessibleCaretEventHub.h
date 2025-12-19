@@ -17,7 +17,6 @@
 #include "nsIReflowObserver.h"
 #include "nsIScrollObserver.h"
 #include "nsPoint.h"
-#include "mozilla/RefPtr.h"
 #include "nsWeakReference.h"
 
 class nsITimer;

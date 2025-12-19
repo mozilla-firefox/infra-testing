@@ -52,7 +52,8 @@ class GPUParent final : public PGPUParent {
                                    const DevicePrefs& devicePrefs,
                                    nsTArray<LayerTreeIdMapping>&& mappings,
                                    nsTArray<GfxInfoFeatureStatus>&& features,
-                                   uint32_t wrNamespace);
+                                   uint32_t wrNamespace,
+                                   InitResolver&& aInitResolver);
   mozilla::ipc::IPCResult RecvInitCompositorManager(
       Endpoint<PCompositorManagerParent>&& aEndpoint, uint32_t aNamespace);
   mozilla::ipc::IPCResult RecvInitVsyncBridge(
@@ -65,15 +66,9 @@ class GPUParent final : public PGPUParent {
   mozilla::ipc::IPCResult RecvInitVRManager(
       Endpoint<PVRManagerParent>&& aEndpoint);
   mozilla::ipc::IPCResult RecvInitVR(Endpoint<PVRGPUChild>&& aVRGPUChild);
-  mozilla::ipc::IPCResult RecvInitUiCompositorController(
-      const LayersId& aRootLayerTreeId,
-      Endpoint<PUiCompositorControllerParent>&& aEndpoint);
-  mozilla::ipc::IPCResult RecvInitAPZInputBridge(
-      const LayersId& aRootLayerTreeId,
-      Endpoint<PAPZInputBridgeParent>&& aEndpoint);
   mozilla::ipc::IPCResult RecvInitProfiler(
       Endpoint<PProfilerChild>&& aEndpoint);
-  mozilla::ipc::IPCResult RecvUpdateVar(const GfxVarUpdate& pref);
+  mozilla::ipc::IPCResult RecvUpdateVar(const nsTArray<GfxVarUpdate>& var);
   mozilla::ipc::IPCResult RecvPreferenceUpdate(const Pref& pref);
   mozilla::ipc::IPCResult RecvScreenInformationChanged();
   mozilla::ipc::IPCResult RecvNotifyBatteryInfo(
@@ -86,8 +81,8 @@ class GPUParent final : public PGPUParent {
       const ContentParentId& aChildId);
   mozilla::ipc::IPCResult RecvNewContentVRManager(
       Endpoint<PVRManagerParent>&& aEndpoint, const ContentParentId& aChildId);
-  mozilla::ipc::IPCResult RecvNewContentRemoteDecoderManager(
-      Endpoint<PRemoteDecoderManagerParent>&& aEndpoint,
+  mozilla::ipc::IPCResult RecvNewContentRemoteMediaManager(
+      Endpoint<PRemoteMediaManagerParent>&& aEndpoint,
       const ContentParentId& aChildId);
   mozilla::ipc::IPCResult RecvGetDeviceStatus(GPUDeviceData* aOutStatus);
   mozilla::ipc::IPCResult RecvSimulateDeviceReset();

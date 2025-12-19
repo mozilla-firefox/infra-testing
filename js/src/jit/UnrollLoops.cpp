@@ -243,7 +243,7 @@ static void DumpBlockTableRows(const BlockTable& table, int32_t firstCix,
     }
     for (uint32_t bix = 0; bix < table.size2(); bix++) {
       DumpMIRBlock(printer, table.get(uint32_t(cix), bix),
-                   /*showHashedPointers=*/true);
+                   /*showDetails=*/true);
     }
   }
   printer.printf(">>>>\n");
@@ -272,7 +272,7 @@ static void DumpValueTable(const ValueTable& table, const char* tag) {
     for (uint32_t vix = 0; vix < table.size2(); vix++) {
       printer.printf("    ");
       DumpMIRDefinition(printer, table.get(cix, vix),
-                        /*showHashedPointers=*/true);
+                        /*showDetails=*/true);
       printer.printf("\n");
     }
   }
@@ -950,7 +950,7 @@ static bool UnrollAndOrPeelLoop(MIRGraph& graph, UnrollState& state) {
     Fprinter& printer(JitSpewPrinter());
     printer.printf(
         "<<<< ORIGINAL FUNCTION (after LCSSA-ification of chosen loops)\n");
-    DumpMIRGraph(printer, graph, /*showHashedPointers=*/true);
+    DumpMIRGraph(printer, graph, /*showDetails=*/true);
     printer.printf(">>>>\n");
   }
 #endif
@@ -990,14 +990,14 @@ static bool UnrollAndOrPeelLoop(MIRGraph& graph, UnrollState& state) {
     printer.printf("<<<< EXIT TARGET BLOCKS: ");
     for (size_t i = 0; i < state.exitTargetBlocks.size(); i++) {
       MBasicBlock* targetBlock = state.exitTargetBlocks.get(i);
-      DumpMIRBlockID(printer, targetBlock, /*showHashedPointers=*/true);
+      DumpMIRBlockID(printer, targetBlock, /*showDetails=*/true);
       printer.printf(" ");
     }
     printer.printf(">>>>\n");
     printer.printf("<<<< EXITING VALUES: ");
     for (size_t i = 0; i < state.exitingValues.size(); i++) {
       MDefinition* exitingValue = state.exitingValues.get(i);
-      DumpMIRDefinitionID(printer, exitingValue, /*showHashedPointers=*/true);
+      DumpMIRDefinitionID(printer, exitingValue, /*showDetails=*/true);
       printer.printf(" ");
     }
     printer.printf(">>>>\n");
@@ -1163,6 +1163,25 @@ static bool UnrollAndOrPeelLoop(MIRGraph& graph, UnrollState& state) {
     for (vix = 0; vix < numValuesInOriginal; vix++) {
       MOZ_ASSERT(valueTable.get(cix, vix)->op() ==
                  valueTable.get(0, vix)->op());
+    }
+
+    // For cloned instructions that have a (load) dependency field, and that
+    // field points to an instruction in the original body, update the field so
+    // as to point to the equivalent instruction in the cloned body.
+    for (vix = 0; vix < numValuesInOriginal; vix++) {
+      MDefinition* clonedInsn = valueTable.get(cix, vix);
+      MDefinition* originalDep = clonedInsn->dependency();
+      if (originalDep) {
+        mozilla::Maybe<size_t> originalInsnIndex =
+            valueTable.findInRow(0, originalDep);
+        if (originalInsnIndex.isSome()) {
+          // The dependency is to an insn in the original body, so we need to
+          // remap it to this body.
+          MDefinition* clonedDep =
+              valueTable.get(cix, originalInsnIndex.value());
+          clonedInsn->setDependency(clonedDep);
+        }
+      }
     }
   }
 
@@ -1628,7 +1647,7 @@ static bool UnrollAndOrPeelLoop(MIRGraph& graph, UnrollState& state) {
     Fprinter& printer(JitSpewPrinter());
     printer.printf("<<<< SPLITTER BLOCKS\n");
     for (MBasicBlock* block : splitterBlocks) {
-      DumpMIRBlock(printer, block, /*showHashedPointers=*/true);
+      DumpMIRBlock(printer, block, /*showDetails=*/true);
     }
     printer.printf(">>>>\n");
   }
@@ -1658,7 +1677,7 @@ static bool UnrollAndOrPeelLoop(MIRGraph& graph, UnrollState& state) {
   if (JitSpewEnabled(JitSpew_UnrollDetails)) {
     Fprinter& printer(JitSpewPrinter());
     printer.printf("<<<< FUNCTION AFTER UNROLLING\n");
-    DumpMIRGraph(printer, graph, /*showHashedPointers=*/true);
+    DumpMIRGraph(printer, graph, /*showDetails=*/true);
     printer.printf(">>>>\n");
   }
 #endif
@@ -1689,18 +1708,45 @@ bool FindInitialCandidates(MIRGraph& graph,
   // Find initial candidate loops, and place them in `initialCandidates`.
   MOZ_ASSERT(initialCandidates.empty());
 
-  // TODO: possibly use a linear-time algorithm to find innermost loops, as
-  // BackTrackingAllocator.cpp does, rather than the scheme below.
-  // See bug 1959074.
+  // First, using a single scan over the blocks, find blocks that are the
+  // headers of innermost loops.  This uses the same logic to find innermost
+  // loops as BacktrackingAllocator::init.
+  //
+  // The general idea is: we traverse the entire graph in RPO order, but ignore
+  // all blocks except loop headers and loop backedge blocks.  At a header we
+  // make a note of the backedge block it points at.  Because the loops are
+  // properly nested, this means that we will ignore backedges for
+  // non-innermost loops, and, so, when we do come to a block that matches
+  // `backedge`, we know we've identified an innermost loop.
+  //
+  // At the same time, release-assert that the blocks are numbered
+  // sequentially.  We need this for the loop-non-overlapping check below.
+  mozilla::Vector<MBasicBlock*, 128, SystemAllocPolicy> initialHeaders;
+  {
+    MBasicBlock* backedge = nullptr;
+    uint32_t expectedNextId = 0;
+    for (auto rpoIter(graph.rpoBegin()), rpoIterEnd(graph.rpoEnd());
+         rpoIter != rpoIterEnd; ++rpoIter) {
+      MBasicBlock* block = *rpoIter;
+      MOZ_RELEASE_ASSERT(block->id() == expectedNextId);
+      expectedNextId++;
 
-  // Collect up the loops in the function.  The iteration order doesn't matter
-  // here, but we have to choose something.
-  for (auto rpoIter(graph.rpoBegin()), rpoIterEnd(graph.rpoEnd());
-       rpoIter != rpoIterEnd; ++rpoIter) {
-    MBasicBlock* header = *rpoIter;
-    if (!header->isLoopHeader()) {
-      continue;
+      if (block->isLoopHeader()) {
+        backedge = block->backedge();
+      }
+      if (block == backedge) {
+        if (!initialHeaders.append(block->loopHeaderOfBackedge())) {
+          return false;
+        }
+      }
     }
+  }
+
+  // Now use MarkLoopBlocks to check each potential loop in more detail, and,
+  // for each non-empty, non-OSR one, create an entry in initialCandidates for
+  // it.
+  for (MBasicBlock* header : initialHeaders) {
+    MOZ_ASSERT(header->isLoopHeader());
 
     bool hasOsrEntry;
     size_t numBlocks = MarkLoopBlocks(graph, header, &hasOsrEntry);
@@ -1720,77 +1766,20 @@ bool FindInitialCandidates(MIRGraph& graph,
     }
   }
 
-  // Sort the loops by size (in blocks).
-  std::sort(initialCandidates.begin(), initialCandidates.end(),
-            [](const InitialCandidate& cand1, const InitialCandidate& cand2) {
-              return cand1.numBlocks < cand2.numBlocks;
-            });
-
-  // Remove non-innermost candidates from consideration.  We expect
-  // `initialCandidates` to describe contiguous, properly nested candidates.
-  // For each loop in `initialCandidates`, scan forwards in the vector and mark
-  // as invalid, any subsequent loops that contain it.
-  for (size_t i = 0; i < initialCandidates.length(); i++) {
-    const InitialCandidate& candI = initialCandidates[i];
-    MOZ_ASSERT(candI.numBlocks > 0);
-
-    for (size_t j = i + 1; j < initialCandidates.length(); j++) {
-      InitialCandidate& candJ = initialCandidates[j];
-      MOZ_ASSERT(candJ.numBlocks > 0);
-      // Because sorted by size:
-      MOZ_ASSERT(candI.numBlocks <= candJ.numBlocks);
-      if (!candJ.valid) {
-        // Already invalidated
-        continue;
-      }
-
-      // Determine relationship of I vs J.  Either non-overlapping, or I is
-      // completely contained inside J.  In which case invalidate J.
-      MOZ_ASSERT(candI.numBlocks > 0);
-      if (candI.header->id() + candI.numBlocks <= candJ.header->id()) {
-        continue;  // no overlap
-      }
-      if (candJ.header->id() + candJ.numBlocks <= candI.header->id()) {
-        continue;  // no overlap
-      }
-      // "I is completely contained within J"
-      MOZ_ASSERT(candJ.header->id() <= candI.header->id());
-      MOZ_ASSERT(candI.header->id() + candI.numBlocks <=
-                 candJ.header->id() + candJ.numBlocks);
-      // and they aren't identical
-      MOZ_ASSERT(candI.header->id() != candJ.header->id() ||
-                 candI.numBlocks != candJ.numBlocks);
-      candJ.valid = false;
-    }
-  }
-
-  // Slide the valid ones to the start of the vector and sort by starting block
-  // ID.  This makes it easy to verify that the cands are non-overlapping.
-  {
-    size_t wr = 0;
-    size_t rd;
-    for (rd = 0; rd < initialCandidates.length(); rd++) {
-      if (initialCandidates[rd].valid) {
-        initialCandidates[wr++] = initialCandidates[rd];
-      }
-    }
-    while (wr < rd) {
-      initialCandidates.popBack();
-      wr++;
-    }
-  }
-
   // Sort the loops by header ID.
   std::sort(initialCandidates.begin(), initialCandidates.end(),
             [](const InitialCandidate& cand1, const InitialCandidate& cand2) {
               return cand1.header->id() < cand2.header->id();
             });
 
-  // Now we can conveniently assert non-overlappingness.
+  // Now we can conveniently assert non-overlappingness.  Note that this
+  // depends on the property that each loop is a sequential sequence of block
+  // IDs, as we release-asserted above.  Presence of an overlap might indicate
+  // that a non-innermost loop made it this far.
   for (size_t i = 1; i < initialCandidates.length(); i++) {
-    MOZ_ASSERT(initialCandidates[i - 1].header->id() +
-                   initialCandidates[i - 1].numBlocks <=
-               initialCandidates[i].header->id());
+    MOZ_RELEASE_ASSERT(initialCandidates[i - 1].header->id() +
+                           initialCandidates[i - 1].numBlocks <=
+                       initialCandidates[i].header->id());
   }
 
   // Heuristics: calculate a "score" for each loop, indicating our desire to

@@ -22,14 +22,11 @@ using mozilla::net::ClassOfService from "mozilla/net/ClassOfService.h";
 [RefCounted] using class nsITransportSecurityInfo from "nsITransportSecurityInfo.h";
 using mozilla::net::TRRSkippedReason from "nsITRRSkipReason.h";
 using nsIRequest::TRRMode from "nsIRequest.h";
+using nsILoadInfo::IPAddressSpace from "nsILoadInfo.h";
+using struct mozilla::net::LNAPerms from "mozilla/net/HttpTransactionShell.h";
 
 namespace mozilla {
 namespace net {
-
-struct H2PushedStreamArg {
-  PHttpTransaction transWithPushedStream;
-  uint32_t pushedStreamId;
-};
 
 struct NetworkAddressArg {
   NetAddr selfAddr;
@@ -61,7 +58,7 @@ parent:
                        TRRSkippedReason trrSkipReason,
                        uint32_t caps,
                        TimeStamp onStartRequestStart,
-                       HttpConnectionInfoCloneArgs connInfoArgs);
+                       HttpConnectionInfoCloneArgs connInfoArgs, IPAddressSpace targetIpAddressSpace);
   async OnTransportStatus(nsresult status,
                           int64_t progress,
                           int64_t progressMax,
@@ -79,9 +76,6 @@ parent:
                       TimeStamp lastActiveTabOptimization,
                       TimeStamp onStopRequestStart);
   async OnInitFailed(nsresult status);
-  async OnH2PushStream(uint32_t pushedStreamId,
-                       nsCString resourceUrl,
-                       nsCString requestString);
   async EarlyHint(nsCString linkHeader, nsCString referrerPolicy, nsCString cspHeader);
 
 child:
@@ -100,9 +94,10 @@ child:
              bool responseTimeoutEnabled,
              uint64_t channelId,
              bool hasTransactionObserver,
-             H2PushedStreamArg? pushedStreamArg,
              PInputChannelThrottleQueue? throttleQueue,
              bool aIsDocumentLoad,
+             IPAddressSpace aParentIPAddressSpace,
+             LNAPerms aLnaPermissionStatus,
              TimeStamp aRedirectStart,
              TimeStamp aRedirectEnd);
 

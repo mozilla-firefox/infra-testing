@@ -6,7 +6,6 @@
 #ifndef HTMLBodyElement_h___
 #define HTMLBodyElement_h___
 
-#include "mozilla/Attributes.h"
 #include "nsGenericHTMLElement.h"
 
 namespace mozilla {
@@ -19,7 +18,7 @@ class OnBeforeUnloadEventHandlerNonNull;
 
 class HTMLBodyElement final : public nsGenericHTMLElement {
  public:
-  using Element::GetText;
+  using Element::GetCharacterDataBuffer;
 
   explicit HTMLBodyElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
       : nsGenericHTMLElement(std::move(aNodeInfo)) {}

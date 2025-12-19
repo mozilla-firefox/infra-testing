@@ -2,9 +2,13 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use std::ops::Deref;
 use std::sync::atomic::{AtomicU8, Ordering};
 
+use malloc_size_of_derive::MallocSizeOf;
+
 use crate::error::{Error, ErrorKind};
+use crate::metrics::dual_labeled_counter::validate_dynamic_key_and_or_category;
 use crate::metrics::labeled::validate_dynamic_label;
 use crate::Glean;
 use serde::{Deserialize, Serialize};
@@ -12,7 +16,7 @@ use serde::{Deserialize, Serialize};
 /// The supported metrics' lifetimes.
 ///
 /// A metric's lifetime determines when its stored data gets reset.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Default)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Default, MallocSizeOf)]
 #[repr(i32)] // Use i32 to be compatible with our JNA definition
 #[serde(rename_all = "lowercase")]
 pub enum Lifetime {
@@ -50,7 +54,7 @@ impl TryFrom<i32> for Lifetime {
 }
 
 /// The common set of data shared across all different metric types.
-#[derive(Default, Debug, Clone, Deserialize, Serialize)]
+#[derive(Default, Debug, Clone, Deserialize, Serialize, MallocSizeOf)]
 pub struct CommonMetricData {
     /// The metric's name.
     pub name: String,
@@ -70,10 +74,43 @@ pub struct CommonMetricData {
     /// metric to be recorded to, dynamic labels are stored in the specific
     /// label so that we can validate them when the Glean singleton is
     /// available.
-    pub dynamic_label: Option<String>,
+    pub dynamic_label: Option<DynamicLabelType>,
 }
 
-#[derive(Default, Debug)]
+/// The type of dynamic label applied to a base metric. Used to help identify
+/// the necessary validation to be performed.
+#[derive(Debug, Clone, Deserialize, Serialize, MallocSizeOf, uniffi::Enum)]
+pub enum DynamicLabelType {
+    /// A dynamic label applied from a `LabeledMetric`
+    Label(String),
+    /// A label applied by a `DualLabeledCounter` that contains a dynamic key
+    KeyOnly(String),
+    /// A label applied by a `DualLabeledCounter` that contains a dynamic category
+    CategoryOnly(String),
+    /// A label applied by a `DualLabeledCounter` that contains a dynamic key and category
+    KeyAndCategory(String),
+}
+
+impl Default for DynamicLabelType {
+    fn default() -> Self {
+        Self::Label(String::new())
+    }
+}
+
+impl Deref for DynamicLabelType {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            DynamicLabelType::Label(label) => label,
+            DynamicLabelType::KeyOnly(key) => key,
+            DynamicLabelType::CategoryOnly(category) => category,
+            DynamicLabelType::KeyAndCategory(key_and_category) => key_and_category,
+        }
+    }
+}
+
+#[derive(Default, Debug, MallocSizeOf)]
 pub struct CommonMetricDataInternal {
     pub inner: CommonMetricData,
     pub disabled: AtomicU8,
@@ -136,7 +173,17 @@ impl CommonMetricDataInternal {
         let base_identifier = self.base_identifier();
 
         if let Some(label) = &self.inner.dynamic_label {
-            validate_dynamic_label(glean, self, &base_identifier, label)
+            match label {
+                DynamicLabelType::Label(label) => {
+                    validate_dynamic_label(glean, self, &base_identifier, label)
+                }
+                _ => validate_dynamic_key_and_or_category(
+                    glean,
+                    self,
+                    &base_identifier,
+                    label.clone(),
+                ),
+            }
         } else {
             base_identifier
         }

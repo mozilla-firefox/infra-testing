@@ -18,7 +18,6 @@ class GfxInfo final : public GfxInfoBase {
  public:
   // We only declare the subset of nsIGfxInfo that we actually implement. The
   // rest is brought forward from GfxInfoBase.
-  NS_IMETHOD GetD2DEnabled(bool* aD2DEnabled) override;
   NS_IMETHOD GetDWriteEnabled(bool* aDWriteEnabled) override;
   NS_IMETHOD GetDWriteVersion(nsAString& aDwriteVersion) override;
   NS_IMETHOD GetEmbeddedInFirefoxReality(
@@ -59,7 +58,15 @@ class GfxInfo final : public GfxInfoBase {
 
 #ifdef DEBUG
   NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_NSIGFXINFODEBUG
+
+  NS_IMETHOD SpoofVendorID(const nsAString& aVendorID) override;
+  NS_IMETHOD SpoofDeviceID(const nsAString& aDeviceID) override;
+  NS_IMETHOD SpoofDriverVersion(const nsAString& aDriverVersion) override;
+  NS_IMETHOD SpoofOSVersion(uint32_t aVersion) override;
+  NS_IMETHOD SpoofOSVersionEx(uint32_t aMajor, uint32_t aMinor, uint32_t aBuild,
+                              uint32_t aRevision) override;
+
+  GfxVersionEx OperatingSystemVersionEx() override { return mOSVersionEx; }
 #endif
 
  protected:
@@ -70,9 +77,9 @@ class GfxInfo final : public GfxInfoBase {
   }
   virtual nsresult GetFeatureStatusImpl(
       int32_t aFeature, int32_t* aStatus, nsAString& aSuggestedDriverVersion,
-      const nsTArray<GfxDriverInfo>& aDriverInfo, nsACString& aFailureId,
-      OperatingSystem* aOS = nullptr) override;
-  virtual const nsTArray<GfxDriverInfo>& GetGfxDriverInfo() override;
+      const nsTArray<RefPtr<GfxDriverInfo>>& aDriverInfo,
+      nsACString& aFailureId, OperatingSystem* aOS = nullptr) override;
+  virtual const nsTArray<RefPtr<GfxDriverInfo>>& GetGfxDriverInfo() override;
 
   virtual bool DoesWindowProtocolMatch(
       const nsAString& aBlocklistWindowProtocol,
@@ -124,6 +131,10 @@ class GfxInfo final : public GfxInfoBase {
 
   static int sGLXTestPipe;
   static pid_t sGLXTestPID;
+
+#ifdef DEBUG
+  GfxVersionEx mOSVersionEx;
+#endif
 
   void GetDataVAAPI();
   void GetDataV4L2();

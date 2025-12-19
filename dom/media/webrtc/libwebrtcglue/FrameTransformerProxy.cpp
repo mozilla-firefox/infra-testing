@@ -5,26 +5,28 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 #include "libwebrtcglue/FrameTransformerProxy.h"
-#include "libwebrtcglue/FrameTransformer.h"
-#include "mozilla/dom/RTCRtpSender.h"
-#include "mozilla/dom/RTCRtpReceiver.h"
-#include "mozilla/Logging.h"
-#include "mozilla/Mutex.h"
-#include "jsapi/RTCRtpScriptTransformer.h"
-#include "nsThreadUtils.h"
-#include "mozilla/Assertions.h"
-#include <utility>
-#include "mozilla/Maybe.h"
-#include "mozilla/RefPtr.h"
-#include "nscore.h"
-#include "ErrorList.h"
-#include "nsIRunnable.h"
-#include "nsIEventTarget.h"
-#include "api/frame_transformer_interface.h"
+
 #include <memory>
-#include "nsDebug.h"
-#include "nsISupports.h"
 #include <string>
+#include <utility>
+
+#include "ErrorList.h"
+#include "api/frame_transformer_interface.h"
+#include "jsapi/RTCRtpScriptTransformer.h"
+#include "libwebrtcglue/FrameTransformer.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/Logging.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/Mutex.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/dom/RTCRtpReceiver.h"
+#include "mozilla/dom/RTCRtpSender.h"
+#include "nsDebug.h"
+#include "nsIEventTarget.h"
+#include "nsIRunnable.h"
+#include "nsISupports.h"
+#include "nsThreadUtils.h"
+#include "nscore.h"
 
 namespace mozilla {
 
@@ -56,9 +58,23 @@ void FrameTransformerProxy::SetScriptTransformer(
 
   MOZ_ASSERT(!mScriptTransformer);
   mScriptTransformer = &aTransformer;
-  while (!mQueue.empty()) {
-    mScriptTransformer->TransformFrame(std::move(mQueue.front()));
-    mQueue.pop_front();
+
+  if (!mQueue.empty()) {
+    std::list<std::unique_ptr<webrtc::TransformableFrameInterface>> queue;
+    std::swap(queue, mQueue);
+    mWorkerThread->Dispatch(NS_NewRunnableFunction(
+        __func__, [this, self = RefPtr<FrameTransformerProxy>(this),
+                   queue = std::move(queue)]() mutable {
+          if (NS_WARN_IF(!mScriptTransformer)) {
+            // Could happen due to errors. Is there some
+            // other processing we ought to do?
+            return;
+          }
+          while (!queue.empty()) {
+            mScriptTransformer->TransformFrame(std::move(queue.front()));
+            queue.pop_front();
+          }
+        }));
   }
 }
 
@@ -196,13 +212,13 @@ bool FrameTransformerProxy::RequestKeyFrame() {
   return true;
 }
 
-void FrameTransformerProxy::KeyFrameRequestDone(bool aSuccess) {
+void FrameTransformerProxy::KeyFrameRequestDone() {
   MutexAutoLock lock(mMutex);
   if (mWorkerThread) {
     mWorkerThread->Dispatch(NS_NewRunnableFunction(
-        __func__, [this, self = RefPtr<FrameTransformerProxy>(this), aSuccess] {
+        __func__, [this, self = RefPtr<FrameTransformerProxy>(this)] {
           if (mScriptTransformer) {
-            mScriptTransformer->KeyFrameRequestDone(aSuccess);
+            mScriptTransformer->KeyFrameRequestDone();
           }
         }));
   }

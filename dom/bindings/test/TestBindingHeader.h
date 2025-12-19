@@ -8,14 +8,14 @@
 #ifndef TestBindingHeader_h
 #define TestBindingHeader_h
 
+#include "js/Object.h"  // JS::GetClass
+#include "mozilla/ErrorResult.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/Record.h"
 #include "mozilla/dom/TypedArray.h"
-#include "mozilla/ErrorResult.h"
 #include "nsCOMPtr.h"
 #include "nsGenericHTMLElement.h"
 #include "nsWrapperCache.h"
-#include "js/Object.h"  // JS::GetClass
 
 // Forward declare this before we include TestCodeGenBinding.h, because that
 // header relies on including this one for it, for ParentDict. Hopefully it
@@ -43,26 +43,21 @@ namespace dom {
 
 class nsRenamedInterface : public nsISupports, public nsWrapperCache {
  public:
-  NS_DECLARE_STATIC_IID_ACCESSOR(NS_RENAMED_INTERFACE_IID)
+  NS_INLINE_DECL_STATIC_IID(NS_RENAMED_INTERFACE_IID)
   NS_DECL_ISUPPORTS
 
   // We need a GetParentObject to make binding codegen happy
   virtual nsISupports* GetParentObject();
 };
 
-NS_DEFINE_STATIC_IID_ACCESSOR(nsRenamedInterface, NS_RENAMED_INTERFACE_IID)
-
 // IID for the TestExternalInterface
 #define NS_TEST_EXTERNAL_INTERFACE_IID \
   {0xd5ba0c99, 0x9b1d, 0x4e71, {0x8a, 0x94, 0x56, 0x38, 0x6c, 0xa3, 0xda, 0x3d}}
 class TestExternalInterface : public nsISupports {
  public:
-  NS_DECLARE_STATIC_IID_ACCESSOR(NS_TEST_EXTERNAL_INTERFACE_IID)
+  NS_INLINE_DECL_STATIC_IID(NS_TEST_EXTERNAL_INTERFACE_IID)
   NS_DECL_ISUPPORTS
 };
-
-NS_DEFINE_STATIC_IID_ACCESSOR(TestExternalInterface,
-                              NS_TEST_EXTERNAL_INTERFACE_IID)
 
 class TestNonWrapperCacheInterface : public nsISupports {
  public:
@@ -1561,11 +1556,11 @@ class TestNamedDeleterWithRetvalInterface : public nsISupports,
   // We need a GetParentObject to make binding codegen happy
   virtual nsISupports* GetParentObject();
 
-  bool NamedDeleter(const nsAString&, bool&);
-  bool NamedDeleter(const nsAString&) = delete;
+  void NamedDeleter(const nsAString&, bool&);
+  void NamedDeleter(const nsAString&) = delete;
   long NamedGetter(const nsAString&, bool&);
-  bool DelNamedItem(const nsAString&);
-  bool DelNamedItem(const nsAString&, bool&) = delete;
+  void DelNamedItem(const nsAString&);
+  void DelNamedItem(const nsAString&, bool&) = delete;
   void GetSupportedNames(nsTArray<nsString>&);
 };
 

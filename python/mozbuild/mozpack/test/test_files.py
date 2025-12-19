@@ -2,9 +2,12 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+import buildconfig
+
 from mozbuild.dirutils import ensureParentDir
+from mozbuild.nodeutil import find_node_executable
 from mozbuild.util import ensure_bytes
-from mozpack.errors import ErrorMessage, errors
+from mozpack.errors import ErrorMessage
 from mozpack.files import (
     AbsoluteSymlinkFile,
     ComposedFinder,
@@ -43,7 +46,6 @@ from tempfile import mkdtemp
 
 import mozfile
 import mozunit
-import six
 
 import mozpack.path as mozpath
 from mozpack.chrome.manifest import (
@@ -892,44 +894,91 @@ class TestMinifiedJavaScript(TestWithTmpDir):
         "// Another comment",
     ]
 
+    def setUp(self):
+        super().setUp()
+        if not buildconfig.substs.get("NODEJS"):
+            node_exe, _ = find_node_executable()
+            if node_exe:
+                buildconfig.substs["NODEJS"] = node_exe
+
     def test_minified_javascript(self):
-        orig_f = GeneratedFile("\n".join(self.orig_lines))
-        min_f = MinifiedJavaScript(orig_f)
+        """Test that MinifiedJavaScript minifies JavaScript content."""
+        orig_f = GeneratedFile("\n".join(self.orig_lines).encode())
+        min_f = MinifiedJavaScript(orig_f, "test.js")
 
-        mini_lines = min_f.open().readlines()
-        self.assertTrue(mini_lines)
-        self.assertTrue(len(mini_lines) < len(self.orig_lines))
+        mini_content = min_f.open().read()
+        orig_content = orig_f.open().read()
 
-    def _verify_command(self, code):
-        our_dir = os.path.abspath(os.path.dirname(__file__))
-        return [
-            sys.executable,
-            os.path.join(our_dir, "support", "minify_js_verify.py"),
-            code,
-        ]
+        # Verify minification occurred (content should be smaller)
+        self.assertTrue(len(mini_content) < len(orig_content))
+        # Verify content is not empty
+        self.assertTrue(len(mini_content) > 0)
 
-    def test_minified_verify_success(self):
-        orig_f = GeneratedFile("\n".join(self.orig_lines))
-        min_f = MinifiedJavaScript(orig_f, verify_command=self._verify_command("0"))
+    def test_minified_javascript_open(self):
+        """Test that MinifiedJavaScript.open returns appropriately reset file object."""
+        orig_f = GeneratedFile("\n".join(self.orig_lines).encode())
+        min_f = MinifiedJavaScript(orig_f, "test.js")
 
-        mini_lines = [six.ensure_text(s) for s in min_f.open().readlines()]
-        self.assertTrue(mini_lines)
-        self.assertTrue(len(mini_lines) < len(self.orig_lines))
+        # Test reading partial content
+        first_read = min_f.open().read(10)
+        self.assertTrue(len(first_read) <= 10)
 
-    def test_minified_verify_failure(self):
-        orig_f = GeneratedFile("\n".join(self.orig_lines))
-        errors.out = six.StringIO()
-        min_f = MinifiedJavaScript(orig_f, verify_command=self._verify_command("1"))
+        # Test reading full content multiple times
+        full_content = min_f.open().read()
+        second_read = min_f.open().read()
+        self.assertEqual(full_content, second_read)
 
-        mini_lines = min_f.open().readlines()
-        output = errors.out.getvalue()
-        errors.out = sys.stderr
-        self.assertEqual(
-            output,
-            "warning: JS minification verification failed for <unknown>:\n"
-            "warning: Error message\n",
-        )
-        self.assertEqual(mini_lines, orig_f.open().readlines())
+    def test_preserves_functionality(self):
+        """Test that Terser preserves JavaScript functionality."""
+        # More complex JavaScript with functions and objects
+        complex_js = """
+        // This is a test function
+        function testFunction(param) {
+            let result = {
+                value: param * 2,
+                toString: function() {
+                    return "Result: " + this.value;
+                }
+            };
+            return result;
+        }
+
+        // Export for testing
+        var exported = testFunction;
+        """
+
+        orig_f = GeneratedFile(complex_js.encode())
+        min_f = MinifiedJavaScript(orig_f, "complex.js")
+
+        minified_content = min_f.open().read().decode()
+
+        # Verify it's minified
+        self.assertTrue(len(minified_content) < len(complex_js))
+        # Verify functions are still present)
+        self.assertIn("function", minified_content)
+
+    def test_handles_empty_file(self):
+        """Test that MinifiedJavaScript handles empty files gracefully."""
+        empty_f = GeneratedFile(b"")
+        min_f = MinifiedJavaScript(empty_f, "empty.js")
+
+        # Should handle empty content gracefully
+        result = min_f.open().read()
+        self.assertEqual(result, b"")
+
+    def test_handles_syntax_errors(self):
+        """Test that MinifiedJavaScript raises an error for syntax errors."""
+        # JavaScript with syntax error
+        broken_js = b"function broken( { return 'missing parenthesis'; }"
+
+        orig_f = GeneratedFile(broken_js)
+        min_f = MinifiedJavaScript(orig_f, "broken.js")
+
+        # Should raise an ErrorMessage when minification fails
+        from mozpack.errors import ErrorMessage
+
+        with self.assertRaises(ErrorMessage):
+            min_f.open().read()
 
 
 class MatchTestTemplate:
@@ -1054,7 +1103,7 @@ def do_check(test, finder, pattern, result):
 class TestFileFinder(MatchTestTemplate, TestWithTmpDir):
     def add(self, path):
         ensureParentDir(self.tmppath(path))
-        open(self.tmppath(path), "wb").write(six.ensure_binary(path))
+        open(self.tmppath(path), "wb").write(path.encode())
 
     def do_check(self, pattern, result):
         do_check(self, self.finder, pattern, result)
@@ -1218,7 +1267,7 @@ class TestComposedFinder(MatchTestTemplate, TestWithTmpDir):
             real_path = mozpath.join("a", path)
         ensureParentDir(self.tmppath(real_path))
         if not content:
-            content = six.ensure_binary(path)
+            content = path.encode()
         open(self.tmppath(real_path), "wb").write(content)
 
     def do_check(self, pattern, result):
@@ -1246,12 +1295,10 @@ class TestComposedFinder(MatchTestTemplate, TestWithTmpDir):
 
 
 @unittest.skipUnless(hglib, "hglib not available")
-@unittest.skipIf(
-    six.PY3 and os.name == "nt", "Does not currently work in Python3 on Windows"
-)
+@unittest.skipIf(os.name == "nt", "Does not currently work in Python3 on Windows")
 class TestMercurialRevisionFinder(MatchTestTemplate, TestWithTmpDir):
     def setUp(self):
-        super(TestMercurialRevisionFinder, self).setUp()
+        super().setUp()
         hglib.init(self.tmpdir)
         self._clients = []
 
@@ -1265,7 +1312,7 @@ class TestMercurialRevisionFinder(MatchTestTemplate, TestWithTmpDir):
 
         self._clients[:] = []
 
-        super(TestMercurialRevisionFinder, self).tearDown()
+        super().tearDown()
 
     def _client(self):
         configs = (
@@ -1273,7 +1320,7 @@ class TestMercurialRevisionFinder(MatchTestTemplate, TestWithTmpDir):
             b'ui.username="Dummy User <dummy@example.com>"',
         )
         client = hglib.open(
-            six.ensure_binary(self.tmpdir),
+            self.tmpdir.encode(),
             encoding=b"UTF-8",  # b'' because py2 needs !unicode
             configs=configs,
         )
@@ -1284,8 +1331,8 @@ class TestMercurialRevisionFinder(MatchTestTemplate, TestWithTmpDir):
         with self._client() as c:
             ensureParentDir(self.tmppath(path))
             with open(self.tmppath(path), "wb") as fh:
-                fh.write(six.ensure_binary(path))
-            c.add(six.ensure_binary(self.tmppath(path)))
+                fh.write(path.encode())
+            c.add(self.tmppath(path).encode())
 
     def do_check(self, pattern, result):
         do_check(self, self.finder, pattern, result)
@@ -1310,14 +1357,14 @@ class TestMercurialRevisionFinder(MatchTestTemplate, TestWithTmpDir):
         with self._client() as c:
             with open(self.tmppath("foo"), "wb") as fh:
                 fh.write(b"foo initial")
-            c.add(six.ensure_binary(self.tmppath("foo")))
+            c.add(self.tmppath("foo").encode())
             c.commit("initial")
 
             with open(self.tmppath("foo"), "wb") as fh:
                 fh.write(b"foo second")
             with open(self.tmppath("bar"), "wb") as fh:
                 fh.write(b"bar second")
-            c.add(six.ensure_binary(self.tmppath("bar")))
+            c.add(self.tmppath("bar").encode())
             c.commit("second")
             # This wipes out the working directory, ensuring the finder isn't
             # finding anything from the filesystem.
@@ -1340,7 +1387,7 @@ class TestMercurialRevisionFinder(MatchTestTemplate, TestWithTmpDir):
         with self._client() as c:
             with open(self.tmppath("foo"), "wb") as fh:
                 fh.write(b"initial")
-            c.add(six.ensure_binary(self.tmppath("foo")))
+            c.add(self.tmppath("foo").encode())
             c.commit("initial")
             c.rawcommand([b"update", b"null"])
 

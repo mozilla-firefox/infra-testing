@@ -132,9 +132,6 @@ RtpSenderEgress::RtpSenderEgress(const Environment& env,
       use_ntp_time_for_absolute_send_time_(!env_.field_trials().IsDisabled(
           "WebRTC-UseNtpTimeAbsoluteSendTime")) {
   RTC_DCHECK(worker_queue_);
-  RTC_DCHECK(config.transport_feedback_callback == nullptr)
-      << "transport_feedback_callback is no longer used and will soon be "
-         "deleted.";
   if (bitrate_callback_) {
     update_task_ = RepeatingTaskHandle::DelayedStart(worker_queue_,
                                                      kUpdateInterval, [this]() {
@@ -200,7 +197,7 @@ void RtpSenderEgress::SendPacket(std::unique_ptr<RtpPacketToSend> packet,
     if (packet->is_red()) {
       RtpPacketToSend unpacked_packet(*packet);
 
-      const rtc::CopyOnWriteBuffer buffer = packet->Buffer();
+      const CopyOnWriteBuffer buffer = packet->Buffer();
       // Grab media payload type from RED header.
       const size_t headers_size = packet->headers_size();
       unpacked_packet.SetPayloadType(buffer[headers_size]);
@@ -253,7 +250,8 @@ void RtpSenderEgress::SendPacket(std::unique_ptr<RtpPacketToSend> packet,
     }
   }
 
-  auto compound_packet = Packet{std::move(packet), pacing_info, now};
+  auto compound_packet =
+      Packet{.rtp_packet = std::move(packet), .info = pacing_info, .now = now};
   if (enable_send_packet_batching_ && !is_audio_) {
     packets_to_send_.push_back(std::move(compound_packet));
   } else {
@@ -346,8 +344,15 @@ RtpSendRates RtpSenderEgress::GetSendRates(Timestamp now) const {
 void RtpSenderEgress::GetDataCounters(StreamDataCounters* rtp_stats,
                                       StreamDataCounters* rtx_stats) const {
   RTC_DCHECK_RUN_ON(worker_queue_);
-  *rtp_stats = rtp_stats_;
-  *rtx_stats = rtx_rtp_stats_;
+  if (rtp_stats_callback_) {
+    *rtp_stats = rtp_stats_callback_->GetDataCounters(ssrc_);
+    if (rtx_ssrc_.has_value()) {
+      *rtx_stats = rtp_stats_callback_->GetDataCounters(*rtx_ssrc_);
+    }
+  } else {
+    *rtp_stats = rtp_stats_;
+    *rtx_stats = rtx_rtp_stats_;
+  }
 }
 
 void RtpSenderEgress::ForceIncludeSendPacketsInAllocation(
@@ -372,7 +377,7 @@ void RtpSenderEgress::SetTimestampOffset(uint32_t timestamp) {
 }
 
 std::vector<RtpSequenceNumberMap::Info> RtpSenderEgress::GetSentRtpPacketInfos(
-    rtc::ArrayView<const uint16_t> sequence_numbers) const {
+    ArrayView<const uint16_t> sequence_numbers) const {
   RTC_DCHECK_RUN_ON(worker_queue_);
   RTC_DCHECK(!sequence_numbers.empty());
   if (!need_rtp_packet_infos_) {
@@ -412,7 +417,7 @@ RtpSenderEgress::FetchFecPackets() {
 }
 
 void RtpSenderEgress::OnAbortedRetransmissions(
-    rtc::ArrayView<const uint16_t> sequence_numbers) {
+    ArrayView<const uint16_t> sequence_numbers) {
   RTC_DCHECK_RUN_ON(worker_queue_);
   // Mark aborted retransmissions as sent, rather than leaving them in
   // a 'pending' state - otherwise they can not be requested again and
@@ -464,8 +469,13 @@ void RtpSenderEgress::UpdateRtpStats(Timestamp now,
   // worker thread.
   RtpSendRates send_rates;
 
-  StreamDataCounters* counters =
-      packet_ssrc == rtx_ssrc_ ? &rtx_rtp_stats_ : &rtp_stats_;
+  StreamDataCounters* counters = nullptr;
+  if (rtp_stats_callback_) {
+    rtp_stats_ = rtp_stats_callback_->GetDataCounters(packet_ssrc);
+    counters = &rtp_stats_;
+  } else {
+    counters = packet_ssrc == rtx_ssrc_ ? &rtx_rtp_stats_ : &rtp_stats_;
+  }
 
   counters->MaybeSetFirstPacketTime(now);
 

@@ -13,10 +13,7 @@
   font: message-box;
   font-size: var(--theme-body-font-size);
 
-  --tab-line-hover-color: light-dark(
-    rgba(0,0,0,.2),
-    rgba(255,255,255,.2)
-  );
+  --tab-line-hover-color: light-dark(rgba(0, 0, 0, 0.2), rgba(255, 255, 255, 0.2));
 
   --tab-line-selected-color: var(--blue-50);
   --toggle-thumb-color: light-dark(white, var(--grey-40));
@@ -38,13 +35,15 @@
   --toggle-hover-thumb-color: var(--toggle-thumb-color);
 
   --searchbox-no-match-background-color: light-dark(#ffe5e5, #402325);
-  --searchbox-no-match-stroke-color: light-dark(var(--red-60),var(--red-50));
+  --searchbox-no-match-stroke-color: light-dark(var(--red-60), var(--red-50));
   --searchbox-background-color: transparent;
   --searchbox-border-color: transparent;
 
   --devtools-searchinput-clear-cross-color: transparent;
   --devtools-searchinput-clear-hover-cross-color: transparent;
   --devtools-searchinput-clear-opacity: 0.8;
+
+  --devtools-twisty-size: 14px;
 
   /* Don't allow forced colors in DevTools if they're not supported */
   &:not([forced-colors-active]) {
@@ -150,7 +149,9 @@ html|input {
  * Override wrong system font from forms.css
  * Bug 1458224: buttons use a wrong default font-size on Linux
  */
-html|button, html|select, html|input {
+html|button,
+html|select,
+html|input {
   font: message-box;
   font-size: var(--theme-body-font-size);
 }
@@ -356,11 +357,6 @@ iframe {
   }
 }
 
-/* Remove system form border from devtools-button. */
-.devtools-button::-moz-focus-inner {
-  border: 0;
-}
-
 /* Button with text */
 .devtools-button:not(:empty) {
   padding-inline: 5px;
@@ -407,11 +403,7 @@ iframe {
   }
 }
 
-.devtools-button:empty:not(
-  [aria-expanded="true"],
-  [aria-pressed="true"],
-  .checked
-):hover {
+.devtools-button:empty:not([aria-expanded="true"], [aria-pressed="true"], .checked):hover {
   background: var(--toolbarbutton-hover-background);
   color: var(--toolbarbutton-hover-color);
 
@@ -421,15 +413,18 @@ iframe {
 }
 
 /* Standalone buttons */
-.devtools-button[data-standalone] {
+.devtools-button.devtools-button-standalone {
   min-height: 28px;
   padding: 4px 6px;
-  border: 1px solid transparent;
+  border: 1px solid light-dark(rgba(138, 161, 180, 0.2), var(--grey-50));
   background: var(--toolbarbutton-background);
-}
-
-.theme-light .devtools-button[data-standalone] {
-  border-color: rgba(138,161,180,0.2);
+  /* prettier-ignore */
+  color: light-dark(
+    var(--grey-70),
+    /* In dark mode, --grey-40 will only give us a AA contrast score, but --grey-30
+       is a bit too harsh, so we mix the color just enough to get a AAA score */
+    color-mix(in srgb, var(--grey-30) 70%, var(--grey-40))
+  );
 }
 
 /* Selectable button which is unchecked. */
@@ -479,10 +474,6 @@ iframe {
 /* Only apply active style on non High Contrast Mode */
 :root:not([forced-colors-active]) .devtools-togglebutton:active {
   background: var(--theme-toolbarbutton-active-background);
-}
-
-.devtools-togglebutton::-moz-focus-inner {
-  border-color: transparent;
 }
 
 /* Icons */
@@ -555,6 +546,13 @@ iframe {
 .devtools-searchinput .textbox-input::placeholder,
 .devtools-filterinput .textbox-input::placeholder {
   font-style: normal;
+}
+
+/* Don't show the "native" search input clear button. Wrap in :where so it's easier to
+   override for specific elements.
+   This should be removed when all dependencies of Bug 1956650 are fixed. */
+:where(input[type="search"])::-moz-search-clear-button {
+  display: none;
 }
 
 /* Searchbox with extra button(s) (MDN help or clear button) */
@@ -657,11 +655,20 @@ iframe {
   z-index: 1001;
 }
 
+/* Highlighting search results */
+
+::highlight(devtools-search) {
+  color: var(--theme-search-results-color);
+  background-color: var(--theme-search-results-background);
+  text-decoration: 1px underline var(--theme-search-results-border-color);
+  text-decoration-skip-ink: none;
+}
+
 /* Twisty and checkbox controls */
 
 .theme-twisty {
-  width: 14px;
-  height: 14px;
+  width: var(--devtools-twisty-size);
+  height: var(--devtools-twisty-size);
   cursor: pointer;
   background-image: url("chrome://devtools/skin/images/arrow.svg");
   background-position: center;
@@ -684,11 +691,7 @@ iframe {
   color: var(--theme-selection-color);
 }
 
-.theme-twisty:is(
-  .open,
-  [open],
-  [aria-expanded="true"]
-) {
+.theme-twisty:is(.open, [open], [aria-expanded="true"]) {
   transform: none;
 }
 
@@ -758,7 +761,9 @@ iframe {
   width: 100%;
   height: 2px;
   background: transparent;
-  transition: transform 250ms var(--animation-curve), opacity 250ms var(--animation-curve);
+  transition:
+    transform 250ms var(--animation-curve),
+    opacity 250ms var(--animation-curve);
   opacity: 0;
   transform: scaleX(0);
 
@@ -807,7 +812,7 @@ iframe {
 /* Checkbox Toggle */
 
 .devtools-checkbox-toggle {
-  --x-pos: .15em;
+  --x-pos: 0.15em;
   /* Reset native checkbox styling. */
   appearance: none;
   background-color: var(--toggle-track-color);
@@ -846,10 +851,9 @@ iframe {
   }
 }
 
-
 /* For right-to-left layout, the toggle thumb goes in the opposite direction. */
 html[dir="rtl"] .devtools-checkbox-toggle {
-  --x-pos: -.15em;
+  --x-pos: -0.15em;
 }
 
 html[dir="rtl"] .devtools-checkbox-toggle:checked {
@@ -858,14 +862,14 @@ html[dir="rtl"] .devtools-checkbox-toggle:checked {
 
 .devtools-checkbox-toggle::before {
   position: relative;
-  width: calc(1em - .3em);
-  height: calc(1em - .3em);
-  transform: translateY(.15em) translateX(var(--x-pos));
+  width: calc(1em - 0.3em);
+  height: calc(1em - 0.3em);
+  transform: translateY(0.15em) translateX(var(--x-pos));
   border-radius: 100%;
   display: block;
   content: "";
   background-color: var(--toggle-thumb-color);
-  transition: transform .1s ease-out;
+  transition: transform 0.1s ease-out;
 }
 
 .devtools-checkbox-toggle:checked::before {
@@ -878,4 +882,52 @@ html[dir="rtl"] .devtools-checkbox-toggle:checked {
   .devtools-checkbox-toggle::before {
     transition: none;
   }
+}
+
+.devtools-checkered-background {
+  background-color: #eee;
+  background-image:
+    linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%, #ccc),
+    linear-gradient(45deg, #ccc 25%, transparent 25%, transparent 75%, #ccc 75%, #ccc);
+  background-size: 20px 20px;
+  background-position:
+    0 0,
+    10px 10px;
+}
+
+/******************************************************************************/
+/* Jump to definition button */
+
+button.jump-definition {
+  display: inline-block;
+  height: 16px;
+  width: 20px;
+  margin-left: 0.25em;
+  vertical-align: middle;
+  background: center url("chrome://devtools/content/shared/components/reps/images/jump-definition.svg") no-repeat;
+  border-color: transparent;
+  stroke: var(--theme-icon-color);
+  -moz-context-properties: stroke;
+  cursor: pointer;
+}
+
+button.jump-definition:hover {
+  stroke: var(--theme-icon-checked-color);
+}
+
+:root[forced-colors-active] button.jump-definition {
+  border: 1px solid ButtonText;
+  border-radius: 2px;
+  background-color: ButtonFace;
+}
+
+:root[forced-colors-active] button.jump-definition:hover {
+  stroke: var(--theme-icon-hover-color);
+  border-color: var(--theme-icon-hover-color);
+}
+
+/* In High Contrast Mode, the button has a solid background, so we only need
+    to set a different color for the icon when we are not in HCM */
+:root:not([forced-colors-active]) .tree-node.focused button.jump-definition {
+  stroke: currentColor;
 }

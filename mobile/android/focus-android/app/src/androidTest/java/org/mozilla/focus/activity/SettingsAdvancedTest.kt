@@ -26,7 +26,7 @@ class SettingsAdvancedTest : TestSetup() {
 
     private val featureSettingsHelper = FeatureSettingsHelper()
 
-    @get: Rule
+    @get:Rule
     val mActivityTestRule = MainActivityFirstrunTestRule(showFirstRun = false)
 
     @Before
@@ -49,7 +49,7 @@ class SettingsAdvancedTest : TestSetup() {
     @SmokeTest
     @Test
     fun openLinksInAppsTest() {
-        val tab3Url = getGenericTabAsset(webServer, 3).url
+        val tab3Url = webServer.getGenericTabAsset(3).url
         val youtubeLink = "https://www.youtube.com/c/MozillaChannel/videos"
 
         homeScreen {

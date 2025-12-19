@@ -11,9 +11,14 @@ internal object MenuDialogTestTag {
     private const val MAIN_MENU = "mainMenu"
 
     const val EXTENSIONS = "$MAIN_MENU.extensions"
-    const val TOOLS = "$MAIN_MENU.tools"
-    const val SAVE = "$MAIN_MENU.save"
+    const val SHARE = "$MAIN_MENU.share"
+    const val MORE_OPTION_CHEVRON = "$MAIN_MENU.more.chevron"
+
+    const val EXTENSIONS_OPTION_CHEVRON = "$MAIN_MENU.extensions.chevron"
+    const val DESKTOP_SITE_ON = "$MAIN_MENU.desktop.site.on"
+    const val DESKTOP_SITE_OFF = "$MAIN_MENU.desktop.site.off"
 
     const val RECOMMENDED_ADDON_ITEM = "recommended.addon.item"
     const val RECOMMENDED_ADDON_ITEM_TITLE = "$RECOMMENDED_ADDON_ITEM.title"
+    const val WEB_EXTENSION_ITEM = "webExtension.item"
 }

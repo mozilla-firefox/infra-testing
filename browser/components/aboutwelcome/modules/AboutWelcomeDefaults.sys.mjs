@@ -17,7 +17,8 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   AddonRepository: "resource://gre/modules/addons/AddonRepository.sys.mjs",
-  AttributionCode: "resource:///modules/AttributionCode.sys.mjs",
+  AttributionCode:
+    "moz-src:///browser/components/attribution/AttributionCode.sys.mjs",
   AWScreenUtils: "resource:///modules/aboutwelcome/AWScreenUtils.sys.mjs",
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
 });
@@ -39,48 +40,36 @@ const MR_ABOUT_WELCOME_DEFAULT = {
     "var(--mr-welcome-background-color) var(--mr-welcome-background-gradient)",
   screens: [
     {
-      id: "RETURN_TO_AMO",
-      targeting: "isRTAMO",
+      id: "AW_BACKUP_RESTORE_EMBEDDED_BACKUP_FOUND",
+      targeting:
+        "backupRestoreEnabled && (backupsInfo.found || backupsInfo.multipleBackupsFound)",
       content: {
         fullscreen: true,
-        position: "split",
-        title: { string_id: "mr1-return-to-amo-subtitle" },
-        isRtamo: true,
+        logo: {},
+        title: {
+          string_id: "restore-from-backup-title",
+        },
         subtitle: {
-          string_id: "mr1-return-to-amo-addon-title",
+          string_id: "restore-from-backup-subtitle",
         },
-        backdrop:
-          "var(--mr-welcome-background-color) var(--mr-welcome-background-gradient)",
+        tiles: {
+          type: "backup_restore",
+        },
+        position: "split",
+        split_narrow_bkg_position: "-42px",
         background:
-          "url('chrome://activity-stream/content/data/content/assets/mr-rtamo-background-image.svg') center center / cover no-repeat",
+          "url('chrome://activity-stream/content/data/content/assets/fox-doodle-backup-restore.svg') var(--mr-secondary-position) no-repeat var(--mr-screen-background-color)",
         progress_bar: true,
-        primary_button: {
-          label: { string_id: "mr1-return-to-amo-add-extension-label" },
-          action: {
-            type: "INSTALL_ADDON_FROM_URL",
-            data: { url: null, telemetrySource: "rtamo" },
-          },
+        hide_secondary_section: "responsive",
+        backup_show_filepicker: {
+          action: {},
         },
-        secondary_button: {
+        skip_button: {
           label: {
-            string_id: "mr2022-onboarding-secondary-skip-button-label",
+            string_id: "restore-from-backup-secondary-button",
           },
           action: {
             navigate: true,
-          },
-          has_arrow_icon: true,
-        },
-        secondary_button_top: {
-          label: {
-            string_id: "mr1-onboarding-sign-in-button-label",
-          },
-          action: {
-            data: {
-              entrypoint: "activity-stream-firstrun",
-              where: "tab",
-            },
-            type: "SHOW_FIREFOX_ACCOUNTS",
-            addFlowParams: true,
           },
         },
       },
@@ -136,9 +125,57 @@ const MR_ABOUT_WELCOME_DEFAULT = {
       },
     },
     {
+      id: "RETURN_TO_AMO",
+      targeting: "isRTAMO",
+      content: {
+        fullscreen: true,
+        position: "split",
+        title: { string_id: "mr1-return-to-amo-subtitle" },
+        isRtamo: true,
+        subtitle: {
+          string_id: "mr1-return-to-amo-addon-title",
+        },
+        backdrop:
+          "var(--mr-welcome-background-color) var(--mr-welcome-background-gradient)",
+        background:
+          "url('chrome://activity-stream/content/data/content/assets/mr-rtamo-background-image.svg') center center / cover no-repeat",
+        progress_bar: true,
+        primary_button: {
+          label: { string_id: "mr1-return-to-amo-add-extension-label" },
+          action: {
+            type: "INSTALL_ADDON_FROM_URL",
+            data: { url: null, telemetrySource: "rtamo" },
+          },
+        },
+        secondary_button: {
+          label: {
+            string_id: "mr2022-onboarding-secondary-skip-button-label",
+          },
+          action: {
+            navigate: true,
+          },
+          has_arrow_icon: true,
+        },
+        secondary_button_top: {
+          label: {
+            string_id: "mr1-onboarding-sign-in-button-label",
+          },
+          action: {
+            data: {
+              entrypoint: "activity-stream-firstrun",
+              where: "tab",
+            },
+            type: "SHOW_FIREFOX_ACCOUNTS",
+            addFlowParams: true,
+          },
+          targeting: "!isFxASignedIn",
+        },
+      },
+    },
+    {
       id: "AW_EASY_SETUP_NEEDS_DEFAULT_AND_PIN",
       targeting:
-        "doesAppNeedPin && (unhandledCampaignAction != 'SET_DEFAULT_BROWSER') && 'browser.shell.checkDefaultBrowser'|preferenceValue && !isDefaultBrowser",
+        "doesAppNeedPin && (unhandledCampaignAction != 'SET_DEFAULT_BROWSER') && (unhandledCampaignAction != 'PIN_FIREFOX_TO_TASKBAR') && (unhandledCampaignAction != 'PIN_AND_DEFAULT') && 'browser.shell.checkDefaultBrowser'|preferenceValue && !isDefaultBrowser",
       content: {
         fullscreen: true,
         position: "split",
@@ -255,25 +292,34 @@ const MR_ABOUT_WELCOME_DEFAULT = {
           },
           has_arrow_icon: true,
         },
-        secondary_button_top: {
-          label: {
-            string_id: "mr1-onboarding-sign-in-button-label",
-          },
-          action: {
-            data: {
-              entrypoint: "activity-stream-firstrun",
-              where: "tab",
+        secondary_button_top: [
+          {
+            label: { string_id: "mr1-onboarding-sign-in-button-label" },
+            action: {
+              data: { entrypoint: "activity-stream-firstrun", where: "tab" },
+              type: "SHOW_FIREFOX_ACCOUNTS",
+              addFlowParams: true,
             },
-            type: "SHOW_FIREFOX_ACCOUNTS",
-            addFlowParams: true,
+            targeting: "!isFxASignedIn",
           },
-        },
+          {
+            label: { string_id: "restore-from-backup-secondary-top-button" },
+            action: {
+              type: "SET_PREF",
+              data: {
+                pref: { name: "showRestoreFromBackup", value: true },
+              },
+              navigate: true,
+            },
+            targeting: "backupRestoreEnabled",
+          },
+        ],
       },
     },
     {
       id: "AW_EASY_SETUP_NEEDS_DEFAULT",
       targeting:
-        "!doesAppNeedPin && (unhandledCampaignAction != 'SET_DEFAULT_BROWSER') && 'browser.shell.checkDefaultBrowser'|preferenceValue && !isDefaultBrowser",
+        "!doesAppNeedPin && (unhandledCampaignAction != 'SET_DEFAULT_BROWSER') && (unhandledCampaignAction != 'PIN_AND_DEFAULT') && 'browser.shell.checkDefaultBrowser'|preferenceValue && !isDefaultBrowser",
       content: {
         fullscreen: true,
         position: "split",
@@ -367,25 +413,34 @@ const MR_ABOUT_WELCOME_DEFAULT = {
           },
           has_arrow_icon: true,
         },
-        secondary_button_top: {
-          label: {
-            string_id: "mr1-onboarding-sign-in-button-label",
-          },
-          action: {
-            data: {
-              entrypoint: "activity-stream-firstrun",
-              where: "tab",
+        secondary_button_top: [
+          {
+            label: { string_id: "mr1-onboarding-sign-in-button-label" },
+            action: {
+              data: { entrypoint: "activity-stream-firstrun", where: "tab" },
+              type: "SHOW_FIREFOX_ACCOUNTS",
+              addFlowParams: true,
             },
-            type: "SHOW_FIREFOX_ACCOUNTS",
-            addFlowParams: true,
+            targeting: "!isFxASignedIn",
           },
-        },
+          {
+            label: { string_id: "restore-from-backup-secondary-top-button" },
+            action: {
+              type: "SET_PREF",
+              data: {
+                pref: { name: "showRestoreFromBackup", value: true },
+              },
+              navigate: true,
+            },
+            targeting: "backupRestoreEnabled",
+          },
+        ],
       },
     },
     {
       id: "AW_EASY_SETUP_NEEDS_PIN",
       targeting:
-        "doesAppNeedPin && (!'browser.shell.checkDefaultBrowser'|preferenceValue || isDefaultBrowser || (unhandledCampaignAction == 'SET_DEFAULT_BROWSER'))",
+        "(unhandledCampaignAction != 'PIN_FIREFOX_TO_TASKBAR') && (unhandledCampaignAction != 'PIN_AND_DEFAULT') && doesAppNeedPin && (!'browser.shell.checkDefaultBrowser'|preferenceValue || isDefaultBrowser || (unhandledCampaignAction == 'SET_DEFAULT_BROWSER'))",
       content: {
         fullscreen: true,
         position: "split",
@@ -490,25 +545,34 @@ const MR_ABOUT_WELCOME_DEFAULT = {
           },
           has_arrow_icon: true,
         },
-        secondary_button_top: {
-          label: {
-            string_id: "mr1-onboarding-sign-in-button-label",
-          },
-          action: {
-            data: {
-              entrypoint: "activity-stream-firstrun",
-              where: "tab",
+        secondary_button_top: [
+          {
+            label: { string_id: "mr1-onboarding-sign-in-button-label" },
+            action: {
+              data: { entrypoint: "activity-stream-firstrun", where: "tab" },
+              type: "SHOW_FIREFOX_ACCOUNTS",
+              addFlowParams: true,
             },
-            type: "SHOW_FIREFOX_ACCOUNTS",
-            addFlowParams: true,
+            targeting: "!isFxASignedIn",
           },
-        },
+          {
+            label: { string_id: "restore-from-backup-secondary-top-button" },
+            action: {
+              type: "SET_PREF",
+              data: {
+                pref: { name: "showRestoreFromBackup", value: true },
+              },
+              navigate: true,
+            },
+            targeting: "backupRestoreEnabled",
+          },
+        ],
       },
     },
     {
       id: "AW_EASY_SETUP_ONLY_IMPORT",
       targeting:
-        "!doesAppNeedPin && (!'browser.shell.checkDefaultBrowser'|preferenceValue || isDefaultBrowser || (unhandledCampaignAction == 'SET_DEFAULT_BROWSER'))",
+        "(!doesAppNeedPin || (unhandledCampaignAction == 'PIN_FIREFOX_TO_TASKBAR') || (unhandledCampaignAction == 'PIN_AND_DEFAULT')) && (!'browser.shell.checkDefaultBrowser'|preferenceValue || isDefaultBrowser || (unhandledCampaignAction == 'SET_DEFAULT_BROWSER') || (unhandledCampaignAction == 'PIN_AND_DEFAULT'))",
       content: {
         fullscreen: true,
         position: "split",
@@ -591,17 +655,67 @@ const MR_ABOUT_WELCOME_DEFAULT = {
           },
           has_arrow_icon: true,
         },
-        secondary_button_top: {
-          label: {
-            string_id: "mr1-onboarding-sign-in-button-label",
-          },
-          action: {
-            data: {
-              entrypoint: "activity-stream-firstrun",
-              where: "tab",
+        secondary_button_top: [
+          {
+            label: { string_id: "mr1-onboarding-sign-in-button-label" },
+            action: {
+              data: { entrypoint: "activity-stream-firstrun", where: "tab" },
+              type: "SHOW_FIREFOX_ACCOUNTS",
+              addFlowParams: true,
             },
-            type: "SHOW_FIREFOX_ACCOUNTS",
-            addFlowParams: true,
+            targeting: "!isFxASignedIn",
+          },
+          {
+            label: { string_id: "restore-from-backup-secondary-top-button" },
+            action: {
+              type: "SET_PREF",
+              data: {
+                pref: { name: "showRestoreFromBackup", value: true },
+              },
+              navigate: true,
+            },
+            targeting: "backupRestoreEnabled",
+          },
+        ],
+      },
+    },
+    {
+      id: "AW_BACKUP_RESTORE_EMBEDDED_NO_BACKUP_FOUND",
+      targeting:
+        "backupRestoreEnabled && 'messaging-system-action.showRestoreFromBackup' |preferenceValue == true",
+      content: {
+        fullscreen: true,
+        logo: {},
+        title: {
+          string_id: "restore-from-backup-title",
+        },
+        subtitle: {
+          string_id: "restore-from-backup-subtitle",
+        },
+        tiles: {
+          type: "backup_restore",
+        },
+        position: "split",
+        split_narrow_bkg_position: "-42px",
+        background:
+          "url('chrome://activity-stream/content/data/content/assets/fox-doodle-backup-restore.svg') var(--mr-secondary-position) no-repeat var(--mr-screen-background-color)",
+        progress_bar: true,
+        hide_secondary_section: "responsive",
+        backup_show_filepicker: {
+          action: {},
+        },
+        skip_button: {
+          label: {
+            string_id: "restore-from-backup-secondary-button",
+          },
+          has_arrow_icon: true,
+          action: {
+            type: "SET_PREF",
+            data: {
+              pref: { name: "showRestoreFromBackup", value: false },
+            },
+            goBack: true,
+            navigate: true,
           },
         },
       },
@@ -717,6 +831,7 @@ const MR_ABOUT_WELCOME_DEFAULT = {
           action: {
             navigate: true,
           },
+          has_arrow_icon: true,
         },
       },
     },
@@ -917,6 +1032,10 @@ function prepareMobileDownload(content) {
 }
 
 async function prepareContentForReact(content) {
+  if (!content.screens) {
+    return content;
+  }
+
   const { screens } = content;
 
   if (content?.template === "return_to_amo") {

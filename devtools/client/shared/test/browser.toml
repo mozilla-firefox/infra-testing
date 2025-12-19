@@ -87,9 +87,7 @@ tags = "addons"
 
 ["browser_dbg_listtabs-02.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'", # Never worked for remote frames, needs a mock DevToolsServerConnection
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'", # Never worked for remote frames, needs a mock DevToolsServerConnection
-  "os == 'win' && os_version == '11.26100' && processor == 'x86_64'", # Never worked for remote frames, needs a mock DevToolsServerConnection
+  "true", # Never worked for remote frames, needs a mock DevToolsServerConnection
 ]
 
 ["browser_dbg_listworkers.js"]
@@ -101,7 +99,9 @@ skip-if = [
 ["browser_dbg_target-scoped-actor-02.js"]
 
 ["browser_devices.js"]
-skip-if = ["verify"]
+skip-if = [
+  "verify", # Bug 1975963
+]
 
 ["browser_filter-editor-01.js"]
 
@@ -116,7 +116,9 @@ skip-if = ["verify"]
 ["browser_filter-editor-06.js"]
 
 ["browser_filter-editor-07.js"]
-fail-if = ["os == 'linux' && os_version == '18.04' && processor == 'x86_64' && a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_filter-editor-08.js"]
 
@@ -134,7 +136,7 @@ fail-if = ["os == 'linux' && os_version == '18.04' && processor == 'x86_64' && a
 
 ["browser_html_tooltip-02.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && opt && a11y_checks", # Bug 1721159
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && a11y_checks", # Bug 1721159
 ]
 
 ["browser_html_tooltip-03.js"]
@@ -167,7 +169,7 @@ skip-if = [
 
 ["browser_html_tooltip_variable-height.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && opt && a11y_checks", # Bug 1721159
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && a11y_checks", # Bug 1721159
 ]
 
 ["browser_html_tooltip_width-auto.js"]
@@ -203,7 +205,6 @@ skip-if = [
 ["browser_layoutHelpers.js"]
 
 ["browser_layoutHelpers_getBoxQuads1.js"]
-skip-if = ["verify"]
 
 ["browser_layoutHelpers_getBoxQuads2.js"]
 
@@ -226,6 +227,9 @@ skip-if = ["verify"]
 ["browser_tableWidget_keyboard_interaction.js"]
 
 ["browser_tableWidget_mouse_interaction.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt", # Bug 1118592
+]
 
 ["browser_telemetry_button_responsive.js"]
 
@@ -258,7 +262,11 @@ skip-if = ["verify"]
 ["browser_treeWidget_basic.js"]
 
 ["browser_treeWidget_keyboard_interaction.js"]
-fail-if = ["os == 'linux' && os_version == '18.04' && processor == 'x86_64' && a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]
 
 ["browser_treeWidget_mouse_interaction.js"]
-fail-if = ["os == 'linux' && os_version == '18.04' && processor == 'x86_64' && a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && a11y_checks", # Bug 1849028 clicked element may not be focusable and/or labeled
+]

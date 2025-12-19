@@ -108,6 +108,9 @@ with Files("PrivateBrowsingUtils.sys.mjs"):
 with Files("Promise*.sys.mjs"):
     BUG_COMPONENT = ("Toolkit", "Async Tooling")
 
+with Files("RustSharedRemoteSettingsService.sys.mjs"):
+    BUG_COMPONENT = ("Application Services", "Remote Settings")
+
 with Files("ShortcutUtils.sys.mjs"):
     BUG_COMPONENT = ("Firefox", "Toolbars and Customization")
 
@@ -125,7 +128,6 @@ with Files("WindowsLaunchOnLogin.sys.mjs"):
 
 with Files("WindowsRegistry.sys.mjs"):
     BUG_COMPONENT = ("Toolkit", "General")
-
 
 XPCSHELL_TESTS_MANIFESTS += ["tests/xpcshell/xpcshell.toml"]
 BROWSER_CHROME_MANIFESTS += ["tests/browser/browser.toml"]
@@ -149,6 +151,7 @@ EXTRA_JS_MODULES += [
     "AboutPagesUtils.sys.mjs",
     "ActorManagerParent.sys.mjs",
     "AppMenuNotifications.sys.mjs",
+    "AppServicesTracing.sys.mjs",
     "AsyncPrefs.sys.mjs",
     "BinarySearch.sys.mjs",
     "BrowserTelemetryUtils.sys.mjs",
@@ -199,6 +202,7 @@ EXTRA_JS_MODULES += [
     "Region.sys.mjs",
     "RemotePageAccessManager.sys.mjs",
     "ResetProfile.sys.mjs",
+    "RustSharedRemoteSettingsService.sys.mjs",
     "SelectionUtils.sys.mjs",
     "ServiceRequest.sys.mjs",
     "ShortcutUtils.sys.mjs",
@@ -207,6 +211,7 @@ EXTRA_JS_MODULES += [
     "Timer.sys.mjs",
     "Troubleshoot.sys.mjs",
     "UpdateUtils.sys.mjs",
+    "UrlUtils.sys.mjs",
     "WebChannel.sys.mjs",
 ]
 
@@ -259,7 +264,6 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
     ]
 
 for var in (
-    "ANDROID_PACKAGE_NAME",
     "MOZ_APP_NAME",
     "MOZ_APP_BASENAME",
     "MOZ_APP_DISPLAYNAME",
@@ -336,6 +340,7 @@ for var in (
     "MOZ_SELECTABLE_PROFILES",
     "BROWSER_NEWTAB_AS_ADDON",
     "USE_LIBZ_RS",
+    "MOZ_ANDROID_CONTENT_SERVICE_ISOLATED_PROCESS",
 ):
     DEFINES[f"{var}_BOOL"] = "true" if CONFIG[var] else "false"
 
@@ -349,3 +354,7 @@ XPIDL_SOURCES += [
 ]
 
 XPIDL_MODULE = "toolkit_modules"
+
+MOZ_SRC_FILES += [
+    "PrefUtils.sys.mjs",
+]

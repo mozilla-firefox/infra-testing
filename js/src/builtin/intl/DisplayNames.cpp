@@ -13,13 +13,12 @@
 #include "mozilla/PodOperations.h"
 #include "mozilla/Span.h"
 
-#include <algorithm>
-
 #include "jsnum.h"
 #include "jspubtd.h"
 
 #include "builtin/intl/CommonFunctions.h"
 #include "builtin/intl/FormatBuffer.h"
+#include "builtin/intl/LocaleNegotiation.h"
 #include "gc/AllocKind.h"
 #include "gc/GCContext.h"
 #include "js/CallArgs.h"
@@ -45,6 +44,7 @@
 #include "vm/NativeObject-inl.h"
 
 using namespace js;
+using namespace js::intl;
 
 const JSClassOps DisplayNamesObject::classOps_ = {
     nullptr, /* addProperty */
@@ -67,6 +67,9 @@ const JSClass DisplayNamesObject::class_ = {
 
 const JSClass& DisplayNamesObject::protoClass_ = PlainObject::class_;
 
+static bool displayNames_supportedLocalesOf(JSContext* cx, unsigned argc,
+                                            Value* vp);
+
 static bool displayNames_toSource(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   args.rval().setString(cx->names().DisplayNames);
@@ -74,8 +77,7 @@ static bool displayNames_toSource(JSContext* cx, unsigned argc, Value* vp) {
 }
 
 static const JSFunctionSpec displayNames_static_methods[] = {
-    JS_SELF_HOSTED_FN("supportedLocalesOf",
-                      "Intl_DisplayNames_supportedLocalesOf", 1, 0),
+    JS_FN("supportedLocalesOf", displayNames_supportedLocalesOf, 1, 0),
     JS_FS_END,
 };
 
@@ -555,5 +557,22 @@ bool js::intl_ComputeDisplayName(JSContext* cx, unsigned argc, Value* vp) {
     args.rval().setString(str);
   }
 
+  return true;
+}
+
+/**
+ * Intl.DisplayNames.supportedLocalesOf ( locales [ , options ] )
+ */
+static bool displayNames_supportedLocalesOf(JSContext* cx, unsigned argc,
+                                            Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  // Steps 1-3.
+  auto* array = SupportedLocalesOf(cx, AvailableLocaleKind::DisplayNames,
+                                   args.get(0), args.get(1));
+  if (!array) {
+    return false;
+  }
+  args.rval().setObject(*array);
   return true;
 }

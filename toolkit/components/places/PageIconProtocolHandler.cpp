@@ -220,19 +220,9 @@ nsresult PageIconProtocolHandler::NewChannelInternal(nsIURI* aURI,
 
   // Create our channel.
   nsCOMPtr<nsIChannel> channel;
-  {
-    // We override the channel's loadinfo below anyway, so using a null
-    // principal here is alright.
-    nsCOMPtr<nsIPrincipal> loadingPrincipal =
-        NullPrincipal::CreateWithoutOriginAttributes();
-    nsresult rv = NS_NewInputStreamChannel(
-        getter_AddRefs(channel), aURI, pipeIn.forget(), loadingPrincipal,
-        nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_DATA_IS_BLOCKED,
-        nsIContentPolicy::TYPE_INTERNAL_IMAGE);
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
-
-  nsresult rv = channel->SetLoadInfo(aLoadInfo);
+  nsresult rv = NS_NewInputStreamChannelInternal(
+      getter_AddRefs(channel), aURI, pipeIn.forget(), /* aContentType */ ""_ns,
+      /* aContentCharset */ ""_ns, aLoadInfo);
   NS_ENSURE_SUCCESS(rv, rv);
 
   GetFaviconData(aURI)->Then(
@@ -265,7 +255,7 @@ nsresult PageIconProtocolHandler::NewChannelInternal(nsIURI* aURI,
           // favicon before giving up.
           channel->SetContentType(nsLiteralCString(FAVICON_DEFAULT_MIMETYPE));
           channel->SetContentLength(-1);
-          Unused << StreamDefaultFavicon(uri, loadInfo, pipeOut);
+          (void)StreamDefaultFavicon(uri, loadInfo, pipeOut);
         }
       });
 
@@ -286,7 +276,7 @@ RefPtr<FaviconPromise> PageIconProtocolHandler::GetFaviconData(
   nsCOMPtr<nsIURI> pageURI;
   nsresult rv;
   // NOTE: We don't need to strip #size= fragments because
-  // GetFaviconDataForPage strips them when doing the database lookup.
+  // AsyncGetFaviconForPage strips them when doing the database lookup.
   nsAutoCString pageQuery;
   aPageIconURI->GetPathQueryRef(pageQuery);
   rv = NS_NewURI(getter_AddRefs(pageURI), pageQuery);
@@ -294,7 +284,7 @@ RefPtr<FaviconPromise> PageIconProtocolHandler::GetFaviconData(
     return FaviconPromise::CreateAndReject(rv, __func__);
   }
 
-  return faviconService->AsyncGetFaviconForPage(pageURI, preferredSize);
+  return faviconService->AsyncGetFaviconForPage(pageURI, preferredSize, true);
 }
 
 RefPtr<RemoteStreamPromise> PageIconProtocolHandler::NewStream(
@@ -346,7 +336,7 @@ RefPtr<RemoteStreamPromise> PageIconProtocolHandler::NewStream(
 
           RemoteStreamInfo info(pipeIn,
                                 nsLiteralCString(FAVICON_DEFAULT_MIMETYPE), -1);
-          Unused << StreamDefaultFavicon(uri, loadInfo, pipeOut);
+          (void)StreamDefaultFavicon(uri, loadInfo, pipeOut);
           outerPromise->Resolve(std::move(info), __func__);
         }
       });

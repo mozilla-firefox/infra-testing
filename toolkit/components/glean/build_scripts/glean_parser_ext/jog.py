@@ -45,6 +45,8 @@ known_extra_args = [
     "histogram_type",
     "numerators",
     "ordered_labels",
+    "ordered_keys",
+    "ordered_categories",
 ]
 
 # List of all metric-type-specific metadata that JOG understands.
@@ -215,7 +217,7 @@ def output_file(objs, output_fd, options={}):
             for meta in known_metadata:
                 if meta in metric.metadata:
                     extra[meta] = metric.metadata.get(meta)
-            if len(extra):
+            if extra:
                 metric_arg_list.append(extra)
             dict_cat.append(metric_arg_list)
 

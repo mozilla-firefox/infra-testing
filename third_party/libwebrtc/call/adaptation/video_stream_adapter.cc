@@ -11,21 +11,30 @@
 #include "call/adaptation/video_stream_adapter.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <optional>
 #include <utility>
+#include <variant>
 
-#include "absl/types/variant.h"
+#include "api/adaptation/resource.h"
+#include "api/field_trials_view.h"
+#include "api/rtp_parameters.h"
+#include "api/scoped_refptr.h"
 #include "api/sequence_checker.h"
 #include "api/video/video_adaptation_counters.h"
-#include "api/video/video_adaptation_reason.h"
-#include "api/video_codecs/video_encoder.h"
+#include "api/video/video_codec_type.h"
+#include "api/video_codecs/video_codec.h"
+#include "call/adaptation/adaptation_constraint.h"
 #include "call/adaptation/video_source_restrictions.h"
 #include "call/adaptation/video_stream_input_state.h"
+#include "call/adaptation/video_stream_input_state_provider.h"
 #include "modules/video_coding/svc/scalability_mode_util.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/safe_conversions.h"
+#include "video/video_stream_encoder_observer.h"
 
 namespace webrtc {
 
@@ -237,8 +246,8 @@ void VideoStreamAdapter::ClearRestrictions() {
   // Invalidate any previously returned Adaptation.
   RTC_LOG(LS_INFO) << "Resetting restrictions";
   ++adaptation_validation_id_;
-  current_restrictions_ = {VideoSourceRestrictions(),
-                           VideoAdaptationCounters()};
+  current_restrictions_ = {.restrictions = VideoSourceRestrictions(),
+                           .counters = VideoAdaptationCounters()};
   awaiting_frame_size_change_ = std::nullopt;
   BroadcastVideoRestrictionsUpdate(input_state_provider_->InputState(),
                                    nullptr);
@@ -318,18 +327,19 @@ Adaptation VideoStreamAdapter::RestrictionsOrStateToAdaptation(
     VideoStreamAdapter::RestrictionsOrState step_or_state,
     const VideoStreamInputState& input_state) const {
   RTC_DCHECK(!step_or_state.valueless_by_exception());
-  return absl::visit(
-      RestrictionsOrStateVisitor{adaptation_validation_id_, input_state},
-      step_or_state);
+  return std::visit(RestrictionsOrStateVisitor{.adaptation_validation_id =
+                                                   adaptation_validation_id_,
+                                               .input_state = input_state},
+                    step_or_state);
 }
 
 Adaptation VideoStreamAdapter::GetAdaptationUp(
     const VideoStreamInputState& input_state) const {
   RestrictionsOrState step = GetAdaptationUpStep(input_state);
   // If an adaptation proposed, check with the constraints that it is ok.
-  if (absl::holds_alternative<RestrictionsWithCounters>(step)) {
+  if (std::holds_alternative<RestrictionsWithCounters>(step)) {
     RestrictionsWithCounters restrictions =
-        absl::get<RestrictionsWithCounters>(step);
+        std::get<RestrictionsWithCounters>(step);
     for (const auto* constraint : adaptation_constraints_) {
       if (!constraint->IsAdaptationUpAllowed(input_state,
                                              current_restrictions_.restrictions,
@@ -371,7 +381,7 @@ VideoStreamAdapter::RestrictionsOrState VideoStreamAdapter::GetAdaptationUpStep(
       // Attempt to increase target frame rate.
       RestrictionsOrState increase_frame_rate =
           IncreaseFramerate(input_state, current_restrictions_);
-      if (absl::holds_alternative<RestrictionsWithCounters>(
+      if (std::holds_alternative<RestrictionsWithCounters>(
               increase_frame_rate)) {
         return increase_frame_rate;
       }
@@ -403,11 +413,9 @@ Adaptation VideoStreamAdapter::GetAdaptationDown() {
   }
   // Check for min_fps
   if (degradation_preference_ == DegradationPreference::BALANCED &&
-      absl::holds_alternative<RestrictionsWithCounters>(
-          restrictions_or_state)) {
+      std::holds_alternative<RestrictionsWithCounters>(restrictions_or_state)) {
     restrictions_or_state = AdaptIfFpsDiffInsufficient(
-        input_state,
-        absl::get<RestrictionsWithCounters>(restrictions_or_state));
+        input_state, std::get<RestrictionsWithCounters>(restrictions_or_state));
   }
   return RestrictionsOrStateToAdaptation(restrictions_or_state, input_state);
 }
@@ -455,7 +463,7 @@ VideoStreamAdapter::GetAdaptationDownStep(
       // Try scale down framerate, if lower.
       RestrictionsOrState decrease_frame_rate =
           DecreaseFramerate(input_state, current_restrictions);
-      if (absl::holds_alternative<RestrictionsWithCounters>(
+      if (std::holds_alternative<RestrictionsWithCounters>(
               decrease_frame_rate)) {
         return decrease_frame_rate;
       }
@@ -632,10 +640,10 @@ VideoStreamAdapter::GetAdaptDownResolutionStepForBalanced(
     const VideoStreamInputState& input_state) const {
   // Adapt twice if the first adaptation did not decrease resolution.
   auto first_step = GetAdaptationDownStep(input_state, current_restrictions_);
-  if (!absl::holds_alternative<RestrictionsWithCounters>(first_step)) {
+  if (!std::holds_alternative<RestrictionsWithCounters>(first_step)) {
     return first_step;
   }
-  auto first_restrictions = absl::get<RestrictionsWithCounters>(first_step);
+  auto first_restrictions = std::get<RestrictionsWithCounters>(first_step);
   if (first_restrictions.counters.resolution_adaptations >
       current_restrictions_.counters.resolution_adaptations) {
     return first_step;
@@ -643,16 +651,15 @@ VideoStreamAdapter::GetAdaptDownResolutionStepForBalanced(
   // We didn't decrease resolution so force it; amend a resolution resuction
   // to the existing framerate reduction in `first_restrictions`.
   auto second_step = DecreaseResolution(input_state, first_restrictions);
-  if (absl::holds_alternative<RestrictionsWithCounters>(second_step)) {
+  if (std::holds_alternative<RestrictionsWithCounters>(second_step)) {
     return second_step;
   }
   // If the second step was not successful then settle for the first one.
   return first_step;
 }
 
-void VideoStreamAdapter::ApplyAdaptation(
-    const Adaptation& adaptation,
-    rtc::scoped_refptr<Resource> resource) {
+void VideoStreamAdapter::ApplyAdaptation(const Adaptation& adaptation,
+                                         scoped_refptr<Resource> resource) {
   RTC_DCHECK_RUN_ON(&sequence_checker_);
   RTC_DCHECK_EQ(adaptation.validation_id_, adaptation_validation_id_);
   if (adaptation.status() != Adaptation::Status::kValid)
@@ -670,7 +677,8 @@ void VideoStreamAdapter::ApplyAdaptation(
   } else {
     awaiting_frame_size_change_ = std::nullopt;
   }
-  current_restrictions_ = {adaptation.restrictions(), adaptation.counters()};
+  current_restrictions_ = {.restrictions = adaptation.restrictions(),
+                           .counters = adaptation.counters()};
   BroadcastVideoRestrictionsUpdate(adaptation.input_state(), resource);
 }
 
@@ -686,7 +694,7 @@ Adaptation VideoStreamAdapter::GetAdaptationTo(
 
 void VideoStreamAdapter::BroadcastVideoRestrictionsUpdate(
     const VideoStreamInputState& /* input_state */,
-    const rtc::scoped_refptr<Resource>& resource) {
+    const scoped_refptr<Resource>& resource) {
   RTC_DCHECK_RUN_ON(&sequence_checker_);
   VideoSourceRestrictions filtered = FilterRestrictionsByDegradationPreference(
       source_restrictions(), degradation_preference_);

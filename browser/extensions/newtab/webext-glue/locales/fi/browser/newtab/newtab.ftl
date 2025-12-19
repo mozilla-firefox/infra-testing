@@ -8,6 +8,9 @@
 newtab-page-title = Uusi välilehti
 newtab-settings-button =
     .title = Muokkaa Uusi välilehti -sivua
+newtab-customize-panel-icon-button =
+    .title = Mukauta tätä sivua
+newtab-customize-panel-icon-button-label = Mukauta
 newtab-personalize-settings-icon-label =
     .title = Mukauta uutta välilehteä
     .aria-label = Asetukset
@@ -53,6 +56,9 @@ newtab-topsites-add-shortcut-header = Uusi oikotie
 newtab-topsites-edit-topsites-header = Muokkaa ykkössivustoa
 newtab-topsites-edit-shortcut-header = Muokkaa oikotietä
 newtab-topsites-add-shortcut-label = Lisää pikavalinta
+newtab-topsites-add-shortcut-title =
+    .title = Lisää pikavalinta
+    .aria-label = Lisää pikavalinta
 newtab-topsites-title-label = Otsikko
 newtab-topsites-title-input =
     .placeholder = Kirjoita otsikko
@@ -81,6 +87,14 @@ newtab-confirm-delete-history-p2 = Tämä toiminto on peruuttamaton.
 ## Top Sites - Sponsored label
 
 newtab-topsite-sponsored = Sponsoroitu
+
+## Label used by screen readers for pinned top sites
+
+# Variables:
+#   $title (string) - The label or hostname of the site.
+topsite-label-pinned =
+    .aria-label = { $title } (kiinnitetty)
+    .title = { $title }
 
 ## Context Menu - Action Tooltips.
 
@@ -117,7 +131,8 @@ newtab-menu-delete-pocket = Poista { -pocket-brand-name }-palvelusta
 newtab-menu-archive-pocket = Arkistoi { -pocket-brand-name }-palveluun
 newtab-menu-show-privacy-info = Tukijamme ja yksityisyytesi
 newtab-menu-about-fakespot = Tietoja { -fakespot-brand-name }ista
-newtab-menu-report-content = Ilmoita tästä sisällöstä
+# Report is a verb (i.e. report issue with the content).
+newtab-menu-report = Ilmoita
 # Context menu option to personalize New Tab recommended stories by blocking a section of stories,
 # e.g. "Sports". "Block" is a verb here.
 newtab-menu-section-block = Estä
@@ -191,6 +206,8 @@ newtab-label-sponsored-by = Sponsorina { $sponsor }
 #   $source (string) - The name of a company or their domain
 #   $timeToRead (number) - The estimated number of minutes to read this story
 newtab-label-source-read-time = { $source } · { $timeToRead } min
+# This string is used under fixed size ads to indicate sponsored content
+newtab-label-sponsored-fixed = Sponsoroitu
 
 ## Section Menu: These strings are displayed in the section context menu and are
 ## meant as a call to action for the given section.
@@ -253,9 +270,6 @@ newtab-pocket-learn-more = Lue lisää
 newtab-pocket-cta-button = Hanki { -pocket-brand-name }
 newtab-pocket-cta-text = Tallenna tykkäämäsi tekstit { -pocket-brand-name }iin ja ravitse mieltäsi kiinnostavilla teksteillä.
 newtab-pocket-pocket-firefox-family = { -pocket-brand-name } on osa { -brand-product-name }-perhettä
-# A save to Pocket button that shows over the card thumbnail on hover.
-newtab-pocket-image =
-    .aria-label = { -pocket-brand-name }
 newtab-pocket-save = Tallenna
 newtab-pocket-saved = Tallennettu
 
@@ -305,16 +319,32 @@ newtab-custom-pocket-subtitle = Poikkeuksellista, valikoitua sisältöä { -pock
 newtab-custom-stories-toggle =
     .label = Suositellut tarinat
     .description = Poikkeuksellista { -brand-product-name }-perheen kuratoimaa sisältöä
+newtab-custom-stories-personalized-toggle =
+    .label = Tarinat
+newtab-custom-stories-personalized-checkbox-label = Personoituja tarinoita aktiivisuuteesi pohjautuen
 newtab-custom-pocket-sponsored = Sponsoroidut tarinat
 newtab-custom-pocket-show-recent-saves = Näytä viimeisimmät tallennukset
 newtab-custom-recent-title = Viimeisin toiminta
 newtab-custom-recent-subtitle = Valikoima viimeisimpiä sivustoja ja sisältöä
-newtab-custom-recent-toggle =
-    .label = Viimeisin toiminta
-    .description = Valikoima viimeisimpiä sivustoja ja sisältöä
 newtab-custom-weather-toggle =
     .label = Sää
     .description = Päivän sääennuste yhdellä vilkaisulla
+newtab-custom-trending-search-toggle =
+    .label = Nousussa olevat haut
+    .description = Suosittuja ja usein haettuja aiheita
+newtab-custom-widget-weather-toggle =
+    .label = Sää
+newtab-custom-widget-trending-search-toggle =
+    .label = Nousussa olevat haut
+newtab-custom-widget-lists-toggle =
+    .label = Listat
+newtab-custom-widget-timer-toggle =
+    .label = Ajastin
+newtab-custom-widget-section-title = Widgetit
+# Tooltip for close button
+newtab-custom-close-menu-button =
+    .title = Sulje
+    .aria-label = Sulje valikko
 newtab-custom-close-button = Sulje
 newtab-custom-settings = Muokkaa lisää asetuksia
 
@@ -327,6 +357,7 @@ newtab-wallpaper-custom-color = Valitse väri
 # Variables
 #   $file_size (number) - The number of the maximum image file size (in MB) that may be uploaded
 newtab-wallpaper-error-max-file-size = Kuvan koko ylitti tiedostokokorajan { $file_size } Mt. Yritä ladata pienempi tiedosto.
+newtab-wallpaper-error-upload-file-type = Tiedostosi lataaminen epäonnistui. Yritä uudelleen kuvatiedostolla.
 newtab-wallpaper-error-file-type = Tiedostoa ei voitu lähettää. Yritä uudelleen toisella tiedostotyypillä.
 newtab-wallpaper-light-red-panda = Kultapanda
 newtab-wallpaper-light-mountain = Valkoinen vuori
@@ -376,7 +407,7 @@ newtab-wallpaper-abstract-purple-green = Violetin ja vihreän valon liukuväriä
 newtab-wallpaper-abstract-blue-purple-waves = Sinisiä ja violetteja aaltoilevia muotoja
 newtab-wallpaper-abstract-black-waves = Mustia aaltoilevia muotoja
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Valokuvat
 newtab-wallpaper-beach-at-sunrise = Ranta auringonnousun aikaan
@@ -391,7 +422,6 @@ newtab-wallpaper-suspension-bridge = Harmaa riippusilta päiväsaikaan
 newtab-wallpaper-sand-dunes = Valkoiset hiekkadyynit
 newtab-wallpaper-palm-trees = Kookospalmujen siluetti auringonnousun aikana
 newtab-wallpaper-blue-flowers = Lähikuva siniterälehtisistä kukista
-newtab-wallpaper-forest-trees = Puut sumun peitossa
 # Variables
 #   $author_string (String) - The name of the creator of the photo.
 #   $webpage_string (String) - The name of the webpage where the photo is located.
@@ -406,6 +436,10 @@ feature-highlight-dismiss-button =
 feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
+
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
 
 ## Celestial
 
@@ -433,7 +467,6 @@ newtab-weather-menu-change-location = Vaihda sijaintia
 newtab-weather-change-location-search-input-placeholder =
     .placeholder = Hae sijaintia
     .aria-label = Hae sijaintia
-newtab-weather-change-location-search-input = Hae sijaintia
 newtab-weather-menu-weather-display = Sään näkymä
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
@@ -449,8 +482,16 @@ newtab-weather-menu-change-temperature-units-fahrenheit = Vaihda Fahrenheitiin
 newtab-weather-menu-change-temperature-units-celsius = Vaihda Celsiukseen
 newtab-weather-menu-hide-weather = Piilota sää uudessa välilehdessä
 newtab-weather-menu-learn-more = Lue lisää
+newtab-weather-menu-detect-my-location = Havaitse sijaintini
 # This message is shown if user is working offline
 newtab-weather-error-not-available = Säätiedot eivät ole tällä hetkellä saatavilla.
+newtab-weather-opt-in-see-weather = Haluatko nähdä sijaintisi sään?
+newtab-weather-opt-in-not-now =
+    .label = Ei nyt
+newtab-weather-opt-in-yes =
+    .label = Kyllä
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = Helsinki
 
 ## Topic Labels
 
@@ -499,6 +540,9 @@ newtab-topic-selection-button-pick-interests = Valitse kiinnostuksen kohteesi
 newtab-section-follow-button = Seuraa
 newtab-section-following-button = Seurataan
 newtab-section-unfollow-button = Lopeta seuraaminen
+# A modal may appear next to the Follow button, directing users to try out the feature
+newtab-section-follow-highlight-title = Hienosäädä syötettä
+newtab-section-follow-highlight-subtitle = Seuraa kiinnostuksen kohteitasi nähdäksesi enemmän sinua kiinnostavia asioita.
 
 ## Button to block/unblock listed topics
 ## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
@@ -517,7 +561,7 @@ newtab-section-confirm-block-topic-p2 = Estetyt aiheet eivät enää näy syött
 #   $topic (string) - Name of topic that user is blocking
 newtab-section-block-topic-button = Estä { $topic }
 
-## Panel in the Customize menu section to manage followed and blocked topics
+## Strings for custom wallpaper highlight
 
 newtab-section-mangage-topics-title = Aiheet
 newtab-section-manage-topics-button-v2 =
@@ -530,3 +574,139 @@ newtab-custom-wallpaper-title = Mukautetut taustakuvat ovat täällä
 # 'Make firefox yours" means to customize or personalize
 newtab-custom-wallpaper-subtitle = Valitse oma taustakuvasi tai mukautettu väri ja tee { -brand-product-name }ista mieluisesi.
 newtab-custom-wallpaper-cta = Kokeile
+
+## Strings for new user activation custom wallpaper highlight
+
+newtab-new-user-custom-wallpaper-title = Valitse taustakuva ja tee { -brand-product-name }ista omasi
+newtab-new-user-custom-wallpaper-subtitle = Tee jokaisesta uudesta välilehdestä tutunomainen mukautetuilla taustakuvilla ja väreillä.
+newtab-new-user-custom-wallpaper-cta = Kokeile nyt
+
+## Strings for download mobile highlight
+
+newtab-download-mobile-highlight-title = Lataa { -brand-product-name } mobiililaitteille
+# "Scan the code" refers to scanning the QR code that appears above the body text that leads to Firefox for mobile download.
+newtab-download-mobile-highlight-body-variant-a = Skannaa koodi selataksesi turvallisesti liikkeellä ollessasi.
+newtab-download-mobile-highlight-body-variant-b = Jatka siitä, mihin jäit, synkronoimalla välilehdet, salasanat ja muut tiedot.
+newtab-download-mobile-highlight-body-variant-c = Tiesitkö, että voit ottaa { -brand-product-name }in mukaasi liikkeellä ollessasi? Sama selain. Taskussasi.
+newtab-download-mobile-highlight-image =
+    .aria-label = QR-koodi { -brand-product-name }in lataamiseksi mobiililaitteille
+
+## Strings for shortcuts highlight
+
+newtab-shortcuts-highlight-title = Suosikkisi sormiesi ulottuvilla
+newtab-shortcuts-highlight-subtitle = Lisää pikakuvake, niin suosikkisivustosi ovat yhden napsautuksen päässä.
+
+## Strings for reporting ads and content
+
+newtab-report-content-why-reporting-this =
+    .label = Miksi ilmoitat tästä?
+newtab-report-ads-reason-not-interested =
+    .label = En ole kiinnostunut
+newtab-report-ads-reason-inappropriate =
+    .label = Se on sopimatonta
+newtab-report-ads-reason-seen-it-too-many-times =
+    .label = Olen nähnyt sen liian monta kertaa
+newtab-report-content-wrong-category =
+    .label = Väärä luokka
+newtab-report-content-outdated =
+    .label = Vanhentunut
+newtab-report-content-inappropriate-offensive =
+    .label = Sopimaton tai loukkaava
+newtab-report-content-spam-misleading =
+    .label = Roskapostia tai harhaanjohtavaa
+newtab-report-cancel = Peruuta
+newtab-report-submit = Lähetä
+newtab-toast-thanks-for-reporting =
+    .message = Kiitos, että ilmoitit tästä.
+
+## Strings for trending searches
+
+newtab-trending-searches-show-trending =
+    .title = Näytä nousussa olevat haut
+newtab-trending-searches-hide-trending =
+    .title = Piilota nousussa olevat haut
+newtab-trending-searches-learn-more = Lue lisää
+newtab-trending-searches-dismiss = Piilota nousussa olevat haut
+# "Trending searches refers to popular searches from search engines
+newtab-trending-searches-title = Nousussa olevat haut
+
+## Strings for task / to-do list productivity widget
+
+# "Add one" means adding a new task to the list (e.g., "Walk the dog")
+newtab-widget-lists-empty-cta = Mahdollisuudet ovat rajattomat. Lisää yksi sellainen.
+# A simple label next to the default list name letting users know this is a new / beta feature
+newtab-widget-lists-label-new =
+    .label = Uusi
+newtab-widget-lists-label-beta =
+    .label = Beeta
+# When tasks have been previous marked as complete, they will appear in their own separate list beneath incomplete items
+# Variables:
+#   $number (number) - Amount of list items marked complete
+newtab-widget-lists-completed-list = Valmis ({ $number })
+newtab-widget-task-list-menu-copy = Kopioi
+newtab-widget-lists-menu-edit = Muokkaa listan nimeä
+newtab-widget-lists-menu-create = Luo uusi lista
+newtab-widget-lists-menu-delete = Poista tämä lista
+newtab-widget-lists-menu-copy = Kopioi lista leikepöydälle
+newtab-widget-lists-menu-hide = Piilota kaikki listat
+newtab-widget-lists-menu-learn-more = Lue lisää
+newtab-widget-lists-input-add-an-item =
+    .placeholder = Lisää kohde
+newtab-widget-lists-input-error = Sisällytä tekstiä lisätäksesi kohteen.
+newtab-widget-lists-input-menu-open-link = Avaa linkki
+newtab-widget-lists-input-menu-move-up = Siirrä ylös
+newtab-widget-lists-input-menu-move-down = Siirrä alas
+newtab-widget-lists-input-menu-delete = Poista
+newtab-widget-lists-input-menu-edit = Muokkaa
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + Luo uusi lista
+newtab-widget-lists-name-label-default =
+    .label = Tehtävälista
+newtab-widget-lists-name-placeholder-default =
+    .placeholder = Tehtävälista
+# The placeholder value of the name field for a newly created list
+newtab-widget-lists-name-placeholder-new =
+    .placeholder = Uusi lista
+newtab-widget-section-title = Widgetit
+# Tooltip for hide all widgets button
+newtab-widget-section-hide-all-button =
+    .title = Piilota widgetit
+    .aria-label = Piilota kaikki widgetit
+newtab-widget-section-maximize =
+    .title = Laajenna widgetit
+    .aria-label = Laajenna widgetit täyteen kokoon
+newtab-widget-section-minimize =
+    .title = Pienennä widgetit
+    .aria-label = Supista widgetit kompaktiin kokoon
+
+## Strings for timer productivity widget
+## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
+
+newtab-widget-timer-notification-title = Ajastin
+newtab-widget-timer-notification-focus = Keskittymisaika on ohi. Hyvää työtä. Tarvitsetko tauon?
+newtab-widget-timer-notification-break = Taukosi on ohi. Oletko valmis keskittymään?
+newtab-widget-timer-notification-warning = Ilmoitukset ovat pois päältä
+newtab-widget-timer-mode-focus =
+    .label = Keskity
+newtab-widget-timer-mode-break =
+    .label = Tauko
+newtab-widget-timer-label-play =
+    .label = Käynnistä
+newtab-widget-timer-label-pause =
+    .label = Keskeytä
+newtab-widget-timer-reset =
+    .title = Nollaa
+newtab-widget-timer-menu-notifications = Poista ilmoitukset käytöstä
+newtab-widget-timer-menu-notifications-on = Ota ilmoitukset käyttöön
+newtab-widget-timer-menu-hide = Piilota ajastin
+newtab-widget-timer-menu-learn-more = Lue lisää
+newtab-widget-message-title = Pysy keskittyneenä listojen ja sisäänrakennetun ajastimen avulla
+# to-dos stands for "things to do".
+newtab-widget-message-copy = Nopeista muistutuksista päivittäisiin tehtäviin, keskittymisharjoituksista venyttelytaukoihin – pysy tehtävässäsi ja aikataulussa.
+newtab-promo-card-title = Tue { -brand-product-name }ia
+newtab-promo-card-body = Sponsorimme tukevat tehtäväämme rakentaa parempaa Internetiä
+newtab-promo-card-cta = Lue lisää
+newtab-promo-card-dismiss-button =
+    .title = Hylkää
+    .aria-label = Hylkää

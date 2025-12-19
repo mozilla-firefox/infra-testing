@@ -14,6 +14,7 @@
 #include "mozilla/Base64.h"
 #include "nsPrintfCString.h"
 #include "mozilla/GUniquePtr.h"
+#include "nsAppShell.h"
 
 #include <dlfcn.h>
 
@@ -46,7 +47,7 @@ nsresult nsDBusRemoteClient::SendCommandLine(const char* aProgram,
   LOG("nsDBusRemoteClient::SendCommandLine");
 
   int commandLineLength;
-  char* commandLine = ConstructCommandLine(
+  mozilla::UniquePtr<char[]> commandLine = ConstructCommandLine(
       argc, argv,
       mStartupToken.IsEmpty() ? nullptr
                               : PromiseFlatCString(mStartupToken).get(),
@@ -56,8 +57,8 @@ nsresult nsDBusRemoteClient::SendCommandLine(const char* aProgram,
     return NS_ERROR_FAILURE;
   }
 
-  nsresult rv = DoSendDBusCommandLine(aProfile, commandLine, commandLineLength);
-  free(commandLine);
+  nsresult rv =
+      DoSendDBusCommandLine(aProfile, commandLine.get(), commandLineLength);
 
   LOG("DoSendDBusCommandLine %s", NS_SUCCEEDED(rv) ? "OK" : "FAILED");
   return rv;
@@ -138,6 +139,7 @@ nsresult nsDBusRemoteClient::DoSendDBusCommandLine(const char* aProfile,
   LOG("  DBus path: %s\n", pathName.get());
   LOG("  DBus interface: %s\n", remoteInterfaceName.get());
 
+  nsAppShell::DBusConnectionCheck();
   RefPtr<GDBusProxy> proxy = dont_AddRef(g_dbus_proxy_new_for_bus_sync(
       G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_NONE, nullptr,
       destinationName.get(), pathName.get(), remoteInterfaceName.get(), nullptr,

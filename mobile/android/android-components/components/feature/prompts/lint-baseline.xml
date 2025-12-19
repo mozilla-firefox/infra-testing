@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<issues format="6" by="lint 8.9.1" type="baseline" client="gradle" dependencies="false" name="AGP (8.9.1)" variant="all" version="8.9.1">
+<issues format="6" by="lint 8.13.0" type="baseline" client="gradle" dependencies="false" name="AGP (8.13.0)" variant="all" version="8.13.0">
 
     <issue
         id="ButtonStyleXmlDetector"
@@ -21,28 +21,6 @@
             file="src/main/res/layout/mozac_feature_prompt_save_login_prompt.xml"
             line="128"
             column="6"/>
-    </issue>
-
-    <issue
-        id="UnsafeCompatGetDrawable"
-        message="This call can lead to crashes, replace with AppCompatResources.getDrawable"
-        errorLine1="        ContextCompat.getDrawable(itemView.context, R.drawable.color_picker_row_bg)?.getPadding(backgroundPadding)"
-        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/mozilla/components/feature/prompts/dialog/BasicColorAdapter.kt"
-            line="90"
-            column="9"/>
-    </issue>
-
-    <issue
-        id="UnsafeCompatGetDrawable"
-        message="This call can lead to crashes, replace with AppCompatResources.getDrawable"
-        errorLine1="        ContextCompat.getDrawable(itemView.context, R.drawable.color_picker_checkmark)?.apply {"
-        errorLine2="        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/mozilla/components/feature/prompts/dialog/BasicColorAdapter.kt"
-            line="93"
-            column="9"/>
     </issue>
 
 </issues>

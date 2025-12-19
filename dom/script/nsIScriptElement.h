@@ -35,19 +35,15 @@ enum class ReferrerPolicy : uint8_t;
 }  // namespace mozilla::dom
 
 // Must be kept in sync with xpcom/rust/xpcom/src/interfaces/nonidl.rs
-#define NS_ISCRIPTELEMENT_IID                        \
-  {                                                  \
-    0xe60fca9b, 0x1b96, 0x4e4e, {                    \
-      0xa9, 0xb4, 0xdc, 0x98, 0x4f, 0x88, 0x3f, 0x9c \
-    }                                                \
-  }
+#define NS_ISCRIPTELEMENT_IID \
+  {0xe60fca9b, 0x1b96, 0x4e4e, {0xa9, 0xb4, 0xdc, 0x98, 0x4f, 0x88, 0x3f, 0x9c}}
 
 /**
  * Internal interface implemented by script elements
  */
 class nsIScriptElement : public nsIScriptLoaderObserver {
  public:
-  NS_DECLARE_STATIC_IID_ACCESSOR(NS_ISCRIPTELEMENT_IID)
+  NS_INLINE_DECL_STATIC_IID(NS_ISCRIPTELEMENT_IID)
 
   explicit nsIScriptElement(mozilla::dom::FromParser aFromParser)
       : mLineNumber(1),
@@ -62,6 +58,7 @@ class nsIScriptElement : public nsIScriptLoaderObserver {
         mDefer(false),
         mAsync(false),
         mExternal(false),
+        mIsTrusted(true),
         mKind(JS::loader::ScriptKind::eClassic),
         mParserCreated(aFromParser == mozilla::dom::FROM_PARSER_FRAGMENT
                            ? mozilla::dom::NOT_FROM_PARSER
@@ -216,19 +213,12 @@ class nsIScriptElement : public nsIScriptLoaderObserver {
    * This method is called when the parser finishes creating the script
    * element's children, if any are present.
    *
-   * @return whether the parser will be blocked while this script is being
-   *         loaded
+   * @param aParser If non-null, a parser that can be blocked until the script
+   *        becomes available.
+   * @return whether a non-null aParser would be blocked while this script is
+   *         being loaded.
    */
-  bool AttemptToExecute() {
-    mDoneAddingChildren = true;
-    bool block = MaybeProcessScript();
-    if (!mAlreadyStarted) {
-      // Need to lose parser-insertedness here to allow another script to cause
-      // execution later.
-      LoseParserInsertedness();
-    }
-    return block;
-  }
+  bool AttemptToExecute(nsCOMPtr<nsIParser> aParser);
 
   /**
    * Get the CORS mode of the script element
@@ -255,6 +245,14 @@ class nsIScriptElement : public nsIScriptLoaderObserver {
    */
   virtual nsresult FireErrorEvent() = 0;
 
+  /**
+   * This must be called on scripts with mIsTrusted set to false in
+   * order retrieve the associated aSourceText (source text after
+   * application of the Trusted Types's default policy).
+   */
+  virtual MOZ_CAN_RUN_SCRIPT nsresult
+  GetTrustedTypesCompliantInlineScriptText(nsString& aSourceText) = 0;
+
  protected:
   /**
    * Processes the script if it's in the document-tree and links to or
@@ -272,7 +270,7 @@ class nsIScriptElement : public nsIScriptLoaderObserver {
    * @return whether the parser will be blocked while this script is being
    *         loaded
    */
-  virtual bool MaybeProcessScript() = 0;
+  virtual bool MaybeProcessScript(nsCOMPtr<nsIParser> aParser) = 0;
 
   /**
    * Since we've removed the XPCOM interface to HTML elements, we need a way to
@@ -345,6 +343,12 @@ class nsIScriptElement : public nsIScriptLoaderObserver {
   bool mExternal;
 
   /**
+   *  Whether a script element is considered trustworthy for execution.
+   *  https://github.com/w3c/trusted-types/pull/579
+   */
+  bool mIsTrusted;
+
+  /**
    * The effective script kind.
    */
   JS::loader::ScriptKind mKind;
@@ -369,7 +373,5 @@ class nsIScriptElement : public nsIScriptLoaderObserver {
    */
   nsWeakPtr mCreatorParser;
 };
-
-NS_DEFINE_STATIC_IID_ACCESSOR(nsIScriptElement, NS_ISCRIPTELEMENT_IID)
 
 #endif  // nsIScriptElement_h___

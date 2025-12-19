@@ -9,12 +9,8 @@
 
 #include <functional>
 
-#include "mozilla/dom/ServiceWorkerOpPromise.h"
-#include "nsISupportsImpl.h"
-
 #include "ServiceWorkerEvents.h"
 #include "ServiceWorkerOpPromise.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/TimeStamp.h"
@@ -22,7 +18,9 @@
 #include "mozilla/dom/RemoteWorkerChild.h"
 #include "mozilla/dom/RemoteWorkerOp.h"
 #include "mozilla/dom/ServiceWorkerOpArgs.h"
+#include "mozilla/dom/ServiceWorkerOpPromise.h"
 #include "mozilla/dom/WorkerRunnable.h"
+#include "nsISupportsImpl.h"
 
 namespace mozilla::dom {
 

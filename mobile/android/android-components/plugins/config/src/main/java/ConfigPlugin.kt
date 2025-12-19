@@ -5,7 +5,9 @@
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.provider.ProviderFactory
+import org.gradle.kotlin.dsl.extra
 import org.gradle.process.ExecOutput
+import java.nio.file.Paths
 import java.text.SimpleDateFormat
 import java.time.LocalDateTime
 import java.util.Date
@@ -16,8 +18,6 @@ class ConfigPlugin : Plugin<Project> {
 }
 
 object Config {
-
-    var vcsHash: String? = null
 
     @JvmStatic
     private fun generateDebugVersionName(): String {
@@ -46,26 +46,15 @@ object Config {
 
     @JvmStatic
     fun readVersionFromFile(project: Project): String {
-        var versionPath = "../version.txt"
-
-        if (project.findProject(":geckoview") != null) {
-            versionPath = "./mobile/android/version.txt"
-        }
-
-        return project.rootProject.file(versionPath).useLines { it.firstOrNull() ?: "" }
+        var mozconfig = project.gradle.extensions.extraProperties.get("mozconfig") as Map<*, *>;
+        var topsrcdir = mozconfig.get("topsrcdir") as String;
+        var versionPath = Paths.get(topsrcdir, "mobile/android/version.txt");
+        return project.file(versionPath).useLines { it.firstOrNull() ?: "" }
     }
 
     @JvmStatic
     fun majorVersion(project: Project): String {
         return readVersionFromFile(project).split(".")[0]
-    }
-
-    /**
-     * Generate a build date that follows the ISO-8601 format
-     */
-    @JvmStatic
-    fun generateBuildDate(): String {
-        return LocalDateTime.now().toString()
     }
 
     private val fennecBaseVersionCode by lazy {
@@ -88,7 +77,7 @@ object Config {
      * the documented epoch date (20150901) and the effective epoch date (20150801).
      */
     @JvmStatic
-    fun generateFennecVersionCode(abi: String, aab: Boolean): Int {
+    fun generateFennecVersionCode(abi: String): Int {
         // The important consideration is that version codes be monotonically
         // increasing (per Android package name) for all published builds.  The input
         // build IDs are based on timestamps and hence are always monotonically
@@ -121,7 +110,7 @@ object Config {
         // they take precedence over 32-bit builds on devices that support 64-bit.
         //
         // The bit labelled 'g' was once used for APK splits. Today, it is 0 for
-        // APK builds, or 1 for AAB builds.
+        // APK builds, or 1 for AAB/Universal builds.
         //
         // We throw an explanatory exception when we are within one calendar year of
         // running out of build events.  This gives lots of time to update the version
@@ -151,50 +140,20 @@ object Config {
         version = version or (base shl 3)
 
         // 'x' bit is 1 for x86/x86-64 architectures
-        if (aab || abi == "x86_64" || abi == "x86") {
+        if (abi == "universal" || abi == "x86_64" || abi == "x86") {
             version = version or (1 shl 2)
         }
 
         // 'p' bit is 1 for 64-bit architectures.
-        if (aab || abi == "arm64-v8a" || abi == "x86_64") {
+        if (abi == "universal" || abi == "arm64-v8a" || abi == "x86_64") {
             version = version or (1 shl 1)
         }
 
-        // 'g' bit is 0 for APK, 1 for AAB
-        if (aab) {
+        // 'g' bit is 0 for APK, 1 for AAB/Universal
+        if (abi == "universal") {
             version = version or (1 shl 0)
         }
 
         return version
-    }
-
-    /**
-     * Returns the git or hg hash of the currently checked out revision. If there are uncommitted changes,
-     * a "+" will be appended to the hash, e.g. "c8ba05ad0+".
-     */
-    @JvmStatic
-    fun getVcsHash(project: Project): String {
-        return vcsHash ?: readVcsHash(project).also { vcsHash = it }
-    }
-
-    private fun readVcsHash(project: Project): String {
-        val proc = project.providers.execute("git", "rev-parse", "--short", "HEAD")
-        if (proc.result.get().exitValue != 0) {
-            // hg id already appends "+" if the working directory isn't clean
-            val hgRevision = project.providers.execute("hg", "id", "--id")
-                .standardOutput.asText.get().trim()
-            return "hg-${hgRevision}"
-        }
-        // Append "+" if there are uncommitted changes in the working directory.
-        val status = project.providers.execute("git", "status", "--porcelain=v2")
-            .standardOutput.asText.get().trim()
-        val hasUnstagedChanges = status.isNotBlank()
-        val statusSuffix = if (hasUnstagedChanges) "+" else ""
-        return "git-${proc.standardOutput.asText.get().trim()}$statusSuffix"
-    }
-
-    private fun ProviderFactory.execute(vararg args: String): ExecOutput = exec {
-        commandLine(*args)
-        isIgnoreExitValue = true
     }
 }

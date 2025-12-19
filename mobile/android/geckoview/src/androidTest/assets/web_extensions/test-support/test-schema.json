@@ -51,6 +51,18 @@
         ]
       },
       {
+        "name": "clearUserPref",
+        "type": "function",
+        "async": true,
+        "description": "Clears the user pref.",
+        "parameters": [
+          {
+            "name": "pref",
+            "type": "string"
+          }
+        ]
+      },
+      {
         "name": "getLinkColor",
         "type": "function",
         "async": true,
@@ -327,6 +339,42 @@
           {
             "type": "boolean",
             "name": "handlingUserInput"
+          }
+        ]
+      },
+
+      {
+        "name": "getWebExtensionsSchemaPermissionNames",
+        "type": "function",
+        "async": true,
+        "description": "Returns all the permission names defined in the WebExtensions API JSONSchema given an array of type names",
+        "parameters": [
+          {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string" },
+            "name": "typeNames"
+          }
+        ]
+      },
+
+      {
+        "name": "teardownAlertsService",
+        "type": "function",
+        "async": true,
+        "description": "Triggers teardown on Alerts Service so that it can clear all notification information.",
+        "parameters": []
+      },
+
+      {
+        "name": "notifyUserGestureActivation",
+        "type": "function",
+        "async": true,
+        "description": "Invokes document.notifyUserGestureActivation to simulate user gesture activation.",
+        "parameters": [
+          {
+            "type": "number",
+            "name": "tabId"
           }
         ]
       }

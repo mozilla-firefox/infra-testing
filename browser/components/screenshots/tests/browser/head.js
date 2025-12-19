@@ -147,6 +147,7 @@ class ScreenshotsHelper {
 
   /**
    * Get the button from screenshots preview dialog
+   *
    * @param {Sting} name The id of the button to query
    * @returns The button or null
    */
@@ -335,10 +336,11 @@ class ScreenshotsHelper {
    *
    * Note: The distance of the rect should be greater than 40 to enter in the "dragging" state.
    * See https://searchfox.org/mozilla-central/rev/af78418c4b5f2c8721d1a06486cf4cf0b33e1e8d/browser/components/screenshots/ScreenshotsOverlayChild.sys.mjs#809
-   * @param {Number} startX The starting X coordinate. The left edge of the overlay rect.
-   * @param {Number} startY The starting Y coordinate. The top edge of the overlay rect.
-   * @param {Number} endX The end X coordinate. The right edge of the overlay rect.
-   * @param {Number} endY The end Y coordinate. The bottom edge of the overlay rect.
+   *
+   * @param {number} startX The starting X coordinate. The left edge of the overlay rect.
+   * @param {number} startY The starting Y coordinate. The top edge of the overlay rect.
+   * @param {number} endX The end X coordinate. The right edge of the overlay rect.
+   * @param {number} endY The end Y coordinate. The bottom edge of the overlay rect.
    */
   async dragOverlay(
     startX,
@@ -676,6 +678,7 @@ class ScreenshotsHelper {
 
   /**
    * Gets the dialog box
+   *
    * @returns The dialog box
    */
   getDialog() {
@@ -737,7 +740,8 @@ class ScreenshotsHelper {
 
   /**
    * Gets the client and scroll demensions on the window
-   * @returns { Object }
+   *
+   * @returns {object}
    *   clientHeight The visible height
    *   clientWidth The visible width
    *   scrollHeight The scrollable height
@@ -898,6 +902,7 @@ class ScreenshotsHelper {
    * Copied from screenshots extension
    * A helper that returns the size of the image that was just put into the clipboard by the
    * :screenshot command.
+   *
    * @return The {width, height, color} dimension and color object.
    */
   async getImageSizeAndColorFromClipboard(options = {}) {
@@ -1000,6 +1005,7 @@ class ScreenshotsHelper {
 
 /**
  * Get the raw clipboard data
+ *
  * @param flavor Type of data to get from clipboard
  * @returns The data from the clipboard
  */
@@ -1031,7 +1037,7 @@ function getRawClipboardData(flavor) {
  * Synthesize a mouse event on an element
  * in the viewport.
  *
- * @param {String} selector: The node selector to get the node target for the event.
+ * @param {string} selector: The node selector to get the node target for the event.
  * @param {number} x
  * @param {number} y
  * @param {object} options: Options that will be passed to BrowserTestUtils.synthesizeMouse
@@ -1073,7 +1079,7 @@ async function safeSynthesizeKeyEventInContentPage(aKey, options, browser) {
  * Synthesize a touch event on an element
  * in the viewport.
  *
- * @param {String} selector: The node selector to get the node target for the event.
+ * @param {string} selector: The node selector to get the node target for the event.
  * @param {number} x
  * @param {number} y
  * @param {object} options: Options that will be passed to BrowserTestUtils.synthesizeTouch
@@ -1094,29 +1100,52 @@ async function safeSynthesizeTouchEventInContentPage(
   await BrowserTestUtils.synthesizeTouch(selector, x, y, options, context);
 }
 
-add_setup(async () => {
+// Should the test include a setup step to ensure the screenshots button is placed on the
+// nav-bar toolbar? A lot of our tests use this as the entry point, so default true.
+var gPlaceButtonOnToolbar = true;
+
+function ensureButtonOnToolbar() {
   CustomizableUI.addWidgetToArea(
     "screenshot-button",
     CustomizableUI.AREA_NAVBAR,
     0
   );
   let screenshotBtn = document.getElementById("screenshot-button");
-  Assert.ok(screenshotBtn, "The screenshots button was added to the nav bar");
+  Assert.ok(screenshotBtn, "The screenshots button exists in the document");
+  Assert.equal(
+    CustomizableUI.getPlacementOfWidget("screenshot-button")?.area,
+    "nav-bar",
+    "The screenshots button is on the nav-bar"
+  );
+}
 
-  registerCleanupFunction(async () => {
-    info(`downloads panel should be visible: ${DownloadsPanel.isPanelShowing}`);
-    if (DownloadsPanel.isPanelShowing) {
-      let hiddenPromise = BrowserTestUtils.waitForEvent(
-        DownloadsPanel.panel,
-        "popuphidden"
-      );
-      DownloadsPanel.hidePanel();
-      await hiddenPromise;
-      info(
-        `downloads panel should not be visible: ${DownloadsPanel.isPanelShowing}`
-      );
-    }
-  });
+async function cleanup() {
+  CustomizableUI.reset();
+  Services.prefs.clearUserPref(
+    "screenshots.browser.component.last-screenshot-method"
+  );
+  Services.prefs.clearUserPref(
+    "screenshots.browser.component.last-saved-method"
+  );
+
+  if (DownloadsPanel.isPanelShowing) {
+    let hiddenPromise = BrowserTestUtils.waitForEvent(
+      DownloadsPanel.panel,
+      "popuphidden"
+    );
+    DownloadsPanel.hidePanel();
+    await hiddenPromise;
+    info(
+      `downloads panel should not be visible: ${DownloadsPanel.isPanelShowing}`
+    );
+  }
+}
+
+add_setup(async () => {
+  if (gPlaceButtonOnToolbar) {
+    ensureButtonOnToolbar();
+  }
+  registerCleanupFunction(cleanup);
 });
 
 function getContentDevicePixelRatio(browser) {

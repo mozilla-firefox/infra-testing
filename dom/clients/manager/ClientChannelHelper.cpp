@@ -9,11 +9,11 @@
 #include "ClientManager.h"
 #include "ClientSource.h"
 #include "MainThreadUtils.h"
+#include "mozilla/StaticPrefs_privacy.h"
+#include "mozilla/StoragePrincipalHelper.h"
 #include "mozilla/dom/ClientsBinding.h"
 #include "mozilla/dom/ServiceWorkerDescriptor.h"
 #include "mozilla/ipc/BackgroundUtils.h"
-#include "mozilla/StaticPrefs_privacy.h"
-#include "mozilla/StoragePrincipalHelper.h"
 #include "nsContentUtils.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
 #include "nsIChannel.h"
@@ -224,7 +224,7 @@ class ClientChannelHelperParent final : public ClientChannelHelper {
     }
 
     if (aClientInfo) {
-      Unused << NS_WARN_IF(!ClientManager::ExpectFutureSource(*aClientInfo));
+      (void)NS_WARN_IF(!ClientManager::ExpectFutureSource(*aClientInfo));
     }
 
     mRecentFutureSourceInfo = std::move(aClientInfo);

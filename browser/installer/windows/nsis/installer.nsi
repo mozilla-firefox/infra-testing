@@ -42,6 +42,7 @@ Var InstallType
 Var AddStartMenuSC
 Var AddTaskbarSC
 Var AddDesktopSC
+Var AddDesktopLauncher
 Var AddPrivateBrowsingSC
 Var InstallMaintenanceService
 Var InstallOptionalExtensions
@@ -137,11 +138,6 @@ VIAddVersionKey "OriginalFilename" "setup.exe"
 !insertmacro UnloadUAC
 !insertmacro WriteRegStr2
 !insertmacro WriteRegDWORD2
-
-; This needs to be inserted after InitHashAppModelId because it uses
-; $AppUserModelID and the compiler can't handle using variables lexically before
-; they've been declared.
-!insertmacro GetInstallerRegistryPref
 
 !include shared.nsh
 
@@ -643,7 +639,10 @@ Section "-Application" APP_IDX
     SetShellVarContext current
   ${EndIf}
 
-  ${If} $AddDesktopSC == 1
+  ${If} $AddDesktopLauncher == 1
+    ; Entry point for installing launcher when Firefox is being installed
+    Call OnInstallDesktopLauncherHandler
+  ${ElseIf} $AddDesktopSC == 1
     ${If} ${FileExists} "$DESKTOP\${BrandFullName}.lnk"
       ShellLink::GetShortCutTarget "$DESKTOP\${BrandFullName}.lnk"
       Pop $0
@@ -658,10 +657,10 @@ Section "-Application" APP_IDX
       ${If} ${FileExists} "$DESKTOP\${BrandShortName}.lnk"
         ShellLink::SetShortCutDescription "$DESKTOP\${BrandShortName}.lnk" "$(BRIEF_APP_DESC)"
         ShellLink::SetShortCutWorkingDirectory "$DESKTOP\${BrandShortName}.lnk" \
-                                               "$INSTDIR"
+                                              "$INSTDIR"
         ${If} "$AppUserModelID" != ""
           ApplicationID::Set "$DESKTOP\${BrandShortName}.lnk" \
-                             "$AppUserModelID" "true"
+                            "$AppUserModelID" "true"
         ${EndIf}
         ${LogMsg} "Added Shortcut: $DESKTOP\${BrandShortName}.lnk"
       ${Else}
@@ -1734,9 +1733,9 @@ Function .onInit
   ; Windows 8.1/Server 2012 R2 and lower are not supported.
   ${Unless} ${AtLeastWin10}
     ${If} "$R7" == "0"
-      strCpy $R7 "$(WARN_MIN_SUPPORTED_OSVER_CPU_MSG)"
+      strCpy $R7 "$(WARN_MIN_SUPPORTED_OSVER_CPU_MSG2)"
     ${Else}
-      strCpy $R7 "$(WARN_MIN_SUPPORTED_OSVER_MSG)"
+      strCpy $R7 "$(WARN_MIN_SUPPORTED_OSVER_MSG2)"
     ${EndIf}
     MessageBox MB_OKCANCEL|MB_ICONSTOP "$R7" IDCANCEL +2
     ExecShell "open" "${URLSystemRequirements}"
@@ -1753,12 +1752,12 @@ Function .onInit
 !ifdef HAVE_64BIT_BUILD
   ${If} "${ARCH}" == "AArch64"
     ${IfNot} ${IsNativeARM64}
-      MessageBox MB_OKCANCEL|MB_ICONSTOP "$(WARN_MIN_SUPPORTED_OSVER_MSG)" IDCANCEL +2
+      MessageBox MB_OKCANCEL|MB_ICONSTOP "$(WARN_MIN_SUPPORTED_OSVER_MSG2)" IDCANCEL +2
       ExecShell "open" "${URLSystemRequirements}"
       Quit
     ${EndIf}
   ${ElseIfNot} ${RunningX64}
-    MessageBox MB_OKCANCEL|MB_ICONSTOP "$(WARN_MIN_SUPPORTED_OSVER_MSG)" IDCANCEL +2
+    MessageBox MB_OKCANCEL|MB_ICONSTOP "$(WARN_MIN_SUPPORTED_OSVER_MSG2)" IDCANCEL +2
     ExecShell "open" "${URLSystemRequirements}"
     Quit
   ${EndIf}
@@ -1779,7 +1778,7 @@ Function .onInit
     StrCpy $HadOldInstall true
   ${EndIf}
 
-  ${InstallOnInitCommon} "$(WARN_MIN_SUPPORTED_OSVER_CPU_MSG)"
+  ${InstallOnInitCommon} "$(WARN_MIN_SUPPORTED_OSVER_CPU_MSG2)"
 
   !insertmacro InitInstallOptionsFile "options.ini"
   !insertmacro InitInstallOptionsFile "shortcuts.ini"

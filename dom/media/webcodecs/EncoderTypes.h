@@ -7,16 +7,16 @@
 #ifndef mozilla_dom_EncoderTypes_h
 #define mozilla_dom_EncoderTypes_h
 
+#include "VideoDecoder.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/dom/AudioEncoderBinding.h"
 #include "mozilla/dom/EncodedVideoChunk.h"
 #include "mozilla/dom/MediaRecorderBinding.h"
 #include "mozilla/dom/VideoEncoderBinding.h"
-#include "mozilla/dom/AudioEncoderBinding.h"
 #include "mozilla/dom/VideoFrame.h"
 #include "mozilla/dom/VideoFrameBinding.h"
 #include "nsStringFwd.h"
 #include "nsTLiteralString.h"
-#include "VideoDecoder.h"
 
 namespace mozilla {
 
@@ -51,7 +51,7 @@ class AudioEncoderConfigInternal {
   Maybe<uint32_t> mNumberOfChannels;
   Maybe<uint32_t> mBitrate;
   BitrateMode mBitrateMode;
-  Maybe<EncoderConfig::CodecSpecific> mSpecific;
+  EncoderConfig::CodecSpecific mSpecific{void_t{}};
 
  private:
   AudioEncoderConfigInternal(const nsAString& aCodec,

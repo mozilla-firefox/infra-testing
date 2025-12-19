@@ -151,12 +151,12 @@ interface Element : Node {
 
   // Obsolete methods.
   Attr? getAttributeNode(DOMString name);
-  [CEReactions, Throws]
+  [CEReactions, NeedsSubjectPrincipal=NonSystem, Throws]
   Attr? setAttributeNode(Attr newAttr);
   [CEReactions, Throws]
   Attr? removeAttributeNode(Attr oldAttr);
   Attr? getAttributeNodeNS(DOMString? namespaceURI, DOMString localName);
-  [CEReactions, Throws]
+  [CEReactions, NeedsSubjectPrincipal=NonSystem, Throws]
   Attr? setAttributeNodeNS(Attr newAttr);
 
   [Func="nsContentUtils::IsCallerChromeOrElementTransformGettersEnabled"]
@@ -187,7 +187,7 @@ interface mixin HTMLOrForeignElement {
 // https://drafts.csswg.org/cssom/#the-elementcssinlinestyle-mixin
 interface mixin ElementCSSInlineStyle {
   [SameObject, PutForwards=cssText]
-  readonly attribute CSSStyleDeclaration style;
+  readonly attribute CSSStyleProperties style;
 };
 
 // https://drafts.csswg.org/cssom-view/
@@ -216,8 +216,12 @@ partial interface Element {
   // scrolling
   undefined scrollIntoView(optional (boolean or ScrollIntoViewOptions) arg = {});
   // None of the CSSOM attributes are [Pure], because they flush
-           attribute long scrollTop;   // scroll on setting
-           attribute long scrollLeft;  // scroll on setting
+           attribute unrestricted double scrollTop;   // scroll on setting
+           attribute unrestricted double scrollLeft;  // scroll on setting
+
+  // FIXME(emilio): A bit weird that these are long instead of doubles, see:
+  // https://lists.w3.org/Archives/Public/www-style/2015Feb/0195.html
+  // https://github.com/w3c/csswg-drafts/issues/5260
   readonly attribute long scrollWidth;
   readonly attribute long scrollHeight;
 
@@ -250,10 +254,10 @@ partial interface Element {
   /* The minimum/maximum offset that the element can be scrolled to
      (i.e., the value that scrollLeft/scrollTop would be clamped to if they were
      set to arbitrarily large values. */
-  [ChromeOnly] readonly attribute long scrollTopMin;
-               readonly attribute long scrollTopMax;
-  [ChromeOnly] readonly attribute long scrollLeftMin;
-               readonly attribute long scrollLeftMax;
+  [ChromeOnly] readonly attribute unrestricted double scrollTopMin;
+               readonly attribute unrestricted double scrollTopMax;
+  [ChromeOnly] readonly attribute unrestricted double scrollLeftMin;
+               readonly attribute unrestricted double scrollLeftMax;
 
   [Pref="layout.css.zoom.enabled"] readonly attribute double currentCSSZoom;
 };
@@ -262,9 +266,9 @@ partial interface Element {
 partial interface Element {
   [CEReactions, SetterNeedsSubjectPrincipal=NonSystem, Pure, SetterThrows, GetterCanOOM]
   attribute (TrustedHTML or [LegacyNullToEmptyString] DOMString) innerHTML;
-  [CEReactions, Pure, SetterThrows]
+  [CEReactions, SetterNeedsSubjectPrincipal=NonSystem, Pure, SetterThrows]
   attribute (TrustedHTML or [LegacyNullToEmptyString] DOMString) outerHTML;
-  [CEReactions, Throws]
+  [CEReactions, NeedsSubjectPrincipal=NonSystem, Throws]
   undefined insertAdjacentHTML(DOMString position, (TrustedHTML or DOMString) text);
 };
 
@@ -273,10 +277,12 @@ dictionary ShadowRootInit {
   required ShadowRootMode mode;
   boolean delegatesFocus = false;
   SlotAssignmentMode slotAssignment = "named";
-  [Pref="dom.webcomponents.shadowdom.declarative.enabled"]
   boolean clonable = false;
-  [Pref="dom.webcomponents.shadowdom.declarative.enabled"]
   boolean serializable = false;
+
+  // https://github.com/whatwg/dom/pull/1353
+  [Pref="dom.shadowdom.referenceTarget.enabled"]
+  DOMString referenceTarget;
 };
 
 // https://dom.spec.whatwg.org/#element
@@ -407,12 +413,21 @@ dictionary GetHTMLOptions {
 
 partial interface Element {
   // https://html.spec.whatwg.org/#dom-element-sethtmlunsafe
-  /* TODO: optional SetHTMLUnsafeOptions options = {} */
-  [Pref="dom.webcomponents.shadowdom.declarative.enabled", Throws]
-  undefined setHTMLUnsafe((TrustedHTML or DOMString) html);
-  [Pref="dom.webcomponents.shadowdom.declarative.enabled"]
+  [NeedsSubjectPrincipal=NonSystem, Throws]
+  undefined setHTMLUnsafe((TrustedHTML or DOMString) html, optional SetHTMLUnsafeOptions options = {});
   DOMString getHTML(optional GetHTMLOptions options = {});
 };
 
 // https://w3c.github.io/trusted-types/dist/spec/#integrations
 typedef (TrustedHTML or TrustedScript or TrustedScriptURL) TrustedType;
+
+// https://drafts.css-houdini.org/css-typed-om-1/#computed-stylepropertymapreadonly-objects
+partial interface Element {
+    [Pref="layout.css.typed-om.enabled"]
+    StylePropertyMapReadOnly computedStyleMap();
+};
+
+// https://drafts.css-houdini.org/css-typed-om-1/#declared-stylepropertymap-objects
+partial interface mixin ElementCSSInlineStyle {
+  [SameObject, Pref="layout.css.typed-om.enabled"] readonly attribute StylePropertyMap attributeStyleMap;
+};

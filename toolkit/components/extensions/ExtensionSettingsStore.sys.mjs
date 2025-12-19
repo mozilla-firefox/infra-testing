@@ -3,7 +3,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* eslint-disable mozilla/valid-lazy */
 
 /**
  * @file
@@ -545,11 +544,11 @@ export var ExtensionSettingsStore = {
    *
    * @param {string} type The type of setting to be returned.
    * @param {string} key A string that uniquely identifies the setting.
-   * @param {string} id
+   * @param {string} [id]
    *        The id of the extension for which the setting is being retrieved.
    *        Defaults to undefined, in which case the top setting is returned.
    *
-   * @returns {object} An object with properties for key, value and id.
+   * @returns {{ id: string, key: string, value: string}} An object with properties for key, value and id.
    */
   getSetting(type, key, id) {
     return getItem(type, key, id);

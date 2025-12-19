@@ -4,29 +4,28 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsCOMPtr.h"
-#include "nsXMLContentSink.h"
-#include "nsIFragmentContentSink.h"
-#include "nsIXMLContentSink.h"
-#include "nsContentSink.h"
-#include "nsIExpatSink.h"
-#include "nsIDTD.h"
-#include "mozilla/dom/Document.h"
-#include "nsIContent.h"
-#include "nsGkAtoms.h"
-#include "mozilla/dom/NodeInfo.h"
-#include "nsContentCreatorFunctions.h"
-#include "nsError.h"
-#include "nsIDocShell.h"
-#include "nsIScriptError.h"
-#include "nsTHashtable.h"
-#include "nsHashKeys.h"
-#include "nsTArray.h"
-#include "nsCycleCollectionParticipant.h"
 #include "mozilla/css/Loader.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentFragment.h"
+#include "mozilla/dom/NodeInfo.h"
 #include "mozilla/dom/ProcessingInstruction.h"
 #include "mozilla/dom/ScriptLoader.h"
+#include "nsCOMPtr.h"
+#include "nsContentCreatorFunctions.h"
+#include "nsContentSink.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsError.h"
+#include "nsGkAtoms.h"
+#include "nsHashKeys.h"
+#include "nsIContent.h"
+#include "nsIDocShell.h"
+#include "nsIExpatSink.h"
+#include "nsIFragmentContentSink.h"
+#include "nsIScriptError.h"
+#include "nsIXMLContentSink.h"
+#include "nsTArray.h"
+#include "nsTHashtable.h"
+#include "nsXMLContentSink.h"
 
 using namespace mozilla::dom;
 
@@ -55,7 +54,7 @@ class nsXMLFragmentContentSink : public nsXMLContentSink,
                          bool* aRetval) override;
 
   // nsIContentSink
-  NS_IMETHOD WillBuildModel(nsDTDMode aDTDMode) override;
+  NS_IMETHOD WillBuildModel() override;
   NS_IMETHOD DidBuildModel(bool aTerminated) override;
   virtual void SetDocumentCharset(NotNull<const Encoding*> aEncoding) override;
   virtual nsISupports* GetTarget() override;
@@ -135,7 +134,7 @@ NS_IMPL_CYCLE_COLLECTION_INHERITED(nsXMLFragmentContentSink, nsXMLContentSink,
                                    mTargetDocument, mRoot)
 
 NS_IMETHODIMP
-nsXMLFragmentContentSink::WillBuildModel(nsDTDMode aDTDMode) {
+nsXMLFragmentContentSink::WillBuildModel() {
   if (mRoot) {
     return NS_OK;
   }
@@ -311,7 +310,6 @@ nsXMLFragmentContentSink::FinishFragmentParsing(DocumentFragment** aFragment) {
   mTargetDocument = nullptr;
   mNodeInfoManager = nullptr;
   mScriptLoader = nullptr;
-  mCSSLoader = nullptr;
   mContentStack.Clear();
   mDocumentURI = nullptr;
   mDocShell = nullptr;

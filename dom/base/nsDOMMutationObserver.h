@@ -12,7 +12,6 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/Animation.h"
 #include "mozilla/dom/Document.h"
-#include "mozilla/dom/MutationEventBinding.h"
 #include "mozilla/dom/MutationObserverBinding.h"
 #include "mozilla/dom/Nullable.h"
 #include "nsCOMArray.h"
@@ -21,6 +20,7 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsGlobalWindowInner.h"
 #include "nsIAnimationObserver.h"
+#include "nsIMutationObserver.h"
 #include "nsPIDOMWindow.h"
 #include "nsStubAnimationObserver.h"
 #include "nsTArray.h"
@@ -338,7 +338,7 @@ class nsMutationReceiver : public nsMutationReceiverBase {
                                           nsAtom* aAttribute) override {
     // We can reuse AttributeWillChange implementation.
     AttributeWillChange(aElement, aNameSpaceID, aAttribute,
-                        mozilla::dom::MutationEvent_Binding::MODIFICATION);
+                        AttrModType::Modification);
   }
 
  protected:
@@ -402,12 +402,8 @@ class nsAnimationReceiver : public nsMutationReceiver {
                                AnimationMutation aMutationType);
 };
 
-#define NS_DOM_MUTATION_OBSERVER_IID                 \
-  {                                                  \
-    0x0c3b91f8, 0xcc3b, 0x4b08, {                    \
-      0x9e, 0xab, 0x07, 0x47, 0xa9, 0xe4, 0x65, 0xb4 \
-    }                                                \
-  }
+#define NS_DOM_MUTATION_OBSERVER_IID \
+  {0x0c3b91f8, 0xcc3b, 0x4b08, {0x9e, 0xab, 0x07, 0x47, 0xa9, 0xe4, 0x65, 0xb4}}
 
 class nsDOMMutationObserver final : public nsISupports, public nsWrapperCache {
  public:
@@ -422,7 +418,7 @@ class nsDOMMutationObserver final : public nsISupports, public nsWrapperCache {
         mId(++sCount) {}
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(nsDOMMutationObserver)
-  NS_DECLARE_STATIC_IID_ACCESSOR(NS_DOM_MUTATION_OBSERVER_IID)
+  NS_INLINE_DECL_STATIC_IID(NS_DOM_MUTATION_OBSERVER_IID)
 
   static already_AddRefed<nsDOMMutationObserver> Constructor(
       const mozilla::dom::GlobalObject&, mozilla::dom::MutationCallback&,
@@ -570,9 +566,6 @@ class nsDOMMutationObserver final : public nsISupports, public nsWrapperCache {
   static AutoTArray<AutoTArray<RefPtr<nsDOMMutationObserver>, 4>, 4>*
       sCurrentlyHandlingObservers;
 };
-
-NS_DEFINE_STATIC_IID_ACCESSOR(nsDOMMutationObserver,
-                              NS_DOM_MUTATION_OBSERVER_IID)
 
 class nsAutoMutationBatch {
  public:

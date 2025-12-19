@@ -9,9 +9,9 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/ErrorResult.h"
-#include "nsGenericHTMLElement.h"
 #include "mozilla/dom/DocumentFragment.h"
 #include "mozilla/dom/ShadowRootBinding.h"
+#include "nsGenericHTMLElement.h"
 #include "nsGkAtoms.h"
 
 namespace mozilla::dom {
@@ -72,8 +72,20 @@ class HTMLTemplateElement final : public nsGenericHTMLElement {
     SetHTMLBoolAttr(nsGkAtoms::shadowrootserializable, aValue, aRv);
   }
 
+  void GetShadowRootReferenceTarget(nsAString& aResult) const {
+    GetHTMLAttr(nsGkAtoms::shadowrootreferencetarget, aResult);
+  }
+  void SetShadowRootReferenceTarget(const nsAString& aValue, ErrorResult& aRv) {
+    SetHTMLAttr(nsGkAtoms::shadowrootreferencetarget, aValue);
+  }
+
+  void SetHTML(const nsAString& aInnerHTML, const SetHTMLOptions& aOptions,
+               ErrorResult& aError) final;
+
   MOZ_CAN_RUN_SCRIPT
   void SetHTMLUnsafe(const TrustedHTMLOrString& aHTML,
+                     const SetHTMLUnsafeOptions& aOptions,
+                     nsIPrincipal* aSubjectPrincipal,
                      ErrorResult& aError) final;
 
  protected:

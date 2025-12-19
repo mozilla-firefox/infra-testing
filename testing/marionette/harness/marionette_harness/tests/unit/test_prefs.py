@@ -2,14 +2,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import six
-
 from marionette_driver import geckoinstance
 from marionette_driver.errors import JavascriptException
 
 from marionette_harness import (
     MarionetteTestCase,
-    run_if_manage_instance,
 )
 
 
@@ -29,7 +26,7 @@ class TestPreferences(MarionetteTestCase):
     def test_gecko_instance_preferences(self):
         required_prefs = geckoinstance.GeckoInstance.required_prefs
 
-        for key, value in six.iteritems(required_prefs):
+        for key, value in required_prefs.items():
             self.assertEqual(
                 self.marionette.get_pref(key),
                 value,
@@ -39,7 +36,7 @@ class TestPreferences(MarionetteTestCase):
     def test_desktop_instance_preferences(self):
         required_prefs = geckoinstance.DesktopInstance.desktop_prefs
 
-        for key, value in six.iteritems(required_prefs):
+        for key, value in required_prefs.items():
             self.assertEqual(
                 self.marionette.get_pref(key),
                 value,
@@ -77,7 +74,7 @@ class TestPreferences(MarionetteTestCase):
         self.marionette.set_pref(self.prefs["string"], "abc")
         value = self.marionette.get_pref(self.prefs["string"])
         self.assertEqual(value, "abc")
-        self.assertTrue(isinstance(value, six.string_types))
+        self.assertTrue(isinstance(value, str))
 
         # Test reset value
         self.marionette.set_pref(self.prefs["string"], None)
@@ -103,18 +100,31 @@ class TestPreferences(MarionetteTestCase):
         self.assertEqual(self.marionette.get_pref(pref_default), "default_value")
 
     def test_get_pref_value_type(self):
-        # Without a given value type the properties URL will be returned only
-        pref_complex = "browser.menu.showCharacterEncoding"
-        properties_file = "chrome://browser/locale/browser.properties"
+        pref_complex = "marionette.test.complex"
+
+        # Set a nsIFile complex preference pointing to a temporary folder.
+        with self.marionette.using_context(self.marionette.CONTEXT_CHROME):
+            expected_path = self.marionette.execute_script(
+                """
+                let pref = arguments[0];
+                let tempDir = Services.dirsvc.get("TmpD", Ci.nsIFile);
+                Services.prefs.setComplexValue(pref, Ci.nsIFile, tempDir);
+                return tempDir.path;
+                """,
+                script_args=(pref_complex,),
+            )
+
+        # Read the complex preference without a value_type,
+        # the path as a string should be returned.
         self.assertEqual(
-            self.marionette.get_pref(pref_complex, default_branch=True), properties_file
+            self.marionette.get_pref(pref_complex, default_branch=False), expected_path
         )
 
         # Otherwise the property named like the pref will be translated
         value = self.marionette.get_pref(
-            pref_complex, default_branch=True, value_type="nsIPrefLocalizedString"
+            pref_complex, default_branch=False, value_type="nsIFile"
         )
-        self.assertNotEqual(value, properties_file)
+        self.assertNotEqual(value, expected_path)
 
     def test_set_prefs(self):
         # By default none of the preferences are set

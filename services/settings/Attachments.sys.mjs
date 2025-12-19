@@ -67,7 +67,7 @@ class LazyRecordAndBuffer {
 
   /**
    * @returns {object} The attachment record, if found. null otherwise.
-   **/
+   */
   async getRecord() {
     try {
       return (await this._ensureRecordAndLazyBuffer()).record;
@@ -79,7 +79,7 @@ class LazyRecordAndBuffer {
   /**
    * @param {object} requestedRecord An attachment record
    * @returns {boolean} Whether the requested record matches this record.
-   **/
+   */
   async isMatchingRequestedRecord(requestedRecord) {
     const record = await this.getRecord();
     return (
@@ -94,10 +94,10 @@ class LazyRecordAndBuffer {
    * Generate the return value for the "download" method.
    *
    * @throws {*} if the record or attachment content is unavailable.
-   * @returns {Object} An object with two properties:
+   * @returns {object} An object with two properties:
    *   buffer: ArrayBuffer with the file content.
    *   record: Record associated with the bytes.
-   **/
+   */
   async getResult() {
     const { record, readBuffer } = await this._ensureRecordAndLazyBuffer();
     if (!this.bufferPromise) {
@@ -131,7 +131,7 @@ export class Downloader {
   }
 
   /**
-   * @returns {Object} An object with async "get", "set" and "delete" methods.
+   * @returns {object} An object with async "get", "set" and "delete" methods.
    *                   The keys are strings, the values may be any object that
    *                   can be stored in IndexedDB (including Blob).
    */
@@ -144,25 +144,27 @@ export class Downloader {
    * If the requested record cannot be downloaded and fallbacks are enabled, the
    * returned attachment may have a different record than the input record.
    *
-   * @param {Object} record A Remote Settings entry with attachment.
+   * @param {object} record A Remote Settings entry with attachment.
    *                        If omitted, the attachmentId option must be set.
-   * @param {Object} options Some download options.
-   * @param {Number} [options.retries] Number of times download should be retried (default: `3`)
-   * @param {Boolean} [options.checkHash] Check content integrity (default: `true`)
+   * @param {object} options Some download options.
+   * @param {number} [options.retries] Number of times download should be retried (default: `3`)
+   * @param {boolean} [options.checkHash] Check content integrity (default: `true`)
    * @param {string} [options.attachmentId] The attachment identifier to use for
    *                                      caching and accessing the attachment.
    *                                      (default: `record.id`)
-   * @param {Boolean} [options.fallbackToCache] Return the cached attachment when the
+   * @param {boolean} [options.cacheResult] if the client should cache a copy of the attachment.
+   *                                          (default: `true`)
+   * @param {boolean} [options.fallbackToCache] Return the cached attachment when the
    *                                          input record cannot be fetched.
    *                                          (default: `false`)
-   * @param {Boolean} [options.fallbackToDump] Use the remote settings dump as a
+   * @param {boolean} [options.fallbackToDump] Use the remote settings dump as a
    *                                         potential source of the attachment.
    *                                         (default: `false`)
    * @throws {Downloader.DownloadError} if the file could not be fetched.
    * @throws {Downloader.BadContentError} if the downloaded content integrity is not valid.
    * @throws {Downloader.ServerInfoError} if the server response is not valid.
    * @throws {NetworkError} if fetching the server infos and fetching the attachment fails.
-   * @returns {Object} An object with two properties:
+   * @returns {object} An object with two properties:
    *   `buffer` `ArrayBuffer`: the file content.
    *   `record` `Object`: record associated with the attachment.
    *   `_source` `String`: identifies the source of the result. Used for testing.
@@ -175,8 +177,8 @@ export class Downloader {
    * Downloads an attachment bundle for a given collection, if one exists. Fills in the cache
    * for all attachments provided by the bundle.
    *
-   * @param {Boolean} force Set to true to force a sync even when local data exists
-   * @returns {Boolean} True if all attachments were processed successfully, false if failed, null if skipped.
+   * @param {boolean} force Set to true to force a sync even when local data exists
+   * @returns {boolean} True if all attachments were processed successfully, false if failed, null if skipped.
    */
   async cacheAll(force = false) {
     // If we're offline, don't try
@@ -298,11 +300,11 @@ export class Downloader {
    * returned attachment may have a different record, e.g. packaged in binary
    * resources or one that is outdated.
    *
-   * @param {Object} record A Remote Settings entry with attachment.
+   * @param {object} record A Remote Settings entry with attachment.
    *                        If omitted, the attachmentId option must be set.
-   * @param {Object} options Some download options.
-   * @param {Number} [options.retries] Number of times download should be retried (default: `3`)
-   * @param {Boolean} [options.checkHash] Check content integrity (default: `true`)
+   * @param {object} options Some download options.
+   * @param {number} [options.retries] Number of times download should be retried (default: `3`)
+   * @param {boolean} [options.checkHash] Check content integrity (default: `true`)
    * @param {string} [options.attachmentId] The attachment identifier to use for
    *                                      caching and accessing the attachment.
    *                                      (default: `record.id`)
@@ -310,7 +312,7 @@ export class Downloader {
    * @throws {Downloader.BadContentError} if the downloaded content integrity is not valid.
    * @throws {Downloader.ServerInfoError} if the server response is not valid.
    * @throws {NetworkError} if fetching the server infos and fetching the attachment fails.
-   * @returns {Object} An object with two properties:
+   * @returns {object} An object with two properties:
    *   `buffer` `ArrayBuffer`: the file content.
    *   `record` `Object`: record associated with the attachment.
    *   `_source` `String`: identifies the source of the result. Used for testing.
@@ -329,6 +331,7 @@ export class Downloader {
     });
   }
 
+  // eslint-disable-next-line complexity
   async #fetchAttachment(record, options) {
     let {
       retries,
@@ -337,6 +340,7 @@ export class Downloader {
       fallbackToCache = false,
       fallbackToDump = false,
       avoidDownload = false,
+      cacheResult = true,
     } = options || {};
     if (!attachmentId) {
       // Check for pre-condition. This should not happen, but it is explicitly
@@ -398,11 +402,13 @@ export class Downloader {
           retries,
           checkHash,
         });
-        const blob = new Blob([newBuffer]);
-        // Store in cache but don't wait for it before returning.
-        this.cacheImpl
-          .set(attachmentId, { record, blob })
-          .catch(e => console.error(e));
+        if (cacheResult) {
+          const blob = new Blob([newBuffer]);
+          // Store in cache but don't wait for it before returning.
+          this.cacheImpl
+            .set(attachmentId, { record, blob })
+            .catch(e => console.error(e));
+        }
         return { buffer: newBuffer, record, _source: "remote_match" };
       } catch (e) {
         // No network, corrupted content, etc.
@@ -474,8 +480,8 @@ export class Downloader {
    * No-op if the attachment does not exist.
    *
    * @param record A Remote Settings entry with attachment.
-   * @param {Object} options Some options.
-   * @param {string} options.attachmentId The attachment identifier to use for
+   * @param {object} [options] Some options.
+   * @param {string} [options.attachmentId] The attachment identifier to use for
    *                                      accessing and deleting the attachment.
    *                                      (default: `record.id`)
    */
@@ -494,79 +500,18 @@ export class Downloader {
   /**
    * Clear the cache from obsolete downloaded attachments.
    *
-   * @param {Array<String>} excludeIds List of attachments IDs to exclude from pruning.
+   * @param {Array<string>} excludeIds List of attachments IDs to exclude from pruning.
    */
   async prune(excludeIds) {
     return this.cacheImpl.prune(excludeIds);
   }
-
-  /**
-   * @deprecated See https://bugzilla.mozilla.org/show_bug.cgi?id=1634127
-   *
-   * Download the record attachment into the local profile directory
-   * and return a file:// URL that points to the local path.
-   *
-   * No-op if the file was already downloaded and not corrupted.
-   *
-   * @param {Object} record A Remote Settings entry with attachment.
-   * @param {Object} options Some download options.
-   * @param {Number} options.retries Number of times download should be retried (default: `3`)
-   * @throws {Downloader.DownloadError} if the file could not be fetched.
-   * @throws {Downloader.BadContentError} if the downloaded file integrity is not valid.
-   * @throws {Downloader.ServerInfoError} if the server response is not valid.
-   * @throws {NetworkError} if fetching the attachment fails.
-   * @returns {String} the absolute file path to the downloaded attachment.
-   */
-  async downloadToDisk(record, options = {}) {
-    const { retries = 3 } = options;
-    const {
-      attachment: { filename, size, hash },
-    } = record;
-    const localFilePath = PathUtils.join(
-      PathUtils.localProfileDir,
-      ...this.folders,
-      filename
-    );
-    const localFileUrl = PathUtils.toFileURI(localFilePath);
-
-    await this._makeDirs();
-
-    let retried = 0;
-    while (true) {
-      if (
-        await lazy.RemoteSettingsWorker.checkFileHash(localFileUrl, size, hash)
-      ) {
-        return localFileUrl;
-      }
-      // File does not exist or is corrupted.
-      if (retried > retries) {
-        throw new Downloader.BadContentError(localFilePath);
-      }
-      try {
-        // Download and write on disk.
-        const buffer = await this.downloadAsBytes(record, {
-          checkHash: false, // Hash will be checked on file.
-          retries: 0, // Already in a retry loop.
-        });
-        await IOUtils.write(localFilePath, new Uint8Array(buffer), {
-          tmpPath: `${localFilePath}.tmp`,
-        });
-      } catch (e) {
-        if (retried >= retries) {
-          throw e;
-        }
-      }
-      retried++;
-    }
-  }
-
   /**
    * Download the record attachment and return its content as bytes.
    *
-   * @param {Object} record A Remote Settings entry with attachment.
-   * @param {Object} options Some download options.
-   * @param {Number} options.retries Number of times download should be retried (default: `3`)
-   * @param {Boolean} options.checkHash Check content integrity (default: `true`)
+   * @param {object} record A Remote Settings entry with attachment.
+   * @param {object} options Some download options.
+   * @param {number} options.retries Number of times download should be retried (default: `3`)
+   * @param {boolean} options.checkHash Check content integrity (default: `true`)
    * @throws {Downloader.DownloadError} if the file could not be fetched.
    * @throws {Downloader.BadContentError} if the downloaded content integrity is not valid.
    * @returns {ArrayBuffer} the file content.
@@ -607,31 +552,6 @@ export class Downloader {
       }
       retried++;
     }
-  }
-
-  /**
-   * @deprecated See https://bugzilla.mozilla.org/show_bug.cgi?id=1634127
-   *
-   * Delete the record attachment downloaded locally.
-   * This is the counterpart of `downloadToDisk()`.
-   * Use `deleteDownloaded()` if `download()` was used to retrieve
-   * the attachment.
-   *
-   * No-op if the related file does not exist.
-   *
-   * @param record A Remote Settings entry with attachment.
-   */
-  async deleteFromDisk(record) {
-    const {
-      attachment: { filename },
-    } = record;
-    const path = PathUtils.join(
-      PathUtils.localProfileDir,
-      ...this.folders,
-      filename
-    );
-    await IOUtils.remove(path);
-    await this._rmDirs();
   }
 
   async _fetchAttachment(url) {
@@ -688,25 +608,22 @@ export class Downloader {
 
   // Separate variable to allow tests to override this.
   static _RESOURCE_BASE_URL = "resource://app/defaults";
+}
 
-  async _makeDirs() {
-    const dirPath = PathUtils.join(PathUtils.localProfileDir, ...this.folders);
-    await IOUtils.makeDirectory(dirPath, { createAncestors: true });
-  }
-
-  async _rmDirs() {
-    for (let i = this.folders.length; i > 0; i--) {
-      const dirPath = PathUtils.join(
-        PathUtils.localProfileDir,
-        ...this.folders.slice(0, i)
-      );
-      try {
-        await IOUtils.remove(dirPath);
-      } catch (e) {
-        // This could fail if there's something in
-        // the folder we're not permitted to remove.
-        break;
-      }
-    }
+/**
+ * A bare downloader that does not store anything in cache.
+ */
+export class UnstoredDownloader extends Downloader {
+  get cacheImpl() {
+    const cacheImpl = {
+      get: async () => {},
+      set: async () => {},
+      setMultiple: async () => {},
+      delete: async () => {},
+      prune: async () => {},
+      hasData: async () => false,
+    };
+    Object.defineProperty(this, "cacheImpl", { value: cacheImpl });
+    return cacheImpl;
   }
 }

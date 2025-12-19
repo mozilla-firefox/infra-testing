@@ -94,9 +94,6 @@ bool UnmarkGrayGCThingUnchecked(GCMarker* marker, JS::GCCellPtr thing);
 
 } /* namespace gc */
 
-// The return value indicates if anything was unmarked.
-bool UnmarkGrayShapeRecursively(Shape* shape);
-
 namespace gc {
 
 // Functions for checking and updating GC thing pointers that might have been
@@ -115,14 +112,14 @@ namespace gc {
 
 template <typename T>
 inline bool IsForwarded(const T* t);
+inline bool IsForwarded(const JS::Value& value);
 
 template <typename T>
 inline T* Forwarded(const T* t);
-
 inline Value Forwarded(const JS::Value& value);
 
 template <typename T>
-inline T MaybeForwarded(T t);
+inline T MaybeForwarded(const T& t);
 
 // Helper functions for use in situations where the object's group might be
 // forwarded, for example while marking.

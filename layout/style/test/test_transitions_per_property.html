@@ -42,7 +42,7 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=435441
 /* eslint-disable dot-notation */
 
 
-/** Test for Bug 435441 **/
+/** Test for Bug 435441 */
 
 SimpleTest.requestLongerTimeout(2);
 SimpleTest.waitForExplicitFinish();
@@ -214,6 +214,7 @@ var supported_properties = {
                          /* test_length_percent_pair_unclamped */ ],
     "mask-size": [ test_background_size_transition,
                    test_length_percent_pair_clamped ],
+    "math-depth": [ test_integer_transition ],
     "max-height": [ test_length_transition, test_percent_transition,
                     test_length_clamped, test_percent_clamped ],
     "max-width": [ test_length_transition, test_percent_transition,
@@ -366,16 +367,19 @@ if (IsCSSPropertyPrefEnabled("layout.css.font-variations.enabled")) {
   supported_properties["font-variation-settings"] = [ test_font_variations_transition ];
 }
 
-if (IsCSSPropertyPrefEnabled("layout.css.contain-intrinsic-size.enabled")) {
-  supported_properties["contain-intrinsic-width"] = [ test_length_transition, test_auto_with_length_transition ];
-  supported_properties["contain-intrinsic-height"] = supported_properties["contain-intrinsic-width"];
-}
-
+supported_properties["contain-intrinsic-width"] = [ test_length_transition, test_auto_with_length_transition ];
+supported_properties["contain-intrinsic-height"] = supported_properties["contain-intrinsic-width"];
 supported_properties["content-visibility"] = [test_content_visibility_transition];
 
 if (IsCSSPropertyPrefEnabled("layout.css.zoom.enabled")) {
   Object.assign(supported_properties, {
     "zoom": [ test_number_transition, test_percent_transition ],
+  });
+}
+
+if (IsCSSPropertyPrefEnabled("layout.css.text-decoration-inset.enabled")) {
+  Object.assign(supported_properties, {
+    "text-decoration-inset": [ test_length_transition ],
   });
 }
 
@@ -411,9 +415,7 @@ for (const logical_size of ["inline", "block"]) {
   supported_properties[logical_size + "-size"] = supported_properties["width"];
   supported_properties["min-" + logical_size + "-size"] = supported_properties["min-width"];
   supported_properties["max-" + logical_size + "-size"] = supported_properties["max-width"];
-  if (IsCSSPropertyPrefEnabled("layout.css.contain-intrinsic-size.enabled")) {
-    supported_properties["contain-intrinsic-" + logical_size + "-size"] = supported_properties["contain-intrinsic-width"];
-  }
+  supported_properties["contain-intrinsic-" + logical_size + "-size"] = supported_properties["contain-intrinsic-width"];
 }
 
 var div = document.getElementById("display");
@@ -948,7 +950,7 @@ const pathFunctionTests = [
   {
     start: "path('M 10 10 A 10 20 30 1 0 140 450')",
     end: "path('M 10 10 A 50 60 70 0 1 380 290')",
-    expected: ["path", '"M 10 10 A 20 30 40 1 0 200 410"']
+    expected: ["path", '"M 10 10 A 20 30 40 1 1 200 410"']
   },
   // mix relative and absolute coordinates
   {

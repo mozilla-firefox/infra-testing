@@ -14,13 +14,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
   TargetingContext: "resource://messaging-system/targeting/Targeting.sys.mjs",
 });
 
-// Don't use ChromeUtils.defineLazyPropertyGetter because that will replace the
-// property with the value upon first access, which prevents us from stubbing the ExperimentManager
-// in unit tests.
-Object.defineProperty(lazy, "ExperimentManager", {
-  get: () => lazy.ExperimentAPI._manager,
-});
-
 const { PREF_INVALID, PREF_STRING, PREF_INT, PREF_BOOL } = Ci.nsIPrefBranch;
 const PREF_TYPES = Object.freeze({
   [PREF_STRING]: "Ci.nsIPrefBranch.PREF_STRING",
@@ -99,6 +92,8 @@ function assertType(expectedType, attribute) {
  * type.
  */
 const typeAssertions = {
+  integer: attribute =>
+    assertType("number", attribute) && Number.isSafeInteger(attribute),
   string: attribute => assertType("string", attribute),
   boolean: attribute => assertType("boolean", attribute),
   quantity: attribute => Math.floor(assertType("number", attribute)),
@@ -123,12 +118,17 @@ const typeAssertions = {
 export const ATTRIBUTE_TRANSFORMS = Object.freeze({
   activeExperiments: typeAssertions.array,
   activeRollouts: typeAssertions.array,
+  addonsInfo: addonsInfo => ({
+    addons: Object.keys(addonsInfo?.addons ?? {}).sort(),
+    hasInstalledAddons: !!addonsInfo?.hasInstalledAddons,
+  }),
   addressesSaved: typeAssertions.quantity,
   archBits: typeAssertions.quantity,
   attributionData: pick("medium", "source", "ua"),
   browserSettings: pickWith({
     update: pick("channel"),
   }),
+  buildId: typeAssertions.integer,
   currentDate: typeAssertions.date,
   defaultPDFHandler: pick("knownBrowser", "registered"),
   distributionId: typeAssertions.string,
@@ -140,6 +140,7 @@ export const ATTRIBUTE_TRANSFORMS = Object.freeze({
     })),
   firefoxVersion: typeAssertions.quantity,
   hasActiveEnterprisePolicies: typeAssertions.boolean,
+  hasPinnedTabs: typeAssertions.boolean,
   homePageSettings: pick("isCustomUrl", "isDefault", "isLocked", "isWebExt"),
   isDefaultHandler: pick("html", "pdf"),
   isDefaultBrowser: typeAssertions.boolean,
@@ -158,6 +159,7 @@ export const ATTRIBUTE_TRANSFORMS = Object.freeze({
   ),
   primaryResolution: pick("height", "width"),
   profileAgeCreated: typeAssertions.quantity,
+  profileGroupProfileCount: typeAssertions.quantity,
   region: typeAssertions.string,
   totalBookmarksCount: typeAssertions.quantity,
   userMonthlyActivity: userMonthlyActivity =>
@@ -220,10 +222,10 @@ export const PREFS = Object.freeze({
   "browser.newtabpage.activity-stream.showSearch": PREF_BOOL,
   "browser.newtabpage.activity-stream.showSponsoredTopSites": PREF_BOOL,
   "browser.newtabpage.enabled": PREF_BOOL,
-  "browser.shopping.experience2023.autoActivateCount": PREF_INT,
-  "browser.shopping.experience2023.optedIn": PREF_INT,
+  "browser.profiles.created": PREF_BOOL,
+  "browser.startup.page": PREF_INT,
   "browser.toolbars.bookmarks.visibility": PREF_STRING,
-  "browser.urlbar.quicksuggest.dataCollection.enabled": PREF_BOOL,
+  "browser.urlbar.lastUrlbarSearchSeconds": PREF_INT,
   "browser.urlbar.showSearchSuggestionsFirst": PREF_BOOL,
   "browser.urlbar.suggest.quicksuggest.sponsored": PREF_BOOL,
   "media.videocontrols.picture-in-picture.enabled": PREF_BOOL,
@@ -234,6 +236,7 @@ export const PREFS = Object.freeze({
   "nimbus.qa.pref-1": PREF_STRING,
   "nimbus.qa.pref-2": PREF_STRING,
   "security.sandbox.content.level": PREF_INT,
+  "termsofuse.acceptedDate": PREF_STRING,
   "trailhead.firstrun.didSeeAboutWelcome": PREF_BOOL,
 });
 
@@ -351,7 +354,7 @@ function recordPrefValues() {
 async function recordTargetingContextAttributes() {
   const context = new lazy.TargetingContext(
     lazy.TargetingContext.combineContexts(
-      lazy.ExperimentManager.createTargetingContext(),
+      lazy.ExperimentAPI.manager.createTargetingContext(),
       lazy.ASRouterTargeting.Environment
     )
   ).ctx;

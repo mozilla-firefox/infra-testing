@@ -27,16 +27,27 @@
 namespace webrtc {
 namespace {
 
-using testing::_;
-using testing::AllOf;
-using testing::Eq;
-using testing::Ge;
-using testing::Gt;
-using testing::Lt;
-using testing::MatchesRegex;
+using ::testing::_;
+using ::testing::AllOf;
+using ::testing::Eq;
+using ::testing::Ge;
+using ::testing::Gt;
+using ::testing::Lt;
+using ::testing::MatchesRegex;
+using ::testing::Property;
+
+TEST(WaitUntilTest, ReturnsTrueWhenConditionIsMet) {
+  AutoThread thread;
+
+  int counter = 0;
+  EXPECT_TRUE(WaitUntil([&] { return ++counter == 3; }));
+
+  // Check that functor is not called after it returned true.
+  EXPECT_EQ(counter, 3);
+}
 
 TEST(WaitUntilTest, ReturnsWhenConditionIsMet) {
-  rtc::AutoThread thread;
+  AutoThread thread;
 
   int counter = 0;
   RTCErrorOr<int> result = WaitUntil([&] { return ++counter; }, Eq(3));
@@ -44,7 +55,7 @@ TEST(WaitUntilTest, ReturnsWhenConditionIsMet) {
 }
 
 TEST(WaitUntilTest, ReturnsErrorWhenTimeoutIsReached) {
-  rtc::AutoThread thread;
+  AutoThread thread;
   int counter = 0;
   RTCErrorOr<int> result =
       WaitUntil([&] { return --counter; }, Eq(1),
@@ -60,7 +71,7 @@ TEST(WaitUntilTest, ReturnsErrorWhenTimeoutIsReached) {
 }
 
 TEST(WaitUntilTest, ErrorContainsMatcherExplanation) {
-  rtc::AutoThread thread;
+  AutoThread thread;
   int counter = 0;
   auto matcher = AllOf(Gt(0), Lt(10));
   RTCErrorOr<int> result =
@@ -81,35 +92,62 @@ TEST(WaitUntilTest, ReturnsWhenConditionIsMetWithSimulatedClock) {
   SimulatedClock fake_clock(Timestamp::Millis(1337));
 
   int counter = 0;
-  RTCErrorOr<int> result =
-      WaitUntil([&] { return ++counter; }, Eq(3), {.clock = &fake_clock});
-  EXPECT_THAT(result, IsRtcOkAndHolds(3));
-  // The fake clock should have advanced at least 2ms.
-  EXPECT_THAT(fake_clock.CurrentTime(), Ge(Timestamp::Millis(1339)));
+  EXPECT_TRUE(WaitUntil(
+      [&] { return ++counter == 3; },
+      {.polling_interval = TimeDelta::Millis(10), .clock = &fake_clock}));
+  EXPECT_EQ(counter, 3);
+  // The fake clock should have advanced at least 2 polling intervals, 20ms.
+  EXPECT_THAT(fake_clock.CurrentTime(), Ge(Timestamp::Millis(1357)));
 }
 
 TEST(WaitUntilTest, ReturnsWhenConditionIsMetWithThreadProcessingFakeClock) {
-  rtc::ScopedFakeClock fake_clock;
+  ScopedFakeClock fake_clock;
 
   int counter = 0;
-  RTCErrorOr<int> result =
-      WaitUntil([&] { return ++counter; }, Eq(3), {.clock = &fake_clock});
-  EXPECT_THAT(result, IsRtcOkAndHolds(3));
+  EXPECT_TRUE(WaitUntil(
+      [&] { return ++counter == 3; },
+      {.polling_interval = TimeDelta::Millis(1), .clock = &fake_clock}));
+  EXPECT_EQ(counter, 3);
   // The fake clock should have advanced at least 2ms.
   EXPECT_THAT(Timestamp::Micros(fake_clock.TimeNanos() * 1000),
               Ge(Timestamp::Millis(1339)));
 }
 
 TEST(WaitUntilTest, ReturnsWhenConditionIsMetWithFakeClock) {
-  rtc::FakeClock fake_clock;
+  FakeClock fake_clock;
 
   int counter = 0;
-  RTCErrorOr<int> result =
-      WaitUntil([&] { return ++counter; }, Eq(3), {.clock = &fake_clock});
-  EXPECT_THAT(result, IsRtcOkAndHolds(3));
+  EXPECT_TRUE(WaitUntil(
+      [&] { return ++counter == 3; },
+      {.polling_interval = TimeDelta::Millis(1), .clock = &fake_clock}));
+  EXPECT_EQ(counter, 3);
   // The fake clock should have advanced at least 2ms.
   EXPECT_THAT(Timestamp::Micros(fake_clock.TimeNanos() * 1000),
               Ge(Timestamp::Millis(1339)));
+}
+
+// No default constuctor, not assignable, move-only type.
+class CustomType {
+ public:
+  explicit CustomType(int value) : value_(value) {}
+  CustomType(CustomType&&) = default;
+  CustomType& operator=(CustomType&&) = delete;
+  CustomType() = delete;
+
+  int value() const { return value_; }
+
+ private:
+  const int value_;
+};
+
+TEST(WaitUntilTest, RequiresOnlyMoveCopyConstructionForReturnedType) {
+  AutoThread thread;
+
+  int counter = 0;
+  RTCErrorOr<CustomType> result =
+      WaitUntil([&] { return CustomType(++counter); },
+                Property(&CustomType::value, Eq(3)));
+  EXPECT_THAT(result, IsRtcOkAndHolds(Property(&CustomType::value, Eq(3))));
 }
 
 TEST(WaitUntilTest, ReturnsWhenConditionIsMetWithSimulatedTimeController) {
@@ -117,9 +155,11 @@ TEST(WaitUntilTest, ReturnsWhenConditionIsMetWithSimulatedTimeController) {
       CreateSimulatedTimeController();
 
   int counter = 0;
-  RTCErrorOr<int> result = WaitUntil([&] { return ++counter; }, Eq(3),
-                                     {.clock = time_controller.get()});
-  EXPECT_THAT(result, IsRtcOkAndHolds(3));
+  EXPECT_TRUE(WaitUntil([&] { return ++counter == 3; },
+                        {.polling_interval = TimeDelta::Millis(1),
+                         .clock = time_controller.get()}));
+  EXPECT_EQ(counter, 3);
+
   // The fake clock should have advanced at least 2ms.
   EXPECT_THAT(time_controller->GetClock()->CurrentTime(),
               Ge(Timestamp::Millis(1339)));

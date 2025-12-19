@@ -12,9 +12,7 @@ Services.scriptloader.loadSubScript(
 
 const asyncStorage = require("resource://devtools/shared/async-storage.js");
 
-Services.prefs.setIntPref("devtools.toolbox.footer.height", 350);
 registerCleanupFunction(async function () {
-  Services.prefs.clearUserPref("devtools.toolbox.footer.height");
   await asyncStorage.removeItem("gridInspectorHostColors");
 });
 
@@ -24,7 +22,7 @@ registerCleanupFunction(async function () {
  *
  * @param {Document} doc
  *        The owner document for the grid inspector.
- * @param {Number} gridCellIndex
+ * @param {number} gridCellIndex
  *        The index (0-based) of the grid cell that should be hovered.
  */
 function synthesizeMouseOverOnGridCell(doc, gridCellIndex = 0) {
@@ -42,10 +40,10 @@ function synthesizeMouseOverOnGridCell(doc, gridCellIndex = 0) {
 /**
  * Returns the number of visible grid highlighters
  *
- * @param {Object} options
- * @param {Boolean} options.isParent: Pass false/true if only the parent/child grid highlighter
+ * @param {object} options
+ * @param {boolean} options.isParent: Pass false/true if only the parent/child grid highlighter
  *                                    should be counted.
- * @returns {Number}
+ * @returns {number}
  */
 function getNumberOfVisibleGridHighlighters({ isParent } = {}) {
   return SpecialPowers.spawn(

@@ -10,9 +10,10 @@ with Files("**"):
 SPHINX_TREES["docs"] = "docs"
 
 BROWSER_CHROME_MANIFESTS += [
-    "test/browser/abouthomecache/browser.toml",
     "test/browser/browser.toml",
 ]
+
+PYTHON_UNITTEST_MANIFESTS += ["test/pytest/python.toml"]
 
 XPCSHELL_TESTS_MANIFESTS += [
     "test/xpcshell/xpcshell.toml",

@@ -7,7 +7,6 @@
 #ifndef LAYOUT_SVG_SVGFOREIGNOBJECTFRAME_H_
 #define LAYOUT_SVG_SVGFOREIGNOBJECTFRAME_H_
 
-#include "mozilla/Attributes.h"
 #include "mozilla/ISVGDisplayableFrame.h"
 #include "mozilla/PresShellForwards.h"
 #include "mozilla/UniquePtr.h"
@@ -37,7 +36,7 @@ class SVGForeignObjectFrame final : public nsContainerFrame,
   void Init(nsIContent* aContent, nsContainerFrame* aParent,
             nsIFrame* aPrevInFlow) override;
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
   nsContainerFrame* GetContentInsertionFrame() override {
     return PrincipalChildList().FirstChild()->GetContentInsertionFrame();

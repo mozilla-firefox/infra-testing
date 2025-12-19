@@ -10,21 +10,6 @@ plugins {
 apply plugin: 'com.android.library'
 
 android {
-    defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
-
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
-    }
-
     buildFeatures {
         compose = true
     }
@@ -33,29 +18,31 @@ android {
 }
 
 dependencies {
-    implementation project(":browser-state")
-    implementation project(":concept-engine")
-    implementation project(":support-ktx")
+    implementation project(":components:browser-state")
+    implementation project(":components:concept-engine")
+    implementation project(":components:support-ktx")
 
+    implementation platform(libs.androidx.compose.bom)
+    implementation libs.androidx.compose.foundation
+    implementation libs.androidx.compose.material3
     implementation libs.androidx.compose.ui
     implementation libs.androidx.compose.ui.tooling.preview
-    implementation libs.androidx.compose.foundation
-    implementation libs.androidx.compose.material
 
     debugImplementation libs.androidx.compose.ui.tooling
 
-    testImplementation project(':support-test')
+    testImplementation project(':components:support-test')
+
     testImplementation libs.androidx.compose.ui.test
     testImplementation libs.androidx.test.core
     testImplementation libs.androidx.test.junit
-    testImplementation libs.testing.robolectric
+    testImplementation libs.robolectric
 
-    androidTestImplementation libs.androidx.test.junit
-    androidTestImplementation libs.androidx.compose.ui.test.manifest
     androidTestImplementation libs.androidx.compose.ui.test
-    androidTestImplementation libs.testing.mockito
+    androidTestImplementation libs.androidx.compose.ui.test.manifest
+    androidTestImplementation libs.androidx.test.junit
+    androidTestImplementation libs.mockito
 }
 
-apply from: '../../../android-lint.gradle'
+apply from: '../../../common-config.gradle'
 apply from: '../../../publish.gradle'
 ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

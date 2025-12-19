@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "RemoteWorkerDebuggerManagerParent.h"
+
 #include "RemoteWorkerDebuggerParent.h"
 #include "mozilla/dom/WorkerDebuggerManager.h"
 
@@ -40,6 +41,12 @@ mozilla::ipc::IPCResult RemoteWorkerDebuggerManagerParent::RecvRegister(
     const RemoteWorkerDebuggerInfo& aDebuggerInfo,
     mozilla::ipc::Endpoint<PRemoteWorkerDebuggerParent>&& aParentEp) {
   MOZ_ASSERT_DEBUG_OR_FUZZING(XRE_IsParentProcess() && NS_IsMainThread());
+
+  if (!aParentEp.IsValid()) {
+    return IPC_FAIL(
+        this, "Invalid Parent Endpoint for RemoteWorkerDebuggerParent...");
+  }
+
   RefPtr<WorkerDebuggerManager> manager = WorkerDebuggerManager::GetOrCreate();
   MOZ_ASSERT_DEBUG_OR_FUZZING(manager);
 
@@ -50,7 +57,7 @@ mozilla::ipc::IPCResult RemoteWorkerDebuggerManagerParent::RecvRegister(
   manager->RegisterDebugger(debugger);
 
   MOZ_ASSERT(debugger->CanSend());
-  Unused << debugger->SendRegisterDone();
+  (void)debugger->SendRegisterDone();
 
   return IPC_OK();
 }

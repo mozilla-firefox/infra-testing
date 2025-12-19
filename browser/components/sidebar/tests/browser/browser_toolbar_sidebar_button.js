@@ -17,6 +17,7 @@ add_setup(async () => {
     set: [
       [VERTICAL_TABS_PREF, true],
       [SIDEBAR_BUTTON_INTRODUCED_PREF, false],
+      ["sidebar.main.tools", "aichat,passwords,syncedtabs,history"],
     ],
   });
   await waitForTabstripOrientation("vertical");
@@ -300,6 +301,85 @@ add_task(async function test_states_for_hide_sidebar() {
   await waitForTabstripOrientation("vertical");
 });
 
+add_task(async function test_toolbar_sidebar_badges() {
+  const SIDEBAR_COMMAND_ID = "viewGenaiChatSidebar";
+
+  await SpecialPowers.pushPrefEnv({
+    set: [["sidebar.notification.badge.aichat", true]],
+  });
+  await SpecialPowers.pushPrefEnv({
+    set: [[VERTICAL_TABS_PREF, false]],
+  });
+  await waitForTabstripOrientation("horizontal");
+
+  let toolbarButton = document.getElementById("sidebar-button");
+  let badgeEl = toolbarButton?.querySelector(".toolbarbutton-badge");
+  let toolEntry = SidebarController.toolsAndExtensions.get(SIDEBAR_COMMAND_ID);
+
+  await SidebarController.initializeUIState({ launcherExpanded: true });
+  Assert.ok(
+    !badgeEl.classList.contains("feature-callout"),
+    "Toolbar badge should not be visible when sidebar is open"
+  );
+  Assert.ok(
+    toolEntry.attention,
+    "Sidebar tool badge should show when sidebar is open"
+  );
+
+  // Simulate user closing the sidebar
+  EventUtils.synthesizeMouseAtCenter(toolbarButton, {}, window);
+  Assert.ok(
+    badgeEl.classList.contains("feature-callout"),
+    "Toolbar badge should appear when sidebar is closed"
+  );
+
+  // Set badge pref false to check if all badges are cleared
+  await SpecialPowers.pushPrefEnv({
+    set: [[`sidebar.notification.badge.aichat`, false]],
+  });
+  Assert.ok(
+    !badgeEl.classList.contains("feature-callout") && !toolEntry.attention,
+    "Toolbar badge and sidebar badge should clear when pref is false"
+  );
+
+  // Test that disabled tools don't show badges
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["sidebar.main.tools", "history"],
+      ["sidebar.notification.badge.aichat", true],
+    ],
+  });
+  Assert.ok(
+    !badgeEl.classList.contains("feature-callout"),
+    "Toolbar badge should not appear for disabled tools"
+  );
+  await SpecialPowers.popPrefEnv();
+
+  // Test that hidden tools don't show badges
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.ml.chat.enabled", false],
+      ["sidebar.notification.badge.aichat", true],
+    ],
+  });
+  Assert.ok(
+    !badgeEl.classList.contains("feature-callout"),
+    "Toolbar badge should not appear for hidden tools"
+  );
+  await SpecialPowers.popPrefEnv();
+
+  await SpecialPowers.popPrefEnv();
+  await SpecialPowers.popPrefEnv();
+  await waitForTabstripOrientation("vertical");
+
+  Assert.ok(
+    !badgeEl.classList.contains("feature-callout"),
+    "Toolbar button don't appear a badge in vertical sidebar"
+  );
+
+  await SpecialPowers.popPrefEnv();
+});
+
 add_task(async function test_states_for_hide_sidebar_vertical() {
   info(
     `starting test with pref values: verticalTabs: ${Services.prefs.getBoolPref(VERTICAL_TABS_PREF)},
@@ -383,10 +463,11 @@ add_task(async function test_states_for_hide_sidebar_vertical() {
   await SidebarController.waitUntilStable();
 
   info("Don't collapse the sidebar by loading a tool.");
-  const toolButton = sidebarMain.toolButtons[0];
+  const toolButton = sidebarMain.toolButtons[2];
   EventUtils.synthesizeMouseAtCenter(toolButton, {}, win);
 
   await checkStates({ hidden: false, expanded: true });
+
   ok(SidebarController.isOpen, "Panel is open.");
 
   info("Close a panel using the toolbar button.");
@@ -397,7 +478,6 @@ add_task(async function test_states_for_hide_sidebar_vertical() {
 
   EventUtils.synthesizeMouseAtCenter(toolbarButton, {}, win);
   await checkStates({ hidden: false, expanded: true });
-
   info("Check states on a new window.");
   const newWin = await BrowserTestUtils.openNewBrowserWindow();
   await checkStates(
@@ -428,8 +508,9 @@ add_task(async function test_sidebar_button_runtime_pref_enabled() {
     "The sidebar button is not visible after being removed"
   );
 
-  // rever the pref change, this should cause the button to be placed in the nav-bar
+  // revert the pref change, this should cause the button to be placed in the nav-bar
   await SpecialPowers.popPrefEnv();
+  await SidebarController.waitUntilStable();
   button = document.getElementById("sidebar-button");
   Assert.ok(
     BrowserTestUtils.isVisible(button),
@@ -442,8 +523,23 @@ add_task(async function test_sidebar_button_runtime_pref_enabled() {
     CustomizableUI.AREA_NAVBAR,
     "The sidebar button is in the nav-bar"
   );
+  Assert.ok(
+    !BrowserTestUtils.isVisible(document.querySelector("sidebar-main")),
+    "The sidebar launcher is hidden"
+  );
+  Assert.ok(
+    !button.checked,
+    "Sidebar button should be un-checked when the launcher is hidden."
+  );
 
-  Assert.ok(button.checked, "Sidebar button should be checked when showing.");
+  button.doCommand();
+  await SidebarController.waitUntilStable();
+  Assert.ok(button.checked, "Sidebar button should be checked");
+  Assert.ok(
+    BrowserTestUtils.isVisible(document.querySelector("sidebar-main")),
+    "The sidebar launcher is visible"
+  );
+
   await SpecialPowers.pushPrefEnv({
     set: [["sidebar.revamp", false]],
   });
@@ -451,6 +547,7 @@ add_task(async function test_sidebar_button_runtime_pref_enabled() {
     !button.checked,
     "Sidebar button should not be checked when old sidebar is not showing."
   );
+
   await SpecialPowers.popPrefEnv();
   await SidebarController.waitUntilStable();
 });

@@ -12,6 +12,7 @@
 #endif
 
 #include "mozilla/RefPtr.h"
+#include "mozilla/dom/quota/DirectoryLockImpl.h"
 
 namespace mozilla::dom::quota {
 
@@ -53,6 +54,13 @@ constexpr void DropDirectoryLockIfNotDropped(RefPtr<T>& aDirectoryLock) {
     aDirectoryLock->Drop();
   }
   aDirectoryLock = nullptr;
+}
+
+inline auto MakeBlockedByChecker(
+    const EnumSet<DirectoryLockCategory>& aCategories) {
+  return [aCategories](const DirectoryLockImpl::PrepareInfo& aPrepareInfo) {
+    return aPrepareInfo.IsBlockedBy(aCategories);
+  };
 }
 
 }  // namespace mozilla::dom::quota

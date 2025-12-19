@@ -15,7 +15,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   event: "chrome://remote/content/shared/webdriver/Event.sys.mjs",
   Log: "chrome://remote/content/shared/Log.sys.mjs",
   pprint: "chrome://remote/content/shared/Format.sys.mjs",
-  TimedPromise: "chrome://remote/content/marionette/sync.sys.mjs",
+  TimedPromise: "chrome://remote/content/shared/Sync.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "logger", () =>
@@ -190,7 +190,7 @@ async function webdriverClickElement(el, a11y) {
     interaction.selectOption(el);
   } else {
     // Synthesize a pointerMove action.
-    lazy.event.synthesizeMouseAtPoint(
+    await lazy.event.synthesizeMouseAtPoint(
       clickPoint.x,
       clickPoint.y,
       {
@@ -204,7 +204,7 @@ async function webdriverClickElement(el, a11y) {
       // Special handling is required if the mousemove started a drag session.
       // In this case, mousedown event shouldn't be fired, and the mouseup should
       // end the session.  Therefore, we should synthesize only mouseup.
-      lazy.event.synthesizeMouseAtPoint(
+      await lazy.event.synthesizeMouseAtPoint(
         clickPoint.x,
         clickPoint.y,
         {
@@ -218,7 +218,7 @@ async function webdriverClickElement(el, a11y) {
       let clicked = interaction.flushEventLoop(containerEl);
 
       // Synthesize a pointerDown + pointerUp action.
-      lazy.event.synthesizeMouseAtPoint(
+      await lazy.event.synthesizeMouseAtPoint(
         clickPoint.x,
         clickPoint.y,
         { allowToHandleDragDrop: true },
@@ -278,7 +278,7 @@ async function seleniumClickElement(el, a11y) {
     let rects = el.getClientRects();
     let centre = lazy.dom.getInViewCentrePoint(rects[0], win);
     let opts = {};
-    lazy.event.synthesizeMouseAtPoint(centre.x, centre.y, opts, win);
+    await lazy.event.synthesizeMouseAtPoint(centre.x, centre.y, opts, win);
   }
 }
 

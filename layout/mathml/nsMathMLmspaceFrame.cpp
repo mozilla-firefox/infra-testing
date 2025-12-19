@@ -6,11 +6,12 @@
 
 #include "nsMathMLmspaceFrame.h"
 
-#include "mozilla/dom/MathMLElement.h"
+#include <algorithm>
+
 #include "mozilla/PresShell.h"
+#include "mozilla/dom/MathMLElement.h"
 #include "mozilla/gfx/2D.h"
 #include "nsLayoutUtils.h"
-#include <algorithm>
 
 using namespace mozilla;
 
@@ -30,7 +31,7 @@ nsMathMLmspaceFrame::~nsMathMLmspaceFrame() = default;
 
 nsresult nsMathMLmspaceFrame::AttributeChanged(int32_t aNameSpaceID,
                                                nsAtom* aAttribute,
-                                               int32_t aModType) {
+                                               AttrModType aModType) {
   if (aNameSpaceID == kNameSpaceID_None) {
     bool hasDirtyAttributes = false;
     IntrinsicDirty intrinsicDirty = IntrinsicDirty::None;
@@ -77,13 +78,12 @@ nscoord nsMathMLmspaceFrame::CalculateAttributeValue(nsAtom* aAtom,
       aAttribute.mValue.GetUnit() == eCSSUnit_Percent) {
     return 0;
   }
-  return CalcLength(PresContext(), mComputedStyle, aAttribute.mValue,
-                    aFontSizeInflation);
+  return CalcLength(aAttribute.mValue, aFontSizeInflation, this);
 }
 
-nsresult nsMathMLmspaceFrame::Place(DrawTarget* aDrawTarget,
-                                    const PlaceFlags& aFlags,
-                                    ReflowOutput& aDesiredSize) {
+void nsMathMLmspaceFrame::Place(DrawTarget* aDrawTarget,
+                                const PlaceFlags& aFlags,
+                                ReflowOutput& aDesiredSize) {
   float fontSizeInflation = nsLayoutUtils::FontSizeInflationFor(this);
 
   // <mspace/> is listed among MathML elements allowing negative spacing and
@@ -123,5 +123,4 @@ nsresult nsMathMLmspaceFrame::Place(DrawTarget* aDrawTarget,
   auto borderPadding = GetBorderPaddingForPlace(aFlags);
   InflateReflowAndBoundingMetrics(borderPadding, aDesiredSize,
                                   mBoundingMetrics);
-  return NS_OK;
 }

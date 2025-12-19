@@ -17,8 +17,8 @@ import androidx.annotation.ColorRes
 import androidx.annotation.DrawableRes
 import androidx.annotation.VisibleForTesting
 import androidx.annotation.VisibleForTesting.Companion.PRIVATE
+import androidx.appcompat.content.res.AppCompatResources
 import androidx.coordinatorlayout.widget.CoordinatorLayout
-import androidx.core.content.ContextCompat
 import androidx.core.view.forEach
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -40,9 +40,11 @@ import mozilla.components.ui.autocomplete.OnFilterListener
 import mozilla.components.ui.widgets.behavior.EngineViewScrollingBehavior
 import kotlin.coroutines.CoroutineContext
 
-internal fun ImageView.setTintResource(@ColorRes tintColorResource: Int) {
+internal fun ImageView.setTintResource(
+    @ColorRes tintColorResource: Int,
+) {
     if (tintColorResource != NO_ID) {
-        imageTintList = ContextCompat.getColorStateList(context, tintColorResource)
+        imageTintList = AppCompatResources.getColorStateList(context, tintColorResource)
     }
 }
 
@@ -407,13 +409,13 @@ class BrowserToolbar @JvmOverloads constructor(
 
     override fun expand() {
         (layoutParams as? CoordinatorLayout.LayoutParams)?.apply {
-            (behavior as? EngineViewScrollingBehavior)?.forceExpand(this@BrowserToolbar)
+            (behavior as? EngineViewScrollingBehavior)?.forceExpand()
         }
     }
 
     override fun collapse() {
         (layoutParams as? CoordinatorLayout.LayoutParams)?.apply {
-            (behavior as? EngineViewScrollingBehavior)?.forceCollapse(this@BrowserToolbar)
+            (behavior as? EngineViewScrollingBehavior)?.forceCollapse()
         }
     }
 
@@ -555,8 +557,8 @@ class BrowserToolbar @JvmOverloads constructor(
         val secondaryImage: Drawable = primaryImage,
         val secondaryContentDescription: String = primaryContentDescription,
         val isInPrimaryState: () -> Boolean = { true },
-        @ColorRes val primaryImageTintResource: Int = NO_ID,
-        @ColorRes val secondaryImageTintResource: Int = primaryImageTintResource,
+        @param:ColorRes val primaryImageTintResource: Int = NO_ID,
+        @param:ColorRes val secondaryImageTintResource: Int = primaryImageTintResource,
         val disableInSecondaryState: Boolean = true,
         override val weight: () -> Int = { -1 },
         background: Int = 0,

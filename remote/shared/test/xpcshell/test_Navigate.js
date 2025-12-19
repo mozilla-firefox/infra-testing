@@ -2,6 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+let { EventEmitter } = ChromeUtils.importESModule(
+  "resource://gre/modules/EventEmitter.sys.mjs"
+);
 const { setTimeout } = ChromeUtils.importESModule(
   "resource://gre/modules/Timer.sys.mjs"
 );
@@ -15,6 +18,11 @@ const {
   "chrome://remote/content/shared/Navigate.sys.mjs"
 );
 
+const { isInitialDocument, isUncommittedInitialDocument } =
+  ChromeUtils.importESModule(
+    "chrome://remote/content/shared/messagehandler/transports/BrowsingContextUtils.sys.mjs"
+  );
+
 const LOAD_FLAG_ERROR_PAGE = 0x10000;
 
 const CURRENT_URI = Services.io.newURI("http://foo.bar/");
@@ -22,6 +30,9 @@ const INITIAL_URI = Services.io.newURI("about:blank");
 const TARGET_URI = Services.io.newURI("http://foo.cheese/");
 const TARGET_URI_ERROR_PAGE = Services.io.newURI("doesnotexist://");
 const TARGET_URI_WITH_HASH = Services.io.newURI("http://foo.cheese/#foo");
+const TARGET_URI_FROM_NAVIGATION_COMMITTED = Services.io.newURI(
+  "http://foo.cheese/#bar"
+);
 
 function wait(time) {
   // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
@@ -33,9 +44,7 @@ class MockRequest {
     this.originalURI = uri;
   }
 
-  get QueryInterface() {
-    return ChromeUtils.generateQI(["nsIRequest", "nsIChannel"]);
-  }
+  QueryInterface = ChromeUtils.generateQI(["nsIRequest", "nsIChannel"]);
 }
 
 class MockWebProgress {
@@ -99,6 +108,8 @@ class MockWebProgress {
     }
 
     this.browsingContext.currentWindowGlobal.isInitialDocument = isInitial;
+    // Start is sent for the initial about:blank if and only if we commit to it
+    this.browsingContext.currentWindowGlobal.isUncommittedInitialDocument = false;
 
     this.isLoadingDocument = true;
     this.loadType = 0;
@@ -146,6 +157,7 @@ class MockTopContext {
     this.currentURI = CURRENT_URI;
     this.currentWindowGlobal = {
       isInitialDocument: true,
+      isUncommittedInitialDocument: true,
       documentURI: CURRENT_URI,
     };
     this.id = 7;
@@ -173,6 +185,7 @@ add_task(
 
     ok(!webProgress.isLoadingDocument, "Document is not loading");
 
+    // without window global, we'll wait for start and stop
     const navigated = waitForInitialNavigationCompleted(webProgress);
     await webProgress.sendStartState({ isInitial: true });
 
@@ -204,7 +217,12 @@ add_task(
     const webProgress = browsingContext.webProgress;
 
     ok(!webProgress.isLoadingDocument, "Document is not loading");
+    ok(
+      isUncommittedInitialDocument(webProgress.browsingContext),
+      "Document is uncommitted initial"
+    );
 
+    // for uncommitted initial, we'll wait for start and stop
     const navigated = waitForInitialNavigationCompleted(webProgress);
 
     await webProgress.sendStartState({ isInitial: true });
@@ -272,12 +290,17 @@ add_task(
     await webProgress.sendStopState();
 
     ok(!webProgress.isLoadingDocument, "Document is not loading");
+    ok(isInitialDocument(webProgress.browsingContext), "Document is initial");
+    ok(
+      !isUncommittedInitialDocument(webProgress.browsingContext),
+      "Document is uncommitted"
+    );
 
     const navigated = waitForInitialNavigationCompleted(webProgress);
 
     ok(
-      !(await hasPromiseResolved(navigated)),
-      "waitForInitialNavigationCompleted has not resolved yet"
+      await hasPromiseResolved(navigated),
+      "waitForInitialNavigationCompleted resolves immediately"
     );
 
     const { currentURI, targetURI } = await navigated;
@@ -293,83 +316,6 @@ add_task(
       "Expected current URI has been set"
     );
     equal(targetURI.spec, INITIAL_URI.spec, "Expected target URI has been set");
-  }
-);
-
-add_task(
-  async function test_waitForInitialNavigation_initialDocumentLoadingAndAdditionalLoad() {
-    const browsingContext = new MockTopContext();
-    const webProgress = browsingContext.webProgress;
-
-    await webProgress.sendStartState({ isInitial: true });
-
-    ok(webProgress.isLoadingDocument, "Document is loading");
-
-    const navigated = waitForInitialNavigationCompleted(webProgress);
-
-    ok(
-      !(await hasPromiseResolved(navigated)),
-      "waitForInitialNavigationCompleted has not resolved yet"
-    );
-
-    await webProgress.sendStopState();
-
-    await wait(100);
-
-    await webProgress.sendStartState({ isInitial: false });
-    await webProgress.sendStopState();
-
-    const { currentURI, targetURI } = await navigated;
-
-    ok(!webProgress.isLoadingDocument, "Document is not loading");
-    ok(
-      !webProgress.browsingContext.currentWindowGlobal.isInitialDocument,
-      "Is not initial document"
-    );
-    equal(
-      currentURI.spec,
-      TARGET_URI.spec,
-      "Expected current URI has been set"
-    );
-    equal(targetURI.spec, TARGET_URI.spec, "Expected target URI has been set");
-  }
-);
-
-add_task(
-  async function test_waitForInitialNavigation_initialDocumentFinishedLoadingAndAdditionalLoad() {
-    const browsingContext = new MockTopContext();
-    const webProgress = browsingContext.webProgress;
-
-    await webProgress.sendStartState({ isInitial: true });
-    await webProgress.sendStopState();
-
-    ok(!webProgress.isLoadingDocument, "Document is not loading");
-
-    const navigated = waitForInitialNavigationCompleted(webProgress);
-
-    ok(
-      !(await hasPromiseResolved(navigated)),
-      "waitForInitialNavigationCompleted has not resolved yet"
-    );
-
-    await wait(100);
-
-    await webProgress.sendStartState({ isInitial: false });
-    await webProgress.sendStopState();
-
-    const { currentURI, targetURI } = await navigated;
-
-    ok(!webProgress.isLoadingDocument, "Document is not loading");
-    ok(
-      !webProgress.browsingContext.currentWindowGlobal.isInitialDocument,
-      "Is not initial document"
-    );
-    equal(
-      currentURI.spec,
-      TARGET_URI.spec,
-      "Expected current URI has been set"
-    );
-    equal(targetURI.spec, TARGET_URI.spec, "Expected target URI has been set");
   }
 );
 
@@ -522,12 +468,7 @@ add_task(async function test_waitForInitialNavigation_unloadTimeout_default() {
   const browsingContext = new MockTopContext();
   const webProgress = browsingContext.webProgress;
 
-  // Stop the navigation on an initial page which is not loading anymore.
-  // This situation happens with new tabs on Android, even though they are on
-  // the initial document, they will not start another navigation on their own.
-  await webProgress.sendStartState({ isInitial: true });
-  await webProgress.sendStopState();
-
+  // Document starts out as uncommitted initial and not loading
   ok(!webProgress.isLoadingDocument, "Document is not loading");
 
   const navigated = waitForInitialNavigationCompleted(webProgress);
@@ -555,12 +496,7 @@ add_task(async function test_waitForInitialNavigation_unloadTimeout_longer() {
   const browsingContext = new MockTopContext();
   const webProgress = browsingContext.webProgress;
 
-  // Stop the navigation on an initial page which is not loading anymore.
-  // This situation happens with new tabs on Android, even though they are on
-  // the initial document, they will not start another navigation on their own.
-  await webProgress.sendStartState({ isInitial: true });
-  await webProgress.sendStopState();
-
+  // Document starts out as uncommitted initial and not loading
   ok(!webProgress.isLoadingDocument, "Document is not loading");
 
   const navigated = waitForInitialNavigationCompleted(webProgress, {
@@ -614,7 +550,7 @@ add_task(async function test_ProgressListener_expectNavigation() {
 });
 
 add_task(
-  async function test_ProgressListener_expectNavigation_initialDocumentFinishedLoading() {
+  async function test_ProgressListener_expectNavigation_initialDocument() {
     const browsingContext = new MockTopContext();
     const webProgress = browsingContext.webProgress;
 
@@ -627,14 +563,6 @@ add_task(
     ok(!(await hasPromiseResolved(navigated)), "Listener has not resolved yet");
 
     await webProgress.sendStartState({ isInitial: true });
-    await webProgress.sendStopState();
-
-    // Wait for unloadTimeout to finish in case it started
-    await wait(30);
-
-    ok(!(await hasPromiseResolved(navigated)), "Listener has not resolved yet");
-
-    await webProgress.sendStartState();
     await webProgress.sendStopState();
 
     ok(await hasPromiseResolved(navigated), "Listener has resolved");
@@ -706,6 +634,94 @@ add_task(async function test_ProgressListener_waitForExplicitStart() {
   ok(
     await hasPromiseResolved(navigated),
     "Listener resolved after finishing the new navigation"
+  );
+});
+
+add_task(async function test_invalid_resolveWhenCommitted() {
+  // Create a webprogress and start it before creating the progress listener.
+  const browsingContext = new MockTopContext();
+  const webProgress = browsingContext.webProgress;
+  await webProgress.sendStartState();
+
+  Assert.throws(
+    () =>
+      new ProgressListener(webProgress, {
+        resolveWhenCommitted: true,
+        resolveWhenStarted: true,
+        navigationManager: {},
+      }),
+    /Cannot use both resolveWhenStarted and resolveWhenCommitted/,
+    "Expected error was returned"
+  );
+
+  Assert.throws(
+    () =>
+      new ProgressListener(webProgress, {
+        resolveWhenCommitted: true,
+        navigationManager: null,
+      }),
+    /Cannot use resolveWhenCommitted without a navigationManager/,
+    "Expected error was returned"
+  );
+});
+
+class MockNavigationManager extends EventEmitter {}
+
+add_task(async function test_ProgressListener_resolveWhenCommitted() {
+  // Create a webprogress and start it before creating the progress listener.
+  const browsingContext = new MockTopContext();
+  const webProgress = browsingContext.webProgress;
+  await webProgress.sendStartState();
+  const mockNavigationManager = new MockNavigationManager();
+
+  // Create the progress listener for a webprogress already in a navigation.
+  const progressListener = new ProgressListener(webProgress, {
+    resolveWhenCommitted: true,
+    navigationManager: mockNavigationManager,
+  });
+
+  // Setup two navigation ids, and start the progress listener with the first
+  // one.
+  const navigationId1 = "navigationId1";
+  const navigationId2 = "navigationId2";
+
+  const navigated = progressListener.start(navigationId1);
+
+  // Start a new navigation
+  await webProgress.sendStartState();
+  ok(
+    !(await hasPromiseResolved(navigated)),
+    "Listener has not resolved after navigation has only started"
+  );
+
+  // Emit an unexpected navigation-committed for the other navigation id.
+  mockNavigationManager.emit("navigation-committed", {
+    navigationId: navigationId2,
+    url: TARGET_URI_FROM_NAVIGATION_COMMITTED.spec,
+  });
+  ok(
+    !(await hasPromiseResolved(navigated)),
+    "Listener has not resolved after an unexpected navigation-committed"
+  );
+  notEqual(
+    progressListener.targetURI.spec,
+    TARGET_URI_FROM_NAVIGATION_COMMITTED.spec,
+    "Expected target URI has not been set from unexpected navigation-committed"
+  );
+
+  // Emit the expected navigation-committed event.
+  mockNavigationManager.emit("navigation-committed", {
+    navigationId: navigationId1,
+    url: TARGET_URI_FROM_NAVIGATION_COMMITTED.spec,
+  });
+  ok(
+    await hasPromiseResolved(navigated),
+    "Listener has resolved after receiving the correct navigation-committed"
+  );
+  equal(
+    progressListener.targetURI.spec,
+    TARGET_URI_FROM_NAVIGATION_COMMITTED.spec,
+    "Expected target URI has been set from navigation-committed"
   );
 });
 

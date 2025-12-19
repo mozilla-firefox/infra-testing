@@ -8,9 +8,9 @@
   --transition: 0.6s opacity, 0.6s scale, 0.6s rotate, 0.6s translate;
 
   position: relative;
-  border-radius: var(--space-small);
+  border-radius: var(--border-radius-medium);
   box-shadow: $shadow-large;
-  padding: var(--size-item-large);
+  padding: var(--space-xxlarge);
   max-width: 745px;
   height: auto;
 
@@ -19,7 +19,7 @@
     appearance: none;
     border: none;
     z-index: 2;
-    top: 0;
+    inset-block-start: 0;
     inset-inline: auto 0;
     border-radius: var(--border-radius-small);
     padding: 0;
@@ -50,7 +50,7 @@
   .title {
     text-align: center;
     font-size: var(--font-size-xlarge);
-    font-weight: var(--font-weight-bold);
+    font-weight: var(--heading-font-weight);
     margin-block-end: var(--space-small);
   }
 
@@ -91,20 +91,20 @@
   list-style: none;
   display: flex;
   flex-wrap: wrap;
-  gap: var(--size-item-small);
-  margin: var(--size-item-large) auto;
+  gap: var(--space-large);
+  margin: var(--space-xxlarge) auto;
   justify-content: center;
   width: fit-content;
 
   .topic-item {
     align-items: center;
-    border-radius: 40px;
+    border-radius: var(--border-radius-circle);
     border: var(--border-width) solid var(--border-color-interactive);
     display: flex;
     justify-self: center;
     max-width: fit-content;
-    padding-block: 6px;
-    padding-inline: 6px var(--size-item-small);
+    padding-block: var(--space-xsmall);
+    padding-inline: var(--space-xsmall) var(--space-large);
     position: relative;
 
     &:hover {
@@ -117,11 +117,22 @@
     }
 
     &:has(input:checked) {
+      /**
+       * @backward-compat { version 147 }
+       *
+       * Replace this with `--border-color-selected` once 147 hits release.
+       */
       border-color: var(--color-accent-primary);
     }
 
     &:focus-within {
       outline-offset: 2px;
+
+      /**
+       * @backward-compat { version 147 }
+       *
+       * Replace this with `--border-color-selected` once 147 hits release.
+       */
       outline: 2px solid var(--color-accent-primary);
     }
 
@@ -135,12 +146,12 @@
       align-items: center;
       width: 42px;
       height: 42px;
-      border-radius: 100%;
+      border-radius: var(--border-radius-circle);
       background-color: var(--newtab-button-static-background);
       margin-inline-end: var(--space-large);
 
       .topic-icon {
-        font-size: 25px;
+        font-size: var(--font-size-xlarge);
       }
 
       .topic-checked {

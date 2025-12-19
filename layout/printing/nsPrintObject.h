@@ -6,12 +6,10 @@
 #ifndef nsPrintObject_h___
 #define nsPrintObject_h___
 
-#include "mozilla/Attributes.h"
 #include "mozilla/UniquePtr.h"
 
 // Interfaces
 #include "nsCOMPtr.h"
-#include "nsViewManager.h"
 #include "nsIDocShell.h"
 #include "nsIDocShellTreeOwner.h"
 
@@ -59,7 +57,6 @@ class nsPrintObject final {
 
   RefPtr<nsPresContext> mPresContext;
   RefPtr<mozilla::PresShell> mPresShell;
-  RefPtr<nsViewManager> mViewManager;
 
   nsCOMPtr<nsIContent> mContent;
 

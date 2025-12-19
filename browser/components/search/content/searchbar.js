@@ -17,7 +17,7 @@
     BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
     FormHistory: "resource://gre/modules/FormHistory.sys.mjs",
     SearchSuggestionController:
-      "resource://gre/modules/SearchSuggestionController.sys.mjs",
+      "moz-src:///toolkit/components/search/SearchSuggestionController.sys.mjs",
   });
 
   /**
@@ -49,14 +49,12 @@
 
     constructor() {
       super();
-
       MozXULElement.insertFTLIfNeeded("browser/search.ftl");
 
-      this.destroy = this.destroy.bind(this);
       this._setupEventListeners();
       let searchbar = this;
       this.observer = {
-        observe(aEngine, aTopic) {
+        observe(aEngine, aTopic, aData) {
           if (aTopic == "browser-search-engine-modified") {
             // Make sure the engine list is refetched next time it's needed
             searchbar._engines = null;
@@ -64,10 +62,29 @@
             // Update the popup header and update the display after any modification.
             searchbar._textbox.popup.updateHeader();
             searchbar.updateDisplay();
+          } else if (
+            aData == "browser.search.widget.new" &&
+            searchbar.isConnected
+          ) {
+            if (Services.prefs.getBoolPref("browser.search.widget.new")) {
+              searchbar.disconnectedCallback();
+            } else {
+              searchbar.connectedCallback();
+            }
           }
         },
         QueryInterface: ChromeUtils.generateQI(["nsIObserver"]),
       };
+
+      Services.prefs.addObserver("browser.search.widget.new", this.observer);
+
+      window.addEventListener("unload", () => {
+        this.destroy();
+        Services.prefs.removeObserver(
+          "browser.search.widget.new",
+          this.observer
+        );
+      });
 
       this._ignoreFocus = false;
       this._engines = null;
@@ -75,8 +92,11 @@
     }
 
     connectedCallback() {
-      // Don't initialize if this isn't going to be visible
-      if (this.closest("#BrowserToolbarPalette")) {
+      // Don't initialize if this isn't going to be visible.
+      if (
+        this.closest("#BrowserToolbarPalette") ||
+        Services.prefs.getBoolPref("browser.search.widget.new")
+      ) {
         return;
       }
 
@@ -107,8 +127,6 @@
 
       this._setupTextboxEventListeners();
       this._initTextbox();
-
-      window.addEventListener("unload", this.destroy);
 
       Services.obs.addObserver(this.observer, "browser-search-engine-modified");
 
@@ -207,6 +225,13 @@
       return this._textbox;
     }
 
+    /**
+     * Textbox alias for API compatibility with UrlbarInput.
+     */
+    get inputField() {
+      return this.textbox;
+    }
+
     set value(val) {
       this._textbox.value = val;
     }
@@ -218,7 +243,6 @@
     destroy() {
       if (this._initialized) {
         this._initialized = false;
-        window.removeEventListener("unload", this.destroy);
 
         Services.obs.removeObserver(
           this.observer,
@@ -378,7 +402,7 @@
         );
       }
 
-      let submission = engine.getSubmission(aData, null, "searchbar");
+      let submission = engine.getSubmission(aData, null);
 
       // If we hit here, we come either from a one-off, a plain search or a suggestion.
       const details = {
@@ -785,8 +809,7 @@
         let searchIcon = document.querySelector(".searchbar-search-button");
         searchIcon.setAttribute("aria-expanded", popup.popupOpen);
         if (popup.popupOpen) {
-          let suggestionsHidden =
-            popup.richlistbox.getAttribute("collapsed") == "true";
+          let suggestionsHidden = popup.richlistbox.hasAttribute("collapsed");
           let numItems = suggestionsHidden ? 0 : popup.matchCount;
           return popup.oneOffButtons.handleKeyDown(aEvent, numItems, true);
         } else if (aEvent.keyCode == KeyEvent.DOM_VK_ESCAPE) {
@@ -795,6 +818,7 @@
           } else {
             this.textbox.select();
           }
+          aEvent.preventDefault();
           return true;
         }
         return false;

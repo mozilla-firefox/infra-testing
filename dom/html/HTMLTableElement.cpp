@@ -5,17 +5,18 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/HTMLTableElement.h"
+
+#include "jsfriendapi.h"
 #include "mozilla/AttributeStyles.h"
-#include "mozilla/MappedDeclarationsBuilder.h"
 #include "mozilla/DeclarationBlock.h"
-#include "nsAttrValueInlines.h"
-#include "nsWrapperCacheInlines.h"
+#include "mozilla/MappedDeclarationsBuilder.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/HTMLCollectionBinding.h"
 #include "mozilla/dom/HTMLTableElementBinding.h"
+#include "nsAttrValueInlines.h"
 #include "nsContentUtils.h"
 #include "nsLayoutUtils.h"
-#include "jsfriendapi.h"
+#include "nsWrapperCacheInlines.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Table)
 
@@ -412,7 +413,8 @@ int32_t TableRowsCollection::HandleInsert(nsIContent* aContainer,
 
 // nsIMutationObserver
 
-void TableRowsCollection::ContentAppended(nsIContent* aFirstNewContent) {
+void TableRowsCollection::ContentAppended(nsIContent* aFirstNewContent,
+                                          const ContentAppendInfo&) {
   nsIContent* container = aFirstNewContent->GetParent();
   if (!nsContentUtils::IsInSameAnonymousTree(mParent, aFirstNewContent) ||
       !InterestingContainer(container)) {
@@ -433,7 +435,8 @@ void TableRowsCollection::ContentAppended(nsIContent* aFirstNewContent) {
   }
 }
 
-void TableRowsCollection::ContentInserted(nsIContent* aChild) {
+void TableRowsCollection::ContentInserted(nsIContent* aChild,
+                                          const ContentInsertInfo&) {
   if (!nsContentUtils::IsInSameAnonymousTree(mParent, aChild) ||
       !InterestingContainer(aChild->GetParent())) {
     return;
@@ -443,7 +446,7 @@ void TableRowsCollection::ContentInserted(nsIContent* aChild) {
 }
 
 void TableRowsCollection::ContentWillBeRemoved(nsIContent* aChild,
-                                               const BatchRemovalState*) {
+                                               const ContentRemoveInfo&) {
   if (!nsContentUtils::IsInSameAnonymousTree(mParent, aChild) ||
       !InterestingContainer(aChild->GetParent())) {
     return;

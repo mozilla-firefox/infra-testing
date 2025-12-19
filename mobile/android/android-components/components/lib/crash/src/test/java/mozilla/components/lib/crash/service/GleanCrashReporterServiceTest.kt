@@ -10,6 +10,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.work.testing.WorkManagerTestInitHelper
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
@@ -17,6 +18,7 @@ import kotlinx.serialization.json.jsonObject
 import mozilla.components.concept.base.crash.Breadcrumb
 import mozilla.components.lib.crash.Crash
 import mozilla.components.lib.crash.GleanMetrics.CrashMetrics
+import mozilla.components.lib.crash.RuntimeTag
 import mozilla.components.support.test.whenever
 import mozilla.telemetry.glean.Glean
 import mozilla.telemetry.glean.config.Configuration
@@ -92,7 +94,8 @@ class GleanCrashReporterServiceTest {
                 0,
                 "",
                 "",
-                Crash.NativeCodeCrash.PROCESS_TYPE_MAIN,
+                Crash.NativeCodeCrash.PROCESS_VISIBILITY_MAIN,
+                processType = "main",
                 breadcrumbs = arrayListOf(),
                 remoteType = null,
             ),
@@ -100,7 +103,8 @@ class GleanCrashReporterServiceTest {
                 0,
                 "",
                 "",
-                Crash.NativeCodeCrash.PROCESS_TYPE_FOREGROUND_CHILD,
+                Crash.NativeCodeCrash.PROCESS_VISIBILITY_FOREGROUND_CHILD,
+                processType = "content",
                 breadcrumbs = arrayListOf(),
                 remoteType = "web",
             ),
@@ -108,7 +112,8 @@ class GleanCrashReporterServiceTest {
                 0,
                 "",
                 "",
-                Crash.NativeCodeCrash.PROCESS_TYPE_BACKGROUND_CHILD,
+                Crash.NativeCodeCrash.PROCESS_VISIBILITY_BACKGROUND_CHILD,
+                processType = "utility",
                 breadcrumbs = arrayListOf(),
                 remoteType = null,
             ),
@@ -199,7 +204,8 @@ class GleanCrashReporterServiceTest {
                 0,
                 "",
                 "",
-                Crash.NativeCodeCrash.PROCESS_TYPE_MAIN,
+                Crash.NativeCodeCrash.PROCESS_VISIBILITY_MAIN,
+                processType = "main",
                 breadcrumbs = arrayListOf(),
                 remoteType = null,
             )
@@ -207,7 +213,8 @@ class GleanCrashReporterServiceTest {
                 0,
                 "",
                 "",
-                Crash.NativeCodeCrash.PROCESS_TYPE_FOREGROUND_CHILD,
+                Crash.NativeCodeCrash.PROCESS_VISIBILITY_FOREGROUND_CHILD,
+                processType = "content",
                 breadcrumbs = arrayListOf(),
                 remoteType = "web",
             )
@@ -215,7 +222,8 @@ class GleanCrashReporterServiceTest {
                 0,
                 "",
                 "",
-                Crash.NativeCodeCrash.PROCESS_TYPE_BACKGROUND_CHILD,
+                Crash.NativeCodeCrash.PROCESS_VISIBILITY_BACKGROUND_CHILD,
+                processType = "utility",
                 breadcrumbs = arrayListOf(),
                 remoteType = null,
             )
@@ -223,7 +231,8 @@ class GleanCrashReporterServiceTest {
                 0,
                 "",
                 "",
-                Crash.NativeCodeCrash.PROCESS_TYPE_BACKGROUND_CHILD,
+                Crash.NativeCodeCrash.PROCESS_VISIBILITY_BACKGROUND_CHILD,
+                processType = "content",
                 breadcrumbs = arrayListOf(),
                 remoteType = "extension",
             )
@@ -406,7 +415,8 @@ class GleanCrashReporterServiceTest {
             12340000,
             "",
             "",
-            Crash.NativeCodeCrash.PROCESS_TYPE_MAIN,
+            Crash.NativeCodeCrash.PROCESS_VISIBILITY_MAIN,
+            processType = "main",
             breadcrumbs = arrayListOf(),
             remoteType = null,
         )
@@ -429,7 +439,7 @@ class GleanCrashReporterServiceTest {
 
         run {
             var pingReceived = false
-            GleanPings.crash.testBeforeNextSubmit { _ ->
+            val job = GleanPings.crash.testBeforeNextSubmit { _ ->
                 val date = GregorianCalendar().apply {
                     time = Date(12340000)
                 }
@@ -445,6 +455,8 @@ class GleanCrashReporterServiceTest {
             }
 
             GleanCrashReporterService(context)
+
+            job.join()
             assertTrue("Expected ping to be sent", pingReceived)
         }
     }
@@ -457,7 +469,8 @@ class GleanCrashReporterServiceTest {
             12340000,
             null,
             null,
-            Crash.NativeCodeCrash.PROCESS_TYPE_MAIN,
+            Crash.NativeCodeCrash.PROCESS_VISIBILITY_MAIN,
+            processType = "main",
             breadcrumbs = arrayListOf(
                 Breadcrumb(
                     message = "Breadcrumb-1",
@@ -493,7 +506,7 @@ class GleanCrashReporterServiceTest {
 
         run {
             var pingReceived = false
-            GleanPings.crash.testBeforeNextSubmit { _ ->
+            val job = GleanPings.crash.testBeforeNextSubmit { _ ->
                 val date = GregorianCalendar().apply {
                     time = Date(12340000)
                 }
@@ -535,6 +548,8 @@ class GleanCrashReporterServiceTest {
             }
 
             GleanCrashReporterService(context)
+
+            job.join()
             assertTrue("Expected ping to be sent", pingReceived)
         }
     }
@@ -591,26 +606,26 @@ class GleanCrashReporterServiceTest {
 
         val stackTracesGlean = """
         {
-            "crashType": "main",
-            "crashAddress": "0xf001ba11",
-            "crashThread": 1,
-            "mainModule": 0,
+            "crash_type": "main",
+            "crash_address": "0xf001ba11",
+            "crash_thread": 1,
+            "main_module": 0,
             "modules": [
             {
-                "baseAddress": "0x00000000",
-                "endAddress": "0x00004000",
-                "codeId": "8675309",
-                "debugFile": "",
-                "debugId": "18675309",
+                "base_address": "0x00000000",
+                "end_address": "0x00004000",
+                "code_id": "8675309",
+                "debug_file": "",
+                "debug_id": "18675309",
                 "filename": "foo.exe",
                 "version": "1.0.0"
             },
             {
-                "baseAddress": "0x00004000",
-                "endAddress": "0x00008000",
-                "codeId": "42",
-                "debugFile": "foo.pdb",
-                "debugId": "43",
+                "base_address": "0x00004000",
+                "end_address": "0x00008000",
+                "code_id": "42",
+                "debug_file": "foo.pdb",
+                "debug_id": "43",
                 "filename": "foo.dll",
                 "version": "1.1.0"
             }
@@ -618,14 +633,14 @@ class GleanCrashReporterServiceTest {
             "threads": [
             {
                 "frames": [
-                { "moduleIndex": 0, "ip": "0x10", "trust": "context" },
-                { "moduleIndex": 0, "ip": "0x20", "trust": "cfi" }
+                { "module_index": 0, "ip": "0x10", "trust": "context" },
+                { "module_index": 0, "ip": "0x20", "trust": "cfi" }
                 ]
             },
             {
                 "frames": [
-                { "moduleIndex": 1, "ip": "0x4010", "trust": "context" },
-                { "moduleIndex": 0, "ip": "0x30", "trust": "cfi" }
+                { "module_index": 1, "ip": "0x4010", "trust": "context" },
+                { "module_index": 0, "ip": "0x30", "trust": "cfi" }
                 ]
             }
             ]
@@ -642,7 +657,9 @@ class GleanCrashReporterServiceTest {
                 "TotalPhysicalMemory": 100,
                 "AsyncShutdownTimeout": "{\"phase\":\"abcd\",\"conditions\":[{\"foo\":\"bar\"}],\"brokenAddBlockers\":[\"foo\"]}",
                 "QuotaManagerShutdownTimeout": "line1\nline2\nline3",
-                "StackTraces": $stackTracesAnnotation
+                "StackTraces": $stackTracesAnnotation,
+                "JSLargeAllocationFailure": "reporting",
+                "JSOutOfMemory": "recovered"
             }
             """.trimIndent(),
         )
@@ -651,7 +668,8 @@ class GleanCrashReporterServiceTest {
             12340000,
             "",
             extrasFile.path,
-            Crash.NativeCodeCrash.PROCESS_TYPE_MAIN,
+            Crash.NativeCodeCrash.PROCESS_VISIBILITY_MAIN,
+            processType = "main",
             breadcrumbs = arrayListOf(),
             remoteType = null,
         )
@@ -662,7 +680,7 @@ class GleanCrashReporterServiceTest {
 
         run {
             var pingReceived = false
-            GleanPings.crash.testBeforeNextSubmit { _ ->
+            val job = GleanPings.crash.testBeforeNextSubmit { _ ->
                 val date = GregorianCalendar().apply {
                     time = Date(12340000)
                 }
@@ -677,12 +695,14 @@ class GleanCrashReporterServiceTest {
                 assertEquals("beta", GleanCrash.appChannel.testGetValue())
                 assertEquals("123.0.0", GleanCrash.appDisplayVersion.testGetValue())
                 assertEquals(100L, GleanMemory.totalPhysical.testGetValue())
+                assertEquals("reporting", GleanMemory.jsLargeAllocationFailure.testGetValue())
+                assertEquals("recovered", GleanMemory.jsOutOfMemory.testGetValue())
                 assertEquals(
                     JsonObject(
                         mapOf(
                             "phase" to JsonPrimitive("abcd"),
                             "conditions" to JsonPrimitive("[{\"foo\":\"bar\"}]"),
-                            "brokenAddBlockers" to JsonArray(listOf(JsonPrimitive("foo"))),
+                            "broken_add_blockers" to JsonArray(listOf(JsonPrimitive("foo"))),
                         ),
                     ),
                     GleanCrash.asyncShutdownTimeout.testGetValue(),
@@ -698,13 +718,15 @@ class GleanCrashReporterServiceTest {
                     GleanCrash.quotaManagerShutdownTimeout.testGetValue(),
                 )
                 assertEquals(
-                    Json.decodeFromString<JsonObject>(stackTracesGlean),
+                    Json.decodeFromString<JsonElement>(stackTracesGlean),
                     GleanCrash.stackTraces.testGetValue(),
                 )
                 pingReceived = true
             }
 
             GleanCrashReporterService(context)
+
+            job.join()
             assertTrue("Expected ping to be sent", pingReceived)
         }
     }
@@ -717,6 +739,10 @@ class GleanCrashReporterServiceTest {
             12340000,
             RuntimeException("Test", java.io.IOException("IO")),
             arrayListOf(),
+            runtimeTags = mapOf(
+                RuntimeTag.VERSION_NAME to "142.0.0",
+                RuntimeTag.BUILD_ID to "1337",
+            ),
         )
 
         service.record(crash)
@@ -736,7 +762,7 @@ class GleanCrashReporterServiceTest {
 
         run {
             var pingReceived = false
-            GleanPings.crash.testBeforeNextSubmit { _ ->
+            val job = GleanPings.crash.testBeforeNextSubmit { _ ->
                 val date = GregorianCalendar().apply {
                     time = Date(12340000)
                 }
@@ -747,6 +773,8 @@ class GleanCrashReporterServiceTest {
                 assertEquals("main", GleanCrash.processType.testGetValue())
                 assertEquals(false, GleanCrash.startup.testGetValue())
                 assertEquals("java_exception", GleanCrash.cause.testGetValue())
+                assertEquals("1337", GleanCrash.appBuild.testGetValue())
+                assertEquals("142.0.0", GleanCrash.appDisplayVersion.testGetValue())
                 val exc = GleanCrash.javaException.testGetValue()
                 assertNotNull(exc)
                 val throwables = exc?.jsonObject?.get("throwables")
@@ -758,7 +786,7 @@ class GleanCrashReporterServiceTest {
                     assertEquals(
                         JsonObject(
                             mapOf(
-                                "typeName" to JsonPrimitive("java.lang.RuntimeException"),
+                                "type_name" to JsonPrimitive("java.lang.RuntimeException"),
                                 "message" to JsonPrimitive("Test"),
                             ),
                         ),
@@ -767,7 +795,7 @@ class GleanCrashReporterServiceTest {
                     assertEquals(
                         JsonObject(
                             mapOf(
-                                "typeName" to JsonPrimitive("java.io.IOException"),
+                                "type_name" to JsonPrimitive("java.io.IOException"),
                                 "message" to JsonPrimitive("IO"),
                             ),
                         ),
@@ -778,6 +806,43 @@ class GleanCrashReporterServiceTest {
             }
 
             GleanCrashReporterService(context)
+
+            job.join()
+            assertTrue("Expected ping to be sent", pingReceived)
+        }
+    }
+
+    @Test
+    fun `GleanCrashReporterService exception crash pings have crash-time app information metrics`() {
+        val service = spy(
+            GleanCrashReporterService(
+                context,
+                appChannel = "channel",
+                appVersion = "version",
+                appBuildId = "buildid",
+            ),
+        )
+
+        val crash = Crash.UncaughtExceptionCrash(
+            12340000,
+            RuntimeException("Test", java.io.IOException("IO")),
+            arrayListOf(),
+        )
+
+        service.record(crash)
+
+        run {
+            var pingReceived = false
+            val job = GleanPings.crash.testBeforeNextSubmit { _ ->
+                assertEquals("channel", GleanCrash.appChannel.testGetValue())
+                assertEquals("version", GleanCrash.appDisplayVersion.testGetValue())
+                assertEquals("buildid", GleanCrash.appBuild.testGetValue())
+                pingReceived = true
+            }
+
+            GleanCrashReporterService(context, appChannel = "intentionally-different")
+
+            job.join()
             assertTrue("Expected ping to be sent", pingReceived)
         }
     }

@@ -9,10 +9,10 @@
 requestLongerTimeout(2);
 
 const httpServer = createTestHTTPServer();
-httpServer.registerContentType("html", "text/html");
 
 httpServer.registerPathHandler("/doc_line_breaks.html", (request, response) => {
   response.setStatusLine(request.httpVersion, 200, "OK");
+  response.setHeader("Content-Type", "text/html");
   response.write(
     `TEST with line breaks\r\n<script>(function(){\r\n})('test')</script>`
   );
@@ -24,9 +24,8 @@ add_task(async function () {
   const dbg = await initDebuggerWithAbsoluteURL(TEST_URL);
 
   await selectSource(dbg, "doc_line_breaks.html");
-  clickElement(dbg, "prettyPrintButton");
+  await togglePrettyPrint(dbg);
 
-  await waitForSelectedSource(dbg, "doc_line_breaks.html:formatted");
   const prettyPrintedSource = findSourceContent(
     dbg,
     "doc_line_breaks.html:formatted"

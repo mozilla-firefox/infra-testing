@@ -4,6 +4,9 @@ Telemetry
 This section describes existing telemetry probes measuring interaction with
 search engines from the browser UI.
 
+This document only covers Legacy telemetry, not Glean telemetry.
+Glean metrics are self-documenting and can be looked up in the Glean dictionary.
+
 Other search-related telemetry is recorded by Toolkit such as search service
 telemetry and telemetry related to fetching search suggestions. Toolkit search
 telemetry is relevant to Firefox as well as other consumers of Toolkit. See
@@ -18,7 +21,8 @@ Glossary
 
 SAP
   Search Access Point, a search that a user performs by visiting
-  via one of Firefox's access points using the associated partner codes.
+  via one of Firefox's access points. The search may or may not have an
+  associated partner code.
 
 SERP
   A search engine results page.
@@ -62,6 +66,11 @@ BrowserSearchTelemetry.sys.mjs
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 This telemetry is handled by `BrowserSearchTelemetry.sys.mjs`_.
+
+sap.counts
+^^^^^^^^^^
+
+  See the `sap.counts Event documentation`_ for more information.
 
 SEARCH_COUNTS - SAP usage
 ^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -195,3 +204,4 @@ browser.search.adclicks.*
 .. _additional telemetry of its own: /browser/urlbar/telemetry.html
 .. _SearchSERPTelemetry.sys.mjs and the associated parent/child actors: https://searchfox.org/mozilla-central/search?q=&path=SearchSERPTelemetry*.sys.mjs&case=false&regexp=false
 .. _BrowserSearchTelemetry: https://searchfox.org/mozilla-central/source/browser/components/search/BrowserSearchTelemetry.sys.mjs
+.. _sap.counts Event documentation: https://dictionary.telemetry.mozilla.org/apps/firefox_desktop/metrics/sap_counts

@@ -5,7 +5,7 @@
 
 ChromeUtils.defineESModuleGetters(this, {
   UrlbarProviderInterventions:
-    "resource:///modules/UrlbarProviderInterventions.sys.mjs",
+    "moz-src:///browser/components/urlbar/UrlbarProviderInterventions.sys.mjs",
 });
 
 add_setup(async function () {
@@ -127,6 +127,13 @@ add_task(async function testIsActive() {
     },
   ];
 
+  let interventionsProviderInstance = UrlbarProvidersManager.getProvider(
+    "UrlbarProviderInterventions"
+  );
+  // Mock the relevent method of Query so we don't have to start a real one.
+  interventionsProviderInstance.queryInstance = {
+    getProvider: name => UrlbarProvidersManager.getProvider(name),
+  };
   for (const {
     description,
     searchString,
@@ -137,17 +144,20 @@ add_task(async function testIsActive() {
 
     // Set null to currentTip to know whether or not UrlbarProviderInterventions
     // calculated the score.
-    UrlbarProviderInterventions.currentTip = null;
+    interventionsProviderInstance.currentTip = null;
 
-    const isActive = UrlbarProviderInterventions.isActive({ searchString });
+    const isActive = await interventionsProviderInstance.isActive({
+      searchString,
+    });
     Assert.equal(isActive, expectedActive, "Result of isActive is correct");
-    const isScoreCalculated = UrlbarProviderInterventions.currentTip !== null;
+    const isScoreCalculated = interventionsProviderInstance.currentTip !== null;
     Assert.equal(
       isScoreCalculated,
       expectedScoreCalculated,
       "The score is calculated correctly"
     );
   }
+  interventionsProviderInstance.queryInstance = null;
 });
 
 add_task(async function tipsAreEnglishOnly() {
@@ -207,9 +217,8 @@ add_task(async function pickHelp() {
       "The result's helpUrl should be defined and non-empty: " +
         JSON.stringify(result.payload.helpUrl)
     );
-    let loadPromise = BrowserTestUtils.browserLoaded(
-      gBrowser.selectedBrowser,
-      false,
+    let newTabOpened = BrowserTestUtils.waitForNewTab(
+      gBrowser,
       result.payload.helpUrl
     );
     await UrlbarTestUtils.openResultMenuAndPressAccesskey(window, "h", {
@@ -217,7 +226,8 @@ add_task(async function pickHelp() {
       resultIndex: 1,
     });
     info("Waiting for help URL to load in the current tab");
-    await loadPromise;
+    let newTab = await newTabOpened;
+    await BrowserTestUtils.removeTab(newTab);
 
     // Wait a bit and make sure the clear recent history dialog did not open.
     // eslint-disable-next-line mozilla/no-arbitrary-setTimeout

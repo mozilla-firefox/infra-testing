@@ -60,7 +60,6 @@
 #include "nsTreeBodyFrame.h"
 #include "nsTreeUtils.h"
 #include "mozilla/a11y/AccTypes.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/DOMStringList.h"
 #include "mozilla/dom/EventTarget.h"
@@ -167,13 +166,15 @@ static bool SendCacheDomainRequestToAllContentProcesses(
  */
 static bool MustBeGenericAccessible(nsIContent* aContent,
                                     DocAccessible* aDocument) {
-  if (aContent->IsInNativeAnonymousSubtree() || aContent->IsSVGElement()) {
+  if (aContent->IsInNativeAnonymousSubtree() || aContent->IsSVGElement() ||
+      aContent == aDocument->DocumentNode()->GetRootElement()) {
     // We should not force create accs for anonymous content.
     // This is an issue for inputs, which have an intermediate
     // container with relevant overflow styling between the input
     // and its internal input content.
     // We should also avoid this for SVG elements (ie. `<foreignobject>`s
     // which have default overflow:hidden styling).
+    // We should avoid this for the document root.
     return false;
   }
   nsIFrame* frame = aContent->GetPrimaryFrame();
@@ -562,27 +563,15 @@ void nsAccessibilityService::NotifyOfAnchorJumpTo(nsIContent* aTargetNode) {
   if (!document) {
     return;
   }
-  // If the document has focus when we get this notification, ensure that
-  // we fire a start scrolling event.
-  const Accessible* focusedAcc = FocusedAccessible();
-  if (focusedAcc &&
-      (focusedAcc == document || focusedAcc->IsNonInteractive())) {
-    LocalAccessible* targetAcc =
-        document->GetAccessibleOrContainer(aTargetNode);
-    // If targetAcc is the document, this isn't useful. It's possible we just
-    // haven't built the initial tree yet. Regardless, we don't want to fire an
-    // event for the document here.
-    if (targetAcc && !targetAcc->IsDoc()) {
-      nsEventShell::FireEvent(nsIAccessibleEvent::EVENT_SCROLLING_START,
-                              targetAcc);
-      document->SetAnchorJump(nullptr);
-    } else {
-      // We can't find the target accessible in the document yet. Set the
-      // anchor jump so that we can fire the scrolling start event later.
-      document->SetAnchorJump(aTargetNode);
-    }
-  } else {
-    document->SetAnchorJump(aTargetNode);
+  document->SetAnchorJump(aTargetNode);
+  // If there is a pending update, the target node might not have been added to
+  // the accessibility tree yet, so do not process the anchor jump here. It will
+  // be processed in NotificationController::WillRefresh after the tree is up to
+  // date. On the other hand, if there is no pending update, process the anchor
+  // jump here because the tree is already up to date and there might not be an
+  // update in the near future.
+  if (!document->Controller()->IsUpdatePending()) {
+    document->ProcessAnchorJump();
   }
 }
 
@@ -681,6 +670,68 @@ void nsAccessibilityService::NotifyOfDevPixelRatioChange(
     fields->SetAttribute(CacheKey::AppUnitsPerDevPixel, aAppUnitsPerDevPixel);
     data.AppendElement(mozilla::a11y::CacheData(0, fields));
     document->IPCDoc()->SendCache(CacheUpdateType::Update, data);
+  }
+}
+
+void nsAccessibilityService::NotifyAnchorPositionedRemoved(
+    mozilla::PresShell* aPresShell, nsIFrame* aFrame) {
+  DocAccessible* document = aPresShell->GetDocAccessible();
+  if (!document) {
+    return;
+  }
+
+  const nsIFrame* anchorFrame =
+      nsCoreUtils::GetAnchorForPositionedFrame(aPresShell, aFrame);
+  if (!anchorFrame) {
+    return;
+  }
+
+  if (LocalAccessible* anchorAcc =
+          document->GetAccessible(anchorFrame->GetContent())) {
+    document->QueueCacheUpdate(anchorAcc, CacheDomain::Relations);
+  }
+}
+
+void nsAccessibilityService::NotifyAnchorRemoved(mozilla::PresShell* aPresShell,
+                                                 nsIFrame* aFrame) {
+  DocAccessible* document = aPresShell->GetDocAccessible();
+  if (!document) {
+    return;
+  }
+
+  nsIFrame* positionedFrame =
+      nsCoreUtils::GetPositionedFrameForAnchor(aPresShell, aFrame);
+  if (!positionedFrame) {
+    return;
+  }
+
+  if (LocalAccessible* positionedAcc =
+          document->GetAccessible(positionedFrame->GetContent())) {
+    // If the anchor was removed, its positioned element may now have a 1:1
+    // relation with another anchor, and they would get a description a11y
+    // relation. So we need to go one level deeper here and refresh the cache of
+    // any potential anchors that remain on the positioned element.
+    document->RefreshAnchorRelationCacheForTarget(positionedAcc);
+  }
+}
+
+void nsAccessibilityService::NotifyAnchorPositionedScrollUpdate(
+    mozilla::PresShell* aPresShell, nsIFrame* aFrame) {
+  DocAccessible* document = aPresShell->GetDocAccessible();
+  if (!document) {
+    return;
+  }
+
+  if (LocalAccessible* positionedAcc =
+          document->GetAccessible(aFrame->GetContent())) {
+    // Refresh relations before reflow to notify current anchor.
+    document->RefreshAnchorRelationCacheForTarget(positionedAcc);
+
+    // Refresh relations after next tick when reflow updated to the
+    // new anchor state.
+    document->Controller()->ScheduleNotification<DocAccessible>(
+        document, &DocAccessible::RefreshAnchorRelationCacheForTarget,
+        positionedAcc);
   }
 }
 
@@ -1303,10 +1354,14 @@ LocalAccessible* nsAccessibilityService::CreateAccessible(
     nsIFrame::RenderedText text = frame->GetRenderedText(
         0, UINT32_MAX, nsIFrame::TextOffsetType::OffsetsInContentText,
         nsIFrame::TrailingWhitespace::DontTrim);
+    auto cssAlt = CssAltContent(content);
     // Ignore not rendered text nodes and whitespace text nodes between table
     // cells.
     if (text.mString.IsEmpty() ||
-        nsCoreUtils::IsTrimmedWhitespaceBeforeHardLineBreak(frame) ||
+        (nsCoreUtils::IsTrimmedWhitespaceBeforeHardLineBreak(frame) &&
+         // If there is CSS alt text, it's okay if the text itself is just
+         // whitespace; e.g. content: " " / "alt"
+         !cssAlt) ||
         (aContext->IsTableRow() &&
          nsCoreUtils::IsWhitespaceString(text.mString))) {
       if (aIsSubtreeHidden) *aIsSubtreeHidden = true;
@@ -1317,7 +1372,7 @@ LocalAccessible* nsAccessibilityService::CreateAccessible(
     newAcc = CreateAccessibleByFrameType(frame, content, aContext);
     MOZ_ASSERT(newAcc, "Accessible not created for text node!");
     document->BindToDocument(newAcc, nullptr);
-    if (auto cssAlt = CssAltContent(content)) {
+    if (cssAlt) {
       nsAutoString text;
       cssAlt.AppendToString(text);
       newAcc->AsTextLeaf()->SetText(text);
@@ -1478,6 +1533,17 @@ LocalAccessible* nsAccessibilityService::CreateAccessible(
       if (aIsSubtreeHidden) {
         *aIsSubtreeHidden = true;
       }
+    } else if (auto cssAlt = CssAltContent(content)) {
+      // This is a pseudo-element without children that has CSS alt text. This
+      // only happens when there is alt text with an empty content string; e.g.
+      // content: "" / "alt"
+      // In this case, we need to expose the alt text on the pseudo-element
+      // itself, since we don't have a child to use. We create a
+      // TextLeafAccessible with the pseudo-element as the backing DOM node.
+      newAcc = new TextLeafAccessible(content, document);
+      nsAutoString text;
+      cssAlt.AppendToString(text);
+      newAcc->AsTextLeaf()->SetText(text);
     }
   }
 
@@ -1717,7 +1783,11 @@ nsAccessibilityService::CreateAccessibleByFrameType(nsIFrame* aFrame,
       newAcc = new HTMLSelectListAccessible(aContent, document);
       break;
     case eHTMLMediaType:
-      newAcc = new EnumRoleAccessible<roles::GROUPING>(aContent, document);
+      // The video Accessible can have TextLeafAccessibles as direct children;
+      // e.g. if there are captions. Therefore, it must be a
+      // HyperTextAccessible.
+      newAcc =
+          new EnumRoleHyperTextAccessible<roles::GROUPING>(aContent, document);
       break;
     case eHTMLRadioButtonType:
       newAcc = new HTMLRadioButtonAccessible(aContent, document);

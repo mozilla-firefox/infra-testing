@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/browser-window */
-
 document.addEventListener(
   "DOMContentLoaded",
   () => {
@@ -57,9 +55,6 @@ document.addEventListener(
         case "context-savelink":
           gContextMenu.saveLink();
           break;
-        case "context-savelinktopocket":
-          Pocket.savePage(gContextMenu.browser, gContextMenu.linkURL);
-          break;
         case "context-copyemail":
           gContextMenu.copyEmail();
           break;
@@ -68,6 +63,9 @@ document.addEventListener(
           break;
         case "context-copylink":
           gContextMenu.copyLink();
+          break;
+        case "context-previewlink":
+          gContextMenu.previewLink();
           break;
         case "context-stripOnShareLink":
           gContextMenu.copyStrippedLink();
@@ -163,13 +161,6 @@ document.addEventListener(
         case "context-savepage":
           gContextMenu.savePageAs();
           break;
-        case "context-pocket":
-          Pocket.savePage(
-            gContextMenu.browser,
-            gContextMenu.browser.currentURI.spec,
-            gContextMenu.browser.contentTitle
-          );
-          break;
         case "fill-login-generated-password":
           gContextMenu.useGeneratedPassword();
           break;
@@ -181,6 +172,9 @@ document.addEventListener(
           break;
         case "context-pdfjs-highlight-selection":
           gContextMenu.pdfJSCmd("highlightSelection");
+          break;
+        case "context-pdfjs-comment-selection":
+          gContextMenu.pdfJSCmd("commentSelection");
           break;
         case "context-reveal-password":
           gContextMenu.toggleRevealPassword();
@@ -212,40 +206,24 @@ document.addEventListener(
         case "context-take-screenshot":
           gContextMenu.takeScreenshot();
           break;
-        case "context-keywordfield":
-          if (!gContextMenu) {
-            throw new Error("Context menu doesn't seem to be open.");
-          }
-          gContextMenu.addKeywordForSearchField();
-          break;
         case "context-add-engine":
           if (!gContextMenu) {
             throw new Error("Context menu doesn't seem to be open.");
           }
           gContextMenu.addSearchFieldAsEngine().catch(console.error);
           break;
-        case "context-searchselect": {
-          let { searchTerms, usePrivate, principal, csp } = event.target;
-          SearchUIUtils.loadSearchFromContext(
-            window,
-            searchTerms,
-            usePrivate,
-            principal,
-            csp,
-            event
-          );
+        case "context-searchselect":
+        case "context-searchselect-private":
+          gContextMenu.loadSearch({ event });
           break;
-        }
-        case "context-searchselect-private": {
-          let { searchTerms, principal, csp } = event.target;
-          SearchUIUtils.loadSearchFromContext(
-            window,
-            searchTerms,
-            true,
-            principal,
-            csp,
-            event
+        case "context-visual-search": {
+          let { SearchUtils } = ChromeUtils.importESModule(
+            "moz-src:///toolkit/components/search/SearchUtils.sys.mjs"
           );
+          gContextMenu.loadSearch({
+            event,
+            searchUrlType: SearchUtils.URL_TYPE.VISUAL_SEARCH,
+          });
           break;
         }
         case "context-translate-selection":
@@ -271,9 +249,6 @@ document.addEventListener(
           break;
         case "context-printframe":
           gContextMenu.printFrame();
-          break;
-        case "context-take-frame-screenshot":
-          gContextMenu.takeScreenshot();
           break;
         case "context-viewframesource":
           gContextMenu.viewFrameSource();
@@ -312,7 +287,7 @@ document.addEventListener(
         case "context-copy-clean-link-to-highlight":
           gContextMenu.copyLinkToHighlight(/* stripSiteTracking */ true);
           break;
-        case "context-remove-all-highlights":
+        case "context-remove-highlight":
           gContextMenu.removeAllTextFragments();
           break;
       }
@@ -334,7 +309,7 @@ document.addEventListener(
           // attempts to generate the text fragment directive of selected text
           // Note: This is kicking off an async operation that might update
           // the context menu while it's open (enables an entry).
-          if (gContextMenu.isContentSelected) {
+          if (gContextMenu.isContentSelected || gContextMenu.hasTextFragments) {
             gContextMenu.getTextDirective();
           }
           break;

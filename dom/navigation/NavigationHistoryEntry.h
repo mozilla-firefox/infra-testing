@@ -10,7 +10,7 @@
 #include "mozilla/DOMEventTargetHelper.h"
 
 class nsIGlobalObject;
-class nsStructuredCloneContainer;
+class nsIStructuredCloneContainer;
 
 namespace mozilla::dom {
 
@@ -34,7 +34,6 @@ class NavigationHistoryEntry final : public DOMEventTargetHelper {
 
   void GetState(JSContext* aCx, JS::MutableHandle<JS::Value> aResult,
                 ErrorResult& aRv) const;
-  void SetState(nsStructuredCloneContainer* aState);
 
   IMPL_EVENT_HANDLER(dispose);
 
@@ -47,17 +46,22 @@ class NavigationHistoryEntry final : public DOMEventTargetHelper {
 
   const nsID& Key() const;
 
-  nsStructuredCloneContainer* GetNavigationState() const;
+  nsIStructuredCloneContainer* GetNavigationAPIState() const;
+  void SetNavigationAPIState(nsIStructuredCloneContainer* aState);
+
+  class SessionHistoryInfo* SessionHistoryInfo() { return mSHInfo.get(); }
+
+  void ResetIndexForDisposal();
 
  private:
   ~NavigationHistoryEntry();
 
-  Document* GetCurrentDocument() const;
+  Document* GetAssociatedDocument() const;
 
   bool HasActiveDocument() const;
 
   // https://html.spec.whatwg.org/#nhe-she
-  UniquePtr<SessionHistoryInfo> mSHInfo;
+  UniquePtr<class SessionHistoryInfo> mSHInfo;
   int64_t mIndex;
 };
 

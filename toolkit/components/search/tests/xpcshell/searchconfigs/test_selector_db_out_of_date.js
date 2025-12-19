@@ -24,10 +24,9 @@ add_task(async function test_selector_db_out_of_date() {
   await searchConfig.get();
 
   // Now clear the database and re-fill it.
-  let db = searchConfig.db;
-  await db.clear();
-  let databaseEntries = await db.list();
-  Assert.equal(databaseEntries.length, 0, "Should have cleared the database.");
+  await searchConfig.db.clear();
+  let dbTimestamp = await searchConfig.db.getLastModified();
+  Assert.equal(dbTimestamp, null, "Should have cleared the database.");
 
   // Add a dummy record with an out-of-date last modified.
   await RemoteSettingsWorker._execute("_test_only_import", [
@@ -61,9 +60,11 @@ add_task(async function test_selector_db_out_of_date() {
     region: "default",
   });
 
-  Assert.deepEqual(
-    result.engines.map(e => e.identifier),
-    ["google", "bing", "ddg", "wikipedia"],
-    "Should have returned the correct data."
+  let engineIdentifiers = result.engines.map(e => e.identifier);
+  Assert.ok(
+    ["google", "bing", "ddg", "wikipedia"].every(id =>
+      engineIdentifiers.includes(id)
+    ),
+    "Should have returned the correct engine identifiers."
   );
 });

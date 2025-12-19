@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CookieStoreSubscriptionService.h"
+
 #include "json/json.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/dom/PCookieStore.h"
@@ -344,8 +345,8 @@ CookieStoreSubscriptionService::Observe(nsISupports* aSubject,
       }
 
       rv = swm->SendCookieChangeEvent(principalInfo.attrs(),
-                                      data.mRegistration.scope(), name, value,
-                                      deleteEvent);
+                                      data.mRegistration.scope(),
+                                      cookie->AsCookie().ToIPC(), deleteEvent);
       if (NS_WARN_IF(NS_FAILED(rv))) {
         return rv;
       }

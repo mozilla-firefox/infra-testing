@@ -11,7 +11,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::u32;
 use api::{MinimapData, SnapshotImageKey};
-use time::precise_time_ns;
 use crate::api::channel::{Sender, single_msg_channel, unbounded_channel};
 use crate::api::{BuiltDisplayList, IdNamespace, ExternalScrollId, Parameter, BoolParameter};
 use crate::api::{FontKey, FontInstanceKey, NativeFontHandle};
@@ -29,6 +28,8 @@ use glyph_rasterizer::SharedFontResources;
 use crate::scene_builder_thread::{SceneBuilderRequest, SceneBuilderResult};
 use crate::intern::InterningMemoryReport;
 use crate::profiler::{self, TransactionProfile};
+#[cfg(feature = "debugger")]
+use crate::debugger::{DebugQuery, DebuggerClient};
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
@@ -125,6 +126,9 @@ pub enum GenerateFrame {
         /// If false, (a subset of) the frame will be rendered, but nothing will
         /// be presented on the window.
         present: bool,
+        /// This flag is used by Firefox to differentiate between frames that
+        /// participate or not in the frame throttling mechanism.
+        tracked: bool,
     },
     /// Don't generate a frame even if something has changed.
     No,
@@ -144,6 +148,15 @@ impl GenerateFrame {
     pub fn present(&self) -> bool {
         match self {
             GenerateFrame::Yes { present, .. } => *present,
+            GenerateFrame::No => false,
+        }
+    }
+
+    /// This flag is used by Gecko to indicate whether the transaction
+    /// participates in frame throttling mechanisms.
+    pub fn tracked(&self) -> bool {
+        match self {
+            GenerateFrame::Yes { tracked, .. } => *tracked,
             GenerateFrame::No => false,
         }
     }
@@ -211,7 +224,7 @@ impl Transaction {
             notifications: Vec::new(),
             use_scene_builder_thread: true,
             generate_frame: GenerateFrame::No,
-            creation_time: precise_time_ns(),
+            creation_time: zeitstempel::now(),
             invalidate_rendered_frame: false,
             low_priority: false,
             render_reasons: RenderReasons::empty(),
@@ -299,7 +312,7 @@ impl Transaction {
         epoch: Epoch,
         (pipeline_id, mut display_list): (PipelineId, BuiltDisplayList),
     ) {
-        display_list.set_send_time_ns(precise_time_ns());
+        display_list.set_send_time_ns(zeitstempel::now());
         self.scene_ops.push(
             SceneMsg::SetDisplayList {
                 display_list,
@@ -375,8 +388,8 @@ impl Transaction {
     /// as to when happened.
     ///
     /// [notifier]: trait.RenderNotifier.html#tymethod.new_frame_ready
-    pub fn generate_frame(&mut self, id: u64, present: bool, reasons: RenderReasons) {
-        self.generate_frame = GenerateFrame::Yes{ id, present };
+    pub fn generate_frame(&mut self, id: u64, present: bool, tracked: bool, reasons: RenderReasons) {
+        self.generate_frame = GenerateFrame::Yes{ id, present, tracked };
         self.render_reasons |= reasons;
     }
 
@@ -592,6 +605,14 @@ impl Transaction {
     /// Returns whether this transaction is marked as low priority.
     pub fn is_low_priority(&self) -> bool {
         self.low_priority
+    }
+
+    /// Render a pipeline offscreen immediately without waiting for vsync
+    /// and without affecting the state of the current scene.
+    ///
+    /// Snapshotted stacking contexts will be persisted in the texture cache.
+    pub fn render_offscreen(&mut self, pipeline_id: PipelineId) {
+        self.scene_ops.push(SceneMsg::RenderOffscreen(pipeline_id));
     }
 }
 
@@ -818,6 +839,11 @@ pub enum SceneMsg {
         ///
         pipeline_id: PipelineId,
     },
+    /// Build a scene without affecting any retained state.
+    ///
+    /// Useful to render an offscreen scene in the background without affecting
+    /// what is currently displayed.
+    RenderOffscreen(PipelineId),
     ///
     SetDocumentView {
         ///
@@ -861,6 +887,7 @@ impl fmt::Debug for SceneMsg {
             SceneMsg::SetDocumentView { .. } => "SceneMsg::SetDocumentView",
             SceneMsg::SetRootPipeline(..) => "SceneMsg::SetRootPipeline",
             SceneMsg::SetQualitySettings { .. } => "SceneMsg::SetQualitySettings",
+            SceneMsg::RenderOffscreen(..) => "SceneMsg::BuildOffscreen",
         })
     }
 }
@@ -927,10 +954,13 @@ pub struct CapturedDocument {
 }
 
 /// Update of the state of built-in debugging facilities.
-#[derive(Clone)]
 pub enum DebugCommand {
     /// Sets the provided debug flags.
     SetFlags(DebugFlags),
+    /// Get current debug flags
+    GetDebugFlags(Sender<DebugFlags>),
+    /// Enable/Disable render command logging.
+    SetRenderCommandLog(bool),
     /// Save a capture of all the documents state.
     SaveCapture(PathBuf, CaptureBits),
     /// Load a capture of all the documents state.
@@ -945,8 +975,6 @@ pub enum DebugCommand {
     EnableNativeCompositor(bool),
     /// Sets the maximum amount of existing batches to visit before creating a new one.
     SetBatchingLookback(u32),
-    /// Invalidate GPU cache, forcing the update from the CPU mirror.
-    InvalidateGpuCache,
     /// Causes the scene builder to pause for a given amount of milliseconds each time it
     /// processes a transaction.
     SimulateLongSceneBuild(u32),
@@ -954,6 +982,14 @@ pub enum DebugCommand {
     SetPictureTileSize(Option<DeviceIntSize>),
     /// Set an override for max off-screen surface size
     SetMaximumSurfaceSize(Option<usize>),
+    /// Generate a frame to force a redraw / recomposite
+    GenerateFrame,
+    #[cfg(feature = "debugger")]
+    /// Query internal information about WR
+    Query(DebugQuery),
+    #[cfg(feature = "debugger")]
+    /// Add a new profiler consumer
+    AddDebugClient(DebuggerClient),
 }
 
 /// Message sent by the `RenderApi` to the render backend thread.
@@ -1076,6 +1112,12 @@ impl RenderApi {
     /// Returns the namespace ID used by this API object.
     pub fn get_namespace_id(&self) -> IdNamespace {
         self.namespace_id
+    }
+
+    /// Returns a clone of the API message sender for internal use
+    #[allow(unused)]
+    pub(crate) fn get_api_sender(&self) -> Sender<ApiMsg> {
+        self.api_sender.clone()
     }
 
     ///
@@ -1394,6 +1436,14 @@ impl RenderApi {
         self.send_message(msg);
     }
 
+    /// Get the current debug flags
+    pub fn get_debug_flags(&self) -> DebugFlags {
+        let (tx, rx) = unbounded_channel();
+        let msg = ApiMsg::DebugCommand(DebugCommand::GetDebugFlags(tx));
+        self.send_message(msg);
+        rx.recv().unwrap()
+    }
+
     /// Update the state of builtin debugging facilities.
     pub fn send_debug_cmd(&self, cmd: DebugCommand) {
         let msg = ApiMsg::DebugCommand(cmd);
@@ -1440,8 +1490,6 @@ pub struct MemoryReport {
     // CPU Memory.
     //
     pub clip_stores: usize,
-    pub gpu_cache_metadata: usize,
-    pub gpu_cache_cpu_mirror: usize,
     pub hit_testers: usize,
     pub fonts: usize,
     pub weak_fonts: usize,
@@ -1458,7 +1506,6 @@ pub struct MemoryReport {
     //
     // GPU memory.
     //
-    pub gpu_cache_textures: usize,
     pub vertex_data_textures: usize,
     pub render_target_textures: usize,
     pub picture_tile_textures: usize,

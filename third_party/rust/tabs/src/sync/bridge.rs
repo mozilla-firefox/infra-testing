@@ -140,7 +140,7 @@ mod tests {
     // A copy of the normal "engine" tests but which go via the bridge
     #[test]
     fn test_sync_via_bridge() {
-        env_logger::try_init().ok();
+        error_support::init_for_tests();
 
         let store = Arc::new(TabsStore::new_with_mem_path("test-bridge_incoming"));
 
@@ -263,8 +263,7 @@ mod tests {
         let ours = serde_json::from_str::<serde_json::Value>(&out[0]).unwrap();
         // As above, can't use `OutgoingEnvelope` as it doesn't Deserialize.
         // First, convert my_tabs from the local `RemoteTab` to the Sync specific `TabsRecord`
-        let expected_tabs: Vec<TabsRecordTab> =
-            my_tabs.into_iter().map(|t| t.to_record_tab()).collect();
+        let expected_tabs: Vec<TabsRecordTab> = my_tabs.into_iter().map(Into::into).collect();
         let expected = json!({
             "id": "my-device".to_string(),
             "payload": json!({
@@ -282,7 +281,7 @@ mod tests {
 
     #[test]
     fn test_sync_meta() {
-        env_logger::try_init().ok();
+        error_support::init_for_tests();
 
         let store = Arc::new(TabsStore::new_with_mem_path("test-meta"));
         let bridge = store.bridged_engine();

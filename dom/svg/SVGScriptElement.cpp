@@ -8,11 +8,11 @@
 
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/FetchPriority.h"
-#include "nsGkAtoms.h"
-#include "nsNetUtil.h"
-#include "nsContentUtils.h"
 #include "mozilla/dom/SVGScriptElementBinding.h"
+#include "nsContentUtils.h"
+#include "nsGkAtoms.h"
 #include "nsIScriptError.h"
+#include "nsNetUtil.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT_CHECK_PARSER(Script)
 
@@ -94,7 +94,8 @@ void SVGScriptElement::SetCrossOrigin(const nsAString& aCrossOrigin,
 }
 
 already_AddRefed<DOMSVGAnimatedString> SVGScriptElement::Href() {
-  return mStringAttributes[HREF].IsExplicitlySet()
+  return mStringAttributes[HREF].IsExplicitlySet() ||
+                 !mStringAttributes[XLINK_HREF].IsExplicitlySet()
              ? mStringAttributes[HREF].ToDOMAnimatedString(this)
              : mStringAttributes[XLINK_HREF].ToDOMAnimatedString(this);
 }
@@ -169,12 +170,10 @@ void SVGScriptElement::FreezeExecutionAttrs(const Document* aOwnerDoc) {
 
 //----------------------------------------------------------------------
 // ScriptElement methods
-
-bool SVGScriptElement::HasScriptContent() {
-  return (mFrozen ? mExternal
-                  : mStringAttributes[HREF].IsExplicitlySet() ||
-                        mStringAttributes[XLINK_HREF].IsExplicitlySet()) ||
-         nsContentUtils::HasNonEmptyTextContent(this);
+bool SVGScriptElement::HasExternalScriptContent() {
+  return mFrozen ? mExternal
+                 : (mStringAttributes[HREF].IsExplicitlySet() ||
+                    mStringAttributes[XLINK_HREF].IsExplicitlySet());
 }
 
 //----------------------------------------------------------------------
@@ -193,7 +192,7 @@ nsresult SVGScriptElement::BindToTree(BindContext& aContext, nsINode& aParent) {
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (IsInComposedDoc()) {
-    MaybeProcessScript();
+    MaybeProcessScript(nullptr /* aParser */);
   }
 
   return NS_OK;
@@ -203,10 +202,15 @@ bool SVGScriptElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
                                       const nsAString& aValue,
                                       nsIPrincipal* aMaybeScriptedPrincipal,
                                       nsAttrValue& aResult) {
-  if (aNamespaceID == kNameSpaceID_None &&
-      aAttribute == nsGkAtoms::crossorigin) {
-    ParseCORSValue(aValue, aResult);
-    return true;
+  if (aNamespaceID == kNameSpaceID_None) {
+    if (aAttribute == nsGkAtoms::crossorigin) {
+      ParseCORSValue(aValue, aResult);
+      return true;
+    }
+    if (aAttribute == nsGkAtoms::fetchpriority) {
+      ParseFetchPriority(aValue, aResult);
+      return true;
+    }
   }
 
   return SVGScriptElementBase::ParseAttribute(aNamespaceID, aAttribute, aValue,
@@ -217,9 +221,13 @@ CORSMode SVGScriptElement::GetCORSMode() const {
   return AttrValueToCORSMode(GetParsedAttr(nsGkAtoms::crossorigin));
 }
 
+void SVGScriptElement::GetFetchPriority(nsAString& aFetchPriority) const {
+  GetEnumAttr(nsGkAtoms::fetchpriority, kFetchPriorityAttributeValueAuto,
+              aFetchPriority);
+}
+
 FetchPriority SVGScriptElement::GetFetchPriority() const {
-  // <https://github.com/w3c/svgwg/issues/916>.
-  return FetchPriority::Auto;
+  return Element::GetFetchPriority();
 }
 
 }  // namespace mozilla::dom

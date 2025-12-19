@@ -14,11 +14,6 @@ const {
 Services.prefs.setBoolPref("devtools.debugger.remote-enabled", true);
 Services.prefs.setBoolPref("devtools.debugger.prompt-connection", false);
 
-SimpleTest.registerCleanupFunction(() => {
-  Services.prefs.clearUserPref("devtools.debugger.remote-enabled");
-  Services.prefs.clearUserPref("devtools.debugger.prompt-connection");
-});
-
 function assertTarget(target, url) {
   is(target.url, url);
   is(target.isBrowsingContext, true);
@@ -69,7 +64,7 @@ add_task(async function () {
   info("Test parent process");
   commands = await commandsFromURL(new URL("https://foo?type=process"));
   target = await commands.descriptorFront.getTarget();
-  const topWindow = Services.wm.getMostRecentWindow("navigator:browser");
+  const topWindow = Services.wm.getMostRecentBrowserWindow();
   assertTarget(target, topWindow.location.href);
   await commands.destroy();
 
@@ -125,7 +120,7 @@ async function testRemoteTCP() {
     new URL("https://foo?type=process&host=127.0.0.1&port=" + port)
   );
   const target = await commands.descriptorFront.getTarget();
-  const topWindow = Services.wm.getMostRecentWindow("navigator:browser");
+  const topWindow = Services.wm.getMostRecentBrowserWindow();
   assertTarget(target, topWindow.location.href);
 
   const settings = commands.client._transport.connectionSettings;
@@ -148,7 +143,7 @@ async function testRemoteWebSocket() {
     new URL("https://foo?type=process&host=127.0.0.1&port=" + port + "&ws=true")
   );
   const target = await commands.descriptorFront.getTarget();
-  const topWindow = Services.wm.getMostRecentWindow("navigator:browser");
+  const topWindow = Services.wm.getMostRecentBrowserWindow();
   assertTarget(target, topWindow.location.href);
 
   const settings = commands.client._transport.connectionSettings;

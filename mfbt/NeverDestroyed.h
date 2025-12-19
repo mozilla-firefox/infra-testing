@@ -26,8 +26,8 @@ namespace mozilla {
 // This type must only be used with static local members within a function,
 // which will be enforced by the clang static analysis.
 template <typename T>
-class MOZ_STATIC_LOCAL_CLASS MOZ_INHERIT_TYPE_ANNOTATIONS_FROM_TEMPLATE_ARGS
-    NeverDestroyed {
+class MOZ_STATIC_LOCAL_CLASS
+MOZ_INHERIT_TYPE_ANNOTATIONS_FROM_TEMPLATE_ARGS NeverDestroyed {
  public:
   static_assert(
       !std::is_trivially_destructible_v<T>,
@@ -47,7 +47,7 @@ class MOZ_STATIC_LOCAL_CLASS MOZ_INHERIT_TYPE_ANNOTATIONS_FROM_TEMPLATE_ARGS
   const T* operator->() const { return get(); }
   T* operator->() { return get(); }
 
-  const T* get() const { return reinterpret_cast<T*>(mStorage); }
+  const T* get() const { return reinterpret_cast<const T*>(mStorage); }
   T* get() { return reinterpret_cast<T*>(mStorage); }
 
   // Block copy & move constructor, as the type is not safe to copy.

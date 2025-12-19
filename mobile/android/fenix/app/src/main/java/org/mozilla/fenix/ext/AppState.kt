@@ -15,16 +15,8 @@ import org.mozilla.fenix.components.appstate.AppState
 import org.mozilla.fenix.home.blocklist.BlocklistHandler
 import org.mozilla.fenix.home.pocket.POCKET_STORIES_DEFAULT_CATEGORY_NAME
 import org.mozilla.fenix.home.pocket.PocketRecommendedStoriesCategory
-import org.mozilla.fenix.home.pocket.ui.PocketStory
 import org.mozilla.fenix.home.recentsyncedtabs.RecentSyncedTabState
 import org.mozilla.fenix.utils.Settings
-
-/**
- * Total count of all stories to show irrespective of their type.
- * This is an optimistic value taking into account that fewer than this stories may actually be available.
- */
-@VisibleForTesting
-internal const val POCKET_STORIES_TO_SHOW_COUNT = 8
 
 /**
  * Total count of content recommendations to show.
@@ -64,7 +56,7 @@ fun AppState.getFilteredStories(useSponsoredStoriesState: Boolean = true): List<
     return combineRecommendationsAndSponsoredContents(
         recommendations = recommendedStories,
         sponsoredStories = sponsoredStories,
-        totalLimit = POCKET_STORIES_TO_SHOW_COUNT,
+        totalLimit = CONTENT_RECOMMENDATIONS_TO_SHOW_COUNT,
     )
 }
 
@@ -79,7 +71,7 @@ private fun AppState.getFilteredRecommendedStories(): List<PocketRecommendedStor
                 .find { it.name == POCKET_STORIES_DEFAULT_CATEGORY_NAME }
                 ?.stories
                 ?.sortedBy { it.timesShown }
-                ?.take(POCKET_STORIES_TO_SHOW_COUNT) ?: emptyList()
+                ?.take(CONTENT_RECOMMENDATIONS_TO_SHOW_COUNT) ?: emptyList()
         }
         false -> {
             val oldestSortedCategories = recommendationState.pocketStoriesCategoriesSelections
@@ -92,7 +84,7 @@ private fun AppState.getFilteredRecommendedStories(): List<PocketRecommendedStor
 
             val filteredStoriesCount = getFilteredStoriesCount(
                 oldestSortedCategories,
-                POCKET_STORIES_TO_SHOW_COUNT,
+                CONTENT_RECOMMENDATIONS_TO_SHOW_COUNT,
             )
 
             oldestSortedCategories
@@ -100,7 +92,7 @@ private fun AppState.getFilteredRecommendedStories(): List<PocketRecommendedStor
                     category.stories
                         .sortedBy { it.timesShown }
                         .take(filteredStoriesCount[category.name]!!)
-                }.take(POCKET_STORIES_TO_SHOW_COUNT)
+                }.take(CONTENT_RECOMMENDATIONS_TO_SHOW_COUNT)
         }
     }
 }
@@ -153,7 +145,7 @@ fun AppState.getStories(useSponsoredStoriesState: Boolean = true): List<PocketSt
 internal fun combineRecommendationsAndSponsoredContents(
     recommendations: List<PocketStory>,
     sponsoredStories: List<PocketStory>,
-    totalLimit: Int = POCKET_STORIES_TO_SHOW_COUNT,
+    totalLimit: Int = CONTENT_RECOMMENDATIONS_TO_SHOW_COUNT,
     sponsoredContentsLimit: Int = POCKET_SPONSORED_STORIES_TO_SHOW_COUNT,
 ): List<PocketStory> {
     val recommendedStoriesToShow =

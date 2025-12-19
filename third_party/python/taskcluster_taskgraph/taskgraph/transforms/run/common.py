@@ -7,11 +7,10 @@ worker implementation they operate on, and take the same three parameters, for
 consistency.
 """
 
-import json
-from typing import Any, Dict, List, Union
+from typing import Any, Union
 
 from taskgraph.transforms.base import TransformConfig
-from taskgraph.util import path
+from taskgraph.util import json, path
 from taskgraph.util.caches import CACHES, get_checkout_dir
 from taskgraph.util.taskcluster import get_artifact_prefix
 
@@ -83,7 +82,7 @@ def generic_worker_add_artifacts(config, task, taskdesc):
     add_artifacts(config, task, taskdesc, path=get_artifact_prefix(taskdesc))
 
 
-def support_vcs_checkout(config, task, taskdesc, repo_configs, sparse=False):
+def support_vcs_checkout(config, task, taskdesc, repo_configs):
     """Update a task with parameters to enable a VCS checkout.
 
     This can only be used with ``run-task`` tasks, as the cache name is
@@ -140,7 +139,7 @@ def support_vcs_checkout(config, task, taskdesc, repo_configs, sparse=False):
 
 def should_use_cache(
     name: str,
-    use_caches: Union[bool, List[str]],
+    use_caches: Union[bool, list[str]],
     has_checkout: bool,
 ) -> bool:
     # Never enable the checkout cache if there's no clone. This allows
@@ -156,7 +155,7 @@ def should_use_cache(
 
 
 def support_caches(
-    config: TransformConfig, task: Dict[str, Any], taskdesc: Dict[str, Any]
+    config: TransformConfig, task: dict[str, Any], taskdesc: dict[str, Any]
 ):
     """Add caches for common tools."""
     run = task["run"]
@@ -171,11 +170,8 @@ def support_caches(
     if use_caches is None:
         # Use project default values for filtering caches, default to
         # checkout cache if no selection is specified.
-        use_caches = (
-            config.graph_config.get("taskgraph", {})
-            .get("run", {})
-            .get("use-caches", ["checkout"])
-        )
+        taskgraph_config = config.graph_config.get("taskgraph") or {}
+        use_caches = taskgraph_config.get("run", {}).get("use-caches", ["checkout"])
 
     for name, cache_cfg in CACHES.items():
         if not should_use_cache(name, use_caches, run["checkout"]):

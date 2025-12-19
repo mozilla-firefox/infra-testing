@@ -4,8 +4,8 @@
 
 package org.mozilla.fenix.browser.tabstrip
 
+import android.annotation.SuppressLint
 import android.graphics.Bitmap
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -28,9 +28,10 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.systemGestureExclusion
-import androidx.compose.material.Icon
-import androidx.compose.material.IconButton
-import androidx.compose.material.Text
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -61,12 +62,11 @@ import mozilla.components.browser.state.action.TabListAction
 import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.compose.base.modifier.thenConditional
+import mozilla.components.concept.engine.utils.ABOUT_HOME_URL
 import mozilla.components.feature.tabs.TabsUseCases
 import mozilla.components.lib.state.ext.observeAsState
 import org.mozilla.fenix.R
-import org.mozilla.fenix.browser.browsingmode.BrowsingMode
 import org.mozilla.fenix.components.AppStore
-import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.components
 import org.mozilla.fenix.compose.Favicon
 import org.mozilla.fenix.compose.HorizontalFadingEdgeBox
@@ -76,6 +76,8 @@ import org.mozilla.fenix.tabstray.browser.compose.createListReorderState
 import org.mozilla.fenix.tabstray.browser.compose.detectListPressAndDrag
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.theme.Theme
+import mozilla.components.ui.icons.R as iconsR
+import org.mozilla.fenix.GleanMetrics.TabStrip as TabStripMetrics
 
 private val minTabStripItemWidth = 130.dp
 private val maxTabStripItemWidth = 280.dp
@@ -89,7 +91,8 @@ private val tabStripHorizontalPadding = 16.dp
 /**
  * Top level composable for the tabs strip.
  *
- * @param onHome Whether or not the tabs strip is in the home screen.
+ * @param isSelectDisabled Whether or not the tabs can be shown as selected.
+ * @param showActionButtons Show the action buttons in the tabs strip when true.
  * @param browserStore The [BrowserStore] instance used to observe tabs state.
  * @param appStore The [AppStore] instance used to observe browsing mode.
  * @param tabsUseCases The [TabsUseCases] instance to perform tab actions.
@@ -97,31 +100,27 @@ private val tabStripHorizontalPadding = 16.dp
  * @param onCloseTabClick Invoked when a tab is closed.
  * @param onLastTabClose Invoked when the last remaining open tab is closed.
  * @param onSelectedTabClick Invoked when a tab is selected.
- * @param onPrivateModeToggleClick Invoked when the private mode toggle button is clicked.
  * @param onTabCounterClick Invoked when tab counter is clicked.
  */
 @Composable
 fun TabStrip(
-    onHome: Boolean = false,
+    isSelectDisabled: Boolean = false,
+    showActionButtons: Boolean = true,
     browserStore: BrowserStore = components.core.store,
     appStore: AppStore = components.appStore,
     tabsUseCases: TabsUseCases = components.useCases.tabsUseCases,
     onAddTabClick: () -> Unit,
     onCloseTabClick: (isPrivate: Boolean) -> Unit,
     onLastTabClose: (isPrivate: Boolean) -> Unit,
-    onSelectedTabClick: () -> Unit,
-    onPrivateModeToggleClick: (mode: BrowsingMode) -> Unit,
+    onSelectedTabClick: (url: String) -> Unit,
     onTabCounterClick: () -> Unit,
 ) {
     val isPossiblyPrivateMode by appStore.observeAsState(false) { it.mode.isPrivate }
     val state by browserStore.observeAsState(TabStripState.initial) {
         it.toTabStripState(
-            isSelectDisabled = onHome,
+            isSelectDisabled = isSelectDisabled,
             isPossiblyPrivateMode = isPossiblyPrivateMode,
             addTab = onAddTabClick,
-            toggleBrowsingMode = { isPrivate ->
-                toggleBrowsingMode(isPrivate, onPrivateModeToggleClick, appStore)
-            },
             closeTab = { isPrivate, numberOfTabs ->
                 it.selectedTabId?.let { selectedTabId ->
                     closeTab(
@@ -139,9 +138,10 @@ fun TabStrip(
 
     TabStripContent(
         state = state,
-        onAddTabClick = onAddTabClick,
-        onPrivateModeToggleClick = {
-            toggleBrowsingMode(state.isPrivateMode, onPrivateModeToggleClick, appStore)
+        showActionButtons = showActionButtons,
+        onAddTabClick = {
+            onAddTabClick()
+            TabStripMetrics.newTabTapped.record()
         },
         onCloseTabClick = { tabId, isPrivate ->
             closeTab(
@@ -153,9 +153,10 @@ fun TabStrip(
                 onCloseTabClick = onCloseTabClick,
             )
         },
-        onSelectedTabClick = {
-            tabsUseCases.selectTab(it)
-            onSelectedTabClick()
+        onSelectedTabClick = { tabId, url ->
+            tabsUseCases.selectTab(tabId)
+            onSelectedTabClick(url)
+            TabStripMetrics.selectTab.record()
         },
         onMove = { tabId, targetId, placeAfter ->
             if (tabId != targetId) {
@@ -169,10 +170,10 @@ fun TabStrip(
 @Composable
 private fun TabStripContent(
     state: TabStripState,
+    showActionButtons: Boolean = true,
     onAddTabClick: () -> Unit,
-    onPrivateModeToggleClick: () -> Unit,
     onCloseTabClick: (id: String, isPrivate: Boolean) -> Unit,
-    onSelectedTabClick: (id: String) -> Unit,
+    onSelectedTabClick: (tabId: String, url: String) -> Unit,
     onMove: (tabId: String, targetId: String, placeAfter: Boolean) -> Unit,
     onTabCounterClick: () -> Unit,
 ) {
@@ -190,20 +191,6 @@ private fun TabStripContent(
             modifier = Modifier.weight(1f, fill = false),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(
-                onClick = onPrivateModeToggleClick,
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.mozac_ic_private_mode_24),
-                    tint = FirefoxTheme.colors.iconPrimary,
-                    contentDescription = if (state.isPrivateMode) {
-                        stringResource(R.string.content_description_disable_private_browsing_button)
-                    } else {
-                        stringResource(R.string.content_description_private_browsing_button)
-                    },
-                )
-            }
-
             TabsList(
                 state = state,
                 modifier = Modifier.weight(1f, fill = false),
@@ -212,32 +199,38 @@ private fun TabStripContent(
                 onMove = onMove,
             )
 
-            IconButton(onClick = onAddTabClick) {
-                Icon(
-                    painter = painterResource(R.drawable.mozac_ic_plus_24),
-                    tint = FirefoxTheme.colors.iconPrimary,
-                    contentDescription = stringResource(R.string.add_tab),
-                )
+            if (showActionButtons) {
+                IconButton(onClick = onAddTabClick) {
+                    Icon(
+                        painter = painterResource(iconsR.drawable.mozac_ic_plus_24),
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        contentDescription = stringResource(R.string.add_tab),
+                    )
+                }
             }
         }
 
-        TabStripTabCounterButton(
-            tabCount = state.tabs.size,
-            size = dimensionResource(R.dimen.tab_strip_height),
-            menuItems = state.menuItems,
-            privacyBadgeVisible = state.isPrivateMode,
-            onClick = onTabCounterClick,
-        )
+        if (showActionButtons) {
+            TabStripTabCounterButton(
+                tabCount = state.tabs.size,
+                size = dimensionResource(R.dimen.tab_strip_height),
+                menuItems = state.menuItems,
+                privacyBadgeVisible = state.isPrivateMode,
+                onClick = onTabCounterClick,
+            )
+        }
     }
 }
 
+// There is a bug with `BoxWithConstraints` where it flags the `BoxWithConstraintsScope` being unused
+// even though it's being used implicitly below via the `maxWidth` property of `BoxWithConstraintsScope`.
+@SuppressLint("UnusedBoxWithConstraintsScope")
 @Composable
-@OptIn(ExperimentalFoundationApi::class)
 private fun TabsList(
     state: TabStripState,
     modifier: Modifier = Modifier,
     onCloseTabClick: (id: String, isPrivate: Boolean) -> Unit,
-    onSelectedTabClick: (id: String) -> Unit,
+    onSelectedTabClick: (tabId: String, url: String) -> Unit,
     onMove: (tabId: String, targetId: String, placeAfter: Boolean) -> Unit,
 ) {
     BoxWithConstraints(modifier = modifier) {
@@ -328,12 +321,12 @@ private fun TabsList(
 }
 
 @Composable
-@Suppress("LongMethod")
+@Suppress("LongMethod", "CognitiveComplexMethod")
 private fun TabItem(
     state: TabStripItem,
     modifier: Modifier = Modifier,
     onCloseTabClick: (id: String, isPrivate: Boolean) -> Unit,
-    onSelectedTabClick: (id: String) -> Unit,
+    onSelectedTabClick: (id: String, url: String) -> Unit,
 ) {
     val backgroundColor = if (state.isSelected) {
         FirefoxTheme.colors.tabActive
@@ -354,7 +347,7 @@ private fun TabItem(
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .clickable { onSelectedTabClick(state.id) }
+                .clickable { onSelectedTabClick(state.id, state.url) }
                 .semantics {
                     role = Role.Tab
                     selected = state.isSelected
@@ -399,7 +392,7 @@ private fun TabItem(
                     Text(
                         text = state.title,
                         modifier = Modifier.align(Alignment.CenterStart),
-                        color = FirefoxTheme.colors.textPrimary,
+                        color = MaterialTheme.colorScheme.onSurface,
                         softWrap = false,
                         maxLines = 1,
                         style = FirefoxTheme.typography.subtitle2,
@@ -417,11 +410,11 @@ private fun TabItem(
                     },
                 ) {
                     Icon(
-                        painter = painterResource(R.drawable.mozac_ic_cross_20),
+                        painter = painterResource(iconsR.drawable.mozac_ic_cross_20),
                         tint = if (state.isSelected) {
-                            FirefoxTheme.colors.iconPrimary
+                            MaterialTheme.colorScheme.onSurface
                         } else {
-                            FirefoxTheme.colors.iconSecondary
+                            MaterialTheme.colorScheme.onSurfaceVariant
                         },
                         contentDescription = stringResource(
                             id = R.string.close_tab_title,
@@ -455,6 +448,11 @@ private fun TabStripIcon(
                     .size(tabStripIconSize)
                     .clip(CircleShape),
             )
+        } else if (url == ABOUT_HOME_URL) {
+            Favicon(
+                imageResource = R.drawable.ic_firefox,
+                size = tabStripIconSize,
+            )
         } else {
             Favicon(
                 url = url,
@@ -477,21 +475,7 @@ private fun closeTab(
     }
     tabsUseCases.removeTab(tabId)
     onCloseTabClick(isPrivate)
-}
-
-/**
- * Invoking the callback is required so the caller can update the browsing mode in cases where
- * appStore.dispatch(AppAction.ModeChange(newMode)) is not enough. This bug is tracked here:
- * https://bugzilla.mozilla.org/show_bug.cgi?id=1923650
- */
-private fun toggleBrowsingMode(
-    isCurrentModePrivate: Boolean,
-    onPrivateModeToggleClick: (mode: BrowsingMode) -> Unit,
-    appStore: AppStore,
-) {
-    val newMode = BrowsingMode.fromBoolean(!isCurrentModePrivate)
-    onPrivateModeToggleClick(newMode)
-    appStore.dispatch(AppAction.ModeChange(newMode))
+    TabStripMetrics.closeTab.record()
 }
 
 private class TabUIStateParameterProvider : PreviewParameterProvider<TabStripState> {
@@ -586,9 +570,8 @@ private fun TabStripContentPreview(tabs: List<TabStripItem>) {
                 tabCounterMenuItems = emptyList(),
             ),
             onAddTabClick = {},
-            onPrivateModeToggleClick = {},
             onCloseTabClick = { _, _ -> },
-            onSelectedTabClick = {},
+            onSelectedTabClick = { _, _ -> },
             onMove = { _, _, _ -> },
             onTabCounterClick = {},
         )
@@ -620,7 +603,6 @@ private fun TabStripPreview() {
                 onLastTabClose = {},
                 onCloseTabClick = {},
                 onSelectedTabClick = {},
-                onPrivateModeToggleClick = {},
                 onTabCounterClick = {},
             )
         }

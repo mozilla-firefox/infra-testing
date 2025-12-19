@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-use crate::db::Sqlite3Extension;
+use crate::{db::Sqlite3Extension, util::i18n_cmp};
 use rusqlite::{Connection, Transaction};
 use sql_support::{
     open_database::{self, ConnectionInitializer},
@@ -18,12 +18,12 @@ use sql_support::{
 ///  2. Add a migration from the old version to the new version in
 ///     [`SuggestConnectionInitializer::upgrade_from`].
 ///     a. If suggestions should be re-ingested after the migration, call `clear_database()` inside
-///        the migration.
+///     the migration.
 ///  3. If the migration adds any tables, delete their their rows in
 ///     `clear_database()` by adding their names to `conditional_tables`, unless
 ///     they are cleared via a deletion trigger or there's some other good
 ///     reason not to do so.
-pub const VERSION: u32 = 37;
+pub const VERSION: u32 = 44;
 
 /// The current Suggest database schema.
 pub const SQL: &str = "
@@ -48,16 +48,24 @@ CREATE TABLE keywords(
     PRIMARY KEY (keyword, suggestion_id)
 ) WITHOUT ROWID;
 
--- Metrics for the `keywords` table per provider. Not all providers use or
--- update it. If you modify an existing provider to use this, you will need to
--- populate this table somehow with metrics for the provider's existing
--- keywords, for example as part of a schema migration.
+CREATE TABLE keywords_i18n(
+    keyword TEXT NOT NULL COLLATE i18n_collate,
+    suggestion_id INTEGER NOT NULL,
+    full_keyword_id INTEGER NULL,
+    rank INTEGER NOT NULL,
+    PRIMARY KEY (keyword, suggestion_id)
+) WITHOUT ROWID;
+
+-- Keywords metrics per record ID and type. Currently we only record metrics for
+-- a small number of record types.
 CREATE TABLE keywords_metrics(
     record_id TEXT NOT NULL PRIMARY KEY,
-    provider INTEGER NOT NULL,
-    max_length INTEGER NOT NULL,
+    record_type TEXT NOT NULL,
+    max_len INTEGER NOT NULL,
     max_word_count INTEGER NOT NULL
 ) WITHOUT ROWID;
+
+CREATE INDEX keywords_metrics_record_type ON keywords_metrics(record_type);
 
 -- full keywords are what we display to the user when a (partial) keyword matches
 CREATE TABLE full_keywords(
@@ -76,6 +84,12 @@ CREATE TABLE prefix_keywords(
 ) WITHOUT ROWID;
 
 CREATE UNIQUE INDEX keywords_suggestion_id_rank ON keywords(suggestion_id, rank);
+
+CREATE TABLE serp_categories(
+    suggestion_id INTEGER NOT NULL,
+    category INTEGER NOT NULL,
+    PRIMARY KEY (suggestion_id, category)
+) WITHOUT ROWID;
 
 CREATE TABLE suggestions(
     id INTEGER PRIMARY KEY,
@@ -161,6 +175,7 @@ CREATE TABLE icons(
 
 CREATE TABLE yelp_subjects(
     keyword TEXT PRIMARY KEY,
+    subject_type INTEGER NOT NULL DEFAULT 0,
     record_id TEXT NOT NULL
 ) WITHOUT ROWID;
 
@@ -195,28 +210,44 @@ CREATE TABLE geonames(
     id INTEGER PRIMARY KEY,
     record_id TEXT NOT NULL,
     name TEXT NOT NULL,
-    latitude REAL NOT NULL,
-    longitude REAL NOT NULL,
     feature_class TEXT NOT NULL,
     feature_code TEXT NOT NULL,
     country_code TEXT NOT NULL,
-    admin1_code TEXT NOT NULL,
-    population INTEGER NOT NULL
+    admin1_code TEXT,
+    admin2_code TEXT,
+    admin3_code TEXT,
+    admin4_code TEXT,
+    population INTEGER,
+    latitude TEXT,
+    longitude TEXT
 );
-CREATE INDEX geonames_feature_class ON geonames(feature_class);
-CREATE INDEX geonames_feature_code ON geonames(feature_code);
 
+-- `language` is a lowercase ISO 639 code: 'en', 'de', 'fr', etc. It can also be
+-- a geonames pseudo-language like 'abbr' for abbreviations and 'iata' for
+-- airport codes. It will be null for names derived from a geoname's primary
+-- name (see `Geoname::name` and `Geoname::ascii_name`).
+-- `geoname_id` is not defined as a foreign key because the main geonames
+-- records are not guaranteed to be ingested before alternates records.
 CREATE TABLE geonames_alternates(
-    name TEXT NOT NULL,
+    id INTEGER PRIMARY KEY,
+    record_id TEXT NOT NULL,
     geoname_id INTEGER NOT NULL,
-    -- The value of the `iso_language` field for the alternate. This will be
-    -- null for the alternate we artificially create for the `name` in the
-    -- corresponding geoname record.
-    iso_language TEXT,
-    PRIMARY KEY (name, geoname_id),
-    FOREIGN KEY(geoname_id) REFERENCES geonames(id) ON DELETE CASCADE
-) WITHOUT ROWID;
-CREATE INDEX geonames_alternates_geoname_id ON geonames_alternates(geoname_id);
+    language TEXT,
+    name TEXT NOT NULL COLLATE geonames_collate,
+    is_preferred INTEGER,
+    is_short INTEGER
+);
+
+CREATE INDEX geonames_alternates_geoname_id_language
+    ON geonames_alternates(geoname_id, language);
+
+CREATE INDEX geonames_alternates_name
+    ON geonames_alternates(name);
+
+CREATE TRIGGER geonames_alternates_delete AFTER DELETE ON geonames BEGIN
+    DELETE FROM geonames_alternates
+    WHERE geoname_id = old.id;
+END;
 
 CREATE TABLE geonames_metrics(
     record_id TEXT NOT NULL PRIMARY KEY,
@@ -228,6 +259,12 @@ CREATE TABLE geonames_metrics(
 -- suggestion type.
 CREATE TABLE dismissed_suggestions (
     url TEXT PRIMARY KEY
+) WITHOUT ROWID;
+
+CREATE TABLE dismissed_dynamic_suggestions (
+    suggestion_type TEXT,
+    dismissal_key TEXT NOT NULL,
+    PRIMARY KEY(suggestion_type, dismissal_key)
 ) WITHOUT ROWID;
 ";
 
@@ -254,6 +291,16 @@ impl<'a> SuggestConnectionInitializer<'a> {
         }
         Ok(())
     }
+
+    fn create_custom_functions(&self, conn: &Connection) -> open_database::Result<()> {
+        // `geonames_collate` is deprecated, use `i18n_collate` instead. The
+        // collations are the same and ideally we'd remove `geonames_collate`,
+        // but then we'd need to recreate the geonames table in a migration, and
+        // it doesn't seem worth it.
+        conn.create_collation("geonames_collate", i18n_cmp)?;
+        conn.create_collation("i18n_collate", i18n_cmp)?;
+        Ok(())
+    }
 }
 
 impl ConnectionInitializer for SuggestConnectionInitializer<'_> {
@@ -265,7 +312,7 @@ impl ConnectionInitializer for SuggestConnectionInitializer<'_> {
         sql_support::setup_sqlite_defaults(conn)?;
         conn.execute("PRAGMA foreign_keys = ON", ())?;
         sql_support::debug_tools::define_debug_functions(conn)?;
-
+        self.create_custom_functions(conn)?;
         Ok(())
     }
 
@@ -275,6 +322,10 @@ impl ConnectionInitializer for SuggestConnectionInitializer<'_> {
     }
 
     fn upgrade_from(&self, tx: &Transaction<'_>, version: u32) -> open_database::Result<()> {
+        // Custom functions are per connection. `prepare` usually handles
+        // creating them but on upgrade it's not called before this method is.
+        self.create_custom_functions(tx)?;
+
         match version {
             1..=15 => {
                 // Treat databases with these older schema versions as corrupt,
@@ -293,13 +344,12 @@ impl ConnectionInitializer for SuggestConnectionInitializer<'_> {
                 Ok(())
             }
             17 => {
-                tx.execute(
+                tx.execute_batch(
                     "
                     DROP TABLE dismissed_suggestions;
                     CREATE TABLE dismissed_suggestions (
                         url TEXT PRIMARY KEY
                     ) WITHOUT ROWID;",
-                    (),
                 )?;
                 Ok(())
             }
@@ -647,6 +697,157 @@ impl ConnectionInitializer for SuggestConnectionInitializer<'_> {
                 tx.execute_batch("DROP TABLE IF EXISTS yelp_location_signs;")?;
                 Ok(())
             }
+            37 => {
+                clear_database(tx)?;
+                tx.execute_batch(
+                    "
+                    DROP TABLE yelp_subjects;
+                    CREATE TABLE yelp_subjects(
+                        keyword TEXT PRIMARY KEY,
+                        subject_type INTEGER NOT NULL DEFAULT 0,
+                        record_id TEXT NOT NULL
+                    ) WITHOUT ROWID;
+                    ",
+                )?;
+                Ok(())
+            }
+            38 => {
+                // This migration makes changes to geonames.
+                tx.execute_batch(
+                    r#"
+                    DROP INDEX geonames_alternates_geoname_id;
+                    DROP TABLE geonames_alternates;
+
+                    DROP INDEX geonames_feature_class;
+                    DROP INDEX geonames_feature_code;
+                    DROP TABLE geonames;
+
+                    CREATE TABLE geonames(
+                        id INTEGER PRIMARY KEY,
+                        record_id TEXT NOT NULL,
+                        name TEXT NOT NULL,
+                        feature_class TEXT NOT NULL,
+                        feature_code TEXT NOT NULL,
+                        country_code TEXT NOT NULL,
+                        admin1_code TEXT,
+                        admin2_code TEXT,
+                        admin3_code TEXT,
+                        admin4_code TEXT,
+                        population INTEGER,
+                        latitude TEXT,
+                        longitude TEXT
+                    );
+
+                    CREATE TABLE geonames_alternates(
+                        record_id TEXT NOT NULL,
+                        geoname_id INTEGER NOT NULL,
+                        language TEXT,
+                        name TEXT NOT NULL COLLATE geonames_collate,
+                        PRIMARY KEY(geoname_id, language, name)
+                    );
+                    CREATE INDEX geonames_alternates_geoname_id ON geonames_alternates(geoname_id);
+                    CREATE INDEX geonames_alternates_name ON geonames_alternates(name);
+
+                    CREATE TRIGGER geonames_alternates_delete AFTER DELETE ON geonames BEGIN
+                        DELETE FROM geonames_alternates
+                        WHERE geoname_id = old.id;
+                    END;
+                    "#,
+                )?;
+                Ok(())
+            }
+            39 => {
+                // This migration makes changes to keywords metrics.
+                clear_database(tx)?;
+                tx.execute_batch(
+                    r#"
+                    DROP TABLE keywords_metrics;
+                    CREATE TABLE keywords_metrics(
+                        record_id TEXT NOT NULL PRIMARY KEY,
+                        record_type TEXT NOT NULL,
+                        max_len INTEGER NOT NULL,
+                        max_word_count INTEGER NOT NULL
+                    ) WITHOUT ROWID;
+                    CREATE INDEX keywords_metrics_record_type ON keywords_metrics(record_type);
+                    "#,
+                )?;
+                Ok(())
+            }
+            40 => {
+                // This migration makes changes to geonames.
+                clear_database(tx)?;
+                tx.execute_batch(
+                    r#"
+                    DROP INDEX geonames_alternates_geoname_id;
+                    DROP INDEX geonames_alternates_name;
+                    DROP TABLE geonames_alternates;
+
+                    CREATE TABLE geonames_alternates(
+                        id INTEGER PRIMARY KEY,
+                        record_id TEXT NOT NULL,
+                        geoname_id INTEGER NOT NULL,
+                        language TEXT,
+                        name TEXT NOT NULL COLLATE geonames_collate,
+                        is_preferred INTEGER,
+                        is_short INTEGER
+                    );
+                    CREATE INDEX geonames_alternates_geoname_id_language
+                        ON geonames_alternates(geoname_id, language);
+                    CREATE INDEX geonames_alternates_name
+                        ON geonames_alternates(name);
+                    "#,
+                )?;
+                Ok(())
+            }
+            41 => {
+                // This migration introduces the `keywords_i18n` table and makes
+                // changes to how keywords metrics are calculated. Clear the DB
+                // so that weather and geonames names are added to the new table
+                // and also so that keywords metrics are recalculated.
+                clear_database(tx)?;
+                tx.execute_batch(
+                    r#"
+                    CREATE TABLE keywords_i18n(
+                        keyword TEXT NOT NULL COLLATE i18n_collate,
+                        suggestion_id INTEGER NOT NULL,
+                        full_keyword_id INTEGER NULL,
+                        rank INTEGER NOT NULL,
+                        PRIMARY KEY (keyword, suggestion_id)
+                    ) WITHOUT ROWID;
+                    "#,
+                )?;
+                Ok(())
+            }
+            42 => {
+                clear_database(tx)?;
+                tx.execute_batch(
+                    r#"
+                    CREATE TABLE serp_categories(
+                        suggestion_id INTEGER NOT NULL,
+                        category INTEGER NOT NULL,
+                        PRIMARY KEY (suggestion_id, category)
+                    ) WITHOUT ROWID;
+                    "#,
+                )?;
+                Ok(())
+            }
+            43 => {
+                clear_database(tx)?;
+                tx.execute_batch(
+                    r#"
+                    CREATE TABLE dismissed_dynamic_suggestions (
+                        suggestion_type TEXT,
+                        dismissal_key TEXT NOT NULL,
+                        PRIMARY KEY(suggestion_type, dismissal_key)
+                    ) WITHOUT ROWID;
+
+                    INSERT INTO dismissed_dynamic_suggestions
+                    SELECT "vpn", url FROM dismissed_suggestions WHERE url = "vpn-suggestions";
+                    "#,
+                )?;
+                Ok(())
+            }
+
             _ => Err(open_database::Error::IncompatibleVersion(version)),
         }
     }
@@ -654,6 +855,9 @@ impl ConnectionInitializer for SuggestConnectionInitializer<'_> {
 
 /// Clears the database, removing all suggestions, icons, and metadata.
 pub fn clear_database(db: &Connection) -> rusqlite::Result<()> {
+    // If you update this, you probably need to update
+    // `SuggestDao::drop_suggestions` too!
+
     db.execute_batch(
         "
         DELETE FROM meta;
@@ -672,7 +876,9 @@ pub fn clear_database(db: &Connection) -> rusqlite::Result<()> {
         "geonames",
         "geonames_metrics",
         "ingested_records",
+        "keywords_i18n",
         "keywords_metrics",
+        "serp_categories",
     ];
     for t in conditional_tables {
         let table_exists = db.exists("SELECT 1 FROM sqlite_master WHERE name = ?", [t])?;
@@ -813,8 +1019,8 @@ PRAGMA user_version=16;
 
     /// Test that `clear_database()` works correctly during migrations.
     ///
-    /// TODO: This only checks `ingested_records` and `rs_cache` for now since
-    /// they're very important, but ideally this would test all tables.
+    /// TODO: This only checks `ingested_records` for now since it's very
+    /// important, but ideally this would test all tables.
     #[test]
     fn test_clear_database() -> anyhow::Result<()> {
         // Start with the v16 schema.
@@ -839,7 +1045,7 @@ PRAGMA user_version=16;
         // `ingested_records` should be empty.
         let conn = db_file.open();
         assert_eq!(
-            conn.query_one::<i32>("SELECT count(*) FROM ingested_records")?,
+            conn.conn_ext_query_one::<i32>("SELECT count(*) FROM ingested_records")?,
             0,
             "ingested_records should be empty"
         );
@@ -867,6 +1073,41 @@ PRAGMA user_version=16;
         db_file.upgrade_to(VERSION);
         db_file.assert_schema_matches_new_database();
 
+        Ok(())
+    }
+
+    /// Test if dynamic vpn suggestions are migrated into the
+    /// dismissed_dynamic_suggestions table during the migration to schema 44.
+    #[test]
+    fn test_migrate_vpn_dismissal() -> anyhow::Result<()> {
+        let db_file =
+            MigratedDatabaseFile::new(SuggestConnectionInitializer::default(), V16_SCHEMA);
+
+        // Upgrade to v43 (just before the migration) and insert the suggestion that should be migrated.
+        db_file.upgrade_to(43);
+        let conn = db_file.open();
+        conn.execute(
+            "INSERT INTO dismissed_suggestions VALUES (?)",
+            ("vpn-suggestions",),
+        )?;
+        conn.close().expect("Connection should be closed");
+        // Finish upgrading to the current version.
+        db_file.upgrade_to(VERSION);
+        db_file.assert_schema_matches_new_database();
+
+        // Check if the vpn suggestion was migrated.
+        let conn = db_file.open();
+        let mut stmt = conn.prepare("SELECT * FROM dismissed_dynamic_suggestions")?;
+        let mut rows = stmt.query([])?;
+        let row = rows.next()?.expect("Should have one row");
+        let suggestion_type: String = row.get(0)?;
+        assert_eq!(suggestion_type, "vpn", "Has correct suggestion_type");
+        let dismissal_key: String = row.get(1)?;
+        assert_eq!(
+            dismissal_key, "vpn-suggestions",
+            "Has correct suggestion_type"
+        );
+        assert!(rows.next()?.is_none(), "Should not have other rows");
         Ok(())
     }
 }

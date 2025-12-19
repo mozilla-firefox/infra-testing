@@ -84,6 +84,7 @@ const gLoggingPresets = {
       label: "about-logging-preset-networking-cookie-label",
       description: "about-logging-preset-networking-cookie-description",
     },
+    profilerPreset: "networking",
   },
   websocket: {
     modules:
@@ -92,6 +93,7 @@ const gLoggingPresets = {
       label: "about-logging-preset-networking-websocket-label",
       description: "about-logging-preset-networking-websocket-description",
     },
+    profilerPreset: "networking",
   },
   http3: {
     modules:
@@ -100,6 +102,7 @@ const gLoggingPresets = {
       label: "about-logging-preset-networking-http3-label",
       description: "about-logging-preset-networking-http3-description",
     },
+    profilerPreset: "networking",
   },
   "http3-upload-speed": {
     modules: "timestamp,neqo_transport::*:3",
@@ -108,10 +111,11 @@ const gLoggingPresets = {
       description:
         "about-logging-preset-networking-http3-upload-speed-description",
     },
+    profilerPreset: "networking",
   },
   "media-playback": {
     modules:
-      "HTMLMediaElement:4,HTMLMediaElementEvents:4,cubeb:5,PlatformDecoderModule:5,AudioSink:5,AudioSinkWrapper:5,MediaDecoderStateMachine:4,MediaDecoder:4,MediaFormatReader:5,GMP:5,EME:5,MediaSource:5,MediaSourceSamples:5,Autoplay:5,MFMediaEngine:5",
+      "HTMLMediaElement:4,HTMLMediaElementEvents:4,cubeb:5,PlatformDecoderModule:5,AudioSink:5,AudioSinkWrapper:5,MediaDecoderStateMachine:4,MediaDecoder:4,MediaFormatReader:5,GMP:5,EME:5,MediaSource:5,MediaSourceSamples:5,Autoplay:5,GVAutoplay:5,MFMediaEngine:5,FFmpegVideo:5,FFmpegAudio:5,FFmpegLib:4,VideoFrameContainer:5,CompositableTextureParent:5",
     l10nIds: {
       label: "about-logging-preset-media-playback-label",
       description: "about-logging-preset-media-playback-description",
@@ -124,7 +128,7 @@ const gLoggingPresets = {
   */
   webrtc: {
     modules:
-      "jsep:5,sdp:5,signaling:5,mtransport:5,nicer:5,RTCRtpReceiver:5,RTCRtpSender:5,RTCDMTFSender:5,WebrtcTCPSocket:5,CamerasChild:5,CamerasParent:5,VideoEngine:5,ShmemPool:5,TabShare:5,MediaChild:5,MediaParent:5,MediaManager:5,MediaTrackGraph:5,cubeb:5,MediaStream:5,MediaStreamTrack:5,DriftCompensator:5,ForwardInputTrack:5,MediaRecorder:5,MediaEncoder:5,TrackEncoder:5,VP8TrackEncoder:5,Muxer:5,GetUserMedia:5,MediaPipeline:5,WebAudioAPI:5,webrtc_trace:5,RTCRtpTransceiver:5,ForwardedInputTrack:5,HTMLMediaElement:5,HTMLMediaElementEvents:5",
+      "jsep:5,sdp:5,signaling:5,mtransport:5,nicer:5,usrsctp:5,RTCRtpReceiver:5,RTCRtpSender:5,RTCDMTFSender:5,DataChannel:5,WebrtcTCPSocket:5,CamerasChild:5,CamerasParent:5,VideoEngine:5,ShmemPool:5,TabShare:5,MediaChild:5,MediaParent:5,MediaManager:5,MediaTrackGraph:5,cubeb:5,MediaStream:5,MediaStreamTrack:5,DriftCompensator:5,ForwardInputTrack:5,MediaRecorder:5,MediaEncoder:5,TrackEncoder:5,VP8TrackEncoder:5,Muxer:5,GetUserMedia:5,MediaPipeline:5,WebAudioAPI:5,webrtc_trace:5,RTCRtpTransceiver:5,ForwardedInputTrack:5,HTMLMediaElement:5,HTMLMediaElementEvents:5",
     l10nIds: {
       label: "about-logging-preset-webrtc-label",
       description: "about-logging-preset-webrtc-description",
@@ -133,7 +137,7 @@ const gLoggingPresets = {
   },
   webcodecs: {
     modules:
-      "WebCodecs:5,PlatformDecoderModule:5,PlatformEncoderModule:5,MediaDecoder:5,FFmpegVideo:5,FFmpegAudio:5,GMP:5,ImageUtils:5",
+      "WebCodecs:5,PlatformDecoderModule:5,PlatformEncoderModule:5,MediaDecoder:5,FFmpegVideo:5,FFmpegAudio:5,FFmpegLib:4,GMP:5,ImageUtils:5",
     l10nIds: {
       label: "about-logging-preset-webcodecs-label",
       description: "about-logging-preset-webcodecs-description",
@@ -158,6 +162,22 @@ const gLoggingPresets = {
     // The graphics profiler preset enables the threads we want but loses the screenshots.
     // We could add an extra preset for that if we miss it.
     profilerPreset: "graphics",
+  },
+  ml: {
+    modules:
+      "GeckoMLEngineParent:4,GeckoMLEngineChild:4,GeckoMLUtils:4,GeckoMLUtils:4,GeckoMLModelHub:4,GeckoMLONNXPipeline:4,GeckoMLOPFS:4,GeckoMLEmbeddingsGenerator:4,GeckoML:4,GeckoMLONNXNative:4",
+    l10nIds: {
+      label: "about-logging-preset-ml-label",
+      description: "about-logging-preset-ml-description",
+    },
+    profilerPreset: "ml",
+  },
+  webcompat: {
+    modules: "console:5,PageMessages:5",
+    l10nIds: {
+      label: "about-logging-preset-web-compat-label",
+      description: "about-logging-preset-web-compat-description",
+    },
   },
   ...gOsSpecificLoggingPresets,
   custom: {
@@ -252,9 +272,11 @@ function updateLoggingOutputType(profilerOutputType) {
       }
       // hide options related to file output for clarity
       $("#log-file-configuration").hidden = true;
+      $("#with-javascript-tracing-checkbox").disabled = false;
       break;
     case "file":
       $("#with-profiler-stacks-checkbox").disabled = true;
+      $("#with-javascript-tracing-checkbox").disabled = true;
       $("#log-file-configuration").hidden = false;
       $("#no-log-file").hidden = !!$("#current-log-file").innerText.length;
       break;
@@ -295,6 +317,49 @@ class ParseError extends Error {
   value;
 }
 
+// Returns a URL from the current state of the page
+function serializeState() {
+  const params = new URLSearchParams();
+
+  const logModules = $("#log-modules")?.value;
+  const dropdown = $("#logging-preset-dropdown")?.value;
+  const outputType = $("[name=logging-output]:checked")?.value;
+  const threads = $("#threads")?.value;
+  const profilerPreset = $("#profiler-preset-dropdown")?.value;
+  const profilerStacks = $("#with-profiler-stacks-checkbox")?.checked;
+  const javascriptTracing = $("#with-javascript-tracing-checkbox")?.checked;
+
+  if (logModules && logModules.trim()) {
+    params.set("modules", logModules.trim());
+  }
+
+  if (dropdown && dropdown !== "custom") {
+    params.set("preset", dropdown);
+  }
+
+  if (outputType === "profiler" || outputType === "file") {
+    params.set("output", outputType);
+  }
+
+  if (threads && threads.trim()) {
+    params.set("threads", threads.trim());
+  }
+
+  if (profilerPreset && profilerPreset !== "none") {
+    params.set("profiler-preset", profilerPreset);
+  }
+
+  if (profilerStacks) {
+    params.set("profilerstacks", "");
+  }
+
+  if (javascriptTracing) {
+    params.set("javascriptTracing", "");
+  }
+
+  return `about:logging?${params.toString()}`;
+}
+
 function parseURL() {
   let options = new URL(document.location.href).searchParams;
 
@@ -307,7 +372,8 @@ function parseURL() {
     loggingPresetOverriden = null,
     threadsOverriden = null,
     profilerPresetOverriden = null,
-    profilerStacksOverriden = null;
+    profilerStacksOverriden = null,
+    javascriptTracingOverriden = null;
   try {
     for (let [k, v] of options) {
       switch (k) {
@@ -341,6 +407,9 @@ function parseURL() {
           break;
         case "profilerstacks":
           profilerStacksOverriden = true;
+          break;
+        case "javascriptTracing":
+          javascriptTracingOverriden = true;
           break;
         default:
           throw new ParseError("about-logging-unknown-option", k, v);
@@ -400,6 +469,13 @@ function parseURL() {
     gLoggingSettings.profilerStacks = true;
   }
 
+  if (javascriptTracingOverriden) {
+    const checkbox = $("#with-javascript-tracing-checkbox");
+    checkbox.disabled = true;
+    someElementsDisabled = true;
+    Services.prefs.setBoolPref("logging.config.javascriptTracing", true);
+  }
+
   if (loggingPresetOverriden) {
     gLoggingSettings.loggingPreset = loggingPresetOverriden;
   }
@@ -411,6 +487,16 @@ function parseURL() {
   }
 
   $("#some-elements-unavailable").hidden = !someElementsDisabled;
+}
+
+async function copyAsURL() {
+  let url = serializeState();
+  await navigator.clipboard.writeText(url);
+  const toast = $("#toast-copied");
+  toast.classList.add("show");
+  setTimeout(() => {
+    toast.classList.remove("show");
+  }, 2000);
 }
 
 let gInited = false;
@@ -437,6 +523,22 @@ function init() {
   let toggleLoggingButton = $("#toggle-logging-button");
   toggleLoggingButton.addEventListener("click", startStopLogging);
 
+  $("#copy-as-url").onclick = copyAsURL;
+
+  function openMenu(event) {
+    if (
+      event.type == "mousedown" ||
+      event.inputSource == MouseEvent.MOZ_SOURCE_KEYBOARD ||
+      !event.detail
+    ) {
+      document.querySelector("panel-list").toggle(event);
+    }
+  }
+
+  let menuButton = $("#open-menu-button");
+  menuButton.addEventListener("mousedown", openMenu);
+  menuButton.addEventListener("click", openMenu);
+
   $$("input[type=radio]").forEach(radio => {
     radio.onchange = e => {
       updateLoggingOutputType(e.target.value);
@@ -451,6 +553,13 @@ function init() {
     updateLogModules();
   });
 
+  $("#with-javascript-tracing-checkbox").addEventListener("change", e => {
+    Services.prefs.setBoolPref(
+      "logging.config.javascriptTracing",
+      e.target.checked
+    );
+  });
+
   let loggingOutputType = Services.prefs.getCharPref(
     "logging.config.output_type",
     "profiler"
@@ -461,6 +570,11 @@ function init() {
 
   $("#with-profiler-stacks-checkbox").checked = Services.prefs.getBoolPref(
     "logging.config.profilerstacks",
+    false
+  );
+
+  $("#with-javascript-tracing-checkbox").checked = Services.prefs.getBoolPref(
+    "logging.config.javascriptTracing",
     false
   );
 
@@ -501,6 +615,21 @@ function init() {
   ) {
     $("#buttons-disabled").hidden = false;
     toggleLoggingButton.disabled = true;
+  }
+
+  // Initialize the uploaded profiles manager if profile uploading is enabled
+  const shouldUpload = Services.prefs.getBoolPref(
+    "toolkit.aboutLogging.uploadProfileToCloud",
+    false
+  );
+  if (shouldUpload) {
+    import("chrome://global/content/aboutLogging/uploadedProfilesManager.mjs")
+      .then(({ UploadedProfilesManager }) => {
+        new UploadedProfilesManager();
+      })
+      .catch(error => {
+        console.error("Error initializing uploaded profiles manager:", error);
+      });
   }
 }
 
@@ -746,11 +875,14 @@ function startLogging() {
       const profilerPreset =
         gLoggingSettings.profilerPreset ??
         gLoggingPresets[gLoggingSettings.loggingPreset].profilerPreset;
-      lazy.ProfilerPrefsPresets.changePreset(
-        "aboutlogging",
-        profilerPreset,
-        supportedFeatures
-      );
+      // Some about:logging presets don't have an associated profiler preset.
+      if (profilerPreset) {
+        lazy.ProfilerPrefsPresets.changePreset(
+          "aboutlogging",
+          profilerPreset,
+          supportedFeatures
+        );
+      }
     } else {
       // a baseline set of threads, and possibly others, overriden by the URL
       lazy.ProfilerPrefsPresets.changePreset(
@@ -773,6 +905,10 @@ function startLogging() {
       if (gLoggingSettings.profilerThreads.includes("cubeb")) {
         features.push("audiocallbacktracing");
       }
+    }
+    if (Services.prefs.getBoolPref("logging.config.javascriptTracing", false)) {
+      dump(" add tracing\n");
+      features.push("tracing");
     }
 
     maybeEnsureButtonInNavbar();

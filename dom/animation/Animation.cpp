@@ -6,30 +6,30 @@
 
 #include "Animation.h"
 
-#include "mozilla/Likely.h"
-#include "nsIFrame.h"
 #include "AnimationUtils.h"
+#include "ScrollTimelineAnimationTracker.h"
 #include "mozAutoDocUpdate.h"
+#include "mozilla/AnimationEventDispatcher.h"
+#include "mozilla/AnimationTarget.h"
+#include "mozilla/AutoRestore.h"
+#include "mozilla/CycleCollectedJSContext.h"
+#include "mozilla/DeclarationBlock.h"
+#include "mozilla/Likely.h"
+#include "mozilla/Maybe.h"  // For Maybe
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/AnimationBinding.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/DocumentTimeline.h"
 #include "mozilla/dom/MutationObservers.h"
 #include "mozilla/dom/Promise.h"
-#include "mozilla/AnimationEventDispatcher.h"
-#include "mozilla/AnimationTarget.h"
-#include "mozilla/AutoRestore.h"
-#include "mozilla/CycleCollectedJSContext.h"
-#include "mozilla/DeclarationBlock.h"
-#include "mozilla/Maybe.h"  // For Maybe
-#include "mozilla/StaticPrefs_dom.h"
 #include "nsAnimationManager.h"  // For CSSAnimation
 #include "nsComputedDOMStyle.h"
-#include "nsDOMMutationObserver.h"    // For nsAutoAnimationMutationBatch
 #include "nsDOMCSSAttrDeclaration.h"  // For nsDOMCSSAttributeDeclaration
+#include "nsDOMMutationObserver.h"    // For nsAutoAnimationMutationBatch
+#include "nsIFrame.h"
 #include "nsThreadUtils.h"  // For nsRunnableMethod and nsRevocableEventPtr
 #include "nsTransitionManager.h"  // For CSSTransition
-#include "ScrollTimelineAnimationTracker.h"
 
 namespace mozilla::dom {
 
@@ -458,6 +458,38 @@ void Animation::SetCurrentTimeNoUpdate(const TimeDuration& aSeekTime) {
   UpdateTiming(SeekFlag::DidSeek, SyncNotifyFlag::Async);
 }
 
+// https://drafts.csswg.org/web-animations-2/#the-overall-progress-of-an-animation
+Nullable<double> Animation::GetOverallProgress() const {
+  Nullable<double> result;
+  if (!mEffect) {
+    return result;
+  }
+  const Nullable<TimeDuration> currentTime = GetCurrentTimeAsDuration();
+  if (currentTime.IsNull()) {
+    return result;
+  }
+
+  const StickyTimeDuration endTime = EffectEnd();
+  if (endTime.IsZero()) {
+    if (currentTime.Value() < TimeDuration(0)) {
+      result.SetValue(0.0);
+    } else {
+      result.SetValue(1.0);
+    }
+    return result;
+  }
+
+  if (endTime == StickyTimeDuration::Forever()) {
+    result.SetValue(0.0);
+    return result;
+  }
+
+  auto overallProgress =
+      std::min(std::max(currentTime.Value() / endTime, 0.0), 1.0);
+  result.SetValue(overallProgress);
+  return result;
+}
+
 // https://drafts.csswg.org/web-animations/#set-the-playback-rate
 void Animation::SetPlaybackRate(double aPlaybackRate) {
   mPendingPlaybackRate.reset();
@@ -846,17 +878,6 @@ void Animation::CommitStyles(ErrorResult& aRv) {
     return;
   }
 
-  // Count how often the endpoint-inclusive behavior makes a difference so we
-  // can gauge if it is Web-compatible.
-  auto computedTimingWithEndpointIncluded =
-      keyframeEffect->GetComputedTiming(nullptr, EndpointBehavior::Inclusive);
-  auto computedTimingWithEndpointExcluded =
-      keyframeEffect->GetComputedTiming(nullptr, EndpointBehavior::Exclusive);
-  if (computedTimingWithEndpointIncluded.mProgress !=
-      computedTimingWithEndpointExcluded.mProgress) {
-    doc->SetUseCounter(eUseCounter_custom_CommitStylesNonFillingFinalValue);
-  }
-
   // Calling SetCSSDeclaration will trigger attribute setting code.
   // Start the update now so that the old rule doesn't get used
   // between when we mutate the declaration and when we set the new
@@ -884,7 +905,7 @@ void Animation::CommitStyles(ErrorResult& aRv) {
   // Set the animated styles
   bool changed = false;
   const AnimatedPropertyIDSet& properties = keyframeEffect->GetPropertySet();
-  for (const AnimatedPropertyID& property : properties) {
+  for (const CSSPropertyId& property : properties) {
     RefPtr<StyleAnimationValue> computedValue =
         Servo_AnimationValueMap_GetValue(animationValues.get(), &property)
             .Consume();

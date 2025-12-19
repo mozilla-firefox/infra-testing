@@ -27,15 +27,15 @@
   color: currentColor;
 
   .customize-close-button::part(button) {
-    background-image: url("chrome://global/skin/icons/close-12.svg");
+    background-image: url("resource://content-accessible/close-12.svg");
   }
 }
 
 .icon {
   -moz-context-properties: fill;
   fill: currentColor;
-  width: var(--icon-size-default);
-  height: var(--icon-size-default);
+  width: var(--icon-size);
+  height: var(--icon-size);
 }
 
 .extensions {
@@ -55,14 +55,14 @@
   padding-block: var(--space-medium);
   box-sizing: border-box;
 
-  &:not(:last-of-type){
+  &:not(:last-of-type) {
     border-bottom: 0.5px solid var(--panel-separator-color);
   }
 }
 
 .customize-extensions-heading {
   margin: 0;
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--heading-font-weight);
 }
 
 moz-fieldset {
@@ -87,10 +87,6 @@ moz-checkbox {
 
   > moz-checkbox:last-of-type {
     padding-block: 0;
-  }
-
-  &[disabled]::part(label) {
-    opacity: 0.5;
   }
 }
 

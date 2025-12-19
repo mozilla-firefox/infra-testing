@@ -5,15 +5,16 @@ import { INITIAL_STATE, reducers } from "common/Reducers.sys.mjs";
 import { CardSections } from "content-src/components/DiscoveryStreamComponents/CardSections/CardSections";
 import { combineReducers, createStore } from "redux";
 import { DSCard } from "../../../../../content-src/components/DiscoveryStreamComponents/DSCard/DSCard";
+import { FollowSectionButtonHighlight } from "../../../../../content-src/components/DiscoveryStreamComponents/FeatureHighlight/FollowSectionButtonHighlight";
+
 const PREF_SECTIONS_PERSONALIZATION_ENABLED =
   "discoverystream.sections.personalization.enabled";
 
 const DEFAULT_PROPS = {
   type: "CardGrid",
   firstVisibleTimeStamp: null,
-  is_collection: true,
-  spocMessageVariant: "",
   ctaButtonSponsors: [""],
+  anySectionsFollowed: false,
   data: {
     sections: [
       {
@@ -307,7 +308,7 @@ describe("<CardSections />", () => {
     button.simulate("click", {});
 
     assert.deepEqual(dispatch.getCall(0).firstArg, {
-      type: "SECTION_PERSONALIZATION_UPDATE",
+      type: "SECTION_PERSONALIZATION_SET",
       data: {
         section_key_2: {
           isFollowed: true,
@@ -343,7 +344,7 @@ describe("<CardSections />", () => {
     button.simulate("click", {});
 
     assert.calledWith(dispatch.getCall(2), {
-      type: "SECTION_PERSONALIZATION_UPDATE",
+      type: "SECTION_PERSONALIZATION_SET",
       data: {},
       meta: {
         from: "ActivityStream:Content",
@@ -363,6 +364,181 @@ describe("<CardSections />", () => {
         to: "ActivityStream:Main",
         skipLocal: true,
       },
+    });
+  });
+
+  it("should render <FollowSectionButtonHighlight> when conditions match", () => {
+    const fakeMessageData = {
+      content: {
+        messageType: "FollowSectionButtonHighlight",
+      },
+    };
+
+    const layout = {
+      title: "layout_name",
+      responsiveLayouts: [
+        {
+          columnCount: 1,
+          tiles: [{ size: "large", position: 0, hasExcerpt: true }],
+        },
+      ],
+    };
+
+    const state = {
+      ...INITIAL_STATE,
+      DiscoveryStream: {
+        ...INITIAL_STATE.DiscoveryStream,
+        sectionPersonalization: {}, // no sections followed
+      },
+      Prefs: {
+        ...INITIAL_STATE.Prefs,
+        values: {
+          ...INITIAL_STATE.Prefs.values,
+          [PREF_SECTIONS_PERSONALIZATION_ENABLED]: true,
+        },
+      },
+      Messages: {
+        isVisible: true,
+        messageData: fakeMessageData,
+      },
+    };
+
+    wrapper = mount(
+      <WrapWithProvider state={state}>
+        <CardSections
+          dispatch={dispatch}
+          {...DEFAULT_PROPS}
+          data={{
+            ...DEFAULT_PROPS.data,
+            sections: [
+              {
+                data: [
+                  {
+                    title: "Card 1",
+                    image_src: "image1.jpg",
+                    url: "http://example.com",
+                  },
+                ],
+                receivedRank: 0,
+                sectionKey: "section_key_1",
+                title: "title",
+                layout,
+              },
+              {
+                data: [
+                  {
+                    title: "Card 2",
+                    image_src: "image2.jpg",
+                    url: "http://example.com",
+                  },
+                ],
+                receivedRank: 0,
+                sectionKey: "section_key_2",
+                title: "title",
+                layout,
+              },
+            ],
+          }}
+        />
+      </WrapWithProvider>
+    );
+
+    // Should only render for the second section (index 1)
+    const highlight = wrapper.find(FollowSectionButtonHighlight);
+    assert.equal(highlight.length, 1);
+    assert.isTrue(wrapper.html().includes("follow-section-button-highlight"));
+  });
+
+  describe("Keyboard navigation", () => {
+    beforeEach(() => {
+      // Mock window.innerWidth to return a value that will make getActiveColumnLayout return "col-1"
+      Object.defineProperty(window, "innerWidth", {
+        writable: true,
+        configurable: true,
+        value: 500,
+      });
+    });
+
+    it("should pass tabIndex={0} to the first card and tabIndex={-1} to other cards", () => {
+      const firstCard = wrapper.find(DSCard).at(0);
+      const secondCard = wrapper.find(DSCard).at(1);
+      const thirdCard = wrapper.find(DSCard).at(2);
+
+      assert.equal(firstCard.prop("tabIndex"), 0);
+      assert.equal(secondCard.prop("tabIndex"), -1);
+      assert.equal(thirdCard.prop("tabIndex"), -1);
+    });
+
+    it("should update focused index when onFocus is called", () => {
+      const secondCard = wrapper.find(DSCard).at(1);
+      const onFocus = secondCard.prop("onFocus");
+
+      onFocus();
+      wrapper.update();
+
+      assert.equal(wrapper.find(DSCard).at(1).prop("tabIndex"), 0);
+      assert.equal(wrapper.find(DSCard).at(0).prop("tabIndex"), -1);
+    });
+
+    describe("handleCardKeyDown", () => {
+      let grid;
+      let mockLink;
+      let mockTargetCard;
+      let mockGridElement;
+      let mockCurrentCard;
+      let mockEvent;
+
+      beforeEach(() => {
+        grid = wrapper.find(".ds-section-grid.ds-card-grid");
+        mockLink = { focus: sandbox.spy() };
+        mockTargetCard = {
+          querySelector: sandbox.stub().returns(mockLink),
+        };
+        mockGridElement = {
+          querySelector: sandbox.stub().returns(mockTargetCard),
+        };
+        mockCurrentCard = {
+          parentElement: mockGridElement,
+        };
+        mockEvent = {
+          preventDefault: sandbox.spy(),
+          target: {
+            closest: sandbox.stub().returns(mockCurrentCard),
+          },
+        };
+      });
+
+      afterEach(() => {
+        sandbox.restore();
+      });
+
+      it("should navigate to next card with ArrowRight", () => {
+        mockEvent.key = "ArrowRight";
+        mockCurrentCard.classList = ["col-1-position-0"];
+
+        grid.prop("onKeyDown")(mockEvent);
+
+        assert.calledOnce(mockEvent.preventDefault);
+        assert.calledWith(
+          mockGridElement.querySelector,
+          "article.ds-card.col-1-position-1"
+        );
+        assert.calledOnce(mockLink.focus);
+      });
+
+      it("should navigate to previous card with ArrowLeft", () => {
+        mockEvent.key = "ArrowLeft";
+        mockCurrentCard.classList = ["col-1-position-1"];
+
+        grid.prop("onKeyDown")(mockEvent);
+
+        assert.calledOnce(mockEvent.preventDefault);
+        assert.calledWith(
+          mockGridElement.querySelector,
+          "article.ds-card.col-1-position-0"
+        );
+        assert.calledOnce(mockLink.focus);
+      });
     });
   });
 });

@@ -7,5 +7,5 @@ support-files = ["dummy.html"]
 
 ["browser_test_procinfo.js"]
 skip-if = [
-  "ccov && os == 'linux'", # Bug 1608080
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && ccov", # Bug 1608080
 ]

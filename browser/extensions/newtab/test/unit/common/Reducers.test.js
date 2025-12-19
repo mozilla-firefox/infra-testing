@@ -623,26 +623,6 @@ describe("Reducers", () => {
       const nextState = Sections(undefined, { type: at.PLACES_LINKS_DELETED });
       assert.equal(nextState, INITIAL_STATE.Sections);
     });
-    it("should remove all removed pocket urls", () => {
-      const removeAction = {
-        type: at.DELETE_FROM_POCKET,
-        data: { pocket_id: 123 },
-      };
-      const newBlockState = Sections(oldState, removeAction);
-      newBlockState.forEach(section => {
-        assert.deepEqual(section.rows, [{ url: "www.other.url" }]);
-      });
-    });
-    it("should archive all archived pocket urls", () => {
-      const removeAction = {
-        type: at.ARCHIVE_FROM_POCKET,
-        data: { pocket_id: 123 },
-      };
-      const newBlockState = Sections(oldState, removeAction);
-      newBlockState.forEach(section => {
-        assert.deepEqual(section.rows, [{ url: "www.other.url" }]);
-      });
-    });
     it("should not update state for empty action.data on PLACES_BOOKMARK_ADDED", () => {
       const nextState = Sections(undefined, { type: at.PLACES_BOOKMARK_ADDED });
       assert.equal(nextState, INITIAL_STATE.Sections);
@@ -706,34 +686,6 @@ describe("Reducers", () => {
       // old row is unchanged
       assert.equal(oldRow, oldState[0].rows[1]);
     });
-    it("should not update state for empty action.data on PLACES_SAVED_TO_POCKET", () => {
-      const nextState = Sections(undefined, {
-        type: at.PLACES_SAVED_TO_POCKET,
-      });
-      assert.equal(nextState, INITIAL_STATE.Sections);
-    });
-    it("should add a pocked item on PLACES_SAVED_TO_POCKET", () => {
-      const action = {
-        type: at.PLACES_SAVED_TO_POCKET,
-        data: {
-          url: "www.foo.bar",
-          pocket_id: 1234,
-          title: "Title for bar.com",
-        },
-      };
-      const nextState = Sections(oldState, action);
-      // check a section to ensure the correct url was saved to pocket
-      const [newRow, oldRow] = nextState[0].rows;
-
-      // new row has pocket data
-      assert.equal(newRow.url, action.data.url);
-      assert.equal(newRow.type, "pocket");
-      assert.equal(newRow.pocket_id, action.data.pocket_id);
-      assert.equal(newRow.title, action.data.title);
-
-      // old row is unchanged
-      assert.equal(oldRow, oldState[0].rows[1]);
-    });
   });
   describe("Pocket", () => {
     it("should return INITIAL_STATE by default", () => {
@@ -748,30 +700,6 @@ describe("Reducers", () => {
         data: false,
       });
       assert.isFalse(state.waitingForSpoc);
-    });
-    it("should have undefined for initial isUserLoggedIn state", () => {
-      assert.isNull(Pocket(undefined, { type: "some_action" }).isUserLoggedIn);
-    });
-    it("should set isUserLoggedIn to false on a POCKET_LOGGED_IN with null", () => {
-      const state = Pocket(undefined, {
-        type: at.POCKET_LOGGED_IN,
-        data: null,
-      });
-      assert.isFalse(state.isUserLoggedIn);
-    });
-    it("should set isUserLoggedIn to false on a POCKET_LOGGED_IN with false", () => {
-      const state = Pocket(undefined, {
-        type: at.POCKET_LOGGED_IN,
-        data: false,
-      });
-      assert.isFalse(state.isUserLoggedIn);
-    });
-    it("should set isUserLoggedIn to true on a POCKET_LOGGED_IN with true", () => {
-      const state = Pocket(undefined, {
-        type: at.POCKET_LOGGED_IN,
-        data: true,
-      });
-      assert.isTrue(state.isUserLoggedIn);
     });
     it("should set pocketCta with correct object on a POCKET_CTA", () => {
       const data = {
@@ -817,18 +745,6 @@ describe("Reducers", () => {
         INITIAL_STATE.DiscoveryStream
       );
     });
-    it("should set isPrivacyInfoModalVisible to true with SHOW_PRIVACY_INFO", () => {
-      const state = DiscoveryStream(undefined, {
-        type: at.SHOW_PRIVACY_INFO,
-      });
-      assert.equal(state.isPrivacyInfoModalVisible, true);
-    });
-    it("should set isPrivacyInfoModalVisible to false with HIDE_PRIVACY_INFO", () => {
-      const state = DiscoveryStream(undefined, {
-        type: at.HIDE_PRIVACY_INFO,
-      });
-      assert.equal(state.isPrivacyInfoModalVisible, false);
-    });
     it("should set layout data with DISCOVERY_STREAM_LAYOUT_UPDATE", () => {
       const state = DiscoveryStream(undefined, {
         type: at.DISCOVERY_STREAM_LAYOUT_UPDATE,
@@ -870,27 +786,6 @@ describe("Reducers", () => {
       });
       assert.deepEqual(state.config, { enabled: true });
     });
-    it("should set recentSavesEnabled with DISCOVERY_STREAM_PREFS_SETUP", () => {
-      const state = DiscoveryStream(undefined, {
-        type: at.DISCOVERY_STREAM_PREFS_SETUP,
-        data: { recentSavesEnabled: true },
-      });
-      assert.isTrue(state.recentSavesEnabled);
-    });
-    it("should set recentSavesData with DISCOVERY_STREAM_RECENT_SAVES", () => {
-      const state = DiscoveryStream(undefined, {
-        type: at.DISCOVERY_STREAM_RECENT_SAVES,
-        data: { recentSaves: [1, 2, 3] },
-      });
-      assert.deepEqual(state.recentSavesData, [1, 2, 3]);
-    });
-    it("should set isUserLoggedIn with DISCOVERY_STREAM_POCKET_STATE_SET", () => {
-      const state = DiscoveryStream(undefined, {
-        type: at.DISCOVERY_STREAM_POCKET_STATE_SET,
-        data: { isUserLoggedIn: true },
-      });
-      assert.isTrue(state.isUserLoggedIn);
-    });
     it("should set feeds as loaded with DISCOVERY_STREAM_FEEDS_UPDATE", () => {
       const state = DiscoveryStream(undefined, {
         type: at.DISCOVERY_STREAM_FEEDS_UPDATE,
@@ -924,6 +819,8 @@ describe("Reducers", () => {
       const data = {
         lastUpdated: 123,
         spocs: [1, 2, 3],
+        spocsCacheUpdateTime: 10 * 60 * 1000,
+        spocsOnDemand: true,
       };
       const state = DiscoveryStream(undefined, {
         type: at.DISCOVERY_STREAM_SPOCS_UPDATE,
@@ -931,12 +828,17 @@ describe("Reducers", () => {
       });
       assert.deepEqual(state.spocs, {
         spocs_endpoint: "",
-        data: [1, 2, 3],
-        lastUpdated: 123,
+        data: data.spocs,
+        lastUpdated: data.lastUpdated,
         loaded: true,
         frequency_caps: [],
         blocked: [],
         placements: [],
+        cacheUpdateTime: data.spocsCacheUpdateTime,
+        onDemand: {
+          enabled: data.spocsOnDemand,
+          loaded: false,
+        },
       });
     });
     it("should default to a single spoc placement", () => {
@@ -1117,172 +1019,6 @@ describe("Reducers", () => {
         [{ url: "test.com" }]
       );
     });
-    it("should not update state for empty action.data on PLACES_SAVED_TO_POCKET", () => {
-      const newState = DiscoveryStream(undefined, {
-        type: at.PLACES_SAVED_TO_POCKET,
-      });
-      assert.equal(newState, INITIAL_STATE.DiscoveryStream);
-    });
-    it("should add pocket_id on PLACES_SAVED_TO_POCKET in both feeds and spocs", () => {
-      const oldState = {
-        feeds: {
-          data: {
-            "https://foo.com/feed1": {
-              data: {
-                recommendations: [
-                  { url: "https://foo.com" },
-                  { url: "test.com" },
-                ],
-              },
-            },
-          },
-          loaded: true,
-        },
-        spocs: {
-          data: {
-            spocs: {
-              items: [{ url: "https://foo.com" }, { url: "test-spoc.com" }],
-            },
-          },
-          placements: [{ name: "spocs" }],
-          loaded: true,
-        },
-      };
-      const action = {
-        type: at.PLACES_SAVED_TO_POCKET,
-        data: {
-          url: "https://foo.com",
-          pocket_id: 1234,
-          open_url: "https://foo-1234",
-        },
-      };
-
-      const newState = DiscoveryStream(oldState, action);
-
-      assert.lengthOf(newState.spocs.data.spocs.items, 2);
-      assert.equal(
-        newState.spocs.data.spocs.items[0].pocket_id,
-        action.data.pocket_id
-      );
-      assert.equal(
-        newState.spocs.data.spocs.items[0].open_url,
-        action.data.open_url
-      );
-      assert.isUndefined(newState.spocs.data.spocs.items[1].pocket_id);
-
-      assert.lengthOf(
-        newState.feeds.data["https://foo.com/feed1"].data.recommendations,
-        2
-      );
-      assert.equal(
-        newState.feeds.data["https://foo.com/feed1"].data.recommendations[0]
-          .pocket_id,
-        action.data.pocket_id
-      );
-      assert.equal(
-        newState.feeds.data["https://foo.com/feed1"].data.recommendations[0]
-          .open_url,
-        action.data.open_url
-      );
-      assert.isUndefined(
-        newState.feeds.data["https://foo.com/feed1"].data.recommendations[1]
-          .pocket_id
-      );
-    });
-    it("should not update state for empty action.data on DELETE_FROM_POCKET", () => {
-      const newState = DiscoveryStream(undefined, {
-        type: at.DELETE_FROM_POCKET,
-      });
-      assert.equal(newState, INITIAL_STATE.DiscoveryStream);
-    });
-    it("should remove site on DELETE_FROM_POCKET in both feeds and spocs", () => {
-      const oldState = {
-        feeds: {
-          data: {
-            "https://foo.com/feed1": {
-              data: {
-                recommendations: [
-                  { url: "https://foo.com", pocket_id: 1234 },
-                  { url: "test.com" },
-                ],
-              },
-            },
-          },
-          loaded: true,
-        },
-        spocs: {
-          data: {
-            spocs: {
-              items: [
-                { url: "https://foo.com", pocket_id: 1234 },
-                { url: "test-spoc.com" },
-              ],
-            },
-          },
-          loaded: true,
-          placements: [{ name: "spocs" }],
-        },
-      };
-      const deleteAction = {
-        type: at.DELETE_FROM_POCKET,
-        data: {
-          pocket_id: 1234,
-        },
-      };
-
-      const newState = DiscoveryStream(oldState, deleteAction);
-      assert.deepEqual(newState.spocs.data.spocs.items, [
-        { url: "test-spoc.com" },
-      ]);
-      assert.deepEqual(
-        newState.feeds.data["https://foo.com/feed1"].data.recommendations,
-        [{ url: "test.com" }]
-      );
-    });
-    it("should remove site on ARCHIVE_FROM_POCKET in both feeds and spocs", () => {
-      const oldState = {
-        feeds: {
-          data: {
-            "https://foo.com/feed1": {
-              data: {
-                recommendations: [
-                  { url: "https://foo.com", pocket_id: 1234 },
-                  { url: "test.com" },
-                ],
-              },
-            },
-          },
-          loaded: true,
-        },
-        spocs: {
-          data: {
-            spocs: {
-              items: [
-                { url: "https://foo.com", pocket_id: 1234 },
-                { url: "test-spoc.com" },
-              ],
-            },
-          },
-          loaded: true,
-          placements: [{ name: "spocs" }],
-        },
-      };
-      const deleteAction = {
-        type: at.ARCHIVE_FROM_POCKET,
-        data: {
-          pocket_id: 1234,
-        },
-      };
-
-      const newState = DiscoveryStream(oldState, deleteAction);
-      assert.deepEqual(newState.spocs.data.spocs.items, [
-        { url: "test-spoc.com" },
-      ]);
-      assert.deepEqual(
-        newState.feeds.data["https://foo.com/feed1"].data.recommendations,
-        [{ url: "test.com" }]
-      );
-    });
     it("should add boookmark details on PLACES_BOOKMARK_ADDED in both feeds and spocs", () => {
       const oldState = {
         feeds: {
@@ -1412,18 +1148,6 @@ describe("Reducers", () => {
         newState.feeds.data["https://foo.com/feed1"].data.recommendations[0]
           .bookmarkTitle
       );
-    });
-    describe("PREF_CHANGED", () => {
-      it("should set isCollectionDismissible", () => {
-        const state = DiscoveryStream(undefined, {
-          type: at.PREF_CHANGED,
-          data: {
-            name: "discoverystream.isCollectionDismissible",
-            value: true,
-          },
-        });
-        assert.equal(state.isCollectionDismissible, true);
-      });
     });
   });
   describe("Search", () => {

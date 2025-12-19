@@ -17,6 +17,10 @@ const { URLChecker } = ChromeUtils.importESModule(
   "chrome://global/content/ml/Utils.sys.mjs"
 );
 
+const { Progress, MLUtils } = ChromeUtils.importESModule(
+  "chrome://global/content/ml/Utils.sys.mjs"
+);
+
 // Root URL of the fake hub, see the `data` dir in the tests.
 const FAKE_HUB =
   "chrome://mochitests/content/browser/toolkit/components/ml/tests/browser/data";
@@ -162,7 +166,44 @@ add_task(async function test_getting_file() {
     String.fromCharCode.apply(null, new Uint8Array(array))
   );
 
-  Assert.equal(jsonData.hidden_size, 768);
+  Assert.equal(jsonData.hidden_size, 32);
+});
+
+/**
+ * Test that we can retrieve a file as an ArrayBuffer even if we don't have headers
+ */
+add_task(async function test_getting_file_no_headers() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      // Enabled by default.
+      ["browser.ml.logLevel", "All"],
+    ],
+  });
+
+  const hub = new ModelHub({
+    rootUrl: FAKE_HUB,
+    urlTemplate: FAKE_URL_TEMPLATE,
+    reset: true,
+  });
+
+  // Return empty headers
+  sinon.stub(hub, "extractHeaders").callsFake(function () {
+    return {};
+  });
+
+  let [array, headers] = await hub.getModelFileAsArrayBuffer(FAKE_MODEL_ARGS);
+
+  Assert.equal(headers["Content-Type"], "application/octet-stream"); // default content type
+
+  // check the content of the file.
+  let jsonData = JSON.parse(
+    String.fromCharCode.apply(null, new Uint8Array(array))
+  );
+
+  Assert.equal(jsonData.hidden_size, 32);
+
+  hub.extractHeaders.restore();
+  await deleteCache(hub.cache);
 });
 
 /**
@@ -253,7 +294,7 @@ add_task(async function test_getting_file_as_response() {
 
   // check the content of the file.
   let jsonData = await response.json();
-  Assert.equal(jsonData.hidden_size, 768);
+  Assert.equal(jsonData.hidden_size, 32);
 });
 
 /**
@@ -544,8 +585,8 @@ add_task(async function testInvalidDomain() {
   );
 });
 
-/** Tests the method's error handling when the URL format does not include the required segments.
- *
+/**
+ * Tests the method's error handling when the URL format does not include the required segments.
  */
 add_task(async function testTooFewParts() {
   const hub = new ModelHub({
@@ -566,8 +607,8 @@ add_task(async function testTooFewParts() {
  * Helper function to initialize the cache
  */
 async function initializeCache() {
-  const randomSuffix = Math.floor(Math.random() * 10000);
-  const dbName = `modelFiles-${randomSuffix}`;
+  const dbName = `modelFiles-${crypto.randomUUID()}`;
+  await TestIndexedDBCache.deleteDatabaseAndWait(dbName).catch(() => {});
   await OPFS.getDirectoryHandle(dbName, { create: true });
   return await IndexedDBCache.init({ dbName });
 }
@@ -577,7 +618,7 @@ async function initializeCache() {
  */
 async function deleteCache(cache) {
   await cache.dispose();
-  indexedDB.deleteDatabase(cache.dbName);
+  await TestIndexedDBCache.deleteDatabaseAndWait(cache.dbName).catch(() => {});
   try {
     await OPFS.remove(cache.dbName, { recursive: true });
   } catch (e) {
@@ -749,8 +790,8 @@ add_task(async function test_ListModels() {
 
   const models = await cache.listModels();
   const expected = [
-    { name: "org1/modelA", revision: "v1" },
-    { name: "org2/modelB", revision: "v2" },
+    { name: "org1/modelA", revision: "v1", taskName: "task1" },
+    { name: "org2/modelB", revision: "v2", taskName: "task2" },
   ];
   Assert.deepEqual(models, expected, "All models should be listed");
   await deleteCache(cache);
@@ -930,7 +971,7 @@ add_task(async function test_DeleteModelsUsingNonExistingTaskName() {
 
   // Model should still be there.
   const models = await cache.listModels();
-  const expected = [{ name: model, revision }];
+  const expected = [{ name: model, revision, taskName }];
   Assert.deepEqual(models, expected, "All models should be listed");
 
   await deleteCache(cache);
@@ -956,11 +997,12 @@ add_task(async function test_deleteNonMatchingModelRevisions() {
   const taskName = "task";
 
   const file = "file.txt";
+  const hostname = new URL(FAKE_HUB).hostname;
 
   await Promise.all([
     cache.put({
       taskName,
-      model: "org/model",
+      model: `${hostname}/org/model`,
       revision: "v1",
       file,
       data: testData,
@@ -970,7 +1012,7 @@ add_task(async function test_deleteNonMatchingModelRevisions() {
     }),
     cache.put({
       taskName,
-      model: "org/model2",
+      model: `${hostname}/org/model2`,
       revision: "v1",
       file,
       data: createRandomBlob(),
@@ -981,7 +1023,7 @@ add_task(async function test_deleteNonMatchingModelRevisions() {
 
     cache.put({
       taskName,
-      model: "org/model2",
+      model: `${hostname}/org/model2`,
       revision: "v2",
       file,
       data: createRandomBlob(),
@@ -992,7 +1034,7 @@ add_task(async function test_deleteNonMatchingModelRevisions() {
 
     cache.put({
       taskName,
-      model: "org/model2",
+      model: `${hostname}/org/model2`,
       revision: "v3",
       file,
       data: testData2,
@@ -1004,12 +1046,12 @@ add_task(async function test_deleteNonMatchingModelRevisions() {
 
   await hub.deleteNonMatchingModelRevisions({
     taskName,
-    model: "org/model2",
+    modelWithHostname: `${hostname}/org/model2`,
     targetRevision: "v3",
   });
 
   const [retrievedData, headers] = await cache.getFile({
-    model: "org/model",
+    model: `${hostname}/org/model`,
     revision: "v1",
     file,
   });
@@ -1025,21 +1067,21 @@ add_task(async function test_deleteNonMatchingModelRevisions() {
   );
 
   const dataAfterDelete = await cache.getFile({
-    model: "org/model2",
+    model: `${hostname}/org/model2`,
     revision: "v1",
     file,
   });
   Assert.equal(dataAfterDelete, null, "The data for v1 should not exist.");
 
   const dataAfterDelete2 = await cache.getFile({
-    model: "org/model2",
+    model: `${hostname}/org/model2`,
     revision: "v2",
     file,
   });
   Assert.equal(dataAfterDelete2, null, "The data for v2 should not exist.");
 
   const [retrievedData2, headers2] = await cache.getFile({
-    model: "org/model2",
+    model: `${hostname}/org/model2`,
     revision: "v3",
     file,
   });
@@ -1093,7 +1135,10 @@ add_task(async function test_listFiles() {
     headers,
   });
 
-  const files = await cache.listFiles({ model: "org/model", revision: "v1" });
+  const { files } = await cache.listFiles({
+    model: "org/model",
+    revision: "v1",
+  });
   const expected = [
     {
       path: "file.txt",
@@ -1104,6 +1149,7 @@ add_task(async function test_listFiles() {
         lastUsed: when1,
         lastUpdated: when1,
       },
+      engineIds: [],
     },
     {
       path: "file2.txt",
@@ -1114,6 +1160,7 @@ add_task(async function test_listFiles() {
         lastUsed: when2,
         lastUpdated: when2,
       },
+      engineIds: [],
     },
     {
       path: "sub/file3.txt",
@@ -1125,6 +1172,7 @@ add_task(async function test_listFiles() {
         lastUsed: when3,
         lastUpdated: when3,
       },
+      engineIds: [],
     },
   ];
 
@@ -1172,7 +1220,7 @@ add_task(async function test_listFilesUsingTaskName() {
     headers,
   });
 
-  const files = await cache.listFiles({ taskName });
+  const { files } = await cache.listFiles({ taskName, model, revision });
   const expected = [
     {
       path: "file.txt",
@@ -1183,6 +1231,7 @@ add_task(async function test_listFilesUsingTaskName() {
         lastUsed: when1,
         lastUpdated: when1,
       },
+      engineIds: [],
     },
     {
       path: "file2.txt",
@@ -1193,6 +1242,7 @@ add_task(async function test_listFilesUsingTaskName() {
         lastUsed: when2,
         lastUpdated: when2,
       },
+      engineIds: [],
     },
     {
       path: "sub/file3.txt",
@@ -1204,6 +1254,7 @@ add_task(async function test_listFilesUsingTaskName() {
         lastUsed: when3,
         lastUpdated: when3,
       },
+      engineIds: [],
     },
   ];
 
@@ -1252,7 +1303,7 @@ add_task(async function test_listFilesUsingNonExistingTaskName() {
     }),
   ]);
 
-  const files = await cache.listFiles({ taskName: "non-existing-task" });
+  const { files } = await cache.listFiles({ taskName: "non-existing-task" });
 
   Assert.deepEqual(files, []);
 
@@ -1274,8 +1325,8 @@ add_task(async function test_initDbFromNonExisting() {
  * Test that we can upgrade even if the existing database is missing some stores or indices.
  */
 add_task(async function test_initDbFromExistingEmpty() {
-  const randomSuffix = Math.floor(Math.random() * 10000);
-  const dbName = `modelFiles-${randomSuffix}`;
+  const dbName = `modelFiles-${crypto.randomUUID()}`;
+  await TestIndexedDBCache.deleteDatabaseAndWait(dbName).catch(() => {});
 
   const dbVersion = 1;
 
@@ -1322,11 +1373,12 @@ add_task(async function test_initDbFromExistingEmpty() {
         lastUsed: when,
         lastUpdated: when,
       },
+      engineIds: [],
     },
   ];
 
   // Ensure every table & indices is on so that we can list files
-  const files = await cache.listFiles({ taskName });
+  const { files } = await cache.listFiles({ taskName, model, revision });
   Assert.deepEqual(files, expected);
 
   await deleteCache(cache);
@@ -1336,8 +1388,9 @@ add_task(async function test_initDbFromExistingEmpty() {
  * Test that upgrading from version 1 to version 2 results in existing data being deleted.
  */
 add_task(async function test_initDbFromExistingNoChange() {
-  const randomSuffix = Math.floor(Math.random() * 10000);
-  const dbName = `modelFiles-${randomSuffix}`;
+  const dbName = `modelFiles-${crypto.randomUUID()}`;
+
+  await TestIndexedDBCache.deleteDatabaseAndWait(dbName).catch(() => {});
 
   // Create version 1
   let cache = await IndexedDBCache.init({ dbName, version: 1 });
@@ -1369,7 +1422,7 @@ add_task(async function test_initDbFromExistingNoChange() {
   Assert.equal(cache.db.version, 2);
 
   // Ensure tables are all empty.
-  const files = await cache.listFiles({ taskName });
+  const { files } = await cache.listFiles({ taskName });
 
   Assert.deepEqual(files, []);
 
@@ -1380,8 +1433,8 @@ add_task(async function test_initDbFromExistingNoChange() {
  * Test that upgrading an existing cache from another source is possible.
  */
 add_task(async function test_initDbFromExistingElseWhereStoreChanges() {
-  const randomSuffix = Math.floor(Math.random() * 10000);
-  const dbName = `modelFiles-${randomSuffix}`;
+  const dbName = `modelFiles-${crypto.randomUUID()}`;
+  await TestIndexedDBCache.deleteDatabaseAndWait(dbName).catch(() => {});
 
   const dbVersion = 2;
   const model = "mozilla/distilvit";
@@ -1422,11 +1475,12 @@ add_task(async function test_initDbFromExistingElseWhereStoreChanges() {
         lastUpdated: when,
         lastUsed: when,
       },
+      engineIds: [],
     },
   ];
 
   // Ensure every table & indices is on so that we can list files
-  const files = await cache2.listFiles({ taskName });
+  const { files } = await cache2.listFiles({ taskName, model, revision });
   Assert.deepEqual(files, expected);
 
   await deleteCache(cache2);
@@ -1449,7 +1503,7 @@ add_task(async function test_getting_file_custom_hub() {
     file: "config.json",
     taskName: "task_model",
     modelHubRootUrl: FAKE_HUB,
-    modelHubUrlTemplate: "{model}/{revision}",
+    modelHubUrlTemplate: "{model}/resolve/{revision}",
   };
 
   let [array, headers] = await hub.getModelFileAsArrayBuffer(args);
@@ -1461,13 +1515,13 @@ add_task(async function test_getting_file_custom_hub() {
     String.fromCharCode.apply(null, new Uint8Array(array))
   );
 
-  Assert.equal(jsonData.hidden_size, 768);
+  Assert.equal(jsonData.hidden_size, 32);
 
   let res = await hub.getModelFileAsBlob(args);
-  Assert.equal(res[0].size, 562);
+  Assert.equal(res[0].size, 548);
 
   let response = await hub.getModelFileAsResponse(args);
-  Assert.equal((await response.blob()).size, 562);
+  Assert.equal((await response.blob()).size, 548);
 });
 
 /**
@@ -1478,6 +1532,7 @@ add_task(async function test_getting_file_disallowed_custom_hub() {
   const hub = new ModelHub({
     rootUrl: "https://localhost",
     urlTemplate: "{model}/boo/revision",
+    allowDenyList: [{ filter: "ALLOW", urlPrefix: "https://example.com" }],
   });
 
   // and we can't use APIs against another hub if it's not allowed
@@ -1490,8 +1545,23 @@ add_task(async function test_getting_file_disallowed_custom_hub() {
     modelHubUrlTemplate: "{model}/{revision}",
   };
 
+  // This catch the error returned by getEtag when checking if file is in cache
   try {
     await hub.getModelFileAsArrayBuffer(args);
+    throw new Error("Expected method to reject.");
+  } catch (error) {
+    Assert.throws(
+      () => {
+        throw error;
+      },
+      new RegExp(`ForbiddenURLError`),
+      `Should throw with https://forbidden.com`
+    );
+  }
+
+  // This catch the error returned when useCached is false
+  try {
+    await hub.getModelFileAsArrayBuffer({ ...args, revision: "v1" });
     throw new Error("Expected method to reject.");
   } catch (error) {
     Assert.throws(
@@ -1518,6 +1588,48 @@ add_task(async function test_getting_file_disallowed_custom_hub() {
 
   try {
     await hub.getModelFileAsResponse(args);
+    throw new Error("Expected method to reject.");
+  } catch (error) {
+    Assert.throws(
+      () => {
+        throw error;
+      },
+      new RegExp(`ForbiddenURLError`),
+      `Should throw with https://forbidden.com`
+    );
+  }
+
+  // This catch the error when http error codes are returned, useCached is false
+  try {
+    await hub.getModelFileAsArrayBuffer({
+      ...args,
+      revision: "v1",
+      modelHubRootUrl: "https://example.com",
+    });
+    throw new Error("Expected method to reject.");
+  } catch (error) {
+    Assert.throws(
+      () => {
+        throw error;
+      },
+      new RegExp(`HTTP error! Status: 404 Not Found`),
+      `Should throw with 404`
+    );
+  }
+
+  // This catch the error returned when useCached is true with no checks for etags
+  try {
+    // store a file in the hub
+    await hub.cache.put({
+      ...args,
+      model: "forbidden.com/acme/bert",
+      engineId: "engineOne",
+      revision: "v1",
+      data: createBlob(),
+      headers: null,
+    });
+
+    await hub.getModelFileAsArrayBuffer({ ...args, revision: "v1" });
     throw new Error("Expected method to reject.");
   } catch (error) {
     Assert.throws(
@@ -1565,7 +1677,7 @@ add_task(async function test_DeleteFileByEngines() {
   );
 
   // if we delete the model by engineOne, it will still be around for engineTwo
-  await cache.deleteFilesByEngine(engineOne);
+  await cache.deleteFilesByEngine({ engineId: engineOne });
 
   retrievedData = await cache.getFile({
     engineId: engineTwo,
@@ -1580,7 +1692,7 @@ add_task(async function test_DeleteFileByEngines() {
   );
 
   // now deleting via engineTwo
-  await cache.deleteFilesByEngine(engineTwo);
+  await cache.deleteFilesByEngine({ engineId: engineTwo });
 
   // at this point we should not have anymore files
   const dataAfterDelete = await cache.getFile({
@@ -1622,7 +1734,7 @@ add_task(async function test_ModelHub_DeleteFileByEngines() {
     headers: null,
   });
 
-  await hub.deleteFilesByEngine(engineOne);
+  await hub.deleteFilesByEngine({ engineId: engineOne });
 
   // at this point we should not have anymore files
   const dataAfterDelete = await cache.getFile({
@@ -1700,7 +1812,7 @@ add_task(async function test_update_allow_deny_after_model_cache() {
   try {
     await hub.getModelFileAsArrayBuffer({ ...FAKE_MODEL_ARGS, file, revision });
   } catch (e) {
-    Assert.ok(e.name === "ForbiddenURLError");
+    Assert.strictEqual(e.name, "ForbiddenURLError");
   }
   // make sure that the model is deleted after
   const dataAfterForbidden = await cache.getFile({
@@ -1719,8 +1831,8 @@ add_task(async function test_update_allow_deny_after_model_cache() {
  * Test that data from OPFS is wiped
  */
 add_task(async function test_migrateStore_modelsDeleted() {
-  const randomSuffix = Math.floor(Math.random() * 10000);
-  const dbName = `modelFiles-${randomSuffix}`;
+  const dbName = `modelFiles-${crypto.randomUUID()}`;
+  await TestIndexedDBCache.deleteDatabaseAndWait(dbName).catch(() => {});
 
   // Initialize version 4 of the database
   let cache = await IndexedDBCache.init({ dbName, version: 4 });
@@ -1750,25 +1862,17 @@ add_task(async function test_migrateStore_modelsDeleted() {
   cache = await IndexedDBCache.init({ dbName, version: 5 });
 
   // Verify all unknown model data is deleted
-  let remainingFiles = await cache.listFiles({
+  const { files: random } = await cache.listFiles({
     model: "random/model",
     revision: "v1",
   });
-  Assert.deepEqual(
-    remainingFiles,
-    [],
-    "All unknown model files should be deleted."
-  );
+  Assert.deepEqual(random, [], "All unknown model files should be deleted.");
 
-  remainingFiles = await cache.listFiles({
+  const { files: unknown } = await cache.listFiles({
     model: "unknown/model",
     revision: "v2",
   });
-  Assert.deepEqual(
-    remainingFiles,
-    [],
-    "All unknown model files should be deleted."
-  );
+  Assert.deepEqual(unknown, [], "All unknown model files should be deleted.");
 
   await deleteCache(cache);
 });
@@ -1777,8 +1881,8 @@ add_task(async function test_migrateStore_modelsDeleted() {
  * Test migration when database starts empty.
  */
 add_task(async function test_migrateStore_emptyDatabase() {
-  const randomSuffix = Math.floor(Math.random() * 10000);
-  const dbName = `modelFiles-${randomSuffix}`;
+  const dbName = `modelFiles-${crypto.randomUUID()}`;
+  await TestIndexedDBCache.deleteDatabaseAndWait(dbName).catch(() => {});
 
   // Initialize an empty version 4 database
   let cache = await IndexedDBCache.init({ dbName, version: 4 });
@@ -1798,9 +1902,17 @@ add_task(async function test_migrateStore_emptyDatabase() {
   await deleteCache(cache);
 });
 
-add_task(async function test_getOwnerIcon() {
+add_task(async function test_getOwnerIcon_cache() {
   await SpecialPowers.pushPrefEnv({
     set: [["browser.ml.logLevel", "All"]],
+  });
+
+  const originalOPFSFile = OPFS.File;
+
+  const localPaths = new Set();
+  const stub = sinon.stub(OPFS, "File").callsFake(function (args) {
+    localPaths.add(args.localPath);
+    return new originalOPFSFile(args); // preserve original behavior
   });
 
   const hub = new ModelHub({
@@ -1808,20 +1920,124 @@ add_task(async function test_getOwnerIcon() {
     urlTemplate: FAKE_URL_TEMPLATE,
   });
 
-  const fullyQualifiedModelName = "mochitests/mozilla/distilvit";
+  const fullyQualifiedModelName = `mochitests/mozilla/distilvit-${crypto.randomUUID()}`;
 
   // first call will get the icon from the web
   const icon = await hub.getOwnerIcon(fullyQualifiedModelName);
   Assert.notEqual(icon, null);
 
   // second call will get it from the cache
-  let spy = sinon.spy(OPFS.File.prototype, "getBlobFromOPFS");
+  let spy = sinon.spy(Progress, "fetchUrl");
 
   const icon2 = await hub.getOwnerIcon(fullyQualifiedModelName);
   Assert.notEqual(icon2, null);
 
   // check that it cames from OPFS
-  Assert.notEqual(await spy.lastCall.returnValue, null);
+  Assert.equal(spy.called, false);
 
-  sinon.restore();
+  spy.restore();
+  stub.restore();
+  for (const path of localPaths) {
+    await OPFS.remove(path, { recursive: true });
+  }
+});
+
+add_task(async function test_getOwnerIcon_download() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.ml.logLevel", "All"]],
+  });
+
+  const originalOPFSFile = OPFS.File;
+
+  const localPaths = new Set();
+  const stub = sinon.stub(OPFS, "File").callsFake(function (args) {
+    localPaths.add(args.localPath);
+    return new originalOPFSFile(args); // preserve original behavior
+  });
+
+  const hub = new ModelHub({
+    rootUrl: FAKE_HUB,
+    urlTemplate: FAKE_URL_TEMPLATE,
+  });
+
+  const fullyQualifiedModelName = `mochitests/mozilla/distilvit-${crypto.randomUUID()}`;
+
+  let spy = sinon.spy(Progress, "fetchUrl");
+  // first call will get the icon from the web
+  const icon = await hub.getOwnerIcon(fullyQualifiedModelName);
+  Assert.notEqual(icon, null);
+  // check that it didn't come from OPFS
+  Assert.equal(spy.called, true);
+  Assert.notEqual(await spy.lastCall?.returnValue, null);
+
+  spy.restore();
+  stub.restore();
+  for (const path of localPaths) {
+    await OPFS.remove(path, { recursive: true });
+  }
+});
+
+/**
+ * Test that downloads can be cancelled
+ */
+add_task(async function test_download_cancellation() {
+  const cache = await initializeCache();
+  const hub = new ModelHub({
+    rootUrl: FAKE_HUB,
+    urlTemplate: FAKE_URL_TEMPLATE,
+  });
+  hub.cache = cache;
+
+  const controller = new AbortController();
+  const { signal } = controller;
+
+  try {
+    controller.abort();
+
+    await Assert.rejects(
+      hub.getModelDataAsFile({ ...FAKE_MODEL_ARGS, abortSignal: signal }),
+      err => err?.name === "AbortError",
+      "The call should be cancelled"
+    );
+  } catch (err) {
+    Assert.ok(false, `Expected AbortError. Got ${err}`);
+  } finally {
+    await deleteCache(cache);
+  }
+});
+
+/**
+ * Test that downloads can be cancelled after fetch is successfull
+ */
+add_task(async function test_download_cancellation_after_fetch() {
+  const cache = await initializeCache();
+  const hub = new ModelHub({
+    rootUrl: FAKE_HUB,
+    urlTemplate: FAKE_URL_TEMPLATE,
+  });
+  hub.cache = cache;
+
+  const controller = new AbortController();
+  const { signal } = controller;
+
+  const fetchUrlStub = sinon
+    .stub(MLUtils, "fetchUrl")
+    .callsFake((url, { signal: _, ...rest } = {}) => {
+      const p = fetch(url, rest);
+      controller.abort();
+      return p;
+    });
+
+  try {
+    await Assert.rejects(
+      hub.getModelDataAsFile({ ...FAKE_MODEL_ARGS, abortSignal: signal }),
+      err => err?.name === "AbortError",
+      "The call should be cancelled"
+    );
+  } catch (err) {
+    Assert.ok(false, `Expected AbortError. Got ${err}`);
+  } finally {
+    await deleteCache(cache);
+    fetchUrlStub.restore();
+  }
 });

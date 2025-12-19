@@ -10,21 +10,27 @@
 
 #include "p2p/test/stun_server.h"
 
+#include <memory>
 #include <string>
 #include <utility>
 
 #include "absl/strings/string_view.h"
 #include "api/sequence_checker.h"
+#include "api/transport/stun.h"
 #include "rtc_base/async_packet_socket.h"
+#include "rtc_base/async_udp_socket.h"
 #include "rtc_base/byte_buffer.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/network/received_packet.h"
+#include "rtc_base/socket_address.h"
 
-namespace cricket {
+namespace webrtc {
 
-StunServer::StunServer(rtc::AsyncUDPSocket* socket) : socket_(socket) {
+StunServer::StunServer(std::unique_ptr<AsyncUDPSocket> socket)
+    : socket_(std::move(socket)) {
   socket_->RegisterReceivedPacketCallback(
-      [&](rtc::AsyncPacketSocket* socket, const rtc::ReceivedPacket& packet) {
+      [&](AsyncPacketSocket* socket, const ReceivedIpPacket& packet) {
         OnPacket(socket, packet);
       });
 }
@@ -34,11 +40,11 @@ StunServer::~StunServer() {
   socket_->DeregisterReceivedPacketCallback();
 }
 
-void StunServer::OnPacket(rtc::AsyncPacketSocket* socket,
-                          const rtc::ReceivedPacket& packet) {
+void StunServer::OnPacket(AsyncPacketSocket* socket,
+                          const ReceivedIpPacket& packet) {
   RTC_DCHECK_RUN_ON(&sequence_checker_);
   // Parse the STUN message; eat any messages that fail to parse.
-  rtc::ByteBufferReader bbuf(packet.payload());
+  ByteBufferReader bbuf(packet.payload());
   StunMessage msg;
   if (!msg.Read(&bbuf)) {
     return;
@@ -61,14 +67,14 @@ void StunServer::OnPacket(rtc::AsyncPacketSocket* socket,
 }
 
 void StunServer::OnBindingRequest(StunMessage* msg,
-                                  const rtc::SocketAddress& remote_addr) {
+                                  const SocketAddress& remote_addr) {
   StunMessage response(STUN_BINDING_RESPONSE, msg->transaction_id());
   GetStunBindResponse(msg, remote_addr, &response);
   SendResponse(response, remote_addr);
 }
 
 void StunServer::SendErrorResponse(const StunMessage& msg,
-                                   const rtc::SocketAddress& addr,
+                                   const SocketAddress& addr,
                                    int error_code,
                                    absl::string_view error_desc) {
   StunMessage err_msg(GetStunErrorResponseType(msg.type()),
@@ -83,16 +89,16 @@ void StunServer::SendErrorResponse(const StunMessage& msg,
 }
 
 void StunServer::SendResponse(const StunMessage& msg,
-                              const rtc::SocketAddress& addr) {
-  rtc::ByteBufferWriter buf;
+                              const SocketAddress& addr) {
+  ByteBufferWriter buf;
   msg.Write(&buf);
-  rtc::PacketOptions options;
+  AsyncSocketPacketOptions options;
   if (socket_->SendTo(buf.Data(), buf.Length(), addr, options) < 0)
     RTC_LOG_ERR(LS_ERROR) << "sendto";
 }
 
 void StunServer::GetStunBindResponse(StunMessage* message,
-                                     const rtc::SocketAddress& remote_addr,
+                                     const SocketAddress& remote_addr,
                                      StunMessage* response) const {
   RTC_DCHECK_EQ(response->type(), STUN_BINDING_RESPONSE);
   RTC_DCHECK_EQ(response->transaction_id(), message->transaction_id());
@@ -108,4 +114,4 @@ void StunServer::GetStunBindResponse(StunMessage* message,
   response->AddAttribute(std::move(mapped_addr));
 }
 
-}  // namespace cricket
+}  // namespace webrtc

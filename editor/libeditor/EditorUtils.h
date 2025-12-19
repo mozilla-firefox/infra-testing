@@ -220,16 +220,21 @@ class MOZ_STACK_CLASS CreateNodeResultBase final : public CaretPoint {
                                 EditorDOMPoint&& aCandidateCaretPoint)
       : CaretPoint(std::move(aCandidateCaretPoint)), mNode(&aNode) {}
 
-  explicit CreateNodeResultBase(RefPtr<NodeType>&& aNode)
-      : mNode(std::move(aNode)) {}
-  explicit CreateNodeResultBase(RefPtr<NodeType>&& aNode,
+  template <typename NT>
+  explicit CreateNodeResultBase(RefPtr<NT>&& aNode)
+      : mNode(std::forward<RefPtr<NT>>(aNode)) {}
+  template <typename NT>
+  explicit CreateNodeResultBase(RefPtr<NT>&& aNode,
                                 const EditorDOMPoint& aCandidateCaretPoint)
-      : CaretPoint(aCandidateCaretPoint), mNode(std::move(aNode)) {
+      : CaretPoint(aCandidateCaretPoint),
+        mNode(std::forward<RefPtr<NT>>(aNode)) {
     MOZ_ASSERT(mNode);
   }
-  explicit CreateNodeResultBase(RefPtr<NodeType>&& aNode,
+  template <typename NT>
+  explicit CreateNodeResultBase(RefPtr<NT>&& aNode,
                                 EditorDOMPoint&& aCandidateCaretPoint)
-      : CaretPoint(std::move(aCandidateCaretPoint)), mNode(std::move(aNode)) {
+      : CaretPoint(std::move(aCandidateCaretPoint)),
+        mNode(std::forward<RefPtr<NT>>(aNode)) {
     MOZ_ASSERT(mNode);
   }
 
@@ -463,7 +468,11 @@ class EditorUtils final {
 
   /**
    * IsNewLinePreformatted() checks whether the linefeed characters are
-   * preformatted or collapsible white-spaces.  This does NOT flush layout.
+   * preformatted or white-spaces.  This does NOT flush layout.
+   * Be aware that even if this returns false, the linefeed characters may be
+   * rendered as non-collapsible white-spaces.  Therefore, if you want to check
+   * whether linefeeds are collapsible or not, you should refer the result of
+   * IsWhiteSpacePreformatted().
    */
   static bool IsNewLinePreformatted(const nsIContent& aContent);
 

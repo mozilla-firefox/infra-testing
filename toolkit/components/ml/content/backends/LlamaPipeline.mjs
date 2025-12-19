@@ -77,9 +77,11 @@ let wllamaModule = null;
  */
 export class LlamaPipeline {
   wllama = null;
+  #errorFactory = null;
 
-  constructor(wllama) {
+  constructor(wllama, errorFactory) {
     this.wllama = wllama;
+    this.#errorFactory = errorFactory;
   }
 
   static async initialize(
@@ -100,7 +102,8 @@ export class LlamaPipeline {
       useMlock = true,
       kvCacheDtype = "q8_0",
       numThreadsDecoding = 0,
-    } = {}
+    } = {},
+    errorFactory
   ) {
     if (!wllamaModule) {
       wllamaModule = await wllamaPromise;
@@ -108,15 +111,15 @@ export class LlamaPipeline {
     let startInitTime = performance.now();
 
     const modelFilePath = (
-      await mlEngineWorker.getModelFile(
-        createFileUrl({
+      await mlEngineWorker.getModelFile({
+        url: createFileUrl({
           model: modelId,
           revision: modelRevision,
           file: modelFile,
           urlTemplate: modelHubUrlTemplate,
           rootUrl: modelHubRootUrl,
-        })
-      )
+        }),
+      })
     ).ok[2];
 
     lazy.console.debug("LlamaPipeline.initialize", { modelFilePath });
@@ -176,7 +179,7 @@ export class LlamaPipeline {
 
     lazy.console.debug("Init time", performance.now() - startInitTime);
 
-    return new LlamaPipeline(wllama);
+    return new LlamaPipeline(wllama, errorFactory);
   }
 
   /**
@@ -327,7 +330,8 @@ export class LlamaPipeline {
 
       return { done: true, finalOutput: output, ok: true, metrics: [] };
     } catch (error) {
-      port?.postMessage({ done: true, ok: false, error });
+      const backendError = this.#errorFactory(error);
+      port?.postMessage({ done: true, ok: false, error: backendError });
 
       inferenceProgressCallback?.({
         ok: false,
@@ -340,7 +344,7 @@ export class LlamaPipeline {
         statusText: Progress.ProgressStatusText.DONE,
       });
 
-      throw error;
+      throw backendError;
     }
   }
 }

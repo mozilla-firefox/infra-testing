@@ -102,6 +102,8 @@ void js::ReleaseAllJITCode(JS::GCContext* gcx) {
       jitZone->discardStubs();
     }
   }
+
+  gcx->runtime()->clearSelfHostedJitCache();
 }
 
 AutoSuppressGC::AutoSuppressGC(JSContext* cx)
@@ -127,7 +129,7 @@ JS_PUBLIC_API void JS::AssertGCThingMustBeTenured(JSObject* obj) {
 JS_PUBLIC_API void JS::AssertGCThingIsNotNurseryAllocable(Cell* cell) {
   MOZ_ASSERT(cell);
   MOZ_ASSERT(!cell->is<JSObject>() && !cell->is<JSString>() &&
-             !cell->is<JS::BigInt>());
+             !cell->is<JS::BigInt>() && !cell->is<GetterSetter>());
 }
 
 JS_PUBLIC_API void js::gc::AssertGCThingHasType(js::gc::Cell* cell,

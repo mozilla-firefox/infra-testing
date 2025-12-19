@@ -7,6 +7,12 @@ const { SUPPORT_URL, PREFERENCES_URL } = ChromeUtils.importESModule(
   "resource://gre/modules/megalist/aggregator/datasources/LoginDataSource.sys.mjs"
 );
 
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["toolkit.osKeyStore.unofficialBuildOnlyLogin", ""]],
+  });
+});
+
 const EXPECTED_PASSWORD_CARD_VALUES = [
   {
     originLine: { value: "example1.com" },
@@ -234,7 +240,9 @@ add_task(async function test_passwords_menu_external_links() {
   Services.fog.testResetFOG();
   await Services.fog.testFlushAllChildren();
 
+  await addMockPasswords();
   const passwordsSidebar = await openPasswordsSidebar();
+  await checkAllLoginsRendered(passwordsSidebar);
   await waitForSnapshots();
   const menu = passwordsSidebar.querySelector("panel-list");
   const menuButton = passwordsSidebar.querySelector("#more-options-menubutton");
@@ -275,6 +283,7 @@ add_task(async function test_passwords_menu_external_links() {
   // We need this since removing gBrowser.selectedTab (this is the tab that has about:preferences)
   // without a fallback causes an error. Leaving it causes a leak when running in chaos mode.
   // It seems that our testing framework is smart enough to cleanup about:blank pages.
+  LoginTestUtils.clearData();
   BrowserTestUtils.addTab(gBrowser, "about:blank");
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
   SidebarController.hide();
@@ -296,10 +305,12 @@ add_task(async function test_passwords_menu_import_from_browser() {
   Services.fog.testResetFOG();
   await Services.fog.testFlushAllChildren();
 
+  await addMockPasswords();
   const passwordsSidebar = await openPasswordsSidebar();
   await waitForSnapshots();
   await testImportFromBrowser(passwordsSidebar);
 
+  LoginTestUtils.clearData();
   BrowserTestUtils.addTab(gBrowser, "about:blank");
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
   SidebarController.hide();
@@ -359,5 +370,22 @@ add_task(async function test_passwords_visibility_when_view_shown() {
   await waitForPasswordConceal(passwordCard.passwordLine.loginLine);
   ok(true, "Password is hidden.");
 
+  SidebarController.hide();
+});
+
+add_task(async function test_passwords_entry_is_not_visible_for_old_sidebar() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["sidebar.revamp", false],
+      ["sidebar.main.tools", "aichat,passwords,syncedtabs,history,bookmarks"],
+    ],
+  });
+
+  await SidebarController.toggle();
+  let passwordsMenuItem = document.querySelector("#sidebar-switcher-megalist");
+  ok(
+    passwordsMenuItem.hidden,
+    "Passwords menu item should be hidden for the old sidebar."
+  );
   SidebarController.hide();
 });

@@ -1033,38 +1033,77 @@ add_task(async function test_cutoff() {
 });
 
 /**
- * Returns the expected frecency of the origin of the given URLs, i.e., the sum
- * of their frecencies.  Each URL is expected to have the same origin.
+ * Returns the expected frecency of the origin of the given URLs.
+ * Each URL is expected to have the same origin.
  *
- * @param  urls
- *         An array of URL strings.
- * @return The expected origin frecency.
+ * @param {(string|nsIURL|URL)[]} urls
+ *   An array of URL strings.
+ * @returns {number}
+ *   The expected origin frecency.
  */
 async function expectedOriginFrecency(urls) {
-  let value = 0;
-  for (let url of urls) {
-    let v = Math.max(
-      (await PlacesTestUtils.getDatabaseValue("moz_places", "frecency", {
-        url,
-        last_visit_date: [">", 0],
-      })) ?? 0,
-      0
-    );
-    value += v;
+  if (!urls.length) {
+    return 1.0;
   }
-  return value || 1.0;
+
+  // Calculate cutoff: start of today minus N days, in microseconds.
+  let cutOffDays = Services.prefs.getIntPref(
+    "places.frecency.originsFrecencyCutOffDays",
+    90
+  );
+  let cutOff = new Date();
+  cutOff.setHours(0, 0, 0, 0);
+  cutOff.setDate(cutOff.getDate() - cutOffDays);
+  let cutOffMicroseconds = cutOff.getTime() * 1000;
+
+  // Fetch frecency and last_visit_date for each URL, group by day
+  let dailyFrecencies = new Map();
+  for (let url of urls) {
+    let frecency = await PlacesTestUtils.getDatabaseValue(
+      "moz_places",
+      "frecency",
+      { url, last_visit_date: [">", cutOffMicroseconds] }
+    );
+    if (frecency === undefined) {
+      continue;
+    }
+
+    let lastVisitDate = await PlacesTestUtils.getDatabaseValue(
+      "moz_places",
+      "last_visit_date",
+      { url, last_visit_date: [">", cutOffMicroseconds] }
+    );
+
+    // Store results by date YYYY-MM-DD which mimics SQLs:
+    // GROUP BY date(last_visit_date / 1000000, 'unixepoch')
+    let day = new Date(lastVisitDate / 1000).toISOString().slice(0, 10);
+    if (!dailyFrecencies.has(day)) {
+      dailyFrecencies.set(day, []);
+    }
+    dailyFrecencies.get(day).push(frecency);
+  }
+
+  // Sum of truncated daily averages which mimics SQL:
+  // SUM(CAST(AVG(frecency) AS INTEGER))
+  let total = 0;
+  for (const frecencies of dailyFrecencies.values()) {
+    let sum = frecencies.reduce((a, b) => a + b, 0);
+    total += Math.trunc(sum / frecencies.length);
+  }
+
+  return total || 1.0;
 }
 
 /**
  * Asserts that the moz_origins table and the origin frecency stats are correct.
  *
- * @param expectedOrigins
- *        An array of expected origins.  Each origin in the array is itself an
- *        array that looks like this:
- *          [prefix, host, [url1, url2, ..., urln]]
- *        The element at index 2 is an array of all the URLs with the origin.
- *        If you don't care about checking frecencies and origin frecency stats,
- *        this element can be `undefined`.
+ * @param {[string, string, (string|nsIURI|URL)[]]} expectedOrigins
+ *   An array of expected origins.  Each origin in the array is itself an
+ *   array that looks like this:
+ *     [prefix, host, [url1, url2, ..., urln]]
+ *   The element at index 2 is an array of all the URLs with the origin.
+ *   If you don't care about checking frecencies and origin frecency stats,
+ *   this element can be `undefined`.
  */
 async function checkDB(expectedOrigins) {
   await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
@@ -1103,8 +1142,8 @@ async function checkDB(expectedOrigins) {
 /**
  * Asserts that the origin frecency threshold is correct.
  *
- * @param expectedOriginFrecencies
- *        An array of expected origin frecencies.
+ * @param {number[]} expectedOriginFrecencies
+ *   An array of expected origin frecencies.
  */
 async function checkThreshold(expectedOriginFrecencies) {
   const DEFAULT_THRESHOLD = 2.0;
@@ -1113,12 +1152,25 @@ async function checkThreshold(expectedOriginFrecencies) {
     DEFAULT_THRESHOLD
   );
 
+  // The origin frecency threshold is calculated by first filtering results
+  // above 1. Then we look for the midpoint value of the sorted set.
+  // If none is found, we default to the default threshold.
+  //
+  // This approximates median() which we'll likely use in the future, but
+  // differs in two ways:
+  // - We filter values starting with 1 because it likely means we deliberately
+  //   gave it a very low frecency.
+  // - With even-length arrays we use the lower of the two middle values
+  //   instead of their average.
+  let filteredResults = expectedOriginFrecencies.filter(value => value > 1);
+  filteredResults.sort((a, b) => a - b);
+  let middle = Math.ceil(filteredResults.length / 2);
+  let maxOfLowerGroup = filteredResults.at(middle - 1);
+
   Assert.equal(
     threshold,
-    expectedOriginFrecencies.length
-      ? expectedOriginFrecencies.reduce((a, b) => a + b, 0) /
-          expectedOriginFrecencies.length
-      : DEFAULT_THRESHOLD
+    maxOfLowerGroup ?? DEFAULT_THRESHOLD,
+    "Threshold is equal."
   );
 }
 

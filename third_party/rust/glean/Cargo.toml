@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.82"
 name = "glean"
-version = "64.1.1"
+version = "66.2.0"
 authors = [
     "Jan-Erik Rediger <jrediger@mozilla.com>",
     "The Glean Team <glean-team@mozilla.com>",
@@ -56,12 +56,28 @@ name = "custom_distribution_buffered"
 path = "tests/custom_distribution_buffered.rs"
 
 [[test]]
+name = "dual_labeled_counter_metric"
+path = "tests/dual_labeled_counter_metric.rs"
+
+[[test]]
+name = "health_ping"
+path = "tests/health_ping.rs"
+
+[[test]]
+name = "health_ping_file_overwrite"
+path = "tests/health_ping_file_overwrite.rs"
+
+[[test]]
 name = "init_fails"
 path = "tests/init_fails.rs"
 
 [[test]]
 name = "interruptible_shutdown"
 path = "tests/interruptible_shutdown.rs"
+
+[[test]]
+name = "labeled_metrics"
+path = "tests/labeled_metrics.rs"
 
 [[test]]
 name = "memory_distribution_buffered"
@@ -92,6 +108,10 @@ name = "schema"
 path = "tests/schema.rs"
 
 [[test]]
+name = "signaling_done"
+path = "tests/signaling_done.rs"
+
+[[test]]
 name = "simple"
 path = "tests/simple.rs"
 
@@ -115,13 +135,19 @@ path = "tests/uploader_capabilities.rs"
 version = "0.5"
 
 [dependencies.glean-core]
-version = "64.1.1"
+version = "66.2.0"
 
 [dependencies.inherent]
 version = "1"
 
 [dependencies.log]
 version = "0.4.8"
+
+[dependencies.malloc_size_of]
+version = "0.2.1"
+features = ["once_cell"]
+default-features = false
+package = "wr_malloc_size_of"
 
 [dependencies.once_cell]
 version = "1.18.0"
@@ -148,6 +174,9 @@ version = "1.0.44"
 
 [dev-dependencies.tempfile]
 version = "3.1.0"
+
+[features]
+gecko = ["glean-core/gecko"]
 
 [badges.circle-ci]
 branch = "main"

@@ -6,17 +6,15 @@
 
 #include "MathMLTextRunFactory.h"
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/BinarySearch.h"
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/ComputedStyleInlines.h"
 #include "mozilla/StaticPrefs_mathml.h"
 #include "mozilla/intl/UnicodeScriptCodes.h"
-
+#include "nsDeviceContext.h"
+#include "nsFontMetrics.h"
 #include "nsStyleConsts.h"
 #include "nsTextFrameUtils.h"
-#include "nsFontMetrics.h"
-#include "nsDeviceContext.h"
 
 using namespace mozilla;
 

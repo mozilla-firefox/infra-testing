@@ -1455,6 +1455,30 @@ struct WithArgsAction {
     return OA{std::move(inner_action)};
   }
 
+  // As above, but in the case where we want to create a OnceAction from a const
+  // WithArgsAction. This is fine as long as the inner action doesn't need to
+  // move any of its state to create a OnceAction.
+  template <
+      typename R, typename... Args,
+      typename std::enable_if<
+          std::is_convertible<const InnerAction&,
+                              OnceAction<R(internal::TupleElement<
+                                           I, std::tuple<Args...>>...)>>::value,
+          int>::type = 0>
+  operator OnceAction<R(Args...)>() const& {  // NOLINT
+    struct OA {
+      OnceAction<InnerSignature<R, Args...>> inner_action;
+
+      R operator()(Args&&... args) && {
+        return std::move(inner_action)
+            .Call(std::get<I>(
+                std::forward_as_tuple(std::forward<Args>(args)...))...);
+      }
+    };
+
+    return OA{inner_action};
+  }
+
   template <
       typename R, typename... Args,
       typename std::enable_if<
@@ -1707,9 +1731,8 @@ template <size_t k>
 struct ReturnArgAction {
   template <typename... Args,
             typename = typename std::enable_if<(k < sizeof...(Args))>::type>
-  auto operator()(Args&&... args) const
-      -> decltype(std::get<k>(
-          std::forward_as_tuple(std::forward<Args>(args)...))) {
+  auto operator()(Args&&... args) const -> decltype(std::get<k>(
+      std::forward_as_tuple(std::forward<Args>(args)...))) {
     return std::get<k>(std::forward_as_tuple(std::forward<Args>(args)...));
   }
 };
@@ -1773,11 +1796,24 @@ struct SetArrayArgumentAction {
 };
 
 template <size_t k>
-struct DeleteArgAction {
+class DeleteArgAction {
+ public:
   template <typename... Args>
   void operator()(const Args&... args) const {
-    delete std::get<k>(std::tie(args...));
+    DoDelete(std::get<k>(std::tie(args...)));
   }
+
+ private:
+  template <typename T>
+  static void DoDelete(T* ptr) {
+    delete ptr;
+  }
+
+  template <typename T>
+  [[deprecated(
+      "DeleteArg<N> used for a non-pointer argument, it was likely migrated "
+      "to a smart pointer type. This action should be removed.")]]
+  static void DoDelete(T&) {}
 };
 
 template <typename Ptr>
@@ -1842,6 +1878,13 @@ struct RethrowAction {
 //   EXPECT_CALL(mock, Foo("abc", _, _)).WillOnce(Invoke(DistanceToOrigin));
 //   EXPECT_CALL(mock, Bar(5, _, _)).WillOnce(Invoke(DistanceToOrigin));
 typedef internal::IgnoredValue Unused;
+
+// Deprecated single-argument DoAll.
+template <typename Action>
+GTEST_INTERNAL_DEPRECATE_AND_INLINE("Avoid using DoAll() for single actions")
+typename std::decay<Action>::type DoAll(Action&& action) {
+  return std::forward<Action>(action);
+}
 
 // Creates an action that does actions a1, a2, ..., sequentially in
 // each invocation. All but the last action will have a readonly view of the
@@ -2008,10 +2051,11 @@ PolymorphicAction<internal::SetErrnoAndReturnAction<T>> SetErrnoAndReturn(
 // Various overloads for Invoke().
 
 // Legacy function.
-// Actions can now be implicitly constructed from callables. No need to create
-// wrapper objects.
 // This function exists for backwards compatibility.
 template <typename FunctionImpl>
+GTEST_INTERNAL_DEPRECATE_AND_INLINE(
+    "Actions can now be implicitly constructed from callables. No need to "
+    "create wrapper objects using Invoke().")
 typename std::decay<FunctionImpl>::type Invoke(FunctionImpl&& function_impl) {
   return std::forward<FunctionImpl>(function_impl);
 }

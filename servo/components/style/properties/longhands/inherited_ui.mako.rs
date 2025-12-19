@@ -12,6 +12,7 @@ ${helpers.predefined_type(
     initial_specified_value="specified::Cursor::auto()",
     animation_type="discrete",
     spec="https://drafts.csswg.org/css-ui/#cursor",
+    servo_restyle_damage="repaint",
     affects="paint",
 )}
 
@@ -22,6 +23,7 @@ ${helpers.predefined_type(
     engines="gecko servo",
     animation_type="discrete",
     spec="https://svgwg.org/svg2-draft/interact.html#PointerEventsProperty",
+    servo_restyle_damage="repaint",
     affects="paint",
 )}
 
@@ -35,20 +37,6 @@ ${helpers.predefined_type(
     enabled_in="ua",
     spec="Nonstandard (https://html.spec.whatwg.org/multipage/#inert-subtrees)",
     affects="paint",
-)}
-
-${helpers.predefined_type(
-    "-moz-user-input",
-    "UserInput",
-    "specified::UserInput::Auto",
-    engines="gecko",
-    gecko_ffi_name="mUserInput",
-    animation_type="discrete",
-    gecko_pref="layout.css.moz-user-input.enabled",
-    has_effect_on_gecko_scrollbars=False,
-    spec="Nonstandard (https://developer.mozilla.org/en-US/docs/Web/CSS/-moz-user-input)",
-    affects="",
-    enabled_in="ua",
 )}
 
 ${helpers.predefined_type(

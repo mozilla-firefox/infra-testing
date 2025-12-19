@@ -10,27 +10,39 @@
 
 #include "p2p/base/regathering_controller.h"
 
+#include "api/sequence_checker.h"
 #include "api/task_queue/pending_task_safety_flag.h"
 #include "api/units/time_delta.h"
+#include "p2p/base/ice_transport_internal.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/thread.h"
 
 namespace webrtc {
 
 BasicRegatheringController::BasicRegatheringController(
     const Config& config,
-    cricket::IceTransportInternal* ice_transport,
-    rtc::Thread* thread)
+    IceTransportInternal* ice_transport,
+    Thread* thread)
     : config_(config), ice_transport_(ice_transport), thread_(thread) {
   RTC_DCHECK(thread_);
   RTC_DCHECK_RUN_ON(thread_);
   RTC_DCHECK(ice_transport_);
-  ice_transport_->SignalStateChanged.connect(
-      this, &BasicRegatheringController::OnIceTransportStateChanged);
-  ice_transport->SignalWritableState.connect(
-      this, &BasicRegatheringController::OnIceTransportWritableState);
-  ice_transport->SignalReceivingState.connect(
-      this, &BasicRegatheringController::OnIceTransportReceivingState);
-  ice_transport->SignalNetworkRouteChanged.connect(
-      this, &BasicRegatheringController::OnIceTransportNetworkRouteChanged);
+  ice_transport_->SubscribeIceTransportStateChanged(
+      [this](IceTransportInternal* transport) {
+        OnIceTransportStateChanged(transport);
+      });
+  ice_transport->SubscribeWritableState(
+      this, [this](PacketTransportInternal* transport) {
+        OnIceTransportWritableState(transport);
+      });
+  ice_transport->SubscribeReceivingState(
+      [this](PacketTransportInternal* transport) {
+        OnIceTransportReceivingState(transport);
+      });
+  ice_transport->SubscribeNetworkRouteChanged(
+      this, [this](std::optional<NetworkRoute> network_route) {
+        OnIceTransportNetworkRouteChanged(network_route);
+      });
 }
 
 BasicRegatheringController::~BasicRegatheringController() {

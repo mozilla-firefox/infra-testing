@@ -8,98 +8,9 @@
 
 #include <utility>
 
-#include "js/CallAndConstruct.h"  // JS_CallFunctionValue
-#include "js/CompilationAndEvaluation.h"
-#include "js/ContextOptions.h"
-#include "js/Exception.h"
-#include "js/friend/ErrorMessages.h"  // JSMSG_OUT_OF_MEMORY
-#include "js/LocaleSensitive.h"
-#include "js/MemoryMetrics.h"
-#include "js/SourceText.h"
 #include "MessageEventRunnable.h"
-#include "mozilla/AntiTrackingUtils.h"
-#include "mozilla/BasePrincipal.h"
-#include "mozilla/CycleCollectedJSContext.h"
-#include "mozilla/ExtensionPolicyService.h"
-#include "mozilla/Mutex.h"
-#include "mozilla/ProfilerLabels.h"
-#include "mozilla/Result.h"
-#include "mozilla/ScopeExit.h"
-#include "mozilla/StaticPrefs_browser.h"
-#include "mozilla/StaticPrefs_dom.h"
-#include "mozilla/dom/BrowsingContextGroup.h"
-#include "mozilla/dom/CallbackDebuggerNotification.h"
-#include "mozilla/dom/ClientManager.h"
-#include "mozilla/dom/ClientState.h"
-#include "mozilla/dom/ContentChild.h"
-#include "mozilla/dom/Console.h"
-#include "mozilla/dom/DocGroup.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/DOMTypes.h"
-#include "mozilla/dom/Event.h"
-#include "mozilla/dom/Exceptions.h"
-#include "mozilla/dom/FunctionBinding.h"
-#include "mozilla/dom/IndexedDatabaseManager.h"
-#include "mozilla/dom/MessageEvent.h"
-#include "mozilla/dom/MessageEventBinding.h"
-#include "mozilla/dom/MessagePort.h"
-#include "mozilla/dom/MessagePortBinding.h"
-#include "mozilla/dom/nsCSPContext.h"
-#include "mozilla/dom/nsCSPUtils.h"
-#include "mozilla/dom/Performance.h"
-#include "mozilla/dom/PerformanceStorageWorker.h"
-#include "mozilla/dom/PromiseDebugging.h"
-#include "mozilla/dom/PRemoteWorkerDebuggerParent.h"
-#include "mozilla/dom/ReferrerInfo.h"
-#include "mozilla/dom/RemoteWorkerChild.h"
-#include "mozilla/dom/RemoteWorkerDebuggerChild.h"
-#include "mozilla/dom/RemoteWorkerNonLifeCycleOpControllerChild.h"
-#include "mozilla/dom/RemoteWorkerService.h"
-#include "mozilla/dom/RootedDictionary.h"
-#include "mozilla/dom/SimpleGlobalObject.h"
-#include "mozilla/dom/TimeoutHandler.h"
-#include "mozilla/dom/UseCounterMetrics.h"
-#include "mozilla/dom/WorkerBinding.h"
-#include "mozilla/dom/WorkerScope.h"
-#include "mozilla/dom/WorkerStatus.h"
-#include "mozilla/dom/WebTaskScheduler.h"
-#include "mozilla/dom/JSExecutionManager.h"
-#include "mozilla/dom/WindowContext.h"
-#include "mozilla/extensions/ExtensionBrowser.h"  // extensions::Create{AndDispatchInitWorkerContext,WorkerLoaded,WorkerDestroyed}Runnable
-#include "mozilla/extensions/WebExtensionPolicy.h"
-#include "mozilla/glean/DomUseCounterMetrics.h"
-#include "mozilla/ipc/BackgroundChild.h"
-#include "mozilla/ipc/PBackgroundChild.h"
-#include "mozilla/StorageAccess.h"
-#include "mozilla/StoragePrincipalHelper.h"
-#include "mozilla/ThreadEventQueue.h"
-#include "mozilla/ThreadSafety.h"
-#include "mozilla/ThrottledEventQueue.h"
-#include "nsCycleCollector.h"
-#include "nsGlobalWindowInner.h"
-#include "nsIDUtils.h"
-#include "nsNetUtil.h"
-#include "nsIFile.h"
-#include "nsIMemoryReporter.h"
-#include "nsIPermissionManager.h"
-#include "nsIProtocolHandler.h"
-#include "nsIScriptError.h"
-#include "nsIURI.h"
-#include "nsIURL.h"
-#include "nsIUUIDGenerator.h"
-#include "nsPrintfCString.h"
-#include "nsProxyRelease.h"
-#include "nsQueryObject.h"
-#include "nsRFPService.h"
-#include "nsSandboxFlags.h"
-#include "nsThreadUtils.h"
-#include "nsUTF8Utils.h"
-
 #include "RuntimeService.h"
 #include "ScriptLoader.h"
-#include "mozilla/dom/ServiceWorkerEvents.h"
-#include "mozilla/dom/ServiceWorkerManager.h"
-#include "mozilla/net/CookieJarSettings.h"
 #include "WorkerCSPEventListener.h"
 #include "WorkerDebugger.h"
 #include "WorkerDebuggerManager.h"
@@ -109,9 +20,104 @@
 #include "WorkerRef.h"
 #include "WorkerRunnable.h"
 #include "WorkerThread.h"
+#include "js/CallAndConstruct.h"  // JS_CallFunctionValue
+#include "js/CompilationAndEvaluation.h"
+#include "js/ContextOptions.h"
+#include "js/Exception.h"
+#include "js/LocaleSensitive.h"
+#include "js/MemoryMetrics.h"
+#include "js/SourceText.h"
+#include "js/friend/ErrorMessages.h"  // JSMSG_OUT_OF_MEMORY
+#include "js/friend/MicroTask.h"
+#include "mozilla/AntiTrackingUtils.h"
+#include "mozilla/BasePrincipal.h"
+#include "mozilla/CycleCollectedJSContext.h"
+#include "mozilla/ExtensionPolicyService.h"
+#include "mozilla/Mutex.h"
+#include "mozilla/ProfilerLabels.h"
+#include "mozilla/ProfilerMarkers.h"
+#include "mozilla/Result.h"
+#include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs_browser.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_javascript.h"
+#include "mozilla/StorageAccess.h"
+#include "mozilla/StoragePrincipalHelper.h"
+#include "mozilla/ThreadEventQueue.h"
+#include "mozilla/ThreadSafety.h"
+#include "mozilla/ThrottledEventQueue.h"
+#include "mozilla/dom/BrowsingContextGroup.h"
+#include "mozilla/dom/CallbackDebuggerNotification.h"
+#include "mozilla/dom/ClientManager.h"
+#include "mozilla/dom/ClientState.h"
+#include "mozilla/dom/Console.h"
+#include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/DOMTypes.h"
+#include "mozilla/dom/DocGroup.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentInlines.h"
+#include "mozilla/dom/Event.h"
+#include "mozilla/dom/Exceptions.h"
+#include "mozilla/dom/FunctionBinding.h"
+#include "mozilla/dom/IndexedDatabaseManager.h"
+#include "mozilla/dom/JSExecutionManager.h"
+#include "mozilla/dom/MessageEvent.h"
+#include "mozilla/dom/MessageEventBinding.h"
+#include "mozilla/dom/MessagePort.h"
+#include "mozilla/dom/MessagePortBinding.h"
+#include "mozilla/dom/PRemoteWorkerDebuggerParent.h"
+#include "mozilla/dom/Performance.h"
+#include "mozilla/dom/PerformanceStorageWorker.h"
+#include "mozilla/dom/PolicyContainer.h"
+#include "mozilla/dom/PromiseDebugging.h"
+#include "mozilla/dom/ReferrerInfo.h"
+#include "mozilla/dom/RemoteWorkerChild.h"
+#include "mozilla/dom/RemoteWorkerDebuggerChild.h"
+#include "mozilla/dom/RemoteWorkerNonLifeCycleOpControllerChild.h"
+#include "mozilla/dom/RemoteWorkerService.h"
+#include "mozilla/dom/RootedDictionary.h"
+#include "mozilla/dom/ServiceWorkerEvents.h"
+#include "mozilla/dom/ServiceWorkerManager.h"
+#include "mozilla/dom/SimpleGlobalObject.h"
+#include "mozilla/dom/TimeoutHandler.h"
+#include "mozilla/dom/TimeoutManager.h"
+#include "mozilla/dom/UseCounterMetrics.h"
+#include "mozilla/dom/WebTaskScheduler.h"
+#include "mozilla/dom/WindowContext.h"
+#include "mozilla/dom/WorkerBinding.h"
+#include "mozilla/dom/WorkerScope.h"
+#include "mozilla/dom/WorkerStatus.h"
+#include "mozilla/dom/nsCSPContext.h"
+#include "mozilla/dom/nsCSPUtils.h"
+#include "mozilla/extensions/ExtensionBrowser.h"  // extensions::Create{AndDispatchInitWorkerContext,WorkerLoaded,WorkerDestroyed}Runnable
+#include "mozilla/extensions/WebExtensionPolicy.h"
+#include "mozilla/glean/DomUseCounterMetrics.h"
+#include "mozilla/ipc/BackgroundChild.h"
+#include "mozilla/ipc/PBackgroundChild.h"
+#include "mozilla/net/CookieJarSettings.h"
 #include "nsContentSecurityManager.h"
-
+#include "nsCycleCollector.h"
+#include "nsGlobalWindowInner.h"
+#include "nsIDUtils.h"
+#include "nsIEventTarget.h"
+#include "nsIFile.h"
+#include "nsIMemoryReporter.h"
+#include "nsIPermissionManager.h"
+#include "nsIProtocolHandler.h"
+#include "nsIScriptError.h"
+#include "nsIURI.h"
+#include "nsIURL.h"
+#include "nsIUUIDGenerator.h"
+#include "nsNetUtil.h"
+#include "nsPresContext.h"
+#include "nsPrintfCString.h"
+#include "nsProxyRelease.h"
+#include "nsQueryObject.h"
+#include "nsRFPService.h"
+#include "nsSandboxFlags.h"
 #include "nsThreadManager.h"
+#include "nsThreadUtils.h"
+#include "nsUTF8Utils.h"
 
 #ifdef XP_WIN
 #  undef PostMessage
@@ -131,6 +137,7 @@
 
 static mozilla::LazyLogModule sWorkerPrivateLog("WorkerPrivate");
 static mozilla::LazyLogModule sWorkerTimeoutsLog("WorkerTimeouts");
+static mozilla::LazyLogModule gFingerprinterDetection("FingerprinterDetection");
 
 mozilla::LogModule* WorkerLog() { return sWorkerPrivateLog; }
 
@@ -536,6 +543,41 @@ class ChangeBackgroundStateRunnable final : public WorkerControlRunnable {
   }
 };
 
+class ChangePlaybackStateRunnable final : public WorkerControlRunnable {
+ public:
+  ChangePlaybackStateRunnable() = delete;
+  explicit ChangePlaybackStateRunnable(WorkerPrivate* aWorkerPrivate) = delete;
+  ChangePlaybackStateRunnable(WorkerPrivate* aWorkerPrivate,
+                              bool aIsPlayingAudio)
+      : WorkerControlRunnable("ChangePlaybackStateRunnable"),
+        mIsPlayingAudio(aIsPlayingAudio) {}
+
+ private:
+  virtual bool WorkerRun(JSContext* aCx,
+                         WorkerPrivate* aWorkerPrivate) override {
+    return aWorkerPrivate->ChangePlaybackStateInternal(mIsPlayingAudio);
+  }
+  bool mIsPlayingAudio = false;
+};
+
+class ChangeActivePeerConnectionsRunnable final : public WorkerControlRunnable {
+ public:
+  ChangeActivePeerConnectionsRunnable() = delete;
+  explicit ChangeActivePeerConnectionsRunnable(WorkerPrivate* aWorkerPrivate) =
+      delete;
+  ChangeActivePeerConnectionsRunnable(WorkerPrivate* aWorkerPrivate,
+                                      bool aHasPeerConnections)
+      : WorkerControlRunnable("ChangeActivePeerConnectionsRunnable"),
+        mConnections(aHasPeerConnections) {}
+
+ private:
+  virtual bool WorkerRun(JSContext* aCx,
+                         WorkerPrivate* aWorkerPrivate) override {
+    return aWorkerPrivate->ChangePeerConnectionsInternal(mConnections);
+  }
+  bool mConnections = false;
+};
+
 class PropagateStorageAccessPermissionGrantedRunnable final
     : public WorkerControlRunnable {
  public:
@@ -620,42 +662,6 @@ class ReportErrorToConsoleRunnable final : public WorkerParentThreadRunnable {
   const nsTArray<nsString> mParams;
   const mozilla::SourceLocation mLocation;
 };
-
-class RunExpiredTimoutsRunnable final : public WorkerThreadRunnable,
-                                        public nsITimerCallback {
- public:
-  NS_DECL_ISUPPORTS_INHERITED
-
-  explicit RunExpiredTimoutsRunnable(WorkerPrivate* aWorkerPrivate)
-      : WorkerThreadRunnable("RunExpiredTimoutsRunnable") {}
-
- private:
-  ~RunExpiredTimoutsRunnable() = default;
-
-  virtual bool PreDispatch(WorkerPrivate* aWorkerPrivate) override {
-    // Silence bad assertions.
-    return true;
-  }
-
-  virtual void PostDispatch(WorkerPrivate* aWorkerPrivate,
-                            bool aDispatchResult) override {
-    // Silence bad assertions.
-  }
-
-  // MOZ_CAN_RUN_SCRIPT_BOUNDARY until worker runnables are generally
-  // MOZ_CAN_RUN_SCRIPT.
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  virtual bool WorkerRun(JSContext* aCx,
-                         WorkerPrivate* aWorkerPrivate) override {
-    return aWorkerPrivate->RunExpiredTimeouts(aCx);
-  }
-
-  NS_IMETHOD
-  Notify(nsITimer* aTimer) override { return Run(); }
-};
-
-NS_IMPL_ISUPPORTS_INHERITED(RunExpiredTimoutsRunnable, WorkerThreadRunnable,
-                            nsITimerCallback)
 
 class DebuggerImmediateRunnable final : public WorkerThreadRunnable {
   RefPtr<dom::Function> mHandler;
@@ -1052,59 +1058,6 @@ class WorkerPrivate::EventTarget final : public nsISerialEventTarget {
 
  private:
   ~EventTarget() = default;
-};
-
-struct WorkerPrivate::TimeoutInfo {
-  TimeoutInfo()
-      : mId(0),
-        mNestingLevel(0),
-        mReason(Timeout::Reason::eTimeoutOrInterval),
-        mIsInterval(false),
-        mCanceled(false),
-        mOnChromeWorker(false) {
-    MOZ_COUNT_CTOR(mozilla::dom::WorkerPrivate::TimeoutInfo);
-  }
-
-  ~TimeoutInfo() { MOZ_COUNT_DTOR(mozilla::dom::WorkerPrivate::TimeoutInfo); }
-
-  bool operator==(const TimeoutInfo& aOther) const {
-    return mTargetTime == aOther.mTargetTime;
-  }
-
-  bool operator<(const TimeoutInfo& aOther) const {
-    return mTargetTime < aOther.mTargetTime;
-  }
-
-  void AccumulateNestingLevel(const uint32_t& aBaseLevel) {
-    if (aBaseLevel < StaticPrefs::dom_clamp_timeout_nesting_level_AtStartup()) {
-      mNestingLevel = aBaseLevel + 1;
-      return;
-    }
-    mNestingLevel = StaticPrefs::dom_clamp_timeout_nesting_level_AtStartup();
-  }
-
-  void CalculateTargetTime() {
-    auto target = mInterval;
-    // Don't clamp timeout for chrome workers
-    if (mNestingLevel >=
-            StaticPrefs::dom_clamp_timeout_nesting_level_AtStartup() &&
-        !mOnChromeWorker) {
-      target = TimeDuration::Max(
-          mInterval,
-          TimeDuration::FromMilliseconds(StaticPrefs::dom_min_timeout_value()));
-    }
-    mTargetTime = TimeStamp::Now() + target;
-  }
-
-  RefPtr<TimeoutHandler> mHandler;
-  mozilla::TimeStamp mTargetTime;
-  mozilla::TimeDuration mInterval;
-  int32_t mId;
-  uint32_t mNestingLevel;
-  Timeout::Reason mReason;
-  bool mIsInterval;
-  bool mCanceled;
-  bool mOnChromeWorker;
 };
 
 class WorkerJSContextStats final : public JS::RuntimeStats {
@@ -1544,8 +1497,10 @@ void WorkerPrivate::StoreCSPOnClient() {
   auto data = mWorkerThreadAccessible.Access();
   MOZ_ASSERT(data->mScope);
   if (mLoadInfo.mCSPContext) {
-    data->mScope->MutableClientSourceRef().SetCspInfo(
-        mLoadInfo.mCSPContext->CSPInfo());
+    mozilla::ipc::PolicyContainerArgs policyContainerArgs;
+    policyContainerArgs.csp() = Some(mLoadInfo.mCSPContext->CSPInfo());
+    data->mScope->MutableClientSourceRef().SetPolicyContainerArgs(
+        policyContainerArgs);
   }
 }
 
@@ -1629,9 +1584,9 @@ nsresult WorkerPrivate::DispatchToParent(
     RefPtr<WorkerParentDebuggeeRunnable> debuggeeRunnable =
         runnable.forget().downcast<WorkerParentDebuggeeRunnable>();
     return DispatchDebuggeeToMainThread(debuggeeRunnable.forget(),
-                                        NS_DISPATCH_NORMAL);
+                                        NS_DISPATCH_FALLIBLE);
   }
-  return DispatchToMainThread(runnable.forget());
+  return DispatchToMainThread(runnable.forget(), NS_DISPATCH_FALLIBLE);
 }
 
 nsresult WorkerPrivate::DispatchLockHeld(
@@ -1670,6 +1625,10 @@ nsresult WorkerPrivate::DispatchLockHeld(
            this, runnable.get()));
       RefPtr<WorkerThreadRunnable> workerThreadRunnable =
           static_cast<WorkerThreadRunnable*>(runnable.get());
+      PROFILER_MARKER("WorkerPrivate::DispatchLockHeld", OTHER,
+                      {MarkerStack::MaybeCapture(
+                          profiler_feature_active(ProfilerFeature::Flows))},
+                      FlowMarker, Flow::FromPointer(runnable.get()));
       mPreStartRunnables.AppendElement(workerThreadRunnable);
       return NS_OK;
     }
@@ -1686,7 +1645,7 @@ nsresult WorkerPrivate::DispatchLockHeld(
         ("WorkerPrivate::DispatchLockHeld [%p] runnable %p dispatch to a "
          "SyncLoop(%p)",
          this, runnable.get(), aSyncLoopTarget));
-    rv = aSyncLoopTarget->Dispatch(runnable.forget(), NS_DISPATCH_NORMAL);
+    rv = aSyncLoopTarget->Dispatch(runnable.forget(), NS_DISPATCH_FALLIBLE);
   } else {
     // If mStatus is Pending, the WorkerPrivate initialization still can fail.
     // Append this WorkerThreadRunnable to WorkerPrivate::mPreStartRunnables,
@@ -1699,6 +1658,10 @@ nsresult WorkerPrivate::DispatchLockHeld(
            this, runnable.get()));
       RefPtr<WorkerThreadRunnable> workerThreadRunnable =
           static_cast<WorkerThreadRunnable*>(runnable.get());
+      PROFILER_MARKER("WorkerPrivate::DispatchLockHeld", OTHER,
+                      {MarkerStack::MaybeCapture(
+                          profiler_feature_active(ProfilerFeature::Flows))},
+                      FlowMarker, Flow::FromPointer(runnable.get()));
       mPreStartRunnables.AppendElement(workerThreadRunnable);
     }
 
@@ -1776,7 +1739,7 @@ void WorkerPrivate::CreateRemoteDebuggerEndpoints() {
                               !mDebuggerParentEp.IsValid() &&
                               !mDebuggerChildEp.IsValid());
 
-  Unused << NS_WARN_IF(NS_FAILED(PRemoteWorkerDebugger::CreateEndpoints(
+  (void)NS_WARN_IF(NS_FAILED(PRemoteWorkerDebugger::CreateEndpoints(
       &mDebuggerParentEp, &mDebuggerChildEp)));
 }
 
@@ -1804,7 +1767,7 @@ void WorkerPrivate::SetIsRemoteDebuggerRegistered(const bool& aRegistered) {
       auto pending = std::move(mDelayedDebuggeeRunnables);
       for (uint32_t i = 0; i < pending.Length(); i++) {
         RefPtr<WorkerRunnable> runnable = std::move(pending[i]);
-        Unused << NS_WARN_IF(
+        (void)NS_WARN_IF(
             NS_FAILED(DispatchLockHeld(runnable.forget(), nullptr, lock)));
       }
       MOZ_RELEASE_ASSERT(mDelayedDebuggeeRunnables.IsEmpty());
@@ -1866,7 +1829,7 @@ void WorkerPrivate::SetIsRemoteDebuggerReady(const bool& aReady) {
     auto pending = std::move(mDelayedDebuggeeRunnables);
     for (uint32_t i = 0; i < pending.Length(); i++) {
       RefPtr<WorkerRunnable> runnable = std::move(pending[i]);
-      Unused << NS_WARN_IF(
+      (void)NS_WARN_IF(
           NS_FAILED(DispatchLockHeld(runnable.forget(), nullptr, lock)));
     }
     MOZ_RELEASE_ASSERT(mDelayedDebuggeeRunnables.IsEmpty());
@@ -1927,7 +1890,7 @@ void WorkerPrivate::EnableRemoteDebugger() {
     }
     // Warning the case if the Worker shutdown before remote debugger
     // registration down.
-    Unused << NS_WARN_IF(!mRemoteDebuggerRegistered);
+    (void)NS_WARN_IF(!mRemoteDebuggerRegistered);
   }
 }
 
@@ -1981,6 +1944,7 @@ nsresult WorkerPrivate::DispatchControlRunnable(
   LOG(WorkerLog(), ("WorkerPrivate::DispatchControlRunnable [%p] runnable %p",
                     this, runnable.get()));
 
+  JSContext* cx = nullptr;
   {
     MutexAutoLock lock(mMutex);
 
@@ -1988,15 +1952,27 @@ nsresult WorkerPrivate::DispatchControlRunnable(
       return NS_ERROR_UNEXPECTED;
     }
 
+    // Unfortunately we can not distinguish if we are on WorkerThread or not.
+    // mThread is set in WorkerPrivate::SetWorkerPrivateInWorkerThread(), but
+    // ControlRunnable can be dispatching before setting mThread.
+    MOZ_ASSERT(mDispatchingControlRunnables < UINT32_MAX);
+    mDispatchingControlRunnables++;
+
     // Transfer ownership to the control queue.
     mControlQueue.Push(runnable.forget().take());
+    cx = mJSContext;
+    MOZ_ASSERT_IF(cx, mThread);
+  }
 
-    if (JSContext* cx = mJSContext) {
-      MOZ_ASSERT(mThread);
-      JS_RequestInterruptCallback(cx);
+  if (cx) {
+    JS_RequestInterruptCallback(cx);
+  }
+
+  {
+    MutexAutoLock lock(mMutex);
+    if (!--mDispatchingControlRunnables) {
+      mCondVar.Notify();
     }
-
-    mCondVar.Notify();
   }
 
   return NS_OK;
@@ -2038,7 +2014,7 @@ nsresult WorkerPrivate::DispatchDebuggerRunnable(
       MOZ_ALWAYS_SUCCEEDS(timer->InitWithNamedFuncCallback(
           DebuggerInterruptTimerCallback, nullptr,
           DEBUGGER_RUNNABLE_INTERRUPT_AFTER_MS, nsITimer::TYPE_ONE_SHOT,
-          "dom:DebuggerInterruptTimer"));
+          "dom:DebuggerInterruptTimer"_ns));
     }
 
     // okay, we have our mutex back now, put the timer in place.
@@ -2232,7 +2208,7 @@ bool WorkerPrivate::Thaw(const nsPIDOMWindowInner* aWindow) {
       // This can only fail if the ThrottledEventQueue cannot dispatch its
       // executor to the main thread, in which case the main thread was never
       // going to draw runnables from it anyway, so the failure doesn't matter.
-      Unused << mMainThreadDebuggeeEventTarget->SetIsPaused(
+      (void)mMainThreadDebuggeeEventTarget->SetIsPaused(
           IsParentWindowPaused() && !isCanceling);
     }
 
@@ -2294,8 +2270,7 @@ void WorkerPrivate::ParentWindowResumed() {
   // This can only fail if the ThrottledEventQueue cannot dispatch its executor
   // to the main thread, in which case the main thread was never going to draw
   // runnables from it anyway, so the failure doesn't matter.
-  Unused << mMainThreadDebuggeeEventTarget->SetIsPaused(IsFrozen() &&
-                                                        !isCanceling);
+  (void)mMainThreadDebuggeeEventTarget->SetIsPaused(IsFrozen() && !isCanceling);
 }
 
 void WorkerPrivate::PropagateStorageAccessPermissionGranted() {
@@ -2311,7 +2286,7 @@ void WorkerPrivate::PropagateStorageAccessPermissionGranted() {
 
   RefPtr<PropagateStorageAccessPermissionGrantedRunnable> runnable =
       new PropagateStorageAccessPermissionGrantedRunnable(this);
-  Unused << NS_WARN_IF(!runnable->Dispatch(this));
+  (void)NS_WARN_IF(!runnable->Dispatch(this));
 }
 
 void WorkerPrivate::NotifyStorageKeyUsed() {
@@ -2480,6 +2455,12 @@ void WorkerPrivate::OfflineStatusChangeEventInternal(bool aIsOffline) {
     return;
   }
 
+  if (ShouldResistFingerprinting(RFPTarget::NetworkConnection)) {
+    // We always report the worker as online if resistFingerprinting is
+    // enabled, regardless of the actual network status.
+    return;
+  }
+
   for (uint32_t index = 0; index < data->mChildWorkers.Length(); ++index) {
     data->mChildWorkers[index]->OfflineStatusChangeEvent(aIsOffline);
   }
@@ -2510,7 +2491,7 @@ void WorkerPrivate::MemoryPressure() {
   AssertIsOnParentThread();
 
   RefPtr<MemoryPressureRunnable> runnable = new MemoryPressureRunnable(this);
-  Unused << NS_WARN_IF(!runnable->Dispatch(this));
+  (void)NS_WARN_IF(!runnable->Dispatch(this));
 }
 
 RefPtr<WorkerPrivate::JSMemoryUsagePromise> WorkerPrivate::GetJSMemoryUsage() {
@@ -2753,12 +2734,8 @@ WorkerPrivate::WorkerThreadAccessible::WorkerThreadAccessible(
       mDebuggerEventLoopLevel(0),
       mNonblockingCCBackgroundActorCount(0),
       mErrorHandlerRecursionCount(0),
-      mNextTimeoutId(1),
-      mCurrentTimerNestingLevel(0),
       mFrozen(false),
       mDebuggerInterruptRequested(false),
-      mTimerRunning(false),
-      mRunningExpiredTimeouts(false),
       mPeriodicGCTimerRunning(false),
       mIdleGCTimerRunning(false),
       mOnLine(aParent ? aParent->OnLine() : !NS_IsOffline()),
@@ -2820,6 +2797,7 @@ WorkerPrivate::WorkerPrivate(
       mTerminationCallback(std::move(aTerminationCallback)),
       mLoadInfo(std::move(aLoadInfo)),
       mDebugger(nullptr),
+      mDispatchingControlRunnables(0),
       mJSContext(nullptr),
       mPRThread(nullptr),
       mWorkerControlEventTarget(new WorkerEventTarget(
@@ -2859,7 +2837,8 @@ WorkerPrivate::WorkerPrivate(
       mAgentClusterOpenerPolicy(aAgentClusterOpenerPolicy),
       mIsPrivilegedAddonGlobal(false),
       mTopLevelWorkerFinishedRunnableCount(0),
-      mWorkerFinishedRunnableCount(0) {
+      mWorkerFinishedRunnableCount(0),
+      mFontVisibility(ComputeFontVisibility()) {
   LOG(WorkerLog(), ("WorkerPrivate::WorkerPrivate [%p]", this));
   MOZ_ASSERT_IF(!IsDedicatedWorker(), NS_IsMainThread());
 
@@ -2882,6 +2861,13 @@ WorkerPrivate::WorkerPrivate(
     if (aParent->IsRunningInBackground()) {
       mIsInBackground = true;
     }
+    if (aParent->IsPlayingAudio()) {
+      mIsPlayingAudio = true;
+    }
+
+    if (aParent->HasActivePeerConnections()) {
+      mHasActivePeerConnections = true;
+    }
 
     mIsPrivilegedAddonGlobal = aParent->mIsPrivilegedAddonGlobal;
   } else {
@@ -2897,12 +2883,12 @@ WorkerPrivate::WorkerPrivate(
           chromeRealmOptions, UsesSystemPrincipal(), mIsSecureContext,
           ShouldResistFingerprinting(RFPTarget::JSDateTimeUTC),
           ShouldResistFingerprinting(RFPTarget::JSMathFdlibm),
-          ShouldResistFingerprinting(RFPTarget::JSLocale));
+          ShouldResistFingerprinting(RFPTarget::JSLocale), ""_ns, u""_ns);
       xpc::InitGlobalObjectOptions(
           contentRealmOptions, UsesSystemPrincipal(), mIsSecureContext,
           ShouldResistFingerprinting(RFPTarget::JSDateTimeUTC),
           ShouldResistFingerprinting(RFPTarget::JSMathFdlibm),
-          ShouldResistFingerprinting(RFPTarget::JSLocale));
+          ShouldResistFingerprinting(RFPTarget::JSLocale), ""_ns, u""_ns);
 
       // Check if it's a privileged addon executing in order to allow access
       // to SharedArrayBuffer
@@ -2960,6 +2946,16 @@ WorkerPrivate::WorkerPrivate(
         mLoadInfo.mWindow->GetOuterWindow()->IsBackground()) {
       mIsInBackground = true;
     }
+
+    if (mLoadInfo.mWindow &&
+        nsGlobalWindowInner::Cast(mLoadInfo.mWindow)->IsPlayingAudio()) {
+      SetIsPlayingAudio(true);
+    }
+
+    if (mLoadInfo.mWindow && nsGlobalWindowInner::Cast(mLoadInfo.mWindow)
+                                 ->HasActivePeerConnections()) {
+      SetActivePeerConnections(true);
+    }
   }
 
   nsCOMPtr<nsISerialEventTarget> target;
@@ -3003,6 +2999,7 @@ WorkerPrivate::WorkerPrivate(
 WorkerPrivate::~WorkerPrivate() {
   MOZ_DIAGNOSTIC_ASSERT(mTopLevelWorkerFinishedRunnableCount == 0);
   MOZ_DIAGNOSTIC_ASSERT(mWorkerFinishedRunnableCount == 0);
+  MOZ_DIAGNOSTIC_ASSERT(mPendingJSAsyncTasks.empty());
 
   mWorkerDebuggerEventTarget->ForgetWorkerPrivate(this);
 
@@ -3160,7 +3157,7 @@ already_AddRefed<WorkerPrivate> WorkerPrivate::Constructor(
 
   // Create remote debugger endpoint here for child binding in
   // WorkerThreadPrimaryRunnable
-  worker->CreateRemoteDebuggerEndpoints();
+  // worker->CreateRemoteDebuggerEndpoints();
 
   if (!runtimeService->RegisterWorker(*worker)) {
     aRv.Throw(NS_ERROR_UNEXPECTED);
@@ -3227,6 +3224,29 @@ void WorkerPrivate::SetIsRunningInForeground() {
   runnable->Dispatch(this);
 
   LOG(WorkerLog(), ("SetIsRunningInForeground [%p]", this));
+}
+
+void WorkerPrivate::SetIsPlayingAudio(bool aIsPlayingAudio) {
+  AssertIsOnParentThread();
+
+  RefPtr<ChangePlaybackStateRunnable> runnable =
+      new ChangePlaybackStateRunnable(this, aIsPlayingAudio);
+  runnable->Dispatch(this);
+
+  AUTO_PROFILER_MARKER_UNTYPED("WorkerPrivate::SetIsPlayingAudio", DOM, {});
+  LOG(WorkerLog(), ("SetIsPlayingAudio [%p]", this));
+}
+
+void WorkerPrivate::SetActivePeerConnections(bool aHasPeerConnections) {
+  AssertIsOnParentThread();
+
+  RefPtr<ChangeActivePeerConnectionsRunnable> runnable =
+      new ChangeActivePeerConnectionsRunnable(this, aHasPeerConnections);
+  runnable->Dispatch(this);
+
+  AUTO_PROFILER_MARKER_UNTYPED("WorkerPrivate::SetActivePeerConnections", DOM,
+                               {});
+  LOG(WorkerLog(), ("SetActivePeerConnections [%p]", this));
 }
 
 nsresult WorkerPrivate::SetIsDebuggerReady(bool aReady) {
@@ -3348,7 +3368,7 @@ nsresult WorkerPrivate::GetLoadInfo(
     // Make sure that the IndexedDatabaseManager is set up
     IndexedDatabaseManager* idm = IndexedDatabaseManager::GetOrCreate();
     if (idm) {
-      Unused << NS_WARN_IF(NS_FAILED(idm->EnsureLocale()));
+      (void)NS_WARN_IF(NS_FAILED(idm->EnsureLocale()));
     } else {
       NS_WARNING("Failed to get IndexedDatabaseManager!");
     }
@@ -3661,6 +3681,9 @@ void WorkerPrivate::RunLoopNeverRan() {
     if (!mPreStartRunnables.IsEmpty()) {
       for (const RefPtr<WorkerThreadRunnable>& runnable : mPreStartRunnables) {
         runnable->mCleanPreStartDispatching = true;
+        PROFILER_MARKER("WorkerPrivate::RunLoopNeverRan", OTHER, {},
+                        TerminatingFlowMarker,
+                        Flow::FromPointer(runnable.get()));
       }
       mPreStartRunnables.Clear();
     }
@@ -3904,8 +3927,11 @@ void WorkerPrivate::DoRunLoop(JSContext* aCx) {
         nsCOMPtr<nsITimer> timer;
         {
           MutexAutoLock lock(mMutex);
-
           mStatus = Dead;
+          // Wait for the dispatching ControlRunnables complete.
+          while (mDispatchingControlRunnables) {
+            mCondVar.Wait();
+          }
           mJSContext = nullptr;
           mDebuggerInterruptTimer.swap(timer);
         }
@@ -4038,7 +4064,7 @@ void WorkerPrivate::OnProcessNextEvent() {
   // loop, and in that case we must ensure that we continue to process control
   // runnables here.
   if (recursionDepth > 1 && mSyncLoopStack.Length() < recursionDepth - 1) {
-    Unused << ProcessAllControlRunnables();
+    (void)ProcessAllControlRunnables();
     // There's no running JS, and no state to revalidate, so we can ignore the
     // return value.
   }
@@ -4053,14 +4079,15 @@ nsISerialEventTarget* WorkerPrivate::MainThreadEventTargetForMessaging() {
   return mMainThreadEventTargetForMessaging;
 }
 
-nsresult WorkerPrivate::DispatchToMainThreadForMessaging(nsIRunnable* aRunnable,
-                                                         uint32_t aFlags) {
+nsresult WorkerPrivate::DispatchToMainThreadForMessaging(
+    nsIRunnable* aRunnable, nsIEventTarget::DispatchFlags aFlags) {
   nsCOMPtr<nsIRunnable> r = aRunnable;
   return DispatchToMainThreadForMessaging(r.forget(), aFlags);
 }
 
 nsresult WorkerPrivate::DispatchToMainThreadForMessaging(
-    already_AddRefed<nsIRunnable> aRunnable, uint32_t aFlags) {
+    already_AddRefed<nsIRunnable> aRunnable,
+    nsIEventTarget::DispatchFlags aFlags) {
   return mMainThreadEventTargetForMessaging->Dispatch(std::move(aRunnable),
                                                       aFlags);
 }
@@ -4069,19 +4096,21 @@ nsISerialEventTarget* WorkerPrivate::MainThreadEventTarget() {
   return mMainThreadEventTarget;
 }
 
-nsresult WorkerPrivate::DispatchToMainThread(nsIRunnable* aRunnable,
-                                             uint32_t aFlags) {
+nsresult WorkerPrivate::DispatchToMainThread(
+    nsIRunnable* aRunnable, nsIEventTarget::DispatchFlags aFlags) {
   nsCOMPtr<nsIRunnable> r = aRunnable;
   return DispatchToMainThread(r.forget(), aFlags);
 }
 
 nsresult WorkerPrivate::DispatchToMainThread(
-    already_AddRefed<nsIRunnable> aRunnable, uint32_t aFlags) {
+    already_AddRefed<nsIRunnable> aRunnable,
+    nsIEventTarget::DispatchFlags aFlags) {
   return mMainThreadEventTarget->Dispatch(std::move(aRunnable), aFlags);
 }
 
 nsresult WorkerPrivate::DispatchDebuggeeToMainThread(
-    already_AddRefed<WorkerRunnable> aRunnable, uint32_t aFlags) {
+    already_AddRefed<WorkerRunnable> aRunnable,
+    nsIEventTarget::DispatchFlags aFlags) {
   RefPtr<WorkerRunnable> debuggeeRunnable = std::move(aRunnable);
   MOZ_ASSERT_DEBUG_OR_FUZZING(debuggeeRunnable->IsDebuggeeRunnable());
   return mMainThreadDebuggeeEventTarget->Dispatch(debuggeeRunnable.forget(),
@@ -4207,7 +4236,7 @@ void WorkerPrivate::ScheduleTimeSliceExpiration(uint32_t aDelay) {
   // used for control events.
   MOZ_ALWAYS_SUCCEEDS(data->mTSTimer->InitWithNamedFuncCallback(
       [](nsITimer* Timer, void* aClosure) { return; }, nullptr, aDelay,
-      nsITimer::TYPE_ONE_SHOT, "TimeSliceExpirationTimer"));
+      nsITimer::TYPE_ONE_SHOT, "TimeSliceExpirationTimer"_ns));
 }
 
 void WorkerPrivate::CancelTimeSliceExpiration() {
@@ -4312,14 +4341,14 @@ void WorkerPrivate::SetGCTimerMode(GCTimerMode aMode) {
   uint32_t delay = 0;
   int16_t type = nsITimer::TYPE_ONE_SHOT;
   nsTimerCallbackFunc callback = nullptr;
-  const char* name = nullptr;
+  nsCString name;
   nsITimer* timer = nullptr;
 
   if (aMode == PeriodicTimer) {
     delay = PERIODIC_GC_TIMER_DELAY_SEC * 1000;
     type = nsITimer::TYPE_REPEATING_SLACK;
     callback = PeriodicGCTimerCallback;
-    name = "dom::PeriodicGCTimerCallback";
+    name.AssignLiteral("dom::PeriodicGCTimerCallback");
     timer = data->mPeriodicGCTimer;
     data->mPeriodicGCTimerRunning = true;
     LOG(WorkerLog(), ("Worker %p scheduled periodic GC timer\n", this));
@@ -4327,7 +4356,7 @@ void WorkerPrivate::SetGCTimerMode(GCTimerMode aMode) {
     delay = IDLE_GC_TIMER_DELAY_SEC * 1000;
     type = nsITimer::TYPE_ONE_SHOT;
     callback = IdleGCTimerCallback;
-    name = "dom::IdleGCTimerCallback";
+    name.AssignLiteral("dom::IdleGCTimerCallback");
     timer = data->mIdleGCTimer;
     data->mIdleGCTimerRunning = true;
     LOG(WorkerLog(), ("Worker %p scheduled idle GC timer\n", this));
@@ -4495,7 +4524,7 @@ void WorkerPrivate::ScheduleDeletion(WorkerRanOrNot aRanOrNot) {
     MOZ_ASSERT(currentThread);
     // On the worker thread WorkerRunnable will refuse to run if not nested
     // on top of a WorkerThreadPrimaryRunnable.
-    Unused << NS_WARN_IF(NS_HasPendingEvents(currentThread));
+    (void)NS_WARN_IF(NS_HasPendingEvents(currentThread));
   }
 #endif
 
@@ -4743,16 +4772,23 @@ bool WorkerPrivate::FreezeInternal() {
   for (uint32_t index = 0; index < data->mChildWorkers.Length(); index++) {
     data->mChildWorkers[index]->Freeze(nullptr);
   }
-
-  if (StaticPrefs::dom_workers_timeoutmanager_AtStartup()) {
-    auto* timeoutManager =
-        data->mScope ? data->mScope->GetTimeoutManager() : nullptr;
-    if (timeoutManager) {
-      timeoutManager->Suspend();
-    }
+  auto* timeoutManager =
+      data->mScope ? data->mScope->GetTimeoutManager() : nullptr;
+  if (timeoutManager) {
+    timeoutManager->Suspend();
+    timeoutManager->Freeze();
   }
 
   return true;
+}
+
+bool WorkerPrivate::HasActiveWorkerRefs() {
+  auto data = mWorkerThreadAccessible.Access();
+  auto* timeoutManager =
+      data->mScope ? data->mScope->GetTimeoutManager() : nullptr;
+  return !data->mChildWorkers.IsEmpty() ||
+         (timeoutManager && timeoutManager->HasTimeouts()) ||
+         !data->mWorkerRefs.IsEmpty();
 }
 
 bool WorkerPrivate::ThawInternal() {
@@ -4761,23 +4797,22 @@ bool WorkerPrivate::ThawInternal() {
 
   // BindRemoteWorkerDebuggerChild();
 
+  data->mFrozen = false;
+
+  auto* timeoutManager =
+      data->mScope ? data->mScope->GetTimeoutManager() : nullptr;
+  if (timeoutManager) {
+    timeoutManager->Thaw();
+    timeoutManager->Resume();
+  }
+
   for (uint32_t index = 0; index < data->mChildWorkers.Length(); index++) {
     data->mChildWorkers[index]->Thaw(nullptr);
   }
 
-  data->mFrozen = false;
-
   // The worker can thaw even if it failed to run (and doesn't have a global).
   if (data->mScope) {
     data->mScope->MutableClientSourceRef().Thaw();
-  }
-
-  if (StaticPrefs::dom_workers_timeoutmanager_AtStartup()) {
-    auto* timeoutManager =
-        data->mScope ? data->mScope->GetTimeoutManager() : nullptr;
-    if (timeoutManager) {
-      timeoutManager->Resume();
-    }
   }
 
   return true;
@@ -4787,8 +4822,7 @@ bool WorkerPrivate::ChangeBackgroundStateInternal(bool aIsBackground) {
   AssertIsOnWorkerThread();
   mIsInBackground = aIsBackground;
   auto data = mWorkerThreadAccessible.Access();
-  if (StaticPrefs::dom_workers_timeoutmanager_AtStartup() &&
-      StaticPrefs::dom_workers_throttling_enabled_AtStartup()) {
+  if (StaticPrefs::dom_workers_throttling_enabled_AtStartup()) {
     auto* timeoutManager =
         data->mScope ? data->mScope->GetTimeoutManager() : nullptr;
     if (timeoutManager) {
@@ -4802,6 +4836,28 @@ bool WorkerPrivate::ChangeBackgroundStateInternal(bool aIsBackground) {
     } else {
       data->mChildWorkers[index]->SetIsRunningInForeground();
     }
+  }
+  return true;
+}
+
+bool WorkerPrivate::ChangePlaybackStateInternal(bool aIsPlayingAudio) {
+  AssertIsOnWorkerThread();
+  mIsPlayingAudio = aIsPlayingAudio;
+  auto data = mWorkerThreadAccessible.Access();
+
+  for (uint32_t index = 0; index < data->mChildWorkers.Length(); index++) {
+    data->mChildWorkers[index]->SetIsPlayingAudio(aIsPlayingAudio);
+  }
+  return true;
+}
+
+bool WorkerPrivate::ChangePeerConnectionsInternal(bool aHasPeerConnections) {
+  AssertIsOnWorkerThread();
+  mHasActivePeerConnections = aHasPeerConnections;
+  auto data = mWorkerThreadAccessible.Access();
+
+  for (uint32_t index = 0; index < data->mChildWorkers.Length(); index++) {
+    data->mChildWorkers[index]->SetActivePeerConnections(aHasPeerConnections);
   }
   return true;
 }
@@ -4824,37 +4880,25 @@ void WorkerPrivate::PropagateStorageAccessPermissionGrantedInternal() {
 
 void WorkerPrivate::TraverseTimeouts(nsCycleCollectionTraversalCallback& cb) {
   auto data = mWorkerThreadAccessible.Access();
-  if (StaticPrefs::dom_workers_timeoutmanager_AtStartup()) {
-    auto* timeoutManager =
-        data->mScope ? data->mScope->GetTimeoutManager() : nullptr;
-    if (timeoutManager) {
-      timeoutManager->ForEachUnorderedTimeout([&cb](Timeout* timeout) {
-        cb.NoteNativeChild(timeout, NS_CYCLE_COLLECTION_PARTICIPANT(Timeout));
-      });
-    }
-    return;
-  }
-  for (uint32_t i = 0; i < data->mTimeouts.Length(); ++i) {
-    // TODO(erahm): No idea what's going on here.
-    TimeoutInfo* tmp = data->mTimeouts[i].get();
-    NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mHandler)
+  auto* timeoutManager =
+      data->mScope ? data->mScope->GetTimeoutManager() : nullptr;
+  if (timeoutManager) {
+    timeoutManager->ForEachUnorderedTimeout([&cb](Timeout* timeout) {
+      cb.NoteNativeChild(timeout, NS_CYCLE_COLLECTION_PARTICIPANT(Timeout));
+    });
   }
 }
 
 void WorkerPrivate::UnlinkTimeouts() {
   auto data = mWorkerThreadAccessible.Access();
-  if (StaticPrefs::dom_workers_timeoutmanager_AtStartup()) {
-    auto* timeoutManager =
-        data->mScope ? data->mScope->GetTimeoutManager() : nullptr;
-    if (timeoutManager) {
-      timeoutManager->ClearAllTimeouts();
-      if (!timeoutManager->HasTimeouts()) {
-        UpdateCCFlag(CCFlag::EligibleForTimeout);
-      }
+  auto* timeoutManager =
+      data->mScope ? data->mScope->GetTimeoutManager() : nullptr;
+  if (timeoutManager) {
+    timeoutManager->ClearAllTimeouts();
+    if (!timeoutManager->HasTimeouts()) {
+      UpdateCCFlag(CCFlag::EligibleForTimeout);
     }
-    return;
   }
-  data->mTimeouts.Clear();
 }
 
 bool WorkerPrivate::AddChildWorker(WorkerPrivate& aChildWorker) {
@@ -4982,43 +5026,44 @@ nsresult WorkerPrivate::RegisterShutdownTask(nsITargetShutdownTask* aTask) {
   NS_ENSURE_ARG(aTask);
 
   MutexAutoLock lock(mMutex);
-
   // If we've already started running shutdown tasks, don't allow registering
   // new ones.
   if (mShutdownTasksRun) {
     return NS_ERROR_UNEXPECTED;
   }
-
-  MOZ_ASSERT(!mShutdownTasks.Contains(aTask));
-  mShutdownTasks.AppendElement(aTask);
-  return NS_OK;
+  return mShutdownTasks.AddTask(aTask);
 }
 
 nsresult WorkerPrivate::UnregisterShutdownTask(nsITargetShutdownTask* aTask) {
   NS_ENSURE_ARG(aTask);
 
   MutexAutoLock lock(mMutex);
+  return mShutdownTasks.RemoveTask(aTask);
+}
 
-  // We've already started running shutdown tasks, so can't unregister them
-  // anymore.
-  if (mShutdownTasksRun) {
-    return NS_ERROR_UNEXPECTED;
+void WorkerPrivate::JSAsyncTaskStarted(JS::Dispatchable* aDispatchable) {
+  RefPtr<StrongWorkerRef> ref = StrongWorkerRef::Create(this, "JSAsyncTask");
+  MOZ_ASSERT_DEBUG_OR_FUZZING(ref);
+  if (NS_WARN_IF(!ref)) {
+    return;
   }
+  MOZ_ALWAYS_TRUE(mPendingJSAsyncTasks.putNew(aDispatchable, std::move(ref)));
+}
 
-  return mShutdownTasks.RemoveElement(aTask) ? NS_OK : NS_ERROR_UNEXPECTED;
+void WorkerPrivate::JSAsyncTaskFinished(JS::Dispatchable* aDispatchable) {
+  mPendingJSAsyncTasks.remove(aDispatchable);
 }
 
 void WorkerPrivate::RunShutdownTasks() {
-  nsTArray<nsCOMPtr<nsITargetShutdownTask>> shutdownTasks;
+  TargetShutdownTaskSet::TasksArray shutdownTasks;
 
   {
     MutexAutoLock lock(mMutex);
-    shutdownTasks = std::move(mShutdownTasks);
-    mShutdownTasks.Clear();
     mShutdownTasksRun = true;
+    shutdownTasks = mShutdownTasks.Extract();
   }
 
-  for (auto& task : shutdownTasks) {
+  for (const auto& task : shutdownTasks) {
     task->TargetShutdown();
   }
   mWorkerHybridEventTarget->ForgetWorkerPrivate(this);
@@ -5069,23 +5114,15 @@ void WorkerPrivate::UpdateCCFlag(const CCFlag aFlag) {
       break;
     }
     case CCFlag::EligibleForTimeout: {
-      if (StaticPrefs::dom_workers_timeoutmanager_AtStartup()) {
-        auto* timeoutManager =
-            data->mScope ? data->mScope->GetTimeoutManager() : nullptr;
-        MOZ_ASSERT(timeoutManager && !timeoutManager->HasTimeouts());
-        break;
-      }
-      MOZ_ASSERT(data->mTimeouts.IsEmpty());
+      auto* timeoutManager =
+          data->mScope ? data->mScope->GetTimeoutManager() : nullptr;
+      MOZ_ASSERT(timeoutManager && !timeoutManager->HasTimeouts());
       break;
     }
     case CCFlag::IneligibleForTimeout: {
-      if (StaticPrefs::dom_workers_timeoutmanager_AtStartup()) {
-        auto* timeoutManager =
-            data->mScope ? data->mScope->GetTimeoutManager() : nullptr;
-        MOZ_ASSERT(!timeoutManager || timeoutManager->HasTimeouts());
-        break;
-      }
-      MOZ_ASSERT(!data->mTimeouts.IsEmpty());
+      auto* timeoutManager =
+          data->mScope ? data->mScope->GetTimeoutManager() : nullptr;
+      MOZ_ASSERT(!timeoutManager || timeoutManager->HasTimeouts());
       break;
     }
     case CCFlag::CheckBackgroundActors: {
@@ -5114,14 +5151,12 @@ void WorkerPrivate::UpdateCCFlag(const CCFlag aFlag) {
     return totalCount > nonblockingActorCount;
   };
 
-  bool noTimeouts{data->mTimeouts.IsEmpty()};
+  auto* timeoutManager =
+      data->mScope ? data->mScope->GetTimeoutManager() : nullptr;
 
-  if (StaticPrefs::dom_workers_timeoutmanager_AtStartup()) {
-    auto* timeoutManager =
-        data->mScope ? data->mScope->GetTimeoutManager() : nullptr;
-    if (timeoutManager) {
-      noTimeouts = !timeoutManager->HasTimeouts();
-    }
+  bool noTimeouts{true};
+  if (timeoutManager) {
+    noTimeouts = !timeoutManager->HasTimeouts();
   }
 
   bool eligibleForCC = data->mChildWorkers.IsEmpty() && noTimeouts &&
@@ -5173,54 +5208,16 @@ bool WorkerPrivate::IsEligibleForCC() {
 void WorkerPrivate::CancelAllTimeouts() {
   auto data = mWorkerThreadAccessible.Access();
 
-  if (StaticPrefs::dom_workers_timeoutmanager_AtStartup()) {
-    auto* timeoutManager =
-        data->mScope ? data->mScope->GetTimeoutManager() : nullptr;
-    if (timeoutManager) {
-      timeoutManager->ClearAllTimeouts();
-      if (!timeoutManager->HasTimeouts()) {
-        UpdateCCFlag(CCFlag::EligibleForTimeout);
-      }
+  auto* timeoutManager =
+      data->mScope ? data->mScope->GetTimeoutManager() : nullptr;
+  if (timeoutManager) {
+    timeoutManager->ClearAllTimeouts();
+    if (!timeoutManager->HasTimeouts()) {
+      UpdateCCFlag(CCFlag::EligibleForTimeout);
     }
-    return;
   }
 
   LOG(TimeoutsLog(), ("Worker %p CancelAllTimeouts.\n", this));
-
-  if (data->mTimerRunning) {
-    NS_ASSERTION(data->mTimer && data->mTimerRunnable, "Huh?!");
-    NS_ASSERTION(!data->mTimeouts.IsEmpty(), "Huh?!");
-
-    if (NS_FAILED(data->mTimer->Cancel())) {
-      NS_WARNING("Failed to cancel timer!");
-    }
-
-    for (uint32_t index = 0; index < data->mTimeouts.Length(); index++) {
-      data->mTimeouts[index]->mCanceled = true;
-    }
-
-    // If mRunningExpiredTimeouts, then the fact that they are all canceled now
-    // means that the currently executing RunExpiredTimeouts will deal with
-    // them.  Otherwise, we need to clean them up ourselves.
-    if (!data->mRunningExpiredTimeouts) {
-      data->mTimeouts.Clear();
-      UpdateCCFlag(CCFlag::EligibleForTimeout);
-    }
-
-    // Set mTimerRunning false even if mRunningExpiredTimeouts is true, so that
-    // if we get reentered under this same RunExpiredTimeouts call we don't
-    // assert above that !mTimeouts().IsEmpty(), because that's clearly false
-    // now.
-    data->mTimerRunning = false;
-  }
-#ifdef DEBUG
-  else if (!data->mRunningExpiredTimeouts) {
-    NS_ASSERTION(data->mTimeouts.IsEmpty(), "Huh?!");
-  }
-#endif
-
-  data->mTimer = nullptr;
-  data->mTimerRunnable = nullptr;
 }
 
 already_AddRefed<nsISerialEventTarget> WorkerPrivate::CreateNewSyncLoop(
@@ -5637,12 +5634,24 @@ void WorkerPrivate::EnterDebuggerEventLoop() {
     {
       MutexAutoLock lock(mMutex);
 
-      std::deque<RefPtr<MicroTaskRunnable>>& debuggerMtQueue =
-          ccjscx->GetDebuggerMicroTaskQueue();
-      while (mControlQueue.IsEmpty() &&
-             !(debuggerRunnablesPending = !mDebuggerQueue.IsEmpty()) &&
-             debuggerMtQueue.empty()) {
-        WaitForWorkerEvents();
+      if (StaticPrefs::javascript_options_use_js_microtask_queue()) {
+        // When JS microtask queue is enabled, check for debugger microtasks
+        // directly from the JS engine
+        while (mControlQueue.IsEmpty() &&
+               !(debuggerRunnablesPending = !mDebuggerQueue.IsEmpty()) &&
+               !JS::HasDebuggerMicroTasks(cx)) {
+          WaitForWorkerEvents();
+        }
+      } else {
+        // Legacy path: check the debugger microtask queue in
+        // CycleCollectedJSContext
+        std::deque<RefPtr<MicroTaskRunnable>>& debuggerMtQueue =
+            ccjscx->GetDebuggerMicroTaskQueue();
+        while (mControlQueue.IsEmpty() &&
+               !(debuggerRunnablesPending = !mDebuggerQueue.IsEmpty()) &&
+               debuggerMtQueue.empty()) {
+          WaitForWorkerEvents();
+        }
       }
 
       ProcessAllControlRunnablesLocked();
@@ -5692,7 +5701,7 @@ void WorkerPrivate::PostMessageToDebugger(const nsAString& aMessage) {
     remoteDebugger = mRemoteDebugger;
   }
   MOZ_ASSERT_DEBUG_OR_FUZZING(remoteDebugger);
-  Unused << remoteDebugger->SendPostMessageToDebugger(nsAutoString(aMessage));
+  (void)remoteDebugger->SendPostMessageToDebugger(nsAutoString(aMessage));
 }
 
 void WorkerPrivate::SetDebuggerImmediate(dom::Function& aHandler,
@@ -5720,9 +5729,8 @@ void WorkerPrivate::ReportErrorToDebugger(const nsACString& aFilename,
     remoteDebugger = mRemoteDebugger;
   }
   MOZ_ASSERT_DEBUG_OR_FUZZING(remoteDebugger);
-  Unused << remoteDebugger->SendReportErrorToDebugger(
-      RemoteWorkerDebuggerErrorInfo(nsAutoCString(aFilename), aLineno,
-                                    nsAutoString(aMessage)));
+  (void)remoteDebugger->SendReportErrorToDebugger(RemoteWorkerDebuggerErrorInfo(
+      nsAutoCString(aFilename), aLineno, nsAutoString(aMessage)));
 }
 
 void WorkerPrivate::UpdateWindowIDToDebugger(const uint64_t& aWindowID,
@@ -5741,9 +5749,9 @@ void WorkerPrivate::UpdateWindowIDToDebugger(const uint64_t& aWindowID,
   }
   MOZ_ASSERT_DEBUG_OR_FUZZING(remoteDebugger);
   if (aIsAdd) {
-    Unused << remoteDebugger->SendAddWindowID(aWindowID);
+    (void)remoteDebugger->SendAddWindowID(aWindowID);
   } else {
-    Unused << remoteDebugger->SendRemoveWindowID(aWindowID);
+    (void)remoteDebugger->SendRemoveWindowID(aWindowID);
   }
 }
 
@@ -5802,6 +5810,19 @@ bool WorkerPrivate::NotifyInternal(WorkerStatus aStatus) {
 
   if (aStatus >= Closing) {
     CancelAllTimeouts();
+
+    JSContext* cx = GetJSContext();
+    if (cx) {
+      // This will invoke the JS async task finished callback for cancellable
+      // JS tasks, which will invoke JSAsyncTaskFinished and remove from
+      // mPendingJSAsyncTasks.
+      //
+      // There may still be outstanding JS tasks for things that couldn't be
+      // cancelled. These must either finish normally, or be blocked on
+      // through a call to JS::ShutdownAsyncTasks. Cycle collector shutdown
+      // will call this during worker shutdown.
+      JS::CancelAsyncTasks(cx);
+    }
   }
 
   if (aStatus == Closing && GlobalScope()) {
@@ -5874,7 +5895,11 @@ void WorkerPrivate::ReportError(JSContext* aCx,
   }
 
   JS::ExceptionStack exnStack(aCx);
-  if (JS_IsExceptionPending(aCx)) {
+  // NOTE: This function is used both for errors and warnings, and warnings
+  //       can be reported while there's a pending exception.
+  //       Warnings are always reported with non-null JSErrorReport.
+  if (!aReport || !aReport->isWarning()) {
+    MOZ_ASSERT(JS_IsExceptionPending(aCx));
     if (!JS::StealPendingExceptionStack(aCx, &exnStack)) {
       JS_ClearPendingException(aCx);
       return;
@@ -5888,10 +5913,6 @@ void WorkerPrivate::ReportError(JSContext* aCx,
       JSAutoRealm ar(aCx, stackGlobal);
       report->SerializeWorkerStack(aCx, this, stack);
     }
-  } else {
-    // ReportError is also used for reporting warnings,
-    // so there won't be a pending exception.
-    MOZ_ASSERT(aReport && aReport->isWarning());
   }
 
   if (report->mMessage.IsEmpty() && aToStringResult) {
@@ -5946,330 +5967,45 @@ int32_t WorkerPrivate::SetTimeout(JSContext* aCx, TimeoutHandler* aHandler,
   auto data = mWorkerThreadAccessible.Access();
   MOZ_ASSERT(aHandler);
 
-  if (StaticPrefs::dom_workers_timeoutmanager_AtStartup()) {
-    WorkerGlobalScope* globalScope = GlobalScope();
-    MOZ_DIAGNOSTIC_ASSERT(globalScope);
-    auto* timeoutManager = globalScope->GetTimeoutManager();
-    int32_t timerId = -1;
-    WorkerStatus status;
-    {
-      MutexAutoLock lock(mMutex);
-      status = mStatus;
-    }
-    // If the worker is trying to call setTimeout/setInterval and the
-    // worker itself which has initiated the close process.
-    if (status >= Closing) {
-      return timeoutManager->GetTimeoutId(aReason);
-    }
-    bool hadTimeouts = timeoutManager->HasTimeouts();
-    nsresult rv = timeoutManager->SetTimeout(aHandler, aTimeout, aIsInterval,
-                                             aReason, &timerId);
-    if (NS_FAILED(rv)) {
-      aRv.Throw(NS_ERROR_FAILURE);
-      return timerId;
-    }
-    if (!hadTimeouts) {
-      UpdateCCFlag(CCFlag::IneligibleForTimeout);
-    }
-    return timerId;
-  }
-
-  // Reasons that doesn't support cancellation will get -1 as their ids.
+  WorkerGlobalScope* globalScope = GlobalScope();
+  MOZ_DIAGNOSTIC_ASSERT(globalScope);
+  auto* timeoutManager = globalScope->GetTimeoutManager();
+  MOZ_DIAGNOSTIC_ASSERT(timeoutManager);
   int32_t timerId = -1;
-  if (aReason == Timeout::Reason::eTimeoutOrInterval) {
-    timerId = data->mNextTimeoutId;
-    data->mNextTimeoutId += 1;
-  }
-
-  WorkerStatus currentStatus;
+  WorkerStatus status;
   {
     MutexAutoLock lock(mMutex);
-    currentStatus = mStatus;
+    status = mStatus;
   }
-
-  // If the worker is trying to call setTimeout/setInterval and the parent
-  // thread has initiated the close process then just silently fail.
-  if (currentStatus >= Closing) {
+  // If the worker is trying to call setTimeout/setInterval and the
+  // worker itself which has initiated the close process.
+  if (status >= Closing) {
+    return timeoutManager->GetTimeoutId(aReason);
+  }
+  bool hadTimeouts = timeoutManager->HasTimeouts();
+  nsresult rv = timeoutManager->SetTimeout(aHandler, aTimeout, aIsInterval,
+                                           aReason, &timerId);
+  if (NS_FAILED(rv)) {
+    aRv.Throw(NS_ERROR_FAILURE);
     return timerId;
   }
-
-  auto newInfo = MakeUnique<TimeoutInfo>();
-  newInfo->mReason = aReason;
-  newInfo->mOnChromeWorker = mIsChromeWorker;
-  newInfo->mIsInterval = aIsInterval;
-  newInfo->mId = timerId;
-  if (newInfo->mReason == Timeout::Reason::eTimeoutOrInterval ||
-      newInfo->mReason == Timeout::Reason::eIdleCallbackTimeout) {
-    newInfo->AccumulateNestingLevel(data->mCurrentTimerNestingLevel);
+  if (!hadTimeouts) {
+    UpdateCCFlag(CCFlag::IneligibleForTimeout);
   }
-
-  if (MOZ_UNLIKELY(timerId == INT32_MAX)) {
-    NS_WARNING("Timeout ids overflowed!");
-    if (aReason == Timeout::Reason::eTimeoutOrInterval) {
-      data->mNextTimeoutId = 1;
-    }
-  }
-
-  newInfo->mHandler = aHandler;
-
-  // See if any of the optional arguments were passed.
-  aTimeout = std::max(0, aTimeout);
-  newInfo->mInterval = TimeDuration::FromMilliseconds(aTimeout);
-  newInfo->CalculateTargetTime();
-
-  const auto& insertedInfo = data->mTimeouts.InsertElementSorted(
-      std::move(newInfo), GetUniquePtrComparator(data->mTimeouts));
-
-  LOG(TimeoutsLog(), ("Worker %p has new timeout: delay=%d interval=%s\n", this,
-                      aTimeout, aIsInterval ? "yes" : "no"));
-
-  // If the timeout we just made is set to fire next then we need to update the
-  // timer, unless we're currently running timeouts.
-  if (insertedInfo == data->mTimeouts.Elements() &&
-      !data->mRunningExpiredTimeouts) {
-    if (!data->mTimer) {
-      data->mTimer = NS_NewTimer(GlobalScope()->SerialEventTarget());
-      if (!data->mTimer) {
-        aRv.Throw(NS_ERROR_UNEXPECTED);
-        return 0;
-      }
-
-      data->mTimerRunnable = new RunExpiredTimoutsRunnable(this);
-    }
-
-    if (!data->mTimerRunning) {
-      UpdateCCFlag(CCFlag::IneligibleForTimeout);
-      data->mTimerRunning = true;
-    }
-
-    if (!RescheduleTimeoutTimer(aCx)) {
-      aRv.Throw(NS_ERROR_FAILURE);
-      return 0;
-    }
-  }
-
   return timerId;
 }
 
 void WorkerPrivate::ClearTimeout(int32_t aId, Timeout::Reason aReason) {
   MOZ_ASSERT(aReason == Timeout::Reason::eTimeoutOrInterval,
              "This timeout reason doesn't support cancellation.");
-  if (StaticPrefs::dom_workers_timeoutmanager_AtStartup()) {
-    WorkerGlobalScope* globalScope = GlobalScope();
-    MOZ_DIAGNOSTIC_ASSERT(globalScope);
-    auto* timeoutManager = globalScope->GetTimeoutManager();
-    timeoutManager->ClearTimeout(aId, aReason);
-    if (!timeoutManager->HasTimeouts()) {
-      UpdateCCFlag(CCFlag::EligibleForTimeout);
-    }
-    return;
-  }
-
-  auto data = mWorkerThreadAccessible.Access();
-
-  if (!data->mTimeouts.IsEmpty()) {
-    NS_ASSERTION(data->mTimerRunning, "Huh?!");
-
-    for (uint32_t index = 0; index < data->mTimeouts.Length(); index++) {
-      const auto& info = data->mTimeouts[index];
-      if (info->mId == aId && info->mReason == aReason) {
-        info->mCanceled = true;
-        break;
-      }
-    }
-  }
-}
-
-bool WorkerPrivate::RunExpiredTimeouts(JSContext* aCx) {
-  auto data = mWorkerThreadAccessible.Access();
-
-  // We may be called recursively (e.g. close() inside a timeout) or we could
-  // have been canceled while this event was pending, bail out if there is
-  // nothing to do.
-  if (data->mRunningExpiredTimeouts || !data->mTimerRunning) {
-    return true;
-  }
-
-  NS_ASSERTION(data->mTimer && data->mTimerRunnable, "Must have a timer!");
-  NS_ASSERTION(!data->mTimeouts.IsEmpty(), "Should have some work to do!");
-
-  bool retval = true;
-
-  auto comparator = GetUniquePtrComparator(data->mTimeouts);
-  JS::Rooted<JSObject*> global(aCx, JS::CurrentGlobalOrNull(aCx));
-
-  // We want to make sure to run *something*, even if the timer fired a little
-  // early. Fudge the value of now to at least include the first timeout.
-  const TimeStamp actual_now = TimeStamp::Now();
-  const TimeStamp now = std::max(actual_now, data->mTimeouts[0]->mTargetTime);
-
-  if (now != actual_now) {
-    LOG(TimeoutsLog(), ("Worker %p fudged timeout by %f ms.\n", this,
-                        (now - actual_now).ToMilliseconds()));
-#ifdef DEBUG
-    double microseconds = (now - actual_now).ToMicroseconds();
-    uint32_t allowedEarlyFiringMicroseconds;
-    data->mTimer->GetAllowedEarlyFiringMicroseconds(
-        &allowedEarlyFiringMicroseconds);
-    MOZ_ASSERT(microseconds < allowedEarlyFiringMicroseconds);
-#endif
-  }
-
-  AutoTArray<TimeoutInfo*, 10> expiredTimeouts;
-  for (uint32_t index = 0; index < data->mTimeouts.Length(); index++) {
-    TimeoutInfo* info = data->mTimeouts[index].get();
-    if (info->mTargetTime > now) {
-      break;
-    }
-    expiredTimeouts.AppendElement(info);
-  }
-
-  // Guard against recursion.
-  data->mRunningExpiredTimeouts = true;
-
-  MOZ_DIAGNOSTIC_ASSERT(data->mCurrentTimerNestingLevel == 0);
-
-  // Run expired timeouts.
-  for (uint32_t index = 0; index < expiredTimeouts.Length(); index++) {
-    TimeoutInfo*& info = expiredTimeouts[index];
-    AutoRestore<uint32_t> nestingLevel(data->mCurrentTimerNestingLevel);
-
-    if (info->mCanceled) {
-      continue;
-    }
-
-    // Set current timer nesting level to current running timer handler's
-    // nesting level
-    data->mCurrentTimerNestingLevel = info->mNestingLevel;
-
-    LOG(TimeoutsLog(),
-        ("Worker %p executing timeout with original delay %f ms.\n", this,
-         info->mInterval.ToMilliseconds()));
-
-    // Always check JS_IsExceptionPending if something fails, and if
-    // JS_IsExceptionPending returns false (i.e. uncatchable exception) then
-    // break out of the loop.
-
-    RefPtr<TimeoutHandler> handler(info->mHandler);
-
-    const char* reason;
-    switch (info->mReason) {
-      case Timeout::Reason::eTimeoutOrInterval:
-        if (info->mIsInterval) {
-          reason = "setInterval handler";
-        } else {
-          reason = "setTimeout handler";
-        }
-        break;
-      case Timeout::Reason::eDelayedWebTaskTimeout:
-        reason = "delayedWebTask handler";
-        break;
-      default:
-        MOZ_ASSERT(info->mReason == Timeout::Reason::eAbortSignalTimeout);
-        reason = "AbortSignal Timeout";
-    }
-    if (info->mReason == Timeout::Reason::eTimeoutOrInterval ||
-        info->mReason == Timeout::Reason::eDelayedWebTaskTimeout) {
-      RefPtr<WorkerGlobalScope> scope(this->GlobalScope());
-      CallbackDebuggerNotificationGuard guard(
-          scope, info->mIsInterval
-                     ? DebuggerNotificationType::SetIntervalCallback
-                     : DebuggerNotificationType::SetTimeoutCallback);
-
-      if (!handler->Call(reason)) {
-        retval = false;
-        break;
-      }
-    } else {
-      MOZ_ASSERT(info->mReason == Timeout::Reason::eAbortSignalTimeout);
-      MOZ_ALWAYS_TRUE(handler->Call(reason));
-    }
-
-    NS_ASSERTION(data->mRunningExpiredTimeouts, "Someone changed this!");
-  }
-
-  // No longer possible to be called recursively.
-  data->mRunningExpiredTimeouts = false;
-
-  // Now remove canceled and expired timeouts from the main list.
-  // NB: The timeouts present in expiredTimeouts must have the same order
-  // with respect to each other in mTimeouts.  That is, mTimeouts is just
-  // expiredTimeouts with extra elements inserted.  There may be unexpired
-  // timeouts that have been inserted between the expired timeouts if the
-  // timeout event handler called setTimeout/setInterval.
-  for (uint32_t index = 0, expiredTimeoutIndex = 0,
-                expiredTimeoutLength = expiredTimeouts.Length();
-       index < data->mTimeouts.Length();) {
-    const auto& info = data->mTimeouts[index];
-    if ((expiredTimeoutIndex < expiredTimeoutLength &&
-         info == expiredTimeouts[expiredTimeoutIndex] &&
-         ++expiredTimeoutIndex) ||
-        info->mCanceled) {
-      if (info->mIsInterval && !info->mCanceled) {
-        // Reschedule intervals.
-        // Reschedule a timeout, if needed, increase the nesting level.
-        info->AccumulateNestingLevel(info->mNestingLevel);
-        info->CalculateTargetTime();
-        // Don't resort the list here, we'll do that at the end.
-        ++index;
-      } else {
-        data->mTimeouts.RemoveElement(info);
-      }
-    } else {
-      // If info did not match the current entry in expiredTimeouts, it
-      // shouldn't be there at all.
-      NS_ASSERTION(!expiredTimeouts.Contains(info),
-                   "Our timeouts are out of order!");
-      ++index;
-    }
-  }
-
-  data->mTimeouts.Sort(comparator);
-
-  // Either signal the parent that we're no longer using timeouts or reschedule
-  // the timer.
-  if (data->mTimeouts.IsEmpty()) {
+  WorkerGlobalScope* globalScope = GlobalScope();
+  MOZ_DIAGNOSTIC_ASSERT(globalScope);
+  auto* timeoutManager = globalScope->GetTimeoutManager();
+  MOZ_DIAGNOSTIC_ASSERT(timeoutManager);
+  timeoutManager->ClearTimeout(aId, aReason);
+  if (!timeoutManager->HasTimeouts()) {
     UpdateCCFlag(CCFlag::EligibleForTimeout);
-    data->mTimerRunning = false;
-  } else if (retval && !RescheduleTimeoutTimer(aCx)) {
-    retval = false;
   }
-
-  return retval;
-}
-
-bool WorkerPrivate::RescheduleTimeoutTimer(JSContext* aCx) {
-  auto data = mWorkerThreadAccessible.Access();
-  MOZ_ASSERT(!data->mRunningExpiredTimeouts);
-  NS_ASSERTION(!data->mTimeouts.IsEmpty(), "Should have some timeouts!");
-  NS_ASSERTION(data->mTimer && data->mTimerRunnable, "Should have a timer!");
-
-  // NB: This is important! The timer may have already fired, e.g. if a timeout
-  // callback itself calls setTimeout for a short duration and then takes longer
-  // than that to finish executing. If that has happened, it's very important
-  // that we don't execute the event that is now pending in our event queue, or
-  // our code in RunExpiredTimeouts to "fudge" the timeout value will unleash an
-  // early timeout when we execute the event we're about to queue.
-  data->mTimer->Cancel();
-
-  double delta =
-      (data->mTimeouts[0]->mTargetTime - TimeStamp::Now()).ToMilliseconds();
-  uint32_t delay = delta > 0 ? static_cast<uint32_t>(std::ceil(
-                                   std::min(delta, double(UINT32_MAX))))
-                             : 0;
-
-  LOG(TimeoutsLog(),
-      ("Worker %p scheduled timer for %d ms, %zu pending timeouts\n", this,
-       delay, data->mTimeouts.Length()));
-
-  nsresult rv = data->mTimer->InitWithCallback(data->mTimerRunnable, delay,
-                                               nsITimer::TYPE_ONE_SHOT);
-  if (NS_FAILED(rv)) {
-    JS_ReportErrorASCII(aCx, "Failed to start timer!");
-    return false;
-  }
-
-  return true;
 }
 
 void WorkerPrivate::StartCancelingTimer() {
@@ -6389,14 +6125,9 @@ void WorkerPrivate::SetCCCollectedAnything(bool collectedAnything) {
 
 uint32_t WorkerPrivate::GetCurrentTimerNestingLevel() const {
   auto data = mWorkerThreadAccessible.Access();
-
-  auto* timeoutManager =
-      data->mScope ? data->mScope->GetTimeoutManager() : nullptr;
-  if (timeoutManager) {
-    return timeoutManager->GetNestingLevelForWorker();
-  }
-
-  return data->mCurrentTimerNestingLevel;
+  return data->mScope
+             ? data->mScope->GetTimeoutManager()->GetNestingLevelForWorker()
+             : 0;
 }
 
 bool WorkerPrivate::isLastCCCollectedAnything() {
@@ -6942,21 +6673,18 @@ NS_INTERFACE_MAP_END
 
 NS_IMETHODIMP
 WorkerPrivate::EventTarget::DispatchFromScript(nsIRunnable* aRunnable,
-                                               uint32_t aFlags) {
-  nsCOMPtr<nsIRunnable> event(aRunnable);
-  return Dispatch(event.forget(), aFlags);
+                                               DispatchFlags aFlags) {
+  return Dispatch(do_AddRef(aRunnable), aFlags);
 }
 
 NS_IMETHODIMP
 WorkerPrivate::EventTarget::Dispatch(already_AddRefed<nsIRunnable> aRunnable,
-                                     uint32_t aFlags) {
+                                     DispatchFlags aFlags) {
   // May be called on any thread!
-  nsCOMPtr<nsIRunnable> event(aRunnable);
 
-  // Workers only support asynchronous dispatch for now.
-  if (NS_WARN_IF(aFlags != NS_DISPATCH_NORMAL)) {
-    return NS_ERROR_UNEXPECTED;
-  }
+  // NOTE: This nsIEventTarget implementation never leaks aRunnable, even if
+  // NS_DISPATCH_FALLIBLE is not set.
+  nsCOMPtr<nsIRunnable> event(aRunnable);
 
   RefPtr<WorkerRunnable> workerRunnable;
 
@@ -7066,6 +6794,47 @@ WorkerPrivate::AutoPushEventLoopGlobal::~AutoPushEventLoopGlobal() {
 #endif
   data->mCurrentEventLoopGlobal = std::move(mOldEventLoopGlobal);
 }
+
+// FontVisibilityProvider implementation
+FontVisibility WorkerPrivate::GetFontVisibility() const {
+  return mFontVisibility;
+}
+
+void WorkerPrivate::ReportBlockedFontFamily(const nsCString& aMsg) const {
+  MOZ_LOG(gFingerprinterDetection, mozilla::LogLevel::Info, ("%s", aMsg.get()));
+  nsContentUtils::ReportToConsoleNonLocalized(NS_ConvertUTF8toUTF16(aMsg),
+                                              nsIScriptError::warningFlag,
+                                              "Security"_ns, GetDocument());
+}
+
+bool WorkerPrivate::IsChrome() const { return IsChromeWorker(); }
+
+bool WorkerPrivate::IsPrivateBrowsing() const {
+  return mLoadInfo.mOriginAttributes.IsPrivateBrowsing();
+}
+
+nsICookieJarSettings* WorkerPrivate::GetCookieJarSettings() const {
+  return CookieJarSettings();
+}
+
+Maybe<FontVisibility> WorkerPrivate::MaybeInheritFontVisibility() const {
+  if (mParent) {
+    // If we have a parent, we inherit the parent's font visibility.
+    return Some(mParent->GetFontVisibility());
+  }
+
+  dom::Document* doc = GetDocument();
+  if (!doc) {
+    return Nothing();
+  }
+
+  nsPresContext* presContext = doc->GetPresContext();
+  NS_ENSURE_TRUE(presContext, Nothing());
+
+  return Some(presContext->GetFontVisibility());
+}
+
+void WorkerPrivate::UserFontSetUpdated(gfxUserFontEntry*) {}
 
 // -----------------------------------------------------------------------------
 // AutoSyncLoopHolder

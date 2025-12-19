@@ -8,10 +8,9 @@ import {
 } from "resource://devtools/client/shared/vendor/react-dom-factories.mjs";
 import PropTypes from "resource://devtools/client/shared/vendor/react-prop-types.mjs";
 
-import { wrapRender } from "resource://devtools/client/shared/components/reps/reps/rep-utils.mjs";
-import { MODE } from "resource://devtools/client/shared/components/reps/reps/constants.mjs";
-import { Rep } from "resource://devtools/client/shared/components/reps/reps/rep.mjs";
-import * as Grip from "resource://devtools/client/shared/components/reps/reps/grip.mjs";
+import { wrapRender } from "./rep-utils.mjs";
+import { MODE } from "./constants.mjs";
+import * as Grip from "./grip.mjs";
 
 /**
  * Renders an object. An object is represented by a list of its
@@ -33,7 +32,7 @@ function Accessor(props) {
       {
         className: "objectBox objectBox-accessor objectTitle",
       },
-      Rep({
+      props.Rep({
         ...props,
         object: evaluation.getterValue,
         mode: props.mode || MODE.TINY,

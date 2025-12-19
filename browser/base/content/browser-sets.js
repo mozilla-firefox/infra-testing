@@ -203,6 +203,7 @@ document.addEventListener(
           case "Profiles:CreateProfile":
           case "Profiles:ManageProfiles":
           case "Profiles:LaunchProfile":
+          case "Profiles:MoveTabsToProfile":
             gProfiles.handleCommand(event);
             break;
           case "Tools:Search":
@@ -213,6 +214,21 @@ document.addEventListener(
             break;
           case "Tools:Addons":
             BrowserAddonUI.openAddonsMgr();
+            if (event.sourceEvent?.target.id == "key_openAddons") {
+              Services.prefs.setStringPref(
+                "browser.keys.openAddons.lastUsed",
+                new Date().toISOString()
+              );
+            }
+            break;
+          case "cmd_openUnifiedExtensionsPanel":
+            gUnifiedExtensions.openPanel(event);
+            break;
+          case "Tools:ClassicWindow":
+            OpenBrowserWindow({ aiWindow: false });
+            break;
+          case "Tools:AIWindow":
+            OpenBrowserWindow({ aiWindow: true });
             break;
           case "Tools:Sanitize":
             Sanitizer.showUI(window);
@@ -224,13 +240,13 @@ document.addEventListener(
             ScreenshotsUtils.notify(window, "Shortcut");
             break;
           case "History:UndoCloseTab":
-            undoCloseTab();
+            SessionWindowUI.undoCloseTab(window);
             break;
           case "History:UndoCloseWindow":
-            undoCloseWindow();
+            SessionWindowUI.undoCloseWindow();
             break;
           case "History:RestoreLastClosedTabOrWindowOrSession":
-            restoreLastClosedTabOrWindowOrSession();
+            SessionWindowUI.restoreLastClosedTabOrWindowOrSession(window);
             break;
           case "History:SearchHistory":
             PlacesCommandHook.searchHistory();

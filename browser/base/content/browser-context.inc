@@ -99,15 +99,15 @@
                 class="context-menu-open-link"
                 data-l10n-id="main-context-menu-open-link-new-private-window"
                 />
+      <menuitem id="context-previewlink"
+                data-l10n-id="main-context-menu-preview-link"
+                />
       <menuseparator id="context-sep-open"/>
       <menuitem id="context-bookmarklink"
                 data-l10n-id="main-context-menu-bookmark-link-2"
                 />
       <menuitem id="context-savelink"
                 data-l10n-id="main-context-menu-save-link"
-                />
-      <menuitem id="context-savelinktopocket"
-                data-l10n-id="main-context-menu-save-link-to-pocket"
                 />
       <menuitem id="context-copyemail"
                 data-l10n-id="main-context-menu-copy-email"
@@ -122,6 +122,7 @@
                 data-l10n-id="main-context-menu-copy-clean-link"
                 hidden="true"
                 />
+      <menuseparator id="context-sep-copylink"/>
       <menu id="context-sendlinktodevice"
             class="sync-ui-item"
             data-l10n-id="main-context-menu-link-send-to-device"
@@ -130,7 +131,6 @@
       </menu>
       <menuseparator id="context-sep-sendlinktodevice" class="sync-ui-item"
                 hidden="true"/>
-      <menuseparator id="context-sep-copylink"/>
       <menuitem id="context-media-play"
                 data-l10n-id="main-context-menu-media-play"
                 />
@@ -247,6 +247,9 @@
       <menuitem id="context-viewimagedesc"
                 data-l10n-id="main-context-menu-image-desc"
                 />
+      <menuitem id="context-visual-search"
+                hidden="true"
+                />
       <menuseparator id="context-sep-setbackground"/>
       <menuitem id="context-setDesktopBackground"
                 data-l10n-id="main-context-menu-image-set-image-as-background"
@@ -260,15 +263,6 @@
       <menuitem id="context-savepage"
                 data-l10n-id="main-context-menu-page-save"
                 />
-      <menuitem id="context-pocket"
-                data-l10n-id="main-context-menu-save-to-pocket"
-                />
-      <menu id="context-sendpagetodevice"
-            class="sync-ui-item"
-            data-l10n-id="main-context-menu-send-to-device"
-            hidden="true">
-        <menupopup id="context-sendpagetodevice-popup"/>
-      </menu>
       <menu id="fill-login" hidden="true">
         <menupopup id="fill-login-popup" />
       </menu>
@@ -285,16 +279,6 @@
                 hidden="true"
                 />
       <menuseparator id="passwordmgr-items-separator"/>
-      <menuitem id="context-copy-link-to-highlight"
-                data-l10n-id="text-action-copy-link-to-highlight"
-                />
-      <menuitem id="context-copy-clean-link-to-highlight"
-                data-l10n-id="text-action-copy-clean-link-to-highlight"
-                />
-      <menuitem id="context-remove-all-highlights"
-                data-l10n-id="text-action-remove-all-highlights"
-                />
-      <menuseparator id="context-sep-highlights"/>
       <menuitem id="context-undo"
                 data-l10n-id="text-action-undo"
                 command="cmd_undo"/>
@@ -320,6 +304,8 @@
       <menuitem id="context-selectall"
                 data-l10n-id="text-action-select-all"
                 command="cmd_selectAll"/>
+      <menuitem id="context-pdfjs-comment-selection"
+                data-l10n-id="text-action-comment-selection-1"/>
       <menuitem id="context-pdfjs-highlight-selection"
                 data-l10n-id="text-action-highlight-selection"/>
       <menuitem id="context-reveal-password"
@@ -328,6 +314,16 @@
       <menuitem id="context-print-selection"
                 data-l10n-id="main-context-menu-print-selection-2"/>
       <menuseparator id="context-sep-selectall"/>
+      <menuitem id="context-copy-link-to-highlight"
+                data-l10n-id="text-action-copy-link-to-highlight"
+                />
+      <menuitem id="context-copy-clean-link-to-highlight"
+                data-l10n-id="text-action-copy-clean-link-to-highlight"
+                />
+      <menuitem id="context-remove-highlight"
+                data-l10n-id="text-action-remove-highlight"
+                />
+      <menuseparator id="context-sep-highlights"/>
 
       <menuitem id="context-pdfjs-undo"
                 data-l10n-id="text-action-undo"/>
@@ -349,8 +345,6 @@
       <menuitem id="context-take-screenshot"
                 data-l10n-id="main-context-menu-take-screenshot"/>
       <menuseparator id="context-sep-screenshots"/>
-      <menuitem id="context-keywordfield"
-                data-l10n-id="main-context-menu-keyword"/>
       <menuitem id="context-add-engine"
                 data-l10n-id="main-context-menu-add-engine"/>
       <menuitem id="context-searchselect"/>
@@ -386,11 +380,7 @@
           <menuitem id="context-printframe"
                     data-l10n-id="main-context-menu-frame-print"
                     />
-          <menuseparator/>
-          <menuitem id="context-take-frame-screenshot"
-                    data-l10n-id="main-context-menu-take-frame-screenshot"
-                    />
-          <menuseparator id="context-sep-frame-screenshot"/>
+          <menuseparator id="print-frame-sep"/>
           <menuitem id="context-viewframesource"
                     data-l10n-id="main-context-menu-frame-view-source"
                     />
@@ -443,6 +433,15 @@
                 hidden="true"
                 data-l10n-id="main-context-menu-inspect"
                 />
+      <menuseparator id="context-sep-sendpagetodevice"
+            class="sync-ui-item"
+            hidden="true"/>
+      <menu id="context-sendpagetodevice"
+            class="sync-ui-item"
+            data-l10n-id="main-context-menu-send-to-device-2"
+            hidden="true">
+        <menupopup id="context-sendpagetodevice-popup"/>
+      </menu>
       <menuseparator id="context-media-eme-separator" hidden="true"/>
       <menuitem id="context-media-eme-learnmore"
                 class="menuitem-iconic"

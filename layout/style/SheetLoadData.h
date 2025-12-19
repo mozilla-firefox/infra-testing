@@ -8,13 +8,13 @@
 #define mozilla_css_SheetLoadData_h
 
 #include "mozilla/AlreadyAddRefed.h"
+#include "mozilla/Encoding.h"
+#include "mozilla/NotNull.h"
+#include "mozilla/PreloaderBase.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/SharedSubResourceCache.h"
 #include "mozilla/css/Loader.h"
 #include "mozilla/css/SheetParsingMode.h"
-#include "mozilla/Encoding.h"
-#include "mozilla/PreloaderBase.h"
-#include "mozilla/SharedSubResourceCache.h"
-#include "mozilla/NotNull.h"
 #include "mozilla/dom/CacheExpirationTime.h"
 #include "nsProxyRelease.h"
 
@@ -198,18 +198,6 @@ class SheetLoadData final
   // If true, this SheetLoadData is being used as a way to handle
   // async observer notification for an already-complete sheet.
   bool mSheetAlreadyComplete : 1;
-
-  // If true, the sheet is being loaded cross-origin without CORS permissions.
-  // This is completely normal and CORS isn't needed for such loads.  This
-  // flag is simply useful in determining whether to set mBlockResourceTiming
-  // for a child sheet.
-  bool mIsCrossOriginNoCORS : 1;
-
-  // If this flag is true, LoadSheet will call SetReportResourceTiming(false)
-  // on the timedChannel. This is to mark resources that are loaded by a
-  // cross-origin stylesheet with a no-cors policy.
-  // https://www.w3.org/TR/resource-timing/#processing-model
-  bool mBlockResourceTiming : 1;
 
   // Boolean flag indicating whether the load has failed.  This will be set
   // to true if this load, or the load of any descendant import, fails.

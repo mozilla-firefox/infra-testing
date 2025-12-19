@@ -5,18 +5,20 @@
 package mozilla.components.concept.toolbar
 
 import android.graphics.drawable.Drawable
+import android.text.style.ForegroundColorSpan
 import android.view.View
 import android.view.View.NO_ID
 import android.view.ViewGroup
 import android.widget.ImageButton
 import android.widget.ImageView
+import androidx.annotation.ColorInt
 import androidx.annotation.ColorRes
 import androidx.annotation.Dimension
 import androidx.annotation.Dimension.Companion.DP
 import androidx.annotation.DrawableRes
+import androidx.appcompat.content.res.AppCompatResources
 import androidx.appcompat.widget.AppCompatImageButton
 import androidx.appcompat.widget.AppCompatImageView
-import androidx.core.content.ContextCompat
 import mozilla.components.support.base.android.Padding
 import mozilla.components.support.ktx.android.content.res.resolveAttribute
 import mozilla.components.support.ktx.android.view.setPadding
@@ -287,7 +289,7 @@ interface Toolbar : ScrollableToolbar {
         override val weight: () -> Int = { -1 },
         private val background: Int = 0,
         private val padding: Padding? = null,
-        @ColorRes val iconTintColorResource: Int = ViewGroup.NO_ID,
+        @param:ColorRes val iconTintColorResource: Int = ViewGroup.NO_ID,
         private val longClickListener: (() -> Unit)? = null,
         private val listener: () -> Unit,
     ) : Action {
@@ -360,7 +362,7 @@ interface Toolbar : ScrollableToolbar {
         override val visible: () -> Boolean = { true },
         override val weight: () -> Int = { -1 },
         private var selected: Boolean = false,
-        @DrawableRes private val background: Int = 0,
+        @param:DrawableRes private val background: Int = 0,
         private val padding: Padding? = null,
         private val listener: (Boolean) -> Unit,
     ) : Action {
@@ -443,7 +445,7 @@ interface Toolbar : ScrollableToolbar {
      * @param padding A optional custom padding.
      */
     open class ActionSpace(
-        @Dimension(unit = DP) private val desiredWidth: Int,
+        @param:Dimension(unit = DP) private val desiredWidth: Int,
         private val padding: Padding? = null,
     ) : Action {
         override fun createView(parent: ViewGroup): View = View(parent.context).apply {
@@ -548,10 +550,21 @@ interface Toolbar : ScrollableToolbar {
          */
         END,
     }
+
+    /**
+     * Registrable domain foreground color span.
+     *
+     * This simple class extension is used so that we can filter for it elsewhere.
+     */
+    class RegistrableDomainColorSpan(
+        @ColorInt color: Int,
+    ) : ForegroundColorSpan(color)
 }
 
-private fun AppCompatImageButton.setTintResource(@ColorRes tintColorResource: Int) {
+private fun AppCompatImageButton.setTintResource(
+    @ColorRes tintColorResource: Int,
+) {
     if (tintColorResource != NO_ID) {
-        imageTintList = ContextCompat.getColorStateList(context, tintColorResource)
+        imageTintList = AppCompatResources.getColorStateList(context, tintColorResource)
     }
 }

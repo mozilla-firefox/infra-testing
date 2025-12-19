@@ -1,5 +1,19 @@
 #!/bin/bash
 
+function find_repo_type()
+{
+  if [ -d ".git" ]; then
+      MOZ_REPO="git"
+  elif [ -d ".hg" ]; then
+      MOZ_REPO="hg"
+  else
+    echo "Unable to detect repo (git or hg)"
+    exit 1
+  fi
+}
+export -f find_repo_type
+
+
 # Assume that if STATE_DIR is already defined, we do not need to
 # execute this file again.
 if [ "x$STATE_DIR" != "x" ]; then
@@ -78,6 +92,7 @@ function find_base_commit()
   echo "adjusted MOZ_LIBWEBRTC_BASE: $MOZ_LIBWEBRTC_BASE"
 }
 export -f find_base_commit
+
 
 function find_next_commit()
 {

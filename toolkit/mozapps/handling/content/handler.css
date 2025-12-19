@@ -5,7 +5,7 @@
 @namespace html "http://www.w3.org/1999/xhtml";
 
 #description {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 #remember-text:not([visible]) {
@@ -17,7 +17,8 @@ dialog {
 }
 
 #items,
-label, description {
+label,
+description {
   margin: 0;
 }
 
@@ -27,6 +28,7 @@ label, description {
 
 #description,
 #description-box,
+#warning-bar,
 #rememberContainer,
 #chooser {
   margin: 0 4px 16px;
@@ -50,7 +52,7 @@ label, description {
 .toggle-container-with-text > html|input[type="checkbox"] {
   margin-inline-end: 8px;
   /* Ensure the checkbox is properly aligned with the text: */
-  translate: 0 calc(1px + max(60% - .6em, 0px));
+  translate: 0 calc(1px + max(60% - 0.6em, 0px));
 }
 
 #rememberContainer:not([hidden]) {

@@ -9,7 +9,10 @@ const { TabStateFlusher } = ChromeUtils.importESModule(
 
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.tabs.groups.enabled", true]],
+    set: [
+      ["test.wait300msAfterTabSwitch", true],
+      ["browser.tabs.groups.enabled", true],
+    ],
   });
   forgetSavedTabGroups();
   window.gTabsPanel.init();
@@ -18,7 +21,7 @@ add_setup(async function () {
 /**
  * One-liner to create a basic tab group
  *
- * @param {Object} [options] options for addTabGroup
+ * @param {object} [options] options for addTabGroup
  * @param {Window} [options.targetWin] window to create the group in
  * @returns {MozTabbrowserTabGroup}
  */
@@ -117,6 +120,18 @@ add_task(async function test_allTabsView() {
     "data:text/plain,tab5",
     "Test Group",
     // tab1 and tab2 rows should be hidden when Test Group is collapsed
+    "Unnamed Group",
+    "data:text/plain,tab3",
+    "data:text/plain,tab4",
+  ]);
+
+  gBrowser.selectedTab = tabs[0]; // tab1 selected
+  await assertTabMenuContains([
+    "New Tab",
+    "data:text/plain,tab5",
+    "Test Group",
+    "data:text/plain,tab1", // tab1 shows because it is the active tab
+    // tab2 row should be hidden because it's in the collapsed group
     "Unnamed Group",
     "data:text/plain,tab3",
     "data:text/plain,tab4",

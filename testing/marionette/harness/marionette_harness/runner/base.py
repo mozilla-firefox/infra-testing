@@ -15,6 +15,7 @@ from argparse import ArgumentParser
 from collections import defaultdict
 from copy import deepcopy
 
+import mozdebug
 import mozinfo
 import moznetwork
 import mozprofile
@@ -24,7 +25,6 @@ from manifestparser.filters import tags
 from marionette_driver.marionette import Marionette
 from moztest.adapters.unit import StructuredTestResult, StructuredTestRunner
 from moztest.results import TestResult, TestResultCollection, relevant_line
-from six import MAXSIZE
 
 from . import serve
 
@@ -48,7 +48,7 @@ class MarionetteTest(TestResult):
     @property
     def test_name(self):
         if self.test_class is not None:
-            return "{0}.py {1}.{2}".format(
+            return "{}.py {}.{}".format(
                 self.test_class.split(".")[0], self.test_class, self.name
             )
         else:
@@ -160,7 +160,7 @@ class MarionetteTestResult(StructuredTestResult, TestResultCollection):
         self.add_test_result(
             test, output=self._exc_info_to_string(err, test), result_actual="ERROR"
         )
-        super(MarionetteTestResult, self).addError(test, err)
+        super().addError(test, err)
 
     def addFailure(self, test, err):
         self.add_test_result(
@@ -168,28 +168,28 @@ class MarionetteTestResult(StructuredTestResult, TestResultCollection):
             output=self._exc_info_to_string(err, test),
             result_actual="UNEXPECTED-FAIL",
         )
-        super(MarionetteTestResult, self).addFailure(test, err)
+        super().addFailure(test, err)
 
     def addSuccess(self, test):
         self.passed += 1
         self.add_test_result(test, result_actual="PASS")
-        super(MarionetteTestResult, self).addSuccess(test)
+        super().addSuccess(test)
 
     def addExpectedFailure(self, test, err):
         """Called when an expected failure/error occured."""
         self.add_test_result(
             test, output=self._exc_info_to_string(err, test), result_actual="KNOWN-FAIL"
         )
-        super(MarionetteTestResult, self).addExpectedFailure(test, err)
+        super().addExpectedFailure(test, err)
 
     def addUnexpectedSuccess(self, test):
         """Called when a test was expected to fail, but succeed."""
         self.add_test_result(test, result_actual="UNEXPECTED-PASS")
-        super(MarionetteTestResult, self).addUnexpectedSuccess(test)
+        super().addUnexpectedSuccess(test)
 
     def addSkip(self, test, reason):
         self.add_test_result(test, output=reason, result_actual="SKIPPED")
-        super(MarionetteTestResult, self).addSkip(test, reason)
+        super().addSkip(test, reason)
 
     def getInfo(self, test):
         return test.test_name
@@ -250,7 +250,7 @@ class MarionetteTextTestRunner(StructuredTestRunner):
         )
 
     def run(self, test):
-        result = super(MarionetteTextTestRunner, self).run(test)
+        result = super().run(test)
         result.printLogs(test)
         return result
 
@@ -371,7 +371,7 @@ class BaseMarionetteArguments(ArgumentParser):
         self.add_argument(
             "--shuffle-seed",
             type=int,
-            default=random.randint(0, MAXSIZE),
+            default=random.randint(0, sys.maxsize),
             help="Use given seed to shuffle tests",
         )
         self.add_argument(
@@ -412,6 +412,17 @@ class BaseMarionetteArguments(ArgumentParser):
             " Pass in the debugger you want to use, eg pdb or ipdb.",
         )
         self.add_argument(
+            "--debugger",
+            default=None,
+            help="Debugger binary to run tests in. Program name or path",
+        )
+        self.add_argument(
+            "--debugger-args",
+            dest="debugger_args",
+            default=None,
+            help="Arguments to pass to the debugger",
+        )
+        self.add_argument(
             "--disable-fission",
             action="store_true",
             dest="disable_fission",
@@ -423,7 +434,7 @@ class BaseMarionetteArguments(ArgumentParser):
             "--headless",
             action="store_true",
             dest="headless",
-            default=os.environ.get("MOZ_HEADLESS", False),
+            default=bool(os.environ.get("MOZ_HEADLESS")),
             help="Run tests in headless mode.",
         )
         self.add_argument(
@@ -531,6 +542,15 @@ class BaseMarionetteArguments(ArgumentParser):
             args.app_args.append("-jsdebugger")
             args.socket_timeout = None
 
+        if args.debugger_args and not args.debugger:
+            self.error("--debugger-args requires --debugger")
+
+        if args.debugger:
+            # Valgrind and some debuggers may cause Gecko to start slowly.
+            # Make sure to wait long enough to connect.
+            args.startup_timeout = 900
+            args.socket_timeout = None
+
         args.prefs = self._get_preferences(args.prefs_files, args.prefs_args)
 
         for container in self.argument_containers:
@@ -606,6 +626,8 @@ class BaseMarionetteTestRunner:
         address=None,
         app=None,
         app_args=None,
+        debugger=None,
+        debugger_args=None,
         binary=None,
         profile=None,
         logger=None,
@@ -615,7 +637,7 @@ class BaseMarionetteTestRunner:
         testvars=None,
         symbols_path=None,
         shuffle=False,
-        shuffle_seed=random.randint(0, MAXSIZE),
+        shuffle_seed=random.randint(0, sys.maxsize),
         this_chunk=1,
         total_chunks=1,
         server_root=None,
@@ -645,6 +667,8 @@ class BaseMarionetteTestRunner:
         self.address = address
         self.app = app
         self.app_args = app_args or []
+        self.debugger = debugger
+        self.debugger_args = debugger_args
         self.bin = binary
         self.emulator = emulator
         self.profile = profile
@@ -743,7 +767,7 @@ class BaseMarionetteTestRunner:
                 if isinstance(v, dict) and isinstance(o, dict):
                     d[k] = update(d.get(k, {}), v)
                 else:
-                    d[k] = u[k]
+                    d[k] = v
             return d
 
         json_testvars = self._load_testvars()
@@ -832,12 +856,18 @@ class BaseMarionetteTestRunner:
             "symbols_path": self.symbols_path,
         }
         if self.bin or self.emulator:
+            debugger_info = None
+            if self.debugger:
+                debugger_info = mozdebug.get_debugger_info(
+                    self.debugger, self.debugger_args
+                )
             kwargs.update(
                 {
                     "host": "127.0.0.1",
                     "port": 2828,
                     "app": self.app,
                     "app_args": self.app_args,
+                    "debugger_info": debugger_info,
                     "profile": self.profile,
                     "addons": self.addons,
                     "gecko_log": self.gecko_log,
@@ -1122,11 +1152,11 @@ class BaseMarionetteTestRunner:
                 )
 
             target_tests = []
-            for test in manifest_tests:
-                if test.get("disabled"):
-                    self.manifest_skipped_tests.append(test)
+            for manifest_test in manifest_tests:
+                if manifest_test.get("disabled"):
+                    self.manifest_skipped_tests.append(manifest_test)
                 else:
-                    target_tests.append(test)
+                    target_tests.append(manifest_test)
 
             for i in target_tests:
                 if not os.path.exists(i["path"]):

@@ -15,12 +15,15 @@
 #include "PendingTransactionQueue.h"
 #include "nsHttpHandler.h"
 #include "mozilla/ChaosMode.h"
+#include "mozilla/StaticPrefs_network.h"
 
 namespace mozilla {
 namespace net {
 
 static uint64_t TabIdForQueuing(nsAHttpTransaction* transaction) {
-  return gHttpHandler->ActiveTabPriority() ? transaction->BrowserId() : 0;
+  return StaticPrefs::network_http_active_tab_priority()
+             ? transaction->BrowserId()
+             : 0;
 }
 
 // This function decides the transaction's order in the pending queue.
@@ -264,23 +267,25 @@ void PendingTransactionQueue::Compact() {
 }
 
 void PendingTransactionQueue::CancelAllTransactions(nsresult reason) {
-  for (const auto& pendingTransInfo : mUrgentStartQ) {
-    LOG(("PendingTransactionQueue::CancelAllTransactions %p\n",
-         pendingTransInfo->Transaction()));
-    pendingTransInfo->Transaction()->Close(reason);
+  AutoTArray<nsHttpTransaction*, 64> toClose;
+  for (const auto& info : mUrgentStartQ) {
+    toClose.AppendElement(info->Transaction());
   }
   mUrgentStartQ.Clear();
 
+  // Drain all table entries into toClose, then clear them.
   for (const auto& data : mPendingTransactionTable.Values()) {
-    for (const auto& pendingTransInfo : *data) {
-      LOG(("PendingTransactionQueue::CancelAllTransactions %p\n",
-           pendingTransInfo->Transaction()));
-      pendingTransInfo->Transaction()->Close(reason);
+    for (const auto& info : *data) {
+      toClose.AppendElement(info->Transaction());
     }
     data->Clear();
   }
-
   mPendingTransactionTable.Clear();
+
+  for (auto trans : toClose) {
+    LOG(("PendingTransactionQueue::CancelAllTransactions %p\n", trans));
+    trans->Close(reason);
+  }
 }
 
 }  // namespace net

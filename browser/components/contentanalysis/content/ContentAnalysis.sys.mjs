@@ -19,8 +19,10 @@ const lazy = {};
 let internalContentAnalysisService = undefined;
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   clearTimeout: "resource://gre/modules/Timer.sys.mjs",
-  PanelMultiView: "resource:///modules/PanelMultiView.sys.mjs",
+  PanelMultiView:
+    "moz-src:///browser/components/customizableui/PanelMultiView.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
 
@@ -94,7 +96,7 @@ export const ContentAnalysis = {
 
   /**
    * @typedef {object} RequestInfo
-   * @property {CanonicalBrowsingContext} browsingContext - browsing context where the request was sent from
+   * @property {CanonicalBrowsingContext?} browsingContext - browsing context where the request was sent from
    * @property {ResourceNameOrOperationType} resourceNameOrOperationType - name of the operation
    */
 
@@ -214,6 +216,11 @@ export const ContentAnalysis = {
   async observe(aSubj, aTopic, _aData) {
     switch (aTopic) {
       case "quit-application-requested": {
+        if (aSubj.data) {
+          // something has already cancelled the quit operation,
+          // so we don't need to do anything.
+          return;
+        }
         let pendingRequestInfos = this._getAllSlowCARequestInfos();
         let requestDescriptions = Array.from(
           pendingRequestInfos.flatMap(info =>
@@ -294,7 +301,11 @@ export const ContentAnalysis = {
             return;
           }
           let browsingContext = request.windowGlobalParent?.browsingContext;
-          if (!browsingContext) {
+          if (
+            !browsingContext &&
+            request.operationTypeForDisplay !==
+              Ci.nsIContentAnalysisRequest.eDownload
+          ) {
             throw new Error(
               "Got dlp-request-made message but couldn't find a browsingContext!"
             );
@@ -338,6 +349,14 @@ export const ContentAnalysis = {
         }
         this.requestTokenToRequestInfo.delete(response.requestToken);
         this._removeSlowCAMessage(response.userActionId, response.requestToken);
+        if (
+          windowAndResourceNameOrOperationType.resourceNameOrOperationType
+            ?.operationType === Ci.nsIContentAnalysisRequest.eDownload
+        ) {
+          // Don't show warn/block/error dialogs for downloads; they're shown
+          // inside the downloads panel.
+          return;
+        }
         const responseResult =
           response?.action ?? Ci.nsIContentAnalysisResponse.eUnspecified;
         // Don't show dialog if this is a cached response
@@ -348,7 +367,7 @@ export const ContentAnalysis = {
             response.requestToken,
             response.userActionId,
             responseResult,
-            response.isAgentResponse,
+            response.isSyntheticResponse,
             response.cancelError
           );
         }
@@ -394,6 +413,14 @@ export const ContentAnalysis = {
         // in-browser notification
         let browser =
           caView.notification.dialogBrowsingContext.top.embedderElement;
+        // If we're showing a dialog in the sidebar, the dialog is managed
+        // by the embedderElement.
+        let isSidebar =
+          browser?.ownerGlobal?.browsingContext?.embedderElement?.id ==
+          "sidebar";
+        if (isSidebar) {
+          browser = browser.ownerGlobal.browsingContext.embedderElement;
+        }
         // browser will be null if the tab was closed
         let win = browser?.ownerGlobal;
         if (win) {
@@ -418,7 +445,8 @@ export const ContentAnalysis = {
    * _SHOW_DIALOGS and _SHOW_NOTIFICATIONS.
    *
    * @param {string} aMessage - Message to show
-   * @param {CanonicalBrowsingContext} aBrowsingContext - BrowsingContext to show the dialog in.
+   * @param {CanonicalBrowsingContext?} aBrowsingContext - BrowsingContext to show the dialog in. If
+   *                            null, the top browsing context will be used for native notifications.
    * @param {number} aTimeout - timeout for closing the native notification. 0 indicates it is
    *                            not automatically closed.
    * @returns {NotificationInfo?} - information about the native notification, if it has been shown.
@@ -434,9 +462,21 @@ export const ContentAnalysis = {
     }
 
     if (this._SHOW_NOTIFICATIONS) {
+      // Downloading as a "save as" operation does not provide a browsing context,
+      // so use the the top window in that case.
       let topWindow =
-        aBrowsingContext.topChromeWindow ??
-        aBrowsingContext.embedderWindowGlobal.browsingContext.topChromeWindow;
+        aBrowsingContext?.topChromeWindow ??
+        aBrowsingContext?.embedderWindowGlobal.browsingContext
+          .topChromeWindow ??
+        lazy.BrowserWindowTracker.getTopWindow({
+          allowFromInactiveWorkspace: true,
+        });
+      if (!topWindow) {
+        console.error(
+          "Unable to get window to show Content Analysis notification for."
+        );
+        return null;
+      }
       const notification = new topWindow.Notification(
         this.l10n.formatValueSync("contentanalysis-notification-title"),
         { body: aMessage, silent: lazy.silentNotifications }
@@ -505,26 +545,41 @@ export const ContentAnalysis = {
    * @param {nsIContentAnalysisRequest} aRequest The nsIContentAnalysisRequest
    * @param {boolean} aStandalone Whether the message is going to be used on its own
    *                              line. This is used to add more context to the message
-   *                              if a file is being uploaded rather than just the name
-   *                              of the file.
+   *                              if a file is being uploaded or downloaded rather than
+   *                              just the name of the file.
    * @returns {ResourceNameOrOperationType}
    */
   _getResourceNameOrOperationTypeFromRequest(aRequest, aStandalone) {
+    /**
+     * @type {ResourceNameOrOperationType}
+     */
+    let nameOrOperationType = {
+      operationType: aRequest.operationTypeForDisplay,
+    };
     if (
-      aRequest.operationTypeForDisplay ==
-      Ci.nsIContentAnalysisRequest.eCustomDisplayString
+      aRequest.operationTypeForDisplay == Ci.nsIContentAnalysisRequest.eUpload
     ) {
       if (aStandalone) {
-        return {
-          name: this.l10n.formatValueSync(
-            "contentanalysis-customdisplaystring-description",
-            { filename: aRequest.operationDisplayString }
-          ),
-        };
+        nameOrOperationType.name = this.l10n.formatValueSync(
+          "contentanalysis-upload-description",
+          { filename: aRequest.fileNameForDisplay }
+        );
+      } else {
+        nameOrOperationType.name = aRequest.fileNameForDisplay;
       }
-      return { name: aRequest.operationDisplayString };
+    } else if (
+      aRequest.operationTypeForDisplay == Ci.nsIContentAnalysisRequest.eDownload
+    ) {
+      if (aStandalone) {
+        nameOrOperationType.name = this.l10n.formatValueSync(
+          "contentanalysis-download-description",
+          { filename: aRequest.fileNameForDisplay }
+        );
+      } else {
+        nameOrOperationType.name = aRequest.fileNameForDisplay;
+      }
     }
-    return { operationType: aRequest.operationTypeForDisplay };
+    return nameOrOperationType;
   },
 
   /**
@@ -533,7 +588,7 @@ export const ContentAnalysis = {
    *
    * @param {nsIContentAnalysisRequest} aRequest
    * @param {ResourceNameOrOperationType} aResourceNameOrOperationType
-   * @param {CanonicalBrowsingContext} aBrowsingContext
+   * @param {CanonicalBrowsingContext?} aBrowsingContext
    */
   _queueSlowCAMessage(
     aRequest,
@@ -620,7 +675,7 @@ export const ContentAnalysis = {
    * @param {nsIContentAnalysisRequest.AnalysisType} aOperation The operation
    * @param {nsIContentAnalysisRequest} aRequest The request that is taking a long time
    * @param {string} aBodyMessage Message to show in the body of the alert
-   * @param {CanonicalBrowsingContext} aBrowsingContext BrowsingContext to show the alert in
+   * @param {CanonicalBrowsingContext?} aBrowsingContext BrowsingContext to show the alert in
    */
   _showSlowCAMessage(aOperation, aRequest, aBodyMessage, aBrowsingContext) {
     if (!this._shouldShowBlockingNotification(aOperation)) {
@@ -755,20 +810,28 @@ export const ContentAnalysis = {
     promise
       .catch(() => {
         // need a catch clause to avoid an unhandled JS exception
-        // when we programmatically close the dialog.
-        // Since this only happens when we are programmatically closing
-        // the dialog, no need to log the exception.
+        // when we programmatically close the dialog or close the tab.
       })
       .finally(() => {
         // This is also called if the tab/window is closed while a request is
         // in progress, in which case we need to cancel all related requests.
+        //
+        // If aUserActionId is still in userActionToBusyDialogMap,
+        // this means the dialog wasn't closed by _disconnectFromView(),
+        // so cancel the operation.
+        if (this.userActionToBusyDialogMap.has(aUserActionId)) {
+          this.contentAnalysis.cancelAllRequestsAssociatedWithUserAction(
+            aUserActionId
+          );
+        }
+        // Do this after checking userActionToBusyDialogMap, since
+        // _removeSlowCAMessage() will remove the entry from
+        // userActionToBusyDialogMap.
         if (this.requestTokenToRequestInfo.delete(aRequestToken)) {
-          // TODO: Is this useful?  I think no.
+          // I think this is needed to clean up when the tab/window
+          // is closed.
           this._removeSlowCAMessage(aUserActionId, aRequestToken);
         }
-        this.contentAnalysis.cancelAllRequestsAssociatedWithUserAction(
-          aUserActionId
-        );
       });
     return {
       dialogBrowsingContext: aBrowsingContext,
@@ -783,7 +846,7 @@ export const ContentAnalysis = {
    * @param {string} aRequestToken
    * @param {string} aUserActionId
    * @param {number} aCAResult
-   * @param {boolean} aIsAgentResponse
+   * @param {boolean} aIsSyntheticResponse
    * @param {number} aRequestCancelError
    * @returns {Promise<NotificationInfo?>} a notification object (if shown)
    */
@@ -793,7 +856,7 @@ export const ContentAnalysis = {
     aRequestToken,
     aUserActionId,
     aCAResult,
-    aIsAgentResponse,
+    aIsSyntheticResponse,
     aRequestCancelError
   ) {
     let message = null;
@@ -858,16 +921,23 @@ export const ContentAnalysis = {
         return null;
       }
       case Ci.nsIContentAnalysisResponse.eBlock: {
-        if (aIsAgentResponse && !lazy.showBlockedResult) {
+        if (!aIsSyntheticResponse && !lazy.showBlockedResult) {
           // Don't show anything
           return null;
         }
         let titleId = undefined;
         let body = undefined;
         if (aResourceNameOrOperationType.name) {
-          titleId = "contentanalysis-block-dialog-title-upload-file";
+          titleId =
+            aResourceNameOrOperationType.operationType ==
+            Ci.nsIContentAnalysisRequest.eUpload
+              ? "contentanalysis-block-dialog-title-upload-file"
+              : "contentanalysis-block-dialog-title-download-file";
           body = this.l10n.formatValueSync(
-            "contentanalysis-block-dialog-body-upload-file",
+            aResourceNameOrOperationType.operationType ==
+              Ci.nsIContentAnalysisRequest.eUpload
+              ? "contentanalysis-block-dialog-body-upload-file"
+              : "contentanalysis-block-dialog-body-download-file",
             { filename: aResourceNameOrOperationType.name }
           );
         } else {

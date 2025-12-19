@@ -10,7 +10,6 @@
 
 #include "unicode/ucol.h"
 
-#include "mozilla/Compiler.h"
 #include "mozilla/intl/ICU4CGlue.h"
 #include "mozilla/intl/ICUError.h"
 #include "mozilla/Result.h"
@@ -229,15 +228,7 @@ class Collator final {
       case Collator::Feature::Default:
         return UCOL_DEFAULT;
     }
-#if MOZ_IS_GCC
-#  if !MOZ_GCC_VERSION_AT_LEAST(9, 1, 0)
-    return UCOL_DEFAULT;
-#  else
     MOZ_CRASH("invalid collator feature");
-#  endif
-#else
-    MOZ_CRASH("invalid collator feature");
-#endif
   }
 
   /**

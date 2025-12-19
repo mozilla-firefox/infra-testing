@@ -139,6 +139,10 @@ nsresult UrlClassifierCommon::SetBlockedContent(nsIChannel* channel,
   NS_ENSURE_ARG(!aList.IsEmpty());
 
   switch (aErrorCode) {
+    case NS_ERROR_HARMFULADDON_URI:
+      NS_SetRequestBlockingReason(
+          channel, nsILoadInfo::BLOCKING_REASON_CLASSIFY_HARMFULADDON_URI);
+      break;
     case NS_ERROR_MALWARE_URI:
       NS_SetRequestBlockingReason(
           channel, nsILoadInfo::BLOCKING_REASON_CLASSIFY_MALWARE_URI);
@@ -333,7 +337,7 @@ nsresult UrlClassifierCommon::CreatePairwiseEntityListURI(nsIChannel* aChannel,
           if (principal) {
             auto* basePrin = BasePrincipal::Cast(principal);
             rv = basePrin->GetURI(getter_AddRefs(topWinURI));
-            Unused << NS_WARN_IF(NS_FAILED(rv));
+            (void)NS_WARN_IF(NS_FAILED(rv));
           }
         }
       }
@@ -350,7 +354,7 @@ nsresult UrlClassifierCommon::CreatePairwiseEntityListURI(nsIChannel* aChannel,
       if (principal) {
         auto* basePrin = BasePrincipal::Cast(principal);
         rv = basePrin->GetURI(getter_AddRefs(topWinURI));
-        Unused << NS_WARN_IF(NS_FAILED(rv));
+        (void)NS_WARN_IF(NS_FAILED(rv));
       }
     }
   }
@@ -688,9 +692,7 @@ bool UrlClassifierCommon::IsPassiveContent(nsIChannel* aChannel) {
   // defined by the mixed content blocker.
   // https://searchfox.org/mozilla-central/rev/c80fa7258c935223fe319c5345b58eae85d4c6ae/dom/security/nsMixedContentBlocker.cpp#532
   return contentType == ExtContentPolicy::TYPE_IMAGE ||
-         contentType == ExtContentPolicy::TYPE_MEDIA ||
-         (contentType == ExtContentPolicy::TYPE_OBJECT_SUBREQUEST &&
-          !StaticPrefs::security_mixed_content_block_object_subrequest());
+         contentType == ExtContentPolicy::TYPE_MEDIA;
 }
 
 /* static */
@@ -699,26 +701,46 @@ bool UrlClassifierCommon::ShouldProcessWithProtectionFeature(
   MOZ_ASSERT(aChannel);
 
   bool shouldProcess = true;
-
-  if (!(StaticPrefs::privacy_trackingprotection_consentmanager_skip_enabled() ||
-        (StaticPrefs::
-             privacy_trackingprotection_consentmanager_skip_pbmode_enabled() &&
-         NS_UsePrivateBrowsing(aChannel)))) {
-    return shouldProcess;
-  }
+  bool isPrivateMode = NS_UsePrivateBrowsing(aChannel);
 
   nsCOMPtr<nsIClassifiedChannel> classifiedChannel =
       do_QueryInterface(aChannel);
 
   if (classifiedChannel) {
-    shouldProcess =
-        !(classifiedChannel->GetClassificationFlags() &
-          nsIClassifiedChannel::ClassificationFlags::CLASSIFIED_CONSENTMANAGER);
+    if (classifiedChannel->GetClassificationFlags() &
+        nsIClassifiedChannel::ClassificationFlags::CLASSIFIED_CONSENTMANAGER) {
+      // Channel is classified as consent manager
+      if (StaticPrefs::
+              privacy_trackingprotection_consentmanager_skip_enabled() ||
+          (StaticPrefs::
+               privacy_trackingprotection_consentmanager_skip_pbmode_enabled() &&
+           isPrivateMode)) {
+        // Don't process channel
+        shouldProcess = false;
 
-    UC_LOG(
-        ("UrlClassifierCommon::ShouldProcessWithProtectionFeature - "
-         "shouldProcess=%d for channel %p",
-         shouldProcess, aChannel));
+        UC_LOG(
+            ("UrlClassifierCommon::ShouldProcessWithProtectionFeature - "
+             "Skipping channel %p because annotated as a consent manager",
+             aChannel));
+      }
+    }
+
+    if (classifiedChannel->GetClassificationFlags() &
+        nsIClassifiedChannel::ClassificationFlags::CLASSIFIED_ANTIFRAUD) {
+      // Channel is classified as anti-fraud
+      if (StaticPrefs::privacy_trackingprotection_antifraud_skip_enabled() ||
+          (StaticPrefs::
+               privacy_trackingprotection_antifraud_skip_pbmode_enabled() &&
+           isPrivateMode)) {
+        // Don't process channel
+        shouldProcess = false;
+
+        UC_LOG(
+            ("UrlClassifierCommon::ShouldProcessWithProtectionFeature - "
+             "Skipping channel %p because it is annotated as anti-fraud",
+             aChannel));
+      }
+    }
   }
 
   return shouldProcess;

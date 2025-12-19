@@ -8,7 +8,6 @@
 
 #include "mozilla/Likely.h"
 #include "mozilla/StaticPrefs_image.h"
-#include "mozilla/Types.h"  // for decltype
 #include "mozilla/ipc/SharedMemoryMapping.h"
 #include "mozilla/layers/SharedSurfacesChild.h"
 #include "mozilla/layers/SharedSurfacesParent.h"
@@ -79,6 +78,10 @@ void SourceSurfaceSharedDataWrapper::Init(SourceSurfaceSharedData* aSurface) {
 
 bool SourceSurfaceSharedDataWrapper::EnsureMapped(size_t aLength) {
   MOZ_ASSERT(!GetData());
+
+  if (mBufHandle.Size() < aLength) {
+    return false;
+  }
 
   auto mapping = mBufHandle.Map();
   while (!mapping) {

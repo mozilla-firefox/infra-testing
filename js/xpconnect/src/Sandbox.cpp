@@ -43,6 +43,7 @@
 #include "mozilla/dom/BlobBinding.h"
 #include "mozilla/dom/cache/CacheStorage.h"
 #include "mozilla/dom/CSSBinding.h"
+#include "mozilla/dom/CSSPositionTryDescriptorsBinding.h"
 #include "mozilla/dom/CSSRuleBinding.h"
 #include "mozilla/dom/DirectoryBinding.h"
 #include "mozilla/dom/DocumentBinding.h"
@@ -97,6 +98,7 @@
 #include "mozilla/dom/XMLSerializerBinding.h"
 #include "mozilla/dom/FormDataBinding.h"
 #include "mozilla/dom/nsCSPContext.h"
+#include "mozilla/dom/PolicyContainer.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "mozilla/BasePrincipal.h"
@@ -920,6 +922,9 @@ bool xpc::GlobalProperties::Parse(JSContext* cx, JS::HandleObject obj) {
       ChromeUtils = true;
     } else if (JS_LinearStringEqualsLiteral(nameStr, "CSS")) {
       CSS = true;
+    } else if (JS_LinearStringEqualsLiteral(nameStr,
+                                            "CSSPositionTryDescriptors")) {
+      CSSPositionTryDescriptors = true;
     } else if (JS_LinearStringEqualsLiteral(nameStr, "CSSRule")) {
       CSSRule = true;
     } else if (JS_LinearStringEqualsLiteral(nameStr, "CustomStateSet")) {
@@ -1051,6 +1056,7 @@ bool xpc::GlobalProperties::Define(JSContext* cx, JS::HandleObject obj) {
   DEFINE_WEBIDL_INTERFACE_OR_NAMESPACE(ChromeUtils)
   DEFINE_WEBIDL_INTERFACE_OR_NAMESPACE(Blob)
   DEFINE_WEBIDL_INTERFACE_OR_NAMESPACE(CSS)
+  DEFINE_WEBIDL_INTERFACE_OR_NAMESPACE(CSSPositionTryDescriptors)
   DEFINE_WEBIDL_INTERFACE_OR_NAMESPACE(CSSRule)
   DEFINE_WEBIDL_INTERFACE_OR_NAMESPACE(CustomStateSet)
   DEFINE_WEBIDL_INTERFACE_OR_NAMESPACE(Directory)
@@ -1296,6 +1302,26 @@ nsresult xpc::CreateSandboxObject(JSContext* cx, MutableHandleValue vp,
 
   if (isSystemPrincipal) {
     realmOptions.behaviors().setClampAndJitterTime(false);
+  }
+
+  if (obj) {
+    nsGlobalWindowInner* window =
+        WindowOrNull(js::UncheckedUnwrap(obj->GetGlobalJSObject(), false));
+    if (window) {
+      const nsCString& localeOverride =
+          window->GetBrowsingContext()->Top()->GetLanguageOverride();
+      if (!localeOverride.IsEmpty()) {
+        realmOptions.behaviors().setLocaleOverride(
+            PromiseFlatCString(localeOverride).get());
+      }
+
+      const nsAString& timezoneOverride =
+          window->GetBrowsingContext()->Top()->GetTimezoneOverride();
+      if (!timezoneOverride.IsEmpty()) {
+        realmOptions.behaviors().setTimeZoneOverride(
+            NS_ConvertUTF16toUTF8(timezoneOverride).get());
+      }
+    }
   }
 
   const JSClass* clasp = &SandboxClass;
@@ -2196,6 +2222,26 @@ nsresult xpc::GetSandboxMetadata(JSContext* cx, HandleObject sandbox,
   }
 
   rval.set(metadata);
+  return NS_OK;
+}
+
+nsresult xpc::SetSandboxLocaleOverride(JSContext* cx, HandleObject sandbox,
+                                       const char* locale) {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(IsSandbox(sandbox));
+
+  JS::SetRealmLocaleOverride(JS::GetObjectRealmOrNull(sandbox), locale);
+
+  return NS_OK;
+}
+
+nsresult xpc::SetSandboxTimezoneOverride(JSContext* cx, HandleObject sandbox,
+                                         const char* timezone) {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(IsSandbox(sandbox));
+
+  JS::SetRealmTimezoneOverride(JS::GetObjectRealmOrNull(sandbox), timezone);
+
   return NS_OK;
 }
 

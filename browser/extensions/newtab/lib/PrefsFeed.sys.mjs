@@ -32,7 +32,15 @@ export class PrefsFeed {
     this._prefMap = prefMap;
     this._prefs = new Prefs();
     this.onExperimentUpdated = this.onExperimentUpdated.bind(this);
+    this.onTrainhopExperimentUpdated =
+      this.onTrainhopExperimentUpdated.bind(this);
     this.onPocketExperimentUpdated = this.onPocketExperimentUpdated.bind(this);
+    this.onSmartShortcutsExperimentUpdated =
+      this.onSmartShortcutsExperimentUpdated.bind(this);
+    this.onWidgetsUpdated = this.onWidgetsUpdated.bind(this);
+    this.onOhttpImagesUpdated = this.onOhttpImagesUpdated.bind(this);
+    this.onInferredPersonalizationExperimentUpdated =
+      this.onInferredPersonalizationExperimentUpdated.bind(this);
   }
 
   onPrefChanged(name, value) {
@@ -93,6 +101,75 @@ export class PrefsFeed {
   }
 
   /**
+   * Computes the trainhop config by processing all enrollments.
+   * Supports two formats:
+   * - Single payload: { type: "feature", payload: { "enabled": true, ... }}
+   * - Multi-payload: { type: "multi-payload", payload: [{ type: "feature", payload: { "enabled": true, ... }}] }
+   * Both formats output the same structure: { "feature": { "enabled": true, ... }}
+   */
+  _getTrainhopConfig() {
+    const allEnrollments =
+      lazy.NimbusFeatures.newtabTrainhop.getAllEnrollments() || [];
+
+    let enrollmentsToProcess = [];
+
+    allEnrollments.forEach(enrollment => {
+      if (
+        enrollment?.value?.type === "multi-payload" &&
+        Array.isArray(enrollment?.value?.payload)
+      ) {
+        enrollment.value.payload.forEach(item => {
+          if (item?.type && item?.payload) {
+            enrollmentsToProcess.push({
+              value: {
+                type: item.type,
+                payload: item.payload,
+              },
+              meta: enrollment.meta,
+            });
+          }
+        });
+      } else if (enrollment?.value?.type) {
+        enrollmentsToProcess.push(enrollment);
+      }
+    });
+
+    const valueObj = {};
+    enrollmentsToProcess.reduce((accumulator, currentValue) => {
+      if (currentValue?.value?.type) {
+        if (
+          !accumulator[currentValue.value.type] ||
+          (accumulator[currentValue.value.type].meta.isRollout &&
+            !currentValue.meta.isRollout)
+        ) {
+          accumulator[currentValue.value.type] = currentValue;
+          valueObj[currentValue.value.type] = currentValue.value.payload;
+        }
+      }
+      return accumulator;
+    }, {});
+
+    return valueObj;
+  }
+
+  /**
+   * Handler for when experiment data updates.
+   */
+  onTrainhopExperimentUpdated() {
+    const valueObj = this._getTrainhopConfig();
+
+    this.store.dispatch(
+      ac.BroadcastToContent({
+        type: at.PREF_CHANGED,
+        data: {
+          name: "trainhopConfig",
+          value: valueObj,
+        },
+      })
+    );
+  }
+
+  /**
    * Handler for Pocket specific experiment data updates.
    */
   onPocketExperimentUpdated(event, reason) {
@@ -114,10 +191,87 @@ export class PrefsFeed {
     }
   }
 
+  /**
+   * Handler for when smart shortcuts experiment data updates.
+   */
+  onSmartShortcutsExperimentUpdated() {
+    const value =
+      lazy.NimbusFeatures.newtabSmartShortcuts.getAllVariables() || {};
+    this.store.dispatch(
+      ac.BroadcastToContent({
+        type: at.PREF_CHANGED,
+        data: {
+          name: "smartShortcutsConfig",
+          value,
+        },
+      })
+    );
+  }
+
+  /**
+   * Handler for when inferred personalization experiment config values update.
+   */
+  onInferredPersonalizationExperimentUpdated() {
+    const value =
+      lazy.NimbusFeatures.newtabInferredPersonalization.getAllVariables() || {};
+    this.store.dispatch(
+      ac.BroadcastToContent({
+        type: at.PREF_CHANGED,
+        data: {
+          name: "inferredPersonalizationConfig",
+          value,
+        },
+      })
+    );
+  }
+
+  /**
+   * Handler for when widget experiment data updates.
+   */
+  onWidgetsUpdated() {
+    const value = lazy.NimbusFeatures.newtabWidgets.getAllVariables() || {};
+    this.store.dispatch(
+      ac.BroadcastToContent({
+        type: at.PREF_CHANGED,
+        data: {
+          name: "widgetsConfig",
+          value,
+        },
+      })
+    );
+  }
+
+  /**
+   * Handler for when OHTTP images experiment data updates.
+   */
+  onOhttpImagesUpdated() {
+    const value = lazy.NimbusFeatures.newtabOhttpImages.getAllVariables() || {};
+    this.store.dispatch(
+      ac.BroadcastToContent({
+        type: at.PREF_CHANGED,
+        data: {
+          name: "ohttpImagesConfig",
+          value,
+        },
+      })
+    );
+  }
+
   init() {
     this._prefs.observeBranch(this);
     lazy.NimbusFeatures.newtab.onUpdate(this.onExperimentUpdated);
+    lazy.NimbusFeatures.newtabTrainhop.onUpdate(
+      this.onTrainhopExperimentUpdated
+    );
     lazy.NimbusFeatures.pocketNewtab.onUpdate(this.onPocketExperimentUpdated);
+    lazy.NimbusFeatures.newtabSmartShortcuts.onUpdate(
+      this.onSmartShortcutsExperimentUpdated
+    );
+    lazy.NimbusFeatures.newtabInferredPersonalization.onUpdate(
+      this.onInferredPersonalizationExperimentUpdated
+    );
+    lazy.NimbusFeatures.newtabWidgets.onUpdate(this.onWidgetsUpdated);
+    lazy.NimbusFeatures.newtabOhttpImages.onUpdate(this.onOhttpImagesUpdated);
 
     // Get the initial value of each activity stream pref
     const values = {};
@@ -167,32 +321,25 @@ export class PrefsFeed {
       "browser.topsites.useRemoteSetting"
     );
 
-    // Read the pref for search hand-off from firefox.js and store it
-    // in our internal list of prefs to watch
-    let handoffToAwesomebarPrefValue = Services.prefs.getBoolPref(
-      "browser.newtabpage.activity-stream.improvesearch.handoffToAwesomebar"
-    );
-    values["improvesearch.handoffToAwesomebar"] = handoffToAwesomebarPrefValue;
-    this._prefMap.set("improvesearch.handoffToAwesomebar", {
-      value: handoffToAwesomebarPrefValue,
-    });
-
     // Add experiment values and default values
     values.featureConfig = lazy.NimbusFeatures.newtab.getAllVariables() || {};
     values.pocketConfig =
       lazy.NimbusFeatures.pocketNewtab.getAllVariables() || {};
+    values.smartShortcutsConfig =
+      lazy.NimbusFeatures.newtabSmartShortcuts.getAllVariables() || {};
+    values.widgetsConfig =
+      lazy.NimbusFeatures.newtabWidgets.getAllVariables() || {};
+    values.trainhopConfig = this._getTrainhopConfig();
     this._setBoolPref(values, "logowordmark.alwaysVisible", false);
     this._setBoolPref(values, "feeds.section.topstories", false);
     this._setBoolPref(values, "discoverystream.enabled", false);
-    this._setBoolPref(
-      values,
-      "discoverystream.sponsored-collections.enabled",
-      false
-    );
-    this._setBoolPref(values, "discoverystream.isCollectionDismissible", false);
     this._setBoolPref(values, "discoverystream.hardcoded-basic-layout", false);
     this._setBoolPref(values, "discoverystream.personalization.enabled", false);
-    this._setBoolPref(values, "discoverystream.personalization.override");
+    this._setBoolPref(
+      values,
+      "discoverystream.personalization.override",
+      false
+    );
     this._setStringPref(
       values,
       "discoverystream.personalization.modelKeys",
@@ -221,7 +368,19 @@ export class PrefsFeed {
   removeListeners() {
     this._prefs.ignoreBranch(this);
     lazy.NimbusFeatures.newtab.offUpdate(this.onExperimentUpdated);
+    lazy.NimbusFeatures.newtabTrainhop.offUpdate(
+      this.onTrainhopExperimentUpdated
+    );
     lazy.NimbusFeatures.pocketNewtab.offUpdate(this.onPocketExperimentUpdated);
+    lazy.NimbusFeatures.newtabSmartShortcuts.offUpdate(
+      this.onSmartShortcutsExperimentUpdated
+    );
+    lazy.NimbusFeatures.newtabInferredPersonalization.offUpdate(
+      this.onInferredPersonalizationExperimentUpdated
+    );
+    lazy.NimbusFeatures.newtabWidgets.offUpdate(this.onWidgetsUpdated);
+    lazy.NimbusFeatures.newtabOhttpImages.offUpdate(this.onOhttpImagesUpdated);
+
     if (this.geo === "") {
       Services.obs.removeObserver(this, lazy.Region.REGION_TOPIC);
     }

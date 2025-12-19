@@ -4,8 +4,6 @@
 
 package org.mozilla.fenix.settings.biometric
 
-import android.os.Build.VERSION_CODES.LOLLIPOP_MR1
-import android.os.Build.VERSION_CODES.M
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK
 import androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
@@ -27,12 +25,11 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
 import org.mozilla.fenix.settings.biometric.ext.isEnrolled
 import org.mozilla.fenix.settings.biometric.ext.isHardwareAvailable
-import org.robolectric.annotation.Config
+import org.robolectric.RobolectricTestRunner
 
-@RunWith(FenixRobolectricTestRunner::class)
+@RunWith(RobolectricTestRunner::class)
 class BiometricPromptFeatureTest {
 
     lateinit var fragment: Fragment
@@ -44,13 +41,6 @@ class BiometricPromptFeatureTest {
         manager = mockk()
     }
 
-    @Config(sdk = [LOLLIPOP_MR1])
-    @Test
-    fun `canUseFeature checks for SDK compatible`() {
-        assertFalse(BiometricPromptFeature.canUseFeature(manager))
-    }
-
-    @Config(sdk = [M])
     @Test
     fun `canUseFeature checks for hardware capabilities`() {
         every { manager.canAuthenticate(any()) } returns BIOMETRIC_SUCCESS
@@ -93,6 +83,16 @@ class BiometricPromptFeatureTest {
         verify { prompt.authenticate(capture(promptInfo)) }
         assertEquals(BIOMETRIC_WEAK or DEVICE_CREDENTIAL, promptInfo.captured.allowedAuthenticators)
         assertEquals("test", promptInfo.captured.title)
+    }
+
+    @Test
+    fun `ensureBiometricPromptInitialized returns a new prompt when feature prompt is null`() {
+        val feature = BiometricPromptFeature(testContext, fragment, {}, {})
+        feature.biometricPrompt = null
+
+        feature.ensureBiometricPromptInitialized()
+
+        assertNotNull(feature.biometricPrompt)
     }
 
     @Test

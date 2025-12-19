@@ -8,33 +8,32 @@ import android.content.Context
 import android.content.res.Configuration
 import android.view.LayoutInflater
 import androidx.navigation.NavController
-import androidx.navigation.fragment.findNavController
 import io.mockk.Runs
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
-import io.mockk.mockkStatic
 import io.mockk.spyk
-import io.mockk.unmockkStatic
 import io.mockk.verify
 import mozilla.components.browser.state.state.ContentState
 import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.NavGraphDirections
 import org.mozilla.fenix.databinding.FragmentTabTrayDialogBinding
-import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.helpers.FenixGleanTestRule
-import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
 import org.mozilla.fenix.helpers.MockkRetryTestRule
 import org.mozilla.fenix.home.HomeScreenViewModel
+import org.mozilla.fenix.navigation.NavControllerProvider
+import org.robolectric.RobolectricTestRunner
 
-@RunWith(FenixRobolectricTestRunner::class)
+@RunWith(RobolectricTestRunner::class)
 class TabsTrayFragmentTest {
     private lateinit var context: Context
     private lateinit var fragment: TabsTrayFragment
@@ -55,52 +54,47 @@ class TabsTrayFragmentTest {
         fragment = spyk(TabsTrayFragment())
         fragment._tabsTrayDialogBinding = tabsTrayDialogBinding
         every { fragment.context } returns context
-        every { fragment.context } returns context
         every { fragment.viewLifecycleOwner } returns mockk(relaxed = true)
+        every { fragment.view } returns mockk()
     }
 
     @Test
     fun `WHEN dismissTabsTrayAndNavigateHome is called with a sessionId THEN it navigates to home to delete that sessions and dismisses the tray`() {
-        every { fragment.navigateToHomeAndDeleteSession(any()) } just Runs
+        every { fragment.navigateToHomeAndDeleteSession(any(), any()) } just Runs
         every { fragment.dismissTabsTray() } just Runs
 
         fragment.dismissTabsTrayAndNavigateHome("test")
 
-        verify { fragment.navigateToHomeAndDeleteSession("test") }
+        verify { fragment.navigateToHomeAndDeleteSession("test", any()) }
         verify { fragment.dismissTabsTray() }
     }
 
     @Test
     fun `WHEN navigateToHomeAndDeleteSession is called with a sessionId THEN it navigates to home and transmits there the sessionId`() {
-        try {
-            mockkStatic("androidx.fragment.app.FragmentViewModelLazyKt")
-            mockkStatic("androidx.navigation.fragment.FragmentKt")
-            mockkStatic("org.mozilla.fenix.ext.NavControllerKt")
-            val viewModel: HomeScreenViewModel = mockk(relaxed = true)
-            every { fragment.homeViewModel } returns viewModel
-            val navController: NavController = mockk(relaxed = true)
-            every { fragment.findNavController() } returns navController
+        val viewModel: HomeScreenViewModel = mockk(relaxed = true)
+        every { fragment.homeViewModel } returns viewModel
+        val navController: NavController = mockk(relaxed = true)
 
-            fragment.navigateToHomeAndDeleteSession("test")
+        val navControllerProvider: NavControllerProvider = mockk()
+        every { navControllerProvider.getNavController(fragment) } returns navController
 
-            verify { viewModel.sessionToDelete = "test" }
-            verify { navController.navigate(NavGraphDirections.actionGlobalHome()) }
-        } finally {
-            unmockkStatic("org.mozilla.fenix.ext.NavControllerKt")
-            unmockkStatic("androidx.navigation.fragment.FragmentKt")
-            unmockkStatic("androidx.fragment.app.FragmentViewModelLazyKt")
-        }
+        fragment.navigateToHomeAndDeleteSession(
+            "test",
+            navControllerProvider = navControllerProvider,
+        )
+
+        verify { viewModel.sessionToDelete = "test" }
+        verify { navController.navigate(NavGraphDirections.actionGlobalHome()) }
     }
 
     @Test
     fun `WHEN dismissTabsTray is called THEN it dismisses the tray`() {
         every { fragment.dismissAllowingStateLoss() } just Runs
-        mockkStatic("org.mozilla.fenix.ext.ContextKt") {
-            every { any<Context>().components } returns mockk(relaxed = true)
-            fragment.dismissTabsTray()
+        every { fragment.recordBreadcrumb(any()) } just Runs
 
-            verify { fragment.dismissAllowingStateLoss() }
-        }
+        fragment.dismissTabsTray()
+
+        verify { fragment.dismissAllowingStateLoss() }
     }
 
     @Test
@@ -122,7 +116,6 @@ class TabsTrayFragmentTest {
             content = ContentState(
                 url = "https://mozilla.org",
                 private = false,
-                isProductUrl = false,
             ),
         )
         val tab2 = TabSessionState(
@@ -130,7 +123,6 @@ class TabsTrayFragmentTest {
             content = ContentState(
                 url = "https://mozilla.org",
                 private = false,
-                isProductUrl = false,
             ),
         )
         val tab3 = TabSessionState(
@@ -138,7 +130,6 @@ class TabsTrayFragmentTest {
             content = ContentState(
                 url = "https://mozilla.org",
                 private = false,
-                isProductUrl = false,
             ),
         )
         val tabsList = listOf(
@@ -148,5 +139,57 @@ class TabsTrayFragmentTest {
         )
         val position = fragment.getTabPositionFromId(tabsList, "tab2")
         assertEquals(1, position)
+    }
+
+    @Test
+    fun `WHEN all conditions are met THEN shouldShowLockPbmBanner returns true`() {
+        val result = testShouldShowLockPbmBanner()
+        assertTrue(result)
+    }
+
+    @Test
+    fun `WHEN isPrivateMode is false THEN shouldShowLockPbmBanner returns false`() {
+        val result = testShouldShowLockPbmBanner(isPrivateMode = false)
+        assertFalse(result)
+    }
+
+    @Test
+    fun `WHEN hasPrivateTabs is false THEN shouldShowLockPbmBanner returns false`() {
+        val result = testShouldShowLockPbmBanner(hasPrivateTabs = false)
+        assertFalse(result)
+    }
+
+    @Test
+    fun `WHEN biometricAvailable is false THEN shouldShowLockPbmBanner returns false`() {
+        val result = testShouldShowLockPbmBanner(biometricAvailable = false)
+        assertFalse(result)
+    }
+
+    @Test
+    fun `WHEN privateLockEnabled is true THEN shouldShowLockPbmBanner returns false`() {
+        val result = testShouldShowLockPbmBanner(privateLockEnabled = true)
+        assertFalse(result)
+    }
+
+    @Test
+    fun `WHEN shouldShowBanner is false THEN shouldShowLockPbmBanner returns false`() {
+        val result = testShouldShowLockPbmBanner(shouldShowBanner = false)
+        assertFalse(result)
+    }
+
+    private fun testShouldShowLockPbmBanner(
+        isPrivateMode: Boolean = true,
+        hasPrivateTabs: Boolean = true,
+        biometricAvailable: Boolean = true,
+        privateLockEnabled: Boolean = false,
+        shouldShowBanner: Boolean = true,
+    ): Boolean {
+        return fragment.shouldShowLockPbmBanner(
+            isPrivateMode = isPrivateMode,
+            hasPrivateTabs = hasPrivateTabs,
+            biometricAvailable = biometricAvailable,
+            privateLockEnabled = privateLockEnabled,
+            shouldShowBanner = shouldShowBanner,
+        )
     }
 }

@@ -5,9 +5,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "StorageAccessPermissionRequest.h"
-#include "nsGlobalWindowInner.h"
-#include "mozilla/StaticPrefs_dom.h"
+
 #include <cstdlib>
+
+#include "mozilla/StaticPrefs_dom.h"
+#include "nsGlobalWindowInner.h"
 
 namespace mozilla::dom {
 
@@ -92,13 +94,13 @@ StorageAccessPermissionRequest::MaybeDelayAutomaticGrants() {
           NS_RELEASE(promise);
         },
         promise, simulatedDelay, nsITimer::TYPE_ONE_SHOT,
-        "DelayedAllowAutoGrantCallback");
+        "DelayedAllowAutoGrantCallback"_ns);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       p->Reject(false, __func__);
     } else {
       // Leak the references here! We'll release them inside the callback.
-      Unused << timer.forget();
-      Unused << promise.forget();
+      timer.forget().leak();
+      promise.forget().leak();
     }
   } else {
     p->Resolve(false, __func__);

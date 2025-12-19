@@ -7,6 +7,7 @@
 #ifndef mozilla_ServoStyleSet_h
 #define mozilla_ServoStyleSet_h
 
+#include "MainThreadUtils.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/AnonymousContentKey.h"
 #include "mozilla/AtomArray.h"
@@ -15,23 +16,23 @@
 #include "mozilla/PostTraversalTask.h"
 #include "mozilla/ServoBindingTypes.h"
 #include "mozilla/ServoUtils.h"
-#include "mozilla/dom/RustTypes.h"
 #include "mozilla/UniquePtr.h"
-#include "MainThreadUtils.h"
-#include "nsCSSPseudoElements.h"
+#include "mozilla/dom/RustTypes.h"
+#include "nsAtom.h"
 #include "nsCSSAnonBoxes.h"
+#include "nsCSSPseudoElements.h"
 #include "nsChangeHint.h"
 #include "nsCoord.h"
-#include "nsAtom.h"
 #include "nsIMemoryReporter.h"
-#include "nsTArray.h"
 #include "nsSize.h"
+#include "nsTArray.h"
 
 namespace mozilla {
 enum class MediaFeatureChangeReason : uint8_t;
 enum class StylePageSizeOrientation : uint8_t;
 enum class StyleRuleChangeKind : uint32_t;
 enum class StyleRelativeSelectorNthEdgeInvalidateFor : uint8_t;
+union StylePositionTryFallbacksItem;
 struct StyleRuleChange;
 
 class ErrorResult;
@@ -165,6 +166,8 @@ class ServoStyleSet {
 
   bool UsesFontMetrics() const;
 
+  bool UsesRootFontMetrics() const;
+
   void SetAuthorStyleDisabled(bool aStyleDisabled);
 
   // Get a CopmutedStyle for a text node (which no rules will match).
@@ -261,6 +264,10 @@ class ServoStyleSet {
   // Try to resolve the staring style for a given element. Please call this
   // function after checking if it may have rules inside @starting-style.
   already_AddRefed<ComputedStyle> ResolveStartingStyle(dom::Element& aElement);
+
+  already_AddRefed<ComputedStyle> ResolvePositionTry(
+      dom::Element& aElement, ComputedStyle& aStyle,
+      const StylePositionTryFallbacksItem&);
 
   size_t SheetCount(Origin) const;
   StyleSheet* SheetAt(Origin, size_t aIndex) const;

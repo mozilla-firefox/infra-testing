@@ -13,8 +13,8 @@
 #include "mozilla/Likely.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/Sprintf.h"
-#include "mozilla/WritingModes.h"
 #include "mozilla/ToString.h"
+#include "mozilla/WritingModes.h"
 #include "nsBidiPresUtils.h"
 #include "nsIFrame.h"
 #include "nsIFrameInlines.h"
@@ -215,7 +215,7 @@ void nsLineBox::List(FILE* out, const char* aPrefix,
   str += "line";
   nsIFrame::ListPtr(str, aFlags, this, "@");
   str += nsPrintfCString(
-      " count=%d state=%s,%s,%s,%s,%s,%s,clear-before:%s,clear-after:%s",
+      " count=%d state=%s,%s,%s,%s,%s,%s,clear-before:%s,clear-after:%s ",
       GetChildCount(), IsBlock() ? "block" : "inline",
       IsDirty() ? "dirty" : "clean",
       IsPreviousMarginDirty() ? "prevmargindirty" : "prevmarginclean",
@@ -600,7 +600,7 @@ Result<nsILineIterator::LineInfo, nsresult> nsLineIterator::GetLine(
   return structure;
 }
 
-int32_t nsLineIterator::FindLineContaining(nsIFrame* aFrame,
+int32_t nsLineIterator::FindLineContaining(const nsIFrame* aFrame,
                                            int32_t aStartLine) {
   const nsLineBox* line = GetLineAt(aStartLine);
   MOZ_ASSERT(line, "aStartLine out of range");

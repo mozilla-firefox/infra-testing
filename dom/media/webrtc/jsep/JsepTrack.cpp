@@ -3,10 +3,11 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "jsep/JsepTrack.h"
-#include "jsep/JsepCodecDescription.h"
-#include "jsep/JsepTrackEncoding.h"
 
 #include <algorithm>
+
+#include "jsep/JsepCodecDescription.h"
+#include "jsep/JsepTrackEncoding.h"
 
 namespace mozilla {
 void JsepTrack::GetNegotiatedPayloadTypes(
@@ -154,9 +155,18 @@ void JsepTrack::RecvTrackSetRemote(const Sdp& aSdp,
   // We do this whether or not the track is active
   SetCNAME(helper.GetCNAME(aMsection));
   mSsrcs.clear();
+  // Storage of mSsrcs and mSsrcToRtxSsrc could be improved, see Bug 1990364
+  // Each `a=ssrc ssrc-attr:value` line can contain the same SSRC. We should
+  // only add unique SSRCs to mSsrcs.
+  std::set<uint32_t> ssrcsSet;
   if (aMsection.GetAttributeList().HasAttribute(SdpAttribute::kSsrcAttribute)) {
-    for (const auto& ssrcAttr : aMsection.GetAttributeList().GetSsrc().mSsrcs) {
-      mSsrcs.push_back(ssrcAttr.ssrc);
+    for (const auto& s : aMsection.GetAttributeList().GetSsrc().mSsrcs) {
+      if (ssrcsSet.find(s.ssrc) != ssrcsSet.end()) {
+        continue;
+      }
+      ssrcsSet.insert(s.ssrc);
+      // Preserve order of ssrcs as they appear in the m-section
+      mSsrcs.push_back(s.ssrc);
     }
   }
 
@@ -421,7 +431,11 @@ void JsepTrack::CreateEncodings(
           SdpAttribute::kRtcpRsizeAttribute)) {
     rtcpMode = webrtc::RtcpMode::kReducedSize;
   }
-  negotiatedDetails->mRtpRtcpConf = RtpRtcpConfig(rtcpMode);
+  // extmap-allow-mixed which can be at the media level or the session level
+  constexpr bool SESSION_FALLBACK = true;
+  bool extmapAllowMixed = remote.GetAttributeList().HasAttribute(
+      SdpAttribute::kExtmapAllowMixedAttribute, SESSION_FALLBACK);
+  negotiatedDetails->mRtpRtcpConf = RtpRtcpConfig(rtcpMode, extmapAllowMixed);
 
   // TODO add support for b=AS if TIAS is not set (bug 976521)
 
@@ -727,13 +741,18 @@ nsresult JsepTrack::Negotiate(const SdpMediaSection& answer,
 // works, however, if that payload type appeared in only one m-section.
 // We figure that out here.
 /* static */
-void JsepTrack::SetUniqueReceivePayloadTypes(std::vector<JsepTrack*>& tracks,
-                                             bool localOffer) {
-  // Maps to track details if no other track contains the payload type,
-  // otherwise maps to nullptr.
-  std::map<uint16_t, std::tuple<JsepTrack*, bool>> payloadTypeToDetailsMap;
+void JsepTrack::SetReceivePayloadTypes(std::vector<JsepTrack*>& tracks,
+                                       bool localOffer) {
+  // Maps payload types to:
+  // - Nothing() temporarily when just initialized
+  // - Some(nullptr) when the payload type is registered to multiple tracks
+  // - Some(track) when the payload type is unique on track
+  std::map<uint16_t, Maybe<JsepTrack*>> payloadTypeToTrackCount;
 
   for (JsepTrack* track : tracks) {
+    track->mUniqueReceivePayloadTypes.clear();
+    track->mOtherReceivePayloadTypes.clear();
+
     if (track->GetMediaType() == SdpMediaSection::kApplication) {
       continue;
     }
@@ -751,23 +770,26 @@ void JsepTrack::SetUniqueReceivePayloadTypes(std::vector<JsepTrack*>& tracks,
     }
 
     for (uint16_t pt : payloadTypesForTrack) {
-      payloadTypeToDetailsMap[pt] =
-          std::make_tuple(track, !payloadTypeToDetailsMap.count(pt));
+      // Note std::map::operator[] inserts a default-initialized value, i.e.
+      // Nothing(), if one doesn't exist.
+      auto& entry = payloadTypeToTrackCount[pt];
+      entry = entry
+                  // If unique, i.e. Some(track), set it to Some(nullptr)
+                  .andThen([](JsepTrack*) { return Some<JsepTrack*>(nullptr); })
+                  // If not unique, i.e. Nothing(), set it to Some(track)
+                  .orElse([track] { return Some(track); });
     }
   }
 
-  for (auto ptAndDetails : payloadTypeToDetailsMap) {
-    uint16_t uniquePt = ptAndDetails.first;
-    MOZ_ASSERT(uniquePt <= UINT8_MAX);
-    auto* trackDetails = std::get<JsepTrack*>(ptAndDetails.second);
-
-    if (trackDetails) {
-      if (std::get<bool>(ptAndDetails.second)) {
-        trackDetails->mUniqueReceivePayloadTypes.push_back(
-            static_cast<uint8_t>(uniquePt));
-      } else {
-        trackDetails->mDuplicateReceivePayloadTypes.push_back(
-            static_cast<uint8_t>(uniquePt));
+  for (const auto& [key, track] : payloadTypeToTrackCount) {
+    const auto pt = AssertedCast<uint8_t>(key);
+    JsepTrack* uniqueTrack = *track;
+    if (uniqueTrack) {
+      uniqueTrack->mUniqueReceivePayloadTypes.push_back(pt);
+    }
+    for (JsepTrack* track : tracks) {
+      if (track != uniqueTrack) {
+        track->mOtherReceivePayloadTypes.push_back(pt);
       }
     }
   }

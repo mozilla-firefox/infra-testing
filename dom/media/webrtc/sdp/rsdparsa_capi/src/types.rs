@@ -86,7 +86,7 @@ pub unsafe extern "C" fn string_vec_get_view(
     index: size_t,
     ret: *mut StringView,
 ) -> nsresult {
-    match (*vec).get(index) {
+    match (&(*vec)).get(index) {
         Some(ref string) => {
             *ret = StringView::from(string.as_str());
             NS_OK
@@ -112,7 +112,7 @@ pub unsafe extern "C" fn f32_vec_get(
     index: size_t,
     ret: *mut f32,
 ) -> nsresult {
-    match (*vec).get(index) {
+    match (&(*vec)).get(index) {
         Some(val) => {
             *ret = *val;
             NS_OK
@@ -132,7 +132,7 @@ pub unsafe extern "C" fn u32_vec_get(
     index: size_t,
     ret: *mut u32,
 ) -> nsresult {
-    match (*vec).get(index) {
+    match (&(*vec)).get(index) {
         Some(val) => {
             *ret = *val;
             NS_OK
@@ -152,7 +152,7 @@ pub unsafe extern "C" fn u16_vec_get(
     index: size_t,
     ret: *mut u16,
 ) -> nsresult {
-    match (*vec).get(index) {
+    match (&(*vec)).get(index) {
         Some(val) => {
             *ret = *val;
             NS_OK
@@ -168,7 +168,7 @@ pub unsafe extern "C" fn u8_vec_len(vec: *const Vec<u8>) -> size_t {
 
 #[no_mangle]
 pub unsafe extern "C" fn u8_vec_get(vec: *const Vec<u8>, index: size_t, ret: *mut u8) -> nsresult {
-    match (*vec).get(index) {
+    match (&(*vec)).get(index) {
         Some(val) => {
             *ret = *val;
             NS_OK
@@ -188,7 +188,7 @@ pub unsafe extern "C" fn ssrc_vec_get_id(
     index: size_t,
     ret: *mut u32,
 ) -> nsresult {
-    match (*vec).get(index) {
+    match (&(*vec)).get(index) {
         Some(val) => {
             *ret = val.id;
             NS_OK

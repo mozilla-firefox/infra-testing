@@ -7,6 +7,7 @@
     <string name="trackers_blocked">Trackers blocked</string>
     <string name="clear_button_description">Clear current input</string>
     <string name="help_trackers_description">About Trackers</string>
+    <string name="search_selector_description">Choose search engine for this search</string>
     <string name="search_selector_header">This time search in</string>
     <string name="bookmarks_search_engine_name">Bookmarks</string>
     <string name="bookmarks_search_engine_description">Search within bookmarks</string>
@@ -22,6 +23,4 @@
     <string name="browser_action_home_button_description">Stay home</string>
     <string name="browser_action_security_lock_description">Webpage security information</string>
     <string name="toolbar_search_hint">Search or enter address</string>
-    <string name="copy_url_button">Copy</string>
-    <string name="copy_url_button_description">Copy the current url</string>
 </resources>

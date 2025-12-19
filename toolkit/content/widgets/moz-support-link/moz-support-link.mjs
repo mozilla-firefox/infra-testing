@@ -24,7 +24,7 @@ export default class MozSupportLink extends HTMLAnchorElement {
    * Handles setting up the SUPPORT_URL preference getter.
    * Without this, the tests for this component may not behave
    * as expected.
-   * @private
+   *
    * @memberof MozSupportLink
    */
   #register() {
@@ -71,6 +71,14 @@ export default class MozSupportLink extends HTMLAnchorElement {
 
   disconnectedCallback() {
     this.removeEventListener("click", this);
+  }
+
+  get supportPage() {
+    return this.getAttribute("support-page");
+  }
+
+  set supportPage(val) {
+    this.setAttribute("support-page", val);
   }
 
   handleEvent(e) {

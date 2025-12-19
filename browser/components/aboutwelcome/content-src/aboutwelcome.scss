@@ -9,7 +9,6 @@
 // aboutwelcome.html or spotlight.html. Ideally, there should be no `@import`
 // statements in the built aboutwelcome.css file.
 @import '../../asrouter/content-src/styles/feature-callout';
-@import '../../asrouter/content-src/styles/shopping';
 
 /* stylelint-disable max-nesting-depth */
 
@@ -78,42 +77,64 @@ html {
   .onboardingContainer {
     min-height: $break-point-medium;
     min-width: fit-content;
+  }
+}
 
-    // Change the height at which the scrollbar appears
-    // for the addons picker since its content is
-    // much taller than other onboarding content
-    &:has(.addons-picker-container) {
-      min-height: 1080px;
+// Allows fullscreen scrolling, for addons picker which
+// may have taller content than other onboarding screens.
+// Overrides fixed height styles to avoid clipping.
+.onboardingContainer:has(.addons-picker-container) {
+  .screen[pos='split'][fullscreen] {
+    height: auto;
+
+    .section-secondary {
+      height: auto;
+    }
+
+    .main-content {
+      min-height: 100vh;
+    }
+  }
+}
+
+.onboardingContainer:has(.embedded-backup-restore-container) {
+  .screen[pos='split'][fullscreen] {
+    .section-main {
+      .main-content {
+        .welcome-text {
+          margin-block: 15px 22px;
+
+          h1, h2 {
+            max-width: 300px;
+          }
+        }
+      }
     }
   }
 }
 
 .onboardingContainer {
-  --grey-subtitle-1: #696977;
-  --mr-welcome-background-color: #F8F6F4;
-  --mr-screen-heading-color: var(--in-content-text-color);
-  --mr-welcome-background-gradient: linear-gradient(0deg, rgba(144, 89, 255, 20%) 0%, rgba(2, 144, 238, 20%) 100%);
-  --mr-screen-background-color: #F8F6F4;
+  --grey-subtitle-1: light-dark(#696977, #FFF);
+  --mr-welcome-background-color: light-dark(#F8F6F4, #333336);
+  --mr-screen-heading-color: var(--text-color);
+  --mr-welcome-background-gradient: linear-gradient(
+    0deg,
+    light-dark(rgba(144, 89, 255, 20%), rgba(144, 89, 255, 30%)) 0%,
+    light-dark(rgba(2, 144, 238, 20%), rgba(2, 144, 238, 30%)) 100%
+  );
+  --mr-screen-background-color: light-dark(#F8F6F4, #62697A);
   --single-select-border-color: #8F8F9D;
-  --single-select-hover-color: #DEDEDF;
-  --picker-background-color: color-mix(in srgb, transparent 98%, black 2%);
-  --picker-hover-background-color: color-mix(in srgb, transparent 95%, black 5%);
-  --picker-border-color: var(--in-content-border-color);
-  --picker-checked-border-color: var(--in-content-item-selected);
+  --single-select-hover-color: light-dark(#DEDEDF, #52525E);
+  --picker-background-color: color-mix(in srgb, transparent 98%, light-dark(black, white) 2%);
+  --picker-hover-background-color: color-mix(in srgb, transparent 95%, light-dark(black, white) 5%);
+  --picker-border-color: var(--border-color);
+  --picker-checked-border-color: var(--border-color-selected);
   --picker-hover-border-color: var(--picker-border-color);
-  --picker-focus-ring-color: var(--in-content-item-selected);
-  --picker-checkbox-color: var(--in-content-item-selected);
+  --picker-focus-ring-color: var(--color-accent-primary-selected);
+  --picker-checkbox-color: var(--color-accent-primary-selected);
   --picker-checkbox-hover-color: var(--picker-checkbox-color);
-
-  @media (prefers-color-scheme: dark) {
-    --grey-subtitle-1: #FFF;
-    --mr-welcome-background-color: #333336;
-    --mr-welcome-background-gradient: linear-gradient(0deg, rgba(144, 89, 255, 30%) 0%, rgba(2, 144, 238, 30%) 100%);
-    --mr-screen-background-color: #62697A;
-    --single-select-hover-color: #52525E;
-    --picker-background-color: color-mix(in srgb, transparent 98%, white 2%);
-    --picker-hover-background-color: color-mix(in srgb, transparent 95%, white 5%);
-  }
+  --picker-backup-flair-background: color-mix(in srgb, var(--color-accent-primary) 20%, transparent);
+  --picker-backup-flair-color: var(--color-accent-primary);
 
   @media (forced-colors: active) {
     --picker-background-color: ButtonFace;
@@ -136,7 +157,7 @@ html {
     --mr-screen-background-color: buttontext;
     --mr-screen-heading-color: buttonface;
 
-    background-color: var(--in-content-page-background);
+    background-color: var(--background-color-canvas);
   }
 
   // Transition all of these and reduced motion effectively only does opacity.
@@ -172,6 +193,13 @@ html {
     transform: rotateY(180deg);
   }
 
+  &:has([pos='split'][fullscreen]) {
+    min-height: 100vh;
+    height: auto;
+    display: flex;
+    flex-direction: column;
+  }
+
   .section-main {
     display: flex;
     flex-direction: column;
@@ -185,8 +213,8 @@ html {
   }
 
   .main-content {
-    background-color: var(--in-content-page-background);
-    border-radius: 20px;
+    background-color: var(--background-color-canvas);
+    border-radius: var(--border-radius-large);
     box-shadow: 0 2px 14px 0 rgba(0, 0, 0, 20%);
     display: flex;
     flex-direction: column;
@@ -197,7 +225,7 @@ html {
     box-sizing: border-box;
 
     @media (prefers-contrast){
-      border: 1px solid var(--in-content-page-color)
+      border: 1px solid var(--text-color)
     }
 
     &.no-steps {
@@ -244,23 +272,23 @@ html {
   }
 
   @mixin secondary-cta-styles {
-    background-color: var(--in-content-button-background);
-    border: 1px solid var(--in-content-button-border-color);
+    background-color: var(--button-background-color);
+    border: var(--button-border);
     line-height: 12px;
     font-size: 0.72em;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     padding: 8px 16px;
     text-decoration: none;
     cursor: default;
 
     &:hover,
     &[open] {
-      background-color: var(--in-content-button-background-hover);
-      color: var(--in-content-button-text-color-hover);
+      background-color: var(--button-background-color-hover);
+      color: var(--button-text-color-hover);
 
       &:active {
-        background-color: var(--in-content-button-background-active);
-        color: var(--in-content-button-text-color-active);
+        background-color: var(--button-background-color-active);
+        color: var(--button-text-color-active);
       }
     }
   }
@@ -293,25 +321,25 @@ html {
     overflow: hidden;
 
     &.light-text {
-      --in-content-page-color: rgb(251, 251, 254);
-      --in-content-primary-button-text-color: rgb(43, 42, 51);
-      --in-content-primary-button-text-color-hover: rgb(43, 42, 51);
-      --in-content-primary-button-background: rgb(0, 221, 255);
-      --in-content-primary-button-background-hover: rgb(128, 235, 255);
-      --in-content-primary-button-background-active: rgb(170, 242, 255);
-      --in-content-button-text-color: var(--in-content-page-color);
+      --text-color: rgb(251, 251, 254);
+      --button-text-color-primary: rgb(43, 42, 51);
+      --button-text-color-primary-hover: rgb(43, 42, 51);
+      --button-background-color-primary: rgb(0, 221, 255);
+      --button-background-color-primary-hover: rgb(128, 235, 255);
+      --button-background-color-primary-active: rgb(170, 242, 255);
+      --button-text-color: var(--text-color);
     }
 
     &.dark-text {
-      --in-content-page-color: rgb(21,  20,  26);
-      --in-content-primary-button-text-color: rgb(251, 251, 254);
-      --in-content-primary-button-text-color-hover: rgb(251, 251, 254);
-      --in-content-primary-button-background: #0061E0;
-      --in-content-primary-button-background-hover: #0250BB;
-      --in-content-primary-button-background-active: #053E94;
-      --in-content-primary-button-border-color: transparent;
-      --in-content-primary-button-border-hover: transparent;
-      --in-content-button-text-color: var(--in-content-page-color);
+      --text-color: rgb(21,  20,  26);
+      --button-text-color-primary: rgb(251, 251, 254);
+      --button-text-color-primary-hover: rgb(251, 251, 254);
+      --button-background-color-primary: #0061E0;
+      --button-background-color-primary-hover: #0250BB;
+      --button-background-color-primary-active: #053E94;
+      --button-border-color-primary: transparent;
+      --button-border-color-primary-hover: transparent;
+      --button-text-color: var(--text-color);
     }
 
     &:dir(rtl) {
@@ -344,7 +372,7 @@ html {
 
         .main-content {
           background-color: var(--mr-welcome-background-color);
-          border-radius: 8px;
+          border-radius: var(--border-radius-medium);
           box-shadow: 0 2px 14px rgba(58, 57, 68, 20%);
           padding: 44px 85px 20px;
 
@@ -379,7 +407,7 @@ html {
             .secondary {
               @include secondary-cta-styles;
 
-              color: var(--in-content-button-text-color);
+              color: var(--button-text-color);
             }
           }
         }
@@ -396,8 +424,8 @@ html {
         }
 
         .main-content {
-          background-color: var(--in-content-page-background);
-          border-radius: 8px;
+          background-color: var(--background-color-canvas);
+          border-radius: var(--border-radius-medium);
           box-shadow: 0 2px 14px rgba(58, 57, 68, 20%);
           overflow: hidden;
 
@@ -442,7 +470,7 @@ html {
 
             &.secondary {
               &:hover {
-                background-color: var(--in-content-button-background-hover);
+                background-color: var(--button-background-color-hover);
               }
             }
           }
@@ -455,16 +483,16 @@ html {
             .secondary {
               @include secondary-cta-styles;
 
-              color: var(--in-content-button-text-color);
+              color: var(--button-text-color);
             }
           }
         }
 
         .addon-container {
           display: flex;
-          border: 1px solid var(--in-content-border-color);
-          box-shadow: 0 1px 2px 0 var(--in-content-border-color);
-          border-radius: 4px;
+          border: 1px solid var(--border-color);
+          box-shadow: 0 1px 2px 0 var(--border-color);
+          border-radius: var(--border-radius-small);
           margin: 5px auto;
           text-align: start;
 
@@ -482,13 +510,13 @@ html {
           .addon-title {
             margin: 10px 0 3px;
             font-size: 16px;
-            font-weight: 600;
+            font-weight: var(--heading-font-weight);
           }
 
           .addon-description {
             margin: 2px 0 10px;
             font-size: 13px;
-            font-weight: 400;
+            font-weight: normal;
           }
 
           .install-button-wrapper {
@@ -504,9 +532,9 @@ html {
         .loader {
           width: 1em;
           height: 1em;
-          border: 3px solid var(--in-content-primary-button-text-color);
+          border: 3px solid var(--button-text-color-primary);
           border-bottom-color: transparent;
-          border-radius: 50%;
+          border-radius: var(--border-radius-circle);
           box-sizing: border-box;
           animation: rotation 1s linear infinite;
           justify-self: center;
@@ -583,7 +611,7 @@ html {
           box-shadow: 0 2px 14px 0 rgba(0, 0, 0, 20%);
           width: $split-section-width + $split-section-width;
           height: $split-screen-height;
-          border-radius: 8px;
+          border-radius: var(--border-radius-medium);
           inset: 0;
           margin: auto;
           pointer-events: none;
@@ -621,6 +649,15 @@ html {
         }
       }
 
+      .secondary-buttons-top-container {
+        .secondary-cta.top {
+          position: relative;
+          padding-top: 0;
+          top: 0;
+          inset-inline-end: 0;
+        }
+      }
+
       .section-main {
         flex-direction: row;
         display: block;
@@ -639,7 +676,7 @@ html {
         }
 
         .main-content {
-          border-radius: 0 8px 8px 0;
+          border-radius: 0 var(--border-radius-medium) var(--border-radius-medium) 0;
           overflow: hidden;
           padding-inline: 35px 20px;
           padding-block: 120px 0;
@@ -650,14 +687,14 @@ html {
           }
 
           &:dir(rtl) {
-            border-radius: 8px 0 0 8px;
+            border-radius: var(--border-radius-medium) 0 0 var(--border-radius-medium);
           }
 
           .legal-paragraph {
             text-align: start;
             font-size: 11px;
             line-height: 16.5px;
-            color: #5B5B66;
+            color: light-dark(#5B5B66, #CFCFD8);
 
             @mixin narrow-legal-paragraph {
               padding-inline: 30px;
@@ -671,9 +708,6 @@ html {
               @include narrow-legal-paragraph;
             }
 
-            @media (prefers-color-scheme: dark) {
-              color: #CFCFD8;
-            }
           }
 
           .main-content-inner {
@@ -736,7 +770,7 @@ html {
                 &.secondary {
                   &:hover,
                   &[open] {
-                    background-color: var(--in-content-button-background-hover);
+                    background-color: var(--button-background-color-hover);
                   }
                 }
               }
@@ -762,9 +796,9 @@ html {
             .loader {
               width: 1em;
               height: 1em;
-              border: 3px solid var(--in-content-primary-button-text-color);
+              border: 3px solid var(--button-text-color-primary);
               border-bottom-color: transparent;
-              border-radius: 50%;
+              border-radius: var(--border-radius-circle);
               box-sizing: border-box;
               animation: rotation 1s linear infinite;
               justify-self: center;
@@ -823,10 +857,7 @@ html {
               min-height: 1em;
               font-size: 15px;
               line-height: 1.5;
-
-              @media (prefers-contrast: no-preference) {
-                color: #5B5B66;
-              }
+              color: light-dark(#5B5B66, #CFCFD8);
             }
           }
 
@@ -844,11 +875,11 @@ html {
           }
 
           @media (prefers-contrast) {
-            border: 1px solid var(--in-content-page-color);
+            border: 1px solid var(--text-color);
 
             .steps.progress-bar {
-              border-top: 1px solid var(--in-content-page-color);
-              background-color: var(--in-content-page-background);
+              border-top: 1px solid var(--text-color);
+              background-color: var(--background-color-canvas);
 
               .indicator {
                 background-color: var(--color-accent-primary);
@@ -861,7 +892,7 @@ html {
       .section-secondary {
         --mr-secondary-position: center center / auto 350px;
 
-        border-radius: 8px 0 0 8px;
+        border-radius: var(--border-radius-medium) 0 0 var(--border-radius-medium);
         margin: auto 0 auto auto;
         display: flex;
         align-items: center;
@@ -870,14 +901,14 @@ html {
         position: relative;
 
         &:dir(rtl) {
-          border-radius: 0 8px 8px 0;
+          border-radius: 0 var(--border-radius-medium) var(--border-radius-medium) 0;
           margin: auto;
           margin-inline-end: 0;
         }
 
         h1 {
           color: var(--mr-screen-heading-color);
-          font-weight: 700;
+          font-weight: var(--font-weight-bold);
           font-size: 47px;
           line-height: 110%;
           max-width: 340px;
@@ -963,18 +994,6 @@ html {
         }
       }
 
-      @media (prefers-contrast: no-preference) and (prefers-color-scheme: dark) {
-        .section-main .main-content {
-          .welcome-text h2 {
-            color: #CFCFD8;
-          }
-
-          .action-buttons .secondary {
-            background-color: #2B2A33;
-          }
-        }
-      }
-
       @media only screen and (width >= 800px) {
         .tiles-single-select-section {
           margin-inline-start: -10px;
@@ -990,10 +1009,10 @@ html {
 
             margin: auto;
             margin-inline-end: 0;
-            border-radius: 8px 0 0 8px;
+            border-radius: var(--border-radius-medium) 0 0 var(--border-radius-medium);
 
             &:dir(rtl) {
-              border-radius: 0 8px 8px 0;
+              border-radius: 0 var(--border-radius-medium) var(--border-radius-medium) 0;
               margin: auto;
               margin-inline-end: 0;
             }
@@ -1002,10 +1021,10 @@ html {
           .section-secondary {
             margin: auto;
             margin-inline-start: 0;
-            border-radius: 0 8px 8px 0;
+            border-radius: 0 var(--border-radius-medium) var(--border-radius-medium) 0;
 
             &:dir(rtl) {
-              border-radius: 8px 0 0 8px;
+              border-radius: var(--border-radius-medium) 0 0 var(--border-radius-medium);
               margin: auto;
               margin-inline-start: 0;
             }
@@ -1030,10 +1049,10 @@ html {
 
             margin: auto;
             margin-inline-end: 0;
-            border-radius: 8px 0 0 8px;
+            border-radius: var(--border-radius-medium) 0 0 var(--border-radius-medium);
 
             &:dir(rtl) {
-              border-radius: 0 8px 8px 0;
+              border-radius: 0 var(--border-radius-medium) var(--border-radius-medium) 0;
               margin: auto;
               margin-inline-end: 0;
             }
@@ -1042,10 +1061,10 @@ html {
           .section-secondary {
             margin: auto;
             margin-inline-start: 0;
-            border-radius: 0 8px 8px 0;
+            border-radius: 0 var(--border-radius-medium) var(--border-radius-medium) 0;
 
             &:dir(rtl) {
-              border-radius: 8px 0 0 8px;
+              border-radius: var(--border-radius-medium) 0 0 var(--border-radius-medium);
               margin: auto;
               margin-inline-start: 0;
             }
@@ -1057,15 +1076,24 @@ html {
         $split-section-width: 50%;
         $split-screen-height: 100%;
 
+        min-height:100vh;
+
         .section-secondary,
         .section-main {
           width: $split-section-width;
-          height: $split-screen-height;
+          height: auto;
+        }
+
+        .section-main {
+          margin: 0;
+          display: flex;
         }
 
         .section-main .main-content {
           border-radius: 0;
           padding: 0;
+          flex: 1;
+          height: auto;
 
           h1 {
             width: auto;
@@ -1076,6 +1104,7 @@ html {
             flex-grow: 0;
             padding-inline: 110px;
             margin-block: auto;
+            padding-block: 40px;
 
             @media only screen and (width <= 800px) {
               padding-block: 20px;
@@ -1123,7 +1152,7 @@ html {
             max-width: 450px;
 
             h1 {
-              font-weight: 510;
+              font-weight: var(--heading-font-weight);
               font-size: 80px;
               margin: 0;
               width: 100%;
@@ -1134,7 +1163,7 @@ html {
               font-size: 20px;
               margin: 0;
               margin-block-start: 24px;
-              font-weight: 510;
+              font-weight: var(--heading-font-weight);
               width: 100%;
             }
           }
@@ -1145,14 +1174,18 @@ html {
 
           .addon-container {
             display: flex;
-            flex-flow: row wrap;
-            border: 1px solid var(--in-content-border-color);
-            box-shadow: 0 1px 2px 0 var(--in-content-border-color);
-            border-radius: 4px;
+            flex-direction: row;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 1px 2px 0 var(--border-color);
+            border-radius: var(--border-radius-small);
             margin-block: 0 16px;
             text-align: start;
             padding: 16px;
             max-width: 800px;
+
+            @media (800px <= width <= 990px) {
+              flex-flow: row wrap;
+            }
 
             .rtamo-icon {
               img {
@@ -1177,16 +1210,16 @@ html {
                     padding-inline: 16px;
                     font-size: 12px;
                     padding-block: 0;
-                    background-color: var(--in-content-button-background);
-                    color: var(--in-content-button-text-color);
+                    background-color: var(--button-background-color);
+                    color: var(--button-text-color);
                     min-width: 0;
 
                     &:hover {
-                      background-color: var(--in-content-button-background-hover);
+                      background-color: var(--button-background-color-hover);
                     }
 
                     &:active {
-                      background-color: var(--in-content-button-background-active);
+                      background-color: var(--button-background-color-active);
                     }
                   }
                 }
@@ -1201,7 +1234,7 @@ html {
 
                   .addon-title {
                     font-size: 16px;
-                    font-weight: 600;
+                    font-weight: var(--heading-font-weight);
                   }
 
                   .addon-author {
@@ -1236,9 +1269,9 @@ html {
           .loader {
             width: 1em;
             height: 1em;
-            border: 3px solid var(--in-content-primary-button-text-color);
+            border: 3px solid var(--button-text-color-primary);
             border-bottom-color: transparent;
-            border-radius: 50%;
+            border-radius: var(--border-radius-circle);
             box-sizing: border-box;
             animation: rotation 1s linear infinite;
             justify-self: center;
@@ -1269,6 +1302,9 @@ html {
 
           .section-main {
             height: 75%;
+            flex-grow: 1;
+            margin: 0;
+            display: flex;
 
             &[hide-secondary-section='responsive'] {
               height: 100%;
@@ -1276,6 +1312,7 @@ html {
               .main-content {
                 border-radius: 0;
                 padding: 0;
+                height: auto;
               }
             }
           }
@@ -1295,6 +1332,8 @@ html {
           .section-secondary {
             --mr-secondary-position: center var(--mr-secondary-background-position-y) / 50%;
 
+            height: 250px;
+
             .hero-image {
               img {
                 width: 25%;
@@ -1305,6 +1344,8 @@ html {
         }
 
         @media only screen and (width <= 800px) {
+          height: 100%;
+
           @include narrow-split-fullscreen;
         }
 
@@ -1326,14 +1367,14 @@ html {
             flex-direction: column;
 
             .section-secondary {
-              border-radius: 8px 8px 0 0;
+              border-radius: var(--border-radius-medium) var(--border-radius-medium) 0 0;
               margin: auto;
               margin-bottom: 0;
 
               &:dir(rtl) {
                 margin: auto;
                 margin-bottom: 0;
-                border-radius: 8px 8px 0 0;
+                border-radius: var(--border-radius-medium) var(--border-radius-medium) 0 0;
               }
             }
 
@@ -1341,12 +1382,12 @@ html {
               height: auto;
               margin: auto;
               margin-top: 0;
-              border-radius: 0 0 8px 8px;
+              border-radius: 0 0 var(--border-radius-medium) var(--border-radius-medium);
 
               &:dir(rtl) {
                 margin: auto;
                 margin-top: 0;
-                border-radius: 0 0 8px 8px;
+                border-radius: 0 0 var(--border-radius-medium) var(--border-radius-medium);
               }
             }
           }
@@ -1360,7 +1401,7 @@ html {
             --mr-secondary-background-position-y: top;
             --mr-secondary-position: center var(--mr-secondary-background-position-y) / 75%;
 
-            border-radius: 8px 8px 0 0;
+            border-radius: var(--border-radius-medium) var(--border-radius-medium) 0 0;
             margin: auto;
             margin-bottom: 0;
             height: $small-secondary-section-height;
@@ -1384,7 +1425,7 @@ html {
             &:dir(rtl) {
               margin: auto;
               margin-bottom: 0;
-              border-radius: 8px 8px 0 0;
+              border-radius: var(--border-radius-medium) var(--border-radius-medium) 0 0;
             }
 
             &.with-secondary-section-hidden {
@@ -1419,16 +1460,16 @@ html {
 
               .main-content {
                 padding: 50px 0 0;
-                border-radius: 8px;
+                border-radius: var(--border-radius-medium);
 
                 &:dir(rtl) {
-                  border-radius: 8px;
+                  border-radius: var(--border-radius-medium);
                 }
               }
             }
 
             .main-content {
-              border-radius: 0 0 8px 8px;
+              border-radius: 0 0 var(--border-radius-medium) var(--border-radius-medium);
               padding: 30px 0 0;
 
               .main-content-inner {
@@ -1510,7 +1551,7 @@ html {
               margin-top: 0;
 
               .main-content {
-                border-radius: 0 0 8px 8px;
+                border-radius: 0 0 var(--border-radius-medium) var(--border-radius-medium);
               }
             }
           }
@@ -1529,10 +1570,10 @@ html {
 
               margin: auto;
               margin-inline-end: 0;
-              border-radius: 8px 0 0 8px;
+              border-radius: var(--border-radius-medium) 0 0 var(--border-radius-medium);
 
               &:dir(rtl) {
-                border-radius: 0 8px 8px 0;
+                border-radius: 0 var(--border-radius-medium) var(--border-radius-medium) 0;
                 margin: auto;
                 margin-inline-end: 0;
               }
@@ -1541,10 +1582,10 @@ html {
             .section-secondary {
               margin: auto;
               margin-inline-start: 0;
-              border-radius: 0 8px 8px 0;
+              border-radius: 0 var(--border-radius-medium) var(--border-radius-medium) 0;
 
               &:dir(rtl) {
-                border-radius: 8px 0 0 8px;
+                border-radius: var(--border-radius-medium) 0 0 var(--border-radius-medium);
                 margin: auto;
                 margin-inline-start: 0;
               }
@@ -1561,35 +1602,37 @@ html {
         @include narrow-split;
       }
 
-      @media only screen and (height <= 650px) {
-        // Hide the "Sign in" button on the welcome screen when it would
-        // otherwise overlap the screen. We'd reposition it, but then it would
-        // overlap the dismiss button. We may change the alignment so they don't
-        // overlap in a future revision.
-        @media (800px <= width <= 990px) {
-          .section-main .secondary-cta.top {
-            display: none;
+      &:where(:not([fullscreen])) {
+        @media only screen and (height <= 650px) {
+          // Hide the "Sign in" button on the welcome screen when it would
+          // otherwise overlap the screen. We'd reposition it, but then it would
+          // overlap the dismiss button. We may change the alignment so they don't
+          // overlap in a future revision.
+          @media (800px <= width <= 990px) {
+            .section-main .secondary-cta.top {
+              display: none;
+            }
           }
-        }
 
-        // Reposition the "Sign in" button on the welcome screen to move inside
-        // the screen when it would otherwise overlap the screen.
-        @mixin extra-narrow-secondary-cta {
-          .section-main .secondary-cta.top {
-            position: absolute;
-            padding: 0;
-            top: 0;
-            inset-inline-end: 0;
+          // Reposition the "Sign in" button on the welcome screen to move inside
+          // the screen when it would otherwise overlap the screen.
+          @mixin extra-narrow-secondary-cta {
+            .section-main .secondary-buttons-top-container {
+              position: absolute;
+              padding: 0;
+              top: 0;
+              inset-inline-end: 0;
+            }
           }
-        }
 
-        @media (width <= 620px) {
-          @include extra-narrow-secondary-cta;
-        }
-
-        [narrow] & {
           @media (width <= 620px) {
             @include extra-narrow-secondary-cta;
+          }
+
+          [narrow] & {
+            @media (width <= 620px) {
+              @include extra-narrow-secondary-cta;
+            }
           }
         }
       }
@@ -1600,6 +1643,7 @@ html {
     margin-block: 60px 10px;
     transition: var(--transition);
     height: 80px;
+    user-select: none;
 
     &.cta-top {
       margin-top: 25px;
@@ -1619,7 +1663,7 @@ html {
 
   .rtamo-theme-icon {
     max-height: 30px;
-    border-radius: 2px;
+    border-radius: var(--border-radius-xsmall);
     margin-bottom: 10px;
     margin-top: 24px;
   }
@@ -1654,13 +1698,13 @@ html {
 
     h1,
     h2 {
-      color: var(--in-content-page-color);
+      color: var(--text-color);
       line-height: 1.5;
     }
 
     h1 {
       font-size: 24px;
-      font-weight: 600;
+      font-weight: var(--heading-font-weight);
       margin: 0 6px;
       letter-spacing: -0.02em;
       outline: none;
@@ -1676,7 +1720,14 @@ html {
 
     &.fancy {
       h1 {
-        background-image: linear-gradient(90deg, #9059FF, #FF4AA2, #FF8C00, #FF4AA2, #9059FF);
+        background-image: linear-gradient(
+          90deg,
+          light-dark(#9059FF, #C688FF),
+          light-dark(#FF4AA2, #FF84C0),
+          light-dark(#FF8C00, #FFBD4F),
+          light-dark(#FF4AA2, #FF84C0),
+          light-dark(#9059FF, #C688FF)
+        );
         background-clip: text;
         background-size: 200%;
 
@@ -1685,8 +1736,6 @@ html {
         }
 
         @media (prefers-color-scheme: dark) {
-          background-image: linear-gradient(90deg, #C688FF, #FF84C0, #FFBD4F, #FF84C0, #C688FF);
-
           &::selection {
             color: #FFF;
             background-color: #696977;
@@ -1789,6 +1838,7 @@ html {
 
   .tiles-single-select-section {
     border: 0;
+    outline: none;
     display: flex;
     flex-wrap: wrap;
     gap: 5px;
@@ -1800,12 +1850,12 @@ html {
     &:hover,
     &:active,
     &:focus-within {
-      border-radius: 8px;
-      outline: 2px solid var(--in-content-primary-button-background);
+      border-radius: var(--border-radius-medium);
+      outline: 2px solid var(--button-background-color-primary);
     }
 
-    // single select only specific styles
-    &.single-select:not(.theme) {
+    // single select and theme specific styles
+    &.single-select, &.theme {
       flex-direction: row;
       padding-top: 5px;
       gap: 10px;
@@ -1814,8 +1864,8 @@ html {
       .select-item {
         position: relative;
         padding-top: 5px;
-        border: 2px solid var(--single-select-border-color);
-        border-radius: 12px;
+        border: 1px solid var(--single-select-border-color);
+        border-radius: var(--border-radius-large);
 
         &:has(.input:focus),
         &:has(.selected) {
@@ -1823,13 +1873,13 @@ html {
         }
 
         &:has(.input:focus) {
-          outline: 2px solid var(--in-content-primary-button-background);
+          outline: 2px solid var(--button-background-color-primary);
           outline-offset: 5px;
         }
 
         &:has(.selected) {
-          border: 3px solid var(--in-content-primary-button-background);
-          border-radius: 12px;
+          border: 1px solid var(--button-background-color-primary);
+          border-radius: var(--border-radius-large);
         }
 
         &:hover {
@@ -1846,7 +1896,7 @@ html {
 
         .flair {
           height: 18px;
-          border-radius: 4px;
+          border-radius: var(--border-radius-small);
           background-color: #9059FF;
           color: #FFF;
           padding: 2px 8px;
@@ -1854,6 +1904,33 @@ html {
           right: 1px;
           top: -10px;
           line-height: 1;
+
+          &.centered {
+            /* stylelint-disable-next-line */
+            border-radius: 8px 8px 0 0;
+            background-color: var(--button-background-color-primary);
+            position: relative;
+            right: unset;
+            top: -6px;
+            line-height: 0.75;
+            width: 100%;
+            box-sizing: border-box;
+
+            &.backup {
+              /* stylelint-disable-next-line */
+              border-radius: 10px 10px 0 0;
+              background-color: var(--picker-backup-flair-background);
+              color: var(--picker-backup-flair-color);
+
+              &.spacer {
+                background-color: transparent;
+              }
+            }
+          }
+
+          &.spacer {
+            background-color: transparent;
+          }
         }
 
         .icon {
@@ -1863,18 +1940,35 @@ html {
         .text {
           margin-block: 8px;
         }
-      }
 
-    }
-    // theme specific styles
-    &.theme {
-      .select-item {
-        width: 180px;
+        .tile-list-container {
+          display: flex;
+          flex-direction: column;
+          margin-inline-start: 20px;
+
+          .tile-list-item {
+            display: flex;
+
+            &:last-child {
+              margin-block-end: 8px;
+            }
+          }
+
+          .tile-list-icon-wrapper {
+            padding-block-start: 6px;
+          }
+
+          .tile-list-text {
+            margin-inline-start: 8px;
+            margin-inline-end: 20px;
+            text-align: start;
+          }
+        }
       }
     }
 
-    // single select specific styles
-    &.single-select {
+    // single select and theme specific styles
+    &.single-select, &.theme {
       &:hover, &:focus-within {
         outline: none;
       }
@@ -1883,7 +1977,7 @@ html {
         transition: var(--transition);
 
         &:has(.input:focus) {
-          outline: 2px solid var(--in-content-primary-button-background);
+          outline: 2px solid var(--button-background-color-primary);
           outline-offset: 2px;
         }
       }
@@ -1896,11 +1990,25 @@ html {
       flex: 1;
       padding: 0;
       min-width: 50px;
-      color: #000;
       box-shadow: none;
-      border-radius: 4px;
+      border-radius: var(--border-radius-small);
       cursor: pointer;
       z-index: 0;
+      transition: var(--transition);
+
+      &.backup {
+        cursor: default;
+        width: 225.5px;
+        padding-top: 0;
+
+        &:has(.selected) {
+          border: 1px solid var(--border-color-selected);
+        }
+
+        &:hover {
+          background-color: transparent;
+        }
+      }
 
       &:focus,
       &:active {
@@ -1912,25 +2020,13 @@ html {
         background-size: cover;
         width: 40px;
         height: 40px;
-        border-radius: 40px;
-        outline: 1px solid var(--in-content-border-color);
-        outline-offset: -0.5px;
+        border-radius: var(--border-radius-small);
         z-index: -1;
 
         &:dir(rtl) {
           transform: scaleX(-1);
         }
 
-        &:focus-visible,
-        &:active,
-        &.selected {
-          outline: 2px solid var(--in-content-primary-button-background);
-          outline-offset: 2px;
-        }
-
-        &.selected {
-          outline-color: var(--color-accent-primary-active);
-        }
 
         &.light {
           background-image: url('resource://builtin-themes/light/icon.svg');
@@ -1952,7 +2048,6 @@ html {
 
       .text {
         display: flex;
-        color: var(--in-content-page-color);
         font-size: 14px;
         font-weight: normal;
         line-height: 20px;
@@ -1975,7 +2070,7 @@ html {
       &:hover,
       &:focus {
         background-color: rgba(217, 217, 227, 30%);
-        border-radius: 4px;
+        border-radius: var(--border-radius-small);
       }
     }
   }
@@ -1993,16 +2088,20 @@ html {
     gap: 16px;
     margin-block: -1em 2em;
     margin-inline: 1em;
-    color: #5B5B66;
-    font-weight: 400;
+    font-weight: normal;
     font-size: 14px;
     text-align: initial;
     transition: var(--transition);
     z-index: 1;
+    color: var(--text-color);
+
+    @media not (prefers-contrast) {
+      color: light-dark(#5B5B66, #CFCFD8);
+    }
 
     #multi-stage-multi-select-label {
       // These styles are based on .welcome-text>h2 (subtitle).
-      color: var(--in-content-page-color);
+      color: var(--text-color);
       line-height: 1.5;
       font-size: 16px;
       font-weight: normal;
@@ -2021,12 +2120,8 @@ html {
       font-size: 15px;
       line-height: 1.5;
 
-      @media (prefers-contrast: no-preference) {
-        color: #5B5B66;
-      }
-
-      @media (prefers-contrast: no-preference) and (prefers-color-scheme: dark) {
-        color: #CFCFD8;
+      @media not (prefers-contrast) {
+        color: light-dark(#5B5B66, #CFCFD8);
       }
     }
 
@@ -2038,13 +2133,44 @@ html {
         flex-shrink: 0;
       }
     }
+  }
 
-    @media (prefers-color-scheme: dark) {
-      color: #CFCFD8;
-    }
+  .confirmation-checklist-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 10px auto;
 
-    @media (prefers-contrast) {
-      color: var(--in-content-page-color);
+    .confirmation-checklist-container {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+
+      .confirmation-checklist-item {
+        display: flex;
+        flex-direction: column;
+        margin-inline-start: 20px;
+
+        &:last-child {
+          margin-block-end: 8px;
+        }
+      }
+
+      .confirmation-checklist-icon-wrapper {
+        display: flex;
+        align-items: center;
+      }
+
+      .confirmation-checklist-text {
+        margin-inline-start: 8px;
+        font-weight: var(--font-weight-semibold);
+      }
+
+      .confirmation-checklist-subtext {
+        margin-inline-start: 26px;
+        text-align: start;
+        font-size: 14px;
+      }
     }
   }
 
@@ -2059,7 +2185,7 @@ html {
       @include text-link-styles;
 
       font-size: 16px;
-      font-weight: 400;
+      font-weight: normal;
 
       &:hover {
         background: none;
@@ -2116,8 +2242,8 @@ html {
     border-radius: 0;
 
     @media (prefers-contrast: no-preference) {
-      background-color: var(--in-content-page-background);
-      border-color: var(--in-content-border-color);
+      background-color: var(--background-color-canvas);
+      border-color: var(--border-color);
     }
 
     cursor: pointer;
@@ -2145,20 +2271,16 @@ html {
   button.content-tiles-header {
     margin: 0.5em 0 0;
     font-size: 11px;
-    font-weight: 400;
+    font-weight: normal;
     justify-content: center;
     border-width: 1px 0;
 
     @media (prefers-contrast: no-preference) {
-      color: #5B5B66;
-    }
-
-    @media (prefers-contrast: no-preference) and (prefers-color-scheme: dark) {
-      color: #CFCFD8;
+      color: light-dark(#5B5B66, #CFCFD8);
     }
 
     @media (prefers-contrast) {
-      color: var(--in-content-page-color);
+      color: var(--text-color);
     }
 
     .arrow-icon {
@@ -2167,7 +2289,7 @@ html {
   }
 
   #content-tiles-container {
-    --tiles-container-border-radius: 8px;
+    --tiles-container-border-radius: var(--border-radius-medium);
 
     margin: 24px 48px;
 
@@ -2192,7 +2314,7 @@ html {
               border-end-end-radius: 0;
 
               & + .tile-content {
-                border: 1px solid var(--in-content-border-color);
+                border: 1px solid var(--border-color);
                 border-top: none;
                 border-radius: 0 0 var(--tiles-container-border-radius) var(--tiles-container-border-radius);
               }
@@ -2212,8 +2334,8 @@ html {
         justify-content: space-between;
 
         & + .tile-content {
-          border-inline-start: 1px solid var(--in-content-border-color);
-          border-inline-end: 1px solid var(--in-content-border-color);
+          border-inline-start: 1px solid var(--border-color);
+          border-inline-end: 1px solid var(--border-color);
         }
 
         .header-text-container {
@@ -2221,12 +2343,12 @@ html {
           flex-direction: column;
 
           .header-title {
-            font-weight: 590;
+            font-weight: var(--heading-font-weight);
             line-height: 1.5;
           }
 
           .header-subtitle {
-            font-weight: 400;
+            font-weight: normal;
             line-height: 1.5;
           }
         }
@@ -2255,7 +2377,7 @@ html {
             background-color: var(--picker-background-color);
             border: 1px solid var(--picker-border-color);
             padding: 8px 12px;
-            border-radius: 100px;
+            border-radius: var(--border-radius-circle);
             user-select: none;
 
             &:has(input:checked) {
@@ -2287,7 +2409,7 @@ html {
             }
 
             .picker-icon {
-              border-radius: 100%;
+              border-radius: var(--border-radius-circle);
               width: 27px;
               height: 27px;
               display: flex;
@@ -2332,7 +2454,7 @@ html {
 
   .tile-title {
     font-size: 24px;
-    font-weight: 600;
+    font-weight: var(--heading-font-weight);
     margin-block: 0;
 
     &:not(:last-child) {
@@ -2373,7 +2495,7 @@ html {
     }
 
     &.with-background {
-      background-color: var(--in-content-page-background);
+      background-color: var(--background-color-canvas);
 
       &:hover {
         background-color: var(--button-background-color-hover);
@@ -2410,6 +2532,22 @@ html {
     span {
       color: var(--grey-subtitle-1);
       margin: 0 4px;
+    }
+  }
+
+  .secondary-buttons-top-container {
+    display: flex;
+    flex-direction: row-reverse;
+    position: fixed;
+    top: 10px;
+    inset-inline-end: 10px;
+    width: auto;
+    height: auto;
+    z-index: 2;
+
+    .secondary-cta.top {
+      position: relative;
+      padding-top: 0;
     }
   }
 
@@ -2470,15 +2608,15 @@ html {
       margin-inline-end: 4px;
       margin-inline-start: 4px;
       background: var(--grey-subtitle-1);
-      border-radius: 5px;
+      border-radius: var(--border-radius-small);
       // using border will show up in Windows High Contrast Mode to improve accessibility.
-      border: 3px solid var(--in-content-button-text-color);
+      border: 3px solid var(--button-text-color);
       opacity: 0.35;
       box-sizing: inherit;
 
       &.current {
         opacity: 1;
-        border-color: var(--in-content-primary-button-background);
+        border-color: var(--button-background-color-primary);
 
         // This is the only step shown, so visually hide it to maintain spacing.
         &:last-of-type:first-of-type {
@@ -2491,7 +2629,7 @@ html {
       height: 6px;
       padding-block: 0;
       margin-block: 42px 0;
-      background-color: color-mix(in srgb, var(--in-content-button-text-color) 25%, transparent);
+      background-color: color-mix(in srgb, var(--button-text-color) 25%, transparent);
       justify-content: start;
       opacity: 1;
       transition: none;
@@ -2500,7 +2638,7 @@ html {
         width: 100%;
         height: 100%;
         margin-inline: -1px;
-        background-color: var(--in-content-primary-button-background);
+        background-color: var(--button-background-color-primary);
         border: 0;
         border-radius: 0;
         opacity: 1;
@@ -2547,11 +2685,15 @@ html {
     &.rtamo {
       margin-top: 24px;
     }
+
+    &.slim {
+      padding: 0;
+    }
   }
 
   .secondary {
-    background-color: var(--in-content-button-background);
-    color: var(--in-content-button-text-color);
+    background-color: var(--button-background-color);
+    color: var(--button-text-color);
   }
 
   .split-button-container,
@@ -2613,7 +2755,7 @@ html {
   .solid-L {
     background-image: url('chrome://activity-stream/content/data/content/assets/noodle-solid-L.svg');
     -moz-context-properties: fill;
-    fill: var(--in-content-page-background);
+    fill: var(--background-color-canvas);
     display: none;
   }
 
@@ -2664,7 +2806,7 @@ html {
     .yellow-circle {
       width: 165px;
       height: 165px;
-      border-radius: 50%;
+      border-radius: var(--border-radius-circle);
       transform: translate(230%, -5%);
       background: #952BB9;
       transition-delay: -0.2s;
@@ -2686,7 +2828,8 @@ html {
     .inline-image,
     .link-paragraph,
     .multi-select-container,
-    migration-wizard {
+    migration-wizard,
+    turn-on-scheduled-backups::part(form) {
       transition-delay: 0.9s;
     }
 
@@ -2759,7 +2902,7 @@ html {
     .yellow-circle {
       width: 165px;
       height: 165px;
-      border-radius: 50%;
+      border-radius: var(--border-radius-circle);
       transform: translate(160%, 130%);
       background: #E7258C;
     }
@@ -2798,6 +2941,7 @@ html {
       .cta-link,
       .legal-paragraph,
       migration-wizard,
+      turn-on-scheduled-backups::part(form),
       .tile-title-container,
       .steps[above-button]:not(.progress-bar) {
         opacity: 0;
@@ -2874,7 +3018,8 @@ html {
       .tiles-single-select-section,
       .inline-image,
       .link-paragraph,
-      migration-wizard {
+      migration-wizard,
+      turn-on-scheduled-backups::part(form) {
         opacity: 0;
         translate: 0 var(--translate);
         transition-delay: 0.2s;
@@ -2929,5 +3074,13 @@ html {
     &::part(deck) {
       font-size: 0.83em;
     }
+  }
+
+  turn-on-scheduled-backups::part(form) {
+    transition: var(--transition);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-medium);
+    padding: 24px 30px;
+    margin-block: 0 24px;
   }
 }

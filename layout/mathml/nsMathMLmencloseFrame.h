@@ -7,7 +7,6 @@
 #ifndef nsMathMLmencloseFrame_h___
 #define nsMathMLmencloseFrame_h___
 
-#include "mozilla/Attributes.h"
 #include "mozilla/EnumSet.h"
 #include "nsMathMLChar.h"
 #include "nsMathMLContainerFrame.h"
@@ -53,11 +52,11 @@ class nsMathMLmencloseFrame : public nsMathMLContainerFrame {
   friend nsIFrame* NS_NewMathMLmencloseFrame(mozilla::PresShell* aPresShell,
                                              ComputedStyle* aStyle);
 
-  nsresult Place(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
-                 ReflowOutput& aDesiredSize) override;
+  void Place(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
+             ReflowOutput& aDesiredSize) override;
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
   void DidSetComputedStyle(ComputedStyle* aOldStyle) override;
 

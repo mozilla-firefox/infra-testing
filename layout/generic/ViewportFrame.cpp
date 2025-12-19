@@ -11,22 +11,35 @@
 
 #include "mozilla/ViewportFrame.h"
 
+#include "MobileViewportManager.h"
+#include "mozilla/AbsoluteContainingBlock.h"
 #include "mozilla/ComputedStyleInlines.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/RestyleManager.h"
 #include "mozilla/ScrollContainerFrame.h"
-#include "nsGkAtoms.h"
 #include "mozilla/dom/ViewTransition.h"
-#include "nsAbsoluteContainingBlock.h"
 #include "nsCanvasFrame.h"
+#include "nsGkAtoms.h"
 #include "nsLayoutUtils.h"
-#include "nsSubDocumentFrame.h"
 #include "nsPlaceholderFrame.h"
-#include "MobileViewportManager.h"
+#include "nsSubDocumentFrame.h"
 
 using namespace mozilla;
-typedef nsAbsoluteContainingBlock::AbsPosReflowFlags AbsPosReflowFlags;
+
+// ScrollContainerFrame can create two other wrap lists for scrollbars and such.
+static constexpr uint16_t kFirstTopLayerIndex = 2;
+enum class TopLayerIndex : uint16_t {
+  // The content-accessible top layer (fullscreen, <dialog>, popover).
+  Content = kFirstTopLayerIndex,
+  // The view transitions and anonymous content top layer. View transitions need
+  // to be separate from the content top layer, because the former needs to be
+  // potentially captured by a view transition, but the later can't be
+  // (otherwise it'd be cyclic).
+  // The native anonymous content are for things like the one for DevTools
+  // highlighters and other non-web-visible UI.
+  ViewTransitionsAndAnonymousContent,
+};
 
 ViewportFrame* NS_NewViewportFrame(PresShell* aPresShell,
                                    ComputedStyle* aStyle) {
@@ -69,10 +82,14 @@ void ViewportFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   // for the top layer, but otherwise we need to do it here.
   if (!kid->IsScrollContainerFrame()) {
     bool isOpaque = false;
-    if (auto* list = BuildDisplayListForTopLayer(aBuilder, &isOpaque)) {
+    if (auto* list = BuildDisplayListForContentTopLayer(aBuilder, &isOpaque)) {
       if (isOpaque) {
         set.DeleteAll(aBuilder);
       }
+      set.PositionedDescendants()->AppendToTop(list);
+    }
+    if (auto* list =
+            BuildDisplayListForViewTransitionsAndNACTopLayer(aBuilder)) {
       set.PositionedDescendants()->AppendToTop(list);
     }
   }
@@ -96,24 +113,32 @@ static void BuildDisplayListForTopLayerFrame(nsDisplayListBuilder* aBuilder,
   nsRect dirty;
   DisplayListClipState::AutoSaveRestore clipState(aBuilder);
   nsDisplayListBuilder::AutoCurrentActiveScrolledRootSetter asrSetter(aBuilder);
-  nsDisplayListBuilder::OutOfFlowDisplayData* savedOutOfFlowData =
-      nsDisplayListBuilder::GetOutOfFlowData(aFrame);
-  if (savedOutOfFlowData) {
+  if (auto* savedOutOfFlowData =
+          nsDisplayListBuilder::GetOutOfFlowData(aFrame)) {
     visible =
         savedOutOfFlowData->GetVisibleRectForFrame(aBuilder, aFrame, &dirty);
-    // This function is called after we've finished building display items for
-    // the root scroll frame. That means that the content clip from the root
-    // scroll frame is no longer on aBuilder. However, we need to make sure
-    // that the display items we build in this function have finite clipped
-    // bounds with respect to the root ASR, so we restore the *combined clip*
-    // that we saved earlier. The combined clip will include the clip from the
-    // root scroll frame.
-    clipState.SetClipChainForContainingBlockDescendants(
-        savedOutOfFlowData->mCombinedClipChain);
-    asrSetter.SetCurrentActiveScrolledRoot(
-        savedOutOfFlowData->mContainingBlockActiveScrolledRoot);
-    asrSetter.SetCurrentScrollParentId(savedOutOfFlowData->mScrollParentId);
+    // If we are in the top layer, our containing block is the viewport, which
+    // can't be captured by a view transition on the same document itself.
+    // Also, the top layer is painted from the root scrollframe, so that
+    // already takes care of clearing the ASR / clip when captured.
+    // TODO(emilio): We might need to clear the ASR / clip when coming from the
+    // viewport (for chrome / XUL docs).
+    if (!aBuilder->IsInViewTransitionCapture()) {
+      // This function is called after we've finished building display items for
+      // the root scroll frame. That means that the content clip from the root
+      // scroll frame is no longer on aBuilder. However, we need to make sure
+      // that the display items we build in this function have finite clipped
+      // bounds with respect to the root ASR, so we restore the *combined clip*
+      // that we saved earlier. The combined clip will include the clip from the
+      // root scroll frame.
+      clipState.SetClipChainForContainingBlockDescendants(
+          savedOutOfFlowData->mCombinedClipChain);
+      asrSetter.SetCurrentActiveScrolledRoot(
+          savedOutOfFlowData->mContainingBlockActiveScrolledRoot);
+      asrSetter.SetCurrentScrollParentId(savedOutOfFlowData->mScrollParentId);
+    }
   }
+
   nsDisplayListBuilder::AutoBuildingDisplayList buildingForChild(
       aBuilder, aFrame, visible, dirty);
 
@@ -159,16 +184,47 @@ static bool BackdropListIsOpaque(ViewportFrame* aFrame,
   return opaque.Contains(aFrame->GetRect());
 }
 
-nsDisplayWrapList* ViewportFrame::BuildDisplayListForTopLayer(
-    nsDisplayListBuilder* aBuilder, bool* aIsOpaque) {
-  nsDisplayList topLayerList(aBuilder);
+nsDisplayWrapList* ViewportFrame::MaybeWrapTopLayerList(
+    nsDisplayListBuilder* aBuilder, uint16_t aIndex,
+    nsDisplayList& aTopLayerList) {
+  if (aTopLayerList.IsEmpty()) {
+    return nullptr;
+  }
+  nsPoint offset = aBuilder->GetCurrentFrame()->GetOffsetTo(this);
+  nsDisplayListBuilder::AutoBuildingDisplayList buildingDisplayList(
+      aBuilder, this, aBuilder->GetVisibleRect() + offset,
+      aBuilder->GetDirtyRect() + offset);
+  // Wrap the whole top layer in a single item with maximum z-index,
+  // and append it at the very end, so that it stays at the topmost.
+  nsDisplayWrapList* wrapList = MakeDisplayItemWithIndex<nsDisplayWrapper>(
+      aBuilder, this, aIndex, &aTopLayerList, false);
+  if (!wrapList) {
+    return nullptr;
+  }
+  wrapList->SetOverrideZIndex(
+      std::numeric_limits<decltype(wrapList->ZIndex())>::max());
+  return wrapList;
+}
 
+nsDisplayWrapList* ViewportFrame::BuildDisplayListForContentTopLayer(
+    nsDisplayListBuilder* aBuilder, bool* aIsOpaque) {
+  if (aBuilder->AvoidBuildingDuplicateOofs()) {
+    return nullptr;
+  }
+
+  nsDisplayList topLayerList(aBuilder);
   auto* doc = PresContext()->Document();
 
   nsTArray<dom::Element*> topLayer = doc->GetTopLayer();
   for (dom::Element* elem : topLayer) {
     nsIFrame* frame = elem->GetPrimaryFrame();
     if (!frame) {
+      continue;
+    }
+    if (frame->GetContent() != elem->AsContent()) {
+      // area elements in image maps point to the image frame as their primary
+      // frame but we should treat them like they don't have their own frame
+      // here. See also bug 135040.
       continue;
     }
 
@@ -188,10 +244,12 @@ nsDisplayWrapList* ViewportFrame::BuildDisplayListForTopLayer(
     // the normal path.
     if (frame->StyleDisplay()->mTopLayer == StyleTopLayer::None) {
       MOZ_ASSERT(!aBuilder->IsForPainting() ||
+                 !elem->State().HasState(dom::ElementState::FULLSCREEN) ||
                  !ShouldInTopLayerForFullscreen(elem));
       continue;
     }
-    MOZ_ASSERT(ShouldInTopLayerForFullscreen(elem));
+    MOZ_ASSERT_IF(elem->State().HasState(dom::ElementState::FULLSCREEN),
+                  ShouldInTopLayerForFullscreen(elem));
     // Inner SVG, MathML elements, as well as children of some XUL
     // elements are not allowed to be out-of-flow. They should not
     // be handled as top layer element here.
@@ -201,15 +259,8 @@ nsDisplayWrapList* ViewportFrame::BuildDisplayListForTopLayer(
                  "layer");
       continue;
     }
-    if (nsIFrame* backdropPh =
-            frame->GetChildList(FrameChildListID::Backdrop).FirstChild()) {
-      MOZ_ASSERT(!backdropPh->GetNextSibling(), "more than one ::backdrop?");
-      MOZ_ASSERT(backdropPh->HasAnyStateBits(NS_FRAME_FIRST_REFLOW),
-                 "did you intend to reflow ::backdrop placeholders?");
-      nsIFrame* backdropFrame =
-          nsPlaceholderFrame::GetRealFrameForPlaceholder(backdropPh);
+    if (auto* backdropFrame = nsLayoutUtils::GetBackdropFrame(elem)) {
       BuildDisplayListForTopLayerFrame(aBuilder, backdropFrame, &topLayerList);
-
       if (aIsOpaque) {
         *aIsOpaque = BackdropListIsOpaque(this, aBuilder, &topLayerList);
       }
@@ -217,45 +268,42 @@ nsDisplayWrapList* ViewportFrame::BuildDisplayListForTopLayer(
     BuildDisplayListForTopLayerFrame(aBuilder, frame, &topLayerList);
   }
 
+  return MaybeWrapTopLayerList(aBuilder, uint16_t(TopLayerIndex::Content),
+                               topLayerList);
+}
+
+nsDisplayWrapList*
+ViewportFrame::BuildDisplayListForViewTransitionsAndNACTopLayer(
+    nsDisplayListBuilder* aBuilder) {
+  if (aBuilder->AvoidBuildingDuplicateOofs()) {
+    return nullptr;
+  }
+
+  nsDisplayList topLayerList(aBuilder);
+  auto* doc = PresContext()->Document();
   if (dom::ViewTransition* vt = doc->GetActiveViewTransition()) {
-    if (dom::Element* root = vt->GetRoot()) {
+    if (dom::Element* root = vt->GetSnapshotContainingBlock()) {
       if (nsIFrame* frame = root->GetPrimaryFrame()) {
         MOZ_ASSERT(frame->StyleDisplay()->mTopLayer != StyleTopLayer::None,
-                   "ua.css should ensure this");
+                   "the snapshot containing block should ensure this");
         MOZ_ASSERT(frame->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW));
         BuildDisplayListForTopLayerFrame(aBuilder, frame, &topLayerList);
       }
     }
   }
 
-  if (nsCanvasFrame* canvasFrame = PresShell()->GetCanvasFrame()) {
-    if (dom::Element* container = canvasFrame->GetCustomContentContainer()) {
-      if (nsIFrame* frame = container->GetPrimaryFrame()) {
-        MOZ_ASSERT(frame->StyleDisplay()->mTopLayer != StyleTopLayer::None,
-                   "ua.css should ensure this");
-        MOZ_ASSERT(frame->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW));
-        BuildDisplayListForTopLayerFrame(aBuilder, frame, &topLayerList);
-      }
+  if (dom::Element* container = doc->GetCustomContentContainer()) {
+    if (nsIFrame* frame = container->GetPrimaryFrame()) {
+      MOZ_ASSERT(frame->StyleDisplay()->mTopLayer != StyleTopLayer::None,
+                 "ua.css should ensure this");
+      MOZ_ASSERT(frame->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW));
+      BuildDisplayListForTopLayerFrame(aBuilder, frame, &topLayerList);
     }
   }
-  if (topLayerList.IsEmpty()) {
-    return nullptr;
-  }
-  nsPoint offset = aBuilder->GetCurrentFrame()->GetOffsetTo(this);
-  nsDisplayListBuilder::AutoBuildingDisplayList buildingDisplayList(
-      aBuilder, this, aBuilder->GetVisibleRect() + offset,
-      aBuilder->GetDirtyRect() + offset);
-  // Wrap the whole top layer in a single item with maximum z-index,
-  // and append it at the very end, so that it stays at the topmost.
-  nsDisplayWrapList* wrapList = MakeDisplayItemWithIndex<nsDisplayWrapper>(
-      aBuilder, this, 2, &topLayerList, aBuilder->CurrentActiveScrolledRoot(),
-      false);
-  if (!wrapList) {
-    return nullptr;
-  }
-  wrapList->SetOverrideZIndex(
-      std::numeric_limits<decltype(wrapList->ZIndex())>::max());
-  return wrapList;
+
+  return MaybeWrapTopLayerList(
+      aBuilder, uint16_t(TopLayerIndex::ViewTransitionsAndAnonymousContent),
+      topLayerList);
 }
 
 #ifdef DEBUG
@@ -282,6 +330,13 @@ void ViewportFrame::RemoveFrame(DestroyContext& aContext, ChildListID aListID,
 }
 #endif
 
+void ViewportFrame::Destroy(DestroyContext& aContext) {
+  if (PresShell()->IsDestroying()) {
+    PresShell::ClearMouseCapture(this);
+  }
+  nsContainerFrame::Destroy(aContext);
+}
+
 nscoord ViewportFrame::IntrinsicISize(const IntrinsicSizeInput& aInput,
                                       IntrinsicISizeType aType) {
   return mFrames.IsEmpty()
@@ -289,35 +344,31 @@ nscoord ViewportFrame::IntrinsicISize(const IntrinsicSizeInput& aInput,
              : mFrames.FirstChild()->IntrinsicISize(aInput, aType);
 }
 
-nsPoint ViewportFrame::AdjustReflowInputForScrollbars(
-    ReflowInput* aReflowInput) const {
-  // Get our prinicpal child frame and see if we're scrollable
-  nsIFrame* kidFrame = mFrames.FirstChild();
+nsRect ViewportFrame::GetContainingBlockAdjustedForScrollbars(
+    const ReflowInput& aReflowInput) const {
+  const WritingMode wm = aReflowInput.GetWritingMode();
 
-  if (ScrollContainerFrame* scrollContainerFrame = do_QueryFrame(kidFrame)) {
-    // Note: In ReflowInput::CalculateHypotheticalPosition(), we exclude the
-    // scrollbar or scrollbar-gutter area when computing the offset to
-    // ViewportFrame. Ensure the code there remains in sync with the logic here.
-    WritingMode wm = aReflowInput->GetWritingMode();
-    LogicalMargin scrollbars(wm,
-                             scrollContainerFrame->GetActualScrollbarSizes());
-    aReflowInput->SetComputedISize(
-        aReflowInput->ComputedISize() - scrollbars.IStartEnd(wm),
-        ReflowInput::ResetResizeFlags::No);
-    aReflowInput->SetAvailableISize(aReflowInput->AvailableISize() -
-                                    scrollbars.IStartEnd(wm));
-    aReflowInput->SetComputedBSize(
-        aReflowInput->ComputedBSize() - scrollbars.BStartEnd(wm),
-        ReflowInput::ResetResizeFlags::No);
-    return nsPoint(scrollbars.Left(wm), scrollbars.Top(wm));
-  }
-  return nsPoint(0, 0);
-}
+  LogicalSize computedSize = aReflowInput.ComputedSize();
+  const nsPoint& origin = [&]() {
+    // Get our prinicpal child frame and see if we're scrollable
+    nsIFrame* kidFrame = mFrames.FirstChild();
+    if (ScrollContainerFrame* scrollContainerFrame = do_QueryFrame(kidFrame)) {
+      // Note: In ReflowInput::CalculateHypotheticalPosition(), we exclude the
+      // scrollbar or scrollbar-gutter area when computing the offset to
+      // ViewportFrame. Ensure the code there remains in sync with the logic
+      // here.
+      LogicalMargin scrollbars(wm,
+                               scrollContainerFrame->GetActualScrollbarSizes());
+      computedSize.ISize(wm) =
+          std::max(0, aReflowInput.ComputedISize() - scrollbars.IStartEnd(wm));
+      computedSize.BSize(wm) =
+          std::max(0, aReflowInput.ComputedBSize() - scrollbars.BStartEnd(wm));
+      return nsPoint(scrollbars.Left(wm), scrollbars.Top(wm));
+    }
+    return nsPoint(0, 0);
+  }();
 
-nsRect ViewportFrame::AdjustReflowInputAsContainingBlock(
-    ReflowInput* aReflowInput) const {
-  const nsPoint origin = AdjustReflowInputForScrollbars(aReflowInput);
-  nsRect rect(origin, aReflowInput->ComputedPhysicalSize());
+  nsRect rect(origin, computedSize.GetPhysicalSize(wm));
   rect.SizeTo(AdjustViewportSizeForFixedPosition(rect));
 
   return rect;
@@ -393,8 +444,8 @@ void ViewportFrame::Reflow(nsPresContext* aPresContext,
   aDesiredSize.SetOverflowAreasToDesiredBounds();
 
   if (HasAbsolutelyPositionedChildren()) {
-    // Make a copy of the reflow input and change the computed width and height
-    // to reflect the available space for the fixed items
+    // Make a copy of the reflow input and change the computed block size to
+    // reflect the available space for the fixed items
     ReflowInput reflowInput(aReflowInput);
 
     if (reflowInput.AvailableBSize() == NS_UNCONSTRAINEDSIZE) {
@@ -408,11 +459,19 @@ void ViewportFrame::Reflow(nsPresContext* aPresContext,
       reflowInput.SetComputedBSize(maxSize.BSize(wm));
     }
 
-    nsRect rect = AdjustReflowInputAsContainingBlock(&reflowInput);
-    AbsPosReflowFlags flags =
-        AbsPosReflowFlags::CBWidthAndHeightChanged;  // XXX could be optimized
+    // The containing block for children. We intentionally not take scrollbar
+    // size and dynamic toolbar into account because
+    // ::-moz-snapshot-containing-block should include those areas.
+    //
+    // We will take them into account in AbsoluteContainingBlock::Reflow(),
+    // for kid frames other than ::-moz-snapshot-containing-block.
+    const nsRect cb(nsPoint(), reflowInput.ComputedPhysicalSize());
+    // XXX: To optimize the performance, set the flags only when the CB width or
+    // height actually changes.
+    AbsPosReflowFlags flags{AbsPosReflowFlag::CBWidthChanged,
+                            AbsPosReflowFlag::CBHeightChanged};
     GetAbsoluteContainingBlock()->Reflow(this, aPresContext, reflowInput,
-                                         aStatus, rect, flags,
+                                         aStatus, cb, flags,
                                          /* aOverflowAreas = */ nullptr);
   }
 

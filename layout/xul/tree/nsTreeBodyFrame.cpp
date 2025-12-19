@@ -4,67 +4,61 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsTreeBodyFrame.h"
+
+#include <algorithm>
+
+#include "ScrollbarActivity.h"
 #include "SimpleXULLeafFrame.h"
+#include "gfxContext.h"
+#include "gfxUtils.h"
+#include "imgIContainer.h"
+#include "imgIRequest.h"
 #include "mozilla/AsyncEventDispatcher.h"
+#include "mozilla/ComputedStyle.h"
 #include "mozilla/ContentEvents.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/EventDispatcher.h"
-#include "mozilla/gfx/2D.h"
-#include "mozilla/gfx/PathHelpers.h"
 #include "mozilla/Likely.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/PresShell.h"
-#include "mozilla/ResultExtensions.h"
 #include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/Try.h"
-#include "mozilla/intl/Segmenter.h"
-
-#include "gfxUtils.h"
-#include "nsCOMPtr.h"
-#include "nsComponentManagerUtils.h"
-#include "nsFontMetrics.h"
-#include "nsITreeView.h"
-#include "nsPresContext.h"
-#include "nsNameSpaceManager.h"
-
-#include "nsTreeBodyFrame.h"
-#include "nsTreeSelection.h"
-#include "nsTreeImageListener.h"
-
-#include "nsGkAtoms.h"
-#include "nsCSSAnonBoxes.h"
-
-#include "gfxContext.h"
-#include "nsIContent.h"
-#include "mozilla/ComputedStyle.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/ReferrerInfo.h"
-#include "mozilla/intl/Segmenter.h"
-#include "nsCSSRendering.h"
-#include "nsString.h"
-#include "nsContainerFrame.h"
-#include "nsView.h"
-#include "nsViewManager.h"
-#include "nsWidgetsCID.h"
-#include "nsIFrameInlines.h"
-#include "nsTreeContentView.h"
-#include "nsTreeUtils.h"
-#include "nsStyleConsts.h"
-#include "imgIRequest.h"
-#include "imgIContainer.h"
-#include "mozilla/dom/NodeInfo.h"
-#include "nsContentUtils.h"
-#include "nsLayoutUtils.h"
-#include "nsDisplayList.h"
 #include "mozilla/dom/CustomEvent.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Event.h"
+#include "mozilla/dom/NodeInfo.h"
+#include "mozilla/dom/ReferrerInfo.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/ToJSValue.h"
 #include "mozilla/dom/TreeColumnBinding.h"
-#include <algorithm>
-#include "ScrollbarActivity.h"
+#include "mozilla/gfx/2D.h"
+#include "mozilla/gfx/PathHelpers.h"
+#include "mozilla/intl/Segmenter.h"
+#include "nsCOMPtr.h"
+#include "nsCSSAnonBoxes.h"
+#include "nsCSSRendering.h"
+#include "nsComponentManagerUtils.h"
+#include "nsContainerFrame.h"
+#include "nsContentUtils.h"
+#include "nsDisplayList.h"
+#include "nsFontMetrics.h"
+#include "nsGkAtoms.h"
+#include "nsIContent.h"
+#include "nsIFrameInlines.h"
+#include "nsITreeView.h"
+#include "nsLayoutUtils.h"
+#include "nsNameSpaceManager.h"
+#include "nsPresContext.h"
+#include "nsString.h"
+#include "nsStyleConsts.h"
+#include "nsTreeContentView.h"
+#include "nsTreeImageListener.h"
+#include "nsTreeSelection.h"
+#include "nsTreeUtils.h"
+#include "nsWidgetsCID.h"
 
 #ifdef ACCESSIBILITY
 #  include "nsAccessibilityService.h"
@@ -773,7 +767,7 @@ nsTreeBodyFrame::ScrollParts nsTreeBodyFrame::GetScrollParts() {
     // dumb! We should know where these frames are.
     FindScrollParts(treeFrame, &result);
     if (result.mVScrollbar) {
-      result.mVScrollbar->SetScrollbarMediatorContent(GetContent());
+      result.mVScrollbar->SetOverrideScrollbarMediator(this);
       result.mVScrollbarContent = result.mVScrollbar->GetContent()->AsElement();
     }
   }
@@ -781,19 +775,16 @@ nsTreeBodyFrame::ScrollParts nsTreeBodyFrame::GetScrollParts() {
 }
 
 void nsTreeBodyFrame::UpdateScrollbars(const ScrollParts& aParts) {
-  nscoord rowHeightAsPixels = nsPresContext::AppUnitsToIntCSSPixels(mRowHeight);
-
-  AutoWeakFrame weakFrame(this);
-
-  if (aParts.mVScrollbar) {
-    nsAutoString curPos;
-    curPos.AppendInt(mTopRowIndex * rowHeightAsPixels);
-    aParts.mVScrollbarContent->SetAttr(kNameSpaceID_None, nsGkAtoms::curpos,
-                                       curPos, true);
-    // 'this' might be deleted here
+  if (!aParts.mVScrollbar) {
+    return;
   }
-
-  if (weakFrame.IsAlive() && mScrollbarActivity) {
+  CSSIntCoord rowHeightAsPixels =
+      nsPresContext::AppUnitsToIntCSSPixels(mRowHeight);
+  CSSIntCoord pos = mTopRowIndex * rowHeightAsPixels;
+  if (!aParts.mVScrollbar->SetCurPos(pos)) {
+    return;
+  }
+  if (mScrollbarActivity) {
     mScrollbarActivity->ActivityOccurred();
   }
 }
@@ -843,35 +834,17 @@ void nsTreeBodyFrame::CheckOverflow(const ScrollParts& aParts) {
 }
 
 void nsTreeBodyFrame::InvalidateScrollbars(const ScrollParts& aParts) {
-  if (mUpdateBatchNest || !mView) {
+  if (mUpdateBatchNest || !mView || !aParts.mVScrollbar) {
     return;
   }
-  AutoWeakFrame weakFrame(this);
-
-  if (aParts.mVScrollbar) {
-    // Do Vertical Scrollbar
-    nsAutoString maxposStr;
-
-    nscoord rowHeightAsPixels =
-        nsPresContext::AppUnitsToIntCSSPixels(mRowHeight);
-
-    int32_t size = rowHeightAsPixels *
-                   (mRowCount > mPageLength ? mRowCount - mPageLength : 0);
-    maxposStr.AppendInt(size);
-    aParts.mVScrollbarContent->SetAttr(kNameSpaceID_None, nsGkAtoms::maxpos,
-                                       maxposStr, true);
-    NS_ENSURE_TRUE_VOID(weakFrame.IsAlive());
-
-    // Also set our page increment and decrement.
-    nscoord pageincrement = mPageLength * rowHeightAsPixels;
-    nsAutoString pageStr;
-    pageStr.AppendInt(pageincrement);
-    aParts.mVScrollbarContent->SetAttr(kNameSpaceID_None,
-                                       nsGkAtoms::pageincrement, pageStr, true);
-    NS_ENSURE_TRUE_VOID(weakFrame.IsAlive());
-  }
-
-  if (weakFrame.IsAlive() && mScrollbarActivity) {
+  nscoord rowHeightAsPixels = nsPresContext::AppUnitsToIntCSSPixels(mRowHeight);
+  CSSIntCoord size = rowHeightAsPixels *
+                     (mRowCount > mPageLength ? mRowCount - mPageLength : 0);
+  CSSIntCoord pageincrement = mPageLength * rowHeightAsPixels;
+  bool changed = false;
+  changed |= aParts.mVScrollbar->SetMaxPos(size);
+  changed |= aParts.mVScrollbar->SetPageIncrement(pageincrement);
+  if (changed && mScrollbarActivity) {
     mScrollbarActivity->ActivityOccurred();
   }
 }
@@ -1583,7 +1556,8 @@ nsresult nsTreeBodyFrame::IsCellCropped(int32_t aRow, nsTreeColumn* aCol,
 
 nsresult nsTreeBodyFrame::CreateTimer(const LookAndFeel::IntID aID,
                                       nsTimerCallbackFunc aFunc, int32_t aType,
-                                      nsITimer** aTimer, const char* aName) {
+                                      nsITimer** aTimer,
+                                      const nsACString& aName) {
   // Get the delay from the look and feel service.
   int32_t delay = LookAndFeel::GetInt(aID, 0);
 
@@ -1592,9 +1566,8 @@ nsresult nsTreeBodyFrame::CreateTimer(const LookAndFeel::IntID aID,
   // Create a new timer only if the delay is greater than zero.
   // Zero value means that this feature is completely disabled.
   if (delay > 0) {
-    MOZ_TRY_VAR(timer,
-                NS_NewTimerWithFuncCallback(aFunc, this, delay, aType, aName,
-                                            GetMainThreadSerialEventTarget()));
+    timer = MOZ_TRY(NS_NewTimerWithFuncCallback(
+        aFunc, this, delay, aType, aName, GetMainThreadSerialEventTarget()));
   }
 
   timer.forget(aTimer);
@@ -1667,6 +1640,12 @@ nsresult nsTreeBodyFrame::RowCountChanged(int32_t aIndex, int32_t aCount) {
       }
       needsInvalidation = true;
     }
+  }
+
+  int32_t lastPageTopRow = std::max(0, mRowCount - mPageLength);
+  if (mTopRowIndex > lastPageTopRow) {
+    mTopRowIndex = lastPageTopRow;
+    needsInvalidation = true;
   }
 
   FullScrollbarsUpdate(needsInvalidation);
@@ -1910,7 +1889,7 @@ already_AddRefed<imgIContainer> nsTreeBodyFrame::GetImage(
 
   // NOTE(heycam): If it's an SVG image, and we need to want the image to
   // able to respond to media query changes, it needs to be added to the
-  // document's ImageTracker.  For now, assume we don't need this.
+  // document's tracked image set.  For now, assume we don't need this.
   // We don't want discarding/decode-on-draw for xul images
   imageRequest->StartDecoding(imgIContainer::FLAG_ASYNC_NOTIFY);
   imageRequest->LockImage();
@@ -1948,8 +1927,9 @@ nsRect nsTreeBodyFrame::GetImageSize(int32_t aRowIndex, nsTreeColumn* aCol,
       GetImage(aRowIndex, aCol, aUseContext, aComputedStyle);
 
   const nsStylePosition* myPosition = aComputedStyle->StylePosition();
-  const auto positionProperty = aComputedStyle->StyleDisplay()->mPosition;
-  const auto width = myPosition->GetWidth(positionProperty);
+  const AnchorPosResolutionParams anchorResolutionParams{
+      this, aComputedStyle->StyleDisplay()->mPosition};
+  const auto width = myPosition->GetWidth(anchorResolutionParams);
   if (width->ConvertsToLength()) {
     int32_t val = width->ToLength();
     r.width += val;
@@ -1957,7 +1937,7 @@ nsRect nsTreeBodyFrame::GetImageSize(int32_t aRowIndex, nsTreeColumn* aCol,
     needWidth = true;
   }
 
-  const auto height = myPosition->GetHeight(positionProperty);
+  const auto height = myPosition->GetHeight(anchorResolutionParams);
   if (height->ConvertsToLength()) {
     int32_t val = height->ToLength();
     r.height += val;
@@ -2009,8 +1989,9 @@ nsSize nsTreeBodyFrame::GetImageDestSize(ComputedStyle* aComputedStyle,
   // Get the style position to see if the CSS has specified the
   // destination width/height.
   const nsStylePosition* myPosition = aComputedStyle->StylePosition();
-  const auto positionProperty = aComputedStyle->StyleDisplay()->mPosition;
-  const auto width = myPosition->GetWidth(positionProperty);
+  const AnchorPosResolutionParams anchorResolutionParams{
+      this, aComputedStyle->StyleDisplay()->mPosition};
+  const auto width = myPosition->GetWidth(anchorResolutionParams);
   if (width->ConvertsToLength()) {
     // CSS has specified the destination width.
     size.width = width->ToLength();
@@ -2019,7 +2000,7 @@ nsSize nsTreeBodyFrame::GetImageDestSize(ComputedStyle* aComputedStyle,
     needWidth = true;
   }
 
-  const auto height = myPosition->GetHeight(positionProperty);
+  const auto height = myPosition->GetHeight(anchorResolutionParams);
   if (height->ConvertsToLength()) {
     // CSS has specified the destination height.
     size.height = height->ToLength();
@@ -2099,16 +2080,18 @@ int32_t nsTreeBodyFrame::GetRowHeight() {
       GetPseudoComputedStyle(nsCSSAnonBoxes::mozTreeRow());
   if (rowContext) {
     const nsStylePosition* myPosition = rowContext->StylePosition();
-    const auto positionProperty = rowContext->StyleDisplay()->mPosition;
+    const AnchorPosResolutionParams anchorResolutionParams{
+        this, rowContext->StyleDisplay()->mPosition};
 
     nscoord minHeight = 0;
-    const auto styleMinHeight = myPosition->GetMinHeight(positionProperty);
+    const auto styleMinHeight =
+        myPosition->GetMinHeight(anchorResolutionParams);
     if (styleMinHeight->ConvertsToLength()) {
       minHeight = styleMinHeight->ToLength();
     }
 
     nscoord height = 0;
-    const auto styleHeight = myPosition->GetHeight(positionProperty);
+    const auto styleHeight = myPosition->GetHeight(anchorResolutionParams);
     if (styleHeight->ConvertsToLength()) {
       height = styleHeight->ToLength();
     }
@@ -2144,8 +2127,9 @@ int32_t nsTreeBodyFrame::GetIndentation() {
       GetPseudoComputedStyle(nsCSSAnonBoxes::mozTreeIndentation());
   if (indentContext) {
     const nsStylePosition* myPosition = indentContext->StylePosition();
-    const auto positionProperty = indentContext->StyleDisplay()->mPosition;
-    const auto width = myPosition->GetWidth(positionProperty);
+    const AnchorPosResolutionParams anchorResolutionParams{
+        this, indentContext->StyleDisplay()->mPosition};
+    const auto width = myPosition->GetWidth(anchorResolutionParams);
     if (width->ConvertsToLength()) {
       return width->ToLength();
     }
@@ -2286,7 +2270,7 @@ nsresult nsTreeBodyFrame::HandleEvent(nsPresContext* aPresContext,
         // Set a timer to trigger the tree scrolling.
         CreateTimer(LookAndFeel::IntID::TreeLazyScrollDelay, LazyScrollCallback,
                     nsITimer::TYPE_ONE_SHOT, getter_AddRefs(mSlots->mTimer),
-                    "nsTreeBodyFrame::LazyScrollCallback");
+                    "nsTreeBodyFrame::LazyScrollCallback"_ns);
       }
 #endif
       // Bail out to prevent spring loaded timer and feedback line settings.
@@ -2326,7 +2310,7 @@ nsresult nsTreeBodyFrame::HandleEvent(nsPresContext* aPresContext,
               CreateTimer(LookAndFeel::IntID::TreeOpenDelay, OpenCallback,
                           nsITimer::TYPE_ONE_SHOT,
                           getter_AddRefs(mSlots->mTimer),
-                          "nsTreeBodyFrame::OpenCallback");
+                          "nsTreeBodyFrame::OpenCallback"_ns);
             }
           }
         }
@@ -2404,7 +2388,7 @@ nsresult nsTreeBodyFrame::HandleEvent(nsPresContext* aPresContext,
       // Close all spring loaded folders except the drop folder.
       CreateTimer(LookAndFeel::IntID::TreeCloseDelay, CloseCallback,
                   nsITimer::TYPE_ONE_SHOT, getter_AddRefs(mSlots->mTimer),
-                  "nsTreeBodyFrame::CloseCallback");
+                  "nsTreeBodyFrame::CloseCallback"_ns);
     }
   }
 
@@ -2452,7 +2436,7 @@ class nsDisplayTreeBody final : public nsPaintedDisplayItem {
 
   void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override {
     MOZ_ASSERT(aBuilder);
-    Unused << static_cast<nsTreeBodyFrame*>(mFrame)->PaintTreeBody(
+    (void)static_cast<nsTreeBodyFrame*>(mFrame)->PaintTreeBody(
         *aCtx, GetPaintRect(aBuilder, aCtx), ToReferenceFrame(), aBuilder);
   }
 
@@ -2772,11 +2756,12 @@ ImgDrawResult nsTreeBodyFrame::PaintSeparator(int32_t aRowIndex,
       GetPseudoComputedStyle(nsCSSAnonBoxes::mozTreeSeparator());
 
   const nsStylePosition* stylePosition = separatorContext->StylePosition();
-  const auto positionProperty = separatorContext->StyleDisplay()->mPosition;
+  const AnchorPosResolutionParams anchorResolutionParams{
+      this, separatorContext->StyleDisplay()->mPosition};
 
   // Obtain the height for the separator or use the default value.
   nscoord height;
-  const auto styleHeight = stylePosition->GetHeight(positionProperty);
+  const auto styleHeight = stylePosition->GetHeight(anchorResolutionParams);
   if (styleHeight->ConvertsToLength()) {
     height = styleHeight->ToLength();
   } else {
@@ -3512,8 +3497,9 @@ ImgDrawResult nsTreeBodyFrame::PaintDropFeedback(
 
     // Obtain the width for the drop feedback or use default value.
     nscoord width;
-    const auto positionProperty = feedbackContext->StyleDisplay()->mPosition;
-    const auto styleWidth = stylePosition->GetWidth(positionProperty);
+    const AnchorPosResolutionParams anchorResolutionParams{
+        this, feedbackContext->StyleDisplay()->mPosition};
+    const auto styleWidth = stylePosition->GetWidth(anchorResolutionParams);
     if (styleWidth->ConvertsToLength()) {
       width = styleWidth->ToLength();
     } else {
@@ -3523,7 +3509,7 @@ ImgDrawResult nsTreeBodyFrame::PaintDropFeedback(
 
     // Obtain the height for the drop feedback or use default value.
     nscoord height;
-    const auto styleHeight = stylePosition->GetHeight(positionProperty);
+    const auto styleHeight = stylePosition->GetHeight(anchorResolutionParams);
     if (styleHeight->ConvertsToLength()) {
       height = styleHeight->ToLength();
     } else {
@@ -3688,22 +3674,17 @@ void nsTreeBodyFrame::ScrollByLine(nsScrollbarFrame* aScrollbar,
   ScrollByLines(aDirection);
 }
 
-void nsTreeBodyFrame::ScrollByUnit(
-    nsScrollbarFrame* aScrollbar, ScrollMode aMode, int32_t aDirection,
-    ScrollUnit aUnit, ScrollSnapFlags aSnapFlags /* = Disabled */) {
-  MOZ_ASSERT_UNREACHABLE("Can't get here, we pass false to MoveToNewPosition");
+void nsTreeBodyFrame::ScrollByUnit(nsScrollbarFrame* aScrollbar,
+                                   ScrollMode aMode, int32_t aDirection,
+                                   ScrollUnit aUnit,
+                                   ScrollSnapFlags aSnapFlags) {
+  MOZ_ASSERT_UNREACHABLE("Can't get here, we don't call MoveToNewPosition");
 }
 
 void nsTreeBodyFrame::RepeatButtonScroll(nsScrollbarFrame* aScrollbar) {
   MOZ_ASSERT(!aScrollbar->IsHorizontal());
   ScrollParts parts = GetScrollParts();
-  int32_t increment = aScrollbar->GetIncrement();
-  int32_t direction = 0;
-  if (increment < 0) {
-    direction = -1;
-  } else if (increment > 0) {
-    direction = 1;
-  }
+  int32_t direction = aScrollbar->GetButtonScrollDirection();
   AutoWeakFrame weakFrame(this);
   ScrollToRowInternal(parts, mTopRowIndex + direction);
 
@@ -3967,7 +3948,7 @@ void nsTreeBodyFrame::LazyScrollCallback(nsITimer* aTimer, void* aClosure) {
       self->CreateTimer(LookAndFeel::IntID::TreeScrollDelay, ScrollCallback,
                         nsITimer::TYPE_REPEATING_SLACK,
                         getter_AddRefs(self->mSlots->mTimer),
-                        "nsTreeBodyFrame::ScrollCallback");
+                        "nsTreeBodyFrame::ScrollCallback"_ns);
       self->ScrollByLines(self->mSlots->mScrollLines);
       // ScrollByLines may have deleted |self|.
     }

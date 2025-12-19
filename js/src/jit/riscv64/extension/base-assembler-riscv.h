@@ -35,14 +35,13 @@
 #ifndef jit_riscv64_extension_Base_assembler_riscv_h
 #define jit_riscv64_extension_Base_assembler_riscv_h
 
-#include <memory>
-#include <set>
 #include <stdio.h>
 
 #include "jit/Label.h"
 #include "jit/riscv64/Architecture-riscv64.h"
 #include "jit/riscv64/constant/Constant-riscv64.h"
 #include "jit/riscv64/Register-riscv64.h"
+#include "jit/shared/IonAssemblerBuffer.h"
 
 #define xlen (uint8_t(sizeof(void*) * 8))
 
@@ -90,21 +89,29 @@ namespace jit {
 typedef FloatRegister FPURegister;
 #define zero_reg zero
 
-#define DEBUG_PRINTF(...)     \
-  if (FLAG_riscv_debug) {     \
-    std::printf(__VA_ARGS__); \
-  }
+#if defined(DEBUG)
+// Only useful when defined(DEBUG). See op.getBoolOption("riscv-debug") in
+// js/src/shell/js.cpp.
+#  define DEBUG_PRINTF(...)     \
+    if (FLAG_riscv_debug) {     \
+      std::printf(__VA_ARGS__); \
+    }
+#else
+#  define DEBUG_PRINTF(...) \
+    do {                    \
+    } while (0)
+#endif /* defined(DEBUG) */
 
 int ToNumber(Register reg);
 Register ToRegister(uint32_t num);
 
 class AssemblerRiscvBase {
  protected:
-  virtual int32_t branch_offset_helper(Label* L, OffsetSize bits) = 0;
+  virtual int32_t branchOffsetHelper(Label* L, OffsetSize bits) = 0;
 
-  virtual void emit(Instr x) = 0;
-  virtual void emit(ShortInstr x) = 0;
-  virtual void emit(uint64_t x) = 0;
+  virtual BufferOffset emit(Instr x) = 0;
+  virtual BufferOffset emit(ShortInstr x) = 0;
+  virtual BufferOffset emit(uint64_t x) = 0;
   virtual uint32_t currentOffset() = 0;
   // Instruction generation.
 
@@ -132,13 +139,13 @@ class AssemblerRiscvBase {
                        Register rd, Register rs1, Register rs2);
   void GenInstrRFrm(uint8_t funct7, BaseOpcode opcode, Register rd,
                     Register rs1, Register rs2, FPURoundingMode frm);
-  void GenInstrI(uint8_t funct3, BaseOpcode opcode, Register rd, Register rs1,
-                 int16_t imm12);
-  void GenInstrI(uint8_t funct3, BaseOpcode opcode, FPURegister rd,
-                 Register rs1, int16_t imm12);
-  void GenInstrIShift(bool arithshift, uint8_t funct3, BaseOpcode opcode,
+  BufferOffset GenInstrI(uint8_t funct3, BaseOpcode opcode, Register rd,
+                         Register rs1, int16_t imm12);
+  BufferOffset GenInstrI(uint8_t funct3, BaseOpcode opcode, FPURegister rd,
+                         Register rs1, int16_t imm12);
+  void GenInstrIShift(uint8_t funct7, uint8_t funct3, BaseOpcode opcode,
                       Register rd, Register rs1, uint8_t shamt);
-  void GenInstrIShiftW(bool arithshift, uint8_t funct3, BaseOpcode opcode,
+  void GenInstrIShiftW(uint8_t funct7, uint8_t funct3, BaseOpcode opcode,
                        Register rd, Register rs1, uint8_t shamt);
   void GenInstrS(uint8_t funct3, BaseOpcode opcode, Register rs1, Register rs2,
                  int16_t imm12);

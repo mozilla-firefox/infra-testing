@@ -8,7 +8,7 @@
 # documentation and how to modify this file.
 repo: mozilla-central
 created_at: '2021-10-14T12:50:40.073465'
-updated_at: '2025-04-07T08:24:03.558859+00:00'
+updated_at: '2025-12-09T16:35:16.409486+00:00'
 export:
   path: ./docs/mots/index.rst
   format: rst
@@ -50,6 +50,10 @@ people:
     bmo_id: 693303
     name: Alex Hochheiden
     nick: ahochheiden
+  - &aleiserson
+    bmo_id: 713407
+    name: Andy Leiserson
+    nick: aleiserson
   - &allstarschh
     bmo_id: 434670
     name: Yoshi Cheng-Hao Huang
@@ -65,10 +69,6 @@ people:
     bmo_id: 636965
     name: Shane Hughes
     nick: aminomancer
-  - &amy
-    bmo_id: 622155
-    name: Amy Churchwell
-    nick: amy
   - &anba
     bmo_id: 339940
     name: André Bargull
@@ -121,8 +121,7 @@ people:
     bmo_id: 683100
     name: Ben Dean-Kawamura
     nick: bdk
-  - &benbangert
-    bmo_id: 424312
+  - bmo_id: 424312
     name: Ben Bangert
     nick: benbangert
   - &beth
@@ -261,6 +260,10 @@ people:
     bmo_id: 7924
     name: ''
     nick: deanis74
+  - &decoder
+    bmo_id: 395101
+    name: Christian Holler
+    nick: decoder
   - &deian
     bmo_id: 637163
     name: Deian Stefan
@@ -471,6 +474,10 @@ people:
     bmo_id: 623993
     name: Iain Ireland
     nick: iain
+  - &ini
+    bmo_id: 741020
+    name: Irene Ni
+    nick: ini
   - &issammani
     bmo_id: 708367
     name: Issam Mani
@@ -611,10 +618,18 @@ people:
     bmo_id: 701257
     name: James Teow
     nick: jteow
+  - &jthomas
+    bmo_id: 421957
+    name: Jason Thomas
+    nick: jthomas
   - &jules
     bmo_id: 699161
     name: Jules Simplicio
     nick: jules
+  - &Julian
+    bmo_id: 656418
+    name: Julian Gaibler
+    nick: Julian
   - &jwatt
     bmo_id: 32767
     name: Jonathan Watt
@@ -742,6 +757,10 @@ people:
     bmo_id: 636237
     name: Maxx Crawford
     nick: maxx
+  - &mbeier
+    bmo_id: 754437
+    name: Moritz Beier
+    nick: mbeier
   - &mcarare
     bmo_id: 648814
     name: Mihai Adrian Carare
@@ -770,6 +789,10 @@ people:
     bmo_id: 547538
     name: Miko Mynttinen
     nick: mikokm
+  - &mixedpuppy
+    bmo_id: 443354
+    name: Shane Caraveo
+    nick: mixedpuppy
   - &mkaply
     bmo_id: 7313
     name: Mike Kaply
@@ -850,6 +873,10 @@ people:
     bmo_id: 651777
     name: Erik Nordin
     nick: nordzilla
+  - &npypchenko
+    bmo_id: 731746
+    name: Nina Pypchenko
+    nick: npypchenko
   - &nrishel
     bmo_id: 697005
     name: Nick Rishel
@@ -898,6 +925,14 @@ people:
     bmo_id: 5630
     name: ''
     nick: rbs
+  - &relud
+    bmo_id: 444787
+    name: Daniel Thorn
+    nick: relud
+  - &rhamoui
+    bmo_id: 690143
+    name: Reem Hamoui
+    nick: rhamoui
   - &rhunt
     bmo_id: 573202
     name: Ryan Hunt
@@ -942,10 +977,6 @@ people:
     bmo_id: 704132
     name: Alexandra Borovova
     nick: Sasha
-  - &scaraveo
-    bmo_id: 443354
-    name: ''
-    nick: scaraveo
   - &sclements
     bmo_id: 603840
     name: Sarah Clements
@@ -954,10 +985,6 @@ people:
     bmo_id: 703413
     name: Stephanie Cunnane
     nick: scunnane
-  - &sefeng
-    bmo_id: 625922
-    name: Sean Feng
-    nick: sefeng
   - &serg
     bmo_id: 691597
     name: Sergey Galich
@@ -1013,6 +1040,10 @@ people:
   - bmo_id: 468136
     name: Dan Gohman
     nick: sunfish
+  - &sunil
+    bmo_id: 711499
+    name: Sunil Mayya
+    nick: sunil
   - &Sylvestre
     bmo_id: 495955
     name: Sylvestre Ledru
@@ -1045,6 +1076,10 @@ people:
     bmo_id: 466874
     name: Scott
     nick: thecount
+  - &thinker
+    bmo_id: 427371
+    name: Thinker Li
+    nick: thinker
   - &timhuang
     bmo_id: 547199
     name: Tim Huang
@@ -1139,13 +1174,14 @@ modules:
       - README.txt
     meta:
       owners_emeritus:
+        - Ben Bangert
         - Brendan Eich
         - Kate Hudson
     owners:
       - *bholley
       - *overholt
+      - *jthomas
       - *mossop
-      - *benbangert
       - *nalexander
       - *nika
     peers: []
@@ -1167,6 +1203,20 @@ modules:
           - *TLMC
         peers: []
         machine_name: performance_regression_policy
+
+      - name: Security Architecture
+        description: Submodule responsible for driving security architecture decisions,
+          performing security reviews, and guiding security decisions.
+        owners:
+          - *decoder
+        peers:
+          - *dveditz
+          - *freddy
+          - *tjr
+          - *bholley
+          - *ckerschb
+          - *sfriedberger
+        machine_name: security_architecture
 
   - machine_name: android_components
     name: Android Components
@@ -1444,7 +1494,6 @@ modules:
     meta:
       owners_emeritus:
         - Monica Chew
-        - Andrea Marchesini
       peers_emeritus:
         - Josh Matthews
         - Mike Connor
@@ -1453,6 +1502,8 @@ modules:
         - Shawn Wilsher
         - Ehsan Akhgari
         - Honza Bambas
+        - Emma Zühlcke
+        - Tom Schuster
       group: dev-platform
       components:
         - 'Core::Networking: Cookies'
@@ -1461,10 +1512,10 @@ modules:
       - *dveditz
       - *timhuang
       - *valentin
+      - *baku
     peers:
       - *edgul
-      - *emz
-      - *tschuster
+      - *bvandersloot
     machine_name: core_cookies
 
   - name: 'Core: Crash reporting'
@@ -1625,6 +1676,7 @@ modules:
         - Ehsan Akhgari
         - Axel Hecht
         - Eric Rahm
+        - Sean Feng
       url: http://developer.mozilla.org/en/docs/DOM
       components:
         - Core::DOM
@@ -1644,7 +1696,7 @@ modules:
       - *asuth
       - *edgar
       - *saschanaz
-      - *sefeng
+      - *tschuster
     machine_name: core_document_object_model
 
   - name: 'Core: DOM File'
@@ -2148,6 +2200,20 @@ modules:
       - *jesup
     machine_name: core_libjar
 
+  - machine_name: core_localstorage_sessionstorage
+    name: localStorage & sessionStorage
+    description: Implementation of localStorage & sessionStorage exposed only on window
+      objects as “localStorage” and “sessionStorage”.
+    includes:
+      - dom/localstorage/**/*
+      - dom/storage/**/*
+    excludes: []
+    owners:
+      - *janv
+    peers:
+      - *asuth
+      - *farre
+    meta:
   - machine_name: core_machine_learning
     name: 'Core: Machine Learning'
     description: AI services and local inference
@@ -2381,6 +2447,7 @@ modules:
     peers:
       - *kershaw
       - *jesup
+      - *sunil
     machine_name: core_necko
 
   - name: 'Core: NodeJS usage, tools, and style'
@@ -2829,6 +2896,7 @@ modules:
     description: Policy management for third-party Rust dependencies
     includes:
       - supply-chain/**/*
+      - .cargo/audit.toml
     meta:
       peers_emeritus:
         - Aria Beingessner
@@ -2871,8 +2939,7 @@ modules:
       - netwerk/protocol/http/**/*
     meta:
       group: dev-platform
-      url:
-        https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/User-Agent/Firefox
+      url: https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/User-Agent/Firefox
       components:
         - 'Core::Networking: HTTP'
     owners:
@@ -2979,6 +3046,8 @@ modules:
       - dom/webidl/WebGPU.webidl
       - dom/webgpu/**/*
       - gfx/wgpu_bindings/**/*
+      - taskcluster/kinds/toolchain-dxc-upload/kind.yml
+      - taskcluster/kinds/toolchain/dxc.yml
       - third_party/rust/naga/**/*
       - third_party/rust/wgpu-*/**/*
       - testing/web-platform/tests/webgpu/**/*
@@ -3002,6 +3071,8 @@ modules:
       - *jgilbert
       - *nical
       - *teoxoy
+      - *aleiserson
+      - *jnicol
     machine_name: core_webgpu_graphics_submodule
 
   - name: 'Core: WebRTC'
@@ -3136,6 +3207,7 @@ modules:
     peers:
       - *stransky
       - *emilio
+      - *thinker
     machine_name: core_widget_gtk
 
   - name: 'Core: Widget - Headless'
@@ -3389,13 +3461,12 @@ modules:
             - Kris Maglione
           review_group: extension-reviewers
         owners:
-          - *scaraveo
           - *rpl
         peers:
-          - *rpl
           - *zombie
           - *robwu
           - *willdurand
+          - *mixedpuppy
         machine_name: addons_manager
 
       - name: Add-ons Manager UI
@@ -3406,15 +3477,15 @@ modules:
           owners_emeritus:
             - Robert Strong
             - Andrew Swan
+            - *mstriemer
           review_group: extension-reviewers
         owners:
-          - *scaraveo
-          - *mstriemer
-        peers:
           - *rpl
+        peers:
           - *zombie
           - *robwu
           - *willdurand
+          - *mixedpuppy
         machine_name: addons_manager_ui
 
       - machine_name: address_bar
@@ -3428,9 +3499,10 @@ modules:
         peers:
           - *daisuke
           - *dao
-          - *mak
-          - *standard8
           - *jteow
+          - *mak
+          - *mbeier
+          - *standard8
         meta:
           components:
             - Firefox::Address Bar
@@ -3485,21 +3557,23 @@ modules:
         meta:
           peers_emeritus:
             - Tim Nguyen
-            - *amy
+            - Amy Churchwell
           components:
             - Firefox::Theme
             - Toolkit::Themes
           review_group: desktop-theme-reviewers
         owners:
           - *dao
-        peers:
-          - *cmkm
-          - *emilio
           - *hjones
+        peers:
+          - *emilio
           - *itielyn8
+          - *Julian
           - *jules
           - *kcochrane
           - *sfoster
+          - *tgiles
+          - *mstriemer
         machine_name: desktop_theme
 
       - name: Desktop UI
@@ -3560,6 +3634,7 @@ modules:
           components:
             - Firefox::Normandy
             - Firefox::Nimbus Desktop Client
+          review_group: nimbus-reviewers
           url: https://experimenter.info/
         owners:
           - *beth
@@ -3567,6 +3642,7 @@ modules:
           - *Gijs
           - *emcminn
           - *charlie
+          - *relud
         machine_name: normandy
 
       - machine_name: firefox_view
@@ -3586,6 +3662,7 @@ modules:
         description: Form detection and autocomplete.
         includes:
           - browser/extensions/formautofill/**/*
+          - toolkit/components/autocomplete/**/*
           - toolkit/components/satchel/**/*
         meta:
           owners_emeritus:
@@ -3593,6 +3670,10 @@ modules:
             - *serg
           peers_emeritus:
             - *tgiles
+          components:
+            - Toolkit::Autocomplete
+            - Toolkit::Form Autofill
+            - Toolkit::Form Manager
         owners:
           - *dimi
         peers:
@@ -3670,12 +3751,16 @@ modules:
           peers_emeritus:
             - *k88hudson
             - *aoprea
+            - Amy Churchwell
         owners:
           - *thecount
         peers:
-          - *amy
-          - *nbarrett
+          - *ini
           - *maxx
+          - *mconley
+          - *nbarrett
+          - *npypchenko
+          - *rhamoui
         machine_name: new_tab_page
 
       - name: Password Manager
@@ -3832,17 +3917,23 @@ modules:
         includes:
           - browser/components/preferences/**/*
           - browser/themes/*/preferences
-          - toolkit/mozapps/preferences
+          - toolkit/components/aboutconfig/*
+          - toolkit/content/preferencesBindings.js
+          - toolkit/content/preferences/*
+          - toolkit/mozapps/preferences/*
         meta:
           owners_emeritus:
             - Jared Wein
+            - *mossop
           peers_emeritus:
             - Tim Nguyen
-          review_group: preferences-reviewers
+          components:
+            - Firefox::Settings UI
+            - Toolkit::Preferences
+          review_group: settings-reviewers
         owners:
-          - *mossop
-        peers:
           - *mstriemer
+        peers:
           - *Gijs
           - *mconley
         machine_name: settings_ui
@@ -3858,16 +3949,19 @@ modules:
           peers_emeritus:
             - Jared Wein
             - Matthew N
+            - *mak
+            - *mconley
         owners:
           - *dao
+          - *sthompson
         peers:
-          - *mak
-          - *mconley
           - *dwalker
           - *nikkis
           - *niklas
           - *jswinarton
-          - *sthompson
+          - *sclements
+          - *kcochrane
+          - *jsudiaman
         machine_name: tabbed_browser
 
       - name: Windows Installer
@@ -3900,7 +3994,6 @@ modules:
       - *jdescottes
       - *nchevobbe
       - *bomsy
-      - *whimboo
     meta:
       owners_emeritus:
         - Patrick Brosset
@@ -3960,6 +4053,34 @@ modules:
       - *royang
       - *rsainani
     meta:
+    submodules:
+
+      - machine_name: fenix_addons
+        name: Fenix - Add-ons
+        description: Submodule for the add-ons code in Firefox for Android.
+        includes:
+          - mobile/android/android-components/components/browser/engine-gecko/src/*/java/mozilla/components/browser/engine/gecko/webextension/*
+          - mobile/android/android-components/components/browser/state/src/*/java/mozilla/components/browser/state/state/extension/*
+          - mobile/android/android-components/components/concept/engine/src/*/java/mozilla/components/concept/engine/webextension/*
+          - mobile/android/android-components/components/feature/addons/**/*
+          - mobile/android/android-components/components/support/webextensions/**/*
+          - mobile/android/android-components/samples/browser/src/*/java/org/mozilla/samples/browser/addons/*
+          - mobile/android/fenix/app/src/*/java/org/mozilla/fenix/addons/*
+          - mobile/android/fenix/app/src/*/java/org/mozilla/fenix/extension/*
+        meta:
+          components:
+            - 'Firefox for Android :: WebExtensions'
+            - 'WebExtensions :: Android'
+          review_group: android-addons-reviewers
+        owners:
+          - *willdurand
+        peers:
+          - *rpl
+          - *robwu
+          - *zombie
+          - *tcampbell
+          - *jonalmeida
+
   - machine_name: focus_android
     name: Focus for Android
     description: Android Project to build Focus for Android
@@ -3977,7 +4098,7 @@ modules:
     description: Aspects of JavaScript use such as language feature usage, tooling
       such as lint configurations, formatting and naming style.
     includes:
-      - .eslintrc-test-paths.js
+      - eslint*.config.mjs
       - '**/.eslintrc*.js'
       - tools/lint/eslint/**/*
       - .prettier*
@@ -4469,12 +4590,12 @@ modules:
             - Kris Maglione
           review_group: extension-reviewers
         owners:
-          - *scaraveo
           - *zombie
+          - *robwu
         peers:
           - *rpl
-          - *robwu
           - *willdurand
+          - *mixedpuppy
         machine_name: webextensions
     machine_name: toolkit
   - machine_name: translation
@@ -4547,5 +4668,5 @@ modules:
         - Ryan Tilder
       group: dev-platform
 hashes:
-  config: 191cbfa5573d7c94c637045ac3ed62e662fb1b03
-  export: 7fb1baa3c6c64954bdaca31c752859f93cf2b78b
+  config: 88462bf39de24dc604fae1158124862f9e3b2071
+  export: 409f256c0f690b6b5d21c6e9819069134c5a9429

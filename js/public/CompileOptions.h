@@ -118,6 +118,8 @@ enum class DelazificationOption : uint8_t {
 #undef _ENUM_ENTRY
 };
 
+enum class EagerBaselineOption : uint8_t { None, JitHints, Aggressive };
+
 class JS_PUBLIC_API InstantiateOptions;
 class JS_PUBLIC_API ReadOnlyDecodeOptions;
 
@@ -126,19 +128,12 @@ class JS_PUBLIC_API ReadOnlyDecodeOptions;
 class JS_PUBLIC_API PrefableCompileOptions {
  public:
   PrefableCompileOptions()
-      : importAttributes_(false),
-        sourcePragmas_(true),
+      : sourcePragmas_(true),
 #ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
         explicitResourceManagement_(
             JS::Prefs::experimental_explicit_resource_management()),
 #endif
         throwOnAsmJSValidationFailure_(false) {
-  }
-
-  bool importAttributes() const { return importAttributes_; }
-  PrefableCompileOptions& setImportAttributes(bool enabled) {
-    importAttributes_ = enabled;
-    return *this;
   }
 
 #ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
@@ -185,7 +180,6 @@ class JS_PUBLIC_API PrefableCompileOptions {
   template <typename Printer>
   void dumpWith(Printer& print) const {
 #  define PrintFields_(Name) print(#Name, Name)
-    PrintFields_(importAttributes_);
     PrintFields_(sourcePragmas_);
     PrintFields_(throwOnAsmJSValidationFailure_);
 #  ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
@@ -215,7 +209,6 @@ class JS_PUBLIC_API PrefableCompileOptions {
 
  private:
   // ==== Syntax-related options. ====
-  bool importAttributes_ : 1;
 
   // The context has specified that source pragmas should be parsed.
   bool sourcePragmas_ : 1;
@@ -294,6 +287,13 @@ class JS_PUBLIC_API TransitiveCompileOptions {
   // order to test different approaches to the concurrent delazification.
   DelazificationOption eagerDelazificationStrategy_ =
       DelazificationOption::OnDemandOnly;
+
+  // The eager baseline strategy option indicates whether functions should be
+  // OMT baseline compiled eagerly whenever bytecode is available and whether
+  // JitHints should be used or not.  Eager baseline compilations are not
+  // currently enabled for delazifications, and explicitly set to None for
+  // delazifications.
+  EagerBaselineOption eagerBaselineStrategy_ = EagerBaselineOption::None;
 
   friend class JS_PUBLIC_API InstantiateOptions;
 
@@ -395,8 +395,10 @@ class JS_PUBLIC_API TransitiveCompileOptions {
   DelazificationOption eagerDelazificationStrategy() const {
     return eagerDelazificationStrategy_;
   }
+  EagerBaselineOption eagerBaselineStrategy() const {
+    return eagerBaselineStrategy_;
+  }
 
-  bool importAttributes() const { return prefableOptions_.importAttributes(); }
   bool sourcePragmas() const { return prefableOptions_.sourcePragmas(); }
 #ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
   bool explicitResourceManagement() const {
@@ -436,6 +438,7 @@ class JS_PUBLIC_API TransitiveCompileOptions {
     PrintFields_(hideScriptFromDebugger_);
     PrintFields_(deferDebugMetadata_);
     PrintFields_(eagerDelazificationStrategy_);
+    PrintFields_(eagerBaselineStrategy_);
     PrintFields_(selfHostingMode);
     PrintFields_(discardSource);
     PrintFields_(sourceIsLazy);
@@ -731,6 +734,11 @@ class MOZ_STACK_CLASS JS_PUBLIC_API CompileOptions final
     return *this;
   }
 
+  CompileOptions& setEagerBaselineStrategy(EagerBaselineOption strategy) {
+    eagerBaselineStrategy_ = strategy;
+    return *this;
+  }
+
   CompileOptions& setForceStrictMode() {
     forceStrictMode_ = true;
     return *this;
@@ -756,9 +764,10 @@ class JS_PUBLIC_API InstantiateOptions {
   bool skipFilenameValidation = false;
   bool hideScriptFromDebugger = false;
   bool deferDebugMetadata = false;
-
   DelazificationOption eagerDelazificationStrategy_ =
       DelazificationOption::OnDemandOnly;
+
+  EagerBaselineOption eagerBaselineStrategy_ = EagerBaselineOption::None;
 
   InstantiateOptions();
 
@@ -766,13 +775,15 @@ class JS_PUBLIC_API InstantiateOptions {
       : skipFilenameValidation(options.skipFilenameValidation_),
         hideScriptFromDebugger(options.hideScriptFromDebugger_),
         deferDebugMetadata(options.deferDebugMetadata_),
-        eagerDelazificationStrategy_(options.eagerDelazificationStrategy()) {}
+        eagerDelazificationStrategy_(options.eagerDelazificationStrategy()),
+        eagerBaselineStrategy_(options.eagerBaselineStrategy_) {}
 
   void copyTo(CompileOptions& options) const {
     options.skipFilenameValidation_ = skipFilenameValidation;
     options.hideScriptFromDebugger_ = hideScriptFromDebugger;
     options.deferDebugMetadata_ = deferDebugMetadata;
     options.setEagerDelazificationStrategy(eagerDelazificationStrategy_);
+    options.setEagerBaselineStrategy(eagerBaselineStrategy_);
   }
 
   bool hideFromNewScriptInitial() const {
@@ -790,6 +801,7 @@ class JS_PUBLIC_API InstantiateOptions {
     MOZ_ASSERT(deferDebugMetadata == false);
     MOZ_ASSERT(eagerDelazificationStrategy_ ==
                DelazificationOption::OnDemandOnly);
+    MOZ_ASSERT(eagerBaselineStrategy_ == EagerBaselineOption::None);
   }
 
   // Assert that all fields have values compatible with the default value.
@@ -811,6 +823,8 @@ class JS_PUBLIC_API InstantiateOptions {
                    DelazificationOption::OnDemandOnly ||
                eagerDelazificationStrategy_ ==
                    DelazificationOption::ParseEverythingEagerly);
+
+    MOZ_ASSERT(eagerBaselineStrategy_ == EagerBaselineOption::None);
   }
 #endif
 };

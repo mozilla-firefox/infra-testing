@@ -1,11 +1,11 @@
-// |reftest| skip async -- Atomics.waitAsync is not supported
+// |reftest| shell-option(--setpref=atomics_wait_async) skip-if(!this.hasOwnProperty('SharedArrayBuffer')||!this.hasOwnProperty('Atomics')||(this.hasOwnProperty('getBuildConfiguration')&&getBuildConfiguration('arm64-simulator'))||!xulRuntime.shell) async -- SharedArrayBuffer,Atomics is not enabled unconditionally, ARM64 Simulator cannot emulate atomics, requires shell-options
 // Copyright (C) 2020 Rick Waldron. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
 /*---
 esid: sec-atomics.waitasync
 description: >
-  Undefined timeout arg is coerced to zero
+  Undefined timeout arg should result in an infinite timeout
 info: |
   Atomics.waitAsync( typedArray, index, value, timeout )
 

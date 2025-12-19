@@ -18,6 +18,7 @@ const {
   getCurrentZoom,
   getFrameOffsets,
 } = require("resource://devtools/shared/layout/utils.js");
+const { debounce } = require("resource://devtools/shared/debounce.js");
 
 loader.lazyGetter(this, "clipboardHelper", () =>
   Cc["@mozilla.org/widget/clipboardhelper;1"].getService(Ci.nsIClipboardHelper)
@@ -47,22 +48,30 @@ const CLOSE_DELAY = 750;
  */
 class EyeDropper {
   #pageEventListenersAbortController;
+  #debouncedUpdateScreenshot;
   constructor(highlighterEnv) {
     EventEmitter.decorate(this);
 
     this.highlighterEnv = highlighterEnv;
     this.markup = new CanvasFrameAnonymousContentHelper(
       this.highlighterEnv,
-      this._buildMarkup.bind(this)
+      this._buildMarkup.bind(this),
+      {
+        contentRootHostClassName: "devtools-highlighter-eye-dropper",
+      }
     );
     this.isReady = this.markup.initialize();
 
     // Get a couple of settings from prefs.
     this.format = Services.prefs.getCharPref(FORMAT_PREF);
     this.eyeDropperZoomLevel = Services.prefs.getIntPref(ZOOM_LEVEL_PREF);
-  }
 
-  ID_CLASS_PREFIX = "eye-dropper-";
+    this.#debouncedUpdateScreenshot = debounce(
+      this.updateScreenshot.bind(this),
+      200,
+      this
+    );
+  }
 
   get win() {
     return this.highlighterEnv.window;
@@ -78,11 +87,10 @@ class EyeDropper {
     const wrapper = this.markup.createNode({
       parent: container,
       attributes: {
-        id: "root",
-        class: "root",
+        id: "eye-dropper-root",
+        class: "eye-dropper-root",
         hidden: "true",
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
 
     // The magnifier canvas element.
@@ -90,31 +98,33 @@ class EyeDropper {
       parent: wrapper,
       nodeType: "canvas",
       attributes: {
-        id: "canvas",
-        class: "canvas",
+        id: "eye-dropper-canvas",
+        class: "eye-dropper-canvas",
         width: MAGNIFIER_WIDTH,
         height: MAGNIFIER_HEIGHT,
       },
-      prefix: this.ID_CLASS_PREFIX,
     });
 
     // The color label element.
     const colorLabelContainer = this.markup.createNode({
       parent: wrapper,
-      attributes: { class: "color-container" },
-      prefix: this.ID_CLASS_PREFIX,
+      attributes: { class: "eye-dropper-color-container" },
     });
     this.markup.createNode({
       nodeType: "div",
       parent: colorLabelContainer,
-      attributes: { id: "color-preview", class: "color-preview" },
-      prefix: this.ID_CLASS_PREFIX,
+      attributes: {
+        id: "eye-dropper-color-preview",
+        class: "eye-dropper-color-preview",
+      },
     });
     this.markup.createNode({
       nodeType: "div",
       parent: colorLabelContainer,
-      attributes: { id: "color-value", class: "color-value" },
-      prefix: this.ID_CLASS_PREFIX,
+      attributes: {
+        id: "eye-dropper-color-value",
+        class: "eye-dropper-color-value",
+      },
     });
 
     return container;
@@ -126,14 +136,14 @@ class EyeDropper {
   }
 
   getElement(id) {
-    return this.markup.getElement(this.ID_CLASS_PREFIX + id);
+    return this.markup.getElement(id);
   }
 
   /**
    * Show the eye-dropper highlighter.
    *
    * @param {DOMNode} node The node which document the highlighter should be inserted in.
-   * @param {Object} options The options object may contain the following properties:
+   * @param {object} options The options object may contain the following properties:
    * - {Boolean} copyOnSelect: Whether selecting a color should copy it to the clipboard.
    * - {String|null} screenshot: a dataURL representation of the page screenshot. If null,
    *                 the eyedropper will use `drawWindow` to get the the screenshot
@@ -149,11 +159,9 @@ class EyeDropper {
     // Get the page's current zoom level.
     this.pageZoom = getCurrentZoom(this.win);
 
-    // Take a screenshot of the viewport. This needs to be done first otherwise the
-    // eyedropper UI will appear in the screenshot itself (since the UI is injected as
-    // native anonymous content in the page).
+    // Take a screenshot of the viewport.
     // Once the screenshot is ready, the magnified area will be drawn.
-    this.prepareImageCapture(options.screenshot);
+    this.updateScreenshot(options.screenshot);
 
     // Start listening for user events.
     const { pageListenerTarget } = this.highlighterEnv;
@@ -167,12 +175,10 @@ class EyeDropper {
     pageListenerTarget.addEventListener("keydown", this, { signal });
     pageListenerTarget.addEventListener("DOMMouseScroll", this, { signal });
     pageListenerTarget.addEventListener("FullZoomChange", this, { signal });
-
-    // Show the eye-dropper.
-    this.getElement("root").removeAttribute("hidden");
+    pageListenerTarget.addEventListener("resize", this, { signal });
 
     // Prepare the canvas context on which we're drawing the magnified page portion.
-    this.ctx = this.getElement("canvas").getCanvasContext();
+    this.ctx = this.getElement("eye-dropper-canvas").getCanvasContext();
     this.ctx.imageSmoothingEnabled = false;
 
     this.magnifiedArea = {
@@ -204,7 +210,7 @@ class EyeDropper {
       this.#pageEventListenersAbortController.abort();
       this.#pageEventListenersAbortController = null;
 
-      const rootElement = this.getElement("root");
+      const rootElement = this.getElement("eye-dropper-root");
       rootElement.setAttribute("hidden", "true");
       rootElement.removeAttribute("drawn");
 
@@ -235,15 +241,19 @@ class EyeDropper {
    * Create an image bitmap from the page screenshot, draw the eyedropper and set the
    * "drawn" attribute on the "root" element once it's done.
    *
-   * @params {String|null} screenshot: a dataURL representation of the page screenshot.
+   * @params {string | null} screenshot: a dataURL representation of the page screenshot.
    *                       If null, we'll use `drawWindow` to get the the page screenshot
    *                       (⚠️ but it won't handle remote frames).
    */
-  async prepareImageCapture(screenshot) {
+  async updateScreenshot(screenshot) {
+    const rootElement = this.getElement("eye-dropper-root");
+
     let imageSource;
     if (screenshot) {
       imageSource = this.#dataURItoBlob(screenshot);
     } else {
+      // Hide the eyedropper while we take the screenshot.
+      rootElement.setAttribute("hidden", "true");
       imageSource = getWindowAsImageData(this.win);
     }
 
@@ -258,7 +268,10 @@ class EyeDropper {
 
     // Set an attribute on the root element to be able to run tests after the first draw
     // was done.
-    this.getElement("root").setAttribute("drawn", "true");
+    rootElement.setAttribute("drawn", "true");
+
+    // Show the eyedropper.
+    rootElement.removeAttribute("hidden");
   }
 
   /**
@@ -325,11 +338,11 @@ class EyeDropper {
 
     // Update the color preview and value.
     const rgb = this.centerColor;
-    this.getElement("color-preview").setAttribute(
+    this.getElement("eye-dropper-color-preview").setAttribute(
       "style",
       `background-color:${toColorString(rgb, "rgb")};`
     );
-    this.getElement("color-value").setTextContent(
+    this.getElement("eye-dropper-color-value").setTextContent(
       toColorString(rgb, this.format)
     );
   }
@@ -378,7 +391,7 @@ class EyeDropper {
 
   handleEvent(e) {
     switch (e.type) {
-      case "mousemove":
+      case "mousemove": {
         // We might be getting an event from a child frame, so account for the offset.
         const [xOffset, yOffset] = getFrameOffsets(this.win, e.target);
         const x = xOffset + e.pageX - this.win.scrollX;
@@ -391,6 +404,7 @@ class EyeDropper {
         // And move the eye-dropper's UI so it follows the mouse.
         this.moveTo(x, y);
         break;
+      }
       // Note: when events are suppressed we will only get mousedown/mouseup and
       // not any click events.
       case "click":
@@ -411,11 +425,15 @@ class EyeDropper {
         this.hide();
         this.show();
         break;
+      case "resize":
+        this.getElement("eye-dropper-root").removeAttribute("drawn");
+        this.#debouncedUpdateScreenshot();
+        break;
     }
   }
 
   moveTo(x, y) {
-    const root = this.getElement("root");
+    const root = this.getElement("eye-dropper-root");
     root.setAttribute("style", `top:${y}px;left:${x}px;`);
 
     // Move the label container to the top if the magnifier is close to the bottom edge.
@@ -520,6 +538,7 @@ class EyeDropper {
 
   /**
    * Copy the currently inspected color to the clipboard.
+   *
    * @return {Promise} Resolves when the copy has been done (after a delay that is used to
    * let users know that something was copied).
    */
@@ -529,7 +548,7 @@ class EyeDropper {
     clipboardHelper.copyString(color);
 
     // Provide some feedback.
-    this.getElement("color-value").setTextContent(
+    this.getElement("eye-dropper-color-value").setTextContent(
       "✓ " + l10n.GetStringFromName("colorValue.copied")
     );
 
@@ -545,6 +564,7 @@ exports.EyeDropper = EyeDropper;
 
 /**
  * Draw the visible portion of the window on a canvas and get the resulting ImageData.
+ *
  * @param {Window} win
  * @return {ImageData} The image data for the window.
  */
@@ -570,7 +590,8 @@ function getWindowAsImageData(win) {
 
 /**
  * Get a formatted CSS color string from a color value.
- * @param {array} rgb Rgb values of a color to format.
+ *
+ * @param {Array} rgb Rgb values of a color to format.
  * @param {string} format Format of string. One of "hex", "rgb", "hsl", "name".
  * @return {string} Formatted color value, e.g. "#FFF" or "hsl(20, 10%, 10%)".
  */
@@ -582,12 +603,12 @@ function toColorString(rgb, format) {
       return hexString(rgb);
     case "rgb":
       return "rgb(" + r + ", " + g + ", " + b + ")";
-    case "hsl":
+    case "hsl": {
       const [h, s, l] = rgbToHsl(rgb);
       return "hsl(" + h + ", " + s + "%, " + l + "%)";
+    }
     case "name":
-      const str = InspectorUtils.rgbToColorName(r, g, b) || hexString(rgb);
-      return str;
+      return InspectorUtils.rgbToColorName(r, g, b) || hexString(rgb);
     default:
       return hexString(rgb);
   }
@@ -595,7 +616,8 @@ function toColorString(rgb, format) {
 
 /**
  * Produce a hex-formatted color string from rgb values.
- * @param {array} rgb Rgb values of color to stringify.
+ *
+ * @param {Array} rgb Rgb values of color to stringify.
  * @return {string} Hex formatted string for color, e.g. "#FFEE00".
  */
 function hexString([r, g, b]) {

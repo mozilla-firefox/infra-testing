@@ -6,13 +6,14 @@
 
 #include "nsMathMLTokenFrame.h"
 
+#include <algorithm>
+
+#include "gfxContext.h"
 #include "mozilla/PresShell.h"
+#include "nsContentUtils.h"
 #include "nsLayoutUtils.h"
 #include "nsPresContext.h"
-#include "nsContentUtils.h"
 #include "nsTextFrame.h"
-#include "gfxContext.h"
-#include <algorithm>
 
 using namespace mozilla;
 
@@ -149,9 +150,9 @@ void nsMathMLTokenFrame::Reflow(nsPresContext* aPresContext,
 // pass, it is not computed here because our children may be text frames
 // that do not implement the GetBoundingMetrics() interface.
 /* virtual */
-nsresult nsMathMLTokenFrame::Place(DrawTarget* aDrawTarget,
-                                   const PlaceFlags& aFlags,
-                                   ReflowOutput& aDesiredSize) {
+void nsMathMLTokenFrame::Place(DrawTarget* aDrawTarget,
+                               const PlaceFlags& aFlags,
+                               ReflowOutput& aDesiredSize) {
   mBoundingMetrics = nsBoundingMetrics();
   for (nsIFrame* childFrame : PrincipalChildList()) {
     ReflowOutput childSize(aDesiredSize.GetWritingMode());
@@ -209,6 +210,4 @@ nsresult nsMathMLTokenFrame::Place(DrawTarget* aDrawTarget,
   }
 
   SetReference(nsPoint(0, aDesiredSize.BlockStartAscent()));
-
-  return NS_OK;
 }

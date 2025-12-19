@@ -101,6 +101,7 @@ add_task(async function () {
   await waitForResults(dbg, [undefined, undefined]);
   pressKey(dbg, "Enter");
   await waitForSelectedSource(dbg, "script-switching-02.js");
+  await waitForSelectedLocation(dbg, 7, 12);
   assertLine(dbg, 7);
   assertColumn(dbg, 12);
 
@@ -166,7 +167,7 @@ function findResultEl(dbg, index = 1) {
 async function assertResultIsTab(dbg, index) {
   const el = await findResultEl(dbg, index);
   ok(
-    el && !!el.querySelector(".tab.result-item-icon"),
+    el && !!el.querySelector(".dbg-img-tab.result-item-icon"),
     "Result should be a tab"
   );
 }

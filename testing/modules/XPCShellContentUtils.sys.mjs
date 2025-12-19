@@ -23,13 +23,15 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ContentTask: "resource://testing-common/ContentTask.sys.mjs",
   HttpServer: "resource://testing-common/httpd.sys.mjs",
   SpecialPowersParent: "resource://testing-common/SpecialPowersParent.sys.mjs",
+  SpecialPowersForProcess:
+    "resource://testing-common/SpecialPowersProcessActor.sys.mjs",
   TestUtils: "resource://testing-common/TestUtils.sys.mjs",
 });
 
 XPCOMUtils.defineLazyServiceGetters(lazy, {
   proxyService: [
     "@mozilla.org/network/protocol-proxy-service;1",
-    "nsIProtocolProxyService",
+    Ci.nsIProtocolProxyService,
   ],
 });
 
@@ -144,7 +146,6 @@ export class ContentPage {
       Ci.nsIWebNavigation
     );
 
-    chromeShell.createAboutBlankDocumentViewer(system, system);
     this.windowlessBrowser.browsingContext.useGlobalHistory = false;
     let loadURIOptions = {
       triggeringPrincipal: system,
@@ -242,10 +243,15 @@ export class ContentPage {
   async loadURL(url, redirectUrl = undefined) {
     await this.browserReady;
 
+    let browserLoadedPromise = promiseBrowserLoaded(
+      this.browser,
+      url,
+      redirectUrl
+    );
     this.browser.fixupAndLoadURIString(url, {
       triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
     });
-    return promiseBrowserLoaded(this.browser, url, redirectUrl);
+    return browserLoadedPromise;
   }
 
   async fetch(...args) {
@@ -257,6 +263,15 @@ export class ContentPage {
 
   spawn(params, task) {
     return this.SpecialPowers.spawn(this.browser, params, task);
+  }
+
+  // Get a SpecialPowersForProcess instance associated with the content process
+  // of the currently loaded page. This allows callers to spawn() tasks that
+  // outlive the page (for as long as the page's process is around).
+  getCurrentContentProcessSpecialPowers() {
+    const testScope = XPCShellContentUtils.currentScope;
+    const domProcess = this.browsingContext.currentWindowGlobal.domProcess;
+    return new lazy.SpecialPowersForProcess(testScope, domProcess);
   }
 
   // Like spawn(), but uses the legacy ContentTask infrastructure rather than

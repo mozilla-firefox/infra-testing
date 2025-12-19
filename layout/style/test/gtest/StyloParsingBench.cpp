@@ -4,19 +4,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "gtest/gtest.h"
-#include "gtest/MozGTestBench.h"
-#include "nsString.h"
 #include "ExampleStylesheet.h"
+#include "ReferrerInfo.h"
 #include "ServoBindings.h"
-#include "mozilla/dom/DOMString.h"
+#include "gtest/MozGTestBench.h"
+#include "gtest/gtest.h"
 #include "mozilla/Encoding.h"
-#include "mozilla/Utf8.h"
 #include "mozilla/NullPrincipal.h"
+#include "mozilla/Utf8.h"
 #include "mozilla/css/SheetParsingMode.h"
-#include "ReferrerInfo.h"
 #include "nsCSSValue.h"
-#include "ReferrerInfo.h"
+#include "nsString.h"
 
 using namespace mozilla;
 using namespace mozilla::css;
@@ -30,7 +28,7 @@ using namespace mozilla::net;
 #  define SETPROPERTY_REPETITIONS (1000 * 1000)
 #  define GETPROPERTY_REPETITIONS (1000 * 1000)
 
-static void ServoParsingBench(const StyleUseCounters* aCounters) {
+static void ServoParsingBench() {
   auto css = AsBytes(MakeStringSpan(EXAMPLE_STYLESHEET));
   nsCString cssStr;
   cssStr.Append(css);
@@ -45,8 +43,8 @@ static void ServoParsingBench(const StyleUseCounters* aCounters) {
     RefPtr<StyleStylesheetContents> stylesheet =
         Servo_StyleSheet_FromUTF8Bytes(
             nullptr, nullptr, nullptr, &cssStr, eAuthorSheetFeatures, data,
-            eCompatibility_FullStandards, nullptr, aCounters,
-            StyleAllowImportRules::Yes, StyleSanitizationKind::None, nullptr)
+            eCompatibility_FullStandards, nullptr, StyleAllowImportRules::Yes,
+            StyleSanitizationKind::None, nullptr)
             .Consume();
   }
 }
@@ -71,7 +69,7 @@ static void ServoSetPropertyByIdBench(const nsACString& css) {
   }
 }
 
-static void ServoGetPropertyValueById() {
+static void ServoGetPropertyValueByNonCustomId() {
   RefPtr<StyleLockedDeclarationBlock> block =
       Servo_DeclarationBlock_CreateEmpty().Consume();
 
@@ -89,19 +87,14 @@ static void ServoGetPropertyValueById() {
 
   for (int i = 0; i < GETPROPERTY_REPETITIONS; i++) {
     nsAutoCString value;
-    Servo_DeclarationBlock_GetPropertyValueById(block, eCSSProperty_width,
-                                                &value);
+    Servo_DeclarationBlock_GetPropertyValueByNonCustomId(
+        block, eCSSProperty_width, &value);
     ASSERT_TRUE(value.EqualsLiteral("10px"));
   }
 }
 
 MOZ_GTEST_BENCH(Stylo, Servo_StyleSheet_FromUTF8Bytes_Bench,
-                [] { ServoParsingBench(nullptr); });
-
-MOZ_GTEST_BENCH(Stylo, Servo_StyleSheet_FromUTF8Bytes_Bench_UseCounters, [] {
-  UniquePtr<StyleUseCounters> counters(Servo_UseCounters_Create());
-  ServoParsingBench(counters.get());
-});
+                [] { ServoParsingBench(); });
 
 MOZ_GTEST_BENCH(Stylo, Servo_DeclarationBlock_SetPropertyById_Bench,
                 [] { ServoSetPropertyByIdBench("10px"_ns); });
@@ -111,6 +104,6 @@ MOZ_GTEST_BENCH(Stylo,
                 [] { ServoSetPropertyByIdBench(" 10px"_ns); });
 
 MOZ_GTEST_BENCH(Stylo, Servo_DeclarationBlock_GetPropertyById_Bench,
-                ServoGetPropertyValueById);
+                ServoGetPropertyValueByNonCustomId);
 
 #endif

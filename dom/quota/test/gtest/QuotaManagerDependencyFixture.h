@@ -55,13 +55,19 @@ class QuotaManagerDependencyFixture : public testing::Test {
       const OriginMetadata& aOriginMetadata);
   static void AssertTemporaryOriginNotInitialized(
       const OriginMetadata& aOriginMetadata);
+
+  // For more complex testing, use of this helper is optional.
+  static void SaveOriginAccessTime(const OriginMetadata& aOriginMetadata);
+
   static void GetOriginUsage(const OriginMetadata& aOriginMetadata,
                              UsageInfo* aResult);
   static void GetCachedOriginUsage(const OriginMetadata& aOriginMetadata,
                                    UsageInfo* aResult);
   static void ClearStoragesForOrigin(const OriginMetadata& aOriginMetadata);
 
-  static void InitializeTemporaryClient(const ClientMetadata& aClientMetadata);
+  static void InitializePersistentClient(const ClientMetadata& aClientMetadata);
+  static void InitializeTemporaryClient(const ClientMetadata& aClientMetadata,
+                                        bool aCreateIfNonExistent = true);
 
   static CStringArray ListOrigins();
   static CStringArray ListCachedOrigins();
@@ -69,7 +75,18 @@ class QuotaManagerDependencyFixture : public testing::Test {
   static void ClearStoragesForOriginAttributesPattern(
       const nsAString& aPattern);
 
+  static void ProcessPendingNormalOriginOperations();
+
+  static Maybe<OriginStateMetadata> GetOriginStateMetadata(
+      const OriginMetadata& aOriginMetadata);
+
+  static Maybe<OriginStateMetadata> LoadDirectoryMetadataHeader(
+      const OriginMetadata& aOriginMetadata);
+
   static uint64_t TotalDirectoryIterations();
+
+  static uint64_t SaveOriginAccessTimeCount();
+  static uint64_t SaveOriginAccessTimeCountInternal();
 
   /* Convenience method for tasks which must be called on PBackground thread */
   template <class Invokable, class... Args>
@@ -234,8 +251,11 @@ class QuotaManagerDependencyFixture : public testing::Test {
 
   static PrincipalMetadata GetTestPrincipalMetadata();
   static OriginMetadata GetTestPersistentOriginMetadata();
+  static ClientMetadata GetTestPersistentClientMetadata();
   static OriginMetadata GetTestOriginMetadata();
   static ClientMetadata GetTestClientMetadata();
+  static OriginMetadata GetTestPrivateOriginMetadata();
+  static ClientMetadata GetTestPrivateClientMetadata();
 
   static PrincipalMetadata GetOtherTestPrincipalMetadata();
   static OriginMetadata GetOtherTestOriginMetadata();

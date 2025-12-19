@@ -1956,7 +1956,6 @@ class Matrix4x4TypedFlagged
     : protected Matrix4x4Typed<SourceUnits, TargetUnits> {
  public:
   using Parent = Matrix4x4Typed<SourceUnits, TargetUnits>;
-  using TargetPoint = PointTyped<TargetUnits>;
   using Parent::_11;
   using Parent::_12;
   using Parent::_13;
@@ -2099,9 +2098,11 @@ class Matrix4x4TypedFlagged
       F min_y = std::min(std::min(std::min(p1.y, p2.y), p3.y), p4.y);
       F max_y = std::max(std::max(std::max(p1.y, p2.y), p3.y), p4.y);
 
-      TargetPoint topLeft(std::max(min_x, aClip.x), std::max(min_y, aClip.y));
-      F width = std::min(max_x, aClip.XMost()) - topLeft.x;
-      F height = std::min(max_y, aClip.YMost()) - topLeft.y;
+      PointTyped<TargetUnits, F> topLeft(
+          std::min(std::max(min_x, aClip.x), aClip.XMost()),
+          std::min(std::max(min_y, aClip.y), aClip.YMost()));
+      F width = std::min(std::max(max_x, aClip.x), aClip.XMost()) - topLeft.x;
+      F height = std::min(std::max(max_y, aClip.y), aClip.YMost()) - topLeft.y;
 
       return RectTyped<TargetUnits, F>(topLeft.x, topLeft.y, width, height);
     }
@@ -2183,7 +2184,7 @@ class Matrix4x4TypedFlagged
     }
 
     if (mType == MatrixType::Simple) {
-      TargetPoint point = TransformPointSimple(aPoint);
+      PointTyped<TargetUnits, F> point = TransformPointSimple(aPoint);
       return Point4DTyped<TargetUnits, F>(point.x, point.y, 0, 1);
     }
 
@@ -2402,14 +2403,6 @@ class Matrix4x4TypedFlagged
                             _32, _33, _34, _41, _42, _43, _44, mType};
   }
 
- private:
-  Matrix4x4TypedFlagged(Float a11, Float a12, Float a13, Float a14, Float a21,
-                        Float a22, Float a23, Float a24, Float a31, Float a32,
-                        Float a33, Float a34, Float a41, Float a42, Float a43,
-                        Float a44, const MatrixType aType)
-      : Parent(a11, a12, a13, a14, a21, a22, a23, a24, a31, a32, a33, a34, a41,
-               a42, a43, a44),
-        mType(aType) {}
   static Matrix4x4TypedFlagged FromUnknownMatrix(
       const Matrix4x4Flagged& aUnknown) {
     return Matrix4x4TypedFlagged{
@@ -2419,12 +2412,21 @@ class Matrix4x4TypedFlagged
         aUnknown._44, aUnknown.mType};
   }
 
+ private:
+  Matrix4x4TypedFlagged(Float a11, Float a12, Float a13, Float a14, Float a21,
+                        Float a22, Float a23, Float a24, Float a31, Float a32,
+                        Float a33, Float a34, Float a41, Float a42, Float a43,
+                        Float a44, const MatrixType aType)
+      : Parent(a11, a12, a13, a14, a21, a22, a23, a24, a31, a32, a33, a34, a41,
+               a42, a43, a44),
+        mType(aType) {}
+
   template <class F>
   PointTyped<TargetUnits, F> TransformPointSimple(
       const PointTyped<SourceUnits, F>& aPoint) const {
     PointTyped<SourceUnits, F> temp;
-    temp.x = aPoint.x * _11 + aPoint.y * +_21 + _41;
-    temp.y = aPoint.x * _12 + aPoint.y * +_22 + _42;
+    temp.x = aPoint.x * _11 + aPoint.y * _21 + _41;
+    temp.y = aPoint.x * _12 + aPoint.y * _22 + _42;
     return temp;
   }
 

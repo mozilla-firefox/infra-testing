@@ -23,26 +23,33 @@ const statsExpectedByType = {
       "jitter",
       "lastPacketReceivedTimestamp",
       "headerBytesReceived",
-      // Always missing from libwebrtc stats
-      // "estimatedPlayoutTimestamp",
       "jitterBufferDelay",
+      "jitterBufferTargetDelay",
+      "jitterBufferMinimumDelay",
       "jitterBufferEmittedCount",
     ],
-    optional: ["remoteId", "nackCount", "qpSum"],
+    optional: ["remoteId", "nackCount", "qpSum", "estimatedPlayoutTimestamp"],
     localVideoOnly: [
       "firCount",
       "pliCount",
       "framesDecoded",
+      "keyFramesDecoded",
       "framesDropped",
       "discardedPackets",
       "framesPerSecond",
       "frameWidth",
       "frameHeight",
       "framesReceived",
+      "framesAssembledFromMultiplePackets",
       "totalDecodeTime",
       "totalInterFrameDelay",
       "totalProcessingDelay",
       "totalSquaredInterFrameDelay",
+      "pauseCount",
+      "totalPausesDuration",
+      "freezeCount",
+      "totalFreezesDuration",
+      "totalAssemblyTime",
     ],
     localAudioOnly: [
       "totalSamplesReceived",
@@ -211,16 +218,16 @@ const statsExpectedByType = {
       "bytesReceived",
       "lastPacketSentTimestamp",
       "lastPacketReceivedTimestamp",
+      "totalRoundTripTime",
+      "currentRoundTripTime",
+      "responsesReceived",
     ],
     optional: ["selected"],
     unimplemented: [
-      "totalRoundTripTime",
-      "currentRoundTripTime",
       "availableOutgoingBitrate",
       "availableIncomingBitrate",
       "requestsReceived",
       "requestsSent",
-      "responsesReceived",
       "responsesSent",
       "retransmissionsReceived",
       "retransmissionsSent",
@@ -349,6 +356,11 @@ function pedanticChecks(report) {
   report.forEach((statObj, mapKey) => {
     info(`"${mapKey} = ${JSON.stringify(statObj, null, 2)}`);
   });
+
+  // These matter when checking candidate-pair stats for bytes sent/received
+  let sending = false;
+  let receiving = false;
+
   // eslint-disable-next-line complexity
   report.forEach((statObj, mapKey) => {
     let tested = {};
@@ -382,6 +394,7 @@ function pedanticChecks(report) {
       date.getFullYear() > 1970,
       `${stat.type}.timestamp is relative to current time, date=${date}`
     );
+
     //
     // RTCStreamStats attributes with common behavior
     //
@@ -511,6 +524,8 @@ function pedanticChecks(report) {
     }
 
     if (stat.type == "inbound-rtp") {
+      receiving = true;
+
       //
       // Required fields
       //
@@ -587,18 +602,37 @@ function pedanticChecks(report) {
           `value=${stat.headerBytesReceived}`
       );
 
-      // Always missing from libwebrtc stats
       // estimatedPlayoutTimestamp
-      // ok(
-      //   stat.estimatedPlayoutTimestamp !== undefined,
-      //   `${stat.type}.estimatedPlayoutTimestamp has a value`
-      // );
+      if (stat.estimatedPlayoutTimestamp !== undefined) {
+        ok(
+          stat.estimatedPlayoutTimestamp < stat.timestamp + 100000,
+          `${stat.type}.estimatedPlayoutTimestamp is not too far in the future`
+        );
+        ok(
+          stat.estimatedPlayoutTimestamp > stat.timestamp - 100000,
+          `${stat.type}.estimatedPlayoutTimestamp is not too far in the past`
+        );
+      }
 
       // jitterBufferEmittedCount
       ok(
         stat.jitterBufferEmittedCount > 0,
         `${stat.type}.jitterBufferEmittedCount is a sane number for a short ` +
           `${stat.kind} test. value=${stat.jitterBufferEmittedCount}`
+      );
+
+      // jitterBufferTargetDelay
+      ok(
+        stat.jitterBufferTargetDelay >= 0,
+        `${stat.type}.jitterBufferTargetDelay is a sane number for a short ` +
+          `${stat.kind} test. value=${stat.jitterBufferTargetDelay}`
+      );
+
+      // jitterBufferMinimumDelay
+      ok(
+        stat.jitterBufferMinimumDelay >= 0,
+        `${stat.type}.jitterBufferMinimumDelay is a sane number for a short ` +
+          `${stat.kind} test. value=${stat.jitterBufferMinimumDelay}`
       );
 
       // jitterBufferDelay
@@ -752,6 +786,13 @@ function pedanticChecks(report) {
             `${stat.kind} test. value=${stat.framesDecoded}`
         );
 
+        // keyFramesDecoded
+        ok(
+          stat.keyFramesDecoded >= 0 && stat.keyFramesDecoded < 1000000,
+          `${stat.type}.keyFramesDecoded is a sane number for a short ` +
+            `${stat.kind} test. value=${stat.keyFramesDecoded}`
+        );
+
         // framesDropped
         ok(
           stat.framesDropped >= 0 && stat.framesDropped < 100,
@@ -782,7 +823,8 @@ function pedanticChecks(report) {
 
         // totalProcessingDelay
         ok(
-          stat.totalProcessingDelay < 1000,
+          stat.totalProcessingDelay <
+            (navigator.userAgent.includes("Android") ? 2000 : 1000),
           `${stat.type}.totalProcessingDelay is sane number for a short test ` +
             `local only test. value=${stat.totalProcessingDelay}`
         );
@@ -802,11 +844,55 @@ function pedanticChecks(report) {
             `value=${stat.totalSquaredInterFrameDelay}`
         );
 
+        // pauseCount
+        ok(
+          stat.pauseCount >= 0 && stat.pauseCount < 100,
+          `${stat.type}.pauseCount is a sane number for a short ` +
+            `${stat.kind} test. value=${stat.pauseCount}`
+        );
+
+        // totalPausesDuration
+        ok(
+          stat.totalPausesDuration >= 0 && stat.totalPausesDuration < 10000,
+          `${stat.type}.totalPausesDuration is sane for a short test. ` +
+            `value=${stat.totalPausesDuration}`
+        );
+
+        // freezeCount
+        ok(
+          stat.freezeCount >= 0 && stat.freezeCount < 100,
+          `${stat.type}.freezeCount is a sane number for a short ` +
+            `${stat.kind} test. value=${stat.freezeCount}`
+        );
+
+        // totalFreezesDuration
+        ok(
+          stat.totalFreezesDuration >= 0 && stat.totalFreezesDuration < 10000,
+          `${stat.type}.totalFreezesDuration is sane for a short test. ` +
+            `value=${stat.totalFreezesDuration}`
+        );
+
         // framesReceived
         ok(
           stat.framesReceived >= 0 && stat.framesReceived < 100000,
           `${stat.type}.framesReceived is a sane number for a short ` +
             `${stat.kind} test. value=${stat.framesReceived}`
+        );
+
+        // framesAssembledFromMultiplePackets
+        ok(
+          stat.framesAssembledFromMultiplePackets >= 0 &&
+            stat.framesAssembledFromMultiplePackets < 100,
+          `${stat.type}.framesAssembledFromMultiplePackets is a sane number ` +
+            `for a short ${stat.kind} test.` +
+            `value=${stat.framesAssembledFromMultiplePackets}`
+        );
+
+        // totalAssemblyTime
+        ok(
+          stat.totalAssemblyTime >= 0 && stat.totalAssemblyTime < 10000,
+          `${stat.type}.totalAssemblyTime is sane for a short test. ` +
+            `value=${stat.totalAssemblyTime}`
         );
       }
     } else if (stat.type == "remote-inbound-rtp") {
@@ -869,6 +955,8 @@ function pedanticChecks(report) {
           `${stat.kind} test. value=${stat.roundTripTimeMeasurements}`
       );
     } else if (stat.type == "outbound-rtp") {
+      sending = true;
+
       //
       // Required fields
       //
@@ -1407,6 +1495,41 @@ function pedanticChecks(report) {
           `(${stat.kind})`
       );
 
+      // totalRoundTripTime
+      ok(
+        stat.totalRoundTripTime !== undefined && stat.totalRoundTripTime >= 0,
+        `${stat.type}.totalRoundTripTime has a value. value=` +
+          `${stat.totalRoundTripTime} (${stat.kind})`
+      );
+
+      // currentRoundTripTime
+      ok(
+        stat.currentRoundTripTime !== undefined &&
+          stat.currentRoundTripTime >= 0,
+        `${stat.type}.currentRoundTripTime has a value. value=` +
+          `${stat.currentRoundTripTime} (${stat.kind})`
+      );
+
+      // responsesReceived
+      ok(
+        stat.responsesReceived !== undefined && stat.responsesReceived >= 0,
+        `${stat.type}.responsesReceived has a value. value=` +
+          `${stat.responsesReceived} (${stat.kind})`
+      );
+
+      const stateValues = [
+        "frozen",
+        "waiting",
+        "in-progress",
+        "failed",
+        "succeeded",
+        "cancelled",
+      ];
+      ok(
+        stateValues.includes(stat.state),
+        `${stat.type}.state '${stat.state}' not in ${stateValues}`
+      );
+
       // state
       if (
         stat.state == "succeeded" &&
@@ -1421,17 +1544,21 @@ function pedanticChecks(report) {
             `(${stat.kind})`
         );
 
+        const sentExpectation = sending ? 100 : 0;
+
         // bytesSent
         ok(
-          stat.bytesSent > 100,
-          `${stat.type}.bytesSent is a sane number (>100) if media is flowing. ` +
+          stat.bytesSent >= sentExpectation,
+          `${stat.type}.bytesSent is a sane number (>${sentExpectation}) if media is flowing. ` +
             `value=${stat.bytesSent}`
         );
 
+        const recvExpectation = receiving ? 100 : 0;
+
         // bytesReceived
         ok(
-          stat.bytesReceived > 100,
-          `${stat.type}.bytesReceived is a sane number (>100) if media is flowing. ` +
+          stat.bytesReceived >= recvExpectation,
+          `${stat.type}.bytesReceived is a sane number (>${recvExpectation}) if media is flowing. ` +
             `value=${stat.bytesReceived}`
         );
 

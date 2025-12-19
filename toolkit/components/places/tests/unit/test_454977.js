@@ -51,7 +51,7 @@ async function task_add_visit(aURI, aVisitType) {
     Assert.ok(stmt.executeStep());
     let placeId = stmt.getInt64(0);
     stmt.finalize();
-    Assert.ok(placeId > 0);
+    Assert.greater(placeId, 0);
     return placeId;
   }
   return 0;
@@ -59,10 +59,11 @@ async function task_add_visit(aURI, aVisitType) {
 
 /**
  * Checks for results consistency, using visit_count as constraint
- * @param   aExpectedCount
- *          Number of history results we are expecting (excluded hidden ones)
- * @param   aExpectedCountWithHidden
- *          Number of history results we are expecting (included hidden ones)
+ *
+ * @param {number} aExpectedCount
+ *   Number of history results we are expecting (excluded hidden ones).
+ * @param {number} aExpectedCountWithHidden
+ *   Number of history results we are expecting (included hidden ones).
  */
 function check_results(aExpectedCount, aExpectedCountWithHidden) {
   let query = PlacesUtils.history.getNewQuery();

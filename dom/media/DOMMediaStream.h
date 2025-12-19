@@ -7,14 +7,13 @@
 #define NSDOMMEDIASTREAM_H_
 
 #include "ImageContainer.h"
-
-#include "nsCycleCollectionParticipant.h"
-#include "nsWrapperCache.h"
-#include "nsIPrincipal.h"
 #include "MediaTrackConstraints.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/RelativeTimeline.h"
 #include "mozilla/WeakPtr.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsIPrincipal.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla {
 
@@ -36,12 +35,8 @@ class ImageContainer;
 class OverlayImage;
 }  // namespace layers
 
-#define NS_DOMMEDIASTREAM_IID                        \
-  {                                                  \
-    0x8cb65468, 0x66c0, 0x444e, {                    \
-      0x89, 0x9f, 0x89, 0x1d, 0x9e, 0xd2, 0xbe, 0x7c \
-    }                                                \
-  }
+#define NS_DOMMEDIASTREAM_IID \
+  {0x8cb65468, 0x66c0, 0x444e, {0x89, 0x9f, 0x89, 0x1d, 0x9e, 0xd2, 0xbe, 0x7c}}
 
 /**
  * DOMMediaStream is the implementation of the js-exposed MediaStream interface.
@@ -104,7 +99,7 @@ class DOMMediaStream : public DOMEventTargetHelper,
 
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(DOMMediaStream, DOMEventTargetHelper)
-  NS_DECLARE_STATIC_IID_ACCESSOR(NS_DOMMEDIASTREAM_IID)
+  NS_INLINE_DECL_STATIC_IID(NS_DOMMEDIASTREAM_IID)
 
   virtual JSObject* WrapObject(JSContext* aCx,
                                JS::Handle<JSObject*> aGivenProto) override;
@@ -248,8 +243,6 @@ class DOMMediaStream : public DOMEventTargetHelper,
   // True if this stream has live audio tracks.
   bool mAudible = false;
 };
-
-NS_DEFINE_STATIC_IID_ACCESSOR(DOMMediaStream, NS_DOMMEDIASTREAM_IID)
 
 }  // namespace mozilla
 

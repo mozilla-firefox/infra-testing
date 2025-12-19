@@ -198,38 +198,8 @@ bool wasm::CheckIsSubtypeOf(Decoder& d, const CodeMetadata& codeMeta,
 
 // Function body validation.
 
-struct NopOpDumper {
-  void dumpOpBegin(OpBytes op) {}
-  void dumpOpEnd() {}
-  void dumpTypeIndex(uint32_t typeIndex) {}
-  void dumpFuncIndex(uint32_t funcIndex) {}
-  void dumpTableIndex(uint32_t tableIndex) {}
-  void dumpGlobalIndex(uint32_t globalIndex) {}
-  void dumpMemoryIndex(uint32_t memoryIndex) {}
-  void dumpElemIndex(uint32_t elemIndex) {}
-  void dumpDataIndex(uint32_t dataIndex) {}
-  void dumpTagIndex(uint32_t tagIndex) {}
-  void dumpLocalIndex(uint32_t localIndex) {}
-  void dumpResultType(ResultType type) {}
-  void dumpI32Const(int32_t constant) {}
-  void dumpI64Const(int64_t constant) {}
-  void dumpF32Const(float constant) {}
-  void dumpF64Const(double constant) {}
-  void dumpV128Const(V128 constant) {}
-  void dumpVectorMask(V128 mask) {}
-  void dumpRefType(RefType type) {}
-  void dumpHeapType(RefType type) {}
-  void dumpValType(ValType type) {}
-  void dumpTryTableCatches(const TryTableCatchVector& catches) {}
-  void dumpLinearMemoryAddress(LinearMemoryAddress<Nothing> addr) {}
-  void dumpBlockDepth(uint32_t relativeDepth) {}
-  void dumpBlockDepths(const Uint32Vector& relativeDepths) {}
-  void dumpFieldIndex(uint32_t fieldIndex) {}
-  void dumpNumElements(uint32_t numElements) {}
-  void dumpLaneIndex(uint32_t laneIndex) {}
-};
-
-bool wasm::ValidateOps(ValidatingOpIter& iter, BaseOpDumper& dumper,
+template <class T>
+bool wasm::ValidateOps(ValidatingOpIter& iter, T& dumper,
                        const CodeMetadata& codeMeta) {
   while (true) {
     OpBytes op;
@@ -2096,18 +2066,12 @@ bool wasm::ValidateOps(ValidatingOpIter& iter, BaseOpDumper& dumper,
         break;
       }
       case uint16_t(Op::ThrowRef): {
-        if (!codeMeta.exnrefEnabled()) {
-          return iter.unrecognizedOpcode(&op);
-        }
         if (!iter.readThrowRef(&nothing)) {
           return false;
         }
         break;
       }
       case uint16_t(Op::TryTable): {
-        if (!codeMeta.exnrefEnabled()) {
-          return iter.unrecognizedOpcode(&op);
-        }
         TryTableCatchVector catches;
         if (!iter.readTryTable(&blockType, &catches)) {
           return false;
@@ -2436,6 +2400,13 @@ bool wasm::ValidateOps(ValidatingOpIter& iter, BaseOpDumper& dumper,
   MOZ_CRASH("unreachable");
 }
 
+template bool wasm::ValidateOps<NopOpDumper>(ValidatingOpIter& iter,
+                                             NopOpDumper& dumper,
+                                             const CodeMetadata& codeMeta);
+template bool wasm::ValidateOps<OpDumper>(ValidatingOpIter& iter,
+                                          OpDumper& dumper,
+                                          const CodeMetadata& codeMeta);
+
 bool wasm::ValidateFunctionBody(const CodeMetadata& codeMeta,
                                 uint32_t funcIndex, uint32_t bodySize,
                                 Decoder& d) {
@@ -2448,7 +2419,7 @@ bool wasm::ValidateFunctionBody(const CodeMetadata& codeMeta,
   }
 
   ValidatingOpIter iter(codeMeta, d, locals);
-  BaseOpDumper visitor;
+  NopOpDumper visitor;
 
   if (!iter.startFunction(funcIndex)) {
     return false;
@@ -2776,10 +2747,6 @@ static bool DecodeTypeSection(Decoder& d, CodeMetadata* codeMeta) {
     return false;
   }
 
-  if (numBytes > MaxStringBytes) {
-    return false;
-  }
-
   const uint8_t* bytes;
   if (!d.readBytes(numBytes, &bytes)) {
     return false;
@@ -2833,7 +2800,8 @@ static bool DecodeLimitBound(Decoder& d, AddressType addressType,
   return true;
 }
 
-static bool DecodeLimits(Decoder& d, LimitsKind kind, Limits* limits) {
+static bool DecodeLimits(Decoder& d, CodeMetadata* codeMeta, LimitsKind kind,
+                         Limits* limits) {
   uint8_t flags;
   if (!d.readFixedU8(&flags)) {
     return d.fail("expected flags");
@@ -2861,16 +2829,9 @@ static bool DecodeLimits(Decoder& d, LimitsKind kind, Limits* limits) {
     limits->shared = Shareable::False;
   }
 
-#ifdef ENABLE_WASM_MEMORY64
   limits->addressType = (flags & uint8_t(LimitsFlags::IsI64))
                             ? AddressType::I64
                             : AddressType::I32;
-#else
-  limits->addressType = AddressType::I32;
-  if (flags & uint8_t(LimitsFlags::IsI64)) {
-    return d.fail("i64 is not supported for memory or table limits");
-  }
-#endif
 
   uint64_t initial;
   if (!DecodeLimitBound(d, limits->addressType, &initial)) {
@@ -2895,16 +2856,49 @@ static bool DecodeLimits(Decoder& d, LimitsKind kind, Limits* limits) {
     limits->maximum.emplace(maximum);
   }
 
+  if (kind == LimitsKind::Memory) {
+    limits->pageSize = PageSize::Standard;
+#ifdef ENABLE_WASM_CUSTOM_PAGE_SIZES
+    if (flags & uint8_t(LimitsFlags::HasCustomPageSize)) {
+      if (!codeMeta->customPageSizesEnabled()) {
+        return d.fail("custom page sizes are disabled");
+      }
+
+      uint32_t customPageSize;
+      if (!d.readVarU32(&customPageSize)) {
+        return d.fail("failed to decode custom page size");
+      }
+
+      if (customPageSize == static_cast<uint32_t>(PageSize::Tiny)) {
+        limits->pageSize = PageSize::Tiny;
+      } else if (customPageSize != static_cast<uint32_t>(PageSize::Standard)) {
+        return d.fail("bad custom page size");
+      }
+    }
+#endif
+  }
+
   return true;
 }
 
-static bool DecodeTableTypeAndLimits(Decoder& d, CodeMetadata* codeMeta) {
+// Combined decoding for both table types and the augmented form of table types
+// that can include init expressions:
+//
+// https://wasm-dsl.github.io/spectec/core/binary/types.html#table-types
+// https://wasm-dsl.github.io/spectec/core/binary/modules.html#table-section
+//
+// Only defined tables are therefore allowed to have init expressions, not
+// imported tables.
+static bool DecodeTableType(Decoder& d, CodeMetadata* codeMeta, bool isImport) {
   bool initExprPresent = false;
   uint8_t typeCode;
   if (!d.peekByte(&typeCode)) {
     return d.fail("expected type code");
   }
   if (typeCode == (uint8_t)TypeCode::TableHasInitExpr) {
+    if (isImport) {
+      return d.fail("imported tables cannot have initializer expressions");
+    }
     d.uncheckedReadFixedU8();
     uint8_t flags;
     if (!d.readFixedU8(&flags) || flags != 0) {
@@ -2919,12 +2913,8 @@ static bool DecodeTableTypeAndLimits(Decoder& d, CodeMetadata* codeMeta) {
   }
 
   Limits limits;
-  if (!DecodeLimits(d, LimitsKind::Table, &limits)) {
+  if (!DecodeLimits(d, codeMeta, LimitsKind::Table, &limits)) {
     return false;
-  }
-
-  if (limits.addressType == AddressType::I64 && !codeMeta->memory64Enabled()) {
-    return d.fail("memory64 is disabled");
   }
 
   // If there's a maximum, check it is in range.  The check to exclude
@@ -2950,14 +2940,14 @@ static bool DecodeTableTypeAndLimits(Decoder& d, CodeMetadata* codeMeta) {
     }
     initExpr = Some(std::move(initializer));
   } else {
-    if (!tableElemType.isNullable()) {
+    if (!tableElemType.isNullable() && !isImport) {
       return d.fail("table with non-nullable references requires initializer");
     }
   }
 
   return codeMeta->tables.emplaceBack(limits, tableElemType,
                                       std::move(initExpr),
-                                      /* isAsmJS */ false);
+                                      /* isAsmJS */ false, isImport);
 }
 
 static bool DecodeGlobalType(Decoder& d, const SharedTypeContext& types,
@@ -2982,20 +2972,17 @@ static bool DecodeGlobalType(Decoder& d, const SharedTypeContext& types,
 
 static bool DecodeMemoryTypeAndLimits(Decoder& d, CodeMetadata* codeMeta,
                                       MemoryDescVector* memories) {
-  if (!codeMeta->features().multiMemory && codeMeta->numMemories() == 1) {
-    return d.fail("already have default memory");
-  }
-
   if (codeMeta->numMemories() >= MaxMemories) {
     return d.fail("too many memories");
   }
 
   Limits limits;
-  if (!DecodeLimits(d, LimitsKind::Memory, &limits)) {
+  if (!DecodeLimits(d, codeMeta, LimitsKind::Memory, &limits)) {
     return false;
   }
 
-  uint64_t maxField = MaxMemoryPagesValidation(limits.addressType);
+  uint64_t maxField =
+      MaxMemoryPagesValidation(limits.addressType, limits.pageSize);
 
   if (limits.initial > maxField) {
     return d.fail("initial memory size too big");
@@ -3008,10 +2995,6 @@ static bool DecodeMemoryTypeAndLimits(Decoder& d, CodeMetadata* codeMeta,
   if (limits.shared == Shareable::True &&
       codeMeta->sharedMemoryEnabled() == Shareable::False) {
     return d.fail("shared memory is disabled");
-  }
-
-  if (limits.addressType == AddressType::I64 && !codeMeta->memory64Enabled()) {
-    return d.fail("memory64 is disabled");
   }
 
   return memories->emplaceBack(MemoryDesc(limits));
@@ -3078,16 +3061,17 @@ static bool DecodeImport(Decoder& d, CodeMetadata* codeMeta,
       break;
     }
     case DefinitionKind::Table: {
-      if (!DecodeTableTypeAndLimits(d, codeMeta)) {
+      if (!DecodeTableType(d, codeMeta, /*isImport=*/true)) {
         return false;
       }
-      codeMeta->tables.back().isImported = true;
       break;
     }
     case DefinitionKind::Memory: {
       if (!DecodeMemoryTypeAndLimits(d, codeMeta, &codeMeta->memories)) {
         return false;
       }
+      codeMeta->memories.back().importIndex =
+          Some(moduleMeta->imports.length());
       break;
     }
     case DefinitionKind::Global: {
@@ -3302,7 +3286,7 @@ static bool DecodeTableSection(Decoder& d, CodeMetadata* codeMeta) {
   }
 
   for (uint32_t i = 0; i < numTables; ++i) {
-    if (!DecodeTableTypeAndLimits(d, codeMeta)) {
+    if (!DecodeTableType(d, codeMeta, /*isImport=*/false)) {
       return false;
     }
   }
@@ -3322,10 +3306,6 @@ static bool DecodeMemorySection(Decoder& d, CodeMetadata* codeMeta) {
   uint32_t numMemories;
   if (!d.readVarU32(&numMemories)) {
     return d.fail("failed to read number of memories");
-  }
-
-  if (!codeMeta->features().multiMemory && numMemories > 1) {
-    return d.fail("the number of memories must be at most one");
   }
 
   for (uint32_t i = 0; i < numMemories; ++i) {
@@ -3832,7 +3812,7 @@ bool wasm::StartsCodeSection(const uint8_t* begin, const uint8_t* end,
     }
 
     if (id == uint8_t(SectionId::Code)) {
-      if (range.size > MaxCodeSectionBytes) {
+      if (range.size() > MaxCodeSectionBytes) {
         return false;
       }
 
@@ -3840,7 +3820,7 @@ bool wasm::StartsCodeSection(const uint8_t* begin, const uint8_t* end,
       return true;
     }
 
-    if (!d.readBytes(range.size)) {
+    if (!d.readBytes(range.size())) {
       return false;
     }
   }
@@ -4007,7 +3987,7 @@ bool wasm::DecodeModuleEnvironment(Decoder& d, CodeMetadata* codeMeta,
   }
 
   if (codeMeta->codeSectionRange &&
-      codeMeta->codeSectionRange->size > MaxCodeSectionBytes) {
+      codeMeta->codeSectionRange->size() > MaxCodeSectionBytes) {
     return d.fail("code section too big");
   }
 
@@ -4138,7 +4118,7 @@ static bool DecodeDataSection(Decoder& d, CodeMetadata* codeMeta,
       return d.fail("expected segment size");
     }
 
-    if (segRange.length > MaxDataSegmentLengthPages * PageSize) {
+    if (segRange.length > MaxDataSegmentLengthPages * StandardPageSizeBytes) {
       return d.fail("segment size too big");
     }
 
@@ -4281,7 +4261,7 @@ static bool DecodeNameSection(Decoder& d, CodeMetadata* codeMeta,
     goto finish;
   }
 
-  while (d.currentOffset() < range->end()) {
+  while (d.currentOffset() < range->end) {
     if (!d.skipNameSubsection()) {
       goto finish;
     }

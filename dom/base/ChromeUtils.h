@@ -39,6 +39,7 @@ class PrecompiledScript;
 class Promise;
 struct ProcessActorOptions;
 struct WindowActorOptions;
+class WindowProxyHolder;
 
 class ChromeUtils {
  private:
@@ -200,13 +201,27 @@ class ChromeUtils {
                                  const dom::ClearResourceCacheOptions& aOptions,
                                  ErrorResult& aRv);
 
-  static void SetPerfStatsCollectionMask(GlobalObject& aGlobal, uint64_t aMask);
+  static void InvalidateResourceCache(GlobalObject& aGlobal, ErrorResult& aRv);
+
+  static void ClearBfcacheByPrincipal(GlobalObject& aGlobal,
+                                      nsIPrincipal* aPrincipal,
+                                      ErrorResult& aRv);
+
+  static void EnableAllPerfStatsFeatures(GlobalObject& aGlobal);
+
+  static void SetPerfStatsFeatures(GlobalObject& aGlobal,
+                                   const Sequence<nsString>& aMetrics);
 
   static already_AddRefed<Promise> CollectPerfStats(GlobalObject& aGlobal,
                                                     ErrorResult& aRv);
 
   static already_AddRefed<Promise> RequestProcInfo(GlobalObject& aGlobal,
                                                    ErrorResult& aRv);
+
+  static uint64_t GetCurrentProcessMemoryUsage(GlobalObject& aGlobal,
+                                               ErrorResult& aRv);
+  static uint64_t GetCpuTimeSinceProcessStart(GlobalObject& aGlobal,
+                                              ErrorResult& aRv);
 
   static bool VsyncEnabled(GlobalObject& aGlobal);
 
@@ -260,7 +275,8 @@ class ChromeUtils {
 
   static void ResetLastExternalProtocolIframeAllowed(GlobalObject& aGlobal);
 
-  static void EndWheelTransaction(GlobalObject& aGlobal);
+  static already_AddRefed<Promise> EndWheelTransaction(
+      GlobalObject& aGlobal, WindowProxyHolder& aWindow, ErrorResult& aRv);
 
   static void RegisterWindowActor(const GlobalObject& aGlobal,
                                   const nsACString& aName,
@@ -309,6 +325,8 @@ class ChromeUtils {
 
   static double DateNow(GlobalObject&);
 
+  static double Now(GlobalObject&);
+
   static void EnsureJSOracleStarted(GlobalObject&);
 
   static unsigned AliveUtilityProcesses(const GlobalObject&);
@@ -320,6 +338,18 @@ class ChromeUtils {
       GlobalObject& aGlobal, JSRFPTarget aTarget,
       nsIRFPTargetSetIDL* aOverriddenFingerprintingSettings,
       const Optional<bool>& aIsPBM);
+
+  static void CallFunctionAndLogException(GlobalObject& aGlobal,
+                                          JS::Handle<JS::Value> aTargetGlobal,
+                                          JS::Handle<JS::Value> aFunction,
+                                          JS::MutableHandle<JS::Value> aRetval,
+                                          ErrorResult& aRv);
+
+  static Nullable<bool> GetGlobalWindowCommandEnabled(GlobalObject&,
+                                                      const nsACString& aName);
+
+  static void EncodeURIForSrcset(GlobalObject&, const nsACString& aIn,
+                                 nsACString& aOut);
 
 #ifdef MOZ_WMF_CDM
   static already_AddRefed<Promise> GetWMFContentDecryptionModuleInformation(
@@ -337,9 +367,10 @@ class ChromeUtils {
 
   static bool IsJSIdentifier(GlobalObject& aGlobal, const nsAString& aStr);
 
- private:
-  // Number of DevTools session debugging the current process
-  static std::atomic<uint32_t> sDevToolsOpenedCount;
+  static already_AddRefed<Promise> FetchDecodedImage(GlobalObject& aGlobal,
+                                                     nsIURI* aURI,
+                                                     nsIChannel* aChannel,
+                                                     ErrorResult& aRv);
 };
 
 }  // namespace dom

@@ -28,7 +28,7 @@ add_task(async function test_history() {
   EventUtils.synthesizeKey("KEY_Tab");
   isnot(
     UrlbarTestUtils.getSelectedElement(window),
-    UrlbarTestUtils.getButtonForResultIndex(window, "menu", resultIndex),
+    UrlbarTestUtils.getButtonForResultIndex(window, "result-menu", resultIndex),
     "Tab key skips over menu button with resultMenu.keyboardAccessible pref set to false"
   );
   info(
@@ -44,7 +44,7 @@ add_task(async function test_history() {
   EventUtils.synthesizeKey("KEY_Tab");
   is(
     UrlbarTestUtils.getSelectedElement(window),
-    UrlbarTestUtils.getButtonForResultIndex(window, "menu", resultIndex),
+    UrlbarTestUtils.getButtonForResultIndex(window, "result-menu", resultIndex),
     "Tab key doesn't skip over menu button with resultMenu.keyboardAccessible pref reset to true"
   );
 
@@ -142,7 +142,7 @@ add_task(async function test_remove_search_history() {
       break;
     }
   }
-  Assert.ok(resultIndex < count, "Result found");
+  Assert.less(resultIndex, count, "Result found");
 
   await UrlbarTestUtils.openResultMenuAndPressAccesskey(window, "R", {
     resultIndex,
@@ -185,18 +185,18 @@ add_task(async function firefoxSuggest() {
   let provider = new UrlbarTestUtils.TestProvider({
     priority: Infinity,
     results: [
-      new UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.URL,
-        UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-        {
+      new UrlbarResult({
+        type: UrlbarUtils.RESULT_TYPE.URL,
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        payload: {
           url,
           isBlockable: true,
           helpUrl,
           helpL10n: {
             id: "urlbar-result-menu-learn-more-about-firefox-suggest",
           },
-        }
-      ),
+        },
+      }),
     ],
   });
 

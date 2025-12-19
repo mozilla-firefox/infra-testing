@@ -151,8 +151,9 @@ def vendor_puppeteer(command_context, repository, commitish, install):
             exit_on_fail=False,
         )
 
+        # Always use the `ci` command to not get updated sub-dependencies installed.
         run_npm(
-            "install",
+            "ci",
             cwd=os.path.join(command_context.topsrcdir, puppeteer_dir),
             env=env,
         )
@@ -384,7 +385,7 @@ class TemporaryDirectory:
 
 class PuppeteerRunner(MozbuildObject):
     def __init__(self, *args, **kwargs):
-        super(PuppeteerRunner, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         self.remotedir = os.path.join(self.topsrcdir, "remote")
         self.puppeteer_dir = os.path.join(self.remotedir, "test", "puppeteer")
@@ -434,7 +435,7 @@ class PuppeteerRunner(MozbuildObject):
         env = {
             # Checked by Puppeteer's custom mocha config
             "CI": "1",
-            # Print browser process ouptut
+            # Print browser process output
             "DUMPIO": "1",
             # Run in headless mode if trueish, otherwise use headful
             "HEADLESS": str(headless),

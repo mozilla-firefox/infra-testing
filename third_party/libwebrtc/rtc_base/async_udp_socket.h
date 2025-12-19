@@ -16,6 +16,8 @@
 #include <memory>
 #include <optional>
 
+#include "absl/base/nullability.h"
+#include "api/environment/environment.h"
 #include "api/sequence_checker.h"
 #include "api/units/time_delta.h"
 #include "rtc_base/async_packet_socket.h"
@@ -26,33 +28,32 @@
 #include "rtc_base/system/no_unique_address.h"
 #include "rtc_base/thread_annotations.h"
 
-namespace rtc {
+namespace webrtc {
 
 // Provides the ability to receive packets asynchronously.  Sends are not
 // buffered since it is acceptable to drop packets under high load.
 class AsyncUDPSocket : public AsyncPacketSocket {
  public:
-  // Binds `socket` and creates AsyncUDPSocket for it. Takes ownership
-  // of `socket`. Returns null if bind() fails (`socket` is destroyed
-  // in that case).
-  static AsyncUDPSocket* Create(Socket* socket,
-                                const SocketAddress& bind_address);
   // Creates a new socket for sending asynchronous UDP packets using an
   // asynchronous socket from the given factory.
-  static AsyncUDPSocket* Create(SocketFactory* factory,
-                                const SocketAddress& bind_address);
-  explicit AsyncUDPSocket(Socket* socket);
+  static absl_nullable std::unique_ptr<AsyncUDPSocket> Create(
+      const Environment& env,
+      const SocketAddress& bind_address,
+      SocketFactory& factory);
+
+  AsyncUDPSocket(const Environment& env,
+                 absl_nonnull std::unique_ptr<Socket> socket);
   ~AsyncUDPSocket() = default;
 
   SocketAddress GetLocalAddress() const override;
   SocketAddress GetRemoteAddress() const override;
   int Send(const void* pv,
            size_t cb,
-           const rtc::PacketOptions& options) override;
+           const AsyncSocketPacketOptions& options) override;
   int SendTo(const void* pv,
              size_t cb,
              const SocketAddress& addr,
-             const rtc::PacketOptions& options) override;
+             const AsyncSocketPacketOptions& options) override;
   int Close() override;
 
   State GetState() const override;
@@ -67,14 +68,16 @@ class AsyncUDPSocket : public AsyncPacketSocket {
   // Called when the underlying socket is ready to send.
   void OnWriteEvent(Socket* socket);
 
-  RTC_NO_UNIQUE_ADDRESS webrtc::SequenceChecker sequence_checker_;
+  const Environment env_;
+  RTC_NO_UNIQUE_ADDRESS SequenceChecker sequence_checker_;
   std::unique_ptr<Socket> socket_;
   bool has_set_ect1_options_ = false;
-  rtc::Buffer buffer_ RTC_GUARDED_BY(sequence_checker_);
-  std::optional<webrtc::TimeDelta> socket_time_offset_
+  Buffer buffer_ RTC_GUARDED_BY(sequence_checker_);
+  std::optional<TimeDelta> socket_time_offset_
       RTC_GUARDED_BY(sequence_checker_);
 };
 
-}  // namespace rtc
+}  //  namespace webrtc
+
 
 #endif  // RTC_BASE_ASYNC_UDP_SOCKET_H_

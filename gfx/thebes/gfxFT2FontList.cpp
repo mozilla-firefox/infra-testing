@@ -3,7 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Base64.h"
 #include "mozilla/MemoryReporting.h"
 
@@ -32,7 +31,9 @@
 #include "gfxUserFontSet.h"
 #include "gfxFontUtils.h"
 #include "SharedFontList-impl.h"
+#define StandardFonts
 #include "StandardFonts-android.inc"
+#undef StandardFonts
 #include "harfbuzz/hb-ot.h"  // for name ID constants
 
 #include "nsServiceManagerUtils.h"
@@ -136,7 +137,7 @@ already_AddRefed<SharedFTFace> FT2FontEntry::GetFTFace(bool aCommit) {
   if (aCommit) {
     if (mFTFace.compareExchange(nullptr, face.get())) {
       // The reference we created is now owned by mFTFace.
-      Unused << face.forget();
+      face.forget().leak();
     } else {
       // We lost a race! Just discard our new face and use the existing one.
     }
@@ -378,7 +379,7 @@ nsresult FT2FontEntry::ReadCMAP(FontInfoData* aFontInfoData) {
     return NS_OK;
   }
 
-  RefPtr<gfxCharacterMap> charmap = new gfxCharacterMap();
+  RefPtr<gfxCharacterMap> charmap = new gfxCharacterMap(256);
 
   nsresult rv = NS_ERROR_NOT_AVAILABLE;
   uint32_t uvsOffset = 0;
@@ -414,9 +415,20 @@ nsresult FT2FontEntry::ReadCMAP(FontInfoData* aFontInfoData) {
         charmap->ClearRange(sr->rangeStart, sr->rangeEnd);
       }
     }
+
+    // Bug 1980258: the Cutive Mono font, widely present on Android, has
+    // spurious blank glyphs for several codepoints. Mask them out, to avoid
+    // the risk of font fallback using it (resulting in blank characters).
+    if (FamilyName().EqualsLiteral("Cutive Mono")) {
+      charmap->ClearRange(0x0080, 0x009f);  // C1 controls: not all present,
+                                            // but let's just mask the block.
+      charmap->clear(0x2074);               // superscript four
+      charmap->clear(0xfb00);               // ff ligature
+      charmap->ClearRange(0xfb03, 0xfb04);  // ffi, ffl
+    }
   }
 
-#ifdef MOZ_WIDGET_ANDROID
+#if defined(MOZ_WIDGET_ANDROID) && !defined(NIGHTLY_BUILD)
   // Hack for the SamsungDevanagari font, bug 1012365:
   // pretend the font supports U+0972.
   if (!charmap->test(0x0972) && charmap->test(0x0905) &&
@@ -440,13 +452,13 @@ nsresult FT2FontEntry::ReadCMAP(FontInfoData* aFontInfoData) {
     mHasCmapTable = true;
   } else {
     // if error occurred, initialize to null cmap
-    charmap = new gfxCharacterMap();
+    charmap = new gfxCharacterMap(0);
     mHasCmapTable = false;
   }
   if (setCharMap) {
     if (mCharacterMap.compareExchange(nullptr, charmap.get())) {
       // We forget rather than addref because we don't use the charmap below.
-      Unused << charmap.forget();
+      charmap.forget().leak();
     }
   }
 
@@ -1334,7 +1346,7 @@ gfxFT2FontList::GetFilteredPlatformFontLists() {
   static Device fontVisibilityDevice = Device::Unassigned;
   if (fontVisibilityDevice == Device::Unassigned) {
     nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
-    Unused << gfxInfo->GetFontVisibilityDetermination(&fontVisibilityDevice);
+    (void)gfxInfo->GetFontVisibilityDetermination(&fontVisibilityDevice);
   }
 
   nsTArray<std::pair<const char**, uint32_t>> fontLists;
@@ -1577,17 +1589,15 @@ void gfxFT2FontList::FindFonts() {
   bool useSystemFontAPI = !gfxAndroidPlatform::IsFontAPIDisabled();
 
   if (useSystemFontAPI) {
-    gfxAndroidPlatform::WaitForInitializeFontAPI();
-
     bool noFontByFontAPI = true;
-    AndroidSystemFontIterator iter;
-    if (iter.Init()) {
+    if (__builtin_available(android 29, *)) {
+      gfxAndroidPlatform::WaitForInitializeFontAPI();
+      AndroidSystemFontIterator iter;
       while (Maybe<AndroidFont> androidFont = iter.Next()) {
-        if (const char* fontPath = androidFont->GetFontFilePath()) {
-          noFontByFontAPI = false;
-          AppendFacesFromFontFile(nsDependentCString(fontPath),
-                                  mFontNameCache.get(), kStandard);
-        }
+        const char* _Nonnull fontPath = androidFont->GetFontFilePath();
+        noFontByFontAPI = false;
+        AppendFacesFromFontFile(nsDependentCString(fontPath),
+                                mFontNameCache.get(), kStandard);
       }
     }
 
@@ -1859,22 +1869,23 @@ gfxFontEntry* gfxFT2FontList::CreateFontEntry(fontlist::Face* aFace,
 // called for each family name, based on the assumption that the
 // first part of the full name is the family name
 
-gfxFontEntry* gfxFT2FontList::LookupLocalFont(nsPresContext* aPresContext,
-                                              const nsACString& aFontName,
-                                              WeightRange aWeightForEntry,
-                                              StretchRange aStretchForEntry,
-                                              SlantStyleRange aStyleForEntry) {
+gfxFontEntry* gfxFT2FontList::LookupLocalFont(
+    FontVisibilityProvider* aFontVisibilityProvider,
+    const nsACString& aFontName, WeightRange aWeightForEntry,
+    StretchRange aStretchForEntry, SlantStyleRange aStyleForEntry) {
   AutoLock lock(mLock);
 
   if (SharedFontList()) {
-    return LookupInSharedFaceNameList(aPresContext, aFontName, aWeightForEntry,
-                                      aStretchForEntry, aStyleForEntry);
+    return LookupInSharedFaceNameList(aFontVisibilityProvider, aFontName,
+                                      aWeightForEntry, aStretchForEntry,
+                                      aStyleForEntry);
   }
 
   // walk over list of names
   FT2FontEntry* fontEntry = nullptr;
-  FontVisibility level =
-      aPresContext ? aPresContext->GetFontVisibility() : FontVisibility::User;
+  FontVisibility level = aFontVisibilityProvider
+                             ? aFontVisibilityProvider->GetFontVisibility()
+                             : FontVisibility::User;
 
   for (const RefPtr<gfxFontFamily>& fontFamily : mFontFamilies.Values()) {
     if (!IsVisibleToCSS(*fontFamily, level)) {
@@ -1929,13 +1940,13 @@ searchDone:
 }
 
 FontFamily gfxFT2FontList::GetDefaultFontForPlatform(
-    nsPresContext* aPresContext, const gfxFontStyle* aStyle,
+    FontVisibilityProvider* aFontVisibilityProvider, const gfxFontStyle* aStyle,
     nsAtom* aLanguage) {
   FontFamily ff;
 #if defined(MOZ_WIDGET_ANDROID)
-  ff = FindFamily(aPresContext, "Roboto"_ns);
+  ff = FindFamily(aFontVisibilityProvider, "Roboto"_ns);
   if (ff.IsNull()) {
-    ff = FindFamily(aPresContext, "Droid Sans"_ns);
+    ff = FindFamily(aFontVisibilityProvider, "Droid Sans"_ns);
   }
 #endif
   /* TODO: what about Qt or other platforms that may use this? */

@@ -9,6 +9,7 @@
 #include "nsWeakReference.h"
 #include "nsIRequest.h"
 #include "nsITRRSkipReason.h"
+#include "nsILoadInfo.h"
 
 #ifdef Status
 /* Xlib headers insist on this for some reason... Nuke it because
@@ -53,7 +54,7 @@ enum class ExtendedCONNECTSupport { UNSURE, NO_SUPPORT, SUPPORTED };
 
 class nsAHttpTransaction : public nsSupportsWeakReference {
  public:
-  NS_DECLARE_STATIC_IID_ACCESSOR(NS_AHTTPTRANSACTION_IID)
+  NS_INLINE_DECL_STATIC_IID(NS_AHTTPTRANSACTION_IID)
 
   // called by the connection when it takes ownership of the transaction.
   virtual void SetConnection(nsAHttpConnection*) = 0;
@@ -181,6 +182,10 @@ class nsAHttpTransaction : public nsSupportsWeakReference {
   virtual bool IsHttp2Websocket() { return false; }
   virtual void SetTRRInfo(nsIRequest::TRRMode aMode,
                           TRRSkippedReason aSkipReason) {};
+  virtual bool AllowedToConnectToIpAddressSpace(
+      nsILoadInfo::IPAddressSpace aTargetIpAddressSpace) {
+    return true;
+  };
 
   // We call this function if we want to use alt-svc host again on the next
   // restart. If this function is not called on the next restart the
@@ -229,9 +234,10 @@ class nsAHttpTransaction : public nsSupportsWeakReference {
   virtual bool IsForWebTransport() { return false; }
   virtual bool IsResettingForTunnelConn() { return false; }
   virtual void SetResettingForTunnelConn(bool aValue) {}
-};
 
-NS_DEFINE_STATIC_IID_ACCESSOR(nsAHttpTransaction, NS_AHTTPTRANSACTION_IID)
+  virtual void InvokeCallback() {}
+  virtual bool IsForFallback() { return false; }
+};
 
 #define NS_DECL_NSAHTTPTRANSACTION                                             \
   void SetConnection(nsAHttpConnection*) override;                             \

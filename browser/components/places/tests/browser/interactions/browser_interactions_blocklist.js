@@ -10,10 +10,16 @@ const BLOCKED_TEST_URL = "https://example.com/browser";
 
 ChromeUtils.defineESModuleGetters(this, {
   FilterAdult: "resource:///modules/FilterAdult.sys.mjs",
-  InteractionsBlocklist: "resource:///modules/InteractionsBlocklist.sys.mjs",
+  InteractionsBlocklist:
+    "moz-src:///browser/components/places/InteractionsBlocklist.sys.mjs",
+  sinon: "resource://testing-common/Sinon.sys.mjs",
 });
 
 add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["test.wait300msAfterTabSwitch", true]],
+  });
+
   let oldBlocklistValue = Services.prefs.getStringPref(
     "places.interactions.customBlocklist",
     "[]"
@@ -37,7 +43,7 @@ add_setup(async function () {
 async function loadBlockedUrl(expectRecording) {
   await Interactions.reset();
   await BrowserTestUtils.withNewTab(ALLOWED_TEST_URL, async browser => {
-    Interactions._pageViewStartTime = Cu.now() - 10000;
+    Interactions._pageViewStartTime = ChromeUtils.now() - 10000;
 
     BrowserTestUtils.startLoadingURIString(browser, BLOCKED_TEST_URL);
     await BrowserTestUtils.browserLoaded(browser, false, BLOCKED_TEST_URL);
@@ -49,7 +55,7 @@ async function loadBlockedUrl(expectRecording) {
       },
     ]);
 
-    Interactions._pageViewStartTime = Cu.now() - 20000;
+    Interactions._pageViewStartTime = ChromeUtils.now() - 20000;
 
     BrowserTestUtils.startLoadingURIString(browser, "about:blank");
     await BrowserTestUtils.browserLoaded(browser, false, "about:blank");
@@ -99,7 +105,14 @@ add_task(async function test_regexp() {
 });
 
 add_task(async function test_adult() {
-  FilterAdult.addDomainToList("https://example.com/browser");
+  let sandbox = sinon.createSandbox();
+  sandbox
+    .stub(FilterAdult, "isAdultUrl")
+    .returns(false)
+    .withArgs(BLOCKED_TEST_URL)
+    .returns(true);
+
   await loadBlockedUrl(false);
-  FilterAdult.removeDomainFromList("https://example.com/browser");
+
+  sandbox.restore();
 });

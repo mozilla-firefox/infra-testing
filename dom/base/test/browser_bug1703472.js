@@ -9,6 +9,7 @@ const BASE_URL = "http://mochi.test:8888/browser/dom/base/test/";
 add_task(async function bug1703472() {
   await SpecialPowers.pushPrefEnv({
     set: [
+      ["test.wait300msAfterTabSwitch", true],
       // Enable the popup blocker
       ["dom.disable_open_during_load", true],
     ],
@@ -17,14 +18,15 @@ add_task(async function bug1703472() {
   await BrowserTestUtils.withNewTab(
     BASE_URL + "file_bug1703472.html",
     async function (browser) {
-      info("Opening popup");
+      info("Opening about:blank popup");
       let win = await newFocusedWindow(function () {
         return BrowserTestUtils.synthesizeMouseAtCenter(
           "#openWindow",
           {},
           browser
         );
-      });
+      }, true);
+      is(Services.focus.focusedWindow, win, "New window should be focused");
 
       info("re-focusing the original window");
       {

@@ -3,20 +3,20 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
 ort.jsep.wasm:
-    description: Onnx runtime wasm SIMD, threaded and JSEP 1.22.0-dev.20250306-ccf8fdd9ea
+    description: Onnx runtime wasm SIMD, threaded and JSEP 1.22.0-dev.20250409-89f8206ba4
     fetch:
         type: static-url
-        url: https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0-dev.20250306-ccf8fdd9ea/dist/ort-wasm-simd-threaded.jsep.wasm
-        sha256: 9b97d6fc585b8a3f93aa7fe13c64156bc65dcc4cf5b9462c84428a60fcb8113e
-        size: 23929658
+        url: https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0-dev.20250409-89f8206ba4/dist/ort-wasm-simd-threaded.jsep.wasm
+        sha256: c46655e8a94afc45338d4cb2b840475f88e5012d524509916e505079c00bfa39
+        size: 21596019
 
 wllama.wasm:
     description: Llama.cpp WASM files
     fetch:
         type: static-url
-        url: https://storage.googleapis.com/moz-model-hub/wasm/3.0.4/wllama.wasm
-        sha256: a46b325da7a75012b268fdec4a078c6b32a7dd29834af39f7dabe47906f941b1
-        size: 1555738
+        url: https://storage.googleapis.com/moz-model-hub/wasm/2.3.1/wllama.wasm
+        sha256: d7e1cd83a4ee7a3cb460be6c8b7762dfa2a992269786101dc4c5e4517c9177a3
+        size: 1762319
 
 xenova-all-minilm-l6-v2:
     description: feature extraction model
@@ -77,7 +77,7 @@ mozilla-smart-tab-topic:
     fetch:
         type: git
         repo: https://huggingface.co/Mozilla/smart-tab-topic
-        revision: 4d6d7848b9ee62ce4a6db08c69f6ab698cb671d1
+        revision: b0fd1b23dcb06bb68b5d60d18c7b1524c65a94af
         path-prefix: "onnx-models/Mozilla/smart-tab-topic/main/"
         artifact-name: smart-tab-topic.tar.zst
 
@@ -98,3 +98,40 @@ smollm2-360-instruct-gguf:
         revision: 593b5a2e04c8f3e4ee880263f93e0bd2901ad47f
         path-prefix: "onnx-models/HuggingFaceTB/SmolLM2-360M-Instruct-GGUF/main/"
         artifact-name: smollm2-360-instruct-gguf.tar.zst
+
+Qwen3-0.6B-GGUF:
+    description: Qwen3-0.6B summarization model GGUF
+    fetch:
+        type: git
+        repo: https://huggingface.co/unsloth/Qwen3-0.6B-GGUF
+        revision: 233b3855f89029f46416b3e8fe5970c79b2ad25d
+        path-prefix: "onnx-models/unsloth/Qwen3-0.6B-GGUF/main/"
+        artifact-name: Qwen3-0.6B-GGUF.tar.zst
+
+
+speecht5-tts:
+    description: microsoft/speecht5_tts with ONNX weights to be compatible with Transformers.js
+    fetch:
+        type: git
+        repo: https://huggingface.co/Xenova/speecht5_tts
+        revision: 73001d8bf5a9a7532c9cede52b5d3c21936939b1
+        path-prefix: "onnx-models/Xenova/speecht5_tts/main/"
+        artifact-name: speecht5_tts.tar.zst
+
+speecht5-tts-vocoder:
+    description: vocoder for speecht5_tts
+    fetch:
+        type: git
+        repo: https://huggingface.co/Xenova/speecht5_hifigan
+        revision: 05bbb2dea568f207f71113f71c9ecc216840238e
+        path-prefix: "onnx-models/Xenova/speecht5_hifigan/main/"
+        artifact-name: speecht5_tts_hifigan.tar.zst
+
+speecht5-tts-speaker:
+    description: speaker embedding for speecht5_tts
+    fetch:
+        type: git
+        repo: https://huggingface.co/datasets/Xenova/transformers.js-docs
+        revision: 4cc21eccd7f4ad1174c2f721c02468e43bf39b60
+        path-prefix: "onnx-models/Xenova/transformers.js-docs/main/"
+        artifact-name: speecht5_tts_speaker_embedding.tar.zst

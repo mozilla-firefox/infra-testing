@@ -26,7 +26,7 @@
 #include "test/gtest.h"
 #include "test/wait_until.h"
 
-namespace rtc {
+namespace webrtc {
 
 class RTCCertificateGeneratorFixture {
  public:
@@ -72,10 +72,9 @@ class RTCCertificateGeneratorFixture {
 class RTCCertificateGeneratorTest : public ::testing::Test {
  public:
  protected:
-  static constexpr webrtc::TimeDelta kGenerationTimeoutMs =
-      webrtc::TimeDelta::Millis(10000);
+  static constexpr TimeDelta kGenerationTimeoutMs = TimeDelta::Millis(10000);
 
-  rtc::AutoThread main_thread_;
+  AutoThread main_thread_;
   RTCCertificateGeneratorFixture fixture_;
 };
 
@@ -98,10 +97,9 @@ TEST_F(RTCCertificateGeneratorTest, GenerateAsyncECDSA) {
   // posted to this thread (which is done by `EXPECT_TRUE_WAIT`).
   EXPECT_FALSE(fixture_.GenerateAsyncCompleted());
   EXPECT_FALSE(fixture_.certificate());
-  EXPECT_THAT(
-      webrtc::WaitUntil([&] { return fixture_.GenerateAsyncCompleted(); },
+  EXPECT_THAT(WaitUntil([&] { return fixture_.GenerateAsyncCompleted(); },
                         ::testing::IsTrue(), {.timeout = kGenerationTimeoutMs}),
-      webrtc::IsRtcOk());
+              IsRtcOk());
   EXPECT_TRUE(fixture_.certificate());
 }
 
@@ -141,11 +139,10 @@ TEST_F(RTCCertificateGeneratorTest, GenerateWithInvalidParamsShouldFail) {
 
   fixture_.generator()->GenerateCertificateAsync(invalid_params, std::nullopt,
                                                  fixture_.OnGenerated());
-  EXPECT_THAT(
-      webrtc::WaitUntil([&] { return fixture_.GenerateAsyncCompleted(); },
+  EXPECT_THAT(WaitUntil([&] { return fixture_.GenerateAsyncCompleted(); },
                         ::testing::IsTrue(), {.timeout = kGenerationTimeoutMs}),
-      webrtc::IsRtcOk());
+              IsRtcOk());
   EXPECT_FALSE(fixture_.certificate());
 }
 
-}  // namespace rtc
+}  // namespace webrtc

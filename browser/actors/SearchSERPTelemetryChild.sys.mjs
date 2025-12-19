@@ -8,7 +8,7 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   clearTimeout: "resource://gre/modules/Timer.sys.mjs",
-  SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
+  SearchUtils: "moz-src:///toolkit/components/search/SearchUtils.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
 
@@ -210,7 +210,7 @@ class ListenerHelper {
    * @param {EventListenerParam} eventListenerParam
    * @param {string} target
    * @param {Function} callback
-   * @returns {Array<function>} Array of remove event listener functions.
+   * @returns {Array<Function>} Array of remove event listener functions.
    */
   static addListener(elements, eventListenerParam, target, callback) {
     let { action, eventType, target: customTarget } = eventListenerParam;
@@ -233,7 +233,7 @@ class ListenerHelper {
       if (CONDITIONS[eventListenerParam.condition]) {
         let condition = CONDITIONS[eventListenerParam.condition];
         eventCallback = async event => {
-          let start = Cu.now();
+          let start = ChromeUtils.now();
           if (condition(event)) {
             callback({ action, target });
           }
@@ -527,25 +527,12 @@ class SearchAdImpression {
       return "";
     }
 
-    // Avoid extracting or fixing up Javascript URLs.
-    if (href.startsWith("javascript")) {
+    let url = URL.parse(href, origin);
+    if (!url || (url.protocol !== "https:" && url.protocol !== "http:")) {
       return "";
     }
 
-    // Hrefs can be relative.
-    if (!href.startsWith("https://") && !href.startsWith("http://")) {
-      href = origin + href;
-    }
-    // Per Bug 376844, apostrophes in query params are escaped, and thus, are
-    // percent-encoded by the time they are observed in the network. Even
-    // though it's more comprehensive, we avoid using newURI because its more
-    // expensive and conversions should be the exception.
-    // e.g. /path'?q=Mozilla's -> /path'?q=Mozilla%27s
-    let arr = href.split("?");
-    if (arr.length == 2 && arr[1].includes("'")) {
-      href = arr[0] + "?" + arr[1].replaceAll("'", "%27");
-    }
-    return href;
+    return url.href;
   }
 
   /**
@@ -763,7 +750,6 @@ class SearchAdImpression {
    * for this function, we either increment the ad count by 1 or don't increment the ad
    * count because the parent used `countChildren` completed the calculation in a
    * previous step.
-   *
    *
    * @param {HTMLAnchorElement} anchor
    *  The anchor to be inspected.
@@ -1298,7 +1284,8 @@ class DomainExtractor {
     }
   }
 
-  /* Given a list of elements, examine the text content for each element, which
+  /**
+   * Given a list of elements, examine the text content for each element, which
    * may be 1) a URL from which we can extract a domain or 2) text we can fix
    * up to create a best guess as to a URL. If either condition is met, we add
    * the domain to the result set.
@@ -1445,7 +1432,7 @@ export class SearchSERPTelemetryChild extends JSWindowActorChild {
    * the information associated with that provider.
    *
    * @param {string} url The url to check
-   * @returns {array|null} Returns null if there's no match, otherwise an array
+   * @returns {Array | null} Returns null if there's no match, otherwise an array
    *   of provider name and the provider information.
    */
   _getProviderInfoForUrl(url) {
@@ -1511,7 +1498,7 @@ export class SearchSERPTelemetryChild extends JSWindowActorChild {
       (eventType == "load" || eventType == "pageshow")
     ) {
       // Start performance measurements.
-      let start = Cu.now();
+      let start = ChromeUtils.now();
       let timerId = Glean.serp.categorizationDuration.start();
 
       let pageActionCallback = info => {
@@ -1520,7 +1507,6 @@ export class SearchSERPTelemetryChild extends JSWindowActorChild {
         }
         this.sendAsyncMessage("SearchTelemetry:Action", {
           target: info.target,
-          url: info.url,
           action: info.action,
         });
       };
@@ -1558,7 +1544,7 @@ export class SearchSERPTelemetryChild extends JSWindowActorChild {
       providerInfo.domainExtraction &&
       (eventType == "load" || eventType == "pageshow")
     ) {
-      let start = Cu.now();
+      let start = ChromeUtils.now();
       let nonAdDomains = domainExtractor.extractDomainsFromDocument(
         doc,
         providerInfo.domainExtraction.nonAds,
@@ -1594,7 +1580,7 @@ export class SearchSERPTelemetryChild extends JSWindowActorChild {
     let providerInfo = this._getProviderInfoForUrl(url);
     if (providerInfo.components?.length) {
       searchAdImpression.providerInfo = providerInfo;
-      let start = Cu.now();
+      let start = ChromeUtils.now();
       let shoppingTabDisplayed = searchAdImpression.hasShoppingTab(
         this.document
       );
@@ -1666,11 +1652,11 @@ export class SearchSERPTelemetryChild extends JSWindowActorChild {
         break;
       }
       case "DOMContentLoaded": {
-        this.#checkForPageImpressionComponents();
         this.#check(event.type);
         break;
       }
       case "load": {
+        this.#checkForPageImpressionComponents();
         // We check both DOMContentLoaded and load in case the page has
         // taken a long time to load and the ad is only detected on load.
         // We still check at DOMContentLoaded because if the page hasn't

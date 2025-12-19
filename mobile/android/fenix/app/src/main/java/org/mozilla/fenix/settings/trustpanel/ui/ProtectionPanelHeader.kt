@@ -15,22 +15,20 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.Icon
-import androidx.compose.material.IconButton
-import androidx.compose.material.Text
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTag
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
-import mozilla.components.compose.base.Divider
-import mozilla.components.compose.base.annotation.LightDarkPreview
 import mozilla.components.support.ktx.kotlin.tryGetHostFromUrl
-import org.mozilla.fenix.R
 import org.mozilla.fenix.compose.Favicon
 import org.mozilla.fenix.settings.trustpanel.store.WebsiteInfoState
 import org.mozilla.fenix.theme.FirefoxTheme
@@ -43,81 +41,46 @@ private val INNER_ICON_SHAPE = RoundedCornerShape(0.dp)
 
 @Composable
 internal fun ProtectionPanelHeader(
-    icon: Bitmap?,
     websiteInfoState: WebsiteInfoState,
-    onConnectionSecurityClick: () -> Unit,
+    icon: Bitmap?,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .padding(start = 12.dp, end = 6.dp),
+            .padding(horizontal = 16.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Spacer(modifier = Modifier.width(4.dp))
-
         ProtectionPanelIcon(url = websiteInfoState.websiteUrl, icon = icon)
 
-        Spacer(modifier = Modifier.width(8.dp))
+        Spacer(modifier = Modifier.width(16.dp))
 
         Column(
-            modifier = Modifier
-                .padding(horizontal = 8.dp)
-                .weight(1f),
+            modifier = Modifier.weight(1f),
         ) {
             Text(
-                text = websiteInfoState.websiteTitle,
-                color = FirefoxTheme.colors.textSecondary,
+                text = websiteInfoState.websiteTitle.ifEmpty {
+                    websiteInfoState.websiteUrl.tryGetHostFromUrl()
+                },
+                color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 style = FirefoxTheme.typography.headline7,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.semantics {
+                    testTagsAsResourceId = true
+                    testTag = "unified.trust.panel.website"
+                },
             )
 
-            Text(
-                text = websiteInfoState.websiteUrl.tryGetHostFromUrl(),
-                color = FirefoxTheme.colors.textSecondary,
-                maxLines = 1,
-                style = FirefoxTheme.typography.caption,
-            )
-        }
-
-        Spacer(modifier = Modifier.width(8.dp))
-
-        Divider(modifier = Modifier.size(width = 2.dp, height = 32.dp))
-
-        IconButton(
-            modifier = Modifier.padding(horizontal = 10.dp),
-            onClick = onConnectionSecurityClick,
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    painter = if (websiteInfoState.isSecured) {
-                        painterResource(id = R.drawable.mozac_ic_lock_20)
-                    } else {
-                        painterResource(id = R.drawable.mozac_ic_lock_slash_20)
-                    },
-                    contentDescription = null,
-                    tint = FirefoxTheme.colors.iconSecondary,
-                )
-
+            if (websiteInfoState.websiteTitle.isNotEmpty()) {
                 Text(
-                    text = if (websiteInfoState.isSecured) {
-                        stringResource(id = R.string.protection_panel_header_secure)
-                    } else {
-                        stringResource(id = R.string.protection_panel_header_not_secure)
+                    text = websiteInfoState.websiteUrl.tryGetHostFromUrl(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = FirefoxTheme.typography.body2,
+                    modifier = Modifier.semantics {
+                        testTagsAsResourceId = true
+                        testTag = "unified.trust.panel.website.url"
                     },
-                    color = FirefoxTheme.colors.textSecondary,
-                    maxLines = 1,
-                    style = FirefoxTheme.typography.caption,
-                )
-
-                Spacer(modifier = Modifier.width(10.dp))
-
-                Icon(
-                    painter = painterResource(id = R.drawable.mozac_ic_chevron_right_24),
-                    contentDescription = null,
-                    tint = FirefoxTheme.colors.iconSecondary,
                 )
             }
         }
@@ -135,7 +98,7 @@ private fun ProtectionPanelIcon(
             contentDescription = null,
             modifier = Modifier
                 .background(
-                    color = FirefoxTheme.colors.layer2,
+                    color = MaterialTheme.colorScheme.surfaceContainerLowest,
                     shape = OUTER_ICON_SHAPE,
                 )
                 .padding(all = ICON_PADDING)
@@ -146,35 +109,47 @@ private fun ProtectionPanelIcon(
             url = url,
             modifier = Modifier
                 .background(
-                    color = FirefoxTheme.colors.layer2,
+                    color = MaterialTheme.colorScheme.surfaceContainerLowest,
                     shape = OUTER_ICON_SHAPE,
                 )
                 .padding(all = ICON_PADDING),
             size = ICON_SIZE,
-            roundedCornerShape = INNER_ICON_SHAPE,
+            shape = INNER_ICON_SHAPE,
         )
     }
 }
 
-@LightDarkPreview
+@PreviewLightDark
 @Composable
 private fun ProtectionPanelHeaderPreview() {
     FirefoxTheme {
-        Column(
-            modifier = Modifier
-                .background(color = FirefoxTheme.colors.layer3),
-        ) {
-            ProtectionPanelHeader(
-                icon = null,
-                websiteInfoState = WebsiteInfoState(
-                    isSecured = true,
-                    websiteUrl = "https://www.mozilla.org",
-                    websiteTitle = "Mozilla",
-                    certificateName = "",
-                ),
-                onConnectionSecurityClick = {},
-            )
-        }
+        ProtectionPanelHeader(
+            websiteInfoState = WebsiteInfoState(
+                isSecured = true,
+                websiteUrl = "https://www.mozilla.org",
+                websiteTitle = "Mozilla",
+                certificateName = "",
+            ),
+            icon = null,
+            modifier = Modifier.background(color = MaterialTheme.colorScheme.surface),
+        )
+    }
+}
+
+@PreviewLightDark
+@Composable
+private fun ProtectionPanelHeaderUrlAsTitlePreview() {
+    FirefoxTheme {
+        ProtectionPanelHeader(
+            websiteInfoState = WebsiteInfoState(
+                isSecured = true,
+                websiteUrl = "https://www.mozilla.org",
+                websiteTitle = "",
+                certificateName = "",
+            ),
+            icon = null,
+            modifier = Modifier.background(color = MaterialTheme.colorScheme.surface),
+        )
     }
 }
 
@@ -182,20 +157,15 @@ private fun ProtectionPanelHeaderPreview() {
 @Composable
 private fun ProtectionPanelHeaderPrivatePreview() {
     FirefoxTheme(theme = Theme.Private) {
-        Column(
-            modifier = Modifier
-                .background(color = FirefoxTheme.colors.layer3),
-        ) {
-            ProtectionPanelHeader(
-                icon = null,
-                websiteInfoState = WebsiteInfoState(
-                    isSecured = false,
-                    websiteUrl = "https://www.mozilla.org",
-                    websiteTitle = "Mozilla",
-                    certificateName = "",
-                ),
-                onConnectionSecurityClick = {},
-            )
-        }
+        ProtectionPanelHeader(
+            websiteInfoState = WebsiteInfoState(
+                isSecured = false,
+                websiteUrl = "https://www.mozilla.org",
+                websiteTitle = "Mozilla",
+                certificateName = "",
+            ),
+            icon = null,
+            modifier = Modifier.background(color = MaterialTheme.colorScheme.surface),
+        )
     }
 }

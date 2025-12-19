@@ -7,12 +7,7 @@
 "use strict";
 requestLongerTimeout(2);
 
-const kBaseUrlForContent = getRootDirectory(gTestPath).replace(
-  "chrome://mochitests/content",
-  "https://example.com"
-);
-const kContentFileName = "file_toplevel.html";
-const kContentFileUrl = kBaseUrlForContent + kContentFileName;
+const kContentFileUrl = kBaseUrlForContent + "file_toplevel.html";
 const kIsMac = navigator.platform.indexOf("Mac") > -1;
 
 async function waitForPasteContextMenu() {
@@ -101,6 +96,8 @@ function testPasteContextMenuSuppression(aWriteFun, aMsg) {
 
         info("Dismiss paste button, cross-origin request should be rejected");
         await promiseDismissPasteButton();
+        // XXX eden: not sure why first promiseDismissPasteButton doesn't work on Windows opt build.
+        await promiseDismissPasteButton();
         await Assert.rejects(
           readTextRequest1,
           /NotAllowedError/,
@@ -114,8 +111,6 @@ function testPasteContextMenuSuppression(aWriteFun, aMsg) {
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["dom.events.asyncClipboard.readText", true],
-      ["dom.events.asyncClipboard.clipboardItem", true],
       ["test.events.async.enabled", true],
       // Avoid paste button delay enabling making test too long.
       ["security.dialog_enable_delay", 0],
@@ -266,7 +261,7 @@ function testPasteContextMenuSuppressionPasteEvent(
     await BrowserTestUtils.withNewTab(
       kContentFileUrl,
       async function (browser) {
-        info(`Write data by in cross-origin frame`);
+        info(`Write data in cross-origin frame`);
         const clipboardText = "X" + Math.random();
         await SpecialPowers.spawn(
           browser.browsingContext.children[1],
@@ -290,15 +285,24 @@ function testPasteContextMenuSuppressionPasteEvent(
         readTextRequest = SpecialPowers.spawn(browser, [], async () => {
           content.document.notifyUserGestureActivation();
           return content.eval(`
-          (() => {
-            return new Promise(resolve => {
-              document.addEventListener("paste", function(e) {
-                e.preventDefault();
-                resolve(navigator.clipboard.readText());
-              }, { once: true });
-            });
-          })();
-        `);
+            (() => {
+              return new Promise(resolve => {
+                document.addEventListener("paste", function(e) {
+                  e.preventDefault();
+                  resolve(navigator.clipboard.readText());
+                }, { once: true });
+              });
+            })();
+          `);
+        });
+        // Input events is dispatched with higher priority, and may therefore
+        // occur before the `SpecialPowers.spawn` call above is processed on the
+        // remote side to register the event listener. So add a delay to ensure
+        // the event listener is registered before the paste event is triggered.
+        await SpecialPowers.spawn(browser, [], () => {
+          return new Promise(resolve => {
+            SpecialPowers.executeSoon(resolve);
+          });
         });
 
         if (aSuppress) {

@@ -46,7 +46,7 @@ const PREF_PREFIX = "devtools.performance.recording.";
 //
 // IMPORTANT NOTE: Please keep the existing profiler presets in sync with their
 // Fenix counterparts and consider adding any new presets to Fenix:
-// https://github.com/mozilla-mobile/firefox-android/blob/1d177e7e78d027e8ab32cedf0fc68316787d7454/fenix/app/src/main/java/org/mozilla/fenix/perf/ProfilerUtils.kt
+// https://searchfox.org/firefox-main/rev/d87eb30d610a3032111f9ee47441b53927de63d3/mobile/android/fenix/app/src/main/java/org/mozilla/fenix/perf/ProfilerUtils.kt
 
 /** @type {Presets} */
 export const presets = {
@@ -177,6 +177,29 @@ export const presets = {
       },
     },
   },
+  ml: {
+    entries: 128 * 1024 * 1024,
+    interval: 1,
+    features: ["js", "stackwalk", "cpu", "ipcmessages", "processcpu", "memory"],
+    threads: [
+      "BackgroundThreadPool",
+      "DOM Worker",
+      "GeckoMain",
+      "IPDL Background",
+      "onnx_worker",
+    ],
+    duration: 0,
+    l10nIds: {
+      popup: {
+        label: "profiler-popup-presets-ml-label",
+        description: "profiler-popup-presets-ml-description",
+      },
+      devtools: {
+        label: "perftools-presets-ml-label",
+        description: "perftools-presets-ml-description2",
+      },
+    },
+  },
   networking: {
     entries: 128 * 1024 * 1024,
     interval: 1,
@@ -255,6 +278,7 @@ export const presets = {
       "samplingallthreads",
       "stackwalk",
       "unregisteredthreads",
+      "flows",
     ],
     threads: ["*"],
     duration: 0,
@@ -266,6 +290,25 @@ export const presets = {
       devtools: {
         label: "perftools-presets-debug-label",
         description: "perftools-presets-debug-description",
+      },
+    },
+  },
+  "web-compat": {
+    entries: 128 * 1024 * 1024,
+    interval: 1,
+    features: ["screenshots", "js", "stackwalk", "nostacksampling", "tracing"],
+    threads: ["GeckoMain", "DOM Worker"],
+    mozLogs: "console: 5, PageMessages: 5",
+    duration: 0,
+    profilerViewMode: "active-tab",
+    l10nIds: {
+      popup: {
+        label: "profiler-popup-presets-web-compat-label",
+        description: "profiler-popup-presets-web-compat-description",
+      },
+      devtools: {
+        label: "perftools-presets-web-compat-label",
+        description: "perftools-presets-web-compat-description",
       },
     },
   },
@@ -301,7 +344,8 @@ export function getPrefPostfix(pageContext) {
       return ".remote";
     default: {
       const { UnhandledCaseError } = ChromeUtils.importESModule(
-        "resource://devtools/shared/performance-new/errors.sys.mjs"
+        "resource://devtools/shared/performance-new/errors.sys.mjs",
+        { global: "contextual" }
       );
       throw new UnhandledCaseError(pageContext, "Page Context");
     }
@@ -407,6 +451,7 @@ export function setRecordingSettings(pageContext, prefs) {
 
 /**
  * Revert the recording prefs for both local and remote profiling.
+ *
  * @return {void}
  */
 export function revertRecordingSettings() {
@@ -424,6 +469,7 @@ export function revertRecordingSettings() {
 
 /**
  * Add an observer for the profiler-related preferences.
+ *
  * @param {PrefObserver} observer
  * @return {void}
  */
@@ -433,6 +479,7 @@ export function addPrefObserver(observer) {
 
 /**
  * Removes an observer for the profiler-related preferences.
+ *
  * @param {PrefObserver} observer
  * @return {void}
  */
@@ -443,6 +490,7 @@ export function removePrefObserver(observer) {
  * Return the proper view mode for the Firefox Profiler front-end timeline by
  * looking at the proper preset that is selected.
  * Return value can be undefined when the preset is unknown or custom.
+ *
  * @param {PageContext} pageContext
  * @return {ProfilerViewMode | undefined}
  */
@@ -492,6 +540,7 @@ export function getRecordingSettingsFromPreset(
       supportedFeatures.includes(feature)
     ),
     threads: preset.threads,
+    mozLogs: preset.mozLogs,
     objdirs,
     duration: preset.duration,
   };
@@ -519,6 +568,7 @@ export function getRecordingSettings(pageContext, supportedFeatures) {
 /**
  * Change the prefs based on a preset. This mechanism is used by the popup to
  * easily switch between different settings.
+ *
  * @param {string} presetName
  * @param {PageContext} pageContext
  * @param {string[]} supportedFeatures

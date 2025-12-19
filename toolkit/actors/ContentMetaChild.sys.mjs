@@ -24,31 +24,31 @@ const PREVIEW_IMAGE_RULES = [
   "og:image:secure_url",
 ];
 
-/*
+/**
  * Checks if the incoming meta tag has a greater score than the current best
  * score by checking the index of the meta tag in the list of rules provided.
  *
  * @param {Array} aRules
  *          The list of rules for a given type of meta tag
- * @param {String} aTag
+ * @param {string} aTag
  *          The name or property of the incoming meta tag
- * @param {String} aEntry
+ * @param {string} aEntry
  *          The current best entry for the given meta tag
  *
- * @returns {Boolean} true if the incoming meta tag is better than the current
+ * @returns {boolean} true if the incoming meta tag is better than the current
  *                    best meta tag of that same kind, false otherwise
  */
 function shouldExtractMetadata(aRules, aTag, aEntry) {
   return aRules.indexOf(aTag) > aEntry.currMaxScore;
 }
 
-/*
+/**
  * Ensure that the preview image URL is safe and valid before storing
  *
  * @param {URL} aURL
  *          A URL object that needs to be checked for valid principal and protocol
  *
- * @returns {Boolean} true if the preview URL is safe and can be stored, false otherwise
+ * @returns {boolean} true if the preview URL is safe and can be stored, false otherwise
  */
 function checkLoadURIStr(aURL) {
   if (!ACCEPTED_PROTOCOLS.has(aURL.protocol)) {
@@ -84,18 +84,21 @@ export class ContentMetaChild extends JSWindowActorChild {
 
   didDestroy() {
     for (let entry of this.metaTags.values()) {
-      entry.timeout.cancel();
+      if (entry.timeout) {
+        entry.timeout.cancel();
+      }
     }
   }
 
   handleEvent(event) {
     switch (event.type) {
-      case "DOMContentLoaded":
+      case "DOMContentLoaded": {
         const metaTags = this.contentWindow.document.querySelectorAll("meta");
         for (let metaTag of metaTags) {
           this.onMetaTag(metaTag);
         }
         break;
+      }
       case "DOMMetaAdded":
         this.onMetaTag(event.originalTarget);
         break;
@@ -128,6 +131,12 @@ export class ContentMetaChild extends JSWindowActorChild {
       timeout: null,
     };
 
+    if (!entry.timeout) {
+      // This is either the first time we get here or our callback did already
+      // run at least once.
+      entry.timeout = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
+    }
+
     // Malformed meta tag - do not store it
     const content = metaTag.getAttributeNS(null, "content");
     if (!content) {
@@ -157,32 +166,27 @@ export class ContentMetaChild extends JSWindowActorChild {
       this.metaTags.set(url, entry);
     }
 
-    if (entry.timeout) {
-      entry.timeout.delay = TIMEOUT_DELAY;
-    } else {
-      // We want to debounce incoming meta tags until we're certain we have the
-      // best one for description and preview image, and only store that one
-      entry.timeout = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
-      entry.timeout.initWithCallback(
-        () => {
-          entry.timeout = null;
-          this.metaTags.delete(url);
-          // We try to cancel the timers when we get destroyed, but if
-          // there's a race, catch it:
-          if (!this.manager || this.manager.isClosed) {
-            return;
-          }
+    // We want to debounce incoming meta tags until we're certain we have the
+    // best one for description and preview image, and only store that one
+    entry.timeout.initWithCallback(
+      () => {
+        entry.timeout = null;
+        this.metaTags.delete(url);
+        // We try to cancel the timers when we get destroyed, but if
+        // there's a race, catch it:
+        if (!this.manager || this.manager.isClosed) {
+          return;
+        }
 
-          // Save description and preview image to moz_places
-          this.sendAsyncMessage("Meta:SetPageInfo", {
-            url,
-            description: entry.description.value,
-            previewImageURL: entry.image.value,
-          });
-        },
-        TIMEOUT_DELAY,
-        Ci.nsITimer.TYPE_ONE_SHOT
-      );
-    }
+        // Save description and preview image to moz_places
+        this.sendAsyncMessage("Meta:SetPageInfo", {
+          url,
+          description: entry.description.value,
+          previewImageURL: entry.image.value,
+        });
+      },
+      TIMEOUT_DELAY,
+      Ci.nsITimer.TYPE_ONE_SHOT
+    );
   }
 }

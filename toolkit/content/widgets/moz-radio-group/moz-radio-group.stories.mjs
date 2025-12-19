@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { html, ifDefined } from "../vendor/lit.all.mjs";
+import { html, ifDefined, classMap } from "../vendor/lit.all.mjs";
 import "./moz-radio-group.mjs";
 
 let greetings = ["hello", "howdy", "hola"];
@@ -38,6 +38,10 @@ export default {
     },
     accesskeys: {
       if: { arg: "showAccesskeys", truthy: true },
+    },
+    headingLevel: {
+      options: ["", "1", "2", "3", "4", "5", "6"],
+      control: { type: "select" },
     },
   },
   parameters: {
@@ -101,6 +105,8 @@ const Template = ({
   hasSlottedSupportLinks,
   groupSlottedSupportLink,
   nestedFields,
+  ellipsized,
+  headingLevel,
 }) => html`
   <moz-radio-group
     name=${groupName}
@@ -108,6 +114,7 @@ const Template = ({
     support-page=${ifDefined(groupSupportPage)}
     ?disabled=${disabled}
     value=${value}
+    .headingLevel=${headingLevel}
   >
     ${groupSlottedSupportLink
       ? html`<a href="/" slot="support-link">Slotted support link</a>`
@@ -123,6 +130,7 @@ const Template = ({
           iconSrc=${ifDefined(showIcons ? icons[i] : "")}
           accesskey=${ifDefined(showAccesskeys ? accesskeys[i] : "")}
           support-page=${ifDefined(supportPage)}
+          class=${classMap({ "text-truncated-ellipsis": ellipsized })}
         >
           ${hasSlottedSupportLinks
             ? html`<a slot="support-link" href="www.example.com">
@@ -158,6 +166,7 @@ Default.args = {
   groupSupportPage: "",
   hasSlottedSupportLinks: false,
   groupSlottedSupportLink: false,
+  headingLevel: "",
 };
 
 export const AllUnchecked = Template.bind({});
@@ -232,4 +241,17 @@ export const WithNestedFields = Template.bind({});
 WithNestedFields.args = {
   ...Default.args,
   nestedFields: true,
+};
+
+export const WithEllipsizedLabel = Template.bind({});
+WithEllipsizedLabel.args = {
+  ...Default.args,
+  ellipsized: true,
+  l10nId: "moz-checkbox-long-label",
+};
+
+export const WithHeadingLabel = Template.bind({});
+WithHeadingLabel.args = {
+  ...WithRadioGroupDescription.args,
+  headingLevel: "2",
 };

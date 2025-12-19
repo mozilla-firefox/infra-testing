@@ -59,6 +59,8 @@ type_policies = {
     "Double": "DoublePolicy",
     "String": "StringPolicy",
     "Symbol": "SymbolPolicy",
+    "NoTypePolicy": "NoTypePolicy",
+    "Slots": "NoTypePolicy",
 }
 
 
@@ -66,15 +68,21 @@ def decide_type_policy(types, no_type_policy):
     if no_type_policy:
         return "public NoTypePolicy::Data"
 
-    if len(types) == 1:
-        return f"public {type_policies[types[0]]}<0>::Data"
-
     type_num = 0
     mixed_type_policies = []
     for mir_type in types:
         policy = type_policies[mir_type]
+        if policy == "NoTypePolicy":
+            type_num += 1
+            continue
         mixed_type_policies.append(f"{policy}<{type_num}>")
         type_num += 1
+
+    if len(mixed_type_policies) == 0:
+        return "public NoTypePolicy::Data"
+
+    if len(mixed_type_policies) == 1:
+        return f"public {mixed_type_policies[0]}::Data"
 
     return "public MixPolicy<{}>::Data".format(", ".join(mixed_type_policies))
 
@@ -85,6 +93,7 @@ mir_base_class = [
     "MBinaryInstruction",
     "MTernaryInstruction",
     "MQuaternaryInstruction",
+    "MQuinaryInstruction",
 ]
 
 
@@ -96,7 +105,7 @@ gc_pointer_types = [
     "PropertyName*",
     "Shape*",
     "GetterSetter*",
-    "JSAtom*",
+    "JSOffThreadAtom*",
     "ClassBodyScope*",
     "VarScope*",
     "NamedLambdaObject*",
@@ -104,6 +113,22 @@ gc_pointer_types = [
     "JSScript*",
     "LexicalScope*",
 ]
+
+special_storage_types = {
+    "JSOffThreadAtom*": (
+        "CompilerGCPointer<JSAtom*>",
+        "{}->unwrap()",
+        "&{}->asOffThreadAtom()",
+    )
+}
+
+
+def arg_type_sig_to_init(type_sig, arg_name):
+    if type_sig in special_types:
+        _, init, _ = special_types[type_sig]
+        return init.format(arg_name)
+    else:
+        return arg_name
 
 
 def gen_mir_class(
@@ -115,6 +140,7 @@ def gen_mir_class(
     guard,
     movable,
     folds_to,
+    value_hash,
     congruent_to,
     alias_set,
     might_alias,
@@ -173,7 +199,7 @@ def gen_mir_class(
 
     class_name = "M" + name
 
-    assert len(mir_operands) < 5
+    assert len(mir_operands) < 6
     base_class = mir_base_class[len(mir_operands)]
     assert base_class
     if base_class != "MNullaryInstruction":
@@ -187,7 +213,10 @@ def gen_mir_class(
         for arg_name in arguments:
             arg_type_sig = arguments[arg_name]
             mir_args.append(arg_type_sig + " " + arg_name)
-            if arg_type_sig in gc_pointer_types:
+            if arg_type_sig in special_storage_types:
+                storage, _, _ = special_storage_types[arg_type_sig]
+                code += "  " + storage
+            elif arg_type_sig in gc_pointer_types:
                 code += "  CompilerGCPointer<" + arg_type_sig + ">"
             else:
                 code += "  " + arg_type_sig
@@ -201,19 +230,33 @@ def gen_mir_class(
     )
     if arguments:
         for arg_name in arguments:
-            code += ", " + arg_name + "_(" + arg_name + ")"
+            code += ", " + arg_name + "_("
+            arg_type_sig = arguments[arg_name]
+            if arg_type_sig in special_storage_types:
+                _, init, _ = special_storage_types[arg_type_sig]
+                code += init.format(arg_name)
+            else:
+                code += arg_name
+            code += ")"
     code += " {\\\n"
     if guard:
         code += "    setGuard();\\\n"
     if movable:
         code += "    setMovable();\\\n"
-    if result:
+    # Note: MIRType::None is the default MIR result type so don't generate a
+    # setResultType call for it.
+    if result and result != "None":
         code += f"    setResultType(MIRType::{result});\\\n"
     code += "  }\\\n public:\\\n"
     if arguments:
         for arg_name in arguments:
             code += "  " + arguments[arg_name] + " " + arg_name + "() const { "
-            code += "return " + arg_name + "_; }\\\n"
+            arg_type_sig = arguments[arg_name]
+            if arg_type_sig in special_storage_types:
+                _, _, load = special_storage_types[arg_type_sig]
+                code += "return " + load.format(arg_name + "_") + "; }\\\n"
+            else:
+                code += "return " + arg_name + "_; }\\\n"
     code += f"  INSTRUCTION_HEADER({name})\\\n"
     code += "  TRIVIAL_NEW_WRAPPERS\\\n"
     if named_operands:
@@ -240,6 +283,9 @@ def gen_mir_class(
                 "  bool congruentTo(const MDefinition* ins) const override { "
                 "return congruentIfOperandsEqual(ins); }\\\n"
             )
+    if value_hash:
+        assert value_hash == "custom"
+        code += "  HashNumber valueHash() const override;\\\n"
     if possibly_calls:
         if possibly_calls == "custom":
             code += "  bool possiblyCalls() const override;\\\n"
@@ -329,6 +375,9 @@ def generate_mir_header(c_out, yaml_path):
             folds_to = op.get("folds_to", None)
             assert folds_to in (None, "custom")
 
+            value_hash = op.get("value_hash", None)
+            assert value_hash in (None, "custom")
+
             congruent_to = op.get("congruent_to", None)
             assert congruent_to in (None, "if_operands_equal", "custom")
 
@@ -362,6 +411,7 @@ def generate_mir_header(c_out, yaml_path):
                 guard,
                 movable,
                 folds_to,
+                value_hash,
                 congruent_to,
                 alias_set,
                 might_alias,

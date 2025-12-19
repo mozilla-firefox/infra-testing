@@ -4,14 +4,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "DocumentInlines.h"
 #include "MediaDocument.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/HTMLMediaElement.h"
+#include "nsContentCreatorFunctions.h"
+#include "nsContentUtils.h"
 #include "nsGkAtoms.h"
 #include "nsNodeInfoManager.h"
-#include "nsContentCreatorFunctions.h"
-#include "mozilla/dom/HTMLMediaElement.h"
-#include "DocumentInlines.h"
-#include "nsContentUtils.h"
-#include "mozilla/dom/Element.h"
 
 namespace mozilla::dom {
 
@@ -84,11 +84,6 @@ void VideoDocument::SetScriptGlobalObject(
     DebugOnly<nsresult> rv = CreateSyntheticDocument();
     NS_ASSERTION(NS_SUCCEEDED(rv), "failed to create synthetic video document");
 
-    if (!nsContentUtils::IsChildOfSameType(this)) {
-      LinkStylesheet(nsLiteralString(
-          u"resource://content-accessible/TopLevelVideoDocument.css"));
-      LinkScript(u"chrome://global/content/TopLevelVideoDocument.js"_ns);
-    }
     InitialSetupDone();
   }
 }
@@ -122,6 +117,10 @@ nsresult VideoDocument::CreateVideoElement() {
         nsLiteralString(
             u"position:absolute; top:0; left:0; width:100%; height:100%"),
         true);
+  } else {
+    LinkStylesheet(nsLiteralString(
+        u"resource://content-accessible/TopLevelVideoDocument.css"));
+    LinkScript(u"chrome://global/content/TopLevelVideoDocument.js"_ns);
   }
 
   ErrorResult rv;

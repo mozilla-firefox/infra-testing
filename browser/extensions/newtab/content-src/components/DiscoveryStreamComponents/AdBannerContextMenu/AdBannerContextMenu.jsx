@@ -27,6 +27,7 @@ export function AdBannerContextMenu({
   position,
   type,
   showAdReporting,
+  toggleActive = () => {},
 }) {
   const ADBANNER_CONTEXT_MENU_OPTIONS = [
     "BlockAdUrl",
@@ -66,6 +67,7 @@ export function AdBannerContextMenu({
    */
   const toggleContextMenu = isKeyBoard => {
     toggleContextMenuStyleSwitch(!showContextMenu);
+    toggleActive(!showContextMenu);
     setShowContextMenu(!showContextMenu);
     setIsKeyboardAccess(isKeyBoard);
   };
@@ -84,6 +86,7 @@ export function AdBannerContextMenu({
 
   const onUpdate = () => {
     toggleContextMenuStyleSwitch(!showContextMenu);
+    toggleActive(!showContextMenu);
     setShowContextMenu(!showContextMenu);
   };
 
@@ -93,6 +96,10 @@ export function AdBannerContextMenu({
         <moz-button
           type="icon"
           size="default"
+          data-l10n-id="newtab-menu-content-tooltip"
+          data-l10n-args={JSON.stringify({
+            title: spoc.title || spoc.sponsor || spoc.alt_text,
+          })}
           iconsrc="chrome://global/skin/icons/more.svg"
           onClick={onClick}
           onKeyDown={onKeyDown}

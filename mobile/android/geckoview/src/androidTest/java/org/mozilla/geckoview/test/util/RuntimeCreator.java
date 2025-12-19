@@ -13,8 +13,10 @@ import androidx.annotation.UiThread;
 import androidx.test.platform.app.InstrumentationRegistry;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.json.JSONObject;
+import org.mozilla.geckoview.BuildConfig;
 import org.mozilla.geckoview.ContentBlocking;
 import org.mozilla.geckoview.ExperimentDelegate;
+import org.mozilla.geckoview.GeckoPreferenceController;
 import org.mozilla.geckoview.GeckoResult;
 import org.mozilla.geckoview.GeckoRuntime;
 import org.mozilla.geckoview.GeckoRuntimeSettings;
@@ -32,6 +34,23 @@ public class RuntimeCreator {
   private static GeckoRuntime sRuntime;
   public static AtomicInteger sTestSupport = new AtomicInteger(0);
   public static WebExtension sTestSupportExtension;
+
+  /** Sets the GeckoPreferenceController.Observer.Delegate on the RuntimeCreator. */
+  public static class RuntimePreferenceDelegate
+      implements GeckoPreferenceController.Observer.Delegate {
+    public GeckoPreferenceController.Observer.Delegate delegate = null;
+
+    @Override
+    public void onGeckoPreferenceChange(
+        @NonNull final GeckoPreferenceController.GeckoPreference<?> observedGeckoPreference) {
+      if (delegate != null) {
+        delegate.onGeckoPreferenceChange(observedGeckoPreference);
+      }
+    }
+  }
+
+  public static RuntimePreferenceDelegate sRuntimePreferenceDelegateProxy =
+      new RuntimePreferenceDelegate();
 
   /**
    * The ExperimentDelegate can only be set when starting the RuntimeCreator, so for testing we are
@@ -134,6 +153,19 @@ public class RuntimeCreator {
     sRuntimeExperimentDelegateProxy.delegate = delegate;
   }
 
+  /**
+   * Set the {@link GeckoPreferenceController.Observer.Delegate} instance using the proxy.
+   *
+   * <p>Application code can only register the callbacks on this delegate when the {@link
+   * GeckoRuntime} is created, so we need to proxy it for test code.
+   *
+   * @param delegate the {@link GeckoPreferenceController.Observer.Delegate} for this test to use.
+   */
+  public static void setGeckoPreferenceDelegate(
+      final GeckoPreferenceController.Observer.Delegate delegate) {
+    sRuntimePreferenceDelegateProxy.delegate = delegate;
+  }
+
   public static void setPortDelegate(final WebExtension.PortDelegate portDelegate) {
     sPortDelegate = portDelegate;
   }
@@ -156,11 +188,17 @@ public class RuntimeCreator {
             .updateUrl("http://mochi.test:8888/safebrowsing4-dummy/update")
             .build();
 
+    final SafeBrowsingProvider google5 =
+        SafeBrowsingProvider.from(ContentBlocking.GOOGLE_SAFE_BROWSING_V5_PROVIDER)
+            .getHashUrl("http://mochi.test:8888/safebrowsing5-dummy/gethash")
+            .updateUrl("http://mochi.test:8888/safebrowsing5-dummy/update")
+            .build();
+
     final GeckoRuntimeSettings runtimeSettings =
         new GeckoRuntimeSettings.Builder()
             .contentBlocking(
                 new ContentBlocking.Settings.Builder()
-                    .safeBrowsingProviders(googleLegacy, google)
+                    .safeBrowsingProviders(googleLegacy, google, google5)
                     .build())
             .arguments(new String[] {"-purgecaches"})
             .extras(InstrumentationRegistry.getArguments())
@@ -168,6 +206,8 @@ public class RuntimeCreator {
             .consoleOutput(true)
             .crashHandler(TestCrashHandler.class)
             .experimentDelegate(sRuntimeExperimentDelegateProxy)
+            .isolatedProcessEnabled(BuildConfig.MOZ_ANDROID_CONTENT_SERVICE_ISOLATED_PROCESS)
+            .appZygoteProcessEnabled(env.isAppZygoteProcess())
             .build();
 
     sRuntime =
@@ -177,6 +217,7 @@ public class RuntimeCreator {
     registerTestSupport();
 
     sRuntime.setDelegate(() -> Process.killProcess(Process.myPid()));
+    sRuntime.setPreferencesObserverDelegate(sRuntimePreferenceDelegateProxy);
 
     return sRuntime;
   }

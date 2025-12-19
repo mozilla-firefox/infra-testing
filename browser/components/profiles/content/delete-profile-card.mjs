@@ -2,10 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/remote-page */
-
 import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
 import { html } from "chrome://global/content/vendor/lit.all.mjs";
+
 // eslint-disable-next-line import/no-unassigned-import
 import "chrome://global/content/elements/moz-button.mjs";
 // eslint-disable-next-line import/no-unassigned-import
@@ -28,7 +27,6 @@ export class DeleteProfileCard extends MozLitElement {
 
   connectedCallback() {
     super.connectedCallback();
-
     this.init();
   }
 
@@ -39,6 +37,12 @@ export class DeleteProfileCard extends MozLitElement {
 
     this.data = await RPMSendQuery("Profiles:GetDeleteProfileContent");
 
+    if (this.data.profile.hasCustomAvatar) {
+      const objURL = URL.createObjectURL(this.data.profile.avatarFiles.file16);
+      this.data.profile.avatarURLs.url16 = objURL;
+      this.data.profile.avatarURLs.url80 = objURL;
+    }
+
     let titleEl = document.querySelector("title");
     titleEl.setAttribute(
       "data-l10n-args",
@@ -46,6 +50,22 @@ export class DeleteProfileCard extends MozLitElement {
     );
 
     this.initialized = true;
+    this.setFavicon();
+  }
+
+  setFavicon() {
+    const favicon = document.getElementById("favicon");
+
+    if (this.data.profile.hasCustomAvatar) {
+      favicon.href = this.data.profile.avatarURLs.url16;
+      return;
+    }
+
+    const faviconBlob = new Blob([this.data.profile.faviconSVGText], {
+      type: "image/svg+xml",
+    });
+    const faviconObjURL = URL.createObjectURL(faviconBlob);
+    favicon.href = faviconObjURL;
   }
 
   updated() {
@@ -58,13 +78,6 @@ export class DeleteProfileCard extends MozLitElement {
     let { themeFg, themeBg } = this.data.profile;
     this.headerAvatar.style.fill = themeBg;
     this.headerAvatar.style.stroke = themeFg;
-
-    this.setFavicon();
-  }
-
-  setFavicon() {
-    let favicon = document.getElementById("favicon");
-    favicon.href = `chrome://browser/content/profiles/assets/16_${this.data.profile.avatar}.svg`;
   }
 
   cancelDelete() {
@@ -95,8 +108,7 @@ export class DeleteProfileCard extends MozLitElement {
             width="80"
             height="80"
             data-l10n-id=${this.data.profile.avatarL10nId}
-            src="chrome://browser/content/profiles/assets/80_${this.data.profile
-              .avatar}.svg"
+            src=${this.data.profile.avatarURLs.url80}
           />
           <div id="profile-content">
             <div>

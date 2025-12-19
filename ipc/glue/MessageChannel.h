@@ -9,20 +9,16 @@
 #define ipc_glue_MessageChannel_h
 
 #include "ipc/EnumSerializer.h"
-#include "mozilla/Atomics.h"
 #include "mozilla/BaseProfilerMarkers.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/MoveOnlyFunction.h"
-#include "mozilla/Vector.h"
 #if defined(XP_WIN)
 #  include "mozilla/ipc/Neutering.h"
 #endif  // defined(XP_WIN)
 
 #include <functional>
-#include <map>
 #include <stack>
-#include <vector>
 
 #include "MessageLink.h"  // for HasResultCodes
 #include "mozilla/ipc/ScopedPort.h"
@@ -114,6 +110,7 @@ class MessageChannel : HasResultCodes {
 
  public:
   using Message = IPC::Message;
+  using seqno_t = Message::seqno_t;
 
   static constexpr int32_t kNoTimeout = INT32_MIN;
 
@@ -205,7 +202,7 @@ class MessageChannel : HasResultCodes {
 
   // Asynchronously send a message to the other side of the channel.
   // If aSeqno is non-null, it will be set to the seqno of the sent message.
-  bool Send(UniquePtr<Message> aMsg, int32_t* aSeqno = nullptr)
+  bool Send(UniquePtr<Message> aMsg, seqno_t* aSeqno = nullptr)
       MOZ_EXCLUDES(*mMonitor);
 
   bool SendBuildIDsMatchMessage(const char* aParentBuildID)
@@ -361,12 +358,13 @@ class MessageChannel : HasResultCodes {
   bool ShouldContinueFromTimeout() MOZ_REQUIRES(*mMonitor);
 
   void EndTimeout() MOZ_REQUIRES(*mMonitor);
-  void CancelTransaction(int transaction) MOZ_REQUIRES(*mMonitor);
+  void CancelTransaction(seqno_t transaction) MOZ_REQUIRES(*mMonitor);
 
   void RepostAllMessages() MOZ_REQUIRES(*mMonitor);
 
-  int32_t NextSeqno() {
+  seqno_t NextSeqno() {
     AssertWorkerThread();
+    MOZ_RELEASE_ASSERT(mozilla::Abs(mNextSeqno) < INT64_MAX, "seqno overflow");
     return (mSide == ChildSide) ? --mNextSeqno : ++mNextSeqno;
   }
 
@@ -420,7 +418,6 @@ class MessageChannel : HasResultCodes {
   // Called to flush [LazySend] messages to the link.
   void FlushLazySendMessages() MOZ_REQUIRES(*mMonitor);
 
-  bool WasTransactionCanceled(int transaction);
   bool ShouldDeferMessage(const Message& aMsg) MOZ_REQUIRES(*mMonitor);
   void OnMessageReceivedFromLink(UniquePtr<Message> aMsg)
       MOZ_REQUIRES(*mMonitor);
@@ -606,7 +603,7 @@ class MessageChannel : HasResultCodes {
 
   // Worker-thread only; sequence numbers for messages that require
   // replies.
-  int32_t mNextSeqno = 0;
+  seqno_t mNextSeqno = 0;
 
   static bool sIsPumpingMessages;
 
@@ -659,7 +656,7 @@ class MessageChannel : HasResultCodes {
   friend class AutoEnterTransaction;
   AutoEnterTransaction* mTransactionStack MOZ_GUARDED_BY(*mMonitor) = nullptr;
 
-  int32_t CurrentNestedInsideSyncTransaction() const MOZ_REQUIRES(*mMonitor);
+  seqno_t CurrentNestedInsideSyncTransaction() const MOZ_REQUIRES(*mMonitor);
 
   bool AwaitingSyncReply() const MOZ_REQUIRES(*mMonitor);
   int AwaitingSyncReplyNestedLevel() const MOZ_REQUIRES(*mMonitor);
@@ -686,7 +683,7 @@ class MessageChannel : HasResultCodes {
   // A message is only timed out if it initiated a transaction. This avoids
   // hitting a lot of corner cases with message nesting that we don't really
   // care about.
-  int32_t mTimedOutMessageSeqno MOZ_GUARDED_BY(*mMonitor) = 0;
+  seqno_t mTimedOutMessageSeqno MOZ_GUARDED_BY(*mMonitor) = 0;
   int mTimedOutMessageNestedLevel MOZ_GUARDED_BY(*mMonitor) = 0;
 
   // Queue of all incoming messages.
@@ -754,7 +751,7 @@ struct IPCMarker {
   static void StreamJSONMarkerData(
       mozilla::baseprofiler::SpliceableJSONWriter& aWriter,
       mozilla::TimeStamp aStart, mozilla::TimeStamp aEnd, int32_t aOtherPid,
-      int32_t aMessageSeqno, IPC::Message::msgid_t aMessageType,
+      IPC::Message::seqno_t aMessageSeqno, IPC::Message::msgid_t aMessageType,
       mozilla::ipc::Side aSide, mozilla::ipc::MessageDirection aDirection,
       mozilla::ipc::MessagePhase aPhase, bool aSync,
       mozilla::MarkerThreadId aOriginThreadId) {

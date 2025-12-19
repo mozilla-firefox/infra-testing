@@ -22,6 +22,8 @@ from mozlog.commandline import add_logging_group
     "chrome-m",
     "cstm-car-m",
 ]
+ANDROID_APPS = FIREFOX_ANDROID_APPS + CHROME_ANDROID_APPS
+
 FIREFOX_APPS = FIREFOX_ANDROID_APPS + [FIREFOX]
 
 CHROMIUM_DISTROS = [CHROME, CHROMIUM_RELEASE]
@@ -651,7 +653,7 @@ class _StopAction(argparse.Action):
         default=argparse.SUPPRESS,
         help=None,
     ):
-        super(_StopAction, self).__init__(
+        super().__init__(
             option_strings=option_strings,
             dest=dest,
             default=default,
@@ -662,7 +664,7 @@ class _StopAction(argparse.Action):
 
 class _PrintTests(_StopAction):
     def __init__(self, integrated_apps=INTEGRATED_APPS, *args, **kwargs):
-        super(_PrintTests, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.integrated_apps = integrated_apps
 
     def __call__(self, parser, namespace, values, option_string=None):
@@ -715,7 +717,7 @@ class _PrintTests(_StopAction):
                         subtest = next_test["name"]
                         measure = next_test.get("measure")
                         if measure is not None:
-                            subtest = "{0} ({1})".format(
+                            subtest = "{} ({})".format(
                                 subtest, measure.replace("\n", ", ")
                             )
                         test_list[suite]["subtests"].append(subtest)

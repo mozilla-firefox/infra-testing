@@ -11,14 +11,19 @@ def test_context_manager(repo):
     cmd = {
         "git": ["show", "--no-patch"],
         "hg": ["tip"],
-        "jj": ["show", "@-"],
+        # For jj, remove most of the header to avoid relative timestamps (one
+        # output might say "(now)", the next "(1 second ago)" for the same
+        # timestamp.)
+        "jj": ["show", "@-", "--template", "description ++ '\\n'"],
+        "src": ["echo", "src"],
     }[repo.vcs]
 
     vcs = get_repository_object(repo.dir)
     output_subprocess = vcs._run(*cmd)
     if repo.vcs == "hg":
         assert vcs._client.server is None
-    assert "Initial commit" in output_subprocess
+    if repo.vcs != "src":
+        assert "Initial commit" in output_subprocess
 
     with vcs:
         if repo.vcs == "hg":

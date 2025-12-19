@@ -132,6 +132,9 @@ DefaultJitOptions::DefaultJitOptions() {
   // Whether the Baseline Interpreter is enabled.
   SET_DEFAULT(baselineInterpreter, true);
 
+  // Whether replacing Object.keys with NativeIterators is globally disabled.
+  SET_DEFAULT(disableObjectKeysScalarReplacement, false);
+
 #ifdef ENABLE_PORTABLE_BASELINE_INTERP
   // Whether the Portable Baseline Interpreter is enabled.
   SET_DEFAULT(portableBaselineInterpreter, false);
@@ -268,7 +271,7 @@ DefaultJitOptions::DefaultJitOptions() {
   SET_DEFAULT(osrPcMismatchesBeforeRecompile, 6000);
 
   // The bytecode length limit for small function.
-  SET_DEFAULT(smallFunctionMaxBytecodeLength, 130);
+  SET_DEFAULT(smallFunctionMaxBytecodeLength, 140);
 
   // The minimum entry count for an IC stub before it can be trial-inlined.
   SET_DEFAULT(inliningEntryThreshold, 100);
@@ -295,16 +298,6 @@ DefaultJitOptions::DefaultJitOptions() {
   SET_DEFAULT(ionMaxScriptSizeMainThread, 2 * 1000);
   SET_DEFAULT(ionMaxLocalsAndArgs, 10 * 1000);
   SET_DEFAULT(ionMaxLocalsAndArgsMainThread, 256);
-
-  // Force the used register allocator instead of letting the optimization
-  // pass decide.
-  const char* forcedRegisterAllocatorEnv = "JIT_OPTION_forcedRegisterAllocator";
-  if (const char* env = getenv(forcedRegisterAllocatorEnv)) {
-    forcedRegisterAllocator = LookupRegisterAllocator(env);
-    if (!forcedRegisterAllocator.isSome()) {
-      Warn(forcedRegisterAllocatorEnv, env);
-    }
-  }
 
 #if defined(JS_CODEGEN_MIPS64) || defined(JS_CODEGEN_LOONG64) || \
     defined(JS_CODEGEN_RISCV64)

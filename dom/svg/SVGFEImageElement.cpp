@@ -6,19 +6,19 @@
 
 #include "mozilla/dom/SVGFEImageElement.h"
 
+#include "imgIContainer.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/SVGObserverUtils.h"
-#include "mozilla/dom/Document.h"
 #include "mozilla/dom/BindContext.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/FetchPriority.h"
 #include "mozilla/dom/SVGFEImageElementBinding.h"
 #include "mozilla/dom/SVGFilterElement.h"
 #include "mozilla/dom/UserActivation.h"
 #include "mozilla/gfx/2D.h"
-#include "mozilla/RefPtr.h"
 #include "nsContentUtils.h"
 #include "nsLayoutUtils.h"
 #include "nsNetUtil.h"
-#include "imgIContainer.h"
-#include "gfx2DGlue.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(FEImage)
 
@@ -36,18 +36,33 @@ SVGElement::StringInfo SVGFEImageElement::sStringInfo[3] = {
     {nsGkAtoms::href, kNameSpaceID_None, true},
     {nsGkAtoms::href, kNameSpaceID_XLink, true}};
 
+// Cycle collection magic -- based on SVGUseElement
+NS_IMPL_CYCLE_COLLECTION_CLASS(SVGFEImageElement)
+
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(SVGFEImageElement,
+                                                SVGFEImageElementBase)
+  tmp->mImageContentObserver = nullptr;
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(SVGFEImageElement,
+                                                  SVGFEImageElementBase)
+  SVGObserverUtils::TraverseFEImageObserver(tmp, &cb);
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+
 //----------------------------------------------------------------------
 // nsISupports methods
 
-NS_IMPL_ISUPPORTS_INHERITED(SVGFEImageElement, SVGFEImageElementBase,
-                            imgINotificationObserver, nsIImageLoadingContent)
+NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED(SVGFEImageElement,
+                                             SVGFEImageElementBase,
+                                             imgINotificationObserver,
+                                             nsIImageLoadingContent)
 
 //----------------------------------------------------------------------
 // Implementation
 
 SVGFEImageElement::SVGFEImageElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
-    : SVGFEImageElementBase(std::move(aNodeInfo)), mImageAnimationMode(0) {
+    : SVGFEImageElementBase(std::move(aNodeInfo)) {
   // We start out broken
   AddStatesSilently(ElementState::BROKEN);
 }
@@ -56,39 +71,45 @@ SVGFEImageElement::~SVGFEImageElement() { nsImageLoadingContent::Destroy(); }
 
 //----------------------------------------------------------------------
 
-nsresult SVGFEImageElement::LoadSVGImage(bool aForce, bool aNotify) {
-  // resolve href attribute
-  nsIURI* baseURI = GetBaseURI();
-
+void SVGFEImageElement::UpdateSrcURI() {
   nsAutoString href;
-  if (mStringAttributes[HREF].IsExplicitlySet()) {
-    mStringAttributes[HREF].GetAnimValue(href, this);
-  } else {
-    mStringAttributes[XLINK_HREF].GetAnimValue(href, this);
+  HrefAsString(href);
+
+  mImageContentObserver = nullptr;
+  mSrcURI = nullptr;
+  if (!href.IsEmpty()) {
+    StringToURI(href, OwnerDoc(), getter_AddRefs(mSrcURI));
   }
-  href.Trim(" \t\n\r");
-
-  if (baseURI && !href.IsEmpty()) NS_MakeAbsoluteURI(href, href, baseURI);
-
-  // Make sure we don't get in a recursive death-spiral
-  Document* doc = OwnerDoc();
-  nsCOMPtr<nsIURI> hrefAsURI;
-  if (NS_SUCCEEDED(StringToURI(href, doc, getter_AddRefs(hrefAsURI)))) {
-    bool isEqual;
-    if (NS_SUCCEEDED(hrefAsURI->Equals(baseURI, &isEqual)) && isEqual) {
-      // Image URI matches our URI exactly! Bail out.
-      return NS_OK;
-    }
-  }
-
-  // Mark channel as urgent-start before load image if the image load is
-  // initaiated by a user interaction.
-  mUseUrgentStartForChannel = UserActivation::IsHandlingUserInput();
-  return LoadImage(href, aForce, aNotify, eImageLoadType_Normal);
 }
 
-bool SVGFEImageElement::ShouldLoadImage() const {
-  return LoadingEnabled() && OwnerDoc()->ShouldLoadImages();
+void SVGFEImageElement::LoadSelectedImage(bool aAlwaysLoad,
+                                          bool aStopLazyLoading) {
+  // Make sure we don't get in a recursive death-spiral
+  bool isEqual;
+  if (mSrcURI && NS_SUCCEEDED(mSrcURI->Equals(GetBaseURI(), &isEqual)) &&
+      isEqual) {
+    // Image URI matches our URI exactly! Bail out.
+    return;
+  }
+
+  const bool kNotify = true;
+
+  if (SVGObserverUtils::GetAndObserveFEImageContent(this)) {
+    // We have a local target, don't try to load an image.
+    CancelImageRequests(kNotify);
+    return;
+  }
+
+  nsresult rv = NS_ERROR_FAILURE;
+  if (mSrcURI || (mStringAttributes[HREF].IsExplicitlySet() ||
+                  mStringAttributes[XLINK_HREF].IsExplicitlySet())) {
+    rv = LoadImage(mSrcURI, /* aForce = */ true, kNotify, eImageLoadType_Normal,
+                   LoadFlags(), OwnerDoc());
+  }
+
+  if (NS_FAILED(rv)) {
+    CancelImageRequests(kNotify);
+  }
 }
 
 //----------------------------------------------------------------------
@@ -105,10 +126,15 @@ bool SVGFEImageElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
                                        const nsAString& aValue,
                                        nsIPrincipal* aMaybeScriptedPrincipal,
                                        nsAttrValue& aResult) {
-  if (aNamespaceID == kNameSpaceID_None &&
-      aAttribute == nsGkAtoms::crossorigin) {
-    ParseCORSValue(aValue, aResult);
-    return true;
+  if (aNamespaceID == kNameSpaceID_None) {
+    if (aAttribute == nsGkAtoms::crossorigin) {
+      ParseCORSValue(aValue, aResult);
+      return true;
+    }
+    if (aAttribute == nsGkAtoms::fetchpriority) {
+      ParseFetchPriority(aValue, aResult);
+      return true;
+    }
   }
   return SVGFEImageElementBase::ParseAttribute(
       aNamespaceID, aAttribute, aValue, aMaybeScriptedPrincipal, aResult);
@@ -119,6 +145,7 @@ void SVGFEImageElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                      const nsAttrValue* aOldValue,
                                      nsIPrincipal* aSubjectPrincipal,
                                      bool aNotify) {
+  bool forceReload = false;
   if (aName == nsGkAtoms::href && (aNamespaceID == kNameSpaceID_XLink ||
                                    aNamespaceID == kNameSpaceID_None)) {
     if (aNamespaceID == kNameSpaceID_XLink &&
@@ -126,32 +153,19 @@ void SVGFEImageElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
       // href overrides xlink:href
       return;
     }
-    if (aValue || (aNamespaceID == kNameSpaceID_None &&
-                   mStringAttributes[XLINK_HREF].IsExplicitlySet())) {
-      if (ShouldLoadImage()) {
-        LoadSVGImage(true, aNotify);
-      }
-    } else {
-      CancelImageRequests(aNotify);
-    }
+    UpdateSrcURI();
+    forceReload = true;
   } else if (aNamespaceID == kNameSpaceID_None &&
              aName == nsGkAtoms::crossorigin) {
-    if (aNotify && GetCORSMode() != AttrValueToCORSMode(aOldValue) &&
-        ShouldLoadImage()) {
-      ForceReload(aNotify, IgnoreErrors());
-    }
+    forceReload = GetCORSMode() != AttrValueToCORSMode(aOldValue);
+  }
+
+  if (forceReload) {
+    QueueImageTask(mSrcURI, /* aAlwaysLoad = */ true, aNotify);
   }
 
   return SVGFEImageElementBase::AfterSetAttr(
       aNamespaceID, aName, aValue, aOldValue, aSubjectPrincipal, aNotify);
-}
-
-void SVGFEImageElement::MaybeLoadSVGImage() {
-  if ((mStringAttributes[HREF].IsExplicitlySet() ||
-       mStringAttributes[XLINK_HREF].IsExplicitlySet()) &&
-      (NS_FAILED(LoadSVGImage(false, true)) || !LoadingEnabled())) {
-    CancelImageRequests(true);
-  }
 }
 
 nsresult SVGFEImageElement::BindToTree(BindContext& aContext,
@@ -161,14 +175,6 @@ nsresult SVGFEImageElement::BindToTree(BindContext& aContext,
 
   nsImageLoadingContent::BindToTree(aContext, aParent);
 
-  if ((mStringAttributes[HREF].IsExplicitlySet() ||
-       mStringAttributes[XLINK_HREF].IsExplicitlySet()) &&
-      ShouldLoadImage()) {
-    nsContentUtils::AddScriptRunner(
-        NewRunnableMethod("dom::SVGFEImageElement::MaybeLoadSVGImage", this,
-                          &SVGFEImageElement::MaybeLoadSVGImage));
-  }
-
   if (aContext.InComposedDoc()) {
     aContext.OwnerDoc().SetUseCounter(eUseCounter_custom_feImage);
   }
@@ -177,11 +183,14 @@ nsresult SVGFEImageElement::BindToTree(BindContext& aContext,
 }
 
 void SVGFEImageElement::UnbindFromTree(UnbindContext& aContext) {
+  mImageContentObserver = nullptr;
   nsImageLoadingContent::UnbindFromTree();
   SVGFEImageElementBase::UnbindFromTree(aContext);
 }
 
 void SVGFEImageElement::DestroyContent() {
+  ClearImageLoadTask();
+
   nsImageLoadingContent::Destroy();
   SVGFEImageElementBase::DestroyContent();
 }
@@ -191,10 +200,15 @@ void SVGFEImageElement::DestroyContent() {
 
 NS_IMPL_ELEMENT_CLONE_WITH_INIT(SVGFEImageElement)
 
-already_AddRefed<DOMSVGAnimatedString> SVGFEImageElement::Href() {
-  return mStringAttributes[HREF].IsExplicitlySet()
-             ? mStringAttributes[HREF].ToDOMAnimatedString(this)
-             : mStringAttributes[XLINK_HREF].ToDOMAnimatedString(this);
+void SVGFEImageElement::NodeInfoChanged(Document* aOldDoc) {
+  SVGFEImageElementBase::NodeInfoChanged(aOldDoc);
+
+  // Reparse the URI if needed. Note that we can't check whether we already have
+  // a parsed URI, because it might be null even if we have a valid href
+  // attribute, if we tried to parse with a different base.
+  UpdateSrcURI();
+
+  QueueImageTask(mSrcURI, /* aAlwaysLoad = */ true, /* aNotify = */ false);
 }
 
 //----------------------------------------------------------------------
@@ -202,6 +216,11 @@ already_AddRefed<DOMSVGAnimatedString> SVGFEImageElement::Href() {
 
 CORSMode SVGFEImageElement::GetCORSMode() {
   return AttrValueToCORSMode(GetParsedAttr(nsGkAtoms::crossorigin));
+}
+
+void SVGFEImageElement::GetFetchPriority(nsAString& aFetchPriority) const {
+  GetEnumAttr(nsGkAtoms::fetchpriority, kFetchPriorityAttributeValueAuto,
+              aFetchPriority);
 }
 
 //----------------------------------------------------------------------
@@ -307,6 +326,13 @@ bool SVGFEImageElement::OutputIsTainted(const nsTArray<bool>& aInputsAreTainted,
 //----------------------------------------------------------------------
 // SVGElement methods
 
+already_AddRefed<DOMSVGAnimatedString> SVGFEImageElement::Href() {
+  return mStringAttributes[HREF].IsExplicitlySet() ||
+                 !mStringAttributes[XLINK_HREF].IsExplicitlySet()
+             ? mStringAttributes[HREF].ToDOMAnimatedString(this)
+             : mStringAttributes[XLINK_HREF].ToDOMAnimatedString(this);
+}
+
 already_AddRefed<DOMSVGAnimatedPreserveAspectRatio>
 SVGFEImageElement::PreserveAspectRatio() {
   return mPreserveAspectRatio.ToDOMAnimatedPreserveAspectRatio(this);
@@ -328,7 +354,7 @@ NS_IMETHODIMP_(void)
 SVGFEImageElement::FrameCreated(nsIFrame* aFrame) {
   nsImageLoadingContent::FrameCreated(aFrame);
 
-  uint64_t mode = aFrame->PresContext()->ImageAnimationMode();
+  auto mode = aFrame->PresContext()->ImageAnimationMode();
   if (mode == mImageAnimationMode) {
     return;
   }
@@ -382,16 +408,38 @@ void SVGFEImageElement::DidAnimateAttribute(int32_t aNameSpaceID,
   if ((aNameSpaceID == kNameSpaceID_None ||
        aNameSpaceID == kNameSpaceID_XLink) &&
       aAttribute == nsGkAtoms::href) {
-    bool hrefIsSet =
-        mStringAttributes[SVGFEImageElement::HREF].IsExplicitlySet() ||
-        mStringAttributes[SVGFEImageElement::XLINK_HREF].IsExplicitlySet();
-    if (hrefIsSet) {
-      LoadSVGImage(true, true);
-    } else {
-      CancelImageRequests(true);
-    }
+    UpdateSrcURI();
+    QueueImageTask(mSrcURI, /* aAlwaysLoad = */ true, /* aNotify */ true);
   }
   SVGFEImageElementBase::DidAnimateAttribute(aNameSpaceID, aAttribute);
+}
+
+//----------------------------------------------------------------------
+// Public helper methods
+
+void SVGFEImageElement::HrefAsString(nsAString& aHref) {
+  if (mStringAttributes[HREF].IsExplicitlySet()) {
+    mStringAttributes[HREF].GetBaseValue(aHref, this);
+  } else {
+    mStringAttributes[XLINK_HREF].GetBaseValue(aHref, this);
+  }
+}
+
+void SVGFEImageElement::NotifyImageContentChanged() {
+  // We don't support rendering fragments yet (bug 455986)
+}
+
+void SVGFEImageElement::AddSizeOfExcludingThis(nsWindowSizes& aSizes,
+                                               size_t* aNodeSize) const {
+  SVGElement::AddSizeOfExcludingThis(aSizes, aNodeSize);
+
+  // It is okay to include the size of mSrcURI here even though it might have
+  // strong references from elsewhere because the URI was created for this
+  // object, in nsImageLoadingContent::StringToURI(). Only objects that created
+  // their own URI will call nsIURI::SizeOfIncludingThis().
+  if (mSrcURI) {
+    *aNodeSize += mSrcURI->SizeOfIncludingThis(aSizes.mState.mMallocSizeOf);
+  }
 }
 
 }  // namespace mozilla::dom

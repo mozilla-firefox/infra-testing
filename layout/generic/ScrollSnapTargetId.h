@@ -6,9 +6,10 @@
 #define mozilla_ScrollSnapTargetId_h_
 
 #include <cstdint>
+
+#include "Units.h"
 #include "nsPoint.h"
 #include "nsTArray.h"
-#include "Units.h"
 
 namespace mozilla {
 
@@ -22,9 +23,7 @@ inline constexpr bool IsEnumCase(ScrollSnapTargetId) { return true; }
 struct ScrollSnapTargetIds {
   CopyableTArray<ScrollSnapTargetId> mIdsOnX;
   CopyableTArray<ScrollSnapTargetId> mIdsOnY;
-  bool operator==(const ScrollSnapTargetIds& aOther) const {
-    return mIdsOnX == aOther.mIdsOnX && mIdsOnY == aOther.mIdsOnY;
-  }
+  bool operator==(const ScrollSnapTargetIds&) const = default;
 };
 
 struct SnapDestination {

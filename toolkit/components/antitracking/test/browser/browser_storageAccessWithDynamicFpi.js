@@ -5,17 +5,13 @@
 
 "use strict";
 
-const { RemoteSettings } = ChromeUtils.importESModule(
-  "resource://services-settings/remote-settings.sys.mjs"
-);
-
 const isAndroid = AppConstants.platform == "android";
 
 XPCOMUtils.defineLazyServiceGetter(
   this,
   "peuService",
   "@mozilla.org/partitioning/exception-list-service;1",
-  "nsIPartitioningExceptionListService"
+  Ci.nsIPartitioningExceptionListService
 );
 
 const TEST_REDIRECT_TOP_PAGE =
@@ -58,6 +54,7 @@ add_setup(async function () {
       ["privacy.trackingprotection.annotate_channels", true],
       // Bug 1617611: Fix all the tests broken by "cookies SameSite=lax by default"
       ["network.cookie.sameSite.laxByDefault", false],
+      ["security.allow_eval_with_system_principal", true],
     ],
   });
   registerCleanupFunction(cleanup);
@@ -91,8 +88,8 @@ function executeContentScript(browser, callback, options = {}) {
             once: true,
           });
 
-          content.document.body.appendChild(ifr);
           ifr.src = obj.page;
+          content.document.body.appendChild(ifr);
         } else {
           // first-party
           let runnableStr = `(() => {return (${obj.callback});})();`;

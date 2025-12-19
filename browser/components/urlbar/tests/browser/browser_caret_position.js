@@ -208,7 +208,7 @@ add_task(async function setURI() {
       `Test for ${data.firstURL} -> ${data.secondURL} with initial selection: ${data.initialSelectionStart}, ${data.initialSelectionEnd}`
     );
     info("Check the caret position after setting second URL");
-    gURLBar.setURI(makeURI(data.firstURL));
+    gURLBar.setURI({ uri: makeURI(data.firstURL) });
 
     // The protocol may be trimmed when the urlbar is blurred, then we must
     // adjust the expected selection accordingly.
@@ -236,7 +236,7 @@ add_task(async function setURI() {
     await flushScrollStyle();
 
     gURLBar.focus();
-    gURLBar.setURI(makeURI(data.secondURL));
+    gURLBar.setURI({ uri: makeURI(data.secondURL) });
     await flushScrollStyle();
 
     Assert.equal(gURLBar.selectionStart, data.expectedSelectionStart);
@@ -251,14 +251,14 @@ add_task(async function setURI() {
     }
 
     info("Check the caret position while the input is not focused");
-    gURLBar.setURI(makeURI(data.firstURL));
+    gURLBar.setURI({ uri: makeURI(data.firstURL) });
     gURLBar.selectionStart = data.initialSelectionStart;
     gURLBar.selectionEnd = data.initialSelectionEnd;
 
     await flushScrollStyle();
 
     gURLBar.blur();
-    gURLBar.setURI(makeURI(data.secondURL));
+    gURLBar.setURI({ uri: makeURI(data.secondURL) });
     await flushScrollStyle();
 
     if (data.firstURL === data.secondURL) {
@@ -548,10 +548,10 @@ function checkIfKeyStartsQuery(key, shouldStartQuery, win) {
       queryStarted = true;
     },
   };
-  win.gURLBar.controller.addQueryListener(queryListener);
+  win.gURLBar.controller.addListener(queryListener);
   EventUtils.synthesizeKey(key, {}, win);
   win.gURLBar.eventBufferer.replayDeferredEvents(false);
-  win.gURLBar.controller.removeQueryListener(queryListener);
+  win.gURLBar.controller.removeListener(queryListener);
   Assert.equal(
     queryStarted,
     shouldStartQuery,

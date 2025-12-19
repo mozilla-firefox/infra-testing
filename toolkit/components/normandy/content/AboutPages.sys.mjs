@@ -10,13 +10,11 @@ ChromeUtils.defineESModuleGetters(lazy, {
   AddonStudies: "resource://normandy/lib/AddonStudies.sys.mjs",
   BranchedAddonStudyAction:
     "resource://normandy/actions/BranchedAddonStudyAction.sys.mjs",
-  ExperimentManager: "resource://nimbus/lib/ExperimentManager.sys.mjs",
+  ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
   NimbusTelemetry: "resource://nimbus/lib/Telemetry.sys.mjs",
   PreferenceExperiments:
     "resource://normandy/lib/PreferenceExperiments.sys.mjs",
   RecipeRunner: "resource://normandy/lib/RecipeRunner.sys.mjs",
-  RemoteSettingsExperimentLoader:
-    "resource://nimbus/lib/RemoteSettingsExperimentLoader.sys.mjs",
   UnenrollmentCause: "resource://nimbus/lib/ExperimentManager.sys.mjs",
 });
 
@@ -76,6 +74,7 @@ export let AboutPages = {};
 let BrowsingContexts = new WeakSet();
 /**
  * about:studies page for displaying in-progress and past Shield studies.
+ *
  * @type {AboutPage}
  * @implements {nsIMessageListener}
  */
@@ -103,12 +102,16 @@ ChromeUtils.defineLazyGetter(AboutPages, "aboutStudies", () => {
     },
 
     getMessagingSystemList() {
-      return lazy.ExperimentManager.store.getAll();
+      // Do not include Firefox Labs. Those are shown on
+      // about:preferences#experimental.
+      return lazy.ExperimentAPI.manager.store
+        .getAll()
+        .filter(e => !e.isFirefoxLabsOptIn);
     },
 
     async optInToExperiment(data) {
       try {
-        await lazy.RemoteSettingsExperimentLoader.optInToExperiment(data);
+        await lazy.ExperimentAPI.optInToExperiment(data);
         return {
           error: false,
           message: "Opt-in was successful.",
@@ -121,14 +124,16 @@ ChromeUtils.defineLazyGetter(AboutPages, "aboutStudies", () => {
       }
     },
 
-    /** Add a browsing context to the weak set;
+    /**
+     * Add a browsing context to the weak set;
      * this weak set keeps track of all contexts
      * that are housing an about:studies page.
      */
     addToWeakSet(browsingContext) {
       BrowsingContexts.add(browsingContext);
     },
-    /** Remove a browsing context to the weak set;
+    /**
+     * Remove a browsing context to the weak set;
      * this weak set keeps track of all contexts
      * that are housing an about:studies page.
      */
@@ -139,6 +144,7 @@ ChromeUtils.defineLazyGetter(AboutPages, "aboutStudies", () => {
     /**
      * Sends a message to every about:studies page,
      * by iterating over the BrowsingContexts weakset.
+     *
      * @param {string} message The message string to send to.
      * @param {object} data The data object to send.
      */
@@ -163,8 +169,9 @@ ChromeUtils.defineLazyGetter(AboutPages, "aboutStudies", () => {
 
     /**
      * Disable an active add-on study and remove its add-on.
-     * @param {String} recipeId the id of the addon to remove
-     * @param {String} reason the reason for removal
+     *
+     * @param {string} recipeId the id of the addon to remove
+     * @param {string} reason the reason for removal
      */
     async removeAddonStudy(recipeId, reason) {
       try {
@@ -187,8 +194,9 @@ ChromeUtils.defineLazyGetter(AboutPages, "aboutStudies", () => {
 
     /**
      * Disable an active preference study.
-     * @param {String} experimentName the name of the experiment to remove
-     * @param {String} reason the reason for removal
+     *
+     * @param {string} experimentName the name of the experiment to remove
+     * @param {string} reason the reason for removal
      */
     async removePreferenceStudy(experimentName, reason) {
       try {
@@ -212,7 +220,7 @@ ChromeUtils.defineLazyGetter(AboutPages, "aboutStudies", () => {
     },
 
     async removeMessagingSystemExperiment(slug) {
-      lazy.ExperimentManager.unenroll(
+      lazy.ExperimentAPI.manager.unenroll(
         slug,
         lazy.UnenrollmentCause.fromReason(
           lazy.NimbusTelemetry.UnenrollReason.INDIVIDUAL_OPT_OUT
@@ -220,7 +228,7 @@ ChromeUtils.defineLazyGetter(AboutPages, "aboutStudies", () => {
       );
       this._sendToAll(
         "Shield:UpdateMessagingSystemExperimentList",
-        lazy.ExperimentManager.store.getAll()
+        this.getMessagingSystemList()
       );
     },
 

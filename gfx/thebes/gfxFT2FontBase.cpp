@@ -133,6 +133,19 @@ uint32_t gfxFT2FontEntryBase::GetGlyph(uint32_t aCharCode,
   return slot.mGlyphIndex;
 }
 
+size_t gfxFT2FontEntryBase::ComputedSizeOfExcludingThis(
+    MallocSizeOf aMallocSizeOf) {
+  size_t result = gfxFontEntry::ComputedSizeOfExcludingThis(aMallocSizeOf);
+
+  if (const auto* data = GetUserFontData()) {
+    if (data->FontData()) {
+      result += aMallocSizeOf(data->FontData());
+    }
+  }
+
+  return result;
+}
+
 // aScale is intended for a 16.16 x/y_scale of an FT_Size_Metrics
 static inline FT_Long ScaleRoundDesignUnits(FT_Short aDesignMetric,
                                             FT_Fixed aScale) {
@@ -351,9 +364,10 @@ void gfxFT2FontBase::InitMetrics() {
     // we can get units_per_EM from the 'head' table instead; otherwise,
     // we don't have a unitsPerEm value so we can't compute/use yScale or
     // mFUnitsConvFactor (x scale).
-    const TT_Header* head =
-        static_cast<TT_Header*>(FT_Get_Sfnt_Table(face, ft_sfnt_head));
-    if (head) {
+    if (const TT_Header* head =
+            static_cast<TT_Header*>(FT_Get_Sfnt_Table(face, ft_sfnt_head))) {
+      gfxFloat emUnit = head->Units_Per_EM;
+      mFUnitsConvFactor = ftMetrics.x_ppem / emUnit;
       // Bug 1267909 - Even if the font is not explicitly scalable,
       // if the face has color bitmaps, it should be treated as scalable
       // and scaled to the desired size. Metrics based on y_ppem need
@@ -366,9 +380,8 @@ void gfxFT2FontBase::InitMetrics() {
         mMetrics.maxDescent *= adjustScale;
         mMetrics.maxAdvance *= adjustScale;
         lineHeight *= adjustScale;
+        mFUnitsConvFactor *= adjustScale;
       }
-      gfxFloat emUnit = head->Units_Per_EM;
-      mFUnitsConvFactor = ftMetrics.x_ppem / emUnit;
       yScale = emHeight / emUnit;
     }
   }

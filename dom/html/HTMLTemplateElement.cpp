@@ -5,26 +5,24 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/HTMLTemplateElement.h"
-#include "mozilla/dom/HTMLTemplateElementBinding.h"
 
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/HTMLTemplateElementBinding.h"
 #include "mozilla/dom/NameSpaceConstants.h"
 #include "mozilla/dom/ShadowRootBinding.h"
+#include "nsAtom.h"
 #include "nsGenericHTMLElement.h"
 #include "nsGkAtoms.h"
 #include "nsStyleConsts.h"
-#include "nsAtom.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Template)
 
 namespace mozilla::dom {
 
-static constexpr nsAttrValue::EnumTable kShadowRootModeTable[] = {
+static constexpr nsAttrValue::EnumTableEntry kShadowRootModeTable[] = {
     {"open", ShadowRootMode::Open},
     {"closed", ShadowRootMode::Closed},
-    {nullptr, {}}};
-
-const nsAttrValue::EnumTable* kShadowRootModeDefault = &kShadowRootModeTable[2];
+};
 
 HTMLTemplateElement::HTMLTemplateElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
@@ -102,10 +100,20 @@ bool HTMLTemplateElement::ParseAttribute(int32_t aNamespaceID,
                                               aMaybeScriptedPrincipal, aResult);
 }
 
+void HTMLTemplateElement::SetHTML(const nsAString& aHTML,
+                                  const SetHTMLOptions& aOptions,
+                                  ErrorResult& aError) {
+  RefPtr<DocumentFragment> content = mContent;
+  nsContentUtils::SetHTML(content, this, aHTML, aOptions, aError);
+}
+
 void HTMLTemplateElement::SetHTMLUnsafe(const TrustedHTMLOrString& aHTML,
+                                        const SetHTMLUnsafeOptions& aOptions,
+                                        nsIPrincipal* aSubjectPrincipal,
                                         ErrorResult& aError) {
   RefPtr<DocumentFragment> content = mContent;
-  nsContentUtils::SetHTMLUnsafe(content, this, aHTML, false /*aIsShadowRoot*/,
+  nsContentUtils::SetHTMLUnsafe(content, this, aHTML, aOptions,
+                                false /*aIsShadowRoot*/, aSubjectPrincipal,
                                 aError);
 }
 

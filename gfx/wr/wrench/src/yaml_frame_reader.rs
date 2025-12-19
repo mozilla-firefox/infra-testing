@@ -154,7 +154,8 @@ impl ExternalImageHandler for LocalExternalImageHandler {
         &mut self,
         key: ExternalImageId,
         _channel_index: u8,
-    ) -> ExternalImage {
+        _is_composited: bool,
+    ) -> ExternalImage<'_> {
         let (id, desc) = self.texture_ids[key.0 as usize];
         ExternalImage {
             uv: TexelRect::new(0.0, 0.0, desc.size.width as f32, desc.size.height as f32),
@@ -480,9 +481,10 @@ impl YamlFrameReader {
         send_transaction: bool,
         yaml: &Yaml
     ) {
+        let offscreen = yaml["offscreen"].as_bool().unwrap_or(false);
         // By default, present if send_transaction is set to true. Can be overridden
         // by a field in the pipeline's root.
-        let present = yaml["present"].as_bool().unwrap_or(send_transaction);
+        let present = !offscreen && yaml["present"].as_bool().unwrap_or(send_transaction);
 
         // Don't allow referencing clips between pipelines for now.
         self.user_clip_id_map.clear();
@@ -505,6 +507,7 @@ impl YamlFrameReader {
             payload,
             present,
             send_transaction,
+            render_offscreen: offscreen,
         });
 
         assert_eq!(self.spatial_id_stack.len(), 1);
@@ -844,16 +847,6 @@ impl YamlFrameReader {
         let bounds = self.resolve_rect(&item[bounds_key]);
         let color = self.resolve_colorf(&item["color"]).unwrap_or(ColorF::BLACK);
         dl.push_rect(info, bounds, color);
-    }
-
-    fn handle_clear_rect(
-        &self,
-        dl: &mut DisplayListBuilder,
-        item: &Yaml,
-        info: &CommonItemProperties,
-    ) {
-        let bounds = item["bounds"].as_rect().expect("clear-rect type must have bounds");
-        dl.push_clear_rect(info, bounds);
     }
 
     fn handle_hit_test(
@@ -1595,7 +1588,6 @@ impl YamlFrameReader {
             match item_type {
                 "rect" => self.handle_rect(dl, item, &info),
                 "hit-test" => self.handle_hit_test(dl, item, &mut info),
-                "clear-rect" => self.handle_clear_rect(dl, item, &info),
                 "line" => self.handle_line(dl, item, &mut info),
                 "image" => self.handle_image(dl, wrench, item, &mut info),
                 "yuv-image" => self.handle_yuv_image(dl, wrench, item, &mut info),
@@ -2056,7 +2048,6 @@ impl YamlFrameReader {
 
         let filters = yaml["filters"].as_vec_filter_op().unwrap_or_default();
         let filter_datas = yaml["filter-datas"].as_vec_filter_data().unwrap_or_default();
-        let filter_primitives = yaml["filter-primitives"].as_vec_filter_primitive().unwrap_or_default();
 
         let snapshot = if !yaml["snapshot"].is_badvalue() {
             let yaml = &yaml["snapshot"];
@@ -2092,7 +2083,6 @@ impl YamlFrameReader {
             mix_blend_mode,
             &filters,
             &filter_datas,
-            &filter_primitives,
             raster_space,
             flags,
             snapshot,
@@ -2123,13 +2113,11 @@ impl YamlFrameReader {
 
         let filters = item["filters"].as_vec_filter_op().unwrap_or_default();
         let filter_datas = item["filter-datas"].as_vec_filter_data().unwrap_or_default();
-        let filter_primitives = item["filter-primitives"].as_vec_filter_primitive().unwrap_or_default();
 
         dl.push_backdrop_filter(
             info,
             &filters,
             &filter_datas,
-            &filter_primitives,
         );
     }
 }

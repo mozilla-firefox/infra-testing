@@ -6,11 +6,26 @@
 
 #include "FontFaceSetImpl.h"
 
+#include "ReferrerInfo.h"
 #include "gfxFontConstants.h"
 #include "gfxFontSrcPrincipal.h"
 #include "gfxFontSrcURI.h"
 #include "gfxFontUtils.h"
 #include "gfxPlatformFontList.h"
+#include "mozilla/AsyncEventDispatcher.h"
+#include "mozilla/BasePrincipal.h"
+#include "mozilla/FontPropertyTypes.h"
+#include "mozilla/LoadInfo.h"
+#include "mozilla/Logging.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/PresShell.h"
+#include "mozilla/PresShellInlines.h"
+#include "mozilla/ServoBindings.h"
+#include "mozilla/ServoCSSParser.h"
+#include "mozilla/ServoStyleSet.h"
+#include "mozilla/ServoUtils.h"
+#include "mozilla/Sprintf.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/css/Loader.h"
 #include "mozilla/dom/CSSFontFaceRule.h"
 #include "mozilla/dom/DocumentInlines.h"
@@ -23,40 +38,25 @@
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerRunnable.h"
-#include "mozilla/FontPropertyTypes.h"
-#include "mozilla/AsyncEventDispatcher.h"
-#include "mozilla/BasePrincipal.h"
-#include "mozilla/glean/NetwerkProtocolHttpMetrics.h"
-#include "mozilla/Logging.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/PresShell.h"
-#include "mozilla/PresShellInlines.h"
-#include "mozilla/ServoBindings.h"
-#include "mozilla/ServoCSSParser.h"
-#include "mozilla/ServoStyleSet.h"
-#include "mozilla/ServoUtils.h"
-#include "mozilla/Sprintf.h"
-#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/glean/GfxMetrics.h"
-#include "mozilla/LoadInfo.h"
+#include "mozilla/glean/NetwerkProtocolHttpMetrics.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
+#include "nsDOMNavigationTiming.h"
 #include "nsDeviceContext.h"
 #include "nsFontFaceLoader.h"
 #include "nsIConsoleService.h"
 #include "nsIContentPolicy.h"
 #include "nsIDocShell.h"
+#include "nsIInputStream.h"
 #include "nsILoadContext.h"
 #include "nsIPrincipal.h"
 #include "nsIWebNavigation.h"
-#include "nsNetUtil.h"
-#include "nsIInputStream.h"
 #include "nsLayoutUtils.h"
+#include "nsNetUtil.h"
 #include "nsPresContext.h"
 #include "nsPrintfCString.h"
 #include "nsUTF8Utils.h"
-#include "nsDOMNavigationTiming.h"
-#include "ReferrerInfo.h"
 
 using namespace mozilla;
 using namespace mozilla::css;
@@ -254,8 +254,6 @@ FontFaceSetLoadStatus FontFaceSetImpl::Status() {
 
 bool FontFaceSetImpl::Add(FontFaceImpl* aFontFace, ErrorResult& aRv) {
   RecursiveMutexAutoLock lock(mMutex);
-  FlushUserFontSet();
-
   if (aFontFace->IsInFontFaceSet(this)) {
     return false;
   }
@@ -288,8 +286,6 @@ bool FontFaceSetImpl::Add(FontFaceImpl* aFontFace, ErrorResult& aRv) {
 
 void FontFaceSetImpl::Clear() {
   RecursiveMutexAutoLock lock(mMutex);
-  FlushUserFontSet();
-
   if (mNonRuleFaces.IsEmpty()) {
     return;
   }
@@ -308,8 +304,6 @@ void FontFaceSetImpl::Clear() {
 
 bool FontFaceSetImpl::Delete(FontFaceImpl* aFontFace) {
   RecursiveMutexAutoLock lock(mMutex);
-  FlushUserFontSet();
-
   if (aFontFace->HasRule()) {
     return false;
   }
@@ -643,19 +637,8 @@ nsresult FontFaceSetImpl::LogMessage(gfxUserFontEntry* aUserFontEntry,
   if (rule) {
     Servo_FontFaceRule_GetSourceLocation(rule, &line, &column);
     // FIXME We need to figure out an approach to get the style sheet
-    // of this raw rule. See bug 1450903.
-#if 0
-    StyleSheet* sheet = rule->GetStyleSheet();
-    // if the style sheet is removed while the font is loading can be null
-    if (sheet) {
-      nsCString spec = sheet->GetSheetURI()->GetSpecOrDefault();
-      CopyUTF8toUTF16(spec, href);
-    } else {
-      NS_WARNING("null parent stylesheet for @font-face rule");
-      href.AssignLiteral("unknown");
-    }
-#endif
-    // Leave href empty if we don't know how to get the correct sheet.
+    // of this raw rule. See bug 1450903. Leave href empty if we don't know how
+    // to get the correct sheet.
   }
 
   nsresult rv;

@@ -13,47 +13,47 @@
 #include "nsString.h"
 
 // Interfaces needed to be included
-#include "nsCopySupport.h"
-#include "nsISelectionController.h"
-#include "nsPIDOMWindow.h"
-#include "nsIFormControl.h"
-#include "nsITransferable.h"
+#include "BrowserParent.h"
+#include "imgIContainer.h"
+#include "imgIRequest.h"
+#include "mozilla/TextControlElement.h"
+#include "mozilla/dom/BrowsingContext.h"
+#include "mozilla/dom/DataTransfer.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/HTMLAnchorElement.h"
+#include "mozilla/dom/HTMLAreaElement.h"
+#include "mozilla/dom/Selection.h"
 #include "nsComponentManagerUtils.h"
-#include "nsXPCOM.h"
-#include "nsISupportsPrimitives.h"
-#include "nsServiceManagerUtils.h"
-#include "nsNetUtil.h"
-#include "nsIFile.h"
+#include "nsContentUtils.h"
+#include "nsCopySupport.h"
+#include "nsEscape.h"
 #include "nsFrameLoader.h"
 #include "nsFrameLoaderOwner.h"
 #include "nsIContent.h"
 #include "nsIContentInlines.h"
 #include "nsIContentPolicy.h"
-#include "nsIImageLoadingContent.h"
-#include "nsUnicharUtils.h"
-#include "nsIURL.h"
-#include "nsIURIMutator.h"
-#include "mozilla/dom/Document.h"
 #include "nsICookieJarSettings.h"
-#include "nsIPrincipal.h"
-#include "nsIWebBrowserPersist.h"
-#include "nsEscape.h"
-#include "nsContentUtils.h"
-#include "nsIMIMEService.h"
-#include "imgIContainer.h"
-#include "imgIRequest.h"
-#include "mozilla/dom/DataTransfer.h"
+#include "nsIFile.h"
+#include "nsIFormControl.h"
+#include "nsIImageLoadingContent.h"
 #include "nsIMIMEInfo.h"
-#include "nsRange.h"
-#include "BrowserParent.h"
-#include "mozilla/TextControlElement.h"
-#include "mozilla/dom/BrowsingContext.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/dom/HTMLAreaElement.h"
-#include "mozilla/dom/HTMLAnchorElement.h"
-#include "mozilla/dom/Selection.h"
-#include "nsVariant.h"
+#include "nsIMIMEService.h"
+#include "nsIPrincipal.h"
+#include "nsISelectionController.h"
+#include "nsISupportsPrimitives.h"
+#include "nsITransferable.h"
+#include "nsIURIMutator.h"
+#include "nsIURL.h"
+#include "nsIWebBrowserPersist.h"
+#include "nsNetUtil.h"
+#include "nsPIDOMWindow.h"
 #include "nsQueryObject.h"
+#include "nsRange.h"
+#include "nsServiceManagerUtils.h"
+#include "nsUnicharUtils.h"
+#include "nsVariant.h"
+#include "nsXPCOM.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -65,7 +65,7 @@ class MOZ_STACK_CLASS DragDataProducer {
                    nsIContent* aSelectionTargetNode, bool aIsAltKeyPressed);
   nsresult Produce(DataTransfer* aDataTransfer, bool* aCanDrag,
                    Selection** aSelection, nsIContent** aDragNode,
-                   nsIContentSecurityPolicy** aCsp,
+                   nsIPolicyContainer** aPolicyContainer,
                    nsICookieJarSettings** aCookieJarSettings);
 
  private:
@@ -110,7 +110,7 @@ nsresult nsContentAreaDragDrop::GetDragData(
     nsPIDOMWindowOuter* aWindow, nsIContent* aTarget,
     nsIContent* aSelectionTargetNode, bool aIsAltKeyPressed,
     DataTransfer* aDataTransfer, bool* aCanDrag, Selection** aSelection,
-    nsIContent** aDragNode, nsIContentSecurityPolicy** aCsp,
+    nsIContent** aDragNode, nsIPolicyContainer** aPolicyContainer,
     nsICookieJarSettings** aCookieJarSettings) {
   NS_ENSURE_TRUE(aSelectionTargetNode, NS_ERROR_INVALID_ARG);
 
@@ -118,8 +118,8 @@ nsresult nsContentAreaDragDrop::GetDragData(
 
   DragDataProducer provider(aWindow, aTarget, aSelectionTargetNode,
                             aIsAltKeyPressed);
-  return provider.Produce(aDataTransfer, aCanDrag, aSelection, aDragNode, aCsp,
-                          aCookieJarSettings);
+  return provider.Produce(aDataTransfer, aCanDrag, aSelection, aDragNode,
+                          aPolicyContainer, aCookieJarSettings);
 }
 
 NS_IMPL_ISUPPORTS(nsContentAreaDragDropDataProvider, nsIFlavorDataProvider)
@@ -156,47 +156,6 @@ nsresult nsContentAreaDragDropDataProvider::SaveURIToFile(
   return persist->SaveURI(inSourceURI, inTriggeringPrincipal, 0, nullptr,
                           inCookieJarSettings, nullptr, nullptr, inDestFile,
                           inContentPolicyType, isPrivate);
-}
-
-/*
- * Check if the provided filename extension is valid for the MIME type and
- * return the MIME type's primary extension.
- *
- * @param aExtension           [in]  the extension to check
- * @param aMimeType            [in]  the MIME type to check the extension with
- * @param aIsValidExtension    [out] true if |aExtension| is valid for
- *                                   |aMimeType|
- * @param aPrimaryExtension    [out] the primary extension for the MIME type
- *                                   to potentially be used as a replacement
- *                                   for |aExtension|
- */
-nsresult CheckAndGetExtensionForMime(const nsCString& aExtension,
-                                     const nsCString& aMimeType,
-                                     bool* aIsValidExtension,
-                                     nsACString* aPrimaryExtension) {
-  nsresult rv;
-
-  nsCOMPtr<nsIMIMEService> mimeService = do_GetService("@mozilla.org/mime;1");
-  if (NS_WARN_IF(!mimeService)) {
-    return NS_ERROR_FAILURE;
-  }
-
-  nsCOMPtr<nsIMIMEInfo> mimeInfo;
-  rv = mimeService->GetFromTypeAndExtension(aMimeType, ""_ns,
-                                            getter_AddRefs(mimeInfo));
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  mimeInfo->GetPrimaryExtension(*aPrimaryExtension);
-
-  if (aExtension.IsEmpty()) {
-    *aIsValidExtension = false;
-    return NS_OK;
-  }
-
-  rv = mimeInfo->ExtensionExists(aExtension, aIsValidExtension);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  return NS_OK;
 }
 
 // This is our nsIFlavorDataProvider callback. There are several
@@ -380,45 +339,48 @@ void DragDataProducer::CreateLinkText(const nsAString& inURL,
 
 nsresult DragDataProducer::GetImageData(imgIContainer* aImage,
                                         imgIRequest* aRequest) {
+  MOZ_ASSERT(aImage);
+  MOZ_ASSERT(aRequest);
+
   nsCOMPtr<nsIURI> imgUri = aRequest->GetURI();
+  if (!imgUri) {
+    return NS_ERROR_FAILURE;
+  }
 
-  nsCOMPtr<nsIURL> imgUrl(do_QueryInterface(imgUri));
-  if (imgUrl) {
-    nsAutoCString spec;
-    nsresult rv = imgUrl->GetSpec(spec);
-    NS_ENSURE_SUCCESS(rv, rv);
+  nsAutoCString spec;
+  nsresult rv = imgUri->GetSpec(spec);
+  NS_ENSURE_SUCCESS(rv, rv);
 
-    // pass out the image source string
-    CopyUTF8toUTF16(spec, mImageSourceString);
+  // pass out the image source string
+  CopyUTF8toUTF16(spec, mImageSourceString);
 
-    nsCString mimeType;
-    aRequest->GetMimeType(getter_Copies(mimeType));
+  nsCString mimeType;
+  aRequest->GetMimeType(getter_Copies(mimeType));
 
-    nsAutoCString fileName;
-    aRequest->GetFileName(fileName);
+  nsAutoCString fileName;
+  aRequest->GetFileName(fileName);
 
 #if defined(XP_MACOSX)
-    // Save the MIME type so we can make sure the extension
-    // is compatible (and replace it if it isn't) when the
-    // image is dropped. On Mac, we need to get the OS MIME
-    // handler information in the parent due to sandboxing.
-    CopyUTF8toUTF16(mimeType, mImageRequestMime);
-    CopyUTF8toUTF16(fileName, mImageDestFileName);
+  // Save the MIME type so we can make sure the extension
+  // is compatible (and replace it if it isn't) when the
+  // image is dropped. On Mac, we need to get the OS MIME
+  // handler information in the parent due to sandboxing.
+  CopyUTF8toUTF16(mimeType, mImageRequestMime);
+  CopyUTF8toUTF16(fileName, mImageDestFileName);
 #else
-    nsCOMPtr<nsIMIMEService> mimeService = do_GetService("@mozilla.org/mime;1");
-    if (NS_WARN_IF(!mimeService)) {
-      return NS_ERROR_FAILURE;
-    }
+  nsCOMPtr<nsIMIMEService> mimeService = do_GetService("@mozilla.org/mime;1");
+  if (NS_WARN_IF(!mimeService)) {
+    return NS_ERROR_FAILURE;
+  }
 
-    CopyUTF8toUTF16(fileName, mImageDestFileName);
-    mimeService->ValidateFileNameForSaving(mImageDestFileName, mimeType,
-                                           nsIMIMEService::VALIDATE_DEFAULT,
-                                           mImageDestFileName);
+  CopyUTF8toUTF16(fileName, mImageDestFileName);
+  mimeService->ValidateFileNameForSaving(mImageDestFileName, mimeType,
+                                         nsIMIMEService::VALIDATE_DEFAULT,
+                                         mImageDestFileName);
 #endif
 
-    // and the image object
-    mImage = aImage;
-  }
+  // and the image object
+  mImage = aImage;
 
   return NS_OK;
 }
@@ -426,7 +388,7 @@ nsresult DragDataProducer::GetImageData(imgIContainer* aImage,
 nsresult DragDataProducer::Produce(DataTransfer* aDataTransfer, bool* aCanDrag,
                                    Selection** aSelection,
                                    nsIContent** aDragNode,
-                                   nsIContentSecurityPolicy** aCsp,
+                                   nsIPolicyContainer** aPolicyContainer,
                                    nsICookieJarSettings** aCookieJarSettings) {
   MOZ_ASSERT(aCanDrag && aSelection && aDataTransfer && aDragNode,
              "null pointer passed to Produce");
@@ -504,15 +466,20 @@ nsresult DragDataProducer::Produce(DataTransfer* aDataTransfer, bool* aCanDrag,
     bool haveSelectedContent = false;
 
     // only drag form elements by using the alt key,
-    // otherwise buttons and select widgets are hard to use
+    // otherwise select widgets are hard to use
 
     // Note that while <object> elements implement nsIFormControl, we should
     // really allow dragging them if they happen to be images.
+    // XXX Other browsers allow dragging ohter type of form element as well.
     if (!mIsAltKeyPressed) {
-      const auto* form = nsIFormControl::FromNodeOrNull(mTarget);
-      if (form && form->ControlType() != FormControlType::Object) {
-        *aCanDrag = false;
-        return NS_OK;
+      if (const auto* form = nsIFormControl::FromNodeOrNull(mTarget)) {
+        if (form->IsConceptButton()) {
+          return NS_OK;
+        }
+        if (form->ControlType() != FormControlType::Object) {
+          *aCanDrag = false;
+          return NS_OK;
+        }
       }
     }
 
@@ -651,9 +618,9 @@ nsresult DragDataProducer::Produce(DataTransfer* aDataTransfer, bool* aCanDrag,
     nsCOMPtr<Document> doc = mWindow->GetDoc();
     NS_ENSURE_TRUE(doc, NS_ERROR_FAILURE);
 
-    nsCOMPtr<nsIContentSecurityPolicy> csp = doc->GetCsp();
-    if (csp) {
-      NS_IF_ADDREF(*aCsp = csp);
+    nsCOMPtr<nsIPolicyContainer> policyContainer = doc->GetPolicyContainer();
+    if (policyContainer) {
+      policyContainer.forget(aPolicyContainer);
     }
 
     nsCOMPtr<nsICookieJarSettings> cookieJarSettings = doc->CookieJarSettings();
@@ -678,6 +645,8 @@ nsresult DragDataProducer::Produce(DataTransfer* aDataTransfer, bool* aCanDrag,
     data = do_QueryInterface(supports);
     if (NS_SUCCEEDED(rv)) {
       data->GetData(mHtmlString);
+      // Do not add NULs to DND text.
+      mHtmlString.StripChar(L'\0');
     }
     rv = transferable->GetTransferData(kHTMLContext, getter_AddRefs(supports));
     data = do_QueryInterface(supports);
@@ -693,6 +662,8 @@ nsresult DragDataProducer::Produce(DataTransfer* aDataTransfer, bool* aCanDrag,
     data = do_QueryInterface(supports);
     NS_ENSURE_SUCCESS(rv, rv);  // require plain text at a minimum
     data->GetData(mTitleString);
+    // Do not add NULs to DND text.
+    mTitleString.StripChar(L'\0');
   }
 
   // default text value is the URL

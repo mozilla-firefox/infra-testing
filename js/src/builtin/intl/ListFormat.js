@@ -135,7 +135,7 @@ function InitializeListFormat(listFormat, locales, options) {
   }
 
   // Step 6.
-  var opt = new_Record();
+  var opt = NEW_RECORD();
   lazyListFormatData.opt = opt;
 
   // Steps 7-8.
@@ -173,24 +173,6 @@ function InitializeListFormat(listFormat, locales, options) {
   // We've done everything that must be done now: mark the lazy data as fully
   // computed and install it.
   initializeIntlObject(listFormat, "ListFormat", lazyListFormatData);
-}
-
-/**
- * Returns the subset of the given locale list for which this locale list has a
- * matching (possibly fallback) locale. Locales appear in the same order in the
- * returned list as in the input list.
- */
-function Intl_ListFormat_supportedLocalesOf(locales /*, options*/) {
-  var options = ArgumentsLength() > 1 ? GetArgument(1) : undefined;
-
-  // Step 1.
-  var availableLocales = "ListFormat";
-
-  // Step 2.
-  var requestedLocales = CanonicalizeLocaleList(locales);
-
-  // Step 3.
-  return SupportedLocales(availableLocales, requestedLocales, options);
 }
 
 /**

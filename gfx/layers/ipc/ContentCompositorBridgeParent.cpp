@@ -28,7 +28,6 @@
 #include "nsDebug.h"           // for NS_ASSERTION, etc
 #include "nsTArray.h"          // for nsTArray
 #include "nsXULAppAPI.h"       // for XRE_GetAsyncIOEventTarget
-#include "mozilla/Unused.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/BaseProfilerMarkerTypes.h"
@@ -372,6 +371,19 @@ void ContentCompositorBridgeParent::SetConfirmedTargetAPZC(
                                          std::move(aTargets));
 }
 
+void ContentCompositorBridgeParent::EndWheelTransaction(
+    const LayersId& aLayersId,
+    PWebRenderBridgeParent::EndWheelTransactionResolver&& aResolve) {
+  MOZ_ASSERT(aLayersId.IsValid());
+  const CompositorBridgeParent::LayerTreeState* state =
+      CompositorBridgeParent::GetIndirectShadowTree(aLayersId);
+  if (!state || !state->mParent) {
+    return;
+  }
+
+  state->mParent->EndWheelTransaction(aLayersId, std::move(aResolve));
+}
+
 void ContentCompositorBridgeParent::DeferredDestroy() { mSelfRef = nullptr; }
 
 ContentCompositorBridgeParent::~ContentCompositorBridgeParent() {
@@ -431,7 +443,7 @@ void ContentCompositorBridgeParent::ObserveLayersUpdate(LayersId aLayersId,
     return;
   }
 
-  Unused << state->mParent->SendObserveLayersUpdate(aLayersId, aActive);
+  (void)state->mParent->SendObserveLayersUpdate(aLayersId, aActive);
 }
 
 }  // namespace mozilla::layers

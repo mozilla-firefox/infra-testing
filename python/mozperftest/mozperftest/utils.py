@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import zipfile
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from io import StringIO
@@ -30,12 +31,20 @@ MULTI_REVISION_ROOT = f"{API_ROOT}/namespaces"
 MULTI_TASK_ROOT = f"{API_ROOT}/tasks"
 ON_TRY = "MOZ_AUTOMATION" in os.environ
 DOWNLOAD_TIMEOUT = 30
-METRICS_MATCHER = re.compile(r"(perfMetrics\s.*)")
+METRICS_MATCHER = re.compile(r"(perfMetrics.*)")
 PRETTY_APP_NAMES = {
     "org.mozilla.fenix": "fenix",
     "org.mozilla.firefox": "fenix",
     "org.mozilla.geckoview_example": "geckoview",
 }
+
+FIREFOX_MOBILE_APPS = ["fenix", "geckoview", "focus", "refbrow", "fennec"]
+CHROME_MOBILE_APPS = ["chrome-m"]
+MOBILE_APPS = FIREFOX_MOBILE_APPS + CHROME_MOBILE_APPS
+
+FIREFOX_DESKTOP_APPS = ["firefox"]
+CHROME_DESKTOP_APPS = ["chrome"]
+DESKTOP_APPS = FIREFOX_DESKTOP_APPS + CHROME_DESKTOP_APPS
 
 
 class NoPerfMetricsError(Exception):
@@ -79,10 +88,8 @@ class LogProcessor:
                 continue
             self.stdout.write(data.strip("\n") + "\n")
 
-            # Check if a temporary commit wa created
-            match = self.matcher.match(data)
+            match = self.matcher.search(data)
             if match:
-                # Last line found is the revision we want
                 self._match.append(match.group(1))
 
     def flush(self):
@@ -186,6 +193,12 @@ class MachLogger:
 
     def error(self, msg, name="mozperftest", **kwargs):
         self._logger(logging.ERROR, name, kwargs, msg)
+
+    def group_start(self, msg=None, name="mozperftest", **kwargs):
+        self._logger(logging.INFO, name, kwargs, msg)
+
+    def group_end(self, msg=None, name="mozperftest", **kwargs):
+        self._logger(logging.INFO, name, kwargs, msg)
 
 
 def install_package(virtualenv_manager, package, ignore_failure=False):
@@ -296,6 +309,7 @@ def install_requirements_file(
 # this mapping will map paths when running there.
 # The key is the source path, and the value the ci path
 _TRY_MAPPING = {
+    Path("accessible"): Path("mochitest", "browser", "accessible"),
     Path("browser"): Path("mochitest", "browser", "browser"),
     Path("netwerk"): Path("xpcshell", "tests", "netwerk"),
     Path("dom"): Path("mochitest", "tests", "dom"),
@@ -650,3 +664,66 @@ def archive_folder(folder_to_archive, output_path, archive_name=None):
         tar.add(folder_to_archive, arcname=archive_name)
 
     return full_archive_path
+
+
+def archive_files(files, output_dir, archive_name, prefix=""):
+    """Archives individual files into a zip file, with optional append mode.
+
+    Args:
+        files: List of Path objects to archive
+        output_dir: Path object - directory where the archive should be created
+        archive_name: Name for the archive
+        prefix: Optional prefix for archived filenames
+
+    Returns:
+        Path to the archive if created/updated, None otherwise
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    archive_path = output_dir / f"{archive_name}.zip"
+
+    mode = "a" if archive_path.exists() else "w"
+
+    with zipfile.ZipFile(archive_path, mode, compression=zipfile.ZIP_DEFLATED) as zf:
+        for file_path in files:
+            base_name = file_path.name
+
+            if prefix:
+                archive_name = f"{prefix}-{base_name}"
+            else:
+                archive_name = base_name
+
+            print(f"Adding {archive_name} to archive")
+            zf.write(file_path, arcname=archive_name)
+
+    return archive_path
+
+
+def extract_tgz_and_find_files(output_dir, tgz_name, patterns):
+    """Extract TGZ file if on CI and find files matching patterns.
+
+    Args:
+        output_dir: Path object - directory where files are located or where TGZ should be extracted
+        tgz_name: Name of the TGZ file (without extension)
+        patterns: List of patterns for file extensions (e.g., ["*.data", "*.json.gz"])
+
+    Returns:
+        Tuple of (files, work_dir) where work_dir is the temp directory to clean up (or None)
+    """
+    work_dir = None
+    search_dir = output_dir
+
+    if ON_TRY:
+        tgz_path = output_dir / f"{tgz_name}.tgz"
+        if tgz_path.exists():
+            work_dir = Path(tempfile.mkdtemp())
+            with tarfile.open(tgz_path, "r:gz") as tar:
+                tar.extractall(path=work_dir)
+            search_dir = work_dir
+
+    found_files = []
+    for pattern in patterns:
+        found_files.extend(search_dir.rglob(pattern))
+
+    valid_files = [f for f in found_files if f.is_file()]
+
+    return (valid_files, work_dir)

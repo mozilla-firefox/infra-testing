@@ -8,12 +8,14 @@
 #define DOM_NOTIFICATION_NOTIFICATIONUTILS_H_
 
 #include <cstdint>
+
 #include "mozilla/dom/DOMTypes.h"
 #include "nsCOMPtr.h"
 #include "nsINotificationStorage.h"
 #include "nsStringFwd.h"
 
 enum class nsresult : uint32_t;
+class nsIAlertNotification;
 class nsIPrincipal;
 class nsINotificationStorage;
 namespace mozilla::dom {
@@ -68,6 +70,12 @@ NotificationPermission GetNotificationPermission(
 
 nsCOMPtr<nsINotificationStorage> GetNotificationStorage(bool isPrivate);
 
+using NotificationsPromise =
+    MozPromise<CopyableTArray<IPCNotification>, nsresult, false>;
+
+already_AddRefed<NotificationsPromise> GetStoredNotificationsForScope(
+    nsIPrincipal* aPrincipal, const nsACString& aScope, const nsAString& aTag);
+
 nsresult GetOrigin(nsIPrincipal* aPrincipal, nsString& aOrigin);
 
 nsresult PersistNotification(nsIPrincipal* aPrincipal,
@@ -81,6 +89,14 @@ enum class CloseMode {
   InactiveGlobal,
 };
 void UnregisterNotification(nsIPrincipal* aPrincipal, const nsString& aId);
+
+// Show an alert and clean up any previously stored notifications that
+// aren't currently known to the notification backend.
+//
+// The cleanup happens when this is globally the first call, or always if
+// dom.webnotifications.testing.force_storage_cleanup.enabled is set.
+nsresult ShowAlertWithCleanup(nsIAlertNotification* aAlert,
+                              nsIObserver* aAlertListener);
 
 nsresult RemovePermission(nsIPrincipal* aPrincipal);
 nsresult OpenSettings(nsIPrincipal* aPrincipal);

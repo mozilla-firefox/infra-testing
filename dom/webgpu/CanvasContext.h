@@ -6,11 +6,12 @@
 #ifndef GPU_CanvasContext_H_
 #define GPU_CanvasContext_H_
 
-#include "nsICanvasRenderingContextInternal.h"
-#include "nsWrapperCache.h"
 #include "ObjectModel.h"
 #include "mozilla/layers/LayersTypes.h"
+#include "mozilla/webgpu/WebGPUTypes.h"
 #include "mozilla/webrender/WebRenderAPI.h"
+#include "nsICanvasRenderingContextInternal.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla {
 namespace dom {
@@ -27,7 +28,6 @@ class CanvasContext final : public nsICanvasRenderingContextInternal,
                             public nsWrapperCache {
  private:
   virtual ~CanvasContext();
-  void Cleanup();
 
  public:
   // nsISupports interface + CC
@@ -55,10 +55,12 @@ class CanvasContext final : public nsICanvasRenderingContextInternal,
   bool InitializeCanvasRenderer(nsDisplayListBuilder* aBuilder,
                                 layers::CanvasRenderer* aRenderer) override;
   mozilla::UniquePtr<uint8_t[]> GetImageBuffer(
+      mozilla::CanvasUtils::ImageExtraction aExtractionBehavior,
       int32_t* out_format, gfx::IntSize* out_imageSize) override;
-  NS_IMETHOD GetInputStream(const char* aMimeType,
-                            const nsAString& aEncoderOptions,
-                            nsIInputStream** aStream) override;
+  NS_IMETHOD GetInputStream(
+      const char* aMimeType, const nsAString& aEncoderOptions,
+      mozilla::CanvasUtils::ImageExtraction aExtractionBehavior,
+      const nsACString& aRandomizationKey, nsIInputStream** aStream) override;
   already_AddRefed<gfx::SourceSurface> GetSurfaceSnapshot(
       gfxAlphaType* aOutAlphaType) override;
 
@@ -89,9 +91,10 @@ class CanvasContext final : public nsICanvasRenderingContextInternal,
  public:
   void GetCanvas(dom::OwningHTMLCanvasElementOrOffscreenCanvas&) const;
 
-  void Configure(const dom::GPUCanvasConfiguration& aConfig);
+  void Configure(const dom::GPUCanvasConfiguration& aConfig, ErrorResult& aRv);
   void Unconfigure();
 
+  void GetConfiguration(dom::Nullable<dom::GPUCanvasConfiguration>& aRv);
   RefPtr<Texture> GetCurrentTexture(ErrorResult& aRv);
   void MaybeQueueSwapChainPresent();
   Maybe<layers::SurfaceDescriptor> SwapChainPresent();
@@ -100,20 +103,22 @@ class CanvasContext final : public nsICanvasRenderingContextInternal,
 
  private:
   gfx::IntSize mCanvasSize;
-  std::unique_ptr<dom::GPUCanvasConfiguration> mConfig;
+  std::unique_ptr<dom::GPUCanvasConfiguration> mConfiguration;
   bool mPendingSwapChainPresent = false;
   bool mWaitingCanvasRendererInitialized = false;
 
-  RefPtr<WebGPUChild> mBridge;
-  RefPtr<Texture> mTexture;
+  RefPtr<WebGPUChild> mChild;
+  RefPtr<Texture> mCurrentTexture;
   gfx::SurfaceFormat mGfxFormat = gfx::SurfaceFormat::R8G8B8A8;
 
   Maybe<layers::RemoteTextureId> mLastRemoteTextureId;
   Maybe<layers::RemoteTextureOwnerId> mRemoteTextureOwnerId;
   RefPtr<layers::FwdTransactionTracker> mFwdTransactionTracker;
-  bool mUseExternalTextureInSwapChain = false;
+  bool mUseSharedTextureInSwapChain = false;
   bool mNewTextureRequested = false;
 };
+
+typedef AutoTArray<WeakPtr<CanvasContext>, 1> CanvasContextArray;
 
 }  // namespace webgpu
 }  // namespace mozilla

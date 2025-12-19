@@ -4,19 +4,14 @@
 
 // This file is a Mako template: http://www.makotemplates.org/
 
-// Please note that valid Rust syntax may be mangled by the Mako parser.
-// For example, Vec<&Foo> will be mangled as Vec&Foo>. To work around these issues, the code
-// can be escaped. In the above example, Vec<<&Foo> or Vec< &Foo> achieves the desired result of Vec<&Foo>.
-
 <%namespace name="helpers" file="/helpers.mako.rs" />
 
-use app_units::Au;
 use servo_arc::{Arc, UniqueArc};
 use std::{ops, ptr};
 use std::{fmt, mem};
 
 #[cfg(feature = "servo")] use euclid::SideOffsets2D;
-#[cfg(feature = "gecko")] use crate::gecko_bindings::structs::{self, nsCSSPropertyID};
+#[cfg(feature = "gecko")] use crate::gecko_bindings::structs::{self, NonCustomCSSPropertyId};
 #[cfg(feature = "servo")] use crate::logical_geometry::LogicalMargin;
 #[cfg(feature = "servo")] use crate::computed_values;
 use crate::logical_geometry::WritingMode;
@@ -27,12 +22,12 @@ use crate::media_queries::Device;
 use crate::parser::ParserContext;
 use crate::selector_parser::PseudoElement;
 use crate::stylist::Stylist;
-use style_traits::{CssWriter, KeywordsCollectFn, ParseError, SpecifiedValueInfo, StyleParseErrorKind, ToCss};
+use style_traits::{CssStringWriter, CssWriter, KeywordsCollectFn, ParseError, SpecifiedValueInfo, StyleParseErrorKind, ToCss, TypedValue, ToTyped};
+use crate::derives::*;
 use crate::stylesheets::{CssRuleType, CssRuleTypes, Origin};
 use crate::logical_geometry::{LogicalAxis, LogicalCorner, LogicalSide};
 use crate::use_counters::UseCounters;
 use crate::rule_tree::StrongRuleNode;
-use crate::str::CssStringWriter;
 use crate::values::{
     computed,
     resolved,
@@ -45,6 +40,7 @@ use super::{
     LonghandIdSet, VariableDeclaration, CustomDeclaration,
     WideKeywordDeclaration, NonCustomPropertyIterator,
 };
+use debug_unreachable::debug_unreachable;
 
 <%!
     from collections import defaultdict
@@ -413,8 +409,21 @@ impl PropertyDeclaration {
         }
     }
 
+    /// Like the method on ToTyped.
+    pub fn to_typed(&self) -> Option<TypedValue> {
+        use self::PropertyDeclaration::*;
+
+        match *self {
+            % for ty, vs in groupby(variants, key=lambda x: x["type"]):
+            ${" | ".join("{}(ref value)".format(v["name"]) for v in vs)} => {
+                value.to_typed()
+            }
+            % endfor
+        }
+    }
+
     /// Returns the color value of a given property, for high-contrast-mode tweaks.
-    pub(super) fn color_value(&self) -> Option<<&crate::values::specified::Color> {
+    pub(super) fn color_value(&self) -> Option<&crate::values::specified::Color> {
         ${static_longhand_id_set("COLOR_PROPERTIES", lambda p: p.predefined_type == "Color")}
         <%
             # sanity check
@@ -468,9 +477,9 @@ pub mod property_counts {
 
 % if engine == "gecko":
 #[allow(dead_code)]
-unsafe fn static_assert_nscsspropertyid() {
+unsafe fn static_assert_noncustomcsspropertyid() {
     % for i, property in enumerate(data.longhands + data.shorthands + data.all_aliases()):
-    std::mem::transmute::<[u8; ${i}], [u8; ${property.nscsspropertyid()} as usize]>([0; ${i}]); // ${property.name}
+    std::mem::transmute::<[u8; ${i}], [u8; ${property.noncustomcsspropertyid()} as usize]>([0; ${i}]); // ${property.name}
     % endfor
 }
 % endif
@@ -511,7 +520,7 @@ impl NonCustomPropertyId {
             % if engine == "gecko":
                 unsafe { structs::nsCSSProps_gPropertyEnabled[self.0 as usize] }
             % else:
-                static PREF_NAME: [Option< &str>; ${
+                static PREF_NAME: [Option<&str>; ${
                     len(data.longhands) + len(data.shorthands) + len(data.all_aliases())
                 }] = [
                     % for property in data.longhands + data.shorthands + data.all_aliases():
@@ -552,8 +561,9 @@ impl NonCustomPropertyId {
             rule_types.contains(CssRuleType::Keyframe) ||
             rule_types.contains(CssRuleType::Page) ||
             rule_types.contains(CssRuleType::Style) ||
+            rule_types.contains(CssRuleType::Scope) ||
             rule_types.contains(CssRuleType::PositionTry),
-            "Declarations are only expected inside a keyframe, page, or style rule."
+            "Given rule type does not allow declarations."
         );
 
         static MAP: [u32; property_counts::NON_CUSTOM] = [
@@ -909,6 +919,21 @@ impl LonghandIdSet {
         )}
         &BORDER_BACKGROUND_PROPERTIES
     }
+
+    /// Returns properties that are zoom dependent (basically, that contain lengths).
+    #[inline]
+    pub fn zoom_dependent() -> &'static Self {
+        ${static_longhand_id_set("ZOOM_DEPENDENT", lambda p: p.is_zoom_dependent())}
+        &ZOOM_DEPENDENT
+    }
+
+    /// Note that it's different from zoom_dependent(), as this only includes inherited, physical
+    /// properties.
+    #[inline]
+    pub fn zoom_dependent_inherited_properties() -> &'static Self {
+        ${static_longhand_id_set("ZOOM_DEPENDENT_INHERITED", lambda p: p.is_inherited_zoom_dependent_property())}
+        &ZOOM_DEPENDENT_INHERITED
+    }
 }
 
 /// An identifier for a given longhand property.
@@ -1016,7 +1041,7 @@ impl LonghandId {
     }
 
     /// Return the relevant data to map a particular logical property into physical.
-    fn logical_mapping_data(self) -> Option<<&'static LogicalMappingData> {
+    fn logical_mapping_data(self) -> Option<&'static LogicalMappingData> {
         const LOGICAL_MAPPING_DATA: [Option<LogicalMappingData>; ${len(data.longhands)}] = [
             % for prop in data.longhands:
             % if prop.logical:
@@ -1057,17 +1082,16 @@ impl LonghandId {
     /// Returns PropertyFlags for given longhand property.
     #[inline(always)]
     pub fn flags(self) -> PropertyFlags {
-        // TODO(emilio): This can be simplified further as Rust gains more
-        // constant expression support.
-        const FLAGS: [u16; ${len(data.longhands)}] = [
+        const FLAGS: [PropertyFlags; ${len(data.longhands)}] = [
             % for property in data.longhands:
+                PropertyFlags::empty()
                 % for flag in property.flags + restriction_flags(property):
-                    PropertyFlags::${flag}.bits() |
+                    .union(PropertyFlags::${flag})
                 % endfor
-                0,
+                ,
             % endfor
         ];
-        PropertyFlags::from_bits_retain(FLAGS[self as usize])
+        FLAGS[self as usize]
     }
 }
 
@@ -1214,7 +1238,7 @@ pub enum CountedUnknownProperty {
 impl CountedUnknownProperty {
     /// Parse the counted unknown property, for testing purposes only.
     pub fn parse_for_testing(property_name: &str) -> Option<Self> {
-        ascii_case_insensitive_phf_map! {
+        ::cssparser::ascii_case_insensitive_phf_map! {
             unknown_ids -> CountedUnknownProperty = {
                 % for property in data.counted_unknown_properties:
                 "${property.name}" => CountedUnknownProperty::${property.camel_case},
@@ -1234,9 +1258,9 @@ impl CountedUnknownProperty {
 impl PropertyId {
     /// Returns a given property from the given name, _regardless of whether it
     /// is enabled or not_, or Err(()) for unknown properties.
-    pub(super) fn parse_unchecked(
+    pub fn parse_unchecked(
         property_name: &str,
-        use_counters: Option< &UseCounters>,
+        use_counters: Option<&UseCounters>,
     ) -> Result<Self, ()> {
         // A special id for css use counters. ShorthandAlias is not used in the Servo build.
         // That's why we need to allow dead_code.
@@ -1244,7 +1268,7 @@ impl PropertyId {
             NonCustom(NonCustomPropertyId),
             CountedUnknown(CountedUnknownProperty),
         }
-        ascii_case_insensitive_phf_map! {
+        ::cssparser::ascii_case_insensitive_phf_map! {
             static_ids -> StaticId = {
                 % for i, property in enumerate(data.longhands + data.shorthands + data.all_aliases()):
                 "${property.name}" => StaticId::NonCustom(NonCustomPropertyId(${i})),
@@ -1278,7 +1302,7 @@ impl PropertyId {
 impl PropertyDeclaration {
     /// Given a property declaration, return the property declaration id.
     #[inline]
-    pub fn id(&self) -> PropertyDeclarationId {
+    pub fn id(&self) -> PropertyDeclarationId<'_> {
         match *self {
             PropertyDeclaration::Custom(ref declaration) => {
                 return PropertyDeclarationId::Custom(&declaration.name)
@@ -1385,10 +1409,11 @@ pub use super::gecko::style_structs;
 /// The module where all the style structs are defined.
 #[cfg(feature = "servo")]
 pub mod style_structs {
-    use fxhash::FxHasher;
+    use rustc_hash::FxHasher;
     use super::longhands;
     use std::hash::{Hash, Hasher};
     use crate::values::specified::color::ColorSchemeFlags;
+    use crate::derives::*;
 
     % for style_struct in data.active_style_structs():
         % if style_struct.name == "Font":
@@ -1567,7 +1592,7 @@ pub mod style_structs {
                 /// Iterate over the values of ${longhand.name}.
                 #[allow(non_snake_case)]
                 #[inline]
-                pub fn ${longhand.ident}_iter(&self) -> ${longhand.camel_case}Iter {
+                pub fn ${longhand.ident}_iter(&self) -> ${longhand.camel_case}Iter<'_> {
                     ${longhand.camel_case}Iter {
                         style_struct: self,
                         current: 0,
@@ -1697,14 +1722,14 @@ pub struct ComputedValuesInner {
     % endfor
     custom_properties: crate::custom_properties::ComputedCustomProperties,
 
-    /// The writing mode of this computed values struct.
-    pub writing_mode: WritingMode,
-
     /// The effective zoom value.
     pub effective_zoom: computed::Zoom,
 
     /// A set of flags we use to store misc information regarding this style.
     pub flags: ComputedValueFlags,
+
+    /// The writing mode of this computed values struct.
+    pub writing_mode: WritingMode,
 
     /// The rule node representing the ordered list of rules matched for this
     /// node.  Can be None for default values and text nodes.  This is
@@ -1742,7 +1767,7 @@ pub struct ComputedValues {
 impl ComputedValues {
     /// Returns the pseudo-element that this style represents.
     #[cfg(feature = "servo")]
-    pub fn pseudo(&self) -> Option<<&PseudoElement> {
+    pub fn pseudo(&self) -> Option<&PseudoElement> {
         self.pseudo.as_ref()
     }
 
@@ -1763,7 +1788,7 @@ impl ComputedValues {
     }
 
     /// Returns the visited rules, if applicable.
-    pub fn visited_rules(&self) -> Option<<&StrongRuleNode> {
+    pub fn visited_rules(&self) -> Option<&StrongRuleNode> {
         self.visited_style().and_then(|s| s.rules.as_ref())
     }
 
@@ -1797,7 +1822,7 @@ impl ComputedValues {
     pub fn computed_or_resolved_value(
         &self,
         property_id: LonghandId,
-        context: Option<<&resolved::Context>,
+        context: Option<&mut resolved::Context>,
         dest: &mut CssStringWriter,
     ) -> fmt::Result {
         use crate::values::resolved::ToResolvedValue;
@@ -1816,6 +1841,7 @@ impl ComputedValues {
                     _ => unsafe { debug_unreachable!() },
                 };
                 if let Some(c) = context {
+                    c.current_longhand = Some(property_id);
                     value.to_resolved_value(c).to_css(&mut dest)
                 } else {
                     value.to_css(&mut dest)
@@ -1825,11 +1851,36 @@ impl ComputedValues {
         }
     }
 
+    /// Returns the computed value of the given longhand as a strongly-typed
+    /// `TypedValue`, if supported.
+    pub fn computed_typed_value(
+        &self,
+        property_id: LonghandId,
+    ) -> Option<TypedValue> {
+        let property_id = property_id.to_physical(self.writing_mode);
+        match property_id {
+            % for specified_type, props in groupby(data.longhands, key=lambda x: x.specified_type()):
+            <% props = list(props) %>
+            ${" |\n".join("LonghandId::{}".format(p.camel_case) for p in props)} => {
+                let value = match property_id {
+                    % for prop in props:
+                    % if not prop.logical:
+                    LonghandId::${prop.camel_case} => self.clone_${prop.ident}(),
+                    % endif
+                    % endfor
+                    _ => unsafe { debug_unreachable!() },
+                };
+                value.to_typed()
+            }
+            % endfor
+        }
+    }
+
     /// Returns the given longhand's resolved value as a property declaration.
     pub fn computed_or_resolved_declaration(
         &self,
         property_id: LonghandId,
-        context: Option<<&resolved::Context>,
+        context: Option<&mut resolved::Context>,
     ) -> PropertyDeclaration {
         use crate::values::resolved::ToResolvedValue;
         use crate::values::computed::ToComputedValue;
@@ -1847,6 +1898,7 @@ impl ComputedValues {
                     _ => unsafe { debug_unreachable!() },
                 };
                 if let Some(c) = context {
+                    c.current_longhand = Some(physical_property_id);
                     let resolved = computed_value.to_resolved_value(c);
                     computed_value = ToResolvedValue::from_resolved_value(resolved);
                 }
@@ -1915,7 +1967,7 @@ impl ComputedValues {
 impl ComputedValues {
     /// Create a new refcounted `ComputedValues`
     pub fn new(
-        pseudo: Option<<&PseudoElement>,
+        pseudo: Option<&PseudoElement>,
         custom_properties: crate::custom_properties::ComputedCustomProperties,
         writing_mode: WritingMode,
         effective_zoom: computed::Zoom,
@@ -1993,6 +2045,8 @@ impl ComputedValues {
             PropertyDeclarationId::Longhand(id) => {
                 let context = resolved::Context {
                     style: self,
+                    for_property: id.into(),
+                    current_longhand: Some(id),
                 };
                 let mut s = String::new();
                 self.computed_or_resolved_value(
@@ -2035,7 +2089,7 @@ impl ops::DerefMut for ComputedValues {
 #[cfg(feature = "servo")]
 impl ComputedValuesInner {
     /// Returns the visited style, if any.
-    pub fn visited_style(&self) -> Option<<&ComputedValues> {
+    pub fn visited_style(&self) -> Option<&ComputedValues> {
         self.visited_style.as_deref()
     }
 
@@ -2136,7 +2190,7 @@ impl ComputedValuesInner {
 
     /// Get the logical computed padding for this writing mode.
     #[inline]
-    pub fn logical_padding(&self) -> LogicalMargin<<&computed::LengthPercentage> {
+    pub fn logical_padding(&self) -> LogicalMargin<&computed::LengthPercentage> {
         let padding_style = self.get_padding();
         LogicalMargin::from_physical(self.writing_mode, SideOffsets2D::new(
             &padding_style.padding_top.0,
@@ -2166,7 +2220,7 @@ impl ComputedValuesInner {
 
     /// Gets the logical computed margin from this style.
     #[inline]
-    pub fn logical_margin(&self) -> LogicalMargin<<&computed::Margin> {
+    pub fn logical_margin(&self) -> LogicalMargin<&computed::Margin> {
         let margin_style = self.get_margin();
         LogicalMargin::from_physical(self.writing_mode, SideOffsets2D::new(
             &margin_style.margin_top,
@@ -2178,7 +2232,7 @@ impl ComputedValuesInner {
 
     /// Gets the logical position from this style.
     #[inline]
-    pub fn logical_position(&self) -> LogicalMargin<<&computed::Inset> {
+    pub fn logical_position(&self) -> LogicalMargin<&computed::Inset> {
         // FIXME(SimonSapin): should be the writing mode of the containing block, maybe?
         let position_style = self.get_position();
         LogicalMargin::from_physical(self.writing_mode, SideOffsets2D::new(
@@ -2213,40 +2267,6 @@ impl ComputedValuesInner {
             // Return the computed value if not overridden by the above exceptions
             box_.transform_style
         }
-    }
-
-    /// Whether given this transform value, the compositor would require a
-    /// layer.
-    pub fn transform_requires_layer(&self) -> bool {
-        use crate::values::generics::transform::TransformOperation;
-        // Check if the transform matrix is 2D or 3D
-        for transform in &*self.get_box().transform.0 {
-            match *transform {
-                TransformOperation::Perspective(..) => {
-                    return true;
-                }
-                TransformOperation::Matrix3D(m) => {
-                    // See http://dev.w3.org/csswg/css-transforms/#2d-matrix
-                    if m.m31 != 0.0 || m.m32 != 0.0 ||
-                       m.m13 != 0.0 || m.m23 != 0.0 ||
-                       m.m43 != 0.0 || m.m14 != 0.0 ||
-                       m.m24 != 0.0 || m.m34 != 0.0 ||
-                       m.m33 != 1.0 || m.m44 != 1.0 {
-                        return true;
-                    }
-                }
-                TransformOperation::Translate3D(_, _, z) |
-                TransformOperation::TranslateZ(z) => {
-                    if z.px() != 0. {
-                        return true;
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        // Neither perspective nor transform present
-        false
     }
 }
 
@@ -2318,7 +2338,7 @@ where
 
     /// Get a mutable reference to the owned struct, or `None` if the struct
     /// hasn't been mutated.
-    pub fn get_if_mutated(&mut self) -> Option<<&mut T> {
+    pub fn get_if_mutated(&mut self) -> Option<&mut T> {
         match *self {
             StyleStructRef::Owned(ref mut v) => Some(v),
             StyleStructRef::Borrowed(..) => None,
@@ -2363,7 +2383,7 @@ pub struct StyleBuilder<'a> {
 
     /// The stylist we're using to compute style except for media queries.
     /// device is used in media queries instead.
-    pub stylist: Option<<&'a Stylist>,
+    pub stylist: Option<&'a Stylist>,
 
     /// The style we're inheriting from.
     ///
@@ -2387,7 +2407,7 @@ pub struct StyleBuilder<'a> {
     pub invalid_non_custom_properties: LonghandIdSet,
 
     /// The pseudo-element this style will represent.
-    pub pseudo: Option<<&'a PseudoElement>,
+    pub pseudo: Option<&'a PseudoElement>,
 
     /// Whether we have mutated any reset structs since the the last time
     /// `clear_modified_reset` was called.  This is used to tell whether the
@@ -2409,6 +2429,9 @@ pub struct StyleBuilder<'a> {
     /// The effective zoom.
     pub effective_zoom: computed::Zoom,
 
+    /// The effective zoom for inheritance (the "specified" zoom on this element).
+    pub effective_zoom_for_inheritance: computed::Zoom,
+
     /// Flags for the computed value.
     pub flags: Cell<ComputedValueFlags>,
 
@@ -2425,9 +2448,9 @@ impl<'a> StyleBuilder<'a> {
     /// Trivially construct a `StyleBuilder`.
     pub fn new(
         device: &'a Device,
-        stylist: Option<<&'a Stylist>,
-        parent_style: Option<<&'a ComputedValues>,
-        pseudo: Option<<&'a PseudoElement>,
+        stylist: Option<&'a Stylist>,
+        parent_style: Option<&'a ComputedValues>,
+        pseudo: Option<&'a PseudoElement>,
         rules: Option<StrongRuleNode>,
         is_root_element: bool,
     ) -> Self {
@@ -2448,6 +2471,7 @@ impl<'a> StyleBuilder<'a> {
             invalid_non_custom_properties: LonghandIdSet::default(),
             writing_mode: inherited_style.writing_mode,
             effective_zoom: inherited_style.effective_zoom,
+            effective_zoom_for_inheritance: computed::Zoom::ONE,
             color_scheme: inherited_style.get_inherited_ui().color_scheme_bits(),
             flags: Cell::new(flags),
             visited_style: None,
@@ -2467,11 +2491,11 @@ impl<'a> StyleBuilder<'a> {
     ///
     /// Do _not_ actually call this to construct a style, this should mostly be
     /// used for animations.
-    pub fn for_animation(
+    pub fn for_derived_style(
         device: &'a Device,
-        stylist: Option<<&'a Stylist>,
+        stylist: Option<&'a Stylist>,
         style_to_derive_from: &'a ComputedValues,
-        parent_style: Option<<&'a ComputedValues>,
+        parent_style: Option<&'a ComputedValues>,
     ) -> Self {
         let reset_style = device.default_computed_values();
         let inherited_style = parent_style.unwrap_or(reset_style);
@@ -2488,6 +2512,7 @@ impl<'a> StyleBuilder<'a> {
             invalid_non_custom_properties: LonghandIdSet::default(),
             writing_mode: style_to_derive_from.writing_mode,
             effective_zoom: style_to_derive_from.effective_zoom,
+            effective_zoom_for_inheritance: Self::zoom_for_inheritance(style_to_derive_from.get_box().clone_zoom(), inherited_style),
             color_scheme: style_to_derive_from.get_inherited_ui().color_scheme_bits(),
             flags: Cell::new(style_to_derive_from.flags),
             visited_style: None,
@@ -2580,9 +2605,9 @@ impl<'a> StyleBuilder<'a> {
     /// computed values that need to be provided as well.
     pub fn for_inheritance(
         device: &'a Device,
-        stylist: Option<<&'a Stylist>,
-        parent: Option<<&'a ComputedValues>,
-        pseudo: Option<<&'a PseudoElement>,
+        stylist: Option<&'a Stylist>,
+        parent: Option<&'a ComputedValues>,
+        pseudo: Option<&'a PseudoElement>,
     ) -> Self {
         // Rebuild the visited style from the parent, ensuring that it will also
         // not have rules.  This matches the unvisited style that will be
@@ -2658,7 +2683,7 @@ impl<'a> StyleBuilder<'a> {
         /// Gets a mutable view of the current `${style_struct.name}` style,
         /// only if it's been mutated before.
         pub fn get_${style_struct.name_lower}_if_mutated(&mut self)
-                                                         -> Option<<&mut style_structs::${style_struct.name}> {
+                                                         -> Option<&mut style_structs::${style_struct.name}> {
             self.${style_struct.ident}.get_if_mutated()
         }
 
@@ -2773,22 +2798,23 @@ impl<'a> StyleBuilder<'a> {
         self.get_box().clone_zoom()
     }
 
-    /// The zoom we need to apply for this element, without including ancestor effective zooms.
-    pub fn resolved_specified_zoom(&self) -> computed::Zoom {
-        let zoom = self.specified_zoom();
-        if zoom.is_document() {
+    /// Computes effective_zoom and effective_zoom_for_inheritance based on the current style
+    /// information.
+    pub fn recompute_effective_zooms(&mut self) {
+        let specified = self.specified_zoom();
+        self.effective_zoom = self.inherited_style.effective_zoom.compute_effective(specified);
+        self.effective_zoom_for_inheritance = Self::zoom_for_inheritance(specified, self.inherited_style);
+    }
+
+    fn zoom_for_inheritance(specified: computed::Zoom, inherited_style: &ComputedValues) -> computed::Zoom {
+        if specified.is_document() {
             // If our inherited effective zoom has derived to zero, there's not much we can do.
             // This value is not exposed to content anyways (it's used for scrollbars and to avoid
             // zoom affecting canvas).
-            self.inherited_effective_zoom().inverted().unwrap_or(computed::Zoom::ONE)
+            inherited_style.effective_zoom.inverted().unwrap_or(computed::Zoom::ONE)
         } else {
-            zoom
+            specified
         }
-    }
-
-    /// Inherited zoom.
-    pub fn inherited_effective_zoom(&self) -> computed::Zoom {
-        self.inherited_style.effective_zoom
     }
 
     /// The computed value flags of our parent.
@@ -2822,7 +2848,7 @@ impl<'a> StyleBuilder<'a> {
         let lh = device.calc_line_height(&font, writing_mode, None);
         if line_height_base == LineHeightBase::InheritedStyle {
             // Apply our own zoom if our style source is the parent style.
-            computed::NonNegativeLength::new(self.resolved_specified_zoom().zoom(lh.px()))
+            computed::NonNegativeLength::new(self.effective_zoom_for_inheritance.zoom(lh.px()))
         } else {
             lh
         }
@@ -2855,17 +2881,6 @@ pub static CASCADE_PROPERTY: [CascadePropertyFn; ${len(data.longhands)}] = [
         longhands::${property.ident}::cascade_property,
     % endfor
 ];
-
-/// See StyleAdjuster::adjust_for_border_width.
-pub fn adjust_border_width(style: &mut StyleBuilder) {
-    % for side in ["top", "right", "bottom", "left"]:
-        // Like calling to_computed_value, which wouldn't type check.
-        if style.get_border().clone_border_${side}_style().none_or_hidden() &&
-           style.get_border().border_${side}_has_nonzero_width() {
-            style.set_border_${side}_width(Au(0));
-        }
-    % endfor
-}
 
 /// An identifier for a given alias property.
 #[derive(Clone, Copy, Eq, PartialEq, MallocSizeOf)]
@@ -2950,9 +2965,9 @@ macro_rules! longhand_properties_idents {
 
 // Large pages generate tens of thousands of ComputedValues.
 #[cfg(feature = "gecko")]
-size_of_test!(ComputedValues, 240);
+size_of_test!(ComputedValues, 248);
 #[cfg(feature = "servo")]
-size_of_test!(ComputedValues, 208);
+size_of_test!(ComputedValues, 216);
 
 // FFI relies on this.
 size_of_test!(Option<Arc<ComputedValues>>, 8);
@@ -2980,29 +2995,16 @@ const_assert!(std::mem::size_of::<longhands::${longhand.ident}::SpecifiedValue>(
 % endfor
 
 % if engine == "servo":
-% for effect_name in ["repaint", "reflow_out_of_flow", "reflow", "rebuild_and_reflow_inline", "rebuild_and_reflow"]:
-    macro_rules! restyle_damage_${effect_name} {
-        ($old: ident, $new: ident, $damage: ident, [ $($effect:expr),* ]) => ({
-            restyle_damage_${effect_name}!($old, $new, $damage, [$($effect),*], false)
-        });
-        ($old: ident, $new: ident, $damage: ident, [ $($effect:expr),* ], $extra:expr) => ({
-            if
-                % for style_struct in data.active_style_structs():
-                    % for longhand in style_struct.longhands:
-                        % if effect_name in longhand.servo_restyle_damage.split() and not longhand.logical:
-                            $old.get_${style_struct.name_lower}().${longhand.ident} !=
-                            $new.get_${style_struct.name_lower}().${longhand.ident} ||
-                        % endif
-                    % endfor
-                % endfor
-
-                $extra || false {
-                    $damage.insert($($effect)|*);
-                    true
-            } else {
-                false
-            }
-        });
-    }
+% for effect_name in ["repaint", "recalculate_overflow", "rebuild_stacking_context", "rebuild_box"]:
+pub(crate) fn restyle_damage_${effect_name} (old: &ComputedValues, new: &ComputedValues) -> bool {
+    % for style_struct in data.active_style_structs():
+        % for longhand in style_struct.longhands:
+            % if effect_name in longhand.servo_restyle_damage.split() and not longhand.logical:
+                old.get_${style_struct.name_lower}().${longhand.ident} != new.get_${style_struct.name_lower}().${longhand.ident} ||
+            % endif
+        % endfor
+    % endfor
+    false
+}
 % endfor
 % endif

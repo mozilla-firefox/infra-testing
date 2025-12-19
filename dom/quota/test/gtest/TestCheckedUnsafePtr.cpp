@@ -2,14 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/dom/quota/CheckedUnsafePtr.h"
+#include <type_traits>
 
 #include "gtest/gtest.h"
-
-#include <memory>
-#include <type_traits>
-#include <utility>
-#include "mozilla/fallible.h"
+#include "mozilla/dom/quota/CheckedUnsafePtr.h"
 
 using namespace mozilla;
 

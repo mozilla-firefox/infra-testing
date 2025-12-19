@@ -8,30 +8,23 @@
 #include "SVGTextFrame.h"
 
 // Keep others in (case-insensitive) order:
+#include <algorithm>
+#include <cmath>
+#include <limits>
+
 #include "DOMSVGPoint.h"
+#include "SVGAnimatedNumberList.h"
+#include "SVGContentUtils.h"
+#include "SVGContextPaint.h"
+#include "SVGLengthList.h"
+#include "SVGNumberList.h"
+#include "SVGPaintServerFrame.h"
 #include "gfx2DGlue.h"
 #include "gfxContext.h"
 #include "gfxFont.h"
 #include "gfxSkipChars.h"
 #include "gfxTypes.h"
 #include "gfxUtils.h"
-#include "LookAndFeel.h"
-#include "nsBidiPresUtils.h"
-#include "nsBlockFrame.h"
-#include "nsCaret.h"
-#include "nsContentUtils.h"
-#include "nsGkAtoms.h"
-#include "SVGPaintServerFrame.h"
-#include "nsTArray.h"
-#include "nsTextFrame.h"
-#include "SVGAnimatedNumberList.h"
-#include "SVGContentUtils.h"
-#include "SVGContextPaint.h"
-#include "SVGLengthList.h"
-#include "SVGNumberList.h"
-#include "nsLayoutUtils.h"
-#include "nsFrameSelection.h"
-#include "nsStyleStructInlines.h"
 #include "mozilla/CaretAssociationHint.h"
 #include "mozilla/DisplaySVGItem.h"
 #include "mozilla/Likely.h"
@@ -40,17 +33,24 @@
 #include "mozilla/SVGOuterSVGFrame.h"
 #include "mozilla/SVGUtils.h"
 #include "mozilla/dom/DOMPointBinding.h"
-#include "mozilla/dom/Selection.h"
 #include "mozilla/dom/SVGGeometryElement.h"
 #include "mozilla/dom/SVGRect.h"
 #include "mozilla/dom/SVGTextContentElementBinding.h"
 #include "mozilla/dom/SVGTextPathElement.h"
+#include "mozilla/dom/Selection.h"
 #include "mozilla/dom/Text.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/PatternHelpers.h"
-#include <algorithm>
-#include <cmath>
-#include <limits>
+#include "nsBidiPresUtils.h"
+#include "nsBlockFrame.h"
+#include "nsCaret.h"
+#include "nsContentUtils.h"
+#include "nsFrameSelection.h"
+#include "nsGkAtoms.h"
+#include "nsLayoutUtils.h"
+#include "nsStyleStructInlines.h"
+#include "nsTArray.h"
+#include "nsTextFrame.h"
 
 using namespace mozilla::dom;
 using namespace mozilla::dom::SVGTextContentElement_Binding;
@@ -89,23 +89,14 @@ static gfxPoint AppUnitsToGfxUnits(const nsPoint& aPoint,
 }
 
 /**
- * Converts a gfxRect that is in app units to CSS pixels using the specified
- * nsPresContext and returns it as a gfxRect.
+ * Converts a nsRect that is in app units to CSS pixels and returns it
+ * as a gfxRect.
  */
-static gfxRect AppUnitsToFloatCSSPixels(const gfxRect& aRect,
-                                        const nsPresContext* aContext) {
+static gfxRect AppUnitsToFloatCSSPixels(const nsRect& aRect) {
   return gfxRect(nsPresContext::AppUnitsToFloatCSSPixels(aRect.x),
                  nsPresContext::AppUnitsToFloatCSSPixels(aRect.y),
                  nsPresContext::AppUnitsToFloatCSSPixels(aRect.width),
                  nsPresContext::AppUnitsToFloatCSSPixels(aRect.height));
-}
-
-/**
- * Returns whether a gfxPoint lies within a gfxRect.
- */
-static bool Inside(const gfxRect& aRect, const gfxPoint& aPoint) {
-  return aPoint.x >= aRect.x && aPoint.x < aRect.XMost() &&
-         aPoint.y >= aRect.y && aPoint.y < aRect.YMost();
 }
 
 /**
@@ -184,9 +175,6 @@ static nsIContent* GetFirstNonAAncestor(nsIContent* aContent) {
  * and false for the inner <text> element (since a <text> is not allowed
  * to be a child of another <text>) and the <tspan> element (because it
  * must be inside a <text> subtree).
- *
- * Note that we don't support the <tref> element yet and this function
- * returns false for it.
  *
  * [1] https://svgwg.org/svg2-draft/intro.html#TermTextContentElement
  */
@@ -270,7 +258,8 @@ static bool IsGlyphPositioningAttribute(nsAtom* aAttribute) {
  * @param aTextRun The text run of aFrame.
  * @param aDominantBaseline The dominant-baseline value to use.
  */
-static nscoord GetBaselinePosition(nsTextFrame* aFrame, gfxTextRun* aTextRun,
+static nscoord GetBaselinePosition(nsTextFrame* aFrame,
+                                   const gfxTextRun* aTextRun,
                                    StyleDominantBaseline aDominantBaseline,
                                    float aFontSizeScaleFactor) {
   WritingMode writingMode = aFrame->GetWritingMode();
@@ -408,15 +397,16 @@ struct TextRenderedRun {
    * paint it.  See the comments documenting the member variables below
    * for descriptions of the arguments.
    */
-  TextRenderedRun(nsTextFrame* aFrame, const gfxPoint& aPosition,
-                  float aLengthAdjustScaleFactor, double aRotate,
+  TextRenderedRun(nsTextFrame* aFrame, SVGTextFrame* aSVGTextFrame,
+                  const gfxPoint& aPosition, double aRotate,
                   float aFontSizeScaleFactor, nscoord aBaseline,
                   uint32_t aTextFrameContentOffset,
                   uint32_t aTextFrameContentLength,
                   uint32_t aTextElementCharIndex)
       : mFrame(aFrame),
+        mRoot(aSVGTextFrame),
         mPosition(aPosition),
-        mLengthAdjustScaleFactor(aLengthAdjustScaleFactor),
+        mLengthAdjustScaleFactor(mRoot->mLengthAdjustScaleFactor),
         mRotate(static_cast<float>(aRotate)),
         mFontSizeScaleFactor(aFontSizeScaleFactor),
         mBaseline(aBaseline),
@@ -433,9 +423,10 @@ struct TextRenderedRun {
   }
 
   /**
-   * Returns whether this rendered run is RTL.
+   * Return true if the logical inline direction is reversed compared to
+   * normal physical coordinates (i.e. if it is leftwards or upwards).
    */
-  bool IsRightToLeft() const { return GetTextRun()->IsRightToLeft(); }
+  bool IsInlineReversed() const { return GetTextRun()->IsInlineReversed(); }
 
   /**
    * Returns whether this rendered run is vertical.
@@ -569,12 +560,11 @@ struct TextRenderedRun {
    * Returns a rectangle that bounds the fill and/or stroke of the rendered run
    * in run user space.
    *
-   * @param aContext The context to use for unit conversions.
    * @param aFlags A combination of the flags above (eIncludeFill and
    *   eIncludeStroke) indicating what parts of the text to include in
    *   the rectangle.
    */
-  SVGBBox GetRunUserSpaceRect(nsPresContext* aContext, uint32_t aFlags) const;
+  SVGBBox GetRunUserSpaceRect(uint32_t aFlags) const;
 
   /**
    * Returns a rectangle that covers the fill and/or stroke of the rendered run
@@ -661,6 +651,11 @@ struct TextRenderedRun {
   nsTextFrame* mFrame;
 
   /**
+   * The SVGTextFrame to which our text frame belongs.
+   */
+  SVGTextFrame* mRoot;
+
+  /**
    * The point in user space that the text is positioned at.
    *
    * For a horizontal run:
@@ -737,13 +732,13 @@ gfxMatrix TextRenderedRun::GetTransformFromUserSpaceForPainting(
   nsPoint t;
   if (IsVertical()) {
     m.PreScale(1.0, mLengthAdjustScaleFactor);
-    t = nsPoint(-mBaseline, IsRightToLeft()
+    t = nsPoint(-mBaseline, IsInlineReversed()
                                 ? -mFrame->GetRect().height + aVisIEndEdge
                                 : -aVisIStartEdge);
   } else {
     m.PreScale(mLengthAdjustScaleFactor, 1.0);
-    t = nsPoint(IsRightToLeft() ? -mFrame->GetRect().width + aVisIEndEdge
-                                : -aVisIStartEdge,
+    t = nsPoint(IsInlineReversed() ? -mFrame->GetRect().width + aVisIEndEdge
+                                   : -aVisIStartEdge,
                 -mBaseline);
   }
   m.PreTranslate(AppUnitsToGfxUnits(t, aContext));
@@ -776,11 +771,12 @@ gfxMatrix TextRenderedRun::GetTransformFromRunUserSpaceToUserSpace(
   nsPoint t;
   if (IsVertical()) {
     m.PreScale(1.0, mLengthAdjustScaleFactor);
-    t = nsPoint(-mBaseline,
-                IsRightToLeft() ? -mFrame->GetRect().height + start + end : 0);
+    t = nsPoint(-mBaseline, IsInlineReversed()
+                                ? -mFrame->GetRect().height + start + end
+                                : 0);
   } else {
     m.PreScale(mLengthAdjustScaleFactor, 1.0);
-    t = nsPoint(IsRightToLeft() ? -mFrame->GetRect().width + start + end : 0,
+    t = nsPoint(IsInlineReversed() ? -mFrame->GetRect().width + start + end : 0,
                 -mBaseline);
   }
   m.PreTranslate(AppUnitsToGfxUnits(t, aContext) * cssPxPerDevPx /
@@ -807,8 +803,7 @@ gfxMatrix TextRenderedRun::GetTransformFromRunUserSpaceToFrameUserSpace(
   return m.PreTranslate(t);
 }
 
-SVGBBox TextRenderedRun::GetRunUserSpaceRect(nsPresContext* aContext,
-                                             uint32_t aFlags) const {
+SVGBBox TextRenderedRun::GetRunUserSpaceRect(uint32_t aFlags) const {
   SVGBBox r;
   if (!mFrame) {
     return r;
@@ -828,7 +823,6 @@ SVGBBox TextRenderedRun::GetRunUserSpaceRect(nsPresContext* aContext,
       vertical ? -self.y : -self.x);
 
   gfxSkipCharsIterator it = mFrame->EnsureTextRun(nsTextFrame::eInflated);
-  gfxSkipCharsIterator start = it;
   gfxTextRun* textRun = mFrame->GetTextRun(nsTextFrame::eInflated);
 
   // Get the content range for this rendered run.
@@ -838,10 +832,7 @@ SVGBBox TextRenderedRun::GetRunUserSpaceRect(nsPresContext* aContext,
     return r;
   }
 
-  // FIXME(heycam): We could create a single PropertyProvider for all
-  // TextRenderedRuns that correspond to the text frame, rather than recreate
-  // it each time here.
-  nsTextFrame::PropertyProvider provider(mFrame, start);
+  auto& provider = mRoot->PropertyProviderFor(mFrame);
 
   // Measure that range.
   gfxTextRun::Metrics metrics = textRun->MeasureText(
@@ -878,10 +869,7 @@ SVGBBox TextRenderedRun::GetRunUserSpaceRect(nsPresContext* aContext,
   }
 
   // Convert the app units rectangle to user units.
-  gfxRect fill = AppUnitsToFloatCSSPixels(
-      gfxRect(fillInAppUnits.x, fillInAppUnits.y, fillInAppUnits.width,
-              fillInAppUnits.height),
-      aContext);
+  gfxRect fill = AppUnitsToFloatCSSPixels(fillInAppUnits);
 
   // Scale the rectangle up due to any mFontSizeScaleFactor.
   fill.Scale(1.0 / mFontSizeScaleFactor);
@@ -903,7 +891,7 @@ SVGBBox TextRenderedRun::GetRunUserSpaceRect(nsPresContext* aContext,
 
 SVGBBox TextRenderedRun::GetFrameUserSpaceRect(nsPresContext* aContext,
                                                uint32_t aFlags) const {
-  SVGBBox r = GetRunUserSpaceRect(aContext, aFlags);
+  SVGBBox r = GetRunUserSpaceRect(aFlags);
   if (r.IsEmpty()) {
     return r;
   }
@@ -914,7 +902,7 @@ SVGBBox TextRenderedRun::GetFrameUserSpaceRect(nsPresContext* aContext,
 SVGBBox TextRenderedRun::GetUserSpaceRect(
     nsPresContext* aContext, uint32_t aFlags,
     const gfxMatrix* aAdditionalTransform) const {
-  SVGBBox r = GetRunUserSpaceRect(aContext, aFlags);
+  SVGBBox r = GetRunUserSpaceRect(aFlags);
   if (r.IsEmpty()) {
     return r;
   }
@@ -939,7 +927,7 @@ void TextRenderedRun::GetClipEdges(nscoord& aVisIStartEdge,
 
   gfxSkipCharsIterator it = mFrame->EnsureTextRun(nsTextFrame::eInflated);
   gfxTextRun* textRun = mFrame->GetTextRun(nsTextFrame::eInflated);
-  nsTextFrame::PropertyProvider provider(mFrame, it);
+  auto& provider = mRoot->PropertyProviderFor(mFrame);
 
   // Get the covered content offset/length for this rendered run in skipped
   // characters, since that is what GetAdvanceWidth expects.
@@ -954,24 +942,72 @@ void TextRenderedRun::GetClipEdges(nscoord& aVisIStartEdge,
   // white space, as the nsTextFrame when painting does not include them when
   // interpreting clip edges.
   nsTextFrame::TrimmedOffsets trimmedOffsets =
-      mFrame->GetTrimmedOffsets(mFrame->TextFragment());
+      mFrame->GetTrimmedOffsets(mFrame->CharacterDataBuffer());
   TrimOffsets(frameOffset, frameLength, trimmedOffsets);
 
   // Convert the trimmed whole-nsTextFrame offset/length into skipped
   // characters.
   Range frameRange = ConvertOriginalToSkipped(it, frameOffset, frameLength);
 
-  // Measure the advance width in the text run between the start of
-  // frame's content and the start of the rendered run's content,
-  nscoord startEdge = textRun->GetAdvanceWidth(
-      Range(frameRange.start, runRange.start), &provider);
+  // Get the advance of aRange, using the aCachedRange if available to
+  // accelerate textrun measurement.
+  auto MeasureUsingCache = [&](SVGTextFrame::CachedMeasuredRange& aCachedRange,
+                               const Range& aRange) -> nscoord {
+    if (aRange.Intersects(aCachedRange.mRange)) {
+      // Figure out the deltas between the cached range and the new one at the
+      // start and end edges.
+      Range startDelta, endDelta;
+      int startSign = 0, endSign = 0;
+      if (aRange.start < aCachedRange.mRange.start) {
+        // This range extends the cached range at the start.
+        startSign = 1;
+        startDelta = Range(aRange.start, aCachedRange.mRange.start);
+      } else if (aRange.start > aCachedRange.mRange.start) {
+        // This range trims the cached range at the start.
+        startSign = -1;
+        startDelta = Range(aCachedRange.mRange.start, aRange.start);
+      }
+      if (aRange.end > aCachedRange.mRange.end) {
+        // This range extends the cached range at the end.
+        endSign = 1;
+        endDelta = Range(aCachedRange.mRange.end, aRange.end);
+      } else if (aRange.end < aCachedRange.mRange.end) {
+        // This range trims the cached range at the end.
+        endSign = -1;
+        endDelta = Range(aRange.end, aCachedRange.mRange.end);
+      }
+      // If the total of the deltas is less than the length of aRange,
+      // it will be cheaper to measure them and adjust the cached advance
+      // instead of measuring the whole of aRange.
+      if (startDelta.Length() + endDelta.Length() < aRange.Length()) {
+        if (startSign) {
+          aCachedRange.mAdvance +=
+              startSign * textRun->GetAdvanceWidth(startDelta, &provider);
+        }
+        if (endSign) {
+          aCachedRange.mAdvance +=
+              endSign * textRun->GetAdvanceWidth(endDelta, &provider);
+        }
+      } else {
+        aCachedRange.mAdvance = textRun->GetAdvanceWidth(aRange, &provider);
+      }
+    } else {
+      // Just measure the range, and cache the result.
+      aCachedRange.mAdvance = textRun->GetAdvanceWidth(aRange, &provider);
+    }
+    aCachedRange.mRange = aRange;
+    return aCachedRange.mAdvance;
+  };
 
-  // and between the end of the rendered run's content and the end
-  // of the frame's content.
+  mRoot->SetCurrentFrameForCaching(mFrame);
+  nscoord startEdge =
+      MeasureUsingCache(mRoot->CachedRange(SVGTextFrame::WhichRange::Before),
+                        Range(frameRange.start, runRange.start));
   nscoord endEdge =
-      textRun->GetAdvanceWidth(Range(runRange.end, frameRange.end), &provider);
+      MeasureUsingCache(mRoot->CachedRange(SVGTextFrame::WhichRange::After),
+                        Range(runRange.end, frameRange.end));
 
-  if (textRun->IsRightToLeft()) {
+  if (textRun->IsInlineReversed()) {
     aVisIStartEdge = endEdge;
     aVisIEndEdge = startEdge;
   } else {
@@ -983,7 +1019,7 @@ void TextRenderedRun::GetClipEdges(nscoord& aVisIStartEdge,
 nscoord TextRenderedRun::GetAdvanceWidth() const {
   gfxSkipCharsIterator it = mFrame->EnsureTextRun(nsTextFrame::eInflated);
   gfxTextRun* textRun = mFrame->GetTextRun(nsTextFrame::eInflated);
-  nsTextFrame::PropertyProvider provider(mFrame, it);
+  auto& provider = mRoot->PropertyProviderFor(mFrame);
 
   Range range = ConvertOriginalToSkipped(it, mTextFrameContentOffset,
                                          mTextFrameContentLength);
@@ -1033,7 +1069,7 @@ int32_t TextRenderedRun::GetCharNumAtPosition(nsPresContext* aContext,
 
   gfxSkipCharsIterator it = mFrame->EnsureTextRun(nsTextFrame::eInflated);
   gfxTextRun* textRun = mFrame->GetTextRun(nsTextFrame::eInflated);
-  nsTextFrame::PropertyProvider provider(mFrame, it);
+  auto& provider = mRoot->PropertyProviderFor(mFrame);
 
   // Next check that the point lies horizontally within the left and right
   // edges of the text.
@@ -1050,12 +1086,12 @@ int32_t TextRenderedRun::GetCharNumAtPosition(nsPresContext* aContext,
   // Finally, measure progressively smaller portions of the rendered run to
   // find which glyph it lies within.  This will need to change once we
   // support letter-spacing and word-spacing.
-  bool rtl = textRun->IsRightToLeft();
+  bool ir = textRun->IsInlineReversed();
   for (int32_t i = mTextFrameContentLength - 1; i >= 0; i--) {
     range = ConvertOriginalToSkipped(it, mTextFrameContentOffset, i);
     gfxFloat advance = aContext->AppUnitsToGfxUnits(
         textRun->GetAdvanceWidth(range, &provider));
-    if ((rtl && pos < runAdvance - advance) || (!rtl && pos >= advance)) {
+    if ((ir && pos < runAdvance - advance) || (!ir && pos >= advance)) {
       return i;
     }
   }
@@ -1086,20 +1122,20 @@ class TextNodeIterator {
         mSubtreePosition(mSubtree ? eBeforeSubtree : eWithinSubtree) {
     NS_ASSERTION(aRoot, "expected non-null root");
     if (!aRoot->IsText()) {
-      Next();
+      GetNext();
     }
   }
 
   /**
    * Returns the current Text, or null if the iterator has finished.
    */
-  Text* Current() const { return mCurrent ? mCurrent->AsText() : nullptr; }
+  Text* GetCurrent() const { return mCurrent ? mCurrent->AsText() : nullptr; }
 
   /**
    * Advances to the next Text and returns it, or null if the end of
    * iteration has been reached.
    */
-  Text* Next();
+  Text* GetNext();
 
   /**
    * Returns whether the iterator is currently within the subtree rooted
@@ -1136,7 +1172,7 @@ class TextNodeIterator {
   SubtreePosition mSubtreePosition;
 };
 
-Text* TextNodeIterator::Next() {
+Text* TextNodeIterator::GetNext() {
   // Starting from mCurrent, we do a non-recursive traversal to the next
   // Text beneath mRoot, updating mSubtreePosition appropriately if we
   // encounter mSubtree.
@@ -1277,7 +1313,7 @@ void TextNodeCorrespondenceRecorder::RecordCorrespondence(SVGTextFrame* aRoot) {
 }
 
 void TextNodeCorrespondenceRecorder::Record(SVGTextFrame* aRoot) {
-  if (!mNodeIterator.Current()) {
+  if (!mNodeIterator.GetCurrent()) {
     // If there are no Text nodes then there is nothing to do.
     return;
   }
@@ -1288,7 +1324,7 @@ void TextNodeCorrespondenceRecorder::Record(SVGTextFrame* aRoot) {
 
   // Find how many undisplayed characters there are after the final nsTextFrame.
   uint32_t undisplayed = 0;
-  if (mNodeIterator.Current()) {
+  if (mNodeIterator.GetCurrent()) {
     if (mPreviousNode && mPreviousNode->TextLength() != mNodeCharIndex) {
       // The last nsTextFrame ended part way through a Text node.  The
       // remaining characters count as undisplayed.
@@ -1298,7 +1334,7 @@ void TextNodeCorrespondenceRecorder::Record(SVGTextFrame* aRoot) {
       undisplayed += mPreviousNode->TextLength() - mNodeCharIndex;
     }
     // All the remaining Text that we iterate must also be undisplayed.
-    for (Text* textNode = mNodeIterator.Current(); textNode;
+    for (Text* textNode = mNodeIterator.GetCurrent(); textNode;
          textNode = NextNode()) {
       undisplayed += textNode->TextLength();
     }
@@ -1310,10 +1346,10 @@ void TextNodeCorrespondenceRecorder::Record(SVGTextFrame* aRoot) {
 }
 
 Text* TextNodeCorrespondenceRecorder::NextNode() {
-  mPreviousNode = mNodeIterator.Current();
+  mPreviousNode = mNodeIterator.GetCurrent();
   Text* next;
   do {
-    next = mNodeIterator.Next();
+    next = mNodeIterator.GetNext();
   } while (next && next->TextLength() == 0);
   return next;
 }
@@ -1344,15 +1380,15 @@ void TextNodeCorrespondenceRecorder::TraverseAndRecord(nsIFrame* aFrame) {
     NS_ASSERTION(mNodeCharIndex == 0,
                  "incorrect tracking of undisplayed "
                  "characters in text nodes");
-    if (!mNodeIterator.Current()) {
+    if (!mNodeIterator.GetCurrent()) {
       MOZ_ASSERT_UNREACHABLE(
           "incorrect tracking of correspondence between "
           "text frames and text nodes");
     } else {
       // Each whole Text we find before we get to the text node for the
       // first text frame must be undisplayed.
-      while (mNodeIterator.Current() != node) {
-        undisplayed += mNodeIterator.Current()->TextLength();
+      while (mNodeIterator.GetCurrent() != node) {
+        undisplayed += mNodeIterator.GetCurrent()->TextLength();
         NextNode();
       }
       // If the first text frame starts at a non-zero content offset, then those
@@ -1383,8 +1419,8 @@ void TextNodeCorrespondenceRecorder::TraverseAndRecord(nsIFrame* aFrame) {
     }
     // Each whole Text we find before we get to the text node for
     // the current text frame must be undisplayed.
-    while (mNodeIterator.Current() && mNodeIterator.Current() != node) {
-      undisplayed += mNodeIterator.Current()->TextLength();
+    while (mNodeIterator.GetCurrent() && mNodeIterator.GetCurrent() != node) {
+      undisplayed += mNodeIterator.GetCurrent()->TextLength();
       NextNode();
     }
     // If the current text frame starts at a non-zero content offset, then those
@@ -1455,13 +1491,14 @@ class MOZ_STACK_CLASS TextFrameIterator {
 
   /**
    * Returns the root SVGTextFrame this TextFrameIterator is iterating over.
+   * (May be nullptr, if nullptr was passed to our constructor.)
    */
-  SVGTextFrame* Root() const { return mRootFrame; }
+  SVGTextFrame* GetRoot() const { return mRootFrame; }
 
   /**
-   * Returns the current nsTextFrame.
+   * Returns the current nsTextFrame, or null if the iterator has finished.
    */
-  nsTextFrame* Current() const { return do_QueryFrame(mCurrentFrame); }
+  nsTextFrame* GetCurrent() const { return do_QueryFrame(mCurrentFrame); }
 
   /**
    * Returns the number of undisplayed characters in the DOM just before the
@@ -1476,9 +1513,10 @@ class MOZ_STACK_CLASS TextFrameIterator {
   nsPoint Position() const { return mCurrentPosition; }
 
   /**
-   * Advances to the next nsTextFrame and returns it.
+   * Advances to the next nsTextFrame and returns it, or null if the end of
+   * iteration has been reached.
    */
-  nsTextFrame* Next();
+  nsTextFrame* GetNext();
 
   /**
    * Returns whether the iterator is within the subtree.
@@ -1520,7 +1558,7 @@ class MOZ_STACK_CLASS TextFrameIterator {
     }
 
     mBaselines.AppendElement(mRootFrame->StyleSVG()->mDominantBaseline);
-    Next();
+    GetNext();
   }
 
   /**
@@ -1586,7 +1624,7 @@ uint32_t TextFrameIterator::UndisplayedCharacters() const {
   return GetUndisplayedCharactersBeforeFrame(frame);
 }
 
-nsTextFrame* TextFrameIterator::Next() {
+nsTextFrame* TextFrameIterator::GetNext() {
   // Starting from mCurrentFrame, we do a non-recursive traversal to the next
   // nsTextFrame beneath mRoot, updating mSubtreePosition appropriately if we
   // encounter mSubtree.
@@ -1658,7 +1696,7 @@ nsTextFrame* TextFrameIterator::Next() {
     } while (mCurrentFrame && !IsNonEmptyTextFrame(mCurrentFrame));
   }
 
-  return Current();
+  return GetCurrent();
 }
 
 void TextFrameIterator::PushBaseline(nsIFrame* aNextFrame) {
@@ -1732,6 +1770,15 @@ class TextRenderedRunIterator {
         mCurrent(First()) {}
 
   /**
+   * Ensure any cached PropertyProvider is cleared at the end of the iteration.
+   */
+  ~TextRenderedRunIterator() {
+    if (auto* root = mFrameIterator.GetRoot()) {
+      root->ForgetCachedProvider();
+    }
+  }
+
+  /**
    * Returns the current TextRenderedRun.
    */
   TextRenderedRun Current() const { return mCurrent; }
@@ -1745,7 +1792,7 @@ class TextRenderedRunIterator {
   /**
    * Returns the root SVGTextFrame this iterator is for.
    */
-  SVGTextFrame* Root() const { return mFrameIterator.Root(); }
+  SVGTextFrame* GetRoot() const { return mFrameIterator.GetRoot(); }
 
   /**
    * Advances to the first TextRenderedRun and returns it.
@@ -1786,7 +1833,7 @@ class TextRenderedRunIterator {
 };
 
 TextRenderedRun TextRenderedRunIterator::Next() {
-  if (!mFrameIterator.Current()) {
+  if (!mFrameIterator.GetCurrent()) {
     // If there are no more frames, then there are no more rendered runs to
     // return.
     mCurrent = TextRenderedRun();
@@ -1811,7 +1858,7 @@ TextRenderedRun TextRenderedRunIterator::Next() {
       return mCurrent;
     }
 
-    frame = mFrameIterator.Current();
+    frame = mFrameIterator.GetCurrent();
 
     charIndex = mTextElementCharIndex;
 
@@ -1822,8 +1869,8 @@ TextRenderedRun TextRenderedRunIterator::Next() {
         runEnd;  // XXX Replace runStart with mTextElementCharIndex.
     runStart = mTextElementCharIndex;
     runEnd = runStart + 1;
-    while (runEnd < Root()->mPositions.Length() &&
-           !Root()->mPositions[runEnd].mRunBoundary) {
+    while (runEnd < GetRoot()->mPositions.Length() &&
+           !GetRoot()->mPositions[runEnd].mRunBoundary) {
       runEnd++;
     }
 
@@ -1854,18 +1901,18 @@ TextRenderedRun TextRenderedRunIterator::Next() {
     uint32_t untrimmedOffset = offset;
     uint32_t untrimmedLength = length;
     nsTextFrame::TrimmedOffsets trimmedOffsets =
-        frame->GetTrimmedOffsets(frame->TextFragment());
+        frame->GetTrimmedOffsets(frame->CharacterDataBuffer());
     TrimOffsets(offset, length, trimmedOffsets);
     charIndex += offset - untrimmedOffset;
 
     // Get the position and rotation of the character that begins this
     // rendered run.
-    pt = Root()->mPositions[charIndex].mPosition;
-    rotate = Root()->mPositions[charIndex].mAngle;
+    pt = GetRoot()->mPositions[charIndex].mPosition;
+    rotate = GetRoot()->mPositions[charIndex].mAngle;
 
     // Determine if we should skip this rendered run.
     bool skip = !mFrameIterator.IsWithinSubtree() ||
-                Root()->mPositions[mTextElementCharIndex].mHidden;
+                GetRoot()->mPositions[mTextElementCharIndex].mHidden;
     if (mFilter == eVisibleFrames) {
       skip = skip || !frame->StyleVisibility()->IsVisible();
     }
@@ -1877,12 +1924,12 @@ TextRenderedRun TextRenderedRunIterator::Next() {
     // If we have moved past the end of the current frame's content, we need to
     // advance to the next frame.
     if (offset + untrimmedLength >= contentEnd) {
-      mFrameIterator.Next();
+      mFrameIterator.GetNext();
       mTextElementCharIndex += mFrameIterator.UndisplayedCharacters();
       mFrameStartTextElementCharIndex = mTextElementCharIndex;
     }
 
-    if (!mFrameIterator.Current()) {
+    if (!mFrameIterator.GetCurrent()) {
       if (skip) {
         // That was the last frame, and we skipped this rendered run.  So we
         // have no rendered run to return.
@@ -1899,18 +1946,17 @@ TextRenderedRun TextRenderedRunIterator::Next() {
     }
   }
 
-  mCurrent = TextRenderedRun(frame, pt, Root()->mLengthAdjustScaleFactor,
-                             rotate, mFontSizeScaleFactor, baseline, offset,
-                             length, charIndex);
+  mCurrent = TextRenderedRun(frame, GetRoot(), pt, rotate, mFontSizeScaleFactor,
+                             baseline, offset, length, charIndex);
   return mCurrent;
 }
 
 TextRenderedRun TextRenderedRunIterator::First() {
-  if (!mFrameIterator.Current()) {
+  if (!mFrameIterator.GetCurrent()) {
     return TextRenderedRun();
   }
 
-  if (Root()->mPositions.IsEmpty()) {
+  if (GetRoot()->mPositions.IsEmpty()) {
     mFrameIterator.Close();
     return TextRenderedRun();
   }
@@ -1962,9 +2008,18 @@ class MOZ_STACK_CLASS CharIterator {
                nsIContent* aSubtree, bool aPostReflow = true);
 
   /**
+   * Ensure any cached PropertyProvider is cleared at the end of the iteration.
+   */
+  ~CharIterator() {
+    if (auto* root = mFrameIterator.GetRoot()) {
+      root->ForgetCachedProvider();
+    }
+  }
+
+  /**
    * Returns whether the iterator is finished.
    */
-  bool AtEnd() const { return !mFrameIterator.Current(); }
+  bool AtEnd() const { return !mFrameIterator.GetCurrent(); }
 
   /**
    * Advances to the next matching character.  Returns true if there was a
@@ -2009,9 +2064,10 @@ class MOZ_STACK_CLASS CharIterator {
   bool AdvanceToSubtree();
 
   /**
-   * Returns the nsTextFrame for the current character.
+   * Returns the nsTextFrame for the current character, or null if the end of
+   * iteration has been reached.
    */
-  nsTextFrame* TextFrame() const { return mFrameIterator.Current(); }
+  nsTextFrame* GetTextFrame() const { return mFrameIterator.GetCurrent(); }
 
   /**
    * Returns whether the iterator is within the subtree.
@@ -2022,6 +2078,13 @@ class MOZ_STACK_CLASS CharIterator {
    * Returns whether the iterator is past the subtree.
    */
   bool IsAfterSubtree() const { return mFrameIterator.IsAfterSubtree(); }
+
+  /**
+   * Returns the iterator's computed dominant-baseline value.
+   */
+  StyleDominantBaseline DominantBaseline() const {
+    return mFrameIterator.DominantBaseline();
+  }
 
   /**
    * Returns whether the current character is a skipped character.
@@ -2203,8 +2266,8 @@ CharIterator::CharIterator(SVGTextFrame* aSVGTextFrame,
       mLengthAdjustScaleFactor(aSVGTextFrame->mLengthAdjustScaleFactor),
       mPostReflow(aPostReflow) {
   if (!AtEnd()) {
-    mSkipCharsIterator = TextFrame()->EnsureTextRun(nsTextFrame::eInflated);
-    mTextRun = TextFrame()->GetTextRun(nsTextFrame::eInflated);
+    mSkipCharsIterator = GetTextFrame()->EnsureTextRun(nsTextFrame::eInflated);
+    mTextRun = GetTextFrame()->GetTextRun(nsTextFrame::eInflated);
     mTextElementCharIndex = mFrameIterator.UndisplayedCharacters();
     UpdateGlyphStartTextElementCharIndex();
     if (!MatchesFilter()) {
@@ -2255,12 +2318,12 @@ bool CharIterator::AdvanceToCharacter(uint32_t aTextElementCharIndex) {
 
 bool CharIterator::AdvancePastCurrentFrame() {
   // XXX Can do this better than one character at a time if it matters.
-  nsTextFrame* currentFrame = TextFrame();
+  nsTextFrame* currentFrame = GetTextFrame();
   do {
     if (!Next()) {
       return false;
     }
-  } while (TextFrame() == currentFrame);
+  } while (GetTextFrame() == currentFrame);
   return true;
 }
 
@@ -2290,14 +2353,14 @@ bool CharIterator::AdvanceToSubtree() {
 }
 
 bool CharIterator::IsOriginalCharTrimmed() const {
-  if (mFrameForTrimCheck != TextFrame()) {
+  if (mFrameForTrimCheck != GetTextFrame()) {
     // Since we do a lot of trim checking, we cache the trimmed offsets and
     // lengths while we are in the same frame.
-    mFrameForTrimCheck = TextFrame();
+    mFrameForTrimCheck = GetTextFrame();
     uint32_t offset = mFrameForTrimCheck->GetContentOffset();
     uint32_t length = mFrameForTrimCheck->GetContentLength();
     nsTextFrame::TrimmedOffsets trim = mFrameForTrimCheck->GetTrimmedOffsets(
-        mFrameForTrimCheck->TextFragment(),
+        mFrameForTrimCheck->CharacterDataBuffer(),
         (mPostReflow ? nsTextFrame::TrimmedOffsetFlags::Default
                      : nsTextFrame::TrimmedOffsetFlags::NotPostReflow));
     TrimOffsets(offset, length, trim);
@@ -2313,17 +2376,15 @@ bool CharIterator::IsOriginalCharTrimmed() const {
       (index >= mTrimmedOffset + mTrimmedLength &&
        mFrameForTrimCheck->StyleText()->NewlineIsSignificant(
            mFrameForTrimCheck) &&
-       mFrameForTrimCheck->TextFragment()->CharAt(index) == '\n'));
+       mFrameForTrimCheck->CharacterDataBuffer().CharAt(index) == '\n'));
 }
 
 gfxFloat CharIterator::GetAdvance(nsPresContext* aContext) const {
   float cssPxPerDevPx =
       nsPresContext::AppUnitsToFloatCSSPixels(aContext->AppUnitsPerDevPixel());
 
-  gfxSkipCharsIterator start =
-      TextFrame()->EnsureTextRun(nsTextFrame::eInflated);
-  nsTextFrame::PropertyProvider provider(TextFrame(), start);
-
+  auto& provider =
+      mFrameIterator.GetRoot()->PropertyProviderFor(GetTextFrame());
   uint32_t offset = mSkipCharsIterator.GetSkippedOffset();
   gfxFloat advance =
       mTextRun->GetAdvanceWidth(Range(offset, offset + 1), &provider);
@@ -2340,26 +2401,27 @@ bool CharIterator::NextCharacter() {
 
   // Advance within the current text run.
   mSkipCharsIterator.AdvanceOriginal(1);
-  if (mSkipCharsIterator.GetOriginalOffset() < TextFrame()->GetContentEnd()) {
+  if (mSkipCharsIterator.GetOriginalOffset() <
+      GetTextFrame()->GetContentEnd()) {
     // We're still within the part of the text run for the current text frame.
     UpdateGlyphStartTextElementCharIndex();
     return true;
   }
 
   // Advance to the next frame.
-  mFrameIterator.Next();
+  mFrameIterator.GetNext();
 
   // Skip any undisplayed characters.
   uint32_t undisplayed = mFrameIterator.UndisplayedCharacters();
   mTextElementCharIndex += undisplayed;
-  if (!TextFrame()) {
+  if (!GetTextFrame()) {
     // We're at the end.
     mSkipCharsIterator = gfxSkipCharsIterator();
     return false;
   }
 
-  mSkipCharsIterator = TextFrame()->EnsureTextRun(nsTextFrame::eInflated);
-  mTextRun = TextFrame()->GetTextRun(nsTextFrame::eInflated);
+  mSkipCharsIterator = GetTextFrame()->EnsureTextRun(nsTextFrame::eInflated);
+  mTextRun = GetTextFrame()->GetTextRun(nsTextFrame::eInflated);
   UpdateGlyphStartTextElementCharIndex();
   return true;
 }
@@ -2397,6 +2459,7 @@ class SVGTextDrawPathCallbacks final : public nsTextFrame::DrawPathCallbacks {
    * Constructs an SVGTextDrawPathCallbacks.
    *
    * @param aSVGTextFrame The ancestor text frame.
+   * @param aContextPaint Used by context-fill and context-stroke.
    * @param aContext The context to use for painting.
    * @param aFrame The nsTextFrame to paint.
    * @param aCanvasTM The transformation matrix to set when painting; this
@@ -2405,12 +2468,14 @@ class SVGTextDrawPathCallbacks final : public nsTextFrame::DrawPathCallbacks {
    * @param aImgParams Whether we need to synchronously decode images.
    * @param aShouldPaintSVGGlyphs Whether SVG glyphs should be painted.
    */
-  SVGTextDrawPathCallbacks(SVGTextFrame* aSVGTextFrame, gfxContext& aContext,
+  SVGTextDrawPathCallbacks(SVGTextFrame* aSVGTextFrame,
+                           SVGContextPaint* aContextPaint, gfxContext& aContext,
                            nsTextFrame* aFrame, const gfxMatrix& aCanvasTM,
                            imgDrawingParams& aImgParams,
                            bool aShouldPaintSVGGlyphs)
       : DrawPathCallbacks(aShouldPaintSVGGlyphs),
         mSVGTextFrame(aSVGTextFrame),
+        mContextPaint(aContextPaint),
         mContext(aContext),
         mFrame(aFrame),
         mCanvasTM(aCanvasTM),
@@ -2469,6 +2534,7 @@ class SVGTextDrawPathCallbacks final : public nsTextFrame::DrawPathCallbacks {
                     const StyleSVGOpacity& aOpacity) const;
 
   SVGTextFrame* const mSVGTextFrame;
+  SVGContextPaint* const mContextPaint;
   gfxContext& mContext;
   nsTextFrame* const mFrame;
   const gfxMatrix& mCanvasTM;
@@ -2589,13 +2655,14 @@ void SVGTextDrawPathCallbacks::ApplyOpacity(
         sRGBColor::FromABGR(aPaint.kind.AsColor().CalcColor(*mFrame->Style()))
             .a;
   }
-  aColor.a *= SVGUtils::GetOpacity(aOpacity, /*aContextPaint*/ nullptr);
+  aColor.a *= SVGUtils::GetOpacity(aOpacity, mContextPaint);
 }
 
 void SVGTextDrawPathCallbacks::MakeFillPattern(GeneralPattern* aOutPattern) {
   if (mColor == NS_SAME_AS_FOREGROUND_COLOR ||
       mColor == NS_40PERCENT_FOREGROUND_COLOR) {
-    SVGUtils::MakeFillPatternFor(mFrame, &mContext, aOutPattern, mImgParams);
+    SVGUtils::MakeFillPatternFor(mFrame, &mContext, aOutPattern, mImgParams,
+                                 mContextPaint);
     return;
   }
 
@@ -2665,7 +2732,7 @@ void SVGTextDrawPathCallbacks::StrokeGeometry() {
     return;
   }
 
-  if (!SVGUtils::HasStroke(mFrame, /*aContextPaint*/ nullptr)) {
+  if (!SVGUtils::HasStroke(mFrame, mContextPaint)) {
     return;
   }
 
@@ -2677,7 +2744,7 @@ void SVGTextDrawPathCallbacks::StrokeGeometry() {
     strokePattern.InitColorPattern(ToDeviceColor(color));
   } else {
     SVGUtils::MakeStrokePatternFor(mFrame, &mContext, &strokePattern,
-                                   mImgParams, /*aContextPaint*/ nullptr);
+                                   mImgParams, mContextPaint);
   }
   if (strokePattern.GetPattern()) {
     SVGElement* svgOwner =
@@ -2693,7 +2760,7 @@ void SVGTextDrawPathCallbacks::StrokeGeometry() {
     RefPtr<Path> path = mContext.GetPath();
     SVGContentUtils::AutoStrokeOptions strokeOptions;
     SVGContentUtils::GetStrokeOptions(&strokeOptions, svgOwner, mFrame->Style(),
-                                      /*aContextPaint*/ nullptr);
+                                      mContextPaint);
     DrawOptions drawOptions;
     drawOptions.mAntialiasMode =
         SVGUtils::ToAntialiasMode(mFrame->StyleText()->mTextRendering);
@@ -2798,7 +2865,7 @@ void SVGTextFrame::DidSetComputedStyle(ComputedStyle* aOldComputedStyle) {
 }
 
 nsresult SVGTextFrame::AttributeChanged(int32_t aNameSpaceID,
-                                        nsAtom* aAttribute, int32_t aModType) {
+                                        nsAtom* aAttribute, AttrModType) {
   if (aNameSpaceID != kNameSpaceID_None) {
     return NS_OK;
   }
@@ -2885,17 +2952,18 @@ void SVGTextFrame::ScheduleReflowSVGNonDisplayText(IntrinsicDirty aReason) {
 NS_IMPL_ISUPPORTS(SVGTextFrame::MutationObserver, nsIMutationObserver)
 
 void SVGTextFrame::MutationObserver::ContentAppended(
-    nsIContent* aFirstNewContent) {
+    nsIContent* aFirstNewContent, const ContentAppendInfo&) {
   mFrame->NotifyGlyphMetricsChange(true);
 }
 
-void SVGTextFrame::MutationObserver::ContentInserted(nsIContent* aChild) {
+void SVGTextFrame::MutationObserver::ContentInserted(nsIContent* aChild,
+                                                     const ContentInsertInfo&) {
   mFrame->NotifyGlyphMetricsChange(true);
 }
 
 void SVGTextFrame::MutationObserver::ContentWillBeRemoved(
-    nsIContent* aChild, const BatchRemovalState* aState) {
-  if (aState && !aState->mIsFirst) {
+    nsIContent* aChild, const ContentRemoveInfo& aInfo) {
+  if (aInfo.mBatchRemovalState && !aInfo.mBatchRemovalState->mIsFirst) {
     return;
   }
   mFrame->NotifyGlyphMetricsChange(true);
@@ -2907,8 +2975,8 @@ void SVGTextFrame::MutationObserver::CharacterDataChanged(
 }
 
 void SVGTextFrame::MutationObserver::AttributeChanged(
-    Element* aElement, int32_t aNameSpaceID, nsAtom* aAttribute,
-    int32_t aModType, const nsAttrValue* aOldValue) {
+    Element* aElement, int32_t aNameSpaceID, nsAtom* aAttribute, AttrModType,
+    const nsAttrValue* aOldValue) {
   if (!aElement->IsSVGElement()) {
     return;
   }
@@ -3087,25 +3155,14 @@ void SVGTextFrame::PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
     return;
   }
 
-  nsPresContext* presContext = PresContext();
+  if (IsSubtreeDirty()) {
+    return;
+  }
 
   if (HasAnyStateBits(NS_FRAME_IS_NONDISPLAY)) {
-    // If we are in a canvas DrawWindow call that used the
-    // DRAWWINDOW_DO_NOT_FLUSH flag, then we may still have out
-    // of date frames.  Just don't paint anything if they are
-    // dirty.
-    if (presContext->PresShell()->InDrawWindowNotFlushing() &&
-        IsSubtreeDirty()) {
-      return;
-    }
     // Text frames inside <clipPath>, <mask>, etc. will never have had
     // ReflowSVG called on them, so call UpdateGlyphPositioning to do this now.
     UpdateGlyphPositioning();
-  } else if (IsSubtreeDirty()) {
-    // If we are asked to paint before reflow has recomputed mPositions etc.
-    // directly via PaintSVG, rather than via a display list, then we need
-    // to bail out here too.
-    return;
   }
 
   const float epsilon = 0.0001;
@@ -3127,6 +3184,7 @@ void SVGTextFrame::PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
   // SVG frames' PaintSVG methods paint in CSS px, but normally frames paint in
   // dev pixels. Here we multiply a CSS-px-to-dev-pixel factor onto aTransform
   // so our non-SVG nsTextFrame children paint correctly.
+  nsPresContext* presContext = PresContext();
   auto auPerDevPx = presContext->AppUnitsPerDevPixel();
   float cssPxPerDevPx = nsPresContext::AppUnitsToFloatCSSPixels(auPerDevPx);
   gfxMatrix canvasTMForChildren = aTransform;
@@ -3198,10 +3256,10 @@ void SVGTextFrame::PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
                                                 opacity);
       }
 
-      if (ShouldRenderAsPath(frame, paintSVGGlyphs)) {
-        SVGTextDrawPathCallbacks callbacks(this, aContext, frame,
-                                           matrixForPaintServers, aImgParams,
-                                           paintSVGGlyphs);
+      if (ShouldRenderAsPath(frame, outerContextPaint, paintSVGGlyphs)) {
+        SVGTextDrawPathCallbacks callbacks(this, outerContextPaint, aContext,
+                                           frame, matrixForPaintServers,
+                                           aImgParams, paintSVGGlyphs);
         params.callbacks = &callbacks;
         frame->PaintText(params, startEdge, endEdge, nsPoint(), isSelected);
       } else {
@@ -3261,12 +3319,11 @@ nsIFrame* SVGTextFrame::GetFrameForPoint(const gfxPoint& aPoint) {
     }
 
     gfxPoint pointInRunUserSpace = m.TransformPoint(aPoint);
-    gfxRect frameRect = run.GetRunUserSpaceRect(
-                               presContext, TextRenderedRun::eIncludeFill |
+    gfxRect frameRect = run.GetRunUserSpaceRect(TextRenderedRun::eIncludeFill |
                                                 TextRenderedRun::eIncludeStroke)
                             .ToThebesRect();
 
-    if (Inside(frameRect, pointInRunUserSpace)) {
+    if (frameRect.Contains(pointInRunUserSpace)) {
       hit = run.mFrame;
     }
   }
@@ -3324,7 +3381,7 @@ void SVGTextFrame::ReflowSVG() {
   if (r.IsEmpty()) {
     mRect.SetEmpty();
   } else {
-    mRect = nsLayoutUtils::RoundGfxRectToAppRect(r.ToThebesRect(),
+    mRect = nsLayoutUtils::RoundGfxRectToAppRect((const Rect&)r,
                                                  AppUnitsPerCSSPixel());
 
     // Due to rounding issues when we have a transform applied, we sometimes
@@ -3380,8 +3437,8 @@ SVGBBox SVGTextFrame::GetBBoxContribution(const Matrix& aToBBoxUserspace,
   SVGBBox bbox;
 
   if (aFlags & SVGUtils::eForGetClientRects) {
-    Rect rect = NSRectToRect(mRect, AppUnitsPerCSSPixel());
-    if (!rect.IsEmpty()) {
+    if (!mRect.IsEmpty()) {
+      Rect rect = NSRectToRect(mRect, AppUnitsPerCSSPixel());
       bbox = aToBBoxUserspace.TransformBounds(rect);
     }
     return bbox;
@@ -3426,7 +3483,7 @@ static bool HasTextContent(nsIContent* aContent) {
   NS_ASSERTION(aContent, "expected non-null aContent");
 
   TextNodeIterator it(aContent);
-  for (Text* text = it.Current(); text; text = it.Next()) {
+  for (Text* text = it.GetCurrent(); text; text = it.GetNext()) {
     if (text->TextLength() != 0) {
       return true;
     }
@@ -3442,7 +3499,7 @@ static uint32_t GetTextContentLength(nsIContent* aContent) {
 
   uint32_t length = 0;
   TextNodeIterator it(aContent);
-  for (Text* text = it.Current(); text; text = it.Next()) {
+  for (Text* text = it.GetCurrent(); text; text = it.GetNext()) {
     length += text->TextLength();
   }
   return length;
@@ -3545,18 +3602,23 @@ void SVGTextFrame::SelectSubString(nsIContent* aContent, uint32_t charnum,
 
   UpdateGlyphPositioning();
 
-  // Convert charnum/nchars from addressable characters relative to
-  // aContent to global character indices.
-  CharIterator chit(this, CharIterator::eAddressable, aContent);
-  if (!chit.AdvanceToSubtree() || !chit.Next(charnum) ||
-      chit.IsAfterSubtree()) {
-    aRv.ThrowIndexSizeError("Character index out of range");
-    return;
+  RefPtr<nsIContent> content;
+
+  // Ensure the destructor of CharIterator runs before calling HandleClick.
+  {
+    // Convert charnum/nchars from addressable characters relative to
+    // aContent to global character indices.
+    CharIterator chit(this, CharIterator::eAddressable, aContent);
+    if (!chit.AdvanceToSubtree() || !chit.Next(charnum) ||
+        chit.IsAfterSubtree()) {
+      aRv.ThrowIndexSizeError("Character index out of range");
+      return;
+    }
+    charnum = chit.TextElementCharIndex();
+    content = chit.GetTextFrame()->GetContent();
+    chit.NextWithinSubtree(nchars);
+    nchars = chit.TextElementCharIndex() - charnum;
   }
-  charnum = chit.TextElementCharIndex();
-  const RefPtr<nsIContent> content = chit.TextFrame()->GetContent();
-  chit.NextWithinSubtree(nchars);
-  nchars = chit.TextElementCharIndex() - charnum;
 
   RefPtr<nsFrameSelection> frameSelection = GetFrameSelection();
 
@@ -3585,8 +3647,8 @@ void SVGTextFrame::SelectSubString(nsIContent* aContent, uint32_t charnum,
  */
 bool SVGTextFrame::RequiresSlowFallbackForSubStringLength() {
   TextFrameIterator frameIter(this);
-  for (nsTextFrame* frame = frameIter.Current(); frame;
-       frame = frameIter.Next()) {
+  for (nsTextFrame* frame = frameIter.GetCurrent(); frame;
+       frame = frameIter.GetNext()) {
     if (frameIter.TextPathFrame() || frame->GetNextContinuation()) {
       return true;
     }
@@ -3639,7 +3701,7 @@ float SVGTextFrame::GetSubStringLengthFastPath(nsIContent* aContent,
   uint32_t frameStartTextElementCharIndex = 0;
   uint32_t textElementCharIndex;
 
-  for (nsTextFrame* frame = frit.Current(); frame; frame = frit.Next()) {
+  for (nsTextFrame* frame = frit.GetCurrent(); frame; frame = frit.GetNext()) {
     frameStartTextElementCharIndex += frit.UndisplayedCharacters();
     textElementCharIndex = frameStartTextElementCharIndex;
 
@@ -3651,7 +3713,8 @@ float SVGTextFrame::GetSubStringLengthFastPath(nsIContent* aContent,
     uint32_t trimmedOffset = untrimmedOffset;
     uint32_t trimmedLength = untrimmedLength;
     nsTextFrame::TrimmedOffsets trimmedOffsets = frame->GetTrimmedOffsets(
-        frame->TextFragment(), nsTextFrame::TrimmedOffsetFlags::NotPostReflow);
+        frame->CharacterDataBuffer(),
+        nsTextFrame::TrimmedOffsetFlags::NotPostReflow);
     TrimOffsets(trimmedOffset, trimmedLength, trimmedOffsets);
 
     textElementCharIndex += trimmedOffset - untrimmedOffset;
@@ -3672,7 +3735,7 @@ float SVGTextFrame::GetSubStringLengthFastPath(nsIContent* aContent,
 
       gfxSkipCharsIterator it = frame->EnsureTextRun(nsTextFrame::eInflated);
       gfxTextRun* textRun = frame->GetTextRun(nsTextFrame::eInflated);
-      nsTextFrame::PropertyProvider provider(frame, it);
+      auto& provider = PropertyProviderFor(frame);
 
       Range range = ConvertOriginalToSkipped(it, offset, trimmedLength);
 
@@ -3740,7 +3803,7 @@ float SVGTextFrame::GetSubStringLengthSlowFallback(nsIContent* aContent,
       gfxSkipCharsIterator it =
           run.mFrame->EnsureTextRun(nsTextFrame::eInflated);
       gfxTextRun* textRun = run.mFrame->GetTextRun(nsTextFrame::eInflated);
-      nsTextFrame::PropertyProvider provider(run.mFrame, it);
+      auto& provider = PropertyProviderFor(run.mFrame);
 
       Range range = ConvertOriginalToSkipped(it, offset, length);
 
@@ -3907,18 +3970,20 @@ already_AddRefed<DOMSVGPoint> SVGTextFrame::GetEndPositionOfChar(
   // Get the advance of the glyph.
   gfxFloat advance =
       GetGlyphAdvance(this, aContent, startIndex,
-                      it.IsClusterAndLigatureGroupStart() ? &it : nullptr);
-  if (it.TextRun()->IsRightToLeft()) {
+                      it.IsClusterAndLigatureGroupStart() ? &it : nullptr) /
+      mFontSizeScaleFactor;
+  const gfxTextRun* textRun = it.TextRun();
+  if (textRun->IsInlineReversed()) {
     advance = -advance;
   }
+  Point p = textRun->IsVertical() ? Point(0, advance) : Point(advance, 0);
 
   // The end position is the start position plus the advance in the direction
   // of the glyph's rotation.
   Matrix m = Matrix::Rotation(mPositions[startIndex].mAngle) *
              Matrix::Translation(ToPoint(mPositions[startIndex].mPosition));
-  Point p = m.TransformPoint(Point(advance / mFontSizeScaleFactor, 0));
 
-  return do_AddRef(new DOMSVGPoint(p));
+  return do_AddRef(new DOMSVGPoint(m.TransformPoint(p)));
 }
 
 /**
@@ -3949,16 +4014,15 @@ already_AddRefed<SVGRect> SVGTextFrame::GetExtentOfChar(nsIContent* aContent,
   float cssPxPerDevPx = nsPresContext::AppUnitsToFloatCSSPixels(
       presContext->AppUnitsPerDevPixel());
 
-  nsTextFrame* textFrame = it.TextFrame();
+  nsTextFrame* textFrame = it.GetTextFrame();
   uint32_t startIndex = it.GlyphStartTextElementCharIndex();
-  bool isRTL = it.TextRun()->IsRightToLeft();
-  bool isVertical = it.TextRun()->IsVertical();
+  const gfxTextRun* textRun = it.TextRun();
 
   // Get the glyph advance.
   gfxFloat advance =
       GetGlyphAdvance(this, aContent, startIndex,
                       it.IsClusterAndLigatureGroupStart() ? &it : nullptr);
-  gfxFloat x = isRTL ? -advance : 0.0;
+  gfxFloat x = textRun->IsInlineReversed() ? -advance : 0.0;
 
   // The ascent and descent gives the height of the glyph.
   gfxFloat ascent, descent;
@@ -3971,15 +4035,18 @@ already_AddRefed<SVGRect> SVGTextFrame::GetExtentOfChar(nsIContent* aContent,
   m.PreRotate(mPositions[startIndex].mAngle);
   m.PreScale(1 / mFontSizeScaleFactor, 1 / mFontSizeScaleFactor);
 
+  nscoord baseline = GetBaselinePosition(
+      textFrame, textRun, it.DominantBaseline(), mFontSizeScaleFactor);
+
   gfxRect glyphRect;
-  if (isVertical) {
+  if (textRun->IsVertical()) {
     glyphRect = gfxRect(
-        -presContext->AppUnitsToGfxUnits(descent) * cssPxPerDevPx, x,
+        -presContext->AppUnitsToGfxUnits(baseline) * cssPxPerDevPx, x,
         presContext->AppUnitsToGfxUnits(ascent + descent) * cssPxPerDevPx,
         advance);
   } else {
     glyphRect = gfxRect(
-        x, -presContext->AppUnitsToGfxUnits(ascent) * cssPxPerDevPx, advance,
+        x, -presContext->AppUnitsToGfxUnits(baseline) * cssPxPerDevPx, advance,
         presContext->AppUnitsToGfxUnits(ascent + descent) * cssPxPerDevPx);
   }
 
@@ -4011,7 +4078,7 @@ float SVGTextFrame::GetRotationOfChar(nsIContent* aContent, uint32_t aCharNum,
     return 0;
   }
 
-  // we need to account for the glyph's underlying orientation
+  // We need to account for the glyph's underlying orientation.
   const gfxTextRun::GlyphRun& glyphRun = it.GlyphRun();
   int32_t glyphOrientation =
       90 * (glyphRun.IsSidewaysRight() - glyphRun.IsSidewaysLeft());
@@ -4292,21 +4359,21 @@ void SVGTextFrame::DetermineCharPositions(nsTArray<nsPoint>& aPositions) {
   nsPoint position;
 
   TextFrameIterator frit(this);
-  for (nsTextFrame* frame = frit.Current(); frame; frame = frit.Next()) {
+  for (nsTextFrame* frame = frit.GetCurrent(); frame; frame = frit.GetNext()) {
     gfxSkipCharsIterator it = frame->EnsureTextRun(nsTextFrame::eInflated);
     gfxTextRun* textRun = frame->GetTextRun(nsTextFrame::eInflated);
-    nsTextFrame::PropertyProvider provider(frame, it);
+    auto& provider = PropertyProviderFor(frame);
 
     // Reset the position to the new frame's position.
     position = frit.Position();
     if (textRun->IsVertical()) {
-      if (textRun->IsRightToLeft()) {
+      if (textRun->IsInlineReversed()) {
         position.y += frame->GetRect().height;
       }
       position.x += GetBaselinePosition(frame, textRun, frit.DominantBaseline(),
                                         mFontSizeScaleFactor);
     } else {
-      if (textRun->IsRightToLeft()) {
+      if (textRun->IsInlineReversed()) {
         position.x += frame->GetRect().width;
       }
       position.y += GetBaselinePosition(frame, textRun, frit.DominantBaseline(),
@@ -4320,7 +4387,7 @@ void SVGTextFrame::DetermineCharPositions(nsTArray<nsPoint>& aPositions) {
 
     // Any white space characters trimmed at the start of the line of text.
     nsTextFrame::TrimmedOffsets trimmedOffsets =
-        frame->GetTrimmedOffsets(frame->TextFragment());
+        frame->GetTrimmedOffsets(frame->CharacterDataBuffer());
     while (it.GetOriginalOffset() < trimmedOffsets.mStart) {
       aPositions.AppendElement(position);
       it.AdvanceOriginal(1);
@@ -4339,7 +4406,7 @@ void SVGTextFrame::DetermineCharPositions(nsTArray<nsPoint>& aPositions) {
         nscoord advance =
             textRun->GetAdvanceWidth(Range(offset, offset + 1), &provider);
         (textRun->IsVertical() ? position.y : position.x) +=
-            textRun->IsRightToLeft() ? -advance : advance;
+            textRun->IsInlineReversed() ? -advance : advance;
       }
       it.AdvanceOriginal(1);
     }
@@ -4349,6 +4416,10 @@ void SVGTextFrame::DetermineCharPositions(nsTArray<nsPoint>& aPositions) {
   for (uint32_t i = 0; i < frit.UndisplayedCharacters(); i++) {
     aPositions.AppendElement(position);
   }
+
+  // Clear any cached PropertyProvider, to avoid risk of re-using it after
+  // style changes or other mutations may have invalidated it.
+  ForgetCachedProvider();
 }
 
 /**
@@ -4429,7 +4500,7 @@ void SVGTextFrame::AdjustChunksForLineBreaks() {
 
   CharIterator it(this, CharIterator::eOriginal, /* aSubtree */ nullptr);
   while (!it.AtEnd() && line != block->LinesEnd()) {
-    if (it.TextFrame() == line->mFirstChild) {
+    if (it.GetTextFrame() == line->mFirstChild) {
       mPositions[it.TextElementCharIndex()].mStartOfChunk = true;
       line++;
     }
@@ -4486,9 +4557,10 @@ void SVGTextFrame::AdjustPositionsForClusters() {
 
       // Update the character position.
       gfxFloat advance = partialAdvance / mFontSizeScaleFactor;
+      const gfxTextRun* textRun = it.TextRun();
       gfxPoint direction = gfxPoint(cos(angle), sin(angle)) *
-                           (it.TextRun()->IsRightToLeft() ? -1.0 : 1.0);
-      if (it.TextRun()->IsVertical()) {
+                           (textRun->IsInlineReversed() ? -1.0 : 1.0);
+      if (textRun->IsVertical()) {
         std::swap(direction.x, direction.y);
       }
       mPositions[charIndex].mPosition =
@@ -4654,8 +4726,8 @@ void SVGTextFrame::DoTextPathLayout() {
 
       MOZ_ASSERT(!mPositions[i].mClusterOrLigatureGroupMiddle);
 
-      gfxFloat sign = it.TextRun()->IsRightToLeft() ? -1.0 : 1.0;
-      bool vertical = it.TextRun()->IsVertical();
+      const gfxTextRun* textRun = it.TextRun();
+      bool vertical = textRun->IsVertical();
 
       // Compute cumulative advances for each character of the cluster or
       // ligature group.
@@ -4699,9 +4771,12 @@ void SVGTextFrame::DoTextPathLayout() {
 
       gfxFloat halfAdvance =
           partialAdvances.LastElement() / mFontSizeScaleFactor / 2.0;
+      if (textRun->IsInlineReversed()) {
+        halfAdvance = -halfAdvance;
+      }
       gfxFloat midx =
           (vertical ? mPositions[i].mPosition.y : mPositions[i].mPosition.x) +
-          sign * halfAdvance + offset;
+          halfAdvance + offset;
 
       // Hide the character if it falls off the end of the path.
       mPositions[i].mHidden = midx < 0 || midx > pathLength;
@@ -4721,7 +4796,7 @@ void SVGTextFrame::DoTextPathLayout() {
       Point offsetFromPath = normal * (vertical ? -mPositions[i].mPosition.x
                                                 : mPositions[i].mPosition.y);
       pt += offsetFromPath;
-      Point direction = tangent * sign;
+      Point direction = textRun->IsInlineReversed() ? -tangent : tangent;
       mPositions[i].mPosition =
           ThebesPoint(pt) - ThebesPoint(direction) * halfAdvance;
       mPositions[i].mAngle += rotation;
@@ -4753,7 +4828,7 @@ void SVGTextFrame::DoAnchoring() {
   for (uint32_t start = it.TextElementCharIndex(); start < mPositions.Length();
        start = it.TextElementCharIndex()) {
     it.AdvanceToCharacter(start);
-    nsTextFrame* chunkFrame = it.TextFrame();
+    nsTextFrame* chunkFrame = it.GetTextFrame();
 
     // Measure characters in this chunk to find the left-most and right-most
     // edges of all glyphs within the chunk.
@@ -4764,10 +4839,10 @@ void SVGTextFrame::DoAnchoring() {
     do {
       if (!it.IsOriginalCharSkipped() && !it.IsOriginalCharTrimmed()) {
         gfxFloat advance = it.GetAdvance(presContext) / mFontSizeScaleFactor;
-        gfxFloat pos = it.TextRun()->IsVertical()
-                           ? mPositions[index].mPosition.y
-                           : mPositions[index].mPosition.x;
-        if (it.TextRun()->IsRightToLeft()) {
+        const gfxTextRun* textRun = it.TextRun();
+        gfxFloat pos = textRun->IsVertical() ? mPositions[index].mPosition.y
+                                             : mPositions[index].mPosition.x;
+        if (textRun->IsInlineReversed()) {
           left = std::min(left, pos - advance);
           right = std::max(right, pos);
         } else {
@@ -4955,6 +5030,7 @@ void SVGTextFrame::DoGlyphPositioning() {
 }
 
 bool SVGTextFrame::ShouldRenderAsPath(nsTextFrame* aFrame,
+                                      SVGContextPaint* aContextPaint,
                                       bool& aShouldPaintSVGGlyphs) {
   // Rendering to a clip path.
   if (HasAnyStateBits(NS_STATE_SVG_CLIPPATH_CHILD)) {
@@ -4969,8 +5045,7 @@ bool SVGTextFrame::ShouldRenderAsPath(nsTextFrame* aFrame,
   // Fill is a non-solid paint or is not opaque.
   if (!(style->mFill.kind.IsNone() ||
         (style->mFill.kind.IsColor() &&
-         SVGUtils::GetOpacity(style->mFillOpacity, /*aContextPaint*/ nullptr) ==
-             1.0f))) {
+         SVGUtils::GetOpacity(style->mFillOpacity, aContextPaint) == 1.0f))) {
     return true;
   }
 
@@ -5100,6 +5175,9 @@ void SVGTextFrame::DoReflow() {
     RemoveStateBits(NS_FRAME_IS_DIRTY | NS_FRAME_HAS_DIRTY_CHILDREN);
   }
 
+  // Forget any cached measurements of one of our children.
+  mFrameForCachedRanges = nullptr;
+
   nsPresContext* presContext = PresContext();
   nsIFrame* kid = PrincipalChildList().FirstChild();
   if (!kid) {
@@ -5154,7 +5232,7 @@ bool SVGTextFrame::UpdateFontSizeScaleFactor() {
   // Find the minimum and maximum font sizes used over all the
   // nsTextFrames.
   TextFrameIterator it(this);
-  nsTextFrame* f = it.Current();
+  nsTextFrame* f = it.GetCurrent();
   while (f) {
     if (!geometricPrecision) {
       // Unfortunately we can't treat text-rendering:geometricPrecision
@@ -5168,7 +5246,7 @@ bool SVGTextFrame::UpdateFontSizeScaleFactor() {
       max = std::max(max, fontSize.ToCSSPixels());
       anyText = true;
     }
-    f = it.Next();
+    f = it.GetNext();
   }
 
   if (!anyText) {
@@ -5256,8 +5334,7 @@ Point SVGTextFrame::TransformFramePointToTextChild(
     uint32_t flags = TextRenderedRun::eIncludeFill |
                      TextRenderedRun::eIncludeStroke |
                      TextRenderedRun::eNoHorizontalOverflow;
-    gfxRect runRect =
-        run.GetRunUserSpaceRect(presContext, flags).ToThebesRect();
+    gfxRect runRect = run.GetRunUserSpaceRect(flags).ToThebesRect();
 
     gfxMatrix m = run.GetTransformFromRunUserSpaceToUserSpace(presContext);
     if (!m.Invert()) {
@@ -5266,7 +5343,7 @@ Point SVGTextFrame::TransformFramePointToTextChild(
     gfxPoint pointInRunUserSpace =
         m.TransformPoint(ThebesPoint(pointInUserSpace));
 
-    if (Inside(runRect, pointInRunUserSpace)) {
+    if (runRect.Contains(pointInRunUserSpace)) {
       // The point was inside the rendered run's rect, so we choose it.
       dx = 0;
       dy = 0;
@@ -5322,10 +5399,7 @@ gfxRect SVGTextFrame::TransformFrameRectFromTextChild(
     nsRect rectInTextFrame = aRect + aChildFrame->GetOffsetTo(run.mFrame);
 
     // Scale it into frame user space.
-    gfxRect rectInFrameUserSpace = AppUnitsToFloatCSSPixels(
-        gfxRect(rectInTextFrame.x, rectInTextFrame.y, rectInTextFrame.width,
-                rectInTextFrame.height),
-        presContext);
+    gfxRect rectInFrameUserSpace = AppUnitsToFloatCSSPixels(rectInTextFrame);
 
     // Intersect it with the run.
     uint32_t flags =

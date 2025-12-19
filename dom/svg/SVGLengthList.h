@@ -7,14 +7,14 @@
 #ifndef DOM_SVG_SVGLENGTHLIST_H_
 #define DOM_SVG_SVGLENGTHLIST_H_
 
+#include "SVGElement.h"
+#include "SVGLength.h"
 #include "nsCOMPtr.h"
 #include "nsDebug.h"
 #include "nsIContent.h"
 #include "nsINode.h"
 #include "nsIWeakReferenceUtils.h"
-#include "SVGElement.h"
 #include "nsTArray.h"
-#include "SVGLength.h"
 
 namespace mozilla {
 
@@ -44,7 +44,7 @@ class SVGLengthList {
   SVGLengthList& operator=(const SVGLengthList& aOther) {
     mLengths.ClearAndRetainStorage();
     // Best-effort, really.
-    Unused << mLengths.AppendElements(aOther.mLengths, fallible);
+    (void)mLengths.AppendElements(aOther.mLengths, fallible);
     return *this;
   }
 
@@ -195,7 +195,7 @@ class SVGLengthListAndInfo : public SVGLengthList {
   /**
    * Returns true if this object is an "identity" value, from the perspective
    * of SMIL. In other words, returns true until the initial value set up in
-   * SVGLengthListSMILType::Init() has been changed with a SetInfo() call.
+   * SVGLengthListSMILType::InitValue() has been changed with a SetInfo() call.
    */
   bool IsIdentity() const {
     if (!mElement) {

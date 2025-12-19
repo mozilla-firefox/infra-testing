@@ -6,12 +6,13 @@
 
 #include "nsMathMLmpaddedFrame.h"
 
-#include "mozilla/dom/MathMLElement.h"
-#include "mozilla/gfx/2D.h"
+#include <algorithm>
+
 #include "mozilla/PresShell.h"
 #include "mozilla/TextUtils.h"
+#include "mozilla/dom/MathMLElement.h"
+#include "mozilla/gfx/2D.h"
 #include "nsLayoutUtils.h"
-#include <algorithm>
 
 using namespace mozilla;
 
@@ -41,7 +42,7 @@ nsMathMLmpaddedFrame::InheritAutomaticData(nsIFrame* aParent) {
 
 nsresult nsMathMLmpaddedFrame::AttributeChanged(int32_t aNameSpaceID,
                                                 nsAtom* aAttribute,
-                                                int32_t aModType) {
+                                                AttrModType aModType) {
   if (aNameSpaceID == kNameSpaceID_None) {
     bool hasDirtyAttributes = false;
     IntrinsicDirty intrinsicDirty = IntrinsicDirty::None;
@@ -230,7 +231,7 @@ void nsMathMLmpaddedFrame::UpdateValue(const Attribute& aAttribute,
                                        Attribute::PseudoUnit aSelfUnit,
                                        const ReflowOutput& aDesiredSize,
                                        nscoord& aValueToUpdate,
-                                       float aFontSizeInflation) const {
+                                       float aFontSizeInflation) {
   nsCSSUnit unit = aAttribute.mValue.GetUnit();
   if (aAttribute.IsValid() && eCSSUnit_Null != unit) {
     nscoord scaler = 0, amount = 0;
@@ -268,8 +269,7 @@ void nsMathMLmpaddedFrame::UpdateValue(const Attribute& aAttribute,
       amount =
           NSToCoordRound(float(scaler) * aAttribute.mValue.GetPercentValue());
     } else {
-      amount = CalcLength(PresContext(), mComputedStyle, aAttribute.mValue,
-                          aFontSizeInflation);
+      amount = CalcLength(aAttribute.mValue, aFontSizeInflation, this);
     }
 
     switch (aAttribute.mSign) {
@@ -287,18 +287,14 @@ void nsMathMLmpaddedFrame::UpdateValue(const Attribute& aAttribute,
 }
 
 /* virtual */
-nsresult nsMathMLmpaddedFrame::Place(DrawTarget* aDrawTarget,
-                                     const PlaceFlags& aFlags,
-                                     ReflowOutput& aDesiredSize) {
+void nsMathMLmpaddedFrame::Place(DrawTarget* aDrawTarget,
+                                 const PlaceFlags& aFlags,
+                                 ReflowOutput& aDesiredSize) {
   // First perform normal row layout without border/padding.
   PlaceFlags flags = aFlags + PlaceFlag::MeasureOnly +
                      PlaceFlag::IgnoreBorderPadding +
                      PlaceFlag::DoNotAdjustForWidthAndHeight;
-  nsresult rv = nsMathMLContainerFrame::Place(aDrawTarget, flags, aDesiredSize);
-  if (NS_FAILED(rv)) {
-    DidReflowChildren(PrincipalChildList().FirstChild());
-    return rv;
-  }
+  nsMathMLContainerFrame::Place(aDrawTarget, flags, aDesiredSize);
 
   nscoord height = aDesiredSize.BlockStartAscent();
   nscoord depth = aDesiredSize.Height() - aDesiredSize.BlockStartAscent();
@@ -412,6 +408,4 @@ nsresult nsMathMLmpaddedFrame::Place(DrawTarget* aDrawTarget,
     // Finish reflowing child frames, positioning their origins.
     PositionRowChildFrames(dx, aDesiredSize.BlockStartAscent() - voffset);
   }
-
-  return NS_OK;
 }

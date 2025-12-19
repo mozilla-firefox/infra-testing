@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 package org.mozilla.focus.activity.robots
 
+import android.net.Uri
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.ViewInteraction
 import androidx.test.espresso.action.ViewActions.click
@@ -22,6 +23,8 @@ import org.mozilla.focus.helpers.TestHelper.mDevice
 import org.mozilla.focus.helpers.TestHelper.packageName
 import org.mozilla.focus.helpers.TestHelper.waitingTime
 import org.mozilla.focus.idlingResources.SessionLoadedIdlingResource
+import mozilla.components.browser.toolbar.R as toolbarR
+import mozilla.components.feature.customtabs.R as customtabsR
 
 class CustomTabRobot {
 
@@ -59,6 +62,13 @@ class CustomTabRobot {
         closeCustomTabButton
             .check(matches(isDisplayed()))
             .perform(click())
+    }
+
+    fun verifyCustomTabUrl(url: String) {
+        val uri = Uri.parse(url)
+        val expectedText = uri.host ?: url // fallback if host is null
+
+        verifyPageURL(expectedText)
     }
 
     fun verifyPageURL(expectedText: String) {
@@ -118,13 +128,13 @@ fun customTab(interact: CustomTabRobot.() -> Unit): CustomTabRobot.Transition {
 
 private fun actionButton(description: String) = onView(withContentDescription(description))
 
-private val menuButton = onView(withId(R.id.mozac_browser_toolbar_menu))
+private val menuButton = onView(withId(toolbarR.id.mozac_browser_toolbar_menu))
 
 private val shareButton = onView(withContentDescription("Share link"))
 
 private fun customMenuItem(description: String) = onView(withText(description))
 
-private val closeCustomTabButton = onView(withContentDescription(R.string.mozac_feature_customtabs_exit_button))
+private val closeCustomTabButton = onView(withContentDescription(customtabsR.string.mozac_feature_customtabs_exit_button))
 
 private val openInFocusButton = onView(withText("Open in $appName"))
 

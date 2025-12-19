@@ -5,6 +5,8 @@
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  LayoutUtils: "resource://gre/modules/LayoutUtils.sys.mjs",
+
   accessibility:
     "chrome://remote/content/shared/webdriver/Accessibility.sys.mjs",
   AnimationFramePromise: "chrome://remote/content/shared/Sync.sys.mjs",
@@ -65,10 +67,17 @@ export class MarionetteCommandsChild extends JSWindowActorChild {
     return lazy.assertTargetInViewPort(target, this.contentWindow);
   }
 
-  #dispatchEvent(options) {
+  async #dispatchEvent(options) {
     const { eventName, details } = options;
     const win = this.contentWindow;
 
+    const windowUtils = win.windowUtils;
+    const microTaskLevel = windowUtils.microTaskLevel;
+    // Since we're being called as a webidl callback,
+    // CallbackObjectBase::CallSetup::CallSetup has increased the microtask
+    // level. Undo that temporarily so that microtask handling works closer
+    // the way it would work when dispatching events natively.
+    windowUtils.microTaskLevel = 0;
     try {
       switch (eventName) {
         case "synthesizeKeyDown":
@@ -78,7 +87,7 @@ export class MarionetteCommandsChild extends JSWindowActorChild {
           lazy.event.sendKeyUp(details.eventData, win);
           break;
         case "synthesizeMouseAtPoint":
-          lazy.event.synthesizeMouseAtPoint(
+          await lazy.event.synthesizeMouseAtPoint(
             details.x,
             details.y,
             details.eventData,
@@ -89,7 +98,7 @@ export class MarionetteCommandsChild extends JSWindowActorChild {
           lazy.event.synthesizeMultiTouch(details.eventData, win);
           break;
         case "synthesizeWheelAtPoint":
-          lazy.event.synthesizeWheelAtPoint(
+          await lazy.event.synthesizeWheelAtPoint(
             details.x,
             details.y,
             details.eventData,
@@ -112,13 +121,15 @@ export class MarionetteCommandsChild extends JSWindowActorChild {
       }
 
       throw e;
+    } finally {
+      windowUtils.microTaskLevel = microTaskLevel;
     }
   }
 
   async #finalizeAction() {
     // Terminate the current wheel transaction if there is one. Wheel
     // transactions should not live longer than a single action chain.
-    ChromeUtils.endWheelTransaction();
+    await ChromeUtils.endWheelTransaction(this.contentWindow);
 
     // Wait for the next animation frame to make sure the page's content
     // was updated.
@@ -135,6 +146,22 @@ export class MarionetteCommandsChild extends JSWindowActorChild {
     const { rect } = options;
 
     return lazy.dom.getInViewCentrePoint(rect, this.contentWindow);
+  }
+
+  #toBrowserWindowCoordinates(options, _context) {
+    const { position } = options;
+
+    const [x, y] = position;
+    const dpr = this.contentWindow.devicePixelRatio;
+
+    const val = lazy.LayoutUtils.rectToTopLevelWidgetRect(this.contentWindow, {
+      left: x,
+      top: y,
+      height: 0,
+      width: 0,
+    });
+
+    return [val.x / dpr, val.y / dpr];
   }
 
   // eslint-disable-next-line complexity
@@ -160,7 +187,7 @@ export class MarionetteCommandsChild extends JSWindowActorChild {
           result = this.#assertInViewPort(data);
           break;
         case "MarionetteCommandsParent:_dispatchEvent":
-          this.#dispatchEvent(data);
+          await this.#dispatchEvent(data);
           waitForNextTick = true;
           break;
         case "MarionetteCommandsParent:_getClientRects":
@@ -171,6 +198,9 @@ export class MarionetteCommandsChild extends JSWindowActorChild {
           break;
         case "MarionetteCommandsParent:_finalizeAction":
           this.#finalizeAction();
+          break;
+        case "MarionetteCommandsParent:_toBrowserWindowCoordinates":
+          result = this.#toBrowserWindowCoordinates(data);
           break;
         case "MarionetteCommandsParent:clearElement":
           this.clearElement(data);
@@ -277,7 +307,8 @@ export class MarionetteCommandsChild extends JSWindowActorChild {
 
   // Implementation of WebDriver commands
 
-  /** Clear the text of an element.
+  /**
+   * Clear the text of an element.
    *
    * @param {object} options
    * @param {Element} options.elem

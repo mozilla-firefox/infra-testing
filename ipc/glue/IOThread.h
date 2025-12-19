@@ -23,6 +23,10 @@ class IOThread : private base::Thread {
   // lifetime of the IO Thread).
   static IOThread* Get() { return sSingleton; }
 
+  // Called during XPCOM component startup and shutdown.
+  static void Startup();
+  static void Shutdown();
+
   // Get the nsISerialEventTarget which should be used to dispatch events to run
   // on the IOThreadBase.
   nsISerialEventTarget* GetEventTarget() {
@@ -50,13 +54,17 @@ class IOThread : private base::Thread {
 
 // Background I/O thread used by the parent process.
 class IOThreadParent : public IOThread {
- public:
-  IOThreadParent();
-  ~IOThreadParent();
-
  protected:
   void Init() override;
   void CleanUp() override;
+
+ private:
+  friend class IOThread;
+
+  IOThreadParent();
+  ~IOThreadParent();
+
+  const IPC::Channel::ChannelKind* mChannelKind;
 };
 
 // Background I/O thread used by the child process.
@@ -79,8 +87,8 @@ class IOThreadChild : public IOThread {
 };
 
 inline void AssertIOThread() {
-  MOZ_ASSERT(IOThread::Get()->GetEventTarget()->IsOnCurrentThread(),
-             "should be on the async IO event target");
+  MOZ_ASSERT(MessageLoop::TYPE_IO == MessageLoop::current()->type(),
+             "should be on the IO thread!");
 }
 
 }  // namespace mozilla::ipc

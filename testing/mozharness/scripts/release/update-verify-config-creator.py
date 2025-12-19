@@ -339,7 +339,7 @@ class UpdateVerifyConfigCreator(BaseScript):
             self.log("Closed HG client.")
 
     def _pre_config_lock(self, rw_config):
-        super(UpdateVerifyConfigCreator, self)._pre_config_lock(rw_config)
+        super()._pre_config_lock(rw_config)
 
         if "updater_platform" not in self.config:
             self.config["updater_platform"] = self.config["platform"]
@@ -570,9 +570,8 @@ class UpdateVerifyConfigCreator(BaseScript):
         #   files and use a \\0 block separator. It's ugly, but it works.
         args = cmdbuilder(
             b"cat",
-            b"--cwd",
-            bytes(self.config["local_repo"], "utf-8"),
             *[bytes(p, "utf-8") for p in paths],
+            cwd=self.config["local_repo"].encode("utf-8"),
             r=bytes(rev, "utf-8"),
             T=b"{path}\\0{data}\\0",
         )
@@ -605,8 +604,24 @@ class UpdateVerifyConfigCreator(BaseScript):
     def _get_files_from_remote_repo(self, rev, branch, *paths):
         files = []
         for path in paths:
-            url = urljoin(self.config["hg_server"], f"{branch}/raw-file/{rev}/{path}")
-            ret = self._retry_download(url, "WARNING")
+            hg_url = urljoin(
+                self.config["hg_server"], f"{branch}/raw-file/{rev}/{path}"
+            )
+            # we're going to waste time retrying on 404s here...meh
+            # at least we can lower sleep time to minimize that
+            ret = self._retry_download(
+                hg_url, "WARNING", retry_config={"sleeptime": 5, "max_sleeptime": 5}
+            )
+            # yep...errors are not raised! they're indicated by a `None`
+            if ret is None:
+                self.log("couldn't fetch file from hg; trying github")
+                # this won't work for try most likely; that's okay, it's a short term hack!
+                # possible problems:
+                # - we get a non tag rev
+                # - we get rate limited
+                git_url = f"https://raw.githubusercontent.com/mozilla-firefox/firefox/refs/tags/{rev}/{path}"
+                ret = self._retry_download(git_url, "WARNING")
+
             files.append(ret.read().strip().decode("utf-8"))
         return files
 

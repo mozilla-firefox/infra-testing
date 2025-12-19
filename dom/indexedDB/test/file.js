@@ -104,9 +104,10 @@ function verifyBlobProperties(blob1, blob2, fileId) {
  *
  * Note: Unlike the generator based verifyBlob routine, verifyBlobAsync uses
  * bufferCache for both blob1 and blob2 arguments.
+ *
  * @param {Blob} blob1 actual Blob value
  * @param {Blob} blob2 Blob with expected properties
- * @param {Number} fileId expected id
+ * @param {number} fileId expected id
  */
 async function verifyBlobAsync(blob1, blob2, fileId) {
   verifyBlobProperties(blob1, blob2, fileId);
@@ -234,7 +235,6 @@ function verifyBlobArray(blobs1, blobs2, expectedFileIds) {
 function verifyView(view1, view2) {
   is(view1.byteLength, view2.byteLength, "Correct byteLength");
   verifyBuffers(view1, view2);
-  continueToNextStep();
 }
 
 function verifyWasmModule(module1, module2) {

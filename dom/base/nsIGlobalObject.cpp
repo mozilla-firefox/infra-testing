@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsIGlobalObject.h"
+
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/GlobalFreezeObserver.h"
@@ -21,8 +22,8 @@
 #include "mozilla/dom/ServiceWorkerRegistration.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "nsContentUtils.h"
-#include "nsThreadUtils.h"
 #include "nsGlobalWindowInner.h"
+#include "nsThreadUtils.h"
 
 // Max number of Report objects
 constexpr auto MAX_REPORT_RECORDS = 100;
@@ -50,8 +51,7 @@ using mozilla::dom::ServiceWorkerRegistration;
 using mozilla::dom::ServiceWorkerRegistrationDescriptor;
 using mozilla::dom::VoidFunction;
 
-nsIGlobalObject::nsIGlobalObject()
-    : mIsDying(false), mIsInnerWindow(false) {}
+nsIGlobalObject::nsIGlobalObject() : mIsDying(false), mIsInnerWindow(false) {}
 
 bool nsIGlobalObject::IsScriptForbidden(JSObject* aCallback,
                                         bool aIsJSImplementedWebIDL) const {
@@ -491,6 +491,19 @@ bool nsIGlobalObject::ShouldResistFingerprinting(CallerType aCallerType,
                                                  RFPTarget aTarget) const {
   return aCallerType != CallerType::System &&
          ShouldResistFingerprinting(aTarget);
+}
+
+bool nsIGlobalObject::IsRFPTargetActive(const nsAString& aTargetName,
+                                        mozilla::ErrorResult& aRv) {
+  MOZ_ASSERT(mozilla::StaticPrefs::privacy_fingerprintingProtection_testing());
+
+  Maybe<RFPTarget> target = mozilla::nsRFPService::TextToRFPTarget(aTargetName);
+  if (NS_WARN_IF(!target)) {
+    aRv.Throw(NS_ERROR_INVALID_ARG);
+    return false;
+  }
+
+  return ShouldResistFingerprinting(*target);
 }
 
 void nsIGlobalObject::ReportToConsole(

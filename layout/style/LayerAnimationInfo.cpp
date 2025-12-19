@@ -6,8 +6,8 @@
 
 #include "LayerAnimationInfo.h"
 
-#include "nsCSSProps.h"          // For nsCSSProps::PropHasFlags
 #include "nsCSSPropertyIDSet.h"  // For nsCSSPropertyIDSet::CompositorAnimatable
+#include "nsCSSProps.h"          // For nsCSSProps::PropHasFlags
 
 namespace mozilla {
 
@@ -21,7 +21,7 @@ namespace mozilla {
 
 /* static */
 DisplayItemType LayerAnimationInfo::GetDisplayItemTypeForProperty(
-    nsCSSPropertyID aProperty) {
+    NonCustomCSSPropertyId aProperty) {
   switch (aProperty) {
     case eCSSProperty_background_color:
       return DisplayItemType::TYPE_BACKGROUND_COLOR;

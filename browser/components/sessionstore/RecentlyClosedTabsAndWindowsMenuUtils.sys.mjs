@@ -7,9 +7,10 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  PlacesUIUtils: "resource:///modules/PlacesUIUtils.sys.mjs",
+  PlacesUIUtils: "moz-src:///browser/components/places/PlacesUIUtils.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
+  SessionWindowUI: "resource:///modules/sessionstore/SessionWindowUI.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "l10n", () => {
@@ -44,6 +45,7 @@ function getClosedTabGroupsById() {
 export var RecentlyClosedTabsAndWindowsMenuUtils = {
   /**
    * Builds up a document fragment of UI items for the recently closed tabs.
+   *
    * @param   {Window} aWindow
    *          The window that the tabs were closed in.
    * @param   {"menuitem"|"toolbarbutton"} aTagName
@@ -140,6 +142,7 @@ export var RecentlyClosedTabsAndWindowsMenuUtils = {
 
   /**
    * Builds up a document fragment of UI items for the recently closed windows.
+   *
    * @param   {Window} aWindow
    *          A window that can be used to create the elements and document fragment.
    * @param   {"menuitem"|"toolbarbutton"} aTagName
@@ -178,6 +181,7 @@ export var RecentlyClosedTabsAndWindowsMenuUtils = {
 
   /**
    * Handle a command event to re-open all closed tabs
+   *
    * @param aEvent
    *        The command event when the user clicks the restore all menu item
    */
@@ -245,6 +249,7 @@ export var RecentlyClosedTabsAndWindowsMenuUtils = {
 
   /**
    * Handle a command event to re-open all closed windows
+   *
    * @param aEvent
    *        The command event when the user clicks the restore all menu item
    */
@@ -258,6 +263,7 @@ export var RecentlyClosedTabsAndWindowsMenuUtils = {
   /**
    * Re-open a closed tab and put it to the end of the tab strip.
    * Used for a middle click.
+   *
    * @param aEvent
    *        The event when the user clicks the menu item
    */
@@ -274,7 +280,8 @@ export var RecentlyClosedTabsAndWindowsMenuUtils = {
         aEvent.originalTarget.getAttribute("value")
       );
     } else {
-      aEvent.view.undoCloseTab(
+      lazy.SessionWindowUI.undoCloseTab(
+        aEvent.view,
         aEvent.originalTarget.getAttribute("value"),
         aEvent.originalTarget.getAttribute("source-window-id")
       );
@@ -463,6 +470,7 @@ function createTabGroupSubpanel(
 
 /**
  * Create a UI entry for a recently closed tab, tab group, or window.
+ *
  * @param {"menuitem"|"toolbarbutton"} aTagName
  *        the tag name that will be used when creating the UI entry
  * @param {boolean} aIsWindowsFragment
@@ -492,12 +500,12 @@ function createEntry(
   element.setAttribute("label", aMenuLabel);
   if (aClosedTab.image) {
     const iconURL = lazy.PlacesUIUtils.getImageURL(aClosedTab.image);
-    element.setAttribute("image", iconURL);
+    element.setAttribute("image", ChromeUtils.encodeURIForSrcset(iconURL));
   }
 
   if (aIsWindowsFragment) {
-    element.addEventListener("command", event =>
-      event.target.ownerGlobal.undoCloseWindow(aIndex)
+    element.addEventListener("command", () =>
+      lazy.SessionWindowUI.undoCloseWindow(aIndex)
     );
   } else if (typeof aClosedTab.sourceClosedId == "number") {
     // sourceClosedId is used to look up the closed window to remove it when the tab is restored
@@ -520,7 +528,11 @@ function createEntry(
     element.setAttribute("value", aIndex);
     element.setAttribute("source-window-id", sourceWindowId);
     element.addEventListener("command", event =>
-      event.target.ownerGlobal.undoCloseTab(aIndex, sourceWindowId)
+      lazy.SessionWindowUI.undoCloseTab(
+        event.target.ownerGlobal,
+        aIndex,
+        sourceWindowId
+      )
     );
   }
 

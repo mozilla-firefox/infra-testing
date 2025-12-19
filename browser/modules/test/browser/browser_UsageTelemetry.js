@@ -27,9 +27,9 @@ const { ObjectUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/ObjectUtils.sys.mjs"
 );
 
-BrowserUsageTelemetry._onTabsOpenedTask._timeoutMs = 0;
+BrowserUsageTelemetry._onTabsOpenedTask._idleTimeoutMs = 0;
 registerCleanupFunction(() => {
-  BrowserUsageTelemetry._onTabsOpenedTask._timeoutMs = undefined;
+  BrowserUsageTelemetry._onTabsOpenedTask._idleTimeoutMs = undefined;
 });
 
 // Reset internal URI counter in case URIs were opened by other tests.
@@ -120,6 +120,12 @@ function resetTelemetry() {
   BrowserUsageTelemetry.maxTabPinnedCount = 0;
   BrowserUsageTelemetry.maxWindowCount = 0;
 }
+
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["test.wait300msAfterTabSwitch", true]],
+  });
+});
 
 add_task(async function test_tabsAndWindows() {
   // Let's reset the counts.

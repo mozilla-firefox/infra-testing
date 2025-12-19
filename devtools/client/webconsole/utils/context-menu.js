@@ -40,10 +40,10 @@ loader.lazyRequireGetter(
  * Create a Menu instance for the webconsole.
  *
  * @param {Event} context menu event
- *        {Object} message (optional) message object containing metadata such as:
+ *        {object} message (optional) message object containing metadata such as:
  *        - {String} source
  *        - {String} request
- * @param {Object} options
+ * @param {object} options
  *        - {Actions} bound actions
  *        - {WebConsoleWrapper} wrapper instance used for accessing properties like the store
  *          and window.
@@ -246,7 +246,7 @@ function createContextMenu(event, message, webConsoleWrapper) {
         const suggestedName =
           `console-export-${date.getFullYear()}-` +
           `${date.getMonth() + 1}-${date.getDate()}_${date.getHours()}-` +
-          `${date.getMinutes()}-${date.getSeconds()}.txt`;
+          `${date.getMinutes()}-${date.getSeconds()}.log`;
         const outputText =
           await getUnvirtualizedConsoleOutputText(webConsoleWrapper);
         const data = new TextEncoder().encode(outputText);

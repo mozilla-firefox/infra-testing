@@ -21,8 +21,8 @@
 #include <utility>
 #include <vector>
 
-#include "api/environment/environment.h"
 #include "api/environment/environment_factory.h"
+#include "api/field_trials_view.h"
 #include "api/rtc_event_log/rtc_event_log_factory.h"
 #include "api/units/time_delta.h"
 #include "api/units/timestamp.h"
@@ -36,7 +36,6 @@
 #include "logging/rtc_event_log/events/rtc_event_dtls_transport_state.h"
 #include "logging/rtc_event_log/events/rtc_event_dtls_writable_state.h"
 #include "logging/rtc_event_log/events/rtc_event_frame_decoded.h"
-#include "logging/rtc_event_log/events/rtc_event_generic_ack_received.h"
 #include "logging/rtc_event_log/events/rtc_event_generic_packet_received.h"
 #include "logging/rtc_event_log/events/rtc_event_generic_packet_sent.h"
 #include "logging/rtc_event_log/events/rtc_event_ice_candidate_pair.h"
@@ -61,7 +60,7 @@
 #include "rtc_base/fake_clock.h"
 #include "rtc_base/random.h"
 #include "rtc_base/time_utils.h"
-#include "test/explicit_key_value_config.h"
+#include "test/create_test_field_trials.h"
 #include "test/gtest.h"
 #include "test/logging/log_writer.h"
 #include "test/logging/memory_log_writer.h"
@@ -70,8 +69,6 @@
 namespace webrtc {
 
 namespace {
-
-using test::ExplicitKeyValueConfig;
 
 struct EventCounts {
   size_t audio_send_streams = 0;
@@ -98,7 +95,6 @@ struct EventCounts {
   size_t outgoing_rtcp_packets = 0;
   size_t generic_packets_sent = 0;
   size_t generic_packets_received = 0;
-  size_t generic_acks_received = 0;
 
   size_t total_nonconfig_events() const {
     return alr_states + route_changes + audio_playouts + ana_configs +
@@ -107,7 +103,7 @@ struct EventCounts {
            probe_successes + probe_failures + ice_configs + ice_events +
            incoming_rtp_packets + outgoing_rtp_packets + incoming_rtcp_packets +
            outgoing_rtcp_packets + generic_packets_sent +
-           generic_packets_received + generic_acks_received;
+           generic_packets_received;
   }
 
   size_t total_config_events() const {
@@ -124,11 +120,9 @@ std::unique_ptr<FieldTrialsView> CreateFieldTrialsFor(
     RtcEventLog::EncodingType encoding_type) {
   switch (encoding_type) {
     case RtcEventLog::EncodingType::Legacy:
-      return std::make_unique<ExplicitKeyValueConfig>(
-          "WebRTC-RtcEventLogNewFormat/Disabled/");
+      return CreateTestFieldTrialsPtr("WebRTC-RtcEventLogNewFormat/Disabled/");
     case RtcEventLog::EncodingType::NewFormat:
-      return std::make_unique<ExplicitKeyValueConfig>(
-          "WebRTC-RtcEventLogNewFormat/Enabled/");
+      return CreateTestFieldTrialsPtr("WebRTC-RtcEventLogNewFormat/Enabled/");
     case RtcEventLog::EncodingType::ProtoFree:
       RTC_CHECK(false);
       return nullptr;
@@ -201,8 +195,6 @@ class RtcEventLogSession
       dtls_writable_state_list_;
   std::map<uint32_t, std::vector<std::unique_ptr<RtcEventFrameDecoded>>>
       frame_decoded_event_map_;
-  std::vector<std::unique_ptr<RtcEventGenericAckReceived>>
-      generic_acks_received_;
   std::vector<std::unique_ptr<RtcEventGenericPacketReceived>>
       generic_packets_received_;
   std::vector<std::unique_ptr<RtcEventGenericPacketSent>> generic_packets_sent_;
@@ -234,7 +226,7 @@ class RtcEventLogSession
   const RtcEventLog::EncodingType encoding_type_;
   test::EventGenerator gen_;
   test::EventVerifier verifier_;
-  rtc::ScopedFakeClock clock_;
+  ScopedFakeClock clock_;
   std::string temp_filename_;
   MemoryLogStorage log_storage_;
   std::unique_ptr<LogWriterFactoryInterface> log_output_factory_;
@@ -343,9 +335,9 @@ void RtcEventLogSession::WriteVideoSendConfigs(size_t video_send_streams,
   clock_.AdvanceTime(TimeDelta::Millis(prng_.Rand(20)));
   uint32_t ssrc = prng_.Rand<uint32_t>();
   outgoing_extensions_.emplace_back(ssrc, all_extensions);
-  auto event = gen_.NewVideoSendStreamConfig(ssrc, all_extensions);
-  event_log->Log(event->Copy());
-  video_send_config_list_.push_back(std::move(event));
+  auto first_event = gen_.NewVideoSendStreamConfig(ssrc, all_extensions);
+  event_log->Log(first_event->Copy());
+  video_send_config_list_.push_back(std::move(first_event));
   for (size_t i = 1; i < video_send_streams; i++) {
     clock_.AdvanceTime(TimeDelta::Millis(prng_.Rand(20)));
     do {
@@ -391,14 +383,14 @@ void RtcEventLogSession::WriteLog(EventCounts count,
       clock_.AdvanceTime(TimeDelta::Millis(prng_.Rand(20)));
       event_log->StartLogging(log_output_factory_->Create(temp_filename_),
                               output_period_ms_);
-      start_time_us_ = rtc::TimeMicros();
-      utc_start_time_us_ = rtc::TimeUTCMicros();
+      start_time_us_ = TimeMicros();
+      utc_start_time_us_ = TimeUTCMicros();
     }
 
     clock_.AdvanceTime(TimeDelta::Millis(prng_.Rand(20)));
     size_t selection = prng_.Rand(remaining_events - 1);
-    first_timestamp_ms_ = std::min(first_timestamp_ms_, rtc::TimeMillis());
-    last_timestamp_ms_ = std::max(last_timestamp_ms_, rtc::TimeMillis());
+    first_timestamp_ms_ = std::min(first_timestamp_ms_, TimeMillis());
+    last_timestamp_ms_ = std::max(last_timestamp_ms_, TimeMillis());
 
     if (selection < count.alr_states) {
       auto event = gen_.NewAlrState();
@@ -592,20 +584,11 @@ void RtcEventLogSession::WriteLog(EventCounts count,
     }
     selection -= count.generic_packets_received;
 
-    if (selection < count.generic_acks_received) {
-      auto event = gen_.NewGenericAckReceived();
-      generic_acks_received_.push_back(event->Copy());
-      event_log->Log(std::move(event));
-      count.generic_acks_received--;
-      continue;
-    }
-    selection -= count.generic_acks_received;
-
     RTC_DCHECK_NOTREACHED();
   }
 
   event_log->StopLogging();
-  stop_time_us_ = rtc::TimeMicros();
+  stop_time_us_ = TimeMicros();
 
   ASSERT_EQ(count.total_nonconfig_events(), static_cast<size_t>(0));
 }
@@ -830,13 +813,6 @@ void RtcEventLogSession::ReadAndVerifyLog() {
                                             parsed_generic_packets_sent[i]);
   }
 
-  auto& parsed_generic_acks_received = parsed_log.generic_acks_received();
-  ASSERT_EQ(parsed_generic_acks_received.size(), generic_acks_received_.size());
-  for (size_t i = 0; i < parsed_generic_acks_received.size(); i++) {
-    verifier_.VerifyLoggedGenericAckReceived(*generic_acks_received_[i],
-                                             parsed_generic_acks_received[i]);
-  }
-
   EXPECT_EQ(first_timestamp_ms_, parsed_log.first_timestamp().ms());
   EXPECT_EQ(last_timestamp_ms_, parsed_log.last_timestamp().ms());
 
@@ -874,7 +850,6 @@ TEST_P(RtcEventLogSession, StartLoggingFromBeginning) {
     count.frame_decoded_events = 50;
     count.generic_packets_sent = 100;
     count.generic_packets_received = 100;
-    count.generic_acks_received = 20;
     count.route_changes = 4;
   }
 
@@ -908,7 +883,6 @@ TEST_P(RtcEventLogSession, StartLoggingInTheMiddle) {
     count.frame_decoded_events = 250;
     count.generic_packets_sent = 500;
     count.generic_packets_received = 500;
-    count.generic_acks_received = 50;
     count.route_changes = 10;
   }
 
@@ -952,8 +926,8 @@ TEST_P(RtcEventLogCircularBufferTest, KeepsMostRecentEvents) {
   std::replace(test_name.begin(), test_name.end(), '/', '_');
   const std::string temp_filename = test::OutputPath() + test_name;
 
-  std::unique_ptr<rtc::ScopedFakeClock> fake_clock =
-      std::make_unique<rtc::ScopedFakeClock>();
+  std::unique_ptr<ScopedFakeClock> fake_clock =
+      std::make_unique<ScopedFakeClock>();
   fake_clock->SetTime(Timestamp::Seconds(kStartTimeSeconds));
 
   // Create a scope for the TQ and event log factories.
@@ -978,12 +952,12 @@ TEST_P(RtcEventLogCircularBufferTest, KeepsMostRecentEvents) {
           i, kStartBitrate + i * 1000));
       fake_clock->AdvanceTime(TimeDelta::Millis(10));
     }
-    start_time_us = rtc::TimeMicros();
-    utc_start_time_us = rtc::TimeUTCMicros();
+    start_time_us = TimeMicros();
+    utc_start_time_us = TimeUTCMicros();
     log->StartLogging(log_output_factory_->Create(temp_filename),
                       RtcEventLog::kImmediateOutput);
     fake_clock->AdvanceTime(TimeDelta::Millis(10));
-    stop_time_us = rtc::TimeMicros();
+    stop_time_us = TimeMicros();
     log->StopLogging();
   }
 
@@ -1017,7 +991,7 @@ TEST_P(RtcEventLogCircularBufferTest, KeepsMostRecentEvents) {
   // recreate the clock. However we must ensure that the old fake_clock is
   // destroyed before the new one is created, so we have to reset() first.
   fake_clock.reset();
-  fake_clock = std::make_unique<rtc::ScopedFakeClock>();
+  fake_clock = std::make_unique<ScopedFakeClock>();
   fake_clock->SetTime(Timestamp::Millis(first_timestamp_ms));
   for (size_t i = 1; i < probe_success_events.size(); i++) {
     fake_clock->AdvanceTime(TimeDelta::Millis(10));

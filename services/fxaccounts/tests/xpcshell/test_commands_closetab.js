@@ -15,11 +15,11 @@ const { getRemoteCommandStore, RemoteCommand } = ChromeUtils.importESModule(
   "resource://services-sync/TabsStore.sys.mjs"
 );
 
-ChromeUtils.defineESModuleGetters(this, {
-  ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
-  ExperimentFakes: "resource://testing-common/NimbusTestUtils.sys.mjs",
-  ExperimentManager: "resource://nimbus/lib/ExperimentManager.sys.mjs",
-});
+const { NimbusTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/NimbusTestUtils.sys.mjs"
+);
+
+NimbusTestUtils.init(this);
 
 class TelemetryMock {
   constructor() {
@@ -50,6 +50,11 @@ function FxaInternalMock(recentDeviceList) {
   };
 }
 
+add_setup(function () {
+  do_get_profile(); // FOG requires a profile dir.
+  Services.fog.initializeFOG();
+});
+
 add_task(async function test_closetab_isDeviceCompatible() {
   const closeTab = new CloseRemoteTab(null, null);
   let device = { name: "My device" };
@@ -78,10 +83,10 @@ add_task(async function test_closetab_isDeviceCompatible() {
   );
   Assert.ok(closeTab.isDeviceCompatible(device));
 
+  const { cleanup } = await NimbusTestUtils.setupTest();
+
   // Verify that nimbus can remotely override the pref
-  await ExperimentManager.onStartup();
-  await ExperimentAPI.ready();
-  let doExperimentCleanup = await ExperimentFakes.enrollWithFeatureConfig({
+  let doExperimentCleanup = await NimbusTestUtils.enrollWithFeatureConfig({
     featureId: "remoteTabManagement",
     // You can add values for each variable you added to the manifest
     value: {
@@ -92,7 +97,8 @@ add_task(async function test_closetab_isDeviceCompatible() {
   // Feature successfully disabled
   Assert.ok(!closeTab.isDeviceCompatible(device));
 
-  doExperimentCleanup();
+  await doExperimentCleanup();
+  await cleanup();
 });
 
 add_task(async function test_closetab_send() {
@@ -121,13 +127,17 @@ add_task(async function test_closetab_send() {
   const store = await getRemoteCommandStore();
 
   // Queue 3 tabs to close with different timings
-  const command1 = new RemoteCommand.CloseTab("https://foo.bar/must-send");
+  const command1 = new RemoteCommand.CloseTab({
+    url: "https://foo.bar/must-send",
+  });
   await store.addRemoteCommandAt(targetDevice.id, command1, now - 15);
 
-  const command2 = new RemoteCommand.CloseTab("https://foo.bar/can-send");
+  const command2 = new RemoteCommand.CloseTab({
+    url: "https://foo.bar/can-send",
+  });
   await store.addRemoteCommandAt(targetDevice.id, command2, now - 12);
 
-  const command3 = new RemoteCommand.CloseTab("https://foo.bar/early");
+  const command3 = new RemoteCommand.CloseTab({ url: "https://foo.bar/early" });
   await store.addRemoteCommandAt(targetDevice.id, command3, now - 5);
 
   // Verify initial state
@@ -180,9 +190,9 @@ add_task(async function test_closetab_send() {
   // no "overdue" items but there are "due" ones
 
   // Queue 2 more tabs
-  let command4 = new RemoteCommand.CloseTab("https://foo.bar/due");
+  let command4 = new RemoteCommand.CloseTab({ url: "https://foo.bar/due" });
   await store.addRemoteCommandAt(targetDevice.id, command4, now - 5);
-  let command5 = new RemoteCommand.CloseTab("https://foo.bar/due2");
+  let command5 = new RemoteCommand.CloseTab({ url: "https://foo.bar/due2" });
   await store.addRemoteCommandAt(targetDevice.id, command5, now);
 
   // Verify initial state
@@ -251,9 +261,9 @@ add_task(async function test_closetab_send() {
   const store = await getRemoteCommandStore();
   Assert.equal((await store.getUnsentCommands()).length, 0);
   // queue a tab to close, recent enough that it remains queued and a new timer is set for it.
-  const command = new RemoteCommand.CloseTab(
-    "https://foo.bar/send-at-shutdown"
-  );
+  const command = new RemoteCommand.CloseTab({
+    url: "https://foo.bar/send-at-shutdown",
+  });
   Assert.ok(
     await store.addRemoteCommandAt(targetDevice.id, command, now),
     "adding the remote command should work"
@@ -333,13 +343,13 @@ add_task(async function test_multiple_devices() {
     Assert.equal(payload.encrypted, "encryptedpayload");
   });
 
-  let command1 = new RemoteCommand.CloseTab(tab1);
+  let command1 = new RemoteCommand.CloseTab({ url: tab1 });
   Assert.ok(
     await store.addRemoteCommandAt(device1.id, command1, now - 15),
     "adding the remote command should work"
   );
 
-  let command2 = new RemoteCommand.CloseTab(tab2);
+  let command2 = new RemoteCommand.CloseTab({ url: tab2 });
   Assert.ok(
     await store.addRemoteCommandAt(device2.id, command2, now),
     "adding the remote command should work"
@@ -406,14 +416,14 @@ add_task(async function test_timer_reset_on_new_tab() {
 
   commandMock.expects("sendCloseTabsCommand").never();
 
-  let command1 = new RemoteCommand.CloseTab(tab1);
+  let command1 = new RemoteCommand.CloseTab({ url: tab1 });
   Assert.ok(
     await store.addRemoteCommandAt(targetDevice.id, command1, now - 5),
     "adding the remote command should work"
   );
   await commandQueue.flushQueue();
 
-  let command2 = new RemoteCommand.CloseTab(tab2);
+  let command2 = new RemoteCommand.CloseTab({ url: tab2 });
   Assert.ok(
     await store.addRemoteCommandAt(targetDevice.id, command2, now),
     "adding the remote command should work"
@@ -425,7 +435,7 @@ add_task(async function test_timer_reset_on_new_tab() {
   Assert.equal(unsentCmds.length, 2);
 
   // _ensureTimer should've been called at least twice
-  Assert.ok(ensureTimerSpy.callCount > 1);
+  Assert.greater(ensureTimerSpy.callCount, 1);
   commandMock.verify();
   queueMock.verify();
   commandQueue.shutdown();
@@ -468,6 +478,9 @@ add_task(async function test_idle_flush() {
 });
 
 add_task(async function test_telemetry_on_sendCloseTabsCommand() {
+  // Clear events from other test cases
+  Services.fog.testResetFOG();
+
   const targetDevice = {
     id: "dev1",
     name: "Device 1",
@@ -498,7 +511,7 @@ add_task(async function test_telemetry_on_sendCloseTabsCommand() {
   // Set the delay to 10ms
   commandQueue.DELAY = 10;
 
-  let command1 = new RemoteCommand.CloseTab("https://foo.bar/");
+  let command1 = new RemoteCommand.CloseTab({ url: "https://foo.bar/" });
 
   const store = await getRemoteCommandStore();
   Assert.ok(
@@ -516,6 +529,13 @@ add_task(async function test_telemetry_on_sendCloseTabsCommand() {
       extra: { flowID: "1", streamID: "2" },
     },
   ]);
+  const sendEvents = Glean.fxa.closetabSent.testGetValue();
+  Assert.equal(sendEvents.length, 1);
+  Assert.deepEqual(sendEvents[0].extra, {
+    flow_id: "1",
+    hashed_device_id: "dev1-san",
+    stream_id: "2",
+  });
 
   commandQueue.shutdown();
 });
@@ -549,9 +569,9 @@ add_task(async function test_closetab_chunking() {
   const largeNumberOfCommands = [];
   for (let i = 0; i < 300; i++) {
     largeNumberOfCommands.push(
-      new RemoteCommand.CloseTab(
-        `https://example.com/addingsomeextralongstring/tab${i}`
-      )
+      new RemoteCommand.CloseTab({
+        url: `https://example.com/addingsomeextralongstring/tab${i}`,
+      })
     );
   }
 
@@ -590,8 +610,9 @@ add_task(async function test_closetab_chunking() {
       }
 
       const chunkSize = encoder.encode(JSON.stringify(urls)).length;
-      Assert.ok(
-        chunkSize <= COMMAND_MAX_PAYLOAD_SIZE,
+      Assert.lessOrEqual(
+        chunkSize,
+        COMMAND_MAX_PAYLOAD_SIZE,
         `Chunk size (${chunkSize}) should not exceed max payload size (${COMMAND_MAX_PAYLOAD_SIZE})`
       );
 
@@ -612,9 +633,9 @@ add_task(async function test_closetab_chunking() {
   queueMock.verify();
 
   // Test edge case: URL exceeding max size
-  const oversizedCommand = new RemoteCommand.CloseTab(
-    "https://example.com/" + "a".repeat(COMMAND_MAX_PAYLOAD_SIZE)
-  );
+  const oversizedCommand = new RemoteCommand.CloseTab({
+    url: "https://example.com/" + "a".repeat(COMMAND_MAX_PAYLOAD_SIZE),
+  });
   await store.addRemoteCommandAt(targetDevice.id, oversizedCommand, now);
 
   await commandQueue.flushQueue();

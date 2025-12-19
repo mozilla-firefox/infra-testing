@@ -14,6 +14,7 @@
 #include <vector>
 #include "secoidt.h"
 #include "pkcs11t.h"
+#include "kyber.h"
 
 typedef struct AesCbcTestVectorStr {
   uint32_t id;
@@ -58,6 +59,33 @@ typedef struct ChaChaTestVectorStr {
   bool invalid_iv;
 } ChaChaTestVector;
 
+typedef struct MlKemKeyGenTestVectorStr {
+  uint32_t id;
+  KyberParams params;
+  std::vector<uint8_t> seed;
+  std::vector<uint8_t> publicKeyDigest;
+  std::vector<uint8_t> privateKeyDigest;
+} MlKemKeyGenTestVector;
+
+typedef struct MlKemEncapTestVectorStr {
+  uint32_t id;
+  KyberParams params;
+  std::vector<uint8_t> entropy;
+  std::vector<uint8_t> publicKey;
+  std::vector<uint8_t> cipherTextDigest;
+  std::vector<uint8_t> secret;
+  bool expectedResult;
+} MlKemEncapTestVector;
+
+typedef struct MlKemDecapTestVectorStr {
+  uint32_t id;
+  KyberParams params;
+  std::vector<uint8_t> privateKey;
+  std::vector<uint8_t> cipherText;
+  std::vector<uint8_t> secret;
+  bool expectedResult;
+} MlKemDecapTestVector;
+
 typedef struct EcdsaTestVectorStr {
   SECOidTag hash_oid;
   uint32_t id;
@@ -97,13 +125,13 @@ typedef struct HkdfTestVectorStr {
 } HkdfTestVector;
 
 enum class IkeTestType {
-  ikeGxy,         /* CKM_NSS_IKE_PRF_DERIVE case 1 */
-  ikeV1Psk,       /* CKM_NSS_IKE_PRF_DERIVE case 2 */
-  ikeV2Rekey,     /* CKM_NSS_IKE_PRF_DERIVE case 3 */
-  ikeV1,          /* CKM_NSS_IKE1_PRF_DERIVE */
-  ikeV1AppB,      /* CKM_NSS_IKE1_PRF_APP_B_DERIVE base mode */
-  ikeV1AppBQuick, /* CKM_NSS_IKE1_PRF_APP_B_DERIVE quick mode */
-  ikePlus         /* CKM_NSS_IKE_PRF_DERIVE */
+  ikeGxy,         /* CKM_IKE_PRF_DERIVE case 1 */
+  ikeV1Psk,       /* CKM_IKE_PRF_DERIVE case 2 */
+  ikeV2Rekey,     /* CKM_IKE_PRF_DERIVE case 3 */
+  ikeV1,          /* CKM_IKE1_PRF_DERIVE */
+  ikeV1AppB,      /* CKM_IKE1_PRF_EXTENDED_DERIVE base mode */
+  ikeV1AppBQuick, /* CKM_IKE1_PRF_EXTENDED_DERIVE quick mode */
+  ikePlus         /* CKM_IKE2_PRF_PLUS_DERIVE */
 };
 
 typedef struct IkeTestVectorStr {

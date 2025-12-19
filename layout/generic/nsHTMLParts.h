@@ -9,9 +9,9 @@
 #ifndef nsHTMLParts_h___
 #define nsHTMLParts_h___
 
-#include "nscore.h"
 #include "nsFrameState.h"
 #include "nsISupports.h"
+#include "nscore.h"
 
 class nsAtom;
 class nsCheckboxRadioFrame;
@@ -21,7 +21,6 @@ class nsIChannel;
 class nsIContent;
 class nsIFragmentContentSink;
 class nsIFrame;
-class nsIHTMLContentSink;
 class nsIURI;
 class nsListControlFrame;
 class nsNodeInfoManager;
@@ -123,14 +122,10 @@ nsFirstLineFrame* NS_NewFirstLineFrame(mozilla::PresShell* aPresShell,
                                        mozilla::ComputedStyle* aStyle);
 
 // forms
-nsContainerFrame* NS_NewGfxButtonControlFrame(mozilla::PresShell* aPresShell,
-                                              mozilla::ComputedStyle* aStyle);
 nsCheckboxRadioFrame* NS_NewCheckboxRadioFrame(mozilla::PresShell* aPresShell,
                                                mozilla::ComputedStyle* aStyle);
 nsIFrame* NS_NewImageControlFrame(mozilla::PresShell* aPresShell,
                                   mozilla::ComputedStyle* aStyle);
-nsContainerFrame* NS_NewHTMLButtonControlFrame(mozilla::PresShell* aPresShell,
-                                               mozilla::ComputedStyle* aStyle);
 nsContainerFrame* NS_NewFieldSetFrame(mozilla::PresShell* aPresShell,
                                       mozilla::ComputedStyle* aStyle);
 nsIFrame* NS_NewFileControlFrame(mozilla::PresShell* aPresShell,
@@ -178,14 +173,5 @@ class nsTableCellFrame;
 nsTableCellFrame* NS_NewTableCellFrame(mozilla::PresShell* aPresShell,
                                        mozilla::ComputedStyle* aStyle,
                                        nsTableFrame* aTableFrame);
-
-nsresult NS_NewHTMLContentSink(nsIHTMLContentSink** aInstancePtrResult,
-                               mozilla::dom::Document* aDoc, nsIURI* aURL,
-                               nsISupports* aContainer,  // e.g. docshell
-                               nsIChannel* aChannel);
-nsresult NS_NewHTMLFragmentContentSink(
-    nsIFragmentContentSink** aInstancePtrResult);
-nsresult NS_NewHTMLFragmentContentSink2(
-    nsIFragmentContentSink** aInstancePtrResult);
 
 #endif /* nsHTMLParts_h___ */

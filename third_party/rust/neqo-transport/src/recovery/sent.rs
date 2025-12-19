@@ -9,22 +9,20 @@
 use std::{
     collections::BTreeMap,
     ops::RangeInclusive,
+    rc::Rc,
     time::{Duration, Instant},
 };
 
-use crate::{
-    packet::{PacketNumber, PacketType},
-    recovery::RecoveryToken,
-};
+use crate::{packet, recovery};
 
 #[derive(Debug, Clone)]
-pub struct SentPacket {
-    pt: PacketType,
-    pn: PacketNumber,
+pub struct Packet {
+    pt: packet::Type,
+    pn: packet::Number,
     ack_eliciting: bool,
     time_sent: Instant,
     primary_path: bool,
-    tokens: Vec<RecoveryToken>,
+    tokens: Rc<recovery::Tokens>,
 
     time_declared_lost: Option<Instant>,
     /// After a PTO, this is true when the packet has been released.
@@ -33,14 +31,14 @@ pub struct SentPacket {
     len: usize,
 }
 
-impl SentPacket {
+impl Packet {
     #[must_use]
-    pub const fn new(
-        pt: PacketType,
-        pn: PacketNumber,
+    pub fn new(
+        pt: packet::Type,
+        pn: packet::Number,
         time_sent: Instant,
         ack_eliciting: bool,
-        tokens: Vec<RecoveryToken>,
+        tokens: recovery::Tokens,
         len: usize,
     ) -> Self {
         Self {
@@ -49,7 +47,7 @@ impl SentPacket {
             time_sent,
             ack_eliciting,
             primary_path: true,
-            tokens,
+            tokens: Rc::new(tokens),
             time_declared_lost: None,
             pto: false,
             len,
@@ -58,13 +56,13 @@ impl SentPacket {
 
     /// The type of this packet.
     #[must_use]
-    pub const fn packet_type(&self) -> PacketType {
+    pub const fn packet_type(&self) -> packet::Type {
         self.pt
     }
 
     /// The number of the packet.
     #[must_use]
-    pub const fn pn(&self) -> PacketNumber {
+    pub const fn pn(&self) -> packet::Number {
         self.pn
     }
 
@@ -73,7 +71,15 @@ impl SentPacket {
     pub fn ecn_marked_ect0(&self) -> bool {
         self.tokens
             .iter()
-            .any(|t| matches!(t, RecoveryToken::EcnEct0))
+            .any(|t| matches!(t, recovery::Token::EcnEct0))
+    }
+
+    /// Returns `true` if this packet is a PMTUD probe.
+    #[must_use]
+    pub fn is_pmtud_probe(&self) -> bool {
+        self.tokens
+            .iter()
+            .any(|t| matches!(t, recovery::Token::PmtudProbe))
     }
 
     /// The time that this packet was sent.
@@ -106,14 +112,9 @@ impl SentPacket {
     }
 
     /// Access the recovery tokens that this holds.
-    #[allow(
-        clippy::allow_attributes,
-        clippy::missing_const_for_fn,
-        reason = "TODO: False positive on nightly."
-    )]
     #[must_use]
-    pub fn tokens(&self) -> &[RecoveryToken] {
-        &self.tokens
+    pub fn tokens(&self) -> &recovery::Tokens {
+        self.tokens.as_ref()
     }
 
     /// Clears the flag that had this packet on the primary path.
@@ -124,7 +125,7 @@ impl SentPacket {
 
     /// For Initial packets, it is possible that the packet builder needs to amend the length.
     pub fn track_padding(&mut self, padding: usize) {
-        debug_assert_eq!(self.pt, PacketType::Initial);
+        debug_assert_eq!(self.pt, packet::Type::Initial);
         self.len += padding;
     }
 
@@ -190,12 +191,12 @@ impl SentPacket {
 
 /// A collection for packets that we have sent that haven't been acknowledged.
 #[derive(Debug, Default)]
-pub struct SentPackets {
+pub struct Packets {
     /// The collection.
-    packets: BTreeMap<u64, SentPacket>,
+    packets: BTreeMap<u64, Packet>,
 }
 
-impl SentPackets {
+impl Packets {
     #[allow(
         clippy::allow_attributes,
         clippy::len_without_is_empty,
@@ -206,11 +207,11 @@ impl SentPackets {
         self.packets.len()
     }
 
-    pub fn track(&mut self, packet: SentPacket) {
+    pub fn track(&mut self, packet: Packet) {
         self.packets.insert(packet.pn, packet);
     }
 
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut SentPacket> {
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Packet> {
         self.packets.values_mut()
     }
 
@@ -218,9 +219,9 @@ impl SentPackets {
     /// The values returned will be reversed, so that the most recent packet appears first.
     /// This is because ACK frames arrive with ranges starting from the largest acknowledged
     /// and we want to match that.
-    pub fn take_ranges<R>(&mut self, acked_ranges: R) -> Vec<SentPacket>
+    pub fn take_ranges<R>(&mut self, acked_ranges: R) -> Vec<Packet>
     where
-        R: IntoIterator<Item = RangeInclusive<PacketNumber>>,
+        R: IntoIterator<Item = RangeInclusive<packet::Number>>,
         R::IntoIter: ExactSizeIterator,
     {
         let mut result = Vec::new();
@@ -229,7 +230,7 @@ impl SentPackets {
         //  [---------------------------packets----------------------------]
         let mut packets = std::mem::take(&mut self.packets);
 
-        let mut previous_range_start: Option<PacketNumber> = None;
+        let mut previous_range_start: Option<packet::Number> = None;
 
         for range in acked_ranges {
             // Split off at the end of the acked range.
@@ -248,7 +249,7 @@ impl SentPackets {
             // > values in **descending packet number order**.
             //
             // <https://www.rfc-editor.org/rfc/rfc9000.html#section-19.3.1>
-            debug_assert!(previous_range_start.is_none_or(|s| s > *range.end()));
+            debug_assert!(previous_range_start.map_or(true, |s| s > *range.end()));
             previous_range_start = Some(*range.start());
 
             // Thus none of the following ACK ranges will acknowledge packets in
@@ -280,7 +281,7 @@ impl SentPackets {
     }
 
     /// Empty out the packets, but keep the offset.
-    pub fn drain_all(&mut self) -> impl Iterator<Item = SentPacket> {
+    pub fn drain_all(&mut self) -> impl Iterator<Item = Packet> {
         std::mem::take(&mut self.packets).into_values()
     }
 
@@ -303,7 +304,7 @@ impl SentPackets {
             };
             to_remove
                 .into_values()
-                .filter(SentPacket::ack_eliciting)
+                .filter(Packet::ack_eliciting)
                 .count()
         } else {
             0
@@ -311,15 +312,30 @@ impl SentPackets {
     }
 }
 
+/// Test helper to create a sent packet.
 #[cfg(test)]
+#[must_use]
+pub fn make_packet(pn: packet::Number, sent_time: Instant, len: usize) -> Packet {
+    Packet::new(
+        packet::Type::Short,
+        pn,
+        sent_time,
+        true,
+        recovery::Tokens::new(),
+        len,
+    )
+}
+
+#[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use std::{
         cell::OnceCell,
         time::{Duration, Instant},
     };
 
-    use super::{SentPacket, SentPackets};
-    use crate::packet::{PacketNumber, PacketType};
+    use super::{Packet, Packets};
+    use crate::{packet, recovery};
 
     const PACKET_GAP: Duration = Duration::from_secs(1);
     fn start_time() -> Instant {
@@ -327,19 +343,19 @@ mod tests {
         STARTING_TIME.with(|t| *t.get_or_init(Instant::now))
     }
 
-    fn pkt(n: u32) -> SentPacket {
-        SentPacket::new(
-            PacketType::Short,
-            PacketNumber::from(n),
+    fn pkt(n: u32) -> Packet {
+        Packet::new(
+            packet::Type::Short,
+            packet::Number::from(n),
             start_time() + (PACKET_GAP * n),
             true,
-            Vec::new(),
+            recovery::Tokens::new(),
             100,
         )
     }
 
-    fn pkts() -> SentPackets {
-        let mut pkts = SentPackets::default();
+    fn pkts() -> Packets {
+        let mut pkts = Packets::default();
         pkts.track(pkt(0));
         pkts.track(pkt(1));
         pkts.track(pkt(2));
@@ -348,25 +364,20 @@ mod tests {
     }
 
     trait HasPacketNumber {
-        fn pn(&self) -> PacketNumber;
+        fn pn(&self) -> packet::Number;
     }
-    impl HasPacketNumber for SentPacket {
-        fn pn(&self) -> PacketNumber {
+    impl HasPacketNumber for Packet {
+        fn pn(&self) -> packet::Number {
             self.pn
         }
     }
-    impl HasPacketNumber for &'_ SentPacket {
-        fn pn(&self) -> PacketNumber {
-            self.pn
-        }
-    }
-    impl HasPacketNumber for &'_ mut SentPacket {
-        fn pn(&self) -> PacketNumber {
+    impl HasPacketNumber for &'_ mut Packet {
+        fn pn(&self) -> packet::Number {
             self.pn
         }
     }
 
-    fn remove_one(pkts: &mut SentPackets, idx: PacketNumber) {
+    fn remove_one(pkts: &mut Packets, idx: packet::Number) {
         assert_eq!(pkts.len(), 3);
         let store = pkts.take_ranges([idx..=idx]);
         let mut it = store.into_iter();
@@ -435,14 +446,14 @@ mod tests {
 
     #[test]
     fn first_skipped_ok() {
-        let mut pkts = SentPackets::default();
+        let mut pkts = Packets::default();
         pkts.track(pkt(4)); // This is fine.
         assert_eq!(pkts.len(), 1);
     }
 
     #[test]
     fn ignore_unknown() {
-        let mut pkts = SentPackets::default();
+        let mut pkts = Packets::default();
         pkts.track(pkt(0));
         assert!(pkts.take_ranges([1..=1]).is_empty());
     }

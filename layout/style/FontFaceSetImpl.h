@@ -7,16 +7,16 @@
 #ifndef mozilla_dom_FontFaceSetImpl_h
 #define mozilla_dom_FontFaceSetImpl_h
 
-#include "mozilla/dom/FontFace.h"
-#include "mozilla/dom/FontFaceSetBinding.h"
+#include <functional>
+
+#include "gfxUserFontSet.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/FontPropertyTypes.h"
 #include "mozilla/RecursiveMutex.h"
-#include "gfxUserFontSet.h"
+#include "mozilla/dom/FontFace.h"
+#include "mozilla/dom/FontFaceSetBinding.h"
 #include "nsICSSLoaderObserver.h"
 #include "nsIDOMEventListener.h"
-
-#include <functional>
 
 struct gfxFontFaceSrc;
 class gfxFontSrcPrincipal;
@@ -132,9 +132,10 @@ class FontFaceSetImpl : public nsISupports, public gfxUserFontSet {
 
   virtual void FlushUserFontSet() = 0;
 
-  static nsPresContext* GetPresContextFor(gfxUserFontSet* aUserFontSet) {
+  static FontVisibilityProvider* GetFontVisibilityProviderFor(
+      gfxUserFontSet* aUserFontSet) {
     const auto* set = static_cast<FontFaceSetImpl*>(aUserFontSet);
-    return set ? set->GetPresContext() : nullptr;
+    return set ? set->GetFontVisibilityProvider() : nullptr;
   }
 
   virtual void RefreshStandardFontLoadPrincipal();

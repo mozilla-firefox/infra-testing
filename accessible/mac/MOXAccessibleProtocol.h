@@ -25,6 +25,9 @@
 // Forwarded from accessibilityFocusedUIElement.
 - (id _Nullable)moxFocusedUIElement;
 
+// Retrieve a list of custom actions.
+- (NSArray* _Nullable)moxCustomActions;
+
 // Sends a notification to any observing assistive applications.
 - (void)moxPostNotification:(NSString* _Nonnull)notification;
 
@@ -60,6 +63,8 @@
 
 // Return true if this accessible is a live region
 - (BOOL)moxIsLiveRegion;
+
+- (BOOL)moxIsTextField;
 
 // Find the nearest ancestor that returns true with the given block function
 - (id<MOXAccessible> _Nullable)moxFindAncestor:
@@ -108,6 +113,9 @@
 
 // AXEnabled
 - (NSNumber* _Nullable)moxEnabled;
+
+// AXErrorMessageElements
+- (NSArray* _Nullable)moxErrorMessageElements;
 
 // AXFocused
 - (NSNumber* _Nullable)moxFocused;
@@ -340,6 +348,12 @@
 
 // AXLanguage
 - (NSString* _Nullable)moxLanguage;
+
+// AXKeyShortcutsValue
+- (NSString* _Nullable)moxKeyShortcutsValue;
+
+// AXCustomContent
+- (NSArray* _Nullable)moxCustomContent;
 
 // AXMozDebugDescription
 - (NSString* _Nullable)moxMozDebugDescription;

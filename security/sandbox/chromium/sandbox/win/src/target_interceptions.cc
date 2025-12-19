@@ -1,8 +1,10 @@
-// Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+// Copyright 2006-2008 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "sandbox/win/src/target_interceptions.h"
+
+#include <ntstatus.h>
 
 #include "base/win/static_constants.h"
 #include "sandbox/win/src/interception_agent.h"
@@ -10,8 +12,6 @@
 #include "sandbox/win/src/sandbox_nt_util.h"
 
 namespace sandbox {
-
-SANDBOX_INTERCEPT NtExports g_nt;
 
 const char KERNEL32_DLL_NAME[] = "kernel32.dll";
 
@@ -46,8 +46,6 @@ TargetNtMapViewOfSection(NtMapViewOfSectionFunction orig_MapViewOfSection,
     if (!IsSameProcess(process))
       break;
 
-    // Only check for verifier.dll or kernel32.dll loading if we haven't moved
-    // past that state yet.
     if (s_state == kBeforeKernel32) {
       const char* ansi_module_name =
           GetAnsiImageInfoFromModule(reinterpret_cast<HMODULE>(*base));
@@ -56,22 +54,19 @@ TargetNtMapViewOfSection(NtMapViewOfSectionFunction orig_MapViewOfSection,
       // find what looks like a valid export directory for a PE module but the
       // pointer to the module name will be pointing to invalid memory.
       __try {
-        // Don't initialize the heap if verifier.dll is being loaded. This
-        // indicates Application Verifier is enabled and we should wait until
-        // the next module is loaded.
         if (ansi_module_name &&
-            (g_nt._strnicmp(
-                 ansi_module_name, base::win::kApplicationVerifierDllName,
-                 g_nt.strlen(base::win::kApplicationVerifierDllName) + 1) == 0))
-          break;
-
-        if (ansi_module_name &&
-            (g_nt._strnicmp(ansi_module_name, KERNEL32_DLL_NAME,
-                            sizeof(KERNEL32_DLL_NAME)) == 0)) {
+            (GetNtExports()->_strnicmp(ansi_module_name, KERNEL32_DLL_NAME,
+                                       sizeof(KERNEL32_DLL_NAME)) == 0)) {
           s_state = kAfterKernel32;
         }
       } __except (EXCEPTION_EXECUTE_HANDLER) {
       }
+    }
+
+    // Assume the heap may not be initialized before kernel32 loads, which is
+    // the case when AppVerifier is enabled.
+    if (s_state == kBeforeKernel32) {
+      break;
     }
 
     if (!InitHeap())
@@ -96,7 +91,7 @@ TargetNtMapViewOfSection(NtMapViewOfSectionFunction orig_MapViewOfSection,
     if (agent) {
       if (!agent->OnDllLoad(file_name, module_name, *base)) {
         // Interception agent is demanding to un-map the module.
-        g_nt.UnmapViewOfSection(process, *base);
+        GetNtExports()->UnmapViewOfSection(process, *base);
         *base = nullptr;
         ret = STATUS_UNSUCCESSFUL;
       }

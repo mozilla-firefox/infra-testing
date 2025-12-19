@@ -5,6 +5,7 @@
 // #[allow(dead_code)] is required on this module as a workaround for
 // https://github.com/rust-lang/rust/issues/46379
 #![allow(dead_code)]
+use chrono::Timelike;
 use glean_core::{Glean, PingType, Result};
 
 use std::fs::{read_dir, File};
@@ -41,9 +42,13 @@ pub fn tempdir() -> (tempfile::TempDir, String) {
 
 pub const GLOBAL_APPLICATION_ID: &str = "org.mozilla.glean.test.app";
 
-// Creates a new instance of Glean with a temporary directory.
-// We need to keep the `TempDir` alive, so that it's not deleted before we stop using it.
-pub fn new_glean(tempdir: Option<tempfile::TempDir>) -> (Glean, tempfile::TempDir) {
+/// Creates a new instance of Glean with a temporary directory, with `upload_enabled` specified.
+///
+/// We need to keep the `TempDir` alive, so that it's not deleted before we stop using it.
+pub fn new_glean_with_upload(
+    tempdir: Option<tempfile::TempDir>,
+    upload_enabled: bool,
+) -> (Glean, tempfile::TempDir) {
     let dir = match tempdir {
         Some(tempdir) => tempdir,
         None => tempfile::tempdir().unwrap(),
@@ -53,7 +58,7 @@ pub fn new_glean(tempdir: Option<tempfile::TempDir>) -> (Glean, tempfile::TempDi
         data_path: dir.path().display().to_string(),
         application_id: GLOBAL_APPLICATION_ID.into(),
         language_binding_name: "Rust".into(),
-        upload_enabled: true,
+        upload_enabled,
         max_events: None,
         delay_ping_lifetime_io: false,
         app_build: "Unknown".into(),
@@ -75,6 +80,13 @@ pub fn new_glean(tempdir: Option<tempfile::TempDir>) -> (Glean, tempfile::TempDi
     _ = new_test_ping(&mut glean, "store2");
 
     (glean, dir)
+}
+
+/// Creates a new instance of Glean with a temporary directory.
+///
+/// We need to keep the `TempDir` alive, so that it's not deleted before we stop using it.
+pub fn new_glean(tempdir: Option<tempfile::TempDir>) -> (Glean, tempfile::TempDir) {
+    new_glean_with_upload(tempdir, true)
 }
 
 pub fn new_test_ping(glean: &mut Glean, name: &str) -> PingType {
@@ -161,14 +173,19 @@ impl PingBuilder {
 /// Converts an iso8601::DateTime to a chrono::DateTime<FixedOffset>
 pub fn iso8601_to_chrono(datetime: &iso8601::DateTime) -> chrono::DateTime<chrono::FixedOffset> {
     if let YMD { year, month, day } = datetime.date {
-        return chrono::FixedOffset::east(datetime.time.tz_offset_hours * 3600)
-            .ymd(year, month, day)
-            .and_hms_milli(
+        return chrono::FixedOffset::east_opt(datetime.time.tz_offset_hours * 3600)
+            .unwrap()
+            .with_ymd_and_hms(
+                year,
+                month,
+                day,
                 datetime.time.hour,
                 datetime.time.minute,
                 datetime.time.second,
-                datetime.time.millisecond,
-            );
+            )
+            .unwrap()
+            .with_nanosecond(datetime.time.millisecond * 1_000_000)
+            .unwrap();
     };
     panic!("Unsupported datetime format");
 }

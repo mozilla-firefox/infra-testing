@@ -7,8 +7,8 @@
 #ifndef mozilla_dom_PerformanceInteractionMetrics_h__
 #define mozilla_dom_PerformanceInteractionMetrics_h__
 
-#include "nsHashtablesFwd.h"
 #include "PerformanceEventTiming.h"
+#include "nsHashtablesFwd.h"
 
 namespace mozilla::dom {
 
@@ -21,7 +21,8 @@ class PerformanceInteractionMetrics final {
   PerformanceInteractionMetrics& operator=(
       const PerformanceInteractionMetrics& aCopy) = delete;
 
-  uint64_t ComputeInteractionId(const WidgetEvent* aEvent);
+  Maybe<uint64_t> ComputeInteractionId(PerformanceEventTiming* aEventTiming,
+                                       const WidgetEvent* aEvent);
 
   nsTHashMap<uint32_t, RefPtr<PerformanceEventTiming>>& PendingKeyDowns() {
     return mPendingKeyDowns;
@@ -57,6 +58,8 @@ class PerformanceInteractionMetrics final {
   uint64_t mCurrentInteractionValue;
 
   Maybe<uint64_t> mLastKeydownInteractionValue;
+
+  bool mContextMenuTriggered = false;
 };
 
 inline void ImplCycleCollectionTraverse(

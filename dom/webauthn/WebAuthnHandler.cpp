@@ -4,25 +4,26 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "hasht.h"
-#include "nsHTMLDocument.h"
-#include "nsIURIMutator.h"
-#include "nsThreadUtils.h"
+#include "mozilla/dom/WebAuthnHandler.h"
+
 #include "WebAuthnCoseIdentifiers.h"
 #include "WebAuthnEnumStrings.h"
 #include "WebAuthnTransportIdentifiers.h"
+#include "hasht.h"
 #include "mozilla/Base64.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/BounceTrackingProtection.h"
-#include "mozilla/glean/DomWebauthnMetrics.h"
 #include "mozilla/dom/AuthenticatorAssertionResponse.h"
 #include "mozilla/dom/AuthenticatorAttestationResponse.h"
-#include "mozilla/dom/PublicKeyCredential.h"
 #include "mozilla/dom/PWebAuthnTransaction.h"
-#include "mozilla/dom/WebAuthnHandler.h"
+#include "mozilla/dom/PublicKeyCredential.h"
 #include "mozilla/dom/WebAuthnTransactionChild.h"
 #include "mozilla/dom/WebAuthnUtil.h"
 #include "mozilla/dom/WindowGlobalChild.h"
+#include "mozilla/glean/DomWebauthnMetrics.h"
+#include "nsHTMLDocument.h"
+#include "nsIURIMutator.h"
+#include "nsThreadUtils.h"
 
 #ifdef XP_WIN
 #  include "WinWebAuthnService.h"
@@ -143,10 +144,6 @@ already_AddRefed<Promise> WebAuthnHandler::MakeCredential(
   }
 
   nsCOMPtr<nsIPrincipal> principal = doc->NodePrincipal();
-  if (!IsWebAuthnAllowedForPrincipal(principal)) {
-    promise->MaybeReject(NS_ERROR_DOM_SECURITY_ERR);
-    return promise.forget();
-  }
 
   nsCString rpId;
   if (aOptions.mRp.mId.WasPassed()) {
@@ -392,7 +389,7 @@ already_AddRefed<Promise> WebAuthnHandler::MakeCredential(
 
   WebAuthnMakeCredentialInfo info(rpId, challenge, adjustedTimeout, excludeList,
                                   rpInfo, userInfo, coseAlgos, extensions,
-                                  authSelection, attestation);
+                                  authSelection, attestation, aOptions.mHints);
 
   // Set up the transaction state. Fallible operations should not be performed
   // below this line, as we must not leave the transaction state partially
@@ -462,10 +459,6 @@ already_AddRefed<Promise> WebAuthnHandler::GetAssertion(
   }
 
   nsCOMPtr<nsIPrincipal> principal = doc->NodePrincipal();
-  if (!IsWebAuthnAllowedForPrincipal(principal)) {
-    promise->MaybeReject(NS_ERROR_DOM_SECURITY_ERR);
-    return promise.forget();
-  }
 
   nsCString rpId;
   if (aOptions.mRpId.WasPassed()) {
@@ -666,7 +659,7 @@ already_AddRefed<Promise> WebAuthnHandler::GetAssertion(
 
   WebAuthnGetAssertionInfo info(
       rpId, maybeAppId, challenge, adjustedTimeout, allowList, extensions,
-      aOptions.mUserVerification, aConditionallyMediated);
+      aOptions.mUserVerification, aConditionallyMediated, aOptions.mHints);
 
   // Set up the transaction state. Fallible operations should not be performed
   // below this line, as we must not leave the transaction state partially
@@ -920,7 +913,7 @@ void WebAuthnHandler::FinishGetAssertion(
   if (global) {
     nsPIDOMWindowInner* window = global->GetAsInnerWindow();
     if (window) {
-      Unused << BounceTrackingProtection::RecordUserActivation(
+      (void)BounceTrackingProtection::RecordUserActivation(
           window->GetWindowContext());
     }
   }
@@ -959,9 +952,14 @@ void WebAuthnHandler::ResolveTransaction(
       break;
   }
 
-  mTransaction.ref().mPromise->MaybeResolve(aCredential);
+  // Bug 1969341 - we need to reset the transaction before resolving the
+  // promise. This lets us handle the case where resolving the promise initiates
+  // a new WebAuthn request.
+  RefPtr<Promise> promise = mTransaction.ref().mPromise;
   mTransaction.reset();
   Unfollow();
+
+  promise->MaybeResolve(aCredential);
 }
 
 template <typename T>
@@ -977,9 +975,14 @@ void WebAuthnHandler::RejectTransaction(const T& aReason) {
       break;
   }
 
-  mTransaction.ref().mPromise->MaybeReject(aReason);
+  // Bug 1969341 - we need to reset the transaction before rejecting the
+  // promise. This lets us handle the case where rejecting the promise initiates
+  // a new WebAuthn request.
+  RefPtr<Promise> promise = mTransaction.ref().mPromise;
   mTransaction.reset();
   Unfollow();
+
+  promise->MaybeReject(aReason);
 }
 
 }  // namespace mozilla::dom

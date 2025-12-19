@@ -7,7 +7,6 @@
 /* import-globals-from home.js */
 /* import-globals-from search.js */
 /* import-globals-from containers.js */
-/* import-globals-from translations.js */
 /* import-globals-from privacy.js */
 /* import-globals-from sync.js */
 /* import-globals-from experimental.js */
@@ -15,6 +14,12 @@
 /* import-globals-from findInPage.js */
 /* import-globals-from /browser/base/content/utilityOverlay.js */
 /* import-globals-from /toolkit/content/preferencesBindings.js */
+
+/** @import MozButton from "chrome://global/content/elements/moz-button.mjs" */
+/** @import {SettingConfig, SettingEmitChange} from "chrome://global/content/preferences/Setting.mjs" */
+/** @import {SettingControlConfig} from "chrome://browser/content/preferences/widgets/setting-control.mjs" */
+/** @import {SettingGroup, SettingGroupConfig} from "chrome://browser/content/preferences/widgets/setting-group.mjs" */
+/** @import {SettingPane, SettingPaneConfig} from "chrome://browser/content/preferences/widgets/setting-pane.mjs" */
 
 "use strict";
 
@@ -51,18 +56,18 @@ var fxAccounts = getFxAccountsSingleton();
 XPCOMUtils.defineLazyServiceGetters(this, {
   gApplicationUpdateService: [
     "@mozilla.org/updates/update-service;1",
-    "nsIApplicationUpdateService",
+    Ci.nsIApplicationUpdateService,
   ],
 
   listManager: [
     "@mozilla.org/url-classifier/listmanager;1",
-    "nsIUrlListManager",
+    Ci.nsIUrlListManager,
   ],
   gHandlerService: [
     "@mozilla.org/uriloader/handler-service;1",
-    "nsIHandlerService",
+    Ci.nsIHandlerService,
   ],
-  gMIMEService: ["@mozilla.org/mime;1", "nsIMIMEService"],
+  gMIMEService: ["@mozilla.org/mime;1", Ci.nsIMIMEService],
 });
 
 if (Cc["@mozilla.org/gio-service;1"]) {
@@ -70,7 +75,7 @@ if (Cc["@mozilla.org/gio-service;1"]) {
     this,
     "gGIOService",
     "@mozilla.org/gio-service;1",
-    "nsIGIOService"
+    Ci.nsIGIOService
   );
 } else {
   this.gGIOService = null;
@@ -81,6 +86,7 @@ ChromeUtils.defineESModuleGetters(this, {
   ContextualIdentityService:
     "resource://gre/modules/ContextualIdentityService.sys.mjs",
   DownloadUtils: "resource://gre/modules/DownloadUtils.sys.mjs",
+  ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
   ExtensionPreferencesManager:
     "resource://gre/modules/ExtensionPreferencesManager.sys.mjs",
   ExtensionSettingsStore:
@@ -93,7 +99,7 @@ ChromeUtils.defineESModuleGetters(this, {
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   OSKeyStore: "resource://gre/modules/OSKeyStore.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
-  QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
+  QuickSuggest: "moz-src:///browser/components/urlbar/QuickSuggest.sys.mjs",
   Region: "resource://gre/modules/Region.sys.mjs",
   SelectionChangedMenulist:
     "resource:///modules/SelectionChangedMenulist.sys.mjs",
@@ -102,8 +108,8 @@ ChromeUtils.defineESModuleGetters(this, {
   TransientPrefs: "resource:///modules/TransientPrefs.sys.mjs",
   UIState: "resource://services-sync/UIState.sys.mjs",
   UpdateUtils: "resource://gre/modules/UpdateUtils.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(this, "gSubDialog", function () {
@@ -145,6 +151,166 @@ ChromeUtils.defineLazyGetter(this, "gSubDialog", function () {
   });
 });
 
+/** @type {Record<string, boolean>} */
+const srdSectionPrefs = {};
+XPCOMUtils.defineLazyPreferenceGetter(
+  srdSectionPrefs,
+  "all",
+  "browser.settings-redesign.enabled",
+  false
+);
+
+/**
+ * @param {string} section
+ */
+function srdSectionEnabled(section) {
+  if (!(section in srdSectionPrefs)) {
+    XPCOMUtils.defineLazyPreferenceGetter(
+      srdSectionPrefs,
+      section,
+      `browser.settings-redesign.${section}.enabled`,
+      false
+    );
+  }
+  return srdSectionPrefs.all || srdSectionPrefs[section];
+}
+
+var SettingPaneManager = {
+  /** @type {Map<string, SettingPaneConfig>} */
+  _data: new Map(),
+
+  /**
+   * @param {string} id
+   */
+  get(id) {
+    if (!this._data.has(id)) {
+      throw new Error(`Setting pane "${id}" not found`);
+    }
+    return this._data.get(id);
+  },
+
+  /**
+   * @param {string} id
+   * @param {SettingPaneConfig} config
+   */
+  registerPane(id, config) {
+    if (this._data.has(id)) {
+      throw new Error(`Setting pane "${id}" already registered`);
+    }
+    this._data.set(id, config);
+    let subPane = friendlyPrefCategoryNameToInternalName(id);
+    let settingPane = /** @type {SettingPane} */ (
+      document.createElement("setting-pane")
+    );
+    settingPane.name = subPane;
+    settingPane.config = config;
+    settingPane.isSubPane = !!config.parent;
+    document.getElementById("mainPrefPane").append(settingPane);
+    register_module(subPane, {
+      init() {
+        settingPane.init();
+      },
+    });
+  },
+
+  /**
+   * @param {Record<string, SettingPaneConfig>} paneConfigs
+   */
+  registerPanes(paneConfigs) {
+    for (let id in paneConfigs) {
+      this.registerPane(id, paneConfigs[id]);
+    }
+  },
+};
+
+var SettingGroupManager = {
+  /** @type {Map<string, SettingGroupConfig>} */
+  _data: new Map(),
+
+  /**
+   * @param {string} id
+   */
+  get(id) {
+    if (!this._data.has(id)) {
+      throw new Error(`Setting group "${id}" not found`);
+    }
+    return this._data.get(id);
+  },
+
+  /**
+   * @param {string} id
+   * @param {SettingGroupConfig} config
+   */
+  registerGroup(id, config) {
+    if (this._data.has(id)) {
+      throw new Error(`Setting group "${id}" already registered`);
+    }
+    this._data.set(id, config);
+  },
+
+  /**
+   * @param {Record<string, SettingGroupConfig>} groupConfigs
+   */
+  registerGroups(groupConfigs) {
+    for (let id in groupConfigs) {
+      this.registerGroup(id, groupConfigs[id]);
+    }
+  },
+};
+
+/**
+ * Register initial config-based setting panes here. If you need to register a
+ * pane elsewhere, use {@link SettingPaneManager['registerPane']}.
+ *
+ * @type {Record<string, SettingPaneConfig>}
+ */
+const CONFIG_PANES = Object.freeze({
+  containers2: {
+    parent: "general",
+    l10nId: "containers-section-header",
+    groupIds: ["containers"],
+  },
+  dnsOverHttps: {
+    parent: "privacy",
+    l10nId: "preferences-doh-header2",
+    groupIds: ["dnsOverHttpsAdvanced"],
+  },
+  managePayments: {
+    parent: "privacy",
+    l10nId: "autofill-payment-methods-manage-payments-title",
+    groupIds: ["managePayments"],
+  },
+  paneProfiles: {
+    parent: "general",
+    l10nId: "preferences-profiles-group-header",
+    groupIds: ["profilePane"],
+  },
+  etp: {
+    parent: "privacy",
+    l10nId: "preferences-etp-header",
+    groupIds: ["etpBanner", "etpAdvanced"],
+  },
+  etpCustomize: {
+    parent: "etp",
+    l10nId: "preferences-etp-customize-header",
+    groupIds: ["etpReset", "etpCustomize"],
+  },
+  manageAddresses: {
+    parent: "privacy",
+    l10nId: "autofill-addresses-manage-addresses-title",
+    groupIds: ["manageAddresses"],
+  },
+  translations: {
+    parent: "general",
+    l10nId: "settings-translations-subpage-header",
+    groupIds: [
+      "translationsAutomaticTranslation",
+      "translationsDownloadLanguages",
+    ],
+    iconSrc: "chrome://browser/skin/translations.svg",
+  },
+});
+
 var gLastCategory = { category: undefined, subcategory: undefined };
 const gXULDOMParser = new DOMParser();
 var gCategoryModules = new Map();
@@ -155,7 +321,7 @@ function register_module(categoryName, categoryObject) {
   gCategoryInits.set(categoryName, {
     _initted: false,
     init() {
-      let startTime = performance.now();
+      let startTime = ChromeUtils.now();
       if (this._initted) {
         return;
       }
@@ -197,17 +363,21 @@ function init_all() {
   register_module("panePrivacy", gPrivacyPane);
   register_module("paneContainers", gContainersPane);
 
-  if (Services.prefs.getBoolPref("browser.translations.newSettingsUI.enable")) {
-    register_module("paneTranslations", gTranslationsPane);
+  for (let [id, config] of Object.entries(CONFIG_PANES)) {
+    SettingPaneManager.registerPane(id, config);
   }
-  if (Services.prefs.getBoolPref("browser.preferences.experimental")) {
-    // Set hidden based on previous load's hidden value.
+
+  if (ExperimentAPI.labsEnabled) {
+    // Set hidden based on previous load's hidden value or if Nimbus is
+    // disabled.
     document.getElementById("category-experimental").hidden =
       Services.prefs.getBoolPref(
         "browser.preferences.experimental.hidden",
         false
       );
     register_module("paneExperimental", gExperimentalPane);
+  } else {
+    document.getElementById("category-experimental").hidden = true;
   }
 
   NimbusFeatures.moreFromMozilla.recordExposureEvent({ once: true });
@@ -272,6 +442,12 @@ function onHashChange() {
   gotoPref(null, "Hash");
 }
 
+/**
+ * @param {string} [aCategory] The pane to show, defaults to the hash of URL or general
+ * @param {"Click"|"Initial"|"Hash"} [aShowReason]
+ *   What triggered the navigation. Defaults to "Click" if aCategory is provided,
+ *   otherwise "Initial".
+ */
 async function gotoPref(
   aCategory,
   aShowReason = aCategory ? "Click" : "Initial"
@@ -280,7 +456,7 @@ async function gotoPref(
   const kDefaultCategoryInternalName = "paneGeneral";
   const kDefaultCategory = "general";
   let hash = document.location.hash;
-  let category = aCategory || hash.substr(1) || kDefaultCategoryInternalName;
+  let category = aCategory || hash.substring(1) || kDefaultCategoryInternalName;
 
   let breakIndex = category.indexOf("-");
   // Subcategories allow for selecting smaller sections of the preferences
@@ -309,14 +485,18 @@ async function gotoPref(
   }
 
   let item;
+  let unknownCategory = false;
   if (category != "paneSearchResults") {
     // Hide second level headers in normal view
     for (let element of document.querySelectorAll(".search-header")) {
       element.hidden = true;
     }
 
-    item = categories.querySelector(".category[value=" + category + "]");
+    item = /** @type {HTMLElement} */ (
+      categories.querySelector(".category[value=" + CSS.escape(category) + "]")
+    );
     if (!item || item.hidden) {
+      unknownCategory = true;
       category = kDefaultCategoryInternalName;
       item = categories.querySelector(".category[value=" + category + "]");
     }
@@ -324,6 +504,7 @@ async function gotoPref(
 
   if (
     gLastCategory.category ||
+    unknownCategory ||
     category != kDefaultCategoryInternalName ||
     subcategory
   ) {
@@ -331,6 +512,10 @@ async function gotoPref(
     // Overwrite the hash, unless there is no hash and we're switching to the
     // default category, e.g. by using the 'back' button after navigating to
     // a different category.
+
+    // Note: Bug 1983388 - If there is an element in the DOM that has the same
+    // ID as the `friendlyName`, then focus will be lost when navigating the
+    // category navigation via keyboard when that `friendlyName` category is selected.
     if (
       !(!document.location.hash && category == kDefaultCategoryInternalName)
     ) {
@@ -342,8 +527,10 @@ async function gotoPref(
   gLastCategory.category = category;
   gLastCategory.subcategory = subcategory;
   if (item) {
+    // @ts-ignore MozElements.RichListBox
     categories.selectedItem = item;
   } else {
+    // @ts-ignore MozElements.RichListBox
     categories.clearSelection();
   }
   window.history.replaceState(category, document.title);
@@ -387,8 +574,19 @@ async function gotoPref(
     spotlight(subcategory, category);
   }
 
+  // Handle any visibility changes that are controlled by pref logic.
+  //
+  // Take caution when trying to flip the hidden state to true since the
+  // element might show up unexpectedly on different pages in about:preferences.
+  //
+  // See Bug 1999032 to remove this in favor of config-based prefs.
+  categoryModule.handlePrefControlledSection?.();
+
   // Record which category is shown
-  Glean.aboutpreferences["show" + aShowReason].record({ value: category });
+  let gleanId = /** @type {"showClick" | "showHash" | "showInitial"} */ (
+    "show" + aShowReason
+  );
+  Glean.aboutpreferences[gleanId].record({ value: category });
 
   document.dispatchEvent(
     new CustomEvent("paneshown", {
@@ -401,9 +599,15 @@ async function gotoPref(
   );
 }
 
+/**
+ * @param {string} aQuery
+ * @param {string} aAttribute
+ */
 function search(aQuery, aAttribute) {
   let mainPrefPane = document.getElementById("mainPrefPane");
-  let elements = mainPrefPane.children;
+  let elements = /** @type {HTMLElement[]} */ (
+    Array.from(mainPrefPane.children)
+  );
   for (let element of elements) {
     // If the "data-hidden-from-search" is "true", the
     // element will not get considered during search.

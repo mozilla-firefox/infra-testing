@@ -2,11 +2,9 @@
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 add_setup(async function () {
-  Services.prefs.setBoolPref("identity.fxaccounts.oauth.enabled", false);
   registerCleanupFunction(() => {
     // reset internal state so it doesn't affect the next tests
     TabsSetupFlowManager.resetInternalState();
-    Services.prefs.clearUserPref("identity.fxaccounts.oauth.enabled");
   });
 
   // gSync.init() is called in a requestIdleCallback. Force its initialization.
@@ -561,11 +559,15 @@ add_task(async function search_synced_tabs() {
     );
 
     info("Clear the search query.");
-    EventUtils.synthesizeMouseAtCenter(
-      syncedTabsComponent.searchTextbox.clearButton,
-      {},
-      content
+    let inputChildren = SpecialPowers.InspectorUtils.getChildrenForNode(
+      syncedTabsComponent.searchTextbox.inputEl,
+      true,
+      false
     );
+    info(`INPUT CHILDREN: ${inputChildren}`);
+    let clearButton = inputChildren.find(e => e.localName == "button");
+    info(`CLEAR BUTTON: ${clearButton}`);
+    EventUtils.synthesizeMouseAtCenter(clearButton, {}, content);
     await TestUtils.waitForCondition(
       () => syncedTabsComponent.fullyUpdated,
       "Synced Tabs component is done updating."
@@ -626,18 +628,14 @@ add_task(async function search_synced_tabs() {
       "There are no matching search results for the second device."
     );
 
-    info("Clear the search query with keyboard.");
-    is(
-      syncedTabsComponent.shadowRoot.activeElement,
-      syncedTabsComponent.searchTextbox,
-      "Search input is focused"
+    info("Clear the search query.");
+    inputChildren = SpecialPowers.InspectorUtils.getChildrenForNode(
+      syncedTabsComponent.searchTextbox.inputEl,
+      true,
+      false
     );
-    EventUtils.synthesizeKey("KEY_Tab", {}, content);
-    ok(
-      syncedTabsComponent.searchTextbox.clearButton.matches(":focus-visible"),
-      "Clear Search button is focused"
-    );
-    EventUtils.synthesizeKey("KEY_Enter", {}, content);
+    clearButton = inputChildren.find(e => e.localName == "button");
+    EventUtils.synthesizeMouseAtCenter(clearButton, {}, content);
     await TestUtils.waitForCondition(
       () => syncedTabsComponent.fullyUpdated,
       "Synced Tabs component is done updating."
@@ -797,6 +795,97 @@ add_task(async function search_synced_tabs_recent_browsing() {
     ok(BrowserTestUtils.isHidden(showAllLink), "The show all link is hidden.");
   });
   await SpecialPowers.popPrefEnv();
+  await tearDown(sandbox);
+});
+
+add_task(async function view_all_synced_tabs_recent_browsing() {
+  const NUMBER_OF_TABS = 1;
+  TabsSetupFlowManager.resetInternalState();
+  const sandbox = setupRecentDeviceListMocks();
+  const tabClients = [
+    {
+      id: 1,
+      type: "client",
+      name: "My desktop",
+      clientType: "desktop",
+      tabs: Array(NUMBER_OF_TABS)
+        .fill()
+        .map((_, i) => {
+          return {
+            type: "tab",
+            title: "Internet for people, not profits - Mozilla",
+            url: `https://www.mozilla.org/${i}`,
+            icon: "https://www.mozilla.org/media/img/favicons/mozilla/favicon.d25d81d39065.ico",
+            client: 1,
+          };
+        }),
+    },
+    {
+      id: 2,
+      type: "client",
+      name: "My iphone",
+      clientType: "phone",
+      tabs: [
+        {
+          type: "tab",
+          title: "Mount Everest - Wikipedia",
+          url: "https://en.wikipedia.org/wiki/Mount_Everest",
+          icon: "https://www.wikipedia.org/static/favicon/wikipedia.ico",
+          client: 2,
+        },
+      ],
+    },
+  ];
+  sandbox
+    .stub(SyncedTabs, "getRecentTabs")
+    .resolves(getMockTabData(tabClients));
+  sandbox.stub(SyncedTabs, "getTabClients").resolves(tabClients);
+
+  await withFirefoxView({}, async browser => {
+    const { document } = browser.contentWindow;
+    await navigateToViewAndWait(document, "recentbrowsing");
+    // Notify observers while in recent browsing. Once synced tabs is selected,
+    // it should have the updated data.
+    Services.obs.notifyObservers(null, UIState.ON_UPDATE);
+
+    const syncedTabsComponent = document.querySelector(
+      "view-syncedtabs[slot=syncedtabs]"
+    );
+    await TestUtils.waitForCondition(
+      () => syncedTabsComponent.fullyUpdated,
+      "view-syncedtabs[slot=syncedtabs] is fullyUpdated"
+    );
+
+    const viewAllLink =
+      syncedTabsComponent.cardEls[0].shadowRoot.querySelector(
+        "a.view-all-link"
+      );
+    ok(
+      viewAllLink.href.startsWith(getFirefoxViewURL()),
+      `The view all link links to about:firefoxview: ${viewAllLink.href}`
+    );
+
+    const openTabsCount = gBrowser.tabs.length;
+    const pagesDeck = document.querySelector("named-deck");
+
+    viewAllLink.click();
+
+    await BrowserTestUtils.waitForMutationCondition(
+      pagesDeck,
+      { attributes: true },
+      () => pagesDeck.selectedViewName !== "recentbrowsing"
+    );
+    is(gBrowser.tabs.length, openTabsCount, "No new tabs were opened");
+    Assert.ok(
+      FirefoxViewHandler.tab.selected,
+      "Firefox View tab is still selected selected"
+    );
+    Assert.equal(
+      pagesDeck.selectedViewName,
+      "syncedtabs",
+      "syncedtabs is the selected view after clicking the view-all button"
+    );
+  });
   await tearDown(sandbox);
 });
 

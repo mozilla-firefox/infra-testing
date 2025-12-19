@@ -9,28 +9,23 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   AboutHomeStartupCache: "resource:///modules/AboutHomeStartupCache.sys.mjs",
-  AboutNewTab: "resource:///modules/AboutNewTab.sys.mjs",
   AWToolbarButton: "resource:///modules/aboutwelcome/AWToolbarUtils.sys.mjs",
   ASRouter: "resource:///modules/asrouter/ASRouter.sys.mjs",
   ASRouterDefaultConfig:
     "resource:///modules/asrouter/ASRouterDefaultConfig.sys.mjs",
   ASRouterNewTabHook: "resource:///modules/asrouter/ASRouterNewTabHook.sys.mjs",
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
-  AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
   BackupService: "resource:///modules/backup/BackupService.sys.mjs",
-  BookmarkHTMLUtils: "resource://gre/modules/BookmarkHTMLUtils.sys.mjs",
-  BookmarkJSONUtils: "resource://gre/modules/BookmarkJSONUtils.sys.mjs",
   BrowserSearchTelemetry:
     "moz-src:///browser/components/search/BrowserSearchTelemetry.sys.mjs",
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.sys.mjs",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
-  CaptchaDetectionPingUtils:
-    "resource://gre/modules/CaptchaDetectionPingUtils.sys.mjs",
   ContentBlockingPrefs:
     "moz-src:///browser/components/protections/ContentBlockingPrefs.sys.mjs",
   ContextualIdentityService:
     "resource://gre/modules/ContextualIdentityService.sys.mjs",
+  DAPIncrementality: "resource://gre/modules/DAPIncrementality.sys.mjs",
   DAPTelemetrySender: "resource://gre/modules/DAPTelemetrySender.sys.mjs",
   DAPVisitCounter: "resource://gre/modules/DAPVisitCounter.sys.mjs",
   DefaultBrowserCheck:
@@ -38,51 +33,34 @@ ChromeUtils.defineESModuleGetters(lazy, {
   DesktopActorRegistry:
     "moz-src:///browser/components/DesktopActorRegistry.sys.mjs",
   Discovery: "resource:///modules/Discovery.sys.mjs",
-  DoHController: "resource://gre/modules/DoHController.sys.mjs",
+  DistributionManagement: "resource:///modules/distribution.sys.mjs",
   DownloadsViewableInternally:
-    "resource:///modules/DownloadsViewableInternally.sys.mjs",
+    "moz-src:///browser/components/downloads/DownloadsViewableInternally.sys.mjs",
   ExtensionsUI: "resource:///modules/ExtensionsUI.sys.mjs",
-  // FilePickerCrashed is used by the `listeners` object below.
-  // eslint-disable-next-line mozilla/valid-lazy
-  FilePickerCrashed: "resource:///modules/FilePickerCrashed.sys.mjs",
   FormAutofillUtils: "resource://gre/modules/shared/FormAutofillUtils.sys.mjs",
-  Interactions: "resource:///modules/Interactions.sys.mjs",
+  Interactions: "moz-src:///browser/components/places/Interactions.sys.mjs",
   LoginBreaches: "resource:///modules/LoginBreaches.sys.mjs",
   LoginHelper: "resource://gre/modules/LoginHelper.sys.mjs",
   MigrationUtils: "resource:///modules/MigrationUtils.sys.mjs",
-  NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   OnboardingMessageProvider:
     "resource:///modules/asrouter/OnboardingMessageProvider.sys.mjs",
-  PageActions: "resource:///modules/PageActions.sys.mjs",
-  PageDataService: "resource:///modules/pagedata/PageDataService.sys.mjs",
-  PageThumbs: "resource://gre/modules/PageThumbs.sys.mjs",
+  PageDataService:
+    "moz-src:///browser/components/pagedata/PageDataService.sys.mjs",
   PdfJs: "resource://pdf.js/PdfJs.sys.mjs",
-  PlacesBackups: "resource://gre/modules/PlacesBackups.sys.mjs",
-  PlacesUIUtils: "resource:///modules/PlacesUIUtils.sys.mjs",
-  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
-  // PluginManager is used by the `listeners` object below.
-  // eslint-disable-next-line mozilla/valid-lazy
-  PluginManager: "resource:///actors/PluginParent.sys.mjs",
+  PlacesBrowserStartup:
+    "moz-src:///browser/components/places/PlacesBrowserStartup.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
-  ProcessHangMonitor: "resource:///modules/ProcessHangMonitor.sys.mjs",
   ProfileDataUpgrader:
     "moz-src:///browser/components/ProfileDataUpgrader.sys.mjs",
-  ProfilesDatastoreService:
-    "resource:///modules/profiles/ProfilesDatastoreService.sys.mjs",
-  RemoteSecuritySettings:
-    "resource://gre/modules/psm/RemoteSecuritySettings.sys.mjs",
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
   SafeBrowsing: "resource://gre/modules/SafeBrowsing.sys.mjs",
   Sanitizer: "resource:///modules/Sanitizer.sys.mjs",
-  SandboxUtils: "resource://gre/modules/SandboxUtils.sys.mjs",
   ScreenshotsUtils: "resource:///modules/ScreenshotsUtils.sys.mjs",
   SearchSERPTelemetry:
     "moz-src:///browser/components/search/SearchSERPTelemetry.sys.mjs",
-  SelectableProfileService:
-    "resource:///modules/profiles/SelectableProfileService.sys.mjs",
   SessionStartup: "resource:///modules/sessionstore/SessionStartup.sys.mjs",
-  SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
+  SessionWindowUI: "resource:///modules/sessionstore/SessionWindowUI.sys.mjs",
   ShortcutUtils: "resource://gre/modules/ShortcutUtils.sys.mjs",
   SpecialMessageActions:
     "resource://messaging-system/lib/SpecialMessageActions.sys.mjs",
@@ -91,7 +69,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
   TelemetryReportingPolicy:
     "resource://gre/modules/TelemetryReportingPolicy.sys.mjs",
   TRRRacer: "resource:///modules/TRRPerformance.sys.mjs",
-  TabCrashHandler: "resource:///modules/ContentCrashHandlers.sys.mjs",
   WebChannel: "resource://gre/modules/WebChannel.sys.mjs",
   WebProtocolHandlerRegistrar:
     "resource:///modules/WebProtocolHandlerRegistrar.sys.mjs",
@@ -100,8 +77,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
 });
 
 XPCOMUtils.defineLazyServiceGetters(lazy, {
-  BrowserHandler: ["@mozilla.org/browser/clh;1", "nsIBrowserHandler"],
-  PushService: ["@mozilla.org/push/Service;1", "nsIPushService"],
+  BrowserHandler: ["@mozilla.org/browser/clh;1", Ci.nsIBrowserHandler],
+  PushService: ["@mozilla.org/push/Service;1", Ci.nsIPushService],
 });
 
 if (AppConstants.ENABLE_WEBDRIVER) {
@@ -109,14 +86,14 @@ if (AppConstants.ENABLE_WEBDRIVER) {
     lazy,
     "Marionette",
     "@mozilla.org/remote/marionette;1",
-    "nsIMarionette"
+    Ci.nsIMarionette
   );
 
   XPCOMUtils.defineLazyServiceGetter(
     lazy,
     "RemoteAgent",
     "@mozilla.org/remote/agent;1",
-    "nsIRemoteAgent"
+    Ci.nsIRemoteAgent
   );
 } else {
   lazy.Marionette = { running: false };
@@ -149,49 +126,6 @@ ChromeUtils.defineLazyGetter(lazy, "gBrowserBundle", function () {
   );
 });
 
-const listeners = {
-  observers: {
-    "file-picker-crashed": ["FilePickerCrashed"],
-    "gmp-plugin-crash": ["PluginManager"],
-    "plugin-crashed": ["PluginManager"],
-  },
-
-  observe(subject, topic, data) {
-    for (let module of this.observers[topic]) {
-      try {
-        lazy[module].observe(subject, topic, data);
-      } catch (e) {
-        console.error(e);
-      }
-    }
-  },
-
-  init() {
-    for (let observer of Object.keys(this.observers)) {
-      Services.obs.addObserver(this, observer);
-    }
-  },
-};
-if (AppConstants.MOZ_UPDATER) {
-  ChromeUtils.defineESModuleGetters(lazy, {
-    // This listeners/observers/lazy indirection is too much for eslint:
-    // eslint-disable-next-line mozilla/valid-lazy
-    UpdateListener: "resource://gre/modules/UpdateListener.sys.mjs",
-  });
-
-  listeners.observers["update-downloading"] = ["UpdateListener"];
-  listeners.observers["update-staged"] = ["UpdateListener"];
-  listeners.observers["update-downloaded"] = ["UpdateListener"];
-  listeners.observers["update-available"] = ["UpdateListener"];
-  listeners.observers["update-error"] = ["UpdateListener"];
-  listeners.observers["update-swap"] = ["UpdateListener"];
-}
-
-// Seconds of idle before trying to create a bookmarks backup.
-const BOOKMARKS_BACKUP_IDLE_TIME_SEC = 8 * 60;
-// Minimum interval between backups.  We try to not create more than one backup
-// per interval.
-const BOOKMARKS_BACKUP_MIN_INTERVAL_DAYS = 1;
 // Seconds of idle time before the late idle tasks will be scheduled.
 const LATE_TASKS_IDLE_TIME_SEC = 20;
 // Time after we stop tracking startup crashes.
@@ -219,23 +153,14 @@ export function BrowserGlue() {
     this,
     "_userIdleService",
     "@mozilla.org/widget/useridleservice;1",
-    "nsIUserIdleService"
+    Ci.nsIUserIdleService
   );
-
-  ChromeUtils.defineLazyGetter(this, "_distributionCustomizer", function () {
-    const { DistributionCustomizer } = ChromeUtils.importESModule(
-      "resource:///modules/distribution.sys.mjs"
-    );
-    return new DistributionCustomizer();
-  });
 
   this._init();
 }
 
 BrowserGlue.prototype = {
   _saveSession: false,
-  _migrationImportsDefaultBookmarks: false,
-  _placesBrowserInitComplete: false,
   _isNewProfile: undefined,
   _defaultCookieBehaviorAtStartup: null,
 
@@ -306,48 +231,23 @@ BrowserGlue.prototype = {
         break;
       case "places-init-complete":
         Services.obs.removeObserver(this, "places-init-complete");
-        if (!this._migrationImportsDefaultBookmarks) {
-          this._initPlaces(false);
-        }
-        break;
-      case "idle":
-        this._backupBookmarks();
-        break;
-      case "distribution-customization-complete":
-        Services.obs.removeObserver(
-          this,
-          "distribution-customization-complete"
-        );
-        // Customization has finished, we don't need the customizer anymore.
-        delete this._distributionCustomizer;
+        lazy.PlacesBrowserStartup.backendInitComplete();
         break;
       case "browser-glue-test": // used by tests
         if (data == "force-ui-migration") {
           this._migrateUI();
-        } else if (data == "force-distribution-customization") {
-          this._distributionCustomizer.applyCustomizations();
-          // To apply distribution bookmarks use "places-init-complete".
-        } else if (data == "test-force-places-init") {
-          this._placesInitialized = false;
-          this._initPlaces(false);
         } else if (data == "places-browser-init-complete") {
-          if (this._placesBrowserInitComplete) {
-            Services.obs.notifyObservers(null, "places-browser-init-complete");
-          }
+          lazy.PlacesBrowserStartup.notifyIfInitializationComplete();
         } else if (data == "add-breaches-sync-handler") {
           this._addBreachesSyncHandler();
         }
         break;
-      case "initial-migration-will-import-default-bookmarks":
-        this._migrationImportsDefaultBookmarks = true;
-        break;
-      case "initial-migration-did-import-default-bookmarks":
-        this._initPlaces(true);
-        break;
       case "handle-xul-text-link": {
         let linkHandled = subject.QueryInterface(Ci.nsISupportsPRBool);
         if (!linkHandled.data) {
-          let win = lazy.BrowserWindowTracker.getTopWindow();
+          let win =
+            lazy.BrowserWindowTracker.getTopWindow() ??
+            (await lazy.BrowserWindowTracker.promiseOpenWindow());
           if (win) {
             data = JSON.parse(data);
             let where = lazy.BrowserUtils.whereToOpenLink(data);
@@ -363,8 +263,7 @@ BrowserGlue.prototype = {
         break;
       }
       case "profile-before-change":
-        // Any component depending on Places should be finalized in
-        // _onPlacesShutdown.  Any component that doesn't need to act after
+        // Any component that doesn't need to act after
         // the UI has gone should be finalized in _onQuitApplicationGranted.
         this._dispose();
         break;
@@ -379,7 +278,9 @@ BrowserGlue.prototype = {
         } catch (ex) {
           console.error(ex);
         }
-        let win = lazy.BrowserWindowTracker.getTopWindow();
+        let win = lazy.BrowserWindowTracker.getTopWindow({
+          allowFromInactiveWorkspace: true,
+        });
         lazy.BrowserSearchTelemetry.recordSearch(
           win.gBrowser.selectedBrowser,
           engine,
@@ -440,7 +341,6 @@ BrowserGlue.prototype = {
       "quit-application-granted",
       "session-save",
       "places-init-complete",
-      "distribution-customization-complete",
       "handle-xul-text-link",
       "profile-before-change",
       "keyword-search",
@@ -454,10 +354,6 @@ BrowserGlue.prototype = {
     }
 
     lazy.DesktopActorRegistry.init();
-
-    this._firstWindowReady = new Promise(
-      resolve => (this._firstWindowLoaded = resolve)
-    );
   },
 
   // cleanup (called on application shutdown)
@@ -467,13 +363,6 @@ BrowserGlue.prototype = {
     // until here.
     lazy.AboutHomeStartupCache.uninit();
 
-    if (this._bookmarksBackupIdleTime) {
-      this._userIdleService.removeIdleObserver(
-        this,
-        this._bookmarksBackupIdleTime
-      );
-      this._bookmarksBackupIdleTime = null;
-    }
     if (this._lateTasksIdleObserver) {
       this._userIdleService.removeIdleObserver(
         this._lateTasksIdleObserver,
@@ -506,7 +395,7 @@ BrowserGlue.prototype = {
     }
 
     // apply distribution customizations
-    this._distributionCustomizer.applyCustomizations();
+    lazy.DistributionManagement.applyCustomizations();
 
     // handle any UI migration
     this._migrateUI();
@@ -516,17 +405,9 @@ BrowserGlue.prototype = {
     }
 
     if (!AppConstants.NIGHTLY_BUILD && this._isNewProfile) {
-      lazy.FormAutofillUtils.setOSAuthEnabled(
-        lazy.FormAutofillUtils.AUTOFILL_CREDITCARDS_REAUTH_PREF,
-        false
-      );
-      lazy.LoginHelper.setOSAuthEnabled(
-        lazy.LoginHelper.OS_AUTH_FOR_PASSWORDS_PREF,
-        false
-      );
+      lazy.FormAutofillUtils.setOSAuthEnabled(false);
+      lazy.LoginHelper.setOSAuthEnabled(false);
     }
-
-    listeners.init();
 
     lazy.BrowserUtils.callModulesFromCategory({
       categoryName: "browser-before-ui-startup",
@@ -626,7 +507,9 @@ BrowserGlue.prototype = {
    *        why a profile reset is offered.
    */
   _resetProfileNotification(reason) {
-    let win = lazy.BrowserWindowTracker.getTopWindow();
+    let win = lazy.BrowserWindowTracker.getTopWindow({
+      allowFromInactiveWorkspace: true,
+    });
     if (!win) {
       return;
     }
@@ -684,7 +567,9 @@ BrowserGlue.prototype = {
   },
 
   _notifyUnsignedAddonsDisabled() {
-    let win = lazy.BrowserWindowTracker.getTopWindow();
+    let win = lazy.BrowserWindowTracker.getTopWindow({
+      allowFromInactiveWorkspace: true,
+    });
     if (!win) {
       return;
     }
@@ -718,18 +603,8 @@ BrowserGlue.prototype = {
     );
   },
 
-  _verifySandboxUserNamespaces: function BG_verifySandboxUserNamespaces(aWin) {
-    if (!AppConstants.MOZ_SANDBOX) {
-      return;
-    }
-
-    lazy.SandboxUtils.maybeWarnAboutMissingUserNamespaces(
-      aWin.gNotificationBox
-    );
-  },
-
   _earlyBlankFirstPaint(cmdLine) {
-    let startTime = Cu.now();
+    let startTime = ChromeUtils.now();
 
     let shouldCreateWindow = isPrivateWindow => {
       if (cmdLine.findFlag("wait-for-jsdebugger", false) != -1) {
@@ -803,9 +678,11 @@ BrowserGlue.prototype = {
     if (makeWindowPrivate) {
       browserWindowFeatures += ",private";
     }
+
+    // We use a null URI such that the window stays on the initial uncommitted about:blank
     let win = Services.ww.openWindow(
       null,
-      "about:blank",
+      null,
       null,
       browserWindowFeatures,
       null
@@ -852,12 +729,15 @@ BrowserGlue.prototype = {
     win.stop();
 
     ChromeUtils.addProfilerMarker("earlyBlankFirstPaint", startTime);
-    win.openTime = Cu.now();
+    win.openTime = ChromeUtils.now();
 
     let { TelemetryTimestamps } = ChromeUtils.importESModule(
       "resource://gre/modules/TelemetryTimestamps.sys.mjs"
     );
     TelemetryTimestamps.add("blankWindowShown");
+    Glean.browserTimings.startupTimeline.blankWindowShown.set(
+      Services.telemetry.msSinceProcessStart()
+    );
 
     function getValue(attr) {
       return Services.xulStore.getValue(
@@ -875,12 +755,6 @@ BrowserGlue.prototype = {
 
   // the first browser window has finished initializing
   _onFirstWindowLoaded: function BG__onFirstWindowLoaded(aWindow) {
-    lazy.AboutNewTab.init();
-
-    lazy.TabCrashHandler.init();
-
-    lazy.ProcessHangMonitor.init();
-
     // A channel for "remote troubleshooting" code...
     let channel = new lazy.WebChannel(
       "remote-troubleshooting",
@@ -911,29 +785,15 @@ BrowserGlue.prototype = {
       lazy.WeaveService.init();
     }
 
-    lazy.PageThumbs.init();
-
-    lazy.NewTabUtils.init();
-
-    lazy.PageActions.init();
-
-    lazy.DoHController.init();
-
-    lazy.ProfilesDatastoreService.init().catch(console.error);
-    lazy.SelectableProfileService.init().catch(console.error);
-
-    this._firstWindowTelemetry(aWindow);
-    this._firstWindowLoaded();
-
-    // Set the default favicon size for UI views that use the page-icon protocol.
-    lazy.PlacesUtils.favicons.setDefaultIconURIPreferredSize(
-      16 * aWindow.devicePixelRatio
+    lazy.BrowserUtils.callModulesFromCategory(
+      {
+        categoryName: "browser-first-window-ready",
+        profilerMarker: "browserFirstWindowReady",
+      },
+      aWindow
     );
 
-    lazy.ContentBlockingPrefs.init();
-    lazy.CaptchaDetectionPingUtils.init();
-
-    this._verifySandboxUserNamespaces(aWindow);
+    this._firstWindowTelemetry(aWindow);
   },
 
   _maybeOfferProfileReset() {
@@ -1020,16 +880,6 @@ BrowserGlue.prototype = {
       () => Services.startup.trackStartupCrashEnd(),
 
       () => {
-        if (this._bookmarksBackupIdleTime) {
-          this._userIdleService.removeIdleObserver(
-            this,
-            this._bookmarksBackupIdleTime
-          );
-          this._bookmarksBackupIdleTime = null;
-        }
-      },
-
-      () => {
         // bug 1839426 - The FOG service needs to be instantiated reliably so it
         // can perform at-shutdown tasks later in shutdown.
         Services.fog;
@@ -1044,36 +894,6 @@ BrowserGlue.prototype = {
         failureHandler(ex);
       }
     }
-  },
-
-  // Set up a listener to enable/disable the screenshots extension
-  // based on its preference.
-  _monitorScreenshotsPref() {
-    const SCREENSHOTS_PREF = "extensions.screenshots.disabled";
-    const COMPONENT_PREF = "screenshots.browser.component.enabled";
-    const _checkScreenshotsPref = async () => {
-      let screenshotsDisabled = Services.prefs.getBoolPref(
-        SCREENSHOTS_PREF,
-        false
-      );
-      let componentEnabled = Services.prefs.getBoolPref(COMPONENT_PREF, true);
-
-      // TODO(Bug 1948366): simplify this logic further once we have migrated
-      // all users of the legacy `extensions.screenshots.disabled` to the new
-      // `screenshots.browser.component.enabled` pref (e.g. enterprise policies
-      // `DisableFirefoxScreenshots` setting and users that may have been directly
-      // using the legacy pref to disable the screenshot feature).
-      if (screenshotsDisabled && componentEnabled) {
-        lazy.ScreenshotsUtils.uninitialize();
-      } else if (componentEnabled) {
-        lazy.ScreenshotsUtils.initialize();
-      } else {
-        lazy.ScreenshotsUtils.uninitialize();
-      }
-    };
-    Services.prefs.addObserver(SCREENSHOTS_PREF, _checkScreenshotsPref);
-    Services.prefs.addObserver(COMPONENT_PREF, _checkScreenshotsPref);
-    _checkScreenshotsPref();
   },
 
   _monitorWebcompatReporterPref() {
@@ -1143,7 +963,7 @@ BrowserGlue.prototype = {
     }
 
     lazy.Sanitizer.onStartup();
-    this._maybeShowRestoreSessionInfoBar();
+    lazy.SessionWindowUI.maybeShowRestoreSessionInfoBar();
     this._scheduleStartupIdleTasks();
     this._lateTasksIdleObserver = (idleService, topic) => {
       if (topic == "idle") {
@@ -1200,7 +1020,7 @@ BrowserGlue.prototype = {
         ChromeUtils.idleDispatch(
           async () => {
             if (!Services.startup.shuttingDown) {
-              let startTime = Cu.now();
+              let startTime = ChromeUtils.now();
               try {
                 await task.task();
               } catch (ex) {
@@ -1302,7 +1122,7 @@ BrowserGlue.prototype = {
       {
         name: "BrowserGlue._monitorScreenshotsPref",
         task: () => {
-          this._monitorScreenshotsPref();
+          lazy.ScreenshotsUtils.monitorScreenshotsPref();
         },
       },
 
@@ -1359,37 +1179,6 @@ BrowserGlue.prototype = {
                 }
               }
             });
-          }
-        },
-      },
-
-      // Add the import button if this is the first startup.
-      {
-        name: "PlacesUIUtils.ImportButton",
-        task: async () => {
-          // First check if we've already added the import button, in which
-          // case we should check for events indicating we can remove it.
-          if (
-            Services.prefs.getBoolPref(
-              "browser.bookmarks.addedImportButton",
-              false
-            )
-          ) {
-            lazy.PlacesUIUtils.removeImportButtonWhenImportSucceeds();
-            return;
-          }
-
-          // Otherwise, check if this is a new profile where we need to add it.
-          // `maybeAddImportButton` will call
-          // `removeImportButtonWhenImportSucceeds`itself if/when it adds the
-          // button. Doing things in this order avoids listening for removal
-          // more than once.
-          if (
-            this._isNewProfile &&
-            // Not in automation: the button changes CUI state, breaking tests
-            !Cu.isInAutomation
-          ) {
-            await lazy.PlacesUIUtils.maybeAddImportButton();
           }
         },
       },
@@ -1481,6 +1270,7 @@ BrowserGlue.prototype = {
         task: async () => {
           await lazy.DAPTelemetrySender.startup();
           await lazy.DAPVisitCounter.startup();
+          await lazy.DAPIncrementality.startup();
         },
       },
 
@@ -1559,10 +1349,6 @@ BrowserGlue.prototype = {
         this._addBreachesSyncHandler();
       }.bind(this),
 
-      function RemoteSecuritySettingsInit() {
-        lazy.RemoteSecuritySettings.init();
-      },
-
       function searchBackgroundChecks() {
         Services.search.runBackgroundChecks();
       },
@@ -1571,7 +1357,7 @@ BrowserGlue.prototype = {
     for (let task of idleTasks) {
       ChromeUtils.idleDispatch(async () => {
         if (!Services.startup.shuttingDown) {
-          let startTime = Cu.now();
+          let startTime = ChromeUtils.now();
           try {
             await task();
           } catch (ex) {
@@ -1694,7 +1480,9 @@ BrowserGlue.prototype = {
       aQuitType = "quit";
     }
 
-    let win = lazy.BrowserWindowTracker.getTopWindow();
+    let win = lazy.BrowserWindowTracker.getTopWindow({
+      allowFromInactiveWorkspace: true,
+    });
 
     // Our prompt for quitting is most important, so replace others.
     win.gDialogBox.replaceDialogIfOpen();
@@ -1815,274 +1603,11 @@ BrowserGlue.prototype = {
     aCancelQuit.data = buttonPressed != 0;
   },
 
-  /**
-   * Initialize Places
-   * - imports the bookmarks html file if bookmarks database is empty, try to
-   *   restore bookmarks from a JSON backup if the backend indicates that the
-   *   database was corrupt.
-   *
-   * These prefs can be set up by the frontend:
-   *
-   * WARNING: setting these preferences to true will overwite existing bookmarks
-   *
-   * - browser.places.importBookmarksHTML
-   *   Set to true will import the bookmarks.html file from the profile folder.
-   * - browser.bookmarks.restore_default_bookmarks
-   *   Set to true by safe-mode dialog to indicate we must restore default
-   *   bookmarks.
-   */
-  _initPlaces: function BG__initPlaces(aInitialMigrationPerformed) {
-    if (this._placesInitialized) {
-      throw new Error("Cannot initialize Places more than once");
-    }
-    this._placesInitialized = true;
-
-    // We must instantiate the history service since it will tell us if we
-    // need to import or restore bookmarks due to first-run, corruption or
-    // forced migration (due to a major schema change).
-    // If the database is corrupt or has been newly created we should
-    // import bookmarks.
-    let dbStatus = lazy.PlacesUtils.history.databaseStatus;
-
-    // Show a notification with a "more info" link for a locked places.sqlite.
-    if (dbStatus == lazy.PlacesUtils.history.DATABASE_STATUS_LOCKED) {
-      // Note: initPlaces should always happen when the first window is ready,
-      // in any case, better safe than sorry.
-      this._firstWindowReady.then(() => {
-        this._showPlacesLockedNotificationBox();
-        this._placesBrowserInitComplete = true;
-        Services.obs.notifyObservers(null, "places-browser-init-complete");
-      });
-      return;
-    }
-
-    let importBookmarks =
-      !aInitialMigrationPerformed &&
-      (dbStatus == lazy.PlacesUtils.history.DATABASE_STATUS_CREATE ||
-        dbStatus == lazy.PlacesUtils.history.DATABASE_STATUS_CORRUPT);
-
-    // Check if user or an extension has required to import bookmarks.html
-    let importBookmarksHTML = false;
-    try {
-      importBookmarksHTML = Services.prefs.getBoolPref(
-        "browser.places.importBookmarksHTML"
-      );
-      if (importBookmarksHTML) {
-        importBookmarks = true;
-      }
-    } catch (ex) {}
-
-    // Support legacy bookmarks.html format for apps that depend on that format.
-    let autoExportHTML = Services.prefs.getBoolPref(
-      "browser.bookmarks.autoExportHTML",
-      false
-    ); // Do not export.
-    if (autoExportHTML) {
-      // Sqlite.sys.mjs and Places shutdown happen at profile-before-change, thus,
-      // to be on the safe side, this should run earlier.
-      lazy.AsyncShutdown.profileChangeTeardown.addBlocker(
-        "Places: export bookmarks.html",
-        () =>
-          lazy.BookmarkHTMLUtils.exportToFile(
-            lazy.BookmarkHTMLUtils.defaultPath
-          )
-      );
-    }
-
-    (async () => {
-      // Check if Safe Mode or the user has required to restore bookmarks from
-      // default profile's bookmarks.html
-      let restoreDefaultBookmarks = false;
-      try {
-        restoreDefaultBookmarks = Services.prefs.getBoolPref(
-          "browser.bookmarks.restore_default_bookmarks"
-        );
-        if (restoreDefaultBookmarks) {
-          // Ensure that we already have a bookmarks backup for today.
-          await this._backupBookmarks();
-          importBookmarks = true;
-        }
-      } catch (ex) {}
-
-      // If the user did not require to restore default bookmarks, or import
-      // from bookmarks.html, we will try to restore from JSON
-      if (importBookmarks && !restoreDefaultBookmarks && !importBookmarksHTML) {
-        // get latest JSON backup
-        let lastBackupFile = await lazy.PlacesBackups.getMostRecentBackup();
-        if (lastBackupFile) {
-          // restore from JSON backup
-          await lazy.BookmarkJSONUtils.importFromFile(lastBackupFile, {
-            replace: true,
-            source: lazy.PlacesUtils.bookmarks.SOURCES.RESTORE_ON_STARTUP,
-          });
-          importBookmarks = false;
-        } else {
-          // We have created a new database but we don't have any backup available
-          importBookmarks = true;
-          if (await IOUtils.exists(lazy.BookmarkHTMLUtils.defaultPath)) {
-            // If bookmarks.html is available in current profile import it...
-            importBookmarksHTML = true;
-          } else {
-            // ...otherwise we will restore defaults
-            restoreDefaultBookmarks = true;
-          }
-        }
-      }
-
-      // Import default bookmarks when necessary.
-      // Otherwise, if any kind of import runs, default bookmarks creation should be
-      // delayed till the import operations has finished.  Not doing so would
-      // cause them to be overwritten by the newly imported bookmarks.
-      if (!importBookmarks) {
-        // Now apply distribution customized bookmarks.
-        // This should always run after Places initialization.
-        try {
-          await this._distributionCustomizer.applyBookmarks();
-        } catch (e) {
-          console.error(e);
-        }
-      } else {
-        // An import operation is about to run.
-        let bookmarksUrl = null;
-        if (restoreDefaultBookmarks) {
-          // User wants to restore the default set of bookmarks shipped with the
-          // browser, those that new profiles start with.
-          bookmarksUrl = "chrome://browser/content/default-bookmarks.html";
-        } else if (await IOUtils.exists(lazy.BookmarkHTMLUtils.defaultPath)) {
-          bookmarksUrl = PathUtils.toFileURI(
-            lazy.BookmarkHTMLUtils.defaultPath
-          );
-        }
-
-        if (bookmarksUrl) {
-          // Import from bookmarks.html file.
-          try {
-            if (
-              Services.policies.isAllowed("defaultBookmarks") &&
-              // Default bookmarks are imported after startup, and they may
-              // influence the outcome of tests, thus it's possible to use
-              // this test-only pref to skip the import.
-              !(
-                Cu.isInAutomation &&
-                Services.prefs.getBoolPref(
-                  "browser.bookmarks.testing.skipDefaultBookmarksImport",
-                  false
-                )
-              )
-            ) {
-              await lazy.BookmarkHTMLUtils.importFromURL(bookmarksUrl, {
-                replace: true,
-                source: lazy.PlacesUtils.bookmarks.SOURCES.RESTORE_ON_STARTUP,
-              });
-            }
-          } catch (e) {
-            console.error("Bookmarks.html file could be corrupt. ", e);
-          }
-          try {
-            // Now apply distribution customized bookmarks.
-            // This should always run after Places initialization.
-            await this._distributionCustomizer.applyBookmarks();
-          } catch (e) {
-            console.error(e);
-          }
-        } else {
-          console.error(new Error("Unable to find bookmarks.html file."));
-        }
-
-        // Reset preferences, so we won't try to import again at next run
-        if (importBookmarksHTML) {
-          Services.prefs.setBoolPref(
-            "browser.places.importBookmarksHTML",
-            false
-          );
-        }
-        if (restoreDefaultBookmarks) {
-          Services.prefs.setBoolPref(
-            "browser.bookmarks.restore_default_bookmarks",
-            false
-          );
-        }
-      }
-
-      // Initialize bookmark archiving on idle.
-      // If the last backup has been created before the last browser session,
-      // and is days old, be more aggressive with the idle timer.
-      let idleTime = BOOKMARKS_BACKUP_IDLE_TIME_SEC;
-      if (!(await lazy.PlacesBackups.hasRecentBackup())) {
-        idleTime /= 2;
-      }
-
-      if (!this._isObservingIdle) {
-        this._userIdleService.addIdleObserver(this, idleTime);
-        this._isObservingIdle = true;
-      }
-
-      this._bookmarksBackupIdleTime = idleTime;
-
-      if (this._isNewProfile) {
-        // New profiles may have existing bookmarks (imported from another browser or
-        // copied into the profile) and we want to show the bookmark toolbar for them
-        // in some cases.
-        await lazy.PlacesUIUtils.maybeToggleBookmarkToolbarVisibility();
-      }
-    })()
-      .catch(ex => {
-        console.error(ex);
-      })
-      .then(() => {
-        // NB: deliberately after the catch so that we always do this, even if
-        // we threw halfway through initializing in the Task above.
-        this._placesBrowserInitComplete = true;
-        Services.obs.notifyObservers(null, "places-browser-init-complete");
-      });
-  },
-
-  /**
-   * If a backup for today doesn't exist, this creates one.
-   */
-  _backupBookmarks: function BG__backupBookmarks() {
-    return (async function () {
-      let lastBackupFile = await lazy.PlacesBackups.getMostRecentBackup();
-      // Should backup bookmarks if there are no backups or the maximum
-      // interval between backups elapsed.
-      if (
-        !lastBackupFile ||
-        new Date() - lazy.PlacesBackups.getDateForFile(lastBackupFile) >
-          BOOKMARKS_BACKUP_MIN_INTERVAL_DAYS * 86400000
-      ) {
-        let maxBackups = Services.prefs.getIntPref(
-          "browser.bookmarks.max_backups"
-        );
-        await lazy.PlacesBackups.create(maxBackups);
-      }
-    })();
-  },
-
-  /**
-   * Show the notificationBox for a locked places database.
-   */
-  _showPlacesLockedNotificationBox:
-    async function BG__showPlacesLockedNotificationBox() {
-      var win = lazy.BrowserWindowTracker.getTopWindow();
-      var buttons = [{ supportPage: "places-locked" }];
-
-      var notifyBox = win.gBrowser.getNotificationBox();
-      var notification = await notifyBox.appendNotification(
-        "places-locked",
-        {
-          label: { "l10n-id": "places-locked-prompt" },
-          priority: win.gNotificationBox.PRIORITY_CRITICAL_MEDIUM,
-        },
-        buttons
-      );
-      notification.persistence = -1; // Until user closes it
-    },
-
   _migrateUI() {
     // Use an increasing number to keep track of the current state of the user's
     // profile, so we can move data around as needed as the browser evolves.
     // Completely unrelated to the current Firefox release number.
-    const APP_DATA_VERSION = 154;
+    const APP_DATA_VERSION = 163;
     const PREF = "browser.migration.version";
 
     let profileDataVersion = Services.prefs.getIntPref(PREF, -1);
@@ -2098,7 +1623,9 @@ BrowserGlue.prototype = {
 
   async _showUpgradeDialog() {
     const data = await lazy.OnboardingMessageProvider.getUpgradeMessage();
-    const { gBrowser } = lazy.BrowserWindowTracker.getTopWindow();
+    const { gBrowser } = lazy.BrowserWindowTracker.getTopWindow({
+      allowFromInactiveWorkspace: true,
+    });
 
     // We'll be adding a new tab open the tab-modal dialog in.
     let tab;
@@ -2133,29 +1660,7 @@ BrowserGlue.prototype = {
     gBrowser.selectedTab = tab;
   },
 
-  async _showPreOnboardingModal() {
-    const { gBrowser } = lazy.BrowserWindowTracker.getTopWindow();
-    const data = await lazy.NimbusFeatures.preonboarding.getAllVariables();
-
-    const config = {
-      type: "SHOW_SPOTLIGHT",
-      data: {
-        content: {
-          template: "multistage",
-          id: data?.id || "PRE_ONBOARDING_MODAL",
-          backdrop: data?.backdrop,
-          screens: data?.screens,
-          UTMTerm: data?.UTMTerm,
-          disableEscClose: data?.requireAction,
-          // displayed as a window modal by default
-        },
-      },
-    };
-
-    lazy.SpecialMessageActions.handleAction(config, gBrowser);
-  },
-
-  async _showSetToDefaultSpotlight(message, browser) {
+  _showSetToDefaultSpotlight(message, browser) {
     const config = {
       type: "SHOW_SPOTLIGHT",
       data: message,
@@ -2220,7 +1725,9 @@ BrowserGlue.prototype = {
       /* isStartupCheck */ true
     );
     if (willPrompt) {
-      let win = lazy.BrowserWindowTracker.getTopWindow();
+      let win = lazy.BrowserWindowTracker.getTopWindow({
+        allowFromInactiveWorkspace: true,
+      });
       let setToDefaultFeature = lazy.NimbusFeatures.setToDefaultPrompt;
 
       // Send exposure telemetry if user will see default prompt or experimental
@@ -2236,13 +1743,16 @@ BrowserGlue.prototype = {
         this._showSetToDefaultSpotlight(message, win.gBrowser.selectedBrowser);
         return;
       }
+
+      // Intentionally don't await the returned user's response promise.
       lazy.DefaultBrowserCheck.prompt(win);
     }
 
     await lazy.ASRouter.waitForInitialized;
-    lazy.ASRouter.sendTriggerMessage({
-      browser:
-        lazy.BrowserWindowTracker.getTopWindow()?.gBrowser.selectedBrowser,
+    await lazy.ASRouter.sendTriggerMessage({
+      browser: lazy.BrowserWindowTracker.getTopWindow({
+        allowFromInactiveWorkspace: true,
+      })?.gBrowser.selectedBrowser,
       // triggerId and triggerContext
       id: "defaultBrowserCheck",
       context: { willShowDefaultPrompt: willPrompt, source: "startup" },
@@ -2250,85 +1760,12 @@ BrowserGlue.prototype = {
   },
 
   /**
-   * Only show the infobar when canRestoreLastSession and the pref value == 1
-   */
-  async _maybeShowRestoreSessionInfoBar() {
-    let count = Services.prefs.getIntPref(
-      "browser.startup.couldRestoreSession.count",
-      0
-    );
-    if (count < 0 || count >= 2) {
-      return;
-    }
-    if (count == 0) {
-      // We don't show the infobar right after the update which establishes this pref
-      // Increment the counter so we can consider it next time
-      Services.prefs.setIntPref(
-        "browser.startup.couldRestoreSession.count",
-        ++count
-      );
-      return;
-    }
-
-    const win = lazy.BrowserWindowTracker.getTopWindow();
-    // We've restarted at least once; we will show the notification if possible.
-    // We can't do that if there's no session to restore, or this is a private window.
-    if (
-      !lazy.SessionStore.canRestoreLastSession ||
-      lazy.PrivateBrowsingUtils.isWindowPrivate(win)
-    ) {
-      return;
-    }
-
-    Services.prefs.setIntPref(
-      "browser.startup.couldRestoreSession.count",
-      ++count
-    );
-
-    const messageFragment = win.document.createDocumentFragment();
-    const message = win.document.createElement("span");
-    const icon = win.document.createElement("img");
-    icon.src = "chrome://browser/skin/menu.svg";
-    icon.setAttribute("data-l10n-name", "icon");
-    icon.className = "inline-icon";
-    message.appendChild(icon);
-    messageFragment.appendChild(message);
-    win.document.l10n.setAttributes(
-      message,
-      "restore-session-startup-suggestion-message"
-    );
-
-    const buttons = [
-      {
-        "l10n-id": "restore-session-startup-suggestion-button",
-        primary: true,
-        callback: () => {
-          win.PanelUI.selectAndMarkItem([
-            "appMenu-history-button",
-            "appMenu-restoreSession",
-          ]);
-        },
-      },
-    ];
-
-    const notifyBox = win.gBrowser.getNotificationBox();
-    const notification = await notifyBox.appendNotification(
-      "startup-restore-session-suggestion",
-      {
-        label: messageFragment,
-        priority: notifyBox.PRIORITY_INFO_MEDIUM,
-      },
-      buttons
-    );
-    // Don't allow it to be immediately hidden:
-    notification.timeout = Date.now() + 3000;
-  },
-
-  /**
    * Open preferences even if there are no open windows.
    */
   _openPreferences(...args) {
-    let chromeWindow = lazy.BrowserWindowTracker.getTopWindow();
+    let chromeWindow = lazy.BrowserWindowTracker.getTopWindow({
+      allowFromInactiveWorkspace: true,
+    });
     if (chromeWindow) {
       chromeWindow.openPreferences(...args);
       return;

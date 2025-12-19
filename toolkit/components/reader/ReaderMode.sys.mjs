@@ -248,6 +248,7 @@ export var ReaderMode = {
     }
 
     let article = await this._readerParse(doc);
+    article.textPlainDoc = result.textPlainDoc;
     // If we have to redirect, reject to the caller with the parsed article,
     // so we can update the URL before displaying it.
     if (newURL) {
@@ -328,6 +329,9 @@ export var ReaderMode = {
         );
 
         let result = { doc };
+        if (xhr.responseType != "document") {
+          result.textPlainDoc = true;
+        }
         if (responseURL != givenURL) {
           result.newURL = xhr.responseURL;
         }
@@ -527,21 +531,19 @@ export var ReaderMode = {
     return readingSpeed.get(lang) || readingSpeed.get("en");
   },
   /**
-   *
    * Check if the document to be parsed is text document.
+   *
    * @param doc the doc object to be parsed.
    * @return boolean
-   *
    */
   _isDocumentPlainText(doc) {
     return doc.contentType == "text/plain";
   },
   /**
-   *
    * The document to be parsed is text document and is converted to HTML format.
+   *
    * @param doc the doc object to be parsed.
    * @return doc
-   *
    */
   _convertPlainTextDocument(doc) {
     let preTag = doc.querySelector("pre");

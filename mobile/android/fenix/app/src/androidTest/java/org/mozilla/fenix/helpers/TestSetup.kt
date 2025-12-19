@@ -62,7 +62,11 @@ open class TestSetup {
             // This will only work in case of a RetryTestRule execution.
             AppAndSystemHelper.clearDownloadsFolder()
             // Make sure the Wifi and Mobile Data connections are on.
-            AppAndSystemHelper.setNetworkEnabled(true)
+
+            // Currently disabled due to network connection problems encountered on Firebase
+            // despite having all UI tests that interact with network connection settings disabled
+            // AppAndSystemHelper.setNetworkEnabled(true)
+
             // Make sure that the data saver system setting is disabled.
             enableDataSaverSystemSetting(enabled = false)
             // Clear bookmarks left after a failed test, before a retry.
@@ -71,6 +75,8 @@ open class TestSetup {
             AppAndSystemHelper.deleteHistoryStorage()
             // Clear permissions left after a failed test, before a retry.
             AppAndSystemHelper.deletePermissionsStorage()
+            // Make sure the debug drawer is hidden, to not interfere with UI elements
+            AppAndSystemHelper.disableDebugDrawer()
             // Get the network connection details, before a retry.
             runWithCondition(BuildConfig.DEBUG) {
                 getNetworkDetails()

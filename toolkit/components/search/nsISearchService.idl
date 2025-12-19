@@ -153,15 +153,13 @@ interface nsISearchEngine : nsISupports
   readonly attribute AString id;
 
   /**
+   * @deprecated: This should not be used for new telemetry. It is a combined
+   * field that contains multiple values. Report separate
+   * id/partner_code/other fields instead.
+   *
    * The identifier to use for this engine when submitting to telemetry.
    */
   readonly attribute AString telemetryId;
-
-  /**
-   * An optional unique identifier for this search engine within the context of
-   * the distribution, as provided by the distributing entity.
-   */
-  readonly attribute AString identifier;
 
   /**
    * Anonymized path of where we initially loaded the engine from.
@@ -169,10 +167,17 @@ interface nsISearchEngine : nsISupports
   readonly attribute AString loadPath;
 
   /**
-   * Whether or not this engine is provided by the application, e.g. it is
-   * in the list of configured search engines.
+   * Whether this engine is an app provided config engine, i.e., it comes
+   * from the search-config-v2 and is pre-configured based on the user's
+   * environment such as locale and region.
    */
   readonly attribute boolean isAppProvided;
+
+  /**
+   * Whether this engine is a config search engine, i.e., it comes
+   * from the search-config-v2.
+   */
+  readonly attribute boolean isConfigEngine;
 
   /**
    * Whether or not this engine is an in-memory only search engine.
@@ -273,6 +278,8 @@ interface nsISearchService : nsISupports
     CHANGE_REASON_UITOUR = 0xC,
     CHANGE_REASON_ENGINE_UPDATE = 0xD,
     CHANGE_REASON_USER_PRIVATE_PREF_ENABLED = 0xE,
+    CHANGE_REASON_ENGINE_IGNORE_LIST_UPDATED = 0xF,
+    CHANGE_REASON_NO_EXISTING_DEFAULT_ENGINE = 0x10,
   };
 
   /**
@@ -338,10 +345,14 @@ interface nsISearchService : nsISupports
    *        icon. This value may be overridden by an icon specified in the
    *        engine description file.
    *
+   * @param originAttributes [optional]
+            The origin attributes to use to load this manifest.
+   *
    * @throws NS_ERROR_FAILURE if the description file cannot be successfully
    *         loaded.
    */
-  Promise addOpenSearchEngine(in AString engineURL, in AString iconURL);
+  Promise addOpenSearchEngine(in AString engineURL, in AString iconURL,
+                              [optional] in jsval originAttributes);
 
   /**
    * Adds a new search engine defined by the user.
@@ -429,13 +440,6 @@ interface nsISearchService : nsISupports
   Promise getAppProvidedEngines();
 
   /**
-   * Returns an array of search engines installed by a given extension.
-   *
-   * @returns an array of nsISearchEngine objects.
-   */
-  Promise getEnginesByExtensionID(in AString extensionID);
-
-  /**
    * Returns an engine definition if it's search url matches the host provided.
    *
    * @param   host
@@ -486,7 +490,9 @@ interface nsISearchService : nsISupports
    * @param  engine
    *         The engine to remove.
    */
-  Promise removeEngine(in nsISearchEngine engine);
+  Promise removeEngine(
+    in nsISearchEngine engine,
+    [optional] in unsigned short changeReason);
 
   /**
    * Notify nsSearchService that an extension has been removed. Removes any
@@ -511,13 +517,13 @@ interface nsISearchService : nsISupports
 
   /**
    * The currently active search engine.
-   * Unless the application doesn't ship any search plugin, this should never
+   * Unless the application doesn't ship any search engine, this should never
    * be null. If the currently active engine is removed, this attribute will
    * fallback first to the application default engine if it's not hidden, then to
    * the first visible engine, and as a last resort it will unhide the app
    * default engine.
    */
-  attribute nsISearchEngine defaultEngine;
+  readonly attribute nsISearchEngine defaultEngine;
 
   Promise getDefault();
   Promise setDefault(in nsISearchEngine engine, in unsigned short changeReason);
@@ -526,7 +532,7 @@ interface nsISearchService : nsISupports
    * The currently active search engine for private browsing mode.
    * @see defaultEngine.
    */
-  attribute nsISearchEngine defaultPrivateEngine;
+  readonly attribute nsISearchEngine defaultPrivateEngine;
 
   Promise getDefaultPrivate();
   Promise setDefaultPrivate(
@@ -540,17 +546,16 @@ interface nsISearchService : nsISupports
 
   /**
    * Allows the add-on manager to discover if a WebExtension based search engine
-   * may change the default to an application provided search engine.
+   * may change the default to a config search engine.
    * If that WebExtension is on the allow list, then it will override the
    * built-in engine's urls and parameters.
    *
    *  @param extension
-   *        The extension to load from.
+   *   The extension to load from.
    *  @returns An object with two booleans:
-   *        - canChangeToAppProvided: indicates if the WebExtension engine may
-   *            set the named engine as default e.g. it is application provided.
-   *        - canInstallEngine: indicates if the WebExtension engine may be
-   *            installed, e.g. it is not an app-provided engine.
+   *   canChangeToConfigEngine: indicates if the WebExtension engine may set the
+   *     already installed config search engine as default.
+   *   canInstallEngine: indicates if the WebExtension engine may be installed.
    */
   Promise maybeSetAndOverrideDefault(in jsval extension);
 
@@ -592,14 +597,4 @@ interface nsISearchService : nsISupports
    *        "https://www.google.com/search?q=terms".
    */
   nsISearchParseSubmissionResult parseSubmissionURL(in AString url);
-
-  /**
-   * Returns a list of alternate domains for a given search engine domain.
-   *
-   * @param domain
-   *        The domain of the search engine.
-   * @returns {Array}
-   *          An array which contains all alternate domains.
-   */
-  Array<ACString> getAlternateDomains(in ACString domain);
 };

@@ -6,9 +6,9 @@
 
 #include "nsFrameList.h"
 
-#include "mozilla/intl/BidiEmbeddingLevel.h"
 #include "mozilla/ArenaObjectID.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/intl/BidiEmbeddingLevel.h"
 #include "nsBidiPresUtils.h"
 #include "nsContainerFrame.h"
 #include "nsGkAtoms.h"
@@ -186,7 +186,7 @@ nsIFrame* nsFrameList::FrameAt(int32_t aIndex) const {
   return frame;
 }
 
-int32_t nsFrameList::IndexOf(nsIFrame* aFrame) const {
+int32_t nsFrameList::IndexOf(const nsIFrame* aFrame) const {
   int32_t count = 0;
   for (nsIFrame* f = mFirstChild; f; f = f->GetNextSibling()) {
     if (f == aFrame) {
@@ -455,12 +455,12 @@ const char* ChildListName(FrameChildListID aListID) {
   switch (aListID) {
     case FrameChildListID::Principal:
       return "";
-    case FrameChildListID::Caption:
-      return "CaptionList";
     case FrameChildListID::ColGroup:
       return "ColGroupList";
     case FrameChildListID::Absolute:
       return "AbsoluteList";
+    case FrameChildListID::PushedAbsolute:
+      return "PushedAbsoluteList";
     case FrameChildListID::Fixed:
       return "FixedList";
     case FrameChildListID::Overflow:
@@ -473,12 +473,10 @@ const char* ChildListName(FrameChildListID aListID) {
       return "OverflowOutOfFlowList";
     case FrameChildListID::Float:
       return "FloatList";
-    case FrameChildListID::Bullet:
-      return "BulletList";
+    case FrameChildListID::Marker:
+      return "MarkerList";
     case FrameChildListID::PushedFloats:
       return "PushedFloatsList";
-    case FrameChildListID::Backdrop:
-      return "BackdropList";
     case FrameChildListID::NoReflowPrincipal:
       return "NoReflowPrincipalList";
   }

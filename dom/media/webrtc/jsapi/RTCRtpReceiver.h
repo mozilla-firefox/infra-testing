@@ -5,21 +5,22 @@
 #ifndef _RTCRtpReceiver_h_
 #define _RTCRtpReceiver_h_
 
-#include "nsISupports.h"
-#include "nsWrapperCache.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/StateMirroring.h"
-#include "mozilla/Maybe.h"
+#include <vector>
+
+#include "PerformanceRecorder.h"
+#include "RTCStatsReport.h"
 #include "js/RootingAPI.h"
 #include "libwebrtcglue/RtpRtcpConfig.h"
-#include "nsTArray.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/StateMirroring.h"
 #include "mozilla/dom/RTCRtpCapabilitiesBinding.h"
 #include "mozilla/dom/RTCRtpParametersBinding.h"
 #include "mozilla/dom/RTCStatsReportBinding.h"
-#include "PerformanceRecorder.h"
-#include "RTCStatsReport.h"
+#include "nsISupports.h"
+#include "nsTArray.h"
+#include "nsWrapperCache.h"
 #include "transportbridge/MediaPipeline.h"
-#include <vector>
 
 class nsPIDOMWindowInner;
 
@@ -166,6 +167,8 @@ class RTCRtpReceiver : public nsISupports,
 
   const RTCStatsTimestampMaker* GetTimestampMaker() const;
 
+  Maybe<gfx::IntSize> ReceivingSize() const;
+
  private:
   virtual ~RTCRtpReceiver();
 
@@ -215,6 +218,8 @@ class RTCRtpReceiver : public nsISupports,
   Canonical<Maybe<RtpRtcpConfig>> mVideoRtpRtcpConfig;
   Canonical<bool> mReceiving;
   Canonical<RefPtr<FrameTransformerProxy>> mFrameTransformerProxy;
+
+  Mirror<Maybe<gfx::IntSize>> mReceivingSize;
 };
 
 }  // namespace dom

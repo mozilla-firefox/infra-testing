@@ -9,16 +9,18 @@ from taskgraph.util.templates import merge
 from ..build_config import get_apk_based_projects, get_components
 
 
-def components_loader(kind, path, config, params, loaded_tasks):
+def components_loader(kind, path, config, params, loaded_tasks, write_artifacts):
     """Loader that yields one task per android-component.
 
     Android-components are read from android-component/.buildconfig.yml
     """
     config["tasks"] = _get_components_tasks(config)
-    return base_loader(kind, path, config, params, loaded_tasks)
+    return base_loader(kind, path, config, params, loaded_tasks, write_artifacts)
 
 
-def components_and_apks_loader(kind, path, config, params, loaded_tasks):
+def components_and_apks_loader(
+    kind, path, config, params, loaded_tasks, write_artifacts
+):
     """Loader that yields one task per android-component and per apk-based project.
 
     For instance focus-android yields one task.
@@ -30,24 +32,33 @@ def components_and_apks_loader(kind, path, config, params, loaded_tasks):
     components_tasks = _get_components_tasks(config, for_build_type="regular")
     apks_tasks = _get_apks_tasks(config)
     config["tasks"] = merge(config["tasks"], components_tasks, apks_tasks)
-    return base_loader(kind, path, config, params, loaded_tasks)
+    return base_loader(kind, path, config, params, loaded_tasks, write_artifacts)
+
+
+def get_component_name(component):
+    prefix, _, name = component["name"].partition(":")
+    if prefix == "components":
+        return name
+    return component["name"]
 
 
 def _get_components_tasks(config, for_build_type=None):
     not_for_components = config.get("not-for-components", [])
     tasks = {
         "{}{}".format(
-            "" if build_type == "regular" else build_type + "-", component["name"]
+            "" if build_type == "regular" else build_type + "-",
+            get_component_name(component),
         ): {
             "attributes": {
                 "build-type": build_type,
-                "component": component["name"],
+                "component": get_component_name(component),
+                "gradle-project": component["name"],
             }
         }
         for component in get_components()
         for build_type in ("regular", "nightly", "beta", "release")
         if (
-            component["name"] not in not_for_components
+            get_component_name(component) not in not_for_components
             and (component["shouldPublish"] or build_type == "regular")
             and (for_build_type is None or build_type == for_build_type)
         )

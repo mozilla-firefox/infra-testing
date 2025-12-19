@@ -540,6 +540,32 @@ crash:
     expires: never
     telemetry_mirror: h#PROCESS_CRASH_SUBMIT_ATTEMPT
 
+  submit_success:
+    type: dual_labeled_counter
+    description: >
+      The submission status when main/plugin/content crashes are submitted. 1 is
+      success, 0 is failure. Keyed on the CrashManager Crash.type.
+
+      This metric was generated to correspond to the Legacy Telemetry boolean
+      histogram PROCESS_CRASH_SUBMIT_SUCCESS.
+    dual_labels:
+      key:
+        description: The crash type.
+      category:
+        labels:
+          - "false"
+          - "true"
+        description: Boolean
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1960567
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1960567
+    notification_emails:
+      - crash-reporting-wg@mozilla.org
+      - stability@mozilla.org
+    expires: never
+    telemetry_mirror: PROCESS_CRASH_SUBMIT_SUCCESS
+
 crash.windows:
   error_reporting:
     type: boolean
@@ -665,6 +691,40 @@ memory:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1830098
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1830098
+    data_sensitivity:
+      - technical
+    expires: never
+    send_in_pings:
+      - crash
+
+  js_large_allocation_failure:
+    type: string
+    description: >
+      A large allocation couldn't be satisfied: What was
+      its state when the crash happened.
+    notification_emails:
+      - mgaudet@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1964092
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1964092
+    data_sensitivity:
+      - technical
+    expires: never
+    send_in_pings:
+      - crash
+
+  js_out_of_memory:
+    type: string
+    description: >
+      A small allocation couldn't be satisfied: What was
+      its state when the crash happened.
+    notification_emails:
+      - mgaudet@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1964092
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1964092
     data_sensitivity:
       - technical
     expires: never
@@ -996,3 +1056,23 @@ crash_submission:
     data_sensitivity:
       - technical
     expires: never
+  failure_event:
+    type: event
+    description: A crash report failed to be submitted.
+    notification_emails:
+      - crash-reporting-wg@mozilla.org
+      - stability@mozilla.org
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1976485
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1976485
+    data_sensitivity:
+      - technical
+    expires: never
+    extra_keys:
+      id:
+        description: A unique identifier for the crash.
+        type: string
+      reason:
+        description: The reason why the crash failed to be submitted.
+        type: string

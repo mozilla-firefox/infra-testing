@@ -8,14 +8,14 @@
 
 #include "Rule.h"
 
+#include "mozilla/HoldDropJSObjects.h"
+#include "mozilla/ServoBindings.h"
 #include "mozilla/css/GroupRule.h"
 #include "mozilla/dom/CSSImportRule.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentOrShadowRoot.h"
 #include "nsCCUncollectableMarker.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/HoldDropJSObjects.h"
 #include "nsWrapperCacheInlines.h"
-#include "mozilla/ServoBindings.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -50,19 +50,19 @@ bool Rule::IsKnownLive() const {
 }
 
 void Rule::UnlinkDeclarationWrapper(nsWrapperCache& aDecl) {
-  // We have to be a bit careful here.  We have two separate nsWrapperCache
+  // We have to be a bit careful here. We have two separate nsWrapperCache
   // instances, aDecl and this, that both correspond to the same CC participant:
-  // this.  If we just used ReleaseWrapper() on one of them, that would
+  // this. If we just used ReleaseWrapper() on one of them, that would
   // unpreserve that one wrapper, then trace us with a tracer that clears JS
   // things, and we would clear the wrapper on the cache that has not
-  // unpreserved the wrapper yet.  That would violate the invariant that the
+  // unpreserved the wrapper yet. That would violate the invariant that the
   // cache keeps caching the wrapper until the wrapper dies.
   //
-  // So we reimplement a modified version of nsWrapperCache::ReleaseWrapper here
-  // that unpreserves both wrappers before doing any clearing.
+  // So instead we use a special case version of ReleaseWrapper to unpreserve
+  // both wrappers before doing any clearing.
   bool needDrop = PreservingWrapper() || aDecl.PreservingWrapper();
-  SetPreservingWrapper(false);
-  aDecl.SetPreservingWrapper(false);
+  ReleaseWrapperWithoutDrop();
+  aDecl.ReleaseWrapperWithoutDrop();
   if (needDrop) {
     DropJSObjects(this);
   }

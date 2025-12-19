@@ -1526,6 +1526,48 @@ nsXPCComponents_Utils::SetSandboxMetadata(HandleValue sandboxVal,
 }
 
 NS_IMETHODIMP
+nsXPCComponents_Utils::SetSandboxLocaleOverride(HandleValue sandboxVal,
+                                                const char* locale,
+                                                JSContext* cx) {
+  if (!sandboxVal.isObject()) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  RootedObject sandbox(cx, &sandboxVal.toObject());
+  // We only care about sandboxes here, so CheckedUnwrapStatic is fine.
+  sandbox = js::CheckedUnwrapStatic(sandbox);
+  if (!sandbox || !xpc::IsSandbox(sandbox)) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  nsresult rv = xpc::SetSandboxLocaleOverride(cx, sandbox, locale);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsXPCComponents_Utils::SetSandboxTimezoneOverride(HandleValue sandboxVal,
+                                                  const char* timezone,
+                                                  JSContext* cx) {
+  if (!sandboxVal.isObject()) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  RootedObject sandbox(cx, &sandboxVal.toObject());
+  // We only care about sandboxes here, so CheckedUnwrapStatic is fine.
+  sandbox = js::CheckedUnwrapStatic(sandbox);
+  if (!sandbox || !xpc::IsSandbox(sandbox)) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  nsresult rv = xpc::SetSandboxTimezoneOverride(cx, sandbox, timezone);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsXPCComponents_Utils::IsESModuleLoaded(const nsACString& aResourceURI,
                                         bool* retval) {
   RefPtr moduleloader = mozJSModuleLoader::Get();
@@ -1695,7 +1737,7 @@ struct IntentionallyLeakedObject {
 NS_IMETHODIMP
 nsXPCComponents_Utils::IntentionallyLeak() {
 #ifdef NS_FREE_PERMANENT_DATA
-  Unused << new IntentionallyLeakedObject();
+  (void)new IntentionallyLeakedObject();
   return NS_OK;
 #else
   return NS_ERROR_NOT_IMPLEMENTED;
@@ -2306,7 +2348,7 @@ NS_IMETHODIMP
 nsXPCComponents_Utils::ReadUTF8File(nsIFile* aFile, nsACString& aResult) {
   NS_ENSURE_TRUE(aFile, NS_ERROR_INVALID_ARG);
 
-  MOZ_TRY_VAR(aResult, URLPreloader::ReadFile(aFile));
+  aResult = MOZ_TRY(URLPreloader::ReadFile(aFile));
   return NS_OK;
 }
 
@@ -2314,14 +2356,7 @@ NS_IMETHODIMP
 nsXPCComponents_Utils::ReadUTF8URI(nsIURI* aURI, nsACString& aResult) {
   NS_ENSURE_TRUE(aURI, NS_ERROR_INVALID_ARG);
 
-  MOZ_TRY_VAR(aResult, URLPreloader::ReadURI(aURI));
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsXPCComponents_Utils::Now(double* aRetval) {
-  TimeStamp start = TimeStamp::ProcessCreation();
-  *aRetval = (TimeStamp::Now() - start).ToMilliseconds();
+  aResult = MOZ_TRY(URLPreloader::ReadURI(aURI));
   return NS_OK;
 }
 

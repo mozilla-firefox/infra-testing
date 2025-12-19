@@ -9,17 +9,12 @@ import os
 from collections import defaultdict
 from datetime import datetime
 
-import six
-
 from .. import base
 
 html = None
 raw = None
 
-if six.PY2:
-    from cgi import escape
-else:
-    from html import escape
+from html import escape
 
 base_path = os.path.split(__file__)[0]
 
@@ -223,14 +218,13 @@ class HTMLFormatter(base.BaseFormatter):
                 separator = line.startswith(" " * 10)
                 if separator:
                     log.append(line[:80])
+                elif (
+                    line.lower().find("error") != -1
+                    or line.lower().find("exception") != -1
+                ):
+                    log.append(html.span(raw(escape(line)), class_="error"))
                 else:
-                    if (
-                        line.lower().find("error") != -1
-                        or line.lower().find("exception") != -1
-                    ):
-                        log.append(html.span(raw(escape(line)), class_="error"))
-                    else:
-                        log.append(raw(escape(line)))
+                    log.append(raw(escape(line)))
                 log.append(html.br())
             additional_html.append(log)
 

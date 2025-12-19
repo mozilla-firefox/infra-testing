@@ -5,20 +5,19 @@
 import {
   UrlbarProvider,
   UrlbarUtils,
-} from "resource:///modules/UrlbarUtils.sys.mjs";
+} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   ContentRelevancyManager:
     "resource://gre/modules/ContentRelevancyManager.sys.mjs",
-  QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
-  SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarProviderSearchSuggestions:
-    "resource:///modules/UrlbarProviderSearchSuggestions.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
-  UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.sys.mjs",
+  QuickSuggest: "moz-src:///browser/components/urlbar/QuickSuggest.sys.mjs",
+  SearchUtils: "moz-src:///toolkit/components/search/SearchUtils.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarSearchUtils:
+    "moz-src:///browser/components/urlbar/UrlbarSearchUtils.sys.mjs",
 });
 
 // Used for suggestions that don't otherwise have a score.
@@ -28,20 +27,9 @@ const DEFAULT_SUGGESTION_SCORE = 0.2;
  * A provider that returns a suggested url to the user based on what
  * they have currently typed so they can navigate directly.
  */
-class ProviderQuickSuggest extends UrlbarProvider {
+export class UrlbarProviderQuickSuggest extends UrlbarProvider {
   /**
-   * Returns the name of this provider.
-   *
-   * @returns {string} the name of this provider.
-   */
-  get name() {
-    return "UrlbarProviderQuickSuggest";
-  }
-
-  /**
-   * The type of the provider.
-   *
-   * @returns {UrlbarUtils.PROVIDER_TYPE}
+   * @returns {Values<typeof UrlbarUtils.PROVIDER_TYPE>}
    */
   get type() {
     return UrlbarUtils.PROVIDER_TYPE.NETWORK;
@@ -53,7 +41,7 @@ class ProviderQuickSuggest extends UrlbarProvider {
    *   suggestions require scores so they can be ranked. Scores are numeric
    *   values in the range [0, 1].
    */
-  get DEFAULT_SUGGESTION_SCORE() {
+  static get DEFAULT_SUGGESTION_SCORE() {
     return DEFAULT_SUGGESTION_SCORE;
   }
 
@@ -63,9 +51,8 @@ class ProviderQuickSuggest extends UrlbarProvider {
    * with this provider, to save on resources.
    *
    * @param {UrlbarQueryContext} queryContext The query context object
-   * @returns {boolean} Whether this provider should be invoked for the search.
    */
-  isActive(queryContext) {
+  async isActive(queryContext) {
     // If the sources don't include search or the user used a restriction
     // character other than search, don't allow any suggestions.
     if (
@@ -100,13 +87,11 @@ class ProviderQuickSuggest extends UrlbarProvider {
   }
 
   /**
-   * Starts querying. Extended classes should return a Promise resolved when the
-   * provider is done searching AND returning results.
+   * Starts querying.
    *
-   * @param {UrlbarQueryContext} queryContext The query context object
-   * @param {Function} addCallback Callback invoked by the provider to add a new
-   *        result. A UrlbarResult should be passed to it.
-   * @returns {Promise}
+   * @param {UrlbarQueryContext} queryContext
+   * @param {(provider: UrlbarProvider, result: UrlbarResult) => void} addCallback
+   *   Callback invoked by the provider to add a new result.
    */
   async startQuery(queryContext, addCallback) {
     let instance = this.queryInstance;
@@ -181,11 +166,8 @@ class ProviderQuickSuggest extends UrlbarProvider {
         suggestion.score = DEFAULT_SUGGESTION_SCORE;
       }
 
-      // Step 2: Apply relevancy ranking. For now we only do this for Merino
-      // suggestions, but we may expand it in the future.
-      if (suggestion.source == "merino") {
-        await this.#applyRanking(suggestion);
-      }
+      // Step 2: Apply relevancy ranking.
+      await this.#applyRanking(suggestion);
 
       // Step 3: Apply score overrides defined in `quickSuggestScoreMap`. It
       // maps telemetry types to scores.
@@ -265,7 +247,7 @@ class ProviderQuickSuggest extends UrlbarProvider {
     let { result } = details;
 
     // Delegate to the result's feature if there is one.
-    let feature = lazy.QuickSuggest.getFeatureByResult(details.result);
+    let feature = lazy.QuickSuggest.getFeatureByResult(result);
     if (feature) {
       feature.onEngagement(
         queryContext,
@@ -293,6 +275,18 @@ class ProviderQuickSuggest extends UrlbarProvider {
   }
 
   /**
+   * This is called only for dynamic result types.
+   *
+   * @param {UrlbarResult} result The result whose view will be updated.
+   * @returns {object} An object of view template.
+   */
+  getViewTemplate(result) {
+    return lazy.QuickSuggest.getFeatureByResult(result)?.getViewTemplate?.(
+      result
+    );
+  }
+
+  /**
    * This is called only for dynamic result types, when the urlbar view updates
    * the view of one of the results of the provider.  It should return an object
    * describing the view update.
@@ -306,6 +300,15 @@ class ProviderQuickSuggest extends UrlbarProvider {
     );
   }
 
+  /**
+   * Gets the list of commands that should be shown in the result menu for a
+   * given result from the provider. All commands returned by this method should
+   * be handled by implementing `onEngagement()` with the possible exception of
+   * commands automatically handled by the urlbar, like "help".
+   *
+   * @param {UrlbarResult} result
+   *   The menu will be shown for this result.
+   */
   getResultCommands(result) {
     return lazy.QuickSuggest.getFeatureByResult(result)?.getResultCommands?.(
       result
@@ -350,25 +353,52 @@ class ProviderQuickSuggest extends UrlbarProvider {
       return null;
     }
 
-    // Set important properties that every Suggest result should have. See
-    // `QuickSuggest.getFeatureBySource()` for `source` and `provider` values.
-    // If the suggestion isn't managed by a feature, then it's from Merino and
-    // `is_sponsored` is true if it's sponsored. (Merino uses snake_case.)
+    // Set important properties that every Suggest result should have.
+
+    // `source` indicates the Suggest backend the suggestion came from.
     result.payload.source = suggestion.source;
+
+    // `provider` depends on `source` and generally indicates the type of
+    // Suggest suggestion. See `QuickSuggest.getFeatureBySource()`.
     result.payload.provider = suggestion.provider;
-    result.payload.telemetryType = this.#getSuggestionTelemetryType(suggestion);
-    result.payload.isSponsored = feature
-      ? feature.isSuggestionSponsored(suggestion)
-      : !!suggestion.is_sponsored;
-    if (suggestion.source == "rust") {
-      // `suggestionObject` is passed back into the Rust component on dismissal.
-      result.payload.suggestionObject = suggestion;
+
+    // Set `isSponsored` unless the feature already did.
+    if (!result.payload.hasOwnProperty("isSponsored")) {
+      result.payload.isSponsored = !!feature?.isSuggestionSponsored(suggestion);
     }
 
-    // Handle icons here so each feature doesn't have to do it, but use `||=` to
-    // let them do it if they need to.
+    // For most Suggest results, the result type recorded in urlbar telemetry is
+    // `${source}_${telemetryType}` (the payload values).
+    result.payload.telemetryType = this.#getSuggestionTelemetryType(suggestion);
+
+    // Handle icons here unless the feature already did.
     result.payload.icon ||= suggestion.icon;
     result.payload.iconBlob ||= suggestion.icon_blob;
+
+    switch (suggestion.source) {
+      case "merino":
+        // Dismissals of Merino suggestions are recorded in the Rust component's
+        // database. Each dismissal is recorded as a string value called a key.
+        // If Merino includes `dismissal_key` in the suggestion, use that as the
+        // key. Otherwise we'll use its URL. See `QuickSuggest.dismissResult()`.
+        if (
+          suggestion.dismissal_key &&
+          !result.payload.hasOwnProperty("dismissalKey")
+        ) {
+          result.payload.dismissalKey = suggestion.dismissal_key;
+        }
+        break;
+      case "rust":
+        // `suggestionObject` is passed back to the Rust component on dismissal.
+        // See `QuickSuggest.dismissResult()`.
+        result.payload.suggestionObject = suggestion;
+        // `suggestionType` is defined only for dynamic Rust suggestions and is
+        // the dynamic type. Don't add an undefined property to other payloads.
+        if (suggestion.suggestionType) {
+          result.payload.suggestionType = suggestion.suggestionType;
+        }
+        break;
+    }
 
     // Set the appropriate suggested index and related properties unless the
     // feature did it already.
@@ -385,7 +415,9 @@ class ProviderQuickSuggest extends UrlbarProvider {
           );
         } else if (
           lazy.UrlbarPrefs.get("showSearchSuggestionsFirst") &&
-          lazy.UrlbarProviderSearchSuggestions.isActive(queryContext) &&
+          (await this.queryInstance
+            .getProvider("UrlbarProviderSearchSuggestions")
+            ?.isActive(queryContext, this.queryInstance.controller)) &&
           lazy.UrlbarSearchUtils.getDefaultEngine(
             queryContext.isPrivate
           ).supportsResponseType(lazy.SearchUtils.URL_TYPE.SUGGEST_JSON)
@@ -412,11 +444,9 @@ class ProviderQuickSuggest extends UrlbarProvider {
    * Returns a new result for an unmanaged suggestion. An "unmanaged" suggestion
    * is a suggestion without a feature.
    *
-   * Merino is the only backend allowed to serve unmanaged suggestions, for a
-   * couple of reasons: (1) Some suggestion types aren't that complicated and
-   * can be handled in a default manner, for example dynamic Wikipedia
-   * suggestions. (2) It allows us to experiment with new suggestion types
-   * without requiring any changes to Firefox.
+   * Merino is the only backend allowed to serve unmanaged suggestions, and its
+   * "top_picks" provider is the only Merino provider recognized by this method.
+   * For everything else, the method returns null.
    *
    * @param {UrlbarQueryContext} queryContext
    *   The query context.
@@ -424,10 +454,10 @@ class ProviderQuickSuggest extends UrlbarProvider {
    *   The suggestion.
    * @returns {UrlbarResult|null}
    *   A new result for the suggestion or null if the suggestion is not from
-   *   Merino.
+   *   the Merino "top_picks" provider.
    */
   #makeUnmanagedResult(queryContext, suggestion) {
-    if (suggestion.source != "merino") {
+    if (suggestion.source != "merino" || suggestion.provider != "top_picks") {
       return null;
     }
 
@@ -435,35 +465,37 @@ class ProviderQuickSuggest extends UrlbarProvider {
     let payload = {
       url: suggestion.url,
       originalUrl: suggestion.original_url,
-      dismissalKey: suggestion.dismissal_key,
+      isSponsored: !!suggestion.is_sponsored,
       isBlockable: true,
       isManageable: true,
     };
 
+    let titleHighlights;
     if (suggestion.full_keyword) {
-      payload.title = suggestion.title;
-      payload.qsSuggestion = [
-        suggestion.full_keyword,
-        UrlbarUtils.HIGHLIGHT.SUGGESTED,
-      ];
+      let { value, highlights } =
+        lazy.QuickSuggest.getFullKeywordTitleAndHighlights({
+          tokens: queryContext.tokens,
+          highlightType: UrlbarUtils.HIGHLIGHT.SUGGESTED,
+          fullKeyword: suggestion.full_keyword,
+          title: suggestion.title,
+        });
+      payload.title = value;
+      titleHighlights = highlights;
     } else {
-      payload.title = [suggestion.title, UrlbarUtils.HIGHLIGHT.TYPED];
+      payload.title = suggestion.title;
+      titleHighlights = UrlbarUtils.HIGHLIGHT.TYPED;
       payload.shouldShowUrl = true;
     }
 
-    return Object.assign(
-      new lazy.UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.URL,
-        UrlbarUtils.RESULT_SOURCE.SEARCH,
-        ...lazy.UrlbarResult.payloadAndSimpleHighlights(
-          queryContext.tokens,
-          payload
-        )
-      ),
-      {
-        isBestMatch: !!suggestion.is_top_pick,
-      }
-    );
+    return new lazy.UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+      isBestMatch: !!suggestion.is_top_pick,
+      payload,
+      highlights: {
+        title: titleHighlights,
+      },
+    });
   }
 
   /**
@@ -521,10 +553,7 @@ class ProviderQuickSuggest extends UrlbarProvider {
 
     let score;
     try {
-      score = await lazy.ContentRelevancyManager.score(
-        suggestion.categories,
-        true // adjustment needed b/c Merino uses the original encoding
-      );
+      score = await lazy.ContentRelevancyManager.score(suggestion.categories);
     } catch (error) {
       Glean.suggestRelevance.status.failure.add(1);
       this.logger.error("Error updating suggestion score", error);
@@ -545,7 +574,7 @@ class ProviderQuickSuggest extends UrlbarProvider {
    *
    * @param {UrlbarResult} result
    *   The result to check.
-   * @returns {boolean}
+   * @returns {Promise<boolean>}
    *   Whether the result can be added.
    */
   async #canAddResult(result) {
@@ -564,10 +593,9 @@ class ProviderQuickSuggest extends UrlbarProvider {
     let feature = lazy.QuickSuggest.getFeatureByResult(result);
     if (
       !feature &&
-      ((result.payload.isSponsored &&
-        !lazy.UrlbarPrefs.get("suggest.quicksuggest.sponsored")) ||
-        (!result.payload.isSponsored &&
-          !lazy.UrlbarPrefs.get("suggest.quicksuggest.nonsponsored")))
+      (!lazy.UrlbarPrefs.get("suggest.quicksuggest.all") ||
+        (result.payload.isSponsored &&
+          !lazy.UrlbarPrefs.get("suggest.quicksuggest.sponsored")))
     ) {
       return false;
     }
@@ -585,5 +613,3 @@ class ProviderQuickSuggest extends UrlbarProvider {
     await this.#applyRanking(suggestion);
   }
 }
-
-export var UrlbarProviderQuickSuggest = new ProviderQuickSuggest();

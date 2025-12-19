@@ -7,12 +7,11 @@
 #ifndef mozilla_JSEventHandler_h_
 #define mozilla_JSEventHandler_h_
 
-#include "mozilla/Attributes.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/dom/EventHandlerBinding.h"
+#include "nsAtom.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsAtom.h"
 #include "nsIDOMEventListener.h"
 #include "nsIScriptContext.h"
 
@@ -144,16 +143,12 @@ class TypedEventHandler {
  * is expected to call Disconnect()!
  */
 
-#define NS_JSEVENTHANDLER_IID                        \
-  {                                                  \
-    0x4f486881, 0x1956, 0x4079, {                    \
-      0x8c, 0xa0, 0xf3, 0xbd, 0x60, 0x5c, 0xc2, 0x79 \
-    }                                                \
-  }
+#define NS_JSEVENTHANDLER_IID \
+  {0x4f486881, 0x1956, 0x4079, {0x8c, 0xa0, 0xf3, 0xbd, 0x60, 0x5c, 0xc2, 0x79}}
 
 class JSEventHandler : public nsIDOMEventListener {
  public:
-  NS_DECLARE_STATIC_IID_ACCESSOR(NS_JSEVENTHANDLER_IID)
+  NS_INLINE_DECL_STATIC_IID(NS_JSEVENTHANDLER_IID)
 
   JSEventHandler(dom::EventTarget* aTarget, nsAtom* aType,
                  const TypedEventHandler& aTypedHandler);
@@ -215,8 +210,6 @@ class JSEventHandler : public nsIDOMEventListener {
   RefPtr<nsAtom> mEventName;
   TypedEventHandler mTypedHandler;
 };
-
-NS_DEFINE_STATIC_IID_ACCESSOR(JSEventHandler, NS_JSEVENTHANDLER_IID)
 
 }  // namespace mozilla
 

@@ -7,7 +7,6 @@
 
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/Dafsa.h"
-#include "mozilla/RefPtr.h"
 #include "nsCOMPtr.h"
 #include "nsIDataStorage.h"
 #include "nsISiteSecurityService.h"
@@ -126,9 +125,6 @@ class nsSiteSecurityService : public nsISiteSecurityService {
   bool GetPreloadStatus(
       const nsACString& aHost,
       /*optional out*/ bool* aIncludeSubdomains = nullptr) const;
-  nsresult IsSecureHost(const nsACString& aHost,
-                        const OriginAttributes& aOriginAttributes,
-                        bool* aResult);
 
   nsresult GetWithMigration(const nsACString& aHostname,
                             const OriginAttributes& aOriginAttributes,

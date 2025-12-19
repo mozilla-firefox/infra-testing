@@ -12,12 +12,8 @@
 namespace mozilla {
 namespace psm {
 
-#define NS_PKCS11MODULEDB_CID                        \
-  {                                                  \
-    0xff9fbcd7, 0x9517, 0x4334, {                    \
-      0xb9, 0x7a, 0xce, 0xed, 0x78, 0x90, 0x99, 0x74 \
-    }                                                \
-  }
+#define NS_PKCS11MODULEDB_CID \
+  {0xff9fbcd7, 0x9517, 0x4334, {0xb9, 0x7a, 0xce, 0xed, 0x78, 0x90, 0x99, 0x74}}
 
 class PKCS11ModuleDB : public nsIPKCS11ModuleDB {
  public:
@@ -35,7 +31,7 @@ const nsLiteralCString kNSSInternalModuleName("NSS Internal PKCS #11 Module");
 const nsLiteralCString kOSClientCertsModuleName("OS Client Cert Module");
 const nsLiteralCString kRootModuleName("Builtin Roots Module");
 
-void CollectThirdPartyPKCS11ModuleTelemetry();
+void CollectThirdPartyPKCS11ModuleTelemetry(bool aIsInitialization = false);
 
 }  // namespace psm
 }  // namespace mozilla

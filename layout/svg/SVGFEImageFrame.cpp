@@ -8,10 +8,9 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/SVGObserverUtils.h"
 #include "mozilla/dom/SVGFEImageElement.h"
-#include "mozilla/dom/MutationEventBinding.h"
 #include "nsContainerFrame.h"
-#include "nsIFrame.h"
 #include "nsGkAtoms.h"
+#include "nsIFrame.h"
 #include "nsLiteralString.h"
 
 using namespace mozilla::dom;
@@ -51,7 +50,7 @@ class SVGFEImageFrame final : public nsIFrame {
 #endif
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
   void OnVisibilityChange(
       Visibility aNewVisibility,
@@ -112,7 +111,7 @@ void SVGFEImageFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
 
 nsresult SVGFEImageFrame::AttributeChanged(int32_t aNameSpaceID,
                                            nsAtom* aAttribute,
-                                           int32_t aModType) {
+                                           AttrModType aModType) {
   SVGFEImageElement* element = static_cast<SVGFEImageElement*>(GetContent());
   if (element->AttributeAffectsRendering(aNameSpaceID, aAttribute)) {
     MOZ_ASSERT(

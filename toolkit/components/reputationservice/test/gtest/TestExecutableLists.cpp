@@ -2,7 +2,6 @@
  * http://creativecommons.org/publicdomain/zero/3.0/ */
 
 #include "gtest/gtest.h"
-#include "mozilla/ArrayUtils.h"
 #include "nsLocalFileCommon.h"
 #include "ApplicationReputation.h"
 
@@ -241,6 +240,7 @@ static const char* const kTestFileExtensions[] = {
     ".tbz",       // Linux archive (bzip2)
     ".tbz2",      // Linux archive (bzip2)
     ".tcsh",      // Linux shell
+    ".terminal",  // Apple Terminal configuration files
     ".tgz",       // Linux archive (gzip)
     ".torrent",   // Bittorrent
     ".tpz",       // Linux archive (gzip)

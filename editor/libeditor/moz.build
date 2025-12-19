@@ -13,6 +13,8 @@ MOCHITEST_CHROME_MANIFESTS += ["tests/chrome.toml"]
 
 BROWSER_CHROME_MANIFESTS += ["tests/browser.toml"]
 
+TEST_DIRS += ["gtest"]
+
 EXPORTS.mozilla += [
     "EditAction.h",
     "EditorBase.h",
@@ -58,6 +60,9 @@ UNIFIED_SOURCES += [
     "HTMLEditorDeleteHandler.cpp",
     "HTMLEditorDocumentCommands.cpp",
     "HTMLEditorEventListener.cpp",
+    "HTMLEditorInsertLineBreakHandler.cpp",
+    "HTMLEditorInsertParagraphHandler.cpp",
+    "HTMLEditorMutationObserver.cpp",
     "HTMLEditorObjectResizer.cpp",
     "HTMLEditorState.cpp",
     "HTMLEditSubActionHandler.cpp",
@@ -70,6 +75,7 @@ UNIFIED_SOURCES += [
     "InternetCiter.cpp",
     "JoinNodesTransaction.cpp",
     "MoveNodeTransaction.cpp",
+    "MoveSiblingsTransaction.cpp",
     "PendingStyles.cpp",
     "PlaceholderTransaction.cpp",
     "ReplaceTextTransaction.cpp",

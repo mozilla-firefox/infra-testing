@@ -31,7 +31,7 @@ add_task(async function () {
   await waitUntil(() => requestsListStatus.title);
   await waitForDOMIfNeeded(requestItem, ".requests-list-timings-total");
 
-  verifyRequestItemTarget(
+  await verifyRequestItemTarget(
     document,
     getDisplayedRequests(store.getState()),
     getSortedRequests(store.getState())[0],
@@ -49,7 +49,7 @@ add_task(async function () {
     document.querySelectorAll(".request-list-item")[0]
   );
   await wait;
-  wait = waitForDOM(document, "#response-panel .CodeMirror-code");
+  wait = waitForDOM(document, "#response-panel .cm-content");
   clickOnSidebarTab(document, "response");
   await wait;
 

@@ -8,14 +8,17 @@
  * Care should be taken to keep it minimal as it can be run with browser initialization.
  */
 
+import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 import { createLazyLoaders } from "resource://devtools/client/performance-new/shared/typescript-lazy-load.sys.mjs";
 
 const lazy = createLazyLoaders({
   CustomizableUI: () =>
-    ChromeUtils.importESModule("resource:///modules/CustomizableUI.sys.mjs"),
+    ChromeUtils.importESModule(
+      "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs"
+    ),
   CustomizableWidgets: () =>
     ChromeUtils.importESModule(
-      "resource:///modules/CustomizableWidgets.sys.mjs"
+      "moz-src:///browser/components/customizableui/CustomizableWidgets.sys.mjs"
     ),
   PopupLogic: () =>
     ChromeUtils.importESModule(
@@ -28,6 +31,7 @@ const lazy = createLazyLoaders({
 });
 
 const WIDGET_ID = "profiler-button";
+const DROPMARKER_ID = "profiler-button-dropmarker";
 
 /**
  * Add the profiler button to the navbar.
@@ -58,6 +62,10 @@ function remove() {
  * @return {boolean}
  */
 function isInNavbar() {
+  if (AppConstants.MOZ_APP_NAME == "thunderbird") {
+    return false;
+  }
+
   const { CustomizableUI } = lazy.CustomizableUI();
   return Boolean(CustomizableUI.getPlacementOfWidget("profiler-button"));
 }
@@ -86,6 +94,7 @@ function ensureButtonInNavbar() {
 
 /**
  * Opens the popup for the profiler.
+ *
  * @param {Document} document
  */
 function openPopup(document) {
@@ -108,6 +117,7 @@ function openPopup(document) {
 /**
  * This function creates the widget definition for the CustomizableUI. It should
  * only be run if the profiler button is enabled.
+ *
  * @param {(isEnabled: boolean) => void} toggleProfilerKeyShortcuts
  * @return {void}
  */
@@ -269,6 +279,12 @@ function initialize(toggleProfilerKeyShortcuts) {
       // This class is needed to show the subview arrow when our button
       // is in the overflow menu.
       buttonElement.classList.add("subviewbutton-nav");
+
+      // Add l10n attributes for the dropmarker.
+      const dropmarker = node.querySelector("#" + DROPMARKER_ID);
+      if (dropmarker) {
+        document.l10n.setAttributes(dropmarker, DROPMARKER_ID);
+      }
 
       function setButtonActive() {
         document.l10n.setAttributes(

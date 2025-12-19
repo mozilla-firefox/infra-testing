@@ -8,12 +8,13 @@
 import copy
 import json
 import os
+import platform
 import warnings
 from abc import ABCMeta, abstractmethod
 from collections.abc import Iterable
 
 import filters
-import six
+from cmdline import ANDROID_APPS
 from logger.logger import RaptorLogger
 from utils import flatten
 
@@ -38,8 +39,7 @@ METRIC_BLOCKLIST = [
 ]
 
 
-@six.add_metaclass(ABCMeta)
-class PerftestOutput:
+class PerftestOutput(metaclass=ABCMeta):
     """Abstract base class to handle output of perftest results"""
 
     def __init__(
@@ -57,6 +57,8 @@ class PerftestOutput:
         self.subtest_alert_on = subtest_alert_on
         self.browser_name = None
         self.browser_version = None
+        self.os_name = platform.system()
+        self.os_platform_version = None
         self.extra_summary_methods = extra_summary_methods
 
     @abstractmethod
@@ -67,6 +69,14 @@ class PerftestOutput:
         # sets the browser metadata for the perfherder data
         self.browser_name = browser_name
         self.browser_version = browser_version
+
+    def _set_platform_version(self):
+        if self.os_name == "Windows":
+            self.os_platform_version = platform.uname().version
+        elif self.os_name == "Darwin":
+            self.os_platform_version = platform.mac_ver()[0]
+        else:  # Linux
+            self.os_platform_version = platform.release()
 
     def summarize_supporting_data(self):
         """
@@ -188,6 +198,13 @@ class PerftestOutput:
                 data["application"] = {"name": self.browser_name}
                 if self.browser_version:
                     data["application"]["version"] = self.browser_version
+
+            # Add os info only for desktop
+            if self.app not in ANDROID_APPS and self.os_name:
+                data["os"] = {"name": self.os_name}
+                self._set_platform_version()
+                if self.os_platform_version:
+                    self.data["os"]["platform_version"] = self.os_platform_version
             self.summarized_supporting_data.append(data)
 
         return
@@ -274,6 +291,15 @@ class PerftestOutput:
             self.summarized_results["application"] = {"name": self.browser_name}
             if self.browser_version:
                 self.summarized_results["application"]["version"] = self.browser_version
+
+        # Add os info only for desktop
+        if self.app not in ANDROID_APPS and self.os_name:
+            self.summarized_results["os"] = {"name": self.os_name}
+            self._set_platform_version()
+            if self.os_platform_version:
+                self.summarized_results["os"][
+                    "platform_version"
+                ] = self.os_platform_version
 
         total_perfdata = 0
         if output_perf_data:
@@ -379,7 +405,7 @@ class PerftestOutput:
             correctionFactor = 3
             results = _filter(vals)
 
-            # stylebench has 5 tests, each of these are made of up 5 subtests
+            # stylebench has 6 tests. Five of them are made of up 5 subtests
             #
             #   * Adding classes.
             #   * Removing classes.
@@ -411,11 +437,44 @@ class PerftestOutput:
             #
             # We receive 76 entries per test, which ads up to 380. We want to use
             # the 5 test entries, not the rest.
-            if len(results) != 380:
+            #
+            # Then there's the sixth "Dynamic media queries" test, which gives
+            # results for viewports in increments of 50px like:
+            #
+            #   Dynamic media queries/Resizing to 300px - 0/Sync
+            #   Dynamic media queries/Resizing to 300px - 0/Async
+            #   Dynamic media queries/Resizing to 300px - 0
+            #   Dynamic media queries/Resizing to 350px - 0/Sync
+            #   Dynamic media queries/Resizing to 350px - 0/Async
+            #   Dynamic media queries/Resizing to 350px - 0
+            #   ...
+            #   Dynamic media queries/Resizing to 800px - 0/Sync
+            #   Dynamic media queries/Resizing to 800px - 0/Async
+            #   Dynamic media queries/Resizing to 800px - 0
+            #   Dynamic media queries/Resizing to 350px - 1/Sync
+            #   Dynamic media queries/Resizing to 350px - 1/Async
+            #   Dynamic media queries/Resizing to 350px - 1
+            #   Dynamic media queries/Resizing to 400px - 1/Sync
+            #   Dynamic media queries/Resizing to 400px - 1/Async
+            #   Dynamic media queries/Resizing to 400px - 1
+            #   ...
+            #   Dynamic media queries/Resizing to 800px - 4/Sync
+            #   Dynamic media queries/Resizing to 800px - 4/Async
+            #   Dynamic media queries/Resizing to 800px - 4
+            #   Dynamic media queries <- What we want
+            #
+            # So len([300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800]) is 11.
+            #
+            # So, 11 (subtests) *
+            #     5 (repetitions) *
+            #     3 (entries per repetition (sync/async/sum)) =
+            #     165 entries for test before the sum.
+            EXPECTED_ENTRIES = 380 + 166
+            if len(results) != EXPECTED_ENTRIES:
                 raise Exception(
-                    "StyleBench requires 380 entries, found: %s instead" % len(results)
+                    f"StyleBench requires {EXPECTED_ENTRIES} entries, found: {len(results)} instead"
                 )
-            results = results[75::76]
+            results = results[:380][75::76] + [results[-1]]
             # pylint --py3k W1619
             return 60 * 1000 / filters.geometric_mean(results) / correctionFactor
 
@@ -688,9 +747,9 @@ class PerftestOutput:
                 )
 
         vals = []
-        for name, test in _subtests.items():
-            test["value"] = filters.mean(test["replicates"])
-            vals.append([test["value"], name])
+        for name, subtest_data in _subtests.items():
+            subtest_data["value"] = filters.mean(subtest_data["replicates"])
+            vals.append([subtest_data["value"], name])
 
         # pylint W1656
         return list(_subtests.values()), sorted(vals, reverse=True)

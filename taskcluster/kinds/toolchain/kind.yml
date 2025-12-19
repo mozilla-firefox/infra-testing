@@ -15,6 +15,7 @@ transforms:
     - gecko_taskgraph.transforms.task:transforms
 
 task-defaults:
+    run-on-repo-type: [hg]
     treeherder:
         kind: build
         platform: toolchains/opt
@@ -32,21 +33,27 @@ tasks-from:
     - clang-tidy.yml
     - clang.yml
     - compiler-rt.yml
+    - dxc.yml
     - dump-syms.yml
+    - embedded-uniffi-bindgen.yml
     - fix-stacks.yml
     - gcc.yml
     - geckodriver.yml
     - gn.yml
     - grcov.yml
     - hostutils.yml
+    - jj.yml
     - libunwind.yml
+    - libxml2.yml
     - llvm-symbolizer.yml
     - macos-sdk.yml
     - mingw.yml
     - minidump-stackwalk.yml
     - misc.yml
     - nasm.yml
+    - nimbus-fml.yml
     - node.yml
+    - onnx.yml
     - pkgconf.yml
     - python.yml
     - python-wheels.yml

@@ -8,7 +8,6 @@
 #define mozilla_extensions_ExtensionBrowserSettings_h
 
 #include "js/TypeDecls.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsCOMPtr.h"
@@ -67,6 +66,7 @@ class ExtensionBrowserSettings final : public nsISupports,
   ExtensionSetting* OverrideDocumentColors();
   ExtensionSetting* OverrideContentColorScheme();
   ExtensionSetting* UseDocumentFonts();
+  ExtensionSetting* VerticalTabs();
   ExtensionSetting* ZoomFullPage();
   ExtensionSetting* ZoomSiteSpecific();
 
@@ -97,6 +97,7 @@ class ExtensionBrowserSettings final : public nsISupports,
   RefPtr<ExtensionSetting> mOverrideDocumentColorsSetting;
   RefPtr<ExtensionSetting> mOverrideContentColorSchemeSetting;
   RefPtr<ExtensionSetting> mUseDocumentFontsSetting;
+  RefPtr<ExtensionSetting> mVerticalTabsSetting;
   RefPtr<ExtensionSetting> mZoomFullPageSetting;
   RefPtr<ExtensionSetting> mZoomSiteSpecificSetting;
   RefPtr<ExtensionBrowserSettingsColorManagement> mColorManagementNamespace;

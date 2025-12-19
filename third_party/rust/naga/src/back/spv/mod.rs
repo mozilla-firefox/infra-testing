@@ -5,6 +5,7 @@ Backend for [SPIR-V][spv] (Standard Portable Intermediate Representation).
 */
 
 mod block;
+mod f16_polyfill;
 mod helpers;
 mod image;
 mod index;
@@ -77,6 +78,8 @@ pub enum Error {
     Override,
     #[error(transparent)]
     ResolveArraySizeError(#[from] crate::proc::ResolveArraySizeError),
+    #[error("mapping of {0:?} is missing")]
+    MissingBinding(crate::ResourceBinding),
 }
 
 #[derive(Default)]
@@ -92,7 +95,7 @@ impl IdGenerator {
 #[derive(Debug, Clone)]
 pub struct DebugInfo<'a> {
     pub source_code: &'a str,
-    pub file_name: &'a std::path::Path,
+    pub file_name: &'a str,
     pub language: SourceLanguage,
 }
 
@@ -148,6 +151,12 @@ struct Function {
     signature: Option<Instruction>,
     parameters: Vec<FunctionArgument>,
     variables: crate::FastHashMap<Handle<crate::LocalVariable>, LocalVariable>,
+    /// Map from a local variable that is a ray query to its u32 tracker.
+    ray_query_initialization_tracker_variables:
+        crate::FastHashMap<Handle<crate::LocalVariable>, LocalVariable>,
+    /// Map from a local variable that is a ray query to its tracker for the t max.
+    ray_query_t_max_tracker_variables:
+        crate::FastHashMap<Handle<crate::LocalVariable>, LocalVariable>,
     /// List of local variables used as a counters to ensure that all loops are bounded.
     force_loop_bounding_vars: Vec<LocalVariable>,
 
@@ -275,6 +284,7 @@ impl LocalImageType {
                 flags: make_flags(false, ImageTypeFlags::empty()),
                 image_format: format.into(),
             },
+            crate::ImageClass::External => unimplemented!(),
         }
     }
 }
@@ -439,6 +449,16 @@ impl From<LocalType> for LookupType {
 struct LookupFunctionType {
     parameter_type_ids: Vec<Word>,
     return_type_id: Word,
+}
+
+#[derive(Debug, PartialEq, Clone, Hash, Eq)]
+enum LookupRayQueryFunction {
+    Initialize,
+    Proceed,
+    GenerateIntersection,
+    ConfirmIntersection,
+    GetVertexPositions { committed: bool },
+    GetIntersection { committed: bool },
 }
 
 #[derive(Debug)]
@@ -681,6 +701,21 @@ struct BlockContext<'w> {
     expression_constness: ExpressionConstnessTracker,
 
     force_loop_bounding: bool,
+
+    /// Hash from an expression whose type is a ray query / pointer to a ray query to its tracker.
+    /// Note: this is sparse, so can't be a handle vec
+    ray_query_tracker_expr: crate::FastHashMap<Handle<crate::Expression>, RayQueryTrackers>,
+}
+
+#[derive(Clone, Copy)]
+struct RayQueryTrackers {
+    // Initialization tracker
+    initialized_tracker: Word,
+    // Tracks the t max from ray query initialize.
+    // Unlike HLSL, spir-v's equivalent getter for the current committed t has UB (instead of just
+    // returning t_max) if there was no previous hit (though in some places it treats the behaviour as
+    // defined), therefore we must track the tmax inputted into ray query initialize.
+    t_max_tracker: Word,
 }
 
 impl BlockContext<'_> {
@@ -737,12 +772,14 @@ pub struct Writer {
     /// The set of spirv extensions used.
     extensions_used: crate::FastIndexSet<&'static str>,
 
+    debug_strings: Vec<Instruction>,
     debugs: Vec<Instruction>,
     annotations: Vec<Instruction>,
     flags: WriterFlags,
     bounds_check_policies: BoundsCheckPolicies,
     zero_initialize_workgroup_memory: ZeroInitializeWorkgroupMemoryMode,
     force_loop_bounding: bool,
+    use_storage_input_output_16: bool,
     void_type: Word,
     //TODO: convert most of these into vectors, addressable by handle indices
     lookup_type: crate::FastHashMap<LookupType, Word>,
@@ -756,6 +793,7 @@ pub struct Writer {
     constant_ids: HandleVec<crate::Expression, Word>,
     cached_constants: crate::FastHashMap<CachedConstant, Word>,
     global_variables: HandleVec<crate::GlobalVariable, GlobalVariable>,
+    fake_missing_bindings: bool,
     binding_map: BindingMap,
 
     // Cached expressions are only meaningful within a BlockContext, but we
@@ -767,8 +805,15 @@ pub struct Writer {
     // Just a temporary list of SPIR-V ids
     temp_list: Vec<Word>,
 
-    ray_get_committed_intersection_function: Option<Word>,
-    ray_get_candidate_intersection_function: Option<Word>,
+    ray_query_functions: crate::FastHashMap<LookupRayQueryFunction, Word>,
+
+    /// F16 I/O polyfill manager for handling `f16` input/output variables
+    /// when `StorageInputOutput16` capability is not available.
+    io_f16_polyfills: f16_polyfill::F16IoPolyfill,
+
+    /// Non semantic debug printf extension `OpExtInstImport`
+    debug_printf: Option<Word>,
+    pub(crate) ray_query_initialization_tracking: bool,
 }
 
 bitflags::bitflags! {
@@ -800,13 +845,35 @@ bitflags::bitflags! {
         ///
         /// [`BuiltIn::FragDepth`]: crate::BuiltIn::FragDepth
         const CLAMP_FRAG_DEPTH = 0x10;
+
+        /// Instead of silently failing if the arguments to generate a ray query are
+        /// invalid, uses debug printf extension to print to the command line
+        ///
+        /// Note: VK_KHR_shader_non_semantic_info must be enabled. This will have no
+        /// effect if `options.ray_query_initialization_tracking` is set to false.
+        const PRINT_ON_RAY_QUERY_INITIALIZATION_FAIL = 0x20;
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+bitflags::bitflags! {
+    /// How far through a ray query are we
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub(super) struct RayQueryPoint: u32 {
+        /// Ray query has been successfully initialized.
+        const INITIALIZED = 1 << 0;
+        /// Proceed has been called on ray query.
+        const PROCEED = 1 << 1;
+        /// Proceed has returned false (have finished traversal).
+        const FINISHED_TRAVERSAL = 1 << 2;
+    }
+}
+
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize))]
 #[cfg_attr(feature = "deserialize", derive(serde::Deserialize))]
 pub struct BindingInfo {
+    pub descriptor_set: u32,
+    pub binding: u32,
     /// If the binding is an unsized binding array, this overrides the size.
     pub binding_array_size: Option<u32>,
 }
@@ -831,6 +898,10 @@ pub struct Options<'a> {
     /// Configuration flags for the writer.
     pub flags: WriterFlags,
 
+    /// Don't panic on missing bindings. Instead use fake values for `Binding`
+    /// and `DescriptorSet` decorations. This may result in invalid SPIR-V.
+    pub fake_missing_bindings: bool,
+
     /// Map of resources to information about the binding.
     pub binding_map: BindingMap,
 
@@ -851,6 +922,14 @@ pub struct Options<'a> {
     /// to think the number of iterations is bounded.
     pub force_loop_bounding: bool,
 
+    /// if set, ray queries will get a variable to track their state to prevent
+    /// misuse.
+    pub ray_query_initialization_tracking: bool,
+
+    /// Whether to use the `StorageInputOutput16` capability for `f16` shader I/O.
+    /// When false, `f16` I/O is polyfilled using `f32` types with conversions.
+    pub use_storage_input_output_16: bool,
+
     pub debug_info: Option<DebugInfo<'a>>,
 }
 
@@ -865,11 +944,14 @@ impl Default for Options<'_> {
         Options {
             lang_version: (1, 0),
             flags,
+            fake_missing_bindings: true,
             binding_map: BindingMap::default(),
             capabilities: None,
             bounds_check_policies: BoundsCheckPolicies::default(),
             zero_initialize_workgroup_memory: ZeroInitializeWorkgroupMemoryMode::Polyfill,
             force_loop_bounding: true,
+            ray_query_initialization_tracking: true,
+            use_storage_input_output_16: true,
             debug_info: None,
         }
     }

@@ -5,15 +5,11 @@
 
 "use strict";
 
-const { RemoteSettings } = ChromeUtils.importESModule(
-  "resource://services-settings/remote-settings.sys.mjs"
-);
-
 XPCOMUtils.defineLazyServiceGetter(
   this,
   "urlQueryStrippingListService",
   "@mozilla.org/query-stripping-list-service;1",
-  "nsIURLQueryStrippingListService"
+  Ci.nsIURLQueryStrippingListService
 );
 
 const COLLECTION_NAME = "query-stripping";

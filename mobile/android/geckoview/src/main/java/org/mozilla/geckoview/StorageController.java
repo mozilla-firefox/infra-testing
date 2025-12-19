@@ -64,6 +64,7 @@ public final class StorageController {
     public static final long ALL = 1 << 9;
   }
 
+  /** Clear flags for storage controller operations. */
   @Retention(RetentionPolicy.SOURCE)
   @LongDef(
       flag = true,
@@ -256,6 +257,10 @@ public final class StorageController {
             bundle -> {
               final GeckoBundle[] permsArray = bundle.getBundleArray("permissions");
               return ContentPermission.fromBundleArray(permsArray);
+            },
+            exception -> {
+              Log.w(LOGTAG, "An error occurred when getting permissions: " + exception);
+              return exception;
             });
   }
 

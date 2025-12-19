@@ -24,7 +24,7 @@ assert.deepEqual = function(actual, expected, message) {
 (function() {
 let getOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
 let join = arr => arr.join(', ');
-function stringFromTemplate(strings, ...subs) {
+function stringFromTemplate(strings, subs) {
   let parts = strings.map((str, i) => `${i === 0 ? '' : subs[i - 1]}${str}`);
   return parts.join('');
 }
@@ -87,7 +87,7 @@ assert.deepEqual.format = function(value, seen) {
     function acceptMappers(...mappers) {
       function toString() {
         let renderings = subs.map((sub, i) => (mappers[i] || String)(sub));
-        let rendered = stringFromTemplate(strings, ...renderings);
+        let rendered = stringFromTemplate(strings, renderings);
         if (usage.used) rendered += ` as #${usage.id}`;
         return rendered;
       }
@@ -101,7 +101,7 @@ assert.deepEqual.format = function(value, seen) {
 
   let format = assert.deepEqual.format;
   function lazyString(strings, ...subs) {
-    return { toString: () => stringFromTemplate(strings, ...subs) };
+    return { toString: () => stringFromTemplate(strings, subs) };
   }
 
   if (typeof value === 'function') {
@@ -401,10 +401,35 @@ assert.deepEqual._compare = (function () {
   return deepEqual;
 })();
 
+// file: assertThrowsValue.js
+/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
+
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/*---
+defines: [assertThrowsValue]
+---*/
+
+function assertThrowsValue(f, val, msg) {
+  try {
+    f();
+  } catch (exc) {
+    assert.sameValue(exc, val, msg);
+    return;
+  }
+
+  var fullmsg = "Assertion failed: expected exception, no exception thrown";
+  if (msg !== void 0) {
+    fullmsg += " - " + msg;
+  }
+  throw new Test262Error(fullmsg);
+}
+
 // file: non262-Reflect-shell.js
 /*---
 defines: [SOME_PRIMITIVE_VALUES]
-allow_unused: True
 ---*/
 
 // List of a few values that are not objects.

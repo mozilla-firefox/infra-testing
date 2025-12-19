@@ -8,21 +8,22 @@
  * Implementation of the "@mozilla.org/layout/content-policy;1" contract.
  */
 
-#include "mozilla/Logging.h"
-
-#include "nsISupports.h"
-#include "nsXPCOM.h"
-#include "nsContentPolicyUtils.h"
-#include "mozilla/dom/nsCSPService.h"
 #include "nsContentPolicy.h"
-#include "nsIURI.h"
+
+#include "mozilla/Logging.h"
+#include "mozilla/dom/PolicyContainer.h"
+#include "mozilla/dom/nsCSPService.h"
+#include "mozilla/dom/nsMixedContentBlocker.h"
+#include "nsCOMArray.h"
+#include "nsContentPolicyUtils.h"
+#include "nsContentUtils.h"
 #include "nsIBrowserChild.h"
 #include "nsIContent.h"
-#include "nsIImageLoadingContent.h"
-#include "nsCOMArray.h"
-#include "nsContentUtils.h"
-#include "mozilla/dom/nsMixedContentBlocker.h"
 #include "nsIContentSecurityPolicy.h"
+#include "nsIImageLoadingContent.h"
+#include "nsISupports.h"
+#include "nsIURI.h"
+#include "nsXPCOM.h"
 
 class nsIDOMWindow;
 
@@ -96,7 +97,8 @@ inline nsresult nsContentPolicy::CheckPolicy(CPMethod policyMethod,
   nsresult rv;
   const nsCOMArray<nsIContentPolicy>& entries = mPolicies.GetCachedEntries();
   if (doc) {
-    if (nsCOMPtr<nsIContentSecurityPolicy> csp = doc->GetCsp()) {
+    if (nsCOMPtr<nsIContentSecurityPolicy> csp =
+            PolicyContainer::GetCSP(doc->GetPolicyContainer())) {
       csp->EnsureEventTarget(mozilla::GetMainThreadSerialEventTarget());
     }
   }

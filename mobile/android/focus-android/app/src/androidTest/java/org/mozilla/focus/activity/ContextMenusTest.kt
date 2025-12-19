@@ -19,7 +19,7 @@ import org.mozilla.focus.helpers.MockWebServerHelper
 import org.mozilla.focus.helpers.RetryTestRule
 import org.mozilla.focus.helpers.StringsHelper
 import org.mozilla.focus.helpers.TestAssetHelper.getGenericTabAsset
-import org.mozilla.focus.helpers.TestAssetHelper.getImageTestAsset
+import org.mozilla.focus.helpers.TestAssetHelper.imageTestAsset
 import org.mozilla.focus.helpers.TestHelper
 import org.mozilla.focus.helpers.TestHelper.assertNativeAppOpens
 import org.mozilla.focus.helpers.TestHelper.getTargetContext
@@ -33,10 +33,10 @@ class ContextMenusTest : TestSetup() {
     private lateinit var webServer: MockWebServer
     private val featureSettingsHelper = FeatureSettingsHelper()
 
-    @get: Rule
+    @get:Rule
     val mActivityTestRule = MainActivityIntentsTestRule(showFirstRun = false)
 
-    @get: Rule
+    @get:Rule
     val retryTestRule = RetryTestRule(3)
 
     @Before
@@ -59,7 +59,7 @@ class ContextMenusTest : TestSetup() {
     @SmokeTest
     @Test
     fun linkedImageContextMenuItemsTest() {
-        val imagesTestPage = getImageTestAsset(webServer)
+        val imagesTestPage = webServer.imageTestAsset
         val imageAssetUrl = webServer.url("download.jpg").toString()
 
         searchScreen {
@@ -72,7 +72,7 @@ class ContextMenusTest : TestSetup() {
     @SmokeTest
     @Test
     fun simpleImageContextMenuItemsTest() {
-        val imagesTestPage = getImageTestAsset(webServer)
+        val imagesTestPage = webServer.imageTestAsset
         val imageAssetUrl = webServer.url("rabbit.jpg").toString()
 
         searchScreen {
@@ -85,8 +85,8 @@ class ContextMenusTest : TestSetup() {
     @SmokeTest
     @Test
     fun linkContextMenuItemsTest() {
-        val tab1Page = getGenericTabAsset(webServer, 1)
-        val tab2Page = getGenericTabAsset(webServer, 2)
+        val tab1Page = webServer.getGenericTabAsset(1)
+        val tab2Page = webServer.getGenericTabAsset(2)
 
         searchScreen {
         }.loadPage(tab1Page.url) {
@@ -100,8 +100,8 @@ class ContextMenusTest : TestSetup() {
     @SmokeTest
     @Test
     fun copyLinkAddressTest() {
-        val tab1Page = getGenericTabAsset(webServer, 1)
-        val tab2Page = getGenericTabAsset(webServer, 2)
+        val tab1Page = webServer.getGenericTabAsset(1)
+        val tab2Page = webServer.getGenericTabAsset(2)
 
         searchScreen {
         }.loadPage(tab1Page.url) {
@@ -120,8 +120,8 @@ class ContextMenusTest : TestSetup() {
     @SmokeTest
     @Test
     fun shareLinkTest() {
-        val tab1Page = getGenericTabAsset(webServer, 1)
-        val tab2Page = getGenericTabAsset(webServer, 2)
+        val tab1Page = webServer.getGenericTabAsset(1)
+        val tab2Page = webServer.getGenericTabAsset(2)
 
         searchScreen {
         }.loadPage(tab1Page.url) {
@@ -134,7 +134,7 @@ class ContextMenusTest : TestSetup() {
 
     @Test
     fun copyImageLocationTest() {
-        val imagesTestPage = getImageTestAsset(webServer)
+        val imagesTestPage = webServer.imageTestAsset
         val imageAssetUrl = webServer.url("rabbit.jpg").toString()
 
         searchScreen {
@@ -154,7 +154,7 @@ class ContextMenusTest : TestSetup() {
     @SmokeTest
     @Test
     fun saveImageTest() {
-        val imagesTestPage = getImageTestAsset(webServer)
+        val imagesTestPage = webServer.imageTestAsset
         val fileName = "rabbit.jpg"
 
         searchScreen {
@@ -177,7 +177,7 @@ class ContextMenusTest : TestSetup() {
 
     @Test
     fun shareImageTest() {
-        val imagesTestPage = getImageTestAsset(webServer)
+        val imagesTestPage = webServer.imageTestAsset
 
         searchScreen {
         }.loadPage(imagesTestPage.url) {

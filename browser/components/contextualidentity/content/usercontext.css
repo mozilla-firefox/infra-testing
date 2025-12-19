@@ -106,12 +106,12 @@
 }
 
 #userContext-label {
-	color: var(--identity-tab-color);
-	margin: 0;
+  color: var(--identity-tab-color);
+  margin: 0;
   max-width: 8em;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 #userContext-icons {
@@ -122,13 +122,12 @@
   background-color: var(--identity-icon-color);
   height: 2px;
   border-radius: 2px;
-  margin: -3px 2px 0;
+  margin: 0 calc(var(--tab-border-radius) / 2);
 
-  #vertical-pinned-tabs-container &,
   #tabbrowser-tabs[orient="vertical"] & {
     height: auto;
     width: 2px;
-    margin: 3px 0;
+    margin: calc(var(--tab-border-radius) / 2) 0;
   }
 }
 
@@ -144,7 +143,7 @@
 }
 
 .menuitem-iconic[data-usercontextid] {
-  list-style-image: var(--identity-icon);
+  --menuitem-icon: var(--identity-icon);
   -moz-context-properties: fill;
   fill: var(--identity-icon-color);
 }

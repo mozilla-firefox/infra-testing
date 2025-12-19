@@ -1,5 +1,5 @@
-libpng 1.6.47 - February 18, 2025
-=================================
+libpng 1.6.53 - December 5, 2025
+================================
 
 This is a public release of libpng, intended for use in production code.
 
@@ -7,15 +7,12 @@ This is a public release of libpng, intended for use in production code.
 Files available for download
 ----------------------------
 
-Source files with LF line endings (for Unix/Linux):
+Source files:
 
- * libpng-1.6.47.tar.xz (LZMA-compressed, recommended)
- * libpng-1.6.47.tar.gz (deflate-compressed)
-
-Source files with CRLF line endings (for Windows):
-
- * lpng1647.7z (LZMA-compressed, recommended)
- * lpng1647.zip (deflate-compressed)
+ * libpng-1.6.53.tar.xz (LZMA-compressed, recommended)
+ * libpng-1.6.53.tar.gz (deflate-compressed)
+ * lpng1653.7z (LZMA-compressed)
+ * lpng1653.zip (deflate-compressed)
 
 Other information:
 
@@ -25,19 +22,14 @@ Other information:
  * TRADEMARK.md
 
 
-Changes from version 1.6.46 to version 1.6.47
+Changes from version 1.6.52 to version 1.6.53
 ---------------------------------------------
 
- * Modified the behaviour of colorspace chunks in order to adhere
-   to the new precedence rules formulated in the latest draft of
-   the PNG Specification.
-   (Contributed by John Bowler)
- * Fixed a latent bug in `png_write_iCCP`.
-   This would have been a read-beyond-end-of-malloc vulnerability,
-   introduced early in the libpng-1.6.0 development, yet (fortunately!)
-   it was inaccessible before the above-mentioned modification of the
-   colorspace precedence rules, due to pre-existing colorspace checks.
-   (Reported by Bob Friesenhahn; fixed by John Bowler)
+ * Fixed a build failure on RISC-V RVV caused by a misspelled intrinsic.
+   (Contributed by Alexander Smorkalov.)
+ * Fixed a build failure with CMake 4.1 or newer, on Windows, when using
+   Visual C++ without MASM installed.
+   (Reported by Andrew Tribick; fixed by Luis Caro Campos.)
 
 
 Send comments/corrections/commendations to png-mng-implement at lists.sf.net.

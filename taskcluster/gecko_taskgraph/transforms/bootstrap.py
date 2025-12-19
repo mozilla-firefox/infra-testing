@@ -7,6 +7,8 @@ from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.schema import Schema
 from voluptuous import Any, Optional, Required
 
+from gecko_taskgraph.transforms.task import task_description_schema
+
 transforms = TransformSequence()
 
 bootstrap_schema = Schema(
@@ -21,6 +23,7 @@ bootstrap_schema = Schema(
         Required("pre-commands"): [str],
         # relative path (from config.path) to the file task was defined in
         Optional("task-from"): str,
+        Optional("run-on-repo-type"): task_description_schema["run-on-repo-type"],
     }
 )
 
@@ -56,7 +59,9 @@ def bootstrap_tasks(config, tasks):
                 # machines.
                 "unset MOZ_AUTOMATION",
                 f"curl --retry 5 -L -f -O {head_repo}/raw-file/{head_rev}/python/mozboot/bin/bootstrap.py",
-                f"python3 bootstrap.py --vcs=git --no-interactive --application-choice {app}",
+                # We keep using git-cinnabar here because we rely on being able to pull
+                # the head revision from Mercurial.
+                f"python3 bootstrap.py --vcs=git-cinnabar --no-interactive --application-choice {app}",
                 "cd mozilla-unified",
                 # After bootstrap, configure should go through without its own auto-bootstrap.
                 "./mach configure --enable-bootstrap=no-update",
@@ -98,7 +103,8 @@ def bootstrap_tasks(config, tasks):
                     "tier": 2,
                 },
                 "run-on-projects": ["trunk"],
-                "worker-type": "b-linux-gcp",
+                "run-on-repo-type": task.get("run-on-repo-type", ["git", "hg"]),
+                "worker-type": "b-linux",
                 "worker": {
                     "implementation": "docker-worker",
                     "docker-image": image,

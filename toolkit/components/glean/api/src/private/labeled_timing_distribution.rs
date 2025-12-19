@@ -44,14 +44,14 @@ pub enum LabeledTimingDistributionMetricKind {
     Child,
 }
 
-crate::define_metric_metadata_getter!(
+define_metric_metadata_getter!(
     TimingDistributionMetric,
     LabeledTimingDistributionMetric,
     TIMING_DISTRIBUTION_MAP,
     LABELED_TIMING_DISTRIBUTION_MAP
 );
 
-crate::define_metric_namer!(LabeledTimingDistributionMetric, LABELED);
+define_metric_namer!(LabeledTimingDistributionMetric, LABELED);
 
 impl LabeledTimingDistributionMetric {
     #[cfg(test)]
@@ -366,15 +366,17 @@ impl TimingDistribution for LabeledTimingDistributionMetric {
         }
     }
 
-    pub fn test_get_value<'a, S: Into<Option<&'a str>>>(
-        &self,
-        ping_name: S,
-    ) -> Option<DistributionData> {
-        self.inner.test_get_value(ping_name)
-    }
-
     pub fn test_get_num_recorded_errors(&self, error: ErrorType) -> i32 {
         self.inner.test_get_num_recorded_errors(error)
+    }
+}
+
+#[inherent]
+impl glean::TestGetValue for LabeledTimingDistributionMetric {
+    type Output = DistributionData;
+
+    pub fn test_get_value(&self, ping_name: Option<String>) -> Option<DistributionData> {
+        self.inner.test_get_value(ping_name)
     }
 }
 

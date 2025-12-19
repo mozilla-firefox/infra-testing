@@ -7,11 +7,10 @@
 #ifndef nsTreeSelection_h__
 #define nsTreeSelection_h__
 
-#include "nsITreeSelection.h"
-#include "nsITimer.h"
-#include "nsCycleCollectionParticipant.h"
-#include "mozilla/Attributes.h"
 #include "XULTreeElement.h"
+#include "nsCycleCollectionParticipant.h"
+#include "nsITimer.h"
+#include "nsITreeSelection.h"
 
 class nsTreeColumn;
 struct nsTreeRange;

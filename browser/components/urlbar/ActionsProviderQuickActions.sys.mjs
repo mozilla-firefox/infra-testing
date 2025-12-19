@@ -5,19 +5,35 @@
 import {
   ActionsProvider,
   ActionsResult,
-} from "resource:///modules/ActionsProvider.sys.mjs";
+} from "moz-src:///browser/components/urlbar/ActionsProvider.sys.mjs";
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   QuickActionsLoaderDefault:
-    "resource:///modules/QuickActionsLoaderDefault.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
+    "moz-src:///browser/components/urlbar/QuickActionsLoaderDefault.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
 });
 
 // These prefs are relative to the `browser.urlbar` branch.
 const ENABLED_PREF = "suggest.quickactions";
 const MATCH_IN_PHRASE_PREF = "quickactions.matchInPhrase";
 const MIN_SEARCH_PREF = "quickactions.minimumSearchString";
+
+/**
+ * @typedef QuickActionsDefinition
+ * @property {string[]} commands
+ *   The possible typed entries that this command will be displayed for.
+ * @property {string} icon
+ *   The URI of the icon associated with this command.
+ * @property {string} label
+ *   The id of the label for the result element.
+ * @property {() => boolean} [isVisible]
+ *   A function to call to check if this action should be visible or not.
+ * @property {() => null|{focusContent: boolean}} onPick
+ *   The function to call when the quick action is picked. It may return an object
+ *   with property focusContent to indicate if the content area should be focussed
+ *   after the pick.
+ */
 
 /**
  * A provider that matches the urlbar input to built in actions.
@@ -29,6 +45,7 @@ class ProviderQuickActions extends ActionsProvider {
 
   isActive(queryContext) {
     return (
+      queryContext.sapName == "urlbar" &&
       lazy.UrlbarPrefs.get(ENABLED_PREF) &&
       !queryContext.searchMode &&
       queryContext.trimmedSearchString.length < 50 &&
@@ -39,27 +56,29 @@ class ProviderQuickActions extends ActionsProvider {
 
   async queryActions(queryContext) {
     let input = queryContext.trimmedLowerCaseSearchString;
-    let results = await this.getActions(input);
+    let results = await this.getActions({ input });
 
     if (lazy.UrlbarPrefs.get(MATCH_IN_PHRASE_PREF)) {
-      for (let [keyword, key] of this.#keywords) {
-        if (input.includes(keyword)) {
-          results.push(key);
+      for (let [keyword, keys] of this.#keywords) {
+        if (input.includes(keyword) && keys.length) {
+          keys.forEach(key => results.add(key));
         }
       }
     }
 
     // Remove invisible actions.
-    results = results.filter(key => {
+    results.forEach(key => {
       const action = this.#actions.get(key);
-      return action.isVisible?.() ?? true;
+      if (!(action.isVisible?.() ?? true)) {
+        results.delete(key);
+      }
     });
 
-    if (!results.length) {
+    if (!results.size) {
       return null;
     }
 
-    return results.map(key => {
+    return [...results].map(key => {
       let action = this.#actions.get(key);
       return new ActionsResult({
         key,
@@ -74,9 +93,17 @@ class ProviderQuickActions extends ActionsProvider {
     });
   }
 
-  async getActions(prefix) {
+  async getActions({ input, includesExactMatch = false }) {
     await lazy.QuickActionsLoaderDefault.ensureLoaded();
-    return [...(this.#prefixes.get(prefix) ?? [])];
+
+    let results = this.#prefixes.get(input) ?? new Set();
+
+    if (includesExactMatch) {
+      let actions = this.#keywords.get(input);
+      actions?.forEach(action => results.add(action));
+    }
+
+    return results;
   }
 
   getAction(key) {
@@ -97,19 +124,21 @@ class ProviderQuickActions extends ActionsProvider {
    * Adds a new QuickAction.
    *
    * @param {string} key A key to identify this action.
-   * @param {string} definition An object that describes the action.
+   * @param {QuickActionsDefinition} definition An object that describes the action.
    */
   addAction(key, definition) {
     this.#actions.set(key, definition);
-    definition.commands.forEach(cmd => this.#keywords.set(cmd, key));
+    definition.commands.forEach(cmd => {
+      let keys = this.#keywords.get(cmd) ?? [];
+      keys.push(key);
+      this.#keywords.set(cmd, keys);
+    });
     this.#loopOverPrefixes(definition.commands, prefix => {
       let result = this.#prefixes.get(prefix);
       if (result) {
-        if (!result.includes(key)) {
-          result.push(key);
-        }
+        result.add(key);
       } else {
-        result = [key];
+        result = new Set([key]);
       }
       this.#prefixes.set(prefix, result);
     });
@@ -123,23 +152,41 @@ class ProviderQuickActions extends ActionsProvider {
   removeAction(key) {
     let definition = this.#actions.get(key);
     this.#actions.delete(key);
-    definition.commands.forEach(cmd => this.#keywords.delete(cmd));
+    definition.commands.forEach(cmd => {
+      let keys = this.#keywords.get(cmd) ?? [];
+      this.#keywords.set(
+        cmd,
+        keys.filter(k => k != key)
+      );
+    });
     this.#loopOverPrefixes(definition.commands, prefix => {
       let result = this.#prefixes.get(prefix);
       if (result) {
-        result = result.filter(val => val != key);
+        result.delete(key);
       }
       this.#prefixes.set(prefix, result);
     });
   }
 
-  // A map from keywords to an action.
+  /**
+   * A map from keywords to an action.
+   *
+   * @type {Map<string, Array>}
+   */
   #keywords = new Map();
 
-  // A map of all prefixes to an array of actions.
+  /**
+   * A map of all prefixes to an array of actions.
+   *
+   * @type {Map<string, Set>}
+   */
   #prefixes = new Map();
 
-  // The actions that have been added.
+  /**
+   * The actions that have been added.
+   *
+   * @type {Map<string, QuickActionsDefinition>}
+   */
   #actions = new Map();
 
   #loopOverPrefixes(commands, fun) {

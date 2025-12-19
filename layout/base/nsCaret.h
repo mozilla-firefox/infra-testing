@@ -145,10 +145,8 @@ class nsCaret final : public nsISelectionListener {
     CaretAssociationHint mHint{0};
     mozilla::intl::BidiEmbeddingLevel mBidiLevel;
 
-    bool operator==(const CaretPosition& aOther) const {
-      return mContent == aOther.mContent && mOffset == aOther.mOffset &&
-             mHint == aOther.mHint && mBidiLevel == aOther.mBidiLevel;
-    }
+    bool operator==(const CaretPosition& aOther) const = default;
+
     explicit operator bool() const { return !!mContent; }
   };
 
@@ -198,7 +196,6 @@ class nsCaret final : public nsISelectionListener {
   // invalidates paint as needed.
   void UpdateCaretPositionFromSelectionIfNeeded();
 
-  nsWeakPtr mPresShell;
   mozilla::WeakPtr<mozilla::dom::Selection> mDomSelectionWeak;
 
   nsCOMPtr<nsITimer> mBlinkTimer;

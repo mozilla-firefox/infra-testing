@@ -8,6 +8,8 @@
 
 use crate::applicable_declarations::CascadePriority;
 use crate::custom_properties_map::CustomPropertiesMap;
+use crate::derives::*;
+use crate::dom::AttributeProvider;
 use crate::media_queries::Device;
 use crate::properties::{
     CSSWideKeyword, CustomDeclaration, CustomDeclarationValue, LonghandId, LonghandIdSet,
@@ -15,7 +17,7 @@ use crate::properties::{
 };
 use crate::properties_and_values::{
     registry::PropertyRegistrationData,
-    syntax::data_type::DependentDataTypes,
+    syntax::{data_type::DependentDataTypes, Descriptor},
     value::{
         AllowComputationallyDependent, ComputedValue as ComputedRegisteredValue,
         SpecifiedValue as SpecifiedRegisteredValue,
@@ -26,6 +28,7 @@ use crate::stylesheets::UrlExtraData;
 use crate::stylist::Stylist;
 use crate::values::computed::{self, ToComputedValue};
 use crate::values::specified::FontRelativeLength;
+use crate::values::AtomIdent;
 use crate::Atom;
 use cssparser::{
     CowRcStr, Delimiter, Parser, ParserInput, SourcePosition, Token, TokenSerializationType,
@@ -107,6 +110,13 @@ fn get_scrollbar_inline_size(device: &Device, url_data: &UrlExtraData) -> Variab
     VariableValue::pixels(device.scrollbar_inline_size().px(), url_data)
 }
 
+fn get_hairline(device: &Device, url_data: &UrlExtraData) -> VariableValue {
+    VariableValue::pixels(
+        app_units::Au(device.app_units_per_device_pixel()).to_f32_px(),
+        url_data,
+    )
+}
+
 static ENVIRONMENT_VARIABLES: [EnvironmentVariable; 4] = [
     make_variable!(atom!("safe-area-inset-top"), get_safearea_inset_top),
     make_variable!(atom!("safe-area-inset-bottom"), get_safearea_inset_bottom),
@@ -142,21 +152,17 @@ macro_rules! lnf_int_variable {
     }};
 }
 
-static CHROME_ENVIRONMENT_VARIABLES: [EnvironmentVariable; 10] = [
-    lnf_int_variable!(
-        atom!("-moz-mac-titlebar-height"),
-        MacTitlebarHeight,
-        int_pixels
-    ),
-    lnf_int_variable!(
-        atom!("-moz-gtk-csd-titlebar-button-spacing"),
-        TitlebarButtonSpacing,
-        int_pixels
-    ),
-    lnf_int_variable!(
+fn eval_gtk_csd_titlebar_radius(device: &Device, url_data: &UrlExtraData) -> VariableValue {
+    let int_pixels = lnf_int!(TitlebarRadius);
+    let unzoomed_scale =
+        device.device_pixel_ratio_ignoring_full_zoom().get() / device.device_pixel_ratio().get();
+    VariableValue::pixels(int_pixels as f32 * unzoomed_scale, url_data)
+}
+
+static CHROME_ENVIRONMENT_VARIABLES: [EnvironmentVariable; 9] = [
+    make_variable!(
         atom!("-moz-gtk-csd-titlebar-radius"),
-        TitlebarRadius,
-        int_pixels
+        eval_gtk_csd_titlebar_radius
     ),
     lnf_int_variable!(
         atom!("-moz-gtk-csd-tooltip-radius"),
@@ -188,6 +194,7 @@ static CHROME_ENVIRONMENT_VARIABLES: [EnvironmentVariable; 10] = [
         get_content_preferred_color_scheme
     ),
     make_variable!(atom!("scrollbar-inline-size"), get_scrollbar_inline_size),
+    make_variable!(atom!("hairline"), get_hairline),
 ];
 
 impl CssEnvironment {
@@ -237,7 +244,7 @@ pub struct VariableValue {
     first_token_type: TokenSerializationType,
     last_token_type: TokenSerializationType,
 
-    /// var(), env(), or non-custom property (e.g. through `em`) references.
+    /// var(), env(), attr() or non-custom property (e.g. through `em`) references.
     references: References,
 }
 
@@ -252,12 +259,7 @@ pub fn compute_variable_value(
     if registration.syntax.is_universal() {
         return Some(ComputedRegisteredValue::universal(Arc::clone(value)));
     }
-    compute_value(
-        &value.css,
-        &value.url_data,
-        registration,
-        computed_context,
-    ).ok()
+    compute_value(&value.css, &value.url_data, registration, computed_context).ok()
 }
 
 // For all purposes, we want values to be considered equal if their css text is equal.
@@ -403,18 +405,23 @@ impl NonCustomReferences {
         if value.eq_ignore_ascii_case(FontRelativeLength::LH) {
             return Self::FONT_UNITS | Self::LH_UNITS;
         }
-        if value.eq_ignore_ascii_case(FontRelativeLength::EM) ||
-            value.eq_ignore_ascii_case(FontRelativeLength::EX) ||
-            value.eq_ignore_ascii_case(FontRelativeLength::CAP) ||
-            value.eq_ignore_ascii_case(FontRelativeLength::CH) ||
-            value.eq_ignore_ascii_case(FontRelativeLength::IC)
+        if value.eq_ignore_ascii_case(FontRelativeLength::EM)
+            || value.eq_ignore_ascii_case(FontRelativeLength::EX)
+            || value.eq_ignore_ascii_case(FontRelativeLength::CAP)
+            || value.eq_ignore_ascii_case(FontRelativeLength::CH)
+            || value.eq_ignore_ascii_case(FontRelativeLength::IC)
         {
             return Self::FONT_UNITS;
         }
         if value.eq_ignore_ascii_case(FontRelativeLength::RLH) {
             return Self::ROOT_FONT_UNITS | Self::ROOT_LH_UNITS;
         }
-        if value.eq_ignore_ascii_case(FontRelativeLength::REM) {
+        if value.eq_ignore_ascii_case(FontRelativeLength::REM)
+            || value.eq_ignore_ascii_case(FontRelativeLength::REX)
+            || value.eq_ignore_ascii_case(FontRelativeLength::RCH)
+            || value.eq_ignore_ascii_case(FontRelativeLength::RCAP)
+            || value.eq_ignore_ascii_case(FontRelativeLength::RIC)
+        {
             return Self::ROOT_FONT_UNITS;
         }
         Self::empty()
@@ -459,6 +466,20 @@ pub enum DeferFontRelativeCustomPropertyResolution {
     No,
 }
 
+#[derive(Clone, Debug, MallocSizeOf, PartialEq, ToShmem, Parse)]
+enum SubstitutionFunctionKind {
+    Var,
+    Env,
+    Attr,
+}
+
+#[derive(Clone, Debug, MallocSizeOf, PartialEq, ToShmem, Parse)]
+enum AttributeType {
+    None,
+    Type(Descriptor),
+    Unit,
+}
+
 #[derive(Clone, Debug, MallocSizeOf, PartialEq, ToShmem)]
 struct VariableFallback {
     start: num::NonZeroUsize,
@@ -467,24 +488,26 @@ struct VariableFallback {
 }
 
 #[derive(Clone, Debug, MallocSizeOf, PartialEq, ToShmem)]
-struct VarOrEnvReference {
+struct SubstitutionFunctionReference {
     name: Name,
     start: usize,
     end: usize,
     fallback: Option<VariableFallback>,
+    attribute_syntax: AttributeType,
     prev_token_type: TokenSerializationType,
     next_token_type: TokenSerializationType,
-    is_var: bool,
+    substitution_kind: SubstitutionFunctionKind,
 }
 
 /// A struct holding information about the external references to that a custom
 /// property value may have.
 #[derive(Clone, Debug, Default, MallocSizeOf, PartialEq, ToShmem)]
 struct References {
-    refs: Vec<VarOrEnvReference>,
+    refs: Vec<SubstitutionFunctionReference>,
     non_custom_references: NonCustomReferences,
     any_env: bool,
     any_var: bool,
+    any_attr: bool,
 }
 
 impl References {
@@ -589,8 +612,8 @@ impl VariableValue {
         let mut css = input.slice_from(start_position).to_owned();
         if !missing_closing_characters.is_empty() {
             // Unescaped backslash at EOF in a quoted string is ignored.
-            if css.ends_with("\\") &&
-                matches!(missing_closing_characters.as_bytes()[0], b'"' | b'\'')
+            if css.ends_with("\\")
+                && matches!(missing_closing_characters.as_bytes()[0], b'"' | b'\'')
             {
                 css.pop();
             }
@@ -785,32 +808,55 @@ fn parse_declaration_value_block<'i, 't>(
                 return Err(input.new_custom_error(e));
             },
             Token::Function(ref name) => {
-                let is_var = name.eq_ignore_ascii_case("var");
-                if is_var || name.eq_ignore_ascii_case("env") {
+                let substitution_kind = match SubstitutionFunctionKind::from_ident(name).ok() {
+                    Some(SubstitutionFunctionKind::Attr) => {
+                        if static_prefs::pref!("layout.css.attr.enabled") {
+                            Some(SubstitutionFunctionKind::Attr)
+                        } else {
+                            None
+                        }
+                    },
+                    kind => kind,
+                };
+                if let Some(substitution_kind) = substitution_kind {
                     let our_ref_index = references.refs.len();
                     let fallback = input.parse_nested_block(|input| {
                         // TODO(emilio): For env() this should be <custom-ident> per spec, but no other browser does
                         // that, see https://github.com/w3c/csswg-drafts/issues/3262.
                         let name = input.expect_ident()?;
-                        let name = Atom::from(if is_var {
-                            match parse_name(name.as_ref()) {
-                                Ok(name) => name,
-                                Err(()) => {
-                                    let name = name.clone();
-                                    return Err(input.new_custom_error(
-                                        SelectorParseErrorKind::UnexpectedIdent(name),
-                                    ));
-                                },
-                            }
-                        } else {
-                            name.as_ref()
-                        });
+                        let name =
+                            Atom::from(if substitution_kind == SubstitutionFunctionKind::Var {
+                                match parse_name(name.as_ref()) {
+                                    Ok(name) => name,
+                                    Err(()) => {
+                                        let name = name.clone();
+                                        return Err(input.new_custom_error(
+                                            SelectorParseErrorKind::UnexpectedIdent(name),
+                                        ));
+                                    },
+                                }
+                            } else {
+                                name.as_ref()
+                            });
+
+                        let mut attribute_syntax = AttributeType::None;
+                        if substitution_kind == SubstitutionFunctionKind::Attr
+                            && input
+                                .try_parse(|input| input.expect_function_matching("type"))
+                                .is_ok()
+                        {
+                            // TODO(descalante): determine what to do for `type(garbage)` bug 2006626
+                            attribute_syntax = input
+                                .parse_nested_block(Descriptor::from_css_parser)
+                                .ok()
+                                .map_or(AttributeType::None, AttributeType::Type);
+                        }
 
                         // We want the order of the references to match source order. So we need to reserve our slot
                         // now, _before_ parsing our fallback. Note that we don't care if parsing fails after all, since
                         // if this fails we discard the whole result anyways.
                         let start = token_start.byte_index() - input_start.byte_index();
-                        references.refs.push(VarOrEnvReference {
+                        references.refs.push(SubstitutionFunctionReference {
                             name,
                             start,
                             // To be fixed up after parsing fallback and auto-closing via our_ref_index.
@@ -820,7 +866,8 @@ fn parse_declaration_value_block<'i, 't>(
                             next_token_type: TokenSerializationType::Nothing,
                             // To be fixed up after parsing fallback.
                             fallback: None,
-                            is_var,
+                            attribute_syntax,
+                            substitution_kind: substitution_kind.clone(),
                         });
 
                         let mut fallback = None;
@@ -861,14 +908,14 @@ fn parse_declaration_value_block<'i, 't>(
                     check_closed!(")");
                     prev_reference_index = Some(our_ref_index);
                     let reference = &mut references.refs[our_ref_index];
-                    reference.end = input.position().byte_index() - input_start.byte_index() +
-                        missing_closing_characters.len();
+                    reference.end = input.position().byte_index() - input_start.byte_index()
+                        + missing_closing_characters.len();
                     reference.fallback = fallback;
-                    if is_var {
-                        references.any_var = true;
-                    } else {
-                        references.any_env = true;
-                    }
+                    match substitution_kind {
+                        SubstitutionFunctionKind::Var => references.any_var = true,
+                        SubstitutionFunctionKind::Env => references.any_env = true,
+                        SubstitutionFunctionKind::Attr => references.any_attr = true,
+                    };
                 } else {
                     nested!();
                     check_closed!(")");
@@ -894,12 +941,12 @@ fn parse_declaration_value_block<'i, 't>(
                     missing_closing_characters.push_str(quote)
                 }
             },
-            Token::Ident(ref value) |
-            Token::AtKeyword(ref value) |
-            Token::Hash(ref value) |
-            Token::IDHash(ref value) |
-            Token::UnquotedUrl(ref value) |
-            Token::Dimension {
+            Token::Ident(ref value)
+            | Token::AtKeyword(ref value)
+            | Token::Hash(ref value)
+            | Token::IDHash(ref value)
+            | Token::UnquotedUrl(ref value)
+            | Token::Dimension {
                 unit: ref value, ..
             } => {
                 references
@@ -943,8 +990,8 @@ fn find_non_custom_references(
     include_universal: bool,
 ) -> Option<NonCustomReferences> {
     let dependent_types = registration.syntax.dependent_types();
-    let may_reference_length = dependent_types.intersects(DependentDataTypes::LENGTH) ||
-        (include_universal && registration.syntax.is_universal());
+    let may_reference_length = dependent_types.intersects(DependentDataTypes::LENGTH)
+        || (include_universal && registration.syntax.is_universal());
     if may_reference_length {
         let value_dependencies = value.references.non_custom_references(is_root_element);
         if !value_dependencies.is_empty() {
@@ -1006,7 +1053,12 @@ impl<'a, 'b: 'a> CustomPropertiesBuilder<'a, 'b> {
     }
 
     /// Cascade a given custom property declaration.
-    pub fn cascade(&mut self, declaration: &'a CustomDeclaration, priority: CascadePriority) {
+    pub fn cascade(
+        &mut self,
+        declaration: &'a CustomDeclaration,
+        priority: CascadePriority,
+        attr_provider: &dyn AttributeProvider,
+    ) {
         let CustomDeclaration {
             ref name,
             ref value,
@@ -1038,8 +1090,9 @@ impl<'a, 'b: 'a> CustomPropertiesBuilder<'a, 'b> {
                 let may_have_color_scheme = true;
                 // Non-custom dependency is really relevant for registered custom properties
                 // that require computed value of such dependencies.
-                let has_dependency = unparsed_value.references.any_var ||
-                    find_non_custom_references(
+                let has_dependency = unparsed_value.references.any_var
+                    || unparsed_value.references.any_attr
+                    || find_non_custom_references(
                         registration,
                         unparsed_value,
                         may_have_color_scheme,
@@ -1057,6 +1110,7 @@ impl<'a, 'b: 'a> CustomPropertiesBuilder<'a, 'b> {
                         map,
                         self.stylist,
                         self.computed_context,
+                        attr_provider,
                     );
                 }
                 self.may_have_cycles = true;
@@ -1123,7 +1177,7 @@ impl<'a, 'b: 'a> CustomPropertiesBuilder<'a, 'b> {
             _ => return,
         };
 
-        if !refs.any_var {
+        if !refs.any_var && !refs.any_attr {
             return;
         }
 
@@ -1152,7 +1206,7 @@ impl<'a, 'b: 'a> CustomPropertiesBuilder<'a, 'b> {
             .refs
             .iter()
             .filter_map(|reference| {
-                if !reference.is_var {
+                if reference.substitution_kind != SubstitutionFunctionKind::Var {
                     return None;
                 }
                 let registration = self
@@ -1209,7 +1263,10 @@ impl<'a, 'b: 'a> CustomPropertiesBuilder<'a, 'b> {
         let existing_value = self.custom_properties.get(registration, &name);
         let existing_value = match existing_value {
             None => {
-                if matches!(value, CustomDeclarationValue::CSSWideKeyword(CSSWideKeyword::Initial)) {
+                if matches!(
+                    value,
+                    CustomDeclarationValue::CSSWideKeyword(CSSWideKeyword::Initial)
+                ) {
                     debug_assert!(registration.inherits(), "Should've been handled earlier");
                     // The initial value of a custom property without a
                     // guaranteed-invalid initial value is the same as it
@@ -1235,7 +1292,8 @@ impl<'a, 'b: 'a> CustomPropertiesBuilder<'a, 'b> {
                         &value.url_data,
                         registration,
                         self.computed_context,
-                    ).ok()
+                    )
+                    .ok()
                 } else {
                     None
                 }
@@ -1278,7 +1336,7 @@ impl<'a, 'b: 'a> CustomPropertiesBuilder<'a, 'b> {
                     CSSWideKeyword::Revert | CSSWideKeyword::RevertLayer => {},
                 }
                 None
-            }
+            },
         };
 
         if let Some(value) = computed_value {
@@ -1306,6 +1364,7 @@ impl<'a, 'b: 'a> CustomPropertiesBuilder<'a, 'b> {
     pub fn build(
         mut self,
         defer: DeferFontRelativeCustomPropertyResolution,
+        attr_provider: &dyn AttributeProvider,
     ) -> Option<CustomPropertiesMap> {
         let mut deferred_custom_properties = None;
         if self.may_have_cycles {
@@ -1322,6 +1381,7 @@ impl<'a, 'b: 'a> CustomPropertiesBuilder<'a, 'b> {
                 &self.references_from_non_custom_properties,
                 self.stylist,
                 self.computed_context,
+                attr_provider,
             );
             self.computed_context.builder.invalid_non_custom_properties =
                 invalid_non_custom_properties;
@@ -1338,8 +1398,8 @@ impl<'a, 'b: 'a> CustomPropertiesBuilder<'a, 'b> {
             inherited: if self
                 .computed_context
                 .inherited_custom_properties()
-                .inherited ==
-                self.custom_properties.inherited
+                .inherited
+                == self.custom_properties.inherited
             {
                 self.computed_context
                     .inherited_custom_properties()
@@ -1364,6 +1424,7 @@ impl<'a, 'b: 'a> CustomPropertiesBuilder<'a, 'b> {
         deferred: CustomPropertiesMap,
         stylist: &Stylist,
         computed_context: &mut computed::Context,
+        attr_provider: &dyn AttributeProvider,
     ) {
         if deferred.is_empty() {
             return;
@@ -1382,6 +1443,7 @@ impl<'a, 'b: 'a> CustomPropertiesBuilder<'a, 'b> {
                 &mut custom_properties,
                 stylist,
                 computed_context,
+                attr_provider,
             );
         }
         computed_context.builder.custom_properties = custom_properties;
@@ -1401,6 +1463,7 @@ fn substitute_all(
     references_from_non_custom_properties: &NonCustomReferenceMap<Vec<Name>>,
     stylist: &Stylist,
     computed_context: &computed::Context,
+    attr_provider: &dyn AttributeProvider,
 ) {
     // The cycle dependencies removal in this function is a variant
     // of Tarjan's algorithm. It is mostly based on the pseudo-code
@@ -1487,6 +1550,7 @@ fn substitute_all(
         var: VarType,
         non_custom_references: &NonCustomReferenceMap<Vec<Name>>,
         context: &mut Context<'a, 'b>,
+        attr_provider: &dyn AttributeProvider,
     ) -> Option<usize> {
         // Some shortcut checks.
         let value = match var {
@@ -1504,7 +1568,9 @@ fn substitute_all(
                     /* include_unregistered = */ true,
                 );
                 context.non_custom_references |= non_custom_refs.unwrap_or_default();
-                let has_dependency = value.references.any_var || non_custom_refs.is_some();
+                let has_dependency = value.references.any_var
+                    || value.references.any_attr
+                    || non_custom_refs.is_some();
                 // Nothing to resolve.
                 if !has_dependency {
                     debug_assert!(!value.references.any_env, "Should've been handled earlier");
@@ -1527,6 +1593,7 @@ fn substitute_all(
                             &mut context.map,
                             context.stylist,
                             context.computed_context,
+                            attr_provider,
                         );
                     }
                     return None;
@@ -1571,7 +1638,8 @@ fn substitute_all(
         let mut lowlink = index;
         let visit_link =
             |var: VarType, context: &mut Context, lowlink: &mut usize, self_ref: &mut bool| {
-                let next_index = match traverse(var, non_custom_references, context) {
+                let next_index = match traverse(var, non_custom_references, context, attr_provider)
+                {
                     Some(index) => index,
                     // There is nothing to do if the next variable has been
                     // fully resolved at this point.
@@ -1602,7 +1670,7 @@ fn substitute_all(
             // Visit other custom properties...
             // FIXME: Maybe avoid visiting the same var twice if not needed?
             for next in &v.references.refs {
-                if !next.is_var {
+                if next.substitution_kind != SubstitutionFunctionKind::Var {
                     continue;
                 }
                 visit_link(
@@ -1652,10 +1720,9 @@ fn substitute_all(
             if context.contains_computed_custom_property {
                 // These non-custom properties can't become invalid-at-compute-time from
                 // cyclic dependencies purely consisting of non-registered properties.
-                if context
-                    .non_custom_references
-                    .intersects(NonCustomReferences::FONT_UNITS | NonCustomReferences::ROOT_FONT_UNITS)
-                {
+                if context.non_custom_references.intersects(
+                    NonCustomReferences::FONT_UNITS | NonCustomReferences::ROOT_FONT_UNITS,
+                ) {
                     context
                         .invalid_non_custom_properties
                         .insert(LonghandId::FontSize);
@@ -1727,9 +1794,11 @@ fn substitute_all(
                     context.computed_context.is_root_element(),
                     /* include_unregistered = */ false,
                 )
-                .is_some() ||
-                    v.references.refs.iter().any(|reference| {
-                        reference.is_var && deferred.get(&reference.name).is_some()
+                .is_some()
+                    || v.references.refs.iter().any(|reference| {
+                        (reference.substitution_kind == SubstitutionFunctionKind::Var
+                            && deferred.get(&reference.name).is_some())
+                            || reference.substitution_kind == SubstitutionFunctionKind::Attr
                     });
 
                 if defer {
@@ -1740,13 +1809,14 @@ fn substitute_all(
             }
 
             // If there are no var references we should already be computed and substituted by now.
-            if !defer && v.references.any_var {
+            if !defer && (v.references.any_var || v.references.any_attr) {
                 substitute_references_if_needed_and_apply(
                     &name,
                     v,
                     &mut context.map,
                     context.stylist,
                     context.computed_context,
+                    attr_provider,
                 );
             }
         }
@@ -1779,6 +1849,7 @@ fn substitute_all(
             VarType::Custom((*name).clone()),
             references_from_non_custom_properties,
             &mut context,
+            attr_provider,
         );
     }
 }
@@ -1815,13 +1886,14 @@ fn handle_invalid_at_computed_value_time(
     custom_properties.remove(registration, name);
 }
 
-/// Replace `var()` and `env()` functions in a pre-existing variable value.
+/// Replace `var()`, `env()`, and `attr()` functions in a pre-existing variable value.
 fn substitute_references_if_needed_and_apply(
     name: &Name,
     value: &Arc<VariableValue>,
     custom_properties: &mut ComputedCustomProperties,
     stylist: &Stylist,
     computed_context: &computed::Context,
+    attr_provider: &dyn AttributeProvider,
 ) {
     let registration = stylist.get_custom_property_registration(&name);
     if !value.has_references() && registration.syntax.is_universal() {
@@ -1838,6 +1910,7 @@ fn substitute_references_if_needed_and_apply(
         custom_properties,
         stylist,
         computed_context,
+        attr_provider,
     ) {
         Ok(v) => v,
         Err(..) => {
@@ -1864,20 +1937,20 @@ fn substitute_references_if_needed_and_apply(
                 registration.inherits(),
                 computed_context.is_root_element(),
             ) {
-                (CSSWideKeyword::Initial, _, _) |
-                (CSSWideKeyword::Revert, false, _) |
-                (CSSWideKeyword::RevertLayer, false, _) |
-                (CSSWideKeyword::Unset, false, _) |
-                (CSSWideKeyword::Revert, true, true) |
-                (CSSWideKeyword::RevertLayer, true, true) |
-                (CSSWideKeyword::Unset, true, true) |
-                (CSSWideKeyword::Inherit, _, true) => {
+                (CSSWideKeyword::Initial, _, _)
+                | (CSSWideKeyword::Revert, false, _)
+                | (CSSWideKeyword::RevertLayer, false, _)
+                | (CSSWideKeyword::Unset, false, _)
+                | (CSSWideKeyword::Revert, true, true)
+                | (CSSWideKeyword::RevertLayer, true, true)
+                | (CSSWideKeyword::Unset, true, true)
+                | (CSSWideKeyword::Inherit, _, true) => {
                     remove_and_insert_initial_value(name, registration, custom_properties);
                 },
-                (CSSWideKeyword::Revert, true, false) |
-                (CSSWideKeyword::RevertLayer, true, false) |
-                (CSSWideKeyword::Inherit, _, false) |
-                (CSSWideKeyword::Unset, true, false) => {
+                (CSSWideKeyword::Revert, true, false)
+                | (CSSWideKeyword::RevertLayer, true, false)
+                | (CSSWideKeyword::Inherit, _, false)
+                | (CSSWideKeyword::Unset, true, false) => {
                     match inherited.get(registration, name) {
                         Some(value) => {
                             custom_properties.insert(registration, name, value.clone());
@@ -1897,7 +1970,7 @@ fn substitute_references_if_needed_and_apply(
         Err(()) => {
             handle_invalid_at_computed_value_time(name, custom_properties, computed_context);
             return;
-        }
+        },
     };
 
     custom_properties.insert(registration, name, value);
@@ -1926,24 +1999,26 @@ impl<'a> Substitution<'a> {
         computed_context: &computed::Context,
     ) -> Result<ComputedRegisteredValue, ()> {
         if registration.syntax.is_universal() {
-            return Ok(ComputedRegisteredValue::universal(Arc::new(VariableValue {
-                css: self.css.into_owned(),
-                first_token_type: self.first_token_type,
-                last_token_type: self.last_token_type,
-                url_data: url_data.clone(),
-                references: Default::default(),
-            })))
+            return Ok(ComputedRegisteredValue::universal(Arc::new(
+                VariableValue {
+                    css: self.css.into_owned(),
+                    first_token_type: self.first_token_type,
+                    last_token_type: self.last_token_type,
+                    url_data: url_data.clone(),
+                    references: Default::default(),
+                },
+            )));
         }
         compute_value(&self.css, url_data, registration, computed_context)
     }
 
     fn new(
-        css: &'a str,
+        css: Cow<'a, str>,
         first_token_type: TokenSerializationType,
         last_token_type: TokenSerializationType,
     ) -> Self {
         Self {
-            css: Cow::Borrowed(css),
+            css,
             first_token_type,
             last_token_type,
         }
@@ -1993,7 +2068,8 @@ fn do_substitute_chunk<'a>(
     custom_properties: &'a ComputedCustomProperties,
     stylist: &Stylist,
     computed_context: &computed::Context,
-    references: &mut std::iter::Peekable<std::slice::Iter<VarOrEnvReference>>,
+    references: &mut std::iter::Peekable<std::slice::Iter<SubstitutionFunctionReference>>,
+    attr_provider: &dyn AttributeProvider,
 ) -> Result<Substitution<'a>, ()> {
     if start == end {
         // Empty string. Easy.
@@ -2005,7 +2081,11 @@ fn do_substitute_chunk<'a>(
         .map_or(true, |reference| reference.end > end)
     {
         let result = &css[start..end];
-        return Ok(Substitution::new(result, first_token_type, last_token_type));
+        return Ok(Substitution::new(
+            Cow::Borrowed(result),
+            first_token_type,
+            last_token_type,
+        ));
     }
 
     let mut substituted = ComputedValue::empty(url_data);
@@ -2028,6 +2108,7 @@ fn do_substitute_chunk<'a>(
             stylist,
             computed_context,
             references,
+            attr_provider,
         )?;
 
         // Optimize the property: var(--...) case to avoid allocating at all.
@@ -2050,34 +2131,67 @@ fn do_substitute_chunk<'a>(
     Ok(Substitution::from_value(substituted))
 }
 
+fn quoted_css_string(src: &str) -> String {
+    let mut dest = String::with_capacity(src.len() + 2);
+    cssparser::serialize_string(src, &mut dest).unwrap();
+    dest
+}
+
 fn substitute_one_reference<'a>(
     css: &'a str,
     url_data: &UrlExtraData,
     custom_properties: &'a ComputedCustomProperties,
-    reference: &VarOrEnvReference,
+    reference: &SubstitutionFunctionReference,
     stylist: &Stylist,
     computed_context: &computed::Context,
-    references: &mut std::iter::Peekable<std::slice::Iter<VarOrEnvReference>>,
+    references: &mut std::iter::Peekable<std::slice::Iter<SubstitutionFunctionReference>>,
+    attr_provider: &dyn AttributeProvider,
 ) -> Result<Substitution<'a>, ()> {
-    if reference.is_var {
-        let registration = stylist.get_custom_property_registration(&reference.name);
-        if let Some(v) = custom_properties.get(registration, &reference.name) {
-            // Skip references that are inside the outer variable (in fallback for example).
-            while references
-                .next_if(|next_ref| next_ref.end <= reference.end)
-                .is_some()
-            {}
-            return Ok(Substitution::from_value(v.to_variable_value()))
-        }
-    } else {
-        let device = stylist.device();
-        if let Some(v) = device.environment().get(&reference.name, device, url_data) {
-            while references
-                .next_if(|next_ref| next_ref.end <= reference.end)
-                .is_some()
-            {}
-            return Ok(Substitution::from_value(v));
-        }
+    let substitution: Option<_> = match reference.substitution_kind {
+        SubstitutionFunctionKind::Var => {
+            let registration = stylist.get_custom_property_registration(&reference.name);
+            custom_properties
+                .get(registration, &reference.name)
+                .map(|v| Substitution::from_value(v.to_variable_value()))
+        },
+        SubstitutionFunctionKind::Env => {
+            let device = stylist.device();
+            device
+                .environment()
+                .get(&reference.name, device, url_data)
+                .map(Substitution::from_value)
+        },
+        SubstitutionFunctionKind::Attr => attr_provider
+            .get_attr(AtomIdent::cast(&reference.name))
+            .and_then(|attr| {
+                let AttributeType::Type(syntax) = &reference.attribute_syntax else {
+                    return Some(Substitution::new(
+                        Cow::Owned(quoted_css_string(&attr)),
+                        TokenSerializationType::Nothing,
+                        TokenSerializationType::Nothing,
+                    ));
+                };
+                let mut input = ParserInput::new(&attr);
+                let mut parser = Parser::new(&mut input);
+                let value = SpecifiedRegisteredValue::parse(
+                    &mut parser,
+                    syntax,
+                    url_data,
+                    AllowComputationallyDependent::Yes,
+                )
+                .ok()?;
+                let value = value.to_computed_value(computed_context);
+                Some(Substitution::from_value(value.to_variable_value()))
+            }),
+    };
+
+    if let Some(s) = substitution {
+        while references
+            .next_if(|next_ref| next_ref.end <= reference.end)
+            .is_some()
+        {}
+
+        return Ok(s);
     }
 
     let Some(ref fallback) = reference.fallback else {
@@ -2095,15 +2209,17 @@ fn substitute_one_reference<'a>(
         stylist,
         computed_context,
         references,
+        attr_provider,
     )
 }
 
-/// Replace `var()` and `env()` functions. Return `Err(..)` for invalid at computed time.
+/// Replace `var()`, `env()`, and `attr()` functions. Return `Err(..)` for invalid at computed time.
 fn substitute_internal<'a>(
     variable_value: &'a VariableValue,
     custom_properties: &'a ComputedCustomProperties,
     stylist: &Stylist,
     computed_context: &computed::Context,
+    attr_provider: &dyn AttributeProvider,
 ) -> Result<Substitution<'a>, ()> {
     let mut refs = variable_value.references.refs.iter().peekable();
     do_substitute_chunk(
@@ -2117,15 +2233,17 @@ fn substitute_internal<'a>(
         stylist,
         computed_context,
         &mut refs,
+        attr_provider,
     )
 }
 
-/// Replace var() and env() functions, returning the resulting CSS string.
+/// Replace var(), env(), and attr() functions, returning the resulting CSS string.
 pub fn substitute<'a>(
     variable_value: &'a VariableValue,
     custom_properties: &'a ComputedCustomProperties,
     stylist: &Stylist,
     computed_context: &computed::Context,
+    attr_provider: &dyn AttributeProvider,
 ) -> Result<Cow<'a, str>, ()> {
     debug_assert!(variable_value.has_references());
     let v = substitute_internal(
@@ -2133,6 +2251,7 @@ pub fn substitute<'a>(
         custom_properties,
         stylist,
         computed_context,
+        attr_provider,
     )?;
     Ok(v.css)
 }

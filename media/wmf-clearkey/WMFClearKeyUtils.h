@@ -6,7 +6,6 @@
 #define DOM_MEDIA_PLATFORM_WMF_CLEARKEY_WMFCLEARKEYCDMUTILS_H
 
 #include <initguid.h>
-#include <memory>
 #include <mfidl.h>
 #include <mutex>
 #include <thread>
@@ -17,7 +16,6 @@
 
 #include "MFCDMExtra.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/Unused.h"
 
 namespace mozilla {
 
@@ -25,7 +23,7 @@ inline constexpr WCHAR kCLEARKEY_SYSTEM_NAME[] = L"org.w3.clearkey";
 
 #define WMF_CLEARKEY_DEBUG 0
 
-#ifdef WMF_CLEARKEY_DEBUG
+#if WMF_CLEARKEY_DEBUG
 #  define LOG(msg, ...)                                                   \
     printf(("[Thread %lu]: D/WMFClearKey " msg "\n"),                     \
            static_cast<unsigned long>(                                    \
@@ -123,7 +121,7 @@ class AutoPropVar final {
     if (mVar.vt != VT_EMPTY) {
       HRESULT hr = PropVariantClear(&mVar);
       MOZ_ASSERT(SUCCEEDED(hr));
-      Unused << hr;
+      (void)hr;
     }
   }
 

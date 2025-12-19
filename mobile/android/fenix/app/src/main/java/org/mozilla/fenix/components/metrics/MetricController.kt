@@ -61,7 +61,11 @@ import org.mozilla.fenix.GleanMetrics.ProgressiveWebApp
 import org.mozilla.fenix.GleanMetrics.SitePermissions
 import org.mozilla.fenix.GleanMetrics.Sync
 import org.mozilla.fenix.GleanMetrics.SyncedTabs
+import org.mozilla.fenix.GleanMetrics.Toolbar
 import org.mozilla.fenix.search.awesomebar.ShortcutsSuggestionProvider
+import org.mozilla.fenix.telemetry.ACTION_TAB_COUNTER_CLICKED
+import org.mozilla.fenix.telemetry.ACTION_TAB_COUNTER_LONG_CLICKED
+import org.mozilla.fenix.telemetry.SOURCE_ADDRESS_BAR
 import org.mozilla.fenix.utils.Settings
 import java.util.UUID
 import mozilla.components.compose.browser.awesomebar.AwesomeBarFacts as ComposeAwesomeBarFacts
@@ -143,7 +147,7 @@ internal class ReleaseMetricController(
     }
 
     @VisibleForTesting
-    @Suppress("LongMethod")
+    @Suppress("LongMethod", "CognitiveComplexMethod")
     internal fun Fact.process(): Unit = when (component to item) {
         Component.FEATURE_PROMPTS to LoginDialogFacts.Items.DISPLAY -> {
             LoginDialog.displayed.record(NoExtras())
@@ -179,17 +183,17 @@ internal class ReleaseMetricController(
             }
         }
         Component.BROWSER_TOOLBAR to ToolbarFacts.Items.MENU -> {
-            if (settings.navigationToolbarEnabled) {
-                Events.browserToolbarAction.record(Events.BrowserToolbarActionExtra("menu_press"))
-            } else {
-                Events.toolbarMenuVisible.record(NoExtras())
-            }
+            Events.toolbarMenuVisible.record(NoExtras())
         }
         Component.UI_TABCOUNTER to ToolbarFacts.Items.TOOLBAR -> {
-            Events.browserToolbarAction.record(Events.BrowserToolbarActionExtra("tabs_tray"))
+            Toolbar.buttonTapped.record(
+                Toolbar.ButtonTappedExtra(source = SOURCE_ADDRESS_BAR, item = ACTION_TAB_COUNTER_CLICKED),
+            )
         }
         Component.UI_TABCOUNTER to ToolbarFacts.Items.MENU -> {
-            Events.browserToolbarAction.record(Events.BrowserToolbarActionExtra("tabs_tray_long_press"))
+            Toolbar.buttonTapped.record(
+                Toolbar.ButtonTappedExtra(source = SOURCE_ADDRESS_BAR, item = ACTION_TAB_COUNTER_LONG_CLICKED),
+            )
         }
         Component.FEATURE_CONTEXTMENU to ContextMenuFacts.Items.ITEM -> {
             metadata?.get("item")?.let { item ->
@@ -365,6 +369,9 @@ internal class ReleaseMetricController(
 
             // Submit a separate `fx-suggest` ping for this click. These pings do not include the `client_id`.
             FxSuggest.pingType.set("fxsuggest-click")
+            (metadata?.get(FxSuggestFacts.MetadataKeys.CLIENT_COUNTRY) as? String)?.let {
+                FxSuggest.country.set(it)
+            }
             FxSuggest.isClicked.set(true)
             (metadata?.get(FxSuggestFacts.MetadataKeys.POSITION) as? Long)?.let {
                 FxSuggest.position.set(it)
@@ -415,6 +422,9 @@ internal class ReleaseMetricController(
             // and we submit them for engaged search sessions only.
             if (!engagementAbandoned) {
                 FxSuggest.pingType.set("fxsuggest-impression")
+                (metadata?.get(FxSuggestFacts.MetadataKeys.CLIENT_COUNTRY) as? String)?.let {
+                    FxSuggest.country.set(it)
+                }
                 (metadata?.get(FxSuggestFacts.MetadataKeys.IS_CLICKED) as? Boolean)?.let {
                     FxSuggest.isClicked.set(it)
                 }
@@ -438,6 +448,14 @@ internal class ReleaseMetricController(
             }
 
             Unit
+        }
+
+        Component.FEATURE_FXSUGGEST to FxSuggestFacts.Items.SUGGESTION_QUERY_COUNT -> {
+            FxSuggest.pingType.set("fxsuggest-query")
+            (metadata?.get("query_count") as? Long)?.let {
+                FxSuggest.queryCount.set(it)
+            }
+            Pings.fxSuggestApi.submit()
         }
 
         Component.FEATURE_PWA to ProgressiveWebAppFacts.Items.HOMESCREEN_ICON_TAP -> {

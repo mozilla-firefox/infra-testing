@@ -244,7 +244,7 @@ LayoutDeviceIntRect HyperTextAccessibleBase::TextBounds(int32_t aStartOffset,
 
   index_t startOffset = ConvertMagicOffset(aStartOffset);
   index_t endOffset = ConvertMagicOffset(aEndOffset);
-  if (!startOffset.IsValid() || startOffset >= endOffset) {
+  if (!startOffset.IsValid() || startOffset > endOffset) {
     return LayoutDeviceIntRect();
   }
 
@@ -257,12 +257,8 @@ LayoutDeviceIntRect HyperTextAccessibleBase::TextBounds(int32_t aStartOffset,
     return LayoutDeviceIntRect();
   }
 
-  if (endPoint == startPoint) {
-    result = startPoint.CharBounds();
-  } else {
-    TextLeafRange range(startPoint, endPoint);
-    result = range.Bounds();
-  }
+  TextLeafRange range(startPoint, endPoint);
+  result = range.Bounds();
 
   // Calls to TextLeafRange::Bounds() will construct screen coordinates.
   // Perform any additional conversions here.
@@ -329,12 +325,15 @@ TextLeafPoint HyperTextAccessibleBase::ToTextLeafPoint(int32_t aOffset,
   if (!child) {
     return TextLeafPoint();
   }
-  if (HyperTextAccessibleBase* childHt = child->AsHyperTextBase()) {
-    return childHt->ToTextLeafPoint(
-        aDescendToEnd ? static_cast<int32_t>(childHt->CharacterCount()) : 0,
-        aDescendToEnd);
-  }
   int32_t offset = aOffset - GetChildOffset(child);
+  if (HyperTextAccessibleBase* childHt = child->AsHyperTextBase()) {
+    // This child is an embedded object, so the offset can only be 0 or 1.
+    MOZ_ASSERT(offset == 0 || offset == 1);
+    // Offset 1 refers to the end of this container, so descend to its end.
+    const bool end = aDescendToEnd || offset == 1;
+    return childHt->ToTextLeafPoint(
+        end ? static_cast<int32_t>(childHt->CharacterCount()) : 0, end);
+  }
   return TextLeafPoint(child, offset);
 }
 

@@ -4,29 +4,29 @@
 
 /* eslint no-shadow: error, mozilla/no-aArgs: error */
 
-import { SearchEngine } from "resource://gre/modules/SearchEngine.sys.mjs";
+import { SearchEngine } from "moz-src:///toolkit/components/search/SearchEngine.sys.mjs";
+import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
-const lazy = {};
-
-ChromeUtils.defineESModuleGetters(lazy, {
+const lazy = XPCOMUtils.declareLazy({
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
   ExtensionParent: "resource://gre/modules/ExtensionParent.sys.mjs",
-  SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
-});
-
-ChromeUtils.defineLazyGetter(lazy, "logConsole", () => {
-  return console.createInstance({
-    prefix: "AddonSearchEngine",
-    maxLogLevel: lazy.SearchUtils.loggingEnabled ? "Debug" : "Warn",
-  });
+  SearchUtils: "moz-src:///toolkit/components/search/SearchUtils.sys.mjs",
+  logConsole: () =>
+    console.createInstance({
+      prefix: "AddonSearchEngine",
+      maxLogLevel: lazy.SearchUtils.loggingEnabled ? "Debug" : "Warn",
+    }),
 });
 
 /**
  * AddonSearchEngine represents a search engine defined by an add-on.
  */
 export class AddonSearchEngine extends SearchEngine {
-  // The extension ID if added by an extension.
-  _extensionID = null;
+  /**
+   * @type {string}
+   * The extension ID if added by an extension.
+   */
+  _extensionID;
 
   /**
    * Creates a AddonSearchEngine.

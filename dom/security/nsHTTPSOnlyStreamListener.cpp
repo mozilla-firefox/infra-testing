@@ -4,14 +4,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsHTTPSOnlyStreamListener.h"
+
 #include "NSSErrorsService.h"
-#include "mozilla/glean/DomSecurityMetrics.h"
-#include "mozilla/Telemetry.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/dom/WindowGlobalParent.h"
+#include "mozilla/glean/DomSecurityMetrics.h"
 #include "mozpkix/pkixnss.h"
 #include "nsCOMPtr.h"
-#include "nsHTTPSOnlyStreamListener.h"
 #include "nsHTTPSOnlyUtils.h"
 #include "nsIChannel.h"
 #include "nsIRequest.h"
@@ -167,7 +167,6 @@ void nsHTTPSOnlyStreamListener::RecordUpgradeTelemetry(nsIRequest* request,
         break;
 
       case ExtContentPolicy::TYPE_OBJECT:
-      case ExtContentPolicy::TYPE_OBJECT_SUBREQUEST:
         typeKey = "object"_ns;
         break;
 
@@ -245,8 +244,9 @@ void nsHTTPSOnlyStreamListener::RecordUpgradeTelemetry(nsIRequest* request,
 
   // Needs bug 1657470 (New Metric Type: "Keyed Categorical") before
   // this can be migrated to Glean.
-  mozilla::Telemetry::Accumulate(
-      mozilla::Telemetry::HTTPS_ONLY_MODE_UPGRADE_TYPE, typeKey, success);
+  mozilla::glean::security::https_only_mode_upgrade_type
+      .Get(typeKey, success ? "true"_ns : "false"_ns)
+      .Add();
 }
 
 void nsHTTPSOnlyStreamListener::LogUpgradeFailure(nsIRequest* request,

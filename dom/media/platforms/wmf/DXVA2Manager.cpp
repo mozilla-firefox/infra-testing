@@ -7,16 +7,17 @@
 #ifdef MOZ_AV1
 #  include "AOMDecoder.h"
 #endif
-#include "DXVA2Manager.h"
 #include <d3d11.h>
+
+#include "DXVA2Manager.h"
 #include "DriverCrashGuard.h"
 #include "GfxDriverInfo.h"
 #include "ImageContainer.h"
 #include "MFTDecoder.h"
 #include "MediaTelemetryConstants.h"
 #include "PerformanceRecorder.h"
-#include "VideoUtils.h"
 #include "VPXDecoder.h"
+#include "VideoUtils.h"
 #include "WMFUtils.h"
 #include "gfxCrashReporterUtils.h"
 #include "gfxWindowsPlatform.h"
@@ -26,8 +27,8 @@
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPrefs_media.h"
-#include "mozilla/glean/DomMediaPlatformsWmfMetrics.h"
 #include "mozilla/gfx/DeviceManagerDx.h"
+#include "mozilla/glean/DomMediaPlatformsWmfMetrics.h"
 #include "mozilla/layers/CompositeProcessD3D11FencesHolderMap.h"
 #include "mozilla/layers/D3D11ShareHandleImage.h"
 #include "mozilla/layers/D3D11ZeroCopyTextureImage.h"
@@ -669,8 +670,9 @@ D3D11DXVA2Manager::InitInternal(layers::KnowsCompositor* aKnowsCompositor,
     }
   }
 
-  // XXX enable fence
-  const bool useFence = false;
+  auto* fencesHolderMap = layers::CompositeProcessD3D11FencesHolderMap::Get();
+  const bool useFence =
+      fencesHolderMap && layers::FenceD3D11::IsSupported(mDevice);
   if (useFence) {
     mWriteFence = layers::FenceD3D11::Create(mDevice);
   }
@@ -857,9 +859,20 @@ HRESULT D3D11DXVA2Manager::WrapTextureWithImage(IMFSample* aVideoSample,
 
   RefreshIMFSampleWrappers();
 
+  auto format = [&]() {
+    if (desc.Format == DXGI_FORMAT_P010) {
+      return gfx::SurfaceFormat::P010;
+    }
+    if (desc.Format == DXGI_FORMAT_P016) {
+      return gfx::SurfaceFormat::P016;
+    }
+    MOZ_ASSERT(desc.Format == DXGI_FORMAT_NV12);
+    return gfx::SurfaceFormat::NV12;
+  }();
+
   RefPtr<D3D11TextureIMFSampleImage> image = new D3D11TextureIMFSampleImage(
       aVideoSample, texture, arrayIndex, gfx::IntSize(mWidth, mHeight), aRegion,
-      ToColorSpace2(mYUVColorSpace), mColorRange, mColorDepth);
+      format, ToColorSpace2(mYUVColorSpace), mColorRange, mColorDepth);
   image->AllocateTextureClient(mKnowsCompositor, mZeroCopyUsageInfo,
                                mWriteFence);
 

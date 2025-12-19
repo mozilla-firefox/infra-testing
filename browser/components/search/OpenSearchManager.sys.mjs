@@ -23,12 +23,12 @@ class _OpenSearchManager {
    */
 
   /**
-   * @type {WeakMap<XULBrowserElement, OpenSearchData[]>}
+   * @type {WeakMap<MozBrowser, OpenSearchData[]>}
    */
   #offeredEngines = new WeakMap();
 
   /**
-   * @type {WeakMap<XULBrowserElement, OpenSearchData[]>}
+   * @type {WeakMap<MozBrowser, OpenSearchData[]>}
    */
   #hiddenEngines = new WeakMap();
 
@@ -72,7 +72,7 @@ class _OpenSearchManager {
    * If an engine with that name is already installed, adds it to the list
    * of hidden engines instead.
    *
-   * @param {XULBrowserElement} browser
+   * @param {MozBrowser} browser
    *   The browser offering the engine.
    * @param {{title: string, href: string}} engine
    *   The title of the engine and the url to the opensearch XML.
@@ -128,10 +128,17 @@ class _OpenSearchManager {
    */
   updateOpenSearchBadge(win) {
     let engines = this.#offeredEngines.get(win.gBrowser.selectedBrowser);
-    win.gURLBar.addSearchEngineHelper.setEnginesFromBrowser(
-      win.gBrowser.selectedBrowser,
-      engines || []
-    );
+    for (let urlbar of win.document.querySelectorAll("moz-urlbar")) {
+      if (!urlbar.controller) {
+        // This means it is not initialized and happens
+        // if the new searchbar is disabled.
+        continue;
+      }
+      urlbar.addSearchEngineHelper.setEnginesFromBrowser(
+        win.gBrowser.selectedBrowser,
+        engines || []
+      );
+    }
 
     let searchBar = win.document.getElementById("searchbar");
     if (!searchBar) {
@@ -196,7 +203,7 @@ class _OpenSearchManager {
   /**
    * Get the open search engines offered by a certain browser.
    *
-   * @param {XULBrowserElement} browser
+   * @param {MozBrowser} browser
    *   The browser for which to get the engines.
    * @returns {OpenSearchData[]}
    *   The open search engines.

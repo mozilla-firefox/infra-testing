@@ -126,6 +126,17 @@ static Accessible* GetTextContainer(Accessible* aDescendant) {
   return nullptr;
 }
 
+static MsaaAccessible* GetTextPatternProviderFor(Accessible* aOrigin) {
+  if (HasTextPattern(aOrigin)) {
+    return MsaaAccessible::GetFrom(aOrigin);
+  }
+  return MsaaAccessible::GetFrom(GetTextContainer(aOrigin));
+}
+
+static bool MustSelectUsingDoAction(Accessible* aAcc) {
+  return IsRadio(aAcc) || aAcc->Role() == roles::PAGETAB;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // uiaRawElmProvider
 ////////////////////////////////////////////////////////////////////////////////
@@ -187,11 +198,13 @@ void uiaRawElmProvider::RaiseUiaEventForGeckoEvent(Accessible* aAcc,
       return;
     case nsIAccessibleEvent::EVENT_TEXT_CARET_MOVED:
     case nsIAccessibleEvent::EVENT_TEXT_SELECTION_CHANGED:
-      ::UiaRaiseAutomationEvent(uia, UIA_Text_TextSelectionChangedEventId);
+      ::UiaRaiseAutomationEvent(GetTextPatternProviderFor(aAcc),
+                                UIA_Text_TextSelectionChangedEventId);
       return;
     case nsIAccessibleEvent::EVENT_TEXT_INSERTED:
     case nsIAccessibleEvent::EVENT_TEXT_REMOVED:
-      ::UiaRaiseAutomationEvent(uia, UIA_Text_TextChangedEventId);
+      ::UiaRaiseAutomationEvent(GetTextPatternProviderFor(aAcc),
+                                UIA_Text_TextChangedEventId);
       MaybeRaiseUiaLiveRegionEvent(aAcc, aGeckoEvent);
       return;
     case nsIAccessibleEvent::EVENT_TEXT_VALUE_CHANGE:
@@ -514,13 +527,14 @@ uiaRawElmProvider::GetPropertyValue(PROPERTYID aPropertyId,
   switch (aPropertyId) {
     // Accelerator Key / shortcut.
     case UIA_AcceleratorKeyPropertyId: {
-      if (!localAcc) {
-        // KeyboardShortcut is only currently relevant for LocalAccessible.
-        break;
-      }
       nsAutoString keyString;
 
-      localAcc->KeyboardShortcut().ToString(keyString);
+      if (!acc->GetStringARIAAttr(nsGkAtoms::aria_keyshortcuts, keyString)) {
+        if (localAcc) {
+          // KeyboardShortcut is only currently relevant for LocalAccessible.
+          localAcc->KeyboardShortcut().ToString(keyString);
+        }
+      }
 
       if (!keyString.IsEmpty()) {
         aPropertyValue->vt = VT_BSTR;
@@ -581,6 +595,12 @@ uiaRawElmProvider::GetPropertyValue(PROPERTYID aPropertyId,
           // correct default (false) even if the attribute isn't specified.
           ariaProperties.AppendLiteral("atomic=false");
         }
+      }
+      if (acc->HasCustomActions()) {
+        if (!ariaProperties.IsEmpty()) {
+          ariaProperties += ';';
+        }
+        ariaProperties.AppendLiteral("hasactions=true");
       }
       if (!ariaProperties.IsEmpty()) {
         aPropertyValue->vt = VT_BSTR;
@@ -691,6 +711,18 @@ uiaRawElmProvider::GetPropertyValue(PROPERTYID aPropertyId,
           (acc->State() & states::FOCUSABLE) ? VARIANT_TRUE : VARIANT_FALSE;
       return S_OK;
 
+    case UIA_IsOffscreenPropertyId:
+      aPropertyValue->vt = VT_BOOL;
+      aPropertyValue->boolVal =
+          (acc->State() & states::OFFSCREEN) ? VARIANT_TRUE : VARIANT_FALSE;
+      return S_OK;
+
+    case UIA_IsPasswordPropertyId:
+      aPropertyValue->vt = VT_BOOL;
+      aPropertyValue->boolVal =
+          (acc->State() & states::PROTECTED) ? VARIANT_TRUE : VARIANT_FALSE;
+      return S_OK;
+
     case UIA_LabeledByPropertyId:
       if (Accessible* target = GetLabeledBy()) {
         aPropertyValue->vt = VT_UNKNOWN;
@@ -749,6 +781,17 @@ uiaRawElmProvider::GetPropertyValue(PROPERTYID aPropertyId,
       aPropertyValue->vt = VT_I4;
       aPropertyValue->lVal = acc->GroupPosition().setSize;
       return S_OK;
+
+    default: {
+      // These can't be included as case statements because they are not
+      // constant expressions.
+      const UiaRegistrations& registrations = GetUiaRegistrations();
+      if (aPropertyId == registrations.mAccessibleActions) {
+        aPropertyValue->vt = VT_UNKNOWN | VT_ARRAY;
+        aPropertyValue->parray = AccRelationsToUiaArray({RelationType::ACTION});
+        return S_OK;
+      }
+    }
   }
 
   return S_OK;
@@ -1179,7 +1222,7 @@ uiaRawElmProvider::Select() {
   if (!acc) {
     return CO_E_OBJNOTCONNECTED;
   }
-  if (IsRadio(acc)) {
+  if (MustSelectUsingDoAction(acc)) {
     acc->DoAction(0);
   } else {
     acc->TakeSelection();
@@ -1193,7 +1236,7 @@ uiaRawElmProvider::AddToSelection() {
   if (!acc) {
     return CO_E_OBJNOTCONNECTED;
   }
-  if (IsRadio(acc)) {
+  if (MustSelectUsingDoAction(acc)) {
     acc->DoAction(0);
   } else {
     acc->SetSelected(true);
@@ -1543,4 +1586,30 @@ SAFEARRAY* a11y::AccessibleArrayToUiaArray(const nsTArray<Accessible*>& aAccs) {
     ++indices[0];
   }
   return uias;
+}
+
+const UiaRegistrations& a11y::GetUiaRegistrations() {
+  static UiaRegistrations sRegistrations = {};
+  static bool sRegistered = false;
+  if (sRegistered) {
+    return sRegistrations;
+  }
+  RefPtr<IUIAutomationRegistrar> registrar;
+  if (FAILED(CoCreateInstance(CLSID_CUIAutomationRegistrar, nullptr,
+                              CLSCTX_INPROC_SERVER, IID_IUIAutomationRegistrar,
+                              getter_AddRefs(registrar)))) {
+    return sRegistrations;
+  }
+  UIAutomationPropertyInfo actionsInfo = {
+      // https://w3c.github.io/core-aam/#ariaActions
+      // {8C787AC3-0405-4C94-AC09-7A56A173F7EF}
+      {0x8C787AC3,
+       0x0405,
+       0x4C94,
+       {0xAC, 0x09, 0x7A, 0x56, 0xA1, 0x73, 0xF7, 0xEF}},
+      L"AccessibleActions",
+      UIAutomationType_ElementArray};
+  registrar->RegisterProperty(&actionsInfo, &sRegistrations.mAccessibleActions);
+  sRegistered = true;
+  return sRegistrations;
 }

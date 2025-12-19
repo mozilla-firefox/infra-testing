@@ -18,7 +18,6 @@
 #include "mozilla/dom/XRSession.h"
 #include "mozilla/dom/XRInputSourceArray.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/Unused.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/WebXRBinding.h"
 #include "nsServiceManagerUtils.h"
@@ -476,8 +475,8 @@ void VRDisplayClient::FireGamepadEvents() {
         (state.numButtons > 0 || state.numAxes > 0)) {
       dom::GamepadAdded info(NS_ConvertUTF8toUTF16(state.controllerName.data()),
                              dom::GamepadMappingType::_empty, state.hand,
-                             mDisplayInfo.mDisplayID, state.numButtons,
-                             state.numAxes, state.numHaptics, 0, 0);
+                             state.numButtons, state.numAxes, state.numHaptics,
+                             0, 0);
       dom::GamepadChangeEventBody body(info);
       dom::GamepadChangeEvent event(gamepadHandle, body);
       gamepadManager->Update(event);

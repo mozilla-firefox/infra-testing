@@ -55,7 +55,7 @@ this.search = class extends ExtensionAPI {
               if (
                 favIconUrl &&
                 (favIconUrl.startsWith("blob:") ||
-                  (favIconUrl.startsWith("moz-extension:") &&
+                  (ExtensionUtils.isExtensionUrl(favIconUrl) &&
                     !favIconUrl.startsWith(context.extension.baseURL)))
               ) {
                 favIconUrl = await ExtensionUtils.makeDataURI(favIconUrl);
@@ -90,13 +90,14 @@ this.search = class extends ExtensionAPI {
             defaultDisposition: "NEW_TAB",
           });
 
-          await SearchUIUtils.loadSearchFromExtension({
+          await SearchUIUtils.loadSearch({
             window: windowTracker.topWindow,
-            query: searchProperties.query,
+            searchText: searchProperties.query,
             where,
             engine,
             tab,
             triggeringPrincipal: context.principal,
+            sapSource: "webextension",
           });
         },
 
@@ -109,12 +110,13 @@ this.search = class extends ExtensionAPI {
             defaultDisposition: "CURRENT_TAB",
           });
 
-          await SearchUIUtils.loadSearchFromExtension({
+          await SearchUIUtils.loadSearch({
             window: windowTracker.topWindow,
-            query: queryProperties.text,
+            searchText: queryProperties.text,
             where,
             tab,
             triggeringPrincipal: context.principal,
+            sapSource: "webextension",
           });
         },
       },

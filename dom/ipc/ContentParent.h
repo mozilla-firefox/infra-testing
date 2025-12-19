@@ -7,23 +7,9 @@
 #ifndef mozilla_dom_ContentParent_h
 #define mozilla_dom_ContentParent_h
 
-#include "mozilla/dom/PContentParent.h"
-#include "mozilla/dom/ipc/IdType.h"
-#include "mozilla/dom/MessageManagerCallback.h"
-#include "mozilla/dom/MediaSessionBinding.h"
-#include "mozilla/dom/ProcessIsolation.h"
-#include "mozilla/dom/RemoteBrowser.h"
-#include "mozilla/dom/RemoteType.h"
-#include "mozilla/dom/JSProcessActorParent.h"
-#include "mozilla/dom/ProcessActor.h"
-#include "mozilla/dom/UniqueContentParentKeepAlive.h"
-#include "mozilla/dom/UserActivation.h"
-#include "mozilla/gfx/gfxVarReceiver.h"
-#include "mozilla/gfx/GPUProcessListener.h"
-#include "mozilla/ipc/BackgroundUtils.h"
-#include "mozilla/ipc/GeckoChildProcessHost.h"
-#include "mozilla/ipc/InputStreamUtils.h"
-#include "mozilla/ipc/SharedMemoryHandle.h"
+#include "DriverCrashGuard.h"
+#include "MainThreadUtils.h"
+#include "PermissionMessageUtils.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/DataMutex.h"
 #include "mozilla/HalTypes.h"
@@ -37,25 +23,38 @@
 #include "mozilla/StaticPtr.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
-
-#include "MainThreadUtils.h"
+#include "mozilla/dom/JSProcessActorParent.h"
+#include "mozilla/dom/MediaSessionBinding.h"
+#include "mozilla/dom/MessageManagerCallback.h"
+#include "mozilla/dom/PContentParent.h"
+#include "mozilla/dom/ProcessActor.h"
+#include "mozilla/dom/ProcessIsolation.h"
+#include "mozilla/dom/RemoteBrowser.h"
+#include "mozilla/dom/RemoteType.h"
+#include "mozilla/dom/UniqueContentParentKeepAlive.h"
+#include "mozilla/dom/UserActivation.h"
+#include "mozilla/dom/ipc/IdType.h"
+#include "mozilla/gfx/GPUProcessListener.h"
+#include "mozilla/gfx/gfxVarReceiver.h"
+#include "mozilla/ipc/BackgroundUtils.h"
+#include "mozilla/ipc/GeckoChildProcessHost.h"
+#include "mozilla/ipc/InputStreamUtils.h"
+#include "mozilla/ipc/SharedMemoryHandle.h"
 #include "nsClassHashtable.h"
-#include "nsTHashMap.h"
-#include "nsTHashSet.h"
 #include "nsHashKeys.h"
 #include "nsIAsyncShutdown.h"
+#include "nsIDOMGeoPositionCallback.h"
+#include "nsIDOMGeoPositionErrorCallback.h"
 #include "nsIDOMProcessParent.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIObserver.h"
+#include "nsIReferrerInfo.h"
 #include "nsIRemoteTab.h"
 #include "nsITransferable.h"
-#include "nsIDOMGeoPositionCallback.h"
-#include "nsIDOMGeoPositionErrorCallback.h"
 #include "nsIUrlClassifierFeature.h"
 #include "nsRefPtrHashtable.h"
-#include "PermissionMessageUtils.h"
-#include "DriverCrashGuard.h"
-#include "nsIReferrerInfo.h"
+#include "nsTHashMap.h"
+#include "nsTHashSet.h"
 
 class nsConsoleService;
 class nsICycleCollectorLogSink;
@@ -63,6 +62,7 @@ class nsIDumpGCAndCCLogsCallback;
 class nsIRemoteTab;
 class nsITimer;
 class ParentIdleListener;
+class nsIOriginsListLoadCallback;
 class nsIWidget;
 class nsIX509Cert;
 
@@ -82,6 +82,10 @@ class SandboxBrokerPolicyFactory;
 class PreallocatedProcessManagerImpl;
 
 using mozilla::loader::PScriptCacheParent;
+
+namespace performance::pageload_event {
+class PageloadEventData;
+}  // namespace performance::pageload_event
 
 namespace ipc {
 class CrashReporterHost;
@@ -141,7 +145,7 @@ class ContentParent final : public PContentParent,
   using LaunchPromise =
       mozilla::MozPromise<UniqueContentParentKeepAlive, nsresult, true>;
 
-  NS_DECLARE_STATIC_IID_ACCESSOR(NS_CONTENTPARENT_IID)
+  NS_INLINE_DECL_STATIC_IID(NS_CONTENTPARENT_IID)
 
   static LogModule* GetLog();
 
@@ -291,7 +295,7 @@ class ContentParent final : public PContentParent,
   static void BroadcastThemeUpdate(widget::ThemeChangeKind);
 
   static void BroadcastMediaCodecsSupportedUpdate(
-      RemoteDecodeIn aLocation, const media::MediaCodecsSupported& aSupported);
+      RemoteMediaIn aLocation, const media::MediaCodecsSupported& aSupported);
 
   const nsACString& GetRemoteType() const override;
 
@@ -549,7 +553,7 @@ class ContentParent final : public PContentParent,
       const bool& aForWindowDotPrint, const bool& aTopLevelCreatedByWebContent,
       nsIURI* aURIToLoad, const nsACString& aFeatures,
       const UserActivation::Modifiers& aModifiers,
-      nsIPrincipal* aTriggeringPrincipal, nsIContentSecurityPolicy* aCsp,
+      nsIPrincipal* aTriggeringPrincipal, nsIPolicyContainer* aPolicyContainer,
       nsIReferrerInfo* aReferrerInfo, const OriginAttributes& aOriginAttributes,
       bool aUserActivation, bool aTextDirectiveUserActivation,
       CreateWindowResolver&& aResolve);
@@ -560,7 +564,7 @@ class ContentParent final : public PContentParent,
       const bool& aTopLevelCreatedByWebContent, nsIURI* aURIToLoad,
       const nsACString& aFeatures, const UserActivation::Modifiers& aModifiers,
       const nsAString& aName, nsIPrincipal* aTriggeringPrincipal,
-      nsIContentSecurityPolicy* aCsp, nsIReferrerInfo* aReferrerInfo,
+      nsIPolicyContainer* aPolicyContainer, nsIReferrerInfo* aReferrerInfo,
       const OriginAttributes& aOriginAttributes, bool aUserActivation,
       bool aTextDirectiveUserActivation);
 
@@ -746,7 +750,7 @@ class ContentParent final : public PContentParent,
 
   bool ShouldContinueFromReplyTimeout() override;
 
-  void OnVarChanged(const GfxVarUpdate& aVar) override;
+  void OnVarChanged(const nsTArray<GfxVarUpdate>& aVar) override;
   void OnCompositorUnexpectedShutdown() override;
 
  private:
@@ -783,7 +787,7 @@ class ContentParent final : public PContentParent,
       nsresult& aResult, nsCOMPtr<nsIRemoteTab>& aNewRemoteTab,
       bool* aWindowIsNew, int32_t& aOpenLocation,
       nsIPrincipal* aTriggeringPrincipal, nsIReferrerInfo* aReferrerInfo,
-      bool aLoadUri, nsIContentSecurityPolicy* aCsp,
+      bool aLoadUri, nsIPolicyContainer* aPolicyContainer,
       const OriginAttributes& aOriginAttributes, bool aUserActivation,
       bool aTextDirectiveUserActivation);
 
@@ -1018,7 +1022,7 @@ class ContentParent final : public PContentParent,
 
   mozilla::ipc::IPCResult RecvSyncMessage(
       const nsAString& aMsg, const ClonedMessageData& aData,
-      nsTArray<StructuredCloneData>* aRetvals);
+      nsTArray<UniquePtr<StructuredCloneData>>* aRetvals);
 
   mozilla::ipc::IPCResult RecvAsyncMessage(const nsAString& aMsg,
                                            const ClonedMessageData& aData);
@@ -1182,7 +1186,10 @@ class ContentParent final : public PContentParent,
   mozilla::ipc::IPCResult RecvRecordDiscardedData(
       const DiscardedData& aDiscardedData);
   mozilla::ipc::IPCResult RecvRecordPageLoadEvent(
-      mozilla::glean::perf::PageLoadExtra&& aPageLoadEventExtra);
+      mozilla::performance::pageload_event::PageloadEventData&&
+          aPageLoadEventData,
+      const TimeStamp& aNavigationStartTime,
+      uint64_t aAndroidAppLinkLoadIdentifier);
   mozilla::ipc::IPCResult RecvRecordOrigin(const uint32_t& aMetricId,
                                            const nsACString& aOrigin);
   mozilla::ipc::IPCResult RecvReportContentBlockingLog(
@@ -1289,8 +1296,8 @@ class ContentParent final : public PContentParent,
       ServiceWorkerShutdownState::Progress aProgress);
 
   mozilla::ipc::IPCResult RecvRawMessage(
-      const JSActorMessageMeta& aMeta, const Maybe<ClonedMessageData>& aData,
-      const Maybe<ClonedMessageData>& aStack);
+      const JSActorMessageMeta& aMeta, JSIPCValue&& aData,
+      const UniquePtr<ClonedMessageData>& aStack);
 
   mozilla::ipc::IPCResult RecvAbortOtherOrientationPendingPromises(
       const MaybeDiscarded<BrowsingContext>& aContext);
@@ -1301,7 +1308,7 @@ class ContentParent final : public PContentParent,
 
   mozilla::ipc::IPCResult RecvHistoryCommit(
       const MaybeDiscarded<BrowsingContext>& aContext, const uint64_t& aLoadID,
-      const nsID& aChangeID, const uint32_t& aLoadType, const bool& aPersist,
+      const nsID& aChangeID, const uint32_t& aLoadType,
       const bool& aCloneEntryChildren, const bool& aChannelExpired,
       const uint32_t& aCacheKey);
 
@@ -1309,7 +1316,14 @@ class ContentParent final : public PContentParent,
   mozilla::ipc::IPCResult RecvHistoryGo(
       const MaybeDiscarded<BrowsingContext>& aContext, int32_t aOffset,
       uint64_t aHistoryEpoch, bool aRequireUserInteraction,
-      bool aUserActivation, HistoryGoResolver&& aResolveRequestedIndex);
+      bool aUserActivation, bool aCheckForCancelation,
+      HistoryGoResolver&& aResolveRequestedIndex);
+
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
+  mozilla::ipc::IPCResult RecvNavigationTraverse(
+      const MaybeDiscarded<BrowsingContext>& aContext, const nsID& aKey,
+      uint64_t aHistoryEpoch, bool aUserActivation, bool aCheckForCancelation,
+      NavigationTraverseResolver&& aResolveRequestedIndex);
 
   mozilla::ipc::IPCResult RecvSynchronizeLayoutHistoryState(
       const MaybeDiscarded<BrowsingContext>& aContext,
@@ -1341,10 +1355,9 @@ class ContentParent final : public PContentParent,
       const MaybeDiscarded<BrowsingContext>& aContext,
       GetLoadingSessionHistoryInfoFromParentResolver&& aResolver);
 
-  mozilla::ipc::IPCResult RecvGetContiguousSessionHistoryInfos(
+  mozilla::ipc::IPCResult RecvSynchronizeNavigationAPIState(
       const MaybeDiscarded<BrowsingContext>& aContext,
-      SessionHistoryInfo&& aInfo,
-      GetContiguousSessionHistoryInfosResolver&& aResolver);
+      const ClonedMessageData& aState);
 
   mozilla::ipc::IPCResult RecvRemoveFromBFCache(
       const MaybeDiscarded<BrowsingContext>& aContext);
@@ -1369,6 +1382,9 @@ class ContentParent final : public PContentParent,
       const MaybeDiscarded<BrowsingContext>& aContext,
       const uint32_t aReloadFlags);
 
+  mozilla::ipc::IPCResult RecvConsumeHistoryActivation(
+      const MaybeDiscarded<BrowsingContext>& aTop);
+
   mozilla::ipc::IPCResult RecvCleanupPendingLoadState(uint64_t aLoadIdentifier);
 
   // Notify the ContentChild to enable the input event prioritization when
@@ -1381,6 +1397,8 @@ class ContentParent final : public PContentParent,
 #endif
 
   mozilla::ipc::IPCResult RecvFOGData(ByteBuf&& buf);
+
+  mozilla::ipc::IPCResult RecvGeckoTraceExport(ByteBuf&& aBuf);
 
   mozilla::ipc::IPCResult RecvSetContainerFeaturePolicy(
       const MaybeDiscardedBrowsingContext& aContainerContext,
@@ -1401,6 +1419,10 @@ class ContentParent final : public PContentParent,
   mozilla::ipc::IPCResult RecvSignalFuzzingReady();
 #endif
 
+#ifdef FUZZING
+  mozilla::ipc::IPCResult RecvKillGPUProcess();
+#endif
+
  public:
   void SendGetFilesResponseAndForget(const nsID& aID,
                                      const GetFilesResponseResult& aResult);
@@ -1418,7 +1440,7 @@ class ContentParent final : public PContentParent,
     return mBrowsingContextFieldEpoch;
   }
 
-  void UpdateNetworkLinkType();
+  uint32_t UpdateNetworkLinkType();
 
   already_AddRefed<JSActor> InitJSActor(JS::Handle<JSObject*> aMaybeActor,
                                         const nsACString& aName,
@@ -1440,6 +1462,11 @@ class ContentParent final : public PContentParent,
     return mRemoteWorkerServiceActor;
   }
 
+  void SetAndroidAppLinkLaunchType(uint64_t aLoadIdentifier,
+                                   int32_t aAppLinkLaunchType);
+  int32_t GetAndroidAppLinkLaunchType(uint64_t aLoadIdentifier);
+  void ClearAndroidAppLinkLaunchType(uint64_t aLoadIdentifier);
+
  private:
   // Return an existing ContentParent if possible. Otherwise, `nullptr`.
   static UniqueContentParentKeepAlive GetUsedBrowserProcess(
@@ -1457,6 +1484,11 @@ class ContentParent final : public PContentParent,
 
   void StartRemoteWorkerService();
 
+  void RecordAndroidAppLinkTelemetry(
+      mozilla::performance::pageload_event::PageloadEventData*
+          aPageLoadEventData,
+      const TimeStamp& aNavStartTime, uint64_t aAppLinkLaunchTypeIdentifier);
+
  private:
   // If you add strong pointers to cycle collected objects here, be sure to
   // release these objects in ShutDownProcess.  See the comment there for more
@@ -1465,7 +1497,6 @@ class ContentParent final : public PContentParent,
   GeckoChildProcessHost* mSubprocess;
   const TimeStamp mLaunchTS;  // used to calculate time to start content process
   TimeStamp mLaunchYieldTS;   // used to calculate async launch main thread time
-  TimeStamp mActivateTS;
 
   bool mIsAPreallocBlocker;  // We called AddBlocker for this ContentParent
 
@@ -1582,6 +1613,10 @@ class ContentParent final : public PContentParent,
   // moot the need for this structure.
   nsTArray<uint64_t> mLoadedOriginHashes;
 
+  // Map from android load identifier to app link launch type
+  // We do this to avoid sending the app link launch type to the content process
+  nsTHashMap<uint64_t, int32_t> mAndroidLoadIdentifierToAppLinkLaunchType;
+
   UniquePtr<mozilla::ipc::CrashReporterHost> mCrashReporter;
 
   // Collects any pref changes that occur during process launch (after
@@ -1616,15 +1651,16 @@ class ContentParent final : public PContentParent,
   RefPtr<IdleTaskRunner> mMaybeBeginShutdownRunner;
 
   static uint32_t sMaxContentProcesses;
-  static uint32_t sPageLoadEventCounter;
 
   bool mIsSignaledImpendingShutdown = false;
   bool mIsNotifiedShutdownSuccess = false;
 
   nsCOMPtr<nsIThread> mClipboardContentAnalysisThread;
-};
 
-NS_DEFINE_STATIC_IID_ACCESSOR(ContentParent, NS_CONTENTPARENT_IID)
+#ifdef MOZ_WMF_CDM
+  RefPtr<nsIOriginsListLoadCallback> mOriginsListCallback;
+#endif
+};
 
 // Threadsafe handle object allowing off-main-thread code to get some
 // information and maintain a weak reference to a ContentParent.

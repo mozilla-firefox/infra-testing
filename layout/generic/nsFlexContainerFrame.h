@@ -11,8 +11,8 @@
 
 #include <tuple>
 
-#include "mozilla/dom/FlexBinding.h"
 #include "mozilla/IntrinsicISizesCache.h"
+#include "mozilla/dom/FlexBinding.h"
 #include "nsContainerFrame.h"
 #include "nsILineIterator.h"
 
@@ -90,7 +90,7 @@ class MOZ_STACK_CLASS FlexboxAxisInfo final {
   // Helpers for constructor which determine the orientation of our axes, based
   // on legacy box properties (-webkit-box-orient, -webkit-box-direction) or
   // modern flexbox properties (flex-direction, flex-wrap) depending on whether
-  // the flex container is a "legacy box" (as determined by IsLegacyBox).
+  // the flex container is a "legacy webkit box".
   void InitAxesFromLegacyProps(const nsIFrame* aFlexContainer);
   void InitAxesFromModernProps(const nsIFrame* aFlexContainer);
 };
@@ -100,8 +100,7 @@ class MOZ_STACK_CLASS FlexboxAxisInfo final {
  * "display: flex" or "display: inline-flex".
  *
  * We also use this class for elements with "display: -webkit-box" or
- * "display: -webkit-inline-box" (but not "-moz-box" / "-moz-inline-box" --
- * those are rendered with old-school XUL frame classes).
+ * "display: -webkit-inline-box".
  *
  * Note: we represent the -webkit-box family of properties (-webkit-box-orient,
  * -webkit-box-flex, etc.) as aliases for their -moz equivalents.  And for
@@ -270,7 +269,8 @@ class nsFlexContainerFrame final : public nsContainerFrame,
   int32_t GetNumLines() const final;
   bool IsLineIteratorFlowRTL() final;
   mozilla::Result<LineInfo, nsresult> GetLine(int32_t aLineNumber) final;
-  int32_t FindLineContaining(nsIFrame* aFrame, int32_t aStartLine = 0) final;
+  int32_t FindLineContaining(const nsIFrame* aFrame,
+                             int32_t aStartLine = 0) final;
   NS_IMETHOD FindFrameAt(int32_t aLineNumber, nsPoint aPos,
                          nsIFrame** aFrameFound, bool* aPosIsBeforeFirstFrame,
                          bool* aPosIsAfterLastFrame) final;

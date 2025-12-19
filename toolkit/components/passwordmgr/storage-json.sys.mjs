@@ -95,7 +95,18 @@ export class LoginManagerStorage_json {
       if (loginsBackupEnabled) {
         backupPath = PathUtils.join(profileDir, "logins-backup.json");
       }
+      // Note that LoginStore is based on JSONFile which brings its own
+      // shutdown blocker to finalize properly, so we do not need one here.
       this._store = new lazy.LoginStore(jsonPath, backupPath);
+
+      // The ProfileDataUpgrader can possibly set this pref. As we don't know
+      // whether that has already happened, or will still happen, we need to add
+      // a pref observer.
+      Services.prefs.addObserver(
+        "signon.reencryptionNeeded",
+        this.#observeReencryptionNeeded.bind(this)
+      );
+      this.#observeReencryptionNeeded();
 
       return (async () => {
         // Load the data asynchronously.
@@ -109,10 +120,11 @@ export class LoginManagerStorage_json {
   }
 
   /**
-   * Internal method used by regression tests only.  It is called before
-   * replacing this storage module with a new instance.
+   * Internal method used by tests only. It is called before replacing
+   * this storage module with a new instance. It avoids to finalize the
+   * underlying DeferredTask as it is still needed for the next tests.
    */
-  terminate() {
+  testSaveForReplace() {
     this._store._saver.disarm();
     return this._store._save();
   }
@@ -435,6 +447,12 @@ export class LoginManagerStorage_json {
     ]);
   }
 
+  async modifyLoginAsync(oldLogin, newLoginData, fromSync) {
+    let result = this.modifyLogin(oldLogin, newLoginData, fromSync);
+    // Emulate being async:
+    return Promise.resolve(result);
+  }
+
   // Replace the login with a tombstone. It has a guid and sync-related properties,
   // but does not contain the login or password information.
   #replaceLoginWithTombstone(login) {
@@ -581,90 +599,6 @@ export class LoginManagerStorage_json {
     },
     candidateLogins = this._store.data.logins
   ) {
-    function match(aLoginItem) {
-      for (let field in matchData) {
-        let wantedValue = matchData[field];
-
-        // Override the storage field name for some fields due to backwards
-        // compatibility with Sync/storage.
-        let storageFieldName = field;
-        switch (field) {
-          case "formActionOrigin": {
-            storageFieldName = "formSubmitURL";
-            break;
-          }
-          case "origin": {
-            storageFieldName = "hostname";
-            break;
-          }
-        }
-
-        switch (field) {
-          case "formActionOrigin":
-            if (wantedValue != null) {
-              // Historical compatibility requires this special case
-              if (
-                aLoginItem.formSubmitURL == "" ||
-                (wantedValue == "" && Object.keys(matchData).length != 1)
-              ) {
-                break;
-              }
-              if (
-                !lazy.LoginHelper.isOriginMatching(
-                  aLoginItem[storageFieldName],
-                  wantedValue,
-                  aOptions
-                )
-              ) {
-                return false;
-              }
-              break;
-            }
-          // fall through
-          case "origin":
-            if (wantedValue != null) {
-              // needed for formActionOrigin fall through
-              if (
-                !lazy.LoginHelper.isOriginMatching(
-                  aLoginItem[storageFieldName],
-                  wantedValue,
-                  aOptions
-                )
-              ) {
-                return false;
-              }
-              break;
-            }
-          // Normal cases.
-          // fall through
-          case "httpRealm":
-          case "id":
-          case "usernameField":
-          case "passwordField":
-          case "encryptedUsername":
-          case "encryptedPassword":
-          case "guid":
-          case "encType":
-          case "timeCreated":
-          case "timeLastUsed":
-          case "timePasswordChanged":
-          case "timesUsed":
-          case "syncCounter":
-          case "everSynced":
-            if (wantedValue == null && aLoginItem[storageFieldName]) {
-              return false;
-            } else if (aLoginItem[storageFieldName] != wantedValue) {
-              return false;
-            }
-            break;
-          // Fail if caller requests an unknown property.
-          default:
-            throw new Error("Unexpected field: " + field);
-        }
-      }
-      return true;
-    }
-
     let foundLogins = [],
       foundIds = [];
     for (let loginItem of candidateLogins) {
@@ -672,7 +606,7 @@ export class LoginManagerStorage_json {
         continue; // skip deleted items
       }
 
-      if (match(loginItem)) {
+      if (this.#matchLogin(loginItem, matchData, aOptions)) {
         // Create the new nsLoginInfo object, push to array
         let login = Cc["@mozilla.org/login-manager/loginInfo;1"].createInstance(
           Ci.nsILoginInfo
@@ -751,7 +685,33 @@ export class LoginManagerStorage_json {
       ) {
         remainingLogins.push(login);
       } else {
-        removedLogins.push(login);
+        // Create the nsLoginInfo object which to emit
+        const loginInfo = Cc[
+          "@mozilla.org/login-manager/loginInfo;1"
+        ].createInstance(Ci.nsILoginInfo);
+        loginInfo.init(
+          login.hostname,
+          login.formSubmitURL,
+          login.httpRealm,
+          login.encryptedUsername,
+          login.encryptedPassword,
+          login.usernameField,
+          login.passwordField
+        );
+        // set nsILoginMetaInfo values
+        loginInfo.QueryInterface(Ci.nsILoginMetaInfo);
+        loginInfo.guid = login.guid;
+        loginInfo.timeCreated = login.timeCreated;
+        loginInfo.timeLastUsed = login.timeLastUsed;
+        loginInfo.timePasswordChanged = login.timePasswordChanged;
+        loginInfo.timesUsed = login.timesUsed;
+        loginInfo.syncCounter = login.syncCounter;
+        loginInfo.everSynced = login.everSynced;
+
+        // Any unknown fields along for the ride
+        loginInfo.unknownFields = login.encryptedUnknownFields;
+
+        removedLogins.push(loginInfo);
         if (!fullyRemove && login?.everSynced) {
           // The login has been synced, so mark it as deleted.
           this.#incrementSyncCounter(login);
@@ -793,6 +753,108 @@ export class LoginManagerStorage_json {
     return logins;
   }
 
+  /**
+   * Checks if the given login item matches the specified matchData.
+   *
+   * @param {object} aLoginItem The login item to check.
+   * @param {object} aMatchData The match data to compare against. keyed by
+   * @param {object} [aOptions] Additional options for matching
+   *
+   * @returns {boolean} - Returns true if the login item matches the match data,
+   */
+  #matchLogin(
+    aLoginItem,
+    aMatchData,
+    aOptions = {
+      schemeUpgrades: false,
+      acceptDifferentSubdomains: false,
+      acceptRelatedRealms: false,
+      relatedRealms: [],
+    }
+  ) {
+    for (let field in aMatchData) {
+      let wantedValue = aMatchData[field];
+
+      // Override the storage field name for some fields due to backwards
+      // compatibility with Sync/storage.
+      let storageFieldName = field;
+      switch (field) {
+        case "formActionOrigin": {
+          storageFieldName = "formSubmitURL";
+          break;
+        }
+        case "origin": {
+          storageFieldName = "hostname";
+          break;
+        }
+      }
+
+      switch (field) {
+        case "formActionOrigin":
+          if (wantedValue != null) {
+            // Historical compatibility requires this special case
+            if (
+              aLoginItem.formSubmitURL == "" ||
+              (wantedValue == "" && Object.keys(aMatchData).length != 1)
+            ) {
+              break;
+            }
+            if (
+              !lazy.LoginHelper.isOriginMatching(
+                aLoginItem[storageFieldName],
+                wantedValue,
+                aOptions
+              )
+            ) {
+              return false;
+            }
+            break;
+          }
+        // fall through
+        case "origin":
+          if (wantedValue != null) {
+            // needed for formActionOrigin fall through
+            if (
+              !lazy.LoginHelper.isOriginMatching(
+                aLoginItem[storageFieldName],
+                wantedValue,
+                aOptions
+              )
+            ) {
+              return false;
+            }
+            break;
+          }
+        // Normal cases.
+        // fall through
+        case "httpRealm":
+        case "id":
+        case "usernameField":
+        case "passwordField":
+        case "encryptedUsername":
+        case "encryptedPassword":
+        case "guid":
+        case "encType":
+        case "timeCreated":
+        case "timeLastUsed":
+        case "timePasswordChanged":
+        case "timesUsed":
+        case "syncCounter":
+        case "everSynced":
+          if (wantedValue == null && aLoginItem[storageFieldName]) {
+            return false;
+          } else if (aLoginItem[storageFieldName] != wantedValue) {
+            return false;
+          }
+          break;
+        // Fail if caller requests an unknown property.
+        default:
+          throw new Error("Unexpected field: " + field);
+      }
+    }
+    return true;
+  }
+
   countLogins(origin, formActionOrigin, httpRealm) {
     this._store.ensureDataReady();
 
@@ -807,10 +869,13 @@ export class LoginManagerStorage_json {
         matchData[field] = loginData[field];
       }
     }
-    let [logins] = this._searchLogins(matchData);
 
-    this.log(`Counted ${logins.length} logins.`);
-    return logins.length;
+    const foundLogins = this._store.data.logins.filter(
+      loginItem => !loginItem.deleted && this.#matchLogin(loginItem, matchData)
+    );
+
+    this.log(`Counted ${foundLogins.length} logins.`);
+    return foundLogins.length;
   }
 
   addPotentiallyVulnerablePassword(login) {
@@ -1049,6 +1114,126 @@ export class LoginManagerStorage_json {
     }
 
     return result;
+  }
+
+  reencryptionInProgress = false;
+
+  /**
+   * For migration purposes, asynchronously reencrypt all logins in the
+   * background.
+   */
+  async reencryptAllLogins() {
+    if (this.reencryptionInProgress) {
+      return;
+    }
+    this.reencryptionInProgress = true;
+    this._store.ensureDataReady();
+    Glean.pwmgr.migration.record({ value: "started" });
+
+    const encryptedLogins = structuredClone(
+      this._store.data.logins.filter(login => !this.loginIsDeleted(login.guid))
+    );
+    let encrypted = encryptedLogins.flatMap(
+      ({ encryptedUsername, encryptedPassword, encryptedUnknownFields }) => [
+        encryptedUsername,
+        encryptedPassword,
+        encryptedUnknownFields,
+      ]
+    );
+
+    // Calling decryptMany / encryptMany with an empty array would throw an
+    // error, so just don't do it if there are no logins.
+    if (encryptedLogins.length) {
+      const decrypted = await this._crypto
+        .decryptMany(encrypted)
+        .catch(error => {
+          Glean.pwmgr.migration.record({
+            value: "decryptionError",
+            error: error.name,
+          });
+          this.reencryptionInProgress = false;
+          throw error;
+        });
+      encrypted = await this._crypto.encryptMany(decrypted).catch(error => {
+        Glean.pwmgr.migration.record({
+          value: "encryptionError",
+          error: error.name,
+        });
+        this.reencryptionInProgress = false;
+        throw error;
+      });
+    }
+
+    for (let oldIndex = 0; oldIndex < encryptedLogins.length; oldIndex++) {
+      const oldLogin = encryptedLogins[oldIndex];
+      const newLogin = this._store.data.logins.find(
+        login => login.id === oldLogin.id
+      );
+
+      if (
+        !newLogin ||
+        newLogin.encryptedUsername != oldLogin.encryptedUsername ||
+        newLogin.encryptedPassword != oldLogin.encryptedPassword ||
+        newLogin.encryptedUnknownFields != oldLogin.encryptedUnknownFields
+      ) {
+        // This login has been changed or got deleted while we were
+        // asynchronously reencrypting the logins. As we shoudn't overwrite it
+        // and potentially loose the update, we will just skip it.
+        this.log(
+          `Login ${
+            oldLogin.guid
+          } changed during migration and doesn't need to be updated.`
+        );
+        continue;
+      }
+
+      newLogin.encryptedUsername = encrypted[oldIndex * 3];
+      newLogin.encryptedPassword = encrypted[oldIndex * 3 + 1];
+      newLogin.encryptedUnknownFields = encrypted[oldIndex * 3 + 2];
+    }
+
+    // Save the logins changed by us to disk if there are any
+    if (encryptedLogins.length) {
+      // This could throw if we are in shutdown phase and the store is already
+      // finalized. Thus, it is important we call this before clearing
+      // signon.reencryptionNeeded below, to make sure we will retry the
+      // reencryption on the next restart in case this fails.
+      this._store.saveSoon();
+    }
+
+    Services.prefs.clearUserPref("signon.reencryptionNeeded");
+    this.reencryptionInProgress = false;
+    if (this.addedLoginObserver) {
+      Services.obs.removeObserver(this, "passwordmgr-crypto-login");
+    }
+    Glean.pwmgr.migration.record({ value: "success" });
+  }
+
+  /**
+   * Pref observer for signon.reencryptionNeeded
+   */
+  #observeReencryptionNeeded() {
+    if (Services.prefs.getBoolPref("signon.reencryptionNeeded", false)) {
+      // Only reencrypt if user is logged in. Else, wait until the login has
+      // happened.
+      if (this.isLoggedIn) {
+        this.reencryptAllLogins();
+      } else if (!this.addedLoginObserver) {
+        Services.obs.addObserver(this, "passwordmgr-crypto-login");
+        this.addedLoginObserver = true;
+      }
+    }
+  }
+
+  observe(_, topic) {
+    // If we need to reencrypt, and weren't able to do so on startup because a
+    // primary password is set, we can retry doing so now.
+    if (
+      topic === "passwordmgr-crypto-login" &&
+      Services.prefs.getBoolPref("signon.reencryptionNeeded", false)
+    ) {
+      this.reencryptAllLogins();
+    }
   }
 }
 

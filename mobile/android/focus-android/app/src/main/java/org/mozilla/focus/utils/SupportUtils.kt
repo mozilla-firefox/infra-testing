@@ -14,7 +14,7 @@ import androidx.fragment.app.FragmentActivity
 import mozilla.components.browser.state.state.ExternalAppType
 import mozilla.components.browser.state.state.SessionState
 import mozilla.components.feature.customtabs.createCustomTabConfigFromIntent
-import mozilla.components.support.utils.ext.getPackageInfoCompat
+import mozilla.components.support.utils.ext.packageManagerCompatHelper
 import org.mozilla.focus.BuildConfig
 import org.mozilla.focus.R
 import org.mozilla.focus.activity.CustomTabActivity
@@ -66,7 +66,6 @@ object SupportUtils {
         TRACKERS("trackers"),
         USAGE_PING_SETTINGS("usage-ping-settings-mobile"),
         SEARCH_SUGGESTIONS("search-suggestions-focus-android"),
-        STUDIES("how-opt-out-studies-firefox-focus-android"),
         HTTPS_ONLY("https-only-prefs-focus"),
         COOKIE_BANNER("cookie-banner-reduction-firefox-focus-android"),
     }
@@ -106,7 +105,10 @@ object SupportUtils {
      */
     fun getAppVersion(context: Context): String {
         try {
-            return context.packageManager.getPackageInfoCompat(context.packageName, 0).versionName ?: ""
+            return context.packageManagerCompatHelper.getPackageInfoCompat(
+                context.packageName,
+                0,
+            ).versionName ?: ""
         } catch (e: PackageManager.NameNotFoundException) {
             // This should be impossible - we should always be able to get information about ourselves:
             throw IllegalStateException("Unable find package details for Focus", e)

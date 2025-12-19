@@ -78,6 +78,7 @@
       <li><a href="about:license#cairo">Cairo Component Licenses</a></li>
       <li><a href="about:license#chromium">Chromium License</a></li>
       <li><a href="about:license#codemirror">CodeMirror License</a></li>
+      <li><a href="about:license#codemirror6">CodeMirror 6 License</a></li>
       <li><a href="about:license#cryptogams">CRYPTOGAMS License</a></li>
       <li><a href="about:license#cubic-bezier">cubic-bezier License</a></li>
       <li><a href="about:license#d3">D3 License</a></li>
@@ -115,20 +116,19 @@
       <li><a href="about:license#libyuv">libyuv License</a></li>
       <li><a href="about:license#hunspell-lt">Lithuanian Spellchecking Dictionary License</a></li>
       <li><a href="about:license#lodash">lodash License</a></li>
-      <li><a href="about:license#matches">matches License</a></li>
       <li><a href="about:license#mit">MIT License</a></li>
       <li><a href="about:license#myspell">MySpell License</a></li>
       <li><a href="about:license#nicer">nICEr License</a></li>
       <li><a href="about:license#node-md5">node-md5 License</a></li>
       <li><a href="about:license#nom">nom License</a></li>
       <li><a href="about:license#nrappkit">nrappkit License</a></li>
-      <li><a href="about:license#openldap">OpenLDAP Public License</a></li>
       <li><a href="about:license#openvision">OpenVision License</a></li>
 #if defined(XP_WIN) || defined(XP_MACOSX) || defined(XP_LINUX)
       <li><a href="about:license#openvr">OpenVR License</a></li>
 #endif
       <li><a href="about:license#praton">praton License</a></li>
       <li><a href="about:license#praton1">praton and inet_ntop License</a></li>
+      <li><a href="about:license#prosemirror">ProseMirror License</a></li>
       <li><a href="about:license#qcms">qcms License</a></li>
       <li><a href="about:license#qrcode-generator">QR Code Generator License</a></li>
       <li><a href="about:license#react">React License</a></li>
@@ -1531,6 +1531,12 @@ product.
                 <li><code>third_party/perfetto/</code></li>
 #endif
                 <li><code>third_party/rust/calendrical_calculations</code></li>
+                <li><code>toolkit/components/ml/vendor/openai/dist/openai.mjs</code></li>
+                <li><code>toolkit/components/ml/vendor/transformers.js</code></li>
+#ifdef NIGHTLY_BUILD
+                <li><code>toolkit/components/ml/vendor/transformers-dev.js</code></li>
+                <li><code>toolkit/components/ml/vendor/openai/dist/openai-dev.mjs</code></li>
+#endif
             </ul>
           </td>
           <td>
@@ -2233,7 +2239,7 @@ product.
             <p>This license applies to files in the following directories:
             <ul>
                 <li><code>third_party/rust/arrayref</code></li>
-                <li><code>third_party/rust/mach</code></li>
+                <li><code>third_party/rust/mach2</code></li>
                 <li><code>third_party/rust/qlog</code></li>
             </ul>
             See the individual LICENSE files for copyright owners.</p>
@@ -2277,6 +2283,7 @@ product.
                 <li><code>toolkit/content/vendor/react/react-transition-group.js</code></li>
                 <li><code>third_party/rust/bindgen/</code></li>
                 <li><code>third_party/rust/subtle/</code></li>
+                <li><code>third_party/rust/uritemplate-next/</code></li>
 #ifdef MOZ_JXL
                 <li><code>third_party/jpeg-xl/</code></li>
 #endif
@@ -2428,6 +2435,9 @@ product.
                 <li><code>toolkit/components/formautofill/shared/FormAutofillNameUtils.sys.mjs</code></li>
                 <li><code>editor/libeditor/EditorEventListener.cpp</code></li>
                 <li><code>security/sandbox/</code></li>
+#ifdef MOZ_ZUCCHINI
+                <li><code>third_party/zucchini/</code></li>
+#endif
                 <li><code>toolkit/components/passwordmgr/shared/PasswordGenerator.sys.mjs</code></li>
                 <li><code>widget/cocoa/GfxInfo.mm</code></li>
                 <li><code>widget/windows/nsWindow.cpp</code></li>
@@ -2518,6 +2528,40 @@ product.
             Please note that some subdirectories of the CodeMirror distribution
             include their own LICENSE files, and are released under different
             licences.
+            </pre>
+          </td>
+        </tr>
+
+        <tr>
+          <td>
+            <h1><a id="codemirror6"></a>CodeMirror 6 License</h1>
+          </td>
+          <td>
+            <p>This license applies to all files in <code>devtools/client/shared/sourceeditor/codemirror6</code></p>
+          </td>
+          <td>
+            <pre>
+            MIT License
+
+            Copyright (C) 2025 by Marijn Haverbeke <marijn@haverbeke.berlin>, Adrian Heine <mail@adrianheine.de>, and others
+
+            Permission is hereby granted, free of charge, to any person obtaining a copy
+            of this software and associated documentation files (the "Software"), to deal
+            in the Software without restriction, including without limitation the rights
+            to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+            copies of the Software, and to permit persons to whom the Software is
+            furnished to do so, subject to the following conditions:
+
+            The above copyright notice and this permission notice shall be included in
+            all copies or substantial portions of the Software.
+
+            THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+            IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+            FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+            AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+            LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+            OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+            THE SOFTWARE.
             </pre>
           </td>
         </tr>
@@ -2675,7 +2719,7 @@ product.
             <h1><a id="diff"></a>diff License</h1>
           </td>
           <td>
-            <p>This license applies to the file <code>devtools/client/inspector/markup/test/helper_diff.js</code>.</p>
+            <p>This license applies to the file <code>devtools/client/inspector/markup/test/events/helper_diff.js</code>.</p>
           </td>
           <td>
             <pre>
@@ -3681,7 +3725,11 @@ product.
             <h1><a id="libevent"></a>libevent License</h1>
           </td>
           <td>
-            <p>This license applies to files in the directory <code>ipc/chromium/src/third_party/libevent/</code>.</p>
+            <p>This license applies to files in the following directories:<p>
+            <ul>
+              <li><code>ipc/chromium/src/third_party/libevent/</code></li>
+              <li><code>security/sandbox/chromium/third_party/libevent/</code></li>
+            </ul>
           </td>
           <td>
             <pre>
@@ -4032,44 +4080,6 @@ product.
 
         <tr>
           <td>
-            <h1><a id="matches"></a>matches License</h1>
-          </td>
-          <td>
-            <p>This license applies to files in the directory <code>third_party/rust/matches</code>.</p>
-          </td>
-          <td>
-            <pre>
-            Copyright (c) 2014-2016 Simon Sapin
-
-            Permission is hereby granted, free of charge, to any
-            person obtaining a copy of this software and associated
-            documentation files (the "Software"), to deal in the
-            Software without restriction, including without
-            limitation the rights to use, copy, modify, merge,
-            publish, distribute, sublicense, and/or sell copies of
-            the Software, and to permit persons to whom the Software
-            is furnished to do so, subject to the following
-            conditions:
-
-            The above copyright notice and this permission notice
-            shall be included in all copies or substantial portions
-            of the Software.
-
-            THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-            ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-            TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-            PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-            SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-            CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-            OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-            IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-            DEALINGS IN THE SOFTWARE.
-            </pre>
-          </td>
-        </tr>
-
-        <tr>
-          <td>
             <h1><a id="mit"></a>MIT License</h1>
           </td>
           <td>
@@ -4100,7 +4110,6 @@ product.
               <li><code>toolkit/content/vendor/react/prop-types*</code></li>
               <li><code>devtools/client/shared/vendor/react*</code>,
                   <code>toolkit/content/vendor/react/react*</code>,
-                  <code>browser/components/pocket/content/panels/js/vendor.bundle.js</code> and
                   <code>devtools/client/debugger/test/mochitest/examples/react/build/main.js</code></li>
               <li><code>devtools/client/shared/vendor/react-router-dom.js</code></li>
               <li><code>devtools/client/shared/vendor/reselect.js</code> and
@@ -4120,6 +4129,20 @@ product.
               <li><code>js/src/xsum</code></li>
               <li><code>toolkit/components/resistfingerprinting/content/gl-matrix.js</code></li>
               <li><code>toolkit/components/resistfingerprinting/content/ssdeep.js</code></li>
+#ifdef NIGHTLY_BUILD
+              <li><code>toolkit/components/ml/vendor/wllama-module-dev.mjs</code></li>
+#endif
+              <li><code>toolkit/components/ml/vendor/wllama-module.mjs</code></li>
+#ifdef XP_WIN
+              <li>CoreMessagingXP.dll</li>
+              <li>marshal.dll</li>
+              <li>Microsoft.InputStateManager.dll</li>
+              <li>Microsoft.Internal.FrameworkUdk.dll</li>
+              <li>Microsoft.UI.Composition.OSSupport.dll</li>
+              <li>Microsoft.UI.Input.dll</li>
+              <li>Microsoft.UI.Windowing.Core.dll</li>
+              <li>Microsoft.UI.Windowing.dll</li>
+#endif
             </ul>
             See the individual LICENSE files or headers for copyright owners.</p>
           </td>
@@ -4484,67 +4507,6 @@ product.
 
         <tr>
           <td>
-            <h1><a id="openldap"></a>OpenLDAP Public License</h1>
-          </td>
-          <td>
-            <p>This license applies to certain files in the directory <code>third_party/rust/lmdb-rkv-sys/lmdb/libraries/liblmdb</code>.
-            </p>
-          </td>
-          <td>
-            <pre>
-            The OpenLDAP Public License
-              Version 2.8, 17 August 2003
-
-            Redistribution and use of this software and associated documentation
-            ("Software"), with or without modification, are permitted provided
-            that the following conditions are met:
-
-            1. Redistributions in source form must retain copyright statements
-              and notices,
-
-            2. Redistributions in binary form must reproduce applicable copyright
-              statements and notices, this list of conditions, and the following
-              disclaimer in the documentation and/or other materials provided
-              with the distribution, and
-
-            3. Redistributions must contain a verbatim copy of this document.
-
-            The OpenLDAP Foundation may revise this license from time to time.
-            Each revision is distinguished by a version number.  You may use
-            this Software under terms of this license revision or under the
-            terms of any subsequent revision of the license.
-
-            THIS SOFTWARE IS PROVIDED BY THE OPENLDAP FOUNDATION AND ITS
-            CONTRIBUTORS ``AS IS'' AND ANY EXPRESSED OR IMPLIED WARRANTIES,
-            INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
-            AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT
-            SHALL THE OPENLDAP FOUNDATION, ITS CONTRIBUTORS, OR THE AUTHOR(S)
-            OR OWNER(S) OF THE SOFTWARE BE LIABLE FOR ANY DIRECT, INDIRECT,
-            INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
-            BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-            LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-            CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
-            LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
-            ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-            POSSIBILITY OF SUCH DAMAGE.
-
-            The names of the authors and copyright holders must not be used in
-            advertising or otherwise to promote the sale, use or other dealing
-            in this Software without specific, written prior permission.  Title
-            to copyright in this Software shall at all times remain with copyright
-            holders.
-
-            OpenLDAP is a registered trademark of the OpenLDAP Foundation.
-
-            Copyright 1999-2003 The OpenLDAP Foundation, Redwood City,
-            California, USA.  All Rights Reserved.  Permission to copy and
-            distribute verbatim copies of this document is granted.
-            </pre>
-          </td>
-        </tr>
-
-        <tr>
-          <td>
             <h1><a id="openvision"></a>OpenVision License</h1>
           </td>
           <td>
@@ -4732,6 +4694,79 @@ product.
             AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
             WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
             CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+            </pre>
+          </td>
+        </tr>
+
+        <tr>
+          <td>
+            <h1><a id="prosemirror"></a>ProseMirror Licenses</h1>
+          </td>
+          <td>
+            <p>This entry applies to all files in <code>third_party/js/prosemirror/</code> and its subdirectories. Most ProseMirror packages are licensed under the MIT license, except where noted below.</p>
+            <ul>
+              <li>
+                MIT License:
+                <ul>
+                  <li><code>third_party/js/prosemirror/prosemirror-commands</code></li>
+                  <li><code>third_party/js/prosemirror/prosemirror-history</code></li>
+                  <li><code>third_party/js/prosemirror/prosemirror-keymap</code></li>
+                  <li><code>third_party/js/prosemirror/prosemirror-model</code></li>
+                  <li><code>third_party/js/prosemirror/prosemirror-schema-basic</code></li>
+                  <li><code>third_party/js/prosemirror/prosemirror-state</code></li>
+                  <li><code>third_party/js/prosemirror/prosemirror-transform</code></li>
+                  <li><code>third_party/js/prosemirror/prosemirror-view</code></li>
+                </ul>
+              </li>
+              <li>
+                Apache License 2.0:
+                <ul>
+                  <li><code>third_party/js/prosemirror/prosemirror-suggestions</code></li>
+                </ul>
+              </li>
+            </ul>
+          </td>
+          <td>
+            <pre>
+            MIT License (applies to core and non-core ProseMirror packages)
+
+            Copyright (C) 2015-2017 by Marijn Haverbeke <marijn@haverbeke.berlin> and others
+
+            Permission is hereby granted, free of charge, to any person obtaining a copy
+            of this software and associated documentation files (the "Software"), to deal
+            in the Software without restriction, including without limitation the rights
+            to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+            copies of the Software, and to permit persons to whom the Software is
+            furnished to do so, subject to the following conditions:
+
+            The above copyright notice and this permission notice shall be included in
+            all copies or substantial portions of the Software.
+
+            THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+            IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+            FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+            AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+            LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+            OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+            THE SOFTWARE.
+
+            ---
+
+            Apache License 2.0 (applies to third-party package <code>third_party/js/prosemirror/prosemirror-suggestions</code>):
+
+            Copyright 2017 Quartzy, Inc.
+
+            Licensed under the Apache License, Version 2.0 (the "License");
+            you may not use this file except in compliance with the License.
+            You may obtain a copy of the License at
+
+              http://www.apache.org/licenses/LICENSE-2.0
+
+            Unless required by applicable law or agreed to in writing, software
+            distributed under the License is distributed on an "AS IS" BASIS,
+            WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+            See the License for the specific language governing permissions and
+            limitations under the License.
             </pre>
           </td>
         </tr>
@@ -5313,6 +5348,10 @@ product.
               <li><code>intl/icu</code></li>
               <li><code>intl/tzdata</code></li>
               <li><code>js/src/util</code></li>
+              <li><code>security/sandbox/chromium/base/third_party/icu</code></li>
+#ifdef MOZ_ZUCCHINI
+              <li><code>third_party/zucchini/chromium/base/third_party/icu/</code></li>
+#endif
             </ul>
             <p>and to parts of the code in:</p>
             <ul>
@@ -5720,13 +5759,18 @@ product.
               <li><code>intl/icu_segmenter_data</code></li>
               <li><code>third_party/rust/icu_calendar</code></li>
               <li><code>third_party/rust/icu_calendar_data</code></li>
+              <li><code>third_party/rust/icu_casemap</code></li>
+              <li><code>third_party/rust/icu_casemap_data</code></li>
               <li><code>third_party/rust/icu_collections</code></li>
-              <li><code>third_party/rust/icu_locid</code></li>
-              <li><code>third_party/rust/icu_locid_transform</code></li>
+              <li><code>third_party/rust/icu_locale</code></li>
+              <li><code>third_party/rust/icu_locale_core</code></li>
+              <li><code>third_party/rust/icu_locale_data</code></li>
+              <li><code>third_party/rust/icu_normalizer</code></li>
+              <li><code>third_party/rust/icu_normalizer_data</code></li>
               <li><code>third_party/rust/icu_provider</code></li>
               <li><code>third_party/rust/icu_provider_adapters</code></li>
-              <li><code>third_party/rust/icu_provider_macros</code></li>
               <li><code>third_party/rust/icu_segmenter</code></li>
+              <li><code>third_party/rust/icu_time</code></li>
               <li><code>third_party/rust/litemap</code></li>
               <li><code>third_party/rust/tinystr</code></li>
               <li><code>third_party/rust/writeable</code></li>
@@ -5961,7 +6005,7 @@ product.
             <h1><a id="webrtc"></a>WebRTC License</h1>
           </td>
           <td>
-            <p>This license applies to certain files in the directory <code>third_party/libwebrtc/</code>.</p>
+            <p>This license applies to certain files in the directory <code>third_party/libwebrtc/</code> and <code>dom/media/systemservices/android_video_capture/</code>.</p>
           </td>
           <td>
             <pre>
@@ -6042,7 +6086,7 @@ product.
     </ul>
 
 <pre>
-Copyright (c) &lt;year&gt;, Xiph.org Foundation
+Copyright (c) &lt;2002-2025&gt;, Xiph.org Foundation
         <tr>
           <td>
             <h1><a id="xiph"></a>Xiph.org Foundation License</h1>

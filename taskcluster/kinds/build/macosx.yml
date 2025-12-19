@@ -5,7 +5,21 @@
 task-defaults:
     index:
         product: firefox
-    worker-type: b-linux-gcp
+    worker-type: b-linux-docker-amd
+    worker:
+        artifacts:
+            - name: public/build/security/{browser_entitlement}.xml
+              path: checkouts/gecko/security/mac/hardenedruntime/{entitlement_directory}/{browser_entitlement}.xml
+              type: file
+            - name: public/build/security/media-plugin-helper.xml
+              path: checkouts/gecko/security/mac/hardenedruntime/{entitlement_directory}/media-plugin-helper.xml
+              type: file
+            - name: public/build/security/plugin-container.xml
+              path: checkouts/gecko/security/mac/hardenedruntime/{entitlement_directory}/plugin-container.xml
+              type: file
+            - name: public/build/security/security-module-helper.xml
+              path: checkouts/gecko/security/mac/hardenedruntime/{entitlement_directory}/security-module-helper.xml
+              type: file
     run:
         using: mozharness
         actions: [get-secrets, build]
@@ -45,12 +59,14 @@ macosx64/debug:
         custom-build-variant-cfg: cross-debug
         mozconfig-variant: debug
     use-sccache: true
+    use-python: "3.11"
     fetches:
         toolchain:
             - linux64-clang
             - linux64-sccache
             - macosx64-sdk
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-apple-darwin
 
 macosx64-aarch64/debug:
     description: "MacOS X Aarch64 Cross-compile"
@@ -84,6 +100,7 @@ macosx64-aarch64/debug:
             - linux64-sccache
             - macosx64-sdk
             - sysroot-wasm32-wasi
+            - onnxruntime-aarch64-apple-darwin
 
 macosx64-non-unified/plain:
     description: "MacOS X x64 Hybrid Cross-compile"
@@ -96,14 +113,17 @@ macosx64-non-unified/plain:
     worker:
         max-run-time: 7200
         env:
+            MOZ_AUTOMATION_BUILD_SYMBOLS: '0'
             PERFHERDER_EXTRA_OPTIONS: non-unified
     run:
         config:
             - builds/releng_base_firefox.py
             - builds/releng_base_mac_64_cross_builds.py
-        mozconfig-variant: non-unified
+        mozconfig-variant: nightly
         extra-config:
             disable_package_metrics: true
+            extra_mozconfig_content:
+                - ac_add_options --disable-unified-build
     use-sccache: true
     run-on-projects: ['integration']
     fetches:
@@ -112,6 +132,7 @@ macosx64-non-unified/plain:
             - linux64-sccache
             - macosx64-sdk
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-apple-darwin
 
 macosx64/opt:
     description: "MacOS X x64 Cross-compile"
@@ -134,12 +155,14 @@ macosx64/opt:
             - builds/releng_base_mac_64_cross_builds.py
     run-on-projects: ['integration']
     use-sccache: true
+    use-python: "3.11"
     fetches:
         toolchain:
             - linux64-clang
             - linux64-sccache
             - macosx64-sdk
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-apple-darwin
 
 macosx64-asan-fuzzing/opt:
     description: "MacOS X x64 Cross-compile Fuzzing ASAN"
@@ -170,6 +193,7 @@ macosx64-asan-fuzzing/opt:
             - macosx64-llvm-symbolizer
             - macosx64-sdk
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-apple-darwin
     optimization:
         skip-unless-expanded: null
 
@@ -203,6 +227,7 @@ macosx64-fuzzing/debug:
             - macosx64-sdk
             - macosx64-llvm-symbolizer
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-apple-darwin
     optimization:
         skip-unless-expanded: null
 
@@ -237,6 +262,7 @@ macosx64-aarch64-asan-fuzzing/opt:
             - macosx64-aarch64-llvm-symbolizer
             - macosx64-sdk
             - sysroot-wasm32-wasi
+            - onnxruntime-aarch64-apple-darwin
     optimization:
         skip-unless-expanded: null
 
@@ -272,6 +298,7 @@ macosx64-aarch64-fuzzing/debug:
             - macosx64-aarch64-llvm-symbolizer
             - macosx64-sdk
             - sysroot-wasm32-wasi
+            - onnxruntime-aarch64-apple-darwin
     optimization:
         skip-unless-expanded: null
 
@@ -311,6 +338,7 @@ macosx64-x64-devedition/opt:
             - linux64-clang
             - macosx64-sdk
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-apple-darwin
 
 macosx64-aarch64-devedition/opt:
     description: "MacOS X Dev Edition Aarch64 (shippable)"
@@ -350,6 +378,7 @@ macosx64-aarch64-devedition/opt:
             - linux64-clang
             - macosx64-sdk
             - sysroot-wasm32-wasi
+            - onnxruntime-aarch64-apple-darwin
 
 macosx64-devedition/opt:
     description: "MacOS X Dev Edition Universal"
@@ -407,39 +436,39 @@ macosx64-devedition/opt:
             - artifact: target.test_packages.json
               extract: false
               dest: ../artifacts
-            - artifact: target.perftests.tests.tar.gz
+            - artifact: target.perftests.tests.tar.zst
               extract: false
               dest: ../artifacts
             - artifact: target.xpt_artifacts.zip
               extract: false
               dest: ../artifacts
-            - artifact: target.common.tests.tar.gz
+            - artifact: target.common.tests.tar.zst
               dest: x64/common
-            - artifact: target.cppunittest.tests.tar.gz
+            - artifact: target.cppunittest.tests.tar.zst
               dest: x64/cppunittest
-            - artifact: target.gtest.tests.tar.gz
+            - artifact: target.gtest.tests.tar.zst
               dest: x64/gtest
-            - artifact: target.jittest.tests.tar.gz
+            - artifact: target.jittest.tests.tar.zst
               dest: x64/jittest
-            - artifact: target.jsreftest.tests.tar.gz
+            - artifact: target.jsreftest.tests.tar.zst
               dest: x64/jsreftest
-            - artifact: target.mochitest.tests.tar.gz
+            - artifact: target.mochitest.tests.tar.zst
               dest: x64/mochitest
-            - artifact: target.reftest.tests.tar.gz
+            - artifact: target.reftest.tests.tar.zst
               dest: x64/reftest
-            - artifact: target.talos.tests.tar.gz
+            - artifact: target.talos.tests.tar.zst
               dest: x64/talos
-            - artifact: target.raptor.tests.tar.gz
+            - artifact: target.raptor.tests.tar.zst
               dest: x64/raptor
-            - artifact: target.condprof.tests.tar.gz
+            - artifact: target.condprof.tests.tar.zst
               dest: x64/confprof
-            - artifact: target.awsy.tests.tar.gz
+            - artifact: target.awsy.tests.tar.zst
               dest: x64/awsy
-            - artifact: target.xpcshell.tests.tar.gz
+            - artifact: target.xpcshell.tests.tar.zst
               dest: x64/xpcshell
-            - artifact: target.web-platform.tests.tar.gz
+            - artifact: target.web-platform.tests.tar.zst
               dest: x64/web-platform
-            - artifact: target.updater-dep.tests.tar.gz
+            - artifact: target.updater-dep.tests.tar.zst
               dest: x64/updater-dep
             - artifact: target.crashreporter-symbols.zip
               dest: x64/crashreporter-symbols
@@ -456,37 +485,40 @@ macosx64-devedition/opt:
             - artifact: mozharness.zip
               extract: false
               dest: ../artifacts
+            - artifact: target.trainhop.tests.tar.zst
+              extract: false
+              dest: ../artifacts
         macosx64-aarch64-devedition-opt:
             - artifact: target.dmg
               extract: false
               dest: aarch64
-            - artifact: target.common.tests.tar.gz
+            - artifact: target.common.tests.tar.zst
               dest: aarch64/common
-            - artifact: target.cppunittest.tests.tar.gz
+            - artifact: target.cppunittest.tests.tar.zst
               dest: aarch64/cppunittest
-            - artifact: target.gtest.tests.tar.gz
+            - artifact: target.gtest.tests.tar.zst
               dest: aarch64/gtest
-            - artifact: target.jittest.tests.tar.gz
+            - artifact: target.jittest.tests.tar.zst
               dest: aarch64/jittest
-            - artifact: target.jsreftest.tests.tar.gz
+            - artifact: target.jsreftest.tests.tar.zst
               dest: aarch64/jsreftest
-            - artifact: target.mochitest.tests.tar.gz
+            - artifact: target.mochitest.tests.tar.zst
               dest: aarch64/mochitest
-            - artifact: target.reftest.tests.tar.gz
+            - artifact: target.reftest.tests.tar.zst
               dest: aarch64/reftest
-            - artifact: target.talos.tests.tar.gz
+            - artifact: target.talos.tests.tar.zst
               dest: aarch64/talos
-            - artifact: target.raptor.tests.tar.gz
+            - artifact: target.raptor.tests.tar.zst
               dest: aarch64/raptor
-            - artifact: target.condprof.tests.tar.gz
+            - artifact: target.condprof.tests.tar.zst
               dest: aarch64/confprof
-            - artifact: target.awsy.tests.tar.gz
+            - artifact: target.awsy.tests.tar.zst
               dest: aarch64/awsy
-            - artifact: target.xpcshell.tests.tar.gz
+            - artifact: target.xpcshell.tests.tar.zst
               dest: aarch64/xpcshell
-            - artifact: target.web-platform.tests.tar.gz
+            - artifact: target.web-platform.tests.tar.zst
               dest: aarch64/web-platform
-            - artifact: target.updater-dep.tests.tar.gz
+            - artifact: target.updater-dep.tests.tar.zst
               dest: aarch64/updater-dep
             - artifact: target.crashreporter-symbols.zip
               dest: aarch64/crashreporter-symbols
@@ -496,6 +528,7 @@ macosx64-devedition/opt:
               dest: aarch64/update_framework_artifacts
         toolchain:
             - linux64-cctools-port
+            - onnxruntime-x86_64-apple-darwin
 
 macosx64-noopt/debug:
     description: "MacOS X x64 No-optimize Debug"
@@ -522,6 +555,7 @@ macosx64-noopt/debug:
             - linux64-sccache
             - macosx64-sdk
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-apple-darwin
 
 macosx64-aarch64-noopt/debug:
     description: "MacOS X aarch64 No-optimize Debug"
@@ -552,6 +586,7 @@ macosx64-aarch64-noopt/debug:
             - linux64-sccache
             - macosx64-sdk
             - sysroot-wasm32-wasi
+            - onnxruntime-aarch64-apple-darwin
 
 macosx64-x64-add-on-devel/opt:
     description: "MacOS X x64 add-on-devel"
@@ -579,6 +614,7 @@ macosx64-x64-add-on-devel/opt:
             - linux64-sccache
             - macosx64-sdk
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-apple-darwin
 
 macosx64-aarch64-add-on-devel/opt:
     description: "MacOS X Aarch64 add-on-devel"
@@ -608,6 +644,7 @@ macosx64-aarch64-add-on-devel/opt:
             - linux64-sccache
             - macosx64-sdk
             - sysroot-wasm32-wasi
+            - onnxruntime-aarch64-apple-darwin
 
 macosx64-add-on-devel/opt:
     description: "MacOS X add-on-devel"
@@ -676,6 +713,7 @@ macosx64-add-on-devel/opt:
               dest: aarch64/jsshell
         toolchain:
             - linux64-cctools-port
+            - onnxruntime-x86_64-apple-darwin
 
 macosx64-nightlyasrelease/opt:
     description: "MacOS X Nightly-As-Release"
@@ -708,6 +746,7 @@ macosx64-nightlyasrelease/opt:
             - linux64-clang
             - macosx64-sdk
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-apple-darwin
 
 macosx64-x64-shippable/opt:
     description: "MacOS X x64 Cross-compile"
@@ -741,6 +780,7 @@ macosx64-x64-shippable/opt:
             - linux64-clang
             - macosx64-sdk
             - sysroot-wasm32-wasi
+            - onnxruntime-x86_64-apple-darwin
 
 macosx64-aarch64-shippable/opt:
     description: "MacOS X aarch64 Cross-compile"
@@ -777,6 +817,7 @@ macosx64-aarch64-shippable/opt:
             - linux64-clang
             - macosx64-sdk
             - sysroot-wasm32-wasi
+            - onnxruntime-aarch64-apple-darwin
 
 macosx64-shippable/opt:
     description: "MacOS X Universal"
@@ -833,39 +874,39 @@ macosx64-shippable/opt:
             - artifact: target.test_packages.json
               extract: false
               dest: ../artifacts
-            - artifact: target.perftests.tests.tar.gz
+            - artifact: target.perftests.tests.tar.zst
               extract: false
               dest: ../artifacts
             - artifact: target.xpt_artifacts.zip
               extract: false
               dest: ../artifacts
-            - artifact: target.common.tests.tar.gz
+            - artifact: target.common.tests.tar.zst
               dest: x64/common
-            - artifact: target.cppunittest.tests.tar.gz
+            - artifact: target.cppunittest.tests.tar.zst
               dest: x64/cppunittest
-            - artifact: target.gtest.tests.tar.gz
+            - artifact: target.gtest.tests.tar.zst
               dest: x64/gtest
-            - artifact: target.jittest.tests.tar.gz
+            - artifact: target.jittest.tests.tar.zst
               dest: x64/jittest
-            - artifact: target.jsreftest.tests.tar.gz
+            - artifact: target.jsreftest.tests.tar.zst
               dest: x64/jsreftest
-            - artifact: target.mochitest.tests.tar.gz
+            - artifact: target.mochitest.tests.tar.zst
               dest: x64/mochitest
-            - artifact: target.reftest.tests.tar.gz
+            - artifact: target.reftest.tests.tar.zst
               dest: x64/reftest
-            - artifact: target.talos.tests.tar.gz
+            - artifact: target.talos.tests.tar.zst
               dest: x64/talos
-            - artifact: target.raptor.tests.tar.gz
+            - artifact: target.raptor.tests.tar.zst
               dest: x64/raptor
-            - artifact: target.condprof.tests.tar.gz
+            - artifact: target.condprof.tests.tar.zst
               dest: x64/confprof
-            - artifact: target.awsy.tests.tar.gz
+            - artifact: target.awsy.tests.tar.zst
               dest: x64/awsy
-            - artifact: target.xpcshell.tests.tar.gz
+            - artifact: target.xpcshell.tests.tar.zst
               dest: x64/xpcshell
-            - artifact: target.web-platform.tests.tar.gz
+            - artifact: target.web-platform.tests.tar.zst
               dest: x64/web-platform
-            - artifact: target.updater-dep.tests.tar.gz
+            - artifact: target.updater-dep.tests.tar.zst
               dest: x64/updater-dep
             - artifact: target.crashreporter-symbols.zip
               dest: x64/crashreporter-symbols
@@ -882,37 +923,40 @@ macosx64-shippable/opt:
             - artifact: mozharness.zip
               extract: false
               dest: ../artifacts
+            - artifact: target.trainhop.tests.tar.zst
+              extract: false
+              dest: ../artifacts
         macosx64-aarch64-shippable-opt:
             - artifact: target.dmg
               extract: false
               dest: aarch64
-            - artifact: target.common.tests.tar.gz
+            - artifact: target.common.tests.tar.zst
               dest: aarch64/common
-            - artifact: target.cppunittest.tests.tar.gz
+            - artifact: target.cppunittest.tests.tar.zst
               dest: aarch64/cppunittest
-            - artifact: target.gtest.tests.tar.gz
+            - artifact: target.gtest.tests.tar.zst
               dest: aarch64/gtest
-            - artifact: target.jittest.tests.tar.gz
+            - artifact: target.jittest.tests.tar.zst
               dest: aarch64/jittest
-            - artifact: target.jsreftest.tests.tar.gz
+            - artifact: target.jsreftest.tests.tar.zst
               dest: aarch64/jsreftest
-            - artifact: target.mochitest.tests.tar.gz
+            - artifact: target.mochitest.tests.tar.zst
               dest: aarch64/mochitest
-            - artifact: target.reftest.tests.tar.gz
+            - artifact: target.reftest.tests.tar.zst
               dest: aarch64/reftest
-            - artifact: target.talos.tests.tar.gz
+            - artifact: target.talos.tests.tar.zst
               dest: aarch64/talos
-            - artifact: target.raptor.tests.tar.gz
+            - artifact: target.raptor.tests.tar.zst
               dest: aarch64/raptor
-            - artifact: target.condprof.tests.tar.gz
+            - artifact: target.condprof.tests.tar.zst
               dest: aarch64/confprof
-            - artifact: target.awsy.tests.tar.gz
+            - artifact: target.awsy.tests.tar.zst
               dest: aarch64/awsy
-            - artifact: target.xpcshell.tests.tar.gz
+            - artifact: target.xpcshell.tests.tar.zst
               dest: aarch64/xpcshell
-            - artifact: target.web-platform.tests.tar.gz
+            - artifact: target.web-platform.tests.tar.zst
               dest: aarch64/web-platform
-            - artifact: target.updater-dep.tests.tar.gz
+            - artifact: target.updater-dep.tests.tar.zst
               dest: aarch64/updater-dep
             - artifact: target.crashreporter-symbols.zip
               dest: aarch64/crashreporter-symbols
@@ -922,3 +966,4 @@ macosx64-shippable/opt:
               dest: aarch64/update_framework_artifacts
         toolchain:
             - linux64-cctools-port
+            - onnxruntime-x86_64-apple-darwin

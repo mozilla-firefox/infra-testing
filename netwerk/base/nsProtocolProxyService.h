@@ -17,7 +17,6 @@
 #include "nsHashKeys.h"
 #include "nsITimer.h"
 #include "prio.h"
-#include "mozilla/Attributes.h"
 
 class nsIPrefBranch;
 class nsISystemProxySettings;
@@ -48,7 +47,7 @@ class nsProtocolProxyService final : public nsIProtocolProxyService2,
   NS_DECL_NSITIMERCALLBACK
   NS_DECL_NSINAMED
 
-  NS_DECLARE_STATIC_IID_ACCESSOR(NS_PROTOCOL_PROXY_SERVICE_IMPL_CID)
+  NS_INLINE_DECL_STATIC_IID(NS_PROTOCOL_PROXY_SERVICE_IMPL_CID)
 
   nsProtocolProxyService();
 
@@ -198,6 +197,8 @@ class nsProtocolProxyService final : public nsIProtocolProxyService2,
    *        The proxy host name (UTF-8 ok).
    * @param port
    *        The proxy port number.
+   * @param masqueTemplate
+   *        The MasqueTemplate.
    * @param username
    *        The username for the proxy (ASCII). May be "", but not null.
    * @param password
@@ -214,7 +215,8 @@ class nsProtocolProxyService final : public nsIProtocolProxyService2,
    *        The resulting nsIProxyInfo object.
    */
   nsresult NewProxyInfo_Internal(const char* type, const nsACString& host,
-                                 int32_t port, const nsACString& username,
+                                 int32_t port, const nsACString& masqueTemplate,
+                                 const nsACString& username,
                                  const nsACString& password,
                                  const nsACString& aProxyAuthorizationHeader,
                                  const nsACString& aConnectionIsolationKey,
@@ -424,9 +426,6 @@ class nsProtocolProxyService final : public nsIProtocolProxyService2,
   bool mIsShutdown{false};
   nsCOMPtr<nsITimer> mReloadPACTimer;
 };
-
-NS_DEFINE_STATIC_IID_ACCESSOR(nsProtocolProxyService,
-                              NS_PROTOCOL_PROXY_SERVICE_IMPL_CID)
 
 }  // namespace net
 }  // namespace mozilla

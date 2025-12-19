@@ -279,7 +279,7 @@ for (const test of tests) {
 
     let result = await Services.search.maybeSetAndOverrideDefault(extension);
     Assert.equal(
-      result.canChangeToAppProvided,
+      result.canChangeToConfigEngine,
       test.expected.switchToDefaultAllowed,
       "Should have returned the correct value for allowing switch to default or not."
     );
@@ -326,7 +326,10 @@ for (const test of tests) {
       // As we're not testing the WebExtension manager as well,
       // set this engine as default so we can check the telemetry data.
       let oldDefaultEngine = Services.search.defaultEngine;
-      Services.search.defaultEngine = engine;
+      await Services.search.setDefault(
+        engine,
+        Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+      );
 
       let engineInfo = Services.search.getDefaultEngineInfo();
       Assert.deepEqual(
@@ -341,7 +344,10 @@ for (const test of tests) {
         },
         "Should return the extended identifier and alternate submission url to telemetry"
       );
-      Services.search.defaultEngine = oldDefaultEngine;
+      await Services.search.setDefault(
+        oldDefaultEngine,
+        Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+      );
 
       engine.wrappedJSObject.removeExtensionOverride();
     }

@@ -19,7 +19,7 @@ namespace js {
 //
 // If you add a new flag here, please add appropriate code to JSObject::dump to
 // dump it as part of the object representation.
-enum class ObjectFlag : uint16_t {
+enum class ObjectFlag : uint32_t {
   IsUsedAsPrototype = 1 << 0,
   NotExtensible = 1 << 1,
   Indexed = 1 << 2,
@@ -83,9 +83,24 @@ enum class ObjectFlag : uint16_t {
   NeedsProxyGetSetResultValidation = 1 << 13,
 
   // There exists a property on this object which has fuse semantics associated
-  // with it, and thus we must trap on changes to said property.
-  HasFuseProperty = 1 << 14,
+  // with it. Changes to this object may require popping a per-realm Fuse. This
+  // is used for builtin prototypes and constructors.
+  HasRealmFuseProperty = 1 << 14,
 
+  // If set, this object may have an ObjectFuse associated with it that JIT code
+  // can use to bake in constant property values of this object. Changes to this
+  // object may require popping this per-Object fuse. This is used for global
+  // objects, global lexical environments, and certain builtin constructors and
+  // prototypes.
+  HasObjectFuse = 1 << 15,
+
+  // If set, we have already called the preserveWrapper hook for this object.
+  // This should only be set if `obj->getClass()->preservesWrapper()` is true.
+  HasPreservedWrapper = 1 << 16,
+
+  // If set, the object may have an accessor property where the getter or setter
+  // is a non-JSFunction callable object.
+  HasNonFunctionAccessor = 1 << 17,
 };
 
 using ObjectFlags = EnumFlags<ObjectFlag>;

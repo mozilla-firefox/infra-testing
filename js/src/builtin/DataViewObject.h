@@ -81,14 +81,6 @@ class DataViewObject : public ArrayBufferViewObject {
     return endOffset.isValid() && endOffset.value() <= byteLength;
   }
 
-  static bool isOriginalByteOffsetGetter(Native native) {
-    return native == byteOffsetGetter;
-  }
-
-  static bool isOriginalByteLengthGetter(Native native) {
-    return native == byteLengthGetter;
-  }
-
   static bool construct(JSContext* cx, unsigned argc, Value* vp);
 
   static bool getInt8Impl(JSContext* cx, const CallArgs& args);
@@ -178,12 +170,6 @@ class DataViewObject : public ArrayBufferViewObject {
 class FixedLengthDataViewObject : public DataViewObject {
  public:
   static const JSClass class_;
-
-  size_t byteOffset() const {
-    return ArrayBufferViewObject::byteOffsetSlotValue();
-  }
-
-  size_t byteLength() const { return ArrayBufferViewObject::lengthSlotValue(); }
 };
 
 /**
@@ -203,6 +189,20 @@ class ResizableDataViewObject : public DataViewObject {
   static const JSClass class_;
 };
 
+/**
+ * DataView whose buffer is an immutable ArrayBuffer object.
+ */
+class ImmutableDataViewObject : public DataViewObject {
+  friend class DataViewObject;
+
+  static ImmutableDataViewObject* create(
+      JSContext* cx, size_t byteOffset, size_t byteLength,
+      Handle<ArrayBufferObjectMaybeShared*> arrayBuffer, HandleObject proto);
+
+ public:
+  static const JSClass class_;
+};
+
 // For structured cloning.
 JSObject* NewDataView(JSContext* cx, HandleObject buffer, size_t byteOffset);
 
@@ -211,7 +211,7 @@ JSObject* NewDataView(JSContext* cx, HandleObject buffer, size_t byteOffset);
 template <>
 inline bool JSObject::is<js::DataViewObject>() const {
   return is<js::FixedLengthDataViewObject>() ||
-         is<js::ResizableDataViewObject>();
+         is<js::ResizableDataViewObject>() || is<js::ImmutableDataViewObject>();
 }
 
 #endif /* vm_DataViewObject_h */

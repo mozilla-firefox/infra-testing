@@ -5,14 +5,14 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "FontFaceSetWorkerImpl.h"
+
 #include "mozilla/FontLoaderUtils.h"
+#include "mozilla/LoadInfo.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRef.h"
 #include "mozilla/dom/WorkerRunnable.h"
-#include "mozilla/LoadInfo.h"
 #include "nsContentPolicyUtils.h"
 #include "nsFontFaceLoader.h"
-#include "nsINetworkPredictor.h"
 #include "nsIWebNavigation.h"
 
 using namespace mozilla;
@@ -283,9 +283,6 @@ nsresult FontFaceSetWorkerImpl::StartLoad(gfxUserFontEntry* aUserFontEntry,
 
   mLoaders.PutEntry(fontLoader);
 
-  net::PredictorLearn(src.mURI->get(), mWorkerRef->Private()->GetBaseURI(),
-                      nsINetworkPredictor::LEARN_LOAD_SUBRESOURCE, loadGroup);
-
   if (NS_SUCCEEDED(rv)) {
     fontLoader->StartedLoading(streamLoader);
     // let the font entry remember the loader, in case we need to cancel it
@@ -316,11 +313,15 @@ bool FontFaceSetWorkerImpl::IsFontLoadAllowed(const gfxFontFaceSrc& aSrc) {
   nsIPrincipal* principal =
       gfxPrincipal ? gfxPrincipal->NodePrincipal() : nullptr;
 
-  nsCOMPtr<nsILoadInfo> secCheckLoadInfo = new net::LoadInfo(
+  Result<RefPtr<net::LoadInfo>, nsresult> maybeLoadInfo = net::LoadInfo::Create(
       mWorkerRef->Private()->GetLoadingPrincipal(),  // loading principal
       principal,                                     // triggering principal
       nullptr, nsILoadInfo::SEC_ONLY_FOR_EXPLICIT_CONTENTSEC_CHECK,
       nsIContentPolicy::TYPE_FONT);
+  if (NS_WARN_IF(maybeLoadInfo.isErr())) {
+    return false;
+  }
+  RefPtr<net::LoadInfo> secCheckLoadInfo = maybeLoadInfo.unwrap();
 
   int16_t shouldLoad = nsIContentPolicy::ACCEPT;
   nsresult rv =
@@ -352,7 +353,11 @@ nsresult FontFaceSetWorkerImpl::CreateChannelForSyncLoadFontData(
                                         : nsIContentPolicy::TYPE_FONT);
 }
 
-nsPresContext* FontFaceSetWorkerImpl::GetPresContext() const { return nullptr; }
+FontVisibilityProvider* FontFaceSetWorkerImpl::GetFontVisibilityProvider()
+    const {
+  RecursiveMutexAutoLock lock(mMutex);
+  return mWorkerRef->Private();
+}
 
 TimeStamp FontFaceSetWorkerImpl::GetNavigationStartTimeStamp() {
   RecursiveMutexAutoLock lock(mMutex);

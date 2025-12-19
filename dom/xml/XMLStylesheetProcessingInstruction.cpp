@@ -54,16 +54,18 @@ void XMLStylesheetProcessingInstruction::UnbindFromTree(
   nsCOMPtr<Document> oldDoc = GetUncomposedDoc();
 
   ProcessingInstruction::UnbindFromTree(aContext);
-  Unused << UpdateStyleSheetInternal(oldDoc, nullptr);
+  (void)UpdateStyleSheetInternal(oldDoc, nullptr);
 }
 
 // nsINode
 
 void XMLStylesheetProcessingInstruction::SetNodeValueInternal(
-    const nsAString& aNodeValue, ErrorResult& aError) {
-  CharacterData::SetNodeValueInternal(aNodeValue, aError);
+    const nsAString& aNodeValue, ErrorResult& aError,
+    MutationEffectOnScript aMutationEffectOnScript) {
+  CharacterData::SetNodeValueInternal(aNodeValue, aError,
+                                      aMutationEffectOnScript);
   if (!aError.Failed()) {
-    Unused << UpdateStyleSheetInternal(nullptr, nullptr, ForceUpdate::Yes);
+    (void)UpdateStyleSheetInternal(nullptr, nullptr, ForceUpdate::Yes);
   }
 }
 
@@ -153,8 +155,11 @@ XMLStylesheetProcessingInstruction::CloneDataNode(
   GetData(data);
   RefPtr<mozilla::dom::NodeInfo> ni = aNodeInfo;
   auto* nim = ni->NodeInfoManager();
-  return do_AddRef(new (nim)
-                       XMLStylesheetProcessingInstruction(ni.forget(), data));
+  auto* doc = ni->GetDocument();
+  RefPtr<XMLStylesheetProcessingInstruction> it = do_AddRef(
+      new (nim) XMLStylesheetProcessingInstruction(ni.forget(), data));
+  MaybeStartCopyStyleSheetTo(it.get(), doc);
+  return it.forget();
 }
 
 }  // namespace mozilla::dom

@@ -225,16 +225,20 @@ enum class LimitsFlags {
   HasMaximum = 0x1,
   IsShared = 0x2,
   IsI64 = 0x4,
+#ifdef ENABLE_WASM_CUSTOM_PAGE_SIZES
+  HasCustomPageSize = 0x8,
+#endif
 };
 
 enum class LimitsMask {
-#ifdef ENABLE_WASM_MEMORY64
   Table = uint8_t(LimitsFlags::HasMaximum) | uint8_t(LimitsFlags::IsI64),
+#ifdef ENABLE_WASM_CUSTOM_PAGE_SIZES
+  Memory = uint8_t(LimitsFlags::HasMaximum) | uint8_t(LimitsFlags::IsShared) |
+           uint8_t(LimitsFlags::IsI64) |
+           uint8_t(LimitsFlags::HasCustomPageSize),
+#else
   Memory = uint8_t(LimitsFlags::HasMaximum) | uint8_t(LimitsFlags::IsShared) |
            uint8_t(LimitsFlags::IsI64),
-#else
-  Table = uint8_t(LimitsFlags::HasMaximum),
-  Memory = uint8_t(LimitsFlags::HasMaximum) | uint8_t(LimitsFlags::IsShared),
 #endif
 };
 
@@ -970,8 +974,8 @@ enum class BuiltinModuleFuncId {
 // emitted internally when compiling intrinsic modules and are rejected by wasm
 // validation.
 // See wasm/WasmBuiltinModule.yaml for the list.
-#define VISIT_BUILTIN_FUNC(op, export, sa_name, abitype, entry, uses_memory, \
-                           inline_op, idx)                                   \
+#define VISIT_BUILTIN_FUNC(op, export, sa_name, abitype, needs_thunk, entry, \
+                           uses_memory, inline_op, idx)                      \
   op = idx + 1,  // NOLINT
   FOR_EACH_BUILTIN_MODULE_FUNC(VISIT_BUILTIN_FUNC)
 #undef VISIT_BUILTIN_FUNC
@@ -1135,14 +1139,14 @@ enum class FieldFlags { Mutable = 0x01, AllowedMask = 0x01 };
 
 enum class FieldWideningOp { None, Signed, Unsigned };
 
-// The WebAssembly spec hard-codes the virtual page size to be 64KiB and
-// requires the size of linear memory to always be a multiple of 64KiB.
-
-static const unsigned PageSize = 64 * 1024;
-static const unsigned PageBits = 16;
-static_assert(PageSize == (1u << PageBits));
-
-static const unsigned PageMask = ((1u << PageBits) - 1);
+// The WebAssembly custom page sizes proposal allows for a virtual page size of
+// either 64KiB, or 1 byte.  We call these Standard and Tiny, respectively.
+enum class PageSize {
+#ifdef ENABLE_WASM_CUSTOM_PAGE_SIZES
+  Tiny = 0,
+#endif
+  Standard = 16
+};
 
 // These limits are agreed upon with other engines for consistency.
 
@@ -1152,7 +1156,7 @@ static const unsigned MaxSubTypingDepth = 63;
 static const unsigned MaxTags = 1000000;
 static const unsigned MaxFuncs = 1000000;
 static const unsigned MaxTables = 100000;
-static const unsigned MaxMemories = 100000;
+static const unsigned MaxMemories = 100;
 static const unsigned MaxImports = 1000000;
 static const unsigned MaxExports = 1000000;
 static const unsigned MaxGlobals = 1000000;
@@ -1167,9 +1171,13 @@ static const unsigned MaxLocals = 50000;
 static const unsigned MaxParams = 1000;
 static const unsigned MaxResults = 1000;
 static const unsigned MaxStructFields = 10000;
-static const uint64_t MaxMemory32PagesValidation = uint64_t(1) << 16;
-static const uint64_t MaxMemory64PagesValidation = uint64_t(1) << 48;
-static const unsigned MaxStringBytes = 100000;
+#ifdef ENABLE_WASM_CUSTOM_PAGE_SIZES
+static const uint64_t MaxMemory32TinyPagesValidation = UINT32_MAX;
+static const uint64_t MaxMemory64TinyPagesValidation = (uint64_t(1) << 53) - 1;
+#endif
+static const uint64_t MaxMemory32StandardPagesValidation = uint64_t(1) << 16;
+static const uint64_t MaxMemory64StandardPagesValidation =
+    (uint64_t(1) << 37) - 1;
 static const unsigned MaxModuleBytes = 1024 * 1024 * 1024;
 static const unsigned MaxFunctionBytes = 7654321;
 static const unsigned MaxArrayNewFixedElements = 10000;
@@ -1186,7 +1194,7 @@ static_assert(uint64_t(MaxArrayPayloadBytes) <
 // These limits pertain to our WebAssembly implementation only.
 
 static const unsigned MaxTryTableCatches = 10000;
-static const unsigned MaxBrTableElems = 1000000;
+static const unsigned MaxBrTableElems = 65520;
 static const unsigned MaxCodeSectionBytes = MaxModuleBytes;
 static const unsigned MaxBranchHintValue = 2;
 

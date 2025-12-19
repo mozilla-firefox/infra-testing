@@ -17,8 +17,8 @@ add_task(async function test_purge_counting_per_host() {
   let schema12db = new CookieDatabaseConnection(dbFile, 12);
 
   let now = Date.now() * 1000; // date in microseconds
-  let pastExpiry = Math.round(now / 1e6 - 1000);
-  let futureExpiry = Math.round(now / 1e6 + 1000);
+  let pastExpiry = Math.round(now / 1e3 - 1000);
+  let futureExpiry = Math.round(now / 1e3 + 1000);
 
   let host = "cookie-host1.com";
 
@@ -55,7 +55,7 @@ add_task(async function test_purge_counting_per_host() {
   Assert.equal(validCookies, cookieCountMax);
 
   // add a cookie - this will trigger the purge
-  Services.cookies.add(
+  const cv = Services.cookies.add(
     host,
     "/", // path
     "cookie-name-x",
@@ -65,9 +65,10 @@ add_task(async function test_purge_counting_per_host() {
     true, // isSession
     futureExpiry,
     {}, // OA
-    Ci.nsICookie.SAMESITE_NONE, // SameSite
+    Ci.nsICookie.SAMESITE_UNSET, // SameSite
     Ci.nsICookie.SCHEME_HTTPS
   );
+  Assert.equal(cv.result, Ci.nsICookieValidation.eOK, "Valid cookie");
 
   // check that we purge down to the cookieMax (plus the cookie added)
   validCookies = Services.cookies.countCookiesFromHost(host);

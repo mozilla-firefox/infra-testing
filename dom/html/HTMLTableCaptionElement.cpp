@@ -7,9 +7,9 @@
 #include "mozilla/dom/HTMLTableCaptionElement.h"
 
 #include "mozilla/MappedDeclarationsBuilder.h"
+#include "mozilla/dom/HTMLTableCaptionElementBinding.h"
 #include "nsAttrValueInlines.h"
 #include "nsStyleConsts.h"
-#include "mozilla/dom/HTMLTableCaptionElementBinding.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(TableCaption)
 
@@ -24,10 +24,10 @@ JSObject* HTMLTableCaptionElement::WrapNode(JSContext* aCx,
 
 NS_IMPL_ELEMENT_CLONE(HTMLTableCaptionElement)
 
-static const nsAttrValue::EnumTable kCaptionAlignTable[] = {
+static constexpr nsAttrValue::EnumTableEntry kCaptionAlignTable[] = {
     {"top", StyleCaptionSide::Top},
     {"bottom", StyleCaptionSide::Bottom},
-    {nullptr, 0}};
+};
 
 bool HTMLTableCaptionElement::ParseAttribute(
     int32_t aNamespaceID, nsAtom* aAttribute, const nsAString& aValue,

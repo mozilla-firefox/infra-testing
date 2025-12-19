@@ -5,12 +5,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CookieStoreNotifier.h"
-#include "CookieStore.h"
+
 #include "CookieChangeEvent.h"
-#include "mozilla/net/CookieCommons.h"
+#include "CookieStore.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/WorkerPrivate.h"
-#include "mozilla/Unused.h"
+#include "mozilla/net/Cookie.h"
+#include "mozilla/net/CookieCommons.h"
+#include "nsGlobalWindowInner.h"
 #include "nsICookie.h"
 #include "nsICookieNotification.h"
 #include "nsISerialEventTarget.h"
@@ -61,7 +63,7 @@ already_AddRefed<CookieStoreNotifier> CookieStoreNotifier::Create(
                           ? "private-cookie-changed"
                           : "cookie-changed",
                       false);
-  Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 
   return notifier.forget();
 }
@@ -91,7 +93,7 @@ void CookieStoreNotifier::Disentangle() {
   nsresult rv = os->RemoveObserver(this, mOriginAttributes.IsPrivateBrowsing()
                                              ? "private-cookie-changed"
                                              : "cookie-changed");
-  Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 }
 
 NS_IMETHODIMP
@@ -140,23 +142,10 @@ CookieStoreNotifier::Observe(nsISupports* aSubject, const char* aTopic,
   }
 
   CookieListItem item;
+  CookieStore::CookieStructToItem(net::Cookie::Cast(cookie)->ToIPC(), &item);
 
-  nsAutoCString name;
-  rv = cookie->GetName(name);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  item.mName.Construct(NS_ConvertUTF8toUTF16(name));
-
-  if (action != nsICookieNotification::COOKIE_DELETED) {
-    nsAutoCString value;
-    rv = cookie->GetValue(value);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
-
-    item.mValue.Construct(NS_ConvertUTF8toUTF16(value));
+  if (action == nsICookieNotification::COOKIE_DELETED) {
+    item.mValue.Reset();
   }
 
   bool deletedEvent = action == nsICookieNotification::COOKIE_DELETED;

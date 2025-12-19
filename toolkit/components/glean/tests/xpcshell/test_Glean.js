@@ -73,7 +73,7 @@ add_task(async function test_fog_timespan_works() {
   await sleep(10);
   Glean.testOnly.canWeTimeIt.stop();
 
-  Assert.ok(Glean.testOnly.canWeTimeIt.testGetValue("test-ping") > 0);
+  Assert.greater(Glean.testOnly.canWeTimeIt.testGetValue("test-ping"), 0);
 });
 
 add_task(async function test_fog_timespan_throws_on_stop_wout_start() {
@@ -255,6 +255,119 @@ add_task(function test_recursive_testBeforeNextSubmit() {
   Assert.equal(3, submitted, "Ping was submitted 3 times");
   // Be kind and remove the callback.
   GleanPings.onePingOnly.testBeforeNextSubmit(() => {});
+});
+
+add_task(function test_testBeforeNextSubmit_error() {
+  Assert.ok("onePingOnly" in GleanPings);
+
+  let submitted = false;
+  GleanPings.onePingOnly.testBeforeNextSubmit(() => {
+    submitted = true;
+    throw new Error("oh no");
+  });
+
+  Assert.throws(
+    () => GleanPings.onePingOnly.submit(),
+    /oh no/,
+    "testBeforeNextSubmit error thrown from submit"
+  );
+
+  Assert.ok(submitted, "Did submit ping");
+});
+
+add_task(async function test_testSubmission() {
+  Assert.ok("onePingOnly" in GleanPings);
+
+  let submitReason = null;
+  await GleanPings.onePingOnly.testSubmission(
+    reason => (submitReason = reason),
+    () => GleanPings.onePingOnly.submit("raison d'être")
+  );
+
+  Assert.equal(
+    submitReason,
+    "raison d'être",
+    "ping callback called with correct reason"
+  );
+});
+
+add_task(async function test_testSubmission_async() {
+  Assert.ok("onePingOnly" in GleanPings);
+
+  const orderOfOperations = [];
+
+  // We are going to intentionally block submission so that we can delay it
+  // until after testSubmission returns a promise.
+  const blocker = Promise.withResolvers();
+
+  const testPromise = GleanPings.onePingOnly.testSubmission(
+    () => orderOfOperations.push("test-callback"),
+    async () => {
+      orderOfOperations.push("await-blocker");
+      await blocker.promise;
+      orderOfOperations.push("submit");
+      GleanPings.onePingOnly.submit();
+    }
+  );
+  orderOfOperations.push("test-submission-queued");
+
+  blocker.resolve();
+  await testPromise;
+
+  Assert.deepEqual(orderOfOperations, [
+    "await-blocker",
+    "test-submission-queued",
+    "submit",
+    "test-callback",
+  ]);
+});
+
+add_task(async function test_testSubmission_error() {
+  Assert.ok("onePingOnly" in GleanPings);
+
+  await Assert.rejects(
+    GleanPings.onePingOnly.testSubmission(
+      () => {
+        throw new Error("uh oh");
+      },
+      () => GleanPings.onePingOnly.submit()
+    ),
+    /NS_ERROR_XPC_JAVASCRIPT_ERROR_WITH_DETAILS/,
+    "testSubmission callback threw"
+  );
+});
+
+add_task(async function test_testSubmission_unsubmitted() {
+  Assert.ok("onePingOnly" in GleanPings);
+
+  let submitted = false;
+  await Assert.rejects(
+    GleanPings.onePingOnly.testSubmission(
+      () => (submitted = true),
+      () => {}
+    ),
+    /Ping did not submit immediately/,
+    "Threw immediately because the ping did not submit"
+  );
+
+  Assert.ok(!submitted, "callback not called");
+});
+
+add_task(async function test_testSubmission_timeout() {
+  Assert.ok("onePingOnly" in GleanPings);
+
+  let submitted = false;
+  await Assert.rejects(
+    GleanPings.onePingOnly.testSubmission(
+      () => (submitted = true),
+      () => {},
+      1
+    ),
+    /Ping was not submitted after timeout/,
+    "Threw after a timeout"
+  );
+
+  Assert.ok(!submitted, "callback not called");
 });
 
 add_task(async function test_fog_timing_distribution_works() {
@@ -703,12 +816,12 @@ add_task(async function test_fog_labeled_custom_distribution_works() {
     Glean.testOnly.mabelsCustomLabelLengths.monospace.testGetValue();
   Assert.equal(2, monospace.count);
   Assert.equal(43, monospace.sum);
-  Assert.deepEqual({ 0: 0, 1: 2, 268435456: 0 }, monospace.values);
+  Assert.deepEqual({ 1: 2 }, monospace.values);
   let sanserif =
     Glean.testOnly.mabelsCustomLabelLengths.sanserif.testGetValue();
   Assert.equal(1, sanserif.count);
   Assert.equal(13, sanserif.sum);
-  Assert.deepEqual({ 0: 0, 1: 1, 268435456: 0 }, sanserif.values);
+  Assert.deepEqual({ 1: 1 }, sanserif.values);
   // What about invalid/__other__?
   Assert.equal(
     undefined,
@@ -836,3 +949,176 @@ add_task(function test_collection_disabled_pings_work() {
     Glean.testOnly.collectionDisabledCounter.testGetValue()
   );
 });
+
+add_task(function test_dual_labeled_counter_works() {
+  Glean.testOnly.keyedCategories.get("to the city", "lasered").add(1);
+  Glean.testOnly.keyedCategories.get("to the city", "cut").add(4);
+  Glean.testOnly.keyedCategories.get("to my heart", "polished").add(1);
+
+  Assert.equal(
+    1,
+    Glean.testOnly.keyedCategories.get("to the city", "lasered").testGetValue()
+  );
+  Assert.equal(
+    4,
+    Glean.testOnly.keyedCategories.get("to the city", "cut").testGetValue()
+  );
+  Assert.equal(
+    1,
+    Glean.testOnly.keyedCategories.get("to my heart", "polished").testGetValue()
+  );
+
+  Assert.equal(
+    undefined,
+    Glean.testOnly.keyedCategories
+      .get("to the city", "__other__")
+      .testGetValue()
+  );
+  Glean.testOnly.keyedCategories.get("to the city", "cryptographic").add(3);
+  Assert.equal(
+    3,
+    Glean.testOnly.keyedCategories
+      .get("to the city", "__other__")
+      .testGetValue()
+  );
+});
+
+add_task(
+  {
+    skip_if: () =>
+      Services.prefs.getBoolPref("telemetry.fog.artifact_build", true),
+  },
+  async function test_labeled_metrics_test_get_value_works() {
+    Services.fog.testResetFOG();
+
+    // LabeledBoolean
+    Glean.testOnly.mabelsLikeBalloons.test1.set(true);
+    Glean.testOnly.mabelsLikeBalloons.test2.set(false);
+
+    const booleanValue = Glean.testOnly.mabelsLikeBalloons.testGetValue();
+    Assert.deepEqual(
+      {
+        test1: true,
+        test2: false,
+      },
+      booleanValue
+    );
+
+    // LabeledCounter
+    Glean.testOnly.mabelsLabeledCounters.clean.add(1);
+
+    const counterValue = Glean.testOnly.mabelsLabeledCounters.testGetValue();
+    Assert.deepEqual(
+      {
+        clean: 1,
+      },
+      counterValue
+    );
+
+    // LabeledString
+    Glean.testOnly.mabelsBalloonStrings.test.set("string!");
+
+    const stringValue = Glean.testOnly.mabelsBalloonStrings.testGetValue();
+    Assert.deepEqual(
+      {
+        test: "string!",
+      },
+      stringValue
+    );
+
+    // LabeledQuantity
+    Glean.testOnly.buttonJars.up.set(1);
+    Glean.testOnly.buttonJars.curling.set(10);
+
+    const quantityValue = Glean.testOnly.buttonJars.testGetValue();
+    Assert.deepEqual(
+      {
+        up: 1,
+        curling: 10,
+      },
+      quantityValue
+    );
+
+    // LabeledCustomDistribution
+    Glean.testOnly.mabelsCustomLabelLengths.monospace.accumulateSamples([
+      1, 42,
+    ]);
+    Glean.testOnly.mabelsCustomLabelLengths.sanserif.accumulateSingleSample(13);
+
+    const customDistributionValue =
+      Glean.testOnly.mabelsCustomLabelLengths.testGetValue();
+    Assert.deepEqual(
+      {
+        monospace: {
+          count: 2,
+          sum: 43,
+          values: {
+            1: 2,
+          },
+        },
+        sanserif: {
+          count: 1,
+          sum: 13,
+          values: {
+            1: 1,
+          },
+        },
+      },
+      customDistributionValue
+    );
+
+    // LabeledMemoryDistribution
+    Glean.testOnly.whatDoYouRemember.twenty_years_ago.accumulate(7);
+    Glean.testOnly.whatDoYouRemember.twenty_years_ago.accumulate(17);
+
+    const memoryDistributionValue =
+      Glean.testOnly.whatDoYouRemember.testGetValue();
+    const [first, second] = Object.keys(
+      memoryDistributionValue.twenty_years_ago.values
+    );
+    Assert.deepEqual(
+      {
+        twenty_years_ago: {
+          count: 2,
+          sum: 24 * 1024 * 1024,
+          values: {
+            [first]: 1,
+            [second]: 1,
+          },
+        },
+      },
+      memoryDistributionValue
+    );
+
+    // LabeledTimingDistribution
+    let t1 = Glean.testOnly.whereHasTheTimeGone.west.start();
+    let t2 = Glean.testOnly.whereHasTheTimeGone.west.start();
+    await sleep(5);
+    let t3 = Glean.testOnly.whereHasTheTimeGone.west.start();
+    Glean.testOnly.whereHasTheTimeGone.west.cancel(t1);
+    await sleep(5);
+    Glean.testOnly.whereHasTheTimeGone.west.stopAndAccumulate(t2); // 10ms
+    Glean.testOnly.whereHasTheTimeGone.west.stopAndAccumulate(t3); // 5ms
+
+    const timingDistributionValue =
+      Glean.testOnly.whereHasTheTimeGone.testGetValue();
+    const NANOS_IN_MILLIS = 1e6;
+    // bug 1701949 - Sleep gets close, but sometimes doesn't wait long enough.
+    const EPSILON = 40000;
+
+    // Variance in timing makes getting the sum impossible to know.
+    const sum = timingDistributionValue.west.sum;
+    Assert.greater(sum, 15 * NANOS_IN_MILLIS - EPSILON);
+    Assert.equal(2, Object.keys(timingDistributionValue.west.values).length);
+    Assert.deepEqual(
+      {
+        west: {
+          sum,
+          count: 2,
+          values: timingDistributionValue.west.values,
+        },
+      },
+      timingDistributionValue
+    );
+  }
+);

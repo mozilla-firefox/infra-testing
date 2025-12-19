@@ -166,7 +166,7 @@ class TextLeafPoint final {
    * Returns a rect (in dev pixels) describing position and size of
    * the character at mOffset in mAcc. This rect is screen-relative.
    */
-  LayoutDeviceIntRect CharBounds();
+  LayoutDeviceIntRect CharBounds() const;
 
   /**
    * Returns true if the given point (in screen coords) is contained
@@ -188,7 +188,7 @@ class TextLeafPoint final {
   /**
    * Translate given TextLeafPoint into a DOM point.
    */
-  MOZ_CAN_RUN_SCRIPT std::pair<nsIContent*, int32_t> ToDOMPoint(
+  MOZ_CAN_RUN_SCRIPT std::pair<nsIContent*, uint32_t> ToDOMPoint(
       bool aIncludeGenerated = true) const;
 
  private:
@@ -252,6 +252,10 @@ class TextLeafPoint final {
    * such that the resulting rect contains only one character.
    */
   LayoutDeviceIntRect ComputeBoundsFromFrame() const;
+
+  LayoutDeviceIntRect InsertionPointBounds() const;
+
+  friend class TextLeafRange;
 };
 
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(TextLeafPoint::BoundaryFlags)
@@ -330,8 +334,12 @@ class TextLeafRange final {
    * kRemoveAllExistingSelectedRanges, this will be set as the only range in the
    * selection; i.e. all existing ranges (if any) will be removed from the
    * selection first.
+   * If aSetFocus is true, the element containing the start point will be
+   * focused if appropriate. If aSetFocus is false, the focused element will
+   * be left as is.
    */
-  MOZ_CAN_RUN_SCRIPT bool SetSelection(int32_t aSelectionNum) const;
+  MOZ_CAN_RUN_SCRIPT bool SetSelection(int32_t aSelectionNum,
+                                       bool aSetFocus = true) const;
 
   MOZ_CAN_RUN_SCRIPT void ScrollIntoView(uint32_t aScrollType) const;
 
@@ -352,10 +360,11 @@ class TextLeafRange final {
    * that the first and last lines might be partial if the range begins or ends
    * in the middle of a line. They are exclusive of mEnd, since range ends are
    * always exclusive, so including mEnd would include the bounds for 1
-   * character past the end of the range. Each rectangle is screen-relative. The
-   * function returns true if it walks any lines, and false if it could not walk
-   * any lines, which could happen if the start and end points are improperly
-   * positioned.
+   * character past the end of the range. Each rectangle is screen-relative. If
+   * this range is collapsed, the callback is called with the insertion point
+   * bounds. The function returns true if it walks any lines, and false if it
+   * could not walk any lines, which could happen if the start and end points
+   * are improperly positioned.
    */
   using LineRectCallback =
       FunctionRef<void(TextLeafRange, LayoutDeviceIntRect)>;

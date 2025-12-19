@@ -2,6 +2,10 @@
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 "use strict";
 
+const { sinon } = ChromeUtils.importESModule(
+  "resource://testing-common/Sinon.sys.mjs"
+);
+
 const UPDATE_TASK_LATENCY = "update-task-latency";
 const SEARCH_LATENCY = "search-latency";
 const INFERENCE_LATENCY = "inference-latency";
@@ -28,12 +32,12 @@ const perfMetadata = {
       verbose: true,
       manifest: "perftest.toml",
       manifest_flavor: "browser-chrome",
-      try_platform: ["linux", "mac", "win"],
+      try_platform: ["mac", "win"],
     },
   },
 };
 
-requestLongerTimeout(120);
+requestLongerTimeout(45);
 const CUSTOM_EMBEDDER_OPTIONS = {
   taskName: "feature-extraction",
   featureId: "simple-text-embedder",
@@ -42,6 +46,7 @@ const CUSTOM_EMBEDDER_OPTIONS = {
   modelRevision: "main",
   numThreads: 2,
   timeoutMS: -1,
+  backend: "onnx-native",
 };
 
 const ROOT_URL =
@@ -206,7 +211,7 @@ async function prepareSemanticSearchTest({
   const lazy = {};
 
   ChromeUtils.defineESModuleGetters(lazy, {
-    PlacesSemanticHistoryManager:
+    getPlacesSemanticHistoryManager:
       "resource://gre/modules/PlacesSemanticHistoryManager.sys.mjs",
   });
 
@@ -219,26 +224,39 @@ async function prepareSemanticSearchTest({
 
   const { cleanup } = await perfSetup({
     prefs: [
+      ["browser.ml.enable", true],
+      ["places.semanticHistory.featureGate", true],
       ["browser.ml.modelHubRootUrl", modelHubRootUrl],
       ["javascript.options.wasm_lazy_tiering", true],
       ["browser.ml.logLevel", "Info"],
     ],
   });
 
-  const semanticManager = new lazy.PlacesSemanticHistoryManager({
-    embeddingSize: 384,
-    rowLimit,
-    samplingAttrib: "frecency",
-    changeThresholdCount: 0,
-    distanceThreshold: 1.0,
-    testFlag,
-  });
+  let semanticManager = lazy.getPlacesSemanticHistoryManager(
+    {
+      backend: "onnx-native",
+      embeddingSize: 384,
+      rowLimit,
+      samplingAttrib: "frecency",
+      changeThresholdCount: 0,
+      distanceThreshold: 1.0,
+      testFlag,
+    },
+    true
+  );
 
   if (!semanticManager.qualifiedForSemanticSearch) {
     info("Skipping test due to insufficient hardware.");
     Assert.ok(true);
     return { skip: true };
   }
+
+  // Skip featureGate, Region and other non critical checks.
+  let canUseSemanticStub = sinon.stub(semanticManager, "canUseSemanticSearch");
+  canUseSemanticStub.get(() => true);
+  registerCleanupFunction(() => {
+    canUseSemanticStub.restore();
+  });
 
   semanticManager.embedder.options = CUSTOM_EMBEDDER_OPTIONS;
   await semanticManager.embedder.ensureEngine();
@@ -290,7 +308,9 @@ async function runInferenceAndCollectMetrics({
     }
 
     const memUsage = await getTotalMemoryUsage();
-    const metrics = fetchMetrics(res.metrics);
+    const metrics = fetchMetrics(
+      (res.metrics && res.metrics.runTimestamps) || []
+    );
     let embeddingLatency = 0;
 
     for (const [metricName, value] of Object.entries(metrics)) {
@@ -331,14 +351,14 @@ async function cleanupSemanticSearchTest({ semanticManager, conn, cleanup }) {
   await EngineProcess.destroyMLEngine();
   semanticManager.stopProcess();
   await semanticManager.embedder.shutdown();
-  await semanticManager.semanticDB.dropSchema();
+  await semanticManager.semanticDB.removeDatabaseFiles();
   await cleanup();
 
   return updateTime;
 }
 
 async function runShortAndLongQueryPerfTest(concurrentInferenceFlag) {
-  const rowLimit = 10000;
+  const rowLimit = 500;
   const numIterations = 20;
   const mode = concurrentInferenceFlag ? "CONCURRENT" : "SEQUENTIAL";
   info(`Running ${mode} inference performance test...`);

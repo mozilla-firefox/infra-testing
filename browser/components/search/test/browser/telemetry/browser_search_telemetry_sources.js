@@ -61,10 +61,6 @@ add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.urlbar.suggest.searches", true],
-      [
-        "browser.newtabpage.activity-stream.improvesearch.handoffToAwesomebar",
-        true,
-      ],
       // Ensure to add search suggestion telemetry as search_suggestion not search_formhistory.
       ["browser.urlbar.maxHistoricalSearchSuggestions", 0],
     ],
@@ -440,13 +436,14 @@ add_task(async function test_source_system() {
 
       // This is not quite the same as calling from the commandline, but close
       // enough for this test.
-      SearchUIUtils.loadSearchFromCommandLine(
+      SearchUIUtils.loadSearch({
         window,
-        "searchSuggestion",
-        false,
-        Services.scriptSecurityManager.getSystemPrincipal(),
-        gBrowser.selectedBrowser.csp
-      );
+        searchText: "searchSuggestion",
+        triggeringPrincipal:
+          Services.scriptSecurityManager.getSystemPrincipal(),
+        policyContainer: gBrowser.selectedBrowser.policyContainer,
+        sapSource: "system",
+      });
 
       await loadPromise;
       return tab;

@@ -54,7 +54,6 @@ option(
 )
 set_config("MOZ_STUB_INSTALLER", True, when="MOZ_STUB_INSTALLER")
 
-
 project_flag(
     env="MOZ_PROFILE_MIGRATOR",
     help="Enable profile migrator",
@@ -520,7 +519,7 @@ set_define("JSON_USE_EXCEPTION", 0)
 option("--with-l10n-base", nargs=1, env="L10NBASEDIR", help="Path to l10n repositories")
 
 
-@depends("--with-l10n-base", "MOZ_AUTOMATION", build_environment)
+@depends("--with-l10n-base", moz_automation, build_environment)
 @imports(_from="os.path", _import="isdir")
 @imports(_from="os.path", _import="expanduser")
 @imports(_from="os", _import="environ")
@@ -1055,7 +1054,7 @@ set_config("MOZ_PACKAGER_FORMAT", packager_format)
 @depends(target_is_android, "--enable-debug", milestone.is_nightly)
 def enable_minify_default(is_android, debug, is_nightly):
     if is_android and not debug and not is_nightly:
-        return ("properties", "js")
+        return ("properties",)
     return ("properties",)
 
 
@@ -1080,6 +1079,21 @@ def enable_minify(value):
 
 set_config("MOZ_PACKAGER_MINIFY", True, when=enable_minify.properties)
 set_config("MOZ_PACKAGER_MINIFY_JS", True, when=enable_minify.js)
+
+
+@depends(target_is_android, "--enable-debug", milestone.is_nightly)
+def enable_minify_pdfjs_default(is_android, debug, is_nightly):
+    return is_android and not debug and not is_nightly
+
+
+option(
+    name="--enable-minify-pdfjs",
+    help="Enable minification of PDF.js JavaScript files during packaging",
+    default=enable_minify_pdfjs_default,
+)
+
+
+set_config("MOZ_PACKAGER_MINIFY_PDFJS", True, when="--enable-minify-pdfjs")
 
 
 @depends(host, build_project)
@@ -1127,6 +1141,11 @@ project_flag(
     set_as_define=True,
 )
 
+project_flag(
+    "MOZ_EXTRA_ERROR_DEFINITIONS",
+    help="Name of JSON file to add extra error definitions to ErrorList.py",
+    nargs=1,
+)
 
 # Profile Management
 # ==============================================================
@@ -1204,9 +1223,15 @@ option(
     "--enable-webrender-debugger", help="Build the websocket debug server in WebRender"
 )
 
-set_config(
-    "MOZ_WEBRENDER_DEBUGGER", depends_if("--enable-webrender-debugger")(lambda _: True)
-)
+
+@depends("--enable-webrender-debugger")
+def webrender_debugger(value):
+    if value:
+        return True
+
+
+set_config("MOZ_WEBRENDER_DEBUGGER", webrender_debugger)
+set_define("MOZ_WEBRENDER_DEBUGGER", webrender_debugger)
 
 # Additional system headers defined at the application level
 # ==============================================================
@@ -1302,9 +1327,9 @@ set_define("MOZ_WEBSPEECH_TEST_BACKEND", webspeech_test_backend)
 
 # Graphics
 # ==============================================================
-@depends(target, milestone)
-def skia_pdf_default(target, milestone):
-    return milestone.is_nightly and target.os != "WINNT"
+@depends(milestone)
+def skia_pdf_default(milestone):
+    return milestone.is_nightly
 
 
 option("--enable-skia-pdf", default=skia_pdf_default, help="{Enable|Disable} Skia PDF")
@@ -1438,7 +1463,7 @@ set_define("ENABLE_WEBDRIVER", webdriver)
 
 
 @depends(
-    "--enable-tests", target, cross_compiling, hazard_analysis, asan, "MOZ_AUTOMATION"
+    "--enable-tests", target, cross_compiling, hazard_analysis, asan, moz_automation
 )
 def geckodriver_default(enable_tests, target, cross_compile, hazard, asan, automation):
     if not enable_tests:
@@ -1843,22 +1868,22 @@ with only_when("--enable-compile-environment"):
     use_relrhack = depends(which_elf_hack)(lambda x: x == "relr")
     set_config("RELRHACK", True, when=use_relrhack)
 
-    @depends(c_compiler, linker_ldflags, when=use_relrhack)
-    def relrhack_real_linker(c_compiler, linker_ldflags):
+    @depends(linker_ldflags, when=use_relrhack)
+    def relrhack_linker(linker_ldflags):
         ld = "ld"
         for flag in linker_ldflags:
             if flag.startswith("-fuse-ld="):
                 ld = "ld." + flag[len("-fuse-ld=") :]
+        return ld
+
+    set_config("RELRHACK_LINKER", relrhack_linker)
+
+    @depends(c_compiler, relrhack_linker, when=use_relrhack)
+    def relrhack_real_linker(c_compiler, ld):
         ld = check_cmd_output(
             c_compiler.compiler, f"--print-prog-name={ld}", *c_compiler.flags
         )
         return ld.rstrip()
-
-    @depends(relrhack_real_linker, when=use_relrhack)
-    def relrhack_linker(ld):
-        return os.path.basename(ld)
-
-    set_config("RELRHACK_LINKER", relrhack_linker)
 
     std_filesystem = host_cxx_compiler.try_run(
         header="#include <filesystem>",
@@ -2609,6 +2634,14 @@ def ffvpx(target):
             ]
         elif target.cpu == "aarch64":
             use_nasm = False
+    elif target.os == "Android":
+        if target.cpu == "x86_64":
+            flags = ["-D__x86_64__", "-DPIC", "-DELF", "-Pconfig_android_x86_64.asm"]
+        elif target.cpu == "x86":
+            audio_only = True
+        elif target.cpu == "aarch64" or target.cpu == "arm":
+            flags = ["-DPIC", "-DELF"]
+            use_nasm = False
     elif target.cpu == "x86_64":
         flags = ["-D__x86_64__", "-DPIC", "-DELF", "-Pconfig_unix64.asm"]
     else:
@@ -2728,55 +2761,92 @@ with only_when(compile_environment & target_is_windows):
     set_config("MOZ_ANGLE_RENDERER", True)
 
 with only_when(target_is_windows):
-    option(
-        "--enable-dxcompiler",
-        default=milestone.is_nightly,
-        help="{Enable|Disable} DXC for WebGPU on Windows",
-    )
+    # We only produce dxc builds for x86_64 and aarch64.
+    @depends(target)
+    def dxc_supports_target(target):
+        return target.cpu in ("x86_64", "aarch64")
 
-    @depends("--enable-dxcompiler", target, artifact_builds, valid_windows_sdk_dir)
-    @checking("for dxcompiler.dll and dxil.dll")
+    @depends(
+        target,
+        artifact_builds,
+        valid_windows_sdk_dir,
+        dxc_dll_path,
+        when=dxc_supports_target,
+    )
+    @checking("for dxcompiler.dll")
     @imports("os.path")
-    def dxcompiler(enable_dxc, target, artifact, windows_sdk_dir):
+    def dxcompiler(target, artifact, windows_sdk_dir, dxc_path):
         if not windows_sdk_dir and not artifact:
-            return namespace(enabled=False)
-        if not enable_dxc:
             return namespace(enabled=False)
         arch = {
             "x86_64": "x64",
             "aarch64": "arm64",
         }.get(target.cpu, target.cpu)
 
-        dxc_name = "dxcompiler.dll"
-        dxil_name = "dxil.dll"
-        dxc_path = ""
-        dxil_path = ""
         if not artifact:
-            sdk_d3d_path = os.path.join(windows_sdk_dir.path, "Redist", "D3D", arch)
-            dxc_path = os.path.join(sdk_d3d_path, dxc_name)
-            dxil_path = os.path.join(sdk_d3d_path, dxil_name)
+            if not dxc_path:
+                log.warning(
+                    "Missing dxcompiler.dll dependency. WebGPU will be disabled"
+                )
+                return namespace(enabled=False)
+
             if not os.path.exists(dxc_path):
                 die("Could not find dxcompiler.dll at {}", dxc_path)
-            if not os.path.exists(dxil_path):
-                die("Could not find dxil.dll at {}", dxil_path)
 
+        dxc_name = "dxcompiler.dll"
         return namespace(
             enabled=True,
             from_sdk=not artifact,
             dxc_name=dxc_name,
             dxc_path=dxc_path,
-            dxil_name=dxil_name,
-            dxil_path=dxil_path,
         )
 
     with only_when(dxcompiler.enabled):
         set_config("MOZ_DXCOMPILER", True)
         set_define("MOZ_DXCOMPILER", 1)
         set_define("MOZ_DXC_DLL_NAME", dxcompiler.dxc_name)
-        set_define("MOZ_DXIL_DLL_NAME", dxcompiler.dxil_name)
         with only_when(dxcompiler.from_sdk):
             set_config("MOZ_DXC_DLL_PATH", dxcompiler.dxc_path)
-            set_config("MOZ_DXIL_DLL_PATH", dxcompiler.dxil_path)
+
+with only_when(target_is_windows & compile_environment):
+    option(
+        env="MOZ_WINDOWS_APP_SDK_DIR",
+        nargs=1,
+        help="Path to the DLLs from the Windows App SDK redistributable",
+    )
+
+    @depends(target)
+    def windows_app_sdk_task_job_name(target):
+        return f"winappsdk-{target.cpu}-pc-windows-msvc"
+
+    @depends(
+        "MOZ_WINDOWS_APP_SDK_DIR",
+        bootstrap_path(
+            windows_app_sdk_task_job_name,
+            when=depends("MOZ_WINDOWS_APP_SDK_DIR")(lambda x: not x),
+        ),
+    )
+    @checking("for the Windows App SDK")
+    @imports("os")
+    def windows_app_sdk(dir, bootstrapped):
+        if bootstrapped:
+            dir = bootstrapped
+        elif dir:
+            dir = dir[0]
+
+        if not dir:
+            raise FatalCheckError("Windows App SDK dir not present!")
+        if not os.path.exists(dir):
+            raise FatalCheckError(f"Could not find Windows App SDK directory at {dir}")
+        if not os.path.isdir(dir):
+            raise FatalCheckError(
+                f"Windows App SDK directory is not a directory at {dir}"
+            )
+        if len(os.listdir(dir)) == 0:
+            raise FatalCheckError(f"Windows App SDK directory is empty at {dir}")
+        return dir
+
+    set_config("MOZ_WINDOWSAPPSDK_DIR", windows_app_sdk)
 
 
 # Remoting protocol support
@@ -2807,9 +2877,9 @@ def wasm_sandboxing_libraries():
     )
 
 
-@depends(dependable(wasm_sandboxing_libraries), build_project)
-def default_wasm_sandboxing_libraries(libraries, build_project):
-    if build_project != "tools/rusttests":
+@depends(dependable(wasm_sandboxing_libraries), build_project, target)
+def default_wasm_sandboxing_libraries(libraries, build_project, target):
+    if build_project != "tools/rusttests" and target.endianness == "little":
         non_default_libs = {}
 
         return tuple(l for l in libraries if l not in non_default_libs)
@@ -3068,7 +3138,7 @@ def pdbstr_paths(valid_windows_sdk_dir, host):
     ]
 
 
-@depends("MOZ_AUTOMATION", c_compiler)
+@depends(moz_automation, c_compiler)
 def allow_missing_wintools(automation, c_compiler):
     if not automation:
         return True
@@ -3281,13 +3351,6 @@ with only_when(target_is_android):
         help="Append username to app display and android name",
     )
 
-    confvar(
-        env="ANDROID_PACKAGE_NAME",
-        nargs=1,
-        set_as_config=False,
-        help="Name of the Android package (default org.mozilla.$MOZ_APP_NAME)",
-    )
-
     with only_when("ANDROID_APPEND_USERNAME_TO_PACKAGE_NAME"):
         option(env="USER", nargs=1, help="System user name")
 
@@ -3297,19 +3360,6 @@ with only_when(target_is_android):
                 return user[0].replace("-", "_")
             else:
                 return "unknown"
-
-    @depends("ANDROID_PACKAGE_NAME", moz_app_name, mangled_username)
-    def android_package_name(value, moz_app_name, username):
-        if value:
-            if username:
-                return f"{value[0]}_{username}"
-            else:
-                return value[0]
-        if moz_app_name == "fennec":
-            return "org.mozilla.fennec_aurora"
-        return "org.mozilla.%s" % moz_app_name
-
-    set_config("ANDROID_PACKAGE_NAME", android_package_name)
 
 
 @depends("MOZ_APP_DISPLAYNAME", mangled_username)
@@ -3658,16 +3708,26 @@ set_define(
     when=depends("--enable-parental-controls")(lambda x: not x),
 )
 
-# Automation renaming
+# Package renaming
 # ==============================================================
 
-with only_when("MOZ_AUTOMATION"):
-    option(env="MOZ_SIMPLE_PACKAGE_NAME", nargs=1, help="Package name override")
-    set_config(
-        "MOZ_SIMPLE_PACKAGE_NAME", depends_if("MOZ_SIMPLE_PACKAGE_NAME")(lambda x: x[0])
-    )
-    option(env="MOZ_PKG_SPECIAL", nargs=1, help="Name of special moz flavor")
-    set_config("MOZ_PKG_SPECIAL", depends_if("MOZ_PKG_SPECIAL")(lambda x: x[0]))
+option(env="MOZ_SIMPLE_PACKAGE_NAME", nargs=1, help="Package name override")
+set_config(
+    "MOZ_SIMPLE_PACKAGE_NAME", depends_if("MOZ_SIMPLE_PACKAGE_NAME")(lambda x: x[0])
+)
+option(env="MOZ_PKG_SPECIAL", nargs=1, help="Name of special moz flavor")
+set_config("MOZ_PKG_SPECIAL", depends_if("MOZ_PKG_SPECIAL")(lambda x: x[0]))
+
+
+# Smart card support
+# ==============================================================
+@depends(target)
+def disable_smart_cards(target):
+    return target.os == "Android"
+
+
+set_config("MOZ_NO_SMART_CARDS", True, when=disable_smart_cards)
+set_define("MOZ_NO_SMART_CARDS", True, when=disable_smart_cards)
 
 
 # OSX Packaging
@@ -3710,6 +3770,7 @@ with only_when(target_is_osx):
     option(env="DMG_TOOL", nargs=1, help="Path to the dmg tool")
     set_config("DMG_TOOL", depends_if("DMG_TOOL")(lambda x: x[0]))
 
+    # Media Plugin Helper
     moz_eme_process_name = dependable("media-plugin-helper")
 
     set_config("MOZ_EME_PROCESS_NAME", moz_eme_process_name)
@@ -3733,6 +3794,81 @@ with only_when(target_is_osx):
         return f"{distribution_id[0]}.{eme_process_bundle_id}-{eme_process_name}"
 
     set_config("MOZ_EME_PROCESS_BUNDLEID", moz_eme_process_bundle_id)
+
+    # GPU Helper
+    #
+    # Set up configuration strings for building and referencing the GPU process
+    # executable. For a local developer build where the display name is
+    # "Nightly", the strings will be as follows.
+    #
+    # MOZ_GPU_PROCESS_NAME = gpu-helper
+    # MOZ_GPU_PROCESS_NAME_BRANDED = Nightly GPU Helper
+    # MOZ_GPU_PROCESS_NAME_BUNDLENAME = gpu-helper.app
+    # MOZ_GPU_PROCESS_BUNDLEID = org.mozilla.nightly-gpu-helper
+    moz_gpu_process_name = dependable("gpu-helper")
+
+    set_config("MOZ_GPU_PROCESS_NAME", moz_gpu_process_name)
+    set_config(
+        "MOZ_GPU_PROCESS_NAME_BRANDED",
+        depends_if(moz_app_displayname)(lambda name: f"{name} GPU Helper"),
+    )
+    set_config(
+        "MOZ_GPU_PROCESS_BUNDLENAME",
+        depends(moz_gpu_process_name)(lambda name: f"{name}.app"),
+    )
+
+    # Generate a lower case string with no spaces to be used as the bundle ID
+    # for the GPU helper .app of the form org.mozilla.<executable-name>.
+    @depends(moz_app_displayname, moz_gpu_process_name, "--with-distribution-id")
+    def moz_gpu_process_bundle_id(app_displayname, gpu_process_name, distribution_id):
+        if not app_displayname:
+            return
+
+        gpu_process_bundle_id = app_displayname.replace(" ", "-").lower()
+        return f"{distribution_id[0]}.{gpu_process_bundle_id}-{gpu_process_name}"
+
+    set_config("MOZ_GPU_PROCESS_BUNDLEID", moz_gpu_process_bundle_id)
+
+    with only_when(milestone.is_nightly & ~disable_smart_cards):
+        # Security Module Helper
+        #
+        # Set up configuration strings for building and referencing the PKCS#11
+        # utility process executable. For a local developer build where the
+        # display name is "Nightly", the strings will be as follows.
+        #
+        # MOZ_PKCS11_PROCESS_NAME = security-module-helper
+        # MOZ_PKCS11_PROCESS_NAME_BRANDED = Nightly Security Module Helper
+        # MOZ_PKCS11_PROCESS_NAME_BUNDLENAME = security-module-helper.app
+        # MOZ_PKCS11_PROCESS_BUNDLEID = org.mozilla.nightly-security-module-helper
+        moz_pkcs11_process_name = dependable("security-module-helper")
+
+        set_config("MOZ_PKCS11_PROCESS_NAME", moz_pkcs11_process_name)
+        set_config(
+            "MOZ_PKCS11_PROCESS_NAME_BRANDED",
+            depends_if(moz_app_displayname)(
+                lambda name: f"{name} Security Module Helper"
+            ),
+        )
+        set_config(
+            "MOZ_PKCS11_PROCESS_BUNDLENAME",
+            depends(moz_pkcs11_process_name)(lambda name: f"{name}.app"),
+        )
+
+        # Generate a lower case string with no spaces to be used as the bundle ID
+        # for the PKCS11 helper .app of the form org.mozilla.<executable-name>.
+        @depends(moz_app_displayname, moz_pkcs11_process_name, "--with-distribution-id")
+        def moz_pkcs11_process_bundle_id(
+            app_displayname, pkcs11_process_name, distribution_id
+        ):
+            if not app_displayname:
+                return
+
+            pkcs11_process_bundle_id = app_displayname.replace(" ", "-").lower()
+            return (
+                f"{distribution_id[0]}.{pkcs11_process_bundle_id}-{pkcs11_process_name}"
+            )
+
+        set_config("MOZ_PKCS11_PROCESS_BUNDLEID", moz_pkcs11_process_bundle_id)
 
 
 # JS Packaging
@@ -3832,7 +3968,9 @@ with only_when(compile_environment):
     def default_user_appdir(target):
         if target.kernel in ("WINNT", "Darwin"):
             return "Mozilla"
-        return ".mozilla"
+        elif target.os == "Android":
+            return ".mozilla"
+        return "mozilla"
 
     option(
         "--with-user-appdir",
@@ -3849,7 +3987,12 @@ with only_when(compile_environment):
             die("--with-user-appdir must be a single relative path.")
         return '"{}"'.format(appdir[0])
 
+    @depends(depends("--with-user-appdir")(lambda x: x), when=toolkit_gtk)
+    def forced_or_dotted_user_appdir(value):
+        return value.origin != "default" or value[0].startswith(".")
+
     set_define("MOZ_USER_DIR", user_appdir)
+    set_define("MOZ_LEGACY_HOME", True, when=forced_or_dotted_user_appdir)
 
 
 # Check for sin_len and sin6_len - used by SCTP; only appears in Mac/*BSD generally
@@ -3928,16 +4071,6 @@ with only_when(target_has_linux_kernel & compile_environment):
         ),
     )
 
-
-# Smart card support
-# ==============================================================
-@depends(build_project)
-def disable_smart_cards(build_project):
-    return build_project == "mobile/android"
-
-
-set_config("MOZ_NO_SMART_CARDS", True, when=disable_smart_cards)
-set_define("MOZ_NO_SMART_CARDS", True, when=disable_smart_cards)
 
 # Enable UniFFI fixtures
 # ==============================================================
@@ -4134,3 +4267,114 @@ with only_when(target_is_windows & compile_environment):
         return dir
 
     set_config("MOZ_WINDOWS_RS_DIR", windows_rs_dir)
+
+
+# ONNX runtime support
+# ==============================================================
+
+
+@depends(target)
+def onnxruntime_task_name(target):
+    # FIXME: see bug 1973674
+    os = target.raw_os
+    cpu = target.raw_cpu
+    if os.startswith("darwin"):
+        target = f"{cpu}-apple-darwin"
+    elif os.startswith("ios-sim"):
+        target = f"{cpu}-apple-ios-sim"
+    elif os.startswith("ios"):
+        target = f"{cpu}-apple-ios"
+    else:
+        target = target.toolchain
+    return f"onnxruntime-{target}"
+
+
+with only_when(~artifact_builds):
+    option(
+        "--with-onnx-runtime",
+        nargs="?",
+        help="Location of the ONNX Runtime",
+    )
+
+    @depends("--with-onnx-runtime")
+    def need_boostrap_onnxruntime(with_onnx_runtime):
+        return (with_onnx_runtime and len(with_onnx_runtime) == 0) or (
+            with_onnx_runtime.origin == "default"
+        )
+
+    @depends(
+        "--with-onnx-runtime",
+        library_name_info.dll,
+        target.toolchain,
+        bootstrap_path(onnxruntime_task_name, when=need_boostrap_onnxruntime),
+    )
+    @checking("ONNX install path")
+    @imports("os")
+    def onnx_runtime_path(with_onnx_runtime, dllinfo, toolchain, bootstrap):
+        if not with_onnx_runtime and with_onnx_runtime.origin != "default":
+            return
+
+        if len(with_onnx_runtime):
+            dirname = with_onnx_runtime[0]
+        elif bootstrap:
+            dirname = bootstrap
+        elif with_onnx_runtime.origin == "default":
+            return
+        else:
+            die(
+                f"Cannot find onnxruntime for {toolchain}. Provide one with --with-onnx-runtime=location"
+            )
+
+        location = os.path.abspath(
+            os.path.join(dirname, f"{dllinfo.prefix}onnxruntime{dllinfo.suffix}")
+        )
+
+        if os.path.exists(location):
+            return location
+        else:
+            die(f"Cannot find bootstrapped onnxruntime in {location}")
+
+    set_config("ONNX_RUNTIME", onnx_runtime_path)
+    set_define("ONNX_RUNTIME", onnx_runtime_path)
+
+with only_when(artifact_builds):
+
+    @depends(onnxruntime_task_name, build_environment.topsrcdir)
+    @imports(_from="__builtin__", _import="open")
+    @imports("re")
+    def is_onnxruntime_supported_by_taskcluster(onnxruntime_task_name, topsrcdir):
+        task_desc = os.path.join(
+            topsrcdir, "taskcluster", "kinds", "toolchain", "onnx.yml"
+        )
+        with open(task_desc) as fh:
+            content = fh.read()
+            # Those are the runtime we build on taskcluster
+            onnx_tasks = re.findall(r"^(onnxruntime-.*):", content, re.MULTILINE)
+            return onnxruntime_task_name in onnx_tasks
+
+    set_define("ONNX_RUNTIME", is_onnxruntime_supported_by_taskcluster)
+
+set_config(
+    "GECKO_TRACE_ENABLE",
+    True,
+    when=moz_debug | milestone.is_early_beta_or_earlier,
+)
+set_define(
+    "GECKO_TRACE_ENABLE",
+    True,
+    when=moz_debug | milestone.is_early_beta_or_earlier,
+)
+
+
+# Desktop Launcher
+# ==============================================================
+with only_when(target_is_windows):
+    desktop_launcher_enabled = ~compile_environment | check_header(
+        "winhttp.h",
+        includes=["windows.h"],
+        body="auto flag = WINHTTP_FLAG_SECURE_DEFAULTS",
+        language="C++",
+        when=compile_environment,
+    )
+    set_config("DESKTOP_LAUNCHER_ENABLED", True, when=desktop_launcher_enabled)
+    set_define("DESKTOP_LAUNCHER_ENABLED", True, when=desktop_launcher_enabled)

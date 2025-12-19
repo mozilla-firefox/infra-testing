@@ -5,9 +5,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/CSSNestedDeclarations.h"
-#include "mozilla/dom/CSSNestedDeclarationsBinding.h"
 
 #include "mozilla/DeclarationBlock.h"
+#include "mozilla/dom/CSSNestedDeclarationsBinding.h"
 
 namespace mozilla::dom {
 
@@ -118,7 +118,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(CSSNestedDeclarations,
   // Keep this in sync with IsCCLeaf.
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
-StyleLockedDeclarationBlock* CSSNestedDeclarations::RawStyle() const {
+const StyleLockedDeclarationBlock* CSSNestedDeclarations::RawStyle() const {
   return mDecls.mDecls->Raw();
 }
 

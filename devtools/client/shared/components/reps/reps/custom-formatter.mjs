@@ -11,8 +11,8 @@ import {
   createFactory,
 } from "resource://devtools/client/shared/vendor/react.mjs";
 
-import { cleanupStyle } from "resource://devtools/client/shared/components/reps/reps/rep-utils.mjs";
-import { MODE } from "resource://devtools/client/shared/components/reps/index.mjs";
+import { cleanupStyle } from "./rep-utils.mjs";
+import { MODE } from "./constants.mjs";
 
 const ALLOWED_TAGS = new Set([
   "span",
@@ -202,7 +202,8 @@ function renderJsonMl(jsonMl, props, index = 0) {
             front: child && !!child.typeName ? child : null,
           });
         } else {
-          // `browserLoaderRequire` is exposed by WebConsoleUI. It is the BrowserLoader's require.
+          // `browserLoaderRequire` is the BrowserLoader's require.
+          // It is exposed by WebConsoleUI and debugger index.js.
           // This helps load ObjectInspector as well as Reps in the same global as this module,
           // which is loaded from the BrowserLoader via ChromeUtils.importESModule + global: "current".
           //

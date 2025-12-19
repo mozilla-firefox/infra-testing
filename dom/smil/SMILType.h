@@ -7,7 +7,6 @@
 #ifndef DOM_SMIL_SMILTYPE_H_
 #define DOM_SMIL_SMILTYPE_H_
 
-#include "mozilla/Attributes.h"
 #include "nscore.h"
 
 namespace mozilla {
@@ -61,7 +60,7 @@ class SMILType {
    * @pre  aValue.IsNull()
    * @post aValue.mType == this
    */
-  virtual void Init(SMILValue& aValue) const = 0;
+  virtual void InitValue(SMILValue& aValue) const = 0;
 
   /**
    * Destroys any data associated with a value of this type.
@@ -69,7 +68,7 @@ class SMILType {
    * @pre  aValue.mType == this
    * @post aValue.IsNull()
    */
-  virtual void Destroy(SMILValue& aValue) const = 0;
+  virtual void DestroyValue(SMILValue& aValue) const = 0;
 
   /**
    * Assign this object the value of another. Think of this as the assignment

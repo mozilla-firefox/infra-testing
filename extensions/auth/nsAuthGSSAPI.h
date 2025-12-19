@@ -9,7 +9,6 @@
 #include "nsAuth.h"
 #include "nsIAuthModule.h"
 #include "nsString.h"
-#include "mozilla/Attributes.h"
 
 #define GSS_USE_FUNCTION_POINTERS 1
 
@@ -54,9 +53,11 @@ class nsAuthGSSAPI final : public nsIAuthModule {
   gss_ctx_id_t mCtx;
   gss_OID mMechOID;
   nsCString mServiceName;
-  uint32_t mServiceFlags;
+  uint32_t mServiceFlags = REQ_DEFAULT;
   nsString mUsername;
-  bool mComplete;
+  bool mComplete = false;
+  bool mDelegationRequested = false;
+  bool mDelegationSupported = false;
 };
 
 #endif /* nsAuthGSSAPI_h__ */

@@ -5,14 +5,11 @@
 package mozilla.components.feature.containers
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flow
 import mozilla.components.browser.state.action.ContainerAction
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.ContainerState
 import mozilla.components.browser.state.store.BrowserStore
-import mozilla.components.support.test.ext.joinBlocking
-import mozilla.components.support.test.libstate.ext.waitUntilIdle
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.test.rule.MainCoroutineRule
@@ -24,7 +21,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.verify
 
-@ExperimentalCoroutinesApi
 @RunWith(AndroidJUnit4::class)
 class ContainerMiddlewareTest {
     @get:Rule
@@ -48,10 +44,7 @@ class ContainerMiddlewareTest {
                 middleware = listOf(middleware),
             )
 
-            store.waitUntilIdle() // wait to consume InitAction
-            store.waitUntilIdle() // wait to consume AddContainersAction
-
-            store.dispatch(ContainerAction.AddContainerAction(container)).joinBlocking()
+            store.dispatch(ContainerAction.AddContainerAction(container))
 
             verify(storage).addContainer(
                 container.contextId,
@@ -71,9 +64,6 @@ class ContainerMiddlewareTest {
                 middleware = listOf(middleware),
             )
 
-            store.waitUntilIdle() // wait to consume InitAction
-            store.waitUntilIdle() // wait to consume AddContainersAction
-
             verify(storage).getContainers()
             assertEquals(container, store.state.containers["contextId"])
         }
@@ -92,11 +82,7 @@ class ContainerMiddlewareTest {
                 middleware = listOf(middleware),
             )
 
-            store.waitUntilIdle() // wait to consume InitAction
-            store.waitUntilIdle() // wait to consume AddContainersAction
-
             store.dispatch(ContainerAction.RemoveContainerAction(container.contextId))
-                .joinBlocking()
 
             verify(storage).removeContainer(container)
         }

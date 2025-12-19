@@ -1,30 +1,31 @@
 /* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-// vim:cindent:tabstop=4:expandtab:shiftwidth=4:
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsLayoutDebuggingTools.h"
 
-#include "nsIDocShell.h"
-#include "nsPIDOMWindow.h"
-#include "nsIDocumentViewer.h"
-#include "nsIPrintSettings.h"
-#include "nsIPrintSettingsService.h"
-
-#include "nsAtom.h"
-
-#include "nsIContent.h"
-
-#include "nsCounterManager.h"
-#include "nsCSSFrameConstructor.h"
-#include "nsViewManager.h"
-#include "nsIFrame.h"
-
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/Element.h"
+#include "ErrorList.h"
+#include "RetainedDisplayListBuilder.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/dom/ChildIterator.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/TreeIterator.h"
+#include "nsAtom.h"
+#include "nsCSSFrameConstructor.h"
+#include "nsCounterManager.h"
+#include "nsDisplayList.h"
+#include "nsIContent.h"
+#include "nsIDocShell.h"
+#include "nsIDocumentViewer.h"
+#include "nsIFrame.h"
+#include "nsIPrintSettings.h"
+#include "nsIPrintSettingsService.h"
+#include "nsLayoutUtils.h"
+#include "nsPIDOMWindow.h"
 
 using namespace mozilla;
 using mozilla::dom::Document;
@@ -44,14 +45,6 @@ static PresShell* GetPresShell(nsIDocShell* aDocShell) {
     return nullptr;
   }
   return viewer->GetPresShell();
-}
-
-static nsViewManager* view_manager(nsIDocShell* aDocShell) {
-  PresShell* presShell = GetPresShell(aDocShell);
-  if (!presShell) {
-    return nullptr;
-  }
-  return presShell->GetViewManager();
 }
 
 #ifdef DEBUG
@@ -136,27 +129,60 @@ nsLayoutDebuggingTools::SetPagedMode(bool aPagedMode) {
   return NS_OK;
 }
 
-static void DumpContentRecur(nsIDocShell* aDocShell, FILE* out) {
+static void DumpContentRecur(nsIDocShell* aDocShell, FILE* out,
+                             bool aAnonymousSubtrees) {
 #ifdef DEBUG
-  if (nullptr != aDocShell) {
-    fprintf(out, "docshell=%p \n", static_cast<void*>(aDocShell));
-    RefPtr<Document> doc(document(aDocShell));
-    if (doc) {
-      dom::Element* root = doc->GetRootElement();
-      if (root) {
-        root->List(out);
+  if (!aDocShell) {
+    return;
+  }
+
+  fprintf(out, "docshell=%p \n", static_cast<void*>(aDocShell));
+  RefPtr<Document> doc(document(aDocShell));
+  if (!doc) {
+    fputs("no document\n", out);
+    return;
+  }
+
+  dom::Element* root = doc->GetRootElement();
+  if (!root) {
+    fputs("no root element\n", out);
+    return;
+  }
+
+  // The content tree (without anonymous subtrees).
+  root->List(out);
+
+  // The anonymous subtrees.
+  if (aAnonymousSubtrees) {
+    dom::TreeIterator<dom::StyleChildrenIterator> iter(*root);
+    while (nsIContent* current = iter.GetNext()) {
+      if (!current->IsRootOfNativeAnonymousSubtree()) {
+        continue;
       }
-    } else {
-      fputs("no document\n", out);
+
+      fputs("--\n", out);
+      if (current->IsElement() &&
+          current->AsElement()->GetPseudoElementType() ==
+              PseudoStyleType::mozSnapshotContainingBlock) {
+        fprintf(out,
+                "View Transition Tree "
+                "[parent=%p][active-view-transition=%p]:\n",
+                (void*)current->GetParent(),
+                (void*)doc->GetActiveViewTransition());
+      } else {
+        fprintf(out, "Anonymous Subtree [parent=%p]:\n",
+                (void*)current->GetParent());
+      }
+      current->List(out);
     }
   }
 #endif
 }
 
 NS_IMETHODIMP
-nsLayoutDebuggingTools::DumpContent() {
+nsLayoutDebuggingTools::DumpContent(bool aAnonymousSubtrees) {
   NS_ENSURE_TRUE(mDocShell, NS_ERROR_NOT_INITIALIZED);
-  DumpContentRecur(mDocShell, stdout);
+  DumpContentRecur(mDocShell, stdout, aAnonymousSubtrees);
   return NS_OK;
 }
 
@@ -215,34 +241,48 @@ nsLayoutDebuggingTools::DumpTextRuns() {
   return NS_OK;
 }
 
-static void DumpViewsRecur(nsIDocShell* aDocShell, FILE* out) {
-#ifdef DEBUG
-  fprintf(out, "docshell=%p \n", static_cast<void*>(aDocShell));
-  RefPtr<nsViewManager> vm(view_manager(aDocShell));
-  if (vm) {
-    nsView* root = vm->GetRootView();
-    if (root) {
-      root->List(out);
-    }
-  } else {
-    fputs("null view manager\n", out);
-  }
-#endif  // DEBUG
-}
-
-NS_IMETHODIMP
-nsLayoutDebuggingTools::DumpViews() {
-  NS_ENSURE_TRUE(mDocShell, NS_ERROR_NOT_INITIALIZED);
-  DumpViewsRecur(mDocShell, stdout);
-  return NS_OK;
-}
-
 NS_IMETHODIMP
 nsLayoutDebuggingTools::DumpCounterManager() {
   NS_ENSURE_TRUE(mDocShell, NS_ERROR_NOT_INITIALIZED);
   if (PresShell* presShell = GetPresShell(mDocShell)) {
     presShell->FrameConstructor()->GetContainStyleScopeManager().DumpCounters();
   }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsLayoutDebuggingTools::DumpRetainedDisplayList() {
+  NS_ENSURE_TRUE(mDocShell, NS_ERROR_NOT_INITIALIZED);
+  PresShell* presShell = GetPresShell(mDocShell);
+  if (!presShell) {
+    fputs("null pres shell\n", stdout);
+    return NS_OK;
+  }
+
+  if (!nsLayoutUtils::AreRetainedDisplayListsEnabled()) {
+    fputs("Retained display list is not enabled\n", stdout);
+    return NS_OK;
+  }
+
+  nsIFrame* root = presShell->GetRootFrame();
+  auto* RDLBuilder = nsLayoutUtils::GetRetainedDisplayListBuilder(root);
+  if (!RDLBuilder) {
+    fputs("no retained display list\n", stdout);
+    return NS_OK;
+  }
+  nsDisplayListBuilder* builder = RDLBuilder->Builder();
+  const nsDisplayList* list = RDLBuilder->List();
+  if (!builder || !list) {
+    fputs("no retained display list\n", stdout);
+    return NS_OK;
+  }
+
+  fprintf(stdout, "Retained Display List (rootframe=%p) visible=%s:\n",
+          nsLayoutUtils::GetDisplayRootFrame(root),
+          ToString(builder->GetVisibleRect()).c_str());
+  fputs("<\n", stdout);
+  nsIFrame::PrintDisplayList(builder, *list, 1, false);
+  fputs(">\n", stdout);
   return NS_OK;
 }
 
@@ -306,15 +346,7 @@ nsLayoutDebuggingTools::DumpReflowStats() {
 }
 
 nsresult nsLayoutDebuggingTools::ForceRefresh() {
-  RefPtr<nsViewManager> vm(view_manager(mDocShell));
-  if (!vm) {
-    return NS_OK;
-  }
-  nsView* root = vm->GetRootView();
-  if (root) {
-    vm->InvalidateView(root);
-  }
-  return NS_OK;
+  return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 nsresult nsLayoutDebuggingTools::SetBoolPrefAndRefresh(const char* aPrefName,

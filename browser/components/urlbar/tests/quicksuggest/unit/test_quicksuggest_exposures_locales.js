@@ -10,17 +10,37 @@
 
 const REMOTE_SETTINGS_RECORDS = [
   {
-    type: "exposure-suggestions",
-    suggestion_type: "aaa",
-    attachment: {
-      keywords: ["aaa keyword", "aaa bbb keyword", "amp", "wikipedia"],
-    },
+    type: "dynamic-suggestions",
+    suggestion_type: "test-exposure-aaa",
+    score: 1.0,
+    attachment: [
+      {
+        keywords: ["aaa keyword", "aaa bbb keyword", "amp", "wikipedia"],
+        data: {
+          result: {
+            isHiddenExposure: true,
+            payload: {
+              rsSuggestionType: "test-exposure-aaa",
+            },
+          },
+        },
+      },
+    ],
   },
   {
-    type: "exposure-suggestions",
-    suggestion_type: "bbb",
+    type: "dynamic-suggestions",
+    suggestion_type: "test-exposure-bbb",
+    score: 1.0,
     attachment: {
       keywords: ["bbb keyword", "aaa bbb keyword", "amp", "wikipedia"],
+      data: {
+        result: {
+          isHiddenExposure: true,
+          payload: {
+            rsSuggestionType: "test-exposure-bbb",
+          },
+        },
+      },
     },
   },
   {
@@ -55,28 +75,28 @@ add_task(async function suggestEnabledLocales() {
         {
           query: "amp",
           expectedResults: [
-            QuickSuggestTestUtils.ampResult(),
-            makeExpectedExposureResult("bbb"),
-            makeExpectedExposureResult("aaa"),
+            QuickSuggestTestUtils.ampResult({ suggestedIndex: -1 }),
+            makeExpectedExposureResult("test-exposure-bbb"),
+            makeExpectedExposureResult("test-exposure-aaa"),
           ],
         },
         {
           query: "wikipedia",
           expectedResults: [
             QuickSuggestTestUtils.wikipediaResult(),
-            makeExpectedExposureResult("bbb"),
-            makeExpectedExposureResult("aaa"),
+            makeExpectedExposureResult("test-exposure-bbb"),
+            makeExpectedExposureResult("test-exposure-aaa"),
           ],
         },
         {
           query: "aaa keyword",
-          expectedResults: [makeExpectedExposureResult("aaa")],
+          expectedResults: [makeExpectedExposureResult("test-exposure-aaa")],
         },
         {
           query: "aaa bbb keyword",
           expectedResults: [
-            makeExpectedExposureResult("bbb"),
-            makeExpectedExposureResult("aaa"),
+            makeExpectedExposureResult("test-exposure-bbb"),
+            makeExpectedExposureResult("test-exposure-aaa"),
           ],
         },
       ],
@@ -94,27 +114,27 @@ add_task(async function suggestDisabledLocales() {
       query: "amp",
       expectedResults: [
         // No AMP result!
-        makeExpectedExposureResult("bbb"),
-        makeExpectedExposureResult("aaa"),
+        makeExpectedExposureResult("test-exposure-bbb"),
+        makeExpectedExposureResult("test-exposure-aaa"),
       ],
     },
     {
       query: "wikipedia",
       expectedResults: [
         // No Wikipedia result!
-        makeExpectedExposureResult("bbb"),
-        makeExpectedExposureResult("aaa"),
+        makeExpectedExposureResult("test-exposure-bbb"),
+        makeExpectedExposureResult("test-exposure-aaa"),
       ],
     },
     {
       query: "aaa keyword",
-      expectedResults: [makeExpectedExposureResult("aaa")],
+      expectedResults: [makeExpectedExposureResult("test-exposure-aaa")],
     },
     {
       query: "aaa bbb keyword",
       expectedResults: [
-        makeExpectedExposureResult("bbb"),
-        makeExpectedExposureResult("aaa"),
+        makeExpectedExposureResult("test-exposure-bbb"),
+        makeExpectedExposureResult("test-exposure-aaa"),
       ],
     },
   ];
@@ -133,7 +153,7 @@ add_task(async function suggestDisabledLocales() {
       queries,
     },
     {
-      homeRegion: "DE",
+      homeRegion: "XX",
       locales: ["de", "en-US", "fr"],
       expectedQuickSuggestEnabled: false,
       queries,
@@ -155,16 +175,10 @@ async function doLocaleTest({
     info("Doing locale test: " + JSON.stringify({ homeRegion, locale }));
 
     // Set the region and locale.
-    await QuickSuggestTestUtils.withLocales({
-      homeRegion,
-      locales: [locale],
+    await QuickSuggestTestUtils.withRegionAndLocale({
+      locale,
+      region: homeRegion,
       callback: async () => {
-        // Reinitialize Suggest, which will set default-branch values for
-        // Suggest prefs appropriate to the locale.
-        info("Reinitializing Suggest");
-        await QuickSuggest._test_reinit();
-        info("Done reinitializing Suggest");
-
         // Sanity-check prefs. At this point, the value of `quickSuggestEnabled`
         // will be the value of its fallback pref, `quicksuggest.enabled`.
         assertSuggestPrefs(expectedQuickSuggestEnabled);
@@ -177,7 +191,8 @@ async function doLocaleTest({
         // Install an experiment that enables Suggest and exposures.
         let nimbusCleanup = await UrlbarTestUtils.initNimbusFeature({
           quickSuggestEnabled: true,
-          quickSuggestExposureSuggestionTypes: "aaa,bbb",
+          quickSuggestDynamicSuggestionTypes:
+            "test-exposure-aaa,test-exposure-bbb",
         });
         await QuickSuggestTestUtils.forceSync();
 
@@ -207,17 +222,13 @@ async function doLocaleTest({
       },
     });
   }
-
-  // Reinitialize Suggest so prefs go back to their defaults now that the app is
-  // back to its default locale.
-  await QuickSuggest._test_reinit();
 }
 
 function assertSuggestPrefs(expectedEnabled) {
   let prefs = [
     "browser.urlbar.quicksuggest.enabled",
+    "browser.urlbar.suggest.quicksuggest.all",
     "browser.urlbar.suggest.quicksuggest.sponsored",
-    "browser.urlbar.suggest.quicksuggest.nonsponsored",
   ];
   for (let p of prefs) {
     Assert.equal(
@@ -233,17 +244,18 @@ function assertSuggestPrefs(expectedEnabled) {
   }
 }
 
-function makeExpectedExposureResult(exposureSuggestionType) {
+function makeExpectedExposureResult(rsSuggestionType) {
   return {
     type: UrlbarUtils.RESULT_TYPE.DYNAMIC,
     source: UrlbarUtils.RESULT_SOURCE.SEARCH,
     heuristic: false,
     exposureTelemetry: UrlbarUtils.EXPOSURE_TELEMETRY.HIDDEN,
     payload: {
-      exposureSuggestionType,
+      rsSuggestionType,
       source: "rust",
       dynamicType: "exposure",
-      provider: "Exposure",
+      provider: "Dynamic",
+      suggestionType: rsSuggestionType,
       telemetryType: "exposure",
       isSponsored: false,
     },

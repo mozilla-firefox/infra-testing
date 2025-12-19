@@ -21,9 +21,10 @@ import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.appstate.AppAction.MessagingAction.MessageClicked
 import org.mozilla.fenix.helpers.FenixGleanTestRule
-import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
+import org.robolectric.RobolectricTestRunner
+import java.lang.ref.WeakReference
 
-@RunWith(FenixRobolectricTestRunner::class)
+@RunWith(RobolectricTestRunner::class)
 class DefaultMessageControllerTest {
 
     @get:Rule
@@ -39,7 +40,7 @@ class DefaultMessageControllerTest {
         defaultMessageController = DefaultMessageController(
             messagingController = messagingController,
             appStore = appStore,
-            homeActivity = homeActivity,
+            homeActivityRef = WeakReference(homeActivity),
         )
     }
 

@@ -31,7 +31,7 @@ const MS_PER_NS = 1000000;
 
 // Wait for `about:processes` to be updated.
 async function promiseAboutProcessesUpdated({ doc, force, tabAboutProcesses }) {
-  let startTime = performance.now();
+  let startTime = ChromeUtils.now();
 
   let updatePromise = new Promise(resolve => {
     doc.addEventListener("AboutProcessesUpdated", resolve, { once: true });
@@ -173,7 +173,7 @@ async function testCpu(element, total, slope, assumptions) {
       Assert.ok(slope > 0 && slope < 0.0001);
       break;
     case "?":
-      Assert.ok(slope == null);
+      Assert.equal(slope, null);
       // Nothing else to do here.
       return;
     default: {
@@ -186,14 +186,16 @@ async function testCpu(element, total, slope, assumptions) {
         }`
       );
       // Also, sanity checks.
-      Assert.ok(
-        computedPercentage / 100 >= assumptions.minimalCPUPercentage,
+      Assert.greaterOrEqual(
+        computedPercentage / 100,
+        assumptions.minimalCPUPercentage,
         `Not too little: ${computedPercentage / 100} >=? ${
           assumptions.minimalCPUPercentage
         } `
       );
-      Assert.ok(
-        computedPercentage / 100 <= assumptions.maximalCPUPercentage,
+      Assert.lessOrEqual(
+        computedPercentage / 100,
+        assumptions.maximalCPUPercentage,
         `Not too much: ${computedPercentage / 100} <=? ${
           assumptions.maximalCPUPercentage
         } `
@@ -242,13 +244,15 @@ async function testMemory(element, total, delta, assumptions) {
   let [, extractedTotal, extractedUnit] = extracted;
 
   let extractedTotalNumber = Number.parseFloat(extractedTotal);
-  Assert.ok(
-    extractedTotalNumber > 0,
+  Assert.greater(
+    extractedTotalNumber,
+    0,
     `Unitless total memory use is greater than 0: ${extractedTotal}`
   );
   if (extractedUnit != "GB") {
-    Assert.ok(
-      extractedTotalNumber <= 1024,
+    Assert.lessOrEqual(
+      extractedTotalNumber,
+      1024,
       `Unitless total memory use is less than 1024: ${extractedTotal}`
     );
   }
@@ -383,7 +387,7 @@ async function setupAudioTab() {
   let tab = BrowserTestUtils.addTab(gBrowser, origin, { skipAnimation: true });
   tab.testTitle = title;
   tab.testOrigin = origin;
-  await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+  await BrowserTestUtils.browserLoaded(tab.linkedBrowser, { wantLoad: origin });
   await SpecialPowers.spawn(tab.linkedBrowser, [title], async title => {
     content.document.title = title;
     const ROOT =
@@ -407,8 +411,6 @@ async function testAboutProcessesWithConfig({ showAllFrames, showThreads }) {
       // Force same-origin tabs to share a single process, to properly test
       // functionality involving multiple tabs within a single process with Fission.
       ["dom.ipc.processCount.webIsolated", 1],
-      // Ensure utility audio decoder is enabled
-      ["media.utility-process.enabled", true],
     ],
   });
 
@@ -449,10 +451,10 @@ async function testAboutProcessesWithConfig({ showAllFrames, showThreads }) {
       skipAnimation: true,
     });
     await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
-    let p = BrowserTestUtils.browserLoaded(
-      tab.linkedBrowser,
-      true /* includeSubFrames */
-    );
+    let p = BrowserTestUtils.browserLoaded(tab.linkedBrowser, {
+      includeSubFrames: true,
+      wantLoad: "about:blank",
+    });
     await SpecialPowers.spawn(tab.linkedBrowser, [], async () => {
       // Open an in-process iframe to test toolkit.aboutProcesses.showAllSubframes
       let frame = content.document.createElement("iframe");
@@ -622,7 +624,7 @@ async function testAboutProcessesWithConfig({ showAllFrames, showThreads }) {
 
     info("Sanity checks: pid");
     let pid = Number.parseInt(pidContent);
-    Assert.ok(pid > 0, `Checking pid ${pidContent}`);
+    Assert.greater(pid, 0, `Checking pid ${pidContent}`);
     Assert.equal(pid, row.process.pid);
 
     info("Sanity checks: memory resident");

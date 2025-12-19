@@ -6,8 +6,9 @@
 
 #include "MP3Demuxer.h"
 
-#include <algorithm>
 #include <inttypes.h>
+
+#include <algorithm>
 #include <limits>
 
 #include "ByteWriter.h"
@@ -15,7 +16,6 @@
 #include "VideoUtils.h"
 #include "mozilla/Assertions.h"
 
-extern mozilla::LazyLogModule gMediaDemuxerLog;
 #define MP3LOG(msg, ...) \
   DDMOZ_LOG(gMediaDemuxerLog, LogLevel::Debug, msg, ##__VA_ARGS__)
 #define MP3LOGV(msg, ...) \
@@ -263,7 +263,7 @@ RefPtr<MP3TrackDemuxer::SamplesPromise> MP3TrackDemuxer::GetSamples(
       return SamplesPromise::CreateAndReject(NS_ERROR_DOM_MEDIA_DEMUXER_ERR,
                                              __func__);
     }
-    frames->AppendSample(frame);
+    frames->AppendSample(std::move(frame));
   }
 
   MP3LOGV("GetSamples() End mSamples.Size()=%zu aNumSamples=%d mOffset=%" PRIu64

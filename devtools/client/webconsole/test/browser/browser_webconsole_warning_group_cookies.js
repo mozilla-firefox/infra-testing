@@ -10,7 +10,7 @@ const TEST_FILE =
   "browser/devtools/client/webconsole/test/browser/test-warning-groups.html";
 const COOKIE_GROUP = "Cookie warnings";
 
-pushPref("devtools.webconsole.groupWarningMessages", true);
+pushPref("devtools.webconsole.groupSimilarMessages", true);
 pushPref("network.cookie.sameSite.laxByDefaultWarningsForBeta", true);
 
 async function cleanUp() {
@@ -136,8 +136,8 @@ add_task(async function testInvalidSameSiteMessage() {
 
   await checkConsoleOutputForWarningGroup(hud, [
     `▼︎⚠ ${COOKIE_GROUP} 2`,
-    `| ${message1}`,
     `| ${message2}`,
+    `| ${message1}`,
   ]);
 
   // Source map are being resolved in background and we might have

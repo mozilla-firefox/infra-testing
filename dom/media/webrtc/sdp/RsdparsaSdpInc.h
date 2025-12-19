@@ -6,11 +6,10 @@
 #ifndef _RUSTSDPINC_H_
 #define _RUSTSDPINC_H_
 
-#include "nsError.h"
-#include "mozilla/Maybe.h"
-
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
+
+#include "nsError.h"
 
 struct BandwidthVec;
 struct RustSdpSession;
@@ -263,6 +262,7 @@ struct RustSdpAttributeFlags {
   bool rtcpRsize;
   bool bundleOnly;
   bool endOfCandidates;
+  bool extmapAllowMixed;
 };
 
 struct RustSdpAttributeMsid {

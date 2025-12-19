@@ -7,10 +7,11 @@ task-defaults:
         product: firefox
     treeherder:
         tier: 2
-    worker-type: b-linux-gcp
+    worker-type: b-linux-docker-amd
     worker:
         max-run-time: 7200
     run-on-projects: ['trunk']
+    run-on-repo-type: [hg]
     run:
         using: mozharness
         actions: [get-secrets, build]
@@ -22,6 +23,7 @@ task-defaults:
             app_name: mobile/ios
             stage_platform: ios
             disable_package_metrics: true
+            upload_env: {"UPLOAD_PATH": "/builds/worker/artifacts"}
     use-sccache: true
     fetches:
         toolchain:
@@ -86,6 +88,7 @@ ios-non-unified/plain:
             extra_mozconfig_content:
                 - ac_add_options --disable-unified-build
         mozconfig-variant: opt
+    run-on-projects: ['integration']
     fetches:
         toolchain:
             - ios-sdk

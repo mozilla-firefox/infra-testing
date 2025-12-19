@@ -8,6 +8,7 @@
 
 #include "jit/JitSpewer.h"
 #include "vm/NativeObject.h"
+#include "wasm/WasmFrame.h"
 #include "wasm/WasmMemory.h"
 
 namespace js {
@@ -16,7 +17,8 @@ namespace wasm {
 
 #ifdef DEBUG
 void MemoryAccessDesc::assertOffsetInGuardPages() const {
-  MOZ_ASSERT(offset_ < (uint64_t)GetMaxOffsetGuardLimit(hugeMemory_));
+  MOZ_ASSERT(offset_ < (uint64_t)GetMaxOffsetGuardLimit(
+                           hugeMemory_, wasm::PageSize::Standard));
 }
 #endif
 
@@ -83,6 +85,20 @@ bool AssemblerShared::hasCreator() const {
   return !creators_.empty();
 }
 #endif
+
+static uint32_t ABIArgGeneratorStartOffset(ABIKind kind) {
+  switch (kind) {
+    case ABIKind::System:
+      return 0;
+    case ABIKind::Wasm:
+      return wasm::FrameWithInstances::sizeOfInstanceFields();
+    default:
+      MOZ_CRASH("Invalid ABI kind");
+  }
+}
+
+ABIArgGeneratorShared::ABIArgGeneratorShared(ABIKind kind)
+    : kind_(kind), stackOffset_(ABIArgGeneratorStartOffset(kind)) {}
 
 }  // namespace jit
 

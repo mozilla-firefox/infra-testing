@@ -8,6 +8,9 @@
 newtab-page-title = Tendayke Pyahu
 newtab-settings-button =
     .title = Eñemomba’e ne Tendayke Pyahu roguére
+newtab-customize-panel-icon-button =
+    .title = Emboava ko kuatiarogue
+newtab-customize-panel-icon-button-label = Ñemomba’ete
 newtab-personalize-settings-icon-label =
     .title = Eñemomba’e tendayke pyahúre
     .aria-label = Ñemboheko
@@ -53,6 +56,9 @@ newtab-topsites-add-shortcut-header = Mbopya’eha pyahu
 newtab-topsites-edit-topsites-header = Tenda Ojeikevéva Mbosako’i
 newtab-topsites-edit-shortcut-header = Mbopya’eha mbosako’i
 newtab-topsites-add-shortcut-label = Embojuaju jeike pya’eha
+newtab-topsites-add-shortcut-title =
+    .title = Embojuaju jeike pya’eha
+    .aria-label = Embojuaju jeike pya’eha
 newtab-topsites-title-label = Teratee
 newtab-topsites-title-input =
     .placeholder = Ehai herarã
@@ -81,6 +87,14 @@ newtab-confirm-delete-history-p2 = Ko ojejapóva ndaikatuvéima oñemboguevi.
 ## Top Sites - Sponsored label
 
 newtab-topsite-sponsored = Pytyvõpyréva
+
+## Label used by screen readers for pinned top sites
+
+# Variables:
+#   $title (string) - The label or hostname of the site.
+topsite-label-pinned =
+    .aria-label = { $title } (mbojapyre)
+    .title = { $title }
 
 ## Context Menu - Action Tooltips.
 
@@ -117,7 +131,8 @@ newtab-menu-delete-pocket = Embogue { -pocket-brand-name }-pe
 newtab-menu-archive-pocket = Eñongatu { -pocket-brand-name }-pe
 newtab-menu-show-privacy-info = Ore pytyvõhára ha iñemigua
 newtab-menu-about-fakespot = { -fakespot-brand-name } rehegua
-newtab-menu-report-content = Emomarandu ko tetepy rehegua
+# Report is a verb (i.e. report issue with the content).
+newtab-menu-report = Momarandu
 # Context menu option to personalize New Tab recommended stories by blocking a section of stories,
 # e.g. "Sports". "Block" is a verb here.
 newtab-menu-section-block = Joko
@@ -190,6 +205,8 @@ newtab-label-sponsored-by = Ohepyme’ẽva { $sponsor }
 #   $source (string) - The name of a company or their domain
 #   $timeToRead (number) - The estimated number of minutes to read this story
 newtab-label-source-read-time = { $source } · { $timeToRead } min
+# This string is used under fixed size ads to indicate sponsored content
+newtab-label-sponsored-fixed = Pytyvõpyréva
 
 ## Section Menu: These strings are displayed in the section context menu and are
 ## meant as a call to action for the given section.
@@ -252,9 +269,6 @@ newtab-pocket-learn-more = Kuaave
 newtab-pocket-cta-button = Eguereko { -pocket-brand-name }
 newtab-pocket-cta-text = Eñongatu umi eipotáva tembiasakue { -pocket-brand-name }-pe ha emombarete ne akã ñemoñe’ẽ ha’evévape.
 newtab-pocket-pocket-firefox-family = { -pocket-brand-name } ha’e { -brand-product-name } pehẽngue
-# A save to Pocket button that shows over the card thumbnail on hover.
-newtab-pocket-image =
-    .aria-label = { -pocket-brand-name }
 newtab-pocket-save = Ñongatu
 newtab-pocket-saved = Ñongatupyre
 
@@ -304,16 +318,32 @@ newtab-custom-pocket-subtitle = Tetepy iporãva { -pocket-brand-name } oiporavop
 newtab-custom-stories-toggle =
     .label = Tembiasakue momba’epyre
     .description = Tetepy iporãva oiporavóva { -brand-product-name } reheguáva
+newtab-custom-stories-personalized-toggle =
+    .label = Tembiasakue
+newtab-custom-stories-personalized-checkbox-label = Tembiasakueita teéva ipyendáva ne rembiapóre
 newtab-custom-pocket-sponsored = Tembiasakue jehepyme’ẽguáva
 newtab-custom-pocket-show-recent-saves = Ehechauka eñongaturamóva
 newtab-custom-recent-title = Tembiapo ramovegua
 newtab-custom-recent-subtitle = Tenda jeporavo ha tetepy ramovegua
-newtab-custom-recent-toggle =
-    .label = Tembiapo ramovegua
-    .description = Tenda jeporavo ha tetepy ramovegua
 newtab-custom-weather-toggle =
     .label = Arapytu
     .description = Ko árape g̃uara ára
+newtab-custom-trending-search-toggle =
+    .label = Jeheka ojejapovéva
+    .description = Umi téma ojeguerohory ha ojehekavéva
+newtab-custom-widget-weather-toggle =
+    .label = Arapytu
+newtab-custom-widget-trending-search-toggle =
+    .label = Eheka ojejapovéva
+newtab-custom-widget-lists-toggle =
+    .label = Tysýi
+newtab-custom-widget-timer-toggle =
+    .label = Aravojere
+newtab-custom-widget-section-title = Widgets
+# Tooltip for close button
+newtab-custom-close-menu-button =
+    .title = Mboty
+    .aria-label = Poravorã mboty
 newtab-custom-close-button = Mboty
 newtab-custom-settings = Eñangareko hetave ñembohekóre
 
@@ -326,6 +356,7 @@ newtab-wallpaper-custom-color = Eiporavo peteĩ sa’y
 # Variables
 #   $file_size (number) - The number of the maximum image file size (in MB) that may be uploaded
 newtab-wallpaper-error-max-file-size = Ta’ãnga ohasáma tuichakuépe { $file_size } MB rehegua. Eñeha’ã ehupi marandurenda michĩvéva.
+newtab-wallpaper-error-upload-file-type = Ndaikatúi rohupi marandurenda. Eha’ã jey marandurenda ambuéva reheve.
 newtab-wallpaper-error-file-type = Ndaikatúi rohupi marandurenda. Eha’ã jey marandurenda ambuéva reheve.
 newtab-wallpaper-light-red-panda = Panda pytã
 newtab-wallpaper-light-mountain = Yvyty morotĩ
@@ -375,7 +406,7 @@ newtab-wallpaper-abstract-purple-green = Sa’ykuéra pytãũ ha hovyũ rehegua
 newtab-wallpaper-abstract-blue-purple-waves = Hovy ha pytãũva rehegua
 newtab-wallpaper-abstract-black-waves = Hũ ikarẽkarẽva
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Ta’ãnga
 newtab-wallpaper-beach-at-sunrise = Jejahuha ko’ẽmbotávo
@@ -390,7 +421,6 @@ newtab-wallpaper-suspension-bridge = Jehasaha osãingóva ra’ãnga isa’y tan
 newtab-wallpaper-sand-dunes = Yvyku’i morotĩ atýra
 newtab-wallpaper-palm-trees = Jata’i ra’ãnga aravo itajúva aja
 newtab-wallpaper-blue-flowers = Yvoty hovy ra’ãnga ag̃uietégui ipotyjeráva
-newtab-wallpaper-forest-trees = Yvyramáta ojaho’íva arai
 # Variables
 #   $author_string (String) - The name of the creator of the photo.
 #   $webpage_string (String) - The name of the webpage where the photo is located.
@@ -405,6 +435,10 @@ feature-highlight-dismiss-button =
 feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
+
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
 
 ## Celestial
 
@@ -432,7 +466,6 @@ newtab-weather-menu-change-location = Emoambue tendatee
 newtab-weather-change-location-search-input-placeholder =
     .placeholder = Eheka tendatee
     .aria-label = Eheka tendatee
-newtab-weather-change-location-search-input = Eheka tendatee
 newtab-weather-menu-weather-display = Ára jehechaha
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
@@ -448,8 +481,16 @@ newtab-weather-menu-change-temperature-units-fahrenheit = Eva Fahrenheit ndive
 newtab-weather-menu-change-temperature-units-celsius = Eva Celsius ndive
 newtab-weather-menu-hide-weather = Eñomi arareko Tendayke Pyahúpe
 newtab-weather-menu-learn-more = Eikuaave
+newtab-weather-menu-detect-my-location = Ehecha che rendaite
 # This message is shown if user is working offline
 newtab-weather-error-not-available = Marandu ára rehegua ndaipóri ko’ag̃aite.
+newtab-weather-opt-in-see-weather = ¿Ehechasépa ne rendaitepegua arareko?
+newtab-weather-opt-in-not-now =
+    .label = Ani ko’ág̃a
+newtab-weather-opt-in-yes =
+    .label = Héẽ
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = Táva Nueva York
 
 ## Topic Labels
 
@@ -498,6 +539,9 @@ newtab-topic-selection-button-pick-interests = Eiporavo eipotáva
 newtab-section-follow-button = Tapykueho
 newtab-section-following-button = Ahapykueho
 newtab-section-unfollow-button = Ndahapykuehovéima
+# A modal may appear next to the Follow button, directing users to try out the feature
+newtab-section-follow-highlight-title = Eiporuporã nde feed
+newtab-section-follow-highlight-subtitle = Ehapykueho ndegustáva ehecha hag̃ua hetave mbaʼe.
 
 ## Button to block/unblock listed topics
 ## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
@@ -516,7 +560,7 @@ newtab-section-confirm-block-topic-p2 = Umi téma jokopyre nosẽmo’ãvéima c
 #   $topic (string) - Name of topic that user is blocking
 newtab-section-block-topic-button = Ejoko { $topic }
 
-## Panel in the Customize menu section to manage followed and blocked topics
+## Strings for custom wallpaper highlight
 
 newtab-section-mangage-topics-title = Téma
 newtab-section-manage-topics-button-v2 =
@@ -526,4 +570,142 @@ newtab-section-mangage-topics-followed-topics-empty-state = Ndohapykuehói guete
 newtab-section-mangage-topics-blocked-topics = Bloqueado
 newtab-section-mangage-topics-blocked-topics-empty-state = Ndojokói gueteri mba’evéichagua téma.
 newtab-custom-wallpaper-title = Ko’ápe oĩ mba’erechaha rugua
+# 'Make firefox yours" means to customize or personalize
+newtab-custom-wallpaper-subtitle = Ehupi ne mba’erechaha teéva térã eiporavo sa’yete embohéra hag̃ua ne { -brand-product-name }.
 newtab-custom-wallpaper-cta = Eha’ãjey
+
+## Strings for new user activation custom wallpaper highlight
+
+newtab-new-user-custom-wallpaper-title = Eiporavo mba’erechaha rugua ejapo hag̃ua { -brand-product-name } nemba’erã.
+newtab-new-user-custom-wallpaper-subtitle = Pe tendayke pyahu toñeñandu porã mba’erechaha rugua ha sa’y eipotáva ndive.
+newtab-new-user-custom-wallpaper-cta = Eiporu ko’ág̃a
+
+## Strings for download mobile highlight
+
+newtab-download-mobile-highlight-title = Emboguejy { -brand-product-name } ne pumbyrýpe
+# "Scan the code" refers to scanning the QR code that appears above the body text that leads to Firefox for mobile download.
+newtab-download-mobile-highlight-body-variant-a = Emoha’ãnga pe ayvu eikundaha hag̃ua tekorosãme ehokuévo.
+newtab-download-mobile-highlight-body-variant-b = Eku’ejey eheja haguégui embojuehe rire tendayke, ñe’ẽñemi ha hetave.
+newtab-download-mobile-highlight-body-variant-c = ¿Eikuaápa ikatuha eraha { -brand-product-name } nendive? Pe kundaharaite. Ne kasõ vokópe.
+newtab-download-mobile-highlight-image =
+    .aria-label = QR ayvu emboguejy hag̃ua { -brand-product-name } pumbyrýpe
+
+## Strings for shortcuts highlight
+
+newtab-shortcuts-highlight-title = Eguerohoryvéva ne kuã ykerete
+newtab-shortcuts-highlight-subtitle = Embojuaju jeike pya’eha ereko hag̃ua erohoryvéva nde ykére.
+
+## Strings for reporting ads and content
+
+newtab-report-content-why-reporting-this =
+    .label = ¿Mba’ére emombe’u kóva rehegua?
+newtab-report-ads-reason-not-interested =
+    .label = Ndaipotái mba’eve
+newtab-report-ads-reason-inappropriate =
+    .label = Péva nahendái
+newtab-report-ads-reason-seen-it-too-many-times =
+    .label = Ahecha hetaitereirasa jey
+newtab-report-content-wrong-category =
+    .label = Mboja’opy oĩvaíva
+newtab-report-content-outdated =
+    .label = Hekopyahu’ỹva
+newtab-report-content-inappropriate-offensive =
+    .label = Nahendái térã oporoja’óva
+newtab-report-content-spam-misleading =
+    .label = Spam térã japúva
+newtab-report-cancel = Heja
+newtab-report-submit = Mondo
+newtab-toast-thanks-for-reporting =
+    .message = Aguyje emomarandu haguére.
+
+## Strings for trending searches
+
+newtab-trending-searches-show-trending =
+    .title = Ehechauka jeheka ojejapovéva
+newtab-trending-searches-hide-trending =
+    .title = Eñomi jeheka ojejapovéva
+newtab-trending-searches-learn-more = Eikuaave
+newtab-trending-searches-dismiss = Eñomi jeheka ojejapovéva
+# "Trending searches refers to popular searches from search engines
+newtab-trending-searches-title = Jeheka ojejapovéva
+
+## Strings for task / to-do list productivity widget
+
+# "Add one" means adding a new task to the list (e.g., "Walk the dog")
+newtab-widget-lists-empty-cta = Eha’ãkuaa heta jey. Embojuaju peteĩ.
+# A simple label next to the default list name letting users know this is a new / beta feature
+newtab-widget-lists-label-new =
+    .label = Pyahu
+newtab-widget-lists-label-beta =
+    .label = Beta
+# When tasks have been previous marked as complete, they will appear in their own separate list beneath incomplete items
+# Variables:
+#   $number (number) - Amount of list items marked complete
+newtab-widget-lists-completed-list = Opapyre ({ $number })
+newtab-widget-task-list-menu-copy = Monguatia
+newtab-widget-lists-menu-edit = Embosako’i tysýi réra
+newtab-widget-lists-menu-create = Emoheñói tysýi pyahu
+newtab-widget-lists-menu-delete = Embogue ko tysýi
+newtab-widget-lists-menu-copy = Embohasa tysýi kuatiajokohápe
+newtab-widget-lists-menu-hide = Eñomimba umi tysýi
+newtab-widget-lists-menu-learn-more = Eikuaave
+newtab-widget-lists-input-add-an-item =
+    .placeholder = Embojuaju jehaipy
+newtab-widget-lists-input-error = Emoinge moñe’ẽrã embojuaju hag̃ua mba’eporurã.
+newtab-widget-lists-input-menu-open-link = Joajuha ijurujáva
+newtab-widget-lists-input-menu-move-up = Jehupi
+newtab-widget-lists-input-menu-move-down = Emongu’e yvy gotyo
+newtab-widget-lists-input-menu-delete = Mboguete
+newtab-widget-lists-input-menu-edit = Mbosako’i
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + Emoheñói tysýi pyahu
+newtab-widget-lists-name-label-default =
+    .label = Tembiaporã rysýi
+newtab-widget-lists-name-placeholder-default =
+    .placeholder = Tembiaporã rysýi
+# The placeholder value of the name field for a newly created list
+newtab-widget-lists-name-placeholder-new =
+    .placeholder = Tysýi pyahu
+newtab-widget-section-title = Widgets
+# Tooltip for hide all widgets button
+newtab-widget-section-hide-all-button =
+    .title = Eñomi widgets
+    .aria-label = Eñomimbaite widgets
+newtab-widget-section-maximize =
+    .title = Emyasãi widgets
+    .aria-label = Emyasãimbaite widgets tuichaháicha
+newtab-widget-section-minimize =
+    .title = Emomichĩ widgets
+    .aria-label = Emomichĩmbaite widgets tuichaháicha
+
+## Strings for timer productivity widget
+## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
+
+newtab-widget-timer-notification-title = Aravojere
+newtab-widget-timer-notification-focus = Opáma nde aravo. Ejapo porã. ¿Epytu’usépa?
+newtab-widget-timer-notification-break = Opáma nde jepytu’u. ¿Eñepyrũ jeýkatu?
+newtab-widget-timer-notification-warning = Umi ñemomarandu ojeíma
+newtab-widget-timer-mode-focus =
+    .label = Focus
+newtab-widget-timer-mode-break =
+    .label = Pytu’u
+newtab-widget-timer-label-play =
+    .label = Mbopu
+newtab-widget-timer-label-pause =
+    .label = Mombyta
+newtab-widget-timer-reset =
+    .title = Mbojevyjey
+newtab-widget-timer-menu-notifications = Eipe’a ñemomarandu
+newtab-widget-timer-menu-notifications-on = Emyandy marandu’i
+newtab-widget-timer-menu-hide = Eñomi aravopapaha
+newtab-widget-timer-menu-learn-more = Kuaave
+newtab-widget-message-title = Epyta umi tysýi ndive ha aravopapaha reheve
+# to-dos stands for "things to do".
+newtab-widget-message-copy = Mandu’arã guive tembiaporã peve, ñamindu’u ha jepytu’u jehetetirarã, ema’ẽ ne rembiapo ha aravo rehe.
+newtab-promo-card-title = Eipytyvõ { -brand-product-name }
+newtab-promo-card-body = Ore ykekohára oipytyvõ romombareteve hag̃ua ñanduti rogue
+newtab-promo-card-cta = Eikuaave
+newtab-promo-card-dismiss-button =
+    .title = Mboyke
+    .aria-label = Mboyke

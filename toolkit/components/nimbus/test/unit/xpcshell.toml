@@ -1,16 +1,18 @@
 [DEFAULT]
-head = "head.js"
+head = "../../../../../toolkit/profile/test/xpcshell/head.js ../../../../../browser/components/profiles/tests/unit/head.js head.js"
 tags = "nimbus"
 firefox-appdir = "browser"
 support-files = ["reference_aboutwelcome_experiment_content.json"]
 skip-if = [
-  "os == 'android'",
   "appname == 'thunderbird'",
+  "os == 'android'",
 ]
 prefs = [
   "app.normandy.run_interval_seconds=0", # This turns off the update interval for fetching recipes from Remote Settings
+  "messaging-system.log=all", # Enable all Nimbus logging.
 ]
-run-sequentially = "very high failure rate in parallel"
+
+["test_Enrollments.js"]
 
 ["test_ExperimentAPI.js"]
 
@@ -31,6 +33,10 @@ run-sequentially = "very high failure rate in parallel"
 ["test_ExperimentManager_lifecycle.js"]
 
 ["test_ExperimentManager_prefs.js"]
+requesttimeoutfactor = 6  # Slow and high CPU use on Linux and Windows
+skip-if = [
+  "os == 'win' && msix", # Bug 1991153
+]
 
 ["test_ExperimentManager_unenroll.js"]
 
@@ -45,19 +51,27 @@ run-sequentially = "very high failure rate in parallel"
 ["test_RemoteSettingsExperimentLoader.js"]
 
 ["test_RemoteSettingsExperimentLoader_updateRecipes.js"]
-
-["test_SharedDataMap.js"]
+requesttimeoutfactor = 2  # Slow on Windows
 
 ["test_TargetingContextRecorder.js"]
-skip-if = ["artifact"]
+requesttimeoutfactor = 2  # Slow on Windows
+skip-if = [
+  "artifact",
+  "os == 'win' && msix", # Bug 1991153
+]
 
 ["test_localization.js"]
 
 ["test_nimbusTelemetry.js"]
+requesttimeoutfactor = 3  # Slow on Windows msix
 
 ["test_policy.js"]
 
 ["test_prefFlips.js"]
-skip-if = ["os == 'mac' && os_version == '15.30' && arch == 'aarch64'"] # Bug 1960885
+requesttimeoutfactor = 2  # Slow on Linux and Windows
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1960885
+  "os == 'win' && msix", # Bug 1991153
+]
 
 ["test_schema_uris.js"]

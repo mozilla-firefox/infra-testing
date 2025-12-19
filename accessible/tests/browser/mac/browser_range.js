@@ -11,6 +11,12 @@ loadScripts(
   { name: "states.js", dir: MOCHITESTS_DIR }
 );
 
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["test.wait300msAfterTabSwitch", true]],
+  });
+});
+
 /**
  * Verify that the value of a slider input can be incremented/decremented
  * Test input[type=range]
@@ -281,15 +287,24 @@ addAccessibleTask(
       "Value description updated to critical."
     );
 
-    // XXX bug 1895627:
-    //   await invokeContentTask(browser, [], () => {
-    //     const f = content.document.getElementById("fuel");
-    //     f.textContent = "at 90/100";
-    //   });
-    //   await untilCacheIs(
-    //     () => meter.getAttributeValue("AXValueDescription"),
-    //     "at 90/100, Critical value",
-    //     "Value description updated to include inner text."
-    //   );
+    await invokeContentTask(browser, [], () => {
+      const f = content.document.getElementById("fuel");
+      f.textContent = "at 90/100";
+    });
+    await untilCacheIs(
+      () => meter.getAttributeValue("AXValueDescription"),
+      "at 90/100, Critical value",
+      "Value description updated to include textContent."
+    );
+
+    await invokeContentTask(browser, [], () => {
+      const f = content.document.getElementById("fuel");
+      f.innerText = "currently showing 90/100";
+    });
+    await untilCacheIs(
+      () => meter.getAttributeValue("AXValueDescription"),
+      "currently showing 90/100, Critical value",
+      "Value description updated to include innerText."
+    );
   }
 );

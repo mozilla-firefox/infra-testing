@@ -236,7 +236,7 @@
           }
         }
       }
-      /*
+      /**
        * A declarative way to wire up attribute inheritance and automatically generate
        * the `observedAttributes` getter.  For example, if you returned:
        *    {
@@ -346,10 +346,10 @@
         }
       }
 
-      /*
+      /**
        * Implements attribute value inheritance by child elements.
        *
-       * @param {array} list
+       * @param {Array} list
        *        An array of (to-element-selector, to-attr) pairs.
        * @param {string} attr
        *        An attribute to propagate.
@@ -773,9 +773,9 @@
   window.MozHTMLElement = MozHTMLElement;
 
   customElements.setElementCreationCallback("browser", () => {
-    Services.scriptloader.loadSubScript(
-      "chrome://global/content/elements/browser-custom-element.js",
-      window
+    ChromeUtils.importESModule(
+      "chrome://global/content/elements/browser-custom-element.mjs",
+      { global: "current" }
     );
   });
 
@@ -794,7 +794,6 @@
       ["named-deck", "chrome://global/content/elements/named-deck.js"],
       ["named-deck-button", "chrome://global/content/elements/named-deck.js"],
       ["panel-list", "chrome://global/content/elements/panel-list.js"],
-      ["search-textbox", "chrome://global/content/elements/search-textbox.js"],
       ["stringbundle", "chrome://global/content/elements/stringbundle.js"],
       [
         "printpreview-pagination",
@@ -811,70 +810,85 @@
       });
     }
 
+    let acornElements = [
+      ["moz-badge", "chrome://global/content/elements/moz-badge.mjs"],
+      ["moz-box-button", "chrome://global/content/elements/moz-box-button.mjs"],
+      ["moz-box-group", "chrome://global/content/elements/moz-box-group.mjs"],
+      ["moz-box-item", "chrome://global/content/elements/moz-box-item.mjs"],
+      ["moz-box-link", "chrome://global/content/elements/moz-box-link.mjs"],
+      [
+        "moz-breadcrumb-group",
+        "chrome://global/content/elements/moz-breadcrumb-group.mjs",
+      ],
+      ["moz-button", "chrome://global/content/elements/moz-button.mjs"],
+      [
+        "moz-button-group",
+        "chrome://global/content/elements/moz-button-group.mjs",
+      ],
+      ["moz-card", "chrome://global/content/elements/moz-card.mjs"],
+      ["moz-checkbox", "chrome://global/content/elements/moz-checkbox.mjs"],
+      ["moz-fieldset", "chrome://global/content/elements/moz-fieldset.mjs"],
+      ["moz-five-star", "chrome://global/content/elements/moz-five-star.mjs"],
+      [
+        "moz-input-color",
+        "chrome://global/content/elements/moz-input-color.mjs",
+      ],
+      [
+        "moz-input-folder",
+        "chrome://global/content/elements/moz-input-folder.mjs",
+      ],
+      [
+        "moz-input-password",
+        "chrome://global/content/elements/moz-input-password.mjs",
+      ],
+      [
+        "moz-input-search",
+        "chrome://global/content/elements/moz-input-search.mjs",
+      ],
+      ["moz-input-text", "chrome://global/content/elements/moz-input-text.mjs"],
+      ["moz-label", "chrome://global/content/elements/moz-label.mjs"],
+      [
+        "moz-message-bar",
+        "chrome://global/content/elements/moz-message-bar.mjs",
+      ],
+      ["moz-option", "chrome://global/content/elements/moz-select.mjs"],
+      [
+        "moz-page-header",
+        "chrome://global/content/elements/moz-page-header.mjs",
+      ],
+      ["moz-page-nav", "chrome://global/content/elements/moz-page-nav.mjs"],
+      ["moz-promo", "chrome://global/content/elements/moz-promo.mjs"],
+      ["moz-radio", "chrome://global/content/elements/moz-radio-group.mjs"],
+      [
+        "moz-radio-group",
+        "chrome://global/content/elements/moz-radio-group.mjs",
+      ],
+      [
+        "moz-reorderable-list",
+        "chrome://global/content/elements/moz-reorderable-list.mjs",
+      ],
+      ["moz-select", "chrome://global/content/elements/moz-select.mjs"],
+      [
+        "moz-support-link",
+        "chrome://global/content/elements/moz-support-link.mjs",
+      ],
+      ["moz-toggle", "chrome://global/content/elements/moz-toggle.mjs"],
+      [
+        "moz-visual-picker",
+        "chrome://global/content/elements/moz-visual-picker.mjs",
+      ],
+      [
+        "moz-visual-picker-item",
+        "chrome://global/content/elements/moz-visual-picker.mjs",
+      ],
+    ];
     document.addEventListener(
       "DOMContentLoaded",
       () => {
         // Only sync-import widgets once the document has loaded. If a widget is
         // used before DOMContentLoaded it will be imported and upgraded when
         // registering the customElements.setElementCreationCallback().
-        for (let [tag, script] of [
-          [
-            "moz-box-button",
-            "chrome://global/content/elements/moz-box-button.mjs",
-          ],
-          [
-            "moz-box-group",
-            "chrome://global/content/elements/moz-box-group.mjs",
-          ],
-          ["moz-box-item", "chrome://global/content/elements/moz-box-item.mjs"],
-          ["moz-box-link", "chrome://global/content/elements/moz-box-link.mjs"],
-          ["moz-button", "chrome://global/content/elements/moz-button.mjs"],
-          [
-            "moz-button-group",
-            "chrome://global/content/elements/moz-button-group.mjs",
-          ],
-          ["moz-card", "chrome://global/content/elements/moz-card.mjs"],
-          ["moz-checkbox", "chrome://global/content/elements/moz-checkbox.mjs"],
-          ["moz-fieldset", "chrome://global/content/elements/moz-fieldset.mjs"],
-          [
-            "moz-five-star",
-            "chrome://global/content/elements/moz-five-star.mjs",
-          ],
-          [
-            "moz-input-folder",
-            "chrome://global/content/elements/moz-input-folder.mjs",
-          ],
-          [
-            "moz-input-password",
-            "chrome://global/content/elements/moz-input-password.mjs",
-          ],
-          [
-            "moz-input-search",
-            "chrome://global/content/elements/moz-input-search.mjs",
-          ],
-          [
-            "moz-input-text",
-            "chrome://global/content/elements/moz-input-text.mjs",
-          ],
-          ["moz-label", "chrome://global/content/elements/moz-label.mjs"],
-          [
-            "moz-message-bar",
-            "chrome://global/content/elements/moz-message-bar.mjs",
-          ],
-          ["moz-option", "chrome://global/content/elements/moz-select.mjs"],
-          ["moz-page-nav", "chrome://global/content/elements/moz-page-nav.mjs"],
-          ["moz-radio", "chrome://global/content/elements/moz-radio-group.mjs"],
-          [
-            "moz-radio-group",
-            "chrome://global/content/elements/moz-radio-group.mjs",
-          ],
-          ["moz-select", "chrome://global/content/elements/moz-select.mjs"],
-          [
-            "moz-support-link",
-            "chrome://global/content/elements/moz-support-link.mjs",
-          ],
-          ["moz-toggle", "chrome://global/content/elements/moz-toggle.mjs"],
-        ]) {
+        for (let [tag, script] of acornElements) {
           if (!customElements.get(tag)) {
             customElements.setElementCreationCallback(
               tag,

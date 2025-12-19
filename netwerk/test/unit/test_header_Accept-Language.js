@@ -69,12 +69,12 @@ function test_accepted_languages() {
       // When the number of languages is small, we keep the quality value to only one decimal place.
       // Otherwise, it can be up to two decimal places.
       if (acceptedLanguagesLength < 10) {
-        Assert.ok(qualityValue.length == 3);
+        Assert.equal(qualityValue.length, 3);
 
         decimalPlaces = 1;
       } else {
-        Assert.ok(qualityValue.length >= 3);
-        Assert.ok(qualityValue.length <= 4);
+        Assert.greaterOrEqual(qualityValue.length, 3);
+        Assert.lessOrEqual(qualityValue.length, 4);
 
         decimalPlaces = 2;
       }
@@ -82,7 +82,7 @@ function test_accepted_languages() {
       // All the other languages should have an evenly-spaced quality value.
       Assert.equal(
         parseFloat(qualityValue).toFixed(decimalPlaces),
-        (1.0 - (1 / acceptedLanguagesLength) * i).toFixed(decimalPlaces)
+        Math.max(1.0 - i * 0.1, 0.1).toFixed(decimalPlaces)
       );
     }
   }

@@ -38,7 +38,7 @@ export namespace Targets {
     let MediaDevices: number;
     let MediaCapabilities: number;
     let AudioSampleRate: number;
-    let NavigatorConnection: number;
+    let NetworkConnection: number;
     let WindowDevicePixelRatio: number;
     let MouseEventScreenPoint: number;
     let FontVisibilityBaseSystem: number;
@@ -65,10 +65,18 @@ export namespace Targets {
     let WebGPULimits: number;
     let WebGPUIsFallbackAdapter: number;
     let WebGPUSubgroupSizes: number;
+    let JSLocalePrompt: number;
+    let ScreenAvailToResolution: number;
+    let UseHardcodedFontSubstitutes: number;
+    let DiskStorageLimit: number;
+    let WebCodecs: number;
+    let MaxTouchPoints: number;
+    let MaxTouchPointsCollapse: number;
     let IsAlwaysEnabledForPrecompute: number;
     let AllTargets: number;
 }
-export namespace DefaultTargets {
+export const DefaultTargetsBaseline: {};
+export namespace DefaultTargetsFPP {
     let DESKTOP_DEFAULT: string[];
     let ANDROID_DEFAULT: string[];
 }

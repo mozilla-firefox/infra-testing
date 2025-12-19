@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/StaticRange.h"
+
 #include "mozilla/dom/StaticRangeBinding.h"
 #include "nsContentUtils.h"
 #include "nsINode.h"
@@ -93,7 +94,8 @@ already_AddRefed<StaticRange> StaticRange::Create(
 }
 
 StaticRange::~StaticRange() {
-  DoSetRange(RawRangeBoundary(), RawRangeBoundary(), nullptr);
+  DoSetRange(RawRangeBoundary(mStart.GetTreeKind()),
+             RawRangeBoundary(mEnd.GetTreeKind()), nullptr);
 }
 
 bool StaticRange::IsValid() const {

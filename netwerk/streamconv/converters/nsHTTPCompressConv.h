@@ -18,13 +18,12 @@
 
 class nsIStringInputStream;
 
-#  define NS_HTTPCOMPRESSCONVERTER_CID                 \
-    {                                                  \
-      /* 66230b2b-17fa-4bd3-abf4-07986151022d */       \
-      0x66230b2b, 0x17fa, 0x4bd3, {                    \
-        0xab, 0xf4, 0x07, 0x98, 0x61, 0x51, 0x02, 0x2d \
-      }                                                \
-    }
+#  define NS_HTTPCOMPRESSCONVERTER_CID          \
+    {/* 66230b2b-17fa-4bd3-abf4-07986151022d */ \
+     0x66230b2b,                                \
+     0x17fa,                                    \
+     0x4bd3,                                    \
+     {0xab, 0xf4, 0x07, 0x98, 0x61, 0x51, 0x02, 0x2d}}
 
 #  define HTTP_DEFLATE_TYPE "deflate"
 #  define HTTP_GZIP_TYPE "gzip"
@@ -36,6 +35,8 @@ class nsIStringInputStream;
 #  define HTTP_UNCOMPRESSED_TYPE "uncompressed"
 #  define HTTP_ZSTD_TYPE "zstd"
 #  define HTTP_ZST_TYPE "zst"
+#  define HTTP_BROTLI_DICTIONARY_TYPE "dcb"
+#  define HTTP_ZSTD_DICTIONARY_TYPE "dcz"
 
 namespace mozilla {
 namespace net {
@@ -65,6 +66,8 @@ class nsHTTPCompressConv : public nsIStreamConverter,
     HTTP_COMPRESS_BROTLI,
     HTTP_COMPRESS_IDENTITY,
     HTTP_COMPRESS_ZSTD,
+    HTTP_COMPRESS_BROTLI_DICTIONARY,
+    HTTP_COMPRESS_ZSTD_DICTIONARY,
   };
 
  private:

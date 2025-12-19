@@ -147,7 +147,8 @@ describe("<ImpressionStats>", () => {
         recommended_at: undefined,
         received_rank: undefined,
         topic: undefined,
-        is_list_card: undefined,
+        features: undefined,
+        attribution: undefined,
         format: "medium-card",
       },
       {
@@ -161,7 +162,8 @@ describe("<ImpressionStats>", () => {
         recommended_at: undefined,
         received_rank: undefined,
         topic: undefined,
-        is_list_card: undefined,
+        features: undefined,
+        attribution: undefined,
         format: "medium-card",
       },
       {
@@ -175,7 +177,8 @@ describe("<ImpressionStats>", () => {
         recommended_at: undefined,
         received_rank: undefined,
         topic: undefined,
-        is_list_card: undefined,
+        features: undefined,
+        attribution: undefined,
         format: "medium-card",
       },
     ]);
@@ -226,6 +229,7 @@ describe("<ImpressionStats>", () => {
       source: "newtab",
       advertiser: "test advertiser",
       position: 1,
+      attribution: undefined,
     });
   });
   it("should send an impression when the wrapped item transiting from invisible to visible", () => {
@@ -268,7 +272,8 @@ describe("<ImpressionStats>", () => {
         received_rank: undefined,
         fetchTimestamp: TEST_FETCH_TIMESTAMP,
         topic: undefined,
-        is_list_card: undefined,
+        features: undefined,
+        attribution: undefined,
         format: "medium-card",
       },
       {
@@ -282,7 +287,8 @@ describe("<ImpressionStats>", () => {
         received_rank: undefined,
         fetchTimestamp: TEST_FETCH_TIMESTAMP,
         topic: undefined,
-        is_list_card: undefined,
+        features: undefined,
+        attribution: undefined,
         format: "medium-card",
       },
       {
@@ -296,7 +302,8 @@ describe("<ImpressionStats>", () => {
         received_rank: undefined,
         fetchTimestamp: TEST_FETCH_TIMESTAMP,
         topic: undefined,
-        is_list_card: undefined,
+        features: undefined,
+        attribution: undefined,
         format: "medium-card",
       },
     ]);

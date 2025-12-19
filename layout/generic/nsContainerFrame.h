@@ -9,18 +9,19 @@
 #ifndef nsContainerFrame_h___
 #define nsContainerFrame_h___
 
-#include "mozilla/Attributes.h"
 #include "LayoutConstants.h"
-#include "nsISelectionDisplay.h"
-#include "nsSplittableFrame.h"
+#include "mozilla/Attributes.h"
 #include "nsFrameList.h"
+#include "nsISelectionDisplay.h"
 #include "nsLineBox.h"
+#include "nsSplittableFrame.h"
 #include "nsTHashSet.h"
 
 class nsOverflowContinuationTracker;
 
 namespace mozilla {
 class PresShell;
+struct StylePositionArea;
 }  // namespace mozilla
 
 // Some macros for container classes to do sanity checking on
@@ -46,8 +47,6 @@ class nsContainerFrame : public nsSplittableFrame {
   NS_DECL_QUERYFRAME
 
   // nsIFrame overrides
-  void Init(nsIContent* aContent, nsContainerFrame* aParent,
-            nsIFrame* aPrevInFlow) override;
   nsContainerFrame* GetContentInsertionFrame() override { return this; }
 
   const nsFrameList& GetChildList(ChildListID aList) const override;
@@ -150,17 +149,6 @@ class nsContainerFrame : public nsSplittableFrame {
   virtual void DeleteNextInFlowChild(DestroyContext&, nsIFrame* aNextInFlow,
                                      bool aDeletingEmptyFrames);
 
-  // Positions the frame's view based on the frame's origin
-  static void PositionFrameView(nsIFrame* aKidFrame);
-
-  static void ReparentFrameView(nsIFrame* aChildFrame,
-                                nsIFrame* aOldParentFrame,
-                                nsIFrame* aNewParentFrame);
-
-  static void ReparentFrameViewList(const nsFrameList& aChildFrameList,
-                                    nsIFrame* aOldParentFrame,
-                                    nsIFrame* aNewParentFrame);
-
   /**
    * Reparent aFrame from aOldParent to aNewParent.
    */
@@ -178,12 +166,6 @@ class nsContainerFrame : public nsSplittableFrame {
   static void ReparentFrames(nsFrameList& aFrameList,
                              nsContainerFrame* aOldParent,
                              nsContainerFrame* aNewParent);
-
-  // Set the view's size and position after its frame has been reflowed.
-  static void SyncFrameViewAfterReflow(
-      nsPresContext* aPresContext, nsIFrame* aFrame, nsView* aView,
-      const nsRect& aInkOverflowArea,
-      ReflowChildFlags aFlags = ReflowChildFlags::Default);
 
   /**
    * Converts the minimum and maximum sizes given in inner window app units to
@@ -221,7 +203,7 @@ class nsContainerFrame : public nsSplittableFrame {
    * classes derived from nsContainerFrame want.
    */
   virtual mozilla::LogicalSize ComputeAutoSize(
-      gfxContext* aRenderingContext, mozilla::WritingMode aWM,
+      const SizeComputationInput& aSizingInput, mozilla::WritingMode aWM,
       const mozilla::LogicalSize& aCBSize, nscoord aAvailableISize,
       const mozilla::LogicalSize& aMargin,
       const mozilla::LogicalSize& aBorderPadding,
@@ -289,7 +271,26 @@ class nsContainerFrame : public nsSplittableFrame {
                                 const ReflowInput* aReflowInput, nscoord aX,
                                 nscoord aY, ReflowChildFlags aFlags);
 
-  static void PositionChildViews(nsIFrame* aFrame);
+  /**
+   * Let the absolutely positioned containing block reflow any absolutely
+   * positioned child frames that need to be reflowed.
+   *
+   * @param aStatus The reflow statuses of any reflowed absolute children will
+   * be merged into aStatus; aside from that, this method won't modify aStatus.
+   */
+  void ReflowAbsoluteFrames(nsPresContext* aPresContext,
+                            ReflowOutput& aDesiredSize,
+                            const ReflowInput& aReflowInput,
+                            nsReflowStatus& aStatus);
+
+  /**
+   * A convenience method to call ReflowAbsoluteFrames() and
+   * FinishAndStoreOverflow().
+   */
+  void FinishReflowWithAbsoluteFrames(nsPresContext* aPresContext,
+                                      ReflowOutput& aDesiredSize,
+                                      const ReflowInput& aReflowInput,
+                                      nsReflowStatus& aStatus);
 
   // ==========================================================================
   /* Overflow containers are continuation frames that hold overflow. They
@@ -436,6 +437,15 @@ class nsContainerFrame : public nsSplittableFrame {
                                  const nsDisplayListSet& aLists);
 
   /**
+   * Add absolute frame continuations to the display list.
+   *
+   * Note: for absolute frame's first-in-flow, it will be painted through its
+   * placeholder frame.
+   */
+  void DisplayAbsoluteContinuations(nsDisplayListBuilder* aBuilder,
+                                    const nsDisplayListSet& aLists);
+
+  /**
    * Builds display lists for the children. The background
    * of each child is placed in the Content() list (suitable for inline
    * children and other elements that behave like inlines,
@@ -446,14 +456,6 @@ class nsContainerFrame : public nsSplittableFrame {
    */
   virtual void BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                 const nsDisplayListSet& aLists) override;
-
-  static void PlaceFrameView(nsIFrame* aFrame) {
-    if (aFrame->HasView()) {
-      nsContainerFrame::PositionFrameView(aFrame);
-    } else {
-      nsContainerFrame::PositionChildViews(aFrame);
-    }
-  }
 
   /**
    * Returns a CSS Box Alignment constant which the caller can use to align
@@ -479,7 +481,10 @@ class nsContainerFrame : public nsSplittableFrame {
    * on its type (By overriding `CSSAlignmentForAbsPosChild`).
    */
   mozilla::StyleAlignFlags CSSAlignmentForAbsPosChildWithinContainingBlock(
-      const ReflowInput& aChildRI, mozilla::LogicalAxis aLogicalAxis) const;
+      const SizeComputationInput& aSizingInput,
+      mozilla::LogicalAxis aLogicalAxis,
+      const mozilla::StylePositionArea& aResolvedPositionArea,
+      const mozilla::LogicalSize& aContainingBlockSize) const;
 
 #define NS_DECLARE_FRAME_PROPERTY_FRAMELIST(prop) \
   NS_DECLARE_FRAME_PROPERTY_WITH_DTOR_NEVER_CALLED(prop, nsFrameList)
@@ -490,7 +495,6 @@ class nsContainerFrame : public nsSplittableFrame {
   NS_DECLARE_FRAME_PROPERTY_FRAMELIST(OverflowProperty)
   NS_DECLARE_FRAME_PROPERTY_FRAMELIST(OverflowContainersProperty)
   NS_DECLARE_FRAME_PROPERTY_FRAMELIST(ExcessOverflowContainersProperty)
-  NS_DECLARE_FRAME_PROPERTY_FRAMELIST(BackdropProperty)
 
   // Only really used on nsBlockFrame instances, but the caller thinks it could
   // have arbitrary nsContainerFrames.
@@ -852,7 +856,7 @@ class nsContainerFrame : public nsSplittableFrame {
 
   // Helper used by Progress and Meter frames. Returns true if the bar should
   // be rendered vertically, based on writing-mode and -moz-orient properties.
-  bool ResolvedOrientationIsVertical();
+  bool ResolvedOrientationIsVertical() const;
 
   /**
    * Calculate the used values for 'width' and 'height' for a replaced element.
@@ -908,6 +912,13 @@ class nsContainerFrame : public nsSplittableFrame {
   void DisplaySelectionOverlay(
       nsDisplayListBuilder* aBuilder, nsDisplayList* aList,
       uint16_t aContentType = nsISelectionDisplay::DISPLAY_FRAMES);
+
+  /**
+   * Helper for ruby frames that want to accumulate the max ascent/descent of
+   * their children.
+   */
+  mozilla::RubyMetrics RubyMetricsIncludingChildren(
+      float aRubyMetricsFactor) const;
 
   // ==========================================================================
 

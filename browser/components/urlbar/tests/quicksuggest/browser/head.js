@@ -13,10 +13,11 @@ Services.scriptloader.loadSubScript(
 ChromeUtils.defineESModuleGetters(this, {
   CONTEXTUAL_SERVICES_PING_TYPES:
     "resource:///modules/PartnerLinkAttribution.sys.mjs",
-  QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
+  QuickSuggest: "moz-src:///browser/components/urlbar/QuickSuggest.sys.mjs",
+  Region: "resource://gre/modules/Region.sys.mjs",
   TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.sys.mjs",
   UrlbarProviderQuickSuggest:
-    "resource:///modules/UrlbarProviderQuickSuggest.sys.mjs",
+    "moz-src:///browser/components/urlbar/UrlbarProviderQuickSuggest.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(this, "QuickSuggestTestUtils", () => {
@@ -30,6 +31,14 @@ ChromeUtils.defineLazyGetter(this, "QuickSuggestTestUtils", () => {
 ChromeUtils.defineLazyGetter(this, "MerinoTestUtils", () => {
   const { MerinoTestUtils: module } = ChromeUtils.importESModule(
     "resource://testing-common/MerinoTestUtils.sys.mjs"
+  );
+  module.init(this);
+  return module;
+});
+
+ChromeUtils.defineLazyGetter(this, "GeolocationTestUtils", () => {
+  const { GeolocationTestUtils: module } = ChromeUtils.importESModule(
+    "resource://testing-common/GeolocationTestUtils.sys.mjs"
   );
   module.init(this);
   return module;
@@ -176,6 +185,18 @@ async function doQuickSuggestPingTest({
       fireInputEvent: true,
     }),
 }) {
+  Assert.ok(Region.home, "Sanity check: Region should be non-null/empty");
+
+  let allExpectedPings = [
+    impressionOnly,
+    ...click,
+    ...commands.map(({ pings }) => pings),
+  ].flat();
+
+  for (let ping of allExpectedPings) {
+    ping.country = Region.home;
+  }
+
   await doImpressionOnlyTest({
     index,
     suggestion,
@@ -297,11 +318,11 @@ async function doImpressionOnlyTest({
   info("Waiting for page to load after clicking different row");
   await loadPromise;
 
-  Assert.equal(
-    expectedPings.length,
-    gleanPingCount.value,
-    "Submitted one Glean ping per expected ping"
-  );
+  // The pings are sent asynchronously, so we wait until we've seen them all
+  // be sent.
+  await TestUtils.waitForCondition(() => {
+    return expectedPings.length == gleanPingCount.value;
+  }, "Submitted one Glean ping per expected ping");
 
   // Clean up.
   await PlacesUtils.history.clear();
@@ -357,11 +378,11 @@ async function doClickTest({
   await loadPromise;
   await TestUtils.waitForTick();
 
-  Assert.equal(
-    expectedPings.length,
-    gleanPingCount.value,
-    "Submitted one Glean ping per expected ping"
-  );
+  // The pings are sent asynchronously, so we wait until we've seen them all
+  // be sent.
+  await TestUtils.waitForCondition(() => {
+    return expectedPings.length == gleanPingCount.value;
+  }, "Submitted one Glean ping per expected ping");
 
   await PlacesUtils.history.clear();
 
@@ -437,11 +458,11 @@ async function doCommandTest({
     }
   }
 
-  Assert.equal(
-    expectedPings.length,
-    gleanPingCount.value,
-    "Submitted one Glean ping per expected ping"
-  );
+  // The pings are sent asynchronously, so we wait until we've seen them all
+  // be sent.
+  await TestUtils.waitForCondition(() => {
+    return expectedPings.length == gleanPingCount.value;
+  }, "Submitted one Glean ping per expected ping");
 
   if (command == "dismiss") {
     await QuickSuggest.clearDismissedSuggestions();
@@ -567,6 +588,7 @@ function watchQuickSuggestPings(pings) {
 function assertQuickSuggestPing(expectedPing) {
   let expectedKeys = [
     "pingType",
+    "country",
     "matchType",
     "advertiser",
     "blockId",
@@ -633,8 +655,8 @@ function assertQuickSuggestPing(expectedPing) {
 
 function expectedPingContextId() {
   // `contextId` in the `quick-suggest` pings should always be the value in this
-  // pref, a UUID, but without the leading and trailing braces.
+  // pref, a UUID, but with any braces stripped.
   return Services.prefs
     .getCharPref("browser.contextual-services.contextId")
-    .substring(1, 37);
+    .replace(/\{|\}/g, "");
 }

@@ -11,6 +11,7 @@
 #include "BounceTrackingMapEntry.h"
 #include "ClearDataCallback.h"
 #include "PromiseNativeWrapper.h"
+#include "ProfileAfterChangeGate.h"
 
 #include "BounceTrackingStateGlobal.h"
 #include "ErrorList.h"
@@ -22,6 +23,7 @@
 #include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/dom/Promise.h"
 #include "nsDebug.h"
+#include "nsGlobalWindowInner.h"
 #include "nsHashPropertyBag.h"
 #include "nsIClearDataService.h"
 #include "nsIObserverService.h"
@@ -65,6 +67,13 @@ already_AddRefed<BounceTrackingProtection>
 BounceTrackingProtection::GetSingleton() {
   MOZ_ASSERT(XRE_IsParentProcess());
 
+  nsresult rv = EnsurePastProfileAfterChange();
+  if (NS_FAILED(rv)) {
+    // We haven't reached "profile-after-change" yet, so we can't initialize
+    // BounceTrackingProtection. Return nullptr.
+    return nullptr;
+  }
+
   // Init previously failed, don't try again.
   if (sInitFailed) {
     return nullptr;
@@ -84,7 +93,7 @@ BounceTrackingProtection::GetSingleton() {
     RunOnShutdown([] {
       if (sBounceTrackingProtection &&
           sBounceTrackingProtection->mRemoteExceptionList) {
-        Unused << sBounceTrackingProtection->mRemoteExceptionList->Shutdown();
+        (void)sBounceTrackingProtection->mRemoteExceptionList->Shutdown();
       }
       sBounceTrackingProtection = nullptr;
     });
@@ -201,7 +210,7 @@ nsresult BounceTrackingProtection::UpdateBounceTrackingPurgeTimer(
             [] { NS_WARNING("RunPurgeBounceTrackers failed"); });
       },
       purgeTimerPeriod * PR_MSEC_PER_SEC, nsITimer::TYPE_REPEATING_SLACK,
-      "mBounceTrackingPurgeTimer");
+      "mBounceTrackingPurgeTimer"_ns);
 }
 
 // static
@@ -293,7 +302,11 @@ nsresult BounceTrackingProtection::RecordStatefulBounces(
   // Assert: navigable’s bounce tracking record is not null.
   const Maybe<BounceTrackingRecord>& record =
       aBounceTrackingState->GetBounceTrackingRecord();
-  NS_ENSURE_TRUE(record, NS_ERROR_FAILURE);
+  if (!record) {
+    MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
+            ("GetBounceTrackingRecord returned nothing"));
+    return NS_ERROR_FAILURE;
+  }
 
   // Get the bounce tracker map and the user activation map.
   RefPtr<BounceTrackingStateGlobal> globalState =
@@ -1002,6 +1015,20 @@ BounceTrackingProtection::PurgeBounceTrackers() {
                     }
                   }
 
+                  // Record exposure of the feature for Nimbus
+                  // experimentation.
+                  // The error result returned by this method isn't very
+                  // useful, so we ignore it. Thee method will also return
+                  // errors if the client is not enrolled in an experiment
+                  // involving BTP which we don't consider a failure state.
+                  //
+                  // We record exposure for MODE_ENABLED_DRY_RUN in addition to
+                  // MODE_ENABLED so we know in Nimbus when a client would have
+                  // been exposed to BTP had it been enabled. This enables us to
+                  // compare the control and treatment branches with exposure.
+                  (void)NimbusFeatures::RecordExposureEvent(
+                      "bounceTrackingProtection"_ns, false);
+
                   if (StaticPrefs::privacy_bounceTrackingProtection_mode() ==
                       nsIBounceTrackingProtection::MODE_ENABLED) {
                     // Log successful purges.
@@ -1021,15 +1048,6 @@ BounceTrackingProtection::PurgeBounceTrackers() {
                       // Record successful purges via nsITrackingDBService for
                       // tracker stats.
                       ReportPurgedTrackersToAntiTrackingDB(purgedSites);
-
-                      // Record exposure of the feature for Nimbus
-                      // experimentation.
-                      // The error result returned by this method isn't very
-                      // useful, so we ignore it. Thee method will also return
-                      // errors if the client is not enrolled in an experiment
-                      // involving BTP which we don't consider a failure state.
-                      Unused << NimbusFeatures::RecordExposureEvent(
-                          "bounceTrackingProtection"_ns, false);
                     }
                   }
 

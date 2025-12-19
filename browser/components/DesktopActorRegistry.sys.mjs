@@ -33,6 +33,14 @@ let JSPROCESSACTORS = {
     },
   },
 
+  MozCachedOHTTP: {
+    parent: {
+      esModuleURI:
+        "moz-src:///browser/components/mozcachedohttp/actors/MozCachedOHTTPParent.sys.mjs",
+    },
+    includeParent: true,
+  },
+
   RefreshBlockerObserver: {
     child: {
       esModuleURI: "resource:///actors/RefreshBlockerChild.sys.mjs",
@@ -129,27 +137,6 @@ let JSWINDOWACTORS = {
     matches: ["about:messagepreview", "about:messagepreview?*"],
   },
 
-  AboutPocket: {
-    parent: {
-      esModuleURI: "resource:///actors/AboutPocketParent.sys.mjs",
-    },
-    child: {
-      esModuleURI: "resource:///actors/AboutPocketChild.sys.mjs",
-
-      events: {
-        DOMDocElementInserted: { capture: true },
-      },
-    },
-
-    remoteTypes: ["privilegedabout"],
-    matches: [
-      "about:pocket-saved*",
-      "about:pocket-signup*",
-      "about:pocket-home*",
-      "about:pocket-style-guide*",
-    ],
-  },
-
   AboutPrivateBrowsing: {
     parent: {
       esModuleURI: "resource:///actors/AboutPrivateBrowsingParent.sys.mjs",
@@ -211,21 +198,6 @@ let JSWINDOWACTORS = {
     matches: ["about:tabcrashed*"],
   },
 
-  AboutWelcomeShopping: {
-    parent: {
-      esModuleURI: "resource:///actors/AboutWelcomeParent.sys.mjs",
-    },
-    child: {
-      esModuleURI: "resource:///actors/AboutWelcomeChild.sys.mjs",
-      events: {
-        Update: {},
-      },
-    },
-    matches: ["about:shoppingsidebar"],
-    remoteTypes: ["privilegedabout"],
-    messageManagerGroups: ["shopping-sidebar", "browsers", "review-checker"],
-  },
-
   AboutWelcome: {
     parent: {
       esModuleURI: "resource:///actors/AboutWelcomeParent.sys.mjs",
@@ -246,6 +218,20 @@ let JSWINDOWACTORS = {
     enablePreference: "browser.aboutwelcome.enabled",
   },
 
+  AIChatContent: {
+    parent: {
+      esModuleURI:
+        "moz-src:///browser/components/aiwindow/ui/actors/AIChatContentParent.sys.mjs",
+    },
+    child: {
+      esModuleURI:
+        "moz-src:///browser/components/aiwindow/ui/actors/AIChatContentChild.sys.mjs",
+    },
+    allFrames: true,
+    matches: ["about:aichatcontent"],
+    enablePreference: "browser.aiwindow.enabled",
+  },
+
   BackupUI: {
     parent: {
       esModuleURI: "resource:///actors/BackupUIParent.sys.mjs",
@@ -254,6 +240,7 @@ let JSWINDOWACTORS = {
       esModuleURI: "resource:///actors/BackupUIChild.sys.mjs",
       events: {
         "BackupUI:InitWidget": { wantUntrusted: true },
+        "BackupUI:TriggerCreateBackup": { wantUntrusted: true },
         "BackupUI:EnableScheduledBackups": { wantUntrusted: true },
         "BackupUI:DisableScheduledBackups": { wantUntrusted: true },
         "BackupUI:ShowFilepicker": { wantUntrusted: true },
@@ -265,10 +252,21 @@ let JSWINDOWACTORS = {
         "BackupUI:RerunEncryption": { wantUntrusted: true },
         "BackupUI:ShowBackupLocation": { wantUntrusted: true },
         "BackupUI:EditBackupLocation": { wantUntrusted: true },
+        "BackupUI:SetEmbeddedComponentPersistentData": { wantUntrusted: true },
+        "BackupUI:FlushEmbeddedComponentPersistentData": {
+          wantUntrusted: true,
+        },
+        "BackupUI:ErrorBarDismissed": { wantUntrusted: true },
       },
     },
-    matches: ["about:preferences*", "about:settings*"],
-    enablePreference: "browser.backup.preferences.ui.enabled",
+    includeChrome: true,
+    allFrames: true,
+    matches: [
+      "about:preferences*",
+      "about:settings*",
+      "about:welcome*",
+      "chrome://browser/content/spotlight.html",
+    ],
   },
 
   BlockedSite: {
@@ -291,6 +289,22 @@ let JSWINDOWACTORS = {
       esModuleURI: "resource:///actors/BrowserTabChild.sys.mjs",
     },
 
+    messageManagerGroups: ["browsers"],
+  },
+
+  CanonicalURL: {
+    parent: {
+      esModuleURI: "resource:///actors/CanonicalURLParent.sys.mjs",
+    },
+    child: {
+      esModuleURI: "resource:///actors/CanonicalURLChild.sys.mjs",
+      events: {
+        DOMContentLoaded: {},
+        pageshow: {},
+      },
+    },
+    enablePreference: "browser.tabs.notes.enabled",
+    matches: ["http://*/*", "https://*/*"],
     messageManagerGroups: ["browsers"],
   },
 
@@ -362,6 +376,20 @@ let JSWINDOWACTORS = {
     },
 
     allFrames: true,
+  },
+
+  CustomKeys: {
+    parent: {
+      esModuleURI: "resource:///actors/CustomKeysParent.sys.mjs",
+    },
+    child: {
+      esModuleURI: "resource:///actors/CustomKeysChild.sys.mjs",
+      events: {
+        DOMDocElementInserted: { wantUntrusted: true },
+      },
+    },
+    matches: ["about:keyboard"],
+    remoteTypes: ["privilegedabout"],
   },
 
   DecoderDoctor: {
@@ -445,9 +473,12 @@ let JSWINDOWACTORS = {
     onAddActor(register, unregister) {
       let isRegistered = false;
 
-      // Register the actor if we have a provider set and not yet registered
+      // Register the actor if we have a provider or support provider-less
       const maybeRegister = () => {
-        if (Services.prefs.getCharPref("browser.ml.chat.provider", "")) {
+        if (
+          Services.prefs.getCharPref("browser.ml.chat.provider", "") ||
+          Services.prefs.getBoolPref("browser.ml.chat.page")
+        ) {
           if (!isRegistered) {
             register();
             isRegistered = true;
@@ -458,6 +489,7 @@ let JSWINDOWACTORS = {
         }
       };
 
+      Services.prefs.addObserver("browser.ml.chat.page", maybeRegister);
       Services.prefs.addObserver("browser.ml.chat.provider", maybeRegister);
       maybeRegister();
     },
@@ -481,10 +513,15 @@ let JSWINDOWACTORS = {
       "chrome://browser/content/syncedtabs/sidebar.xhtml",
       "chrome://browser/content/places/historySidebar.xhtml",
       "chrome://browser/content/places/bookmarksSidebar.xhtml",
+      "chrome://browser/content/sidebar/sidebar-history.html",
+      "chrome://browser/content/sidebar/sidebar-customize.html",
+      "chrome://browser/content/sidebar/sidebar-syncedtabs.html",
+      "chrome://browser/content/genai/chat.html",
       "about:firefoxview",
       "about:editprofile",
       "about:deleteprofile",
       "about:newprofile",
+      "about:opentabs",
     ],
   },
 
@@ -519,12 +556,29 @@ let JSWINDOWACTORS = {
     enablePreference: "browser.ml.linkPreview.enabled",
   },
 
+  PageAssist: {
+    parent: {
+      esModuleURI: "resource:///actors/PageAssistParent.sys.mjs",
+    },
+    child: {
+      esModuleURI: "resource:///actors/PageAssistChild.sys.mjs",
+    },
+    includeChrome: true,
+    enablePreference: "browser.ml.pageAssist.enabled",
+  },
+
   PageInfo: {
     child: {
       esModuleURI: "resource:///actors/PageInfoChild.sys.mjs",
     },
 
     allFrames: true,
+  },
+
+  PageInfoPreview: {
+    child: {
+      esModuleURI: "resource:///actors/PageInfoPreviewChild.sys.mjs",
+    },
   },
 
   PageStyle: {
@@ -617,34 +671,6 @@ let JSWINDOWACTORS = {
     enablePreference: "accessibility.blockautorefresh",
   },
 
-  ReviewChecker: {
-    parent: {
-      esModuleURI: "resource:///actors/ReviewCheckerParent.sys.mjs",
-    },
-    child: {
-      esModuleURI: "resource:///actors/ReviewCheckerChild.sys.mjs",
-      events: {
-        ContentReady: { wantUntrusted: true },
-        PolledRequestMade: { wantUntrusted: true },
-        // This is added so the actor instantiates immediately and makes
-        // methods available to the page js on load.
-        DOMDocElementInserted: {},
-        ReportProductAvailable: { wantUntrusted: true },
-        AdClicked: { wantUntrusted: true },
-        AdImpression: { wantUntrusted: true },
-        DisableShopping: { wantUntrusted: true },
-        CloseShoppingSidebar: { wantUntrusted: true },
-        MoveSidebarToLeft: { wantUntrusted: true },
-        MoveSidebarToRight: { wantUntrusted: true },
-        ShowSidebarSettings: { wantUntrusted: true },
-      },
-    },
-    matches: ["about:shoppingsidebar"],
-    remoteTypes: ["privilegedabout"],
-    messageManagerGroups: ["review-checker", "browsers"],
-    enablePreference: "browser.shopping.experience2023.integratedSidebar",
-  },
-
   ScreenshotsComponent: {
     parent: {
       esModuleURI: "resource:///modules/ScreenshotsUtils.sys.mjs",
@@ -707,30 +733,6 @@ let JSWINDOWACTORS = {
       },
     },
     matches: ["about:studies*"],
-  },
-
-  ShoppingSidebar: {
-    parent: {
-      esModuleURI: "resource:///actors/ShoppingSidebarParent.sys.mjs",
-    },
-    child: {
-      esModuleURI: "resource:///actors/ShoppingSidebarChild.sys.mjs",
-      events: {
-        ContentReady: { wantUntrusted: true },
-        PolledRequestMade: { wantUntrusted: true },
-        // This is added so the actor instantiates immediately and makes
-        // methods available to the page js on load.
-        DOMDocElementInserted: {},
-        ReportProductAvailable: { wantUntrusted: true },
-        AdClicked: { wantUntrusted: true },
-        AdImpression: { wantUntrusted: true },
-        DisableShopping: { wantUntrusted: true },
-      },
-    },
-    matches: ["about:shoppingsidebar"],
-    remoteTypes: ["privilegedabout"],
-    messageManagerGroups: ["shopping-sidebar", "browsers"],
-    enablePreference: "browser.shopping.experience2023.enabled",
   },
 
   SpeechDispatcher: {

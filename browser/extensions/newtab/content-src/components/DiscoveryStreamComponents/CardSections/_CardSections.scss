@@ -1,15 +1,79 @@
+// Bug 1964453: Some styles here may appear duplicative — due to @includes and media queries, certain rules are intentionally overwritten rather than relying on cascade behavior.
+
 @mixin section-card-small {
   grid-row: span 1;
   grid-column: span 1;
   padding: var(--space-large);
 
+  &.refined-cards.ds-card.sections-card-ui {
+    box-shadow: var(--box-shadow-card);
+
+    &:hover {
+      box-shadow: var(--box-shadow-card-hover);
+    }
+  }
+
+  &.refined-cards {
+    .ds-card-link {
+      padding: var(--space-small);
+      flex-grow: 0;
+    }
+
+    .img-wrapper {
+      width: 110px;
+      height: 117px;
+    }
+
+    .meta {
+      padding: 0;
+      min-height: 117px;
+
+      .info-wrap {
+        flex-grow: 1
+      }
+
+      .sections-card-footer {
+        max-width: 114px;
+        min-height: unset;
+        position: initial;
+        margin-block-start: auto;
+
+        .source {
+          word-break: normal;
+          width: 114px;
+        }
+      }
+    }
+
+    .card-stp-button-hover-background {
+      background: transparent;
+    }
+
+    .card-stp-button-position-wrapper {
+      // context menu should match the padding for the parent
+      inset-inline-end: var(--space-small);
+      inset-block-end: var(--space-small);
+    }
+
+    .context-menu-position-container .context-menu-button {
+      height: 32px;
+      width: 32px;
+    }
+
+    &:hover,
+    &:active,
+    &:focus-within,
+    &.active {
+      .meta {
+        .source-wrapper .source {
+          display: none;
+        }
+      }
+    }
+  }
 
   &.ds-card.sections-card-ui {
     padding: unset;
-  }
-
-  .card-stp-thumbs-buttons-wrapper {
-    display: none;
   }
 
   .ds-card-link {
@@ -19,7 +83,6 @@
     align-items: center;
     gap: var(--space-medium);
     padding: var(--space-large);
-
   }
 
   .img-wrapper {
@@ -31,7 +94,7 @@
     .ds-image.img {
       width: 100%;
       height: 100%;
-      padding-top: 0;
+      padding-block-start: 0;
       min-width: 100%;
     }
 
@@ -44,7 +107,7 @@
   }
 
   &:not(.placeholder) {
-    .img-wrapper>.ds-image.img>img {
+    .img-wrapper > .ds-image.img > img {
       width: 100%;
       border-radius: var(--border-radius-medium) var(--border-radius-medium);
     }
@@ -57,7 +120,7 @@
 
     .info-wrap .title {
       font-size: var(--font-size-small);
-      margin-block: var(--space-xsmall) 0;
+      margin-block: 0;
       -webkit-line-clamp: 4;
     }
 
@@ -71,10 +134,9 @@
   }
 
   .card-stp-button-position-wrapper {
-    inset-inline-end: 10px;
+    inset-inline-end: var(--space-small);
   }
 }
-
 
 @mixin section-card-medium {
   grid-row: span 2;
@@ -84,12 +146,106 @@
   align-items: initial;
   gap: initial;
 
-  .card-stp-button-position-wrapper {
-    inset-inline-end: 10px;
+  &.refined-cards.ds-card.sections-card-ui {
+    height: unset;
+    box-shadow: var(--box-shadow-card);
+
+    &:hover {
+      box-shadow: var(--box-shadow-card-hover);
+    }
   }
 
-  .card-stp-thumbs-buttons-wrapper {
-    display: block;
+  &.refined-cards {
+    .ds-card-link {
+      padding: unset;
+      flex-grow: 1;
+    }
+
+    .img-wrapper {
+      width: 100%;
+      height: 160px;
+    }
+
+    &.ds-spoc-rectangle {
+      .img-wrapper {
+        height: 250px;
+      }
+    }
+
+    .meta {
+      padding: var(--space-large) var(--space-large) var(--space-small);
+      min-height: unset;
+
+      .info-wrap {
+        flex-grow: initial;
+      }
+
+      .sections-card-footer {
+        max-width: 225px;
+        inset-inline-end: initial;
+        inset-block-end: initial;
+        min-height: 28px;
+
+        .source-wrapper {
+          max-width: 245px;
+        }
+
+        .source {
+          width: 217px;
+        }
+      }
+
+      &:has(.story-footer .story-sponsored-label) {
+        .sections-card-footer {
+          display: none;
+        }
+
+        .story-footer {
+          margin-block: auto 0;
+
+        }
+      }
+    }
+
+    .context-menu-position-container .context-menu-button {
+      height: 32px;
+      width: 32px;
+    }
+
+    .card-stp-button-position-wrapper {
+      // context menu should match the padding for the parent
+      inset-inline-end: var(--space-large);
+      inset-block-end: var(--space-small);
+    }
+
+    .card-stp-button-hover-background {
+      background: transparent;
+    }
+
+    &:hover,
+    &:active,
+    &:focus-within,
+    &.active {
+      .meta {
+        .source-wrapper {
+          max-width: 175px;
+        }
+
+        .source-wrapper .source {
+          display: block;
+          width: unset;
+        }
+      }
+    }
+
+  }
+
+  .card-stp-button-position-wrapper {
+    inset-inline-end: var(--space-small);
+  }
+
+  .card-stp-button-hover-background {
+    background: transparent;
   }
 
   .ds-card-link {
@@ -109,7 +265,7 @@
   }
 
   &:not(.placeholder) {
-    .img-wrapper>.ds-image.img>img {
+    .img-wrapper > .ds-image.img > img {
       border-radius: var(--border-radius-large) var(--border-radius-large) 0 0;
     }
   }
@@ -118,10 +274,13 @@
     padding: var(--space-medium) var(--space-large);
 
     .info-wrap {
+      flex-grow: initial;
+      // flex-grow: 1;/
+
       .title {
         -webkit-line-clamp: 3;
-        font-size: var(--font-size-root);
         margin-block: 0 var(--space-small);
+        font-size: var(--font-size-root);
       }
 
       .excerpt {
@@ -129,33 +288,86 @@
         -webkit-line-clamp: 3;
       }
     }
+
+    .sections-card-footer {
+      margin-block-start: auto;
+    }
   }
 }
 
-
-// DS Large Card
 @mixin section-card-large {
   grid-row: span 2;
   grid-column: span 2;
 
+  &.refined-cards.ds-card.sections-card-ui {
+    box-shadow: var(--box-shadow-card);
+
+    @media ($break-point-layout-variant <=width < $break-point-widest),
+      (min-width: $break-point-sections-variant) {
+      .ds-card-link {
+        gap: var(--space-large);
+        padding: var(--space-large);
+      }
+
+      .meta {
+        padding: 0;
+        color: var(--newtab-text-primary-color);
+
+        .info-wrap .excerpt {
+          color: var(--text-color-deemphasized);
+        }
+
+        .sections-card-footer {
+          max-width: 334px;
+
+          .source-wrapper {
+            max-width: 245px;
+          }
+        }
+      }
+
+      .card-stp-button-position-wrapper {
+        inset-inline-end: var(--space-large);
+        inset-block-end: var(--space-large);
+      }
+
+      &:hover,
+      &:active,
+      &:focus-visible,
+      &.active {
+        .meta .source-wrapper .source {
+          display: block;
+        }
+      }
+    }
+
+    &:hover {
+      box-shadow: var(--box-shadow-card-hover);
+    }
+  }
+
   &.ds-card.sections-card-ui {
-    @media ($break-point-layout-variant <= width < $break-point-widest ),
-      (min-width: $break-point-sections-variant ) {
+    @media ($break-point-layout-variant <=width < $break-point-widest),
+      (min-width: $break-point-sections-variant) {
       align-content: flex-start;
+      justify-content: center;
 
       .ds-card-link {
         flex-direction: row;
         gap: var(--space-xlarge);
         padding: var(--space-xxlarge);
+        flex-grow: 0;
       }
 
       .img-wrapper {
-        width: 265px;
+        width: 190px;
+        height: 250px;
       }
 
       .ds-image.img {
-        // Square ratio
         aspect-ratio: 1/1;
+        width: 100%;
+        height: 100%;
 
         img {
           border-radius: var(--border-radius-medium);
@@ -164,13 +376,12 @@
 
       .meta {
         padding: 0;
-        // match height of image for large cards
         min-height: 220px;
 
         .title {
           -webkit-line-clamp: 3;
           font-size: var(--font-size-large);
-          font-weight: var(--font-weight-bold);
+          font-weight: var(--heading-font-weight);
           margin-block: 0 var(--space-small);
         }
 
@@ -178,9 +389,14 @@
           -webkit-line-clamp: 4;
           font-size: var(--font-size-root);
         }
+
+        .sections-card-footer {
+          margin-block-start: auto;
+        }
       }
 
       .card-stp-button-hover-background {
+        background: transparent;
         inset-inline-start: 0;
       }
     }
@@ -188,41 +404,6 @@
 }
 
 .has-sections-grid .ds-outer-wrapper-breakpoint-override {
-  .ds-layout-topsites {
-    position: relative;
-
-    .top-sites-list-wrapper {
-      width: 266px;
-      margin-inline: auto;
-
-      @media (min-width: $break-point-medium) {
-        width: 266px;
-      }
-
-      @media (min-width: $break-point-layout-variant) {
-        width: 510px;
-      }
-
-      @media (min-width: $break-point-widest) {
-        width: 986px;
-      }
-    }
-  }
-
-  // Note this breakpoint doesn't use set the same default width (746px).
-  // The sections layout uses a different $break-point-layout-variant
-  // but not $break-point-large. This rule below maintains
-  // the topsites layout to stack two rows x four tiles
-  // when the sections grid changes to a two column layout
-  @media (min-width: $break-point-large) {
-    .ds-layout-topsites .hide-for-narrow {
-      display: inline-block;
-    }
-  }
-}
-
-.has-sections-grid.layout-variant-a .ds-outer-wrapper-breakpoint-override,
-.has-sections-grid.layout-variant-b .ds-outer-wrapper-breakpoint-override {
   .ds-layout-topsites {
     position: relative;
 
@@ -302,6 +483,7 @@
 
 .ds-section-wrapper {
   padding-inline: 0;
+  position: relative;
 
   .ds-section {
     padding-block-end: var(--space-medium);
@@ -315,12 +497,18 @@
       justify-content: space-between;
       align-items: center;
       margin-block: var(--space-small) var(--space-medium);
+
+      .section-heading-inline-start {
+        display: flex;
+        flex-direction: row;
+        align-items: flex-start;
+      }
     }
 
     .section-title {
       @include wallpaper-contrast-fix;
 
-      font-weight: var(--font-weight-bold);
+      font-weight: var(--heading-font-weight);
       font-size: var(--font-size-xlarge);
       color: var(--newtab-contextual-text-primary-color);
       margin-block: 0;
@@ -336,10 +524,6 @@
       color: var(--newtab-contextual-text-primary-color);
       margin-block: var(--space-xsmall) 0;
       font-size: var(--font-size-root);
-
-      @media (min-width: $break-point-widest) {
-        font-size: 1rem // 16px
-      }
     }
   }
 
@@ -353,6 +537,8 @@
   }
 
   .section-follow {
+    position: relative;
+
     .section-button-following-text {
       display: none;
     }
@@ -372,7 +558,7 @@
     }
 
     &.following:hover {
-      .section-button-following-text  {
+      .section-button-following-text {
         display: none;
       }
 
@@ -387,8 +573,20 @@
   grid-gap: var(--space-large);
   grid-template-columns: repeat(1, 300px);
 
+  .ds-image {
+    &.image-2,
+    &.image-3,
+    &.image-4 {
+      display: none;
+    }
+
+    &.image-1 {
+      display: block;
+    }
+  }
+
   @media (min-width: $break-point-medium) {
-    @for $i from 0 through 6 {
+    @for $i from 0 through 16 {
       .col-1-position-#{$i} {
         order: $i;
       }
@@ -422,7 +620,7 @@
   @media (min-width: $break-point-layout-variant) {
     grid-template-columns: repeat(2, 300px);
 
-    @for $i from 0 through 6 {
+    @for $i from 0 through 16 {
       .col-2-position-#{$i} {
         order: $i;
       }
@@ -451,13 +649,25 @@
         display: none;
       }
     }
+
+    .ds-image {
+      &.image-1,
+      &.image-3,
+      &.image-4 {
+        display: none;
+      }
+
+      &.image-2 {
+        display: block;
+      }
+    }
   }
 
   @media (min-width: $break-point-widest) {
     grid-template-columns: repeat(3, 300px);
     gap: var(--space-large);
 
-    @for $i from 0 through 6 {
+    @for $i from 0 through 16 {
       .col-3-position-#{$i} {
         order: $i;
       }
@@ -486,13 +696,24 @@
         display: none;
       }
     }
-  }
 
+    .ds-image {
+      &.image-1,
+      &.image-2,
+      &.image-4 {
+        display: none;
+      }
+
+      &.image-3 {
+        display: block;
+      }
+    }
+  }
 
   @media (min-width: $break-point-sections-variant) {
     grid-template-columns: repeat(4, 300px);
 
-    @for $i from 0 through 6 {
+    @for $i from 0 through 16 {
       .col-4-position-#{$i} {
         order: $i;
       }
@@ -519,6 +740,18 @@
     .col-4-hide-excerpt {
       .meta .info-wrap .excerpt {
         display: none;
+      }
+    }
+
+    .ds-image {
+      &.image-1,
+      &.image-2,
+      &.image-3 {
+        display: none;
+      }
+
+      &.image-4 {
+        display: block;
       }
     }
   }

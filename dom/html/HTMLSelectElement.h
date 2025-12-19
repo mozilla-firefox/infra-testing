@@ -7,18 +7,16 @@
 #define mozilla_dom_HTMLSelectElement_h
 
 #include "mozilla/Attributes.h"
-#include "mozilla/dom/ConstraintValidation.h"
-#include "nsGenericHTMLElement.h"
-
-#include "mozilla/dom/BindingDeclarations.h"
-#include "mozilla/dom/UnionTypes.h"
-#include "mozilla/dom/HTMLOptionsCollection.h"
 #include "mozilla/EnumSet.h"
-#include "nsCheapSets.h"
-#include "nsCOMPtr.h"
-#include "nsError.h"
+#include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/ConstraintValidation.h"
 #include "mozilla/dom/HTMLFormElement.h"
+#include "mozilla/dom/HTMLOptionsCollection.h"
+#include "nsCOMPtr.h"
+#include "nsCheapSets.h"
 #include "nsContentUtils.h"
+#include "nsError.h"
+#include "nsGenericHTMLElement.h"
 
 class nsContentList;
 class nsIDOMHTMLOptionElement;
@@ -36,6 +34,8 @@ class PresState;
 namespace dom {
 
 class FormData;
+class HTMLElementOrLong;
+class HTMLOptionElementOrHTMLOptGroupElement;
 class HTMLSelectElement;
 
 class MOZ_STACK_CLASS SafeOptionListMutation {
@@ -200,10 +200,16 @@ class HTMLSelectElement final : public nsGenericHTMLFormControlElementWithState,
 
   bool IsHTMLFocusable(IsFocusableFlags, bool* aIsFocusable,
                        int32_t* aTabIndex) override;
-  void InsertChildBefore(nsIContent* aKid, nsIContent* aBeforeThis,
-                         bool aNotify, ErrorResult& aRv) override;
-  void RemoveChildNode(nsIContent* aKid, bool aNotify,
-                       const BatchRemovalState*) override;
+  void InsertChildBefore(
+      nsIContent* aKid, nsIContent* aBeforeThis, bool aNotify, ErrorResult& aRv,
+      nsINode* aOldParent = nullptr,
+      MutationEffectOnScript aMutationEffectOnScript =
+          MutationEffectOnScript::DropTrustWorthiness) override;
+  void RemoveChildNode(
+      nsIContent* aKid, bool aNotify, const BatchRemovalState* aState,
+      nsINode* aNewParent = nullptr,
+      MutationEffectOnScript aMutationEffectOnScript =
+          MutationEffectOnScript::DropTrustWorthiness) override;
 
   // nsGenericHTMLElement
   bool IsDisabledForEvents(WidgetEvent* aEvent) override;
@@ -287,7 +293,7 @@ class HTMLSelectElement final : public nsGenericHTMLFormControlElementWithState,
                       nsAttrValue& aResult) override;
   nsMapRuleToAttributesFunc GetAttributeMappingFunction() const override;
   nsChangeHint GetAttributeChangeHint(const nsAtom* aAttribute,
-                                      int32_t aModType) const override;
+                                      AttrModType aModType) const override;
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
 
   nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;

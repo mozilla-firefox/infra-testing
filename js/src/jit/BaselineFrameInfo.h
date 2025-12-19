@@ -181,6 +181,9 @@ class FrameInfo {
   Address addressOfThis() const {
     return Address(FramePointer, JitFrameLayout::offsetOfThis());
   }
+  Address addressOfDescriptor() const {
+    return Address(FramePointer, CommonFrameLayout::offsetOfDescriptor());
+  }
   Address addressOfCalleeToken() const {
     return Address(FramePointer, JitFrameLayout::offsetOfCalleeToken());
   }
@@ -217,6 +220,10 @@ class FrameInfo {
                    BaselineFrame::reverseOffsetOfDebugFrameSize());
   }
 #endif
+  Address addressOfInterpreterScript() const {
+    return Address(FramePointer,
+                   BaselineFrame::reverseOffsetOfInterpreterScript());
+  }
 };
 
 class CompilerFrameInfo : public FrameInfo {
@@ -416,10 +423,6 @@ class InterpreterFrameInfo : public FrameInfo {
 
   void bumpInterpreterICEntry();
 
-  Address addressOfInterpreterScript() const {
-    return Address(FramePointer,
-                   BaselineFrame::reverseOffsetOfInterpreterScript());
-  }
   Address addressOfInterpreterPC() const {
     return Address(FramePointer, BaselineFrame::reverseOffsetOfInterpreterPC());
   }

@@ -4,62 +4,63 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-#include "nsCOMPtr.h"
 #include "mozilla/dom/PrototypeDocumentContentSink.h"
-#include "nsIParser.h"
-#include "mozilla/dom/Document.h"
-#include "nsIContent.h"
-#include "nsIURI.h"
-#include "nsNetUtil.h"
-#include "nsHTMLParts.h"
-#include "nsCRT.h"
-#include "mozilla/StyleSheetInlines.h"
-#include "mozilla/css/Loader.h"
-#include "nsGkAtoms.h"
-#include "nsContentUtils.h"
-#include "nsDocElementCreatedNotificationRunner.h"
-#include "nsIScriptContext.h"
-#include "nsNameSpaceManager.h"
-#include "nsIScriptError.h"
-#include "prtime.h"
-#include "mozilla/Logging.h"
-#include "nsRect.h"
-#include "nsIScriptElement.h"
-#include "nsReadableUtils.h"
-#include "nsUnicharUtils.h"
-#include "nsIChannel.h"
-#include "nsNodeInfoManager.h"
-#include "nsContentCreatorFunctions.h"
-#include "nsIContentPolicy.h"
-#include "nsContentPolicyUtils.h"
-#include "nsError.h"
-#include "nsIScriptGlobalObject.h"
+
+#include "js/CompilationAndEvaluation.h"
+#include "js/Utility.h"  // JS::FreePolicy
+#include "js/experimental/JSStencil.h"
 #include "mozAutoDocUpdate.h"
-#include "nsMimeTypes.h"
-#include "nsHtml5SVGLoadDispatcher.h"
-#include "nsTextNode.h"
-#include "mozilla/dom/AutoEntryScript.h"
-#include "mozilla/dom/CDATASection.h"
-#include "mozilla/dom/Comment.h"
-#include "mozilla/dom/DocumentType.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/dom/HTMLTemplateElement.h"
-#include "mozilla/dom/ProcessingInstruction.h"
-#include "mozilla/dom/XMLStylesheetProcessingInstruction.h"
-#include "mozilla/dom/ScriptLoader.h"
-#include "mozilla/dom/nsCSPUtils.h"
+#include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/LoadInfo.h"
+#include "mozilla/Logging.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/StyleSheetInlines.h"
 #include "mozilla/Try.h"
-
-#include "nsXULPrototypeCache.h"
+#include "mozilla/css/Loader.h"
+#include "mozilla/dom/AutoEntryScript.h"
+#include "mozilla/dom/CDATASection.h"
+#include "mozilla/dom/Comment.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentType.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/HTMLTemplateElement.h"
+#include "mozilla/dom/PolicyContainer.h"
+#include "mozilla/dom/ProcessingInstruction.h"
+#include "mozilla/dom/ScriptLoader.h"
+#include "mozilla/dom/XMLStylesheetProcessingInstruction.h"
+#include "mozilla/dom/nsCSPUtils.h"
+#include "nsCOMPtr.h"
+#include "nsCRT.h"
+#include "nsContentCreatorFunctions.h"
+#include "nsContentPolicyUtils.h"
+#include "nsContentUtils.h"
+#include "nsDocElementCreatedNotificationRunner.h"
+#include "nsError.h"
+#include "nsGkAtoms.h"
+#include "nsHTMLParts.h"
+#include "nsHtml5SVGLoadDispatcher.h"
+#include "nsIChannel.h"
+#include "nsIContent.h"
+#include "nsIContentPolicy.h"
+#include "nsIParser.h"
+#include "nsIScriptContext.h"
+#include "nsIScriptElement.h"
+#include "nsIScriptError.h"
+#include "nsIScriptGlobalObject.h"
+#include "nsIURI.h"
+#include "nsMimeTypes.h"
+#include "nsNameSpaceManager.h"
+#include "nsNetUtil.h"
+#include "nsNodeInfoManager.h"
+#include "nsReadableUtils.h"
+#include "nsRect.h"
+#include "nsTextNode.h"
+#include "nsUnicharUtils.h"
 #include "nsXULElement.h"
-#include "mozilla/CycleCollectedJSContext.h"
-#include "js/CompilationAndEvaluation.h"
-#include "js/experimental/JSStencil.h"
-#include "js/Utility.h"  // JS::FreePolicy
+#include "nsXULPrototypeCache.h"
+#include "prtime.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -114,7 +115,7 @@ nsresult PrototypeDocumentContentSink::Init(Document* aDoc, nsIURI* aURI,
   nsresult rv = NS_GetFinalChannelURI(aChannel, getter_AddRefs(mDocumentURI));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  mScriptLoader = mDocument->ScriptLoader();
+  mScriptLoader = mDocument->GetScriptLoader();
 
   return NS_OK;
 }
@@ -151,6 +152,10 @@ nsISupports* PrototypeDocumentContentSink::GetTarget() {
 }
 
 bool PrototypeDocumentContentSink::IsScriptExecuting() {
+  if (!mScriptLoader) {
+    MOZ_ASSERT(false, "Can't load prototype docs as data");
+    return false;
+  }
   return !!mScriptLoader->GetCurrentScript();
 }
 
@@ -443,8 +448,14 @@ void PrototypeDocumentContentSink::CloseElement(Element* aElement,
     nsCOMPtr<nsIScriptElement> sele = do_QueryInterface(aElement);
     MOZ_ASSERT(sele, "Node didn't QI to script.");
     if (sele->GetScriptIsModule()) {
-      DebugOnly<bool> block = sele->AttemptToExecute();
-      MOZ_ASSERT(!block, "<script type=module> shouldn't block the parser");
+      // https://html.spec.whatwg.org/#parsing-main-incdata
+      // An end tag whose tag name is "script"
+      //  - If the active speculative HTML parser is null and the JavaScript
+      // execution context stack is empty, then perform a microtask checkpoint.
+      {
+        nsAutoMicroTask mt;
+      }
+      sele->AttemptToExecute(nullptr /* aParser */);
     }
   }
 }
@@ -1017,7 +1028,8 @@ nsresult PrototypeDocumentContentSink::ExecuteScript(
 
   if (!aScript->mOutOfLine) {
     // Check if CSP allows loading of inline scripts.
-    if (nsCOMPtr<nsIContentSecurityPolicy> csp = mDocument->GetCsp()) {
+    if (nsCOMPtr<nsIContentSecurityPolicy> csp =
+            PolicyContainer::GetCSP(mDocument->GetPolicyContainer())) {
       nsAutoJSString content;
       JS::Rooted<JSString*> decompiled(cx,
                                        JS_DecompileScript(cx, scriptObject));
@@ -1043,7 +1055,7 @@ nsresult PrototypeDocumentContentSink::ExecuteScript(
   // On failure, ~AutoScriptEntry will handle exceptions, so
   // there is no need to manually check the return value.
   JS::Rooted<JS::Value> rval(cx);
-  Unused << JS_ExecuteScript(cx, scriptObject, &rval);
+  (void)JS_ExecuteScript(cx, scriptObject, &rval);
 
   return NS_OK;
 }

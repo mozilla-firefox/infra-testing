@@ -5,6 +5,15 @@
 const scriptPage = url =>
   `<html><head><meta charset="utf-8"><script src="${url}"></script></head><body>Test Popup</body></html>`;
 
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.urlbar.trustPanel.featureGate", false],
+      ["test.wait300msAfterTabSwitch", true],
+    ],
+  });
+});
+
 add_task(async function test_execute_page_action_without_popup() {
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {

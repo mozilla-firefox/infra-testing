@@ -331,13 +331,6 @@ ObliviousHttpChannel::IsNoCacheResponse(bool* _retval) {
 }
 
 NS_IMETHODIMP
-ObliviousHttpChannel::IsPrivateResponse(bool* _retval) {
-  LOG(("ObliviousHttpChannel::IsPrivateResponse NOT IMPLEMENTED [this=%p]",
-       this));
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
 ObliviousHttpChannel::RedirectTo(nsIURI* aNewURI) {
   LOG(("ObliviousHttpChannel::RedirectTo NOT IMPLEMENTED [this=%p]", this));
   return NS_ERROR_NOT_IMPLEMENTED;
@@ -368,6 +361,16 @@ ObliviousHttpChannel::GetRequestContextID(uint64_t* _retval) {
 NS_IMETHODIMP
 ObliviousHttpChannel::SetRequestContextID(uint64_t rcID) {
   return mInnerChannel->SetRequestContextID(rcID);
+}
+
+NS_IMETHODIMP
+ObliviousHttpChannel::GetIsUserAgentHeaderOutdated(bool* aValue) {
+  return mInnerChannel->GetIsUserAgentHeaderOutdated(aValue);
+}
+
+NS_IMETHODIMP
+ObliviousHttpChannel::SetIsUserAgentHeaderOutdated(bool aValue) {
+  return mInnerChannel->SetIsUserAgentHeaderOutdated(aValue);
 }
 
 NS_IMETHODIMP
@@ -750,7 +753,7 @@ void ObliviousHttpChannel::EmitOnDataAvailable() {
     return;
   }
   rv = mStreamListener->OnDataAvailable(this, contentStream, 0, contentLength);
-  Unused << rv;
+  (void)rv;
 }
 
 NS_IMETHODIMP
@@ -769,11 +772,11 @@ ObliviousHttpChannel::OnStopRequest(nsIRequest* aRequest,
       aStatusCode = ProcessOnStopRequest();
     }
   }
-  Unused << mStreamListener->OnStartRequest(this);
+  (void)mStreamListener->OnStartRequest(this);
   if (NS_SUCCEEDED(aStatusCode)) {
     EmitOnDataAvailable();
   }
-  Unused << mStreamListener->OnStopRequest(this, aStatusCode);
+  (void)mStreamListener->OnStopRequest(this, aStatusCode);
 
   return NS_OK;
 }
@@ -802,7 +805,7 @@ NS_IMETHODIMP ObliviousHttpChannel::ExplicitSetUploadStream(
   if (mStreamListener) {
     return NS_ERROR_IN_PROGRESS;
   }
-  if (aMethod != "POST"_ns && aMethod != "PUT") {
+  if (aMethod != "POST"_ns && aMethod != "PUT" && aMethod != "DELETE") {
     return NS_ERROR_INVALID_ARG;
   }
   if (aStreamHasHeaders) {
@@ -868,6 +871,17 @@ NS_IMETHODIMP ObliviousHttpChannel::SetDocumentCharacterSet(
 NS_IMETHODIMP ObliviousHttpChannel::GetDocumentCharacterSet(
     nsAString& aDocumenharacterSet) {
   return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP ObliviousHttpChannel::GetDecompressDictionary(
+    DictionaryCacheEntry** aDictionary) {
+  *aDictionary = nullptr;
+  return NS_OK;
+}
+
+NS_IMETHODIMP ObliviousHttpChannel::SetDecompressDictionary(
+    DictionaryCacheEntry* aDictionary) {
+  return NS_OK;
 }
 
 }  // namespace mozilla::net

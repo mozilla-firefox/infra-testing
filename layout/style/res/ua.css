@@ -66,7 +66,8 @@
   column-span: inherit; /* needed if <table> has "column-span:all" */
   contain: inherit; /* needed if table has 'contain:layout' or 'paint' */
   container: inherit; /* Bug 1805588 */
-  scroll-margin: inherit;  /* Bug 1633192 */
+  scroll-margin: inherit; /* Bug 1633192 */
+  view-transition-name: inherit; /* Bug 1985925 */
 }
 
 *|*::-moz-table-row {
@@ -133,8 +134,12 @@
 }
 
 /* https://drafts.csswg.org/css-lists-3/#ua-stylesheet */
-::marker {
+::marker,
+::before::marker,
+::after::marker {
   text-align: end;
+  text-align-last: end;
+  text-indent: 0;
   text-transform: none;
   unicode-bidi: isolate;
   font-variant-numeric: tabular-nums;
@@ -151,6 +156,13 @@
 :any-link {
   cursor: pointer;
   text-decoration: underline;
+}
+
+:any-link:lang(ja),
+:any-link:lang(ko),
+:any-link:lang(zh) {
+  /* stylelint-disable-next-line */
+  text-decoration-inset: auto;
 }
 
 :link {
@@ -192,7 +204,6 @@
   unicode-bidi: inherit;
   text-overflow: inherit;
   overflow: inherit;
-  overflow-clip-box: inherit;
   resize: inherit;
   padding: inherit;
   box-decoration-break: inherit;
@@ -209,7 +220,6 @@
   mask: inherit;
   opacity: inherit;
   text-decoration: inherit;
-  overflow-clip-box: inherit;
   unicode-bidi: inherit;
   user-select: inherit;
   text-overflow: inherit;
@@ -234,8 +244,8 @@
      blocks with overflow: scroll; */
   unicode-bidi: inherit;
   text-overflow: inherit;
-  /* Please keep the declarations below in sync with ::-moz-fieldset-content /
-     ::-moz-button-content in forms.css */
+  /* Please keep the declarations below in sync with ::-moz-fieldset-content
+     in forms.css */
   content: inherit;
   /* Multicol container */
   column-count: inherit;
@@ -266,12 +276,12 @@
   align-items: inherit;
   justify-content: inherit;
   justify-items: inherit;
-  /* Do not change these. nsCSSFrameConstructor depends on them to create a good
-     frame tree. */
-  overflow-clip-box: inherit;
 }
 
-*|*::-moz-viewport, *|*::-moz-viewport-scroll, *|*::-moz-canvas, *|*::-moz-scrolled-canvas {
+*|*::-moz-viewport,
+*|*::-moz-viewport-scroll,
+*|*::-moz-canvas,
+*|*::-moz-scrolled-canvas {
   display: block;
   background-color: inherit;
 }
@@ -434,6 +444,10 @@ parsererror|parsererror {
   color: black;
 }
 
+parsererror|parsererror[dir="rtl"] {
+  direction: rtl;
+}
+
 parsererror|sourcetext {
   display: block;
   white-space: pre;
@@ -443,6 +457,7 @@ parsererror|sourcetext {
   color: red;
   font-weight: bold;
   font-size: 12pt;
+  direction: ltr;
 }
 
 /* Custom content container in the CanvasFrame, positioned on top of everything
@@ -473,13 +488,35 @@ parsererror|sourcetext {
 
 /* :root section moved to the other root selectors for performance */
 
-:root::view-transition {
+/* ::-moz-snapshot-containing-block is a wrapper of ::view-transition, so we set
+ * some necessary properties here, instead of in ::view-transition. */
+:root::-moz-snapshot-containing-block {
+  /* The snapshot containing block is considered to be an absolute positioning
+   * containing block and a fixed positioning containing block for
+   * ::view-transition and its descendants.
+   * Note that we use will-change property to make sure this pseudo-element
+   * establish a fixed positioning containing block. */
+  will-change: -moz-fixed-pos-containing-block;
+  /* The snapshot containing block itself should be fixed positioned. It doesn't
+   * move when scrolling. */
   position: fixed;
+  /* The snapshot containing block origin refers to the top-left corner of the
+   * snapshot containing block.
+   * The snapshot containing block size refers to the width and height of the
+   * snapshot containing block as a tuple of two numbers. */
   inset: 0;
-
+  /* Avoid hit-testing on this pseudo-element.
+   * Note that this doesn't affect `::view-transition` because that inherits
+   * directly from the root. */
+  pointer-events: none;
   /* Gecko implementation detail to make sure view transitions render in the
    * top layer */
-  -moz-top-layer: auto !important;
+  -moz-top-layer: auto;
+}
+
+:root::view-transition {
+  position: absolute;
+  inset: 0;
 }
 
 :root::view-transition-group(*) {
@@ -494,10 +531,6 @@ parsererror|sourcetext {
 :root::view-transition-image-pair(*) {
   position: absolute;
   inset: 0;
-
-  animation-duration: inherit;
-  animation-fill-mode: inherit;
-  animation-delay: inherit;
 }
 
 :root::view-transition-old(*),
@@ -506,10 +539,18 @@ parsererror|sourcetext {
   inset-block-start: 0;
   inline-size: 100%;
   block-size: auto;
+}
 
+:root::view-transition-image-pair(*),
+:root::view-transition-old(*),
+:root::view-transition-new(*) {
   animation-duration: inherit;
   animation-fill-mode: inherit;
   animation-delay: inherit;
+  animation-timing-function: inherit;
+  animation-iteration-count: inherit;
+  animation-direction: inherit;
+  animation-play-state: inherit;
 }
 
 /* Avoid exposing these keyframe names when view transitions are disabled */
@@ -517,15 +558,29 @@ parsererror|sourcetext {
 @media -moz-pref("dom.viewTransitions.enabled") {
   /* Default cross-fade transition */
   @keyframes -ua-view-transition-fade-out {
-    to { opacity: 0; }
+    to {
+      opacity: 0;
+    }
   }
   @keyframes -ua-view-transition-fade-in {
-    from { opacity: 0; }
+    from {
+      opacity: 0;
+    }
   }
 
   /* Keyframes for blending when there are 2 images */
   @keyframes -ua-mix-blend-mode-plus-lighter {
-    from { mix-blend-mode: plus-lighter }
-    to { mix-blend-mode: plus-lighter }
+    from {
+      mix-blend-mode: plus-lighter;
+    }
+    to {
+      mix-blend-mode: plus-lighter;
+    }
+  }
+}
+
+@media print {
+  :-moz-suppress-for-print-selection {
+    display: none !important;
   }
 }

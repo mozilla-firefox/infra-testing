@@ -8,9 +8,9 @@
 #define mozilla_dom_EventTarget_h_
 
 #include "mozilla/dom/Nullable.h"
+#include "nsAtom.h"
 #include "nsISupports.h"
 #include "nsWrapperCache.h"
-#include "nsAtom.h"
 
 class nsIDOMEventListener;
 class nsIGlobalObject;
@@ -18,6 +18,7 @@ class nsINode;
 class nsPIDOMWindowInner;
 class nsPIDOMWindowOuter;
 class nsPIWindowRoot;
+class nsScreen;
 
 namespace mozilla {
 
@@ -36,21 +37,18 @@ class EventListener;
 class EventListenerOptionsOrBoolean;
 class EventHandlerNonNull;
 class GlobalObject;
+class Navigation;
 class WindowProxyHolder;
 enum class CallerType : uint32_t;
 enum class EventCallbackDebuggerNotificationType : uint8_t;
 
 // IID for the dom::EventTarget interface
-#define NS_EVENTTARGET_IID                           \
-  {                                                  \
-    0xde651c36, 0x0053, 0x4c67, {                    \
-      0xb1, 0x3d, 0x67, 0xb9, 0x40, 0xfc, 0x82, 0xe4 \
-    }                                                \
-  }
+#define NS_EVENTTARGET_IID \
+  {0xde651c36, 0x0053, 0x4c67, {0xb1, 0x3d, 0x67, 0xb9, 0x40, 0xfc, 0x82, 0xe4}}
 
 class EventTarget : public nsISupports, public nsWrapperCache {
  public:
-  NS_DECLARE_STATIC_IID_ACCESSOR(NS_EVENTTARGET_IID)
+  NS_INLINE_DECL_STATIC_IID(NS_EVENTTARGET_IID)
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
 
@@ -140,6 +138,18 @@ class EventTarget : public nsISupports, public nsWrapperCache {
   inline const nsINode* GetAsNode() const;
   inline nsINode* AsNode();
   inline const nsINode* AsNode() const;
+
+  virtual bool IsNavigation() const { return false; }
+  inline Navigation* GetAsNavigation();
+  inline const Navigation* GetAsNavigation() const;
+  inline Navigation* AsNavigation();
+  inline const Navigation* AsNavigation() const;
+
+  virtual bool IsScreen() const { return false; }
+  inline nsScreen* GetAsScreen();
+  inline const nsScreen* GetAsScreen() const;
+  inline nsScreen* AsScreen();
+  inline const nsScreen* AsScreen() const;
 
   virtual bool IsInnerWindow() const { return false; }
   virtual bool IsOuterWindow() const { return false; }
@@ -363,8 +373,6 @@ class EventTarget : public nsISupports, public nsWrapperCache {
                                   bool aUseCapture,
                                   const Nullable<bool>& aWantsUntrusted);
 };
-
-NS_DEFINE_STATIC_IID_ACCESSOR(EventTarget, NS_EVENTTARGET_IID)
 
 #define NS_IMPL_FROMEVENTTARGET_GENERIC(_class, _check, _const)             \
   template <typename T>                                                     \

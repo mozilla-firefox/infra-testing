@@ -4,9 +4,11 @@
 
 package mozilla.components.lib.crash
 
+import android.app.ForegroundServiceStartNotAllowedException
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.os.BadParcelableException
 import android.os.Build
 import androidx.annotation.StyleRes
 import androidx.annotation.VisibleForTesting
@@ -19,6 +21,7 @@ import kotlinx.coroutines.withContext
 import mozilla.components.concept.base.crash.Breadcrumb
 import mozilla.components.concept.base.crash.CrashReporting
 import mozilla.components.lib.crash.db.CrashDatabase
+import mozilla.components.lib.crash.db.forceSerializable
 import mozilla.components.lib.crash.db.insertCrashSafely
 import mozilla.components.lib.crash.db.insertReportSafely
 import mozilla.components.lib.crash.db.toCrash
@@ -60,9 +63,9 @@ private class BreadcrumbList(val maxBreadCrumbs: Int) {
  * in on nightly was unexpectedly high. In order to avoid an unmanageable volume when we turned the
  * feature on in the Release channel, we decided to only send crashes that were as new as the feature
  * itself.
- * This timestamp is equivalent to October 28th, 2024 00:00:00 GMT
+ * This timestamp is equivalent to Mon Aug 18 2025 00:00:00 GMT+0000
  */
-private const val START_OF_134_NIGHTLY_TIMESTAMP = 1730073600000L
+private const val START_OF_144_NIGHTLY_TIMESTAMP = 1755475200000L
 
 /**
  *
@@ -154,7 +157,10 @@ class CrashReporter internal constructor(
     /**
      * Install this [CrashReporter] instance. At this point the component will be setup to collect crash reports.
      */
-    fun install(applicationContext: Context): CrashReporter {
+    fun install(
+        applicationContext: Context,
+        handleCaughtExceptionSideEffects: (() -> Unit)? = null,
+    ): CrashReporter {
         instance = this
 
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
@@ -162,6 +168,7 @@ class CrashReporter internal constructor(
             context = applicationContext,
             crashReporter = this,
             defaultExceptionHandler = defaultHandler,
+            handleCaughtException = handleCaughtExceptionSideEffects,
         )
         Thread.setDefaultUncaughtExceptionHandler(handler)
 
@@ -174,7 +181,7 @@ class CrashReporter internal constructor(
      * @param timestampMillis Timestamp in milliseconds to retrieve reports after. Defaults to the start
      * of the Fenix 134 cycle when this feature went live.
      */
-    suspend fun hasUnsentCrashReportsSince(timestampMillis: Long = START_OF_134_NIGHTLY_TIMESTAMP): Boolean {
+    suspend fun hasUnsentCrashReportsSince(timestampMillis: Long = START_OF_144_NIGHTLY_TIMESTAMP): Boolean {
         return database.crashDao().numberOfUnsentCrashesSince(timestampMillis) > 0
     }
 
@@ -185,8 +192,18 @@ class CrashReporter internal constructor(
      * @param timestampMillis Timestamp in milliseconds to retrieve reports after. Defaults to the start
      * of the Fenix 134 cycle when this feature went live.
      */
-    suspend fun unsentCrashReportsSince(timestampMillis: Long = START_OF_134_NIGHTLY_TIMESTAMP): List<Crash> {
+    suspend fun unsentCrashReportsSince(timestampMillis: Long = START_OF_144_NIGHTLY_TIMESTAMP): List<Crash> {
         return database.crashDao().getCrashesWithoutReportsSince(timestampMillis)
+            .map { it.toCrash() }
+    }
+
+    /**
+     * Fetches specific crash reports that are identified by they ID.
+     *
+     * @param crashIDs The list of strings representing the crash IDs to find.
+     */
+    suspend fun findCrashReports(crashIDs: Array<String>): List<Crash> {
+        return database.crashDao().getCrashesFromID(crashIDs)
             .map { it.toCrash() }
     }
 
@@ -368,13 +385,51 @@ class CrashReporter internal constructor(
     }
 
     @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
-    internal fun sendCrashReport(context: Context, crash: Crash) {
+    internal fun sendCrashReport(context: Context, crash: Crash) = try {
         ContextCompat.startForegroundService(context, SendCrashReportService.createReportIntent(context, crash))
+    } catch (e: BadParcelableException) {
+        (crash as? Crash.UncaughtExceptionCrash)?.let {
+            // We may end up with a throwable that isn't completely serializable, which will cause
+            // a crash when the service tries to unbundle it.
+            val updatedCrash = it.copy(throwable = it.throwable.forceSerializable())
+            ContextCompat.startForegroundService(
+                context,
+                SendCrashReportService.createReportIntent(context, updatedCrash),
+            )
+            logger.warn("replaced throwable for crash that could not be serialized")
+        }
+    } catch (e: IllegalStateException) {
+        if (Build.VERSION.SDK_INT > Build.VERSION_CODES.S &&
+            e is ForegroundServiceStartNotAllowedException
+        ) {
+            logger.warn("ignored failed service start while backgrounded")
+        } else {
+            throw e
+        }
     }
 
     @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
-    internal fun sendCrashTelemetry(context: Context, crash: Crash) {
+    internal fun sendCrashTelemetry(context: Context, crash: Crash) = try {
         ContextCompat.startForegroundService(context, SendCrashTelemetryService.createReportIntent(context, crash))
+    } catch (e: BadParcelableException) {
+        (crash as? Crash.UncaughtExceptionCrash)?.let {
+            // We may end up with a throwable that isn't completely serializable, which will cause
+            // a crash when the service tries to unbundle it.
+            val updatedCrash = it.copy(throwable = it.throwable.forceSerializable())
+            ContextCompat.startForegroundService(
+                context,
+                SendCrashTelemetryService.createReportIntent(context, updatedCrash),
+            )
+            logger.warn("replaced throwable for crash that could not be serialized")
+        }
+    } catch (e: IllegalStateException) {
+        if (Build.VERSION.SDK_INT > Build.VERSION_CODES.S &&
+            e is ForegroundServiceStartNotAllowedException
+        ) {
+            logger.warn("ignored failed service start while backgrounded")
+        } else {
+            throw e
+        }
     }
 
     @VisibleForTesting
@@ -392,7 +447,8 @@ class CrashReporter internal constructor(
             // and can notify the app. Background child process crashes will be recovered from
             // automatically, and main process crashes cannot be recovered from, so we do not
             // send the intent for those.
-            crash is Crash.NativeCodeCrash && crash.processType == Crash.NativeCodeCrash.PROCESS_TYPE_FOREGROUND_CHILD
+            crash is Crash.NativeCodeCrash &&
+                crash.processVisibility == Crash.NativeCodeCrash.PROCESS_VISIBILITY_FOREGROUND_CHILD
         }
     }
 
@@ -424,12 +480,10 @@ class CrashReporter internal constructor(
         internal val appName: String = "App",
         internal val organizationName: String = "Mozilla",
         internal val message: String? = null,
-        @StyleRes internal val theme: Int = R.style.Theme_Mozac_CrashReporter,
+        @param:StyleRes internal val theme: Int = R.style.Theme_Mozac_CrashReporter,
     )
 
     companion object {
-        const val RELEASE_RUNTIME_TAG = "release"
-
         @Volatile
         private var instance: CrashReporter? = null
 

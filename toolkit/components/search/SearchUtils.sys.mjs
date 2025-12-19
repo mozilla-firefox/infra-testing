@@ -7,13 +7,16 @@
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
-const lazy = {};
+/**
+ * @import {SearchEngine} from "moz-src:///toolkit/components/search/SearchEngine.sys.mjs"
+ */
 
-ChromeUtils.defineLazyGetter(lazy, "logConsole", () => {
-  return console.createInstance({
-    prefix: "SearchUtils",
-    maxLogLevel: SearchUtils.loggingEnabled ? "Debug" : "Warn",
-  });
+const lazy = XPCOMUtils.declareLazy({
+  logConsole: () =>
+    console.createInstance({
+      prefix: "SearchUtils",
+      maxLogLevel: SearchUtils.loggingEnabled ? "Debug" : "Warn",
+    }),
 });
 
 const BinaryInputStream = Components.Constructor(
@@ -83,7 +86,7 @@ class LoadListener {
     }
 
     if (requestFailed || this._countRead == 0) {
-      lazy.logConsole.warn("loadListener: request failed!");
+      lazy.logConsole.debug("loadListener: request failed!");
       // send null so the callback can deal with the failure
       this._bytes = null;
     } else if (!this._expectedContentType.test(this._channel.contentType)) {
@@ -171,13 +174,14 @@ export var SearchUtils = {
     DEFAULT_PRIVATE: "engine-default-private",
   },
 
-  URL_TYPE: {
+  URL_TYPE: Object.freeze({
     SUGGEST_JSON: "application/x-suggestions+json",
     SEARCH: "text/html",
     OPENSEARCH: "application/opensearchdescription+xml",
     TRENDING_JSON: "application/x-trending+json",
     SEARCH_FORM: "searchform",
-  },
+    VISUAL_SEARCH: "application/x-visual-search+html",
+  }),
 
   ENGINES_URLS: {
     "prod-main":
@@ -244,19 +248,34 @@ export var SearchUtils = {
    *   The URL string from which to create an nsIChannel.
    * @param {nsContentPolicyType} contentPolicyType
    *   The type of document being loaded.
+   * @param {object} [originAttributes]
+   *   The origin attributes to associate to this channel.
    * @returns {nsIChannel}
    *   an nsIChannel object, or null if the url is invalid.
    */
-  makeChannel(url, contentPolicyType) {
+  makeChannel(url, contentPolicyType, originAttributes = null) {
     if (!contentPolicyType) {
       throw new Error("makeChannel called with invalid content policy type");
     }
     try {
       let uri = typeof url == "string" ? Services.io.newURI(url) : url;
-      let principal =
-        uri.scheme == "moz-extension"
-          ? Services.scriptSecurityManager.createContentPrincipal(uri, {})
-          : Services.scriptSecurityManager.createNullPrincipal({});
+      let principal;
+      if (uri.scheme == "moz-extension") {
+        principal = Services.scriptSecurityManager.createContentPrincipal(
+          uri,
+          {}
+        );
+      } else {
+        if (!originAttributes) {
+          originAttributes = {};
+          try {
+            originAttributes.firstPartyDomain =
+              Services.eTLD.getSchemelessSite(uri);
+          } catch {}
+        }
+        principal =
+          Services.scriptSecurityManager.createNullPrincipal(originAttributes);
+      }
 
       return Services.io.newChannelFromURI(
         uri,
@@ -289,7 +308,7 @@ export var SearchUtils = {
    *   The current settings version.
    */
   get SETTINGS_VERSION() {
-    return 12;
+    return 13;
   },
 
   /**
@@ -388,18 +407,19 @@ export var SearchUtils = {
    * This is implemented here as it is used in searchengine-devtools as well as
    * the search service.
    *
+   * @template {SearchEngine} T
    * @param {object} options
    *   The options for this function.
-   * @param {object[]} options.engines
+   * @param {T[]} options.engines
    *   An array of engine objects to sort. These should have the `name` and
    *   `orderHint` fields as top-level properties.
-   * @param {object} options.appDefaultEngine
+   * @param {SearchEngine} options.appDefaultEngine
    *   The application default engine.
-   * @param {object} [options.appPrivateDefaultEngine]
+   * @param {SearchEngine} [options.appPrivateDefaultEngine]
    *   The application private default engine, if any.
    * @param {string} [options.locale]
    *   The current application locale, or the locale to use for the sorting.
-   * @returns {object[]}
+   * @returns {T[]}
    *   The sorted array of engine objects.
    */
   sortEnginesByDefaults({
@@ -408,7 +428,9 @@ export var SearchUtils = {
     appPrivateDefaultEngine,
     locale = Services.locale.appLocaleAsBCP47,
   }) {
+    /** @type {T[]} */
     const sortedEngines = [];
+    /** @type {Set<string>} */
     const addedEngines = new Set();
 
     function maybeAddEngineToSort(engine) {
@@ -432,15 +454,14 @@ export var SearchUtils = {
       maybeAddEngineToSort(appPrivateDefault);
     }
 
-    let remainingEngines;
     const collator = new Intl.Collator(locale);
 
-    remainingEngines = engines.filter(e => !addedEngines.has(e.name));
+    let remainingEngines = engines.filter(e => !addedEngines.has(e.name));
 
     // We sort by highest orderHint first, then alphabetically by name.
     remainingEngines.sort((a, b) => {
-      if (a._orderHint && b.orderHint) {
-        if (a._orderHint == b.orderHint) {
+      if (a.orderHint && b.orderHint) {
+        if (a.orderHint == b.orderHint) {
           return collator.compare(a.name, b.name);
         }
         return b.orderHint - a.orderHint;
@@ -496,13 +517,19 @@ export var SearchUtils = {
    *
    * @param {string|nsIURI} uri
    *  The URI to the icon.
+   * @param {object} [originAttributes]
+   *   The origin attributes to download the icon.
    * @returns {Promise<[Uint8Array, string]>}
    *   Resolves to an array containing the data and the mime type.
    *   Rejects if the icon cannot be fetched.
    */
-  async fetchIcon(uri) {
+  async fetchIcon(uri, originAttributes = null) {
     return new Promise((resolve, reject) => {
-      let chan = SearchUtils.makeChannel(uri, Ci.nsIContentPolicy.TYPE_IMAGE);
+      let chan = SearchUtils.makeChannel(
+        uri,
+        Ci.nsIContentPolicy.TYPE_IMAGE,
+        originAttributes
+      );
       let listener = new SearchUtils.LoadListener(
         chan,
         /^image\//,
@@ -578,7 +605,7 @@ export var SearchUtils = {
    *   Mime type of the payload.
    * @param {number} [size]
    *   Desired icon size.
-   * @returns {[Uint8Array, string]}
+   * @returns {[Uint8Array<ArrayBuffer>, string]}
    *   An array of two elements - an array containing the rescaled icon
    *   and a string for the content type.
    * @throws if the icon cannot be rescaled or the rescaled icon is too big.
@@ -596,7 +623,7 @@ export var SearchUtils = {
     let stream = imgTools.encodeScaledImage(container, "image/png", size, size);
     let streamSize = stream.available();
     if (streamSize > SearchUtils.MAX_ICON_SIZE) {
-      throw new Error("Icon is too big");
+      throw new Error("Rescaled icon still is too big");
     }
 
     let bis = new BinaryInputStream(stream);
@@ -610,13 +637,6 @@ XPCOMUtils.defineLazyPreferenceGetter(
   SearchUtils,
   "loggingEnabled",
   BROWSER_SEARCH_PREF + "log",
-  false
-);
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  SearchUtils,
-  "rustSelectorFeatureGate",
-  BROWSER_SEARCH_PREF + "rustSelector.featureGate",
   false
 );
 

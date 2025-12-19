@@ -4,12 +4,12 @@
 
 package org.mozilla.fenix.settings.trustpanel.store
 
+import androidx.annotation.VisibleForTesting
 import mozilla.components.browser.state.state.SessionState
 import mozilla.components.browser.state.state.content.PermissionHighlightsState
 import mozilla.components.concept.engine.permission.SitePermissions
 import mozilla.components.lib.state.Middleware
 import mozilla.components.lib.state.Store
-import org.jetbrains.annotations.VisibleForTesting
 import org.mozilla.fenix.settings.PhoneFeature
 import org.mozilla.fenix.utils.Settings
 
@@ -74,20 +74,35 @@ class TrustPanelStore(
         ) = PhoneFeature.entries
             .filterNot { it == PhoneFeature.AUTOPLAY_AUDIBLE || it == PhoneFeature.AUTOPLAY_INAUDIBLE }
             .associateWith { phoneFeature ->
-                if (phoneFeature == PhoneFeature.AUTOPLAY) {
-                    WebsitePermission.Autoplay(
-                        autoplayValue = sitePermissions.toAutoplayValue(),
-                        isVisible = sitePermissions != null || permissionHighlights.isAutoPlayBlocking,
-                        deviceFeature = phoneFeature,
-                    )
-                } else {
-                    val status = phoneFeature.getStatus(sitePermissions, settings)
-                    WebsitePermission.Toggleable(
-                        isEnabled = status.isAllowed(),
-                        isBlockedByAndroid = isPermissionBlockedByAndroid(phoneFeature),
-                        isVisible = sitePermissions != null && status.doNotAskAgain(),
-                        deviceFeature = phoneFeature,
-                    )
+                when (phoneFeature) {
+                    PhoneFeature.AUTOPLAY -> {
+                        WebsitePermission.Autoplay(
+                            autoplayValue = sitePermissions.toAutoplayValue(),
+                            isVisible = sitePermissions != null || permissionHighlights.isAutoPlayBlocking,
+                            deviceFeature = phoneFeature,
+                        )
+                    }
+                    PhoneFeature.LOCAL_NETWORK_ACCESS,
+                    PhoneFeature.LOCAL_DEVICE_ACCESS,
+                    -> {
+                        val status = phoneFeature.getStatus(sitePermissions, settings)
+                        WebsitePermission.Toggleable(
+                            isEnabled = status.isAllowed(),
+                            isBlockedByAndroid = false,
+                            isVisible = settings.isLnaFeatureEnabled && sitePermissions != null &&
+                                    status.doNotAskAgain(),
+                            deviceFeature = phoneFeature,
+                        )
+                    }
+                    else -> {
+                        val status = phoneFeature.getStatus(sitePermissions, settings)
+                        WebsitePermission.Toggleable(
+                            isEnabled = status.isAllowed(),
+                            isBlockedByAndroid = isPermissionBlockedByAndroid(phoneFeature),
+                            isVisible = sitePermissions != null && status.doNotAskAgain(),
+                            deviceFeature = phoneFeature,
+                        )
+                    }
                 }
             }
 

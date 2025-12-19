@@ -40,7 +40,7 @@ class Repackage(BaseScript):
     def query_abs_dirs(self):
         if self.abs_dirs:
             return self.abs_dirs
-        abs_dirs = super(Repackage, self).query_abs_dirs()
+        abs_dirs = super().query_abs_dirs()
         config = self.config
 
         dirs = {}
@@ -74,6 +74,7 @@ class Repackage(BaseScript):
             "deb-l10n-templates": config["deb-l10n-templates"],
             "flatpak-templates": config.get("flatpak-templates"),
             "wsx-stub": config["wsx-stub"],
+            "extensions-dir": config["extensions-dir"],
         }
         subst.update(dirs)
         if config.get("fetch-dir"):

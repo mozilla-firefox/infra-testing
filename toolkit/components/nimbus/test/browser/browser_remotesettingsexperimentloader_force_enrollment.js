@@ -2,25 +2,15 @@
 
 "use strict";
 
-const { RemoteSettings } = ChromeUtils.importESModule(
-  "resource://services-settings/remote-settings.sys.mjs"
-);
-const { RemoteSettingsExperimentLoader } = ChromeUtils.importESModule(
-  "resource://nimbus/lib/RemoteSettingsExperimentLoader.sys.mjs"
-);
-
-async function setup(recipes) {
+async function setup(experiments) {
   const sandbox = sinon.createSandbox();
 
-  sandbox.stub(ExperimentManager, "forceEnroll");
+  sandbox.stub(ExperimentAPI.manager, "forceEnroll");
 
-  const client = RemoteSettings("nimbus-desktop-experiments");
-  await client.db.importChanges({}, Date.now(), recipes, {
-    clear: true,
-  });
+  await resetRemoteSettingsCollections({ experiments });
 
   return async function cleanup() {
-    await client.db.clear();
+    await resetRemoteSettingsCollections();
     sandbox.restore();
   };
 }
@@ -35,7 +25,7 @@ add_setup(async function () {
     ],
   });
 
-  await RemoteSettingsExperimentLoader.finishedUpdating();
+  await ExperimentAPI._rsLoader.finishedUpdating();
 
   registerCleanupFunction(async () => {
     await SpecialPowers.popPrefEnv();
@@ -50,7 +40,7 @@ add_task(async function test_fetch_recipe_and_branch_no_debug() {
   const cleanup = await setup([recipe]);
 
   await Assert.rejects(
-    RemoteSettingsExperimentLoader.optInToExperiment({
+    ExperimentAPI.optInToExperiment({
       slug,
       branch: "control",
     }),
@@ -59,18 +49,18 @@ add_task(async function test_fetch_recipe_and_branch_no_debug() {
   );
 
   Assert.ok(
-    ExperimentManager.forceEnroll.notCalled,
+    ExperimentAPI.manager.forceEnroll.notCalled,
     "forceEnroll is not called"
   );
 
   Services.prefs.setBoolPref("nimbus.debug", true);
 
-  await RemoteSettingsExperimentLoader.optInToExperiment({
+  await ExperimentAPI.optInToExperiment({
     slug,
     branch: "control",
   });
 
-  Assert.ok(ExperimentManager.forceEnroll.called, "forceEnroll is called");
+  Assert.ok(ExperimentAPI.manager.forceEnroll.called, "forceEnroll is called");
 
   await cleanup();
 });
@@ -79,7 +69,7 @@ add_task(async function test_fetch_recipe_and_branch_badslug() {
   const cleanup = await setup([]);
 
   await Assert.rejects(
-    RemoteSettingsExperimentLoader.optInToExperiment({
+    ExperimentAPI.optInToExperiment({
       slug: "other_slug",
       branch: "control",
     }),
@@ -88,7 +78,7 @@ add_task(async function test_fetch_recipe_and_branch_badslug() {
   );
 
   Assert.ok(
-    ExperimentManager.forceEnroll.notCalled,
+    ExperimentAPI.manager.forceEnroll.notCalled,
     "forceEnroll is not called"
   );
 
@@ -101,7 +91,7 @@ add_task(async function test_fetch_recipe_and_branch_badbranch() {
   const cleanup = await setup([recipe]);
 
   await Assert.rejects(
-    RemoteSettingsExperimentLoader.optInToExperiment({
+    ExperimentAPI.optInToExperiment({
       slug,
       branch: "other_branch",
     }),
@@ -110,7 +100,7 @@ add_task(async function test_fetch_recipe_and_branch_badbranch() {
   );
 
   Assert.ok(
-    ExperimentManager.forceEnroll.notCalled,
+    ExperimentAPI.manager.forceEnroll.notCalled,
     "forceEnroll is not called"
   );
 
@@ -122,13 +112,13 @@ add_task(async function test_fetch_recipe_and_branch() {
   const recipe = NimbusTestUtils.factories.recipe(slug, { targeting: "false" });
   const cleanup = await setup([recipe]);
 
-  await RemoteSettingsExperimentLoader.optInToExperiment({
+  await ExperimentAPI.optInToExperiment({
     slug,
     branch: "control",
   });
 
   Assert.ok(
-    ExperimentManager.forceEnroll.calledOnceWithExactly(
+    ExperimentAPI.manager.forceEnroll.calledOnceWithExactly(
       recipe,
       recipe.branches[0]
     ),
@@ -148,14 +138,17 @@ add_task(async function test_invalid_recipe() {
   const cleanup = await setup([recipe]);
 
   await Assert.rejects(
-    RemoteSettingsExperimentLoader.optInToExperiment({
+    ExperimentAPI.optInToExperiment({
       slug,
       branch: "control",
     }),
     /failed validation/
   );
 
-  Assert.ok(ExperimentManager.forceEnroll.notCalled, "forceEnroll not called");
+  Assert.ok(
+    ExperimentAPI.manager.forceEnroll.notCalled,
+    "forceEnroll not called"
+  );
 
   await cleanup();
 });
@@ -185,14 +178,17 @@ add_task(async function test_invalid_branch_variablesOnly() {
   const cleanup = await setup([recipe]);
 
   await Assert.rejects(
-    RemoteSettingsExperimentLoader.optInToExperiment({
+    ExperimentAPI.optInToExperiment({
       slug,
       branch: "control",
     }),
     /failed validation/
   );
 
-  Assert.ok(ExperimentManager.forceEnroll.notCalled, "forceEnroll not called");
+  Assert.ok(
+    ExperimentAPI.manager.forceEnroll.notCalled,
+    "forceEnroll not called"
+  );
 
   await cleanup();
 });
@@ -219,14 +215,17 @@ add_task(async function test_invalid_branch_schema() {
   const cleanup = await setup([recipe]);
 
   await Assert.rejects(
-    RemoteSettingsExperimentLoader.optInToExperiment({
+    ExperimentAPI.optInToExperiment({
       slug,
       branch: "control",
     }),
     /failed validation/
   );
 
-  Assert.ok(ExperimentManager.forceEnroll.notCalled, "forceEnroll not called");
+  Assert.ok(
+    ExperimentAPI.manager.forceEnroll.notCalled,
+    "forceEnroll not called"
+  );
 
   await cleanup();
 });
@@ -252,14 +251,17 @@ add_task(async function test_invalid_branch_featureId() {
   const cleanup = await setup([recipe]);
 
   await Assert.rejects(
-    RemoteSettingsExperimentLoader.optInToExperiment({
+    ExperimentAPI.optInToExperiment({
       slug,
       branch: "control",
     }),
     /failed validation/
   );
 
-  Assert.ok(ExperimentManager.forceEnroll.notCalled, "forceEnroll not called");
+  Assert.ok(
+    ExperimentAPI.manager.forceEnroll.notCalled,
+    "forceEnroll not called"
+  );
 
   await cleanup();
 });

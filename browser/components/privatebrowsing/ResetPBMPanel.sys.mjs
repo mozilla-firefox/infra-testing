@@ -21,7 +21,8 @@ const SHOW_CONFIRM_DIALOG_PREF =
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
-  CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
+  CustomizableUI:
+    "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
 });
@@ -111,6 +112,7 @@ export const ResetPBMPanel = {
 
   /**
    * Handles the confirmation panel cancel button.
+   *
    * @param {MozButton} button - Cancel button that triggered the action.
    */
   onCancel(button) {
@@ -128,6 +130,7 @@ export const ResetPBMPanel = {
   /**
    * Handles the confirmation panel confirm button which triggers the clear
    * action.
+   *
    * @param {MozButton} button - Confirm button that triggered the action.
    */
   async onConfirm(button) {

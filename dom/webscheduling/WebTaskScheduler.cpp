@@ -4,14 +4,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsTHashMap.h"
 #include "WebTaskScheduler.h"
-#include "WebTaskSchedulerWorker.h"
-#include "WebTaskSchedulerMainThread.h"
-#include "nsGlobalWindowInner.h"
 
-#include "mozilla/dom/WorkerPrivate.h"
+#include "WebTaskSchedulerMainThread.h"
+#include "WebTaskSchedulerWorker.h"
 #include "mozilla/dom/TimeoutManager.h"
+#include "mozilla/dom/WorkerPrivate.h"
+#include "nsGlobalWindowInner.h"
+#include "nsTHashMap.h"
 
 namespace mozilla::dom {
 
@@ -322,11 +322,12 @@ already_AddRefed<Promise> WebTaskScheduler::PostTask(
     // result of creating a fixed priority unabortable task signal given
     // options["priority"]
     newState->SetPrioritySource(
-        new TaskSignal(GetParentObject(), taskPriority.Value()));
+        TaskSignal::Create(GetParentObject(), taskPriority.Value()));
   } else if (signalValue && signalValue->IsTaskSignal()) {
     // 7. Otherwise if signal is not null and implements the TaskSignal
     // interface, then set state’s priority source to signal.
-    newState->SetPrioritySource(static_cast<TaskSignal*>(signalValue));
+    newState->SetPrioritySource(
+        do_AddRef(static_cast<TaskSignal*>(signalValue)));
   }
 
   if (!newState->GetPrioritySource()) {
@@ -334,7 +335,7 @@ already_AddRefed<Promise> WebTaskScheduler::PostTask(
     // source to the result of creating a fixed priority unabortable task
     // signal given "user-visible".
     newState->SetPrioritySource(
-        new TaskSignal(GetParentObject(), TaskPriority::User_visible));
+        TaskSignal::Create(GetParentObject(), TaskPriority::User_visible));
   }
 
   MOZ_ASSERT(newState->GetPrioritySource());
@@ -420,7 +421,7 @@ already_AddRefed<Promise> WebTaskScheduler::YieldImpl() {
     // 6. If prioritySource is null, then set prioritySource to the result of
     // creating a fixed priority unabortable task signal given "user-visible".
     prioritySource =
-        new TaskSignal(GetParentObject(), TaskPriority::User_visible);
+        TaskSignal::Create(GetParentObject(), TaskPriority::User_visible);
   }
 
   // 7. Let handle be the result of creating a task handle given result and

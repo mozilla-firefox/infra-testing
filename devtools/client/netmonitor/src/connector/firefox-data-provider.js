@@ -30,9 +30,9 @@ class FirefoxDataProvider {
   /**
    * Constructor for data provider
    *
-   * @param {Object} commands Object defined from devtools/shared/commands to interact with the devtools backend
-   * @param {Object} actions set of actions fired during data fetching process.
-   * @param {Object} owner all events are fired on this object.
+   * @param {object} commands Object defined from devtools/shared/commands to interact with the devtools backend
+   * @param {object} actions set of actions fired during data fetching process.
+   * @param {object} owner all events are fired on this object.
    */
   constructor({ commands, actions, owner }) {
     // Options
@@ -376,6 +376,7 @@ class FirefoxDataProvider {
    * The handler for when the network event stacktrace resource is available.
    * The resource contains basic info, the actual stacktrace is fetched lazily
    * using requestData.
+   *
    * @param {object} resource The network event stacktrace resource
    */
   async onStackTraceAvailable(resource) {
@@ -449,24 +450,25 @@ class FirefoxDataProvider {
    * The handler for when the network event resource is updated.
    *
    * @param {object} resource The updated network event resource.
+   * @param {object} update The update packet, includes the latest resource updates
    */
-  async onNetworkResourceUpdated(resource) {
+  async onNetworkResourceUpdated(resource, update) {
     // Identify the channel as SSE if mimeType is event-stream.
     if (resource?.mimeType?.includes("text/event-stream")) {
       await this.setEventStreamFlag(resource.actor);
     }
 
-    this.pendingRequests.delete(resource.actor);
     if (this.actionsEnabled && this.actions.updateRequest) {
       await this.actions.updateRequest(resource.actor, resource, true);
     }
 
-    // This event is fired only once per request, once all the properties are fetched
-    // from `onNetworkResourceUpdated`. There should be no more RDP requests after this.
-    // Note that this event might be consumed by extension so, emit it in production
-    // release as well.
+    // This event is fired multiple times per request
     this.emitForTests(TEST_EVENTS.NETWORK_EVENT_UPDATED, resource.actor);
-    this.emit(EVENTS.PAYLOAD_READY, resource);
+    if (update.resourceUpdates.responseEndAvailable) {
+      this.pendingRequests.delete(resource.actor);
+      // The EVENTS.PAYLOAD_READY might be consumed by extensions.
+      this.emit(EVENTS.PAYLOAD_READY, resource);
+    }
   }
 
   /**
@@ -763,6 +765,7 @@ class FirefoxDataProvider {
 
   /**
    * Handles additional information received for a "responseCache" packet.
+   *
    * @param {object} response the message received from the server.
    */
   async onResponseCache(response) {

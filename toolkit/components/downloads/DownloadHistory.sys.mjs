@@ -12,6 +12,7 @@
  */
 
 import { DownloadList } from "resource://gre/modules/DownloadList.sys.mjs";
+import { DownloadError } from "resource://gre/modules/DownloadCore.sys.mjs";
 
 const lazy = {};
 
@@ -32,6 +33,7 @@ const METADATA_STATE_CANCELED = 3;
 const METADATA_STATE_PAUSED = 4;
 const METADATA_STATE_BLOCKED_PARENTAL = 6;
 const METADATA_STATE_DIRTY = 8;
+const METADATA_STATE_BLOCKED_CONTENT_ANALYSIS = 9;
 
 /**
  * Provides methods to retrieve downloads from previous sessions and store
@@ -125,6 +127,12 @@ export let DownloadHistory = {
         state = METADATA_STATE_BLOCKED_PARENTAL;
       } else if (download.error.becauseBlockedByReputationCheck) {
         state = METADATA_STATE_DIRTY;
+      } else if (download.error.becauseBlockedByContentAnalysis) {
+        state =
+          download.error.reputationCheckVerdict ===
+          DownloadError.BLOCK_VERDICT_MALWARE
+            ? METADATA_STATE_BLOCKED_CONTENT_ANALYSIS
+            : METADATA_STATE_DIRTY;
       } else {
         state = METADATA_STATE_FAILED;
       }
@@ -142,6 +150,10 @@ export let DownloadHistory = {
     // The verdict may still be present even if the download succeeded.
     if (download.error && download.error.reputationCheckVerdict) {
       metaData.reputationCheckVerdict = download.error.reputationCheckVerdict;
+    }
+    if (download?.error?.hasOwnProperty("contentAnalysisCancelError")) {
+      metaData.contentAnalysisCancelError =
+        download.error.contentAnalysisCancelError;
     }
 
     // This should be executed before any async parts, to ensure the cache is
@@ -230,8 +242,8 @@ let DownloadCache = {
   /**
    * This returns an object containing the meta data for the supplied URL.
    *
-   * @param {String} url The url to get the meta data for.
-   * @return {Object|null} Returns an empty object if there is no meta data found, or
+   * @param {string} url The url to get the meta data for.
+   * @return {object | null} Returns an empty object if there is no meta data found, or
    *                       an object containing the meta data. The meta data
    *                       will look like:
    *
@@ -300,8 +312,8 @@ let DownloadCache = {
    * for the given url, it will be overwritten (note: the targetFileSpec will be
    * maintained).
    *
-   * @param {String} url The url to set the meta data for.
-   * @param {Object} metadata The new metaData to save in the cache.
+   * @param {string} url The url to set the meta data for.
+   * @param {object} metadata The new metaData to save in the cache.
    */
   async setMetadata(url, metadata) {
     await this.ensureInitialized();
@@ -386,14 +398,14 @@ class HistoryDownload {
   /**
    * History downloads are never in progress.
    *
-   * @type {Boolean}
+   * @type {boolean}
    */
   stopped = true;
 
   /**
    * No percentage indication is shown for history downloads.
    *
-   * @type {Boolean}
+   * @type {boolean}
    */
   hasProgress = false;
 
@@ -404,7 +416,7 @@ class HistoryDownload {
    * instead of the history download. In case this session download is not
    * available, we show the history download as canceled, not paused.
    *
-   * @type {Boolean}
+   * @type {boolean}
    */
   hasPartialData = false;
 
@@ -433,6 +445,12 @@ class HistoryDownload {
         this.error = { message: "History download failed." };
       } else if (metaData.state == METADATA_STATE_BLOCKED_PARENTAL) {
         this.error = { becauseBlockedByParentalControls: true };
+      } else if (metaData.state == METADATA_STATE_BLOCKED_CONTENT_ANALYSIS) {
+        this.error = {
+          becauseBlockedByContentAnalysis: true,
+          contentAnalysisCancelError: metaData.contentAnalysisCancelError,
+          reputationCheckVerdict: metaData.reputationCheckVerdict || "",
+        };
       } else if (metaData.state == METADATA_STATE_DIRTY) {
         this.error = {
           becauseBlockedByReputationCheck: true,
@@ -502,6 +520,17 @@ class HistoryDownload {
     }
     this.deleted = true;
     await this.refresh();
+  }
+
+  /**
+   * This method mimicks the "respondToContentAnalysisWarnWithBlock"
+   * method of session downloads.
+   */
+  async respondToContentAnalysisWarnWithBlock() {
+    // A history download cannot be pending a content
+    // analysis response (since it doesn't persist after Firefox
+    // is closed), so just do nothing.
+    console.warn("attempted to block via Content Analysis a history download");
   }
 }
 
@@ -576,8 +605,9 @@ class DownloadHistoryList extends DownloadList {
     this._slotsForUrl = new Map();
     this._slotForDownload = new WeakMap();
 
-    // Start the asynchronous queries to retrieve history and session downloads.
-    publicList.addView(this).catch(console.error);
+    // Retrieve history and session downloads.
+    publicList.addView(this);
+
     let query = {},
       options = {};
     lazy.PlacesUtils.history.queryStringToQuery(place, query, options);
@@ -605,7 +635,7 @@ class DownloadHistoryList extends DownloadList {
    * Index of the first slot that contains a session download. This is equal to
    * the length of the list when there are no session downloads.
    *
-   * @type {Number}
+   * @type {number}
    */
   _firstSessionSlotIndex = 0;
 
@@ -634,8 +664,8 @@ class DownloadHistoryList extends DownloadList {
    * Updates the download history item when the meta data or destination file
    * changes.
    *
-   * @param {String} sourceUrl The sourceUrl which was updated.
-   * @param {Object} metaData The new meta data for the sourceUrl.
+   * @param {string} sourceUrl The sourceUrl which was updated.
+   * @param {object} metaData The new meta data for the sourceUrl.
    */
   updateForMetaDataChange(sourceUrl, metaData) {
     let slotsForUrl = this._slotsForUrl.get(sourceUrl);

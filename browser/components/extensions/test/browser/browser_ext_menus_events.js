@@ -22,10 +22,6 @@ async function grantOptionalPermission(extension, permissions) {
 var someOtherTab, testTab;
 
 add_setup(async function () {
-  await SpecialPowers.pushPrefEnv({
-    set: [["extensions.manifestV3.enabled", true]],
-  });
-
   // To help diagnose an intermittent later.
   SimpleTest.requestCompleteLog();
 
@@ -82,7 +78,7 @@ async function testShowHideEvent({
 
     browser.test.onMessage.addListener(async msg => {
       switch (msg) {
-        case "register-menu":
+        case "register-menu": {
           let menuId;
           await new Promise(resolve => {
             menuId = browser.menus.create(menu_create_params, resolve);
@@ -99,6 +95,7 @@ async function testShowHideEvent({
           );
           browser.test.sendMessage("menu-registered", menuId);
           break;
+        }
         case "assert-menu-shown":
           browser.test.assertEq(1, shownEvents.length, "expected onShown");
           browser.test.assertEq(
@@ -541,6 +538,15 @@ add_task(async function test_show_hide_tab() {
 // Checks that right-clicking on a tab in the all-tabs panel
 // results in an event that is associated with the expected tab.
 add_task(async function test_show_hide_tab_via_tab_panel() {
+  /**
+   * @see TabsList.sys.mjs#getTabFromRow
+   * @param {XulToolbarItem} row
+   * @returns {MozTabbrowserTab}
+   */
+  function tabOf(row) {
+    return row._tab;
+  }
+
   gTabsPanel.init();
   const allTabsView = document.getElementById("allTabsMenu-allTabsView");
 
@@ -557,7 +563,7 @@ add_task(async function test_show_hide_tab_via_tab_panel() {
       // Find the menu item that is associated with the given tab
       let index = Array.prototype.findIndex.call(
         gTabsPanel.allTabsViewTabs.children,
-        toolbaritem => toolbaritem.tab === contextTab
+        toolbaritem => tabOf(toolbaritem) === contextTab
       );
       Assert.notStrictEqual(
         index,

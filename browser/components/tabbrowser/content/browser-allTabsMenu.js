@@ -2,9 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// This file is loaded into the browser window scope.
-/* eslint-env mozilla/browser-window */
-
 ChromeUtils.defineESModuleGetters(this, {
   BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.sys.mjs",
   GroupsPanel: "moz-src:///browser/components/tabbrowser/GroupsList.sys.mjs",
@@ -21,6 +18,8 @@ var gTabsPanel = {
     containerTabsView: "allTabsMenu-containerTabsView",
     hiddenTabsButton: "allTabsMenu-hiddenTabsButton",
     hiddenTabsView: "allTabsMenu-hiddenTabsView",
+    hiddenTabsViewTabs: "allTabsMenu-hiddenTabsView-tabs",
+    hiddenAudioTabs: "allTabsMenu-allTabsView-hiddenAudio-tabs",
     groupsView: "allTabsMenu-groupsView",
     groupsSubView: "allTabsMenu-groupsSubView",
   },
@@ -56,15 +55,16 @@ var gTabsPanel = {
 
     this.hiddenAudioTabsPopup = new TabsPanel({
       view: this.allTabsView,
-      insertBefore: document.getElementById("allTabsMenu-hiddenTabsSeparator"),
-      filterFn: tab => tab.hidden && tab.soundPlaying,
+      containerNode: this.hiddenAudioTabs,
+      filterFn: tab => tab.soundPlaying,
+      onlyHiddenTabs: true,
     });
     this.allTabsPanel = new TabsPanel({
       view: this.allTabsView,
       containerNode: this.allTabsViewTabs,
       filterFn: tab => !tab.hidden,
       dropIndicator: this.dropIndicator,
-      showGroups: true,
+      onlyHiddenTabs: false,
     });
     this.groupsPanel = new GroupsPanel({
       view: this.allTabsView,
@@ -181,7 +181,9 @@ var gTabsPanel = {
 
     this.hiddenTabsPopup = new TabsPanel({
       view: this.hiddenTabsView,
-      filterFn: tab => tab.hidden && tab != FirefoxViewHandler.tab,
+      containerNode: this.hiddenTabsViewTabs,
+      filterFn: tab => tab != FirefoxViewHandler.tab,
+      onlyHiddenTabs: true,
     });
 
     this._initialized = true;

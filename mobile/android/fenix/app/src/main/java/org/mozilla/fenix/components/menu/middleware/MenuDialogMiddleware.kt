@@ -4,9 +4,10 @@
 
 package org.mozilla.fenix.components.menu.middleware
 
-import android.app.AlertDialog
 import android.app.PendingIntent
 import android.content.Intent
+import android.content.SharedPreferences
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -24,7 +25,6 @@ import mozilla.components.feature.top.sites.PinnedSiteStorage
 import mozilla.components.feature.top.sites.TopSite
 import mozilla.components.feature.top.sites.TopSitesUseCases
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
 import mozilla.components.lib.state.Store
 import mozilla.components.support.base.log.logger.Logger
 import mozilla.components.ui.widgets.withCenterAlignedButtons
@@ -38,6 +38,7 @@ import org.mozilla.fenix.components.bookmarks.BookmarksUseCase
 import org.mozilla.fenix.components.menu.store.BookmarkState
 import org.mozilla.fenix.components.menu.store.MenuAction
 import org.mozilla.fenix.components.menu.store.MenuState
+import org.mozilla.fenix.components.metrics.MetricsUtils
 import org.mozilla.fenix.utils.LastSavedFolderCache
 import org.mozilla.fenix.utils.Settings
 
@@ -63,7 +64,7 @@ import org.mozilla.fenix.utils.Settings
  * @param requestDesktopSiteUseCase The [SessionUseCases.RequestDesktopSiteUseCase] for toggling
  * desktop mode for the current session.
  * @param tabsUseCases The [TabsUseCases] for reopening a private tab as a regular (ie, non-private) tab.
- * @param alertDialogBuilder The [AlertDialog.Builder] used to create a popup when trying to
+ * @param materialAlertDialogBuilder The [MaterialAlertDialogBuilder] used to create a popup when trying to
  * add a shortcut after the shortcut limit has been reached.
  * @param topSitesMaxLimit The maximum number of top sites the user can have.
  * @param onDeleteAndQuit Callback invoked to delete browsing data and quit the browser.
@@ -86,7 +87,7 @@ class MenuDialogMiddleware(
     private val removePinnedSitesUseCase: TopSitesUseCases.RemoveTopSiteUseCase,
     private val requestDesktopSiteUseCase: SessionUseCases.RequestDesktopSiteUseCase,
     private val tabsUseCases: TabsUseCases,
-    private val alertDialogBuilder: AlertDialog.Builder,
+    private val materialAlertDialogBuilder: MaterialAlertDialogBuilder,
     private val topSitesMaxLimit: Int,
     private val onDeleteAndQuit: () -> Unit,
     private val onDismiss: suspend () -> Unit,
@@ -98,22 +99,24 @@ class MenuDialogMiddleware(
     private val logger = Logger("MenuDialogMiddleware")
 
     override fun invoke(
-        context: MiddlewareContext<MenuState, MenuAction>,
+        store: Store<MenuState, MenuAction>,
         next: (MenuAction) -> Unit,
         action: MenuAction,
     ) {
-        val currentState = context.state
+        val currentState = store.state
 
         when (action) {
-            is MenuAction.InitAction -> initialize(context.store)
-            is MenuAction.AddBookmark -> addBookmark(context.store)
-            is MenuAction.AddShortcut -> addShortcut(context.store)
-            is MenuAction.RemoveShortcut -> removeShortcut(context.store)
+            is MenuAction.InitAction -> initialize(store)
+            is MenuAction.AddBookmark -> addBookmark(store)
+            is MenuAction.AddShortcut -> addShortcut(store)
+            is MenuAction.RemoveShortcut -> removeShortcut(store)
             is MenuAction.DeleteBrowsingDataAndQuit -> deleteBrowsingDataAndQuit()
             is MenuAction.FindInPage -> launchFindInPage()
-            is MenuAction.OpenInApp -> openInApp(context.store)
+            is MenuAction.DismissMenuBanner -> dismissMenuBanner()
+            is MenuAction.OpenInApp -> openInApp(store)
             is MenuAction.OpenInFirefox -> openInFirefox()
-            is MenuAction.InstallAddon -> installAddon(context.store, action.addon)
+            is MenuAction.InstallAddon -> installAddon(store, action.addon)
+            is MenuAction.InstallAddonSuccess -> installAddonSuccess()
             is MenuAction.CustomMenuItemAction -> customMenuItemAction(action.intent, action.url)
             is MenuAction.ToggleReaderView -> toggleReaderView(state = currentState)
             is MenuAction.CustomizeReaderView -> customizeReaderView()
@@ -144,7 +147,9 @@ class MenuDialogMiddleware(
         store: Store<MenuState, MenuAction>,
     ) {
         val url = store.state.browserMenuState?.selectedTab?.content?.url ?: return
-        val bookmark = bookmarksStorage.getBookmarksWithUrl(url)
+        val bookmark = bookmarksStorage
+            .getBookmarksWithUrl(url)
+            .getOrDefault(listOf())
             .firstOrNull { it.url == url } ?: return
 
         store.dispatch(
@@ -217,7 +222,7 @@ class MenuDialogMiddleware(
 
         val parentGuid = lastSavedFolderCache.getGuid() ?: BookmarkRoot.Mobile.id
 
-        val parentNode = bookmarksStorage.getBookmark(parentGuid)
+        val parentNode = bookmarksStorage.getBookmark(parentGuid).getOrNull()
 
         val guidToEdit = addBookmarkUseCase(
             url = url,
@@ -229,6 +234,7 @@ class MenuDialogMiddleware(
             BookmarkAction.BookmarkAdded(
                 guidToEdit = guidToEdit,
                 parentNode = parentNode,
+                source = MetricsUtils.BookmarkAction.Source.MENU_DIALOG,
             ),
         )
 
@@ -248,7 +254,7 @@ class MenuDialogMiddleware(
             .filter { it is TopSite.Default || it is TopSite.Pinned }.size
 
         if (numPinnedSites >= topSitesMaxLimit) {
-            alertDialogBuilder.apply {
+            materialAlertDialogBuilder.apply {
                 setTitle(R.string.shortcut_max_limit_title)
                 setMessage(R.string.shortcut_max_limit_content)
                 setPositiveButton(R.string.top_sites_max_limit_confirmation_button) { dialog, _ ->
@@ -292,11 +298,6 @@ class MenuDialogMiddleware(
             .firstOrNull { it.url == url } ?: return@launch
 
         removePinnedSitesUseCase(topSite = topSite)
-
-        appStore.dispatch(
-            AppAction.ShortcutAction.ShortcutRemoved,
-        )
-
         onDismiss()
     }
 
@@ -357,6 +358,10 @@ class MenuDialogMiddleware(
         )
     }
 
+    private fun installAddonSuccess() = scope.launch(Dispatchers.Main) {
+        onDismiss()
+    }
+
     private fun toggleReaderView(
         state: MenuState,
     ) = scope.launch {
@@ -383,6 +388,10 @@ class MenuDialogMiddleware(
     private fun launchFindInPage() = scope.launch {
         appStore.dispatch(FindInPageAction.FindInPageStarted)
         onDismiss()
+    }
+
+    private fun dismissMenuBanner() = scope.launch {
+        settings.shouldShowMenuBanner = false
     }
 
     private fun requestSiteMode(
@@ -423,6 +432,6 @@ class MenuDialogMiddleware(
     }
 
     companion object {
-        private const val NUMBER_OF_RECOMMENDED_ADDONS_TO_SHOW = 4
+        private const val NUMBER_OF_RECOMMENDED_ADDONS_TO_SHOW = 3
     }
 }

@@ -321,10 +321,6 @@ var PlacesOrganizer = {
           case "OrganizerCommand:CloseWindow":
             window.close();
             break;
-          // == placesToolbox ==
-          case "searchFilter":
-            PlacesSearchBox.search(event.target.value);
-            break;
         }
         break;
       case "AppCommand":
@@ -455,7 +451,7 @@ var PlacesOrganizer = {
     // has changed; otherwise we would have returned earlier.
 
     let input = PlacesSearchBox.searchFilter;
-    input.value = "";
+    input.clear();
     input.editor?.clearUndoRedo();
     this._setSearchScopeForNode(node);
     this.updateDetailsPane();
@@ -893,7 +889,7 @@ var PlacesSearchBox = {
   /**
    * The Search text field
    *
-   * @see {@link https://searchfox.org/mozilla-central/source/toolkit/content/widgets/search-textbox.js}
+   * @see {@link https://searchfox.org/mozilla-central/source/toolkit/content/widgets/moz-input-search}
    * @returns {HTMLInputElement}
    */
   get searchFilter() {
@@ -1046,6 +1042,9 @@ var PlacesSearchBox = {
    * Set up the gray text in the search bar as the Places View loads.
    */
   init() {
+    this.searchFilter.addEventListener("MozInputSearch:search", e => {
+      this.search(e.target.value);
+    });
     this.updatePlaceholder();
   },
 

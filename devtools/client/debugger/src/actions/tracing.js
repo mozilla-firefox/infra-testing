@@ -7,10 +7,14 @@ import {
   getTraceFrames,
   getIsCurrentlyTracing,
   getCurrentThread,
+  getSourceByActorId,
+  getSourceActor,
 } from "../selectors/index";
 import { NO_SEARCH_VALUE } from "../reducers/tracer-frames";
+import { createLocation } from "../utils/location";
+import { getOriginalLocation } from "../utils/source-maps";
 
-import { selectSourceBySourceActorID } from "./sources/select.js";
+import { selectLocation } from "./sources/select.js";
 const {
   TRACER_FIELDS_INDEXES,
 } = require("resource://devtools/server/actors/tracer.js");
@@ -47,32 +51,47 @@ export function addTraces(traces) {
 }
 
 export function selectTrace(traceIndex) {
-  return async function ({ dispatch, getState }) {
-    // For now, the tracer only consider the top level thread
-    const thread = getCurrentThread(getState());
-
-    dispatch({
-      type: "SELECT_TRACE",
-      traceIndex,
-      thread,
-    });
+  return async function (thunkArgs) {
+    const { dispatch, getState } = thunkArgs;
     const traces = getAllTraces(getState());
     const trace = traces[traceIndex];
-    // Ignore DOM Event traces, which aren't related to a particular location in source.
-    if (!trace || trace[TRACER_FIELDS_INDEXES.TYPE] == "event") {
+    if (!trace) {
       return;
     }
 
-    const frameIndex = trace[TRACER_FIELDS_INDEXES.FRAME_INDEX];
-    const frames = getTraceFrames(getState());
-    const frame = frames[frameIndex];
-
-    await dispatch(
-      selectSourceBySourceActorID(frame.sourceId, {
+    // Ignore DOM Event traces, which aren't related to a particular location in source.
+    let location = null;
+    if (trace[TRACER_FIELDS_INDEXES.TYPE] != "event") {
+      const frameIndex = trace[TRACER_FIELDS_INDEXES.FRAME_INDEX];
+      const frames = getTraceFrames(getState());
+      const frame = frames[frameIndex];
+      const source = getSourceByActorId(getState(), frame.sourceId);
+      const sourceActor = getSourceActor(getState(), frame.sourceId);
+      location = createLocation({
+        source,
+        sourceActor,
         line: frame.line,
         column: frame.column,
-      })
-    );
+      });
+      location = await getOriginalLocation(location, thunkArgs);
+    }
+
+    // For now, the tracer only consider the top level thread
+    const thread = getCurrentThread(getState());
+    dispatch({
+      type: "SELECT_TRACE",
+      traceIndex,
+      location,
+      thread,
+    });
+
+    if (location) {
+      // We disable the yellow flashing highlighting as the currently selected traced line
+      // will have a permanent highlight.
+      await dispatch(selectLocation(location, { highlight: false }));
+    }
+
+    await dispatch(updateSelectedLocationTraces(location));
   };
 }
 
@@ -87,10 +106,19 @@ export function setLocalAndRemoteRuntimeVersion(
   };
 }
 
+// Calls to the searchTraceArguments can either be synchronous (for primitives)
+// or async (for everything else).
+// This means that an old call can resolve after a more recent one and override
+// the UI.
+let currentSearchSymbol;
+
 export function searchTraceArguments(searchString) {
   return async function ({ dispatch, client, panel }) {
     // Ignore any starting and ending spaces in the query string
     searchString = searchString.trim();
+
+    const searchSymbol = Symbol("CURRENT_SEARCH_SYMBOL");
+    currentSearchSymbol = searchSymbol;
 
     // Reset back to no search if the query is empty
     if (!searchString) {
@@ -142,6 +170,12 @@ export function searchTraceArguments(searchString) {
       evalInTracer: true,
     });
 
+    if (currentSearchSymbol != searchSymbol) {
+      // Stop handling this evaluation result if the action was called more
+      // recently.
+      return;
+    }
+
     if (result.type == "null") {
       result = null;
     } else if (result.type == "undefined") {
@@ -167,5 +201,48 @@ export function searchTraceArguments(searchString) {
         searchValueOrGrip,
       });
     }
+  };
+}
+
+export function updateSelectedLocationTraces(selectedLocation) {
+  return async function ({ getState, dispatch }) {
+    if (!selectedLocation) {
+      dispatch({
+        type: "SET_SELECTED_LOCACTION_TRACES",
+        selectedLocationTraces: null,
+      });
+      return;
+    }
+    const state = getState();
+
+    let location = selectedLocation;
+    // When an original location is selected, we should be fetching the matching generated location from reducers
+    if (selectedLocation.source.isOriginal) {
+      location = state.sources.selectedGeneratedLocation;
+    }
+
+    const allTraces = getAllTraces(state);
+    const frames = getTraceFrames(state);
+
+    // By computing this from the selectLocation action, we compute this once per location change,
+    // but it may be relevant to try to cache traces per location (file, line and column)
+    // to avoid having to go through all the traces on each location change.
+    const selectedLocationTraces = allTraces.filter(trace => {
+      const frameIndex = trace[TRACER_FIELDS_INDEXES.FRAME_INDEX];
+      const frame = frames[frameIndex];
+      return (
+        frame &&
+        frame.sourceId == location.sourceActor.id &&
+        frame.line == location.line &&
+        (!location.column || frame.column == location.column)
+      );
+    });
+
+    dispatch({
+      type: "SET_SELECTED_LOCACTION_TRACES",
+      selectedLocationTraces: !selectedLocationTraces.length
+        ? null
+        : selectedLocationTraces,
+    });
   };
 }

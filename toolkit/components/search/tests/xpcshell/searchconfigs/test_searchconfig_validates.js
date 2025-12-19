@@ -174,12 +174,37 @@ add_task(async function test_search_config_valid_partner_codes() {
   }
 });
 
+add_task(
+  async function test_search_config_all_locales_are_in_available_locales() {
+    let selector = new SearchEngineSelector(() => {});
+    let config = await selector.getEngineConfiguration();
+    let availableLocales = new Set(
+      config.find(entry => entry.recordType == "availableLocales").locales
+    );
+
+    let localesInConfig = SearchTestUtils.extractAvailableLocales(config);
+
+    Assert.deepEqual(
+      Array.from(localesInConfig.difference(availableLocales)),
+      [],
+      "Available locales should have all the locales listed in other parts of the configuration"
+    );
+    Assert.deepEqual(
+      Array.from(availableLocales.difference(localesInConfig)),
+      [],
+      "Available locales should not have any locales not listed in other parts of the configuration"
+    );
+  }
+);
+
 add_task(async function test_search_config_override_validates_to_schema() {
-  let selector = new SearchEngineSelector(() => {});
+  let collectionData = await RemoteSettings(
+    SearchUtils.SETTINGS_OVERRIDES_KEY
+  ).get();
 
   await assertSearchConfigValidates({
     collectionName: "search-config-overrides-v2",
-    collectionData: await selector.getEngineConfigurationOverrides(),
+    collectionData,
     getEntryId: entry => entry.identifier,
   });
 });

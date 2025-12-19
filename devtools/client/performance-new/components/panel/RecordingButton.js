@@ -9,7 +9,7 @@
  */
 
 /**
- * @typedef {Object} StateProps
+ * @typedef {object} StateProps
  * @property {RecordingState} recordingState
  * @property {boolean | null} isSupportedPlatform
  * @property {boolean} recordingUnexpectedlyStopped
@@ -17,17 +17,16 @@
  */
 
 /**
- * @typedef {Object} OwnProps
+ * @typedef {object} OwnProps
  * @property {import("../../@types/perf").OnProfileReceived} onProfileReceived
  * @property {import("../../@types/perf").PerfFront} perfFront
  */
 
 /**
- * @typedef {Object} ThunkDispatchProps
+ * @typedef {object} ThunkDispatchProps
  * @property {typeof actions.startRecording} startRecording
  * @property {typeof actions.getProfileAndStopProfiler} getProfileAndStopProfiler
  * @property {typeof actions.stopProfilerAndDiscardProfile} stopProfilerAndDiscardProfile
-
  */
 
 /**
@@ -75,8 +74,14 @@ class RecordingButton extends PureComponent {
   _onCaptureButtonClick = async () => {
     const { getProfileAndStopProfiler, onProfileReceived, perfFront } =
       this.props;
-    const profile = await getProfileAndStopProfiler(perfFront);
-    onProfileReceived(profile);
+    try {
+      const profileAndAdditionalInformation =
+        await getProfileAndStopProfiler(perfFront);
+      onProfileReceived(profileAndAdditionalInformation);
+    } catch (e) {
+      const assertedError = /** @type {Error | string} */ (e);
+      onProfileReceived(null, assertedError);
+    }
   };
 
   _onStopButtonClick = () => {

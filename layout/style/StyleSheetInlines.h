@@ -7,22 +7,12 @@
 #ifndef mozilla_StyleSheetInlines_h
 #define mozilla_StyleSheetInlines_h
 
-#include "mozilla/dom/Document.h"
 #include "mozilla/StyleSheet.h"
+#include "mozilla/dom/Document.h"
 #include "nsIGlobalObject.h"
 #include "nsINode.h"
 
 namespace mozilla {
-
-void StyleSheet::SetURIs(nsIURI* aSheetURI, nsIURI* aOriginalSheetURI,
-                         nsIURI* aBaseURI) {
-  MOZ_ASSERT(aSheetURI && aBaseURI, "null ptr");
-  MOZ_ASSERT(!HasRules() && !IsComplete());
-  StyleSheetInfo& info = Inner();
-  info.mSheetURI = aSheetURI;
-  info.mOriginalSheetURI = aOriginalSheetURI;
-  info.mBaseURI = aBaseURI;
-}
 
 dom::ParentObject StyleSheet::GetParentObject() const {
   if (mRelevantGlobal) {

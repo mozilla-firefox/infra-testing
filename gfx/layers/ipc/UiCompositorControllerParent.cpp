@@ -13,7 +13,6 @@
 
 #include "FrameMetrics.h"
 #include "SynchronousTask.h"
-#include "mozilla/Unused.h"
 #include "mozilla/gfx/Types.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "mozilla/layers/Compositor.h"
@@ -43,15 +42,10 @@ UiCompositorControllerParent::GetFromRootLayerTreeId(
 RefPtr<UiCompositorControllerParent> UiCompositorControllerParent::Start(
     const LayersId& aRootLayerTreeId,
     Endpoint<PUiCompositorControllerParent>&& aEndpoint) {
+  MOZ_ASSERT(CompositorThreadHolder::IsInCompositorThread());
   RefPtr<UiCompositorControllerParent> parent =
       new UiCompositorControllerParent(aRootLayerTreeId);
-
-  RefPtr<Runnable> task =
-      NewRunnableMethod<Endpoint<PUiCompositorControllerParent>&&>(
-          "layers::UiCompositorControllerParent::Open", parent,
-          &UiCompositorControllerParent::Open, std::move(aEndpoint));
-  CompositorThread()->Dispatch(task.forget());
-
+  parent->Open(std::move(aEndpoint));
   return parent;
 }
 
@@ -184,7 +178,7 @@ void UiCompositorControllerParent::ToolbarAnimatorMessageFromCompositor(
     return;
   }
 
-  Unused << SendToolbarAnimatorMessageFromCompositor(aMessage);
+  (void)SendToolbarAnimatorMessageFromCompositor(aMessage);
 }
 
 bool UiCompositorControllerParent::AllocPixelBuffer(const int32_t aSize,

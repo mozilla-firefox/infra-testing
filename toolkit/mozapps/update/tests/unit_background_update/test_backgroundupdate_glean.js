@@ -12,19 +12,21 @@ const { ASRouterTargeting } = ChromeUtils.importESModule(
 const { BackgroundUpdate } = ChromeUtils.importESModule(
   "resource://gre/modules/BackgroundUpdate.sys.mjs"
 );
-const { ExperimentFakes } = ChromeUtils.importESModule(
+const { NimbusTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/NimbusTestUtils.sys.mjs"
 );
 
-const { maybeSubmitBackgroundUpdatePing } = ChromeUtils.importESModule(
+const { Actions } = ChromeUtils.importESModule(
   "resource://gre/modules/backgroundtasks/BackgroundTask_backgroundupdate.sys.mjs"
 );
+
+NimbusTestUtils.init(this);
 
 XPCOMUtils.defineLazyServiceGetter(
   this,
   "UpdateService",
   "@mozilla.org/updates/update-service;1",
-  "nsIApplicationUpdateService"
+  Ci.nsIApplicationUpdateService
 );
 
 add_setup(function test_setup() {
@@ -92,7 +94,7 @@ add_task(async function test_record_update_environment() {
   });
 
   // There's nothing async in this function atm, but it's annotated async, so..
-  await maybeSubmitBackgroundUpdatePing();
+  await Actions.maybeSubmitBackgroundUpdatePing();
 
   ok(pingSubmitted, "'background-update' ping was submitted");
 });
@@ -133,7 +135,7 @@ async function do_readTargeting(content, beforeNextSubmitCallback) {
   });
 
   // There's nothing async in this function atm, but it's annotated async, so..
-  await maybeSubmitBackgroundUpdatePing();
+  await Actions.maybeSubmitBackgroundUpdatePing();
 
   ok(pingSubmitted, "'background-update' ping was submitted");
 }
@@ -173,21 +175,38 @@ add_task(async function test_targeting_exists() {
   };
 
   // Arrange fake experiment enrollment details.
-  const manager = ExperimentFakes.manager();
+  const { manager, cleanup } = await NimbusTestUtils.setupTest();
 
-  await manager.onStartup();
-  await manager.store.addEnrollment(ExperimentFakes.experiment("foo"));
+  await manager.enroll(
+    NimbusTestUtils.factories.recipe.withFeatureConfig("foo", {
+      featureId: "testFeature",
+    }),
+    "test"
+  );
   manager.unenroll("foo");
-  await manager.store.addEnrollment(
-    ExperimentFakes.experiment("bar", { active: false })
+  await manager.enroll(
+    NimbusTestUtils.factories.recipe.withFeatureConfig("bar", {
+      featureId: "testFeature",
+    }),
+    "test"
   );
-  await manager.store.addEnrollment(
-    ExperimentFakes.experiment("baz", { active: true })
+  manager.unenroll("bar");
+  await manager.enroll(
+    NimbusTestUtils.factories.recipe.withFeatureConfig("baz", {
+      featureId: "testFeature",
+    }),
+    "test"
   );
 
-  manager.store.addEnrollment(ExperimentFakes.rollout("rol1"));
+  await manager.enroll(
+    NimbusTestUtils.factories.recipe("rol1", { isRollout: true }),
+    "test"
+  );
   manager.unenroll("rol1");
-  manager.store.addEnrollment(ExperimentFakes.rollout("rol2"));
+  await manager.enroll(
+    NimbusTestUtils.factories.recipe("rol2", { isRollout: true }),
+    "test"
+  );
 
   let targetSnapshot = await ASRouterTargeting.getEnvironmentSnapshot({
     targets: [manager.createTargetingContext(), target],
@@ -202,8 +221,9 @@ add_task(async function test_targeting_exists() {
     );
 
     // `environment.firefoxVersion` is a positive integer.
-    Assert.ok(
-      Glean.backgroundUpdate.targetingEnvFirefoxVersion.testGetValue() > 0
+    Assert.greater(
+      Glean.backgroundUpdate.targetingEnvFirefoxVersion.testGetValue(),
+      0
     );
 
     Assert.equal(
@@ -215,8 +235,8 @@ add_task(async function test_targeting_exists() {
       Glean.backgroundUpdate.targetingEnvProfileAge.testGetValue();
 
     Assert.ok(profileAge instanceof Date);
-    Assert.ok(0 < profileAge.getTime());
-    Assert.ok(profileAge.getTime() < Date.now());
+    Assert.less(0, profileAge.getTime());
+    Assert.less(profileAge.getTime(), Date.now());
 
     // `environment.profileAgeCreated` is an integer, milliseconds since the
     // Unix epoch.
@@ -232,8 +252,8 @@ add_task(async function test_targeting_exists() {
     let currentDate =
       Glean.backgroundUpdate.targetingEnvCurrentDate.testGetValue();
 
-    Assert.ok(0 < currentDate.getTime());
-    Assert.ok(currentDate.getTime() < Date.now());
+    Assert.less(0, currentDate.getTime());
+    Assert.less(currentDate.getTime(), Date.now());
 
     // `environment.currentDate` is in ISO string format.
     let targetCurrentDate = new Date(targetSnapshot.environment.currentDate);
@@ -246,7 +266,7 @@ add_task(async function test_targeting_exists() {
     // Verify active experiments.
     Assert.deepEqual(
       {
-        branch: "treatment",
+        branch: "control",
         extra: { source: "defaultProfile", type: "nimbus-nimbus" },
       },
       Services.fog.testGetExperimentData("baz"),
@@ -255,7 +275,7 @@ add_task(async function test_targeting_exists() {
 
     Assert.deepEqual(
       {
-        branch: "treatment",
+        branch: "control",
         extra: { source: "defaultProfile", type: "nimbus-rollout" },
       },
       Services.fog.testGetExperimentData("rol2"),
@@ -272,4 +292,8 @@ add_task(async function test_targeting_exists() {
       );
     }
   });
+
+  manager.unenroll("baz");
+  manager.unenroll("rol2");
+  await cleanup();
 });

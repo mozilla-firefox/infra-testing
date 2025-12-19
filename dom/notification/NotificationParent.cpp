@@ -6,17 +6,15 @@
 
 #include "NotificationParent.h"
 
-#include "nsThreadUtils.h"
+#include "NotificationHandler.h"
 #include "NotificationUtils.h"
 #include "mozilla/AlertNotification.h"
 #include "mozilla/StaticPrefs_dom.h"
-#include "mozilla/dom/ClientOpenWindowUtils.h"
 #include "mozilla/dom/ServiceWorkerManager.h"
 #include "mozilla/ipc/Endpoint.h"
-#include "mozilla/Components.h"
 #include "nsComponentManagerUtils.h"
-#include "nsIAlertsService.h"
 #include "nsIServiceWorkerManager.h"
+#include "nsThreadUtils.h"
 
 namespace mozilla::dom::notification {
 
@@ -39,7 +37,7 @@ class NotificationObserver final : public nsIObserver {
 
   NS_IMETHODIMP Observe(nsISupports* aSubject, const char* aTopic,
                         const char16_t* aData) override {
-    AlertTopic topic = ToAlertTopic(aTopic);
+    AlertTopic topic = ToAlertTopic(aTopic, aData);
 
     // These two never fire any content event directly
     if (topic == AlertTopic::Disable) {
@@ -62,7 +60,7 @@ class NotificationObserver final : public nsIObserver {
     } else if (mScope.IsEmpty()) {
       if (topic == AlertTopic::Click) {
         // No actor there, we need to open up a window ourselves
-        return OpenWindow();
+        return OpenWindowFor(mPrincipal);
       }
       // Nothing to do
       return NS_OK;
@@ -80,7 +78,17 @@ class NotificationObserver final : public nsIObserver {
       return NS_OK;
     }
 
-    MOZ_ASSERT(topic == AlertTopic::Click || topic == AlertTopic::Finished);
+    MOZ_ASSERT(topic == AlertTopic::Click || topic == AlertTopic::Finished ||
+               topic == AlertTopic::Closed);
+
+    if (topic == AlertTopic::Click) {
+      nsCOMPtr<nsIAlertAction> action = do_QueryInterface(aSubject);
+      nsAutoString actionName;
+      if (action) {
+        MOZ_TRY(action->GetAction(actionName));
+      }
+      return RespondOnClick(mPrincipal, mScope, mNotification, actionName);
+    }
 
     RefPtr<ServiceWorkerManager> swm = ServiceWorkerManager::GetInstance();
     if (!swm) {
@@ -90,22 +98,7 @@ class NotificationObserver final : public nsIObserver {
     nsAutoCString originSuffix;
     MOZ_TRY(mPrincipal->GetOriginSuffix(originSuffix));
 
-    if (topic == AlertTopic::Click) {
-      nsCOMPtr<nsIAlertAction> action = do_QueryInterface(aSubject);
-      nsAutoString actionName;
-      if (action) {
-        MOZ_TRY(action->GetAction(actionName));
-      }
-      nsresult rv = swm->SendNotificationClickEvent(originSuffix, mScope,
-                                                    mNotification, actionName);
-      if (NS_FAILED(rv)) {
-        // No active service worker, let's do the last resort
-        return OpenWindow();
-      }
-      return NS_OK;
-    }
-
-    MOZ_ASSERT(topic == AlertTopic::Finished);
+    MOZ_ASSERT(topic == AlertTopic::Finished || topic == AlertTopic::Closed);
     (void)NS_WARN_IF(NS_FAILED(
         AdjustPushQuota(mPrincipal, NotificationStatusChange::Closed)));
     (void)NS_WARN_IF(
@@ -118,7 +111,7 @@ class NotificationObserver final : public nsIObserver {
  private:
   virtual ~NotificationObserver() = default;
 
-  static AlertTopic ToAlertTopic(const char* aTopic) {
+  static AlertTopic ToAlertTopic(const char* aTopic, const char16_t* aData) {
     if (!strcmp("alertdisablecallback", aTopic)) {
       return AlertTopic::Disable;
     }
@@ -132,23 +125,18 @@ class NotificationObserver final : public nsIObserver {
       return AlertTopic::Show;
     }
     if (!strcmp("alertfinished", aTopic)) {
+      if (aData && nsDependentString(aData) == u"close"_ns) {
+        // Backends with asynchronous system API may hint that they are
+        // intentionally closing the notification, to disambiguate from an early
+        // alertfinished which is recognized as an error.
+        // (Not introducing alertclose for compatibility with existing browser
+        // script callers.)
+        return AlertTopic::Closed;
+      }
       return AlertTopic::Finished;
     }
     MOZ_ASSERT_UNREACHABLE("Unknown alert topic");
     return AlertTopic::Finished;
-  }
-
-  nsresult OpenWindow() {
-    nsAutoCString origin;
-    MOZ_TRY(mPrincipal->GetOrigin(origin));
-
-    // XXX: We should be able to just pass nsIPrincipal directly
-    mozilla::ipc::PrincipalInfo info{};
-    MOZ_TRY(PrincipalToPrincipalInfo(mPrincipal, &info));
-
-    (void)ClientOpenWindow(
-        nullptr, ClientOpenWindowArgs(info, Nothing(), ""_ns, origin));
-    return NS_OK;
   }
 
   // May want to replace with SWR ID, see bug 1881812
@@ -167,8 +155,16 @@ nsresult NotificationParent::HandleAlertTopic(AlertTopic aTopic) {
   if (aTopic == AlertTopic::Show) {
     if (!mResolver) {
 #ifdef ANDROID
-      // XXX: This can happen as we resolve showNotification() immediately on
-      // Android for now and a mock service may still call this.
+      // XXX: This can happen as alertshow happens asynchronously on Android as
+      // we go through GeckoView.
+      //
+      // For example, if two same-tagged notifications are requested at the same
+      // time, the first one will be canceled but can still fire alertshow,
+      // while the second one will also fire one, and the handler for the second
+      // one would get both.
+      //
+      // We may want to reintroduce UUID for such asynchronous case, but for now
+      // it's very edge case and can be ignored.
       return NS_OK;
 #else
       MOZ_ASSERT_UNREACHABLE("Are we getting double show events?");
@@ -178,16 +174,26 @@ nsresult NotificationParent::HandleAlertTopic(AlertTopic aTopic) {
     mResolver.take().value()(CopyableErrorResult());
     return NS_OK;
   }
-  if (aTopic == AlertTopic::Finished) {
-    if (mResolver) {
+  if (mResolver) {
+    if (aTopic == AlertTopic::Closed) {
+      // Closing without ever being shown, but intentionally by the backend
+      mResolver.take().value()(CopyableErrorResult());
+    } else if (aTopic == AlertTopic::Finished) {
       // alertshow happens first before alertfinished, and it should have
       // nullified mResolver. If not it means it failed to show and is bailing
       // out.
-      // XXX: Apparently XUL manual do not disturb mode does this without firing
-      // alertshow at all.
-      mResolver.take().value()(CopyableErrorResult(NS_ERROR_FAILURE));
+      // NOTE(krosylight): The spec does not define what to do when a
+      // permission-granted notification fails to open, we throw TypeError
+      // here as that's the error for when permission is denied.
+      CopyableErrorResult rv;
+      rv.ThrowTypeError(
+          "Failed to show notification, potentially because the browser did "
+          "not have the corresponding OS-level permission."_ns);
+      mResolver.take().value()(rv);
     }
+  }
 
+  if (aTopic == AlertTopic::Finished || aTopic == AlertTopic::Closed) {
     // Unpersisted already and being unregistered already by nsIAlertsService
     mDangling = true;
     Close();
@@ -273,8 +279,12 @@ nsresult NotificationParent::Show() {
   }
 
   nsCOMPtr<nsIPrincipal> principal = mArgs.mPrincipal;
-  MOZ_TRY(alert->Init(options.tag(), options.icon(), options.title(),
-                      options.body(), true, obsoleteCookie,
+  nsAutoCString iconUrl;
+  if (RefPtr<nsIURI> iconUri = options.icon()) {
+    iconUri->GetSpec(iconUrl);
+  }
+  MOZ_TRY(alert->Init(options.tag(), NS_ConvertUTF8toUTF16(iconUrl),
+                      options.title(), options.body(), true, obsoleteCookie,
                       NS_ConvertASCIItoUTF16(GetEnumString(options.dir())),
                       options.lang(), options.dataSerialized(), principal,
                       principal->GetIsInPrivateBrowsing(), requireInteraction,
@@ -290,18 +300,9 @@ nsresult NotificationParent::Show() {
 
   MOZ_TRY(alert->GetId(mId));
 
-  nsCOMPtr<nsIAlertsService> alertService = components::Alerts::Service();
   RefPtr<NotificationObserver> observer = new NotificationObserver(
       mArgs.mScope, principal, IPCNotification(mId, options), *this);
-  MOZ_TRY(alertService->ShowAlert(alert, observer));
-
-#ifdef ANDROID
-  // XXX: the Android nsIAlertsService is broken and doesn't send alertshow
-  // properly, so we call it here manually.
-  // (This now fires onshow event regardless of the actual result, but it should
-  // be better than the previous behavior that did not do anything at all)
-  observer->Observe(nullptr, "alertshow", nullptr);
-#endif
+  MOZ_TRY(ShowAlertWithCleanup(alert, observer));
 
   return NS_OK;
 }

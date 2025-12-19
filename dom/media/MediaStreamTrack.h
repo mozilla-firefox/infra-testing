@@ -7,18 +7,18 @@
 #define MEDIASTREAMTRACK_H_
 
 #include "MediaTrackConstraints.h"
+#include "PerformanceRecorder.h"
 #include "PrincipalChangeObserver.h"
 #include "PrincipalHandle.h"
 #include "mozilla/DOMEventTargetHelper.h"
+#include "mozilla/WeakPtr.h"
 #include "mozilla/dom/MediaStreamTrackBinding.h"
 #include "mozilla/dom/MediaTrackCapabilitiesBinding.h"
 #include "mozilla/dom/MediaTrackSettingsBinding.h"
 #include "mozilla/media/MediaUtils.h"
-#include "mozilla/WeakPtr.h"
 #include "nsError.h"
 #include "nsID.h"
 #include "nsIPrincipal.h"
-#include "PerformanceRecorder.h"
 
 namespace mozilla {
 
@@ -98,6 +98,13 @@ class MediaStreamTrackSource : public nsISupports {
     virtual void MutedChanged(bool aNewState) = 0;
 
     /**
+     * Called when the constraints of the MediaStreamTrackSource where this sink
+     * is registered has changed.
+     */
+    virtual void ConstraintsChanged(
+        const MediaTrackConstraints& aConstraints) = 0;
+
+    /**
      * Called when the MediaStreamTrackSource where this sink is registered has
      * stopped producing data for good, i.e., it has ended.
      */
@@ -120,6 +127,18 @@ class MediaStreamTrackSource : public nsISupports {
    * of garbage collection having removed the members already.
    */
   virtual void Destroy() {}
+
+  struct CloneResult {
+    RefPtr<MediaStreamTrackSource> mSource;
+    RefPtr<mozilla::MediaTrack> mInputTrack;
+  };
+
+  /**
+   * Clone this MediaStreamTrackSource. Cloned sources allow independent track
+   * settings. Not supported by all source types. A source not supporting
+   * cloning returns nullptr.
+   */
+  virtual CloneResult Clone();
 
   /**
    * Gets the source's MediaSourceEnum for usage by PeerConnections.
@@ -170,7 +189,7 @@ class MediaStreamTrackSource : public nsISupports {
     return NS_ERROR_NOT_IMPLEMENTED;
   }
 
-  typedef MozPromise<bool /* aIgnored */, RefPtr<MediaMgrError>, true>
+  typedef MozPromise<bool /* aIgnored */, RefPtr<MediaMgrError>, false>
       ApplyConstraintsPromise;
 
   /**
@@ -183,7 +202,7 @@ class MediaStreamTrackSource : public nsISupports {
   /**
    * Same for GetSettings (no-op).
    */
-  virtual void GetSettings(dom::MediaTrackSettings& aResult) {};
+  virtual void GetSettings(dom::MediaTrackSettings& aResult) = 0;
 
   virtual void GetCapabilities(dom::MediaTrackCapabilities& aResult) {};
 
@@ -227,10 +246,11 @@ class MediaStreamTrackSource : public nsISupports {
     if (mStopped) {
       return;
     }
+    mSinks.RemoveElementsBy([](const WeakPtr<Sink>& aElem) {
+      MOZ_ASSERT(aElem, "Sink was not explicitly removed");
+      return !aElem;
+    });
     mSinks.AppendElement(aSink);
-    while (mSinks.RemoveElement(nullptr)) {
-      MOZ_ASSERT_UNREACHABLE("Sink was not explicitly removed");
-    }
   }
 
   /**
@@ -239,9 +259,10 @@ class MediaStreamTrackSource : public nsISupports {
    */
   void UnregisterSink(Sink* aSink) {
     MOZ_ASSERT(NS_IsMainThread());
-    while (mSinks.RemoveElement(nullptr)) {
-      MOZ_ASSERT_UNREACHABLE("Sink was not explicitly removed");
-    }
+    mSinks.RemoveElementsBy([](const WeakPtr<Sink>& aElem) {
+      MOZ_ASSERT(aElem, "Sink was not explicitly removed");
+      return !aElem;
+    });
     if (mSinks.RemoveElement(aSink) && !IsActive()) {
       MOZ_ASSERT(!aSink->KeepsSourceAlive() || !mStopped,
                  "When the last sink keeping the source alive is removed, "
@@ -281,12 +302,11 @@ class MediaStreamTrackSource : public nsISupports {
    */
   void PrincipalChanged() {
     MOZ_ASSERT(NS_IsMainThread());
-    for (auto& sink : mSinks.Clone()) {
-      if (!sink) {
-        DebugOnly<bool> removed = mSinks.RemoveElement(sink);
-        MOZ_ASSERT(!removed, "Sink was not explicitly removed");
-        continue;
-      }
+    mSinks.RemoveElementsBy([](const WeakPtr<Sink>& aElem) {
+      MOZ_ASSERT(aElem, "Sink was not explicitly removed");
+      return !aElem;
+    });
+    for (const auto& sink : mSinks.Clone()) {
       sink->PrincipalChanged();
     }
   }
@@ -298,13 +318,27 @@ class MediaStreamTrackSource : public nsISupports {
    */
   void MutedChanged(bool aNewState) {
     MOZ_ASSERT(NS_IsMainThread());
-    for (auto& sink : mSinks.Clone()) {
-      if (!sink) {
-        DebugOnly<bool> removed = mSinks.RemoveElement(sink);
-        MOZ_ASSERT(!removed, "Sink was not explicitly removed");
-        continue;
-      }
+    mSinks.RemoveElementsBy([](const WeakPtr<Sink>& aElem) {
+      MOZ_ASSERT(aElem, "Sink was not explicitly removed");
+      return !aElem;
+    });
+    for (const auto& sink : mSinks.Clone()) {
       sink->MutedChanged(aNewState);
+    }
+  }
+
+  /**
+   * Called by a sub class when the source's applied constraints has changed.
+   * Notifies all sinks.
+   */
+  void ConstraintsChanged(const MediaTrackConstraints& aConstraints) {
+    MOZ_ASSERT(NS_IsMainThread());
+    mSinks.RemoveElementsBy([](const WeakPtr<Sink>& aElem) {
+      MOZ_ASSERT(aElem, "Sink was not explicitly removed");
+      return !aElem;
+    });
+    for (const auto& sink : mSinks.Clone()) {
+      sink->ConstraintsChanged(aConstraints);
     }
   }
 
@@ -314,12 +348,11 @@ class MediaStreamTrackSource : public nsISupports {
    */
   void OverrideEnded() {
     MOZ_ASSERT(NS_IsMainThread());
-    for (auto& sink : mSinks.Clone()) {
-      if (!sink) {
-        DebugOnly<bool> removed = mSinks.RemoveElement(sink);
-        MOZ_ASSERT(!removed, "Sink was not explicitly removed");
-        continue;
-      }
+    mSinks.RemoveElementsBy([](const WeakPtr<Sink>& aElem) {
+      MOZ_ASSERT(aElem, "Sink was not explicitly removed");
+      return !aElem;
+    });
+    for (const auto& sink : mSinks.Clone()) {
       sink->OverrideEnded();
     }
   }
@@ -448,7 +481,7 @@ class MediaStreamTrack : public DOMEventTargetHelper, public SupportsWeakPtr {
   already_AddRefed<Promise> ApplyConstraints(
       const dom::MediaTrackConstraints& aConstraints, CallerType aCallerType,
       ErrorResult& aRv);
-  already_AddRefed<MediaStreamTrack> Clone();
+  virtual already_AddRefed<MediaStreamTrack> Clone() = 0;
   MediaStreamTrackState ReadyState() { return mReadyState; }
 
   IMPL_EVENT_HANDLER(mute)
@@ -600,6 +633,11 @@ class MediaStreamTrack : public DOMEventTargetHelper, public SupportsWeakPtr {
   void MutedChanged(bool aNewState);
 
   /**
+   * Called when mSource's applied constraints has changed.
+   */
+  void ConstraintsChanged(const MediaTrackConstraints& aConstraints);
+
+  /**
    * Sets this track's muted state without raising any events.
    * Only really set by cloning. See MutedChanged for runtime changes.
    */
@@ -616,7 +654,22 @@ class MediaStreamTrack : public DOMEventTargetHelper, public SupportsWeakPtr {
    * Creates a new MediaStreamTrack with the same kind, input track, input
    * track ID and source as this MediaStreamTrack.
    */
-  virtual already_AddRefed<MediaStreamTrack> CloneInternal() = 0;
+
+  template <typename TrackType>
+  already_AddRefed<MediaStreamTrack> CloneInternal() {
+    auto cloneRes = mSource->Clone();
+    MOZ_ASSERT(!!cloneRes.mSource == !!cloneRes.mInputTrack);
+    if (!cloneRes.mSource || !cloneRes.mInputTrack) {
+      cloneRes.mSource = mSource;
+      cloneRes.mInputTrack = mInputTrack;
+    }
+    auto newTrack =
+        MakeRefPtr<TrackType>(mWindow, cloneRes.mInputTrack, cloneRes.mSource,
+                              ReadyState(), Muted(), mConstraints);
+    newTrack->SetEnabled(Enabled());
+    newTrack->SetMuted(Muted());
+    return newTrack.forget();
+  }
 
   nsTArray<PrincipalChangeObserver<MediaStreamTrack>*>
       mPrincipalChangeObservers;

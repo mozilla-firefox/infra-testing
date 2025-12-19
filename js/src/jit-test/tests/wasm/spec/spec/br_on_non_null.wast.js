@@ -17,99 +17,117 @@
 
 // ./test/core/br_on_non_null.wast:1
 let $0 = instantiate(`(module
-  (type $$t (func (result i32)))
+  (type \$t (func (result i32)))
 
-  (func $$nn (param $$r (ref $$t)) (result i32)
-    (call_ref $$t
-      (block $$l (result (ref $$t))
-        (br_on_non_null $$l (local.get $$r))
+  (func \$nn (param \$r (ref \$t)) (result i32)
+    (call_ref \$t
+      (block \$l (result (ref \$t))
+        (br_on_non_null \$l (local.get \$r))
         (return (i32.const -1))
       )
     )
   )
-  (func $$n (param $$r (ref null $$t)) (result i32)
-    (call_ref $$t
-      (block $$l (result (ref $$t))
-        (br_on_non_null $$l (local.get $$r))
+  (func \$n (param \$r (ref null \$t)) (result i32)
+    (call_ref \$t
+      (block \$l (result (ref \$t))
+        (br_on_non_null \$l (local.get \$r))
         (return (i32.const -1))
       )
     )
   )
+  (func \$n2 (param \$r (ref null \$t)) (result i32)
+    (call_ref \$t
+      (ref.as_non_null
+        (block \$l (result (ref null \$t))
+          (br_on_non_null \$l (local.get \$r))
+          (return (i32.const -2))
+        )
+      )
+    )
+  )
 
-  (elem func $$f)
-  (func $$f (result i32) (i32.const 7))
+  (elem func \$f)
+  (func \$f (result i32) (i32.const 7))
 
-  (func (export "nullable-null") (result i32) (call $$n (ref.null $$t)))
-  (func (export "nonnullable-f") (result i32) (call $$nn (ref.func $$f)))
-  (func (export "nullable-f") (result i32) (call $$n (ref.func $$f)))
+  (func (export "nonnullable-f") (result i32) (call \$nn (ref.func \$f)))
+  (func (export "nullable-null") (result i32) (call \$n (ref.null \$t)))
+  (func (export "nullable-f") (result i32) (call \$n (ref.func \$f)))
+  (func (export "nullable2-null") (result i32) (call \$n2 (ref.null \$t)))
+  (func (export "nullable2-f") (result i32) (call \$n2 (ref.func \$f)))
 
   (func (export "unreachable") (result i32)
-    (block $$l (result (ref $$t))
-      (br_on_non_null $$l (unreachable))
+    (block \$l (result (ref \$t))
+      (br_on_non_null \$l (unreachable))
       (return (i32.const -1))
     )
-    (call_ref $$t)
+    (call_ref \$t)
   )
 )`);
 
-// ./test/core/br_on_non_null.wast:37
+// ./test/core/br_on_non_null.wast:49
 assert_trap(() => invoke($0, `unreachable`, []), `unreachable`);
 
-// ./test/core/br_on_non_null.wast:39
-assert_return(() => invoke($0, `nullable-null`, []), [value("i32", -1)]);
-
-// ./test/core/br_on_non_null.wast:40
+// ./test/core/br_on_non_null.wast:51
 assert_return(() => invoke($0, `nonnullable-f`, []), [value("i32", 7)]);
 
-// ./test/core/br_on_non_null.wast:41
+// ./test/core/br_on_non_null.wast:52
+assert_return(() => invoke($0, `nullable-null`, []), [value("i32", -1)]);
+
+// ./test/core/br_on_non_null.wast:53
 assert_return(() => invoke($0, `nullable-f`, []), [value("i32", 7)]);
 
-// ./test/core/br_on_non_null.wast:43
+// ./test/core/br_on_non_null.wast:54
+assert_return(() => invoke($0, `nullable2-null`, []), [value("i32", -2)]);
+
+// ./test/core/br_on_non_null.wast:55
+assert_return(() => invoke($0, `nullable2-f`, []), [value("i32", 7)]);
+
+// ./test/core/br_on_non_null.wast:57
 let $1 = instantiate(`(module
-  (type $$t (func))
-  (func (param $$r (ref null $$t)) (drop (block (result (ref $$t)) (br_on_non_null 0 (local.get $$r)) (unreachable))))
-  (func (param $$r (ref null func)) (drop (block (result (ref func)) (br_on_non_null 0 (local.get $$r)) (unreachable))))
-  (func (param $$r (ref null extern)) (drop (block (result (ref extern)) (br_on_non_null 0 (local.get $$r)) (unreachable))))
+  (type \$t (func))
+  (func (param \$r (ref null \$t)) (drop (block (result (ref \$t)) (br_on_non_null 0 (local.get \$r)) (unreachable))))
+  (func (param \$r (ref null func)) (drop (block (result (ref func)) (br_on_non_null 0 (local.get \$r)) (unreachable))))
+  (func (param \$r (ref null extern)) (drop (block (result (ref extern)) (br_on_non_null 0 (local.get \$r)) (unreachable))))
 )`);
 
-// ./test/core/br_on_non_null.wast:51
+// ./test/core/br_on_non_null.wast:65
 let $2 = instantiate(`(module
-  (type $$t (func (param i32) (result i32)))
-  (elem func $$f)
-  (func $$f (param i32) (result i32) (i32.mul (local.get 0) (local.get 0)))
+  (type \$t (func (param i32) (result i32)))
+  (elem func \$f)
+  (func \$f (param i32) (result i32) (i32.mul (local.get 0) (local.get 0)))
 
-  (func $$a (param $$n i32) (param $$r (ref null $$t)) (result i32)
-    (call_ref $$t
-      (block $$l (result i32 (ref $$t))
-        (return (br_on_non_null $$l (local.get $$n) (local.get $$r)))
+  (func \$a (param \$n i32) (param \$r (ref null \$t)) (result i32)
+    (call_ref \$t
+      (block \$l (result i32 (ref \$t))
+        (return (br_on_non_null \$l (local.get \$n) (local.get \$r)))
       )
     )
   )
 
-  (func (export "args-null") (param $$n i32) (result i32)
-    (call $$a (local.get $$n) (ref.null $$t))
+  (func (export "args-null") (param \$n i32) (result i32)
+    (call \$a (local.get \$n) (ref.null \$t))
   )
-  (func (export "args-f") (param $$n i32) (result i32)
-    (call $$a (local.get $$n) (ref.func $$f))
+  (func (export "args-f") (param \$n i32) (result i32)
+    (call \$a (local.get \$n) (ref.func \$f))
   )
 )`);
 
-// ./test/core/br_on_non_null.wast:72
+// ./test/core/br_on_non_null.wast:86
 assert_return(() => invoke($2, `args-null`, [3]), [value("i32", 3)]);
 
-// ./test/core/br_on_non_null.wast:73
+// ./test/core/br_on_non_null.wast:87
 assert_return(() => invoke($2, `args-f`, [3]), [value("i32", 9)]);
 
-// ./test/core/br_on_non_null.wast:77
+// ./test/core/br_on_non_null.wast:91
 assert_invalid(
   () => instantiate(`(module
-    (type $$t (func))
-    (func $$f (param (ref null $$t)) (result funcref) (local.get 0))
+    (type \$t (func))
+    (func \$f (param (ref null \$t)) (result funcref) (local.get 0))
     (func (param funcref) (result funcref funcref)
-      (ref.null $$t)
+      (ref.null \$t)
       (local.get 0)
       (br_on_non_null 0)  ;; only leaves a funcref on the stack
-      (call $$f)
+      (call \$f)
       (local.get 0)
     )
   )`),

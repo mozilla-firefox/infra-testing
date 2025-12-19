@@ -15,7 +15,6 @@
  * @typedef {import("../@types/perf").PerformancePref} PerformancePref
  * @typedef {import("../@types/perf").RecordingSettings} RecordingSettings
  * @typedef {import("../@types/perf").GetActiveBrowserID} GetActiveBrowserID
- * @typedef {import("../@types/perf").MinimallyTypedGeckoProfile} MinimallyTypedGeckoProfile
  * @typedef {import("../@types/perf").ProfilerViewMode} ProfilerViewMode
  * @typedef {import("../@types/perf").ProfilerPanel} ProfilerPanel
  */
@@ -48,7 +47,7 @@ const UI_BASE_URL_PATH_DEFAULT = "/from-browser";
  * profiler.firefox.com to be analyzed. This function opens up profiler.firefox.com
  * into a new browser tab.
  *
- * @typedef {Object} OpenProfilerOptions
+ * @typedef {object} OpenProfilerOptions
  * @property {ProfilerViewMode | undefined} [profilerViewMode] - View mode for the Firefox Profiler
  *   front-end timeline. While opening the url, we should append a query string
  *   if a view other than "full" needs to be displayed.
@@ -99,7 +98,7 @@ async function openProfilerTab({ profilerViewMode, defaultPanel }) {
   // Note that when running from the browser toolbox, there won't be the browser window,
   // but only the browser toolbox document.
   const win =
-    Services.wm.getMostRecentWindow("navigator:browser") ||
+    Services.wm.getMostRecentBrowserWindow() ||
     Services.wm.getMostRecentWindow("devtools:toolbox");
   if (!win) {
     throw new Error("No browser window");
@@ -119,26 +118,6 @@ async function openProfilerTab({ profilerViewMode, defaultPanel }) {
     })
   );
   return contentBrowser;
-}
-
-/**
- * Flatten all the sharedLibraries of the different processes in the profile
- * into one list of libraries.
- * @param {MinimallyTypedGeckoProfile} profile - The profile JSON object
- * @returns {Library[]}
- */
-function sharedLibrariesFromProfile(profile) {
-  /**
-   * @param {MinimallyTypedGeckoProfile} processProfile
-   * @returns {Library[]}
-   */
-  function getLibsRecursive(processProfile) {
-    return processProfile.libs.concat(
-      ...processProfile.processes.map(getLibsRecursive)
-    );
-  }
-
-  return getLibsRecursive(profile);
 }
 
 /**
@@ -192,7 +171,7 @@ function openFilePickerForObjdir(window, objdirs, changeObjdirs) {
  * @param {number} columnOneBased
  */
 async function openScriptInDebugger(tabId, scriptUrl, line, columnOneBased) {
-  const win = Services.wm.getMostRecentWindow("navigator:browser");
+  const win = Services.wm.getMostRecentBrowserWindow();
 
   // Iterate through all tabs in the current window and find the tab that we want.
   const foundTab = win.gBrowser.tabs.find(
@@ -227,7 +206,6 @@ async function openScriptInDebugger(tabId, scriptUrl, line, columnOneBased) {
 
 module.exports = {
   openProfilerTab,
-  sharedLibrariesFromProfile,
   restartBrowserWithEnvironmentVariable,
   openFilePickerForObjdir,
   openScriptInDebugger,

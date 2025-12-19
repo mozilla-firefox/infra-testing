@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "XULButtonElement.h"
+
 #include "XULMenuParentElement.h"
 #include "XULPopupElement.h"
 #include "mozilla/Assertions.h"
@@ -14,22 +15,22 @@
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/dom/AncestorIterator.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/MouseEventBinding.h"
 #include "mozilla/dom/NameSpaceConstants.h"
-#include "mozilla/dom/AncestorIterator.h"
 #include "mozilla/dom/XULMenuBarElement.h"
-#include "nsGkAtoms.h"
-#include "nsITimer.h"
-#include "nsLayoutUtils.h"
 #include "nsCaseTreatment.h"
 #include "nsChangeHint.h"
+#include "nsGkAtoms.h"
+#include "nsIDOMXULButtonElement.h"
+#include "nsISound.h"
+#include "nsITimer.h"
+#include "nsLayoutUtils.h"
 #include "nsMenuPopupFrame.h"
 #include "nsPlaceholderFrame.h"
 #include "nsPresContext.h"
 #include "nsXULPopupManager.h"
-#include "nsIDOMXULButtonElement.h"
-#include "nsISound.h"
 
 namespace mozilla::dom {
 
@@ -44,12 +45,17 @@ XULButtonElement::~XULButtonElement() {
   KillMenuOpenTimer();
 }
 
-nsChangeHint XULButtonElement::GetAttributeChangeHint(const nsAtom* aAttribute,
-                                                      int32_t aModType) const {
+nsChangeHint XULButtonElement::GetAttributeChangeHint(
+    const nsAtom* aAttribute, AttrModType aModType) const {
   if (aAttribute == nsGkAtoms::type &&
       IsAnyOfXULElements(nsGkAtoms::button, nsGkAtoms::toolbarbutton)) {
     // type=menu switches to a menu frame.
     return nsChangeHint_ReconstructFrame;
+  }
+  if (aAttribute == nsGkAtoms::checked &&
+      IsAnyOfXULElements(nsGkAtoms::menuitem, nsGkAtoms::radio,
+                         nsGkAtoms::checkbox)) {
+    return nsChangeHint_RepaintFrame;
   }
   return nsXULElement::GetAttributeChangeHint(aAttribute, aModType);
 }
@@ -311,10 +317,10 @@ void XULButtonElement::StartBlinking() {
               self->StopBlinking();
             },
             aClosure, kBlinkDelay, nsITimer::TYPE_ONE_SHOT,
-            "XULButtonElement::ContinueBlinking");
+            "XULButtonElement::ContinueBlinking"_ns);
       },
       this, kBlinkDelay, nsITimer::TYPE_ONE_SHOT,
-      "XULButtonElement::StartBlinking", GetMainThreadSerialEventTarget());
+      "XULButtonElement::StartBlinking"_ns, GetMainThreadSerialEventTarget());
 }
 
 void XULButtonElement::UnbindFromTree(UnbindContext& aContext) {
@@ -525,7 +531,7 @@ void XULButtonElement::PostHandleEventForMenus(
           self->OpenMenuPopup(false);
         },
         this, MenuOpenCloseDelay(), nsITimer::TYPE_ONE_SHOT,
-        "XULButtonElement::OpenMenu", GetMainThreadSerialEventTarget());
+        "XULButtonElement::OpenMenu"_ns, GetMainThreadSerialEventTarget());
   }
 }
 

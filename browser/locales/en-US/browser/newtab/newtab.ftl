@@ -5,11 +5,9 @@
 ### Firefox Home / New Tab strings for about:home / about:newtab.
 
 newtab-page-title = New Tab
-newtab-settings-button =
-    .title = Customize your New Tab page
-newtab-personalize-settings-icon-label =
-    .title = Personalize New Tab
-    .aria-label = Settings
+newtab-customize-panel-icon-button =
+    .title = Customize this page
+newtab-customize-panel-icon-button-label = Customize
 newtab-settings-dialog-label =
     .aria-label = Settings
 newtab-logo-and-wordmark =
@@ -48,6 +46,9 @@ newtab-topsites-add-search-engine-header = Add Search Engine
 newtab-topsites-add-shortcut-header = New Shortcut
 newtab-topsites-edit-shortcut-header = Edit Shortcut
 newtab-topsites-add-shortcut-label = Add Shortcut
+newtab-topsites-add-shortcut-title =
+    .title = Add Shortcut
+    .aria-label = Add Shortcut
 newtab-topsites-title-label = Title
 newtab-topsites-title-input =
     .placeholder = Enter a title
@@ -79,17 +80,20 @@ newtab-confirm-delete-history-p2 = This action cannot be undone.
 
 newtab-topsite-sponsored = Sponsored
 
+## Label used by screen readers for pinned top sites
+
+# Variables:
+#   $title (string) - The label or hostname of the site.
+topsite-label-pinned =
+    .aria-label = { $title } (pinned)
+    .title = { $title }
+
 ## Context Menu - Action Tooltips.
 
 # General tooltip for context menus.
 newtab-menu-section-tooltip =
     .title = Open menu
     .aria-label = Open menu
-
-# Tooltip for dismiss button
-newtab-dismiss-button-tooltip =
-    .title = Remove
-    .aria-label = Remove
 
 # This tooltip is for the context menu of Pocket cards or Topsites
 # Variables:
@@ -107,12 +111,9 @@ newtab-menu-dismiss = Dismiss
 newtab-menu-pin = Pin
 newtab-menu-unpin = Unpin
 newtab-menu-delete-history = Delete from History
-newtab-menu-save-to-pocket = Save to { -pocket-brand-name }
-newtab-menu-delete-pocket = Delete from { -pocket-brand-name }
-newtab-menu-archive-pocket = Archive in { -pocket-brand-name }
 newtab-menu-show-privacy-info = Our sponsors & your privacy
-newtab-menu-about-fakespot = About { -fakespot-brand-name }
-newtab-menu-report-content = Report this content
+# Report is a verb (i.e. report issue with the content).
+newtab-menu-report = Report
 # Context menu option to personalize New Tab recommended stories by blocking a section of stories,
 # e.g. "Sports". "Block" is a verb here.
 newtab-menu-section-block = Block
@@ -125,18 +126,6 @@ newtab-menu-section-unfollow = Unfollow topic
 newtab-menu-manage-sponsored-content = Manage sponsored content
 newtab-menu-our-sponsors-and-your-privacy = Our sponsors and your privacy
 newtab-menu-report-this-ad = Report this ad
-
-## Message displayed in a modal window to explain privacy and provide context for sponsored content.
-
-newtab-privacy-modal-button-done = Done
-newtab-privacy-modal-button-manage = Manage sponsored content settings
-newtab-privacy-modal-header = Your privacy matters.
-newtab-privacy-modal-paragraph-2 =
-    In addition to dishing up captivating stories, we also show you relevant,
-    highly-vetted content from select sponsors. Rest assured, <strong>your browsing
-    data never leaves your personal copy of { -brand-product-name }</strong> — we don’t see it, and our
-    sponsors don’t either.
-newtab-privacy-modal-link = Learn how privacy works on the new tab
 
 ##
 
@@ -190,6 +179,9 @@ newtab-label-sponsored-by = Sponsored by { $sponsor }
 #   $timeToRead (number) - The estimated number of minutes to read this story
 newtab-label-source-read-time = { $source } · { $timeToRead } min
 
+# This string is used under fixed size ads to indicate sponsored content
+newtab-label-sponsored-fixed = Sponsored
+
 ## Section Menu: These strings are displayed in the section context menu and are
 ## meant as a call to action for the given section.
 
@@ -219,26 +211,6 @@ newtab-discovery-empty-section-topstories-loading = Loading…
 # Displays when a layout in a section took too long to fetch articles.
 newtab-discovery-empty-section-topstories-timed-out = Oops! We almost loaded this section, but not quite.
 
-## Thumbs up and down buttons that shows over a newtab stories card thumbnail on hover.
-
-# Clicking the thumbs up button for this story will result in more stories like this one being recommended
-newtab-pocket-thumbs-up-tooltip =
-    .title = More like this
-# Clicking the thumbs down button for this story informs us that the user does not feel like the story is interesting for them
-newtab-pocket-thumbs-down-tooltip =
-    .title = Not for me
-# Used to show the user a message upon clicking the thumbs up or down buttons
-newtab-toast-thumbs-up-or-down2 =
-    .message = Thanks. Your feedback will help us improve your feed.
-newtab-toast-dismiss-button =
-    .title = Dismiss
-    .aria-label = Dismiss
-
-## Pocket content onboarding experience dialog and modal for new users seeing the Pocket section for the first time, shown as the first item in the Pocket section.
-
-newtab-pocket-onboarding-discover = Discover the best of the web
-newtab-pocket-onboarding-cta = { -pocket-brand-name } explores a diverse range of publications to bring the most informative, inspirational, and trustworthy content right to your { -brand-product-name } browser.
-
 ## Error Fallback Content.
 ## This message and suggested action link are shown in each section of UI that fails to render.
 
@@ -261,11 +233,23 @@ newtab-custom-row-selector =
 newtab-custom-stories-toggle =
   .label = Recommended stories
   .description = Exceptional content curated by the { -brand-product-name } family
-newtab-custom-pocket-show-recent-saves = Show recent saves
+newtab-custom-stories-personalized-toggle =
+  .label = Stories
+newtab-custom-stories-personalized-checkbox-label = Personalized stories based on your activity
 newtab-custom-weather-toggle =
   .label = Weather
   .description = Today’s forecast at a glance
-newtab-custom-close-button = Close
+newtab-custom-widget-weather-toggle =
+  .label = Weather
+newtab-custom-widget-lists-toggle =
+  .label = Lists
+newtab-custom-widget-timer-toggle =
+  .label = Timer
+newtab-custom-widget-section-title = Widgets
+# Tooltip for close button
+newtab-custom-close-menu-button =
+    .title = Close
+    .aria-label = Close menu
 newtab-custom-settings = Manage more settings
 
 ## New Tab Wallpapers
@@ -277,7 +261,7 @@ newtab-wallpaper-custom-color = Choose a color
 # Variables
 #   $file_size (number) - The number of the maximum image file size (in MB) that may be uploaded
 newtab-wallpaper-error-max-file-size = The image exceeded the file size limit of { $file_size }MB. Please try uploading a smaller file.
-newtab-wallpaper-error-file-type = We couldn’t upload your file. Please try again with different file type.
+newtab-wallpaper-error-upload-file-type = We couldn’t upload your file. Please try again with an image file.
 newtab-wallpaper-light-red-panda = Red panda
 newtab-wallpaper-light-mountain = White mountain
 newtab-wallpaper-light-sky = Sky with purple and pink clouds
@@ -355,6 +339,10 @@ newtab-wallpaper-celestial-eclipse-time-lapse = Lunar eclipse time lapse
 newtab-wallpaper-celestial-black-hole = Black hole galaxy illustration
 newtab-wallpaper-celestial-river = Satellite image of river
 
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
+
 
 # Variables
 #   $author_string (String) - The name of the creator of the photo.
@@ -399,8 +387,16 @@ newtab-weather-menu-change-temperature-units-fahrenheit = Switch to Fahrenheit
 newtab-weather-menu-change-temperature-units-celsius = Switch to Celsius
 newtab-weather-menu-hide-weather = Hide weather on New Tab
 newtab-weather-menu-learn-more = Learn more
+newtab-weather-menu-detect-my-location = Detect my location
 # This message is shown if user is working offline
 newtab-weather-error-not-available = Weather data is not available right now.
+newtab-weather-opt-in-see-weather = Do you want to see the weather for your location?
+newtab-weather-opt-in-not-now =
+    .label = Not now
+newtab-weather-opt-in-yes =
+    .label = Yes
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = New York City
 
 ## Topic Labels
 
@@ -449,6 +445,9 @@ newtab-topic-selection-button-pick-interests = Pick your interests
 newtab-section-follow-button = Follow
 newtab-section-following-button = Following
 newtab-section-unfollow-button = Unfollow
+# A modal may appear next to the Follow button, directing users to try out the feature
+newtab-section-follow-highlight-title = Fine-tune your feed
+newtab-section-follow-highlight-subtitle = Follow your interests to see more of what you like.
 
 ## Button to block/unblock listed topics
 ## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
@@ -485,6 +484,12 @@ newtab-custom-wallpaper-title = Custom wallpapers are here
 newtab-custom-wallpaper-subtitle = Upload your own wallpaper or pick a custom color to make { -brand-product-name } yours.
 newtab-custom-wallpaper-cta = Try it
 
+## Strings for new user activation custom wallpaper highlight
+
+newtab-new-user-custom-wallpaper-title = Choose a wallpaper to make { -brand-product-name } yours
+newtab-new-user-custom-wallpaper-subtitle = Make every new tab feel like home with custom wallpapers and colors.
+newtab-new-user-custom-wallpaper-cta = Try it now
+
 ## Strings for download mobile highlight
 
 newtab-download-mobile-highlight-title = Download { -brand-product-name } for mobile
@@ -494,6 +499,11 @@ newtab-download-mobile-highlight-body-variant-b = Pick up where you left off whe
 newtab-download-mobile-highlight-body-variant-c = Did you know you can take { -brand-product-name } on the go? Same browser. In your pocket.
 newtab-download-mobile-highlight-image =
     .aria-label = QR code to download { -brand-product-name } for mobile
+
+## Strings for shortcuts highlight
+
+newtab-shortcuts-highlight-title = Your favorites at your fingertips
+newtab-shortcuts-highlight-subtitle = Add a shortcut to keep your favorite sites one click away.
 
 ## Strings for reporting ads and content
 
@@ -517,3 +527,90 @@ newtab-report-cancel = Cancel
 newtab-report-submit = Submit
 newtab-toast-thanks-for-reporting =
     .message = Thank you for reporting this.
+
+## Strings for task / to-do list productivity widget
+
+newtab-widget-section-title = Widgets
+# Tooltip for hide all widgets button
+newtab-widget-section-hide-all-button =
+    .title = Hide widgets
+    .aria-label = Hide all widgets
+newtab-widget-section-maximize =
+    .title = Expand widgets
+    .aria-label = Expand all widgets to full size
+newtab-widget-section-minimize =
+    .title = Minimize widgets
+    .aria-label = Collapse all widgets to compact size
+newtab-widget-lists-name-label-default =
+    .label = Task list
+newtab-widget-lists-name-placeholder-default =
+    .placeholder = Task list
+# The placeholder value of the name field for a newly created list
+newtab-widget-lists-name-placeholder-new =
+    .placeholder = New list
+
+# "Add one" means adding a new task to the list (e.g., "Walk the dog")
+newtab-widget-lists-empty-cta = The possibilities are endless. Add one.
+# A simple label next to the default list name letting users know this is a new / beta feature
+newtab-widget-lists-label-new =
+    .label = New
+newtab-widget-lists-label-beta =
+    .label = Beta
+# When tasks have been previous marked as complete, they will appear in their own separate list beneath incomplete items
+# Variables:
+#   $number (number) - Amount of list items marked complete
+newtab-widget-lists-completed-list = Completed ({ $number })
+newtab-widget-task-list-menu-copy = Copy
+newtab-widget-lists-menu-edit = Edit list name
+newtab-widget-lists-menu-create = Create a new list
+newtab-widget-lists-menu-delete = Delete this list
+newtab-widget-lists-menu-copy = Copy list to clipboard
+newtab-widget-lists-menu-hide = Hide all lists
+newtab-widget-lists-menu-learn-more = Learn more
+newtab-widget-lists-input-add-an-item =
+    .placeholder = Add an item
+newtab-widget-lists-input-error = Please include text to add an item.
+newtab-widget-lists-input-menu-open-link = Open link
+newtab-widget-lists-input-menu-move-up = Move up
+newtab-widget-lists-input-menu-move-down = Move down
+newtab-widget-lists-input-menu-delete = Delete
+newtab-widget-lists-input-menu-edit = Edit
+
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + Create a new list
+
+## Strings for timer productivity widget
+## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
+
+newtab-widget-timer-notification-title = Timer
+newtab-widget-timer-notification-focus = Focus time is up. Nice work. Need a break?
+newtab-widget-timer-notification-break = Your break is over. Ready to focus?
+newtab-widget-timer-notification-warning = Notifications are off
+newtab-widget-timer-mode-focus =
+    .label = Focus
+newtab-widget-timer-mode-break =
+    .label = Break
+newtab-widget-timer-label-play =
+    .label = Play
+newtab-widget-timer-label-pause =
+    .label = Pause
+newtab-widget-timer-reset =
+    .title = Reset
+newtab-widget-timer-menu-notifications = Turn off notifications
+newtab-widget-timer-menu-notifications-on = Turn on notifications
+newtab-widget-timer-menu-hide = Hide timer
+newtab-widget-timer-menu-learn-more = Learn more
+
+newtab-widget-message-title = Stay focused with lists and a built-in timer
+# to-dos stands for "things to do".
+newtab-widget-message-copy = From quick reminders to daily to-dos, focus sessions to stretch breaks — stay on task and on time.
+
+# Strings for the default promo card
+
+newtab-promo-card-title = Support { -brand-product-name }
+newtab-promo-card-body = Our sponsors support our mission to build a better web
+newtab-promo-card-cta = Learn more
+newtab-promo-card-dismiss-button =
+    .title = Dismiss
+    .aria-label = Dismiss

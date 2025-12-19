@@ -6,35 +6,28 @@
 
 #include "Fetch.h"
 
+#include "BodyExtractor.h"
+#include "FetchChild.h"
+#include "FetchObserver.h"
+#include "FetchUtil.h"
+#include "InternalRequest.h"
+#include "InternalResponse.h"
+#include "ThirdPartyUtil.h"
 #include "js/RootingAPI.h"
 #include "js/Value.h"
 #include "mozilla/CycleCollectedJSContext.h"
-#include "mozilla/StaticPrefs_dom.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/ipc/BackgroundChild.h"
-#include "mozilla/ipc/PBackgroundChild.h"
-#include "mozilla/ipc/PBackgroundSharedTypes.h"
-#include "mozilla/ipc/IPCStreamUtils.h"
-#include "nsIGlobalObject.h"
-
-#include "nsDOMString.h"
-#include "nsJSUtils.h"
-#include "nsNetUtil.h"
-#include "nsReadableUtils.h"
-#include "nsStreamUtils.h"
-#include "nsStringStream.h"
-#include "nsProxyRelease.h"
-#include "ThirdPartyUtil.h"
-
 #include "mozilla/ErrorResult.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/BodyConsumer.h"
-#include "mozilla/dom/Exceptions.h"
 #include "mozilla/dom/DOMException.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/Exceptions.h"
 #include "mozilla/dom/FetchDriver.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/FormData.h"
 #include "mozilla/dom/Headers.h"
+#include "mozilla/dom/MimeType.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/PromiseWorkerProxy.h"
 #include "mozilla/dom/ReadableStreamDefaultReader.h"
@@ -43,20 +36,24 @@
 #include "mozilla/dom/Response.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/URLSearchParams.h"
-#include "mozilla/glean/NetwerkMetrics.h"
-#include "mozilla/net/CookieJarSettings.h"
-
-#include "BodyExtractor.h"
-#include "FetchChild.h"
-#include "FetchUtil.h"
-#include "FetchObserver.h"
-#include "InternalRequest.h"
-#include "InternalResponse.h"
-
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerRef.h"
 #include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/dom/WorkerScope.h"
+#include "mozilla/ipc/BackgroundChild.h"
+#include "mozilla/ipc/IPCStreamUtils.h"
+#include "mozilla/ipc/PBackgroundChild.h"
+#include "mozilla/ipc/PBackgroundSharedTypes.h"
+#include "mozilla/net/CookieJarSettings.h"
+#include "nsDOMString.h"
+#include "nsIClassifiedChannel.h"
+#include "nsIGlobalObject.h"
+#include "nsJSUtils.h"
+#include "nsNetUtil.h"
+#include "nsProxyRelease.h"
+#include "nsReadableUtils.h"
+#include "nsStreamUtils.h"
+#include "nsStringStream.h"
 
 namespace mozilla::dom {
 
@@ -90,7 +87,7 @@ class AbortSignalMainThread final : public AbortSignalImpl {
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(AbortSignalMainThread)
 
-  explicit AbortSignalMainThread(bool aAborted)
+  explicit AbortSignalMainThread(SignalAborted aAborted)
       : AbortSignalImpl(aAborted, JS::UndefinedHandleValue) {
     mozilla::HoldJSObjects(this);
   }
@@ -147,7 +144,7 @@ class AbortSignalProxy final : public AbortFollower {
   // thread, to create it in already-aborted state if necessary.  It does *not*
   // reflect the instantaneous is-aborted status of the worker thread's
   // AbortSignal.
-  const bool mAborted;
+  const SignalAborted mAborted;
 
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
@@ -155,7 +152,8 @@ class AbortSignalProxy final : public AbortFollower {
   AbortSignalProxy(AbortSignalImpl* aSignalImpl,
                    nsIEventTarget* aMainThreadEventTarget)
       : mMainThreadEventTarget(aMainThreadEventTarget),
-        mAborted(aSignalImpl->Aborted()) {
+        mAborted(aSignalImpl->Aborted() ? SignalAborted::Yes
+                                        : SignalAborted::No) {
     MOZ_ASSERT(!NS_IsMainThread());
     MOZ_ASSERT(mMainThreadEventTarget);
     Follow(aSignalImpl);
@@ -449,7 +447,8 @@ class MainThreadFetchRunnable : public Runnable {
       fetch = new FetchDriver(mRequest.clonePtr(), principal, loadGroup,
                               workerPrivate->MainThreadEventTarget(),
                               workerPrivate->CookieJarSettings(),
-                              workerPrivate->GetPerformanceStorage(), false);
+                              workerPrivate->GetPerformanceStorage(),
+                              net::ClassificationFlags({0, 0}));
       nsAutoCString spec;
       if (proxy->GetWorkerPrivate()->GetBaseURI()) {
         proxy->GetWorkerPrivate()->GetBaseURI()->GetAsciiSpec(spec);
@@ -559,7 +558,7 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
     nsCOMPtr<nsILoadGroup> loadGroup;
     nsCOMPtr<nsICookieJarSettings> cookieJarSettings;
     nsIPrincipal* principal;
-    bool isTrackingFetch = false;
+    net::ClassificationFlags trackingFlags = {0, 0};
     if (window) {
       doc = window->GetExtantDoc();
       if (!doc) {
@@ -570,7 +569,7 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
       loadGroup = doc->GetDocumentLoadGroup();
       cookieJarSettings = doc->CookieJarSettings();
 
-      isTrackingFetch = doc->IsScriptTracking(cx);
+      trackingFlags = doc->GetScriptTrackingFlags();
     } else {
       principal = aGlobal->PrincipalOrNull();
       if (NS_WARN_IF(!principal)) {
@@ -595,7 +594,7 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
         new FetchDriver(std::move(internalRequest), principal, loadGroup,
                         aGlobal->SerialEventTarget(), cookieJarSettings,
                         nullptr,  // PerformanceStorage
-                        isTrackingFetch);
+                        trackingFlags);
     fetch->SetDocument(doc);
     resolver->SetLoadGroup(loadGroup);
     aRv = fetch->Fetch(signalImpl, resolver);
@@ -644,7 +643,7 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
 
     auto* backgroundChild =
         mozilla::ipc::BackgroundChild::GetOrCreateForCurrentThread();
-    Unused << NS_WARN_IF(!backgroundChild->SendPFetchConstructor(actor));
+    (void)NS_WARN_IF(!backgroundChild->SendPFetchConstructor(actor));
 
     FetchOpArgs ipcArgs;
 
@@ -676,8 +675,8 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
       }
       if (thirdPartyUtil) {
         bool thirdParty = false;
-        Unused << thirdPartyUtil->IsThirdPartyWindow(window->GetOuterWindow(),
-                                                     nullptr, &thirdParty);
+        (void)thirdPartyUtil->IsThirdPartyWindow(window->GetOuterWindow(),
+                                                 nullptr, &thirdParty);
         ipcArgs.isThirdPartyContext() = thirdParty;
       }
     } else {
@@ -701,10 +700,18 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
     ipcArgs.hasCSPEventListener() = false;
     ipcArgs.isWorkerRequest() = false;
 
+    if (window && window->GetBrowsingContext()) {
+      ipcArgs.associatedBrowsingContextID() =
+          window->GetBrowsingContext()->Id();
+    }
+
+    UniquePtr<SerializedStackHolder> stack = GetCurrentStackForNetMonitor(cx);
+    if (stack) {
+      actor->SetOriginStack(std::move(stack));
+    }
+
     actor->DoFetchOp(ipcArgs);
 
-    mozilla::glean::networking::fetch_keepalive_request_count.Get("main"_ns)
-        .Add(1);
     return p.forget();
   } else {
     WorkerPrivate* worker = GetCurrentThreadWorkerPrivate();
@@ -750,7 +757,7 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
 
       auto* backgroundChild =
           mozilla::ipc::BackgroundChild::GetOrCreateForCurrentThread();
-      Unused << NS_WARN_IF(!backgroundChild->SendPFetchConstructor(actor));
+      (void)NS_WARN_IF(!backgroundChild->SendPFetchConstructor(actor));
 
       FetchOpArgs ipcArgs;
       ipcArgs.request() = IPCInternalRequest();
@@ -792,12 +799,6 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
       ipcArgs.isWorkerRequest() = true;
 
       actor->DoFetchOp(ipcArgs);
-
-      if (internalRequest->GetKeepalive()) {
-        mozilla::glean::networking::fetch_keepalive_request_count
-            .Get("worker"_ns)
-            .Add(1);
-      }
 
       return p.forget();
     }
@@ -1099,7 +1100,7 @@ void WorkerFetchResolver::OnDataAvailable() {
 
   RefPtr<WorkerDataAvailableRunnable> r =
       new WorkerDataAvailableRunnable(mPromiseProxy->GetWorkerPrivate(), this);
-  Unused << r->Dispatch(mPromiseProxy->GetWorkerPrivate());
+  (void)r->Dispatch(mPromiseProxy->GetWorkerPrivate());
 }
 
 void WorkerFetchResolver::OnResponseEnd(FetchDriverObserver::EndReason aReason,
@@ -1112,7 +1113,7 @@ void WorkerFetchResolver::OnResponseEnd(FetchDriverObserver::EndReason aReason,
 
   FlushConsoleReport();
 
-  Unused << aReasonDetails;
+  (void)aReasonDetails;
 
   RefPtr<WorkerFetchResponseEndRunnable> r = new WorkerFetchResponseEndRunnable(
       mPromiseProxy->GetWorkerPrivate(), this, aReason);
@@ -1514,20 +1515,63 @@ template already_AddRefed<Promise> FetchBody<EmptyBody>::ConsumeBody(
 template <class Derived>
 void FetchBody<Derived>::GetMimeType(nsACString& aMimeType,
                                      nsACString& aMixedCaseMimeType) {
-  // Extract mime type.
-  ErrorResult result;
-  nsCString contentTypeValues;
+  // Implements "extract a MIME type" from
+  // https://fetch.spec.whatwg.org/#concept-header-extract-mime-type
   MOZ_ASSERT(DerivedClass()->GetInternalHeaders());
-  DerivedClass()->GetInternalHeaders()->Get("Content-Type"_ns,
-                                            contentTypeValues, result);
+
+  ErrorResult result;
+  nsAutoCString contentTypeValue;
+  DerivedClass()->GetInternalHeaders()->Get("Content-Type"_ns, contentTypeValue,
+                                            result);
   MOZ_ALWAYS_TRUE(!result.Failed());
 
-  // HTTP ABNF states Content-Type may have only one value.
-  // This is from the "parse a header value" of the fetch spec.
-  if (!contentTypeValues.IsVoid() && contentTypeValues.Find(",") == -1) {
-    // Convert from a bytestring to a UTF8 CString.
-    CopyLatin1toUTF8(contentTypeValues, aMimeType);
-    aMixedCaseMimeType = aMimeType;
+  if (contentTypeValue.IsVoid()) {
+    return;
+  }
+
+  nsTArray<nsTDependentSubstring<char>> values =
+      CMimeType::SplitMimetype(contentTypeValue);
+
+  nsAutoCString charset;
+  nsAutoCString essence;
+  RefPtr<CMimeType> mimeType;
+
+  for (const auto& value : values) {
+    RefPtr<CMimeType> temporaryMimeType = CMimeType::Parse(value);
+
+    if (!temporaryMimeType) {
+      continue;
+    }
+
+    nsAutoCString temporaryEssence;
+    temporaryMimeType->GetEssence(temporaryEssence);
+
+    if (temporaryEssence.EqualsLiteral("*/*")) {
+      continue;
+    }
+
+    mimeType = temporaryMimeType;
+
+    if (!temporaryEssence.Equals(essence)) {
+      charset.Truncate();
+      mimeType->GetParameterValue("charset"_ns, charset, false, false);
+
+      essence = temporaryEssence;
+    } else {
+      nsAutoCString newCharset;
+      if (!mimeType->GetParameterValue("charset"_ns, newCharset, false,
+                                       false) &&
+          !charset.IsEmpty()) {
+        mimeType->SetParameterValue("charset"_ns, charset);
+      } else if (!newCharset.IsEmpty()) {
+        charset = newCharset;
+      }
+    }
+  }
+
+  if (mimeType) {
+    mimeType->Serialize(aMixedCaseMimeType);
+    aMimeType = aMixedCaseMimeType;
     ToLowerCase(aMimeType);
   }
 }
@@ -1693,7 +1737,7 @@ void FetchBody<Derived>::MaybeTeeReadableStreamBody(
     return;
   }
 
-  nsTArray<RefPtr<ReadableStream> > branches;
+  nsTArray<RefPtr<ReadableStream>> branches;
   MOZ_KnownLive(mReadableStreamBody)->Tee(aCx, branches, aRv);
   if (aRv.Failed()) {
     return;

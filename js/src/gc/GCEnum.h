@@ -56,6 +56,7 @@ enum class State {
   D(RootsChange, 1)                      \
   D(Alloc, 2)                            \
   D(VerifierPre, 4)                      \
+  D(VerifierPost, 5)                     \
   D(YieldBeforeRootMarking, 6)           \
   D(GenerationalGC, 7)                   \
   D(YieldBeforeMarking, 8)               \
@@ -73,7 +74,8 @@ enum class State {
   D(YieldBeforeSweepingNonObjects, 22)   \
   D(YieldBeforeSweepingPropMapTrees, 23) \
   D(CheckWeakMapMarking, 24)             \
-  D(YieldWhileGrayMarking, 25)
+  D(YieldWhileGrayMarking, 25)           \
+  D(CheckHeapBeforeMinorGC, 26)
 
 enum class ZealMode {
 #define ZEAL_MODE(name, value) name = value,
@@ -109,9 +111,6 @@ enum class GCAbortReason {
   _(ArrayBufferContents)                   \
   _(StringContents)                        \
   _(ScriptPrivateData)                     \
-  _(MapObjectData)                         \
-  _(BigIntDigits)                          \
-  _(ScopeData)                             \
   _(WeakMapObject)                         \
   _(ShapeSetForAdd)                        \
   _(PropMapChildren)                       \
@@ -134,8 +133,6 @@ enum class GCAbortReason {
   _(ScriptDebugScript)                     \
   _(BreakpointSite)                        \
   _(Breakpoint)                            \
-  _(ForOfPIC)                              \
-  _(ForOfPICStub)                          \
   _(WasmInstanceExports)                   \
   _(WasmInstanceScopes)                    \
   _(WasmInstanceGlobals)                   \
@@ -154,6 +151,7 @@ enum class GCAbortReason {
   _(DebuggerOnStepHandler)                 \
   _(DebuggerOnPopHandler)                  \
   _(ICUObject)                             \
+  _(IntlOptions)                           \
   _(FinalizationRegistryRecordVector)      \
   _(FinalizationRegistryRegistrations)     \
   _(FinalizationRecordVector)              \
@@ -162,7 +160,7 @@ enum class GCAbortReason {
   _(XDRBufferElements)                     \
   _(GlobalObjectData)                      \
   _(ProxyExternalValueArray)               \
-  _(WasmTrailerBlock)
+  _(GraphLoadingStateRecord)
 
 #define JS_FOR_EACH_MEMORY_USE(_)  \
   JS_FOR_EACH_PUBLIC_MEMORY_USE(_) \

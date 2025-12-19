@@ -7,15 +7,16 @@ package org.mozilla.fenix.settings.trustpanel
 import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.state.state.content.PermissionHighlightsState
 import mozilla.components.concept.engine.permission.SitePermissions
+import mozilla.components.concept.engine.permission.SitePermissions.Status.ALLOWED
 import mozilla.components.feature.sitepermissions.SitePermissionsRules.Action.ASK_TO_ALLOW
 import mozilla.components.support.test.any
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.whenever
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
 import org.mozilla.fenix.settings.PhoneFeature
 import org.mozilla.fenix.settings.trustpanel.store.AutoplayValue
 import org.mozilla.fenix.settings.trustpanel.store.TrustPanelAction
@@ -24,15 +25,16 @@ import org.mozilla.fenix.settings.trustpanel.store.TrustPanelStore
 import org.mozilla.fenix.settings.trustpanel.store.WebsitePermission
 import org.mozilla.fenix.trackingprotection.TrackingProtectionCategory
 import org.mozilla.fenix.utils.Settings
+import org.robolectric.RobolectricTestRunner
 
-@RunWith(FenixRobolectricTestRunner::class)
+@RunWith(RobolectricTestRunner::class)
 class TrustPanelStoreTest {
 
     @Test
     fun `WHEN toggle tracking protection action is dispatched THEN tracking protection enabled state is updated`() = runTest {
         val store = TrustPanelStore(initialState = TrustPanelState())
 
-        store.dispatch(TrustPanelAction.ToggleTrackingProtection).join()
+        store.dispatch(TrustPanelAction.ToggleTrackingProtection)
 
         assertFalse(store.state.isTrackingProtectionEnabled)
     }
@@ -41,7 +43,7 @@ class TrustPanelStoreTest {
     fun `WHEN update number of trackers blocked action is dispatched THEN number of trackers blocked state is updated`() = runTest {
         val store = TrustPanelStore(initialState = TrustPanelState())
 
-        store.dispatch(TrustPanelAction.UpdateNumberOfTrackersBlocked(1)).join()
+        store.dispatch(TrustPanelAction.UpdateNumberOfTrackersBlocked(1))
 
         assertEquals(store.state.numberOfTrackersBlocked, 1)
     }
@@ -51,7 +53,7 @@ class TrustPanelStoreTest {
         val store = TrustPanelStore(initialState = TrustPanelState())
         val baseDomain = "mozilla.org"
 
-        store.dispatch(TrustPanelAction.UpdateBaseDomain(baseDomain)).join()
+        store.dispatch(TrustPanelAction.UpdateBaseDomain(baseDomain))
 
         assertEquals(store.state.baseDomain, baseDomain)
     }
@@ -61,7 +63,7 @@ class TrustPanelStoreTest {
         val store = TrustPanelStore(initialState = TrustPanelState())
         val trackerCategory = TrackingProtectionCategory.CRYPTOMINERS
 
-        store.dispatch(TrustPanelAction.UpdateDetailedTrackerCategory(trackerCategory)).join()
+        store.dispatch(TrustPanelAction.UpdateDetailedTrackerCategory(trackerCategory))
 
         assertEquals(store.state.detailedTrackerCategory, trackerCategory)
     }
@@ -106,6 +108,76 @@ class TrustPanelStoreTest {
                 )
             }
         }
+    }
+
+    @Test
+    fun `WHEN LNA blocking disabled THEN LNA permissions are not visible in website permission state`() {
+        val settings: Settings = mock()
+        val sitePermissions: SitePermissions = mock()
+        val permissionHighlights: PermissionHighlightsState = mock()
+
+        initializeSitePermissions(sitePermissions)
+
+        whenever(sitePermissions.localDeviceAccess).thenReturn(ALLOWED)
+        whenever(sitePermissions.localNetworkAccess).thenReturn(ALLOWED)
+
+        whenever(permissionHighlights.isAutoPlayBlocking).thenReturn(true)
+        whenever(settings.isLnaFeatureEnabled).thenReturn(false)
+
+        val state = TrustPanelStore.createWebsitePermissionState(
+            settings = settings,
+            sitePermissions = sitePermissions,
+            permissionHighlights = permissionHighlights,
+            isPermissionBlockedByAndroid = { phoneFeature: PhoneFeature ->
+                phoneFeature == PhoneFeature.CAMERA // Only the camera permission is blocked
+            },
+        )
+
+        val localDeviceAccessPermission = state[PhoneFeature.LOCAL_DEVICE_ACCESS]!!
+        val localNetworkAccessPermission = state[PhoneFeature.LOCAL_NETWORK_ACCESS]!!
+
+        assertFalse(
+            "Expected local device access permission to be invisible",
+            localDeviceAccessPermission.isVisible,
+        )
+        assertFalse(
+            "Expected local network access permission to be invisible",
+            localNetworkAccessPermission.isVisible,
+        )
+    }
+
+    @Test
+    fun `WHEN LNA blocking is enabled THEN LNA permissions are visible in website permission state`() {
+        val settings: Settings = mock()
+        val sitePermissions: SitePermissions = mock()
+        val permissionHighlights: PermissionHighlightsState = mock()
+
+        initializeSitePermissions(sitePermissions)
+        whenever(sitePermissions.localDeviceAccess).thenReturn(ALLOWED)
+        whenever(sitePermissions.localNetworkAccess).thenReturn(ALLOWED)
+        whenever(permissionHighlights.isAutoPlayBlocking).thenReturn(true)
+        whenever(settings.isLnaFeatureEnabled).thenReturn(true)
+
+        val state = TrustPanelStore.createWebsitePermissionState(
+            settings = settings,
+            sitePermissions = sitePermissions,
+            permissionHighlights = permissionHighlights,
+            isPermissionBlockedByAndroid = { phoneFeature: PhoneFeature ->
+                phoneFeature == PhoneFeature.CAMERA // Only the camera permission is blocked
+            },
+        )
+
+        val localDeviceAccessPermission = state[PhoneFeature.LOCAL_DEVICE_ACCESS]!!
+        val localNetworkAccessPermission = state[PhoneFeature.LOCAL_NETWORK_ACCESS]!!
+
+        assertTrue(
+            "Expected local device access permission to be visible",
+            localDeviceAccessPermission.isVisible,
+        )
+        assertTrue(
+            "Expected local network access permission to be visible",
+            localNetworkAccessPermission.isVisible,
+        )
     }
 
     @Test
@@ -162,7 +234,7 @@ class TrustPanelStoreTest {
         val store = TrustPanelStore(initialState = TrustPanelState())
         val newSitePermissions: SitePermissions = mock()
 
-        store.dispatch(TrustPanelAction.UpdateSitePermissions(newSitePermissions)).join()
+        store.dispatch(TrustPanelAction.UpdateSitePermissions(newSitePermissions))
 
         assertEquals(store.state.sitePermissions, newSitePermissions)
     }
@@ -182,7 +254,7 @@ class TrustPanelStoreTest {
             ),
         )
 
-        store.dispatch(TrustPanelAction.WebsitePermissionAction.GrantPermissionBlockedByAndroid(PhoneFeature.CAMERA)).join()
+        store.dispatch(TrustPanelAction.WebsitePermissionAction.GrantPermissionBlockedByAndroid(PhoneFeature.CAMERA))
 
         assertEquals(
             (store.state.websitePermissionsState[PhoneFeature.CAMERA]as? WebsitePermission.Toggleable)
@@ -206,7 +278,7 @@ class TrustPanelStoreTest {
             ),
         )
 
-        store.dispatch(TrustPanelAction.WebsitePermissionAction.TogglePermission(PhoneFeature.CAMERA)).join()
+        store.dispatch(TrustPanelAction.WebsitePermissionAction.TogglePermission(PhoneFeature.CAMERA))
 
         assertEquals(
             (store.state.websitePermissionsState[PhoneFeature.CAMERA]as? WebsitePermission.Toggleable)
@@ -231,7 +303,7 @@ class TrustPanelStoreTest {
 
         store.dispatch(
             TrustPanelAction.WebsitePermissionAction.ChangeAutoplay(AutoplayValue.AUTOPLAY_ALLOW_ALL),
-        ).join()
+        )
 
         assertEquals(
             (store.state.websitePermissionsState[PhoneFeature.AUTOPLAY]as? WebsitePermission.Autoplay)
@@ -246,9 +318,11 @@ class TrustPanelStoreTest {
         whenever(sitePermissions.camera).thenReturn(SitePermissions.Status.NO_DECISION)
         whenever(sitePermissions.microphone).thenReturn(SitePermissions.Status.NO_DECISION)
         whenever(sitePermissions.notification).thenReturn(SitePermissions.Status.NO_DECISION)
-        whenever(sitePermissions.location).thenReturn(SitePermissions.Status.ALLOWED) // Only location allowed
+        whenever(sitePermissions.location).thenReturn(ALLOWED) // Only location allowed
         whenever(sitePermissions.localStorage).thenReturn(SitePermissions.Status.NO_DECISION)
         whenever(sitePermissions.crossOriginStorageAccess).thenReturn(SitePermissions.Status.NO_DECISION)
         whenever(sitePermissions.mediaKeySystemAccess).thenReturn(SitePermissions.Status.NO_DECISION)
+        whenever(sitePermissions.localDeviceAccess).thenReturn(SitePermissions.Status.NO_DECISION)
+        whenever(sitePermissions.localNetworkAccess).thenReturn(SitePermissions.Status.NO_DECISION)
     }
 }

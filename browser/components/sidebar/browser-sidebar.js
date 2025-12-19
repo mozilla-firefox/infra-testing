@@ -8,28 +8,25 @@
  * and provides APIs for sidebar extensions, etc.
  */
 
-var { ShoppingUtils } = ChromeUtils.importESModule(
-  "resource:///modules/ShoppingUtils.sys.mjs"
-);
 const { DeferredTask } = ChromeUtils.importESModule(
   "resource://gre/modules/DeferredTask.sys.mjs"
 );
 
 const toolsNameMap = {
   viewGenaiChatSidebar: "aichat",
+  viewGenaiPageAssistSidebar: "aipageassist",
+  viewGenaiSmartAssistSidebar: "aismartassist",
   viewTabsSidebar: "syncedtabs",
   viewHistorySidebar: "history",
   viewBookmarksSidebar: "bookmarks",
-  viewReviewCheckerSidebar: "reviewchecker",
   viewCPMSidebar: "passwords",
 };
-const EXPAND_ON_HOVER_DEBOUNCE_RATE_MS = 200;
 const EXPAND_ON_HOVER_DEBOUNCE_TIMEOUT_MS = 1000;
 const LAUNCHER_SPLITTER_WIDTH = 4;
 
 var SidebarController = {
-  makeSidebar({ elementId, ...rest }) {
-    return {
+  makeSidebar({ elementId, ...rest }, commandID) {
+    const sidebar = {
       get sourceL10nEl() {
         return document.getElementById(elementId);
       },
@@ -39,10 +36,24 @@ var SidebarController = {
       },
       ...rest,
     };
+
+    const toolID = toolsNameMap[commandID];
+    if (toolID) {
+      XPCOMUtils.defineLazyPreferenceGetter(
+        sidebar,
+        "attention",
+        `sidebar.notification.badge.${toolID}`,
+        false,
+        (_pref, _prev) => this.handleToolBadges(toolID)
+      );
+      sidebar.attention;
+    }
+
+    return sidebar;
   },
 
   registerPrefSidebar(pref, commandID, config) {
-    const sidebar = this.makeSidebar(config);
+    const sidebar = this.makeSidebar(config, commandID);
     this._sidebars.set(commandID, sidebar);
 
     let switcherMenuitem;
@@ -101,6 +112,7 @@ var SidebarController = {
       [
         "viewHistorySidebar",
         this.makeSidebar({
+          name: "history",
           elementId: "sidebar-switcher-history",
           url: this.sidebarRevampEnabled
             ? "chrome://browser/content/sidebar/sidebar-history.html"
@@ -122,6 +134,7 @@ var SidebarController = {
       [
         "viewTabsSidebar",
         this.makeSidebar({
+          name: "syncedtabs",
           elementId: "sidebar-switcher-tabs",
           url: this.sidebarRevampEnabled
             ? "chrome://browser/content/sidebar/sidebar-syncedtabs.html"
@@ -140,6 +153,7 @@ var SidebarController = {
       [
         "viewBookmarksSidebar",
         this.makeSidebar({
+          name: "bookmarks",
           elementId: "sidebar-switcher-bookmarks",
           url: "chrome://browser/content/places/bookmarksSidebar.xhtml",
           menuId: "menu_bookmarksSidebar",
@@ -159,6 +173,7 @@ var SidebarController = {
       "browser.ml.chat.enabled",
       "viewGenaiChatSidebar",
       {
+        name: "aichat",
         elementId: "sidebar-switcher-genai-chat",
         url: "chrome://browser/content/genai/chat.html",
         keyId: "viewGenaiChatSidebarKb",
@@ -168,31 +183,43 @@ var SidebarController = {
         revampL10nId: "sidebar-menu-genai-chat-label",
         iconUrl: "chrome://global/skin/icons/highlights.svg",
         gleanClickEvent: Glean.sidebar.chatbotIconClick,
+        toolContextMenuId: "aichat",
       }
     );
 
-    if (!PrivateBrowsingUtils.isWindowPrivate(window)) {
-      this.registerPrefSidebar(
-        "browser.shopping.experience2023.integratedSidebar",
-        "viewReviewCheckerSidebar",
-        {
-          elementId: "sidebar-switcher-review-checker",
-          url: "chrome://browser/content/shopping/review-checker.xhtml",
-          menuId: "menu_reviewCheckerSidebar",
-          menuL10nId: "menu-view-review-checker",
-          revampL10nId: "sidebar-menu-review-checker-label",
-          iconUrl: "chrome://browser/content/shopping/assets/shopping.svg",
-          gleanEvent: Glean.shopping.sidebarToggle,
-          gleanClickEvent: Glean.sidebar.shoppingReviewCheckerIconClick,
-          recordSidebarVersion: true,
-        }
-      );
-    }
+    this.registerPrefSidebar(
+      "browser.ml.pageAssist.enabled",
+      "viewGenaiPageAssistSidebar",
+      {
+        name: "aipageassist",
+        elementId: "sidebar-switcher-genai-page-assist",
+        url: "chrome://browser/content/genai/pageAssist.html",
+        menuId: "menu_genaiPageAssistSidebar",
+        menuL10nId: "menu-view-genai-page-assist",
+        revampL10nId: "sidebar-menu-genai-page-assist-label",
+        iconUrl: "chrome://browser/skin/reader-mode.svg",
+      }
+    );
+
+    this.registerPrefSidebar(
+      "browser.ml.smartAssist.enabled",
+      "viewGenaiSmartAssistSidebar",
+      {
+        name: "aismartassist",
+        elementId: "sidebar-switcher-genai-smart-assist",
+        url: "chrome://browser/content/genai/smartAssist.html",
+        menuId: "menu_genaiSmartAssistSidebar",
+        menuL10nId: "menu-view-genai-smart-assist",
+        revampL10nId: "sidebar-menu-genai-smart-assist-label",
+        iconUrl: "chrome://browser/skin/trending.svg",
+      }
+    );
 
     this.registerPrefSidebar(
       "browser.contextual-password-manager.enabled",
       "viewCPMSidebar",
       {
+        name: "passwords",
         elementId: "sidebar-switcher-megalist",
         url: "chrome://global/content/megalist/megalist.html",
         menuId: "menu_megalistSidebar",
@@ -244,14 +271,17 @@ var SidebarController = {
   },
   POSITION_START_PREF: "sidebar.position_start",
   DEFAULT_SIDEBAR_ID: "viewBookmarksSidebar",
-  TOOLS_PREF: "sidebar.main.tools",
   VISIBILITY_PREF: "sidebar.visibility",
+  TOOLS_PREF: "sidebar.main.tools",
+  INSTALLED_EXTENSIONS: "sidebar.installed.extensions",
 
   // lastOpenedId is set in show() but unlike currentID it's not cleared out on hide
   // and isn't persisted across windows
   lastOpenedId: null,
 
   _box: null,
+  _pinnedTabsContainer: null,
+  _pinnedTabsItemsWrapper: null,
   // The constructor of this label accesses the browser element due to the
   // control="sidebar" attribute, so avoid getting this label during startup.
   get _title() {
@@ -334,6 +364,18 @@ var SidebarController = {
     return this._launcherSplitter.getAttribute("state") === "dragging";
   },
 
+  get isPinnedTabsDragging() {
+    return this._pinnedTabsSplitter.getAttribute("state") === "dragging";
+  },
+
+  get sidebarTools() {
+    return this.sidebarRevampTools ? this.sidebarRevampTools.split(",") : [];
+  },
+
+  get sidebarExtensions() {
+    return this.installedExtensions ? this.installedExtensions.split(",") : [];
+  },
+
   init() {
     // Initialize global state manager.
     this.SidebarManager;
@@ -343,10 +385,20 @@ var SidebarController = {
       this._state = new this.SidebarState(this);
     }
 
+    this._pinnedTabsContainer = document.getElementById(
+      "pinned-tabs-container"
+    );
+    this._pinnedTabsItemsWrapper =
+      this._pinnedTabsContainer.shadowRoot.querySelector(
+        "[part=items-wrapper]"
+      );
     this._box = document.getElementById("sidebar-box");
     this._splitter = document.getElementById("sidebar-splitter");
     this._launcherSplitter = document.getElementById(
       "sidebar-launcher-splitter"
+    );
+    this._pinnedTabsSplitter = document.getElementById(
+      "vertical-pinned-tabs-splitter"
     );
     this._reversePositionButton = document.getElementById(
       "sidebar-reverse-position"
@@ -354,6 +406,7 @@ var SidebarController = {
     this._switcherPanel = document.getElementById("sidebarMenu-popup");
     this._switcherTarget = document.getElementById("sidebar-switcher-target");
     this._switcherArrow = document.getElementById("sidebar-switcher-arrow");
+    this._hoverBlockerCount = 0;
     if (
       Services.prefs.getBoolPref(
         "browser.tabs.allow_transparent_browser",
@@ -386,7 +439,7 @@ var SidebarController = {
       this._handleLauncherResize(entry)
     );
 
-    if (this.sidebarRevampEnabled) {
+    if (this.sidebarRevampEnabled && !BrowserHandler.kiosk) {
       if (!customElements.get("sidebar-main")) {
         ChromeUtils.importESModule(
           "chrome://browser/content/sidebar/sidebar-main.mjs",
@@ -394,7 +447,10 @@ var SidebarController = {
         );
       }
       this.revampComponentsLoaded = true;
-      this._state.initializeState();
+      this._state.initializeState(this._showLauncherAfterInit);
+      // clear the flag after we've used it
+      delete this._showLauncherAfterInit;
+
       document.getElementById("sidebar-header").hidden = true;
       if (!this._mainResizeObserverAdded) {
         this._mainResizeObserver.observe(this.sidebarMain);
@@ -416,6 +472,7 @@ var SidebarController = {
         this._splitter.addEventListener("command", this._browserResizeObserver);
       }
       this._enableLauncherDragging();
+      this._enablePinnedTabsSplitterDragging();
 
       // Record Glean metrics.
       this.recordVisibilitySetting();
@@ -436,6 +493,7 @@ var SidebarController = {
         this._switcherListenersAdded = true;
       }
       this._disableLauncherDragging();
+      this._disablePinnedTabsDragging();
     }
     // We need to update the tab strip for vertical tabs during init
     // as there will be no tabstrip-orientation-change event
@@ -514,6 +572,16 @@ var SidebarController = {
     }
     this._splitter.removeEventListener("command", this._browserResizeObserver);
     this._disableLauncherDragging();
+    this._disablePinnedTabsDragging();
+  },
+
+  /**
+   * Keep track when sidebar.revamp is enabled by the user via about:preferences UI
+   *
+   * @param {boolean} isEnabled
+   */
+  enabledViaSettings(isEnabled = false) {
+    this._showLauncherAfterInit = isEnabled;
   },
 
   /**
@@ -535,12 +603,7 @@ var SidebarController = {
     if (this.inSingleTabWindow) {
       return null;
     }
-    let snapshot = this._state.getProperties();
-    // we don't persist the sidebar command when the panel is closed
-    if (!this._state.panelOpen) {
-      delete snapshot.command;
-    }
-    return snapshot;
+    return this._state.getProperties();
   },
 
   /**
@@ -731,23 +794,12 @@ var SidebarController = {
     // First reset all ordinals to match DOM ordering.
     let contentArea = document.getElementById("tabbrowser-tabbox");
     let browser = document.getElementById("browser");
-    [...browser.children].forEach((node, i) => {
-      node.style.order = i + 1;
+    [...browser.children].forEach((node, i, children) => {
+      node.style.order = this._positionStart ? i + 1 : children.length - i;
     });
     let sidebarContainer = document.getElementById("sidebar-main");
     let sidebarMain = document.querySelector("sidebar-main");
-    if (!this._positionStart) {
-      // DOM ordering is:     sidebar-main | launcher-splitter | sidebar-box | splitter | tabbrowser-tabbox
-      // Want to display as:  tabbrowser-tabbox | splitter |  sidebar-box  | launcher-splitter | sidebar-main
-      // First switch order of sidebar-main and tabbrowser-tabbox
-      let mainOrdinal = this.sidebarContainer.style.order;
-      this.sidebarContainer.style.order = contentArea.style.order;
-      contentArea.style.order = mainOrdinal;
-      // Then swap launcher-splitter and splitter
-      let splitterOrdinal = this._splitter.style.order;
-      this._splitter.style.order = this._launcherSplitter.style.order;
-      this._launcherSplitter.style.order = splitterOrdinal;
-    }
+
     // Indicate we've switched ordering to the box
     this._box.toggleAttribute("sidebar-positionend", !this._positionStart);
     sidebarMain.toggleAttribute("sidebar-positionend", !this._positionStart);
@@ -793,14 +845,11 @@ var SidebarController = {
     if (!this.sidebarRevampEnabled) {
       this._state.launcherVisible = false;
       document.getElementById("sidebar-header").hidden = false;
-      // Disable vertical tabs if revamped sidebar is turned off
-      if (this.sidebarVerticalTabsEnabled) {
-        Services.prefs.setBoolPref("sidebar.verticalTabs", false);
-      }
-    } else {
-      // initial launcher visibleness with sidebar.revamp is is one of the
-      // default properties managed by SidebarState
-      this._state.launcherVisible = this._state.defaultLauncherVisible;
+
+      // Ensure CPM isn't shown.
+      const cpmMenuItem = document.querySelector("#sidebar-switcher-megalist");
+      this.lastOpenedId = this.DEFAULT_SIDEBAR_ID;
+      cpmMenuItem.hidden = true;
     }
     if (!this._sidebars.get(this.lastOpenedId)) {
       this.lastOpenedId = this.DEFAULT_SIDEBAR_ID;
@@ -1019,6 +1068,13 @@ var SidebarController = {
       this.updateToolbarButton();
       return Promise.resolve();
     }
+
+    if (!this.sidebarRevampEnabled) {
+      const cpmMenuItem = document.querySelector("#sidebar-switcher-megalist");
+      this.lastOpenedId = this.DEFAULT_SIDEBAR_ID;
+      cpmMenuItem.hidden = true;
+    }
+
     return this.show(commandID, triggerNode);
   },
 
@@ -1051,8 +1107,13 @@ var SidebarController = {
   async _animateSidebarMain() {
     let tabbox = document.getElementById("tabbrowser-tabbox");
     let animatingElements;
-    if (document.documentElement.hasAttribute("sidebar-expand-on-hover")) {
+    let expandOnHoverEnabled = document.documentElement.hasAttribute(
+      "sidebar-expand-on-hover"
+    );
+    if (expandOnHoverEnabled) {
       animatingElements = [this.sidebarContainer];
+
+      this._addHoverStateBlocker();
     } else {
       animatingElements = [
         this.sidebarContainer,
@@ -1192,12 +1253,17 @@ var SidebarController = {
     }
     this._ongoingAnimations = animations;
     this.sidebarContainer.toggleAttribute("sidebar-ongoing-animations", true);
+    this.sidebarMain.toggleAttribute("sidebar-ongoing-animations", true);
     this._box.toggleAttribute("sidebar-ongoing-animations", true);
     tabbox.toggleAttribute("sidebar-ongoing-animations", true);
     await Promise.allSettled(animations.map(a => a.finished));
     if (this._ongoingAnimations === animations) {
       this._ongoingAnimations = [];
       resetElements();
+    }
+
+    if (expandOnHoverEnabled) {
+      await this._removeHoverStateBlocker();
     }
   },
 
@@ -1239,13 +1305,10 @@ var SidebarController = {
     if (shouldShowLauncher && this._state.command) {
       await this.show(this._state.command);
     } else if (!shouldShowLauncher) {
-      // hide will only update the toolbar button state if the panel was open
-      if (!this.isOpen) {
-        this.updateToolbarButton();
-      }
       // hide the open panel. It will re-open next time as we don't change the command value
       this.hide({ dismissPanel: false });
     }
+    this.updateToolbarButton();
   },
 
   /**
@@ -1270,6 +1333,7 @@ var SidebarController = {
       } else {
         toolbarButton.toggleAttribute("expanded", false);
       }
+      this.handleToolBadges();
       switch (this.sidebarRevampVisibility) {
         case "always-show":
         case "expand-on-hover":
@@ -1287,6 +1351,107 @@ var SidebarController = {
             : "sidebar-widget-show-sidebar2";
           break;
       }
+    }
+  },
+
+  /**
+   * Handles badges display for the toolbar and sidebar.
+   * Check if a tool(toolID) has requested a badge from pref (i.e) sidebar.notification.badge.{toolID})
+   * Ensure that badges are shown or cleared based on the sidebar visibility and user interaction.
+   *
+   * @param {string|null} toolID
+   */
+  handleToolBadges(toolID = null) {
+    const toolPrefList = this.SidebarManager.getBadgeTools();
+
+    for (const pref of toolPrefList) {
+      if (toolID && toolID !== pref) {
+        continue;
+      }
+
+      const badgePref = Services.prefs.getBoolPref(
+        `sidebar.notification.badge.${pref}`,
+        false
+      );
+      const commandID = [...this.toolsAndExtensions.keys()].find(
+        id => toolsNameMap[id] === pref
+      );
+
+      if (!commandID) {
+        continue;
+      }
+
+      const isSidebarClosed = !this._state?.launcherVisible;
+      const isCurrentView = this._state?.command === commandID;
+
+      // Don't show sidebar badge if sidebar is open and user is already viewing the tool panel
+      if (badgePref && isCurrentView && this.isOpen) {
+        this.dismissSidebarBadge(commandID);
+      }
+
+      // Show badge on toolbar if we would have shown it on a visible tool but sidebar is closed
+      const tool = this.toolsAndExtensions.get(commandID);
+      if (
+        this.sidebarRevampEnabled &&
+        badgePref &&
+        !tool.disabled &&
+        !tool.hidden &&
+        isSidebarClosed
+      ) {
+        this._showToolbarButtonBadge();
+      } else {
+        this._clearToolbarButtonBadge();
+      }
+
+      window.dispatchEvent(new CustomEvent("SidebarItemChanged"));
+    }
+  },
+
+  _addHoverStateBlocker() {
+    this._hoverBlockerCount++;
+    MousePosTracker.removeListener(this);
+  },
+
+  async _removeHoverStateBlocker() {
+    if (this._hoverBlockerCount == 1) {
+      let isHovered = this._checkIsHoveredOverLauncher();
+
+      // Collapse sidebar if needed
+      if (this._state.launcherExpanded && !isHovered) {
+        if (this._animationEnabled && !window.gReduceMotion) {
+          this._animateSidebarMain();
+        }
+        this._state.launcherExpanded = false;
+        await this.waitUntilStable();
+      }
+
+      // Re-add MousePosTracker listener
+      MousePosTracker.addListener(this);
+    }
+    if (this._hoverBlockerCount > 0) {
+      this._hoverBlockerCount--;
+    }
+  },
+
+  _showToolbarButtonBadge() {
+    const badgeEl = this.toolbarButton?.querySelector(".toolbarbutton-badge");
+    return badgeEl?.classList.add("feature-callout");
+  },
+
+  _clearToolbarButtonBadge() {
+    const badgeEl = this.toolbarButton?.querySelector(".toolbarbutton-badge");
+    return badgeEl?.classList.remove("feature-callout");
+  },
+
+  /**
+   * Set badge toolID pref false on clicking the tool icon
+   *
+   * @param {string} view
+   */
+  dismissSidebarBadge(view) {
+    const prefName = `sidebar.notification.badge.${toolsNameMap[view]}`;
+    if (Services.prefs.getBoolPref(prefName, false)) {
+      Services.prefs.setBoolPref(prefName, false);
     }
   },
 
@@ -1314,6 +1479,47 @@ var SidebarController = {
   },
 
   /**
+   * Enable the splitter which can be used to resize the pinned tabs container.
+   */
+  _enablePinnedTabsSplitterDragging() {
+    if (!this._pinnedTabsSplitter.hidden) {
+      // Already showing the launcher splitter with observers connected.
+      // Nothing to do.
+      return;
+    }
+    this._pinnedTabsResizeObserver = new ResizeObserver(() => {
+      if (this.isPinnedTabsDragging) {
+        this._state.pinnedTabsDragActive = true;
+      }
+    });
+
+    this._itemsWrapperResizeObserver = new ResizeObserver(async () => {
+      await window.promiseDocumentFlushed(() => {
+        // Adjust pinned tabs container height if needed
+        requestAnimationFrame(() => {
+          // If we are currently moving tabs, don't resize
+          if (this._pinnedTabsContainer.hasAttribute("dragActive")) {
+            return;
+          }
+
+          this.updatePinnedTabsHeightOnResize();
+        });
+      });
+    });
+    this._pinnedTabsResizeObserver.observe(this._pinnedTabsContainer);
+    this._itemsWrapperResizeObserver.observe(this._pinnedTabsItemsWrapper);
+
+    this._pinnedTabsDropHandler = () =>
+      (this._state.pinnedTabsDragActive = false);
+    this._pinnedTabsSplitter.addEventListener(
+      "command",
+      this._pinnedTabsDropHandler
+    );
+
+    this._pinnedTabsSplitter.hidden = false;
+  },
+
+  /**
    * Disable the launcher splitter and remove any active observers.
    */
   _disableLauncherDragging() {
@@ -1328,10 +1534,38 @@ var SidebarController = {
     this._launcherSplitter.hidden = true;
   },
 
+  /**
+   * Disable the pinned tabs splitter and remove any active observers.
+   */
+  _disablePinnedTabsDragging() {
+    if (this._pinnedTabsResizeObserver) {
+      this._pinnedTabsResizeObserver.disconnect();
+    }
+    if (this._itemsWrapperResizeObserver) {
+      this._itemsWrapperResizeObserver.disconnect();
+    }
+
+    this._pinnedTabsSplitter.hidden = true;
+  },
+
   _loadSidebarExtension(commandID) {
     let sidebar = this.sidebars.get(commandID);
     if (typeof sidebar?.onload === "function") {
       sidebar.onload();
+    }
+  },
+
+  updatePinnedTabsHeightOnResize() {
+    let itemsWrapperHeight = window.windowUtils.getBoundsWithoutFlushing(
+      this._pinnedTabsItemsWrapper
+    ).height;
+    if (this._state.pinnedTabsHeight > itemsWrapperHeight) {
+      this._state.pinnedTabsHeight = itemsWrapperHeight;
+      if (this._state.launcherExpanded) {
+        this._state.expandedPinnedTabsHeight = this._state.pinnedTabsHeight;
+      } else {
+        this._state.collapsedPinnedTabsHeight = this._state.pinnedTabsHeight;
+      }
     }
   },
 
@@ -1341,14 +1575,11 @@ var SidebarController = {
   refreshTools() {
     let changed = false;
     const tools = new Set(this.sidebarRevampTools.split(","));
-    this.toolsAndExtensions.forEach((tool, commandID) => {
-      const toolID = toolsNameMap[commandID];
-      if (toolID) {
-        const expected = !tools.has(toolID);
-        if (tool.disabled != expected) {
-          tool.disabled = expected;
-          changed = true;
-        }
+    this.toolsAndExtensions.forEach(tool => {
+      const expected = !tools.has(tool.name);
+      if (tool.disabled != expected) {
+        tool.disabled = expected;
+        changed = true;
       }
     });
     if (changed) {
@@ -1362,25 +1593,20 @@ var SidebarController = {
    * @param {string} commandID
    */
   toggleTool(commandID) {
-    let toggledTool = this.toolsAndExtensions.get(commandID);
+    const toggledTool = this.toolsAndExtensions.get(commandID);
+    const toolName = toggledTool.name;
     toggledTool.disabled = !toggledTool.disabled;
+
     if (!toggledTool.disabled) {
       // If re-enabling tool, remove from the map and add it to the end
       this.toolsAndExtensions.delete(commandID);
       this.toolsAndExtensions.set(commandID, toggledTool);
     }
-    // Tools are persisted via a pref.
-    if (!Object.hasOwn(toggledTool, "extensionId")) {
-      const tools = new Set(this.sidebarRevampTools.split(","));
-      const updatedTools = tools.has(toolsNameMap[commandID])
-        ? Array.from(tools).filter(
-            tool => !!tool && tool != toolsNameMap[commandID]
-          )
-        : [
-            ...Array.from(tools).filter(tool => !!tool),
-            toolsNameMap[commandID],
-          ];
-      Services.prefs.setStringPref(this.TOOLS_PREF, updatedTools.join());
+
+    this.SidebarManager.updateToolsPref(toolName, toggledTool.disabled);
+
+    if (toggledTool.disabled) {
+      this.dismissSidebarBadge(commandID);
     }
     window.dispatchEvent(new CustomEvent("SidebarItemChanged"));
   },
@@ -1398,13 +1624,15 @@ var SidebarController = {
       window.dispatchEvent(new CustomEvent("SidebarItemChanged"));
     } else {
       // Add new extension
+      const name = extension.extensionId;
       this.toolsAndExtensions.set(commandID, {
         view: commandID,
         extensionId: extension.extensionId,
         icon: extension.icon,
         iconUrl: extension.iconUrl,
         tooltiptext: extension.label,
-        disabled: false,
+        disabled: !this.sidebarTools.includes(name), // name is the extensionID
+        name,
       });
       window.dispatchEvent(new CustomEvent("SidebarItemAdded"));
     }
@@ -1418,6 +1646,23 @@ var SidebarController = {
    * @param {object} props
    */
   registerExtension(commandID, props) {
+    const sidebarTools = this.sidebarTools;
+    const installedExtensions = this.sidebarExtensions;
+    const name = props.extensionId;
+
+    // An extension that is newly installed will be added to the sidebar.main.tools
+    // pref by default until a user deselects it; separately we update our list of
+    // sidebar extensions to ensure it keeps track of what's been installed.
+    if (!installedExtensions.includes(name) && !sidebarTools.includes(name)) {
+      sidebarTools.push(name);
+      installedExtensions.push(name);
+      Services.prefs.setStringPref(this.TOOLS_PREF, sidebarTools.join());
+      Services.prefs.setStringPref(
+        this.INSTALLED_EXTENSIONS,
+        installedExtensions.join()
+      );
+    }
+
     const sidebar = {
       title: props.title,
       url: "chrome://browser/content/webext-panels.xhtml",
@@ -1431,6 +1676,7 @@ var SidebarController = {
       // The following properties are specific to extensions
       extensionId: props.extensionId,
       onload: props.onload,
+      name,
     };
     this.sidebars.set(commandID, sidebar);
 
@@ -1539,16 +1785,20 @@ var SidebarController = {
     const extensions = [];
     for (const [commandID, sidebar] of this.sidebars.entries()) {
       if (Object.hasOwn(sidebar, "extensionId")) {
+        const disabled = !this.sidebarTools.includes(sidebar.name);
+
         extensions.push({
           commandID,
           view: commandID,
           extensionId: sidebar.extensionId,
           iconUrl: sidebar.iconUrl,
           tooltiptext: sidebar.label,
-          disabled: false,
+          disabled,
+          name: sidebar.name,
         });
       }
     }
+
     return extensions;
   },
 
@@ -1562,12 +1812,11 @@ var SidebarController = {
       .filter(commandID => this.sidebars.get(commandID))
       .map(commandID => {
         const sidebar = this.sidebars.get(commandID);
-        const disabled = !this.sidebarRevampTools
-          .split(",")
-          .includes(toolsNameMap[commandID]);
+        const disabled = !this.sidebarTools.includes(toolsNameMap[commandID]);
         return {
           commandID,
           view: commandID,
+          name: sidebar.name,
           iconUrl: sidebar.iconUrl,
           l10nId: sidebar.revampL10nId,
           disabled,
@@ -1575,6 +1824,10 @@ var SidebarController = {
           get hidden() {
             return !(sidebar.visible ?? true);
           },
+          get attention() {
+            return sidebar.attention ?? false;
+          },
+          contextMenu: sidebar.toolContextMenuId,
         };
       });
   },
@@ -1599,6 +1852,7 @@ var SidebarController = {
     }
     document.getElementById(sidebar.menuId)?.remove();
     document.getElementById(sidebar.switcherMenuId)?.remove();
+
     this.sidebars.delete(commandID);
     this.toolsAndExtensions.delete(commandID);
     window.dispatchEvent(new CustomEvent("SidebarItemRemoved"));
@@ -1637,6 +1891,7 @@ var SidebarController = {
         updateToggleControlLabel(triggerNode);
       }
       this.updateToolbarButton();
+      this.dismissSidebarBadge(commandID);
 
       this._fireFocusedEvent();
       return true;
@@ -1677,6 +1932,9 @@ var SidebarController = {
    */
   _show(commandID) {
     return new Promise(resolve => {
+      const willShowEvent = new CustomEvent("SidebarWillShow");
+      this.browser.contentWindow?.dispatchEvent(willShowEvent);
+
       this._state.panelOpen = true;
       if (this.sidebarRevampEnabled) {
         this._box.dispatchEvent(
@@ -1843,6 +2101,20 @@ var SidebarController = {
   },
 
   /**
+   * Use MousePosTracker to manually check for hover state over launcher
+   */
+  _checkIsHoveredOverLauncher() {
+    // Manually check mouse position
+    let isHovered;
+    MousePosTracker._callListener({
+      onMouseEnter: () => (isHovered = true),
+      onMouseLeave: () => (isHovered = false),
+      getMouseTargetRect: () => this.getMouseTargetRect(),
+    });
+    return isHovered;
+  },
+
+  /**
    * Record to Glean when any of the sidebar icons are clicked.
    *
    * @param {string} commandID - Command ID of the icon.
@@ -1909,6 +2181,7 @@ var SidebarController = {
     if (toVerticalTabs) {
       arrowScrollbox.setAttribute("orient", "vertical");
       tabStrip.setAttribute("orient", "vertical");
+      this._clearToolbarButtonBadge();
     } else {
       arrowScrollbox.setAttribute("orient", "horizontal");
       tabStrip.removeAttribute("expanded");
@@ -1926,9 +2199,9 @@ var SidebarController = {
       !this.verticalTabsEnabled &&
       this.sidebarRevampVisibility == "hide-sidebar"
     ) {
-      // the sidebar.visibility pref didn't change so updateVisbility hasn't
-      // been called; we need to call it here to un-expand the launcher
-      this._state.updateVisibility(undefined, false);
+      // the sidebar.visibility pref didn't change so launcherExpanded hasn't
+      // been updated; we need to set it here to un-expand the launcher
+      this._state.launcherExpanded = false;
     }
   },
 
@@ -1941,10 +2214,15 @@ var SidebarController = {
       this._animateSidebarMain();
     }
     this._state.launcherExpanded = true;
+    this._mouseEnterDeferred.resolve();
   },
 
   onMouseLeave() {
+    if (!this._state.launcherExpanded) {
+      return;
+    }
     this.mouseEnterTask.disarm();
+    this._mouseEnterDeferred.resolve();
     const contentArea = document.getElementById("tabbrowser-tabbox");
     this._box.toggleAttribute("sidebar-launcher-hovered", false);
     contentArea.toggleAttribute("sidebar-launcher-hovered", false);
@@ -1956,14 +2234,27 @@ var SidebarController = {
   },
 
   onMouseEnter() {
+    if (this._state.launcherExpanded) {
+      return;
+    }
+    this._mouseEnterDeferred = Promise.withResolvers();
     this.mouseEnterTask = new DeferredTask(
       () => {
-        this.debouncedMouseEnter();
+        let isHovered = this._checkIsHoveredOverLauncher();
+
+        // Only expand sidebar if mouse is still hovering over sidebar launcher
+        if (isHovered) {
+          this.debouncedMouseEnter();
+        }
       },
-      EXPAND_ON_HOVER_DEBOUNCE_RATE_MS,
+      this._animationExpandOnHoverDelayDurationMs,
       EXPAND_ON_HOVER_DEBOUNCE_TIMEOUT_MS
     );
     this.mouseEnterTask?.arm();
+  },
+
+  get expandOnHoverComplete() {
+    return this._mouseEnterDeferred?.promise || Promise.resolve();
   },
 
   async setLauncherCollapsedWidth() {
@@ -2000,6 +2291,24 @@ var SidebarController = {
     };
   },
 
+  async handleEvent(e) {
+    switch (e.type) {
+      case "popupshown":
+        /* Temporarily remove MousePosTracker listener when a context menu is open */
+        if (e.composedTarget.tagName !== "tooltip") {
+          this._addHoverStateBlocker();
+        }
+        break;
+      case "popuphidden":
+        if (e.composedTarget.tagName !== "tooltip") {
+          await this._removeHoverStateBlocker();
+        }
+        break;
+      default:
+        break;
+    }
+  },
+
   async toggleExpandOnHover(isEnabled, isDragEnded) {
     document.documentElement.toggleAttribute(
       "sidebar-expand-on-hover",
@@ -2014,12 +2323,43 @@ var SidebarController = {
       if (!isDragEnded) {
         await this.setLauncherCollapsedWidth();
       }
+      document.addEventListener("popupshown", this);
+      document.addEventListener("popuphidden", this);
+      // Reset user-preferred height
+      this.sidebarMain.buttonsWrapper.style.height = this._state
+        .launcherExpanded
+        ? ""
+        : "0";
     } else {
+      this._removeHoverStateBlocker();
       MousePosTracker.removeListener(this);
       if (!this.mouseOverTask?.isFinalized) {
         this.mouseOverTask?.finalize();
       }
+      document.removeEventListener("popupshown", this);
+      document.removeEventListener("popuphidden", this);
+      // Add back user-preferred height if defined
+      if (
+        this._state.launcherExpanded &&
+        this._state.expandedToolsHeight !== undefined &&
+        this.sidebarMain.buttonGroup
+      ) {
+        this.sidebarMain.buttonGroup.style.height =
+          this._state.expandedToolsHeight;
+      } else if (
+        !this._state.launcherExpanded &&
+        this._state.collapsedToolsHeight !== undefined &&
+        this.sidebarMain.buttonGroup
+      ) {
+        this.sidebarMain.buttonGroup.style.height =
+          this._state.collapsedToolsHeight;
+      }
     }
+
+    document.documentElement.toggleAttribute(
+      "sidebar-expand-on-hover",
+      isEnabled
+    );
   },
 
   /**
@@ -2057,8 +2397,9 @@ var SidebarController = {
 };
 
 ChromeUtils.defineESModuleGetters(SidebarController, {
-  SidebarManager: "resource:///modules/SidebarManager.sys.mjs",
-  SidebarState: "resource:///modules/SidebarState.sys.mjs",
+  SidebarManager:
+    "moz-src:///browser/components/sidebar/SidebarManager.sys.mjs",
+  SidebarState: "moz-src:///browser/components/sidebar/SidebarState.sys.mjs",
 });
 
 // Add getters related to the position here, since we will want them
@@ -2098,6 +2439,12 @@ XPCOMUtils.defineLazyPreferenceGetter(
 );
 XPCOMUtils.defineLazyPreferenceGetter(
   SidebarController,
+  "_animationExpandOnHoverDelayDurationMs",
+  "sidebar.animation.expand-on-hover.delay-duration-ms",
+  200
+);
+XPCOMUtils.defineLazyPreferenceGetter(
+  SidebarController,
   "sidebarRevampEnabled",
   "sidebar.revamp",
   false,
@@ -2121,6 +2468,12 @@ XPCOMUtils.defineLazyPreferenceGetter(
       SidebarController.refreshTools();
     }
   }
+);
+XPCOMUtils.defineLazyPreferenceGetter(
+  SidebarController,
+  "installedExtensions",
+  "sidebar.installed.extensions",
+  ""
 );
 
 XPCOMUtils.defineLazyPreferenceGetter(
@@ -2183,21 +2536,13 @@ XPCOMUtils.defineLazyPreferenceGetter(
       !SidebarController.inSingleTabWindow
     ) {
       SidebarController.recordTabsLayoutSetting(newValue);
-    }
-  }
-);
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  SidebarController,
-  "revampDefaultLauncherVisible",
-  "sidebar.revamp.defaultLauncherVisible",
-  false,
-  (_aPreference, _previousValue, _newValue) => {
-    if (
-      !SidebarController.uninitializing &&
-      !SidebarController.inSingleTabWindow
-    ) {
-      SidebarController._state.updateVisibility();
+      if (newValue) {
+        SidebarController._enablePinnedTabsSplitterDragging();
+      } else {
+        SidebarController._disablePinnedTabsDragging();
+      }
+      SidebarController._state.updatePinnedTabsHeight();
+      SidebarController._state.updateToolsHeight();
     }
   }
 );

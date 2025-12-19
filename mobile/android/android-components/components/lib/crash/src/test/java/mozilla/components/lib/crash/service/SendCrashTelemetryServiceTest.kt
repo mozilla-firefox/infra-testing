@@ -7,7 +7,6 @@ package mozilla.components.lib.crash.service
 import android.content.ComponentName
 import android.content.Intent
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import mozilla.components.lib.crash.Crash
 import mozilla.components.lib.crash.CrashReporter
 import mozilla.components.support.test.any
@@ -26,7 +25,6 @@ import org.mockito.Mockito.spy
 import org.mockito.Mockito.verify
 import org.robolectric.Robolectric
 
-@ExperimentalCoroutinesApi
 @RunWith(AndroidJUnit4::class)
 class SendCrashTelemetryServiceTest {
     private var service: SendCrashTelemetryService? = null
@@ -91,7 +89,8 @@ class SendCrashTelemetryServiceTest {
             123,
             "/data/data/org.mozilla.samples.browser/files/mozilla/Crash Reports/pending/3ba5f665-8422-dc8e-a88e-fc65c081d304.dmp",
             "/data/data/org.mozilla.samples.browser/files/mozilla/Crash Reports/pending/3ba5f665-8422-dc8e-a88e-fc65c081d304.extra",
-            Crash.NativeCodeCrash.PROCESS_TYPE_FOREGROUND_CHILD,
+            Crash.NativeCodeCrash.PROCESS_VISIBILITY_FOREGROUND_CHILD,
+            processType = "content",
             breadcrumbs = arrayListOf(),
             remoteType = "null",
         )
@@ -105,7 +104,7 @@ class SendCrashTelemetryServiceTest {
             "minidumpPath",
             "/data/data/org.mozilla.samples.browser/files/mozilla/Crash Reports/pending/3ba5f665-8422-dc8e-a88e-fc65c081d304.dmp",
         )
-        intent.putExtra("processType", "FOREGROUND_CHILD")
+        intent.putExtra("processVisibility", "FOREGROUND_CHILD")
         intent.putExtra(
             "extrasPath",
             "/data/data/org.mozilla.samples.browser/files/mozilla/Crash Reports/pending/3ba5f665-8422-dc8e-a88e-fc65c081d304.extra",
@@ -123,7 +122,7 @@ class SendCrashTelemetryServiceTest {
 
         assertEquals(123, nativeCrash.timestamp)
         assertEquals(false, nativeCrash.isFatal)
-        assertEquals(Crash.NativeCodeCrash.PROCESS_TYPE_FOREGROUND_CHILD, nativeCrash.processType)
+        assertEquals(Crash.NativeCodeCrash.PROCESS_VISIBILITY_FOREGROUND_CHILD, nativeCrash.processVisibility)
         assertEquals(
             "/data/data/org.mozilla.samples.browser/files/mozilla/Crash Reports/pending/3ba5f665-8422-dc8e-a88e-fc65c081d304.dmp",
             nativeCrash.minidumpPath,

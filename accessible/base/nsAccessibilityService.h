@@ -267,6 +267,31 @@ class nsAccessibilityService final : public mozilla::a11y::DocManager,
                                    int32_t aAppUnitsPerDevPixel);
 
   /**
+   * Notify accessibility that an anchor positioned frame is
+   * about to be removed. This gives us a chance to update cached relations
+   * before the reflow where we will lose references to the anchor and won't be
+   * able to refresh its accessible's cache.
+   */
+  void NotifyAnchorPositionedRemoved(mozilla::PresShell* aPresShell,
+                                     nsIFrame* aFrame);
+
+  /**
+   * Notify accessibility that an anchor frame is about to be removed. This
+   * gives us a chance to update cached relations before the reflow where the
+   * anchor will be lost and we won't be able to refresh the accessible cache of
+   * prior relations.
+   */
+  void NotifyAnchorRemoved(mozilla::PresShell* aPresShell, nsIFrame* aFrame);
+
+  /**
+   * Notify accessibility that an anchor positioned frame has
+   * been marked for reflow because of a scroll change for one of its
+   * anchors. A fallback anchor may be activated or deactivated.
+   */
+  void NotifyAnchorPositionedScrollUpdate(mozilla::PresShell* aPresShell,
+                                          nsIFrame* aFrame);
+
+  /**
    * Notify accessibility that an element explicitly set for an attribute is
    * about to change. See dom::Element::ExplicitlySetAttrElement.
    */
@@ -551,6 +576,7 @@ static const char kEventTypeNames[][40] = {
     "live region removed",       // EVENT_LIVE_REGION_REMOVED
     "inner reorder",             // EVENT_INNER_REORDER
     "live region changed",       // EVENT_LIVE_REGION_CHANGED
+    "errormessage changed",      // EVENT_ERRORMESSAGE_CHANGED
 };
 
 #endif

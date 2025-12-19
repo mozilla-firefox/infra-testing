@@ -7,11 +7,9 @@
 #ifndef transportlayersrtp_h__
 #define transportlayersrtp_h__
 
-#include <string>
-
-#include "transportlayer.h"
-#include "mozilla/RefPtr.h"
 #include "SrtpFlow.h"
+#include "mozilla/RefPtr.h"
+#include "transportlayer.h"
 
 namespace mozilla {
 

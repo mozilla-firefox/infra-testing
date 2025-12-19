@@ -20,7 +20,8 @@ $ds-width: 936px;
   }
 
   .ds-column-grid {
-    display: grid;
+    display: flex;
+    flex-direction: column;
     grid-row-gap: var(--gridRowGap);
 
     // We want to completely hide components with no content,
@@ -32,10 +33,10 @@ $ds-width: 936px;
 }
 
 .ds-header {
-  margin: 8px 0;
+  margin: var(--space-small) 0;
 
   .ds-context {
-    font-weight: 400;
+    font-weight: var(--font-weight);
   }
 }
 
@@ -43,8 +44,7 @@ $ds-width: 936px;
 .ds-layout .section-title span {
   color: var(--newtab-contextual-text-primary-color);
   font-size: $section-title-font-size;
-  font-weight: 600;
-  line-height: 20px;
+  font-weight: var(--heading-font-weight);
 
   // Contrast fix for users who have wallpapers set
   @include wallpaper-contrast-fix;
@@ -63,7 +63,13 @@ $ds-width: 936px;
 
     a {
       color: var(--newtab-primary-action-background);
-      font-weight: 500;
+
+      /**
+       * @backward-compat { version 146 }
+       *
+       * Replace this with `--font-weight-semibold` once 146 hits release.
+       */
+      font-weight: var(--heading-font-weight);
 
       &:is(:focus, :hover) {
         text-decoration: none;

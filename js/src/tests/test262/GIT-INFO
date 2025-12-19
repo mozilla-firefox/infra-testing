@@ -1,9 +1,9 @@
-commit c23091151fe97a45f61a6b3b461fd16ca143c6bc
-Author: André Bargull <andre.bargull@gmail.com>
-Date:   Fri Mar 21 17:52:03 2025 +0100
+commit 4869a68f71f9ea4c1b50ac7b1283e1fc81525581
+Author: Frank Yung-Fong Tang <ftang@chromium.org>
+Date:   Wed Dec 10 08:37:46 2025 -0800
 
-    Prefer "islamic-tbla" over "islamic" for Hijri calendars
+    Add test for ECMA402 PR 1015 to verify  (new Intl.Segmenter()).segment("123")[Symbol.iterator].name (#4635)
     
-    "islamic" is underspecified because it doesn't include any information
-    which location and algorithms should be used to approximate new moon
-    observations. Instead switch to "islamic-tbla".
+    * Add test for ECMA402 PR 1015
+    
+    https://github.com/tc39/ecma402/pull/1015

@@ -15,7 +15,7 @@
 #include "nsServiceManagerUtils.h"
 
 #include "mozilla/Preferences.h"
-#include "mozilla/java/GeckoAppShellWrappers.h"
+#include "mozilla/gfx/Logging.h"
 #include "mozilla/java/HardwareCodecCapabilityUtilsWrappers.h"
 
 namespace mozilla {
@@ -136,11 +136,6 @@ GfxInfo::GfxInfo()
 
 GfxInfo::~GfxInfo() {}
 
-/* GetD2DEnabled and GetDwriteEnabled shouldn't be called until after
- * gfxPlatform initialization has occurred because they depend on it for
- * information. (See bug 591561) */
-nsresult GfxInfo::GetD2DEnabled(bool* aEnabled) { return NS_ERROR_FAILURE; }
-
 nsresult GfxInfo::GetDWriteEnabled(bool* aEnabled) { return NS_ERROR_FAILURE; }
 
 nsresult GfxInfo::GetHasBattery(bool* aHasBattery) {
@@ -213,6 +208,8 @@ void GfxInfo::EnsureInitialized() {
 
   mOSVersionInteger = (uint32_t(na) << 24) | (uint32_t(nb) << 16) |
                       (uint32_t(nc) << 8) | uint32_t(nd);
+
+  mOSVersionEx.Parse(mOSVersion);
 
   mAdapterDescription.AppendPrintf(
       ", OpenGL: %s -- %s -- %s", mGLStrings->Vendor().get(),
@@ -358,7 +355,7 @@ void GfxInfo::AddCrashReportAnnotations() {
       CrashReporter::Annotation::AdapterDriverVersion, mGLStrings->Version());
 }
 
-const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
+const nsTArray<RefPtr<GfxDriverInfo>>& GfxInfo::GetGfxDriverInfo() {
   if (sDriverInfo->IsEmpty()) {
     APPEND_TO_DRIVER_BLOCKLIST2(
         OperatingSystem::Android, DeviceFamily::All,
@@ -372,7 +369,7 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
 
 nsresult GfxInfo::GetFeatureStatusImpl(
     int32_t aFeature, int32_t* aStatus, nsAString& aSuggestedDriverVersion,
-    const nsTArray<GfxDriverInfo>& aDriverInfo, nsACString& aFailureId,
+    const nsTArray<RefPtr<GfxDriverInfo>>& aDriverInfo, nsACString& aFailureId,
     OperatingSystem* aOS /* = nullptr */) {
   NS_ENSURE_ARG_POINTER(aStatus);
   aSuggestedDriverVersion.SetIsVoid(true);
@@ -429,80 +426,6 @@ nsresult GfxInfo::GetFeatureStatusImpl(
         *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
         aFailureId = "FEATURE_FAILURE_VILLE";
         return NS_OK;
-      }
-    }
-
-    if (aFeature == FEATURE_STAGEFRIGHT) {
-      NS_LossyConvertUTF16toASCII cManufacturer(mManufacturer);
-      NS_LossyConvertUTF16toASCII cModel(mModel);
-      NS_LossyConvertUTF16toASCII cHardware(mHardware);
-
-      if (cHardware.EqualsLiteral("antares") ||
-          cHardware.EqualsLiteral("harmony") ||
-          cHardware.EqualsLiteral("picasso") ||
-          cHardware.EqualsLiteral("picasso_e") ||
-          cHardware.EqualsLiteral("ventana") ||
-          cHardware.EqualsLiteral("rk30board")) {
-        *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
-        aFailureId = "FEATURE_FAILURE_STAGE_HW";
-        return NS_OK;
-      }
-
-      if (CompareVersions(mOSVersion.get(), "4.1.0") < 0) {
-        // Whitelist:
-        //   All Samsung ICS devices, except for:
-        //     Samsung SGH-I717 (Bug 845729)
-        //     Samsung SGH-I727 (Bug 845729)
-        //     Samsung SGH-I757 (Bug 845729)
-        //   All Galaxy nexus ICS devices
-        //   Sony Xperia Ion (LT28) ICS devices
-        bool isWhitelisted =
-            cModel.Equals("LT28h", nsCaseInsensitiveCStringComparator) ||
-            cManufacturer.Equals("samsung",
-                                 nsCaseInsensitiveCStringComparator) ||
-            cModel.Equals(
-                "galaxy nexus",
-                nsCaseInsensitiveCStringComparator);  // some Galaxy Nexus
-                                                      // have
-                                                      // manufacturer=amazon
-
-        if (cModel.LowerCaseFindASCII("sgh-i717") != -1 ||
-            cModel.LowerCaseFindASCII("sgh-i727") != -1 ||
-            cModel.LowerCaseFindASCII("sgh-i757") != -1) {
-          isWhitelisted = false;
-        }
-
-        if (!isWhitelisted) {
-          *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
-          aFailureId = "FEATURE_FAILURE_4_1_HW";
-          return NS_OK;
-        }
-      } else if (CompareVersions(mOSVersion.get(), "4.2.0") < 0) {
-        // Whitelist:
-        //   All JB phones except for those in blocklist below
-        // Blocklist:
-        //   Samsung devices from bug 812881 and 853522.
-        //   Motorola XT890 from bug 882342.
-        bool isBlocklisted = cModel.LowerCaseFindASCII("gt-p3100") != -1 ||
-                             cModel.LowerCaseFindASCII("gt-p3110") != -1 ||
-                             cModel.LowerCaseFindASCII("gt-p3113") != -1 ||
-                             cModel.LowerCaseFindASCII("gt-p5100") != -1 ||
-                             cModel.LowerCaseFindASCII("gt-p5110") != -1 ||
-                             cModel.LowerCaseFindASCII("gt-p5113") != -1 ||
-                             cModel.LowerCaseFindASCII("xt890") != -1;
-
-        if (isBlocklisted) {
-          *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
-          aFailureId = "FEATURE_FAILURE_4_2_HW";
-          return NS_OK;
-        }
-      } else if (CompareVersions(mOSVersion.get(), "4.3.0") < 0) {
-        // Blocklist all Sony devices
-        if (cManufacturer.LowerCaseFindASCII("sony") != -1) {
-          *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
-          aFailureId = "FEATURE_FAILURE_4_3_SONY";
-          return NS_OK;
-        }
       }
     }
 
@@ -675,6 +598,18 @@ nsresult GfxInfo::GetFeatureStatusImpl(
     return NS_OK;
   }
 
+  if (aFeature == FEATURE_GL_NORM16_TEXTURES) {
+    const auto& extensions = mGLStrings->Extensions();
+    // GL_EXT_texture_norm16 is required for GL_R16, GL_RG16, etc texture
+    // formats on OpenGL ES.
+    if (!extensions.Contains("GL_EXT_texture_norm16")) {
+      *aStatus = nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
+      aFailureId = "FEATURE_FAILURE_MISSING_EXTENSION";
+    } else {
+      *aStatus = nsIGfxInfo::FEATURE_STATUS_OK;
+    }
+  }
+
   return GfxInfoBase::GetFeatureStatusImpl(
       aFeature, aStatus, aSuggestedDriverVersion, aDriverInfo, aFailureId, &os);
 }
@@ -752,7 +687,7 @@ int32_t GfxInfo::WebRtcHwVp8EncodeSupported() {
     return status;
   }
 
-  status = java::GeckoAppShell::HasHWVP8Encoder()
+  status = java::HardwareCodecCapabilityUtils::HasHWVP8(true)
                ? nsIGfxInfo::FEATURE_STATUS_OK
                : nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
 
@@ -775,7 +710,7 @@ int32_t GfxInfo::WebRtcHwVp8DecodeSupported() {
     return status;
   }
 
-  status = java::GeckoAppShell::HasHWVP8Decoder()
+  status = java::HardwareCodecCapabilityUtils::HasHWVP8(false)
                ? nsIGfxInfo::FEATURE_STATUS_OK
                : nsIGfxInfo::FEATURE_BLOCKED_DEVICE;
 
@@ -833,6 +768,13 @@ NS_IMETHODIMP GfxInfo::SpoofOSVersion(uint32_t aVersion) {
   return NS_OK;
 }
 
+NS_IMETHODIMP GfxInfo::SpoofOSVersionEx(uint32_t aMajor, uint32_t aMinor,
+                                        uint32_t aBuild, uint32_t aRevision) {
+  EnsureInitialized();
+  mOSVersionEx = GfxVersionEx(aMajor, aMinor, aBuild, aRevision);
+  return NS_OK;
+}
+
 #endif
 
 nsString GfxInfo::Model() {
@@ -858,6 +800,11 @@ nsString GfxInfo::Manufacturer() {
 uint32_t GfxInfo::OperatingSystemVersion() {
   EnsureInitialized();
   return mOSVersionInteger;
+}
+
+GfxVersionEx GfxInfo::OperatingSystemVersionEx() {
+  EnsureInitialized();
+  return mOSVersionEx;
 }
 
 }  // namespace widget

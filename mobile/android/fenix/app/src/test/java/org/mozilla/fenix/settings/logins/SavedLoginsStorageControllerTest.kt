@@ -4,30 +4,36 @@
 
 package org.mozilla.fenix.settings.logins
 
+import android.content.Context
 import androidx.navigation.NavController
 import androidx.navigation.NavDestination
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import mozilla.appservices.RustComponentsInitializer
 import mozilla.components.concept.storage.Login
 import mozilla.components.concept.storage.LoginEntry
+import mozilla.components.lib.dataprotect.SecureAbove22Preferences
 import mozilla.components.service.sync.logins.InvalidRecordException
 import mozilla.components.service.sync.logins.SyncableLoginsStorage
+import mozilla.components.service.sync.logins.UNDECRYPTABLE_LOGINS_CLEANED_KEY
+import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.test.rule.MainCoroutineRule
 import mozilla.components.support.test.rule.runTestOnMain
+import mozilla.components.support.utils.ClipboardHandler
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.R
 import org.mozilla.fenix.ext.directionsEq
-import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
 import org.mozilla.fenix.settings.logins.controller.SavedLoginsStorageController
 import org.mozilla.fenix.settings.logins.fragment.EditLoginFragmentDirections
-import org.mozilla.fenix.utils.ClipboardHandler
+import org.robolectric.RobolectricTestRunner
 
-@RunWith(FenixRobolectricTestRunner::class)
+@RunWith(RobolectricTestRunner::class)
 class SavedLoginsStorageControllerTest {
     @get:Rule
     val coroutinesTestRule = MainCoroutineRule()
@@ -333,5 +339,46 @@ class SavedLoginsStorageControllerTest {
                 ),
             )
         }
+    }
+
+    @Test
+    fun `VERIFY cleaning undecryptable logins only happens once`() = runTestOnMain {
+        RustComponentsInitializer.init()
+        val securePrefs = SecureAbove22Preferences(testContext, "logins", forceInsecure = true)
+        val testPasswordsStorage = SyncableLoginsStorage(
+            testContext,
+            lazy { securePrefs },
+            coroutinesTestRule.testDispatcher,
+        )
+
+        testPasswordsStorage.warmUp()
+        coroutinesTestRule.testDispatcher.scheduler.advanceUntilIdle()
+
+        // Assert we've never ran the logins cleanup
+        assertTrue(
+            testContext
+                .getSharedPreferences("sync.logins.prefs", Context.MODE_PRIVATE)
+                .getInt(UNDECRYPTABLE_LOGINS_CLEANED_KEY, 0) == 0,
+        )
+
+        // Register with the sync manager to "pretend" we're about to sync
+        testPasswordsStorage.registerWithSyncManager()
+        coroutinesTestRule.testDispatcher.scheduler.advanceUntilIdle()
+        // Validate we've ran once and set the pref successfully
+        assertTrue(
+            testContext
+                .getSharedPreferences("sync.logins.prefs", Context.MODE_PRIVATE)
+                .getInt(UNDECRYPTABLE_LOGINS_CLEANED_KEY, 0) == 1,
+        )
+
+        testPasswordsStorage.registerWithSyncManager()
+        coroutinesTestRule.testDispatcher.scheduler.advanceUntilIdle()
+
+        // Subsequent calls should not call the method again
+        assertTrue(
+            testContext
+                .getSharedPreferences("sync.logins.prefs", Context.MODE_PRIVATE)
+                .getInt(UNDECRYPTABLE_LOGINS_CLEANED_KEY, 0) == 1,
+        )
     }
 }

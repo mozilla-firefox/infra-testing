@@ -17,9 +17,9 @@
 
   --arrowpanel-header-info-icon-padding: 4px;
   --arrowpanel-header-info-icon-full-width: calc(16px + (2 * var(--arrowpanel-header-info-icon-padding)));
-  --panel-separator-margin-vertical: 4px;
-  --panel-separator-margin-horizontal: 8px;
-  --panel-separator-margin: var(--panel-separator-margin-vertical) var(--panel-separator-margin-horizontal);
+  --panel-separator-padding-vertical: 4px;
+  --panel-separator-padding-horizontal: 8px;
+  --panel-separator-padding: var(--panel-separator-padding-vertical) var(--panel-separator-padding-horizontal);
   --panel-subview-body-padding-block: 8px;
   --panel-subview-body-padding-inline: 0;
   --panel-subview-body-padding: var(--panel-subview-body-padding-block) var(--panel-subview-body-padding-inline);
@@ -27,13 +27,13 @@
   --panel-and-palette-icon-size: 16px;
 
   &:not([lwtheme]) {
-    --panel-separator-zap-gradient: linear-gradient(90deg, #9059FF 0%, #FF4AA2 52.08%, #FFBD4F 100%);
+    --panel-separator-zap-gradient: linear-gradient(90deg, #9059ff 0%, #ff4aa2 52.08%, #ffbd4f 100%);
   }
 
-  &[uidensity=compact] {
+  &[uidensity="compact"] {
     --arrowpanel-menuitem-margin-inline: 4px;
     --arrowpanel-menuitem-padding-block: 4px;
-    --panel-separator-margin-horizontal: 4px;
+    --panel-separator-padding-horizontal: 4px;
     --panel-subview-body-padding-block: 4px;
     :is(panel, menupopup):not([touchmode]) {
       --arrowpanel-header-back-icon-padding: 4px;
@@ -55,8 +55,12 @@ menupopup {
   /* The min-height is calculated with the separator's horizontal margin rather
    * than the vertical, to let the back icon have even spacing all around
    * while being aligned with the separator. */
-  --arrowpanel-header-min-height: calc(var(--arrowpanel-header-back-icon-full-width)
-                                       + (var(--panel-separator-margin-horizontal) * 2));
+  --arrowpanel-header-min-height: calc(var(--arrowpanel-header-back-icon-full-width) + (var(--panel-separator-padding-horizontal) * 2));
+}
+
+panel toolbarseparator {
+  color: var(--panel-separator-color);
+  padding: var(--panel-separator-padding);
 }
 
 #PanelUI-menu-button {
@@ -90,11 +94,11 @@ menupopup {
       /* "!important" is necessary to override the rule in toolbarbutton.css */
       margin: -5px 0 0 !important;
       margin-inline-end: -3px !important;
-      min-width: 12px;
-      min-height: 12px;
+      min-width: var(--icon-size-xsmall);
+      min-height: var(--icon-size-xsmall);
       -moz-context-properties: fill;
       background: url(chrome://browser/skin/notification-fill-12.svg) no-repeat center;
-      background-size: 12px;
+      background-size: var(--icon-size-xsmall);
     }
   }
 
@@ -163,11 +167,11 @@ menupopup {
 
 #fxa-toolbar-menu-button[badge-status="sync-disabled"] > .toolbarbutton-badge-stack > .toolbarbutton-badge {
   box-shadow: none;
-  min-width: 12px;
-  min-height: 12px;
+  min-width: var(--icon-size-xsmall);
+  min-height: var(--icon-size-xsmall);
   -moz-context-properties: stroke, fill;
   background: url(chrome://browser/skin/notification-fill-12.svg) no-repeat center;
-  background-size: 12px;
+  background-size: var(--icon-size-xsmall);
   stroke: var(--arrowpanel-background);
   fill: var(--warning-icon-bgcolor);
   filter: drop-shadow(0 0 5px var(--warning-icon-bgcolor));
@@ -251,10 +255,10 @@ panelview {
   color: var(--button-text-color-ghost);
   background-color: var(--button-background-color-ghost);
   padding: 0;
-  border-radius: var(--toolbarbutton-border-radius);
+  border-radius: var(--button-border-radius);
   flex-shrink: 0;
 
-  &[disabled=true] {
+  &[disabled="true"] {
     visibility: hidden;
   }
 
@@ -286,8 +290,8 @@ panelview {
   display: none;
 }
 
-#wrapper-edit-controls:is([place="palette"],[place="panel"]) > #edit-controls,
-#wrapper-zoom-controls:is([place="palette"],[place="panel"]) > #zoom-controls,
+#wrapper-edit-controls:is([place="palette"], [place="panel"]) > #edit-controls,
+#wrapper-zoom-controls:is([place="palette"], [place="panel"]) > #zoom-controls,
 :is(panelview, #widget-overflow-fixed-list) .toolbaritem-combined-buttons {
   margin: var(--arrowpanel-menuitem-margin);
 }
@@ -369,7 +373,7 @@ panelview {
   }
 
   menuseparator {
-    padding: var(--panel-separator-margin);
+    padding: var(--panel-separator-padding);
   }
 }
 
@@ -390,7 +394,6 @@ menupopup[emptyplacesresult] > .hide-if-empty-places-result {
   --arrowpanel-border-color: #0060df;
   --arrowpanel-color: #fff;
   --arrowpanel-padding: 6px 10px;
-  font-weight: 400;
   font-size: 1.1rem;
 
   &::part(content) {
@@ -406,7 +409,7 @@ menupopup[emptyplacesresult] > .hide-if-empty-places-result {
     background-image: url("chrome://global/skin/icons/delete.svg");
     background-size: contain;
     -moz-context-properties: fill;
-    fill: #FFF;
+    fill: #fff;
     animation: none;
   }
 }
@@ -468,16 +471,17 @@ menupopup[emptyplacesresult] > .hide-if-empty-places-result {
 
   #confirmation-hint.with-description & {
     font-size: 1.2em;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 }
 
 @media (prefers-reduced-motion: no-preference) {
   #confirmation-hint-message-container {
-    transform: scale(.8);
+    transform: scale(0.8);
     opacity: 0;
-    transition: transform 120ms cubic-bezier(.25,1.27,.35,1.18),
-                opacity 60ms linear;
+    transition:
+      transform 120ms cubic-bezier(0.25, 1.27, 0.35, 1.18),
+      opacity 60ms linear;
 
     #confirmation-hint-checkmark-animation-container[animate] + & {
       transform: scale(1);
@@ -517,10 +521,7 @@ menupopup[emptyplacesresult] > .hide-if-empty-places-result {
   min-width: calc(var(--menu-panel-width) + 32px);
 }
 
-.toolbaritem-combined-buttons:is(
-  :not([cui-areatype="toolbar"]),
-  [overflowedItem=true]
-) > toolbarbutton > .toolbarbutton-icon {
+.toolbaritem-combined-buttons:is(:not([cui-areatype="toolbar"]), [overflowedItem="true"]) > toolbarbutton > .toolbarbutton-icon {
   min-width: 0;
   min-height: 0;
   margin: 0;
@@ -539,8 +540,8 @@ menupopup[emptyplacesresult] > .hide-if-empty-places-result {
     transform: scale(1);
   }
   100% {
-    opacity: 0 ;
-    transform: scale(.5);
+    opacity: 0;
+    transform: scale(0.5);
   }
 }
 
@@ -566,7 +567,7 @@ toolbarbutton[constrain-size="true"][cui-areatype="panel"] > .toolbarbutton-badg
     color: var(--panel-banner-item-color);
     background-color: var(--panel-banner-item-background-color);
     margin-bottom: 4px;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   .panel-banner-item,
@@ -624,8 +625,12 @@ toolbarbutton[constrain-size="true"][cui-areatype="panel"] > .toolbarbutton-badg
 /* FxAccount indicator bits. */
 
 @keyframes syncRotate {
-  from { transform: rotate(0); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -658,7 +663,7 @@ toolbarbutton[constrain-size="true"][cui-areatype="panel"] > .toolbarbutton-badg
 
 /* Handle different UI states. */
 
-#appMenu-mainView:not([showing-fxa-menu-message]) #appMenu-fxa-menu-message,
+#appMenu-mainView:not([showing-fxa-menu-message], [showing-default-cta-menu-message]) #appMenu-menu-message,
 #PanelUI-fxa:not([showing-fxa-menu-message]) #PanelUI-fxa-menu-message {
   display: none;
 }
@@ -671,7 +676,7 @@ toolbarbutton[constrain-size="true"][cui-areatype="panel"] > .toolbarbutton-badg
 }
 
 #PanelUI-fxa[showing-fxa-menu-message] #fxa-manage-account-button {
-  display: none
+  display: none;
 }
 
 :root:not([fxastatus="signedin"]) #PanelUI-fxa-menu-syncnow-button {
@@ -696,7 +701,7 @@ toolbarbutton[constrain-size="true"][cui-areatype="panel"] > .toolbarbutton-badg
       color: var(--button-text-color);
       background-color: var(--button-background-color);
       font-size: 0.8em;
-      font-weight: 600;
+      font-weight: var(--font-weight-semibold);
 
       &:hover {
         color: var(--button-text-color-hover);
@@ -719,11 +724,11 @@ toolbarbutton[constrain-size="true"][cui-areatype="panel"] > .toolbarbutton-badg
 
 #appMenu-fxa-status2[fxastatus] > #appMenu-fxa-label2 > vbox > #appMenu-header-description,
 #appMenu-fxa-text {
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 
-:root[fxadisabled=true] #appMenu-fxa-status2,
-:root[fxadisabled=true] #appMenu-fxa-separator {
+:root[fxadisabled="true"] #appMenu-fxa-status2,
+:root[fxadisabled="true"] #appMenu-fxa-separator {
   display: none;
 }
 
@@ -790,7 +795,7 @@ toolbarbutton[constrain-size="true"][cui-areatype="panel"] > .toolbarbutton-badg
 
 .sync-setup-title {
   font-size: 1.1em;
-  font-weight: 400;
+  font-weight: normal;
   margin-block: auto;
 }
 
@@ -807,7 +812,7 @@ toolbarbutton[constrain-size="true"][cui-areatype="panel"] > .toolbarbutton-badg
   padding: 6px 12px;
   background-color: var(--button-background-color);
   font-size: 0.9em;
-  font-weight: 500;
+  font-weight: var(--font-weight-semibold);
   max-width: fit-content;
   border-radius: var(--button-border-radius);
 
@@ -820,12 +825,11 @@ toolbarbutton[constrain-size="true"][cui-areatype="panel"] > .toolbarbutton-badg
   }
 }
 
-
 /* Firefox Account Toolbar Panel */
 
 #fxa-avatar-image {
-  width: 16px;
-  height: 16px;
+  width: var(--icon-size);
+  height: var(--icon-size);
 }
 
 :root {
@@ -876,25 +880,25 @@ toolbarbutton[constrain-size="true"][cui-areatype="panel"] > .toolbarbutton-badg
    * point, I'm hoping we can shift to something less gross (bug 1938106).
    */
   &[fxastatus="not_configured"][fxa-avatar-icon-variant$="-circle"] #fxa-toolbar-menu-button:not([showing-callout]) {
-    #fxa-avatar-image:-moz-locale-dir(rtl) {
-      transform: scaleX(-1);
+    .avatar-container {
+      position: relative;
+
+      &:-moz-locale-dir(rtl) {
+        transform: scaleX(-1);
+      }
     }
 
-    .toolbarbutton-badge {
-      background-color: transparent;
-      border: 0;
-      box-shadow: none;
-      position: relative;
-      display: block;
+    .avatar-container::after {
+      content: "";
+      position: absolute;
+      top: calc(var(--icon-size) - 6px);
+      /* Avatar icon size minus its circle width minus half of the little circle icon size */
+      left: calc(var(--icon-size) - 1px - 6px / 2);
       height: 6px;
       width: 6px;
       background-image: url(chrome://browser/skin/fxa/circle.svg);
       background-repeat: no-repeat;
       background-position: center;
-      top: 15px;
-      inset-inline-start: 2px;
-      fill: var(--toolbarbutton-icon-fill);
-      color: unset;
       opacity: 0.43;
 
       @media (prefers-color-scheme: dark) {
@@ -918,7 +922,7 @@ toolbarbutton[constrain-size="true"][cui-areatype="panel"] > .toolbarbutton-badg
 
   /* Non-signedin statuses icons are not totally round. */
   &[fxastatus="signedin"] #fxa-avatar-image {
-    border-radius: 50%;
+    border-radius: var(--border-radius-circle);
   }
 
   &[fxastatus="signedin"] #fxa-avatar-label {
@@ -935,19 +939,8 @@ toolbarbutton[constrain-size="true"][cui-areatype="panel"] > .toolbarbutton-badg
 }
 
 #fxa-avatar-label {
-  margin-inline: 6px 0;
-}
-
-.PanelUI-fxa-service-description-label,
-.PanelUI-remotetabs-instruction-label {
-  /* Use 'lighter' font for this to de-emphasize it compared to the title. */
-  font-weight: lighter;
-
-  @media (-moz-platform: linux) {
-     /* Use 300 on Linux because 100 is too light (lacks contrast with
-     * the background) for some fonts in combination with anti-aliasing. */
-     font-weight: 300;
-  }
+  margin: 0;
+  margin-inline-start: var(--space-small);
 }
 
 #fxa-menu-header-title {
@@ -957,7 +950,7 @@ toolbarbutton[constrain-size="true"][cui-areatype="panel"] > .toolbarbutton-badg
 
 #fxa-menu-header-description {
   color: var(--text-color-deemphasized);
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--heading-font-weight);
   text-wrap: wrap;
 }
 
@@ -1041,23 +1034,23 @@ panelmultiview[mainViewId="PanelUI-fxa"] #PanelUI-remotetabs-syncnow {
 }
 
 .sendToDevice-device {
-  &[clientType=phone] {
+  &[clientType="phone"] {
     list-style-image: url("chrome://browser/skin/device-phone.svg");
   }
 
-  &[clientType=tablet] {
+  &[clientType="tablet"] {
     list-style-image: url("chrome://browser/skin/device-tablet.svg");
   }
 
-  &[clientType=desktop] {
+  &[clientType="desktop"] {
     list-style-image: url("chrome://browser/skin/device-desktop.svg");
   }
 
-  &[clientType=tv] {
+  &[clientType="tv"] {
     list-style-image: url("chrome://browser/skin/device-tv.svg");
   }
 
-  &[clientType=vr] {
+  &[clientType="vr"] {
     list-style-image: url("chrome://browser/skin/device-vr.svg");
   }
 
@@ -1085,7 +1078,7 @@ panelmultiview[mainViewId="PanelUI-fxa"] #PanelUI-remotetabs-syncnow {
   /* !important for the color as an OSX specific rule when a lightweight theme
      is used for buttons in the toolbox overrides. See bug 1238531 for details */
   color: white !important;
-  border-radius: 2px;
+  border-radius: var(--border-radius-xsmall);
   /* If you change the margin or padding below, the min-height of the synced tabs
      panel (e.g. #PanelUI-remotetabs[mainview] #PanelUI-remotetabs-setupsync,
      etc) may need adjusting (see bug 1248506) */
@@ -1138,7 +1131,8 @@ panelmultiview[mainViewId="PanelUI-fxa"] #PanelUI-remotetabs-syncnow {
   display: block;
 }
 
-#PanelUI-remotetabs[mainview] { /* panel anchored to toolbar button might be too skinny */
+#PanelUI-remotetabs[mainview] {
+  /* panel anchored to toolbar button might be too skinny */
   min-width: 19em;
 
   .PanelUI-remotetabs-notabsforclient-label {
@@ -1148,6 +1142,7 @@ panelmultiview[mainViewId="PanelUI-fxa"] #PanelUI-remotetabs-syncnow {
   /* Work around bug 1224412 - these boxes will cause scrollbars to appear when
    the panel is anchored to a toolbar button.
   */
+  /* prettier-ignore */
   #PanelUI-remotetabs-setupsync,
   #PanelUI-remotetabs-syncdisabled,
   #PanelUI-remotetabs-reauthsync,
@@ -1249,8 +1244,8 @@ panelview .toolbarbutton-1,
     fill: currentColor;
     fill-opacity: 0.6;
     display: flex;
-    height: 12px;
-    width: 12px;
+    height: var(--icon-size-xsmall);
+    width: var(--icon-size-xsmall);
   }
 
   &[type="open-to-new"]:-moz-locale-dir(rtl)::after {
@@ -1325,7 +1320,7 @@ panelview .toolbarbutton-1,
     fill: currentColor;
     /* the stroke color is used to fill the circle in the icon */
     stroke: var(--button-background-color);
-    border-radius: 50%;
+    border-radius: var(--border-radius-circle);
     padding: 0;
   }
 
@@ -1341,8 +1336,8 @@ panelview .toolbarbutton-1,
 }
 
 #appMenu-zoomReset-button2 > .toolbarbutton-text,
-#appMenu-fullscreen-button2 > .toolbarbutton-icon  {
-  border-radius: 2px;
+#appMenu-fullscreen-button2 > .toolbarbutton-icon {
+  border-radius: var(--border-radius-xsmall);
 }
 
 #appMenu-fullscreen-button2 > .toolbarbutton-icon {
@@ -1417,7 +1412,7 @@ panelview .toolbarbutton-1,
     display: none;
   }
 
-  toolbarseparator.proton-zap {
+  toolbarseparator.proton-zap::before {
     border-image: var(--panel-separator-zap-gradient, none) 1;
   }
 }
@@ -1473,10 +1468,7 @@ panelview .toolbarbutton-1 {
   panelview .toolbarbutton-1,
   toolbarbutton.subviewbutton,
   .widget-overflow-list .toolbarbutton-1,
-  .toolbaritem-combined-buttons:is(
-    :not([cui-areatype="toolbar"]),
-    [overflowedItem=true]
-  ) > toolbarbutton
+  .toolbaritem-combined-buttons:is(:not([cui-areatype="toolbar"]), [overflowedItem="true"]) > toolbarbutton
 ) {
   color: var(--button-text-color-ghost);
   background-color: var(--button-background-color-ghost);
@@ -1499,7 +1491,7 @@ panelview .toolbarbutton-1 {
     &:active {
       color: var(--button-text-color-ghost-active);
       background-color: var(--button-background-color-ghost-active);
-      box-shadow: 0 1px 0 hsla(210,4%,10%,.03) inset;
+      box-shadow: 0 1px 0 hsla(210, 4%, 10%, 0.03) inset;
     }
   }
 }
@@ -1534,7 +1526,9 @@ panelview .toolbarbutton-1 {
 }
 
 .PanelUI-tabitem-container {
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
 
   &.tabitem-removed {
     opacity: 0;
@@ -1553,36 +1547,32 @@ panelview .toolbarbutton-1 {
 }
 
 toolbarbutton[itemtype="showmorebutton"],
-  toolbarbutton[itemtype="showinactivebutton"] {
-    padding-inline-start: 0;
+toolbarbutton[itemtype="showinactivebutton"] {
+  padding-inline-start: 0;
 
-    > label {
-      /* Needed to properly left-align with the rest of list */
-      margin-inline-start: -8px;
-    }
+  > label {
+    /* Needed to properly left-align with the rest of list */
+    margin-inline-start: -8px;
   }
+}
 
 .remote-tabs-close-button {
   .toolbarbutton-icon {
-      /* To match the nav elements in the panel */
-  -moz-context-properties: fill, fill-opacity;
-  fill: currentColor;
-  fill-opacity: 0.6;
-  display: flex;
-
+    /* To match the nav elements in the panel */
+    -moz-context-properties: fill, fill-opacity;
+    fill: currentColor;
+    fill-opacity: 0.6;
+    display: flex;
   }
 }
 
 .remote-tabs-undo-button {
   font-size: 0.8em;
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--font-weight-semibold);
 }
 
 .toolbaritem-combined-buttons {
-  &:where(:not(.unified-extensions-item)):is(
-    :not([cui-areatype="toolbar"]),
-    [overflowedItem=true]
-  ) > toolbarbutton {
+  &:where(:not(.unified-extensions-item)):is(:not([cui-areatype="toolbar"]), [overflowedItem="true"]) > toolbarbutton {
     border: 0;
     margin: 0;
     flex: 1;
@@ -1595,35 +1585,15 @@ toolbarbutton[itemtype="showmorebutton"],
     display: none;
   }
 
-  &:is(
-    :not([cui-areatype="toolbar"]),
-    [overflowedItem=true]
-  ) > toolbarbutton:not(.toolbarbutton-1)[disabled] {
+  &:is(:not([cui-areatype="toolbar"]), [overflowedItem="true"]) > toolbarbutton:not(.toolbarbutton-1)[disabled] {
     opacity: 0.4;
     /* Override toolbarbutton.css which sets the color to GrayText */
     color: inherit;
   }
 
-  &:is(
-    :not([cui-areatype="toolbar"]),
-    [overflowedItem=true]
-  ) > separator {
-    appearance: none;
-    align-items: stretch;
-    margin: .5em 0;
-    width: 1px;
-    height: auto;
-    background: var(--panel-separator-color);
-    transition-property: margin;
-    transition-duration: 10ms;
-    transition-timing-function: ease;
-  }
-
-  &:is(
-    :not([cui-areatype="toolbar"]),
-    [overflowedItem=true]
-  ):hover > separator {
-    margin: 0;
+  &:is(:not([cui-areatype="toolbar"]), [overflowedItem="true"]) > separator {
+    /* Override toolbarbuttons.css which sets the color to currentColor */
+    color: var(--panel-separator-color);
   }
 }
 
@@ -1641,7 +1611,7 @@ toolbarbutton[itemtype="showmorebutton"],
 
   .toolbarbutton-1:not(.toolbarbutton-combined) > .toolbarbutton-text {
     text-align: start;
-    padding-inline-start: .5em;
+    padding-inline-start: 0.5em;
   }
 
   > #stop-reload-button > .toolbarbutton-1 {
@@ -1675,8 +1645,8 @@ toolbarbutton[itemtype="showmorebutton"],
     url(chrome://browser/skin/panic-panel/header.png),
     url(chrome://browser/skin/panic-panel/header@2x.png) 2x
   );
-  max-height: 48px;
-  width: 48px;
+  max-height: var(--size-item-xlarge);
+  width: var(--size-item-xlarge);
 }
 
 #panic-button-success-header {
@@ -1694,7 +1664,7 @@ toolbarbutton[itemtype="showmorebutton"],
   padding: 3px;
   margin: 0 0 2px;
   background-color: transparent;
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
   border: 1px solid transparent;
 
   &:hover {
@@ -1710,9 +1680,9 @@ toolbarbutton[itemtype="showmorebutton"],
     width: 16px;
     height: 16px;
     border: 1px solid rgba(110, 110, 110, 0.4);
-    border-radius: 50%;
+    border-radius: var(--border-radius-circle);
     margin: 1px 5px;
-    background-color: rgba(150,150,150,0.2);
+    background-color: rgba(150, 150, 150, 0.2);
   }
 
   > .radio-check[selected] {
@@ -1780,8 +1750,8 @@ radiogroup:focus-visible > .subviewradio[focused="true"] {
   color: var(--button-text-color-destructive);
   margin: 5px 15px 11px;
   border: 1px solid var(--button-border-color-destructive);
-  border-radius: 4px;
-  font-weight: 600;
+  border-radius: var(--button-border-radius);
+  font-weight: var(--font-weight-semibold);
   padding: 10px;
 
   &:hover {
@@ -1812,9 +1782,9 @@ radiogroup:focus-visible > .subviewradio[focused="true"] {
   color: var(--button-text-color);
   margin: 5px 0 0;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--button-border-radius);
   padding: 10px;
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   appearance: none;
 
   &:hover {
@@ -1838,7 +1808,7 @@ radiogroup:focus-visible > .subviewradio[focused="true"] {
   min-height: var(--arrowpanel-header-min-height);
 
   + toolbarseparator {
-    margin-top: 0 !important;
+    padding-top: 0 !important;
   }
 
   > h1 {
@@ -1853,8 +1823,7 @@ radiogroup:focus-visible > .subviewradio[focused="true"] {
 
   &.panel-header-with-info-button > .subviewbutton-back + h1 {
     margin-inline-start: 0;
-    margin-inline-end: calc(var(--arrowpanel-header-back-icon-full-width)
-                            - var(--arrowpanel-header-info-icon-full-width));
+    margin-inline-end: calc(var(--arrowpanel-header-back-icon-full-width) - var(--arrowpanel-header-info-icon-full-width));
   }
 
   &:not(.panel-header-with-additional-element) > .subviewbutton-back + h1 {
@@ -1900,16 +1869,16 @@ radiogroup:focus-visible > .subviewradio[focused="true"] {
   #info-message-container {
     height: 260px;
     overflow: hidden;
-    transition: margin-bottom .25s;
+    transition: margin-bottom 0.25s;
   }
 
   #info-message-container[disabled] {
     /* Offset the height when hidden. This makes the panel content
     * cover the info message and reveal it as it slides down, rather
     * than the info message growing in height. */
-   margin-bottom: -260px;
-   pointer-events: none;
- }
+    margin-bottom: -260px;
+    pointer-events: none;
+  }
 
   #info-message-container[disabled] #protections-popup-message {
     opacity: 0;
@@ -1921,7 +1890,7 @@ radiogroup:focus-visible > .subviewradio[focused="true"] {
   align-items: flex-end;
   height: calc(100% - 20px);
   margin: 10px;
-  transition: opacity .25s;
+  transition: opacity 0.25s;
   opacity: 1;
   background-image: url(chrome://browser/skin/controlcenter/hero-message-background.svg);
   background-repeat: no-repeat;
@@ -1940,7 +1909,7 @@ radiogroup:focus-visible > .subviewradio[focused="true"] {
   .protections-popup-message-title {
     display: grid;
     font-size: 1.3em;
-    font-weight: 600;
+    font-weight: var(--heading-font-weight);
     line-height: 1.4em;
     margin: 14px 0 0;
     grid-column-start: 1;
@@ -1955,7 +1924,7 @@ radiogroup:focus-visible > .subviewradio[focused="true"] {
 
   .text-link {
     color: inherit;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 }
 
@@ -1969,14 +1938,6 @@ radiogroup:focus-visible > .subviewradio[focused="true"] {
 
   &[viewId="PanelUI-profiler"] {
     --panel-width: 319px;
-   }
-
-   /* Override themes for the Pocket panel, because the Pocket
-   panel currently only supports dark and light themes. */
-  @media not (prefers-color-scheme: dark){
-    &[viewId="PanelUI-savetopocket"] {
-      --arrowpanel-background: #fbfbfb;
-    }
   }
 }
 
@@ -1989,7 +1950,7 @@ radiogroup:focus-visible > .subviewradio[focused="true"] {
     background: radial-gradient(circle farthest-side at top right, #03b1f4, #0556cd);
     color: #fff;
 
-     &:-moz-locale-dir(rtl) {
+    &:-moz-locale-dir(rtl) {
       background: radial-gradient(circle farthest-side at top left, #03b1f4, #0556cd);
     }
 
@@ -1998,7 +1959,7 @@ radiogroup:focus-visible > .subviewradio[focused="true"] {
     }
 
     toolbarseparator {
-      border-color: #0003;
+      color: #0003;
     }
   }
 
@@ -2011,26 +1972,27 @@ radiogroup:focus-visible > .subviewradio[focused="true"] {
    "false". When the DOM is being initialized it is set to "false" so that animations
    do not run. */
   &[animationready="true"] #PanelUI-profiler-info {
-    transition: margin-block-end 250ms, opacity 250ms;
+    transition:
+      margin-block-end 250ms,
+      opacity 250ms;
   }
 }
 
 #PanelUI-profiler-info {
   min-height: 180px;
   padding: 0 15px 15px;
-  background: top 10px right no-repeat
-    url("chrome://browser/skin/profiler-popup-backdrop.png");
+  background: top 10px right no-repeat url("chrome://browser/skin/profiler-popup-backdrop.png");
   opacity: 1;
 }
 
 #PanelUI-profiler-content {
   position: relative;
-  padding: calc(15px - var(--panel-separator-margin-vertical)) 15px 15px;
+  padding: calc(15px - var(--panel-separator-padding-vertical)) 15px 15px;
 }
 
 .PanelUI-profiler-description-title {
   font-size: 1.3em;
-  font-weight: 600;
+  font-weight: var(--heading-font-weight);
   margin-block: 2px;
 }
 
@@ -2057,16 +2019,16 @@ radiogroup:focus-visible > .subviewradio[focused="true"] {
 }
 
 #PanelUI-profiler-content-edit-settings {
-  font-size: .9em;
+  font-size: 0.9em;
 }
 
 .PanelUI-profiler-content-label {
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 
 #PanelUI-profiler-content-description {
   margin-block: 4px;
-  font-size: .9em;
+  font-size: 0.9em;
   color: var(--text-color-deemphasized);
 }
 
@@ -2090,7 +2052,7 @@ radiogroup:focus-visible > .subviewradio[focused="true"] {
 .PanelUI-profiler-button {
   appearance: none;
   background-color: var(--button-background-color);
-  border-radius: 4px;
+  border-radius: var(--button-border-radius);
   color: var(--button-text-color);
   padding: 8px;
   margin: 0 5px;
@@ -2141,7 +2103,7 @@ radiogroup:focus-visible > .subviewradio[focused="true"] {
 
 /* Web-extension pop-ups */
 
-.cui-widget-panelview[id^=PanelUI-webext-] {
+.cui-widget-panelview[id^="PanelUI-webext-"] {
   border-radius: var(--arrowpanel-border-radius);
 }
 
@@ -2176,7 +2138,7 @@ radiogroup:focus-visible > .subviewradio[focused="true"] {
 }
 
 #reset-pbm-panel-header > description {
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--heading-font-weight);
 }
 
 #reset-pbm-panel-checkbox {
@@ -2193,6 +2155,8 @@ radiogroup:focus-visible > .subviewradio[focused="true"] {
 }
 
 .report-broken-site-view {
+  max-height: 68vh;
+
   description,
   label,
   menulist,
@@ -2201,8 +2165,133 @@ radiogroup:focus-visible > .subviewradio[focused="true"] {
     margin: 0;
   }
 
+  > .panel-subview-body {
+    toolbarbutton {
+      margin-inline: calc(-1 * var(--arrowpanel-menuitem-padding-inline));
+    }
+
+    toolbarbutton::after {
+      position: absolute;
+      inset-inline-end: calc(2 * var(--arrowpanel-menuitem-padding-inline));
+    }
+  }
+
+  #report-broken-site-panel-preview-items {
+    margin: var(--arrowpanel-menuitem-padding);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    border: var(--border-width) solid var(--border-color-card);
+    border-radius: var(--border-radius-medium);
+    background-color: var(--background-color-box);
+    box-sizing: border-box;
+
+    summary {
+      cursor: pointer;
+      padding-block: var(--space-large);
+    }
+
+    .data {
+      padding: var(--arrowpanel-menuitem-padding);
+      background:
+        linear-gradient(0deg, color-mix(in srgb, currentColor 7%, transparent) 0, transparent 16px),
+        linear-gradient(180deg, color-mix(in srgb, currentColor 7%, transparent) 0, transparent 16px);
+      overflow: auto;
+
+      .entry {
+        text-indent: var(--space-large) hanging;
+      }
+
+      .entry > span:first-child {
+        margin-inline-end: var(--space-small);
+      }
+    }
+
+    details {
+      & {
+        width: 100%;
+      }
+
+      &:not(:first-of-type) > summary {
+        border-top: 1px solid var(--border-color-card);
+      }
+
+      > summary {
+        list-style: none;
+        cursor: pointer;
+        width: -moz-available;
+        padding: var(--arrowpanel-menuitem-padding);
+        padding-inline-start: calc(16px + calc(2 * var(--arrowpanel-menuitem-padding-block)));
+        background-image: url("chrome://global/skin/icons/arrow-down.svg");
+        background-position: var(--arrowpanel-menuitem-padding-block) var(--arrowpanel-menuitem-padding-inline);
+        background-repeat: no-repeat;
+        -moz-context-properties: fill;
+        fill: currentColor;
+      }
+
+      &[open] > summary {
+        background-image: url("chrome://global/skin/icons/arrow-up.svg");
+      }
+    }
+
+    details > summary {
+      color: var(--button-text-color);
+      background-color: var(--button-background-color-ghost);
+
+      &:hover {
+        background-color: var(--button-background-color-hover);
+        color: var(--button-text-color-hover);
+      }
+
+      &:active {
+        background-color: var(--button-background-color-active);
+        color: var(--button-text-color-active);
+      }
+
+      &:focus-visible {
+        outline: var(--focus-outline);
+      }
+
+      @media (prefers-contrast) {
+        outline: var(--button-border-color) solid var(--border-width);
+      }
+    }
+
+    details > summary {
+      border-radius: calc(var(--border-radius-medium) - var(--border-width));
+    }
+
+    details:not(:first-of-type):not(:last-of-type) > summary {
+      border-radius: 0;
+    }
+
+    details:first-of-type,
+    details:last-of-type[open] {
+      > summary {
+        border-end-end-radius: 0;
+        border-end-start-radius: 0;
+      }
+    }
+
+    details:last-of-type > summary {
+      border-start-start-radius: 0;
+      border-start-end-radius: 0;
+    }
+  }
+
   p {
     line-height: 1.5;
+  }
+
+  vbox > checkbox {
+    margin-block-start: var(--space-large);
+  }
+
+  #report-broken-site-popup-blocked-trackers > p {
+    font-size: 0.9em;
+    color: var(--text-color-deemphasized);
+    line-height: 1.2em;
+    margin-inline-start: calc(var(--space-medium) + var(--checkbox-size));
   }
 
   textarea {
@@ -2240,7 +2329,11 @@ radiogroup:focus-visible > .subviewradio[focused="true"] {
     }
 
     a {
-      margin-top: 1.5em;
+      margin-block: 1.5em 1em;
+    }
+
+    hbox:has(a#report-broken-site-popup-send-more-info-link[hidden]) + #report-broken-site-popup-preview-button {
+      margin-block-start: 1.5em;
     }
   }
 
@@ -2277,10 +2370,6 @@ radiogroup:focus-visible > .subviewradio[focused="true"] {
 
 /* ----- Profiles panels ----- */
 
-#PanelUI-profiles > toolbarseparator {
-  display: none;
-}
-
 #profiles-header-content {
   max-width: 16em;
   white-space: nowrap;
@@ -2296,6 +2385,10 @@ radiogroup:focus-visible > .subviewradio[focused="true"] {
 
 #profiles-edit-this-profile-button > .toolbarbutton-text {
   display: none;
+}
+
+#profiles-copy-profile-button {
+  list-style-image: url("chrome://global/skin/icons/edit-copy.svg");
 }
 
 #profiles-create-profile-button {
@@ -2325,6 +2418,7 @@ radiogroup:focus-visible > .subviewradio[focused="true"] {
   z-index: -1;
   position: absolute;
   top: 0;
+  border-block-end: 1px solid var(--border-color-card);
 }
 
 #PanelUI-profiles > .panel-subview-body {
@@ -2344,4 +2438,18 @@ radiogroup:focus-visible > .subviewradio[focused="true"] {
 
 #content-analysis-panel-container {
   padding: 8px;
+}
+
+/* ----- IP Protection panel ----- */
+#PanelUI-ipprotection {
+  width: 400px;
+}
+
+#ipprotection-experiment-badge {
+  margin-inline-start: var(--space-xsmall);
+  display: inline-block;
+}
+
+#ipprotection-header-button {
+  list-style-image: url(chrome://global/skin/icons/help.svg);
 }

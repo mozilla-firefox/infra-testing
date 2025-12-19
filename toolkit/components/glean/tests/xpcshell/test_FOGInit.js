@@ -14,13 +14,6 @@ add_setup(
     // FOG needs a profile directory to put its data in.
     do_get_profile();
 
-    // Glean init (via `chrono`) gets the timezone via unprotected write.
-    // This is being worked around:
-    // https://github.com/chronotope/chrono/pull/677
-    // Until that reaches a release and we update to it (bug 1780401), ensure
-    // local time has been loaded by JS before we kick of Glean init.
-    new Date().getHours(); // used for its side effect.
-
     // We need to initialize it once, otherwise operations will be stuck in the pre-init queue.
     Services.fog.initializeFOG();
   }
@@ -33,11 +26,9 @@ add_task(function test_fog_init_works() {
     Assert.ok(true, "Too close to 'metrics' ping send window. Skipping test.");
     return;
   }
-  Assert.greater(
-    Glean.fog.initialization.testGetValue(),
-    0,
-    "FOG init happened, and its time was measured."
-  );
+  const snapshot = Glean.fog.initializations.testGetValue();
+  Assert.equal(snapshot.count, 1, "FOG init happened once.");
+  Assert.greater(snapshot.sum, 0, "FOG init's time was measured.");
 });
 
 add_task(function test_fog_initialized_with_correct_rate_limit() {

@@ -6,14 +6,14 @@
 
 #include "MappedDeclarationsBuilder.h"
 
+#include "mozilla/dom/Document.h"
 #include "nsAttrValue.h"
 #include "nsAttrValueInlines.h"
-#include "mozilla/dom/Document.h"
 #include "nsPresContext.h"
 
 namespace mozilla {
 
-void MappedDeclarationsBuilder::SetIdentAtomValue(nsCSSPropertyID aId,
+void MappedDeclarationsBuilder::SetIdentAtomValue(NonCustomCSSPropertyId aId,
                                                   nsAtom* aValue) {
   Servo_DeclarationBlock_SetIdentStringValue(&EnsureDecls(), aId, aValue);
   if (aId == eCSSProperty__x_lang) {

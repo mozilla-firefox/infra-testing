@@ -6,8 +6,6 @@
 
 #include "ServiceWorkerUtils.h"
 
-#include "nsContentPolicyUtils.h"
-
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/LoadInfo.h"
@@ -15,8 +13,8 @@
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_extensions.h"
 #include "mozilla/dom/BrowsingContext.h"
-#include "mozilla/dom/ClientInfo.h"
 #include "mozilla/dom/ClientIPCTypes.h"
+#include "mozilla/dom/ClientInfo.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Navigator.h"
 #include "mozilla/dom/ServiceWorkerGlobalScopeBinding.h"
@@ -24,6 +22,7 @@
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRunnable.h"
 #include "nsCOMPtr.h"
+#include "nsContentPolicyUtils.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsIGlobalObject.h"
 #include "nsIPrincipal.h"
@@ -280,13 +279,13 @@ void ServiceWorkerScopeAndScriptAreValid(const ClientInfo& aClientInfo,
   // The refs should really be empty coming in here, but if someone
   // injects bad data into IPC, who knows.  So let's revalidate that.
   nsAutoCString ref;
-  Unused << aScopeURI->GetRef(ref);
+  (void)aScopeURI->GetRef(ref);
   if (NS_WARN_IF(!ref.IsEmpty())) {
     aRv.ThrowSecurityError("Non-empty fragment on scope URL");
     return;
   }
 
-  Unused << aScriptURI->GetRef(ref);
+  (void)aScriptURI->GetRef(ref);
   if (NS_WARN_IF(!ref.IsEmpty())) {
     aRv.ThrowSecurityError("Non-empty fragment on script URL");
     return;
@@ -354,12 +353,18 @@ void ServiceWorkerScopeAndScriptAreValid(const ClientInfo& aClientInfo,
     // logic here (and the CheckMayLoad calls above) corresponds to the steps of
     // the register (https://w3c.github.io/ServiceWorker/#register-algorithm)
     // which explicitly throws a SecurityError.
-    nsCOMPtr<nsILoadInfo> secCheckLoadInfo = new mozilla::net::LoadInfo(
-        principal,  // loading principal
-        principal,  // triggering principal
-        maybeDoc,   // loading node
-        nsILoadInfo::SEC_ONLY_FOR_EXPLICIT_CONTENTSEC_CHECK,
-        nsIContentPolicy::TYPE_INTERNAL_SERVICE_WORKER, Some(aClientInfo));
+    Result<RefPtr<net::LoadInfo>, nsresult> maybeLoadInfo =
+        net::LoadInfo::Create(
+            principal,  // loading principal
+            principal,  // triggering principal
+            maybeDoc,   // loading node
+            nsILoadInfo::SEC_ONLY_FOR_EXPLICIT_CONTENTSEC_CHECK,
+            nsIContentPolicy::TYPE_INTERNAL_SERVICE_WORKER, Some(aClientInfo));
+    if (NS_WARN_IF(maybeLoadInfo.isErr())) {
+      aResult.ThrowSecurityError("Script URL is not allowed by policy.");
+      return;
+    }
+    RefPtr<net::LoadInfo> secCheckLoadInfo = maybeLoadInfo.unwrap();
 
     if (cspListener) {
       rv = secCheckLoadInfo->SetCspEventListener(cspListener);

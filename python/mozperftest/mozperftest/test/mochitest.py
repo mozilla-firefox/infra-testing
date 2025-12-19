@@ -7,7 +7,9 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 from mozperftest.layers import Layer
-from mozperftest.test.functionaltestrunner import FunctionalTestRunner
+from mozperftest.test.functionaltestrunner import (
+    FunctionalTestRunner,
+)
 from mozperftest.utils import (
     METRICS_MATCHER,
     ON_TRY,
@@ -96,7 +98,7 @@ class Mochitest(Layer):
     }
 
     def __init__(self, env, mach_cmd):
-        super(Mochitest, self).__init__(env, mach_cmd)
+        super().__init__(env, mach_cmd)
         self.topsrcdir = mach_cmd.topsrcdir
         self._mach_context = mach_cmd._mach_context
         self.python_path = mach_cmd.virtualenv_manager.python_path
@@ -134,7 +136,7 @@ class Mochitest(Layer):
         gecko_profile_entries = os.getenv("MOZ_PROFILER_STARTUP_ENTRIES", "65536000")
         gecko_profile_interval = os.getenv("MOZ_PROFILER_STARTUP_INTERVAL", None)
 
-        if self.get_arg("gecko-profile") or os.getenv("MOZ_PROFILER_STARTUP") == "1":
+        if self.get_arg("gecko-profile"):
             gecko_profile_args.append("--profiler")
             gecko_profile_args.extend(
                 [
@@ -173,16 +175,59 @@ class Mochitest(Layer):
             parsed_extra_args.append(f"--{arg}")
         return parsed_extra_args
 
-    def _get_mochitest_args(self):
+    def _setup_mochitest_android_args(self, metadata):
+        """Sets up all the arguments needed to run mochitest android tests."""
+        app = metadata.binary
+        activity = self.get_arg("android-activity")
+        if (app + ".") in activity:
+            # Mochitest prefixes the activity with the app-name so we need to
+            # remove it here if it exists.
+            activity = activity.replace(app + ".", "")
+
+        mochitest_android_args = [
+            "--android",
+            f"--app={app}",
+            f"--activity={activity}",
+        ]
+
+        if not ON_TRY:
+            os.environ["MOZ_HOST_BIN"] = self.mach_cmd.bindir
+            mochitest_android_args.extend(
+                [
+                    f"--setenv=MOZ_HOST_BIN={os.environ['MOZ_HOST_BIN']}",
+                ]
+            )
+        else:
+            os.environ["MOZ_HOST_BIN"] = str(
+                Path(os.getenv("MOZ_FETCHES_DIR"), "hostutils")
+            )
+            mochitest_android_args.extend(
+                [
+                    f"--setenv=MOZ_HOST_BIN={os.environ['MOZ_HOST_BIN']}",
+                    f"--remote-webserver={os.environ['HOST_IP']}",
+                    "--http-port=8854",
+                    "--ssl-port=4454",
+                ]
+            )
+
+        return mochitest_android_args
+
+    def _get_mochitest_args(self, metadata):
         """Handles setup for all mochitest-specific arguments."""
         mochitest_args = []
+
         mochitest_args.extend(self._enable_gecko_profiling())
         mochitest_args.extend(self._parse_extra_args())
+
+        if self.get_arg("android"):
+            mochitest_args.extend(self._setup_mochitest_android_args(metadata))
+
         return mochitest_args
 
     def remote_run(self, test, metadata):
         """Run tests in CI."""
         import runtests
+        import runtestsremote
         from manifestparser import TestManifest
         from mochitest_options import MochitestArgumentParser
 
@@ -201,12 +246,18 @@ class Mochitest(Layer):
 
         manifest_path = Path(test.parent, manifest_name)
         manifest = TestManifest([str(manifest_path)], strict=False)
-        manifest.active_tests(paths=[str(test)])
+        test_list = manifest.active_tests(paths=(str(test),))
+
+        subsuite = None
+        for parsed_test in test_list or []:
+            if str(test) in str(Path(parsed_test.get("path", ""))):
+                subsuite = parsed_test.get("subsuite", None)
+                break
 
         # Use the mochitest argument parser to parse the extra argument
         # options, and produce an `args` object that has all the defaults
         parser = MochitestArgumentParser()
-        args = parser.parse_args(self._get_mochitest_args())
+        args = parser.parse_args(self._get_mochitest_args(metadata))
 
         # Bug 1858155 - Attempting to only use one test_path triggers a failure
         # during test execution
@@ -217,18 +268,32 @@ class Mochitest(Layer):
         args.topobjdir = self.topobjdir
         args.topsrcdir = self.topsrcdir
         args.flavor = manifest_flavor
-        args.app = self.get_arg("mochitest_binary")
+
+        if subsuite:
+            args.subsuite = subsuite
 
         fetch_dir = os.getenv("MOZ_FETCHES_DIR")
-        args.utilityPath = str(Path(fetch_dir, "bin"))
-        args.extraProfileFiles.append(str(Path(fetch_dir, "bin", "plugins")))
-        args.testingModulesDir = str(Path(fetch_dir, "modules"))
-        args.symbolsPath = str(Path(fetch_dir, "crashreporter-symbols"))
-        args.certPath = str(Path(fetch_dir, "certs"))
+        if self.get_arg("android"):
+            args.utilityPath = str(Path(fetch_dir, "hostutils"))
+            args.xrePath = str(Path(fetch_dir, "hostutils"))
+            args.extraProfileFiles.append(str(Path(fetch_dir, "bin", "plugins")))
+            args.testingModulesDir = str(Path(fetch_dir, "modules"))
+            args.symbolsPath = str(Path(fetch_dir, "crashreporter-symbols"))
+            args.certPath = str(Path(fetch_dir, "certs"))
+        else:
+            args.app = self.get_arg("mochitest_binary")
+            args.utilityPath = str(Path(fetch_dir, "bin"))
+            args.extraProfileFiles.append(str(Path(fetch_dir, "bin", "plugins")))
+            args.testingModulesDir = str(Path(fetch_dir, "modules"))
+            args.symbolsPath = str(Path(fetch_dir, "crashreporter-symbols"))
+            args.certPath = str(Path(fetch_dir, "certs"))
 
         log_processor = LogProcessor(METRICS_MATCHER)
         with redirect_stdout(log_processor):
-            result = runtests.run_test_harness(parser, args)
+            if self.get_arg("android"):
+                result = runtestsremote.run_test_harness(parser, args)
+            else:
+                result = runtests.run_test_harness(parser, args)
 
         return result, log_processor
 
@@ -253,7 +318,7 @@ class Mochitest(Layer):
                     status, log_processor = FunctionalTestRunner.test(
                         self.mach_cmd,
                         [str(test)],
-                        self._get_mochitest_args() + ["--keep-open=False"],
+                        self._get_mochitest_args(metadata) + ["--keep-open=False"],
                     )
             finally:
                 metadata.run_hook(

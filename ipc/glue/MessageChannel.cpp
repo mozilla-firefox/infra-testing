@@ -15,20 +15,16 @@
 #include "base/waitable_event.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/CycleCollectedJSContext.h"
-#include "mozilla/DebugOnly.h"
-#include "mozilla/Fuzzing.h"
 #include "mozilla/FlowMarkers.h"
 #include "mozilla/IntentionalCrash.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/ProfilerMarkers.h"
-#include "mozilla/ScopeExit.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/glean/IpcMetrics.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/ipc/NodeController.h"
 #include "mozilla/ipc/ProcessChild.h"
@@ -133,9 +129,10 @@ bool MessageChannel::sIsPumpingMessages = false;
 
 class AutoEnterTransaction {
  public:
-  explicit AutoEnterTransaction(MessageChannel* aChan, int32_t aMsgSeqno,
-                                int32_t aTransactionID, int aNestedLevel)
-      MOZ_REQUIRES(*aChan->mMonitor)
+  explicit AutoEnterTransaction(MessageChannel* aChan,
+                                IPC::Message::seqno_t aMsgSeqno,
+                                IPC::Message::seqno_t aTransactionID,
+                                int aNestedLevel) MOZ_REQUIRES(*aChan->mMonitor)
       : mChan(aChan),
         mActive(true),
         mOutgoing(true),
@@ -234,12 +231,12 @@ class AutoEnterTransaction {
     return mNestedLevel;
   }
 
-  int32_t SequenceNumber() const {
+  IPC::Message::seqno_t SequenceNumber() const {
     MOZ_RELEASE_ASSERT(mActive);
     return mSeqno;
   }
 
-  int32_t TransactionID() const {
+  IPC::Message::seqno_t TransactionID() const {
     MOZ_RELEASE_ASSERT(mActive);
     return mTransaction;
   }
@@ -248,7 +245,7 @@ class AutoEnterTransaction {
     MOZ_RELEASE_ASSERT(aMessage->seqno() == mSeqno);
     MOZ_RELEASE_ASSERT(aMessage->transaction_id() == mTransaction);
     MOZ_RELEASE_ASSERT(!mReply);
-    IPC_LOG("Reply received on worker thread: seqno=%d", mSeqno);
+    IPC_LOG("Reply received on worker thread: seqno=%" PRId64, mSeqno);
     mReply = std::move(aMessage);
     MOZ_RELEASE_ASSERT(IsComplete());
   }
@@ -297,8 +294,8 @@ class AutoEnterTransaction {
 
   // Properties of the message being sent/received.
   int mNestedLevel;
-  int32_t mSeqno;
-  int32_t mTransaction;
+  IPC::Message::seqno_t mSeqno;
+  IPC::Message::seqno_t mTransaction;
 
   // Next item in mChan->mTransactionStack.
   AutoEnterTransaction* mNext;
@@ -497,7 +494,7 @@ void MessageChannel::AssertMaybeDeferredCountCorrect() {
 // function is only called when the current transaction is known to be for a
 // NESTED_INSIDE_SYNC message. In that case, we know for sure what the caller is
 // looking for.
-int32_t MessageChannel::CurrentNestedInsideSyncTransaction() const {
+auto MessageChannel::CurrentNestedInsideSyncTransaction() const -> seqno_t {
   mMonitor->AssertCurrentThreadOwns();
   if (!mTransactionStack) {
     return 0;
@@ -710,7 +707,7 @@ bool MessageChannel::OpenOnSameThread(MessageChannel* aTargetChan,
          Open(std::move(porta), aSide, channelId, currentThread);
 }
 
-bool MessageChannel::Send(UniquePtr<Message> aMsg, int32_t* aSeqno) {
+bool MessageChannel::Send(UniquePtr<Message> aMsg, seqno_t* aSeqno) {
   MOZ_RELEASE_ASSERT(!aMsg->is_sync());
   MOZ_RELEASE_ASSERT(aMsg->nested_level() != IPC::Message::NESTED_INSIDE_SYNC);
   MOZ_RELEASE_ASSERT(aMsg->routing_id() != MSG_ROUTING_NONE);
@@ -843,7 +840,7 @@ bool MessageChannel::SendBuildIDsMatchMessage(const char* aParentBuildID) {
 
 class CancelMessage : public IPC::Message {
  public:
-  explicit CancelMessage(int transaction)
+  explicit CancelMessage(seqno_t transaction)
       : IPC::Message(MSG_ROUTING_NONE, CANCEL_MESSAGE_TYPE) {
     set_transaction_id(transaction);
   }
@@ -961,7 +958,7 @@ class IPCFlowMarker : public BaseMarkerType<IPCFlowMarker> {
   static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
                                                MS::Location::MarkerTable};
   static constexpr const char* TableLabel =
-      "{marker.name} - {marker.data.name}(flow={marker.data.flow})";
+      "{marker.data.name}(flow={marker.data.flow})";
   static constexpr const char* ChartLabel = "{marker.name}";
 
   static constexpr MS::ETWMarkerGroup Group = MS::ETWMarkerGroup::Generic;
@@ -1001,12 +998,12 @@ void MessageChannel::OnMessageReceivedFromLink(UniquePtr<Message> aMsg) {
   // If we're awaiting a sync reply, we know that it needs to be immediately
   // handled to unblock us.
   if (aMsg->is_sync() && aMsg->is_reply()) {
-    IPC_LOG("Received reply seqno=%d xid=%d", aMsg->seqno(),
+    IPC_LOG("Received reply seqno=%" PRId64 " xid=%" PRId64, aMsg->seqno(),
             aMsg->transaction_id());
 
     if (aMsg->seqno() == mTimedOutMessageSeqno) {
       // Drop the message, but allow future sync messages to be sent.
-      IPC_LOG("Received reply to timedout message; igoring; xid=%d",
+      IPC_LOG("Received reply to timedout message; igoring; xid=%" PRId64,
               mTimedOutMessageSeqno);
       EndTimeout();
       return;
@@ -1062,8 +1059,9 @@ void MessageChannel::OnMessageReceivedFromLink(UniquePtr<Message> aMsg) {
 
   bool shouldWakeUp = AwaitingSyncReply() && !ShouldDeferMessage(*aMsg);
 
-  IPC_LOG("Receive from link; seqno=%d, xid=%d, shouldWakeUp=%d", aMsg->seqno(),
-          aMsg->transaction_id(), shouldWakeUp);
+  IPC_LOG("Receive from link; seqno=%" PRId64 ", xid=%" PRId64
+          ", shouldWakeUp=%d",
+          aMsg->seqno(), aMsg->transaction_id(), shouldWakeUp);
 
   struct FlowMarkerDispatch {
     FlowMarkerDispatch(msgid_t type, Flow flow) : type(type), flow(flow) {
@@ -1086,8 +1084,8 @@ void MessageChannel::OnMessageReceivedFromLink(UniquePtr<Message> aMsg) {
   // We want this marker to span the time when Post is called so that we
   // can inherit the connection to the runnable.
   FlowMarkerDispatch marker(
-      aMsg->type(),
-      Flow::Global(aMsg->seqno() ^ LossyNarrowChannelId(mMessageChannelId)));
+      aMsg->type(), Flow::Global(static_cast<uint64_t>(aMsg->seqno()) ^
+                                 LossyNarrowChannelId(mMessageChannelId)));
 
   // There are two cases we're concerned about, relating to the state of the
   // worker thread:
@@ -1149,7 +1147,7 @@ void MessageChannel::ProcessPendingRequests(
     return;
   }
 
-  IPC_LOG("ProcessPendingRequests for seqno=%d, xid=%d",
+  IPC_LOG("ProcessPendingRequests for seqno=%" PRId64 ", xid=%" PRId64,
           aTransaction.SequenceNumber(), aTransaction.TransactionID());
 
   // Loop until there aren't any more nested messages to process.
@@ -1176,7 +1174,8 @@ void MessageChannel::ProcessPendingRequests(
       // Only log the interesting messages.
       if (msg->is_sync() ||
           msg->nested_level() == IPC::Message::NESTED_INSIDE_CPOW) {
-        IPC_LOG("ShouldDeferMessage(seqno=%d) = %d", msg->seqno(), defer);
+        IPC_LOG("ShouldDeferMessage(seqno=%" PRId64 ") = %d", msg->seqno(),
+                defer);
       }
 
       if (!defer) {
@@ -1292,7 +1291,7 @@ bool MessageChannel::Send(UniquePtr<Message> aMsg, UniquePtr<Message>* aReply) {
 
   aMsg->set_seqno(NextSeqno());
 
-  int32_t seqno = aMsg->seqno();
+  seqno_t seqno = aMsg->seqno();
   int nestedLevel = aMsg->nested_level();
   msgid_t replyType = aMsg->type() + 1;
 
@@ -1304,12 +1303,12 @@ bool MessageChannel::Send(UniquePtr<Message> aMsg, UniquePtr<Message>* aReply) {
   // message we're sending).
   bool nest =
       stackTop && stackTop->NestedLevel() == IPC::Message::NESTED_INSIDE_SYNC;
-  int32_t transaction = nest ? stackTop->TransactionID() : seqno;
+  seqno_t transaction = nest ? stackTop->TransactionID() : seqno;
   aMsg->set_transaction_id(transaction);
 
   AutoEnterTransaction transact(this, seqno, transaction, nestedLevel);
 
-  IPC_LOG("Send seqno=%d, xid=%d", seqno, transaction);
+  IPC_LOG("Send seqno=%" PRId64 ", xid=%" PRId64, seqno, transaction);
 
   // aMsg will be destroyed soon, let's keep its type.
   const char* msgName = aMsg->name();
@@ -1365,7 +1364,7 @@ bool MessageChannel::Send(UniquePtr<Message> aMsg, UniquePtr<Message>* aReply) {
         break;
       }
 
-      IPC_LOG("Timing out Send: xid=%d", transaction);
+      IPC_LOG("Timing out Send: xid=%" PRId64, transaction);
 
       mTimedOutMessageSeqno = seqno;
       mTimedOutMessageNestedLevel = nestedLevel;
@@ -1379,20 +1378,22 @@ bool MessageChannel::Send(UniquePtr<Message> aMsg, UniquePtr<Message>* aReply) {
   }
 
   if (transact.IsCanceled()) {
-    IPC_LOG("Other side canceled seqno=%d, xid=%d", seqno, transaction);
+    IPC_LOG("Other side canceled seqno=%" PRId64 ", xid=%" PRId64, seqno,
+            transaction);
     mLastSendError = SyncSendError::CancelledAfterSend;
     return false;
   }
 
   if (transact.IsError()) {
-    IPC_LOG("Error: seqno=%d, xid=%d", seqno, transaction);
+    IPC_LOG("Error: seqno=%" PRId64 ", xid=%" PRId64, seqno, transaction);
     mLastSendError = SyncSendError::ReplyError;
     return false;
   }
 
   uint32_t latencyMs = round((TimeStamp::Now() - start).ToMilliseconds());
-  IPC_LOG("Got reply: seqno=%d, xid=%d, msgName=%s, latency=%ums", seqno,
-          transaction, msgName, latencyMs);
+  IPC_LOG("Got reply: seqno=%" PRId64 ", xid=%" PRId64
+          ", msgName=%s, latency=%ums",
+          seqno, transaction, msgName, latencyMs);
 
   UniquePtr<Message> reply = transact.GetReply();
 
@@ -1420,7 +1421,7 @@ bool MessageChannel::ProcessPendingRequest(ActorLifecycleProxy* aProxy,
   AssertWorkerThread();
   mMonitor->AssertCurrentThreadOwns();
 
-  IPC_LOG("Process pending: seqno=%d, xid=%d", aUrgent->seqno(),
+  IPC_LOG("Process pending: seqno=%" PRId64 ", xid=%" PRId64, aUrgent->seqno(),
           aUrgent->transaction_id());
 
   // keep the error relevant information
@@ -1512,6 +1513,8 @@ NS_IMPL_ISUPPORTS_INHERITED(MessageChannel::MessageTask, CancelableRunnable,
 
 static uint32_t ToRunnablePriority(IPC::Message::PriorityValue aPriority) {
   switch (aPriority) {
+    case IPC::Message::LOW_PRIORITY:
+      return nsIRunnablePriority::PRIORITY_LOW;
     case IPC::Message::NORMAL_PRIORITY:
       return nsIRunnablePriority::PRIORITY_NORMAL;
     case IPC::Message::INPUT_PRIORITY:
@@ -1694,14 +1697,14 @@ void MessageChannel::DispatchMessage(ActorLifecycleProxy* aProxy,
   }
 #endif
 
-  IPC_LOG("DispatchMessage: seqno=%d, xid=%d", aMsg->seqno(),
+  IPC_LOG("DispatchMessage: seqno=%" PRId64 ", xid=%" PRId64, aMsg->seqno(),
           aMsg->transaction_id());
   AddProfilerMarker(*aMsg, MessageDirection::eReceiving);
 
   {
     AutoEnterTransaction transaction(this, *aMsg);
 
-    int id = aMsg->transaction_id();
+    seqno_t id = aMsg->transaction_id();
     MOZ_RELEASE_ASSERT(!aMsg->is_sync() || id == transaction.TransactionID());
 
     {
@@ -1721,7 +1724,8 @@ void MessageChannel::DispatchMessage(ActorLifecycleProxy* aProxy,
 
     if (reply && transaction.IsCanceled()) {
       // The transaction has been canceled. Don't send a reply.
-      IPC_LOG("Nulling out reply due to cancellation, seqno=%d, xid=%d",
+      IPC_LOG("Nulling out reply due to cancellation, seqno=%" PRId64
+              ", xid=%" PRId64,
               aMsg->seqno(), id);
       reply = nullptr;
     }
@@ -1734,7 +1738,7 @@ void MessageChannel::DispatchMessage(ActorLifecycleProxy* aProxy,
 #endif
 
   if (reply && ChannelConnected == mChannelState) {
-    IPC_LOG("Sending reply seqno=%d, xid=%d", aMsg->seqno(),
+    IPC_LOG("Sending reply seqno=%" PRId64 ", xid=%" PRId64, aMsg->seqno(),
             aMsg->transaction_id());
     AddProfilerMarker(*reply, MessageDirection::eSending);
 
@@ -2234,7 +2238,7 @@ void MessageChannel::AddProfilerMarker(const IPC::Message& aMessage,
     if (pid != base::kInvalidProcessId &&
         !profiler_is_locked_on_current_thread()) {
       // The current timestamp must be given to the `IPCMarker` payload.
-      [[maybe_unused]] const TimeStamp now = TimeStamp::Now();
+      const TimeStamp now = TimeStamp::Now();
       bool isThreadBeingProfiled =
           profiler_thread_is_being_profiled_for_markers();
       PROFILER_MARKER(
@@ -2263,7 +2267,7 @@ void MessageChannel::AddProfilerMarker(const IPC::Message& aMessage,
 void MessageChannel::EndTimeout() {
   mMonitor->AssertCurrentThreadOwns();
 
-  IPC_LOG("Ending timeout of seqno=%d", mTimedOutMessageSeqno);
+  IPC_LOG("Ending timeout of seqno=%" PRId64, mTimedOutMessageSeqno);
   mTimedOutMessageSeqno = 0;
   mTimedOutMessageNestedLevel = 0;
 
@@ -2303,7 +2307,7 @@ void MessageChannel::RepostAllMessages() {
   AssertMaybeDeferredCountCorrect();
 }
 
-void MessageChannel::CancelTransaction(int transaction) {
+void MessageChannel::CancelTransaction(seqno_t transaction) {
   mMonitor->AssertCurrentThreadOwns();
 
   // When we cancel a transaction, we need to behave as if there's no longer
@@ -2316,13 +2320,13 @@ void MessageChannel::CancelTransaction(int transaction) {
   // tampered with (by us). If so, they don't reset the variable to the old
   // value.
 
-  IPC_LOG("CancelTransaction: xid=%d", transaction);
+  IPC_LOG("CancelTransaction: xid=%" PRId64, transaction);
 
   // An unusual case: We timed out a transaction which the other side then
   // cancelled. In this case we just leave the timedout state and try to
   // forget this ever happened.
   if (transaction == mTimedOutMessageSeqno) {
-    IPC_LOG("Cancelled timed out message %d", mTimedOutMessageSeqno);
+    IPC_LOG("Cancelled timed out message %" PRId64, mTimedOutMessageSeqno);
     EndTimeout();
 
     // Normally mCurrentTransaction == 0 here. But it can be non-zero if:
@@ -2353,8 +2357,8 @@ void MessageChannel::CancelTransaction(int transaction) {
     if (msg->is_sync() && msg->nested_level() != IPC::Message::NOT_NESTED) {
       MOZ_RELEASE_ASSERT(!foundSync);
       MOZ_RELEASE_ASSERT(msg->transaction_id() != transaction);
-      IPC_LOG("Removing msg from queue seqno=%d xid=%d", msg->seqno(),
-              msg->transaction_id());
+      IPC_LOG("Removing msg from queue seqno=%" PRId64 " xid=%" PRId64,
+              msg->seqno(), msg->transaction_id());
       foundSync = true;
       if (!IsAlwaysDeferred(*msg)) {
         mMaybeDeferredPendingCount--;
@@ -2379,7 +2383,7 @@ void MessageChannel::CancelCurrentTransaction() {
       mListener->IntentionalCrash();
     }
 
-    IPC_LOG("Cancel requested: current xid=%d",
+    IPC_LOG("Cancel requested: current xid=%" PRId64,
             CurrentNestedInsideSyncTransaction());
     MOZ_RELEASE_ASSERT(DispatchingSyncMessage());
     auto cancel =

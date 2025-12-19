@@ -23,7 +23,7 @@ function setupTest({ ...args } = {}) {
 add_task(async function test_set_inactive() {
   const { manager, cleanup } = await setupTest();
 
-  await manager.store.addEnrollment(ExperimentFakes.experiment("foo"));
+  await manager.enroll(NimbusTestUtils.factories.recipe("foo"), "test");
   manager.unenroll("foo");
 
   Assert.equal(
@@ -32,15 +32,17 @@ add_task(async function test_set_inactive() {
     "should set .active to false"
   );
 
-  cleanup();
+  await cleanup();
 });
 
 add_task(async function test_unenroll_opt_out() {
   Services.prefs.setBoolPref(STUDIES_OPT_OUT_PREF, true);
 
   const { manager, cleanup } = await setupTest();
-  const experiment = ExperimentFakes.experiment("foo");
-  await manager.store.addEnrollment(experiment);
+  const experiment = NimbusTestUtils.factories.recipe.withFeatureConfig("foo", {
+    featureId: "testFeature",
+  });
+  await manager.enroll(experiment, "test");
 
   // Check that there aren't any Glean normandy unenrollNimbusExperiment events yet
   Assert.equal(
@@ -57,6 +59,10 @@ add_task(async function test_unenroll_opt_out() {
   );
 
   Services.prefs.setBoolPref(STUDIES_OPT_OUT_PREF, false);
+
+  await NimbusTestUtils.assert.enrollmentExists(experiment.slug, {
+    active: false,
+  });
 
   Assert.equal(
     manager.store.get(experiment.slug).active,
@@ -72,7 +78,7 @@ add_task(async function test_unenroll_opt_out() {
     [
       {
         value: experiment.slug,
-        branch: experiment.branch.slug,
+        branch: experiment.branches[0].slug,
         reason: "studies-opt-out",
       },
     ]
@@ -84,13 +90,13 @@ add_task(async function test_unenroll_opt_out() {
     [
       {
         experiment: experiment.slug,
-        branch: experiment.branch.slug,
+        branch: experiment.branches[0].slug,
         reason: "studies-opt-out",
       },
     ]
   );
 
-  cleanup();
+  await cleanup();
   Services.prefs.clearUserPref(STUDIES_OPT_OUT_PREF);
 });
 
@@ -98,8 +104,8 @@ add_task(async function test_unenroll_rollout_opt_out() {
   Services.prefs.setBoolPref(STUDIES_OPT_OUT_PREF, true);
 
   const { manager, cleanup } = await setupTest();
-  const rollout = ExperimentFakes.rollout("foo");
-  manager.store.addEnrollment(rollout);
+  const rollout = NimbusTestUtils.factories.recipe("foo", { isRollout: true });
+  await manager.enroll(rollout, "test");
 
   // Check that there aren't any Glean normandy unenrollNimbusExperiment events yet
   Assert.equal(
@@ -117,6 +123,10 @@ add_task(async function test_unenroll_rollout_opt_out() {
 
   Services.prefs.setBoolPref(STUDIES_OPT_OUT_PREF, false);
 
+  await NimbusTestUtils.assert.enrollmentExists(rollout.slug, {
+    active: false,
+  });
+
   Assert.equal(
     manager.store.get(rollout.slug).active,
     false,
@@ -131,7 +141,7 @@ add_task(async function test_unenroll_rollout_opt_out() {
     [
       {
         value: rollout.slug,
-        branch: rollout.branch.slug,
+        branch: rollout.branches[0].slug,
         reason: "studies-opt-out",
       },
     ]
@@ -143,22 +153,23 @@ add_task(async function test_unenroll_rollout_opt_out() {
     [
       {
         experiment: rollout.slug,
-        branch: rollout.branch.slug,
+        branch: rollout.branches[0].slug,
         reason: "studies-opt-out",
       },
     ]
   );
 
-  cleanup();
+  await cleanup();
   Services.prefs.clearUserPref(STUDIES_OPT_OUT_PREF);
 });
 
 add_task(async function test_unenroll_uploadPref() {
   const { manager, cleanup } = await setupTest();
-  const recipe = ExperimentFakes.recipe("foo");
+  const recipe = NimbusTestUtils.factories.recipe("foo");
 
+  await manager.store.init();
   await manager.onStartup();
-  await ExperimentFakes.enrollmentHelper(recipe, { manager });
+  await NimbusTestUtils.enroll(recipe, { manager });
 
   Assert.equal(
     manager.store.get(recipe.slug).active,
@@ -168,13 +179,15 @@ add_task(async function test_unenroll_uploadPref() {
 
   Services.prefs.setBoolPref(UPLOAD_ENABLED_PREF, false);
 
+  await NimbusTestUtils.assert.enrollmentExists(recipe.slug, { active: false });
+
   Assert.equal(
     manager.store.get(recipe.slug).active,
     false,
     "Should set .active to false"
   );
 
-  cleanup();
+  await cleanup();
   Services.prefs.clearUserPref(UPLOAD_ENABLED_PREF);
 });
 
@@ -182,14 +195,9 @@ add_task(async function test_setExperimentInactive_called() {
   const { sandbox, manager, cleanup } = await setupTest();
   sandbox.spy(TelemetryEnvironment, "setExperimentInactive");
 
-  const experiment = ExperimentFakes.recipe("foo", {
-    bucketConfig: {
-      ...ExperimentFakes.recipe.bucketConfig,
-      count: 1000,
-    },
-  });
+  const experiment = NimbusTestUtils.factories.recipe("foo");
 
-  await manager.enroll(experiment);
+  await manager.enroll(experiment, "test");
 
   // Test Glean experiment API interaction
   Assert.notEqual(
@@ -212,14 +220,16 @@ add_task(async function test_setExperimentInactive_called() {
     "experiment should be inactive after unenroll"
   );
 
-  cleanup();
+  await cleanup();
 });
 
 add_task(async function test_send_unenroll_event() {
   const { manager, cleanup } = await setupTest();
-  const experiment = ExperimentFakes.experiment("foo");
+  const experiment = NimbusTestUtils.factories.recipe.withFeatureConfig("foo", {
+    featureId: "testFeature",
+  });
 
-  manager.store.addEnrollment(experiment);
+  await manager.enroll(experiment, "test");
 
   // Check that there aren't any Glean normandy unenrollNimbusExperiment events yet
   Assert.equal(
@@ -245,7 +255,7 @@ add_task(async function test_send_unenroll_event() {
     [
       {
         value: experiment.slug,
-        branch: experiment.branch.slug,
+        branch: experiment.branches[0].slug,
         reason: "some-reason",
       },
     ]
@@ -257,20 +267,20 @@ add_task(async function test_send_unenroll_event() {
     [
       {
         experiment: experiment.slug,
-        branch: experiment.branch.slug,
+        branch: experiment.branches[0].slug,
         reason: "some-reason",
       },
     ]
   );
 
-  cleanup();
+  await cleanup();
 });
 
 add_task(async function test_undefined_reason() {
   const { manager, cleanup } = await setupTest();
-  const experiment = ExperimentFakes.experiment("foo");
+  const experiment = NimbusTestUtils.factories.recipe("foo");
 
-  manager.store.addEnrollment(experiment);
+  await manager.enroll(experiment, "test");
 
   manager.unenroll("foo");
 
@@ -290,7 +300,7 @@ add_task(async function test_undefined_reason() {
     ["unknown"]
   );
 
-  cleanup();
+  await cleanup();
 });
 
 /**
@@ -301,54 +311,52 @@ add_task(async function test_undefined_reason() {
  */
 
 add_task(async function test_remove_rollouts() {
-  const { sandbox, manager, cleanup } = await setupTest();
-  sandbox.spy(manager.store, "updateExperiment");
-  const rollout = ExperimentFakes.rollout("foo");
-
-  await manager.enroll(
-    NimbusTestUtils.factories.recipe("foo", { isRollout: true })
-  );
-  Assert.ok(
-    manager.store.updateExperiment.notCalled,
-    "Should not have called updateExperiment when enrolling"
-  );
-
-  manager.unenroll("foo", { reason: "some-reason" });
-
-  Assert.ok(
-    manager.store.updateExperiment.calledOnce,
-    "Called to set the rollout as inactive"
-  );
-  Assert.ok(
-    manager.store.updateExperiment.calledWith(rollout.slug, {
-      active: false,
-      unenrollReason: "some-reason",
-    }),
-    "Called with expected parameters"
-  );
-
-  cleanup();
-});
-
-add_task(async function test_unenroll_individualOptOut_statusTelemetry() {
-  const { manager, cleanup } = await setupTest();
-
-  await manager.enroll(
-    ExperimentFakes.recipe("foo", {
-      bucketConfig: {
-        ...ExperimentFakes.recipe.bucketConfig,
-        count: 1000,
-      },
-      branches: [ExperimentFakes.recipe.branches[0]],
-    })
-  );
-
   Services.fog.applyServerKnobsConfig(
     JSON.stringify({
       metrics_enabled: {
         "nimbus_events.enrollment_status": true,
       },
     })
+  );
+
+  const { sandbox, manager, cleanup } = await setupTest();
+  sandbox.spy(manager.store, "deactivateEnrollment");
+  const rollout = NimbusTestUtils.factories.rollout("foo");
+
+  await manager.enroll(
+    NimbusTestUtils.factories.recipe("foo", { isRollout: true }),
+    "test"
+  );
+
+  manager.unenroll("foo", { reason: "some-reason" });
+
+  Assert.ok(
+    manager.store.deactivateEnrollment.calledOnceWithExactly(
+      rollout.slug,
+      "some-reason"
+    ),
+    "Called with expected parameters"
+  );
+
+  await cleanup();
+});
+
+add_task(async function test_unenroll_individualOptOut_statusTelemetry() {
+  Services.fog.applyServerKnobsConfig(
+    JSON.stringify({
+      metrics_enabled: {
+        "nimbus_events.enrollment_status": true,
+      },
+    })
+  );
+
+  const { manager, cleanup } = await setupTest();
+
+  await manager.enroll(
+    NimbusTestUtils.factories.recipe.withFeatureConfig("foo", {
+      featureId: "testFeature",
+    }),
+    "test"
   );
 
   manager.unenroll("foo", { reason: "individual-opt-out" });
@@ -359,28 +367,24 @@ add_task(async function test_unenroll_individualOptOut_statusTelemetry() {
       ?.map(ev => ev.extra),
     [
       {
+        status: "Enrolled",
+        reason: "Qualified",
         slug: "foo",
         branch: "control",
-        status: "Disqualified",
+      },
+      {
+        branch: "control",
         reason: "OptOut",
+        status: "Disqualified",
+        slug: "foo",
       },
     ]
   );
 
-  cleanup();
+  await cleanup();
 });
 
 add_task(async function testUnenrollBogusReason() {
-  const { manager, cleanup } = await setupTest();
-
-  await manager.enroll(
-    NimbusTestUtils.factories.recipe("bogus", {
-      branches: [NimbusTestUtils.factories.recipe.branches[0]],
-    })
-  );
-
-  Assert.ok(manager.store.get("bogus").active, "Enrollment active");
-
   Services.fog.applyServerKnobsConfig(
     JSON.stringify({
       metrics_enabled: {
@@ -388,6 +392,17 @@ add_task(async function testUnenrollBogusReason() {
       },
     })
   );
+
+  const { manager, cleanup } = await setupTest();
+
+  await manager.enroll(
+    NimbusTestUtils.factories.recipe("bogus", {
+      branches: [NimbusTestUtils.factories.recipe.branches[0]],
+    }),
+    "test"
+  );
+
+  Assert.ok(manager.store.get("bogus").active, "Enrollment active");
 
   manager.unenroll("bogus", "bogus");
 
@@ -397,11 +412,17 @@ add_task(async function testUnenrollBogusReason() {
       ?.map(ev => ev.extra),
     [
       {
-        slug: "bogus",
         branch: "control",
+        status: "Enrolled",
+        reason: "Qualified",
+        slug: "bogus",
+      },
+      {
         status: "Disqualified",
+        slug: "bogus",
         reason: "Error",
         error_string: "unknown",
+        branch: "control",
       },
     ]
   );
@@ -430,5 +451,5 @@ add_task(async function testUnenrollBogusReason() {
     ]
   );
 
-  cleanup();
+  await cleanup();
 });

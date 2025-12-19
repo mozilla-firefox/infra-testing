@@ -215,7 +215,6 @@ bool js::jit::CanInlineNativeCrossRealm(InlinableNative native) {
     case InlinableNative::IntrinsicIsObject:
     case InlinableNative::IntrinsicIsCrossRealmArrayConstructor:
     case InlinableNative::IntrinsicCanOptimizeArraySpecies:
-    case InlinableNative::IntrinsicCanOptimizeStringProtoSymbolLookup:
     case InlinableNative::IntrinsicToInteger:
     case InlinableNative::IntrinsicToLength:
     case InlinableNative::IntrinsicIsConstructing:
@@ -238,8 +237,6 @@ bool js::jit::CanInlineNativeCrossRealm(InlinableNative native) {
     case InlinableNative::IntrinsicGuardToSetObject:
     case InlinableNative::IntrinsicGetNextSetEntryForIterator:
     case InlinableNative::IntrinsicGuardToArrayBuffer:
-    case InlinableNative::IntrinsicArrayBufferByteLength:
-    case InlinableNative::IntrinsicPossiblyWrappedArrayBufferByteLength:
     case InlinableNative::IntrinsicGuardToSharedArrayBuffer:
     case InlinableNative::IntrinsicIsTypedArrayConstructor:
     case InlinableNative::IntrinsicIsTypedArray:
@@ -250,11 +247,7 @@ bool js::jit::CanInlineNativeCrossRealm(InlinableNative native) {
     case InlinableNative::IntrinsicRegExpExec:
     case InlinableNative::IntrinsicRegExpExecForTest:
     case InlinableNative::IntrinsicTypedArrayLength:
-    case InlinableNative::IntrinsicTypedArrayLengthZeroOnOutOfBounds:
-    case InlinableNative::IntrinsicTypedArrayByteOffset:
-    case InlinableNative::IntrinsicTypedArrayElementSize:
     case InlinableNative::IntrinsicArrayIteratorPrototypeOptimizable:
-    case InlinableNative::IntrinsicThisTimeValue:
 #ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
     case InlinableNative::IntrinsicGuardToAsyncDisposableStack:
     case InlinableNative::IntrinsicGuardToDisposableStack:
@@ -273,6 +266,7 @@ bool js::jit::CanInlineNativeCrossRealm(InlinableNative native) {
     case InlinableNative::ArrayShift:
     case InlinableNative::ArrayPush:
     case InlinableNative::ArraySlice:
+    case InlinableNative::ArrayBufferByteLength:
     case InlinableNative::AtomicsCompareExchange:
     case InlinableNative::AtomicsExchange:
     case InlinableNative::AtomicsLoad:
@@ -309,6 +303,8 @@ bool js::jit::CanInlineNativeCrossRealm(InlinableNative native) {
     case InlinableNative::DataViewSetFloat64:
     case InlinableNative::DataViewSetBigInt64:
     case InlinableNative::DataViewSetBigUint64:
+    case InlinableNative::DataViewByteLength:
+    case InlinableNative::DataViewByteOffset:
     case InlinableNative::DateGetTime:
     case InlinableNative::DateGetFullYear:
     case InlinableNative::DateGetMonth:
@@ -323,15 +319,25 @@ bool js::jit::CanInlineNativeCrossRealm(InlinableNative native) {
     case InlinableNative::MapHas:
     case InlinableNative::MapDelete:
     case InlinableNative::MapSet:
+    case InlinableNative::MapSize:
     case InlinableNative::Number:
     case InlinableNative::NumberParseInt:
     case InlinableNative::NumberToString:
     case InlinableNative::ReflectGetPrototypeOf:
+    case InlinableNative::RegExpDotAll:
+    case InlinableNative::RegExpGlobal:
+    case InlinableNative::RegExpHasIndices:
+    case InlinableNative::RegExpIgnoreCase:
+    case InlinableNative::RegExpMultiline:
+    case InlinableNative::RegExpSticky:
+    case InlinableNative::RegExpUnicode:
+    case InlinableNative::RegExpUnicodeSets:
     case InlinableNative::SetConstructor:
     case InlinableNative::SetHas:
     case InlinableNative::SetDelete:
     case InlinableNative::SetAdd:
     case InlinableNative::SetSize:
+    case InlinableNative::SharedArrayBufferByteLength:
     case InlinableNative::String:
     case InlinableNative::StringToString:
     case InlinableNative::StringValueOf:
@@ -348,6 +354,8 @@ bool js::jit::CanInlineNativeCrossRealm(InlinableNative native) {
     case InlinableNative::StringEndsWith:
     case InlinableNative::StringToLowerCase:
     case InlinableNative::StringToUpperCase:
+    case InlinableNative::StringToLocaleLowerCase:
+    case InlinableNative::StringToLocaleUpperCase:
     case InlinableNative::StringTrim:
     case InlinableNative::StringTrimStart:
     case InlinableNative::StringTrimEnd:
@@ -358,6 +366,15 @@ bool js::jit::CanInlineNativeCrossRealm(InlinableNative native) {
     case InlinableNative::ObjectKeys:
     case InlinableNative::ObjectToString:
     case InlinableNative::TypedArrayConstructor:
+    case InlinableNative::TypedArrayFill:
+    case InlinableNative::TypedArraySet:
+    case InlinableNative::TypedArraySubarray:
+    case InlinableNative::TypedArrayLength:
+    case InlinableNative::TypedArrayByteLength:
+    case InlinableNative::TypedArrayByteOffset:
+    case InlinableNative::WeakMapGet:
+    case InlinableNative::WeakMapHas:
+    case InlinableNative::WeakSetHas:
 #ifdef FUZZING_JS_FUZZILLI
     case InlinableNative::FuzzilliHash:
 #endif

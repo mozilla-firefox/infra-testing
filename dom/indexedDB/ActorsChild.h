@@ -8,7 +8,8 @@
 #define mozilla_dom_indexeddb_actorschild_h__
 
 #include "js/RootingAPI.h"
-#include "mozilla/Attributes.h"
+#include "mozilla/InitializedOnce.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/IDBCursorType.h"
 #include "mozilla/dom/IDBTransaction.h"
 #include "mozilla/dom/indexedDB/PBackgroundIDBCursorChild.h"
@@ -20,8 +21,6 @@
 #include "mozilla/dom/indexedDB/PBackgroundIDBTransactionChild.h"
 #include "mozilla/dom/indexedDB/PBackgroundIDBVersionChangeTransactionChild.h"
 #include "mozilla/dom/indexedDB/PBackgroundIndexedDBUtilsChild.h"
-#include "mozilla/InitializedOnce.h"
-#include "mozilla/UniquePtr.h"
 #include "nsCOMPtr.h"
 #include "nsTArray.h"
 

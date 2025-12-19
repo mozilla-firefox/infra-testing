@@ -6,8 +6,8 @@
 #ifndef AudioSink_h__
 #define AudioSink_h__
 
-#include "AudioStream.h"
 #include "AudibilityMonitor.h"
+#include "AudioStream.h"
 #include "MediaEventSource.h"
 #include "MediaInfo.h"
 #include "MediaQueue.h"
@@ -17,7 +17,6 @@
 #include "mozilla/Monitor.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/Result.h"
 #include "nsISupportsImpl.h"
 
 namespace mozilla {

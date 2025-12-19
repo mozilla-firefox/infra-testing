@@ -32,6 +32,7 @@ stage-package: multilocale.txt locale-manifest.in $(MOZ_PKG_MANIFEST) $(MOZ_PKG_
 		$(if $(MOZ_PACKAGER_MINIFY_JS),--minify-js \
 		  $(addprefix --js-binary ,$(JS_BINARY)) \
 		) \
+		$(if $(MOZ_PACKAGER_MINIFY_PDFJS),--minify-pdfjs) \
 		$(addprefix --jarlog ,$(wildcard $(JARLOG_FILE_AB_CD))) \
 		$(addprefix --compress ,$(JAR_COMPRESSION)) \
 		$(MOZ_PKG_MANIFEST) '$(DIST)' '$(DIST)'/$(MOZ_PKG_DIR)$(if $(MOZ_PKG_MANIFEST),,$(_BINPATH:%=/%)) \
@@ -55,14 +56,14 @@ ifdef MOZ_PACKAGE_JSSHELL
 endif # MOZ_PACKAGE_JSSHELL
 ifdef MOZ_AUTOMATION
 ifdef MOZ_ARTIFACT_BUILD_SYMBOLS
-	@echo 'Packaging existing crashreporter symbols from artifact build...'
-	$(NSINSTALL) -D $(DIST)/$(PKG_PATH)
-	cd $(DIST)/crashreporter-symbols && \
-          zip -r5D '../$(PKG_PATH)$(SYMBOL_ARCHIVE_BASENAME).zip' . -i '*.sym' -i '*.txt'
+	@echo 'Checking for crashreporter symbols from artifact build...'
+ifeq ($(wildcard $(UPLOAD_DIR)/$(SYMBOL_ARCHIVE_BASENAME).zip),)
+$(error Expected symbol archive $(UPLOAD_DIR)/$(SYMBOL_ARCHIVE_BASENAME).zip not found. This should have been created by artifacts.py during artifact installation. Check that UPLOAD_DIR is set correctly and that symbols were downloaded.)
+endif
 ifeq ($(MOZ_ARTIFACT_BUILD_SYMBOLS),full)
-	$(call py_action,symbols_archive $(SYMBOL_FULL_ARCHIVE_BASENAME).tar.zst,'$(DIST)/$(PKG_PATH)$(SYMBOL_FULL_ARCHIVE_BASENAME).tar.zst' \
-                                     $(abspath $(DIST)/crashreporter-symbols) \
-                                     --full-archive)
+ifeq ($(wildcard $(UPLOAD_DIR)/$(SYMBOL_FULL_ARCHIVE_BASENAME).tar.zst),)
+$(error Expected full symbol archive $(UPLOAD_DIR)/$(SYMBOL_FULL_ARCHIVE_BASENAME).tar.zst not found. This should have been created by artifacts.py during artifact installation. Check that UPLOAD_DIR is set correctly and that full symbols were downloaded.)
+endif
 endif
 endif # MOZ_ARTIFACT_BUILD_SYMBOLS
 endif # MOZ_AUTOMATION
@@ -172,16 +173,13 @@ endif
 	ln -s $(installdir)/$(MOZ_APP_NAME) $(DESTDIR)$(bindir)
 
 upload:
-	$(PYTHON3) -u $(MOZILLA_DIR)/build/upload.py --base-path $(DIST) $(UPLOAD_FILES)
+	$(PYTHON3) -u $(MOZILLA_DIR)/build/upload.py --base-path $(ABS_DIST) $(UPLOAD_FILES)
 	mkdir -p `dirname $(CHECKSUM_FILE)`
-	@$(PYTHON3) $(MOZILLA_DIR)/build/checksums.py \
+	$(PYTHON3) $(MOZILLA_DIR)/build/checksums.py \
 		-o $(CHECKSUM_FILE) \
 		$(CHECKSUM_ALGORITHM_PARAM) \
 		$(UPLOAD_PATH)
-	@echo 'CHECKSUM FILE START'
-	@cat $(CHECKSUM_FILE)
-	@echo 'CHECKSUM FILE END'
-	$(PYTHON3) -u $(MOZILLA_DIR)/build/upload.py --base-path $(DIST) $(CHECKSUM_FILES)
+	$(PYTHON3) -u $(MOZILLA_DIR)/build/upload.py --base-path $(ABS_DIST) $(CHECKSUM_FILE)
 
 # source-package creates a source tarball from the files in MOZ_PKG_SRCDIR,
 # which is either set to a clean checkout or defaults to $topsrcdir

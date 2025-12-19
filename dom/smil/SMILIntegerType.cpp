@@ -6,19 +6,20 @@
 
 #include "SMILIntegerType.h"
 
+#include <math.h>
+
 #include "mozilla/SMILValue.h"
 #include "nsDebug.h"
-#include <math.h>
 
 namespace mozilla {
 
-void SMILIntegerType::Init(SMILValue& aValue) const {
+void SMILIntegerType::InitValue(SMILValue& aValue) const {
   MOZ_ASSERT(aValue.IsNull(), "Unexpected value type");
   aValue.mU.mInt = 0;
   aValue.mType = this;
 }
 
-void SMILIntegerType::Destroy(SMILValue& aValue) const {
+void SMILIntegerType::DestroyValue(SMILValue& aValue) const {
   MOZ_ASSERT(aValue.mType == this, "Unexpected SMIL value");
   aValue.mU.mInt = 0;
   aValue.mType = SMILNullType::Singleton();

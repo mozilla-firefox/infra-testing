@@ -6,13 +6,11 @@
 
 #include "mozilla/dom/BrowserHost.h"
 
-#include "mozilla/Unused.h"
+#include "mozilla/ProcessPriorityManager.h"
 #include "mozilla/dom/BrowsingContextGroup.h"
 #include "mozilla/dom/CancelContentJSOptionsBinding.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/WindowGlobalParent.h"
-#include "mozilla/ProcessPriorityManager.h"
-
 #include "nsIObserverService.h"
 
 namespace mozilla::dom {
@@ -101,7 +99,7 @@ void BrowserHost::UpdateEffects(EffectsInfo aEffects) {
     return;
   }
   mEffectsInfo = aEffects;
-  Unused << mRoot->SendUpdateEffects(mEffectsInfo);
+  (void)mRoot->SendUpdateEffects(mEffectsInfo);
 }
 
 /* attribute boolean renderLayers; */
@@ -254,6 +252,14 @@ BrowserHost::CreateAboutBlankDocumentViewer(
     return NS_OK;
   }
 
+  // Before creating the viewer in-content, ensure that the process is allowed
+  // to load this principal.
+  if (NS_WARN_IF(!mRoot->Manager()->ValidatePrincipal(aPrincipal))) {
+    ContentParent::LogAndAssertFailedPrincipalValidationInfo(
+        aPrincipal, "BrowserHost::CreateAboutBlankDocumentViewer");
+    return NS_ERROR_DOM_SECURITY_ERR;
+  }
+
   // Ensure the content process has permisisons for the new document we're about
   // to create in it.
   nsresult rv = GetContentParent()->TransmitPermissionsForPrincipal(aPrincipal);
@@ -267,8 +273,8 @@ BrowserHost::CreateAboutBlankDocumentViewer(
   mRoot->GetBrowsingContext()->Group()->EnsureUsesOriginAgentClusterInitialized(
       aPrincipal);
 
-  Unused << mRoot->SendCreateAboutBlankDocumentViewer(aPrincipal,
-                                                      aPartitionedPrincipal);
+  (void)mRoot->SendCreateAboutBlankDocumentViewer(aPrincipal,
+                                                  aPartitionedPrincipal);
   return NS_OK;
 }
 

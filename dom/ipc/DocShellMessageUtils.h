@@ -8,11 +8,10 @@
 #define mozilla_dom_docshell_message_utils_h__
 
 #include "ipc/EnumSerializer.h"
+#include "mozilla/ScrollbarPreferences.h"
 #include "nsCOMPtr.h"
 #include "nsDocShellLoadState.h"
 #include "nsIDocumentViewer.h"
-#include "mozilla/ScrollbarPreferences.h"
-#include "mozilla/ipc/IPDLParamTraits.h"
 
 namespace IPC {
 
@@ -33,8 +32,8 @@ template <>
 struct ParamTraits<mozilla::dom::PermitUnloadResult>
     : public ContiguousEnumSerializerInclusive<
           mozilla::dom::PermitUnloadResult,
-          mozilla::dom::PermitUnloadResult::eAllowNavigation,
-          mozilla::dom::PermitUnloadResult::eRequestBlockNavigation> {};
+          mozilla::dom::PermitUnloadResult::eContinue,
+          mozilla::dom::PermitUnloadResult::eCanceledByNavigate> {};
 
 template <>
 struct ParamTraits<mozilla::dom::XPCOMPermitUnloadAction>
@@ -42,6 +41,13 @@ struct ParamTraits<mozilla::dom::XPCOMPermitUnloadAction>
           mozilla::dom::XPCOMPermitUnloadAction,
           mozilla::dom::XPCOMPermitUnloadAction::ePrompt,
           mozilla::dom::XPCOMPermitUnloadAction::eDontPromptAndUnload> {};
+
+template <>
+struct ParamTraits<mozilla::dom::ForceMediaDocument>
+    : public ContiguousEnumSerializerInclusive<
+          mozilla::dom::ForceMediaDocument,
+          mozilla::dom::ForceMediaDocument::None,
+          mozilla::dom::ForceMediaDocument::Video> {};
 
 }  // namespace IPC
 

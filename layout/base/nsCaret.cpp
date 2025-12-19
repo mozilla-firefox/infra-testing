@@ -10,34 +10,34 @@
 
 #include <algorithm>
 
+#include "SelectionMovementUtils.h"
 #include "gfxUtils.h"
 #include "mozilla/CaretAssociationHint.h"
-#include "mozilla/gfx/2D.h"
-#include "mozilla/intl/BidiEmbeddingLevel.h"
-#include "mozilla/ScrollContainerFrame.h"
-#include "mozilla/StaticPrefs_bidi.h"
-#include "nsCOMPtr.h"
-#include "nsFontMetrics.h"
-#include "nsITimer.h"
-#include "nsFrameSelection.h"
-#include "nsIFrame.h"
-#include "nsIContent.h"
-#include "nsIFrameInlines.h"
-#include "nsLayoutUtils.h"
-#include "nsPresContext.h"
-#include "nsBlockFrame.h"
-#include "nsISelectionController.h"
-#include "nsTextFrame.h"
-#include "nsXULPopupManager.h"
-#include "nsMenuPopupFrame.h"
-#include "nsTextFragment.h"
+#include "mozilla/LookAndFeel.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
-#include "mozilla/LookAndFeel.h"
+#include "mozilla/ScrollContainerFrame.h"
+#include "mozilla/StaticPrefs_bidi.h"
+#include "mozilla/dom/CharacterDataBuffer.h"
 #include "mozilla/dom/Selection.h"
-#include "nsIBidiKeyboard.h"
+#include "mozilla/gfx/2D.h"
+#include "mozilla/intl/BidiEmbeddingLevel.h"
+#include "nsBlockFrame.h"
+#include "nsCOMPtr.h"
 #include "nsContentUtils.h"
-#include "SelectionMovementUtils.h"
+#include "nsFontMetrics.h"
+#include "nsFrameSelection.h"
+#include "nsIBidiKeyboard.h"
+#include "nsIContent.h"
+#include "nsIFrame.h"
+#include "nsIFrameInlines.h"
+#include "nsISelectionController.h"
+#include "nsITimer.h"
+#include "nsLayoutUtils.h"
+#include "nsMenuPopupFrame.h"
+#include "nsPresContext.h"
+#include "nsTextFrame.h"
+#include "nsXULPopupManager.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -57,10 +57,6 @@ nsCaret::~nsCaret() { StopBlinking(); }
 nsresult nsCaret::Init(PresShell* aPresShell) {
   NS_ENSURE_ARG(aPresShell);
 
-  mPresShell =
-      do_GetWeakReference(aPresShell);  // the presshell owns us, so no addref
-  NS_ASSERTION(mPresShell, "Hey, pres shell should support weak refs");
-
   RefPtr<Selection> selection =
       aPresShell->GetSelection(nsISelectionController::SELECTION_NORMAL);
   if (!selection) {
@@ -76,14 +72,17 @@ nsresult nsCaret::Init(PresShell* aPresShell) {
 
 static bool DrawCJKCaret(nsIFrame* aFrame, int32_t aOffset) {
   nsIContent* content = aFrame->GetContent();
-  const nsTextFragment* frag = content->GetText();
-  if (!frag) {
+  const CharacterDataBuffer* characterDataBuffer =
+      content->GetCharacterDataBuffer();
+  if (!characterDataBuffer) {
     return false;
   }
-  if (aOffset < 0 || static_cast<uint32_t>(aOffset) >= frag->GetLength()) {
+  if (aOffset < 0 ||
+      static_cast<uint32_t>(aOffset) >= characterDataBuffer->GetLength()) {
     return false;
   }
-  const char16_t ch = frag->CharAt(AssertedCast<uint32_t>(aOffset));
+  const char16_t ch =
+      characterDataBuffer->CharAt(AssertedCast<uint32_t>(aOffset));
   return 0x2e80 <= ch && ch <= 0xd7ff;
 }
 
@@ -124,7 +123,6 @@ void nsCaret::Terminate() {
     mDomSelectionWeak->RemoveSelectionListener(this);
   }
   mDomSelectionWeak = nullptr;
-  mPresShell = nullptr;
   mCaretPosition = {};
 }
 
@@ -188,10 +186,8 @@ static nsPoint AdjustRectForClipping(const nsRect& aRect, nsIFrame* aFrame,
                                      bool aVertical) {
   nsRect rectRelativeToClip = aRect;
   ScrollContainerFrame* sf = nullptr;
-  nsIFrame* scrollFrame = nullptr;
   for (nsIFrame* current = aFrame; current; current = current->GetParent()) {
     if ((sf = do_QueryFrame(current))) {
-      scrollFrame = current;
       break;
     }
     if (current->IsTransformed()) {
@@ -207,27 +203,6 @@ static nsPoint AdjustRectForClipping(const nsRect& aRect, nsIFrame* aFrame,
   }
 
   nsRect clipRect = sf->GetScrollPortRect();
-  {
-    const auto& disp = *scrollFrame->StyleDisplay();
-    if (disp.mOverflowClipBoxBlock == StyleOverflowClipBox::ContentBox ||
-        disp.mOverflowClipBoxInline == StyleOverflowClipBox::ContentBox) {
-      const WritingMode wm = scrollFrame->GetWritingMode();
-      const bool cbH = (wm.IsVertical() ? disp.mOverflowClipBoxBlock
-                                        : disp.mOverflowClipBoxInline) ==
-                       StyleOverflowClipBox::ContentBox;
-      const bool cbV = (wm.IsVertical() ? disp.mOverflowClipBoxInline
-                                        : disp.mOverflowClipBoxBlock) ==
-                       StyleOverflowClipBox::ContentBox;
-      nsMargin padding = scrollFrame->GetUsedPadding();
-      if (!cbH) {
-        padding.left = padding.right = 0;
-      }
-      if (!cbV) {
-        padding.top = padding.bottom = 0;
-      }
-      clipRect.Deflate(padding);
-    }
-  }
   nsPoint offset;
   // Now see if the caret extends beyond the view's bounds. If it does, then
   // snap it back, put it as close to the edge as it can.
@@ -605,7 +580,7 @@ void nsCaret::ResetBlinking() {
   // blinking too often. 50 is not likely to be user observable in practice,
   // it's ~4 animation frames at 60fps.
   static const auto kBlinkTimerSlack = TimeDuration::FromMilliseconds(50);
-
+  const bool wasBlinkOn = mIsBlinkOn;
   mIsBlinkOn = true;
 
   if (mReadOnly || !IsVisible()) {
@@ -618,6 +593,10 @@ void nsCaret::ResetBlinking() {
   if (mBlinkTime <= 0) {
     StopBlinking();
     return;
+  }
+
+  if (!wasBlinkOn) {
+    SchedulePaint();
   }
 
   mBlinkCount = LookAndFeel::CaretBlinkCount();
@@ -636,7 +615,7 @@ void nsCaret::ResetBlinking() {
   mLastBlinkTimerReset = now;
   mBlinkTimer->InitWithNamedFuncCallback(CaretBlinkCallback, this, mBlinkTime,
                                          nsITimer::TYPE_REPEATING_SLACK,
-                                         "CaretBlinkCallback");
+                                         "CaretBlinkCallback"_ns);
 }
 
 void nsCaret::StopBlinking() {
@@ -648,11 +627,6 @@ void nsCaret::StopBlinking() {
 
 size_t nsCaret::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const {
   size_t total = aMallocSizeOf(this);
-  if (mPresShell) {
-    // We only want the size of the nsWeakReference object, not the PresShell
-    // (since we don't own the PresShell).
-    total += mPresShell->SizeOfOnlyThis(aMallocSizeOf);
-  }
   if (mBlinkTimer) {
     total += mBlinkTimer->SizeOfIncludingThis(aMallocSizeOf);
   }

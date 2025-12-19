@@ -9,7 +9,6 @@
 
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/layers/Fence.h"
 #include "mozilla/webrender/WebRenderTypes.h"
 #include "Units.h"
@@ -58,6 +57,12 @@ class RenderCompositor {
   // Returns false when waiting gpu tasks is failed.
   // It might happen when rendering context is lost.
   virtual bool WaitForGPU() { return true; }
+
+  // On platforms where putting the frame onto the screen involves work in other
+  // processes, wait until those other processes have completed that work.
+  // Specifically, on macOS, we have to send surfaces to the parent process and
+  // it will put them into CALayers, and we want to wait until that's done.
+  virtual void WaitUntilPresentationFlushed() {}
 
   // Check for and return the last completed frame.
   // @return the last (highest) completed RenderedFrameId
@@ -115,6 +120,12 @@ class RenderCompositor {
 
   virtual bool ShouldUseNativeCompositor() { return false; }
 
+  virtual bool ShouldUseLayerCompositor() const { return false; }
+
+  virtual bool UseLayerCompositor() const { return false; }
+
+  virtual bool EnableAsyncScreenshot() { return false; }
+
   // Interface for wr::Compositor
   virtual void CompositorBeginFrame() {}
   virtual void CompositorEndFrame() {}
@@ -132,12 +143,16 @@ class RenderCompositor {
                              wr::DeviceIntPoint aVirtualOffset,
                              wr::DeviceIntSize aTileSize, bool aIsOpaque) {}
   virtual void CreateSwapChainSurface(wr::NativeSurfaceId aId,
-                                      wr::DeviceIntSize aSize, bool aIsOpaque) {
-  }
+                                      wr::DeviceIntSize aSize, bool aIsOpaque,
+                                      bool aNeedsSyncDcompCommit) {}
   virtual void ResizeSwapChainSurface(wr::NativeSurfaceId aId,
                                       wr::DeviceIntSize aSize) {}
-  virtual void BindSwapChain(wr::NativeSurfaceId aId) {}
-  virtual void PresentSwapChain(wr::NativeSurfaceId aId) {}
+  virtual void BindSwapChain(wr::NativeSurfaceId aId,
+                             const wr::DeviceIntRect* aDirtyRects,
+                             size_t aNumDirtyRects) {}
+  virtual void PresentSwapChain(wr::NativeSurfaceId aId,
+                                const wr::DeviceIntRect* aDirtyRects,
+                                size_t aNumDirtyRects) {}
   virtual void CreateExternalSurface(wr::NativeSurfaceId aId, bool aIsOpaque) {}
   virtual void CreateBackdropSurface(wr::NativeSurfaceId aId,
                                      wr::ColorF aColor) {}

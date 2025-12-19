@@ -8,10 +8,9 @@
 #define DOM_QUOTA_FIRSTINITIALIZATIONATTEMPTSIMPL_H_
 
 #include "FirstInitializationAttempts.h"
-
 #include "mozilla/Assertions.h"
-#include "mozilla/Telemetry.h"
 #include "mozilla/TelemetryHistogramEnums.h"
+#include "mozilla/glean/DomQuotaMetrics.h"
 #include "nsError.h"
 
 namespace mozilla::dom::quota {
@@ -25,9 +24,10 @@ void FirstInitializationAttempts<Initialization, StringGenerator>::
   mFirstInitializationAttempts |= aInitialization;
 
   if constexpr (!std::is_same_v<StringGenerator, Nothing>) {
-    Telemetry::Accumulate(Telemetry::QM_FIRST_INITIALIZATION_ATTEMPT,
-                          StringGenerator::GetString(aInitialization),
-                          static_cast<uint32_t>(NS_SUCCEEDED(aRv)));
+    glean::dom_quota::first_initialization_attempt
+        .Get(StringGenerator::GetString(aInitialization),
+             NS_SUCCEEDED(aRv) ? "true"_ns : "false"_ns)
+        .Add();
   }
 }
 

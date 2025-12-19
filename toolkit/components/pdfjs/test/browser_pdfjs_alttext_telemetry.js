@@ -227,7 +227,7 @@ add_task(async function test_telemetry_new_alt_text_dialog() {
       let values = Glean.pdfjsImageAltText.modelResult.testGetValue();
       Assert.equal(values.length, 1, "Should have 1 model result");
       const extra = values[0].extra;
-      Assert.ok(extra.time > 0, "time must be a positive number");
+      Assert.greater(Number(extra.time), 0, "time must be a positive number");
       Assert.ok(!!extra.length, "length must be a positive number");
 
       await waitForSelector(browser, "#newAltTextDialog");
@@ -352,7 +352,7 @@ add_task(async function test_telemetry_new_alt_text_dialog() {
       );
 
       // Remove the image.
-      await clickOn(browser, ".delete");
+      await clickOn(browser, ".deleteButton");
 
       await clickOn(browser, `#editorStampAddImage`);
 
@@ -458,7 +458,7 @@ add_task(async function test_telemetry_new_alt_text_count() {
       await clickOn(browser, "#newAltTextNotNow");
 
       // Delete the editor and create a new one but without AI.
-      await clickOn(browser, ".delete");
+      await clickOn(browser, ".deleteButton");
       Services.fog.testResetFOG();
 
       for (const string of ["Hello", "", "World", "", ""]) {

@@ -7,10 +7,9 @@
 #ifndef DOM_SVG_SVGANIMATEDNUMBERLIST_H_
 #define DOM_SVG_SVGANIMATEDNUMBERLIST_H_
 
-#include "mozilla/Attributes.h"
+#include "SVGNumberList.h"
 #include "mozilla/SMILAttr.h"
 #include "mozilla/UniquePtr.h"
-#include "SVGNumberList.h"
 
 namespace mozilla {
 

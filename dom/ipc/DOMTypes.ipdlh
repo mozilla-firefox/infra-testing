@@ -7,6 +7,7 @@
 include "mozilla/dom/DomSecurityIPCUtils.h";
 include "mozilla/GfxMessageUtils.h";
 include "mozilla/dom/CSPMessageUtils.h";
+include "mozilla/dom/PolicyContainerMessageUtils.h";
 include "mozilla/dom/DocShellMessageUtils.h";
 include "mozilla/dom/NavigationAPIIPCUtils.h";
 include "mozilla/dom/PermissionMessageUtils.h";
@@ -17,6 +18,7 @@ include "mozilla/dom/notification/IPCUtils.h";
 include "mozilla/ipc/URIUtils.h";
 include "mozilla/layers/LayersMessageUtils.h";
 include "mozilla/net/NeckoMessageUtils.h";
+include "mozilla/URLClassifierIPCUtils.h";
 
 include IPCBlob;
 include IPCStream;
@@ -51,7 +53,7 @@ using nsILoadInfo::SchemelessInputType from "nsILoadInfo.h";
 [RefCounted] using class nsIPrincipal from "nsIPrincipal.h";
 using mozilla::dom::MaybeDiscardedBrowsingContext from "mozilla/dom/BrowsingContext.h";
 [RefCounted] using class nsIURI from "nsIURI.h";
-[RefCounted] using class nsIContentSecurityPolicy from "nsIContentSecurityPolicy.h";
+[RefCounted] using class nsIPolicyContainer from "nsIPolicyContainer.h";
 [RefCounted] using class nsIInputStream from "mozilla/ipc/IPCStreamUtils.h";
 [RefCounted] using class nsIReferrerInfo from "nsIReferrerInfo.h";
 [RefCounted] using class nsIVariant from "nsIVariant.h";
@@ -60,6 +62,9 @@ using mozilla::TimeStamp from "mozilla/TimeStamp.h";
 [MoveOnly] using class mozilla::ipc::BigBuffer from "mozilla/ipc/BigBuffer.h";
 using mozilla::dom::NotificationDirection from "mozilla/dom/NotificationBinding.h";
 using mozilla::dom::UserNavigationInvolvement from "mozilla/dom/UserNavigationInvolvement.h";
+using mozilla::net::ClassificationFlags from "nsIClassifiedChannel.h";
+using mozilla::dom::ForceMediaDocument from "mozilla/dom/LoadURIOptionsBinding.h";
+using mozilla::dom::NavigationHistoryBehavior from "mozilla/dom/NavigationBinding.h";
 
 namespace mozilla {
 namespace dom {
@@ -162,13 +167,13 @@ struct DocShellLoadStateInit
   nullable nsIPrincipal PrincipalToInherit;
   nullable nsIPrincipal PartitionedPrincipalToInherit;
   nullable nsIURI BaseURI;
-  // The Content Security Policy of the load, that is, the CSP of the entity
-  // responsible for causing the load to occur. Most likely this is the CSP
+  // The Policy Container of the load, that is, the policyContainer of the entity
+  // responsible for causing the load to occur. Most likely this is the policyContainer
   // of the document that started the load. In case the entity starting the
-  // load did not use a CSP, then Csp can be null. Please note that this is
-  // also the CSP that will be applied to the load in case the load
+  // load did not use a policyContainer, then policyContainer can be null. Please note that
+  // this is also the policyContainer that will be applied to the load in case the load
   // encounters a server side redirect.
-  nullable nsIContentSecurityPolicy Csp;
+  nullable nsIPolicyContainer PolicyContainer;
   nullable nsIInputStream PostDataStream;
   nullable nsIInputStream HeadersStream;
   nullable nsIURI UnstrippedURI;
@@ -204,6 +209,7 @@ struct DocShellLoadStateInit
   uint32_t TriggeringSandboxFlags;
   uint64_t TriggeringWindowId;
   bool TriggeringStorageAccess;
+  ClassificationFlags TriggeringClassificationFlags;
   int32_t? CancelContentJSEpoch;
 
   bool ResultPrincipalURIIsSome;
@@ -211,6 +217,7 @@ struct DocShellLoadStateInit
   bool LoadReplace;
   bool InheritPrincipal;
   bool PrincipalIsExplicit;
+  bool NotifiedBeforeUnloadListeners;
   bool ForceAllowDataURI;
   bool IsExemptFromHTTPSFirstMode;
   bool OriginalFrameSrc;
@@ -221,8 +228,16 @@ struct DocShellLoadStateInit
   bool TextDirectiveUserActivation;
   bool AllowFocusMove;
   bool IsFromProcessingFrameAttributes;
+  bool NeedsCompletelyLoadedDocument;
+  bool ShouldNotForceReplaceInOnLoad;
+  NavigationHistoryBehavior? HistoryBehavior;
+
   SchemelessInputType SchemelessInput;
+  ForceMediaDocument forceMediaDocument;
   HTTPSUpgradeTelemetryType HttpsUpgradeTelemetry;
+
+  // https://html.spec.whatwg.org/#she-navigation-api-state
+  ClonedMessageData? NavigationAPIState;
 
   // Fields missing due to lack of need or serialization
   // nsCOMPtr<nsIDocShell> mSourceDocShell;
@@ -234,6 +249,10 @@ struct DocShellLoadStateInit
   bool TryToReplaceWithSessionHistoryLoad;
 
   bool IsMetaRefresh;
+
+  bool IsCaptivePortalTab;
+
+  bool IsInitialAboutBlankHandlingProhibited;
 };
 
 struct TimedChannelInfo
@@ -344,6 +363,7 @@ struct IPCNotificationAction {
 
 // Mostly same as NotificationOptions except:
 // * `title` is included (it's a separate parameter in the Notification constructor)
+// * `icon` is parsed into nsIURI
 // * `data` is serialized to base64 string by StructuredCloneContainer
 // * `vibrate` is normalized to sequence
 struct IPCNotificationOptions {
@@ -352,7 +372,7 @@ struct IPCNotificationOptions {
   nsString lang;
   nsString body;
   nsString tag;
-  nsString icon;
+  nullable nsIURI icon;
   bool requireInteraction;
   bool silent;
   uint32_t[] vibrate;

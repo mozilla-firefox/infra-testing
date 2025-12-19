@@ -13,7 +13,6 @@
 #include "mozilla/SVGUtils.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
-#include "mozilla/dom/ImageTracker.h"
 #include "mozilla/dom/SVGDocument.h"
 #include "nsError.h"
 #include "nsString.h"
@@ -155,7 +154,7 @@ nsresult gfxSVGGlyphsDocument::SetupPresentation() {
   if (mDocument->HasAnimationController()) {
     mDocument->GetAnimationController()->Resume(SMILTimeContainer::PAUSE_IMAGE);
   }
-  mDocument->ImageTracker()->SetAnimatingState(true);
+  mDocument->SetImageAnimationState(true);
 
   mViewer = viewer;
   mPresShell = presShell;
@@ -373,8 +372,8 @@ nsresult gfxSVGGlyphsDocument::ParseDocument(const uint8_t* aBuffer,
                          u""_ns,   // aQualifiedName
                          nullptr,  // aDoctype
                          uri, uri, principal,
-                         false,    // aLoadedAsData
-                         nullptr,  // aEventObject
+                         mozilla::dom::LoadedAsData::No,  // aLoadedAsData
+                         nullptr,                         // aEventObject
                          DocumentFlavor::SVG);
   NS_ENSURE_SUCCESS(rv, rv);
 

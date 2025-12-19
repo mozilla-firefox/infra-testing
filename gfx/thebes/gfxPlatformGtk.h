@@ -41,9 +41,6 @@ class gfxPlatformGtk final : public gfxPlatform {
 
   bool CreatePlatformFontList() override;
 
-  static int32_t GetFontScaleDPI();
-  static double GetFontScaleFactor();
-
   gfxImageFormat GetOffscreenFormat() override;
 
   bool SupportsApzWheelInput() const override { return true; }
@@ -68,9 +65,10 @@ class gfxPlatformGtk final : public gfxPlatform {
   void InitAcceleration() override;
   void InitX11EGLConfig();
   void InitDmabufConfig();
-  bool InitVAAPIConfig(bool aForceEnabledByUser);
+  void InitPlatformHardwareVideoConfig() override;
   void InitPlatformGPUProcessPrefs() override;
   void InitWebRenderConfig() override;
+  void InitMesaThreading();
   void BuildContentDeviceData(mozilla::gfx::ContentDeviceData* aOut) override;
 
  private:

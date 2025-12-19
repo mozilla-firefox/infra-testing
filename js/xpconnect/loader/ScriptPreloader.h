@@ -6,8 +6,6 @@
 #ifndef ScriptPreloader_h
 #define ScriptPreloader_h
 
-#include "mozilla/Atomics.h"
-#include "mozilla/CheckedInt.h"
 #include "mozilla/EnumSet.h"
 #include "mozilla/EventTargetAndLockCapability.h"
 #include "mozilla/LinkedList.h"
@@ -32,9 +30,10 @@
 #include "nsITimer.h"
 
 #include "js/CompileOptions.h"  // JS::DecodeOptions, JS::ReadOnlyDecodeOptions
-#include "js/experimental/JSStencil.h"  // JS::Stencil
-#include "js/GCAnnotations.h"           // for JS_HAZ_NON_GC_POINTER
-#include "js/RootingAPI.h"              // for Handle, Heap
+#include "js/experimental/CompileScript.h"  // JS::FrontendContext
+#include "js/experimental/JSStencil.h"      // JS::Stencil
+#include "js/GCAnnotations.h"               // for JS_HAZ_NON_GC_POINTER
+#include "js/RootingAPI.h"                  // for Handle, Heap
 #include "js/Transcoding.h"  // for TranscodeBuffer, TranscodeRange, TranscodeSource
 #include "js/TypeDecls.h"  // for HandleObject, HandleScript
 
@@ -66,6 +65,8 @@ struct Matcher {
 }  // namespace loader
 
 using namespace mozilla::loader;
+
+struct CachedStencilRefAndTime;
 
 class ScriptPreloader : public nsIObserver,
                         public nsIMemoryReporter,
@@ -216,21 +217,6 @@ class ScriptPreloader : public nsIObserver,
                                      : ScriptStatus::Saved;
     }
 
-    // For use with nsTArray::Sort.
-    //
-    // Orders scripts by script load time, so that scripts which are needed
-    // earlier are stored earlier, and scripts needed at approximately the
-    // same time are stored approximately contiguously.
-    struct Comparator {
-      bool Equals(const CachedStencil* a, const CachedStencil* b) const {
-        return a->mLoadTime == b->mLoadTime;
-      }
-
-      bool LessThan(const CachedStencil* a, const CachedStencil* b) const {
-        return a->mLoadTime < b->mLoadTime;
-      }
-    };
-
     struct StatusMatcher final : public Matcher<CachedStencil*> {
       explicit StatusMatcher(ScriptStatus status) : mStatus(status) {}
 
@@ -274,7 +260,7 @@ class ScriptPreloader : public nsIObserver,
 
     // Encodes this script into XDR data, and stores the result in mXDRData.
     // Returns true on success, false on failure.
-    bool XDREncode(JSContext* cx);
+    bool XDREncode(JS::FrontendContext* cx);
 
     // Encodes or decodes this script, in the storage format required by the
     // script cache file.
@@ -387,6 +373,8 @@ class ScriptPreloader : public nsIObserver,
     // from a child process.
     MaybeOneOf<JS::TranscodeBuffer, nsTArray<uint8_t>> mXDRData;
   } JS_HAZ_NON_GC_POINTER;
+
+  friend struct CachedStencilRefAndTime;
 
   template <ScriptStatus status>
   static Matcher<CachedStencil*>* Match() {

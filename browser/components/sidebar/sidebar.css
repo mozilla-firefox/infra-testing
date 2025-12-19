@@ -9,11 +9,19 @@
   --sidebar-box-border-color: light-dark(color-mix(in srgb, currentColor 10%, transparent), var(--border-color-deemphasized));
   --sidebar-box-border-width: 0.5px;
   --sidebar-box-border: var(--sidebar-box-border-width) solid var(--sidebar-box-border-color);
-  --sidebar-box-background: light-dark(rgba(0, 0, 0, .03), rgba(255, 255, 255, .05));
+  --sidebar-box-background: light-dark(rgba(0, 0, 0, 0.03), rgba(255, 255, 255, 0.05));
   --sidebar-box-color: currentColor;
   background-color: transparent;
   color: var(--sidebar-text-color);
   height: 100%;
+
+  &[lwt-sidebar="light"] {
+    color-scheme: light;
+  }
+
+  &[lwt-sidebar="dark"] {
+    color-scheme: dark;
+  }
 }
 
 body {
@@ -43,39 +51,28 @@ moz-card {
     white-space: nowrap;
   }
 
-  &.phone::part(icon),
-  &.mobile::part(icon) {
-    background-image: url("chrome://browser/skin/device-phone.svg");
-  }
-
-  &.desktop::part(icon) {
-    background-image: url("chrome://browser/skin/device-desktop.svg");
-  }
-
-  &.tablet::part(icon) {
-    background-image: url("chrome://browser/skin/device-tablet.svg");
+  &:first-of-type {
+    margin-block-start: 0;
   }
 }
 
 .sidebar-panel {
+  display: flex;
+  flex-direction: column;
   padding: var(--space-large);
-  height: 100%;
   box-sizing: border-box;
   border-radius: var(--border-radius-medium);
   width: 100%;
-}
+  height: 100%;
 
-fxview-search-textbox {
-  &::part(input) {
-    background-color: var(--sidebar-box-background);
-    color: var(--sidebar-box-color);
-    border: var(--sidebar-box-border);
-    border-radius: var(--border-radius-medium);
+  moz-input-search {
+    display: block;
   }
 
-  &::part(container) {
-    width: 100%;
-    height: var(--size-item-large)
+  .sidebar-panel-scrollable-content {
+    overflow-y: auto;
+    height: 100%;
+    padding: var(--space-xsmall);
   }
 }
 
@@ -100,10 +97,20 @@ fxview-empty-state {
     max-width: 250px;
   }
 
-  /* these illustrations need a larger width otherwise they look too small */
-  &.synced-tabs::part(image-container) {
-    min-width: auto;
-    width: 100%;
-    max-width: 350px;
+  &.synced-tabs {
+    &::part(container) {
+      margin-block-start: 0;
+    }
+
+    /* these illustrations need a larger width otherwise they look too small */
+    &::part(image-container) {
+      min-width: auto;
+      width: 100%;
+      max-width: 350px;
+    }
   }
+}
+
+moz-input-search {
+  width: 100%;
 }

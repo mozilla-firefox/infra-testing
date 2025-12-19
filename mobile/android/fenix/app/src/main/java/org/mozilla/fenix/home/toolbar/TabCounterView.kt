@@ -10,8 +10,8 @@ import androidx.navigation.NavController
 import mozilla.components.browser.state.selector.normalTabs
 import mozilla.components.browser.state.selector.privateTabs
 import mozilla.components.browser.state.state.BrowserState
-import mozilla.components.ui.tabcounter.TabCounter
 import mozilla.components.ui.tabcounter.TabCounterMenu
+import mozilla.components.ui.tabcounter.TabCounterView
 import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.fenix.GleanMetrics.StartOnHome
 import org.mozilla.fenix.NavGraphDirections
@@ -21,6 +21,7 @@ import org.mozilla.fenix.browser.browsingmode.BrowsingModeManager
 import org.mozilla.fenix.components.toolbar.FenixTabCounterMenu
 import org.mozilla.fenix.ext.nav
 import org.mozilla.fenix.tabstray.Page
+import org.mozilla.fenix.utils.Settings
 
 /**
  * Helper class for building the [FenixTabCounterMenu].
@@ -28,15 +29,17 @@ import org.mozilla.fenix.tabstray.Page
  * @param context An Android [Context].
  * @param browsingModeManager [BrowsingModeManager] used for fetching the current browsing mode.
  * @param navController [NavController] used for navigation.
- * @param tabCounter The [TabCounter] that will be setup with event handlers.
+ * @param tabCounter The [TabCounterView] that will be setup with event handlers.
  * @param showLongPressMenu Whether a popup menu should be shown when long pressing on this or not.
+ * @param settings [Settings] object used to determine whether the tab enhancements are enabled.
  */
 class TabCounterView(
     private val context: Context,
     private val browsingModeManager: BrowsingModeManager,
     private val navController: NavController,
-    private val tabCounter: TabCounter,
+    private val tabCounter: TabCounterView,
     private val showLongPressMenu: Boolean,
+    settings: Settings,
 ) {
 
     init {
@@ -45,15 +48,27 @@ class TabCounterView(
         tabCounter.setOnClickListener {
             StartOnHome.openTabsTray.record(NoExtras())
 
-            navController.nav(
-                navController.currentDestination?.id,
-                NavGraphDirections.actionGlobalTabsTrayFragment(
-                    page = when (browsingModeManager.mode) {
-                        BrowsingMode.Normal -> Page.NormalTabs
-                        BrowsingMode.Private -> Page.PrivateTabs
-                    },
-                ),
-            )
+            if (settings.tabManagerEnhancementsEnabled) {
+                navController.nav(
+                    navController.currentDestination?.id,
+                    NavGraphDirections.actionGlobalTabManagementFragment(
+                        page = when (browsingModeManager.mode) {
+                            BrowsingMode.Normal -> Page.NormalTabs
+                            BrowsingMode.Private -> Page.PrivateTabs
+                        },
+                    ),
+                )
+            } else {
+                navController.nav(
+                    navController.currentDestination?.id,
+                    NavGraphDirections.actionGlobalTabsTrayFragment(
+                        page = when (browsingModeManager.mode) {
+                            BrowsingMode.Normal -> Page.NormalTabs
+                            BrowsingMode.Private -> Page.PrivateTabs
+                        },
+                    ),
+                )
+            }
         }
     }
 
@@ -73,6 +88,7 @@ class TabCounterView(
 
         tabCounter.setCountWithAnimation(tabCount)
         tabCounter.toggleCounterMask(isPrivate)
+        tabCounter.updateContentDescription(isPrivate)
     }
 
     /**

@@ -7,17 +7,22 @@
 #ifndef mozilla_dom_WebAuthnUtil_h
 #define mozilla_dom_WebAuthnUtil_h
 
-#include "mozilla/dom/WebAuthenticationBinding.h"
 #include "ipc/IPCMessageUtils.h"
+#include "mozilla/dom/WebAuthenticationBinding.h"
 
 namespace mozilla::dom {
+
+class WindowGlobalParent;
 
 bool IsValidAppId(const nsCOMPtr<nsIPrincipal>& aPrincipal,
                   const nsCString& aAppId);
 
 bool IsWebAuthnAllowedInDocument(const nsCOMPtr<Document>& aDoc);
 
-bool IsWebAuthnAllowedForPrincipal(const nsCOMPtr<nsIPrincipal>& aPrincipal);
+bool IsWebAuthnAllowedInContext(WindowGlobalParent* aContext);
+
+bool IsWebAuthnAllowedForTransportSecurityInfo(
+    nsITransportSecurityInfo* aSecurityInfo);
 
 nsresult DefaultRpId(const nsCOMPtr<nsIPrincipal>& aPrincipal,
                      /* out */ nsACString& aRpId);

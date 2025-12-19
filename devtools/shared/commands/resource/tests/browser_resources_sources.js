@@ -182,9 +182,7 @@ async function getExpectedResources(ignoreUnresurrectedSources = false) {
       description: "javascript URL",
       sourceForm: {
         introductionType: "javascriptURL",
-        sourceMapBaseURL: isEveryFrameTargetEnabled()
-          ? "about:blank"
-          : TEST_URL,
+        sourceMapBaseURL: "about:blank",
         url: null,
         isBlackBoxed: false,
         sourceMapURL: null,
@@ -193,7 +191,7 @@ async function getExpectedResources(ignoreUnresurrectedSources = false) {
       },
       sourceContent: {
         contentType: "text/javascript",
-        source: "666",
+        source: "'666'",
       },
     },
     {
@@ -282,6 +280,8 @@ add_task(async function testSourcesOnload() {
   });
 });
 
+// Bug 1767772: Skipped via add_task(...).skip() for very frequent intermittent
+// failures.
 add_task(async function testGarbagedCollectedSources() {
   info(
     "Assert SOURCES on an already loaded page with some sources that have been GC-ed"
@@ -332,7 +332,7 @@ add_task(async function testGarbagedCollectedSources() {
     const registration = await content.wrappedJSObject.registrationPromise;
     registration.unregister();
   });
-});
+}).skip();
 
 /**
  * Assert that evaluating sources for a new global, in the parent process

@@ -6,9 +6,8 @@
 #ifndef MOZILLA_AUDIONODEEXTERNALINPUTTRACK_H_
 #define MOZILLA_AUDIONODEEXTERNALINPUTTRACK_H_
 
-#include "MediaTrackGraph.h"
 #include "AudioNodeTrack.h"
-#include "mozilla/Atomics.h"
+#include "MediaTrackGraph.h"
 
 namespace mozilla {
 

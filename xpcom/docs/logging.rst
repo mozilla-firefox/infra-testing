@@ -252,10 +252,6 @@ To adjust the logging after Firefox has started, you can set prefs under the
 ``logging.`` prefix. For example, setting ``logging.foo`` to ``3`` will set the log
 module ``foo`` to start logging at level 3.
 
-The MOZ_LOG syntax can be used directly as well, by setting the preference
-``logging.config.modules``. All modules can be used but only the special string
-`profilerstacks` is supported.
-
 A number of special prefs can be set as well, described in the table below:
 
 +-------------------------------------+------------+-------------------------------+--------------------------------------------------------+
@@ -560,6 +556,24 @@ So that ``console.shouldLog()`` only consider the level set by
 
   logger.debug("some debug info");
 
+
+Logging from Java
++++++++++++++++++
+
+In GeckoView, the Java code can log messages using the `org.mozilla.gecko.MozLog` class.
+
+.. code-block:: java
+
+  import org.mozilla.gecko.MozLog;
+
+  public class Example {
+      public void doStuff() {
+          final String MODULE = "GeckoSample";
+          MozLog.d(MODULE, "Doing stuff");
+          MozLog.w(MODULE, "Warning");
+          MozLog.e(MODULE, "Error happened");
+      }
+  }
 
 Logging web page errors and warnings
 ++++++++++++++++++++++++++++++++++++

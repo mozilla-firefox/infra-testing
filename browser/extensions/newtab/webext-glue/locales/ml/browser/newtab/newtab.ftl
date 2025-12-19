@@ -53,6 +53,9 @@ newtab-topsites-add-shortcut-header = പുതിയ കുറുക്കു�
 newtab-topsites-edit-topsites-header = മികച്ച സൈറ്റ് പട്ടിക തിരുത്തൂ
 newtab-topsites-edit-shortcut-header = കുറുക്കുവഴി തിരുത്തുക
 newtab-topsites-add-shortcut-label = കുറുക്കുവഴി ചേർക്കുക
+newtab-topsites-add-shortcut-title =
+    .title = കുറുക്കുവഴി ചേർക്കുക
+    .aria-label = കുറുക്കുവഴി ചേർക്കുക
 newtab-topsites-title-label = തലക്കെട്ട്
 newtab-topsites-title-input =
     .placeholder = തലക്കെട്ട് നൽകൂ
@@ -126,6 +129,9 @@ newtab-menu-section-unfollow = വിഷയം പിന്തുടരാൻ �
 
 ## Context menu options for sponsored stories and new ad formats on New Tab.
 
+newtab-menu-manage-sponsored-content = പണടച്ചിട്ടുപ്രചരിപ്പിച്ച ഉള്ളടക്കം കൈകാര്യം ചെയ്യുക
+newtab-menu-our-sponsors-and-your-privacy = ഞങ്ങളുടെ പരുപാടികൾക്കു് പണം കൊടുക്കുന്നവരും താങ്ങളുടെ സ്വകാര്യതാവും
+newtab-menu-report-this-ad = മേൽക്കോയ്മക്കാരോടു് ഈ പരസ്യത്തിനെ പറ്റി അറിയിക്കുക.
 
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
@@ -240,9 +246,6 @@ newtab-pocket-new-topics-title = താങ്ങൾക്കു് ഇനിയ�
 newtab-pocket-more-recommendations = കൂടുതൽ ശുപാർശകൾ
 newtab-pocket-learn-more = കൂടുതല്‍ അറിയുക
 newtab-pocket-cta-button = { -pocket-brand-name } ലഭ്യമാക്കുക
-# A save to Pocket button that shows over the card thumbnail on hover.
-newtab-pocket-image =
-    .aria-label = { -pocket-brand-name }
 newtab-pocket-save = കരുതിവയ്ക്കുക
 newtab-pocket-saved = കരുതിവച്ച
 
@@ -286,9 +289,6 @@ newtab-custom-sponsored-sites = പണം കൊണ്ടു് പ്രസര�
 newtab-custom-pocket-title = { -pocket-brand-name } ശുപാൎശ ചെയ്ത
 newtab-custom-pocket-show-recent-saves = അടുത്തിടെ കരുതിവയ്ക്കലുകൾ കാണിക്കുക
 newtab-custom-recent-title = ഒടുവിലുള്ള പ്രവർത്തനം
-newtab-custom-recent-toggle =
-    .label = ഒടുവിലുള്ള പ്രവർത്തനം
-    .description = ഒടുവിൽ സന്ദൎശിച്ച വെബ്സ്ഥാനങ്ങളുടെയും ഉള്ളടക്കത്തിന്റെയും ഒരു തിരഞ്ഞെടുപ്പു്
 newtab-custom-weather-toggle =
     .label = കാലാവസ്ഥ
     .description = ഒരു നോട്ടത്തിൽ ഇന്നത്തെ കാലാവസ്ഥ
@@ -306,6 +306,7 @@ newtab-wallpaper-light-sky = പാടലന്നിറത്തിന്റെ
 
 ## Solid Colors
 
+newtab-wallpaper-category-title-colors = കടും നിറങ്ങൾ
 newtab-wallpaper-blue = നീല
 newtab-wallpaper-light-blue = ഇളം നീല
 newtab-wallpaper-light-purple = ഇളം ഊതന്നിറം
@@ -330,7 +331,7 @@ newtab-wallpaper-abstract-blue = നീല ആകാരങ്ങൾ
 newtab-wallpaper-abstract-purple = ഊതന്നിറ ആകാരങ്ങൾ
 newtab-wallpaper-abstract-orange = പഴുക്ക ആകാരങ്ങൾ
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = ചിത്രങ്ങൾ
 newtab-wallpaper-sky-with-pink-clouds = പാടലന്നിറമുള്ള മുകിലുകൾ പതിഞ്ഞവ്വിണ്ണു്
@@ -345,16 +346,15 @@ feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
 
-## Celestial
-
-
 ## New Tab Weather
 
+# Variables:
+#   $provider (string) - Service provider for weather data
+newtab-weather-sponsored = { $provider } ∙ പണമടച്ചുപ്രചരിപ്പിച്ചതു്
 newtab-weather-menu-change-location = സ്ഥാനം മാറ്റുക
 newtab-weather-change-location-search-input-placeholder =
     .placeholder = സ്ഥാനം തപ്പുക
     .aria-label = സ്ഥാനം തപ്പുക
-newtab-weather-change-location-search-input = സ്ഥാനം തപ്പുക
 newtab-weather-menu-weather-display = കാലാവസ്ഥ പ്രദർശകം
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
@@ -426,7 +426,7 @@ newtab-section-cancel-button = ഇപ്പോഴല്ല
 #   $topic (string) - Name of topic that user is blocking
 newtab-section-block-topic-button = { $topic } തടയുക
 
-## Panel in the Customize menu section to manage followed and blocked topics
+## Strings for custom wallpaper highlight
 
 newtab-section-mangage-topics-title = വിഷയങ്ങൾ
 newtab-section-manage-topics-button-v2 =
@@ -436,3 +436,20 @@ newtab-section-mangage-topics-followed-topics-empty-state = താങ്ങൾ �
 newtab-section-mangage-topics-blocked-topics = തടഞ്ഞവ
 newtab-section-mangage-topics-blocked-topics-empty-state = താങ്ങൾ ഇതുവരെ ഒരു വിഷയത്തിനെയും ത‍ടഞ്ഞിട്ടില്ല
 newtab-custom-wallpaper-cta = ഉപയോഗിച്ചു് നോക്കൂ!
+
+## Strings for reporting ads and content
+
+newtab-report-ads-reason-not-interested =
+    .label = എനിക്കിതിൽ താല്പര്യമില്ല
+newtab-report-ads-reason-inappropriate =
+    .label = ഇതു് തകാത്തതാണു്
+newtab-report-ads-reason-seen-it-too-many-times =
+    .label = ഇതു ഞാൻ ഒരുപാടു് വട്ടം കണ്ടിട്ടുണ്ടു്
+newtab-report-content-wrong-category =
+    .label = തെറ്റായയിനം
+newtab-report-content-outdated =
+    .label = പഴയതു്
+newtab-report-content-spam-misleading =
+    .label = പാഴുള്ളടക്കം അല്ലെങ്കിൽ തെറ്റിദ്ധരിപ്പിക്കുന്നതു്.
+newtab-report-cancel = റദ്ദാക്കുക
+newtab-report-submit = സമൎപ്പിക്കുക

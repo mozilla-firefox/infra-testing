@@ -8,6 +8,9 @@
 newtab-page-title = לשונית חדשה
 newtab-settings-button =
     .title = התאמה אישית של דף הלשונית החדשה שלך
+newtab-customize-panel-icon-button =
+    .title = התאמה אישית של דף זה
+newtab-customize-panel-icon-button-label = התאמה אישית
 newtab-personalize-settings-icon-label =
     .title = התאמה אישית של דף הלשונית החדשה
     .aria-label = הגדרות
@@ -53,6 +56,9 @@ newtab-topsites-add-shortcut-header = קיצור דרך חדש
 newtab-topsites-edit-topsites-header = עריכת אתר מוביל
 newtab-topsites-edit-shortcut-header = עריכת קיצור דרך
 newtab-topsites-add-shortcut-label = הוספת קיצור דרך
+newtab-topsites-add-shortcut-title =
+    .title = הוספת קיצור דרך
+    .aria-label = הוספת קיצור דרך
 newtab-topsites-title-label = כותרת
 newtab-topsites-title-input =
     .placeholder = נא להזין כותרת
@@ -81,6 +87,14 @@ newtab-confirm-delete-history-p2 = לא ניתן לבטל פעולה זו.
 ## Top Sites - Sponsored label
 
 newtab-topsite-sponsored = ממומן
+
+## Label used by screen readers for pinned top sites
+
+# Variables:
+#   $title (string) - The label or hostname of the site.
+topsite-label-pinned =
+    .aria-label = ‏{ $title } (נעוץ)
+    .title = { $title }
 
 ## Context Menu - Action Tooltips.
 
@@ -116,7 +130,8 @@ newtab-menu-save-to-pocket = שמירה אל { -pocket-brand-name }
 newtab-menu-delete-pocket = מחיקה מ־{ -pocket-brand-name }
 newtab-menu-archive-pocket = העברה לארכיון ב־{ -pocket-brand-name }
 newtab-menu-about-fakespot = על אודות { -fakespot-brand-name }
-newtab-menu-report-content = דיווח על תוכן זה
+# Report is a verb (i.e. report issue with the content).
+newtab-menu-report = דיווח
 # Context menu option to personalize New Tab recommended stories by blocking a section of stories,
 # e.g. "Sports". "Block" is a verb here.
 newtab-menu-section-block = חסימה
@@ -149,7 +164,7 @@ newtab-menu-bookmark = הוספת סימנייה
 
 newtab-menu-copy-download-link = העתקת קישור ההורדה
 newtab-menu-go-to-download-page = מעבר לעמוד ההורדה
-newtab-menu-remove-download = הסרה מההיסטורייה
+newtab-menu-remove-download = הסרה מההיסטוריה
 
 ## Context Menu - Download Menu: These are platform specific strings found in the context menu of an item that has
 ## been downloaded. The intention behind "this action" is that it will show where the downloaded file exists on the file
@@ -189,6 +204,8 @@ newtab-label-source-read-time =
         [1] ‏{ $source }  · דקה אחת
        *[other] ‏{ $source } · { $timeToRead } דקות
     }
+# This string is used under fixed size ads to indicate sponsored content
+newtab-label-sponsored-fixed = ממומן
 
 ## Section Menu: These strings are displayed in the section context menu and are
 ## meant as a call to action for the given section.
@@ -247,9 +264,6 @@ newtab-pocket-learn-more = מידע נוסף
 newtab-pocket-cta-button = קבלת { -pocket-brand-name }
 newtab-pocket-cta-text = שמירת הסיפורים שאהבת ב־{ -pocket-brand-name } על מנת למלא את מחשבתך בקריאה מרתקת.
 newtab-pocket-pocket-firefox-family = ‏{ -pocket-brand-name } הוא חלק ממשפחת { -brand-product-name }
-# A save to Pocket button that shows over the card thumbnail on hover.
-newtab-pocket-image =
-    .aria-label = { -pocket-brand-name }
 newtab-pocket-save = שמירה
 newtab-pocket-saved = נשמר
 
@@ -299,16 +313,32 @@ newtab-custom-pocket-subtitle = תוכן יוצא דופן שנבחר בקפיד
 newtab-custom-stories-toggle =
     .label = סיפורים מומלצים
     .description = תוכן יוצא דופן שנבחר בקפידה על־ידי משפחת { -brand-product-name }
+newtab-custom-stories-personalized-toggle =
+    .label = סיפורים
+newtab-custom-stories-personalized-checkbox-label = סיפורים מותאמים אישית המבוססים על הפעילות שלך
 newtab-custom-pocket-sponsored = סיפורים ממומנים
 newtab-custom-pocket-show-recent-saves = הצגת שמירות אחרונות
 newtab-custom-recent-title = פעילות אחרונה
 newtab-custom-recent-subtitle = מבחר של אתרים ותכנים אחרונים
-newtab-custom-recent-toggle =
-    .label = פעילות אחרונה
-    .description = מבחר של אתרים ותכנים אחרונים
 newtab-custom-weather-toggle =
     .label = מזג אוויר
     .description = התחזית של היום
+newtab-custom-trending-search-toggle =
+    .label = חיפושים פופולריים
+    .description = נושאים נפוצים ובחיפוש תדיר
+newtab-custom-widget-weather-toggle =
+    .label = מזג אוויר
+newtab-custom-widget-trending-search-toggle =
+    .label = חיפושים פופולריים
+newtab-custom-widget-lists-toggle =
+    .label = רשימות
+newtab-custom-widget-timer-toggle =
+    .label = שעון עצר
+newtab-custom-widget-section-title = ווידג’טים
+# Tooltip for close button
+newtab-custom-close-menu-button =
+    .title = סגירה
+    .aria-label = סגירת תפריט
 newtab-custom-close-button = סגירה
 newtab-custom-settings = ניהול הגדרות נוספות
 
@@ -321,6 +351,7 @@ newtab-wallpaper-custom-color = בחירת צבע
 # Variables
 #   $file_size (number) - The number of the maximum image file size (in MB) that may be uploaded
 newtab-wallpaper-error-max-file-size = התמונה חרגה ממגבלת גודל הקובץ של { $file_size } מ״ב. נא לנסות להעלות קובץ קטן יותר.
+newtab-wallpaper-error-upload-file-type = לא הצלחנו להעלות את הקובץ שלך. נא לנסות שוב עם קובץ תמונה.
 newtab-wallpaper-error-file-type = לא הצלחנו להעלות את הקובץ שלך. נא לנסות שוב עם סוג קובץ אחר.
 newtab-wallpaper-light-red-panda = פנדה אדומה
 newtab-wallpaper-light-mountain = הר לבן
@@ -370,7 +401,7 @@ newtab-wallpaper-abstract-purple-green = מעברי צבע סגול וירוק
 newtab-wallpaper-abstract-blue-purple-waves = צורות גליות בצבע כחול וסגול
 newtab-wallpaper-abstract-black-waves = צורות גליות בצבע שחור
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = תצלומים
 newtab-wallpaper-beach-at-sunrise = זריחה בחוף הים
@@ -385,7 +416,6 @@ newtab-wallpaper-suspension-bridge = תצלום של גשר תלוי אפור ב
 newtab-wallpaper-sand-dunes = דיונות חול לבן
 newtab-wallpaper-palm-trees = צללית של עצי דקל קוקוס במהלך שעת הזהב
 newtab-wallpaper-blue-flowers = צילום תקריב של פרחים כחולי כותרת בפריחה
-newtab-wallpaper-forest-trees = עצים מכוסים בערפל
 # Variables
 #   $author_string (String) - The name of the creator of the photo.
 #   $webpage_string (String) - The name of the webpage where the photo is located.
@@ -400,6 +430,10 @@ feature-highlight-dismiss-button =
 feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
+
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
 
 ## Celestial
 
@@ -427,7 +461,6 @@ newtab-weather-menu-change-location = שינוי מקום
 newtab-weather-change-location-search-input-placeholder =
     .placeholder = חיפוש מקום
     .aria-label = חיפוש מקום
-newtab-weather-change-location-search-input = חיפוש מקום
 newtab-weather-menu-weather-display = תצוגת מזג אוויר
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
@@ -443,8 +476,16 @@ newtab-weather-menu-change-temperature-units-fahrenheit = מעבר לפרנהי�
 newtab-weather-menu-change-temperature-units-celsius = מעבר לצלזיוס
 newtab-weather-menu-hide-weather = הסתרת מזג האוויר בלשונית החדשה
 newtab-weather-menu-learn-more = מידע נוסף
+newtab-weather-menu-detect-my-location = זיהוי המיקום שלי
 # This message is shown if user is working offline
 newtab-weather-error-not-available = נתוני מזג האוויר אינם זמינים כעת.
+newtab-weather-opt-in-see-weather = האם ברצונך לראות את מזג האוויר עבור המיקום שלך?
+newtab-weather-opt-in-not-now =
+    .label = לא כעת
+newtab-weather-opt-in-yes =
+    .label = כן
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = New York City
 
 ## Topic Labels
 
@@ -493,6 +534,9 @@ newtab-topic-selection-button-pick-interests = בחירת תחומי העניי�
 newtab-section-follow-button = לעקוב
 newtab-section-following-button = במעקב
 newtab-section-unfollow-button = ביטול המעקב
+# A modal may appear next to the Follow button, directing users to try out the feature
+newtab-section-follow-highlight-title = כיוונון הפיד שלך
+newtab-section-follow-highlight-subtitle = ניתן לעקוב אחר תחומי העניין שלך כדי לראות עוד ממה שאהוב עליך.
 
 ## Button to block/unblock listed topics
 ## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
@@ -511,7 +555,7 @@ newtab-section-confirm-block-topic-p2 = נושאים חסומים לא יופי�
 #   $topic (string) - Name of topic that user is blocking
 newtab-section-block-topic-button = חסימת { $topic }
 
-## Panel in the Customize menu section to manage followed and blocked topics
+## Strings for custom wallpaper highlight
 
 newtab-section-mangage-topics-title = נושאים
 newtab-section-manage-topics-button-v2 =
@@ -524,3 +568,139 @@ newtab-custom-wallpaper-title = טפטים מותאמים אישית נמצאי�
 # 'Make firefox yours" means to customize or personalize
 newtab-custom-wallpaper-subtitle = ניתן להעלות טפט משלך או לבחור בצבע מותאם אישית כדי להפוך את { -brand-product-name } לשלך.
 newtab-custom-wallpaper-cta = בואו ננסה
+
+## Strings for new user activation custom wallpaper highlight
+
+newtab-new-user-custom-wallpaper-title = ניתן לבחור בטפט כדי להפוך את { -brand-product-name } לשלך
+newtab-new-user-custom-wallpaper-subtitle = כל לשונית חדשה יכולה לקבל תחושה של בית עם טפטים וצבעים מותאמים אישית.
+newtab-new-user-custom-wallpaper-cta = לנסות עכשיו
+
+## Strings for download mobile highlight
+
+newtab-download-mobile-highlight-title = הורדת { -brand-product-name } לנייד
+# "Scan the code" refers to scanning the QR code that appears above the body text that leads to Firefox for mobile download.
+newtab-download-mobile-highlight-body-variant-a = יש לסרוק את הקוד כדי לגלוש בבטחה בדרכים.
+newtab-download-mobile-highlight-body-variant-b = ניתן להמשיך מאיפה שהפסקת על־ידי סנכרון הלשוניות, הססמאות ועוד.
+newtab-download-mobile-highlight-body-variant-c = ידעת שניתן לקחת את { -brand-product-name } לדרכים? אותו הדפדפן, בכיס שלך.
+newtab-download-mobile-highlight-image =
+    .aria-label = קוד QR להורדת { -brand-product-name } לנייד
+
+## Strings for shortcuts highlight
+
+newtab-shortcuts-highlight-title = המועדפים שלך בקצות האצבעות
+newtab-shortcuts-highlight-subtitle = ניתן להוסיף קיצור דרך כדי לשמור את האתרים המועדפים עליך במרחק קליק אחד.
+
+## Strings for reporting ads and content
+
+newtab-report-content-why-reporting-this =
+    .label = על מה הדיווח?
+newtab-report-ads-reason-not-interested =
+    .label = אין לי עניין בזה
+newtab-report-ads-reason-inappropriate =
+    .label = זה לא הולם
+newtab-report-ads-reason-seen-it-too-many-times =
+    .label = ראיתי את זה יותר מדי פעמים
+newtab-report-content-wrong-category =
+    .label = קטגוריה שגויה
+newtab-report-content-outdated =
+    .label = מיושן
+newtab-report-content-inappropriate-offensive =
+    .label = בלתי הולם או פוגעני
+newtab-report-content-spam-misleading =
+    .label = ספאם או הטעיה
+newtab-report-cancel = ביטול
+newtab-report-submit = שליחה
+newtab-toast-thanks-for-reporting =
+    .message = תודה שדיווחת על זה.
+
+## Strings for trending searches
+
+newtab-trending-searches-show-trending =
+    .title = הצגת חיפושים פופולריים
+newtab-trending-searches-hide-trending =
+    .title = הסתרת חיפושים פופולריים
+newtab-trending-searches-learn-more = מידע נוסף
+newtab-trending-searches-dismiss = הסתרת חיפושים פופולריים
+# "Trending searches refers to popular searches from search engines
+newtab-trending-searches-title = חיפושים פופולריים
+
+## Strings for task / to-do list productivity widget
+
+# "Add one" means adding a new task to the list (e.g., "Walk the dog")
+newtab-widget-lists-empty-cta = האפשרויות הן אינסופיות. בואו ונוסיף אחת כזאת.
+# A simple label next to the default list name letting users know this is a new / beta feature
+newtab-widget-lists-label-new =
+    .label = חדש
+newtab-widget-lists-label-beta =
+    .label = Beta
+# When tasks have been previous marked as complete, they will appear in their own separate list beneath incomplete items
+# Variables:
+#   $number (number) - Amount of list items marked complete
+newtab-widget-lists-completed-list = הושלמו ({ $number })
+newtab-widget-task-list-menu-copy = העתקה
+newtab-widget-lists-menu-edit = עריכת שם הרשימה
+newtab-widget-lists-menu-create = יצירת רשימה חדשה
+newtab-widget-lists-menu-delete = מחיקת רשימה זו
+newtab-widget-lists-menu-copy = העתקת הרשימה ללוח העריכה
+newtab-widget-lists-menu-hide = הסתרת כל הרשימות
+newtab-widget-lists-menu-learn-more = מידע נוסף
+newtab-widget-lists-input-add-an-item =
+    .placeholder = הוספת פריט
+newtab-widget-lists-input-error = נא לכלול טקסט כדי להוסיף פריט.
+newtab-widget-lists-input-menu-open-link = פתיחת קישור
+newtab-widget-lists-input-menu-move-up = להזיז מעלה
+newtab-widget-lists-input-menu-move-down = להזיז מטה
+newtab-widget-lists-input-menu-delete = מחיקה
+newtab-widget-lists-input-menu-edit = עריכה
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + יצירת רשימה חדשה
+newtab-widget-lists-name-label-default =
+    .label = רשימת משימות
+newtab-widget-lists-name-placeholder-default =
+    .placeholder = רשימת משימות
+# The placeholder value of the name field for a newly created list
+newtab-widget-lists-name-placeholder-new =
+    .placeholder = רשימה חדשה
+newtab-widget-section-title = ווידג’טים
+# Tooltip for hide all widgets button
+newtab-widget-section-hide-all-button =
+    .title = הסתרת ווידג׳טים
+    .aria-label = הסתרת כל הווידג׳טים
+newtab-widget-section-maximize =
+    .title = הרחבת ווידג׳טים
+    .aria-label = הרחבת כל הווידג׳טים לגודל מלא
+newtab-widget-section-minimize =
+    .title = מזעור ווידג׳טים
+    .aria-label = צמצום כל הווידג׳טים לגודל קומפקטי
+
+## Strings for timer productivity widget
+## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
+
+newtab-widget-timer-notification-title = שעון עצר
+newtab-widget-timer-notification-focus = זמן הריכוז נגמר. עבודה יפה. יש לך צורך בהפסקה?
+newtab-widget-timer-notification-break = ההפסקה שלך הסתיימה. נחזור בחזרה להתרכז?
+newtab-widget-timer-notification-warning = ההתרעות כבויות
+newtab-widget-timer-mode-focus =
+    .label = ריכוז
+newtab-widget-timer-mode-break =
+    .label = הפסקה
+newtab-widget-timer-label-play =
+    .label = הפעלה
+newtab-widget-timer-label-pause =
+    .label = השהייה
+newtab-widget-timer-reset =
+    .title = איפוס
+newtab-widget-timer-menu-notifications = כיבוי התרעות
+newtab-widget-timer-menu-notifications-on = הפעלת התרעות
+newtab-widget-timer-menu-hide = הסתרת שעון עצר
+newtab-widget-timer-menu-learn-more = מידע נוסף
+newtab-widget-message-title = להישאר מרוכז בעזרת רשימות ושעון עצר מובנה
+# to-dos stands for "things to do".
+newtab-widget-message-copy = מתזכורות מהירות ועד למשימות יומיות, מזמני התמקדות ועד להפסקות להתמתחות - כך ניתן להספיק את המשימות בזמן.
+newtab-promo-card-title = תמיכה ב־{ -brand-product-name }
+newtab-promo-card-body = נותני החסות שלנו תומכים במשימה שלנו לבנות אינטרנט טוב יותר
+newtab-promo-card-cta = מידע נוסף
+newtab-promo-card-dismiss-button =
+    .title = סגירה
+    .aria-label = סגירה

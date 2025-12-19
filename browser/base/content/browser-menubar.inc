@@ -17,6 +17,12 @@
                 <menuitem id="menu_newNavigator"
                           key="key_newNavigator"
                           command="cmd_newNavigator" data-l10n-id="menu-file-new-window"/>
+                <menuitem id="menu_newAIWindow"
+                          command="Tools:AIWindow"
+                          data-l10n-id="menu-file-new-ai-window"/>
+                <menuitem id="menu_newClassicWindow"
+                          command="Tools:ClassicWindow"
+                          data-l10n-id="menu-file-new-classic-window"/>
                 <menuitem id="menu_newPrivateWindow"
                           command="Tools:PrivateBrowsing"
                           key="key_privatebrowsing" data-l10n-id="menu-file-new-private-window"/>
@@ -168,19 +174,16 @@
 #ifdef XP_MACOSX
                 <menuitem id="enterFullScreenItem"
                           key="key_enterFullScreen"
-                          command="View:FullScreen"
-                          data-l10n-id="menu-view-enter-full-screen">
-                </menuitem>
+                          data-l10n-id="menu-view-enter-full-screen"/>
                 <menuitem id="exitFullScreenItem"
                           key="key_exitFullScreen"
-                          command="View:FullScreen"
-                          hidden="true" data-l10n-id="menu-view-exit-full-screen">
-                </menuitem>
+                          hidden="true" data-l10n-id="menu-view-exit-full-screen"/>
 #else
                 <menuitem id="fullScreenItem"
                           key="key_enterFullScreen"
                           type="checkbox"
                           command="View:FullScreen"
+                          observes="View:FullScreen"
                           data-l10n-id="menu-view-full-screen"/>
 #endif
                 <menuitem id="menu_readerModeItem"
@@ -205,6 +208,7 @@
                          placespopup="true"
                          is="places-popup"
 #endif
+                         needsgutter="always"
                          tooltip="bhTooltip"
                          popupsinherittooltip="true">
                 <menuitem id="menu_showAllHistory"
@@ -263,6 +267,7 @@
                placespopup="true"
                is="places-popup"
 #endif
+               needsgutter="always"
                context="placesContext"
                openInTabs="children"
                tooltip="bhTooltip" popupsinherittooltip="true">
@@ -323,8 +328,12 @@
     </menupopup>
   </menu>
 
-  <menu id="profiles-menu" data-l10n-id="menu-profiles" hidden="true">
+  <menu id="profiles-menu" data-l10n-id="menu-profiles-menu" hidden="true">
     <menupopup id="menu_ProfilesPopup">
+      <!-- Profile list gets inserted here -->
+      <menuitem id="menu_newProfile" class="menuitem-iconic" command="Profiles:CreateProfile" data-l10n-id="menu-profiles-new-profile" />
+      <menuseparator id="profilesSeparator" />
+      <menuitem id="menu_manageProfiles" command="Profiles:ManageProfiles" data-l10n-id="menu-profiles-manage-profiles" />
     </menupopup>
   </menu>
 
@@ -335,7 +344,7 @@
                         command="Tools:Downloads" data-l10n-id="menu-tools-downloads"/>
               <menuitem id="menu_openAddons"
                         key="key_openAddons"
-                        command="Tools:Addons" data-l10n-id="menu-tools-addons-and-themes"/>
+                        command="Tools:Addons" data-l10n-id="menu-tools-extensions-and-themes"/>
 
               <!-- only one of sync-setup, sync-enable, sync-unverifieditem, sync-syncnowitem or sync-reauthitem will be showing at once -->
               <menuitem id="sync-setup"

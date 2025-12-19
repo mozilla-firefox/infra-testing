@@ -3,33 +3,34 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#if !defined(MediaData_h)
-#  define MediaData_h
+#ifndef MediaData_h
+#define MediaData_h
 
-#  include "AudioConfig.h"
-#  include "AudioSampleFormat.h"
-#  include "EncoderConfig.h"
-#  include "ImageTypes.h"
-#  include "MediaResult.h"
-#  include "SharedBuffer.h"
-#  include "TimeUnits.h"
-#  include "mozilla/CheckedInt.h"
-#  include "mozilla/DefineEnum.h"
-#  include "mozilla/EnumSet.h"
-#  include "mozilla/Maybe.h"
-#  include "mozilla/PodOperations.h"
-#  include "mozilla/RefPtr.h"
-#  include "mozilla/Result.h"
-#  include "mozilla/Span.h"
-#  include "mozilla/UniquePtr.h"
-#  include "mozilla/UniquePtrExtensions.h"
-#  include "mozilla/gfx/Rect.h"
-#  include "nsString.h"
-#  include "nsTArray.h"
+#include "AudioConfig.h"
+#include "AudioSampleFormat.h"
+#include "EncoderConfig.h"
+#include "ImageTypes.h"
+#include "MediaResult.h"
+#include "SharedBuffer.h"
+#include "TimeUnits.h"
+#include "mozilla/CheckedInt.h"
+#include "mozilla/DefineEnum.h"
+#include "mozilla/EnumSet.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/PodOperations.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/Result.h"
+#include "mozilla/Span.h"
+#include "mozilla/UniquePtr.h"
+#include "mozilla/UniquePtrExtensions.h"
+#include "mozilla/gfx/Rect.h"
+#include "nsString.h"
+#include "nsTArray.h"
 
 namespace mozilla {
 
 namespace layers {
+class BufferRecycleBin;
 class Image;
 class ImageContainer;
 class KnowsCompositor;
@@ -485,6 +486,21 @@ class VideoData : public MediaData {
     ChromaSubsampling mChromaSubsampling = ChromaSubsampling::FULL;
   };
 
+  // Extends YCbCrBuffer to support 8-bit per channel conversion with
+  // recyclable plane data.
+  class QuantizableBuffer final : public YCbCrBuffer {
+   public:
+    MediaResult To8BitPerChannel(layers::BufferRecycleBin* aRecycleBin);
+    ~QuantizableBuffer();
+
+   private:
+    void AllocateRecyclableData(size_t aLength);
+
+    RefPtr<layers::BufferRecycleBin> mRecycleBin;
+    UniquePtr<uint8_t[]> m8bpcPlanes;
+    size_t mAllocatedLength;
+  };
+
   // Constructs a VideoData object. If aImage is nullptr, creates a new Image
   // holding a copy of the YCbCr data passed in aBuffer. If aImage is not
   // nullptr, it's stored as the underlying video image and aBuffer is assumed
@@ -687,7 +703,7 @@ class MediaRawData final : public MediaData {
            mAlphaBuffer.ComputedSizeOfExcludingThis();
   }
   // Access the buffer as a Span.
-  operator Span<const uint8_t>() { return Span{Data(), Size()}; }
+  operator Span<const uint8_t>() const { return Span{Data(), Size()}; }
 
   const CryptoSample& mCrypto;
   RefPtr<MediaByteBuffer> mExtraData;

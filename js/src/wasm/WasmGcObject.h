@@ -22,22 +22,6 @@
 #include "wasm/WasmTypeDef.h"
 #include "wasm/WasmValType.h"
 
-namespace js::wasm {
-
-// For trailer blocks whose owning Wasm{Struct,Array}Objects make it into the
-// tenured heap, we have to tell the tenured heap how big those trailers are
-// in order to get major GCs to happen sufficiently frequently.  In an attempt
-// to make the numbers more accurate, for each block we overstate the size by
-// the following amount, on the assumption that:
-//
-// * mozjemalloc has an overhead of at least one word per block
-//
-// * the malloc-cache mechanism rounds up small block sizes to the nearest 16;
-//   hence the average increase is 16 / 2.
-static const size_t TrailerBlockOverhead = (16 / 2) + (1 * sizeof(void*));
-
-}  // namespace js::wasm
-
 namespace js {
 
 //=========================================================================
@@ -176,22 +160,11 @@ class WasmArrayObject : public WasmGcObject,
     return offsetToPointer<uint8_t>(offsetOfInlineStorage());
   }
 
-  // This tells us how big the object is if we know the number of inline bytes
-  // it was created with.
-  static inline constexpr size_t sizeOfIncludingInlineStorage(
-      size_t sizeOfInlineStorage) {
-    size_t n = sizeof(WasmArrayObject) + sizeOfInlineStorage;
-    MOZ_ASSERT(n <= JSObject::MAX_BYTE_SIZE);
-    return n;
-  }
-
-  // This tells us how big the object is if we know the number of inline bytes
-  // it was created with.
-  static inline constexpr size_t sizeOfIncludingInlineData(
-      size_t sizeOfInlineData) {
-    size_t n = sizeof(WasmArrayObject) + sizeOfInlineData;
-    MOZ_ASSERT(n <= JSObject::MAX_BYTE_SIZE);
-    return n;
+  // Actual array data that follows DataHeader. The array data is a part of the
+  // `inlineStorage`.
+  template <typename T>
+  T* inlineArrayElements() {
+    return offsetToPointer<T>(offsetOfInlineArrayData());
   }
 
   // AllocKind for object creation
@@ -232,9 +205,14 @@ class WasmArrayObject : public WasmGcObject,
   static inline constexpr uint32_t maxInlineElementsForElemSize(
       uint32_t elemSize);
 
+  size_t sizeOfExcludingThis() const;
+
+  // These constants can be anything, so long as they are not the same.  Use
+  // small but unlikely values in the hope of getting more value from
+  // assertions involving them.
   using DataHeader = uintptr_t;
-  static const DataHeader DataIsIL = 0;
-  static const DataHeader DataIsOOL = 1;
+  static const DataHeader DataIsIL = 0x37;
+  static const DataHeader DataIsOOL = 0x71;
 
   // Creates a new array object with out-of-line storage. Reports an error on
   // OOM. The element type, shape, class pointer, alloc site and alloc kind are
@@ -285,17 +263,27 @@ class WasmArrayObject : public WasmGcObject,
   // Tracing and finalization
   static void obj_trace(JSTracer* trc, JSObject* object);
   static void obj_finalize(JS::GCContext* gcx, JSObject* object);
-  static size_t obj_moved(JSObject* obj, JSObject* old);
+  static size_t obj_moved(JSObject* objNew, JSObject* objOld);
 
   void storeVal(const wasm::Val& val, uint32_t itemIndex);
   void fillVal(const wasm::Val& val, uint32_t itemIndex, uint32_t len);
 
-  static DataHeader* dataHeaderFromDataPointer(const uint8_t* data) {
+  static inline DataHeader* dataHeaderFromDataPointer(const uint8_t* data) {
     MOZ_ASSERT(data);
-    return (DataHeader*)data - 1;
+    DataHeader* header = (DataHeader*)data;
+    header--;
+    MOZ_ASSERT(*header == DataIsIL || *header == DataIsOOL);
+    return header;
   }
   DataHeader* dataHeader() const {
     return WasmArrayObject::dataHeaderFromDataPointer(data_);
+  }
+
+  static inline uint8_t* dataHeaderToDataPointer(const DataHeader* header) {
+    MOZ_ASSERT(header);
+    MOZ_ASSERT(*header == DataIsIL || *header == DataIsOOL);
+    header++;
+    return (uint8_t*)header;
   }
 
   static bool isDataInline(uint8_t* data) {
@@ -370,6 +358,8 @@ class WasmStructObject : public WasmGcObject,
     return n;
   }
 
+  size_t sizeOfExcludingThis() const;
+
   static const JSClass* classForTypeDef(const wasm::TypeDef* typeDef);
   static js::gc::AllocKind allocKindForTypeDef(const wasm::TypeDef* typeDef);
 
@@ -429,7 +419,7 @@ class WasmStructObject : public WasmGcObject,
   // Tracing and finalization
   static void obj_trace(JSTracer* trc, JSObject* object);
   static void obj_finalize(JS::GCContext* gcx, JSObject* object);
-  static size_t obj_moved(JSObject* obj, JSObject* old);
+  static size_t obj_moved(JSObject* objNew, JSObject* objOld);
 
   void storeVal(const wasm::Val& val, uint32_t fieldIndex);
 };
@@ -537,9 +527,8 @@ class MOZ_RAII StableWasmArrayObjectElements {
         // elements.
         MOZ_CRASH();
       }
-      std::copy(array->inlineStorage(),
-                array->inlineStorage() + array->numElements_ * sizeof(T),
-                ownElements_->begin());
+      const T* src = array->inlineArrayElements<T>();
+      std::copy(src, src + array->numElements_, ownElements_->begin());
       elements_ = ownElements_->begin();
     } else {
       elements_ = reinterpret_cast<T*>(array->data_);

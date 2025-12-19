@@ -1,4 +1,3 @@
-import json
 import os
 import subprocess
 
@@ -6,6 +5,7 @@ import pytest
 from gecko_taskgraph import GECKO
 from mozunit import main
 from taskgraph.taskgraph import TaskGraph
+from taskgraph.util import json
 
 pytestmark = pytest.mark.slow
 PARAMS_DIR = os.path.join(GECKO, "taskcluster", "test", "params")
@@ -29,7 +29,7 @@ def get_graph_from_spec(tmpdir_factory):
     # entirely as having already run
     env = os.environ.copy()
     env.pop("MOZ_AUTOMATION", None)
-    subprocess.run(cmd, cwd=GECKO, env=env)
+    subprocess.run(cmd, check=False, cwd=GECKO, env=env)
     assert len(outdir.listdir()) > 0
 
     def inner(param_spec):

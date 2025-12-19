@@ -7,7 +7,6 @@
 #define DnsAndConnectSocket_h__
 
 #include "mozilla/TimeStamp.h"
-#include "mozilla/UniquePtr.h"
 #include "nsAHttpConnection.h"
 #include "nsHttpConnection.h"
 #include "nsHttpTransaction.h"
@@ -40,7 +39,7 @@ class DnsAndConnectSocket final : public nsIOutputStreamCallback,
   ~DnsAndConnectSocket();
 
  public:
-  NS_DECLARE_STATIC_IID_ACCESSOR(NS_DNSANDCONNECTSOCKET_IID)
+  NS_INLINE_DECL_STATIC_IID(NS_DNSANDCONNECTSOCKET_IID)
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIOUTPUTSTREAMCALLBACK
   NS_DECL_NSITRANSPORTEVENTSINK
@@ -50,8 +49,7 @@ class DnsAndConnectSocket final : public nsIOutputStreamCallback,
   NS_DECL_NSIDNSLISTENER
 
   DnsAndConnectSocket(nsHttpConnectionInfo* ci, nsAHttpTransaction* trans,
-                      uint32_t caps, bool speculative, bool isFromPredictor,
-                      bool urgentStart);
+                      uint32_t caps, bool speculative, bool urgentStart);
 
   [[nodiscard]] nsresult Init(ConnectionEntry* ent);
   void Abandon();
@@ -170,7 +168,8 @@ class DnsAndConnectSocket final : public nsIOutputStreamCallback,
     void CancelDnsResolution();
     void Abandon();
     void CloseAll();
-    nsresult SetupConn(nsAHttpTransaction* transaction, ConnectionEntry* ent,
+    nsresult SetupConn(DnsAndConnectSocket* dnsAndSock,
+                       nsAHttpTransaction* transaction, ConnectionEntry* ent,
                        nsresult status, uint32_t cap,
                        HttpConnectionBase** connection);
     [[nodiscard]] nsresult SetupStreams(DnsAndConnectSocket* dnsAndSock);
@@ -236,11 +235,6 @@ class DnsAndConnectSocket final : public nsIOutputStreamCallback,
   // mark the connection as urgent rightaway it's created.
   bool mUrgentStart;
 
-  // mIsFromPredictor is set if the socket originated from the network
-  // Predictor. It is used to gather telemetry data on used speculative
-  // connections from the predictor.
-  bool mIsFromPredictor;
-
   bool mAllow1918 = true;
 
   // mHasConnected tracks whether one of the sockets has completed the
@@ -259,14 +253,12 @@ class DnsAndConnectSocket final : public nsIOutputStreamCallback,
   nsCOMPtr<nsITimer> mSynTimer;
   BackupTransportSetup mBackupTransport;
 
-  bool mIsHttp3;
+  bool mIsHttp3 = false;
 
   bool mSkipDnsResolution = false;
   bool mProxyNotTransparent = false;
   bool mProxyTransparentResolvesHost = false;
 };
-
-NS_DEFINE_STATIC_IID_ACCESSOR(DnsAndConnectSocket, NS_DNSANDCONNECTSOCKET_IID)
 
 }  // namespace net
 }  // namespace mozilla

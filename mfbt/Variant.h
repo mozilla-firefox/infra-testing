@@ -6,13 +6,14 @@
 
 /* A template class for tagged unions. */
 
+#include <algorithm>
 #include <new>
 #include <stdint.h>
 
 #include "mozilla/Assertions.h"
 #include "mozilla/HashFunctions.h"
 #include "mozilla/OperatorNewExtensions.h"
-#include "mozilla/TemplateLib.h"
+
 #include <type_traits>
 #include <utility>
 
@@ -25,11 +26,6 @@ struct ParamTraits;
 }  // namespace IPC
 
 namespace mozilla {
-
-namespace ipc {
-template <typename T>
-struct IPDLParamTraits;
-}  // namespace ipc
 
 template <typename... Ts>
 class Variant;
@@ -372,6 +368,13 @@ struct VariantIndex {
  * its constructor and destructor run on creation and deletion
  * respectively. This is the problem that `mozilla::Variant` solves.
  *
+ * Since C++17, std::variant exists. `mozilla::Variant` differs conceptually
+ * from it by (a.) having a richer `.match` API (compared to `std::visit`) and
+ * (b.) having a different assignment semantic. Assigning to an `std::variant`
+ * assigns to the underlying value, while assigning to a `mozilla::Variant`
+ * deletes the previous value then move-constructs a new value. This makes it
+ * possible to store *and* update const values.
+ *
  * ## Usage
  *
  * A `mozilla::Variant` instance is constructed (via move or copy) from one of
@@ -567,15 +570,15 @@ struct VariantIndex {
  * instead.
  */
 template <typename... Ts>
-class MOZ_INHERIT_TYPE_ANNOTATIONS_FROM_TEMPLATE_ARGS MOZ_NON_PARAM Variant {
+class MOZ_INHERIT_TYPE_ANNOTATIONS_FROM_TEMPLATE_ARGS
+MOZ_NON_PARAM MOZ_GSL_OWNER Variant {
   friend struct IPC::ParamTraits<mozilla::Variant<Ts...>>;
-  friend struct mozilla::ipc::IPDLParamTraits<mozilla::Variant<Ts...>>;
 
   using Tag = typename detail::VariantTag<Ts...>::Type;
   using Impl = detail::VariantImplementation<Tag, 0, Ts...>;
 
-  static constexpr size_t RawDataAlignment = tl::Max<alignof(Ts)...>::value;
-  static constexpr size_t RawDataSize = tl::Max<sizeof(Ts)...>::value;
+  static constexpr size_t RawDataAlignment = std::max({alignof(Ts)...});
+  static constexpr size_t RawDataSize = std::max({sizeof(Ts)...});
 
   // Raw storage for the contained variant value.
   alignas(RawDataAlignment) unsigned char rawData[RawDataSize];
@@ -739,7 +742,7 @@ class MOZ_INHERIT_TYPE_ANNOTATIONS_FROM_TEMPLATE_ARGS MOZ_NON_PARAM Variant {
 
   /** Mutable lvalue-reference. */
   template <typename T>
-  T& as() & {
+      T& as() & MOZ_LIFETIME_BOUND {
     static_assert(
         detail::SelectVariantType<T, Ts...>::count == 1,
         "provided a type not uniquely found in this Variant's type list");
@@ -748,7 +751,7 @@ class MOZ_INHERIT_TYPE_ANNOTATIONS_FROM_TEMPLATE_ARGS MOZ_NON_PARAM Variant {
   }
 
   template <size_t N>
-  typename detail::Nth<N, Ts...>::Type& as() & {
+      typename detail::Nth<N, Ts...>::Type& as() & MOZ_LIFETIME_BOUND {
     static_assert(N < sizeof...(Ts),
                   "provided an index outside of this Variant's type list");
     MOZ_RELEASE_ASSERT(is<N>());
@@ -757,7 +760,7 @@ class MOZ_INHERIT_TYPE_ANNOTATIONS_FROM_TEMPLATE_ARGS MOZ_NON_PARAM Variant {
 
   /** Immutable const lvalue-reference. */
   template <typename T>
-  const T& as() const& {
+  const T& as() const& MOZ_LIFETIME_BOUND {
     static_assert(detail::SelectVariantType<T, Ts...>::count == 1,
                   "provided a type not found in this Variant's type list");
     MOZ_RELEASE_ASSERT(is<T>());
@@ -765,7 +768,7 @@ class MOZ_INHERIT_TYPE_ANNOTATIONS_FROM_TEMPLATE_ARGS MOZ_NON_PARAM Variant {
   }
 
   template <size_t N>
-  const typename detail::Nth<N, Ts...>::Type& as() const& {
+  const typename detail::Nth<N, Ts...>::Type& as() const& MOZ_LIFETIME_BOUND {
     static_assert(N < sizeof...(Ts),
                   "provided an index outside of this Variant's type list");
     MOZ_RELEASE_ASSERT(is<N>());
@@ -774,7 +777,7 @@ class MOZ_INHERIT_TYPE_ANNOTATIONS_FROM_TEMPLATE_ARGS MOZ_NON_PARAM Variant {
 
   /** Mutable rvalue-reference. */
   template <typename T>
-  T&& as() && {
+      T&& as() && MOZ_LIFETIME_BOUND {
     static_assert(
         detail::SelectVariantType<T, Ts...>::count == 1,
         "provided a type not uniquely found in this Variant's type list");
@@ -783,7 +786,7 @@ class MOZ_INHERIT_TYPE_ANNOTATIONS_FROM_TEMPLATE_ARGS MOZ_NON_PARAM Variant {
   }
 
   template <size_t N>
-  typename detail::Nth<N, Ts...>::Type&& as() && {
+      typename detail::Nth<N, Ts...>::Type&& as() && MOZ_LIFETIME_BOUND {
     static_assert(N < sizeof...(Ts),
                   "provided an index outside of this Variant's type list");
     MOZ_RELEASE_ASSERT(is<N>());
@@ -793,7 +796,7 @@ class MOZ_INHERIT_TYPE_ANNOTATIONS_FROM_TEMPLATE_ARGS MOZ_NON_PARAM Variant {
 
   /** Immutable const rvalue-reference. */
   template <typename T>
-  const T&& as() const&& {
+  const T&& as() const&& MOZ_LIFETIME_BOUND {
     static_assert(detail::SelectVariantType<T, Ts...>::count == 1,
                   "provided a type not found in this Variant's type list");
     MOZ_RELEASE_ASSERT(is<T>());
@@ -801,7 +804,7 @@ class MOZ_INHERIT_TYPE_ANNOTATIONS_FROM_TEMPLATE_ARGS MOZ_NON_PARAM Variant {
   }
 
   template <size_t N>
-  const typename detail::Nth<N, Ts...>::Type&& as() const&& {
+  const typename detail::Nth<N, Ts...>::Type&& as() const&& MOZ_LIFETIME_BOUND {
     static_assert(N < sizeof...(Ts),
                   "provided an index outside of this Variant's type list");
     MOZ_RELEASE_ASSERT(is<N>());

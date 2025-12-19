@@ -107,16 +107,14 @@ impl TryFrom<PRTime> for Time {
     type Error = Error;
     fn try_from(prtime: PRTime) -> Res<Self> {
         let base = get_base();
-        let delta = prtime
-            .checked_sub(base.prtime)
-            .ok_or(Error::TimeTravelError)?;
+        let delta = prtime.checked_sub(base.prtime).ok_or(Error::TimeTravel)?;
         let d = Duration::from_micros(u64::try_from(delta.abs())?);
         let t = if delta >= 0 {
             base.instant.checked_add(d)
         } else {
             base.instant.checked_sub(d)
         };
-        let t = t.ok_or(Error::TimeTravelError)?;
+        let t = t.ok_or(Error::TimeTravel)?;
         Ok(Self { t })
     }
 }
@@ -130,13 +128,13 @@ impl TryInto<PRTime> for Time {
             || {
                 // Try to go backwards from the base time.
                 let backwards = base.instant - self.t; // infallible
-                PRTime::try_from(backwards.as_micros()).map_or(Err(Error::TimeTravelError), |d| {
-                    base.prtime.checked_sub(d).ok_or(Error::TimeTravelError)
+                PRTime::try_from(backwards.as_micros()).map_or(Err(Error::TimeTravel), |d| {
+                    base.prtime.checked_sub(d).ok_or(Error::TimeTravel)
                 })
             },
             |delta| {
-                PRTime::try_from(delta.as_micros()).map_or(Err(Error::TimeTravelError), |d| {
-                    d.checked_add(base.prtime).ok_or(Error::TimeTravelError)
+                PRTime::try_from(delta.as_micros()).map_or(Err(Error::TimeTravel), |d| {
+                    d.checked_add(base.prtime).ok_or(Error::TimeTravel)
                 })
             },
         )
@@ -153,13 +151,6 @@ impl From<Time> for Instant {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Interval {
     d: Duration,
-}
-
-impl Deref for Interval {
-    type Target = Duration;
-    fn deref(&self) -> &Self::Target {
-        &self.d
-    }
 }
 
 impl TryFrom<PRTime> for Interval {
@@ -213,6 +204,7 @@ impl Default for TimeHolder {
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod test {
     use std::time::{Duration, Instant};
 
@@ -222,7 +214,7 @@ mod test {
     #[test]
     fn convert_stable() {
         init();
-        let now = Time::from(Instant::now());
+        let now = Time::from(test_fixture::now());
         let pr: PRTime = now.try_into().expect("convert to PRTime with truncation");
         let t2 = Time::try_from(pr).expect("convert to Instant");
         let pr2: PRTime = t2.try_into().expect("convert to PRTime again");

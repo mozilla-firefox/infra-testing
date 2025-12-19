@@ -6,29 +6,28 @@
 
 #include "nsPageFrame.h"
 
+#include "PrintedSheetFrame.h"
+#include "gfxContext.h"
 #include "mozilla/AppUnits.h"
+#include "mozilla/Logging.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StaticPrefs_print.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/intl/Segmenter.h"
-#include "gfxContext.h"
-#include "nsDeviceContext.h"
-#include "nsFontMetrics.h"
-#include "nsIFrame.h"
-#include "nsLayoutUtils.h"
-#include "nsPresContext.h"
-#include "nsGkAtoms.h"
-#include "nsFieldSetFrame.h"
-#include "nsPageContentFrame.h"
-#include "nsDisplayList.h"
-#include "nsPageSequenceFrame.h"  // for nsSharedPageData
-#include "nsTextFormatter.h"      // for page number localization formatting
 #include "nsBidiUtils.h"
+#include "nsDeviceContext.h"
+#include "nsDisplayList.h"
+#include "nsFieldSetFrame.h"
+#include "nsFontMetrics.h"
+#include "nsGkAtoms.h"
+#include "nsIFrame.h"
 #include "nsIPrintSettings.h"
-#include "PrintedSheetFrame.h"
-
-#include "mozilla/Logging.h"
+#include "nsLayoutUtils.h"
+#include "nsPageContentFrame.h"
+#include "nsPageSequenceFrame.h"  // for nsSharedPageData
+#include "nsPresContext.h"
+#include "nsTextFormatter.h"  // for page number localization formatting
 extern mozilla::LazyLogModule gLayoutPrintingLog;
 #define PR_PL(_p1) MOZ_LOG(gLayoutPrintingLog, mozilla::LogLevel::Debug, _p1)
 
@@ -124,10 +123,11 @@ nsReflowStatus nsPageFrame::ReflowPageContent(
   // that we will respect a margin of zero if specified, assuming this means
   // the document is intended to fit the paper size exactly, and the client is
   // taking full responsibility for what happens around the edges.
-  const auto positionProperty = kidReflowInput.mStyleDisplay->mPosition;
+  const auto anchorResolutionParams =
+      AnchorPosResolutionParams::From(&kidReflowInput);
   if (mPD->mPrintSettings->GetHonorPageRuleMargins()) {
     for (const auto side : mozilla::AllPhysicalSides()) {
-      if (!kidReflowInput.mStyleMargin->GetMargin(side, positionProperty)
+      if (!kidReflowInput.mStyleMargin->GetMargin(side, anchorResolutionParams)
                ->IsAuto()) {
         // Computed margins are already in the coordinate space of the content,
         // do not scale.
@@ -249,11 +249,25 @@ nsresult nsPageFrame::GetFrameName(nsAString& aResult) const {
 void nsPageFrame::ProcessSpecialCodes(const nsString& aStr, nsString& aNewStr) {
   aNewStr = aStr;
 
+  // Helper to wrap a string in Unicode FSI/PDI controls, so that its bidi
+  // rendering will be isolated from the context, and will respect the default
+  // directionality of the string's content.
+  // We apply this to each of the strings being substituted in for "special"
+  // codes in the header/footer.
+  constexpr char16_t kFirstStrongIsolate = char16_t(0x2068);
+  constexpr char16_t kPopDirectionalIsolate = char16_t(0x2069);
+  auto bidiIsolateWrap = [](nsString& aString) {
+    aString.Insert(kFirstStrongIsolate, 0);
+    aString.Append(kPopDirectionalIsolate);
+  };
+
   // Search to see if the &D code is in the string
   // then subst in the current date/time
   constexpr auto kDate = u"&D"_ns;
   if (aStr.Find(kDate) != kNotFound) {
-    aNewStr.ReplaceSubstring(kDate, mPD->mDateTimeStr);
+    nsAutoString uStr(mPD->mDateTimeStr);
+    bidiIsolateWrap(uStr);
+    aNewStr.ReplaceSubstring(kDate, uStr);
   }
 
   // NOTE: Must search for &PT before searching for &P
@@ -266,6 +280,7 @@ void nsPageFrame::ProcessSpecialCodes(const nsString& aStr, nsString& aNewStr) {
     nsAutoString uStr;
     nsTextFormatter::ssprintf(uStr, mPD->mPageNumAndTotalsFormat.get(),
                               mPageNum, mPD->mRawNumPages);
+    bidiIsolateWrap(uStr);
     aNewStr.ReplaceSubstring(kPageAndTotal, uStr);
   }
 
@@ -275,17 +290,22 @@ void nsPageFrame::ProcessSpecialCodes(const nsString& aStr, nsString& aNewStr) {
   if (aStr.Find(kPage) != kNotFound) {
     nsAutoString uStr;
     nsTextFormatter::ssprintf(uStr, mPD->mPageNumFormat.get(), mPageNum);
+    bidiIsolateWrap(uStr);
     aNewStr.ReplaceSubstring(kPage, uStr);
   }
 
   constexpr auto kTitle = u"&T"_ns;
   if (aStr.Find(kTitle) != kNotFound) {
-    aNewStr.ReplaceSubstring(kTitle, mPD->mDocTitle);
+    nsAutoString uStr(mPD->mDocTitle);
+    bidiIsolateWrap(uStr);
+    aNewStr.ReplaceSubstring(kTitle, uStr);
   }
 
   constexpr auto kDocURL = u"&U"_ns;
   if (aStr.Find(kDocURL) != kNotFound) {
-    aNewStr.ReplaceSubstring(kDocURL, mPD->mDocURL);
+    nsAutoString uStr(mPD->mDocURL);
+    bidiIsolateWrap(uStr);
+    aNewStr.ReplaceSubstring(kDocURL, uStr);
   }
 
   constexpr auto kPageTotal = u"&L"_ns;
@@ -293,6 +313,7 @@ void nsPageFrame::ProcessSpecialCodes(const nsString& aStr, nsString& aNewStr) {
     nsAutoString uStr;
     nsTextFormatter::ssprintf(uStr, mPD->mPageNumFormat.get(),
                               mPD->mRawNumPages);
+    bidiIsolateWrap(uStr);
     aNewStr.ReplaceSubstring(kPageTotal, uStr);
   }
 }

@@ -16,6 +16,7 @@
 #include "ThirdPartyCookieBlockingExceptions.h"
 
 #include "nsString.h"
+#include "nsICookieValidation.h"
 #include "nsIMemoryReporter.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/MozPromise.h"
@@ -98,13 +99,13 @@ class CookieService final : public nsICookieService,
    */
   nsresult Remove(const nsACString& aHost, const OriginAttributes& aAttrs,
                   const nsACString& aName, const nsACString& aPath,
-                  const nsID* aOperationID);
+                  bool aFromHttp, const nsID* aOperationID);
 
-  bool SetCookiesFromIPC(const nsACString& aBaseDomain,
-                         const OriginAttributes& aAttrs, nsIURI* aHostURI,
-                         bool aFromHttp, bool aIsThirdParty,
-                         const nsTArray<CookieStruct>& aCookies,
-                         dom::BrowsingContext* aBrowsingContext);
+  nsICookieValidation::ValidationError SetCookiesFromIPC(
+      const nsACString& aBaseDomain, const OriginAttributes& aAttrs,
+      nsIURI* aHostURI, bool aFromHttp, bool aIsThirdParty,
+      const nsTArray<CookieStruct>& aCookies,
+      dom::BrowsingContext* aBrowsingContext);
 
  protected:
   virtual ~CookieService();
@@ -140,6 +141,16 @@ class CookieService final : public nsICookieService,
   // private browsing.
   RefPtr<CookieStorage> mPersistentStorage;
   RefPtr<CookieStorage> mPrivateStorage;
+
+ private:
+  nsresult AddInternal(nsIURI* aCookieURI, const nsACString& aHost,
+                       const nsACString& aPath, const nsACString& aName,
+                       const nsACString& aValue, bool aIsSecure,
+                       bool aIsHttpOnly, bool aIsSession, int64_t aExpiry,
+                       OriginAttributes* aOriginAttributes, int32_t aSameSite,
+                       nsICookie::schemeType aSchemeMap, bool aIsPartitioned,
+                       bool aFromHttp, const nsID* aOperationID,
+                       nsICookieValidation** aValidation);
 };
 
 }  // namespace net

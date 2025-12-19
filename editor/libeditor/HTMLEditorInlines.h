@@ -16,7 +16,6 @@
 
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Debug.h"
-#include "mozilla/Likely.h"
 #include "mozilla/RefPtr.h"
 
 #include "mozilla/dom/Element.h"
@@ -60,6 +59,13 @@ Result<MoveNodeResult, nsresult> HTMLEditor::MoveNodeToEndWithTransaction(
     nsIContent& aContentToMove, nsINode& aNewContainer) {
   return MoveNodeWithTransaction(aContentToMove,
                                  EditorDOMPoint::AtEndOf(aNewContainer));
+}
+
+Result<MoveNodeResult, nsresult> HTMLEditor::MoveSiblingsToEndWithTransaction(
+    nsIContent& aFirstContentToMove, nsIContent& aLastContentToMove,
+    nsINode& aNewContainer) {
+  return MoveSiblingsWithTransaction(aFirstContentToMove, aLastContentToMove,
+                                     EditorDOMPoint::AtEndOf(aNewContainer));
 }
 
 Element* HTMLEditor::GetTableCellElementAt(

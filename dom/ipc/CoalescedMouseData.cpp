@@ -3,11 +3,10 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-#include "base/basictypes.h"
-
 #include "CoalescedMouseData.h"
-#include "BrowserChild.h"
 
+#include "BrowserChild.h"
+#include "base/basictypes.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "nsRefreshDriver.h"
@@ -20,10 +19,12 @@ void CoalescedMouseData::Coalesce(const WidgetMouseEvent& aEvent,
                                   const uint64_t& aInputBlockId) {
   if (IsEmpty()) {
     mCoalescedInputEvent = MakeUnique<WidgetMouseEvent>(aEvent);
+    mCoalescedInputEvent->mCallbackId = std::move(aEvent.mCallbackId);
     mGuid = aGuid;
     mInputBlockId = aInputBlockId;
     MOZ_ASSERT(!mCoalescedInputEvent->mCoalescedWidgetEvents);
   } else {
+    MOZ_ASSERT(aEvent.mCallbackId.isNothing());
     MOZ_ASSERT(mGuid == aGuid);
     MOZ_ASSERT(mInputBlockId == aInputBlockId);
     MOZ_ASSERT(mCoalescedInputEvent->mModifiers == aEvent.mModifiers);
@@ -50,6 +51,7 @@ void CoalescedMouseData::Coalesce(const WidgetMouseEvent& aEvent,
             aEvent);
 
     event->mMessage = ePointerMove;
+    event->mButton = MouseButton::eNotPressed;
     event->mPressure = aEvent.ComputeMouseButtonPressure();
     event->mFlags.mBubbles = false;
     event->mFlags.mCancelable = false;
@@ -58,17 +60,29 @@ void CoalescedMouseData::Coalesce(const WidgetMouseEvent& aEvent,
 
 bool CoalescedMouseData::CanCoalesce(const WidgetMouseEvent& aEvent,
                                      const ScrollableLayerGuid& aGuid,
-                                     const uint64_t& aInputBlockId) {
+                                     const uint64_t& aInputBlockId,
+                                     const nsRefreshDriver* aRefreshDriver) {
   MOZ_ASSERT(aEvent.mMessage == eMouseMove);
-  return !mCoalescedInputEvent ||
-         (!mCoalescedInputEvent->mFlags.mIsSynthesizedForTests &&
-          !aEvent.mFlags.mIsSynthesizedForTests &&
-          mCoalescedInputEvent->mModifiers == aEvent.mModifiers &&
-          mCoalescedInputEvent->mInputSource == aEvent.mInputSource &&
-          mCoalescedInputEvent->pointerId == aEvent.pointerId &&
-          mCoalescedInputEvent->mButton == aEvent.mButton &&
-          mCoalescedInputEvent->mButtons == aEvent.mButtons && mGuid == aGuid &&
-          mInputBlockId == aInputBlockId);
+  if (!mCoalescedInputEvent) {
+    return true;
+  }
+  if (mCoalescedInputEvent->mFlags.mIsSynthesizedForTests !=
+          aEvent.mFlags.mIsSynthesizedForTests ||
+      mCoalescedInputEvent->mModifiers != aEvent.mModifiers ||
+      mCoalescedInputEvent->mInputSource != aEvent.mInputSource ||
+      mCoalescedInputEvent->pointerId != aEvent.pointerId ||
+      mCoalescedInputEvent->mButton != aEvent.mButton ||
+      mCoalescedInputEvent->mButtons != aEvent.mButtons || mGuid != aGuid ||
+      mInputBlockId != aInputBlockId) {
+    return false;
+  }
+  // Basically, tests do not want to coalesces the consecutive mouse events.
+  // However, if the test calls nsIDOMWindowUtils::AdvanceTimeAndRefresh(0),
+  // they must try to check coalesced mouse move events.
+  if (!aEvent.mFlags.mIsSynthesizedForTests) {
+    return true;
+  }
+  return aRefreshDriver && aRefreshDriver->IsTestControllingRefreshesEnabled();
 }
 
 CoalescedMouseMoveFlusher::CoalescedMouseMoveFlusher(

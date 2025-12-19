@@ -47,9 +47,9 @@ data class WebPushSubscription(
     val publicKey: ByteArray,
     val authSecret: ByteArray,
 ) {
-    @Suppress("BracesOnIfStatements", "ComplexMethod")
+    @Suppress("BracesOnIfStatements")
     override fun equals(other: Any?): Boolean {
-        /* auto-generated */
+        // auto-generated
         if (this === other) return true
         if (javaClass != other?.javaClass) return false
 
@@ -60,7 +60,9 @@ data class WebPushSubscription(
         if (appServerKey != null) {
             if (other.appServerKey == null) return false
             if (!appServerKey.contentEquals(other.appServerKey)) return false
-        } else if (other.appServerKey != null) return false
+        } else if (other.appServerKey != null) {
+            return false
+        }
         if (!publicKey.contentEquals(other.publicKey)) return false
         if (!authSecret.contentEquals(other.authSecret)) return false
 
@@ -69,7 +71,7 @@ data class WebPushSubscription(
 
     @Suppress("MagicNumber")
     override fun hashCode(): Int {
-        /* auto-generated */
+        // auto-generated
         var result = scope.hashCode()
         result = 31 * result + endpoint.hashCode()
         result = 31 * result + (appServerKey?.contentHashCode() ?: 0)

@@ -9,7 +9,6 @@
 #include "mozilla/net/DNSPacket.h"
 #include "nsIDNSService.h"
 #include "mozilla/StaticPrefs_network.h"
-#include "mozilla/ThreadLocal.h"
 
 #include <dns_sd.h>
 #include <unistd.h>
@@ -136,12 +135,23 @@ nsresult ResolveHTTPSRecordImpl(const nsACString& aHost,
   FD_ZERO(&readfds);
   FD_SET(fd, &readfds);
 
-  int result = select(fd + 1, &readfds, NULL, NULL, NULL);
+  // If the domain queried results in NXDOMAIN, then QueryCallback will
+  // never get called, and select will hang forever. We need to use a
+  // timeout so that select() eventually returns.
+  struct timeval timeout;
+  timeout.tv_sec =
+      StaticPrefs::network_dns_native_https_timeout_mac_msec() / 1000;
+  timeout.tv_usec =
+      (StaticPrefs::network_dns_native_https_timeout_mac_msec() % 1000) * 1000;
+
+  int result = select(fd + 1, &readfds, NULL, NULL, &timeout);
   if (result > 0 && FD_ISSET(fd, &readfds)) {
     // Process the result
     DNSServiceProcessResult(sdRef);
   } else if (result < 0) {
     LOG("select() failed");
+  } else if (result == 0) {
+    LOG("select timed out");
   }
 
   // Cleanup

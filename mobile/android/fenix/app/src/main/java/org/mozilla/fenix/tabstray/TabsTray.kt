@@ -2,11 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-@file:OptIn(ExperimentalFoundationApi::class)
-
 package org.mozilla.fenix.tabstray
 
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +11,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -27,13 +26,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.rememberNestedScrollInteropConnection
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import mozilla.components.browser.state.state.ContentState
 import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.storage.sync.TabEntry
-import mozilla.components.compose.base.Divider
-import mozilla.components.compose.base.annotation.LightDarkPreview
 import mozilla.components.lib.state.ext.observeAsState
 import org.mozilla.fenix.tabstray.ext.isNormalTab
 import org.mozilla.fenix.tabstray.syncedtabs.SyncedTabsListItem
@@ -49,7 +47,9 @@ import org.mozilla.fenix.tabstray.syncedtabs.OnTabCloseClick as OnSyncedTabClose
  * @param displayTabsInGrid Whether the normal and private tabs should be displayed in a grid.
  * @param isInDebugMode True for debug variant or if secret menu is enabled for this session.
  * @param shouldShowTabAutoCloseBanner Whether the tab auto closer banner should be displayed.
+ * @param shouldShowLockPbmBanner Whether the lock private browsing banner should be displayed.
  * @param shouldShowInactiveTabsAutoCloseDialog Whether the inactive tabs auto close dialog should be displayed.
+ * @param isPbmLocked Whether the private browsing mode is currently locked.
  * @param onTabPageClick Invoked when the user clicks on the Normal, Private, or Synced tabs page button.
  * @param onTabClose Invoked when the user clicks to close a tab.
  * @param onTabMediaClick Invoked when the user interacts with a tab's media controls.
@@ -81,6 +81,9 @@ import org.mozilla.fenix.tabstray.syncedtabs.OnTabCloseClick as OnSyncedTabClose
  * @param onForceSelectedTabsAsInactiveClick Invoked when the user clicks on the make inactive banner menu item.
  * @param onTabsTrayDismiss Invoked when accessibility services or UI automation requests dismissal.
  * @param onTabAutoCloseBannerViewOptionsClick Invoked when the user clicks to view the auto close options.
+ * @param onTabsTrayPbmLockedClick Invoked when the user interacts with the lock private browsing mode banner.
+ * @param onTabsTrayPbmLockedDismiss Invoked when the user clicks either button on the
+ * lock private browsing mode banner.
  * @param onTabAutoCloseBannerDismiss Invoked when the user clicks to dismiss the auto close banner.
  * @param onTabAutoCloseBannerShown Invoked when the auto close banner has been shown to the user.
  * @param onMove Invoked after the drag and drop gesture completed. Swaps positions of two tabs.
@@ -88,15 +91,18 @@ import org.mozilla.fenix.tabstray.syncedtabs.OnTabCloseClick as OnSyncedTabClose
  * @param onInactiveTabsCFRShown Invoked when the inactive tabs CFR is displayed.
  * @param onInactiveTabsCFRClick Invoked when the inactive tabs CFR is clicked.
  * @param onInactiveTabsCFRDismiss Invoked when the inactive tabs CFR is dismissed.
+ * @param onUnlockPbmClick Invoked when user clicks on the Unlock button.
  */
-@Suppress("LongMethod", "LongParameterList", "ComplexMethod")
+@Suppress("LongMethod", "LongParameterList")
 @Composable
 fun TabsTray(
     tabsTrayStore: TabsTrayStore,
     displayTabsInGrid: Boolean,
     isInDebugMode: Boolean,
     shouldShowTabAutoCloseBanner: Boolean,
+    shouldShowLockPbmBanner: Boolean,
     shouldShowInactiveTabsAutoCloseDialog: (Int) -> Boolean,
+    isPbmLocked: Boolean = false,
     onTabPageClick: (Page) -> Unit,
     onTabClose: (TabSessionState) -> Unit,
     onTabMediaClick: (TabSessionState) -> Unit,
@@ -123,6 +129,8 @@ fun TabsTray(
     onForceSelectedTabsAsInactiveClick: () -> Unit,
     onTabsTrayDismiss: () -> Unit,
     onTabAutoCloseBannerViewOptionsClick: () -> Unit,
+    onTabsTrayPbmLockedClick: () -> Unit,
+    onTabsTrayPbmLockedDismiss: () -> Unit,
     onTabAutoCloseBannerDismiss: () -> Unit,
     onTabAutoCloseBannerShown: () -> Unit,
     onMove: (String, String?, Boolean) -> Unit,
@@ -130,10 +138,11 @@ fun TabsTray(
     onInactiveTabsCFRShown: () -> Unit,
     onInactiveTabsCFRClick: () -> Unit,
     onInactiveTabsCFRDismiss: () -> Unit,
+    onUnlockPbmClick: () -> Unit,
 ) {
     val tabsTrayState by tabsTrayStore.observeAsState(initialValue = tabsTrayStore.state) { it }
     val pagerState = rememberPagerState(
-        initialPage = tabsTrayState.selectedPage.ordinal,
+        initialPage = Page.pageToPosition(page = tabsTrayState.selectedPage, enhancementsEnabled = false),
         pageCount = { Page.entries.size },
     )
     val isInMultiSelectMode by remember(tabsTrayState.mode) {
@@ -154,15 +163,17 @@ fun TabsTray(
     }
 
     LaunchedEffect(tabsTrayState.selectedPage) {
-        pagerState.animateScrollToPage(tabsTrayState.selectedPage.ordinal)
+        pagerState.animateScrollToPage(
+            page = Page.pageToPosition(page = tabsTrayState.selectedPage, enhancementsEnabled = false),
+        )
     }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .then(shapeModifier)
-            .background(FirefoxTheme.colors.layer1)
-            .testTag(TabsTrayTestTag.tabsTray),
+            .background(MaterialTheme.colorScheme.surface)
+            .testTag(TabsTrayTestTag.TABS_TRAY),
     ) {
         Box(modifier = Modifier.nestedScroll(rememberNestedScrollInteropConnection())) {
             TabsTrayBanner(
@@ -173,6 +184,7 @@ fun TabsTray(
                 selectionMode = tabsTrayState.mode,
                 isInDebugMode = isInDebugMode,
                 shouldShowTabAutoCloseBanner = shouldShowTabAutoCloseBanner,
+                shouldShowLockPbmBanner = shouldShowLockPbmBanner,
                 onTabPageIndicatorClicked = onTabPageClick,
                 onSaveToCollectionClick = onSaveToCollectionClick,
                 onShareSelectedTabsClick = onShareSelectedTabsClick,
@@ -186,6 +198,8 @@ fun TabsTray(
                 onForceSelectedTabsAsInactiveClick = onForceSelectedTabsAsInactiveClick,
                 onDismissClick = onTabsTrayDismiss,
                 onTabAutoCloseBannerViewOptionsClick = onTabAutoCloseBannerViewOptionsClick,
+                onTabsTrayPbmLockedClick = onTabsTrayPbmLockedClick,
+                onTabsTrayPbmLockedDismiss = onTabsTrayPbmLockedDismiss,
                 onTabAutoCloseBannerDismiss = onTabAutoCloseBannerDismiss,
                 onTabAutoCloseBannerShown = onTabAutoCloseBannerShown,
                 onEnterMultiselectModeClick = {
@@ -194,19 +208,21 @@ fun TabsTray(
                 onExitSelectModeClick = {
                     tabsTrayStore.dispatch(TabsTrayAction.ExitSelectMode)
                 },
+                onThreeDotMenuShown = {
+                    tabsTrayStore.dispatch(TabsTrayAction.ThreeDotMenuShown)
+                },
             )
         }
 
-        Divider()
+        HorizontalDivider()
 
         Box(modifier = Modifier.fillMaxSize()) {
             HorizontalPager(
                 modifier = Modifier.fillMaxSize(),
                 state = pagerState,
-                beyondViewportPageCount = 2,
                 userScrollEnabled = false,
             ) { position ->
-                when (Page.positionToPage(position)) {
+                when (Page.positionToPage(position = position, enhancementsEnabled = false)) {
                     Page.NormalTabs -> {
                         NormalTabsPage(
                             normalTabs = tabsTrayState.normalTabs,
@@ -244,11 +260,13 @@ fun TabsTray(
                             selectedTabId = tabsTrayState.selectedTabId,
                             selectionMode = tabsTrayState.mode,
                             displayTabsInGrid = displayTabsInGrid,
+                            isPbmLocked = isPbmLocked,
                             onTabClose = onTabClose,
                             onTabMediaClick = onTabMediaClick,
                             onTabClick = onTabClick,
                             onTabLongClick = onTabLongClick,
                             onMove = onMove,
+                            onUnlockPbmClick = onUnlockPbmClick,
                         )
                     }
 
@@ -257,6 +275,10 @@ fun TabsTray(
                             syncedTabs = tabsTrayState.syncedTabs,
                             onTabClick = onSyncedTabClick,
                             onTabClose = onSyncedTabClose,
+                            expandedState = tabsTrayState.expandedSyncedTabs,
+                            onSectionExpansionToggled = { index ->
+                                tabsTrayStore.dispatch(TabsTrayAction.SyncedTabsHeaderToggled(index))
+                            },
                         )
                     }
                 }
@@ -265,7 +287,7 @@ fun TabsTray(
     }
 }
 
-@LightDarkPreview
+@PreviewLightDark
 @Composable
 private fun TabsTrayPreview() {
     val tabs = generateFakeTabsList()
@@ -282,7 +304,7 @@ private fun TabsTrayPreview() {
 }
 
 @Suppress("MagicNumber")
-@LightDarkPreview
+@PreviewLightDark
 @Composable
 private fun TabsTrayMultiSelectPreview() {
     val tabs = generateFakeTabsList()
@@ -293,7 +315,7 @@ private fun TabsTrayMultiSelectPreview() {
     )
 }
 
-@LightDarkPreview
+@PreviewLightDark
 @Composable
 private fun TabsTrayInactiveTabsPreview() {
     TabsTrayPreviewRoot(
@@ -304,7 +326,7 @@ private fun TabsTrayInactiveTabsPreview() {
     )
 }
 
-@LightDarkPreview
+@PreviewLightDark
 @Composable
 private fun TabsTrayPrivateTabsPreview() {
     TabsTrayPreviewRoot(
@@ -313,7 +335,7 @@ private fun TabsTrayPrivateTabsPreview() {
     )
 }
 
-@LightDarkPreview
+@PreviewLightDark
 @Composable
 private fun TabsTraySyncedTabsPreview() {
     TabsTrayPreviewRoot(
@@ -322,7 +344,7 @@ private fun TabsTraySyncedTabsPreview() {
     )
 }
 
-@LightDarkPreview
+@PreviewLightDark
 @Composable
 private fun TabsTrayAutoCloseBannerPreview() {
     TabsTrayPreviewRoot(
@@ -331,7 +353,17 @@ private fun TabsTrayAutoCloseBannerPreview() {
     )
 }
 
-@Suppress("LongMethod")
+@PreviewLightDark
+@Composable
+private fun TabsTrayLockedPreview() {
+    TabsTrayPreviewRoot(
+        privateTabs = generateFakeTabsList(isPrivate = true),
+        selectedPage = Page.PrivateTabs,
+        isPbmLocked = true,
+    )
+}
+
+@Suppress("LongMethod", "CognitiveComplexMethod")
 @Composable
 private fun TabsTrayPreviewRoot(
     displayTabsInGrid: Boolean = true,
@@ -345,6 +377,7 @@ private fun TabsTrayPreviewRoot(
     inactiveTabsExpanded: Boolean = false,
     showInactiveTabsAutoCloseDialog: Boolean = false,
     showTabAutoCloseBanner: Boolean = false,
+    isPbmLocked: Boolean = false,
     isSignedIn: Boolean = true,
 ) {
     var showInactiveTabsAutoCloseDialogState by remember { mutableStateOf(showInactiveTabsAutoCloseDialog) }
@@ -372,6 +405,7 @@ private fun TabsTrayPreviewRoot(
                 isInDebugMode = false,
                 shouldShowInactiveTabsAutoCloseDialog = { true },
                 shouldShowTabAutoCloseBanner = showTabAutoCloseBanner,
+                isPbmLocked = isPbmLocked,
                 onTabPageClick = { page ->
                     tabsTrayStore.dispatch(TabsTrayAction.PageSelected(page))
                 },
@@ -390,6 +424,7 @@ private fun TabsTrayPreviewRoot(
                         TabsTrayState.Mode.Normal -> {
                             tabsTrayStore.dispatch(TabsTrayAction.UpdateSelectedTabId(tabId = tab.id))
                         }
+
                         is TabsTrayState.Mode.Select -> {
                             if (tabsTrayStore.state.mode.selectedTabs.contains(tab)) {
                                 tabsTrayStore.dispatch(TabsTrayAction.RemoveSelectTab(tab))
@@ -434,6 +469,8 @@ private fun TabsTrayPreviewRoot(
                 onForceSelectedTabsAsInactiveClick = {},
                 onTabsTrayDismiss = {},
                 onTabAutoCloseBannerViewOptionsClick = {},
+                onTabsTrayPbmLockedClick = {},
+                onTabsTrayPbmLockedDismiss = {},
                 onTabAutoCloseBannerDismiss = {},
                 onTabAutoCloseBannerShown = {},
                 onMove = { _, _, _ -> },
@@ -441,12 +478,15 @@ private fun TabsTrayPreviewRoot(
                 onInactiveTabsCFRShown = {},
                 onInactiveTabsCFRClick = {},
                 onInactiveTabsCFRDismiss = {},
+                shouldShowLockPbmBanner = false,
+                onUnlockPbmClick = {},
             )
 
             Box(modifier = Modifier.align(alignment = Alignment.BottomEnd)) {
                 TabsTrayFab(
                     tabsTrayStore = tabsTrayStore,
                     isSignedIn = isSignedIn,
+                    isPbmLocked = isPbmLocked,
                     onNormalTabsFabClicked = {
                         val newTab = createTab(
                             url = "www.mozilla.com",

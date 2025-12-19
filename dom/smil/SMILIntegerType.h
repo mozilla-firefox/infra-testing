@@ -7,15 +7,14 @@
 #ifndef DOM_SMIL_SMILINTEGERTYPE_H_
 #define DOM_SMIL_SMILINTEGERTYPE_H_
 
-#include "mozilla/Attributes.h"
 #include "mozilla/SMILType.h"
 
 namespace mozilla {
 
 class SMILIntegerType : public SMILType {
  public:
-  void Init(SMILValue& aValue) const override;
-  void Destroy(SMILValue& aValue) const override;
+  void InitValue(SMILValue& aValue) const override;
+  void DestroyValue(SMILValue& aValue) const override;
   nsresult Assign(SMILValue& aDest, const SMILValue& aSrc) const override;
   bool IsEqual(const SMILValue& aLeft, const SMILValue& aRight) const override;
   nsresult Add(SMILValue& aDest, const SMILValue& aValueToAdd,

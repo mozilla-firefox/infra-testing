@@ -256,9 +256,51 @@
   customElements.define("deck", MozDeck);
 
   class MozTabpanels extends MozDeck {
+    /**
+     * Panels that are currently within an active Split View.
+     *
+     * @type {string[]}
+     */
+    #splitViewPanels = [];
+
+    /**
+     * The splitter placed in between Split View panels.
+     *
+     * @type {XULElement}
+     */
+    #splitViewSplitter = null;
+
+    static #SPLIT_VIEW_PANEL_EVENTS = Object.freeze([
+      "click",
+      "mouseover",
+      "mouseout",
+    ]);
+
     constructor() {
       super();
       this._tabbox = null;
+    }
+
+    handleEvent(e) {
+      const browser =
+        e.currentTarget.tagName === "browser"
+          ? e.currentTarget
+          : e.currentTarget.querySelector("browser");
+      switch (e.type) {
+        case "click":
+        case "focus": {
+          const tab = gBrowser.getTabForBrowser(browser);
+          const tabstrip = this.tabbox.tabs;
+          tabstrip.selectedItem = tab;
+          break;
+        }
+        case "mouseover":
+          gBrowser.appendStatusPanel(browser);
+          break;
+        case "mouseout":
+          gBrowser.appendStatusPanel();
+          break;
+      }
     }
 
     get tabbox() {
@@ -269,6 +311,17 @@
       }
 
       return (this._tabbox = this.closest("tabbox"));
+    }
+
+    get splitViewSplitter() {
+      if (!this.#splitViewSplitter) {
+        const splitter = document.createXULElement("splitter");
+        splitter.className = "split-view-splitter";
+        splitter.setAttribute("resizebefore", "sibling");
+        splitter.setAttribute("resizeafter", "none");
+        this.#splitViewSplitter = splitter;
+      }
+      return this.#splitViewSplitter;
     }
 
     /**
@@ -313,6 +366,72 @@
       }
 
       return tabElmFromIndex;
+    }
+
+    set splitViewPanels(newPanels) {
+      for (const [i, panel] of newPanels.entries()) {
+        const panelEl = document.getElementById(panel);
+        panelEl?.classList.add("split-view-panel");
+        panelEl?.setAttribute("column", i);
+        const browser = panelEl?.querySelector("browser");
+        const browserContainer = panelEl?.querySelector(".browserContainer");
+        for (const eventType of MozTabpanels.#SPLIT_VIEW_PANEL_EVENTS) {
+          browserContainer?.addEventListener(eventType, this);
+        }
+        browser?.addEventListener("focus", this);
+      }
+      this.#splitViewPanels = newPanels;
+      this.isSplitViewActive = !!newPanels.length;
+    }
+
+    get splitViewPanels() {
+      return this.#splitViewPanels;
+    }
+
+    /**
+     * Remove split view attributes from a panel, and optionally remove it from
+     * the splitViewPanels array.
+     *
+     * @param {string} panel
+     * @param {boolean} [updateArray]
+     */
+    removePanelFromSplitView(panel, updateArray = true) {
+      const panelEl = document.getElementById(panel);
+      panelEl?.classList.remove("split-view-panel");
+      panelEl?.removeAttribute("column");
+      const browser = panelEl?.querySelector("browser");
+      const browserContainer = panelEl?.querySelector(".browserContainer");
+      for (const eventType of MozTabpanels.#SPLIT_VIEW_PANEL_EVENTS) {
+        browserContainer?.removeEventListener(eventType, this);
+      }
+      browser?.removeEventListener("focus", this);
+      if (updateArray) {
+        const index = this.#splitViewPanels.indexOf(panel);
+        if (index !== -1) {
+          this.#splitViewPanels.splice(index, 1);
+        }
+      }
+      this.isSplitViewActive = !!this.#splitViewPanels.length;
+    }
+
+    set isSplitViewActive(isActive) {
+      this.toggleAttribute("splitview", isActive);
+      this.splitViewSplitter.hidden = !isActive;
+      const selectedPanel = this.selectedPanel;
+      if (isActive) {
+        // Place splitter after first panel, so that it can be resized.
+        const firstPanel = document.getElementById(this.splitViewPanels[0]);
+        firstPanel?.after(this.#splitViewSplitter);
+      }
+
+      // Ensure that selected index stays up to date, in case the splitter
+      // offsets it.
+      this.selectedPanel = selectedPanel;
+    }
+
+    setSplitViewPanelActive(isActive, panel) {
+      const panelEl = document.getElementById(panel);
+      panelEl?.classList.toggle("split-view-panel-active", isActive);
     }
   }
 
@@ -774,12 +893,12 @@
      * @param {MozTab} startTab
      *   A `<tab>` element to start searching from.
      * @param {object} opts
-     * @param {Number} [opts.direction=1]
+     * @param {number} [opts.direction=1]
      *   1 to search forward, -1 to search backward.
-     * @param {Boolean} [opts.wrap=false]
+     * @param {boolean} [opts.wrap=false]
      *   If true, wrap around if the search reaches the end (or beginning)
      *   of the tab strip.
-     * @param {Boolean} [opts.startWithAdjacent=true]
+     * @param {boolean} [opts.startWithAdjacent=true]
      *   If true (which is the default), start searching from the next tab
      *   after (or before) `startTab`. If false, `startTab` may be returned
      *   if it passes the filter.
@@ -955,7 +1074,7 @@
       this.insertBefore(start, this.firstChild);
 
       let end = MozXULElement.parseXULToFragment(
-        `<spacer class="tabs-right" flex="1"/>`
+        `<spacer class="tabs-right"/>`
       );
       this.insertBefore(end, null);
 

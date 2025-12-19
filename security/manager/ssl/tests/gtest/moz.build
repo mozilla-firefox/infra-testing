@@ -10,9 +10,15 @@ SOURCES += [
     "DeserializeCertTest.cpp",
     "HMACTest.cpp",
     "MD4Test.cpp",
+    "NSSBenchTest.cpp",
     "OCSPCacheTest.cpp",
     "TLSIntoleranceTest.cpp",
 ]
+
+if not CONFIG["MOZ_NO_SMART_CARDS"]:
+    SOURCES += [
+        "UtilityPKCS11ModuleTest.cpp",
+    ]
 
 LOCAL_INCLUDES += [
     "/security/certverifier",

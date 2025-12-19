@@ -31,6 +31,12 @@
  */
 
 /**
+ * Request 2x longer timeout for this test.
+ * There are lot of test cases in this file, but it doesn't make sense to split them up.
+ */
+requestLongerTimeout(2);
+
+/**
  * Definitions for the test cases.
  *
  * @typedef {object} Case
@@ -141,7 +147,7 @@ const cases = [
   },
   {
     // Case 12 - Nothing is set to auto translate.
-    page: SPANISH_PAGE_MISMATCH_SHORT_URL,
+    page: SPANISH_PAGE_UNDECLARED_SHORT_URL,
     buttonShown: true,
     message:
       "A language was detected, but it was so low confidence only show the button.",
@@ -182,6 +188,7 @@ add_task(async function test_language_identification_behavior() {
       page,
       languagePairs: LANGUAGE_PAIRS,
       autoDownloadFromRemoteSettings: true,
+      contentEagerMode: true,
       prefs: [
         [
           "browser.translations.alwaysTranslateLanguages",
@@ -208,7 +215,7 @@ add_task(async function test_language_identification_behavior() {
       throw new Error("Expected only 1 main outcome.");
     }
 
-    if (buttonShown || offerTranslation) {
+    if (buttonShown || offerTranslation || translatePage) {
       await FullPageTranslationsTestUtils.assertTranslationsButton(
         {
           button: true,
@@ -226,14 +233,44 @@ add_task(async function test_language_identification_behavior() {
     }
 
     if (translatePage) {
-      await FullPageTranslationsTestUtils.assertPageIsTranslated({
+      await FullPageTranslationsTestUtils.assertAllPageContentIsTranslated({
         fromLanguage: translatePage,
         toLanguage: "en",
         runInPage,
         message,
       });
+      await FullPageTranslationsTestUtils.assertPageH1TitleIsTranslated({
+        fromLanguage: "es",
+        toLanguage: "en",
+        runInPage,
+        message:
+          "The page's H1's title should be translated because it intersects with the viewport.",
+      });
+
+      if (
+        page === SPANISH_PAGE_SHORT_URL ||
+        page === SPANISH_PAGE_MISMATCH_SHORT_URL
+      ) {
+        await FullPageTranslationsTestUtils.assertPageFinalParagraphTitleIsTranslated(
+          {
+            fromLanguage: "es",
+            toLanguage: "en",
+            runInPage,
+            message:
+              "The page's final paragraph's title should be translated because it intersects with the viewport.",
+          }
+        );
+      } else {
+        await FullPageTranslationsTestUtils.assertPageFinalParagraphTitleIsNotTranslated(
+          {
+            runInPage,
+            message:
+              "Attribute translations are always lazy based on intersection, so the final paragraph's title should remain untranslated.",
+          }
+        );
+      }
     } else {
-      await FullPageTranslationsTestUtils.assertPageIsUntranslated(
+      await FullPageTranslationsTestUtils.assertPageIsNotTranslated(
         runInPage,
         message
       );
@@ -258,4 +295,58 @@ add_task(async function test_language_identification_behavior() {
     panel.removeEventListener("popupshown", handlePopupShown);
     await cleanup();
   }
+});
+
+/**
+ * This test case tests the behavior when the page has no declared language
+ * tag and the detected language is not supported by Translations.
+ */
+add_task(async function test_detected_language_unsupported() {
+  info("Testing unsupported detected language with no declared language");
+  TranslationsParent.testAutomaticPopup = true;
+
+  let wasPopupShown = false;
+  window.FullPageTranslationsPanel.elements; // De-lazify the panel.
+
+  const { resolve } = Promise.withResolvers();
+  const panel = window.document.getElementById("full-page-translations-panel");
+
+  function handlePopupShown() {
+    wasPopupShown = true;
+    panel.removeEventListener("popupshown", handlePopupShown);
+    resolve();
+  }
+  panel.addEventListener("popupshown", handlePopupShown);
+
+  const { cleanup, runInPage } = await loadTestPage({
+    page: SPANISH_PAGE_UNDECLARED_URL,
+    // Deliberately omit Spanish so that it is not supported.
+    languagePairs: [
+      { fromLang: "en", toLang: "fr" },
+      { fromLang: "fr", toLang: "en" },
+      { fromLang: "en", toLang: "uk" },
+      { fromLang: "uk", toLang: "en" },
+    ],
+    autoDownloadFromRemoteSettings: true,
+    contentEagerMode: true,
+  });
+
+  await FullPageTranslationsTestUtils.assertTranslationsButton(
+    { button: false },
+    "The translations button is not visible when the detected language is unsupported."
+  );
+
+  await FullPageTranslationsTestUtils.assertPageIsNotTranslated(
+    runInPage,
+    "No translation should occur when the detected language is unsupported."
+  );
+
+  is(
+    wasPopupShown,
+    false,
+    "A translation was not offered for an unsupported detected language."
+  );
+
+  TranslationsParent.testAutomaticPopup = false;
+  await cleanup();
 });

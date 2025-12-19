@@ -9,8 +9,13 @@
  */
 #include "video/config/video_encoder_config.h"
 
+#include <cstddef>
+#include <optional>
 #include <string>
 
+#include "api/video/video_codec_type.h"
+#include "api/video_codecs/sdp_video_format.h"
+#include "api/video_codecs/video_codec.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/strings/string_builder.h"
 
@@ -44,7 +49,7 @@ std::string VideoStream::ToString() const {
   ss << ", bitrate_priority: " << bitrate_priority.value_or(0);
   ss << ", active: " << active;
   ss << ", scale_down_by: " << scale_resolution_down_by;
-
+  ss << '}';
   return ss.str();
 }
 
@@ -82,8 +87,14 @@ std::string VideoEncoderConfig::ToString() const {
   ss << ", frame_drop_enabled: " << frame_drop_enabled;
   ss << ", encoder_specific_settings: ";
   ss << (encoder_specific_settings != nullptr ? "(ptr)" : "NULL");
-
   ss << ", min_transmit_bitrate_bps: " << min_transmit_bitrate_bps;
+  ss << ", number_of_streams: " << number_of_streams;
+  ss << ", legacy_conference_mode: " << legacy_conference_mode;
+  ss << ", is_quality_scaling_allowed: " << is_quality_scaling_allowed;
+  ss << ", max_qp: " << max_qp;
+  for (size_t n = 0; n < simulcast_layers.size(); ++n) {
+    ss << ", simulcast_layers[" << n << "]: " << simulcast_layers[n].ToString();
+  }
   ss << '}';
   return ss.str();
 }
@@ -98,6 +109,14 @@ bool VideoEncoderConfig::HasScaleResolutionDownTo() const {
 }
 
 VideoEncoderConfig::VideoEncoderConfig(const VideoEncoderConfig&) = default;
+
+SdpVideoFormat VideoEncoderConfig::GetSimulcastVideoFormat(
+    size_t stream_index) const {
+  if (stream_index >= simulcast_layers.size()) {
+    return video_format;
+  }
+  return simulcast_layers[stream_index].video_format.value_or(video_format);
+}
 
 void VideoEncoderConfig::EncoderSpecificSettings::FillEncoderSpecificSettings(
     VideoCodec* codec) const {

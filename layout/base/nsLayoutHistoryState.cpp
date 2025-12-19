@@ -9,12 +9,11 @@
  * is not
  */
 
-#include "nsILayoutHistoryState.h"
-#include "nsWeakReference.h"
 #include "mozilla/PresState.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/UniquePtr.h"
+#include "nsILayoutHistoryState.h"
 #include "nsTHashMap.h"
+#include "nsWeakReference.h"
 
 using namespace mozilla;
 

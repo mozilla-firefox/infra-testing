@@ -7,12 +7,12 @@
 #include "SharedStyleSheetCache.h"
 
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/ServoBindings.h"
 #include "mozilla/StoragePrincipalHelper.h"
 #include "mozilla/StyleSheet.h"
 #include "mozilla/css/SheetLoadData.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/Document.h"
-#include "mozilla/ServoBindings.h"
 #include "nsContentUtils.h"
 #include "nsXULPrototypeCache.h"
 
@@ -28,7 +28,11 @@ MOZ_DEFINE_MALLOC_SIZE_OF(SharedStyleSheetCacheMallocSizeOf)
 
 SharedStyleSheetCache::SharedStyleSheetCache() = default;
 
-void SharedStyleSheetCache::Init() { RegisterWeakMemoryReporter(this); }
+void SharedStyleSheetCache::Init() {
+  RegisterWeakMemoryReporter(this);
+  auto ClearCache = [](const char*, void*) { Clear(); };
+  Preferences::RegisterPrefixCallback(ClearCache, "layout.css.");
+}
 
 SharedStyleSheetCache::~SharedStyleSheetCache() {
   UnregisterWeakMemoryReporter(this);
@@ -200,7 +204,10 @@ size_t SharedStyleSheetCache::SizeOfIncludingThis(
   for (const auto& sheetMap : mInlineSheets) {
     for (const auto& entry : sheetMap.GetData()) {
       n += entry.GetKey().SizeOfExcludingThisIfUnshared(aMallocSizeOf);
-      n += entry.GetData()->SizeOfIncludingThis(aMallocSizeOf);
+      n += entry.GetData().ShallowSizeOfExcludingThis(aMallocSizeOf);
+      for (const auto& candidate : entry.GetData()) {
+        n += candidate.mSheet->SizeOfIncludingThis(aMallocSizeOf);
+      }
     }
   }
   return n;
@@ -250,8 +257,8 @@ void SharedStyleSheetCache::Clear(
 
   if (XRE_IsParentProcess()) {
     for (auto* cp : ContentParent::AllProcesses(ContentParent::eLive)) {
-      Unused << cp->SendClearStyleSheetCache(aChrome, aPrincipal,
-                                             aSchemelessSite, aPattern, aURL);
+      (void)cp->SendClearStyleSheetCache(aChrome, aPrincipal, aSchemelessSite,
+                                         aPattern, aURL);
     }
   }
 

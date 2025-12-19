@@ -28,7 +28,9 @@
 
 #include "builtin/Array.h"
 #include "builtin/intl/CommonFunctions.h"
+#include "builtin/intl/FormatBuffer.h"
 #include "builtin/intl/TimeZoneDataGenerated.h"
+#include "js/StableStringChars.h"
 #include "js/Utility.h"
 #include "js/Vector.h"
 #include "vm/ArrayObject.h"
@@ -62,7 +64,7 @@ static HashNumber HashStringIgnoreCaseASCII(const Char* s, size_t length) {
   return hash;
 }
 
-js::intl::SharedIntlData::TimeZoneHasher::Lookup::Lookup(
+js::intl::SharedIntlData::AvailableTimeZoneHasher::Lookup::Lookup(
     const JSLinearString* timeZone)
     : js::intl::SharedIntlData::LinearStringLookup(timeZone) {
   if (isLatin1) {
@@ -70,6 +72,18 @@ js::intl::SharedIntlData::TimeZoneHasher::Lookup::Lookup(
   } else {
     hash = HashStringIgnoreCaseASCII(twoByteChars, length);
   }
+}
+
+js::intl::SharedIntlData::AvailableTimeZoneHasher::Lookup::Lookup(
+    const char* chars, size_t length)
+    : js::intl::SharedIntlData::LinearStringLookup(chars, length) {
+  hash = HashStringIgnoreCaseASCII(latin1Chars, length);
+}
+
+js::intl::SharedIntlData::AvailableTimeZoneHasher::Lookup::Lookup(
+    const char16_t* chars, size_t length)
+    : js::intl::SharedIntlData::LinearStringLookup(chars, length) {
+  hash = HashStringIgnoreCaseASCII(twoByteChars, length);
 }
 
 template <typename Char1, typename Char2>
@@ -83,8 +97,8 @@ static bool EqualCharsIgnoreCaseASCII(const Char1* s1, const Char2* s2,
   return true;
 }
 
-bool js::intl::SharedIntlData::TimeZoneHasher::match(TimeZoneName key,
-                                                     const Lookup& lookup) {
+bool js::intl::SharedIntlData::AvailableTimeZoneHasher::match(
+    TimeZoneName key, const Lookup& lookup) {
   if (key->length() != lookup.length) {
     return false;
   }
@@ -134,7 +148,6 @@ bool js::intl::SharedIntlData::ensureTimeZones(JSContext* cx) {
     return false;
   }
 
-  Rooted<JSAtom*> timeZone(cx);
   for (auto timeZoneName : timeZones.unwrap()) {
     if (timeZoneName.isErr()) {
       ReportInternalError(cx);
@@ -147,13 +160,13 @@ bool js::intl::SharedIntlData::ensureTimeZones(JSContext* cx) {
       continue;
     }
 
-    timeZone = Atomize(cx, timeZoneSpan.data(), timeZoneSpan.size());
+    JSAtom* timeZone = Atomize(cx, timeZoneSpan.data(), timeZoneSpan.size());
     if (!timeZone) {
       return false;
     }
 
-    TimeZoneHasher::Lookup lookup(timeZone);
-    TimeZoneSet::AddPtr p = availableTimeZones.lookupForAdd(lookup);
+    auto p =
+        availableTimeZones.lookupForAdd(AvailableTimeZoneSet::Lookup{timeZone});
 
     // ICU shouldn't report any duplicate time zone names, but if it does,
     // just ignore the duplicate name.
@@ -167,13 +180,13 @@ bool js::intl::SharedIntlData::ensureTimeZones(JSContext* cx) {
 
   for (const char* rawTimeZone : timezone::ianaZonesTreatedAsLinksByICU) {
     MOZ_ASSERT(rawTimeZone != nullptr);
-    timeZone = Atomize(cx, rawTimeZone, strlen(rawTimeZone));
+    JSAtom* timeZone = Atomize(cx, rawTimeZone, strlen(rawTimeZone));
     if (!timeZone) {
       return false;
     }
 
-    TimeZoneHasher::Lookup lookup(timeZone);
-    TimeZoneSet::AddPtr p = ianaZonesTreatedAsLinksByICU.lookupForAdd(lookup);
+    auto p = ianaZonesTreatedAsLinksByICU.lookupForAdd(
+        TimeZoneSet::Lookup{timeZone});
     MOZ_ASSERT(!p, "Duplicate entry in timezone::ianaZonesTreatedAsLinksByICU");
 
     if (!ianaZonesTreatedAsLinksByICU.add(p, timeZone)) {
@@ -184,28 +197,25 @@ bool js::intl::SharedIntlData::ensureTimeZones(JSContext* cx) {
 
   ianaLinksCanonicalizedDifferentlyByICU.clearAndCompact();
 
-  Rooted<JSAtom*> linkName(cx);
-  Rooted<JSAtom*>& target = timeZone;
   for (const auto& linkAndTarget :
        timezone::ianaLinksCanonicalizedDifferentlyByICU) {
     const char* rawLinkName = linkAndTarget.link;
     const char* rawTarget = linkAndTarget.target;
 
     MOZ_ASSERT(rawLinkName != nullptr);
-    linkName = Atomize(cx, rawLinkName, strlen(rawLinkName));
+    JSAtom* linkName = Atomize(cx, rawLinkName, strlen(rawLinkName));
     if (!linkName) {
       return false;
     }
 
     MOZ_ASSERT(rawTarget != nullptr);
-    target = Atomize(cx, rawTarget, strlen(rawTarget));
+    JSAtom* target = Atomize(cx, rawTarget, strlen(rawTarget));
     if (!target) {
       return false;
     }
 
-    TimeZoneHasher::Lookup lookup(linkName);
-    TimeZoneMap::AddPtr p =
-        ianaLinksCanonicalizedDifferentlyByICU.lookupForAdd(lookup);
+    auto p = ianaLinksCanonicalizedDifferentlyByICU.lookupForAdd(
+        TimeZoneMap::Lookup{linkName});
     MOZ_ASSERT(
         !p,
         "Duplicate entry in timezone::ianaLinksCanonicalizedDifferentlyByICU");
@@ -223,39 +233,116 @@ bool js::intl::SharedIntlData::ensureTimeZones(JSContext* cx) {
   return true;
 }
 
-bool js::intl::SharedIntlData::validateTimeZoneName(
-    JSContext* cx, HandleString timeZone, MutableHandle<JSAtom*> result) {
+JSLinearString* js::intl::SharedIntlData::canonicalizeTimeZone(
+    JSContext* cx, Handle<JSLinearString*> timeZone) {
   if (!ensureTimeZones(cx)) {
+    return nullptr;
+  }
+
+  auto availablePtr =
+      availableTimeZones.lookup(AvailableTimeZoneSet::Lookup{timeZone});
+  MOZ_ASSERT(availablePtr.found(), "Invalid time zone name");
+
+  Rooted<JSAtom*> availableTimeZone(cx, *availablePtr);
+  return canonicalizeAvailableTimeZone(cx, availableTimeZone);
+}
+
+bool js::intl::SharedIntlData::validateAndCanonicalizeTimeZone(
+    JSContext* cx, const AvailableTimeZoneSet::Lookup& lookup,
+    MutableHandle<JSAtom*> identifier, MutableHandle<JSAtom*> primary) {
+  MOZ_ASSERT(timeZoneDataInitialized);
+
+  auto availablePtr = availableTimeZones.lookup(lookup);
+  if (!availablePtr) {
+    return true;
+  }
+
+  Rooted<JSAtom*> availableTimeZone(cx, *availablePtr);
+  JSAtom* canonicalTimeZone =
+      canonicalizeAvailableTimeZone(cx, availableTimeZone);
+  if (!canonicalTimeZone) {
     return false;
   }
 
-  Rooted<JSLinearString*> timeZoneLinear(cx, timeZone->ensureLinear(cx));
-  if (!timeZoneLinear) {
-    return false;
-  }
+  cx->markAtom(availableTimeZone);
+  MOZ_ASSERT(AtomIsMarked(cx->zone(), canonicalTimeZone),
+             "canonicalizeAvailableTimeZone already marked the atom");
 
-  TimeZoneHasher::Lookup lookup(timeZoneLinear);
-  if (TimeZoneSet::Ptr p = availableTimeZones.lookup(lookup)) {
-    result.set(*p);
-  }
-
+  identifier.set(availableTimeZone);
+  primary.set(canonicalTimeZone);
   return true;
 }
 
-bool js::intl::SharedIntlData::tryCanonicalizeTimeZoneConsistentWithIANA(
-    JSContext* cx, HandleString timeZone, MutableHandle<JSAtom*> result) {
+bool js::intl::SharedIntlData::validateAndCanonicalizeTimeZone(
+    JSContext* cx, Handle<JSLinearString*> timeZone,
+    MutableHandle<JSAtom*> identifier, MutableHandle<JSAtom*> primary) {
   if (!ensureTimeZones(cx)) {
     return false;
   }
+  return validateAndCanonicalizeTimeZone(
+      cx, AvailableTimeZoneSet::Lookup{timeZone}, identifier, primary);
+}
 
-  Rooted<JSLinearString*> timeZoneLinear(cx, timeZone->ensureLinear(cx));
-  if (!timeZoneLinear) {
+bool js::intl::SharedIntlData::validateAndCanonicalizeTimeZone(
+    JSContext* cx, mozilla::Span<const char> timeZone,
+    MutableHandle<JSAtom*> identifier, MutableHandle<JSAtom*> primary) {
+  if (!ensureTimeZones(cx)) {
     return false;
   }
+  return validateAndCanonicalizeTimeZone(
+      cx, AvailableTimeZoneSet::Lookup{timeZone.data(), timeZone.size()},
+      identifier, primary);
+}
 
-  TimeZoneHasher::Lookup lookup(timeZoneLinear);
-  MOZ_ASSERT(availableTimeZones.has(lookup), "Invalid time zone name");
+JSAtom* js::intl::SharedIntlData::canonicalizeAvailableTimeZone(
+    JSContext* cx, Handle<JSAtom*> availableTimeZone) {
+  MOZ_ASSERT(timeZoneDataInitialized);
+  MOZ_ASSERT(
+      availableTimeZones.has(AvailableTimeZoneSet::Lookup{availableTimeZone}),
+      "Invalid time zone name");
 
+  // Some time zone names are canonicalized differently by ICU.
+  auto* canonicalTimeZone =
+      tryCanonicalizeTimeZoneConsistentWithIANA(availableTimeZone);
+  if (canonicalTimeZone) {
+    cx->markAtom(canonicalTimeZone);
+    return canonicalTimeZone;
+  }
+
+  JS::AutoStableStringChars stableChars(cx);
+  if (!stableChars.initTwoByte(cx, availableTimeZone)) {
+    return nullptr;
+  }
+
+  using TimeZone = mozilla::intl::TimeZone;
+
+  intl::FormatBuffer<char16_t, TimeZone::TimeZoneIdentifierLength> buffer(cx);
+  auto result =
+      TimeZone::GetCanonicalTimeZoneID(stableChars.twoByteRange(), buffer);
+  if (result.isErr()) {
+    intl::ReportInternalError(cx, result.unwrapErr());
+    return nullptr;
+  }
+  MOZ_ASSERT(std::u16string_view(u"Etc/Unknown") !=
+                 std::u16string_view(buffer.data(), buffer.length()),
+             "Invalid canonical time zone");
+
+  auto availablePtr = availableTimeZones.lookup(
+      AvailableTimeZoneSet::Lookup{buffer.data(), buffer.length()});
+  MOZ_ASSERT(availablePtr, "Invalid time zone name");
+
+  cx->markAtom(*availablePtr);
+  return *availablePtr;
+}
+
+JSAtom* js::intl::SharedIntlData::tryCanonicalizeTimeZoneConsistentWithIANA(
+    JSAtom* availableTimeZone) {
+  MOZ_ASSERT(timeZoneDataInitialized);
+  MOZ_ASSERT(
+      availableTimeZones.has(AvailableTimeZoneSet::Lookup{availableTimeZone}),
+      "Invalid time zone name");
+
+  TimeZoneMap::Lookup lookup(availableTimeZone);
   if (TimeZoneMap::Ptr p =
           ianaLinksCanonicalizedDifferentlyByICU.lookup(lookup)) {
     // The effectively supported time zones aren't known at compile time,
@@ -266,18 +353,16 @@ bool js::intl::SharedIntlData::tryCanonicalizeTimeZoneConsistentWithIANA(
     //    ICU_TIMEZONE_FILES_DIR environment variable.)
     // Ensure ICU supports the new target zone before applying the update.
     TimeZoneName targetTimeZone = p->value();
-    TimeZoneHasher::Lookup targetLookup(targetTimeZone);
-    if (availableTimeZones.has(targetLookup)) {
-      result.set(targetTimeZone);
+    if (availableTimeZones.has(AvailableTimeZoneSet::Lookup{targetTimeZone})) {
+      return targetTimeZone;
     }
   } else if (TimeZoneSet::Ptr p = ianaZonesTreatedAsLinksByICU.lookup(lookup)) {
-    result.set(*p);
+    return *p;
   }
-
-  return true;
+  return nullptr;
 }
 
-JS::Result<js::intl::SharedIntlData::TimeZoneSet::Iterator>
+JS::Result<js::intl::SharedIntlData::AvailableTimeZoneSet::Iterator>
 js::intl::SharedIntlData::availableTimeZonesIteration(JSContext* cx) {
   if (!ensureTimeZones(cx)) {
     return cx->alreadyReportedError();
@@ -476,21 +561,21 @@ static bool IsSameAvailableLocales(const AvailableLocales1& availableLocales1,
 }
 #endif
 
-bool js::intl::SharedIntlData::ensureSupportedLocales(JSContext* cx) {
-  if (supportedLocalesInitialized) {
+bool js::intl::SharedIntlData::ensureAvailableLocales(JSContext* cx) {
+  if (availableLocalesInitialized) {
     return true;
   }
 
-  // If ensureSupportedLocales() was called previously, but didn't complete due
+  // If ensureAvailableLocales() was called previously, but didn't complete due
   // to OOM, clear all data and start from scratch.
-  supportedLocales.clearAndCompact();
-  collatorSupportedLocales.clearAndCompact();
+  availableLocales.clearAndCompact();
+  collatorAvailableLocales.clearAndCompact();
 
-  if (!getAvailableLocales(cx, supportedLocales,
+  if (!getAvailableLocales(cx, availableLocales,
                            mozilla::intl::Locale::GetAvailableLocales())) {
     return false;
   }
-  if (!getAvailableLocales(cx, collatorSupportedLocales,
+  if (!getAvailableLocales(cx, collatorAvailableLocales,
                            mozilla::intl::Collator::GetAvailableLocales())) {
     return false;
   }
@@ -503,66 +588,61 @@ bool js::intl::SharedIntlData::ensureSupportedLocales(JSContext* cx) {
       mozilla::intl::Locale::GetAvailableLocales(),
       mozilla::intl::NumberFormat::GetAvailableLocales()));
 
-  MOZ_ASSERT(!supportedLocalesInitialized,
-             "ensureSupportedLocales is neither reentrant nor thread-safe");
-  supportedLocalesInitialized = true;
+  MOZ_ASSERT(!availableLocalesInitialized,
+             "ensureAvailableLocales is neither reentrant nor thread-safe");
+  availableLocalesInitialized = true;
 
   return true;
 }
 
-bool js::intl::SharedIntlData::isSupportedLocale(JSContext* cx,
-                                                 SupportedLocaleKind kind,
-                                                 HandleString locale,
-                                                 bool* supported) {
-  if (!ensureSupportedLocales(cx)) {
+bool js::intl::SharedIntlData::isAvailableLocale(JSContext* cx,
+                                                 AvailableLocaleKind kind,
+                                                 Handle<JSLinearString*> locale,
+                                                 bool* available) {
+  if (!ensureAvailableLocales(cx)) {
     return false;
   }
 
-  Rooted<JSLinearString*> localeLinear(cx, locale->ensureLinear(cx));
-  if (!localeLinear) {
-    return false;
-  }
-
-  LocaleHasher::Lookup lookup(localeLinear);
+  LocaleHasher::Lookup lookup(locale);
 
   switch (kind) {
-    case SupportedLocaleKind::Collator:
-      *supported = collatorSupportedLocales.has(lookup);
+    case AvailableLocaleKind::Collator:
+      *available = collatorAvailableLocales.has(lookup);
       return true;
-    case SupportedLocaleKind::DateTimeFormat:
-    case SupportedLocaleKind::DisplayNames:
-    case SupportedLocaleKind::DurationFormat:
-    case SupportedLocaleKind::ListFormat:
-    case SupportedLocaleKind::NumberFormat:
-    case SupportedLocaleKind::PluralRules:
-    case SupportedLocaleKind::RelativeTimeFormat:
-    case SupportedLocaleKind::Segmenter:
-      *supported = supportedLocales.has(lookup);
+    case AvailableLocaleKind::DateTimeFormat:
+    case AvailableLocaleKind::DisplayNames:
+    case AvailableLocaleKind::DurationFormat:
+    case AvailableLocaleKind::ListFormat:
+    case AvailableLocaleKind::NumberFormat:
+    case AvailableLocaleKind::PluralRules:
+    case AvailableLocaleKind::RelativeTimeFormat:
+    case AvailableLocaleKind::Segmenter:
+      *available = availableLocales.has(lookup);
       return true;
   }
   MOZ_CRASH("Invalid Intl constructor");
 }
 
 js::ArrayObject* js::intl::SharedIntlData::availableLocalesOf(
-    JSContext* cx, SupportedLocaleKind kind) {
-  if (!ensureSupportedLocales(cx)) {
+    JSContext* cx, AvailableLocaleKind kind) {
+  if (!ensureAvailableLocales(cx)) {
     return nullptr;
   }
 
   LocaleSet* localeSet = nullptr;
   switch (kind) {
-    case SupportedLocaleKind::Collator:
-      localeSet = &collatorSupportedLocales;
+    case AvailableLocaleKind::Collator:
+      localeSet = &collatorAvailableLocales;
       break;
-    case SupportedLocaleKind::DateTimeFormat:
-    case SupportedLocaleKind::DisplayNames:
-    case SupportedLocaleKind::DurationFormat:
-    case SupportedLocaleKind::ListFormat:
-    case SupportedLocaleKind::NumberFormat:
-    case SupportedLocaleKind::PluralRules:
-    case SupportedLocaleKind::RelativeTimeFormat:
-    case SupportedLocaleKind::Segmenter:
-      localeSet = &supportedLocales;
+    case AvailableLocaleKind::DateTimeFormat:
+    case AvailableLocaleKind::DisplayNames:
+    case AvailableLocaleKind::DurationFormat:
+    case AvailableLocaleKind::ListFormat:
+    case AvailableLocaleKind::NumberFormat:
+    case AvailableLocaleKind::PluralRules:
+    case AvailableLocaleKind::RelativeTimeFormat:
+    case AvailableLocaleKind::Segmenter:
+      localeSet = &availableLocales;
       break;
     default:
       MOZ_CRASH("Invalid Intl constructor");
@@ -597,7 +677,6 @@ bool js::intl::SharedIntlData::ensureUpperCaseFirstLocales(JSContext* cx) {
   // complete due to OOM, clear all data and start from scratch.
   upperCaseFirstLocales.clearAndCompact();
 
-  Rooted<JSAtom*> locale(cx);
   for (const char* rawLocale : mozilla::intl::Collator::GetAvailableLocales()) {
     auto collator = mozilla::intl::Collator::TryCreate(rawLocale);
     if (collator.isErr()) {
@@ -615,7 +694,7 @@ bool js::intl::SharedIntlData::ensureUpperCaseFirstLocales(JSContext* cx) {
       continue;
     }
 
-    locale = Atomize(cx, rawLocale, strlen(rawLocale));
+    JSAtom* locale = Atomize(cx, rawLocale, strlen(rawLocale));
     if (!locale) {
       return false;
     }
@@ -641,7 +720,7 @@ bool js::intl::SharedIntlData::ensureUpperCaseFirstLocales(JSContext* cx) {
 #endif  // DEBUG || MOZ_SYSTEM_ICU
 
 bool js::intl::SharedIntlData::isUpperCaseFirst(JSContext* cx,
-                                                HandleString locale,
+                                                Handle<JSLinearString*> locale,
                                                 bool* isUpperFirst) {
 #if DEBUG || MOZ_SYSTEM_ICU
   if (!ensureUpperCaseFirstLocales(cx)) {
@@ -649,23 +728,17 @@ bool js::intl::SharedIntlData::isUpperCaseFirst(JSContext* cx,
   }
 #endif
 
-  Rooted<JSLinearString*> localeLinear(cx, locale->ensureLinear(cx));
-  if (!localeLinear) {
-    return false;
-  }
-
 #if !MOZ_SYSTEM_ICU
   // "da" (Danish) and "mt" (Maltese) are the only two supported locales using
   // upper-case first. CLDR also lists "cu" (Church Slavic) as an upper-case
   // first locale, but since it's not supported in ICU, we don't care about it
   // here.
-  bool isDefaultUpperCaseFirstLocale =
-      js::StringEqualsLiteral(localeLinear, "da") ||
-      js::StringEqualsLiteral(localeLinear, "mt");
+  bool isDefaultUpperCaseFirstLocale = js::StringEqualsLiteral(locale, "da") ||
+                                       js::StringEqualsLiteral(locale, "mt");
 #endif
 
 #if DEBUG || MOZ_SYSTEM_ICU
-  LocaleHasher::Lookup lookup(localeLinear);
+  LocaleHasher::Lookup lookup(locale);
   *isUpperFirst = upperCaseFirstLocales.has(lookup);
 #else
   *isUpperFirst = isDefaultUpperCaseFirstLocale;
@@ -689,7 +762,6 @@ bool js::intl::SharedIntlData::ensureIgnorePunctuationLocales(JSContext* cx) {
   // complete due to OOM, clear all data and start from scratch.
   ignorePunctuationLocales.clearAndCompact();
 
-  Rooted<JSAtom*> locale(cx);
   for (const char* rawLocale : mozilla::intl::Collator::GetAvailableLocales()) {
     auto collator = mozilla::intl::Collator::TryCreate(rawLocale);
     if (collator.isErr()) {
@@ -707,7 +779,7 @@ bool js::intl::SharedIntlData::ensureIgnorePunctuationLocales(JSContext* cx) {
       continue;
     }
 
-    locale = Atomize(cx, rawLocale, strlen(rawLocale));
+    JSAtom* locale = Atomize(cx, rawLocale, strlen(rawLocale));
     if (!locale) {
       return false;
     }
@@ -732,29 +804,22 @@ bool js::intl::SharedIntlData::ensureIgnorePunctuationLocales(JSContext* cx) {
 }
 #endif  // DEBUG || MOZ_SYSTEM_ICU
 
-bool js::intl::SharedIntlData::isIgnorePunctuation(JSContext* cx,
-                                                   HandleString locale,
-                                                   bool* ignorePunctuation) {
+bool js::intl::SharedIntlData::isIgnorePunctuation(
+    JSContext* cx, Handle<JSLinearString*> locale, bool* ignorePunctuation) {
 #if DEBUG || MOZ_SYSTEM_ICU
   if (!ensureIgnorePunctuationLocales(cx)) {
     return false;
   }
 #endif
 
-  Rooted<JSLinearString*> localeLinear(cx, locale->ensureLinear(cx));
-  if (!localeLinear) {
-    return false;
-  }
-
 #if !MOZ_SYSTEM_ICU
   // "th" (Thai) is the only supported locale which ignores punctuation by
   // default.
-  bool isDefaultIgnorePunctuationLocale =
-      js::StringEqualsLiteral(localeLinear, "th");
+  bool isDefaultIgnorePunctuationLocale = js::StringEqualsLiteral(locale, "th");
 #endif
 
 #if DEBUG || MOZ_SYSTEM_ICU
-  LocaleHasher::Lookup lookup(localeLinear);
+  LocaleHasher::Lookup lookup(locale);
   *ignorePunctuation = ignorePunctuationLocales.has(lookup);
 #else
   *ignorePunctuation = isDefaultIgnorePunctuationLocale;
@@ -812,8 +877,8 @@ void js::intl::SharedIntlData::destroyInstance() {
   availableTimeZones.clearAndCompact();
   ianaZonesTreatedAsLinksByICU.clearAndCompact();
   ianaLinksCanonicalizedDifferentlyByICU.clearAndCompact();
-  supportedLocales.clearAndCompact();
-  collatorSupportedLocales.clearAndCompact();
+  availableLocales.clearAndCompact();
+  collatorAvailableLocales.clearAndCompact();
 #if DEBUG || MOZ_SYSTEM_ICU
   upperCaseFirstLocales.clearAndCompact();
   ignorePunctuationLocales.clearAndCompact();
@@ -826,8 +891,8 @@ void js::intl::SharedIntlData::trace(JSTracer* trc) {
     availableTimeZones.trace(trc);
     ianaZonesTreatedAsLinksByICU.trace(trc);
     ianaLinksCanonicalizedDifferentlyByICU.trace(trc);
-    supportedLocales.trace(trc);
-    collatorSupportedLocales.trace(trc);
+    availableLocales.trace(trc);
+    collatorAvailableLocales.trace(trc);
 #if DEBUG || MOZ_SYSTEM_ICU
     upperCaseFirstLocales.trace(trc);
     ignorePunctuationLocales.trace(trc);
@@ -841,8 +906,8 @@ size_t js::intl::SharedIntlData::sizeOfExcludingThis(
          ianaZonesTreatedAsLinksByICU.shallowSizeOfExcludingThis(mallocSizeOf) +
          ianaLinksCanonicalizedDifferentlyByICU.shallowSizeOfExcludingThis(
              mallocSizeOf) +
-         supportedLocales.shallowSizeOfExcludingThis(mallocSizeOf) +
-         collatorSupportedLocales.shallowSizeOfExcludingThis(mallocSizeOf) +
+         availableLocales.shallowSizeOfExcludingThis(mallocSizeOf) +
+         collatorAvailableLocales.shallowSizeOfExcludingThis(mallocSizeOf) +
 #if DEBUG || MOZ_SYSTEM_ICU
          upperCaseFirstLocales.shallowSizeOfExcludingThis(mallocSizeOf) +
          ignorePunctuationLocales.shallowSizeOfExcludingThis(mallocSizeOf) +

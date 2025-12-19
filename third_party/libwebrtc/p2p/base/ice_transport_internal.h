@@ -11,8 +11,7 @@
 #ifndef P2P_BASE_ICE_TRANSPORT_INTERNAL_H_
 #define P2P_BASE_ICE_TRANSPORT_INTERNAL_H_
 
-#include <stdint.h>
-
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <string>
@@ -23,11 +22,10 @@
 #include "absl/strings/string_view.h"
 #include "api/array_view.h"
 #include "api/candidate.h"
-#include "api/field_trials_view.h"
 #include "api/peer_connection_interface.h"
 #include "api/rtc_error.h"
 #include "api/transport/enums.h"
-#include "api/transport/stun.h"
+#include "api/units/time_delta.h"
 #include "p2p/base/candidate_pair_interface.h"
 #include "p2p/base/connection.h"
 #include "p2p/base/connection_info.h"
@@ -35,13 +33,32 @@
 #include "p2p/base/port.h"
 #include "p2p/base/stun_dictionary.h"
 #include "p2p/base/transport_description.h"
+#include "p2p/dtls/dtls_stun_piggyback_callbacks.h"
 #include "rtc_base/callback_list.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/network_constants.h"
+#include "rtc_base/sigslot_trampoline.h"
 #include "rtc_base/system/rtc_export.h"
 #include "rtc_base/third_party/sigslot/sigslot.h"
 
-namespace cricket {
+namespace webrtc {
+
+// TODO(zhihuang): Replace this with
+// PeerConnectionInterface::IceConnectionState.
+enum class IceTransportStateInternal {
+  STATE_INIT,
+  STATE_CONNECTING,  // Will enter this state once a connection is created
+  STATE_COMPLETED,
+  STATE_FAILED
+};
+
+enum IceConnectionState {
+  kIceConnectionConnecting = 0,
+  kIceConnectionFailed,
+  kIceConnectionConnected,  // Writable, but still checking one or more
+                            // connections
+  kIceConnectionCompleted,
+};
 
 struct IceTransportStats {
   CandidateStatsList candidate_stats_list;
@@ -62,18 +79,10 @@ struct IceTransportStats {
 
   IceRole ice_role = ICEROLE_UNKNOWN;
   std::string ice_local_username_fragment;
-  webrtc::IceTransportState ice_state = webrtc::IceTransportState::kNew;
+  IceTransportState ice_state = IceTransportState::kNew;
 };
 
 typedef std::vector<Candidate> Candidates;
-
-enum IceConnectionState {
-  kIceConnectionConnecting = 0,
-  kIceConnectionFailed,
-  kIceConnectionConnected,  // Writable, but still checking one or more
-                            // connections
-  kIceConnectionCompleted,
-};
 
 // TODO(deadbeef): Unify with PeerConnectionInterface::IceConnectionState
 // once /talk/ and /webrtc/ are combined, and also switch to ENUM_NAME naming
@@ -104,21 +113,21 @@ enum class NominationMode {
 // and contain valid values. If conditions are not met, an RTCError with the
 // appropriated error number and description is returned. If the configuration
 // is valid RTCError::OK() is returned.
-webrtc::RTCError VerifyCandidate(const Candidate& cand);
+RTCError VerifyCandidate(const Candidate& cand);
 
-// Runs through a list of cricket::Candidate instances and calls VerifyCandidate
+// Runs through a list of Candidate instances and calls VerifyCandidate
 // for each one, stopping on the first error encounted and returning that error
 // value if so. On success returns RTCError::OK().
-webrtc::RTCError VerifyCandidates(const Candidates& candidates);
+RTCError VerifyCandidates(const Candidates& candidates);
 
 // Information about ICE configuration.
 // TODO(bugs.webrtc.org/15609): Define a public API for this.
 struct RTC_EXPORT IceConfig {
-  // The ICE connection receiving timeout value in milliseconds.
-  std::optional<int> receiving_timeout;
-  // Time interval in milliseconds to ping a backup connection when the ICE
-  // channel is strongly connected.
-  std::optional<int> backup_connection_ping_interval;
+  // The ICE connection receiving timeout value.
+  std::optional<TimeDelta> receiving_timeout;
+  // Time interval to ping a backup connection when the ICE channel is strongly
+  // connected.
+  std::optional<TimeDelta> backup_connection_ping_interval;
 
   ContinualGatheringPolicy continual_gathering_policy = GATHER_ONCE;
 
@@ -131,7 +140,7 @@ struct RTC_EXPORT IceConfig {
   bool prioritize_most_likely_candidate_pairs = false;
 
   // Writable connections are pinged at a slower rate once stablized.
-  std::optional<int> stable_writable_connection_ping_interval;
+  std::optional<TimeDelta> stable_writable_connection_ping_interval;
 
   // If set to true, this means the ICE transport should presume TURN-to-TURN
   // candidate pairs will succeed, even before a binding response is received.
@@ -146,107 +155,96 @@ struct RTC_EXPORT IceConfig {
 
   // Interval to check on all networks and to perform ICE regathering on any
   // active network having no connection on it.
-  std::optional<int> regather_on_failed_networks_interval;
+  std::optional<TimeDelta> regather_on_failed_networks_interval;
 
   // The time period in which we will not switch the selected connection
   // when a new connection becomes receiving but the selected connection is not
   // in case that the selected connection may become receiving soon.
-  std::optional<int> receiving_switching_delay;
+  std::optional<TimeDelta> receiving_switching_delay;
 
   // TODO(honghaiz): Change the default to regular nomination.
   // Default nomination mode if the remote does not support renomination.
   NominationMode default_nomination_mode = NominationMode::SEMI_AGGRESSIVE;
 
-  // The interval in milliseconds at which ICE checks (STUN pings) will be sent
-  // for a candidate pair when it is both writable and receiving (strong
-  // connectivity). This parameter overrides the default value given by
-  // `STRONG_PING_INTERVAL` in p2ptransport.h if set.
-  std::optional<int> ice_check_interval_strong_connectivity;
-  // The interval in milliseconds at which ICE checks (STUN pings) will be sent
-  // for a candidate pair when it is either not writable or not receiving (weak
-  // connectivity). This parameter overrides the default value given by
-  // `WEAK_PING_INTERVAL` in p2ptransport.h if set.
-  std::optional<int> ice_check_interval_weak_connectivity;
+  // The interval at which ICE checks (STUN pings) will be sent for a candidate
+  // pair when it is both writable and receiving (strong connectivity). This
+  // parameter overrides the default value given by `kStrongPingInterval` in
+  // p2ptransport.h if set.
+  std::optional<TimeDelta> ice_check_interval_strong_connectivity;
+  // The interval \at which ICE checks (STUN pings) will be sent for a candidate
+  // pair when it is either not writable or not receiving (weak connectivity).
+  // This parameter overrides the default value given by `kWeakPingInterval` in
+  // p2ptransport.h if set.
+  std::optional<TimeDelta> ice_check_interval_weak_connectivity;
   // ICE checks (STUN pings) will not be sent at higher rate (lower interval)
   // than this, no matter what other settings there are.
-  // Measure in milliseconds.
   //
   // Note that this parameter overrides both the above check intervals for
   // candidate pairs with strong or weak connectivity, if either of the above
   // interval is shorter than the min interval.
-  std::optional<int> ice_check_min_interval;
+  std::optional<TimeDelta> ice_check_min_interval;
   // The min time period for which a candidate pair must wait for response to
   // connectivity checks before it becomes unwritable. This parameter
-  // overrides the default value given by `CONNECTION_WRITE_CONNECT_TIMEOUT`
+  // overrides the default value given by `kConnectionWriteConnectTimeout`
   // in port.h if set, when determining the writability of a candidate pair.
-  std::optional<int> ice_unwritable_timeout;
+  std::optional<TimeDelta> ice_unwritable_timeout;
 
   // The min number of connectivity checks that a candidate pair must sent
   // without receiving response before it becomes unwritable. This parameter
-  // overrides the default value given by `CONNECTION_WRITE_CONNECT_FAILURES` in
+  // overrides the default value given by `kConnectionWriteConnectTimeout` in
   // port.h if set, when determining the writability of a candidate pair.
   std::optional<int> ice_unwritable_min_checks;
 
   // The min time period for which a candidate pair must wait for response to
   // connectivity checks it becomes inactive. This parameter overrides the
-  // default value given by `CONNECTION_WRITE_TIMEOUT` in port.h if set, when
+  // default value given by `kConnectionWriteTimeout` in port.h if set, when
   // determining the writability of a candidate pair.
-  std::optional<int> ice_inactive_timeout;
+  std::optional<TimeDelta> ice_inactive_timeout;
 
-  // The interval in milliseconds at which STUN candidates will resend STUN
-  // binding requests to keep NAT bindings open.
-  std::optional<int> stun_keepalive_interval;
+  // The interval at which STUN candidates will resend STUN binding requests to
+  // keep NAT bindings open.
+  std::optional<TimeDelta> stun_keepalive_interval;
 
-  std::optional<rtc::AdapterType> network_preference;
+  std::optional<AdapterType> network_preference;
 
-  webrtc::VpnPreference vpn_preference = webrtc::VpnPreference::kDefault;
+  VpnPreference vpn_preference = VpnPreference::kDefault;
 
   // Experimental feature to transport the DTLS handshake in STUN packets.
   bool dtls_handshake_in_stun = false;
 
   IceConfig();
-  IceConfig(int receiving_timeout_ms,
-            int backup_connection_ping_interval,
+  IceConfig(TimeDelta receiving_timeout,
+            TimeDelta backup_connection_ping_interval,
             ContinualGatheringPolicy gathering_policy,
             bool prioritize_most_likely_candidate_pairs,
-            int stable_writable_connection_ping_interval_ms,
+            TimeDelta stable_writable_connection_ping_interval,
             bool presume_writable_when_fully_relayed,
-            int regather_on_failed_networks_interval_ms,
-            int receiving_switching_delay_ms);
+            TimeDelta regather_on_failed_networks_interval,
+            TimeDelta receiving_switching_delay);
   // Construct an IceConfig object from an RTCConfiguration object.
   // This will check the `config` settings and set the associated IceConfig
   // member properties.
-  explicit IceConfig(
-      const webrtc::PeerConnectionInterface::RTCConfiguration& config);
+  explicit IceConfig(const PeerConnectionInterface::RTCConfiguration& config);
   ~IceConfig();
 
   // Checks if the current configuration values are consistent.
-  webrtc::RTCError IsValid() const;
+  RTCError IsValid() const;
 
   // Helper getters for parameters with implementation-specific default value.
   // By convention, parameters with default value are represented by
   // std::optional and setting a parameter to null restores its default value.
-  int receiving_timeout_or_default() const;
-  int backup_connection_ping_interval_or_default() const;
-  int stable_writable_connection_ping_interval_or_default() const;
-  int regather_on_failed_networks_interval_or_default() const;
-  int receiving_switching_delay_or_default() const;
-  int ice_check_interval_strong_connectivity_or_default() const;
-  int ice_check_interval_weak_connectivity_or_default() const;
-  int ice_check_min_interval_or_default() const;
-  int ice_unwritable_timeout_or_default() const;
+  TimeDelta receiving_timeout_or_default() const;
+  TimeDelta backup_connection_ping_interval_or_default() const;
+  TimeDelta stable_writable_connection_ping_interval_or_default() const;
+  TimeDelta regather_on_failed_networks_interval_or_default() const;
+  TimeDelta receiving_switching_delay_or_default() const;
+  TimeDelta ice_check_interval_strong_connectivity_or_default() const;
+  TimeDelta ice_check_interval_weak_connectivity_or_default() const;
+  TimeDelta ice_check_min_interval_or_default() const;
+  TimeDelta ice_unwritable_timeout_or_default() const;
   int ice_unwritable_min_checks_or_default() const;
-  int ice_inactive_timeout_or_default() const;
-  int stun_keepalive_interval_or_default() const;
-};
-
-// TODO(zhihuang): Replace this with
-// PeerConnectionInterface::IceConnectionState.
-enum class IceTransportState {
-  STATE_INIT,
-  STATE_CONNECTING,  // Will enter this state once a connection is created
-  STATE_COMPLETED,
-  STATE_FAILED
+  TimeDelta ice_inactive_timeout_or_default() const;
+  TimeDelta stun_keepalive_interval_or_default() const;
 };
 
 // IceTransportInternal is an internal abstract class that does ICE.
@@ -255,15 +253,21 @@ enum class IceTransportState {
 // the IceTransportInterface will be split from this class.
 //
 // TODO(bugs.webrtc.org/15609): Define a public API for this.
-class RTC_EXPORT IceTransportInternal : public rtc::PacketTransportInternal {
+class RTC_EXPORT IceTransportInternal : public PacketTransportInternal {
  public:
   IceTransportInternal();
   ~IceTransportInternal() override;
 
+  // This class is uncopyable and immovable.
+  IceTransportInternal(const IceTransportInternal&) = delete;
+  IceTransportInternal& operator=(const IceTransportInternal&) = delete;
+  IceTransportInternal(IceTransportInternal&&) = delete;
+  IceTransportInternal& operator=(IceTransportInternal&&) = delete;
+
   // TODO(bugs.webrtc.org/9308): Remove GetState once all uses have been
   // migrated to GetIceTransportState.
-  virtual IceTransportState GetState() const = 0;
-  virtual webrtc::IceTransportState GetIceTransportState() const = 0;
+  virtual IceTransportStateInternal GetState() const = 0;
+  virtual IceTransportState GetIceTransportState() const = 0;
 
   virtual int component() const = 0;
 
@@ -284,6 +288,18 @@ class RTC_EXPORT IceTransportInternal : public rtc::PacketTransportInternal {
   virtual void SetRemoteIceCredentials(absl::string_view ice_ufrag,
                                        absl::string_view ice_pwd);
 
+  // TODO: bugs.webrtc.org/367395350 - Make virtual when all downstream
+  // overrides are gone.
+  // Returns the current local ICE parameters.
+  virtual const IceParameters* local_ice_parameters() const {
+    RTC_CHECK_NOTREACHED();
+  }
+  // Returns the latest remote ICE parameters or nullptr if there are no remote
+  // ICE parameters yet.
+  virtual const IceParameters* remote_ice_parameters() const {
+    RTC_CHECK_NOTREACHED();
+  }
+
   // The ufrag and pwd in `ice_params` must be set
   // before candidate gathering can start.
   virtual void SetIceParameters(const IceParameters& ice_params) = 0;
@@ -294,7 +310,7 @@ class RTC_EXPORT IceTransportInternal : public rtc::PacketTransportInternal {
 
   virtual void SetIceConfig(const IceConfig& config) = 0;
   // Default implementation in order to allow downstream usage deletion.
-  // TODO: bugs.webrtc.org/367395350 - Make virutal when all downstream
+  // TODO: bugs.webrtc.org/367395350 - Make virtual when all downstream
   // overrides are gone.
   virtual const IceConfig& config() const { RTC_CHECK_NOTREACHED(); }
 
@@ -338,6 +354,13 @@ class RTC_EXPORT IceTransportInternal : public rtc::PacketTransportInternal {
   // Handles sending and receiving of candidates.
   sigslot::signal2<IceTransportInternal*, const Candidate&>
       SignalCandidateGathered;
+  void NotifyCandidateGathered(IceTransportInternal* transport,
+                               const Candidate& candidate) {
+    SignalCandidateGathered(transport, candidate);
+  }
+  void SubscribeCandidateGathered(
+      absl::AnyInvocable<void(IceTransportInternal*, const Candidate&)>
+          callback);
 
   void SetCandidateErrorCallback(
       absl::AnyInvocable<void(IceTransportInternal*,
@@ -362,8 +385,7 @@ class RTC_EXPORT IceTransportInternal : public rtc::PacketTransportInternal {
   sigslot::signal2<IceTransportInternal*, const Candidate&> SignalRouteChange;
 
   void SetCandidatePairChangeCallback(
-      absl::AnyInvocable<void(const cricket::CandidatePairChangeEvent&)>
-          callback) {
+      absl::AnyInvocable<void(const CandidatePairChangeEvent&)> callback) {
     RTC_DCHECK(!candidate_pair_change_callback_);
     candidate_pair_change_callback_ = std::move(callback);
   }
@@ -371,17 +393,27 @@ class RTC_EXPORT IceTransportInternal : public rtc::PacketTransportInternal {
   // Invoked when there is conflict in the ICE role between local and remote
   // agents.
   sigslot::signal1<IceTransportInternal*> SignalRoleConflict;
-
-  // Emitted whenever the transport state changed.
-  // TODO(bugs.webrtc.org/9308): Remove once all uses have migrated to the new
-  // IceTransportState.
-  sigslot::signal1<IceTransportInternal*> SignalStateChanged;
+  void NotifyRoleConflict(IceTransportInternal* transport) {
+    SignalRoleConflict(transport);
+  }
+  void SubscribeRoleConflict(
+      absl::AnyInvocable<void(IceTransportInternal*)> callback);
 
   // Emitted whenever the new standards-compliant transport state changed.
   sigslot::signal1<IceTransportInternal*> SignalIceTransportStateChanged;
+  void NotifyIceTransportStateChanged(IceTransportInternal* transport) {
+    SignalIceTransportStateChanged(transport);
+  }
+  void SubscribeIceTransportStateChanged(
+      absl::AnyInvocable<void(IceTransportInternal*)> callback);
 
   // Invoked when the transport is being destroyed.
   sigslot::signal1<IceTransportInternal*> SignalDestroyed;
+  void NotifyDestroyed(IceTransportInternal* transport) {
+    SignalDestroyed(transport);
+  }
+  void SubscribeDestroyed(
+      absl::AnyInvocable<void(IceTransportInternal*)> callback);
 
   // Invoked when remote dictionary has been updated,
   // i.e. modifications to attributes from remote ice agent has
@@ -406,29 +438,21 @@ class RTC_EXPORT IceTransportInternal : public rtc::PacketTransportInternal {
     dictionary_writer_synced_callback_list_.RemoveReceivers(tag);
   }
 
-  virtual const webrtc::FieldTrialsView* field_trials() const {
-    return nullptr;
-  }
-  virtual void SetDtlsPiggybackingCallbacks(
-      absl::AnyInvocable<std::optional<absl::string_view>(StunMessageType)>
-          dtls_piggyback_get_data,
-      absl::AnyInvocable<std::optional<absl::string_view>(StunMessageType)>
-          dtls_piggyback_get_ack,
-      absl::AnyInvocable<void(const StunByteStringAttribute*,
-                              const StunByteStringAttribute*)>
-          dtls_piggyback_report_data) {}
+  virtual void ResetDtlsStunPiggybackCallbacks() {}
+  virtual void SetDtlsStunPiggybackCallbacks(
+      DtlsStunPiggybackCallbacks&& callbacks) {}
 
  protected:
   void SendGatheringStateEvent() { gathering_state_callback_list_.Send(this); }
 
-  webrtc::CallbackList<IceTransportInternal*,
-                       const StunDictionaryView&,
-                       rtc::ArrayView<uint16_t>>
+  CallbackList<IceTransportInternal*,
+               const StunDictionaryView&,
+               ArrayView<uint16_t>>
       dictionary_view_updated_callback_list_;
-  webrtc::CallbackList<IceTransportInternal*, const StunDictionaryWriter&>
+  CallbackList<IceTransportInternal*, const StunDictionaryWriter&>
       dictionary_writer_synced_callback_list_;
 
-  webrtc::CallbackList<IceTransportInternal*> gathering_state_callback_list_;
+  CallbackList<IceTransportInternal*> gathering_state_callback_list_;
 
   absl::AnyInvocable<void(IceTransportInternal*, const IceCandidateErrorEvent&)>
       candidate_error_callback_;
@@ -436,10 +460,24 @@ class RTC_EXPORT IceTransportInternal : public rtc::PacketTransportInternal {
   absl::AnyInvocable<void(IceTransportInternal*, const Candidates&)>
       candidates_removed_callback_;
 
-  absl::AnyInvocable<void(const cricket::CandidatePairChangeEvent&)>
+  absl::AnyInvocable<void(const CandidatePairChangeEvent&)>
       candidate_pair_change_callback_;
+
+ private:
+  SignalTrampoline<IceTransportInternal,
+                   &IceTransportInternal::SignalCandidateGathered>
+      candidate_gathered_trampoline_;
+  SignalTrampoline<IceTransportInternal,
+                   &IceTransportInternal::SignalRoleConflict>
+      role_conflict_trampoline_;
+  SignalTrampoline<IceTransportInternal,
+                   &IceTransportInternal::SignalIceTransportStateChanged>
+      ice_transport_state_changed_trampoline_;
+  SignalTrampoline<IceTransportInternal, &IceTransportInternal::SignalDestroyed>
+      destroyed_trampoline_;
 };
 
-}  // namespace cricket
+}  //  namespace webrtc
+
 
 #endif  // P2P_BASE_ICE_TRANSPORT_INTERNAL_H_

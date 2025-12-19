@@ -11,32 +11,21 @@
 import {
   UrlbarProvider,
   UrlbarUtils,
-} from "resource:///modules/UrlbarUtils.sys.mjs";
+} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
 });
 
 /**
  * Class used to create the provider.
  */
-class ProviderHistoryUrlHeuristic extends UrlbarProvider {
+export class UrlbarProviderHistoryUrlHeuristic extends UrlbarProvider {
   /**
-   * Returns the name of this provider.
-   *
-   * @returns {string} the name of this provider.
-   */
-  get name() {
-    return "HistoryUrlHeuristic";
-  }
-
-  /**
-   * Returns the type of this provider.
-   *
-   * @returns {integer} one of the types from UrlbarUtils.PROVIDER_TYPE.*
+   * @returns {Values<typeof UrlbarUtils.PROVIDER_TYPE>}
    */
   get type() {
     return UrlbarUtils.PROVIDER_TYPE.HEURISTIC;
@@ -48,9 +37,8 @@ class ProviderHistoryUrlHeuristic extends UrlbarProvider {
    * with this provider, to save on resources.
    *
    * @param {UrlbarQueryContext} queryContext The query context object
-   * @returns {boolean} Whether this provider should be invoked for the search.
    */
-  isActive(queryContext) {
+  async isActive(queryContext) {
     // For better performance, this provider tries to return a result only when
     // the input value can become a URL of the http(s) protocol and its length
     // is less than `MAX_TEXT_LENGTH`. That way its SQL query avoids calling
@@ -66,10 +54,9 @@ class ProviderHistoryUrlHeuristic extends UrlbarProvider {
   /**
    * Starts querying.
    *
-   * @param {object} queryContext The query context object
-   * @param {Function} addCallback Callback invoked by the provider to add a new
-   *        result.
-   * @returns {Promise} resolved when the query stops.
+   * @param {UrlbarQueryContext} queryContext
+   * @param {(provider: UrlbarProvider, result: UrlbarResult) => void} addCallback
+   *   Callback invoked by the provider to add a new result.
    */
   async startQuery(queryContext, addCallback) {
     const instance = this.queryInstance;
@@ -121,20 +108,18 @@ class ProviderHistoryUrlHeuristic extends UrlbarProvider {
       return null;
     }
 
-    return Object.assign(
-      new lazy.UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.URL,
-        UrlbarUtils.RESULT_SOURCE.HISTORY,
-        ...lazy.UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
-          url: [inputedURL, UrlbarUtils.HIGHLIGHT.TYPED],
-          title: [title, UrlbarUtils.HIGHLIGHT.NONE],
-          icon: UrlbarUtils.getIconForUrl(resultSet[0].getResultByName("url")),
-        })
-      ),
-      { heuristic: true }
-    );
+    return new lazy.UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+      heuristic: true,
+      payload: {
+        url: inputedURL,
+        title,
+        icon: UrlbarUtils.getIconForUrl(resultSet[0].getResultByName("url")),
+      },
+      highlights: {
+        url: UrlbarUtils.HIGHLIGHT.TYPED,
+      },
+    });
   }
 }
-
-export var UrlbarProviderHistoryUrlHeuristic =
-  new ProviderHistoryUrlHeuristic();

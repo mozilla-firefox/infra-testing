@@ -40,7 +40,6 @@
 
 #include "mozilla/Atomics.h"
 #include "mozilla/glean/NetwerkMetrics.h"
-#include "mozilla/HashFunctions.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/glean/NetwerkDnsMetrics.h"
 #include "mozilla/DebugOnly.h"
@@ -91,40 +90,6 @@ static const unsigned int NEGATIVE_RECORD_LIFETIME = 60;
 #define ShortIdleTimeoutSeconds 60
 
 using namespace mozilla;
-
-namespace geckoprofiler::markers {
-
-struct HostResolverMarker {
-  static constexpr Span<const char> MarkerTypeName() {
-    return MakeStringSpan("HostResolver");
-  }
-  static void StreamJSONMarkerData(
-      mozilla::baseprofiler::SpliceableJSONWriter& aWriter,
-      const mozilla::ProfilerString8View& aHost,
-      const mozilla::ProfilerString8View& aOriginSuffix, uint16_t aType,
-      uint32_t aFlags) {
-    aWriter.StringProperty("host", aHost);
-    aWriter.StringProperty("originSuffix", aOriginSuffix);
-    aWriter.IntProperty("qtype", aType);
-    aWriter.StringProperty("flags", nsPrintfCString("0x%x", aFlags));
-  }
-  static MarkerSchema MarkerTypeDisplay() {
-    using MS = MarkerSchema;
-    MS schema(MS::Location::MarkerChart, MS::Location::MarkerTable);
-    schema.SetTableLabel("{marker.name} - {marker.data.host}");
-    schema.AddKeyFormatSearchable("host", MS::Format::SanitizedString,
-                                  MS::Searchable::Searchable);
-    schema.AddKeyFormatSearchable("originSuffix", MS::Format::SanitizedString,
-                                  MS::Searchable::Searchable);
-    schema.AddKeyFormat("qtype", MS::Format::Integer);
-    schema.AddKeyFormat("flags", MS::Format::String);
-    return schema;
-  }
-};
-
-}  // namespace geckoprofiler::markers
-
-//----------------------------------------------------------------------------
 
 namespace mozilla::net {
 LazyLogModule gHostResolverLog("nsHostResolver");
@@ -269,10 +234,12 @@ void nsHostResolver::ClearPendingQueue(
 // cache that have 'Resolve' set true but not 'OnQueue' are being resolved
 // right now, so we need to mark them to get re-resolved on completion!
 
-void nsHostResolver::FlushCache(bool aTrrToo) {
+void nsHostResolver::FlushCache(bool aTrrToo, bool aFlushEvictionQueue) {
   MutexAutoLock lock(mLock);
 
-  mQueue.FlushEvictionQ(mRecordDB, lock);
+  if (aFlushEvictionQueue) {
+    mQueue.FlushEvictionQ(mRecordDB, lock);
+  }
 
   // Refresh the cache entries that are resolving RIGHT now, remove the rest.
   for (auto iter = mRecordDB.Iter(); !iter.Done(); iter.Next()) {
@@ -336,7 +303,7 @@ void nsHostResolver::Shutdown() {
     mNCS = nullptr;
   }
 
-  // Shutdown the resolver threads, but with a timeout of 2 seconds (prefable).
+  // Shutdown the resolver threads, but with a timeout of 5 seconds (prefable).
   // If the timeout is exceeded, any stuck threads will be leaked.
   mResolverThreads->ShutdownWithTimeout(
       StaticPrefs::network_dns_resolver_shutdown_timeout_ms());
@@ -425,6 +392,9 @@ already_AddRefed<nsHostRecord> nsHostResolver::InitLoopbackRecord(
                          StaticPrefs::network_dnsCacheExpiration(),
                          StaticPrefs::network_dnsCacheExpirationGracePeriod());
   addrRec->negative = false;
+  // Use the oldest possible timestamp, since the contents of this record never
+  // change.
+  addrRec->mLastUpdate = TimeStamp::ProcessCreation();
 
   *aRv = NS_OK;
   return rec.forget();
@@ -480,8 +450,11 @@ nsresult nsHostResolver::ResolveHost(const nsACString& aHost,
        flags & nsIDNSService::RESOLVE_REFRESH_CACHE ? " - refresh cache" : "",
        type, this));
 
-  PROFILER_MARKER("nsHostResolver::ResolveHost", NETWORK, {},
-                  HostResolverMarker, host, originSuffix, type, flags);
+  // When this pref is set, we always set the flag, to make sure consumers
+  // that forget to set the flag don't end up being a cache miss.
+  if (StaticPrefs::network_dns_always_ai_canonname()) {
+    flags |= nsIDNSService::RESOLVE_CANONICAL_NAME;
+  }
 
   // ensure that we are working with a valid hostname before proceeding.  see
   // bug 304904 for details.
@@ -1408,6 +1381,9 @@ bool nsHostResolver::MaybeRetryTRRLookup(
   MOZ_ASSERT(!aAddrRec->mResolving);
   if (!StaticPrefs::network_trr_retry_on_recoverable_errors()) {
     LOG(("nsHostResolver::MaybeRetryTRRLookup retrying with native"));
+
+    // Trigger a confirmation retry, in order to cycle connection if needed
+    TRRService::Get()->RetryTRRConfirm();
     return NS_SUCCEEDED(NativeLookup(aAddrRec, aLock));
   }
 
@@ -1570,17 +1546,12 @@ nsHostResolver::LookupStatus nsHostResolver::CompleteLookupLocked(
     MutexAutoLock lock(addrRec->addr_info_lock);
     RefPtr<AddrInfo> old_addr_info;
     bool isDifferentRRSet = different_rrset(addrRec->addr_info, newRRSet);
-    bool isRenewal = addrRec->addr_info;
-    if (isRenewal) {
-      glean::dns::grace_period_renewal
-          .Get(isDifferentRRSet ? "different_record"_ns : "same_record"_ns)
-          .Add(1);
-    }
     if (isDifferentRRSet) {
       LOG(("nsHostResolver record %p new gencnt\n", addrRec.get()));
       old_addr_info = addrRec->addr_info;
       addrRec->addr_info = std::move(newRRSet);
       addrRec->addr_info_gencnt++;
+      addrRec->mLastUpdate = TimeStamp::NowLoRes();
     } else {
       if (addrRec->addr_info && newRRSet) {
         auto builder = addrRec->addr_info->Build();
@@ -1620,10 +1591,6 @@ nsHostResolver::LookupStatus nsHostResolver::CompleteLookupLocked(
       LOG(("CompleteLookup: %s has NO address\n", addrRec->host.get()));
     }
   }
-
-  PROFILER_MARKER("nsHostResolver::CompleteLookupLocked", NETWORK, {},
-                  HostResolverMarker, addrRec->host, addrRec->originSuffix,
-                  addrRec->type, addrRec->flags);
 
   // get the list of pending callbacks for this lookup, and notify
   // them that the lookup is complete.
@@ -1739,10 +1706,6 @@ nsHostResolver::LookupStatus nsHostResolver::CompleteLookupByTypeLocked(
     MOZ_ASSERT(aReason != TRRSkippedReason::TRR_UNSET);
     typeRec->RecordReason(aReason);
   }
-
-  PROFILER_MARKER("nsHostResolver::CompleteLookupByTypeLocked", NETWORK, {},
-                  HostResolverMarker, typeRec->host, typeRec->originSuffix,
-                  typeRec->type, typeRec->flags);
 
   mozilla::LinkedList<RefPtr<nsResolveHostCallback>> cbs =
       std::move(typeRec->mCallbacks);

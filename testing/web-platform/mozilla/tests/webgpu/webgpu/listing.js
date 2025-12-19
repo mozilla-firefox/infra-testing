@@ -63,6 +63,14 @@ export const listing = [
       "api",
       "operation",
       "buffers",
+      "createBindGroup"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "operation",
+      "buffers",
       "map"
     ]
   },
@@ -170,8 +178,26 @@ export const listing = [
       "api",
       "operation",
       "command_buffer",
+      "queries",
+      "timestampQuery"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "operation",
+      "command_buffer",
       "render",
       "dynamic_state"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "operation",
+      "command_buffer",
+      "render",
+      "render_bundle"
     ]
   },
   {
@@ -565,6 +591,14 @@ export const listing = [
       "api",
       "operation",
       "texture_view",
+      "texture_component_swizzle"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "operation",
+      "texture_view",
       "write"
     ]
   },
@@ -678,7 +712,34 @@ export const listing = [
       "validation",
       "capability_checks",
       "features",
+      "texture_component_swizzle"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "features",
       "texture_formats"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "features",
+      "texture_formats_tier1"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "features",
+      "texture_formats_tier2"
     ]
   },
   {
@@ -3990,6 +4051,13 @@ export const listing = [
       "execution",
       "memory_model",
       "weak"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "override"
     ]
   },
   {

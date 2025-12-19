@@ -6,18 +6,17 @@
 
 #include "InspectorFontFace.h"
 
+#include "brotli/decode.h"
 #include "gfxPlatformFontList.h"
 #include "gfxTextRun.h"
 #include "gfxUserFontSet.h"
 #include "harfbuzz/hb-ot.h"
-#include "nsFontFaceLoader.h"
-#include "mozilla/gfx/2D.h"
-#include "brotli/decode.h"
-#include "zlib.h"
+#include "mozilla/ServoBindings.h"
 #include "mozilla/dom/CSSFontFaceRule.h"
 #include "mozilla/dom/FontFaceSet.h"
-#include "mozilla/ServoBindings.h"
-#include "mozilla/Unused.h"
+#include "mozilla/gfx/2D.h"
+#include "nsFontFaceLoader.h"
+#include "zlib.h"
 
 namespace mozilla {
 namespace dom {
@@ -263,7 +262,7 @@ void InspectorFontFace::GetVariationInstances(
       AppendTagAsASCII(value.mAxis, v.mAxis);
       value.mValue = v.mValue;
       // This won't fail, because of SetCapacity above.
-      Unused << inst.mValues.AppendElement(value, mozilla::fallible);
+      (void)inst.mValues.AppendElement(value, mozilla::fallible);
     }
   }
 }

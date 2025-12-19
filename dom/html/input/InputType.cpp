@@ -8,18 +8,17 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/Likely.h"
-#include "nsIFormControl.h"
 #include "mozilla/dom/ButtonInputTypes.h"
 #include "mozilla/dom/CheckableInputTypes.h"
 #include "mozilla/dom/ColorInputType.h"
 #include "mozilla/dom/DateTimeInputTypes.h"
 #include "mozilla/dom/FileInputType.h"
-#include "mozilla/dom/HiddenInputType.h"
 #include "mozilla/dom/HTMLInputElement.h"
+#include "mozilla/dom/HiddenInputType.h"
 #include "mozilla/dom/NumericInputTypes.h"
 #include "mozilla/dom/SingleLineTextInputTypes.h"
-
 #include "nsContentUtils.h"
+#include "nsIFormControl.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -233,8 +232,8 @@ nsresult InputType::GetValidationMessage(
 
       if (maximum.isNaN() || valueHigh <= maximum) {
         nsAutoString valueLowStr, valueHighStr;
-        ConvertNumberToString(valueLow, valueLowStr);
-        ConvertNumberToString(valueHigh, valueHighStr);
+        ConvertNumberToString(valueLow, Localized::Yes, valueLowStr);
+        ConvertNumberToString(valueHigh, Localized::Yes, valueHighStr);
 
         if (valueLowStr.Equals(valueHighStr)) {
           return nsContentUtils::FormatMaybeLocalizedString(
@@ -249,7 +248,7 @@ nsresult InputType::GetValidationMessage(
       }
 
       nsAutoString valueLowStr;
-      ConvertNumberToString(valueLow, valueLowStr);
+      ConvertNumberToString(valueLow, Localized::Yes, valueLowStr);
 
       return nsContentUtils::FormatMaybeLocalizedString(
           aValidationMessage, nsContentUtils::eDOM_PROPERTIES,
@@ -292,10 +291,8 @@ auto InputType::ConvertStringToNumber(const nsAString& aValue) const
   return {};
 }
 
-bool InputType::ConvertNumberToString(Decimal aValue,
-                                      nsAString& aResultString) const {
+bool InputType::ConvertNumberToString(Decimal, Localized, nsAString&) const {
   NS_WARNING("InputType::ConvertNumberToString called");
-
   return false;
 }
 

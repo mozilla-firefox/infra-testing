@@ -7,18 +7,19 @@
 #ifndef MOZILLA_DOM_MEDIA_WEBRTC_JSAPI_RTCRTPSCRIPTTRANSFORMER_H_
 #define MOZILLA_DOM_MEDIA_WEBRTC_JSAPI_RTCRTPSCRIPTTRANSFORMER_H_
 
-#include "nsISupports.h"
-#include "nsWrapperCache.h"
+#include <memory>
+
+#include "js/RootingAPI.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/ReadableStream.h"
 #include "mozilla/dom/WritableStream.h"
-#include "mozilla/Maybe.h"
-#include "js/RootingAPI.h"
-#include "nsTArray.h"
 #include "nsCOMArray.h"
-#include <memory>
-#include "nsTHashSet.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsISupports.h"
+#include "nsTArray.h"
+#include "nsTHashSet.h"
+#include "nsWrapperCache.h"
 
 class nsPIDOMWindowInner;
 
@@ -157,7 +158,7 @@ class RTCRtpScriptTransformer final : public nsISupports,
   void GenerateKeyFrameError(const Maybe<std::string>& aRid,
                              const CopyableErrorResult& aResult);
   already_AddRefed<Promise> SendKeyFrameRequest();
-  void KeyFrameRequestDone(bool aSuccess);
+  void KeyFrameRequestDone();
 
   // Public to ease implementation of cycle collection functions
   using GenerateKeyFramePromises =

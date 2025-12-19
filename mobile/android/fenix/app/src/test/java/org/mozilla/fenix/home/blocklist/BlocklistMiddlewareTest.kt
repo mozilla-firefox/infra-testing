@@ -8,7 +8,6 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import mozilla.components.browser.state.state.createTab
-import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.middleware.CaptureActionsMiddleware
 import mozilla.components.support.test.mock
 import org.junit.Assert.assertEquals
@@ -18,14 +17,14 @@ import org.junit.runner.RunWith
 import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.appstate.AppState
-import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
 import org.mozilla.fenix.home.bookmarks.Bookmark
 import org.mozilla.fenix.home.recentsyncedtabs.RecentSyncedTab
 import org.mozilla.fenix.home.recentsyncedtabs.RecentSyncedTabState
 import org.mozilla.fenix.home.recenttabs.RecentTab
 import org.mozilla.fenix.utils.Settings
+import org.robolectric.RobolectricTestRunner
 
-@RunWith(FenixRobolectricTestRunner::class)
+@RunWith(RobolectricTestRunner::class)
 class BlocklistMiddlewareTest {
     private val mockSettings: Settings = mockk()
     private val blocklistHandler = BlocklistHandler(mockSettings)
@@ -52,7 +51,7 @@ class BlocklistMiddlewareTest {
                 recentHistory = appStore.state.recentHistory,
                 recentSyncedTabState = appStore.state.recentSyncedTabState,
             ),
-        ).joinBlocking()
+        )
 
         assertEquals(updatedBookmark, appStore.state.bookmarks[0])
     }
@@ -79,7 +78,7 @@ class BlocklistMiddlewareTest {
                 recentHistory = appStore.state.recentHistory,
                 recentSyncedTabState = appStore.state.recentSyncedTabState,
             ),
-        ).joinBlocking()
+        )
 
         assertEquals(updatedBookmark, appStore.state.bookmarks[0])
     }
@@ -106,7 +105,7 @@ class BlocklistMiddlewareTest {
                 recentHistory = appStore.state.recentHistory,
                 recentSyncedTabState = appStore.state.recentSyncedTabState,
             ),
-        ).joinBlocking()
+        )
 
         assertEquals(updatedBookmark, appStore.state.bookmarks[0])
     }
@@ -133,7 +132,7 @@ class BlocklistMiddlewareTest {
                 recentHistory = appStore.state.recentHistory,
                 recentSyncedTabState = appStore.state.recentSyncedTabState,
             ),
-        ).joinBlocking()
+        )
 
         assertTrue(appStore.state.bookmarks.isEmpty())
     }
@@ -162,7 +161,7 @@ class BlocklistMiddlewareTest {
                 recentHistory = appStore.state.recentHistory,
                 recentSyncedTabState = appStore.state.recentSyncedTabState,
             ),
-        ).joinBlocking()
+        )
 
         assertTrue(appStore.state.bookmarks.isEmpty())
         assertTrue(appStore.state.recentTabs.isEmpty())
@@ -200,7 +199,7 @@ class BlocklistMiddlewareTest {
                 recentHistory = appStore.state.recentHistory,
                 recentSyncedTabState = appStore.state.recentSyncedTabState,
             ),
-        ).joinBlocking()
+        )
 
         assertEquals(unblockedBookmark, appStore.state.bookmarks[0])
         assertEquals(unblockedRecentTab, appStore.state.recentTabs[0])
@@ -223,7 +222,7 @@ class BlocklistMiddlewareTest {
 
         appStore.dispatch(
             AppAction.RemoveBookmark(removedBookmark),
-        ).joinBlocking()
+        )
 
         val capturedAction = captureMiddleware.findFirstAction(AppAction.Change::class)
         assertEquals(emptyList<Bookmark>(), capturedAction.bookmarks)
@@ -253,7 +252,7 @@ class BlocklistMiddlewareTest {
                 recentHistory = appStore.state.recentHistory,
                 recentSyncedTabState = appStore.state.recentSyncedTabState,
             ),
-        ).joinBlocking()
+        )
 
         assertTrue(appStore.state.bookmarks.isEmpty())
     }
@@ -281,7 +280,7 @@ class BlocklistMiddlewareTest {
                 recentHistory = appStore.state.recentHistory,
                 recentSyncedTabState = appStore.state.recentSyncedTabState,
             ),
-        ).joinBlocking()
+        )
 
         assertTrue(appStore.state.bookmarks.isEmpty())
     }
@@ -309,7 +308,7 @@ class BlocklistMiddlewareTest {
                 recentHistory = appStore.state.recentHistory,
                 recentSyncedTabState = appStore.state.recentSyncedTabState,
             ),
-        ).joinBlocking()
+        )
 
         assertTrue(appStore.state.bookmarks.isEmpty())
     }
@@ -349,7 +348,7 @@ class BlocklistMiddlewareTest {
                     ),
                 ),
             ),
-        ).joinBlocking()
+        )
 
         assertEquals(
             allowedTab,
@@ -371,7 +370,7 @@ class BlocklistMiddlewareTest {
             AppAction.RecentSyncedTabStateChange(
                 RecentSyncedTabState.None,
             ),
-        ).joinBlocking()
+        )
 
         assertEquals(RecentSyncedTabState.None, appStore.state.recentSyncedTabState)
     }
@@ -400,7 +399,7 @@ class BlocklistMiddlewareTest {
                     listOf(blockedTab),
                 ),
             ),
-        ).joinBlocking()
+        )
 
         assertEquals(
             RecentSyncedTabState.None,
@@ -447,7 +446,7 @@ class BlocklistMiddlewareTest {
             AppAction.RemoveRecentSyncedTab(
                 currentTabs.first(),
             ),
-        ).joinBlocking()
+        )
 
         assertEquals(
             2,

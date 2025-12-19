@@ -778,7 +778,11 @@ uint64_t XULTreeItemAccessibleBase::NativeState() const {
   if (IsExpandable()) {
     bool isContainerOpen;
     mTreeView->IsContainerOpen(mRow, &isContainerOpen);
-    state |= isContainerOpen ? states::EXPANDED : states::COLLAPSED;
+    if (isContainerOpen) {
+      state |= states::EXPANDED;
+    }
+
+    state |= states::EXPANDABLE;
   }
 
   // selected state
@@ -920,7 +924,7 @@ NS_IMPL_RELEASE_INHERITED(XULTreeItemAccessible, XULTreeItemAccessibleBase)
 ////////////////////////////////////////////////////////////////////////////////
 // XULTreeItemAccessible: nsIAccessible implementation
 
-ENameValueFlag XULTreeItemAccessible::Name(nsString& aName) const {
+ENameValueFlag XULTreeItemAccessible::DirectName(nsString& aName) const {
   aName.Truncate();
 
   GetCellName(mColumn, aName);

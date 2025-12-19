@@ -1125,6 +1125,8 @@ class ADBDevice(ADBCommand):
         self.run_as_package = run_as_package
 
         self._logger.debug("ADBDevice: %s" % self.__dict__)
+        self.shell("settings put system accelerometer_rotation 0")
+        self.shell("settings put system user_rotation 0")
 
     @property
     def is_rooted(self):
@@ -1329,7 +1331,7 @@ class ADBDevice(ADBCommand):
             char = file_obj.read(1).decode()
             if not char:
                 break
-            if char != "\r" and char != "\n":
+            if char not in {"\r", "\n"}:
                 line = char + line
             elif line:
                 # we have collected everything up to the beginning of the line
@@ -4143,6 +4145,13 @@ class ADBDevice(ADBCommand):
             if match:
                 package_name = match.group(1)
                 break
+        output = self.shell_output(f"dumpsys package dexopt | grep -A 1 {package_name}")
+        print(output)
+        if "status=speed-profile" not in output:
+            raise Exception(
+                f"{package_name} did not install the baseline profile correctly"
+            )
+
         return package_name
 
     def is_app_installed(self, app_name, timeout=None):

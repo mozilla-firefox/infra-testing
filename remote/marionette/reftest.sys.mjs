@@ -71,6 +71,11 @@ reftest.Runner = class {
     this.lastURL = null;
     this.useRemoteTabs = lazy.AppInfo.browserTabsRemoteAutostart;
     this.useRemoteSubframes = lazy.AppInfo.fissionAutostart;
+    this.cacheScreenshots = true;
+    this.useDrawSnapshot = Services.prefs.getBoolPref(
+      "reftest.use-draw-snapshot",
+      false
+    );
   }
 
   /**
@@ -86,7 +91,7 @@ reftest.Runner = class {
    * @param {string} screenshotMode
    *     String enum representing when screenshots should be taken
    */
-  setup(urlCount, screenshotMode, isPrint = false) {
+  setup(urlCount, screenshotMode, isPrint = false, cacheScreenshots = true) {
     this.isPrint = isPrint;
 
     lazy.assert.open(this.driver.getBrowsingContext({ top: true }));
@@ -103,6 +108,8 @@ reftest.Runner = class {
     if (isPrint) {
       this.loadPdfJs();
     }
+
+    this.cacheScreenshots = cacheScreenshots;
 
     ChromeUtils.registerWindowActor("MarionetteReftest", {
       kind: "JSWindowActor",
@@ -181,7 +188,7 @@ reftest.Runner = class {
     lazy.assert.positiveInteger(height);
 
     let reftestWin = this.parentWindow.open(
-      "chrome://remote/content/marionette/reftest.xhtml",
+      "chrome://remote/content/marionette/reftest-chrome/reftest.xhtml",
       "reftest",
       `chrome,height=${height},width=${width}`
     );
@@ -703,7 +710,7 @@ reftest.Runner = class {
     let browserRect = win.gBrowser.getBoundingClientRect();
     let canvas = null;
     let remainingCount = this.urlCount.get(url) || 1;
-    let cache = remainingCount > 1;
+    let cache = this.cacheScreenshots && remainingCount > 1;
     let cacheKey = browserRect.width + "x" + browserRect.height;
     lazy.logger.debug(
       `screenshot ${url} remainingCount: ` +
@@ -743,12 +750,12 @@ reftest.Runner = class {
         )
       ) {
         lazy.logger.error(`Invalid window dimensions:
-browserRect.left: ${browserRect.left}
-browserRect.top: ${browserRect.top}
-win.innerWidth: ${win.innerWidth}
-browserRect.width: ${browserRect.width}
-win.innerHeight: ${win.innerHeight}
-browserRect.height: ${browserRect.height}`);
+ browserRect.left: ${browserRect.left}
+ browserRect.top: ${browserRect.top}
+ win.innerWidth: ${win.innerWidth}
+ browserRect.width: ${browserRect.width}
+ win.innerHeight: ${win.innerHeight}
+ browserRect.height: ${browserRect.height}`);
         throw new Error("Window has incorrect dimensions");
       }
 
@@ -763,7 +770,7 @@ browserRect.height: ${browserRect.height}`);
         0, // top
         browserRect.width,
         browserRect.height,
-        { canvas, flags, readback: true }
+        { canvas, flags, readback: !this.useDrawSnapshot }
       );
     }
     if (

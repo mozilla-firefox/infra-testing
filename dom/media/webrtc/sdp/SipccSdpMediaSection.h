@@ -7,12 +7,11 @@
 #ifndef _SIPCCSDPMEDIASECTION_H_
 #define _SIPCCSDPMEDIASECTION_H_
 
-#include "mozilla/Attributes.h"
+#include <map>
+
 #include "mozilla/UniquePtr.h"
 #include "sdp/SdpMediaSection.h"
 #include "sdp/SipccSdpAttributeList.h"
-
-#include <map>
 
 extern "C" {
 #include "sipcc_sdp.h"

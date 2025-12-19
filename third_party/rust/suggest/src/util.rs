@@ -3,7 +3,23 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
+use icu_casemap::CaseMapperBorrowed;
+use icu_normalizer::DecomposingNormalizerBorrowed;
+use icu_properties::props::GeneralCategory;
+use icu_properties::props::GeneralCategoryGroup;
+use icu_properties::CodePointMapDataBorrowed;
+use std::borrow::Cow;
+
 use crate::Result;
+
+static NFKD: DecomposingNormalizerBorrowed = DecomposingNormalizerBorrowed::new_nfkd();
+static GENERAL_CATEGORY: CodePointMapDataBorrowed<'static, GeneralCategory> =
+    icu_properties::CodePointMapData::<GeneralCategory>::new();
+static CASE_MAPPER: CaseMapperBorrowed = CaseMapperBorrowed::new();
+
+fn is_combining_mark(c: char) -> bool {
+    GeneralCategoryGroup::Mark.contains(GENERAL_CATEGORY.get(c))
+}
 
 /// Given a list of keywords for a suggestion, returns a phrase that best
 /// completes the user's query. This function uses two heuristics to pick the
@@ -56,16 +72,17 @@ pub fn full_keyword(query: &str, keywords: &[impl AsRef<str>]) -> String {
 /// influences the branching factor at each step in the traversal.
 ///
 /// At each traversal step, the filter-map function is called like:
-/// `f(chunk, chunk_index, chunk_size, path)`.
+/// `f(chunk, chunk_index, is_last_chunk, path)`.
 ///
 /// `chunk` is the chunk at that step, `chunk_index` is its index in the parent
-/// `words` slice, and `chunk_size` is its size in words. The function can map
-/// the chunk to one or more values. Each value expands the branching factor at
-/// the current step by `max_chunk_size`. In other words, the branching factor
-/// at a given traversal step is `max_chunk_size` multiplied by the number of
-/// values returned by the filter-map function at that step. `path` is the path
-/// of mapped values that has been travsersed at that step: a sequence of mapped
-/// values corresponding to chunks in the parent `words` slice.
+/// `words` slice, and `is_last_chunk` is true if the chunk is at the end of
+/// `words`. The function can map the chunk to one or more values. Each value
+/// expands the branching factor at the current step by `max_chunk_size`. In
+/// other words, the branching factor at a given traversal step is
+/// `max_chunk_size` multiplied by the number of values returned by the
+/// filter-map function at that step. `path` is the path of mapped values that
+/// has been travsersed at that step: a sequence of mapped values corresponding
+/// to chunks in the parent `words` slice.
 ///
 /// The filter-map function can return `None` to halt traversal at the current
 /// step. Returning `None` sets the branching factor at that step to zero,
@@ -83,7 +100,7 @@ pub fn full_keyword(query: &str, keywords: &[impl AsRef<str>]) -> String {
 ///
 /// ```
 /// # use suggest::util::filter_map_chunks;
-/// let paths = filter_map_chunks(&["a", "b", "c"], 3, |chunk, _, _| {
+/// let paths = filter_map_chunks(&["a", "b", "c"], 3, |chunk, _, _, _| {
 ///     Ok(Some(vec![chunk.to_uppercase()]))
 /// });
 /// assert_eq!(paths.unwrap(), vec![
@@ -99,7 +116,7 @@ pub fn full_keyword(query: &str, keywords: &[impl AsRef<str>]) -> String {
 ///
 /// ```
 /// # use suggest::util::filter_map_chunks;
-/// let paths = filter_map_chunks(&["a", "b", "c"], 3, |chunk, chunk_index, _| {
+/// let paths = filter_map_chunks(&["a", "b", "c"], 3, |chunk, chunk_index, _, _| {
 ///     if chunk_index > 0 || chunk == "a" {
 ///         Ok(Some(vec![chunk.to_uppercase()]))
 ///     } else {
@@ -117,7 +134,7 @@ pub fn full_keyword(query: &str, keywords: &[impl AsRef<str>]) -> String {
 ///
 /// ```
 /// # use suggest::util::filter_map_chunks;
-/// let paths = filter_map_chunks(&["a", "b", "c"], 3, |chunk, _, path| {
+/// let paths = filter_map_chunks(&["a", "b", "c"], 3, |chunk, _, _, path| {
 ///     if path.iter().any(|value| value == "A B") {
 ///         Ok(None)
 ///     } else {
@@ -135,7 +152,7 @@ pub fn full_keyword(query: &str, keywords: &[impl AsRef<str>]) -> String {
 ///
 /// ```
 /// # use suggest::util::filter_map_chunks;
-/// let paths = filter_map_chunks(&["a", "b", "c"], 3, |chunk, _, _| {
+/// let paths = filter_map_chunks(&["a", "b", "c"], 3, |chunk, _, _, _| {
 ///     Ok(Some(vec![format!("{chunk}0"), format!("{chunk}1")]))
 /// });
 /// assert_eq!(paths.unwrap(), vec![
@@ -162,7 +179,7 @@ pub fn full_keyword(query: &str, keywords: &[impl AsRef<str>]) -> String {
 pub fn filter_map_chunks<T: Clone>(
     words: &[&str],
     max_chunk_size: usize,
-    f: impl Fn(&str, usize, &[T]) -> Result<Option<Vec<T>>>,
+    f: impl Fn(&str, usize, bool, &[T]) -> Result<Option<Vec<T>>>,
 ) -> Result<Vec<Vec<T>>> {
     let normalized_query = words.join(" ");
     filter_map_chunks_recurse(words, &normalized_query, &mut vec![], 0, max_chunk_size, &f)
@@ -182,7 +199,7 @@ fn filter_map_chunks_recurse<T: Clone>(
     path: &mut Vec<T>,
     chunk_index: usize,
     max_chunk_size: usize,
-    f: &impl Fn(&str, usize, &[T]) -> Result<Option<Vec<T>>>,
+    f: &impl Fn(&str, usize, bool, &[T]) -> Result<Option<Vec<T>>>,
 ) -> Result<Vec<Vec<T>>> {
     // Filtered-in (non-pruned) paths that will be returned from this step of
     // the traversal.
@@ -196,20 +213,21 @@ fn filter_map_chunks_recurse<T: Clone>(
             break;
         }
 
-        // Get the current chunk within the remaining query. Its char length is
+        // Get the current chunk within the remaining query. Its byte length is
         // the sum of the lengths of the words in the chunk + `chunk_size - 1`
         // spaces between the words. There will only be one space between each
         // word in `remaining_query` because `remaining_query` is normalized.
-        let chunk_char_len = remaining_words[..chunk_size]
+        let chunk_byte_len = remaining_words[..chunk_size]
             .iter()
             .fold(chunk_size - 1, |memo, w| memo + w.len());
-        let chunk = &remaining_query[..chunk_char_len];
+        let chunk = &remaining_query[..chunk_byte_len];
+        let is_last_chunk = chunk_size == remaining_words.len();
 
         // Call the mapper function.
-        if let Some(mapped_values) = f(chunk, chunk_index, &path[..])? {
+        if let Some(mapped_values) = f(chunk, chunk_index, is_last_chunk, &path[..])? {
             for value in mapped_values {
-                if chunk_size == remaining_words.len() {
-                    // This is the final chunk in the path. Stop recursing.
+                if is_last_chunk {
+                    // This is the last chunk in the path. Stop recursing.
                     this_step_paths.push(vec![value.clone()]);
                 } else {
                     // Recurse. Note that the new `remaining_words` slice won't
@@ -218,7 +236,7 @@ fn filter_map_chunks_recurse<T: Clone>(
                     path.push(value.clone());
                     let subtree_paths = filter_map_chunks_recurse(
                         &remaining_words[chunk_size..],
-                        &remaining_query[(chunk_char_len + 1)..],
+                        &remaining_query[(chunk_byte_len + 1)..],
                         path,
                         chunk_index + chunk_size,
                         max_chunk_size,
@@ -237,9 +255,87 @@ fn filter_map_chunks_recurse<T: Clone>(
     Ok(this_step_paths)
 }
 
+/// Given a keyword for a suggestion, splits the keyword by the first whitespace
+/// into the prefix and the suffix. Returns an empty string as the suffix if there
+/// is no whitespace.
+pub fn split_keyword(keyword: &str) -> (&str, &str) {
+    keyword.split_once(' ').unwrap_or((keyword, ""))
+}
+
+/// Compares two strings ignoring case, Unicode combining marks, and some
+/// punctuation. Intended to be used as a Sqlite collating sequence for
+/// comparing natural language strings like keywords and geoname names.
+///
+/// XXX: Should really be using `icu_collator` for collation!
+pub fn i18n_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    CASE_MAPPER
+        .fold_string(&i18n_transform(a))
+        .cmp(&CASE_MAPPER.fold_string(&i18n_transform(b)))
+}
+
+/// Performs the following transforms on the given string:
+///
+/// * Removes Unicode combining marks
+/// * Removes some punctuation
+/// * Replaces other punctuation with spaces
+pub fn i18n_transform(s: &str) -> Cow<'_, str> {
+    // Punctuation to remove. Examples:
+    //
+    // "Washington, D.C." => "Washington DC"
+    // "L'Assomption" => "LAssomption"
+    macro_rules! pattern_remove {
+        () => {
+            '.' | ',' | '\'' | '’'
+        };
+    }
+
+    // Punctuation to replace with spaces. Examples:
+    //
+    // "Carmel-by-the-Sea" => "Carmel by the Sea"
+    macro_rules! pattern_replace_with_space {
+        () => {
+            '-'
+        };
+    }
+
+    macro_rules! pattern_all {
+        () => {
+            pattern_remove!() | pattern_replace_with_space!()
+        };
+    }
+
+    let borrowable = !NFKD
+        .normalize_iter(s.chars())
+        .any(|c| is_combining_mark(c) || matches!(c, pattern_all!()));
+
+    if borrowable {
+        // XXX: This borrows the non-NFKD form, which sure looks like a bug,
+        // since NFKD can introduce changes that aren't caught by the check
+        // inside `any()` above.
+        Cow::from(s)
+    } else {
+        NFKD.normalize_iter(s.chars())
+            .filter_map(|c| {
+                if is_combining_mark(c) {
+                    // Remove Unicode combining marks:
+                    // "Que\u{0301}bec" => "Quebec"
+                    None
+                } else {
+                    match c {
+                        pattern_remove!() => None,
+                        pattern_replace_with_space!() => Some(' '),
+                        _ => Some(c),
+                    }
+                }
+            })
+            .collect::<_>()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use itertools::Itertools;
 
     #[test]
     fn keywords_with_more_words() {
@@ -302,7 +398,7 @@ mod tests {
     fn fmc<T: Clone>(
         query: &str,
         max_chunk_size: usize,
-        f: impl Fn(&str, usize, &[T]) -> Result<Option<Vec<T>>>,
+        f: impl Fn(&str, usize, bool, &[T]) -> Result<Option<Vec<T>>>,
     ) -> Result<Vec<Vec<T>>> {
         let words: Vec<_> = query.split_whitespace().collect();
         filter_map_chunks(&words, max_chunk_size, f)
@@ -323,7 +419,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_1() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 1, |chunk, chunk_index, _| {
+        let paths = fmc("a b c d e", 1, |chunk, chunk_index, _, _| {
             Ok(Some(vec![(chunk.to_string(), chunk_index)]))
         })?;
         check_paths(
@@ -335,7 +431,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_2() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 2, |chunk, chunk_index, _| {
+        let paths = fmc("a b c d e", 2, |chunk, chunk_index, _, _| {
             Ok(Some(vec![(chunk.to_string(), chunk_index)]))
         })?;
         check_paths(
@@ -356,7 +452,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_3() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 3, |chunk, chunk_index, _| {
+        let paths = fmc("a b c d e", 3, |chunk, chunk_index, _, _| {
             Ok(Some(vec![(chunk.to_string(), chunk_index)]))
         })?;
         check_paths(
@@ -382,7 +478,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_4() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 4, |chunk, chunk_index, _| {
+        let paths = fmc("a b c d e", 4, |chunk, chunk_index, _, _| {
             Ok(Some(vec![(chunk.to_string(), chunk_index)]))
         })?;
         check_paths(
@@ -410,7 +506,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_5() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 5, |chunk, chunk_index, _| {
+        let paths = fmc("a b c d e", 5, |chunk, chunk_index, _, _| {
             Ok(Some(vec![(chunk.to_string(), chunk_index)]))
         })?;
         check_paths(
@@ -439,7 +535,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_1_map_many() -> anyhow::Result<()> {
-        let paths = fmc("a b c", 1, |chunk, _, _| {
+        let paths = fmc("a b c", 1, |chunk, _, _, _| {
             Ok(Some((0..3).map(|i| format!("{chunk}{i}")).collect()))
         })?;
         assert_eq!(
@@ -479,7 +575,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_2_map_many() -> anyhow::Result<()> {
-        let paths = fmc("a b c", 2, |chunk, _, _| {
+        let paths = fmc("a b c", 2, |chunk, _, _, _| {
             Ok(Some((0..3).map(|i| format!("{chunk}{i}")).collect()))
         })?;
         assert_eq!(
@@ -537,7 +633,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_1_prune_a() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 1, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 1, |chunk, chunk_index, _, _| match chunk {
             "a" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -547,7 +643,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_1_prune_b() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 1, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 1, |chunk, chunk_index, _, _| match chunk {
             "b" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -557,7 +653,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_1_prune_c() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 1, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 1, |chunk, chunk_index, _, _| match chunk {
             "c" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -567,7 +663,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_1_prune_d() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 1, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 1, |chunk, chunk_index, _, _| match chunk {
             "d" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -577,7 +673,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_1_prune_e() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 1, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 1, |chunk, chunk_index, _, _| match chunk {
             "e" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -587,7 +683,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_2_prune_a() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 2, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 2, |chunk, chunk_index, _, _| match chunk {
             "a" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -604,7 +700,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_2_prune_b() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 2, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 2, |chunk, chunk_index, _, _| match chunk {
             "b" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -623,7 +719,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_2_prune_c() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 2, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 2, |chunk, chunk_index, _, _| match chunk {
             "c" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -641,7 +737,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_2_prune_d() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 2, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 2, |chunk, chunk_index, _, _| match chunk {
             "d" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -660,7 +756,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_2_prune_e() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 2, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 2, |chunk, chunk_index, _, _| match chunk {
             "e" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -677,7 +773,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_2_prune_ab() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 2, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 2, |chunk, chunk_index, _, _| match chunk {
             "a b" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -696,7 +792,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_2_prune_bc() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 2, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 2, |chunk, chunk_index, _, _| match chunk {
             "b c" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -716,7 +812,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_2_prune_cd() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 2, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 2, |chunk, chunk_index, _, _| match chunk {
             "c d" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -736,7 +832,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_2_prune_de() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 2, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 2, |chunk, chunk_index, _, _| match chunk {
             "d e" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -755,7 +851,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_2_prune_a_bc() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 2, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 2, |chunk, chunk_index, _, _| match chunk {
             "a" | "b c" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -772,7 +868,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_2_prune_a_cd() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 2, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 2, |chunk, chunk_index, _, _| match chunk {
             "a" | "c d" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -788,7 +884,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_2_prune_bc_cd() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 2, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 2, |chunk, chunk_index, _, _| match chunk {
             "b c" | "c d" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -806,7 +902,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_2_prune_bc_de() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 2, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 2, |chunk, chunk_index, _, _| match chunk {
             "b c" | "d e" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -824,7 +920,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_3_prune_a() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 3, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 3, |chunk, chunk_index, _, _| match chunk {
             "a" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -844,7 +940,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_3_prune_b() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 3, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 3, |chunk, chunk_index, _, _| match chunk {
             "b" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -867,7 +963,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_3_prune_c() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 3, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 3, |chunk, chunk_index, _, _| match chunk {
             "c" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -890,7 +986,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_3_prune_d() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 3, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 3, |chunk, chunk_index, _, _| match chunk {
             "d" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -913,7 +1009,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_3_prune_e() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 3, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 3, |chunk, chunk_index, _, _| match chunk {
             "e" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -933,7 +1029,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_3_prune_ab() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 3, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 3, |chunk, chunk_index, _, _| match chunk {
             "a b" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -956,7 +1052,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_3_prune_bc() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 3, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 3, |chunk, chunk_index, _, _| match chunk {
             "b c" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -981,7 +1077,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_3_prune_cd() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 3, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 3, |chunk, chunk_index, _, _| match chunk {
             "c d" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -1006,7 +1102,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_3_prune_de() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 3, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 3, |chunk, chunk_index, _, _| match chunk {
             "d e" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -1029,7 +1125,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_3_prune_abc() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 3, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 3, |chunk, chunk_index, _, _| match chunk {
             "a b c" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -1054,7 +1150,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_3_prune_bcd() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 3, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 3, |chunk, chunk_index, _, _| match chunk {
             "b c d" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -1080,7 +1176,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_3_prune_cde() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 3, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 3, |chunk, chunk_index, _, _| match chunk {
             "c d e" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -1105,7 +1201,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_3_prune_a_bc_cde() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 3, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 3, |chunk, chunk_index, _, _| match chunk {
             "a" | "b c" | "c d e" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -1124,7 +1220,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_4_prune_a() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 4, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 4, |chunk, chunk_index, _, _| match chunk {
             "a" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -1145,7 +1241,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_4_prune_b() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 4, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 4, |chunk, chunk_index, _, _| match chunk {
             "b" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -1170,7 +1266,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_4_prune_c() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 4, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 4, |chunk, chunk_index, _, _| match chunk {
             "c" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -1195,7 +1291,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_4_prune_d() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 4, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 4, |chunk, chunk_index, _, _| match chunk {
             "d" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -1220,7 +1316,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_4_prune_e() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 4, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 4, |chunk, chunk_index, _, _| match chunk {
             "e" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -1241,7 +1337,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_4_prune_ab() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 4, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 4, |chunk, chunk_index, _, _| match chunk {
             "a b" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -1266,7 +1362,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_4_prune_bc() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 4, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 4, |chunk, chunk_index, _, _| match chunk {
             "b c" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -1293,7 +1389,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_4_prune_cd() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 4, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 4, |chunk, chunk_index, _, _| match chunk {
             "c d" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -1320,7 +1416,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_4_prune_de() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 4, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 4, |chunk, chunk_index, _, _| match chunk {
             "d e" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -1345,7 +1441,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_4_prune_abc() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 4, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 4, |chunk, chunk_index, _, _| match chunk {
             "a b c" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -1372,7 +1468,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_4_prune_bcd() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 4, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 4, |chunk, chunk_index, _, _| match chunk {
             "b c d" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -1400,7 +1496,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_4_prune_cde() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 4, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 4, |chunk, chunk_index, _, _| match chunk {
             "c d e" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -1427,7 +1523,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_4_prune_abcd() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 4, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 4, |chunk, chunk_index, _, _| match chunk {
             "a b c d" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -1455,7 +1551,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_4_prune_bcde() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 4, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 4, |chunk, chunk_index, _, _| match chunk {
             "b c d e" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -1483,7 +1579,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_4_prune_a_bc_de() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 4, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 4, |chunk, chunk_index, _, _| match chunk {
             "a" | "b c" | "d e" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -1502,7 +1598,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_4_prune_a_bc_cde() -> anyhow::Result<()> {
-        let paths = fmc("a b c d e", 4, |chunk, chunk_index, _| match chunk {
+        let paths = fmc("a b c d e", 4, |chunk, chunk_index, _, _| match chunk {
             "a" | "b c" | "c d e" => Ok(None),
             _ => Ok(Some(vec![(chunk.to_string(), chunk_index)])),
         })?;
@@ -1522,7 +1618,7 @@ mod tests {
 
     #[test]
     fn filter_map_chunks_spaces() -> anyhow::Result<()> {
-        let paths = fmc("   a   b  c        d  e ", 2, |chunk, chunk_index, _| {
+        let paths = fmc("   a   b  c        d  e ", 2, |chunk, chunk_index, _, _| {
             Ok(Some(vec![(chunk.to_string(), chunk_index)]))
         })?;
         check_paths(
@@ -1538,6 +1634,165 @@ mod tests {
                 vec![("a b", 0), ("c d", 2), ("e", 4)],
             ],
         );
+        Ok(())
+    }
+
+    #[test]
+    fn filter_map_chunks_is_last_1() -> anyhow::Result<()> {
+        let paths = fmc("a b c d e", 1, |chunk, _, is_last, _| {
+            Ok(Some(vec![(chunk.to_string(), is_last as usize)]))
+        })?;
+        check_paths(
+            paths,
+            vec![vec![("a", 0), ("b", 0), ("c", 0), ("d", 0), ("e", 1)]],
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn filter_map_chunks_is_last_2() -> anyhow::Result<()> {
+        let paths = fmc("a b c d e", 2, |chunk, _, is_last, _| {
+            Ok(Some(vec![(chunk.to_string(), is_last as usize)]))
+        })?;
+        check_paths(
+            paths,
+            vec![
+                vec![("a", 0), ("b", 0), ("c", 0), ("d", 0), ("e", 1)],
+                vec![("a", 0), ("b", 0), ("c", 0), ("d e", 1)],
+                vec![("a", 0), ("b", 0), ("c d", 0), ("e", 1)],
+                vec![("a", 0), ("b c", 0), ("d", 0), ("e", 1)],
+                vec![("a", 0), ("b c", 0), ("d e", 1)],
+                vec![("a b", 0), ("c", 0), ("d", 0), ("e", 1)],
+                vec![("a b", 0), ("c", 0), ("d e", 1)],
+                vec![("a b", 0), ("c d", 0), ("e", 1)],
+            ],
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn filter_map_chunks_is_last_3() -> anyhow::Result<()> {
+        let paths = fmc("a b c d e", 3, |chunk, _, is_last, _| {
+            Ok(Some(vec![(chunk.to_string(), is_last as usize)]))
+        })?;
+        check_paths(
+            paths,
+            vec![
+                vec![("a", 0), ("b", 0), ("c", 0), ("d", 0), ("e", 1)],
+                vec![("a", 0), ("b", 0), ("c", 0), ("d e", 1)],
+                vec![("a", 0), ("b", 0), ("c d", 0), ("e", 1)],
+                vec![("a", 0), ("b", 0), ("c d e", 1)],
+                vec![("a", 0), ("b c", 0), ("d", 0), ("e", 1)],
+                vec![("a", 0), ("b c", 0), ("d e", 1)],
+                vec![("a", 0), ("b c d", 0), ("e", 1)],
+                vec![("a b", 0), ("c", 0), ("d", 0), ("e", 1)],
+                vec![("a b", 0), ("c", 0), ("d e", 1)],
+                vec![("a b", 0), ("c d", 0), ("e", 1)],
+                vec![("a b", 0), ("c d e", 1)],
+                vec![("a b c", 0), ("d", 0), ("e", 1)],
+                vec![("a b c", 0), ("d e", 1)],
+            ],
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_split_keyword() {
+        assert_eq!(split_keyword("foo"), ("foo", ""));
+        assert_eq!(split_keyword("foo bar baz"), ("foo", "bar baz"));
+    }
+
+    #[test]
+    fn i18n_transform() -> anyhow::Result<()> {
+        // (test str, expected str)
+        let tests = [
+            ("AbC", "AbC"),
+            ("AbC dEf", "AbC dEf"),
+            ("Àęí", "Aei"),
+            // "Québec" with single 'é' char
+            ("Qu\u{00e9}bec", "Quebec"),
+            // "Québec" with ASCII 'e' followed by combining acute accent
+            ("Que\u{0301}bec", "Quebec"),
+            ("Gößnitz", "Goßnitz"),
+            ("St. Louis", "St Louis"),
+            ("Washington, D.C.", "Washington DC"),
+            ("U.S.A.", "USA"),
+            ("Carmel-by-the-Sea", "Carmel by the Sea"),
+            ("Val-d'Or", "Val dOr"),
+            ("Val-d’Or", "Val dOr"),
+            (".,-'()[]?<>", " ()[]?<>"),
+        ];
+        for (test_str, expected_str) in tests {
+            assert_eq!(
+                super::i18n_transform(test_str),
+                expected_str,
+                "Transform test str: {:?}",
+                test_str
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn i18n_cmp() -> anyhow::Result<()> {
+        let tests = [
+            ["AbC xYz", "ABC XYZ", "abc xyz"].as_slice(),
+            &["Àęí", "Aei", "àęí", "aei"],
+            &[
+                // "Québec" with single 'é' char
+                "Qu\u{00e9}bec",
+                // "Québec" with ASCII 'e' followed by combining acute accent
+                "Que\u{0301}bec",
+                "Quebec",
+                "quebec",
+            ],
+            &[
+                "Gößnitz",
+                "Gössnitz",
+                "Goßnitz",
+                "Gossnitz",
+                "gößnitz",
+                "gössnitz",
+                "goßnitz",
+                "gossnitz",
+            ],
+            &["St. Louis", "St... Louis", "St Louis", "st louis"],
+            &[
+                "Washington, D.C.",
+                "Washington, DC",
+                "Washington D.C.",
+                "Washington DC",
+                "washington dc",
+            ],
+            &[
+                "U.S.A.", "US.A.", "U.SA.", "U.S.A", "USA.", "U.SA", "USA", "usa",
+            ],
+            &[
+                "Val-d'Or",
+                "Val-d’Or",
+                "Val-dOr",
+                "Val d'Or",
+                "Val d’Or",
+                "Val dOr",
+                "val dor",
+            ],
+            &[
+                "Carmel-by-the-Sea",
+                "Carmel by the Sea",
+                "carmel by the sea",
+            ],
+            &[".,-'()[]?<>", " ()[]?<>"],
+        ];
+        for strs in tests {
+            for a_and_b in strs.iter().permutations(2) {
+                assert_eq!(
+                    super::i18n_cmp(a_and_b[0], a_and_b[1]),
+                    std::cmp::Ordering::Equal,
+                    "Comparing: {:?}",
+                    a_and_b
+                );
+            }
+        }
         Ok(())
     }
 }

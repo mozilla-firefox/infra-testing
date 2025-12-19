@@ -16,7 +16,6 @@
 #include "nsStyleConsts.h"
 #include "nsPIDOMWindow.h"
 #include "nsProgressFrame.h"
-#include "nsMeterFrame.h"
 #include "nsRangeFrame.h"
 #include "nsCSSRendering.h"
 #include "ImageContainer.h"
@@ -29,6 +28,7 @@
 #include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/dom/DocumentInlines.h"
+#include "nsXULElement.h"
 #include <algorithm>
 
 using namespace mozilla;
@@ -49,26 +49,16 @@ NS_IMPL_ISUPPORTS(nsNativeTheme, nsITimerCallback, nsINamed)
     return ElementState();
   }
 
-  const bool isXULElement = frameContent->IsXULElement();
-  if (isXULElement) {
-    if (aAppearance == StyleAppearance::Checkbox ||
-        aAppearance == StyleAppearance::Radio ||
-        aAppearance == StyleAppearance::ToolbarbuttonDropdown ||
-        aAppearance == StyleAppearance::ButtonArrowPrevious ||
-        aAppearance == StyleAppearance::ButtonArrowNext ||
-        aAppearance == StyleAppearance::ButtonArrowUp ||
-#ifdef MOZ_WIDGET_GTK
-        aAppearance == StyleAppearance::MozWindowButtonClose ||
-        aAppearance == StyleAppearance::MozWindowButtonMinimize ||
-        aAppearance == StyleAppearance::MozWindowButtonRestore ||
-        aAppearance == StyleAppearance::MozWindowButtonMaximize ||
-#endif
-        aAppearance == StyleAppearance::ButtonArrowDown) {
+  bool isXULElement = frameContent->IsXULElement();
+  if (aAppearance == StyleAppearance::Checkbox ||
+      aAppearance == StyleAppearance::Radio) {
+    if (nsXULElement::FromNodeOrNull(frameContent->GetParent())) {
       aFrame = aFrame->GetParent();
-      frameContent = aFrame->GetContent();
+      frameContent = frameContent->GetParent();
+      isXULElement = true;
     }
-    MOZ_ASSERT(frameContent && frameContent->IsElement());
   }
+  MOZ_ASSERT(frameContent && frameContent->IsElement());
 
   ElementState flags = frameContent->AsElement()->StyleState();
   nsNumberControlFrame* numberControlFrame =
@@ -120,7 +110,6 @@ NS_IMPL_ISUPPORTS(nsNativeTheme, nsITimerCallback, nsINamed)
     case StyleAppearance::NumberInput:
     case StyleAppearance::Textfield:
     case StyleAppearance::PasswordInput:
-    case StyleAppearance::Searchfield:
     case StyleAppearance::Textarea: {
       if (CheckBooleanAttr(aFrame, nsGkAtoms::focused)) {
         flags |= ElementState::FOCUS | ElementState::FOCUSRING;
@@ -214,29 +203,12 @@ bool nsNativeTheme::IsWidgetStyled(nsPresContext* aPresContext,
 
   /**
    * Progress bar appearance should be the same for the bar and the container
-   * frame. nsProgressFrame owns the logic and will tell us what we should do.
+   * frame.
    */
-  if (aAppearance == StyleAppearance::Progresschunk ||
-      aAppearance == StyleAppearance::ProgressBar) {
-    nsProgressFrame* progressFrame = do_QueryFrame(
-        aAppearance == StyleAppearance::Progresschunk ? aFrame->GetParent()
-                                                      : aFrame);
-    if (progressFrame) {
-      return !progressFrame->ShouldUseNativeStyle();
-    }
-  }
-
-  /**
-   * Meter bar appearance should be the same for the bar and the container
-   * frame. nsMeterFrame owns the logic and will tell us what we should do.
-   */
-  if (aAppearance == StyleAppearance::Meterchunk ||
+  if (aAppearance == StyleAppearance::ProgressBar ||
       aAppearance == StyleAppearance::Meter) {
-    nsMeterFrame* meterFrame = do_QueryFrame(
-        aAppearance == StyleAppearance::Meterchunk ? aFrame->GetParent()
-                                                   : aFrame);
-    if (meterFrame) {
-      return !meterFrame->ShouldUseNativeStyle();
+    if (nsProgressFrame* progressFrame = do_QueryFrame(aFrame)) {
+      return !progressFrame->ShouldUseNativeStyle();
     }
   }
 
@@ -245,12 +217,8 @@ bool nsNativeTheme::IsWidgetStyled(nsPresContext* aPresContext,
    * comes to native theming (either all parts, or no parts, are themed).
    * nsRangeFrame owns the logic and will tell us what we should do.
    */
-  if (aAppearance == StyleAppearance::Range ||
-      aAppearance == StyleAppearance::RangeThumb) {
-    nsRangeFrame* rangeFrame = do_QueryFrame(
-        aAppearance == StyleAppearance::RangeThumb ? aFrame->GetParent()
-                                                   : aFrame);
-    if (rangeFrame) {
+  if (aAppearance == StyleAppearance::Range) {
+    if (nsRangeFrame* rangeFrame = do_QueryFrame(aFrame)) {
       return !rangeFrame->ShouldUseNativeStyle();
     }
   }
@@ -349,15 +317,6 @@ bool nsNativeTheme::IsFirstTab(nsIFrame* aFrame) {
       return (first == aFrame);
   }
   return false;
-}
-
-bool nsNativeTheme::IsHorizontal(nsIFrame* aFrame) {
-  if (!aFrame) return false;
-
-  if (!aFrame->GetContent()->IsElement()) return true;
-
-  return !aFrame->GetContent()->AsElement()->AttrValueIs(
-      kNameSpaceID_None, nsGkAtoms::orient, nsGkAtoms::vertical, eCaseMatters);
 }
 
 bool nsNativeTheme::IsNextToSelectedTab(nsIFrame* aFrame, int32_t aOffset) {
@@ -582,5 +541,10 @@ bool nsNativeTheme::IsWidgetAlwaysNonNative(nsIFrame* aFrame,
          aAppearance == StyleAppearance::FocusOutline ||
          aAppearance == StyleAppearance::SpinnerUpbutton ||
          aAppearance == StyleAppearance::SpinnerDownbutton ||
+         aAppearance == StyleAppearance::Toolbarbutton ||
+         aAppearance == StyleAppearance::ProgressBar ||
+         aAppearance == StyleAppearance::Meter ||
+         aAppearance == StyleAppearance::Range ||
+         aAppearance == StyleAppearance::Listbox ||
          (aFrame && aFrame->StyleUI()->mMozTheme == StyleMozTheme::NonNative);
 }

@@ -163,8 +163,6 @@ const { AppConstants } = ChromeUtils.importESModule(
 );
 const kExpectInputBeforeCompositionEnd =
   SpecialPowers.getBoolPref("dom.input_events.dispatch_before_compositionend");
-const kNewWhiteSpaceNormalizerEnabled =
-  SpecialPowers.getBoolPref("editor.white_space_normalization.blink_compatible");
 
 function waitForTick() {
   return new Promise(resolve => { SimpleTest.executeSoon(resolve); });
@@ -676,15 +674,6 @@ function runUndoRedoTest()
 
   synthesizeKey("Z", {accelKey: true});
 
-  // XXX this is unexpected behavior, see bug 258291
-  if (!checkContent("\u732B",
-                    "runUndoRedoTest", "#" + ++i) ||
-      !checkSelection(1, "", "runUndoRedoTest", "#" + i)) {
-    return;
-  }
-
-  synthesizeKey("Z", {accelKey: true});
-
   if (!checkContent("",
                     "runUndoRedoTest", "#" + ++i) ||
       !checkSelection(0, "", "runUndoRedoTest", "#" + i)) {
@@ -701,15 +690,6 @@ function runUndoRedoTest()
 
   synthesizeKey("Z", {accelKey: true, shiftKey: true});
 
-  if (!checkContent("\u732B",
-                    "runUndoRedoTest", "#" + ++i) ||
-      !checkSelection(1, "", "runUndoRedoTest", "#" + i)) {
-    return;
-  }
-
-  synthesizeKey("Z", {accelKey: true, shiftKey: true});
-
-  // XXX this is unexpected behavior, see bug 258291
   if (!checkContent("\u732B",
                     "runUndoRedoTest", "#" + ++i) ||
       !checkSelection(1, "", "runUndoRedoTest", "#" + i)) {
@@ -2204,15 +2184,8 @@ async function runCompositionTest()
   }
 
   // Undo tests for the testcases for bug 23558 and bug 271815
-  synthesizeKey("z", { accelKey: true });
-
-  // XXX this is unexpected behavior, see bug 258291
-  if (!checkContent("\u30E9\u30FC\u30E1\u30F3",
-                    "runCompositionTest", "#6-1") ||
-      !checkSelection(4, "", "runCompositionTest", "#6-1")) {
-    return;
-  }
-
+  // The last composition was canceled by the user and the composition didn't delete selection.
+  // Therefore, that should not appear as an undoable transaction.
   synthesizeKey("z", { accelKey: true });
 
   if (!checkContent("\u30E9\u30FC\u30E1\u30F3\u9AD8",
@@ -2231,21 +2204,64 @@ async function runCompositionTest()
 
   synthesizeKey("z", { accelKey: true });
 
-  // XXX this is unexpected behavior, see bug 258291
-  if (!checkContent("\u30E9\u30FC\u30E1\u30F3\u6700",
-                    "runCompositionTest", "#6-4") ||
-      !checkSelection(5, "", "runCompositionTest", "#6-4")) {
-    return;
-  }
-
-  synthesizeKey("z", { accelKey: true });
-
   if (!checkContent("\u30E9\u30FC\u30E1\u30F3",
                     "runCompositionTest", "#6-5") ||
       !checkSelection(4, "", "runCompositionTest", "#6-5")) {
     // eslint-disable-next-line no-useless-return
     return;
   }
+}
+
+function runUndoCompositionWhichDeletedSelection() {
+  const kDescription = "runUndoCompositionWhichDeletedSelection";
+  input.value = "";
+  input.focus();
+
+  synthesizeKey("a");
+  synthesizeKey("b");
+  synthesizeKey("c");
+  synthesizeKey("KEY_ArrowLeft", {shiftKey: true});
+  // Replace "c" with a Japanese character,
+  synthesizeCompositionChange({
+    composition: {
+      string: "\u3042",
+      clauses: [
+        { length: 1, attr: COMPOSITION_ATTR_RAW_CLAUSE },
+      ],
+    },
+    caret: { start: 1, length: 0 },
+  });
+  // then, cancel the composition,
+  synthesizeCompositionChange({
+    composition: {
+      string: "",
+      clauses: [
+        { length: 0, attr: 0 },
+      ],
+    },
+    caret: { start: 0, length: 0 },
+  });
+  synthesizeComposition({type: "compositioncommitasis"});
+  // finally, undoing it should not cancel deleting "c".
+  {
+    synthesizeKey("z", { accelKey: true });
+    const kSummary = "first undo should restore the replaced char by the composition";
+    if (!checkContent("abc", kDescription, kSummary) ||
+        !checkSelection(2, "", kDescription, kSummary)) {
+      return;
+    }
+  }
+  // another undoing should cancel the text insertion before the composition.
+  {
+    synthesizeKey("z", { accelKey: true });
+    const kSummary = "second undo should cancel the text insertion before the composition";
+    if (!checkContent("", kDescription, kSummary) ||
+        !checkSelection(0, "", kDescription, kSummary)) {
+      return;
+    }
+  }
+
+  input.value = "";
 }
 
 function runCompositionEventTest()
@@ -2257,8 +2273,8 @@ function runCompositionEventTest()
   input.value = "";
   input.focus();
 
-  let windowEventCounts = [], windowEventData = [], windowEventLocale = [];
-  let inputEventCounts = [], inputEventData = [], inputEventLocale = [];
+  let windowEventCounts = [], windowEventData = [];
+  let inputEventCounts = [], inputEventData = [];
   let preventDefault = false;
   let stopPropagation = false;
 
@@ -2267,10 +2283,8 @@ function runCompositionEventTest()
     for (let i = 0; i < kEvents.length; i++) {
       windowEventCounts[kEvents[i]] = 0;
       windowEventData[kEvents[i]] = "";
-      windowEventLocale[kEvents[i]] = "";
       inputEventCounts[kEvents[i]] = 0;
       inputEventData[kEvents[i]] = "";
-      inputEventLocale[kEvents[i]] = "";
     }
   }
 
@@ -2278,7 +2292,6 @@ function runCompositionEventTest()
   {
     windowEventCounts[aEvent.type]++;
     windowEventData[aEvent.type] = aEvent.data;
-    windowEventLocale[aEvent.type] = aEvent.locale;
     if (preventDefault) {
       aEvent.preventDefault();
     }
@@ -2298,7 +2311,6 @@ function runCompositionEventTest()
   {
     inputEventCounts[aEvent.type]++;
     inputEventData[aEvent.type] = aEvent.data;
-    inputEventLocale[aEvent.type] = aEvent.locale;
     if (preventDefault) {
       aEvent.preventDefault();
     }
@@ -2350,27 +2362,19 @@ function runCompositionEventTest()
      kDescription + "compositionstart hasn't been handled by window #1");
   is(windowEventData.compositionstart, "",
      kDescription + "data of compositionstart isn't empty (window) #1");
-  is(windowEventLocale.compositionstart, "",
-     kDescription + "locale of compositionstart isn't empty (window) #1");
   is(inputEventCounts.compositionstart, 1,
      kDescription + "compositionstart hasn't been handled by input #1");
   is(inputEventData.compositionstart, "",
      kDescription + "data of compositionstart isn't empty (input) #1");
-  is(inputEventLocale.compositionstart, "",
-     kDescription + "locale of compositionstart isn't empty (input) #1");
 
   is(windowEventCounts.compositionupdate, 1,
      kDescription + "compositionupdate hasn't been handled by window #1");
   is(windowEventData.compositionupdate, "\u3089",
      kDescription + "data of compositionupdate doesn't match (window) #1");
-  is(windowEventLocale.compositionupdate, "",
-     kDescription + "locale of compositionupdate isn't empty (window) #1");
   is(inputEventCounts.compositionupdate, 1,
      kDescription + "compositionupdate hasn't been handled by input #1");
   is(inputEventData.compositionupdate, "\u3089",
      kDescription + "data of compositionupdate doesn't match (input) #1");
-  is(inputEventLocale.compositionupdate, "",
-     kDescription + "locale of compositionupdate isn't empty (input) #1");
 
   is(windowEventCounts.compositionend, 0,
      kDescription + "compositionend has been handled by window #1");
@@ -2407,14 +2411,10 @@ function runCompositionEventTest()
      kDescription + "compositionupdate hasn't been handled by window #2");
   is(windowEventData.compositionupdate, "\u3089\u30FC",
      kDescription + "data of compositionupdate doesn't match (window) #2");
-  is(windowEventLocale.compositionupdate, "",
-     kDescription + "locale of compositionupdate isn't empty (window) #2");
   is(inputEventCounts.compositionupdate, 2,
      kDescription + "compositionupdate hasn't been handled by input #2");
   is(inputEventData.compositionupdate, "\u3089\u30FC",
      kDescription + "data of compositionupdate doesn't match (input) #2");
-  is(inputEventLocale.compositionupdate, "",
-     kDescription + "locale of compositionupdate isn't empty (input) #2");
 
   is(windowEventCounts.compositionend, 0,
      kDescription + "compositionend has been handled during composition by window #2");
@@ -2447,14 +2447,10 @@ function runCompositionEventTest()
      kDescription + "compositionend hasn't been handled by window #3");
   is(windowEventData.compositionend, "\u3089\u30FC",
      kDescription + "data of compositionend doesn't match (window) #3");
-  is(windowEventLocale.compositionend, "",
-     kDescription + "locale of compositionend isn't empty (window) #3");
   is(inputEventCounts.compositionend, 1,
      kDescription + "compositionend hasn't been handled by input #3");
   is(inputEventData.compositionend, "\u3089\u30FC",
      kDescription + "data of compositionend doesn't match (input) #3");
-  is(inputEventLocale.compositionend, "",
-     kDescription + "locale of compositionend isn't empty (input) #3");
 
   is(windowEventCounts.input, kExpectInputBeforeCompositionEnd ? 4 : 3,
      kDescription + "input hasn't been handled by window #3");
@@ -2488,40 +2484,28 @@ function runCompositionEventTest()
      kDescription + "compositionstart hasn't been handled by window #4");
   is(windowEventData.compositionstart, "\u30FC",
      kDescription + "data of compositionstart is empty (window) #4");
-  is(windowEventLocale.compositionstart, "",
-     kDescription + "locale of compositionstart isn't empty (window) #4");
   is(inputEventCounts.compositionstart, 1,
      kDescription + "compositionstart hasn't been handled by input #4");
   is(inputEventData.compositionstart, "\u30FC",
      kDescription + "data of compositionstart is empty (input) #4");
-  is(inputEventLocale.compositionstart, "",
-     kDescription + "locale of compositionstart isn't empty (input) #4");
 
   is(windowEventCounts.compositionupdate, 1,
      kDescription + "compositionupdate hasn't been handled by window #4");
   is(windowEventData.compositionupdate, "\u3089",
      kDescription + "data of compositionupdate doesn't match (window) #4");
-  is(windowEventLocale.compositionupdate, "",
-     kDescription + "locale of compositionupdate isn't empty (window) #4");
   is(inputEventCounts.compositionupdate, 1,
      kDescription + "compositionupdate hasn't been handled by input #4");
   is(inputEventData.compositionupdate, "\u3089",
      kDescription + "data of compositionupdate doesn't match (input) #4");
-  is(inputEventLocale.compositionupdate, "",
-     kDescription + "locale of compositionupdate isn't empty (input) #4");
 
   is(windowEventCounts.compositionend, 1,
      kDescription + "compositionend hasn't been handled by window #4");
   is(windowEventData.compositionend, "\u3089",
      kDescription + "data of compositionend doesn't match (window) #4");
-  is(windowEventLocale.compositionend, "",
-     kDescription + "locale of compositionend isn't empty (window) #4");
   is(inputEventCounts.compositionend, 1,
      kDescription + "compositionend hasn't been handled by input #4");
   is(inputEventData.compositionend, "\u3089",
      kDescription + "data of compositionend doesn't match (input) #4");
-  is(inputEventLocale.compositionend, "",
-     kDescription + "locale of compositionend isn't empty (input) #4");
 
   is(windowEventCounts.input, kExpectInputBeforeCompositionEnd ? 3 : 2,
      kDescription + "input hasn't been handled by window #4");
@@ -2556,40 +2540,28 @@ function runCompositionEventTest()
      kDescription + "compositionstart hasn't been handled by window #5");
   is(windowEventData.compositionstart, "\u3089\u3089",
      kDescription + "data of compositionstart is empty (window) #5");
-  is(windowEventLocale.compositionstart, "",
-     kDescription + "locale of compositionstart isn't empty (window) #5");
   is(inputEventCounts.compositionstart, 1,
      kDescription + "compositionstart hasn't been handled by input #5");
   is(inputEventData.compositionstart, "\u3089\u3089",
      kDescription + "data of compositionstart is empty (input) #5");
-  is(inputEventLocale.compositionstart, "",
-     kDescription + "locale of compositionstart isn't empty (input) #5");
 
   is(windowEventCounts.compositionupdate, 1,
      kDescription + "compositionupdate hasn't been handled by window #5");
   is(windowEventData.compositionupdate, "\u306D",
      kDescription + "data of compositionupdate doesn't match (window) #5");
-  is(windowEventLocale.compositionupdate, "",
-     kDescription + "locale of compositionupdate isn't empty (window) #5");
   is(inputEventCounts.compositionupdate, 1,
      kDescription + "compositionupdate hasn't been handled by input #5");
   is(inputEventData.compositionupdate, "\u306D",
      kDescription + "data of compositionupdate doesn't match (input) #5");
-  is(inputEventLocale.compositionupdate, "",
-     kDescription + "locale of compositionupdate isn't empty (input) #5");
 
   is(windowEventCounts.compositionend, 1,
      kDescription + "compositionend hasn't been handled by window #5");
   is(windowEventData.compositionend, "\u306D",
      kDescription + "data of compositionend doesn't match (window) #5");
-  is(windowEventLocale.compositionend, "",
-     kDescription + "locale of compositionend isn't empty (window) #5");
   is(inputEventCounts.compositionend, 1,
      kDescription + "compositionend hasn't been handled by input #5");
   is(inputEventData.compositionend, "\u306D",
      kDescription + "data of compositionend doesn't match (input) #5");
-  is(inputEventLocale.compositionend, "",
-     kDescription + "locale of compositionend isn't empty (input) #5");
 
   is(windowEventCounts.input, kExpectInputBeforeCompositionEnd ? 3 : 2,
      kDescription + "input hasn't been handled by window #5");
@@ -2626,8 +2598,6 @@ function runCompositionEventTest()
      kDescription + "compositionstart hasn't been handled by window #6");
   is(windowEventData.compositionstart, "\u306D",
      kDescription + "data of compositionstart is empty #6");
-  is(windowEventLocale.compositionstart, "",
-     kDescription + "locale of compositionstart isn't empty #6");
   is(inputEventCounts.compositionstart, 0,
      kDescription + "compositionstart has been handled by input #6");
 
@@ -2635,8 +2605,6 @@ function runCompositionEventTest()
      kDescription + "compositionupdate hasn't been handled by window #6");
   is(windowEventData.compositionupdate, "\u306E",
      kDescription + "data of compositionupdate doesn't match #6");
-  is(windowEventLocale.compositionupdate, "",
-     kDescription + "locale of compositionupdate isn't empty #6");
   is(inputEventCounts.compositionupdate, 0,
      kDescription + "compositionupdate has been handled by input #6");
 
@@ -2644,8 +2612,6 @@ function runCompositionEventTest()
      kDescription + "compositionend hasn't been handled by window #6");
   is(windowEventData.compositionend, "\u306E",
      kDescription + "data of compositionend doesn't match #6");
-  is(windowEventLocale.compositionend, "",
-     kDescription + "locale of compositionend isn't empty #6");
   is(inputEventCounts.compositionend, 0,
      kDescription + "compositionend has been handled by input #6");
 
@@ -2669,13 +2635,11 @@ function runCompositionEventTest()
   let compositionstart = document.createEvent("CompositionEvent");
   compositionstart.initCompositionEvent("compositionstart",
                                         true, true, document.defaultView,
-                                        "start data", "start locale");
+                                        "start data");
   is(compositionstart.type, "compositionstart",
      kDescription + "type doesn't match #7");
   is(compositionstart.data, "start data",
      kDescription + "data doesn't match #7");
-  is(compositionstart.locale, "start locale",
-     kDescription + "locale doesn't match #7");
   is(compositionstart.detail, 0,
      kDescription + "detail isn't 0 #7");
 
@@ -2685,14 +2649,10 @@ function runCompositionEventTest()
      kDescription + "compositionstart hasn't been handled by window #7");
   is(windowEventData.compositionstart, "start data",
      kDescription + "data of compositionstart was changed (window) #7");
-  is(windowEventLocale.compositionstart, "start locale",
-     kDescription + "locale of compositionstart was changed (window) #7");
   is(inputEventCounts.compositionstart, 1,
      kDescription + "compositionstart hasn't been handled by input #7");
   is(inputEventData.compositionstart, "start data",
      kDescription + "data of compositionstart was changed (input) #7");
-  is(inputEventLocale.compositionstart, "start locale",
-     kDescription + "locale of compositionstart was changed (input) #7");
 
   is(input.value, "value of input",
      kDescription + "input value was changed #7");
@@ -2700,13 +2660,11 @@ function runCompositionEventTest()
   let compositionupdate1 = document.createEvent("compositionevent");
   compositionupdate1.initCompositionEvent("compositionupdate",
                                           true, false, document.defaultView,
-                                          "composing string", "composing locale");
+                                          "composing string");
   is(compositionupdate1.type, "compositionupdate",
      kDescription + "type doesn't match #8");
   is(compositionupdate1.data, "composing string",
      kDescription + "data doesn't match #8");
-  is(compositionupdate1.locale, "composing locale",
-     kDescription + "locale doesn't match #8");
   is(compositionupdate1.detail, 0,
      kDescription + "detail isn't 0 #8");
 
@@ -2716,14 +2674,10 @@ function runCompositionEventTest()
      kDescription + "compositionupdate hasn't been handled by window #8");
   is(windowEventData.compositionupdate, "composing string",
      kDescription + "data of compositionupdate was changed (window) #8");
-  is(windowEventLocale.compositionupdate, "composing locale",
-     kDescription + "locale of compositionupdate was changed (window) #8");
   is(inputEventCounts.compositionupdate, 1,
      kDescription + "compositionupdate hasn't been handled by input #8");
   is(inputEventData.compositionupdate, "composing string",
      kDescription + "data of compositionupdate was changed (input) #8");
-  is(inputEventLocale.compositionupdate, "composing locale",
-     kDescription + "locale of compositionupdate was changed (input) #8");
 
   is(input.value, "value of input",
      kDescription + "input value was changed #8");
@@ -2731,13 +2685,11 @@ function runCompositionEventTest()
   let compositionupdate2 = document.createEvent("compositionEvent");
   compositionupdate2.initCompositionEvent("compositionupdate",
                                           true, false, document.defaultView,
-                                          "commit string", "commit locale");
+                                          "commit string");
   is(compositionupdate2.type, "compositionupdate",
      kDescription + "type doesn't match #9");
   is(compositionupdate2.data, "commit string",
      kDescription + "data doesn't match #9");
-  is(compositionupdate2.locale, "commit locale",
-     kDescription + "locale doesn't match #9");
   is(compositionupdate2.detail, 0,
      kDescription + "detail isn't 0 #9");
 
@@ -2747,14 +2699,10 @@ function runCompositionEventTest()
      kDescription + "compositionupdate hasn't been handled by window #9");
   is(windowEventData.compositionupdate, "commit string",
      kDescription + "data of compositionupdate was changed (window) #9");
-  is(windowEventLocale.compositionupdate, "commit locale",
-     kDescription + "locale of compositionupdate was changed (window) #9");
   is(inputEventCounts.compositionupdate, 2,
      kDescription + "compositionupdate hasn't been handled by input #9");
   is(inputEventData.compositionupdate, "commit string",
      kDescription + "data of compositionupdate was changed (input) #9");
-  is(inputEventLocale.compositionupdate, "commit locale",
-     kDescription + "locale of compositionupdate was changed (input) #9");
 
   is(input.value, "value of input",
      kDescription + "input value was changed #9");
@@ -2762,13 +2710,11 @@ function runCompositionEventTest()
   let compositionend = document.createEvent("Compositionevent");
   compositionend.initCompositionEvent("compositionend",
                                       true, false, document.defaultView,
-                                      "end data", "end locale");
+                                      "end data");
   is(compositionend.type, "compositionend",
      kDescription + "type doesn't match #10");
   is(compositionend.data, "end data",
      kDescription + "data doesn't match #10");
-  is(compositionend.locale, "end locale",
-     kDescription + "locale doesn't match #10");
   is(compositionend.detail, 0,
      kDescription + "detail isn't 0 #10");
 
@@ -2778,14 +2724,10 @@ function runCompositionEventTest()
      kDescription + "compositionend hasn't been handled by window #10");
   is(windowEventData.compositionend, "end data",
      kDescription + "data of compositionend was changed (window) #10");
-  is(windowEventLocale.compositionend, "end locale",
-     kDescription + "locale of compositionend was changed (window) #10");
   is(inputEventCounts.compositionend, 1,
      kDescription + "compositionend hasn't been handled by input #10");
   is(inputEventData.compositionend, "end data",
      kDescription + "data of compositionend was changed (input) #10");
-  is(inputEventLocale.compositionend, "end locale",
-     kDescription + "locale of compositionend was changed (input) #10");
 
   is(input.value, "value of input",
      kDescription + "input value was changed #10");
@@ -6564,7 +6506,7 @@ function runBug1530649Test()
 
   is(
     contenteditable.innerHTML,
-    kNewWhiteSpaceNormalizerEnabled ? "abc&nbsp;" : "abc <br>",
+    "abc&nbsp;",
     "runBug1530649Test: The trailing space shouldn't be removed"
   );
 
@@ -6574,9 +6516,7 @@ function runBug1530649Test()
 
   is(
     // It's fine to keep the preceding white-space as an NBSP until the composition ends
-    kNewWhiteSpaceNormalizerEnabled
-      ? contenteditable.innerHTML.replaceAll("&nbsp;", " ")
-      : contenteditable.innerHTML,
+    contenteditable.innerHTML.replaceAll("&nbsp;", " "),
     "abc d",
     "runBug1530649Test: The new composition string shouldn't remove the last space"
   );
@@ -6719,7 +6659,7 @@ function runCommitCompositionWithSpaceKey()
 
   is(
     contenteditable.innerHTML,
-    kNewWhiteSpaceNormalizerEnabled ? "a&nbsp;" : "a <br>",
+    "a&nbsp;",
     "runCommitCompositionWithSpaceKey: last single space should be kept"
   );
 
@@ -6731,7 +6671,7 @@ function runCommitCompositionWithSpaceKey()
 
   is(
     contenteditable.innerHTML,
-    kNewWhiteSpaceNormalizerEnabled ? "a b&nbsp;" : "a b <br>",
+    "a b&nbsp;",
     "runCommitCompositionWithSpaceKey: inserting composition shouldn't remove last single space."
   );
 
@@ -6743,7 +6683,7 @@ function runCommitCompositionWithSpaceKey()
 
   is(
     contenteditable.innerHTML,
-    kNewWhiteSpaceNormalizerEnabled ? "a b c&nbsp;" : "a b c <br>",
+    "a b c&nbsp;",
     "runCommitCompositionWithSpaceKey: inserting composition shouldn't remove last single space."
   );
 
@@ -6762,7 +6702,7 @@ function runCommitCompositionWithSpaceKey()
 
   is(
     contenteditable.innerHTML,
-    kNewWhiteSpaceNormalizerEnabled ? "ab&nbsp;" : "ab <br>",
+    "ab&nbsp;",
     "runCommitCompositionWithSpaceKey: contenteditable should end with a padding <br> element after inserting commit string ending with a space"
   );
 }
@@ -10861,96 +10801,6 @@ async function runIMEContentObserverTest()
     checkTextChangeNotification(notifications[0], description, { offset: getNativeText("\nabc\n\n").length + offsetAtStart, removedLength: getNativeText("\n\n").length, addedLength: 0 });
     checkPositionChangeNotification(notifications[1], description);
     dumpUnexpectedNotifications(description, 2);
-
-    await (async function test_insert_multiple_consecutive_siblings() {
-      aElement.innerHTML = "<p><br></p>";
-      const p = aElement.querySelector("p");
-      sel.collapse(p, 0);
-      await flushNotifications();
-      description = aDescription + "Insert multiple consecutive siblings from DOMNodeInserted event listener";
-      aElement.addEventListener("DOMNodeInserted", () => {
-        const span1 = doc.createElement("span");
-        span1.textContent = "a";
-        p.insertBefore(span1, p.firstChild);
-        const span2 = doc.createElement("span");
-        span2.textContent = "b";
-        p.insertBefore(span2, p.firstChild);
-        const span3 = doc.createElement("span");
-        span3.textContent = "c";
-        p.insertBefore(span3, p.firstChild);
-        const span4 = doc.createElement("span");
-        span4.textContent = "d";
-        p.insertBefore(span4, p.firstChild);
-        // Now, span4 should be cached as first added node and <br> should be
-        // cached as the last added node in IMEContentObserver.
-        // span2 is not adjacent sibling of the caching range boundaries.
-        // Therefore, this requires to compute index of span2 in the <p>.
-        // We want to check the path.
-        const span5 = doc.createElement("span");
-        span5.textContent = "e";
-        span2.insertBefore(span5, span2.firstChild);
-      }, {once: true});
-      waitNotifications = promiseReceiveNotifications();
-      synthesizeKey("KEY_Enter", { shiftKey: true }, win, callback);  // For setting the callback to recode notifications
-      ensureToRemovePrecedingPositionChangeNotification();
-      is(
-        aElement.innerHTML,
-        "<p><span>d</span><span>c</span><span><span>e</span>b</span><span>a</span><br><br></p>",
-        description + " <span> elements should be inserted before the new <br>"
-      );
-      checkTextChangeNotification(
-        notifications[0],
-        description,
-        {
-          offset: getNativeText("\n").length + offsetAtStart,
-          removedLength: 0,
-          addedLength: getNativeText("dceba\n").length,
-        }
-      );
-    })();
-
-    await (async function test_insert_multiple_indirect_siblings() {
-      aElement.innerHTML = "<p><span>a</span><br><br></p>";
-      const p = aElement.querySelector("p");
-      sel.collapse(p, 2);
-      await flushNotifications();
-      description = aDescription + "Insert multiple indirect siblings from DOMNodeInserted event listener";
-      aElement.addEventListener("DOMNodeInserted", () => {
-        const span0 = p.querySelector("span");
-        const newBR = p.querySelector("br + br");
-        const span1 = doc.createElement("span");
-        span1.textContent = "b";
-        p.insertBefore(span1, newBR);
-        const span2 = doc.createElement("span");
-        span2.textContent = "c";
-        p.insertBefore(span2, newBR);
-        // Now, span1 should be cached as first added node and <br> should be
-        // cached as the last added node in IMEContentObserver.
-        // Then, inserting new node before the first <br> which is before the
-        // span1 (first added node), it should be
-        const span3 = doc.createElement("span");
-        span3.textContent = "d";
-        span0.insertBefore(span3, span0.firstChild);
-      }, {once: true});
-      waitNotifications = promiseReceiveNotifications();
-      synthesizeKey("KEY_Enter", { shiftKey: true }, win, callback);  // For setting the callback to recode notifications
-      ensureToRemovePrecedingPositionChangeNotification();
-      is(
-        aElement.innerHTML,
-        "<p><span><span>d</span>a</span><br><span>b</span><span>c</span><br><br></p>",
-        description + " <span> elements should be inserted before the new <br>"
-      );
-      // However, the text changes should be merged into one notification.
-      checkTextChangeNotification(
-        notifications[0],
-        description,
-        {
-          offset: getNativeText("\n").length + offsetAtStart,
-          removedLength: "a\n".length,
-          addedLength: getNativeText("da\nbc\n").length,
-        }
-      );
-    })();
   }
 
   await testWithPlaintextEditor("runIMEContentObserverTest with input element: ", input, false);
@@ -11330,7 +11180,7 @@ function runPaddingLineBreakTest() {
   });
   is(
     contenteditable.innerHTML,
-    kNewWhiteSpaceNormalizerEnabled ? "<p>a&nbsp;</p>" : "<p>a <br></p>",
+    "<p>a&nbsp;</p>",
     "Padding <br> should be inserted after composition string when it ends with a collapsible white-space"
   );
   synthesizeCompositionChange({
@@ -11357,16 +11207,14 @@ function runPaddingLineBreakTest() {
   is(
     // If the new normalizer is enabled, it's fine to keep the last white-space
     // before composition stirng is an NBSP because it'll be normalized at end.
-    kNewWhiteSpaceNormalizerEnabled
-      ? contenteditable.innerHTML.replaceAll("&nbsp;", " ")
-      : contenteditable.innerHTML,
+    contenteditable.innerHTML.replaceAll("&nbsp;", " "),
     "<p>abc d</p>",
     `The padding <br> should be deleted when the composition string, "d", is inserted`
   );
   synthesizeComposition({ type: "compositioncommit", data: "" });
   is(
     contenteditable.innerHTML,
-    kNewWhiteSpaceNormalizerEnabled ? "<p>abc&nbsp;</p>" : "<p>abc <br></p>",
+    "<p>abc&nbsp;</p>",
     "A padding <br> should be inserted if the composition string becomes empty and the previous character is a collapsible ASCII white-space"
   );
   synthesizeKey("z", {accelKey: true});
@@ -11376,30 +11224,28 @@ function runPaddingLineBreakTest() {
     "Undo should not delete the padding <br>"
   );
 
-  if (kNewWhiteSpaceNormalizerEnabled) {
-    contenteditable.innerHTML = "<p>abc&nbsp;</p>";
-    selection.collapse(contenteditable.querySelector("p").firstChild, "abc ".length);
-    synthesizeCompositionChange({
-      composition: {string: "d", clauses: [{length: 1, attr: COMPOSITION_ATTR_RAW_CLAUSE}]},
-    });
-    is(
-      contenteditable.innerHTML.replaceAll("&nbsp;", " "),
-      "<p>abc d</p>",
-      `The white-space should not become invislbe, but it's fine either an ASCII space or an NBSP`
-    );
-    synthesizeComposition({ type: "compositioncommit", data: "" });
-    is(
-      contenteditable.innerHTML,
-      "<p>abc&nbsp;</p>",
-      "The last white-space should be an NBSP if the composition string becomes empty and the previous character is a collapsible ASCII white-space"
-    );
-    synthesizeKey("z", {accelKey: true});
-    is(
-      contenteditable.innerHTML,
-      "<p>abc&nbsp;</p>",
-      "Undo should not delete the trailing white-space"
-    );
-  }
+  contenteditable.innerHTML = "<p>abc&nbsp;</p>";
+  selection.collapse(contenteditable.querySelector("p").firstChild, "abc ".length);
+  synthesizeCompositionChange({
+    composition: {string: "d", clauses: [{length: 1, attr: COMPOSITION_ATTR_RAW_CLAUSE}]},
+  });
+  is(
+    contenteditable.innerHTML.replaceAll("&nbsp;", " "),
+    "<p>abc d</p>",
+    `The white-space should not become invislbe, but it's fine either an ASCII space or an NBSP`
+  );
+  synthesizeComposition({ type: "compositioncommit", data: "" });
+  is(
+    contenteditable.innerHTML,
+    "<p>abc&nbsp;</p>",
+    "The last white-space should be an NBSP if the composition string becomes empty and the previous character is a collapsible ASCII white-space"
+  );
+  synthesizeKey("z", {accelKey: true});
+  is(
+    contenteditable.innerHTML,
+    "<p>abc&nbsp;</p>",
+    "Undo should not delete the trailing white-space"
+  );
 
   contenteditable.innerHTML = "";
 }
@@ -11424,7 +11270,7 @@ function runCancelCompositionAfterCollapseWhileSpace() {
   synthesizeComposition({type: "compositioncommit", data: ""});
   is(
     contenteditable.innerHTML,
-    kNewWhiteSpaceNormalizerEnabled ? "<p>A&nbsp;</p>" : "<p>A <br></p>",
+    "<p>A&nbsp;</p>",
     `${description}: Canceling the composition should keep the preceding collapsible white-space visible`
   );
   synthesizeKey("B");
@@ -11435,13 +11281,43 @@ function runCancelCompositionAfterCollapseWhileSpace() {
   );
 }
 
+function runCompositionOnlyWhiteSpace() {
+  const selection = windowOfContenteditable.getSelection();
+  contenteditable.innerHTML = "<p>A</p>";
+  contenteditable.focus();
+  selection.collapse(
+    contenteditable.querySelector("[contenteditable] > p").firstChild,
+    "A".length
+  );
+  const description = "runCompositionOnlyWhiteSpace";
+  synthesizeCompositionChange({
+    composition: {string: " ", clauses: [{length: 1, attr: COMPOSITION_ATTR_RAW_CLAUSE}]},
+  });
+  is(
+    contenteditable.innerHTML,
+    "<p>A&nbsp;</p>",
+    `${description}: Composing string " " should be inserted`
+  );
+  synthesizeComposition({type: "compositioncommitasis", data: " "});
+  is(
+    contenteditable.innerHTML,
+    "<p>A&nbsp;</p>",
+    `${description}: Committing the white-space should not change the value`
+  );
+  synthesizeKey("B");
+  is(
+    contenteditable.innerHTML,
+    "<p>A B</p>",
+    `${description}: Typing "B" should cause inserting it after the white-space`
+  );
+}
+
 async function runTest()
 {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["dom.events.textevent.enabled", true],
       ["test.ime_content_observer.assert_invalid_cache", true],
-      ["dom.mutation_events.enabled", true],
     ],
   });
 
@@ -11467,6 +11343,7 @@ async function runTest()
   await runSetSelectionEventTest();
 
   runUndoRedoTest();
+  runUndoCompositionWhichDeletedSelection();
   runCompositionCommitAsIsTest();
   runCompositionEventTest();
   runCompositionTestWhoseTextNodeModified();
@@ -11487,6 +11364,7 @@ async function runTest()
   runBug1675313Test();
   runCommitCompositionWithSpaceKey();
   runCancelCompositionAfterCollapseWhileSpace();
+  runCompositionOnlyWhiteSpace();
   runCompositionWithSelectionChange();
   runCompositionWithClick();
   runForceCommitTest();

@@ -8,8 +8,7 @@ use std::{cmp::max, time::Duration};
 
 pub use crate::recovery::FAST_PTO_SCALE;
 use crate::{
-    connection::{ConnectionIdManager, Role, LOCAL_ACTIVE_CID_LIMIT},
-    recv_stream::INITIAL_RECV_WINDOW_SIZE,
+    connection::{ConnectionIdManager, Role},
     rtt::GRANULARITY,
     stream_id::StreamType,
     tparams::{
@@ -23,20 +22,70 @@ use crate::{
         TransportParametersHandler,
     },
     tracking::DEFAULT_LOCAL_ACK_DELAY,
-    version::{Version, VersionConfig},
-    CongestionControlAlgorithm, Res,
+    version::{self, Version},
+    CongestionControlAlgorithm, Res, DEFAULT_INITIAL_RTT,
 };
 
-const LOCAL_MAX_DATA: u64 = 0x3FFF_FFFF_FFFF_FFFF; // 2^62-1
-const LOCAL_STREAM_LIMIT_BIDI: u64 = 16;
-const LOCAL_STREAM_LIMIT_UNI: u64 = 16;
-/// See `ConnectionParameters.ack_ratio` for a discussion of this value.
-pub const ACK_RATIO_SCALE: u8 = 10;
-/// By default, aim to have the peer acknowledge 4 times per round trip time.
-/// See `ConnectionParameters.ack_ratio` for more.
-pub const DEFAULT_ACK_RATIO: u8 = 4 * ACK_RATIO_SCALE;
-/// The local value for the idle timeout period.
-const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+/// Maximum number of bidirectional streams that the remote can open.
+///
+/// Constant throughout the lifetime of the connection.
+///
+/// See also <https://github.com/google/quiche/blob/4f1f0fcea045cd71410c2c318773fc24c3523ed7/quiche/quic/core/quic_constants.h#L113-L114>.
+const LOCAL_STREAM_LIMIT_BIDI: u64 = 100;
+/// Maximum number of unidirectional streams that the remote can open.
+///
+/// Constant throughout the lifetime of the connection.
+///
+/// See also <https://github.com/google/quiche/blob/4f1f0fcea045cd71410c2c318773fc24c3523ed7/quiche/quic/core/quic_constants.h#L113-L114>.
+const LOCAL_STREAM_LIMIT_UNI: u64 = 100;
+
+/// Factor to multiply stream-level data flow control limits to get
+/// connection-level data flow control limits.
+///
+/// Prevents a single stream from taking up the entire connection-level
+/// capacity.
+///
+/// TODO: Consider further tuning.
+const CONNECTION_FACTOR: u64 = 2;
+
+/// Initial stream-level receive window size.
+///
+/// Auto-tuned throughout the lifetime of the connection. See flow control
+/// implementation for details.
+///
+/// See also <https://datatracker.ietf.org/doc/html/rfc9000#name-max_stream_data-frames>.
+pub const INITIAL_LOCAL_MAX_STREAM_DATA: usize = 1024 * 1024;
+/// Initial connection-level receive window size.
+///
+/// Set to 16 times the initial stream-level receive window to enable some
+/// connection-level parallelism.
+///
+/// Auto-tuned throughout the lifetime of the connection. See flow control
+/// implementation for details.
+///
+/// See also <https://datatracker.ietf.org/doc/html/rfc9000#frame-max-data>.
+pub const INITIAL_LOCAL_MAX_DATA: u64 = INITIAL_LOCAL_MAX_STREAM_DATA as u64 * CONNECTION_FACTOR;
+
+/// Limit for the maximum amount of bytes active on a single stream, i.e. limit
+/// for the size of the stream receive window.
+///
+/// A value of 10 MiB allows for:
+///
+/// - 10ms rtt and 8.3 GBit/s
+/// - 20ms rtt and 4.2 GBit/s
+/// - 40ms rtt and 2.1 GBit/s
+/// - 100ms rtt and 0.8 GBit/s
+///
+/// See also <https://datatracker.ietf.org/doc/html/rfc9000#name-max_stream_data-frames>.
+pub const MAX_LOCAL_MAX_STREAM_DATA: u64 = 10 * 1024 * 1024;
+/// Limit for the maximum amount of bytes active on the connection, i.e. limit
+/// for the size of the connection-level receive window.
+///
+/// See also <https://datatracker.ietf.org/doc/html/rfc9000#frame-max-data>.
+pub const MAX_LOCAL_MAX_DATA: u64 = MAX_LOCAL_MAX_STREAM_DATA * CONNECTION_FACTOR;
+
+// Maximum size of a QUIC DATAGRAM frame, as specified in https://datatracker.ietf.org/doc/html/rfc9221#section-3-4.
+const MAX_DATAGRAM_FRAME_SIZE: u64 = 65535;
 const MAX_QUEUED_DATAGRAMS_DEFAULT: usize = 10;
 
 /// What to do with preferred addresses.
@@ -56,7 +105,7 @@ pub enum PreferredAddressConfig {
 #[expect(clippy::struct_excessive_bools, reason = "We need that many, sorry.")]
 #[derive(Debug, Clone)]
 pub struct ConnectionParameters {
-    versions: VersionConfig,
+    versions: version::Config,
     cc_algorithm: CongestionControlAlgorithm,
     /// Initial connection-level flow control limit.
     max_data: u64,
@@ -86,6 +135,7 @@ pub struct ConnectionParameters {
     datagram_size: u64,
     outgoing_datagram_queue: usize,
     incoming_datagram_queue: usize,
+    initial_rtt: Duration,
     fast_pto: u8,
     grease: bool,
     disable_migration: bool,
@@ -98,28 +148,31 @@ pub struct ConnectionParameters {
     sni_slicing: bool,
     /// Whether to enable mlkem768nistp256-sha256.
     mlkem: bool,
+    /// Whether to randomize the packet number of the first Initial packet.
+    randomize_first_pn: bool,
 }
 
 impl Default for ConnectionParameters {
     fn default() -> Self {
         Self {
-            versions: VersionConfig::default(),
+            versions: version::Config::default(),
             cc_algorithm: CongestionControlAlgorithm::Cubic,
-            max_data: LOCAL_MAX_DATA,
-            max_stream_data_bidi_remote: u64::try_from(INITIAL_RECV_WINDOW_SIZE)
+            max_data: INITIAL_LOCAL_MAX_DATA,
+            max_stream_data_bidi_remote: u64::try_from(INITIAL_LOCAL_MAX_STREAM_DATA)
                 .expect("usize fits in u64"),
-            max_stream_data_bidi_local: u64::try_from(INITIAL_RECV_WINDOW_SIZE)
+            max_stream_data_bidi_local: u64::try_from(INITIAL_LOCAL_MAX_STREAM_DATA)
                 .expect("usize fits in u64"),
-            max_stream_data_uni: u64::try_from(INITIAL_RECV_WINDOW_SIZE)
+            max_stream_data_uni: u64::try_from(INITIAL_LOCAL_MAX_STREAM_DATA)
                 .expect("usize fits in u64"),
             max_streams_bidi: LOCAL_STREAM_LIMIT_BIDI,
             max_streams_uni: LOCAL_STREAM_LIMIT_UNI,
-            ack_ratio: DEFAULT_ACK_RATIO,
-            idle_timeout: DEFAULT_IDLE_TIMEOUT,
+            ack_ratio: Self::DEFAULT_ACK_RATIO,
+            idle_timeout: Self::DEFAULT_IDLE_TIMEOUT,
             preferred_address: PreferredAddressConfig::Default,
-            datagram_size: 0,
+            datagram_size: MAX_DATAGRAM_FRAME_SIZE,
             outgoing_datagram_queue: MAX_QUEUED_DATAGRAMS_DEFAULT,
             incoming_datagram_queue: MAX_QUEUED_DATAGRAMS_DEFAULT,
+            initial_rtt: DEFAULT_INITIAL_RTT,
             fast_pto: FAST_PTO_SCALE,
             grease: true,
             disable_migration: false,
@@ -128,17 +181,26 @@ impl Default for ConnectionParameters {
             pmtud_iface_mtu: true,
             sni_slicing: true,
             mlkem: true,
+            randomize_first_pn: true,
         }
     }
 }
 
 impl ConnectionParameters {
+    /// See `ConnectionParameters.ack_ratio` for a discussion of this value.
+    pub const ACK_RATIO_SCALE: u8 = 10;
+    /// By default, aim to have the peer acknowledge 4 times per round trip time.
+    /// See `ConnectionParameters.ack_ratio` for more.
+    pub const DEFAULT_ACK_RATIO: u8 = 4 * Self::ACK_RATIO_SCALE;
+    /// The local value for the idle timeout period.
+    pub const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+
     #[must_use]
-    pub const fn get_versions(&self) -> &VersionConfig {
+    pub const fn get_versions(&self) -> &version::Config {
         &self.versions
     }
 
-    pub(crate) fn get_versions_mut(&mut self) -> &mut VersionConfig {
+    pub(crate) fn get_versions_mut(&mut self) -> &mut version::Config {
         &mut self.versions
     }
 
@@ -148,7 +210,7 @@ impl ConnectionParameters {
     /// before less preferred.
     #[must_use]
     pub fn versions(mut self, initial: Version, all: Vec<Version>) -> Self {
-        self.versions = VersionConfig::new(initial, all);
+        self.versions = version::Config::new(initial, all);
         self
     }
 
@@ -197,23 +259,6 @@ impl ConnectionParameters {
             }
         }
         self
-    }
-
-    /// Get the maximum stream data that we will accept on different types of streams.
-    ///
-    /// # Panics
-    ///
-    /// If `StreamType::UniDi` and `false` are passed as that is not a valid combination.
-    #[must_use]
-    pub fn get_max_stream_data(&self, stream_type: StreamType, remote: bool) -> u64 {
-        match (stream_type, remote) {
-            (StreamType::BiDi, false) => self.max_stream_data_bidi_local,
-            (StreamType::BiDi, true) => self.max_stream_data_bidi_remote,
-            (StreamType::UniDi, false) => {
-                panic!("Can't get receive limit on a stream that can only be sent")
-            }
-            (StreamType::UniDi, true) => self.max_stream_data_uni,
-        }
     }
 
     /// Set the maximum stream data that we will accept on different types of streams.
@@ -285,6 +330,17 @@ impl ConnectionParameters {
     #[must_use]
     pub const fn get_idle_timeout(&self) -> Duration {
         self.idle_timeout
+    }
+
+    #[must_use]
+    pub const fn get_initial_rtt(&self) -> Duration {
+        self.initial_rtt
+    }
+
+    #[must_use]
+    pub const fn initial_rtt(mut self, init_rtt: Duration) -> Self {
+        self.initial_rtt = init_rtt;
+        self
     }
 
     #[must_use]
@@ -393,6 +449,7 @@ impl ConnectionParameters {
         self.pmtud_iface_mtu
     }
 
+    // TODO: Not used in neqo, but Gecko calls it. Needs a test to call it.
     #[must_use]
     pub const fn pmtud_iface_mtu(mut self, pmtud_iface_mtu: bool) -> Self {
         self.pmtud_iface_mtu = pmtud_iface_mtu;
@@ -421,6 +478,17 @@ impl ConnectionParameters {
         self
     }
 
+    #[must_use]
+    pub const fn randomize_first_pn_enabled(&self) -> bool {
+        self.randomize_first_pn
+    }
+
+    #[must_use]
+    pub const fn randomize_first_pn(mut self, randomize_first_pn: bool) -> Self {
+        self.randomize_first_pn = randomize_first_pn;
+        self
+    }
+
     /// # Errors
     /// When a connection ID cannot be obtained.
     /// # Panics
@@ -432,47 +500,47 @@ impl ConnectionParameters {
     ) -> Res<TransportParametersHandler> {
         let mut tps = TransportParametersHandler::new(role, self.versions.clone());
         // default parameters
-        tps.local.set_integer(
+        tps.local_mut().set_integer(
             ActiveConnectionIdLimit,
-            u64::try_from(LOCAL_ACTIVE_CID_LIMIT)?,
+            u64::try_from(ConnectionIdManager::ACTIVE_LIMIT)?,
         );
         if self.disable_migration {
-            tps.local.set_empty(DisableMigration);
+            tps.local_mut().set_empty(DisableMigration);
         }
         if self.grease {
-            tps.local.set_empty(GreaseQuicBit);
+            tps.local_mut().set_empty(GreaseQuicBit);
         }
-        tps.local.set_integer(
+        tps.local_mut().set_integer(
             MaxAckDelay,
             u64::try_from(DEFAULT_LOCAL_ACK_DELAY.as_millis())?,
         );
-        tps.local
+        tps.local_mut()
             .set_integer(MinAckDelay, u64::try_from(GRANULARITY.as_micros())?);
 
         // set configurable parameters
-        tps.local.set_integer(InitialMaxData, self.max_data);
-        tps.local.set_integer(
+        tps.local_mut().set_integer(InitialMaxData, self.max_data);
+        tps.local_mut().set_integer(
             InitialMaxStreamDataBidiLocal,
             self.max_stream_data_bidi_local,
         );
-        tps.local.set_integer(
+        tps.local_mut().set_integer(
             InitialMaxStreamDataBidiRemote,
             self.max_stream_data_bidi_remote,
         );
-        tps.local
+        tps.local_mut()
             .set_integer(InitialMaxStreamDataUni, self.max_stream_data_uni);
-        tps.local
+        tps.local_mut()
             .set_integer(InitialMaxStreamsBidi, self.max_streams_bidi);
-        tps.local
+        tps.local_mut()
             .set_integer(InitialMaxStreamsUni, self.max_streams_uni);
-        tps.local.set_integer(
+        tps.local_mut().set_integer(
             TransportParameterId::IdleTimeout,
             u64::try_from(self.idle_timeout.as_millis()).unwrap_or(0),
         );
         if let PreferredAddressConfig::Address(preferred) = &self.preferred_address {
             if role == Role::Server {
                 let (cid, srt) = cid_manager.preferred_address_cid()?;
-                tps.local.set(
+                tps.local_mut().set(
                     TransportParameterId::PreferredAddress,
                     TransportParameter::PreferredAddress {
                         v4: preferred.ipv4(),
@@ -483,7 +551,7 @@ impl ConnectionParameters {
                 );
             }
         }
-        tps.local
+        tps.local_mut()
             .set_integer(MaxDatagramFrameSize, self.datagram_size);
         Ok(tps)
     }

@@ -8,11 +8,11 @@
 #define mozilla_dom_VideoFrame_h
 
 #include "js/TypeDecls.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/NotNull.h"
 #include "mozilla/Span.h"
+#include "mozilla/WeakPtr.h"
 #include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/BufferSourceBindingFwd.h"
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/dom/VideoColorSpaceBinding.h"
 #include "mozilla/dom/WebCodecsUtils.h"
@@ -20,6 +20,7 @@
 #include "mozilla/gfx/Rect.h"
 #include "mozilla/media/MediaUtils.h"
 #include "nsCycleCollectionParticipant.h"
+#include "nsTArrayForwardDeclare.h"
 #include "nsWrapperCache.h"
 
 class nsIGlobalObject;
@@ -51,6 +52,11 @@ struct VideoFrameCopyToOptions;
 struct VideoFrameInit;
 
 }  // namespace dom
+
+namespace webgpu {
+class ExternalTexture;
+}  // namespace webgpu
+
 }  // namespace mozilla
 
 namespace mozilla::dom {
@@ -103,7 +109,7 @@ class VideoFrame final : public nsISupports,
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
 
-  static bool PrefEnabled(JSContext* aCx = nullptr, JSObject* aObj = nullptr);
+  static bool PrefEnabled(JSContext* aCx, JSObject* aObj = nullptr);
 
   static already_AddRefed<VideoFrame> Constructor(
       const GlobalObject& aGlobal, HTMLImageElement& aImageElement,
@@ -190,6 +196,11 @@ class VideoFrame final : public nsISupports,
   const gfx::IntRect& NativeVisibleRect() const { return mVisibleRect; }
   already_AddRefed<layers::Image> GetImage() const;
 
+  // Track a WebGPU ExternalTexture as being imported from this video frame.
+  // This ensures it will be correctly expired when the video frame is closed.
+  void TrackWebGPUExternalTexture(
+      WeakPtr<webgpu::ExternalTexture> aExternalTexture);
+
   nsCString ToString() const;
 
  public:
@@ -265,6 +276,10 @@ class VideoFrame final : public nsISupports,
 
   // The following are used to help monitoring mResource release.
   RefPtr<media::ShutdownWatcher> mShutdownWatcher = nullptr;
+
+  // WebGPU external textures that were imported from this video frame. We must
+  // call `Expire()` on them when the video frame is closed.
+  nsTArray<WeakPtr<webgpu::ExternalTexture>> mWebGPUExternalTextures;
 };
 
 }  // namespace mozilla::dom

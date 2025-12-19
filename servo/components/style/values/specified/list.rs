@@ -6,6 +6,7 @@
 
 #[cfg(feature = "gecko")]
 use crate::counter_style::{CounterStyle, CounterStyleParsingFlags};
+use crate::derives::*;
 use crate::parser::{Parse, ParserContext};
 #[cfg(feature = "servo")]
 use crate::properties::longhands::list_style_type::SpecifiedValue as ListStyleType;
@@ -25,6 +26,7 @@ use style_traits::{ParseError, StyleParseErrorKind};
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(transparent)]
 pub struct ListStyleType(pub CounterStyle);
@@ -154,6 +156,7 @@ pub struct QuoteList(
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C)]
 pub enum Quotes {

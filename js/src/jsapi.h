@@ -9,14 +9,9 @@
 #ifndef jsapi_h
 #define jsapi_h
 
-#include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/MemoryReporting.h"
-#include "mozilla/RangedPtr.h"
-#include "mozilla/RefPtr.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/Utf8.h"
 #include "mozilla/Variant.h"
 
 #include <stdarg.h>
@@ -767,7 +762,7 @@ class MOZ_STACK_CLASS JS_PUBLIC_API AutoSetAsyncStackForNewCalls {
   // lifetime of the AutoSetAsyncStackForNewCalls object. It is strongly
   // encouraged that asyncCause be a string constant or similar statically
   // allocated string.
-  AutoSetAsyncStackForNewCalls(JSContext* cx, HandleObject stack,
+  AutoSetAsyncStackForNewCalls(JSContext* cx, JSObject* stack,
                                const char* asyncCause,
                                AsyncCallKind kind = AsyncCallKind::IMPLICIT);
   ~AutoSetAsyncStackForNewCalls();
@@ -821,9 +816,6 @@ extern JS_PUBLIC_API JSObject* JS_NewObjectForConstructor(
     JSContext* cx, const JSClass* clasp, const JS::CallArgs& args);
 
 /************************************************************************/
-
-extern JS_PUBLIC_API void JS_SetParallelParsingEnabled(JSContext* cx,
-                                                       bool enabled);
 
 extern JS_PUBLIC_API void JS_SetOffthreadBaselineCompilationEnabled(
     JSContext* cx, bool enabled);

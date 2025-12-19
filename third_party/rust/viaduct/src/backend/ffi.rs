@@ -2,8 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use crate::{backend::Backend, settings::GLOBAL_SETTINGS};
-use crate::{msg_types, Error};
+use crate::{
+    backend::Backend,
+    settings::{allow_android_emulator_loopback, GLOBAL_SETTINGS},
+};
+use crate::{error, msg_types, warn, ViaductError};
 use ffi_support::{ByteBuffer, FfiStr};
 
 ffi_support::implement_into_ffi_by_protobuf!(msg_types::Request);
@@ -29,20 +32,20 @@ impl From<crate::Request> for msg_types::Request {
 macro_rules! backend_error {
     ($($args:tt)*) => {{
         let msg = format!($($args)*);
-        log::error!("{}", msg);
-        Error::BackendError(msg)
+        error!("{}", msg);
+        ViaductError::BackendError(msg)
     }};
 }
 
 pub struct FfiBackend;
 impl Backend for FfiBackend {
-    fn send(&self, request: crate::Request) -> Result<crate::Response, Error> {
+    fn send(&self, request: crate::Request) -> Result<crate::Response, ViaductError> {
         use ffi_support::IntoFfi;
         use prost::Message;
         super::note_backend("FFI (trusted)");
 
         let method = request.method;
-        let fetch = callback_holder::get_callback().ok_or(Error::BackendNotInitialized)?;
+        let fetch = callback_holder::get_callback().ok_or(ViaductError::BackendNotInitialized)?;
         let proto_req: msg_types::Request = request.into();
         let buf = proto_req.into_ffi_value();
         let response = unsafe { fetch(buf) };
@@ -61,7 +64,7 @@ impl Backend for FfiBackend {
         };
 
         if let Some(exn) = response.exception_message {
-            return Err(Error::NetworkError(format!("Java error: {:?}", exn)));
+            return Err(ViaductError::NetworkError(format!("Java error: {:?}", exn)));
         }
         let status = response
             .status
@@ -77,7 +80,7 @@ impl Backend for FfiBackend {
                 Ok(name) => name,
                 Err(e) => {
                     // Ignore headers with invalid names, since nobody can look for them anyway.
-                    log::warn!("Server sent back invalid header name: '{}'", e);
+                    warn!("Server sent back invalid header name: '{}'", e);
                     continue;
                 }
             };
@@ -119,6 +122,7 @@ type FetchCallback = unsafe extern "C" fn(ByteBuffer) -> ByteBuffer;
 /// Module that manages get/set of the global fetch callback pointer.
 mod callback_holder {
     use super::FetchCallback;
+    use crate::error;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     /// Note: We only assign to this once.
@@ -158,7 +162,7 @@ mod callback_holder {
                 // it sets this only once. Note that this is actually going to be
                 // before logging is initialized in practice, so there's not a lot
                 // we can actually do here.
-                log::error!("Bug: Initialized CALLBACK_PTR multiple times");
+                error!("Bug: Initialized CALLBACK_PTR multiple times");
                 false
             }
         }
@@ -179,9 +183,7 @@ pub extern "C" fn viaduct_alloc_bytebuffer(sz: i32) -> ByteBuffer {
 #[no_mangle]
 pub extern "C" fn viaduct_log_error(s: FfiStr<'_>) {
     let mut error = ffi_support::ExternError::default();
-    ffi_support::call_with_output(&mut error, || {
-        log::error!("Viaduct Ffi Error: {}", s.as_str())
-    });
+    ffi_support::call_with_output(&mut error, || error!("Viaduct Ffi Error: {}", s.as_str()));
     error.consume_and_log_if_error();
 }
 
@@ -199,9 +201,7 @@ pub extern "C" fn viaduct_initialize(callback: FetchCallback) -> u8 {
 pub extern "C" fn viaduct_allow_android_emulator_loopback() {
     let mut error = ffi_support::ExternError::default();
     ffi_support::call_with_output(&mut error, || {
-        let url = url::Url::parse("http://10.0.2.2").unwrap();
-        let mut settings = GLOBAL_SETTINGS.write();
-        settings.addn_allowed_insecure_url = Some(url);
+        allow_android_emulator_loopback();
     });
     error.consume_and_log_if_error();
 }

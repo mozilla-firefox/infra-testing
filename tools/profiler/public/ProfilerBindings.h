@@ -92,6 +92,8 @@ void gecko_profiler_marker_schema_set_table_label(
 void gecko_profiler_marker_schema_set_all_labels(mozilla::MarkerSchema* aSchema,
                                                  const char* aLabel,
                                                  size_t aLabelLength);
+void gecko_profiler_marker_schema_set_stack_based(
+    mozilla::MarkerSchema* aSchema);
 
 // MarkerSchema methods for adding key/key-label values.
 void gecko_profiler_marker_schema_add_key_format(
@@ -101,15 +103,15 @@ void gecko_profiler_marker_schema_add_key_label_format(
     mozilla::MarkerSchema* aSchema, const char* aKey, size_t aKeyLength,
     const char* aLabel, size_t aLabelLength,
     mozilla::MarkerSchema::Format aFormat);
-void gecko_profiler_marker_schema_add_key_format_searchable(
+void gecko_profiler_marker_schema_add_key_format_with_flags(
     mozilla::MarkerSchema* aSchema, const char* aKey, size_t aKeyLength,
     mozilla::MarkerSchema::Format aFormat,
-    mozilla::MarkerSchema::Searchable aSearchable);
-void gecko_profiler_marker_schema_add_key_label_format_searchable(
+    mozilla::MarkerSchema::PayloadFlags aPayloadFlags);
+void gecko_profiler_marker_schema_add_key_label_format_with_flags(
     mozilla::MarkerSchema* aSchema, const char* aKey, size_t aKeyLength,
     const char* aLabel, size_t aLabelLength,
     mozilla::MarkerSchema::Format aFormat,
-    mozilla::MarkerSchema::Searchable aSearchable);
+    mozilla::MarkerSchema::PayloadFlags aPayloadFlags);
 void gecko_profiler_marker_schema_add_static_label_value(
     mozilla::MarkerSchema* aSchema, const char* aLabel, size_t aLabelLength,
     const char* aValue, size_t aValueLength);

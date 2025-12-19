@@ -3,15 +3,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "RemoteWorkerDebuggerManagerChild.h"
+
 #include "RemoteWorkerService.h"
 
 namespace mozilla::dom {
 
-RemoteWorkerDebuggerManagerChild::RemoteWorkerDebuggerManagerChild() {
-  MOZ_ASSERT_DEBUG_OR_FUZZING(
-      RemoteWorkerService::Thread() &&
-      RemoteWorkerService::Thread()->IsOnCurrentThread());
-}
+RemoteWorkerDebuggerManagerChild::RemoteWorkerDebuggerManagerChild() {}
 
 RemoteWorkerDebuggerManagerChild::~RemoteWorkerDebuggerManagerChild() {}
 

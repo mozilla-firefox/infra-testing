@@ -33,7 +33,6 @@
 #include <sstream>
 #include <stack>
 #include <string>
-#include <tuple>
 #include <unordered_set>
 
 #include <stdio.h>
@@ -53,7 +52,7 @@
 // prior to that, we need to fall back to llvm's make_unique.  It's also the
 // case that we expect clang 10 to build with c++14 and clang 9 and earlier to
 // build with c++11, at least as suggested by the llvm-config --cxxflags on
-// non-windows platforms.  mozilla-central seems to build with -std=c++17 on
+// non-windows platforms.  firefox-main seems to build with -std=c++17 on
 // windows so we need to make this decision based on __cplusplus instead of
 // the CLANG_VERSION_MAJOR.
 #if __cplusplus < 201402L
@@ -88,7 +87,8 @@ enum class FileType {
 // Takes an absolute path to a file, and returns the type of file it is. If
 // it's a Source or Generated file, the provided inout path argument is modified
 // in-place so that it is relative to the source dir or objdir, respectively.
-FileType relativizePath(std::string &path) {
+// Otherwise we strip the first include path that matches, if any.
+FileType relativizePath(std::string &path, const HeaderSearchOptions &HeaderSearchOpts) {
   if (path.compare(0, Objdir.length(), Objdir) == 0) {
     path.replace(0, Objdir.length(), GENERATED);
     return FileType::Generated;
@@ -102,6 +102,14 @@ FileType relativizePath(std::string &path) {
     path.erase(0, Srcdir.length() + 1);
     return FileType::Source;
   }
+
+  for (const auto &Entry : HeaderSearchOpts.UserEntries) {
+    if (path.compare(0, Entry.Path.length(), Entry.Path) == 0) {
+      path.erase(0, Entry.Path.size() + 1);
+      break;
+    }
+  }
+
   return FileType::Unknown;
 }
 
@@ -194,8 +202,8 @@ bool isPure(FunctionDecl *D) {
 // it's in the source dir or the objdir). We also store the analysis output
 // here.
 struct FileInfo {
-  FileInfo(std::string &Rname) : Realname(Rname) {
-    switch (relativizePath(Realname)) {
+  FileInfo(std::string &Rname, const HeaderSearchOptions &HeaderSearchOptions) : Realname(Rname) {
+    switch (relativizePath(Realname, HeaderSearchOptions)) {
     case FileType::Generated:
       Interesting = true;
       Generated = true;
@@ -341,7 +349,7 @@ private:
           Absolute = Filename;
         }
       }
-      std::unique_ptr<FileInfo> Info = make_unique<FileInfo>(Absolute);
+      std::unique_ptr<FileInfo> Info = make_unique<FileInfo>(Absolute, CI.getHeaderSearchOpts());
       It = FileMap.insert(std::make_pair(Id, std::move(Info))).first;
     }
     return It->second.get();
@@ -366,7 +374,7 @@ private:
   // In resulting string rep, line is 1-based and zero-padded to 5 digits, while
   // column is 0-based and unpadded.
   std::string locationToString(SourceLocation Loc, size_t Length = 0) {
-    std::pair<FileID, unsigned> Pair = SM.getDecomposedLoc(Loc);
+    std::pair<FileID, unsigned> Pair = SM.getDecomposedExpansionLoc(Loc);
 
     bool IsInvalid;
     unsigned Line = SM.getLineNumber(Pair.first, Pair.second, &IsInvalid);
@@ -388,8 +396,8 @@ private:
   // Convert SourceRange to "line-line" or "line".
   // In the resulting string rep, line is 1-based.
   std::string lineRangeToString(SourceRange Range, bool omitEnd = false) {
-    std::pair<FileID, unsigned> Begin = SM.getDecomposedLoc(Range.getBegin());
-    std::pair<FileID, unsigned> End = SM.getDecomposedLoc(Range.getEnd());
+    std::pair<FileID, unsigned> Begin = SM.getDecomposedExpansionLoc(Range.getBegin());
+    std::pair<FileID, unsigned> End = SM.getDecomposedExpansionLoc(Range.getEnd());
 
     bool IsInvalid;
     unsigned Line1 = SM.getLineNumber(Begin.first, Begin.second, &IsInvalid);
@@ -434,11 +442,30 @@ private:
     return result;
   }
 
+  bool needsNestingRangeForVarDecl(SourceRange& Range) {
+    std::pair<FileID, unsigned> Begin = SM.getDecomposedExpansionLoc(Range.getBegin());
+    std::pair<FileID, unsigned> End = SM.getDecomposedExpansionLoc(Range.getEnd());
+
+    bool IsInvalid;
+    unsigned Line1 = SM.getLineNumber(Begin.first, Begin.second, &IsInvalid);
+    if (IsInvalid) {
+      return false;
+    }
+    unsigned Line2 = SM.getLineNumber(End.first, End.second, &IsInvalid);
+    if (IsInvalid) {
+      return false;
+    }
+
+    static constexpr unsigned MinVarDeclNestingRangeLines = 10;
+
+    return Line2 > Line1 + MinVarDeclNestingRangeLines;
+  }
+
   // Convert SourceRange to "line:column-line:column".
   // In the resulting string rep, line is 1-based, column is 0-based.
   std::string fullRangeToString(SourceRange Range) {
-    std::pair<FileID, unsigned> Begin = SM.getDecomposedLoc(Range.getBegin());
-    std::pair<FileID, unsigned> End = SM.getDecomposedLoc(Range.getEnd());
+    std::pair<FileID, unsigned> Begin = SM.getDecomposedExpansionLoc(Range.getBegin());
+    std::pair<FileID, unsigned> End = SM.getDecomposedExpansionLoc(Range.getEnd());
 
     bool IsInvalid;
     unsigned Line1 = SM.getLineNumber(Begin.first, Begin.second, &IsInvalid);
@@ -1244,6 +1271,40 @@ public:
     return true;
   }
 
+  // Returns true if the class has template in its entire class hierarchy.
+  bool hasTemplateInHierarchy(const CXXRecordDecl* cxxDecl) {
+    if (cxxDecl->isDependentType()) {
+      // This class is templatized.
+      return true;
+    }
+
+
+    if (dyn_cast<const ClassTemplateSpecializationDecl>(cxxDecl)) {
+      // This class is template specialization.
+      return true;
+    }
+
+    for (const CXXBaseSpecifier &Base : cxxDecl->bases()) {
+      const CXXRecordDecl *BaseDecl = Base.getType()->getAsCXXRecordDecl();
+      if (!BaseDecl) {
+        // The base class is not-yet-substituted.
+        return true;
+      }
+
+      const Type* ty = Base.getType().getTypePtr();
+      if (dyn_cast<const SubstTemplateTypeParmType>(ty)) {
+        // The base class is a substituted template parameter.
+        return true;
+      }
+
+      if (hasTemplateInHierarchy(BaseDecl)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   enum {
     // Flag to omit the identifier from being cross-referenced across files.
     // This is usually desired for local variables.
@@ -1262,10 +1323,23 @@ public:
     Heuristic = 1 << 3,
   };
 
+  enum class LayoutHandling {
+    // Emit the layout information (size, offset, etc) and the other fields.
+    // This should be used when the struct is not templatized.
+    UseLayout,
+
+    // Only emit the layout information.
+    // This should be used for emitting the data for base classes.
+    LayoutOnly,
+  };
+
   void emitStructuredRecordInfo(llvm::json::OStream &J, SourceLocation Loc,
-                                const RecordDecl *decl) {
-    J.attribute("kind",
-                TypeWithKeyword::getTagTypeKindName(decl->getTagKind()));
+                                const RecordDecl *decl,
+                                LayoutHandling layoutHandling = LayoutHandling::UseLayout) {
+    if (layoutHandling != LayoutHandling::LayoutOnly) {
+      J.attribute("kind",
+                  TypeWithKeyword::getTagTypeKindName(decl->getTagKind()));
+    }
 
     const ASTContext &C = *AstContext;
     const ASTRecordLayout &Layout = C.getASTRecordLayout(decl);
@@ -1289,10 +1363,25 @@ public:
                     C.getTypeSizeInChars(ptrType).getQuantity());
       }
 
+      bool emitLayout = false;
+      if (layoutHandling == LayoutHandling::LayoutOnly) {
+        emitLayout = true;
+      } else {
+        emitLayout = hasTemplateInHierarchy(cxxDecl);
+      }
+
       J.attributeBegin("supers");
       J.arrayBegin();
       for (const CXXBaseSpecifier &Base : cxxDecl->bases()) {
         const CXXRecordDecl *BaseDecl = Base.getType()->getAsCXXRecordDecl();
+
+        if (!BaseDecl) {
+          // If the base class is dependent of template parameters and
+          // not yet fixed, skip it.
+          // Those information will be emitted in the subclass that has
+          // fixed template parameters.
+          continue;
+        }
 
         J.objectBegin();
 
@@ -1314,54 +1403,80 @@ public:
         J.arrayEnd();
         J.attributeEnd();
 
+        if (emitLayout) {
+          // In order to reduce the file size, emit the entire super class
+          // layout only if there's any template class in the hierarchy
+          // Otherwise the field layout can be constructed with each
+          // superclass's data.
+
+          J.attributeBegin("layout");
+          J.objectBegin();
+
+          // The structured info for template leaf classes is not emitted,
+          // which means we don't have "pretty" format of the class.
+          // Thus we emit it here.
+          //
+          // Once that part is solved, the pretty field here can be removed.
+          //
+          // See the emitStructuredInfo callsite in VisitNamedDecl.
+          J.attribute("pretty", getQualifiedName(BaseDecl));
+
+          emitStructuredRecordInfo(J, Loc, BaseDecl,
+                                   LayoutHandling::LayoutOnly);
+          J.objectEnd();
+          J.attributeEnd();
+        }
+
         J.objectEnd();
       }
       J.arrayEnd();
       J.attributeEnd();
 
-      J.attributeBegin("methods");
-      J.arrayBegin();
-      for (const CXXMethodDecl *MethodDecl : cxxDecl->methods()) {
-        J.objectBegin();
-
-        J.attribute("pretty", getQualifiedName(MethodDecl));
-        J.attribute("sym", getMangledName(CurMangleContext, MethodDecl));
-
-        // TODO: Better figure out what to do for non-isUserProvided methods
-        // which means there's potentially semantic data that doesn't correspond
-        // to a source location in the source.  Should we be emitting
-        // structured info for those when we're processing the class here?
-
-        J.attributeBegin("props");
+      if (layoutHandling != LayoutHandling::LayoutOnly) {
+        J.attributeBegin("methods");
         J.arrayBegin();
-        if (MethodDecl->isStatic()) {
-          J.value("static");
-        }
-        if (MethodDecl->isInstance()) {
-          J.value("instance");
-        }
-        if (MethodDecl->isVirtual()) {
-          J.value("virtual");
-        }
-        if (MethodDecl->isUserProvided()) {
-          J.value("user");
-        }
-        if (MethodDecl->isDefaulted()) {
-          J.value("defaulted");
-        }
-        if (MethodDecl->isDeleted()) {
-          J.value("deleted");
-        }
-        if (MethodDecl->isConstexpr()) {
-          J.value("constexpr");
+        for (const CXXMethodDecl *MethodDecl : cxxDecl->methods()) {
+          J.objectBegin();
+
+          J.attribute("pretty", getQualifiedName(MethodDecl));
+          J.attribute("sym", getMangledName(CurMangleContext, MethodDecl));
+
+          // TODO: Better figure out what to do for non-isUserProvided methods
+          // which means there's potentially semantic data that doesn't correspond
+          // to a source location in the source.  Should we be emitting
+          // structured info for those when we're processing the class here?
+
+          J.attributeBegin("props");
+          J.arrayBegin();
+          if (MethodDecl->isStatic()) {
+            J.value("static");
+          }
+          if (MethodDecl->isInstance()) {
+            J.value("instance");
+          }
+          if (MethodDecl->isVirtual()) {
+            J.value("virtual");
+          }
+          if (MethodDecl->isUserProvided()) {
+            J.value("user");
+          }
+          if (MethodDecl->isDefaulted()) {
+            J.value("defaulted");
+          }
+          if (MethodDecl->isDeleted()) {
+            J.value("deleted");
+          }
+          if (MethodDecl->isConstexpr()) {
+            J.value("constexpr");
+          }
+          J.arrayEnd();
+          J.attributeEnd();
+
+          J.objectEnd();
         }
         J.arrayEnd();
         J.attributeEnd();
-
-        J.objectEnd();
       }
-      J.arrayEnd();
-      J.attributeEnd();
     }
 
     FileID structFileID = SM.getFileID(Loc);
@@ -1404,6 +1519,7 @@ public:
       if (tagDecl) {
         J.attribute("typesym", getMangledName(CurMangleContext, tagDecl));
       }
+
       J.attribute("offsetBytes", localOffsetBytes.getQuantity());
       if (Field.isBitField()) {
         J.attributeBegin("bitPositions");
@@ -1598,7 +1714,8 @@ public:
     emitBindingAttributes(J, *decl);
   }
 
-  void emitStructuredInfo(SourceLocation Loc, const NamedDecl *decl) {
+  void emitStructuredInfo(SourceLocation Loc, const NamedDecl *decl,
+                          LayoutHandling layoutHandling = LayoutHandling::UseLayout) {
     std::string json_str;
     llvm::raw_string_ostream ros(json_str);
     llvm::json::OStream J(ros);
@@ -1614,7 +1731,7 @@ public:
     J.attribute("sym", getMangledName(CurMangleContext, decl));
 
     if (const RecordDecl *RD = dyn_cast<RecordDecl>(decl)) {
-      emitStructuredRecordInfo(J, Loc, RD);
+      emitStructuredRecordInfo(J, Loc, RD, layoutHandling);
     } else if (const EnumDecl *ED = dyn_cast<EnumDecl>(decl)) {
       emitStructuredEnumInfo(J, ED);
     } else if (const EnumConstantDecl *ECD = dyn_cast<EnumConstantDecl>(decl)) {
@@ -1906,12 +2023,12 @@ public:
     // By default, we end at the line containing the function's name.
     SourceLocation End = D->getLocation();
 
-    std::pair<FileID, unsigned> FuncLoc = SM.getDecomposedLoc(End);
+    std::pair<FileID, unsigned> FuncLoc = SM.getDecomposedExpansionLoc(End);
 
     // But if there are parameters, we want to include those as well.
     for (ParmVarDecl *Param : D->parameters()) {
       std::pair<FileID, unsigned> ParamLoc =
-          SM.getDecomposedLoc(Param->getLocation());
+          SM.getDecomposedExpansionLoc(Param->getLocation());
 
       // It's possible there are macros involved or something. We don't include
       // the parameters in that case.
@@ -1930,12 +2047,12 @@ public:
     // By default, we end at the line containing the name.
     SourceLocation End = D->getLocation();
 
-    std::pair<FileID, unsigned> FuncLoc = SM.getDecomposedLoc(End);
+    std::pair<FileID, unsigned> FuncLoc = SM.getDecomposedExpansionLoc(End);
 
     if (CXXRecordDecl *D2 = dyn_cast<CXXRecordDecl>(D)) {
       // But if there are parameters, we want to include those as well.
       for (CXXBaseSpecifier &Base : D2->bases()) {
-        std::pair<FileID, unsigned> Loc = SM.getDecomposedLoc(Base.getEndLoc());
+        std::pair<FileID, unsigned> Loc = SM.getDecomposedExpansionLoc(Base.getEndLoc());
 
         // It's possible there are macros involved or something. We don't
         // include the parameters in that case.
@@ -1968,10 +2085,10 @@ public:
       return Range1;
     }
 
-    std::pair<FileID, unsigned> Begin1 = SM.getDecomposedLoc(Range1.getBegin());
-    std::pair<FileID, unsigned> End1 = SM.getDecomposedLoc(Range1.getEnd());
-    std::pair<FileID, unsigned> Begin2 = SM.getDecomposedLoc(Range2.getBegin());
-    std::pair<FileID, unsigned> End2 = SM.getDecomposedLoc(Range2.getEnd());
+    std::pair<FileID, unsigned> Begin1 = SM.getDecomposedExpansionLoc(Range1.getBegin());
+    std::pair<FileID, unsigned> End1 = SM.getDecomposedExpansionLoc(Range1.getEnd());
+    std::pair<FileID, unsigned> Begin2 = SM.getDecomposedExpansionLoc(Range2.getBegin());
+    std::pair<FileID, unsigned> End2 = SM.getDecomposedExpansionLoc(Range2.getEnd());
 
     if (End1.first != Begin2.first) {
       // Something weird is probably happening with the preprocessor. Just
@@ -1992,9 +2109,9 @@ public:
   // - The range is well ordered (end is not before begin).
   // Returns an empty range otherwise.
   SourceRange validateRange(SourceLocation Loc, SourceRange Range) {
-    std::pair<FileID, unsigned> Decomposed = SM.getDecomposedLoc(Loc);
-    std::pair<FileID, unsigned> Begin = SM.getDecomposedLoc(Range.getBegin());
-    std::pair<FileID, unsigned> End = SM.getDecomposedLoc(Range.getEnd());
+    std::pair<FileID, unsigned> Decomposed = SM.getDecomposedExpansionLoc(Loc);
+    std::pair<FileID, unsigned> Begin = SM.getDecomposedExpansionLoc(Range.getBegin());
+    std::pair<FileID, unsigned> End = SM.getDecomposedExpansionLoc(Range.getEnd());
 
     if (Begin.first != Decomposed.first || End.first != Decomposed.first) {
       return SourceRange();
@@ -2086,6 +2203,10 @@ public:
                  ? "decl"
                  : "def";
       PrettyKind = "variable";
+
+      if (needsNestingRangeForVarDecl(PeekRange)) {
+        NestingRange = PeekRange;
+      }
     } else if (isa<NamespaceDecl>(D) || isa<NamespaceAliasDecl>(D)) {
       Kind = "def";
       PrettyKind = "namespace";
@@ -2150,17 +2271,22 @@ public:
     // In-progress structured info emission.
     if (RecordDecl *D2 = dyn_cast<RecordDecl>(D)) {
       if (D2->isThisDeclarationADefinition() &&
-          // XXX getASTRecordLayout doesn't work for dependent types, so we
-          // avoid calling into emitStructuredInfo for now if there's a
-          // dependent type or if we're in any kind of template context.  This
-          // should be re-evaluated once this is working for normal classes and
-          // we can better evaluate what is useful.
+          // We don't emit structured info for template leaf classes
+          // in order to reduce the memory consumption comes from
+          // too many instantiation gathered to container classes in
+          // crossref-extra and jumpref-extra.
+          //
+          // Once that part is solved, those template leaf classes
+          // can be emitted by skipping getASTRecordLayout call and
+          // the Layout handling in emitStructuredRecordInfo.
+          //
+          // See https://github.com/mozsearch/mozsearch/pull/906
           !D2->isDependentType() && !TemplateStack) {
         if (auto *D3 = dyn_cast<CXXRecordDecl>(D2)) {
           findBindingToJavaClass(*AstContext, *D3);
           findBoundAsJavaClasses(*AstContext, *D3);
         }
-        emitStructuredInfo(ExpansionLoc, D2);
+        emitStructuredInfo(ExpansionLoc, D2, LayoutHandling::UseLayout);
       }
     }
     if (EnumDecl *D2 = dyn_cast<EnumDecl>(D)) {
@@ -2783,7 +2909,7 @@ public:
 
   void inclusionDirective(SourceRange FileNameRange, const FileEntry *File) {
     std::string includedFile(File->tryGetRealPathName());
-    FileType type = relativizePath(includedFile);
+    FileType type = relativizePath(includedFile, CI.getHeaderSearchOpts());
     if (type == FileType::Unknown) {
       return;
     }

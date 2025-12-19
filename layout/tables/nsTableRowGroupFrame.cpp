@@ -4,27 +4,26 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "nsTableRowGroupFrame.h"
 
+#include <algorithm>
+
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs_layout.h"
-
 #include "nsCOMPtr.h"
-#include "nsTableRowFrame.h"
-#include "nsTableFrame.h"
-#include "nsTableCellFrame.h"
-#include "nsPresContext.h"
-#include "nsStyleConsts.h"
+#include "nsCSSFrameConstructor.h"
+#include "nsCSSRendering.h"
+#include "nsCellMap.h"  //table cell navigation
+#include "nsDisplayList.h"
+#include "nsGkAtoms.h"
+#include "nsHTMLParts.h"
 #include "nsIContent.h"
 #include "nsIFrame.h"
 #include "nsIFrameInlines.h"
-#include "nsGkAtoms.h"
-#include "nsCSSRendering.h"
-#include "nsHTMLParts.h"
-#include "nsCSSFrameConstructor.h"
-#include "nsDisplayList.h"
-
-#include "nsCellMap.h"  //table cell navigation
-#include <algorithm>
+#include "nsPresContext.h"
+#include "nsStyleConsts.h"
+#include "nsTableCellFrame.h"
+#include "nsTableFrame.h"
+#include "nsTableRowFrame.h"
 
 using namespace mozilla;
 using namespace mozilla::layout;
@@ -176,10 +175,13 @@ void nsTableRowGroupFrame::InitRepeatedFrame(
 }
 
 // Handle the child-traversal part of DisplayGenericTablePart
-static void DisplayRows(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
+static void DisplayRows(nsDisplayListBuilder* aBuilder,
+                        nsTableRowGroupFrame* aFrame,
                         const nsDisplayListSet& aLists) {
+  if (aFrame->HidesContent()) {
+    return;
+  }
   nscoord overflowAbove;
-  nsTableRowGroupFrame* f = static_cast<nsTableRowGroupFrame*>(aFrame);
   // Don't try to use the row cursor if we have to descend into placeholders;
   // we might have rows containing placeholders, where the row's overflow
   // area doesn't intersect the dirty rect but we need to descend into the row
@@ -188,10 +190,10 @@ static void DisplayRows(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
   // the rows in |f|, but that's exactly what we're trying to avoid, so we
   // approximate it by checking it for |f|: if it's true for any row
   // in |f| then it's true for |f| itself.
-  nsIFrame* kid = aBuilder->ShouldDescendIntoFrame(f, true)
+  nsIFrame* kid = aBuilder->ShouldDescendIntoFrame(aFrame, true)
                       ? nullptr
-                      : f->GetFirstRowContaining(aBuilder->GetVisibleRect().y,
-                                                 &overflowAbove);
+                      : aFrame->GetFirstRowContaining(
+                            aBuilder->GetVisibleRect().y, &overflowAbove);
 
   if (kid) {
     // have a cursor, use it
@@ -200,7 +202,7 @@ static void DisplayRows(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
           aBuilder->GetVisibleRect().YMost()) {
         break;
       }
-      f->BuildDisplayListForChild(aBuilder, kid, aLists);
+      aFrame->BuildDisplayListForChild(aBuilder, kid, aLists);
       kid = kid->GetNextSibling();
     }
     return;
@@ -208,14 +210,14 @@ static void DisplayRows(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
 
   // No cursor. Traverse children the hard way and build a cursor while we're at
   // it
-  nsTableRowGroupFrame::FrameCursorData* cursor = f->SetupRowCursor();
-  kid = f->PrincipalChildList().FirstChild();
+  nsTableRowGroupFrame::FrameCursorData* cursor = aFrame->SetupRowCursor();
+  kid = aFrame->PrincipalChildList().FirstChild();
   while (kid) {
-    f->BuildDisplayListForChild(aBuilder, kid, aLists);
+    aFrame->BuildDisplayListForChild(aBuilder, kid, aLists);
 
     if (cursor) {
       if (!cursor->AppendFrame(kid)) {
-        f->ClearRowCursor();
+        aFrame->ClearRowCursor();
         return;
       }
     }
@@ -401,7 +403,7 @@ void nsTableRowGroupFrame::ReflowChildren(
           // the overflow area may have changed inflate the overflow area
           const nsStylePosition* stylePos = StylePosition();
           if (tableFrame->IsAutoBSize(wm) &&
-              !stylePos->BSize(wm, StyleDisplay()->mPosition)
+              !stylePos->BSize(wm, AnchorPosResolutionParams::From(this))
                    ->ConvertsToLength()) {
             // Because other cells in the row may need to be aligned
             // differently, repaint the entire row
@@ -430,7 +432,6 @@ void nsTableRowGroupFrame::ReflowChildren(
         const LogicalPoint offset(wm, 0,
                                   aReflowInput.mBCoord - oldPosition.B(wm));
         kidFrame->MovePositionBy(wm, offset);
-        nsTableFrame::RePositionViews(kidFrame);
         kidFrame->InvalidateFrameSubtree();
       }
 
@@ -826,7 +827,6 @@ void nsTableRowGroupFrame::CalculateRowBSizes(nsPresContext* aPresContext,
                                          false);
 
       if (deltaB != 0) {
-        nsTableFrame::RePositionViews(rowFrame);
         // XXXbz we don't need to update our overflow area?
       }
     }
@@ -889,7 +889,6 @@ nscoord nsTableRowGroupFrame::CollapseRowGroupIfNecessary(nscoord aBTotalOffset,
   overflow.UnionAllWith(
       nsRect(0, 0, groupRect.Width(aWM), groupRect.Height(aWM)));
   FinishAndStoreOverflow(overflow, groupRect.Size(aWM).GetPhysicalSize(aWM));
-  nsTableFrame::RePositionViews(this);
   nsTableFrame::InvalidateTableFrame(this, oldGroupRect, oldGroupInkOverflow,
                                      false);
 
@@ -1669,11 +1668,11 @@ Result<nsILineIterator::LineInfo, nsresult> nsTableRowGroupFrame::GetLine(
   return Err(NS_ERROR_FAILURE);
 }
 
-int32_t nsTableRowGroupFrame::FindLineContaining(nsIFrame* aFrame,
+int32_t nsTableRowGroupFrame::FindLineContaining(const nsIFrame* aFrame,
                                                  int32_t aStartLine) {
   NS_ENSURE_TRUE(aFrame, -1);
 
-  nsTableRowFrame* rowFrame = do_QueryFrame(aFrame);
+  const nsTableRowFrame* rowFrame = do_QueryFrame(aFrame);
   if (MOZ_UNLIKELY(!rowFrame)) {
     // When we do not have valid table structure in the DOM tree, somebody wants
     // to check the line number with an out-of-flow child of this frame because

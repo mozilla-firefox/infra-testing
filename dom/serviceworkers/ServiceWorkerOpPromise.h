@@ -7,10 +7,7 @@
 #ifndef mozilla_dom_serviceworkeroppromise_h__
 #define mozilla_dom_serviceworkeroppromise_h__
 
-#include <utility>
-
 #include "mozilla/MozPromise.h"
-
 #include "mozilla/dom/SafeRefPtr.h"
 #include "mozilla/dom/ServiceWorkerOpArgs.h"
 

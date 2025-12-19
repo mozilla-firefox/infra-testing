@@ -11,10 +11,7 @@ import com.google.android.material.snackbar.Snackbar.LENGTH_SHORT
 import io.mockk.MockKAnnotations
 import io.mockk.every
 import io.mockk.impl.annotations.MockK
-import io.mockk.mockkObject
-import io.mockk.unmockkObject
 import io.mockk.verify
-import org.junit.After
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -25,8 +22,8 @@ import org.mozilla.fenix.compose.snackbar.Snackbar
 import org.mozilla.fenix.compose.snackbar.SnackbarState
 import org.mozilla.fenix.helpers.MockkRetryTestRule
 
-private const val appName = "Firefox"
-private const val editPassword = "Edit password"
+private const val APP_NAME = "Firefox"
+private const val EDIT_PASSWORD = "Edit password"
 
 class FenixSnackbarDelegateTest {
 
@@ -43,29 +40,22 @@ class FenixSnackbarDelegateTest {
     @Before
     fun setup() {
         MockKAnnotations.init(this)
-        mockkObject(Snackbar.Companion)
 
-        delegate = FenixSnackbarDelegate(view)
-        every {
-            Snackbar.make(view, any())
-        } returns snackbar
-        every { view.context.getString(R.string.app_name) } returns appName
-        every { view.context.getString(R.string.edit_2) } returns editPassword
-    }
+        delegate = FenixSnackbarDelegate(view) { parent, state -> snackbar }
 
-    @After
-    fun teardown() {
-        unmockkObject(Snackbar.Companion)
+        every { view.context.getString(R.string.app_name) } returns APP_NAME
+        every { view.context.getString(R.string.edit_2) } returns EDIT_PASSWORD
     }
 
     @Test
     fun `GIVEN an action listener is not provided WHEN the snackbar is made THEN the snackbar's action listener is null`() {
         val snackbarState = delegate.makeSnackbarState(
             snackBarParentView = view,
-            text = appName,
+            text = APP_NAME,
             duration = LENGTH_LONG,
             isError = false,
-            actionText = editPassword,
+            actionText = EDIT_PASSWORD,
+            withDismissAction = false,
             listener = null,
         )
 
@@ -76,10 +66,11 @@ class FenixSnackbarDelegateTest {
     fun `GIVEN an action string is not provided WHEN the snackbar is made THEN the snackbar's action listener is null`() {
         val snackbarState = delegate.makeSnackbarState(
             snackBarParentView = view,
-            text = appName,
+            text = APP_NAME,
             duration = LENGTH_LONG,
             isError = false,
             actionText = null,
+            withDismissAction = false,
             listener = {},
         )
 
@@ -90,10 +81,11 @@ class FenixSnackbarDelegateTest {
     fun `GIVEN an action string and an action listener are not provided WHEN the snackbar state is made THEN the snackbar state's listener is null`() {
         val snackbarState = delegate.makeSnackbarState(
             snackBarParentView = view,
-            text = appName,
+            text = APP_NAME,
             duration = LENGTH_LONG,
             isError = false,
             actionText = null,
+            withDismissAction = false,
             listener = null,
         )
 
@@ -104,10 +96,11 @@ class FenixSnackbarDelegateTest {
     fun `GIVEN the snackbar is an error WHEN the snackbar state is made THEN the snackbar should be the warning type`() {
         val snackbarState = delegate.makeSnackbarState(
             snackBarParentView = view,
-            text = appName,
+            text = APP_NAME,
             duration = LENGTH_LONG,
             isError = true,
             actionText = null,
+            withDismissAction = false,
             listener = null,
         )
 
@@ -115,13 +108,31 @@ class FenixSnackbarDelegateTest {
     }
 
     @Test
+    fun `GIVEN the snackbar has a subText WHEN the snackbar state is made THEN the snackbar should be with a subMessage`() {
+        val subText = "subText"
+        val snackbarState = delegate.makeSnackbarState(
+            snackBarParentView = view,
+            text = APP_NAME,
+            subText = subText,
+            duration = LENGTH_LONG,
+            isError = true,
+            actionText = null,
+            withDismissAction = false,
+            listener = null,
+        )
+
+        assertTrue(snackbarState.subMessage?.text == subText)
+    }
+
+    @Test
     fun `GIVEN the snackbar is not an error WHEN the snackbar state is made THEN the snackbar should be the default type`() {
         val snackbarState = delegate.makeSnackbarState(
             snackBarParentView = view,
-            text = appName,
+            text = APP_NAME,
             duration = LENGTH_LONG,
             isError = false,
             actionText = null,
+            withDismissAction = false,
             listener = null,
         )
 
@@ -131,7 +142,7 @@ class FenixSnackbarDelegateTest {
     @Test
     fun `WHEN the snackbar is requested THEN show snackbar is shown`() {
         delegate.show(
-            text = appName,
+            text = APP_NAME,
             duration = LENGTH_LONG,
             action = null,
             listener = null,
@@ -165,7 +176,7 @@ class FenixSnackbarDelegateTest {
 
         delegate.dismiss()
 
-        verify(exactly = 0) { snackbar.dismiss() }
+        verify(exactly = 1) { snackbar.dismiss() }
     }
 
     @Test

@@ -4,31 +4,35 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "AndroidAlerts.h"
+#include "mozilla/dom/notification/NotificationHandler.h"
 #include "mozilla/java/GeckoRuntimeWrappers.h"
 #include "mozilla/java/WebNotificationWrappers.h"
+#include "mozilla/java/WebNotificationActionWrappers.h"
+#include "nsContentUtils.h"
 #include "nsIPrincipal.h"
+#include "nsIScriptSecurityManager.h"
 #include "nsIURI.h"
+
+using namespace mozilla::dom::notification;
 
 namespace mozilla {
 namespace widget {
 
 NS_IMPL_ISUPPORTS(AndroidAlerts, nsIAlertsService)
 
-StaticAutoPtr<AndroidAlerts::ListenerMap> AndroidAlerts::sListenerMap;
-MOZ_RUNINIT nsTHashMap<nsStringHashKey, java::WebNotification::GlobalRef>
-    AndroidAlerts::mNotificationsMap;
+struct AndroidNotificationTuple {
+  // Can be null if the caller doesn't care about the result.
+  nsCOMPtr<nsIObserver> mObserver;
 
-NS_IMETHODIMP
-AndroidAlerts::ShowAlertNotification(
-    const nsAString& aImageUrl, const nsAString& aAlertTitle,
-    const nsAString& aAlertText, bool aAlertTextClickable,
-    const nsAString& aAlertCookie, nsIObserver* aAlertListener,
-    const nsAString& aAlertName, const nsAString& aBidi, const nsAString& aLang,
-    const nsAString& aData, nsIPrincipal* aPrincipal, bool aInPrivateBrowsing,
-    bool aRequireInteraction) {
-  MOZ_ASSERT_UNREACHABLE("Should be implemented by nsAlertsService.");
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
+  // The Gecko alert notification.
+  nsCOMPtr<nsIAlertNotification> mAlert;
+
+  // The Java represented form of mAlert.
+  mozilla::java::WebNotification::GlobalRef mNotificationRef;
+};
+
+using NotificationMap = nsTHashMap<nsStringHashKey, AndroidNotificationTuple>;
+static StaticAutoPtr<NotificationMap> sNotificationMap;
 
 NS_IMETHODIMP
 AndroidAlerts::ShowAlert(nsIAlertNotification* aAlert,
@@ -92,66 +96,147 @@ AndroidAlerts::ShowAlert(nsIAlertNotification* aAlert,
   rv = aAlert->GetVibrate(vibrate);
   NS_ENSURE_SUCCESS(rv, NS_OK);
 
-  if (aAlertListener) {
-    if (!sListenerMap) {
-      sListenerMap = new ListenerMap();
+  nsTArray<RefPtr<nsIAlertAction>> nsActions;
+  MOZ_TRY(aAlert->GetActions(nsActions));
+  jni::ObjectArray::LocalRef actions =
+      jni::ObjectArray::New(nsActions.Length());
+  size_t index = 0;
+  for (auto& nsAction : nsActions) {
+    nsAutoString name;
+    MOZ_TRY(nsAction->GetAction(name));
+
+    nsAutoString title;
+    MOZ_TRY(nsAction->GetTitle(title));
+
+    java::WebNotificationAction::LocalRef action =
+        java::WebNotificationAction::New(name, title);
+    actions->SetElement(index, action);
+    ++index;
+  }
+
+  nsAutoCString origin;
+  rv = aAlert->GetOrigin(origin);
+  NS_ENSURE_SUCCESS(rv, NS_OK);
+
+  if (!sNotificationMap) {
+    sNotificationMap = new NotificationMap();
+  } else if (Maybe<AndroidNotificationTuple> tuple =
+                 sNotificationMap->Extract(name)) {
+    if (tuple->mObserver) {
+      tuple->mObserver->Observe(nullptr, "alertfinished", u"close");
     }
-    // This will remove any observers already registered for this name.
-    sListenerMap->InsertOrUpdate(name, aAlertListener);
   }
 
   java::WebNotification::LocalRef notification = notification->New(
       title, name, cookie, text, imageUrl, dir, lang, requireInteraction, spec,
-      silent, privateBrowsing, jni::IntArray::From(vibrate));
-  java::GeckoRuntime::LocalRef runtime = java::GeckoRuntime::GetInstance();
-  if (runtime != NULL) {
+      silent, privateBrowsing, jni::IntArray::From(vibrate), actions, origin);
+  AndroidNotificationTuple tuple{
+      .mObserver = aAlertListener,
+      .mAlert = aAlert,
+      .mNotificationRef = notification,
+  };
+  sNotificationMap->InsertOrUpdate(name, std::move(tuple));
+
+  if (java::GeckoRuntime::LocalRef runtime =
+          java::GeckoRuntime::GetInstance()) {
     runtime->NotifyOnShow(notification);
   }
-  mNotificationsMap.InsertOrUpdate(name, notification);
 
   return NS_OK;
 }
 
 NS_IMETHODIMP
 AndroidAlerts::CloseAlert(const nsAString& aAlertName, bool aContextClosed) {
-  java::WebNotification::LocalRef notification =
-      mNotificationsMap.Get(aAlertName);
-  if (!notification) {
+  if (!sNotificationMap) {
     return NS_OK;
+  }
+
+  Maybe<AndroidNotificationTuple> tuple = sNotificationMap->Extract(aAlertName);
+  if (!tuple) {
+    return NS_OK;
+  }
+
+  if (tuple->mObserver) {
+    // All CloseAlert implementation is expected to fire alertfinished
+    // synchronously. (See bug 1975432 to deduplicate this logic)
+    // We have to fire alertfinished here as we are closing it ourselves;
+    // GeckoView will only send it when it's closed from Android side.
+    tuple->mObserver->Observe(nullptr, "alertfinished", u"close");
   }
 
   java::GeckoRuntime::LocalRef runtime = java::GeckoRuntime::GetInstance();
   if (runtime != NULL) {
-    runtime->NotifyOnClose(notification);
+    runtime->NotifyOnClose(tuple->mNotificationRef);
   }
-  mNotificationsMap.Remove(aAlertName);
 
   return NS_OK;
 }
 
+NS_IMETHODIMP AndroidAlerts::GetHistory(nsTArray<nsString>& aResult) {
+  // TODO: Implement this using NotificationManager.getActiveNotifications
+  // https://developer.android.com/reference/android/app/NotificationManager#getActiveNotifications()
+  // See bug 1971394.
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
 NS_IMETHODIMP AndroidAlerts::Teardown() {
-  mNotificationsMap.Clear();
+  sNotificationMap = nullptr;
   return NS_OK;
 }
 
 NS_IMETHODIMP AndroidAlerts::PbmTeardown() { return NS_ERROR_NOT_IMPLEMENTED; }
 
+nsresult RespondViaNotificationHandler(const nsAString& aName,
+                                       const nsACString& aTopic,
+                                       Maybe<nsString> aAction,
+                                       const nsACString& aOrigin) {
+  if (aTopic != "alertclickcallback"_ns) {
+    // NOTE(krosylight): we are not handling alertfinished as we don't want to
+    // open the app for each notification dismiss.
+    return NS_OK;
+  }
+
+  nsCOMPtr<nsIPrincipal> principal;
+  if (nsCOMPtr<nsIScriptSecurityManager> ssm =
+          nsContentUtils::GetSecurityManager()) {
+    MOZ_TRY(ssm->CreateContentPrincipalFromOrigin(aOrigin,
+                                                  getter_AddRefs(principal)));
+  } else {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  RefPtr<NotificationHandler> handler = NotificationHandler::GetSingleton();
+  MOZ_TRY(handler->RespondOnClick(principal, aName, aAction ? *aAction : u""_ns,
+                                  /* aAutoClosed */ !aAction, nullptr));
+  return NS_OK;
+}
+
 void AndroidAlerts::NotifyListener(const nsAString& aName, const char* aTopic,
-                                   const char16_t* aCookie) {
-  if (!sListenerMap) {
+                                   Maybe<nsString> aAction,
+                                   const nsACString& aOrigin) {
+  nsDependentCString topic(aTopic);
+
+  if (!sNotificationMap) {
+    RespondViaNotificationHandler(aName, topic, aAction, aOrigin);
     return;
   }
 
-  nsCOMPtr<nsIObserver> listener = sListenerMap->Get(aName);
-  if (!listener) {
+  Maybe<AndroidNotificationTuple> tuple = sNotificationMap->MaybeGet(aName);
+  if (!tuple) {
+    RespondViaNotificationHandler(aName, topic, aAction, aOrigin);
     return;
   }
 
-  listener->Observe(nullptr, aTopic, aCookie);
+  if (tuple->mObserver) {
+    nsCOMPtr<nsIAlertAction> action;
+    if (aAction) {
+      tuple->mAlert->GetAction(*aAction, getter_AddRefs(action));
+    }
+    tuple->mObserver->Observe(action, aTopic, nullptr);
+  }
 
-  if ("alertfinished"_ns.Equals(aTopic)) {
-    sListenerMap->Remove(aName);
-    mNotificationsMap.Remove(aName);
+  if ("alertfinished"_ns.Equals(topic)) {
+    sNotificationMap->Remove(aName);
   }
 }
 

@@ -60,7 +60,6 @@ PKG_PATH =
 SDK_PATH =
 PKG_INST_BASENAME = $(PKG_BASENAME).installer
 PKG_STUB_BASENAME = $(PKG_BASENAME).installer-stub
-PKG_INST_PATH = install/sea/
 PKG_UPDATE_BASENAME = $(PKG_BASENAME)
 CHECKSUMS_FILE_BASENAME = $(PKG_BASENAME)
 MOZ_INFO_BASENAME = $(PKG_BASENAME)
@@ -98,27 +97,21 @@ MOZSEARCH_JAVA_INDEX_BASENAME = $(PKG_BASENAME).mozsearch-java-index
 MOZHARNESS_PACKAGE = mozharness.zip
 
 # Test package naming
-TEST_PACKAGE = $(PKG_BASENAME).common.tests.tar.gz
-CPP_TEST_PACKAGE = $(PKG_BASENAME).cppunittest.tests.tar.gz
-XPC_TEST_PACKAGE = $(PKG_BASENAME).xpcshell.tests.tar.gz
-MOCHITEST_PACKAGE = $(PKG_BASENAME).mochitest.tests.tar.gz
-REFTEST_PACKAGE = $(PKG_BASENAME).reftest.tests.tar.gz
-WP_TEST_PACKAGE = $(PKG_BASENAME).web-platform.tests.tar.gz
-TALOS_PACKAGE = $(PKG_BASENAME).talos.tests.tar.gz
-AWSY_PACKAGE = $(PKG_BASENAME).awsy.tests.tar.gz
-GTEST_PACKAGE = $(PKG_BASENAME).gtest.tests.tar.gz
+TEST_PACKAGE = $(PKG_BASENAME).common.tests.tar.zst
+CPP_TEST_PACKAGE = $(PKG_BASENAME).cppunittest.tests.tar.zst
+XPC_TEST_PACKAGE = $(PKG_BASENAME).xpcshell.tests.tar.zst
+MOCHITEST_PACKAGE = $(PKG_BASENAME).mochitest.tests.tar.zst
+REFTEST_PACKAGE = $(PKG_BASENAME).reftest.tests.tar.zst
+WP_TEST_PACKAGE = $(PKG_BASENAME).web-platform.tests.tar.zst
+TALOS_PACKAGE = $(PKG_BASENAME).talos.tests.tar.zst
+AWSY_PACKAGE = $(PKG_BASENAME).awsy.tests.tar.zst
+GTEST_PACKAGE = $(PKG_BASENAME).gtest.tests.tar.zst
 
 # `.xpt` artifacts: for use in artifact builds.
 XPT_ARTIFACTS_ARCHIVE_BASENAME = $(PKG_BASENAME).xpt_artifacts
 ifeq (Darwin, $(OS_ARCH))
 UPDATE_FRAMEWORK_ARTIFACTS_ARCHIVE_BASENAME = $(PKG_BASENAME).update_framework_artifacts
 endif # Darwin
-
-ifneq (,$(wildcard $(DIST)/bin/application.ini))
-BUILDID = $(shell $(PYTHON3) $(MOZILLA_DIR)/config/printconfigsetting.py $(DIST)/bin/application.ini App BuildID)
-else
-BUILDID = $(shell $(PYTHON3) $(MOZILLA_DIR)/config/printconfigsetting.py $(DIST)/bin/platform.ini Build BuildID)
-endif
 
 MOZ_SOURCESTAMP_FILE = $(DIST)/$(PKG_PATH)/$(MOZ_INFO_BASENAME).txt
 MOZ_BUILDINFO_FILE = $(DIST)/$(PKG_PATH)/$(MOZ_INFO_BASENAME).json

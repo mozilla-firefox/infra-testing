@@ -6,10 +6,10 @@ add_task(async function () {
 
   let tab = (gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser));
 
-  await promiseTabLoadEvent(
-    tab,
-    "data:text/html;charset=utf-8," + escape(childContent)
-  );
+  await BrowserTestUtils.loadURIString({
+    browser: tab.linkedBrowser,
+    uriString: "data:text/html;charset=utf-8," + escape(childContent),
+  });
   await SimpleTest.promiseFocus(gBrowser.selectedBrowser);
 
   let remote = gBrowser.selectedBrowser.isRemoteBrowser;
@@ -47,8 +47,9 @@ add_task(async function () {
   await scrollPromise;
 
   await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function () {
-    Assert.ok(
-      content.document.getElementById("s").getBoundingClientRect().left >= 0,
+    Assert.greaterOrEqual(
+      content.document.getElementById("s").getBoundingClientRect().left,
+      0,
       "scroll should include find result"
     );
   });

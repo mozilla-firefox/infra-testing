@@ -132,8 +132,8 @@ class RequestPanel extends Component {
    * This function is not sorting result properties since it can
    * results in unexpected order of params. See bug 1469533
    *
-   * @param {Object[]} arr - key-value pair array or form params
-   * @returns {Object} Rep compatible object
+   * @param {object[]} arr - key-value pair array or form params
+   * @returns {object} Rep compatible object
    */
   getProperties(arr) {
     return arr.reduce((map, obj) => {
@@ -189,7 +189,7 @@ class RequestPanel extends Component {
   render() {
     const { request, targetSearchResult } = this.props;
     const { filterText, rawRequestPayloadDisplayed } = this.state;
-    const { formDataSections, mimeType, requestPostData } = request;
+    const { formDataSections, mimeType, requestPostData, url } = request;
     const postData = requestPostData ? requestPostData.postData?.text : null;
 
     if ((!formDataSections || formDataSections.length === 0) && !postData) {
@@ -212,6 +212,7 @@ class RequestPanel extends Component {
         filterText,
         targetSearchResult,
         defaultSelectFirstNode: false,
+        url,
       };
       requestPayloadLabel = REQUEST_FORM_DATA;
       hasFormattedDisplay = true;
@@ -224,7 +225,7 @@ class RequestPanel extends Component {
 
     // Check if the request post data has been truncated from the backend,
     // in which case no parse should be attempted.
-    if (postData && limit <= postData.length) {
+    if (postData && limit > 0 && limit <= postData.length) {
       error = REQUEST_TRUNCATED;
     }
     if (formDataSections && formDataSections.length === 0 && postData) {
@@ -242,6 +243,7 @@ class RequestPanel extends Component {
             filterText,
             targetSearchResult,
             defaultSelectFirstNode: false,
+            url,
           };
           requestPayloadLabel = JSON_SCOPE_NAME;
           hasFormattedDisplay = true;
@@ -256,8 +258,9 @@ class RequestPanel extends Component {
       component = SourcePreview;
       componentProps = {
         text: postData,
-        mode: mimeType?.replace(/;.+/, ""),
+        mimeType: mimeType?.replace(/;.+/, ""),
         targetSearchResult,
+        url,
       };
       requestPayloadLabel = REQUEST_POST_PAYLOAD;
     }

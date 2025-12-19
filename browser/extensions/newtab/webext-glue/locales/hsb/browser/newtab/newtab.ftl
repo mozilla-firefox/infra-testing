@@ -8,6 +8,9 @@
 newtab-page-title = Nowy rajtark
 newtab-settings-button =
     .title = Stronu wašeho noweho rajtarka přiměrić
+newtab-customize-panel-icon-button =
+    .title = Tutu stronu přiměrić
+newtab-customize-panel-icon-button-label = Přiměrić
 newtab-personalize-settings-icon-label =
     .title = Nowy rajtark personalizować
     .aria-label = Nastajenja
@@ -53,6 +56,9 @@ newtab-topsites-add-shortcut-header = Nowe zwjazanje
 newtab-topsites-edit-topsites-header = Najhusćišo wopytane sydło wobdźěłać
 newtab-topsites-edit-shortcut-header = Zwjazanje wobdźěłać
 newtab-topsites-add-shortcut-label = Skrótšenku přidać
+newtab-topsites-add-shortcut-title =
+    .title = Skrótšenku přidać
+    .aria-label = Skrótšenku přidać
 newtab-topsites-title-label = Titul
 newtab-topsites-title-input =
     .placeholder = Titul zapodać
@@ -81,6 +87,14 @@ newtab-confirm-delete-history-p2 = Tuta akcija njeda so cofnyć.
 ## Top Sites - Sponsored label
 
 newtab-topsite-sponsored = Sponserowany
+
+## Label used by screen readers for pinned top sites
+
+# Variables:
+#   $title (string) - The label or hostname of the site.
+topsite-label-pinned =
+    .aria-label = { $title } (připjate)
+    .title = { $title }
 
 ## Context Menu - Action Tooltips.
 
@@ -117,7 +131,8 @@ newtab-menu-delete-pocket = Z { -pocket-brand-name } zhašeć
 newtab-menu-archive-pocket = W { -pocket-brand-name } archiwować
 newtab-menu-show-privacy-info = Naši sponsorojo a waša priwatnosć
 newtab-menu-about-fakespot = Wo { -fakespot-brand-name }
-newtab-menu-report-content = Tutón wobsah zdźělić
+# Report is a verb (i.e. report issue with the content).
+newtab-menu-report = Zdźělić
 # Context menu option to personalize New Tab recommended stories by blocking a section of stories,
 # e.g. "Sports". "Block" is a verb here.
 newtab-menu-section-block = Blokować
@@ -191,6 +206,8 @@ newtab-label-sponsored-by = Sponserowany wot { $sponsor }
 #   $source (string) - The name of a company or their domain
 #   $timeToRead (number) - The estimated number of minutes to read this story
 newtab-label-source-read-time = { $source } · { $timeToRead } mjeń.
+# This string is used under fixed size ads to indicate sponsored content
+newtab-label-sponsored-fixed = Sponserowany
 
 ## Section Menu: These strings are displayed in the section context menu and are
 ## meant as a call to action for the given section.
@@ -253,9 +270,6 @@ newtab-pocket-learn-more = Dalše informacije
 newtab-pocket-cta-button = { -pocket-brand-name } wobstarać
 newtab-pocket-cta-text = Składujće stawizny, kotrež so wam spodobuja, w { -pocket-brand-name } a žiwće swój duch z fascinowacymi čitančkami.
 newtab-pocket-pocket-firefox-family = { -pocket-brand-name } je dźěl swójby { -brand-product-name }
-# A save to Pocket button that shows over the card thumbnail on hover.
-newtab-pocket-image =
-    .aria-label = { -pocket-brand-name }
 newtab-pocket-save = Składować
 newtab-pocket-saved = Składowany
 
@@ -307,16 +321,32 @@ newtab-custom-pocket-subtitle = Wosebite wobsah, wubrany přez { -pocket-brand-n
 newtab-custom-stories-toggle =
     .label = Doporučene stawiznički
     .description = Wuwzaćowy wobsah, kotryž so přez swójbu { -brand-product-name } hlada
+newtab-custom-stories-personalized-toggle =
+    .label = Stawiznički
+newtab-custom-stories-personalized-checkbox-label = Personalizowane stawiznički na zakładźe wašeje aktiwity
 newtab-custom-pocket-sponsored = Sponserowane stawizny
 newtab-custom-pocket-show-recent-saves = Najnowše składowanja pokazać
 newtab-custom-recent-title = Najnowša aktiwita
 newtab-custom-recent-subtitle = Wuběr najnowšich sydłow a najnowšeho wobsaha
-newtab-custom-recent-toggle =
-    .label = Najnowša aktiwita
-    .description = Wuběr najnowšich sydłow a najnowšeho wobsaha
 newtab-custom-weather-toggle =
     .label = Wjedro
     .description = Dźensniša wjedrowa předpowědź na jedyn pohlad
+newtab-custom-trending-search-toggle =
+    .label = Woblubowane pytanja
+    .description = Popularne a husto pytane temy
+newtab-custom-widget-weather-toggle =
+    .label = Wjedro
+newtab-custom-widget-trending-search-toggle =
+    .label = Woblubowane pytanja
+newtab-custom-widget-lists-toggle =
+    .label = Lisćiny
+newtab-custom-widget-timer-toggle =
+    .label = Časoměr
+newtab-custom-widget-section-title = Asistenty
+# Tooltip for close button
+newtab-custom-close-menu-button =
+    .title = Začinić
+    .aria-label = Meni začinić
 newtab-custom-close-button = Začinić
 newtab-custom-settings = Dalše nastajenja rjadować
 
@@ -329,6 +359,7 @@ newtab-wallpaper-custom-color = Barbu wubrać
 # Variables
 #   $file_size (number) - The number of the maximum image file size (in MB) that may be uploaded
 newtab-wallpaper-error-max-file-size = Wobraz je limit datajoweje wulkosće { $file_size } překročił. Nahrajće prošu mjeńšu dataju.
+newtab-wallpaper-error-upload-file-type = Njemóžachmy wašu dataju nahrać. Spytajće prošu z wobrazowej dataju hišće raz.
 newtab-wallpaper-error-file-type = Njemóžachmy wašu dataju nahrać. Spytajće prošu z druhim datajowym typom hišće raz.
 newtab-wallpaper-light-red-panda = Čerwjeny panda
 newtab-wallpaper-light-mountain = Běła hora
@@ -378,7 +409,7 @@ newtab-wallpaper-abstract-purple-green = Wioletny a zeleny swětłowy přeběh
 newtab-wallpaper-abstract-blue-purple-waves = Módre a wioletne žołmate twary
 newtab-wallpaper-abstract-black-waves = Čorne žołmate twary
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Fota
 newtab-wallpaper-beach-at-sunrise = Brjóh při schadźenju słónca
@@ -393,7 +424,6 @@ newtab-wallpaper-suspension-bridge = Šěra fotografija wisateho mosta wodnjo
 newtab-wallpaper-sand-dunes = Běłe pěskowe nawěwy
 newtab-wallpaper-palm-trees = Silueta štomow kokosowych palmow w złotej hodźinje
 newtab-wallpaper-blue-flowers = Fotografija kwětkow z módrymi łopješkami w kćěwje z bliskosće
-newtab-wallpaper-forest-trees = Z kurjawu pokryte štomy
 # Variables
 #   $author_string (String) - The name of the creator of the photo.
 #   $webpage_string (String) - The name of the webpage where the photo is located.
@@ -409,12 +439,16 @@ feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
 
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
+
 ## Celestial
 
 # “Celestial” referring to astronomy; positioned in or relating to the sky,
 # or outer space as observed in astronomy.
 # Not to be confused with religious definition of the word.
-newtab-wallpaper-category-title-celestial = Njebjeski
+newtab-wallpaper-category-title-celestial = Njebjeske
 newtab-wallpaper-celestial-lunar-eclipse = Zaćmiće měsačka
 newtab-wallpaper-celestial-earth-night = Nócne foto z delnjeho zemskeho orbita
 newtab-wallpaper-celestial-starry-sky = Hwězdne njebjo
@@ -435,7 +469,6 @@ newtab-weather-menu-change-location = Městno změnić
 newtab-weather-change-location-search-input-placeholder =
     .placeholder = Městno pytać
     .aria-label = Městno pytać
-newtab-weather-change-location-search-input = Městno pytać
 newtab-weather-menu-weather-display = Wjedrowe pokazanje
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
@@ -451,8 +484,16 @@ newtab-weather-menu-change-temperature-units-fahrenheit = Fahrenheit wužiwać
 newtab-weather-menu-change-temperature-units-celsius = Celsius wužiwać
 newtab-weather-menu-hide-weather = Wjedro na nowym rajtarku schować
 newtab-weather-menu-learn-more = Dalše informacije
+newtab-weather-menu-detect-my-location = Moje stejnišćo namakać
 # This message is shown if user is working offline
 newtab-weather-error-not-available = Wjedrowe daty tuchwilu k dispoziciji njejsu.
+newtab-weather-opt-in-see-weather = Chceće wjedro za swoje stejnišćo widźeć?
+newtab-weather-opt-in-not-now =
+    .label = Nic nětko
+newtab-weather-opt-in-yes =
+    .label = Haj
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = New York City
 
 ## Topic Labels
 
@@ -501,6 +542,9 @@ newtab-topic-selection-button-pick-interests = Wubjerće swoje zajimy
 newtab-section-follow-button = Slědować
 newtab-section-following-button = Slědowacy
 newtab-section-unfollow-button = Hižo njeslědować
+# A modal may appear next to the Follow button, directing users to try out the feature
+newtab-section-follow-highlight-title = Wothłosujće swój kanal na drobne
+newtab-section-follow-highlight-subtitle = Slědujće swojim zajimam, zo byšće wjace wo tym widźał, štož so wam spodoba.
 
 ## Button to block/unblock listed topics
 ## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
@@ -519,7 +563,7 @@ newtab-section-confirm-block-topic-p2 = Zablokowane temy so hižo we wašim kana
 #   $topic (string) - Name of topic that user is blocking
 newtab-section-block-topic-button = { $topic } blokować
 
-## Panel in the Customize menu section to manage followed and blocked topics
+## Strings for custom wallpaper highlight
 
 newtab-section-mangage-topics-title = Temy
 newtab-section-manage-topics-button-v2 =
@@ -532,3 +576,139 @@ newtab-custom-wallpaper-title = Tu su swójske pozadkowe wobrazy
 # 'Make firefox yours" means to customize or personalize
 newtab-custom-wallpaper-subtitle = Nahrajće swójski pozadkowy wobraz abo wubjerće swójsku barbu, zo byšće sej { -brand-product-name } přiswojił.
 newtab-custom-wallpaper-cta = Wupruwujće jón
+
+## Strings for new user activation custom wallpaper highlight
+
+newtab-new-user-custom-wallpaper-title = Wubjerće pozadkowy wobraz, zo byšće sej { -brand-product-name } přiswojił
+newtab-new-user-custom-wallpaper-subtitle = Čujće so na kóždym nowym rajtarku kaž doma ze swójskimi pozadkowymi wobrazami a barbami.
+newtab-new-user-custom-wallpaper-cta = Spytajće nětko
+
+## Strings for download mobile highlight
+
+newtab-download-mobile-highlight-title = { -brand-product-name } za mobilny grat sćahnyć
+# "Scan the code" refers to scanning the QR code that appears above the body text that leads to Firefox for mobile download.
+newtab-download-mobile-highlight-body-variant-a = Skenujće kod, zo byšće po puću wěsće přehladował.
+newtab-download-mobile-highlight-body-variant-b = Pokročujće, hdźež sće přestał, hdyž swoje rajtarki, hesła a wjace synchronizujeće.
+newtab-download-mobile-highlight-body-variant-c = Sće wědźał, zo móžeće { -brand-product-name } po puću sobu wzać? Samsny wobhladowak. We wašej tobole.
+newtab-download-mobile-highlight-image =
+    .aria-label = QR-kod za sćehnjenje { -brand-product-name } za mobilny grat
+
+## Strings for shortcuts highlight
+
+newtab-shortcuts-highlight-title = Waše fawority k ruce
+newtab-shortcuts-highlight-subtitle = Přidajće zwjazanje, zo byšće swoje najlubše sydła jedne kliknjenje preč dźeržał.
+
+## Strings for reporting ads and content
+
+newtab-report-content-why-reporting-this =
+    .label = Čehodla to zdźěleće?
+newtab-report-ads-reason-not-interested =
+    .label = Njejsym zajimowany
+newtab-report-ads-reason-inappropriate =
+    .label = Je njepřihódne
+newtab-report-ads-reason-seen-it-too-many-times =
+    .label = Sym to přečasto widźał
+newtab-report-content-wrong-category =
+    .label = Wopačna kategorija
+newtab-report-content-outdated =
+    .label = Zestarjeny
+newtab-report-content-inappropriate-offensive =
+    .label = Njepřistojny abo křiwdźacy
+newtab-report-content-spam-misleading =
+    .label = Spam abo zamylacy
+newtab-report-cancel = Přetorhnyć
+newtab-report-submit = Wotpósłać
+newtab-toast-thanks-for-reporting =
+    .message = Wulki dźak, zo sće to zdźělił.
+
+## Strings for trending searches
+
+newtab-trending-searches-show-trending =
+    .title = Woblubowane pytanja pokazać
+newtab-trending-searches-hide-trending =
+    .title = Woblubowane pytanja schować
+newtab-trending-searches-learn-more = Dalše informacije
+newtab-trending-searches-dismiss = Woblubowane pytanja schować
+# "Trending searches refers to popular searches from search engines
+newtab-trending-searches-title = Woblubowane pytanja
+
+## Strings for task / to-do list productivity widget
+
+# "Add one" means adding a new task to the list (e.g., "Walk the dog")
+newtab-widget-lists-empty-cta = Móžnosće su njeličomne. Přidajće jedyn nadawk.
+# A simple label next to the default list name letting users know this is a new / beta feature
+newtab-widget-lists-label-new =
+    .label = Nowy
+newtab-widget-lists-label-beta =
+    .label = Beta
+# When tasks have been previous marked as complete, they will appear in their own separate list beneath incomplete items
+# Variables:
+#   $number (number) - Amount of list items marked complete
+newtab-widget-lists-completed-list = Dokónčeny ({ $number })
+newtab-widget-task-list-menu-copy = Kopěrować
+newtab-widget-lists-menu-edit = Mjeno lisćiny wobdźěłać
+newtab-widget-lists-menu-create = Nowu lisćinu wutworić
+newtab-widget-lists-menu-delete = Tutu lisćinu zhašeć
+newtab-widget-lists-menu-copy = Lisćinu do mjezyskłada kopěrować
+newtab-widget-lists-menu-hide = Wšě lisćiny schować
+newtab-widget-lists-menu-learn-more = Dalše informacije
+newtab-widget-lists-input-add-an-item =
+    .placeholder = Zapisk přidać
+newtab-widget-lists-input-error = Prošu zapřijimujće tekst, zo byšće zapisk přidał.
+newtab-widget-lists-input-menu-open-link = Wotkaz wočinić
+newtab-widget-lists-input-menu-move-up = Horje
+newtab-widget-lists-input-menu-move-down = Dele
+newtab-widget-lists-input-menu-delete = Zhašeć
+newtab-widget-lists-input-menu-edit = Wobdźěłać
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + Nowu lisćinu wutworić
+newtab-widget-lists-name-label-default =
+    .label = Lisćiny nadawkow
+newtab-widget-lists-name-placeholder-default =
+    .placeholder = Lisćiny nadawkow
+# The placeholder value of the name field for a newly created list
+newtab-widget-lists-name-placeholder-new =
+    .placeholder = Nowa lisćina
+newtab-widget-section-title = Asistenty
+# Tooltip for hide all widgets button
+newtab-widget-section-hide-all-button =
+    .title = Asistenty schować
+    .aria-label = Wšě asistenty schować
+newtab-widget-section-maximize =
+    .title = Asistenty pokazać
+    .aria-label = Wšě asistenty z połnej wulkosću pokazać
+newtab-widget-section-minimize =
+    .title = Asistenty miniměrować
+    .aria-label = Wšě asistenty z kompaktnej wulkosću schować
+
+## Strings for timer productivity widget
+## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
+
+newtab-widget-timer-notification-title = Časoměr
+newtab-widget-timer-notification-focus = Fokusowy čas je nimo. Wulkotne dźěło. Trjebaće přestawku?
+newtab-widget-timer-notification-break = Waša přestawka je nimo. Hotowy za fokus?
+newtab-widget-timer-notification-warning = Zdźělenja su znjemóžnjene
+newtab-widget-timer-mode-focus =
+    .label = Fokus
+newtab-widget-timer-mode-break =
+    .label = Přestawka
+newtab-widget-timer-label-play =
+    .label = Wothrać
+newtab-widget-timer-label-pause =
+    .label = Přestawka
+newtab-widget-timer-reset =
+    .title = Wróćo stajić
+newtab-widget-timer-menu-notifications = Zdźělenja znjemóžnić
+newtab-widget-timer-menu-notifications-on = Zdźělenja zmóžnić
+newtab-widget-timer-menu-hide = Časoměr schować
+newtab-widget-timer-menu-learn-more = Dalše informacije
+newtab-widget-message-title = Wostańće koncentrowany z lisćinami a zatwarjenym časoměrom
+# to-dos stands for "things to do".
+newtab-widget-message-copy = Wot spěšnych dopomnjećow do wšědnych nadawkowych lisćinow, koncentrujće so na posedźenja, zo byšće přestawki podlěšił – njepopušćejće a budźće zdypkom.
+newtab-promo-card-title = { -brand-product-name } podpěrać
+newtab-promo-card-body = Naši sponsorojo našu misiju podpěruja, zo bychu lěpši web tworili
+newtab-promo-card-cta = Dalše informacije
+newtab-promo-card-dismiss-button =
+    .title = Zaćisnyć
+    .aria-label = Zaćisnyć

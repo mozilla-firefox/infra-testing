@@ -2,9 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* All top-level definitions here are exports.  */
-/* eslint no-unused-vars: [2, {"vars": "local"}] */
-
 const PROPERTIES_URL = "chrome://devtools/locale/styleeditor.properties";
 
 import { loader } from "resource://devtools/shared/loader/Loader.sys.mjs";
@@ -150,6 +147,7 @@ export function showFilePicker(
 
 /**
  * Returns a Popup Menu for the Options ("gear") Button
+ *
  * @param {function} toggleOrigSources
  *        To toggle the original source pref
  * @param {function} toggleAtRulesSidebar

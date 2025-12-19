@@ -6,7 +6,6 @@
 #include "DBusMenu.h"
 #include "prlink.h"
 #include "nsThreadUtils.h"
-#include "mozilla/ArrayUtils.h"
 
 namespace mozilla::widget {
 
@@ -34,9 +33,8 @@ static bool sLibPresent;
     return sLibPresent;
   }
   sInitialized = true;
-#define FUNC(name, type, params)                         \
-  { #name, (DBusMenuFunc*)&DBusMenuFunctions::s_##name } \
-  ,
+#define FUNC(name, type, params) \
+  {#name, (DBusMenuFunc*)&DBusMenuFunctions::s_##name},
   static const DBusMenuDynamicFunction kDbusmenuGlibSymbols[] = {
       DBUSMENU_GLIB_FUNCTIONS};
   static const DBusMenuDynamicFunction kDbusmenuGtkSymbols[] = {

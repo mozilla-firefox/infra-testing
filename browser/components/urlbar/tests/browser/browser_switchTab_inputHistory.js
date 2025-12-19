@@ -9,7 +9,7 @@
 "use strict";
 
 const { UrlbarProviderOpenTabs } = ChromeUtils.importESModule(
-  "resource:///modules/UrlbarProviderOpenTabs.sys.mjs"
+  "moz-src:///browser/components/urlbar/UrlbarProviderOpenTabs.sys.mjs"
 );
 
 add_setup(async function () {
@@ -116,7 +116,10 @@ add_task(
     // registration may be delayed.
     await TestUtils.waitForCondition(
       () =>
-        UrlbarProviderOpenTabs.getOpenTabUrlsForUserContextId(1).includes(url),
+        UrlbarProviderOpenTabs.getOpenTabUrlsForUserContextId(1).some(
+          ([urlMatch, userContextIdMatch, groupIdMatch]) =>
+            urlMatch == url && userContextIdMatch == 1 && groupIdMatch == null
+        ),
       "Awaiting for open tab to be registered"
     );
 

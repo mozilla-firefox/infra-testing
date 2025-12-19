@@ -17,10 +17,44 @@ export class ReportBrokenSiteParent extends JSWindowActorParent {
     return trackingTable.includes("content") ? "strict" : "basic";
   }
 
+  #getETPCategory() {
+    // Note that the pref will be set to "custom" if the user disables ETP on
+    // mobile.
+    const etpState = Services.prefs.getStringPref(
+      "browser.contentblocking.category",
+      "standard"
+    );
+    return etpState;
+  }
+
+  #isBlockingTracker(state) {
+    return (
+      state & Ci.nsIWebProgressListener.STATE_REPLACED_FINGERPRINTING_CONTENT ||
+      state & Ci.nsIWebProgressListener.STATE_REPLACED_TRACKING_CONTENT ||
+      state & Ci.nsIWebProgressListener.STATE_BLOCKED_TRACKING_CONTENT ||
+      state & Ci.nsIWebProgressListener.STATE_BLOCKED_FINGERPRINTING_CONTENT ||
+      state & Ci.nsIWebProgressListener.STATE_BLOCKED_CRYPTOMINING_CONTENT ||
+      state & Ci.nsIWebProgressListener.STATE_BLOCKED_SOCIALTRACKING_CONTENT ||
+      state & Ci.nsIWebProgressListener.STATE_BLOCKED_EMAILTRACKING_CONTENT
+    );
+  }
+
+  #getBlockedOrigins(currentWindowGlobal) {
+    const blockedOrigins = [];
+    const log = JSON.parse(currentWindowGlobal.contentBlockingLog);
+    for (let [origin, actions] of Object.entries(log)) {
+      if (actions.some(([state]) => this.#isBlockingTracker(state))) {
+        blockedOrigins.push(origin);
+      }
+    }
+    return blockedOrigins;
+  }
+
   #getAntitrackingInfo(browsingContext) {
     // Ask BounceTrackingProtection whether it has recently purged state for the
     // site in the current top level context.
     let btpHasPurgedSite = false;
+    let { currentWindowGlobal } = browsingContext;
     if (
       Services.prefs.getIntPref("privacy.bounceTrackingProtection.mode") !=
       Ci.nsIBounceTrackingProtection.MODE_DISABLED
@@ -29,7 +63,6 @@ export class ReportBrokenSiteParent extends JSWindowActorParent {
         "@mozilla.org/bounce-tracking-protection;1"
       ].getService(Ci.nsIBounceTrackingProtection);
 
-      let { currentWindowGlobal } = browsingContext;
       if (currentWindowGlobal) {
         let { documentPrincipal } = currentWindowGlobal;
         let { baseDomain } = documentPrincipal;
@@ -38,11 +71,14 @@ export class ReportBrokenSiteParent extends JSWindowActorParent {
       }
     }
 
+    const blockList = this.#getAntitrackingBlockList();
+    const blockedOrigins = this.#getBlockedOrigins(currentWindowGlobal);
     return {
-      blockList: this.#getAntitrackingBlockList(),
+      blockList,
+      blockedOrigins,
       isPrivateBrowsing: browsingContext.usePrivateBrowsing,
       hasTrackingContentBlocked: !!(
-        browsingContext.currentWindowGlobal.contentBlockingEvents &
+        currentWindowGlobal.contentBlockingEvents &
         Ci.nsIWebProgressListener.STATE_BLOCKED_TRACKING_CONTENT
       ),
       hasMixedActiveContentBlocked: !!(
@@ -54,6 +90,7 @@ export class ReportBrokenSiteParent extends JSWindowActorParent {
         Ci.nsIWebProgressListener.STATE_BLOCKED_MIXED_DISPLAY_CONTENT
       ),
       btpHasPurgedSite,
+      etpCategory: this.#getETPCategory(),
     };
   }
 
@@ -92,7 +129,6 @@ export class ReportBrokenSiteParent extends JSWindowActorParent {
     );
 
     return clean({
-      direct2DEnabled: get("direct2DEnabled"),
       directWriteEnabled: get("directWriteEnabled"),
       directWriteVersion: get("directWriteVersion"),
       hasTouchScreen: info.ApzTouchInput == 1,
@@ -111,10 +147,17 @@ export class ReportBrokenSiteParent extends JSWindowActorParent {
     for (const item of codecSupportInfo.split("\n")) {
       const [codec, ...types] = item.split(" ");
       if (!codecs[codec]) {
-        codecs[codec] = { hardware: false, software: false };
+        codecs[codec] = {
+          hardwareDecode: false,
+          softwareDecode: false,
+          hardwareEncode: false,
+          softwareEncode: false,
+        };
       }
-      codecs[codec].software ||= types.includes("SW");
-      codecs[codec].hardware ||= types.includes("HW");
+      codecs[codec].softwareDecode ||= types.includes("SWDEC");
+      codecs[codec].hardwareDecode ||= types.includes("HWDEC");
+      codecs[codec].softwareEncode ||= types.includes("SWENC");
+      codecs[codec].hardwareEncode ||= types.includes("HWENC");
     }
     return codecs;
   }
@@ -187,7 +230,6 @@ export class ReportBrokenSiteParent extends JSWindowActorParent {
       "gfx.webrender.software",
       "browser.opaqueResponseBlocking",
       "extensions.InstallTrigger.enabled",
-      "layout.css.h1-in-section-ua-styles.enabled",
       "privacy.resistFingerprinting",
       "privacy.globalprivacycontrol.enabled",
       "network.cookie.cookieBehavior.optInPartitioning",

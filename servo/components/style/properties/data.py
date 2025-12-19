@@ -102,11 +102,12 @@ STYLE_RULE = 1 << 0
 PAGE_RULE = 1 << 1
 KEYFRAME_RULE = 1 << 2
 POSITION_TRY_RULE = 1 << 3
+SCOPE_RULE = 1 << 4
 
-ALL_RULES = STYLE_RULE | PAGE_RULE | KEYFRAME_RULE
-DEFAULT_RULES = STYLE_RULE | KEYFRAME_RULE
+ALL_RULES = STYLE_RULE | PAGE_RULE | KEYFRAME_RULE | SCOPE_RULE
+DEFAULT_RULES = STYLE_RULE | KEYFRAME_RULE | SCOPE_RULE
 DEFAULT_RULES_AND_PAGE = DEFAULT_RULES | PAGE_RULE
-DEFAULT_RULES_EXCEPT_KEYFRAME = STYLE_RULE
+DEFAULT_RULES_EXCEPT_KEYFRAME = STYLE_RULE | SCOPE_RULE
 DEFAULT_RULES_AND_POSITION_TRY = DEFAULT_RULES | POSITION_TRY_RULE
 
 # Rule name to value dict
@@ -115,6 +116,7 @@ RULE_VALUES = {
     "Page": PAGE_RULE,
     "Keyframe": KEYFRAME_RULE,
     "PositionTry": POSITION_TRY_RULE,
+    "Scope": SCOPE_RULE,
 }
 
 
@@ -342,8 +344,8 @@ class Property(object):
     def is_prioritary(self):
         return self.name in PRIORITARY_PROPERTIES
 
-    def nscsspropertyid(self):
-        return "nsCSSPropertyID::eCSSProperty_" + self.ident
+    def noncustomcsspropertyid(self):
+        return "NonCustomCSSPropertyId::eCSSProperty_" + self.ident
 
 
 class Longhand(Property):
@@ -373,7 +375,7 @@ class Longhand(Property):
         ignored_when_colors_disabled=False,
         simple_vector_bindings=False,
         vector=False,
-        servo_restyle_damage="repaint",
+        servo_restyle_damage="rebuild_box",
         affects=None,
     ):
         Property.__init__(
@@ -520,14 +522,52 @@ class Longhand(Property):
             ty = "Box<{}>".format(ty)
         return ty
 
+    def is_zoom_dependent(self):
+        if not self.predefined_type:
+            return False
+        # TODO: Get this from SpecifiedValueInfo or so instead; see bug 1887627.
+        return self.predefined_type in {
+            "BorderSpacing",
+            "FontSize",
+            "Inset",
+            "Length",
+            "LengthPercentage",
+            "LengthPercentageOrAuto",
+            "LetterSpacing",
+            "LineHeight",
+            "LineWidth",
+            "MaxSize",
+            "NonNegativeLength",
+            "NonNegativeLengthOrAuto",
+            "NonNegativeLengthOrNumber",
+            "NonNegativeLengthOrNumberRect",
+            "NonNegativeLengthPercentage",
+            "NonNegativeLengthPercentageOrNormal",
+            "Position",
+            "PositionOrAuto",
+            "SimpleShadow",
+            "Size",
+            "SVGLength",
+            "SVGStrokeDashArray",
+            "SVGWidth",
+            "TextDecorationLength",
+            "TextDecorationInset",
+            "TextIndent",
+            "WordSpacing",
+        }
+
+    def is_inherited_zoom_dependent_property(self):
+        if self.logical:
+            return False
+        if not self.style_struct.inherited:
+            return False
+        return self.is_zoom_dependent()
+
     def specified_is_copy(self):
         if self.is_vector or self.boxed:
             return False
         if self.predefined_type:
             return self.predefined_type in {
-                "AlignContent",
-                "AlignItems",
-                "AlignSelf",
                 "Appearance",
                 "AnimationComposition",
                 "AnimationDirection",
@@ -568,9 +608,10 @@ class Longhand(Property):
                 "PositionArea",
                 "PositionAreaKeyword",
                 "PositionProperty",
-                "JustifyContent",
+                "ContentDistribution",
+                "ItemPlacement",
+                "SelfAlignment",
                 "JustifyItems",
-                "JustifySelf",
                 "LineBreak",
                 "LineClamp",
                 "MasonryAutoFlow",
@@ -588,7 +629,6 @@ class Longhand(Property):
                 "OutlineStyle",
                 "Overflow",
                 "OverflowAnchor",
-                "OverflowClipBox",
                 "OverflowWrap",
                 "OverscrollBehavior",
                 "PageOrientation",
@@ -610,6 +650,7 @@ class Longhand(Property):
                 "ScrollSnapType",
                 "TextAlign",
                 "TextAlignLast",
+                "TextAutospace",
                 "TextDecorationLine",
                 "TextEmphasisPosition",
                 "TextJustify",
@@ -618,10 +659,10 @@ class Longhand(Property):
                 "TouchAction",
                 "TransformStyle",
                 "UserFocus",
-                "UserInput",
                 "UserSelect",
                 "VectorEffect",
                 "WordBreak",
+                "WritingModeProperty",
                 "XSpan",
                 "XTextScale",
                 "ZIndex",
@@ -719,8 +760,8 @@ class Alias(object):
     def enabled_in_content(self):
         return self.enabled_in == "content"
 
-    def nscsspropertyid(self):
-        return "nsCSSPropertyID::eCSSPropertyAlias_%s" % self.ident
+    def noncustomcsspropertyid(self):
+        return "NonCustomCSSPropertyId::eCSSPropertyAlias_%s" % self.ident
 
 
 class Method(object):
@@ -1027,18 +1068,29 @@ class PropertyRestrictions:
 
         return props
 
-    # https://drafts.csswg.org/css-pseudo/#marker-pseudo
+    # https://drafts.csswg.org/css-lists-3/#marker-properties
     @staticmethod
     def marker(data):
         return set(
             [
                 "color",
+                "content",
+                "counter-increment",
+                "counter-reset",
+                "counter-set",
+                "cursor",
+                "direction",
+                "hyphens",
+                "line-height",
+                "quotes",
                 "text-combine-upright",
+                "text-emphasis-color",
+                "text-emphasis-position",
+                "text-emphasis-style",
+                "text-orientation",
+                "text-shadow",
                 "text-transform",
                 "unicode-bidi",
-                "direction",
-                "content",
-                "line-height",
                 "-moz-osx-font-smoothing",
             ]
             + PropertyRestrictions.shorthand(data, "text-wrap")

@@ -49,6 +49,7 @@
 namespace js {
 
 class FrontendContext;
+struct ConstantCompareOperand;
 
 namespace frontend {
 
@@ -385,6 +386,9 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
     return locationOfNameBoundInScopeType<FunctionScope>(
         name, innermostEmitterScope());
   }
+
+  mozilla::Maybe<ConstantCompareOperand> parseNodeToConstantCompareOperand(
+      ParseNode* constant);
 
   void setVarEmitterScope(EmitterScope* emitterScope) {
     MOZ_ASSERT(emitterScope);
@@ -806,9 +810,11 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
   // pushed on the stack and emits code to destructure each part of a [] or
   // {} lhs expression.
   [[nodiscard]] bool emitDestructuringOps(ListNode* pattern,
-                                          DestructuringFlavor flav);
+                                          DestructuringFlavor flav,
+                                          SelfHostedIter selfHostedIter);
   [[nodiscard]] bool emitDestructuringOpsArray(ListNode* pattern,
-                                               DestructuringFlavor flav);
+                                               DestructuringFlavor flav,
+                                               SelfHostedIter selfHostedIter);
   [[nodiscard]] bool emitDestructuringOpsObject(ListNode* pattern,
                                                 DestructuringFlavor flav);
 
@@ -835,17 +841,15 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
   // Pops iterator from the top of the stack. Pushes the result of |.next()|
   // onto the stack.
   [[nodiscard]] bool emitIteratorNext(
-      const mozilla::Maybe<uint32_t>& callSourceCoordOffset,
-      IteratorKind kind = IteratorKind::Sync,
-      SelfHostedIter selfHostedIter = SelfHostedIter::Deny);
-  [[nodiscard]] bool emitIteratorCloseInScope(
-      EmitterScope& currentScope, IteratorKind iterKind = IteratorKind::Sync,
-      CompletionKind completionKind = CompletionKind::Normal,
-      SelfHostedIter selfHostedIter = SelfHostedIter::Deny);
+      const mozilla::Maybe<uint32_t>& callSourceCoordOffset, IteratorKind kind,
+      SelfHostedIter selfHostedIter);
+  [[nodiscard]] bool emitIteratorCloseInScope(EmitterScope& currentScope,
+                                              IteratorKind iterKind,
+                                              CompletionKind completionKind,
+                                              SelfHostedIter selfHostedIter);
   [[nodiscard]] bool emitIteratorCloseInInnermostScope(
-      IteratorKind iterKind = IteratorKind::Sync,
-      CompletionKind completionKind = CompletionKind::Normal,
-      SelfHostedIter selfHostedIter = SelfHostedIter::Deny) {
+      IteratorKind iterKind, CompletionKind completionKind,
+      SelfHostedIter selfHostedIter) {
     return emitIteratorCloseInScope(*innermostEmitterScope(), iterKind,
                                     completionKind, selfHostedIter);
   }
@@ -1000,23 +1004,13 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
   [[nodiscard]] bool emitLexicalInitialization(NameNode* name);
   [[nodiscard]] bool emitLexicalInitialization(TaggedParserAtomIndex name);
 
-  // Emit bytecode for the spread operator.
+  // Emit bytecode for the array spread operator.
   //
-  // emitSpread expects some values representing the spread target (an array or
-  // a tuple), the iterator and it's next() method to be on the stack in that
-  // order (iterator's next() on the bottom).
-  // The number of values representing the spread target is
-  // `spreadeeStackItems`: it's 2 for arrays (one for the array and one for the
-  // index) and 1 for tuples (the tuple itself).
-  // Since arrays and tuples use different opcodes to initialize new elements,
-  // it must be specified using `storeElementOp`.
-  // When emitSpread() finishes, the stack only contains the values representing
-  // the spread target.
-  [[nodiscard]] bool emitSpread(SelfHostedIter selfHostedIter,
-                                int spreadeeStackItems, JSOp storeElementOp);
-  // This shortcut can be used when spreading into arrays, as it assumes
-  // `spreadeeStackItems = 2` (|ARRAY INDEX|) and `storeElementOp =
-  // JSOp::InitElemInc`
+  // emitSpread expects some values representing the spread target (an array),
+  // the iterator and its next() method to be on the stack in that order
+  // (iterator's next() on the bottom).
+  // When emitSpread() finishes, the stack only contains the spread target and
+  // the final index.
   [[nodiscard]] bool emitSpread(SelfHostedIter selfHostedIter);
 
   enum class ClassNameKind {

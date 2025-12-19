@@ -340,6 +340,9 @@ include table-width/reftest.list
 
 include ../tables/reftests/reftest.list
 
+# target-text/
+include target-text/reftest.list
+
 # text/
 include text/reftest.list
 
@@ -385,6 +388,9 @@ include web-animations/reftest.list
 
 # webcomponents/
 include webcomponents/reftest.list
+
+# webgpu
+include ../../dom/webgpu/tests/reftest/reftest.list
 
 # widget/
 include ../../widget/reftests/reftest.list

@@ -26,8 +26,9 @@ export class LoginForm extends MozLitElement {
     usernameValue: { type: String },
     passwordValue: { type: String },
     passwordVisible: { type: Boolean },
-    onPasswordRevealClick: { type: Function },
     _showDeleteCard: { type: Boolean, state: true },
+    _originInvalid: { type: Boolean, state: true },
+    _passwordInvalid: { type: Boolean, state: true },
   };
 
   static queries = {
@@ -45,9 +46,51 @@ export class LoginForm extends MozLitElement {
     this.usernameValue = "";
     this.passwordValue = "";
     this._showDeleteCard = false;
-    this.onPasswordRevealClick = () => {
-      this.passwordVisible = !this.passwordVisible;
+    this._originInvalid = false;
+    this._passwordInvalid = false;
+  }
+
+  async firstUpdated() {
+    const mozButtonGroup = this.shadowRoot.querySelector("moz-button-group");
+    // Wait for the button group to complete its update cycle since it might reorder its slots.
+    await mozButtonGroup.updateComplete;
+    this.#handleKeyPressOnLastButton(mozButtonGroup);
+  }
+
+  #handleKeyPressOnLastButton(mozButtonGroup) {
+    const handleKeyPress = e => {
+      if (e.key !== "Tab") {
+        return;
+      }
+
+      const notifMsgBar = this.parentElement.querySelector(
+        "notification-message-bar"
+      );
+
+      if (!notifMsgBar) {
+        return;
+      }
+
+      e.preventDefault();
+
+      const mozMsgBar = notifMsgBar.shadowRoot.querySelector("moz-message-bar");
+      const mozButtonGroup = mozMsgBar.querySelector("moz-button-group");
+
+      if (mozButtonGroup) {
+        const firstSlot = mozButtonGroup.shadowRoot.querySelector("slot");
+        const firstButton = firstSlot.assignedElements()[0];
+        firstButton.focus();
+        return;
+      }
+
+      const primaryActionButton = mozMsgBar.querySelector("#primary-action");
+      primaryActionButton.focus();
     };
+
+    const slots = mozButtonGroup.shadowRoot.querySelectorAll("slot");
+    const lastSlot = slots[slots.length - 1];
+    const lastButton = lastSlot.assignedElements()[0];
+    lastButton.addEventListener("keydown", e => handleKeyPress(e));
   }
 
   #removeWarning(warning) {
@@ -57,7 +100,12 @@ export class LoginForm extends MozLitElement {
   }
 
   #shouldShowWarning(field, input, warning) {
-    if (!input.checkValidity()) {
+    const fieldInvalid =
+      warning === this.originWarning
+        ? this._originInvalid
+        : this._passwordInvalid;
+
+    if (!input.checkValidity() || fieldInvalid) {
       // FIXME: for some reason checkValidity does not apply the :invalid style
       // to the field. For now, we reset the input value to "" apply :invalid
       // styling.
@@ -67,11 +115,21 @@ export class LoginForm extends MozLitElement {
       warning.setAttribute("message", input.validationMessage);
       warning.classList.add("invalid-input");
       field.setAttribute("aria-describedby", warning.id);
+      if (warning === this.originWarning) {
+        this._originInvalid = true;
+      } else if (warning === this.passwordWarning) {
+        this._passwordInvalid = true;
+      }
       return true;
     }
 
     field.removeAttribute("aria-describedby");
     this.#removeWarning(warning);
+    if (warning === this.originWarning) {
+      this._originInvalid = false;
+    } else if (warning === this.passwordWarning) {
+      this._passwordInvalid = false;
+    }
     return false;
   }
 
@@ -79,11 +137,29 @@ export class LoginForm extends MozLitElement {
     const field = e.target;
     const warning =
       field.name === "origin" ? this.originWarning : this.passwordWarning;
+    const isValid = field.input.checkValidity();
 
-    if (field.input.checkValidity()) {
+    if (isValid) {
       this.#removeWarning(warning);
       field.removeAttribute("aria-describedby");
     }
+
+    if (field.name === "origin") {
+      this._originInvalid = !isValid;
+    } else if (field.name === "password") {
+      this._passwordInvalid = !isValid;
+    }
+  }
+
+  onCancel(e) {
+    e.preventDefault();
+
+    const loginFromForm = {
+      origin: this.originValue || this.originField.input.value,
+      username: this.usernameField.input.value.trim(),
+      password: this.passwordField.value,
+    };
+    this.onClose(loginFromForm);
   }
 
   onSubmit(e) {
@@ -93,12 +169,12 @@ export class LoginForm extends MozLitElement {
       return;
     }
 
-    const loginForm = {
+    const loginFromForm = {
       origin: this.originValue || this.originField.input.value,
       username: this.usernameField.input.value.trim(),
       password: this.passwordField.value,
     };
-    this.onSaveClick(loginForm);
+    this.onSaveClick(loginFromForm);
   }
 
   #isFormValid() {
@@ -131,6 +207,14 @@ export class LoginForm extends MozLitElement {
   }
 
   #renderDeleteCard() {
+    const getIconSrc = () => {
+      return document.dir === "rtl"
+        ? // eslint-disable-next-line mozilla/no-browser-refs-in-toolkit
+          "chrome://browser/skin/forward.svg"
+        : // eslint-disable-next-line mozilla/no-browser-refs-in-toolkit
+          "chrome://browser/skin/back.svg";
+    };
+
     return html` <link
         rel="stylesheet"
         href="chrome://global/content/megalist/components/login-form/login-form.css"
@@ -139,13 +223,11 @@ export class LoginForm extends MozLitElement {
         <div class="remove-card-back">
           <moz-button
             type="icon ghost"
-            iconSrc="chrome://browser/skin/back.svg"
+            iconSrc=${getIconSrc()}
+            data-l10n-id="contextual-manager-passwords-remove-login-card-back-message"
             @click=${this.#toggleDeleteCard}
           >
           </moz-button>
-          <p
-            data-l10n-id="contextual-manager-passwords-remove-login-card-back-message"
-          ></p>
         </div>
         <div class="remove-card-text">
           <h3
@@ -179,7 +261,7 @@ export class LoginForm extends MozLitElement {
     const heading =
       this.type !== "edit"
         ? "contextual-manager-passwords-create-label"
-        : "contextual-manager-passwords-edit-label";
+        : "contextual-manager-passwords-update-label";
 
     return html`<link
         rel="stylesheet"
@@ -231,10 +313,8 @@ export class LoginForm extends MozLitElement {
               <login-password-field
                 name="password"
                 required
-                ?visible=${this.passwordVisible}
                 ?newPassword=${this.type !== "edit"}
                 .value=${this.passwordValue}
-                .onRevealClick=${this.onPasswordRevealClick}
                 @input=${e => this.onInput(e)}
               ></login-password-field>
               <password-warning
@@ -247,7 +327,7 @@ export class LoginForm extends MozLitElement {
             <moz-button-group>
               <moz-button
                 data-l10n-id="login-item-cancel-button"
-                @click=${this.onClose}
+                @click=${this.onCancel}
               ></moz-button>
               <moz-button
                 data-l10n-id="login-item-save-new-button"

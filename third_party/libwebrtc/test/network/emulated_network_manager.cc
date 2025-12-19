@@ -21,9 +21,9 @@
 #include "api/task_queue/task_queue_base.h"
 #include "api/test/network_emulation/network_emulation_interfaces.h"
 #include "api/test/time_controller.h"
-#include "p2p/base/basic_packet_socket_factory.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/network.h"
+#include "rtc_base/thread.h"
 #include "rtc_base/thread_annotations.h"
 #include "test/network/fake_network_socket_server.h"
 #include "test/network/network_emulation.h"
@@ -31,13 +31,12 @@
 namespace webrtc {
 namespace test {
 
-// Framework assumes that rtc::NetworkManager is called from network thread.
-class EmulatedNetworkManager::NetworkManagerImpl
-    : public rtc::NetworkManagerBase {
+// Framework assumes that webrtc::NetworkManager is called from network thread.
+class EmulatedNetworkManager::NetworkManagerImpl : public NetworkManagerBase {
  public:
-  explicit NetworkManagerImpl(
-      absl::Nonnull<rtc::Thread*> network_thread,
-      absl::Nonnull<EndpointsContainer*> endpoints_container)
+  explicit NetworkManagerImpl(Thread* absl_nonnull network_thread,
+                              EndpointsContainer* absl_nonnull
+                                  endpoints_container)
       : network_thread_(network_thread),
         endpoints_container_(endpoints_container) {}
 
@@ -48,13 +47,11 @@ class EmulatedNetworkManager::NetworkManagerImpl
   void MaybeSignalNetworksChanged();
 
   // We don't support any address interfaces in the network emulation framework.
-  std::vector<const rtc::Network*> GetAnyAddressNetworks() override {
-    return {};
-  }
+  std::vector<const Network*> GetAnyAddressNetworks() override { return {}; }
 
  private:
-  const absl::Nonnull<rtc::Thread*> network_thread_;
-  const absl::Nonnull<const EndpointsContainer*> endpoints_container_;
+  Thread* absl_nonnull const network_thread_;
+  const EndpointsContainer* absl_nonnull const endpoints_container_;
   bool sent_first_update_ RTC_GUARDED_BY(network_thread_) = false;
   int start_count_ RTC_GUARDED_BY(network_thread_) = 0;
 };
@@ -69,7 +66,6 @@ EmulatedNetworkManager::EmulatedNetworkManager(
       network_thread_(
           time_controller->CreateThread("net_thread",
                                         absl::WrapUnique(socket_server_))),
-      packet_socket_factory_(socket_server_),
       network_manager_(
           std::make_unique<NetworkManagerImpl>(network_thread_.get(),
                                                endpoints_container)),
@@ -77,35 +73,17 @@ EmulatedNetworkManager::EmulatedNetworkManager(
 
 EmulatedNetworkManager::~EmulatedNetworkManager() = default;
 
-rtc::NetworkManager* EmulatedNetworkManager::network_manager() {
-  RTC_CHECK(network_manager_ != nullptr)
-      << "network_manager() can't be used together with ReleaseNetworkManager.";
-  return network_manager_.get();
-}
-
-absl::Nonnull<std::unique_ptr<rtc::NetworkManager>>
+absl_nonnull std::unique_ptr<NetworkManager>
 EmulatedNetworkManager::ReleaseNetworkManager() {
   RTC_CHECK(network_manager_ != nullptr)
       << "ReleaseNetworkManager can be called at most once.";
   return std::move(network_manager_);
 }
 
-void EmulatedNetworkManager::EnableEndpoint(EmulatedEndpointImpl* endpoint) {
-  RTC_CHECK(endpoints_container_->HasEndpoint(endpoint))
-      << "No such interface: " << endpoint->GetPeerLocalAddress().ToString();
-  network_thread_->PostTask([this, endpoint]() {
-    endpoint->Enable();
-    network_manager_ptr_->UpdateNetworksOnce();
-  });
-}
-
-void EmulatedNetworkManager::DisableEndpoint(EmulatedEndpointImpl* endpoint) {
-  RTC_CHECK(endpoints_container_->HasEndpoint(endpoint))
-      << "No such interface: " << endpoint->GetPeerLocalAddress().ToString();
-  network_thread_->PostTask([this, endpoint]() {
-    endpoint->Disable();
-    network_manager_ptr_->UpdateNetworksOnce();
-  });
+void EmulatedNetworkManager::UpdateNetworks() {
+  NetworkManagerImpl* absl_nonnull network_manager = network_manager_ptr_;
+  network_thread_->PostTask(
+      [network_manager] { network_manager->UpdateNetworksOnce(); });
 }
 
 void EmulatedNetworkManager::NetworkManagerImpl::StartUpdating() {
@@ -144,8 +122,8 @@ void EmulatedNetworkManager::GetStats(
 void EmulatedNetworkManager::NetworkManagerImpl::UpdateNetworksOnce() {
   RTC_DCHECK_RUN_ON(network_thread_);
 
-  std::vector<std::unique_ptr<rtc::Network>> networks;
-  for (std::unique_ptr<rtc::Network>& net :
+  std::vector<std::unique_ptr<Network>> networks;
+  for (std::unique_ptr<Network>& net :
        endpoints_container_->GetEnabledNetworks()) {
     net->set_default_local_address_provider(this);
     networks.push_back(std::move(net));

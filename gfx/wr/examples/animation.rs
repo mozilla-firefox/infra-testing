@@ -78,7 +78,6 @@ impl App {
             PrimitiveFlags::IS_BACKFACE_VISIBLE,
             &filters,
             &[],
-            &[]
         );
 
         let space_and_clip = SpaceAndClipInfo {
@@ -233,7 +232,7 @@ impl Example for App {
                         colors: vec![],
                     },
                 );
-                txn.generate_frame(0, true, RenderReasons::empty());
+                txn.generate_frame(0, true, false, RenderReasons::empty());
                 api.send_transaction(document_id, txn);
             }
             _ => (),

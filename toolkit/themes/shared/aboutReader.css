@@ -69,8 +69,8 @@ body {
   --custom-theme-background: var(--color-white);
   --custom-theme-foreground: var(--color-gray-100);
   --custom-theme-unvisited-links: var(--color-blue-50);
-  --custom-theme-visited-links: #321C64;
-  --custom-theme-selection-highlight: #FFFFCC;
+  --custom-theme-visited-links: #321c64;
+  --custom-theme-selection-highlight: #ffffcc;
   /* light colours */
 }
 
@@ -128,11 +128,11 @@ body.dark {
 body.contrast {
   --main-background: #000000;
   --main-foreground: #fff;
-  --primary-color: #D6B4FD;
-  --link-color: #8080FF;
-  --link-color-hover: #D6B4FD;
-  --toolbar-border: #FFEE32;
-  --icon-fill: #FFEE32;
+  --primary-color: #d6b4fd;
+  --link-color: #8080ff;
+  --link-color-hover: #d6b4fd;
+  --toolbar-border: #ffee32;
+  --icon-fill: #ffee32;
 }
 
 body.custom {
@@ -207,7 +207,9 @@ body {
 }
 
 body.loaded {
-  transition: color 0.4s, background-color 0.4s;
+  transition:
+    color 0.4s,
+    background-color 0.4s;
 }
 
 *::selection {
@@ -216,7 +218,7 @@ body.loaded {
 }
 
 a {
-  border-radius: 2px;
+  border-radius: var(--border-radius-xsmall);
 }
 
 a::selection {
@@ -327,7 +329,7 @@ blockquote {
 .toolbar {
   padding-block: 16px;
   border: 1px solid var(--toolbar-border);
-  border-radius: 6px;
+  border-radius: var(--border-radius-small);
   box-shadow: 0 2px 8px var(--toolbar-box-shadow);
 
   width: 32px; /* basic width, without padding/border */
@@ -410,17 +412,13 @@ button:disabled {
   fill: var(--icon-disabled-fill) !important;
 }
 
-.toolbar button::-moz-focus-inner {
-  border: 0;
-}
-
 .toolbar-button {
   position: relative;
   width: 32px;
   height: 32px;
   padding: 0;
   border: 1px solid var(--toolbar-button-border);
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
   margin: 4px 0;
   background-color: var(--toolbar-button-background);
   background-size: 16px 16px;
@@ -456,7 +454,7 @@ button:disabled {
   color: var(--tooltip-foreground);
   padding: 4px 8px;
   border: 1px solid var(--tooltip-border);
-  border-radius: 2px;
+  border-radius: var(--border-radius-xsmall);
   visibility: hidden;
   pointer-events: none;
   /* Put above .dropdown .dropdown-popup, which has z-index: 1000. */
@@ -494,14 +492,14 @@ button:disabled {
   z-index: 1000;
   background-color: var(--popup-background);
   visibility: hidden;
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
   border: 1px solid var(--popup-border);
   box-shadow: 0 0 10px 0 var(--popup-shadow);
   top: var(--space-xsmall);
 
   h2 {
     font-size: var(--font-size-large);
-    font-weight: var(--font-weight-bold);
+    font-weight: var(--heading-font-weight);
     color: var(--popup-foreground);
     margin-block: var(--space-small);
   }
@@ -571,7 +569,7 @@ button:disabled {
   color: var(--popup-button-foreground-hover);
 }
 
-.radiorow > input[type=radio]:focus-visible + label {
+.radiorow > input[type="radio"]:focus-visible + label {
   outline: 2px solid var(--primary-color);
   outline-offset: var(--focus-outline-offset);
   z-index: 1;
@@ -592,16 +590,8 @@ body.hcm .color-scheme-buttons {
   justify-content: center;
   /* We want 10px between items, but there's no margin collapsing in flexbox. */
   margin: 10px 5px;
-  border-radius: 2px;
+  border-radius: var(--border-radius-xsmall);
   border-color: var(--popup-border);
-}
-
-.color-scheme-buttons > input:first-child + label {
-  margin-inline-start: 10px;
-}
-
-.color-scheme-buttons > label:last-child {
-  margin-inline-end: 10px;
 }
 
 /* Improved text and layout menu popup */
@@ -678,7 +668,7 @@ body.hcm .color-scheme-buttons {
     background-color: var(--popup-button-background);
     color: var(--popup-button-foreground);
     font-size: inherit;
-    font-weight: var(--font-weight-bold);
+    font-weight: var(--font-weight-semibold);
     padding-inline: var(--space-large) var(--space-xxlarge);
     text-overflow: ellipsis;
     background-image: url("chrome://global/skin/icons/arrow-down.svg");
@@ -877,7 +867,7 @@ div[name="customtheme"] {
 }
 
 .color-scheme-buttons > label {
-  height: 48px;
+  height: var(--size-item-xlarge);
   width: calc(50% - 21px);
   font-size: 15px;
   color: var(--popup-button-foreground);
@@ -902,7 +892,7 @@ div[name="customtheme"] {
 
 .color-scheme-buttons {
   .auto-button:before {
-    background: linear-gradient(to right, var(--light-theme-background) 50%, var(--dark-theme-background) 50%);;
+    background: linear-gradient(to right, var(--light-theme-background) 50%, var(--dark-theme-background) 50%);
   }
 
   .light-button:before {
@@ -918,7 +908,7 @@ div[name="customtheme"] {
   }
 
   .contrast-button:before {
-    background-color: #000000;
+    background-color: black;
   }
 
   .gray-button:before {
@@ -974,6 +964,7 @@ div[name="customtheme"] {
  * must be added to CLASSES_TO_PRESERVE in ReaderMode.sys.mjs, so that
  * Readability.js doesn't strip them out */
 
+/* Variables in .container are for user customization and should not be replaced with design tokens */
 .container {
   margin: 0 auto;
   font-size: var(--font-size);
@@ -982,6 +973,7 @@ div[name="customtheme"] {
   text-align: var(--text-alignment);
   word-spacing: var(--word-spacing);
   letter-spacing: var(--letter-spacing);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-font-weight-tokens */
   font-weight: var(--font-weight);
 
   .header {
@@ -990,7 +982,11 @@ div[name="customtheme"] {
 }
 
 pre {
-  font-family: inherit;
+  font-family: monospace;
+
+  .plain-text-doc & {
+    font-family: inherit;
+  }
 }
 
 .moz-reader-content {
@@ -1016,7 +1012,7 @@ pre {
 .moz-reader-content h1,
 .moz-reader-content h2,
 .moz-reader-content h3 {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 .moz-reader-content h1 {
@@ -1066,7 +1062,7 @@ pre {
 .moz-reader-content .wp-caption {
   margin: -10px -10px calc(8px + var(--line-height) * 0.4);
   padding: 10px;
-  border-radius: 5px;
+  border-radius: var(--border-radius-small);
 }
 
 .moz-reader-content li {
@@ -1097,7 +1093,7 @@ pre {
 }
 
 .moz-reader-content .caption,
-.moz-reader-content .wp-caption-text
+.moz-reader-content .wp-caption-text,
 .moz-reader-content figcaption {
   font-size: 0.9em;
   line-height: 1.48em;
@@ -1167,7 +1163,7 @@ table {
   border-width: 0;
   /* height: auto is implied from `.moz-reader-content *` rule. */
   width: 1em;
-  margin: 0 .07em;
+  margin: 0 0.07em;
   padding: 0;
 }
 

@@ -10,6 +10,9 @@ skip script non262/String/normalize-generateddata-input.js # input data for othe
 slow script test262/built-ins/decodeURI/S15.1.3.1_A2.5_T1.js
 slow script test262/built-ins/decodeURIComponent/S15.1.3.2_A2.5_T1.js
 
+# x86 NaN generation rules are different from those of riscv64 (bug 1983202)
+skip-if(this.hasOwnProperty("getBuildConfiguration")&&getBuildConfiguration("riscv64-simulator")) script test262/built-ins/TypedArray/prototype/map/return-new-typedarray-conversion-operation-consistent-nan.js
+
 
 ###########################################################################
 # Generated jstests.list for test262 when inline |reftest| isn't possible #
@@ -47,12 +50,6 @@ skip-if(!this.hasOwnProperty("Intl")) include test262/intl402/jstests.list
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1415303
 skip-if(!this.hasOwnProperty("Atomics")) include test262/built-ins/Atomics/jstests.list
 skip-if(!this.hasOwnProperty("SharedArrayBuffer")) include test262/built-ins/SharedArrayBuffer/jstests.list
-
-# https://bugzilla.mozilla.org/show_bug.cgi?id=1863140
-skip script test262/built-ins/FinalizationRegistry/prototype/register/return-undefined-register-symbol.js
-skip script test262/built-ins/FinalizationRegistry/prototype/unregister/unregister-symbol-token.js
-skip script test262/built-ins/WeakRef/returns-new-object-from-constructor-with-symbol-target.js
-skip script test262/built-ins/WeakRef/prototype/deref/return-symbol-target.js
 
 #####################################
 # Test262 tests disabled on browser #
@@ -645,16 +642,13 @@ ignore-flag(--more-compartments) script test262/built-ins/Proxy/construct/return
 ignore-flag(--more-compartments) script test262/built-ins/Proxy/construct/return-not-object-throws-null-realm.js
 ignore-flag(--more-compartments) script test262/built-ins/Proxy/construct/return-not-object-throws-boolean-realm.js
 ignore-flag(--more-compartments) script test262/built-ins/Proxy/construct/return-not-object-throws-boolean-realm.js
-
-# https://bugzilla.mozilla.org/show_bug.cgi?id=1761993
-skip script test262/built-ins/AsyncGeneratorPrototype/return/return-state-completed-broken-promise.js
-skip script test262/built-ins/AsyncGeneratorPrototype/return/return-suspendedStart-broken-promise.js
-skip script test262/built-ins/AsyncGeneratorPrototype/return/return-suspendedYield-broken-promise-try-catch.js
+ignore-flag(--more-compartments) script test262/staging/sm/extensions/dataview.js
 
 # Time zone canonicalization proposal.
 skip script test262/intl402/DateTimeFormat/timezone-not-canonicalized.js
 skip script test262/intl402/DateTimeFormat/timezone-case-insensitive.js
 skip script test262/intl402/DateTimeFormat/canonicalize-utc-timezone.js
+skip script test262/intl402/DateTimeFormat/canonicalize-timezone.js
 
 # https://github.com/tc39/test262/pull/4209
 skip script test262/language/statements/with/set-mutable-binding-binding-deleted-in-get-unscopables-strict-mode.js
@@ -664,67 +658,23 @@ skip script test262/language/statements/with/set-mutable-binding-idref-with-prox
 skip script test262/language/statements/with/get-binding-value-idref-with-proxy-env.js
 skip script test262/language/statements/with/set-mutable-binding-idref-compound-assign-with-proxy-env.js
 
-# Failures in AsyncFromSyncIteratorPrototype, see bug 1877862.
-skip script test262/built-ins/AsyncFromSyncIteratorPrototype/throw/throw-undefined-poisoned-return.js
-skip script test262/built-ins/AsyncFromSyncIteratorPrototype/throw/throw-undefined-return-object.js
-skip script test262/built-ins/AsyncFromSyncIteratorPrototype/throw/throw-undefined-return-not-object.js
-skip script test262/built-ins/AsyncFromSyncIteratorPrototype/throw/throw-null.js
-skip script test262/built-ins/AsyncFromSyncIteratorPrototype/throw/throw-undefined.js
-skip script test262/built-ins/AsyncFromSyncIteratorPrototype/throw/throw-result-poisoned-wrapper.js
-skip script test262/built-ins/AsyncFromSyncIteratorPrototype/throw/iterator-result-rejected-promise-close.js
-skip script test262/built-ins/AsyncFromSyncIteratorPrototype/throw/throw-undefined-get-return-undefined.js
-skip script test262/built-ins/AsyncFromSyncIteratorPrototype/next/next-result-poisoned-wrapper.js
-skip script test262/built-ins/AsyncFromSyncIteratorPrototype/next/for-await-iterator-next-rejected-promise-close.js
-skip script test262/built-ins/AsyncFromSyncIteratorPrototype/next/yield-iterator-next-rejected-promise-close.js
-skip script test262/built-ins/AsyncFromSyncIteratorPrototype/next/for-await-next-rejected-promise-close.js
-skip script test262/built-ins/AsyncFromSyncIteratorPrototype/next/iterator-result-poisoned-wrapper.js
-skip script test262/built-ins/AsyncFromSyncIteratorPrototype/next/yield-next-rejected-promise-close.js
-
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1934808
 skip script test262/built-ins/Iterator/concat/fresh-iterator-result.js
 skip script test262/built-ins/Iterator/concat/next-method-returns-throwing-value.js
 
-# https://bugzilla.mozilla.org/show_bug.cgi?id=1950211
-skip script test262/built-ins/String/prototype/replace/cstm-replace-on-boolean-primitive.js
-skip script test262/built-ins/String/prototype/replace/cstm-replace-on-string-primitive.js
-skip script test262/built-ins/String/prototype/replace/cstm-replace-on-number-primitive.js
-skip script test262/built-ins/String/prototype/replace/cstm-replace-on-bigint-primitive.js
-skip script test262/built-ins/String/prototype/matchAll/cstm-matchall-on-number-primitive.js
-skip script test262/built-ins/String/prototype/matchAll/cstm-matchall-on-bigint-primitive.js
-skip script test262/built-ins/String/prototype/matchAll/cstm-matchall-on-string-primitive.js
-skip script test262/built-ins/String/prototype/replaceAll/cstm-replaceall-on-bigint-primitive.js
-skip script test262/built-ins/String/prototype/replaceAll/cstm-replaceall-on-number-primitive.js
-skip script test262/built-ins/String/prototype/replaceAll/cstm-replaceall-on-boolean-primitive.js
-skip script test262/built-ins/String/prototype/replaceAll/cstm-replaceall-on-string-primitive.js
-skip script test262/built-ins/String/prototype/split/cstm-split-on-boolean-primitive.js
-skip script test262/built-ins/String/prototype/split/cstm-split-on-string-primitive.js
-skip script test262/built-ins/String/prototype/split/cstm-split-on-number-primitive.js
-skip script test262/built-ins/String/prototype/split/cstm-split-on-bigint-primitive.js
-skip script test262/built-ins/String/prototype/match/cstm-matcher-on-boolean-primitive.js
-skip script test262/built-ins/String/prototype/match/cstm-matcher-on-bigint-primitive.js
-skip script test262/built-ins/String/prototype/match/cstm-matcher-on-number-primitive.js
-skip script test262/built-ins/String/prototype/match/cstm-matcher-on-string-primitive.js
-skip script test262/built-ins/String/prototype/search/cstm-search-on-bigint-primitive.js
-skip script test262/built-ins/String/prototype/search/cstm-search-on-string-primitive.js
-skip script test262/built-ins/String/prototype/search/cstm-search-on-boolean-primitive.js
-skip script test262/built-ins/String/prototype/search/cstm-search-on-number-primitive.js
+# https://bugzilla.mozilla.org/show_bug.cgi?id=1970162
+# https://github.com/tc39/ecma402/pull/989
+skip script test262/intl402/PluralRules/constructor-options-throwing-getters.js
+skip script test262/intl402/PluralRules/default-options-object-prototype.js
+skip script test262/intl402/PluralRules/constructor-option-read-order.js
+skip script test262/intl402/PluralRules/prototype/select/notation.js
+skip script test262/intl402/PluralRules/prototype/resolvedOptions/properties.js
+skip script test262/intl402/PluralRules/prototype/resolvedOptions/order.js
+skip script test262/intl402/PluralRules/prototype/constructor/notation.js
+skip script test262/intl402/PluralRules/notation.js
 
-# https://bugzilla.mozilla.org/show_bug.cgi?id=1935510
-skip script test262/built-ins/Iterator/prototype/every/argument-validation-failure-closes-underlying.js
-skip script test262/built-ins/Iterator/prototype/forEach/argument-validation-failure-closes-underlying.js
-skip script test262/built-ins/Iterator/prototype/flatMap/argument-validation-failure-closes-underlying.js
-skip script test262/built-ins/Iterator/prototype/some/argument-validation-failure-closes-underlying.js
-skip script test262/built-ins/Iterator/prototype/reduce/argument-validation-failure-closes-underlying.js
-skip script test262/built-ins/Iterator/prototype/drop/argument-validation-failure-closes-underlying.js
-skip script test262/built-ins/Iterator/prototype/take/argument-validation-failure-closes-underlying.js
-skip script test262/built-ins/Iterator/prototype/filter/argument-validation-failure-closes-underlying.js
-skip script test262/built-ins/Iterator/prototype/find/argument-validation-failure-closes-underlying.js
-skip script test262/built-ins/Iterator/prototype/map/argument-validation-failure-closes-underlying.js
-skip script test262/staging/sm/Iterator/prototype/every/check-fn-after-getting-iterator.js
-skip script test262/staging/sm/Iterator/prototype/forEach/check-fn-after-getting-iterator.js
-skip script test262/staging/sm/Iterator/prototype/some/check-fn-after-getting-iterator.js
-skip script test262/staging/sm/Iterator/prototype/reduce/check-fn-after-getting-iterator.js
-skip script test262/staging/sm/Iterator/prototype/find/check-fn-after-getting-iterator.js
+# See https://bugzilla.mozilla.org/show_bug.cgi?id=1983837
+skip script test262/staging/top-level-await/tla-hang-entry.js
 
 
 ###########################################################
@@ -746,6 +696,11 @@ skip script test262/built-ins/AsyncFunction/is-not-a-global.js
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1726243
 skip-if(!xulRuntime.shell) script test262/language/module-code/top-level-await/await-dynamic-import-rejection.js
 
+# shell.js defines "var TypedArray" and test file defines "let TypedArray". This causes a SyntaxError.
+# This can be fixed upstream by instead of defining "let TypedArray" including the harness file
+# "testTypedArray.js".
+skip script test262/staging/sm/TypedArray/getter-name.js
+
 
 ####################################################
 # Tests disabled due to invalid test expectations  #
@@ -755,16 +710,136 @@ skip-if(!xulRuntime.shell) script test262/language/module-code/top-level-await/a
 skip script test262/language/statements/class/decorator/syntax/class-valid/decorator-member-expr-private-identifier.js
 skip script test262/language/expressions/class/decorator/syntax/class-valid/decorator-member-expr-private-identifier.js
 
-# https://github.com/tc39/test262/issues/4359
-skip script test262/staging/sm/WeakMap/symbols.js
+# https://github.com/rbuckton/ecma262/pull/14
+skip script test262/staging/explicit-resource-management/call-dispose-methods.js
+skip script test262/staging/explicit-resource-management/await-using-in-switch-case-block.js
 
-# https://github.com/tc39/test262/pull/4428
-skip script test262/intl402/DateTimeFormat/prototype/formatToParts/dayPeriod-short-en.js
-skip script test262/intl402/DateTimeFormat/prototype/formatToParts/dayPeriod-narrow-en.js
-skip script test262/intl402/DateTimeFormat/prototype/formatToParts/dayPeriod-long-en.js
-skip script test262/intl402/DateTimeFormat/prototype/format/dayPeriod-short-en.js
-skip script test262/intl402/DateTimeFormat/prototype/format/dayPeriod-narrow-en.js
-skip script test262/intl402/DateTimeFormat/prototype/format/dayPeriod-long-en.js
+# https://github.com/tc39/test262/pull/4623
+skip script test262/built-ins/ThrowTypeError/distinct-cross-realm.js
+
+# https://github.com/tc39/test262/issues/4639
+skip script test262/intl402/Intl/supportedValuesOf/calendars-required-by-intl-era-monthcode.js
+
+# https://github.com/tc39/test262/pull/4649
+skip-if(!xulRuntime.shell) script test262/built-ins/Math/sumPrecise/throws-on-non-number.js
+
+# Not yet updated for Unicode 17.
+skip script test262/staging/sm/String/string-upper-lower-mapping.js
+
+# Not yet updated for Unicode 17.
+# https://github.com/tc39/test262/pull/4572
+# https://github.com/tc39/test262/pull/4573
+skip script test262/built-ins/RegExp/property-escapes/generated/Cased.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Tangut.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_-_Inherited.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Inherited.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Extender.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Latin.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Changes_When_Casefolded.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Alphabetic.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Syriac.js
+skip script test262/built-ins/RegExp/property-escapes/generated/XID_Start.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Arabic.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Unified_Ideograph.js
+skip script test262/built-ins/RegExp/property-escapes/generated/XID_Continue.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Letter.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Math.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Han.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Cased_Letter.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Math_Symbol.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_-_Sharada.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Changes_When_Casemapped.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Tirhuta.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Tifinagh.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Changes_When_Titlecased.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Lowercase.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Newa.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_-_Tangut.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Nonspacing_Mark.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Ideographic.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Changes_When_Lowercased.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Emoji.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_-_Kannada.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Modifier_Letter.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Number.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Other.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Nandinagari.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_-_Latin.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Grapheme_Extend.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Uppercase_Letter.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Kannada.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Case_Ignorable.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Spacing_Mark.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Changes_When_Uppercased.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Uppercase.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Other_Letter.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_-_Telugu.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_-_Han.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Telugu.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Common.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Extended_Pictographic.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Decimal_Number.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Mark.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Symbol.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Punctuation.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_-_Common.js
+skip script test262/built-ins/RegExp/property-escapes/generated/ID_Continue.js
+skip script test262/built-ins/RegExp/property-escapes/generated/ID_Start.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Unassigned.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Grapheme_Base.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Currency_Symbol.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Assigned.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Other_Symbol.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Sharada.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Emoji_Presentation.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Lowercase_Letter.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Letter_Number.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Changes_When_NFKC_Casefolded.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Diacritic.js
+skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Other_Punctuation.js
+skip script test262/built-ins/RegExp/property-escapes/generated/Script_-_Arabic.js
+
+# https://github.com/tc39/test262/pull/4659
+skip script test262/staging/Intl402/Temporal/old/indian-calendar.js
+
+# "Intl era and monthCode" proposal should clarify if "islamic" and "islamic-rgsa" are still allowed
+# for Intl.DisplayNames.
+skip script test262/intl402/Intl/supportedValuesOf/calendars-accepted-by-DisplayNames.js
+
+# https://github.com/tc39/test262/pull/4721
+skip script test262/staging/Intl402/Temporal/old/non-iso-calendars-ethioaa.js
+skip script test262/staging/Intl402/Temporal/old/non-iso-calendars-ethiopic.js
+skip script test262/staging/Intl402/Temporal/old/non-iso-calendars-indian.js
+skip script test262/staging/Intl402/Temporal/old/non-iso-calendars-coptic.js
+
+# https://github.com/tc39/proposal-intl-era-monthcode/issues/96
+skip script test262/intl402/Temporal/PlainDateTime/prototype/since/leap-months-chinese.js
+skip script test262/intl402/Temporal/PlainDateTime/prototype/since/leap-months-dangi.js
+skip script test262/intl402/Temporal/PlainDateTime/prototype/since/leap-months-hebrew.js
+skip script test262/intl402/Temporal/PlainDateTime/prototype/until/leap-months-chinese.js
+skip script test262/intl402/Temporal/PlainDateTime/prototype/until/leap-months-dangi.js
+skip script test262/intl402/Temporal/PlainDateTime/prototype/until/leap-months-hebrew.js
+skip script test262/intl402/Temporal/ZonedDateTime/prototype/since/leap-months-chinese.js
+skip script test262/intl402/Temporal/ZonedDateTime/prototype/since/leap-months-dangi.js
+skip script test262/intl402/Temporal/ZonedDateTime/prototype/since/leap-months-hebrew.js
+skip script test262/intl402/Temporal/ZonedDateTime/prototype/until/leap-months-chinese.js
+skip script test262/intl402/Temporal/ZonedDateTime/prototype/until/leap-months-dangi.js
+skip script test262/intl402/Temporal/ZonedDateTime/prototype/until/leap-months-hebrew.js
+skip script test262/intl402/Temporal/PlainDate/prototype/since/leap-months-chinese.js
+skip script test262/intl402/Temporal/PlainDate/prototype/since/leap-months-dangi.js
+skip script test262/intl402/Temporal/PlainDate/prototype/since/leap-months-hebrew.js
+skip script test262/intl402/Temporal/PlainDate/prototype/until/leap-months-chinese.js
+skip script test262/intl402/Temporal/PlainDate/prototype/until/leap-months-dangi.js
+skip script test262/intl402/Temporal/PlainDate/prototype/until/leap-months-hebrew.js
+skip script test262/intl402/Temporal/PlainYearMonth/prototype/until/leap-months-hebrew.js
+skip script test262/intl402/Temporal/PlainYearMonth/prototype/until/leap-months-dangi.js
+skip script test262/intl402/Temporal/PlainYearMonth/prototype/until/leap-months-chinese.js
+skip script test262/intl402/Temporal/PlainYearMonth/prototype/since/leap-months-hebrew.js
+skip script test262/intl402/Temporal/PlainYearMonth/prototype/since/leap-months-dangi.js
+skip script test262/intl402/Temporal/PlainYearMonth/prototype/since/leap-months-chinese.js
+
+# https://github.com/tc39/test262/pull/4676
+skip script test262/intl402/DateTimeFormat/prototype/formatToParts/era.js
 
 
 ##############################################
@@ -939,195 +1014,6 @@ shell-option(--enable-async-iterator-helpers) script non262/AsyncIterator/protot
 shell-option(--enable-async-iterator-helpers) script non262/AsyncIterator/prototype/take/take.js
 shell-option(--enable-async-iterator-helpers) script non262/AsyncIterator/prototype/take/take-more-than-available.js
 
-shell-option(--enable-iterator-helpers) script non262/Iterator/iterator.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/length.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/name.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/proto.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/constructor.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/constructor-subclassable.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/constructor-throw-when-called-directly.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/constructor-throw-without-new.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/from/call-from-with-different-this.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/from/Iterator.from-descriptor.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/from/Iterator.from-length.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/from/Iterator.from-name.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/from/iterator-not-callable-throws.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/from/modify-next.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/from/modify-return.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/from/modify-throw.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/from/o-not-object-throws.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/from/proxy-not-wrapped.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/from/proxy-wrap-next.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/from/proxy-wrap-return.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/from/proxy-wrap-throw.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/from/return-iterator-if-iterable.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/from/return-wrapper-if-not-iterable.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/from/return-wrapper-if-not-iterator-instance.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/from/wrap-functions-on-other-global.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/from/wrap-method-with-non-wrap-this-throws.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/from/wrap-next-forwards-value.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/from/wrap-next-not-object-throws.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/from/wrap-new-global.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/from/wrap-return-closes-iterator.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/from/wrap-throw.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/every/check-fn-after-getting-iterator.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/every/coerce-result-to-boolean.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/every/descriptor.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/every/error-from-correct-realm.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/every/fn-not-callable-throws.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/every/fn-throws-close-iterator.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/every/length.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/every/name.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/every/next-throws-iterator-not-closed.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/every/proxy.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/every/return-true-if-all-match.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/every/short-circuit-on-false.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/every/this-not-iterator-throws.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/every/value-throws-iterator-not-closed.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/find/check-fn-after-getting-iterator.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/find/coerce-result-to-boolean.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/find/descriptor.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/find/error-from-correct-realm.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/find/fn-not-callable-throws.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/find/fn-throws-close-iterator.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/find/length.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/find/name.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/find/next-throws-iterator-not-closed.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/find/proxy.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/find/return-undefined-if-none-match.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/find/short-circuit-on-match.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/find/this-not-iterator-throws.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/find/value-throws-iterator-not-closed.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/forEach/check-fn-after-getting-iterator.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/forEach/descriptor.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/forEach/error-from-correct-realm.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/forEach/fn-not-callable-throws.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/forEach/fn-throws-close-iterator.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/forEach/forEach.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/forEach/length.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/forEach/name.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/forEach/next-throws-iterator-not-closed.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/forEach/proxy.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/forEach/this-not-iterator-throws.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/forEach/value-throws-iterator-not-closed.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/reduce/check-fn-after-getting-iterator.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/reduce/accumulator-set-to-initial-value.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/reduce/descriptor.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/reduce/empty-iterator-without-initial-value-throws.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/reduce/error-from-correct-realm.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/reduce/iterator-empty-return-initial-value.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/reduce/iterator-next-return-non-object-throws.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/reduce/left-associative.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/reduce/length.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/reduce/name.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/reduce/next-throws-iterator-not-closed.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/reduce/no-initial-value-set-accumulator-to-first-value.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/reduce/proxy.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/reduce/reduce.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/reduce/reducer-not-callable-throws.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/reduce/reducer-throws-iterator-closed.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/reduce/this-not-iterator-throws.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/reduce/value-throws-iterator-not-closed.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/some/check-fn-after-getting-iterator.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/some/coerce-result-to-boolean.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/some/descriptor.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/some/error-from-correct-realm.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/some/fn-not-callable-throws.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/some/fn-throws-close-iterator.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/some/length.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/some/name.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/some/next-throws-iterator-not-closed.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/some/proxy.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/some/return-false-if-none-match.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/some/short-circuit-on-true.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/some/this-not-iterator-throws.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/some/value-throws-iterator-not-closed.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/toArray/create-in-current-realm.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/toArray/descriptor.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/toArray/iterator-empty.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/toArray/length.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/toArray/name.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/toArray/next-throws.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/toArray/proxy.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/toArray/this-not-iterator-throws.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/toArray/toArray.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/toArray/value-throws-iterator-not-closed.js
-
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/generator-methods-throw-on-iterator-helpers.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/iterator-helpers-from-other-global.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/iterator-helper-methods-throw-on-generators.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/lazy-methods-from-other-global.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/lazy-methods-handle-empty-iterators.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/lazy-methods-interleaved.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/lazy-methods-iterator-closed-on-call-throws.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/lazy-methods-iterator-closed-on-yield-throws.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/lazy-methods-iterator-not-closed-on-next-throws.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/lazy-methods-iterator-not-closed-on-value-throws.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/lazy-methods-iterator-returns-done-generator-finishes.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/lazy-methods-multiple-return-close-iterator-once.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/lazy-methods-multiple-throw-close-iterator-once.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/lazy-methods-pass-through-lastValue.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/lazy-methods-pass-value-through-chain.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/lazy-methods-proxy-accesses.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/lazy-methods-return-closes-iterator.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/lazy-methods-return-new-iterator-result.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/lazy-methods-reentry-not-close-iterator.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/lazy-methods-throw-closes-iterator-before-next.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/lazy-methods-throw-eagerly-on-next-non-callable.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/lazy-methods-throw-eagerly-on-non-callable.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/lazy-methods-throw-eagerly-on-non-iterator.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/lazy-methods-throw-next-done-throws.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/lazy-methods-throw-next-not-object.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/lazy-methods-throw-on-reentry.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/take-drop-throw-eagerly-on-negative.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/take-drop-throw-eagerly-on-non-integer.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/asIndexedPairs/asIndexedPairs.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/asIndexedPairs/length.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/asIndexedPairs/name.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/drop/drop.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/drop/length.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/drop/drop-more-than-available.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/drop/name.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/filter/coerce-result-to-boolean.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/filter/filter.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/filter/length.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/filter/name.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/flatMap/close-iterator-when-inner-complete-throws.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/flatMap/close-iterator-when-inner-next-throws.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/flatMap/close-iterator-when-inner-value-throws.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/flatMap/flatMap.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/flatMap/inner-empty-iterable.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/flatMap/inner-generator.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/flatMap/length.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/flatMap/name.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/flatMap/throw-when-inner-not-iterable.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/map/call-next-on-iterator-while-iterating.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/map/clobber-symbol.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/map/interleaved-map-calls.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/map/length.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/map/map.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/map/mapper-not-callable-throw.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/map/mutate-iterator-after-done.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/map/mutate-iterator.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/map/name.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/map/output-at-generator-end.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/map/pass-lastValue-to-next.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/map/prototype.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/map/proxy-abrupt-completion-in-iteratorValue.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/map/proxy-abrupt-completion-in-yield.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/map/proxy-abrupt-completion.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/map/proxy-accesses.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/map/reenter-map-generator-from-mapper.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/map/this-not-iterator-throw.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/map/this-value-array-throws.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/map/throw-when-iterator-returns-non-object.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/map/values-pass-through-chained-maps-to-next.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/take/close-iterator-when-none-remaining.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/take/length.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/take/name.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/take/take.js
-shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/take/take-more-than-available.js
-
 
 ##############################################
 # Temporal                                   #
@@ -1146,10 +1032,78 @@ skip script test262/built-ins/Temporal/ZonedDateTime/prototype/until/argument-st
 # See Bug 1950425, skip tests for calendars disabled in release or beta
 skip-if(release_or_beta) script non262/Temporal/Intl/defaults.js
 skip-if(release_or_beta) script test262/staging/Intl402/Temporal/old/non-iso-calendars-islamic-umalqura.js
-skip-if(release_or_beta) script test262/staging/Intl402/Temporal/old/islamic-calendars-islamic.js
-skip-if(release_or_beta) script test262/staging/Intl402/Temporal/old/islamic-calendars-islamic-rgsa.js
 skip-if(release_or_beta) script test262/staging/Intl402/Temporal/old/islamic-calendars-islamic-umalqura.js
+skip-if(release_or_beta) script test262/intl402/Temporal/PlainMonthDay/from/constrain-to-leap-day.js
+skip-if(release_or_beta) script test262/intl402/Temporal/ZonedDateTime/prototype/subtract/constrain-day-islamic-umalqura.js
+skip-if(release_or_beta) script test262/intl402/Temporal/ZonedDateTime/prototype/subtract/basic-islamic-umalqura.js
+skip-if(release_or_beta) script test262/intl402/Temporal/ZonedDateTime/prototype/add/constrain-day-islamic-umalqura.js
+skip-if(release_or_beta) script test262/intl402/Temporal/ZonedDateTime/prototype/add/basic-islamic-umalqura.js
+skip-if(release_or_beta) script test262/intl402/Temporal/PlainDate/prototype/subtract/constrain-day-islamic-umalqura.js
+skip-if(release_or_beta) script test262/intl402/Temporal/PlainDate/prototype/subtract/basic-islamic-umalqura.js
+skip-if(release_or_beta) script test262/intl402/Temporal/PlainDate/prototype/add/basic-islamic-umalqura.js
+skip-if(release_or_beta) script test262/intl402/Temporal/PlainDate/prototype/add/constrain-day-islamic-umalqura.js
+skip-if(release_or_beta) script test262/intl402/Temporal/PlainDateTime/prototype/subtract/constrain-day-islamic-umalqura.js
+skip-if(release_or_beta) script test262/intl402/Temporal/PlainDateTime/prototype/subtract/basic-islamic-umalqura.js
+skip-if(release_or_beta) script test262/intl402/Temporal/PlainDateTime/prototype/add/constrain-day-islamic-umalqura.js
+skip-if(release_or_beta) script test262/intl402/Temporal/PlainDateTime/prototype/add/basic-islamic-umalqura.js
 
-# Try re-enabling when Bug 1954138 or Bug 1955545 are fixed.
-skip script test262/staging/Intl402/Temporal/old/non-iso-calendars-islamic.js
-skip script test262/staging/Intl402/Temporal/old/non-iso-calendars-islamic-rgsa.js
+# Fails for "ethiopic", see <https://unicode-org.atlassian.net/browse/CLDR-18739>.
+skip script test262/staging/sm/Temporal/PlainDate/non-positive-era-year.js
+skip script test262/intl402/Temporal/PlainDateTime/prototype/add/era-boundary-ethiopic.js
+skip script test262/intl402/Temporal/PlainDateTime/prototype/subtract/era-boundary-ethiopic.js
+skip script test262/intl402/Temporal/ZonedDateTime/prototype/add/era-boundary-ethiopic.js
+skip script test262/intl402/Temporal/ZonedDateTime/prototype/subtract/era-boundary-ethiopic.js
+skip script test262/intl402/Temporal/PlainDate/prototype/add/era-boundary-ethiopic.js
+skip script test262/intl402/Temporal/PlainDate/prototype/subtract/era-boundary-ethiopic.js
+skip script test262/intl402/Temporal/PlainYearMonth/prototype/year/arithmetic-year.js
+skip script test262/intl402/Temporal/PlainYearMonth/from/extreme-dates.js
+skip script test262/intl402/Temporal/PlainYearMonth/prototype/with/mutually-exclusive-fields-ethiopic.js
+skip script test262/intl402/Temporal/PlainYearMonth/prototype/subtract/era-boundary-ethiopic.js
+
+# See https://bugzilla.mozilla.org/show_bug.cgi?id=2004851
+skip script test262/built-ins/Temporal/Duration/prototype/round/relativeto-date-limits.js
+skip script test262/built-ins/Temporal/Duration/prototype/total/relativeto-date-limits.js
+
+# Tracked by https://bugzilla.mozilla.org/show_bug.cgi?id=2005286, there's likely
+# multiple underlying issues.
+skip script test262/intl402/Temporal/PlainYearMonth/prototype/until/era-boundary-ethiopic.js
+skip script test262/intl402/Temporal/PlainYearMonth/prototype/since/era-boundary-ethiopic.js
+skip script test262/intl402/Temporal/PlainYearMonth/prototype/add/era-boundary-ethiopic.js
+skip script test262/intl402/Temporal/PlainYearMonth/from/era-boundary-ethiopic.js
+skip script test262/intl402/Temporal/PlainYearMonth/from/roundtrip-from-property-bag.js
+skip script test262/intl402/Temporal/PlainDate/prototype/year/arithmetic-year.js
+skip script test262/intl402/Temporal/PlainDate/prototype/until/era-boundary-ethiopic.js
+skip script test262/intl402/Temporal/PlainDate/prototype/since/era-boundary-ethiopic.js
+skip script test262/intl402/Temporal/PlainDate/prototype/with/mutually-exclusive-fields-ethiopic.js
+skip script test262/intl402/Temporal/PlainDate/prototype/withCalendar/extreme-dates.js
+skip script test262/intl402/Temporal/PlainDate/from/leap-year-hebrew.js
+skip script test262/intl402/Temporal/PlainDate/from/era-boundary-ethiopic.js
+skip script test262/intl402/Temporal/PlainDate/from/extreme-dates.js
+skip script test262/intl402/Temporal/PlainDate/from/roundtrip-from-string.js
+skip script test262/intl402/Temporal/PlainDate/from/roundtrip-from-property-bag.js
+skip script test262/intl402/Temporal/ZonedDateTime/prototype/year/arithmetic-year.js
+skip script test262/intl402/Temporal/ZonedDateTime/prototype/until/era-boundary-ethiopic.js
+skip script test262/intl402/Temporal/ZonedDateTime/prototype/since/era-boundary-ethiopic.js
+skip script test262/intl402/Temporal/ZonedDateTime/prototype/with/mutually-exclusive-fields-ethiopic.js
+skip script test262/intl402/Temporal/ZonedDateTime/prototype/withCalendar/extreme-dates.js
+skip script test262/intl402/Temporal/ZonedDateTime/from/leap-year-hebrew.js
+skip script test262/intl402/Temporal/ZonedDateTime/from/era-boundary-ethiopic.js
+skip script test262/intl402/Temporal/ZonedDateTime/from/extreme-dates.js
+skip script test262/intl402/Temporal/ZonedDateTime/from/roundtrip-from-string.js
+skip script test262/intl402/Temporal/ZonedDateTime/from/roundtrip-from-property-bag.js
+skip script test262/intl402/Temporal/PlainDateTime/prototype/year/arithmetic-year.js
+skip script test262/intl402/Temporal/PlainDateTime/prototype/until/era-boundary-ethiopic.js
+skip script test262/intl402/Temporal/PlainDateTime/prototype/since/era-boundary-ethiopic.js
+skip script test262/intl402/Temporal/PlainDateTime/prototype/with/mutually-exclusive-fields-ethiopic.js
+skip script test262/intl402/Temporal/PlainDateTime/prototype/withCalendar/extreme-dates.js
+skip script test262/intl402/Temporal/PlainDateTime/from/leap-year-hebrew.js
+skip script test262/intl402/Temporal/PlainDateTime/from/era-boundary-ethiopic.js
+skip script test262/intl402/Temporal/PlainDateTime/from/extreme-dates.js
+skip script test262/intl402/Temporal/PlainDateTime/from/roundtrip-from-string.js
+skip script test262/intl402/Temporal/PlainDateTime/from/roundtrip-from-property-bag.js
+
+# Buggy tests
+skip script test262/intl402/DateTimeFormat/prototype/formatToParts/chinese-calendar-dates.js
+skip script test262/intl402/DateTimeFormat/prototype/formatToParts/dangi-calendar-dates.js
+skip script test262/intl402/DateTimeFormat/prototype/formatRangeToParts/chinese-calendar-dates.js
+skip script test262/intl402/DateTimeFormat/prototype/formatRangeToParts/dangi-calendar-dates.js

@@ -12,8 +12,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   FirefoxBridgeExtensionUtils:
     "resource:///modules/FirefoxBridgeExtensionUtils.sys.mjs",
   LoginHelper: "resource://gre/modules/LoginHelper.sys.mjs",
-  PlacesUIUtils: "resource:///modules/PlacesUIUtils.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
+  PlacesUIUtils: "moz-src:///browser/components/places/PlacesUIUtils.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
   UsageReporting: "resource://gre/modules/UsageReporting.sys.mjs",
 });
 
@@ -263,7 +263,7 @@ export let ProfileDataUpgrader = {
       // from default placement. This is done early enough that it doesn't
       // impact adding new managed bookmarks.
       const { CustomizableUI } = ChromeUtils.importESModule(
-        "resource:///modules/CustomizableUI.sys.mjs"
+        "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs"
       );
       CustomizableUI.removeWidgetFromArea("managed-bookmarks");
     }
@@ -713,76 +713,32 @@ export let ProfileDataUpgrader = {
       }
     }
 
-    // Version 146 had a typo issue and thus it has been replaced by 147.
-
+    let hasRun146Migration = false;
     if (existingDataVersion < 147) {
-      // We're securing the boolean prefs for OS Authentication.
-      // This is achieved by converting them into a string pref and encrypting the values
-      // stored inside it.
+      // Directly copy old os auth pref values prior to 147 to the new boolean
+      // pref for OS auth (UI migration 156). Previously, this migration version
+      // migrated the old OS auth pref values to an encrypted string pref.
+      const prevOsAuthForCc = !Services.prefs.getBoolPref(
+        "signon.management.page.os-auth.enabled",
+        false
+      );
+      const newOSAuthNameForCc =
+        "extensions.formautofill.creditCards.os-auth.locked.enabled";
+      Services.prefs.setBoolPref(newOSAuthNameForCc, prevOsAuthForCc);
+      Services.prefs.lockPref(newOSAuthNameForCc);
 
-      // Note: we don't run this on nightly builds and we also do not run this
-      // for users with primary password enabled. That means both these sets of
-      // users will have the features turned on by default. For Nightly this is
-      // an intentional product decision; for primary password this is because
-      // we cannot encrypt the opt-out value without asking for the primary
-      // password, which in turn means we cannot migrate without doing so. It
-      // is also very difficult to postpone this migration because there is no
-      // way to know when the user has put in the primary password. We will
-      // probably reconsider some of this architecture in future, but for now
-      // this is the least-painful method considering the alternatives, cf.
-      // bug 1901899.
-      if (
-        !AppConstants.NIGHTLY_BUILD &&
-        !lazy.LoginHelper.isPrimaryPasswordSet()
-      ) {
-        const hasRunBetaMigration = Services.prefs
-          .getCharPref("browser.startup.homepage_override.mstone", "")
-          .startsWith("127.0");
+      const prevOsAuthForPw = !Services.prefs.getBoolPref(
+        "extensions.formautofill.reauth.enabled",
+        false
+      );
+      const newOSAuthNameForPw =
+        "signon.management.page.os-auth.locked.enabled";
+      Services.prefs.setBoolPref(newOSAuthNameForPw, prevOsAuthForPw);
+      Services.prefs.lockPref(newOSAuthNameForPw);
 
-        // Version 146 UI migration wrote to a wrong `creditcards` pref when
-        // the feature was disabled, instead it should have used `creditCards`.
-        // The correct pref name is in AUTOFILL_CREDITCARDS_REAUTH_PREF.
-        // Note that we only wrote prefs if the feature was disabled.
-        let ccTypoDisabled = !lazy.FormAutofillUtils.getOSAuthEnabled(
-          "extensions.formautofill.creditcards.reauth.optout"
-        );
-        let ccCorrectPrefDisabled = !lazy.FormAutofillUtils.getOSAuthEnabled(
-          lazy.FormAutofillUtils.AUTOFILL_CREDITCARDS_REAUTH_PREF
-        );
-        let ccPrevReauthPrefValue = Services.prefs.getBoolPref(
-          "extensions.formautofill.reauth.enabled",
-          false
-        );
-
-        let userHadEnabledCreditCardReauth =
-          // If we've run beta migration, and neither typo nor correct pref
-          // indicate disablement, the user enabled the pref:
-          (hasRunBetaMigration && !ccTypoDisabled && !ccCorrectPrefDisabled) ||
-          // Or if we never ran beta migration and the bool pref is set:
-          ccPrevReauthPrefValue;
-
-        lazy.FormAutofillUtils.setOSAuthEnabled(
-          lazy.FormAutofillUtils.AUTOFILL_CREDITCARDS_REAUTH_PREF,
-          userHadEnabledCreditCardReauth
-        );
-
-        if (!hasRunBetaMigration) {
-          const passwordsPrevReauthPrefValue = Services.prefs.getBoolPref(
-            "signon.management.page.os-auth.enabled",
-            false
-          );
-          lazy.LoginHelper.setOSAuthEnabled(
-            lazy.LoginHelper.OS_AUTH_FOR_PASSWORDS_PREF,
-            passwordsPrevReauthPrefValue
-          );
-        }
-      }
-
+      hasRun146Migration = true;
       Services.prefs.clearUserPref("extensions.formautofill.reauth.enabled");
       Services.prefs.clearUserPref("signon.management.page.os-auth.enabled");
-      Services.prefs.clearUserPref(
-        "extensions.formautofill.creditcards.reauth.optout"
-      );
     }
 
     if (existingDataVersion < 148) {
@@ -883,6 +839,100 @@ export let ProfileDataUpgrader = {
         .filter(x => !!x);
       migrations.push("mibbit");
       Services.prefs.setCharPref(kPref, migrations.join(","));
+    }
+
+    if (existingDataVersion < 155) {
+      // Remove outdated sidebar info from XULStore.
+      for (const attr of [
+        "checked",
+        "positionend",
+        "sidebarcommand",
+        "style",
+      ]) {
+        Services.xulStore.removeValue(BROWSER_DOCURL, "sidebar-box", attr);
+      }
+    }
+
+    if (existingDataVersion < 156) {
+      const customBlockListEnabled = Services.prefs.getBoolPref(
+        "browser.contentblocking.customBlockList.preferences.ui.enabled",
+        false
+      );
+      if (customBlockListEnabled) {
+        Services.prefs.clearUserPref(
+          "browser.contentblocking.customBlockList.preferences.ui.enabled"
+        );
+        Services.prefs.clearUserPref("urlclassifier.trackingTable");
+      }
+    }
+
+    if (existingDataVersion < 157) {
+      // We've changed the 147 migration to copy the old OS auth pref values of
+      // that version to the new locked boolean prefs instead, so no need to
+      // perform a migration if it's already been done.
+      if (!hasRun146Migration) {
+        // We're moving away from string encrypted prefs for OS Authentication and
+        // using locked boolean prefs instead.
+        // To determine the state of the old OS Auth value, manually read these prefs.
+        // This treats any non-empty-string value as "turned off", irrespective of
+        // whether it correctly decrypts to the correct value, because we cannot do
+        // the decryption if the primary password has not yet been provided.
+        const prevOsAuthForCc = !Services.prefs.getStringPref(
+          "extensions.formautofill.creditCards.reauth.optout",
+          ""
+        );
+        const prevOsAuthForPw = !Services.prefs.getStringPref(
+          "signon.management.page.os-auth.optout",
+          ""
+        );
+
+        lazy.LoginHelper.setOSAuthEnabled(prevOsAuthForPw);
+        lazy.FormAutofillUtils.setOSAuthEnabled(prevOsAuthForCc);
+
+        Services.prefs.clearUserPref(
+          "extensions.formautofill.creditCards.reauth.optout"
+        );
+        Services.prefs.clearUserPref("signon.management.page.os-auth.optout");
+      }
+    }
+
+    // Nightly users who have run the migration for 157 will have had OS auth
+    // set to true for everyone who has migrated and there's no way to retrieve
+    // the old OS auth pref value because it was cleared in the previous
+    // migration. So we force the pref to false. See bug 1974217.
+    if (AppConstants.NIGHTLY_BUILD && existingDataVersion === 158) {
+      lazy.LoginHelper.setOSAuthEnabled(false);
+      lazy.FormAutofillUtils.setOSAuthEnabled(false);
+    }
+
+    if (existingDataVersion < 159) {
+      // Bug 1979014 / bug 1980398 - autohide attribute becomes a real boolean attribute.
+      let menubarWasEnabled =
+        Services.xulStore.getValue(
+          BROWSER_DOCURL,
+          "toolbar-menubar",
+          "autohide"
+        ) == "false";
+      if (menubarWasEnabled) {
+        Services.xulStore.setValue(
+          BROWSER_DOCURL,
+          "toolbar-menubar",
+          "autohide",
+          "-moz-missing\n"
+        );
+      }
+    }
+
+    if (existingDataVersion < 160) {
+      // Force all logins to be re-encrypted to make use of more modern crypto.
+      // This pref is checked in the initialization of the LoginManagerStorage.
+      Services.prefs.setBoolPref("signon.reencryptionNeeded", true);
+    }
+
+    // Updating from 161 to 163 to trigger re-migrations of the Rusts store.
+    if (existingDataVersion < 163) {
+      // Force all logins to be re-migrated to the rust store.
+      Services.prefs.setBoolPref("signon.rustMirror.migrationNeeded", true);
     }
 
     // Update the migration version.

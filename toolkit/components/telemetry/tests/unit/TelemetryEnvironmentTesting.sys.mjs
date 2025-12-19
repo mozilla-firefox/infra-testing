@@ -9,7 +9,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
   Assert: "resource://testing-common/Assert.sys.mjs",
   // AttributionCode is only needed for Firefox
-  AttributionCode: "resource:///modules/AttributionCode.sys.mjs",
+  AttributionCode:
+    "moz-src:///browser/components/attribution/AttributionCode.sys.mjs",
 
   MockRegistrar: "resource://testing-common/MockRegistrar.sys.mjs",
 });
@@ -157,7 +158,7 @@ export var TelemetryEnvironmentTesting = {
     } else if (gIsMac) {
       lazy.AttributionCode._clearCache();
       const { MacAttribution } = ChromeUtils.importESModule(
-        "resource:///modules/MacAttribution.sys.mjs"
+        "moz-src:///browser/components/attribution/MacAttribution.sys.mjs"
       );
       await MacAttribution.setAttributionString(ATTRIBUTION_CODE);
     }
@@ -169,7 +170,7 @@ export var TelemetryEnvironmentTesting = {
       lazy.AttributionCode._clearCache();
     } else if (gIsMac) {
       const { MacAttribution } = ChromeUtils.importESModule(
-        "resource:///modules/MacAttribution.sys.mjs"
+        "moz-src:///browser/components/attribution/MacAttribution.sys.mjs"
       );
       await MacAttribution.delAttributionString();
     }
@@ -527,7 +528,13 @@ export var TelemetryEnvironmentTesting = {
     lazy.Assert.ok(Array.isArray(data.partner.partnerNames));
     if (isInitial) {
       lazy.Assert.equal(data.partner.partnerNames.length, 0);
-      lazy.Assert.equal(distExt.partnerNames, null);
+      // bug 1965481 - Artifact and full builds disagree on how to store [].
+      if (Services.prefs.getBoolPref("telemetry.fog.artifact_build", false)) {
+        lazy.Assert.ok(Array.isArray(distExt.partnerNames));
+        lazy.Assert.equal(distExt.partnerNames.length, 0);
+      } else {
+        lazy.Assert.equal(distExt.partnerNames, null);
+      }
     } else {
       lazy.Assert.ok(data.partner.partnerNames.includes(PARTNER_NAME));
       lazy.Assert.ok(
@@ -803,9 +810,58 @@ export var TelemetryEnvironmentTesting = {
       }
     }
 
-    let gfxData = data.system.gfx;
-    lazy.Assert.ok("D2DEnabled" in gfxData);
-    lazy.Assert.equal(gfxData.D2DEnabled, Glean.gfx.d2dEnabled.testGetValue());
+    this.checkGfx(data.system.gfx);
+
+    if (gIsMac) {
+      lazy.Assert.ok(this.checkString(data.system.appleModelId));
+      lazy.Assert.equal(
+        data.system.appleModelId,
+        Glean.system.appleModelId.testGetValue()
+      );
+    } else {
+      lazy.Assert.ok(this.checkNullOrString(data.system.appleModelId));
+      lazy.Assert.equal(null, Glean.system.appleModelId.testGetValue());
+    }
+
+    // This feature is only available on Windows
+    if (AppConstants.platform == "win") {
+      lazy.Assert.ok(
+        "sec" in data.system,
+        "sec must be available under data.system"
+      );
+
+      let SEC_FIELDS = ["antivirus", "antispyware", "firewall"];
+      for (let f of SEC_FIELDS) {
+        let products = Glean.windowsSecurity[f].testGetValue();
+        lazy.Assert.ok(
+          f in data.system.sec,
+          f + " must be available under data.system.sec"
+        );
+
+        let value = data.system.sec[f];
+        // value is null on Windows Server
+        lazy.Assert.ok(
+          value === null || Array.isArray(value),
+          f + " must be either null or an array"
+        );
+        if (Array.isArray(value)) {
+          for (let product of value) {
+            // It is posssible that this will fail if either the Legacy or
+            // Glean string limits are hit. If the Glean string_list limits are
+            // hit, `testGetValue` above will throw, though.
+            lazy.Assert.ok(products.includes(product), `${f} data must match.`);
+            lazy.Assert.equal(
+              typeof product,
+              "string",
+              "Each element of " + f + " must be a string"
+            );
+          }
+        }
+      }
+    }
+  },
+
+  checkGfx(gfxData) {
     lazy.Assert.ok("DWriteEnabled" in gfxData);
     lazy.Assert.equal(
       gfxData.DWriteEnabled,
@@ -825,7 +881,6 @@ export var TelemetryEnvironmentTesting = {
       Glean.gfx.textScaleFactor.testGetValue()
     );
     if (gIsWindows) {
-      lazy.Assert.equal(typeof gfxData.D2DEnabled, "boolean");
       lazy.Assert.equal(typeof gfxData.DWriteEnabled, "boolean");
     }
 
@@ -884,6 +939,14 @@ export var TelemetryEnvironmentTesting = {
     lazy.Assert.equal(typeof gfxData.features.gpuProcess.status, "string");
     lazy.Assert.ok(!!Glean.gfxFeatures.gpuProcess.testGetValue().status);
 
+    if (gIsWindows && !!gfxData.features?.d3d11?.version) {
+      lazy.Assert.equal(typeof gfxData.features.d3d11.version, "number");
+      lazy.Assert.equal(
+        gfxData.features.d3d11.version,
+        Glean.gfxFeatures.d3d11.testGetValue().version
+      );
+    }
+
     try {
       // If we've not got nsIGfxInfoDebug, then this will throw and stop us doing
       // this test.
@@ -911,54 +974,6 @@ export var TelemetryEnvironmentTesting = {
         Glean.gfxFeatures.gpuProcess.testGetValue().status
       );
     } catch (e) {}
-
-    if (gIsMac) {
-      lazy.Assert.ok(this.checkString(data.system.appleModelId));
-      lazy.Assert.equal(
-        data.system.appleModelId,
-        Glean.system.appleModelId.testGetValue()
-      );
-    } else {
-      lazy.Assert.ok(this.checkNullOrString(data.system.appleModelId));
-      lazy.Assert.equal(null, Glean.system.appleModelId.testGetValue());
-    }
-
-    // This feature is only available on Windows
-    if (AppConstants.platform == "win") {
-      lazy.Assert.ok(
-        "sec" in data.system,
-        "sec must be available under data.system"
-      );
-
-      let SEC_FIELDS = ["antivirus", "antispyware", "firewall"];
-      for (let f of SEC_FIELDS) {
-        let products = Glean.windowsSecurity[f].testGetValue();
-        lazy.Assert.ok(
-          f in data.system.sec,
-          f + " must be available under data.system.sec"
-        );
-
-        let value = data.system.sec[f];
-        // value is null on Windows Server
-        lazy.Assert.ok(
-          value === null || Array.isArray(value),
-          f + " must be either null or an array"
-        );
-        if (Array.isArray(value)) {
-          for (let product of value) {
-            // It is posssible that this will fail if either the Legacy or
-            // Glean string limits are hit. If the Glean string_list limits are
-            // hit, `testGetValue` above will throw, though.
-            lazy.Assert.ok(products.includes(product), `${f} data must match.`);
-            lazy.Assert.equal(
-              typeof product,
-              "string",
-              "Each element of " + f + " must be a string"
-            );
-          }
-        }
-      }
-    }
   },
 
   checkActiveAddon(id, data, partialRecord) {
@@ -1106,6 +1121,10 @@ export var TelemetryEnvironmentTesting = {
     }
 
     // Check "theme" structure.
+    // NOTE: theme is expected to be set to an empty object while the theme is
+    // not installed or enabled yet by the time the telemetry environment is
+    // capturing the active addons and themes early during the first at startup,
+    // see Bug 1994389.
     if (Object.keys(data.addons.theme).length !== 0) {
       this.checkTheme(data.addons.theme);
     }

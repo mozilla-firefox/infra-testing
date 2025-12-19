@@ -7,29 +7,38 @@
 
 IPDL_SOURCES += [
     "PMediaDecoderParams.ipdlh",
+    "PRemoteCDM.ipdl",
     "PRemoteDecoder.ipdl",
+    "PRemoteEncoder.ipdl",
 ]
 
 PREPROCESSED_IPDL_SOURCES += [
     "PRDD.ipdl",
-    "PRemoteDecoderManager.ipdl",
+    "PRemoteMediaManager.ipdl",
 ]
 
 EXPORTS.mozilla += [
+    "MediaActorUtils.h",
+    "PRemoteCDMActor.h",
     "RDDChild.h",
     "RDDParent.h",
     "RDDProcessHost.h",
     "RDDProcessImpl.h",
     "RDDProcessManager.h",
+    "RemoteCDMChild.h",
+    "RemoteCDMParent.h",
     "RemoteDecoderChild.h",
-    "RemoteDecoderManagerChild.h",
-    "RemoteDecoderManagerParent.h",
     "RemoteDecoderModule.h",
     "RemoteDecoderParent.h",
     "RemoteDecodeUtils.h",
+    "RemoteEncoderModule.h",
     "RemoteImageHolder.h",
     "RemoteMediaData.h",
     "RemoteMediaDataDecoder.h",
+    "RemoteMediaDataEncoderChild.h",
+    "RemoteMediaDataEncoderParent.h",
+    "RemoteMediaManagerChild.h",
+    "RemoteMediaManagerParent.h",
     "ShmemRecycleAllocator.h",
 ]
 
@@ -45,15 +54,20 @@ SOURCES += [
     "RDDProcessImpl.cpp",
     "RDDProcessManager.cpp",
     "RemoteAudioDecoder.cpp",
+    "RemoteCDMChild.cpp",
+    "RemoteCDMParent.cpp",
     "RemoteDecoderChild.cpp",
-    "RemoteDecoderManagerChild.cpp",
-    "RemoteDecoderManagerParent.cpp",
     "RemoteDecoderModule.cpp",
     "RemoteDecoderParent.cpp",
     "RemoteDecodeUtils.cpp",
+    "RemoteEncoderModule.cpp",
     "RemoteImageHolder.cpp",
     "RemoteMediaData.cpp",
     "RemoteMediaDataDecoder.cpp",
+    "RemoteMediaDataEncoderChild.cpp",
+    "RemoteMediaDataEncoderParent.cpp",
+    "RemoteMediaManagerChild.cpp",
+    "RemoteMediaManagerParent.cpp",
     "RemoteVideoDecoder.cpp",
 ]
 

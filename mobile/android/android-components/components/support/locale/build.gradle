@@ -6,43 +6,29 @@ apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 
 android {
-    defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
-
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
-    }
-
     namespace = 'mozilla.components.support.locale'
 }
 
 dependencies {
+    implementation project(':components:browser-state')
+    implementation project(':components:support-base')
+    implementation project(':components:support-utils')
+
     implementation libs.androidx.core
     implementation libs.androidx.core.ktx
-    implementation libs.kotlin.coroutines
+    implementation libs.kotlinx.coroutines
 
-    implementation project(':support-base')
-    implementation project(':support-utils')
-    implementation project(':browser-state')
+    testImplementation project(':components:support-test')
+    testImplementation project(':components:support-test-libstate')
 
-    testImplementation project(':support-test')
-    testImplementation project(':support-test-libstate')
     testImplementation libs.androidx.test.core
     testImplementation libs.androidx.test.junit
-    testImplementation libs.testing.robolectric
-    testImplementation libs.testing.coroutines
+    testImplementation libs.kotlinx.coroutines.test
+    testImplementation libs.robolectric
 
-    androidTestImplementation libs.testing.coroutines
+    androidTestImplementation libs.kotlinx.coroutines.test
 }
 
-apply from: '../../../android-lint.gradle'
+apply from: '../../../common-config.gradle'
 apply from: '../../../publish.gradle'
 ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

@@ -27,7 +27,7 @@ var HandshakeTelemetryHelpers = {
    * Counts the number of entries in the histogram, ignoring the bucket value.
    * e.g. {0: 1, 1: 2, 3: 3} has 6 entries.
    *
-   * @param {Object} histObject The histogram to count the entries of.
+   * @param {object} histObject The histogram to count the entries of.
    * @returns The count of the number of entries in the histogram.
    */
   countHistogramEntries(histObject) {
@@ -47,9 +47,9 @@ var HandshakeTelemetryHelpers = {
    * Assert that the histogram index is the right value. It expects that
    * other indexes are all zero.
    *
-   * @param {Object} histogram The histogram to check.
-   * @param {Number} index The index to check against the expected value.
-   * @param {Number} expected The expected value of the index.
+   * @param {object} histogram The histogram to check.
+   * @param {number} index The index to check against the expected value.
+   * @param {number} expected The expected value of the index.
    */
   assertHistogramMap(histogram, expectedEntries) {
     Assert.ok(
@@ -138,15 +138,17 @@ var HandshakeTelemetryHelpers = {
     // SSL_TIME_UNTIL_READY_{FLAVOR} should only contain values if we expected success.
     if (resultCode === 0) {
       for (let h of this.getHistograms(["SSL_TIME_UNTIL_READY"], flavors)) {
-        Assert.ok(
-          this.countHistogramEntries(h) === resultCount,
+        Assert.strictEqual(
+          this.countHistogramEntries(h),
+          resultCount,
           "Timing entry count correct"
         );
       }
     } else {
       for (let h of this.getHistograms(["SSL_TIME_UNTIL_READY"], flavors)) {
-        Assert.ok(
-          this.countHistogramEntries(h) === 0,
+        Assert.strictEqual(
+          this.countHistogramEntries(h),
+          0,
           "No timing entries expected"
         );
       }
@@ -160,8 +162,9 @@ var HandshakeTelemetryHelpers = {
   checkEmpty(flavors) {
     for (let h of this.getHistogramNames(this.HISTOGRAMS, flavors)) {
       let hObj = Services.telemetry.getHistogramById(h);
-      Assert.ok(
-        this.countHistogramEntries(hObj) === 0,
+      Assert.strictEqual(
+        this.countHistogramEntries(hObj),
+        0,
         `No entries expected in ${h.name}. Contents: ${JSON.stringify(
           hObj.snapshot()
         )}`

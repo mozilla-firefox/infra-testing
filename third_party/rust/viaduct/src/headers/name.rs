@@ -61,7 +61,7 @@ impl InvalidHeaderName {
 }
 
 fn validate_header(mut name: Cow<'static, str>) -> Result<HeaderName, InvalidHeaderName> {
-    if name.len() == 0 {
+    if name.is_empty() {
         return Err(invalid_header_name(name));
     }
     let mut need_lower_case = false;
@@ -107,7 +107,7 @@ impl std::fmt::Display for HeaderName {
 #[cold]
 #[inline(never)]
 fn invalid_header_name(s: Cow<'static, str>) -> InvalidHeaderName {
-    log::warn!("Invalid header name: {}", s);
+    crate::warn!("Invalid header name: {}", s);
     InvalidHeaderName(s)
 }
 // Note: 0 = invalid, 1 = valid, 2 = valid but needs lowercasing. I'd use an

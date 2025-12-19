@@ -38,10 +38,10 @@
   right: 0;
   inset-block: 0;
   cursor: pointer;
-    /* The slow icon is absolutely positioned and can can overlap the column text.
-       This background gradient is added on its left side so the icon
-       has a solid background and the text slowly fades before the icon. */
-  background-image: linear-gradient(to right,transparent, var(--theme-body-background) 43%);
+  /* The slow icon is absolutely positioned and can can overlap the column text.
+     This background gradient is added on its left side so the icon
+     has a solid background and the text slowly fades before the icon. */
+  background-image: linear-gradient(to right, transparent, var(--theme-body-background) 43%);
   padding-inline: 5px 30px;
 
   &::before {
@@ -73,16 +73,16 @@
 }
 
 .request-list-item:not(.selected).odd .requests-list-slow-button {
-  background-image: linear-gradient(to right,transparent, var(--table-zebra-inline-icons-background) 43%);
+  background-image: linear-gradient(to right, transparent, var(--table-zebra-inline-icons-background) 43%);
 }
 
 .request-list-item:not(.selected):hover .requests-list-slow-button,
 .request-list-item:not(.selected).odd:hover .requests-list-slow-button {
-  background-image: linear-gradient(to right,transparent, var(--table-selection-inline-icons-background-hover) 43%);
+  background-image: linear-gradient(to right, transparent, var(--table-selection-inline-icons-background-hover) 43%);
 }
 
 .request-list-item.selected .requests-list-slow-button {
-  background-image: linear-gradient(to right,transparent, var(--theme-selection-background) 43%);
+  background-image: linear-gradient(to right, transparent, var(--theme-selection-background) 43%);
 
   :root[forced-colors-active] & {
     background-color: var(--theme-selection-background);
@@ -168,6 +168,10 @@
   display: inline-block;
 }
 
+.requests-list-column.requests-list-number-column {
+  text-align: end;
+}
+
 /* Requests list headers */
 
 .requests-list-headers-group,
@@ -215,12 +219,6 @@
   background-color: transparent;
 }
 
-.requests-list-header-button::-moz-focus-inner,
-.message-list-header-button::-moz-focus-inner {
-  border: 0;
-  padding: 0;
-}
-
 .requests-list-header-button:hover {
   background-color: rgba(0, 0, 0, 0.1);
 }
@@ -258,11 +256,11 @@
   width: calc(100% - 11px);
 }
 
-.requests-list-header-button[data-sorted=ascending] > .button-icon {
+.requests-list-header-button[data-sorted="ascending"] > .button-icon {
   background-image: url("chrome://devtools/skin/images/sort-ascending-arrow.svg");
 }
 
-.requests-list-header-button[data-sorted=descending] > .button-icon {
+.requests-list-header-button[data-sorted="descending"] > .button-icon {
   background-image: url("chrome://devtools/skin/images/sort-descending-arrow.svg");
 }
 
@@ -506,8 +504,8 @@
   border-inline-start-color: #585959 !important;
 }
 
-.requests-list-timings-division[data-division-scale=second],
-.requests-list-timings-division[data-division-scale=minute] {
+.requests-list-timings-division[data-division-scale="second"],
+.requests-list-timings-division[data-division-scale="minute"] {
   font-weight: 600;
 }
 
@@ -600,17 +598,7 @@
  * Dim requests served from cache when High Contrast Mode is not enabled
  */
 :root:not([forced-colors-active]) .request-list-item:not(.selected, :hover).fromCache {
-  --table-icon-opacity: 0.7;
   color: var(--theme-text-color-alt);
-}
-
-/*
- * Apply partial opacity to specific icons and icon-like elements
- * (e.g. for cached requests)
- */
-.requests-security-icon-group,
-.requests-list-status-code:not([data-code^="3"]) {
-  opacity: var(--table-icon-opacity, 1);
 }
 
 /*

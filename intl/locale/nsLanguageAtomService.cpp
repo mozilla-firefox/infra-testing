@@ -5,22 +5,19 @@
 
 #include "nsLanguageAtomService.h"
 
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Encoding.h"
 #include "mozilla/intl/Locale.h"
 #include "mozilla/intl/OSPreferences.h"
+#include "MainThreadUtils.h"
 #include "nsGkAtoms.h"
 #include "nsUConvPropertySearch.h"
 #include "nsUnicharUtils.h"
+#include "MainThreadUtils.h"
 
 #include <mutex>  // for call_once
 
 using namespace mozilla;
 using mozilla::intl::OSPreferences;
-
-static constexpr nsUConvProp encodingsGroups[] = {
-#include "encodingsgroups.properties.h"
-};
 
 // List of mozilla internal x-* tags that map to themselves (see bug 256257)
 static constexpr nsStaticAtom* kLangGroups[] = {
@@ -106,18 +103,6 @@ nsStaticAtom* nsLanguageAtomService::LookupLanguage(
 
   RefPtr<nsAtom> lang = NS_Atomize(lowered);
   return GetLanguageGroup(lang);
-}
-
-already_AddRefed<nsAtom> nsLanguageAtomService::LookupCharSet(
-    NotNull<const Encoding*> aEncoding) {
-  nsAutoCString charset;
-  aEncoding->Name(charset);
-  nsAutoCString group;
-  if (NS_FAILED(nsUConvPropertySearch::SearchPropertyValue(
-          encodingsGroups, std::size(encodingsGroups), charset, group))) {
-    return RefPtr<nsAtom>(nsGkAtoms::Unicode).forget();
-  }
-  return NS_Atomize(group);
 }
 
 nsAtom* nsLanguageAtomService::GetLocaleLanguage() {
@@ -217,6 +202,12 @@ nsStaticAtom* nsLanguageAtomService::GetUncachedLanguageGroup(
     if (result.isOk() && loc.Canonicalize().isOk()) {
       // Fill in script subtag if not present.
       if (loc.Script().Missing()) {
+        // No script. At this point it's fair to assume that en-* maps to
+        // x-western. This fast path avoids the slow call to AddLikelySubtags.
+        if (loc.Language().EqualTo("en")) {
+          return nsGkAtoms::x_western;
+        }
+
         if (loc.AddLikelySubtags().isErr()) {
           // Fall back to x-unicode if no match was found
           return nsGkAtoms::Unicode;

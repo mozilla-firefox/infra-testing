@@ -561,9 +561,8 @@ void RenderThread::HandleWrNotifierEvents(WrWindowId aWindowId) {
 void RenderThread::WrNotifierEvent_HandleWakeUp(
     wr::WindowId aWindowId, const wr::FrameReadyParams& aParams) {
   MOZ_ASSERT(IsInRenderThread());
-
-  bool isTrackedFrame = false;
-  HandleFrameOneDoc(aWindowId, aParams, isTrackedFrame, Nothing());
+  MOZ_ASSERT(!aParams.tracked);
+  HandleFrameOneDoc(aWindowId, aParams, Nothing());
 }
 
 void RenderThread::WrNotifierEvent_HandleNewFrameReady(
@@ -571,8 +570,7 @@ void RenderThread::WrNotifierEvent_HandleNewFrameReady(
     const wr::FrameReadyParams& aParams) {
   MOZ_ASSERT(IsInRenderThread());
 
-  bool isTrackedFrame = true;
-  HandleFrameOneDoc(aWindowId, aParams, isTrackedFrame, Some(aPublishId));
+  HandleFrameOneDoc(aWindowId, aParams, Some(aPublishId));
 }
 
 void RenderThread::WrNotifierEvent_HandleExternalEvent(
@@ -603,7 +601,6 @@ Maybe<layers::FrameRecording> RenderThread::EndRecordingForWindow(
 
 void RenderThread::HandleFrameOneDoc(wr::WindowId aWindowId,
                                      const wr::FrameReadyParams& aParams,
-                                     bool aTrackedFrame,
                                      Maybe<FramePublishId> aPublishId) {
   MOZ_ASSERT(IsInRenderThread());
 
@@ -611,16 +608,15 @@ void RenderThread::HandleFrameOneDoc(wr::WindowId aWindowId,
     return;
   }
 
-  HandleFrameOneDocInner(aWindowId, aParams, aTrackedFrame, aPublishId);
+  HandleFrameOneDocInner(aWindowId, aParams, aPublishId);
 
-  if (aTrackedFrame) {
+  if (aParams.tracked) {
     DecPendingFrameCount(aWindowId);
   }
 }
 
 void RenderThread::HandleFrameOneDocInner(wr::WindowId aWindowId,
                                           const wr::FrameReadyParams& aParams,
-                                          bool aTrackedFrame,
                                           Maybe<FramePublishId> aPublishId) {
   if (IsDestroyed(aWindowId)) {
     return;
@@ -631,7 +627,7 @@ void RenderThread::HandleFrameOneDocInner(wr::WindowId aWindowId,
   }
 
   PendingFrameInfo frame;
-  if (aTrackedFrame) {
+  if (aParams.tracked) {
     // scope lock
     auto windows = mWindowInfos.Lock();
     auto it = windows->find(AsUint64(aWindowId));
@@ -834,7 +830,7 @@ void RenderThread::UpdateAndRender(
 
   std::string markerName = "Composite #" + std::to_string(AsUint64(aWindowId));
   AutoProfilerTracing tracingCompositeMarker(
-      "Paint", markerName.c_str(), geckoprofiler::category::GRAPHICS,
+      markerName.c_str(), geckoprofiler::category::GRAPHICS,
       Some(renderer->GetCompositorBridge()->GetInnerWindowId()));
 
   bool render = aParams.render;
@@ -1283,18 +1279,18 @@ void RenderThread::InitDeviceTask() {
   // lazy initialization to happen now.
   SingletonGL();
 
-  if (mShaders) {
-    // Kick off shader warmup, outside the InitDeviceTask so that this thread
-    // becomes available to handle other messages from the Compositor.
-    PostResumeShaderWarmupRunnable();
-  }
-
   const auto maxDurationMs = 3 * 1000;
   const auto end = TimeStamp::Now();
   const auto durationMs = static_cast<uint32_t>((end - start).ToMilliseconds());
   if (durationMs > maxDurationMs) {
     gfxCriticalNoteOnce << "RenderThread::InitDeviceTask is slow: "
                         << durationMs;
+  }
+}
+
+void RenderThread::BeginShaderWarmupIfNeeded() {
+  if (mShaders) {
+    PostResumeShaderWarmupRunnable();
   }
 }
 
@@ -1319,40 +1315,30 @@ void RenderThread::PostRunnable(already_AddRefed<nsIRunnable> aRunnable) {
   mThread->Dispatch(runnable.forget());
 }
 
+/* static */ void RenderThread::PostHandleDeviceReset(
+    gfx::DeviceResetDetectPlace aPlace, gfx::DeviceResetReason aReason) {
+  MOZ_ASSERT(!IsInRenderThread());
+  auto* renderThread = Get();
+  if (!renderThread) {
+    gfx::GPUProcessManager::NotifyDeviceReset(aReason, aPlace);
+    return;
+  }
+
+  renderThread->PostRunnable(
+      NewRunnableMethod<gfx::DeviceResetDetectPlace, gfx::DeviceResetReason>(
+          "wr::RenderThread::HandleDeviceReset", renderThread,
+          &RenderThread::HandleDeviceReset, aPlace, aReason));
+}
+
 void RenderThread::HandleDeviceReset(gfx::DeviceResetDetectPlace aPlace,
                                      gfx::DeviceResetReason aReason) {
   MOZ_ASSERT(IsInRenderThread());
-
-  // This happens only on simulate device reset.
-  if (aReason == gfx::DeviceResetReason::FORCED_RESET) {
-    if (!mHandlingDeviceReset) {
-      mHandlingDeviceReset = true;
-
-      MutexAutoLock lock(mRenderTextureMapLock);
-      mRenderTexturesDeferred.clear();
-      for (const auto& entry : mRenderTextures) {
-        entry.second->ClearCachedResources();
-      }
-
-      // All RenderCompositors will be destroyed by the GPUProcessManager in
-      // either OnRemoteProcessDeviceReset via the GPUChild, or
-      // OnInProcessDeviceReset here directly.
-      gfx::GPUProcessManager::GPUProcessManager::NotifyDeviceReset(
-          gfx::DeviceResetReason::FORCED_RESET, aPlace);
-    }
-    return;
-  }
 
   if (mHandlingDeviceReset) {
     return;
   }
 
   mHandlingDeviceReset = true;
-
-#ifndef XP_WIN
-  // On Windows, see DeviceManagerDx::MaybeResetAndReacquireDevices.
-  gfx::GPUProcessManager::RecordDeviceReset(aReason);
-#endif
 
   {
     MutexAutoLock lock(mRenderTextureMapLock);
@@ -1362,21 +1348,7 @@ void RenderThread::HandleDeviceReset(gfx::DeviceResetDetectPlace aPlace,
     }
   }
 
-  // All RenderCompositors will be destroyed by the GPUProcessManager in
-  // either OnRemoteProcessDeviceReset via the GPUChild, or
-  // OnInProcessDeviceReset here directly.
-  // On Windows, device will be re-created before sessions re-creation.
-  if (XRE_IsGPUProcess()) {
-    gfx::GPUProcessManager::GPUProcessManager::NotifyDeviceReset(aReason,
-                                                                 aPlace);
-  } else {
-#ifndef XP_WIN
-    // FIXME(aosmond): Do we need to do this on Windows? nsWindow::OnPaint
-    // seems to do its own detection for the parent process.
-    gfx::GPUProcessManager::GPUProcessManager::NotifyDeviceReset(aReason,
-                                                                 aPlace);
-#endif
-  }
+  gfx::GPUProcessManager::NotifyDeviceReset(aReason, aPlace);
 }
 
 bool RenderThread::IsHandlingDeviceReset() {
@@ -1745,7 +1717,9 @@ void wr_notifier_new_frame_ready(wr::WrWindowId aWindowId,
                                  wr::FramePublishId aPublishId,
                                  const wr::FrameReadyParams* aParams) {
   auto* renderThread = mozilla::wr::RenderThread::Get();
-  renderThread->DecPendingFrameBuildCount(aWindowId);
+  if (aParams->tracked) {
+    renderThread->DecPendingFrameBuildCount(aWindowId);
+  }
 
   renderThread->WrNotifierEvent_NewFrameReady(aWindowId, aPublishId, aParams);
 }

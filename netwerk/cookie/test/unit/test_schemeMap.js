@@ -176,7 +176,7 @@ add_task(async _ => {
   }
 
   info("Let's set a cookie without scheme");
-  Services.cookies.add(
+  const cv = Services.cookies.add(
     "example.org",
     "/",
     "a",
@@ -184,11 +184,12 @@ add_task(async _ => {
     false,
     false,
     false,
-    Math.floor(Date.now() / 1000 + 1000),
+    Date.now() + 1000 * 1000,
     {},
     Ci.nsICookie.SAMESITE_LAX,
     Ci.nsICookie.SCHEME_UNSET
   );
+  Assert.equal(cv.result, Ci.nsICookieValidation.eOK, "Valid cookie");
 
   let cookies = Services.cookies.getCookiesFromHost("example.org", {});
   Assert.equal(cookies.length, 1, "We expect 1 cookie only");

@@ -10,20 +10,30 @@ import {
   SkippableTimer,
   UrlbarProvider,
   UrlbarUtils,
-} from "resource:///modules/UrlbarUtils.sys.mjs";
+} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  DEFAULT_FORM_HISTORY_PARAM:
+    "moz-src:///toolkit/components/search/SearchSuggestionController.sys.mjs",
   FormHistory: "resource://gre/modules/FormHistory.sys.mjs",
   SearchSuggestionController:
-    "resource://gre/modules/SearchSuggestionController.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarProviderTopSites: "resource:///modules/UrlbarProviderTopSites.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
-  UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.sys.mjs",
-  UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.sys.mjs",
+    "moz-src:///toolkit/components/search/SearchSuggestionController.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarProviderTopSites:
+    "moz-src:///browser/components/urlbar/UrlbarProviderTopSites.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarSearchUtils:
+    "moz-src:///browser/components/urlbar/UrlbarSearchUtils.sys.mjs",
+  UrlbarTokenizer:
+    "moz-src:///browser/components/urlbar/UrlbarTokenizer.sys.mjs",
+  UrlUtils: "resource://gre/modules/UrlUtils.sys.mjs",
 });
+
+/**
+ * @import {SearchSuggestionController} from "moz-src:///toolkit/components/search/SearchSuggestionController.sys.mjs"
+ */
 
 const RESULT_MENU_COMMANDS = {
   TRENDING_BLOCK: "trendingblock",
@@ -47,7 +57,7 @@ const TRENDING_HELP_URL =
 function looksLikeUrl(str, ignoreAlphanumericHosts = false) {
   // Single word including special chars.
   return (
-    !lazy.UrlbarTokenizer.REGEXP_SPACES.test(str) &&
+    !lazy.UrlUtils.REGEXP_SPACES.test(str) &&
     (["/", "@", ":", "["].some(c => str.includes(c)) ||
       (ignoreAlphanumericHosts
         ? /^([\[\]A-Z0-9-]+\.){3,}[^.]+$/i.test(str)
@@ -58,24 +68,13 @@ function looksLikeUrl(str, ignoreAlphanumericHosts = false) {
 /**
  * Class used to create the provider.
  */
-class ProviderSearchSuggestions extends UrlbarProvider {
+export class UrlbarProviderSearchSuggestions extends UrlbarProvider {
   constructor() {
     super();
   }
 
   /**
-   * Returns the name of this provider.
-   *
-   * @returns {string} the name of this provider.
-   */
-  get name() {
-    return "SearchSuggestions";
-  }
-
-  /**
-   * Returns the type of this provider.
-   *
-   * @returns {integer} one of the types from UrlbarUtils.PROVIDER_TYPE.*
+   * @returns {Values<typeof UrlbarUtils.PROVIDER_TYPE>}
    */
   get type() {
     return UrlbarUtils.PROVIDER_TYPE.NETWORK;
@@ -86,10 +85,9 @@ class ProviderSearchSuggestions extends UrlbarProvider {
    * If this method returns false, the providers manager won't start a query
    * with this provider, to save on resources.
    *
-   * @param {UrlbarQueryContext} queryContext The query context object
-   * @returns {boolean} Whether this provider should be invoked for the search.
+   * @param {UrlbarQueryContext} queryContext The query context object.
    */
-  isActive(queryContext) {
+  async isActive(queryContext) {
     // If the sources don't include search or the user used a restriction
     // character other than search, don't allow any suggestions.
     if (
@@ -118,7 +116,9 @@ class ProviderSearchSuggestions extends UrlbarProvider {
       lazy.UrlbarPrefs.get("maxHistoricalSearchSuggestions") &&
       queryContext.trimmedSearchString;
 
-    return wantsLocalSuggestions || this._allowRemoteSuggestions(queryContext);
+    return (
+      !!wantsLocalSuggestions || this._allowRemoteSuggestions(queryContext)
+    );
   }
 
   /**
@@ -148,7 +148,7 @@ class ProviderSearchSuggestions extends UrlbarProvider {
    * context.  If this returns false, then we shouldn't fetch either form
    * history or remote suggestions.
    *
-   * @param {object} queryContext The query context object
+   * @param {UrlbarQueryContext} queryContext The query context object.
    * @returns {boolean} True if suggestions in general are allowed and false if
    *   not.
    */
@@ -156,7 +156,8 @@ class ProviderSearchSuggestions extends UrlbarProvider {
     if (
       // If the user typed a restriction token or token alias, we ignore the
       // pref to disable suggestions in the Urlbar.
-      (!lazy.UrlbarPrefs.get("suggest.searches") &&
+      (queryContext.sapName == "urlbar" &&
+        !lazy.UrlbarPrefs.get("suggest.searches") &&
         !this._isTokenOrRestrictionPresent(queryContext)) ||
       !lazy.UrlbarPrefs.get("browser.search.suggest.enabled") ||
       (queryContext.isPrivate &&
@@ -222,10 +223,9 @@ class ProviderSearchSuggestions extends UrlbarProvider {
   /**
    * Starts querying.
    *
-   * @param {object} queryContext The query context object
-   * @param {Function} addCallback Callback invoked by the provider to add a new
-   *        result.
-   * @returns {Promise} resolved when the query stops.
+   * @param {UrlbarQueryContext} queryContext
+   * @param {(provider: UrlbarProvider, result: UrlbarResult) => void} addCallback
+   *   Callback invoked by the provider to add a new result.
    */
   async startQuery(queryContext, addCallback) {
     let instance = this.queryInstance;
@@ -285,7 +285,7 @@ class ProviderSearchSuggestions extends UrlbarProvider {
     }
 
     let alias = (aliasEngine && aliasEngine.alias) || "";
-    let results = await this._fetchSearchSuggestions(
+    let results = await this.#fetchSearchSuggestions(
       queryContext,
       engine,
       query,
@@ -318,9 +318,8 @@ class ProviderSearchSuggestions extends UrlbarProvider {
    * Cancels a running query.
    */
   cancelQuery() {
-    if (this._suggestionsController) {
-      this._suggestionsController.stop();
-      this._suggestionsController = null;
+    if (this.#suggestionsController) {
+      this.#suggestionsController.stop();
     }
   }
 
@@ -329,12 +328,10 @@ class ProviderSearchSuggestions extends UrlbarProvider {
    *
    * @param {UrlbarResult} result
    *   The result to get menu comands for.
-   *
-   * @returns {Array} The commands to be shown.
    */
   getResultCommands(result) {
     if (result.payload.trending) {
-      return [
+      return /** @type {UrlbarResultCommand[]} */ ([
         {
           name: RESULT_MENU_COMMANDS.TRENDING_BLOCK,
           l10n: { id: "urlbar-result-menu-trending-dont-show" },
@@ -346,17 +343,18 @@ class ProviderSearchSuggestions extends UrlbarProvider {
           name: RESULT_MENU_COMMANDS.TRENDING_HELP,
           l10n: { id: "urlbar-result-menu-trending-why" },
         },
-      ];
+      ]);
     }
     return undefined;
   }
 
   onEngagement(queryContext, controller, details) {
     let { result } = details;
-    if (details.selType == "dismiss" && queryContext.formHistoryName) {
+
+    if (details.selType == "dismiss") {
       lazy.FormHistory.update({
         op: "remove",
-        fieldname: queryContext.formHistoryName,
+        fieldname: lazy.DEFAULT_FORM_HISTORY_PARAM,
         value: result.payload.suggestion,
       }).catch(error =>
         console.error(`Removing form history failed: ${error}`)
@@ -371,20 +369,25 @@ class ProviderSearchSuggestions extends UrlbarProvider {
         break;
       case RESULT_MENU_COMMANDS.TRENDING_BLOCK:
         lazy.UrlbarPrefs.set("suggest.trending", false);
-        this.#recordTrendingBlockedTelemetry(details.selType);
+        this.#recordTrendingBlockedTelemetry();
         this.#replaceTrendingResultWithAcknowledgement(controller);
         break;
     }
   }
 
-  async _fetchSearchSuggestions(queryContext, engine, searchString, alias) {
+  /**
+   * @type {?SearchSuggestionController}
+   */
+  #suggestionsController;
+
+  async #fetchSearchSuggestions(queryContext, engine, searchString, alias) {
     if (!engine) {
       return null;
     }
 
-    this._suggestionsController = new lazy.SearchSuggestionController(
-      queryContext.formHistoryName
-    );
+    if (!this.#suggestionsController) {
+      this.#suggestionsController = new lazy.SearchSuggestionController();
+    }
 
     // If there's a form history entry that equals the search string, the search
     // suggestions controller will include it, and we'll make a result for it.
@@ -393,46 +396,45 @@ class ProviderSearchSuggestions extends UrlbarProvider {
     // final list of results would be left with `count` - 1 form history results
     // instead of `count`.  Therefore we request `count` + 1 entries.  The muxer
     // will dedupe and limit the final form history count as appropriate.
-    this._suggestionsController.maxLocalResults = queryContext.maxResults + 1;
+    let maxLocalResults = queryContext.maxResults + 1;
 
     // Request maxResults + 1 remote suggestions for the same reason we request
     // maxResults + 1 form history entries.
     let allowRemote = this._allowRemoteSuggestions(queryContext, searchString);
-    this._suggestionsController.maxRemoteResults = allowRemote
-      ? queryContext.maxResults + 1
-      : 0;
+    let maxRemoteResults = allowRemote ? queryContext.maxResults + 1 : 0;
 
     if (allowRemote && this.#shouldFetchTrending(queryContext)) {
       if (
         queryContext.searchMode &&
         lazy.UrlbarPrefs.get("trending.maxResultsSearchMode") != -1
       ) {
-        this._suggestionsController.maxRemoteResults = lazy.UrlbarPrefs.get(
+        maxRemoteResults = lazy.UrlbarPrefs.get(
           "trending.maxResultsSearchMode"
         );
       } else if (
         !queryContext.searchMode &&
         lazy.UrlbarPrefs.get("trending.maxResultsNoSearchMode") != -1
       ) {
-        this._suggestionsController.maxRemoteResults = lazy.UrlbarPrefs.get(
+        maxRemoteResults = lazy.UrlbarPrefs.get(
           "trending.maxResultsNoSearchMode"
         );
       }
     }
 
-    this._suggestionsFetchCompletePromise = this._suggestionsController.fetch(
-      searchString,
-      queryContext.isPrivate,
-      engine,
-      queryContext.userContextId,
-      this._isTokenOrRestrictionPresent(queryContext),
-      false,
-      this.#shouldFetchTrending(queryContext)
-    );
-
     // See `SearchSuggestionsController.fetch` documentation for a description
     // of `fetchData`.
-    let fetchData = await this._suggestionsFetchCompletePromise;
+    let fetchData = await this.#suggestionsController.fetch({
+      searchString,
+      inPrivateBrowsing: queryContext.isPrivate,
+      engine,
+      userContextId: queryContext.userContextId,
+      restrictToEngine: this._isTokenOrRestrictionPresent(queryContext),
+      dedupeRemoteAndLocal: false,
+      fetchTrending: this.#shouldFetchTrending(queryContext),
+      maxLocalResults,
+      maxRemoteResults,
+    });
+
     // The fetch was canceled.
     if (!fetchData) {
       return null;
@@ -490,36 +492,44 @@ class ProviderSearchSuggestions extends UrlbarProvider {
       }
 
       try {
-        let payload = {
-          engine: [engine.name, UrlbarUtils.HIGHLIGHT.TYPED],
-          suggestion: [entry.value, UrlbarUtils.HIGHLIGHT.SUGGESTED],
-          lowerCaseSuggestion: entry.value.toLocaleLowerCase(),
-          tailPrefix,
-          tail: [tail, UrlbarUtils.HIGHLIGHT.SUGGESTED],
-          tailOffsetIndex: tail ? entry.tailOffsetIndex : undefined,
-          keyword: [alias ? alias : undefined, UrlbarUtils.HIGHLIGHT.TYPED],
-          trending: entry.trending,
-          description: entry.description || undefined,
-          query: [searchString.trim(), UrlbarUtils.HIGHLIGHT.NONE],
-          icon: !entry.value ? await engine.getIconURL() : entry.icon,
-        };
-
-        if (entry.trending) {
-          payload.helpUrl = TRENDING_HELP_URL;
+        let query = searchString.trim();
+        let suggestion = entry.value;
+        let title;
+        if (tail && entry.tailOffsetIndex >= 0) {
+          title = tail;
+        } else if (suggestion) {
+          title = suggestion;
+        } else {
+          title = query;
         }
 
         results.push(
-          Object.assign(
-            new lazy.UrlbarResult(
-              UrlbarUtils.RESULT_TYPE.SEARCH,
-              UrlbarUtils.RESULT_SOURCE.SEARCH,
-              ...lazy.UrlbarResult.payloadAndSimpleHighlights(
-                queryContext.tokens,
-                payload
-              )
-            ),
-            { isRichSuggestion: !!entry.icon }
-          )
+          new lazy.UrlbarResult({
+            type: UrlbarUtils.RESULT_TYPE.SEARCH,
+            source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+            isRichSuggestion: !!entry.icon,
+            payload: {
+              title,
+              engine: engine.name,
+              suggestion,
+              lowerCaseSuggestion: entry.value.toLocaleLowerCase(),
+              tailPrefix,
+              tail,
+              tailOffsetIndex: tail ? entry.tailOffsetIndex : undefined,
+              keyword: alias || undefined,
+              trending: entry.trending,
+              description: entry.description || undefined,
+              query,
+              icon: !entry.value ? await engine.getIconURL() : entry.icon,
+              helpUrl: entry.trending ? TRENDING_HELP_URL : undefined,
+            },
+            highlights: {
+              engine: UrlbarUtils.HIGHLIGHT.TYPED,
+              suggestion: UrlbarUtils.HIGHLIGHT.SUGGESTED,
+              tail: UrlbarUtils.HIGHLIGHT.SUGGESTED,
+              keyword: UrlbarUtils.HIGHLIGHT.TYPED,
+            },
+          })
         );
       } catch (err) {
         this.logger.error(err);
@@ -547,7 +557,7 @@ class ProviderSearchSuggestions extends UrlbarProvider {
    *
    * @param {UrlbarQueryContext} queryContext
    *   The query context object.
-   * @returns {EngineAlias?} aliasEngine
+   * @returns {Promise<EngineAlias?>} aliasEngine
    *   A representation of the aliased engine. Null if there's no match.
    */
   async _maybeGetAlias(queryContext) {
@@ -570,7 +580,7 @@ class ProviderSearchSuggestions extends UrlbarProvider {
 
     // Match an alias only when it has a space after it.  If there's no trailing
     // space, then continue to treat it as part of the search string.
-    if (!lazy.UrlbarTokenizer.REGEXP_SPACES_START.test(query)) {
+    if (!lazy.UrlUtils.REGEXP_SPACES_START.test(query)) {
       return null;
     }
 
@@ -602,6 +612,7 @@ class ProviderSearchSuggestions extends UrlbarProvider {
   #shouldFetchTrending(queryContext) {
     return !!(
       queryContext.searchString == "" &&
+      queryContext.sapName != "searchbar" &&
       lazy.UrlbarPrefs.get("trending.featureGate") &&
       lazy.UrlbarPrefs.get("suggest.trending") &&
       (queryContext.searchMode ||
@@ -637,20 +648,22 @@ class ProviderSearchSuggestions extends UrlbarProvider {
 }
 
 function makeFormHistoryResult(queryContext, engine, entry) {
-  return new lazy.UrlbarResult(
-    UrlbarUtils.RESULT_TYPE.SEARCH,
-    UrlbarUtils.RESULT_SOURCE.HISTORY,
-    ...lazy.UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
+  return new lazy.UrlbarResult({
+    type: UrlbarUtils.RESULT_TYPE.SEARCH,
+    source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+    payload: {
       engine: engine.name,
-      suggestion: [entry.value, UrlbarUtils.HIGHLIGHT.SUGGESTED],
+      suggestion: entry.value,
+      title: entry.value,
       lowerCaseSuggestion: entry.value.toLocaleLowerCase(),
       isBlockable: true,
       blockL10n: { id: "urlbar-result-menu-remove-from-history" },
       helpUrl:
         Services.urlFormatter.formatURLPref("app.support.baseURL") +
         "awesome-bar-result-menu",
-    })
-  );
+    },
+    highlights: {
+      suggestion: UrlbarUtils.HIGHLIGHT.SUGGESTED,
+    },
+  });
 }
-
-export var UrlbarProviderSearchSuggestions = new ProviderSearchSuggestions();

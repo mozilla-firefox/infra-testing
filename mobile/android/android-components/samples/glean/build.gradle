@@ -14,7 +14,7 @@ buildscript {
         }
 
         dependencies {
-            classpath "org.mozilla.telemetry:glean-gradle-plugin:${libs.versions.mozilla.glean.get()}"
+            classpath libs.mozilla.glean.gradle.plugin
         }
     }
 }
@@ -27,11 +27,12 @@ apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 
 android {
+    compileSdk { version = release(config.compileSdkMajorVersion) { minorApiLevel = config.compileSdkMinorVersion } }
+
     defaultConfig {
         applicationId "org.mozilla.samples.glean"
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
+        minSdk config.minSdkVersion
+        targetSdk config.targetSdkVersion
         versionCode 1
         versionName "1.0"
 
@@ -57,30 +58,27 @@ android {
 }
 
 dependencies {
-    implementation libs.mozilla.glean
-    implementation project(':service-glean')
-    implementation project(':service-nimbus')
-    implementation project(':support-base')
-    implementation project(':support-rusthttp')
-    implementation project(':support-rustlog')
-    implementation project(':lib-fetch-httpurlconnection')
-
-    implementation libs.kotlin.coroutines
+    implementation project(':components:lib-fetch-httpurlconnection')
+    implementation project(':components:samples-glean-library')
+    implementation project(':components:service-glean')
+    implementation project(':components:service-nimbus')
+    implementation project(':components:support-appservices')
+    implementation project(':components:support-base')
 
     implementation libs.androidx.appcompat
     implementation libs.androidx.browser
-
-    implementation project(':samples-glean-library')
+    implementation libs.kotlinx.coroutines
+    implementation libs.mozilla.glean
 
     androidTestImplementation libs.androidx.test.core
-    androidTestImplementation libs.androidx.test.monitor
-    androidTestImplementation libs.androidx.test.runner
-    androidTestImplementation libs.androidx.test.rules
+    androidTestImplementation libs.androidx.test.espresso.core
     androidTestImplementation libs.androidx.test.junit
+    androidTestImplementation libs.androidx.test.monitor
+    androidTestImplementation libs.androidx.test.rules
+    androidTestImplementation libs.androidx.test.runner
     androidTestImplementation libs.androidx.test.uiautomator
-    androidTestImplementation libs.androidx.espresso.core
     androidTestImplementation libs.androidx.work.testing
-    androidTestImplementation libs.testing.mockwebserver
+    androidTestImplementation libs.mockwebserver
 }
 
 ext {

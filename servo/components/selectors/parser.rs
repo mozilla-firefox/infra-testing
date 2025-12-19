@@ -13,10 +13,13 @@ use crate::context::QuirksMode;
 use crate::sink::Push;
 use crate::visitor::SelectorListKind;
 pub use crate::visitor::SelectorVisitor;
+use bitflags::bitflags;
+use cssparser::match_ignore_ascii_case;
 use cssparser::parse_nth;
 use cssparser::{BasicParseError, BasicParseErrorKind, ParseError, ParseErrorKind};
 use cssparser::{CowRcStr, Delimiter, SourceLocation};
 use cssparser::{Parser as CssParser, ToCss, Token};
+use debug_unreachable::debug_unreachable;
 use precomputed_hash::PrecomputedHash;
 use servo_arc::{Arc, ArcUnionBorrow, ThinArc, ThinArcUnion, UniqueArc};
 use smallvec::SmallVec;
@@ -24,9 +27,6 @@ use std::borrow::{Borrow, Cow};
 use std::fmt::{self, Debug};
 use std::iter::Rev;
 use std::slice;
-use bitflags::bitflags;
-use cssparser::match_ignore_ascii_case;
-use debug_unreachable::debug_unreachable;
 
 #[cfg(feature = "to_shmem")]
 use to_shmem_derive::ToShmem;
@@ -47,9 +47,21 @@ pub trait PseudoElement: Sized + ToCss {
         false
     }
 
+    /// Whether this pseudo-element is valid when directly after a ::before/::after pseudo.
+    fn valid_after_before_or_after(&self) -> bool {
+        false
+    }
+
     /// Whether this pseudo-element is element-backed.
     /// https://drafts.csswg.org/css-pseudo-4/#element-like
     fn is_element_backed(&self) -> bool {
+        false
+    }
+
+    /// Whether this pseudo-element is ::before or ::after pseudo element,
+    /// which are treated specially when deciding what can come after them.
+    /// https://drafts.csswg.org/css-pseudo-4/#generated-content
+    fn is_before_or_after(&self) -> bool {
         false
     }
 
@@ -89,7 +101,7 @@ pub trait NonTSPseudoClass: Sized + ToCss {
 
 /// Returns a Cow::Borrowed if `s` is already ASCII lowercase, and a
 /// Cow::Owned if `s` had to be converted into ASCII lowercase.
-fn to_ascii_lowercase(s: &str) -> Cow<str> {
+fn to_ascii_lowercase(s: &str) -> Cow<'_, str> {
     if let Some(first_uppercase) = s.bytes().position(|byte| byte >= b'A' && byte <= b'Z') {
         let mut string = s.to_owned();
         string[first_uppercase..].make_ascii_lowercase();
@@ -129,32 +141,30 @@ bitflags! {
         /// disallowed. If this flag is set, `AFTER_NON_ELEMENT_BACKED_PSEUDO` must be set
         /// as well.
         const AFTER_NON_STATEFUL_PSEUDO_ELEMENT = 1 << 4;
+        // Whether we've parsed a generated pseudo-element (as in ::before, ::after).
+        // If so then some other pseudo elements are disallowed (e.g. another generated pseudo)
+        // while others allowed (e.g. ::marker).
+        const AFTER_BEFORE_OR_AFTER_PSEUDO = 1 << 5;
 
         /// Whether we are after any of the pseudo-like things.
-        const AFTER_PSEUDO = Self::AFTER_PART_LIKE.bits() | Self::AFTER_SLOTTED.bits() | Self::AFTER_NON_ELEMENT_BACKED_PSEUDO.bits();
+        const AFTER_PSEUDO = Self::AFTER_PART_LIKE.bits() | Self::AFTER_SLOTTED.bits() | Self::AFTER_NON_ELEMENT_BACKED_PSEUDO.bits() | Self::AFTER_BEFORE_OR_AFTER_PSEUDO.bits();
 
         /// Whether we explicitly disallow combinators.
-        const DISALLOW_COMBINATORS = 1 << 5;
+        const DISALLOW_COMBINATORS = 1 << 6;
 
         /// Whether we explicitly disallow pseudo-element-like things.
-        const DISALLOW_PSEUDOS = 1 << 6;
+        const DISALLOW_PSEUDOS = 1 << 7;
 
         /// Whether we explicitly disallow relative selectors (i.e. `:has()`).
-        const DISALLOW_RELATIVE_SELECTOR = 1 << 7;
+        const DISALLOW_RELATIVE_SELECTOR = 1 << 8;
 
         /// Whether we've parsed a pseudo-element which is in a pseudo-element tree (i.e. it is a
         /// descendant pseudo of a pseudo-element root).
-        const IN_PSEUDO_ELEMENT_TREE = 1 << 8;
+        const IN_PSEUDO_ELEMENT_TREE = 1 << 9;
     }
 }
 
 impl SelectorParsingState {
-    #[inline]
-    fn allows_pseudos(self) -> bool {
-        // NOTE(emilio): We allow pseudos after ::part and such.
-        !self.intersects(Self::AFTER_NON_ELEMENT_BACKED_PSEUDO | Self::DISALLOW_PSEUDOS)
-    }
-
     #[inline]
     fn allows_slotted(self) -> bool {
         !self.intersects(Self::AFTER_PSEUDO | Self::DISALLOW_PSEUDOS)
@@ -393,7 +403,9 @@ impl<Impl: SelectorImpl> SelectorList<Impl> {
         if let ArcUnionBorrow::Second(ref list) = self.0.borrow() {
             list.with_arc(|list| list.mark_as_intentionally_leaked())
         }
-        self.slice().iter().for_each(|s| s.mark_as_intentionally_leaked())
+        self.slice()
+            .iter()
+            .for_each(|s| s.mark_as_intentionally_leaked())
     }
 
     pub fn from_one(selector: Selector<Impl>) -> Self {
@@ -697,8 +709,8 @@ where
                 local_name.precomputed_hash()
             },
             Component::AttributeOther(ref selector) => {
-                if selector.local_name != selector.local_name_lower ||
-                    !Impl::should_collect_attr_hash(&selector.local_name)
+                if selector.local_name != selector.local_name_lower
+                    || !Impl::should_collect_attr_hash(&selector.local_name)
                 {
                     continue;
                 }
@@ -709,8 +721,8 @@ where
                 // in the filter if there's more than one selector, as that'd
                 // exclude elements that may match one of the other selectors.
                 let slice = list.slice();
-                if slice.len() == 1 &&
-                    !collect_selector_hashes(
+                if slice.len() == 1
+                    && !collect_selector_hashes(
                         create_inner_iterator(&slice[0]),
                         quirks_mode,
                         hashes,
@@ -769,9 +781,9 @@ impl AncestorHashes {
 
     /// Returns the fourth hash, reassembled from parts.
     pub fn fourth_hash(&self) -> u32 {
-        ((self.packed_hashes[0] & 0xff000000) >> 24) |
-            ((self.packed_hashes[1] & 0xff000000) >> 16) |
-            ((self.packed_hashes[2] & 0xff000000) >> 8)
+        ((self.packed_hashes[0] & 0xff000000) >> 24)
+            | ((self.packed_hashes[1] & 0xff000000) >> 16)
+            | ((self.packed_hashes[2] & 0xff000000) >> 8)
     }
 }
 
@@ -781,7 +793,7 @@ pub fn namespace_empty_string<Impl: SelectorImpl>() -> Impl::NamespaceUrl {
     Impl::NamespaceUrl::default()
 }
 
-type SelectorData<Impl> = ThinArc<SpecificityAndFlags, Component<Impl>>;
+pub(super) type SelectorData<Impl> = ThinArc<SpecificityAndFlags, Component<Impl>>;
 
 /// Whether a selector may match a featureless host element, and whether it may match other
 /// elements.
@@ -799,7 +811,7 @@ impl MatchesFeaturelessHost {
     /// Whether we may match.
     #[inline]
     pub fn may_match(self) -> bool {
-        return !matches!(self, Self::Never)
+        return !matches!(self, Self::Never);
     }
 }
 
@@ -928,6 +940,32 @@ impl<Impl: SelectorImpl> Selector<Impl> {
         None
     }
 
+    #[inline]
+    pub fn pseudo_elements(&self) -> SmallVec<[&Impl::PseudoElement; 3]> {
+        let mut pseudos = SmallVec::new();
+
+        if !self.has_pseudo_element() {
+            return pseudos;
+        }
+
+        let mut iter = self.iter();
+        loop {
+            for component in &mut iter {
+                if let Component::PseudoElement(ref pseudo) = *component {
+                    pseudos.push(pseudo);
+                }
+            }
+            match iter.next_sequence() {
+                Some(Combinator::PseudoElement) => {},
+                _ => break,
+            }
+        }
+
+        debug_assert!(!pseudos.is_empty(), "has_pseudo_element lied!");
+
+        pseudos
+    }
+
     /// Whether this selector (pseudo-element part excluded) matches every element.
     ///
     /// Used for "pre-computed" pseudo-elements in components/style/stylist.rs
@@ -936,10 +974,10 @@ impl<Impl: SelectorImpl> Selector<Impl> {
         self.iter_raw_match_order().all(|c| {
             matches!(
                 *c,
-                Component::ExplicitUniversalType |
-                    Component::ExplicitAnyNamespace |
-                    Component::Combinator(Combinator::PseudoElement) |
-                    Component::PseudoElement(..)
+                Component::ExplicitUniversalType
+                    | Component::ExplicitAnyNamespace
+                    | Component::Combinator(Combinator::PseudoElement)
+                    | Component::PseudoElement(..)
             )
         })
     }
@@ -947,7 +985,10 @@ impl<Impl: SelectorImpl> Selector<Impl> {
     /// Whether this selector may match a featureless shadow host, with no combinators to the
     /// left, and optionally has a pseudo-element to the right.
     #[inline]
-    pub fn matches_featureless_host(&self, scope_matches_featureless_host: bool) -> MatchesFeaturelessHost {
+    pub fn matches_featureless_host(
+        &self,
+        scope_matches_featureless_host: bool,
+    ) -> MatchesFeaturelessHost {
         let flags = self.flags();
         if !flags.intersects(SelectorFlags::HAS_HOST | SelectorFlags::HAS_SCOPE) {
             return MatchesFeaturelessHost::Never;
@@ -963,11 +1004,14 @@ impl<Impl: SelectorImpl> Selector<Impl> {
                 _ => {
                     debug_assert!(false, "Pseudo selector without pseudo combinator?");
                     return MatchesFeaturelessHost::Never;
-                }
+                },
             }
         }
 
-        let compound_matches = crate::matching::compound_matches_featureless_host(&mut iter, scope_matches_featureless_host);
+        let compound_matches = crate::matching::compound_matches_featureless_host(
+            &mut iter,
+            scope_matches_featureless_host,
+        );
         if iter.next_sequence().is_some() {
             return MatchesFeaturelessHost::Never;
         }
@@ -978,7 +1022,7 @@ impl<Impl: SelectorImpl> Selector<Impl> {
     /// When a combinator is reached, the iterator will return None, and
     /// next_sequence() may be called to continue to the next sequence.
     #[inline]
-    pub fn iter(&self) -> SelectorIter<Impl> {
+    pub fn iter(&self) -> SelectorIter<'_, Impl> {
         SelectorIter {
             iter: self.iter_raw_match_order(),
             next_combinator: None,
@@ -987,7 +1031,7 @@ impl<Impl: SelectorImpl> Selector<Impl> {
 
     /// Same as `iter()`, but skips `RelativeSelectorAnchor` and its associated combinator.
     #[inline]
-    pub fn iter_skip_relative_selector_anchor(&self) -> SelectorIter<Impl> {
+    pub fn iter_skip_relative_selector_anchor(&self) -> SelectorIter<'_, Impl> {
         if cfg!(debug_assertions) {
             let mut selector_iter = self.iter_raw_parse_order_from(0);
             assert!(
@@ -1012,7 +1056,7 @@ impl<Impl: SelectorImpl> Selector<Impl> {
     /// Returns an iterator over this selector in matching order (right-to-left),
     /// skipping the rightmost |offset| Components.
     #[inline]
-    pub fn iter_from(&self, offset: usize) -> SelectorIter<Impl> {
+    pub fn iter_from(&self, offset: usize) -> SelectorIter<'_, Impl> {
         let iter = self.0.slice()[offset..].iter();
         SelectorIter {
             iter,
@@ -1036,7 +1080,7 @@ impl<Impl: SelectorImpl> Selector<Impl> {
     /// Returns an iterator over the entire sequence of simple selectors and
     /// combinators, in matching order (from right to left).
     #[inline]
-    pub fn iter_raw_match_order(&self) -> slice::Iter<Component<Impl>> {
+    pub fn iter_raw_match_order(&self) -> slice::Iter<'_, Component<Impl>> {
         self.0.slice().iter()
     }
 
@@ -1057,7 +1101,10 @@ impl<Impl: SelectorImpl> Selector<Impl> {
     /// combinators, in parse order (from left to right), starting from
     /// `offset`.
     #[inline]
-    pub fn iter_raw_parse_order_from(&self, offset: usize) -> Rev<slice::Iter<Component<Impl>>> {
+    pub fn iter_raw_parse_order_from(
+        &self,
+        offset: usize,
+    ) -> Rev<slice::Iter<'_, Component<Impl>>> {
         self.0.slice()[..self.len() - offset].iter().rev()
     }
 
@@ -1086,8 +1133,10 @@ impl<Impl: SelectorImpl> Selector<Impl> {
     }
 
     pub fn replace_parent_selector(&self, parent: &SelectorList<Impl>) -> Self {
-        let parent_specificity_and_flags =
-            selector_list_specificity_and_flags(parent.slice().iter(), /* for_nesting_parent = */ true);
+        let parent_specificity_and_flags = selector_list_specificity_and_flags(
+            parent.slice().iter(),
+            /* for_nesting_parent = */ true,
+        );
 
         let mut specificity = Specificity::from(self.specificity());
         let mut flags = self.flags() - SelectorFlags::HAS_PARENT;
@@ -1105,16 +1154,21 @@ impl<Impl: SelectorImpl> Selector<Impl> {
                 return None;
             }
 
-            let result = SelectorList::from_iter(orig.iter().map(|s| {
-                s.replace_parent_selector(parent)
-            }));
+            let result =
+                SelectorList::from_iter(orig.iter().map(|s| s.replace_parent_selector(parent)));
 
-            let result_specificity_and_flags =
-                selector_list_specificity_and_flags(result.slice().iter(), /* for_nesting_parent = */ false);
+            let result_specificity_and_flags = selector_list_specificity_and_flags(
+                result.slice().iter(),
+                /* for_nesting_parent = */ false,
+            );
             if propagate_specificity {
                 *specificity += Specificity::from(
-                    result_specificity_and_flags.specificity -
-                        selector_list_specificity_and_flags(orig.iter(), /* for_nesting_parent = */ false).specificity,
+                    result_specificity_and_flags.specificity
+                        - selector_list_specificity_and_flags(
+                            orig.iter(),
+                            /* for_nesting_parent = */ false,
+                        )
+                        .specificity,
                 );
             }
             flags.insert(result_specificity_and_flags.flags - forbidden_flags);
@@ -1148,12 +1202,16 @@ impl<Impl: SelectorImpl> Selector<Impl> {
                 return result;
             }
 
-            let result_specificity_and_flags =
-                relative_selector_list_specificity_and_flags(&result, /* for_nesting_parent = */ false);
-            flags.insert(result_specificity_and_flags .flags - forbidden_flags);
+            let result_specificity_and_flags = relative_selector_list_specificity_and_flags(
+                &result, /* for_nesting_parent = */ false,
+            );
+            flags.insert(result_specificity_and_flags.flags - forbidden_flags);
             *specificity += Specificity::from(
-                result_specificity_and_flags.specificity -
-                    relative_selector_list_specificity_and_flags(orig, /* for_nesting_parent = */ false).specificity,
+                result_specificity_and_flags.specificity
+                    - relative_selector_list_specificity_and_flags(
+                        orig, /* for_nesting_parent = */ false,
+                    )
+                    .specificity,
             );
             result
         }
@@ -1178,29 +1236,29 @@ impl<Impl: SelectorImpl> Selector<Impl> {
         let iter = self.iter_raw_match_order().map(|component| {
             use self::Component::*;
             match *component {
-                LocalName(..) |
-                ID(..) |
-                Class(..) |
-                AttributeInNoNamespaceExists { .. } |
-                AttributeInNoNamespace { .. } |
-                AttributeOther(..) |
-                ExplicitUniversalType |
-                ExplicitAnyNamespace |
-                ExplicitNoNamespace |
-                DefaultNamespace(..) |
-                Namespace(..) |
-                Root |
-                Empty |
-                Scope |
-                ImplicitScope |
-                Nth(..) |
-                NonTSPseudoClass(..) |
-                PseudoElement(..) |
-                Combinator(..) |
-                Host(None) |
-                Part(..) |
-                Invalid(..) |
-                RelativeSelectorAnchor => component.clone(),
+                LocalName(..)
+                | ID(..)
+                | Class(..)
+                | AttributeInNoNamespaceExists { .. }
+                | AttributeInNoNamespace { .. }
+                | AttributeOther(..)
+                | ExplicitUniversalType
+                | ExplicitAnyNamespace
+                | ExplicitNoNamespace
+                | DefaultNamespace(..)
+                | Namespace(..)
+                | Root
+                | Empty
+                | Scope
+                | ImplicitScope
+                | Nth(..)
+                | NonTSPseudoClass(..)
+                | PseudoElement(..)
+                | Combinator(..)
+                | Host(None)
+                | Part(..)
+                | Invalid(..)
+                | RelativeSelectorAnchor => component.clone(),
                 ParentSelector => {
                     specificity += Specificity::from(parent_specificity_and_flags.specificity);
                     flags.insert(parent_specificity_and_flags.flags - forbidden_flags);
@@ -1368,10 +1426,10 @@ impl<Impl: SelectorImpl> Selector<Impl> {
         fn check_for_parent(input: &mut CssParser, has_parent: &mut bool) {
             while let Ok(t) = input.next() {
                 match *t {
-                    Token::Function(_) |
-                    Token::ParenthesisBlock |
-                    Token::CurlyBracketBlock |
-                    Token::SquareBracketBlock => {
+                    Token::Function(_)
+                    | Token::ParenthesisBlock
+                    | Token::CurlyBracketBlock
+                    | Token::SquareBracketBlock => {
                         let _ = input.parse_nested_block(
                             |i| -> Result<(), ParseError<'_, BasicParseError>> {
                                 check_for_parent(i, has_parent);
@@ -1412,7 +1470,11 @@ impl<Impl: SelectorImpl> Selector<Impl> {
     pub fn is_rightmost(&self, offset: usize) -> bool {
         // There can really be only one pseudo-element, and it's not really valid for anything else to
         // follow it.
-        offset == 0 || matches!(self.combinator_at_match_order(offset - 1), Combinator::PseudoElement)
+        offset == 0
+            || matches!(
+                self.combinator_at_match_order(offset - 1),
+                Combinator::PseudoElement
+            )
     }
 }
 
@@ -1592,10 +1654,10 @@ impl Combinator {
     pub fn is_ancestor(&self) -> bool {
         matches!(
             *self,
-            Combinator::Child |
-                Combinator::Descendant |
-                Combinator::PseudoElement |
-                Combinator::SlotAssignment
+            Combinator::Child
+                | Combinator::Descendant
+                | Combinator::PseudoElement
+                | Combinator::SlotAssignment
         )
     }
 
@@ -1639,6 +1701,49 @@ impl NthType {
     }
 }
 
+/// The properties that comprise an An+B syntax
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[cfg_attr(feature = "to_shmem", derive(ToShmem))]
+#[cfg_attr(feature = "to_shmem", shmem(no_bounds))]
+pub struct AnPlusB(pub i32, pub i32);
+
+impl AnPlusB {
+    #[inline]
+    pub fn matches_index(&self, i: i32) -> bool {
+        // Is there a non-negative integer n such that An+B=i?
+        match i.checked_sub(self.1) {
+            None => false,
+            Some(an) => match an.checked_div(self.0) {
+                Some(n) => n >= 0 && self.0 * n == an,
+                None /* a == 0 */ => an == 0,
+            },
+        }
+    }
+}
+
+impl ToCss for AnPlusB {
+    /// Serialize <an+b> (part of the CSS Syntax spec).
+    /// <https://drafts.csswg.org/css-syntax-3/#serialize-an-anb-value>
+    #[inline]
+    fn to_css<W>(&self, dest: &mut W) -> fmt::Result
+    where
+        W: fmt::Write,
+    {
+        match (self.0, self.1) {
+            (0, 0) => dest.write_char('0'),
+
+            (1, 0) => dest.write_char('n'),
+            (-1, 0) => dest.write_str("-n"),
+            (_, 0) => write!(dest, "{}n", self.0),
+
+            (0, _) => write!(dest, "{}", self.1),
+            (1, _) => write!(dest, "n{:+}", self.1),
+            (-1, _) => write!(dest, "-n{:+}", self.1),
+            (_, _) => write!(dest, "{}n{:+}", self.0, self.1),
+        }
+    }
+}
+
 /// The properties that comprise an :nth- pseudoclass as of Selectors 3 (e.g.,
 /// nth-child(An+B)).
 /// https://www.w3.org/TR/selectors-3/#nth-child-pseudo
@@ -1648,8 +1753,7 @@ impl NthType {
 pub struct NthSelectorData {
     pub ty: NthType,
     pub is_function: bool,
-    pub a: i32,
-    pub b: i32,
+    pub an_plus_b: AnPlusB,
 }
 
 impl NthSelectorData {
@@ -1663,8 +1767,7 @@ impl NthSelectorData {
                 NthType::OnlyChild
             },
             is_function: false,
-            a: 0,
-            b: 1,
+            an_plus_b: AnPlusB(0, 1),
         }
     }
 
@@ -1678,8 +1781,7 @@ impl NthSelectorData {
                 NthType::Child
             },
             is_function: false,
-            a: 0,
-            b: 1,
+            an_plus_b: AnPlusB(0, 1),
         }
     }
 
@@ -1693,15 +1795,17 @@ impl NthSelectorData {
                 NthType::LastChild
             },
             is_function: false,
-            a: 0,
-            b: 1,
+            an_plus_b: AnPlusB(0, 1),
         }
     }
 
     /// Returns true if this is an edge selector that is not `:*-of-type``
     #[inline]
     pub fn is_simple_edge(&self) -> bool {
-        self.a == 0 && self.b == 1 && !self.ty.is_of_type() && !self.ty.is_only()
+        self.an_plus_b.0 == 0
+            && self.an_plus_b.1 == 1
+            && !self.ty.is_of_type()
+            && !self.ty.is_only()
     }
 
     /// Writes the beginning of the selector.
@@ -1721,22 +1825,9 @@ impl NthSelectorData {
         })
     }
 
-    /// Serialize <an+b> (part of the CSS Syntax spec, but currently only used here).
-    /// <https://drafts.csswg.org/css-syntax-3/#serialize-an-anb-value>
     #[inline]
     fn write_affine<W: fmt::Write>(&self, dest: &mut W) -> fmt::Result {
-        match (self.a, self.b) {
-            (0, 0) => dest.write_char('0'),
-
-            (1, 0) => dest.write_char('n'),
-            (-1, 0) => dest.write_str("-n"),
-            (_, 0) => write!(dest, "{}n", self.a),
-
-            (0, _) => write!(dest, "{}", self.b),
-            (1, _) => write!(dest, "n{:+}", self.b),
-            (-1, _) => write!(dest, "-n{:+}", self.b),
-            (_, _) => write!(dest, "{}n{:+}", self.a, self.b),
-        }
+        self.an_plus_b.to_css(dest)
     }
 }
 
@@ -2234,9 +2325,9 @@ impl<Impl: SelectorImpl> Component<Impl> {
     pub fn has_indexed_selector_in_subject(&self) -> bool {
         match *self {
             Component::NthOf(..) | Component::Nth(..) => return true,
-            Component::Is(ref selectors) |
-            Component::Where(ref selectors) |
-            Component::Negation(ref selectors) => {
+            Component::Is(ref selectors)
+            | Component::Where(ref selectors)
+            | Component::Negation(ref selectors) => {
                 // Check the subject compound.
                 for selector in selectors.slice() {
                     let mut iter = selector.iter();
@@ -2353,12 +2444,24 @@ impl<Impl: SelectorImpl> ToCss for Selector<Impl> {
                 None => continue,
                 Some(c) => c,
             };
-            if matches!(first_compound, Component::RelativeSelectorAnchor | Component::ImplicitScope) {
+            if matches!(
+                first_compound,
+                Component::RelativeSelectorAnchor | Component::ImplicitScope
+            ) {
                 debug_assert!(
                     compound.len() == 1,
                     "RelativeSelectorAnchor/ImplicitScope should only be a simple selector"
                 );
-                combinators.next().unwrap().to_css_relative(dest)?;
+                if let Some(c) = combinators.next() {
+                    c.to_css_relative(dest)?;
+                } else {
+                    // Direct property declarations in `@scope` does not have
+                    // combinators, since its selector is `:implicit-scope`.
+                    debug_assert!(
+                        matches!(first_compound, Component::ImplicitScope),
+                        "Only implicit :scope may not have any combinator"
+                    );
+                }
                 continue;
             }
 
@@ -2373,9 +2476,9 @@ impl<Impl: SelectorImpl> ToCss for Selector<Impl> {
             // If we are in this case, after we have serialized the universal
             // selector, we skip Step 2 and continue with the algorithm.
             let (can_elide_namespace, first_non_namespace) = match compound[0] {
-                Component::ExplicitAnyNamespace |
-                Component::ExplicitNoNamespace |
-                Component::Namespace(..) => (false, 1),
+                Component::ExplicitAnyNamespace
+                | Component::ExplicitNoNamespace
+                | Component::Namespace(..) => (false, 1),
                 Component::DefaultNamespace(..) => (true, 1),
                 _ => (true, 0),
             };
@@ -2390,8 +2493,8 @@ impl<Impl: SelectorImpl> ToCss for Selector<Impl> {
                     // -- Combinator::PseudoElement, just like
                     // Combinator::SlotAssignment, don't exist in the
                     // spec.
-                    (Some(Combinator::PseudoElement), _) |
-                    (Some(Combinator::SlotAssignment), _) => (),
+                    (Some(Combinator::PseudoElement), _)
+                    | (Some(Combinator::SlotAssignment), _) => (),
                     (_, &Component::ExplicitUniversalType) => {
                         // Iterate over everything so we serialize the namespace
                         // too.
@@ -2553,8 +2656,9 @@ impl<Impl: SelectorImpl> ToCss for Component<Impl> {
                 operator.to_css(dest)?;
                 value.to_css(dest)?;
                 match case_sensitivity {
-                    ParsedCaseSensitivity::CaseSensitive |
-                    ParsedCaseSensitivity::AsciiCaseInsensitiveIfInHtmlElementInHtmlDocument => {},
+                    ParsedCaseSensitivity::CaseSensitive
+                    | ParsedCaseSensitivity::AsciiCaseInsensitiveIfInHtmlElementInHtmlDocument => {
+                    },
                     ParsedCaseSensitivity::AsciiCaseInsensitive => dest.write_str(" i")?,
                     ParsedCaseSensitivity::ExplicitCaseSensitive => dest.write_str(" s")?,
                 }
@@ -2616,14 +2720,7 @@ impl<Impl: SelectorImpl> ToCss for Component<Impl> {
             },
             Has(ref list) => {
                 dest.write_str(":has(")?;
-                let mut first = true;
-                for RelativeSelector { ref selector, .. } in list.iter() {
-                    if !first {
-                        dest.write_str(", ")?;
-                    }
-                    first = false;
-                    selector.to_css(dest)?;
-                }
+                serialize_selector_list(list.iter().map(|rel| &rel.selector), dest)?;
                 dest.write_str(")")
             },
             NonTSPseudoClass(ref pseudo) => pseudo.to_css(dest),
@@ -2658,8 +2755,9 @@ impl<Impl: SelectorImpl> ToCss for AttrSelectorWithOptionalNamespace<Impl> {
                 operator.to_css(dest)?;
                 value.to_css(dest)?;
                 match case_sensitivity {
-                    ParsedCaseSensitivity::CaseSensitive |
-                    ParsedCaseSensitivity::AsciiCaseInsensitiveIfInHtmlElementInHtmlDocument => {},
+                    ParsedCaseSensitivity::CaseSensitive
+                    | ParsedCaseSensitivity::AsciiCaseInsensitiveIfInHtmlElementInHtmlDocument => {
+                    },
                     ParsedCaseSensitivity::AsciiCaseInsensitive => dest.write_str(" i")?,
                     ParsedCaseSensitivity::ExplicitCaseSensitive => dest.write_str(" s")?,
                 }
@@ -2698,7 +2796,7 @@ where
     input.skip_whitespace();
 
     if parse_relative != ParseRelative::No {
-        let combinator = try_parse_combinator::<P, Impl>(input);
+        let combinator = try_parse_combinator(input);
         match parse_relative {
             ParseRelative::ForHas => {
                 builder.push_simple_selector(Component::RelativeSelectorAnchor);
@@ -2736,14 +2834,15 @@ where
 
         if state.intersects(SelectorParsingState::AFTER_PSEUDO) {
             debug_assert!(state.intersects(
-                SelectorParsingState::AFTER_NON_ELEMENT_BACKED_PSEUDO |
-                    SelectorParsingState::AFTER_SLOTTED |
-                    SelectorParsingState::AFTER_PART_LIKE
+                SelectorParsingState::AFTER_NON_ELEMENT_BACKED_PSEUDO
+                    | SelectorParsingState::AFTER_BEFORE_OR_AFTER_PSEUDO
+                    | SelectorParsingState::AFTER_SLOTTED
+                    | SelectorParsingState::AFTER_PART_LIKE
             ));
             break;
         }
 
-        let combinator = if let Ok(c) = try_parse_combinator::<P, Impl>(input) {
+        let combinator = if let Ok(c) = try_parse_combinator(input) {
             c
         } else {
             break 'outer_loop;
@@ -2758,7 +2857,7 @@ where
     return Ok(Selector(builder.build(parse_relative)));
 }
 
-fn try_parse_combinator<'i, 't, P, Impl>(input: &mut CssParser<'i, 't>) -> Result<Combinator, ()> {
+fn try_parse_combinator<'i, 't>(input: &mut CssParser<'i, 't>) -> Result<Combinator, ()> {
     let mut any_whitespace = false;
     loop {
         let before_this_token = input.state();
@@ -2804,8 +2903,8 @@ where
         Err(ParseError {
             kind: ParseErrorKind::Basic(BasicParseErrorKind::EndOfInput),
             ..
-        }) |
-        Ok(OptionalQName::None(_)) => Ok(false),
+        })
+        | Ok(OptionalQName::None(_)) => Ok(false),
         Ok(OptionalQName::Some(namespace, local_name)) => {
             if state.intersects(SelectorParsingState::AFTER_PSEUDO) {
                 return Err(input.new_custom_error(SelectorParseErrorKind::InvalidState));
@@ -3118,8 +3217,8 @@ impl AttributeFlags {
             AttributeFlags::CaseSensitive => ParsedCaseSensitivity::ExplicitCaseSensitive,
             AttributeFlags::AsciiCaseInsensitive => ParsedCaseSensitivity::AsciiCaseInsensitive,
             AttributeFlags::CaseSensitivityDependsOnName => {
-                if !have_namespace &&
-                    include!(concat!(
+                if !have_namespace
+                    && include!(concat!(
                         env!("OUT_DIR"),
                         "/ascii_case_insensitive_html_attributes.rs"
                     ))
@@ -3174,9 +3273,9 @@ where
     let list = SelectorList::parse_with_state(
         parser,
         input,
-        state |
-            SelectorParsingState::SKIP_DEFAULT_NAMESPACE |
-            SelectorParsingState::DISALLOW_PSEUDOS,
+        state
+            | SelectorParsingState::SKIP_DEFAULT_NAMESPACE
+            | SelectorParsingState::DISALLOW_PSEUDOS,
         ForgivingParsing::No,
         ParseRelative::No,
     )?;
@@ -3243,8 +3342,8 @@ where
                 //     (Similar quotes for :where() / :not())
                 //
                 let ignore_default_ns = state
-                    .intersects(SelectorParsingState::SKIP_DEFAULT_NAMESPACE) ||
-                    matches!(
+                    .intersects(SelectorParsingState::SKIP_DEFAULT_NAMESPACE)
+                    || matches!(
                         result,
                         SimpleSelectorParseResult::SimpleSelector(Component::Host(..))
                     );
@@ -3275,6 +3374,9 @@ where
                     state.insert(SelectorParsingState::AFTER_PART_LIKE);
                 } else {
                     state.insert(SelectorParsingState::AFTER_NON_ELEMENT_BACKED_PSEUDO);
+                    if p.is_before_or_after() {
+                        state.insert(SelectorParsingState::AFTER_BEFORE_OR_AFTER_PSEUDO);
+                    }
                 }
                 if !p.accepts_state_pseudo_classes() {
                     state.insert(SelectorParsingState::AFTER_NON_STATEFUL_PSEUDO_ELEMENT);
@@ -3309,9 +3411,9 @@ where
     let inner = SelectorList::parse_with_state(
         parser,
         input,
-        state |
-            SelectorParsingState::SKIP_DEFAULT_NAMESPACE |
-            SelectorParsingState::DISALLOW_PSEUDOS,
+        state
+            | SelectorParsingState::SKIP_DEFAULT_NAMESPACE
+            | SelectorParsingState::DISALLOW_PSEUDOS,
         ForgivingParsing::Yes,
         ParseRelative::No,
     )?;
@@ -3328,7 +3430,9 @@ where
     Impl: SelectorImpl,
 {
     debug_assert!(parser.parse_has());
-    if state.intersects(SelectorParsingState::DISALLOW_RELATIVE_SELECTOR) {
+    if state.intersects(
+        SelectorParsingState::DISALLOW_RELATIVE_SELECTOR | SelectorParsingState::AFTER_PSEUDO,
+    ) {
         return Err(input.new_custom_error(SelectorParseErrorKind::InvalidState));
     }
     // Nested `:has()` is disallowed, mark it as such.
@@ -3338,10 +3442,10 @@ where
     let inner = SelectorList::parse_with_state(
         parser,
         input,
-        state |
-            SelectorParsingState::SKIP_DEFAULT_NAMESPACE |
-            SelectorParsingState::DISALLOW_PSEUDOS |
-            SelectorParsingState::DISALLOW_RELATIVE_SELECTOR,
+        state
+            | SelectorParsingState::SKIP_DEFAULT_NAMESPACE
+            | SelectorParsingState::DISALLOW_PSEUDOS
+            | SelectorParsingState::DISALLOW_RELATIVE_SELECTOR,
         ForgivingParsing::No,
         ParseRelative::ForHas,
     )?;
@@ -3382,12 +3486,15 @@ where
         return parse_is_where(parser, input, state, Component::Is);
     }
 
-    if state.intersects(SelectorParsingState::AFTER_NON_ELEMENT_BACKED_PSEUDO | SelectorParsingState::AFTER_SLOTTED) {
+    if state.intersects(
+        SelectorParsingState::AFTER_NON_ELEMENT_BACKED_PSEUDO | SelectorParsingState::AFTER_SLOTTED,
+    ) {
         return Err(input.new_custom_error(SelectorParseErrorKind::InvalidState));
     }
 
     let after_part = state.intersects(SelectorParsingState::AFTER_PART_LIKE);
-    P::parse_non_ts_functional_pseudo_class(parser, name, input, after_part).map(Component::NonTSPseudoClass)
+    P::parse_non_ts_functional_pseudo_class(parser, name, input, after_part)
+        .map(Component::NonTSPseudoClass)
 }
 
 fn parse_nth_pseudo_class<'i, 't, P, Impl>(
@@ -3407,8 +3514,7 @@ where
     let nth_data = NthSelectorData {
         ty,
         is_function: true,
-        a,
-        b,
+        an_plus_b: AnPlusB(a, b),
     };
     if !parser.parse_nth_child_of() || ty.is_of_type() {
         return Ok(Component::Nth(nth_data));
@@ -3423,9 +3529,9 @@ where
     let selectors = SelectorList::parse_with_state(
         parser,
         input,
-        state |
-            SelectorParsingState::SKIP_DEFAULT_NAMESPACE |
-            SelectorParsingState::DISALLOW_PSEUDOS,
+        state
+            | SelectorParsingState::SKIP_DEFAULT_NAMESPACE
+            | SelectorParsingState::DISALLOW_PSEUDOS,
         ForgivingParsing::No,
         ParseRelative::No,
     )?;
@@ -3438,7 +3544,7 @@ where
 /// Returns whether the name corresponds to a CSS2 pseudo-element that
 /// can be specified with the single colon syntax (in addition to the
 /// double-colon syntax, which can be used for all pseudo-elements).
-fn is_css2_pseudo_element(name: &str) -> bool {
+pub fn is_css2_pseudo_element(name: &str) -> bool {
     // ** Do not add to this list! **
     match_ignore_ascii_case! { name,
         "before" | "after" | "first-line" | "first-letter" => true,
@@ -3518,7 +3624,15 @@ where
             };
             let is_pseudo_element = !is_single_colon || is_css2_pseudo_element(&name);
             if is_pseudo_element {
-                if !state.allows_pseudos() {
+                // Pseudos after pseudo elements are not allowed in some cases:
+                // - Some states will disallow pseudos, such as the interiors of
+                // :has/:is/:where/:not (DISALLOW_PSEUDOS).
+                // - Non-element backed pseudos do not allow other pseudos to follow (AFTER_NON_ELEMENT_BACKED_PSEUDO)...
+                // - ... except ::before and ::after, which allow _some_ pseudos.
+                if state.intersects(SelectorParsingState::DISALLOW_PSEUDOS)
+                    || (state.intersects(SelectorParsingState::AFTER_NON_ELEMENT_BACKED_PSEUDO)
+                        && !state.intersects(SelectorParsingState::AFTER_BEFORE_OR_AFTER_PSEUDO))
+                {
                     return Err(input.new_custom_error(SelectorParseErrorKind::InvalidState));
                 }
                 let pseudo_element = if is_functional {
@@ -3556,8 +3670,14 @@ where
                     P::parse_pseudo_element(parser, location, name)?
                 };
 
-                if state.intersects(SelectorParsingState::AFTER_SLOTTED) &&
-                    !pseudo_element.valid_after_slotted()
+                if state.intersects(SelectorParsingState::AFTER_BEFORE_OR_AFTER_PSEUDO)
+                    && !pseudo_element.valid_after_before_or_after()
+                {
+                    return Err(input.new_custom_error(SelectorParseErrorKind::InvalidState));
+                }
+
+                if state.intersects(SelectorParsingState::AFTER_SLOTTED)
+                    && !pseudo_element.valid_after_slotted()
                 {
                     return Err(input.new_custom_error(SelectorParseErrorKind::InvalidState));
                 }
@@ -3601,7 +3721,9 @@ where
         // https://drafts.csswg.org/css-view-transitions-1/#pseudo-root
         if state.allows_only_child_pseudo_class_only() {
             if name.eq_ignore_ascii_case("only-child") {
-                return Ok(Component::Nth(NthSelectorData::only(/* of_type = */ false)));
+                return Ok(Component::Nth(NthSelectorData::only(
+                    /* of_type = */ false,
+                )));
             }
             // Other non-functional pseudo classes are not allowed.
             // FIXME: Perhaps we can refactor this, e.g. distinguish tree-structural pseudo classes
@@ -3625,8 +3747,8 @@ where
     }
 
     let pseudo_class = P::parse_non_ts_pseudo_class(parser, location, name)?;
-    if state.intersects(SelectorParsingState::AFTER_NON_ELEMENT_BACKED_PSEUDO) &&
-        !pseudo_class.is_user_action_state()
+    if state.intersects(SelectorParsingState::AFTER_NON_ELEMENT_BACKED_PSEUDO)
+        && !pseudo_class.is_user_action_state()
     {
         return Err(location.new_custom_error(SelectorParseErrorKind::InvalidState));
     }
@@ -3654,6 +3776,8 @@ pub mod tests {
     pub enum PseudoElement {
         Before,
         After,
+        Marker,
+        DetailsContent,
         Highlight(String),
     }
 
@@ -3668,8 +3792,16 @@ pub mod tests {
             true
         }
 
+        fn valid_after_before_or_after(&self) -> bool {
+            matches!(self, Self::Marker)
+        }
+
+        fn is_before_or_after(&self) -> bool {
+            matches!(self, Self::Before | Self::After)
+        }
+
         fn is_element_backed(&self) -> bool {
-            true
+            matches!(self, Self::DetailsContent)
         }
     }
 
@@ -3712,6 +3844,8 @@ pub mod tests {
             match *self {
                 PseudoElement::Before => dest.write_str("::before"),
                 PseudoElement::After => dest.write_str("::after"),
+                PseudoElement::Marker => dest.write_str("::marker"),
+                PseudoElement::DetailsContent => dest.write_str("::details-content"),
                 PseudoElement::Highlight(ref name) => {
                     dest.write_str("::highlight(")?;
                     serialize_identifier(&name, dest)?;
@@ -3881,6 +4015,8 @@ pub mod tests {
             match_ignore_ascii_case! { &name,
                 "before" => return Ok(PseudoElement::Before),
                 "after" => return Ok(PseudoElement::After),
+                "marker" => return Ok(PseudoElement::Marker),
+                "details-content" => return Ok(PseudoElement::DetailsContent),
                 _ => {}
             }
             Err(
@@ -4516,7 +4652,8 @@ pub mod tests {
             parse("#foo:has(:is(.bar, div .baz).bar)").unwrap()
         );
 
-        let child = parse_relative_expected("#foo", ParseRelative::ForNesting, Some("& #foo")).unwrap();
+        let child =
+            parse_relative_expected("#foo", ParseRelative::ForNesting, Some("& #foo")).unwrap();
         assert_eq!(
             child.replace_parent_selector(&parent),
             parse(":is(.bar, div .baz) #foo").unwrap()
@@ -4541,6 +4678,59 @@ pub mod tests {
         let combinator = iter.next_sequence();
         assert_eq!(combinator, Some(Combinator::PseudoElement));
         assert!(matches!(iter.next(), Some(&Component::LocalName(..))));
+        assert_eq!(iter.next(), None);
+        assert_eq!(iter.next_sequence(), None);
+    }
+
+    #[test]
+    fn test_pseudo_before_marker() {
+        let list = parse("::before::marker").unwrap();
+        let selector = &list.slice()[0];
+        let mut iter = selector.iter();
+        assert_eq!(
+            iter.next(),
+            Some(&Component::PseudoElement(PseudoElement::Marker))
+        );
+        assert_eq!(iter.next(), None);
+        let combinator = iter.next_sequence();
+        assert_eq!(combinator, Some(Combinator::PseudoElement));
+        assert!(matches!(
+            iter.next(),
+            Some(&Component::PseudoElement(PseudoElement::Before))
+        ));
+        assert_eq!(iter.next(), None);
+        let combinator = iter.next_sequence();
+        assert_eq!(combinator, Some(Combinator::PseudoElement));
+        assert_eq!(iter.next(), None);
+        assert_eq!(iter.next_sequence(), None);
+    }
+
+    #[test]
+    fn test_pseudo_duplicate_before_after_or_marker() {
+        assert!(parse("::before::before").is_err());
+        assert!(parse("::after::after").is_err());
+        assert!(parse("::marker::marker").is_err());
+    }
+
+    #[test]
+    fn test_pseudo_on_element_backed_pseudo() {
+        let list = parse("::details-content::before").unwrap();
+        let selector = &list.slice()[0];
+        let mut iter = selector.iter();
+        assert_eq!(
+            iter.next(),
+            Some(&Component::PseudoElement(PseudoElement::Before))
+        );
+        assert_eq!(iter.next(), None);
+        let combinator = iter.next_sequence();
+        assert_eq!(combinator, Some(Combinator::PseudoElement));
+        assert!(matches!(
+            iter.next(),
+            Some(&Component::PseudoElement(PseudoElement::DetailsContent))
+        ));
+        assert_eq!(iter.next(), None);
+        let combinator = iter.next_sequence();
+        assert_eq!(combinator, Some(Combinator::PseudoElement));
         assert_eq!(iter.next(), None);
         assert_eq!(iter.next_sequence(), None);
     }

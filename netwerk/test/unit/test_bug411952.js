@@ -5,8 +5,8 @@ function run_test() {
     var cm = Services.cookies;
     Assert.notEqual(cm, null, "Retrieving the cookie manager failed");
 
-    const time = new Date("Jan 1, 2030").getTime() / 1000;
-    cm.add(
+    const time = Date.now() + 24 * 60 * 1000;
+    const cv = cm.add(
       "example.com",
       "/",
       "C",
@@ -16,10 +16,11 @@ function run_test() {
       false,
       time,
       {},
-      Ci.nsICookie.SAMESITE_NONE,
+      Ci.nsICookie.SAMESITE_UNSET,
       Ci.nsICookie.SCHEME_HTTPS
     );
-    const now = Math.floor(new Date().getTime() / 1000);
+    Assert.equal(cv.result, Ci.nsICookieValidation.eOK, "Valid cookie");
+    const now = new Date().getTime();
 
     var found = false;
     for (let cookie of cm.cookies) {
@@ -32,11 +33,12 @@ function run_test() {
           "creationTime" in cookie,
           "creationTime attribute is not accessible on the cookie"
         );
-        var creationTime = Math.floor(cookie.creationTime / 1000000);
+        var creationTime = Math.floor(cookie.creationTime / 1000);
         // allow the times to slip by one second at most,
         // which should be fine under normal circumstances.
-        Assert.ok(
-          Math.abs(creationTime - now) <= 1,
+        Assert.lessOrEqual(
+          Math.abs(creationTime - now),
+          1000,
           "Cookie's creationTime is set incorrectly"
         );
         found = true;

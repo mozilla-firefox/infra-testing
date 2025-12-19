@@ -46,7 +46,8 @@ using namespace js::wasm;
 bool wasm::CreateStackMapForFunctionEntryTrap(
     const wasm::ArgTypeVector& argTypes, const RegisterOffsets& trapExitLayout,
     size_t trapExitLayoutWords, size_t nBytesReservedBeforeTrap,
-    size_t nInboundStackArgBytes, wasm::StackMap** result) {
+    size_t nInboundStackArgBytes, wasm::StackMaps& stackMaps,
+    wasm::StackMap** result) {
   // Ensure this is defined on all return paths.
   *result = nullptr;
 
@@ -68,7 +69,7 @@ bool wasm::CreateStackMapForFunctionEntryTrap(
 
 #ifndef DEBUG
   bool hasRefs = false;
-  for (WasmABIArgIter i(argTypes); !i.done(); i++) {
+  for (ABIArgIter i(argTypes, ABIKind::Wasm); !i.done(); i++) {
     if (i.mirType() == MIRType::WasmAnyRef) {
       hasRefs = true;
       break;
@@ -82,8 +83,7 @@ bool wasm::CreateStackMapForFunctionEntryTrap(
   }
 #endif
 
-  wasm::StackMap* stackMap =
-      wasm::StackMap::create(nTotalBytes / sizeof(void*));
+  wasm::StackMap* stackMap = stackMaps.create(nTotalBytes / sizeof(void*));
   if (!stackMap) {
     return false;
   }
@@ -109,7 +109,7 @@ bool wasm::CreateStackMapForFunctionEntryTrap(
   const size_t stackArgOffset =
       (trapExitLayoutBytes + nBytesReservedBeforeTrap + nFrameBytes) /
       sizeof(void*);
-  for (WasmABIArgIter i(argTypes); !i.done(); i++) {
+  for (ABIArgIter i(argTypes, ABIKind::Wasm); !i.done(); i++) {
     ABIArg argLoc = *i;
     if (argLoc.kind() == ABIArg::Stack &&
         argTypes[i.index()] == MIRType::WasmAnyRef) {
@@ -129,7 +129,7 @@ bool wasm::CreateStackMapForFunctionEntryTrap(
   }
 #endif
 
-  *result = stackMap;
+  *result = stackMaps.finalize(stackMap);
   return true;
 }
 
@@ -142,7 +142,7 @@ bool wasm::GenerateStackmapEntriesForTrapExit(
     return false;
   }
 
-  for (WasmABIArgIter i(args); !i.done(); i++) {
+  for (ABIArgIter i(args, ABIKind::Wasm); !i.done(); i++) {
     if (!i->argInRegister() || i.mirType() != MIRType::WasmAnyRef) {
       continue;
     }
@@ -183,9 +183,8 @@ void wasm::EmitWasmPreBarrierGuard(MacroAssembler& masm, Register instance,
 
   // Emit metadata for a potential null access when reading the previous value.
   if (trapSiteDesc) {
-    masm.append(
-        wasm::Trap::NullPointerDereference,
-        wasm::TrapSite(TrapMachineInsnForLoadWord(), fco, *trapSiteDesc));
+    masm.append(wasm::Trap::NullPointerDereference,
+                TrapMachineInsnForLoadWord(), fco.get(), *trapSiteDesc);
   }
 }
 
@@ -272,6 +271,16 @@ void wasm::EmitWasmPostBarrierGuard(MacroAssembler& masm,
                                      skipBarrier);
 }
 
+void wasm::CheckWholeCellLastElementCache(MacroAssembler& masm,
+                                          Register instance, Register object,
+                                          Register temp, Label* skipBarrier) {
+  masm.loadPtr(
+      Address(instance,
+              wasm::Instance::offsetOfAddressOfLastBufferedWholeCell()),
+      temp);
+  masm.branchPtr(Assembler::Equal, Address(temp, 0), object, skipBarrier);
+}
+
 #ifdef DEBUG
 bool wasm::IsPlausibleStackMapKey(const uint8_t* nextPC) {
 #  if defined(JS_CODEGEN_X64) || defined(JS_CODEGEN_X86)
@@ -303,11 +312,13 @@ bool wasm::IsPlausibleStackMapKey(const uint8_t* nextPC) {
   // TODO(loong64): Implement IsValidStackMapKey.
   return true;
 #  elif defined(JS_CODEGEN_RISCV64)
-  const uint32_t* insn = (const uint32_t*)nextPC;
+  const uint32_t* insn = reinterpret_cast<const uint32_t*>(nextPC);
   return (((uintptr_t(insn) & 3) == 0) &&
           ((insn[-1] == 0x00006037 && insn[-2] == 0x00100073) ||  // break;
-           ((insn[-1] & kBaseOpcodeMask) == JALR) ||
-           ((insn[-1] & kBaseOpcodeMask) == JAL) ||
+           ((insn[-1] & kBaseOpcodeMask) == JALR) ||              // jalr
+           ((insn[-1] & kBaseOpcodeMask) == JAL) ||               // jal
+           ((insn[-2] & kBaseOpcodeMask) == JAL &&
+            insn[-1] == 0x00000013 /* addi zero, zero, 0 */) ||  // jal; nop
            (insn[-1] == 0x00100073 &&
             (insn[-2] & kITypeMask) == RO_CSRRWI)));  // wasm trap
 #  else
@@ -320,7 +331,7 @@ void StackMaps::checkInvariants(const uint8_t* base) const {
 #ifdef DEBUG
   // Chech that each entry points from the stackmap structure points
   // to a plausible instruction.
-  for (auto iter = mapping_.iter(); !iter.done(); iter.next()) {
+  for (auto iter = codeOffsetToStackMap_.iter(); !iter.done(); iter.next()) {
     MOZ_ASSERT(IsPlausibleStackMapKey(base + iter.get().key()),
                "wasm stackmap does not reference a valid insn");
   }

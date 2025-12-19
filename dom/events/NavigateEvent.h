@@ -15,6 +15,7 @@
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/NavigateEventBinding.h"
+#include "mozilla/dom/NavigationPrecommitControllerBinding.h"
 #include "nsCycleCollectionParticipant.h"
 
 namespace mozilla::dom {
@@ -52,6 +53,8 @@ class NavigateEvent final : public Event {
 
   enum NavigationType NavigationType() const;
 
+  void SetNavigationType(enum NavigationType aNavigationType);
+
   already_AddRefed<NavigationDestination> Destination() const;
 
   bool CanIntercept() const;
@@ -67,6 +70,8 @@ class NavigateEvent final : public Event {
   void GetDownloadRequest(nsAString& aDownloadRequest) const;
 
   void GetInfo(JSContext* aCx, JS::MutableHandle<JS::Value> aInfo) const;
+
+  void SetInfo(JS::Value aInfo) { mInfo = aInfo; }
 
   bool HasUAVisualTransition() const;
 
@@ -99,14 +104,22 @@ class NavigateEvent final : public Event {
 
   dom::AbortController* AbortController() const;
 
-  bool HasBeenDispatched() const;
+  bool IsBeingDispatched() const;
 
   MOZ_CAN_RUN_SCRIPT
   void Finish(bool aDidFulfill);
 
- private:
+  nsTArray<RefPtr<NavigationPrecommitHandler>>&
+  NavigationPrecommitHandlerList() {
+    return mNavigationPrecommitHandlerList;
+  }
+
   void PerformSharedChecks(ErrorResult& aRv);
 
+  Document* GetAssociatedDocument() const;
+
+ private:
+  MOZ_CAN_RUN_SCRIPT
   void PotentiallyResetFocus();
 
   MOZ_CAN_RUN_SCRIPT
@@ -129,6 +142,9 @@ class NavigateEvent final : public Event {
   JS::Heap<JS::Value> mInfo;
   bool mHasUAVisualTransition = false;
   RefPtr<Element> mSourceElement;
+  uint32_t mLastScrollGeneration = 0;
+
+  nsTArray<RefPtr<NavigationPrecommitHandler>> mNavigationPrecommitHandlerList;
 
   // https://html.spec.whatwg.org/multipage/nav-history-apis.html#the-navigateevent-interface:navigateevent-2
   enum InterceptionState mInterceptionState = InterceptionState::None;

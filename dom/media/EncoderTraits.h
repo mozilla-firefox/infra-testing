@@ -7,8 +7,8 @@
 #ifndef EncoderTraits_h_
 #define EncoderTraits_h_
 
-#include "mozilla/dom/EncoderTypes.h"
 #include "PEMFactory.h"
+#include "mozilla/dom/EncoderTypes.h"
 
 namespace mozilla::EncoderSupport {
 
@@ -16,7 +16,7 @@ template <typename T>
 bool Supports(const RefPtr<T>& aEncoderConfigInternal) {
   RefPtr<PEMFactory> factory = new PEMFactory();
   EncoderConfig config = aEncoderConfigInternal->ToEncoderConfig();
-  return factory->Supports(config);
+  return !factory->Supports(config).isEmpty();
 }
 
 }  // namespace mozilla::EncoderSupport

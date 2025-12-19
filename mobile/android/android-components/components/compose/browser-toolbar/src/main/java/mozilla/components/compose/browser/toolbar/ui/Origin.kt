@@ -6,39 +6,70 @@ package mozilla.components.compose.browser.toolbar.ui
 
 import android.content.res.Configuration.UI_MODE_NIGHT_YES
 import android.content.res.Configuration.UI_MODE_TYPE_NORMAL
-import android.view.Gravity
-import android.view.View
-import android.view.ViewGroup.LayoutParams.MATCH_PARENT
-import android.widget.LinearLayout
+import android.view.SoundEffectConstants
 import androidx.annotation.StringRes
-import androidx.appcompat.widget.AppCompatTextView
+import androidx.compose.foundation.IndicationNodeFactory
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.InteractionSource
+import androidx.compose.foundation.layout.Arrangement.Center
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.key
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Alignment.Companion.Bottom
+import androidx.compose.ui.Alignment.Companion.Start
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.ContentDrawScope
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.node.DelegatableNode
+import androidx.compose.ui.node.DrawModifierNode
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role.Companion.Button
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.view.isVisible
-import mozilla.components.browser.menu2.BrowserMenuController
+import mozilla.components.compose.base.menu.CustomPlacementPopup
+import mozilla.components.compose.base.menu.CustomPlacementPopupHorizontalContent
+import mozilla.components.compose.base.modifier.thenConditional
+import mozilla.components.compose.base.text.FadedText
+import mozilla.components.compose.base.text.TruncationDirection.END
+import mozilla.components.compose.base.text.TruncationDirection.START
 import mozilla.components.compose.base.theme.AcornTheme
 import mozilla.components.compose.browser.toolbar.R
-import mozilla.components.compose.browser.toolbar.concept.PageOrigin.Companion.FadeDirection
-import mozilla.components.compose.browser.toolbar.concept.PageOrigin.Companion.FadeDirection.FADE_DIRECTION_END
-import mozilla.components.compose.browser.toolbar.concept.PageOrigin.Companion.FadeDirection.FADE_DIRECTION_START
+import mozilla.components.compose.browser.toolbar.concept.BrowserToolbarTestTags.ADDRESSBAR_TITLE
+import mozilla.components.compose.browser.toolbar.concept.BrowserToolbarTestTags.ADDRESSBAR_URL
+import mozilla.components.compose.browser.toolbar.concept.PageOrigin.Companion.ContextualMenuOption
 import mozilla.components.compose.browser.toolbar.concept.PageOrigin.Companion.TextGravity
 import mozilla.components.compose.browser.toolbar.concept.PageOrigin.Companion.TextGravity.TEXT_GRAVITY_END
 import mozilla.components.compose.browser.toolbar.concept.PageOrigin.Companion.TextGravity.TEXT_GRAVITY_START
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarInteraction
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarInteraction.BrowserToolbarEvent
-import mozilla.components.compose.browser.toolbar.store.BrowserToolbarInteraction.BrowserToolbarMenu
-import mozilla.components.compose.browser.toolbar.store.BrowserToolbarInteraction.CombinedEventAndMenu
+import mozilla.components.compose.browser.toolbar.utils.PageOriginContextualMenuBuilder
+import mozilla.components.support.ktx.kotlin.getRegistrableDomainIndexRange
+import mozilla.components.support.utils.ClipboardHandler
 
 private const val URL_TEXT_SIZE_ALONE = 15
 private const val URL_TEXT_SIZE_WITH_TITLE = 12
+private const val FADE_LENGTH = 66
 
 /**
  * Custom layout for showing the origin - title and url of a webpage.
@@ -47,164 +78,225 @@ private const val URL_TEXT_SIZE_WITH_TITLE = 12
  * @param modifier [Modifier] to apply to this composable for further customisation.
  * @param url the URL of the webpage. Can be `null` or empty, in which vase the [hint] will be shown.
  * @param title the title of the webpage. Can be `null` or empty, in which case only [url] or [hint] will be shown.
- * @param onClick [BrowserToolbarEvent] to be dispatched when this layout is clicked.
+ * @param onClick Optional [BrowserToolbarEvent] to be dispatched when this layout is clicked.
  * @param onLongClick Optional [BrowserToolbarInteraction] describing how to handle this layout being long clicked.
+ * To ensure long clicks handling the normal click behavior should also be set.
  * @param onInteraction [BrowserToolbarInteraction] to be dispatched when this layout is interacted with.
  * @param onInteraction Callback for handling [BrowserToolbarEvent]s on user interactions.
- * @param fadeDirection [FadeDirection] How the displayed text should be faded.
- * @param textGravity [TextGravity] How the displayed text should be aligned.
  */
 @Composable
+@Suppress("LongMethod")
 internal fun Origin(
     @StringRes hint: Int,
     modifier: Modifier = Modifier,
-    url: String? = null,
+    url: CharSequence? = null,
     title: String? = null,
-    onClick: BrowserToolbarEvent,
-    onLongClick: BrowserToolbarInteraction?,
+    textGravity: TextGravity = TEXT_GRAVITY_START,
+    contextualMenuOptions: List<ContextualMenuOption> = emptyList(),
+    onClick: BrowserToolbarEvent?,
+    onLongClick: BrowserToolbarEvent?,
     onInteraction: (BrowserToolbarEvent) -> Unit,
-    fadeDirection: FadeDirection,
-    textGravity: TextGravity,
 ) {
-    OriginView(
-        hint = stringResource(hint),
-        url = url,
-        title = title,
-        fadeDirection = fadeDirection,
-        textGravity = textGravity,
-        onClick = onClick,
-        onLongClick = onLongClick,
-        onInteraction = onInteraction,
-        modifier = modifier,
-    )
-}
+    val view = LocalView.current
+    val haptic = LocalHapticFeedback.current
+    val shouldReactToLongClicks = remember(onLongClick, contextualMenuOptions) {
+        onLongClick != null || contextualMenuOptions.isNotEmpty()
+    }
+    var showMenu by remember { mutableStateOf(false) }
+    val clipboardHandler = remember(view) { ClipboardHandler(view.context) }
 
-@Composable
-@Suppress("LongMethod", "LongParameterList")
-private fun OriginView(
-    hint: String,
-    url: String?,
-    title: String?,
-    fadeDirection: FadeDirection,
-    textGravity: TextGravity,
-    onClick: BrowserToolbarEvent,
-    onLongClick: BrowserToolbarInteraction?,
-    onInteraction: (BrowserToolbarEvent) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val shouldShowTitle = remember { title != null && title.isNotEmpty() }
+    val shouldShowTitle = remember(title) { title != null && title.isNotBlank() }
     val urlTextSize = remember(shouldShowTitle) {
         when (shouldShowTitle) {
-            true -> URL_TEXT_SIZE_WITH_TITLE.sp
-            false -> URL_TEXT_SIZE_ALONE.sp
+            true -> URL_TEXT_SIZE_WITH_TITLE
+            false -> URL_TEXT_SIZE_ALONE
         }
     }
-    val urlGravity = remember(shouldShowTitle) {
-        when (shouldShowTitle) {
-            true -> Gravity.TOP or Gravity.LEFT
-            false -> Gravity.CENTER_VERTICAL or Gravity.LEFT
-        }
-    }
-    val urlToShow = remember(url) {
+
+    val hint = stringResource(hint)
+    val urlToShow: CharSequence = remember(url) {
         when (url == null || url.isBlank()) {
             true -> hint
             else -> url
         }
     }
-    val longClickMenu = key(onLongClick) { onLongClick.buildMenu(onInteraction) }
-    val textColor = AcornTheme.colors.textPrimary
+    val contentDescription: String = getContentDescription(urlToShow, hint, title)
 
-    AndroidView(
-        modifier = modifier,
-        factory = { context ->
-            LinearLayout(context).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER_VERTICAL
-                isClickable = true
-                isFocusable = true
-                addView(
-                    CustomFadeAndGravityTextView(context, fadeDirection, textGravity).apply {
-                        text = title
-                        gravity = Gravity.BOTTOM or Gravity.LEFT
-                        setSingleLine()
-                        isVisible = shouldShowTitle
-                        textSize = URL_TEXT_SIZE_ALONE.sp.value
-                        setTextColor(textColor.toArgb())
-                        layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f)
-                    },
+    CompositionLocalProvider(LocalIndication provides NoRippleIndication) {
+        Box(
+            contentAlignment = Alignment.CenterStart,
+            modifier = modifier
+                .clearAndSetSemantics {
+                    this.contentDescription = contentDescription
+                }
+                .clickable(
+                    enabled = onClick != null && !shouldReactToLongClicks,
+                ) {
+                    view.playSoundEffect(SoundEffectConstants.CLICK)
+                    onInteraction(requireNotNull(onClick))
+                }
+                .thenConditional(
+                    Modifier.combinedClickable(
+                        role = Button,
+                        onClick = {
+                            onClick?.let {
+                                view.playSoundEffect(SoundEffectConstants.CLICK)
+                                onInteraction(it)
+                            }
+                        },
+                        onLongClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            showMenu = true
+                            onLongClick?.let { onInteraction(it) }
+                        },
+                    ),
+                ) { shouldReactToLongClicks },
+        ) {
+            Column(verticalArrangement = Center) {
+                val hasTitle = !title.isNullOrBlank()
+                if (hasTitle) {
+                    Title(title = title, textGravity = textGravity)
+                }
+
+                Url(
+                    url = urlToShow,
+                    fontSize = urlTextSize,
+                    color = getUrlColor(showUrlOnly = hasTitle || urlToShow == hint),
                 )
-
-                addView(
-                    CustomFadeAndGravityTextView(context, fadeDirection, textGravity).apply {
-                        text = urlToShow
-                        gravity = urlGravity
-                        setSingleLine()
-                        textSize = urlTextSize.value
-                        setTextColor(textColor.toArgb())
-                        layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f)
-                    },
-                )
-
-                setOnClickListener { onInteraction(onClick) }
-                setLongClickHandling(onLongClick, longClickMenu, onInteraction)
-            }
-        },
-        update = { container ->
-            (container.getChildAt(0) as? AppCompatTextView)?.apply {
-                text = title
-                isVisible = shouldShowTitle
-            }
-            (container.getChildAt(1) as? AppCompatTextView)?.apply {
-                text = urlToShow
-                gravity = urlGravity
-                textSize = urlTextSize.value
             }
 
-            container.setLongClickHandling(onLongClick, longClickMenu, onInteraction)
-        },
+            LongPressMenu(showMenu, contextualMenuOptions, clipboardHandler, onInteraction) {
+                showMenu = false
+            }
+        }
+    }
+}
+
+@Composable
+private fun Title(
+    title: String,
+    textGravity: TextGravity,
+) {
+    FadedText(
+        text = title,
+        modifier = Modifier.testTag(ADDRESSBAR_TITLE),
+        style = TextStyle(
+            fontSize = URL_TEXT_SIZE_ALONE.sp,
+            color = MaterialTheme.colorScheme.onSurface,
+        ),
+        truncationDirection = textGravity.toTextTruncationDirection(),
+        fadeLength = FADE_LENGTH.dp,
     )
 }
 
-private fun View.setLongClickHandling(
-    onLongClick: BrowserToolbarInteraction?,
-    longClickMenu: BrowserMenuController?,
-    onInteraction: (BrowserToolbarEvent) -> Unit,
+@Composable
+private fun Url(
+    url: CharSequence,
+    fontSize: Int,
+    color: Color,
 ) {
-    if (onLongClick is BrowserToolbarEvent) {
-        setOnLongClickListener {
-            onInteraction(onLongClick)
-            true
-        }
-    } else if (onLongClick is BrowserToolbarMenu && longClickMenu != null) {
-        setOnLongClickListener {
-            longClickMenu.show(anchor = this)
-            true
-        }
-    } else if (onLongClick is CombinedEventAndMenu && longClickMenu != null) {
-        setOnLongClickListener {
-            onInteraction(onLongClick.event)
-            longClickMenu.show(anchor = this)
-            true
-        }
-    } else {
-        setOnLongClickListener(null)
+    // Ensure compatibility with MaterialTheme attributes. See bug 1936346 for more context.
+    val materialTextStyle = LocalTextStyle.current
+    val urlString = remember(url) { url.toString() }
+    val registrableDomainIndexRange = remember(url) {
+        url.getRegistrableDomainIndexRange()
     }
+
+    HighlightedDomainUrl(
+        url = urlString,
+        registrableDomainIndexRange = registrableDomainIndexRange,
+        fadedTextStyle = materialTextStyle.merge(
+            fontSize = fontSize.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        ),
+        boldedTextStyle = materialTextStyle.merge(
+            fontSize = fontSize.sp,
+            color = color,
+        ),
+        modifier = Modifier.testTag(ADDRESSBAR_URL),
+    )
+}
+
+@Composable
+private fun getUrlColor(showUrlOnly: Boolean): Color {
+    return if (showUrlOnly) {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+}
+
+@Composable
+private fun LongPressMenu(
+    isVisible: Boolean,
+    contextualMenuOptions: List<ContextualMenuOption>,
+    clipboard: ClipboardHandler,
+    onInteraction: (BrowserToolbarEvent) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    CustomPlacementPopup(
+        isVisible = isVisible,
+        onDismissRequest = onDismiss,
+        horizontalAlignment = Start,
+        verticalAlignment = Bottom,
+    ) {
+        val menuItems = PageOriginContextualMenuBuilder.buildMenuOptions(
+            clipboard = clipboard,
+            allowedMenuOptions = contextualMenuOptions,
+        )
+        CustomPlacementPopupHorizontalContent {
+            items(menuItems) { menuItem ->
+                menuItemComposable(menuItem) { event ->
+                    onDismiss()
+                    onInteraction(event)
+                }.invoke()
+            }
+        }
+    }
+}
+
+private fun TextGravity.toTextTruncationDirection() = when (this) {
+    TEXT_GRAVITY_START -> END
+    TEXT_GRAVITY_END -> START
+}
+
+@Composable
+private fun getContentDescription(urlToShow: CharSequence, hint: String, title: String?) =
+    remember(urlToShow) {
+        if (urlToShow == hint) {
+            hint
+        } else {
+            "${title ?: ""} $urlToShow. $hint"
+        }
+    }
+
+/**
+ * Custom indication disabling click ripples.
+ */
+private object NoRippleIndication : IndicationNodeFactory {
+    override fun create(interactionSource: InteractionSource): DelegatableNode =
+        object : Modifier.Node(), DrawModifierNode {
+            override fun ContentDrawScope.draw() = drawContent()
+        }
+
+    override fun equals(other: Any?) = other === this
+    override fun hashCode(): Int = System.identityHashCode(this)
 }
 
 @Preview(showBackground = true)
 @Composable
 private fun OriginPreviewWithJustTheHint() {
     AcornTheme {
-        Origin(
-            hint = R.string.mozac_browser_toolbar_search_hint,
-            url = null,
-            title = null,
-            onClick = object : BrowserToolbarEvent {},
-            onLongClick = null,
-            onInteraction = {},
-            fadeDirection = FADE_DIRECTION_END,
-            textGravity = TEXT_GRAVITY_START,
-        )
+        Surface {
+            Origin(
+                hint = R.string.mozac_browser_toolbar_search_hint,
+                url = null,
+                title = null,
+                onClick = object : BrowserToolbarEvent {},
+                onLongClick = null,
+                onInteraction = {},
+            )
+        }
     }
 }
 
@@ -212,17 +304,17 @@ private fun OriginPreviewWithJustTheHint() {
 @Composable
 private fun OriginPreviewWithTitleAndURL() {
     AcornTheme {
-        Origin(
-            hint = R.string.mozac_browser_toolbar_search_hint,
-            modifier = Modifier.background(AcornTheme.colors.layer1),
-            url = "https://mozilla.com",
-            title = "Test title",
-            onClick = object : BrowserToolbarEvent {},
-            onLongClick = null,
-            onInteraction = {},
-            fadeDirection = FADE_DIRECTION_END,
-            textGravity = TEXT_GRAVITY_START,
-        )
+        Surface {
+            Origin(
+                hint = R.string.mozac_browser_toolbar_search_hint,
+                modifier = Modifier.background(MaterialTheme.colorScheme.surface),
+                url = "https://mozilla.com",
+                title = "Test title",
+                onClick = object : BrowserToolbarEvent {},
+                onLongClick = null,
+                onInteraction = {},
+            )
+        }
     }
 }
 
@@ -230,16 +322,16 @@ private fun OriginPreviewWithTitleAndURL() {
 @Composable
 private fun OriginPreviewWithTitleAndURLStart() {
     AcornTheme {
-        Origin(
-            hint = R.string.mozac_browser_toolbar_search_hint,
-            url = "https://mozilla.com/firefox-browser",
-            title = "Test title",
-            onClick = object : BrowserToolbarEvent {},
-            onLongClick = null,
-            onInteraction = {},
-            fadeDirection = FADE_DIRECTION_END,
-            textGravity = TEXT_GRAVITY_START,
-        )
+        Surface {
+            Origin(
+                hint = R.string.mozac_browser_toolbar_search_hint,
+                url = "https://mozilla.com/firefox-browser",
+                title = "Test title",
+                onClick = object : BrowserToolbarEvent {},
+                onLongClick = null,
+                onInteraction = {},
+            )
+        }
     }
 }
 
@@ -247,17 +339,17 @@ private fun OriginPreviewWithTitleAndURLStart() {
 @Composable
 private fun OriginPreviewWithTitleAndURLEnd() {
     AcornTheme {
-        Origin(
-            hint = R.string.mozac_browser_toolbar_search_hint,
-            modifier = Modifier.background(AcornTheme.colors.layer1),
-            url = "https://mozilla.com/firefox-browser",
-            title = "Test title",
-            onClick = object : BrowserToolbarEvent {},
-            onLongClick = null,
-            onInteraction = {},
-            fadeDirection = FADE_DIRECTION_END,
-            textGravity = TEXT_GRAVITY_END,
-        )
+        Surface {
+            Origin(
+                hint = R.string.mozac_browser_toolbar_search_hint,
+                url = "https://mozilla.com/firefox-browser",
+                title = "Test title",
+                textGravity = TEXT_GRAVITY_START,
+                onClick = object : BrowserToolbarEvent {},
+                onLongClick = null,
+                onInteraction = {},
+            )
+        }
     }
 }
 
@@ -265,17 +357,17 @@ private fun OriginPreviewWithTitleAndURLEnd() {
 @Composable
 private fun OriginPreviewWithJustURLStart() {
     AcornTheme {
-        Origin(
-            hint = R.string.mozac_browser_toolbar_search_hint,
-            modifier = Modifier.background(AcornTheme.colors.layer1),
-            url = "https://mozilla.com/firefox-browser",
-            title = null,
-            onClick = object : BrowserToolbarEvent {},
-            onLongClick = null,
-            onInteraction = {},
-            fadeDirection = FADE_DIRECTION_END,
-            textGravity = TEXT_GRAVITY_START,
-        )
+        Surface {
+            Origin(
+                hint = R.string.mozac_browser_toolbar_search_hint,
+                url = "https://mozilla.com/firefox-browser",
+                title = null,
+                textGravity = TEXT_GRAVITY_END,
+                onClick = object : BrowserToolbarEvent {},
+                onLongClick = null,
+                onInteraction = {},
+            )
+        }
     }
 }
 
@@ -283,16 +375,16 @@ private fun OriginPreviewWithJustURLStart() {
 @Composable
 private fun OriginPreviewWithJustURLEnd() {
     AcornTheme {
-        Origin(
-            hint = R.string.mozac_browser_toolbar_search_hint,
-            modifier = Modifier.background(AcornTheme.colors.layer1),
-            url = "https://mozilla.com/firefox-browser",
-            title = null,
-            onClick = object : BrowserToolbarEvent {},
-            onLongClick = null,
-            onInteraction = {},
-            fadeDirection = FADE_DIRECTION_START,
-            textGravity = TEXT_GRAVITY_END,
-        )
+        Surface {
+            Origin(
+                hint = R.string.mozac_browser_toolbar_search_hint,
+                url = "https://mozilla.com/firefox-browser",
+                title = null,
+                textGravity = TEXT_GRAVITY_START,
+                onClick = object : BrowserToolbarEvent {},
+                onLongClick = null,
+                onInteraction = {},
+            )
+        }
     }
 }

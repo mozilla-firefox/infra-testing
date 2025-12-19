@@ -4,6 +4,7 @@
 
 include protocol PBackground;
 include PBackgroundSharedTypes;
+include NeckoChannelParams;
 
 using mozilla::OriginAttributes from "mozilla/ipc/BackgroundUtils.h";
 using struct mozilla::void_t from "ipc/IPCMessageUtils.h";
@@ -13,15 +14,9 @@ using struct nsID from "nsID.h";
 namespace mozilla {
 namespace dom {
 
-struct CookieData
+union MaybeCookieStruct
 {
-  nsString name;
-  nsString value;
-};
-
-union MaybeCookieData
-{
-  CookieData;
+  CookieStruct;
   void_t;
 };
 
@@ -31,6 +26,12 @@ struct CookieSubscription
   nsString url;
 };
 
+struct CookieStoreResult
+{
+  bool success;
+  bool waitForNotification;
+};
+
 // This protocol is used for the CookieStore API
 [ManualDealloc]
 protocol PCookieStore
@@ -38,7 +39,7 @@ protocol PCookieStore
   manager PBackground;
 
 parent:
-  async GetRequest(nullable nsIURI cookieURI,
+  async GetRequest(nsIURI cookieURI,
                    OriginAttributes attrs,
                    OriginAttributes? partitionedAttrs,
                    bool thirdPartyContext,
@@ -48,9 +49,9 @@ parent:
                    bool matchName,
                    nsString name,
                    nsCString path,
-                   bool onlyFirstMatch) returns (CookieData[] data);
+                   bool onlyFirstMatch) returns (CookieStruct[] data);
 
-  async SetRequest(nullable nsIURI cookieURI,
+  async SetRequest(nsIURI cookieURI,
                    OriginAttributes attrs,
                    bool thirdPartyContext,
                    bool partitionForeign,
@@ -64,9 +65,9 @@ parent:
                    nsString path,
                    int32_t sameSite,
                    bool partitioned,
-                   nsID operationId) returns (bool waitForNotification);
+                   nsID operationId) returns (CookieStoreResult result);
 
-  async DeleteRequest(nullable nsIURI cookieURI,
+  async DeleteRequest(nsIURI cookieURI,
                       OriginAttributes attrs,
                       bool thirdPartyContext,
                       bool partitionForeign,

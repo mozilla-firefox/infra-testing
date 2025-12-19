@@ -51,7 +51,7 @@
     inset-block-start: -5px;
     inset-inline-end: 1px;
     border: var(--button-border);
-    border-radius: 100%;
+    border-radius: var(--border-radius-circle);
     background-color: var(--fxview-background-color-secondary);
     padding: 6px;
     min-width: 0;
@@ -59,11 +59,11 @@
     position: absolute;
 
     &[muted="true"] {
-    background-image: url("chrome://global/skin/media/audio-muted.svg");
+      background-image: url("chrome://global/skin/media/audio-muted.svg");
     }
 
     &[soundplaying="true"] {
-    background-image: url("chrome://global/skin/media/audio.svg");
+      background-image: url("chrome://global/skin/media/audio.svg");
     }
 
     &:active,

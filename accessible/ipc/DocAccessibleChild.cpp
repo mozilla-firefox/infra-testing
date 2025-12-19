@@ -51,18 +51,6 @@ AccessibleData DocAccessibleChild::SerializeAcc(LocalAccessible* aAcc) {
     // XXX: We need to do this because this requires a state check.
     genericTypes |= eNumericValue;
   }
-  if (aAcc->IsTextLeaf() || aAcc->IsImage()) {
-    // Ideally, we'd set eActionable for any Accessible with an ancedstor
-    // action. However, that requires an ancestor walk which is too expensive
-    // here. eActionable is only used by ATK. For now, we only expose ancestor
-    // actions on text leaf and image Accessibles. This means that we don't
-    // support "clickAncestor" for ATK.
-    if (aAcc->ActionCount()) {
-      genericTypes |= eActionable;
-    }
-  } else if (aAcc->HasPrimaryAction()) {
-    genericTypes |= eActionable;
-  }
 
   RefPtr<AccAttributes> fields;
   // Even though we send moves as a hide and a show, we don't want to
@@ -76,7 +64,8 @@ AccessibleData DocAccessibleChild::SerializeAcc(LocalAccessible* aAcc) {
     }
   }
 
-  return AccessibleData(aAcc->ID(), aAcc->Role(), aAcc->LocalParent()->ID(),
+  return AccessibleData(aAcc->ID(), aAcc->NativeRole(),
+                        aAcc->LocalParent()->ID(),
                         static_cast<int32_t>(aAcc->IndexInParent()),
                         static_cast<AccType>(aAcc->mType),
                         static_cast<AccGenericType>(genericTypes),
@@ -255,7 +244,7 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvVerifyCache(
 mozilla::ipc::IPCResult DocAccessibleChild::RecvDoActionAsync(
     const uint64_t& aID, const uint8_t& aIndex) {
   if (LocalAccessible* acc = IdToAccessible(aID)) {
-    Unused << acc->DoAction(aIndex);
+    (void)acc->DoAction(aIndex);
   }
 
   return IPC_OK();
@@ -264,11 +253,11 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvDoActionAsync(
 mozilla::ipc::IPCResult DocAccessibleChild::RecvSetTextSelection(
     const uint64_t& aStartID, const int32_t& aStartOffset,
     const uint64_t& aEndID, const int32_t& aEndOffset,
-    const int32_t& aSelectionNum) {
+    const int32_t& aSelectionNum, const bool& aSetFocus) {
   TextLeafRange range(TextLeafPoint(IdToAccessible(aStartID), aStartOffset),
                       TextLeafPoint(IdToAccessible(aEndID), aEndOffset));
   if (range) {
-    range.SetSelection(aSelectionNum);
+    range.SetSelection(aSelectionNum, aSetFocus);
   }
 
   return IPC_OK();
@@ -383,47 +372,6 @@ mozilla::ipc::IPCResult DocAccessibleChild::RecvScrollToPoint(
   }
 
   return IPC_OK();
-}
-
-LayoutDeviceIntRect DocAccessibleChild::GetCaretRectFor(const uint64_t& aID) {
-#if defined(XP_WIN)
-  LocalAccessible* target;
-
-  if (aID) {
-    target = reinterpret_cast<LocalAccessible*>(aID);
-  } else {
-    target = mDoc;
-  }
-
-  MOZ_ASSERT(target);
-
-  HyperTextAccessible* text = target->AsHyperText();
-  if (!text) {
-    return LayoutDeviceIntRect();
-  }
-
-  nsIWidget* widget = nullptr;
-  return text->GetCaretRect(&widget);
-#else
-  // The caret rect is only used on Windows, so just return an empty rect
-  // on other platforms.
-  return LayoutDeviceIntRect();
-#endif  // defined(XP_WIN)
-}
-
-bool DocAccessibleChild::SendFocusEvent(const uint64_t& aID) {
-  return PDocAccessibleChild::SendFocusEvent(aID, GetCaretRectFor(aID));
-}
-
-bool DocAccessibleChild::SendCaretMoveEvent(const uint64_t& aID,
-                                            const int32_t& aOffset,
-                                            const bool& aIsSelectionCollapsed,
-                                            const bool& aIsAtEndOfLine,
-                                            const int32_t& aGranularity,
-                                            bool aFromUser) {
-  return PDocAccessibleChild::SendCaretMoveEvent(
-      aID, GetCaretRectFor(aID), aOffset, aIsSelectionCollapsed, aIsAtEndOfLine,
-      aGranularity, aFromUser);
 }
 
 #if !defined(XP_WIN)

@@ -41,6 +41,12 @@ class ContentIteratorBase {
    */
   [[nodiscard]] virtual nsresult Init(nsINode* aRoot);
 
+  /**
+   * If you want to use `const AbstractRange*`, you can use an overload which
+   * takes RawRangeBoundary instances or InitWithoutValidatingPoints().
+   * If your range is dynamic, i.e., an nsRange, you can use
+   * InitWithoutValidatingPoints() which skips comparing the boundary points.
+   */
   [[nodiscard]] virtual nsresult Init(dom::AbstractRange* aRange);
   [[nodiscard]] virtual nsresult Init(nsINode* aStartContainer,
                                       uint32_t aStartOffset,
@@ -87,24 +93,45 @@ class ContentIteratorBase {
   static nsINode* GetDeepFirstChild(nsINode* aRoot);
   // If aAllowCrossShadowBoundary is true, it'll continue with the shadow tree
   // when it reaches to a shadow host.
-  static nsIContent* GetDeepFirstChild(nsIContent* aRoot,
-                                       bool aAllowCrossShadowBoundary);
+  static nsIContent* GetDeepFirstChild(
+      nsIContent* aRoot,
+      dom::AllowRangeCrossShadowBoundary aAllowCrossShadowBoundary);
   static nsINode* GetDeepLastChild(nsINode* aRoot);
   // If aAllowCrossShadowBoundary is true, it'll continue with the shadow tree
   // when it reaches to a shadow host.
-  static nsIContent* GetDeepLastChild(nsIContent* aRoot,
-                                      bool aAllowCrossShadowBoundary);
+  static nsIContent* GetDeepLastChild(
+      nsIContent* aRoot,
+      dom::AllowRangeCrossShadowBoundary aAllowCrossShadowBoundary);
 
+  struct AncestorInfo {
+    nsIContent* mAncestor = nullptr;
+    // mIsDescendantInShadowTree is used to determine if we should go
+    // dive into the shadow tree or regular light DOM tree if mAncestor
+    // is a shadow host. It should always be false otherwise.
+    bool mIsDescendantInShadowTree = false;
+  };
+
+  class InclusiveAncestorComparator {
+   public:
+    bool Equals(const AncestorInfo& aA, const nsINode* aB) const {
+      return aA.mAncestor == aB;
+    }
+  };
   // Get the next/previous sibling of aNode, or its parent's, or grandparent's,
   // etc.  Returns null if aNode and all its ancestors have no next/previous
   // sibling.
   //
   // If aAllowCrossShadowBoundary is true, it'll continue with the shadow host
   // when it reaches to a shadow root.
-  static nsIContent* GetNextSibling(nsINode* aNode,
-                                    bool aAllowCrossShadowBoundary = false);
-  static nsIContent* GetPrevSibling(nsINode* aNode,
-                                    bool aAllowCrossShadowBoundary = false);
+  static nsIContent* GetNextSibling(
+      nsINode* aNode,
+      dom::AllowRangeCrossShadowBoundary aAllowCrossShadowBoundary =
+          dom::AllowRangeCrossShadowBoundary::No,
+      nsTArray<AncestorInfo>* aInclusiveAncestorsOfEndContainer = nullptr);
+  static nsIContent* GetPrevSibling(
+      nsINode* aNode,
+      dom::AllowRangeCrossShadowBoundary aAllowCrossShadowBoundary =
+          dom::AllowRangeCrossShadowBoundary::No);
 
   nsINode* NextNode(nsINode* aNode);
   nsINode* PrevNode(nsINode* aNode);
@@ -230,9 +257,13 @@ class ContentSubtreeIterator final : public SafeContentIteratorBase {
   /**
    * Not supported.
    */
-  [[nodiscard]] virtual nsresult Init(nsINode* aRoot) override;
+  [[nodiscard]] nsresult Init(nsINode* aRoot) override;
 
-  [[nodiscard]] virtual nsresult Init(dom::AbstractRange* aRange) override;
+  /**
+   * If you need to use const AbstractRange, use an overload which take
+   * RawRangeBoundary instances.
+   */
+  [[nodiscard]] nsresult Init(dom::AbstractRange* aRange) override;
 
   /**
    * Initialize the iterator with aRange that does correct things
@@ -254,16 +285,26 @@ class ContentSubtreeIterator final : public SafeContentIteratorBase {
    *
    * Examples of what nodes will be returned can be found
    * at test_content_iterator_subtree_shadow_tree.html.
+   *
+   * FIXME: This doesn't have a overload of this method which takes
+   * `const RawRangeBoundary`s. That allows the callers to make this with
+   * `const AbstractRange*`. So, it and its non-validation version (for
+   * `const nsRange*` should be here.
    */
   [[nodiscard]] nsresult InitWithAllowCrossShadowBoundary(
       dom::AbstractRange* aRange);
-  [[nodiscard]] virtual nsresult Init(nsINode* aStartContainer,
-                                      uint32_t aStartOffset,
-                                      nsINode* aEndContainer,
-                                      uint32_t aEndOffset) override;
-  [[nodiscard]] virtual nsresult Init(
-      const RawRangeBoundary& aStartBoundary,
-      const RawRangeBoundary& aEndBoundary) override;
+
+  [[nodiscard]] nsresult Init(nsINode* aStartContainer, uint32_t aStartOffset,
+                              nsINode* aEndContainer,
+                              uint32_t aEndOffset) override;
+  [[nodiscard]] nsresult Init(const RawRangeBoundary& aStartBoundary,
+                              const RawRangeBoundary& aEndBoundary) override;
+  [[nodiscard]] nsresult InitWithoutValidatingPoints(
+      const RawRangeBoundary& aStart, const RawRangeBoundary& aEnd) override {
+    // We need to create an nsRange from aStart and aEnd.  Therefore, anyway
+    // nsRange will validate them.
+    return Init(aStart, aEnd);
+  }
 
   void Next() override;
   void Prev() override;
@@ -324,7 +365,7 @@ class ContentSubtreeIterator final : public SafeContentIteratorBase {
   RefPtr<dom::AbstractRange> mRange;
 
   // See <https://dom.spec.whatwg.org/#concept-tree-inclusive-ancestor>.
-  AutoTArray<nsIContent*, 8> mInclusiveAncestorsOfEndContainer;
+  AutoTArray<AncestorInfo, 8> mInclusiveAncestorsOfEndContainer;
 
   // Whether this iterator allows to iterate nodes across shadow boundary.
   dom::AllowRangeCrossShadowBoundary mAllowCrossShadowBoundary =

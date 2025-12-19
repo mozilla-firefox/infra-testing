@@ -899,10 +899,13 @@ class CSSCompleter {
       return [];
     }
 
-    result = result.suggestions;
+    const { suggestions } = result;
     const query = this.selector;
     const completion = [];
-    for (let [value, count, state] of result) {
+
+    for (const suggestion of suggestions) {
+      let [value, state] = suggestion;
+
       switch (this.selectorState) {
         case CSSCompleter.CSS_SELECTOR_STATE_ID:
         case CSSCompleter.CSS_SELECTOR_STATE_CLASS:
@@ -932,7 +935,6 @@ class CSSCompleter {
         label: value,
         preLabel: query,
         text: value,
-        score: count,
       };
 
       // In case the query's state is tag and the item's state is id or class

@@ -46,7 +46,7 @@ and :ref:`Bootstrap <bootstrap-setup>` and build the project.
 
 Once you have got GeckoView building and running, you will want to start
 contributing. There is a general guide to `Performing a Bug Fix for Git
-Developers <contributing-to-mc.html>`_ for you to follow. To contribute to
+Developers <contributing-to-firefox.html>`_ for you to follow. To contribute to
 GeckoView specifically, you will need the following additional
 information.
 
@@ -85,7 +85,7 @@ Sometimes it is easier to leave logs to help trace exactly which layer the bug i
 
 * **C++** - ``MOZ_LOG``
 
-  * Set the ``logging.config.modules`` preference. For example, ```--setpref="logging.config.clear_on_startup=false"`` or manually in ``about:config``.
+  * Use ``about:logging`` or set the ``logging`` preference directly. For example, ``--setpref="logging.LOG_MODULE_NAME=LOG_MODULE_VALUE"`` or manually in ``about:config``.
 
 * **C++** - ``printf_stderr("Any String")`` or ``__android_log_write(ANDROID_LOG_INFO, "Any Tag", "Any string");`` or ``__android_log_print(ANDROID_LOG_INFO, "Any Tag", "Any string");``
 
@@ -127,7 +127,7 @@ To see information on other options, simply run
 ``./mach geckoview-junit --help``; of particular note for dealing with
 intermittent test failures are ``--repeat N`` and
 ``--run-until-failure``, both of which do exactly what you’d expect.
-If a test is intermittently failing, consult `Debugging Intermittent Test Failures </devtools/tests/debugging-intermittents.html>`_ for additional tips.
+If a test is intermittently failing, consult `Debugging Intermittent Test Failures </testing/debugging-intermittents/index.html>`_ for additional tips.
 
 Other tests, such as mochitests, may be ran using:
 
@@ -277,27 +277,24 @@ javadoc locally, we use the following command:
 
 .. code:: bash
 
-   ./mach gradle geckoview:javadocWithGeckoBinariesDebug
+   ./mach android geckoview-docs
 
 
-To view the javadoc locally, choose one of the two options:
-
-- Navigate to
-  ``<mozilla-central root>/<build architecture>/gradle/build/mobile/android/geckoview/docs/javadoc/withGeckoBinaries-debug``
+To view the javadoc locally, first find the directory:
 
 - In your ``mozilla-unified`` directory, type the following command:
 
   .. code:: bash
 
-     find . -name withGeckoBinaries-debug
+     find . -name javadoc  -path '*/geckoview/*'
 
-  This should return the relative path of the local javadoc.
+  This should return the relative path of the local geckoview javadoc.
 
   As an example, the output could be this:
 
   .. code:: bash
 
-      mozilla-unified/objdir-frontend/gradle/build/mobile/android/geckoview/docs/javadoc/withGeckoBinaries-debug
+      ./obj-aarch64-unknown-linux-android/gradle/build/mobile/android/geckoview/docs/javadoc
 
   Then, use the following command to go into the directory of the local javadoc:
 
@@ -312,7 +309,7 @@ Now, we want to launch a local web server. To launch locally, use any web server
    python3 -m http.server 8000
 
 
-In this example, navigate to the web docs via ``http://localhost:8000/org/mozilla/geckoview/``.
+In this example, navigate to the web docs via ``http://localhost:8000/``.
 
 .. note::
     If you get a 404 error, please ensure that you have navigated to the correct directory and try

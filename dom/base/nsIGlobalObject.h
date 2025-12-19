@@ -7,12 +7,13 @@
 #ifndef nsIGlobalObject_h__
 #define nsIGlobalObject_h__
 
+#include "js/TypeDecls.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/OriginTrials.h"
 #include "mozilla/dom/ClientInfo.h"
 #include "mozilla/dom/ClientState.h"
 #include "mozilla/dom/ServiceWorkerDescriptor.h"
-#include "mozilla/OriginTrials.h"
 #include "nsContentUtils.h"
 #include "nsHashKeys.h"
 #include "nsISupports.h"
@@ -20,7 +21,6 @@
 #include "nsStringFwd.h"
 #include "nsTArray.h"
 #include "nsTHashtable.h"
-#include "js/TypeDecls.h"
 
 // Must be kept in sync with xpcom/rust/xpcom/src/interfaces/nonidl.rs
 #define NS_IGLOBALOBJECT_IID \
@@ -88,7 +88,7 @@ class nsIGlobalObject : public nsISupports {
  public:
   using RTPCallerType = mozilla::RTPCallerType;
   using RFPTarget = mozilla::RFPTarget;
-  NS_DECLARE_STATIC_IID_ACCESSOR(NS_IGLOBALOBJECT_IID)
+  NS_INLINE_DECL_STATIC_IID(NS_IGLOBALOBJECT_IID)
 
   /**
    * This check is added to deal with Promise microtask queues. On the main
@@ -295,6 +295,9 @@ class nsIGlobalObject : public nsISupports {
 
   RTPCallerType GetRTPCallerType() const;
 
+  bool IsRFPTargetActive(const nsAString& aTargetName,
+                         mozilla::ErrorResult& aRv);
+
   /**
    * Get the module loader to use for this global, if any. By default this
    * returns null.
@@ -413,7 +416,5 @@ class nsIGlobalObject : public nsISupports {
   // https://streams.spec.whatwg.org/#byte-length-queuing-strategy-size-function
   RefPtr<mozilla::dom::Function> mByteLengthQueuingStrategySizeFunction;
 };
-
-NS_DEFINE_STATIC_IID_ACCESSOR(nsIGlobalObject, NS_IGLOBALOBJECT_IID)
 
 #endif  // nsIGlobalObject_h__

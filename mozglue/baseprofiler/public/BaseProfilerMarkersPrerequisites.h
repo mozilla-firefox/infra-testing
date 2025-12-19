@@ -706,12 +706,50 @@ class MarkerSchema {
     Uint64,
     Uint32,
     Uint8,
+    Int64,
+    Int32,
+    Int8,
+    Double,
     Boolean,
     CString,
     String,
     TimeStamp,
     TimeDuration
   };
+
+  template <typename T>
+  static constexpr InputType getDefaultInputTypeForType() {
+    using CleanT = std::remove_cv_t<std::remove_pointer_t<T>>;
+
+    if constexpr (std::is_same_v<CleanT, bool>) {
+      return InputType::Boolean;
+    } else if constexpr (std::is_same_v<CleanT, double>) {
+      return InputType::Double;
+    } else if constexpr (std::is_unsigned_v<CleanT> && sizeof(CleanT) == 4) {
+      return InputType::Uint32;
+    } else if constexpr (std::is_unsigned_v<CleanT> && sizeof(CleanT) == 8) {
+      return InputType::Uint64;
+    } else if constexpr (std::is_unsigned_v<CleanT> && sizeof(CleanT) == 1) {
+      return InputType::Uint8;
+    } else if constexpr (std::is_signed_v<CleanT> &&
+                         std::is_integral_v<CleanT> && sizeof(CleanT) == 4) {
+      return InputType::Int32;
+    } else if constexpr (std::is_signed_v<CleanT> &&
+                         std::is_integral_v<CleanT> && sizeof(CleanT) == 8) {
+      return InputType::Int64;
+    } else if constexpr (std::is_signed_v<CleanT> &&
+                         std::is_integral_v<CleanT> && sizeof(CleanT) == 1) {
+      return InputType::Int8;
+    } else if constexpr (std::is_same_v<CleanT, TimeStamp>) {
+      return InputType::TimeStamp;
+    } else if constexpr (std::is_same_v<CleanT, TimeDuration>) {
+      return InputType::TimeDuration;
+    } else if constexpr (std::is_same_v<CleanT, ProfilerString8View>) {
+      return InputType::CString;
+    } else {
+      static_assert(sizeof(T) == 0, "Unsupported type");
+    }
+  }
 
   enum class Location : unsigned {
     MarkerChart,
@@ -794,6 +832,25 @@ class MarkerSchema {
     TerminatingFlow
   };
 
+  template <typename T>
+  static constexpr Format getDefaultFormatForType() {
+    using CleanT = std::remove_cv_t<T>;
+
+    if constexpr (std::is_integral_v<CleanT> || std::is_same_v<CleanT, bool>) {
+      return Format::Integer;
+    } else if constexpr (std::is_same_v<CleanT, double>) {
+      return Format::Decimal;
+    } else if constexpr (std::is_same_v<CleanT, TimeStamp>) {
+      return Format::Time;
+    } else if constexpr (std::is_same_v<CleanT, TimeDuration>) {
+      return Format::Duration;
+    } else if constexpr (std::is_same_v<CleanT, ProfilerString8View>) {
+      return Format::SanitizedString;
+    } else {
+      static_assert(sizeof(T) == 0, "Unsupported type");
+    }
+  }
+
   // This represents groups of markers which MarkerTypes can expose to indicate
   // what group they belong to (multiple groups are allowed combined in bitwise
   // or). This is currently only used for ETW filtering. In the long run this
@@ -808,7 +865,11 @@ class MarkerSchema {
   };
 
   // Flags which describe additional information for a PayloadField.
-  enum class PayloadFlags : uint32_t { None = 0, Searchable = 1 };
+  enum class PayloadFlags : uint32_t {
+    None = 0,
+    Searchable = 1 << 0,
+    Hidden = 1 << 1,
+  };
 
   // This is one field of payload to be used for additional marker data.
   struct PayloadField {
@@ -824,7 +885,6 @@ class MarkerSchema {
     PayloadFlags Flags = PayloadFlags::None;
   };
 
-  enum class Searchable { NotSearchable, Searchable };
   enum class GraphType { Line, Bar, FilledLine };
   enum class GraphColor {
     Blue,
@@ -897,40 +957,24 @@ class MarkerSchema {
   // - `aKey`: Element property name as streamed by `StreamJSONMarkerData()`.
   // - `aLabel`: Optional prefix. Defaults to the key name.
   // - `aFormat`: How to format the data element value, see `Format` above.
-  // - `aSearchable`: Optional, indicates if the value is used in searches,
-  //   defaults to false.
+  // - `aPayloadFlags`: Optional, indicates additinal flags to serialize inside
+  // the marker schema object. Defaults to `PayloadFlags::None`.
 
-  MarkerSchema& AddKeyFormat(std::string aKey, Format aFormat) {
+  MarkerSchema& AddKeyFormat(std::string aKey, Format aFormat,
+                             PayloadFlags aPayloadFlags = PayloadFlags::None) {
     mData.emplace_back(mozilla::VariantType<DynamicData>{},
                        DynamicData{std::move(aKey), mozilla::Nothing{}, aFormat,
-                                   mozilla::Nothing{}});
+                                   aPayloadFlags});
     return *this;
   }
 
-  MarkerSchema& AddKeyLabelFormat(std::string aKey, std::string aLabel,
-                                  Format aFormat) {
+  MarkerSchema& AddKeyLabelFormat(
+      std::string aKey, std::string aLabel, Format aFormat,
+      PayloadFlags aPayloadFlags = PayloadFlags::None) {
     mData.emplace_back(
         mozilla::VariantType<DynamicData>{},
         DynamicData{std::move(aKey), mozilla::Some(std::move(aLabel)), aFormat,
-                    mozilla::Nothing{}});
-    return *this;
-  }
-
-  MarkerSchema& AddKeyFormatSearchable(std::string aKey, Format aFormat,
-                                       Searchable aSearchable) {
-    mData.emplace_back(mozilla::VariantType<DynamicData>{},
-                       DynamicData{std::move(aKey), mozilla::Nothing{}, aFormat,
-                                   mozilla::Some(aSearchable)});
-    return *this;
-  }
-
-  MarkerSchema& AddKeyLabelFormatSearchable(std::string aKey,
-                                            std::string aLabel, Format aFormat,
-                                            Searchable aSearchable) {
-    mData.emplace_back(
-        mozilla::VariantType<DynamicData>{},
-        DynamicData{std::move(aKey), mozilla::Some(std::move(aLabel)), aFormat,
-                    mozilla::Some(aSearchable)});
+                    aPayloadFlags});
     return *this;
   }
 
@@ -978,7 +1022,7 @@ class MarkerSchema {
     std::string mKey;
     mozilla::Maybe<std::string> mLabel;
     Format mFormat;
-    mozilla::Maybe<Searchable> mSearchable;
+    PayloadFlags mPayloadFlags;
   };
   struct StaticData {
     std::string mLabel;
@@ -1003,7 +1047,14 @@ template <typename PayloadType>
 static void StreamPayload(baseprofiler::SpliceableJSONWriter& aWriter,
                           const Span<const char> aKey,
                           const PayloadType& aPayload) {
-  aWriter.StringProperty(aKey, aPayload);
+  using CleanT = std::remove_cv_t<PayloadType>;
+  if constexpr (std::is_integral_v<CleanT>) {
+    aWriter.IntProperty(aKey, aPayload);
+  } else if constexpr (std::is_same_v<CleanT, double>) {
+    aWriter.DoubleProperty(aKey, aPayload);
+  } else {
+    aWriter.StringProperty(aKey, aPayload);
+  }
 }
 
 template <typename PayloadType>
@@ -1022,13 +1073,6 @@ inline void StreamPayload<bool>(baseprofiler::SpliceableJSONWriter& aWriter,
                                 const Span<const char> aKey,
                                 const bool& aPayload) {
   aWriter.BoolProperty(aKey, aPayload);
-}
-
-template <>
-inline void StreamPayload<ProfilerString8View>(
-    baseprofiler::SpliceableJSONWriter& aWriter, const Span<const char> aKey,
-    const ProfilerString8View& aPayload) {
-  aWriter.StringProperty(aKey, aPayload);
 }
 
 template <>
@@ -1086,19 +1130,10 @@ struct BaseMarkerType {
     }
     for (const MS::PayloadField field : T::PayloadFields) {
       if (field.Label) {
-        if (uint32_t(field.Flags) & uint32_t(MS::PayloadFlags::Searchable)) {
-          schema.AddKeyLabelFormatSearchable(field.Key, field.Label, field.Fmt,
-                                             MS::Searchable::Searchable);
-        } else {
-          schema.AddKeyLabelFormat(field.Key, field.Label, field.Fmt);
-        }
+        schema.AddKeyLabelFormat(field.Key, field.Label, field.Fmt,
+                                 field.Flags);
       } else {
-        if (uint32_t(field.Flags) & uint32_t(MS::PayloadFlags::Searchable)) {
-          schema.AddKeyFormatSearchable(field.Key, field.Fmt,
-                                        MS::Searchable::Searchable);
-        } else {
-          schema.AddKeyFormat(field.Key, field.Fmt);
-        }
+        schema.AddKeyFormat(field.Key, field.Fmt, field.Flags);
       }
     }
     if (T::Description) {

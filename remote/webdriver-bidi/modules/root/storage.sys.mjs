@@ -14,7 +14,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "chrome://remote/content/webdriver-bidi/modules/root/network.sys.mjs",
   error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
   pprint: "chrome://remote/content/shared/Format.sys.mjs",
-  TabManager: "chrome://remote/content/shared/TabManager.sys.mjs",
   UserContextManager:
     "chrome://remote/content/shared/UserContextManager.sys.mjs",
 });
@@ -66,6 +65,7 @@ const SameSiteType = {
   [Ci.nsICookie.SAMESITE_NONE]: "none",
   [Ci.nsICookie.SAMESITE_LAX]: "lax",
   [Ci.nsICookie.SAMESITE_STRICT]: "strict",
+  [Ci.nsICookie.SAMESITE_UNSET]: "default",
 };
 
 class StorageModule extends RootBiDiModule {
@@ -300,8 +300,9 @@ class StorageModule extends RootBiDiModule {
 
     const isPartitioned = originAttributes.partitionKey?.length > 0;
 
+    let cv;
     try {
-      Services.cookies.add(
+      cv = Services.cookies.add(
         domain,
         path === null ? "/" : path,
         name,
@@ -310,7 +311,11 @@ class StorageModule extends RootBiDiModule {
         httpOnly === null ? false : httpOnly,
         isSession,
         // The XPCOM interface requires the expiry field even for session cookies.
-        expiry === null ? MAX_COOKIE_EXPIRY : expiry,
+        // The expiry value must be passed in milliseconds and is capped at 400
+        // days.
+        expiry === null
+          ? MAX_COOKIE_EXPIRY
+          : Services.cookies.maybeCapExpiry(expiry * 1000),
         originAttributes,
         this.#getSameSitePlatformProperty(sameSite),
         schemeType,
@@ -318,6 +323,12 @@ class StorageModule extends RootBiDiModule {
       );
     } catch (e) {
       throw new lazy.error.UnableToSetCookieError(e);
+    }
+
+    if (cv.result !== Ci.nsICookieValidation.eOK) {
+      throw new lazy.error.UnableToSetCookieError(
+        `Invalid cookie: ${cv.errorString}`
+      );
     }
 
     return {
@@ -591,6 +602,10 @@ class StorageModule extends RootBiDiModule {
           deserializedValue = lazy.deserializeBytesValue(value);
           break;
 
+        case "expiry":
+          deserializedValue = value * 1000;
+          break;
+
         default:
           deserializedValue = value;
       }
@@ -613,7 +628,7 @@ class StorageModule extends RootBiDiModule {
 
     if (partitionSpec.type === PartitionType.Context) {
       const { context: contextId } = partitionSpec;
-      const browsingContext = this.#getBrowsingContext(contextId);
+      const browsingContext = this._getNavigable(contextId);
       const principal = Services.scriptSecurityManager.createContentPrincipal(
         browsingContext.currentURI,
         {}
@@ -678,27 +693,6 @@ class StorageModule extends RootBiDiModule {
     delete partitionKey.isThirdPartyURI;
 
     return partitionKey;
-  }
-
-  /**
-   * Retrieves a browsing context based on its id.
-   *
-   * @param {number} contextId
-   *     Id of the browsing context.
-   * @returns {BrowsingContext}
-   *     The browsing context.
-   * @throws {NoSuchFrameError}
-   *     If the browsing context cannot be found.
-   */
-  #getBrowsingContext(contextId) {
-    const context = lazy.TabManager.getBrowsingContextById(contextId);
-    if (context === null) {
-      throw new lazy.error.NoSuchFrameError(
-        `Browsing Context with id ${contextId} not found`
-      );
-    }
-
-    return context;
   }
 
   /**
@@ -789,9 +783,12 @@ class StorageModule extends RootBiDiModule {
       case "strict": {
         return Ci.nsICookie.SAMESITE_STRICT;
       }
+      case "none": {
+        return Ci.nsICookie.SAMESITE_NONE;
+      }
     }
 
-    return Ci.nsICookie.SAMESITE_NONE;
+    return Ci.nsICookie.SAMESITE_UNSET;
   }
 
   /**
@@ -881,7 +878,7 @@ class StorageModule extends RootBiDiModule {
 
       let storedCookieValue = storedCookie[fieldName];
 
-      // The platform represantation of cookie doesn't contain a size field,
+      // The platform representation of cookie doesn't contain a size field,
       // so we have to calculate it to match.
       if (fieldName === "size") {
         storedCookieValue = this.#getCookieSize(storedCookie);
@@ -909,7 +906,7 @@ class StorageModule extends RootBiDiModule {
         case "expiry": {
           const expiry = this.#getCookieExpiry(storedCookie);
           if (expiry !== null) {
-            cookie.expiry = expiry;
+            cookie.expiry = Math.round(expiry / 1000);
           }
           break;
         }

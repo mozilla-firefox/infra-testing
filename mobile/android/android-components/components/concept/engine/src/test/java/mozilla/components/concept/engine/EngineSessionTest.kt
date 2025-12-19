@@ -55,7 +55,7 @@ class EngineSessionTest {
         session.notifyInternalObservers { onProgress(25) }
         session.notifyInternalObservers { onProgress(100) }
         session.notifyInternalObservers { onLoadingStateChange(true) }
-        session.notifyInternalObservers { onSecurityChange(true, "mozilla.org", "issuer") }
+        session.notifyInternalObservers { onSecurityChange(true, "mozilla.org", "issuer", null) }
         session.notifyInternalObservers { onTrackerBlockingEnabledChange(true) }
         session.notifyInternalObservers { onTrackerBlocked(tracker) }
         session.notifyInternalObservers { onExcludedOnTrackingProtectionChange(true) }
@@ -79,7 +79,7 @@ class EngineSessionTest {
         session.notifyInternalObservers { onMediaFullscreenChanged(true, mediaSessionElementMetadata) }
         session.notifyInternalObservers { onCrash() }
         session.notifyInternalObservers { onLoadRequest("https://www.mozilla.org", true, true) }
-        session.notifyInternalObservers { onLaunchIntentRequest("https://www.mozilla.org", null) }
+        session.notifyInternalObservers { onLaunchIntentRequest("https://www.mozilla.org", null, null, null) }
         session.notifyInternalObservers { onProcessKilled() }
         session.notifyInternalObservers { onShowDynamicToolbar() }
 
@@ -90,7 +90,7 @@ class EngineSessionTest {
         verify(observer).onProgress(25)
         verify(observer).onProgress(100)
         verify(observer).onLoadingStateChange(true)
-        verify(observer).onSecurityChange(true, "mozilla.org", "issuer")
+        verify(observer).onSecurityChange(true, "mozilla.org", "issuer", null)
         verify(observer).onTrackerBlockingEnabledChange(true)
         verify(observer).onTrackerBlocked(tracker)
         verify(observer).onExcludedOnTrackingProtectionChange(true)
@@ -114,7 +114,7 @@ class EngineSessionTest {
         verify(observer).onMediaFullscreenChanged(true, mediaSessionElementMetadata)
         verify(observer).onCrash()
         verify(observer).onLoadRequest("https://www.mozilla.org", true, true)
-        verify(observer).onLaunchIntentRequest("https://www.mozilla.org", null)
+        verify(observer).onLaunchIntentRequest("https://www.mozilla.org", null, null, null)
         verify(observer).onProcessKilled()
         verify(observer).onShowDynamicToolbar()
         verifyNoMoreInteractions(observer)
@@ -137,7 +137,7 @@ class EngineSessionTest {
         session.notifyInternalObservers { onLocationChange("https://www.mozilla.org", false) }
         session.notifyInternalObservers { onProgress(25) }
         session.notifyInternalObservers { onLoadingStateChange(true) }
-        session.notifyInternalObservers { onSecurityChange(true, "mozilla.org", "issuer") }
+        session.notifyInternalObservers { onSecurityChange(true, "mozilla.org", "issuer", null) }
         session.notifyInternalObservers { onTrackerBlockingEnabledChange(true) }
         session.notifyInternalObservers { onTrackerBlocked(tracker) }
         session.notifyInternalObservers { onLongPress(unknownHitResult) }
@@ -152,7 +152,7 @@ class EngineSessionTest {
         session.notifyInternalObservers { onWindowRequest(windowRequest) }
         session.notifyInternalObservers { onCrash() }
         session.notifyInternalObservers { onLoadRequest("https://www.mozilla.org", true, true) }
-        session.notifyInternalObservers { onLaunchIntentRequest("https://www.mozilla.org", null) }
+        session.notifyInternalObservers { onLaunchIntentRequest("https://www.mozilla.org", null, null, null) }
         session.notifyInternalObservers { onShowDynamicToolbar() }
         session.unregister(observer)
 
@@ -166,7 +166,7 @@ class EngineSessionTest {
         session.notifyInternalObservers { onLocationChange("https://www.firefox.com", false) }
         session.notifyInternalObservers { onProgress(100) }
         session.notifyInternalObservers { onLoadingStateChange(false) }
-        session.notifyInternalObservers { onSecurityChange(false, "", "") }
+        session.notifyInternalObservers { onSecurityChange(false, "", "", null) }
         session.notifyInternalObservers { onTrackerBlocked(tracker) }
         session.notifyInternalObservers { onTrackerBlockingEnabledChange(false) }
         session.notifyInternalObservers { onLongPress(otherHitResult) }
@@ -189,14 +189,14 @@ class EngineSessionTest {
         session.notifyInternalObservers { onMediaFullscreenChanged(true, mediaSessionElementMetadata) }
         session.notifyInternalObservers { onCrash() }
         session.notifyInternalObservers { onLoadRequest("https://www.mozilla.org", true, true) }
-        session.notifyInternalObservers { onLaunchIntentRequest("https://www.firefox.com", null) }
+        session.notifyInternalObservers { onLaunchIntentRequest("https://www.firefox.com", null, null, null) }
         session.notifyInternalObservers { onShowDynamicToolbar() }
 
         verify(observer).onScrollChange(1234, 4321)
         verify(observer).onLocationChange("https://www.mozilla.org", false)
         verify(observer).onProgress(25)
         verify(observer).onLoadingStateChange(true)
-        verify(observer).onSecurityChange(true, "mozilla.org", "issuer")
+        verify(observer).onSecurityChange(true, "mozilla.org", "issuer", null)
         verify(observer).onTrackerBlockingEnabledChange(true)
         verify(observer).onTrackerBlocked(tracker)
         verify(observer).onLongPress(unknownHitResult)
@@ -211,13 +211,13 @@ class EngineSessionTest {
         verify(observer).onWindowRequest(windowRequest)
         verify(observer).onCrash()
         verify(observer).onLoadRequest("https://www.mozilla.org", true, true)
-        verify(observer).onLaunchIntentRequest("https://www.mozilla.org", null)
+        verify(observer).onLaunchIntentRequest("https://www.mozilla.org", null, null, null)
         verify(observer).onShowDynamicToolbar()
         verify(observer, never()).onScrollChange(2345, 5432)
         verify(observer, never()).onLocationChange("https://www.firefox.com", false)
         verify(observer, never()).onProgress(100)
         verify(observer, never()).onLoadingStateChange(false)
-        verify(observer, never()).onSecurityChange(false, "", "")
+        verify(observer, never()).onSecurityChange(false, "", "", null)
         verify(observer, never()).onTrackerBlockingEnabledChange(false)
         verify(observer, never()).onTrackerBlocked(Tracker("Tracker"))
         verify(observer, never()).onLongPress(otherHitResult)
@@ -239,7 +239,7 @@ class EngineSessionTest {
         verify(observer, never()).onMediaMuteChanged(true)
         verify(observer, never()).onMediaFullscreenChanged(true, mediaSessionElementMetadata)
         verify(observer, never()).onLoadRequest("https://www.mozilla.org", false, true)
-        verify(observer, never()).onLaunchIntentRequest("https://www.firefox.com", null)
+        verify(observer, never()).onLaunchIntentRequest("https://www.firefox.com", null, null, null)
         verifyNoMoreInteractions(observer)
     }
 
@@ -262,7 +262,7 @@ class EngineSessionTest {
         session.notifyInternalObservers { onLocationChange("https://www.mozilla.org", false) }
         session.notifyInternalObservers { onProgress(25) }
         session.notifyInternalObservers { onLoadingStateChange(true) }
-        session.notifyInternalObservers { onSecurityChange(true, "mozilla.org", "issuer") }
+        session.notifyInternalObservers { onSecurityChange(true, "mozilla.org", "issuer", null) }
         session.notifyInternalObservers { onTrackerBlockingEnabledChange(true) }
         session.notifyInternalObservers { onTrackerBlocked(tracker) }
         session.notifyInternalObservers { onLongPress(unknownHitResult) }
@@ -289,7 +289,7 @@ class EngineSessionTest {
         session.notifyInternalObservers { onLocationChange("https://www.firefox.com", false) }
         session.notifyInternalObservers { onProgress(100) }
         session.notifyInternalObservers { onLoadingStateChange(false) }
-        session.notifyInternalObservers { onSecurityChange(false, "", "") }
+        session.notifyInternalObservers { onSecurityChange(false, "", "", null) }
         session.notifyInternalObservers { onTrackerBlocked(tracker) }
         session.notifyInternalObservers { onTrackerBlockingEnabledChange(false) }
         session.notifyInternalObservers { onLongPress(otherHitResult) }
@@ -316,7 +316,7 @@ class EngineSessionTest {
         verify(observer).onLocationChange("https://www.mozilla.org", false)
         verify(observer).onProgress(25)
         verify(observer).onLoadingStateChange(true)
-        verify(observer).onSecurityChange(true, "mozilla.org", "issuer")
+        verify(observer).onSecurityChange(true, "mozilla.org", "issuer", null)
         verify(observer).onTrackerBlockingEnabledChange(true)
         verify(observer).onTrackerBlocked(tracker)
         verify(observer).onLongPress(unknownHitResult)
@@ -334,7 +334,7 @@ class EngineSessionTest {
         verify(observer, never()).onLocationChange("https://www.firefox.com", false)
         verify(observer, never()).onProgress(100)
         verify(observer, never()).onLoadingStateChange(false)
-        verify(observer, never()).onSecurityChange(false, "", "")
+        verify(observer, never()).onSecurityChange(false, "", "", null)
         verify(observer, never()).onTrackerBlockingEnabledChange(false)
         verify(observer, never()).onTrackerBlocked(Tracker("Tracker"))
         verify(observer, never()).onLongPress(otherHitResult)
@@ -359,7 +359,7 @@ class EngineSessionTest {
         verify(otherObserver, never()).onLocationChange("https://www.firefox.com", false)
         verify(otherObserver, never()).onProgress(100)
         verify(otherObserver, never()).onLoadingStateChange(false)
-        verify(otherObserver, never()).onSecurityChange(false, "", "")
+        verify(otherObserver, never()).onSecurityChange(false, "", "", null)
         verify(otherObserver, never()).onTrackerBlockingEnabledChange(false)
         verify(otherObserver, never()).onTrackerBlocked(Tracker("Tracker"))
         verify(otherObserver, never()).onLongPress(otherHitResult)
@@ -399,7 +399,7 @@ class EngineSessionTest {
         session.notifyInternalObservers { onLocationChange("https://www.mozilla.org", false) }
         session.notifyInternalObservers { onProgress(25) }
         session.notifyInternalObservers { onLoadingStateChange(true) }
-        session.notifyInternalObservers { onSecurityChange(true, "mozilla.org", "issuer") }
+        session.notifyInternalObservers { onSecurityChange(true, "mozilla.org", "issuer", null) }
         session.notifyInternalObservers { onTrackerBlockingEnabledChange(true) }
         session.notifyInternalObservers { onTrackerBlocked(tracker) }
         session.notifyInternalObservers { onLongPress(unknownHitResult) }
@@ -426,7 +426,7 @@ class EngineSessionTest {
         session.notifyInternalObservers { onLocationChange("https://www.firefox.com", false) }
         session.notifyInternalObservers { onProgress(100) }
         session.notifyInternalObservers { onLoadingStateChange(false) }
-        session.notifyInternalObservers { onSecurityChange(false, "", "") }
+        session.notifyInternalObservers { onSecurityChange(false, "", "", null) }
         session.notifyInternalObservers { onTrackerBlocked(tracker) }
         session.notifyInternalObservers { onTrackerBlockingEnabledChange(false) }
         session.notifyInternalObservers { onLongPress(otherHitResult) }
@@ -453,7 +453,7 @@ class EngineSessionTest {
         verify(observer).onLocationChange("https://www.mozilla.org", false)
         verify(observer).onProgress(25)
         verify(observer).onLoadingStateChange(true)
-        verify(observer).onSecurityChange(true, "mozilla.org", "issuer")
+        verify(observer).onSecurityChange(true, "mozilla.org", "issuer", null)
         verify(observer).onTrackerBlockingEnabledChange(true)
         verify(observer).onTrackerBlocked(tracker)
         verify(observer).onLongPress(unknownHitResult)
@@ -471,7 +471,7 @@ class EngineSessionTest {
         verify(observer, never()).onLocationChange("https://www.firefox.com", false)
         verify(observer, never()).onProgress(100)
         verify(observer, never()).onLoadingStateChange(false)
-        verify(observer, never()).onSecurityChange(false, "", "")
+        verify(observer, never()).onSecurityChange(false, "", "", null)
         verify(observer, never()).onTrackerBlockingEnabledChange(false)
         verify(observer, never()).onTrackerBlocked(Tracker("Tracker"))
         verify(observer, never()).onLongPress(otherHitResult)
@@ -515,7 +515,7 @@ class EngineSessionTest {
         otherSession.notifyInternalObservers { onLocationChange("https://www.mozilla.org", false) }
         otherSession.notifyInternalObservers { onProgress(25) }
         otherSession.notifyInternalObservers { onLoadingStateChange(true) }
-        otherSession.notifyInternalObservers { onSecurityChange(true, "mozilla.org", "issuer") }
+        otherSession.notifyInternalObservers { onSecurityChange(true, "mozilla.org", "issuer", null) }
         otherSession.notifyInternalObservers { onTrackerBlockingEnabledChange(true) }
         otherSession.notifyInternalObservers { onTrackerBlocked(tracker) }
         otherSession.notifyInternalObservers { onLongPress(unknownHitResult) }
@@ -541,7 +541,7 @@ class EngineSessionTest {
         verify(observer, never()).onLocationChange("https://www.mozilla.org", false)
         verify(observer, never()).onProgress(25)
         verify(observer, never()).onLoadingStateChange(true)
-        verify(observer, never()).onSecurityChange(true, "mozilla.org", "issuer")
+        verify(observer, never()).onSecurityChange(true, "mozilla.org", "issuer", null)
         verify(observer, never()).onTrackerBlockingEnabledChange(true)
         verify(observer, never()).onTrackerBlocked(tracker)
         verify(observer, never()).onLongPress(unknownHitResult)
@@ -568,7 +568,7 @@ class EngineSessionTest {
         session.notifyInternalObservers { onLocationChange("https://www.mozilla.org", false) }
         session.notifyInternalObservers { onProgress(25) }
         session.notifyInternalObservers { onLoadingStateChange(true) }
-        session.notifyInternalObservers { onSecurityChange(true, "mozilla.org", "issuer") }
+        session.notifyInternalObservers { onSecurityChange(true, "mozilla.org", "issuer", null) }
         session.notifyInternalObservers { onTrackerBlockingEnabledChange(true) }
         session.notifyInternalObservers { onTrackerBlocked(tracker) }
         session.notifyInternalObservers { onLongPress(unknownHitResult) }
@@ -594,7 +594,7 @@ class EngineSessionTest {
         verify(observer, times(1)).onLocationChange("https://www.mozilla.org", false)
         verify(observer, times(1)).onProgress(25)
         verify(observer, times(1)).onLoadingStateChange(true)
-        verify(observer, times(1)).onSecurityChange(true, "mozilla.org", "issuer")
+        verify(observer, times(1)).onSecurityChange(true, "mozilla.org", "issuer", null)
         verify(observer, times(1)).onTrackerBlockingEnabledChange(true)
         verify(observer, times(1)).onTrackerBlocked(tracker)
         verify(observer, times(1)).onLongPress(unknownHitResult)
@@ -777,7 +777,6 @@ class EngineSessionTest {
         val all = TrackingProtectionPolicy.strict()
         val selected = TrackingProtectionPolicy.select(
             trackingCategories = arrayOf(TrackingCategory.AD),
-
         )
 
         // Tracking protection policies should be applied to all sessions by default
@@ -948,7 +947,7 @@ class EngineSessionTest {
         observer.onProgress(25)
         observer.onProgress(100)
         observer.onLoadingStateChange(true)
-        observer.onSecurityChange(true, "mozilla.org", "issuer")
+        observer.onSecurityChange(true, "mozilla.org", "issuer", null)
         observer.onTrackerBlockingEnabledChange(true)
         observer.onTrackerBlocked(tracker)
         observer.onExcludedOnTrackingProtectionChange(true)
@@ -964,7 +963,7 @@ class EngineSessionTest {
         observer.onWindowRequest(windowRequest)
         observer.onCrash()
         observer.onLoadRequest("https://www.mozilla.org", true, true)
-        observer.onLaunchIntentRequest("https://www.mozilla.org", null)
+        observer.onLaunchIntentRequest("https://www.mozilla.org", null, null, null)
         observer.onProcessKilled()
         observer.onShowDynamicToolbar()
     }
@@ -975,6 +974,8 @@ open class DummyEngineSession : EngineSession() {
         get() = mock(Settings::class.java)
 
     override fun restoreState(state: EngineSessionState): Boolean { return false }
+
+    override fun flushSessionState() {}
 
     override fun loadUrl(
         url: String,

@@ -469,17 +469,18 @@ def writeVariantTagMappings(println, variant_mappings, description, source, url)
     """Writes a function definition that maps variant subtags."""
     println(
         """
-static const char* ToCharPointer(const char* str) {
-  return str;
+static auto ToSpan(const mozilla::Span<const char>& aSpan) {
+  return aSpan;
 }
 
-static const char* ToCharPointer(const mozilla::intl::UniqueChars& str) {
-  return str.get();
+template <size_t N>
+static auto ToSpan(const mozilla::intl::LanguageTagSubtag<N>& aSubtag) {
+  return aSubtag.Span();
 }
 
 template <typename T, typename U = T>
 static bool IsLessThan(const T& a, const U& b) {
-  return strcmp(ToCharPointer(a), ToCharPointer(b)) < 0;
+  return ToSpan(a) < ToSpan(b);
 }
 """
     )
@@ -495,24 +496,24 @@ bool mozilla::intl::Locale::PerformVariantMappings() {
     mVariants.erase(mVariants.begin() + index);
   };
 
-  auto insertVariantSortedIfNotPresent = [&](const char* variant) {
+  auto insertVariantSortedIfNotPresent = [&](mozilla::Span<const char> variant) {
     auto* p = std::lower_bound(
         mVariants.begin(), mVariants.end(), variant,
         IsLessThan<decltype(mVariants)::ElementType, decltype(variant)>);
 
     // Don't insert the replacement when already present.
-    if (p != mVariants.end() && strcmp(p->get(), variant) == 0) {
+    if (p != mVariants.end() && p->Span() == variant) {
       return true;
     }
 
     // Insert the preferred variant in sort order.
-    auto preferred = DuplicateStringToUniqueChars(variant);
-    return !!mVariants.insert(p, std::move(preferred));
+    auto preferred = mozilla::intl::VariantSubtag{variant};
+    return !!mVariants.insert(p, preferred);
   };
 
   for (size_t i = 0; i < mVariants.length();) {
-    const char* variant = mVariants[i].get();
-    MOZ_ASSERT(IsCanonicallyCasedVariantTag(mozilla::MakeStringSpan(variant)));
+    const auto& variant = mVariants[i];
+    MOZ_ASSERT(IsCanonicallyCasedVariantTag(variant.Span()));
 """.lstrip()
     )
 
@@ -521,7 +522,7 @@ bool mozilla::intl::Locale::PerformVariantMappings() {
     )
 
     no_replacements = " ||\n        ".join(
-        f"""strcmp(variant, "{deprecated_variant}") == 0"""
+        f"""variant.Span() == mozilla::MakeStringSpan("{deprecated_variant}")"""
         for (deprecated_variant, _) in sorted(no_alias, key=itemgetter(0))
     )
 
@@ -540,7 +541,7 @@ bool mozilla::intl::Locale::PerformVariantMappings() {
     ):
         println(
             f"""
-    else if (strcmp(variant, "{deprecated_variant}") == 0) {{
+    else if (variant.Span() == mozilla::MakeStringSpan("{deprecated_variant}")) {{
       removeVariantAt(i);
 """.strip(
                 "\n"
@@ -567,7 +568,7 @@ bool mozilla::intl::Locale::PerformVariantMappings() {
             assert type == "variant"
             println(
                 f"""
-      if (!insertVariantSortedIfNotPresent("{replacement}")) {{
+      if (!insertVariantSortedIfNotPresent(mozilla::MakeStringSpan("{replacement}"))) {{
         return false;
       }}
 """.strip(
@@ -628,30 +629,30 @@ bool mozilla::intl::Locale::UpdateLegacyMappings() {
   MOZ_ASSERT(std::is_sorted(mVariants.begin(), mVariants.end(),
                             IsLessThan<decltype(mVariants)::ElementType>));
 
-  auto findVariant = [this](const char* variant) {
+  auto findVariant = [this](mozilla::Span<const char> variant) {
     auto* p = std::lower_bound(mVariants.begin(), mVariants.end(), variant,
                                IsLessThan<decltype(mVariants)::ElementType,
                                           decltype(variant)>);
 
-    if (p != mVariants.end() && strcmp(p->get(), variant) == 0) {
+    if (p != mVariants.end() && p->Span() == variant) {
       return p;
     }
     return static_cast<decltype(p)>(nullptr);
   };
 
-  auto insertVariantSortedIfNotPresent = [&](const char* variant) {
+  auto insertVariantSortedIfNotPresent = [&](mozilla::Span<const char> variant) {
     auto* p = std::lower_bound(mVariants.begin(), mVariants.end(), variant,
                                IsLessThan<decltype(mVariants)::ElementType,
                                           decltype(variant)>);
 
     // Don't insert the replacement when already present.
-    if (p != mVariants.end() && strcmp(p->get(), variant) == 0) {
+    if (p != mVariants.end() && p->Span() == variant) {
       return true;
     }
 
     // Insert the preferred variant in sort order.
-    auto preferred = DuplicateStringToUniqueChars(variant);
-    return !!mVariants.insert(p, std::move(preferred));
+    auto preferred = mozilla::intl::VariantSubtag{variant};
+    return !!mVariants.insert(p, preferred);
   };
 
   auto removeVariant = [&](auto* p) {
@@ -698,11 +699,11 @@ bool mozilla::intl::Locale::UpdateLegacyMappings() {
         println(
             """
   if (mVariants.length() >= 2) {
-    if (auto* hepburn = findVariant("hepburn")) {
-      if (auto* heploc = findVariant("heploc")) {
+    if (auto* hepburn = findVariant(mozilla::MakeStringSpan("hepburn"))) {
+      if (auto* heploc = findVariant(mozilla::MakeStringSpan("heploc"))) {
         removeVariants(hepburn, heploc);
 
-        if (!insertVariantSortedIfNotPresent("alalc97")) {
+        if (!insertVariantSortedIfNotPresent(mozilla::MakeStringSpan("alalc97"))) {
           return false;
         }
       }
@@ -818,7 +819,7 @@ bool mozilla::intl::Locale::UpdateLegacyMappings() {
                 for i, variant in enumerate(sorted_variants):
                     println(
                         f"""
-    {"  " * i}{maybe_else}if (auto* {variant} = findVariant("{variant}")) {{
+    {"  " * i}{maybe_else}if (auto* {variant} = findVariant(mozilla::MakeStringSpan("{variant}"))) {{
 """.rstrip().lstrip(
                             "\n"
                         )
@@ -1066,12 +1067,10 @@ def readSupplementalData(core_file):
                     # subtags are present. A single variant subtags may be present
                     # in |type|. And |i_type| definitely has a single variant subtag.
                     # Should this ever change, update this code accordingly.
-                    assert type == (Any, None, None, None) or type == (
-                        Any,
-                        None,
-                        None,
-                        Any,
-                    )
+                    assert type in {
+                        (Any, None, None, None),
+                        (Any, None, None, Any),
+                    }
                     assert replacement == (Any, None, None, None)
                     assert i_type == (Any, None, None, Any)
                     assert i_replacement == (Any, None, None, None)
@@ -1156,12 +1155,10 @@ def readSupplementalData(core_file):
         if modified_rules and loop_count > 1:
             new_rules = {k for k in transitive_rules.keys() if k not in rules}
             for k in new_rules:
-                assert k == (Any, None, None, "guoyu-hakka") or k == (
-                    Any,
-                    None,
-                    None,
-                    "guoyu-xiang",
-                )
+                assert k in {
+                    (Any, None, None, "guoyu-hakka"),
+                    (Any, None, None, "guoyu-xiang"),
+                }
 
         # Merge the transitive rules.
         rules.update(transitive_rules)
@@ -1445,9 +1442,7 @@ def readUnicodeExtensions(core_file):
         tree = ET.parse(file)
         for keyword in tree.iterfind(".//keyword/key"):
             extension = keyword.get("extension", "u")
-            assert (
-                extension == "u" or extension == "t"
-            ), f"unknown extension type: {extension}"
+            assert extension in {"u", "t"}, f"unknown extension type: {extension}"
 
             extension_name = keyword.get("name")
 
@@ -1605,7 +1600,6 @@ def writeCLDRLanguageTagData(println, data, url):
 #include <cstring>
 #include <iterator>
 #include <string>
-#include <type_traits>
 
 #include "mozilla/intl/Locale.h"
 
@@ -2061,8 +2055,7 @@ def updateCLDRLangTags(args):
 def flines(filepath, encoding="utf-8"):
     """Open filepath and iterate over its content."""
     with open(filepath, encoding=encoding) as f:
-        for line in f:
-            yield line
+        yield from f
 
 
 @total_ordering
@@ -2953,9 +2946,7 @@ def generateTzDataTestZones(tzdataDir, version, ignoreFactory, testDir):
     ) as f:
         println = partial(print, file=f)
 
-        println(
-            '// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty("Temporal"))'
-        )
+        println('// |reftest| skip-if(!this.hasOwnProperty("Temporal"))')
         println("")
         println(generatedFileWarning)
         println(tzdataVersionComment.format(version))
@@ -3499,7 +3490,7 @@ def readICUUnitResourceFile(filepath):
         for unit_display in ("units", "unitsNarrow", "unitsShort")
         if unit_display in unit_table
         for (unit_type, unit_names) in unit_table[unit_display].items()
-        if unit_type != "compound" and unit_type != "coordinate"
+        if unit_type not in {"compound", "coordinate"}
         for unit_name in unit_names.keys()
     }
 

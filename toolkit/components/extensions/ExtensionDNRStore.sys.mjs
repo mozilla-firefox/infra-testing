@@ -1,7 +1,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* eslint-disable mozilla/valid-lazy */
 
 import { StartupCache } from "resource://gre/modules/ExtensionParent.sys.mjs";
 import { ExtensionUtils } from "resource://gre/modules/ExtensionUtils.sys.mjs";
@@ -931,7 +930,7 @@ class RulesetsStore {
         continue;
       }
 
-      const readJSONStartTime = Cu.now();
+      const readJSONStartTime = ChromeUtils.now();
       const rawRules =
         enabled &&
         (await fetch(path)
@@ -1021,7 +1020,7 @@ class RulesetsStore {
     rawRules,
     { logRuleValidationError = err => Cu.reportError(err) } = {}
   ) {
-    const startTime = Cu.now();
+    const startTime = ChromeUtils.now();
     const validatedRulesTimerId =
       Glean.extensionsApisDnr.validateRulesTime.start();
     try {
@@ -1208,7 +1207,7 @@ class RulesetsStore {
         );
       }
 
-      const startTime = Cu.now();
+      const startTime = ChromeUtils.now();
       const timerId = Glean.extensionsApisDnr.startupCacheReadTime.start();
       this._ensureCacheLoaded = (async () => {
         const cacheFilePath = this.#getCacheFilePath();
@@ -1285,7 +1284,7 @@ class RulesetsStore {
     return this._readData(extension);
   }
   async _readData(extension) {
-    const startTime = Cu.now();
+    const startTime = ChromeUtils.now();
     try {
       let result;
       // Try to load data from the startupCache.
@@ -1580,7 +1579,7 @@ class RulesetsStore {
   }
 
   async #saveCacheDataNow() {
-    const startTime = Cu.now();
+    const startTime = ChromeUtils.now();
     const timerId = Glean.extensionsApisDnr.startupCacheWriteTime.start();
     try {
       const cacheFilePath = this.#getCacheFilePath();
@@ -1617,7 +1616,7 @@ class RulesetsStore {
    * @returns {Promise<void>}
    */
   async #saveNow(extensionUUID, extensionId) {
-    const startTime = Cu.now();
+    const startTime = ChromeUtils.now();
     try {
       if (
         !this._dataPromises.has(extensionUUID) ||

@@ -38,6 +38,7 @@ packaging_description_schema = Schema(
         # passed through to job description
         Optional("fetches"): job_description_schema["fetches"],
         Optional("run-on-projects"): job_description_schema["run-on-projects"],
+        Optional("run-on-repo-type"): job_description_schema["run-on-repo-type"],
         # Shipping product and phase
         Optional("shipping-product"): job_description_schema["shipping-product"],
         Optional("shipping-phase"): job_description_schema["shipping-phase"],
@@ -284,8 +285,8 @@ PACKAGE_FORMATS = {
             "{version_display}",
             "--build-number",
             "{build_number}",
-            "--release-product",
-            "{release_product}",
+            "--product",
+            "{shipping_product}",
             "--release-type",
             "{release_type}",
         ],
@@ -303,8 +304,10 @@ PACKAGE_FORMATS = {
             "{build_number}",
             "--templates",
             "{deb-l10n-templates}",
-            "--release-product",
-            "{release_product}",
+            "--product",
+            "{shipping_product}",
+            "--extensions-dir",
+            "{extensions-dir}",
         ],
         "inputs": {
             "input-xpi-file": "target.langpack.xpi",
@@ -323,30 +326,17 @@ PACKAGE_FORMATS = {
             "{version_display}",
             "--build-number",
             "{build_number}",
-            "--release-product",
-            "{release_product}",
+            "--product",
+            "{shipping_product}",
             "--release-type",
             "{release_type}",
             "--input-xpi-dir",
-            "{fetch-dir}",
+            "{fetch-dir}/extensions",
         ],
         "inputs": {
             "input": "target{archive_format}",
         },
         "output": "target.rpm",
-    },
-    "desktop-file": {
-        "args": [
-            "desktop-file",
-            "--flavor",
-            "flatpak",
-            "--release-product",
-            "firefox",
-            "--release-type",
-            "{release_type}",
-        ],
-        "inputs": {},
-        "output": "target.flatpak.desktop",
     },
     "flatpak": {
         "args": [
@@ -385,6 +375,7 @@ MOZHARNESS_EXPANSIONS = [
     "sfx-stub",
     "wsx-stub",
     "flatpak-templates",
+    "extensions-dir",
 ]
 
 transforms = TransformSequence()
@@ -492,6 +483,9 @@ def make_job_description(config, jobs):
                 repackage_signing_task = dependency
             elif "signing" in dependency or "notarization" in dependency:
                 signing_task = dependency
+            elif "shippable-l10n" in dependency:
+                # Thunderbird does not sign langpacks, so we find them in the langpack build task
+                signing_task = dependency
 
         if config.kind == "repackage-msi":
             treeherder["symbol"] = "MSI({})".format(locale or "N")
@@ -564,7 +558,7 @@ def make_job_description(config, jobs):
                 package=config.kind.split("-")[1],
             )
 
-        elif config.kind == "repackage-flatpak":
+        if config.kind in ("repackage-flatpak", "repackage-rpm"):
             assert not locale
 
             if attributes.get("l10n_chunk") or attributes.get("chunk_locales"):
@@ -575,10 +569,17 @@ def make_job_description(config, jobs):
             # The keys are unique, like `shippable-l10n-signing-linux64-shippable-1/opt`, so we
             # can't ask for the tasks directly, we must filter for them.
             for t in config.kind_dependencies_tasks.values():
+                # Filter out tasks that are either not the wrong kind, not the
+                # right product or not the right platform to keep one langpack
+                # per locale
                 if attributes.get("shippable"):
-                    if (
-                        t.kind != "shippable-l10n-signing"
-                        or t.attributes["build_platform"] != "linux64-shippable"
+                    if t.kind != "shippable-l10n-signing":
+                        continue
+                    if t.attributes["shipping_product"] != job["shipping-product"]:
+                        continue
+                    if t.attributes["build_platform"] not in (
+                        "linux64-shippable",
+                        "linux64-devedition",
                     ):
                         continue
                 elif t.kind != "l10n" or t.attributes["build_platform"] != "linux64":
@@ -629,7 +630,7 @@ def make_job_description(config, jobs):
                 "version_display": config.params["version"],
                 "mar-channel-id": attributes["mar-channel-id"],
                 "build_number": config.params["build_number"],
-                "release_product": config.params["release_product"],
+                "shipping_product": job["shipping-product"],
                 "release_type": config.params["release_type"],
                 "flatpak-name": job.get("flatpak", {}).get("name"),
                 "flatpak-branch": job.get("flatpak", {}).get("branch"),
@@ -724,6 +725,7 @@ def make_job_description(config, jobs):
             "run-on-projects": job.get(
                 "run-on-projects", dep_job.attributes.get("run_on_projects")
             ),
+            "run-on-repo-type": job.get("run-on-repo-type", ["git", "hg"]),
             "optimization": dep_job.optimization,
             "treeherder": treeherder,
             "routes": job.get("routes", []),
@@ -754,6 +756,9 @@ def make_job_description(config, jobs):
 
         if "shipping-phase" in job:
             task["shipping-phase"] = job["shipping-phase"]
+
+        if "shipping-product" in job and job["shipping-product"] is not None:
+            task["shipping-product"] = job["shipping-product"]
 
         yield task
 

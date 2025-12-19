@@ -3,23 +3,25 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/dom/UnionTypes.h"
-#include "mozilla/dom/WebGPUBinding.h"
 #include "CommandEncoder.h"
 
-#include "CommandBuffer.h"
 #include "Buffer.h"
+#include "CommandBuffer.h"
 #include "ComputePassEncoder.h"
 #include "Device.h"
+#include "ExternalTexture.h"
 #include "RenderPassEncoder.h"
+#include "TextureView.h"
 #include "Utility.h"
+#include "ipc/WebGPUChild.h"
+#include "mozilla/dom/UnionTypes.h"
+#include "mozilla/dom/WebGPUBinding.h"
 #include "mozilla/webgpu/CanvasContext.h"
 #include "mozilla/webgpu/ffi/wgpu.h"
-#include "ipc/WebGPUChild.h"
 
 namespace mozilla::webgpu {
 
-GPU_IMPL_CYCLE_COLLECTION(CommandEncoder, mParent, mBridge)
+GPU_IMPL_CYCLE_COLLECTION(CommandEncoder, mParent, mExternalTextures)
 GPU_IMPL_JS_WRAP(CommandEncoder)
 
 void CommandEncoder::ConvertTextureDataLayoutToFFI(
@@ -45,7 +47,7 @@ void CommandEncoder::ConvertTextureCopyViewToFFI(
     const dom::GPUTexelCopyTextureInfo& aCopy,
     ffi::WGPUTexelCopyTextureInfo* aViewFFI) {
   *aViewFFI = {};
-  aViewFFI->texture = aCopy.mTexture->mId;
+  aViewFFI->texture = aCopy.mTexture->GetId();
   aViewFFI->mip_level = aCopy.mMipLevel;
   const auto& origin = aCopy.mOrigin;
   if (origin.IsRangeEnforcedUnsignedLongSequence()) {
@@ -71,68 +73,56 @@ static ffi::WGPUTexelCopyTextureInfo ConvertTextureCopyView(
   return view;
 }
 
-CommandEncoder::CommandEncoder(Device* const aParent,
-                               WebGPUChild* const aBridge, RawId aId)
-    : ChildOf(aParent), mId(aId), mBridge(aBridge) {
-  MOZ_RELEASE_ASSERT(aId);
-}
+CommandEncoder::CommandEncoder(Device* const aParent, RawId aId)
+    : ObjectBase(aParent->GetChild(), aId,
+                 ffi::wgpu_client_drop_command_encoder),
+      ChildOf(aParent),
+      mState(CommandEncoderState::Open) {}
 
-CommandEncoder::~CommandEncoder() { Cleanup(); }
+CommandEncoder::~CommandEncoder() = default;
 
-void CommandEncoder::Cleanup() {
-  if (!mValid) {
-    return;
-  }
-  mValid = false;
-
-  if (!mBridge) {
-    return;
-  }
-
-  if (mBridge->CanSend()) {
-    mBridge->SendCommandEncoderDrop(mId);
-  }
-
-  wgpu_client_free_command_encoder_id(mBridge->GetClient(), mId);
-}
-
-void CommandEncoder::TrackPresentationContext(CanvasContext* aTargetContext) {
+void CommandEncoder::TrackPresentationContext(
+    WeakPtr<CanvasContext> aTargetContext) {
   if (aTargetContext) {
     mPresentationContexts.AppendElement(aTargetContext);
   }
 }
 
-void CommandEncoder::CopyBufferToBuffer(const Buffer& aSource,
-                                        BufferAddress aSourceOffset,
-                                        const Buffer& aDestination,
-                                        BufferAddress aDestinationOffset,
-                                        BufferAddress aSize) {
-  if (!mBridge->CanSend()) {
-    return;
+void CommandEncoder::CopyBufferToBuffer(
+    const Buffer& aSource, BufferAddress aSourceOffset,
+    const Buffer& aDestination, BufferAddress aDestinationOffset,
+    const dom::Optional<BufferAddress>& aSize) {
+  // In Javascript, `size === undefined` means "copy from source offset to end
+  // of buffer". wgpu_command_encoder_copy_buffer_to_buffer uses a value of
+  // UINT64_MAX to encode this. If the requested copy size was UINT64_MAX, fudge
+  // it to a different value that will still be rejected for misalignment on the
+  // device timeline.
+  BufferAddress size;
+  if (aSize.WasPassed()) {
+    if (aSize.Value() == std::numeric_limits<uint64_t>::max()) {
+      size = std::numeric_limits<uint64_t>::max() - 4;
+    } else {
+      size = aSize.Value();
+    }
+  } else {
+    size = std::numeric_limits<uint64_t>::max();
   }
 
-  ipc::ByteBuf bb;
   ffi::wgpu_command_encoder_copy_buffer_to_buffer(
-      aSource.mId, aSourceOffset, aDestination.mId, aDestinationOffset, aSize,
-      ToFFI(&bb));
-  mBridge->SendCommandEncoderAction(mId, mParent->mId, std::move(bb));
+      GetClient(), mParent->GetId(), GetId(), aSource.GetId(), aSourceOffset,
+      aDestination.GetId(), aDestinationOffset, size);
 }
 
 void CommandEncoder::CopyBufferToTexture(
     const dom::GPUTexelCopyBufferInfo& aSource,
     const dom::GPUTexelCopyTextureInfo& aDestination,
     const dom::GPUExtent3D& aCopySize) {
-  if (!mBridge->CanSend()) {
-    return;
-  }
-
-  ipc::ByteBuf bb;
   ffi::WGPUTexelCopyBufferLayout src_layout = {};
   CommandEncoder::ConvertTextureDataLayoutToFFI(aSource, &src_layout);
   ffi::wgpu_command_encoder_copy_buffer_to_texture(
-      aSource.mBuffer->mId, &src_layout, ConvertTextureCopyView(aDestination),
-      ConvertExtent(aCopySize), ToFFI(&bb));
-  mBridge->SendCommandEncoderAction(mId, mParent->mId, std::move(bb));
+      GetClient(), mParent->GetId(), GetId(), aSource.mBuffer->GetId(),
+      &src_layout, ConvertTextureCopyView(aDestination),
+      ConvertExtent(aCopySize));
 
   TrackPresentationContext(aDestination.mTexture->mTargetContext);
 }
@@ -140,31 +130,19 @@ void CommandEncoder::CopyTextureToBuffer(
     const dom::GPUTexelCopyTextureInfo& aSource,
     const dom::GPUTexelCopyBufferInfo& aDestination,
     const dom::GPUExtent3D& aCopySize) {
-  if (!mBridge->CanSend()) {
-    return;
-  }
-
-  ipc::ByteBuf bb;
   ffi::WGPUTexelCopyBufferLayout dstLayout = {};
   CommandEncoder::ConvertTextureDataLayoutToFFI(aDestination, &dstLayout);
   ffi::wgpu_command_encoder_copy_texture_to_buffer(
-      ConvertTextureCopyView(aSource), aDestination.mBuffer->mId, &dstLayout,
-      ConvertExtent(aCopySize), ToFFI(&bb));
-  mBridge->SendCommandEncoderAction(mId, mParent->mId, std::move(bb));
+      GetClient(), mParent->GetId(), GetId(), ConvertTextureCopyView(aSource),
+      aDestination.mBuffer->GetId(), &dstLayout, ConvertExtent(aCopySize));
 }
 void CommandEncoder::CopyTextureToTexture(
     const dom::GPUTexelCopyTextureInfo& aSource,
     const dom::GPUTexelCopyTextureInfo& aDestination,
     const dom::GPUExtent3D& aCopySize) {
-  if (!mBridge->CanSend()) {
-    return;
-  }
-
-  ipc::ByteBuf bb;
   ffi::wgpu_command_encoder_copy_texture_to_texture(
-      ConvertTextureCopyView(aSource), ConvertTextureCopyView(aDestination),
-      ConvertExtent(aCopySize), ToFFI(&bb));
-  mBridge->SendCommandEncoderAction(mId, mParent->mId, std::move(bb));
+      GetClient(), mParent->GetId(), GetId(), ConvertTextureCopyView(aSource),
+      ConvertTextureCopyView(aDestination), ConvertExtent(aCopySize));
 
   TrackPresentationContext(aDestination.mTexture->mTargetContext);
 }
@@ -178,60 +156,103 @@ void CommandEncoder::ClearBuffer(const Buffer& aBuffer, const uint64_t aOffset,
     size = &sizeVal;
   }
 
-  ipc::ByteBuf bb;
-  ffi::wgpu_command_encoder_clear_buffer(aBuffer.mId, aOffset, size,
-                                         ToFFI(&bb));
-  mBridge->SendCommandEncoderAction(mId, mParent->mId, std::move(bb));
+  ffi::wgpu_command_encoder_clear_buffer(GetClient(), mParent->GetId(), GetId(),
+                                         aBuffer.GetId(), aOffset, size);
 }
 
 void CommandEncoder::PushDebugGroup(const nsAString& aString) {
-  if (!mBridge->CanSend()) {
-    return;
-  }
-
-  ipc::ByteBuf bb;
   NS_ConvertUTF16toUTF8 marker(aString);
-  ffi::wgpu_command_encoder_push_debug_group(&marker, ToFFI(&bb));
-  mBridge->SendCommandEncoderAction(mId, mParent->mId, std::move(bb));
+  ffi::wgpu_command_encoder_push_debug_group(GetClient(), mParent->GetId(),
+                                             GetId(), &marker);
 }
 void CommandEncoder::PopDebugGroup() {
-  if (!mBridge->CanSend()) {
-    return;
-  }
-
-  ipc::ByteBuf bb;
-  ffi::wgpu_command_encoder_pop_debug_group(ToFFI(&bb));
-  mBridge->SendCommandEncoderAction(mId, mParent->mId, std::move(bb));
+  ffi::wgpu_command_encoder_pop_debug_group(GetClient(), mParent->GetId(),
+                                            GetId());
 }
 void CommandEncoder::InsertDebugMarker(const nsAString& aString) {
-  if (!mBridge->CanSend()) {
-    return;
-  }
-
-  ipc::ByteBuf bb;
   NS_ConvertUTF16toUTF8 marker(aString);
-  ffi::wgpu_command_encoder_insert_debug_marker(&marker, ToFFI(&bb));
-  mBridge->SendCommandEncoderAction(mId, mParent->mId, std::move(bb));
+  ffi::wgpu_command_encoder_insert_debug_marker(GetClient(), mParent->GetId(),
+                                                GetId(), &marker);
 }
 
 already_AddRefed<ComputePassEncoder> CommandEncoder::BeginComputePass(
     const dom::GPUComputePassDescriptor& aDesc) {
-  RefPtr<ComputePassEncoder> pass = new ComputePassEncoder(this, aDesc);
+  auto id = ffi::wgpu_client_make_compute_pass_encoder_id(GetClient());
+  RefPtr<ComputePassEncoder> pass = new ComputePassEncoder(this, id, aDesc);
   pass->SetLabel(aDesc.mLabel);
+  if (mState == CommandEncoderState::Ended) {
+    // Because we do not call wgpu until the pass is ended, we need to generate
+    // this error ourselves in order to report it at the correct time.
+
+    const auto* message = "Encoding must not have ended";
+    ffi::wgpu_report_validation_error(GetClient(), mParent->GetId(), message);
+
+    pass->Invalidate();
+  } else if (mState == CommandEncoderState::Locked) {
+    // This is not sufficient to handle this case properly. Invalidity
+    // needs to be transferred from the pass to the encoder when the pass
+    // ends. Bug 1971650.
+    pass->Invalidate();
+  } else {
+    mState = CommandEncoderState::Locked;
+  }
   return pass.forget();
 }
 
 already_AddRefed<RenderPassEncoder> CommandEncoder::BeginRenderPass(
     const dom::GPURenderPassDescriptor& aDesc) {
-  for (const auto& at : aDesc.mColorAttachments) {
-    TrackPresentationContext(at.mView->GetTargetContext());
+  dom::GPURenderPassDescriptor desc{aDesc};
+
+  auto coerceToViewInPlace =
+      [](dom::OwningGPUTextureOrGPUTextureView& texOrView)
+      -> RefPtr<TextureView> {
+    RefPtr<TextureView> view;
+    switch (texOrView.GetType()) {
+      case dom::OwningGPUTextureOrGPUTextureView::Type::eGPUTexture: {
+        dom::GPUTextureViewDescriptor defaultDesc{};
+        RefPtr<Texture> tex = texOrView.GetAsGPUTexture();
+        texOrView.SetAsGPUTextureView() = tex->CreateView(defaultDesc);
+        break;
+      }
+
+      case dom::OwningGPUTextureOrGPUTextureView::Type::eGPUTextureView:
+        // Nothing to do, great!
+        break;
+    }
+    view = texOrView.GetAsGPUTextureView();
+    return view;
+  };
+
+  for (auto& at : desc.mColorAttachments) {
+    TrackPresentationContext(coerceToViewInPlace(at.mView)->GetTargetContext());
     if (at.mResolveTarget.WasPassed()) {
-      TrackPresentationContext(at.mResolveTarget.Value().GetTargetContext());
+      TrackPresentationContext(
+          coerceToViewInPlace(at.mResolveTarget.Value())->GetTargetContext());
     }
   }
+  if (desc.mDepthStencilAttachment.WasPassed()) {
+    coerceToViewInPlace(desc.mDepthStencilAttachment.Value().mView);
+  }
 
-  RefPtr<RenderPassEncoder> pass = new RenderPassEncoder(this, aDesc);
-  pass->SetLabel(aDesc.mLabel);
+  auto id = ffi::wgpu_client_make_render_pass_encoder_id(GetClient());
+  RefPtr<RenderPassEncoder> pass = new RenderPassEncoder(this, id, desc);
+  pass->SetLabel(desc.mLabel);
+  if (mState == CommandEncoderState::Ended) {
+    // Because we do not call wgpu until the pass is ended, we need to generate
+    // this error ourselves in order to report it at the correct time.
+
+    const auto* message = "Encoding must not have ended";
+    ffi::wgpu_report_validation_error(GetClient(), mParent->GetId(), message);
+
+    pass->Invalidate();
+  } else if (mState == CommandEncoderState::Locked) {
+    // This is not sufficient to handle this case properly. Invalidity
+    // needs to be transferred from the pass to the encoder when the pass
+    // ends. Bug 1971650.
+    pass->Invalidate();
+  } else {
+    mState = CommandEncoderState::Locked;
+  }
   return pass.forget();
 }
 
@@ -239,55 +260,70 @@ void CommandEncoder::ResolveQuerySet(QuerySet& aQuerySet, uint32_t aFirstQuery,
                                      uint32_t aQueryCount,
                                      webgpu::Buffer& aDestination,
                                      uint64_t aDestinationOffset) {
-  if (!mBridge->CanSend()) {
-    return;
-  }
-
-  ipc::ByteBuf bb;
-  ffi::wgpu_command_encoder_resolve_query_set(aQuerySet.mId, aFirstQuery,
-                                              aQueryCount, aDestination.mId,
-                                              aDestinationOffset, ToFFI(&bb));
-  mBridge->SendCommandEncoderAction(mId, mParent->mId, std::move(bb));
+  ffi::wgpu_command_encoder_resolve_query_set(
+      GetClient(), mParent->GetId(), GetId(), aQuerySet.GetId(), aFirstQuery,
+      aQueryCount, aDestination.GetId(), aDestinationOffset);
 }
 
-void CommandEncoder::EndComputePass(ffi::WGPURecordedComputePass& aPass) {
-  // Because this can be called during child Cleanup, we need to check
-  // that the bridge is still alive.
-  if (!mBridge || !mBridge->CanSend()) {
+void CommandEncoder::EndComputePass(
+    ffi::WGPURecordedComputePass& aPass, CanvasContextArray& aCanvasContexts,
+    Span<RefPtr<ExternalTexture>> aExternalTextures) {
+  if (mState != CommandEncoderState::Locked) {
+    const auto* message = "Encoder is not currently locked";
+    ffi::wgpu_report_validation_error(GetClient(), mParent->GetId(), message);
     return;
   }
+  mState = CommandEncoderState::Open;
 
-  ipc::ByteBuf byteBuf;
-  ffi::wgpu_compute_pass_finish(&aPass, ToFFI(&byteBuf));
-  mBridge->SendComputePass(mId, mParent->mId, std::move(byteBuf));
+  for (const auto& context : aCanvasContexts) {
+    TrackPresentationContext(context);
+  }
+  mExternalTextures.AppendElements(aExternalTextures);
+
+  ffi::wgpu_compute_pass_finish(GetClient(), mParent->GetId(), GetId(), &aPass);
 }
 
-void CommandEncoder::EndRenderPass(ffi::WGPURecordedRenderPass& aPass) {
-  // Because this can be called during child Cleanup, we need to check
-  // that the bridge is still alive.
-  if (!mBridge || !mBridge->CanSend()) {
+void CommandEncoder::EndRenderPass(
+    ffi::WGPURecordedRenderPass& aPass, CanvasContextArray& aCanvasContexts,
+    Span<RefPtr<ExternalTexture>> aExternalTextures) {
+  if (mState != CommandEncoderState::Locked) {
+    const auto* message = "Encoder is not currently locked";
+    ffi::wgpu_report_validation_error(GetClient(), mParent->GetId(), message);
     return;
   }
+  mState = CommandEncoderState::Open;
 
-  ipc::ByteBuf byteBuf;
-  ffi::wgpu_render_pass_finish(&aPass, ToFFI(&byteBuf));
-  mBridge->SendRenderPass(mId, mParent->mId, std::move(byteBuf));
+  for (const auto& context : aCanvasContexts) {
+    TrackPresentationContext(context);
+  }
+  mExternalTextures.AppendElements(aExternalTextures);
+
+  ffi::wgpu_render_pass_finish(GetClient(), mParent->GetId(), GetId(), &aPass);
 }
 
 already_AddRefed<CommandBuffer> CommandEncoder::Finish(
     const dom::GPUCommandBufferDescriptor& aDesc) {
-  // We rely on knowledge that `CommandEncoderId` == `CommandBufferId`
-  // TODO: refactor this to truly behave as if the encoder is being finished,
-  // and a new command buffer ID is being created from it. Resolve the ID
-  // type aliasing at the place that introduces it: `wgpu-core`.
-  RawId deviceId = mParent->mId;
-  if (mBridge->CanSend()) {
-    mBridge->SendCommandEncoderFinish(mId, deviceId, aDesc);
-  }
+  ffi::WGPUCommandBufferDescriptor desc = {};
 
-  RefPtr<CommandEncoder> me(this);
+  webgpu::StringHelper label(aDesc.mLabel);
+  desc.label = label.Get();
+
+  if (mState == CommandEncoderState::Locked) {
+    // Most errors that could occur here will be raised by wgpu. But since we
+    // don't tell wgpu about passes until they are ended, we need to raise an
+    // error if the application left a pass open.
+    const auto* message =
+        "Encoder is locked by a previously created render/compute pass";
+    ffi::wgpu_report_validation_error(GetClient(), mParent->GetId(), message);
+  }
+  RawId command_buffer_id = ffi::wgpu_command_encoder_finish(
+      GetClient(), mParent->GetId(), GetId(), &desc);
+
+  mState = CommandEncoderState::Ended;
+
   RefPtr<CommandBuffer> comb = new CommandBuffer(
-      mParent, mId, std::move(mPresentationContexts), std::move(me));
+      mParent, command_buffer_id, std::move(mPresentationContexts),
+      std::move(mExternalTextures));
   comb->SetLabel(aDesc.mLabel);
   return comb.forget();
 }

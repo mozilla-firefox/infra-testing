@@ -34,10 +34,9 @@ const FEATURES = {
 };
 
 const SIMPLE_COMMANDS = [
-  "dumpContent",
   "dumpTextRuns",
-  "dumpViews",
   "dumpCounterManager",
+  "dumpRetainedDisplayList",
   "dumpStyleSheets",
   "dumpMatchedRules",
   "dumpComputedStyles",
@@ -49,6 +48,7 @@ class Debugger {
     this._flags = new Map();
     this._pagedMode = false;
     this._attached = false;
+    this._anonymousSubtreeDumping = false;
     this._deterministicFrameDumping = false;
 
     for (let [name, pref] of Object.entries(FEATURES)) {
@@ -104,6 +104,14 @@ class Debugger {
     this._sendMessage("setPagedMode", v);
   }
 
+  get anonymousSubtreeDumping() {
+    return this._anonymousSubtreeDumping;
+  }
+
+  set anonymousSubtreeDumping(v) {
+    this._anonymousSubtreeDumping = !!v;
+  }
+
   get deterministicFrameDumping() {
     return this._deterministicFrameDumping;
   }
@@ -114,6 +122,10 @@ class Debugger {
 
   openDevTools() {
     lazy.BrowserToolboxLauncher.init();
+  }
+
+  sendDumpContent() {
+    this._sendMessage("dumpContent", this.anonymousSubtreeDumping);
   }
 
   sendDumpFrames(css_pixels) {
@@ -168,6 +180,10 @@ for (let name of SIMPLE_COMMANDS) {
     this._sendMessage(name);
   };
 }
+
+Debugger.prototype.dumpContent = function () {
+  this.sendDumpContent();
+};
 
 Debugger.prototype.dumpFrames = function () {
   this.sendDumpFrames(false);
@@ -298,6 +314,7 @@ function parseArguments() {
     autoclose: false,
     delay: 0,
     paged: false,
+    anonymousSubtreeDumping: false,
     deterministicFrameDumping: false,
   };
   if (window.arguments) {
@@ -312,6 +329,8 @@ function parseArguments() {
         args.profileFilename = RegExp.$1;
       } else if (/^paged$/.test(arg)) {
         args.paged = true;
+      } else if (/^anonymous-subtree-dumping$/.test(arg)) {
+        args.anonymousSubtreeDumping = true;
       } else if (/^deterministic-frame-dumping$/.test(arg)) {
         args.deterministicFrameDumping = true;
       } else {
@@ -369,6 +388,9 @@ function OnLDBLoad() {
         case "cmd_dumpTextRuns":
           gDebugger.dumpTextRuns();
           break;
+        case "cmd_dumpRetainedDisplayList":
+          gDebugger.dumpRetainedDisplayList();
+          break;
         case "cmd_openDevTools":
           gDebugger.openDevTools();
           break;
@@ -400,13 +422,13 @@ function OnLDBLoad() {
           gDebugger.dumpFramesInCSSPixels();
           break;
         case "menu_dumpTextRuns":
-          gDebugger.dumTextRuns();
-          break;
-        case "menu_dumpViews":
-          gDebugger.dumpViews();
+          gDebugger.dumpTextRuns();
           break;
         case "menu_dumpCounterManager":
           gDebugger.dumpCounterManager();
+          break;
+        case "menu_dumpRetainedDisplayList":
+          gDebugger.dumpRetainedDisplayList();
           break;
         case "menu_dumpStyleSheets":
           gDebugger.dumpStyleSheets();
@@ -509,6 +531,7 @@ function OnLDBLoad() {
     loadStringURI(gArgs.url);
   }
 
+  gDebugger._anonymousSubtreeDumping = gArgs.anonymousSubtreeDumping;
   gDebugger._deterministicFrameDumping = gArgs.deterministicFrameDumping;
 
   // Some command line arguments may toggle menu items. Call this after
@@ -530,6 +553,7 @@ function checkPersistentMenus() {
   checkPersistentMenu("crossingEventDumping");
   checkPersistentMenu("reflowCounts");
   checkPersistentMenu("pagedMode");
+  checkPersistentMenu("anonymousSubtreeDumping");
   checkPersistentMenu("deterministicFrameDumping");
 }
 

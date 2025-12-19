@@ -4,36 +4,35 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/RefPtr.h"
-#include "mozilla/dom/ReferrerPolicyBinding.h"
-#include "nsIClassInfoImpl.h"
-#include "nsIEffectiveTLDService.h"
-#include "nsIHttpChannel.h"
-#include "nsIObjectInputStream.h"
-#include "nsIObjectOutputStream.h"
-#include "nsIOService.h"
-#include "nsIPipe.h"
-#include "nsIURL.h"
-
-#include "nsWhitespaceTokenizer.h"
-#include "nsContentUtils.h"
-#include "nsCharSeparatedTokenizer.h"
-#include "nsScriptSecurityManager.h"
-#include "nsStreamUtils.h"
 #include "ReferrerInfo.h"
 
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ContentBlockingAllowList.h"
-#include "mozilla/net/CookieJarSettings.h"
-#include "mozilla/net/HttpBaseChannel.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/dom/RequestBinding.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StorageAccess.h"
 #include "mozilla/StyleSheet.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/ReferrerPolicyBinding.h"
+#include "mozilla/dom/RequestBinding.h"
 #include "mozilla/glean/DomSecurityMetrics.h"
+#include "mozilla/net/CookieJarSettings.h"
+#include "mozilla/net/HttpBaseChannel.h"
+#include "nsCharSeparatedTokenizer.h"
+#include "nsContentUtils.h"
+#include "nsIClassInfoImpl.h"
+#include "nsIEffectiveTLDService.h"
+#include "nsIHttpChannel.h"
+#include "nsIOService.h"
+#include "nsIObjectInputStream.h"
+#include "nsIObjectOutputStream.h"
+#include "nsIPipe.h"
+#include "nsIURL.h"
 #include "nsIWebProgressListener.h"
+#include "nsScriptSecurityManager.h"
+#include "nsStreamUtils.h"
+#include "nsWhitespaceTokenizer.h"
 
 static mozilla::LazyLogModule gReferrerInfoLog("ReferrerInfo");
 #define LOG(msg) MOZ_LOG(gReferrerInfoLog, mozilla::LogLevel::Debug, msg)
@@ -216,7 +215,7 @@ ReferrerPolicy ReferrerInfo::GetDefaultReferrerPolicy(nsIHttpChannel* aChannel,
   if (aChannel && aURI) {
     nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
     nsCOMPtr<nsICookieJarSettings> cjs;
-    Unused << loadInfo->GetCookieJarSettings(getter_AddRefs(cjs));
+    (void)loadInfo->GetCookieJarSettings(getter_AddRefs(cjs));
     if (!cjs) {
       bool shouldResistFingerprinting =
           nsContentUtils::ShouldResistFingerprinting(
@@ -756,8 +755,7 @@ bool ReferrerInfo::ShouldIgnoreLessRestrictedPolicies(
     // inherited from the parent.
     if (XRE_IsParentProcess()) {
       nsCOMPtr<nsICookieJarSettings> cookieJarSettings;
-      Unused << loadInfo->GetCookieJarSettings(
-          getter_AddRefs(cookieJarSettings));
+      (void)loadInfo->GetCookieJarSettings(getter_AddRefs(cookieJarSettings));
 
       net::CookieJarSettings::Cast(cookieJarSettings)
           ->UpdateIsOnContentBlockingAllowList(aChannel);
@@ -861,7 +859,7 @@ void ReferrerInfo::LogMessageToConsole(
   rv = nsContentUtils::ReportToConsoleByWindowID(
       localizedMsg, nsIScriptError::infoFlag, "Security"_ns, windowID,
       SourceLocation(std::move(uri)));
-  Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
 }
 
 ReferrerPolicy ReferrerPolicyIDLToReferrerPolicy(
@@ -1097,7 +1095,7 @@ HashNumber ReferrerInfo::Hash() const {
   MOZ_ASSERT(mInitialized);
   nsAutoCString originalReferrerSpec;
   if (mOriginalReferrer) {
-    Unused << mOriginalReferrer->GetSpec(originalReferrerSpec);
+    (void)mOriginalReferrer->GetSpec(originalReferrerSpec);
   }
 
   return mozilla::AddToHash(
@@ -1256,15 +1254,16 @@ already_AddRefed<nsIReferrerInfo> ReferrerInfo::CreateForFetch(
 
 /* static */
 already_AddRefed<nsIReferrerInfo> ReferrerInfo::CreateForExternalCSSResources(
-    mozilla::StyleSheet* aExternalSheet, ReferrerPolicyEnum aPolicy) {
-  MOZ_ASSERT(aExternalSheet && !aExternalSheet->IsInline());
-  nsCOMPtr<nsIReferrerInfo> referrerInfo;
-
+    mozilla::StyleSheet* aExternalSheet, nsIURI* aExternalSheetURI,
+    ReferrerPolicyEnum aPolicy) {
+  MOZ_ASSERT(aExternalSheet);
+  MOZ_ASSERT(aExternalSheetURI);
   // Step 2
   // https://w3c.github.io/webappsec-referrer-policy/#integration-with-css
   // Use empty policy at the beginning and update it later from Referrer-Policy
   // header.
-  referrerInfo = new ReferrerInfo(aExternalSheet->GetSheetURI(), aPolicy);
+  nsCOMPtr<nsIReferrerInfo> referrerInfo =
+      new ReferrerInfo(aExternalSheetURI, aPolicy);
   return referrerInfo.forget();
 }
 
@@ -1711,3 +1710,6 @@ void ReferrerInfo::RecordTelemetry(nsIHttpChannel* aChannel) {
 }
 
 }  // namespace mozilla::dom
+
+#undef LOG
+#undef LOG_ENABLED

@@ -15,7 +15,6 @@
 #include "nsPrintfCString.h"
 #include "mozilla/GRefPtr.h"
 #include "mozilla/GUniquePtr.h"
-#include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/WidgetUtilsGtk.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_widget.h"
@@ -23,6 +22,7 @@
 #include "prenv.h"
 
 #include <gio/gio.h>
+#include <glib.h>
 #include <gtk/gtk.h>
 #include <gio/gdesktopappinfo.h>
 #ifdef MOZ_ENABLE_DBUS
@@ -30,6 +30,7 @@
 #  include <dlfcn.h>
 #  include "mozilla/widget/AsyncDBus.h"
 #  include "mozilla/WidgetUtilsGtk.h"
+#  include "nsAppShell.h"
 #endif
 
 using namespace mozilla;
@@ -42,6 +43,108 @@ LazyLogModule gGIOServiceLog("GIOService");
 #else
 #  define LOG(...)
 #endif /* MOZ_LOGGING */
+
+#define MOZ_TYPE_APP_LAUNCH_CONTEXT (moz_app_launch_context_get_type())
+#define MOZ_APP_LAUNCH_CONTEXT(obj)                               \
+  (G_TYPE_CHECK_INSTANCE_CAST((obj), MOZ_TYPE_APP_LAUNCH_CONTEXT, \
+                              MozAppLaunchContext))
+#define MOZ_APP_LAUNCH_CONTEXT_CLASS(klass)                      \
+  (G_TYPE_CHECK_CLASS_CAST((klass), MOZ_TYPE_APP_LAUNCH_CONTEXT, \
+                           MozAppLaunchContextClass))
+#define MOZ_IS_APP_LAUNCH_CONTEXT(obj) \
+  (G_TYPE_CHECK_INSTANCE_TYPE((obj), MOZ_TYPE_APP_LAUNCH_CONTEXT))
+#define MOZ_IS_APP_LAUNCH_CONTEXT_CLASS(klass) \
+  (G_TYPE_CHECK_CLASS_TYPE((klass), MOZ_TYPE_APP_LAUNCH_CONTEXT))
+#define MOZ_APP_LAUNCH_CONTEXT_GET_CLASS(obj)                    \
+  (G_TYPE_INSTANCE_GET_CLASS((obj), MOZ_TYPE_APP_LAUNCH_CONTEXT, \
+                             MozAppLaunchContextClass))
+
+typedef struct {
+  GAppLaunchContext parent_instance;
+  char* activation_token;
+} MozAppLaunchContext;
+
+typedef struct {
+  GAppLaunchContextClass parent_class;
+} MozAppLaunchContextClass;
+
+// GLib's G_DEFINE_TYPE triggers warnings about volatile types. These warnings
+// were fixed in GLib 2.67.1: https://gitlab.gnome.org/GNOME/glib/-/issues/600
+// We can remove the diagnostic pragmas below after our minimum supported GLib
+// version is >= 2.67.1.
+#if !GLIB_CHECK_VERSION(2, 67, 1)
+#  if defined(__clang__)
+#    pragma clang diagnostic push
+#    pragma clang diagnostic ignored "-Wdeprecated-volatile"
+#  elif defined(__GNUC__)
+#    pragma GCC diagnostic push
+#    pragma GCC diagnostic ignored "-Wvolatile"
+#  endif
+#endif
+
+G_DEFINE_TYPE(MozAppLaunchContext, moz_app_launch_context,
+              G_TYPE_APP_LAUNCH_CONTEXT)
+
+#if !GLIB_CHECK_VERSION(2, 67, 1)
+#  if defined(__clang__)
+#    pragma clang diagnostic pop
+#  elif defined(__GNUC__)
+#    pragma GCC diagnostic pop
+#  endif
+#endif
+
+static char* moz_app_launch_context_get_startup_notify_id(
+    GAppLaunchContext* context, GAppInfo* info, GList* files) {
+  MozAppLaunchContext* self = MOZ_APP_LAUNCH_CONTEXT(context);
+
+  // https://docs.gtk.org/gio/method.AppLaunchContext.get_startup_notify_id.html
+  // We have already obtained an activation token, so simply return it now.
+  return g_strdup(self->activation_token);
+}
+
+static void moz_app_launch_context_finalize(GObject* object) {
+  MozAppLaunchContext* self = MOZ_APP_LAUNCH_CONTEXT(object);
+  g_clear_pointer(&self->activation_token, g_free);
+  G_OBJECT_CLASS(moz_app_launch_context_parent_class)->finalize(object);
+}
+
+static void moz_app_launch_context_class_init(MozAppLaunchContextClass* klass) {
+  GAppLaunchContextClass* launch_class = G_APP_LAUNCH_CONTEXT_CLASS(klass);
+  GObjectClass* object_class = G_OBJECT_CLASS(klass);
+
+  launch_class->get_startup_notify_id =
+      moz_app_launch_context_get_startup_notify_id;
+  object_class->finalize = moz_app_launch_context_finalize;
+}
+
+static void moz_app_launch_context_init(MozAppLaunchContext* self) {
+  GAppLaunchContext* context = G_APP_LAUNCH_CONTEXT(self);
+
+  // GLib does not support xdg-activation before version 2.76,
+  // so set the environment variable manually.
+  // This only works when launching the proces directly, and does
+  // not work when going through the xdg-desktop-portal.
+  // For activation to work when using the portal, you need to use
+  // GLib 2.76 or newer.
+  if (self->activation_token && glib_check_version(2, 76, 0)) {
+    g_app_launch_context_setenv(context, "XDG_ACTIVATION_TOKEN",
+                                self->activation_token);
+  }
+
+  // Unset this before launching third-party MIME handlers. Otherwise, if
+  // Thunderbird sets this in its startup script (as it does in Debian and
+  // Fedora), and Firefox does not set this in its startup script (it doesn't in
+  // Debian), then Firefox will think it is part of Thunderbird and try to make
+  // Thunderbird the default browser. See bug 1494436.
+  g_app_launch_context_unsetenv(context, "MOZ_APP_LAUNCHER");
+}
+
+MozAppLaunchContext* moz_app_launch_context_new(const char* activation_token) {
+  MozAppLaunchContext* self =
+      MOZ_APP_LAUNCH_CONTEXT(g_object_new(MOZ_TYPE_APP_LAUNCH_CONTEXT, NULL));
+  self->activation_token = g_strdup(activation_token);
+  return self;
+}
 
 class nsFlatpakHandlerApp : public nsIHandlerApp {
  public:
@@ -319,16 +422,8 @@ nsGIOMimeApp::Equals(nsIHandlerApp* aHandlerApp, bool* _retval) {
 
 static RefPtr<GAppLaunchContext> GetLaunchContext(
     const char* aXDGToken = nullptr) {
-  RefPtr<GAppLaunchContext> context = dont_AddRef(g_app_launch_context_new());
-  // Unset this before launching third-party MIME handlers. Otherwise, if
-  // Thunderbird sets this in its startup script (as it does in Debian and
-  // Fedora), and Firefox does not set this in its startup script (it doesn't in
-  // Debian), then Firefox will think it is part of Thunderbird and try to make
-  // Thunderbird the default browser. See bug 1494436.
-  g_app_launch_context_unsetenv(context, "MOZ_APP_LAUNCHER");
-  if (aXDGToken) {
-    g_app_launch_context_setenv(context, "XDG_ACTIVATION_TOKEN", aXDGToken);
-  }
+  RefPtr<GAppLaunchContext> context =
+      dont_AddRef(G_APP_LAUNCH_CONTEXT(moz_app_launch_context_new(aXDGToken)));
   return context;
 }
 
@@ -620,6 +715,8 @@ nsGIOService::GetAppForURIScheme(const nsACString& aURIScheme,
                                  nsIHandlerApp** aApp) {
   *aApp = nullptr;
 
+  // Portals works with DBus only.
+#ifdef MOZ_ENABLE_DBUS
   // Application in flatpak sandbox does not have access to the list
   // of installed applications on the system. We use SchemeSupported
   // method to check if the URI scheme is supported and then use
@@ -634,14 +731,13 @@ nsGIOService::GetAppForURIScheme(const nsACString& aURIScheme,
       return NS_ERROR_FAILURE;
     }
     GUniquePtr<GError> error;
-    RefPtr<GDBusProxy> proxy;
-    RefPtr<GVariant> result;
 
-    proxy = g_dbus_proxy_new_for_bus_sync(
+    nsAppShell::DBusConnectionCheck();
+    RefPtr<GDBusProxy> proxy = dont_AddRef(g_dbus_proxy_new_for_bus_sync(
         G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_NONE, nullptr, OPENURI_BUS_NAME,
         OPENURI_OBJECT_PATH, OPENURI_INTERFACE_NAME,
         nullptr,  // cancellable
-        getter_Transfers(error));
+        getter_Transfers(error)));
     if (error) {
       g_warning("Failed to create proxy: %s\n", error->message);
       return NS_ERROR_FAILURE;
@@ -650,7 +746,7 @@ nsGIOService::GetAppForURIScheme(const nsACString& aURIScheme,
     GVariantBuilder builder;
     g_variant_builder_init(&builder, G_VARIANT_TYPE_VARDICT);
 
-    result = dont_AddRef(g_dbus_proxy_call_sync(
+    RefPtr<GVariant> result = dont_AddRef(g_dbus_proxy_call_sync(
         proxy, SCHEME_SUPPORTED_METHOD,
         g_variant_new("(sa{sv})", PromiseFlatCString(aURIScheme).get(),
                       &builder),
@@ -683,6 +779,7 @@ nsGIOService::GetAppForURIScheme(const nsACString& aURIScheme,
     mozApp.forget(aApp);
     return NS_OK;
   }
+#endif
 
   RefPtr<GAppInfo> app_info = dont_AddRef(g_app_info_get_default_for_uri_scheme(
       PromiseFlatCString(aURIScheme).get()));
@@ -914,11 +1011,24 @@ static nsresult RevealFileViaDBusWithProxy(GDBusProxy* aProxy, nsIFile* aFile,
   MOZ_TRY(aFile->GetNativePath(path));
 
   RefPtr<mozilla::widget::DBusCallPromise> dbusPromise;
-  const char* startupId = "";
+
+  char* activationToken = nullptr;
+  auto releaseActivationToken = MakeScopeExit([&] { g_free(activationToken); });
+
+  // Try to get activation token from GdkDisplay
+  if (GdkDisplay* display = gdk_display_get_default()) {
+    if (GdkAppLaunchContext* context =
+            gdk_display_get_app_launch_context(display)) {
+      activationToken = g_app_launch_context_get_startup_notify_id(
+          G_APP_LAUNCH_CONTEXT(context), nullptr, nullptr);
+      g_object_unref(context);
+    }
+  }
 
   const int32_t timeout =
       StaticPrefs::widget_gtk_file_manager_show_items_timeout_ms();
 
+  nsAppShell::DBusConnectionCheck();
   if (!(strcmp(aMethod, kMethodOpenDirectory) == 0)) {
     GUniquePtr<gchar> uri(g_filename_to_uri(path.get(), nullptr, nullptr));
     if (!uri) {
@@ -930,8 +1040,8 @@ static nsresult RevealFileViaDBusWithProxy(GDBusProxy* aProxy, nsIFile* aFile,
     g_variant_builder_init(&builder, G_VARIANT_TYPE_STRING_ARRAY);
     g_variant_builder_add(&builder, "s", uri.get());
 
-    RefPtr<GVariant> variant = dont_AddRef(
-        g_variant_ref_sink(g_variant_new("(ass)", &builder, startupId)));
+    RefPtr<GVariant> variant = dont_AddRef(g_variant_ref_sink(g_variant_new(
+        "(ass)", &builder, activationToken ? activationToken : "")));
     g_variant_builder_clear(&builder);
 
     dbusPromise = widget::DBusProxyCall(aProxy, aMethod, variant,
@@ -955,8 +1065,8 @@ static nsresult RevealFileViaDBusWithProxy(GDBusProxy* aProxy, nsIFile* aFile,
     RefPtr<GUnixFDList> fd_list =
         dont_AddRef(g_unix_fd_list_new_from_array(&fd, 1));
 
-    RefPtr<GVariant> variant = dont_AddRef(
-        g_variant_ref_sink(g_variant_new("(sha{sv})", startupId, 0, &options)));
+    RefPtr<GVariant> variant = dont_AddRef(g_variant_ref_sink(g_variant_new(
+        "(sha{sv})", activationToken ? activationToken : "", 0, &options)));
     g_variant_builder_clear(&options);
 
     dbusPromise = widget::DBusProxyCallWithUnixFDList(

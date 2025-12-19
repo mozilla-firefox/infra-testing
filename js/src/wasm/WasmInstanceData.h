@@ -137,6 +137,10 @@ struct FuncImportInstanceData {
   // values for lazy table initialization.
   GCPtr<JSObject*> callable;
   static_assert(sizeof(GCPtr<JSObject*>) == sizeof(void*), "for JIT access");
+
+  // See "Wasm Function.prototype.call.bind optimization" in WasmInstance.cpp
+  // for more information.
+  bool isFunctionCallBind;
 };
 
 struct MemoryInstanceData {
@@ -146,12 +150,22 @@ struct MemoryInstanceData {
   // Pointer to the base of the memory.
   uint8_t* base;
 
-  // Bounds check limit in bytes (or zero if there is no memory).  This is
-  // 64-bits on 64-bit systems so as to allow for heap lengths up to and beyond
-  // 4GB, and 32-bits on 32-bit systems, where heaps are limited to 2GB.
+  // Bounds check limit in bytes. This is 64 bits on 64-bit systems so as to
+  // allow for heap lengths up to and beyond 4GB, and 32 bits on 32-bit systems,
+  // where heaps are limited to 2GB.
   //
   // See "Linear memory addresses and bounds checking" in WasmMemory.cpp.
   uintptr_t boundsCheckLimit;
+
+  // The default boundsCheckLimit is used for standard page sizes and also 8-bit
+  // memory accesses on custom page sizes. These other limits are only used for
+  // accesses on memories with custom page sizes.
+#ifdef ENABLE_WASM_CUSTOM_PAGE_SIZES
+  uintptr_t boundsCheckLimit16;
+  uintptr_t boundsCheckLimit32;
+  uintptr_t boundsCheckLimit64;
+  uintptr_t boundsCheckLimit128;
+#endif
 
   // Whether this memory is shared or not.
   bool isShared;
@@ -162,8 +176,10 @@ struct MemoryInstanceData {
 // to bounds-check and index the table.
 
 struct TableInstanceData {
-  // Length of the table in number of elements (not bytes).
-  uint32_t length;
+  // Length of the table in number of elements (not bytes). Although the type is
+  // uint64_t, the maximum value fits in 32 bits -- this value can safely be
+  // loaded as either a 32-bit value or a 64-bit value.
+  uint64_t length;
 
   // Pointer to the array of elements (which can have various representations).
   // For tables of anyref this is null.

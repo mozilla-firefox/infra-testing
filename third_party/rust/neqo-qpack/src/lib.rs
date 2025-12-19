@@ -4,10 +4,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+
 pub mod decoder;
 mod decoder_instructions;
 pub mod encoder;
 mod encoder_instructions;
+mod fuzz;
 mod header_block;
 pub mod huffman;
 mod huffman_decode_helper;
@@ -20,51 +23,72 @@ mod static_table;
 mod stats;
 mod table;
 
-pub use decoder::QPackDecoder;
-pub use encoder::QPackEncoder;
 pub use stats::Stats;
+use thiserror::Error;
+
+pub use crate::{decoder::Decoder, encoder::Encoder};
 
 type Res<T> = Result<T, Error>;
 
 #[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Clone, Copy)]
-pub struct QpackSettings {
+#[expect(clippy::struct_field_names, reason = "That's how they are called.")]
+pub struct Settings {
     pub max_table_size_decoder: u64,
     pub max_table_size_encoder: u64,
     pub max_blocked_streams: u16,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Error)]
 pub enum Error {
-    DecompressionFailed,
+    #[error("Decompression error")]
+    Decompression,
+    #[error("Encoder stream error")]
     EncoderStream,
+    #[error("Decoder stream error")]
     DecoderStream,
+    #[error("Critical stream closed")]
     ClosedCriticalStream,
-    InternalError,
-
-    // These are internal errors, they will be transformed into one of the above.
-    NeedMoreData, /* Return when an input stream does not have more data that a decoder
-                   * needs.(It does not mean that a stream is closed.) */
-    HeaderLookup,
-    HuffmanDecompressionFailed,
-    BadUtf8,
-    ChangeCapacity,
-    DynamicTableFull,
-    IncrementAck,
-    IntegerOverflow,
-    WrongStreamCount,
-    Decoding, // Decoding internal error that is not one of the above.
-    EncoderStreamBlocked,
+    #[error("Internal error")]
     Internal,
 
-    TransportError(neqo_transport::Error),
-    QlogError,
+    // These are internal errors, they will be transformed into one of the above.
+    ///
+    /// Return when an input stream does not have more data that a decoder needs.
+    /// It does not mean that a stream is closed.
+    #[error("Need more data")]
+    NeedMoreData,
+    #[error("Header lookup failed")]
+    HeaderLookup,
+    #[error("Huffman decompression error")]
+    HuffmanDecompression,
+    #[error("Bad UTF-8 encoding")]
+    BadUtf8,
+    #[error("Change capacity error")]
+    ChangeCapacity,
+    #[error("Dynamic table full")]
+    DynamicTableFull,
+    #[error("Incremented ack is larger than inserts")]
+    IncrementAck,
+    #[error("Integer overflow")]
+    IntegerOverflow,
+    #[error("Wrong stream count")]
+    WrongStreamCount,
+    #[error("Decoding error")]
+    Decoding, // Decoding internal error that is not one of the above.
+    #[error("Encoder stream blocked")]
+    EncoderStreamBlocked,
+
+    #[error(transparent)]
+    Transport(#[from] neqo_transport::Error),
+    #[error("Qlog error")]
+    Qlog,
 }
 
 impl Error {
     #[must_use]
     pub const fn code(&self) -> neqo_transport::AppError {
         match self {
-            Self::DecompressionFailed => 0x200,
+            Self::Decompression => 0x200,
             Self::EncoderStream => 0x201,
             Self::DecoderStream => 0x202,
             Self::ClosedCriticalStream => 0x104,
@@ -84,32 +108,5 @@ impl Error {
                 err
             }
         })
-    }
-}
-
-impl ::std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn ::std::error::Error + 'static)> {
-        match self {
-            Self::TransportError(e) => Some(e),
-            _ => None,
-        }
-    }
-}
-
-impl ::std::fmt::Display for Error {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        write!(f, "QPACK error: {self:?}")
-    }
-}
-
-impl From<neqo_transport::Error> for Error {
-    fn from(err: neqo_transport::Error) -> Self {
-        Self::TransportError(err)
-    }
-}
-
-impl From<::qlog::Error> for Error {
-    fn from(_err: ::qlog::Error) -> Self {
-        Self::QlogError
     }
 }

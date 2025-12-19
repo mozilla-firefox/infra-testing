@@ -15,7 +15,7 @@
 #include "mozilla/ipc/UtilityProcessManager.h"
 #include "mozilla/ipc/UtilityProcessSandboxing.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/RemoteDecoderManagerParent.h"
+#include "mozilla/RemoteMediaManagerParent.h"
 
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
 #  include "mozilla/Sandbox.h"
@@ -227,11 +227,24 @@ mozilla::ipc::IPCResult UtilityProcessChild::RecvRequestMemoryReport(
   mozilla::dom::MemoryReportRequestClient::Start(
       aGeneration, aAnonymize, aMinimizeMemoryUsage, aDMDFile, processName,
       [&](const MemoryReport& aReport) {
-        Unused << GetSingleton()->SendAddMemoryReport(aReport);
+        (void)GetSingleton()->SendAddMemoryReport(aReport);
       },
       aResolver);
   return IPC_OK();
 }
+
+#ifndef MOZ_NO_SMART_CARDS
+IPCResult UtilityProcessChild::RecvStartPKCS11ModuleService(
+    Endpoint<PPKCS11ModuleChild>&& aEndpoint) {
+  auto child = MakeRefPtr<psm::PKCS11ModuleChild>();
+  if (!child || NS_FAILED(child->Start(std::move(aEndpoint)))) {
+    return IPC_FAIL(this, "Failed to create and start PKCS11ModuleChild");
+  }
+
+  mPKCS11ModuleInstance = std::move(child);
+  return IPC_OK();
+}
+#endif  // !MOZ_NO_SMART_CARDS
 
 #if defined(MOZ_SANDBOX) && defined(MOZ_DEBUG) && defined(ENABLE_TESTS)
 mozilla::ipc::IPCResult UtilityProcessChild::RecvInitSandboxTesting(
@@ -265,20 +278,19 @@ mozilla::ipc::IPCResult UtilityProcessChild::RecvTestTelemetryProbes() {
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult
-UtilityProcessChild::RecvStartUtilityAudioDecoderService(
-    Endpoint<PUtilityAudioDecoderParent>&& aEndpoint,
+mozilla::ipc::IPCResult UtilityProcessChild::RecvStartUtilityMediaService(
+    Endpoint<PUtilityMediaServiceParent>&& aEndpoint,
     nsTArray<gfx::GfxVarUpdate>&& aUpdates) {
   PROFILER_MARKER_UNTYPED(
-      "UtilityProcessChild::RecvStartUtilityAudioDecoderService", MEDIA,
+      "UtilityProcessChild::RecvStartUtilityMediaService", MEDIA,
       MarkerOptions(MarkerTiming::IntervalUntilNowFrom(mChildStartTime)));
-  mUtilityAudioDecoderInstance =
-      new UtilityAudioDecoderParent(std::move(aUpdates));
-  if (!mUtilityAudioDecoderInstance) {
-    return IPC_FAIL(this, "Failed to create UtilityAudioDecoderParent");
+  mUtilityMediaServiceInstance =
+      new UtilityMediaServiceParent(std::move(aUpdates));
+  if (!mUtilityMediaServiceInstance) {
+    return IPC_FAIL(this, "Failed to create UtilityMediaServiceParent");
   }
 
-  mUtilityAudioDecoderInstance->Start(std::move(aEndpoint));
+  mUtilityMediaServiceInstance->Start(std::move(aEndpoint));
   return IPC_OK();
 }
 
@@ -377,8 +389,8 @@ void UtilityProcessChild::ActorDestroy(ActorDestroyReason aWhy) {
   }
 
   uint32_t timeout = 0;
-  if (mUtilityAudioDecoderInstance) {
-    mUtilityAudioDecoderInstance = nullptr;
+  if (mUtilityMediaServiceInstance) {
+    mUtilityMediaServiceInstance = nullptr;
     timeout = 10 * 1000;
   }
 
@@ -388,7 +400,11 @@ void UtilityProcessChild::ActorDestroy(ActorDestroyReason aWhy) {
   mWindowsUtilsInstance = nullptr;
 #  endif
 
-  // Wait until all RemoteDecoderManagerParent have closed.
+#  ifndef MOZ_NO_SMART_CARDS
+  mPKCS11ModuleInstance = nullptr;
+#  endif  // !MOZ_NO_SMART_CARDS
+
+  // Wait until all RemoteMediaManagerParent have closed.
   // It is still possible some may not have clean up yet, and we might hit
   // timeout. Our xpcom-shutdown listener should take care of cleaning the
   // reference of our singleton.

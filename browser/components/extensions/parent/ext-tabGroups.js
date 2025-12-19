@@ -11,6 +11,42 @@ var { ExtensionError } = ExtensionUtils;
 
 const spellColour = color => (color === "grey" ? "gray" : color);
 
+/**
+ * @param {MozTabbrowserTabGroup} group Group to move.
+ * @param {DOMWindow} window Browser window to move to.
+ * @param {integer} index The desired position of the group within the window
+ * @returns {integer} The tab index that the group should move to, such that
+ *   after the move operation, the group's position is at the given index.
+ */
+function adjustIndexForMove(group, window, index) {
+  let tabIndex = index < 0 ? window.gBrowser.tabs.length : index;
+  if (group.ownerGlobal === window) {
+    let group_tabs = group.tabs;
+    if (tabIndex > group_tabs[0]._tPos) {
+      // When group is moving to a higher index, we need to increase the
+      // index to account for the fact that the act of moving tab groups
+      // causes all following tabs to have a decreased index.
+      tabIndex += group_tabs.length;
+    }
+  }
+  tabIndex = Math.min(tabIndex, window.gBrowser.tabs.length);
+
+  let prevTab = tabIndex > 0 ? window.gBrowser.tabs.at(tabIndex - 1) : null;
+  let nextTab = window.gBrowser.tabs.at(tabIndex);
+  if (nextTab?.pinned) {
+    throw new ExtensionError(
+      "Cannot move the group to an index that is in the middle of pinned tabs."
+    );
+  }
+  if (prevTab && nextTab?.group && prevTab.group === nextTab.group) {
+    throw new ExtensionError(
+      "Cannot move the group to an index that is in the middle of another group."
+    );
+  }
+
+  return tabIndex;
+}
+
 this.tabGroups = class extends ExtensionAPIPersistent {
   queryGroups({ collapsed, color, title, windowId } = {}) {
     color = spellColour(color);
@@ -64,6 +100,9 @@ this.tabGroups = class extends ExtensionAPIPersistent {
           // Tab group moved from a different window.
           return;
         }
+        if (!this.extension.canAccessWindow(event.originalTarget.ownerGlobal)) {
+          return;
+        }
         fire.async(this.convert(event.originalTarget));
       };
       windowTracker.addListener("TabGroupCreate", onCreate);
@@ -78,13 +117,20 @@ this.tabGroups = class extends ExtensionAPIPersistent {
     },
     onMoved({ fire }) {
       let onMove = event => {
+        if (!this.extension.canAccessWindow(event.originalTarget.ownerGlobal)) {
+          return;
+        }
         fire.async(this.convert(event.originalTarget));
       };
       let onCreate = event => {
-        if (event.detail.isAdoptingGroup) {
-          // Tab group moved from a different window.
-          fire.async(this.convert(event.originalTarget));
+        if (!event.detail.isAdoptingGroup) {
+          // We are only interested in tab groups moved from a different window.
+          return;
         }
+        if (!this.extension.canAccessWindow(event.originalTarget.ownerGlobal)) {
+          return;
+        }
+        fire.async(this.convert(event.originalTarget));
       };
       windowTracker.addListener("TabGroupMoved", onMove);
       windowTracker.addListener("TabGroupCreate", onCreate);
@@ -104,12 +150,27 @@ this.tabGroups = class extends ExtensionAPIPersistent {
           // Tab group moved to a different window.
           return;
         }
-        fire.async(this.convert(event.originalTarget));
+        if (!this.extension.canAccessWindow(event.originalTarget.ownerGlobal)) {
+          return;
+        }
+        fire.async(this.convert(event.originalTarget), {
+          isWindowClosing: false,
+        });
+      };
+      let onClosed = window => {
+        if (!this.extension.canAccessWindow(window)) {
+          return;
+        }
+        for (const group of window.gBrowser.tabGroups) {
+          fire.async(this.convert(group), { isWindowClosing: true });
+        }
       };
       windowTracker.addListener("TabGroupRemoved", onRemove);
+      windowTracker.addListener("domwindowclosed", onClosed);
       return {
         unregister() {
           windowTracker.removeListener("TabGroupRemoved", onRemove);
+          windowTracker.removeListener("domwindowclosed", onClosed);
         },
         convert(_fire) {
           fire = _fire;
@@ -118,6 +179,9 @@ this.tabGroups = class extends ExtensionAPIPersistent {
     },
     onUpdated({ fire }) {
       let onUpdate = event => {
+        if (!this.extension.canAccessWindow(event.originalTarget.ownerGlobal)) {
+          return;
+        }
         fire.async(this.convert(event.originalTarget));
       };
       windowTracker.addListener("TabGroupCollapse", onUpdate);
@@ -165,20 +229,17 @@ this.tabGroups = class extends ExtensionAPIPersistent {
             }
           }
 
+          let tabIndex = adjustIndexForMove(group, win, index);
           if (win !== group.ownerGlobal) {
-            let last = win.gBrowser.tabContainer.ariaFocusableItems.length + 1;
-            let elementIndex = index === -1 ? last : Math.min(index, last);
-            group = win.gBrowser.adoptTabGroup(group, elementIndex);
-          } else if (index >= 0 && index < win.gBrowser.tabs.length) {
-            win.gBrowser.moveTabTo(group, { tabIndex: index });
-          } else if (win.gBrowser.tabs.at(-1) !== group.tabs.at(-1)) {
-            win.gBrowser.moveTabAfter(group, win.gBrowser.tabs.at(-1));
+            group = win.gBrowser.adoptTabGroup(group, { tabIndex });
+          } else {
+            win.gBrowser.moveTabTo(group, { tabIndex });
           }
           return this.convert(group);
         },
 
         query: query => {
-          return Array.from(this.queryGroups(query ?? {}), group =>
+          return Array.from(this.queryGroups(query), group =>
             this.convert(group)
           );
         },

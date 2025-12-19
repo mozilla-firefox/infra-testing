@@ -9,15 +9,16 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.Card
-import androidx.compose.material.Text
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import mozilla.components.compose.base.annotation.LightDarkPreview
 import org.mozilla.fenix.theme.FirefoxTheme
 
 private val cardShape = RoundedCornerShape(8.dp)
@@ -41,14 +42,15 @@ fun TabStripCard(
 ) {
     Card(
         shape = cardShape,
-        backgroundColor = backgroundColor,
-        elevation = elevation,
+        colors = CardDefaults.cardColors(containerColor = backgroundColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = elevation),
         modifier = modifier,
-        content = content,
-    )
+    ) {
+        content()
+    }
 }
 
-@LightDarkPreview
+@PreviewLightDark
 @Composable
 private fun TabStripCardPreview() {
     FirefoxTheme {
@@ -62,7 +64,6 @@ private fun TabStripCardPreview() {
             ) {
                 Text(
                     text = "Tab Strip Card",
-                    color = FirefoxTheme.colors.textPrimary,
                     style = FirefoxTheme.typography.subtitle1,
                 )
             }

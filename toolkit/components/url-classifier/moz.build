@@ -17,6 +17,7 @@ XPIDL_SOURCES += [
     "nsIUrlClassifierPrefixSet.idl",
     "nsIUrlClassifierRemoteSettingsService.idl",
     "nsIUrlClassifierStreamUpdater.idl",
+    "nsIUrlClassifierTestUtils.idl",
     "nsIUrlClassifierUtils.idl",
     "nsIUrlListManager.idl",
 ]
@@ -28,6 +29,7 @@ DEFINES["GOOGLE_PROTOBUF_NO_STATIC_INITIALIZER"] = True
 
 UNIFIED_SOURCES += [
     "chromium/safebrowsing.pb.cc",
+    "chromium/safebrowsing_v5.pb.cc",
     "ChunkSet.cpp",
     "Classifier.cpp",
     "LookupCache.cpp",
@@ -36,6 +38,7 @@ UNIFIED_SOURCES += [
     "nsUrlClassifierDBService.cpp",
     "nsUrlClassifierInfo.cpp",
     "nsUrlClassifierProxies.cpp",
+    "nsUrlClassifierTestUtils.cpp",
     "nsUrlClassifierUtils.cpp",
     "ProtocolParser.cpp",
     "RiceDeltaDecoder.cpp",
@@ -68,6 +71,7 @@ XPCOM_MANIFESTS += [
 
 EXPORTS += [
     "chromium/safebrowsing.pb.h",
+    "chromium/safebrowsing_v5.pb.h",
     "Entries.h",
     "LookupCache.h",
     "LookupCacheV4.h",

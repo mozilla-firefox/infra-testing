@@ -7,7 +7,6 @@
 #ifndef nsMathMLmpaddedFrame_h___
 #define nsMathMLmpaddedFrame_h___
 
-#include "mozilla/Attributes.h"
 #include "nsCSSValue.h"
 #include "nsMathMLContainerFrame.h"
 
@@ -34,8 +33,8 @@ class nsMathMLmpaddedFrame final : public nsMathMLContainerFrame {
     return TransmitAutomaticDataForMrowLikeElement();
   }
 
-  nsresult Place(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
-                 ReflowOutput& aDesiredSize) override;
+  void Place(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
+             ReflowOutput& aDesiredSize) override;
 
   bool IsMrowLike() override {
     return mFrames.FirstChild() != mFrames.LastChild() || !mFrames.FirstChild();
@@ -88,13 +87,13 @@ class nsMathMLmpaddedFrame final : public nsMathMLContainerFrame {
   Attribute mVerticalOffset;
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) final;
+                            AttrModType aModType) final;
   void ParseAttribute(nsAtom* aAtom, Attribute& aAttribute);
   bool ParseAttribute(nsString& aString, Attribute& aAttribute);
 
   void UpdateValue(const Attribute& aAttribute, Attribute::PseudoUnit aSelfUnit,
                    const ReflowOutput& aDesiredSize, nscoord& aValueToUpdate,
-                   float aFontSizeInflation) const;
+                   float aFontSizeInflation);
 };
 
 #endif /* nsMathMLmpaddedFrame_h___ */

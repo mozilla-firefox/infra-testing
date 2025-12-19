@@ -5,9 +5,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MiddleCroppingLabelFrame.h"
+
 #include "MiddleCroppingBlockFrame.h"
-#include "mozilla/dom/Element.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/dom/Element.h"
 
 nsIFrame* NS_NewMiddleCroppingLabelFrame(mozilla::PresShell* aPresShell,
                                          mozilla::ComputedStyle* aStyle) {
@@ -23,7 +24,7 @@ void MiddleCroppingLabelFrame::GetUncroppedValue(nsAString& aValue) {
 
 nsresult MiddleCroppingLabelFrame::AttributeChanged(int32_t aNameSpaceID,
                                                     nsAtom* aAttribute,
-                                                    int32_t aModType) {
+                                                    AttrModType) {
   if (aNameSpaceID == kNameSpaceID_None && aAttribute == nsGkAtoms::value) {
     UpdateDisplayedValueToUncroppedValue(true);
   }

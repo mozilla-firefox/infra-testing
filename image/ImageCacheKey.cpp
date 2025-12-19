@@ -5,13 +5,10 @@
 
 #include "ImageCacheKey.h"
 
-#include <utility>
-
 #include "mozilla/AntiTrackingUtils.h"
 #include "mozilla/HashFunctions.h"
 #include "mozilla/StorageAccess.h"
 #include "mozilla/StoragePrincipalHelper.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/ServiceWorkerManager.h"
 #include "mozilla/StaticPrefs_privacy.h"
@@ -32,10 +29,8 @@ static nsIPrincipal* GetLoaderPrincipal(Document* aDocument) {
 }
 
 static nsIPrincipal* GetPartitionPrincipal(Document* aDocument) {
-  if (aDocument && StaticPrefs::privacy_partition_network_state()) {
-    return aDocument->PartitionedPrincipal();
-  }
-  return GetLoaderPrincipal(aDocument);
+  return aDocument ? aDocument->PartitionedPrincipal()
+                   : nsContentUtils::GetSystemPrincipal();
 }
 
 ImageCacheKey::ImageCacheKey(nsIURI* aURI, CORSMode aCORSMode,
@@ -84,7 +79,7 @@ void ImageCacheKey::EnsureHash() const {
   // NOTE(emilio): Not adding the partition principal to the hash, since it
   // can mutate (see bug 1955775).
   nsAutoCString spec;
-  Unused << mURI->GetSpec(spec);
+  (void)mURI->GetSpec(spec);
   mHash.emplace(
       AddToHash(HashString(spec), mControlledDocument, mAppType, mCORSMode));
 }

@@ -6,6 +6,15 @@
 
 /* Global rules */
 :root {
+  /**
+   * Headings are currently 1 level higher than they should be. Eventually
+   * "Settings" will become our h1 and everything will drop down a level so our
+   * h1s become h2s, h2s become h3s, etc.
+   */
+  --heading-font-size-xlarge: var(--font-size-xlarge);
+  --heading-font-size-large: var(--font-size-large);
+  --heading-font-size-medium: var(--font-size-medium);
+  --select-max-width: 20rem;
   user-select: text;
 }
 
@@ -32,7 +41,6 @@
   vertical-align: top; /* See bug 1606130 */
   display: flex;
   flex-direction: column;
-
 }
 
 /*
@@ -61,21 +69,21 @@
 
 #mainPrefPane {
   width: 100%;
-  padding: 0;
+  /* at some point we'll end up removing the sticky element using z-index above this that cuts off the top of the focus outline in https://bugzilla.mozilla.org/show_bug.cgi?id=1867385, but we're adding padding intentionally until then */
+  padding: calc(var(--focus-outline-offset) + var(--focus-outline-width)) 0 0;
 }
 
 html|div[data-category],
-groupbox[data-category] {
+groupbox[data-category],
+setting-group[data-category] {
   margin: 0 0 32px;
 }
 
 html|h1 {
-  font-size: var(--font-size-xlarge);
   margin: 0 0 var(--space-small);
 }
 
 html|h2 {
-  font-size: var(--font-size-large);
   margin: var(--space-small) 0 var(--space-xxsmall) 0;
 }
 
@@ -122,7 +130,7 @@ label {
 }
 
 .tip-caption {
-  font-size: .9em;
+  font-size: 0.9em;
   color: var(--text-color-deemphasized);
 }
 
@@ -165,11 +173,11 @@ radio {
 
 .spotlight {
   background-color: color-mix(in srgb, var(--color-accent-primary) 15%, transparent);
-  outline: var(--color-accent-primary) 1px dotted;
+  outline: var(--border-color-selected) 1px dotted;
   animation: fade-out 0.5s ease-out 2s forwards;
   /* Show the border to spotlight the components in high-contrast mode. */
   border: 1px solid transparent;
-  border-radius: 2px;
+  border-radius: var(--border-radius-xsmall);
 }
 
 @keyframes fade-out {
@@ -196,7 +204,7 @@ radio {
 
 .subcategory:not([hidden]) ~ .subcategory {
   padding-top: var(--space-xxlarge);
-  border-top: 1px solid var(--in-content-border-color);
+  border-top: 1px solid var(--border-color);
 }
 
 /* Category List */
@@ -246,31 +254,11 @@ radio {
 
 /* General Pane */
 
-.is-default > #isNotDefaultPane,
-:not(.is-default) > #isDefaultPane {
-  visibility: hidden;
-}
-
-#isDefaultLabel,
-#isNotDefaultLabel {
-  font-weight: var(--font-weight-bold);
-}
-
 /* stylelint-disable-next-line media-query-no-invalid */
 @media not -moz-pref("browser.migrate.preferences-entrypoint.enabled") {
   #dataMigrationGroup {
     display: none;
   }
-}
-
-#dataMigration {
-  /* This should really be using baseline, but that doesn't work properly with
-   * the <description> and XUL <button> markup. */
-  align-items: center;
-}
-
-#browserContainersExtensionContent {
-  padding-block: 5px;
 }
 
 .extension-controlled {
@@ -327,28 +315,6 @@ radio {
   padding: 0.3em;
 }
 
-#saveWhere {
-  align-items: center;
-}
-
-#saveTo {
-  margin-inline-end: 1em;
-}
-
-#downloadFolder {
-  flex: 1;
-  margin-block: 4px;
-  margin-inline-start: 0;
-  padding-inline-start: 30px;
-  background-repeat: no-repeat;
-  background-size: 16px;
-  background-position: center left 8px;
-}
-
-#downloadFolder:-moz-locale-dir(rtl) {
-  background-position-x: right 8px;
-}
-
 #updateBox {
   margin-block: 4px 32px;
 }
@@ -379,6 +345,7 @@ radio {
 }
 
 #filter {
+  flex: 1;
   margin: 4px 0 8px;
 }
 
@@ -412,6 +379,9 @@ radio {
 
 .typeIcon {
   margin-inline: 10px 9px !important;
+  &:not([srcset]) {
+    visibility: hidden;
+  }
 }
 
 #handlersView .actionsMenu::part(icon),
@@ -479,7 +449,7 @@ richlistitem[selected] .actionsMenu:focus-visible {
 }
 
 #homeContentsGroup > [data-subcategory] .section-checkbox {
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--font-weight-semibold);
 }
 
 #homeContentsGroup > [data-subcategory] > vbox menulist {
@@ -493,10 +463,6 @@ richlistitem[selected] .actionsMenu:focus-visible {
 
 #homeContentsGroup .checkbox-label {
   margin-inline-end: var(--space-small);
-}
-
-.addon-with-favicon .menu-icon {
-  margin-inline-start: 0;
 }
 
 a[is="moz-support-link"]:not(.sidebar-footer-link, [hidden]) {
@@ -519,8 +485,8 @@ a[is="moz-support-link"]:not(.sidebar-footer-link, [hidden]) {
 
 #engineList > treechildren::-moz-tree-image(engineShown, checked, selected),
 #blocklistsTree > treechildren::-moz-tree-image(selectionCol, checked, selected) {
-  fill: var(--in-content-item-selected-text);
-  stroke: var(--in-content-item-selected);
+  fill: var(--text-color-accent-primary-selected);
+  stroke: var(--color-accent-primary-selected);
 }
 
 @media (forced-colors) {
@@ -611,20 +577,20 @@ html|dialog {
 
 html|dialog::backdrop,
 .dialogOverlay[topmost="true"] {
-  background-color: rgba(0,0,0,0.5);
+  background-color: rgba(0, 0, 0, 0.5);
 }
 
 html|dialog,
 .dialogBox {
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--border-radius-medium);
   box-shadow: var(--box-shadow-popup);
 }
 
 .dialogBox {
-  background-color: var(--in-content-page-background);
+  background-color: var(--background-color-canvas);
   background-clip: content-box;
-  color: var(--in-content-page-color);
+  color: var(--text-color);
   /* `transparent` will use the dialogText color in high-contrast themes and
      when page colors are disabled */
   display: flex;
@@ -637,7 +603,7 @@ html|dialog,
   @media not (forced-colors) {
     html|dialog,
     .dialogBox {
-      --in-content-page-background: #42414d;
+      --background-color-canvas: #42414d;
     }
   }
 }
@@ -650,12 +616,12 @@ html|dialog,
 }
 
 .dialogTitleBar {
-  padding: .4em .2em;
-  border-bottom: 1px solid var(--in-content-border-color);
+  padding: 0.4em 0.2em;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .dialogTitle {
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--heading-font-weight);
   text-align: center;
   user-select: none;
 }
@@ -724,7 +690,7 @@ html|dialog,
 .fxaProfileImage {
   width: 80px;
   height: 80px;
-  border-radius: 50%;
+  border-radius: var(--border-radius-circle);
   border: 1px solid transparent;
   list-style-image: url(chrome://browser/skin/fxa/avatar-color.svg);
   margin-inline-end: var(--space-xlarge);
@@ -736,7 +702,7 @@ html|dialog,
 }
 
 .fxaProfileImage.actionable:hover {
-  border-color: #0095DD;
+  border-color: #0095dd;
 }
 
 .fxaProfileImage.actionable:hover:active {
@@ -771,8 +737,26 @@ html|dialog,
   margin-block: 0 4px;
 }
 
-#noFxaSignIn {
+button#noFxaSignIn {
   margin-inline-start: 8px;
+}
+
+#syncConfigured {
+  --box-icon-start-fill: var(--icon-color-success);
+}
+
+#syncNotConfigured,
+#noFxaSignIn {
+  --box-icon-start-fill: var(--icon-color-warning);
+}
+
+#syncSetup {
+  white-space: nowrap;
+}
+
+#syncNow,
+#syncing {
+  min-width: 150px;
 }
 
 .fxaSyncIllustration {
@@ -786,7 +770,7 @@ html|dialog,
 }
 
 .separator {
-  border-bottom: 1px solid var(--in-content-box-border-color);
+  border-bottom: 1px solid var(--border-color);
 }
 
 #fxaGroup {
@@ -804,8 +788,18 @@ html|dialog,
 .fxaLoginRejectedWarning {
   list-style-image: url(chrome://global/skin/icons/warning.svg);
   -moz-context-properties: fill;
-  fill: #FFBF00;
+  fill: #ffbf00;
   margin-inline: 4px 8px;
+}
+
+#fxaLoginVerified {
+  --box-icon-size: calc(var(--icon-size-xlarge) * 2);
+  --box-icon-border-radius: var(--border-radius-circle);
+
+  &[description] {
+    --box-label-alignment: end;
+    --box-description-alignment: start;
+  }
 }
 
 #syncStatusContainer {
@@ -818,7 +812,7 @@ html|dialog,
 
 .sync-group {
   margin-block: var(--space-large);
-  border: 1px solid var(--in-content-border-color);
+  border: 1px solid var(--border-color);
 }
 
 .sync-configured {
@@ -914,6 +908,7 @@ dialog > .sync-engines-list + hbox {
 
 .fxaMobilePromo {
   margin-top: 2px !important;
+  margin-bottom: var(--space-xxlarge);
 }
 
 .androidIcon,
@@ -945,7 +940,8 @@ dialog > .sync-engines-list + hbox {
     content: "";
     width: 1px;
     height: 100%;
-    background-color: var(--in-content-border-color);
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/no-non-semantic-token-usage */
+    background-color: var(--border-color);
     top: 0;
     inset-inline-end: 0;
     position: absolute;
@@ -980,10 +976,10 @@ dialog > .sync-engines-list + hbox {
 }
 
 .info-box-container {
-  background-color: var(--in-content-box-info-background);
+  background-color: var(--background-color-box-info);
   padding: 9px;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
 }
 
 .info-box-container.smaller-font-size {
@@ -1010,7 +1006,7 @@ dialog > .sync-engines-list + hbox {
 
 .sticky-container {
   position: sticky;
-  background-color: var(--in-content-page-background);
+  background-color: var(--background-color-canvas);
   top: 0;
   z-index: 1;
   /* The sticky-container should have the capability to cover all spotlight area. */
@@ -1024,20 +1020,26 @@ dialog > .sync-engines-list + hbox {
   max-width: var(--page-main-content-width);
 }
 
+#search-tooltip-container {
+  position: relative;
+  top: 0;
+}
+
 .search-tooltip {
   max-width: 10em;
   font-size: 1rem;
   position: absolute;
-  padding: 0 .7em;
+  padding: 0 0.7em;
   background-color: #ffe900;
   color: #000;
   border: 1px solid #d7b600;
   margin-top: -18px;
-  opacity: .85;
+  opacity: 0.85;
+  z-index: 1;
 }
 
 .search-tooltip:hover {
-  opacity: .1;
+  opacity: 0.1;
 }
 
 .search-tooltip::before {
@@ -1086,7 +1088,7 @@ dialog > .sync-engines-list + hbox {
   display: none !important;
 }
 
-menulist[indicator=true] > menupopup menuitem:not([image]) > .menu-icon {
+menulist[indicator="true"] > menupopup menuitem:not([image]) > .menu-icon {
   display: flex;
   min-width: auto; /* Override the min-width defined in menu.css */
   margin-inline-end: 6px;
@@ -1094,7 +1096,7 @@ menulist[indicator=true] > menupopup menuitem:not([image]) > .menu-icon {
   height: 10px;
 }
 
-menulist[indicator=true] > menupopup menuitem[indicator=true]:not([image]) > .menu-icon {
+menulist[indicator="true"] > menupopup menuitem[indicator="true"]:not([image]) > .menu-icon {
   list-style-image: url(chrome://browser/skin/preferences/search-arrow-indicator.svg);
 
   &:-moz-locale-dir(rtl) {
@@ -1211,6 +1213,10 @@ richlistitem .text-link:hover {
   font-size: var(--font-size-large);
 }
 
+#experimentalCategory-reset {
+  margin-top: var(--space-small);
+}
+
 .featureGateDescription {
   white-space: pre-wrap;
 }
@@ -1220,8 +1226,8 @@ richlistitem .text-link:hover {
   align-items: baseline;
 }
 
-.checkbox-row input[type=checkbox] {
-  translate: 0 2px
+.checkbox-row input[type="checkbox"] {
+  translate: 0 2px;
 }
 
 .checkbox-row a {
@@ -1285,7 +1291,11 @@ richlistitem .text-link:hover {
 }
 
 #solo-ai {
-  background-image: url("chrome://browser/skin/preferences/solo-ai-logo.svg")
+  background-image: url("chrome://browser/skin/preferences/solo-ai-logo.svg");
+}
+
+#mdn {
+  background-image: url("chrome://browser/skin/preferences/mdn-logo.svg");
 }
 
 /*
@@ -1297,12 +1307,12 @@ richlistitem .text-link:hover {
   min-height: 204px;
   margin-block: 10px 0;
   margin-inline-start: 30px;
-  background-color: var(--in-content-box-info-background);
+  background-color: var(--background-color-box-info);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: space-evenly;
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
 }
 
 @media (forced-colors) {
@@ -1319,7 +1329,7 @@ richlistitem .text-link:hover {
 }
 
 .qr-code-box-image {
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
   padding: 2px;
   width: 80px;
   flex: 0 0 auto;
@@ -1337,7 +1347,7 @@ richlistitem .text-link:hover {
 }
 
 .qr-code-box-title {
-  font-size: .87em;
+  font-size: 0.87em;
   font-weight: normal;
 
   text-align: center;
@@ -1353,7 +1363,7 @@ richlistitem .text-link:hover {
 
 .simple .qr-code-box {
   padding-inline: var(--space-xlarge);
-  padding-block: 20px
+  padding-block: 20px;
 }
 
 .simple .qr-code-box-image {
@@ -1361,12 +1371,12 @@ richlistitem .text-link:hover {
 }
 
 #moreFromMozillaCategory .qr-code-link {
-  font-size: .87em;
+  font-size: 0.87em;
 }
 
 @media (prefers-color-scheme: dark) {
   .qr-code-box:not([hidden="true"]) {
-    background-color: rgba(91,91,102,0.45);
+    background-color: rgba(91, 91, 102, 0.45);
   }
 
   .qr-code-box-title {
@@ -1374,87 +1384,53 @@ richlistitem .text-link:hover {
   }
 }
 
-#websiteAppearanceGroup {
-  display: block;
+#webAppearanceGroup .description-deemphasized {
+  margin-block-end: var(--space-large);
 }
 
-#web-appearance-chooser {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-large);
+/** SRD web-appearance-chooser control START **/
+.appearance-chooser-item {
+  flex: 1;
+
+  &::part(image) {
+    width: 54px;
+    box-shadow: var(--box-shadow-card);
+    margin-block: var(--space-medium);
+    border: var(--border-width) solid var(--border-color);
+    border-radius: var(--border-radius-small);
+  }
+
+  &:dir(rtl)::part(image) {
+    transform: scaleX(-1);
+  }
 }
+/** SRD web-appearance-chooser control END **/
 
-#web-appearance-chooser,
-#web-appearance-override-warning,
-#text-zoom-override-warning {
-  margin: var(--space-medium) 0;
+/** SRD rows control for Homepage START **/
+setting-group[groupid="homepage"] {
+  --select-max-width: fit-content;
+  --select-min-width: 15em;
 }
+/** SRD rows control for Homepage END **/
 
-#web-appearance-override-warning:not([hidden]) {
-  display: flex;
+/** SRD rows control for New Tab START **/
+setting-group[groupid="home"] {
+  --select-max-width: 17rem;
 }
-
-.web-appearance-choice {
-  width: 100%;
-  border: 1px solid var(--in-content-box-border-color);
-  background-color: var(--in-content-box-background-color);
-  color: var(--in-content-text-color);
-  border-radius: 4px;
-  overflow: clip;
-}
-
-.web-appearance-choice-image-container {
-  background-color: var(--in-content-button-background);
-  padding: var(--space-medium) 0;
-}
-
-.web-appearance-choice:hover > .web-appearance-choice-image-container {
-  background-color: var(--in-content-button-background-hover);
-}
-
-.web-appearance-choice:hover:active > .web-appearance-choice-image-container {
-  background-color: var(--in-content-button-background-active);
-}
-
-.web-appearance-choice img {
-  display: block;
-  margin: 0 auto;
-
-  border: 1px solid var(--in-content-box-border-color);
-  border-radius: 4px;
-  box-shadow: 0 0 2px 0 rgba(0,0,0,0.2);
-
-  transform: scaleX(1);
-  content: url("chrome://browser/content/preferences/web-appearance-light.svg")
-}
-
-.web-appearance-choice.dark img {
-  content: url("chrome://browser/content/preferences/web-appearance-dark.svg")
-}
-
-.web-appearance-choice img:-moz-locale-dir(rtl) {
-  transform: scaleX(-1);
-}
-
-.web-appearance-choice-footer {
-  border-top: 1px solid var(--in-content-box-border-color);
-  padding: 4px 8px;
-  overflow-wrap: anywhere;
-  display: flex;
-}
+/** SRD rows control for New Tab END **/
 
 #translations-manage-install-list {
   height: 220px;
   overflow: auto;
   background-color: var(--background-color-box);
-  border: 1px solid var(--in-content-box-border-color);
-  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-small);
   resize: vertical;
   margin: 4px 0;
 }
 
 .translations-manage-language:first-child {
-  border-bottom: 1px solid var(--in-content-box-border-color);
+  border-bottom: 1px solid var(--border-color);
   padding: 8px;
   margin-bottom: 8px;
 }
@@ -1472,6 +1448,10 @@ richlistitem .text-link:hover {
 #translations-manage-error {
   color: var(--text-color-error);
   margin: var(--space-large) 0;
+}
+
+.translations-download-language-error {
+  background-color: var(--background-color-critical);
 }
 
 .hidden-category {
@@ -1526,10 +1506,61 @@ richlistitem .text-link:hover {
   margin: 0 0 var(--space-small);
 }
 
+.subsection-heading {
+  margin-bottom: var(--space-small);
+}
+
 .section-header-last {
   margin: 0 0 var(--space-large);
 }
 
 .search-header:has(.section-heading) {
   margin: 0;
+}
+
+/* Styles for the "sponsors support our mission" message and link on the Home tab */
+.mission-message {
+  margin-block-start: var(--space-large);
+
+  > a {
+    font-size: var(--font-size-small);
+  }
+}
+
+#dohProviderSelect {
+  --select-max-width: 235px;
+}
+
+#browserContainersbox moz-message-bar {
+  margin-block-start: 0;
+}
+
+#etpBannerEl {
+  border-radius: var(--border-radius-large);
+  background-clip: content-box;
+  background-image:
+    url("chrome://browser/content/preferences/etp-advanced-banner.svg"),
+    radial-gradient(94.12% 34.67% at 50% 50%, rgba(159, 116, 255, 0.5) 0%, rgba(159, 116, 255, 0) 100%), linear-gradient(135deg, #592acb 0%, #ab43e7 100%);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: cover;
+  height: 128px;
+}
+
+#etpLevelWarning {
+  --promo-image-position: top;
+}
+
+#etpResetButtonGroup {
+  display: flex;
+  gap: var(--space-small);
+}
+
+#addresses-list-header,
+#payments-list-header {
+  --box-label-font-weight: var(--heading-font-weight);
+}
+
+.box-header-bold {
+  --box-label-font-weight: var(--heading-font-weight);
 }

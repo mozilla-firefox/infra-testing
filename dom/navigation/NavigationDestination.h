@@ -7,12 +7,10 @@
 #ifndef mozilla_dom_NavigationDestination_h___
 #define mozilla_dom_NavigationDestination_h___
 
+#include "mozilla/dom/BindingDeclarations.h"
 #include "nsISupports.h"
-
 #include "nsStructuredCloneContainer.h"
 #include "nsWrapperCache.h"
-
-#include "mozilla/dom/BindingDeclarations.h"
 
 class nsIGlobalObject;
 class nsIURI;
@@ -33,7 +31,7 @@ class NavigationDestination final : public nsISupports, public nsWrapperCache {
 
   NavigationDestination(nsIGlobalObject* aGlobal, nsIURI* aURI,
                         NavigationHistoryEntry* aEntry,
-                        nsStructuredCloneContainer* aState,
+                        nsIStructuredCloneContainer* aState,
                         bool aIsSameDocument);
 
   void GetUrl(nsString& aURL) const;
@@ -43,13 +41,15 @@ class NavigationDestination final : public nsISupports, public nsWrapperCache {
   bool SameDocument() const;
   void GetState(JSContext* aCx, JS::MutableHandle<JS::Value> aRetVal,
                 ErrorResult& aRv) const;
+  void SetState(nsIStructuredCloneContainer* aState);
 
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
   nsIGlobalObject* GetParentObject();
 
   NavigationHistoryEntry* GetEntry() const;
-  nsIURI* GetURI() const;
+  nsIURI* GetURL() const;
+  void SetURL(nsIURI* aURI);
 
  private:
   ~NavigationDestination() = default;
@@ -63,7 +63,7 @@ class NavigationDestination final : public nsISupports, public nsWrapperCache {
   RefPtr<NavigationHistoryEntry> mEntry;
 
   // https://html.spec.whatwg.org/#concept-navigationdestination-state
-  RefPtr<nsStructuredCloneContainer> mState;
+  RefPtr<nsIStructuredCloneContainer> mState;
 
   // https://html.spec.whatwg.org/#concept-navigationdestination-samedocument
   bool mIsSameDocument = false;

@@ -42,6 +42,7 @@
 HWY_BEFORE_NAMESPACE();
 namespace hwy {
 namespace HWY_NAMESPACE {
+namespace {
 
 // Returns random number in [-8, 8] - we use knowledge of the range to Find()
 // values we know are not present.
@@ -172,8 +173,8 @@ struct TestFindIf {
     // Includes out-of-range value 9 to test the not-found path.
     for (int val = min_val; val <= 9; ++val) {
 #if HWY_GENERIC_LAMBDA
-      const auto greater = [val](const auto d, const auto v) HWY_ATTR {
-        return Gt(v, Set(d, ConvertScalarTo<T>(val)));
+      const auto greater = [val](const auto d2, const auto v) HWY_ATTR {
+        return Gt(v, Set(d2, ConvertScalarTo<T>(val)));
       };
 #else
       const GreaterThan greater(val);
@@ -210,17 +211,20 @@ void TestAllFindIf() {
   ForAllTypes(ForPartialVectors<ForeachCountAndMisalign<TestFindIf>>());
 }
 
+}  // namespace
 // NOLINTNEXTLINE(google-readability-namespace-comments)
 }  // namespace HWY_NAMESPACE
 }  // namespace hwy
 HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
-
 namespace hwy {
+namespace {
 HWY_BEFORE_TEST(FindTest);
 HWY_EXPORT_AND_TEST_P(FindTest, TestAllFind);
 HWY_EXPORT_AND_TEST_P(FindTest, TestAllFindIf);
+HWY_AFTER_TEST();
+}  // namespace
 }  // namespace hwy
-
-#endif
+HWY_TEST_MAIN();
+#endif  // HWY_ONCE

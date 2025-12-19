@@ -10,11 +10,12 @@ plugins {
 apply plugin: 'com.android.application'
 
 android {
+    compileSdk { version = release(config.compileSdkMajorVersion) { minorApiLevel = config.compileSdkMinorVersion } }
+
     defaultConfig {
         applicationId "org.mozilla.samples.toolbar"
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
+        minSdk config.minSdkVersion
+        targetSdk config.targetSdkVersion
         versionCode 1
         versionName "1.0"
 
@@ -38,32 +39,27 @@ android {
 
 
 dependencies {
-    implementation platform(libs.androidx.compose.bom)
-
-    implementation project(':concept-engine')
-    implementation project(':concept-menu')
-    implementation project(':browser-toolbar')
-    implementation project(':browser-menu')
-    implementation project(':browser-menu2')
-    implementation project(':browser-domains')
-    implementation project(':browser-state')
-    implementation project(':compose-base')
-    implementation project(':compose-browser-toolbar')
-
-    implementation project(':ui-colors')
-    implementation project(':ui-tabcounter')
-    implementation project(':ui-icons')
-
-    implementation project(':feature-toolbar')
-
-    implementation project(':support-ktx')
-
-    implementation project(':support-utils')
-
-    implementation libs.kotlin.coroutines
+    implementation project(':components:browser-domains')
+    implementation project(':components:browser-menu')
+    implementation project(':components:browser-menu2')
+    implementation project(':components:browser-state')
+    implementation project(':components:browser-toolbar')
+    implementation project(':components:compose-base')
+    implementation project(':components:compose-browser-toolbar')
+    implementation project(':components:concept-engine')
+    implementation project(':components:concept-menu')
+    implementation project(':components:feature-toolbar')
+    implementation project(':components:support-ktx')
+    implementation project(':components:support-utils')
+    implementation project(':components:ui-colors')
+    implementation project(':components:ui-icons')
+    implementation project(':components:ui-tabcounter')
 
     implementation libs.androidx.appcompat
+    implementation platform(libs.androidx.compose.bom)
+    implementation libs.androidx.compose.material3
     implementation libs.androidx.compose.ui
     implementation libs.androidx.core.ktx
     implementation libs.androidx.recyclerview
+    implementation libs.kotlinx.coroutines
 }

@@ -3,13 +3,14 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 ---
 task-defaults:
-    platform: linux1804-64/opt
+    run-on-repo-type: [hg]
+    platform: linux2404-64/opt
     require-build:
         by-project:
             try:
-                linux1804-64/opt: build-linux64/opt
+                linux2404-64/opt: build-linux64/opt
             default:
-                linux1804-64/opt: build-linux64-shippable/opt
+                linux2404-64/opt: build-linux64-shippable/opt
     fetches:
         build:
             - target.tar.xz
@@ -18,9 +19,9 @@ task-defaults:
     treeherder:
         kind: test
         tier: 1
-    worker-type: t-linux-xlarge-source
+    worker-type: t-linux-docker-amd
     worker:
-        docker-image: {in-tree: ubuntu1804-test}
+        docker-image: {in-tree: ubuntu2404-test}
         max-run-time: 3600
         artifacts:
             - type: file

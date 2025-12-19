@@ -8,27 +8,11 @@
 
 #include <utility>
 
+#include "ServiceWorkerCloneData.h"
 #include "ServiceWorkerOpPromise.h"
+#include "ServiceWorkerShutdownState.h"
 #include "js/Exception.h"  // JS::ExceptionStack, JS::StealPendingExceptionStack
 #include "jsapi.h"
-
-#include "mozilla/dom/PushSubscriptionChangeEvent.h"
-#include "mozilla/dom/PushSubscriptionChangeEventBinding.h"
-#include "nsCOMPtr.h"
-#include "nsContentUtils.h"
-#include "nsDebug.h"
-#include "nsError.h"
-#include "nsINamed.h"
-#include "nsIPushErrorReporter.h"
-#include "nsISupportsImpl.h"
-#include "nsITimer.h"
-#include "nsIURI.h"
-#include "nsServiceManagerUtils.h"
-#include "nsTArray.h"
-#include "nsThreadUtils.h"
-
-#include "ServiceWorkerCloneData.h"
-#include "ServiceWorkerShutdownState.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/DebugOnly.h"
@@ -36,9 +20,9 @@
 #include "mozilla/OwningNonNull.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/ScopeExit.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/Client.h"
+#include "mozilla/dom/CookieStore.h"
 #include "mozilla/dom/ExtendableCookieChangeEvent.h"
 #include "mozilla/dom/ExtendableMessageEventBinding.h"
 #include "mozilla/dom/FetchEventBinding.h"
@@ -49,9 +33,11 @@
 #include "mozilla/dom/Notification.h"
 #include "mozilla/dom/NotificationEvent.h"
 #include "mozilla/dom/NotificationEventBinding.h"
-#include "mozilla/dom/PerformanceTiming.h"
 #include "mozilla/dom/PerformanceStorage.h"
+#include "mozilla/dom/PerformanceTiming.h"
 #include "mozilla/dom/PushEventBinding.h"
+#include "mozilla/dom/PushSubscriptionChangeEvent.h"
+#include "mozilla/dom/PushSubscriptionChangeEventBinding.h"
 #include "mozilla/dom/RemoteWorkerChild.h"
 #include "mozilla/dom/RemoteWorkerNonLifeCycleOpControllerChild.h"
 #include "mozilla/dom/RemoteWorkerService.h"
@@ -67,6 +53,18 @@
 #include "mozilla/dom/WorkerScope.h"
 #include "mozilla/extensions/ExtensionBrowser.h"
 #include "mozilla/ipc/IPCStreamUtils.h"
+#include "nsCOMPtr.h"
+#include "nsContentUtils.h"
+#include "nsDebug.h"
+#include "nsError.h"
+#include "nsINamed.h"
+#include "nsIPushErrorReporter.h"
+#include "nsISupportsImpl.h"
+#include "nsITimer.h"
+#include "nsIURI.h"
+#include "nsServiceManagerUtils.h"
+#include "nsTArray.h"
+#include "nsThreadUtils.h"
 
 namespace mozilla::dom {
 
@@ -302,13 +300,16 @@ class ServiceWorkerOp::ServiceWorkerOpRunnable final
     MOZ_ASSERT(aWorkerPrivate->IsServiceWorker());
     MOZ_ASSERT(mOwner);
 
-    if (aWorkerPrivate->GlobalScope()->IsDying()) {
-      Unused << Cancel();
+    // GlobalScope could be nullptr here that OOM issue causes GlobalScope
+    // creation fail.
+    if (!aWorkerPrivate->GlobalScope() ||
+        aWorkerPrivate->GlobalScope()->IsDying()) {
+      (void)Cancel();
       return true;
     }
 
     bool rv = mOwner->Exec(aCx, aWorkerPrivate);
-    Unused << NS_WARN_IF(!rv);
+    (void)NS_WARN_IF(!rv);
     mOwner = nullptr;
 
     return rv;
@@ -486,7 +487,7 @@ ServiceWorkerOp::ServiceWorkerOp(
 }
 
 ServiceWorkerOp::~ServiceWorkerOp() {
-  Unused << NS_WARN_IF(!mPromiseHolder.IsEmpty());
+  (void)NS_WARN_IF(!mPromiseHolder.IsEmpty());
   mPromiseHolder.RejectIfExists(NS_ERROR_DOM_ABORT_ERR, __func__);
 }
 
@@ -595,7 +596,7 @@ class UpdateServiceWorkerStateOp final : public ServiceWorkerOp {
       MOZ_ASSERT(aWorkerPrivate->IsServiceWorker());
 
       if (mOwner) {
-        Unused << mOwner->Exec(aCx, aWorkerPrivate);
+        (void)mOwner->Exec(aCx, aWorkerPrivate);
         mOwner = nullptr;
       }
 
@@ -715,8 +716,7 @@ class CookieChangeEventOp final : public ExtendableEventOp {
         mArgs.get_ServiceWorkerCookieChangeEventOpArgs();
 
     CookieListItem item;
-    item.mName.Construct();
-    item.mName.Value() = args.name();
+    CookieStore::CookieStructToItem(args.cookie(), &item);
 
     GlobalObject globalObj(aCx, aWorkerPrivate->GlobalScope()->GetWrapper());
     nsCOMPtr<EventTarget> eventTarget =
@@ -725,14 +725,12 @@ class CookieChangeEventOp final : public ExtendableEventOp {
 
     RefPtr<ExtendableCookieChangeEvent> event;
 
-    if (!args.deleted()) {
-      item.mValue.Construct();
-      item.mValue.Value() = args.value();
-
-      event = ExtendableCookieChangeEvent::CreateForChangedCookie(eventTarget,
+    if (args.deleted()) {
+      item.mValue.Reset();
+      event = ExtendableCookieChangeEvent::CreateForDeletedCookie(eventTarget,
                                                                   item);
     } else {
-      event = ExtendableCookieChangeEvent::CreateForDeletedCookie(eventTarget,
+      event = ExtendableCookieChangeEvent::CreateForChangedCookie(eventTarget,
                                                                   item);
     }
 
@@ -861,7 +859,7 @@ class PushEventOp final : public ExtendableEventOp {
 
           if (reporter) {
             nsresult rv = reporter->ReportDeliveryError(messageId, error);
-            Unused << NS_WARN_IF(NS_FAILED(rv));
+            (void)NS_WARN_IF(NS_FAILED(rv));
           }
         });
 
@@ -1518,8 +1516,8 @@ void FetchEventOp::AsyncLog(const nsCString& aScriptSpec, uint32_t aLineNumber,
           return;
         }
 
-        Unused << self->mActor->SendAsyncLog(spec, line, column, messageName,
-                                             params);
+        (void)self->mActor->SendAsyncLog(spec, line, column, messageName,
+                                         params);
       });
 
   MOZ_ALWAYS_SUCCEEDS(

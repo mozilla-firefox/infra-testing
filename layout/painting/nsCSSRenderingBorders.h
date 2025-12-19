@@ -8,16 +8,16 @@
 #define NS_CSS_RENDERING_BORDERS_H
 
 #include "gfxRect.h"
+#include "gfxUtils.h"
+#include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/BezierUtils.h"
 #include "mozilla/gfx/PathHelpers.h"
-#include "mozilla/RefPtr.h"
-#include "nsColor.h"
 #include "nsCOMPtr.h"
+#include "nsColor.h"
 #include "nsIFrame.h"
 #include "nsImageRenderer.h"
-#include "gfxUtils.h"
 
 struct nsBorderColors;
 
@@ -28,7 +28,6 @@ class nsDisplayListBuilder;
 
 class nsDisplayBorder;
 class nsDisplayButtonBorder;
-class nsDisplayButtonForeground;
 class nsDisplayOutline;
 
 enum class StyleBorderStyle : uint8_t;
@@ -84,18 +83,19 @@ class nsCSSBorderRenderer final {
   typedef mozilla::gfx::Path Path;
   typedef mozilla::gfx::Point Point;
   typedef mozilla::gfx::Rect Rect;
+  typedef mozilla::gfx::Margin Margin;
   typedef mozilla::gfx::RectCornerRadii RectCornerRadii;
   typedef mozilla::gfx::StrokeOptions StrokeOptions;
 
   friend class mozilla::nsDisplayOutline;
   friend class mozilla::nsDisplayButtonBorder;
-  friend class mozilla::nsDisplayButtonForeground;
 
  public:
   nsCSSBorderRenderer(nsPresContext* aPresContext, DrawTarget* aDrawTarget,
                       const Rect& aDirtyRect, Rect& aOuterRect,
                       const mozilla::StyleBorderStyle* aBorderStyles,
-                      const Float* aBorderWidths, RectCornerRadii& aBorderRadii,
+                      const Margin& aBorderWidths,
+                      RectCornerRadii& aBorderRadii,
                       const nscolor* aBorderColors, bool aBackfaceIsVisible,
                       const mozilla::Maybe<Rect>& aClipRect);
 
@@ -109,7 +109,7 @@ class nsCSSBorderRenderer final {
 
   // utility function used for background painting as well as borders
   static void ComputeInnerRadii(const RectCornerRadii& aRadii,
-                                const Float* aBorderSizes,
+                                const Margin& aBorderSizes,
                                 RectCornerRadii* aInnerRadiiRet);
 
   // Given aRadii as the border radii for a rectangle, compute the
@@ -117,7 +117,7 @@ class nsCSSBorderRenderer final {
   // by increasing the radii, except keeping sharp corners sharp.
   // Used for spread box-shadows
   static void ComputeOuterRadii(const RectCornerRadii& aRadii,
-                                const Float* aBorderSizes,
+                                const Margin& aBorderSizes,
                                 RectCornerRadii* aOuterRadiiRet);
 
   static bool AllCornersZeroSize(const RectCornerRadii& corners);
@@ -137,7 +137,7 @@ class nsCSSBorderRenderer final {
 
   // the style and size of the border
   mozilla::StyleBorderStyle mBorderStyles[4];
-  Float mBorderWidths[4];
+  Margin mBorderWidths;
   RectCornerRadii mBorderRadii;
 
   // the colors for 'border-top-color' et. al.
@@ -210,7 +210,7 @@ class nsCSSBorderRenderer final {
   // clip is needed if we can render the entire border in 1 or 2 passes.
   void FillSolidBorder(const Rect& aOuterRect, const Rect& aInnerRect,
                        const RectCornerRadii& aBorderRadii,
-                       const Float* aBorderSizes, mozilla::SideBits aSides,
+                       const Margin& aBorderSizes, mozilla::SideBits aSides,
                        const ColorPattern& aColor);
 
   //

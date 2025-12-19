@@ -33,11 +33,11 @@
 #include "mozilla/dom/Document.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsLayoutUtils.h"
+#include "nsMenuPopupFrame.h"
 #include "nsPrintfCString.h"
 #include "nsPIDOMWindow.h"
 #include "nsRefreshDriver.h"
 #include "nsString.h"
-#include "nsView.h"
 
 static mozilla::LazyLogModule sApzHlpLog("apz.helper");
 #define APZCCH_LOG(...) MOZ_LOG(sApzHlpLog, LogLevel::Debug, (__VA_ARGS__))
@@ -533,21 +533,22 @@ PresShell* APZCCallbackHelper::GetRootContentDocumentPresShellForContent(
 }
 
 nsEventStatus APZCCallbackHelper::DispatchWidgetEvent(WidgetGUIEvent& aEvent) {
-  nsEventStatus status = nsEventStatus_eConsumeNoDefault;
   if (aEvent.mWidget) {
-    aEvent.mWidget->DispatchEvent(&aEvent, status);
+    return aEvent.mWidget->DispatchEvent(&aEvent);
   }
-  return status;
+  return nsEventStatus_eConsumeNoDefault;
 }
 
 nsEventStatus APZCCallbackHelper::DispatchSynthesizedMouseEvent(
-    EventMessage aMsg, const LayoutDevicePoint& aRefPoint, Modifiers aModifiers,
-    int32_t aClickCount, PrecedingPointerDown aPrecedingPointerDownState,
-    nsIWidget* aWidget) {
+    EventMessage aMsg, const LayoutDevicePoint& aRefPoint, uint32_t aPointerId,
+    Modifiers aModifiers, int32_t aClickCount,
+    PrecedingPointerDown aPrecedingPointerDownState, nsIWidget* aWidget,
+    SynthesizeForTests aSynthesizeForTests) {
   MOZ_ASSERT(aMsg == eMouseMove || aMsg == eMouseDown || aMsg == eMouseUp ||
              aMsg == eMouseLongTap);
 
   WidgetMouseEvent event(true, aMsg, aWidget, WidgetMouseEvent::eReal);
+  event.mFlags.mIsSynthesizedForTests = static_cast<bool>(aSynthesizeForTests);
   event.mRefPoint = LayoutDeviceIntPoint::Truncate(aRefPoint.x, aRefPoint.y);
   event.mButton = MouseButton::ePrimary;
   event.mButtons = aMsg == eMouseDown ? MouseButtonsFlag::ePrimaryFlag
@@ -569,6 +570,7 @@ nsEventStatus APZCCallbackHelper::DispatchSynthesizedMouseEvent(
     event.mClickCount = aClickCount;
   }
   event.mModifiers = aModifiers;
+  event.pointerId = aPointerId;
   // Real touch events will generate corresponding pointer events. We set
   // convertToPointer to false to prevent the synthesized mouse events generate
   // pointer events again.
@@ -577,14 +579,17 @@ nsEventStatus APZCCallbackHelper::DispatchSynthesizedMouseEvent(
 }
 
 PreventDefaultResult APZCCallbackHelper::DispatchSynthesizedContextmenuEvent(
-    const LayoutDevicePoint& aRefPoint, Modifiers aModifiers,
-    nsIWidget* aWidget) {
+    const LayoutDevicePoint& aRefPoint, uint32_t aPointerId,
+    Modifiers aModifiers, nsIWidget* aWidget,
+    SynthesizeForTests aSynthesizeForTests) {
   WidgetPointerEvent event(true, eContextMenu, aWidget);
+  event.mFlags.mIsSynthesizedForTests = static_cast<bool>(aSynthesizeForTests);
   event.mRefPoint = LayoutDeviceIntPoint::Truncate(aRefPoint.x, aRefPoint.y);
   event.mButton = MouseButton::ePrimary;
   event.mButtons = MouseButtonsFlag::ePrimaryFlag;
   event.mInputSource = dom::MouseEvent_Binding::MOZ_SOURCE_TOUCH;
   event.mModifiers = aModifiers;
+  event.pointerId = aPointerId;
   // contextmenu events will never generate pointer events.
   event.convertToPointer = false;
   nsEventStatus result = DispatchWidgetEvent(event);
@@ -598,19 +603,23 @@ PreventDefaultResult APZCCallbackHelper::DispatchSynthesizedContextmenuEvent(
 }
 
 void APZCCallbackHelper::FireSingleTapEvent(
-    const LayoutDevicePoint& aPoint, Modifiers aModifiers, int32_t aClickCount,
-    PrecedingPointerDown aPrecedingPointerDownState, nsIWidget* aWidget) {
+    const LayoutDevicePoint& aPoint, uint32_t aPointerId, Modifiers aModifiers,
+    int32_t aClickCount, PrecedingPointerDown aPrecedingPointerDownState,
+    nsIWidget* aWidget, SynthesizeForTests aSynthesizeForTests) {
   if (aWidget->Destroyed()) {
     return;
   }
   APZCCH_LOG("Dispatching single-tap component events to %s\n",
              ToString(aPoint).c_str());
-  DispatchSynthesizedMouseEvent(eMouseMove, aPoint, aModifiers, aClickCount,
-                                aPrecedingPointerDownState, aWidget);
-  DispatchSynthesizedMouseEvent(eMouseDown, aPoint, aModifiers, aClickCount,
-                                aPrecedingPointerDownState, aWidget);
-  DispatchSynthesizedMouseEvent(eMouseUp, aPoint, aModifiers, aClickCount,
-                                aPrecedingPointerDownState, aWidget);
+  DispatchSynthesizedMouseEvent(eMouseMove, aPoint, aPointerId, aModifiers,
+                                aClickCount, aPrecedingPointerDownState,
+                                aWidget, aSynthesizeForTests);
+  DispatchSynthesizedMouseEvent(eMouseDown, aPoint, aPointerId, aModifiers,
+                                aClickCount, aPrecedingPointerDownState,
+                                aWidget, aSynthesizeForTests);
+  DispatchSynthesizedMouseEvent(eMouseUp, aPoint, aPointerId, aModifiers,
+                                aClickCount, aPrecedingPointerDownState,
+                                aWidget, aSynthesizeForTests);
 }
 
 static dom::Element* GetDisplayportElementFor(
@@ -634,20 +643,14 @@ static dom::Element* GetDisplayportElementFor(
 static dom::Element* GetRootElementFor(nsIWidget* aWidget) {
   // This returns the root element that ChromeProcessController sets the
   // displayport on during initialization.
-  if (nsView* view = nsView::GetViewFor(aWidget)) {
-    if (aWidget->GetWindowType() == widget::WindowType::Popup) {
-      MOZ_ASSERT(view->GetFrame() && view->GetFrame()->IsMenuPopupFrame() &&
-                 view->GetFrame()->GetContent() &&
-                 view->GetFrame()->GetContent()->IsElement());
-      return view->GetFrame()->GetContent()->AsElement();
-    }
-
-    if (PresShell* presShell = view->GetPresShell()) {
-      MOZ_ASSERT(presShell->GetDocument());
-      return presShell->GetDocument()->GetDocumentElement();
-    }
+  auto* frame = aWidget->GetFrame();
+  if (!frame) {
+    return nullptr;
   }
-  return nullptr;
+  if (frame->IsMenuPopupFrame()) {
+    return frame->GetContent()->AsElement();
+  }
+  return frame->PresContext()->Document()->GetDocumentElement();
 }
 
 namespace {
@@ -705,6 +708,12 @@ static bool PrepareForSetTargetAPZCNotification(
   if (!guidIsValid) {
     return false;
   }
+
+  // Stop suppressing displayport while the page is still loading.
+  if (MOZ_UNLIKELY(aRootFrame->PresShell()->IsDocumentLoading())) {
+    aRootFrame->PresShell()->SuppressDisplayport(false);
+  }
+
   if (DisplayPortUtils::HasNonMinimalNonZeroDisplayPort(dpElement)) {
     // If the element has a displayport but it hasn't been painted yet,
     // we want the caller to wait for the paint to happen, but we don't
@@ -793,15 +802,11 @@ void DisplayportSetListener::OnPostRefresh() {
 
 nsIFrame* GetRootFrameForWidget(const nsIWidget* aWidget,
                                 const PresShell* aPresShell) {
-  if (aWidget->GetWindowType() == widget::WindowType::Popup) {
+  if (auto* popup = aWidget->GetPopupFrame()) {
     // In the case where the widget is popup window and uses APZ, the widget
     // frame (i.e. menu popup frame) is the reference frame used for building
     // the display list for hit-testing inside the popup.
-    MOZ_ASSERT(aWidget->AsyncPanZoomEnabled());
-    if (nsView* view = nsView::GetViewFor(aWidget)) {
-      MOZ_ASSERT(view->GetFrame() && view->GetFrame()->IsMenuPopupFrame());
-      return view->GetFrame();
-    }
+    return popup;
   }
 
   return aPresShell->GetRootFrame();
@@ -967,31 +972,30 @@ void APZCCallbackHelper::CancelAutoscroll(
 void APZCCallbackHelper::NotifyScaleGestureComplete(
     const nsCOMPtr<nsIWidget>& aWidget, float aScale) {
   MOZ_ASSERT(NS_IsMainThread());
-
-  if (nsView* view = nsView::GetViewFor(aWidget)) {
-    if (PresShell* presShell = view->GetPresShell()) {
-      dom::Document* doc = presShell->GetDocument();
-      MOZ_ASSERT(doc);
-      if (nsPIDOMWindowInner* win = doc->GetInnerWindow()) {
-        dom::AutoJSAPI jsapi;
-        if (!jsapi.Init(win)) {
-          return;
-        }
-
-        JSContext* cx = jsapi.cx();
-        JS::Rooted<JS::Value> detail(cx, JS::Float32Value(aScale));
-        RefPtr<dom::CustomEvent> event =
-            NS_NewDOMCustomEvent(doc, nullptr, nullptr);
-        event->InitCustomEvent(cx, u"MozScaleGestureComplete"_ns,
-                               /* CanBubble */ true,
-                               /* Cancelable */ false, detail);
-        event->SetTrusted(true);
-        auto* dispatcher = new AsyncEventDispatcher(doc, event.forget(),
-                                                    ChromeOnlyDispatch::eYes);
-        dispatcher->PostDOMEvent();
-      }
-    }
+  nsIFrame* frame = aWidget->GetFrame();
+  if (!frame) {
+    return;
   }
+  dom::Document* doc = frame->PresShell()->GetDocument();
+  MOZ_ASSERT(doc);
+  nsPIDOMWindowInner* win = doc->GetInnerWindow();
+  if (!win) {
+    return;
+  }
+  dom::AutoJSAPI jsapi;
+  if (!jsapi.Init(win)) {
+    return;
+  }
+  JSContext* cx = jsapi.cx();
+  JS::Rooted<JS::Value> detail(cx, JS::Float32Value(aScale));
+  RefPtr<dom::CustomEvent> event = NS_NewDOMCustomEvent(doc, nullptr, nullptr);
+  event->InitCustomEvent(cx, u"MozScaleGestureComplete"_ns,
+                         /* CanBubble */ true,
+                         /* Cancelable */ false, detail);
+  event->SetTrusted(true);
+  auto* dispatcher =
+      new AsyncEventDispatcher(doc, event.forget(), ChromeOnlyDispatch::eYes);
+  dispatcher->PostDOMEvent();
 }
 
 /* static */

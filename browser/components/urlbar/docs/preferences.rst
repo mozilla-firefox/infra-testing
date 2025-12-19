@@ -41,15 +41,16 @@ browser.urlbar.suggest.openpage (boolean, default: true)
   Whether results will include switch-to-tab results.
   Can be controlled from Privacy Preferences.
 
-browser.urlbar.suggest.quicksuggest.nonsponsored (boolean, default: false)
+browser.urlbar.suggest.quicksuggest.all (boolean, default: false)
   If ``browser.urlbar.quicksuggest.enabled`` is true, this controls whether
-  results will include non-sponsored quick suggest suggestions. Otherwise
-  non-sponsored suggestions will not be shown.
+  results will include suggestions that are part of the Firefox Suggest brand.
+  Otherwise they will not be included.
 
 browser.urlbar.suggest.quicksuggest.sponsored (boolean, default: false)
- If ``browser.urlbar.quicksuggest.enabled`` is true, this controls whether
-  results will include sponsored quick suggest suggestions. Otherwise sponsored
-  suggestions will not be shown.
+  If ``browser.urlbar.quicksuggest.enabled`` and
+  ``browser.urlbar.suggest.quicksuggest.all`` are true, this controls whether
+  results will include sponsored Firefox Suggest suggestions. Otherwise they
+  will not be included.
 
 browser.urlbar.suggest.searches (boolean, default: true)
   Whether results will include search suggestions.
@@ -163,19 +164,25 @@ browser.urlbar.merino.providers (string, default: "")
 browser.urlbar.openintab (boolean, default: false)
   Whether address bar results should be opened in new tabs by default.
 
-browser.urlbar.pocket.featureGate (boolean, default: false)
-  Feature gate pref for Pocket suggestions in the urlbar.
-
 browser.urlbar.quicksuggest.enabled (boolean, default: false)
   Whether the quick suggest feature is enabled, i.e., sponsored and recommended
   results related to the user's search string. This pref can be overridden by
   the ``quickSuggestEnabled`` Nimbus variable. If false, neither sponsored nor
   non-sponsored quick suggest results will be shown. If true, then we look at
-  the individual prefs ``browser.urlbar.suggest.quicksuggest.nonsponsored`` and
+  the individual prefs ``browser.urlbar.suggest.quicksuggest.all`` and
   ``browser.urlbar.suggest.quicksuggest.sponsored``.
 
-browser.urlbar.quicksuggest.dataCollection.enabled (boolean, default: false)
-  Whether data collection is enabled for quick suggest results.
+browser.urlbar.quicksuggest.online.available (boolean, default: false)
+  Whether online Firefox Suggest is available to the user. This is only
+  relevant when Suggest overall is enabled. When true, a checkbox will be
+  shown in the settings UI allowing to the user to toggle online Suggest.
+
+browser.urlbar.quicksuggest.online.enabled (boolean, default: true)
+  Whether Firefox Suggest retrieves online suggestions from Merino. This pref
+  is only relevant when Suggest overall is enabled and online Suggest is
+  available to the user; otherwise online suggestions are disabled. In
+  addition, when the relevant Oblivious HTTP (OHTTP) Merino prefs are set,
+  online suggestions will be fetched over OHTTP.
 
 browser.urlbar.richSuggestions.tail (boolean, default: true)
   If true, we show tail search suggestions when available.
@@ -195,10 +202,6 @@ browser.urlbar.sponsoredTopSites (boolean, default: false)
 
 browser.urlbar.suggest.addons (boolean, default: true)
   If ``browser.urlbar.addons.featureGate`` is true, this controls whether add-on
-  suggestions are turned on. Otherwise they won't be shown.
-
-browser.urlbar.suggest.pocket (boolean, default: true)
-  If ``browser.urlbar.pocket.featureGate`` is true, this controls whether Pocket
   suggestions are turned on. Otherwise they won't be shown.
 
 browser.urlbar.suggest.yelp (boolean, default: true)
@@ -235,9 +238,6 @@ browser.urlbar.unitConversion.enabled (boolean, default: false)
 
 browser.urlbar.unitConversion.suggestedIndex (integer, default: 1)
   The index where we show unit conversion results.
-
-browser.urlbar.experimental.expandTextOnFocus (boolean, default: false)
-  Whether we expand the font size when the urlbar is focused.
 
 browser.urlbar.keepPanelOpenDuringImeComposition (boolean, default: false)
   Whether the results panel should be kept open during IME composition. The

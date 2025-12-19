@@ -17,6 +17,7 @@
 #include "builtin/intl/CommonFunctions.h"
 #include "builtin/intl/FormatBuffer.h"
 #include "builtin/intl/LanguageTag.h"
+#include "builtin/intl/LocaleNegotiation.h"
 #include "builtin/intl/SharedIntlData.h"
 #include "gc/GCContext.h"
 #include "js/PropertySpec.h"
@@ -32,6 +33,7 @@
 #include "vm/JSObject-inl.h"
 
 using namespace js;
+using namespace js::intl;
 
 using JS::AutoStableStringChars;
 
@@ -62,6 +64,9 @@ const JSClass CollatorObject::class_ = {
 
 const JSClass& CollatorObject::protoClass_ = PlainObject::class_;
 
+static bool collator_supportedLocalesOf(JSContext* cx, unsigned argc,
+                                        Value* vp);
+
 static bool collator_toSource(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   args.rval().setString(cx->names().Collator);
@@ -69,8 +74,7 @@ static bool collator_toSource(JSContext* cx, unsigned argc, Value* vp) {
 }
 
 static const JSFunctionSpec collator_static_methods[] = {
-    JS_SELF_HOSTED_FN("supportedLocalesOf", "Intl_Collator_supportedLocalesOf",
-                      1, 0),
+    JS_FN("supportedLocalesOf", collator_supportedLocalesOf, 1, 0),
     JS_FS_END,
 };
 
@@ -104,8 +108,9 @@ const ClassSpec CollatorObject::classSpec_ = {
  *
  * ES2017 Intl draft rev 94045d234762ad107a3d09bb6f7381a65f1a2f9b
  */
-static bool Collator(JSContext* cx, const CallArgs& args) {
+static bool Collator(JSContext* cx, unsigned argc, Value* vp) {
   AutoJSConstructorProfilerEntry pseudoFrame(cx, "Intl.Collator");
+  CallArgs args = CallArgsFromVp(argc, vp);
 
   // Step 1 (Handled by OrdinaryCreateFromConstructor fallback code).
 
@@ -134,17 +139,40 @@ static bool Collator(JSContext* cx, const CallArgs& args) {
   return true;
 }
 
-static bool Collator(JSContext* cx, unsigned argc, Value* vp) {
-  CallArgs args = CallArgsFromVp(argc, vp);
-  return Collator(cx, args);
+CollatorObject* js::intl::CreateCollator(JSContext* cx, Handle<Value> locales,
+                                         Handle<Value> options) {
+  Rooted<CollatorObject*> collator(cx,
+                                   NewBuiltinClassInstance<CollatorObject>(cx));
+  if (!collator) {
+    return nullptr;
+  }
+
+  if (!InitializeObject(cx, collator, cx->names().InitializeCollator, locales,
+                        options)) {
+    return nullptr;
+  }
+
+  return collator;
 }
 
-bool js::intl_Collator(JSContext* cx, unsigned argc, Value* vp) {
-  CallArgs args = CallArgsFromVp(argc, vp);
-  MOZ_ASSERT(args.length() == 2);
-  MOZ_ASSERT(!args.isConstructing());
+CollatorObject* js::intl::GetOrCreateCollator(JSContext* cx,
+                                              Handle<Value> locales,
+                                              Handle<Value> options) {
+  // Try to use a cached instance when |locales| is either undefined or a
+  // string, and |options| is undefined.
+  if ((locales.isUndefined() || locales.isString()) && options.isUndefined()) {
+    Rooted<JSLinearString*> locale(cx);
+    if (locales.isString()) {
+      locale = locales.toString()->ensureLinear(cx);
+      if (!locale) {
+        return nullptr;
+      }
+    }
+    return cx->global()->globalIntlData().getOrCreateCollator(cx, locale);
+  }
 
-  return Collator(cx, args);
+  // Create a new Intl.Collator instance.
+  return CreateCollator(cx, locales, options);
 }
 
 void js::CollatorObject::finalize(JS::GCContext* gcx, JSObject* obj) {
@@ -220,26 +248,9 @@ bool js::intl_availableCollations(JSContext* cx, unsigned argc, Value* vp) {
 static mozilla::intl::Collator* NewIntlCollator(
     JSContext* cx, Handle<CollatorObject*> collator) {
   RootedValue value(cx);
-
   RootedObject internals(cx, intl::GetInternalsObject(cx, collator));
   if (!internals) {
     return nullptr;
-  }
-
-  if (!GetProperty(cx, internals, internals, cx->names().locale, &value)) {
-    return nullptr;
-  }
-
-  mozilla::intl::Locale tag;
-  {
-    Rooted<JSLinearString*> locale(cx, value.toString()->ensureLinear(cx));
-    if (!locale) {
-      return nullptr;
-    }
-
-    if (!intl::ParseLocale(cx, locale, tag)) {
-      return nullptr;
-    }
   }
 
   using mozilla::intl::Collator;
@@ -307,21 +318,7 @@ static mozilla::intl::Collator* NewIntlCollator(
     }
   }
 
-  // |ApplyUnicodeExtensionToTag| applies the new keywords to the front of the
-  // Unicode extension subtag. We're then relying on ICU to follow RFC 6067,
-  // which states that any trailing keywords using the same key should be
-  // ignored.
-  if (!intl::ApplyUnicodeExtensionToTag(cx, tag, keywords)) {
-    return nullptr;
-  }
-
-  intl::FormatBuffer<char> buffer(cx);
-  if (auto result = tag.ToString(buffer); result.isErr()) {
-    intl::ReportInternalError(cx, result.unwrapErr());
-    return nullptr;
-  }
-
-  UniqueChars locale = buffer.extractStringZ();
+  UniqueChars locale = intl::FormatLocale(cx, internals, keywords);
   if (!locale) {
     return nullptr;
   }
@@ -413,7 +410,7 @@ static mozilla::intl::Collator* GetOrCreateCollator(
 }
 
 static bool intl_CompareStrings(JSContext* cx, mozilla::intl::Collator* coll,
-                                HandleString str1, HandleString str2,
+                                JSString* str1, JSString* str2,
                                 MutableHandleValue result) {
   MOZ_ASSERT(str1);
   MOZ_ASSERT(str2);
@@ -456,9 +453,19 @@ bool js::intl_CompareStrings(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // Use the UCollator to actually compare the strings.
-  RootedString str1(cx, args[1].toString());
-  RootedString str2(cx, args[2].toString());
+  JSString* str1 = args[1].toString();
+  JSString* str2 = args[2].toString();
   return intl_CompareStrings(cx, coll, str1, str2, args.rval());
+}
+
+bool js::intl::CompareStrings(JSContext* cx, Handle<CollatorObject*> collator,
+                              Handle<JSString*> str1, Handle<JSString*> str2,
+                              MutableHandle<Value> result) {
+  mozilla::intl::Collator* coll = GetOrCreateCollator(cx, collator);
+  if (!coll) {
+    return false;
+  }
+  return intl_CompareStrings(cx, coll, str1, str2, result);
 }
 
 bool js::intl_isUpperCaseFirst(JSContext* cx, unsigned argc, Value* vp) {
@@ -468,7 +475,11 @@ bool js::intl_isUpperCaseFirst(JSContext* cx, unsigned argc, Value* vp) {
 
   SharedIntlData& sharedIntlData = cx->runtime()->sharedIntlData.ref();
 
-  RootedString locale(cx, args[0].toString());
+  Rooted<JSLinearString*> locale(cx, args[0].toString()->ensureLinear(cx));
+  if (!locale) {
+    return false;
+  }
+
   bool isUpperFirst;
   if (!sharedIntlData.isUpperCaseFirst(cx, locale, &isUpperFirst)) {
     return false;
@@ -485,12 +496,33 @@ bool js::intl_isIgnorePunctuation(JSContext* cx, unsigned argc, Value* vp) {
 
   SharedIntlData& sharedIntlData = cx->runtime()->sharedIntlData.ref();
 
-  RootedString locale(cx, args[0].toString());
+  Rooted<JSLinearString*> locale(cx, args[0].toString()->ensureLinear(cx));
+  if (!locale) {
+    return false;
+  }
+
   bool isIgnorePunctuation;
   if (!sharedIntlData.isIgnorePunctuation(cx, locale, &isIgnorePunctuation)) {
     return false;
   }
 
   args.rval().setBoolean(isIgnorePunctuation);
+  return true;
+}
+
+/**
+ * Intl.Collator.supportedLocalesOf ( locales [ , options ] )
+ */
+static bool collator_supportedLocalesOf(JSContext* cx, unsigned argc,
+                                        Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  // Steps 1-3.
+  auto* array = SupportedLocalesOf(cx, AvailableLocaleKind::Collator,
+                                   args.get(0), args.get(1));
+  if (!array) {
+    return false;
+  }
+  args.rval().setObject(*array);
   return true;
 }

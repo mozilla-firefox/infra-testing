@@ -4,6 +4,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 #![expect(
     clippy::missing_errors_doc,
     reason = "Functions simply delegate to tokio and quinn-udp."
@@ -18,7 +19,7 @@ use std::{
 };
 
 use log::{log_enabled, Level};
-use neqo_common::{qdebug, qtrace, Datagram, IpTos};
+use neqo_common::{qdebug, qtrace, Datagram, DatagramBatch, Tos};
 use quinn_udp::{EcnCodepoint, RecvMeta, Transmit, UdpSocketState};
 
 /// Receive buffer size
@@ -39,51 +40,85 @@ const RECV_BUF_SIZE: usize = u16::MAX as usize;
 /// - Linux/Android: use segmentation offloading via GRO
 /// - Windows: use segmentation offloading via URO (caveat see <https://github.com/quinn-rs/quinn/issues/2041>)
 /// - Apple: no segmentation offloading available, use multiple buffers
-#[cfg(not(apple))]
+#[cfg(not(all(apple, feature = "fast-apple-datapath")))]
 const NUM_BUFS: usize = 1;
-#[cfg(apple)]
+#[cfg(all(apple, feature = "fast-apple-datapath"))]
 // Value approximated based on neqo-bin "Download" benchmark only.
 const NUM_BUFS: usize = 16;
 
 /// A UDP receive buffer.
 pub struct RecvBuf(Vec<Vec<u8>>);
 
-impl RecvBuf {
-    #[must_use]
-    pub fn new() -> Self {
-        Self(vec![vec![0; RECV_BUF_SIZE]; NUM_BUFS])
-    }
-}
-
 impl Default for RecvBuf {
     fn default() -> Self {
-        Self::new()
+        Self(vec![vec![0; RECV_BUF_SIZE]; NUM_BUFS])
     }
 }
 
 pub fn send_inner(
     state: &UdpSocketState,
     socket: quinn_udp::UdpSockRef<'_>,
-    d: &Datagram,
+    d: &DatagramBatch,
 ) -> io::Result<()> {
     let transmit = Transmit {
         destination: d.destination(),
         ecn: EcnCodepoint::from_bits(Into::<u8>::into(d.tos())),
-        contents: d,
-        segment_size: None,
+        contents: d.data(),
+        segment_size: Some(d.datagram_size().get()),
         src_ip: None,
     };
 
-    state.try_send(socket, &transmit)?;
+    match state.try_send(socket, &transmit) {
+        Ok(()) => {}
+        Err(e) if is_emsgsize(&e) => {
+            qdebug!(
+                "Failed to send datagram of size {} bytes, in {} segments, each {} bytes, from {} to {}. PMTUD probe? Ignoring error: {}",
+                d.data().len(),
+                d.num_datagrams(),
+                d.datagram_size().get(),
+                d.source(),
+                d.destination(),
+                e
+            );
+            return Ok(());
+        }
+        e @ Err(_) => return e,
+    }
 
     qtrace!(
-        "sent {} bytes from {} to {}",
-        d.len(),
+        "sent {} bytes, in {} segments, each {} bytes, from {} to {} ",
+        d.data().len(),
+        d.num_datagrams(),
+        d.datagram_size().get(),
         d.source(),
-        d.destination()
+        d.destination(),
     );
 
     Ok(())
+}
+
+#[expect(
+    clippy::unnecessary_map_or,
+    reason = "Clippy ignores the #[cfg] attribute."
+)]
+fn is_emsgsize(e: &io::Error) -> bool {
+    e.raw_os_error().map_or(false, |e| {
+        #[cfg(unix)]
+        {
+            e == libc::EMSGSIZE
+        }
+        #[cfg(windows)]
+        {
+            e == windows::Win32::Networking::WinSock::WSAEMSGSIZE.0
+                // WSAEINVAL is returned when the Windows USO (UDP Segmentation Offload)
+                // segment size exceeds the supported limit.
+                || e == windows::Win32::Networking::WinSock::WSAEINVAL.0
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            false
+        }
+    })
 }
 
 #[cfg(unix)]
@@ -92,10 +127,10 @@ use std::os::fd::AsFd as SocketRef;
 use std::os::windows::io::AsSocket as SocketRef;
 
 #[expect(clippy::missing_panics_doc, reason = "OK here.")]
-pub fn recv_inner<'a>(
+pub fn recv_inner<'a, S: SocketRef>(
     local_address: SocketAddr,
     state: &UdpSocketState,
-    socket: impl SocketRef,
+    socket: S,
     recv_buf: &'a mut RecvBuf,
 ) -> Result<DatagramIter<'a>, io::Error> {
     let mut metas = [RecvMeta::default(); NUM_BUFS];
@@ -109,14 +144,15 @@ pub fn recv_inner<'a>(
     if log_enabled!(Level::Trace) {
         for meta in metas.iter().take(n) {
             qtrace!(
-                "received {} bytes from {} to {local_address} in {} segments",
+                "received {} bytes, in {} segments, each {} bytes, from {} to {local_address}",
                 meta.len,
-                meta.addr,
                 if meta.stride == 0 {
                     0
                 } else {
                     meta.len.div_ceil(meta.stride)
-                }
+                },
+                meta.stride,
+                meta.addr,
             );
         }
     }
@@ -154,7 +190,7 @@ impl<'a> Iterator for DatagramIter<'a> {
                 return Some(Datagram::from_slice(
                     meta.addr,
                     self.local_address,
-                    meta.ecn.map(|n| IpTos::from(n as u8)).unwrap_or_default(),
+                    meta.ecn.map(|n| Tos::from(n as u8)).unwrap_or_default(),
                     d,
                 ));
             }
@@ -201,8 +237,13 @@ impl<S: SocketRef> Socket<S> {
     }
 
     /// Send a [`Datagram`] on the given [`Socket`].
-    pub fn send(&self, d: &Datagram) -> io::Result<()> {
+    pub fn send(&self, d: &DatagramBatch) -> io::Result<()> {
         send_inner(&self.state, (&self.inner).into(), d)
+    }
+
+    /// Returns the maximum number of GSO segments supported by this socket.
+    pub fn max_gso_segments(&self) -> usize {
+        self.state.max_gso_segments()
     }
 
     /// Receive a batch of [`Datagram`]s on the given [`Socket`], each
@@ -214,13 +255,26 @@ impl<S: SocketRef> Socket<S> {
     ) -> Result<DatagramIter<'a>, io::Error> {
         recv_inner(local_address, &self.state, &self.inner, recv_buf)
     }
+
+    /// Whether transmitted datagrams might get fragmented by the IP layer
+    ///
+    /// Returns `false` on targets which employ e.g. the `IPV6_DONTFRAG` socket option.
+    pub fn may_fragment(&self) -> bool {
+        self.state.may_fragment()
+    }
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
+    #![allow(
+        clippy::allow_attributes,
+        clippy::unwrap_in_result,
+        reason = "OK in tests."
+    )]
     use std::env;
 
-    use neqo_common::{IpTosDscp, IpTosEcn};
+    use neqo_common::{Dscp, Ecn};
 
     use super::*;
 
@@ -241,7 +295,7 @@ mod tests {
         let receiver_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
 
         sender.send_to(&[], receiver.inner.local_addr()?)?;
-        let mut recv_buf = RecvBuf::new();
+        let mut recv_buf = RecvBuf::default();
         let mut datagrams = receiver.recv(receiver_addr, &mut recv_buf)?;
 
         assert_eq!(datagrams.next(), None);
@@ -255,16 +309,17 @@ mod tests {
         let receiver = socket()?;
         let receiver_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
 
-        let datagram = Datagram::new(
+        let datagram: DatagramBatch = Datagram::new(
             sender.inner.local_addr()?,
             receiver.inner.local_addr()?,
-            IpTos::from((IpTosDscp::Le, IpTosEcn::Ect1)),
+            Tos::from((Dscp::Le, Ecn::Ect1)),
             b"Hello, world!".to_vec(),
-        );
+        )
+        .into();
 
         sender.send(&datagram)?;
 
-        let mut recv_buf = RecvBuf::new();
+        let mut recv_buf = RecvBuf::default();
         let mut received_datagrams = receiver
             .recv(receiver_addr, &mut recv_buf)
             .expect("receive to succeed");
@@ -272,56 +327,107 @@ mod tests {
         // Assert that the ECN is correct.
         // On Android API level <= 25 the IPv4 `IP_TOS` control message is
         // not supported and thus ECN bits can not be received.
+        // On NetBSD and OpenBSD, this also fails, but the cause has not been looked into.
         if cfg!(target_os = "android")
             && env::var("API_LEVEL")
                 .ok()
                 .and_then(|v| v.parse::<u32>().ok())
                 .expect("API_LEVEL environment variable to be set on Android")
                 <= 25
+            || cfg!(any(target_os = "netbsd", target_os = "openbsd"))
         {
             assert_eq!(
-                IpTosEcn::default(),
-                IpTosEcn::from(received_datagrams.next().unwrap().tos())
+                Ecn::default(),
+                Ecn::from(received_datagrams.next().unwrap().tos())
             );
         } else {
             assert_eq!(
-                IpTosEcn::from(datagram.tos()),
-                IpTosEcn::from(received_datagrams.next().unwrap().tos())
+                Ecn::from(datagram.tos()),
+                Ecn::from(received_datagrams.next().unwrap().tos())
             );
         }
         Ok(())
     }
 
+    #[test]
+    #[cfg(unix)]
+    fn is_emsgsize_true_for_emsgsize() {
+        let err = io::Error::from_raw_os_error(libc::EMSGSIZE);
+        assert!(is_emsgsize(&err));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn is_emsgsize_false_for_other_errors() {
+        let err = io::Error::from_raw_os_error(libc::EAGAIN);
+        assert!(!is_emsgsize(&err));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn is_emsgsize_true_for_wsaemsgsize() {
+        let err = io::Error::from_raw_os_error(windows::Win32::Networking::WinSock::WSAEMSGSIZE.0);
+        assert!(is_emsgsize(&err));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn is_emsgsize_true_for_wsaeinval() {
+        let err = io::Error::from_raw_os_error(windows::Win32::Networking::WinSock::WSAEINVAL.0);
+        assert!(is_emsgsize(&err));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn is_emsgsize_false_for_other_windows_errors() {
+        let err =
+            io::Error::from_raw_os_error(windows::Win32::Networking::WinSock::WSAEWOULDBLOCK.0);
+        assert!(!is_emsgsize(&err));
+    }
+
+    #[test]
+    fn is_emsgsize_false_for_non_os_error() {
+        let err = io::Error::other("test error");
+        assert!(!is_emsgsize(&err));
+    }
+
+    #[test]
+    fn max_gso_segments_returns_at_least_one() -> Result<(), io::Error> {
+        let s = socket()?;
+        assert!(s.max_gso_segments() >= 1);
+        Ok(())
+    }
+
     /// Expect [`Socket::recv`] to handle multiple [`Datagram`]s on GRO read.
     #[test]
-    #[cfg_attr(not(any(target_os = "linux", target_os = "windows")), ignore)]
-    fn many_datagrams_through_gro() -> Result<(), io::Error> {
+    #[cfg_attr(
+        not(any(target_os = "linux", target_os = "windows")),
+        ignore = "GRO not available"
+    )]
+    fn many_datagrams_through_gso_gro() -> Result<(), io::Error> {
+        use std::num::NonZeroUsize;
+
         const SEGMENT_SIZE: usize = 128;
 
         let sender = socket()?;
         let receiver = socket()?;
         let receiver_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
 
-        // `neqo_udp::Socket::send` does not yet
-        // (https://github.com/mozilla/neqo/issues/1693) support GSO. Use
-        // `quinn_udp` directly.
-        let max_gso_segments = sender.state.max_gso_segments();
+        let max_gso_segments = sender.max_gso_segments();
         let msg = vec![0xAB; SEGMENT_SIZE * max_gso_segments];
-        let transmit = Transmit {
-            destination: receiver.inner.local_addr()?,
-            ecn: EcnCodepoint::from_bits(Into::<u8>::into(IpTos::from((
-                IpTosDscp::Le,
-                IpTosEcn::Ect1,
-            )))),
-            contents: &msg,
-            segment_size: Some(SEGMENT_SIZE),
-            src_ip: None,
-        };
-        sender.state.try_send((&sender.inner).into(), &transmit)?;
+        let batch = DatagramBatch::new(
+            sender.inner.local_addr()?,
+            receiver.inner.local_addr()?,
+            Tos::from((Dscp::Le, Ecn::Ect0)),
+            NonZeroUsize::new(SEGMENT_SIZE).expect("SEGMENT_SIZE cannot be zero"),
+            msg,
+        );
 
-        // Allow for one GSO sendmmsg to result in multiple GRO recvmmsg.
+        sender.send(&batch)?;
+
+        // Allow for one GSO sendmsg to result in multiple GRO recvmmsg.
         let mut num_received = 0;
-        let mut recv_buf = RecvBuf::new();
+        let mut recv_buf = RecvBuf::default();
         while num_received < max_gso_segments {
             receiver
                 .recv(receiver_addr, &mut recv_buf)
@@ -335,6 +441,51 @@ mod tests {
                     num_received += 1;
                 });
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn send_ignore_emsgsize() -> Result<(), io::Error> {
+        let sender = socket()?;
+        // Use non-blocking socket to test for `WouldBlock` error.
+        let receiver = Socket::new(std::net::UdpSocket::bind("127.0.0.1:0")?)?;
+        let receiver_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
+
+        // Send oversized datagram and expect `EMSGSIZE` error to be ignored.
+        let oversized_datagram = Datagram::new(
+            sender.inner.local_addr()?,
+            receiver.inner.local_addr()?,
+            Tos::from((Dscp::Le, Ecn::Ect1)),
+            vec![0; u16::MAX as usize + 1],
+        )
+        .into();
+        sender.send(&oversized_datagram)?;
+
+        let mut recv_buf = RecvBuf::default();
+        match receiver.recv(receiver_addr, &mut recv_buf) {
+            Ok(_) => panic!("Expected an error, but received datagrams"),
+            Err(e) => assert_eq!(e.kind(), io::ErrorKind::WouldBlock),
+        }
+
+        // Now send a normal datagram to ensure that the socket is still usable.
+        let normal_datagram = Datagram::new(
+            sender.inner.local_addr()?,
+            receiver.inner.local_addr()?,
+            Tos::from((Dscp::Le, Ecn::Ect1)),
+            b"Hello World!".to_vec(),
+        )
+        .into();
+        sender.send(&normal_datagram)?;
+
+        let mut recv_buf = RecvBuf::default();
+        // Block until "Hello World!" is received.
+        receiver.inner.set_nonblocking(false)?;
+        let mut received_datagram = receiver.recv(receiver_addr, &mut recv_buf)?;
+        assert_eq!(
+            received_datagram.next().unwrap().as_ref(),
+            normal_datagram.data()
+        );
 
         Ok(())
     }

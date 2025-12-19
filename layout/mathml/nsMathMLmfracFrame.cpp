@@ -6,20 +6,21 @@
 
 #include "nsMathMLmfracFrame.h"
 
+#include <algorithm>
+
+#include "gfxContext.h"
+#include "gfxMathTable.h"
+#include "gfxTextRun.h"
 #include "gfxUtils.h"
-#include "mozilla/gfx/2D.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/StaticPrefs_mathml.h"
-#include "nsLayoutUtils.h"
-#include "nsPresContext.h"
-#include "nsDisplayList.h"
-#include "gfxContext.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/MathMLElement.h"
-#include <algorithm>
-#include "gfxMathTable.h"
-#include "gfxTextRun.h"
+#include "mozilla/gfx/2D.h"
+#include "nsDisplayList.h"
+#include "nsLayoutUtils.h"
+#include "nsPresContext.h"
 
 using namespace mozilla;
 using namespace mozilla::gfx;
@@ -54,8 +55,10 @@ NS_IMETHODIMP
 nsMathMLmfracFrame::TransmitAutomaticData() {
   // The TeXbook (Ch 17. p.141) says the numerator inherits the compression
   //  while the denominator is compressed
-  UpdatePresentationDataFromChildAt(1, 1, NS_MATHML_COMPRESSED,
-                                    NS_MATHML_COMPRESSED);
+  if (!StaticPrefs::mathml_math_shift_enabled()) {
+    UpdatePresentationDataFromChildAt(1, 1, NS_MATHML_COMPRESSED,
+                                      NS_MATHML_COMPRESSED);
+  }
 
   // If displaystyle is false, then scriptlevel is incremented, so notify the
   // children of this.
@@ -77,9 +80,7 @@ nsMathMLmfracFrame::TransmitAutomaticData() {
   return NS_OK;
 }
 
-nscoord nsMathMLmfracFrame::CalcLineThickness(nsPresContext* aPresContext,
-                                              ComputedStyle* aComputedStyle,
-                                              nsString& aThicknessAttribute,
+nscoord nsMathMLmfracFrame::CalcLineThickness(nsString& aThicknessAttribute,
                                               nscoord onePixel,
                                               nscoord aDefaultRuleThickness,
                                               float aFontSizeInflation) {
@@ -91,9 +92,9 @@ nscoord nsMathMLmfracFrame::CalcLineThickness(nsPresContext* aPresContext,
   // https://w3c.github.io/mathml-core/#dfn-linethickness
   if (!aThicknessAttribute.IsEmpty()) {
     lineThickness = defaultThickness;
-    ParseNumericValue(aThicknessAttribute, &lineThickness,
-                      dom::MathMLElement::PARSE_ALLOW_NEGATIVE, aPresContext,
-                      aComputedStyle, aFontSizeInflation);
+    ParseAndCalcNumericValue(aThicknessAttribute, &lineThickness,
+                             dom::MathMLElement::PARSE_ALLOW_NEGATIVE,
+                             aFontSizeInflation, this);
     // MathML Core says a negative value is interpreted as 0.
     if (lineThickness < 0) {
       lineThickness = 0;
@@ -120,7 +121,7 @@ void nsMathMLmfracFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
 
 nsresult nsMathMLmfracFrame::AttributeChanged(int32_t aNameSpaceID,
                                               nsAtom* aAttribute,
-                                              int32_t aModType) {
+                                              AttrModType aModType) {
   if (aNameSpaceID == kNameSpaceID_None &&
       nsGkAtoms::linethickness == aAttribute) {
     // The thickness changes, so a repaint of the bar is needed.
@@ -145,9 +146,9 @@ nscoord nsMathMLmfracFrame::FixInterFrameSpacing(ReflowOutput& aDesiredSize) {
 }
 
 /* virtual */
-nsresult nsMathMLmfracFrame::Place(DrawTarget* aDrawTarget,
-                                   const PlaceFlags& aFlags,
-                                   ReflowOutput& aDesiredSize) {
+void nsMathMLmfracFrame::Place(DrawTarget* aDrawTarget,
+                               const PlaceFlags& aFlags,
+                               ReflowOutput& aDesiredSize) {
   ////////////////////////////////////
   // Get the children's desired sizes
   nsBoundingMetrics bmNum, bmDen;
@@ -199,9 +200,8 @@ nsresult nsMathMLmfracFrame::Place(DrawTarget* aDrawTarget,
   // see if the linethickness attribute is there
   nsAutoString value;
   mContent->AsElement()->GetAttr(nsGkAtoms::linethickness, value);
-  mLineThickness =
-      CalcLineThickness(presContext, mComputedStyle, value, onePixel,
-                        defaultRuleThickness, fontSizeInflation);
+  mLineThickness = CalcLineThickness(value, onePixel, defaultRuleThickness,
+                                     fontSizeInflation);
 
   bool displayStyle = StyleFont()->mMathStyle == StyleMathStyle::Normal;
 
@@ -406,6 +406,4 @@ nsresult nsMathMLmfracFrame::Place(DrawTarget* aDrawTarget,
     mLineRect.SetRect(leftSpace, dy, width - (leftSpace + rightSpace),
                       actualRuleThickness);
   }
-
-  return NS_OK;
 }

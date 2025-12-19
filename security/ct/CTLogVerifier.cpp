@@ -42,8 +42,7 @@ class SignatureParamsTrustDomain final : public TrustDomain {
   }
 
   pkix::Result CheckRevocation(EndEntityOrCA, const CertID&, Time, Duration,
-                               const Input*, const Input*,
-                               const Input*) override {
+                               const Input*, const Input*) override {
     return pkix::Result::FATAL_ERROR_LIBRARY_FAILURE;
   }
 
@@ -104,20 +103,17 @@ class SignatureParamsTrustDomain final : public TrustDomain {
     return pkix::Result::FATAL_ERROR_LIBRARY_FAILURE;
   }
 
-  pkix::Result NetscapeStepUpMatchesServerAuth(Time, bool&) override {
-    return pkix::Result::FATAL_ERROR_LIBRARY_FAILURE;
-  }
-
   void NoteAuxiliaryExtension(AuxiliaryExtension, Input) override {}
 
   DigitallySigned::SignatureAlgorithm mSignatureAlgorithm;
 };
 
 CTLogVerifier::CTLogVerifier(CTLogOperatorId operatorId, CTLogState state,
-                             uint64_t timestamp)
+                             CTLogFormat format, uint64_t timestamp)
     : mSignatureAlgorithm(DigitallySigned::SignatureAlgorithm::Anonymous),
       mOperatorId(operatorId),
       mState(state),
+      mFormat(format),
       mTimestamp(timestamp) {}
 
 pkix::Result CTLogVerifier::Init(Input subjectPublicKeyInfo) {

@@ -7,7 +7,6 @@
 package org.mozilla.gecko;
 
 import android.annotation.SuppressLint;
-import android.annotation.TargetApi;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.credentials.CreateCredentialException;
@@ -31,7 +30,6 @@ import org.mozilla.gecko.util.WebAuthnUtils;
 import org.mozilla.geckoview.GeckoResult;
 
 // Credential Manager implementation that is introduced from Android 14.
-@TargetApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
 public class WebAuthnCredentialManager {
   private static final String LOGTAG = "WebAuthnCredMan";
   private static final boolean DEBUG = false;
@@ -77,11 +75,18 @@ public class WebAuthnCredentialManager {
       final int[] algs,
       final WebAuthnUtils.WebAuthnPublicCredential[] excludeList,
       final GeckoBundle authenticatorSelection,
+      final GeckoBundle extensions,
       final byte[] clientDataHash) {
     try {
       final JSONObject requestJSON =
           WebAuthnUtils.getJSONObjectForMakeCredential(
-              credentialBundle, userId, challenge, algs, excludeList, authenticatorSelection);
+              credentialBundle,
+              userId,
+              challenge,
+              algs,
+              excludeList,
+              authenticatorSelection,
+              extensions);
       final Bundle bundle = getRequestBundle(requestJSON.toString(), clientDataHash);
       if (bundle == null) {
         return null;
@@ -135,19 +140,13 @@ public class WebAuthnCredentialManager {
       final int[] algs,
       final WebAuthnUtils.WebAuthnPublicCredential[] excludeList,
       final GeckoBundle authenticatorSelection,
+      final GeckoBundle extensions,
       final byte[] clientDataHash) {
-    final Boolean requireResidentKey =
-        authenticatorSelection.getBoolean("requireResidentKey", false);
 
-    final Boolean residentKeyDiscouraged =
-        authenticatorSelection
-            .getString("residentKey", requireResidentKey ? "required" : "discouraged")
-            .equals("discouraged");
-
-    // We only use Credential Manager for Passkeys. If residentKey is discouraged, use GMS FIDO2.
-    if (residentKeyDiscouraged) {
-      return GeckoResult.fromException(new WebAuthnUtils.Exception("NOT_SUPPORTED_ERR"));
-    }
+    // We use Credential Manager first. If it doesn't work, we use GMS FIDO2.
+    // Credential manager may support non-discoverable keys,
+    // Else, following the specifications, `residentKey=discouraged` allows discoverable keys too
+    // but prefer non-discoverable keys
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
       return GeckoResult.fromException(new WebAuthnUtils.Exception("NOT_SUPPORTED_ERR"));
     }
@@ -167,6 +166,7 @@ public class WebAuthnCredentialManager {
             algs,
             excludeList,
             authenticatorSelection,
+            extensions,
             clientDataHash);
     if (requestBundle == null) {
       return GeckoResult.fromException(new WebAuthnUtils.Exception("UNKNOWN_ERR"));
@@ -252,6 +252,10 @@ public class WebAuthnCredentialManager {
           final GeckoBundle assertionBundle,
           final GeckoBundle extensions,
           final byte[] clientDataHash) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+      // No credential manager. Relay to GMS FIDO2
+      return GeckoResult.fromValue(null);
+    }
     final Bundle requestBundle =
         getRequestBundleForGetAssertion(
             challenge, allowList, assertionBundle, extensions, clientDataHash);
@@ -333,6 +337,9 @@ public class WebAuthnCredentialManager {
 
   public static GeckoResult<WebAuthnUtils.GetAssertionResponse> getAssertion(
       final PrepareGetCredentialResponse.PendingGetCredentialHandle pendingHandle) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+      return GeckoResult.fromException(new WebAuthnUtils.Exception("NOT_SUPPORTED_ERR"));
+    }
     final GeckoResult<WebAuthnUtils.GetAssertionResponse> result = new GeckoResult<>();
     final Context context = GeckoAppShell.getApplicationContext();
     final CredentialManager manager =

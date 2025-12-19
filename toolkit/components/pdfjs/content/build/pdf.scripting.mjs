@@ -20,6 +20,10 @@
  * JavaScript code in this page
  */
 
+/**
+ * pdfjsVersion = 5.4.486
+ * pdfjsBuild = ff4529d12
+ */
 
 ;// ./src/scripting_api/constants.js
 const Border = Object.freeze({
@@ -243,6 +247,8 @@ class ColorConverters {
     return ["CMYK", c, m, y, k];
   }
 }
+const DateFormats = ["m/d", "m/d/yy", "mm/dd/yy", "mm/yy", "d-mmm", "d-mmm-yy", "dd-mmm-yy", "yy-mm-dd", "mmm-yy", "mmmm-yy", "mmm d, yyyy", "mmmm d, yyyy", "m/d/yy h:MM tt", "m/d/yy HH:MM"];
+const TimeFormats = ["HH:MM", "h:MM tt", "HH:MM:ss", "h:MM:ss tt"];
 
 ;// ./src/scripting_api/pdf_object.js
 class PDFObject {
@@ -427,6 +433,9 @@ class Field extends PDFObject {
     this._fieldType = getFieldType(this._actions);
     this._siblings = data.siblings || null;
     this._rotation = data.rotation || 0;
+    this._datetimeFormat = data.datetimeFormat || null;
+    this._hasDateOrTime = !!data.hasDatetimeHTML;
+    this._util = data.util;
     this._globalEval = data.globalEval;
     this._appObjects = data.appObjects;
     this.value = data.value || "";
@@ -552,6 +561,15 @@ class Field extends PDFObject {
       this._setChoiceValue(value);
       return;
     }
+    if (this._hasDateOrTime && value) {
+      const date = this._util.scand(this._datetimeFormat, value);
+      if (date) {
+        this._originalValue = date.valueOf();
+        value = this._util.printd(this._datetimeFormat, date);
+        this._value = !isNaN(value) ? parseFloat(value) : value;
+        return;
+      }
+    }
     if (value === "" || typeof value !== "string" || this._fieldType >= FieldType.date) {
       this._originalValue = undefined;
       this._value = value;
@@ -560,6 +578,9 @@ class Field extends PDFObject {
     this._originalValue = value;
     const _value = value.trim().replace(",", ".");
     this._value = !isNaN(_value) ? parseFloat(_value) : value;
+  }
+  get _initialValue() {
+    return this._hasDateOrTime && this._originalValue || null;
   }
   _getValue() {
     return this._originalValue ?? this.value;
@@ -943,29 +964,25 @@ class CheckboxField extends RadioButtonField {
 
 ;// ./src/scripting_api/aform.js
 
+
 class AForm {
   constructor(document, app, util, color) {
     this._document = document;
     this._app = app;
     this._util = util;
     this._color = color;
-    this._dateFormats = ["m/d", "m/d/yy", "mm/dd/yy", "mm/yy", "d-mmm", "d-mmm-yy", "dd-mmm-yy", "yy-mm-dd", "mmm-yy", "mmmm-yy", "mmm d, yyyy", "mmmm d, yyyy", "m/d/yy h:MM tt", "m/d/yy HH:MM"];
-    this._timeFormats = ["HH:MM", "h:MM tt", "HH:MM:ss", "h:MM:ss tt"];
     this._emailRegex = new RegExp("^[a-zA-Z0-9.!#$%&'*+\\/=?^_`{|}~-]+" + "@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?" + "(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$");
   }
   _mkTargetName(event) {
     return event.target ? `[ ${event.target.name} ]` : "";
   }
-  _parseDate(cFormat, cDate, strict = false) {
+  _parseDate(cFormat, cDate) {
     let date = null;
     try {
-      date = this._util._scand(cFormat, cDate, strict);
+      date = this._util._scand(cFormat, cDate, false);
     } catch {}
     if (date) {
       return date;
-    }
-    if (strict) {
-      return null;
     }
     date = Date.parse(cDate);
     return isNaN(date) ? null : new Date(date);
@@ -1118,9 +1135,7 @@ class AForm {
     }
   }
   AFDate_Format(pdf) {
-    if (pdf >= 0 && pdf < this._dateFormats.length) {
-      this.AFDate_FormatEx(this._dateFormats[pdf]);
-    }
+    this.AFDate_FormatEx(DateFormats[pdf] ?? pdf);
   }
   AFDate_KeystrokeEx(cFormat) {
     const event = globalThis.event;
@@ -1131,7 +1146,7 @@ class AForm {
     if (!value) {
       return;
     }
-    if (this._parseDate(cFormat, value, true) === null) {
+    if (this._parseDate(cFormat, value) === null) {
       const invalid = GlobalConstants.IDS_INVALID_DATE;
       const invalid2 = GlobalConstants.IDS_INVALID_DATE2;
       const err = `${invalid} ${this._mkTargetName(event)}${invalid2}${cFormat}`;
@@ -1140,8 +1155,8 @@ class AForm {
     }
   }
   AFDate_Keystroke(pdf) {
-    if (pdf >= 0 && pdf < this._dateFormats.length) {
-      this.AFDate_KeystrokeEx(this._dateFormats[pdf]);
+    if (pdf >= 0 && pdf < DateFormats.length) {
+      this.AFDate_KeystrokeEx(DateFormats[pdf]);
     }
   }
   AFRange_Validate(bGreaterThan, nGreaterThan, bLessThan, nLessThan) {
@@ -1379,16 +1394,14 @@ class AForm {
     this.AFDate_FormatEx(cFormat);
   }
   AFTime_Format(pdf) {
-    if (pdf >= 0 && pdf < this._timeFormats.length) {
-      this.AFDate_FormatEx(this._timeFormats[pdf]);
-    }
+    this.AFDate_FormatEx(TimeFormats[pdf] ?? pdf);
   }
   AFTime_KeystrokeEx(cFormat) {
     this.AFDate_KeystrokeEx(cFormat);
   }
   AFTime_Keystroke(pdf) {
-    if (pdf >= 0 && pdf < this._timeFormats.length) {
-      this.AFDate_KeystrokeEx(this._timeFormats[pdf]);
+    if (pdf >= 0 && pdf < TimeFormats.length) {
+      this.AFDate_KeystrokeEx(TimeFormats[pdf]);
     }
   }
   eMailValidate(str) {
@@ -2189,6 +2202,10 @@ class App extends PDFObject {
   popUpMenuEx() {}
   removeToolButton() {}
   response(cQuestion, cTitle = "", cDefault = "", bPassword = "", cLabel = "") {
+    if (!this._document.obj._userActivation) {
+      return null;
+    }
+    this._document.obj._userActivation = false;
     if (cQuestion && typeof cQuestion === "object") {
       cDefault = cQuestion.cDefault;
       cQuestion = cQuestion.cQuestion;
@@ -2241,12 +2258,17 @@ class Console extends PDFObject {
   }
   hide() {}
   println(msg) {
-    if (typeof msg === "string") {
-      this._send({
-        command: "println",
-        value: "PDF.js Console:: " + msg
-      });
+    if (typeof msg !== "string") {
+      try {
+        msg = JSON.stringify(msg);
+      } catch {
+        msg = msg.toString?.() || "[Unserializable object]";
+      }
     }
+    this._send({
+      command: "println",
+      value: "PDF.js Console:: " + msg
+    });
   }
   show() {}
 }
@@ -2456,6 +2478,19 @@ class Doc extends PDFObject {
     this._otherPageActions = null;
   }
   _initActions() {
+    for (const {
+      obj
+    } of this._fields.values()) {
+      const initialValue = obj._initialValue;
+      if (initialValue) {
+        this._send({
+          id: obj._id,
+          siblings: obj._siblings,
+          value: initialValue,
+          formattedValue: obj.value.toString()
+        });
+      }
+    }
     const dontRun = new Set(["WillClose", "WillSave", "DidSave", "WillPrint", "DidPrint", "OpenAction"]);
     this._disableSaving = true;
     for (const actionName of this._actions.keys()) {
@@ -3499,7 +3534,7 @@ class Util extends PDFObject {
       ddd: data => this._days[data.dayOfWeek].substring(0, 3),
       dd: data => data.day.toString().padStart(2, "0"),
       d: data => data.day.toString(),
-      yyyy: data => data.year.toString(),
+      yyyy: data => data.year.toString().padStart(4, "0"),
       yy: data => (data.year % 100).toString().padStart(2, "0"),
       HH: data => data.hours.toString().padStart(2, "0"),
       H: data => data.hours.toString(),
@@ -3848,10 +3883,10 @@ class Util extends PDFObject {
       return strict ? null : this.#tryToGuessDate(cFormat, cDate);
     }
     const data = {
-      year: new Date().getFullYear(),
+      year: 2000,
       month: 0,
       day: 1,
-      hours: 12,
+      hours: 0,
       minutes: 0,
       seconds: 0,
       am: null
@@ -3931,6 +3966,7 @@ function initSandbox(params) {
       obj.doc = _document;
       obj.fieldPath = name;
       obj.appObjects = appObjects;
+      obj.util = util;
       const otherFields = annotations.slice(1);
       let field;
       switch (obj.type) {
@@ -4043,8 +4079,6 @@ function initSandbox(params) {
 
 ;// ./src/pdf.scripting.js
 
-const pdfjsVersion = "5.2.135";
-const pdfjsBuild = "b47b248e1";
 globalThis.pdfjsScripting = {
   initSandbox: initSandbox
 };

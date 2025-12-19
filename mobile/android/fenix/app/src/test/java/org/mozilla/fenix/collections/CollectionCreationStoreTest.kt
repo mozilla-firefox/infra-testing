@@ -19,7 +19,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.components.TabCollectionStorage
-import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
+import org.robolectric.RobolectricTestRunner
 
 private const val URL_MOZILLA = "www.mozilla.org"
 private const val SESSION_ID_MOZILLA = "0"
@@ -29,7 +29,7 @@ private const val SESSION_ID_BCC = "1"
 private const val SESSION_ID_BAD_1 = "not a real session id"
 private const val SESSION_ID_BAD_2 = "definitely not a real session id"
 
-@RunWith(FenixRobolectricTestRunner::class)
+@RunWith(RobolectricTestRunner::class)
 class CollectionCreationStoreTest {
 
     @MockK private lateinit var tabCollectionStorage: TabCollectionStorage
@@ -61,10 +61,10 @@ class CollectionCreationStoreTest {
             ),
         )
 
-        store.dispatch(CollectionCreationAction.AddAllTabs).joinBlocking()
+        store.dispatch(CollectionCreationAction.AddAllTabs)
         assertEquals(tabs.toSet(), store.state.selectedTabs)
 
-        store.dispatch(CollectionCreationAction.RemoveAllTabs).joinBlocking()
+        store.dispatch(CollectionCreationAction.RemoveAllTabs)
         assertEquals(emptySet<Tab>(), store.state.selectedTabs)
     }
 
@@ -80,16 +80,16 @@ class CollectionCreationStoreTest {
             ),
         )
 
-        store.dispatch(CollectionCreationAction.TabAdded(tab2)).joinBlocking()
+        store.dispatch(CollectionCreationAction.TabAdded(tab2))
         assertEquals(setOf(tab2), store.state.selectedTabs)
 
-        store.dispatch(CollectionCreationAction.TabAdded(tab1)).joinBlocking()
+        store.dispatch(CollectionCreationAction.TabAdded(tab1))
         assertEquals(setOf(tab1, tab2), store.state.selectedTabs)
 
-        store.dispatch(CollectionCreationAction.TabAdded(tab3)).joinBlocking()
+        store.dispatch(CollectionCreationAction.TabAdded(tab3))
         assertEquals(setOf(tab1, tab2, tab3), store.state.selectedTabs)
 
-        store.dispatch(CollectionCreationAction.TabRemoved(tab2)).joinBlocking()
+        store.dispatch(CollectionCreationAction.TabRemoved(tab2))
         assertEquals(setOf(tab1, tab3), store.state.selectedTabs)
     }
 
@@ -107,7 +107,7 @@ class CollectionCreationStoreTest {
                 saveCollectionStep = SaveCollectionStep.RenameCollection,
                 defaultCollectionNumber = 3,
             ),
-        ).joinBlocking()
+        )
         assertEquals(SaveCollectionStep.RenameCollection, store.state.saveCollectionStep)
         assertEquals(3, store.state.defaultCollectionNumber)
     }

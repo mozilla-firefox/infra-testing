@@ -23,16 +23,15 @@
         gecko_ffi_name="mMargin.{}".format(index),
         spec=spec,
         rule_types_allowed=(DEFAULT_RULES if side[1] else DEFAULT_RULES_AND_PAGE) | POSITION_TRY_RULE,
-        servo_restyle_damage="reflow",
+        servo_restyle_damage="rebuild_box",
         affects="layout",
     )}
 % endfor
 
 ${helpers.predefined_type(
     "overflow-clip-margin",
-    "Length",
-    "computed::Length::zero()",
-    parse_method="parse_non_negative",
+    "OverflowClipMargin",
+    "computed::OverflowClipMargin::zero()",
     engines="gecko servo",
     spec="https://drafts.csswg.org/css-overflow/#propdef-overflow-clip-margin",
     affects="overflow",

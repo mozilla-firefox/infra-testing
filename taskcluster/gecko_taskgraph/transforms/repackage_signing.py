@@ -14,7 +14,7 @@ from voluptuous import Optional
 
 from gecko_taskgraph.transforms.task import task_description_schema
 from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
-from gecko_taskgraph.util.scriptworker import get_signing_cert_scope_per_platform
+from gecko_taskgraph.util.scriptworker import get_signing_type_per_platform
 
 repackage_signing_description_schema = Schema(
     {
@@ -25,6 +25,7 @@ repackage_signing_description_schema = Schema(
         Optional("treeherder"): task_description_schema["treeherder"],
         Optional("shipping-product"): task_description_schema["shipping-product"],
         Optional("shipping-phase"): task_description_schema["shipping-phase"],
+        Optional("run-on-repo-type"): task_description_schema["run-on-repo-type"],
     }
 )
 
@@ -115,10 +116,9 @@ def make_repackage_signing_description(config, jobs):
 
         build_platform = dep_job.attributes.get("build_platform")
         is_shippable = dep_job.attributes.get("shippable")
-        signing_cert_scope = get_signing_cert_scope_per_platform(
+        signing_type = get_signing_type_per_platform(
             build_platform, is_shippable, config
         )
-        scopes = [signing_cert_scope]
 
         upstream_artifacts = []
         for artifact in sorted(dep_job.attributes.get("release_artifacts")):
@@ -139,12 +139,12 @@ def make_repackage_signing_description(config, jobs):
             "worker-type": "linux-signing" if is_shippable else "linux-depsigning",
             "worker": {
                 "implementation": "scriptworker-signing",
+                "signing-type": signing_type,
                 "upstream-artifacts": upstream_artifacts,
-                "max-run-time": 3600,
             },
-            "scopes": scopes,
             "dependencies": dependencies,
             "attributes": attributes,
+            "run-on-repo-type": job.get("run-on-repo-type", ["git", "hg"]),
             "run-on-projects": dep_job.attributes.get("run_on_projects"),
             "optimization": dep_job.optimization,
             "treeherder": treeherder,

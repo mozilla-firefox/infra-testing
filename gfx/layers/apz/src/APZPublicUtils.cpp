@@ -8,7 +8,6 @@
 
 #include "AsyncPanZoomController.h"
 #include "nsLayoutUtils.h"
-#include "mozilla/HelperMacros.h"
 #include "mozilla/StaticPrefs_general.h"
 
 namespace mozilla {
@@ -27,7 +26,7 @@ namespace apz {
       aFrameMetrics, aVelocity, AsyncPanZoomController::ZoomInProgress::No);
 }
 
-/*static*/ gfx::IntSize GetDisplayportAlignmentMultiplier(
+/*static*/ gfx::Size GetDisplayportAlignmentMultiplier(
     const ScreenSize& aBaseSize) {
   return AsyncPanZoomController::GetDisplayportAlignmentMultiplier(aBaseSize);
 }

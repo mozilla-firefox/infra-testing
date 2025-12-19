@@ -2,20 +2,26 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { SuggestProvider } from "resource:///modules/urlbar/private/SuggestFeature.sys.mjs";
+import { SuggestProvider } from "moz-src:///browser/components/urlbar/private/SuggestFeature.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   GeolocationUtils:
-    "resource:///modules/urlbar/private/GeolocationUtils.sys.mjs",
-  GeonameMatchType: "resource://gre/modules/RustSuggest.sys.mjs",
-  GeonameType: "resource://gre/modules/RustSuggest.sys.mjs",
-  QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
+    "moz-src:///browser/components/urlbar/private/GeolocationUtils.sys.mjs",
+  GeonameMatchType:
+    "moz-src:///toolkit/components/uniffi-bindgen-gecko-js/components/generated/RustSuggest.sys.mjs",
+  QuickSuggest: "moz-src:///browser/components/urlbar/QuickSuggest.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
+  YelpSubjectType:
+    "moz-src:///toolkit/components/uniffi-bindgen-gecko-js/components/generated/RustSuggest.sys.mjs",
 });
+
+/**
+ * @import {GeonameMatch} from "moz-src:///toolkit/components/uniffi-bindgen-gecko-js/components/generated/RustSuggest.sys.mjs"
+ */
 
 const RESULT_MENU_COMMAND = {
   INACCURATE_LOCATION: "inaccurate_location",
@@ -33,12 +39,13 @@ export class YelpSuggestions extends SuggestProvider {
     return [
       "yelpFeatureGate",
       "suggest.yelp",
+      "suggest.quicksuggest.all",
       "suggest.quicksuggest.sponsored",
     ];
   }
 
-  get primaryUserControlledPreference() {
-    return "suggest.yelp";
+  get primaryUserControlledPreferences() {
+    return ["suggest.yelp"];
   }
 
   get rustSuggestionType() {
@@ -187,23 +194,68 @@ export class YelpSuggestions extends SuggestProvider {
       }
     }
 
-    return Object.assign(
-      new lazy.UrlbarResult(
-        lazy.UrlbarUtils.RESULT_TYPE.URL,
-        lazy.UrlbarUtils.RESULT_SOURCE.SEARCH,
-        ...lazy.UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
-          url: url.toString(),
-          originalUrl: suggestion.url,
-          title: [title, lazy.UrlbarUtils.HIGHLIGHT.TYPED],
-          bottomTextL10n: { id: "firefox-suggest-yelp-bottom-text" },
-          iconBlob: suggestion.icon_blob,
-        })
-      ),
-      resultProperties
-    );
+    let payload = {
+      url: url.toString(),
+      originalUrl: suggestion.url,
+      bottomTextL10n: {
+        id: "firefox-suggest-yelp-bottom-text",
+      },
+      iconBlob: suggestion.icon_blob,
+    };
+    let highlights;
+
+    if (
+      lazy.UrlbarPrefs.get("yelpServiceResultDistinction") &&
+      suggestion.subjectType === lazy.YelpSubjectType.SERVICE
+    ) {
+      let titleHighlights = lazy.UrlbarUtils.getTokenMatches(
+        queryContext.tokens,
+        title,
+        lazy.UrlbarUtils.HIGHLIGHT.TYPED
+      );
+      payload.titleL10n = {
+        id: "firefox-suggest-yelp-service-title",
+        args: {
+          service: title,
+        },
+        argsHighlights: {
+          service: titleHighlights,
+        },
+      };
+      // Used for the tooltip.
+      payload.title = title;
+    } else {
+      payload.title = title;
+      highlights = {
+        title: lazy.UrlbarUtils.HIGHLIGHT.TYPED,
+      };
+    }
+
+    return new lazy.UrlbarResult({
+      type: lazy.UrlbarUtils.RESULT_TYPE.URL,
+      source: lazy.UrlbarUtils.RESULT_SOURCE.SEARCH,
+      ...resultProperties,
+      payload,
+      highlights,
+    });
   }
 
+  /**
+   * @typedef {object} L10nItem
+   * @property {Values<RESULT_MENU_COMMAND>} [name]
+   *   The name of the command.
+   * @property {{id: string}} [l10n]
+   *   The id of the l10n string to use for the translation.
+   */
+
+  /**
+   * Gets the list of commands that should be shown in the result menu for a
+   * given result from the provider. All commands returned by this method should
+   * be handled by implementing `onEngagement()` with the possible exception of
+   * commands automatically handled by the urlbar, like "help".
+   */
   getResultCommands() {
+    /** @type {UrlbarResultCommand[]} */
     let commands = [
       {
         name: RESULT_MENU_COMMAND.INACCURATE_LOCATION,
@@ -382,9 +434,6 @@ export class YelpSuggestions extends SuggestProvider {
    * `#metadataCache`. If the known Yelp suggestion is absent for some reason,
    * we fall back to hardcoded values. This is a tad hacky and we should come up
    * with something better.
-   *
-   * @returns {object}
-   *   The metadata cache.
    */
   async #makeMetadataCache() {
     let cache;
@@ -437,20 +486,20 @@ export class YelpSuggestions extends SuggestProvider {
    *
    * @param {string|null} city
    *   The candidate city name or null if you're only matching regions.
-   * @param {region|null} region
+   * @param {string|null} region
    *   The candidate region name or abbreviation, or null if you're only
    *   matching cities.
-   * @returns {object|null}
+   * @returns {Promise<{city: string|null, region: string|null}|null>}
    *   If a city was passed in and it didn't match a city in the DB, or if a
    *   region was passed in and it didn't match a region in the DB, null is
    *   returned. Null is also returned if both were passed but they aren't a
    *   valid city-region combination. Otherwise, an object `{ city, region }` is
    *   returned:
    *
-   *   {string|null} city
+   *   city
    *     The best matching city's name, or if the passed-in city was null and a
    *     region was matched, this will be null.
-   *   {string} region
+   *   region
    *     The best matching region. If a city was matched, it will be the ISO
    *     code of the city's region (e.g., the usual two-letter abbreviation for
    *     U.S. states). If a city wasn't passed in, this will be the best
@@ -465,8 +514,7 @@ export class YelpSuggestions extends SuggestProvider {
       regionMatches = await lazy.QuickSuggest.rustBackend.fetchGeonames(
         region,
         false, // prefix matching
-        lazy.GeonameType.REGION,
-        null
+        null // geonames filter array
       );
       if (!regionMatches.length) {
         // The user typed something we thought was a region but isn't, so assume
@@ -479,7 +527,6 @@ export class YelpSuggestions extends SuggestProvider {
       let cityMatches = await lazy.QuickSuggest.rustBackend.fetchGeonames(
         city,
         true, // prefix matching
-        lazy.GeonameType.CITY,
         regionMatches?.map(m => m.geoname)
       );
       // Discard prefix matches on any names that aren't full names, i.e., on
@@ -500,7 +547,10 @@ export class YelpSuggestions extends SuggestProvider {
         cityMatches,
         locationFromGeonameMatch
       );
-      return { city: best.geoname.name, region: best.geoname.admin1Code };
+      return {
+        city: best.geoname.name,
+        region: best.geoname.adminDivisionCodes.get(1),
+      };
     }
 
     // We didn't detect a city in the query but we detected a region, so try to
@@ -544,7 +594,7 @@ function locationFromGeonameMatch(match) {
     latitude: match.geoname.latitude,
     longitude: match.geoname.longitude,
     country: match.geoname.countryCode,
-    region: match.geoname.admin1Code,
+    region: match.geoname.adminDivisionCodes.get(1),
     population: match.geoname.population,
   };
 }

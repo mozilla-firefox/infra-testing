@@ -41,11 +41,8 @@
 #include "nsRect.h"
 #include "nsIContent.h"
 #include "nsServiceManagerUtils.h"
-#include "nsViewManager.h"
-#include "nsView.h"
 #include "nsXULTooltipListener.h"
 #include "nsIConstraintValidation.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/EventListenerManager.h"
 #include "mozilla/Try.h"
 #include "mozilla/dom/DragEvent.h"
@@ -495,12 +492,6 @@ nsDocShellTreeOwner::GetHasPrimaryContent(bool* aResult) {
 //*****************************************************************************
 
 NS_IMETHODIMP
-nsDocShellTreeOwner::InitWindow(nsIWidget* aParentWidget, int32_t aX,
-                                int32_t aY, int32_t aCX, int32_t aCY) {
-  return NS_ERROR_NULL_POINTER;
-}
-
-NS_IMETHODIMP
 nsDocShellTreeOwner::Destroy() {
   nsCOMPtr<nsIWebBrowserChrome> webBrowserChrome = GetWebBrowserChrome();
   if (webBrowserChrome) {
@@ -598,9 +589,6 @@ nsDocShellTreeOwner::GetDimensions(DimensionKind aDimensionKind, int32_t* aX,
   NS_ENSURE_STATE(webBrowserChrome);
   return webBrowserChrome->GetDimensions(aDimensionKind, aX, aY, aCX, aCY);
 }
-
-NS_IMETHODIMP
-nsDocShellTreeOwner::Repaint(bool aForce) { return NS_ERROR_NULL_POINTER; }
 
 NS_IMETHODIMP
 nsDocShellTreeOwner::GetParentWidget(nsIWidget** aParentWidget) {
@@ -932,9 +920,10 @@ nsDocShellTreeOwner::HandleEvent(Event* aEvent) {
 #endif
               LoadURIOptions loadURIOptions;
               loadURIOptions.mTriggeringPrincipal = triggeringPrincipal;
-              nsCOMPtr<nsIContentSecurityPolicy> csp;
-              handler->GetCsp(dragEvent, getter_AddRefs(csp));
-              loadURIOptions.mCsp = csp;
+              nsCOMPtr<nsIPolicyContainer> policyContainer;
+              handler->GetPolicyContainer(dragEvent,
+                                          getter_AddRefs(policyContainer));
+              loadURIOptions.mPolicyContainer = policyContainer;
               webnav->FixupAndLoadURIString(url, loadURIOptions);
             }
           }
@@ -1153,7 +1142,8 @@ nsresult ChromeTooltipListener::MouseMove(Event* aMouseEvent) {
       nsresult rv = NS_NewTimerWithFuncCallback(
           getter_AddRefs(mTooltipTimer), sTooltipCallback, this,
           StaticPrefs::ui_tooltip_delay_ms(), nsITimer::TYPE_ONE_SHOT,
-          "ChromeTooltipListener::MouseMove", GetMainThreadSerialEventTarget());
+          "ChromeTooltipListener::MouseMove"_ns,
+          GetMainThreadSerialEventTarget());
       if (NS_FAILED(rv)) {
         mPossibleTooltipNode = nullptr;
         NS_WARNING("Could not create a timer for tooltip tracking");

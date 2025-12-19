@@ -5,17 +5,16 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "DOMSecurityMonitor.h"
-#include "nsContentUtils.h"
 
+#include "mozilla/BasePrincipal.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "nsContentUtils.h"
 #include "nsIChannel.h"
 #include "nsILoadInfo.h"
 #include "nsIPrincipal.h"
 #include "nsIURI.h"
 #include "nsJSUtils.h"
 #include "xpcpublic.h"
-
-#include "mozilla/BasePrincipal.h"
-#include "mozilla/StaticPrefs_dom.h"
 
 /* static */
 void DOMSecurityMonitor::AuditParsingOfHTMLXMLFragments(
@@ -51,8 +50,6 @@ void DOMSecurityMonitor::AuditParsingOfHTMLXMLFragments(
    */
   static nsLiteralCString htmlFragmentAllowlist[] = {
       "chrome://global/content/elements/marquee.js"_ns,
-      nsLiteralCString(
-          "chrome://pocket/content/panels/js/vendor/jquery-2.1.1.min.js"),
       nsLiteralCString("chrome://devtools/content/shared/sourceeditor/"
                        "codemirror/codemirror.bundle.js"),
       nsLiteralCString(

@@ -3,13 +3,14 @@
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
+      ["test.wait300msAfterTabSwitch", true],
       // Enable popup blocker
       ["dom.disable_open_during_load", true],
     ],
   });
 });
 
-/** Test for Bug 1901139 **/
+/** Test for Bug 1901139 */
 
 add_task(async function () {
   await BrowserTestUtils.withNewTab(

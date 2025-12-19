@@ -4,6 +4,11 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use std::{
+    fmt::{self, Display, Formatter},
+    time::Instant,
+};
+
 use neqo_common::qdebug;
 use neqo_transport::{Connection, StreamId};
 
@@ -20,8 +25,8 @@ pub struct ControlStreamRemote {
     frame_reader: FrameReader,
 }
 
-impl ::std::fmt::Display for ControlStreamRemote {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+impl Display for ControlStreamRemote {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "Http3 remote control stream {:?}", self.stream_id)
     }
 }
@@ -35,14 +40,12 @@ impl ControlStreamRemote {
     }
 
     /// Check if a stream is the control stream and read received data.
-    pub fn receive_single(&mut self, conn: &mut Connection) -> Res<Option<HFrame>> {
+    pub fn receive_single(&mut self, conn: &mut Connection, now: Instant) -> Res<Option<HFrame>> {
         qdebug!("[{self}] Receiving data");
-        match self
-            .frame_reader
-            .receive(&mut StreamReaderConnectionWrapper::new(
-                conn,
-                self.stream_id,
-            ))? {
+        match self.frame_reader.receive(
+            &mut StreamReaderConnectionWrapper::new(conn, self.stream_id),
+            now,
+        )? {
             (_, true) => Err(Error::HttpClosedCriticalStream),
             (s, false) => {
                 qdebug!("[{self}] received {s:?}");
@@ -63,11 +66,11 @@ impl RecvStream for ControlStreamRemote {
         Err(Error::HttpClosedCriticalStream)
     }
 
-    fn receive(&mut self, conn: &mut Connection) -> Res<(ReceiveOutput, bool)> {
+    fn receive(&mut self, conn: &mut Connection, now: Instant) -> Res<(ReceiveOutput, bool)> {
         let mut control_frames = Vec::new();
 
         loop {
-            if let Some(f) = self.receive_single(conn)? {
+            if let Some(f) = self.receive_single(conn, now)? {
                 control_frames.push(f);
             } else {
                 return Ok((ReceiveOutput::ControlFrames(control_frames), false));

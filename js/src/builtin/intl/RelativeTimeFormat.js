@@ -139,7 +139,7 @@ function InitializeRelativeTimeFormat(relativeTimeFormat, locales, options) {
   }
 
   // Step 4.
-  var opt = new_Record();
+  var opt = NEW_RECORD();
 
   // Steps 5-6.
   var matcher = GetOption(
@@ -198,26 +198,6 @@ function InitializeRelativeTimeFormat(relativeTimeFormat, locales, options) {
 }
 
 /**
- * Returns the subset of the given locale list for which this locale list has a
- * matching (possibly fallback) locale. Locales appear in the same order in the
- * returned list as in the input list.
- *
- * Spec: ECMAScript 402 API, RelativeTimeFormat, 1.3.2.
- */
-function Intl_RelativeTimeFormat_supportedLocalesOf(locales /*, options*/) {
-  var options = ArgumentsLength() > 1 ? GetArgument(1) : undefined;
-
-  // Step 1.
-  var availableLocales = "RelativeTimeFormat";
-
-  // Step 2.
-  var requestedLocales = CanonicalizeLocaleList(locales);
-
-  // Step 3.
-  return SupportedLocales(availableLocales, requestedLocales, options);
-}
-
-/**
  * Returns a String value representing the written form of a relative date
  * formatted according to the effective locale and the formatting options
  * of this RelativeTimeFormat object.
@@ -245,7 +225,7 @@ function Intl_RelativeTimeFormat_format(value, unit) {
   }
 
   // Step 3.
-  var t = ToNumber(value);
+  var t = TO_NUMBER(value);
 
   // Step 4.
   var u = ToString(unit);
@@ -282,7 +262,7 @@ function Intl_RelativeTimeFormat_formatToParts(value, unit) {
   }
 
   // Step 3.
-  var t = ToNumber(value);
+  var t = TO_NUMBER(value);
 
   // Step 4.
   var u = ToString(unit);

@@ -117,16 +117,15 @@
     static suggestionsSection = /*html*/ `
       <html:div id="tab-group-suggestions-container" hidden="true">
 
-        <checkbox
-          checked="true"
-          type="checkbox"
+        <html:moz-checkbox
+          checked=""
           id="tab-group-select-checkbox"
           data-l10n-id="tab-group-editor-select-suggestions">
-        </checkbox>
-      
+        </html:moz-checkbox>
+
         <html:div id="tab-group-suggestions"></html:div>
 
-        <html:p 
+        <html:p
           data-l10n-id="tab-group-editor-information-message">
         </html:p>
 
@@ -250,7 +249,7 @@
             id="tab-group-suggestions-message"
             data-l10n-id="tab-group-editor-no-tabs-found-title">
           </html:moz-button>
-          <html:p 
+          <html:p
             data-l10n-id="tab-group-editor-no-tabs-found-message">
           </html:p>
         </html:div>
@@ -258,7 +257,7 @@
         ${this.defaultActions}
 
       </html:div>
-      
+
       ${this.loadingSection}
       ${this.loadingActions}
       ${this.suggestionsSection}
@@ -328,6 +327,7 @@
     #suggestionsLoadCancel;
     #suggestionsSeparator;
     #smartTabGroupingManager;
+    #smartTabGroupsInitiated = false;
     #suggestionsOptinContainer;
     #suggestionsOptin;
     #suggestionsRunToken;
@@ -354,7 +354,16 @@
         this,
         "smartTabGroupsOptin",
         "browser.tabs.groups.smart.optin",
-        false
+        false,
+        this.#onSmartTabGroupsOptInPrefChange.bind(this)
+      );
+
+      XPCOMUtils.defineLazyPreferenceGetter(
+        this,
+        "mlEnabled",
+        "browser.ml.enable",
+        true,
+        this.#onSmartTabGroupsPrefChange.bind(this)
       );
     }
 
@@ -473,23 +482,48 @@
       this.panel.addEventListener("popuphidden", this);
       this.panel.addEventListener("keypress", this);
       this.#swatchesContainer.addEventListener("change", this);
+      Glean.tabgroup.smartTabEnabled.set(this.smartTabGroupsPrefEnabled);
     }
 
     get smartTabGroupsEnabled() {
       return (
+        Services.locale.appLocaleAsBCP47.startsWith("en") &&
         this.smartTabGroupsUserEnabled &&
         this.smartTabGroupsFeatureConfigEnabled &&
-        !PrivateBrowsingUtils.isWindowPrivate(this.ownerGlobal)
+        !PrivateBrowsingUtils.isWindowPrivate(this.ownerGlobal) &&
+        this.mlEnabled
+      );
+    }
+
+    get smartTabGroupsPrefEnabled() {
+      return (
+        this.smartTabGroupsUserEnabled &&
+        this.smartTabGroupsFeatureConfigEnabled &&
+        this.smartTabGroupsOptin
       );
     }
 
     #onSmartTabGroupsPrefChange(_preName, _prev, _latest) {
+      if (!this.#smartTabGroupsInitiated && this.smartTabGroupsEnabled) {
+        this.#initSuggestions();
+      }
       const icon = this.smartTabGroupsEnabled
         ? MozTabbrowserTabGroupMenu.AI_ICON
         : "";
 
       this.#suggestionButton.iconSrc = icon;
       this.#suggestionsMessage.iconSrc = icon;
+      Glean.tabgroup.smartTab.record({
+        enabled: this.smartTabGroupsPrefEnabled,
+      });
+      Glean.tabgroup.smartTabEnabled.set(this.smartTabGroupsPrefEnabled);
+    }
+
+    #onSmartTabGroupsOptInPrefChange(_preName, _prev, _latest) {
+      Glean.tabgroup.smartTab.record({
+        enabled: this.smartTabGroupsPrefEnabled,
+      });
+      Glean.tabgroup.smartTabEnabled.set(this.smartTabGroupsPrefEnabled);
     }
 
     #initSmartTabGroupsOptin() {
@@ -543,8 +577,7 @@
         () => {
           this.#handleMLOptinTelemetry("step0-optin-link-click");
           openTrustedLinkIn(
-            // this is a placeholder link, it should be replaced with the actual link
-            "https://support.mozilla.org",
+            "https://support.mozilla.org/kb/how-use-ai-enhanced-tab-groups",
             "tab"
           );
         }
@@ -562,6 +595,9 @@
     }
 
     #initSuggestions() {
+      if (!this.smartTabGroupsEnabled || this.#smartTabGroupsInitiated) {
+        return;
+      }
       const { SmartTabGroupingManager } = ChromeUtils.importESModule(
         "moz-src:///browser/components/tabbrowser/SmartTabGrouping.sys.mjs"
       );
@@ -593,14 +629,13 @@
       this.#selectSuggestionsCheckbox = this.querySelector(
         "#tab-group-select-checkbox"
       );
-      this.#selectSuggestionsCheckbox.addEventListener(
-        "CheckboxStateChange",
-        () => {
-          this.#selectSuggestionsCheckbox.checked
-            ? this.#handleSelectAll()
-            : this.#handleDeselectAll();
+      this.#selectSuggestionsCheckbox.addEventListener("change", e => {
+        if (e.target.checked) {
+          this.#handleSelectAll();
+        } else {
+          this.#handleDeselectAll();
         }
-      );
+      });
       this.#suggestionsMessageContainer = this.querySelector(
         "#tab-group-suggestions-message-container"
       );
@@ -647,6 +682,7 @@
         this.#suggestionsRunToken = null;
         this.#handleLoadSuggestionsCancel();
       });
+      this.#smartTabGroupsInitiated = true;
     }
 
     #populateSwatches() {
@@ -769,6 +805,7 @@
 
     /**
      * Check if the label should be updated with the suggested label
+     *
      * @returns {boolean}
      */
     #shouldUpdateLabelWithMlLabel() {
@@ -777,6 +814,7 @@
 
     /**
      * Attempt to set the label of the group to the suggested label
+     *
      * @param {MozTabbrowserTabGroup} group
      * @param {string} newLabel
      * @returns
@@ -801,8 +839,15 @@
       this.#panel.openPopup(group.firstChild, {
         position: this.#panelPosition,
       });
+      if (!this.smartTabGroupsOptin) {
+        return;
+      }
       // If user has opted in kick off label generation
-      this.smartTabGroupsOptin && this.#initMlGroupLabel();
+      this.#initMlGroupLabel();
+      if (this.smartTabGroupsEnabled) {
+        // initialize the embedding engine in the background
+        this.#smartTabGroupingManager.initEmbeddingEngine();
+      }
     }
 
     /*
@@ -856,9 +901,13 @@
         flushes.push(TabStateFlusher.flush(tab.linkedBrowser));
       });
       Promise.allSettled(flushes).then(() => {
-        saveAndCloseGroup.disabled = !SessionStore.shouldSaveTabGroup(
-          this.activeGroup
-        );
+        // `this.activeGroup` could be no longer available if the menu was closed
+        // since starting the tab state flushes.
+        if (this.activeGroup?.tabs) {
+          saveAndCloseGroup.disabled = !SessionStore.shouldSaveTabsToGroup(
+            this.activeGroup.tabs
+          );
+        }
       });
     }
 
@@ -895,7 +944,10 @@
             this.#handleMlTelemetry("save-popup-hidden");
           }
         } else {
-          this.activeGroup.ungroupTabs();
+          this.activeGroup.ungroupTabs({
+            isUserTriggered: true,
+            telemetrySource: TabMetrics.METRIC_SOURCE.CANCEL_TAB_GROUP_CREATION,
+          });
         }
       }
       if (this.#nameField.disabled) {
@@ -905,7 +957,7 @@
         Glean.tabgroup.groupInteractions.rename.add(1);
       }
       this.activeGroup = null;
-      this.#smartTabGroupingManager.terminateProcess();
+      this.#smartTabGroupingManager?.terminateProcess();
     }
 
     on_keypress(event) {
@@ -995,6 +1047,7 @@
 
     /**
      * Set the state of the form to disabled or enabled
+     *
      * @param {boolean} state
      */
     #setFormToDisabled(state) {
@@ -1089,6 +1142,7 @@
 
     /**
      * Sends Glean metrics if smart tab grouping is enabled
+     *
      * @param {string} action "save", "save-popup-hidden" or "cancel"
      */
     #handleMlTelemetry(action) {
@@ -1122,6 +1176,7 @@
 
     /**
      * Sends Glean metrics for opt-in UI flow
+     *
      * @param {string} step contains step number and description of flow
      */
     #handleMLOptinTelemetry(step) {
@@ -1130,49 +1185,28 @@
       });
     }
 
-    #createRow(tab, index) {
-      // Create Row
-      let row = document.createXULElement("toolbaritem");
-      row.setAttribute("context", "tabContextMenu");
-      row.setAttribute("id", `tab-bar-${index}`);
-
+    #createRow(tab) {
       // Create Checkbox
-      let checkbox = document.createXULElement("checkbox");
-      checkbox.value = tab;
-      checkbox.setAttribute("checked", true);
-      checkbox.classList.add("tab-group-suggestion-checkbox");
-      checkbox.addEventListener("CheckboxStateChange", e => {
-        const isChecked = e.target.checked;
-        const currentTab = e.target.value;
-
-        if (isChecked) {
-          this.#selectedSuggestedTabs.push(currentTab);
+      let checkbox = document.createElement("moz-checkbox");
+      checkbox.label = tab.label;
+      checkbox.iconSrc = tab.image;
+      checkbox.checked = true;
+      checkbox.classList.add(
+        "tab-group-suggestion-checkbox",
+        "text-truncated-ellipsis"
+      );
+      checkbox.addEventListener("change", e => {
+        if (e.target.checked) {
+          this.#selectedSuggestedTabs.push(tab);
         } else {
           this.#selectedSuggestedTabs = this.#selectedSuggestedTabs.filter(
-            t => t != currentTab
+            t => t != tab
           );
         }
       });
 
-      row.appendChild(checkbox);
-
-      // Create Row Label
-      let label = document.createXULElement("toolbarbutton");
-      label.classList.add(
-        "all-tabs-button",
-        "subviewbutton",
-        "subviewbutton-iconic",
-        "tab-group-suggestion-label"
-      );
-      label.setAttribute("flex", "1");
-      label.setAttribute("crop", "end");
-      label.label = tab.label;
-      label.image = tab.image;
-      label.disabled = true;
-      row.appendChild(label);
-
       // Apply Row to Suggestions
-      this.#suggestions.appendChild(row);
+      this.#suggestions.appendChild(checkbox);
     }
 
     /**
@@ -1183,6 +1217,9 @@
      * @param {boolean} shouldShow - Whether the element should be shown (true) or hidden (false).
      */
     #setElementVisibility(element, shouldShow) {
+      if (!element) {
+        return;
+      }
       element.hidden = !shouldShow;
     }
 
@@ -1222,6 +1259,7 @@
     /**
      * Unique state setter for a "3rd" panel state while in suggest Mode
      * that just shows suggestions and hides the majority of the panel
+     *
      * @param {boolean} value
      */
     #setSuggestModeSuggestionState(value) {
@@ -1236,9 +1274,16 @@
       this.#setSuggestModeSuggestionState(false);
       this.#suggestedTabs = [];
       this.#selectedSuggestedTabs = [];
-      this.#suggestions.innerHTML = "";
+      if (this.#suggestions) {
+        this.#suggestions.replaceChildren();
+      }
+      if (this.#selectSuggestionsCheckbox) {
+        this.#selectSuggestionsCheckbox.checkbox = true;
+      }
       this.#showSmartSuggestionsContainer(false);
-      this.#suggestionsOptinContainer.innerHTML = "";
+      if (this.#suggestionsOptinContainer) {
+        this.#suggestionsOptinContainer.replaceChildren();
+      }
     }
 
     #renderSuggestionState() {

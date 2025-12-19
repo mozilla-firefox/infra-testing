@@ -1,4 +1,4 @@
-// |jit-test| skip-if: !getPrefValue("wasm_lazy_tiering") || !getBuildConfiguration("x64") || !hasDisassembler() || getBuildConfiguration("simulator"); test-also=-P wasm_lazy_tiering --setpref=wasm_lazy_tiering_synchronous; include:codegen-x64-test.js
+// |jit-test| skip-if: !wasmLazyTieringEnabled() || !getBuildConfiguration("x64") || !hasDisassembler() || getBuildConfiguration("simulator"); test-also=-P wasm_lazy_tiering --setpref=wasm_lazy_tiering_synchronous; include:codegen-x64-test.js
 
 assertEq(hasDisassembler(), true);
 
@@ -53,8 +53,8 @@ let t = `
 `;
 
 let expected =
-`41 83 ae .. 0. 00 00 03   subl \\$0x03, 0x...\\(%r14\\)
- 0f 88 .. .. 00 00         js 0x000000000000....`;
+`subl \\$0x03, 0x...\\(%r14\\)
+ js 0x000000000000....`;
 
 codegenTestX64_adhoc(t, "f", expected,
                      {no_prefix:true, no_suffix:true, baseline:true});

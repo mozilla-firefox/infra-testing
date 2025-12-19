@@ -10,8 +10,6 @@
 #include "EditorForwards.h"
 #include "EditorUtils.h"
 
-#include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLBRElement.h"
@@ -21,7 +19,6 @@
 #include "nsDebug.h"
 #include "nsGkAtoms.h"
 #include "nsIContent.h"
-#include "nsTextFragment.h"
 
 namespace mozilla {
 
@@ -142,7 +139,7 @@ class EditorLineBreakBase {
   [[nodiscard]] bool CharAtOffsetIsLineBreak() const {
     MOZ_DIAGNOSTIC_ASSERT(IsPreformattedLineBreak());
     return *mOffsetInText < TextRef().TextDataLength() &&
-           TextRef().TextFragment().CharAt(*mOffsetInText) == '\n';
+           TextRef().DataBuffer().CharAt(*mOffsetInText) == '\n';
   }
 
   [[nodiscard]] bool IsDeletableFromComposedDoc() const {

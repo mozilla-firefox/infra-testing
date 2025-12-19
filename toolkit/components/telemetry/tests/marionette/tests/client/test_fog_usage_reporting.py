@@ -12,6 +12,7 @@ BASELINE = FOGDocTypePingFilter("baseline")
 FOG_USAGE_REPORTING = FOGDocTypePingFilter("usage-reporting")
 FOG_USAGE_DELETION_REQUEST_PING = FOGDocTypePingFilter("usage-deletion-request")
 CANARY_USAGE_PROFILE_ID = "beefbeef-beef-beef-beef-beeefbeefbee"
+CANARY_USAGE_PROFILE_GROUP_ID = "b0bacafe-b0ba-cafe-b0ba-cafeb0bacafe"
 
 
 class TestUsageReporting(FOGTestCase):
@@ -31,15 +32,18 @@ class TestUsageReporting(FOGTestCase):
         )
         self.marionette.set_pref("datareporting.usage.uploadEnabled", True)
 
-    def test_deletion_request(self):
+    def test_usage_reporting_independent_from_telemetry(self):
         """
-        Test the "usage-reporting" ping behaviour and usage-id cycling when disabling telemetry in general.
+        Test that the "usage-reporting" ping behaviour is independent from general telemetry.
 
-        We do not expect a "usage-deletion-request" ping.  The "deletion-request" ping should not include the usage-id.
+        We do not expect a "usage-deletion-request" ping.
+        The "deletion-request" ping should not include the usage-id.
+        The `usage.profile_id` stays the same across telemetry toggling.
         """
+        self.marionette.set_pref("telemetry.glean.internal.maxPingsPerMinute", 60)
 
         ping1 = self.wait_for_ping(
-            self.restart_browser,
+            lambda: self.marionette.restart(in_app=True),
             FOG_USAGE_REPORTING,
             ping_server=self.fog_ping_server,
         )
@@ -55,6 +59,11 @@ class TestUsageReporting(FOGTestCase):
         usage_id1 = metrics["uuid"]["usage.profile_id"]
         self.assertIsValidUUID(usage_id1)
         self.assertNotEqual(CANARY_USAGE_PROFILE_ID, usage_id1)
+
+        self.assertIn("usage.profile_group_id", metrics["uuid"])
+        usage_group_id1 = metrics["uuid"]["usage.profile_group_id"]
+        self.assertIsValidUUID(usage_group_id1)
+        self.assertNotEqual(CANARY_USAGE_PROFILE_GROUP_ID, usage_group_id1)
 
         # Regular `deletion-request` ping won't have the `usage.profile_id`.
         # We just wait for it to know it happened.
@@ -64,9 +73,10 @@ class TestUsageReporting(FOGTestCase):
             ping_server=self.fog_ping_server,
         )
 
-        self.enable_telemetry()
+        # Other telemetry stays disabled.
+        # We should still get the usage-reporting ping on a restart.
         ping3 = self.wait_for_ping(
-            self.restart_browser,
+            lambda: self.marionette.restart(in_app=True),
             FOG_USAGE_REPORTING,
             ping_server=self.fog_ping_server,
         )
@@ -75,8 +85,15 @@ class TestUsageReporting(FOGTestCase):
         usage_id2 = ping3["payload"]["metrics"]["uuid"]["usage.profile_id"]
         self.assertIsValidUUID(usage_id2)
 
-        self.assertNotEqual(usage_id1, usage_id2)
+        self.assertEqual(usage_id1, usage_id2)
         self.assertNotEqual(CANARY_USAGE_PROFILE_ID, usage_id2)
+
+        self.assertIn("usage.profile_group_id", ping3["payload"]["metrics"]["uuid"])
+        usage_group_id2 = ping3["payload"]["metrics"]["uuid"]["usage.profile_group_id"]
+        self.assertIsValidUUID(usage_group_id2)
+
+        self.assertEqual(usage_group_id1, usage_group_id2)
+        self.assertNotEqual(CANARY_USAGE_PROFILE_GROUP_ID, usage_group_id2)
 
     def test_usage_deletion_request(self):
         """
@@ -84,9 +101,10 @@ class TestUsageReporting(FOGTestCase):
 
         We expect a "usage-deletion-request" ping, and it should include the usage-id.
         """
+        self.marionette.set_pref("telemetry.glean.internal.maxPingsPerMinute", 60)
 
         ping1 = self.wait_for_ping(
-            self.restart_browser,
+            lambda: self.marionette.restart(in_app=True),
             FOG_USAGE_REPORTING,
             ping_server=self.fog_ping_server,
         )
@@ -102,6 +120,11 @@ class TestUsageReporting(FOGTestCase):
         usage_id1 = metrics["uuid"]["usage.profile_id"]
         self.assertIsValidUUID(usage_id1)
         self.assertNotEqual(CANARY_USAGE_PROFILE_ID, usage_id1)
+
+        self.assertIn("usage.profile_group_id", metrics["uuid"])
+        usage_group_id1 = metrics["uuid"]["usage.profile_group_id"]
+        self.assertIsValidUUID(usage_group_id1)
+        self.assertNotEqual(CANARY_USAGE_PROFILE_GROUP_ID, usage_group_id1)
 
         # `usage-deletion-request` ping will have the `usage.profile_id`.
         #
@@ -118,9 +141,13 @@ class TestUsageReporting(FOGTestCase):
         usage_id2 = metrics["uuid"]["usage.profile_id"]
         self.assertEqual(usage_id1, usage_id2)
 
+        self.assertIn("usage.profile_group_id", metrics["uuid"])
+        usage_group_id2 = metrics["uuid"]["usage.profile_group_id"]
+        self.assertEqual(usage_group_id1, usage_group_id2)
+
         self.enable_usage_reporting()
         ping3 = self.wait_for_ping(
-            self.restart_browser,
+            lambda: self.marionette.restart(in_app=True),
             FOG_USAGE_REPORTING,
             ping_server=self.fog_ping_server,
         )
@@ -132,18 +159,25 @@ class TestUsageReporting(FOGTestCase):
         self.assertNotEqual(usage_id1, usage_id3)
         self.assertNotEqual(CANARY_USAGE_PROFILE_ID, usage_id3)
 
+        self.assertIn("usage.profile_group_id", ping3["payload"]["metrics"]["uuid"])
+        usage_group_id3 = ping3["payload"]["metrics"]["uuid"]["usage.profile_group_id"]
+        self.assertIsValidUUID(usage_group_id3)
+
+        self.assertNotEqual(usage_group_id1, usage_group_id3)
+        self.assertNotEqual(CANARY_USAGE_PROFILE_GROUP_ID, usage_group_id3)
+
     def test_enabled_state_after_restart(self):
         """
-        Test that the "usage-reporting" ping remains enabled and the usage ID remains fixed when restarting the browser.
+        Test that the "usage-reporting" ping remains enabled and the usage ID and usage group ID remain fixed when restarting the browser.
         """
+        self.marionette.set_pref("telemetry.glean.internal.maxPingsPerMinute", 60)
 
-        self.disable_usage_reporting()
         # Not guaranteed to send a "usage-reporting" ping.
         self.enable_usage_reporting()
 
         # But restarting should send a "usage-reporting ping".
         ping1 = self.wait_for_ping(
-            self.restart_browser,
+            lambda: self.marionette.restart(in_app=True),
             FOG_USAGE_REPORTING,
             ping_server=self.fog_ping_server,
         )
@@ -154,9 +188,14 @@ class TestUsageReporting(FOGTestCase):
         self.assertIsValidUUID(usage_id1)
         self.assertNotEqual(CANARY_USAGE_PROFILE_ID, usage_id1)
 
+        self.assertIn("usage.profile_group_id", metrics["uuid"])
+        usage_group_id1 = metrics["uuid"]["usage.profile_group_id"]
+        self.assertIsValidUUID(usage_group_id1)
+        self.assertNotEqual(CANARY_USAGE_PROFILE_GROUP_ID, usage_group_id1)
+
         # Restarting again should maintain enabled state.
         ping2 = self.wait_for_ping(
-            self.restart_browser,
+            lambda: self.marionette.restart(in_app=True),
             FOG_USAGE_REPORTING,
             ping_server=self.fog_ping_server,
         )
@@ -167,10 +206,16 @@ class TestUsageReporting(FOGTestCase):
 
         self.assertEqual(usage_id1, usage_id2)
 
+        self.assertIn("usage.profile_group_id", metrics["uuid"])
+        usage_group_id2 = metrics["uuid"]["usage.profile_group_id"]
+
+        self.assertEqual(usage_group_id1, usage_group_id2)
+
     def test_disabled_state_after_restart(self):
         """
         Test that the "usage-reporting" ping remains disabled and the usage ID remains null when restarting the browser.
         """
+        self.marionette.set_pref("telemetry.glean.internal.maxPingsPerMinute", 60)
 
         self.enable_usage_reporting()
 
@@ -186,13 +231,18 @@ class TestUsageReporting(FOGTestCase):
         self.assertIsValidUUID(usage_id1)
         self.assertNotEqual(CANARY_USAGE_PROFILE_ID, usage_id1)
 
+        self.assertIn("usage.profile_group_id", metrics["uuid"])
+        usage_group_id1 = metrics["uuid"]["usage.profile_group_id"]
+        self.assertIsValidUUID(usage_group_id1)
+        self.assertNotEqual(CANARY_USAGE_PROFILE_GROUP_ID, usage_group_id1)
+
         current_num_pings = len(self.fog_ping_server.pings)
 
         # It's not easy to wait for the _absence_ of a ping.  So restart and
         # wait for a _different_ ping, then verify we didn't get any additional
         # "usage-reporting" pings.
         _ping2 = self.wait_for_ping(
-            self.restart_browser,
+            lambda: self.marionette.restart(in_app=True),
             BASELINE,
             ping_server=self.fog_ping_server,
         )
@@ -211,6 +261,7 @@ class TestUsageReporting(FOGTestCase):
         # Existing profiles should inherit the general preference, true or
         # false.  New profiles should not inherit the general preference, and
         # instead should default to true.
+        self.marionette.set_pref("telemetry.glean.internal.maxPingsPerMinute", 60)
 
         def healthreportEnabled():
             return self.marionette.get_pref("datareporting.healthreport.uploadEnabled")

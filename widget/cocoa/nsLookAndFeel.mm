@@ -53,16 +53,6 @@ void nsLookAndFeel::EnsureInit() {
   // otherwise we might instantiate the wrong application class, causing
   // exceptions to be thrown elsewhere.
   [GeckoNSApplication sharedApplication];
-  NSWindow* window =
-      [[NSWindow alloc] initWithContentRect:NSZeroRect
-                                  styleMask:NSWindowStyleMaskTitled
-                                    backing:NSBackingStoreBuffered
-                                      defer:NO];
-  auto release = MakeScopeExit([&] { [window release]; });
-
-  mRtl = window.windowTitlebarLayoutDirection ==
-         NSUserInterfaceLayoutDirectionRightToLeft;
-  mTitlebarHeight = std::ceil(window.frame.size.height);
 
   RecordTelemetry();
 
@@ -269,7 +259,6 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme,
                                             : NS_RGB(0xF0, 0xF0, 0xF0);
       break;
     case ColorID::Threedlightshadow:
-    case ColorID::Buttonborder:
     case ColorID::MozDisabledfield:
       aColor = aScheme == ColorScheme::Dark ? *GenericDarkColor(aID)
                                             : NS_RGB(0xDA, 0xDA, 0xDA);
@@ -326,7 +315,6 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme,
       break;
     case ColorID::MozColheader:
     case ColorID::MozColheaderhover:
-    case ColorID::MozEventreerow:
       // Background color of even list rows.
       aColor =
           GetColorFromNSColor(NSColor.controlAlternatingRowBackgroundColors[0]);
@@ -366,6 +354,10 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme,
     case ColorID::MozAutofillBackground:
     case ColorID::TargetTextBackground:
     case ColorID::TargetTextForeground:
+    case ColorID::Buttonborder:
+    case ColorID::MozButtonhoverborder:
+    case ColorID::MozButtonactiveborder:
+    case ColorID::MozButtondisabledborder:
       aColor = GetStandinForNativeColor(aID, aScheme);
       return NS_OK;
     default:
@@ -466,13 +458,8 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
     case IntID::MacBigSurTheme:
       aResult = nsCocoaFeatures::OnBigSurOrLater();
       break;
-    case IntID::MacRTL:
-      EnsureInit();
-      aResult = mRtl;
-      break;
-    case IntID::MacTitlebarHeight:
-      EnsureInit();
-      aResult = mTitlebarHeight;
+    case IntID::MacTahoeTheme:
+      aResult = nsCocoaFeatures::OnTahoeOrLater();
       break;
     case IntID::AlertNotificationOrigin:
       aResult = NS_ALERT_TOP;

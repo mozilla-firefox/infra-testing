@@ -4,21 +4,20 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "gtest/gtest.h"
-
-#include <string.h>
 #include <stdlib.h>
+#include <string.h>
 
-#include "nsContentSecurityUtils.h"
-#include "nsStringFwd.h"
-
+#include "gtest/gtest.h"
 #include "mozilla/ExtensionPolicyService.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/SimpleGlobalObject.h"
 #include "mozilla/extensions/WebExtensionPolicy.h"
+#include "nsContentSecurityUtils.h"
+#include "nsStringFwd.h"
 
 static constexpr auto kChromeURI = "chromeuri"_ns;
 static constexpr auto kResourceURI = "resourceuri"_ns;
+static constexpr auto kMozSrcURI = "mozsrcuri"_ns;
 static constexpr auto kBlobUri = "bloburi"_ns;
 static constexpr auto kDataUri = "dataurl"_ns;
 static constexpr auto kAboutUri = "abouturi"_ns;
@@ -79,6 +78,22 @@ TEST(FilenameEvalParser, ResourceChrome)
         nsContentSecurityUtils::FilenameToFilenameType(str, false);
     ASSERT_EQ(ret.first, kChromeURI);
     ASSERT_EQ(ret.second.value(), "chrome://foo/bar.js"_ns);
+  }
+  {
+    constexpr auto str =
+        "moz-src:///toolkit/components/search/SearchUtils.sys.mjs"_ns;
+    FilenameTypeAndDetails ret =
+        nsContentSecurityUtils::FilenameToFilenameType(str, false);
+    ASSERT_EQ(ret.first, kMozSrcURI);
+    ASSERT_EQ(ret.second.value(), str);
+  }
+  {
+    constexpr auto str =
+        "moz-src:///browser/components/genai/LinkPreview.sys.mjs"_ns;
+    FilenameTypeAndDetails ret =
+        nsContentSecurityUtils::FilenameToFilenameType(str, false);
+    ASSERT_EQ(ret.first, kMozSrcURI);
+    ASSERT_EQ(ret.second.value(), str);
   }
 }
 
@@ -197,7 +212,9 @@ TEST(FilenameEvalParser, UserChromeJS)
       "chrome://tabgroups-resource/content/modules/utils/Overlays.jsm"_ns,
       "resource://usl-ucjs/UserScriptLoaderParent.jsm"_ns,
       "resource://cpmanager-legacy/CPManager.jsm"_ns,
-      "resource://sfm-ucjs/SaveFolderModokiParent.mjs"_ns};
+      "resource://sfm-ucjs/SaveFolderModokiParent.mjs"_ns,
+      "resource://pwa/utils/systemIntegration.sys.mjs"_ns,
+  };
 
   for (auto& name : files) {
     FilenameTypeAndDetails ret =

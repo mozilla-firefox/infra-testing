@@ -6,7 +6,11 @@ use crate::Span;
 
 use alloc::boxed::Box;
 
-pub fn map_address_space(word: &str, span: Span) -> Result<'_, crate::AddressSpace> {
+pub fn map_address_space<'a>(
+    word: &str,
+    span: Span,
+    enable_extensions: &EnableExtensions,
+) -> Result<'a, crate::AddressSpace> {
     match word {
         "private" => Ok(crate::AddressSpace::Private),
         "workgroup" => Ok(crate::AddressSpace::WorkGroup),
@@ -16,21 +20,37 @@ pub fn map_address_space(word: &str, span: Span) -> Result<'_, crate::AddressSpa
         }),
         "push_constant" => Ok(crate::AddressSpace::PushConstant),
         "function" => Ok(crate::AddressSpace::Function),
+        "task_payload" => {
+            if enable_extensions.contains(ImplementedEnableExtension::WgpuMeshShader) {
+                Ok(crate::AddressSpace::TaskPayload)
+            } else {
+                Err(Box::new(Error::EnableExtensionNotEnabled {
+                    span,
+                    kind: ImplementedEnableExtension::WgpuMeshShader.into(),
+                }))
+            }
+        }
         _ => Err(Box::new(Error::UnknownAddressSpace(span))),
     }
 }
 
-pub fn map_built_in(word: &str, span: Span) -> Result<'_, crate::BuiltIn> {
-    Ok(match word {
+pub fn map_built_in(
+    enable_extensions: &EnableExtensions,
+    word: &str,
+    span: Span,
+) -> Result<'static, crate::BuiltIn> {
+    let built_in = match word {
         "position" => crate::BuiltIn::Position { invariant: false },
         // vertex
         "vertex_index" => crate::BuiltIn::VertexIndex,
         "instance_index" => crate::BuiltIn::InstanceIndex,
         "view_index" => crate::BuiltIn::ViewIndex,
+        "clip_distances" => crate::BuiltIn::ClipDistance,
         // fragment
         "front_facing" => crate::BuiltIn::FrontFacing,
         "frag_depth" => crate::BuiltIn::FragDepth,
         "primitive_index" => crate::BuiltIn::PrimitiveIndex,
+        "barycentric" => crate::BuiltIn::Barycentric,
         "sample_index" => crate::BuiltIn::SampleIndex,
         "sample_mask" => crate::BuiltIn::SampleMask,
         // compute
@@ -44,8 +64,46 @@ pub fn map_built_in(word: &str, span: Span) -> Result<'_, crate::BuiltIn> {
         "subgroup_id" => crate::BuiltIn::SubgroupId,
         "subgroup_size" => crate::BuiltIn::SubgroupSize,
         "subgroup_invocation_id" => crate::BuiltIn::SubgroupInvocationId,
+        // mesh
+        "cull_primitive" => crate::BuiltIn::CullPrimitive,
+        "point_index" => crate::BuiltIn::PointIndex,
+        "line_indices" => crate::BuiltIn::LineIndices,
+        "triangle_indices" => crate::BuiltIn::TriangleIndices,
+        "mesh_task_size" => crate::BuiltIn::MeshTaskSize,
+        // mesh global variable
+        "vertex_count" => crate::BuiltIn::VertexCount,
+        "vertices" => crate::BuiltIn::Vertices,
+        "primitive_count" => crate::BuiltIn::PrimitiveCount,
+        "primitives" => crate::BuiltIn::Primitives,
         _ => return Err(Box::new(Error::UnknownBuiltin(span))),
-    })
+    };
+    match built_in {
+        crate::BuiltIn::ClipDistance => {
+            if !enable_extensions.contains(ImplementedEnableExtension::ClipDistances) {
+                return Err(Box::new(Error::EnableExtensionNotEnabled {
+                    span,
+                    kind: ImplementedEnableExtension::ClipDistances.into(),
+                }));
+            }
+        }
+        crate::BuiltIn::CullPrimitive
+        | crate::BuiltIn::PointIndex
+        | crate::BuiltIn::LineIndices
+        | crate::BuiltIn::TriangleIndices
+        | crate::BuiltIn::VertexCount
+        | crate::BuiltIn::Vertices
+        | crate::BuiltIn::PrimitiveCount
+        | crate::BuiltIn::Primitives => {
+            if !enable_extensions.contains(ImplementedEnableExtension::WgpuMeshShader) {
+                return Err(Box::new(Error::EnableExtensionNotEnabled {
+                    span,
+                    kind: ImplementedEnableExtension::WgpuMeshShader.into(),
+                }));
+            }
+        }
+        _ => {}
+    }
+    Ok(built_in)
 }
 
 pub fn map_interpolation(word: &str, span: Span) -> Result<'_, crate::Interpolation> {
@@ -98,7 +156,7 @@ pub fn map_storage_format(word: &str, span: Span) -> Result<'_, crate::StorageFo
         "rgba8sint" => Sf::Rgba8Sint,
         "rgb10a2uint" => Sf::Rgb10a2Uint,
         "rgb10a2unorm" => Sf::Rgb10a2Unorm,
-        "rg11b10float" => Sf::Rg11b10Ufloat,
+        "rg11b10ufloat" => Sf::Rg11b10Ufloat,
         "r64uint" => Sf::R64Uint,
         "rg32uint" => Sf::Rg32Uint,
         "rg32sint" => Sf::Rg32Sint,

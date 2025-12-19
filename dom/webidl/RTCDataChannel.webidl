@@ -14,22 +14,22 @@ enum RTCDataChannelType {
   "blob"
 };
 
-[Exposed=Window]
+[Exposed=(Window,DedicatedWorker)]
 interface RTCDataChannel : EventTarget
 {
-  readonly attribute DOMString label;
+  readonly attribute UTF8String label;
   readonly attribute boolean negotiated;
   readonly attribute boolean ordered;
-  readonly attribute boolean reliable;
   readonly attribute unsigned short? maxPacketLifeTime;
   readonly attribute unsigned short? maxRetransmits;
-  readonly attribute USVString protocol;
+  readonly attribute UTF8String protocol;
   readonly attribute unsigned short? id;
   readonly attribute RTCDataChannelState readyState;
   readonly attribute unsigned long bufferedAmount;
   attribute unsigned long bufferedAmountLowThreshold;
   attribute EventHandler onopen;
   attribute EventHandler onerror;
+  attribute EventHandler onclosing;
   attribute EventHandler onclose;
   undefined close();
   attribute EventHandler onmessage;

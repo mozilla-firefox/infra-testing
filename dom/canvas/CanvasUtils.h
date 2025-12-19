@@ -7,12 +7,11 @@
 #define _CANVASUTILS_H_
 
 #include "CanvasRenderingContextHelper.h"
-#include "mozilla/CheckedInt.h"
-#include "mozilla/dom/ToJSValue.h"
-#include "jsapi.h"
 #include "js/Array.h"               // JS::GetArrayLength
 #include "js/PropertyAndElement.h"  // JS_GetElement
-#include "mozilla/FloatingPoint.h"
+#include "jsapi.h"
+#include "mozilla/CheckedInt.h"
+#include "mozilla/dom/ToJSValue.h"
 
 class nsIPrincipal;
 
@@ -59,22 +58,31 @@ bool HasDrawWindowPrivilege(JSContext* aCx, JSObject* aObj);
 // Check if the context has permission to use OffscreenCanvas.
 bool IsOffscreenCanvasEnabled(JSContext* aCx, JSObject* aObj);
 
+// Check if the principal has "canvas" permission.
+uint32_t GetCanvasExtractDataPermission(nsIPrincipal* aPrincipal);
+
 // Check site-specific permission and display prompt if appropriate.
 bool IsImageExtractionAllowed(dom::Document* aDocument, JSContext* aCx,
-                              nsIPrincipal& aPrincipal);
+                              nsIPrincipal* aPrincipal);
+
+bool IsImageExtractionAllowed(dom::OffscreenCanvas* aOffscreenCanvas,
+                              JSContext* aCx, nsIPrincipal* aPrincipal);
+
+uint32_t GetCanvasExtractDataPermission(nsIPrincipal* aPrincipal);
 
 enum class ImageExtraction {
   Unrestricted,
   Placeholder,
   Randomize,
+  EfficientRandomize,
 };
 
 // Returns whether the result of an image extraction should be replaced
 // by a placeholder or randomized.
 ImageExtraction ImageExtractionResult(dom::HTMLCanvasElement* aCanvasElement,
-                                      JSContext* aCx, nsIPrincipal& aPrincipal);
+                                      JSContext* aCx, nsIPrincipal* aPrincipal);
 ImageExtraction ImageExtractionResult(dom::OffscreenCanvas* aOffscreenCanvas,
-                                      JSContext* aCx, nsIPrincipal& aPrincipal);
+                                      JSContext* aCx, nsIPrincipal* aPrincipal);
 
 // Make a double out of |v|, treating undefined values as 0.0 (for
 // the sake of sparse arrays).  Return true iff coercion

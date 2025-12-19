@@ -13,12 +13,18 @@ const ORIGIN_A_SUB = `https://test1.${BASE_DOMAIN_A}`;
 const CONTAINER_PRINCIPAL_A =
   Services.scriptSecurityManager.createContentPrincipal(
     Services.io.newURI(ORIGIN_A),
-    { userContextId: 2 }
+    {
+      userContextId: 2,
+      partitionKey: `(https,${BASE_DOMAIN_A})`,
+    }
   );
 const CONTAINER_PRINCIPAL_A_SUB =
   Services.scriptSecurityManager.createContentPrincipal(
     Services.io.newURI(ORIGIN_A_SUB),
-    { userContextId: 2 }
+    {
+      userContextId: 2,
+      partitionKey: `(https,${BASE_DOMAIN_A})`,
+    }
   );
 
 const BASE_DOMAIN_B = "example.org";
@@ -67,6 +73,10 @@ async function testCached(origin, isCached) {
     return SpecialPowers.getDOMWindowUtils(content).parsedStyleSheets;
   });
 
+  ok(
+    numParsed == 0 || numParsed == 1,
+    `Where did that stylesheet come from expected 0 or 1, got ${numParsed}`
+  );
   // Stylesheets is cached if numParsed is 0.
   is(!numParsed, isCached, `${origin} is${isCached ? " " : " not "}cached`);
 }
@@ -100,14 +110,21 @@ async function cleanupTestTabs() {
 }
 
 add_task(async function test_deleteByPrincipal() {
-  await SpecialPowers.setBoolPref("dom.security.https_first", false);
+  await SpecialPowers.pushPrefEnv({
+    set: [["dom.security.https_first", false]],
+  });
   await addTestTabs();
 
   // Clear data for content principal of A
   info("Clearing cache for principal " + ORIGIN_A);
   await new Promise(resolve => {
     Services.clearData.deleteDataFromPrincipal(
-      Services.scriptSecurityManager.createContentPrincipalFromOrigin(ORIGIN_A),
+      Services.scriptSecurityManager.createContentPrincipal(
+        Services.io.newURI(ORIGIN_A),
+        {
+          partitionKey: `(https,${BASE_DOMAIN_A})`,
+        }
+      ),
       false,
       Ci.nsIClearDataService.CLEAR_CSS_CACHE,
       resolve

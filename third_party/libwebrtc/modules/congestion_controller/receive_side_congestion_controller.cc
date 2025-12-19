@@ -15,11 +15,9 @@
 #include <memory>
 #include <utility>
 
-#include "absl/base/nullability.h"
 #include "api/environment/environment.h"
 #include "api/media_types.h"
 #include "api/sequence_checker.h"
-#include "api/transport/network_control.h"
 #include "api/units/data_rate.h"
 #include "api/units/time_delta.h"
 #include "api/units/timestamp.h"
@@ -37,7 +35,7 @@
 namespace webrtc {
 
 namespace {
-static const uint32_t kTimeOffsetSwitchThreshold = 30;
+const uint32_t kTimeOffsetSwitchThreshold = 30;
 }  // namespace
 
 void ReceiveSideCongestionController::OnRttUpdate(int64_t avg_rtt_ms,

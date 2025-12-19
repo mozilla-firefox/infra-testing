@@ -399,7 +399,7 @@ add_task(async function test_dfpi_with_ip_and_port() {
       expectedOut: {
         firstPartyDomain: "",
         partitionKey: {
-          topLevelSite: `http://${LOCAL_IP_AND_PORT}`,
+          topLevelSite: `http://127.0.0.1`,
           hasCrossSiteAncestor: true,
         },
       },

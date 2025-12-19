@@ -5,11 +5,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/ArrayUtils.h"
-
 #include "AsyncGtkClipboardRequest.h"
 #include "nsClipboardX11.h"
-#include "mozilla/RefPtr.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/WidgetUtilsGtk.h"
 
@@ -48,7 +45,7 @@ static void DispatchSelectionNotifyEvent(GtkWidget* widget, XEvent* xevent) {
 
 static void DispatchPropertyNotifyEvent(GtkWidget* widget, XEvent* xevent) {
   GdkWindow* window = gtk_widget_get_window(widget);
-  if (window && ((gdk_window_get_events(window)) & GDK_PROPERTY_CHANGE_MASK)) {
+  if (window && ((gdk_window_get_events(window))&GDK_PROPERTY_CHANGE_MASK)) {
     GdkEvent event = {};
     event.property.type = GDK_PROPERTY_NOTIFY;
     event.property.window = window;

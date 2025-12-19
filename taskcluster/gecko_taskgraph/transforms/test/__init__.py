@@ -91,6 +91,8 @@ test_description_schema = Schema(
             "variant",
             Any([str], "built-projects"),
         ),
+        # Whether tasks should run on only a specific type of repository.
+        Optional("run-on-repo-type"): job_description_schema["run-on-repo-type"],
         # When set only run on projects where the build would already be running.
         # This ensures tasks where this is True won't be the cause of the build
         # running on a project it otherwise wouldn't have.
@@ -105,10 +107,17 @@ test_description_schema = Schema(
         Required("chunks"): optionally_keyed_by(
             "test-platform", "variant", Any(int, "dynamic")
         ),
+        # Timeout multiplier to apply to default test timeout values. Can be keyed
+        # by test platform.
+        Optional("timeoutfactor"): optionally_keyed_by(
+            "test-platform", Any(int, float)
+        ),
         # Custom 'test_manifest_loader' to use, overriding the one configured in the
         # parameters. When 'null', no test chunking will be performed. Can also
         # be used to disable "manifest scheduling".
-        Optional("test-manifest-loader"): Any(None, *list(manifest_loaders)),
+        Optional("test-manifest-loader"): optionally_keyed_by(
+            "test-platform", Any(None, *list(manifest_loaders))
+        ),
         # the time (with unit) after which this task is deleted; default depends on
         # the branch (see below)
         Optional("expires-after"): str,
@@ -121,7 +130,15 @@ test_description_schema = Schema(
         Required("instance-size"): optionally_keyed_by(
             "test-platform",
             "variant",
-            Any("default", "large", "large-noscratch", "xlarge", "xlarge-noscratch"),
+            Any(
+                "default",
+                "large-legacy",
+                "large",
+                "large-noscratch",
+                "xlarge",
+                "xlarge-noscratch",
+                "highcpu",
+            ),
         ),
         # type of virtualization or hardware required by test.
         Required("virtualization"): optionally_keyed_by(
@@ -252,6 +269,7 @@ test_description_schema = Schema(
         ),
         Optional("worker-type"): optionally_keyed_by(
             "test-platform",
+            "variant",
             Any(str, None),
         ),
         Optional(
@@ -289,6 +307,8 @@ test_description_schema = Schema(
         Optional("supports-artifact-builds"): bool,
         # Version of python used to run the task
         Optional("use-python"): job_description_schema["use-python"],
+        # Fetch uv binary and add it to PATH
+        Optional("use-uv"): bool,
         # Cache mounts / volumes to set up
         Optional("use-caches"): optionally_keyed_by(
             "test-platform", run_task_schema["use-caches"]
@@ -360,6 +380,7 @@ def set_defaults(config, tasks):
         task.setdefault("variants", [])
         task.setdefault("supports-artifact-builds", True)
         task.setdefault("use-python", "system")
+        task.setdefault("use-uv", True)
         task.setdefault("use-caches", ["checkout", "pip", "uv"])
 
         task["mozharness"].setdefault("extra-options", [])
@@ -392,6 +413,8 @@ def resolve_keys(config, tasks):
         "run-without-variant",
         "suite",
         "suite.name",
+        "test-manifest-loader",
+        "timeoutfactor",
         "use-caches",
     )
     for task in tasks:
@@ -460,13 +483,11 @@ def make_job_description(config, tasks):
 
         mobile = get_mobile_project(task)
         if mobile and (mobile not in task["test-name"]):
-            label = "{}-{}-{}-{}".format(
-                config.kind, task["test-platform"], mobile, task["test-name"]
+            label = "test-{}-{}-{}".format(
+                task["test-platform"], mobile, task["test-name"]
             )
         else:
-            label = "{}-{}-{}".format(
-                config.kind, task["test-platform"], task["test-name"]
-            )
+            label = "test-{}-{}".format(task["test-platform"], task["test-name"])
 
         try_name = task["try-name"]
         if attributes.get("unittest_variant"):
@@ -526,6 +547,7 @@ def make_job_description(config, tasks):
             jobdesc["expires-after"] = task["expires-after"]
 
         jobdesc["routes"] = task.get("routes", [])
+        jobdesc["run-on-repo-type"] = sorted(task["run-on-repo-type"])
         jobdesc["run-on-projects"] = sorted(task["run-on-projects"])
         jobdesc["scopes"] = []
         jobdesc["tags"] = task.get("tags", {})

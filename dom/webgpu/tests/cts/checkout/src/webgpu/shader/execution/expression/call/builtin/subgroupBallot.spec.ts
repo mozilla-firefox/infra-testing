@@ -12,6 +12,7 @@ import { keysOf } from '../../../../../../common/util/data_tables.js';
 import { iterRange, assert } from '../../../../../../common/util/util.js';
 import { getBlockInfoForTextureFormat } from '../../../../../format_info.js';
 import { GPUTest } from '../../../../../gpu_test.js';
+import * as ttu from '../../../../../texture_test_utils.js';
 import { align } from '../../../../../util/math.js';
 
 import { SubgroupTest, kFramebufferSizes, getUintsPerFramebuffer } from './subgroup_util.js';
@@ -191,7 +192,6 @@ g.test('compute,split')
 enable subgroups;
 
 diagnostic(off, subgroup_uniformity);
-diagnostic(off, subgroup_branching);
 
 @group(0) @binding(0)
 var<storage, read_write> size : u32;
@@ -227,7 +227,6 @@ g.test('predicate')
     const wgsl = `
 enable subgroups;
 
-diagnostic(off, subgroup_branching);
 
 @group(0) @binding(0)
 var<storage, read_write> size : u32;
@@ -316,7 +315,6 @@ g.test('predicate_and_control_flow')
     const wgsl = `
 enable subgroups;
 
-diagnostic(off, subgroup_branching);
 diagnostic(off, subgroup_uniformity);
 
 @group(0) @binding(0)
@@ -632,7 +630,7 @@ fn vsMain(@builtin(vertex_index) index : u32) -> @builtin(position) vec4f {
     pass.end();
     t.queue.submit([encoder.finish()]);
 
-    const ballotBuffer = t.copyWholeTextureToNewBufferSimple(ballotFB, 0);
+    const ballotBuffer = ttu.copyWholeTextureToNewBufferSimple(t, ballotFB, 0);
     const ballotReadback = await t.readGPUBufferRangeTyped(ballotBuffer, {
       srcByteOffset: 0,
       type: Uint32Array,
@@ -641,7 +639,7 @@ fn vsMain(@builtin(vertex_index) index : u32) -> @builtin(position) vec4f {
     });
     const ballots: Uint32Array = ballotReadback.data;
 
-    const metadataBuffer = t.copyWholeTextureToNewBufferSimple(metadataFB, 0);
+    const metadataBuffer = ttu.copyWholeTextureToNewBufferSimple(t, metadataFB, 0);
     const metadataReadback = await t.readGPUBufferRangeTyped(metadataBuffer, {
       srcByteOffset: 0,
       type: Uint32Array,

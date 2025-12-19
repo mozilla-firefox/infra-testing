@@ -6,11 +6,10 @@
 #ifndef mozilla_dom_LinkStyle_h
 #define mozilla_dom_LinkStyle_h
 
-#include "nsINode.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/StyleSheet.h"
 #include "mozilla/Result.h"
-#include "mozilla/Unused.h"
+#include "mozilla/StyleSheet.h"
+#include "nsINode.h"
 #include "nsTArray.h"
 
 class nsIContent;
@@ -117,14 +116,15 @@ class LinkStyle {
     ePRECONNECT = 0x00000020,
     // NOTE: 0x40 is unused
     ePRELOAD = 0x00000080,
-    eMODULE_PRELOAD = 0x00000100
+    eMODULE_PRELOAD = 0x00000100,
+    eCOMPRESSION_DICTIONARY = 0x00000200
   };
 
   // The return value is a bitwise or of 0 or more RelValues.
   static uint32_t ParseLinkTypes(const nsAString& aTypes);
 
   void UpdateStyleSheetInternal() {
-    Unused << UpdateStyleSheetInternal(nullptr, nullptr);
+    (void)UpdateStyleSheetInternal(nullptr, nullptr);
   }
 
   struct MOZ_STACK_CLASS SheetInfo {
@@ -278,6 +278,23 @@ class LinkStyle {
                                               ShadowRoot* aOldShadowRoot,
                                               nsICSSLoaderObserver*,
                                               ForceUpdate);
+
+  /**
+   * If the node is being copied into a static document, we need to clone the
+   * associated stylesheet over as well, preserving the relationship between
+   * the node and the stylesheet (See bug 1930618 as to why this is required).
+   * Nodes inheriting from this class should ensure that this is called on
+   * clone, usually by implementing CopyInnerTo. Because we generally don't have
+   * the knowledge of being in shadow root, the actual copying happens later.
+   */
+  void MaybeStartCopyStyleSheetTo(LinkStyle* aDest, Document* aDoc) const;
+
+  /**
+   * Continuation of MaybeStartCopyStyleSheetTo, called in
+   * LinkStyle::DoUpdateStyleSheet. Unlike MaybeStartCopyStyleSheetTo, this is
+   * called from LinkStyle being copied into.
+   */
+  void MaybeFinishCopyStyleSheet(Document* aDocument);
 
   void BindToTree();
 

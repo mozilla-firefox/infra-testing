@@ -8,7 +8,6 @@
 #define nsIDocumentViewerPrint_h___
 
 #include "nsISupports.h"
-#include "mozilla/UniquePtr.h"
 
 namespace mozilla {
 class PresShell;
@@ -18,12 +17,8 @@ class nsPresContext;
 class nsViewManager;
 
 // {c6f255cf-cadd-4382-b57f-cd2a9874169b}
-#define NS_IDOCUMENT_VIEWER_PRINT_IID                \
-  {                                                  \
-    0xc6f255cf, 0xcadd, 0x4382, {                    \
-      0xb5, 0x7f, 0xcd, 0x2a, 0x98, 0x74, 0x16, 0x9b \
-    }                                                \
-  }
+#define NS_IDOCUMENT_VIEWER_PRINT_IID \
+  {0xc6f255cf, 0xcadd, 0x4382, {0xb5, 0x7f, 0xcd, 0x2a, 0x98, 0x74, 0x16, 0x9b}}
 
 /**
  * A DocumentViewerPrint is an INTERNAL Interface used for interaction
@@ -31,7 +26,7 @@ class nsViewManager;
  */
 class nsIDocumentViewerPrint : public nsISupports {
  public:
-  NS_DECLARE_STATIC_IID_ACCESSOR(NS_IDOCUMENT_VIEWER_PRINT_IID)
+  NS_INLINE_DECL_STATIC_IID(NS_IDOCUMENT_VIEWER_PRINT_IID)
 
   virtual bool GetIsPrinting() const = 0;
 
@@ -51,13 +46,9 @@ class nsIDocumentViewerPrint : public nsISupports {
   /**
    * Replaces the current presentation with print preview presentation.
    */
-  virtual void SetPrintPreviewPresentation(nsViewManager* aViewManager,
-                                           nsPresContext* aPresContext,
+  virtual void SetPrintPreviewPresentation(nsPresContext* aPresContext,
                                            mozilla::PresShell* aPresShell) = 0;
 };
-
-NS_DEFINE_STATIC_IID_ACCESSOR(nsIDocumentViewerPrint,
-                              NS_IDOCUMENT_VIEWER_PRINT_IID)
 
 /* Use this macro when declaring classes that implement this interface. */
 #define NS_DECL_NSIDOCUMENTVIEWERPRINT                          \
@@ -67,8 +58,7 @@ NS_DEFINE_STATIC_IID_ACCESSOR(nsIDocumentViewerPrint,
   void IncrementDestroyBlockedCount() override;                 \
   void DecrementDestroyBlockedCount() override;                 \
   void OnDonePrinting() override;                               \
-  void SetPrintPreviewPresentation(nsViewManager* aViewManager, \
-                                   nsPresContext* aPresContext, \
+  void SetPrintPreviewPresentation(nsPresContext* aPresContext, \
                                    mozilla::PresShell* aPresShell) override;
 
 #endif /* nsIDocumentViewerPrint_h___ */

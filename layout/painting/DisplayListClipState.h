@@ -10,8 +10,6 @@
 #include "DisplayItemClip.h"
 #include "DisplayItemClipChain.h"
 
-#include "mozilla/DebugOnly.h"
-
 class nsIFrame;
 
 namespace mozilla {
@@ -28,11 +26,7 @@ class DisplayListClipState {
       : mClipChainContentDescendants(nullptr),
         mClipChainContainingBlockDescendants(nullptr),
         mCurrentCombinedClipChain(nullptr),
-        mCurrentCombinedClipChainIsValid(false),
-        mClippedToDisplayPort(false) {}
-
-  void SetClippedToDisplayPort() { mClippedToDisplayPort = true; }
-  bool IsClippedToDisplayPort() const { return mClippedToDisplayPort; }
+        mCurrentCombinedClipChainIsValid(false) {}
 
   /**
    * Returns intersection of mClipChainContainingBlockDescendants and
@@ -84,15 +78,19 @@ class DisplayListClipState {
    */
   void ClipContainingBlockDescendants(nsDisplayListBuilder* aBuilder,
                                       const nsRect& aRect,
-                                      const nscoord* aRadii,
+                                      const nsRectCornerRadii* aRadii,
                                       DisplayItemClipChain& aClipChainOnStack);
 
+  void ClipToDisplayPort(nsDisplayListBuilder* aBuilder, const nsRect& aRect,
+                         DisplayItemClipChain& aClipChainOnStack);
+
   void ClipContentDescendants(nsDisplayListBuilder* aBuilder,
-                              const nsRect& aRect, const nscoord* aRadii,
+                              const nsRect& aRect,
+                              const nsRectCornerRadii* aRadii,
                               DisplayItemClipChain& aClipChainOnStack);
   void ClipContentDescendants(nsDisplayListBuilder* aBuilder,
                               const nsRect& aRect, const nsRect& aRoundedRect,
-                              const nscoord* aRadii,
+                              const nsRectCornerRadii* aRadii,
                               DisplayItemClipChain& aClipChainOnStack);
 
   void InvalidateCurrentCombinedClipChain(
@@ -175,8 +173,8 @@ class DisplayListClipState::AutoSaveRestore {
    * mClipContainingBlockDescendants and sets mClipContainingBlockDescendants to
    * the result, stored in aClipOnStack.
    */
-  void ClipContainingBlockDescendants(const nsRect& aRect,
-                                      const nscoord* aRadii = nullptr) {
+  void ClipContainingBlockDescendants(
+      const nsRect& aRect, const nsRectCornerRadii* aRadii = nullptr) {
     NS_ASSERTION(!mRestored, "Already restored!");
     NS_ASSERTION(!mClipUsed, "mClip already used");
 #ifdef DEBUG
@@ -185,8 +183,17 @@ class DisplayListClipState::AutoSaveRestore {
     mState.ClipContainingBlockDescendants(mBuilder, aRect, aRadii, mClipChain);
   }
 
+  void ClipToDisplayPort(const nsRect& aRect) {
+    NS_ASSERTION(!mRestored, "Already restored!");
+    NS_ASSERTION(!mClipUsed, "mClip already used");
+#ifdef DEBUG
+    mClipUsed = true;
+#endif
+    mState.ClipToDisplayPort(mBuilder, aRect, mClipChain);
+  }
+
   void ClipContentDescendants(const nsRect& aRect,
-                              const nscoord* aRadii = nullptr) {
+                              const nsRectCornerRadii* aRadii = nullptr) {
     NS_ASSERTION(!mRestored, "Already restored!");
     NS_ASSERTION(!mClipUsed, "mClip already used");
 #ifdef DEBUG
@@ -196,7 +203,7 @@ class DisplayListClipState::AutoSaveRestore {
   }
 
   void ClipContentDescendants(const nsRect& aRect, const nsRect& aRoundedRect,
-                              const nscoord* aRadii = nullptr) {
+                              const nsRectCornerRadii* aRadii = nullptr) {
     NS_ASSERTION(!mRestored, "Already restored!");
     NS_ASSERTION(!mClipUsed, "mClip already used");
 #ifdef DEBUG
@@ -225,9 +232,19 @@ class DisplayListClipState::AutoSaveRestore {
                                                       mClipChain, aFlags);
   }
 
-  void SetClippedToDisplayPort() { mState.SetClippedToDisplayPort(); }
-  bool IsClippedToDisplayPort() const {
-    return mState.IsClippedToDisplayPort();
+  void MaybeRemoveDisplayportClip() {
+    if (!mState.mClipChainContainingBlockDescendants) return;
+
+    // Only remove the displayport clip in the case where it's the first
+    // element of the clip chain. This covers the vast majority of cases,
+    // and handling displayport clips later in the clip chain would introduce
+    // significant added complexity.
+    if (mState.mClipChainContainingBlockDescendants->IsDisplayportClip()) {
+      auto* displayportClipItem = mState.mClipChainContainingBlockDescendants;
+      mState.mClipChainContainingBlockDescendants =
+          mState.mClipChainContainingBlockDescendants->mParent;
+      mState.InvalidateCurrentCombinedClipChain(displayportClipItem->mASR);
+    }
   }
 
  protected:
@@ -278,7 +295,7 @@ class DisplayListClipState::AutoClipMultiple : public AutoSaveRestore {
    * the result, stored in aClipOnStack.
    */
   void ClipContainingBlockDescendantsExtra(const nsRect& aRect,
-                                           const nscoord* aRadii) {
+                                           const nsRectCornerRadii* aRadii) {
     NS_ASSERTION(!mRestored, "Already restored!");
     NS_ASSERTION(!mExtraClipUsed, "mExtraClip already used");
 #ifdef DEBUG

@@ -7,10 +7,10 @@
 #ifndef nsCSPContext_h___
 #define nsCSPContext_h___
 
-#include "mozilla/dom/CSPViolationData.h"
-#include "mozilla/dom/nsCSPUtils.h"
-#include "mozilla/dom/SecurityPolicyViolationEvent.h"
 #include "mozilla/StaticPrefs_security.h"
+#include "mozilla/dom/CSPViolationData.h"
+#include "mozilla/dom/SecurityPolicyViolationEvent.h"
+#include "mozilla/dom/nsCSPUtils.h"
 #include "nsIChannel.h"
 #include "nsIChannelEventSink.h"
 #include "nsIContentSecurityPolicy.h"
@@ -42,6 +42,8 @@ class nsCSPContext : public nsIContentSecurityPolicy {
   NS_DECL_ISUPPORTS
   NS_DECL_NSICONTENTSECURITYPOLICY
   NS_DECL_NSISERIALIZABLE
+
+  NS_DEFINE_STATIC_CID_ACCESSOR(NS_CSPCONTEXT_CID)
 
  protected:
   virtual ~nsCSPContext();
@@ -158,6 +160,13 @@ class nsCSPContext : public nsIContentSecurityPolicy {
   void SerializePolicies(
       nsTArray<mozilla::ipc::ContentSecurityPolicy>& aPolicies);
 
+  static nsCSPContext* Cast(nsIContentSecurityPolicy* aCSP) {
+    return static_cast<nsCSPContext*>(aCSP);
+  }
+
+  [[nodiscard]] nsresult PolicyContainerRead(
+      nsIObjectInputStream* aInputStream);
+
  private:
   enum class ForceReportSample { Yes, No };
 
@@ -183,11 +192,11 @@ class nsCSPContext : public nsIContentSecurityPolicy {
                        bool aSendContentLocationInViolationReports);
 
   // helper to report inline script/style violations
-  void reportInlineViolation(CSPDirective aDirective,
+  void ReportInlineViolation(CSPDirective aDirective,
                              mozilla::dom::Element* aTriggeringElement,
                              nsICSPEventListener* aCSPEventListener,
                              const nsAString& aNonce, bool aReportSample,
-                             const nsAString& aSample,
+                             const nsAString& aSourceCode,
                              const nsAString& aViolatedDirective,
                              const nsAString& aViolatedDirectiveString,
                              CSPDirective aEffectiveDirective,
@@ -203,8 +212,11 @@ class nsCSPContext : public nsIContentSecurityPolicy {
   };
 
   nsresult TryReadPolicies(PolicyDataVersion aVersion,
-                           mozilla::Span<const uint8_t> aData,
-                           uint32_t aNumPolicies);
+                           nsIObjectInputStream* aStream, uint32_t aNumPolicies,
+                           bool aForPolicyContainer);
+
+  [[nodiscard]] nsresult ReadImpl(nsIObjectInputStream* aStream,
+                                  bool aForPolicyContainer);
 
   nsCString mReferrer;
   uint64_t mInnerWindowID;          // See `nsPIDOMWindowInner::mWindowID`.

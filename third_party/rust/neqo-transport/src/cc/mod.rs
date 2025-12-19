@@ -12,9 +12,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use neqo_common::qlog::NeqoQlog;
+use enum_map::Enum;
+use neqo_common::qlog::Qlog;
 
-use crate::{recovery::SentPacket, rtt::RttEstimate, Error, Pmtud};
+use crate::{recovery::sent, rtt::RttEstimate, stats::CongestionControlStats, Error, Pmtud};
 
 mod classic_cc;
 mod cubic;
@@ -26,8 +27,15 @@ pub use classic_cc::CWND_INITIAL_PKTS;
 pub use cubic::Cubic;
 pub use new_reno::NewReno;
 
+#[derive(Clone, Copy, PartialEq, Eq, Enum, Debug)]
+pub enum CongestionEvent {
+    Loss,
+    Ecn,
+    Spurious,
+}
+
 pub trait CongestionControl: Display + Debug {
-    fn set_qlog(&mut self, qlog: NeqoQlog);
+    fn set_qlog(&mut self, qlog: Qlog);
 
     #[must_use]
     fn cwnd(&self) -> usize;
@@ -51,7 +59,13 @@ pub trait CongestionControl: Display + Debug {
     #[must_use]
     fn pmtud_mut(&mut self) -> &mut Pmtud;
 
-    fn on_packets_acked(&mut self, acked_pkts: &[SentPacket], rtt_est: &RttEstimate, now: Instant);
+    fn on_packets_acked(
+        &mut self,
+        acked_pkts: &[sent::Packet],
+        rtt_est: &RttEstimate,
+        now: Instant,
+        cc_stats: &mut CongestionControlStats,
+    );
 
     /// Returns true if the congestion window was reduced.
     fn on_packets_lost(
@@ -59,19 +73,25 @@ pub trait CongestionControl: Display + Debug {
         first_rtt_sample_time: Option<Instant>,
         prev_largest_acked_sent: Option<Instant>,
         pto: Duration,
-        lost_packets: &[SentPacket],
+        lost_packets: &[sent::Packet],
         now: Instant,
+        cc_stats: &mut CongestionControlStats,
     ) -> bool;
 
     /// Returns true if the congestion window was reduced.
-    fn on_ecn_ce_received(&mut self, largest_acked_pkt: &SentPacket, now: Instant) -> bool;
+    fn on_ecn_ce_received(
+        &mut self,
+        largest_acked_pkt: &sent::Packet,
+        now: Instant,
+        cc_stats: &mut CongestionControlStats,
+    ) -> bool;
 
     #[must_use]
     fn recovery_packet(&self) -> bool;
 
-    fn discard(&mut self, pkt: &SentPacket, now: Instant);
+    fn discard(&mut self, pkt: &sent::Packet, now: Instant);
 
-    fn on_packet_sent(&mut self, pkt: &SentPacket, now: Instant);
+    fn on_packet_sent(&mut self, pkt: &sent::Packet, now: Instant);
 
     fn discard_in_flight(&mut self, now: Instant);
 }
@@ -97,4 +117,5 @@ impl FromStr for CongestionControlAlgorithm {
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests;

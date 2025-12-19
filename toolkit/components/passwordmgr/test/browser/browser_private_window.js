@@ -110,6 +110,12 @@ let privateWin;
 // XXX: Note that tasks are currently run in sequence. Some tests may assume the state
 // resulting from successful or unsuccessful logins in previous tasks
 
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["test.wait300msAfterTabSwitch", true]],
+  });
+});
+
 add_task(async function test_setup() {
   normalWin = await BrowserTestUtils.openNewBrowserWindow({ private: false });
   privateWin = await BrowserTestUtils.openNewBrowserWindow({ private: true });
@@ -357,8 +363,9 @@ add_task(async function test_normal_popup_notification_3() {
     loginGuid,
     "Sanity-check we are comparing the same login record"
   );
-  Assert.ok(
-    allLogins[0].timeLastUsed > timeLastUsed,
+  Assert.greater(
+    allLogins[0].timeLastUsed,
+    timeLastUsed,
     "The timeLastUsed timestamp has been updated"
   );
 });

@@ -4,7 +4,6 @@
 
 package org.mozilla.fenix.debugsettings.cfrs
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -14,44 +13,45 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.Text
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.tooling.preview.Preview
 import mozilla.components.compose.base.annotation.FlexibleWindowLightDarkPreview
-import mozilla.components.compose.base.button.SecondaryButton
+import mozilla.components.compose.base.button.OutlinedButton
 import mozilla.components.lib.state.ext.observeAsState
 import org.mozilla.fenix.R
-import org.mozilla.fenix.components.toolbar.navbar.shouldAddNavigationBar
 import org.mozilla.fenix.compose.SwitchWithLabel
 import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.fenix.theme.FirefoxTheme
+import org.mozilla.fenix.theme.Theme
 
 /**
  * CFR Tools UI that allows for the CFR states to be reset.
  *
  * @param cfrToolsStore [CfrToolsStore] used to access [CfrToolsState].
- * @param isNavigationBarShown Whether the navigation bar is shown or not navigation bar
  * CFR toggles will be shown or not.
  */
 @Composable
 fun CfrTools(
     cfrToolsStore: CfrToolsStore,
-    isNavigationBarShown: Boolean = LocalContext.current.shouldAddNavigationBar(),
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(vertical = FirefoxTheme.layout.space.dynamic400),
-        verticalArrangement = Arrangement.spacedBy(FirefoxTheme.layout.space.dynamic400),
-    ) {
-        ResetCfrTool(
-            cfrToolsStore = cfrToolsStore,
-            shouldAddNavigationBar = isNavigationBarShown,
-        )
+    Surface {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(vertical = FirefoxTheme.layout.space.dynamic400),
+            verticalArrangement = Arrangement.spacedBy(FirefoxTheme.layout.space.dynamic400),
+        ) {
+            ResetCfrTool(
+                cfrToolsStore = cfrToolsStore,
+            )
+        }
     }
 }
 
@@ -59,7 +59,6 @@ fun CfrTools(
 @Composable
 private fun ResetCfrTool(
     cfrToolsStore: CfrToolsStore,
-    shouldAddNavigationBar: Boolean,
 ) {
     val cfrPreferences by cfrToolsStore.observeAsState(initialValue = cfrToolsStore.state) { state ->
         state
@@ -77,7 +76,6 @@ private fun ResetCfrTool(
         ) {
             Text(
                 text = stringResource(R.string.debug_drawer_cfr_tools_reset_cfr_title),
-                color = FirefoxTheme.colors.textPrimary,
                 style = FirefoxTheme.typography.headline5,
             )
 
@@ -85,13 +83,12 @@ private fun ResetCfrTool(
 
             Text(
                 text = stringResource(R.string.debug_drawer_cfr_tools_reset_cfr_description),
-                color = FirefoxTheme.colors.textPrimary,
                 style = FirefoxTheme.typography.caption,
             )
 
             Spacer(modifier = Modifier.height(height = FirefoxTheme.layout.space.dynamic150))
 
-            SecondaryButton(
+            OutlinedButton(
                 text = stringResource(R.string.debug_drawer_cfr_tools_reset_cfr_timestamp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
@@ -107,17 +104,6 @@ private fun ResetCfrTool(
                 text = stringResource(R.string.debug_drawer_cfr_tools_homepage_cfr_title),
             )
 
-            if (shouldAddNavigationBar) {
-                CfrToggle(
-                    title = stringResource(R.string.debug_drawer_cfr_tools_homepage_nav_toolbar_title),
-                    description = stringResource(R.string.debug_drawer_cfr_tools_homepage_nav_toolbar_description),
-                    checked = cfrPreferences.homepageNavToolbarShown,
-                    onCfrToggle = {
-                        cfrToolsStore.dispatch(CfrToolsAction.HomepageNavToolbarShownToggled)
-                    },
-                )
-            }
-
             CfrToggle(
                 title = stringResource(R.string.debug_drawer_cfr_tools_homepage_searchbar_title),
                 description = stringResource(R.string.debug_drawer_cfr_tools_homepage_searchbar_description),
@@ -125,15 +111,6 @@ private fun ResetCfrTool(
                 enabled = FxNimbus.features.encourageSearchCfr.value().enabled,
                 onCfrToggle = {
                     cfrToolsStore.dispatch(CfrToolsAction.HomepageSearchBarShownToggled)
-                },
-            )
-
-            CfrToggle(
-                title = stringResource(R.string.debug_drawer_cfr_tools_homepage_sync_title),
-                description = stringResource(R.string.debug_drawer_cfr_tools_homepage_sync_description),
-                checked = cfrPreferences.homepageSyncShown,
-                onCfrToggle = {
-                    cfrToolsStore.dispatch(CfrToolsAction.HomepageSyncShownToggled)
                 },
             )
         }
@@ -172,18 +149,6 @@ private fun ResetCfrTool(
             CfrSectionTitle(
                 text = stringResource(R.string.debug_drawer_cfr_tools_toolbar_cfr_title),
             )
-
-            if (shouldAddNavigationBar) {
-                CfrToggle(
-                    title = stringResource(R.string.debug_drawer_cfr_tools_navigation_buttons_title),
-                    description = stringResource(R.string.debug_drawer_cfr_tools_navigation_buttons_description),
-                    checked = cfrPreferences.navButtonsShown,
-                    enabled = false,
-                    onCfrToggle = {
-                        cfrToolsStore.dispatch(CfrToolsAction.NavButtonsShownToggled)
-                    },
-                )
-            }
         }
 
         Column(
@@ -248,7 +213,7 @@ private fun CfrSectionTitle(
     Text(
         text = text,
         modifier = Modifier.padding(horizontal = FirefoxTheme.layout.space.dynamic400),
-        color = FirefoxTheme.colors.textAccent,
+        color = MaterialTheme.colorScheme.tertiary,
         style = FirefoxTheme.typography.headline6,
     )
 }
@@ -257,15 +222,18 @@ private fun CfrSectionTitle(
 @FlexibleWindowLightDarkPreview
 private fun CfrToolsPreview() {
     FirefoxTheme {
-        Column(
-            modifier = Modifier.background(
-                color = FirefoxTheme.colors.layer1,
-            ),
-        ) {
-            CfrTools(
-                cfrToolsStore = CfrToolsStore(),
-                isNavigationBarShown = true,
-            )
-        }
+        CfrTools(
+            cfrToolsStore = CfrToolsStore(),
+        )
+    }
+}
+
+@Composable
+@Preview
+private fun CfrToolsPrivatePreview() {
+    FirefoxTheme(theme = Theme.Private) {
+        CfrTools(
+            cfrToolsStore = CfrToolsStore(),
+        )
     }
 }

@@ -5,7 +5,6 @@
 package mozilla.components.feature.downloads
 
 import android.app.PendingIntent
-import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationCompat.EXTRA_PROGRESS
 import androidx.core.app.NotificationCompat.EXTRA_PROGRESS_INDETERMINATE
@@ -14,14 +13,13 @@ import androidx.core.content.ContextCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import mozilla.components.browser.state.state.content.DownloadState
 import mozilla.components.feature.downloads.AbstractFetchDownloadService.DownloadJobState
+import mozilla.components.feature.downloads.fake.FakeDateTimeProvider
 import mozilla.components.feature.downloads.fake.FakeFileSizeFormatter
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.mock
-import org.robolectric.annotation.Config
 
 @RunWith(AndroidJUnit4::class)
 class DownloadNotificationTest {
@@ -46,7 +44,7 @@ class DownloadNotificationTest {
 
         assertEquals(
             "10 / 100",
-            downloadJobState.getProgress(
+            downloadJobState.state.getProgress(
                 fileSizeFormatter = fakeFileSizeFormatter,
             ),
         )
@@ -54,8 +52,8 @@ class DownloadNotificationTest {
         val newDownload = downloadJobState.copy(state = downloadJobState.state.copy(contentLength = null))
 
         assertEquals(
-            "",
-            newDownload.getProgress(
+            "10",
+            newDownload.state.getProgress(
                 fileSizeFormatter = fakeFileSizeFormatter,
             ),
         )
@@ -63,8 +61,8 @@ class DownloadNotificationTest {
         val downloadWithNoSize = downloadJobState.copy(state = downloadJobState.state.copy(contentLength = 0))
 
         assertEquals(
-            "",
-            downloadWithNoSize.getProgress(
+            "10",
+            downloadWithNoSize.state.getProgress(
                 fileSizeFormatter = fakeFileSizeFormatter,
             ),
         )
@@ -72,8 +70,8 @@ class DownloadNotificationTest {
         val downloadWithNullSize = downloadJobState.copy(state = downloadJobState.state.copy(contentLength = null))
 
         assertEquals(
-            "",
-            downloadWithNullSize.getProgress(
+            "10",
+            downloadWithNullSize.state.getProgress(
                 fileSizeFormatter = fakeFileSizeFormatter,
             ),
         )
@@ -85,15 +83,6 @@ class DownloadNotificationTest {
             .setCompatGroup("myGroup").build()
 
         assertEquals("myGroup", notificationBuilder.group)
-    }
-
-    @Test
-    @Config(sdk = [Build.VERSION_CODES.M])
-    fun `setCompatGroup will not set the group`() {
-        val notificationBuilder = NotificationCompat.Builder(testContext, "")
-            .setCompatGroup("myGroup").build()
-
-        assertNotEquals("myGroup", notificationBuilder.group)
     }
 
     @Test
@@ -117,10 +106,10 @@ class DownloadNotificationTest {
         )
 
         assertEquals(
-            downloadJobState.getProgress(
+            downloadJobState.state.getProgress(
                 fakeFileSizeFormatter,
             ),
-            downloadJobState.getStatusDescription(
+            downloadJobState.state.getStatusDescription(
                 context = testContext,
                 fileSizeFormatter = fakeFileSizeFormatter,
             ),
@@ -142,7 +131,7 @@ class DownloadNotificationTest {
 
         assertEquals(
             pausedText,
-            downloadJobState.getStatusDescription(
+            downloadJobState.state.getStatusDescription(
                 context = testContext,
                 fileSizeFormatter = fakeFileSizeFormatter,
             ),
@@ -164,7 +153,7 @@ class DownloadNotificationTest {
 
         assertEquals(
             completedText,
-            downloadJobState.getStatusDescription(
+            downloadJobState.state.getStatusDescription(
                 context = testContext,
                 fileSizeFormatter = fakeFileSizeFormatter,
             ),
@@ -186,7 +175,7 @@ class DownloadNotificationTest {
 
         assertEquals(
             failedText,
-            downloadJobState.getStatusDescription(
+            downloadJobState.state.getStatusDescription(
                 context = testContext,
                 fileSizeFormatter = fakeFileSizeFormatter,
             ),
@@ -208,7 +197,7 @@ class DownloadNotificationTest {
 
         assertEquals(
             "",
-            downloadJobState.getStatusDescription(
+            downloadJobState.state.getStatusDescription(
                 context = testContext,
                 fileSizeFormatter = fakeFileSizeFormatter,
             ),
@@ -277,9 +266,12 @@ class DownloadNotificationTest {
 
         val notification = DownloadNotification.createOngoingDownloadNotification(
             context = testContext,
-            downloadJobState = downloadJobState,
+            downloadState = downloadJobState.state,
             fileSizeFormatter = fakeFileSizeFormatter,
             notificationAccentColor = style.notificationAccentColor,
+            downloadEstimator = DownloadEstimator(
+                dateTimeProvider = FakeDateTimeProvider(),
+            ),
         )
 
         assertEquals(
@@ -291,18 +283,24 @@ class DownloadNotificationTest {
 
         val notificationNewDownload = DownloadNotification.createOngoingDownloadNotification(
             context = testContext,
-            downloadJobState = downloadJobState.copy(state = downloadJobState.state.copy(contentLength = null)),
+            downloadState = downloadJobState.state.copy(contentLength = null),
             fileSizeFormatter = fakeFileSizeFormatter,
             notificationAccentColor = style.notificationAccentColor,
+            downloadEstimator = DownloadEstimator(
+                dateTimeProvider = FakeDateTimeProvider(),
+            ),
         )
 
         assertEquals(true, notificationNewDownload.extras.getBoolean(EXTRA_PROGRESS_INDETERMINATE))
 
         val notificationDownloadWithNoSize = DownloadNotification.createOngoingDownloadNotification(
             context = testContext,
-            downloadJobState = downloadJobState.copy(state = downloadJobState.state.copy(contentLength = 0)),
+            downloadState = downloadJobState.state.copy(contentLength = 0),
             fileSizeFormatter = fakeFileSizeFormatter,
             notificationAccentColor = style.notificationAccentColor,
+            downloadEstimator = DownloadEstimator(
+                dateTimeProvider = FakeDateTimeProvider(),
+            ),
         )
 
         assertEquals(true, notificationDownloadWithNoSize.extras.getBoolean(EXTRA_PROGRESS_INDETERMINATE))
@@ -329,9 +327,12 @@ class DownloadNotificationTest {
 
         val notification = DownloadNotification.createOngoingDownloadNotification(
             context = testContext,
-            downloadJobState = download,
+            downloadState = download.state,
             fileSizeFormatter = fakeFileSizeFormatter,
             notificationAccentColor = style.notificationAccentColor,
+            downloadEstimator = DownloadEstimator(
+                dateTimeProvider = FakeDateTimeProvider(),
+            ),
         )
 
         val accentColor = ContextCompat.getColor(testContext, style.notificationAccentColor)
@@ -360,7 +361,8 @@ class DownloadNotificationTest {
 
         val notification = DownloadNotification.createPausedDownloadNotification(
             testContext,
-            download,
+            download.state,
+            download.createdTime,
             notificationAccentColor = style.notificationAccentColor,
         )
 
@@ -389,10 +391,11 @@ class DownloadNotificationTest {
         val style = AbstractFetchDownloadService.Style()
 
         val notification = DownloadNotification.createDownloadCompletedNotification(
-            testContext,
-            download,
+            context = testContext,
+            downloadState = download.state,
+            createdTime = download.createdTime,
             notificationAccentColor = style.notificationAccentColor,
-            mock(PendingIntent::class.java),
+            contentIntent = mock(PendingIntent::class.java),
         )
 
         val accentColor = ContextCompat.getColor(testContext, style.notificationAccentColor)
@@ -421,7 +424,8 @@ class DownloadNotificationTest {
 
         val notification = DownloadNotification.createDownloadFailedNotification(
             testContext,
-            download,
+            download.state,
+            download.createdTime,
             notificationAccentColor = style.notificationAccentColor,
         )
 

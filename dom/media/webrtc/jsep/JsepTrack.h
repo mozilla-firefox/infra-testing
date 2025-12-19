@@ -5,29 +5,28 @@
 #ifndef _JSEPTRACK_H_
 #define _JSEPTRACK_H_
 
-#include <functional>
-#include <algorithm>
-#include <string>
-#include <map>
-#include <set>
-#include <vector>
-
 #include <mozilla/UniquePtr.h>
-#include "mozilla/Preferences.h"
-#include "nsError.h"
+
+#include <algorithm>
+#include <functional>
+#include <map>
+#include <string>
+#include <vector>
 
 #include "jsep/JsepTrackEncoding.h"
 #include "jsep/SsrcGenerator.h"
+#include "libwebrtcglue/RtpRtcpConfig.h"
+#include "mozilla/Preferences.h"
+#include "nsError.h"
 #include "sdp/Sdp.h"
 #include "sdp/SdpAttribute.h"
 #include "sdp/SdpMediaSection.h"
-#include "libwebrtcglue/RtpRtcpConfig.h"
 namespace mozilla {
 
 class JsepTrackNegotiatedDetails {
  public:
   JsepTrackNegotiatedDetails()
-      : mTias(0), mRtpRtcpConf(webrtc::RtcpMode::kCompound) {}
+      : mTias(0), mRtpRtcpConf(webrtc::RtcpMode::kCompound, true) {}
 
   JsepTrackNegotiatedDetails(const JsepTrackNegotiatedDetails& orig)
       : mExtmap(orig.mExtmap),
@@ -65,7 +64,7 @@ class JsepTrackNegotiatedDetails {
   void ForEachRTPHeaderExtension(
       const std::function<void(const SdpExtmapAttributeList::Extmap& extmap)>&
           fn) const {
-    for (auto entry : mExtmap) {
+    for (const auto& entry : mExtmap) {
       fn(entry.second);
     }
   }
@@ -136,7 +135,7 @@ class JsepTrack {
       mVideoPreferredCodec = rhs.mVideoPreferredCodec;
       mUniqueReceivePayloadTypes = rhs.mUniqueReceivePayloadTypes;
       mReceivePayloadTypes = rhs.mReceivePayloadTypes;
-      mDuplicateReceivePayloadTypes = rhs.mDuplicateReceivePayloadTypes;
+      mOtherReceivePayloadTypes = rhs.mOtherReceivePayloadTypes;
 
       mPrototypeCodecs.clear();
       for (const auto& codec : rhs.mPrototypeCodecs) {
@@ -217,8 +216,8 @@ class JsepTrack {
   virtual nsresult Negotiate(const SdpMediaSection& answer,
                              const SdpMediaSection& remote,
                              const SdpMediaSection& local);
-  static void SetUniqueReceivePayloadTypes(std::vector<JsepTrack*>& tracks,
-                                           bool localOffer = false);
+  static void SetReceivePayloadTypes(std::vector<JsepTrack*>& tracks,
+                                     bool localOffer = false);
   virtual void GetNegotiatedPayloadTypes(
       std::vector<uint16_t>* payloadTypes) const;
 
@@ -261,12 +260,17 @@ class JsepTrack {
     return mVideoPreferredCodec;
   }
 
-  std::vector<uint8_t> GetUniqueReceivePayloadTypes() const {
+  void ResetReceivePayloadTypes() {
+    mUniqueReceivePayloadTypes.clear();
+    mOtherReceivePayloadTypes.clear();
+  }
+
+  const std::vector<uint8_t>& GetUniqueReceivePayloadTypes() const {
     return mUniqueReceivePayloadTypes;
   }
 
-  std::vector<uint8_t> GetDuplicateReceivePayloadTypes() const {
-    return mDuplicateReceivePayloadTypes;
+  const std::vector<uint8_t>& GetOtherReceivePayloadTypes() const {
+    return mOtherReceivePayloadTypes;
   }
 
  private:
@@ -311,6 +315,7 @@ class JsepTrack {
   // negotiated rids.
   std::vector<std::string> mRids;
   UniquePtr<JsepTrackNegotiatedDetails> mNegotiatedDetails;
+  // Storage of mSsrcs and mSsrcToRtxSsrc could be improved, see Bug 1990364
   std::vector<uint32_t> mSsrcs;
   std::map<uint32_t, uint32_t> mSsrcToRtxSsrc;
   bool mActive;
@@ -341,8 +346,8 @@ class JsepTrack {
   // Used for matching SSRC to PT as only unique PTs support for this.
   std::vector<uint8_t> mUniqueReceivePayloadTypes;
   std::vector<uint16_t> mReceivePayloadTypes;
-  // Payload types that are duplicate
-  std::vector<uint8_t> mDuplicateReceivePayloadTypes;
+  // Payload types that are registered to some track but not us.
+  std::vector<uint8_t> mOtherReceivePayloadTypes;
 };
 
 }  // namespace mozilla

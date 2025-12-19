@@ -425,8 +425,8 @@ export var SpellCheckHelper = {
   // Set when over any text-entry <input>.
   TEXTINPUT: 0x8,
 
-  // Set when over an <input> that can be used as a keyword field.
-  KEYWORD: 0x10,
+  // Set when over an <input> that can be used as a search engine.
+  SEARCHENGINE: 0x10,
 
   // Set when over an element that otherwise would not be considered
   // "editable" but is because content editable is enabled for the document.
@@ -442,52 +442,41 @@ export var SpellCheckHelper = {
   // specifically for spellcheck.
   SPELLCHECKABLE: 0x100,
 
-  SEARCHENGINE: 0x200,
-
-  isTargetAKeywordField(aNode, window) {
-    if (!window.HTMLInputElement.isInstance(aNode)) {
-      return false;
-    }
-
-    var form = aNode.form;
-    if (!form || aNode.type == "password") {
-      return false;
-    }
-
-    var method = form.method.toUpperCase();
-
-    // These are the following types of forms we can create keywords for:
-    //
-    // method   encoding type       can create keyword
-    // GET      *                                 YES
-    //          *                                 YES
-    // POST                                       YES
-    // POST     application/x-www-form-urlencoded YES
-    // POST     text/plain                        NO (a little tricky to do)
-    // POST     multipart/form-data               NO
-    // POST     everything else                   YES
-    return (
-      method == "GET" ||
-      method == "" ||
-      (form.enctype != "text/plain" && form.enctype != "multipart/form-data")
-    );
-  },
-
+  /**
+   * Returns whether the element is counted as a search engine field.
+   *
+   * @param {HTMLInputElement} aNode
+   *   The input to check.
+   * @param {Window} window
+   *   The element's window.
+   * @returns {boolean}
+   *   Whether it should count as a search engine field.
+   */
   isTargetASearchEngineField(aNode, window) {
-    if (!window.HTMLInputElement.isInstance(aNode)) {
+    if (
+      !window.HTMLInputElement.isInstance(aNode) ||
+      (aNode.type != "text" && aNode.type != "search") ||
+      aNode.readOnly ||
+      !aNode.name ||
+      !aNode.form
+    ) {
       return false;
     }
 
     let form = aNode.form;
-    if (!form || aNode.type == "password" || !aNode.name) {
-      return false;
-    }
     let method = form.method.toUpperCase();
 
     return (
-      (method == "GET" || method == "POST") &&
+      // Forms without an explicit action often don't work, see Bug 1960237.
+      form.hasAttribute("action") &&
+      // Since post forms are rarely search forms, we only count them as such
+      // if they have a search role. The only other method is dialog, which
+      // we never count as search forms.
+      (method == "GET" || (method == "POST" && form.role == "search")) &&
+      // SearchEngine objects currently only support urlencoded requests.
       form.enctype == "application/x-www-form-urlencoded" &&
-      new FormData(form).entries().every(([k, v]) => k && typeof v == "string")
+      // Don't allow forms with file inputs.
+      new FormData(form).values().every(v => typeof v == "string")
     );
   },
 
@@ -511,9 +500,6 @@ export var SpellCheckHelper = {
           (element.type == "text" || element.type == "search")
         ) {
           flags |= this.SPELLCHECKABLE;
-        }
-        if (this.isTargetAKeywordField(element, window)) {
-          flags |= this.KEYWORD;
         }
         if (this.isTargetASearchEngineField(element, window)) {
           flags |= this.SEARCHENGINE;

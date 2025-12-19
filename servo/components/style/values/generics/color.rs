@@ -5,13 +5,16 @@
 //! Generic types for color properties.
 
 use crate::color::{mix::ColorInterpolationMethod, AbsoluteColor, ColorFunction};
-use crate::values::specified::percentage::ToPercentage;
+use crate::derives::*;
+use crate::values::{
+    computed::ToComputedValue, specified::percentage::ToPercentage, ParseError, Parser,
+};
 use std::fmt::{self, Write};
 use style_traits::{CssWriter, ToCss};
 
 /// This struct represents a combined color from a numeric color and
 /// the current foreground color (currentcolor keyword).
-#[derive(Clone, Debug, MallocSizeOf, PartialEq, ToAnimatedValue, ToShmem)]
+#[derive(Clone, Debug, MallocSizeOf, PartialEq, ToAnimatedValue, ToShmem, ToTyped)]
 #[repr(C)]
 pub enum GenericColor<Percentage> {
     /// The actual numeric color.
@@ -22,6 +25,8 @@ pub enum GenericColor<Percentage> {
     CurrentColor,
     /// The color-mix() function.
     ColorMix(Box<GenericColorMix<Self, Percentage>>),
+    /// The contrast-color() function.
+    ContrastColor(Box<Self>),
 }
 
 /// Flags used to modify the calculation of a color mix result.
@@ -87,8 +92,15 @@ impl<Color: ToCss, Percentage: ToCss + ToPercentage> ToCss for ColorMix<Color, P
         }
 
         dest.write_str("color-mix(")?;
-        self.interpolation.to_css(dest)?;
-        dest.write_str(", ")?;
+
+        // If the color interpolation method is oklab (which is now the default),
+        // it can be omitted.
+        // See: https://github.com/web-platform-tests/interop/issues/1166
+        if !self.interpolation.is_default() {
+            self.interpolation.to_css(dest)?;
+            dest.write_str(", ")?;
+        }
+
         self.left.to_css(dest)?;
         if !can_omit(&self.left_percentage, &self.right_percentage, true) {
             dest.write_char(' ')?;
@@ -169,6 +181,7 @@ impl<Percentage> Color<Percentage> {
     ToResolvedValue,
     ToCss,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C, u8)]
 pub enum GenericColorOrAuto<C> {
@@ -196,6 +209,7 @@ pub use self::GenericColorOrAuto as ColorOrAuto;
     ToComputedValue,
     ToCss,
     ToShmem,
+    ToTyped,
 )]
 #[repr(transparent)]
 pub struct GenericCaretColor<C>(pub GenericColorOrAuto<C>);
@@ -208,3 +222,52 @@ impl<C> GenericCaretColor<C> {
 }
 
 pub use self::GenericCaretColor as CaretColor;
+
+/// A light-dark(<light>, <dark>) function.
+#[derive(
+    Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToShmem, ToCss, ToResolvedValue,
+)]
+#[css(function = "light-dark", comma)]
+#[repr(C)]
+pub struct GenericLightDark<T> {
+    /// The value returned when using a light theme.
+    pub light: T,
+    /// The value returned when using a dark theme.
+    pub dark: T,
+}
+
+impl<T> GenericLightDark<T> {
+    /// Parse the arguments of the light-dark() function.
+    pub fn parse_args_with<'i>(
+        input: &mut Parser<'i, '_>,
+        mut parse_one: impl FnMut(&mut Parser<'i, '_>) -> Result<T, ParseError<'i>>,
+    ) -> Result<Self, ParseError<'i>> {
+        let light = parse_one(input)?;
+        input.expect_comma()?;
+        let dark = parse_one(input)?;
+        Ok(Self { light, dark })
+    }
+
+    /// Parse the light-dark() function.
+    pub fn parse_with<'i>(
+        input: &mut Parser<'i, '_>,
+        parse_one: impl FnMut(&mut Parser<'i, '_>) -> Result<T, ParseError<'i>>,
+    ) -> Result<Self, ParseError<'i>> {
+        input.expect_function_matching("light-dark")?;
+        input.parse_nested_block(|input| Self::parse_args_with(input, parse_one))
+    }
+}
+
+impl<T: ToComputedValue> GenericLightDark<T> {
+    /// Choose the light or dark version of this value for computation purposes, and compute it.
+    pub fn compute(&self, cx: &crate::values::computed::Context) -> T::ComputedValue {
+        let dark = cx.device().is_dark_color_scheme(cx.builder.color_scheme);
+        if cx.for_non_inherited_property {
+            cx.rule_cache_conditions
+                .borrow_mut()
+                .set_color_scheme_dependency(cx.builder.color_scheme);
+        }
+        let chosen = if dark { &self.dark } else { &self.light };
+        chosen.to_computed_value(cx)
+    }
+}

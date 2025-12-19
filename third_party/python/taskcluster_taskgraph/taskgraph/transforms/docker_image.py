@@ -2,16 +2,16 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-
-import json
 import logging
 import os
 import re
+from textwrap import dedent
 
 from voluptuous import Optional, Required
 
 import taskgraph
 from taskgraph.transforms.base import TransformSequence
+from taskgraph.util import json
 from taskgraph.util.docker import create_context_tar, generate_context_hash
 from taskgraph.util.schema import Schema
 
@@ -24,38 +24,88 @@ CONTEXTS_DIR = "docker-contexts"
 DIGEST_RE = re.compile("^[0-9a-f]{64}$")
 
 IMAGE_BUILDER_IMAGE = (
-    "mozillareleases/image_builder:5.1.0"
+    "mozillareleases/image_builder:6.1.0"
     "@sha256:"
-    "7fe70dcedefffffa03237ba5d456d42e0d7461de066db3f7a7c280a104869cd5"
+    "10c614e928500a7d5138773fb58941a24a17948e1a8193768e9ba762ba3e9c7e"
 )
 
 transforms = TransformSequence()
 
+#: Schema for docker_image transforms
 docker_image_schema = Schema(
     {
-        # Name of the docker image.
-        Required("name"): str,
-        # Name of the parent docker image.
-        Optional("parent"): str,
-        # Treeherder symbol.
-        Optional("symbol"): str,
-        # relative path (from config.path) to the file the docker image was defined
-        # in.
-        Optional("task-from"): str,
-        # Arguments to use for the Dockerfile.
-        Optional("args"): {str: str},
-        # Name of the docker image definition under taskcluster/docker, when
-        # different from the docker image name.
-        Optional("definition"): str,
-        # List of package tasks this docker image depends on.
-        Optional("packages"): [str],
+        Required(
+            "name",
+            description=dedent(
+                """
+                Name of the docker image.
+                """
+            ).lstrip(),
+        ): str,
+        Optional(
+            "parent",
+            description=dedent(
+                """
+                Name of the parent docker image.
+                """
+            ).lstrip(),
+        ): str,
+        Optional(
+            "symbol",
+            description=dedent(
+                """
+                Treeherder symbol.
+                """
+            ).lstrip(),
+        ): str,
+        Optional(
+            "task-from",
+            description=dedent(
+                """
+                Relative path (from config.path) to the file the docker image was defined in.
+                """
+            ).lstrip(),
+        ): str,
+        Optional(
+            "args",
+            description=dedent(
+                """
+                Arguments to use for the Dockerfile.
+                """
+            ).lstrip(),
+        ): {str: str},
+        Optional(
+            "definition",
+            description=dedent(
+                """
+                Name of the docker image definition under taskcluster/docker, when
+                different from the docker image name.
+                """
+            ).lstrip(),
+        ): str,
+        Optional(
+            "packages",
+            description=dedent(
+                """
+                List of package tasks this docker image depends on.
+                """
+            ).lstrip(),
+        ): [str],
         Optional(
             "index",
-            description="information for indexing this build so its artifacts can be discovered",
+            description=dedent(
+                """
+                Information for indexing this build so its artifacts can be discovered.
+                """
+            ).lstrip(),
         ): task_description_schema["index"],
         Optional(
             "cache",
-            description="Whether this image should be cached based on inputs.",
+            description=dedent(
+                """
+                Whether this image should be cached based on inputs.
+                """
+            ).lstrip(),
         ): bool,
     }
 )
@@ -148,7 +198,7 @@ def fill_template(config, tasks):
                 "artifacts": [
                     {
                         "type": "file",
-                        "path": "/workspace/image.tar.zst",
+                        "path": "/workspace/out/image.tar.zst",
                         "name": "public/image.tar.zst",
                     }
                 ],

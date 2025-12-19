@@ -12,7 +12,7 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  CryptoUtils: "resource://services-crypto/utils.sys.mjs",
+  CryptoUtils: "moz-src:///services/crypto/modules/utils.sys.mjs",
 
   // We use this observers module because we leverage its support for richer
   // "subject" data.
@@ -93,6 +93,39 @@ export class FxAccountsTelemetry {
     // The result is 64 bytes long, which in retrospect is probably excessive,
     // but it's already shipping...
     return lazy.CryptoUtils.sha256(deviceId + uid);
+  }
+
+  // Record when the user opens the choose what to sync menu.
+  async recordOpenCWTSMenu(why = null) {
+    try {
+      let extra = {};
+      if (why) {
+        extra.why = why;
+      }
+      Glean.syncSettings.openChooseWhatToSyncMenu.record(extra);
+    } catch (ex) {
+      log.error("Failed to record manage sync settings telemetry", ex);
+      console.error("Failed to record manage sync settings telemetry", ex);
+    }
+  }
+
+  // Record when the user saves sync settings.
+  async recordSaveSyncSettings(settings = null) {
+    try {
+      let extra = {};
+
+      if (settings && (settings.enabledEngines || settings.disabledEngines)) {
+        extra.enabled_engines = settings.enabledEngines.toString();
+        extra.disabled_engines = settings.disabledEngines.toString();
+
+        Glean.syncSettings.save.record(extra);
+      } else {
+        Glean.syncSettings.save.record();
+      }
+    } catch (ex) {
+      log.error("Failed to record save sync settings telemetry", ex);
+      console.error("Failed to record save sync settings telemetry", ex);
+    }
   }
 
   // Record the connection of FxA or one of its services.

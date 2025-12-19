@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/dom/quota/MozPromiseUtils.h"
 #include "QuotaManagerDependencyFixture.h"
+#include "mozilla/dom/quota/MozPromiseUtils.h"
 
 namespace mozilla::dom::quota::test {
 
@@ -26,6 +26,16 @@ TEST(DOM_Quota_MozPromiseUtils, ExclusiveBoolPromiseToBoolPromise)
                        [](ExclusiveBoolPromise::ResolveOrRejectValue&& aValue) {
                          return false;
                        }));
+
+  ASSERT_TRUE(value.IsResolve());
+  ASSERT_FALSE(value.ResolveValue());
+}
+
+TEST(DOM_Quota_MozPromiseUtils, BoolPromiseToExclusiveBoolPromise)
+{
+  auto value = QuotaManagerDependencyFixture::Await(Map<ExclusiveBoolPromise>(
+      BoolPromise::CreateAndResolve(true, __func__),
+      [](const BoolPromise::ResolveOrRejectValue& aValue) { return false; }));
 
   ASSERT_TRUE(value.IsResolve());
   ASSERT_FALSE(value.ResolveValue());

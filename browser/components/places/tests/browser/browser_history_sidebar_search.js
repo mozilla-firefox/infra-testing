@@ -1,3 +1,11 @@
+add_setup(async function setup() {
+  // This test covers the legacy implementation of the history sidebar
+  // Coverage for the new is at browser/components/sidebar/tests/browser/browser_history_sidebar.js
+  await SpecialPowers.pushPrefEnv({
+    set: [["sidebar.revamp", false]],
+  });
+});
+
 add_task(async function test() {
   let sidebar = document.getElementById("sidebar");
 
@@ -26,7 +34,7 @@ add_task(async function test() {
   }
   await PlacesTestUtils.addVisits(places);
 
-  await withSidebarTree("history", function () {
+  await withSidebarTree("history", async function () {
     info("Set 'by last visited' view");
     sidebar.contentDocument.getElementById("bylastvisited").doCommand();
     let tree = sidebar.contentDocument.getElementById("historyTree");
@@ -35,13 +43,11 @@ add_task(async function test() {
     // Set a search value.
     let searchBox = sidebar.contentDocument.getElementById("search-box");
     ok(searchBox, "search box is in context");
-    searchBox.value = "sidebar.mozilla";
-    searchBox.doCommand();
+    await setSearch(searchBox, "sidebar.mozilla");
     check_tree_order(tree, pages, -FILTERED_COUNT);
 
     info("Reset the search");
-    searchBox.value = "";
-    searchBox.doCommand();
+    searchBox.clear();
     check_tree_order(tree, pages);
   });
 

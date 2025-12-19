@@ -46,6 +46,9 @@ layoutdebug-paged-mode =
 layoutdebug-deterministic-frame-dumping =
     .label = Deterministic Frame Dumping
     .accesskey = D
+layoutdebug-anonymous-subtree-dumping =
+    .label = Anonymous Subtree Dumping
+    .accesskey = A
 
 ## Dump Menu
 
@@ -64,12 +67,12 @@ layoutdebug-dump-frames-in-css-pixels =
 layoutdebug-dump-text-runs =
     .label = Text Runs
     .accesskey = T
-layoutdebug-dump-views =
-    .label = Views and Widgets
-    .accesskey = V
 layoutdebug-dump-counter-manager =
     .label = CSS Counters
     .accesskey = n
+layoutdebug-dump-retained-display-list =
+    .label = Retained Display List
+    .accesskey = L
 layoutdebug-dump-style-sheets =
     .label = Style Sheets
     .accesskey = S

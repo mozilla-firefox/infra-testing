@@ -4,33 +4,35 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsThreadUtils.h"
 #include "OnlineSpeechRecognitionService.h"
+
+#include <json/json.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "OggWriter.h"
+#include "OpusTrackEncoder.h"
 #include "SpeechGrammar.h"
 #include "SpeechRecognition.h"
 #include "SpeechRecognitionAlternative.h"
 #include "SpeechRecognitionResult.h"
 #include "SpeechRecognitionResultList.h"
-#include "mozilla/dom/Document.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ScopeExit.h"
-#include "nsNetUtil.h"
+#include "mozilla/dom/Document.h"
 #include "nsContentUtils.h"
+#include "nsGlobalWindowInner.h"
 #include "nsIChannel.h"
+#include "nsIClassOfService.h"
 #include "nsIHttpChannel.h"
+#include "nsIOutputStream.h"
 #include "nsIPrincipal.h"
 #include "nsIStreamListener.h"
 #include "nsIUploadChannel2.h"
+#include "nsNetUtil.h"
 #include "nsStringStream.h"
-#include "nsIOutputStream.h"
-#include "nsGlobalWindowInner.h"
-#include "OpusTrackEncoder.h"
-#include "OggWriter.h"
-#include "nsIClassOfService.h"
-#include <json/json.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include "nsThreadUtils.h"
 
 namespace mozilla {
 
@@ -211,7 +213,7 @@ void OnlineSpeechRecognitionService::EncoderInitialized() {
   rv = mWriter->GetContainerData(&mEncodedData, ContainerWriter::GET_HEADER);
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
 
-  Unused << rv;
+  (void)rv;
 }
 
 void OnlineSpeechRecognitionService::EncoderError() {
@@ -351,7 +353,7 @@ void OnlineSpeechRecognitionService::DoSTT() {
     // Tell the server to not store the sample by default
     rv = httpChan->SetRequestHeader("Store-Sample"_ns, "0"_ns, false);
     MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv));
-    // Set the product tag as teh web speech api
+    // Set the product tag as the web speech api
     rv = httpChan->SetRequestHeader("Product-Tag"_ns, "wsa"_ns, false);
     MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv));
   }
@@ -426,7 +428,7 @@ OnlineSpeechRecognitionService::SoundEnd() {
         }
       }));
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-  Unused << rv;
+  (void)rv;
 
   mEncodeTaskQueue = nullptr;
 

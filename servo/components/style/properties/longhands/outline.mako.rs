@@ -12,6 +12,7 @@ ${helpers.predefined_type(
     initial_specified_value="specified::Color::currentcolor()",
     ignored_when_colors_disabled=True,
     spec="https://drafts.csswg.org/css-ui/#propdef-outline-color",
+    servo_restyle_damage="repaint",
     affects="paint",
 )}
 
@@ -23,24 +24,27 @@ ${helpers.predefined_type(
     initial_specified_value="specified::OutlineStyle::none()",
     animation_type="discrete",
     spec="https://drafts.csswg.org/css-ui/#propdef-outline-style",
+    servo_restyle_damage="repaint",
     affects="overflow",
 )}
 
 ${helpers.predefined_type(
     "outline-width",
     "BorderSideWidth",
-    "app_units::Au::from_px(3)",
+    "computed::BorderSideWidth::medium()",
     engines="gecko servo",
     initial_specified_value="specified::BorderSideWidth::medium()",
     spec="https://drafts.csswg.org/css-ui/#propdef-outline-width",
+    servo_restyle_damage="repaint",
     affects="overflow",
 )}
 
 ${helpers.predefined_type(
     "outline-offset",
-    "Length",
-    "crate::values::computed::Length::new(0.)",
+    "BorderSideOffset",
+    "app_units::Au(0)",
     engines="gecko servo",
     spec="https://drafts.csswg.org/css-ui/#propdef-outline-offset",
+    servo_restyle_damage="repaint",
     affects="overflow",
 )}

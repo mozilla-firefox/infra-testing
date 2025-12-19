@@ -9,7 +9,6 @@
 #define mozilla_dom_InspectorUtils_h
 
 #include "mozilla/dom/InspectorUtilsBinding.h"
-#include "mozilla/UniquePtr.h"
 #include "nsLayoutUtils.h"
 
 class nsAtom;
@@ -31,8 +30,6 @@ class InspectorFontFace;
 }  // namespace mozilla
 
 namespace mozilla::dom {
-class CSSStyleRule;
-
 /**
  * A collection of utility methods for use by devtools.
  */
@@ -41,11 +38,10 @@ class InspectorUtils {
   static void GetAllStyleSheets(GlobalObject& aGlobal, Document& aDocument,
                                 bool aDocumentOnly,
                                 nsTArray<RefPtr<StyleSheet>>& aResult);
-  static void GetMatchingCSSRules(GlobalObject& aGlobal, Element& aElement,
-                                  const nsAString& aPseudo,
-                                  bool aIncludeVisitedStyle,
-                                  bool aWithStartingStyle,
-                                  nsTArray<RefPtr<css::Rule>>& aResult);
+  static void GetMatchingCSSRules(
+      GlobalObject& aGlobal, Element& aElement, const nsAString& aPseudo,
+      bool aIncludeVisitedStyle, bool aWithStartingStyle,
+      nsTArray<OwningCSSRuleOrInspectorDeclaration>& aResult);
 
   /**
    * Get the line number of a rule.
@@ -110,13 +106,23 @@ class InspectorUtils {
   static void RgbToColorName(GlobalObject& aGlobal, uint8_t aR, uint8_t aG,
                              uint8_t aB, nsACString& aResult);
 
+  static void RgbToNearestColorName(GlobalObject&, float aR, float aG, float aB,
+                                    InspectorNearestColor& aResult);
+
+  static void RgbToHsv(GlobalObject&, float aR, float aG, float aB,
+                       nsTArray<float>& aResult);
+
+  static void HsvToRgb(GlobalObject&, float aH, float aS, float aV,
+                       nsTArray<float>& aResult);
+
+  static float RelativeLuminance(GlobalObject&, float aR, float aG, float aB);
+
   // Convert a given CSS color string to rgba. Returns null on failure or an
   // InspectorRGBATuple on success.
   //
   // NOTE: Converting a color to RGBA may be lossy when converting from some
   // formats e.g. CMYK.
   static void ColorToRGBA(GlobalObject&, const nsACString& aColorString,
-                          const Document*,
                           Nullable<InspectorRGBATuple>& aResult);
 
   // Convert a given CSS color string to another color space.
@@ -236,6 +242,8 @@ class InspectorUtils {
 
   static Element* ContainingBlockOf(GlobalObject&, Element&);
 
+  static bool IsBlockContainer(GlobalObject&, Element&);
+
   static void GetBlockLineCounts(GlobalObject&, Element&,
                                  Nullable<nsTArray<uint32_t>>& aResult);
 
@@ -299,6 +307,13 @@ class InspectorUtils {
       GlobalObject&, const nsACString& aStyleSheetText, uint32_t aLine,
       uint32_t aColumn, const nsACString& aNewBodyText,
       nsACString& aNewStyleSheetText);
+
+  static void SetVerticalClipping(GlobalObject&, BrowsingContext* aContext,
+                                  mozilla::CSSCoord aOffset);
+  static void SetDynamicToolbarMaxHeight(GlobalObject&,
+                                         BrowsingContext* aContext,
+                                         mozilla::CSSCoord aHeight);
+  static uint16_t GetGridContainerType(GlobalObject&, Element&);
 };
 
 }  // namespace mozilla::dom

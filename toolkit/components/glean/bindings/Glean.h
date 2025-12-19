@@ -8,10 +8,15 @@
 #define mozilla_glean_Glean_h
 
 #include "js/TypeDecls.h"
-#include "nsGlobalWindowInner.h"
+// The following include provides GleanWebidlEnabled(), used by generated
+// GleanBinding.cpp
+#include "mozilla/glean/bindings/GleanWebIDL.h"
+#include "nsCOMPtr.h"
 #include "nsISupports.h"
 #include "nsTArrayForwardDeclare.h"
 #include "nsWrapperCache.h"
+
+class nsIGlobalObject;
 
 namespace mozilla::glean {
 
@@ -22,7 +27,7 @@ class Glean final : public nsISupports, public nsWrapperCache {
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(Glean)
 
-  explicit Glean(nsIGlobalObject* aGlobal) : mParent(aGlobal) {}
+  explicit Glean(nsIGlobalObject* aGlobal);
 
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;

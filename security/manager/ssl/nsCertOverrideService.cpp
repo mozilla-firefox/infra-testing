@@ -13,7 +13,6 @@
 #include "mozilla/glean/SecurityManagerSslMetrics.h"
 #include "mozilla/TextUtils.h"
 #include "mozilla/Tokenizer.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/ToJSValue.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsCRT.h"
@@ -433,7 +432,14 @@ nsCertOverrideService::HasMatchingOverride(
   bool disableAllSecurityCheck = false;
   {
     MutexAutoLock lock(mMutex);
-    disableAllSecurityCheck = mDisableAllSecurityCheck;
+    if (mUserContextIdsWithSecurityChecksOverride.has(
+            aOriginAttributes.mUserContextId)) {
+      auto p = mUserContextIdsWithSecurityChecksOverride.lookup(
+          aOriginAttributes.mUserContextId);
+      disableAllSecurityCheck = p->value();
+    } else {
+      disableAllSecurityCheck = mDisableAllSecurityCheck;
+    }
   }
   if (disableAllSecurityCheck) {
     *aIsTemporary = false;
@@ -660,6 +666,39 @@ nsCertOverrideService::
     nss->ClearSSLExternalAndInternalSessionCache();
   } else {
     return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsCertOverrideService::
+    SetDisableAllSecurityChecksAndLetAttackersInterceptMyDataForUserContext(
+        uint32_t aUserContextId, bool aDisable) {
+  if (!(PR_GetEnv("XPCSHELL_TEST_PROFILE_DIR") || IsDebugger())) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  {
+    MutexAutoLock lock(mMutex);
+    (void)mUserContextIdsWithSecurityChecksOverride.put(aUserContextId,
+                                                        aDisable);
+  }
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsCertOverrideService::
+    ResetDisableAllSecurityChecksAndLetAttackersInterceptMyDataForUserContext(
+        uint32_t aUserContextId) {
+  if (!(PR_GetEnv("XPCSHELL_TEST_PROFILE_DIR") || IsDebugger())) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  {
+    MutexAutoLock lock(mMutex);
+    mUserContextIdsWithSecurityChecksOverride.remove(aUserContextId);
   }
 
   return NS_OK;

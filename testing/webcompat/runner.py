@@ -33,6 +33,7 @@ def run(
     log_level="INFO",
     failure_screenshots_dir=None,
     no_failure_screenshots=None,
+    platform_override=None,
 ):
     """"""
     old_environ = os.environ.copy()
@@ -69,6 +70,8 @@ def run(
                 webdriver_ws_port,
                 "--webdriver-log-level",
                 log_level,
+                "--capture=no",
+                "--show-capture=no",
             ]
 
             if debug:
@@ -103,6 +106,10 @@ def run(
             if failure_screenshots_dir:
                 args.append("--failure-screenshots-dir")
                 args.append(failure_screenshots_dir)
+
+            if platform_override:
+                args.append("--platform-override")
+                args.append(platform_override)
 
             if no_failure_screenshots:
                 args.append("--no-failure-screenshots")
@@ -220,6 +227,12 @@ class WDConfig:
         parser.addoption(
             "--headless", action="store_true", help="Run browser in headless mode"
         )
+        parser.addoption(
+            "--platform-override",
+            action="store",
+            choices=["android", "linux", "mac", "windows"],
+            help="Override key navigator properties to match the given platform and/or use responsive design mode to mimic the given platform",
+        )
 
 
 class ResultRecorder:
@@ -258,7 +271,7 @@ class ResultRecorder:
     def record_error(self, report):
         # error in setup/teardown
         if report.when != "call":
-            message = "%s error" % report.when
+            message = f"{report.when} error"
         self.record(report.nodeid, "ERROR", message, report.longrepr)
 
     def record_skip(self, report):

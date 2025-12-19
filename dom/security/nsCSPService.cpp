@@ -4,25 +4,27 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsCSPService.h"
+
 #include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_security.h"
-#include "nsString.h"
+#include "mozilla/dom/PolicyContainer.h"
+#include "mozilla/net/DocumentChannel.h"
+#include "mozilla/net/DocumentLoadListener.h"
+#include "nsAsyncRedirectVerifyHelper.h"
 #include "nsCOMPtr.h"
-#include "nsIURI.h"
-#include "nsIContent.h"
-#include "nsCSPService.h"
-#include "nsIContentSecurityPolicy.h"
+#include "nsContentPolicyUtils.h"
+#include "nsContentUtils.h"
 #include "nsError.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
-#include "nsAsyncRedirectVerifyHelper.h"
-#include "nsContentUtils.h"
-#include "nsContentPolicyUtils.h"
-#include "nsNetUtil.h"
+#include "nsIContent.h"
+#include "nsIContentSecurityPolicy.h"
 #include "nsIProtocolHandler.h"
+#include "nsIURI.h"
+#include "nsNetUtil.h"
 #include "nsQueryObject.h"
-#include "mozilla/net/DocumentLoadListener.h"
-#include "mozilla/net/DocumentChannel.h"
+#include "nsString.h"
 
 using namespace mozilla;
 
@@ -34,8 +36,8 @@ CSPService::~CSPService() = default;
 
 NS_IMPL_ISUPPORTS(CSPService, nsIContentPolicy, nsIChannelEventSink)
 
-// Helper function to identify protocols and content types not subject to CSP.
-bool subjectToCSP(nsIURI* aURI, nsContentPolicyType aContentType) {
+static bool SubjectToCSP(nsILoadInfo* aLoadInfo, nsIURI* aURI,
+                         nsContentPolicyType aContentType) {
   ExtContentPolicyType contentType =
       nsContentUtils::InternalContentPolicyTypeToExternal(aContentType);
 
@@ -56,6 +58,16 @@ bool subjectToCSP(nsIURI* aURI, nsContentPolicyType aContentType) {
   if (aURI->SchemeIs("data") || aURI->SchemeIs("blob") ||
       aURI->SchemeIs("filesystem")) {
     return true;
+  }
+
+  // For resources that will be used with a system principal we don't want to
+  // exempt any protocols from being subject to the CSP.
+  // TODO(bug 1945838): Extend this to all content types, not just scripts.
+  if (contentType == ExtContentPolicyType::TYPE_SCRIPT) {
+    if (BasePrincipal::Cast(aLoadInfo->GetLoadingPrincipal())
+            ->IsSystemPrincipal()) {
+      return true;
+    }
   }
 
   // Finally we have to allowlist "about:" which does not fall into
@@ -86,8 +98,18 @@ bool subjectToCSP(nsIURI* aURI, nsContentPolicyType aContentType) {
       return true;
     }
   }
-  if (aURI->SchemeIs("chrome") && !isImgOrStyleOrDTD) {
-    return true;
+  if (aURI->SchemeIs("chrome")) {
+    nsAutoCString uriSpec;
+    aURI->GetSpec(uriSpec);
+    // Exempt the script used by the top-level VideoDocument.
+    if (contentType == ExtContentPolicyType::TYPE_SCRIPT &&
+        uriSpec.EqualsLiteral(
+            "chrome://global/content/TopLevelVideoDocument.js")) {
+      return false;
+    }
+    if (!isImgOrStyleOrDTD) {
+      return true;
+    }
   }
   if (aURI->SchemeIs("moz-icon") || aURI->SchemeIs("moz-src")) {
     return true;
@@ -125,12 +147,11 @@ bool subjectToCSP(nsIURI* aURI, nsContentPolicyType aContentType) {
   // default decision, CSP can revise it if there's a policy to enforce
   *aDecision = nsIContentPolicy::ACCEPT;
 
-  // No need to continue processing if CSP is disabled or if the protocol
-  // or type is *not* subject to CSP.
-  // Please note, the correct way to opt-out of CSP using a custom
+  // No need to continue processing the CSP if the load should *not* be subject
+  // to CSP. Please note, the correct way to opt-out of CSP using a custom
   // protocolHandler is to set one of the nsIProtocolHandler flags
   // that are allowlistet in subjectToCSP()
-  if (!subjectToCSP(aContentLocation, contentType)) {
+  if (!SubjectToCSP(aLoadInfo, aContentLocation, contentType)) {
     return NS_OK;
   }
 
@@ -162,7 +183,10 @@ bool subjectToCSP(nsIURI* aURI, nsContentPolicyType aContentType) {
   // the csp should be overruled (e.g. by an ExpandedPrincipal)
   // then loadinfo->GetCsp() returns that CSP instead of the
   // document's CSP.
-  nsCOMPtr<nsIContentSecurityPolicy> csp = aLoadInfo->GetCsp();
+  nsCOMPtr<nsIPolicyContainer> policyContainer =
+      aLoadInfo->GetPolicyContainer();
+  nsCOMPtr<nsIContentSecurityPolicy> csp =
+      PolicyContainer::GetCSP(policyContainer);
 
   if (csp) {
     // Generally aOriginalURI denotes the URI before a redirect and hence
@@ -314,7 +338,7 @@ nsresult CSPService::ConsultCSPForRedirect(nsIURI* aOriginalURI,
   // protocolHandler is to set one of the nsIProtocolHandler flags
   // that are allowlistet in subjectToCSP()
   nsContentPolicyType policyType = aLoadInfo->InternalContentPolicyType();
-  if (!subjectToCSP(aNewURI, policyType)) {
+  if (!SubjectToCSP(aLoadInfo, aNewURI, policyType)) {
     return NS_OK;
   }
 
@@ -355,7 +379,10 @@ nsresult CSPService::ConsultCSPForRedirect(nsIURI* aOriginalURI,
   }
 
   // 2) Apply actual CSP to all loads
-  nsCOMPtr<nsIContentSecurityPolicy> csp = aLoadInfo->GetCsp();
+  nsCOMPtr<nsIPolicyContainer> policyContainer =
+      aLoadInfo->GetPolicyContainer();
+  nsCOMPtr<nsIContentSecurityPolicy> csp =
+      PolicyContainer::GetCSP(policyContainer);
   if (csp) {
     // Pass  originalURI to indicate the redirect
     csp->ShouldLoad(policyType,  // load type per nsIContentPolicy (uint32_t)

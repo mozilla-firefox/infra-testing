@@ -45,6 +45,7 @@ ClientAuthDialogService.prototype = {
     hostname,
     certArray,
     loadContext,
+    caNames,
     callback
   ) {
     // On Android, the OS implements the prompt. However, we have to plumb the
@@ -54,8 +55,15 @@ ClientAuthDialogService.prototype = {
       const prompt = new lazy.GeckoViewPrompter(
         loadContext.topFrameElement.ownerGlobal
       );
+      let issuers = null;
+      if (caNames.length) {
+        issuers = [];
+        for (let caName of caNames) {
+          issuers.push(btoa(caName.map(b => String.fromCharCode(b)).join("")));
+        }
+      }
       prompt.asyncShowPrompt(
-        { type: "certificate", host: hostname },
+        { type: "certificate", host: hostname, issuers },
         result => {
           let certDB = Cc["@mozilla.org/security/x509certdb;1"].getService(
             Ci.nsIX509CertDB

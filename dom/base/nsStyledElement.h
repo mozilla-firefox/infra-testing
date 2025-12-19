@@ -13,22 +13,21 @@
 #ifndef __NS_STYLEDELEMENT_H_
 #define __NS_STYLEDELEMENT_H_
 
-#include "mozilla/Attributes.h"
 #include "mozilla/dom/Element.h"
 #include "nsString.h"
 
 namespace mozilla {
 class DeclarationBlock;
 struct MutationClosureData;
+
+namespace dom {
+class StylePropertyMap;
+}
 }  // namespace mozilla
 
 // IID for nsStyledElement interface
-#define NS_STYLED_ELEMENT_IID                        \
-  {                                                  \
-    0xacbd9ea6, 0x15aa, 0x4f37, {                    \
-      0x8c, 0xe0, 0x35, 0x1e, 0xd7, 0x21, 0xca, 0xe9 \
-    }                                                \
-  }
+#define NS_STYLED_ELEMENT_IID \
+  {0xacbd9ea6, 0x15aa, 0x4f37, {0x8c, 0xe0, 0x35, 0x1e, 0xd7, 0x21, 0xca, 0xe9}}
 
 using nsStyledElementBase = mozilla::dom::Element;
 
@@ -52,15 +51,17 @@ class nsStyledElement : public nsStyledElementBase {
       mozilla::MutationClosureData& aData) override;
   virtual nsresult BindToTree(BindContext& aContext, nsINode& aParent) override;
 
-  nsICSSDeclaration* Style();
+  nsDOMCSSDeclaration* Style();
 
-  NS_DECLARE_STATIC_IID_ACCESSOR(NS_STYLED_ELEMENT_IID)
+  mozilla::dom::StylePropertyMap* AttributeStyleMap();
+
+  NS_INLINE_DECL_STATIC_IID(NS_STYLED_ELEMENT_IID)
   NS_IMPL_FROMNODE_HELPER(nsStyledElement, IsStyledElement());
 
   bool IsStyledElement() const final { return true; }
 
  protected:
-  nsICSSDeclaration* GetExistingStyle();
+  nsDOMCSSDeclaration* GetExistingStyle();
 
   /**
    * Parse a style attr value into a CSS rulestruct (or, if there is no
@@ -95,5 +96,4 @@ class nsStyledElement : public nsStyledElementBase {
                      const nsAttrValue* aValue, bool aNotify) override;
 };
 
-NS_DEFINE_STATIC_IID_ACCESSOR(nsStyledElement, NS_STYLED_ELEMENT_IID)
 #endif  // __NS_STYLEDELEMENT_H_

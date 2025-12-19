@@ -10,6 +10,7 @@
 #include <functional>
 #include <type_traits>
 #include <utility>
+
 #include "ErrorList.h"
 #include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
@@ -33,6 +34,10 @@ class nsIGlobalObject;
 
 namespace JS {
 class Value;
+}
+
+namespace mozilla::webgpu {
+class PipelineError;
 }
 
 namespace mozilla::dom {
@@ -120,6 +125,7 @@ class Promise : public SupportsWeakPtr, public JSHolderBase {
   }
 
   void MaybeReject(const RefPtr<MediaStreamError>& aArg);
+  void MaybeReject(const RefPtr<webgpu::PipelineError>& aArg);
 
   void MaybeRejectWithUndefined();
 
@@ -221,6 +227,29 @@ class Promise : public SupportsWeakPtr, public JSHolderBase {
       PropagateUserInteraction aPropagateUserInteraction =
           eDontPropagateUserInteraction);
 
+  // Do the equivalent of Promise.resolve in the compartment of aGlobal.
+  // The promise is resolved with the JS value corresponding to aValue.
+  // If this fails, the promise is rejected with the exception.
+  template <typename T>
+  static already_AddRefed<Promise> Resolve(
+      nsIGlobalObject* aGlobal, T&& aValue, ErrorResult& aError,
+      PropagateUserInteraction aPropagateUserInteraction =
+          eDontPropagateUserInteraction) {
+    AutoJSAPI jsapi;
+    if (!jsapi.Init(aGlobal)) {
+      aError.Throw(NS_ERROR_UNEXPECTED);
+      return nullptr;
+    }
+
+    JSContext* cx = jsapi.cx();
+    JS::Rooted<JS::Value> val(cx);
+    if (!ToJSValue(cx, std::forward<T>(aValue), &val)) {
+      return Promise::RejectWithExceptionFromContext(aGlobal, cx, aError);
+    }
+
+    return Resolve(aGlobal, cx, val, aError, aPropagateUserInteraction);
+  }
+
   // Do the equivalent of Promise.reject in the compartment of aGlobal.  The
   // compartment of aCx is ignored.  Errors are reported on the ErrorResult; if
   // aRv comes back !Failed(), this function MUST return a non-null value.
@@ -265,11 +294,15 @@ class Promise : public SupportsWeakPtr, public JSHolderBase {
   using SuccessSteps =
       const std::function<void(const Span<JS::Heap<JS::Value>>&)>&;
   using FailureSteps = const std::function<void(JS::Handle<JS::Value>)>&;
+  // Wait for all aPromises' results, calling either aFailureSteps if any
+  // promise rejects, or aSuccessSteps if all promises resolves.
+  // aCycleCollectedArg can be passed to keep state alive while waiting for the
+  // promises, making sure that it's cycle collected.
   MOZ_CAN_RUN_SCRIPT
   static void WaitForAll(nsIGlobalObject* aGlobal,
                          const Span<RefPtr<Promise>>& aPromises,
-                         SuccessSteps aSuccessSteps,
-                         FailureSteps aFailureSteps);
+                         SuccessSteps aSuccessSteps, FailureSteps aFailureSteps,
+                         nsISupports* aCycleCollectedArg = nullptr);
 
   template <typename Callback, typename... Args>
   using IsHandlerCallback =

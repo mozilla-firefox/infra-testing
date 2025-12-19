@@ -5,13 +5,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "AbortController.h"
+
 #include "AbortSignal.h"
 #include "js/Value.h"
+#include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/dom/AbortControllerBinding.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/WorkerPrivate.h"
-#include "mozilla/HoldDropJSObjects.h"
 
 namespace mozilla::dom {
 
@@ -55,7 +56,8 @@ nsIGlobalObject* AbortController::GetParentObject() const { return mGlobal; }
 AbortSignal* AbortController::Signal() {
   if (!mSignal) {
     JS::Rooted<JS::Value> reason(RootingCx(), mReason);
-    mSignal = new AbortSignal(mGlobal, mAborted, reason);
+    mSignal = AbortSignal::Create(
+        mGlobal, mAborted ? SignalAborted::Yes : SignalAborted::No, reason);
   }
 
   return mSignal;

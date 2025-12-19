@@ -5,6 +5,7 @@
 package org.mozilla.fenix.ui.robots
 
 import android.util.Log
+import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.ViewMatchers
@@ -207,11 +208,11 @@ class SettingsSubMenuHomepageRobot {
                 )
             Log.i(TAG, "verifyHomePageView: Verified that the \"Recently visited\" toggle is not checked")
         }
-        Log.i(TAG, "verifyHomePageView: Trying to verify that the \"Thought-provoking stories\" option is visible")
+        Log.i(TAG, "verifyHomePageView: Trying to verify that the \"Stories\" option is visible")
         pocketButton().check(matches(withEffectiveVisibility(Visibility.VISIBLE)))
-        Log.i(TAG, "verifyHomePageView: Verified that the \"Thought-provoking stories\" option is visible")
+        Log.i(TAG, "verifyHomePageView: Verified that the \"Stories\" option is visible")
         if (pocketSwitchEnabled) {
-            Log.i(TAG, "verifyHomePageView: Trying to verify that the \"Thought-provoking stories\" toggle is checked")
+            Log.i(TAG, "verifyHomePageView: Trying to verify that the \"Stories\" toggle is checked")
             pocketButton()
                 .check(
                     matches(
@@ -223,9 +224,9 @@ class SettingsSubMenuHomepageRobot {
                         ),
                     ),
                 )
-            Log.i(TAG, "verifyHomePageView: Verified that the \"Thought-provoking stories\" toggle is checked")
+            Log.i(TAG, "verifyHomePageView: Verified that the \"Stories\" toggle is checked")
         } else {
-            Log.i(TAG, "verifyHomePageView: Trying to verify that the \"Thought-provoking stories\" toggle is not checked")
+            Log.i(TAG, "verifyHomePageView: Trying to verify that the \"Stories\" toggle is not checked")
             pocketButton()
                 .check(
                     matches(
@@ -237,7 +238,7 @@ class SettingsSubMenuHomepageRobot {
                         ),
                     ),
                 )
-            Log.i(TAG, "verifyHomePageView: Verified that the \"Thought-provoking stories\" toggle is not checked")
+            Log.i(TAG, "verifyHomePageView: Verified that the \"Stories\" toggle is not checked")
         }
         Log.i(TAG, "verifyHomePageView: Trying to verify that the \"Sponsored stories\" option is visible")
         sponsoredStoriesButton().check(matches(withEffectiveVisibility(Visibility.VISIBLE)))
@@ -337,9 +338,9 @@ class SettingsSubMenuHomepageRobot {
     }
 
     fun clickPocketButton() {
-        Log.i(TAG, "clickPocketButton: Trying to click the \"Thought-provoking stories\" option")
+        Log.i(TAG, "clickPocketButton: Trying to click the \"Stories\" option")
         pocketButton().click()
-        Log.i(TAG, "clickPocketButton: Clicked the \"Thought-provoking stories\" option")
+        Log.i(TAG, "clickPocketButton: Clicked the \"Stories\" option")
     }
 
     fun clickOpeningScreenOption(openingScreenOption: String) {
@@ -350,18 +351,6 @@ class SettingsSubMenuHomepageRobot {
             "Homepage after four hours of inactivity" -> homepageAfterFourHoursButton().click()
         }
         Log.i(TAG, "clickOpeningScreenOption: Clicked \"Opening screen\" option: $openingScreenOption")
-    }
-
-    fun openWallpapersMenu() {
-        Log.i(TAG, "openWallpapersMenu: Trying to click the \"Wallpapers\" option")
-        wallpapersMenuButton().click()
-        Log.i(TAG, "openWallpapersMenu: Clicked the \"Wallpapers\" option")
-    }
-
-    fun selectWallpaper(wallpaperName: String) {
-        Log.i(TAG, "selectWallpaper: Trying to click wallpaper: $wallpaperName")
-        mDevice.findObject(UiSelector().description(wallpaperName)).click()
-        Log.i(TAG, "selectWallpaper: Clicked wallpaper: $wallpaperName")
     }
 
     fun verifySponsoredShortcutsCheckBox(checked: Boolean) {
@@ -402,13 +391,13 @@ class SettingsSubMenuHomepageRobot {
 
     class Transition {
 
-        fun goBackToHomeScreen(interact: HomeScreenRobot.() -> Unit): HomeScreenRobot.Transition {
+        fun goBackToHomeScreen(composeTestRule: ComposeTestRule, interact: HomeScreenRobot.() -> Unit): HomeScreenRobot.Transition {
             Log.i(TAG, "goBackToHomeScreen: Trying to click the navigate up toolbar button")
             goBackButton().click()
             Log.i(TAG, "goBackToHomeScreen: Clicked the navigate up toolbar button")
 
-            HomeScreenRobot().interact()
-            return HomeScreenRobot.Transition()
+            HomeScreenRobot(composeTestRule).interact()
+            return HomeScreenRobot.Transition(composeTestRule)
         }
 
         fun goBack(interact: SettingsRobot.() -> Unit): SettingsRobot.Transition {
@@ -420,7 +409,7 @@ class SettingsSubMenuHomepageRobot {
             return SettingsRobot.Transition()
         }
 
-        fun clickSnackBarViewButton(interact: HomeScreenRobot.() -> Unit): HomeScreenRobot.Transition {
+        fun clickSnackBarViewButton(composeTestRule: ComposeTestRule, interact: HomeScreenRobot.() -> Unit): HomeScreenRobot.Transition {
             Log.i(TAG, "clickSnackBarViewButton: Waiting for $waitingTimeShort ms for \"VIEW\" snackbar button to exist")
             mDevice.findObject(UiSelector().text("VIEW")).waitForExists(waitingTimeShort)
             Log.i(TAG, "clickSnackBarViewButton: Waited for $waitingTimeShort ms for \"VIEW\" snackbar button to exist")
@@ -428,8 +417,8 @@ class SettingsSubMenuHomepageRobot {
             mDevice.findObject(UiSelector().text("VIEW")).click()
             Log.i(TAG, "clickSnackBarViewButton: Clicked the \"VIEW\" snackbar button")
 
-            HomeScreenRobot().interact()
-            return HomeScreenRobot.Transition()
+            HomeScreenRobot(composeTestRule).interact()
+            return HomeScreenRobot.Transition(composeTestRule)
         }
     }
 }
@@ -450,7 +439,7 @@ private fun recentlyVisitedButton() =
     onView(allOf(withText(R.string.customize_toggle_recently_visited)))
 
 private fun pocketButton() =
-    onView(allOf(withText(R.string.customize_toggle_pocket_2)))
+    onView(allOf(withText(R.string.customize_toggle_pocket_3)))
 
 private fun sponsoredStoriesButton() =
     onView(allOf(withText(R.string.customize_toggle_pocket_sponsored)))
@@ -485,5 +474,3 @@ private fun homepageAfterFourHoursButton() =
     )
 
 private fun goBackButton() = onView(allOf(withContentDescription(R.string.action_bar_up_description)))
-
-private fun wallpapersMenuButton() = onView(withText("Wallpapers"))

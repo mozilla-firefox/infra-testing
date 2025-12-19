@@ -6,6 +6,10 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   IndexedDB: "resource://gre/modules/IndexedDB.sys.mjs",
+  ProfilesDatastoreService:
+    "moz-src:///toolkit/profile/ProfilesDatastoreService.sys.mjs",
+  ASRouterPreferences:
+    "resource:///modules/asrouter/ASRouterPreferences.sys.mjs",
 });
 
 export class ASRouterStorage {
@@ -40,6 +44,12 @@ export class ASRouterStorage {
         getAll: this._getAll.bind(this, storeName),
         getAllKeys: this._getAllKeys.bind(this, storeName),
         set: this._set.bind(this, storeName),
+        getSharedMessageImpressions:
+          this.getSharedMessageImpressions.bind(this),
+        getSharedMessageBlocklist: this.getSharedMessageBlocklist.bind(this),
+        setSharedMessageImpressions:
+          this.setSharedMessageImpressions.bind(this),
+        setSharedMessageBlocked: this.setSharedMessageBlocked.bind(this),
       };
     }
 
@@ -87,10 +97,9 @@ export class ASRouterStorage {
   }
 
   /**
-   * createOrOpenDb - Open a db (with this.dbName) if it exists.
-   *                  If it does not exist, create it.
-   *                  If an error occurs, deleted the db and attempt to
-   *                  re-create it.
+   * Open a db (with this.dbName) if it exists. If it does not exist, create it.
+   * If an error occurs, deleted the db and attempt to re-create it.
+   *
    * @returns Promise that resolves with a db instance
    */
   async createOrOpenDb() {
@@ -118,6 +127,232 @@ export class ASRouterStorage {
     }
 
     return result;
+  }
+
+  /**
+   * Gets all of the message impression data
+   *
+   * @returns {object|null} All multiprofile message impressions or null if error occurs
+   */
+  async getSharedMessageImpressions() {
+    try {
+      const conn = await lazy.ProfilesDatastoreService.getConnection();
+      if (!conn) {
+        return null;
+      }
+      const rows = await conn.executeCached(
+        `SELECT messageId, json(impressions) AS impressions FROM MessagingSystemMessageImpressions;`
+      );
+
+      if (rows.length === 0) {
+        return null;
+      }
+
+      const impressionsData = {};
+
+      for (const row of rows) {
+        const messageId = row.getResultByName("messageId");
+        const impressions = JSON.parse(row.getResultByName("impressions"));
+
+        impressionsData[messageId] = impressions;
+      }
+
+      return impressionsData;
+    } catch (e) {
+      lazy.ASRouterPreferences.console.error(
+        `ASRouterStorage: Failed reading from MessagingSystemMessageImpressions`,
+        e
+      );
+      if (this.telemetry) {
+        this.telemetry.handleUndesiredEvent({
+          event: "SHARED_DB_READ_FAILED",
+        });
+      }
+      return null;
+    }
+  }
+
+  /**
+   * Gets the message blocklist
+   *
+   * @returns {Array|null} The message blocklist, or null if error occurred
+   */
+  async getSharedMessageBlocklist() {
+    try {
+      const conn = await lazy.ProfilesDatastoreService.getConnection();
+      if (!conn) {
+        return null;
+      }
+      const rows = await conn.executeCached(
+        `SELECT messageId FROM MessagingSystemMessageBlocklist;`
+      );
+
+      return rows.map(row => row.getResultByName("messageId"));
+    } catch (e) {
+      lazy.ASRouterPreferences.console.error(
+        `ASRouterStorage: Failed reading from MessagingSystemMessageBlocklist`,
+        e
+      );
+      if (this.telemetry) {
+        this.telemetry.handleUndesiredEvent({
+          event: "SHARED_DB_READ_FAILED",
+        });
+      }
+      return null;
+    }
+  }
+
+  /**
+   * Set the message impressions for a given message ID
+   *
+   * @param {string} messageId - The message ID to set the impressions for
+   * @param {Array|null} impressions - The new value of "impressions" (an array of
+   *  impression data or an emtpy array, or null to delete)
+   * @returns {boolean} Success status
+   */
+  async setSharedMessageImpressions(messageId, impressions) {
+    let success = true;
+    try {
+      const conn = await lazy.ProfilesDatastoreService.getConnection();
+      if (!conn) {
+        return false;
+      }
+      if (!messageId) {
+        throw new Error(
+          "Failed attempt to set shared message impressions with no message ID."
+        );
+      }
+
+      // If impressions is falsy, delete the row (an empty array may indicate a custom
+      // frequency cap; we still want to track the message ID in that case.)
+      if (!impressions) {
+        await conn.executeBeforeShutdown(
+          "ASRouter: setSharedMessageImpressions",
+          async () => {
+            await conn.executeCached(
+              `DELETE FROM MessagingSystemMessageImpressions WHERE messageId = :messageId;`,
+              {
+                messageId,
+              }
+            );
+          }
+        );
+      } else {
+        await conn.executeBeforeShutdown(
+          "ASRouter: setSharedMessageImpressions",
+          async () => {
+            await conn.executeCached(
+              `INSERT INTO MessagingSystemMessageImpressions (messageId, impressions) VALUES (
+                :messageId,
+                jsonb(:impressions)
+              )
+              ON CONFLICT (messageId) DO UPDATE SET impressions = excluded.impressions;`,
+              {
+                messageId,
+                impressions: JSON.stringify(impressions),
+              }
+            );
+          }
+        );
+      }
+
+      lazy.ProfilesDatastoreService.notify();
+    } catch (e) {
+      lazy.ASRouterPreferences.console.error(
+        `ASRouterStorage: Failed writing to MessagingSystemMessageImpressions`,
+        e
+      );
+      if (this.telemetry) {
+        this.telemetry.handleUndesiredEvent({
+          event: "SHARED_DB_WRITE_FAILED",
+        });
+      }
+      success = false;
+    }
+
+    return success;
+  }
+
+  /**
+   * Adds a message ID to the blocklist and removes impressions
+   * for that message ID from the impressions table when isBlocked is true
+   * and deletes message ID from the blocklist when isBlocked is false
+   *
+   * @param {string} messageId - The message ID to set the blocked status for
+   * @param {boolean} [isBlocked=true] - If the message should be blocked (true) or unblocked (false)
+   * @returns {boolean} Success status
+   */
+  async setSharedMessageBlocked(messageId, isBlocked = true) {
+    let success = true;
+    if (isBlocked) {
+      // Block the message, and clear impressions
+      try {
+        const conn = await lazy.ProfilesDatastoreService.getConnection();
+        if (!conn) {
+          return false;
+        }
+        await conn.executeTransaction(async () => {
+          await conn.executeCached(
+            `INSERT INTO MessagingSystemMessageBlocklist (messageId)
+                VALUES (:messageId);`,
+            {
+              messageId,
+            }
+          );
+          await conn.executeCached(
+            `DELETE FROM MessagingSystemMessageImpressions
+                WHERE messageId = :messageId;`,
+            {
+              messageId,
+            }
+          );
+        });
+      } catch (e) {
+        lazy.ASRouterPreferences.console.error(
+          `ASRouterStorage: Failed writing to MessagingSystemMessageBlocklist`,
+          e
+        );
+        if (this.telemetry) {
+          this.telemetry.handleUndesiredEvent({
+            event: "SHARED_DB_WRITE_FAILED",
+          });
+        }
+        success = false;
+      }
+    } else {
+      // Unblock the message
+      try {
+        const conn = await lazy.ProfilesDatastoreService.getConnection();
+        if (!conn) {
+          return false;
+        }
+        await conn.executeBeforeShutdown(
+          "ASRouter: setSharedMessageBlocked",
+          async () => {
+            await conn.executeCached(
+              `DELETE FROM MessagingSystemMessageBlocklist WHERE messageId = :messageId;`,
+              {
+                messageId,
+              }
+            );
+          }
+        );
+      } catch (e) {
+        lazy.ASRouterPreferences.console.error(
+          `ASRouterStorage: Failed writing to MessagingSystemMessageBlocklist`,
+          e
+        );
+        if (this.telemetry) {
+          this.telemetry.handleUndesiredEvent({
+            event: "SHARED_DB_WRITE_FAILED",
+          });
+        }
+        success = false;
+      }
+    }
+
+    lazy.ProfilesDatastoreService.notify();
+    return success;
   }
 }
 

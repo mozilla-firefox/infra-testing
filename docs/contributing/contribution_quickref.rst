@@ -56,8 +56,7 @@ To Setup Firefox On Windows
     $ cd mozilla-source
     $ wget https://raw.githubusercontent.com/mozilla-firefox/firefox/refs/heads/main/python/mozboot/bin/bootstrap.py
 
-    # To use Git as your VCS
-    $ python3 bootstrap.py --vcs=git
+    $ python3 bootstrap.py
 
 More information on :ref:`building Firefox for Windows <Building Firefox On Windows>`.
 
@@ -68,8 +67,7 @@ To Setup Firefox On macOS and Linux
 
     $ curl -L https://raw.githubusercontent.com/mozilla-firefox/firefox/refs/heads/main/python/mozboot/bin/bootstrap.py -O
 
-    # To use Git as your VCS
-    $ python3 bootstrap.py --vcs=git
+    $ python3 bootstrap.py
 
 More information on :ref:`building Firefox for Linux <Building Firefox On Linux>` and :ref:`building Firefox for MacOS <Building Firefox On MacOS>`.
 
@@ -78,10 +76,9 @@ To Setup Firefox for Android
 
 .. code-block:: shell
 
-    $ curl -L  https://raw.githubusercontent.com/mozilla-firefox/firefox/refs/heads/main/python/mozboot/bin/bootstrap.py -O
+    $ curl -L https://raw.githubusercontent.com/mozilla-firefox/firefox/refs/heads/main/python/mozboot/bin/bootstrap.py -O
 
-    # To use Git as your VCS
-    $ python3 bootstrap.py --vcs=git
+    $ python3 bootstrap.py
 
 More information on :ref:`building Firefox for Android <Firefox for Android>`
 
@@ -100,6 +97,11 @@ build and reviews cycles.
 
 See our :ref:`editor page for more information about how to set up your favorite editor <Editor / IDE integration>`.
 
+More advanced git configuration
+-------------------------------
+
+See the :ref:`Git tips and tricks page <Git Tricks>` to use a personal fork, and for other useful git configurations.
+
 To build & run
 --------------
 
@@ -107,7 +109,7 @@ Once the System is bootstrapped, run:
 
 .. code-block:: shell
 
-    $ cd mozilla-unified
+    $ cd firefox
     $ ./mach build
 
 which will check for dependencies and start the build.

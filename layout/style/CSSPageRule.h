@@ -7,13 +7,13 @@
 #ifndef mozilla_dom_CSSPageRule_h
 #define mozilla_dom_CSSPageRule_h
 
-#include "mozilla/css/GroupRule.h"
 #include "mozilla/ServoBindingTypes.h"
-
+#include "mozilla/css/GroupRule.h"
 #include "nsDOMCSSDeclaration.h"
 #include "nsICSSDeclaration.h"
-// TODO alaskanemily: This is only needed by the generated bindings.
-// Ideally it would only be included from there.
+// The following include provides nsCSSProps::PropertyIDLName(), used by
+// generated CSSPageDescriptorsBinding.cpp
+// TODO alaskanemily: Ideally it would only be included from there.
 #include "nsCSSProps.h"
 
 namespace mozilla {

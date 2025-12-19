@@ -34,31 +34,33 @@
  * (in X11) or the compositor (in Wayland) does draw the shadow corners
  * already.
  */
-:root[customtitlebar] {
-  background-color: transparent;
+@media (-moz-gtk-csd-transparency-available) {
+  :root[customtitlebar] {
+    background-color: transparent;
 
-  &[sizemode="normal"]:not([gtktiledwindow="true"]) {
-    /* This takes care of drawing our window decorations on X11 */
-    -moz-default-appearance: -moz-window-decorations;
-    appearance: auto;
+    &[sizemode="normal"]:not([gtktiledwindow="true"]) {
+      /* This takes care of drawing our window decorations on X11 */
+      -moz-default-appearance: -moz-window-decorations;
+      appearance: auto;
 
-    #navigator-toolbox,
-    dialog::backdrop {
-      border-top-left-radius: env(-moz-gtk-csd-titlebar-radius);
-      border-top-right-radius: env(-moz-gtk-csd-titlebar-radius);
-    }
-
-    /* stylelint-disable-next-line media-query-no-invalid */
-    @media -moz-pref("widget.gtk.rounded-bottom-corners.enabled") {
-      #navigator-toolbox {
-        /* The body clip below covers this. */
-        border-radius: 0;
+      #navigator-toolbox,
+      dialog::backdrop {
+        border-top-left-radius: env(-moz-gtk-csd-titlebar-radius);
+        border-top-right-radius: env(-moz-gtk-csd-titlebar-radius);
       }
 
-      body,
-      dialog::backdrop {
-        /* Use an uniform clip to allow WebRender to optimize it better */
-        border-radius: env(-moz-gtk-csd-titlebar-radius);
+      /* stylelint-disable-next-line media-query-no-invalid */
+      @media -moz-pref("widget.gtk.rounded-bottom-corners.enabled") {
+        #navigator-toolbox {
+          /* The body clip below covers this. */
+          border-radius: 0;
+        }
+
+        body,
+        dialog::backdrop {
+          /* Use an uniform clip to allow WebRender to optimize it better */
+          border-radius: env(-moz-gtk-csd-titlebar-radius);
+        }
       }
     }
   }
@@ -83,16 +85,9 @@
 }
 
 /* Address bar */
-#urlbar,
+.urlbar,
 #searchbar {
   font-size: 1.05em;
-}
-
-/* stylelint-disable-next-line media-query-no-invalid */
-@media -moz-pref("browser.urlbar.experimental.expandTextOnFocus") {
-  #urlbar[breakout-extend] {
-    font-size: 1.14em;
-  }
 }
 
 /* AutoComplete */
@@ -101,24 +96,11 @@
   border-top: 1px solid ThreeDShadow;
 }
 
-/* Content area */
-
-/* stylelint-disable-next-line media-query-no-invalid */
-@media not -moz-pref("sidebar.revamp") {
-  .sidebar-splitter {
-    appearance: none;
-    width: 6px;
-    background-color: -moz-dialog;
-    border: 1px ThreeDShadow;
-    border-style: none solid;
-  }
-}
-
 /* Tabstrip */
 
 #tabbrowser-tabs {
-  /* override the global style to allow the selected tab to be above the nav-bar */
-  z-index: auto;
+  /* override the native styling */
+  border-bottom: 0;
 }
 
 #TabsToolbar {
@@ -135,7 +117,7 @@
 /* All tabs menupopup */
 
 .alltabs-item[selected="true"] {
-  font-weight: bold;
+  font-weight: var(--font-weight-bold);
 }
 
 #UITourHighlight {
@@ -146,8 +128,8 @@
   /* Opacity rounds to 0 or 1 on Linux without an X compositor, making the
      background color not visible. Anti-aliasing is not available either. Make a
      thicker outline and cancel border-radius for that case. */
-     outline: 4px solid rgb(0,200,215);
-     border-radius: 0 !important;
+  outline: 4px solid rgb(0, 200, 215);
+  border-radius: 0 !important;
 }
 
 #UITourTooltipDescription {
@@ -174,6 +156,33 @@
 .titlebar-buttonbox {
   z-index: 1;
   align-items: stretch;
+  /* In libadwaita buttons are 24px big and spacing is
+   * 3px of gap + 5px * 2 of padding = 13px / 2, see:
+   * https://gitlab.gnome.org/GNOME/libadwaita/-/blob/fe21c3c823443a8f2333cf3cc09ba3d0fa753228/src/stylesheet/widgets/_header-bar.scss#L164
+   * We want a contiguous hit region so we use 6.5px of padding instead. */
+  --titlebar-button-size: 24px;
+  --titlebar-button-spacing: 6.5px;
+  --titlebar-button-end-spacing: 10px;
+  @media (-moz-gtk-theme-family: breeze) {
+    /* On breeze, titlebar button size and spacing depends on the font, see:
+     *  * https://invent.kde.org/plasma/kdecoration/-/blob/28898c2492708f6a1603458baa535a8504e8d638/src/decorationsettings.cpp#L18-33
+     *  * https://invent.kde.org/plasma/breeze/-/blob/156193c14942cbc836cf131e92e16fc3310513ed/kdecoration/breezedecoration.cpp#L734-750
+     *  * https://invent.kde.org/plasma/breeze/-/blob/156193c14942cbc836cf131e92e16fc3310513ed/kdecoration/breeze.h#L34
+     * Since we don't have the height of the "M" glyph, we approximate using
+     * ems snapped to device pixels for crisp rendering. */
+    /* The button size is also the grid unit */
+    --titlebar-button-size: round(1.3em, 2 * env(hairline));
+    /* The spacing is half the button size. Since we apply it to each side,
+     * it's that divided by 2 */
+    --titlebar-button-spacing: calc(var(--titlebar-button-size) / 4);
+    /* End spacing is 2 * smallSpacing, which is max(2px, clamp(grid-unit / 4)). */
+    --titlebar-button-end-spacing: calc(2 * max(2px, round(down, var(--titlebar-button-size) / 4, env(hairline))));
+  }
+  --max-titlebar-button-position: max(
+    env(-moz-gtk-csd-maximize-button-position),
+    env(-moz-gtk-csd-minimize-button-position),
+    env(-moz-gtk-csd-close-button-position)
+  );
 }
 
 @media (-moz-gtk-csd-reversed-placement) {
@@ -184,87 +193,95 @@
 
 .titlebar-button {
   appearance: none;
+  color: inherit;
   align-items: center;
   padding: 0;
-  padding-inline: calc(env(-moz-gtk-csd-titlebar-button-spacing) / 2);
+  padding-inline: var(--titlebar-button-spacing);
+  padding-inline-end: max(
+    var(--titlebar-button-spacing),
+    var(--titlebar-button-end-spacing) * (var(--titlebar-button-position) - var(--max-titlebar-button-position) + 1)
+  );
+  order: var(--titlebar-button-position);
+  /* In GTK applications, you can drag the window by titlebar buttons */
+  -moz-window-dragging: drag;
 
   > .toolbarbutton-icon {
-    appearance: auto;
-  }
+    border-radius: var(--border-radius-circle);
+    background-position: center center;
+    background-size: min(16px, var(--titlebar-button-size) - 2 * env(hairline));
+    background-repeat: no-repeat;
+    -moz-context-properties: stroke;
+    stroke: currentColor;
+    width: var(--titlebar-button-size);
+    height: var(--titlebar-button-size);
 
-  /* stylelint-disable-next-line media-query-no-invalid */
-  @media -moz-pref("widget.gtk.non-native-titlebar-buttons.enabled") {
-    /* When using lightweight themes, use our own buttons since native ones might
-     * assume a native background in order to be visible. */
-    :root[lwtheme] & {
-      padding-inline: 3px;
+    @media not (-moz-gtk-theme-family: breeze) {
+      /* Matches the libadwaita transition */
+      transition: background-color 0.2s ease;
+    }
 
-      > .toolbarbutton-icon {
-        appearance: none;
-        border-radius: 100%;
-        background-position: center center;
-        background-repeat: no-repeat;
-        -moz-context-properties: stroke;
-        stroke: currentColor;
-        /* Roughly the Adwaita size */
-        width: 24px;
-        height: 24px;
-      }
+    @media (-moz-gtk-theme-family: adwaita) or (-moz-gtk-theme-family: yaru) {
+      /* On Adwaita / Yaru, the titlebar buttons have a background by default */
+      background-color: color-mix(in srgb, currentColor 10%, transparent);
     }
   }
 
   &:hover > .toolbarbutton-icon {
-    background-color: color-mix(in srgb, currentColor 12%, transparent);
+    background-color: color-mix(in srgb, currentColor 15%, transparent);
   }
 
   &:hover:active > .toolbarbutton-icon {
-    background-color: color-mix(in srgb, currentColor 20%, transparent);
+    background-color: color-mix(in srgb, currentColor 30%, transparent);
   }
 
   &:focus-visible > .toolbarbutton-icon {
     outline: var(--focus-outline);
     outline-offset: var(--focus-outline-inset);
   }
+
+  @media (-moz-gtk-theme-family: breeze) {
+    &:hover > .toolbarbutton-icon {
+      color: var(--toolbox-bgcolor);
+      background-color: var(--toolbox-textcolor);
+      &:-moz-window-inactive {
+        color: var(--toolbox-bgcolor-inactive);
+        background-color: var(--toolbox-textcolor-inactive);
+      }
+    }
+    &:hover:active > .toolbarbutton-icon {
+      background-color: color-mix(in srgb, var(--toolbox-textcolor) 50%, transparent);
+    }
+    &.titlebar-close:hover > .toolbarbutton-icon {
+      background-color: #ff98a2;
+    }
+    &.titlebar-close:hover:active > .toolbarbutton-icon {
+      background-color: #6d2229;
+    }
+  }
 }
 
+.titlebar-restore,
 .titlebar-max {
-  order: env(-moz-gtk-csd-maximize-button-position);
-  > .toolbarbutton-icon {
-    -moz-default-appearance: -moz-window-button-maximize;
-    background-image: url(chrome://browser/skin/window-controls/maximize.svg);
-  }
-}
+  --titlebar-button-position: env(-moz-gtk-csd-maximize-button-position);
 
-.titlebar-restore {
-  order: env(-moz-gtk-csd-maximize-button-position);
   > .toolbarbutton-icon {
-    -moz-default-appearance: -moz-window-button-restore;
-    background-image: url(chrome://browser/skin/window-controls/restore.svg);
+    background-image: -moz-symbolic-icon(window-maximize-symbolic);
   }
-}
 
-@media not (-moz-gtk-csd-maximize-button) {
-  .titlebar-restore,
-  .titlebar-max {
+  @media not (-moz-gtk-csd-maximize-button) {
     display: none;
   }
 }
 
+.titlebar-restore > .toolbarbutton-icon {
+  background-image: -moz-symbolic-icon(window-restore-symbolic);
+}
+
 .titlebar-close {
-  order: env(-moz-gtk-csd-close-button-position);
+  --titlebar-button-position: env(-moz-gtk-csd-close-button-position);
 
   > .toolbarbutton-icon {
-    -moz-default-appearance: -moz-window-button-close;
-    background-image: url(chrome://browser/skin/window-controls/close.svg);
-  }
-
-  &:hover > .toolbarbutton-icon {
-    background-color: #d70022;
-    color: white;
-  }
-
-  &:hover:active > .toolbarbutton-icon {
-    background-color: #ff0039;
+    background-image: -moz-symbolic-icon(window-close-symbolic);
   }
 
   @media not (-moz-gtk-csd-close-button) {
@@ -273,11 +290,10 @@
 }
 
 .titlebar-min {
-  order: env(-moz-gtk-csd-minimize-button-position);
+  --titlebar-button-position: env(-moz-gtk-csd-minimize-button-position);
 
   > .toolbarbutton-icon {
-    -moz-default-appearance: -moz-window-button-minimize;
-    background-image: url(chrome://browser/skin/window-controls/minimize.svg);
+    background-image: -moz-symbolic-icon(window-minimize-symbolic);
   }
 
   @media not (-moz-gtk-csd-minimize-button) {

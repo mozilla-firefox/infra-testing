@@ -169,7 +169,7 @@ Tracker.prototype = {
    * Starts or stops listening for changes depending on the associated engine's
    * enabled state.
    *
-   * @param {Boolean} engineEnabled Whether the engine was enabled.
+   * @param {boolean} engineEnabled Whether the engine was enabled.
    */
   async onEngineEnabledChanged(engineEnabled) {
     if (engineEnabled == this._isTracking) {
@@ -2120,7 +2120,7 @@ SyncEngine.prototype = {
     return changes;
   },
 
-  /*
+  /**
    * Returns a changeset containing entries for all currently tracked items.
    * The default implementation returns a changeset with timestamps indicating
    * when the item was added to the tracker.

@@ -130,6 +130,7 @@ rtc_library("rtc_event_audio") {
 }
 
 rtc_library("rtc_event_begin_end") {
+  visibility = [ "*" ]
   sources = [
     "rtc_event_log/events/rtc_event_begin_log.cc",
     "rtc_event_log/events/rtc_event_begin_log.h",
@@ -200,8 +201,6 @@ rtc_library("rtc_event_frame_events") {
 rtc_library("rtc_event_generic_packet_events") {
   visibility = [ "*" ]
   sources = [
-    "rtc_event_log/events/rtc_event_generic_ack_received.cc",
-    "rtc_event_log/events/rtc_event_generic_ack_received.h",
     "rtc_event_log/events/rtc_event_generic_packet_received.cc",
     "rtc_event_log/events/rtc_event_generic_packet_received.h",
     "rtc_event_log/events/rtc_event_generic_packet_sent.cc",
@@ -213,7 +212,6 @@ rtc_library("rtc_event_generic_packet_events") {
     "../api:array_view",
     "../api/rtc_event_log",
     "../api/units:timestamp",
-    "../rtc_base:timeutils",
     "//third_party/abseil-cpp/absl/memory",
     "//third_party/abseil-cpp/absl/strings:string_view",
   ]
@@ -376,7 +374,7 @@ rtc_library("rtc_event_log_impl_encoder") {
       "../api:array_view",
       "../api:candidate",
       "../api:dtls_transport_interface",
-      "../api/rtc_event_log:rtc_event_log",
+      "../api/rtc_event_log",
       "../api/transport:bandwidth_usage",
       "../api/units:timestamp",
       "../api/video:video_frame",
@@ -472,6 +470,7 @@ rtc_library("fake_rtc_event_log") {
     "../api:libjingle_logging_api",
     "../api/environment",
     "../api/rtc_event_log",
+    "../api/rtc_event_log:rtc_event_log_factory_interface",
     "../rtc_base:macromagic",
     "../rtc_base/synchronization:mutex",
     "//third_party/abseil-cpp/absl/base:nullability",
@@ -533,6 +532,7 @@ if (rtc_enable_protobuf) {
       "../api/video:video_frame",
       "../modules:module_api_public",
       "../modules/audio_coding:audio_network_adaptor",
+      "../modules/rtp_rtcp:ntp_time_util",
       "../modules/rtp_rtcp:rtp_rtcp_format",
       "../rtc_base:checks",
       "../rtc_base:copy_on_write_buffer",
@@ -545,6 +545,11 @@ if (rtc_enable_protobuf) {
       "//third_party/abseil-cpp/absl/memory",
       "//third_party/abseil-cpp/absl/strings:string_view",
     ]
+
+    # Normally public deps should not be used, but the proto must be included
+    # by all targets depending on rtc_event_log_parser.
+    public_deps +=  # no-presubmit-check TODO(webrtc:8603)
+        [ ":rtc_event_log_proto" ]
   }
 
   if (rtc_include_tests) {
@@ -593,6 +598,7 @@ if (rtc_enable_protobuf) {
         "../api:array_view",
         "../api:candidate",
         "../api:dtls_transport_interface",
+        "../api:field_trials",
         "../api:field_trials_view",
         "../api:libjingle_logging_api",
         "../api:rtc_event_log_output_file",
@@ -614,13 +620,13 @@ if (rtc_enable_protobuf) {
         "../rtc_base:buffer",
         "../rtc_base:checks",
         "../rtc_base:logging",
-        "../rtc_base:macromagic",
         "../rtc_base:random",
         "../rtc_base:rtc_base_tests_utils",
         "../rtc_base:safe_conversions",
         "../rtc_base:timeutils",
         "../system_wrappers",
-        "../test:explicit_key_value_config",
+        "../test:create_test_environment",
+        "../test:create_test_field_trials",
         "../test:fileutils",
         "../test:test_support",
         "../test/logging:log_writer",

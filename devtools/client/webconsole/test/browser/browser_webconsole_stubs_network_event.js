@@ -13,7 +13,7 @@ const {
 } = require(`${CHROME_URL_ROOT}stub-generator-helpers`);
 
 const TEST_URI =
-  "https://example.com/browser/devtools/client/webconsole/test/browser/stub-generators/test-network-event.html";
+  "https://example.com/browser/devtools/client/webconsole/test/browser/test-network-event.html";
 const STUB_FILE = "networkEvent.js";
 
 add_task(async function () {
@@ -94,8 +94,8 @@ async function generateNetworkEventStubs() {
     }
   };
   const onUpdated = updates => {
-    for (const { resource } of updates) {
-      addNetworkUpdateStub(resource);
+    for (const { resource, update } of updates) {
+      addNetworkUpdateStub(resource, update);
     }
   };
 
@@ -117,8 +117,9 @@ async function generateNetworkEventStubs() {
         resolve();
       };
     });
+
     const networkEventUpdateDone = new Promise(resolve => {
-      addNetworkUpdateStub = resource => {
+      addNetworkUpdateStub = (resource, update) => {
         const updateKey = `${key} update`;
         stubs.set(key, getCleanedPacket(key, getOrderedResource(resource)));
         stubs.set(
@@ -128,7 +129,10 @@ async function generateNetworkEventStubs() {
           // Hand-picking only what we need should prevent this.
           getCleanedPacket(updateKey, getOrderedResource(resource))
         );
-        resolve();
+
+        if (update.resourceUpdates.responseEndAvailable) {
+          resolve();
+        }
       };
     });
 
@@ -192,7 +196,7 @@ function getOrderedResource(resource) {
     isThirdPartyTrackingResource: resource.isThirdPartyTrackingResource,
     referrerPolicy: resource.referrerPolicy,
     blockedReason: resource.blockedReason,
-    blockingExtension: resource.blockingExtension,
+    extension: resource.extension,
     channelId: resource.channelId,
     totalTime: resource.totalTime,
     securityState: resource.securityState,

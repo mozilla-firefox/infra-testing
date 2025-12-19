@@ -35,7 +35,7 @@ import mozilla.components.concept.base.crash.Breadcrumb as MozillaBreadcrumb
  * @param sendEventForNativeCrashes Allows configuring if native crashes should be submitted. Disabled by default.
  * @param sentryProjectUrl Base URL of the Sentry web interface pointing to the app/project.
  * @param sendCaughtExceptions Allows configuring if caught exceptions should be submitted. Enabled by default.
- * @param autoInitializeSentry Initializes the Sentry SDK immediately on service creation.
+ * @param crashMetadataEventProcessor an [io.sentry.EventProcessor] to attach crash metadata to a crash report.
  */
 class SentryService(
     private val applicationContext: Context,
@@ -45,6 +45,7 @@ class SentryService(
     private val sendEventForNativeCrashes: Boolean = false,
     private val sentryProjectUrl: String? = null,
     private val sendCaughtExceptions: Boolean = true,
+    private val crashMetadataEventProcessor: CrashMetadataEventProcessor? = null,
 ) : CrashReporterService {
 
     override val id: String = "new-sentry-instance"
@@ -53,8 +54,6 @@ class SentryService(
     @VisibleForTesting
     @GuardedBy("this")
     internal var isInitialized: Boolean = false
-
-    private val crashMetadataEventProcessor = CrashMetadataEventProcessor()
 
     override fun createCrashReportUrl(identifier: String): String? {
         return sentryProjectUrl?.let {
@@ -102,10 +101,10 @@ class SentryService(
     }
 
     private fun addDefaultTags() {
-        Sentry.setTag("ac.version", Build.version)
-        Sentry.setTag("ac.git", Build.gitHash)
-        Sentry.setTag("ac.as.build_version", Build.applicationServicesVersion)
-        Sentry.setTag("ac.glean.build_version", Build.gleanSdkVersion)
+        Sentry.setTag("ac.version", Build.VERSION)
+        Sentry.setTag("ac.git", Build.GIT_HASH)
+        Sentry.setTag("ac.as.build_version", Build.APPLICATION_SERVICES_VERSION)
+        Sentry.setTag("ac.glean.build_version", Build.GLEAN_SDK_VERSION)
         Sentry.setTag("user.locale", Locale.getDefault().toString())
         tags.forEach { entry ->
             Sentry.setTag(entry.key, entry.value)
@@ -145,7 +144,9 @@ class SentryService(
             options.environment = environment
             options.addEventProcessor(RustCrashEventProcessor())
             options.addEventProcessor(AddMechanismEventProcessor())
-            options.addEventProcessor(crashMetadataEventProcessor)
+            crashMetadataEventProcessor?.also {
+                options.addEventProcessor(it)
+            }
         }
     }
 
@@ -165,9 +166,7 @@ class SentryService(
             Sentry.setLevel(level)
         }
 
-        crash?.let {
-            crashMetadataEventProcessor.crashToProcess = it
-        }
+        crashMetadataEventProcessor?.crashToProcess = crash
     }
 
     private fun SentryId.alsoClearBreadcrumbs(): String {
@@ -178,9 +177,9 @@ class SentryService(
     @VisibleForTesting
     internal fun createMessage(crash: Crash.NativeCodeCrash): String {
         val fatal = crash.isFatal.toString()
-        val processType = crash.processType
+        val processVisibility = crash.processVisibility
 
-        return "NativeCodeCrash(fatal=$fatal, processType=$processType)"
+        return "NativeCodeCrash(fatal=$fatal, processVisibility=$processVisibility)"
     }
 }
 

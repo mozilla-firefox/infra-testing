@@ -7,15 +7,12 @@
 #include "WebTransport.h"
 
 #include "WebTransportBidirectionalStream.h"
-#include "mozilla/RefPtr.h"
-#include "nsUTF8Utils.h"
-#include "nsIURL.h"
-#include "nsIWebTransportStream.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/dom/Document.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/dom/DOMExceptionBinding.h"
-#include "mozilla/dom/Promise.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/PWebTransport.h"
+#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/ReadableStream.h"
 #include "mozilla/dom/ReadableStreamDefaultController.h"
 #include "mozilla/dom/RemoteWorkerChild.h"
@@ -29,6 +26,9 @@
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "mozilla/ipc/PBackgroundChild.h"
+#include "nsIURL.h"
+#include "nsIWebTransportStream.h"
+#include "nsUTF8Utils.h"
 
 using namespace mozilla::ipc;
 
@@ -71,6 +71,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(WebTransport)
     tmp->mChild->Shutdown(false);
     tmp->mChild = nullptr;
   }
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(WebTransport)
@@ -277,6 +278,7 @@ void WebTransport::Init(const GlobalObject& aGlobal, const nsAString& aURL,
   PBackgroundChild* backgroundChild =
       BackgroundChild::GetOrCreateForCurrentThread();
   if (NS_WARN_IF(!backgroundChild)) {
+    aError.Throw(NS_ERROR_FAILURE);
     return;
   }
 
@@ -295,9 +297,11 @@ void WebTransport::Init(const GlobalObject& aGlobal, const nsAString& aURL,
   RefPtr<WebTransportChild> child = new WebTransportChild(this);
   if (NS_IsMainThread()) {
     if (!childEndpoint.Bind(child)) {
+      aError.Throw(NS_ERROR_FAILURE);
       return;
     }
   } else if (!childEndpoint.Bind(child, mGlobal->SerialEventTarget())) {
+    aError.Throw(NS_ERROR_FAILURE);
     return;
   }
 

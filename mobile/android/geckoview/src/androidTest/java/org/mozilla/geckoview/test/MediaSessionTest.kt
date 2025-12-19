@@ -4,11 +4,17 @@
 
 package org.mozilla.geckoview.test
 
+import android.os.Build
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.MediumTest
-import org.hamcrest.Matchers.* // ktlint-disable no-wildcard-imports
+import org.hamcrest.Matchers.closeTo
+import org.hamcrest.Matchers.equalTo
+import org.hamcrest.Matchers.greaterThanOrEqualTo
+import org.hamcrest.Matchers.notNullValue
 import org.junit.After
+import org.junit.Assume.assumeThat
 import org.junit.Before
+import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.geckoview.GeckoResult
@@ -75,6 +81,7 @@ class MediaSessionTest : BaseSessionTest() {
     fun teardown() {
     }
 
+    @Ignore("https://bugzilla.mozilla.org/show_bug.cgi?id=1988041")
     @Test
     fun domMetadataPlayback() {
         val onActivatedCalled = arrayOf(GeckoResult<Void>())
@@ -239,6 +246,13 @@ class MediaSessionTest : BaseSessionTest() {
                 mediaSession: MediaSession,
                 meta: MediaSession.Metadata,
             ) {
+                if (sessionRule.currentCall.counter == 7) {
+                    // Occasionally, a 7th call occurs from onStop with blank metadata.
+                    onMetadataCalled[sessionRule.currentCall.counter - 1]
+                        .complete(null)
+                    return
+                }
+
                 assertThat(
                     "Title should match",
                     meta.title,
@@ -304,9 +318,9 @@ class MediaSessionTest : BaseSessionTest() {
                 )
 
                 assertThat(
-                    "Playback rate should match",
+                    "Playback rate should exist",
                     state.playbackRate,
-                    closeTo(1.0, 0.01),
+                    notNullValue(),
                 )
 
                 assertThat(
@@ -344,36 +358,37 @@ class MediaSessionTest : BaseSessionTest() {
         mediaSession1!!.pause()
 
         sessionRule.waitForResult(completedStep3)
-        mediaSession1!!.play()
+        mediaSession1.play()
 
         sessionRule.waitForResult(completedStep4)
         sessionRule.waitForResult(completedStep5)
-        mediaSession1!!.pause()
-        mediaSession1!!.nextTrack()
-        mediaSession1!!.play()
+        mediaSession1.pause()
+        mediaSession1.nextTrack()
+        mediaSession1.play()
 
         sessionRule.waitForResult(completedStep6)
-        mediaSession1!!.pause()
-        mediaSession1!!.nextTrack()
-        mediaSession1!!.play()
+        mediaSession1.pause()
+        mediaSession1.nextTrack()
+        mediaSession1.play()
 
         sessionRule.waitForResult(completedStep7)
-        mediaSession1!!.pause()
+        mediaSession1.pause()
 
         sessionRule.waitForResult(completedStep8a)
-        mediaSession1!!.previousTrack()
-        mediaSession1!!.play()
+        mediaSession1.previousTrack()
+        mediaSession1.play()
 
         sessionRule.waitForResult(completedStep8b)
         sessionRule.waitForResult(completedStep9)
-        mediaSession1!!.play()
+        mediaSession1.play()
 
         sessionRule.waitForResult(completedStep10)
-        mediaSession1!!.stop()
+        mediaSession1.stop()
 
         sessionRule.waitForResult(completedStep11)
     }
 
+    @Ignore("https://bugzilla.mozilla.org/show_bug.cgi?id=1679779")
     @Test
     fun defaultMetadataPlayback() {
         val onActivatedCalled = arrayOf(GeckoResult<Void>())
@@ -462,12 +477,13 @@ class MediaSessionTest : BaseSessionTest() {
         mediaSession1!!.pause()
 
         sessionRule.waitForResult(completedStep3)
-        mediaSession1!!.play()
+        mediaSession1.play()
 
         sessionRule.waitForResult(completedStep4)
         sessionRule.waitForResult(completedStep5)
     }
 
+    @Ignore("https://bugzilla.mozilla.org/show_bug.cgi?id=1988041")
     @Test
     fun domMultiSessions() {
         val onActivatedCalled = arrayOf(
@@ -592,7 +608,7 @@ class MediaSessionTest : BaseSessionTest() {
 
                 assertThat(
                     "Should be active",
-                    mediaSession1?.isActive,
+                    mediaSession1.isActive,
                     equalTo(true),
                 )
             }
@@ -610,9 +626,9 @@ class MediaSessionTest : BaseSessionTest() {
                 )
 
                 assertThat(
-                    "Playback rate should match",
+                    "Playback rate should exist",
                     state.playbackRate,
-                    closeTo(1.0, 0.01),
+                    notNullValue(),
                 )
 
                 assertThat(
@@ -726,7 +742,7 @@ class MediaSessionTest : BaseSessionTest() {
                 )
                 assertThat(
                     "Should be active",
-                    mediaSession2!!.isActive,
+                    mediaSession2.isActive,
                     equalTo(true),
                 )
             }
@@ -803,15 +819,20 @@ class MediaSessionTest : BaseSessionTest() {
         mediaSession2!!.pause()
         sessionRule.waitForResult(completedStep6)
 
-        mediaSession1!!.pause()
-        mediaSession1!!.nextTrack()
-        mediaSession1!!.play()
+        mediaSession1.pause()
+        mediaSession1.nextTrack()
+        mediaSession1.play()
         sessionRule.waitForResult(completedStep7)
         sessionRule.waitForResult(completedStep8)
     }
 
+    @Ignore("https://bugzilla.mozilla.org/show_bug.cgi?id=1988041")
     @Test
     fun fullscreenVideoElementMetadata() {
+        // Bug 1981579
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            assumeThat(sessionRule.env.isIsolatedProcess, equalTo(false))
+        }
         sessionRule.setPrefsUntilTestEnd(
             mapOf(
                 "media.autoplay.default" to 0,
@@ -1013,8 +1034,13 @@ class MediaSessionTest : BaseSessionTest() {
         sessionRule.waitForResult(resultFullscreen)
     }
 
+    @Ignore("https://bugzilla.mozilla.org/show_bug.cgi?id=1988041")
     @Test
     fun switchingProcess() {
+        // Bug 1981579
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            assumeThat(sessionRule.env.isIsolatedProcess, equalTo(false))
+        }
         sessionRule.setPrefsUntilTestEnd(
             mapOf(
                 "media.autoplay.default" to 0,

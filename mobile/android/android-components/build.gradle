@@ -2,9 +2,8 @@
 
 import io.gitlab.arturbosch.detekt.Detekt
 import io.gitlab.arturbosch.detekt.DetektCreateBaselineTask
-import org.gradle.internal.logging.text.StyledTextOutput.Style
-import org.gradle.internal.logging.text.StyledTextOutputFactory
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+
 import static org.gradle.api.tasks.testing.TestResult.ResultType
 
 buildscript {
@@ -20,7 +19,7 @@ buildscript {
     }
 
     dependencies {
-        classpath libs.tools.androidgradle
+        classpath libs.android.gradle.plugin
     }
 }
 
@@ -47,9 +46,31 @@ allprojects {
         }
     }
 
+    ext {
+        gleanVersion = libs.versions.glean.get()
+    }
+
     // Enable Kotlin warnings as errors for all modules
     tasks.withType(KotlinCompile).configureEach {
         compilerOptions.allWarningsAsErrors = true
+    }
+
+    if (gradle.mozconfig.substs.DOWNLOAD_ALL_GRADLE_DEPENDENCIES) {
+        // Work around https://github.com/google/ksp/issues/1964 by explicitly
+        // declaring dependencies that are dynamically added during Gradle task
+        // execution.
+        pluginManager.withPlugin('com.google.devtools.ksp') {
+            project.configurations {
+                kspDependencies
+            }
+
+            project.dependencies {
+                kspDependencies libs.ksp.symbol.processing.aa
+                kspDependencies libs.ksp.symbol.processing.aa.embeddable
+                kspDependencies libs.ksp.symbol.processing.api
+                kspDependencies libs.ksp.symbol.processing.common.deps
+            }
+        }
     }
 }
 
@@ -68,13 +89,13 @@ subprojects {
             if (details.requested.group == 'org.mozilla.telemetry'
                     && details.requested.name.contains('glean') ) {
                 def requested = details.requested.version.tokenize(".")
-                def defined = libs.versions.mozilla.glean.get().tokenize(".")
+                def defined = project.ext.gleanVersion.tokenize(".")
                 // Check the major version
                 if (requested[0] != defined[0]) {
-                    throw new AssertionError("Cannot resolve to a single Glean version. Requested: ${details.requested.version}, A-C uses: ${libs.versions.mozilla.glean.get()}")
+                    throw new AssertionError("Cannot resolve to a single Glean version. Requested: ${details.requested.version}, A-C uses: ${project.ext.gleanVersion}")
                 } else {
                     // Enforce that all (transitive) dependencies are using the defined Glean version
-                    details.useVersion libs.versions.mozilla.glean.get()
+                    details.useVersion project.ext.gleanVersion
                 }
             }
         }
@@ -98,10 +119,6 @@ subprojects {
 
     afterEvaluate {
         if (it.hasProperty('android')) {
-            jacoco {
-                toolVersion = libs.versions.jacoco.get()
-            }
-
             // Format test output
             tasks.matching {it instanceof Test}.configureEach() {
                 systemProperty "robolectric.logging", "stdout"
@@ -144,7 +161,7 @@ subprojects {
             }
 
             dependencies {
-                lintChecks project(':tooling-lint')
+                lintChecks project(':components:tooling-lint')
             }
 
             kotlin {
@@ -162,16 +179,17 @@ subprojects {
                 buildToolsVersion gradle.mozconfig.substs.ANDROID_BUILD_TOOLS_VERSION
 
                 testOptions {
+                    testCoverage {
+                        jacocoVersion = libs.versions.jacoco.get()
+                    }
                     unitTests {
                         includeAndroidResources = true
                     }
                 }
 
-                // https://issuetracker.google.com/issues/379732901
                 packaging {
                     resources {
-                        excludes += ['META-INF/LICENSE.md', 'META-INF/LICENSE-notice.md',
-                                     'META-INF/versions/9/OSGI-INF/MANIFEST.MF']
+                        excludes += ['META-INF/LICENSE.md', 'META-INF/LICENSE-notice.md']
                     }
                 }
 
@@ -180,7 +198,7 @@ subprojects {
                 }
             }
 
-            if (project.hasProperty("coverage") && project.name != "support-test") {
+            if (project.name != "support-test") {
                 android.buildTypes.all { buildType ->
                     tasks.withType(Test).configureEach() {
                         jacoco {
@@ -214,7 +232,10 @@ subprojects {
                 android {
                     buildTypes {
                         debug {
-                            testCoverageEnabled true
+                            // Enable test coverage when fetching dependencies: it's an easy way to
+                            // ensure we fetch the Jacoco agent dependency `org.jacoco.agent`, which
+                            // resolves to `org.jacoco.agent-$VERSION-runtime.jar`.
+                            testCoverageEnabled = project.hasProperty("coverage") || gradle.mozconfig.substs.DOWNLOAD_ALL_GRADLE_DEPENDENCIES
                         }
                     }
                 }
@@ -255,6 +276,10 @@ subprojects {
             logging.removeStandardErrorListener(listener)
         }
     }
+
+    tasks.withType(AbstractTestTask).configureEach {
+        failOnNoDiscoveredTests = false
+    }
 }
 
 if (findProject(":geckoview") == null) {
@@ -283,10 +308,19 @@ detekt {
     }
 }
 
+tasks.named("detekt").configure {
+    reports {
+        custom {
+            reportId = "suppression-count"
+            outputLocation.set(file("$projectDir/build/reports/suppressions.txt"))
+        }
+    }
+}
+
 tasks.withType(Detekt).configureEach() {
     // Custom detekt rules should be built before.
     // See https://detekt.dev/docs/introduction/extensions#pitfalls
-    dependsOn(":tooling-detekt:assemble")
+    dependsOn(":components:tooling-detekt:assemble")
 
     autoCorrect = true
 
@@ -305,16 +339,16 @@ tasks.withType(Detekt).configureEach() {
 
 // Apply same path exclusions as for the main task
 tasks.withType(DetektCreateBaselineTask).configureEach() {
-    dependsOn(":browser-icons:updateBuiltInExtensionVersion")
-    dependsOn(":feature-accounts:updateBuiltInExtensionVersion")
-    dependsOn(":feature-readerview:updateBuiltInExtensionVersion")
-    dependsOn(":feature-search:updateAdsExtensionVersion")
-    dependsOn(":feature-search:updateCookiesExtensionVersion")
-    dependsOn(":samples-browser:updateBorderifyExtensionVersion")
-    dependsOn(":samples-browser:updateTestExtensionVersion")
-    dependsOn(":samples-compose-browser:updateBorderifyExtensionVersion")
-    dependsOn(":samples-compose-browser:updateTestExtensionVersion")
-    dependsOn(":tooling-detekt:assemble")
+    dependsOn(":components:browser-icons:updateBuiltInExtensionVersion")
+    dependsOn(":components:feature-accounts:updateBuiltInExtensionVersion")
+    dependsOn(":components:feature-readerview:updateBuiltInExtensionVersion")
+    dependsOn(":components:feature-search:updateAdsExtensionVersion")
+    dependsOn(":components:feature-search:updateCookiesExtensionVersion")
+    dependsOn(":components:samples-browser:updateBorderifyExtensionVersion")
+    dependsOn(":components:samples-browser:updateTestExtensionVersion")
+    dependsOn(":components:samples-compose-browser:updateBorderifyExtensionVersion")
+    dependsOn(":components:samples-compose-browser:updateTestExtensionVersion")
+    dependsOn(":components:tooling-detekt:assemble")
 
     exclude "**/build.gradle.kts"
     exclude "**/build/**"
@@ -331,15 +365,20 @@ tasks.withType(DetektCreateBaselineTask).configureEach() {
 
 configurations {
     ktlint
+
+    detektDependencies
 }
 
 dependencies {
-    ktlint("com.pinterest:ktlint:${libs.versions.ktlint.get()}") {
+    ktlint(libs.ktlint) {
         attributes {
             attribute(Bundling.BUNDLING_ATTRIBUTE, getObjects().named(Bundling, Bundling.EXTERNAL))
         }
     }
-    detektPlugins project(":tooling-detekt")
+    detektPlugins project(":components:tooling-detekt")
+    detekt libs.detekt.cli
+
+    detektDependencies libs.detekt.cli
 }
 
 tasks.register("ktlint", JavaExec) {
@@ -351,7 +390,6 @@ tasks.register("ktlint", JavaExec) {
     args "samples/**/*.kt"
     args "!**/build/**/*.kt"
     args "buildSrc/**/*.kt"
-    args "--baseline=ktlint-baseline.xml"
     args "--reporter=json,output=build/reports/ktlint/ktlint.json"
     args "--reporter=plain"
 }
@@ -366,7 +404,6 @@ tasks.register("ktlintFormat", JavaExec) {
     args "samples/**/*.kt"
     args "!**/build/**/*.kt"
     args "buildSrc/**/*.kt"
-    args "--baseline=ktlint-baseline.xml"
     args "--reporter=json,output=build/reports/ktlint/ktlintFormat.json"
     args "--reporter=plain"
     jvmArgs("--add-opens", "java.base/java.lang=ALL-UNNAMED")

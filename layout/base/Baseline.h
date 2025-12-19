@@ -5,8 +5,8 @@
 #ifndef LAYOUT_BASE_BASELINE_H_
 #define LAYOUT_BASE_BASELINE_H_
 
-#include "nsCoord.h"
 #include "mozilla/WritingModes.h"
+#include "nsCoord.h"
 
 class nsIFrame;
 
@@ -18,6 +18,13 @@ enum class BaselineSharingGroup : uint8_t {
   First = 0,
   Last = 1,
 };
+
+inline BaselineSharingGroup GetOppositeBaselineSharingGroup(
+    BaselineSharingGroup aBaselineSharingGroup) {
+  return aBaselineSharingGroup == BaselineSharingGroup::First
+             ? BaselineSharingGroup::Last
+             : BaselineSharingGroup::First;
+}
 
 // Layout context under which the baseline is being exported to.
 enum class BaselineExportContext : uint8_t {

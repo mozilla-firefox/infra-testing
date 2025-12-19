@@ -7,9 +7,7 @@ package mozilla.components.feature.privatemode.notification
 import android.content.Context
 import android.content.Intent
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.state.action.CustomTabListAction
 import mozilla.components.browser.state.action.TabListAction
@@ -33,12 +31,12 @@ import org.mockito.Mockito.never
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 
-@ExperimentalCoroutinesApi
 @RunWith(AndroidJUnit4::class)
 class PrivateNotificationFeatureTest {
 
     @get:Rule
     val coroutinesTestRule = MainCoroutineRule()
+    private val dispatcher = coroutinesTestRule.testDispatcher
 
     private lateinit var context: Context
     private lateinit var store: BrowserStore
@@ -60,10 +58,10 @@ class PrivateNotificationFeatureTest {
         val privateSession = createTab("https://firefox.com", private = true)
         val intent = argumentCaptor<Intent>()
 
-        store.dispatch(TabListAction.AddTabAction(privateSession)).join()
+        store.dispatch(TabListAction.AddTabAction(privateSession))
 
         feature.start()
-        runCurrent()
+        dispatcher.scheduler.runCurrent()
         verify(context, times(1)).startService(intent.capture())
 
         val expected = Intent(testContext, AbstractPrivateNotificationService::class.java)
@@ -78,7 +76,7 @@ class PrivateNotificationFeatureTest {
         feature.start()
         verify(context, never()).startService(any())
 
-        store.dispatch(TabListAction.AddTabAction(privateSession)).join()
+        store.dispatch(TabListAction.AddTabAction(privateSession))
         verify(context, times(1)).startService(any())
         Unit
     }
@@ -90,8 +88,8 @@ class PrivateNotificationFeatureTest {
 
         feature.start()
 
-        store.dispatch(TabListAction.AddTabAction(privateSession1)).join()
-        store.dispatch(TabListAction.AddTabAction(privateSession2)).join()
+        store.dispatch(TabListAction.AddTabAction(privateSession1))
+        store.dispatch(TabListAction.AddTabAction(privateSession2))
 
         verify(context, times(1)).startService(any())
         Unit
@@ -105,10 +103,10 @@ class PrivateNotificationFeatureTest {
         feature.start()
         verify(context, never()).startService(any())
 
-        store.dispatch(TabListAction.AddTabAction(normalSession)).join()
+        store.dispatch(TabListAction.AddTabAction(normalSession))
         verify(context, never()).startService(any())
 
-        store.dispatch(CustomTabListAction.AddCustomTabAction(customSession)).join()
+        store.dispatch(CustomTabListAction.AddCustomTabAction(customSession))
         verify(context, never()).startService(any())
         Unit
     }
@@ -123,10 +121,10 @@ class PrivateNotificationFeatureTest {
         feature.start()
         verify(context, never()).startService(any())
 
-        store.dispatch(CustomTabListAction.AddCustomTabAction(privateCustomSession)).join()
+        store.dispatch(CustomTabListAction.AddCustomTabAction(privateCustomSession))
         verify(context, never()).startService(any())
 
-        store.dispatch(CustomTabListAction.AddCustomTabAction(customSession)).join()
+        store.dispatch(CustomTabListAction.AddCustomTabAction(customSession))
         verify(context, never()).startService(any())
         Unit
     }

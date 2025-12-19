@@ -9,9 +9,11 @@ import { PrivateBrowsingUtils } from "resource://gre/modules/PrivateBrowsingUtil
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
+  CustomizableUI:
+    "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
   LoginHelper: "resource://gre/modules/LoginHelper.sys.mjs",
-  PanelMultiView: "resource:///modules/PanelMultiView.sys.mjs",
+  PanelMultiView:
+    "moz-src:///browser/components/customizableui/PanelMultiView.sys.mjs",
   RecentlyClosedTabsAndWindowsMenuUtils:
     "resource:///modules/sessionstore/RecentlyClosedTabsAndWindowsMenuUtils.sys.mjs",
   Sanitizer: "resource:///modules/Sanitizer.sys.mjs",
@@ -20,7 +22,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
 });
 
 const kPrefCustomizationDebug = "browser.uiCustomization.debug";
-const kPrefScreenshots = "extensions.screenshots.disabled";
 
 ChromeUtils.defineLazyGetter(lazy, "log", () => {
   let { ConsoleAPI } = ChromeUtils.importESModule(
@@ -33,20 +34,6 @@ ChromeUtils.defineLazyGetter(lazy, "log", () => {
   };
   return new ConsoleAPI(consoleOptions);
 });
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  lazy,
-  "screenshotsDisabled",
-  kPrefScreenshots,
-  false
-);
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  lazy,
-  "SCREENSHOT_BROWSER_COMPONENT",
-  "screenshots.browser.component.enabled",
-  false
-);
 
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
@@ -137,9 +124,6 @@ export const CustomizableWidgets = [
             PanelUI.showSubView(this.recentlyClosedWindowsPanel, target);
           } else if (target.id == "appMenuSearchHistory") {
             PlacesCommandHook.searchHistory();
-          } else if (target.id == "PanelUI-historyMore") {
-            PlacesCommandHook.showPlacesOrganizer("History");
-            lazy.CustomizableUI.hidePanelForNode(target);
           }
           break;
         }
@@ -321,6 +305,9 @@ export const CustomizableWidgets = [
         const { SidebarController } = aNode.ownerGlobal;
         SidebarController.updateToolbarButton(aNode);
         aNode.setAttribute("overflows", "false");
+        // Show the toolbar button badge by setting the badged attribute.
+        // This activates badge styling by adding feature-callout class to the toolbarbutton-badge element.
+        aNode.setAttribute("badged", true);
       } else {
         // Add an observer so the button is checked while the sidebar is open
         let doc = aNode.ownerDocument;
@@ -568,49 +555,6 @@ if (Services.prefs.getBoolPref("identity.fxaccounts.enabled")) {
               break;
           }
         }
-      }
-    },
-  });
-}
-
-if (!lazy.screenshotsDisabled) {
-  CustomizableWidgets.push({
-    id: "screenshot-button",
-    shortcutId: "key_screenshot",
-    l10nId: "screenshot-toolbarbutton",
-    onCommand(aEvent) {
-      if (lazy.SCREENSHOT_BROWSER_COMPONENT) {
-        Services.obs.notifyObservers(
-          aEvent.currentTarget.ownerGlobal,
-          "menuitem-screenshot",
-          "ToolbarButton"
-        );
-      } else {
-        Services.obs.notifyObservers(
-          null,
-          "menuitem-screenshot-extension",
-          "toolbar"
-        );
-      }
-    },
-    onCreated(aNode) {
-      aNode.ownerGlobal.MozXULElement.insertFTLIfNeeded(
-        "browser/screenshots.ftl"
-      );
-      Services.obs.addObserver(this, "toggle-screenshot-disable");
-    },
-    observe(subj, topic, data) {
-      let document = subj.document;
-      let button = document.getElementById("screenshot-button");
-
-      if (!button) {
-        return;
-      }
-
-      if (data == "true") {
-        button.setAttribute("disabled", "true");
-      } else {
-        button.removeAttribute("disabled");
       }
     },
   });

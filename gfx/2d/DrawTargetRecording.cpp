@@ -18,7 +18,6 @@
 #include "mozilla/layers/RecordedCanvasEventImpl.h"
 #include "mozilla/layers/SourceSurfaceSharedData.h"
 #include "mozilla/layers/TextureRecorded.h"
-#include "mozilla/UniquePtr.h"
 #include "nsXULAppAPI.h"  // for XRE_IsContentProcess()
 #include "RecordingTypes.h"
 #include "RecordedEventImpl.h"
@@ -607,6 +606,22 @@ already_AddRefed<FilterNode> DrawTargetRecording::CreateFilter(
   RefPtr<FilterNode> retNode = new FilterNodeRecording(mRecorder);
 
   RecordEventSelfSkipFlushTransform(RecordedFilterNodeCreation(retNode, aType));
+
+  return retNode.forget();
+}
+
+already_AddRefed<FilterNode> DrawTargetRecording::DeferFilterInput(
+    const Path* aPath, const Pattern& aPattern, const IntRect& aSourceRect,
+    const IntPoint& aDestOffset, const DrawOptions& aOptions,
+    const StrokeOptions* aStrokeOptions) {
+  RefPtr<FilterNode> retNode = new FilterNodeRecording(mRecorder);
+
+  RefPtr<PathRecording> pathRecording = EnsurePathStored(aPath);
+  EnsurePatternDependenciesStored(aPattern);
+
+  RecordEventSelf(RecordedDeferFilterInput(retNode, pathRecording, aPattern,
+                                           aSourceRect, aDestOffset, aOptions,
+                                           aStrokeOptions));
 
   return retNode.forget();
 }

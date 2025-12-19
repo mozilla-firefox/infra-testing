@@ -18,6 +18,7 @@
 #include "mozilla/layers/ProfilerScreenshots.h"
 #include "mozilla/layers/SurfacePool.h"
 #include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/webrender/RenderTextureHost.h"
 #include "mozilla/webrender/RenderThread.h"
 #include "mozilla/widget/CompositorWidget.h"
 #include "RenderCompositorRecordedFrame.h"
@@ -32,6 +33,8 @@ RenderCompositorNative::RenderCompositorNative(
     : RenderCompositor(aWidget),
       mNativeLayerRoot(GetWidget()->GetNativeLayerRoot()) {
   LOG("RenderCompositorNative::RenderCompositorNative()");
+
+  MOZ_ASSERT(mNativeLayerRoot);
 
 #if defined(XP_DARWIN) || defined(MOZ_WAYLAND)
   auto pool = RenderThread::Get()->SharedSurfacePool();
@@ -131,6 +134,12 @@ void RenderCompositorNative::GetCompositorCapabilities(
   aCaps->supports_surface_for_backdrop = !gfx::gfxVars::UseSoftwareWebRender();
 #endif
 }
+
+RenderCompositorNative::Surface::~Surface() = default;
+
+RenderCompositorNative::Surface::Surface(wr::DeviceIntSize aTileSize,
+                                         bool aIsOpaque)
+    : mTileSize(aTileSize), mIsOpaque(aIsOpaque) {}
 
 bool RenderCompositorNative::MaybeReadback(
     const gfx::IntSize& aReadbackSize, const wr::ImageFormat& aReadbackFormat,
@@ -233,6 +242,10 @@ bool RenderCompositorNative::MaybeProcessScreenshotQueue() {
   return true;
 }
 
+void RenderCompositorNative::WaitUntilPresentationFlushed() {
+  mNativeLayerRoot->WaitUntilCommitToScreenHasBeenProcessed();
+}
+
 void RenderCompositorNative::CompositorBeginFrame() {
   mAddedLayers.Clear();
   mAddedTilePixelCount = 0;
@@ -245,28 +258,33 @@ void RenderCompositorNative::CompositorBeginFrame() {
 void RenderCompositorNative::CompositorEndFrame() {
   if (profiler_thread_is_being_profiled_for_markers()) {
     auto bufferSize = GetBufferSize();
-    [[maybe_unused]] uint64_t windowPixelCount =
-        uint64_t(bufferSize.width) * bufferSize.height;
-    int nativeLayerCount = 0;
-    for (const auto& it : mSurfaces) {
-      nativeLayerCount += int(it.second.mNativeLayers.size());
+    uint64_t windowPixelCount = uint64_t(bufferSize.width) * bufferSize.height;
+    if (windowPixelCount) {
+      int nativeLayerCount = 0;
+      for (const auto& it : mSurfaces) {
+        nativeLayerCount += int(it.second.mNativeLayers.size());
+      }
+      PROFILER_MARKER_TEXT(
+          "WR OS Compositor frame", GRAPHICS,
+          MarkerTiming::IntervalUntilNowFrom(mBeginFrameTimeStamp),
+          nsPrintfCString(
+              "%d%% painting, %d%% overdraw, %d used "
+              "layers (%d%% memory) + %d unused layers (%d%% memory)",
+              int(mDrawnPixelCount * 100 / windowPixelCount),
+              int(mAddedClippedPixelCount * 100 / windowPixelCount),
+              int(mAddedLayers.Length()),
+              int(mAddedTilePixelCount * 100 / windowPixelCount),
+              int(nativeLayerCount - mAddedLayers.Length()),
+              int((mTotalTilePixelCount - mAddedTilePixelCount) * 100 /
+                  windowPixelCount)));
     }
-    PROFILER_MARKER_TEXT(
-        "WR OS Compositor frame", GRAPHICS,
-        MarkerTiming::IntervalUntilNowFrom(mBeginFrameTimeStamp),
-        nsPrintfCString("%d%% painting, %d%% overdraw, %d used "
-                        "layers (%d%% memory) + %d unused layers (%d%% memory)",
-                        int(mDrawnPixelCount * 100 / windowPixelCount),
-                        int(mAddedClippedPixelCount * 100 / windowPixelCount),
-                        int(mAddedLayers.Length()),
-                        int(mAddedTilePixelCount * 100 / windowPixelCount),
-                        int(nativeLayerCount - mAddedLayers.Length()),
-                        int((mTotalTilePixelCount - mAddedTilePixelCount) *
-                            100 / windowPixelCount)));
   }
   mDrawnPixelCount = 0;
 
+#if defined(XP_DARWIN)
+  // MacOS fails rendering without the flush here.
   DoFlush();
+#endif
 
   mNativeLayerRoot->SetLayers(mAddedLayers);
   mNativeLayerRoot->CommitToScreen();
@@ -346,6 +364,19 @@ void RenderCompositorNative::AttachExternalImage(
   MOZ_RELEASE_ASSERT(surface.mNativeLayers.size() == 1);
   MOZ_RELEASE_ASSERT(surface.mIsExternal);
   surface.mNativeLayers.begin()->second->AttachExternalImage(image);
+}
+
+void RenderCompositorNativeOGL::AttachExternalImage(
+    wr::NativeSurfaceId aId, wr::ExternalImageId aExternalImage) {
+  RenderTextureHost* image =
+      RenderThread::Get()->GetRenderTexture(aExternalImage);
+
+  // image->Lock only uses the channel index to populate the returned
+  // `WrExternalImage`. Since we don't use that, it doesn't matter
+  // what channel index we pass.
+  image->Lock(0, mGL);
+
+  RenderCompositorNative::AttachExternalImage(aId, aExternalImage);
 }
 
 void RenderCompositorNative::DestroySurface(NativeSurfaceId aId) {
@@ -433,6 +464,14 @@ void RenderCompositorNative::AddSurface(
     gfx::IntRect clipRect(aClipRect.min.x, aClipRect.min.y, aClipRect.width(),
                           aClipRect.height());
     layer->SetClipRect(Some(clipRect));
+    gfx::Rect roundedClipRect(aRoundedClipRect.min.x, aRoundedClipRect.min.y,
+                              aRoundedClipRect.width(),
+                              aRoundedClipRect.height());
+    gfx::RectCornerRadii clipRadius(aClipRadius.top_left, aClipRadius.top_right,
+                                    aClipRadius.bottom_right,
+                                    aClipRadius.bottom_left);
+    gfx::RoundedRect roundedClip(roundedClipRect, clipRadius);
+    layer->SetRoundedClipRect(Some(roundedClip));
     layer->SetTransform(transform);
     layer->SetSamplingFilter(ToSamplingFilter(aImageRendering));
     mAddedLayers.AppendElement(layer);

@@ -28,6 +28,7 @@
 #include "nsGkAtoms.h"
 #include "nsWhitespaceTokenizer.h"
 #include "nsIChannelEventSink.h"
+#include "nsIDNSService.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
 #include "nsCharSeparatedTokenizer.h"
 #include "nsAsyncRedirectVerifyHelper.h"
@@ -147,9 +148,8 @@ static void LogBlockedRequest(nsIRequest* aRequest, const char* aProperty,
   // We can always try top level content window id in this case,
   // since the window id can lead to current top level window's web console.
   if (!innerWindowID) {
-    nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(aRequest);
-    if (httpChannel) {
-      Unused << httpChannel->GetTopLevelContentWindowId(&innerWindowID);
+    if (nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(aRequest)) {
+      (void)httpChannel->GetTopLevelContentWindowId(&innerWindowID);
     }
   }
   nsCORSListenerProxy::LogBlockedCORSRequest(innerWindowID, privateBrowsing,
@@ -210,12 +210,17 @@ struct CORSCacheEntry : public LinkedListElement<CORSCacheEntry>,
   nsCOMPtr<nsIPrincipal> mPrincipal;
   bool mWithCredentials;
   nsCString mKey;  // serialized key
+  const TimeStamp mCreationTime{TimeStamp::NowLoRes()};
+  bool mDoomed{false};
+  bool mIsProxyUsed{false};
 
   nsTArray<nsPreflightCache::TokenTime> mMethods;
   nsTArray<nsPreflightCache::TokenTime> mHeaders;
 
  private:
   virtual ~CORSCacheEntry() = default;
+
+  bool CheckDNSCache();
 };
 
 NS_IMPL_ISUPPORTS(nsPreflightCache, nsICORSPreflightCache)
@@ -333,9 +338,55 @@ void CORSCacheEntry::PurgeExpired(TimeStamp now) {
   }
 }
 
+bool CORSCacheEntry::CheckDNSCache() {
+  // When proxy is used, the DNS lookup is done by proxy, so we skip this check.
+  if (mIsProxyUsed) {
+    return true;
+  }
+
+  nsCOMPtr<nsIDNSService> dns;
+  dns = mozilla::components::DNS::Service();
+  if (!dns) {
+    return false;
+  }
+
+  nsAutoCString host;
+  if (NS_FAILED(mURI->GetAsciiHost(host))) {
+    return false;
+  }
+
+  nsCOMPtr<nsIDNSRecord> record;
+  nsresult rv = dns->ResolveNative(host, nsIDNSService::RESOLVE_OFFLINE, mOA,
+                                   getter_AddRefs(record));
+  if (NS_FAILED(rv) || !record) {
+    return false;
+  }
+
+  nsCOMPtr<nsIDNSAddrRecord> addrRec = do_QueryInterface(record);
+  if (!addrRec) {
+    return false;
+  }
+
+  TimeStamp lastUpdate;
+  (void)addrRec->GetLastUpdate(&lastUpdate);
+
+  if (lastUpdate > mCreationTime) {
+    return false;
+  }
+
+  return true;
+}
+
 bool CORSCacheEntry::CheckRequest(const nsCString& aMethod,
                                   const nsTArray<nsCString>& aHeaders) {
   PurgeExpired(TimeStamp::NowLoRes());
+
+  if (!CheckDNSCache()) {
+    mMethods.Clear();
+    mHeaders.Clear();
+    mDoomed = true;
+    return false;
+  }
 
   if (!aMethod.EqualsLiteral("GET") && !aMethod.EqualsLiteral("POST")) {
     struct CheckToken {
@@ -377,11 +428,16 @@ already_AddRefed<CORSCacheEntry> nsPreflightCache::GetEntry(
 
   RefPtr<CORSCacheEntry> existingEntry = nullptr;
   if ((existingEntry = mTable.Get(key))) {
-    // Entry already existed so just return it. Also update the LRU list.
-    // Move to the head of the list.
-    existingEntry->removeFrom(mList);
-    mList.insertFront(existingEntry);
-    return existingEntry.forget();
+    if (existingEntry->mDoomed) {
+      existingEntry->removeFrom(mList);
+      mTable.Remove(key);
+    } else {
+      // Entry already existed so just return it. Also update the LRU list.
+      // Move to the head of the list.
+      existingEntry->removeFrom(mList);
+      mList.insertFront(existingEntry);
+      return existingEntry.forget();
+    }
   }
 
   if (!aCreate) {
@@ -940,9 +996,8 @@ nsCORSListenerProxy::AsyncOnChannelRedirect(
     nsCOMPtr<nsIHttpChannel> oldHttpChannel = do_QueryInterface(aOldChannel);
     if (oldHttpChannel) {
       nsAutoCString method;
-      Unused << oldHttpChannel->GetRequestMethod(method);
-      Unused << oldHttpChannel->ShouldStripRequestBodyHeader(method,
-                                                             &rewriteToGET);
+      (void)oldHttpChannel->GetRequestMethod(method);
+      (void)oldHttpChannel->ShouldStripRequestBodyHeader(method, &rewriteToGET);
     }
 
     rv = UpdateChannel(
@@ -1218,7 +1273,7 @@ nsresult nsCORSListenerProxy::CheckPreflightNeeded(nsIChannel* aChannel,
   }
 
   nsAutoCString method;
-  Unused << http->GetRequestMethod(method);
+  (void)http->GetRequestMethod(method);
   if (!method.LowerCaseEqualsLiteral("get") &&
       !method.LowerCaseEqualsLiteral("post") &&
       !method.LowerCaseEqualsLiteral("head")) {
@@ -1319,7 +1374,7 @@ void nsCORSPreflightListener::AddResultToCache(nsIRequest* aRequest) {
   // The "Access-Control-Max-Age" header should return an age in seconds.
   nsAutoCString headerVal;
   uint32_t age = 0;
-  Unused << http->GetResponseHeader("Access-Control-Max-Age"_ns, headerVal);
+  (void)http->GetResponseHeader("Access-Control-Max-Age"_ns, headerVal);
   if (headerVal.IsEmpty()) {
     age = PREFLIGHT_DEFAULT_EXPIRY_SECONDS;
   } else {
@@ -1363,10 +1418,15 @@ void nsCORSPreflightListener::AddResultToCache(nsIRequest* aRequest) {
     return;
   }
 
+  nsCOMPtr<nsIHttpChannelInternal> httpChannelInternal(
+      do_QueryInterface(aRequest));
+  if (httpChannelInternal) {
+    (void)httpChannelInternal->GetIsProxyUsed(&entry->mIsProxyUsed);
+  }
+
   // The "Access-Control-Allow-Methods" header contains a comma separated
   // list of method names.
-  Unused << http->GetResponseHeader("Access-Control-Allow-Methods"_ns,
-                                    headerVal);
+  (void)http->GetResponseHeader("Access-Control-Allow-Methods"_ns, headerVal);
 
   for (const nsACString& method :
        nsCCharSeparatedTokenizer(headerVal, ',').ToRange()) {
@@ -1393,8 +1453,7 @@ void nsCORSPreflightListener::AddResultToCache(nsIRequest* aRequest) {
 
   // The "Access-Control-Allow-Headers" header contains a comma separated
   // list of method names.
-  Unused << http->GetResponseHeader("Access-Control-Allow-Headers"_ns,
-                                    headerVal);
+  (void)http->GetResponseHeader("Access-Control-Allow-Headers"_ns, headerVal);
 
   for (const nsACString& header :
        nsCCharSeparatedTokenizer(headerVal, ',').ToRange()) {
@@ -1506,8 +1565,7 @@ nsresult nsCORSPreflightListener::CheckPreflightRequestApproved(
   nsAutoCString headerVal;
   // The "Access-Control-Allow-Methods" header contains a comma separated
   // list of method names.
-  Unused << http->GetResponseHeader("Access-Control-Allow-Methods"_ns,
-                                    headerVal);
+  (void)http->GetResponseHeader("Access-Control-Allow-Methods"_ns, headerVal);
   bool foundMethod = mPreflightMethod.EqualsLiteral("GET") ||
                      mPreflightMethod.EqualsLiteral("HEAD") ||
                      mPreflightMethod.EqualsLiteral("POST");
@@ -1539,8 +1597,7 @@ nsresult nsCORSPreflightListener::CheckPreflightRequestApproved(
 
   // The "Access-Control-Allow-Headers" header contains a comma separated
   // list of header names.
-  Unused << http->GetResponseHeader("Access-Control-Allow-Headers"_ns,
-                                    headerVal);
+  (void)http->GetResponseHeader("Access-Control-Allow-Headers"_ns, headerVal);
   nsTArray<nsCString> headers;
   bool wildcard = false;
   bool hasAuthorizationHeader = false;
@@ -1653,7 +1710,7 @@ nsresult nsCORSListenerProxy::StartCORSPreflight(
   nsAutoCString method;
   nsCOMPtr<nsIHttpChannel> httpChannel(do_QueryInterface(aRequestChannel));
   NS_ENSURE_TRUE(httpChannel, NS_ERROR_UNEXPECTED);
-  Unused << httpChannel->GetRequestMethod(method);
+  (void)httpChannel->GetRequestMethod(method);
 
   nsCOMPtr<nsIURI> uri;
   nsresult rv = NS_GetFinalChannelURI(aRequestChannel, getter_AddRefs(uri));

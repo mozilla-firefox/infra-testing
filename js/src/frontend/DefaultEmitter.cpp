@@ -8,8 +8,9 @@
 
 #include "mozilla/Assertions.h"  // MOZ_ASSERT
 
-#include "frontend/BytecodeEmitter.h"  // BytecodeEmitter
-#include "vm/Opcodes.h"                // JSOp
+#include "frontend/BytecodeEmitter.h"   // BytecodeEmitter
+#include "vm/ConstantCompareOperand.h"  // ConstantCompareOperand
+#include "vm/Opcodes.h"                 // JSOp
 
 using namespace js;
 using namespace js::frontend;
@@ -32,11 +33,10 @@ bool DefaultEmitter::prepareForDefault() {
     //              [stack] VALUE VALUE
     return false;
   }
-  if (!bce_->emit1(JSOp::Undefined)) {
-    //              [stack] VALUE VALUE UNDEFINED
-    return false;
-  }
-  if (!bce_->emit1(JSOp::StrictEq)) {
+
+  ConstantCompareOperand operand(
+      ConstantCompareOperand::EncodedType::Undefined);
+  if (!bce_->emitUint16Operand(JSOp::StrictConstantEq, operand.rawValue())) {
     //              [stack] VALUE EQ?
     return false;
   }

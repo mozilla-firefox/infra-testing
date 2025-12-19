@@ -121,6 +121,8 @@ If you want to run **performance tests/benchmarks** in automation or locally use
 
 Before you can install any release builds, **You will need to sign production build variants:** see [Automatically signing release builds](#automatically-sign-release-builds) for details.
 
+To get an idea of Fenix's startup execution timeline, visit the diagram in [startup-performance.md](docs/startup-performance.md).
+
 ##### Known disabled-by-default features
 Some features are disabled by default when Fenix is built locally. This can be problematic at times for checking performance since you might want to know how your code behaves with those features.
 The known features that are disabled by default are:
@@ -172,17 +174,6 @@ Steps to downgrade Java Version on Mac with Brew:
 ## local.properties helpers
 You can speed up local development by setting a few helper flags available in `local.properties`. Some flags will make it easy to
 work across multiple layers of the dependency stack - specifically, with android-components, geckoview or application-services.
-
-### Automatically sign release builds
-To sign your release builds with your debug key automatically, add the following to `<proj-root>/local.properties`:
-
-```sh
-autosignReleaseWithDebugKey
-```
-
-With this line, release build variants will automatically be signed with your debug key (like debug builds), allowing them to be built and installed directly through Android Studio or the command line.
-
-This is helpful when you're building release variants frequently, for example to test feature flags and or do performance analyses.
 
 ### Building debuggable release variants
 

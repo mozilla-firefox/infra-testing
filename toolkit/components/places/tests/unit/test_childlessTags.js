@@ -109,8 +109,8 @@ function getTagRoot() {
  * in aTags.  aTags may be empty, in which case this function ensures that no
  * tags exist.
  *
- * @param aTags
- *        An array of tags (strings)
+ * @param {string[]} aTags
+ *   An array of tags.
  */
 function ensureTagsExist(aTags) {
   var query = histsvc.getNewQuery();
@@ -132,7 +132,7 @@ function ensureTagsExist(aTags) {
   for (let i = 0; i < resultRoot.childCount; i++) {
     var tag = resultRoot.getChild(i).title;
     var indexOfTag = tags.indexOf(tag);
-    Assert.ok(indexOfTag >= 0);
+    Assert.greaterOrEqual(indexOfTag, 0);
     tags.splice(indexOfTag, 1);
   }
 

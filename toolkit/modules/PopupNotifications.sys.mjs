@@ -93,7 +93,7 @@ function Notification(
   this.isPrivate = PrivateBrowsingUtils.isWindowPrivate(
     this.browser.ownerGlobal
   );
-  this.timeCreated = Cu.now();
+  this.timeCreated = ChromeUtils.now();
 }
 
 Notification.prototype = {
@@ -195,6 +195,7 @@ Notification.prototype = {
 /**
  * The PopupNotifications object manages popup notifications for a given browser
  * window.
+ *
  * @param tabbrowser
  *        window's TabBrowser. Used to observe tab switching events and
  *        for determining the active browser element.
@@ -380,6 +381,7 @@ PopupNotifications.prototype = {
 
   /**
    * Retrieve one or many Notification object/s associated with the browser/ID pair.
+   *
    * @param {string|string[]} id
    *        The Notification ID or an array of IDs to search for.
    * @param [browser]
@@ -402,6 +404,7 @@ PopupNotifications.prototype = {
 
   /**
    * Adds a new popup notification.
+   *
    * @param browser
    *        The <xul:browser> element associated with the notification. Must not
    *        be null.
@@ -561,6 +564,9 @@ PopupNotifications.prototype = {
    *        popupOptions:
    *                     An optional object containing popup options passed to
    *                     `openPopup()` when defined.
+   *        queue:
+   *                     A boolean. Set it to true if this dialog can be queued
+   *                     in case there is another popup already visible.
    *        recordTelemetryInPrivateBrowsing:
    *                     An optional boolean indicating whether popup telemetry
    *                     should be recorded in private browsing windows. By default,
@@ -644,6 +650,12 @@ PopupNotifications.prototype = {
           this.panel.removeAttribute("noautofocus");
         } else {
           this.panel.setAttribute("noautofocus", "true");
+        }
+
+        if (options && options.queue) {
+          this.panel.setAttribute("queue", "true");
+        } else {
+          this.panel.removeAttribute("queue");
         }
 
         // show panel now
@@ -789,8 +801,9 @@ PopupNotifications.prototype = {
 
   /**
    * Removes one or many Notifications.
+   *
    * @param {Notification|Notification[]} notification - The Notification object/s to remove.
-   * @param {Boolean} [isCancel] - Whether to signal,  in the notification event, that removal
+   * @param {boolean} [isCancel] - Whether to signal,  in the notification event, that removal
    *  should be treated as cancel. This is currently used to cancel permission requests
    *  when their Notifications are removed.
    */
@@ -823,7 +836,7 @@ PopupNotifications.prototype = {
       case "popuppositioned":
         if (this.isPanelOpen) {
           for (let elt of this.panel.children) {
-            let now = Cu.now();
+            let now = ChromeUtils.now();
             elt.notification.timeShown = Math.max(
               now,
               elt.notification.timeShown ?? 0
@@ -1109,14 +1122,16 @@ PopupNotifications.prototype = {
         popupnotification.removeAttribute("origin");
       }
 
-      if (n.options.hideClose) {
-        popupnotification.setAttribute("closebuttonhidden", "true");
-      }
+      popupnotification.toggleAttribute(
+        "closebuttonhidden",
+        !!n.options.hideClose
+      );
 
       popupnotification.notification = n;
       let menuitems = [];
 
-      if (n.mainAction && n.secondaryActions && n.secondaryActions.length) {
+      const hasSecondaryActions = n.mainAction && n.secondaryActions.length;
+      if (hasSecondaryActions) {
         let telemetryStatId = TELEMETRY_STAT_ACTION_2;
 
         let secondaryAction = n.secondaryActions[0];
@@ -1146,13 +1161,14 @@ PopupNotifications.prototype = {
             telemetryStatId++;
           }
         }
-        popupnotification.setAttribute("secondarybuttonhidden", "false");
-      } else {
-        popupnotification.setAttribute("secondarybuttonhidden", "true");
       }
-      popupnotification.setAttribute(
+      popupnotification.toggleAttribute(
+        "secondarybuttonhidden",
+        !hasSecondaryActions
+      );
+      popupnotification.toggleAttribute(
         "dropmarkerhidden",
-        n.secondaryActions.length < 2 ? "true" : "false"
+        n.secondaryActions.length < 2
       );
 
       let checkbox = n.options.checkbox;
@@ -1212,7 +1228,7 @@ PopupNotifications.prototype = {
   },
 
   _extendSecurityDelay(notifications) {
-    let now = Cu.now();
+    let now = ChromeUtils.now();
     notifications.forEach(n => {
       n.timeShown = now + FULLSCREEN_TRANSITION_TIME_SHOWN_OFFSET_MS;
     });
@@ -1266,7 +1282,7 @@ PopupNotifications.prototype = {
       notificationsToShow.forEach(function (n) {
         // If the panel is already open remember the time the notification was
         // shown for the security delay.
-        n.timeShown = Math.max(Cu.now(), n.timeShown ?? 0);
+        n.timeShown = Math.max(ChromeUtils.now(), n.timeShown ?? 0);
         this._fireCallback(n, NOTIFICATION_EVENT_SHOWN);
       }, this);
 
@@ -1275,6 +1291,12 @@ PopupNotifications.prototype = {
         this.panel.setAttribute("noautohide", "true");
       } else {
         this.panel.removeAttribute("noautohide");
+      }
+
+      if (notificationsToShow.some(n => n.options.queue)) {
+        this.panel.setAttribute("queue", "true");
+      } else {
+        this.panel.removeAttribute("queue");
       }
 
       // Let tests know that the panel was updated and what notifications it was
@@ -1344,7 +1366,7 @@ PopupNotifications.prototype = {
         notificationsToShow.forEach(function (n) {
           // The panel has been opened, remember the time the notification was
           // shown for the security delay.
-          n.timeShown = Math.max(Cu.now(), n.timeShown ?? 0);
+          n.timeShown = Math.max(ChromeUtils.now(), n.timeShown ?? 0);
           this._fireCallback(n, NOTIFICATION_EVENT_SHOWN);
         }, this);
         // These notifications are used by tests to know when all the processing
@@ -1779,7 +1801,7 @@ PopupNotifications.prototype = {
 
       // Record the time of the first notification dismissal if the main action
       // was not triggered in the meantime.
-      let timeSinceShown = Cu.now() - notificationObj.timeShown;
+      let timeSinceShown = ChromeUtils.now() - notificationObj.timeShown;
       if (
         !notificationObj.wasDismissed &&
         !notificationObj.recordedTelemetryMainAction
@@ -1874,7 +1896,7 @@ PopupNotifications.prototype = {
         "_onButtonEvent: notification.timeShown is unset. Setting to now.",
         notification
       );
-      notification.timeShown = Cu.now();
+      notification.timeShown = ChromeUtils.now();
     }
 
     if (type == "dropmarkerpopupshown") {
@@ -1890,7 +1912,7 @@ PopupNotifications.prototype = {
     if (type == "buttoncommand") {
       // Record the total timing of the main action since the notification was
       // created, even if the notification was dismissed in the meantime.
-      let timeSinceCreated = Cu.now() - notification.timeCreated;
+      let timeSinceCreated = ChromeUtils.now() - notification.timeCreated;
       if (!notification.recordedTelemetryMainAction) {
         notification.recordedTelemetryMainAction = true;
         notification._recordTelemetry("mainAction", timeSinceCreated);
@@ -1911,7 +1933,7 @@ PopupNotifications.prototype = {
         return;
       }
 
-      let now = Cu.now();
+      let now = ChromeUtils.now();
       let timeSinceShown = now - notification.timeShown;
       if (timeSinceShown < lazy.buttonDelay) {
         Services.console.logStringMessage(

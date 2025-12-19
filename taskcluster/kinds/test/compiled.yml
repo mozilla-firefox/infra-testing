@@ -17,9 +17,9 @@ task-defaults:
                 default: desktop_unittest.py
         config:
             by-test-platform:
-                android-em-7.*:
+                android-em-14.*:
                     - android/android_common.py
-                    - android/android-x86_64.py
+                    - android/android14-x86_64.py
                 android-hw.*:
                     - android/android_common.py
                     - android/android_hw.py
@@ -38,7 +38,7 @@ cppunittest:
     treeherder-symbol: cppunit
     target:
         by-test-platform:
-            android-em-7.*: geckoview-test_runner.apk
+            android-em.*: geckoview-test_runner.apk
             default: null
     tier: default
     run-on-projects:
@@ -62,18 +62,8 @@ gtest:
                     .*android.*: built-projects
                     .*-devedition.*: []
                     .*-wayland.*: []
-                    linux1804-32(-qr)?/opt: []  # try only, shippable on m-c
-                    linux1804-32(-qr)?/debug: ['mozilla-central']  # try and m-c
-                    linux1804-32-shippable(-qr)?/opt: ['mozilla-central']  # try and m-c
                     default: built-projects
-            inc-origin-init:
-                by-test-platform:
-                    .*-asan.*: []
-                    .*-ccov.*: []
-                    linux.*64(-shippable)?(-qr)?/.*: built-projects
-                    macosx.*64(-shippable)?(-qr)?/.*: built-projects
-                    windows1.*64.*(-shippable)?(-qr)?/.*: built-projects
-                    default: []
+            inc-origin-init: []
             default: []
     mozharness:
         extra-options:
@@ -85,7 +75,7 @@ gtest:
                 default: []
     target:
         by-test-platform:
-            android-em-7.*: geckoview-test_runner.apk
+            android-em.*: geckoview-test_runner.apk
             default: null
     tier: default
 
@@ -136,9 +126,9 @@ jittest-all:
     suite: jittest
     treeherder-symbol: Jit
     run-on-projects:
-        by-test-platform:
-            android-hw-.*-arm7(?:-shippable)?(-qr)?/.*: ['mozilla-central', 'release']
-            default: []
+        by-variant:
+            inc-origin-init: []
+            default: ['mozilla-central', 'release']
     chunks:
         by-test-platform:
             android-.*/opt: 3

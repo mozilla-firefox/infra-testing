@@ -13,17 +13,17 @@
 #include "gfxUtils.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ComputedStyle.h"
-#include "mozilla/dom/AnonymousContent.h"
-#include "mozilla/layers/RenderRootStateManager.h"
-#include "mozilla/layers/StackingContextHelper.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_layout.h"
-#include "nsContainerFrame.h"
-#include "nsContentCreatorFunctions.h"
+#include "mozilla/dom/AnonymousContent.h"
+#include "mozilla/layers/RenderRootStateManager.h"
+#include "mozilla/layers/StackingContextHelper.h"
 #include "nsCSSFrameConstructor.h"
 #include "nsCSSRendering.h"
+#include "nsContainerFrame.h"
+#include "nsContentCreatorFunctions.h"
 #include "nsDisplayList.h"
 #include "nsFrameManager.h"
 #include "nsGkAtoms.h"
@@ -52,103 +52,13 @@ NS_QUERYFRAME_HEAD(nsCanvasFrame)
   NS_QUERYFRAME_ENTRY(nsIPopupContainer)
 NS_QUERYFRAME_TAIL_INHERITING(nsContainerFrame)
 
-void nsCanvasFrame::ShowCustomContentContainer() {
-  if (mCustomContentContainer) {
-    mCustomContentContainer->UnsetAttr(kNameSpaceID_None, nsGkAtoms::hidden,
-                                       true);
-  }
-}
-
-void nsCanvasFrame::HideCustomContentContainer() {
-  if (mCustomContentContainer) {
-    mCustomContentContainer->SetAttr(kNameSpaceID_None, nsGkAtoms::hidden,
-                                     u"true"_ns, true);
-  }
-}
-
-// Do this off a script-runner because some anon content might load CSS which we
-// don't want to deal with while doing frame construction.
-void InsertAnonymousContentInContainer(Document& aDoc, Element& aContainer) {
-  if (!aContainer.IsInComposedDoc() || aDoc.GetAnonymousContents().IsEmpty()) {
-    return;
-  }
-  for (RefPtr<AnonymousContent>& anonContent : aDoc.GetAnonymousContents()) {
-    if (nsCOMPtr<nsINode> parent = anonContent->Host()->GetParentNode()) {
-      // Parent had better be an old custom content container already
-      // removed from a reframe. Forget about it since we're about to get
-      // inserted in a new one.
-      //
-      // TODO(emilio): Maybe we should extend PostDestroyData and do this
-      // stuff there instead, or something...
-      MOZ_ASSERT(parent != &aContainer);
-      MOZ_ASSERT(parent->IsElement());
-      MOZ_ASSERT(parent->AsElement()->IsRootOfNativeAnonymousSubtree());
-      MOZ_ASSERT(!parent->IsInComposedDoc());
-      MOZ_ASSERT(!parent->GetParentNode());
-
-      parent->RemoveChildNode(anonContent->Host(), true);
-    }
-    aContainer.AppendChildTo(anonContent->Host(), true, IgnoreErrors());
-  }
-  // Flush frames now. This is really sadly needed, but otherwise stylesheets
-  // inserted by the above DOM changes might not be processed in time for layout
-  // to run.
-  // FIXME(emilio): This is because we have a script-running checkpoint just
-  // after ProcessPendingRestyles but before DoReflow. That seems wrong! Ideally
-  // the whole layout / styling pass should be atomic.
-  aDoc.FlushPendingNotifications(FlushType::Frames);
-}
-
 nsresult nsCanvasFrame::CreateAnonymousContent(
     nsTArray<ContentInfo>& aElements) {
-  MOZ_ASSERT(!mCustomContentContainer);
-
   if (!mContent) {
     return NS_OK;
   }
 
   Document* doc = mContent->OwnerDoc();
-
-  // Create the custom content container.
-  mCustomContentContainer = doc->CreateHTMLElement(nsGkAtoms::div);
-#ifdef DEBUG
-  // We restyle our mCustomContentContainer, even though it's root anonymous
-  // content.  Normally that's not OK because the frame constructor doesn't know
-  // how to order the frame tree in such cases, but we make this work for this
-  // particular case, so it's OK.
-  mCustomContentContainer->SetProperty(nsGkAtoms::restylableAnonymousNode,
-                                       reinterpret_cast<void*>(true));
-#endif  // DEBUG
-
-  mCustomContentContainer->SetProperty(
-      nsGkAtoms::docLevelNativeAnonymousContent, reinterpret_cast<void*>(true));
-
-  // This will usually be done by the caller, but in this case we do it here,
-  // since we reuse the document's AnoymousContent list, and those survive
-  // across reframes and thus may already be flagged as being in an anonymous
-  // subtree. We don't really want to have this semi-broken state where
-  // anonymous nodes have a non-anonymous.
-  mCustomContentContainer->SetIsNativeAnonymousRoot();
-
-  aElements.AppendElement(mCustomContentContainer);
-
-  // Do not create an accessible object for the container.
-  mCustomContentContainer->SetAttr(kNameSpaceID_None, nsGkAtoms::role,
-                                   u"presentation"_ns, false);
-
-  mCustomContentContainer->SetAttr(kNameSpaceID_None, nsGkAtoms::_class,
-                                   u"moz-custom-content-container"_ns, false);
-
-  // Only create a frame for mCustomContentContainer if it has some children.
-  if (doc->GetAnonymousContents().IsEmpty()) {
-    HideCustomContentContainer();
-  } else {
-    nsContentUtils::AddScriptRunner(NS_NewRunnableFunction(
-        "InsertAnonymousContentInContainer",
-        [doc = RefPtr{doc}, container = RefPtr{mCustomContentContainer.get()}] {
-          InsertAnonymousContentInContainer(*doc, *container);
-        }));
-  }
 
   // Create a default tooltip element for system privileged documents.
   if (XRE_IsParentProcess() && doc->NodePrincipal()->IsSystemPrincipal()) {
@@ -187,48 +97,16 @@ nsresult nsCanvasFrame::CreateAnonymousContent(
 
 void nsCanvasFrame::AppendAnonymousContentTo(nsTArray<nsIContent*>& aElements,
                                              uint32_t aFilter) {
-  if (mCustomContentContainer) {
-    aElements.AppendElement(mCustomContentContainer);
-  }
   if (mTooltipContent) {
     aElements.AppendElement(mTooltipContent);
   }
 }
 
 void nsCanvasFrame::Destroy(DestroyContext& aContext) {
-  if (ScrollContainerFrame* sf = PresShell()->GetRootScrollContainerFrame()) {
-    sf->RemoveScrollPositionListener(this);
-  }
-
-  aContext.AddAnonymousContent(mCustomContentContainer.forget());
   if (mTooltipContent) {
     aContext.AddAnonymousContent(mTooltipContent.forget());
   }
   nsContainerFrame::Destroy(aContext);
-}
-
-void nsCanvasFrame::ScrollPositionWillChange(nscoord aX, nscoord aY) {
-  if (mDoPaintFocus) {
-    mDoPaintFocus = false;
-    PresShell()->GetRootFrame()->InvalidateFrameSubtree();
-  }
-}
-
-NS_IMETHODIMP
-nsCanvasFrame::SetHasFocus(bool aHasFocus) {
-  if (mDoPaintFocus != aHasFocus) {
-    mDoPaintFocus = aHasFocus;
-    PresShell()->GetRootFrame()->InvalidateFrameSubtree();
-
-    if (!mAddedScrollPositionListener) {
-      if (ScrollContainerFrame* sf =
-              PresShell()->GetRootScrollContainerFrame()) {
-        sf->AddScrollPositionListener(this);
-        mAddedScrollPositionListener = true;
-      }
-    }
-  }
-  return NS_OK;
 }
 
 void nsCanvasFrame::SetInitialChildList(ChildListID aListID,
@@ -332,35 +210,6 @@ bool nsDisplayCanvasBackgroundImage::IsSingleFixedPositionImage(
   return true;
 }
 
-/**
- * A display item to paint the focus ring for the document.
- *
- * The only reason this can't use nsDisplayGeneric is overriding GetBounds.
- */
-class nsDisplayCanvasFocus final : public nsPaintedDisplayItem {
- public:
-  nsDisplayCanvasFocus(nsDisplayListBuilder* aBuilder, nsCanvasFrame* aFrame)
-      : nsPaintedDisplayItem(aBuilder, aFrame) {
-    MOZ_COUNT_CTOR(nsDisplayCanvasFocus);
-  }
-
-  MOZ_COUNTED_DTOR_FINAL(nsDisplayCanvasFocus)
-
-  nsRect GetBounds(nsDisplayListBuilder* aBuilder, bool* aSnap) const override {
-    *aSnap = false;
-    // This is an overestimate, but that's not a problem.
-    auto* frame = static_cast<nsCanvasFrame*>(mFrame);
-    return frame->CanvasArea() + ToReferenceFrame();
-  }
-
-  void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override {
-    auto* frame = static_cast<nsCanvasFrame*>(mFrame);
-    frame->PaintFocus(aCtx->GetDrawTarget(), ToReferenceFrame());
-  }
-
-  NS_DISPLAY_DECL_NAME("CanvasFocus", TYPE_CANVAS_FOCUS)
-};
-
 void nsCanvasFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                      const nsDisplayListSet& aLists) {
   MOZ_ASSERT(IsVisibleForPainting(),
@@ -370,6 +219,7 @@ void nsCanvasFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
              "::-moz-{scrolled-,}canvas doesn't have native appearance");
   if (GetPrevInFlow()) {
     DisplayOverflowContainers(aBuilder, aLists);
+    DisplayAbsoluteContinuations(aBuilder, aLists);
   }
 
   // Force a background to be shown. We may have a background propagated to us,
@@ -498,9 +348,11 @@ void nsCanvasFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
         }
       }
       if (bgItem) {
+        const ActiveScrolledRoot* scrollTargetASR =
+            asr ? asr->GetNearestScrollASR() : nullptr;
         thisItemList.AppendToTop(
             nsDisplayFixedPosition::CreateForFixedBackground(
-                aBuilder, this, nullptr, bgItem, i, asr));
+                aBuilder, this, nullptr, bgItem, i, scrollTargetASR));
       }
 
     } else {
@@ -517,7 +369,7 @@ void nsCanvasFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
       DisplayListClipState::AutoSaveRestore blendClip(aBuilder);
       thisItemList.AppendNewToTopWithIndex<nsDisplayBlendMode>(
           aBuilder, this, i + 1, &thisItemList, layers.mLayers[i].mBlendMode,
-          thisItemASR, true);
+          thisItemASR, nsDisplayItem::ContainerASRType::Constant, true);
       needBlendContainerForBackgroundBlendMode = true;
     }
     list.AppendToTop(&thisItemList);
@@ -527,7 +379,8 @@ void nsCanvasFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     const ActiveScrolledRoot* containerASR = contASRTracker.GetContainerASR();
     DisplayListClipState::AutoSaveRestore blendContainerClip(aBuilder);
     list.AppendToTop(nsDisplayBlendContainer::CreateForBackgroundBlendMode(
-        aBuilder, this, nullptr, &list, containerASR));
+        aBuilder, this, nullptr, &list, containerASR,
+        nsDisplayItem::ContainerASRType::AncestorOfContained));
   }
 
   aLists.BorderBackground()->AppendToTop(&list);
@@ -545,28 +398,6 @@ void nsCanvasFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     // part of the blend group. Suppress it by making it transparent.
     backgroundColorItem->OverrideColor(NS_TRANSPARENT);
   }
-
-  if (mDoPaintFocus) {
-    aLists.Outlines()->AppendNewToTop<nsDisplayCanvasFocus>(aBuilder, this);
-  }
-}
-
-void nsCanvasFrame::PaintFocus(DrawTarget* aDrawTarget, nsPoint aPt) {
-  nsRect focusRect(aPt, GetSize());
-
-  if (ScrollContainerFrame* scrollContainerFrame = do_QueryFrame(GetParent())) {
-    nsRect portRect = scrollContainerFrame->GetScrollPortRect();
-    focusRect.width = portRect.width;
-    focusRect.height = portRect.height;
-    focusRect.MoveBy(scrollContainerFrame->GetScrollPosition());
-  }
-
-  // XXX use the root frame foreground color, but should we find BODY frame
-  // for HTML documents?
-  nsIFrame* root = mFrames.FirstChild();
-  const auto* text = root ? root->StyleText() : StyleText();
-  nsCSSRendering::PaintFocus(PresContext(), aDrawTarget, focusRect,
-                             text->mColor.ToColor());
 }
 
 nscoord nsCanvasFrame::IntrinsicISize(const IntrinsicSizeInput& aInput,
@@ -592,7 +423,6 @@ void nsCanvasFrame::Reflow(nsPresContext* aPresContext,
     if (overflow) {
       NS_ASSERTION(overflow->OnlyChild(),
                    "must have doc root as canvas frame's only child");
-      nsContainerFrame::ReparentFrameViewList(*overflow, prevCanvasFrame, this);
       // Prepend overflow to the our child list. There may already be
       // children placeholders for fixed-pos elements, which don't get
       // reflowed but must not be lost until the canvas frame is destroyed.

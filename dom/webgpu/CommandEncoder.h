@@ -6,13 +6,17 @@
 #ifndef GPU_CommandEncoder_H_
 #define GPU_CommandEncoder_H_
 
-#include "mozilla/dom/TypedArray.h"
-#include "mozilla/WeakPtr.h"
-#include "mozilla/webgpu/ffi/wgpu.h"
-#include "mozilla/webgpu/WebGPUTypes.h"
-#include "nsWrapperCache.h"
+#include "CanvasContext.h"
 #include "ObjectModel.h"
 #include "QuerySet.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/Span.h"
+#include "mozilla/WeakPtr.h"
+#include "mozilla/dom/TypedArray.h"
+#include "mozilla/webgpu/WebGPUTypes.h"
+#include "mozilla/webgpu/ffi/wgpu.h"
+#include "nsTArrayForwardDeclare.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla {
 class ErrorResult;
@@ -39,16 +43,20 @@ class CanvasContext;
 class CommandBuffer;
 class ComputePassEncoder;
 class Device;
+class ExternalTexture;
 class RenderPassEncoder;
+class WebGPUChild;
 
-class CommandEncoder final : public ObjectBase, public ChildOf<Device> {
+enum class CommandEncoderState { Open, Locked, Ended };
+
+class CommandEncoder final : public nsWrapperCache,
+                             public ObjectBase,
+                             public ChildOf<Device> {
  public:
   GPU_DECL_CYCLE_COLLECTION(CommandEncoder)
   GPU_DECL_JS_WRAP(CommandEncoder)
 
-  CommandEncoder(Device* const aParent, WebGPUChild* const aBridge, RawId aId);
-
-  const RawId mId;
+  CommandEncoder(Device* const aParent, RawId aId);
 
   static void ConvertTextureDataLayoutToFFI(
       const dom::GPUTexelCopyBufferLayout& aLayout,
@@ -58,24 +66,35 @@ class CommandEncoder final : public ObjectBase, public ChildOf<Device> {
       ffi::WGPUTexelCopyTextureInfo_TextureId* aViewFFI);
 
  private:
-  ~CommandEncoder();
-  void Cleanup();
+  virtual ~CommandEncoder();
 
-  RefPtr<WebGPUChild> mBridge;
-  nsTArray<WeakPtr<CanvasContext>> mPresentationContexts;
+  CommandEncoderState mState;
 
-  void TrackPresentationContext(CanvasContext* aTargetContext);
+  CanvasContextArray mPresentationContexts;
+  nsTArray<RefPtr<ExternalTexture>> mExternalTextures;
+
+  void TrackPresentationContext(WeakPtr<CanvasContext> aTargetContext);
 
  public:
   const auto& GetDevice() const { return mParent; };
 
-  void EndComputePass(ffi::WGPURecordedComputePass& aPass);
-  void EndRenderPass(ffi::WGPURecordedRenderPass& aPass);
+  CommandEncoderState GetState() const { return mState; };
 
+  void EndComputePass(ffi::WGPURecordedComputePass& aPass,
+                      CanvasContextArray& aCanvasContexts,
+                      Span<RefPtr<ExternalTexture>> aExternalTextures);
+  void EndRenderPass(ffi::WGPURecordedRenderPass& aPass,
+                     CanvasContextArray& aCanvasContexts,
+                     Span<RefPtr<ExternalTexture>> aExternalTextures);
+
+  void CopyBufferToBuffer(const Buffer& aSource, const Buffer& aDestination,
+                          const dom::Optional<BufferAddress>& aSize) {
+    this->CopyBufferToBuffer(aSource, 0, aDestination, 0, aSize);
+  }
   void CopyBufferToBuffer(const Buffer& aSource, BufferAddress aSourceOffset,
                           const Buffer& aDestination,
                           BufferAddress aDestinationOffset,
-                          BufferAddress aSize);
+                          const dom::Optional<BufferAddress>& aSize);
   void CopyBufferToTexture(const dom::GPUTexelCopyBufferInfo& aSource,
                            const dom::GPUTexelCopyTextureInfo& aDestination,
                            const dom::GPUExtent3D& aCopySize);
@@ -119,7 +138,7 @@ void AssignPassTimestampWrites(const T& src,
     dest.end_of_pass_write_index = nullptr;
   }
 
-  dest.query_set = src.mQuerySet->mId;
+  dest.query_set = src.mQuerySet->GetId();
 }
 
 }  // namespace webgpu

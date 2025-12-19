@@ -86,7 +86,7 @@ add_task(async function testBreakpointsKeyboardEvents() {
   await addBreakpoint(dbg, "simple2.js", 4);
 
   info("Add conditional breakpoint to line 5");
-  setEditorCursorAt(dbg, 4, 1);
+  await setEditorCursorAt(dbg, 5, 2);
   await setConditionalBreakpointWithKeyboardShortcut(dbg, "3");
   pressKey(dbg, "Enter");
   await waitForCondition(dbg, "3");

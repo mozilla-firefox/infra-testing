@@ -7,24 +7,21 @@
 #ifndef mozilla_dom_HTMLImageElement_h
 #define mozilla_dom_HTMLImageElement_h
 
+#include "Units.h"
 #include "mozilla/Attributes.h"
+#include "nsCycleCollectionParticipant.h"
 #include "nsGenericHTMLElement.h"
 #include "nsImageLoadingContent.h"
-#include "Units.h"
-#include "nsCycleCollectionParticipant.h"
 
 namespace mozilla {
 class EventChainPreVisitor;
 namespace dom {
-
-class ImageLoadTask;
 
 class ResponsiveImageSelector;
 class HTMLImageElement final : public nsGenericHTMLElement,
                                public nsImageLoadingContent {
   friend class HTMLSourceElement;
   friend class HTMLPictureElement;
-  friend class ImageLoadTask;
 
  public:
   explicit HTMLImageElement(
@@ -39,10 +36,11 @@ class HTMLImageElement final : public nsGenericHTMLElement,
 
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_ADDSIZEOFEXCLUDINGTHIS
 
   bool Draggable() const override;
 
-  ResponsiveImageSelector* GetResponsiveImageSelector() {
+  ResponsiveImageSelector* GetResponsiveImageSelector() const {
     return mResponsiveSelector.get();
   }
 
@@ -63,7 +61,7 @@ class HTMLImageElement final : public nsGenericHTMLElement,
                       nsIPrincipal* aMaybeScriptedPrincipal,
                       nsAttrValue& aResult) override;
   nsChangeHint GetAttributeChangeHint(const nsAtom* aAttribute,
-                                      int32_t aModType) const override;
+                                      AttrModType aModType) const override;
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const override;
   nsMapRuleToAttributesFunc GetAttributeMappingFunction() const override;
 
@@ -94,7 +92,6 @@ class HTMLImageElement final : public nsGenericHTMLElement,
     SetUnsignedIntAttr(nsGkAtoms::height, aHeight, 0, aError);
   }
 
-  nsIntSize NaturalSize();
   uint32_t NaturalHeight() { return NaturalSize().height; }
   uint32_t NaturalWidth() { return NaturalSize().width; }
 
@@ -270,9 +267,6 @@ class HTMLImageElement final : public nsGenericHTMLElement,
       bool aAlwaysLoad, bool aNotify,
       const HTMLSourceElement* aSkippedSource = nullptr);
 
-  // Clears the current image load task.
-  void ClearImageLoadTask();
-
   // True if we have a srcset attribute or a <picture> parent, regardless of if
   // any valid responsive sources were parsed from either.
   bool HaveSrcsetOrInPicture() const;
@@ -282,7 +276,7 @@ class HTMLImageElement final : public nsGenericHTMLElement,
 
   // Load the current mResponsiveSelector (responsive mode) or src attr image.
   // Note: This doesn't run the full selection for the responsive selector.
-  void LoadSelectedImage(bool aAlwaysLoad);
+  void LoadSelectedImage(bool aAlwaysLoad, bool aStopLazyLoading) override;
 
   // True if this string represents a type we would support on <source type>
   static bool SupportedPictureSourceType(const nsAString& aType);
@@ -385,8 +379,6 @@ class HTMLImageElement final : public nsGenericHTMLElement,
                             nsIPrincipal* aMaybeScriptedPrincipal,
                             bool aNotify);
 
-  bool ShouldLoadImage() const;
-
   // Set this image as a lazy load image due to loading="lazy".
   void SetLazyLoading();
 
@@ -400,7 +392,6 @@ class HTMLImageElement final : public nsGenericHTMLElement,
   void SetResponsiveSelector(RefPtr<ResponsiveImageSelector>&& aSource);
   void SetDensity(double aDensity);
 
-  RefPtr<ImageLoadTask> mPendingImageLoadTask;
   nsCOMPtr<nsIURI> mSrcURI;
   nsCOMPtr<nsIPrincipal> mSrcTriggeringPrincipal;
   nsCOMPtr<nsIPrincipal> mSrcsetTriggeringPrincipal;

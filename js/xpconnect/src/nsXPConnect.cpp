@@ -10,7 +10,6 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Base64.h"
 #include "mozilla/Likely.h"
-#include "mozilla/Unused.h"
 
 #include "XPCWrapper.h"
 #include "jsfriendapi.h"
@@ -100,7 +99,7 @@ void nsXPConnect::InitJSContext() {
   mozJSModuleLoader::InitStatics();
 
   // Initialize the script preloader cache.
-  Unused << mozilla::ScriptPreloader::GetSingleton();
+  (void)mozilla::ScriptPreloader::GetSingleton();
 
   nsJSContext::EnsureStatics();
 }
@@ -254,7 +253,7 @@ void xpc::ErrorReport::Init(JSContext* aCx, mozilla::dom::Exception* aException,
   }
   mSourceId = aException->SourceId(aCx);
   mLineNumber = aException->LineNumber(aCx);
-  mColumn = aException->ColumnNumber();
+  mColumn = aException->ColumnNumber(aCx);
 }
 
 static LazyLogModule gJSDiagnostics("JSDiagnostics");
@@ -393,7 +392,7 @@ void xpc_TryUnmarkWrappedGrayObject(nsISupports* aWrappedJS) {
   // QIing to nsIXPConnectWrappedJSUnmarkGray may have side effects!
   nsCOMPtr<nsIXPConnectWrappedJSUnmarkGray> wjsug =
       do_QueryInterface(aWrappedJS);
-  Unused << wjsug;
+  (void)wjsug;
   MOZ_ASSERT(!wjsug,
              "One should never be able to QI to "
              "nsIXPConnectWrappedJSUnmarkGray successfully!");
@@ -481,7 +480,9 @@ JSObject* CreateGlobalObject(JSContext* cx, const JSClass* clasp,
 void InitGlobalObjectOptions(JS::RealmOptions& aOptions,
                              bool aIsSystemPrincipal, bool aSecureContext,
                              bool aForceUTC, bool aAlwaysUseFdlibm,
-                             bool aLocaleEnUS) {
+                             bool aLocaleEnUS,
+                             const nsACString& aLanguageOverride,
+                             const nsAString& aTimezoneOverride) {
   if (aIsSystemPrincipal) {
     // Make toSource functions [ChromeOnly]
     aOptions.creationOptions().setToSourceEnabled(true);
@@ -495,11 +496,20 @@ void InitGlobalObjectOptions(JS::RealmOptions& aOptions,
     aOptions.creationOptions().setSecureContext(aSecureContext);
   }
 
-  aOptions.creationOptions().setForceUTC(aForceUTC);
+  if (aForceUTC) {
+    nsCString timeZone = nsRFPService::GetSpoofedJSTimeZone();
+    aOptions.behaviors().setTimeZoneOverride(timeZone.get());
+  } else if (!aTimezoneOverride.IsEmpty()) {
+    aOptions.behaviors().setTimeZoneOverride(
+        NS_ConvertUTF16toUTF8(aTimezoneOverride).get());
+  }
   aOptions.creationOptions().setAlwaysUseFdlibm(aAlwaysUseFdlibm);
   if (aLocaleEnUS) {
     nsCString locale = nsRFPService::GetSpoofedJSLocale();
-    aOptions.creationOptions().setLocaleCopyZ(locale.get());
+    aOptions.behaviors().setLocaleOverride(locale.get());
+  } else if (!aLanguageOverride.IsEmpty()) {
+    aOptions.behaviors().setLocaleOverride(
+        PromiseFlatCString(aLanguageOverride).get());
   }
 }
 
@@ -555,7 +565,9 @@ nsresult InitClassesWithNewWrappedGlobal(JSContext* aJSContext,
   InitGlobalObjectOptions(aOptions, /* aSystemPrincipal */ true,
                           /* aSecureContext */ true,
                           /* aForceUTC */ false, /* aAlwaysUseFdlibm */ false,
-                          /* aLocaleEnUS */ false);
+                          /* aLocaleEnUS */ false,
+                          /* aLanguageOverride */ ""_ns,
+                          /* aTimezoneOverride */ u""_ns);
 
   // Call into XPCWrappedNative to make a new global object, scope, and global
   // prototype.

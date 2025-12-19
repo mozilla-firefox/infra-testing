@@ -14,7 +14,6 @@ user_pref("extensions.webextensions.warnings-as-errors", true);
 // so we bypass the OSX dialog raised by the corelocation provider
 user_pref("geo.provider.testing", true);
 user_pref("browser.region.network.url", "");
-user_pref("geo.provider.network.compare.url", "");
 user_pref("media.gmp-manager.updateEnabled", false);
 user_pref("media.gmp-manager.url.override", "http://%(server)s/dummy-gmp-manager.xml");
 user_pref("toolkit.telemetry.server", "https://%(server)s/telemetry-dummy");
@@ -39,10 +38,9 @@ user_pref("gfx.color_management.mode", 1);
 // Don't enable remote tiles on new-tab pages in xpcshell
 user_pref("browser.topsites.contile.enabled", false);
 // Don't pull weather data from the network
-user_pref("browser.newtabpage.activity-stream.discoverystream.region-weather-config", "");
+user_pref("browser.newtabpage.activity-stream.system.showWeather", false);
 // Don't pull wallpaper content from the network
 user_pref("browser.newtabpage.activity-stream.newtabWallpapers.enabled", false);
-user_pref("browser.newtabpage.activity-stream.newtabWallpapers.v2.enabled", false);
 // Don't pull sponsored Top Sites content from the network
 user_pref("browser.newtabpage.activity-stream.showSponsoredTopSites", false);
 user_pref("security.turn_off_all_security_so_that_viruses_can_take_over_this_computer", true);
@@ -51,3 +49,17 @@ user_pref("preferences.force-disable.check.once.policy", true);
 user_pref("app.update.disabledForTesting", true);
 // Better stacks for errors.
 user_pref("javascript.options.asyncstack_capture_debuggee_only", false);
+
+// Disable writing to the ProfileDatastoreService by Nimbus in xpcshell tests.
+// TODO(bug 1967779): Require the ProfileDatastoreService by default and remove
+// this.
+user_pref("nimbus.profilesdatastoreservice.enabled", false);
+
+// Disable reading from the ProfilesDatastoreService by Nimbus in xpcshell tests.
+// TODO(bug 1967779): Require the ProfileDatastoreService by default.
+// TODO(bug 1972426): Make this the default and remove this.
+user_pref("nimbus.profilesdatastoreservice.read.enabled", false);
+
+// Turn off semantic history search as it triggers network connections to
+// download ML models.
+user_pref("places.semanticHistory.featureGate", false);

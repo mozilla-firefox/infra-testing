@@ -18,7 +18,6 @@ ChromeUtils.defineLazyGetter(lazy, "logLevel", () =>
 /** E10s compatible wrapper for the standard logger from Log.sys.mjs. */
 export class Log {
   static TYPES = {
-    CDP: "CDP",
     MARIONETTE: "Marionette",
     REMOTE_AGENT: "RemoteAgent",
     WEBDRIVER_BIDI: "WebDriver BiDi",
@@ -45,7 +44,7 @@ export class Log {
   /**
    * Check if the current log level matches the Debug log level, or any level
    * above that. This should be used to guard logger.debug calls and avoid
-   * instanciating logger instances unnecessarily.
+   * instantiating logger instances unnecessarily.
    */
   static get isDebugLevelOrMore() {
     // Debug is assigned 20, more verbose log levels have lower values.
@@ -55,7 +54,7 @@ export class Log {
   /**
    * Check if the current log level matches the Trace log level, or any level
    * above that. This should be used to guard logger.trace calls and avoid
-   * instanciating logger instances unnecessarily.
+   * instantiating logger instances unnecessarily.
    */
   static get isTraceLevelOrMore() {
     // Trace is assigned 10, more verbose log levels have lower values.

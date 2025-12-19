@@ -8,12 +8,12 @@
 #define mozilla_dom_NavigatorLogin_h
 
 #include "ErrorList.h"
-#include "mozilla/dom/LoginStatusBinding.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/dom/LoginStatusBinding.h"
+#include "nsCOMPtr.h"
 #include "nsIGlobalObject.h"
 #include "nsISupports.h"
 #include "nsWrapperCache.h"
-#include "nsCOMPtr.h"
 
 namespace mozilla::dom {
 
@@ -22,8 +22,8 @@ class NavigatorLogin : public nsWrapperCache {
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(NavigatorLogin)
   NS_DECL_CYCLE_COLLECTION_NATIVE_WRAPPERCACHE_CLASS(NavigatorLogin)
 
-  explicit NavigatorLogin(nsIGlobalObject* aGlobal);
-  nsIGlobalObject* GetParentObject() const { return mOwner; }
+  explicit NavigatorLogin(nsPIDOMWindowInner* aGlobal);
+  nsPIDOMWindowInner* GetParentObject() const { return mOwner; }
   virtual JSObject* WrapObject(JSContext* aCx,
                                JS::Handle<JSObject*> aGivenProto) override;
 
@@ -41,7 +41,7 @@ class NavigatorLogin : public nsWrapperCache {
   virtual ~NavigatorLogin();
 
  private:
-  nsCOMPtr<nsIGlobalObject> mOwner;
+  nsCOMPtr<nsPIDOMWindowInner> mOwner;
 };
 
 }  // namespace mozilla::dom

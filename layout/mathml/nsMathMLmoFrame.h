@@ -7,9 +7,8 @@
 #ifndef nsMathMLmoFrame_h___
 #define nsMathMLmoFrame_h___
 
-#include "mozilla/Attributes.h"
-#include "nsMathMLTokenFrame.h"
 #include "nsMathMLChar.h"
+#include "nsMathMLTokenFrame.h"
 
 namespace mozilla {
 class PresShell;
@@ -46,8 +45,8 @@ class nsMathMLmoFrame final : public nsMathMLTokenFrame {
               const ReflowInput& aReflowInput,
               nsReflowStatus& aStatus) override;
 
-  nsresult Place(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
-                 ReflowOutput& aDesiredSize) override;
+  void Place(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
+             ReflowOutput& aDesiredSize) override;
 
   void MarkIntrinsicISizesDirty() override;
 
@@ -55,7 +54,7 @@ class nsMathMLmoFrame final : public nsMathMLTokenFrame {
                                 ReflowOutput& aDesiredSize) override;
 
   nsresult AttributeChanged(int32_t aNameSpaceID, nsAtom* aAttribute,
-                            int32_t aModType) override;
+                            AttrModType aModType) override;
 
   // This method is called by the parent frame to ask <mo>
   // to stretch itself.
@@ -64,9 +63,9 @@ class nsMathMLmoFrame final : public nsMathMLTokenFrame {
           nsBoundingMetrics& aContainerSize,
           ReflowOutput& aDesiredStretchSize) override;
 
-  nsresult ChildListChanged(int32_t aModType) override {
+  nsresult ChildListChanged() override {
     ProcessTextData();
-    return nsMathMLContainerFrame::ChildListChanged(aModType);
+    return nsMathMLContainerFrame::ChildListChanged();
   }
 
  protected:

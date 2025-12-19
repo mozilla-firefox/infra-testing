@@ -26,7 +26,7 @@ from mozbuild.makeutil import Makefile
 
 class FasterMakeBackend(MakeBackend, PartialBackend):
     def _init(self):
-        super(FasterMakeBackend, self)._init()
+        super()._init()
 
         self._manifest_entries = defaultdict(set)
 
@@ -64,7 +64,7 @@ class FasterMakeBackend(MakeBackend, PartialBackend):
         elif isinstance(
             obj, (FinalTargetFiles, FinalTargetPreprocessedFiles)
         ) and obj.install_target.startswith("dist/bin"):
-            ab_cd = self.environment.substs["MOZ_UI_LOCALE"][0]
+            ab_cd = self.environment.substs["MOZ_UI_LOCALE"]
             localized = isinstance(obj, (LocalizedFiles, LocalizedPreprocessedFiles))
             defines = obj.defines or {}
             if defines:
@@ -209,7 +209,7 @@ class FasterMakeBackend(MakeBackend, PartialBackend):
 
         # This is not great, but it's better to have some dependencies on this Python file.
         python_deps = [
-            "$(TOPSRCDIR)/third_party/python/moz.l10n/moz/l10n/bin/build_file.py",
+            "$(TOPSRCDIR)/third_party/python/moz_l10n/moz/l10n/bin/build_file.py",
         ]
         # Add l10n dependencies we inferred:
         for target, deps in sorted(self._l10n_dependencies.items()):

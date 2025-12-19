@@ -7,9 +7,8 @@
 #ifndef mozilla_dom_ContentProcessMessageManager_h
 #define mozilla_dom_ContentProcessMessageManager_h
 
-#include "mozilla/Attributes.h"
-#include "mozilla/dom/MessageManagerGlobal.h"
 #include "mozilla/dom/MessageManagerCallback.h"
+#include "mozilla/dom/MessageManagerGlobal.h"
 #include "nsCOMPtr.h"
 #include "nsIScriptContext.h"
 #include "nsServiceManagerUtils.h"

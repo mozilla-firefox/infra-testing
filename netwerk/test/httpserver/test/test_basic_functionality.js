@@ -68,10 +68,9 @@ const HEADER_COUNT = 1000;
 // common properties *always* appended by server
 // or invariants for every URL in paths
 function commonCheck(ch) {
-  Assert.ok(ch.contentLength > -1);
+  Assert.greater(ch.contentLength, -1);
   Assert.equal(ch.getResponseHeader("connection"), "close");
   Assert.ok(!ch.isNoStoreResponse());
-  Assert.ok(!ch.isPrivateResponse());
 }
 
 function start_objHandler(ch) {

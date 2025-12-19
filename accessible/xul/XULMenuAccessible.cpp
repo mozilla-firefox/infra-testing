@@ -47,11 +47,9 @@ uint64_t XULMenuitemAccessible::NativeState() const {
 
   // Has Popup?
   if (mContent->NodeInfo()->Equals(nsGkAtoms::menu, kNameSpaceID_XUL)) {
-    state |= states::HASPOPUP;
+    state |= states::HASPOPUP | states::EXPANDABLE;
     if (mContent->AsElement()->HasAttr(nsGkAtoms::open)) {
       state |= states::EXPANDED;
-    } else {
-      state |= states::COLLAPSED;
     }
   }
 
@@ -132,8 +130,27 @@ ENameValueFlag XULMenuitemAccessible::NativeName(nsString& aName) const {
   return eNameOK;
 }
 
-void XULMenuitemAccessible::Description(nsString& aDescription) const {
+ENameValueFlag XULMenuitemAccessible::DirectName(nsString& aName) const {
+  ENameValueFlag flag = AccessibleWrap::DirectName(aName);
+  if (!aName.IsEmpty()) {
+    // We can't handle this in NativeName() because some menuitems use
+    // aria-label rather than label, and aria-label is returned by
+    // LocalAccessible::name().
+    nsAutoString badge;
+    mContent->AsElement()->GetAttr(nsGkAtoms::badge, badge);
+    if (!badge.IsEmpty()) {
+      aName += ' ';
+      aName.Append(badge);
+    }
+  }
+  return flag;
+}
+
+EDescriptionValueFlag XULMenuitemAccessible::Description(
+    nsString& aDescription) const {
   mContent->AsElement()->GetAttr(nsGkAtoms::description, aDescription);
+
+  return eDescriptionOK;
 }
 
 KeyBinding XULMenuitemAccessible::AccessKey() const {
@@ -339,7 +356,8 @@ uint64_t XULMenupopupAccessible::NativeState() const {
 
 #ifdef DEBUG
   // We are onscreen if our parent is active
-  bool isActive = mContent->AsElement()->HasAttr(nsGkAtoms::menuactive);
+  nsMenuPopupFrame* menuPopupFrame = do_QueryFrame(GetFrame());
+  bool isActive = menuPopupFrame ? menuPopupFrame->IsOpen() : false;
   if (!isActive) {
     LocalAccessible* parent = LocalParent();
     if (parent) {
@@ -353,7 +371,9 @@ uint64_t XULMenupopupAccessible::NativeState() const {
                "XULMenupopup doesn't have INVISIBLE when it's inactive");
 #endif
 
-  if (state & states::INVISIBLE) state |= states::OFFSCREEN | states::COLLAPSED;
+  if (state & states::INVISIBLE) {
+    state |= states::OFFSCREEN;
+  }
 
   return state;
 }

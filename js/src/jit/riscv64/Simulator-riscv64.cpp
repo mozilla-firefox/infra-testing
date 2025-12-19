@@ -30,11 +30,9 @@
 #  include "jit/riscv64/Simulator-riscv64.h"
 
 #  include "mozilla/Casting.h"
-#  include "mozilla/FloatingPoint.h"
 #  include "mozilla/IntegerPrintfMacros.h"
-#  include "mozilla/Likely.h"
-#  include "mozilla/MathAlgorithms.h"
 
+#  include <cinttypes>
 #  include <float.h>
 #  include <iostream>
 #  include <limits>
@@ -611,7 +609,7 @@ void RiscvDebugger::Debug() {
           printf("%s unrecognized\n", arg1);
           continue;
         }
-        sim_->watch_address_ = reinterpret_cast<int64_t*>(value);
+        sim_->watch_address_ = reinterpret_cast<intptr_t*>(value);
         sim_->watch_value_ = *(sim_->watch_address_);
       } else if ((strcmp(cmd, "disasm") == 0) || (strcmp(cmd, "dpc") == 0) ||
                  (strcmp(cmd, "di") == 0)) {
@@ -927,10 +925,12 @@ void SimulatorProcess::checkICacheLocked(SimInstruction* instr) {
   char* cached_line = cache_page->cachedData(offset & ~CachePage::kLineMask);
 
   if (cache_hit) {
+#  ifdef DEBUG
     // Check that the data in memory matches the contents of the I-cache.
     int cmpret = memcmp(reinterpret_cast<void*>(instr),
                         cache_page->cachedData(offset), kInstrSize);
     MOZ_ASSERT(cmpret == 0);
+#  endif
   } else {
     // Cache miss.  Load memory into the cache.
     memcpy(cached_line, line, CachePage::kLineLength);
@@ -1557,7 +1557,7 @@ bool Simulator::overRecursedWithExtra(uint32_t extra) const {
 
 // Unsupported instructions use format to print an error and stop execution.
 void Simulator::format(SimInstruction* instr, const char* format) {
-  printf("Simulator found unsupported instruction:\n 0x%016lx: %s\n",
+  printf("Simulator found unsupported instruction:\n 0x%016" PRIxPTR ": %s\n",
          reinterpret_cast<intptr_t>(instr), format);
   MOZ_CRASH();
 }
@@ -1565,129 +1565,8 @@ void Simulator::format(SimInstruction* instr, const char* format) {
 // Note: With the code below we assume that all runtime calls return a 64 bits
 // result. If they don't, the v1 result register contains a bogus value, which
 // is fine because it is caller-saved.
-typedef int64_t (*Prototype_General0)();
-typedef int64_t (*Prototype_General1)(int64_t arg0);
-typedef int64_t (*Prototype_General2)(int64_t arg0, int64_t arg1);
-typedef int64_t (*Prototype_General3)(int64_t arg0, int64_t arg1, int64_t arg2);
-typedef int64_t (*Prototype_General4)(int64_t arg0, int64_t arg1, int64_t arg2,
-                                      int64_t arg3);
-typedef int64_t (*Prototype_General5)(int64_t arg0, int64_t arg1, int64_t arg2,
-                                      int64_t arg3, int64_t arg4);
-typedef int64_t (*Prototype_General6)(int64_t arg0, int64_t arg1, int64_t arg2,
-                                      int64_t arg3, int64_t arg4, int64_t arg5);
-typedef int64_t (*Prototype_General7)(int64_t arg0, int64_t arg1, int64_t arg2,
-                                      int64_t arg3, int64_t arg4, int64_t arg5,
-                                      int64_t arg6);
-typedef int64_t (*Prototype_General8)(int64_t arg0, int64_t arg1, int64_t arg2,
-                                      int64_t arg3, int64_t arg4, int64_t arg5,
-                                      int64_t arg6, int64_t arg7);
-typedef int64_t (*Prototype_GeneralGeneralGeneralInt64)(int64_t arg0,
-                                                        int64_t arg1,
-                                                        int64_t arg2,
-                                                        int64_t arg3);
-typedef int64_t (*Prototype_GeneralGeneralInt64Int64)(int64_t arg0,
-                                                      int64_t arg1,
-                                                      int64_t arg2,
-                                                      int64_t arg3);
+ABI_FUNCTION_TYPE_SIM_PROTOTYPES
 
-typedef int64_t (*Prototype_Int_Double)(double arg0);
-typedef int64_t (*Prototype_Int_IntDouble)(int64_t arg0, double arg1);
-typedef int64_t (*Prototype_Int_DoubleInt)(double arg0, int64_t arg1);
-typedef int64_t (*Prototype_Int_DoubleIntInt)(double arg0, int64_t arg1,
-                                              int64_t arg2);
-typedef int64_t (*Prototype_Int_IntDoubleIntInt)(int64_t arg0, double arg1,
-                                                 int64_t arg2, int64_t arg3);
-
-typedef float (*Prototype_Float32_Float32)(float arg0);
-typedef int64_t (*Prototype_Int_Float32)(float arg0);
-typedef float (*Prototype_Float32_Float32Float32)(float arg0, float arg1);
-
-typedef double (*Prototype_Double_None)();
-typedef double (*Prototype_Double_Double)(double arg0);
-typedef double (*Prototype_Double_Int)(int64_t arg0);
-typedef double (*Prototype_Double_DoubleInt)(double arg0, int64_t arg1);
-typedef double (*Prototype_Double_IntDouble)(int64_t arg0, double arg1);
-typedef double (*Prototype_Double_DoubleDouble)(double arg0, double arg1);
-typedef double (*Prototype_Double_DoubleDoubleDouble)(double arg0, double arg1,
-                                                      double arg2);
-typedef double (*Prototype_Double_DoubleDoubleDoubleDouble)(double arg0,
-                                                            double arg1,
-                                                            double arg2,
-                                                            double arg3);
-
-typedef int32_t (*Prototype_Int32_General)(int64_t);
-typedef int32_t (*Prototype_Int32_GeneralInt32)(int64_t, int32_t);
-typedef int32_t (*Prototype_Int32_GeneralInt32Int32)(int64_t, int32_t, int32_t);
-typedef int32_t (*Prototype_Int32_GeneralInt32Int32Int32)(int64_t, int32_t,
-                                                          int32_t, int32_t);
-typedef int32_t (*Prototype_Int32_GeneralInt32Int32Int32Int32)(int64_t, int32_t,
-                                                               int32_t, int32_t,
-                                                               int32_t);
-typedef int32_t (*Prototype_Int32_GeneralInt32Int32Int32Int32Int32)(
-    int64_t, int32_t, int32_t, int32_t, int32_t, int32_t);
-typedef int32_t (*Prototype_Int32_GeneralInt32Int32Int32Int32General)(
-    int64_t, int32_t, int32_t, int32_t, int32_t, int64_t);
-typedef int32_t (*Prototype_Int32_GeneralInt32Int32Int32General)(
-    int64_t, int32_t, int32_t, int32_t, int64_t);
-typedef int32_t (*Prototype_Int32_GeneralInt32Int32General)(int64_t, int32_t,
-                                                            int32_t, int64_t);
-typedef int32_t (*Prototype_Int32_GeneralInt32Int32Int64Int32)(int64_t, int32_t,
-                                                               int32_t, int64_t,
-                                                               int32_t);
-typedef int32_t (*Prototype_Int32_GeneralInt32GeneralInt32)(int64_t, int32_t,
-                                                            int64_t, int32_t);
-typedef int32_t (*Prototype_Int32_GeneralInt32GeneralInt32Int32)(
-    int64_t, int32_t, int64_t, int32_t, int32_t);
-typedef int32_t (*Prototype_Int32_GeneralInt32Int64Int64Int32)(int64_t, int32_t,
-                                                               int64_t, int64_t,
-                                                               int32_t);
-typedef int32_t (*Prototype_Int32_GeneralGeneral)(int64_t, int64_t);
-typedef int32_t (*Prototype_Int32_GeneralGeneralGeneral)(int64_t, int64_t,
-                                                         int64_t);
-typedef int32_t (*Prototype_Int32_GeneralGeneralInt32Int32)(int64_t, int64_t,
-                                                            int32_t, int32_t);
-typedef int32_t (*Prototype_Int32_GeneralInt64Int32Int32)(int64_t, int64_t,
-                                                          int32_t, int32_t);
-typedef int32_t (*Prototype_Int32_GeneralInt64Int32Int32Int32Int32)(
-    int64_t, int64_t, int32_t, int32_t, int32_t, int32_t);
-typedef int32_t (*Prototype_Int32_GeneralInt64Int32Int64Int32)(int64_t, int64_t,
-                                                               int32_t, int64_t,
-                                                               int32_t);
-typedef int32_t (*Prototype_Int32_GeneralInt64Int32Int32Int32)(int64_t, int64_t,
-                                                               int32_t, int32_t,
-                                                               int32_t);
-typedef int32_t (*Prototype_Int32_GeneralGeneralInt32Int32Int32GeneralInt32)(
-    int64_t, int64_t, int32_t, int32_t, int32_t, int64_t, int32_t);
-typedef int32_t (*Prototype_Int32_GeneralGeneralInt32General)(int32_t, int32_t,
-                                                              int32_t, int32_t);
-typedef int32_t (*Prototype_Int32_GeneralInt64Int32Int64General)(
-    int64_t, int64_t, int32_t, int64_t, int64_t);
-typedef int32_t (*Prototype_Int32_GeneralInt64Int64Int64)(int64_t, int64_t,
-                                                          int64_t, int64_t);
-typedef int32_t (*Prototype_Int32_GeneralInt64Int64Int64Int32)(int64_t, int64_t,
-                                                               int64_t, int64_t,
-                                                               int32_t);
-typedef int32_t (*Prototype_Int32_GeneralInt64Int64General)(int64_t, int64_t,
-                                                            int64_t, int64_t);
-typedef int32_t (*Prototype_Int32_GeneralInt64Int64Int64General)(
-    int64_t, int64_t, int64_t, int64_t, int64_t);
-typedef int32_t (*Prototype_Int32_GeneralInt64Int64Int64Int32Int32)(
-    int64_t, int64_t, int64_t, int64_t, int32_t, int32_t);
-typedef int64_t (*Prototype_General_GeneralInt32)(int64_t, int32_t);
-typedef int64_t (*Prototype_General_GeneralInt32Int32)(int64_t, int32_t,
-                                                       int32_t);
-typedef int64_t (*Prototype_General_GeneralInt32General)(int64_t, int32_t,
-                                                         int64_t);
-typedef int64_t (*Prototype_General_GeneralInt32Int32GeneralInt32)(
-    int64_t, int32_t, int32_t, int64_t, int32_t);
-typedef int32_t (*Prototype_Int32_GeneralGeneralInt32GeneralInt32Int32Int32)(
-    int64_t, int64_t, int32_t, int64_t, int32_t, int32_t, int32_t);
-typedef int64_t (*Prototype_Int64_General)(int64_t);
-typedef int64_t (*Prototype_Int64_GeneralInt32)(int64_t, int32_t);
-typedef int64_t (*Prototype_Int64_GeneralInt64)(int64_t, int64_t);
-typedef int64_t (*Prototype_Int64_GeneralInt64Int32)(int64_t, int64_t, int32_t);
-typedef int32_t (*Prototype_Int32_GeneralInt64Int64General)(int64_t, int64_t,
-                                                            int64_t, int64_t);
 // Generated by Assembler::break_()/stop(), ebreak code is passed as immediate
 // field of a subsequent LUI instruction; otherwise returns -1
 static inline uint32_t get_ebreak_code(Instruction* instr) {
@@ -1732,534 +1611,20 @@ void Simulator::SoftwareInterrupt() {
       fprintf(stderr, "Runtime call with unaligned stack!\n");
       MOZ_CRASH();
     }
+    int64_t* sp_ = reinterpret_cast<int64_t*>(getRegister(sp));
 
     if (single_stepping_) {
       single_step_callback_(single_step_callback_arg_, this, nullptr);
     }
     if (FLAG_trace_sim) {
-      printf(
-          "Call to host function at %p with args %ld, %ld, %ld, %ld, %ld, %ld, "
-          "%ld, %ld\n",
-          reinterpret_cast<void*>(external), arg0, arg1, arg2, arg3, arg4, arg5,
-          arg6, arg7);
+      printf("Call to host function at %p with args %" PRIdPTR ", %" PRIdPTR
+             ", %" PRIdPTR ", %" PRIdPTR ", %" PRIdPTR ", %" PRIdPTR
+             ", %" PRIdPTR ", %" PRIdPTR "\n",
+             reinterpret_cast<void*>(external), arg0, arg1, arg2, arg3, arg4,
+             arg5, arg6, arg7);
     }
     switch (redirection->type()) {
-      case Args_General0: {
-        Prototype_General0 target =
-            reinterpret_cast<Prototype_General0>(external);
-        int64_t result = target();
-        if (FLAG_trace_sim) printf("ret %ld\n", result);
-        setCallResult(result);
-        break;
-      }
-      case Args_General1: {
-        Prototype_General1 target =
-            reinterpret_cast<Prototype_General1>(external);
-        int64_t result = target(arg0);
-        if (FLAG_trace_sim) printf("ret %ld\n", result);
-        setCallResult(result);
-        break;
-      }
-      case Args_General2: {
-        Prototype_General2 target =
-            reinterpret_cast<Prototype_General2>(external);
-        int64_t result = target(arg0, arg1);
-        if (FLAG_trace_sim) printf("ret %ld\n", result);
-        setCallResult(result);
-        break;
-      }
-      case Args_General3: {
-        Prototype_General3 target =
-            reinterpret_cast<Prototype_General3>(external);
-        int64_t result = target(arg0, arg1, arg2);
-        if (FLAG_trace_sim) printf("ret %ld\n", result);
-        if (external == intptr_t(&js::wasm::Instance::wake_m32)) {
-          result = int32_t(result);
-        }
-        setCallResult(result);
-        break;
-      }
-      case Args_General4: {
-        Prototype_General4 target =
-            reinterpret_cast<Prototype_General4>(external);
-        int64_t result = target(arg0, arg1, arg2, arg3);
-        if (FLAG_trace_sim) printf("ret %ld\n", result);
-        setCallResult(result);
-        break;
-      }
-      case Args_General5: {
-        Prototype_General5 target =
-            reinterpret_cast<Prototype_General5>(external);
-        int64_t result = target(arg0, arg1, arg2, arg3, arg4);
-        if (FLAG_trace_sim) printf("ret %ld\n", result);
-        setCallResult(result);
-        break;
-      }
-      case Args_General6: {
-        Prototype_General6 target =
-            reinterpret_cast<Prototype_General6>(external);
-        int64_t result = target(arg0, arg1, arg2, arg3, arg4, arg5);
-        if (FLAG_trace_sim) printf("ret %ld\n", result);
-        setCallResult(result);
-        break;
-      }
-      case Args_General7: {
-        Prototype_General7 target =
-            reinterpret_cast<Prototype_General7>(external);
-        int64_t result = target(arg0, arg1, arg2, arg3, arg4, arg5, arg6);
-        if (FLAG_trace_sim) printf("ret %ld\n", result);
-        setCallResult(result);
-        break;
-      }
-      case Args_General8: {
-        Prototype_General8 target =
-            reinterpret_cast<Prototype_General8>(external);
-        int64_t result = target(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
-        if (FLAG_trace_sim) printf("ret %ld\n", result);
-        setCallResult(result);
-        break;
-      }
-      case Args_Double_None: {
-        Prototype_Double_None target =
-            reinterpret_cast<Prototype_Double_None>(external);
-        double dresult = target();
-        if (FLAG_trace_sim) printf("ret %f\n", dresult);
-        setCallResultDouble(dresult);
-        break;
-      }
-      case Args_Int_Double: {
-        double dval0 = getFpuRegisterDouble(fa0);
-        Prototype_Int_Double target =
-            reinterpret_cast<Prototype_Int_Double>(external);
-        int64_t result = target(dval0);
-        if (FLAG_trace_sim) printf("ret %ld\n", result);
-        if (external == intptr_t((int32_t(*)(double))JS::ToInt32)) {
-          result = int32_t(result);
-        }
-        setRegister(a0, result);
-        break;
-      }
-      case Args_Int_GeneralGeneralGeneralInt64: {
-        Prototype_GeneralGeneralGeneralInt64 target =
-            reinterpret_cast<Prototype_GeneralGeneralGeneralInt64>(external);
-        int64_t result = target(arg0, arg1, arg2, arg3);
-        if (FLAG_trace_sim) printf("ret %ld\n", result);
-        if (external == intptr_t(&js::wasm::Instance::wait_i32_m32)) {
-          result = int32_t(result);
-        }
-        setRegister(a0, result);
-        break;
-      }
-      case Args_Int_GeneralGeneralInt64Int64: {
-        Prototype_GeneralGeneralInt64Int64 target =
-            reinterpret_cast<Prototype_GeneralGeneralInt64Int64>(external);
-        int64_t result = target(arg0, arg1, arg2, arg3);
-        if (FLAG_trace_sim) printf("ret %ld\n", result);
-        if (external == intptr_t(&js::wasm::Instance::wait_i64_m32)) {
-          result = int32_t(result);
-        }
-        setRegister(a0, result);
-        break;
-      }
-      case Args_Int_DoubleInt: {
-        double dval = getFpuRegisterDouble(fa0);
-        Prototype_Int_DoubleInt target =
-            reinterpret_cast<Prototype_Int_DoubleInt>(external);
-        int64_t result = target(dval, arg0);
-        if (FLAG_trace_sim) printf("ret %ld\n", result);
-        setRegister(a0, result);
-        break;
-      }
-      case Args_Int_DoubleIntInt: {
-        double dval = getFpuRegisterDouble(fa0);
-        Prototype_Int_DoubleIntInt target =
-            reinterpret_cast<Prototype_Int_DoubleIntInt>(external);
-        int64_t result = target(dval, arg1, arg2);
-        if (FLAG_trace_sim) printf("ret %ld\n", result);
-        setRegister(a0, result);
-        break;
-      }
-      case Args_Int_IntDoubleIntInt: {
-        double dval = getFpuRegisterDouble(fa0);
-        Prototype_Int_IntDoubleIntInt target =
-            reinterpret_cast<Prototype_Int_IntDoubleIntInt>(external);
-        int64_t result = target(arg0, dval, arg2, arg3);
-        if (FLAG_trace_sim) printf("ret %ld\n", result);
-        setRegister(a0, result);
-        break;
-      }
-      case Args_Double_Double: {
-        double dval0 = getFpuRegisterDouble(fa0);
-        Prototype_Double_Double target =
-            reinterpret_cast<Prototype_Double_Double>(external);
-        double dresult = target(dval0);
-        if (FLAG_trace_sim) printf("ret %f\n", dresult);
-        setCallResultDouble(dresult);
-        break;
-      }
-      case Args_Float32_Float32: {
-        float fval0;
-        fval0 = getFpuRegisterFloat(fa0);
-        Prototype_Float32_Float32 target =
-            reinterpret_cast<Prototype_Float32_Float32>(external);
-        float fresult = target(fval0);
-        if (FLAG_trace_sim) printf("ret %f\n", fresult);
-        setCallResultFloat(fresult);
-        break;
-      }
-      case Args_Int_Float32: {
-        float fval0;
-        fval0 = getFpuRegisterFloat(fa0);
-        Prototype_Int_Float32 target =
-            reinterpret_cast<Prototype_Int_Float32>(external);
-        int64_t result = target(fval0);
-        if (FLAG_trace_sim) printf("ret %ld\n", result);
-        setRegister(a0, result);
-        break;
-      }
-      case Args_Float32_Float32Float32: {
-        float fval0;
-        float fval1;
-        fval0 = getFpuRegisterFloat(fa0);
-        fval1 = getFpuRegisterFloat(fa1);
-        Prototype_Float32_Float32Float32 target =
-            reinterpret_cast<Prototype_Float32_Float32Float32>(external);
-        float fresult = target(fval0, fval1);
-        if (FLAG_trace_sim) printf("ret %f\n", fresult);
-        setCallResultFloat(fresult);
-        break;
-      }
-      case Args_Double_Int: {
-        Prototype_Double_Int target =
-            reinterpret_cast<Prototype_Double_Int>(external);
-        double dresult = target(arg0);
-        if (FLAG_trace_sim) printf("ret %f\n", dresult);
-        setCallResultDouble(dresult);
-        break;
-      }
-      case Args_Double_DoubleInt: {
-        double dval0 = getFpuRegisterDouble(fa0);
-        Prototype_Double_DoubleInt target =
-            reinterpret_cast<Prototype_Double_DoubleInt>(external);
-        double dresult = target(dval0, arg0);
-        if (FLAG_trace_sim) printf("ret %f\n", dresult);
-        setCallResultDouble(dresult);
-        break;
-      }
-      case Args_Double_DoubleDouble: {
-        double dval0 = getFpuRegisterDouble(fa0);
-        double dval1 = getFpuRegisterDouble(fa1);
-        Prototype_Double_DoubleDouble target =
-            reinterpret_cast<Prototype_Double_DoubleDouble>(external);
-        double dresult = target(dval0, dval1);
-        if (FLAG_trace_sim) printf("ret %f\n", dresult);
-        setCallResultDouble(dresult);
-        break;
-      }
-      case Args_Double_IntDouble: {
-        double dval0 = getFpuRegisterDouble(fa0);
-        Prototype_Double_IntDouble target =
-            reinterpret_cast<Prototype_Double_IntDouble>(external);
-        double dresult = target(arg0, dval0);
-        if (FLAG_trace_sim) printf("ret %f\n", dresult);
-        setCallResultDouble(dresult);
-        break;
-      }
-      case Args_Int_IntDouble: {
-        double dval0 = getFpuRegisterDouble(fa0);
-        Prototype_Int_IntDouble target =
-            reinterpret_cast<Prototype_Int_IntDouble>(external);
-        int64_t result = target(arg0, dval0);
-        if (FLAG_trace_sim) printf("ret %ld\n", result);
-        setRegister(a0, result);
-        break;
-      }
-      case Args_Double_DoubleDoubleDouble: {
-        double dval0 = getFpuRegisterDouble(fa0);
-        double dval1 = getFpuRegisterDouble(fa1);
-        double dval2 = getFpuRegisterDouble(fa2);
-        Prototype_Double_DoubleDoubleDouble target =
-            reinterpret_cast<Prototype_Double_DoubleDoubleDouble>(external);
-        double dresult = target(dval0, dval1, dval2);
-        if (FLAG_trace_sim) printf("ret %f\n", dresult);
-        setCallResultDouble(dresult);
-        break;
-      }
-      case Args_Double_DoubleDoubleDoubleDouble: {
-        double dval0 = getFpuRegisterDouble(fa0);
-        double dval1 = getFpuRegisterDouble(fa1);
-        double dval2 = getFpuRegisterDouble(fa2);
-        double dval3 = getFpuRegisterDouble(fa3);
-        Prototype_Double_DoubleDoubleDoubleDouble target =
-            reinterpret_cast<Prototype_Double_DoubleDoubleDoubleDouble>(
-                external);
-        double dresult = target(dval0, dval1, dval2, dval3);
-        if (FLAG_trace_sim) printf("ret %f\n", dresult);
-        setCallResultDouble(dresult);
-        break;
-      }
-      case Args_Int32_General: {
-        int32_t ret = reinterpret_cast<Prototype_Int32_General>(nativeFn)(arg0);
-        if (FLAG_trace_sim) printf("ret %d\n", ret);
-        setRegister(a0, I64(ret));
-        break;
-      }
-      case Args_Int32_GeneralInt32: {
-        int32_t ret = reinterpret_cast<Prototype_Int32_GeneralInt32>(nativeFn)(
-            arg0, I32(arg1));
-        if (FLAG_trace_sim) printf("ret %d\n", ret);
-        setRegister(a0, I64(ret));
-        break;
-      }
-      case Args_Int32_GeneralInt32Int32: {
-        int32_t ret = reinterpret_cast<Prototype_Int32_GeneralInt32Int32>(
-            nativeFn)(arg0, I32(arg1), I32(arg2));
-        if (FLAG_trace_sim) printf("ret %d\n", ret);
-        setRegister(a0, I64(ret));
-        break;
-      }
-      case Args_Int32_GeneralInt32Int32Int32: {
-        int32_t ret = reinterpret_cast<Prototype_Int32_GeneralInt32Int32Int32>(
-            nativeFn)(arg0, I32(arg1), I32(arg2), I32(arg3));
-        setRegister(a0, I64(ret));
-        break;
-      }
-      case Args_Int32_GeneralInt32Int32Int32Int32: {
-        int32_t ret =
-            reinterpret_cast<Prototype_Int32_GeneralInt32Int32Int32Int32>(
-                nativeFn)(arg0, I32(arg1), I32(arg2), I32(arg3), I32(arg4));
-        if (FLAG_trace_sim) printf("ret %d\n", ret);
-        setRegister(a0, I64(ret));
-        break;
-      }
-      case Args_Int32_GeneralInt32Int32Int32Int32Int32: {
-        int32_t ret =
-            reinterpret_cast<Prototype_Int32_GeneralInt32Int32Int32Int32Int32>(
-                nativeFn)(arg0, I32(arg1), I32(arg2), I32(arg3), I32(arg4),
-                          I32(arg5));
-        if (FLAG_trace_sim) printf("ret %d\n", ret);
-        setRegister(a0, I64(ret));
-        break;
-      }
-      case Args_Int32_GeneralInt32Int32Int32Int32General: {
-        int32_t ret = reinterpret_cast<
-            Prototype_Int32_GeneralInt32Int32Int32Int32General>(nativeFn)(
-            arg0, I32(arg1), I32(arg2), I32(arg3), I32(arg4), arg5);
-        if (FLAG_trace_sim) printf("ret %d\n", ret);
-        setRegister(a0, I64(ret));
-        break;
-      }
-      case Args_Int32_GeneralInt32Int32Int32General: {
-        int32_t ret =
-            reinterpret_cast<Prototype_Int32_GeneralInt32Int32Int32General>(
-                nativeFn)(arg0, I32(arg1), I32(arg2), I32(arg3), arg4);
-        if (FLAG_trace_sim) printf("ret %d\n", ret);
-        setRegister(a0, I64(ret));
-        break;
-      }
-      case Args_Int32_GeneralInt32Int32General: {
-        int32_t ret =
-            reinterpret_cast<Prototype_Int32_GeneralInt32Int32General>(
-                nativeFn)(arg0, I32(arg1), I32(arg2), arg3);
-        if (FLAG_trace_sim) printf("ret %d\n", ret);
-        setRegister(a0, I64(ret));
-        break;
-      }
-      case Args_Int32_GeneralInt32Int32Int64Int32: {
-        int32_t ret =
-            reinterpret_cast<Prototype_Int32_GeneralInt32Int32Int64Int32>(
-                nativeFn)(arg0, I32(arg1), I32(arg2), arg3, I32(arg4));
-        setRegister(a0, I64(ret));
-        break;
-      }
-      case Args_Int32_GeneralInt32GeneralInt32: {
-        int32_t ret =
-            reinterpret_cast<Prototype_Int32_GeneralInt32GeneralInt32>(
-                nativeFn)(arg0, I32(arg1), arg2, I32(arg3));
-        if (FLAG_trace_sim) printf("ret %d\n", ret);
-        setRegister(a0, I64(ret));
-        break;
-      }
-      case Args_Int32_GeneralInt32GeneralInt32Int32: {
-        int32_t ret =
-            reinterpret_cast<Prototype_Int32_GeneralInt32GeneralInt32Int32>(
-                nativeFn)(arg0, I32(arg1), arg2, I32(arg3), I32(arg4));
-        if (FLAG_trace_sim) printf("ret %d\n", ret);
-        setRegister(a0, I64(ret));
-        break;
-      }
-      case Args_Int32_GeneralGeneral: {
-        int32_t ret = reinterpret_cast<Prototype_Int32_GeneralGeneral>(
-            nativeFn)(arg0, arg1);
-        if (FLAG_trace_sim) printf("ret %d\n", ret);
-        setRegister(a0, I64(ret));
-        break;
-      }
-      case Args_Int32_GeneralInt32Int64Int64Int32: {
-        int32_t ret =
-            reinterpret_cast<Prototype_Int32_GeneralInt32Int64Int64Int32>(
-                nativeFn)(arg0, I32(arg1), arg2, arg3, I32(arg4));
-        setRegister(a0, I64(ret));
-        break;
-      }
-      case Args_Int32_GeneralGeneralGeneral: {
-        int32_t ret = reinterpret_cast<Prototype_Int32_GeneralGeneralGeneral>(
-            nativeFn)(arg0, arg1, arg2);
-        if (FLAG_trace_sim) printf("ret %d\n", ret);
-        setRegister(a0, I64(ret));
-        break;
-      }
-      case Args_Int32_GeneralGeneralInt32Int32: {
-        int32_t ret =
-            reinterpret_cast<Prototype_Int32_GeneralGeneralInt32Int32>(
-                nativeFn)(arg0, arg1, I32(arg2), I32(arg3));
-        if (FLAG_trace_sim) printf("ret %d\n", ret);
-        setRegister(a0, I64(ret));
-        break;
-      }
-      case js::jit::Args_Int32_GeneralInt64Int32Int32: {
-        int32_t ret = reinterpret_cast<Prototype_Int32_GeneralInt64Int32Int32>(
-            nativeFn)(arg0, arg1, I32(arg2), I32(arg3));
-        setRegister(a0, I64(ret));
-        break;
-      }
-      case js::jit::Args_Int32_GeneralInt64Int32Int32Int32Int32: {
-        int32_t ret =
-            reinterpret_cast<Prototype_Int32_GeneralInt64Int32Int32Int32Int32>(
-                nativeFn)(arg0, arg1, I32(arg2), I32(arg3), I32(arg4),
-                          I32(arg5));
-        setRegister(a0, I64(ret));
-        break;
-      }
-      case js::jit::Args_Int32_GeneralInt64Int32Int64Int32: {
-        int32_t ret =
-            reinterpret_cast<Prototype_Int32_GeneralInt64Int32Int64Int32>(
-                nativeFn)(arg0, arg1, I32(arg2), arg3, I32(arg4));
-        setRegister(a0, I64(ret));
-        break;
-      }
-      case js::jit::Args_Int32_GeneralInt64Int32Int64General: {
-        int32_t ret =
-            reinterpret_cast<Prototype_Int32_GeneralInt64Int32Int64General>(
-                nativeFn)(arg0, arg1, I32(arg2), arg3, arg4);
-        if (FLAG_trace_sim) printf("ret %d\n", ret);
-        setRegister(a0, I64(ret));
-        break;
-      }
-      case js::jit::Args_Int32_GeneralInt64Int64Int64: {
-        int32_t ret = reinterpret_cast<Prototype_Int32_GeneralInt64Int64Int64>(
-            nativeFn)(arg0, arg1, arg2, arg3);
-        if (FLAG_trace_sim) printf("ret %d\n", ret);
-        setRegister(a0, I64(ret));
-        break;
-      }
-      case js::jit::Args_Int32_GeneralInt64Int64Int64Int32: {
-        int32_t ret =
-            reinterpret_cast<Prototype_Int32_GeneralInt64Int64Int64Int32>(
-                nativeFn)(arg0, arg1, arg2, arg3, I32(arg4));
-        setRegister(a0, I64(ret));
-        break;
-      }
-      case js::jit::Args_Int32_GeneralInt64Int64General: {
-        int32_t ret =
-            reinterpret_cast<Prototype_Int32_GeneralInt64Int64General>(
-                nativeFn)(arg0, arg1, arg2, arg3);
-        if (FLAG_trace_sim) printf("ret %d\n", ret);
-        setRegister(a0, I64(ret));
-        break;
-      }
-      case js::jit::Args_Int32_GeneralInt64Int64Int64General: {
-        int32_t ret =
-            reinterpret_cast<Prototype_Int32_GeneralInt64Int64Int64General>(
-                nativeFn)(arg0, arg1, arg2, arg3, arg4);
-        if (FLAG_trace_sim) printf("ret %d\n", ret);
-        setRegister(a0, I64(ret));
-        break;
-      }
-      case Args_General_GeneralInt32: {
-        int64_t ret = reinterpret_cast<Prototype_General_GeneralInt32>(
-            nativeFn)(arg0, I32(arg1));
-        if (FLAG_trace_sim) printf("ret %ld\n", ret);
-        setRegister(a0, ret);
-        break;
-      }
-      case js::jit::Args_Int32_GeneralInt64Int64Int64Int32Int32: {
-        int32_t ret =
-            reinterpret_cast<Prototype_Int32_GeneralInt64Int64Int64Int32Int32>(
-                nativeFn)(arg0, arg1, arg2, arg3, I32(arg4), I32(arg5));
-        setRegister(a0, I64(ret));
-        break;
-      }
-      case Args_General_GeneralInt32Int32: {
-        int64_t ret = reinterpret_cast<Prototype_General_GeneralInt32Int32>(
-            nativeFn)(arg0, I32(arg1), I32(arg2));
-        if (FLAG_trace_sim) printf("ret %ld\n", ret);
-        setRegister(a0, ret);
-        break;
-      }
-      case Args_General_GeneralInt32General: {
-        int64_t ret = reinterpret_cast<Prototype_General_GeneralInt32General>(
-            nativeFn)(arg0, I32(arg1), arg2);
-        if (FLAG_trace_sim) printf("ret %ld\n", ret);
-        setRegister(a0, ret);
-        break;
-      }
-      case js::jit::Args_General_GeneralInt32Int32GeneralInt32: {
-        int64_t ret =
-            reinterpret_cast<Prototype_General_GeneralInt32Int32GeneralInt32>(
-                nativeFn)(arg0, I32(arg1), I32(arg2), arg3, I32(arg4));
-        setRegister(a0, ret);
-        break;
-      }
-      case js::jit::Args_Int32_GeneralGeneralInt32Int32Int32GeneralInt32: {
-        int32_t ret = reinterpret_cast<
-            Prototype_Int32_GeneralGeneralInt32Int32Int32GeneralInt32>(
-            nativeFn)(arg0, arg1, I32(arg2), I32(arg3), I32(arg4), arg5,
-                      I32(arg6));
-        setRegister(a0, I64(ret));
-        break;
-      }
-      case js::jit::Args_Int32_GeneralGeneralInt32General: {
-        Prototype_Int32_GeneralGeneralInt32General target =
-            reinterpret_cast<Prototype_Int32_GeneralGeneralInt32General>(
-                external);
-        int64_t result = target(I32(arg0), I32(arg1), I32(arg2), I32(arg3));
-        setRegister(a0, I64(result));
-        break;
-      }
-      case js::jit::Args_Int32_GeneralGeneralInt32GeneralInt32Int32Int32: {
-        int64_t arg6 = getRegister(a6);
-        int32_t ret = reinterpret_cast<
-            Prototype_Int32_GeneralGeneralInt32GeneralInt32Int32Int32>(
-            nativeFn)(arg0, arg1, I32(arg2), arg3, I32(arg4), I32(arg5),
-                      I32(arg6));
-        setRegister(a0, I64(ret));
-        break;
-      }
-      case js::jit::Args_Int64_General: {
-        int64_t ret = reinterpret_cast<Prototype_Int64_General>(nativeFn)(arg0);
-        if (FLAG_trace_sim) printf("ret %ld\n", ret);
-        setRegister(a0, ret);
-        break;
-      }
-      case js::jit::Args_Int64_GeneralInt32: {
-        int64_t ret = reinterpret_cast<Prototype_Int64_GeneralInt32>(nativeFn)(
-            arg0, I32(arg1));
-        setRegister(a0, ret);
-        break;
-      }
-      case js::jit::Args_Int64_GeneralInt64: {
-        int64_t ret = reinterpret_cast<Prototype_Int64_GeneralInt64>(nativeFn)(
-            arg0, arg1);
-        setRegister(a0, ret);
-        break;
-      }
-      case js::jit::Args_Int64_GeneralInt64Int32: {
-        int64_t ret = reinterpret_cast<Prototype_Int64_GeneralInt64Int32>(
-            nativeFn)(arg0, arg1, I32(arg2));
-        setRegister(a0, ret);
-        break;
-      }
+      ABI_FUNCTION_TYPE_RISCV64_SIM_DISPATCH
       default:
         MOZ_CRASH("Unknown function type.");
     }
@@ -2274,7 +1639,11 @@ void Simulator::SoftwareInterrupt() {
   } else if (instr_.InstructionBits() == kBreakInstr &&
              (get_ebreak_code(instr_.instr()) <= kMaxStopCode)) {
     uint32_t code = get_ebreak_code(instr_.instr());
-    if (isWatchpoint(code)) {
+    if (code == 0) {
+      // Default `ebreak`s generated by
+      // MacroAssemblerRiscv64Compat::breakpoint().
+      DieOrDebug();
+    } else if (isWatchpoint(code)) {
       printWatchpoint(code);
     } else if (IsTracepoint(code)) {
       if (!FLAG_debug_sim) {
@@ -2520,8 +1889,8 @@ void Simulator::InstructionDecode(Instruction* instr) {
   if (watch_address_ != nullptr) {
     printf("  0x%012" PRIxPTR " :  0x%016" REGIx_FORMAT "  %14" REGId_FORMAT
            " \n",
-           reinterpret_cast<intptr_t>(watch_address_), *watch_address_,
-           *watch_address_);
+           reinterpret_cast<intptr_t>(watch_address_), I64(*watch_address_),
+           I64(*watch_address_));
     if (watch_value_ != *watch_address_) {
       RiscvDebugger dbg(this);
       dbg.Debug();
@@ -2620,11 +1989,23 @@ void Simulator::DecodeRVRType() {
       set_rd(rs1() & rs2());
       break;
     }
+    case RO_ANDN:
+      set_rd(rs1() & ~rs2());
+      break;
+    case RO_ORN:
+      set_rd(rs1() | (~rs2()));
+      break;
+    case RO_XNOR:
+      set_rd((~rs1()) ^ (~rs2()));
+      break;
 #  ifdef JS_CODEGEN_RISCV64
     case RO_ADDW: {
       set_rd(sext32(rs1() + rs2()));
       break;
     }
+    case RO_ADDUW:
+      set_rd(zext32(rs1()) + rs2());
+      break;
     case RO_SUBW: {
       set_rd(sext32(rs1() - rs2()));
       break;
@@ -2639,6 +2020,30 @@ void Simulator::DecodeRVRType() {
     }
     case RO_SRAW: {
       set_rd(sext32(int32_t(rs1()) >> (rs2() & 0x1F)));
+      break;
+    }
+    case RO_SH1ADDUW: {
+      set_rd(rs2() + (zext32(rs1()) << 1));
+      break;
+    }
+    case RO_SH2ADDUW: {
+      set_rd(rs2() + (zext32(rs1()) << 2));
+      break;
+    }
+    case RO_SH3ADDUW: {
+      set_rd(rs2() + (zext32(rs1()) << 3));
+      break;
+    }
+    case RO_ROLW: {
+      reg_t extz_rs1 = zext32(rs1());
+      sreg_t shamt = rs2() & 31;
+      set_rd(sext32((extz_rs1 << shamt) | (extz_rs1 >> (32 - shamt))));
+      break;
+    }
+    case RO_RORW: {
+      reg_t extz_rs1 = zext32(rs1());
+      sreg_t shamt = rs2() & 31;
+      set_rd(sext32((extz_rs1 >> shamt) | (extz_rs1 << (32 - shamt))));
       break;
     }
 #  endif /* JS_CODEGEN_RISCV64 */
@@ -2753,6 +2158,64 @@ void Simulator::DecodeRVRType() {
       break;
     }
 #  endif /*JS_CODEGEN_RISCV64*/
+    case RO_SH1ADD:
+      set_rd(rs2() + (rs1() << 1));
+      break;
+    case RO_SH2ADD:
+      set_rd(rs2() + (rs1() << 2));
+      break;
+    case RO_SH3ADD:
+      set_rd(rs2() + (rs1() << 3));
+      break;
+    case RO_MAX:
+      set_rd(rs1() < rs2() ? rs2() : rs1());
+      break;
+    case RO_MAXU:
+      set_rd(static_cast<reg_t>(rs1()) < static_cast<reg_t>(rs2()) ? rs2()
+                                                                   : rs1());
+      break;
+    case RO_MIN:
+      set_rd(rs1() < rs2() ? rs1() : rs2());
+      break;
+    case RO_MINU:
+      set_rd(static_cast<reg_t>(rs1()) < static_cast<reg_t>(rs2()) ? rs1()
+                                                                   : rs2());
+      break;
+    case RO_ZEXTH:
+      set_rd(zext_xlen(uint16_t(rs1())));
+      break;
+    case RO_ROL: {
+      sreg_t shamt = rs2() & (xlen - 1);
+      set_rd((static_cast<reg_t>(rs1()) << shamt) |
+             (static_cast<reg_t>(rs1()) >> (xlen - shamt)));
+      break;
+    }
+    case RO_ROR: {
+      sreg_t shamt = rs2() & (xlen - 1);
+      set_rd((static_cast<reg_t>(rs1()) >> shamt) |
+             (static_cast<reg_t>(rs1()) << (xlen - shamt)));
+      break;
+    }
+    case RO_BCLR: {
+      sreg_t index = rs2() & (xlen - 1);
+      set_rd(rs1() & ~(1l << index));
+      break;
+    }
+    case RO_BEXT: {
+      sreg_t index = rs2() & (xlen - 1);
+      set_rd((rs1() >> index) & 1);
+      break;
+    }
+    case RO_BINV: {
+      sreg_t index = rs2() & (xlen - 1);
+      set_rd(rs1() ^ (1 << index));
+      break;
+    }
+    case RO_BSET: {
+      sreg_t index = rs2() & (xlen - 1);
+      set_rd(rs1() | (1 << index));
+      break;
+    }
       // TODO(riscv): End Add RISCV M extension macro
     default: {
       switch (instr_.BaseOpcode()) {
@@ -3066,8 +2529,8 @@ int Simulator::storeConditionalW(uint64_t addr, int value,
   // return 0, but there is no point at allowing that. It is certainly an
   // indicator of a bug.
   if (addr != LLAddr_) {
-    printf("SC to bad address: 0x%016" PRIx64 ", pc=0x%016" PRIx64
-           ", expected: 0x%016" PRIx64 "\n",
+    printf("SC to bad address: 0x%016" PRIx64 ", pc=0x%016" PRIxPTR
+           ", expected: 0x%016" PRIxPTR "\n",
            addr, reinterpret_cast<intptr_t>(instr), LLAddr_);
     MOZ_CRASH();
   }
@@ -3120,8 +2583,8 @@ int Simulator::storeConditionalD(uint64_t addr, int64_t value,
   // return 0, but there is no point at allowing that. It is certainly an
   // indicator of a bug.
   if (addr != LLAddr_) {
-    printf("SC to bad address: 0x%016" PRIx64 ", pc=0x%016" PRIx64
-           ", expected: 0x%016" PRIx64 "\n",
+    printf("SC to bad address: 0x%016" PRIx64 ", pc=0x%016" PRIxPTR
+           ", expected: 0x%016" PRIxPTR "\n",
            addr, reinterpret_cast<intptr_t>(instr), LLAddr_);
     MOZ_CRASH();
   }
@@ -4119,18 +3582,137 @@ void Simulator::DecodeRVIType() {
       set_rd(imm12() & rs1());
       break;
     }
-    case RO_SLLI: {
-      require(shamt6() < xlen);
-      set_rd(sext_xlen(rs1() << shamt6()));
+    case OP_SHL: {
+      switch (instr_.Funct6FieldRaw() | OP_SHL) {
+        case RO_SLLI:
+          require(shamt6() < xlen);
+          set_rd(sext_xlen(rs1() << shamt6()));
+          break;
+        case RO_BCLRI: {
+          require(shamt6() < xlen);
+          sreg_t index = shamt6() & (xlen - 1);
+          set_rd(rs1() & ~(1l << index));
+          break;
+        }
+        case RO_BINVI: {
+          require(shamt6() < xlen);
+          sreg_t index = shamt6() & (xlen - 1);
+          set_rd(rs1() ^ (1l << index));
+          break;
+        }
+        case RO_BSETI: {
+          require(shamt6() < xlen);
+          sreg_t index = shamt6() & (xlen - 1);
+          set_rd(rs1() | (1l << index));
+          break;
+        }
+        case OP_COUNT:
+          switch (instr_.Shamt()) {
+            case 0: {  // clz
+              sreg_t x = rs1();
+              int highest_setbit = -1;
+              for (auto i = xlen - 1; i >= 0; i--) {
+                if ((x & (1l << i))) {
+                  highest_setbit = i;
+                  break;
+                }
+              }
+              set_rd(xlen - 1 - highest_setbit);
+              break;
+            }
+            case 1: {  // ctz
+              sreg_t x = rs1();
+              int lowest_setbit = xlen;
+              for (auto i = 0; i < xlen; i++) {
+                if ((x & (1l << i))) {
+                  lowest_setbit = i;
+                  break;
+                }
+              }
+              set_rd(lowest_setbit);
+              break;
+            }
+            case 2: {  // cpop
+              int i = 0;
+              sreg_t n = rs1();
+              while (n) {
+                n &= (n - 1);
+                i++;
+              }
+              set_rd(i);
+              break;
+            }
+            case 4:
+              set_rd(static_cast<int8_t>(rs1()));
+              break;
+            case 5:
+              set_rd(static_cast<int16_t>(rs1()));
+              break;
+            default:
+              UNSUPPORTED();
+          }
+          break;
+        default:
+          UNSUPPORTED();
+      }
       break;
     }
-    case RO_SRLI: {  //  RO_SRAI
-      if (!instr_.IsArithShift()) {
-        require(shamt6() < xlen);
-        set_rd(sext_xlen(zext_xlen(rs1()) >> shamt6()));
-      } else {
-        require(shamt6() < xlen);
-        set_rd(sext_xlen(sext_xlen(rs1()) >> shamt6()));
+    case OP_SHR: {  //  RO_SRAI
+      switch (instr_.Funct6FieldRaw() | OP_SHR) {
+        case RO_SRLI:
+          require(shamt6() < xlen);
+          set_rd(sext_xlen(zext_xlen(rs1()) >> shamt6()));
+          break;
+        case RO_SRAI:
+          require(shamt6() < xlen);
+          set_rd(sext_xlen(sext_xlen(rs1()) >> shamt6()));
+          break;
+        case RO_BEXTI: {
+          require(shamt6() < xlen);
+          sreg_t index = shamt6() & (xlen - 1);
+          set_rd((rs1() >> index) & 1);
+          break;
+        }
+        case RO_ORCB&(kFunct6Mask | OP_SHR): {
+          reg_t rs1_val = rs1();
+          reg_t result = 0;
+          reg_t mask = 0xFF;
+          reg_t step = 8;
+          for (reg_t i = 0; i < xlen; i += step) {
+            if ((rs1_val & mask) != 0) {
+              result |= mask;
+            }
+            mask <<= step;
+          }
+          set_rd(result);
+          break;
+        }
+        case RO_RORI: {
+#  ifdef JS_CODEGEN_RISCV64
+          int16_t shamt = shamt6();
+#  else
+          int16_t shamt = shamt5();
+#  endif
+          set_rd((static_cast<reg_t>(rs1()) >> shamt) |
+                 (static_cast<reg_t>(rs1()) << (xlen - shamt)));
+          break;
+        }
+        case RO_REV8: {
+          if (imm12() == RO_REV8_IMM12) {
+            reg_t input = rs1();
+            reg_t output = 0;
+            reg_t j = xlen - 1;
+            for (int i = 0; i < xlen; i += 8) {
+              output |= ((input >> (j - 7)) & 0xff) << i;
+              j -= 8;
+            }
+            set_rd(output);
+            break;
+          }
+          UNSUPPORTED();
+        }
+        default:
+          UNSUPPORTED();
       }
       break;
     }
@@ -4139,15 +3721,75 @@ void Simulator::DecodeRVIType() {
       set_rd(sext32(rs1() + imm12()));
       break;
     }
-    case RO_SLLIW: {
-      set_rd(sext32(rs1() << shamt5()));
+    case OP_SHLW:
+      switch (instr_.Funct7FieldRaw() | OP_SHLW) {
+        case RO_SLLIW:
+          set_rd(sext32(rs1() << shamt5()));
+          break;
+        case RO_SLLIUW:
+          set_rd(zext32(rs1()) << shamt6());
+          break;
+        case OP_COUNTW: {
+          switch (instr_.Shamt()) {
+            case 0: {  // clzw
+              sreg_t x = rs1();
+              int highest_setbit = -1;
+              for (auto i = 31; i >= 0; i--) {
+                if ((x & (1l << i))) {
+                  highest_setbit = i;
+                  break;
+                }
+              }
+              set_rd(31 - highest_setbit);
+              break;
+            }
+            case 1: {  // ctzw
+              sreg_t x = rs1();
+              int lowest_setbit = 32;
+              for (auto i = 0; i < 32; i++) {
+                if ((x & (1l << i))) {
+                  lowest_setbit = i;
+                  break;
+                }
+              }
+              set_rd(lowest_setbit);
+              break;
+            }
+            case 2: {  // cpopw
+              int i = 0;
+              int32_t n = static_cast<int32_t>(rs1());
+              while (n) {
+                n &= (n - 1);
+                i++;
+              }
+              set_rd(i);
+              break;
+            }
+            default:
+              UNSUPPORTED();
+          }
+          break;
+        }
+        default:
+          UNSUPPORTED();
+      }
       break;
-    }
-    case RO_SRLIW: {  //  RO_SRAIW
-      if (!instr_.IsArithShift()) {
-        set_rd(sext32(uint32_t(rs1()) >> shamt5()));
-      } else {
-        set_rd(sext32(int32_t(rs1()) >> shamt5()));
+    case OP_SHRW: {  //  RO_SRAI
+      switch (instr_.Funct7FieldRaw() | OP_SHRW) {
+        case RO_SRLIW:
+          set_rd(sext32(uint32_t(rs1()) >> shamt5()));
+          break;
+        case RO_SRAIW:
+          set_rd(sext32(int32_t(rs1()) >> shamt5()));
+          break;
+        case RO_RORIW: {
+          reg_t extz_rs1 = zext32(rs1());
+          int16_t shamt = shamt5();
+          set_rd(sext32((extz_rs1 >> shamt) | (extz_rs1 << (32 - shamt))));
+          break;
+        }
+        default:
+          UNSUPPORTED();
       }
       break;
     }

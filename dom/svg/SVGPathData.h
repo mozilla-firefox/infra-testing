@@ -7,20 +7,19 @@
 #ifndef DOM_SVG_SVGPATHDATA_H_
 #define DOM_SVG_SVGPATHDATA_H_
 
+#include <string.h>
+
+#include "mozilla/MemoryReporting.h"
+#include "mozilla/ServoStyleConsts.h"
+#include "mozilla/dom/SVGElement.h"
+#include "mozilla/gfx/2D.h"
+#include "mozilla/gfx/Types.h"
 #include "nsCOMPtr.h"
 #include "nsDebug.h"
 #include "nsIContent.h"
 #include "nsINode.h"
 #include "nsIWeakReferenceUtils.h"
-#include "mozilla/dom/SVGElement.h"
-#include "mozilla/gfx/2D.h"
-#include "mozilla/gfx/Types.h"
-#include "mozilla/MemoryReporting.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/ServoStyleConsts.h"
 #include "nsTArray.h"
-
-#include <string.h>
 
 namespace mozilla {
 
@@ -170,7 +169,8 @@ class SVGPathDataAndInfo final : public SVGPathData {
   /**
    * Returns true if this object is an "identity" value, from the perspective
    * of SMIL. In other words, returns true until the initial value set up in
-   * SVGPathSegListSMILType::Init() has been changed with a SetElement() call.
+   * SVGPathSegListSMILType::InitValue() has been changed with a SetElement()
+   * call.
    */
   bool IsIdentity() const {
     if (!mElement) {

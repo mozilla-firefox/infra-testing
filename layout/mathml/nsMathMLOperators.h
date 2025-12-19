@@ -8,6 +8,7 @@
 #define nsMathMLOperators_h___
 
 #include <stdint.h>
+
 #include "nsStringFwd.h"
 
 enum nsStretchDirection {
@@ -24,7 +25,6 @@ enum nsOperatorFlagEnum : nsOperatorFlags {
   NS_MATHML_OPERATOR_MUTABLE = 1 << 30,
   NS_MATHML_OPERATOR_EMBELLISH_ANCESTOR = 1 << 29,
   NS_MATHML_OPERATOR_EMBELLISH_ISOLATED = 1 << 28,
-  NS_MATHML_OPERATOR_CENTERED = 1 << 27,
   NS_MATHML_OPERATOR_INVISIBLE = 1 << 26,
 
   // define the bits used in the Operator Dictionary
@@ -85,6 +85,7 @@ class nsMathMLOperators {
 
   // Helper functions used by the nsMathMLChar class.
   static bool IsMirrorableOperator(const nsString& aOperator);
+  static nsString GetMirroredOperator(const nsString& aOperator);
 
   // Helper functions used by the nsMathMLChar class to determine whether
   // aOperator corresponds to an integral operator.
@@ -111,9 +112,6 @@ class nsMathMLOperators {
 #define NS_MATHML_OPERATOR_EMBELLISH_IS_ISOLATED(_flags) \
   (NS_MATHML_OPERATOR_EMBELLISH_ISOLATED ==              \
    ((_flags) & NS_MATHML_OPERATOR_EMBELLISH_ISOLATED))
-
-#define NS_MATHML_OPERATOR_IS_CENTERED(_flags) \
-  (NS_MATHML_OPERATOR_CENTERED == ((_flags) & NS_MATHML_OPERATOR_CENTERED))
 
 #define NS_MATHML_OPERATOR_IS_INVISIBLE(_flags) \
   (NS_MATHML_OPERATOR_INVISIBLE == ((_flags) & NS_MATHML_OPERATOR_INVISIBLE))

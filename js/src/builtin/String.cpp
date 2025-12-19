@@ -9,8 +9,8 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/Compiler.h"
-#include "mozilla/FloatingPoint.h"
 #if JS_HAS_INTL_API
+#  include "mozilla/intl/Locale.h"
 #  include "mozilla/intl/String.h"
 #endif
 #include "mozilla/Likely.h"
@@ -30,8 +30,11 @@
 
 #include "builtin/Array.h"
 #if JS_HAS_INTL_API
+#  include "builtin/intl/Collator.h"
 #  include "builtin/intl/CommonFunctions.h"
 #  include "builtin/intl/FormatBuffer.h"
+#  include "builtin/intl/GlobalIntlData.h"
+#  include "builtin/intl/LocaleNegotiation.h"
 #endif
 #include "builtin/RegExp.h"
 #include "gc/GC.h"
@@ -942,25 +945,70 @@ static bool str_toLowerCase(JSContext* cx, unsigned argc, Value* vp) {
 }
 
 #if JS_HAS_INTL_API
-// String.prototype.toLocaleLowerCase is self-hosted when Intl is exposed,
-// with core functionality performed by the intrinsic below.
+// Lithuanian, Turkish, and Azeri have language dependent case mappings.
+static constexpr char LanguagesWithSpecialCasing[][3] = {"lt", "tr", "az"};
 
-static const char* CaseMappingLocale(JSContext* cx, JSString* str) {
-  JSLinearString* locale = str->ensureLinear(cx);
-  if (!locale) {
-    return nullptr;
+bool js::LocaleHasDefaultCaseMapping(const char* locale) {
+  MOZ_ASSERT(locale);
+
+  size_t languageSubtagLength;
+  if (auto* sep = strchr(locale, '-')) {
+    languageSubtagLength = sep - locale;
+  } else {
+    languageSubtagLength = std::strlen(locale);
   }
 
-  MOZ_ASSERT(locale->length() >= 2, "locale is a valid language tag");
+  // Invalid locale identifiers default to the last-ditch locale "en-GB", which
+  // has default case mapping.
+  mozilla::Span<const char> span{locale, languageSubtagLength};
+  {
+    // Tell the analysis the |IsStructurallyValidLanguageTag| function can't GC.
+    JS::AutoSuppressGCAnalysis nogc;
+    if (!mozilla::intl::IsStructurallyValidLanguageTag(span)) {
+      return true;
+    }
+  }
 
-  // Lithuanian, Turkish, and Azeri have language dependent case mappings.
-  static const char languagesWithSpecialCasing[][3] = {"lt", "tr", "az"};
+  mozilla::intl::LanguageSubtag subtag{span};
+
+  // Canonical case for the language subtag is lower-case
+  {
+    // Tell the analysis the |ToLowerCase| function can't GC.
+    JS::AutoSuppressGCAnalysis nogc;
+
+    subtag.ToLowerCase();
+  }
+
+  // Replace outdated language subtags. Skips complex language mappings, which
+  // is okay because none of the languages with special casing are affected by
+  // complex language mapping.
+  {
+    // Tell the analysis the |LanguageMapping| function can't GC.
+    JS::AutoSuppressGCAnalysis nogc;
+
+    (void)mozilla::intl::Locale::LanguageMapping(subtag);
+  }
+
+  // Check for languages which don't use the default case mapping algorithm.
+  for (const auto& language : LanguagesWithSpecialCasing) {
+    if (subtag.EqualTo(language)) {
+      return false;
+    }
+  }
+
+  // Simple locale with default case mapping. (Or an invalid locale which
+  // defaults to the last-ditch locale "en-GB".)
+  return true;
+}
+
+static const char* CaseMappingLocale(JSLinearString* locale) {
+  MOZ_ASSERT(locale->length() >= 2, "locale is a valid language tag");
 
   // All strings in |languagesWithSpecialCasing| are of length two, so we
   // only need to compare the first two characters to find a matching locale.
   // ES2017 Intl, §9.2.2 BestAvailableLocale
   if (locale->length() == 2 || locale->latin1OrTwoByteChar(2) == '-') {
-    for (const auto& language : languagesWithSpecialCasing) {
+    for (const auto& language : LanguagesWithSpecialCasing) {
       if (locale->latin1OrTwoByteChar(0) == language[0] &&
           locale->latin1OrTwoByteChar(1) == language[1]) {
         return language;
@@ -968,38 +1016,50 @@ static const char* CaseMappingLocale(JSContext* cx, JSString* str) {
     }
   }
 
-  return "";  // ICU root locale
+  return nullptr;
 }
 
-static bool HasDefaultCasing(const char* locale) { return !strcmp(locale, ""); }
+enum class TargetCase { Lower, Upper };
 
-bool js::intl_toLocaleLowerCase(JSContext* cx, unsigned argc, Value* vp) {
-  CallArgs args = CallArgsFromVp(argc, vp);
-  MOZ_ASSERT(args.length() == 2);
-  MOZ_ASSERT(args[0].isString());
-  MOZ_ASSERT(args[1].isString());
-
-  RootedString string(cx, args[0].toString());
-
-  const char* locale = CaseMappingLocale(cx, args[1].toString());
-  if (!locale) {
-    return false;
+/**
+ * TransformCase ( S, locales, targetCase )
+ */
+static JSLinearString* TransformCase(JSContext* cx, Handle<JSString*> string,
+                                     Handle<Value> locales,
+                                     TargetCase targetCase) {
+  // Step 1.
+  Rooted<intl::LocalesList> requestedLocales(cx, cx);
+  if (!intl::CanonicalizeLocaleList(cx, locales, &requestedLocales)) {
+    return nullptr;
   }
 
-  // Call String.prototype.toLowerCase() for language independent casing.
-  if (HasDefaultCasing(locale)) {
-    JSString* str = StringToLowerCase(cx, string);
-    if (!str) {
-      return false;
-    }
+  // Trivial case: When the input is empty, directly return the empty string.
+  if (string->empty()) {
+    return cx->emptyString();
+  }
 
-    args.rval().setString(str);
-    return true;
+  // Steps 2-3.
+  Rooted<JSLinearString*> requestedLocale(cx);
+  if (!requestedLocales.empty()) {
+    requestedLocale = requestedLocales[0];
+  } else {
+    requestedLocale = cx->global()->globalIntlData().defaultLocale(cx);
+    if (!requestedLocale) {
+      return nullptr;
+    }
+  }
+
+  // Steps 4-10.
+  const char* locale = CaseMappingLocale(requestedLocale);
+  if (!locale) {
+    // Call the default case conversion methods for language independent casing.
+    return targetCase == TargetCase::Lower ? StringToLowerCase(cx, string)
+                                           : StringToUpperCase(cx, string);
   }
 
   AutoStableStringChars inputChars(cx);
   if (!inputChars.initTwoByte(cx, string)) {
-    return false;
+    return nullptr;
   }
   mozilla::Range<const char16_t> input = inputChars.twoByteRange();
 
@@ -1012,43 +1072,48 @@ bool js::intl_toLocaleLowerCase(JSContext* cx, unsigned argc, Value* vp) {
 
   intl::FormatBuffer<char16_t, INLINE_CAPACITY> buffer(cx);
 
-  auto ok = mozilla::intl::String::ToLocaleLowerCase(locale, input, buffer);
+  auto ok =
+      targetCase == TargetCase::Lower
+          ? mozilla::intl::String::ToLocaleLowerCase(locale, input, buffer)
+          : mozilla::intl::String::ToLocaleUpperCase(locale, input, buffer);
   if (ok.isErr()) {
     intl::ReportInternalError(cx, ok.unwrapErr());
+    return nullptr;
+  }
+
+  return buffer.toString(cx);
+}
+#endif
+
+static bool str_toLocaleLowerCase(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype",
+                                        "toLocaleLowerCase");
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  // Steps 1-2.
+  Rooted<JSString*> str(
+      cx, ToStringForStringFunction(cx, "toLocaleLowerCase", args.thisv()));
+  if (!str) {
     return false;
   }
 
-  JSString* result = buffer.toString(cx);
+#if JS_HAS_INTL_API
+  // Step 3.
+  auto* result = TransformCase(cx, str, args.get(0), TargetCase::Lower);
   if (!result) {
     return false;
   }
 
   args.rval().setString(result);
   return true;
-}
-
 #else
-
-// When the Intl API is not exposed, String.prototype.toLowerCase is implemented
-// in C++.
-static bool str_toLocaleLowerCase(JSContext* cx, unsigned argc, Value* vp) {
-  AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype",
-                                        "toLocaleLowerCase");
-  CallArgs args = CallArgsFromVp(argc, vp);
-
-  RootedString str(
-      cx, ToStringForStringFunction(cx, "toLocaleLowerCase", args.thisv()));
-  if (!str) {
-    return false;
-  }
-
   /*
    * Forcefully ignore the first (or any) argument and return toLowerCase(),
    * ECMA has reserved that argument, presumably for defining the locale.
    */
   if (cx->runtime()->localeCallbacks &&
       cx->runtime()->localeCallbacks->localeToLowerCase) {
-    RootedValue result(cx);
+    Rooted<Value> result(cx);
     if (!cx->runtime()->localeCallbacks->localeToLowerCase(cx, str, &result)) {
       return false;
     }
@@ -1069,9 +1134,8 @@ static bool str_toLocaleLowerCase(JSContext* cx, unsigned argc, Value* vp) {
 
   args.rval().setString(result);
   return true;
+#endif
 }
-
-#endif  // JS_HAS_INTL_API
 
 static inline bool ToUpperCaseHasSpecialCasing(Latin1Char charCode) {
   // U+00DF LATIN SMALL LETTER SHARP S is the only Latin-1 code point with
@@ -1358,86 +1422,34 @@ static bool str_toUpperCase(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
-#if JS_HAS_INTL_API
-// String.prototype.toLocaleUpperCase is self-hosted when Intl is exposed,
-// with core functionality performed by the intrinsic below.
-
-bool js::intl_toLocaleUpperCase(JSContext* cx, unsigned argc, Value* vp) {
+static bool str_toLocaleUpperCase(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype",
+                                        "toLocaleUpperCase");
   CallArgs args = CallArgsFromVp(argc, vp);
-  MOZ_ASSERT(args.length() == 2);
-  MOZ_ASSERT(args[0].isString());
-  MOZ_ASSERT(args[1].isString());
 
-  RootedString string(cx, args[0].toString());
-
-  const char* locale = CaseMappingLocale(cx, args[1].toString());
-  if (!locale) {
+  Rooted<JSString*> str(
+      cx, ToStringForStringFunction(cx, "toLocaleUpperCase", args.thisv()));
+  if (!str) {
     return false;
   }
 
-  // Call String.prototype.toUpperCase() for language independent casing.
-  if (HasDefaultCasing(locale)) {
-    JSString* str = js::StringToUpperCase(cx, string);
-    if (!str) {
-      return false;
-    }
-
-    args.rval().setString(str);
-    return true;
-  }
-
-  AutoStableStringChars inputChars(cx);
-  if (!inputChars.initTwoByte(cx, string)) {
-    return false;
-  }
-  mozilla::Range<const char16_t> input = inputChars.twoByteRange();
-
-  // Note: maximum case mapping length is three characters, so the result
-  // length might be > INT32_MAX. ICU will fail in this case.
-  static_assert(JSString::MAX_LENGTH <= INT32_MAX,
-                "String length must fit in int32_t for ICU");
-
-  static const size_t INLINE_CAPACITY = js::intl::INITIAL_CHAR_BUFFER_SIZE;
-
-  intl::FormatBuffer<char16_t, INLINE_CAPACITY> buffer(cx);
-
-  auto ok = mozilla::intl::String::ToLocaleUpperCase(locale, input, buffer);
-  if (ok.isErr()) {
-    intl::ReportInternalError(cx, ok.unwrapErr());
-    return false;
-  }
-
-  JSString* result = buffer.toString(cx);
+#if JS_HAS_INTL_API
+  // Step 3.
+  auto* result = TransformCase(cx, str, args.get(0), TargetCase::Upper);
   if (!result) {
     return false;
   }
 
   args.rval().setString(result);
   return true;
-}
-
 #else
-
-// When the Intl API is not exposed, String.prototype.toUpperCase is implemented
-// in C++.
-static bool str_toLocaleUpperCase(JSContext* cx, unsigned argc, Value* vp) {
-  AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype",
-                                        "toLocaleUpperCase");
-  CallArgs args = CallArgsFromVp(argc, vp);
-
-  RootedString str(
-      cx, ToStringForStringFunction(cx, "toLocaleUpperCase", args.thisv()));
-  if (!str) {
-    return false;
-  }
-
   /*
    * Forcefully ignore the first (or any) argument and return toUpperCase(),
    * ECMA has reserved that argument, presumably for defining the locale.
    */
   if (cx->runtime()->localeCallbacks &&
       cx->runtime()->localeCallbacks->localeToUpperCase) {
-    RootedValue result(cx);
+    Rooted<Value> result(cx);
     if (!cx->runtime()->localeCallbacks->localeToUpperCase(cx, str, &result)) {
       return false;
     }
@@ -1458,36 +1470,51 @@ static bool str_toLocaleUpperCase(JSContext* cx, unsigned argc, Value* vp) {
 
   args.rval().setString(result);
   return true;
+#endif
 }
 
-#endif  // JS_HAS_INTL_API
-
-#if JS_HAS_INTL_API
-
-// String.prototype.localeCompare is self-hosted when Intl functionality is
-// exposed, and the only intrinsics it requires are provided in the
-// implementation of Intl.Collator.
-
-#else
-
-// String.prototype.localeCompare is implemented in C++ (delegating to
-// JSLocaleCallbacks) when Intl functionality is not exposed.
+/**
+ * String.prototype.localeCompare ( that [ , reserved1 [ , reserved2 ] ] )
+ *
+ * ES2025 draft rev 76814cbd5d7842c2a99d28e6e8c7833f1de5bee0
+ *
+ * String.prototype.localeCompare ( that [ , locales [ , options ] ] )
+ *
+ * ES2025 Intl draft rev 6827e6e40b45fb313472595be31352451a2d85fa
+ */
 static bool str_localeCompare(JSContext* cx, unsigned argc, Value* vp) {
   AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype",
                                         "localeCompare");
   CallArgs args = CallArgsFromVp(argc, vp);
 
+  // Steps 1-2.
   RootedString str(
       cx, ToStringForStringFunction(cx, "localeCompare", args.thisv()));
   if (!str) {
     return false;
   }
 
+  // Step 3.
   RootedString thatStr(cx, ToString<CanGC>(cx, args.get(0)));
   if (!thatStr) {
     return false;
   }
 
+#if JS_HAS_INTL_API
+  HandleValue locales = args.get(1);
+  HandleValue options = args.get(2);
+
+  // Step 4.
+  Rooted<CollatorObject*> collator(
+      cx, intl::GetOrCreateCollator(cx, locales, options));
+  if (!collator) {
+    return false;
+  }
+
+  // Step 5.
+  return intl::CompareStrings(cx, collator, str, thatStr, args.rval());
+#else
+  // Delegate to JSLocaleCallbacks when Intl functionality is not exposed.
   if (cx->runtime()->localeCallbacks &&
       cx->runtime()->localeCallbacks->localeCompare) {
     RootedValue result(cx);
@@ -1507,9 +1534,8 @@ static bool str_localeCompare(JSContext* cx, unsigned argc, Value* vp) {
 
   args.rval().setInt32(result);
   return true;
-}
-
 #endif  // JS_HAS_INTL_API
+}
 
 #if JS_HAS_INTL_API
 
@@ -1609,10 +1635,12 @@ static bool str_normalize(JSContext* cx, unsigned argc, Value* vp) {
  * IsStringWellFormedUnicode ( string )
  * https://tc39.es/ecma262/#sec-isstringwellformedunicode
  */
-static bool IsStringWellFormedUnicode(JSContext* cx, HandleString str,
+static bool IsStringWellFormedUnicode(JSContext* cx, JSString* str,
                                       size_t* isWellFormedUpTo) {
   MOZ_ASSERT(isWellFormedUpTo);
   *isWellFormedUpTo = 0;
+
+  AutoCheckCannotGC nogc;
 
   size_t len = str->length();
 
@@ -1627,10 +1655,7 @@ static bool IsStringWellFormedUnicode(JSContext* cx, HandleString str,
     return false;
   }
 
-  {
-    AutoCheckCannotGC nogc;
-    *isWellFormedUpTo = Utf16ValidUpTo(Span{linear->twoByteChars(nogc), len});
-  }
+  *isWellFormedUpTo = Utf16ValidUpTo(Span{linear->twoByteChars(nogc), len});
   return true;
 }
 
@@ -1646,8 +1671,7 @@ static bool str_isWellFormed(JSContext* cx, unsigned argc, Value* vp) {
 
   // Step 1. Let O be ? RequireObjectCoercible(this value).
   // Step 2. Let S be ? ToString(O).
-  RootedString str(cx,
-                   ToStringForStringFunction(cx, "isWellFormed", args.thisv()));
+  JSString* str = ToStringForStringFunction(cx, "isWellFormed", args.thisv());
   if (!str) {
     return false;
   }
@@ -1731,6 +1755,28 @@ static bool str_toWellFormed(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
+// Clamp |value| to a string index between 0 and |length|.
+static MOZ_ALWAYS_INLINE bool ToClampedStringIndex(JSContext* cx,
+                                                   Handle<Value> value,
+                                                   uint32_t length,
+                                                   uint32_t* result) {
+  // Handle the common case of int32 indices first.
+  if (value.isInt32()) {
+    int32_t i = value.toInt32();
+    *result = std::min(uint32_t(std::max(i, 0)), length);
+    return true;
+  }
+
+  double d;
+  if (!ToInteger(cx, value, &d)) {
+    return false;
+  }
+  *result = uint32_t(std::clamp(d, 0.0, double(length)));
+  return true;
+}
+
+// Return |Some(index)| if |value| is a string index between 0 and |length|.
+// Otherwise return |Nothing|.
 static MOZ_ALWAYS_INLINE bool ToStringIndex(JSContext* cx, Handle<Value> value,
                                             size_t length,
                                             mozilla::Maybe<size_t>* result) {
@@ -1753,6 +1799,8 @@ static MOZ_ALWAYS_INLINE bool ToStringIndex(JSContext* cx, Handle<Value> value,
   return true;
 }
 
+// Return |Some(index)| if |value| is a relative string index between 0 and
+// |length|. Otherwise return |Nothing|.
 static MOZ_ALWAYS_INLINE bool ToRelativeStringIndex(
     JSContext* cx, Handle<Value> value, size_t length,
     mozilla::Maybe<size_t>* result) {
@@ -2326,8 +2374,8 @@ static MOZ_ALWAYS_INLINE bool ReportErrorIfFirstArgIsRegExp(
   return true;
 }
 
-// ES2018 draft rev de77aaeffce115deaf948ed30c7dbe4c60983c0c
-// 21.1.3.7 String.prototype.includes ( searchString [ , position ] )
+// ES2026 draft rev a562082b031d89d00ee667181ce8a6158656bd4b
+// 22.1.3.8 String.prototype.includes ( searchString [ , position ] )
 bool js::str_includes(JSContext* cx, unsigned argc, Value* vp) {
   AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype", "includes");
   CallArgs args = CallArgsFromVp(argc, vp);
@@ -2349,28 +2397,15 @@ bool js::str_includes(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  // Step 6.
-  uint32_t pos = 0;
+  // Steps 6-9.
+  uint32_t start = 0;
   if (args.hasDefined(1)) {
-    if (args[1].isInt32()) {
-      int i = args[1].toInt32();
-      pos = (i < 0) ? 0U : uint32_t(i);
-    } else {
-      double d;
-      if (!ToInteger(cx, args[1], &d)) {
-        return false;
-      }
-      pos = uint32_t(std::clamp(d, 0.0, double(UINT32_MAX)));
+    if (!ToClampedStringIndex(cx, args[1], str->length(), &start)) {
+      return false;
     }
   }
 
-  // Step 7.
-  uint32_t textLen = str->length();
-
-  // Step 8.
-  uint32_t start = std::min(pos, textLen);
-
-  // Steps 9-10.
+  // Steps 10-12.
   JSLinearString* text = str->ensureLinear(cx);
   if (!text) {
     return false;
@@ -2396,43 +2431,31 @@ bool js::StringIncludes(JSContext* cx, HandleString string,
   return true;
 }
 
-/* ES6 20120927 draft 15.5.4.7. */
+// ES2026 draft rev a562082b031d89d00ee667181ce8a6158656bd4b
+// 22.1.3.9 String.prototype.indexOf ( searchString [ , position ] )
 bool js::str_indexOf(JSContext* cx, unsigned argc, Value* vp) {
   AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype", "indexOf");
   CallArgs args = CallArgsFromVp(argc, vp);
 
-  // Steps 1, 2, and 3
+  // Steps 1-2.
   RootedString str(cx, ToStringForStringFunction(cx, "indexOf", args.thisv()));
   if (!str) {
     return false;
   }
 
-  // Steps 4 and 5
+  // Step 3.
   Rooted<JSLinearString*> searchStr(cx, ArgToLinearString(cx, args, 0));
   if (!searchStr) {
     return false;
   }
 
-  // Steps 6 and 7
-  uint32_t pos = 0;
+  // Steps 4-7.
+  uint32_t start = 0;
   if (args.hasDefined(1)) {
-    if (args[1].isInt32()) {
-      int i = args[1].toInt32();
-      pos = (i < 0) ? 0U : uint32_t(i);
-    } else {
-      double d;
-      if (!ToInteger(cx, args[1], &d)) {
-        return false;
-      }
-      pos = uint32_t(std::clamp(d, 0.0, double(UINT32_MAX)));
+    if (!ToClampedStringIndex(cx, args[1], str->length(), &start)) {
+      return false;
     }
   }
-
-  // Step 8
-  uint32_t textLen = str->length();
-
-  // Step 9
-  uint32_t start = std::min(pos, textLen);
 
   if (str == searchStr) {
     // AngularJS often invokes "false".indexOf("false"). This check should
@@ -2441,7 +2464,7 @@ bool js::str_indexOf(JSContext* cx, unsigned argc, Value* vp) {
     return true;
   }
 
-  // Steps 10 and 11
+  // Steps 8-10.
   JSLinearString* text = str->ensureLinear(cx);
   if (!text) {
     return false;
@@ -2527,8 +2550,8 @@ static int32_t LastIndexOf(const JSLinearString* text,
                          searchLen, start);
 }
 
-// ES2017 draft rev 6859bb9ccaea9c6ede81d71e5320e3833b92cb3e
-// 21.1.3.9 String.prototype.lastIndexOf ( searchString [ , position ] )
+// ES2026 draft rev a562082b031d89d00ee667181ce8a6158656bd4b
+// 22.1.3.11 String.prototype.lastIndexOf ( searchString [ , position ] )
 static bool str_lastIndexOf(JSContext* cx, unsigned argc, Value* vp) {
   AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype", "lastIndexOf");
   CallArgs args = CallArgsFromVp(argc, vp);
@@ -2546,13 +2569,13 @@ static bool str_lastIndexOf(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  // Step 6.
+  // Step 7.
   size_t len = str->length();
 
   // Step 8.
   size_t searchLen = searchStr->length();
 
-  // Steps 4-5, 7.
+  // Steps 4-6 and 9.
   int start = len - searchLen;  // Start searching here
   if (args.hasDefined(1)) {
     if (args[1].isInt32()) {
@@ -2599,7 +2622,7 @@ static bool str_lastIndexOf(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  // Step 9.
+  // Step 10-12.
   args.rval().setInt32(LastIndexOf(text, searchStr, start));
   return true;
 }
@@ -2642,8 +2665,8 @@ bool js::StringLastIndexOf(JSContext* cx, HandleString string,
   return true;
 }
 
-// ES2018 draft rev de77aaeffce115deaf948ed30c7dbe4c60983c0c
-// 21.1.3.20 String.prototype.startsWith ( searchString [ , position ] )
+// ES2026 draft rev a562082b031d89d00ee667181ce8a6158656bd4b
+// 22.1.3.24 String.prototype.startsWith ( searchString [ , position ] )
 bool js::str_startsWith(JSContext* cx, unsigned argc, Value* vp) {
   AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype", "startsWith");
   CallArgs args = CallArgsFromVp(argc, vp);
@@ -2667,36 +2690,26 @@ bool js::str_startsWith(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // Step 6.
-  uint32_t pos = 0;
-  if (args.hasDefined(1)) {
-    if (args[1].isInt32()) {
-      int i = args[1].toInt32();
-      pos = (i < 0) ? 0U : uint32_t(i);
-    } else {
-      double d;
-      if (!ToInteger(cx, args[1], &d)) {
-        return false;
-      }
-      pos = uint32_t(std::clamp(d, 0.0, double(UINT32_MAX)));
-    }
-  }
-
-  // Step 7.
   uint32_t textLen = str->length();
 
-  // Step 8.
-  uint32_t start = std::min(pos, textLen);
+  // Steps 7-8.
+  uint32_t start = 0;
+  if (args.hasDefined(1)) {
+    if (!ToClampedStringIndex(cx, args[1], textLen, &start)) {
+      return false;
+    }
+  }
 
   // Step 9.
   uint32_t searchLen = searchStr->length();
 
-  // Step 10.
+  // Step 12.
   if (searchLen + start < searchLen || searchLen + start > textLen) {
     args.rval().setBoolean(false);
     return true;
   }
 
-  // Steps 11-12.
+  // Steps 10-11 and 13-15.
   JSLinearString* text = str->ensureLinear(cx);
   if (!text) {
     return false;
@@ -2727,8 +2740,8 @@ bool js::StringStartsWith(JSContext* cx, HandleString string,
   return true;
 }
 
-// ES2018 draft rev de77aaeffce115deaf948ed30c7dbe4c60983c0c
-// 21.1.3.6 String.prototype.endsWith ( searchString [ , endPosition ] )
+// ES2026 draft rev a562082b031d89d00ee667181ce8a6158656bd4b
+// 22.1.3.7 String.prototype.endsWith ( searchString [ , endPosition ] )
 bool js::str_endsWith(JSContext* cx, unsigned argc, Value* vp) {
   AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype", "endsWith");
   CallArgs args = CallArgsFromVp(argc, vp);
@@ -2753,37 +2766,27 @@ bool js::str_endsWith(JSContext* cx, unsigned argc, Value* vp) {
   // Step 6.
   uint32_t textLen = str->length();
 
-  // Step 7.
-  uint32_t pos = textLen;
+  // Steps 7-8.
+  uint32_t end = textLen;
   if (args.hasDefined(1)) {
-    if (args[1].isInt32()) {
-      int i = args[1].toInt32();
-      pos = (i < 0) ? 0U : uint32_t(i);
-    } else {
-      double d;
-      if (!ToInteger(cx, args[1], &d)) {
-        return false;
-      }
-      pos = uint32_t(std::clamp(d, 0.0, double(UINT32_MAX)));
+    if (!ToClampedStringIndex(cx, args[1], textLen, &end)) {
+      return false;
     }
   }
-
-  // Step 8.
-  uint32_t end = std::min(pos, textLen);
 
   // Step 9.
   uint32_t searchLen = searchStr->length();
 
-  // Step 11 (reordered).
+  // Step 12 (reordered).
   if (searchLen > end) {
     args.rval().setBoolean(false);
     return true;
   }
 
-  // Step 10.
+  // Step 11.
   uint32_t start = end - searchLen;
 
-  // Steps 12-13.
+  // Steps 10 and 13-15.
   JSLinearString* text = str->ensureLinear(cx);
   if (!text) {
     return false;
@@ -3899,15 +3902,11 @@ static const JSFunctionSpec string_methods[] = {
     JS_INLINABLE_FN("trim", str_trim, 0, 0, StringTrim),
     JS_INLINABLE_FN("trimStart", str_trimStart, 0, 0, StringTrimStart),
     JS_INLINABLE_FN("trimEnd", str_trimEnd, 0, 0, StringTrimEnd),
-#if JS_HAS_INTL_API
-    JS_SELF_HOSTED_FN("toLocaleLowerCase", "String_toLocaleLowerCase", 0, 0),
-    JS_SELF_HOSTED_FN("toLocaleUpperCase", "String_toLocaleUpperCase", 0, 0),
-    JS_SELF_HOSTED_FN("localeCompare", "String_localeCompare", 1, 0),
-#else
-    JS_FN("toLocaleLowerCase", str_toLocaleLowerCase, 0, 0),
-    JS_FN("toLocaleUpperCase", str_toLocaleUpperCase, 0, 0),
+    JS_INLINABLE_FN("toLocaleLowerCase", str_toLocaleLowerCase, 0, 0,
+                    StringToLocaleLowerCase),
+    JS_INLINABLE_FN("toLocaleUpperCase", str_toLocaleUpperCase, 0, 0,
+                    StringToLocaleUpperCase),
     JS_FN("localeCompare", str_localeCompare, 1, 0),
-#endif
     JS_SELF_HOSTED_FN("repeat", "String_repeat", 1, 0),
 #if JS_HAS_INTL_API
     JS_FN("normalize", str_normalize, 0, 0),
@@ -4792,10 +4791,10 @@ JSString* js::EncodeURI(JSContext* cx, const char* chars, size_t length) {
   return sb.finishString();
 }
 
-static bool FlatStringMatchHelper(JSContext* cx, HandleString str,
-                                  HandleString pattern, bool* isFlat,
+static bool FlatStringMatchHelper(JSContext* cx, JSString* str,
+                                  JSString* pattern, bool* isFlat,
                                   int32_t* match) {
-  Rooted<JSLinearString*> linearPattern(cx, pattern->ensureLinear(cx));
+  JSLinearString* linearPattern = pattern->ensureLinear(cx);
   if (!linearPattern) {
     return false;
   }
@@ -4899,8 +4898,8 @@ bool js::FlatStringSearch(JSContext* cx, unsigned argc, Value* vp) {
   MOZ_ASSERT(args[1].isString());
   MOZ_ASSERT(cx->realm()->realmFuses.optimizeRegExpPrototypeFuse.intact());
 
-  RootedString str(cx, args[0].toString());
-  RootedString pattern(cx, args[1].toString());
+  JSString* str = args[0].toString();
+  JSString* pattern = args[1].toString();
 
   bool isFlat = false;
   int32_t match = 0;

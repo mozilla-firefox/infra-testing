@@ -4,7 +4,7 @@
 
 //! Test data that we use in many tests
 
-use crate::{suggestion::FtsMatchInfo, testing::MockIcon, Suggestion};
+use crate::{suggestion::FtsMatchInfo, suggestion::YelpSubjectType, testing::MockIcon, Suggestion};
 use serde_json::json;
 use serde_json::Value as JsonValue;
 
@@ -13,6 +13,7 @@ pub fn los_pollos_amp() -> JsonValue {
         "id": 100,
         "advertiser": "Los Pollos Hermanos",
         "iab_category": "8 - Food & Drink",
+        "serp_categories": [9],
         "keywords": ["lo", "los", "los p", "los pollos", "los pollos h", "los pollos hermanos"],
         "full_keywords": [("los pollos", 4), ("los pollos hermanos", 2)],
         "title": "Los Pollos Hermanos - Albuquerque",
@@ -45,6 +46,7 @@ pub fn los_pollos_suggestion(
         block_id: 100,
         advertiser: "Los Pollos Hermanos".into(),
         iab_category: "8 - Food & Drink".into(),
+        categories: vec![9],
         impression_url: "https://example.com/impression_url".into(),
         click_url: "https://example.com/click_url".into(),
         raw_click_url: "https://example.com/click_url".into(),
@@ -91,6 +93,7 @@ pub fn good_place_eats_suggestion(
         block_id: 101,
         advertiser: "Good Place Eats".into(),
         iab_category: "8 - Food & Drink".into(),
+        categories: vec![],
         impression_url: "https://example.com/impression_url".into(),
         click_url: "https://example.com/click_url".into(),
         raw_click_url: "https://example.com/click_url".into(),
@@ -269,31 +272,10 @@ pub fn new_tab_override_suggestion() -> Suggestion {
     }
 }
 
-pub fn burnout_pocket() -> JsonValue {
-    json!({
-        "description": "pocket suggestion",
-        "url": "https://getpocket.com/collections/its-not-just-burnout-how-grind-culture-failed-women",
-        "lowConfidenceKeywords": ["soft life", "workaholism", "toxic work culture", "work-life balance"],
-        "highConfidenceKeywords": ["burnout women", "grind culture", "women burnout"],
-        "title": "‘It’s Not Just Burnout:’ How Grind Culture Fails Women",
-        "score": 0.25
-    })
-}
-
-pub fn burnout_suggestion(is_top_pick: bool) -> Suggestion {
-    Suggestion::Pocket {
-        title: "‘It’s Not Just Burnout:’ How Grind Culture Fails Women".into(),
-        url:
-            "https://getpocket.com/collections/its-not-just-burnout-how-grind-culture-failed-women"
-                .into(),
-        score: 0.25,
-        is_top_pick,
-    }
-}
-
 pub fn ramen_yelp() -> JsonValue {
     json!({
         "subjects": ["ramen", "spicy ramen", "spicy random ramen", "rats", "raven", "raccoon", "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789", "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789Z"],
+        "businessSubjects": ["the shop"],
         "preModifiers": ["best", "super best", "same_modifier"],
         "postModifiers": ["delivery", "super delivery", "same_modifier"],
         "locationSigns": [
@@ -319,6 +301,7 @@ pub fn ramen_suggestion(title: &str, url: &str) -> Suggestion {
         score: 0.5,
         has_location_sign: true,
         subject_exact_match: true,
+        subject_type: YelpSubjectType::Service,
         location_param: "find_loc".into(),
     }
 }
@@ -378,31 +361,11 @@ pub fn multimatch_amo() -> JsonValue {
     })
 }
 
-pub fn multimatch_pocket() -> JsonValue {
-    json!({
-        "description": "pocket suggestion multi-match",
-        "url": "https://getpocket.com/collections/multimatch",
-        "lowConfidenceKeywords": [],
-        "highConfidenceKeywords": ["multimatch"],
-        "title": "Multimatching",
-        "score": 0.88
-    })
-}
-
 pub fn multimatch_wiki_icon() -> MockIcon {
     MockIcon {
         id: "multimatch-wiki-favicon",
         data: "multimatch-wiki-icon-data",
         mimetype: "image/png",
-    }
-}
-
-pub fn multimatch_pocket_suggestion(is_top_pick: bool) -> Suggestion {
-    Suggestion::Pocket {
-        title: "Multimatching".into(),
-        url: "https://getpocket.com/collections/multimatch".into(),
-        score: 0.88,
-        is_top_pick,
     }
 }
 

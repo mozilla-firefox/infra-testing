@@ -12,8 +12,8 @@
 #include "mozilla/dom/BindingDeclarations.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsHashKeys.h"
-#include "nsTHashMap.h"
 #include "nsHashtablesFwd.h"
+#include "nsTHashMap.h"
 #include "nsWrapperCache.h"
 
 class nsFrameSelection;
@@ -90,6 +90,8 @@ class HighlightRegistry final : public nsISupports, public nsWrapperCache {
    */
   MOZ_CAN_RUN_SCRIPT void RemoveHighlightSelection(Highlight& aHighlight);
 
+  void RepaintHighlightSelection(Highlight& aHighlight);
+
   // WebIDL interface
 
   Document* GetParentObject() const { return mDocument; };
@@ -107,8 +109,9 @@ class HighlightRegistry final : public nsISupports, public nsWrapperCache {
    *
    * If a `FrameSelection` is present, a highlight selection is created.
    */
-  MOZ_CAN_RUN_SCRIPT void Set(const nsAString& aKey, Highlight& aValue,
-                              ErrorResult& aRv);
+  MOZ_CAN_RUN_SCRIPT HighlightRegistry* Set(const nsAString& aKey,
+                                            Highlight& aValue,
+                                            ErrorResult& aRv);
 
   /**
    * @brief Removes all highlights from this registry.

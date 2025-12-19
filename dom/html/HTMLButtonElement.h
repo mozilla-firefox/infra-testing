@@ -126,7 +126,7 @@ class HTMLButtonElement final : public nsGenericHTMLFormControlElementWithState,
   void SetType(const nsAString& aType, ErrorResult& aRv) {
     SetHTMLAttr(nsGkAtoms::type, aType, aRv);
   }
-  void GetValue(DOMString& aValue) { GetHTMLAttr(nsGkAtoms::value, aValue); }
+  void GetValue(nsAString& aValue) { GetHTMLAttr(nsGkAtoms::value, aValue); }
   void SetValue(const nsAString& aValue, ErrorResult& aRv) {
     SetHTMLAttr(nsGkAtoms::value, aValue, aRv);
   }
@@ -135,8 +135,20 @@ class HTMLButtonElement final : public nsGenericHTMLFormControlElementWithState,
   // via bindings.
   void SetCustomValidity(const nsAString& aError);
 
+  // Command & CommandFor
+  Element* GetCommandForElement() const;
+  void SetCommandForElement(Element*);
+  void GetCommand(nsAString& aCommand) const;
+  Element::Command GetCommand() const;
+  void SetCommand(const nsAString& aValue) {
+    SetHTMLAttr(nsGkAtoms::command, aValue);
+  }
+
  protected:
   virtual ~HTMLButtonElement();
+
+  bool InAutoState() const;
+  const nsAttrValue::EnumTableEntry* ResolveAutoState() const;
 
   bool mDisabledChanged : 1;
   bool mInInternalActivate : 1;

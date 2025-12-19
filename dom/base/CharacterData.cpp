@@ -11,21 +11,20 @@
 
 #include "mozilla/dom/CharacterData.h"
 
+#include "mozAutoDocUpdate.h"
 #include "mozilla/AsyncEventDispatcher.h"
+#include "mozilla/Sprintf.h"
 #include "mozilla/dom/BindContext.h"
+#include "mozilla/dom/DirectionalityUtils.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/MutationObservers.h"
 #include "mozilla/dom/ShadowRoot.h"
-#include "mozilla/dom/Document.h"
 #include "mozilla/dom/UnbindContext.h"
-#include "nsReadableUtils.h"
-#include "mozilla/InternalMutationEvent.h"
-#include "mozilla/dom/DirectionalityUtils.h"
-#include "mozAutoDocUpdate.h"
-#include "nsIContentInlines.h"
-#include "nsTextNode.h"
 #include "nsBidiUtils.h"
-#include "mozilla/Sprintf.h"
+#include "nsIContentInlines.h"
+#include "nsReadableUtils.h"
+#include "nsTextNode.h"
 #include "nsWindowSizes.h"
 
 #if defined(ACCESSIBILITY) && defined(DEBUG)
@@ -77,7 +76,7 @@ NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_THIS_END
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(CharacterData)
   if (MOZ_UNLIKELY(cb.WantDebugInfo())) {
     char name[40];
-    SprintfLiteral(name, "CharacterData (len=%d)", tmp->mText.GetLength());
+    SprintfLiteral(name, "CharacterData (len=%d)", tmp->mBuffer.GetLength());
     cb.DescribeRefCountedNode(tmp->mRefCnt.get(), name);
   } else {
     NS_IMPL_CYCLE_COLLECTION_DESCRIBE(CharacterData, tmp->mRefCnt.get())
@@ -105,45 +104,46 @@ void CharacterData::GetNodeValueInternal(nsAString& aNodeValue) {
   GetData(aNodeValue);
 }
 
-void CharacterData::SetNodeValueInternal(const nsAString& aNodeValue,
-                                         ErrorResult& aError) {
-  aError = SetTextInternal(0, mText.GetLength(), aNodeValue.BeginReading(),
-                           aNodeValue.Length(), true);
+void CharacterData::SetNodeValueInternal(
+    const nsAString& aNodeValue, ErrorResult& aError,
+    MutationEffectOnScript aMutationEffectOnScript) {
+  aError = SetTextInternal(0, mBuffer.GetLength(), aNodeValue.BeginReading(),
+                           aNodeValue.Length(), true, aMutationEffectOnScript);
 }
 
 //----------------------------------------------------------------------
 
 // Implementation of CharacterData
 
-void CharacterData::SetTextContentInternal(const nsAString& aTextContent,
-                                           nsIPrincipal* aSubjectPrincipal,
-                                           ErrorResult& aError) {
-  // Batch possible DOMSubtreeModified events.
-  mozAutoSubtreeModified subtree(OwnerDoc(), nullptr);
-  return SetNodeValueInternal(aTextContent, aError);
+void CharacterData::SetTextContentInternal(
+    const nsAString& aTextContent, nsIPrincipal* aSubjectPrincipal,
+    ErrorResult& aError, MutationEffectOnScript aMutationEffectOnScript) {
+  return SetNodeValueInternal(aTextContent, aError, aMutationEffectOnScript);
 }
 
 void CharacterData::GetData(nsAString& aData) const {
-  if (mText.Is2b()) {
+  if (mBuffer.Is2b()) {
     aData.Truncate();
-    mText.AppendTo(aData);
+    mBuffer.AppendTo(aData);
   } else {
     // Must use Substring() since nsDependentCString() requires null
     // terminated strings.
 
-    const char* data = mText.Get1b();
+    const char* data = mBuffer.Get1b();
 
     if (data) {
-      CopyASCIItoUTF16(Substring(data, data + mText.GetLength()), aData);
+      CopyASCIItoUTF16(Substring(data, data + mBuffer.GetLength()), aData);
     } else {
       aData.Truncate();
     }
   }
 }
 
-void CharacterData::SetData(const nsAString& aData, ErrorResult& aRv) {
-  nsresult rv = SetTextInternal(0, mText.GetLength(), aData.BeginReading(),
-                                aData.Length(), true);
+void CharacterData::SetDataInternal(
+    const nsAString& aData, MutationEffectOnScript aMutationEffectOnScript,
+    ErrorResult& aRv) {
+  nsresult rv = SetTextInternal(0, mBuffer.GetLength(), aData.BeginReading(),
+                                aData.Length(), true, aMutationEffectOnScript);
   if (NS_FAILED(rv)) {
     aRv.Throw(rv);
   }
@@ -153,7 +153,7 @@ void CharacterData::SubstringData(uint32_t aStart, uint32_t aCount,
                                   nsAString& aReturn, ErrorResult& rv) {
   aReturn.Truncate();
 
-  uint32_t textLength = mText.GetLength();
+  uint32_t textLength = mBuffer.GetLength();
   if (aStart > textLength) {
     rv.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
     return;
@@ -164,44 +164,50 @@ void CharacterData::SubstringData(uint32_t aStart, uint32_t aCount,
     amount = textLength - aStart;
   }
 
-  if (mText.Is2b()) {
-    aReturn.Assign(mText.Get2b() + aStart, amount);
+  if (mBuffer.Is2b()) {
+    aReturn.Assign(mBuffer.Get2b() + aStart, amount);
   } else {
     // Must use Substring() since nsDependentCString() requires null
     // terminated strings.
 
-    const char* data = mText.Get1b() + aStart;
+    const char* data = mBuffer.Get1b() + aStart;
     CopyASCIItoUTF16(Substring(data, data + amount), aReturn);
   }
 }
 
 //----------------------------------------------------------------------
 
-void CharacterData::AppendData(const nsAString& aData, ErrorResult& aRv) {
-  InsertData(mText.GetLength(), aData, aRv);
+void CharacterData::AppendDataInternal(
+    const nsAString& aData, MutationEffectOnScript aMutationEffectOnScript,
+    ErrorResult& aRv) {
+  InsertDataInternal(mBuffer.GetLength(), aData, aMutationEffectOnScript, aRv);
 }
 
-void CharacterData::InsertData(uint32_t aOffset, const nsAString& aData,
-                               ErrorResult& aRv) {
-  nsresult rv =
-      SetTextInternal(aOffset, 0, aData.BeginReading(), aData.Length(), true);
+void CharacterData::InsertDataInternal(
+    uint32_t aOffset, const nsAString& aData,
+    MutationEffectOnScript aMutationEffectOnScript, ErrorResult& aRv) {
+  nsresult rv = SetTextInternal(aOffset, 0, aData.BeginReading(),
+                                aData.Length(), true, aMutationEffectOnScript);
   if (NS_FAILED(rv)) {
     aRv.Throw(rv);
   }
 }
 
-void CharacterData::DeleteData(uint32_t aOffset, uint32_t aCount,
-                               ErrorResult& aRv) {
-  nsresult rv = SetTextInternal(aOffset, aCount, nullptr, 0, true);
+void CharacterData::DeleteDataInternal(
+    uint32_t aOffset, uint32_t aCount,
+    MutationEffectOnScript aMutationEffectOnScript, ErrorResult& aRv) {
+  nsresult rv = SetTextInternal(aOffset, aCount, nullptr, 0, true,
+                                aMutationEffectOnScript);
   if (NS_FAILED(rv)) {
     aRv.Throw(rv);
   }
 }
 
-void CharacterData::ReplaceData(uint32_t aOffset, uint32_t aCount,
-                                const nsAString& aData, ErrorResult& aRv) {
+void CharacterData::ReplaceDataInternal(
+    uint32_t aOffset, uint32_t aCount, const nsAString& aData,
+    MutationEffectOnScript aMutationEffectOnScript, ErrorResult& aRv) {
   nsresult rv = SetTextInternal(aOffset, aCount, aData.BeginReading(),
-                                aData.Length(), true);
+                                aData.Length(), true, aMutationEffectOnScript);
   if (NS_FAILED(rv)) {
     aRv.Throw(rv);
   }
@@ -210,11 +216,12 @@ void CharacterData::ReplaceData(uint32_t aOffset, uint32_t aCount,
 nsresult CharacterData::SetTextInternal(
     uint32_t aOffset, uint32_t aCount, const char16_t* aBuffer,
     uint32_t aLength, bool aNotify,
+    MutationEffectOnScript aMutationEffectOnScript,
     CharacterDataChangeInfo::Details* aDetails) {
   MOZ_ASSERT(aBuffer || !aLength, "Null buffer passed to SetTextInternal!");
 
   // sanitize arguments
-  uint32_t textLength = mText.GetLength();
+  uint32_t textLength = mBuffer.GetLength();
   if (aOffset > textLength) {
     return NS_ERROR_DOM_INDEX_SIZE_ERR;
   }
@@ -226,25 +233,17 @@ nsresult CharacterData::SetTextInternal(
   uint32_t endOffset = aOffset + aCount;
 
   // Make sure the text fragment can hold the new data.
-  if (aLength > aCount && !mText.CanGrowBy(aLength - aCount)) {
+  if (aLength > aCount && !mBuffer.CanGrowBy(aLength - aCount)) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
   Document* document = GetComposedDoc();
   mozAutoDocUpdate updateBatch(document, aNotify);
 
-  bool haveMutationListeners =
-      aNotify && nsContentUtils::WantMutationEvents(
-                     this, NS_EVENT_BITS_MUTATION_CHARACTERDATAMODIFIED, this);
-
-  RefPtr<nsAtom> oldValue;
-  if (haveMutationListeners) {
-    oldValue = GetCurrentValueAtom();
-  }
-
   if (aNotify) {
-    CharacterDataChangeInfo info = {aOffset == textLength, aOffset, endOffset,
-                                    aLength, aDetails};
+    CharacterDataChangeInfo info = {
+        aOffset == textLength,   aOffset, endOffset, aLength,
+        aMutationEffectOnScript, aDetails};
     MutationObservers::NotifyCharacterDataWillChange(this, info);
   }
 
@@ -256,29 +255,29 @@ nsresult CharacterData::SetTextInternal(
     // Replacing whole text or old text was empty.
     // If this is marked as "maybe modified frequently", the text should be
     // stored as char16_t since converting char* to char16_t* is expensive.
-    bool ok = mText.SetTo(aBuffer, aLength, true,
-                          HasFlag(NS_MAYBE_MODIFIED_FREQUENTLY));
+    bool ok = mBuffer.SetTo(aBuffer, aLength, true,
+                            HasFlag(NS_MAYBE_MODIFIED_FREQUENTLY));
     NS_ENSURE_TRUE(ok, NS_ERROR_OUT_OF_MEMORY);
   } else if (aOffset == textLength) {
     // Appending to existing.
-    bool ok = mText.Append(aBuffer, aLength, !mText.IsBidi(),
-                           HasFlag(NS_MAYBE_MODIFIED_FREQUENTLY));
+    bool ok = mBuffer.Append(aBuffer, aLength, !mBuffer.IsBidi(),
+                             HasFlag(NS_MAYBE_MODIFIED_FREQUENTLY));
     NS_ENSURE_TRUE(ok, NS_ERROR_OUT_OF_MEMORY);
   } else {
     // Merging old and new
 
-    bool bidi = mText.IsBidi();
+    bool bidi = mBuffer.IsBidi();
 
     // Allocate new buffer
     const uint32_t newLength = textLength - aCount + aLength;
     // Use nsString and not nsAutoString so that we get a nsStringBuffer which
-    // can be just AddRefed in nsTextFragment.
+    // can be just AddRefed in CharacterDataBuffer.
     nsString to;
     to.SetCapacity(newLength);
 
     // Copy over appropriate data
     if (aOffset) {
-      mText.AppendTo(to, 0, aOffset);
+      mBuffer.AppendTo(to, 0, aOffset);
     }
     if (aLength) {
       to.Append(aBuffer, aLength);
@@ -287,23 +286,23 @@ nsresult CharacterData::SetTextInternal(
       }
     }
     if (endOffset != textLength) {
-      mText.AppendTo(to, endOffset, textLength - endOffset);
+      mBuffer.AppendTo(to, endOffset, textLength - endOffset);
     }
 
     // If this is marked as "maybe modified frequently", the text should be
     // stored as char16_t since converting char* to char16_t* is expensive.
     // Use char16_t also when we have bidi characters.
     bool use2b = HasFlag(NS_MAYBE_MODIFIED_FREQUENTLY) || bidi;
-    bool ok = mText.SetTo(to, false, use2b);
-    mText.SetBidi(bidi);
+    bool ok = mBuffer.SetTo(to, false, use2b);
+    mBuffer.SetBidi(bidi);
 
     NS_ENSURE_TRUE(ok, NS_ERROR_OUT_OF_MEMORY);
   }
 
   UnsetFlags(NS_CACHED_TEXT_IS_ONLY_WHITESPACE);
 
-  if (document && mText.IsBidi()) {
-    // If we found bidi characters in mText.SetTo() above, indicate that the
+  if (document && mBuffer.IsBidi()) {
+    // If we found bidi characters in mBuffer.SetTo() above, indicate that the
     // document contains bidi characters.
     document->SetBidiEnabled();
   }
@@ -317,23 +316,10 @@ nsresult CharacterData::SetTextInternal(
 
   // Notify observers
   if (aNotify) {
-    CharacterDataChangeInfo info = {aOffset == textLength, aOffset, endOffset,
-                                    aLength, aDetails};
+    CharacterDataChangeInfo info = {
+        aOffset == textLength,   aOffset, endOffset, aLength,
+        aMutationEffectOnScript, aDetails};
     MutationObservers::NotifyCharacterDataChanged(this, info);
-
-    if (haveMutationListeners) {
-      InternalMutationEvent mutation(true, eLegacyCharacterDataModified);
-
-      mutation.mPrevAttrValue = oldValue;
-      if (aLength > 0) {
-        nsAutoString val;
-        mText.AppendTo(val);
-        mutation.mNewAttrValue = NS_Atomize(val);
-      }
-
-      mozAutoSubtreeModified subtree(OwnerDoc(), this);
-      AsyncEventDispatcher::RunDOMEventWhenSafe(*this, mutation);
-    }
   }
 
   return NS_OK;
@@ -346,8 +332,8 @@ nsresult CharacterData::SetTextInternal(
 #ifdef MOZ_DOM_LIST
 void CharacterData::ToCString(nsAString& aBuf, int32_t aOffset,
                               int32_t aLen) const {
-  if (mText.Is2b()) {
-    const char16_t* cp = mText.Get2b() + aOffset;
+  if (mBuffer.Is2b()) {
+    const char16_t* cp = mBuffer.Get2b() + aOffset;
     const char16_t* end = cp + aLen;
 
     while (cp < end) {
@@ -365,7 +351,7 @@ void CharacterData::ToCString(nsAString& aBuf, int32_t aOffset,
       }
     }
   } else {
-    unsigned char* cp = (unsigned char*)mText.Get1b() + aOffset;
+    unsigned char* cp = (unsigned char*)mBuffer.Get1b() + aOffset;
     const unsigned char* end = cp + aLen;
 
     while (cp < end) {
@@ -434,7 +420,7 @@ nsresult CharacterData::BindToTree(BindContext& aContext, nsINode& aParent) {
           aParent.AsContent()->GetContainingShadow();
     }
 
-    if (IsInComposedDoc() && mText.IsBidi()) {
+    if (IsInComposedDoc() && mBuffer.IsBidi()) {
       aContext.OwnerDoc().SetBidiEnabled();
     }
 
@@ -471,7 +457,8 @@ void CharacterData::UnbindFromTree(UnbindContext& aContext) {
   UnsetFlags(NS_CREATE_FRAME_IF_NON_WHITESPACE | NS_REFRAME_IF_WHITESPACE);
 
   const bool nullParent = aContext.IsUnbindRoot(this);
-  HandleShadowDOMRelatedRemovalSteps(nullParent);
+  HandleShadowDOMRelatedRemovalSteps(nullParent,
+                                     !!aContext.GetBatchRemovalState());
 
   if (nullParent) {
     if (GetParent()) {
@@ -509,12 +496,14 @@ void CharacterData::UnbindFromTree(UnbindContext& aContext) {
 
 nsresult CharacterData::SetText(const char16_t* aBuffer, uint32_t aLength,
                                 bool aNotify) {
-  return SetTextInternal(0, mText.GetLength(), aBuffer, aLength, aNotify);
+  return SetTextInternal(0, mBuffer.GetLength(), aBuffer, aLength, aNotify,
+                         MutationEffectOnScript::KeepTrustWorthiness);
 }
 
 nsresult CharacterData::AppendText(const char16_t* aBuffer, uint32_t aLength,
                                    bool aNotify) {
-  return SetTextInternal(mText.GetLength(), 0, aBuffer, aLength, aNotify);
+  return SetTextInternal(mBuffer.GetLength(), 0, aBuffer, aLength, aNotify,
+                         MutationEffectOnScript::KeepTrustWorthiness);
 }
 
 bool CharacterData::TextIsOnlyWhitespace() {
@@ -531,7 +520,7 @@ bool CharacterData::TextIsOnlyWhitespace() {
 
 bool CharacterData::ThreadSafeTextIsOnlyWhitespace() const {
   // FIXME: should this method take content language into account?
-  if (mText.Is2b()) {
+  if (mBuffer.Is2b()) {
     // The fragment contains non-8bit characters and such characters
     // are never considered whitespace.
     //
@@ -545,21 +534,64 @@ bool CharacterData::ThreadSafeTextIsOnlyWhitespace() const {
     return HasFlag(NS_TEXT_IS_ONLY_WHITESPACE);
   }
 
-  const char* cp = mText.Get1b();
-  const char* end = cp + mText.GetLength();
+  return CheckTextIsOnlyWhitespace(0, mBuffer.GetLength());
+}
 
-  while (cp < end) {
-    char ch = *cp;
+bool CharacterData::TextStartsWithOnlyWhitespace(uint32_t aOffset) const {
+  MOZ_ASSERT(aOffset <= mBuffer.GetLength());
 
-    // NOTE(emilio): If you ever change the definition of "whitespace" here, you
-    // need to change it too in RestyleManager::CharacterDataChanged.
-    if (!dom::IsSpaceCharacter(ch)) {
-      return false;
-    }
-
-    ++cp;
+  if (HasFlag(NS_CACHED_TEXT_IS_ONLY_WHITESPACE) &&
+      HasFlag(NS_TEXT_IS_ONLY_WHITESPACE)) {
+    return true;
   }
 
+  return CheckTextIsOnlyWhitespace(0, aOffset);
+}
+
+bool CharacterData::TextEndsWithOnlyWhitespace(uint32_t aOffset) const {
+  MOZ_ASSERT(aOffset <= mBuffer.GetLength());
+
+  if (HasFlag(NS_CACHED_TEXT_IS_ONLY_WHITESPACE) &&
+      HasFlag(NS_TEXT_IS_ONLY_WHITESPACE)) {
+    return true;
+  }
+
+  return CheckTextIsOnlyWhitespace(aOffset, mBuffer.GetLength());
+}
+
+bool CharacterData::CheckTextIsOnlyWhitespace(uint32_t aStartOffset,
+                                              uint32_t aEndOffset) const {
+  if (mBuffer.Is2b()) {
+    const char16_t* cp = mBuffer.Get2b() + aStartOffset;
+    const char16_t* end = mBuffer.Get2b() + aEndOffset;
+
+    while (cp < end) {
+      char16_t ch = *cp;
+
+      // NOTE(emilio): If you ever change the definition of "whitespace" here,
+      // you need to change it too in RestyleManager::CharacterDataChanged.
+      if (!dom::IsSpaceCharacter(ch)) {
+        return false;
+      }
+
+      ++cp;
+    }
+  } else {
+    const char* cp = mBuffer.Get1b() + aStartOffset;
+    const char* end = mBuffer.Get1b() + aEndOffset;
+
+    while (cp < end) {
+      char ch = *cp;
+
+      // NOTE(emilio): If you ever change the definition of "whitespace" here,
+      // you need to change it too in RestyleManager::CharacterDataChanged.
+      if (!dom::IsSpaceCharacter(ch)) {
+        return false;
+      }
+
+      ++cp;
+    }
+  }
   return true;
 }
 
@@ -572,7 +604,7 @@ already_AddRefed<nsAtom> CharacterData::GetCurrentValueAtom() {
 void CharacterData::AddSizeOfExcludingThis(nsWindowSizes& aSizes,
                                            size_t* aNodeSize) const {
   nsIContent::AddSizeOfExcludingThis(aSizes, aNodeSize);
-  *aNodeSize += mText.SizeOfExcludingThis(aSizes.mState.mMallocSizeOf);
+  *aNodeSize += mBuffer.SizeOfExcludingThis(aSizes.mState.mMallocSizeOf);
 }
 
 }  // namespace mozilla::dom

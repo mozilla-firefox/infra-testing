@@ -1,19 +1,22 @@
 [DEFAULT]
 subsuite = "webgpu"
 
-# This test suite should run when WebGPU is enabled by the preprocessor
-# conditionals in `gfxPlatform::InitWebGPUConfig`.
+# This file's tests should run when WebGPU is enabled by the default
+# value of `dom.webgpu.enabled` in `modules/libpref/init/StaticPrefList.yaml`.
 #
-# This condition should be the exact complement of the `run-if`
-# condition in `mochitest-disabled.html`.
-run-if = ["nightly_build || (os == 'win' && early_beta_or_earlier)"]
-
-# `test-verify` jobs don't guarantee a GPU, so skip them.
-skip-if = ["verify"]
+# These conditions should be the same as the `skip-if` conditions in
+# `mochitest-no-pref.html`, except for `verify`.
+run-if = [
+  "early_beta_or_earlier",
+  "os == 'mac' && arch == 'aarch64'",
+  "os == 'win'",
+]
 
 prefs = [
-  "dom.webgpu.enabled=true",
-  "dom.webgpu.workers.enabled=true",
+  "dom.webgpu.service-workers.enabled=true",
+  # Ignoring the blocklist is necessary to run tests in CI on old Mesa versions
+  # (https://bugzilla.mozilla.org/show_bug.cgi?id=1985348).
+  "gfx.webgpu.ignore-blocklist=true",
 ]
 support-files = [
   "worker_wrapper.js",
@@ -25,6 +28,8 @@ support-files = [
 #
 # See spec WebIDL, like this: https://www.w3.org/TR/webgpu/#navigatorgpu
 scheme = "https"
+
+["test_adapter_enabled.html"]
 
 ["test_basic_canvas.worker.html"]
 
@@ -78,4 +83,4 @@ scheme = "http"
 
 ["test_submit_render_empty.worker.html"]
 
-["test_adapter_enabled.html"]
+["test_submit_render_multiple.html"]

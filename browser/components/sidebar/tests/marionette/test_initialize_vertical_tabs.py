@@ -2,10 +2,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import json
-
 from marionette_driver.by import By
 from marionette_harness import MarionetteTestCase
+from mozfile import json
 
 vertical_parent_id = "vertical-tabs"
 horizontal_parent_id = "TabsToolbar-customization-target"
@@ -56,12 +55,12 @@ class TestInitializeVerticalTabs(MarionetteTestCase):
         if orientation == "vertical":
             self.assertEqual(
                 h_collapsed,
-                "true",
+                "",
                 "Horizontal tab strip has expected collapsed attribute value",
             )
             self.assertEqual(
                 v_collapsed,
-                "false",
+                None,
                 "Vertical tab strip has expected collapsed attribute value",
             )
 
@@ -78,7 +77,7 @@ class TestInitializeVerticalTabs(MarionetteTestCase):
         else:
             self.assertEqual(
                 v_collapsed,
-                "true",
+                "",
                 "Vertical tab strip has expected collapsed attribute value",
             )
 
@@ -263,3 +262,32 @@ class TestInitializeVerticalTabs(MarionetteTestCase):
         """
         )
         self.assertEqual(pref_value, "hide-sidebar")
+
+    def test_hide_drag_to_pin_promo_if_horizontal_tabs_pinned(self):
+        # Pin a tab using the horizontal tabstrip.
+        self.restart_with_prefs(
+            {
+                "sidebar.revamp": False,
+                "sidebar.verticalTabs": False,
+            }
+        )
+        self.marionette.execute_async_script(
+            """
+            let resolve = arguments[0];
+            let tab = gBrowser.selectedTab;
+            tab.addEventListener("TabPinned", resolve, { once: true });
+            gBrowser.pinTab(tab);
+            """
+        )
+
+        # Switch to vertical tabs.
+        self.marionette.execute_script(
+            """
+            Services.prefs.setBoolPref("sidebar.verticalTabs", true);
+            """
+        )
+
+        promo_card = self.marionette.find_element(By.ID, "drag-to-pin-promo-card")
+        self.assertFalse(
+            promo_card.is_displayed(), "Drag-to-pin promo card is not displayed."
+        )

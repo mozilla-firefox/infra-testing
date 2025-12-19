@@ -44,10 +44,10 @@ export class LoginManagerStorage extends LoginManagerStorage_json {
   }
 
   /**
-   * Internal method used by regression tests only.  It is called before
-   * replacing this storage module with a new instance.
+   * Internal method used by tests only. It is called before replacing
+   * this storage module with a new instance.
    */
-  terminate() {}
+  testSaveForReplace() {}
 
   async addLoginsAsync(_logins, _continueOnDuplicates = false) {
     throw Components.Exception("", Cr.NS_ERROR_NOT_IMPLEMENTED);
@@ -58,6 +58,10 @@ export class LoginManagerStorage extends LoginManagerStorage_json {
   }
 
   modifyLogin(_oldLogin, _newLoginData) {
+    throw Components.Exception("", Cr.NS_ERROR_NOT_IMPLEMENTED);
+  }
+
+  async modifyLoginAsync(_oldLogin, _newLoginData) {
     throw Components.Exception("", Cr.NS_ERROR_NOT_IMPLEMENTED);
   }
 
@@ -213,6 +217,7 @@ export class LoginManagerStorage extends LoginManagerStorage_json {
   /**
    * GeckoView logins are already decrypted before this component receives them
    * so this method is a no-op for this backend.
+   *
    * @see _vanillaLoginToStorageLogin
    */
   _decryptLogins(logins) {

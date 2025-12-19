@@ -7,7 +7,6 @@
 
 #include "MFMediaEngineStream.h"
 #include "WMFUtils.h"
-#include "mozilla/Atomics.h"
 #include "mozilla/Mutex.h"
 
 namespace mozilla {
@@ -27,7 +26,7 @@ class MFMediaEngineVideoStream final : public MFMediaEngineStream {
 
   static MFMediaEngineVideoStream* Create(uint64_t aStreamId,
                                           const TrackInfo& aInfo,
-                                          bool aIsEncrytpedCustomInit,
+                                          bool aIsEncryptedCustomInit,
                                           MFMediaSource* aParentSource);
   nsCString GetDescriptionName() const override {
     return "media engine video stream"_ns;

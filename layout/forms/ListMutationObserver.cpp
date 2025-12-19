@@ -54,8 +54,7 @@ dom::HTMLInputElement& ListMutationObserver::InputElement() const {
 
 void ListMutationObserver::AttributeChanged(dom::Element* aElement,
                                             int32_t aNameSpaceID,
-                                            nsAtom* aAttribute,
-                                            int32_t aModType,
+                                            nsAtom* aAttribute, AttrModType,
                                             const nsAttrValue* aOldValue) {
   if (aAttribute == nsGkAtoms::value && aNameSpaceID == kNameSpaceID_None &&
       aElement->IsHTMLElement(nsGkAtoms::option)) {
@@ -68,16 +67,18 @@ void ListMutationObserver::CharacterDataChanged(
   mOwningElementFrame->InvalidateFrame();
 }
 
-void ListMutationObserver::ContentAppended(nsIContent* aFirstNewContent) {
+void ListMutationObserver::ContentAppended(nsIContent* aFirstNewContent,
+                                           const ContentAppendInfo&) {
   mOwningElementFrame->InvalidateFrame();
 }
 
-void ListMutationObserver::ContentInserted(nsIContent* aChild) {
+void ListMutationObserver::ContentInserted(nsIContent* aChild,
+                                           const ContentInsertInfo&) {
   mOwningElementFrame->InvalidateFrame();
 }
 
 void ListMutationObserver::ContentWillBeRemoved(nsIContent* aChild,
-                                                const BatchRemovalState*) {
+                                                const ContentRemoveInfo&) {
   mOwningElementFrame->InvalidateFrame();
 }
 

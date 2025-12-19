@@ -39,8 +39,8 @@ using metric_entry_t = uint64_t;
 static_assert(GLEAN_INDEX_BITS + GLEAN_TYPE_BITS + GLEAN_ID_BITS == sizeof(metric_entry_t) * 8, "Index, Type, and ID bits need to fit into a metric_entry_t");
 static_assert(GLEAN_TYPE_BITS + GLEAN_ID_BITS <= sizeof(uint32_t) * 8, "Metric Types and IDs need to fit into at most 32 bits");
 static_assert(4 < UINT32_MAX, "Too many metric categories generated.");
-static_assert(56 < 33554432, "Too many metrics generated. Need room for 2 signal bits.");
-static_assert(20 < 32, "Too many different metric types.");
+static_assert(57 < 33554432, "Too many metrics generated. Need room for 2 signal bits.");
+static_assert(21 < 32, "Too many different metric types.");
 
 already_AddRefed<GleanMetric> NewMetricFromId(uint32_t id, nsISupports* aParent) {
   uint32_t typeId = GLEAN_TYPE_ID(id);
@@ -59,71 +59,75 @@ already_AddRefed<GleanMetric> NewMetricFromId(uint32_t id, nsISupports* aParent)
     {
       return MakeAndAddRef<GleanCustomDistribution>(metricId, aParent);
     }
-    case 4: /* labeled_boolean */
+    case 4: /* datetime */
     {
-      return MakeAndAddRef<GleanLabeled>(metricId, 4, aParent);
+      return MakeAndAddRef<GleanDatetime>(metricId, aParent);
     }
-    case 5: /* labeled_counter */
+    case 5: /* denominator */
     {
-      return MakeAndAddRef<GleanLabeled>(metricId, 5, aParent);
+      return MakeAndAddRef<GleanDenominator>(metricId, aParent);
     }
-    case 6: /* labeled_string */
+    case 6: /* dual_labeled_counter */
     {
-      return MakeAndAddRef<GleanLabeled>(metricId, 6, aParent);
+      return MakeAndAddRef<GleanDualLabeledCounter>(metricId, aParent);
     }
-    case 7: /* memory_distribution */
+    case 7: /* event */
+    {
+      return MakeAndAddRef<GleanEvent>(metricId, aParent);
+    }
+    case 8: /* labeled_boolean */
+    {
+      return MakeAndAddRef<GleanLabeled>(metricId, 8, aParent);
+    }
+    case 9: /* labeled_counter */
+    {
+      return MakeAndAddRef<GleanLabeled>(metricId, 9, aParent);
+    }
+    case 10: /* labeled_string */
+    {
+      return MakeAndAddRef<GleanLabeled>(metricId, 10, aParent);
+    }
+    case 11: /* memory_distribution */
     {
       return MakeAndAddRef<GleanMemoryDistribution>(metricId, aParent);
     }
-    case 8: /* string_list */
+    case 12: /* numerator */
     {
-      return MakeAndAddRef<GleanStringList>(metricId, aParent);
-    }
-    case 9: /* string */
-    {
-      return MakeAndAddRef<GleanString>(metricId, aParent);
-    }
-    case 10: /* text */
-    {
-      return MakeAndAddRef<GleanText>(metricId, aParent);
-    }
-    case 11: /* timespan */
-    {
-      return MakeAndAddRef<GleanTimespan>(metricId, aParent);
-    }
-    case 12: /* timing_distribution */
-    {
-      return MakeAndAddRef<GleanTimingDistribution>(metricId, aParent);
+      return MakeAndAddRef<GleanNumerator>(metricId, aParent);
     }
     case 13: /* object */
     {
       return MakeAndAddRef<GleanObject>(metricId, aParent);
     }
-    case 14: /* datetime */
-    {
-      return MakeAndAddRef<GleanDatetime>(metricId, aParent);
-    }
-    case 15: /* event */
-    {
-      return MakeAndAddRef<GleanEvent>(metricId, aParent);
-    }
-    case 16: /* denominator */
-    {
-      return MakeAndAddRef<GleanDenominator>(metricId, aParent);
-    }
-    case 17: /* quantity */
+    case 14: /* quantity */
     {
       return MakeAndAddRef<GleanQuantity>(metricId, aParent);
     }
-    case 18: /* rate */
+    case 15: /* rate */
     {
       return MakeAndAddRef<GleanRate>(metricId, aParent);
     }
-    case 19: /* numerator */
+    case 16: /* string */
     {
-      return MakeAndAddRef<GleanNumerator>(metricId, aParent);
+      return MakeAndAddRef<GleanString>(metricId, aParent);
     }
-    case 20: /* uuid */
+    case 17: /* string_list */
+    {
+      return MakeAndAddRef<GleanStringList>(metricId, aParent);
+    }
+    case 18: /* text */
+    {
+      return MakeAndAddRef<GleanText>(metricId, aParent);
+    }
+    case 19: /* timespan */
+    {
+      return MakeAndAddRef<GleanTimespan>(metricId, aParent);
+    }
+    case 20: /* timing_distribution */
+    {
+      return MakeAndAddRef<GleanTimingDistribution>(metricId, aParent);
+    }
+    case 21: /* uuid */
     {
       return MakeAndAddRef<GleanUuid>(metricId, aParent);
     }
@@ -150,17 +154,17 @@ already_AddRefed<GleanMetric> NewSubMetricFromIds(uint32_t aParentTypeId,
                                            uint32_t* aSubmetricId,
                                            nsISupports* aParent) {
   switch (aParentTypeId) {
-    case 4: { /* labeled_boolean */
+    case 8: { /* labeled_boolean */
       auto id = impl::fog_labeled_boolean_get(aParentMetricId, &aLabel);
       *aSubmetricId = id;
       return MakeAndAddRef<GleanBoolean>(id, aParent);
     }
-    case 5: { /* labeled_counter */
+    case 9: { /* labeled_counter */
       auto id = impl::fog_labeled_counter_get(aParentMetricId, &aLabel);
       *aSubmetricId = id;
       return MakeAndAddRef<GleanCounter>(id, aParent);
     }
-    case 6: { /* labeled_string */
+    case 10: { /* labeled_string */
       auto id = impl::fog_labeled_string_get(aParentMetricId, &aLabel);
       *aSubmetricId = id;
       return MakeAndAddRef<GleanString>(id, aParent);
@@ -363,107 +367,109 @@ constexpr char gMetricStringTable[] = {
   /*   346 - "test.timingDistributionMetric" */ 't', 'e', 's', 't', '.', 't', 'i', 'm', 'i', 'n', 'g', 'D', 'i', 's', 't', 'r', 'i', 'b', 'u', 't', 'i', 'o', 'n', 'M', 'e', 't', 'r', 'i', 'c', '\0',
   /*   376 - "test.unorderedBooleanMetric" */ 't', 'e', 's', 't', '.', 'u', 'n', 'o', 'r', 'd', 'e', 'r', 'e', 'd', 'B', 'o', 'o', 'l', 'e', 'a', 'n', 'M', 'e', 't', 'r', 'i', 'c', '\0',
   /*   404 - "test.unorderedLabeledBooleanMetric" */ 't', 'e', 's', 't', '.', 'u', 'n', 'o', 'r', 'd', 'e', 'r', 'e', 'd', 'L', 'a', 'b', 'e', 'l', 'e', 'd', 'B', 'o', 'o', 'l', 'e', 'a', 'n', 'M', 'e', 't', 'r', 'i', 'c', '\0',
-  /*   439 - "testNested.anObject" */ 't', 'e', 's', 't', 'N', 'e', 's', 't', 'e', 'd', '.', 'a', 'n', 'O', 'b', 'j', 'e', 'c', 't', '\0',
-  /*   459 - "testNested.datetimeMetric" */ 't', 'e', 's', 't', 'N', 'e', 's', 't', 'e', 'd', '.', 'd', 'a', 't', 'e', 't', 'i', 'm', 'e', 'M', 'e', 't', 'r', 'i', 'c', '\0',
-  /*   485 - "testNested.eventMetric" */ 't', 'e', 's', 't', 'N', 'e', 's', 't', 'e', 'd', '.', 'e', 'v', 'e', 'n', 't', 'M', 'e', 't', 'r', 'i', 'c', '\0',
-  /*   508 - "testNested.eventMetricWithExtra" */ 't', 'e', 's', 't', 'N', 'e', 's', 't', 'e', 'd', '.', 'e', 'v', 'e', 'n', 't', 'M', 'e', 't', 'r', 'i', 'c', 'W', 'i', 't', 'h', 'E', 'x', 't', 'r', 'a', '\0',
-  /*   540 - "testNested.externalDenominator" */ 't', 'e', 's', 't', 'N', 'e', 's', 't', 'e', 'd', '.', 'e', 'x', 't', 'e', 'r', 'n', 'a', 'l', 'D', 'e', 'n', 'o', 'm', 'i', 'n', 'a', 't', 'o', 'r', '\0',
-  /*   571 - "testNested.optimizableCounterMetric" */ 't', 'e', 's', 't', 'N', 'e', 's', 't', 'e', 'd', '.', 'o', 'p', 't', 'i', 'm', 'i', 'z', 'a', 'b', 'l', 'e', 'C', 'o', 'u', 'n', 't', 'e', 'r', 'M', 'e', 't', 'r', 'i', 'c', '\0',
-  /*   607 - "testNested.optimizableDisabledCounterMetric" */ 't', 'e', 's', 't', 'N', 'e', 's', 't', 'e', 'd', '.', 'o', 'p', 't', 'i', 'm', 'i', 'z', 'a', 'b', 'l', 'e', 'D', 'i', 's', 'a', 'b', 'l', 'e', 'd', 'C', 'o', 'u', 'n', 't', 'e', 'r', 'M', 'e', 't', 'r', 'i', 'c', '\0',
-  /*   651 - "testNested.quantityMetric" */ 't', 'e', 's', 't', 'N', 'e', 's', 't', 'e', 'd', '.', 'q', 'u', 'a', 'n', 't', 'i', 't', 'y', 'M', 'e', 't', 'r', 'i', 'c', '\0',
-  /*   677 - "testNested.rateMetric" */ 't', 'e', 's', 't', 'N', 'e', 's', 't', 'e', 'd', '.', 'r', 'a', 't', 'e', 'M', 'e', 't', 'r', 'i', 'c', '\0',
-  /*   699 - "testNested.rateWithExternalDenominator" */ 't', 'e', 's', 't', 'N', 'e', 's', 't', 'e', 'd', '.', 'r', 'a', 't', 'e', 'W', 'i', 't', 'h', 'E', 'x', 't', 'e', 'r', 'n', 'a', 'l', 'D', 'e', 'n', 'o', 'm', 'i', 'n', 'a', 't', 'o', 'r', '\0',
-  /*   738 - "testNested.uuidMetric" */ 't', 'e', 's', 't', 'N', 'e', 's', 't', 'e', 'd', '.', 'u', 'u', 'i', 'd', 'M', 'e', 't', 'r', 'i', 'c', '\0',
-  /*   760 - "test2.booleanMetric" */ 't', 'e', 's', 't', '2', '.', 'b', 'o', 'o', 'l', 'e', 'a', 'n', 'M', 'e', 't', 'r', 'i', 'c', '\0',
-  /*   780 - "test2.counterMetric" */ 't', 'e', 's', 't', '2', '.', 'c', 'o', 'u', 'n', 't', 'e', 'r', 'M', 'e', 't', 'r', 'i', 'c', '\0',
-  /*   800 - "test2.customDistributionMetric" */ 't', 'e', 's', 't', '2', '.', 'c', 'u', 's', 't', 'o', 'm', 'D', 'i', 's', 't', 'r', 'i', 'b', 'u', 't', 'i', 'o', 'n', 'M', 'e', 't', 'r', 'i', 'c', '\0',
-  /*   831 - "test2.labeledBooleanMetric" */ 't', 'e', 's', 't', '2', '.', 'l', 'a', 'b', 'e', 'l', 'e', 'd', 'B', 'o', 'o', 'l', 'e', 'a', 'n', 'M', 'e', 't', 'r', 'i', 'c', '\0',
-  /*   858 - "test2.labeledBooleanMetricLabels" */ 't', 'e', 's', 't', '2', '.', 'l', 'a', 'b', 'e', 'l', 'e', 'd', 'B', 'o', 'o', 'l', 'e', 'a', 'n', 'M', 'e', 't', 'r', 'i', 'c', 'L', 'a', 'b', 'e', 'l', 's', '\0',
-  /*   891 - "test2.labeledCounterMetric" */ 't', 'e', 's', 't', '2', '.', 'l', 'a', 'b', 'e', 'l', 'e', 'd', 'C', 'o', 'u', 'n', 't', 'e', 'r', 'M', 'e', 't', 'r', 'i', 'c', '\0',
-  /*   918 - "test2.labeledCounterMetricLabels" */ 't', 'e', 's', 't', '2', '.', 'l', 'a', 'b', 'e', 'l', 'e', 'd', 'C', 'o', 'u', 'n', 't', 'e', 'r', 'M', 'e', 't', 'r', 'i', 'c', 'L', 'a', 'b', 'e', 'l', 's', '\0',
-  /*   951 - "test2.labeledStringMetric" */ 't', 'e', 's', 't', '2', '.', 'l', 'a', 'b', 'e', 'l', 'e', 'd', 'S', 't', 'r', 'i', 'n', 'g', 'M', 'e', 't', 'r', 'i', 'c', '\0',
-  /*   977 - "test2.labeledStringMetricLabels" */ 't', 'e', 's', 't', '2', '.', 'l', 'a', 'b', 'e', 'l', 'e', 'd', 'S', 't', 'r', 'i', 'n', 'g', 'M', 'e', 't', 'r', 'i', 'c', 'L', 'a', 'b', 'e', 'l', 's', '\0',
-  /*  1009 - "test2.memoryDistributionMetric" */ 't', 'e', 's', 't', '2', '.', 'm', 'e', 'm', 'o', 'r', 'y', 'D', 'i', 's', 't', 'r', 'i', 'b', 'u', 't', 'i', 'o', 'n', 'M', 'e', 't', 'r', 'i', 'c', '\0',
-  /*  1040 - "test2.stringListMetric" */ 't', 'e', 's', 't', '2', '.', 's', 't', 'r', 'i', 'n', 'g', 'L', 'i', 's', 't', 'M', 'e', 't', 'r', 'i', 'c', '\0',
-  /*  1063 - "test2.stringMetric" */ 't', 'e', 's', 't', '2', '.', 's', 't', 'r', 'i', 'n', 'g', 'M', 'e', 't', 'r', 'i', 'c', '\0',
-  /*  1082 - "test2.textMetric" */ 't', 'e', 's', 't', '2', '.', 't', 'e', 'x', 't', 'M', 'e', 't', 'r', 'i', 'c', '\0',
-  /*  1099 - "test2.timespanMetric" */ 't', 'e', 's', 't', '2', '.', 't', 'i', 'm', 'e', 's', 'p', 'a', 'n', 'M', 'e', 't', 'r', 'i', 'c', '\0',
-  /*  1120 - "test2.timingDistributionMetric" */ 't', 'e', 's', 't', '2', '.', 't', 'i', 'm', 'i', 'n', 'g', 'D', 'i', 's', 't', 'r', 'i', 'b', 'u', 't', 'i', 'o', 'n', 'M', 'e', 't', 'r', 'i', 'c', '\0',
-  /*  1151 - "test2.unorderedBooleanMetric" */ 't', 'e', 's', 't', '2', '.', 'u', 'n', 'o', 'r', 'd', 'e', 'r', 'e', 'd', 'B', 'o', 'o', 'l', 'e', 'a', 'n', 'M', 'e', 't', 'r', 'i', 'c', '\0',
-  /*  1180 - "test2.unorderedLabeledBooleanMetric" */ 't', 'e', 's', 't', '2', '.', 'u', 'n', 'o', 'r', 'd', 'e', 'r', 'e', 'd', 'L', 'a', 'b', 'e', 'l', 'e', 'd', 'B', 'o', 'o', 'l', 'e', 'a', 'n', 'M', 'e', 't', 'r', 'i', 'c', '\0',
-  /*  1216 - "test2Nested.anObject" */ 't', 'e', 's', 't', '2', 'N', 'e', 's', 't', 'e', 'd', '.', 'a', 'n', 'O', 'b', 'j', 'e', 'c', 't', '\0',
-  /*  1237 - "test2Nested.datetimeMetric" */ 't', 'e', 's', 't', '2', 'N', 'e', 's', 't', 'e', 'd', '.', 'd', 'a', 't', 'e', 't', 'i', 'm', 'e', 'M', 'e', 't', 'r', 'i', 'c', '\0',
-  /*  1264 - "test2Nested.eventMetric" */ 't', 'e', 's', 't', '2', 'N', 'e', 's', 't', 'e', 'd', '.', 'e', 'v', 'e', 'n', 't', 'M', 'e', 't', 'r', 'i', 'c', '\0',
-  /*  1288 - "test2Nested.eventMetricWithExtra" */ 't', 'e', 's', 't', '2', 'N', 'e', 's', 't', 'e', 'd', '.', 'e', 'v', 'e', 'n', 't', 'M', 'e', 't', 'r', 'i', 'c', 'W', 'i', 't', 'h', 'E', 'x', 't', 'r', 'a', '\0',
-  /*  1321 - "test2Nested.externalDenominator" */ 't', 'e', 's', 't', '2', 'N', 'e', 's', 't', 'e', 'd', '.', 'e', 'x', 't', 'e', 'r', 'n', 'a', 'l', 'D', 'e', 'n', 'o', 'm', 'i', 'n', 'a', 't', 'o', 'r', '\0',
-  /*  1353 - "test2Nested.optimizableCounterMetric" */ 't', 'e', 's', 't', '2', 'N', 'e', 's', 't', 'e', 'd', '.', 'o', 'p', 't', 'i', 'm', 'i', 'z', 'a', 'b', 'l', 'e', 'C', 'o', 'u', 'n', 't', 'e', 'r', 'M', 'e', 't', 'r', 'i', 'c', '\0',
-  /*  1390 - "test2Nested.optimizableDisabledCounterMetric" */ 't', 'e', 's', 't', '2', 'N', 'e', 's', 't', 'e', 'd', '.', 'o', 'p', 't', 'i', 'm', 'i', 'z', 'a', 'b', 'l', 'e', 'D', 'i', 's', 'a', 'b', 'l', 'e', 'd', 'C', 'o', 'u', 'n', 't', 'e', 'r', 'M', 'e', 't', 'r', 'i', 'c', '\0',
-  /*  1435 - "test2Nested.quantityMetric" */ 't', 'e', 's', 't', '2', 'N', 'e', 's', 't', 'e', 'd', '.', 'q', 'u', 'a', 'n', 't', 'i', 't', 'y', 'M', 'e', 't', 'r', 'i', 'c', '\0',
-  /*  1462 - "test2Nested.rateMetric" */ 't', 'e', 's', 't', '2', 'N', 'e', 's', 't', 'e', 'd', '.', 'r', 'a', 't', 'e', 'M', 'e', 't', 'r', 'i', 'c', '\0',
-  /*  1485 - "test2Nested.rateWithExternalDenominator" */ 't', 'e', 's', 't', '2', 'N', 'e', 's', 't', 'e', 'd', '.', 'r', 'a', 't', 'e', 'W', 'i', 't', 'h', 'E', 'x', 't', 'e', 'r', 'n', 'a', 'l', 'D', 'e', 'n', 'o', 'm', 'i', 'n', 'a', 't', 'o', 'r', '\0',
-  /*  1525 - "test2Nested.uuidMetric" */ 't', 'e', 's', 't', '2', 'N', 'e', 's', 't', 'e', 'd', '.', 'u', 'u', 'i', 'd', 'M', 'e', 't', 'r', 'i', 'c', '\0',
+  /*   439 - "testNested.aDualLabeledCounter" */ 't', 'e', 's', 't', 'N', 'e', 's', 't', 'e', 'd', '.', 'a', 'D', 'u', 'a', 'l', 'L', 'a', 'b', 'e', 'l', 'e', 'd', 'C', 'o', 'u', 'n', 't', 'e', 'r', '\0',
+  /*   470 - "testNested.anObject" */ 't', 'e', 's', 't', 'N', 'e', 's', 't', 'e', 'd', '.', 'a', 'n', 'O', 'b', 'j', 'e', 'c', 't', '\0',
+  /*   490 - "testNested.datetimeMetric" */ 't', 'e', 's', 't', 'N', 'e', 's', 't', 'e', 'd', '.', 'd', 'a', 't', 'e', 't', 'i', 'm', 'e', 'M', 'e', 't', 'r', 'i', 'c', '\0',
+  /*   516 - "testNested.eventMetric" */ 't', 'e', 's', 't', 'N', 'e', 's', 't', 'e', 'd', '.', 'e', 'v', 'e', 'n', 't', 'M', 'e', 't', 'r', 'i', 'c', '\0',
+  /*   539 - "testNested.eventMetricWithExtra" */ 't', 'e', 's', 't', 'N', 'e', 's', 't', 'e', 'd', '.', 'e', 'v', 'e', 'n', 't', 'M', 'e', 't', 'r', 'i', 'c', 'W', 'i', 't', 'h', 'E', 'x', 't', 'r', 'a', '\0',
+  /*   571 - "testNested.externalDenominator" */ 't', 'e', 's', 't', 'N', 'e', 's', 't', 'e', 'd', '.', 'e', 'x', 't', 'e', 'r', 'n', 'a', 'l', 'D', 'e', 'n', 'o', 'm', 'i', 'n', 'a', 't', 'o', 'r', '\0',
+  /*   602 - "testNested.optimizableCounterMetric" */ 't', 'e', 's', 't', 'N', 'e', 's', 't', 'e', 'd', '.', 'o', 'p', 't', 'i', 'm', 'i', 'z', 'a', 'b', 'l', 'e', 'C', 'o', 'u', 'n', 't', 'e', 'r', 'M', 'e', 't', 'r', 'i', 'c', '\0',
+  /*   638 - "testNested.optimizableDisabledCounterMetric" */ 't', 'e', 's', 't', 'N', 'e', 's', 't', 'e', 'd', '.', 'o', 'p', 't', 'i', 'm', 'i', 'z', 'a', 'b', 'l', 'e', 'D', 'i', 's', 'a', 'b', 'l', 'e', 'd', 'C', 'o', 'u', 'n', 't', 'e', 'r', 'M', 'e', 't', 'r', 'i', 'c', '\0',
+  /*   682 - "testNested.quantityMetric" */ 't', 'e', 's', 't', 'N', 'e', 's', 't', 'e', 'd', '.', 'q', 'u', 'a', 'n', 't', 'i', 't', 'y', 'M', 'e', 't', 'r', 'i', 'c', '\0',
+  /*   708 - "testNested.rateMetric" */ 't', 'e', 's', 't', 'N', 'e', 's', 't', 'e', 'd', '.', 'r', 'a', 't', 'e', 'M', 'e', 't', 'r', 'i', 'c', '\0',
+  /*   730 - "testNested.rateWithExternalDenominator" */ 't', 'e', 's', 't', 'N', 'e', 's', 't', 'e', 'd', '.', 'r', 'a', 't', 'e', 'W', 'i', 't', 'h', 'E', 'x', 't', 'e', 'r', 'n', 'a', 'l', 'D', 'e', 'n', 'o', 'm', 'i', 'n', 'a', 't', 'o', 'r', '\0',
+  /*   769 - "testNested.uuidMetric" */ 't', 'e', 's', 't', 'N', 'e', 's', 't', 'e', 'd', '.', 'u', 'u', 'i', 'd', 'M', 'e', 't', 'r', 'i', 'c', '\0',
+  /*   791 - "test2.booleanMetric" */ 't', 'e', 's', 't', '2', '.', 'b', 'o', 'o', 'l', 'e', 'a', 'n', 'M', 'e', 't', 'r', 'i', 'c', '\0',
+  /*   811 - "test2.counterMetric" */ 't', 'e', 's', 't', '2', '.', 'c', 'o', 'u', 'n', 't', 'e', 'r', 'M', 'e', 't', 'r', 'i', 'c', '\0',
+  /*   831 - "test2.customDistributionMetric" */ 't', 'e', 's', 't', '2', '.', 'c', 'u', 's', 't', 'o', 'm', 'D', 'i', 's', 't', 'r', 'i', 'b', 'u', 't', 'i', 'o', 'n', 'M', 'e', 't', 'r', 'i', 'c', '\0',
+  /*   862 - "test2.labeledBooleanMetric" */ 't', 'e', 's', 't', '2', '.', 'l', 'a', 'b', 'e', 'l', 'e', 'd', 'B', 'o', 'o', 'l', 'e', 'a', 'n', 'M', 'e', 't', 'r', 'i', 'c', '\0',
+  /*   889 - "test2.labeledBooleanMetricLabels" */ 't', 'e', 's', 't', '2', '.', 'l', 'a', 'b', 'e', 'l', 'e', 'd', 'B', 'o', 'o', 'l', 'e', 'a', 'n', 'M', 'e', 't', 'r', 'i', 'c', 'L', 'a', 'b', 'e', 'l', 's', '\0',
+  /*   922 - "test2.labeledCounterMetric" */ 't', 'e', 's', 't', '2', '.', 'l', 'a', 'b', 'e', 'l', 'e', 'd', 'C', 'o', 'u', 'n', 't', 'e', 'r', 'M', 'e', 't', 'r', 'i', 'c', '\0',
+  /*   949 - "test2.labeledCounterMetricLabels" */ 't', 'e', 's', 't', '2', '.', 'l', 'a', 'b', 'e', 'l', 'e', 'd', 'C', 'o', 'u', 'n', 't', 'e', 'r', 'M', 'e', 't', 'r', 'i', 'c', 'L', 'a', 'b', 'e', 'l', 's', '\0',
+  /*   982 - "test2.labeledStringMetric" */ 't', 'e', 's', 't', '2', '.', 'l', 'a', 'b', 'e', 'l', 'e', 'd', 'S', 't', 'r', 'i', 'n', 'g', 'M', 'e', 't', 'r', 'i', 'c', '\0',
+  /*  1008 - "test2.labeledStringMetricLabels" */ 't', 'e', 's', 't', '2', '.', 'l', 'a', 'b', 'e', 'l', 'e', 'd', 'S', 't', 'r', 'i', 'n', 'g', 'M', 'e', 't', 'r', 'i', 'c', 'L', 'a', 'b', 'e', 'l', 's', '\0',
+  /*  1040 - "test2.memoryDistributionMetric" */ 't', 'e', 's', 't', '2', '.', 'm', 'e', 'm', 'o', 'r', 'y', 'D', 'i', 's', 't', 'r', 'i', 'b', 'u', 't', 'i', 'o', 'n', 'M', 'e', 't', 'r', 'i', 'c', '\0',
+  /*  1071 - "test2.stringListMetric" */ 't', 'e', 's', 't', '2', '.', 's', 't', 'r', 'i', 'n', 'g', 'L', 'i', 's', 't', 'M', 'e', 't', 'r', 'i', 'c', '\0',
+  /*  1094 - "test2.stringMetric" */ 't', 'e', 's', 't', '2', '.', 's', 't', 'r', 'i', 'n', 'g', 'M', 'e', 't', 'r', 'i', 'c', '\0',
+  /*  1113 - "test2.textMetric" */ 't', 'e', 's', 't', '2', '.', 't', 'e', 'x', 't', 'M', 'e', 't', 'r', 'i', 'c', '\0',
+  /*  1130 - "test2.timespanMetric" */ 't', 'e', 's', 't', '2', '.', 't', 'i', 'm', 'e', 's', 'p', 'a', 'n', 'M', 'e', 't', 'r', 'i', 'c', '\0',
+  /*  1151 - "test2.timingDistributionMetric" */ 't', 'e', 's', 't', '2', '.', 't', 'i', 'm', 'i', 'n', 'g', 'D', 'i', 's', 't', 'r', 'i', 'b', 'u', 't', 'i', 'o', 'n', 'M', 'e', 't', 'r', 'i', 'c', '\0',
+  /*  1182 - "test2.unorderedBooleanMetric" */ 't', 'e', 's', 't', '2', '.', 'u', 'n', 'o', 'r', 'd', 'e', 'r', 'e', 'd', 'B', 'o', 'o', 'l', 'e', 'a', 'n', 'M', 'e', 't', 'r', 'i', 'c', '\0',
+  /*  1211 - "test2.unorderedLabeledBooleanMetric" */ 't', 'e', 's', 't', '2', '.', 'u', 'n', 'o', 'r', 'd', 'e', 'r', 'e', 'd', 'L', 'a', 'b', 'e', 'l', 'e', 'd', 'B', 'o', 'o', 'l', 'e', 'a', 'n', 'M', 'e', 't', 'r', 'i', 'c', '\0',
+  /*  1247 - "test2Nested.anObject" */ 't', 'e', 's', 't', '2', 'N', 'e', 's', 't', 'e', 'd', '.', 'a', 'n', 'O', 'b', 'j', 'e', 'c', 't', '\0',
+  /*  1268 - "test2Nested.datetimeMetric" */ 't', 'e', 's', 't', '2', 'N', 'e', 's', 't', 'e', 'd', '.', 'd', 'a', 't', 'e', 't', 'i', 'm', 'e', 'M', 'e', 't', 'r', 'i', 'c', '\0',
+  /*  1295 - "test2Nested.eventMetric" */ 't', 'e', 's', 't', '2', 'N', 'e', 's', 't', 'e', 'd', '.', 'e', 'v', 'e', 'n', 't', 'M', 'e', 't', 'r', 'i', 'c', '\0',
+  /*  1319 - "test2Nested.eventMetricWithExtra" */ 't', 'e', 's', 't', '2', 'N', 'e', 's', 't', 'e', 'd', '.', 'e', 'v', 'e', 'n', 't', 'M', 'e', 't', 'r', 'i', 'c', 'W', 'i', 't', 'h', 'E', 'x', 't', 'r', 'a', '\0',
+  /*  1352 - "test2Nested.externalDenominator" */ 't', 'e', 's', 't', '2', 'N', 'e', 's', 't', 'e', 'd', '.', 'e', 'x', 't', 'e', 'r', 'n', 'a', 'l', 'D', 'e', 'n', 'o', 'm', 'i', 'n', 'a', 't', 'o', 'r', '\0',
+  /*  1384 - "test2Nested.optimizableCounterMetric" */ 't', 'e', 's', 't', '2', 'N', 'e', 's', 't', 'e', 'd', '.', 'o', 'p', 't', 'i', 'm', 'i', 'z', 'a', 'b', 'l', 'e', 'C', 'o', 'u', 'n', 't', 'e', 'r', 'M', 'e', 't', 'r', 'i', 'c', '\0',
+  /*  1421 - "test2Nested.optimizableDisabledCounterMetric" */ 't', 'e', 's', 't', '2', 'N', 'e', 's', 't', 'e', 'd', '.', 'o', 'p', 't', 'i', 'm', 'i', 'z', 'a', 'b', 'l', 'e', 'D', 'i', 's', 'a', 'b', 'l', 'e', 'd', 'C', 'o', 'u', 'n', 't', 'e', 'r', 'M', 'e', 't', 'r', 'i', 'c', '\0',
+  /*  1466 - "test2Nested.quantityMetric" */ 't', 'e', 's', 't', '2', 'N', 'e', 's', 't', 'e', 'd', '.', 'q', 'u', 'a', 'n', 't', 'i', 't', 'y', 'M', 'e', 't', 'r', 'i', 'c', '\0',
+  /*  1493 - "test2Nested.rateMetric" */ 't', 'e', 's', 't', '2', 'N', 'e', 's', 't', 'e', 'd', '.', 'r', 'a', 't', 'e', 'M', 'e', 't', 'r', 'i', 'c', '\0',
+  /*  1516 - "test2Nested.rateWithExternalDenominator" */ 't', 'e', 's', 't', '2', 'N', 'e', 's', 't', 'e', 'd', '.', 'r', 'a', 't', 'e', 'W', 'i', 't', 'h', 'E', 'x', 't', 'e', 'r', 'n', 'a', 'l', 'D', 'e', 'n', 'o', 'm', 'i', 'n', 'a', 't', 'o', 'r', '\0',
+  /*  1556 - "test2Nested.uuidMetric" */ 't', 'e', 's', 't', '2', 'N', 'e', 's', 't', 'e', 'd', '.', 'u', 'u', 'i', 'd', 'M', 'e', 't', 'r', 'i', 'c', '\0',
 };
 
 
 static_assert(sizeof(gMetricStringTable) < 4294967296, "Metric string table is too large.");
 
 const metric_entry_t sMetricByNameLookupEntries[] = {
-  8646911490709783792ull,
-  1152921603391095355ull,
-  5764607699127895098ull,
-  8070450613852307915ull,
-  2305843026393563204ull,
-  3458764668439364535ull,
-  2305843082228138388ull,
-  2882303907546006395ull,
-  11529215286586639861ull,
-  5188146822270419236ull,
-  8646911495004751112ull,
-  576460876857475832ull,
-  7493989857253917111ull,
-  4035225309073637616ull,
-  2305843202487223452ull,
-  10376293773389858230ull,
-  1152921607686062687ull,
-  3458764548180279480ull,
-  8646911374745666044ull,
-  10952754409729163963ull,
-  4611686065672028430ull,
-  3458764552475246801ull,
-  10952754529988249037ull,
-  1729382390054257440ull,
-  6341068335467200838ull,
-  6341068455726285899ull,
-  1152921719355213097ull,
-  2882303791581888664ull,
-  4611686185931113488ull,
-  6917529092065591642ull,
-  5188146942529504295ull,
-  1152921727945147758ull,
-  4035225429332722673ull,
-  2882303787286921342ull,
-  5764607578868810038ull,
-  2882303911840973718ull,
-  7493989977513002176ull,
-  2305843030688530526ull,
-  10376293653130773157ull,
-  1152921723650180425ull,
-  1729382269795172390ull,
-  576460941281985663ull,
-  11529215166327554786ull,
-  2305843150947615578ull,
-  2305843146652648255ull,
-  6917529212324676704ull,
-  9799833016791467419ull,
-  1152921513196781587ull,
-  576460821022900600ull,
-  9799832896532382347ull,
-  8646911370450698725ull,
+  1152921611981030014ull,
+  5764607681948025814ull,
+  2305843215372125428ull,
+  10376293597296197942ull,
+  8070450643917079210ull,
+  4611686039902224478ull,
+  6917529147900166874ull,
+  5188146921054667674ull,
+  2305843095113040362ull,
   576460756598390784ull,
-  8070450734111392981ull,
-  9223372131344056860ull,
-  3458764672734331857ull,
-  1152921633455866636ull
+  12105676043185030676ull,
+  1729382269795172390ull,
+  5764607686242993136ull,
+  10376293721850250329ull,
+  9223372212948436038ull,
+  7493989981807969503ull,
+  4611686160161309534ull,
+  576460881152443159ull,
+  4611686035607257156ull,
+  1152921732240115085ull,
+  7493989861548884438ull,
+  4035225476577363215ull,
+  1729382394349224767ull,
+  9799832960956892207ull,
+  8070450764176164282ull,
+  9223372088394383652ull,
+  4611686091441832340ull,
+  8646911520774555093ull,
+  8646911400515470020ull,
+  12105675922925945601ull,
+  5188146796500615294ull,
+  6341068318287331568ull,
+  576460945576952990ull,
+  6917529268159251948ull,
+  4611686164456276857ull,
+  5188146925349634997ull,
+  10952754353894588742ull,
+  1152921723650180424ull,
+  576460821022900600ull,
+  10952754478448641130ull,
+  4035225480872330535ull,
+  9799832836402839822ull,
+  5764607561688940753ull,
+  2882303860301365819ull,
+  1152921513196781587ull,
+  11529215235047031935ull,
+  1152921607686062682ull,
+  6341068442841383952ull,
+  4611686215995884731ull,
+  11529215110492979546ull,
+  1152921727945147752ull,
+  4035225360613245467ull,
+  5764607557393973432ull,
+  4035225356318278148ull,
+  1152921637750833963ull,
+  3458764591129952695ull,
+  5188146800795582616ull
 };
 
 
@@ -495,13 +501,13 @@ MetricByNameLookup(const nsACString& aKey)
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-       0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   1,   0,   0,   0,   0,   0,
+       0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   2,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   1,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-       1,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   1,   0,   0,   0,
+       1,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   2,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
@@ -511,16 +517,16 @@ MetricByNameLookup(const nsACString& aKey)
        0,   0,   0,   0,   0,   0,   0,   0,   0,   1,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-       0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   3,
+       0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   1,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-       0,   0,   0,   0,   1,   0,   0,   0,   0,   0,   0,   0,   0,   0,   1,   0,
+       0,   0,   0,   0,   2,   0,   0,   0,   0,   0,   0,   0,   0,   0,   1,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   1,   0,   0,   0,   0,   1,   0,   0,   0,   0,   0,   0,   0,   0,
-       0,   0,   0,   0,   2,   0,   0,   0,   0,   1,   0,   0,   0,   0,   0,   0,
+       0,   0,   0,   0,   1,   0,   0,   0,   0,   2,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-       0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   1,   0,   0,   0,   0,   0,
+       0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   2,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
@@ -532,21 +538,21 @@ MetricByNameLookup(const nsACString& aKey)
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-       0,   0,   0,   0,   0,   0,   1,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-       1,   0,   0,   0,   1,   0,   0,   1,   0,   0,   0,   0,   0,   0,   0,   0,
+       0,   0,   0,   0,   0,   0,   3,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+       4,   0,   0,   0,   1,   0,   0,   1,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-       0,   1,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   1,   0,
-       1,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+       0,   1,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   2,   0,
+       3,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-       0,   0,   0,   0,   0,   0,   0,   0,   1,   2,   0,   0,   0,   0,   0,   0,
-       0,   4,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+       0,   0,   0,   0,   0,   0,   0,   0,   3,   2,   0,   0,   0,   0,   0,   0,
+       0,   1,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-       6,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+       3,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   1,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
@@ -558,7 +564,7 @@ MetricByNameLookup(const nsACString& aKey)
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-       0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   2,   0,   0,   0,   0,
+       0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   7,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
@@ -570,33 +576,33 @@ MetricByNameLookup(const nsACString& aKey)
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-       7,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,  12,   0,   0,   0,
+       1,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   3,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-       2,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-       0,   0,   0,   0,   0,   4,   0,   0,   0,   0,   8,   0,   0,   0,   0,   0,
+       3,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+       0,   0,   0,   0,   0,   2,   0,   0,   0,   0,   1,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-       0,   0,   0,   0,   0,   6,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+       0,   0,   0,   0,   0,   3,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+       0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+       0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   1,   0,   0,   0,
+       0,   0,   0,   0,   1,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+       0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+       0,   0,   0,   0,   2,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+       0,   0,   0,   0,   0,   2,   0,   0,   5,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-       0,   0,   0,   0,   6,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-       0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-       0,   0,   0,   0,  10,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-       0,   0,   0,   0,   0,   7,   0,   0,   7,   0,   0,   0,   0,   0,   0,   0,
-       0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-       0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-       0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   2,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   6,   0,   0,   0,
-       0,   0,   0,   1,   0,  17,   0,  34,   0,   0,   0,   0,   0,   0,   0,   0,
+       0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   9,   0,   0,   0,
+       0,   0,   0,   4,   0,   1,   0,  10,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-       0,   0,   0,   0,   0,   0,   0,   0,   0,  29,   0,   0,   0,   0,   0,   0,
-       0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   5,   0,   0,
+       0,   0,   0,   0,   0,   0,   0,   0,   0,  33,   0,   0,   0,   0,   0,   0,
+       0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   6,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-      21,   0,  22,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
-       0,   0,   0,   0,   0,   0,   0,   0,   1,   0,   0,   0,   0,   0,   0,   0,
+      34,   0,  14,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+       0,   0,   0,   0,   0,   0,   0,   0,  17,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
        0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,

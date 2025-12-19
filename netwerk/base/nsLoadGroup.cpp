@@ -15,6 +15,7 @@
 #include "mozilla/Logging.h"
 #include "nsString.h"
 #include "nsTArray.h"
+#include "nsIHttpChannel.h"
 #include "nsIHttpChannelInternal.h"
 #include "nsITimedChannel.h"
 #include "nsIInterfaceRequestor.h"
@@ -25,7 +26,6 @@
 #include "mozilla/glean/NetwerkMetrics.h"
 #include "mozilla/glean/NetwerkProtocolHttpMetrics.h"
 #include "mozilla/StoragePrincipalHelper.h"
-#include "mozilla/Unused.h"
 #include "mozilla/net/NeckoCommon.h"
 #include "mozilla/net/NeckoChild.h"
 #include "mozilla/StaticPrefs_network.h"
@@ -110,7 +110,15 @@ nsLoadGroup::~nsLoadGroup() {
 
   nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
   if (os) {
-    Unused << os->RemoveObserver(this, "last-pb-context-exited");
+    (void)os->RemoveObserver(this, "last-pb-context-exited");
+  }
+
+  if (mPageSize) {
+    glean::network::page_load_size.Get("page"_ns).Accumulate(mPageSize);
+  }
+  if (mTotalSubresourcesSize) {
+    glean::network::page_load_size.Get("subresources"_ns)
+        .Accumulate(mTotalSubresourcesSize);
   }
 
   LOG(("LOADGROUP [%p]: Destroyed.\n", this));
@@ -259,7 +267,7 @@ nsLoadGroup::Cancel(nsresult status) {
   }
 
   if (mRequestContext) {
-    Unused << mRequestContext->CancelTailPendingRequests(status);
+    (void)mRequestContext->CancelTailPendingRequests(status);
   }
 
 #if defined(DEBUG)
@@ -532,6 +540,16 @@ nsLoadGroup::RemoveRequest(nsIRequest* request, nsISupports* ctxt,
   return NotifyRemovalObservers(request, aStatus);
 }
 
+static uint64_t GetTransferSize(nsITimedChannel* aTimedChannel) {
+  if (nsCOMPtr<nsIHttpChannel> channel = do_QueryInterface(aTimedChannel)) {
+    uint64_t size = 0;
+    (void)channel->GetTransferSize(&size);
+    return size;
+  }
+
+  return 0;
+}
+
 nsresult nsLoadGroup::RemoveRequestFromHashtable(nsIRequest* request,
                                                  nsresult aStatus) {
   NS_ENSURE_ARG_POINTER(request);
@@ -583,6 +601,7 @@ nsresult nsLoadGroup::RemoveRequestFromHashtable(nsIRequest* request,
 
       if (request == mDefaultLoadRequest) {
         TelemetryReportChannel(timedChannel, true);
+        mPageSize = GetTransferSize(timedChannel);
       } else {
         rv = timedChannel->GetAsyncOpen(&timeStamp);
         if (NS_SUCCEEDED(rv) && !timeStamp.IsNull()) {
@@ -597,6 +616,7 @@ nsresult nsLoadGroup::RemoveRequestFromHashtable(nsIRequest* request,
         }
 
         TelemetryReportChannel(timedChannel, false);
+        mTotalSubresourcesSize += GetTransferSize(timedChannel);
       }
     }
   }
@@ -1012,12 +1032,6 @@ void nsLoadGroup::TelemetryReportChannel(nsITimedChannel* aTimedChannel,
           responseEnd - asyncOpen);
       mozilla::glean::network::sub_complete_load_net.AccumulateRawDuration(
           responseEnd - asyncOpen);
-      // GLAM EXPERIMENT
-      // This metric is temporary, disabled by default, and will be enabled only
-      // for the purpose of experimenting with client-side sampling of data for
-      // GLAM use. See Bug 1947604 for more information.
-      mozilla::glean::glam_experiment::sub_complete_load_net
-          .AccumulateRawDuration(responseEnd - asyncOpen);
     }
   }
 #endif
@@ -1135,14 +1149,14 @@ nsresult nsLoadGroup::MergeDefaultLoadFlags(nsIRequest* aRequest,
 nsresult nsLoadGroup::Init() {
   mRequestContextService = RequestContextService::GetOrCreate();
   if (mRequestContextService) {
-    Unused << mRequestContextService->NewRequestContext(
+    (void)mRequestContextService->NewRequestContext(
         getter_AddRefs(mRequestContext));
   }
 
   nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
   NS_ENSURE_STATE(os);
 
-  Unused << os->AddObserver(this, "last-pb-context-exited", true);
+  (void)os->AddObserver(this, "last-pb-context-exited", true);
 
   return NS_OK;
 }
@@ -1151,7 +1165,7 @@ nsresult nsLoadGroup::InitWithRequestContextId(
     const uint64_t& aRequestContextId) {
   mRequestContextService = RequestContextService::GetOrCreate();
   if (mRequestContextService) {
-    Unused << mRequestContextService->GetRequestContext(
+    (void)mRequestContextService->GetRequestContext(
         aRequestContextId, getter_AddRefs(mRequestContext));
   }
   mExternalRequestContext = true;
@@ -1159,7 +1173,7 @@ nsresult nsLoadGroup::InitWithRequestContextId(
   nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
   NS_ENSURE_STATE(os);
 
-  Unused << os->AddObserver(this, "last-pb-context-exited", true);
+  (void)os->AddObserver(this, "last-pb-context-exited", true);
 
   return NS_OK;
 }

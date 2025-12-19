@@ -5,11 +5,11 @@
 import os
 import textwrap
 import unittest
+from io import StringIO
 
 import mozpack.path as mozpath
 from buildconfig import topsrcdir
 from mozunit import main
-from six import StringIO
 from test_toolchain_helpers import FakeCompiler
 
 from common import ConfigureTestSandbox
@@ -50,6 +50,7 @@ class BaseCompileChecks(unittest.TestCase):
 
         mock_compiler_defs = textwrap.dedent(
             """\
+            moz_automation = dependable(False)
             @depends(when=True)
             def extra_toolchain_flags():
                 return []

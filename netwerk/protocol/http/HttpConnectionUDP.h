@@ -53,7 +53,7 @@ class HttpConnectionUDP final : public HttpConnectionBase,
   virtual ~HttpConnectionUDP();
 
  public:
-  NS_DECLARE_STATIC_IID_ACCESSOR(HTTPCONNECTIONUDP_IID)
+  NS_INLINE_DECL_STATIC_IID(HTTPCONNECTIONUDP_IID)
   NS_DECL_HTTPCONNECTIONBASE
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIUDPSOCKETSYNCLISTENER
@@ -64,6 +64,11 @@ class HttpConnectionUDP final : public HttpConnectionBase,
   [[nodiscard]] nsresult Init(nsHttpConnectionInfo* info,
                               nsIDNSRecord* dnsRecord, nsresult status,
                               nsIInterfaceRequestor* callbacks, uint32_t caps);
+  [[nodiscard]] nsresult InitWithSocket(nsHttpConnectionInfo* info,
+                                        nsIUDPSocket* aSocket,
+                                        NetAddr aPeerAddr,
+                                        nsIInterfaceRequestor* callbacks,
+                                        uint32_t caps);
 
   friend class HttpConnectionUDPForceIO;
 
@@ -89,10 +94,26 @@ class HttpConnectionUDP final : public HttpConnectionBase,
 
   Http3Stats GetStats();
 
+  void ResetTransaction(nsHttpTransaction* aHttpTransaction);
+
+  void HandleTunnelResponse(nsHttpTransaction* aHttpTransaction,
+                            uint16_t responseStatus, bool* reset);
+
+  nsresult CreateTunnelStream(nsAHttpTransaction* httpTransaction,
+                              HttpConnectionBase** aHttpConnection,
+                              bool aIsExtendedCONNECT = false) override;
+
+  void OnConnected();
+
  private:
+  nsresult InitCommon(nsIUDPSocket* aSocket, const NetAddr& aPeerAddr,
+                      nsIInterfaceRequestor* callbacks, uint32_t caps,
+                      bool isInTunnel);
   [[nodiscard]] nsresult OnTransactionDone(nsresult reason);
   nsresult RecvData();
   nsresult SendData();
+  already_AddRefed<nsIInputStream> CreateProxyConnectStream(
+      nsAHttpTransaction* trans);
 
  private:
   RefPtr<nsHttpHandler> mHttpHandler;  // keep gHttpHandler alive
@@ -103,6 +124,7 @@ class HttpConnectionUDP final : public HttpConnectionBase,
   bool mDontReuse = false;
   bool mIsReused = false;
   bool mLastTransactionExpectedNoContent = false;
+  bool mConnected = false;
 
   int32_t mPriority = nsISupportsPriority::PRIORITY_NORMAL;
 
@@ -126,9 +148,11 @@ class HttpConnectionUDP final : public HttpConnectionBase,
   // Http3
   RefPtr<Http3Session> mHttp3Session;
   nsCString mAlpnToken;
+  bool mIsInTunnel = false;
+  bool mProxyConnectSucceeded = false;
+  nsTArray<RefPtr<nsHttpTransaction>> mQueuedHttpConnectTransaction;
+  nsTArray<RefPtr<nsHttpTransaction>> mQueuedConnectUdpTransaction;
 };
-
-NS_DEFINE_STATIC_IID_ACCESSOR(HttpConnectionUDP, HTTPCONNECTIONUDP_IID)
 
 }  // namespace net
 }  // namespace mozilla

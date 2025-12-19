@@ -19,8 +19,8 @@
 #include "mozilla/HelperMacros.h"
 #include "mozilla/Logging.h"
 #include "mozilla/MozPromise.h"
+#include "mozilla/ProfilerMarkers.h"
 #include "mozilla/ShutdownPhase.h"
-#include "mozilla/Unused.h"
 #include "nsContentUtils.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsDirectoryServiceUtils.h"
@@ -94,7 +94,7 @@ already_AddRefed<FOG> FOG::GetSingleton() {
               do_GetService("@mozilla.org/widget/useridleservice;1", &rv);
           if (NS_SUCCEEDED(rv)) {
             MOZ_ASSERT(idleService);
-            Unused << idleService->RemoveIdleObserver(gFOG, kIdleSecs);
+            (void)idleService->RemoveIdleObserver(gFOG, kIdleSecs);
           }
           bool initOnShutdown =
               Preferences::GetBool("telemetry.fog.init_on_shutdown", true);
@@ -387,6 +387,7 @@ FOG::ApplyServerKnobsConfig(const nsACString& aJsonConfig) {
 
 NS_IMETHODIMP
 FOG::TestFlushAllChildren(JSContext* aCx, mozilla::dom::Promise** aOutPromise) {
+  TimeStamp before = TimeStamp::Now();
   MOZ_ASSERT(XRE_IsParentProcess());
   NS_ENSURE_ARG(aOutPromise);
   *aOutPromise = nullptr;
@@ -402,8 +403,11 @@ FOG::TestFlushAllChildren(JSContext* aCx, mozilla::dom::Promise** aOutPromise) {
   }
 
   glean::FlushAndUseFOGData()->Then(
-      GetCurrentSerialEventTarget(), __func__,
-      [promise]() { promise->MaybeResolveWithUndefined(); });
+      GetCurrentSerialEventTarget(), __func__, [promise, before]() {
+        PROFILER_MARKER_UNTYPED("fog.testFlushAllChildren", TEST,
+                                MarkerTiming::IntervalUntilNowFrom(before));
+        promise->MaybeResolveWithUndefined();
+      });
 
   promise.forget(aOutPromise);
   return NS_OK;
@@ -419,7 +423,7 @@ FOG::Observe(nsISupports* aSubject, const char* aTopic, const char16_t* aData) {
   if (!strcmp(aTopic, OBSERVER_TOPIC_IDLE)) {
     glean::FlushAndUseFOGData();
 #ifndef MOZ_GLEAN_ANDROID
-    Unused << glean::impl::fog_persist_ping_lifetime_data();
+    (void)glean::impl::fog_persist_ping_lifetime_data();
 #endif
   }
 
@@ -430,6 +434,7 @@ NS_IMETHODIMP
 FOG::TestResetFOG(const nsACString& aDataPathOverride,
                   const nsACString& aAppIdOverride) {
   MOZ_ASSERT(XRE_IsParentProcess());
+  PROFILER_MARKER_UNTYPED("fog.testResetFOG", TEST);
   nsresult rv =
       glean::impl::fog_test_reset(&aDataPathOverride, &aAppIdOverride);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -654,6 +659,21 @@ FOG::TestGetDistribution(JSContext* aCx, JS::MutableHandleValue aResult) {
 void FOG::InitMemoryReporter() { RegisterWeakMemoryReporter(this); }
 
 MOZ_DEFINE_MALLOC_SIZE_OF(FOGMallocSizeOf)
+MOZ_DEFINE_MALLOC_ENCLOSING_SIZE_OF(FOGMallocEnclosingSizeOf)
+
+// Rust doesn't support weak-linking, so MFBT_API functions like
+// moz_malloc_size_of need a C++ wrapper that uses the regular ABI
+//
+// We're re-using the previously MOZ_DEFINE_MALLOC(_ENCLOSING)_SIZE_OF-defined
+// functions here to create symbol visible outside this file (the define creates
+// a static function).
+extern "C" size_t fog_malloc_size_of(const void* aPtr) {
+  return FOGMallocSizeOf(aPtr);
+}
+
+extern "C" size_t fog_malloc_enclosing_size_of(const void* aPtr) {
+  return FOGMallocEnclosingSizeOf(aPtr);
+}
 
 NS_IMETHODIMP
 FOG::CollectReports(nsIHandleReportCallback* aHandleReport, nsISupports* aData,
@@ -663,6 +683,7 @@ FOG::CollectReports(nsIHandleReportCallback* aHandleReport, nsISupports* aData,
   MOZ_COLLECT_REPORT("explicit/fog/impl", KIND_HEAP, UNITS_BYTES,
                      aMallocSizeOf(this),
                      "Memory used by the FOG core implementation");
+  glean::impl::fog_collect_reports(aHandleReport, aData, aAnonymize);
 
   return NS_OK;
 }

@@ -14,11 +14,14 @@
 #include "jit/BaselineIC.h"
 #include "jit/BaselineJIT.h"
 #include "jit/BytecodeAnalysis.h"
+#include "jit/CacheIRCompiler.h"
 #include "jit/IonScript.h"
 #include "jit/JitFrames.h"
 #include "jit/JitSpewer.h"
 #include "jit/ScriptFromCalleeToken.h"
+#include "jit/ShapeList.h"
 #include "jit/TrialInlining.h"
+#include "jit/WarpSnapshot.h"
 #include "js/ColumnNumber.h"  // JS::LimitedColumnNumberOneOrigin
 #include "vm/BytecodeUtil.h"
 #include "vm/Compartment.h"
@@ -59,6 +62,7 @@ ICScript::~ICScript() {
   // The contents of the AllocSite LifoAlloc are removed and freed separately
   // after the next minor GC. See prepareForDestruction.
   MOZ_ASSERT(allocSitesSpace_.isEmpty());
+  MOZ_ASSERT(!envAllocSite_);
 }
 
 #ifdef DEBUG
@@ -87,6 +91,11 @@ bool JSScript::createJitScript(JSContext* cx) {
   if (cx->runtime()->geckoProfiler().enabled()) {
     profileString = cx->runtime()->geckoProfiler().profileString(cx, this);
     if (!profileString) {
+      return false;
+    }
+
+    if (!cx->runtime()->geckoProfiler().insertScriptSource(scriptSource())) {
+      ReportOutOfMemory(cx);
       return false;
     }
   }
@@ -219,7 +228,8 @@ void ICScript::trace(JSTracer* trc) {
   // Mark all IC stub codes hanging off the IC stub entries.
   for (size_t i = 0; i < numICEntries(); i++) {
     ICEntry& ent = icEntry(i);
-    ent.trace(trc);
+    ICFallbackStub* fallback = fallbackStub(i);
+    ent.trace(trc, fallback);
   }
 
   for (gc::AllocSite* site : allocSites_) {
@@ -232,7 +242,8 @@ bool ICScript::traceWeak(JSTracer* trc) {
   bool allSurvived = true;
   for (size_t i = 0; i < numICEntries(); i++) {
     ICEntry& ent = icEntry(i);
-    if (!ent.traceWeak(trc)) {
+    ICFallbackStub* fallback = fallbackStub(i);
+    if (!ent.traceWeak(trc, fallback)) {
       allSurvived = false;
     }
   }
@@ -346,6 +357,16 @@ void JitScript::ensureProfileString(JSContext* cx, JSScript* script) {
   }
 }
 
+void JitScript::ensureProfilerScriptSource(JSContext* cx, JSScript* script) {
+  MOZ_ASSERT(cx->runtime()->geckoProfiler().enabled());
+
+  AutoEnterOOMUnsafeRegion oomUnsafe;
+  if (!cx->runtime()->geckoProfiler().insertScriptSource(
+          script->scriptSource())) {
+    oomUnsafe.crash("Failed to insert profiled script source");
+  }
+}
+
 /* static */
 void JitScript::Destroy(Zone* zone, JitScript* script) {
   script->prepareForDestruction(zone);
@@ -373,6 +394,8 @@ void JitScript::forEachICScript(const F& f) const {
 }
 
 void ICScript::prepareForDestruction(Zone* zone) {
+  envAllocSite_ = nullptr;  // Points into allocSitesSpace_.
+
   // Defer freeing AllocSite memory until after the next minor GC, because the
   // nursery can point to these alloc sites.
   JSRuntime* rt = zone->runtimeFromMainThread();
@@ -816,6 +839,8 @@ void jit::MarkActiveICScriptsAndCopyStubs(Zone* zone,
 
 InliningRoot* JitScript::getOrCreateInliningRoot(JSContext* cx,
                                                  JSScript* script) {
+  MOZ_ASSERT(script->jitScript() == this);
+
   if (!inliningRoot_) {
     inliningRoot_ = js::MakeUnique<InliningRoot>(cx, script);
     if (!inliningRoot_) {
@@ -833,8 +858,9 @@ gc::AllocSite* ICScript::getOrCreateAllocSite(JSScript* outerScript,
   MOZ_ASSERT(outerScript->jitScript()->icScript() == this ||
              (inliningRoot() && inliningRoot()->owningScript() == outerScript));
 
-  // The pcOffset must be for this (maybe inlined) script.
-  MOZ_ASSERT(pcOffset < bytecodeSize());
+  // The pcOffset must be valid for this (maybe inlined) script.
+  MOZ_ASSERT_IF(pcOffset != gc::AllocSite::EnvSitePCOffset,
+                pcOffset < bytecodeSize());
 
   for (gc::AllocSite* site : allocSites_) {
     if (site->pcOffset() == pcOffset) {
@@ -867,6 +893,22 @@ gc::AllocSite* ICScript::getOrCreateAllocSite(JSScript* outerScript,
   nursery.noteAllocSiteCreated();
 
   return site;
+}
+
+void ICScript::ensureEnvAllocSite(JSScript* outerScript) {
+  if (envAllocSite_) {
+    return;
+  }
+
+  // Use a dummy offset for this site.
+  uint32_t pcoffset = gc::AllocSite::EnvSitePCOffset;
+  gc::AllocSite* site = getOrCreateAllocSite(outerScript, pcoffset);
+  if (!site) {
+    // Use the unknown site on failure.
+    site = outerScript->zone()->unknownAllocSite(JS::TraceKind::Object);
+  }
+
+  envAllocSite_ = site;
 }
 
 bool JitScript::resetAllocSites(bool resetNurserySites,
@@ -908,7 +950,7 @@ void JitScript::addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf,
                                        size_t* data, size_t* allocSites) const {
   *data += mallocSizeOf(this);
 
-  forEachICScript([=](const ICScript* script) {
+  forEachICScript([=, this](const ICScript* script) {
     // |data| already includes the outer ICScript because it's part of the
     // JitScript.
     if (script != &icScript_) {
@@ -943,13 +985,67 @@ JitScript* ICScript::outerJitScript() {
 //    changes from 0.
 // 4. The hash will change if the failure count of the fallback stub
 //    changes from 0.
-HashNumber ICScript::hash() {
+// 5. The hash will change if the set of shapes stored in ShapeListSnapshot
+//    is changed by stub folding or GC (the shapes in ShapeListObject are weak
+//    pointers).
+HashNumber ICScript::hash(JSContext* cx) {
   HashNumber h = 0;
   for (size_t i = 0; i < numICEntries(); i++) {
     ICStub* stub = icEntry(i).firstStub();
+    ICFallbackStub* fallback = fallbackStub(i);
 
     // Hash the address of the first stub.
     h = mozilla::AddToHash(h, stub);
+
+    // Hash shapes snapshotted in ShapeListSnapshot for GuardMultipleShapes.
+    if (!stub->isFallback() && fallback->mayHaveFoldedStub()) {
+      const CacheIRStubInfo* stubInfo = stub->toCacheIRStub()->stubInfo();
+      CacheIRReader reader(stubInfo);
+      while (reader.more()) {
+        CacheOp op = reader.readOp();
+        switch (op) {
+          case CacheOp::GuardMultipleShapes: {
+            auto args = reader.argsForGuardMultipleShapes();
+            JSObject* shapes =
+                stubInfo->getStubField<StubField::Type::JSObject>(
+                    stub->toCacheIRStub(), args.shapesOffset);
+            auto* shapesObject = &shapes->as<ShapeListObject>();
+            size_t numShapes = shapesObject->length();
+            if (ShapeListSnapshot::shouldSnapshot(numShapes)) {
+              for (size_t i = 0; i < numShapes; i++) {
+                Shape* shape = shapesObject->getUnbarriered(i);
+                h = mozilla::AddToHash(h, shape);
+              }
+              // Also include the GC number to handle the case where we bail
+              // out, add an additional shape, remove this new shape during GC,
+              // and then recompile with the current set of shapes.
+              // See bug 2002447.
+              h = mozilla::AddToHash(h, cx->runtime()->gc.majorGCCount());
+            }
+            break;
+          }
+          case CacheOp::GuardMultipleShapesToOffset: {
+            auto args = reader.argsForGuardMultipleShapesToOffset();
+            JSObject* shapes =
+                stubInfo->getStubField<StubField::Type::JSObject>(
+                    stub->toCacheIRStub(), args.shapesOffset);
+            auto* shapesObject = &shapes->as<ShapeListWithOffsetsObject>();
+            size_t numShapes = shapesObject->numShapes();
+            if (ShapeListSnapshot::shouldSnapshot(numShapes)) {
+              for (size_t i = 0; i < numShapes; i++) {
+                Shape* shape = shapesObject->getShapeUnbarriered(i);
+                h = mozilla::AddToHash(h, shape);
+                h = mozilla::AddToHash(h, shapesObject->getOffset(i));
+              }
+            }
+            break;
+          }
+          default:
+            reader.skip(CacheIROpInfos[size_t(op)].argLength);
+            break;
+        }
+      }
+    }
 
     // Hash whether subsequent stubs have entry count 0.
     if (!stub->isFallback()) {

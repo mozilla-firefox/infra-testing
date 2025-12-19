@@ -1,6 +1,10 @@
 [DEFAULT]
-run-if = ["buildapp == 'browser'"]
-prefs = ["browser.backup.enabled=true", "browser.backup.log=true"]
+run-if = [
+  "buildapp == 'browser'",
+]
 
 ["test_backup.py"]
 support-files = ["http2-ca.pem"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'", # 1924781: Gnome keyring not unlocked
+]

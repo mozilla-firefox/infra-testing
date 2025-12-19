@@ -6,9 +6,11 @@
 
 #include "video_capture_factory.h"
 
-#include "mozilla/StaticPrefs_media.h"
-#include "desktop_capture_impl.h"
 #include "VideoEngine.h"
+#include "desktop_capture_impl.h"
+#include "fake_video_capture/device_info_fake.h"
+#include "fake_video_capture/video_capture_fake.h"
+#include "mozilla/StaticPrefs_media.h"
 
 #if defined(WEBRTC_USE_PIPEWIRE)
 #  include "video_engine/placeholder_device_info.h"
@@ -47,6 +49,13 @@ VideoCaptureFactory::CreateDeviceInfo(
     int32_t aId, mozilla::camera::CaptureDeviceType aType) {
   if (aType == mozilla::camera::CaptureDeviceType::Camera) {
     std::shared_ptr<webrtc::VideoCaptureModule::DeviceInfo> deviceInfo;
+    mUseFakeCamera = mUseFakeCamera.orElse([] {
+      return Some(StaticPrefs::media_getusermedia_camera_fake_force());
+    });
+    if (*mUseFakeCamera) {
+      deviceInfo.reset(new webrtc::videocapturemodule::DeviceInfoFake());
+      return deviceInfo;
+    }
 #if (defined(WEBRTC_LINUX) || defined(WEBRTC_BSD)) && !defined(WEBRTC_ANDROID)
 #  if defined(WEBRTC_USE_PIPEWIRE)
     // Special case when PipeWire is not initialized yet and we need to insert
@@ -82,6 +91,14 @@ VideoCaptureFactory::CreateVideoCapture(
     mozilla::camera::CaptureDeviceType aType) {
   CreateVideoCaptureResult result;
   if (aType == mozilla::camera::CaptureDeviceType::Camera) {
+    if (mUseFakeCamera.valueOr(false)) {
+      nsCOMPtr<nsISerialEventTarget> target;
+      NS_CreateBackgroundTaskQueue("VideoCaptureFake::mTarget",
+                                   getter_AddRefs(target));
+      result.mCapturer =
+          webrtc::videocapturemodule::VideoCaptureFake::Create(target);
+      return result;
+    }
 #if (defined(WEBRTC_LINUX) || defined(WEBRTC_BSD)) && !defined(WEBRTC_ANDROID)
     result.mCapturer = webrtc::VideoCaptureFactory::Create(
         mVideoCaptureOptions.get(), aUniqueId);
@@ -98,7 +115,7 @@ VideoCaptureFactory::CreateVideoCapture(
   result.mDesktopImpl =
       webrtc::DesktopCaptureImpl::Create(aModuleId, aUniqueId, aType);
   result.mCapturer =
-      rtc::scoped_refptr<webrtc::VideoCaptureModule>(result.mDesktopImpl);
+      webrtc::scoped_refptr<webrtc::VideoCaptureModule>(result.mDesktopImpl);
 #endif
 
   return result;
@@ -231,5 +248,7 @@ void VideoCaptureFactory::OnInitialized(
       return;
   }
 }
+
+void VideoCaptureFactory::Invalidate() { mUseFakeCamera = Nothing(); }
 
 }  // namespace mozilla

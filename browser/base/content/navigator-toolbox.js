@@ -3,8 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/browser-window */
-
 document.addEventListener(
   "DOMContentLoaded",
   () => {
@@ -185,21 +183,20 @@ document.addEventListener(
         #back-button,
         #forward-button,
         #reload-button ,
-        #urlbar-go-button,
         #reader-mode-button,
         #picture-in-picture-button,
-        #shopping-sidebar-button,
         #urlbar-zoom-button,
         #star-button-box,
         #personal-toolbar-empty-description,
         #home-button,
         #PlacesToolbar,
         #BMB_bookmarksPopup,
+        #trust-icon-container,
         #tracking-protection-icon-container,
         #identity-icon-box,
         #identity-permission-box,
         #translations-button,
-        #taskbar-tabs-button
+        #split-view-button
         `);
       if (!element) {
         return;
@@ -218,10 +215,6 @@ document.addEventListener(
           checkForMiddleClick(element, event);
           break;
 
-        case "urlbar-go-button":
-          gURLBar.handleCommand(event);
-          break;
-
         case "reader-mode-button":
           if (isLeftClick) {
             AboutReaderParent.toggleReaderMode(event);
@@ -231,12 +224,6 @@ document.addEventListener(
         case "picture-in-picture-button":
           if (isLeftClick) {
             PictureInPicture.toggleUrlbar(event);
-          }
-          break;
-
-        case "shopping-sidebar-button":
-          if (isLeftClick) {
-            ShoppingSidebarParent.urlbarButtonClick(event);
           }
           break;
 
@@ -272,11 +259,19 @@ document.addEventListener(
           BookmarksEventHandler.onClick(event, element.parentNode._placesView);
           break;
 
+        case "trust-icon-container":
+          gTrustPanelHandler.handleProtectionsButtonEvent(event);
+          break;
+
         case "tracking-protection-icon-container":
           gProtectionsHandler.handleProtectionsButtonEvent(event);
           break;
 
         case "identity-icon-box":
+          if (UrlbarPrefs.get("trustPanel.featureGate")) {
+            gTrustPanelHandler.handleProtectionsButtonEvent(event);
+            break;
+          }
           gIdentityHandler.handleIdentityButtonEvent(event);
           PageProxyClickHandler(event);
           break;
@@ -288,6 +283,12 @@ document.addEventListener(
 
         case "translations-button":
           FullPageTranslationsPanel.open(event);
+          break;
+
+        case "split-view-button":
+          if (isLeftClick) {
+            gBrowser.openSplitViewMenu(element);
+          }
           break;
 
         default:
@@ -304,7 +305,6 @@ document.addEventListener(
       let element = event.target.closest(`
         #reader-mode-button,
         #picture-in-picture-button,
-        #shopping-sidebar-button,
         #urlbar-zoom-button,
         #star-button-box,
         #personal-toolbar-empty-description,
@@ -318,7 +318,8 @@ document.addEventListener(
         #downloads-button,
         #fxa-toolbar-menu-button,
         #unified-extensions-button,
-        #library-button
+        #library-button,
+        #split-view-button
       `);
       if (!element) {
         return;
@@ -334,12 +335,6 @@ document.addEventListener(
         case "picture-in-picture-button":
           if (isLikeLeftClick) {
             PictureInPicture.toggleUrlbar(event);
-          }
-          break;
-
-        case "shopping-sidebar-button":
-          if (isLikeLeftClick) {
-            ShoppingSidebarParent.urlbarButtonClick(event);
           }
           break;
 
@@ -408,6 +403,12 @@ document.addEventListener(
 
         case "library-button":
           PanelUI.showSubView("appMenu-libraryView", element, event);
+          break;
+
+        case "split-view-button":
+          if (isLikeLeftClick) {
+            gBrowser.openSplitViewMenu(element);
+          }
           break;
 
         default:
@@ -502,6 +503,11 @@ document.addEventListener(
 
     document
       .getElementById("identity-box")
+      .addEventListener("dragstart", event => {
+        gIdentityHandler.onDragStart(event);
+      });
+    document
+      .getElementById("trust-icon-container")
       .addEventListener("dragstart", event => {
         gIdentityHandler.onDragStart(event);
       });

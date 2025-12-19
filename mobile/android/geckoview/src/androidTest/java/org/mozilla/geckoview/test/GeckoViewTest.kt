@@ -1,3 +1,5 @@
+@file:Suppress("ktlint:standard:no-wildcard-imports")
+
 package org.mozilla.geckoview.test
 
 import android.content.Context
@@ -5,6 +7,7 @@ import android.graphics.Matrix
 import android.os.Build
 import android.os.Bundle
 import android.os.LocaleList
+import android.os.ParcelFileDescriptor
 import android.util.Pair
 import android.util.SparseArray
 import android.view.View
@@ -14,12 +17,11 @@ import android.view.autofill.AutofillValue
 import androidx.test.ext.junit.rules.ActivityScenarioRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
-import androidx.test.filters.SdkSuppress
+import androidx.test.platform.app.InstrumentationRegistry
 import org.hamcrest.Matchers.equalTo
-import org.junit.* // ktlint-disable no-wildcard-imports
+import org.junit.*
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeThat
 import org.junit.rules.RuleChain
 import org.junit.runner.RunWith
 import org.mozilla.geckoview.Autofill
@@ -27,12 +29,12 @@ import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoView
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.NullDelegate
 import org.mozilla.geckoview.test.util.UiThreadUtils
-import java.io.File
 
 @RunWith(AndroidJUnit4::class)
 @LargeTest
 class GeckoViewTest : BaseSessionTest() {
     val activityRule = ActivityScenarioRule(GeckoViewTestActivity::class.java)
+    private val uiAutomation = InstrumentationRegistry.getInstrumentation().uiAutomation
 
     @get:Rule
     override val rules = RuleChain.outerRule(activityRule).around(sessionRule)
@@ -95,27 +97,52 @@ class GeckoViewTest : BaseSessionTest() {
         }
     }
 
-    private fun waitUntilContentProcessPriority(high: List<GeckoSession>, low: List<GeckoSession>) {
+    private fun waitUntilContentProcessPriority(
+        high: List<GeckoSession>,
+        low: List<GeckoSession>,
+    ) {
         val highPids = high.map { sessionRule.getSessionPid(it) }.toSet()
         val lowPids = low.map { sessionRule.getSessionPid(it) }.toSet()
         waitUntilContentProcessPriorityByPid(highPids = highPids, lowPids = lowPids)
     }
 
-    private fun waitUntilContentProcessPriorityByPid(highPids: Collection<Int>, lowPids: Collection<Int>) {
+    private fun waitUntilContentProcessPriorityByPid(
+        highPids: Collection<Int>,
+        lowPids: Collection<Int>,
+    ) {
         UiThreadUtils.waitForCondition({
-            val shouldBeHighPri = getContentProcessesOomScore(highPids)
-            val shouldBeLowPri = getContentProcessesOomScore(lowPids)
-            // Note that higher oom score means less priority
-            shouldBeHighPri.count { it > 100 } == 0 &&
-                shouldBeLowPri.count { it < 300 } == 0
+            val shouldBeHighPri = getContentProcessesOomScoreAdj(highPids)
+            val shouldBeLowPri = getContentProcessesOomScoreAdj(lowPids)
+
+            // Smaller oom_score_adj indicates higher priority, with 0 indicating foreground visibility.
+            // Larger oom_score_adj indicates lower priority, with 900 indicating background visibility
+            // and the process may be killed.
+            shouldBeHighPri.count { it == 0 } == shouldBeHighPri.size &&
+                shouldBeLowPri.count { it >= 900 } == shouldBeLowPri.size
         }, env.defaultTimeoutMillis)
     }
 
-    fun getContentProcessesOomScore(pids: Collection<Int>): List<Int> {
-        return pids.map { pid ->
-            File("/proc/$pid/oom_score").readText(Charsets.UTF_8).trim().toInt()
+    /**
+     * Helper function reads oom_score_adj. oom_score_adj is set by Android based on some criteria
+     * to manage process priority.
+     *
+     * Background on oom_score_adj:
+     * https://cs.android.com/android/platform/superproject/+/android-latest-release:frameworks/base/services/core/java/com/android/server/am/OomAdjuster.md
+     *
+     * oom_score_adj constants:
+     * https://cs.android.com/android/platform/superproject/+/android-latest-release:frameworks/base/services/core/java/com/android/server/am/ProcessList.java
+     */
+    fun getContentProcessesOomScoreAdj(pids: Collection<Int>): List<Int> =
+        pids.map { pid ->
+            val shellCommand = uiAutomation.executeShellCommand("cat /proc/$pid/oom_score_adj")
+            ParcelFileDescriptor.AutoCloseInputStream(shellCommand).use { inputStream ->
+                inputStream
+                    .bufferedReader(Charsets.UTF_8)
+                    .readText()
+                    .trim()
+                    .toInt()
+            }
         }
-    }
 
     fun setupPriorityTest(): GeckoSession {
         // This makes the test a little bit faster
@@ -152,8 +179,6 @@ class GeckoViewTest : BaseSessionTest() {
     @Test
     @NullDelegate(Autofill.Delegate::class)
     fun setTabActiveKeepsTabAtHighPriority() {
-        // Bug 1927595
-        assumeThat(env.isIsolatedProcess, equalTo(false))
         activityRule.scenario.onActivity {
             val otherSession = setupPriorityTest()
 
@@ -180,8 +205,6 @@ class GeckoViewTest : BaseSessionTest() {
     @Test
     @NullDelegate(Autofill.Delegate::class)
     fun processPriorityTest() {
-        // Bug 1927595
-        assumeThat(env.isIsolatedProcess, equalTo(false))
         activityRule.scenario.onActivity {
             val otherSession = setupPriorityTest()
 
@@ -221,8 +244,6 @@ class GeckoViewTest : BaseSessionTest() {
     @Test
     @NullDelegate(Autofill.Delegate::class)
     fun setPriorityHint() {
-        // Bug 1927595
-        assumeThat(env.isIsolatedProcess, equalTo(false))
         val otherSession = setupPriorityTest()
 
         // Setting priorityHint to PRIORITY_HIGH raises priority
@@ -245,9 +266,6 @@ class GeckoViewTest : BaseSessionTest() {
     @Test
     @NullDelegate(Autofill.Delegate::class)
     fun setActiveProcessPriorityTest() {
-        // Bug 1927595
-        assumeThat(env.isIsolatedProcess, equalTo(false))
-
         sessionRule.setPrefsUntilTestEnd(
             mapOf(
                 "dom.ipc.processPriorityManager.backgroundGracePeriodMS" to 0,
@@ -261,7 +279,7 @@ class GeckoViewTest : BaseSessionTest() {
         val initialPids = sessionRule.getAllSessionPids()
         assertTrue("Only one session PID detected on startup", initialPids.size == 1)
         val initialPid = initialPids.first()
-        val initialOomScore = getContentProcessesOomScore(listOf(initialPid)).first()
+        val initialOomScoreAdj = getContentProcessesOomScoreAdj(listOf(initialPid)).first()
 
         mainSession.setActive(true)
         mainSession.setActive(false)
@@ -269,7 +287,7 @@ class GeckoViewTest : BaseSessionTest() {
         mainSession.loadTestPath(HELLO_HTML_PATH)
         mainSession.waitForPageStop()
         val loadedPid = sessionRule.getSessionPid(mainSession)
-        val loadedOomScore = getContentProcessesOomScore(listOf(loadedPid)).first()
+        val loadedOomScoreAdj = getContentProcessesOomScoreAdj(listOf(loadedPid)).first()
 
         val isLoadedActive = sessionRule.getActive(mainSession)
         assertFalse("The session was set to inactive.", isLoadedActive)
@@ -279,23 +297,27 @@ class GeckoViewTest : BaseSessionTest() {
 
             // Note that higher oom score means less priority
             assertTrue(
-                "The initial oom score has more priority than the loaded oom score because it was backgrounded.",
-                loadedOomScore > initialOomScore,
+                "The initial oom score adj has more priority than the loaded oom score because it was backgrounded.",
+                loadedOomScoreAdj > initialOomScoreAdj,
             )
-            assertTrue("The initial oom score indicates higher priority because it started in the foreground.", initialOomScore < 300)
-            assertTrue("The loaded oom score indicates lower priority because it is backgrounded.", loadedOomScore > 300)
+            assertTrue("The initial oom score adj indicates higher priority because it started in the foreground.", initialOomScoreAdj == 0)
+            assertTrue("The loaded oom score adj indicates lower priority because it is backgrounded.", loadedOomScoreAdj == 900)
         } else {
             assertTrue("A process switch did not occur.", initialPid == loadedPid)
 
-            // setActive(false) occurred on this PID, give time for it to settle
+            // setActive(false) occurred on this PID, give time for it to settle.
+            // When it reaches 900, this indicates the pid is backgrounded.
             UiThreadUtils.waitForCondition({
-                getContentProcessesOomScore(listOf(loadedPid)).first() > 100
+                getContentProcessesOomScoreAdj(listOf(loadedPid)).first() == 900
             }, env.defaultTimeoutMillis)
             assertTrue("The loaded oom score indicates low priority.", true)
         }
     }
 
-    private fun visit(node: MockViewStructure, callback: (MockViewStructure) -> Unit) {
+    private fun visit(
+        node: MockViewStructure,
+        callback: (MockViewStructure) -> Unit,
+    ) {
         callback(node)
 
         for (child in node.children) {
@@ -307,27 +329,28 @@ class GeckoViewTest : BaseSessionTest() {
 
     @Test
     @NullDelegate(Autofill.Delegate::class)
-    @SdkSuppress(minSdkVersion = Build.VERSION_CODES.O)
     fun autofillWithNoSession() {
         mainSession.loadTestPath(FORMS_XORIGIN_HTML_PATH)
         mainSession.waitForPageStop()
 
-        val autofills = mapOf(
-            "#user1" to "username@example.com",
-            "#user2" to "username@example.com",
-            "#pass1" to "test-password",
-            "#pass2" to "test-password",
-        )
+        val autofills =
+            mapOf(
+                "#user1" to "username@example.com",
+                "#user2" to "username@example.com",
+                "#pass1" to "test-password",
+                "#pass2" to "test-password",
+            )
 
         // Set up promises to monitor the values changing.
-        val promises = autofills.map { entry ->
-            // Repeat each test with both the top document and the iframe document.
-            mainSession.evaluatePromiseJS(
-                """
+        val promises =
+            autofills.map { entry ->
+                // Repeat each test with both the top document and the iframe document.
+                mainSession.evaluatePromiseJS(
+                    """
                 window.getDataForAllFrames('${entry.key}', '${entry.value}')
                 """,
-            )
-        }
+                )
+            }
 
         activityRule.scenario.onActivity {
             val root = MockViewStructure(View.NO_ID)
@@ -385,14 +408,22 @@ class GeckoViewTest : BaseSessionTest() {
         }
     }
 
-    class MockViewStructure(var id: Int, var parent: MockViewStructure? = null) : ViewStructure() {
+    class MockViewStructure(
+        var id: Int,
+        var parent: MockViewStructure? = null,
+    ) : ViewStructure() {
         private var enabled: Boolean = false
         private var inputType = 0
         var children = Array<MockViewStructure?>(0, { null })
         var childIndex = 0
         var hints: Array<out String>? = null
 
-        override fun setId(p0: Int, p1: String?, p2: String?, p3: String?) {
+        override fun setId(
+            p0: Int,
+            p1: String?,
+            p2: String?,
+            p3: String?,
+        ) {
             id = p0
         }
 
@@ -404,9 +435,7 @@ class GeckoViewTest : BaseSessionTest() {
             children = Array(p0, { null })
         }
 
-        override fun getChildCount(): Int {
-            return children.size
-        }
+        override fun getChildCount(): Int = children.size
 
         override fun newChild(p0: Int): ViewStructure {
             val child = MockViewStructure(p0, this)
@@ -414,17 +443,13 @@ class GeckoViewTest : BaseSessionTest() {
             return child
         }
 
-        override fun asyncNewChild(p0: Int): ViewStructure {
-            return newChild(p0)
-        }
+        override fun asyncNewChild(p0: Int): ViewStructure = newChild(p0)
 
         override fun setInputType(p0: Int) {
             inputType = p0
         }
 
-        fun getInputType(): Int {
-            return inputType
-        }
+        fun getInputType(): Int = inputType
 
         override fun setAutofillHints(p0: Array<out String>?) {
             hints = p0
@@ -434,76 +459,119 @@ class GeckoViewTest : BaseSessionTest() {
             TODO()
         }
 
-        override fun setDimens(p0: Int, p1: Int, p2: Int, p3: Int, p4: Int, p5: Int) {}
-        override fun setTransformation(p0: Matrix?) {}
-        override fun setElevation(p0: Float) {}
-        override fun setAlpha(p0: Float) {}
-        override fun setVisibility(p0: Int) {}
-        override fun setClickable(p0: Boolean) {}
-        override fun setLongClickable(p0: Boolean) {}
-        override fun setContextClickable(p0: Boolean) {}
-        override fun setFocusable(p0: Boolean) {}
-        override fun setFocused(p0: Boolean) {}
-        override fun setAccessibilityFocused(p0: Boolean) {}
-        override fun setCheckable(p0: Boolean) {}
-        override fun setChecked(p0: Boolean) {}
-        override fun setSelected(p0: Boolean) {}
-        override fun setActivated(p0: Boolean) {}
-        override fun setOpaque(p0: Boolean) {}
-        override fun setClassName(p0: String?) {}
-        override fun setContentDescription(p0: CharSequence?) {}
-        override fun setText(p0: CharSequence?) {}
-        override fun setText(p0: CharSequence?, p1: Int, p2: Int) {}
-        override fun setTextStyle(p0: Float, p1: Int, p2: Int, p3: Int) {}
-        override fun setTextLines(p0: IntArray?, p1: IntArray?) {}
-        override fun setHint(p0: CharSequence?) {}
-        override fun getText(): CharSequence {
-            return ""
-        }
-        override fun getTextSelectionStart(): Int {
-            return 0
-        }
-        override fun getTextSelectionEnd(): Int {
-            return 0
-        }
-        override fun getHint(): CharSequence {
-            return ""
-        }
-        override fun getExtras(): Bundle {
-            return Bundle()
-        }
-        override fun hasExtras(): Boolean {
-            return false
-        }
+        override fun setDimens(
+            p0: Int,
+            p1: Int,
+            p2: Int,
+            p3: Int,
+            p4: Int,
+            p5: Int,
+        ) {}
 
-        override fun getAutofillId(): AutofillId? {
-            return null
-        }
+        override fun setTransformation(p0: Matrix?) {}
+
+        override fun setElevation(p0: Float) {}
+
+        override fun setAlpha(p0: Float) {}
+
+        override fun setVisibility(p0: Int) {}
+
+        override fun setClickable(p0: Boolean) {}
+
+        override fun setLongClickable(p0: Boolean) {}
+
+        override fun setContextClickable(p0: Boolean) {}
+
+        override fun setFocusable(p0: Boolean) {}
+
+        override fun setFocused(p0: Boolean) {}
+
+        override fun setAccessibilityFocused(p0: Boolean) {}
+
+        override fun setCheckable(p0: Boolean) {}
+
+        override fun setChecked(p0: Boolean) {}
+
+        override fun setSelected(p0: Boolean) {}
+
+        override fun setActivated(p0: Boolean) {}
+
+        override fun setOpaque(p0: Boolean) {}
+
+        override fun setClassName(p0: String?) {}
+
+        override fun setContentDescription(p0: CharSequence?) {}
+
+        override fun setText(p0: CharSequence?) {}
+
+        override fun setText(
+            p0: CharSequence?,
+            p1: Int,
+            p2: Int,
+        ) {}
+
+        override fun setTextStyle(
+            p0: Float,
+            p1: Int,
+            p2: Int,
+            p3: Int,
+        ) {}
+
+        override fun setTextLines(
+            p0: IntArray?,
+            p1: IntArray?,
+        ) {}
+
+        override fun setHint(p0: CharSequence?) {}
+
+        override fun getText(): CharSequence = ""
+
+        override fun getTextSelectionStart(): Int = 0
+
+        override fun getTextSelectionEnd(): Int = 0
+
+        override fun getHint(): CharSequence = ""
+
+        override fun getExtras(): Bundle = Bundle()
+
+        override fun hasExtras(): Boolean = false
+
+        override fun getAutofillId(): AutofillId? = null
+
         override fun setAutofillId(p0: AutofillId) {}
-        override fun setAutofillId(p0: AutofillId, p1: Int) {}
+
+        override fun setAutofillId(
+            p0: AutofillId,
+            p1: Int,
+        ) {}
+
         override fun setAutofillType(p0: Int) {}
+
         override fun setAutofillValue(p0: AutofillValue?) {}
+
         override fun setAutofillOptions(p0: Array<out CharSequence>?) {}
+
         override fun setDataIsSensitive(p0: Boolean) {}
+
         override fun asyncCommit() {}
+
         override fun setWebDomain(p0: String?) {}
+
         override fun setLocaleList(p0: LocaleList?) {}
 
-        override fun newHtmlInfoBuilder(p0: String): HtmlInfo.Builder {
-            return MockHtmlInfoBuilder()
-        }
+        override fun newHtmlInfoBuilder(p0: String): HtmlInfo.Builder = MockHtmlInfoBuilder()
+
         override fun setHtmlInfo(p0: HtmlInfo) {
         }
     }
 
     class MockHtmlInfoBuilder : ViewStructure.HtmlInfo.Builder() {
-        override fun addAttribute(p0: String, p1: String): ViewStructure.HtmlInfo.Builder {
-            return this
-        }
+        override fun addAttribute(
+            p0: String,
+            p1: String,
+        ): ViewStructure.HtmlInfo.Builder = this
 
-        override fun build(): ViewStructure.HtmlInfo {
-            return MockHtmlInfo()
-        }
+        override fun build(): ViewStructure.HtmlInfo = MockHtmlInfo()
     }
 
     class MockHtmlInfo : ViewStructure.HtmlInfo() {

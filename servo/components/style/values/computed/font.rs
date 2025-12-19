@@ -4,7 +4,7 @@
 
 //! Computed values for font properties
 
-use crate::gecko::media_queries::QueryFontMetricsFlags;
+use crate::derives::*;
 use crate::parser::{Parse, ParserContext};
 use crate::values::animated::ToAnimatedValue;
 use crate::values::computed::{
@@ -20,8 +20,9 @@ use crate::values::specified::font::{
     self as specified, KeywordInfo, MAX_FONT_WEIGHT, MIN_FONT_WEIGHT,
 };
 use crate::values::specified::length::{FontBaseSize, LineHeightBase, NoCalcLength};
+use crate::values::CSSInteger;
 use crate::Atom;
-use cssparser::{serialize_identifier, CssStringWriter, Parser};
+use cssparser::{match_ignore_ascii_case, serialize_identifier, CssStringWriter, Parser};
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
 use num_traits::abs;
 use num_traits::cast::AsPrimitive;
@@ -32,8 +33,8 @@ pub use crate::values::computed::Length as MozScriptMinSize;
 pub use crate::values::specified::font::MozScriptSizeMultiplier;
 pub use crate::values::specified::font::{FontPalette, FontSynthesis, FontSynthesisStyle};
 pub use crate::values::specified::font::{
-    FontVariantAlternates, FontVariantEastAsian, FontVariantLigatures, FontVariantNumeric, XLang,
-    XTextScale,
+    FontVariantAlternates, FontVariantEastAsian, FontVariantLigatures, FontVariantNumeric,
+    QueryFontMetricsFlags, XLang, XTextScale,
 };
 pub use crate::values::specified::Integer as SpecifiedInteger;
 pub use crate::values::specified::Number as SpecifiedNumber;
@@ -144,6 +145,7 @@ pub type FontWeightFixedPoint = FixedPoint<u16, FONT_WEIGHT_FRACTION_BITS>;
     PartialEq,
     PartialOrd,
     ToResolvedValue,
+    ToTyped,
 )]
 #[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
 #[repr(C)]
@@ -187,12 +189,18 @@ impl FontWeight {
         value: 600 << FONT_WEIGHT_FRACTION_BITS,
     });
 
+    /// The threshold above which CSS font matching prefers bolder faces
+    /// over lighter ones.
+    pub const PREFER_BOLD_THRESHOLD: FontWeight = FontWeight(FontWeightFixedPoint {
+        value: 500 << FONT_WEIGHT_FRACTION_BITS,
+    });
+
     /// Returns the `normal` keyword value.
     pub fn normal() -> Self {
         Self::NORMAL
     }
 
-    /// Weither this weight is bold
+    /// Whether this weight is bold
     pub fn is_bold(&self) -> bool {
         *self >= Self::BOLD_THRESHOLD
     }
@@ -250,6 +258,7 @@ impl FontWeight {
     PartialEq,
     ToAnimatedZero,
     ToCss,
+    ToTyped,
 )]
 #[cfg_attr(feature = "servo", derive(Serialize, Deserialize))]
 /// The computed value of font-size
@@ -337,7 +346,7 @@ impl ToResolvedValue for FontSize {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, ToComputedValue, ToResolvedValue)]
+#[derive(Clone, Debug, Eq, PartialEq, ToComputedValue, ToResolvedValue, ToTyped)]
 #[cfg_attr(feature = "servo", derive(Hash, Serialize, Deserialize))]
 /// Specifies a prioritized list of font family names or generic family names.
 #[repr(C)]
@@ -353,15 +362,13 @@ pub struct FontFamily {
 
 macro_rules! static_font_family {
     ($ident:ident, $family:expr) => {
-        lazy_static! {
-            static ref $ident: FontFamily = FontFamily {
-                families: FontFamilyList {
-                    list: crate::ArcSlice::from_iter_leaked(std::iter::once($family)),
-                },
-                is_system_font: false,
-                is_initial: false,
-            };
-        }
+        static $ident: std::sync::LazyLock<FontFamily> = std::sync::LazyLock::new(|| FontFamily {
+            families: FontFamilyList {
+                list: crate::ArcSlice::from_iter_leaked(std::iter::once($family)),
+            },
+            is_system_font: false,
+            is_initial: false,
+        });
     };
 }
 
@@ -420,6 +427,8 @@ impl FontFamily {
         generic_font_family!(CURSIVE, Cursive);
         generic_font_family!(FANTASY, Fantasy);
         #[cfg(feature = "gecko")]
+        generic_font_family!(MATH, Math);
+        #[cfg(feature = "gecko")]
         generic_font_family!(MOZ_EMOJI, MozEmoji);
         generic_font_family!(SYSTEM_UI, SystemUi);
 
@@ -433,6 +442,8 @@ impl FontFamily {
             GenericFontFamily::Monospace => &*MONOSPACE,
             GenericFontFamily::Cursive => &*CURSIVE,
             GenericFontFamily::Fantasy => &*FANTASY,
+            #[cfg(feature = "gecko")]
+            GenericFontFamily::Math => &*MATH,
             #[cfg(feature = "gecko")]
             GenericFontFamily::MozEmoji => &*MOZ_EMOJI,
             GenericFontFamily::SystemUi => &*SYSTEM_UI,
@@ -574,6 +585,11 @@ fn system_ui_enabled(_: &ParserContext) -> bool {
     static_prefs::pref!("layout.css.system-ui.enabled")
 }
 
+#[cfg(feature = "gecko")]
+fn math_enabled(context: &ParserContext) -> bool {
+    context.chrome_rules_enabled() || static_prefs::pref!("mathml.font_family_math.enabled")
+}
+
 /// A generic font-family name.
 ///
 /// The order here is important, if you change it make sure that
@@ -612,6 +628,9 @@ pub enum GenericFontFamily {
     Monospace,
     Cursive,
     Fantasy,
+    #[cfg(feature = "gecko")]
+    #[parse(condition = "math_enabled")]
+    Math,
     #[parse(condition = "system_ui_enabled")]
     SystemUi,
     /// An internal value for emoji font selection.
@@ -626,9 +645,9 @@ impl GenericFontFamily {
     /// the user. See bug 789788 and bug 1730098.
     pub(crate) fn valid_for_user_font_prioritization(self) -> bool {
         match self {
-            Self::None | Self::Fantasy | Self::Cursive | Self::SystemUi => false,
+            Self::None | Self::Cursive | Self::Fantasy | Self::SystemUi => false,
             #[cfg(feature = "gecko")]
-            Self::MozEmoji => false,
+            Self::Math | Self::MozEmoji => false,
             Self::Serif | Self::SansSerif | Self::Monospace => true,
         }
     }
@@ -845,19 +864,54 @@ impl ToComputedValue for specified::FontSizeAdjust {
         match *self {
             Self::None => FontSizeAdjust::None,
             Self::ExHeight(val) => {
-                resolve!(ExHeight, val, false, x_height, 0.5, QueryFontMetricsFlags::empty())
+                resolve!(
+                    ExHeight,
+                    val,
+                    false,
+                    x_height,
+                    0.5,
+                    QueryFontMetricsFlags::empty()
+                )
             },
             Self::CapHeight(val) => {
-                resolve!(CapHeight, val, false, cap_height, -1.0 /* fall back to ascent */, QueryFontMetricsFlags::empty())
+                resolve!(
+                    CapHeight,
+                    val,
+                    false,
+                    cap_height,
+                    -1.0, /* fall back to ascent */
+                    QueryFontMetricsFlags::empty()
+                )
             },
             Self::ChWidth(val) => {
-                resolve!(ChWidth, val, false, zero_advance_measure, 0.5, QueryFontMetricsFlags::NEEDS_CH)
+                resolve!(
+                    ChWidth,
+                    val,
+                    false,
+                    zero_advance_measure,
+                    0.5,
+                    QueryFontMetricsFlags::NEEDS_CH
+                )
             },
             Self::IcWidth(val) => {
-                resolve!(IcWidth, val, false, ic_width, 1.0, QueryFontMetricsFlags::NEEDS_IC)
+                resolve!(
+                    IcWidth,
+                    val,
+                    false,
+                    ic_width,
+                    1.0,
+                    QueryFontMetricsFlags::NEEDS_IC
+                )
             },
             Self::IcHeight(val) => {
-                resolve!(IcHeight, val, true, ic_width, 1.0, QueryFontMetricsFlags::NEEDS_IC)
+                resolve!(
+                    IcHeight,
+                    val,
+                    true,
+                    ic_width,
+                    1.0,
+                    QueryFontMetricsFlags::NEEDS_IC
+                )
             },
         }
     }
@@ -926,13 +980,7 @@ where
     }
 
     fn from_computed_value(computed: &Self::ComputedValue) -> Self {
-        Self(
-            computed
-                .0
-                .iter()
-                .map(T::from_computed_value)
-                .collect()
-        )
+        Self(computed.0.iter().map(T::from_computed_value).collect())
     }
 }
 
@@ -951,6 +999,7 @@ where
     ToComputedValue,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C)]
 #[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
@@ -1057,6 +1106,21 @@ impl ToComputedValue for specified::MathDepth {
     }
 }
 
+impl ToAnimatedValue for MathDepth {
+    type AnimatedValue = CSSInteger;
+
+    #[inline]
+    fn to_animated_value(self, _: &crate::values::animated::Context) -> Self::AnimatedValue {
+        self.into()
+    }
+
+    #[inline]
+    fn from_animated_value(animated: Self::AnimatedValue) -> Self {
+        use std::{cmp, i8};
+        cmp::min(animated, i8::MAX as i32) as i8
+    }
+}
+
 /// - Use a signed 8.8 fixed-point value (representable range -128.0..128)
 ///
 /// Values of <angle> below -90 or above 90 are not permitted, so we use an out
@@ -1088,6 +1152,7 @@ pub type FontStyleFixedPoint = FixedPoint<i16, FONT_STYLE_FRACTION_BITS>;
     PartialEq,
     PartialOrd,
     ToResolvedValue,
+    ToTyped,
 )]
 #[cfg_attr(feature = "servo", derive(Deserialize, Serialize))]
 #[repr(C)]
@@ -1197,7 +1262,15 @@ pub type FontStretchFixedPoint = FixedPoint<u16, FONT_STRETCH_FRACTION_BITS>;
 /// cbindgen:derive-gt
 /// cbindgen:derive-gte
 #[derive(
-    Clone, ComputeSquaredDistance, Copy, Debug, MallocSizeOf, PartialEq, PartialOrd, ToResolvedValue,
+    Clone,
+    ComputeSquaredDistance,
+    Copy,
+    Debug,
+    MallocSizeOf,
+    PartialEq,
+    PartialOrd,
+    ToResolvedValue,
+    ToTyped,
 )]
 #[cfg_attr(feature = "servo", derive(Deserialize, Hash, Serialize))]
 #[repr(C)]

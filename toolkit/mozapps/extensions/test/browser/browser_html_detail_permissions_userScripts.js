@@ -13,12 +13,7 @@ AddonTestUtils.initMochitest(this);
 
 add_setup(async () => {
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["extensions.userScripts.mv3.enabled", true],
-      // TODO: Bug 1960273 - Update this test and remove this pref set when we
-      // enable the data collection permissions on all channels.
-      ["extensions.dataCollectionPermissions.enabled", false],
-    ],
+    set: [["extensions.dataCollectionPermissions.enabled", true]],
   });
 });
 
@@ -33,7 +28,7 @@ function loadUserScriptsExtension(addonId) {
     background() {
       browser.permissions.onAdded.addListener(perms => {
         browser.test.assertDeepEq(
-          { permissions: ["userScripts"], origins: [] },
+          { permissions: ["userScripts"], origins: [], data_collection: [] },
           perms,
           "permissions.onAdded for userScripts permission"
         );
@@ -42,7 +37,7 @@ function loadUserScriptsExtension(addonId) {
       });
       browser.permissions.onRemoved.addListener(perms => {
         browser.test.assertDeepEq(
-          { permissions: ["userScripts"], origins: [] },
+          { permissions: ["userScripts"], origins: [], data_collection: [] },
           perms,
           "permissions.onRemoved for userScripts permission"
         );

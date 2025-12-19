@@ -11,7 +11,8 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   ContentRelevancyManager:
     "resource://gre/modules/ContentRelevancyManager.sys.mjs",
-  InterestVector: "resource://gre/modules/RustRelevancy.sys.mjs",
+  InterestVector:
+    "moz-src:///toolkit/components/uniffi-bindgen-gecko-js/components/generated/RustRelevancy.sys.mjs",
 });
 
 const PREF_CONTENT_RELEVANCY_ENABLED = "toolkit.contentRelevancy.enabled";
@@ -78,9 +79,13 @@ const EXPECTED_AMP_RESULT = QuickSuggestTestUtils.ampResult({
   source: "merino",
   provider: "adm",
   requestId: "request_id",
+  suggestedIndex: -1,
 });
-const EXPECTED_WIKIPEDIA_RESULT =
-  QuickSuggestTestUtils.dynamicWikipediaResult();
+const EXPECTED_WIKIPEDIA_RESULT = QuickSuggestTestUtils.wikipediaResult({
+  source: "merino",
+  provider: "wikipedia",
+  telemetryType: "wikipedia",
+});
 
 let gSandbox;
 
@@ -94,8 +99,12 @@ add_setup(async () => {
   await QuickSuggestTestUtils.ensureQuickSuggestInit({
     merinoSuggestions: MERINO_SUGGESTIONS,
     prefs: [
-      ["suggest.quicksuggest.nonsponsored", true],
+      ["suggest.quicksuggest.all", true],
       ["suggest.quicksuggest.sponsored", true],
+
+      // Turn off higher-placement sponsored so this test doesn't need to worry
+      // about best matches.
+      ["quicksuggest.ampTopPickCharThreshold", 0],
     ],
   });
   gSandbox = sinon.createSandbox();
@@ -188,7 +197,7 @@ add_task(async function test_random_mode() {
   await applyRanking(suggestions);
 
   for (let s of suggestions) {
-    Assert.ok(typeof s.score == "number", "Suggestion should have a score");
+    Assert.equal(typeof s.score, "number", "Suggestion should have a score");
     Assert.greaterOrEqual(s.score, 0, "Suggestion score should be >= 0");
     Assert.lessOrEqual(s.score, 1, "Suggestion score should be <= 1");
     Assert.notEqual(
@@ -285,8 +294,113 @@ add_task(async function test_telemetry_interest_mode_with_failures() {
   Services.prefs.clearUserPref(PREF_RANKING_MODE);
 });
 
+add_task(async function offline_interest_mode_end2end() {
+  // Interest mode should return the suggestion whose category has the largest
+  // interest vector value: the Education suggestion.
+  await doOfflineTest({
+    mode: "interest",
+    expectedResultArgs: {
+      url: "https://example.com/6-education",
+      title: "Suggestion with category 6 (Education)",
+    },
+  });
+});
+
+add_task(async function offline_default_mode_end2end() {
+  // Default mode should return the first suggestion with the highest score,
+  // which is just the first suggestion returned by the backend since they all
+  // have the same score.
+  await doOfflineTest({
+    mode: "default",
+    expectedResultArgs: {
+      url: "https://example.com/no-categories",
+      title: "Suggestion with no categories",
+    },
+  });
+});
+
+async function doOfflineTest({ mode, expectedResultArgs }) {
+  // Turn off Merino.
+  UrlbarPrefs.set("quicksuggest.online.enabled", false);
+
+  Services.prefs.setStringPref(PREF_RANKING_MODE, mode);
+
+  // TODO: For now we stub `query()` on the Rust backend so that it returns AMP
+  // suggestions that have the `categories` property. Once the Rust component
+  // actually returns AMP suggestions with `categories`, we should be able to
+  // remove this and instead pass appropriate AMP data in the setup task to
+  // `QuickSuggestTestUtils.ensureQuickSuggestInit()`. When we do, make sure all
+  // suggestions have the same keyword! We want Rust to return all of them in
+  // response to a single query so that they are sorted and chosen by relevancy
+  // ranking.
+  let sandbox = sinon.createSandbox();
+  let queryStub = sandbox.stub(QuickSuggest.rustBackend, "query");
+  queryStub.returns([
+    mockRustAmpSuggestion({
+      keyword: "offline",
+      title: "Suggestion with no categories",
+      url: "https://example.com/no-categories",
+      categories: [],
+    }),
+    mockRustAmpSuggestion({
+      keyword: "offline",
+      url: "https://example.com/6-education",
+      title: "Suggestion with category 6 (Education)",
+      categories: [6],
+    }),
+    mockRustAmpSuggestion({
+      keyword: "offline",
+      title: "Suggestion with category 1 (Animals)",
+      url: "https://example.com/1-animals",
+      categories: [1],
+    }),
+  ]);
+
+  await check_results({
+    context: createContext("offline", {
+      providers: [UrlbarProviderQuickSuggest.name],
+      isPrivate: false,
+    }),
+    matches: [
+      QuickSuggestTestUtils.ampResult({
+        ...expectedResultArgs,
+        keyword: "offline",
+        suggestedIndex: -1,
+      }),
+    ],
+  });
+
+  Services.prefs.clearUserPref(PREF_RANKING_MODE);
+  UrlbarPrefs.clear("quicksuggest.online.enabled");
+  sandbox.restore();
+}
+
 async function applyRanking(suggestions) {
+  let quickSuggestProviderInstance = UrlbarProvidersManager.getProvider(
+    UrlbarProviderQuickSuggest.name
+  );
   for (let s of suggestions) {
-    await UrlbarProviderQuickSuggest._test_applyRanking(s);
+    await quickSuggestProviderInstance._test_applyRanking(s);
   }
+}
+
+function mockRustAmpSuggestion({ keyword, url, title, categories }) {
+  let suggestion = QuickSuggestTestUtils.ampRemoteSettings({
+    url,
+    title,
+    keywords: [keyword],
+  });
+  return {
+    ...suggestion,
+    rawUrl: suggestion.url,
+    impressionUrl: suggestion.impression_url,
+    clickUrl: suggestion.click_url,
+    blockId: suggestion.id,
+    iabCategory: suggestion.iab_category,
+    icon: null,
+    fullKeyword: keyword,
+    source: "rust",
+    provider: "Amp",
+    categories,
+  };
 }

@@ -1,7 +1,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla PublicddonMa
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
-
 const FXA_ENABLED_PREF = "identity.fxaccounts.enabled";
 const TOPIC_SELECTION_MODAL_LAST_DISPLAYED_PREF =
   "browser.newtabpage.activity-stream.discoverystream.topicSelection.onboarding.lastDisplayed";
@@ -31,7 +30,7 @@ const { NewTabUtils } = ChromeUtils.importESModule(
 
 // eslint-disable-next-line mozilla/use-static-import
 const { ShellService } = ChromeUtils.importESModule(
-  "resource:///modules/ShellService.sys.mjs"
+  "moz-src:///browser/components/shell/ShellService.sys.mjs"
 );
 
 // eslint-disable-next-line mozilla/use-static-import
@@ -39,18 +38,31 @@ const { ClientID } = ChromeUtils.importESModule(
   "resource://gre/modules/ClientID.sys.mjs"
 );
 
+// eslint-disable-next-line mozilla/use-static-import
+const { PlacesUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/PlacesUtils.sys.mjs"
+);
+
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  AboutNewTabResourceMapping:
+    "resource:///modules/AboutNewTabResourceMapping.sys.mjs",
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
   AboutNewTab: "resource:///modules/AboutNewTab.sys.mjs",
   ASRouterPreferences:
     "resource:///modules/asrouter/ASRouterPreferences.sys.mjs",
-  AttributionCode: "resource:///modules/AttributionCode.sys.mjs",
+  AttributionCode:
+    "moz-src:///browser/components/attribution/AttributionCode.sys.mjs",
+  BackupService: "resource:///modules/backup/BackupService.sys.mjs",
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   ClientEnvironment: "resource://normandy/lib/ClientEnvironment.sys.mjs",
-  CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
+  CustomizableUI:
+    "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
+  ExtensionUtils: "resource://gre/modules/ExtensionUtils.sys.mjs",
+  FeatureCalloutBroker:
+    "resource:///modules/asrouter/FeatureCalloutBroker.sys.mjs",
   HomePage: "resource:///modules/HomePage.sys.mjs",
   ProfileAge: "resource://gre/modules/ProfileAge.sys.mjs",
   Region: "resource://gre/modules/Region.sys.mjs",
@@ -59,6 +71,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "resource:///modules/profiles/SelectableProfileService.sys.mjs",
   SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
   TargetingContext: "resource://messaging-system/targeting/Targeting.sys.mjs",
+  TaskbarTabs: "resource:///modules/taskbartabs/TaskbarTabs.sys.mjs",
   TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
   TelemetrySession: "resource://gre/modules/TelemetrySession.sys.mjs",
   WindowsLaunchOnLogin: "resource://gre/modules/WindowsLaunchOnLogin.sys.mjs",
@@ -189,14 +202,20 @@ XPCOMUtils.defineLazyPreferenceGetter(
 );
 
 XPCOMUtils.defineLazyServiceGetters(lazy, {
-  AUS: ["@mozilla.org/updates/update-service;1", "nsIApplicationUpdateService"],
-  BrowserHandler: ["@mozilla.org/browser/clh;1", "nsIBrowserHandler"],
-  ScreenManager: ["@mozilla.org/gfx/screenmanager;1", "nsIScreenManager"],
+  AUS: [
+    "@mozilla.org/updates/update-service;1",
+    Ci.nsIApplicationUpdateService,
+  ],
+  BrowserHandler: ["@mozilla.org/browser/clh;1", Ci.nsIBrowserHandler],
+  ScreenManager: ["@mozilla.org/gfx/screenmanager;1", Ci.nsIScreenManager],
   TrackingDBService: [
     "@mozilla.org/tracking-db-service;1",
-    "nsITrackingDBService",
+    Ci.nsITrackingDBService,
   ],
-  UpdateCheckSvc: ["@mozilla.org/updates/update-checker;1", "nsIUpdateChecker"],
+  UpdateCheckSvc: [
+    "@mozilla.org/updates/update-checker;1",
+    Ci.nsIUpdateChecker,
+  ],
 });
 
 const FXA_USERNAME_PREF = "services.sync.username";
@@ -206,13 +225,19 @@ const { activityStreamProvider: asProvider } = NewTabUtils;
 const FRECENT_SITES_UPDATE_INTERVAL = 6 * 60 * 60 * 1000; // Six hours
 const FRECENT_SITES_IGNORE_BLOCKED = false;
 const FRECENT_SITES_NUM_ITEMS = 25;
-const FRECENT_SITES_MIN_FRECENCY = 100;
+// 2 visits, 30 days ago.
+const FRECENT_SITES_MIN_FRECENCY = PlacesUtils.history.pageFrecencyThreshold(
+  30,
+  2,
+  false
+);
 
 const CACHE_EXPIRATION = 5 * 60 * 1000;
 const jexlEvaluationCache = new Map();
 
 /**
  * CachedTargetingGetter
+ *
  * @param property {string} Name of the method
  * @param options {any=} Options passed to the method
  * @param updateInterval {number?} Update interval for query. Defaults to FRECENT_SITES_UPDATE_INTERVAL
@@ -262,7 +287,11 @@ function CacheUnhandledCampaignAction() {
         if (!lazy.didHandleCampaignAction) {
           const attributionData =
             lazy.AttributionCode.getCachedAttributionData();
-          const ALLOWED_CAMPAIGN_ACTIONS = ["SET_DEFAULT_BROWSER"];
+          const ALLOWED_CAMPAIGN_ACTIONS = [
+            "PIN_AND_DEFAULT",
+            "PIN_FIREFOX_TO_TASKBAR",
+            "SET_DEFAULT_BROWSER",
+          ];
           const campaign = attributionData?.campaign?.toUpperCase();
           if (campaign && ALLOWED_CAMPAIGN_ACTIONS.includes(campaign)) {
             this._value = campaign;
@@ -399,6 +428,39 @@ export const QueryCache = {
       FRECENT_SITES_UPDATE_INTERVAL,
       ClientID
     ),
+    profileGroupProfileCount: new CachedTargetingGetter(
+      "getProfileGroupProfileCount",
+      null,
+      FRECENT_SITES_UPDATE_INTERVAL,
+      {
+        getProfileGroupProfileCount() {
+          if (
+            !Services.prefs.getBoolPref("browser.profiles.enabled", false) ||
+            !Services.prefs.getBoolPref("browser.profiles.created", false)
+          ) {
+            return 0;
+          }
+
+          return lazy.SelectableProfileService.getProfileCount();
+        },
+      }
+    ),
+    backupsInfo: new CachedTargetingGetter(
+      "findBackupsInWellKnownLocations",
+      null,
+      FRECENT_SITES_UPDATE_INTERVAL,
+      {
+        async findBackupsInWellKnownLocations() {
+          let bs;
+          try {
+            bs = lazy.BackupService.get();
+          } catch {
+            bs = lazy.BackupService.init();
+          }
+          return bs.findBackupsInWellKnownLocations();
+        },
+      }
+    ),
   },
 };
 
@@ -486,11 +548,7 @@ export function getSortedMessages(messages, options = {}) {
  *                    its type (web extenstion or custom url) and the parsed url(s)
  *
  * @param {string} url - A URL string for home page or newtab page
- * @returns {Object} {
- *   isWebExt: boolean,
- *   isCustomUrl: boolean,
- *   urls: Array<{url: string, host: string}>
- * }
+ * @returns  {{isWebExt: boolean, isCustomUrl: boolean, urls: {url: string, host: string}[]}}
  */
 function parseAboutPageURL(url) {
   let ret = {
@@ -498,7 +556,7 @@ function parseAboutPageURL(url) {
     isCustomUrl: false,
     urls: [],
   };
-  if (url.startsWith("moz-extension://")) {
+  if (lazy.ExtensionUtils.isExtensionUrl(url)) {
     ret.isWebExt = true;
     ret.urls.push({ url, host: "" });
   } else {
@@ -527,7 +585,7 @@ function parseAboutPageURL(url) {
 /**
  * Get the number of records in autofill storage, e.g. credit cards/addresses.
  *
- * @param  {Object} [data]
+ * @param  {object} [data]
  * @param  {string} [data.collectionName]
  *         The name used to specify which collection to retrieve records.
  * @param  {string} [data.searchString]
@@ -710,13 +768,18 @@ const TargetingGetters = {
       return Promise.resolve(NONE);
     }
     return new Promise(resolve => {
-      // Note: calling init ensures this code is only executed after Search has been initialized
+      // Note: calling getAppProvidedEngines, calls Services.search.init which
+      // ensures this code is only executed after Search has been initialized.
       Services.search
         .getAppProvidedEngines()
         .then(engines => {
+          let { defaultEngine } = Services.search;
           resolve({
-            current: Services.search.defaultEngine.identifier,
-            installed: engines.map(engine => engine.identifier),
+            // Skip reporting the id for third party engines.
+            current: defaultEngine.isAppProvided ? defaultEngine.id : null,
+            // We don't need to filter the id here, as getAppProvidedEngines has
+            // already done that for us.
+            installed: engines.map(engine => engine.id),
           });
         })
         .catch(() => resolve(NONE));
@@ -777,13 +840,36 @@ const TargetingGetters = {
     return lazy.SessionStore.getSavedTabGroups().length;
   },
   get currentTabGroups() {
-    let win = lazy.BrowserWindowTracker.getTopWindow();
+    let win = lazy.BrowserWindowTracker.getTopWindow({
+      allowFromInactiveWorkspace: true,
+    });
     // If there's no window, there can't be any current tab groups.
     if (!win) {
       return 0;
     }
     let totalTabGroups = win.gBrowser.getAllTabGroups().length;
     return totalTabGroups;
+  },
+  get currentTabInstalledAsWebApp() {
+    let win = lazy.BrowserWindowTracker.getTopWindow({
+      allowFromInactiveWorkspace: true,
+    });
+    if (!win) {
+      // There is no active tab, so it isn't a web app.
+      return false;
+    }
+
+    // Note: this is a promise!
+    return (
+      lazy.TaskbarTabs.findTaskbarTab(
+        win.gBrowser.selectedBrowser.currentURI,
+        win.gBrowser.selectedTab.userContextId
+      )
+        .then(aTaskbarTab => aTaskbarTab !== null)
+        // If this is not an nsIURL (e.g. if it's about:blank), then this will
+        // throw; in that case there isn't a matching web app.
+        .catch(() => false)
+    );
   },
   get hasPinnedTabs() {
     for (let win of Services.wm.getEnumerator("navigator:browser")) {
@@ -903,7 +989,9 @@ const TargetingGetters = {
       return false;
     }
 
-    let window = lazy.BrowserWindowTracker.getTopWindow();
+    let window = lazy.BrowserWindowTracker.getTopWindow({
+      allowFromInactiveWorkspace: true,
+    });
 
     // Technically this doesn't mean we have active notifications,
     // but because we use !activeNotifications to check for conflicts, this should return true
@@ -912,7 +1000,14 @@ const TargetingGetters = {
     }
 
     let duration = Date.now() - lazy.newTabTopicModalLastSeen;
+    let isDialogShowing =
+      window.gBrowser?.selectedBrowser.hasAttribute("tabDialogShowing") ||
+      window.gDialogBox?.isOpen;
+    let isFeatureCalloutShowing = lazy.FeatureCalloutBroker.isCalloutShowing;
+
     if (
+      isDialogShowing ||
+      isFeatureCalloutShowing ||
       window.gURLBar?.view.isOpen ||
       window.gNotificationBox?.currentNotification ||
       window.gBrowser.readNotificationBox()?.currentNotification ||
@@ -922,7 +1017,15 @@ const TargetingGetters = {
     ) {
       return true;
     }
-
+    // use observer service to query Newtab
+    const subjectWithBrowser = {
+      browser: window.gBrowser,
+      activeNewtabMessage: false,
+    };
+    Services.obs.notifyObservers(subjectWithBrowser, "newtab-message-query");
+    if (subjectWithBrowser.activeNewtabMessage) {
+      return true;
+    }
     return false;
   },
 
@@ -975,6 +1078,22 @@ const TargetingGetters = {
     return Services.sysinfo.getProperty("hasWinPackageId", false);
   },
 
+  get packageFamilyName() {
+    if (AppConstants.platform !== "win") {
+      // PackageFamilyNames are an MSIX feature, so they won't be available on non-Windows platforms.
+      return null;
+    }
+
+    let packageFamilyName = Services.sysinfo.getProperty(
+      "winPackageFamilyName"
+    );
+    if (packageFamilyName === "") {
+      return null;
+    }
+
+    return packageFamilyName;
+  },
+
   /**
    * Is this invocation running in background task mode?
    *
@@ -1007,6 +1126,7 @@ const TargetingGetters = {
 
   /**
    * The distribution id, if any.
+   *
    * @return {string}
    */
   get distributionId() {
@@ -1015,7 +1135,9 @@ const TargetingGetters = {
       .getCharPref("distribution.id", "");
   },
 
-  /** Where the Firefox View button is shown, if at all.
+  /**
+   * Where the Firefox View button is shown, if at all.
+   *
    * @return {string} container of the button if it is shown in the toolbar/overflow menu
    * @return {string} `null` if the button has been removed
    */
@@ -1052,6 +1174,7 @@ const TargetingGetters = {
 
   /**
    * Has the user ever used the Migration Wizard to migrate bookmarks?
+   *
    * @return {boolean} `true` if bookmark migration has occurred.
    */
   get hasMigratedBookmarks() {
@@ -1061,6 +1184,7 @@ const TargetingGetters = {
   /**
    * Has the user ever used the Migration Wizard to migrate passwords from
    * a CSV file?
+   *
    * @return {boolean} `true` if CSV passwords have been imported via the
    *   migration wizard.
    */
@@ -1070,6 +1194,7 @@ const TargetingGetters = {
 
   /**
    * Has the user ever used the Migration Wizard to migrate history?
+   *
    * @return {boolean} `true` if history migration has occurred.
    */
   get hasMigratedHistory() {
@@ -1078,6 +1203,7 @@ const TargetingGetters = {
 
   /**
    * Has the user ever used the Migration Wizard to migrate passwords?
+   *
    * @return {boolean} `true` if password migration has occurred.
    */
   get hasMigratedPasswords() {
@@ -1089,6 +1215,7 @@ const TargetingGetters = {
    * wizard in about:welcome by having
    * "browser.migrate.content-modal.about-welcome-behavior" be equal to
    * "embedded".
+   *
    * @return {boolean} `true` if the embedded migration wizard is enabled.
    */
   get useEmbeddedMigrationWizard() {
@@ -1096,7 +1223,18 @@ const TargetingGetters = {
   },
 
   /**
+   * Returns the version number of the New Tab built-in addon being used
+   * by the build.
+   *
+   * @return {string}
+   */
+  get newtabAddonVersion() {
+    return lazy.AboutNewTabResourceMapping.addonVersion;
+  },
+
+  /**
    * Whether the user installed Firefox via the RTAMO flow.
+   *
    * @return {boolean} `true` when RTAMO has been used to download Firefox,
    * `false` otherwise.
    */
@@ -1111,6 +1249,7 @@ const TargetingGetters = {
 
   /**
    * Whether the user installed via the device migration flow.
+   *
    * @return {boolean} `true` when the link to download the browser was part
    * of guidance for device migration. `false` otherwise.
    */
@@ -1123,6 +1262,7 @@ const TargetingGetters = {
   /**
    * Whether the user opted into a special message action represented by an
    * installer attribution campaign and this choice still needs to be honored.
+   *
    * @return {string} A special message action to be executed on first-run. For
    * example, `"SET_DEFAULT_BROWSER"` when the user selected to set as default
    * via the install marketing page and set default has not yet been
@@ -1135,7 +1275,8 @@ const TargetingGetters = {
    * The values of the height and width available to the browser to display
    * web content. The available height and width are each calculated taking
    * into account the presence of menu bars, docks, and other similar OS elements
-   * @returns {Object} resolution The resolution object containing width and height
+   *
+   * @returns {object} resolution The resolution object containing width and height
    * @returns {number} resolution.width The available width of the primary monitor
    * @returns {number} resolution.height The available height of the primary monitor
    */
@@ -1198,6 +1339,54 @@ const TargetingGetters = {
 
   get profileGroupId() {
     return QueryCache.getters.profileGroupId.get();
+  },
+
+  get currentProfileId() {
+    if (!lazy.SelectableProfileService.currentProfile) {
+      return "";
+    }
+    return lazy.SelectableProfileService.currentProfile.id.toString();
+  },
+
+  get profileGroupProfileCount() {
+    return QueryCache.getters.profileGroupProfileCount.get();
+  },
+
+  get buildId() {
+    return parseInt(AppConstants.MOZ_BUILDID, 10);
+  },
+
+  get backupsInfo() {
+    return QueryCache.getters.backupsInfo.get().catch(() => null);
+  },
+
+  get backupArchiveEnabled() {
+    let bs;
+    try {
+      bs = lazy.BackupService.get();
+    } catch {
+      bs = lazy.BackupService.init();
+    }
+    return bs.archiveEnabledStatus.enabled;
+  },
+
+  get backupRestoreEnabled() {
+    let bs;
+    try {
+      bs = lazy.BackupService.get();
+    } catch {
+      bs = lazy.BackupService.init();
+    }
+    return bs.restoreEnabledStatus.enabled;
+  },
+
+  get isEncryptedBackup() {
+    const isEncryptedBackup =
+      Services.prefs.getStringPref(
+        "messaging-system-action.backupChooser",
+        null
+      ) === "full";
+    return isEncryptedBackup;
   },
 };
 

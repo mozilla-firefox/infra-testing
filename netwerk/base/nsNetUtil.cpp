@@ -16,10 +16,12 @@
 #include "mozilla/Encoding.h"
 #include "mozilla/LoadContext.h"
 #include "mozilla/LoadInfo.h"
+#include "mozilla/MathAlgorithms.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StaticPrefs_privacy.h"
+#include "mozilla/StaticPrefs_urlclassifier.h"
 #include "mozilla/StoragePrincipalHelper.h"
 #include "mozilla/TaskQueue.h"
 #include "nsAboutProtocolUtils.h"
@@ -38,6 +40,7 @@
 #include "nsIBufferedStreams.h"
 #include "nsBufferedStreams.h"
 #include "nsIChannelEventSink.h"
+#include "nsIClassifiedChannel.h"
 #include "nsIContentSniffer.h"
 #include "mozilla/dom/Document.h"
 #include "nsIDownloader.h"
@@ -106,7 +109,6 @@
 #include "mozilla/net/ExtensionProtocolHandler.h"
 #include "mozilla/net/PageThumbProtocolHandler.h"
 #include "mozilla/net/SFVService.h"
-#include <limits>
 #include "nsICookieService.h"
 #include "nsIXPConnect.h"
 #include "nsParserConstants.h"
@@ -129,6 +131,13 @@ using mozilla::dom::PerformanceStorage;
 using mozilla::dom::ServiceWorkerDescriptor;
 
 #define MAX_RECURSION_COUNT 50
+
+enum class ClassifierMode {
+  Disabled = 0,
+  AntiTracking = 1,
+  SafeBrowsing = 2,
+  Enabled = 3,
+};
 
 already_AddRefed<nsIIOService> do_GetIOService(nsresult* error /* = 0 */) {
   nsCOMPtr<nsIIOService> io;
@@ -491,6 +500,15 @@ nsresult NS_NewChannelInternal(
     }
   }
 
+  if (aLoadingNode) {
+    nsCOMPtr<nsILoadInfo> loadInfo = channel->LoadInfo();
+    ClassificationFlags flags =
+        aLoadingNode->OwnerDoc()->GetScriptTrackingFlags();
+
+    loadInfo->SetTriggeringFirstPartyClassificationFlags(flags.firstPartyFlags);
+    loadInfo->SetTriggeringThirdPartyClassificationFlags(flags.thirdPartyFlags);
+  }
+
   channel.forget(outChannel);
   return NS_OK;
 }
@@ -511,8 +529,10 @@ NS_NewChannelWithTriggeringPrincipal(
 
   nsCOMPtr<nsICookieJarSettings> cookieJarSettings;
 
-  // Special treatment for resources injected by add-ons.
-  if (aTriggeringPrincipal &&
+  // Special treatment for resources injected by add-ons if not document,
+  // iframe, workers.
+  if (!nsContentUtils::IsNonSubresourceInternalPolicyType(aContentPolicyType) &&
+      aTriggeringPrincipal &&
       StaticPrefs::privacy_antitracking_isolateContentScriptResources() &&
       nsContentUtils::IsExpandedPrincipal(aTriggeringPrincipal)) {
     bool shouldResistFingerprinting =
@@ -782,9 +802,9 @@ nsresult NS_NewInputStreamChannelInternal(
     const nsACString& aContentCharset, nsINode* aLoadingNode,
     nsIPrincipal* aLoadingPrincipal, nsIPrincipal* aTriggeringPrincipal,
     nsSecurityFlags aSecurityFlags, nsContentPolicyType aContentPolicyType) {
-  nsCOMPtr<nsILoadInfo> loadInfo = new mozilla::net::LoadInfo(
-      aLoadingPrincipal, aTriggeringPrincipal, aLoadingNode, aSecurityFlags,
-      aContentPolicyType);
+  nsCOMPtr<nsILoadInfo> loadInfo = MOZ_TRY(
+      LoadInfo::Create(aLoadingPrincipal, aTriggeringPrincipal, aLoadingNode,
+                       aSecurityFlags, aContentPolicyType));
   if (!loadInfo) {
     return NS_ERROR_UNEXPECTED;
   }
@@ -847,9 +867,9 @@ nsresult NS_NewInputStreamChannelInternal(
     nsIPrincipal* aLoadingPrincipal, nsIPrincipal* aTriggeringPrincipal,
     nsSecurityFlags aSecurityFlags, nsContentPolicyType aContentPolicyType,
     bool aIsSrcdocChannel /* = false */) {
-  nsCOMPtr<nsILoadInfo> loadInfo = new mozilla::net::LoadInfo(
-      aLoadingPrincipal, aTriggeringPrincipal, aLoadingNode, aSecurityFlags,
-      aContentPolicyType);
+  nsCOMPtr<nsILoadInfo> loadInfo = MOZ_TRY(
+      net::LoadInfo::Create(aLoadingPrincipal, aTriggeringPrincipal,
+                            aLoadingNode, aSecurityFlags, aContentPolicyType));
   return NS_NewInputStreamChannelInternal(outChannel, aUri, aData, aContentType,
                                           loadInfo, aIsSrcdocChannel);
 }
@@ -1140,18 +1160,6 @@ nsresult NS_CheckPortSafety(nsIURI* uri) {
   return NS_CheckPortSafety(port, scheme.get());
 }
 
-nsresult NS_NewProxyInfo(const nsACString& type, const nsACString& host,
-                         int32_t port, uint32_t flags, nsIProxyInfo** result) {
-  nsresult rv;
-  nsCOMPtr<nsIProtocolProxyService> pps;
-  pps = mozilla::components::ProtocolProxy::Service(&rv);
-  if (NS_SUCCEEDED(rv)) {
-    rv = pps->NewProxyInfo(type, host, port, ""_ns, ""_ns, flags, UINT32_MAX,
-                           nullptr, result);
-  }
-  return rv;
-}
-
 nsresult NS_GetFileProtocolHandler(nsIFileProtocolHandler** result,
                                    nsIIOService* ioService /* = nullptr */) {
   nsresult rv;
@@ -1391,7 +1399,11 @@ Result<nsCOMPtr<nsIInputStream>, nsresult> NS_NewBufferedInputStream(
 
 namespace {
 
-#define BUFFER_SIZE 8192
+// Returns the buffer size from the pref, floored to the nearest power of two.
+static uint32_t GetBufferSize() {
+  uint32_t prefValue = StaticPrefs::network_buffer_default_size();
+  return uint32_t(1) << FloorLog2(prefValue);
+}
 
 class BufferWriter final : public nsIInputStreamCallback {
  public:
@@ -1416,8 +1428,9 @@ class BufferWriter final : public nsIInputStreamCallback {
     // Let's make the inputStream buffered if it's not.
     if (!NS_InputStreamIsBuffered(mInputStream)) {
       nsCOMPtr<nsIInputStream> bufferedStream;
-      nsresult rv = NS_NewBufferedInputStream(
-          getter_AddRefs(bufferedStream), mInputStream.forget(), BUFFER_SIZE);
+      nsresult rv =
+          NS_NewBufferedInputStream(getter_AddRefs(bufferedStream),
+                                    mInputStream.forget(), GetBufferSize());
       NS_ENSURE_SUCCESS(rv, rv);
 
       mInputStream = bufferedStream;
@@ -1510,7 +1523,7 @@ class BufferWriter final : public nsIInputStreamCallback {
       }
 
       uint64_t offset = mWrittenData;
-      uint64_t length = mCount == -1 ? BUFFER_SIZE : mCount;
+      uint64_t length = mCount == -1 ? GetBufferSize() : mCount;
 
       // Let's try to read data directly.
       uint32_t writtenData;
@@ -1596,15 +1609,16 @@ class BufferWriter final : public nsIInputStreamCallback {
 
     MOZ_ASSERT(mCount == -1);
 
-    if (mBufferSize >= mWrittenData + BUFFER_SIZE) {
+    uint32_t bufSize = GetBufferSize();
+    if (mBufferSize >= mWrittenData + bufSize) {
       // The buffer is big enough.
       return true;
     }
 
     CheckedUint32 bufferSize =
-        std::max<uint32_t>(static_cast<uint32_t>(mWrittenData), BUFFER_SIZE);
+        std::max<uint32_t>(static_cast<uint32_t>(mWrittenData), bufSize);
     while (bufferSize.isValid() &&
-           bufferSize.value() < mWrittenData + BUFFER_SIZE) {
+           bufferSize.value() < mWrittenData + bufSize) {
       bufferSize *= 2;
     }
 
@@ -2840,6 +2854,24 @@ bool NS_IsAboutSrcdoc(nsIURI* uri) {
   return spec.EqualsLiteral("about:srcdoc");
 }
 
+// https://fetch.spec.whatwg.org/#fetch-scheme
+bool NS_IsFetchScheme(nsIURI* uri) {
+  for (const auto& scheme : {
+           "http",
+           "https",
+           "about",
+           "blob",
+           "data",
+           "file",
+       }) {
+    if (uri->SchemeIs(scheme)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 nsresult NS_GenerateHostPort(const nsCString& host, int32_t port,
                              nsACString& hostLine) {
   if (strchr(host.get(), ':')) {
@@ -3080,7 +3112,7 @@ nsresult NS_ShouldSecureUpgrade(
   }
   // The loadInfo indicates no HTTPS upgrade.
   bool skipHTTPSUpgrade = false;
-  Unused << aLoadInfo->GetSkipHTTPSUpgrade(&skipHTTPSUpgrade);
+  (void)aLoadInfo->GetSkipHTTPSUpgrade(&skipHTTPSUpgrade);
   if (skipHTTPSUpgrade) {
     aLoadInfo->SetHttpsUpgradeTelemetry(nsILoadInfo::SKIP_HTTPS_UPGRADE);
     aShouldUpgrade = false;
@@ -3329,8 +3361,21 @@ bool NS_IsOffline() {
  *    flag to enforce bypassing the URL classifier check.
  */
 bool NS_ShouldClassifyChannel(nsIChannel* aChannel, ClassifyType aType) {
+  auto pref =
+      static_cast<ClassifierMode>(StaticPrefs::urlclassifier_enabled_mode());
+  if (pref == ClassifierMode::Disabled) {
+    return false;
+  }
+  if (aType == ClassifyType::SafeBrowsing &&
+      pref == ClassifierMode::AntiTracking) {
+    return false;
+  }
+  if (aType == ClassifyType::ETP && pref == ClassifierMode::SafeBrowsing) {
+    return false;
+  }
+
   nsLoadFlags loadFlags;
-  Unused << aChannel->GetLoadFlags(&loadFlags);
+  (void)aChannel->GetLoadFlags(&loadFlags);
   //  If our load flags dictate that we must let this channel through without
   //  URL classification, obey that here without performing more checks.
   if (loadFlags & nsIChannel::LOAD_BYPASS_URL_CLASSIFIER) {
@@ -3385,7 +3430,7 @@ nsresult GetParameterHTTP(const nsACString& aHeaderVal, const char* aParamName,
 bool ChannelIsPost(nsIChannel* aChannel) {
   if (nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(aChannel)) {
     nsAutoCString method;
-    Unused << httpChannel->GetRequestMethod(method);
+    (void)httpChannel->GetRequestMethod(method);
     return method.EqualsLiteral("POST");
   }
   return false;
@@ -3471,7 +3516,7 @@ already_AddRefed<nsIURI> TryChangeProtocol(nsIURI* aURI,
   rv = clone->GetScheme(newScheme);
   if (NS_FAILED(rv) || !net::IsSchemeChangePermitted(aURI, newScheme)) {
     nsAutoCString url;
-    Unused << clone->GetSpec(url);
+    (void)clone->GetSpec(url);
     AutoTArray<nsString, 2> params;
     params.AppendElement(NS_ConvertUTF8toUTF16(url));
     params.AppendElement(NS_ConvertUTF8toUTF16(newScheme));
@@ -3872,18 +3917,13 @@ bool IsFontMimeType(const nsAString& aType) {
   return false;
 }
 
-static const nsAttrValue::EnumTable kAsAttributeTable[] = {
-    {"", DESTINATION_INVALID},
-    {"audio", DESTINATION_AUDIO},
-    {"font", DESTINATION_FONT},
-    {"image", DESTINATION_IMAGE},
-    {"script", DESTINATION_SCRIPT},
-    {"style", DESTINATION_STYLE},
-    {"track", DESTINATION_TRACK},
-    {"video", DESTINATION_VIDEO},
-    {"fetch", DESTINATION_FETCH},
-    {"json", DESTINATION_JSON},
-    {nullptr, 0}};
+static constexpr nsAttrValue::EnumTableEntry kAsAttributeTable[] = {
+    {"", DESTINATION_INVALID},      {"audio", DESTINATION_AUDIO},
+    {"font", DESTINATION_FONT},     {"image", DESTINATION_IMAGE},
+    {"script", DESTINATION_SCRIPT}, {"style", DESTINATION_STYLE},
+    {"track", DESTINATION_TRACK},   {"video", DESTINATION_VIDEO},
+    {"fetch", DESTINATION_FETCH},   {"json", DESTINATION_JSON},
+};
 
 void ParseAsValue(const nsAString& aValue, nsAttrValue& aResult) {
   DebugOnly<bool> success =
@@ -4010,6 +4050,128 @@ void WarnIgnoredPreload(const mozilla::dom::Document& aDoc, nsIURI& aURI) {
                                   "PreloadIgnoredInvalidAttr", params);
 }
 
+bool NS_ParseUseAsDictionary(const nsACString& aValue, nsACString& aMatch,
+                             nsACString& aMatchId,
+                             nsTArray<nsCString>& aMatchDestItems,
+                             nsACString& aType) {
+  // Note: match= is required
+  // Use-As-Dictionary = %s"match" /
+  //                     %il"match-dest" /
+  //                     %s"id" /
+  //                     %t"type" ; case-sensitive
+
+  nsCOMPtr<nsISFVService> sfv = GetSFVService();
+
+  nsCOMPtr<nsISFVDictionary> parsedHeader;
+  nsresult rv;
+  if (NS_FAILED(
+          rv = sfv->ParseDictionary(aValue, getter_AddRefs(parsedHeader)))) {
+    return false;
+  }
+
+  nsCOMPtr<nsISFVItemOrInnerList> match;
+  rv = parsedHeader->Get("match"_ns, getter_AddRefs(match));
+  if (NS_FAILED(rv)) {
+    return false;  // match is required, fail if not found
+  }
+  if (nsCOMPtr<nsISFVItem> listItem = do_QueryInterface(match)) {
+    nsCOMPtr<nsISFVBareItem> value;
+    rv = listItem->GetValue(getter_AddRefs(value));
+    if (NS_FAILED(rv)) {
+      return false;
+    }
+    if (nsCOMPtr<nsISFVString> stringVal = do_QueryInterface(value)) {
+      if (NS_FAILED(stringVal->GetValue(aMatch))) {
+        return false;
+      }
+      if (aMatch.IsEmpty()) {
+        return false;  // match is required, fail if not found
+      }
+    } else {
+      return false;
+    }
+  } else {
+    return false;
+  }
+
+  nsCOMPtr<nsISFVItemOrInnerList> matchdest;
+  rv = parsedHeader->Get("match-dest"_ns, getter_AddRefs(matchdest));
+  if (NS_SUCCEEDED(rv)) {
+    if (nsCOMPtr<nsISFVInnerList> innerList = do_QueryInterface(matchdest)) {
+      // Extract the first entry of each inner list, which should contain the
+      // endpoint's URL string
+      nsTArray<RefPtr<nsISFVItem>> items;
+      if (NS_FAILED(innerList->GetItems(items))) {
+        return false;
+      }
+      // Don't check items.IsEmpty() because an empty list is valid
+
+      for (auto& item : items) {
+        nsCOMPtr<nsISFVBareItem> value;
+        if (NS_FAILED(item->GetValue(getter_AddRefs(value)))) {
+          return false;
+        }
+        if (nsCOMPtr<nsISFVString> stringVal = do_QueryInterface(value)) {
+          nsAutoCString string;
+          if (NS_FAILED(stringVal->GetValue(string))) {
+            return false;
+          }
+          aMatchDestItems.AppendElement(string);
+        } else {
+          return false;  // match-dest is an inner list of strings
+        }
+      }
+    }
+  }
+
+  nsCOMPtr<nsISFVItemOrInnerList> matchid;
+  rv = parsedHeader->Get("id"_ns, getter_AddRefs(matchid));
+  if (NS_SUCCEEDED(rv)) {
+    if (nsCOMPtr<nsISFVItem> listItem = do_QueryInterface(matchid)) {
+      nsCOMPtr<nsISFVBareItem> value;
+      rv = listItem->GetValue(getter_AddRefs(value));
+      if (NS_FAILED(rv)) {
+        return false;
+      }
+      if (nsCOMPtr<nsISFVString> stringVal = do_QueryInterface(value)) {
+        if (NS_FAILED(stringVal->GetValue(aMatchId))) {
+          return false;
+        }
+      } else {
+        return false;
+      }
+    } else {
+      return false;
+    }
+  }
+
+  nsCOMPtr<nsISFVItemOrInnerList> type;
+  rv = parsedHeader->Get("type"_ns, getter_AddRefs(type));
+  if (NS_SUCCEEDED(rv)) {
+    if (nsCOMPtr<nsISFVItem> listItem = do_QueryInterface(type)) {
+      nsCOMPtr<nsISFVBareItem> value;
+      rv = listItem->GetValue(getter_AddRefs(value));
+      if (NS_FAILED(rv)) {
+        return false;
+      }
+      if (nsCOMPtr<nsISFVToken> tokenVal = do_QueryInterface(value)) {
+        if (NS_FAILED(tokenVal->GetValue(aType))) {
+          return false;
+        }
+        if (!aType.Equals("raw"_ns)) {
+          return false;
+        }
+      } else {
+        return false;
+      }
+    } else {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 nsresult HasRootDomain(const nsACString& aInput, const nsACString& aHost,
                        bool* aResult) {
   if (NS_WARN_IF(!aResult)) {
@@ -4108,7 +4270,7 @@ void CheckForBrokenChromeURL(nsILoadInfo* aLoadInfo, nsIURI* aURI) {
 #ifdef DEBUG
     if (NS_IsMainThread()) {
       nsCOMPtr<nsIXPConnect> xpc = nsIXPConnect::XPConnect();
-      Unused << xpc->DebugDumpJSStack(false, false, false);
+      (void)xpc->DebugDumpJSStack(false, false, false);
     }
 #endif
     MOZ_CRASH_UNSAFE_PRINTF("Missing chrome or resource URLs: %s", spec.get());
@@ -4151,6 +4313,101 @@ nsresult AddExtraHeaders(nsIHttpChannel* aHttpChannel,
     NS_ENSURE_SUCCESS(rv, rv);
   }
   return NS_OK;
+}
+
+bool IsLocalHostAccess(
+    const nsILoadInfo::IPAddressSpace aParentIPAddressSpace,
+    const nsILoadInfo::IPAddressSpace aTargetIPAddressSpace) {
+  // Determine if the request is moving to a more private address space
+  // i.e. Public -> LocalHost
+  // Private -> LocalHost
+
+  return ((aTargetIPAddressSpace == nsILoadInfo::IPAddressSpace::Local) &&
+          (aParentIPAddressSpace == nsILoadInfo::IPAddressSpace::Public ||
+           aParentIPAddressSpace == nsILoadInfo::IPAddressSpace::Private));
+}
+
+bool IsPrivateNetworkAccess(
+    const nsILoadInfo::IPAddressSpace aParentIPAddressSpace,
+    const nsILoadInfo::IPAddressSpace aTargetIPAddressSpace) {
+  // Determine if the request is moving from public to private address space
+
+  return ((aTargetIPAddressSpace == nsILoadInfo::IPAddressSpace::Private) &&
+          (aParentIPAddressSpace == nsILoadInfo::IPAddressSpace::Public));
+}
+
+bool IsLocalOrPrivateNetworkAccess(
+    const nsILoadInfo::IPAddressSpace aParentIPAddressSpace,
+    const nsILoadInfo::IPAddressSpace aTargetIPAddressSpace) {
+  // Determine if the request is moving to a more private address space
+  // i.e. Public -> Private or Local
+  // Private -> Local
+  // Refer
+  // https://wicg.github.io/private-network-access/#private-network-request-heading
+  // for private network access
+  // XXX (sunil) add link to LNA spec once it is published
+
+  return IsPrivateNetworkAccess(aParentIPAddressSpace, aTargetIPAddressSpace) ||
+         IsLocalHostAccess(aParentIPAddressSpace, aTargetIPAddressSpace);
+}
+
+Result<ActivateStorageAccess, nsresult> ParseActivateStorageAccess(
+    const nsACString& aActivateStorageAcess) {
+  nsCOMPtr<nsISFVService> sfv = GetSFVService();
+
+  // Parse storage acces values
+  //  * Activate-Storage-Access: load
+  //  * Activate-Storage-Access: retry; allowed-origin="https://foo.bar"
+  //  * Activate-Storage-Access: retry; allowed-origin=*
+  // into ActivateStorageAccess struct. See ActivateStorageAccessVariant for
+  // documentation on fields
+  nsCOMPtr<nsISFVItem> parsedHeader;
+  MOZ_TRY(sfv->ParseItem(aActivateStorageAcess, getter_AddRefs(parsedHeader)));
+
+  nsCOMPtr<nsISFVBareItem> value;
+  MOZ_TRY(parsedHeader->GetValue(getter_AddRefs(value)));
+
+  nsCOMPtr<nsISFVToken> token = do_QueryInterface(value);
+  if (!token) {
+    return Err(NS_ERROR_FAILURE);
+  }
+  nsAutoCString tokenValue;
+  token->GetValue(tokenValue);
+
+  if (tokenValue.EqualsLiteral("load")) {
+    return ActivateStorageAccess{
+        ActivateStorageAccessVariant::Load,
+    };
+  }
+  if (!tokenValue.EqualsLiteral("retry")) {
+    return Err(NS_ERROR_FAILURE);
+  }
+  nsCOMPtr<nsISFVParams> params;
+  MOZ_TRY(parsedHeader->GetParams(getter_AddRefs(params)));
+
+  nsCOMPtr<nsISFVBareItem> item;
+  MOZ_TRY(params->Get("allowed-origin"_ns, getter_AddRefs(item)));
+
+  // Evaluate whether the token value is a wildcard symbol.
+  nsCOMPtr<nsISFVToken> itemToken = do_QueryInterface(item);
+  if (itemToken) {
+    itemToken->GetValue(tokenValue);
+    if (!tokenValue.EqualsLiteral("*")) {
+      return Err(NS_ERROR_FAILURE);
+    }
+    return ActivateStorageAccess{
+        ActivateStorageAccessVariant::RetryAny,
+    };
+  }
+
+  // Evaluate whether the token value is an origin.
+  nsCOMPtr<nsISFVString> itemString = do_QueryInterface(item);
+  if (!itemString) {
+    return Err(NS_ERROR_FAILURE);
+  }
+  ActivateStorageAccess result{ActivateStorageAccessVariant::RetryOrigin};
+  itemString->GetValue(result.origin);
+  return result;
 }
 
 }  // namespace net

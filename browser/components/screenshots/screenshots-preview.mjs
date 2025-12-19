@@ -74,7 +74,6 @@ class ScreenshotsPreview extends MozLitElement {
 
   close() {
     window.removeEventListener("keydown", this, true);
-    URL.revokeObjectURL(this.previewImg.src);
     window.close();
   }
 
@@ -130,7 +129,8 @@ class ScreenshotsPreview extends MozLitElement {
   /**
    * If the image is complete and the height is greater than 0, we can resolve.
    * Otherwise wait for a load event on the image and resolve then.
-   * @returns {Promise<String>} Resolves that resolves to the preview image src
+   *
+   * @returns {Promise<string>} Resolves that resolves to the preview image src
    *                            once the image is loaded.
    */
   async imageLoadedPromise() {
@@ -198,7 +198,7 @@ class ScreenshotsPreview extends MozLitElement {
 
     // Wait for the image to be loaded before we copy it
     let imageSrc = await this.imageLoadedPromise();
-    await lazy.ScreenshotsUtils.copyScreenshot(
+    await lazy.ScreenshotsUtils.copyScreenshotFromBlobURL(
       imageSrc,
       this.openerBrowser,
       "PreviewCopy"
@@ -209,7 +209,8 @@ class ScreenshotsPreview extends MozLitElement {
   /**
    * Set the focus to the most recent saved method.
    * This will default to the download button.
-   * @param {String} buttonToFocus
+   *
+   * @param {string} buttonToFocus
    */
   focusButton(buttonToFocus) {
     if (buttonToFocus === "copy") {

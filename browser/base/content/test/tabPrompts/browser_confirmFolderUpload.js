@@ -9,7 +9,8 @@ const { PromptTestUtils } = ChromeUtils.importESModule(
 
 /**
  * Create a temporary test directory that will be cleaned up on test shutdown.
- * @returns {String} - absolute directory path.
+ *
+ * @returns {string} - absolute directory path.
  */
 function getTestDirectory() {
   let tmpDir = Services.dirsvc.get("TmpD", Ci.nsIFile);
@@ -49,6 +50,7 @@ add_setup(async function () {
 /**
  * Create a file input, select a folder and wait for the upload confirmation
  * prompt to open.
+ *
  * @param {boolean} confirmUpload - Whether to accept (true) or cancel the
  * prompt (false).
  * @returns {Promise} - Resolves once the prompt has been closed.
@@ -154,6 +156,12 @@ async function testUploadPrompt(confirmUpload) {
     });
   });
 }
+
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["test.wait300msAfterTabSwitch", true]],
+  });
+});
 
 // Tests the confirmation prompt that shows after the user picked a folder.
 

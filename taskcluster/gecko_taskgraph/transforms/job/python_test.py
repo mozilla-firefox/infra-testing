@@ -14,20 +14,20 @@ from gecko_taskgraph.transforms.job import configure_taskdesc_for_run, run_job_u
 python_test_schema = Schema(
     {
         Required("using"): "python-test",
-        # Python version to use
-        Required("python-version"): int,
         # The subsuite to run
         Required("subsuite"): str,
         # Base work directory used to set up the task.
         Optional("workdir"): str,
         # Use the specified caches.
         Optional("use-caches"): Any(bool, [str]),
+        # Prepend the specified ENV variables to the command. This can be useful
+        # if the value of the ENV needs to be interpolated with another ENV.
+        Optional("prepend-env"): {str: str},
     }
 )
 
 
 defaults = {
-    "python-version": 3,
     "subsuite": "default",
 }
 

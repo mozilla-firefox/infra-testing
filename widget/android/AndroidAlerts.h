@@ -28,16 +28,11 @@ class AndroidAlerts : public nsIAlertsService {
   AndroidAlerts() {}
 
   static void NotifyListener(const nsAString& aName, const char* aTopic,
-                             const char16_t* aCookie);
-
-  static nsTHashMap<nsStringHashKey, mozilla::java::WebNotification::GlobalRef>
-      mNotificationsMap;
+                             Maybe<nsString> aAction,
+                             const nsACString& aOrigin);
 
  protected:
-  virtual ~AndroidAlerts() { sListenerMap = nullptr; }
-
-  using ListenerMap = nsInterfaceHashtable<nsStringHashKey, nsIObserver>;
-  static StaticAutoPtr<ListenerMap> sListenerMap;
+  virtual ~AndroidAlerts() = default;
 };
 
 }  // namespace widget

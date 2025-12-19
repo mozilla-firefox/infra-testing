@@ -19,27 +19,29 @@ loader.lazyGetter(this, "Pipe", () => {
  * DebuggerTransport, but instead of transmitting serialized messages across a
  * connection it merely calls the packet dispatcher of the other side.
  *
- * @param other LocalDebuggerTransport
- *        The other endpoint for this debugger connection.
- *
  * @see DebuggerTransport
  */
-function LocalDebuggerTransport(other) {
-  this.other = other;
-  this.hooks = null;
 
-  // A packet number, shared between this and this.other. This isn't used by the
-  // protocol at all, but it makes the packet traces a lot easier to follow.
-  this._serial = this.other ? this.other._serial : { count: 0 };
-  this.close = this.close.bind(this);
-}
+class LocalDebuggerTransport {
+  /**
+   * @param {LocalDebuggerTransport} other
+   *        The other endpoint for this debugger connection.
+   */
+  constructor(other) {
+    this.other = other;
+    this.hooks = null;
 
-LocalDebuggerTransport.prototype = {
+    // A packet number, shared between this and this.other. This isn't used by the
+    // protocol at all, but it makes the packet traces a lot easier to follow.
+    this._serial = this.other ? this.other._serial : { count: 0 };
+    this.close = this.close.bind(this);
+  }
+
   /**
    * Boolean to help identify DevToolsClient instances connected to a LocalDevToolsTransport pipe
    * and so connected to the same runtime as the frontend.
    */
-  isLocalTransport: true,
+  isLocalTransport = true;
 
   /**
    * Transmit a message by directly calling the onPacket handler of the other
@@ -75,7 +77,7 @@ LocalDebuggerTransport.prototype = {
         }, "LocalDebuggerTransport instance's this.other.hooks.onPacket")
       );
     }
-  },
+  }
 
   /**
    * Send a streaming bulk packet directly to the onBulkPacket handler of the
@@ -86,10 +88,11 @@ LocalDebuggerTransport.prototype = {
    * others temporarily.  Instead, we can just make a single use pipe and be
    * done with it.
    */
-  startBulkSend({ actor, type, length }) {
+  startBulkSend(sentPacket) {
+    const { actor, type, length } = sentPacket;
     const serial = this._serial.count++;
-
     dumpn("Sent bulk packet " + serial + " for actor " + actor);
+
     if (!this.other) {
       const error = new Error("startBulkSend: other side of transport missing");
       return Promise.reject(error);
@@ -99,14 +102,22 @@ LocalDebuggerTransport.prototype = {
 
     DevToolsUtils.executeSoon(
       DevToolsUtils.makeInfallible(() => {
-        dumpn("Received bulk packet " + serial);
+        // Avoid the cost of JSON.stringify() when logging is disabled.
+        if (flags.wantLogging) {
+          dumpn(
+            "Received bulk packet " +
+              serial +
+              ": " +
+              JSON.stringify(sentPacket, null, 2)
+          );
+        }
         if (!this.other.hooks) {
           return;
         }
 
         // Receiver
         new Promise(receiverResolve => {
-          const packet = {
+          const receivedPacket = {
             actor,
             type,
             length,
@@ -119,11 +130,24 @@ LocalDebuggerTransport.prototype = {
               receiverResolve(copying);
               return copying;
             },
+            copyToBuffer: outputBuffer => {
+              if (outputBuffer.byteLength !== length) {
+                throw new Error(
+                  `In copyToBuffer, the output buffer needs to have the same length as the data to read. ${outputBuffer.byteLength} !== ${length}`
+                );
+              }
+              const copying = StreamUtils.copyAsyncStreamToArrayBuffer(
+                pipe.inputStream,
+                outputBuffer
+              );
+              receiverResolve(copying);
+              return copying;
+            },
             stream: pipe.inputStream,
             done: receiverResolve,
           };
 
-          this.other.hooks.onBulkPacket(packet);
+          this.other.hooks.onBulkPacket(receivedPacket);
         })
           // Await the result of reading from the stream
           .then(() => pipe.inputStream.close(), this.close);
@@ -147,6 +171,19 @@ LocalDebuggerTransport.prototype = {
                 copyResolve(copying);
                 return copying;
               },
+              copyFromBuffer: inputBuffer => {
+                if (inputBuffer.byteLength !== length) {
+                  throw new Error(
+                    `In copyFromBuffer, the input buffer needs to have the same length as the data to write. ${inputBuffer.byteLength} !== ${length}`
+                  );
+                }
+                const copying = StreamUtils.copyArrayBufferToAsyncStream(
+                  inputBuffer,
+                  pipe.outputStream
+                );
+                copyResolve(copying);
+                return copying;
+              },
               stream: pipe.outputStream,
               done: copyResolve,
             });
@@ -156,7 +193,7 @@ LocalDebuggerTransport.prototype = {
         );
       });
     });
-  },
+  }
 
   /**
    * Close the transport.
@@ -179,12 +216,12 @@ LocalDebuggerTransport.prototype = {
       }
       this.hooks = null;
     }
-  },
+  }
 
   /**
    * An empty method for emulating the DebuggerTransport API.
    */
-  ready() {},
+  ready() {}
 
   /**
    * Helper function that makes an object fully immutable.
@@ -204,7 +241,7 @@ LocalDebuggerTransport.prototype = {
         this._deepFreeze(object[prop]);
       }
     }
-  },
-};
+  }
+}
 
 exports.LocalDebuggerTransport = LocalDebuggerTransport;

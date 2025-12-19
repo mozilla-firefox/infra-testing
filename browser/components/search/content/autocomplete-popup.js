@@ -229,6 +229,18 @@
       }
     }
 
+    /**
+     * @type {string}
+     *   The current engine name being displayed in updateHeader.
+     */
+    #currentEngineName;
+
+    /**
+     * Updates the header of the pop-up with the search engine name and icon.
+     *
+     * @param {nsISearchEngine} [engine]
+     *   The engine to use, if not specified falls back to the default engine.
+     */
     async updateHeader(engine) {
       if (!engine) {
         if (PrivateBrowsingUtils.isWindowPrivate(window)) {
@@ -237,8 +249,18 @@
           engine = await Services.search.getDefault();
         }
       }
+      this.#currentEngineName = engine.name;
 
       let uri = await engine.getIconURL();
+
+      // If the engine name has changed since we started loading, this means
+      // that getIconURL probably took a long time and we had an update in
+      // the meantime. Hence we skip updating to avoid displaying the wrong
+      // thing.
+      if (engine.name != this.#currentEngineName) {
+        return;
+      }
+
       if (uri) {
         this.setAttribute("src", uri);
       } else {
@@ -257,8 +279,16 @@
     /**
      * This is called when a one-off is clicked and when "search in new tab"
      * is selected from a one-off context menu.
+     *
+     * @param {Event} event
+     *   The event that triggered the search.
+     * @param {nsISearchEngine} engine
+     *   The search engine being used for the search.
+     * @param {string} where
+     *   Where the search should be opened (current tab, new tab, window etc).
+     * @param {object} params
+     *   The parameters associated with opening the search.
      */
-    /* eslint-disable-next-line valid-jsdoc */
     handleOneOffSearch(event, engine, where, params) {
       this.searchbar.handleSearchCommandWhere(event, engine, where, params);
     }

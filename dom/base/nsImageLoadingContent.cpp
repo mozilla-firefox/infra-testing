@@ -11,57 +11,55 @@
  */
 
 #include "nsImageLoadingContent.h"
-#include "nsError.h"
-#include "nsIContent.h"
-#include "nsIScriptGlobalObject.h"
-#include "nsServiceManagerUtils.h"
-#include "nsContentList.h"
-#include "nsContentPolicyUtils.h"
-#include "nsIURI.h"
+
+#include "Orientation.h"
 #include "imgIContainer.h"
 #include "imgLoader.h"
 #include "imgRequestProxy.h"
-#include "nsThreadUtils.h"
-#include "nsNetUtil.h"
-#include "nsImageFrame.h"
-
-#include "nsIChannel.h"
-#include "nsIStreamListener.h"
-
-#include "nsIFrame.h"
-
-#include "nsContentUtils.h"
-#include "nsLayoutUtils.h"
-#include "nsIContentPolicy.h"
-
 #include "mozAutoDocUpdate.h"
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/EventStateManager.h"
+#include "mozilla/PageloadEvent.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
-#include "mozilla/StaticPrefs_image.h"
 #include "mozilla/SVGImageFrame.h"
 #include "mozilla/SVGObserverUtils.h"
+#include "mozilla/StaticPrefs_image.h"
+#include "mozilla/StaticPrefs_svg.h"
 #include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/FetchPriority.h"
-#include "mozilla/dom/PContent.h"  // For TextRecognitionResult
 #include "mozilla/dom/HTMLImageElement.h"
 #include "mozilla/dom/ImageTextBinding.h"
-#include "mozilla/dom/ImageTracker.h"
+#include "mozilla/dom/LargestContentfulPaint.h"
+#include "mozilla/dom/PContent.h"  // For TextRecognitionResult
 #include "mozilla/dom/PageLoadEventUtils.h"
 #include "mozilla/dom/ReferrerInfo.h"
+#include "mozilla/dom/ResponsiveImageSelector.h"
 #include "mozilla/dom/ScriptSettings.h"
-#include "mozilla/intl/LocaleService.h"
 #include "mozilla/intl/Locale.h"
-#include "mozilla/dom/LargestContentfulPaint.h"
+#include "mozilla/intl/LocaleService.h"
 #include "mozilla/net/UrlClassifierFeatureFactory.h"
 #include "mozilla/widget/TextRecognition.h"
-
-#include "Orientation.h"
+#include "nsContentList.h"
+#include "nsContentPolicyUtils.h"
+#include "nsContentUtils.h"
+#include "nsError.h"
+#include "nsIChannel.h"
+#include "nsIContent.h"
+#include "nsIContentPolicy.h"
+#include "nsIFrame.h"
+#include "nsIScriptGlobalObject.h"
+#include "nsIStreamListener.h"
+#include "nsIURI.h"
+#include "nsImageFrame.h"
+#include "nsLayoutUtils.h"
+#include "nsNetUtil.h"
+#include "nsServiceManagerUtils.h"
+#include "nsThreadUtils.h"
 
 #ifdef LoadImage
 // Undefine LoadImage to prevent naming conflict with Windows.
@@ -91,27 +89,46 @@ static void PrintReqURL(imgIRequest* req) {
 }
 #endif /* DEBUG_chb */
 
-const nsAttrValue::EnumTable nsImageLoadingContent::kDecodingTable[] = {
-    {"auto", nsImageLoadingContent::ImageDecodingType::Auto},
-    {"async", nsImageLoadingContent::ImageDecodingType::Async},
-    {"sync", nsImageLoadingContent::ImageDecodingType::Sync},
-    {nullptr, 0}};
+class ImageLoadTask : public MicroTaskRunnable {
+ public:
+  ImageLoadTask(nsImageLoadingContent* aElement, bool aAlwaysLoad,
+                bool aUseUrgentStartForChannel)
+      : mElement(aElement),
+        mDocument(aElement->AsContent()->OwnerDoc()),
+        mAlwaysLoad(aAlwaysLoad),
+        mUseUrgentStartForChannel(aUseUrgentStartForChannel) {
+    mDocument->BlockOnload();
+  }
 
-const nsAttrValue::EnumTable* nsImageLoadingContent::kDecodingTableDefault =
-    &nsImageLoadingContent::kDecodingTable[0];
+  void Run(AutoSlowOperation& aAso) override {
+    if (mElement->mPendingImageLoadTask == this) {
+      JSCallingLocation::AutoFallback fallback(&mCallingLocation);
+      mElement->mUseUrgentStartForChannel = mUseUrgentStartForChannel;
+      mElement->ClearImageLoadTask();
+      mElement->LoadSelectedImage(mAlwaysLoad, /* aStopLazyLoading = */ false);
+    }
+    mDocument->UnblockOnload(false);
+  }
 
-nsImageLoadingContent::nsImageLoadingContent()
-    : mObserverList(nullptr),
-      mOutstandingDecodePromises(0),
-      mRequestGeneration(0),
-      mLoadingEnabled(true),
-      mUseUrgentStartForChannel(false),
-      mLazyLoading(false),
-      mHasPendingLoadTask(false),
-      mSyncDecodingHint(false),
-      mInDocResponsiveContent(false),
-      mCurrentRequestRegistered(false),
-      mPendingRequestRegistered(false) {
+  bool Suppressed() override {
+    nsIGlobalObject* global = mElement->AsContent()->GetOwnerGlobal();
+    return global && global->IsInSyncOperation();
+  }
+
+  bool AlwaysLoad() const { return mAlwaysLoad; }
+
+ private:
+  ~ImageLoadTask() = default;
+  const RefPtr<nsImageLoadingContent> mElement;
+  const RefPtr<dom::Document> mDocument;
+  const JSCallingLocation mCallingLocation{JSCallingLocation::Get()};
+  const bool mAlwaysLoad;
+  // True if we want to set nsIClassOfService::UrgentStart to the channel to get
+  // the response ASAP for better user responsiveness.
+  const bool mUseUrgentStartForChannel;
+};
+
+nsImageLoadingContent::nsImageLoadingContent() : mObserverList(nullptr) {
   if (!nsContentUtils::GetImgLoaderForChannel(nullptr, nullptr)) {
     mLoadingEnabled = false;
   }
@@ -136,6 +153,88 @@ nsImageLoadingContent::~nsImageLoadingContent() {
   MOZ_ASSERT(mOutstandingDecodePromises == 0,
              "Decode promises still unfulfilled?");
   MOZ_ASSERT(mDecodePromises.IsEmpty(), "Decode promises still unfulfilled?");
+}
+
+void nsImageLoadingContent::QueueImageTask(
+    nsIURI* aSrcURI, nsIPrincipal* aSrcTriggeringPrincipal, bool aForceAsync,
+    bool aAlwaysLoad, bool aNotify) {
+  // If loading is temporarily disabled, we don't want to queue tasks that may
+  // then run when loading is re-enabled.
+  // Roughly step 1 and 2.
+  // FIXME(emilio): Would be great to do this more per-spec. We don't cancel
+  // existing loads etc.
+  if (!LoadingEnabled() || !GetOurOwnerDoc()->ShouldLoadImages()) {
+    return;
+  }
+
+  // Ensure that we don't overwrite a previous load request that requires
+  // a complete load to occur.
+  const bool alwaysLoad = aAlwaysLoad || (mPendingImageLoadTask &&
+                                          mPendingImageLoadTask->AlwaysLoad());
+
+  // Steps 5 and 7 (sync cache check for src).
+  const bool shouldLoadSync = [&] {
+    if (aForceAsync) {
+      return false;
+    }
+    if (!aSrcURI) {
+      // NOTE(emilio): we need to also do a sync check for empty / invalid src,
+      // see https://github.com/whatwg/html/issues/2429
+      // But do it sync only when there's a current request.
+      return !!mCurrentRequest;
+    }
+    if (AsContent()->IsSVGElement()) {
+      if (GetOurOwnerDoc()->IsBeingUsedAsImage()) {
+        return true;
+      }
+      if (StaticPrefs::svg_image_element_force_sync_load()) {
+        return true;
+      }
+    }
+    return nsContentUtils::IsImageAvailable(
+        AsContent(), aSrcURI, aSrcTriggeringPrincipal, GetCORSMode());
+  }();
+
+  if (shouldLoadSync) {
+    if (!nsContentUtils::IsSafeToRunScript()) {
+      // If not safe to run script, we should do the sync load task as soon as
+      // possible instead. This prevents unsound state changes from frame
+      // construction and such.
+      void (nsImageLoadingContent::*fp)(nsIURI*, nsIPrincipal*, bool, bool,
+                                        bool) =
+          &nsImageLoadingContent::QueueImageTask;
+      nsContentUtils::AddScriptRunner(
+          NewRunnableMethod<nsIURI*, nsIPrincipal*, bool, bool, bool>(
+              "nsImageLoadingContent::QueueImageTask", this, fp, aSrcURI,
+              aSrcTriggeringPrincipal, aForceAsync, aAlwaysLoad,
+              /* aNotify = */ true));
+      return;
+    }
+
+    ClearImageLoadTask();
+    LoadSelectedImage(alwaysLoad, mLazyLoading && aSrcURI);
+    return;
+  }
+
+  if (mLazyLoading) {
+    // This check is not in the spec, but it is just a performance optimization.
+    // The reasoning for why it is sound is that we early-return from the image
+    // task when lazy loading, and that StopLazyLoading makes us queue a new
+    // task (which will implicitly cancel all the pre-existing tasks).
+    return;
+  }
+
+  RefPtr task = new ImageLoadTask(this, alwaysLoad, mUseUrgentStartForChannel);
+  mPendingImageLoadTask = task;
+  // We might have just become non-broken.
+  UpdateImageState(aNotify);
+  // The task checks this to determine if it was the last queued event, and so
+  // earlier tasks are implicitly canceled.
+  CycleCollectedJSContext::Get()->DispatchToMicroTask(task.forget());
+}
+
+void nsImageLoadingContent::ClearImageLoadTask() {
+  mPendingImageLoadTask = nullptr;
 }
 
 /*
@@ -755,7 +854,7 @@ void nsImageLoadingContent::CloneScriptedRequests(imgRequestProxy* aRequest) {
 
     nsresult rv =
         aRequest->Clone(observer->mObserver, nullptr, getter_AddRefs(req));
-    Unused << NS_WARN_IF(NS_FAILED(rv));
+    (void)NS_WARN_IF(NS_FAILED(rv));
   } while (i > 0);
 }
 
@@ -998,7 +1097,7 @@ nsresult nsImageLoadingContent::LoadImage(const nsAString& aNewURI, bool aForce,
   // Parse the URI string to get image URI
   nsCOMPtr<nsIURI> imageURI;
   if (!aNewURI.IsEmpty()) {
-    Unused << StringToURI(aNewURI, doc, getter_AddRefs(imageURI));
+    (void)StringToURI(aNewURI, doc, getter_AddRefs(imageURI));
   }
 
   return LoadImage(imageURI, aForce, aNotify, aImageLoadType, LoadFlags(), doc,
@@ -1112,7 +1211,7 @@ nsresult nsImageLoadingContent::LoadImage(nsIURI* aNewURI, bool aForce,
 
   if (fetchPriority != FetchPriority::Auto) {
     aDocument->SetPageloadEventFeature(
-        pageload_event::FeatureBits::FETCH_PRIORITY_IMAGES);
+        performance::pageload_event::DocumentFeature::FETCH_PRIORITY_IMAGES);
   }
 
   // Reset the flag to avoid loading from XPCOM or somewhere again else without
@@ -1284,18 +1383,100 @@ already_AddRefed<Promise> nsImageLoadingContent::RecognizeCurrentImageText(
   return domPromise.forget();
 }
 
+CSSIntSize nsImageLoadingContent::NaturalSize(
+    DoDensityCorrection aDensityCorrection) {
+  if (!mCurrentRequest) {
+    return {};
+  }
+
+  nsCOMPtr<imgIContainer> image;
+  mCurrentRequest->GetImage(getter_AddRefs(image));
+  if (!image) {
+    return {};
+  }
+
+  mozilla::image::ImageIntrinsicSize intrinsicSize;
+  nsresult rv = image->GetIntrinsicSize(&intrinsicSize);
+  if (NS_FAILED(rv)) {
+    return {};
+  }
+
+  CSSIntSize size;  // defaults to 0,0
+  if (!StaticPrefs::image_natural_size_fallback_enabled()) {
+    size.width = intrinsicSize.mWidth.valueOr(0);
+    size.height = intrinsicSize.mHeight.valueOr(0);
+  } else {
+    // Fallback case, for web-compatibility!
+    // See https://github.com/whatwg/html/issues/11287 and bug 1935269.
+    // If we lack an intrinsic size in either axis, then use the fallback size,
+    // unless we can transfer the size through the aspect ratio.
+    // (And if we *only* have an intrinsic aspect ratio, use the fallback width
+    // and transfer that through the aspect ratio to produce a height.)
+    size.width = intrinsicSize.mWidth.valueOr(kFallbackIntrinsicWidthInPixels);
+    size.height =
+        intrinsicSize.mHeight.valueOr(kFallbackIntrinsicHeightInPixels);
+    AspectRatio ratio = image->GetIntrinsicRatio();
+    if (ratio) {
+      if (!intrinsicSize.mHeight) {
+        // Compute the height from the width & ratio.  (Note that the width we
+        // use here might be kFallbackIntrinsicWidthInPixels, and that's fine.)
+        size.height = ratio.Inverted().ApplyTo(size.width);
+      } else if (!intrinsicSize.mWidth) {
+        // Compute the width from the height & ratio.
+        size.width = ratio.ApplyTo(size.height);
+      }
+    }
+  }
+
+  ImageResolution resolution = image->GetResolution();
+  if (aDensityCorrection == DoDensityCorrection::Yes) {
+    // NOTE(emilio): What we implement here matches the image-set() spec, but
+    // it's unclear whether this is the right thing to do, see
+    // https://github.com/whatwg/html/pull/5574#issuecomment-826335244.
+    if (auto* image = HTMLImageElement::FromNode(AsContent())) {
+      if (auto* sel = image->GetResponsiveImageSelector()) {
+        float density = sel->GetSelectedImageDensity();
+        MOZ_ASSERT(density >= 0.0);
+        resolution.ScaleBy(density);
+      }
+    }
+  }
+
+  resolution.ApplyTo(size.width, size.height);
+  return size;
+}
+
 CSSIntSize nsImageLoadingContent::GetWidthHeightForImage() {
   Element* element = AsContent()->AsElement();
   if (nsIFrame* frame = element->GetPrimaryFrame(FlushType::Layout)) {
     return CSSIntSize::FromAppUnitsRounded(frame->GetContentRect().Size());
   }
-  const nsAttrValue* value;
+
+  CSSIntSize size;
   nsCOMPtr<imgIContainer> image;
-  if (mCurrentRequest) {
+  if (StaticPrefs::image_natural_size_fallback_enabled()) {
+    // Our image is not rendered (we don't have any frame); so we should should
+    // return the natural size, per:
+    // https://html.spec.whatwg.org/multipage/embedded-content.html#dom-img-width
+    //
+    // Note that the spec says to use the "density-corrected natural width and
+    // height of the image", but we don't do that -- we specifically request
+    // the NaturalSize *without* density-correction here.  This handles a case
+    // where browsers deviate from the spec in an interoperable way, which
+    // hopefully we'll address in the spec soon. See case (2) in this comment
+    // for more:
+    // https://github.com/whatwg/html/issues/11287#issuecomment-2923467541
+    size = NaturalSize(DoDensityCorrection::No);
+  } else if (mCurrentRequest) {
     mCurrentRequest->GetImage(getter_AddRefs(image));
   }
 
-  CSSIntSize size;
+  // If we have width or height attrs, we'll let those stomp on whatever
+  // NaturalSize we may have gotten above. This handles a case where browsers
+  // deviate from the spec in an interoperable way, which hopefully we'll
+  // address in the spec soon. See case (1) in this comment for more:
+  // https://github.com/whatwg/html/issues/11287#issuecomment-2923467541
+  const nsAttrValue* value;
   if ((value = element->GetParsedAttr(nsGkAtoms::width)) &&
       value->Type() == nsAttrValue::eInteger) {
     size.width = value->GetIntegerValue();
@@ -1318,7 +1499,7 @@ CSSIntSize nsImageLoadingContent::GetWidthHeightForImage() {
 void nsImageLoadingContent::UpdateImageState(bool aNotify) {
   Element* thisElement = AsContent()->AsElement();
   const bool isBroken = [&] {
-    if (mLazyLoading || mHasPendingLoadTask) {
+    if (mLazyLoading || mPendingImageLoadTask) {
       return false;
     }
     if (!mCurrentRequest) {
@@ -1636,12 +1817,12 @@ void nsImageLoadingContent::TrackImage(imgIRequest* aImage,
   if (aImage == mCurrentRequest &&
       !(mCurrentRequestFlags & REQUEST_IS_TRACKED)) {
     mCurrentRequestFlags |= REQUEST_IS_TRACKED;
-    doc->ImageTracker()->Add(mCurrentRequest);
+    doc->TrackImage(mCurrentRequest);
   }
   if (aImage == mPendingRequest &&
       !(mPendingRequestFlags & REQUEST_IS_TRACKED)) {
     mPendingRequestFlags |= REQUEST_IS_TRACKED;
-    doc->ImageTracker()->Add(mPendingRequest);
+    doc->TrackImage(mPendingRequest);
   }
 }
 
@@ -1661,11 +1842,10 @@ void nsImageLoadingContent::UntrackImage(
   if (aImage == mCurrentRequest) {
     if (doc && (mCurrentRequestFlags & REQUEST_IS_TRACKED)) {
       mCurrentRequestFlags &= ~REQUEST_IS_TRACKED;
-      doc->ImageTracker()->Remove(
-          mCurrentRequest,
-          aNonvisibleAction == Some(OnNonvisible::DiscardImages)
-              ? ImageTracker::REQUEST_DISCARD
-              : 0);
+      doc->UntrackImage(mCurrentRequest,
+                        aNonvisibleAction == Some(OnNonvisible::DiscardImages)
+                            ? Document::RequestDiscard::Yes
+                            : Document::RequestDiscard::No);
     } else if (aNonvisibleAction == Some(OnNonvisible::DiscardImages)) {
       // If we're not in the document we may still need to be discarded.
       aImage->RequestDiscard();
@@ -1674,11 +1854,10 @@ void nsImageLoadingContent::UntrackImage(
   if (aImage == mPendingRequest) {
     if (doc && (mPendingRequestFlags & REQUEST_IS_TRACKED)) {
       mPendingRequestFlags &= ~REQUEST_IS_TRACKED;
-      doc->ImageTracker()->Remove(
-          mPendingRequest,
-          aNonvisibleAction == Some(OnNonvisible::DiscardImages)
-              ? ImageTracker::REQUEST_DISCARD
-              : 0);
+      doc->UntrackImage(mPendingRequest,
+                        aNonvisibleAction == Some(OnNonvisible::DiscardImages)
+                            ? Document::RequestDiscard::Yes
+                            : Document::RequestDiscard::No);
     } else if (aNonvisibleAction == Some(OnNonvisible::DiscardImages)) {
       // If we're not in the document we may still need to be discarded.
       aImage->RequestDiscard();

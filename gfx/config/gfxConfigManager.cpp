@@ -17,7 +17,6 @@
 #include "nsXULAppAPI.h"
 
 #ifdef XP_WIN
-#  include "mozilla/WindowsVersion.h"
 #  include "mozilla/gfx/DeviceManagerDx.h"
 #  include "mozilla/gfx/DisplayConfigWindows.h"
 #endif
@@ -33,12 +32,10 @@ void gfxConfigManager::Init() {
   mWrSoftwareForceEnabled = StaticPrefs::gfx_webrender_software_AtStartup();
   mWrCompositorForceEnabled =
 #ifdef MOZ_WAYLAND
-      StaticPrefs::gfx_wayland_hdr_AtStartup();
-#else
-      StaticPrefs::gfx_webrender_compositor_force_enabled_AtStartup();
+      StaticPrefs::gfx_wayland_hdr_AtStartup() ||
+      StaticPrefs::gfx_wayland_hdr_force_enabled_AtStartup() ||
 #endif
-  mGPUProcessAllowSoftware =
-      StaticPrefs::layers_gpu_process_allow_software_AtStartup();
+      StaticPrefs::gfx_webrender_compositor_force_enabled_AtStartup();
   mWrForcePartialPresent =
       StaticPrefs::gfx_webrender_force_partial_present_AtStartup();
   mWrPartialPresent =
@@ -64,7 +61,6 @@ void gfxConfigManager::Init() {
 #ifdef XP_WIN
   DeviceManagerDx::Get()->CheckHardwareStretchingSupport(mHwStretchingSupport);
   mScaledResolution = HasScaledResolution();
-  mIsWin11OrLater = IsWin11OrLater();
   mWrCompositorDCompRequired = true;
 #else
   ++mHwStretchingSupport.mBoth;
@@ -102,6 +98,8 @@ void gfxConfigManager::Init() {
   mFeatureD3D11Compositing = &gfxConfig::GetFeature(Feature::D3D11_COMPOSITING);
 #endif
   mFeatureGPUProcess = &gfxConfig::GetFeature(Feature::GPU_PROCESS);
+  mFeatureGLNorm16Textures =
+      &gfxConfig::GetFeature(Feature::GL_NORM16_TEXTURES);
 }
 
 void gfxConfigManager::EmplaceUserPref(const char* aPrefName,
@@ -153,6 +151,7 @@ void gfxConfigManager::ConfigureWebRender() {
   MOZ_ASSERT(mFeatureWrScissoredCacheClears);
   MOZ_ASSERT(mFeatureHwCompositing);
   MOZ_ASSERT(mFeatureGPUProcess);
+  MOZ_ASSERT(mFeatureGLNorm16Textures);
 
   // Initialize WebRender native compositor usage
   mFeatureWrCompositor->SetDefaultFromPref("gfx.webrender.compositor", true,
@@ -248,22 +247,16 @@ void gfxConfigManager::ConfigureWebRender() {
       mFeatureHwCompositing->Disable(FeatureStatus::Blocked,
                                      "Acceleration blocked by platform", ""_ns);
     }
-
-    if (!mFeatureHwCompositing->IsEnabled() &&
-        mFeatureGPUProcess->IsEnabled() && !mGPUProcessAllowSoftware) {
-      // We have neither WebRender nor OpenGL, we don't allow the GPU process
-      // for basic compositor, and it wasn't disabled already.
-      mFeatureGPUProcess->Disable(FeatureStatus::Unavailable,
-                                  "Hardware compositing is unavailable.",
-                                  ""_ns);
-    }
   }
 
   mFeatureWrDComp->EnableByDefault();
+
   if (!mWrDCompWinEnabled) {
     mFeatureWrDComp->UserDisable("User disabled via pref",
                                  "FEATURE_FAILURE_DCOMP_PREF_DISABLED"_ns);
   }
+
+  ConfigureFromBlocklist(nsIGfxInfo::FEATURE_WEBRENDER_DCOMP, mFeatureWrDComp);
 
   if (!mFeatureGPUProcess->IsEnabled()) {
     mFeatureWrDComp->Disable(FeatureStatus::Unavailable, "Requires GPU process",
@@ -327,6 +320,10 @@ void gfxConfigManager::ConfigureWebRender() {
   }
   ConfigureFromBlocklist(nsIGfxInfo::FEATURE_WEBRENDER_SCISSORED_CACHE_CLEARS,
                          mFeatureWrScissoredCacheClears);
+
+  mFeatureGLNorm16Textures->EnableByDefault();
+  ConfigureFromBlocklist(nsIGfxInfo::FEATURE_GL_NORM16_TEXTURES,
+                         mFeatureGLNorm16Textures);
 }
 
 }  // namespace gfx

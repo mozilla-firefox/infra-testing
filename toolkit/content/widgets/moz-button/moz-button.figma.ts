@@ -1,17 +1,18 @@
-import figma, { html } from "@figma/code-connect/html"
+import figma, { html } from "@figma/code-connect/html";
 
-const example = (props) => html`
-<moz-button
-  type=${props.type}
-  disabled=${props.disabled}
-  size=${props.size}
-  iconsrc=${props.iconSrc}
->${props.label}</moz-button>
+const example = props => html`
+  <moz-button
+    type=${props.type}
+    disabled=${props.disabled}
+    size=${props.size}
+    iconsrc=${props.iconSrc}
+    >${props.label}</moz-button
+  >
 `;
 
 // Desktop V3 (newest)
 figma.connect(
-  "https://www.figma.com/design/3WoKOSGtaSjhUHKldHCXbc/Desktop-v3?node-id=1-255&t=1NHTu3TvoKQWOCdP-1",
+  "https://www.figma.com/design/3WoKOSGtaSjhUHKldHCXbc/Desktop-Components-3?node-id=1-255",
   {
     props: {
       iconSrc: figma.boolean("Show icon", {
@@ -32,12 +33,43 @@ figma.connect(
       }),
     },
     example,
-  },
-)
+  }
+);
+
+// Icon Button
+figma.connect(
+  "https://www.figma.com/design/3WoKOSGtaSjhUHKldHCXbc/Desktop-Components-3?node-id=1-589",
+  {
+    props: {
+      iconSrc: "chrome://example.svg",
+      type: figma.boolean("Ghost", {
+        true: "icon ghost",
+        false: "icon",
+      }),
+      attention: figma.boolean("Show attention dot"),
+      disabled: figma.enum("State", {
+        Disabled: true,
+      }),
+      size: figma.enum("Size", {
+        Small: "small",
+      }),
+    },
+    example: props => html`
+      <moz-button
+        type=${props.type}
+        disabled=${props.disabled}
+        size=${props.size}
+        iconsrc=${props.iconSrc}
+        title="the hidden label"
+        attention=${props.attention}
+      ></moz-button>
+    `,
+  }
+);
 
 // Desktop Components text only (deprecated)
 figma.connect(
-  "https://www.figma.com/design/2ruSnPauajQGprFy6K333u/Desktop-Components?node-id=800-5099&m=dev",
+  "https://www.figma.com/design/2ruSnPauajQGprFy6K333u/Desktop-Components?node-id=800-5099",
   {
     props: {
       type: figma.enum("Type", {
@@ -56,8 +88,8 @@ figma.connect(
       }),
     },
     example,
-  },
-)
+  }
+);
 
 // Desktop Components icon only (deprecated)
 figma.connect(
@@ -82,5 +114,5 @@ figma.connect(
       }),
     },
     example,
-  },
-)
+  }
+);

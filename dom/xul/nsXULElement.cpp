@@ -7,14 +7,15 @@
 
 #include <new>
 #include <utility>
+
 #include "AttrArray.h"
 #include "MainThreadUtils.h"
 #include "ReferrerInfo.h"
 #include "Units.h"
 #include "XULButtonElement.h"
 #include "XULFrameElement.h"
-#include "XULMenuElement.h"
 #include "XULMenuBarElement.h"
+#include "XULMenuElement.h"
 #include "XULPopupElement.h"
 #include "XULResizerElement.h"
 #include "XULTextElement.h"
@@ -22,14 +23,14 @@
 #include "XULTreeElement.h"
 #include "js/CompilationAndEvaluation.h"
 #include "js/CompileOptions.h"  // JS::CompileOptions, JS::OwningCompileOptions, , JS::ReadOnlyCompileOptions, JS::ReadOnlyDecodeOptions, JS::DecodeOptions
-#include "js/experimental/CompileScript.h"  // JS::NewFrontendContext, JS::DestroyFrontendContext, JS::SetNativeStackQuota, JS::ThreadStackQuotaForSize, JS::CompileGlobalScriptToStencil, JS::CompilationStorage
-#include "js/experimental/JSStencil.h"      // JS::Stencil, JS::FrontendContext
 #include "js/SourceText.h"
 #include "js/Transcoding.h"
 #include "js/Utility.h"
+#include "js/experimental/CompileScript.h"  // JS::NewFrontendContext, JS::DestroyFrontendContext, JS::SetNativeStackQuota, JS::ThreadStackQuotaForSize, JS::CompileGlobalScriptToStencil, JS::CompilationStorage
+#include "js/experimental/JSStencil.h"      // JS::Stencil, JS::FrontendContext
 #include "jsapi.h"
-#include "mozilla/Assertions.h"
 #include "mozilla/ArrayIterator.h"
+#include "mozilla/Assertions.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/DeclarationBlock.h"
 #include "mozilla/EventDispatcher.h"
@@ -40,7 +41,6 @@
 #include "mozilla/FocusModel.h"
 #include "mozilla/GlobalKeyListener.h"
 #include "mozilla/HoldDropJSObjects.h"
-#include "mozilla/MacroForEach.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/OwningNonNull.h"
@@ -52,10 +52,9 @@
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_javascript.h"
 #include "mozilla/StaticPtr.h"
-#include "mozilla/FocusModel.h"
 #include "mozilla/TaskController.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/URLExtraData.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/BorrowedAttrInfo.h"
 #include "mozilla/dom/CSSRuleBinding.h"
@@ -67,7 +66,6 @@
 #include "mozilla/dom/FragmentOrElement.h"
 #include "mozilla/dom/FromParser.h"
 #include "mozilla/dom/MouseEventBinding.h"
-#include "mozilla/dom/MutationEventBinding.h"
 #include "mozilla/dom/NodeInfo.h"
 #include "mozilla/dom/ReferrerPolicyBinding.h"
 #include "mozilla/dom/ScriptSettings.h"
@@ -78,9 +76,9 @@
 #include "mozilla/fallible.h"
 #include "nsAtom.h"
 #include "nsAttrValueInlines.h"
+#include "nsCOMPtr.h"
 #include "nsCaseTreatment.h"
 #include "nsChangeHint.h"
-#include "nsCOMPtr.h"
 #include "nsCompatibility.h"
 #include "nsContentCreatorFunctions.h"
 #include "nsContentUtils.h"
@@ -569,7 +567,7 @@ nsresult nsXULElement::BindToTree(BindContext& aContext, nsINode& aParent) {
   }
 
 #ifdef DEBUG
-  if (!doc.AllowXULXBL() && !doc.IsUnstyledDocument()) {
+  if (!doc.AllowXULXBL() && !doc.IsLoadedAsData()) {
     // To save CPU cycles and memory, we don't load xul.css for other elements
     // except scrollbars.
     //
@@ -819,7 +817,7 @@ bool nsXULElement::IsEventStoppedFromAnonymousScrollbar(EventMessage aMessage) {
   return (IsRootOfNativeAnonymousSubtree() &&
           IsAnyOfXULElements(nsGkAtoms::scrollbar, nsGkAtoms::scrollcorner) &&
           (aMessage == ePointerClick || aMessage == eMouseDoubleClick ||
-           aMessage == eXULCommand || aMessage == eContextMenu ||
+           aMessage == eCommand || aMessage == eContextMenu ||
            aMessage == eDragStart || aMessage == ePointerAuxClick));
 }
 
@@ -867,7 +865,8 @@ void nsXULElement::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
     aVisitor.SetParentTarget(nullptr, false);
     return;
   }
-  if (aVisitor.mEvent->mMessage == eXULCommand &&
+  if (aVisitor.mEvent->mMessage == eUnidentifiedEvent &&
+      aVisitor.mEvent->mSpecifiedEventType == nsGkAtoms::oncommand &&
       aVisitor.mEvent->mClass == eInputEventClass &&
       aVisitor.mEvent->mOriginalTarget == static_cast<nsIContent*>(this) &&
       !IsXULElement(nsGkAtoms::command)) {
@@ -910,14 +909,12 @@ nsXULElement::IsAttributeMapped(const nsAtom* aAttribute) const {
   return false;
 }
 
-nsIControllers* nsXULElement::GetControllers(ErrorResult& rv) {
-  if (!Controllers()) {
-    nsExtendedDOMSlots* slots = ExtendedDOMSlots();
-
+nsIControllers* nsXULElement::EnsureControllers() {
+  auto* slots = ExtendedDOMSlots();
+  if (!slots->mControllers) {
     slots->mControllers = new nsXULControllers();
   }
-
-  return Controllers();
+  return slots->mControllers;
 }
 
 void nsXULElement::Click(CallerType aCallerType) {
@@ -1049,11 +1046,9 @@ nsresult nsXULElement::MakeHeavyweight(nsXULPrototypeElement* aPrototype) {
     bool oldValueSet;
     // XXX we might wanna have a SetAndTakeAttr that takes an nsAttrName
     if (protoattr->mName.IsAtom()) {
-      rv = mAttrs.SetAndSwapAttr(protoattr->mName.Atom(), attrValue,
-                                 &oldValueSet);
+      rv = SetAndSwapAttr(protoattr->mName.Atom(), attrValue, &oldValueSet);
     } else {
-      rv = mAttrs.SetAndSwapAttr(protoattr->mName.NodeInfo(), attrValue,
-                                 &oldValueSet);
+      rv = SetAndSwapAttr(protoattr->mName.NodeInfo(), attrValue, &oldValueSet);
     }
     NS_ENSURE_SUCCESS(rv, rv);
   }
@@ -1458,15 +1453,21 @@ nsXULPrototypeScript::nsXULPrototypeScript(uint32_t aLineNo)
       mSrcLoadWaiters(nullptr),
       mStencil(nullptr) {}
 
-static nsresult WriteStencil(nsIObjectOutputStream* aStream, JSContext* aCx,
+static nsresult WriteStencil(nsIObjectOutputStream* aStream,
                              JS::Stencil* aStencil) {
+  JS::FrontendContext* fc = JS::NewFrontendContext();
+  if (!fc) {
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
+
   JS::TranscodeBuffer buffer;
   JS::TranscodeResult code;
-  code = JS::EncodeStencil(aCx, aStencil, buffer);
+  code = JS::EncodeStencil(fc, aStencil, buffer);
+
+  JS::DestroyFrontendContext(fc);
 
   if (code != JS::TranscodeResult::Ok) {
     if (code == JS::TranscodeResult::Throw) {
-      JS_ClearPendingException(aCx);
       return NS_ERROR_OUT_OF_MEMORY;
     }
 
@@ -1559,11 +1560,6 @@ nsresult nsXULPrototypeScript::Serialize(
     const nsTArray<RefPtr<mozilla::dom::NodeInfo>>* aNodeInfos) {
   NS_ENSURE_TRUE(aProtoDoc, NS_ERROR_UNEXPECTED);
 
-  AutoJSAPI jsapi;
-  if (!jsapi.Init(xpc::CompilationScope())) {
-    return NS_ERROR_UNEXPECTED;
-  }
-
   NS_ASSERTION(!mSrcLoading || mSrcLoadWaiters != nullptr || !mStencil,
                "script source still loading when serializing?!");
   if (!mStencil) return NS_ERROR_FAILURE;
@@ -1573,10 +1569,7 @@ nsresult nsXULPrototypeScript::Serialize(
   rv = aStream->Write32(mLineNo);
   if (NS_FAILED(rv)) return rv;
 
-  JSContext* cx = jsapi.cx();
-  MOZ_ASSERT(xpc::CompilationScope() == JS::CurrentGlobalOrNull(cx));
-
-  return WriteStencil(aStream, cx, mStencil);
+  return WriteStencil(aStream, mStencil);
 }
 
 nsresult nsXULPrototypeScript::SerializeOutOfLine(
@@ -2015,6 +2008,18 @@ nsresult nsXULPrototypeScript::InstantiateScript(
 }
 
 void nsXULPrototypeScript::Set(JS::Stencil* aStencil) { mStencil = aStencil; }
+
+void nsXULPrototypeScript::AddSizeOfExcludingThis(nsWindowSizes& aSizes,
+                                                  size_t* aNodeSize) const {
+  // It is okay to include the size of mSrcURI here even though it might have
+  // strong references from elsewhere because the URI was created for this
+  // object, in XULContentSinkImpl::OpenScript() or
+  // nsXULPrototypeElement::Deserialize(). Only objects that created their own
+  // URI will call nsIURI::SizeOfIncludingThis().
+  if (mSrcURI) {
+    *aNodeSize += mSrcURI->SizeOfIncludingThis(aSizes.mState.mMallocSizeOf);
+  }
+}
 
 //----------------------------------------------------------------------
 //

@@ -6,11 +6,11 @@
 
 #include "SVGAnimatedNumberPair.h"
 
-#include "nsCharSeparatedTokenizer.h"
 #include "SVGAttrTearoffTable.h"
 #include "SVGNumberPairSMILType.h"
 #include "mozilla/SMILValue.h"
 #include "mozilla/SVGContentUtils.h"
+#include "nsCharSeparatedTokenizer.h"
 #include "nsContentUtils.h"
 
 using namespace mozilla::dom;
@@ -32,15 +32,13 @@ class MOZ_RAII AutoChangeNumberPairNotifier {
     MOZ_ASSERT(mSVGElement, "Expecting non-null element");
 
     if (mDoSetAttr) {
-      mEmptyOrOldValue =
-          mSVGElement->WillChangeNumberPair(mNumberPair->mAttrEnum);
+      mSVGElement->WillChangeNumberPair(mNumberPair->mAttrEnum);
     }
   }
 
   ~AutoChangeNumberPairNotifier() {
     if (mDoSetAttr) {
-      mSVGElement->DidChangeNumberPair(mNumberPair->mAttrEnum,
-                                       mEmptyOrOldValue);
+      mSVGElement->DidChangeNumberPair(mNumberPair->mAttrEnum);
     }
     if (mNumberPair->mIsAnimated) {
       mSVGElement->AnimationNeedsResample();
@@ -50,15 +48,14 @@ class MOZ_RAII AutoChangeNumberPairNotifier {
  private:
   SVGAnimatedNumberPair* const mNumberPair;
   SVGElement* const mSVGElement;
-  nsAttrValue mEmptyOrOldValue;
   bool mDoSetAttr;
 };
 
-MOZ_CONSTINIT static SVGAttrTearoffTable<
-    SVGAnimatedNumberPair, SVGAnimatedNumberPair::DOMAnimatedNumber>
+constinit static SVGAttrTearoffTable<SVGAnimatedNumberPair,
+                                     SVGAnimatedNumberPair::DOMAnimatedNumber>
     sSVGFirstAnimatedNumberTearoffTable;
-MOZ_CONSTINIT static SVGAttrTearoffTable<
-    SVGAnimatedNumberPair, SVGAnimatedNumberPair::DOMAnimatedNumber>
+constinit static SVGAttrTearoffTable<SVGAnimatedNumberPair,
+                                     SVGAnimatedNumberPair::DOMAnimatedNumber>
     sSVGSecondAnimatedNumberTearoffTable;
 
 static nsresult ParseNumberOptionalNumber(const nsAString& aValue,

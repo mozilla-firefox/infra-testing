@@ -8,10 +8,13 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.annotation.StringDef
 import mozilla.components.concept.base.crash.Breadcrumb
+import mozilla.components.lib.crash.runtimetagproviders.ExperimentData
 import mozilla.components.support.utils.ext.getParcelableArrayListCompat
 import mozilla.components.support.utils.ext.getSerializableCompat
+import org.json.JSONArray
 import java.io.Serializable
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 
 // Intent extra used to store crash data under when passing crashes in Intent objects
 private const val INTENT_CRASH = "mozilla.components.lib.crash.CRASH"
@@ -32,6 +35,7 @@ private const val INTENT_RUNTIME_TAGS = "runtimeTags"
 private const val INTENT_UUID = "uuid"
 private const val INTENT_MINIDUMP_PATH = "minidumpPath"
 private const val INTENT_EXTRAS_PATH = "extrasPath"
+private const val INTENT_PROCESS_VISIBILITY = "processVisibility"
 private const val INTENT_PROCESS_TYPE = "processType"
 private const val INTENT_REMOTE_TYPE = "remoteType"
 
@@ -58,6 +62,112 @@ sealed class Crash {
      * Timestamp time of when the crash happened
      */
     abstract val timestamp: Long
+
+    /**
+     * Convenience accessor to get the value from the RELEASE RuntimeTag.
+     */
+    val release: String get() = runtimeTags[RuntimeTag.RELEASE] ?: "N/A"
+
+    /**
+     * Convenience accessor to get the value from the VERSION_NAME RuntimeTag.
+     */
+    val versionName: String get() = runtimeTags[RuntimeTag.VERSION_NAME] ?: release
+
+    /**
+     * Convenience accessor to get the value from the GECKOVIEW_VERSION RuntimeTag.
+     */
+    val geckoViewVersion: String get() = runtimeTags[RuntimeTag.GECKOVIEW_VERSION] ?: versionName
+
+    /**
+     * Convenience accessor to get the value from the BUILD_ID RuntimeTag.
+     */
+    val buildId: String get() = runtimeTags[RuntimeTag.BUILD_ID] ?: "N/A"
+
+    /**
+     * Convenience accessor to get the value from the GIT RuntimeTag.
+     */
+    val gitHash: String get() = runtimeTags[RuntimeTag.GIT] ?: "N/A"
+
+    /**
+     * Convenience accessor to get the value from the AC_VERSION RuntimeTag.
+     */
+    val acVersion: String get() = runtimeTags[RuntimeTag.AC_VERSION] ?: "N/A"
+
+    /**
+     * Convenience accessor to get the value from the AS_VERSION RuntimeTag.
+     */
+    val asVersion: String get() = runtimeTags[RuntimeTag.AS_VERSION] ?: "N/A"
+
+    /**
+     * Convenience accessor to get the value from the GLEAN_VERSION RuntimeTag.
+     */
+    val gleanVersion: String get() = runtimeTags[RuntimeTag.GLEAN_VERSION] ?: "N/A"
+
+    /**
+     * Convenience accessor to get the value from the LOCALE RuntimeTag.
+     */
+    val locale: String get() = runtimeTags[RuntimeTag.LOCALE] ?: "N/A"
+
+    /**
+     * Convenience accessor to get the value from the START_TIME RuntimeTag.
+     */
+    val startTime: String get() = runtimeTags[RuntimeTag.START_TIME] ?: "N/A"
+
+    /**
+     * Convenience accessor to get the value from the VERSION_CODE RuntimeTag.
+     */
+    val versionCode: String get() = runtimeTags[RuntimeTag.VERSION_CODE] ?: "N/A"
+
+    /**
+     * Convenience accessor to get the experiment data from the EXPERIMENT_DATA RuntimeTag.
+     */
+    val experimentData: ExperimentData? get() = runtimeTags[RuntimeTag.EXPERIMENT_DATA]?.let {
+        ExperimentData.fromJsonString(it)
+    }
+
+    /**
+     * Convenience accessor to get the timestamp, in seconds as a string.
+     */
+    val crashTime: String get() = TimeUnit.MILLISECONDS.toSeconds(timestamp).toString()
+
+    /**
+     * Convenience accessor to get if this was a fatal crash.
+     */
+    val isFatalCrash: Boolean get() = when (this) {
+            is UncaughtExceptionCrash -> true
+            is NativeCodeCrash -> this.isFatal
+        }
+
+    /**
+     * Convenience accessor to get if this is a native code crash.
+     */
+    val isNativeCodeCrash: Boolean get() = this is NativeCodeCrash
+
+    /**
+     * Convenience accessor to get the minidump file path.
+     */
+    val miniDumpFilePath: String? get() = (this as? NativeCodeCrash)?.minidumpPath
+
+    /**
+     * Convenience accessor to get extras file path.
+     */
+    val extrasFilePath: String? get() = (this as? NativeCodeCrash)?.extrasPath
+
+    /**
+     * Convenience accessor to get the Java throwable of the crash.
+     */
+    val javaThrowable: Throwable? get() = (this as? UncaughtExceptionCrash)?.throwable
+
+    /**
+     * Convenience accessor to the breadcrumbs as a JSONArray.
+     */
+    val breadcrumbsJson: JSONArray get() {
+            val breadcrumbsJson = JSONArray()
+            for (breadcrumb in breadcrumbs) {
+                breadcrumbsJson.put(breadcrumb.toJson())
+            }
+            return breadcrumbsJson
+        }
 
     /**
      * A crash caused by an uncaught exception.
@@ -111,8 +221,10 @@ sealed class Crash {
      * @property extrasPath Path to a file containing extra metadata about the crash. The file contains key-value pairs
      *                      in the form `Key=Value`. Be aware, it may contain sensitive data such as the URI that was
      *                      loaded at the time of the crash.
-     * @property processType The type of process the crash occurred in. Affects whether or not the crash is fatal
+     * @property processVisibility The type of process the crash occurred in. Affects whether or not the crash is fatal
      *                       or whether the application can recover from it.
+     * @property processType The name of the type of process the crash occurred in. This matches the process types
+     *                       reported by gecko.
      * @property breadcrumbs List of breadcrumbs to send with the crash report.
      * @property remoteType The type of child process (when available).
      * @property runtimeTags Runtime tags that should be attached to any report associated with this crash.
@@ -122,7 +234,8 @@ sealed class Crash {
         override val timestamp: Long,
         val minidumpPath: String?,
         val extrasPath: String?,
-        @ProcessType val processType: String?,
+        @param:ProcessVisibility val processVisibility: String?,
+        val processType: String?,
         override val breadcrumbs: ArrayList<Breadcrumb>,
         val remoteType: String?,
         override val runtimeTags: Map<String, String> = emptyMap(),
@@ -132,6 +245,7 @@ sealed class Crash {
             putString(INTENT_UUID, uuid)
             putString(INTENT_MINIDUMP_PATH, minidumpPath)
             putString(INTENT_EXTRAS_PATH, extrasPath)
+            putString(INTENT_PROCESS_VISIBILITY, processVisibility)
             putString(INTENT_PROCESS_TYPE, processType)
             putLong(INTENT_CRASH_TIMESTAMP, timestamp)
             putParcelableArrayList(INTENT_BREADCRUMBS, breadcrumbs)
@@ -145,40 +259,44 @@ sealed class Crash {
          * may be able to recover.
          */
         val isFatal: Boolean
-            get() = processType == PROCESS_TYPE_MAIN
+            get() = processVisibility == PROCESS_VISIBILITY_MAIN
 
         companion object {
             /**
              * Indicates a crash occurred in the main process and is therefore fatal.
              */
-            const val PROCESS_TYPE_MAIN = "MAIN"
+            const val PROCESS_VISIBILITY_MAIN = "MAIN"
 
             /**
              * Indicates a crash occurred in a foreground child process. The application may be
              * able to recover from this crash, but it was likely noticeable to the user.
              */
-            const val PROCESS_TYPE_FOREGROUND_CHILD = "FOREGROUND_CHILD"
+            const val PROCESS_VISIBILITY_FOREGROUND_CHILD = "FOREGROUND_CHILD"
 
             /**
              * Indicates a crash occurred in a background child process. This should have been
              * recovered from automatically, and will have had minimal impact to the user, if any.
              */
-            const val PROCESS_TYPE_BACKGROUND_CHILD = "BACKGROUND_CHILD"
+            const val PROCESS_VISIBILITY_BACKGROUND_CHILD = "BACKGROUND_CHILD"
 
+            /**
+             * Process visibility strings.
+             */
             @StringDef(
-                PROCESS_TYPE_MAIN,
-                PROCESS_TYPE_FOREGROUND_CHILD,
-                PROCESS_TYPE_BACKGROUND_CHILD,
+                PROCESS_VISIBILITY_MAIN,
+                PROCESS_VISIBILITY_FOREGROUND_CHILD,
+                PROCESS_VISIBILITY_BACKGROUND_CHILD,
             )
             @Retention(AnnotationRetention.SOURCE)
-            annotation class ProcessType
+            annotation class ProcessVisibility
 
             @Suppress("UNCHECKED_CAST", "DEPRECATION")
             internal fun fromBundle(bundle: Bundle) = NativeCodeCrash(
                 uuid = bundle.getString(INTENT_UUID) ?: UUID.randomUUID().toString(),
                 minidumpPath = bundle.getString(INTENT_MINIDUMP_PATH, null),
                 extrasPath = bundle.getString(INTENT_EXTRAS_PATH, null),
-                processType = bundle.getString(INTENT_PROCESS_TYPE, PROCESS_TYPE_MAIN),
+                processVisibility = bundle.getString(INTENT_PROCESS_VISIBILITY, PROCESS_VISIBILITY_MAIN),
+                processType = bundle.getString(INTENT_PROCESS_TYPE, "main"),
                 breadcrumbs = bundle.getParcelableArrayListCompat(
                     INTENT_BREADCRUMBS,
                     Breadcrumb::class.java,
@@ -239,4 +357,25 @@ interface RuntimeTagProvider {
      * @return relevant runtime tags
      */
     operator fun invoke(): Map<String, String>
+}
+
+/**
+ * Namespace for RuntimeTag keys
+ */
+object RuntimeTag {
+    // We initially used this tag for the version name as it was labeled RELEASE in
+    // Sentry. We will address this in Bug 1989492.
+    const val RELEASE = "release"
+
+    const val START_TIME = "start_time"
+    const val GIT = "git_hash"
+    const val AC_VERSION = "ac_version"
+    const val AS_VERSION = "as_version"
+    const val GLEAN_VERSION = "glean_version"
+    const val LOCALE = "locale"
+    const val BUILD_ID = "build_id"
+    const val VERSION_CODE = "version_code"
+    const val VERSION_NAME = "version_name"
+    const val GECKOVIEW_VERSION = "geckoview_version"
+    const val EXPERIMENT_DATA = "experiment_data"
 }

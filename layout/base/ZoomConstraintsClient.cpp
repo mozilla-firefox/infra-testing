@@ -7,22 +7,22 @@
 #include "ZoomConstraintsClient.h"
 
 #include <inttypes.h>
-#include "mozilla/layers/APZCCallbackHelper.h"
-#include "mozilla/layers/ScrollableLayerGuid.h"
-#include "mozilla/layers/ZoomConstraints.h"
+
+#include "UnitTransforms.h"
+#include "Units.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/StaticPrefs_apz.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Event.h"
+#include "mozilla/layers/APZCCallbackHelper.h"
+#include "mozilla/layers/ScrollableLayerGuid.h"
+#include "mozilla/layers/ZoomConstraints.h"
 #include "nsIFrame.h"
 #include "nsLayoutUtils.h"
 #include "nsPoint.h"
-#include "nsView.h"
 #include "nsViewportInfo.h"
-#include "Units.h"
-#include "UnitTransforms.h"
 
 static mozilla::LazyLogModule sApzZoomLog("apz.zoom");
 #define ZCC_LOG(...) MOZ_LOG(sApzZoomLog, LogLevel::Debug, (__VA_ARGS__))
@@ -63,9 +63,7 @@ static nsIWidget* GetWidget(PresShell* aPresShell) {
     // see https://bugzilla.mozilla.org/show_bug.cgi?id=1648427#c7 .
     return rootFrame->GetNearestWidget();
 #else
-    if (nsView* view = rootFrame->GetView()) {
-      return view->GetWidget();
-    }
+    return rootFrame->GetOwnWidget();
 #endif
   }
   return nullptr;

@@ -22,6 +22,7 @@
 #include "sslexp.h"
 #include "ssl3prot.h"
 #include "hasht.h"
+#include "cryptohi.h"
 #include "nssilock.h"
 #include "pkcs11t.h"
 #if defined(XP_UNIX)
@@ -46,6 +47,7 @@ typedef struct sslPskStr sslPsk;
 typedef struct sslDelegatedCredentialStr sslDelegatedCredential;
 typedef struct sslEphemeralKeyPairStr sslEphemeralKeyPair;
 typedef struct TLS13KeyShareEntryStr TLS13KeyShareEntry;
+typedef struct tlsSignOrVerifyContextStr tlsSignOrVerifyContext;
 
 #include "sslencode.h"
 #include "sslexp.h"
@@ -130,11 +132,27 @@ typedef enum { SSLAppOpRead = 0,
 #define DTLS_RETRANSMIT_FINISHED_MS 30000
 
 /* default number of entries in namedGroupPreferences */
-#define SSL_NAMED_GROUP_COUNT 33
+#define SSL_NAMED_GROUP_COUNT 35
 
 /* The maximum DH and RSA bit-length supported. */
 #define SSL_MAX_DH_KEY_BITS 8192
 #define SSL_MAX_RSA_KEY_BITS 8192
+
+/* are we signing or verifying */
+typedef enum {
+    sig_verify = 0,
+    sig_sign,
+} sslSignOrVerify;
+
+/* sign or verify context */
+struct tlsSignOrVerifyContextStr {
+    sslSignOrVerify type;
+    union {
+        SGNContext *sig;
+        VFYContext *vfy;
+        void *ptr;
+    } u;
+};
 
 /* Types and names of elliptic curves used in TLS */
 typedef enum {
@@ -296,6 +314,7 @@ typedef struct sslOptionsStr {
     unsigned int callExtensionWriterOnEchInner : 1;
     unsigned int enableGrease : 1;
     unsigned int enableChXtnPermutation : 1;
+    unsigned int dbLoadCertChain : 1;
 } sslOptions;
 
 typedef enum { sslHandshakingUndetermined = 0,
@@ -727,7 +746,7 @@ typedef struct SSL3HandshakeStateStr {
     dtlsTimer timers[3];       /* Holder for timers. */
     dtlsTimer *rtTimer;        /* Retransmit timer. */
     dtlsTimer *ackTimer;       /* Ack timer (DTLS 1.3 only). */
-    dtlsTimer *hdTimer;        /* Read cipher holddown timer (DLTS 1.3 only) */
+    dtlsTimer *hdTimer;        /* Read cipher holddown timer. */
 
     /* KeyUpdate state machines */
     PRBool isKeyUpdateInProgress; /* The status of KeyUpdate -: {true == started, false == finished}. */
@@ -1385,95 +1404,29 @@ void ssl_ClearPRCList(PRCList *list, void (*f)(void *));
     if (ss->sendLock)         \
     PZ_Unlock(ss->sendLock)
 
-/* firstHandshakeLock -> recvBufLock */
-#define ssl_Get1stHandshakeLock(ss)                               \
-    {                                                             \
-        if (!ss->opt.noLocks) {                                   \
-            PORT_Assert(PZ_InMonitor((ss)->firstHandshakeLock) || \
-                        !ssl_HaveRecvBufLock(ss));                \
-            PZ_EnterMonitor((ss)->firstHandshakeLock);            \
-        }                                                         \
-    }
-#define ssl_Release1stHandshakeLock(ss)               \
-    {                                                 \
-        if (!ss->opt.noLocks)                         \
-            PZ_ExitMonitor((ss)->firstHandshakeLock); \
-    }
-#define ssl_Have1stHandshakeLock(ss) \
-    (PZ_InMonitor((ss)->firstHandshakeLock))
+PRBool ssl_HaveRecvBufLock(sslSocket *ss);
+PRBool ssl_HaveXmitBufLock(sslSocket *ss);
+PRBool ssl_Have1stHandshakeLock(sslSocket *ss);
+PRBool ssl_HaveSSL3HandshakeLock(sslSocket *ss);
+PRBool ssl_HaveSpecWriteLock(sslSocket *ss);
 
-/* ssl3HandshakeLock -> xmitBufLock */
-#define ssl_GetSSL3HandshakeLock(ss)                  \
-    {                                                 \
-        if (!ss->opt.noLocks) {                       \
-            PORT_Assert(!ssl_HaveXmitBufLock(ss));    \
-            PZ_EnterMonitor((ss)->ssl3HandshakeLock); \
-        }                                             \
-    }
-#define ssl_ReleaseSSL3HandshakeLock(ss)             \
-    {                                                \
-        if (!ss->opt.noLocks)                        \
-            PZ_ExitMonitor((ss)->ssl3HandshakeLock); \
-    }
-#define ssl_HaveSSL3HandshakeLock(ss) \
-    (PZ_InMonitor((ss)->ssl3HandshakeLock))
+void ssl_Get1stHandshakeLock(sslSocket *ss);
+void ssl_Release1stHandshakeLock(sslSocket *ss);
 
-#define ssl_GetSpecReadLock(ss)                 \
-    {                                           \
-        if (!ss->opt.noLocks)                   \
-            NSSRWLock_LockRead((ss)->specLock); \
-    }
-#define ssl_ReleaseSpecReadLock(ss)               \
-    {                                             \
-        if (!ss->opt.noLocks)                     \
-            NSSRWLock_UnlockRead((ss)->specLock); \
-    }
-/* NSSRWLock_HaveReadLock is not exported so there's no
- * ssl_HaveSpecReadLock macro. */
+void ssl_GetSSL3HandshakeLock(sslSocket *ss);
+void ssl_ReleaseSSL3HandshakeLock(sslSocket *ss);
 
-#define ssl_GetSpecWriteLock(ss)                 \
-    {                                            \
-        if (!ss->opt.noLocks)                    \
-            NSSRWLock_LockWrite((ss)->specLock); \
-    }
-#define ssl_ReleaseSpecWriteLock(ss)               \
-    {                                              \
-        if (!ss->opt.noLocks)                      \
-            NSSRWLock_UnlockWrite((ss)->specLock); \
-    }
-#define ssl_HaveSpecWriteLock(ss) \
-    (NSSRWLock_HaveWriteLock((ss)->specLock))
+void ssl_GetSpecReadLock(sslSocket *ss);
+void ssl_ReleaseSpecReadLock(sslSocket *ss);
 
-/* recvBufLock -> ssl3HandshakeLock -> xmitBufLock */
-#define ssl_GetRecvBufLock(ss)                           \
-    {                                                    \
-        if (!ss->opt.noLocks) {                          \
-            PORT_Assert(!ssl_HaveSSL3HandshakeLock(ss)); \
-            PORT_Assert(!ssl_HaveXmitBufLock(ss));       \
-            PZ_EnterMonitor((ss)->recvBufLock);          \
-        }                                                \
-    }
-#define ssl_ReleaseRecvBufLock(ss)             \
-    {                                          \
-        if (!ss->opt.noLocks)                  \
-            PZ_ExitMonitor((ss)->recvBufLock); \
-    }
-#define ssl_HaveRecvBufLock(ss) \
-    (PZ_InMonitor((ss)->recvBufLock))
+void ssl_GetSpecWriteLock(sslSocket *ss);
+void ssl_ReleaseSpecWriteLock(sslSocket *ss);
 
-/* xmitBufLock -> specLock */
-#define ssl_GetXmitBufLock(ss)                  \
-    {                                           \
-        if (!ss->opt.noLocks)                   \
-            PZ_EnterMonitor((ss)->xmitBufLock); \
-    }
-#define ssl_ReleaseXmitBufLock(ss)             \
-    {                                          \
-        if (!ss->opt.noLocks)                  \
-            PZ_ExitMonitor((ss)->xmitBufLock); \
-    }
-#define ssl_HaveXmitBufLock(ss) \
-    (PZ_InMonitor((ss)->xmitBufLock))
+void ssl_GetRecvBufLock(sslSocket *ss);
+void ssl_ReleaseRecvBufLock(sslSocket *ss);
+
+void ssl_GetXmitBufLock(sslSocket *ss);
+void ssl_ReleaseXmitBufLock(sslSocket *ss);
 
 /* Placeholder value used in version ranges when SSL 3.0 and all
  * versions of TLS are disabled.
@@ -1687,20 +1640,28 @@ extern SECStatus ssl_ParseSignatureSchemes(const sslSocket *ss, PLArenaPool *are
                                            unsigned int *len);
 extern SECStatus ssl_ConsumeSignatureScheme(
     sslSocket *ss, PRUint8 **b, PRUint32 *length, SSLSignatureScheme *out);
-extern SECStatus ssl3_SignHashesWithPrivKey(SSL3Hashes *hash,
-                                            SECKEYPrivateKey *key,
-                                            SSLSignatureScheme scheme,
-                                            PRBool isTls,
-                                            SECItem *buf);
 extern SECStatus ssl3_SignHashes(sslSocket *ss, SSL3Hashes *hash,
                                  SECKEYPrivateKey *key, SECItem *buf);
-extern SECStatus ssl_VerifySignedHashesWithPubKey(sslSocket *ss,
-                                                  SECKEYPublicKey *spki,
-                                                  SSLSignatureScheme scheme,
-                                                  SSL3Hashes *hash,
-                                                  SECItem *buf);
 extern SECStatus ssl3_VerifySignedHashes(sslSocket *ss, SSLSignatureScheme scheme,
                                          SSL3Hashes *hash, SECItem *buf);
+/* new signature algorithms don't really have a 'sign hashes' interface,
+ * TLS13 now supports proper signing, where, if we are signing hashes, we
+ * will sign them with a proper hash-and-sign signature. Provide
+ * an API for those places in TLS13 where we need to sign. This leverages
+ * the work in secsign and secvfy, so we don't need to add a lot of
+ * algorithm specific code. Once the sign/verify interfaces work, we can
+ * just add the oid in tls13con.c and the ssl_sig_xxxx value and we are
+ * good to go */
+extern tlsSignOrVerifyContext tls_CreateSignOrVerifyContext(
+    SECKEYPrivateKey *privKey,
+    SECKEYPublicKey *pubKey,
+    SSLSignatureScheme scheme, sslSignOrVerify type,
+    SECItem *signature, void *pwArg);
+SECStatus tls_SignOrVerifyUpdate(tlsSignOrVerifyContext ctx,
+                                 const unsigned char *buf, int len);
+SECStatus tls_SignOrVerifyEnd(tlsSignOrVerifyContext ctx, SECItem *sig);
+void tls_DestroySignOrVerifyContext(tlsSignOrVerifyContext ctx);
+
 extern SECStatus ssl3_CacheWrappedSecret(sslSocket *ss, sslSessionID *sid,
                                          PK11SymKey *secret);
 extern void ssl3_FreeSniNameArray(TLSExtensionData *xtnData);
@@ -1893,6 +1854,9 @@ ssl3_TLSPRFWithMasterSecret(sslSocket *ss, ssl3CipherSpec *spec,
 
 extern void
 ssl3_RecordKeyLog(sslSocket *ss, const char *label, PK11SymKey *secret);
+
+extern void
+ssl3_WriteKeyLog(sslSocket *ss, const char *label, const SECItem *item);
 
 PRBool ssl_AlpnTagAllowed(const sslSocket *ss, const SECItem *tag);
 

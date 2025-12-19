@@ -13,9 +13,8 @@ async function openAndCheckMenu(menu, target) {
   await popupshown;
 
   is(menu.state, "open", `Menu panel (${menu.id}) is open.`);
-  is(
-    menu.getAttribute("touchmode"),
-    "true",
+  ok(
+    menu.hasAttribute("touchmode"),
     `Menu panel (${menu.id}) is in touchmode.`
   );
 
@@ -47,9 +46,8 @@ async function openAndCheckLazyMenu(id, target) {
   menu = ev.target;
 
   is(menu.state, "open", `Menu panel (${menu.id}) is open.`);
-  is(
-    menu.getAttribute("touchmode"),
-    "true",
+  ok(
+    menu.hasAttribute("touchmode"),
     `Menu panel (${menu.id}) is in touchmode.`
   );
 
@@ -83,11 +81,7 @@ async function openAndCheckCustomizationUIMenu(target) {
     is(menu.state, "open", `Menu for ${target.id} is open`);
   }
 
-  is(
-    menu.getAttribute("touchmode"),
-    "true",
-    `Menu for ${target.id} is in touchmode.`
-  );
+  ok(menu.hasAttribute("touchmode"), `Menu for ${target.id} is in touchmode.`);
 
   menu.hidePopup();
 
@@ -132,9 +126,9 @@ add_task(async function test_page_action_panel_touch() {
   await BrowserTestUtils.withNewTab("https://example.com", async function () {
     // The page actions button is not normally visible, so we must
     // unhide it.
-    BrowserPageActions.mainButtonNode.style.visibility = "visible";
+    BrowserPageActions.mainButtonNode.style.display = "flex";
     registerCleanupFunction(() => {
-      BrowserPageActions.mainButtonNode.style.removeProperty("visibility");
+      BrowserPageActions.mainButtonNode.style.removeProperty("display");
     });
     let target = document.getElementById("pageActionButton");
     await openAndCheckLazyMenu("pageActionPanel", target);

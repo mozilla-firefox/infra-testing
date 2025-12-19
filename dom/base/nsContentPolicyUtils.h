@@ -15,14 +15,13 @@
 #define __nsContentPolicyUtils_h__
 
 #include "mozilla/BasePrincipal.h"
-
+#include "mozilla/dom/nsCSPService.h"
 #include "nsContentUtils.h"
-#include "nsIContentPolicy.h"
 #include "nsIContent.h"
+#include "nsIContentPolicy.h"
 #include "nsIURI.h"
 #include "nsServiceManagerUtils.h"
 #include "nsStringFwd.h"
-#include "mozilla/dom/nsCSPService.h"
 
 // XXXtw sadly, this makes consumers of nsContentPolicyUtils depend on widget
 #include "mozilla/dom/Document.h"
@@ -96,7 +95,6 @@ inline const char* NS_CP_ContentTypeName(nsContentPolicyType contentType) {
     CASE_RETURN(TYPE_SUBDOCUMENT);
     CASE_RETURN(TYPE_PING);
     CASE_RETURN(TYPE_XMLHTTPREQUEST);
-    CASE_RETURN(TYPE_OBJECT_SUBREQUEST);
     CASE_RETURN(TYPE_DTD);
     CASE_RETURN(TYPE_FONT);
     CASE_RETURN(TYPE_MEDIA);

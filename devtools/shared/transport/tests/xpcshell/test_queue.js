@@ -24,7 +24,7 @@ function run_test() {
   run_next_test();
 }
 
-/** * Tests ***/
+/*** Tests ***/
 
 var test_transport = async function (transportFactory) {
   let clientResolve;
@@ -153,7 +153,7 @@ var test_transport = async function (transportFactory) {
   return Promise.all([clientDeferred, serverDeferred]);
 };
 
-/** * Test Utils ***/
+/*** Test Utils ***/
 
 function verify() {
   const reallyLong = really_long();
@@ -176,7 +176,8 @@ function verify() {
           input,
           reallyLong.length
         );
-        // Avoid do_check_eq here so we don't log the contents
+        // Avoid Assert.strictEqual here so we don't log the contents
+        // eslint-disable-next-line mozilla/no-comparison-or-assignment-inside-ok
         Assert.ok(outputData === reallyLong);
         input.close();
         resolve();

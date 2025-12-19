@@ -19,17 +19,16 @@ use crate::{
     error::RusqliteResultExt,
     fakespot,
     geoname::GeonameCache,
-    pocket::{split_keyword, KeywordConfidence},
     provider::{AmpMatchingStrategy, SuggestionProvider},
     query::{full_keywords_to_fts_content, FtsQuery},
     rs::{
         DownloadedAmoSuggestion, DownloadedAmpSuggestion, DownloadedDynamicRecord,
         DownloadedDynamicSuggestion, DownloadedFakespotSuggestion, DownloadedMdnSuggestion,
-        DownloadedPocketSuggestion, DownloadedWikipediaSuggestion, Record, SuggestRecordId,
+        DownloadedWikipediaSuggestion, Record, SuggestRecordId, SuggestRecordType,
     },
     schema::{clear_database, SuggestConnectionInitializer},
     suggestion::{cook_raw_suggestion_url, FtsMatchInfo, Suggestion},
-    util::full_keyword,
+    util::{full_keyword, i18n_transform, split_keyword},
     weather::WeatherCache,
     Result, SuggestionQuery,
 };
@@ -124,7 +123,7 @@ impl SuggestDb {
     /// if [Self::interrupt_handle::interrupt] is called after the operation starts.  Calling
     /// [Self::write] multiple times during the operation risks missing a call that happens after
     /// between those calls.
-    pub fn write_scope(&self) -> Result<WriteScope> {
+    pub fn write_scope(&self) -> Result<WriteScope<'_>> {
         Ok(WriteScope {
             conn: self.conn.lock(),
             scope: self.interrupt_handle.begin_interrupt_scope()?,
@@ -251,7 +250,7 @@ impl<'a> SuggestDao<'a> {
     pub fn suggestions_table_empty(&self) -> Result<bool> {
         Ok(self
             .conn
-            .query_one::<bool>("SELECT NOT EXISTS (SELECT 1 FROM suggestions)")?)
+            .conn_ext_query_one::<bool>("SELECT NOT EXISTS (SELECT 1 FROM suggestions)")?)
     }
 
     /// Fetches Suggestions of type Amp provider that match the given query
@@ -352,10 +351,13 @@ impl<'a> SuggestDao<'a> {
                         let raw_click_url = row.get::<_, String>("click_url")?;
                         let cooked_click_url = cook_raw_suggestion_url(&raw_click_url);
 
+                        let categories = self.fetch_categories_for_suggestion(suggestion_id)?;
+
                         Ok(Suggestion::Amp {
                             block_id: row.get("block_id")?,
                             advertiser: row.get("advertiser")?,
                             iab_category: row.get("iab_category")?,
+                            categories,
                             title,
                             url: cooked_url,
                             raw_url,
@@ -444,10 +446,13 @@ impl<'a> SuggestDao<'a> {
                             &title,
                         )?;
 
+                        let categories = self.fetch_categories_for_suggestion(suggestion_id)?;
+
                         Ok(Suggestion::Amp {
                             block_id: row.get("block_id")?,
                             advertiser: row.get("advertiser")?,
                             iab_category: row.get("iab_category")?,
+                            categories,
                             title,
                             url: cooked_url,
                             raw_url,
@@ -508,6 +513,30 @@ impl<'a> SuggestDao<'a> {
             prefix,
             stemming: fts_query.match_required_stemming(&fts_content),
         })
+    }
+
+    fn fetch_categories_for_suggestion(&self, suggestion_id: i64) -> Result<Vec<i32>> {
+        let mut category_stmt = self.conn.prepare(
+            r#"
+            SELECT category FROM serp_categories WHERE suggestion_id = :suggestion_id
+            "#,
+        )?;
+
+        let categories: Option<Vec<i32>> = category_stmt
+            .query_map(
+                named_params! {
+                    ":suggestion_id": suggestion_id
+                },
+                |row| {
+                    let category: Option<i32> = row.get(0)?;
+                    Ok(category)
+                },
+            )?
+            .collect::<std::result::Result<Vec<_>, _>>()?
+            .into_iter()
+            .collect();
+
+        Ok(categories.unwrap_or_default())
     }
 
     /// Fetches Suggestions of type Wikipedia provider that match the given query
@@ -681,79 +710,6 @@ impl<'a> SuggestDao<'a> {
             )?
             .into_iter()
             .flatten()
-            .collect();
-        Ok(suggestions)
-    }
-
-    /// Fetches Suggestions of type pocket provider that match the given query
-    pub fn fetch_pocket_suggestions(&self, query: &SuggestionQuery) -> Result<Vec<Suggestion>> {
-        let keyword_lowercased = &query.keyword.to_lowercase();
-        let (keyword_prefix, keyword_suffix) = split_keyword(keyword_lowercased);
-        let suggestions = self
-            .conn
-            .query_rows_and_then_cached(
-                r#"
-            SELECT
-              s.id,
-              MAX(k.rank) AS rank,
-              s.title,
-              s.url,
-              s.provider,
-              s.score,
-              k.confidence,
-              k.keyword_suffix
-            FROM
-              suggestions s
-            JOIN
-              prefix_keywords k
-              ON k.suggestion_id = s.id
-            WHERE
-              k.keyword_prefix = :keyword_prefix
-              AND (k.keyword_suffix BETWEEN :keyword_suffix AND :keyword_suffix || x'FFFF')
-              AND s.provider = :provider
-              AND NOT EXISTS (SELECT 1 FROM dismissed_suggestions WHERE url=s.url)
-            GROUP BY
-              s.id,
-              k.confidence
-            ORDER BY
-              s.score DESC,
-              rank DESC
-            "#,
-                named_params! {
-                    ":keyword_prefix": keyword_prefix,
-                    ":keyword_suffix": keyword_suffix,
-                    ":provider": SuggestionProvider::Pocket,
-                },
-                |row| -> Result<Option<Suggestion>> {
-                    let title = row.get("title")?;
-                    let raw_url = row.get::<_, String>("url")?;
-                    let score = row.get::<_, f64>("score")?;
-                    let confidence = row.get("confidence")?;
-                    let full_suffix = row.get::<_, String>("keyword_suffix")?;
-                    let suffixes_match = match confidence {
-                        KeywordConfidence::Low => full_suffix.starts_with(keyword_suffix),
-                        KeywordConfidence::High => full_suffix == keyword_suffix,
-                    };
-                    if suffixes_match {
-                        Ok(Some(Suggestion::Pocket {
-                            title,
-                            url: raw_url,
-                            score,
-                            is_top_pick: matches!(confidence, KeywordConfidence::High),
-                        }))
-                    } else {
-                        Ok(None)
-                    }
-                },
-            )?
-            .into_iter()
-            .flatten()
-            .take(
-                query
-                    .limit
-                    .and_then(|limit| usize::try_from(limit).ok())
-                    .unwrap_or(usize::MAX),
-            )
             .collect();
         Ok(suggestions)
     }
@@ -949,7 +905,10 @@ impl<'a> SuggestDao<'a> {
                   s.provider = ?
                   AND k.keyword = ?
                   AND d.suggestion_type IN ({})
-                  AND NOT EXISTS (SELECT 1 FROM dismissed_suggestions WHERE url = s.url)
+                  AND NOT EXISTS (
+                    SELECT 1 FROM dismissed_dynamic_suggestions
+                    WHERE dismissal_key = s.url AND suggestion_type = d.suggestion_type
+                  )
                 ORDER BY
                   s.score ASC, d.suggestion_type ASC, s.id ASC
                 "#,
@@ -1050,6 +1009,7 @@ impl<'a> SuggestDao<'a> {
         let mut amp_insert = AmpInsertStatement::new(self.conn)?;
         let mut keyword_insert = KeywordInsertStatement::new(self.conn)?;
         let mut fts_insert = AmpFtsInsertStatement::new(self.conn)?;
+        let mut category_insert = CategoryInsertStatement::new(self.conn)?;
         for suggestion in suggestions {
             self.scope.err_if_interrupted()?;
             let suggestion_id = suggestion_insert.execute(
@@ -1081,6 +1041,12 @@ impl<'a> SuggestDao<'a> {
                     keyword.rank,
                 )?;
             }
+
+            if let Some(categories) = &suggestion.serp_categories {
+                for category in categories {
+                    category_insert.execute(suggestion_id, *category)?;
+                }
+            }
         }
         Ok(())
     }
@@ -1109,50 +1075,6 @@ impl<'a> SuggestDao<'a> {
             for keyword in suggestion.keywords() {
                 // Don't update `full_keywords`, see bug 1876217.
                 keyword_insert.execute(suggestion_id, keyword.keyword, None, keyword.rank)?;
-            }
-        }
-        Ok(())
-    }
-
-    /// Inserts all suggestions from a downloaded Pocket attachment into
-    /// the database.
-    pub fn insert_pocket_suggestions(
-        &mut self,
-        record_id: &SuggestRecordId,
-        suggestions: &[DownloadedPocketSuggestion],
-    ) -> Result<()> {
-        let mut suggestion_insert = SuggestionInsertStatement::new(self.conn)?;
-        let mut prefix_keyword_insert = PrefixKeywordInsertStatement::new(self.conn)?;
-        for suggestion in suggestions {
-            self.scope.err_if_interrupted()?;
-            let suggestion_id = suggestion_insert.execute(
-                record_id,
-                &suggestion.title,
-                &suggestion.url,
-                suggestion.score,
-                SuggestionProvider::Pocket,
-            )?;
-            for ((rank, keyword), confidence) in suggestion
-                .high_confidence_keywords
-                .iter()
-                .enumerate()
-                .zip(std::iter::repeat(KeywordConfidence::High))
-                .chain(
-                    suggestion
-                        .low_confidence_keywords
-                        .iter()
-                        .enumerate()
-                        .zip(std::iter::repeat(KeywordConfidence::Low)),
-                )
-            {
-                let (keyword_prefix, keyword_suffix) = split_keyword(keyword);
-                prefix_keyword_insert.execute(
-                    suggestion_id,
-                    Some(confidence as u8),
-                    keyword_prefix,
-                    keyword_suffix,
-                    rank,
-                )?;
             }
         }
         Ok(())
@@ -1223,7 +1145,11 @@ impl<'a> SuggestDao<'a> {
         // `suggestion.keywords()` can yield duplicates for dynamic
         // suggestions, so ignore failures on insert in the uniqueness
         // constraint on `(suggestion_id, keyword)`.
-        let mut keyword_insert = KeywordInsertStatement::new_with_or_ignore(self.conn)?;
+        let mut keyword_insert = KeywordInsertStatement::with_details(
+            self.conn,
+            "keywords",
+            Some(InsertConflictResolution::Ignore),
+        )?;
         let mut suggestion_insert = SuggestionInsertStatement::new(self.conn)?;
         let mut dynamic_insert = DynamicInsertStatement::new(self.conn)?;
         for suggestion in suggestions {
@@ -1282,8 +1208,23 @@ impl<'a> SuggestDao<'a> {
         Ok(())
     }
 
+    pub fn insert_dynamic_dismissal(&self, suggestion_type: &str, key: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT OR IGNORE INTO dismissed_dynamic_suggestions(suggestion_type, dismissal_key)
+             VALUES(:suggestion_type, :dismissal_key)",
+            named_params! {
+                ":suggestion_type": suggestion_type,
+                ":dismissal_key": key,
+            },
+        )?;
+        Ok(())
+    }
+
     pub fn clear_dismissals(&self) -> Result<()> {
-        self.conn.execute("DELETE FROM dismissed_suggestions", ())?;
+        self.conn.execute_batch(
+            "DELETE FROM dismissed_suggestions;
+             DELETE FROM dismissed_dynamic_suggestions;",
+        )?;
         Ok(())
     }
 
@@ -1296,10 +1237,27 @@ impl<'a> SuggestDao<'a> {
         )?)
     }
 
+    pub fn has_dynamic_dismissal(&self, suggestion_type: &str, key: &str) -> Result<bool> {
+        Ok(self.conn.exists(
+            "SELECT 1
+             FROM dismissed_dynamic_suggestions
+             WHERE suggestion_type = :suggestion_type AND dismissal_key = :dismissal_key",
+            named_params! {
+                ":suggestion_type": suggestion_type,
+                ":dismissal_key": key,
+            },
+        )?)
+    }
+
     pub fn any_dismissals(&self) -> Result<bool> {
-        Ok(self
-            .conn
-            .exists("SELECT 1 FROM dismissed_suggestions LIMIT 1", ())?)
+        Ok(self.conn.query_row(
+            "SELECT
+             EXISTS(SELECT 1 FROM dismissed_suggestions)
+               OR
+             EXISTS(SELECT 1 FROM dismissed_dynamic_suggestions)",
+            (),
+            |row| row.get(0),
+        )?)
     }
 
     /// Deletes all suggestions associated with a Remote Settings record from
@@ -1314,6 +1272,11 @@ impl<'a> SuggestDao<'a> {
         self.scope.err_if_interrupted()?;
         self.conn.execute_cached(
             "DELETE FROM keywords WHERE suggestion_id IN (SELECT id from suggestions WHERE record_id = :record_id)",
+            named_params! { ":record_id": record_id.as_str() },
+        )?;
+        self.scope.err_if_interrupted()?;
+        self.conn.execute_cached(
+            "DELETE FROM keywords_i18n WHERE suggestion_id IN (SELECT id from suggestions WHERE record_id = :record_id)",
             named_params! { ":record_id": record_id.as_str() },
         )?;
         self.scope.err_if_interrupted()?;
@@ -1366,7 +1329,17 @@ impl<'a> SuggestDao<'a> {
         )?;
         self.scope.err_if_interrupted()?;
         self.conn.execute_cached(
+            "DELETE FROM geonames_alternates WHERE record_id = :record_id",
+            named_params! { ":record_id": record_id.as_str() },
+        )?;
+        self.scope.err_if_interrupted()?;
+        self.conn.execute_cached(
             "DELETE FROM geonames_metrics WHERE record_id = :record_id",
+            named_params! { ":record_id": record_id.as_str() },
+        )?;
+        self.scope.err_if_interrupted()?;
+        self.conn.execute_cached(
+            "DELETE FROM serp_categories WHERE suggestion_id IN (SELECT id from suggestions WHERE record_id = :record_id)",
             named_params! { ":record_id": record_id.as_str() },
         )?;
 
@@ -1446,6 +1419,32 @@ impl<'a> SuggestDao<'a> {
         self.get_meta::<String>(&provider_config_meta_key(provider))?
             .map_or_else(|| Ok(None), |json| Ok(serde_json::from_str(&json)?))
     }
+
+    /// Gets keywords metrics for a record type.
+    pub fn get_keywords_metrics(&self, record_type: SuggestRecordType) -> Result<KeywordsMetrics> {
+        let data = self.conn.try_query_row(
+            r#"
+            SELECT
+                max(max_len) AS len,
+                max(max_word_count) AS word_count
+            FROM
+                keywords_metrics
+            WHERE
+                record_type = :record_type
+            "#,
+            named_params! {
+                ":record_type": record_type,
+            },
+            |row| -> Result<(usize, usize)> { Ok((row.get("len")?, row.get("word_count")?)) },
+            true, // cache
+        )?;
+        Ok(data
+            .map(|(max_len, max_word_count)| KeywordsMetrics {
+                max_len,
+                max_word_count,
+            })
+            .unwrap_or_default())
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -1524,7 +1523,7 @@ impl<'a> FullKeywordInserter<'a> {
 //
 // This pattern is applicable for whenever we execute the same query repeatedly in a loop.
 // The impact scales with the number of loop iterations, which is why we currently don't do this
-// for providers like Mdn, Pocket, and Weather, which have relatively small number of records
+// for providers like Mdn and Weather, which have relatively small number of records
 // compared to Amp/Wikipedia.
 
 pub(crate) struct SuggestionInsertStatement<'conn>(rusqlite::Statement<'conn>);
@@ -1762,29 +1761,27 @@ pub(crate) struct KeywordInsertStatement<'conn>(rusqlite::Statement<'conn>);
 
 impl<'conn> KeywordInsertStatement<'conn> {
     pub(crate) fn new(conn: &'conn Connection) -> Result<Self> {
-        Ok(Self(conn.prepare(
-            "INSERT INTO keywords(
-                 suggestion_id,
-                 keyword,
-                 full_keyword_id,
-                 rank
-             )
-             VALUES(?, ?, ?, ?)
-             ",
-        )?))
+        Self::with_details(conn, "keywords", None)
     }
 
-    pub(crate) fn new_with_or_ignore(conn: &'conn Connection) -> Result<Self> {
-        Ok(Self(conn.prepare(
-            "INSERT OR IGNORE INTO keywords(
-                 suggestion_id,
-                 keyword,
-                 full_keyword_id,
-                 rank
-             )
-             VALUES(?, ?, ?, ?)
-             ",
-        )?))
+    pub(crate) fn with_details(
+        conn: &'conn Connection,
+        table: &str,
+        conflict_resolution: Option<InsertConflictResolution>,
+    ) -> Result<Self> {
+        Ok(Self(conn.prepare(&format!(
+            r#"
+            INSERT {} INTO {}(
+                suggestion_id,
+                keyword,
+                full_keyword_id,
+                rank
+            )
+            VALUES(?, ?, ?, ?)
+            "#,
+            conflict_resolution.as_ref().map(|r| r.as_str()).unwrap_or_default(),
+            table,
+        ))?))
     }
 
     pub(crate) fn execute(
@@ -1798,6 +1795,51 @@ impl<'conn> KeywordInsertStatement<'conn> {
             .execute((suggestion_id, keyword, full_keyword_id, rank))
             .with_context("keyword insert")?;
         Ok(())
+    }
+}
+
+pub(crate) struct CategoryInsertStatement<'conn>(rusqlite::Statement<'conn>);
+
+impl<'conn> CategoryInsertStatement<'conn> {
+    pub(crate) fn new(conn: &'conn Connection) -> Result<Self> {
+        Self::with_details(conn, "serp_categories", None)
+    }
+
+    pub(crate) fn with_details(
+        conn: &'conn Connection,
+        table: &str,
+        conflict_resolution: Option<InsertConflictResolution>,
+    ) -> Result<Self> {
+        Ok(Self(conn.prepare(&format!(
+            r#"
+            INSERT OR REPLACE {} INTO {}(
+                suggestion_id,
+                category
+            )
+            VALUES(?, ?)
+            "#,
+            conflict_resolution.as_ref().map(|r| r.as_str()).unwrap_or_default(),
+            table,
+        ))?))
+    }
+
+    pub(crate) fn execute(&mut self, suggestion_id: i64, category: i32) -> Result<()> {
+        self.0
+            .execute((suggestion_id, category))
+            .with_context("category insert")?;
+        Ok(())
+    }
+}
+
+pub(crate) enum InsertConflictResolution {
+    Ignore,
+}
+
+impl InsertConflictResolution {
+    fn as_str(&self) -> &str {
+        match self {
+            InsertConflictResolution::Ignore => "OR IGNORE",
+        }
     }
 }
 
@@ -1839,32 +1881,91 @@ impl<'conn> PrefixKeywordInsertStatement<'conn> {
     }
 }
 
-pub(crate) struct KeywordMetricsInsertStatement<'conn>(rusqlite::Statement<'conn>);
+/// Metrics for a set of keywords. Use `KeywordsMetricsUpdater` to write metrics
+/// to the store and `SuggestDao::get_keywords_metrics` to read them.
+#[derive(Debug, Default, Eq, PartialEq)]
+pub(crate) struct KeywordsMetrics {
+    /// The max byte count (not chars) of all keywords in the set.
+    pub(crate) max_len: usize,
+    /// The max word count of all keywords in the set.
+    pub(crate) max_word_count: usize,
+}
 
-impl<'conn> KeywordMetricsInsertStatement<'conn> {
-    pub(crate) fn new(conn: &'conn Connection) -> Result<Self> {
-        Ok(Self(conn.prepare(
-            "INSERT INTO keywords_metrics(
-                 record_id,
-                 provider,
-                 max_length,
-                 max_word_count
-             )
-             VALUES(?, ?, ?, ?)
-             ",
-        )?))
+/// This can be used to keep a running tally of metrics as you process keywords
+/// and then to write the metrics to the store. Make a `KeywordsMetricsUpdater`,
+/// call `update` on it as you process each keyword, and then call `finish` to
+/// write the metrics to the store.
+pub(crate) struct KeywordsMetricsUpdater {
+    metrics: KeywordsMetrics,
+}
+
+impl KeywordsMetricsUpdater {
+    pub(crate) fn new() -> Self {
+        Self {
+            metrics: KeywordsMetrics::default(),
+        }
     }
 
-    pub(crate) fn execute(
-        &mut self,
+    /// Updates the metrics with those of the given keyword.
+    ///
+    /// The keyword's metrics are calculated as the max of its metrics as-is and
+    /// its metrics when it's transformed using `i18n_transform`. For example,
+    /// `"Qu\u{00e9}bec"` ("Québec" with single two-byte 'é' char) has 7 bytes,
+    /// so its `len` is 7, but the `len` of `i18n_transform("Qu\u{00e9}bec")` is
+    /// 6, since the 'é' is transformed to an ASCII 'e'. The keyword's `max_len`
+    /// will therefore be the max of 7 and 6, which is 7.
+    pub(crate) fn update(&mut self, keyword: &str) {
+        let transformed_kw = i18n_transform(keyword);
+        self.metrics.max_len = std::cmp::max(
+            self.metrics.max_len,
+            std::cmp::max(transformed_kw.len(), keyword.len()),
+        );
+
+        // Getting the word count is costly, so we get only the transformed word
+        // count under the assumption that it will always be at least as large
+        // as the the original word count. That's currently true because the
+        // only relevant transform that `i18n_transform` performs is to replace
+        // hyphens with spaces.
+        self.metrics.max_word_count = std::cmp::max(
+            self.metrics.max_word_count,
+            transformed_kw.split_whitespace().count(),
+        );
+    }
+
+    /// Inserts keywords metrics into the database. This assumes you have a
+    /// cache object inside the `cache` cell that caches the metrics. It will be
+    /// cleared since it will be invalidated by the metrics update.
+    pub(crate) fn finish<T>(
+        &self,
+        conn: &Connection,
         record_id: &SuggestRecordId,
-        provider: SuggestionProvider,
-        max_len: usize,
-        max_word_count: usize,
+        record_type: SuggestRecordType,
+        cache: &mut OnceCell<T>,
     ) -> Result<()> {
-        self.0
-            .execute((record_id.as_str(), provider, max_len, max_word_count))
-            .with_context("keyword metrics insert")?;
+        let mut insert_stmt = conn.prepare(
+            r#"
+            INSERT OR REPLACE INTO keywords_metrics(
+                record_id,
+                record_type,
+                max_len,
+                max_word_count
+            )
+            VALUES(?, ?, ?, ?)
+            "#,
+        )?;
+        insert_stmt
+            .execute((
+                record_id.as_str(),
+                record_type,
+                self.metrics.max_len,
+                self.metrics.max_word_count,
+            ))
+            .with_context("keywords metrics insert")?;
+
+        // We just made some insertions that might invalidate the data in the
+        // cache. Clear it so it's repopulated the next time it's accessed.
+        cache.take();
+
         Ok(())
     }
 }
@@ -1895,4 +1996,309 @@ impl<'conn> AmpFtsInsertStatement<'conn> {
 
 fn provider_config_meta_key(provider: SuggestionProvider) -> String {
     format!("{}{}", PROVIDER_CONFIG_META_KEY_PREFIX, provider as u8)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{store::tests::TestStore, testing::*, SuggestIngestionConstraints};
+
+    #[test]
+    fn keywords_metrics_updater() -> anyhow::Result<()> {
+        // (test keyword, expected `KeywordsMetrics`)
+        //
+        // Tests are cumulative!
+        let tests = [
+            (
+                "abc",
+                KeywordsMetrics {
+                    max_len: 3,
+                    max_word_count: 1,
+                },
+            ),
+            (
+                "a b",
+                KeywordsMetrics {
+                    max_len: 3,
+                    max_word_count: 2,
+                },
+            ),
+            (
+                "a b c",
+                KeywordsMetrics {
+                    max_len: 5,
+                    max_word_count: 3,
+                },
+            ),
+            // "Québec" with single 'é' char:
+            // With `i18n_transform`: len = 6
+            // Without `i18n_transform`: len = 7
+            // => Length for this string should be max(6, 7) = 7, which is a new
+            //    overall max
+            (
+                "Qu\u{00e9}bec",
+                KeywordsMetrics {
+                    max_len: 7,
+                    max_word_count: 3,
+                },
+            ),
+            // "Québec" with ASCII 'e' followed by combining acute accent:
+            // With `i18n_transform`, len = 6
+            // Without `i18n_transform`, len = 8
+            // => Length for this string should be max(6, 8) = 8, which is a new
+            //    overall max
+            (
+                "Que\u{0301}bec",
+                KeywordsMetrics {
+                    max_len: 8,
+                    max_word_count: 3,
+                },
+            ),
+            // Each '-' should be replaced with a space, so the word count for
+            // this string should be 4, which is a new overall max
+            (
+                "Carmel-by-the-Sea",
+                KeywordsMetrics {
+                    max_len: 17,
+                    max_word_count: 4,
+                },
+            ),
+        ];
+
+        // Make an updater and call it with each test in turn.
+        let mut updater = KeywordsMetricsUpdater::new();
+        for (test_kw, expected_metrics) in &tests {
+            updater.update(test_kw);
+            assert_eq!(&updater.metrics, expected_metrics);
+        }
+
+        // Make a store and finish the updater so it updates the metrics table.
+        let store = TestStore::new(MockRemoteSettingsClient::default());
+        store.write(|dao| {
+            // Make a dummy cache cell. It doesn't matter what it contains, we
+            // just want to make sure it's empty after finishing the updater.
+            let mut dummy_cache = OnceCell::new();
+            dummy_cache.set("test").expect("dummy cache set");
+            assert_ne!(dummy_cache.get(), None);
+
+            let record_type = SuggestRecordType::Wikipedia;
+            updater.finish(
+                dao.conn,
+                &SuggestRecordId::new("test-record-1".to_string()),
+                record_type,
+                &mut dummy_cache,
+            )?;
+
+            assert_eq!(dummy_cache.get(), None);
+
+            // Read back the metrics and make sure they match the ones in the
+            // final test.
+            let read_metrics_1 = dao.get_keywords_metrics(record_type)?;
+            assert_eq!(read_metrics_1, tests.last().unwrap().1);
+
+            // Update the metrics one more time and finish them again.
+            updater.update("a very long keyword with many words");
+            let new_expected = KeywordsMetrics {
+                max_len: 35,
+                max_word_count: 7,
+            };
+            assert_eq!(updater.metrics, new_expected);
+
+            updater.finish(
+                dao.conn,
+                &SuggestRecordId::new("test-record-2".to_string()),
+                record_type,
+                &mut dummy_cache,
+            )?;
+
+            // Read back the new metrics and make sure they match.
+            let read_metrics_2 = dao.get_keywords_metrics(record_type)?;
+            assert_eq!(read_metrics_2, new_expected);
+
+            Ok(())
+        })?;
+
+        Ok(())
+    }
+
+    // Keywords in `keywords_i18n` should be dropped when their records are
+    // deleted.
+    #[test]
+    fn keywords_i18n_delete_record() -> anyhow::Result<()> {
+        // Add some records whose keywords are stored in `keywords_i18n`. We'll
+        // use weather records.
+        let kws_1 = ["aaa", "bbb", "ccc"];
+        let kws_2 = ["yyy", "zzz"];
+        let mut store = TestStore::new(
+            MockRemoteSettingsClient::default()
+                .with_record(SuggestionProvider::Weather.record(
+                    "weather-1",
+                    json!({
+                        "score": 0.24,
+                        "keywords": kws_1,
+                    }),
+                ))
+                .with_record(SuggestionProvider::Weather.record(
+                    "weather-2",
+                    json!({
+                        "score": 0.24,
+                        "keywords": kws_2,
+                    }),
+                )),
+        );
+        store.ingest(SuggestIngestionConstraints {
+            providers: Some(vec![SuggestionProvider::Weather]),
+            ..SuggestIngestionConstraints::all_providers()
+        });
+
+        // Make sure all keywords are present.
+        assert_eq!(
+            store.count_rows("keywords_i18n") as usize,
+            kws_1.len() + kws_2.len()
+        );
+
+        for q in kws_1.iter().chain(kws_2.iter()) {
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::weather(q)),
+                vec![Suggestion::Weather {
+                    score: 0.24,
+                    city: None,
+                }],
+                "query: {:?}",
+                q
+            );
+        }
+
+        // Delete the first record.
+        store
+            .client_mut()
+            .delete_record(SuggestionProvider::Weather.empty_record("weather-1"));
+        store.ingest(SuggestIngestionConstraints {
+            providers: Some(vec![SuggestionProvider::Weather]),
+            ..SuggestIngestionConstraints::all_providers()
+        });
+
+        // Its keywords should be dropped and the keywords from the second
+        // record should still be present.
+        assert_eq!(store.count_rows("keywords_i18n") as usize, kws_2.len());
+
+        for q in kws_1 {
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::weather(q)),
+                vec![],
+                "query: {:?}",
+                q
+            );
+        }
+        for q in kws_2 {
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::weather(q)),
+                vec![Suggestion::Weather {
+                    score: 0.24,
+                    city: None,
+                }],
+                "query: {:?}",
+                q
+            );
+        }
+
+        Ok(())
+    }
+
+    // Keywords in `keywords_i18n` should be dropped when their records are
+    // updated and the keywords are no longer present, and new keywords should
+    // be added.
+    #[test]
+    fn keywords_i18n_update_record() -> anyhow::Result<()> {
+        // Add some records whose keywords are stored in `keywords_i18n`. We'll
+        // use weather records.
+        let kws_1 = ["aaa", "bbb", "ccc"];
+        let kws_2 = ["yyy", "zzz"];
+        let mut store = TestStore::new(
+            MockRemoteSettingsClient::default()
+                .with_record(SuggestionProvider::Weather.record(
+                    "weather-1",
+                    json!({
+                        "score": 0.24,
+                        "keywords": kws_1,
+                    }),
+                ))
+                .with_record(SuggestionProvider::Weather.record(
+                    "weather-2",
+                    json!({
+                        "score": 0.24,
+                        "keywords": kws_2,
+                    }),
+                )),
+        );
+        store.ingest(SuggestIngestionConstraints {
+            providers: Some(vec![SuggestionProvider::Weather]),
+            ..SuggestIngestionConstraints::all_providers()
+        });
+
+        // Make sure all keywords are present.
+        assert_eq!(
+            store.count_rows("keywords_i18n") as usize,
+            kws_1.len() + kws_2.len()
+        );
+
+        for q in kws_1.iter().chain(kws_2.iter()) {
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::weather(q)),
+                vec![Suggestion::Weather {
+                    score: 0.24,
+                    city: None,
+                }],
+                "query: {:?}",
+                q
+            );
+        }
+
+        // Update the first record.
+        let kws_1_new = [
+            "bbb", // keyword from the old record
+            "mmm", // new keyword
+        ];
+        store
+            .client_mut()
+            .update_record(SuggestionProvider::Weather.record(
+                "weather-1",
+                json!({
+                    "score": 0.24,
+                    "keywords": kws_1_new,
+                }),
+            ));
+        store.ingest(SuggestIngestionConstraints {
+            providers: Some(vec![SuggestionProvider::Weather]),
+            ..SuggestIngestionConstraints::all_providers()
+        });
+
+        // Check all keywords.
+        assert_eq!(
+            store.count_rows("keywords_i18n") as usize,
+            kws_1_new.len() + kws_2.len()
+        );
+
+        for q in ["aaa", "ccc"] {
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::weather(q)),
+                vec![],
+                "query: {:?}",
+                q
+            );
+        }
+        for q in kws_1_new.iter().chain(kws_2.iter()) {
+            assert_eq!(
+                store.fetch_suggestions(SuggestionQuery::weather(q)),
+                vec![Suggestion::Weather {
+                    score: 0.24,
+                    city: None,
+                }],
+                "query: {:?}",
+                q
+            );
+        }
+
+        Ok(())
+    }
 }

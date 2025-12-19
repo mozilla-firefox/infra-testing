@@ -36,6 +36,7 @@
 #  include <stdio.h>
 #endif
 
+class FontVisibilityProvider;
 class gfxContext;
 class gfxFontGroup;
 class nsAtom;
@@ -154,14 +155,18 @@ class gfxTextRun : public gfxShapedText {
   // Describe range [start, end) of a text run. The range is
   // restricted to grapheme cluster boundaries.
   struct Range {
-    uint32_t start;
-    uint32_t end;
+    uint32_t start = 0;
+    uint32_t end = 0;
     uint32_t Length() const { return end - start; }
 
-    Range() : start(0), end(0) {}
+    Range() = default;
     Range(uint32_t aStart, uint32_t aEnd) : start(aStart), end(aEnd) {}
     explicit Range(const gfxTextRun* aTextRun)
-        : start(0), end(aTextRun->GetLength()) {}
+        : Range(0, aTextRun->GetLength()) {}
+
+    bool Intersects(const Range& aOther) const {
+      return start < aOther.end && end > aOther.start;
+    }
   };
 
   // All coordinates are in layout/app units
@@ -237,8 +242,10 @@ class gfxTextRun : public gfxShapedText {
      * inside clusters. In other words, if character i is not
      * CLUSTER_START, then character i-1 must have zero after-spacing and
      * character i must have zero before-spacing.
+     * Returns true if there is (or may be) any custom spacing; false if we
+     * are sure that aSpacing contains only zero values.
      */
-    virtual void GetSpacing(Range aRange, Spacing* aSpacing) const = 0;
+    virtual bool GetSpacing(Range aRange, Spacing* aSpacing) const = 0;
 
     // Returns a gfxContext that can be used to measure the hyphen glyph.
     // Only called if the hyphen width is requested.
@@ -545,6 +552,7 @@ class gfxTextRun : public gfxShapedText {
       case Script::KATAKANA_OR_HIRAGANA:
       case Script::SIMPLIFIED_HAN:
       case Script::TRADITIONAL_HAN:
+      case Script::TRADITIONAL_HAN_WITH_LATIN:
       case Script::JAPANESE:
       case Script::KOREAN:
       case Script::HAN_WITH_BOPOMOFO:
@@ -910,7 +918,7 @@ class gfxFontGroup final : public gfxTextRunFactory {
   static void
   Shutdown();  // platform must call this to release the languageAtomService
 
-  gfxFontGroup(nsPresContext* aPresContext,
+  gfxFontGroup(FontVisibilityProvider* aFontVisibilityProvider,
                const mozilla::StyleFontFamilyList& aFontFamilyList,
                const gfxFontStyle* aStyle, nsAtom* aLanguage,
                bool aExplicitLanguage, gfxTextPerfMetrics* aTextPerf,
@@ -945,7 +953,9 @@ class gfxFontGroup final : public gfxTextRunFactory {
 
   // Get the presContext for which this fontGroup was constructed. This may be
   // null! (In the case of canvas not connected to a document.)
-  nsPresContext* GetPresContext() const { return mPresContext; }
+  FontVisibilityProvider* GetFontVisibilityProvider() const {
+    return mFontVisibilityProvider;
+  }
 
   /**
    * The listed characters should be treated as invisible and zero-width
@@ -1352,7 +1362,7 @@ class gfxFontGroup final : public gfxTextRunFactory {
     bool mHasFontEntry : 1;
   };
 
-  nsPresContext* mPresContext = nullptr;
+  FontVisibilityProvider* mFontVisibilityProvider = nullptr;
 
   // List of font families, either named or generic.
   // Generic names map to system pref fonts based on language.
@@ -1368,13 +1378,13 @@ class gfxFontGroup final : public gfxTextRunFactory {
 
   RefPtr<nsAtom> mLanguage;
 
-  gfxFloat mUnderlineOffset;
-  gfxFloat mHyphenWidth;
+  gfxFloat mUnderlineOffset = UNDERLINE_OFFSET_NOT_SET;
+  gfxFloat mHyphenWidth = -1.0;  // negative indicates not yet measured
   gfxFloat mDevToCssSize;
 
   RefPtr<gfxUserFontSet> mUserFontSet;
-  uint64_t mCurrGeneration;  // track the current user font set generation,
-                             // rebuild font list if needed
+  uint64_t mCurrGeneration = 0;  // track the current user font set generation,
+                                 // rebuild font list if needed
 
   gfxTextPerfMetrics* mTextPerf;
 
@@ -1385,20 +1395,21 @@ class gfxFontGroup final : public gfxTextRunFactory {
   // cache the most recent pref font to avoid general pref font lookup
   FontFamily mLastPrefFamily;
   RefPtr<gfxFont> mLastPrefFont;
-  eFontPrefLang mLastPrefLang;  // lang group for last pref font
+  eFontPrefLang mLastPrefLang = eFontPrefLang_Western;  // lang group for last
+                                                        // pref font
   eFontPrefLang mPageLang;
   bool mLastPrefFirstFont;  // is this the first font in the list of pref fonts
                             // for this lang group?
 
-  bool mSkipDrawing;  // hide text while waiting for a font
-                      // download to complete (or fallback
-                      // timer to fire)
+  bool mSkipDrawing = false;  // hide text while waiting for a font
+                              // download to complete (or fallback
+                              // timer to fire)
 
-  bool mExplicitLanguage;  // Does mLanguage come from an explicit attribute?
+  bool mExplicitLanguage = false;  // Is mLanguage from an explicit attribute?
 
   bool mResolvedFonts = false;  // Whether the mFonts array has been set up.
 
-  FontPresentation mEmojiPresentation = FontPresentation::Any;
+  StyleFontVariantEmoji mFontVariantEmoji = StyleFontVariantEmoji::Normal;
 
   // Generic font family used to select among font prefs during fallback.
   mozilla::StyleGenericFontFamily mFallbackGeneric =

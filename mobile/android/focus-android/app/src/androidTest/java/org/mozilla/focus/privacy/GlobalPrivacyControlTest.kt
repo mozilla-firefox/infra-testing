@@ -27,7 +27,7 @@ class GlobalPrivacyControlTest : TestSetup() {
 
     private val featureSettingsHelper = FeatureSettingsHelper()
 
-    @get: Rule
+    @get:Rule
     val mActivityTestRule = MainActivityFirstrunTestRule(showFirstRun = false)
 
     @Before
@@ -52,7 +52,7 @@ class GlobalPrivacyControlTest : TestSetup() {
 
     @Test
     fun gpcTest() {
-        val storageStartUrl = getStorageTestAsset(webServer, "global_privacy_control.html").url
+        val storageStartUrl = webServer.getStorageTestAsset("global_privacy_control.html").url
 
         searchScreen {
         }.loadPage(storageStartUrl) {

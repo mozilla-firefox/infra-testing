@@ -9,6 +9,14 @@ const PRIVATE_BROWSING_PERM_NAME = "internal:privateBrowsingAllowed";
 const PRIVATE_BROWSING_PERMS = {
   permissions: [PRIVATE_BROWSING_PERM_NAME],
   origins: [],
+  data_collection: [],
+};
+
+const TECHNICAL_AND_INTERACTION_DATA_PERM_NAME = "technicalAndInteraction";
+const TECHNICAL_AND_INTERACTION_DATA_PERMS = {
+  permissions: [],
+  origins: [],
+  data_collection: [TECHNICAL_AND_INTERACTION_DATA_PERM_NAME],
 };
 
 const lazy = {};
@@ -378,13 +386,19 @@ async function exportExtension(aAddon, aSourceURI) {
 
   const requiredPermissions = aAddon.userPermissions?.permissions ?? [];
   const requiredOrigins = aAddon.userPermissions?.origins ?? [];
+  const requiredDataCollectionPermissions =
+    aAddon.userPermissions?.data_collection ?? [];
   const optionalPermissions = aAddon.optionalPermissions?.permissions ?? [];
   const optionalOrigins = aAddon.optionalOriginsNormalized;
+  const optionalDataCollectionPermissions =
+    aAddon.optionalPermissions?.data_collection ?? [];
   const grantedPermissions = normalizePermissions(
     await lazy.ExtensionPermissions.get(id)
   );
   const grantedOptionalPermissions = grantedPermissions?.permissions ?? [];
   const grantedOptionalOrigins = grantedPermissions?.origins ?? [];
+  const grantedOptionalDataCollectionPermissions =
+    grantedPermissions?.data_collection ?? [];
 
   return {
     webExtensionId: id,
@@ -419,10 +433,13 @@ async function exportExtension(aAddon, aSourceURI) {
       version,
       requiredPermissions,
       requiredOrigins,
+      requiredDataCollectionPermissions,
       optionalPermissions,
       optionalOrigins,
+      optionalDataCollectionPermissions,
       grantedOptionalPermissions,
       grantedOptionalOrigins,
+      grantedOptionalDataCollectionPermissions,
     },
   };
 }
@@ -527,11 +544,17 @@ class ExtensionPromptObserver {
   constructor() {
     Services.obs.addObserver(this, "webextension-permission-prompt");
     Services.obs.addObserver(this, "webextension-optional-permission-prompt");
+    Services.obs.addObserver(this, "webextension-update-permission-prompt");
   }
 
   async permissionPromptRequest(aInstall, aAddon, aInfo) {
     const { sourceURI } = aInstall;
     const { permissions } = aInfo;
+
+    const hasTechnicalAndInteractionDataPerm =
+      permissions.data_collection.includes(
+        TECHNICAL_AND_INTERACTION_DATA_PERM_NAME
+      );
 
     const extension = await exportExtension(aAddon, sourceURI);
     const response = await lazy.EventDispatcher.instance.sendRequestForResult({
@@ -539,6 +562,7 @@ class ExtensionPromptObserver {
       extension,
       permissions: await filterPromptPermissions(permissions.permissions),
       origins: permissions.origins,
+      dataCollectionPermissions: permissions.data_collection,
     });
 
     if (response.allow) {
@@ -550,6 +574,21 @@ class ExtensionPromptObserver {
           PRIVATE_BROWSING_PERMS
         );
       }
+
+      if (hasTechnicalAndInteractionDataPerm) {
+        if (response.isTechnicalAndInteractionDataGranted) {
+          await lazy.ExtensionPermissions.add(
+            aAddon.id,
+            TECHNICAL_AND_INTERACTION_DATA_PERMS
+          );
+        } else {
+          await lazy.ExtensionPermissions.remove(
+            aAddon.id,
+            TECHNICAL_AND_INTERACTION_DATA_PERMS
+          );
+        }
+      }
+
       aInfo.resolve();
     } else {
       aInfo.reject();
@@ -565,6 +604,22 @@ class ExtensionPromptObserver {
     resolve(response.allow);
   }
 
+  async updatePermissionPrompt({ addon, permissions, resolve, reject }) {
+    const response = await lazy.EventDispatcher.instance.sendRequestForResult({
+      type: "GeckoView:WebExtension:UpdatePrompt",
+      extension: await exportExtension(addon, /* aSourceURI */ null),
+      newPermissions: await filterPromptPermissions(permissions.permissions),
+      newOrigins: permissions.origins,
+      newDataCollectionPermissions: permissions.data_collection,
+    });
+
+    if (response.allow) {
+      resolve();
+    } else {
+      reject();
+    }
+  }
+
   observe(aSubject, aTopic) {
     debug`observe ${aTopic}`;
 
@@ -578,6 +633,10 @@ class ExtensionPromptObserver {
       case "webextension-optional-permission-prompt": {
         const { id, permissions, resolve } = aSubject.wrappedJSObject;
         this.optionalPermissionPrompt(id, permissions, resolve);
+        break;
+      }
+      case "webextension-update-permission-prompt": {
+        this.updatePermissionPrompt(aSubject.wrappedJSObject);
         break;
       }
     }
@@ -857,48 +916,6 @@ class MobileWindowTracker extends EventEmitter {
 
 export var mobileWindowTracker = new MobileWindowTracker();
 
-async function updatePromptHandler(aInfo) {
-  const oldPerms = aInfo.existingAddon.userPermissions;
-  if (!oldPerms) {
-    // Updating from a legacy add-on, let it proceed
-    return;
-  }
-
-  const newPerms = aInfo.addon.userPermissions;
-
-  const difference = lazy.Extension.comparePermissions(oldPerms, newPerms);
-
-  // We only care about permissions that we can prompt the user for
-  const newPermissions = await filterPromptPermissions(difference.permissions);
-  const { origins: newOrigins } = difference;
-
-  // If there are no new permissions, just proceed
-  if (!newOrigins.length && !newPermissions.length) {
-    return;
-  }
-
-  const currentlyInstalled = await exportExtension(
-    aInfo.existingAddon,
-    /* aSourceURI */ null
-  );
-  const updatedExtension = await exportExtension(
-    aInfo.addon,
-    /* aSourceURI */ null
-  );
-
-  const response = await lazy.EventDispatcher.instance.sendRequestForResult({
-    type: "GeckoView:WebExtension:UpdatePrompt",
-    currentlyInstalled,
-    updatedExtension,
-    newPermissions,
-    newOrigins,
-  });
-
-  if (!response.allow) {
-    throw new Error("Extension update rejected.");
-  }
-}
-
 export var GeckoViewWebExtension = {
   observe(aSubject, aTopic) {
     debug`observe ${aTopic}`;
@@ -1079,8 +1096,9 @@ export var GeckoViewWebExtension = {
   checkForUpdate(aAddon) {
     return new Promise(resolve => {
       const listener = {
-        onUpdateAvailable(aAddon, install) {
-          install.promptHandler = updatePromptHandler;
+        onUpdateAvailable(_aAddon, install) {
+          install.promptHandler = aInfo =>
+            lazy.AddonManager.updatePromptHandler(aInfo);
           resolve(install);
         },
         onNoUpdateAvailable() {
@@ -1089,7 +1107,7 @@ export var GeckoViewWebExtension = {
       };
       aAddon.findUpdates(
         listener,
-        lazy.AddonManager.UPDATE_WHEN_USER_REQUESTED
+        lazy.AddonManager.UPDATE_WHEN_PERIODIC_UPDATE
       );
     });
   },
@@ -1214,14 +1232,16 @@ export var GeckoViewWebExtension = {
       }
 
       case "GeckoView:WebExtension:AddOptionalPermissions": {
-        const { extensionId, permissions, origins } = aData;
+        const {
+          extensionId,
+          permissions,
+          origins,
+          dataCollectionPermissions: data_collection,
+        } = aData;
         try {
           const addon = await this.extensionById(extensionId);
           const normalized = lazy.ExtensionPermissions.normalizeOptional(
-            {
-              permissions,
-              origins,
-            },
+            { permissions, origins, data_collection },
             addon.optionalPermissions
           );
           const policy = WebExtensionPolicy.getByID(addon.id);
@@ -1239,11 +1259,16 @@ export var GeckoViewWebExtension = {
       }
 
       case "GeckoView:WebExtension:RemoveOptionalPermissions": {
-        const { extensionId, permissions, origins } = aData;
+        const {
+          extensionId,
+          permissions,
+          origins,
+          dataCollectionPermissions: data_collection,
+        } = aData;
         try {
           const addon = await this.extensionById(extensionId);
           const normalized = lazy.ExtensionPermissions.normalizeOptional(
-            { permissions, origins },
+            { permissions, origins, data_collection },
             addon.optionalPermissions
           );
           const policy = WebExtensionPolicy.getByID(addon.id);

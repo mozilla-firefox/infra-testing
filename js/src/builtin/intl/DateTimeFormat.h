@@ -126,16 +126,6 @@ class DateTimeFormatObject : public NativeObject {
 };
 
 /**
- * Returns a new instance of the standard built-in DateTimeFormat constructor.
- *
- * Usage: dateTimeFormat = intl_CreateDateTimeFormat(locales, options, required,
- * defaults)
- */
-[[nodiscard]] extern bool intl_CreateDateTimeFormat(JSContext* cx,
-                                                    unsigned argc,
-                                                    JS::Value* vp);
-
-/**
  * Returns an array with the calendar type identifiers per Unicode
  * Technical Standard 35, Unicode Locale Data Markup Language, for the
  * supported calendars for the given locale. The default calendar is
@@ -155,55 +145,6 @@ class DateTimeFormatObject : public NativeObject {
  */
 [[nodiscard]] extern bool intl_defaultCalendar(JSContext* cx, unsigned argc,
                                                JS::Value* vp);
-
-/**
- * 6.4.1 IsValidTimeZoneName ( timeZone )
- *
- * Verifies that the given string is a valid time zone name. If it is a valid
- * time zone name, its IANA time zone name is returned. Otherwise returns null.
- *
- * ES2017 Intl draft rev 4a23f407336d382ed5e3471200c690c9b020b5f3
- *
- * Usage: ianaTimeZone = intl_IsValidTimeZoneName(timeZone)
- */
-[[nodiscard]] extern bool intl_IsValidTimeZoneName(JSContext* cx, unsigned argc,
-                                                   JS::Value* vp);
-
-/**
- * Return the canonicalized time zone name. Canonicalization resolves link
- * names to their target time zones.
- *
- * Usage: ianaTimeZone = intl_canonicalizeTimeZone(timeZone)
- */
-[[nodiscard]] extern bool intl_canonicalizeTimeZone(JSContext* cx,
-                                                    unsigned argc,
-                                                    JS::Value* vp);
-
-/**
- * Return the default time zone name. The time zone name is not canonicalized.
- *
- * Usage: icuDefaultTimeZone = intl_defaultTimeZone()
- */
-[[nodiscard]] extern bool intl_defaultTimeZone(JSContext* cx, unsigned argc,
-                                               JS::Value* vp);
-
-/**
- * Return the raw offset from GMT in milliseconds for the default time zone.
- *
- * Usage: defaultTimeZoneOffset = intl_defaultTimeZoneOffset()
- */
-[[nodiscard]] extern bool intl_defaultTimeZoneOffset(JSContext* cx,
-                                                     unsigned argc,
-                                                     JS::Value* vp);
-
-/**
- * Return true if the given string is the default time zone as returned by
- * intl_defaultTimeZone(). Otherwise return false.
- *
- * Usage: isIcuDefaultTimeZone = intl_isDefaultTimeZone(icuDefaultTimeZone)
- */
-[[nodiscard]] extern bool intl_isDefaultTimeZone(JSContext* cx, unsigned argc,
-                                                 JS::Value* vp);
 
 /**
  * Returns a String value representing x (which must be a Number value)
@@ -239,13 +180,57 @@ class DateTimeFormatObject : public NativeObject {
                                                                unsigned argc,
                                                                JS::Value* vp);
 
+namespace intl {
+
+enum class DateTimeFormatKind {
+  /**
+   * Call CreateDateTimeFormat with `required = Any` and `defaults = All`.
+   */
+  All,
+
+  /**
+   * Call CreateDateTimeFormat with `required = Date` and `defaults = Date`.
+   */
+  Date,
+
+  /**
+   * Call CreateDateTimeFormat with `required = Time` and `defaults = Time`.
+   */
+  Time,
+};
+
+/**
+ * Returns a new instance of the standard built-in DateTimeFormat constructor.
+ */
+[[nodiscard]] extern DateTimeFormatObject* CreateDateTimeFormat(
+    JSContext* cx, JS::Handle<JS::Value> locales, JS::Handle<JS::Value> options,
+    DateTimeFormatKind kind);
+
+/**
+ * Returns a possibly cached instance of the standard built-in DateTimeFormat
+ * constructor.
+ */
+[[nodiscard]] extern DateTimeFormatObject* GetOrCreateDateTimeFormat(
+    JSContext* cx, JS::Handle<JS::Value> locales, JS::Handle<JS::Value> options,
+    DateTimeFormatKind kind);
+
+/**
+ * Returns a String value representing |millis| (which must be a valid time
+ * value) according to the effective locale and the formatting options of the
+ * given DateTimeFormat.
+ */
+[[nodiscard]] extern bool FormatDateTime(
+    JSContext* cx, JS::Handle<DateTimeFormatObject*> dateTimeFormat,
+    double millis, JS::MutableHandle<JS::Value> result);
+
 /**
  * Shared `toLocaleString` implementation for Temporal objects.
  */
 [[nodiscard]] extern bool TemporalObjectToLocaleString(
-    JSContext* cx, const JS::CallArgs& args, JS::Handle<JSString*> required,
-    JS::Handle<JSString*> defaults,
+    JSContext* cx, const JS::CallArgs& args, DateTimeFormatKind formatKind,
     JS::Handle<JS::Value> toLocaleStringTimeZone = JS::UndefinedHandleValue);
+
+}  // namespace intl
 
 }  // namespace js
 

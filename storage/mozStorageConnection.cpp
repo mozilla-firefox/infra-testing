@@ -13,12 +13,12 @@
 #include "nsIXPConnect.h"
 #include "mozilla/AppShutdown.h"
 #include "mozilla/CheckedInt.h"
+#include "mozilla/glean/StorageMetrics.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/CondVar.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/ErrorNames.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/quota/QuotaObject.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/SpinEventLoopUntil.h"
@@ -81,9 +81,6 @@ mozilla::LazyLogModule gStorageLog("mozStorage");
 namespace mozilla::storage {
 
 using mozilla::dom::quota::QuotaObject;
-using mozilla::Telemetry::AccumulateCategoricalKeyed;
-using mozilla::Telemetry::LABELS_SQLITE_STORE_OPEN;
-using mozilla::Telemetry::LABELS_SQLITE_STORE_QUERY;
 
 namespace {
 
@@ -464,7 +461,7 @@ class AsyncVacuumEvent final : public Runnable {
     if (IsOnCurrentSerialEventTarget(mConnection->eventTargetOpenedOn)) {
       // Send the completion event.
       if (mCallback) {
-        mozilla::Unused << mCallback->Complete(mStatus, nullptr);
+        (void)mCallback->Complete(mStatus, nullptr);
       }
       return NS_OK;
     }
@@ -472,8 +469,8 @@ class AsyncVacuumEvent final : public Runnable {
     // Ensure to invoke the callback regardless of errors.
     auto guard = MakeScopeExit([&]() {
       mConnection->mIsStatementOnHelperThreadInterruptible = false;
-      mozilla::Unused << mConnection->eventTargetOpenedOn->Dispatch(
-          this, NS_DISPATCH_NORMAL);
+      (void)mConnection->eventTargetOpenedOn->Dispatch(this,
+                                                       NS_DISPATCH_NORMAL);
     });
 
     // Get list of attached databases.
@@ -869,7 +866,7 @@ NS_IMETHODIMP_(MozExternalRefCountType) Connection::Release(void) {
         // This could cause SpinningSynchronousClose() to be invoked and AddRef
         // triggered for AsyncCloseConnection's strong ref if the conn was ever
         // use for async purposes.  (Main-thread only, though.)
-        Unused << synchronousClose();
+        (void)synchronousClose();
       } else {
         nsCOMPtr<nsIRunnable> event =
             NewRunnableMethod("storage::Connection::synchronousClose", this,
@@ -883,7 +880,7 @@ NS_IMETHODIMP_(MozExternalRefCountType) Connection::Release(void) {
           // automatic cleanup, but not a Connection.)
           MOZ_ASSERT(false,
                      "Leaked Connection::synchronousClose(), ownership fail.");
-          Unused << synchronousClose();
+          (void)synchronousClose();
         }
       }
 
@@ -949,32 +946,27 @@ void Connection::RecordOpenStatus(nsresult rv) {
   }
 
   if (NS_SUCCEEDED(rv)) {
-    AccumulateCategoricalKeyed(histogramKey, LABELS_SQLITE_STORE_OPEN::success);
     return;
   }
 
   switch (rv) {
     case NS_ERROR_FILE_CORRUPTED:
-      AccumulateCategoricalKeyed(histogramKey,
-                                 LABELS_SQLITE_STORE_OPEN::corrupt);
+      mozilla::glean::sqlite_store::open.Get(histogramKey, "corrupt"_ns).Add();
       break;
     case NS_ERROR_STORAGE_IOERR:
-      AccumulateCategoricalKeyed(histogramKey,
-                                 LABELS_SQLITE_STORE_OPEN::diskio);
+      mozilla::glean::sqlite_store::open.Get(histogramKey, "diskio"_ns).Add();
       break;
     case NS_ERROR_FILE_ACCESS_DENIED:
     case NS_ERROR_FILE_IS_LOCKED:
     case NS_ERROR_FILE_READ_ONLY:
-      AccumulateCategoricalKeyed(histogramKey,
-                                 LABELS_SQLITE_STORE_OPEN::access);
+      mozilla::glean::sqlite_store::open.Get(histogramKey, "access"_ns).Add();
       break;
     case NS_ERROR_FILE_NO_DEVICE_SPACE:
-      AccumulateCategoricalKeyed(histogramKey,
-                                 LABELS_SQLITE_STORE_OPEN::diskspace);
+      mozilla::glean::sqlite_store::open.Get(histogramKey, "diskspace"_ns)
+          .Add();
       break;
     default:
-      AccumulateCategoricalKeyed(histogramKey,
-                                 LABELS_SQLITE_STORE_OPEN::failure);
+      mozilla::glean::sqlite_store::open.Get(histogramKey, "failure"_ns).Add();
   }
 }
 
@@ -994,44 +986,37 @@ void Connection::RecordQueryStatus(int srv) {
     // they aren't indicating a failure.
     case SQLITE_ABORT:
     case SQLITE_INTERRUPT:
-      AccumulateCategoricalKeyed(histogramKey,
-                                 LABELS_SQLITE_STORE_QUERY::success);
       break;
     case SQLITE_CORRUPT:
     case SQLITE_NOTADB:
-      AccumulateCategoricalKeyed(histogramKey,
-                                 LABELS_SQLITE_STORE_QUERY::corrupt);
+      mozilla::glean::sqlite_store::query.Get(histogramKey, "corrupt"_ns).Add();
       break;
     case SQLITE_PERM:
     case SQLITE_CANTOPEN:
     case SQLITE_LOCKED:
     case SQLITE_READONLY:
-      AccumulateCategoricalKeyed(histogramKey,
-                                 LABELS_SQLITE_STORE_QUERY::access);
+      mozilla::glean::sqlite_store::query.Get(histogramKey, "access"_ns).Add();
       break;
     case SQLITE_IOERR:
     case SQLITE_NOLFS:
-      AccumulateCategoricalKeyed(histogramKey,
-                                 LABELS_SQLITE_STORE_QUERY::diskio);
+      mozilla::glean::sqlite_store::query.Get(histogramKey, "diskio"_ns).Add();
       break;
     case SQLITE_FULL:
     case SQLITE_TOOBIG:
-      AccumulateCategoricalKeyed(histogramKey,
-                                 LABELS_SQLITE_STORE_QUERY::diskspace);
+      mozilla::glean::sqlite_store::query.Get(histogramKey, "diskspace"_ns)
+          .Add();
       break;
     case SQLITE_CONSTRAINT:
     case SQLITE_RANGE:
     case SQLITE_MISMATCH:
     case SQLITE_MISUSE:
-      AccumulateCategoricalKeyed(histogramKey,
-                                 LABELS_SQLITE_STORE_QUERY::misuse);
+      mozilla::glean::sqlite_store::query.Get(histogramKey, "misuse"_ns).Add();
       break;
     case SQLITE_BUSY:
-      AccumulateCategoricalKeyed(histogramKey, LABELS_SQLITE_STORE_QUERY::busy);
+      mozilla::glean::sqlite_store::query.Get(histogramKey, "busy"_ns).Add();
       break;
     default:
-      AccumulateCategoricalKeyed(histogramKey,
-                                 LABELS_SQLITE_STORE_QUERY::failure);
+      mozilla::glean::sqlite_store::query.Get(histogramKey, "failure"_ns).Add();
   }
 }
 
@@ -1273,10 +1258,10 @@ nsresult Connection::initializeInternal() {
   // accordingly to their needs.
 #if defined(ANDROID)
   // Android prefers synchronous = OFF for performance reasons.
-  Unused << ExecuteSimpleSQL("PRAGMA synchronous = OFF;"_ns);
+  (void)ExecuteSimpleSQL("PRAGMA synchronous = OFF;"_ns);
 #else
   // Normal is the suggested value for WAL journals.
-  Unused << ExecuteSimpleSQL("PRAGMA synchronous = NORMAL;"_ns);
+  (void)ExecuteSimpleSQL("PRAGMA synchronous = NORMAL;"_ns);
 #endif
 
   // Initialization succeeded, we can stop guarding for failures.
@@ -1296,7 +1281,7 @@ nsresult Connection::initializeOnAsyncThread(nsIFile* aStorageFile) {
     nsCOMPtr<nsIRunnable> event =
         NewRunnableMethod("Connection::shutdownAsyncThread", this,
                           &Connection::shutdownAsyncThread);
-    Unused << NS_DispatchToMainThread(event);
+    (void)NS_DispatchToMainThread(event);
   }
   return rv;
 }
@@ -1437,7 +1422,7 @@ nsresult Connection::ensureOperationSupported(
 #ifdef DEBUG
     if (NS_IsMainThread()) {
       nsCOMPtr<nsIXPConnect> xpc = nsIXPConnect::XPConnect();
-      Unused << xpc->DebugDumpJSStack(false, false, false);
+      (void)xpc->DebugDumpJSStack(false, false, false);
     }
 #endif
     MOZ_ASSERT(false,
@@ -1752,7 +1737,7 @@ nsresult Connection::synchronousClose() {
 #ifdef DEBUG
     if (NS_IsMainThread()) {
       nsCOMPtr<nsIXPConnect> xpc = nsIXPConnect::XPConnect();
-      Unused << xpc->DebugDumpJSStack(false, false, false);
+      (void)xpc->DebugDumpJSStack(false, false, false);
     }
 #endif
     MOZ_ASSERT(false,
@@ -1760,7 +1745,7 @@ nsresult Connection::synchronousClose() {
                "statements. "
                "Should have used asyncClose().");
     // Try to close the database regardless, to free up resources.
-    Unused << SpinningSynchronousClose();
+    (void)SpinningSynchronousClose();
     return NS_ERROR_UNEXPECTED;
   }
 
@@ -1882,7 +1867,7 @@ Connection::AsyncClose(mozIStorageCompletionCallback* aCallback) {
       // Closing the database is more important than returning an error code
       // about a failure to dispatch, especially because all existing native
       // callers ignore our return value.
-      Unused << NS_DispatchToMainThread(completeEvent.forget());
+      (void)NS_DispatchToMainThread(completeEvent.forget());
     }
     MOZ_ALWAYS_SUCCEEDS(synchronousClose());
     // Return a success inconditionally here, since Close() is unlikely to fail

@@ -18,6 +18,7 @@
 namespace mozilla::gfx {
 
 class gfxVarReceiver;
+class MOZ_STACK_CLASS gfxVarsCollectUpdates;
 
 // Generator for graphics vars.
 #define GFX_VARS_LIST(_)                                           \
@@ -33,6 +34,7 @@ class gfxVarReceiver;
     mozilla::gfx::SurfaceFormat::X8R8G8B8_UINT32)                  \
   _(RequiresAcceleratedGLContextForCompositorOGL, bool, false)     \
   _(CanUseHardwareVideoDecoding, bool, false)                      \
+  _(CanUseHardwareVideoEncoding, bool, false)                      \
   _(DXInterop2Blocked, bool, false)                                \
   _(DXNV12Blocked, bool, false)                                    \
   _(DXP010Blocked, bool, false)                                    \
@@ -73,7 +75,6 @@ class gfxVarReceiver;
   _(SystemTextRenderingMode, int32_t, 0)                           \
   _(SystemGDIGamma, float, 1.4f)                                   \
   _(LayersWindowRecordingPath, nsCString, nsCString())             \
-  _(RemoteCanvasEnabled, bool, false)                              \
   _(UseDoubleBufferingWithCompositor, bool, false)                 \
   _(UseGLSwizzle, bool, true)                                      \
   _(ForceSubpixelAAWherePossible, bool, false)                     \
@@ -85,16 +86,23 @@ class gfxVarReceiver;
   _(UseDMABufWebGL, bool, true)                                    \
   _(DMABufModifiersXRGB, ArrayOfuint64_t, nsTArray<uint64_t>())    \
   _(DMABufModifiersARGB, ArrayOfuint64_t, nsTArray<uint64_t>())    \
-  _(CodecSupportInfo, nsCString, nsCString())                      \
   _(WebRenderRequiresHardwareDriver, bool, false)                  \
   _(SupportsThreadsafeGL, bool, false)                             \
   _(AllowWebGPU, bool, false)                                      \
+  _(AllowWebGPUExternalTexture, bool, false)                       \
   _(UseVP8HwDecode, bool, false)                                   \
+  _(UseVP8HwEncode, bool, false)                                   \
   _(UseVP9HwDecode, bool, false)                                   \
+  _(UseVP9HwEncode, bool, false)                                   \
   _(UseAV1HwDecode, bool, false)                                   \
+  _(UseAV1HwEncode, bool, false)                                   \
   _(UseH264HwDecode, bool, false)                                  \
+  _(UseH264HwEncode, bool, false)                                  \
   _(UseHEVCHwDecode, bool, false)                                  \
+  _(UseHEVCHwEncode, bool, false)                                  \
+  _(VP9HwDecodeIsAccelerated, bool, false)                         \
   _(HwDecodedVideoZeroCopy, bool, false)                           \
+  _(UseWMFHWDWM, bool, false)                                      \
   _(UseDMABufSurfaceExport, bool, true)                            \
   _(ReuseDecoderDevice, bool, false)                               \
   _(UseCanvasRenderThread, bool, false)                            \
@@ -108,7 +116,9 @@ class gfxVarReceiver;
   _(AllowWebGPUPresentWithoutReadback, bool, false)                \
   _(GPUProcessEnabled, bool, false)                                \
   _(DMABufModifiersP010, ArrayOfuint64_t, nsTArray<uint64_t>())    \
-  _(DMABufModifiersNV12, ArrayOfuint64_t, nsTArray<uint64_t>())
+  _(DMABufModifiersNV12, ArrayOfuint64_t, nsTArray<uint64_t>())    \
+  _(AllowGLNorm16Textures, bool, false)                            \
+  _(WebRenderLayerCompositorDCompTexture, bool, false)
 
 /* Add new entries above this line. */
 
@@ -135,7 +145,7 @@ class gfxVars final {
   static void Initialize();
   static void Shutdown();
 
-  static void ApplyUpdate(const GfxVarUpdate& aUpdate);
+  static void ApplyUpdate(const nsTArray<GfxVarUpdate>& aUpdate);
   static void AddReceiver(gfxVarReceiver* aReceiver);
   static void RemoveReceiver(gfxVarReceiver* aReceiver);
 
@@ -174,6 +184,10 @@ class gfxVars final {
   static bool IsInitialized() { return sInstance != nullptr; }
 
  private:
+  friend class gfxVarsCollectUpdates;
+  static void StartCollectingUpdates();
+  static void StopCollectingUpdates();
+
   static StaticAutoPtr<gfxVars> sInstance;
   static StaticAutoPtr<nsTArray<VarBase*>> sVarList;
 
@@ -256,6 +270,15 @@ class gfxVars final {
 };
 
 #undef GFX_VARS_LIST
+
+// Helper class that batches changes to gfxVars into a single update to minimize
+// churn for receivers. This is particularly useful for the media processes
+// which reconfigure themselves when gfxVars updates come in.
+class MOZ_STACK_CLASS gfxVarsCollectUpdates final {
+ public:
+  gfxVarsCollectUpdates() { gfxVars::StartCollectingUpdates(); }
+  ~gfxVarsCollectUpdates() { gfxVars::StopCollectingUpdates(); }
+};
 
 }  // namespace mozilla::gfx
 

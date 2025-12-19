@@ -21,6 +21,7 @@
 #include "nsTHashMap.h"
 #include "nsCycleCollectionParticipant.h"
 #include "mozIStoragePendingStatement.h"
+#include "mozIStorageValueArray.h"
 #include "Helpers.h"
 
 class nsNavHistory;
@@ -68,19 +69,15 @@ class nsTrimInt64HashKey : public PLDHashEntryHdr {
 //    it through GetTopLevel()). Then FilledAllResults() is called to finish
 //    object initialization.
 
-#define NS_NAVHISTORYRESULT_IID                      \
-  {                                                  \
-    0x455d1d40, 0x1b9b, 0x40e6, {                    \
-      0xa6, 0x41, 0x8b, 0xb7, 0xe8, 0x82, 0x23, 0x87 \
-    }                                                \
-  }
+#define NS_NAVHISTORYRESULT_IID \
+  {0x455d1d40, 0x1b9b, 0x40e6, {0xa6, 0x41, 0x8b, 0xb7, 0xe8, 0x82, 0x23, 0x87}}
 
 class nsNavHistoryResult final
     : public nsSupportsWeakReference,
       public nsINavHistoryResult,
       public mozilla::places::INativePlacesEventCallback {
  public:
-  NS_DECLARE_STATIC_IID_ACCESSOR(NS_NAVHISTORYRESULT_IID)
+  NS_INLINE_DECL_STATIC_IID(NS_NAVHISTORYRESULT_IID)
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_NSINAVHISTORYRESULT
@@ -195,20 +192,14 @@ class nsNavHistoryResult final
   void StopObservingOnUnlink();
 };
 
-NS_DEFINE_STATIC_IID_ACCESSOR(nsNavHistoryResult, NS_NAVHISTORYRESULT_IID)
-
 // nsNavHistoryResultNode
 //
 //    This is the base class for every node in a result set. The result itself
 //    is a node (nsNavHistoryResult inherits from this), as well as every
 //    leaf and branch on the tree.
 
-#define NS_NAVHISTORYRESULTNODE_IID                  \
-  {                                                  \
-    0x54b61d38, 0x57c1, 0x11da, {                    \
-      0x95, 0xb8, 0x00, 0x13, 0x21, 0xc9, 0xf6, 0x9e \
-    }                                                \
-  }
+#define NS_NAVHISTORYRESULTNODE_IID \
+  {0x54b61d38, 0x57c1, 0x11da, {0x95, 0xb8, 0x00, 0x13, 0x21, 0xc9, 0xf6, 0x9e}}
 
 // These are all the simple getters, they can be used for the result node
 // implementation and all subclasses. More complex are GetIcon, GetParent
@@ -289,7 +280,7 @@ class nsNavHistoryResultNode : public nsINavHistoryResultNode {
   nsNavHistoryResultNode(const nsACString& aURI, const nsACString& aTitle,
                          uint32_t aAccessCount, PRTime aTime);
 
-  NS_DECLARE_STATIC_IID_ACCESSOR(NS_NAVHISTORYRESULTNODE_IID)
+  NS_INLINE_DECL_STATIC_IID(NS_NAVHISTORYRESULTNODE_IID)
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS(nsNavHistoryResultNode)
@@ -413,9 +404,6 @@ class nsNavHistoryResultNode : public nsINavHistoryResultNode {
   nsCString mBookmarkGuid;
 };
 
-NS_DEFINE_STATIC_IID_ACCESSOR(nsNavHistoryResultNode,
-                              NS_NAVHISTORYRESULTNODE_IID)
-
 // nsNavHistoryContainerResultNode
 //
 //    This is the base class for all nodes that can have children. It is
@@ -447,12 +435,8 @@ NS_DEFINE_STATIC_IID_ACCESSOR(nsNavHistoryResultNode,
     return nsNavHistoryContainerResultNode::GetChildIndex(aNode, _retval);    \
   }
 
-#define NS_NAVHISTORYCONTAINERRESULTNODE_IID         \
-  {                                                  \
-    0x6e3bf8d3, 0x22aa, 0x4065, {                    \
-      0x86, 0xbc, 0x37, 0x46, 0xb5, 0xb3, 0x2c, 0xe8 \
-    }                                                \
-  }
+#define NS_NAVHISTORYCONTAINERRESULTNODE_IID \
+  {0x6e3bf8d3, 0x22aa, 0x4065, {0x86, 0xbc, 0x37, 0x46, 0xb5, 0xb3, 0x2c, 0xe8}}
 
 class nsNavHistoryContainerResultNode
     : public nsNavHistoryResultNode,
@@ -465,7 +449,7 @@ class nsNavHistoryContainerResultNode
 
   virtual nsresult Refresh();
 
-  NS_DECLARE_STATIC_IID_ACCESSOR(NS_NAVHISTORYCONTAINERRESULTNODE_IID)
+  NS_INLINE_DECL_STATIC_IID(NS_NAVHISTORYCONTAINERRESULTNODE_IID)
 
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(nsNavHistoryContainerResultNode,
@@ -618,9 +602,6 @@ class nsNavHistoryContainerResultNode
   nsCOMPtr<mozIStoragePendingStatement> mAsyncPendingStmt;
   AsyncCanceledState mAsyncCanceledState;
 };
-
-NS_DEFINE_STATIC_IID_ACCESSOR(nsNavHistoryContainerResultNode,
-                              NS_NAVHISTORYCONTAINERRESULTNODE_IID)
 
 // nsNavHistoryQueryResultNode
 //
@@ -817,6 +798,29 @@ class nsNavHistoryFolderResultNode final
   nsresult OnChildrenFilled();
   void EnsureRegisteredAsFolderObserver();
   nsresult FillChildrenAsync();
+  /*
+   * Fill children of this folder by the current query.
+   *
+   * @param aPendingStmt
+   *        The Storage pending statement that will be used to control async
+   *        execution. If this is nullptr, this method processes as sync.
+   */
+  nsresult FillChildrenInternal(
+      mozIStoragePendingStatement** aPendingStmt = nullptr);
+
+  /**
+   * Turns aRow into a node and appends it as a child of this node if it is
+   * appropriate to do so.
+   *
+   * @param aRow
+   *        A Storage statement (in the case of synchronous execution) or row of
+   *        a result set (in the case of asynchronous execution).
+   * @param aCurrentIndex
+   *        The index of aRow within the results.  When called on the first row,
+   *        this should be set to -1.
+   */
+  nsresult AppendRowAsChild(mozIStorageValueArray* aRow,
+                            int32_t& aCurrentIndex);
 
   bool mIsRegisteredFolderObserver;
   int32_t mAsyncBookmarkIndex;

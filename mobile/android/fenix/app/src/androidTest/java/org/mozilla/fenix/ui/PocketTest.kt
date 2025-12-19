@@ -20,10 +20,8 @@ import org.mozilla.fenix.ui.robots.homeScreen
  */
 
 class PocketTest : TestSetup() {
-    private lateinit var firstPocketStoryPublisher: String
-
     @get:Rule(order = 0)
-    val activityTestRule =
+    val composeTestRule =
         AndroidComposeTestRule(
             HomeActivityTestRule(
                 isRecentTabsFeatureEnabled = false,
@@ -44,12 +42,11 @@ class PocketTest : TestSetup() {
         // Workaround to make sure the Pocket articles are populated before starting the tests.
         for (i in 1..RETRY_COUNT) {
             try {
-                homeScreen {
+                homeScreen(composeTestRule) {
                 }.openThreeDotMenu {
-                }.openSettings {
-                }.goBack {
+                }.clickSettingsButton {
+                }.goBack(composeTestRule) {
                     verifyThoughtProvokingStories(true)
-                    verifyStoriesByTopicItems()
                 }
 
                 break
@@ -67,22 +64,18 @@ class PocketTest : TestSetup() {
     @Test
     fun verifyPocketSectionTest() {
         runWithCondition(isNetworkConnected()) {
-            homeScreen {
+            homeScreen(composeTestRule) {
                 verifyThoughtProvokingStories(true)
-                scrollToPocketProvokingStories()
                 verifyPocketRecommendedStoriesItems()
                 // Sponsored Pocket stories are only advertised for a limited time.
                 // See also known issue https://bugzilla.mozilla.org/show_bug.cgi?id=1828629
                 // verifyPocketSponsoredStoriesItems(2, 8)
-                verifyDiscoverMoreStoriesButton()
-                verifyStoriesByTopic(true)
-                verifyPoweredByPocket()
             }.openThreeDotMenu {
-            }.openCustomizeHome {
+            }.clickSettingsButton {
+            }.openHomepageSubMenu {
                 clickPocketButton()
-            }.goBackToHomeScreen {
+            }.goBackToHomeScreen(composeTestRule) {
                 verifyThoughtProvokingStories(false)
-                verifyStoriesByTopic(false)
             }
         }
     }
@@ -91,48 +84,10 @@ class PocketTest : TestSetup() {
     @Test
     fun openPocketStoryItemTest() {
         runWithCondition(isNetworkConnected()) {
-            homeScreen {
+            homeScreen(composeTestRule) {
                 verifyThoughtProvokingStories(true)
-                scrollToPocketProvokingStories()
-                firstPocketStoryPublisher = getProvokingStoryPublisher(1)
-            }.clickPocketStoryItem(firstPocketStoryPublisher, 1) {
-                verifyUrl(Constants.POCKET_RECOMMENDED_STORIES_UTM_PARAM)
-            }
-        }
-    }
-
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2252514
-    @Test
-    fun pocketDiscoverMoreButtonTest() {
-        runWithCondition(isNetworkConnected()) {
-            homeScreen {
-                verifyDiscoverMoreStoriesButton()
-            }.clickPocketDiscoverMoreButton(activityTestRule) {
-                verifyUrl("getpocket.com/explore")
-            }
-        }
-    }
-
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2252515
-    @Test
-    fun selectPocketStoriesByTopicTest() {
-        runWithCondition(isNetworkConnected()) {
-            homeScreen {
-                verifyStoriesByTopicItemState(activityTestRule, false, 1)
-                clickStoriesByTopicItem(activityTestRule, 1)
-                verifyStoriesByTopicItemState(activityTestRule, true, 1)
-            }
-        }
-    }
-
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2252516
-    @Test
-    fun pocketLearnMoreButtonTest() {
-        runWithCondition(isNetworkConnected()) {
-            homeScreen {
-                verifyPoweredByPocket()
-            }.clickPocketLearnMoreLink(activityTestRule) {
-                verifyUrl("mozilla.org/en-US/firefox/pocket")
+            }.clickPocketStoryItem(1) {
+                verifyUrl(Constants.STORIES_UTM_PARAM)
             }
         }
     }

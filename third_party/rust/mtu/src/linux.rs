@@ -6,7 +6,7 @@
 
 use std::{
     ffi::CStr,
-    io::{Error, ErrorKind, Read as _, Result, Write as _},
+    io::{Error, Read as _, Result, Write as _},
     net::IpAddr,
     num::TryFromIntError,
     ptr, slice,
@@ -22,9 +22,12 @@ use static_assertions::{const_assert, const_assert_eq};
 use crate::{aligned_by, default_err, routesocket::RouteSocket, unlikely_err};
 
 #[allow(
+    clippy::allow_attributes,
+    clippy::allow_attributes_without_reason,
     clippy::struct_field_names,
     non_camel_case_types,
-    clippy::too_many_lines
+    clippy::too_many_lines,
+    reason = "Bindgen-generated code"
 )]
 mod bindings {
     include!(env!("BINDINGS"));
@@ -39,10 +42,10 @@ asserted_const_with_type!(NLM_F_REQUEST, u16, libc::NLM_F_REQUEST, c_int);
 asserted_const_with_type!(NLM_F_ACK, u16, libc::NLM_F_ACK, c_int);
 asserted_const_with_type!(NLMSG_ERROR, u16, libc::NLMSG_ERROR, c_int);
 
-const_assert!(std::mem::size_of::<nlmsghdr>() <= u8::MAX as usize);
-const_assert!(std::mem::size_of::<rtmsg>() <= u8::MAX as usize);
-const_assert!(std::mem::size_of::<rtattr>() <= u8::MAX as usize);
-const_assert!(std::mem::size_of::<ifinfomsg>() <= u8::MAX as usize);
+const_assert!(size_of::<nlmsghdr>() <= u8::MAX as usize);
+const_assert!(size_of::<rtmsg>() <= u8::MAX as usize);
+const_assert!(size_of::<rtattr>() <= u8::MAX as usize);
+const_assert!(size_of::<ifinfomsg>() <= u8::MAX as usize);
 
 const NETLINK_BUFFER_SIZE: usize = 8192; // See netlink(7) man page.
 
@@ -93,12 +96,12 @@ struct IfIndexMsg {
 impl IfIndexMsg {
     fn new(remote: IpAddr, nlmsg_seq: u32) -> Self {
         let addr = AddrBytes::new(remote);
-        #[allow(clippy::cast_possible_truncation)]
-        // Structs lens are <= u8::MAX per `const_assert!`s above; `addr_bytes` is max. 16 for IPv6.
-        let nlmsg_len = (std::mem::size_of::<nlmsghdr>()
-            + std::mem::size_of::<rtmsg>()
-            + std::mem::size_of::<rtattr>()
-            + addr.len()) as u32;
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "Structs lens are <= u8::MAX per `const_assert!`s above; `addr_bytes` is max. 16 for IPv6."
+        )]
+        let nlmsg_len =
+            (size_of::<nlmsghdr>() + size_of::<rtmsg>() + size_of::<rtattr>() + addr.len()) as u32;
         Self {
             nlmsg: nlmsghdr {
                 nlmsg_len,
@@ -122,9 +125,11 @@ impl IfIndexMsg {
                 ..Default::default()
             },
             rt: rtattr {
-                #[allow(clippy::cast_possible_truncation)]
-                // Structs len is <= u8::MAX per `const_assert!` above; `addr_bytes` is max. 16 for IPv6.
-                rta_len: (std::mem::size_of::<rtattr>() + addr.len()) as u16,
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    reason = "Structs len is <= u8::MAX per `const_assert!` above; `addr_bytes` is max. 16 for IPv6."
+                )]
+                rta_len: (size_of::<rtattr>() + addr.len()) as u16,
                 rta_type: RTA_DST,
             },
             addr: addr.into(),
@@ -133,7 +138,7 @@ impl IfIndexMsg {
 
     const fn len(&self) -> usize {
         let len = self.nlmsg.nlmsg_len as usize;
-        debug_assert!(len <= std::mem::size_of::<Self>());
+        debug_assert!(len <= size_of::<Self>());
         len
     }
 }
@@ -148,7 +153,7 @@ impl TryFrom<&[u8]> for nlmsghdr {
     type Error = Error;
 
     fn try_from(value: &[u8]) -> Result<Self> {
-        if value.len() < std::mem::size_of::<Self>() {
+        if value.len() < size_of::<Self>() {
             return Err(default_err());
         }
         Ok(unsafe { ptr::read_unaligned(value.as_ptr().cast()) })
@@ -156,10 +161,11 @@ impl TryFrom<&[u8]> for nlmsghdr {
 }
 
 fn parse_c_int(buf: &[u8]) -> Result<c_int> {
-    let bytes = <&[u8] as TryInto<[u8; std::mem::size_of::<c_int>()]>>::try_into(
-        &buf[..std::mem::size_of::<c_int>()],
-    )
-    .map_err(|_| default_err())?;
+    if buf.len() < size_of::<c_int>() {
+        return Err(default_err());
+    }
+    let bytes = <&[u8] as TryInto<[u8; size_of::<c_int>()]>>::try_into(&buf[..size_of::<c_int>()])
+        .map_err(|_| default_err())?;
     Ok(c_int::from_ne_bytes(bytes))
 }
 
@@ -168,13 +174,13 @@ fn read_msg_with_seq(fd: &mut RouteSocket, seq: u32, kind: u16) -> Result<(nlmsg
         let buf = &mut [0u8; NETLINK_BUFFER_SIZE];
         let len = fd.read(buf.as_mut_slice())?;
         let mut next = &buf[..len];
-        while std::mem::size_of::<nlmsghdr>() <= next.len() {
-            let (hdr, mut msg) = next.split_at(std::mem::size_of::<nlmsghdr>());
+        while size_of::<nlmsghdr>() <= next.len() {
+            let (hdr, mut msg) = next.split_at(size_of::<nlmsghdr>());
             let hdr: nlmsghdr = hdr.try_into()?;
             // `msg` has the remainder of this message plus any following messages.
             // Strip those it off and assign them to `next`.
-            debug_assert!(std::mem::size_of::<nlmsghdr>() <= hdr.nlmsg_len as usize);
-            (msg, next) = msg.split_at(hdr.nlmsg_len as usize - std::mem::size_of::<nlmsghdr>());
+            debug_assert!(size_of::<nlmsghdr>() <= hdr.nlmsg_len as usize);
+            (msg, next) = msg.split_at(hdr.nlmsg_len as usize - size_of::<nlmsghdr>());
 
             if hdr.nlmsg_seq != seq {
                 continue;
@@ -198,7 +204,7 @@ impl TryFrom<&[u8]> for rtattr {
     type Error = Error;
 
     fn try_from(value: &[u8]) -> Result<Self> {
-        if value.len() < std::mem::size_of::<Self>() {
+        if value.len() < size_of::<Self>() {
             return Err(default_err());
         }
         Ok(unsafe { ptr::read_unaligned(value.as_ptr().cast()) })
@@ -212,12 +218,12 @@ struct RtAttr<'a> {
 
 impl<'a> RtAttr<'a> {
     fn new(bytes: &'a [u8]) -> Result<Self> {
-        debug_assert!(bytes.len() >= std::mem::size_of::<rtattr>());
-        let (hdr, mut msg) = bytes.split_at(std::mem::size_of::<rtattr>());
+        debug_assert!(bytes.len() >= size_of::<rtattr>());
+        let (hdr, mut msg) = bytes.split_at(size_of::<rtattr>());
         let hdr: rtattr = hdr.try_into()?;
         let aligned_len = aligned_by(hdr.rta_len.into(), 4);
-        debug_assert!(std::mem::size_of::<rtattr>() <= aligned_len);
-        (msg, _) = msg.split_at(aligned_len - std::mem::size_of::<rtattr>());
+        debug_assert!(size_of::<rtattr>() <= aligned_len);
+        (msg, _) = msg.split_at(aligned_len - size_of::<rtattr>());
         Ok(Self { hdr, msg })
     }
 }
@@ -228,7 +234,7 @@ impl<'a> Iterator for RtAttrs<'a> {
     type Item = RtAttr<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if std::mem::size_of::<rtattr>() <= self.0.len() {
+        if size_of::<rtattr>() <= self.0.len() {
             let attr = RtAttr::new(self.0).ok()?;
             let aligned_len = aligned_by(attr.hdr.rta_len.into(), 4);
             debug_assert!(self.0.len() >= aligned_len);
@@ -248,8 +254,8 @@ fn if_index(remote: IpAddr, fd: &mut RouteSocket) -> Result<i32> {
 
     // Receive RTM_GETROUTE response.
     let (_hdr, mut buf) = read_msg_with_seq(fd, msg_seq, RTM_NEWROUTE)?;
-    debug_assert!(std::mem::size_of::<rtmsg>() <= buf.len());
-    let buf = buf.split_off(std::mem::size_of::<rtmsg>());
+    debug_assert!(size_of::<rtmsg>() <= buf.len());
+    let buf = buf.split_off(size_of::<rtmsg>());
 
     // Parse through the attributes to find the interface index.
     for attr in RtAttrs(buf.as_slice()).by_ref() {
@@ -269,9 +275,11 @@ struct IfInfoMsg {
 
 impl IfInfoMsg {
     fn new(if_index: i32, nlmsg_seq: u32) -> Self {
-        #[allow(clippy::cast_possible_truncation)]
-        // Structs lens are <= u8::MAX per `const_assert!`s above.
-        let nlmsg_len = (std::mem::size_of::<nlmsghdr>() + std::mem::size_of::<ifinfomsg>()) as u32;
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "Structs lens are <= u8::MAX per `const_assert!`s above."
+        )]
+        let nlmsg_len = (size_of::<nlmsghdr>() + size_of::<ifinfomsg>()) as u32;
         Self {
             nlmsg: nlmsghdr {
                 nlmsg_len,
@@ -296,7 +304,7 @@ impl IfInfoMsg {
 
 impl From<&IfInfoMsg> for &[u8] {
     fn from(value: &IfInfoMsg) -> Self {
-        debug_assert!(value.len() >= std::mem::size_of::<Self>());
+        debug_assert!(value.len() >= size_of::<Self>());
         unsafe { slice::from_raw_parts(ptr::from_ref(value).cast(), value.len()) }
     }
 }
@@ -309,8 +317,8 @@ fn if_name_mtu(if_index: i32, fd: &mut RouteSocket) -> Result<(String, usize)> {
 
     // Receive RTM_GETLINK response.
     let (_hdr, mut buf) = read_msg_with_seq(fd, msg_seq, RTM_NEWLINK)?;
-    debug_assert!(std::mem::size_of::<ifinfomsg>() <= buf.len());
-    let buf = buf.split_off(std::mem::size_of::<ifinfomsg>());
+    debug_assert!(size_of::<ifinfomsg>() <= buf.len());
+    let buf = buf.split_off(size_of::<ifinfomsg>());
 
     // Parse through the attributes to find the interface name and MTU.
     let mut ifname = None;
@@ -318,13 +326,8 @@ fn if_name_mtu(if_index: i32, fd: &mut RouteSocket) -> Result<(String, usize)> {
     for attr in RtAttrs(buf.as_slice()).by_ref() {
         match attr.hdr.rta_type {
             IFLA_IFNAME => {
-                let name = CStr::from_bytes_until_nul(attr.msg)
-                    .map_err(|err| Error::new(ErrorKind::Other, err))?;
-                ifname = Some(
-                    name.to_str()
-                        .map_err(|err| Error::new(ErrorKind::Other, err))?
-                        .to_string(),
-                );
+                let name = CStr::from_bytes_until_nul(attr.msg).map_err(Error::other)?;
+                ifname = Some(name.to_str().map_err(Error::other)?.to_string());
             }
             IFLA_MTU => {
                 mtu = Some(
@@ -348,4 +351,75 @@ pub fn interface_and_mtu_impl(remote: IpAddr) -> Result<(String, usize)> {
     let mut fd = RouteSocket::new(AF_NETLINK, NETLINK_ROUTE)?;
     let if_index = if_index(remote, &mut fd)?;
     if_name_mtu(if_index, &mut fd)
+}
+
+#[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
+mod test {
+    use std::net::{Ipv4Addr, Ipv6Addr};
+
+    use super::*;
+
+    #[test]
+    fn nlmsghdr_try_from() {
+        assert!(nlmsghdr::try_from([0u8; 4].as_slice()).is_err());
+        let mut buf = [0u8; 32];
+        buf[0..4].copy_from_slice(&20u32.to_ne_bytes());
+        assert_eq!(nlmsghdr::try_from(buf.as_slice()).unwrap().nlmsg_len, 20);
+    }
+
+    #[test]
+    fn rtattr_try_from() {
+        assert!(rtattr::try_from([0u8; 2].as_slice()).is_err());
+        let mut buf = [0u8; 8];
+        buf[0..2].copy_from_slice(&8u16.to_ne_bytes());
+        buf[2..4].copy_from_slice(&3u16.to_ne_bytes());
+        let attr = rtattr::try_from(buf.as_slice()).unwrap();
+        assert_eq!((attr.rta_len, attr.rta_type), (8, 3));
+    }
+
+    #[test]
+    fn rtattrs_iteration() {
+        assert_eq!(RtAttrs(&[]).count(), 0);
+        assert_eq!(RtAttrs(&[0u8; 2]).count(), 0);
+
+        let mut buf = [0u8; 16];
+        for (offset, rta_type) in [(0, 1u16), (8, 2u16)] {
+            buf[offset..offset + 2].copy_from_slice(&8u16.to_ne_bytes());
+            buf[offset + 2..offset + 4].copy_from_slice(&rta_type.to_ne_bytes());
+        }
+        let types: Vec<_> = RtAttrs(&buf).map(|a| a.hdr.rta_type).collect();
+        assert_eq!(types, [1, 2]);
+    }
+
+    #[test]
+    fn addr_bytes() {
+        assert_eq!(AddrBytes::new(IpAddr::V4(Ipv4Addr::LOCALHOST)).len(), 4);
+        assert_eq!(AddrBytes::new(IpAddr::V6(Ipv6Addr::LOCALHOST)).len(), 16);
+
+        let v4: [u8; 16] = AddrBytes::new(IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4))).into();
+        assert_eq!(v4, [1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn parse_c_int_valid_and_invalid() {
+        assert!(parse_c_int(&[0u8; 2]).is_err());
+        assert_eq!(parse_c_int(&42i32.to_ne_bytes()).unwrap(), 42);
+    }
+
+    #[test]
+    fn if_index_msg_len_and_slice() {
+        let msg = IfIndexMsg::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1);
+        assert!(msg.len() > 0);
+        let slice: &[u8] = (&msg).into();
+        assert_eq!(slice.len(), msg.len());
+    }
+
+    #[test]
+    fn if_info_msg_len_and_slice() {
+        let msg = IfInfoMsg::new(1, 1);
+        assert!(msg.len() > 0);
+        let slice: &[u8] = (&msg).into();
+        assert_eq!(slice.len(), msg.len());
+    }
 }

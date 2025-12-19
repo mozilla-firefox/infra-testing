@@ -41,7 +41,7 @@ role HTMLFormAccessible::NativeRole() const {
 
 void HTMLFormAccessible::DOMAttributeChanged(int32_t aNameSpaceID,
                                              nsAtom* aAttribute,
-                                             int32_t aModType,
+                                             AttrModType aModType,
                                              const nsAttrValue* aOldValue,
                                              uint64_t aOldState) {
   HyperTextAccessible::DOMAttributeChanged(aNameSpaceID, aAttribute, aModType,
@@ -85,11 +85,11 @@ uint64_t HTMLRadioButtonAccessible::NativeState() const {
 
 void HTMLRadioButtonAccessible::GetPositionAndSetSize(int32_t* aPosInSet,
                                                       int32_t* aSetSize) {
-  Unused << ComputeGroupAttributes(aPosInSet, aSetSize);
+  (void)ComputeGroupAttributes(aPosInSet, aSetSize);
 }
 
 void HTMLRadioButtonAccessible::DOMAttributeChanged(
-    int32_t aNameSpaceID, nsAtom* aAttribute, int32_t aModType,
+    int32_t aNameSpaceID, nsAtom* aAttribute, AttrModType aModType,
     const nsAttrValue* aOldValue, uint64_t aOldState) {
   if (aAttribute == nsGkAtoms::name) {
     // If our name changed, it's possible our MEMBER_OF relation
@@ -206,9 +206,8 @@ uint64_t HTMLButtonAccessible::NativeState() const {
     if (!popoverAcc || !popoverAcc->IsAncestorOf(this)) {
       if (popover->IsPopoverOpen()) {
         state |= states::EXPANDED;
-      } else {
-        state |= states::COLLAPSED;
       }
+      state |= states::EXPANDABLE;
     }
   }
 
@@ -247,7 +246,7 @@ ENameValueFlag HTMLButtonAccessible::NativeName(nsString& aName) const {
 
 void HTMLButtonAccessible::DOMAttributeChanged(int32_t aNameSpaceID,
                                                nsAtom* aAttribute,
-                                               int32_t aModType,
+                                               AttrModType aModType,
                                                const nsAttrValue* aOldValue,
                                                uint64_t aOldState) {
   HyperTextAccessible::DOMAttributeChanged(aNameSpaceID, aAttribute, aModType,
@@ -332,12 +331,17 @@ already_AddRefed<AccAttributes> HTMLTextFieldAccessible::NativeAttributes() {
   return attributes.forget();
 }
 
-ENameValueFlag HTMLTextFieldAccessible::Name(nsString& aName) const {
-  ENameValueFlag nameFlag = LocalAccessible::Name(aName);
+ENameValueFlag HTMLTextFieldAccessible::DirectName(nsString& aName) const {
+  ENameValueFlag nameFlag = LocalAccessible::DirectName(aName);
   if (!aName.IsEmpty()) return nameFlag;
 
-  // text inputs and textareas might have useful placeholder text
-  mContent->AsElement()->GetAttr(nsGkAtoms::placeholder, aName);
+  mContent->AsElement()->GetAttr(nsGkAtoms::title, aName);
+  aName.CompressWhitespace();
+  if (aName.IsEmpty()) {
+    // text inputs and textareas might have useful placeholder text
+    mContent->AsElement()->GetAttr(nsGkAtoms::placeholder, aName);
+  }
+
   return eNameOK;
 }
 
@@ -469,7 +473,7 @@ already_AddRefed<EditorBase> HTMLTextFieldAccessible::GetEditor() const {
 
 void HTMLTextFieldAccessible::DOMAttributeChanged(int32_t aNameSpaceID,
                                                   nsAtom* aAttribute,
-                                                  int32_t aModType,
+                                                  AttrModType aModType,
                                                   const nsAttrValue* aOldValue,
                                                   uint64_t aOldState) {
   if (aAttribute == nsGkAtoms::placeholder) {
@@ -511,8 +515,8 @@ bool HTMLFileInputAccessible::IsAcceptableChild(nsIContent* aEl) const {
   return aEl->IsText();
 }
 
-ENameValueFlag HTMLFileInputAccessible::Name(nsString& aName) const {
-  ENameValueFlag flag = HyperTextAccessible::Name(aName);
+ENameValueFlag HTMLFileInputAccessible::DirectName(nsString& aName) const {
+  ENameValueFlag flag = HyperTextAccessible::DirectName(aName);
   if (flag == eNameFromSubtree) {
     // The author didn't provide a name. We'll compute the name from our subtree
     // below.
@@ -540,7 +544,11 @@ ENameValueFlag HTMLFileInputAccessible::Name(nsString& aName) const {
     }
     aName += leaf->Text();
   }
-  return flag;
+
+  // XXX: Return eNameOK even if we got the name from a label or subtree. This
+  // is to force us to cache the name, since the calculation of this type is out
+  // of spec and pretty nuanced.
+  return eNameOK;
 }
 
 bool HTMLFileInputAccessible::HasPrimaryAction() const { return true; }
@@ -684,10 +692,14 @@ ENameValueFlag HTMLGroupboxAccessible::NativeName(nsString& aName) const {
 
   nsIContent* legendContent = GetLegend();
   if (legendContent) {
-    nsTextEquivUtils::AppendTextEquivFromContent(this, legendContent, &aName);
+    bool usedHiddenContent = nsTextEquivUtils::AppendTextEquivFromContent(
+        this, legendContent, &aName);
+    aName.CompressWhitespace();
+    if (!usedHiddenContent && !aName.IsEmpty()) {
+      return eNameFromRelations;
+    }
   }
 
-  aName.CompressWhitespace();
   return eNameOK;
 }
 
@@ -733,10 +745,14 @@ ENameValueFlag HTMLFigureAccessible::NativeName(nsString& aName) const {
 
   nsIContent* captionContent = Caption();
   if (captionContent) {
-    nsTextEquivUtils::AppendTextEquivFromContent(this, captionContent, &aName);
+    bool usedHiddenContent = nsTextEquivUtils::AppendTextEquivFromContent(
+        this, captionContent, &aName);
+    aName.CompressWhitespace();
+    if (!usedHiddenContent && !aName.IsEmpty()) {
+      return eNameFromRelations;
+    }
   }
 
-  aName.CompressWhitespace();
   return eNameOK;
 }
 
@@ -877,7 +893,7 @@ bool HTMLProgressAccessible::SetCurValue(double aValue) {
 
 void HTMLProgressAccessible::DOMAttributeChanged(int32_t aNameSpaceID,
                                                  nsAtom* aAttribute,
-                                                 int32_t aModType,
+                                                 AttrModType aModType,
                                                  const nsAttrValue* aOldValue,
                                                  uint64_t aOldState) {
   LeafAccessible::DOMAttributeChanged(aNameSpaceID, aAttribute, aModType,
@@ -1037,7 +1053,7 @@ int32_t HTMLMeterAccessible::ValueRegion() const {
 
 void HTMLMeterAccessible::DOMAttributeChanged(int32_t aNameSpaceID,
                                               nsAtom* aAttribute,
-                                              int32_t aModType,
+                                              AttrModType aModType,
                                               const nsAttrValue* aOldValue,
                                               uint64_t aOldState) {
   LeafAccessible::DOMAttributeChanged(aNameSpaceID, aAttribute, aModType,

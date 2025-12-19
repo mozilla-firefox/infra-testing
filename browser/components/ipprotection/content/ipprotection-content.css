@@ -1,0 +1,53 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
+
+@import "chrome://global/skin/global.css";
+
+hr {
+  border-style: solid none none none;
+  border-color: var(--panel-separator-color);
+  margin: var(--panel-separator-margin);
+}
+
+#ipprotection-content-wrapper {
+  display: flex;
+  flex-direction: column;
+  padding-inline: var(--panel-subview-body-padding-inline);
+  padding-block: var(--panel-subview-body-padding-block);
+}
+
+.vpn-top-content {
+  margin-inline: var(--space-large);
+  margin-block-start: var(--space-small);
+}
+
+.vpn-bottom-content {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-small) var(--space-large);
+}
+
+.vpn-subtitle {
+  margin: 0;
+}
+
+.vpn-button {
+  align-self: end;
+}
+
+#signed-out-vpn-title {
+  margin-bottom: 0;
+}
+
+#signed-out-vpn-content {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-medium) var(--space-large) var(--space-small);
+}
+
+@media (prefers-color-scheme: dark) {
+  #signed-out-vpn-img {
+    content: url("chrome://browser/content/ipprotection/assets/ipprotection-darkmode.svg");
+  }
+}

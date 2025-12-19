@@ -10,20 +10,6 @@ plugins {
 apply plugin: 'com.android.library'
 
 android {
-    defaultConfig {
-        minSdkVersion = config.minSdkVersion
-        compileSdk = config.compileSdkVersion
-        targetSdkVersion = config.targetSdkVersion
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled = false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
-    }
-
     sourceSets {
         androidTest {
             // Use the same resources as the unit tests
@@ -43,44 +29,42 @@ tasks.register("updateBuiltInExtensionVersion", Copy) { task ->
 }
 
 dependencies {
-    api project(':support-images')
+    api project(':components:support-images')
 
-    implementation project(':browser-state')
-    implementation project(':concept-base')
-    implementation project(':concept-engine')
-    implementation project(':concept-fetch')
-    implementation project(':support-ktx')
+    implementation project(':components:browser-state')
+    implementation project(':components:concept-base')
+    implementation project(':components:concept-engine')
+    implementation project(':components:concept-fetch')
+    implementation project(':components:support-ktx')
 
+    implementation libs.androidsvg
     implementation libs.androidx.annotation
-    implementation libs.androidx.compose.material
+    implementation platform(libs.androidx.compose.bom)
+    implementation libs.androidx.compose.material3
     implementation libs.androidx.compose.ui
     implementation libs.androidx.core.ktx
     implementation libs.androidx.palette
+    implementation libs.disklrucache
+    implementation libs.kotlinx.coroutines
 
-    implementation libs.kotlin.coroutines
-
-    implementation libs.thirdparty.disklrucache
-
-    implementation libs.thirdparty.androidsvg
-
-    testImplementation project(':support-test')
-    testImplementation project(':lib-fetch-httpurlconnection')
-    testImplementation project(':lib-fetch-okhttp')
+    testImplementation project(':components:lib-fetch-httpurlconnection')
+    testImplementation project(':components:lib-fetch-okhttp')
+    testImplementation project(':components:support-test')
 
     testImplementation libs.androidx.test.core
     testImplementation libs.androidx.test.junit
     testImplementation libs.kotlin.reflect
-    testImplementation libs.testing.mockwebserver
-    testImplementation libs.testing.robolectric
-    testImplementation libs.testing.coroutines
+    testImplementation libs.kotlinx.coroutines.test
+    testImplementation libs.mockwebserver
+    testImplementation libs.robolectric
 
     androidTestImplementation libs.androidx.test.core
-    androidTestImplementation libs.androidx.test.runner
     androidTestImplementation libs.androidx.test.rules
-    androidTestImplementation libs.testing.coroutines
+    androidTestImplementation libs.androidx.test.runner
+    androidTestImplementation libs.kotlinx.coroutines.test
 }
 
-apply from: '../../../android-lint.gradle'
+apply from: '../../../common-config.gradle'
 apply from: '../../../publish.gradle'
 ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)
 

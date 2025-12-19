@@ -29,7 +29,10 @@ add_task(async function context_none() {
 add_task(async function context_one() {
   info("Checks the context menu with a page that offers one engine.");
   let url = getRootDirectory(gTestPath) + "add_search_engine_one.html";
-  await BrowserTestUtils.withNewTab(url, async () => {
+  await BrowserTestUtils.withNewTab(url, async browser => {
+    info("Waiting for favicon to load");
+    await BrowserTestUtils.waitForCondition(() => !!browser.mIconURL);
+
     await UrlbarTestUtils.withContextMenu(window, async popup => {
       info("The separator and the add engine item should be present.");
       let elt = popup.parentNode.getMenuItem("add-engine-separator");
@@ -49,7 +52,7 @@ add_task(async function context_one() {
       );
 
       info("Click on the menuitem");
-      let enginePromise = promiseEngine("engine-added", "add_search_engine_0");
+      let enginePromise = SearchTestUtils.promiseEngine("add_search_engine_0");
       popup.activateItem(elt);
       await enginePromise;
       Assert.equal(popup.state, "closed");
@@ -170,7 +173,10 @@ add_task(async function context_two() {
 add_task(async function context_many() {
   info("Checks the context menu with a page that offers many engines.");
   let url = getRootDirectory(gTestPath) + "add_search_engine_many.html";
-  await BrowserTestUtils.withNewTab(url, async () => {
+  await BrowserTestUtils.withNewTab(url, async browser => {
+    info("Waiting for favicon to load");
+    await BrowserTestUtils.waitForCondition(() => !!browser.mIconURL);
+
     await UrlbarTestUtils.withContextMenu(window, async popup => {
       info("The separator and the add engine menu should be present.");
       let separator = popup.parentNode.getMenuItem("add-engine-separator");
@@ -201,7 +207,7 @@ add_task(async function context_many() {
       }
 
       info("Click on the first engine to install it");
-      let enginePromise = promiseEngine("engine-added", "add_search_engine_0");
+      let enginePromise = SearchTestUtils.promiseEngine("add_search_engine_0");
       let elt = popup.parentNode.getMenuItem("add-engine-0");
 
       elt.closest("menupopup").activateItem(elt);
@@ -295,7 +301,7 @@ add_task(async function context_after_customize() {
     // menu. Otherwise the reframing might hide the context menu (this is a
     // long-standing XUL issue).
     await TestUtils.waitForCondition(() => {
-      return window.gURLBar.textbox.hasAttribute("breakout");
+      return window.gURLBar.hasAttribute("breakout");
     });
 
     await UrlbarTestUtils.withContextMenu(window, async popup => {
@@ -313,17 +319,3 @@ add_task(async function context_after_customize() {
     });
   });
 });
-
-function promiseEngine(expectedData, expectedEngineName) {
-  info(`Waiting for engine ${expectedData}`);
-  return TestUtils.topicObserved(
-    "browser-search-engine-modified",
-    (engine, data) => {
-      info(`Got engine ${engine.wrappedJSObject.name} ${data}`);
-      return (
-        expectedData == data &&
-        expectedEngineName == engine.wrappedJSObject.name
-      );
-    }
-  ).then(([engine]) => engine);
-}

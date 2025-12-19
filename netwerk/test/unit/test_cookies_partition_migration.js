@@ -36,8 +36,7 @@ add_task(async function test_chips_migration() {
     false,
     false,
     {},
-    Ci.nsICookie.SAMESITE_NONE,
-    Ci.nsICookie.SAMESITE_NONE,
+    Ci.nsICookie.SAMESITE_UNSET,
     Ci.nsICookie.SCHEME_UNSET,
     false // isPartitioned
   );
@@ -57,8 +56,7 @@ add_task(async function test_chips_migration() {
     false,
     false,
     {},
-    Ci.nsICookie.SAMESITE_NONE,
-    Ci.nsICookie.SAMESITE_NONE,
+    Ci.nsICookie.SAMESITE_UNSET,
     Ci.nsICookie.SCHEME_UNSET,
     true // isPartitioned
   );
@@ -78,8 +76,7 @@ add_task(async function test_chips_migration() {
     false,
     false,
     {},
-    Ci.nsICookie.SAMESITE_NONE,
-    Ci.nsICookie.SAMESITE_NONE,
+    Ci.nsICookie.SAMESITE_UNSET,
     Ci.nsICookie.SCHEME_UNSET,
     true // isPartitioned
   );
@@ -99,8 +96,7 @@ add_task(async function test_chips_migration() {
     false,
     false,
     { partitionKey: "(https,example.com)" },
-    Ci.nsICookie.SAMESITE_NONE,
-    Ci.nsICookie.SAMESITE_NONE,
+    Ci.nsICookie.SAMESITE_UNSET,
     Ci.nsICookie.SCHEME_UNSET,
     true // isPartitioned
   );

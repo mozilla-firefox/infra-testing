@@ -13,8 +13,6 @@
  * @typedef {number} integer
  */
 
-/* eslint "valid-jsdoc": [2, {requireReturn: false, requireReturnDescription: false, prefer: {return: "returns"}}] */
-
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 import { XPIExports } from "resource://gre/modules/addons/XPIExports.sys.mjs";
@@ -84,7 +82,7 @@ const ZipReader = Components.Constructor(
 );
 
 XPCOMUtils.defineLazyServiceGetters(lazy, {
-  gCertDB: ["@mozilla.org/security/x509certdb;1", "nsIX509CertDB"],
+  gCertDB: ["@mozilla.org/security/x509certdb;1", Ci.nsIX509CertDB],
 });
 
 const PREF_INSTALL_REQUIRESECUREORIGIN =
@@ -101,6 +99,8 @@ const PREF_XPI_WEAK_SIGNATURES_ALLOWED =
 const PREF_SELECTED_THEME = "extensions.activeThemeID";
 
 const TOOLKIT_ID = "toolkit@mozilla.org";
+const TOPIC_GOING_OFFLINE = "network:offline-about-to-go-offline";
+const TOPIC_QUIT_GRANTED = "quit-application-granted";
 
 ChromeUtils.defineLazyGetter(lazy, "MOZ_UNSIGNED_SCOPES", () => {
   let result = 0;
@@ -541,6 +541,10 @@ async function loadManifestFromWebManifest(aPackage, aLocation) {
   addon.optionalPermissions = extension.manifestOptionalPermissions;
   addon.requestedPermissions = extension.getRequestedPermissions();
   addon.applyBackgroundUpdates = AddonManager.AUTOUPDATE_DEFAULT;
+  // This property is exposed in the `AddonInstallWrapper` and only used in the
+  // update logic (in the prompt handler). We don't store it in the add-on DB.
+  addon.hasPreviousConsent =
+    extension.getDataCollectionPermissions().hasPreviousConsent;
 
   function getLocale(aLocale) {
     // Use the raw manifest, here, since we need values with their
@@ -1260,7 +1264,7 @@ class AddonInstall {
    * @param {nsIURL} url
    *        The nsIURL to get the add-on from. If this is an nsIFileURL then
    *        the add-on will not need to be downloaded
-   * @param {Object} [options = {}]
+   * @param {object} [options = {}]
    *        Additional options for the install
    * @param {string} [options.hash]
    *        An optional hash for the add-on
@@ -1275,7 +1279,7 @@ class AddonInstall {
    * @param {string} [options.version]
    *        The expected version for the add-on.
    *        Required for updates, i.e. when existingAddon is set.
-   * @param {Object?} [options.telemetryInfo]
+   * @param {object?} [options.telemetryInfo]
    *        An optional object which provides details about the installation source
    *        included in the addon manager telemetry events.
    * @param {boolean} [options.isUserRequestedUpdate]
@@ -1454,7 +1458,7 @@ class AddonInstall {
         this._callInstallListeners("onDownloadCancelled");
         this.removeTemporaryFile();
         break;
-      case AddonManager.STATE_POSTPONED:
+      case AddonManager.STATE_POSTPONED: {
         logger.debug(`Cancelling postponed install of ${this.addon.id}`);
         this.state = AddonManager.STATE_CANCELLED;
         this._cleanup();
@@ -1469,6 +1473,7 @@ class AddonInstall {
 
         this.unstageInstall(stagedAddon);
         break;
+      }
       default:
         throw new Error(
           "Cannot cancel install of " +
@@ -1802,9 +1807,13 @@ class AddonInstall {
             // to install/uninstall/enable/disable addons.  We may need to
             // do that here in the future.
             this._callInstallListeners("onInstallFailed");
-            this.removeTemporaryFile();
           } else {
             logger.info(`Install of ${this.addon.id} cancelled by user`);
+            if (err) {
+              // promptHandler is expected to reject() without value to cancel.
+              // A non-void error is unexpected, so log it for visibility.
+              Cu.reportError(err);
+            }
             this.state = AddonManager.STATE_CANCELLED;
             this._cleanup();
             this._callInstallListeners(
@@ -1812,6 +1821,7 @@ class AddonInstall {
               /* aCancelledByUser */ true
             );
           }
+          this.removeTemporaryFile();
           return;
         }
       }
@@ -2169,11 +2179,12 @@ class AddonInstall {
       case "onDownloadCancelled":
       case "onDownloadFailed":
       case "onInstallCancelled":
-      case "onInstallFailed":
+      case "onInstallFailed": {
         let rej = Promise.reject(new Error(`Install failed: ${event}`));
         rej.catch(() => {});
         this._resolveInstallPromise(rej);
         break;
+      }
       case "onInstallEnded":
         this._resolveInstallPromise(
           Promise.resolve(this._startupPromise).then(() => args[0])
@@ -2334,7 +2345,7 @@ var DownloadAddonInstall = class extends AddonInstall {
    *        The XPIStateLocation the add-on will be installed into
    * @param {nsIURL} url
    *        The nsIURL to get the add-on from
-   * @param {Object} [options = {}]
+   * @param {object} [options = {}]
    *        Additional options for the install
    * @param {string} [options.hash]
    *        An optional hash for the add-on
@@ -2349,7 +2360,7 @@ var DownloadAddonInstall = class extends AddonInstall {
    *        An optional name for the add-on
    * @param {string} [options.type]
    *        An optional type for the add-on
-   * @param {Object} [options.icons]
+   * @param {object} [options.icons]
    *        Optional icons for the add-on
    * @param {string} [options.version]
    *        The expected version for the add-on.
@@ -2415,16 +2426,18 @@ var DownloadAddonInstall = class extends AddonInstall {
     }
   }
 
-  observe() {
-    // Network is going offline
-    this.cancel();
+  observe(_subject, topic, _data) {
+    if (topic == TOPIC_GOING_OFFLINE || topic == TOPIC_QUIT_GRANTED) {
+      // Network is going offline, or we're shutting down
+      this.cancel();
+    }
   }
 
   /**
    * Starts downloading the add-on's XPI file.
    */
   startDownload() {
-    this.downloadStartedAt = Cu.now();
+    this.downloadStartedAt = ChromeUtils.now();
 
     this.state = AddonManager.STATE_DOWNLOADING;
     if (!this._callInstallListeners("onDownloadStarted")) {
@@ -2506,7 +2519,8 @@ var DownloadAddonInstall = class extends AddonInstall {
       }
       this.channel.asyncOpen(listener);
 
-      Services.obs.addObserver(this, "network:offline-about-to-go-offline");
+      Services.obs.addObserver(this, TOPIC_GOING_OFFLINE);
+      Services.obs.addObserver(this, TOPIC_QUIT_GRANTED);
     } catch (e) {
       logger.warn(
         "Failed to start download for addon " + this.sourceURI.spec,
@@ -2519,7 +2533,7 @@ var DownloadAddonInstall = class extends AddonInstall {
     }
   }
 
-  /*
+  /**
    * Update the crypto hasher with the new data and call the progress listeners.
    *
    * @see nsIStreamListener
@@ -2532,7 +2546,7 @@ var DownloadAddonInstall = class extends AddonInstall {
     }
   }
 
-  /*
+  /**
    * Check the redirect response for a hash of the target XPI and verify that
    * we don't end up on an insecure channel.
    *
@@ -2570,7 +2584,7 @@ var DownloadAddonInstall = class extends AddonInstall {
     this.channel = aNewChannel;
   }
 
-  /*
+  /**
    * This is the first chance to get at real headers on the channel.
    *
    * @see nsIStreamListener
@@ -2614,7 +2628,7 @@ var DownloadAddonInstall = class extends AddonInstall {
     }
   }
 
-  /*
+  /**
    * The download is complete.
    *
    * @see nsIStreamListener
@@ -2623,7 +2637,8 @@ var DownloadAddonInstall = class extends AddonInstall {
     this.stream.close();
     this.channel = null;
     this.badCerthandler = null;
-    Services.obs.removeObserver(this, "network:offline-about-to-go-offline");
+    Services.obs.removeObserver(this, TOPIC_GOING_OFFLINE);
+    Services.obs.removeObserver(this, TOPIC_QUIT_GRANTED);
 
     let crypto = this.crypto;
     this.crypto = null;
@@ -2649,9 +2664,8 @@ var DownloadAddonInstall = class extends AddonInstall {
       return;
     }
 
-    logger.debug("Download of " + this.sourceURI.spec + " completed.");
-
     if (Components.isSuccessCode(aStatus)) {
+      logger.debug(`Download of ${this.sourceURI.spec} completed.`);
       if (
         !(aRequest instanceof Ci.nsIHttpChannel) ||
         aRequest.requestSucceeded
@@ -2832,7 +2846,7 @@ var DownloadAddonInstall = class extends AddonInstall {
  *        The callback to pass the new AddonInstall to
  * @param {AddonInternal} aAddon
  *        The add-on being updated
- * @param {Object} aUpdate
+ * @param {object} aUpdate
  *        The metadata about the new version from the update manifest
  * @param {boolean} isUserRequested
  *        An optional boolean, true if the install object is related to a user triggered update.
@@ -2921,6 +2935,10 @@ AddonInstallWrapper.prototype = {
   get addon() {
     let install = installFor(this);
     return install.addon ? install.addon.wrapper : null;
+  },
+
+  get addonHasPreviousConsent() {
+    return installFor(this).addon?.hasPreviousConsent;
   },
 
   get sourceURI() {
@@ -3052,6 +3070,18 @@ export var UpdateChecker = function (
       updateURL = Services.prefs.getCharPref(PREF_EM_UPDATE_BACKGROUND_URL);
     } else {
       updateURL = Services.prefs.getCharPref(PREF_EM_UPDATE_URL);
+    }
+  } else {
+    // Ensure that add-ons from the China repack can update (bug 1990806).
+    const UPDATE_URL_CN_OLD =
+      "https://addons.firefox.com.cn/chinaedition/addons/updates.json";
+    const UPDATE_URL_CN_NEW =
+      "https://archive.mozilla.org/pub/cn_pack/addons.json";
+    if (updateURL.startsWith(UPDATE_URL_CN_OLD)) {
+      logger.warn(
+        `update_url changed for add-on ${aAddon.id} version ${aAddon.version}, from ${updateURL} to ${UPDATE_URL_CN_NEW}`
+      );
+      updateURL = UPDATE_URL_CN_NEW;
     }
   }
 
@@ -3257,7 +3287,7 @@ UpdateChecker.prototype = {
  *        The file to install
  * @param {XPIStateLocation} location
  *        The location to install to
- * @param {Object?} [telemetryInfo]
+ * @param {object?} [telemetryInfo]
  *        An optional object which provides details about the installation source
  *        included in the addon manager telemetry events.
  * @returns {Promise<AddonInstall>}
@@ -3444,7 +3474,7 @@ class DirectoryInstaller {
   /**
    * Installs an add-on into the install location.
    *
-   * @param {Object} options
+   * @param {object} options
    *        Installation options.
    * @param {string} options.id
    *        The ID of the add-on to install
@@ -3597,7 +3627,7 @@ class SystemAddonInstaller extends DirectoryInstaller {
   /**
    * Saves the current set of system add-ons
    *
-   * @param {Object} aAddonSet - object containing schema, directory and set
+   * @param {object} aAddonSet - object containing schema, directory and set
    *                 of system add-on IDs and versions.
    */
   static _saveAddonSet(aAddonSet) {
@@ -3651,20 +3681,24 @@ class SystemAddonInstaller extends DirectoryInstaller {
   }
 
   /**
-   * Tests whether the loaded add-on information matches what is expected.
+   * Tests whether the loaded add-on information matches what is expected
+   * and returns the list of add-on ids of the ones detected as invalid
+   * (e.g. addon version not matching the expected version included in the
+   * addonSet about:config pref).
    *
    * @param {Map<string, AddonInternal>} aAddons
    *        The set of add-ons to check.
-   * @returns {boolean}
-   *        True if all of the given add-ons are valid.
+   * @returns {Array<string>}
+   *        Add-ons ids of the system-signed addons detected as invalid.
    */
-  isValid(aAddons) {
+  getInvalidAddonIds(aAddons) {
+    const invalidAddonIds = [];
     for (let id of Object.keys(this._addonSet.addons)) {
       if (!aAddons.has(id)) {
         logger.warn(
           `Expected add-on ${id} is missing from the system add-on location.`
         );
-        return false;
+        continue;
       }
 
       let addon = aAddons.get(id);
@@ -3672,15 +3706,59 @@ class SystemAddonInstaller extends DirectoryInstaller {
         logger.warn(
           `Expected system add-on ${id} to be version ${this._addonSet.addons[id].version} but was ${addon.version}.`
         );
-        return false;
+        invalidAddonIds.push(id);
+        continue;
       }
 
       if (!this.isValidAddon(addon)) {
-        return false;
+        invalidAddonIds.push(id);
+        continue;
       }
     }
 
-    return true;
+    return invalidAddonIds;
+  }
+
+  async updateAddonSetOnAppVersionChanged(builtInsMap) {
+    let addonSet = this._addonSet;
+
+    if (!addonSet.directory) {
+      // Nothing to do if there aren't any system-signed updates.
+      return;
+    }
+
+    if (!builtInsMap.size) {
+      // If the builtin map is completely empty, we would uninstall
+      // all system-signed updates like resetAddonSet method would.
+      await this.resetAddonSet();
+      return;
+    }
+
+    logger.info("Re-validate system add-on upgrades on app version changed.");
+
+    const systemUpdateIsBuiltInUpgrade = (id, systemUpdateVersion) => {
+      if (!builtInsMap.has(id)) {
+        return false;
+      }
+      const builtInVersion = builtInsMap.get(id).builtin.addon_version;
+      return Services.vc.compare(systemUpdateVersion, builtInVersion) > 0;
+    };
+    for (const id of Object.keys(this._addonSet.addons)) {
+      const { version } = this._addonSet.addons[id];
+      if (systemUpdateIsBuiltInUpgrade(id, version)) {
+        logger.info(
+          `SystemAddonInstaller: keep system-signed update for built-in addon ${id}`
+        );
+        continue;
+      }
+
+      logger.info(
+        `SystemAddonInstaller: uninstalling system-signed addon ${id}`
+      );
+      uninstallAddonFromLocation(id, this.location);
+      delete this._addonSet.addons[id];
+    }
+    SystemAddonInstaller._saveAddonSet(this._addonSet);
   }
 
   /**
@@ -4511,13 +4589,13 @@ export var XPIInstall = {
    *        A hash for the install
    * @param {string} [aOptions.name]
    *        A name for the install
-   * @param {Object} [aOptions.icons]
+   * @param {object} [aOptions.icons]
    *        Icon URLs for the install
    * @param {string} [aOptions.version]
    *        A version for the install
    * @param {XULElement} [aOptions.browser]
    *        The browser performing the install
-   * @param {Object} [aOptions.telemetryInfo]
+   * @param {object} [aOptions.telemetryInfo]
    *        An optional object which provides details about the installation source
    *        included in the addon manager telemetry events.
    * @param {boolean} [aOptions.sendCookies = false]
@@ -4555,7 +4633,7 @@ export var XPIInstall = {
    *
    * @param {nsIFile} aFile
    *        The file to be installed
-   * @param {Object?} [aInstallTelemetryInfo]
+   * @param {object?} [aInstallTelemetryInfo]
    *        An optional object which provides details about the installation source
    *        included in the addon manager telemetry events.
    * @param {boolean} [aUseSystemLocation = false]

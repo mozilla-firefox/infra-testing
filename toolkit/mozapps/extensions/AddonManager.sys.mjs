@@ -38,6 +38,14 @@ const PREF_EM_CHECK_UPDATE_SECURITY = "extensions.checkUpdateSecurity";
 const PREF_SYS_ADDON_UPDATE_ENABLED = "extensions.systemAddon.update.enabled";
 const PREF_REMOTESETTINGS_DISABLED = "extensions.remoteSettings.disabled";
 const PREF_USE_REMOTE = "extensions.webextensions.remote";
+const PREF_AMTELEMETRY_ADDONS_BUILDER =
+  "extensions.telemetry.EnvironmentAddonBuilder";
+const PREF_GLEAN_PING_ADDONS_UPDATED_DELAY_MS =
+  "extensions.gleanPingAddons.updated.delay";
+const PREF_GLEAN_PING_ADDONS_UPDATED_IDLE_TIMEOUT_MS =
+  "extensions.gleanPingAddons.updated.idleTimeout";
+const PREF_GLEAN_PING_ADDONS_UPDATED_TESTING =
+  "extensions.gleanPingAddons.updated.testing";
 
 const PREF_MIN_WEBEXT_PLATFORM_VERSION =
   "extensions.webExtensionsMinPlatformVersion";
@@ -84,9 +92,12 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   AbuseReporter: "resource://gre/modules/AbuseReporter.sys.mjs",
   AddonRepository: "resource://gre/modules/addons/AddonRepository.sys.mjs",
+  DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
   Extension: "resource://gre/modules/Extension.sys.mjs",
+  ObjectUtils: "resource://gre/modules/ObjectUtils.sys.mjs",
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
   TelemetryTimestamps: "resource://gre/modules/TelemetryTimestamps.sys.mjs",
+  TelemetryUtils: "resource://gre/modules/TelemetryUtils.sys.mjs",
   isGatedPermissionType:
     "resource://gre/modules/addons/siteperms-addon-utils.sys.mjs",
   isKnownPublicSuffix:
@@ -99,6 +110,38 @@ XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
   "WEBEXT_POSTDOWNLOAD_THIRD_PARTY",
   PREF_EM_POSTDOWNLOAD_THIRD_PARTY,
+  false
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "AMTELEMETRY_ADDONS_BUILDER_ENABLED",
+  PREF_AMTELEMETRY_ADDONS_BUILDER,
+  false
+);
+
+// By default coalesce `addons` updated ping submission happening in a 5min interval.
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "GLEAN_PING_ADDONS_UPDATED_DELAY_MS",
+  PREF_GLEAN_PING_ADDONS_UPDATED_DELAY_MS,
+  1000 * 60 * 5
+);
+
+// By default wait for 1min for an idle slot after the delay time have already elapsed.
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "GLEAN_PING_ADDONS_UPDATED_IDLE_TIMEOUT_MS",
+  PREF_GLEAN_PING_ADDONS_UPDATED_IDLE_TIMEOUT_MS,
+  1000 * 60
+);
+
+// Whether EnvironmentAddonBuilder._scheduleGleanPingAddonsUpdated should
+// send the `test-glean-ping-addons-updated` observer service notification.
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "GLEAN_PING_ADDONS_UPDATED_TESTING",
+  PREF_GLEAN_PING_ADDONS_UPDATED_TESTING,
   false
 );
 
@@ -139,6 +182,11 @@ var logger = Log.repository.getLogger(LOGGER_ID);
 // at DEBUG and higher should go to JS console and standard error.
 const PREF_LOGGING_ENABLED = "extensions.logging.enabled";
 const NS_PREFBRANCH_PREFCHANGE_TOPIC_ID = "nsPref:changed";
+
+const GMP_PROVIDER_REGISTERED_TOPIC = "gmp-provider-registered";
+// The maximum length of strings collected in the Glean addons.activeAddons/activeTheme/activeGMPlugins
+// metrics properties (e.g. description).
+const MAX_ADDON_STRING_LENGTH = 100;
 
 const UNNAMED_PROVIDER = "<unnamed-provider>";
 function providerName(aProvider) {
@@ -257,6 +305,7 @@ async function promiseCallProvider(aProvider, aMethod, ...aArgs) {
 
 /**
  * Gets the currently selected locale for display.
+ *
  * @return  the selected locale or "en-US" if none is selected
  */
 function getLocale() {
@@ -494,6 +543,7 @@ export var AMBrowserExtensionsImport;
 /**
  * This is the real manager, kept here rather than in AddonManager to keep its
  * contents hidden from API users.
+ *
  * @class
  * @lends AddonManager
  */
@@ -596,6 +646,9 @@ var AddonManagerInternal = {
       }
 
       this.recordTimestamp("AMI_startup_begin");
+      Glean.addonsManager.startupTimeline.AMI_startup_begin.set(
+        Services.telemetry.msSinceProcessStart()
+      );
 
       // Enable the AMRemoteSettings client.
       AMRemoteSettings.init();
@@ -765,6 +818,9 @@ var AddonManagerInternal = {
       gStartupComplete = true;
       gStartedPromise.resolve();
       this.recordTimestamp("AMI_startup_end");
+      Glean.addonsManager.startupTimeline.AMI_startup_end.set(
+        Services.telemetry.msSinceProcessStart()
+      );
     } catch (e) {
       logger.error("startup failed", e);
       AddonManagerPrivate.recordException("AMI", "startup failed", e);
@@ -963,6 +1019,7 @@ var AddonManagerInternal = {
   /**
    * Shuts down the addon manager and all registered providers, this must clean
    * up everything in order for automated tests to fake restarts.
+   *
    * @return Promise{null} that resolves when all providers and dependent modules
    *                       have finished shutting down
    */
@@ -1236,7 +1293,7 @@ var AddonManagerInternal = {
     return uri.replace(/\+/g, "%2B");
   },
 
-  _updatePromptHandler(info) {
+  updatePromptHandler(info) {
     let oldPerms = info.existingAddon.userPermissions;
     if (!oldPerms) {
       // Updating from a legacy add-on, just let it proceed
@@ -1250,11 +1307,21 @@ var AddonManagerInternal = {
     let newPerms = info.addon.userPermissions;
     let difference = lazy.Extension.comparePermissions(oldPerms, newPerms);
 
+    // When an update for an existing add-on includes data collection
+    // permissions, which the add-ons didn't have so far, and the manifest
+    // contains a flag to indicate that there was a previous consent, then we
+    // allow the update to just proceed, unless there are other new required
+    // permissions.
+    const updateIsMigratingToDataCollectionPerms =
+      !info.existingAddon.hasDataCollectionPermissions &&
+      info.install.addonHasPreviousConsent;
+
     // If there are no new permissions, just go ahead with the update
     if (
       !difference.origins.length &&
       !difference.permissions.length &&
-      !difference.data_collection.length
+      (updateIsMigratingToDataCollectionPerms ||
+        !difference.data_collection.length)
     ) {
       return Promise.resolve();
     }
@@ -1263,6 +1330,7 @@ var AddonManagerInternal = {
       let subject = {
         wrappedJSObject: {
           addon: info.addon,
+          existingAddon: info.existingAddon,
           permissions: difference,
           resolve,
           reject,
@@ -1271,7 +1339,10 @@ var AddonManagerInternal = {
           install: info.install,
         },
       };
-      Services.obs.notifyObservers(subject, "webextension-update-permissions");
+      Services.obs.notifyObservers(
+        subject,
+        "webextension-update-permission-prompt"
+      );
     });
   },
 
@@ -1289,6 +1360,7 @@ var AddonManagerInternal = {
   /**
    * Performs a background update check by starting an update for all add-ons
    * that can be updated.
+   *
    * @return Promise{null} Resolves when the background update check is complete
    *                       (the resulting addon installations may still be in progress).
    */
@@ -1336,7 +1408,7 @@ var AddonManagerInternal = {
                       // not when update-available check completes, no?
                       logger.debug(`Starting upgrade install of ${aAddon.id}`);
                       aInstall.promptHandler = (...args) =>
-                        AddonManagerInternal._updatePromptHandler(...args);
+                        AddonManagerInternal.updatePromptHandler(...args);
                       aInstall.install();
                     }
                   },
@@ -1691,13 +1763,13 @@ var AddonManagerInternal = {
    *
    * @param  aUrl
    *         The string represenation of the URL where the add-on is located
-   * @param  {Object} [aOptions = {}]
+   * @param  {object} [aOptions = {}]
    *         Additional options for this install
    * @param  {string} [aOptions.hash]
    *         An optional hash of the add-on
    * @param  {string} [aOptions.name]
    *         An optional placeholder name while the add-on is being downloaded
-   * @param  {string|Object} [aOptions.icons]
+   * @param  {string | object} [aOptions.icons]
    *         Optional placeholder icons while the add-on is being downloaded
    * @param  {string} [aOptions.version]
    *         An optional placeholder version while the add-on is being downloaded
@@ -1705,7 +1777,7 @@ var AddonManagerInternal = {
    *         An optional <browser> element for download permissions prompts.
    * @param  {nsIPrincipal} [aOptions.triggeringPrincipal]
    *         The principal which is attempting to install the add-on.
-   * @param  {Object} [aOptions.telemetryInfo]
+   * @param  {object} [aOptions.telemetryInfo]
    *         An optional object which provides details about the installation source
    *         included in the addon manager telemetry events.
    * @throws if aUrl is not specified or if an optional argument of
@@ -1842,7 +1914,7 @@ var AddonManagerInternal = {
    *
    * @param  {Element} aBrowser: The optional browser element that started the install
    * @param {nsIPrincipal} aInstallingPrincipal
-   * @param {String} aSitePerm
+   * @param {string} aSitePerm
    * @returns {Promise<SitePermsAddonInstall|null>} The promise will resolve with null if there
    *         are no provider with a getSitePermsAddonInstallForWebpage method. In practice,
    *         this should only be the case when SitePermsAddonProvider is not enabled,
@@ -2591,7 +2663,7 @@ var AddonManagerInternal = {
 
     if (!!options.preferUpdateOverInstall && install.existingAddon) {
       install.promptHandler = (...args) =>
-        AddonManagerInternal._updatePromptHandler(...args);
+        AddonManagerInternal.updatePromptHandler(...args);
     } else {
       AddonManagerInternal.setupPromptHandler(
         browser,
@@ -2812,7 +2884,7 @@ var AddonManagerInternal = {
    *         Ideal icon size in pixels
    * @param  aWindow
    *         Optional window object for determining the correct scale.
-   * @return {String} The absolute URL of the icon or null if the addon doesn't have icons
+   * @return {string} The absolute URL of the icon or null if the addon doesn't have icons
    */
   getPreferredIconURL(aAddon, aSize, aWindow = undefined) {
     if (aWindow && aWindow.devicePixelRatio) {
@@ -3077,6 +3149,19 @@ var AddonManagerInternal = {
     return this.getAddonsByTypes(null);
   },
 
+  getBuiltinAddonVersion(addonId) {
+    if (!gStarted) {
+      throw Components.Exception(
+        "AddonManager is not initialized",
+        Cr.NS_ERROR_NOT_INITIALIZED
+      );
+    }
+
+    return this._getProviderByName("XPIProvider").getBuiltinAddonVersion(
+      addonId
+    );
+  },
+
   shouldShowBlocklistAttention() {
     if (!gStarted) {
       throw Components.Exception(
@@ -3267,7 +3352,7 @@ var AddonManagerInternal = {
    * @param {browser}      browser browser user is installing from
    * @param {nsIURI}       url     URI for the principal of the installing source
    * @param {AddonInstallWrapper} install
-   * @param {Object}       info    information such as addon wrapper
+   * @param {object}       info    information such as addon wrapper
    * @param {AddonWrapper} info.addon
    * @param {string}       source  simplified string describing source of install and is
    *                               generated based on the installing principal and checking
@@ -3864,6 +3949,7 @@ export var AddonManagerPrivate = {
       }
     }
 
+    Glean.addonsManager.exception.set(report);
     this._simpleMeasures.exception = report;
   },
 
@@ -3882,10 +3968,13 @@ export var AddonManagerPrivate = {
   // Start a timer, record a simple measure of the time interval when
   // timer.done() is called
   simpleTimer(aName) {
-    let startTime = Cu.now();
+    let startTime = ChromeUtils.now();
     return {
       done: () =>
-        this.recordSimpleMeasure(aName, Math.round(Cu.now() - startTime)),
+        this.recordSimpleMeasure(
+          aName,
+          Math.round(ChromeUtils.now() - startTime)
+        ),
     };
   },
 
@@ -3990,6 +4079,7 @@ export var AddonManagerPrivate = {
 /**
  * This is the public API that UI and developers should be calling. All methods
  * just forward to AddonManagerInternal.
+ *
  * @class
  */
 export var AddonManager = {
@@ -4344,6 +4434,28 @@ export var AddonManager = {
     return AddonManagerInternal.getAllAddons();
   },
 
+  /**
+   * Gets the version of the auto-install built-in add-on
+   * with the given addonID (if a built-in with that add-on
+   * id exists).
+   *
+   * NOTE:
+   * - This method is limited to built-in add-ons
+   *   auto-installed in the "app-builtin-addons" location
+   *   based on the list bundled in Firefox Desktop builds as
+   *   "chrome://browser/content/built_in_addons.json".
+   * - This method will throws an exception if called before
+   *   the AddonManager and the XPIProvider has been started.
+   *
+   * @param  {string} addonId
+   *   Addon id of the built-in add-on to get a version for.
+   * @return {string|void}
+   *   Returns the built-in add-on version if one is found.
+   */
+  getBuiltinAddonVersion(addonId) {
+    return AddonManagerInternal.getBuiltinAddonVersion(addonId);
+  },
+
   getInstallsByTypes(aTypes) {
     return AddonManagerInternal.getInstallsByTypes(aTypes);
   },
@@ -4564,6 +4676,14 @@ export var AddonManager = {
   get beforeShutdown() {
     return gBeforeShutdownBarrier.client;
   },
+
+  /**
+   * Returns a promise that should be attached to an installation prompt
+   * handler when we update an add-on.
+   */
+  async updatePromptHandler(aInfo) {
+    return AddonManagerInternal.updatePromptHandler(aInfo);
+  },
 };
 
 /**
@@ -4590,10 +4710,7 @@ AMRemoteSettings = {
    *   the settings groups defined here.
    */
   RS_ENTRIES_MAP: {
-    installTriggerDeprecation: [
-      "extensions.InstallTriggerImpl.enabled",
-      "extensions.InstallTrigger.enabled",
-    ],
+    installTriggerDeprecation: ["extensions.InstallTrigger.enabled"],
     quarantinedDomains: ["extensions.quarantinedDomains.list"],
   },
 
@@ -4719,10 +4836,580 @@ AMRemoteSettings = {
 };
 
 /**
+ * Encapsulates the Glean addons.activeAddons/activeTheme/activeGMPlugins data collection.
+ *
+ * In Firefox Desktop build the EnvironmentAddonBuilder is managed from the TelemetryEnvironment,
+ * whereas on Firefox for Android / GeckoView builds it is managed from the AMTelemetry singleton
+ * defined in this same ES module.
+ */
+export class EnvironmentAddonBuilder {
+  // Used by TelemetryEnvironment to determine if it is still
+  // responsible for creating and managing the EnvironmentAddonBuilder
+  // instance as part of the legacy TelemetryEnvironment.
+  static isTelemetryEnvironmentEnabled = () =>
+    !lazy.AMTELEMETRY_ADDONS_BUILDER_ENABLED;
+
+  constructor(environment) {
+    this._environment = environment;
+
+    // The pending task blocks addon manager shutdown. It can either be the initial load
+    // or a change load.
+    this._pendingTask = null;
+
+    // Have we added an observer to listen for blocklist changes that still needs to be
+    // removed:
+    this._gmpProviderObserverAdded = false;
+
+    // Set to true once initial load is complete and we're watching for changes.
+    this._loaded = false;
+
+    // Set to true once the shutdown has been completed.
+    this._shutdownCompleted = false;
+
+    // The state reported by the shutdown blocker if we hang shutdown.
+    this._shutdownState = "Initial";
+
+    // Addons may contain partial or full data depending on whether the Addons DB
+    // has had a chance to load. Do we have full data yet?
+    this._addonsAreFull = false;
+
+    // a DeferredTask coalescing multiple addons list updates into a single
+    // submission of the Glean Ping `addons` with the reason `updated`.
+    this._submitGleanPingAddonsUpdatedTask = null;
+
+    this._log = console.createInstance({
+      prefix: "EnvironmentAddonBuilder",
+      maxLogLevel: Services.prefs.getBoolPref(PREF_LOGGING_ENABLED, false)
+        ? "Debug"
+        : "Warn",
+    });
+
+    this._currentData = {};
+  }
+
+  /**
+   * Returns a substring of the input string.
+   *
+   * @param {string} aString The input string.
+   * @param {Integer} aMaxLength The maximum length of the returned substring. If this is
+   *        greater than the length of the input string, we return the whole input string.
+   * @return {string} The substring or null if the input string is null.
+   */
+  limitStringToLength(aString, aMaxLength) {
+    if (typeof aString !== "string") {
+      return null;
+    }
+    return aString.substring(0, aMaxLength);
+  }
+
+  /**
+   * Enforces the parameter to a boolean value.
+   *
+   * @param aValue The input value.
+   * @return {boolean | object} If aValue is a boolean or a number, returns its truthfulness
+   *         value. Otherwise, return null.
+   */
+  enforceBoolean(aValue) {
+    if (typeof aValue !== "number" && typeof aValue !== "boolean") {
+      return null;
+    }
+    return Boolean(aValue);
+  }
+
+  /**
+   * Get the initial set of addons.
+   *
+   * @returns Promise<void> when the initial load is complete.
+   */
+  async init() {
+    AddonManager.beforeShutdown.addBlocker(
+      "EnvironmentAddonBuilder",
+      () => this._shutdownBlocker(),
+      { fetchState: () => this._shutdownState }
+    );
+
+    this._pendingTask = (async () => {
+      try {
+        this._shutdownState = "Awaiting _updateAddons";
+        // Gather initial addons details
+        await this._updateAddons();
+
+        if (!this._addonsAreFull) {
+          // The addon database has not been loaded, wait for it to
+          // initialize and gather full data as soon as it does.
+          this._shutdownState = "Awaiting AddonManagerPrivate.databaseReady";
+          await AddonManagerPrivate.databaseReady;
+
+          // Now gather complete addons details.
+          this._shutdownState = "Awaiting second _updateAddons";
+          await this._updateAddons();
+        }
+      } catch (err) {
+        this._log.error("init - Exception in _updateAddons", err);
+      } finally {
+        this._pendingTask = null;
+        this._shutdownState = "_pendingTask init complete. No longer blocking.";
+        this._log.debug("init - completed");
+        // Submit the addons Glean ping with reason "startup" right after
+        // the EnvironmentAddonBuilder has been initialized as part of the
+        // AddonManager and application startup.
+        GleanPings.addons.submit("startup");
+      }
+    })();
+
+    return this._pendingTask;
+  }
+
+  async uninit() {
+    if (this._shutdownCompleted) {
+      return;
+    }
+    this._finalizeGleanPingAddonsUpdatedTask();
+    await this._shutdownBlocker();
+  }
+
+  /**
+   * Register an addon listener and watch for changes.
+   */
+  watchForChanges() {
+    this._log.trace("watchForChanges");
+    this._loaded = true;
+    AddonManager.addAddonListener(this);
+  }
+
+  // AddonListener
+  onEnabled(addon) {
+    this._onAddonChange(addon);
+  }
+
+  onDisabled(addon) {
+    this._onAddonChange(addon);
+  }
+
+  onInstalled(addon) {
+    this._onAddonChange(addon);
+  }
+
+  onUninstalling(addon) {
+    this._onAddonChange(addon);
+  }
+
+  onUninstalled(addon) {
+    this._onAddonChange(addon);
+  }
+
+  onPropertyChanged(addon, propertiesChanged) {
+    // Avoid to update the telemetry environment for onPropertyChanged
+    // calls that we are not actually interested in (and quarantineIgnoredByApp
+    // is not expected to change at runtime, unless the entire active addons
+    // entry is also replaced, e.g. on the extension being uninstalled and
+    // installed again).
+    if (!propertiesChanged.includes("quarantineIgnoredByUser")) {
+      return;
+    }
+    this._onAddonChange(addon);
+  }
+
+  // nsIObserver
+  observe(aSubject, aTopic) {
+    this._log.trace("observe - Topic " + aTopic);
+    if (aTopic == GMP_PROVIDER_REGISTERED_TOPIC) {
+      Services.obs.removeObserver(this, GMP_PROVIDER_REGISTERED_TOPIC);
+      this._gmpProviderObserverAdded = false;
+      let gmpPluginsPromise = this._getActiveGMPlugins();
+      gmpPluginsPromise.then(
+        gmpPlugins => {
+          let { addons } = this._currentEnvironment;
+          addons.activeGMPlugins = gmpPlugins;
+        },
+        err => {
+          this._log.error("blocklist observe: Error collecting plugins", err);
+        }
+      );
+    }
+  }
+
+  // Internal helper methods and getters.
+  get _currentEnvironment() {
+    return this._environment?._currentEnvironment ?? this._currentData;
+  }
+
+  _onEnvironmentChange(changeReason, oldEnvironment) {
+    this._environment?._onEnvironmentChange(changeReason, oldEnvironment);
+  }
+
+  _onAddonChange(addon) {
+    // On builds where this metric is also reported in the legacy telemetry main ping
+    // as part of the TelemetryEnvironment, return earlier if the add-on is a non-system builtin
+    // to keep the old behavior unchanged (to reduce the change of changing the frequency of the
+    // legacy telemetry main ping as an unexpected side-effect).
+    //
+    // NOTE: on android builds this check is expected to never be true, and the non-system builtin
+    // add-ons like webcompat to be part of the activeAddons Glean metric. This early return
+    // can be dropped completely (along with the similar logic from the _getActiveAddons method)
+    // once we have migrated the Desktop builds away from the legacy TelemetryEnvironment.
+    if (
+      !lazy.AMTELEMETRY_ADDONS_BUILDER_ENABLED &&
+      addon &&
+      addon.isBuiltin &&
+      !addon.isSystem
+    ) {
+      return;
+    }
+    this._log.trace(`_onAddonChange ${addon?.id ? addon.id : ""}`);
+    this._checkForChanges("addons-changed");
+  }
+
+  _checkForChanges(changeReason) {
+    if (this._pendingTask) {
+      this._log.trace(
+        "_checkForChanges - task already pending, dropping change with reason " +
+          changeReason
+      );
+      return;
+    }
+
+    this._shutdownState = "_checkForChanges awaiting _updateAddons";
+    this._pendingTask = this._updateAddons().then(
+      result => {
+        this._pendingTask = null;
+        this._shutdownState = "No longer blocking, _updateAddons resolved";
+        if (result.changed) {
+          this._onEnvironmentChange(changeReason, result.oldEnvironment);
+          this._scheduleGleanPingAddonsUpdated();
+        }
+      },
+      err => {
+        this._pendingTask = null;
+        this._shutdownState = "No longer blocking, _updateAddons rejected";
+        this._log.error("_checkForChanges: Error collecting addons", err);
+      }
+    );
+  }
+
+  _scheduleGleanPingAddonsUpdated() {
+    if (!this._submitGleanPingAddonsUpdatedTask) {
+      this._submitGleanPingAddonsUpdatedTask = new lazy.DeferredTask(
+        () => {
+          if (lazy.GLEAN_PING_ADDONS_UPDATED_TESTING) {
+            Services.obs.notifyObservers(
+              null,
+              "test-glean-ping-addons-updated"
+            );
+          }
+          // Submit the addons Glean ping with reason "updated" when
+          // the list of addons/theme/GMPlugins has changed.
+          GleanPings.addons.submit("updated");
+        },
+        lazy.GLEAN_PING_ADDONS_UPDATED_DELAY_MS,
+        lazy.GLEAN_PING_ADDONS_UPDATED_IDLE_TIMEOUT_MS
+      );
+      AddonManager.beforeShutdown.addBlocker(
+        "EnvironmentAddonBuilder::GleanPingAddonsUpdated",
+        () => this._finalizeGleanPingAddonsUpdatedTask(),
+        { fetchState: () => this._shutdownState }
+      );
+    }
+    this._submitGleanPingAddonsUpdatedTask.arm();
+  }
+
+  _finalizeGleanPingAddonsUpdatedTask() {
+    try {
+      this._submitGleanPingAddonsUpdatedTask?.disarm();
+      this._submitGleanPingAddonsUpdatedTask?.finalize();
+    } catch (err) {
+      this._log.error(
+        "Unexpected failure on disarming and finalizing _submitGleanPingAddonsUpdatedTask",
+        err
+      );
+    } finally {
+      if (this._submitGleanPingAddonsUpdatedTask?.isFinalized) {
+        this._submitGleanPingAddonsUpdatedTask = null;
+      }
+    }
+  }
+
+  async _shutdownBlocker() {
+    if (this._loaded) {
+      AddonManager.removeAddonListener(this);
+      if (this._gmpProviderObserverAdded) {
+        Services.obs.removeObserver(this, GMP_PROVIDER_REGISTERED_TOPIC);
+        this._gmpProviderObserverAdded = false;
+      }
+    }
+
+    // At startup, _pendingTask is set to a Promise that does not resolve
+    // until the addons database has been read so complete details about
+    // addons are available.  Returning it here will cause it to block
+    // profileBeforeChange, guranteeing that full information will be
+    // available by the time profileBeforeChangeTelemetry is fired.
+    await this._pendingTask;
+    this._shutdownCompleted = true;
+  }
+
+  /**
+   * Collect the addon data for the environment.
+   *
+   * This should only be called from _pendingTask; otherwise we risk
+   * running this during addon manager shutdown.
+   *
+   * @returns Promise<Object> This returns a Promise resolved with a status object with the following members:
+   *   changed - Whether the environment changed.
+   *   oldEnvironment - Only set if a change occured, contains the environment data before the change.
+   */
+  async _updateAddons() {
+    this._log.trace("_updateAddons");
+
+    let addons = {
+      activeAddons: await this._getActiveAddons(),
+      // NOTE: about:telemetry expects `theme` to always be set to an object (potentially empty
+      // if no theme was yet found installed and active), see Bug 1994389.
+      theme: (await this._getActiveTheme()) ?? {},
+      activeGMPlugins: await this._getActiveGMPlugins(),
+    };
+
+    let result = {
+      changed:
+        !this._currentEnvironment.addons ||
+        !lazy.ObjectUtils.deepEqual(
+          addons.activeAddons,
+          this._currentEnvironment.addons.activeAddons
+        ),
+    };
+
+    if (result.changed) {
+      this._log.trace("_updateAddons: addons differ");
+      result.oldEnvironment = Cu.cloneInto(this._currentEnvironment, {});
+    }
+    this._currentEnvironment.addons = addons;
+
+    // Convert into the appropriate schema and record the addon environment
+    // data in Glean
+    let activeAddonsGlean = Object.entries(addons.activeAddons).map(
+      ([id, { type, ...rest }]) => ({ id, addonType: type, ...rest })
+    );
+    Glean.addons.activeAddons.set(activeAddonsGlean);
+    // On android builds theme add-ons are not supported, and so
+    // if _getActiveTheme returned an empty object we do not set
+    // the Glean.addons.theme object metric (given that setting it
+    // to null is not a valid value for a Glean object metric).
+    if (addons.theme) {
+      Glean.addons.theme.set(addons.theme);
+    }
+    Glean.addons.activeGMPlugins.set(
+      Object.entries(addons.activeGMPlugins).map(([id, value]) => ({
+        id,
+        ...value,
+      }))
+    );
+
+    return result;
+  }
+
+  /**
+   * Get the addon data in object form.
+   *
+   * @return Promise<object> containing the addon data.
+   */
+  async _getActiveAddons() {
+    // Request addons, asynchronously.
+    // "theme" is excluded because it is already handled by _getActiveTheme.
+    let { addons: allAddons, fullData } = await AddonManager.getActiveAddons(
+      AddonManagerPrivate.getAddonTypesByProvider("XPIProvider").filter(
+        addonType => addonType != "theme"
+      )
+    );
+
+    this._addonsAreFull = fullData;
+    let activeAddons = {};
+    for (let addon of allAddons) {
+      // NOTE: This if block should be dropped completely (along with the similar one
+      // on the _onAddonChange side) once we have migrated the Desktop builds away from
+      // the legacy TelemetryEnvironment
+      if (
+        !lazy.AMTELEMETRY_ADDONS_BUILDER_ENABLED &&
+        addon.isBuiltin &&
+        !addon.isSystem
+      ) {
+        continue;
+      }
+
+      // Weird addon data in the wild can lead to exceptions while collecting
+      // the data.
+      try {
+        // Make sure to have valid dates (built-in add-ons are
+        // expected to not have a valid update date).
+        let updateDate = isNaN(addon.updateDate?.valueOf())
+          ? new Date(0)
+          : new Date(Math.max(0, addon.updateDate));
+
+        activeAddons[addon.id] = {
+          version: this.limitStringToLength(
+            addon.version,
+            MAX_ADDON_STRING_LENGTH
+          ),
+          scope: addon.scope,
+          type: addon.type,
+          updateDay: lazy.TelemetryUtils.millisecondsToDays(
+            updateDate.getTime()
+          ),
+          isSystem: addon.isSystem,
+          isWebExtension: addon.isWebExtension,
+          multiprocessCompatible: true,
+        };
+
+        // getActiveAddons() gives limited data during startup and full
+        // data after the addons database is loaded.
+        if (fullData) {
+          // Make sure to have valid dates (built-in add-ons are
+          // expected to not have a valid install date).
+          let installDate = isNaN(addon.installDate?.valueOf())
+            ? new Date(0)
+            : new Date(Math.max(0, addon.installDate));
+
+          Object.assign(activeAddons[addon.id], {
+            blocklisted:
+              addon.blocklistState !== Ci.nsIBlocklistService.STATE_NOT_BLOCKED,
+            description: this.limitStringToLength(
+              addon.description,
+              MAX_ADDON_STRING_LENGTH
+            ),
+            name: this.limitStringToLength(addon.name, MAX_ADDON_STRING_LENGTH),
+            userDisabled: this.enforceBoolean(addon.userDisabled),
+            appDisabled: addon.appDisabled,
+            foreignInstall: this.enforceBoolean(addon.foreignInstall),
+            hasBinaryComponents: false,
+            installDay: lazy.TelemetryUtils.millisecondsToDays(
+              installDate.getTime()
+            ),
+            signedState: addon.signedState,
+            signedTypes: JSON.stringify(addon.signedTypes),
+            quarantineIgnoredByApp: this.enforceBoolean(
+              addon.quarantineIgnoredByApp
+            ),
+            quarantineIgnoredByUser: this.enforceBoolean(
+              addon.quarantineIgnoredByUser
+            ),
+          });
+        }
+      } catch (ex) {
+        this._log.error(
+          "_getActiveAddons - An addon was discarded due to an error",
+          ex
+        );
+        continue;
+      }
+    }
+
+    return activeAddons;
+  }
+
+  /**
+   * Get the currently active theme data in object form.
+   *
+   * @return Promise<object> containing the active theme data.
+   */
+  async _getActiveTheme() {
+    // Request themes, asynchronously.
+    let { addons: themes } = await AddonManager.getActiveAddons(["theme"]);
+
+    let activeTheme = null;
+    // We only store information about the active theme.
+    let theme = themes.find(themeAddon => themeAddon.isActive);
+    if (theme) {
+      // Make sure to have valid dates.
+      let installDate = new Date(Math.max(0, theme.installDate));
+      let updateDate = new Date(Math.max(0, theme.updateDate));
+
+      activeTheme = {
+        id: theme.id,
+        blocklisted:
+          theme.blocklistState !== Ci.nsIBlocklistService.STATE_NOT_BLOCKED,
+        description: this.limitStringToLength(
+          theme.description,
+          MAX_ADDON_STRING_LENGTH
+        ),
+        name: this.limitStringToLength(theme.name, MAX_ADDON_STRING_LENGTH),
+        userDisabled: this.enforceBoolean(theme.userDisabled),
+        appDisabled: theme.appDisabled,
+        version: this.limitStringToLength(
+          theme.version,
+          MAX_ADDON_STRING_LENGTH
+        ),
+        scope: theme.scope,
+        foreignInstall: this.enforceBoolean(theme.foreignInstall),
+        hasBinaryComponents: false,
+        installDay: lazy.TelemetryUtils.millisecondsToDays(
+          installDate.getTime()
+        ),
+        updateDay: lazy.TelemetryUtils.millisecondsToDays(updateDate.getTime()),
+        signedState: theme.signedState,
+        signedTypes: JSON.stringify(theme.signedTypes),
+      };
+    }
+
+    return activeTheme;
+  }
+
+  /**
+   * Get the GMPlugins data in object form.
+   *
+   * @return Object containing the GMPlugins data.
+   *
+   * This should only be called from _pendingTask; otherwise we risk
+   * running this during addon manager shutdown.
+   */
+  async _getActiveGMPlugins() {
+    // If we haven't yet loaded the blocklist, pass back dummy data for now,
+    // and add an observer to update this data as soon as we get it.
+    if (!AddonManager.hasProvider("GMPProvider")) {
+      if (!this._gmpProviderObserverAdded) {
+        Services.obs.addObserver(this, GMP_PROVIDER_REGISTERED_TOPIC);
+        this._gmpProviderObserverAdded = true;
+      }
+      return {
+        "dummy-gmp": {
+          version: "0.1",
+          userDisabled: false,
+          applyBackgroundUpdates: 1,
+        },
+      };
+    }
+    // Request plugins, asynchronously.
+    let allPlugins = await AddonManager.getAddonsByTypes(["plugin"]);
+
+    let activeGMPlugins = {};
+    for (let plugin of allPlugins) {
+      // Only get info for active GMplugins.
+      if (!plugin.isGMPlugin || !plugin.isActive) {
+        continue;
+      }
+
+      try {
+        activeGMPlugins[plugin.id] = {
+          version: plugin.version,
+          userDisabled: this.enforceBoolean(plugin.userDisabled),
+          applyBackgroundUpdates: plugin.applyBackgroundUpdates,
+        };
+      } catch (ex) {
+        this._log.error(
+          "_getActiveGMPlugins - A GMPlugin was discarded due to an error",
+          ex
+        );
+        continue;
+      }
+    }
+
+    return activeGMPlugins;
+  }
+}
+
+/**
  * Listens to the AddonManager install and addon events and send telemetry events.
  */
 AMTelemetry = {
   telemetrySetupDone: false,
+  telemetryAddonBuilder: null,
 
   // This method is called by the AddonManager, once it has been started, so that we can
   // init the telemetry event category and start listening for the events related to the
@@ -4740,6 +5427,34 @@ AMTelemetry = {
 
     AddonManager.addInstallListener(this);
     AddonManager.addAddonListener(this);
+
+    if (lazy.AMTELEMETRY_ADDONS_BUILDER_ENABLED) {
+      this.telemetryAddonBuilder = new EnvironmentAddonBuilder();
+      this.telemetryAddonBuilder.init().finally(() => {
+        this.telemetryAddonBuilder.watchForChanges();
+      });
+    }
+  },
+
+  // NOTE: used by AddonTestUtils.promiseShutdownManager to ensure
+  // we can initialize it again in AddonTestUtils.promiseStartupManager.
+  // Also used by test_blocklist_statechange_telemetry.js.
+  async uninit() {
+    if (!this.telemetrySetupDone) {
+      return;
+    }
+
+    Services.obs.removeObserver(this, "addon-install-origin-blocked");
+    Services.obs.removeObserver(this, "addon-install-disabled");
+    Services.obs.removeObserver(this, "addon-install-blocked");
+
+    AddonManager.removeInstallListener(this);
+    AddonManager.removeAddonListener(this);
+
+    await this.telemetryAddonBuilder?.uninit();
+    this.telemetryAddonBuilder = null;
+
+    this.telemetrySetupDone = false;
   },
 
   // Observer Service notification callback.
@@ -4802,7 +5517,9 @@ AMTelemetry = {
   },
 
   onDownloadEnded(install) {
-    let download_time = Math.round(Cu.now() - install.downloadStartedAt);
+    let download_time = Math.round(
+      ChromeUtils.now() - install.downloadStartedAt
+    );
     this.recordInstallEvent(install, {
       step: "download_completed",
       download_time,
@@ -4810,7 +5527,9 @@ AMTelemetry = {
   },
 
   onDownloadFailed(install) {
-    let download_time = Math.round(Cu.now() - install.downloadStartedAt);
+    let download_time = Math.round(
+      ChromeUtils.now() - install.downloadStartedAt
+    );
     this.recordInstallEvent(install, {
       step: "download_failed",
       download_time,
@@ -4918,7 +5637,7 @@ AMTelemetry = {
    * @param {AddonInstall} install
    *        The AddonInstall instance to retrieve the source from.
    *
-   * @returns {Object | null}
+   * @returns {object | null}
    *          The telemetry infor ({source, method}) from the given AddonInstall instance.
    */
   getInstallTelemetryInfo(install) {
@@ -5063,8 +5782,9 @@ AMTelemetry = {
     });
     Glean.addonsManager.installStats.record(
       this.formatExtraVars({
-        addon_id: extra.addon_id,
+        addon_id: addonId,
         addon_type: object,
+        hashed_addon_id: install.hashedAddonId,
         taar_based: extra.taar_based,
         utm_campaign: extra.utm_campaign,
         utm_content: extra.utm_content,

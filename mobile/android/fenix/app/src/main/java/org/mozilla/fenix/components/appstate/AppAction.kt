@@ -4,6 +4,8 @@
 
 package org.mozilla.fenix.components.appstate
 
+import mozilla.components.browser.state.search.SearchEngine
+import mozilla.components.browser.state.state.content.DownloadState
 import mozilla.components.concept.storage.BookmarkNode
 import mozilla.components.concept.sync.TabData
 import mozilla.components.feature.tab.collections.TabCollection
@@ -16,12 +18,13 @@ import mozilla.components.service.nimbus.messaging.MessageSurfaceId
 import mozilla.components.service.pocket.PocketStory.ContentRecommendation
 import mozilla.components.service.pocket.PocketStory.PocketSponsoredStory
 import mozilla.components.service.pocket.PocketStory.SponsoredContent
+import org.mozilla.fenix.bookmarks.BookmarksGlobalResultReport
 import org.mozilla.fenix.browser.StandardSnackbarError
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
 import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.appstate.setup.checklist.ChecklistItem
-import org.mozilla.fenix.components.appstate.shopping.ShoppingState
 import org.mozilla.fenix.components.appstate.webcompat.WebCompatState
+import org.mozilla.fenix.components.metrics.MetricsUtils
 import org.mozilla.fenix.home.bookmarks.Bookmark
 import org.mozilla.fenix.home.pocket.PocketImpression
 import org.mozilla.fenix.home.pocket.PocketRecommendedStoriesCategory
@@ -32,7 +35,6 @@ import org.mozilla.fenix.home.recenttabs.RecentTab
 import org.mozilla.fenix.home.recentvisits.RecentlyVisitedItem
 import org.mozilla.fenix.library.history.PendingDeletionHistory
 import org.mozilla.fenix.messaging.MessagingState
-import org.mozilla.fenix.search.SearchDialogFragment
 import org.mozilla.fenix.wallpapers.Wallpaper
 
 /**
@@ -58,11 +60,6 @@ sealed class AppAction : Action {
      * Updates whether the first frame of the homescreen has been [drawn].
      */
     data class UpdateFirstFrameDrawn(val drawn: Boolean) : AppAction()
-
-    /**
-     * Updates whether the [SearchDialogFragment] is visible.
-     */
-    data class UpdateSearchDialogVisibility(val isVisible: Boolean) : AppAction()
     data class AddNonFatalCrash(val crash: NativeCodeCrash) : AppAction()
     data class RemoveNonFatalCrash(val crash: NativeCodeCrash) : AppAction()
     object RemoveAllNonFatalCrashes : AppAction()
@@ -83,7 +80,11 @@ sealed class AppAction : Action {
         AppAction()
 
     data class CollectionsChange(val collections: List<TabCollection>) : AppAction()
-    data class ModeChange(val mode: BrowsingMode) : AppAction()
+
+    /**
+     * Action dispatched when the browsing mode changes inside the BrowsingModeManager.
+     */
+    data class BrowsingModeManagerModeChanged(val mode: BrowsingMode) : AppAction()
     data class TopSitesChange(val topSites: List<TopSite>) : AppAction()
     data class RecentTabsChange(val recentTabs: List<RecentTab>) : AppAction()
     data class RemoveRecentTab(val recentTab: RecentTab) : AppAction()
@@ -140,11 +141,6 @@ sealed class AppAction : Action {
     data object DeleteAndQuitStarted : AppAction()
 
     /**
-     * Action dispatched when the current site's data has been cleared.
-     */
-    data object SiteDataCleared : AppAction()
-
-    /**
      * Action dispatched when the current tab has been closed.
      *
      * @property isPrivate Whether the closed tab was private or not.
@@ -152,6 +148,11 @@ sealed class AppAction : Action {
     data class CurrentTabClosed(
         val isPrivate: Boolean,
     ) : AppAction()
+
+    /**
+     * Action dispatched when an URL has been copied to the clipboard.
+     */
+    data object URLCopiedToClipboard : AppAction()
 
     /**
      * Action dispatched when open in firefox action is selected from custom tab.
@@ -282,6 +283,10 @@ sealed class AppAction : Action {
      * [AppAction] implementations related to the application lifecycle.
      */
     sealed class AppLifecycleAction : AppAction() {
+        /**
+         * The application has started.
+         */
+        object StartAction : AppLifecycleAction()
 
         /**
          * The application has received an ON_RESUME event.
@@ -300,48 +305,6 @@ sealed class AppAction : Action {
     data class UpdateStandardSnackbarErrorAction(
         val standardSnackbarError: StandardSnackbarError?,
     ) : AppAction()
-
-    /**
-     * [AppAction]s related to shopping sheet state.
-     */
-    sealed class ShoppingAction : AppAction() {
-
-        /**
-         * [ShoppingAction] used to update the expansion state of the shopping sheet.
-         */
-        data class ShoppingSheetStateUpdated(val expanded: Boolean) : ShoppingAction()
-
-        /**
-         * [ShoppingAction] used to update the expansion state of the highlights card.
-         */
-        data class HighlightsCardExpanded(
-            val productPageUrl: String,
-            val expanded: Boolean,
-        ) : ShoppingAction()
-
-        /**
-         * [ShoppingAction] used to update the expansion state of the info card.
-         */
-        data class InfoCardExpanded(
-            val productPageUrl: String,
-            val expanded: Boolean,
-        ) : ShoppingAction()
-
-        /**
-         * [ShoppingAction] used to update the expansion state of the settings card.
-         */
-        data class SettingsCardExpanded(
-            val productPageUrl: String,
-            val expanded: Boolean,
-        ) : ShoppingAction()
-
-        /**
-         * [ShoppingAction] used to update the recorded product recommendation impressions set.
-         */
-        data class ProductRecommendationImpression(
-            val key: ShoppingState.ProductRecommendationImpressionKey,
-        ) : ShoppingAction()
-    }
 
     /**
      * [AppAction]s related to the tab strip.
@@ -382,10 +345,12 @@ sealed class AppAction : Action {
          *
          * @property guidToEdit The guid of the newly added bookmark or null.
          * @property parentNode The [BookmarkNode] representing the folder the bookmark was added to, if any.
+         * @property source Describes where the action was called from.
          */
         data class BookmarkAdded(
             val guidToEdit: String?,
             val parentNode: BookmarkNode?,
+            val source: MetricsUtils.BookmarkAction.Source,
         ) : BookmarkAction()
 
         /**
@@ -394,6 +359,46 @@ sealed class AppAction : Action {
          * @property title The title of the bookmark that was removed.
          */
         data class BookmarkDeleted(val title: String?) : BookmarkAction()
+
+        /**
+         * [BookmarkAction] dispatched when a bookmark operation has a result that must be
+         * reported even if the bookmark feature goes out of scope.
+         *
+         * @property globalResultReport The specific result to report.
+         */
+        data class BookmarkOperationResultReported(
+            val globalResultReport: BookmarksGlobalResultReport,
+        ) : BookmarkAction()
+    }
+
+    /**
+     * [AppAction]s related to Qr Scanner.
+     */
+    sealed class QrScannerAction : AppAction() {
+        /**
+         * [QrScannerAction] dispatched when the QR Scanner is requested.
+         */
+        data object QrScannerRequested : QrScannerAction()
+
+        /**
+         * [QrScannerAction] dispatched when the QR Scanner request is consumed.
+         */
+        data object QrScannerRequestConsumed : QrScannerAction()
+
+        /**
+         * [QrScannerAction] dispatched when the QR Scanner is dismissed.
+         */
+        data object QrScannerDismissed : QrScannerAction()
+
+        /**
+         * [QrScannerAction] dispatched when the QR scanner loads a QR code.
+         */
+        data class QrScannerInputAvailable(val data: String?) : QrScannerAction()
+
+        /**
+         * [QrScannerAction] dispatched when the loaded QR code is consumed.
+         */
+        data object QrScannerInputConsumed : QrScannerAction()
     }
 
     /**
@@ -404,11 +409,6 @@ sealed class AppAction : Action {
          * [ShortcutAction] dispatched when a shortcut is added.
          */
         data object ShortcutAdded : ShortcutAction()
-
-        /**
-         * [ShortcutAction] dispatched when a shortcut is removed.
-         */
-        data object ShortcutRemoved : ShortcutAction()
     }
 
     /**
@@ -523,6 +523,19 @@ sealed class AppAction : Action {
     }
 
     /**
+     * [AppAction]s related to the private‐browsing lock feature.
+     */
+    sealed class PrivateBrowsingLockAction : AppAction() {
+
+        /**
+         * Dispatched when the private-browsing lock state should be updated.
+         *
+         * @property isLocked whether the feature should be locked.
+         */
+        data class UpdatePrivateBrowsingLock(val isLocked: Boolean) : PrivateBrowsingLockAction()
+    }
+
+    /**
      * [AppAction]s related to the content recommendations feature.
      */
     sealed class ContentRecommendationsAction : AppAction() {
@@ -577,24 +590,18 @@ sealed class AppAction : Action {
          * Replaces the current list of Pocket sponsored stories.
          *
          * @property sponsoredStories The new list of [PocketSponsoredStory] that was fetched.
-         * @property showContentRecommendations Whether or not to show Merino content
-         * recommendations.
          */
         data class PocketSponsoredStoriesChange(
             val sponsoredStories: List<PocketSponsoredStory>,
-            val showContentRecommendations: Boolean,
         ) : ContentRecommendationsAction()
 
         /**
          * Replaces the current list of [SponsoredContent]s.
          *
          * @property sponsoredContents THe new list of [SponsoredContent] that was fetched.
-         * @property showContentRecommendations Whether or not to show Merino content
-         * recommendations.
          */
         data class SponsoredContentsChange(
             val sponsoredContents: List<SponsoredContent>,
-            val showContentRecommendations: Boolean,
         ) : ContentRecommendationsAction()
 
         /**
@@ -661,5 +668,121 @@ sealed class AppAction : Action {
             val taskType: ChecklistItem.Task.Type,
             val prefValue: Boolean,
         ) : SetupChecklistAction()
+    }
+
+    /**
+     * [AppAction]s related to downloads.
+     */
+    sealed class DownloadAction : AppAction() {
+        /**
+         * Dispatched when a download is in progress.
+         *
+         * @property downloadId The unique identifier for the ongoing download.
+         */
+        data class DownloadInProgress(val downloadId: String) : DownloadAction()
+
+        /**
+         * Dispatched when a download has failed.
+         *
+         * @property fileName The name of the file that failed to download.
+         */
+        data class DownloadFailed(val fileName: String?) : DownloadAction()
+
+        /**
+         * Dispatched when a download has completed successfully.
+         *
+         * @property downloadState The state object containing information about the completed download.
+         */
+        data class DownloadCompleted(val downloadState: DownloadState) : DownloadAction()
+
+        /**
+         * Dispatched when there is an error attempting to open a downloaded file.
+         *
+         * @property downloadState The state object containing information about the failed download.
+         */
+        data class CannotOpenFile(val downloadState: DownloadState) : DownloadAction()
+    }
+
+    /**
+     * [AppAction]s related to prompting the user for a store review/rating.
+     */
+    sealed class ReviewPromptAction : AppAction() {
+        /**
+         * Dispatched to trigger review prompt eligibility checks.
+         */
+        data object CheckIfEligibleForReviewPrompt : ReviewPromptAction()
+
+        /**
+         * Dispatched when no triggers for showing the prompt are satisfied.
+         */
+        data object DoNotShowReviewPrompt : ReviewPromptAction()
+
+        /**
+         * Dispatched when a trigger to show the Play Store prompt is satisfied.
+         */
+        data object ShowPlayStorePrompt : ReviewPromptAction()
+
+        /**
+         * Dispatched when a trigger to show our custom review prompt is satisfied.
+         */
+        data object ShowCustomReviewPrompt : ReviewPromptAction()
+
+        /**
+         * Dispatched after a review prompt was shown.
+         */
+        data object ReviewPromptShown : ReviewPromptAction()
+    }
+
+    /**
+     * [AppAction]s related to the search feature.
+     */
+    sealed class SearchAction : AppAction() {
+        /**
+         * A new search has started.
+         *
+         * @property tabId The ID of the tab that triggered the search.
+         * May be `null` if search was not started from a browser tab.
+         * @property source The application feature from where a new search was started.
+         */
+        data class SearchStarted(
+            val tabId: String? = null,
+            val source: MetricsUtils.Source = MetricsUtils.Source.NONE,
+        ) : SearchAction()
+
+        /**
+         * The current in-progress search has ended.
+         */
+        data object SearchEnded : SearchAction()
+
+        /**
+         * New search engine was chosen for the in-progress search.
+         *
+         * @property searchEngine The new [SearchEngine] to use for the current in-progress browser search.
+         * @property isUserSelected Whether the search engine was selected by the user or not.
+         */
+        data class SearchEngineSelected(
+            val searchEngine: SearchEngine,
+            val isUserSelected: Boolean,
+        ) : SearchAction()
+    }
+
+    /**
+     * [AppAction]s related to menu notifications. These actions are used to manage
+     * the display and removal of notifications within the application's menu.
+     */
+    sealed class MenuNotification : AppAction() {
+        /**
+         * Dispatched to add a new notification to the menu.
+         *
+         * @property notification The [SupportedMenuNotifications] type to be displayed.
+         */
+        data class AddMenuNotification(val notification: SupportedMenuNotifications) : MenuNotification()
+
+        /**
+         * Dispatched to remove an existing notification from the menu.
+         *
+         * @property notification The [SupportedMenuNotifications] type to be removed.
+         */
+        data class RemoveMenuNotification(val notification: SupportedMenuNotifications) : MenuNotification()
     }
 }

@@ -32,12 +32,12 @@ case `uname -s` in
                 macosx_version_min=11.0
                 ;;
             *)
-                macosx_version_min=10.12
+                macosx_version_min=10.15
                 ;;
         esac
         # NOTE: both CFLAGS and CPPFLAGS need to be set here, otherwise
         # configure step fails.
-        sysroot_flags="-isysroot ${MOZ_FETCHES_DIR}/MacOSX15.4.sdk -mmacosx-version-min=${macosx_version_min}"
+        sysroot_flags="-isysroot ${MOZ_FETCHES_DIR}/MacOSX26.1.sdk -mmacosx-version-min=${macosx_version_min}"
         export CPPFLAGS="${sysroot_flags} -I${xz_prefix}/include"
         export CFLAGS=${sysroot_flags}
         export LDFLAGS="${LDFLAGS} ${sysroot_flags} -L${xz_prefix}/lib"
@@ -72,6 +72,20 @@ export MAKEFLAGS=-j`nproc`
 make
 make DESTDIR=${work_dir} install
 cd ${work_dir}
+
+sysconfig_file=$(
+  ls "${work_dir}/${tardir}/lib"/python3.*/*_sysconfigdata*.py 2>/dev/null \
+  | head -n1
+)
+if [ -n "$sysconfig_file" ]; then
+  cat >> "$sysconfig_file" << 'PYCODE'
+import sys
+build_time_vars = {
+    k: v.replace("/python", sys.base_prefix) if isinstance(v, str) and v.startswith("/python") else v
+    for k, v in build_time_vars.items()
+}
+PYCODE
+fi
 
 ${work_dir}/python/bin/python3 -m pip install --upgrade pip==23.0
 ${work_dir}/python/bin/python3 -m pip install -r ${GECKO_PATH}/build/psutil_requirements.txt -r ${GECKO_PATH}/build/zstandard_requirements.txt

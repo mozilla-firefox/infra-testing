@@ -41,14 +41,15 @@ add_task(async function mouse_help() {
 
 // Clicks inside a tip but not on any button.
 add_task(async function mouse_insideTipButNotOnButtons() {
-  let results = [makeTipResult({ buttonUrl: TIP_URL, helpUrl: HELP_URL })];
-  let provider = new UrlbarTestUtils.TestProvider({ results, priority: 1 });
-  UrlbarProvidersManager.registerProvider(provider);
-
   // Click inside the tip but outside the buttons.  Nothing should happen.  Make
   // the result the heuristic to check that the selection on the main button
   // isn't lost.
-  results[0].heuristic = true;
+  let results = [
+    makeTipResult({ buttonUrl: TIP_URL, helpUrl: HELP_URL, heuristic: true }),
+  ];
+  let provider = new UrlbarTestUtils.TestProvider({ results, priority: 1 });
+  UrlbarProvidersManager.registerProvider(provider);
+
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
     value: "test",
     window,
@@ -127,7 +128,7 @@ async function doTest({ click, buttonUrl = undefined, helpUrl = undefined }) {
   });
   let row = await UrlbarTestUtils.waitForAutocompleteResultAt(window, 0);
   let mainButton = row._buttons.get("0");
-  let target = helpUrl ? row._buttons.get("menu") : mainButton;
+  let target = helpUrl ? row._buttons.get("result-menu") : mainButton;
 
   // If we're picking the tip with the keyboard, TAB to select the proper
   // target.
@@ -141,17 +142,19 @@ async function doTest({ click, buttonUrl = undefined, helpUrl = undefined }) {
   }
 
   // Done.
+  await UrlbarTestUtils.promisePopupClose(window);
   UrlbarProvidersManager.unregisterProvider(provider);
   if (tab) {
     BrowserTestUtils.removeTab(tab);
   }
 }
 
-function makeTipResult({ buttonUrl, helpUrl }) {
-  return new UrlbarResult(
-    UrlbarUtils.RESULT_TYPE.TIP,
-    UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-    {
+function makeTipResult({ buttonUrl, helpUrl, heuristic }) {
+  return new UrlbarResult({
+    type: UrlbarUtils.RESULT_TYPE.TIP,
+    source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+    heuristic,
+    payload: {
       type: "test",
       titleL10n: { id: "urlbar-search-tips-confirm" },
       buttons: [
@@ -164,6 +167,6 @@ function makeTipResult({ buttonUrl, helpUrl }) {
       helpL10n: {
         id: "urlbar-result-menu-tip-get-help",
       },
-    }
-  );
+    },
+  });
 }

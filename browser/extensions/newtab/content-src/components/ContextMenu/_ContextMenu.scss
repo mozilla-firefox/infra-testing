@@ -4,28 +4,28 @@
 
 .context-menu {
   background: var(--newtab-background-color-secondary);
-  border-radius: $context-menu-border-radius;
+  border-radius: var(--border-radius-small);
   box-shadow: $context-menu-shadow;
   display: block;
   font-size: $context-menu-font-size;
-  margin-inline-start: 5px;
+  margin-inline-start: var(--space-xsmall);
   inset-inline-start: 100%;
   position: absolute;
-  top: math.div($context-menu-button-size, 4);
+  inset-block-start: var(--space-small);
   z-index: 2;
 
   > ul {
     list-style: none;
     margin: 0;
-    padding: $context-menu-outer-padding 0;
+    padding: var(--space-xsmall) 0;
 
     > li {
       margin: 0;
       width: 100%;
 
       &.separator {
-        border-bottom: $border-secondary;
-        margin: $context-menu-outer-padding 0;
+        border-block-end: 1px solid var(--border-color);
+        margin: var(--space-xsmall) 0;
       }
 
       > a,
@@ -35,10 +35,9 @@
         cursor: pointer;
         display: flex;
         width: 100%;
-        line-height: 16px;
         outline: none;
         border: 0;
-        padding: $context-menu-item-padding;
+        padding: var(--space-xsmall) var(--space-medium);
         white-space: nowrap;
 
         &:is(:focus, :hover) {

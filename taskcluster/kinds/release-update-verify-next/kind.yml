@@ -9,6 +9,7 @@ kind-dependencies:
     - post-beetmover-dummy
     - release-balrog-submit-toplevel
     - release-update-verify-config-next
+    - toolchain
 
 transforms:
     - gecko_taskgraph.transforms.release:run_on_releases
@@ -18,11 +19,12 @@ transforms:
     - gecko_taskgraph.transforms.task:transforms
 
 task-defaults:
+    run-on-repo-type: [hg]
     name: update-verify-next
     run-on-projects: []  # to make sure this never runs as part of CI
-    run-on-releases: [esr128]
+    run-on-releases: [esr140]
     shipping-phase: promote
-    worker-type: b-linux-gcp
+    worker-type: b-linux
     worker:
         artifacts:
             - name: 'public/build/diff-summary.log'
@@ -42,23 +44,29 @@ task-defaults:
         chunks: 12
 
 tasks:
+    firefox-next-linux64-aarch64:
+        description: linux64-aarch64 esr-next update verify
+        shipping-product: firefox
+        attributes:
+            build_platform: linux64-aarch64-shippable
+
     firefox-next-linux64:
         description: linux64 esr-next update verify
         shipping-product: firefox
         attributes:
             build_platform: linux64-shippable
 
-    firefox-next-linux:
-        description: linux esr-next update verify
-        shipping-product: firefox
-        attributes:
-            build_platform: linux-shippable
-
     firefox-next-win64:
         description: win64 esr-next update verify
         shipping-product: firefox
         attributes:
             build_platform: win64-shippable
+
+    firefox-next-win64-aarch64:
+        description: win64-aarch64 esr-next update verify
+        shipping-product: firefox
+        attributes:
+            build_platform: win64-aarch64-shippable
 
     firefox-next-win32:
         description: win32 esr-next update verify
@@ -71,3 +79,6 @@ tasks:
         shipping-product: firefox
         attributes:
             build_platform: macosx64-shippable
+        fetches:
+            toolchain:
+                - linux64-libdmg

@@ -1,0 +1,133 @@
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src chrome:; object-src 'none'"
+    />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="viewport" content="width=device-width" />
+    <title data-l10n-id="about-translations-title"></title>
+    <link rel="stylesheet" href="chrome://global/skin/global.css" />
+    <link rel="stylesheet" href="chrome://global/skin/in-content/common.css" />
+    <link
+      rel="stylesheet"
+      href="chrome://global/content/translations/about-translations.css"
+    />
+    <link rel="localization" href="branding/brand.ftl" />
+    <link rel="localization" href="toolkit/global/mozMessageBar.ftl" />
+    <link rel="localization" href="toolkit/about/aboutTranslations.ftl" />
+    <script
+      type="module"
+      src="chrome://global/content/translations/about-translations.mjs"
+    ></script>
+    <script
+      type="module"
+      src="chrome://global/content/elements/moz-message-bar.mjs"
+    ></script>
+  </head>
+
+  <body>
+    <header id="about-translations-header">
+      <div id="about-translations-logo-and-h1">
+        <img
+          id="about-translations-logo"
+          src="chrome://branding/content/about-logo.png"
+        />
+        <h1
+          id="about-translations-h1"
+          data-l10n-id="about-translations-title"
+        ></h1>
+      </div>
+      <div id="about-translations-description">
+        <span data-l10n-id="about-translations-description"></span>
+        <a
+          id="about-translations-learn-more-link"
+          is="moz-support-link"
+          data-l10n-id="about-translations-learn-more-link"
+          support-page="website-translation"
+        ></a>
+      </div>
+
+      <moz-message-bar
+        id="about-translations-unsupported-info-message"
+        type="info"
+        role="alert"
+        class="about-translations-message-bar"
+        data-l10n-id="about-translations-unsupported-info-message"
+        data-l10n-attrs="heading,message"
+      >
+        <button
+          data-l10n-id="about-translations-unsupported-info-button"
+          slot="actions"
+        ></button>
+      </moz-message-bar>
+
+      <moz-message-bar
+        id="about-translations-language-load-error-message"
+        type="error"
+        role="alert"
+        class="about-translations-message-bar"
+        data-l10n-id="about-translations-language-load-error-message"
+        data-l10n-attrs="heading,message"
+      >
+        <button
+          data-l10n-id="about-translations-language-load-error-button"
+          slot="actions"
+        ></button>
+      </moz-message-bar>
+    </header>
+
+    <section id="about-translations-main-user-interface">
+      <select
+        id="about-translations-source-select"
+        class="about-translations-select"
+        disabled
+      >
+        <option
+          id="about-translations-detect-language-option"
+          data-l10n-id="about-translations-detect-default"
+          value="detect"
+        ></option>
+      </select>
+
+      <moz-button
+        id="about-translations-swap-languages-button"
+        type="ghost icon"
+        data-l10n-id="about-translations-swap-languages"
+        disabled=""
+      >
+        <div id="about-translations-swap-langauges-icon"></div>
+      </moz-button>
+
+      <select
+        id="about-translations-target-select"
+        class="about-translations-select"
+        disabled
+      >
+        <option data-l10n-id="about-translations-select" value=""></option>
+      </select>
+
+      <div id="about-translations-input-section">
+        <textarea
+          id="about-translations-source-textarea"
+          class="about-translations-textarea"
+          data-l10n-id="about-translations-input-placeholder"
+          spellcheck="false"
+        ></textarea>
+      </div>
+      <div id="about-translations-empty-section"></div>
+      <textarea
+        id="about-translations-target-textarea"
+        class="about-translations-textarea"
+        data-l10n-id="about-translations-output-placeholder"
+        readonly
+      ></textarea>
+    </section>
+  </body>
+</html>

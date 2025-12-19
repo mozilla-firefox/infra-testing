@@ -12,13 +12,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ClientEnvironment: "resource://normandy/lib/ClientEnvironment.sys.mjs",
   Heartbeat: "resource://normandy/lib/Heartbeat.sys.mjs",
   NormandyUtils: "resource://normandy/lib/NormandyUtils.sys.mjs",
-  ShellService: "resource:///modules/ShellService.sys.mjs",
-  Storage: "resource://normandy/lib/Storage.sys.mjs",
+  ProfilesDatastoreService:
+    "moz-src:///toolkit/profile/ProfilesDatastoreService.sys.mjs",
+  ShellService: "moz-src:///browser/components/shell/ShellService.sys.mjs",
   UpdateUtils: "resource://gre/modules/UpdateUtils.sys.mjs",
-});
-
-ChromeUtils.defineLazyGetter(lazy, "gAllRecipeStorage", function () {
-  return new lazy.Storage("normandy-heartbeat");
 });
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
@@ -48,16 +45,16 @@ export class ShowHeartbeatAction extends BaseAction {
       learnMoreUrl,
     } = recipe.arguments;
 
-    const recipeStorage = new lazy.Storage(recipe.id);
-
-    if (!(await this.shouldShow(recipeStorage, recipe))) {
+    if (!(await this.shouldShow(recipe))) {
       return;
     }
 
     this.log.debug(
       `Heartbeat for recipe ${recipe.id} showing prompt "${message}"`
     );
-    const targetWindow = lazy.BrowserWindowTracker.getTopWindow();
+    const targetWindow = lazy.BrowserWindowTracker.getTopWindow({
+      allowFromInactiveWorkspace: true,
+    });
 
     if (!targetWindow) {
       throw new Error("No window to show heartbeat in");
@@ -77,24 +74,18 @@ export class ShowHeartbeatAction extends BaseAction {
 
     heartbeat.eventEmitter.once(
       "Voted",
-      this.updateLastInteraction.bind(this, recipeStorage)
+      this.updateLastInteraction.bind(this, recipe.id)
     );
     heartbeat.eventEmitter.once(
       "Engaged",
-      this.updateLastInteraction.bind(this, recipeStorage)
+      this.updateLastInteraction.bind(this, recipe.id)
     );
-
-    let now = Date.now();
-    await Promise.all([
-      lazy.gAllRecipeStorage.setItem("lastShown", now),
-      recipeStorage.setItem("lastShown", now),
-    ]);
   }
 
-  async shouldShow(recipeStorage, recipe) {
+  async shouldShow(recipe) {
     const { repeatOption, repeatEvery } = recipe.arguments;
     // Don't show any heartbeats to a user more than once per throttle period
-    let lastShown = await lazy.gAllRecipeStorage.getItem("lastShown");
+    let lastShown = await ShowHeartbeatAction._getLastShown();
     if (lastShown) {
       const duration = new Date() - lastShown;
       if (duration < HEARTBEAT_THROTTLE) {
@@ -110,7 +101,7 @@ export class ShowHeartbeatAction extends BaseAction {
     switch (repeatOption) {
       case "once": {
         // Don't show if we've ever shown before
-        if (await recipeStorage.getItem("lastShown")) {
+        if (await ShowHeartbeatAction._getLastShown(recipe.id)) {
           this.log.debug(
             `Heartbeat for "once" recipe ${recipe.id} has been shown before, skipping.`
           );
@@ -120,21 +111,15 @@ export class ShowHeartbeatAction extends BaseAction {
       }
 
       case "nag": {
-        // Show a heartbeat again only if the user has not interacted with it before
-        if (await recipeStorage.getItem("lastInteraction")) {
-          this.log.debug(
-            `Heartbeat for "nag" recipe ${recipe.id} has already been interacted with, skipping.`
-          );
-          return false;
-        }
-        break;
+        // TODO(bug 1967853): nag was removed from LegacyHeartbeat.schema.json and
+        // the logic for it needs to be updated, because it could result in multiple
+        // profiles showing the same nag message.
+        return false;
       }
 
       case "xdays": {
-        // Show this heartbeat again if it  has been at least `repeatEvery` days since the last time it was shown.
-        let lastShown = await lazy.gAllRecipeStorage.getItem("lastShown");
+        // Show this heartbeat again if it has been at least `repeatEvery` days since the last time it was shown.
         if (lastShown) {
-          lastShown = new Date(lastShown);
           const duration = new Date() - lastShown;
           if (duration < repeatEvery * DAY_IN_MS) {
             // show the number of hours since the last time this hearbeat was shown, with at most 1 decimal point.
@@ -148,6 +133,9 @@ export class ShowHeartbeatAction extends BaseAction {
       }
     }
 
+    let now = Date.now();
+    await ShowHeartbeatAction._setLastShown(recipe.id, now);
+
     return true;
   }
 
@@ -156,7 +144,7 @@ export class ShowHeartbeatAction extends BaseAction {
    * ID, then the client ID is attached to the surveyId in the format
    * `${surveyId}::${userId}`.
    *
-   * @return {String} Survey ID, possibly with user UUID
+   * @return {string} Survey ID, possibly with user UUID
    */
   generateSurveyId(recipe) {
     const { includeTelemetryUUID, surveyId } = recipe.arguments;
@@ -168,8 +156,9 @@ export class ShowHeartbeatAction extends BaseAction {
 
   /**
    * Generate the appropriate post-answer URL for a recipe.
+   *
    * @param  recipe
-   * @return {String} URL with post-answer query params
+   * @return {string} URL with post-answer query params
    */
   async generatePostAnswerURL(recipe) {
     const { postAnswerUrl, message, includeTelemetryUUID } = recipe.arguments;
@@ -180,11 +169,12 @@ export class ShowHeartbeatAction extends BaseAction {
     }
 
     const userId = lazy.ClientEnvironment.userId;
-    const searchEngine = (await Services.search.getDefault()).identifier;
+    const searchEngine = await Services.search.getDefault();
+    const searchEngineId = searchEngine.isConfigEngine ? searchEngine.id : null;
     const args = {
       fxVersion: Services.appinfo.version,
       isDefaultBrowser: lazy.ShellService.isDefaultBrowser() ? 1 : 0,
-      searchEngine,
+      searchEngine: searchEngineId,
       source: "heartbeat",
       // `surveyversion` used to be the version of the heartbeat action when it
       // was hosted on a server. Keeping it around for compatibility.
@@ -213,7 +203,103 @@ export class ShowHeartbeatAction extends BaseAction {
     return url.toString();
   }
 
-  updateLastInteraction(recipeStorage) {
-    recipeStorage.setItem("lastInteraction", Date.now());
+  updateLastInteraction(recipeId) {
+    ShowHeartbeatAction._setLastInteraction(recipeId, Date.now());
+  }
+
+  /**
+   * Get last shown time in milliseconds since epoch for a recipe.
+   *
+   * @param {string | null} recipeId
+   *        ID of the recipe to look up, or null for the max across recipes.
+   * @returns {Promise<number | null>} The last shown date, if any.
+   */
+  static async _getLastShown(recipeId = null) {
+    const conn = await lazy.ProfilesDatastoreService.getConnection();
+    let rows;
+    if (recipeId === null) {
+      rows = await conn.executeCached(
+        "SELECT MAX(lastShown) AS lastShown FROM Heartbeats;"
+      );
+    } else {
+      rows = await conn.executeCached(
+        "SELECT lastShown FROM Heartbeats WHERE recipeId = :recipeId;",
+        { recipeId }
+      );
+    }
+    return rows[0]?.getResultByName("lastShown") ?? null;
+  }
+
+  /**
+   * Get last interaction time in milliseconds since epoch for a recipe.
+   *
+   * @param {string | null} recipeId
+   *        ID of the recipe to look up, or null for the max across recipes.
+   * @returns {Promise<number | null>} The last interaction date, if any.
+   */
+  static async _getLastInteraction(recipeId = null) {
+    const conn = await lazy.ProfilesDatastoreService.getConnection();
+    let rows;
+    if (recipeId === null) {
+      rows = await conn.executeCached(
+        "SELECT MAX(lastInteraction) AS lastInteraction FROM Heartbeats;"
+      );
+    } else {
+      rows = await conn.executeCached(
+        "SELECT lastInteraction FROM Heartbeats WHERE recipeId = :recipeId;",
+        { recipeId }
+      );
+    }
+    return rows[0]?.getResultByName("lastInteraction") ?? null;
+  }
+
+  /**
+   * Set a last shown for a recipe.
+   *
+   * @param {string} recipeId
+   *        ID of the recipe to update.
+   * @param {number} lastShown
+   *        Time the recipe was last shown, in milliseconds since epoch, as
+   *        given by Date.now().
+   */
+  static async _setLastShown(recipeId, lastShown) {
+    const conn = await lazy.ProfilesDatastoreService.getConnection();
+    await conn.executeCached(
+      `
+          INSERT INTO Heartbeats(recipeId, lastShown)
+          VALUES (:recipeId, :lastShown)
+          ON CONFLICT(recipeId) DO UPDATE
+          SET lastShown = :lastShown;`,
+      { recipeId, lastShown }
+    );
+  }
+
+  /**
+   * Set a last interaction for a recipe.
+   *
+   * @param {string} recipeId
+   *        ID of the recipe to update.
+   * @param {number} lastInteraction
+   *        Time the recipe was last interacted with, in milliseconds since
+   *        epoch, as given by Date.now().
+   */
+  static async _setLastInteraction(recipeId, lastInteraction) {
+    const conn = await lazy.ProfilesDatastoreService.getConnection();
+    await conn.executeCached(
+      `
+          INSERT INTO Heartbeats(recipeId, lastInteraction)
+          VALUES (:recipeId, :lastInteraction)
+          ON CONFLICT(recipeId) DO UPDATE
+          SET lastInteraction = :lastInteraction;`,
+      { recipeId, lastInteraction }
+    );
+  }
+
+  /**
+   * Clear ALL storage data. Only for use in tests.
+   */
+  static async _clearAllStorage() {
+    const conn = await lazy.ProfilesDatastoreService.getConnection();
+    await conn.executeCached("DELETE FROM Heartbeats;");
   }
 }

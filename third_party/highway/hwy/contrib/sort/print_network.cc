@@ -21,7 +21,7 @@
 
 // Based on A.7 in "Entwurf und Implementierung vektorisierter
 // Sortieralgorithmen" and code by Mark Blacher.
-void PrintMergeNetwork(int rows, int cols) {
+static void PrintMergeNetwork(int rows, int cols) {
   printf("\n%d x %d:\n", rows, cols);
   // Powers of two
   HWY_ASSERT(rows != 0 && (rows & (rows - 1)) == 0);
@@ -80,7 +80,7 @@ void PrintMergeNetwork(int rows, int cols) {
   printf("\n");
 }
 
-int main(int argc, char** argv) {
+int main(int /*argc*/, char** /*argv*/) {
   PrintMergeNetwork(8, 2);
   PrintMergeNetwork(8, 4);
   PrintMergeNetwork(16, 4);

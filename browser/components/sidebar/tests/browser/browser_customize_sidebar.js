@@ -5,8 +5,17 @@
 
 requestLongerTimeout(2);
 
+let initialSidebarVisibility = Services.prefs.getStringPref(
+  SIDEBAR_VISIBILITY_PREF
+);
+
 registerCleanupFunction(() => {
-  Services.prefs.clearUserPref(SIDEBAR_VISIBILITY_PREF);
+  // sidebar.visibility gets set during startup and should be restored
+  // to that value, not the default value
+  Services.prefs.setStringPref(
+    SIDEBAR_VISIBILITY_PREF,
+    initialSidebarVisibility
+  );
   Services.prefs.clearUserPref(POSITION_SETTING_PREF);
   Services.prefs.clearUserPref(VERTICAL_TABS_PREF);
 });
@@ -58,8 +67,8 @@ add_task(async function test_customize_sidebar_actions() {
   );
   is(
     customizeComponent.toolInputs.length,
-    4,
-    "Four default tools are shown in the customize menu"
+    5,
+    "Five default tools are shown in the customize menu"
   );
 
   for (const toolInput of customizeComponent.toolInputs) {
@@ -68,7 +77,7 @@ add_task(async function test_customize_sidebar_actions() {
     await BrowserTestUtils.waitForCondition(
       () => {
         let toggledTool = SidebarController.toolsAndExtensions.get(
-          toolInput.name
+          toolInput.id
         );
         return toggledTool.disabled === !toolDisabledInitialState;
       },
@@ -89,7 +98,7 @@ add_task(async function test_customize_sidebar_actions() {
     await BrowserTestUtils.waitForCondition(
       () => {
         let toggledTool = SidebarController.toolsAndExtensions.get(
-          toolInput.name
+          toolInput.id
         );
         return toggledTool.disabled === toolDisabledInitialState;
       },
@@ -112,8 +121,8 @@ add_task(async function test_customize_sidebar_actions() {
         sidebar.toolButtons[sidebar.toolButtons.length - 1].getAttribute(
           "view"
         ),
-        toolInput.name,
-        `The button for the ${toolInput.name} entrypoint has been added back to the end of the list of tools/extensions entrypoints`
+        toolInput.id,
+        `The button for the ${toolInput.id} entrypoint has been added back to the end of the list of tools/extensions entrypoints`
       );
     }
   }
@@ -193,8 +202,8 @@ add_task(async function test_customize_position_setting() {
   ok(newPanel.positionInput.checked, "Position setting persists.");
   is(
     newSidebarBox.style.order,
-    "3",
-    "Sidebar box should have an order of 3 when on the right"
+    "5",
+    "Sidebar box should have an order of 5 when on the right"
   );
 
   await BrowserTestUtils.closeWindow(newWin);

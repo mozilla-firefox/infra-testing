@@ -9,12 +9,13 @@ import androidx.core.net.toUri
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
+import org.mozilla.fenix.helpers.TestSetup
 import org.mozilla.fenix.helpers.perf.DetectMemoryLeaksRule
 import org.mozilla.fenix.ui.robots.navigationToolbar
 
-class HTTPSFirstModeTest {
+class HTTPSFirstModeTest : TestSetup() {
     @get:Rule
-    val activityTestRule =
+    val composeTestRule =
         AndroidComposeTestRule(
             HomeActivityIntentTestRule.withDefaultSettingsOverrides(),
         ) { it.activity }
@@ -24,29 +25,30 @@ class HTTPSFirstModeTest {
 
     @Test
     fun httpsFirstModeImplicitSchemeTest() {
-        navigationToolbar {
-        }.enterURLAndEnterToBrowser("example.com".toUri()) {
-            verifyPageContent("Example Domain")
-        }.openNavigationToolbar {
-            verifyUrl("https://example.com/")
+        navigationToolbar(composeTestRule) {
+        }.enterURLAndEnterToBrowser("permission.site".toUri()) {
+            verifyPageContent("permission.site")
+        }.openSearch {
+            verifyTypedToolbarText("https://permission.site/", exists = true)
         }
     }
 
     @Test
     fun httpsFirstModeExplicitSchemeTest() {
-        navigationToolbar {
-        }.enterURLAndEnterToBrowser("http://example.com".toUri()) {
-            verifyPageContent("Example Domain")
-        }.openNavigationToolbar {
-            verifyUrl("http://example.com/")
+        navigationToolbar(composeTestRule) {
+        }.enterURLAndEnterToBrowser("http://permission.site".toUri()) {
+            verifyPageContent("permission.site")
+        }.openSearch {
+            verifyTypedToolbarText("http://permission.site/", exists = true)
+        }.dismissSearchBar {
         }
 
         // Exception should persist
-        navigationToolbar {
-        }.enterURLAndEnterToBrowser("example.com".toUri()) {
-            verifyPageContent("Example Domain")
-        }.openNavigationToolbar {
-            verifyUrl("http://example.com/")
+        navigationToolbar(composeTestRule) {
+        }.enterURLAndEnterToBrowser("permission.site".toUri()) {
+            verifyPageContent("permission.site")
+        }.openSearch {
+            verifyTypedToolbarText("http://permission.site/", exists = true)
         }
     }
 }

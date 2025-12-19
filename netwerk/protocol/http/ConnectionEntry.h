@@ -10,6 +10,7 @@
 #include "PendingTransactionQueue.h"
 #include "DnsAndConnectSocket.h"
 #include "DashboardTypes.h"
+#include "mozilla/WeakPtr.h"
 
 namespace mozilla {
 namespace net {
@@ -19,7 +20,7 @@ namespace net {
 // nsHttpConnectionMgr::mCT maps connection info hash key to ConnectionEntry
 // object, which contains list of active and idle connections as well as the
 // list of pending transactions.
-class ConnectionEntry {
+class ConnectionEntry : public SupportsWeakPtr {
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ConnectionEntry)
   explicit ConnectionEntry(nsHttpConnectionInfo* ci);
@@ -73,6 +74,9 @@ class ConnectionEntry {
   void RemoveExtendedCONNECTConns(HttpConnectionBase* conn);
 
   HttpConnectionBase* GetH2orH3ActiveConn();
+  // Find an H2 tunnel connection (nsHttpConnection with UsingSpdy()) in active
+  // connections. This is used for WebSocket/WebTransport through H3 proxy.
+  already_AddRefed<nsHttpConnection> GetH2TunnelActiveConn();
   // Make an active spdy connection DontReuse.
   // TODO: this is a helper function and should nbe improved.
   bool MakeFirstActiveSpdyConnDontReuse();
@@ -114,8 +118,8 @@ class ConnectionEntry {
                                   bool aIsHttp3 = false);
 
   nsresult CreateDnsAndConnectSocket(nsAHttpTransaction* trans, uint32_t caps,
-                                     bool speculative, bool isFromPredictor,
-                                     bool urgentStart, bool allow1918,
+                                     bool speculative, bool urgentStart,
+                                     bool allow1918,
                                      PendingTransactionInfo* pendingTransInfo);
 
   // Spdy sometimes resolves the address in the socket manager in order
@@ -158,6 +162,9 @@ class ConnectionEntry {
   bool mDoNotDestroy : 1;
 
   bool IsHttp3() const { return mConnInfo->IsHttp3(); }
+  bool IsHttp3ProxyConnection() const {
+    return mConnInfo->IsHttp3ProxyConnection();
+  }
   bool AllowHttp2() const { return mCanUseSpdy; }
   void DisallowHttp2();
   void DontReuseHttp3Conn();
@@ -212,6 +219,8 @@ class ConnectionEntry {
 
   const nsTArray<RefPtr<nsIWebTransportHash>>& GetServerCertHashes();
 
+  const nsCString& OriginFrameHashKey();
+
  private:
   void InsertIntoIdleConnections_internal(nsHttpConnection* conn);
   void RemoveFromIdleConnectionsIndex(size_t inx);
@@ -237,6 +246,8 @@ class ConnectionEntry {
 
   PendingTransactionQueue mPendingQ;
   ~ConnectionEntry();
+
+  nsCString mOriginFrameHashKey;
 
   bool mRetriedDifferentIPFamilyForHttp3 = false;
 };

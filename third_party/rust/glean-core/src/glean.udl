@@ -354,6 +354,8 @@ interface PingType {
     void set_enabled(boolean enabled);
 };
 
+typedef enum DynamicLabelType;
+
 // The common set of data shared across all different metric types.
 dictionary CommonMetricData {
     // The metric's category.
@@ -376,7 +378,7 @@ dictionary CommonMetricData {
     // When a labeled metric factory creates the specific metric to be recorded to,
     // dynamic labels are stored in the specific label so that
     // we can validate them when the Glean singleton is available.
-    string? dynamic_label = null;
+    DynamicLabelType? dynamic_label = null;
 };
 
 interface CounterMetric {
@@ -458,6 +460,8 @@ interface LabeledCounter {
     CounterMetric get(string label);
 
     i32 test_get_num_recorded_errors(ErrorType error);
+
+    record<string, i32>? test_get_value(optional string? ping_name = null);
 };
 
 interface LabeledBoolean {
@@ -466,6 +470,8 @@ interface LabeledBoolean {
     BooleanMetric get(string label);
 
     i32 test_get_num_recorded_errors(ErrorType error);
+
+    record<string, boolean>? test_get_value(optional string? ping_name = null);
 };
 
 interface LabeledString {
@@ -474,6 +480,18 @@ interface LabeledString {
     StringMetric get(string label);
 
     i32 test_get_num_recorded_errors(ErrorType error);
+
+    record<string, string>? test_get_value(optional string? ping_name = null);
+};
+
+interface LabeledQuantity {
+    constructor(LabeledMetricData meta, sequence<CowString>? labels);
+
+    QuantityMetric get(string label);
+
+    i32 test_get_num_recorded_errors(ErrorType error);
+
+    record<string, i64>? test_get_value(optional string? ping_name = null);
 };
 
 interface StringListMetric {
@@ -721,4 +739,14 @@ interface ObjectMetric {
     i32 test_get_num_recorded_errors(ErrorType error);
 
     void record_schema_error();
+};
+
+interface DualLabeledCounterMetric {
+    constructor(CommonMetricData meta, sequence<CowString>? keys, sequence<CowString>? categories);
+
+    CounterMetric get(string key, string category);
+
+    record<string, record<string, i32>>? test_get_value(optional string? ping_name = null);
+
+    i32 test_get_num_recorded_errors(ErrorType error);
 };

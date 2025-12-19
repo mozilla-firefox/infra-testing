@@ -7,6 +7,7 @@
  * Tests that the request for a domain that is not found shows
  * correctly.
  */
+
 add_task(async function () {
   const URL = "https://not-existed.com/";
   const { monitor } = await initNetMonitor(URL, {
@@ -26,13 +27,21 @@ add_task(async function () {
 
   const firstItem = document.querySelectorAll(".request-list-item")[0];
 
+  info("Wait for content for the transfered column to be updated");
+  const transferredValue = await waitFor(() => {
+    const value = firstItem.querySelector(
+      ".requests-list-transferred"
+    ).innerText;
+    return value.includes("NS_ERROR") ? value : false;
+  });
+
   is(
     firstItem.querySelector(".requests-list-url").innerText,
     URL,
     "The url in the displayed request is correct"
   );
   is(
-    firstItem.querySelector(".requests-list-transferred").innerText,
+    transferredValue,
     "NS_ERROR_UNKNOWN_HOST",
     "The error in the displayed request is correct"
   );

@@ -135,7 +135,6 @@ add_heuristic_tests([
         </form></body></html>`,
     expectedResult: [
       {
-        invalid: true,
         fields: [
           { fieldName: "given-name", reason: "autocomplete" },
           { fieldName: "family-name", reason: "autocomplete" },
@@ -203,6 +202,63 @@ add_heuristic_tests([
         fields: [
           { fieldName: "cc-type", reason: "autocomplete" },
           { fieldName: "cc-csc", reason: "autocomplete" },
+        ],
+      },
+    ],
+  },
+  {
+    description: `Form field with misleading name attribute`,
+    fixtureData: `
+        <html><body>
+            <label for="address_label">Nome deste endereço</label>
+            <input id="address_label"/>
+            <input id="zipcode" type="text" placeholder="CEP" required="required">
+            <label for="zipcode">CEP*</label>
+            <input id="address_name" type="text" placeholder=" " required="required">
+            <label for="address_name">Endereço*</label>
+            <label for="house_number">Número</label>
+            <input id="house_number"/>
+            <label for="city">Cidade</label>
+            <input id="city"/>
+        </body></html>
+      `,
+    expectedResult: [
+      {
+        default: {
+          reason: "regex-heuristic",
+        },
+        fields: [
+          { fieldName: "name" },
+          { fieldName: "postal-code" },
+          { fieldName: "address-line1" },
+          { fieldName: "address-housenumber", reason: "update-heuristic" },
+          { fieldName: "address-level2" },
+        ],
+      },
+    ],
+  },
+  {
+    description: `Form field where fathom detects credit card name`,
+    fixtureData: `
+        <html><body>
+            <label>Prénom<input/></label>
+            <label>Nom<input/></label>
+            <label>Saisir une adresse avec un numéro de maison<input/></label>
+            <label>Ligne d'adresse 2<input/></label>
+            <label>Code postal<input/></label>
+        </body></html>
+      `,
+    expectedResult: [
+      {
+        default: {
+          reason: "regex-heuristic",
+        },
+        fields: [
+          { fieldName: "given-name" },
+          { fieldName: "name", reason: "update-heuristic-alternate" },
+          { fieldName: "address-line1", reason: "update-heuristic-alternate" },
+          { fieldName: "address-line2", reason: "update-heuristic" },
+          { fieldName: "postal-code" },
         ],
       },
     ],

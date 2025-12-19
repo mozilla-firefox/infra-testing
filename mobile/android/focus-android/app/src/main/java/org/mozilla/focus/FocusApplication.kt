@@ -12,22 +12,20 @@ import androidx.annotation.OpenForTesting
 import androidx.annotation.VisibleForTesting
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.lifecycle.ProcessLifecycleOwner
-import androidx.preference.PreferenceManager
 import androidx.work.Configuration.Builder
 import androidx.work.Configuration.Provider
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import mozilla.components.support.AppServicesInitializer
 import mozilla.components.support.base.facts.register
 import mozilla.components.support.base.log.Log
 import mozilla.components.support.base.log.sink.AndroidLogSink
 import mozilla.components.support.ktx.android.content.isMainProcess
 import mozilla.components.support.locale.LocaleAwareApplication
+import mozilla.components.support.remotesettings.GlobalRemoteSettingsDependencyProvider
 import mozilla.components.support.rusthttp.RustHttpConfig
-import mozilla.components.support.rustlog.RustLog
 import mozilla.components.support.webextensions.WebExtensionSupport
 import org.mozilla.focus.biometrics.LockObserver
 import org.mozilla.focus.experiments.finishNimbusInitialization
@@ -38,13 +36,14 @@ import org.mozilla.focus.session.VisibilityLifeCycleCallback
 import org.mozilla.focus.telemetry.FactsProcessor
 import org.mozilla.focus.telemetry.ProfilerMarkerFactProcessor
 import org.mozilla.focus.utils.AppConstants
-import kotlin.coroutines.CoroutineContext
+import mozilla.components.support.AppServicesInitializer.Config as AppServiceConfig
 
-@Suppress("TooManyFunctions")
-open class FocusApplication : LocaleAwareApplication(), Provider, CoroutineScope {
-    private var job = Job()
-    override val coroutineContext: CoroutineContext
-        get() = job + Dispatchers.Main
+/**
+ * Focus application class.
+ */
+open class FocusApplication : LocaleAwareApplication(), Provider {
+
+    protected val applicationScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     open val components: Components by lazy { Components(this) }
 
@@ -54,7 +53,6 @@ open class FocusApplication : LocaleAwareApplication(), Provider, CoroutineScope
     private val storeLink by lazy { StoreLink(components.appStore, components.store) }
     private val lockObserver by lazy { LockObserver(this, components.store, components.appStore) }
 
-    @OptIn(DelicateCoroutinesApi::class)
     override fun onCreate() {
         super.onCreate()
 
@@ -63,8 +61,6 @@ open class FocusApplication : LocaleAwareApplication(), Provider, CoroutineScope
 
         if (isMainProcess()) {
             initializeNimbus()
-
-            PreferenceManager.setDefaultValues(this, R.xml.settings, false)
 
             setTheme(this)
             components.engine.warmUp()
@@ -81,9 +77,11 @@ open class FocusApplication : LocaleAwareApplication(), Provider, CoroutineScope
             registerActivityLifecycleCallbacks(visibilityLifeCycleCallback)
             registerComponentCallbacks(visibilityLifeCycleCallback)
 
-            storeLink.start()
+            storeLink.start(applicationScope)
 
             initializeWebExtensionSupport()
+
+            initializeRemoteSettingsSupport()
 
             setupLeakCanary()
 
@@ -91,7 +89,8 @@ open class FocusApplication : LocaleAwareApplication(), Provider, CoroutineScope
             components.startupActivityLog.registerInAppOnCreate(this)
 
             ProcessLifecycleOwner.get().lifecycle.addObserver(lockObserver)
-            GlobalScope.launch(Dispatchers.IO) {
+
+            applicationScope.launch {
                 // Remove stale temporary uploaded files.
                 components.fileUploadsDirCleaner.cleanUploadsDirectory()
             }
@@ -107,6 +106,11 @@ open class FocusApplication : LocaleAwareApplication(), Provider, CoroutineScope
         // no-op, LeakCanary is disabled by default
     }
 
+    /**
+     * Updates the configuration of LeakCanary based on the provided state.
+     *
+     * @param isEnabled Whether LeakCanary features should be enabled.
+     */
     open fun updateLeakCanaryState(isEnabled: Boolean) {
         // no-op, LeakCanary is disabled by default
     }
@@ -143,21 +147,17 @@ open class FocusApplication : LocaleAwareApplication(), Provider, CoroutineScope
      * thread, early in the app startup sequence.
      */
     private fun beginSetupMegazord() {
-        // Note: Megazord.init() must be called as soon as possible ...
-        // Megazord.init()
-
-        // ... but RustHttpConfig.setClient() and RustLog.enable() can be called later.
-
-        RustLog.enable()
+        AppServicesInitializer.init(
+            AppServiceConfig(components.crashReporter),
+        )
     }
 
     /**
      * Finish Megazord setup sequence.
      */
-    @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
     @OpenForTesting
     open fun finishSetupMegazord() {
-        GlobalScope.launch(Dispatchers.IO) {
+        applicationScope.launch(Dispatchers.IO) {
             // We need to use an unwrapped client because native components do not support private
             // requests.
             @Suppress("Deprecation")
@@ -167,6 +167,11 @@ open class FocusApplication : LocaleAwareApplication(), Provider, CoroutineScope
             // experiments recipes from the server.
             finishNimbusInitialization(components.experiments)
         }
+    }
+
+    private fun initializeRemoteSettingsSupport() {
+        GlobalRemoteSettingsDependencyProvider.initialize(components.remoteSettingsService)
+        components.remoteSettingsSyncScheduler.registerForSync()
     }
 
     private fun setTheme(context: Context) {

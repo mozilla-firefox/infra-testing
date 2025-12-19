@@ -115,12 +115,12 @@ class InputTestHelpers extends LitTestHelpers {
     let { activatedProperty } = this;
 
     function trackEvent(event) {
-      let reactiveProps = event.target.constructor.properties;
+      let reactiveProps = event.target.constructor?.properties;
       seenEvents.push({
         type: event.type,
-        value: event.target.value,
+        value: event.currentTarget.value,
         localName: event.currentTarget.localName,
-        ...(reactiveProps.hasOwnProperty(activatedProperty) && {
+        ...(reactiveProps?.hasOwnProperty(activatedProperty) && {
           [activatedProperty]: event.target[activatedProperty],
         }),
       });
@@ -166,6 +166,8 @@ class InputTestHelpers extends LitTestHelpers {
    */
   async testCommonInputProperties(elementName) {
     await this.verifyLabel(elementName);
+    await this.verifyAriaLabel(elementName);
+    await this.verifyAriaDescription(elementName);
     await this.verifyName(elementName);
     await this.verifyValue(elementName);
     await this.verifyIcon(elementName);
@@ -252,6 +254,83 @@ class InputTestHelpers extends LitTestHelpers {
     firstInput.value = NEW_VALUE;
     await firstInput.updateComplete;
     is(firstInput.inputEl.value, NEW_VALUE, "Input value is updated.");
+  }
+
+  /**
+   * Verifies input value property remains in sync with its inner HTMLInputElement's value in both directions.
+   *
+   * @param {string} selector - HTML tag of the element under test.
+   */
+  async verifyValueSync(selector) {
+    const INITIAL_VALUE = "value";
+    const USER_INPUT = "new value";
+    const UNIQUE_INPUT = "unique value";
+
+    const valueTemplate = this.templateFn({
+      label: "Testing value",
+      value: INITIAL_VALUE,
+    });
+    const renderTarget = await this.renderTemplate(valueTemplate);
+
+    const wrapper = renderTarget.querySelector(selector);
+    ok(wrapper, `Found ${selector} wrapper`);
+
+    const innerInput = wrapper.inputEl;
+    ok(
+      HTMLInputElement.isInstance(innerInput),
+      "Wrapper inner element is an <input>"
+    );
+
+    is(
+      innerInput.value,
+      INITIAL_VALUE,
+      "Inner input starts with the initial template value."
+    );
+    is(
+      wrapper.value,
+      INITIAL_VALUE,
+      "Wrapper value starts with the initial template value."
+    );
+
+    wrapper.value = INITIAL_VALUE;
+    await wrapper.updateComplete;
+    is(
+      innerInput.value,
+      INITIAL_VALUE,
+      "Inner input value is in sync with wrapper value (after direct set)."
+    );
+
+    wrapper.value = "";
+    await wrapper.updateComplete;
+
+    innerInput.focus();
+    sendString(USER_INPUT);
+    innerInput.blur();
+    await TestUtils.waitForTick();
+
+    is(
+      wrapper.value,
+      USER_INPUT,
+      "Wrapper value is updated after typing into inner input."
+    );
+    is(
+      innerInput.value,
+      USER_INPUT,
+      "Inner input value is updated after typing into inner input."
+    );
+
+    wrapper.value = UNIQUE_INPUT;
+    await wrapper.updateComplete;
+    is(
+      wrapper.value,
+      UNIQUE_INPUT,
+      "Wrapper value is updated to unique value."
+    );
+    is(
+      innerInput.value,
+      UNIQUE_INPUT,
+      "Inner input value is in sync with unique wrapper value."
+    );
   }
 
   /**
@@ -422,10 +501,23 @@ class InputTestHelpers extends LitTestHelpers {
     await firstInput.updateComplete;
 
     is(
-      getSupportLink().parentElement.id,
+      getSupportLink().previousElementSibling.id,
       "description",
-      "Support link is rendered in the description if a description is present."
+      "Support link is rendered next to the description if a description is present."
     );
+
+    if (firstInput.isInlineLayout) {
+      ok(
+        !getSupportLink().getAttribute("aria-describedby"),
+        "aria-describedby is not set on the support link."
+      );
+    } else {
+      is(
+        getSupportLink().getAttribute("aria-describedby"),
+        "label description",
+        "Support link is described by the label and description elements."
+      );
+    }
 
     let getSlottedSupportLink = () =>
       secondInput.shadowRoot
@@ -468,9 +560,9 @@ class InputTestHelpers extends LitTestHelpers {
     await slottedDescriptionPresent;
 
     is(
-      getSlottedSupportLink().assignedSlot.parentElement.id,
+      getSlottedSupportLink().assignedSlot.previousElementSibling.id,
       "description",
-      "Support link is rendered in the slotted description if a slotted description is present."
+      "Support link is rendered next to the slotted description if a slotted description is present."
     );
   }
 
@@ -630,7 +722,7 @@ class InputTestHelpers extends LitTestHelpers {
     let renderTarget = await this.renderTemplate(whitespaceTemplate);
     let firstInput = renderTarget.querySelector(selector);
 
-    if (firstInput.constructor.inputLayout == "block") {
+    if (!firstInput.isInlineLayout) {
       return;
     }
 
@@ -703,6 +795,11 @@ class InputTestHelpers extends LitTestHelpers {
     ]);
   }
 
+  /**
+   * Verifies that the aria-label attribute is applied to the input element.
+   *
+   * @param {string} selector - HTML tag of the element under test.
+   */
   async verifyAriaLabel(selector) {
     const ARIA_LABEL = "I'm not visible";
     let ariaLabelTemplate = this.templateFn({
@@ -722,6 +819,32 @@ class InputTestHelpers extends LitTestHelpers {
       input.inputEl.getAttribute("aria-label"),
       ARIA_LABEL,
       "The aria-label is set on the input element."
+    );
+  }
+
+  /**
+   * Verifies that the aria-description attribute is applied to the input element.
+   *
+   * @param {string} selector - HTML tag of the element under test.
+   */
+  async verifyAriaDescription(selector) {
+    const ARIA_DESCRIPTION = "I'm not visible";
+    let ariaDescriptionTemplate = this.templateFn({
+      value: "default",
+      "aria-description": ARIA_DESCRIPTION,
+    });
+    let renderTarget = await this.renderTemplate(ariaDescriptionTemplate);
+    let input = renderTarget.querySelector(selector);
+
+    ok(!input.hasDescription, "No visible description text is rendered.");
+    ok(
+      !input.getAttribute("aria-description"),
+      "aria-description is not set on the outer element."
+    );
+    is(
+      input.inputEl.getAttribute("aria-description"),
+      ARIA_DESCRIPTION,
+      "The aria-description is set on the input element."
     );
   }
 

@@ -8,7 +8,8 @@
 
 ChromeUtils.defineESModuleGetters(this, {
   BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.sys.mjs",
-  CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
+  CustomizableUI:
+    "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
   ExtensionTelemetry: "resource://gre/modules/ExtensionTelemetry.sys.mjs",
   OriginControls: "resource://gre/modules/ExtensionPermissions.sys.mjs",
   ViewPopup: "resource:///modules/ExtensionPopups.sys.mjs",
@@ -498,7 +499,10 @@ this.browserAction = class extends ExtensionAPIPersistent {
     }
 
     if (this.widget.areaType == CustomizableUI.TYPE_PANEL) {
-      await window.gUnifiedExtensions.togglePanel();
+      await window.gUnifiedExtensions.openPanel(
+        null,
+        "extension_browser_action_popup"
+      );
     }
 
     // This should already have been checked by callers, but acts as an
@@ -682,7 +686,7 @@ this.browserAction = class extends ExtensionAPIPersistent {
         break;
       }
 
-      case "popupshowing":
+      case "popupshowing": {
         const menu = event.target;
         const trigger = menu.triggerNode;
         const node = window.document.getElementById(this.id);
@@ -695,8 +699,9 @@ this.browserAction = class extends ExtensionAPIPersistent {
           this.updateContextMenu(menu);
         }
         break;
+      }
 
-      case "auxclick":
+      case "auxclick": {
         if (event.button !== 1) {
           return;
         }
@@ -713,6 +718,7 @@ this.browserAction = class extends ExtensionAPIPersistent {
           CustomizableUI.hidePanelForNode(event.target);
         }
         break;
+      }
     }
   }
 
@@ -726,11 +732,16 @@ this.browserAction = class extends ExtensionAPIPersistent {
     const action =
       this.extension.manifestVersion < 3 ? "onBrowserAction" : "onAction";
 
-    global.actionContextMenu({
-      extension: this.extension,
-      [action]: true,
-      menu,
-    });
+    if (
+      this.extension.hasPermission("contextMenus") ||
+      this.extension.hasPermission("menus")
+    ) {
+      global.actionContextMenu({
+        extension: this.extension,
+        [action]: true,
+        menu,
+      });
+    }
   }
 
   /**
@@ -986,6 +997,37 @@ this.browserAction = class extends ExtensionAPIPersistent {
         },
       };
     },
+    onUserSettingsChanged({ fire }) {
+      let listener = {
+        onWidgetRemoved: (widgetId, oldArea) => {
+          if (widgetId !== this.id) {
+            return;
+          }
+
+          if (oldArea === CustomizableUI.AREA_ADDONS) {
+            fire.async({ isOnToolbar: true });
+          }
+        },
+        onWidgetAdded: (widgetId, newArea) => {
+          if (widgetId !== this.id) {
+            return;
+          }
+
+          if (newArea === CustomizableUI.AREA_ADDONS) {
+            fire.async({ isOnToolbar: false });
+          }
+        },
+      };
+      CustomizableUI.addListener(listener);
+      return {
+        unregister: () => {
+          CustomizableUI.removeListener(listener);
+        },
+        convert(newFire) {
+          fire = newFire;
+        },
+      };
+    },
   };
 
   getAPI(context) {
@@ -1000,10 +1042,19 @@ this.browserAction = class extends ExtensionAPIPersistent {
         onClicked: new EventManager({
           context,
           // module name is "browserAction" because it the name used in the
-          // ext-browser.json, indipendently from the manifest version.
+          // ext-browser.json, independently from the manifest version.
           module: "browserAction",
           event: "onClicked",
           inputHandling: true,
+          extensionApi: this,
+        }).api(),
+
+        onUserSettingsChanged: new EventManager({
+          context,
+          // module name is "browserAction" because it the name used in the
+          // ext-browser.json, independently from the manifest version.
+          module: "browserAction",
+          event: "onUserSettingsChanged",
           extensionApi: this,
         }).api(),
 

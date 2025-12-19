@@ -10,14 +10,17 @@
 
 #include "nsFrameSelection.h"
 
+#include <algorithm>
+
 #include "ErrorList.h"
-#include "mozilla/intl/BidiEmbeddingLevel.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/HTMLEditor.h"
 #include "mozilla/IntegerRange.h"
 #include "mozilla/Logging.h"
+#include "mozilla/MouseEvents.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/PseudoStyleType.h"
 #include "mozilla/ScrollContainerFrame.h"
@@ -26,66 +29,52 @@
 #include "mozilla/StaticPrefs_bidi.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_layout.h"
-#include "mozilla/Unused.h"
-
-#include "nsCOMPtr.h"
-#include "nsDebug.h"
-#include "nsFrameTraversal.h"
-#include "nsString.h"
-#include "nsISelectionListener.h"
-#include "nsDeviceContext.h"
-#include "nsIContent.h"
-#include "nsRange.h"
-#include "nsITableCellLayout.h"
-#include "nsTArray.h"
-#include "nsTableWrapperFrame.h"
-#include "nsTableCellFrame.h"
-#include "nsCCUncollectableMarker.h"
-#include "nsTextFragment.h"
-#include <algorithm>
-#include "nsContentUtils.h"
-#include "nsCSSFrameConstructor.h"
-
-#include "nsGkAtoms.h"
-#include "nsLayoutUtils.h"
-#include "nsBidiPresUtils.h"
-#include "nsTextFrame.h"
-
-#include "nsThreadUtils.h"
-#include "mozilla/Preferences.h"
-
-#include "mozilla/PresShell.h"
-#include "nsPresContext.h"
-#include "nsCaret.h"
-
-#include "mozilla/MouseEvents.h"
 #include "mozilla/TextEvents.h"
+#include "mozilla/intl/BidiEmbeddingLevel.h"
+#include "nsBidiPresUtils.h"
+#include "nsCCUncollectableMarker.h"
+#include "nsCOMPtr.h"
+#include "nsCSSFrameConstructor.h"
+#include "nsCaret.h"
+#include "nsContentUtils.h"
+#include "nsDebug.h"
+#include "nsDeviceContext.h"
+#include "nsFrameTraversal.h"
+#include "nsGkAtoms.h"
+#include "nsIContent.h"
+#include "nsISelectionListener.h"
+#include "nsITableCellLayout.h"
+#include "nsLayoutUtils.h"
+#include "nsPresContext.h"
+#include "nsRange.h"
+#include "nsString.h"
+#include "nsTArray.h"
+#include "nsTableCellFrame.h"
+#include "nsTableWrapperFrame.h"
+#include "nsTextFrame.h"
+#include "nsThreadUtils.h"
 
 // notifications
-#include "mozilla/dom/Document.h"
-
-#include "nsISelectionController.h"  //for the enums
-#include "nsCopySupport.h"
-#include "nsIClipboard.h"
-#include "nsIFrameInlines.h"
-
-#include "nsError.h"
+#include "SelectionMovementUtils.h"
+#include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/AutoCopyListener.h"
+#include "mozilla/ErrorResult.h"
 #include "mozilla/dom/AncestorIterator.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Highlight.h"
 #include "mozilla/dom/Selection.h"
+#include "mozilla/dom/SelectionBinding.h"
 #include "mozilla/dom/ShadowRoot.h"
 #include "mozilla/dom/StaticRange.h"
 #include "mozilla/dom/Text.h"
-#include "mozilla/ErrorResult.h"
-#include "mozilla/dom/SelectionBinding.h"
-#include "mozilla/AsyncEventDispatcher.h"
-
+#include "nsCopySupport.h"
+#include "nsError.h"
 #include "nsFocusManager.h"
+#include "nsIClipboard.h"
+#include "nsIFrameInlines.h"
+#include "nsISelectionController.h"  //for the enums
 #include "nsPIDOMWindow.h"
-
-#include "SelectionMovementUtils.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -527,12 +516,7 @@ nsresult nsFrameSelection::DesiredCaretPos::FetchPos(
   if (!caretFrame) {
     return NS_ERROR_FAILURE;
   }
-  nsPoint viewOffset(0, 0);
-  nsView* view = nullptr;
-  caretFrame->GetOffsetFromView(viewOffset, &view);
-  if (view) {
-    coord += viewOffset;
-  }
+  coord += caretFrame->GetOffsetToRootFrame();
   aDesiredCaretPos = coord.TopLeft();
   return NS_OK;
 }
@@ -819,7 +803,7 @@ nsresult nsFrameSelection::MoveCaret(nsDirection aDirection,
       Caret::IsVisualMovement(aExtendSelection, aMovementStyle);
   const PrimaryFrameData frameForFocus =
       sel->GetPrimaryFrameForCaretAtFocusNode(visualMovement);
-  if (!frameForFocus.mFrame) {
+  if (!frameForFocus) {
     return NS_ERROR_FAILURE;
   }
   if (visualMovement) {
@@ -1120,8 +1104,7 @@ void nsFrameSelection::BidiLevelFromMove(PresShell* aPresShell,
 
 void nsFrameSelection::BidiLevelFromClick(nsIContent* aNode,
                                           uint32_t aContentOffset) {
-  nsIFrame* clickInFrame = nullptr;
-  clickInFrame = SelectionMovementUtils::GetFrameForNodeOffset(
+  nsIFrame* clickInFrame = SelectionMovementUtils::GetFrameForNodeOffset(
       aNode, aContentOffset, mCaret.mHint);
   if (!clickInFrame) {
     return;
@@ -1200,30 +1183,33 @@ void nsFrameSelection::MaintainedRange::AdjustContentOffsets(
       amount = eSelectEndLine;
     }
 
-    uint32_t offset;
-    nsIFrame* frame = SelectionMovementUtils::GetFrameForNodeOffset(
-        aOffsets.content, aOffsets.offset, CaretAssociationHint::After,
-        &offset);
+    FrameAndOffset frameAndOffset =
+        SelectionMovementUtils::GetFrameForNodeOffset(
+            aOffsets.content, aOffsets.offset, CaretAssociationHint::After);
 
     PeekOffsetOptions peekOffsetOptions{};
     if (aStopAtScroller == StopAtScroller::Yes) {
       peekOffsetOptions += PeekOffsetOption::StopAtScroller;
     }
-    if (frame && amount == eSelectWord && direction == eDirPrevious) {
+    if (frameAndOffset && amount == eSelectWord && direction == eDirPrevious) {
       // To avoid selecting the previous word when at start of word,
       // first move one character forward.
-      PeekOffsetStruct charPos(eSelectCharacter, eDirNext,
-                               static_cast<int32_t>(offset), nsPoint(0, 0),
-                               peekOffsetOptions);
-      if (NS_SUCCEEDED(frame->PeekOffset(&charPos))) {
-        frame = charPos.mResultFrame;
-        offset = charPos.mContentOffset;
+      PeekOffsetStruct charPos(
+          eSelectCharacter, eDirNext,
+          static_cast<int32_t>(frameAndOffset.mOffsetInFrameContent),
+          nsPoint(0, 0), peekOffsetOptions);
+      if (NS_SUCCEEDED(frameAndOffset->PeekOffset(&charPos))) {
+        frameAndOffset = {charPos.mResultFrame,
+                          static_cast<uint32_t>(charPos.mContentOffset)};
       }
     }
 
-    PeekOffsetStruct pos(amount, direction, static_cast<int32_t>(offset),
-                         nsPoint(0, 0), peekOffsetOptions);
-    if (frame && NS_SUCCEEDED(frame->PeekOffset(&pos)) && pos.mResultContent) {
+    PeekOffsetStruct pos(
+        amount, direction,
+        static_cast<int32_t>(frameAndOffset.mOffsetInFrameContent),
+        nsPoint(0, 0), peekOffsetOptions);
+    if (frameAndOffset && NS_SUCCEEDED(frameAndOffset->PeekOffset(&pos)) &&
+        pos.mResultContent) {
       aOffsets.content = pos.mResultContent;
       aOffsets.offset = pos.mContentOffset;
     }
@@ -1552,7 +1538,7 @@ nsresult nsFrameSelection::TakeFocus(nsIContent& aNewFocus,
 
 UniquePtr<SelectionDetails> nsFrameSelection::LookUpSelection(
     nsIContent* aContent, int32_t aContentOffset, int32_t aContentLength,
-    bool aSlowCheck) const {
+    IgnoreNormalSelection aIgnoreNormalSelection) const {
   if (!aContent || !mPresShell) {
     return nullptr;
   }
@@ -1566,13 +1552,13 @@ UniquePtr<SelectionDetails> nsFrameSelection::LookUpSelection(
   }
 
   UniquePtr<SelectionDetails> details;
-
-  for (size_t j = 0; j < std::size(mDomSelections); j++) {
+  for (size_t j = aIgnoreNormalSelection == IgnoreNormalSelection::Yes ? 1 : 0;
+       j < std::size(mDomSelections); j++) {
     MOZ_ASSERT(mDomSelections[j]);
     details = mDomSelections[j]->LookUpSelection(
         aContent, static_cast<uint32_t>(aContentOffset),
         static_cast<uint32_t>(aContentLength), std::move(details),
-        kPresentSelectionTypes[j], aSlowCheck);
+        kPresentSelectionTypes[j]);
   }
 
   // This may seem counter intuitive at first. Highlight selections need to be
@@ -1586,7 +1572,7 @@ UniquePtr<SelectionDetails> nsFrameSelection::LookUpSelection(
     details = iter.second()->LookUpSelection(
         aContent, static_cast<uint32_t>(aContentOffset),
         static_cast<uint32_t>(aContentLength), std::move(details),
-        SelectionType::eHighlight, aSlowCheck);
+        SelectionType::eHighlight);
   }
 
   return details;
@@ -1638,6 +1624,18 @@ void nsFrameSelection::AddHighlightSelection(
     mHighlightSelections.AppendElement(
         CompactPair<RefPtr<nsAtom>, RefPtr<Selection>>(aHighlightName,
                                                        std::move(selection)));
+  }
+}
+
+void nsFrameSelection::RepaintHighlightSelection(nsAtom* aHighlightName) {
+  if (auto iter =
+          std::find_if(mHighlightSelections.begin(), mHighlightSelections.end(),
+                       [&aHighlightName](auto const& aElm) {
+                         return aElm.first() == aHighlightName;
+                       });
+      iter != mHighlightSelections.end()) {
+    RefPtr selection = iter->second();
+    selection->Repaint(mPresShell->GetPresContext());
   }
 }
 
@@ -1731,7 +1729,9 @@ nsresult nsFrameSelection::RepaintSelection(SelectionType aSelectionType) {
   if (!sel) {
     return NS_ERROR_INVALID_ARG;
   }
-  NS_ENSURE_STATE(mPresShell);
+  if (!mPresShell) {
+    return NS_ERROR_UNEXPECTED;
+  }
 
 // On macOS, update the selection cache to the new active selection
 // aka the current selection.
@@ -1984,20 +1984,20 @@ nsresult nsFrameSelection::PhysicalMove(int16_t aDirection, int16_t aAmount,
   WritingMode wm;
   const PrimaryFrameData frameForFocus =
       sel->GetPrimaryFrameForCaretAtFocusNode(true);
-  if (frameForFocus.mFrame) {
+  if (frameForFocus) {
     // FYI: Setting the caret association hint was done during a call of
     // GetPrimaryFrameForCaretAtFocusNode.  Therefore, this may not be intended
     // by the original author.
     sel->GetFrameSelection()->SetHint(frameForFocus.mHint);
 
-    if (!frameForFocus.mFrame->Style()->IsTextCombined()) {
-      wm = frameForFocus.mFrame->GetWritingMode();
+    if (!frameForFocus->Style()->IsTextCombined()) {
+      wm = frameForFocus->GetWritingMode();
     } else {
       // Using different direction for horizontal-in-vertical would
       // make it hard to navigate via keyboard. Inherit the moving
       // direction from its parent.
-      MOZ_ASSERT(frameForFocus.mFrame->IsTextFrame());
-      wm = frameForFocus.mFrame->GetParent()->GetWritingMode();
+      MOZ_ASSERT(frameForFocus->IsTextFrame());
+      wm = frameForFocus->GetParent()->GetWritingMode();
       MOZ_ASSERT(wm.IsVertical(),
                  "Text combined "
                  "can only appear in vertical text");
@@ -2149,7 +2149,7 @@ void nsFrameSelection::EndBatchChanges(const char* aRequesterFuncName,
       // This returns NS_ERROR_FAILURE if being called for a selection that is
       // not present. We don't care about that here, so we silently ignore it
       // and continue.
-      Unused << NotifySelectionListeners(selectionType, IsBatchingEnd::Yes);
+      (void)NotifySelectionListeners(selectionType, IsBatchingEnd::Yes);
     }
   }
 }
@@ -3089,7 +3089,7 @@ void nsFrameSelection::SetAncestorLimiter(Element* aLimiter) {
         const nsresult rv =
             TakeFocus(*limiter, 0, 0, CaretAssociationHint::Before,
                       FocusMode::kCollapseToNewPoint);
-        Unused << NS_WARN_IF(NS_FAILED(rv));
+        (void)NS_WARN_IF(NS_FAILED(rv));
         // TODO: in case of failure, propagate it to the callers.
       }
     }

@@ -4,22 +4,23 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/dom/DOMIntersectionObserver.h"
 #include "mozilla/dom/HTMLIFrameElement.h"
-#include "mozilla/dom/ContentChild.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/HTMLIFrameElementBinding.h"
-#include "mozilla/dom/FeaturePolicy.h"
-#include "mozilla/dom/TrustedTypeUtils.h"
-#include "mozilla/dom/TrustedTypesConstants.h"
+
 #include "mozilla/MappedDeclarationsBuilder.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/StaticPrefs_dom.h"
-#include "nsSubDocumentFrame.h"
-#include "nsError.h"
+#include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/DOMIntersectionObserver.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/FeaturePolicy.h"
+#include "mozilla/dom/HTMLIFrameElementBinding.h"
+#include "mozilla/dom/TrustedTypeUtils.h"
+#include "mozilla/dom/TrustedTypesConstants.h"
 #include "nsContentUtils.h"
-#include "nsSandboxFlags.h"
+#include "nsError.h"
 #include "nsNetUtil.h"
+#include "nsSandboxFlags.h"
+#include "nsSubDocumentFrame.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT_CHECK_PARSER(IFrame)
 
@@ -257,7 +258,7 @@ void HTMLIFrameElement::MaybeStoreCrossOriginFeaturePolicy() {
   }
 
   if (ContentChild* cc = ContentChild::GetSingleton()) {
-    Unused << cc->SendSetContainerFeaturePolicy(
+    (void)cc->SendSetContainerFeaturePolicy(
         browsingContext, Some(mFeaturePolicy->ToFeaturePolicyInfo()));
   }
 }
@@ -392,13 +393,14 @@ void HTMLIFrameElement::GetSrcdoc(OwningTrustedHTMLOrString& aSrcdoc) {
 }
 
 void HTMLIFrameElement::SetSrcdoc(const TrustedHTMLOrString& aSrcdoc,
+                                  nsIPrincipal* aSubjectPrincipal,
                                   ErrorResult& aError) {
   constexpr nsLiteralString sink = u"HTMLIFrameElement srcdoc"_ns;
 
   Maybe<nsAutoString> compliantStringHolder;
   const nsAString* compliantString =
       TrustedTypeUtils::GetTrustedTypesCompliantString(
-          aSrcdoc, sink, kTrustedTypesOnlySinkGroup, *this,
+          aSrcdoc, sink, kTrustedTypesOnlySinkGroup, *this, aSubjectPrincipal,
           compliantStringHolder, aError);
   if (aError.Failed()) {
     return;

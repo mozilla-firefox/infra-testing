@@ -51,7 +51,7 @@ const perfMetadata = {
   },
 };
 
-requestLongerTimeout(120);
+requestLongerTimeout(10);
 
 const CUSTOM_INTENT_OPTIONS = {
   taskName: "text-classification",
@@ -140,8 +140,9 @@ async function perform_inference(queries, type) {
     results.push(res);
   }
 
-  Assert.ok(
-    results.length === queries.length,
+  Assert.strictEqual(
+    results.length,
+    queries.length,
     "results size should be equal to queries size."
   );
   // Write results to a file
@@ -150,7 +151,7 @@ async function perform_inference(queries, type) {
 
 const runInference2 = async () => {
   ChromeUtils.defineESModuleGetters(this, {
-    MLSuggest: "resource:///modules/urlbar/private/MLSuggest.sys.mjs",
+    MLSuggest: "moz-src:///browser/components/urlbar/private/MLSuggest.sys.mjs",
   });
 
   // Override INTENT and NER options within MLSuggest

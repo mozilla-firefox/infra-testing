@@ -68,10 +68,7 @@
 #ifndef xpcprivate_h___
 #define xpcprivate_h___
 
-#include "mozilla/Alignment.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/CycleCollectedJSContext.h"
@@ -82,6 +79,7 @@
 #include "mozilla/LinkedList.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/PodOperations.h"
 #include "mozilla/mozalloc.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/TimeStamp.h"
@@ -2097,7 +2095,7 @@ class XPCVariant : public nsIVariant {
 
   // We #define and iid so that out module local code can use QI to detect
   // if a given nsIVariant is in fact an XPCVariant.
-  NS_DECLARE_STATIC_IID_ACCESSOR(XPCVARIANT_IID)
+  NS_INLINE_DECL_STATIC_IID(XPCVARIANT_IID)
 
   static already_AddRefed<XPCVariant> newVariant(JSContext* cx,
                                                  const JS::Value& aJSVal);
@@ -2148,8 +2146,6 @@ class XPCVariant : public nsIVariant {
   bool mReturnRawObject;
 };
 
-NS_DEFINE_STATIC_IID_ACCESSOR(XPCVariant, XPCVARIANT_IID)
-
 /***************************************************************************/
 // Utilities
 
@@ -2186,6 +2182,7 @@ struct GlobalProperties {
   bool Blob : 1;
   bool ChromeUtils : 1;
   bool CSS : 1;
+  bool CSSPositionTryDescriptors : 1;
   bool CSSRule : 1;
   bool CustomStateSet : 1;
   bool Directory : 1;
@@ -2450,6 +2447,14 @@ nsresult GetSandboxMetadata(JSContext* cx, JS::HandleObject sandboxArg,
 [[nodiscard]] nsresult SetSandboxMetadata(JSContext* cx,
                                           JS::HandleObject sandboxArg,
                                           JS::HandleValue metadata);
+
+[[nodiscard]] nsresult SetSandboxLocaleOverride(JSContext* cx,
+                                                JS::HandleObject sandboxArg,
+                                                const char* locale);
+
+[[nodiscard]] nsresult SetSandboxTimezoneOverride(JSContext* cx,
+                                                  JS::HandleObject sandboxArg,
+                                                  const char* timezone);
 
 bool CreateObjectIn(JSContext* cx, JS::HandleValue vobj,
                     CreateObjectInOptions& options,

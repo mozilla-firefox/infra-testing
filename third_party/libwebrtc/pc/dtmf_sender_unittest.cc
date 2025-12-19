@@ -10,8 +10,7 @@
 
 #include "pc/dtmf_sender.h"
 
-#include <stddef.h>
-
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -89,12 +88,12 @@ class FakeDtmfProvider : public DtmfProviderInterface {
 
   bool InsertDtmf(int code, int duration) override {
     int gap = 0;
-    // TODO(ronghuawu): Make the timer (basically the rtc::TimeNanos)
+    // TODO(ronghuawu): Make the timer (basically the webrtc::TimeNanos)
     // mockable and use a fake timer in the unit tests.
     if (last_insert_dtmf_call_ > 0) {
-      gap = static_cast<int>(rtc::TimeMillis() - last_insert_dtmf_call_);
+      gap = static_cast<int>(webrtc::TimeMillis() - last_insert_dtmf_call_);
     }
-    last_insert_dtmf_call_ = rtc::TimeMillis();
+    last_insert_dtmf_call_ = webrtc::TimeMillis();
 
     dtmf_info_queue_.push_back(DtmfInfo(code, duration, gap));
     return true;
@@ -119,11 +118,11 @@ class DtmfSenderTest : public ::testing::Test {
   DtmfSenderTest()
       : observer_(new FakeDtmfObserver()), provider_(new FakeDtmfProvider()) {
     provider_->SetCanInsertDtmf(true);
-    dtmf_ = DtmfSender::Create(rtc::Thread::Current(), provider_.get());
+    dtmf_ = DtmfSender::Create(webrtc::Thread::Current(), provider_.get());
     dtmf_->RegisterObserver(observer_.get());
   }
 
-  ~DtmfSenderTest() {
+  ~DtmfSenderTest() override {
     if (dtmf_) {
       dtmf_->UnregisterObserver();
     }
@@ -201,8 +200,6 @@ class DtmfSenderTest : public ::testing::Test {
     const std::vector<std::string>& tones = observer_->tones();
     // The observer will get an empty string at the end.
     EXPECT_EQ(tones_ref.size() + 1, tones.size());
-    EXPECT_EQ(observer_->tones(),
-              observer_->tones_from_single_argument_callback());
     EXPECT_TRUE(tones.back().empty());
     EXPECT_TRUE(observer_->tones_remaining().empty());
     std::string::const_iterator it_ref = tones_ref.begin();
@@ -214,11 +211,11 @@ class DtmfSenderTest : public ::testing::Test {
     }
   }
 
-  rtc::AutoThread main_thread_;
+  webrtc::AutoThread main_thread_;
   std::unique_ptr<FakeDtmfObserver> observer_;
   std::unique_ptr<FakeDtmfProvider> provider_;
-  rtc::scoped_refptr<DtmfSender> dtmf_;
-  rtc::ScopedFakeClock fake_clock_;
+  webrtc::scoped_refptr<DtmfSender> dtmf_;
+  webrtc::ScopedFakeClock fake_clock_;
 };
 
 TEST_F(DtmfSenderTest, CanInsertDtmf) {
@@ -306,7 +303,7 @@ TEST_F(DtmfSenderTest, InsertDtmfWhileSenderIsDeleted) {
                    .clock = &fake_clock_}),
               webrtc::IsRtcOk());
   // Delete the sender.
-  dtmf_ = NULL;
+  dtmf_ = nullptr;
   // The queue should be discontinued so no more tone callbacks.
   fake_clock_.AdvanceTime(webrtc::TimeDelta::Millis(200));
   EXPECT_EQ(1U, observer_->tones().size());

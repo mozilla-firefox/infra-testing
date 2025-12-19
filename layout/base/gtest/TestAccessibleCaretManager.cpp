@@ -4,13 +4,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "gtest/gtest.h"
-#include "gmock/gmock.h"
-
 #include <string>
 
 #include "AccessibleCaret.h"
 #include "AccessibleCaretManager.h"
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
 #include "mozilla/Preferences.h"
 
 using ::testing::_;
@@ -76,8 +75,9 @@ class AccessibleCaretManagerTester : public ::testing::Test {
       return static_cast<MockAccessibleCaret&>(*mCarets.GetSecond());
     }
 
-    bool CompareTreePosition(nsIFrame* aStartFrame,
-                             nsIFrame* aEndFrame) const override {
+    bool CompareTreePosition(const nsIFrame* aStartFrame, int32_t aStartOffset,
+                             const nsIFrame* aEndFrame,
+                             int32_t aEndOffset) const override {
       return true;
     }
 

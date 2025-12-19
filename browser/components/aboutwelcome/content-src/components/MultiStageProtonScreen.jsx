@@ -50,6 +50,24 @@ export const MultiStageProtonScreen = props => {
       ?.removeAttribute("narrow");
   }
 
+  function useMediaQuery(query) {
+    const [doesMatch, setDoesMatch] = useState(
+      () => window.matchMedia(query).matches
+    );
+
+    useEffect(() => {
+      const mediaQueryList = window.matchMedia(query);
+      const onChange = event => setDoesMatch(event.matches);
+
+      mediaQueryList.addEventListener("change", onChange);
+      return () => mediaQueryList.removeEventListener("change", onChange);
+    }, [query]);
+
+    return doesMatch;
+  }
+
+  const isWideScreen = useMediaQuery("(min-width: 800px)");
+
   return (
     <ProtonScreen
       content={props.content}
@@ -61,8 +79,8 @@ export const MultiStageProtonScreen = props => {
       setScreenMultiSelects={props.setScreenMultiSelects}
       activeMultiSelect={props.activeMultiSelect}
       setActiveMultiSelect={props.setActiveMultiSelect}
-      activeSingleSelect={props.activeSingleSelect}
-      setActiveSingleSelect={props.setActiveSingleSelect}
+      activeSingleSelectSelections={props.activeSingleSelectSelections}
+      setActiveSingleSelectSelection={props.setActiveSingleSelectSelection}
       totalNumberOfScreens={props.totalNumberOfScreens}
       handleAction={props.handleAction}
       isFirstScreen={props.isFirstScreen}
@@ -83,6 +101,7 @@ export const MultiStageProtonScreen = props => {
       forceHideStepsIndicator={props.forceHideStepsIndicator}
       ariaRole={props.ariaRole}
       aboveButtonStepsIndicator={props.aboveButtonStepsIndicator}
+      isWideScreen={isWideScreen}
     />
   );
 };
@@ -218,18 +237,15 @@ export const ProtonScreenActionButtons = props => {
 
 export class ProtonScreen extends React.PureComponent {
   componentDidMount() {
+    // Don't focus on main content if it is a feature callout
+    // See Bug 1985939
+    if (this.props.content?.position === "callout") {
+      return;
+    }
     this.mainContentHeader.focus();
   }
 
-  getScreenClassName(
-    isFirstScreen,
-    isLastScreen,
-    includeNoodles,
-    isVideoOnboarding,
-    isAddonsPicker
-  ) {
-    const screenClass = `screen-${this.props.order % 2 !== 0 ? 1 : 2}`;
-
+  getScreenClassName(includeNoodles, isVideoOnboarding, isAddonsPicker) {
     if (isVideoOnboarding) {
       return "with-video";
     }
@@ -238,9 +254,14 @@ export class ProtonScreen extends React.PureComponent {
       return "addons-picker";
     }
 
-    return `${isFirstScreen ? `dialog-initial` : ``} ${
-      isLastScreen ? `dialog-last` : ``
-    } ${includeNoodles ? `with-noodles` : ``} ${screenClass}`;
+    const screenClass = `screen-${this.props.order % 2 !== 0 ? 1 : 2}`;
+    const dialogInitial =
+      this.props.isFirstScreen && this.props.previousOrder < 0
+        ? `dialog-initial`
+        : ``;
+    const dialogLast = this.props.isLastScreen ? `dialog-last` : ``;
+
+    return `${screenClass} ${dialogInitial} ${dialogLast} ${includeNoodles ? `with-noodles` : ``}`;
   }
 
   renderTitle({ title, title_logo }) {
@@ -532,18 +553,79 @@ export class ProtonScreen extends React.PureComponent {
     );
   }
 
+  getCombinedInnerStyles(content, isWideScreen) {
+    const CONFIGURABLE_STYLES = [
+      "overflow",
+      "display",
+      "paddingInline",
+      "paddingInlineStart",
+      "paddingInlineEnd",
+      "paddingBlock",
+      "paddingBlockStart",
+      "paddingBlockEnd",
+    ];
+
+    const innerContentStyles = isWideScreen
+      ? content.main_content_style || {}
+      : content.main_content_style_narrow || {};
+
+    const validInnerStyles =
+      AboutWelcomeUtils.getValidStyle(
+        innerContentStyles,
+        CONFIGURABLE_STYLES
+      ) || {};
+
+    return {
+      ...validInnerStyles,
+      justifyContent: content.split_content_justify_content,
+    };
+  }
+
+  getActionButtonsPosition(content) {
+    const VALID_POSITIONS = [
+      "after_subtitle",
+      "after_supporting_content",
+      "end",
+    ];
+
+    if (VALID_POSITIONS.includes(content.action_buttons_position)) {
+      return content.action_buttons_position;
+    }
+    // Legacy mapping
+    if (content.action_buttons_above_content) {
+      return "after_subtitle";
+    }
+    // Default
+    return "end";
+  }
+
+  renderActionButtons(position, content) {
+    return this.getActionButtonsPosition(content) === position ? (
+      <ProtonScreenActionButtons
+        content={content}
+        isRtamo={this.props.isRtamo}
+        installedAddons={this.props.installedAddons}
+        addonId={this.props.addonId}
+        addonName={this.props.addonName}
+        addonType={this.props.addonType}
+        handleAction={this.props.handleAction}
+        activeMultiSelect={this.props.activeMultiSelect}
+      />
+    ) : null;
+  }
+
+  // eslint-disable-next-line complexity
   render() {
     const {
       autoAdvance,
       content,
       isRtamo,
       addonType,
-      isFirstScreen,
-      isLastScreen,
       isSingleScreen,
       forceHideStepsIndicator,
       ariaRole,
       aboveButtonStepsIndicator,
+      isWideScreen,
     } = this.props;
     const includeNoodles = content.has_noodles;
     // The default screen position is "center"
@@ -560,8 +642,6 @@ export class ProtonScreen extends React.PureComponent {
     // by checking if screen order is even or odd.
     const screenClassName = isCenterPosition
       ? this.getScreenClassName(
-          isFirstScreen,
-          isLastScreen,
           includeNoodles,
           content?.video_container,
           content.tiles?.type === "addons-picker"
@@ -570,6 +650,7 @@ export class ProtonScreen extends React.PureComponent {
     const isEmbeddedMigration = content.tiles?.type === "migration-wizard";
     const isSystemPromptStyleSpotlight =
       content.isSystemPromptStyleSpotlight === true;
+    const combinedStyles = this.getCombinedInnerStyles(content, isWideScreen);
 
     return (
       <main
@@ -610,6 +691,7 @@ export class ProtonScreen extends React.PureComponent {
             AboutWelcomeUtils.getValidStyle(content.screen_style, [
               "width",
               "padding",
+              "height",
             ])
           }
         >
@@ -646,7 +728,6 @@ export class ProtonScreen extends React.PureComponent {
             {content.logo && !content.fullscreen
               ? this.renderPicture(content.logo)
               : null}
-
             {isRtamo && !content.fullscreen
               ? this.renderRTAMOIcon(
                   addonType,
@@ -654,13 +735,7 @@ export class ProtonScreen extends React.PureComponent {
                   this.props.addonIconURL
                 )
               : null}
-
-            <div
-              className="main-content-inner"
-              style={{
-                justifyContent: content.split_content_justify_content,
-              }}
-            >
+            <div className="main-content-inner" style={combinedStyles}>
               {content.logo && content.fullscreen
                 ? this.renderPicture(content.logo)
                 : null}
@@ -694,18 +769,7 @@ export class ProtonScreen extends React.PureComponent {
                       />
                     </Localized>
                   ) : null}
-                  {content.action_buttons_above_content && (
-                    <ProtonScreenActionButtons
-                      content={content}
-                      isRtamo={this.props.isRtamo}
-                      installedAddons={this.props.installedAddons}
-                      addonId={this.props.addonId}
-                      addonName={this.props.addonName}
-                      addonType={this.props.addonType}
-                      handleAction={this.props.handleAction}
-                      activeMultiSelect={this.props.activeMultiSelect}
-                    />
-                  )}
+                  {this.renderActionButtons("after_subtitle", content)}
                   {content.cta_paragraph ? (
                     <CTAParagraph
                       content={content.cta_paragraph}
@@ -720,26 +784,23 @@ export class ProtonScreen extends React.PureComponent {
                   handleAction={this.props.handleAction}
                 />
               ) : null}
-              <ContentTiles {...this.props} />
               {this.renderLanguageSwitcher()}
+              {content?.tiles_container?.position !==
+              "after_supporting_content" ? (
+                <ContentTiles {...this.props} />
+              ) : null}
               {content.above_button_content
                 ? this.renderOrderedContent(content.above_button_content)
                 : null}
+              {this.renderActionButtons("after_supporting_content", content)}
+              {content?.tiles_container?.position ===
+              "after_supporting_content" ? (
+                <ContentTiles {...this.props} />
+              ) : null}
               {!hideStepsIndicator && aboveButtonStepsIndicator
                 ? this.renderStepsIndicator()
                 : null}
-              {!content.action_buttons_above_content && (
-                <ProtonScreenActionButtons
-                  content={content}
-                  isRtamo={this.props.isRtamo}
-                  installedAddons={this.props.installedAddons}
-                  addonId={this.props.addonId}
-                  addonName={this.props.addonName}
-                  addonType={this.props.addonType}
-                  handleAction={this.props.handleAction}
-                  activeMultiSelect={this.props.activeMultiSelect}
-                />
-              )}
+              {this.renderActionButtons("end", content)}
               {
                 /* Fullscreen dot-style step indicator should sit inside the
               main inner content to share its padding, which will be

@@ -13,6 +13,7 @@ transforms:
     - gecko_taskgraph.transforms.task:transforms
 
 task-defaults:
+    run-on-repo-type: [hg]
     attributes:
         cron: true
         # This enables uploading symbols.
@@ -20,11 +21,12 @@ task-defaults:
     fetches:
         toolchain:
             - linux64-dump_syms
+            - linux64-7zz
     treeherder:
         platform: symbols/opt
         kind: other
         tier: 2
-    worker-type: b-linux-gcp
+    worker-type: b-linux
     worker:
         env:
             MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE: system
@@ -40,8 +42,8 @@ tasks:
             type: generic
         worker:
             env:
-                PROCESSED_PACKAGES_INDEX: gecko.v2.mozilla-central.latest.system-symbols.mac
                 PROCESSED_PACKAGES_PATH: public/build/processed-packages.gz
+                REPOSADO_METADATA_PATH: public/build/reposado-metadata.tar.gz
             artifacts:
                 - name: public/build
                   type: directory
@@ -296,7 +298,6 @@ tasks:
                 - symbol-scrapers
             toolchain:
                 - linux64-cabextract
-                - linux64-7zz
     alpine:
         description: Extract Alpine Linux system symbols found in crashreports
         attributes:

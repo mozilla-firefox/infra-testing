@@ -7,7 +7,6 @@ package org.mozilla.fenix.home.toolbar
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.view.animation.AnimationUtils
 import androidx.annotation.DrawableRes
 import androidx.annotation.VisibleForTesting
 import androidx.appcompat.content.res.AppCompatResources
@@ -20,20 +19,20 @@ import androidx.core.view.updateLayoutParams
 import androidx.navigation.fragment.findNavController
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.support.ktx.android.content.res.resolveAttribute
-import mozilla.components.support.utils.ext.isLandscape
 import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.R
-import org.mozilla.fenix.browser.tabstrip.isTabStripEnabled
 import org.mozilla.fenix.components.toolbar.ToolbarPosition
-import org.mozilla.fenix.components.toolbar.navbar.shouldAddNavigationBar
 import org.mozilla.fenix.databinding.FragmentHomeBinding
 import org.mozilla.fenix.databinding.FragmentHomeToolbarViewLayoutBinding
+import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.increaseTapAreaVertically
 import org.mozilla.fenix.ext.isLargeWindow
+import org.mozilla.fenix.ext.pixelSizeFor
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.home.HomeFragment
 import org.mozilla.fenix.home.HomeMenuView
 import org.mozilla.fenix.search.toolbar.SearchSelector
+import org.mozilla.fenix.settings.deletebrowsingdata.DeleteBrowsingDataController
 import org.mozilla.fenix.utils.ToolbarPopupWindow
 import java.lang.ref.WeakReference
 
@@ -45,6 +44,7 @@ internal class HomeToolbarView(
     private val interactor: ToolbarInteractor,
     private val homeFragment: HomeFragment,
     private val homeActivity: HomeActivity,
+    private val deleteBrowsingDataController: DeleteBrowsingDataController,
 ) : FenixHomeToolbar {
     private var context = homeFragment.requireContext()
 
@@ -65,15 +65,13 @@ internal class HomeToolbarView(
 
     init {
         initLayoutParameters()
-        updateMargins()
     }
 
-    override fun build(browserState: BrowserState) {
+    override fun build(browserState: BrowserState, middleSearchEnabled: Boolean) {
         initLayoutParameters()
-        updateMargins()
 
         toolbarBinding.toolbarText.compoundDrawablePadding =
-            context.resources.getDimensionPixelSize(R.dimen.search_bar_search_engine_icon_padding)
+            context.pixelSizeFor(R.dimen.search_bar_search_engine_icon_padding)
 
         toolbarBinding.toolbarWrapper.setOnClickListener {
             interactor.onNavigateSearch()
@@ -94,12 +92,13 @@ internal class HomeToolbarView(
             TOOLBAR_WRAPPER_INCREASE_HEIGHT_DPS,
         )
 
-        updateButtonVisibility(browserState, context.shouldAddNavigationBar())
+        updateButtonVisibility(browserState)
+        updateAddressBarVisibility(!middleSearchEnabled)
     }
 
-    override fun updateButtonVisibility(browserState: BrowserState, shouldAddNavigationBar: Boolean) {
-        val showMenu = !shouldAddNavigationBar
-        val showTabCounter = !(shouldAddNavigationBar || context.isTabStripEnabled())
+    override fun updateButtonVisibility(browserState: BrowserState) {
+        val showMenu = true
+        val showTabCounter = !context.settings().isTabStripEnabled
         toolbarBinding.menuButton.isVisible = showMenu
         toolbarBinding.tabButton.isVisible = showTabCounter
 
@@ -144,7 +143,9 @@ internal class HomeToolbarView(
      *
      * @param id The resource ID of the drawable to use as the background.
      */
-    fun updateBackground(@DrawableRes id: Int) {
+    fun updateBackground(
+        @DrawableRes id: Int,
+    ) {
         toolbarBinding.toolbar.setBackgroundResource(id)
     }
 
@@ -162,8 +163,9 @@ internal class HomeToolbarView(
         lifecycleOwner = homeFragment.viewLifecycleOwner,
         homeActivity = homeActivity,
         navController = homeFragment.findNavController(),
-        homeFragment = homeFragment,
+        fenixBrowserUseCases = context.components.useCases.fenixBrowserUseCases,
         menuButton = WeakReference(toolbarBinding.menuButton),
+        deleteBrowsingDataController = deleteBrowsingDataController,
     ).also { it.build() }
 
     @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
@@ -172,7 +174,8 @@ internal class HomeToolbarView(
         browsingModeManager = homeActivity.browsingModeManager,
         navController = homeFragment.findNavController(),
         tabCounter = toolbarBinding.tabButton,
-        showLongPressMenu = !(context.settings().navigationToolbarEnabled && context.isLargeWindow()),
+        showLongPressMenu = !context.isLargeWindow(),
+        settings = context.settings(),
     )
 
     private fun initLayoutParameters() {
@@ -185,7 +188,7 @@ internal class HomeToolbarView(
                     gravity = Gravity.TOP
                 }
 
-                val isTabletAndTabStripEnabled = context.isTabStripEnabled()
+                val isTabletAndTabStripEnabled = context.settings().isTabStripEnabled
                 ConstraintSet().apply {
                     clone(toolbarBinding.toolbarLayout)
                     clear(toolbarBinding.toolbar.id, ConstraintSet.BOTTOM)
@@ -226,14 +229,18 @@ internal class HomeToolbarView(
                     context.theme.resolveAttribute(R.attr.bottomBarBackgroundTop),
                 )
 
+                val topPadding = context.pixelSizeFor(R.dimen.home_fragment_top_toolbar_header_margin) +
+                    if (isTabletAndTabStripEnabled) {
+                        context.pixelSizeFor(R.dimen.tab_strip_height)
+                    } else {
+                        0
+                    }
+
                 homeBinding.homeAppBar.updateLayoutParams<ViewGroup.MarginLayoutParams> {
-                    topMargin =
-                        context.resources.getDimensionPixelSize(R.dimen.home_fragment_top_toolbar_header_margin) +
-                        if (isTabletAndTabStripEnabled) {
-                            context.resources.getDimensionPixelSize(R.dimen.tab_strip_height)
-                        } else {
-                            0
-                        }
+                    topMargin = topPadding
+                }
+                homeBinding.homepageView.updateLayoutParams<ViewGroup.MarginLayoutParams> {
+                    bottomMargin = topPadding
                 }
             }
 
@@ -241,28 +248,10 @@ internal class HomeToolbarView(
         }
     }
 
-    private fun updateMargins() {
-        if (context.settings().navigationToolbarEnabled) {
-            val marginStart = context.resources.getDimensionPixelSize(R.dimen.toolbar_horizontal_margin)
-            val marginEnd = if (context.isLandscape() || context.isLargeWindow()) {
-                context.resources.getDimensionPixelSize(R.dimen.home_item_horizontal_short_margin)
-            } else {
-                context.resources.getDimensionPixelSize(R.dimen.home_item_horizontal_margin)
-            }
-
-            (toolbarBinding.toolbarWrapper.layoutParams as ConstraintLayout.LayoutParams).apply {
-                this.marginStart = marginStart
-                this.marginEnd = marginEnd
-            }
-        }
-    }
-
     override fun updateAddressBarVisibility(isVisible: Boolean) {
         if (isVisible) {
-            toolbarBinding.toolbarWrapper.startAnimation(AnimationUtils.loadAnimation(context, R.anim.fade_in))
             toolbarBinding.toolbarWrapper.visibility = View.VISIBLE
         } else {
-            toolbarBinding.toolbarWrapper.startAnimation(AnimationUtils.loadAnimation(context, R.anim.fade_out))
             toolbarBinding.toolbarWrapper.visibility = View.INVISIBLE
         }
     }

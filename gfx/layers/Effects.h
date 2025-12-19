@@ -17,7 +17,6 @@
 #include "mozilla/layers/TextureHost.h"      // for CompositingRenderTarget, etc
 #include "mozilla/mozalloc.h"                // for operator delete, etc
 #include "nscore.h"                          // for nsACString
-#include "mozilla/EnumeratedArray.h"
 
 namespace mozilla {
 namespace layers {
@@ -114,8 +113,21 @@ struct EffectNV12 : public EffectYCbCr {
   const char* Name() override { return "EffectNV12"; }
 };
 
+struct EffectRoundedClip : public Effect {
+  explicit EffectRoundedClip(const gfx::Rect& aRect,
+                             const gfx::RectCornerRadii& aRadii)
+      : Effect(EffectTypes::ROUNDED_CLIP), mRect(aRect), mRadii(aRadii) {}
+
+  virtual const char* Name() { return "EffectRoundedClip"; }
+  void PrintInfo(std::stringstream& aStream, const char* aPrefix) override;
+
+  gfx::Rect mRect;
+  gfx::RectCornerRadii mRadii;
+};
+
 struct EffectChain {
   RefPtr<Effect> mPrimaryEffect;
+  RefPtr<EffectRoundedClip> mRoundedClipEffect;
 };
 
 /**

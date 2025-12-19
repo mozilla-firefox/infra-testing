@@ -21,7 +21,7 @@ import org.mozilla.focus.activity.robots.searchScreen
 import org.mozilla.focus.helpers.FeatureSettingsHelper
 import org.mozilla.focus.helpers.MainActivityFirstrunTestRule
 import org.mozilla.focus.helpers.MockWebServerHelper
-import org.mozilla.focus.helpers.TestAssetHelper
+import org.mozilla.focus.helpers.TestAssetHelper.genericAsset
 import org.mozilla.focus.helpers.TestHelper.mDevice
 import org.mozilla.focus.helpers.TestHelper.pressHomeKey
 import org.mozilla.focus.helpers.TestHelper.waitingTime
@@ -35,7 +35,7 @@ class SwitchContextTest : TestSetup() {
     private lateinit var webServer: MockWebServer
     private val featureSettingsHelper = FeatureSettingsHelper()
 
-    @get: Rule
+    @get:Rule
     val mActivityTestRule = MainActivityFirstrunTestRule(showFirstRun = false)
 
     @Before
@@ -66,7 +66,7 @@ class SwitchContextTest : TestSetup() {
     @SmokeTest
     @Test
     fun notificationOpenButtonTest() {
-        val testPage = TestAssetHelper.getGenericAsset(webServer)
+        val testPage = webServer.genericAsset
 
         searchScreen {
         }.loadPage(testPage.url) {
@@ -88,18 +88,18 @@ class SwitchContextTest : TestSetup() {
     @Test
     fun switchFromSettingsToFocusTest() {
         // Initialize UiDevice instance
-        val LAUNCH_TIMEOUT = 5000
-        val SETTINGS_APP = "com.android.settings"
+        val appLaunchTimeoutMillis = 5000
+        val settingsPackage = "com.android.settings"
         val settingsApp = mDevice.findObject(
             UiSelector()
-                .packageName(SETTINGS_APP)
+                .packageName(settingsPackage)
                 .enabled(true),
         )
         val launcherPackage = mDevice.launcherPackageName
         val context = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext
         val intent = context.packageManager
-            .getLaunchIntentForPackage(SETTINGS_APP)
-        val testPage = TestAssetHelper.getGenericAsset(webServer)
+            .getLaunchIntentForPackage(settingsPackage)
+        val testPage = webServer.genericAsset
 
         // Open a webpage
         searchScreen {
@@ -112,7 +112,7 @@ class SwitchContextTest : TestSetup() {
         Assert.assertNotNull(launcherPackage)
         mDevice.wait(
             Until.hasObject(By.pkg(launcherPackage).depth(0)),
-            LAUNCH_TIMEOUT.toLong(),
+            appLaunchTimeoutMillis.toLong(),
         )
 
         // Launch the app

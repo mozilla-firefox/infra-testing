@@ -12,13 +12,9 @@
 #include "mozilla/AbstractThread.h"
 #include "mozilla/AppShutdown.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/Atomics.h"
 #include "mozilla/DebugOnly.h"
-#include "mozilla/Poison.h"
 #include "mozilla/SharedThreadPool.h"
 #include "mozilla/TaskController.h"
-#include "mozilla/Unused.h"
-#include "mozilla/XPCOM.h"
 #include "mozJSModuleLoader.h"
 #include "nsXULAppAPI.h"
 
@@ -95,7 +91,6 @@
 #ifdef MOZ_PHC
 #  include "mozilla/PHCManager.h"
 #endif
-#include "mozilla/UniquePtr.h"
 #include "mozilla/ServoStyleConsts.h"
 
 #include "mozilla/ipc/GeckoChildProcessHost.h"
@@ -115,6 +110,10 @@
 
 #include "mozilla/GeckoTrace.h"
 
+#ifdef XP_IOS
+#  include <CoreFoundation/CoreFoundation.h>
+#endif
+
 using base::AtExitManager;
 using mozilla::ipc::IOThreadParent;
 
@@ -127,7 +126,6 @@ namespace {
 static AtExitManager* sExitManager;
 static MessageLoop* sMessageLoop;
 static bool sCommandLineWasInitialized;
-static IOThreadParent* sIOThread;
 static mozilla::BackgroundHangMonitor* sMainHangMonitor;
 
 } /* anonymous namespace */
@@ -227,6 +225,18 @@ class OggReporter final : public nsIMemoryReporter,
 
 NS_IMPL_ISUPPORTS(OggReporter, nsIMemoryReporter)
 
+#ifdef XP_IOS
+// Check if iOS LockdownMode is enabled, which blocks the JIT everywhere.
+static bool IsLockdownModeEnabled() {
+  CFPropertyListRef prefValue = CFPreferencesCopyValue(
+      CFSTR("LDMGlobalEnabled"), kCFPreferencesAnyApplication,
+      kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+  bool enabled = prefValue == kCFBooleanTrue;
+  if (prefValue) CFRelease(prefValue);
+  return enabled;
+}
+#endif
+
 static bool sInitializedJS = false;
 
 static void InitializeJS() {
@@ -241,6 +251,11 @@ static void InitializeJS() {
       mozilla::StaticPrefs::javascript_options_main_process_disable_jit()) {
     JS::DisableJitBackend();
   }
+#ifdef XP_IOS
+  else if (IsLockdownModeEnabled()) {
+    JS::DisableJitBackend();
+  }
+#endif
 
   // Set all JS::Prefs.
   SET_JS_PREFS_FROM_BROWSER_PREFS;
@@ -314,13 +329,6 @@ NS_InitXPCOM(nsIServiceManager** aResult, nsIFile* aBinDirectory,
     messageLoop->set_thread_name("Gecko_Child");
     messageLoop->set_hang_timeouts(128, 8192);
   }
-
-  // Start the IPC I/O thread in the parent process. We'll have already started
-  // the IPC I/O thread if we're in a content process.
-  if (XRE_IsParentProcess()) {
-    sIOThread = new IOThreadParent();
-  }
-  MOZ_ASSERT(mozilla::ipc::IOThread::Get(), "An IOThread has been started");
 
   // Establish the main thread here.
   rv = nsThreadManager::get().Init();
@@ -480,11 +488,6 @@ NS_InitXPCOM(nsIServiceManager** aResult, nsIFile* aBinDirectory,
   // to the directory service.
   nsDirectoryService::gService->RegisterCategoryProviders();
 
-  // Now that both the profiler and directory services have been started
-  // we can find the download directory, where the profiler can write
-  // profiles if necessary
-  profiler_lookup_async_signal_dump_directory();
-
   // Init mozilla::SharedThreadPool (which needs the service manager).
   mozilla::SharedThreadPool::InitStatics();
 
@@ -635,7 +638,7 @@ nsresult ShutdownXPCOM(nsIServiceManager* aServMgr) {
 
     // We want the service manager to be the subject of notifications
     nsCOMPtr<nsIServiceManager> mgr;
-    Unused << NS_GetServiceManager(getter_AddRefs(mgr));
+    (void)NS_GetServiceManager(getter_AddRefs(mgr));
     MOZ_DIAGNOSTIC_ASSERT(mgr != nullptr, "Service manager not present!");
     mozilla::AppShutdown::AdvanceShutdownPhase(
         mozilla::ShutdownPhase::XPCOMShutdown, nullptr, do_QueryInterface(mgr));
@@ -824,8 +827,7 @@ nsresult ShutdownXPCOM(nsIServiceManager* aServMgr) {
 
   NS_IF_RELEASE(gDebug);
 
-  delete sIOThread;
-  sIOThread = nullptr;
+  mozilla::ipc::IOThread::Shutdown();
 
   delete sMessageLoop;
   sMessageLoop = nullptr;

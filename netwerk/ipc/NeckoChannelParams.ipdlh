@@ -35,8 +35,10 @@ using class mozilla::TimeStamp from "mozilla/TimeStamp.h";
 [RefCounted] using class nsDocShellLoadState from "nsDocShellLoadState.h";
 using nsContentPolicyType from "nsIContentPolicy.h";
 using mozilla::net::PreferredAlternativeDataDeliveryTypeIPC from "nsICacheInfoChannel.h";
+using mozilla::dom::ForceMediaDocument from "mozilla/dom/LoadURIOptionsBinding.h";
 using nsILoadInfo::CrossOriginEmbedderPolicy from "nsILoadInfo.h";
 using nsILoadInfo::StoragePermissionState from "nsILoadInfo.h";
+using nsILoadInfo::IPAddressSpace from "nsILoadInfo.h";
 using struct mozilla::dom::LoadingSessionHistoryInfo from "mozilla/dom/SessionHistoryEntry.h";
 using mozilla::dom::RequestMode from "mozilla/dom/RequestBinding.h";
 using mozilla::net::LinkHeader from "nsNetUtil.h";
@@ -72,6 +74,17 @@ struct CookieJarSettingsArgs
   bool hasFingerprintingRandomizationKey;
   uint8_t[] fingerprintingRandomizationKey;
   uint64_t topLevelWindowContextId;
+};
+
+//-----------------------------------------------------------------------------
+// CookieChange
+//-----------------------------------------------------------------------------
+
+struct CookieChange
+{
+  bool added;
+  CookieStruct cookie;
+  OriginAttributes originAttributes;
 };
 
 //-----------------------------------------------------------------------------
@@ -118,6 +131,8 @@ struct LoadInfoArgs
   uint32_t                    triggeringSandboxFlags;
   uint64_t                    triggeringWindowId;
   bool                        triggeringStorageAccess;
+  uint32_t                    triggeringFirstPartyClassificationFlags;
+  uint32_t                    triggeringThirdPartyClassificationFlags;
   nsContentPolicyType         contentPolicyType;
   uint32_t                    tainting;
   bool                        blockAllMixedContent;
@@ -127,6 +142,7 @@ struct LoadInfoArgs
   bool                        browserWouldUpgradeInsecureRequests;
   bool                        forceAllowDataURI;
   bool                        allowInsecureRedirectToDataURI;
+  ForceMediaDocument          forceMediaDocument;
   bool                        skipContentPolicyCheckForWebRequest;
   bool                        originalFrameSrcLoad;
   bool                        forceInheritPrincipalDropped;
@@ -188,15 +204,18 @@ struct LoadInfoArgs
   bool                        allowDeprecatedSystemRequests;
   bool                        isInDevToolsContext;
   bool                        parserCreatedScript;
+  RequestMode?                requestMode;
   bool                        isFromProcessingFrameAttributes;
   bool                        isMediaRequest;
   bool                        isMediaInitialRequest;
   bool                        isFromObjectOrEmbed;
   CookieJarSettingsArgs       cookieJarSettings;
   uint32_t                    requestBlockingReason;
-  CSPInfo?                    cspToInheritInfo;
+  PolicyContainerArgs?        policyContainerToInherit;
   StoragePermissionState      storagePermission;
-  RFPTargetSet?              overriddenFingerprintingSettings;
+  IPAddressSpace              parentIPAddressSpace;
+  IPAddressSpace              ipAddressSpace;
+  RFPTargetSet?               overriddenFingerprintingSettings;
   bool                        isMetaRefresh;
   CrossOriginEmbedderPolicy   loadingEmbedderPolicy;
   bool                        originTrialCoepCredentiallessEnabledForTopLevel;
@@ -262,6 +281,8 @@ struct ParentLoadInfoForwarderArgs
   // Only ever returns true if the loadinfo is of TYPE_SCRIPT and
   // the script was created by the HTML parser.
   bool parserCreatedScript;
+
+  RequestMode? requestMode;
 
   // Sandbox Flags of the Document that triggered the load
   uint32_t triggeringSandboxFlags;
@@ -368,7 +389,6 @@ struct HttpChannelOpenArgs
   nsCString                   appCacheClientID;
   CorsPreflightArgs?          preflightArgs;
   nsCString                   contentTypeHint;
-  nsString                    integrityMetadata;
   IPCStream?                  uploadStream;
   LoadInfoArgs                loadInfo;
   uint32_t                    loadFlags;
@@ -415,6 +435,8 @@ struct ProxyInfoCloneArgs
   nsCString type;
   nsCString host;
   int32_t port;
+  nsCString masqueTemplate;
+  nsCString alpn;
   nsCString username;
   nsCString password;
   uint32_t flags;
@@ -474,15 +496,15 @@ struct CookieStruct
   nsCString value;
   nsCString host;
   nsCString path;
-  int64_t   expiry;
-  int64_t   lastAccessed;
-  int64_t   creationTime;
+  int64_t   expiryInMSec;
+  int64_t   lastAccessedInUSec;
+  int64_t   creationTimeInUSec;
+  int64_t   updateTimeInUSec;
   bool      isHttpOnly;
   bool      isSession;
   bool      isSecure;
   bool      isPartitioned;
   int32_t   sameSite;
-  int32_t   rawSameSite;
   uint8_t   schemeMap;
 };
 
@@ -550,6 +572,7 @@ struct RedirectToRealChannelArgs {
   nsCString? originalUriString;
   EarlyHintConnectArgs[] earlyHints;
   uint32_t earlyHintLinkType;
+  nullable nsIReferrerInfo referrerInfo;
 };
 
 struct TimingStructArgs {
@@ -580,6 +603,7 @@ struct ResourceTimingStructArgs {
   TimeStamp redirectEnd;
   uint64_t transferSize;
   uint64_t encodedBodySize;
+  uint64_t decodedBodySize;
 
   // Not actually part of resource timing, but not part of the transaction
   // timings either. These need to be passed to HttpChannelChild along with
@@ -624,7 +648,6 @@ struct TransactionObserverResult
 struct SpeculativeConnectionOverriderArgs {
   uint32_t parallelSpeculativeConnectLimit;
   bool ignoreIdle;
-  bool isFromPredictor;
   bool allow1918;
 };
 
@@ -665,6 +688,28 @@ struct FileChannelInfo
   LoadInfoArgs           loadInfo;
   nsCString              contentType;
   uint64_t               channelId;
+};
+
+//-----------------------------------------------------------------------------
+// GeckoView's Android Content IPDL structs
+//-----------------------------------------------------------------------------
+
+struct GeckoViewContentChannelOpenArgs
+{
+  URIParams uri;
+  LoadInfoArgs loadInfo;
+  uint32_t loadFlags;
+};
+
+struct GeckoViewContentChannelConnectArgs
+{
+  uint32_t channelId;
+};
+
+union GeckoViewContentChannelArgs
+{
+  GeckoViewContentChannelOpenArgs;
+  GeckoViewContentChannelConnectArgs;
 };
 
 struct RemoteStreamInfo {

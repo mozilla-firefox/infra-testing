@@ -22,13 +22,10 @@ const { throttle } = require("resource://devtools/shared/throttle.js");
 const {
   style: { ELEMENT_STYLE },
 } = require("resource://devtools/shared/constants.js");
+const {
+  canPointerEventDrag,
+} = require("resource://devtools/client/shared/events.js");
 
-loader.lazyRequireGetter(
-  this,
-  "openContentLink",
-  "resource://devtools/client/shared/link.js",
-  true
-);
 loader.lazyRequireGetter(
   this,
   ["parseDeclarations", "parseSingleValue"],
@@ -102,56 +99,47 @@ const IS_DRAGGING_CLASSNAME = "ruleview-propertyvalue-dragging";
  *        The rule editor that owns this TextPropertyEditor.
  * @param {TextProperty} property
  *        The text property to edit.
+ * @param {object} options
+ * @param {Set} options.elementsWithPendingClicks
  */
-function TextPropertyEditor(ruleEditor, property) {
-  this.ruleEditor = ruleEditor;
-  this.ruleView = this.ruleEditor.ruleView;
-  this.cssProperties = this.ruleView.cssProperties;
-  this.doc = this.ruleEditor.doc;
-  this.popup = this.ruleView.popup;
-  this.prop = property;
-  this.prop.editor = this;
-  this.browserWindow = this.doc.defaultView.top;
+class TextPropertyEditor {
+  constructor(ruleEditor, property, options) {
+    this.ruleEditor = ruleEditor;
+    this.ruleView = this.ruleEditor.ruleView;
+    this.cssProperties = this.ruleView.cssProperties;
+    this.doc = this.ruleEditor.doc;
+    this.popup = this.ruleView.popup;
+    this.prop = property;
+    this.prop.editor = this;
+    this.browserWindow = this.doc.defaultView.top;
+    this.#elementsWithPendingClicks = options.elementsWithPendingClicks;
 
-  this._populatedComputed = false;
-  this._hasPendingClick = false;
-  this._clickedElementOptions = null;
+    this.toolbox = this.ruleView.inspector.toolbox;
+    this.telemetry = this.toolbox.telemetry;
 
-  this.toolbox = this.ruleView.inspector.toolbox;
-  this.telemetry = this.toolbox.telemetry;
+    this.#onValidate = this.ruleView.debounce(this.#previewValue, 10, this);
 
-  this._isDragging = false;
-  this._capturingPointerId = null;
-  this._hasDragged = false;
-  this._draggingController = null;
-  this._draggingValueCache = null;
+    this.#createUI();
+    this.update();
+  }
 
-  this.getGridlineNames = this.getGridlineNames.bind(this);
-  this.update = this.update.bind(this);
-  this.updatePropertyState = this.updatePropertyState.bind(this);
-  this._onDraggablePreferenceChanged =
-    this._onDraggablePreferenceChanged.bind(this);
-  this._onEnableChanged = this._onEnableChanged.bind(this);
-  this._onEnableClicked = this._onEnableClicked.bind(this);
-  this._onExpandClicked = this._onExpandClicked.bind(this);
-  this._onNameDone = this._onNameDone.bind(this);
-  this._onStartEditing = this._onStartEditing.bind(this);
-  this._onSwatchCommit = this._onSwatchCommit.bind(this);
-  this._onSwatchPreview = this._onSwatchPreview.bind(this);
-  this._onSwatchRevert = this._onSwatchRevert.bind(this);
-  this._onValidate = this.ruleView.debounce(this._previewValue, 10, this);
-  this._onValueDone = this._onValueDone.bind(this);
+  #populatedComputed = false;
+  #hasPendingClick = false;
+  #clickedElementOptions = null;
+  #populatedShorthandOverridden;
+  #elementsWithPendingClicks;
 
-  this._draggingOnPointerDown = this._draggingOnPointerDown.bind(this);
-  this._draggingOnMouseMove = throttle(this._draggingOnMouseMove, 30, this);
-  this._draggingOnPointerUp = this._draggingOnPointerUp.bind(this);
-  this._draggingOnKeydown = this._draggingOnKeydown.bind(this);
+  #colorSwatchSpans;
+  #bezierSwatchSpans;
+  #linearEasingSwatchSpans;
 
-  this._create();
-  this.update();
-}
+  #onValidate;
+  #isDragging = false;
+  #capturingPointerId = null;
+  #hasDragged = false;
+  #draggingController = null;
+  #draggingValueCache = null;
 
-TextPropertyEditor.prototype = {
   /**
    * Boolean indicating if the name or value is being currently edited.
    */
@@ -163,24 +151,27 @@ TextPropertyEditor.prototype = {
         this.ruleView.tooltips.isEditing
       ) || this.popup.isOpen
     );
-  },
+  }
 
   /**
    * Get the rule to the current text property
    */
   get rule() {
     return this.prop.rule;
-  },
+  }
 
   // Exposed for tests.
   get _DRAGGING_DEADZONE_DISTANCE() {
     return DRAGGING_DEADZONE_DISTANCE;
-  },
+  }
 
   /**
    * Create the property editor's DOM.
    */
-  _create() {
+  #createUI() {
+    const win = this.doc.defaultView;
+    this.abortController = new win.AbortController();
+
     this.element = this.doc.createElementNS(HTML_NS, "div");
     this.element.setAttribute("role", "listitem");
     this.element.classList.add("ruleview-property");
@@ -219,14 +210,6 @@ TextPropertyEditor.prototype = {
 
     appendText(this.nameContainer, ": ");
 
-    // Click to expand the computed properties of the text property.
-    this.expander = createChild(this.container, "button", {
-      "aria-expanded": "false",
-      class: "ruleview-expander theme-twisty",
-      title: SHORTHAND_EXPANDER_TOOLTIP,
-    });
-    this.expander.addEventListener("click", this._onExpandClicked, true);
-
     // Create a span that will hold the property and semicolon.
     // Use this span to create a slightly larger click target
     // for the value.
@@ -249,79 +232,60 @@ TextPropertyEditor.prototype = {
 
     appendText(this.valueContainer, ";");
 
-    this.warning = createChild(this.container, "div", {
-      class: "ruleview-warning",
-      hidden: "",
-      title: l10n("rule.warning.title"),
-    });
+    // This needs to be called after valueContainer, nameSpan and valueSpan are created.
+    if (this.#shouldShowComputedExpander) {
+      this.#createComputedExpander();
+    }
 
-    this.invalidAtComputedValueTimeWarning = createChild(
-      this.container,
-      "div",
-      {
-        class: "ruleview-invalid-at-computed-value-time-warning",
-        hidden: "",
-      }
-    );
+    if (this.#shouldShowWarning) {
+      this.#createWarningIcon();
+    }
 
-    this.unusedState = createChild(this.container, "div", {
-      class: "ruleview-unused-warning",
-      hidden: "",
-    });
+    if (this.#isInvalidAtComputedValueTime()) {
+      this.#createInvalidAtComputedValueTimeIcon();
+    }
 
-    this.compatibilityState = createChild(this.container, "div", {
-      class: "ruleview-compatibility-warning",
-      hidden: "",
-    });
+    if (this.#shouldShowInactiveCssState) {
+      this.#createInactiveCssWarningIcon();
+    }
 
-    // Filter button that filters for the current property name and is
-    // displayed when the property is overridden by another rule.
-    this.filterProperty = createChild(this.container, "button", {
-      class: "ruleview-overridden-rule-filter",
-      hidden: "",
-      title: l10n("rule.filterProperty.title"),
-    });
-
-    this.filterProperty.addEventListener("click", event => {
-      this.ruleEditor.ruleView.setFilterStyles("`" + this.prop.name + "`");
-      event.stopPropagation();
-    });
-
-    // Holds the viewers for the computed properties.
-    // will be populated in |_updateComputed|.
-    this.computed = createChild(this.element, "ul", {
-      class: "ruleview-computedlist",
-    });
-
-    // Holds the viewers for the overridden shorthand properties.
-    // will be populated in |_updateShorthandOverridden|.
-    this.shorthandOverridden = createChild(this.element, "ul", {
-      class: "ruleview-overridden-items",
-    });
+    if (this.#shouldShowFilterProperty) {
+      this.#createFilterPropertyButton();
+    }
 
     // Only bind event handlers if the rule is editable.
     if (this.ruleEditor.isEditable) {
-      this.enable.addEventListener("click", this._onEnableClicked, true);
-      this.enable.addEventListener("change", this._onEnableChanged, true);
-
-      this.nameContainer.addEventListener("click", event => {
-        // Clicks within the name shouldn't propagate any further.
-        event.stopPropagation();
-
-        // Forward clicks on nameContainer to the editable nameSpan
-        if (event.target === this.nameContainer) {
-          this.nameSpan.click();
-        }
+      this.enable.addEventListener("click", this.#onEnableClicked, {
+        signal: this.abortController.signal,
+        capture: true,
       });
+      this.enable.addEventListener("change", this.#onEnableChanged, {
+        signal: this.abortController.signal,
+        capture: true,
+      });
+
+      this.nameContainer.addEventListener(
+        "click",
+        event => {
+          // Clicks within the name shouldn't propagate any further.
+          event.stopPropagation();
+
+          // Forward clicks on nameContainer to the editable nameSpan
+          if (event.target === this.nameContainer) {
+            this.nameSpan.click();
+          }
+        },
+        { signal: this.abortController.signal }
+      );
 
       const getCssVariables = () =>
         this.rule.elementStyle.getAllCustomProperties(this.rule.pseudoElement);
 
       editableField({
-        start: this._onStartEditing,
+        start: this.#onStartEditing,
         element: this.nameSpan,
-        done: this._onNameDone,
-        destroy: this.updatePropertyState,
+        done: this.#onNameDone,
+        destroy: this.updateUI,
         advanceChars: ":",
         contentType: InplaceEditor.CONTENT_TYPES.CSS_PROPERTY,
         popup: this.popup,
@@ -342,18 +306,49 @@ TextPropertyEditor.prototype = {
       // Auto blur name field on multiple CSS rules get pasted in.
       this.nameContainer.addEventListener(
         "paste",
-        blurOnMultipleProperties(this.cssProperties)
+        blurOnMultipleProperties(this.cssProperties),
+        { signal: this.abortController.signal }
       );
 
-      this.valueContainer.addEventListener("click", event => {
-        // Clicks within the value shouldn't propagate any further.
-        event.stopPropagation();
+      this.valueContainer.addEventListener(
+        "click",
+        event => {
+          // Clicks within the value shouldn't propagate any further.
+          event.stopPropagation();
 
-        // Forward clicks on valueContainer to the editable valueSpan
-        if (event.target === this.valueContainer) {
-          this.valueSpan.click();
-        }
-      });
+          // Forward clicks on valueContainer to the editable valueSpan
+          if (event.target === this.valueContainer) {
+            this.valueSpan.click();
+          }
+
+          if (event.target.classList.contains("ruleview-variable-link")) {
+            const isRuleInStartingStyle =
+              this.ruleEditor.rule.isInStartingStyle();
+            const rulePseudoElement = this.ruleEditor.rule.pseudoElement;
+            this.ruleView.highlightProperty(event.target.dataset.variableName, {
+              ruleValidator: rule => {
+                // If the associated rule is not in starting style, the variable
+                // definition can't be in a starting style rule.
+                // Note that if the rule is in starting style, then the variable
+                // definition might be in a starting style rule, or in a regular one.
+                if (!isRuleInStartingStyle && rule.isInStartingStyle()) {
+                  return false;
+                }
+
+                if (
+                  rule.pseudoElement &&
+                  rulePseudoElement !== rule.pseudoElement
+                ) {
+                  return false;
+                }
+
+                return true;
+              },
+            });
+          }
+        },
+        { signal: this.abortController.signal }
+      );
 
       // The mousedown event could trigger a blur event on nameContainer, which
       // will trigger a call to the update function. The update function clears
@@ -363,60 +358,73 @@ TextPropertyEditor.prototype = {
       // after the valueSpan's markup is re-populated. We only need to track this for
       // valueSpan's child elements, because direct click on valueSpan will always
       // trigger a click event.
-      this.valueSpan.addEventListener("mousedown", event => {
-        const clickedEl = event.target;
-        if (clickedEl === this.valueSpan) {
-          return;
-        }
-        this._hasPendingClick = true;
+      this.valueSpan.addEventListener(
+        "mousedown",
+        event => {
+          const clickedEl = event.target;
+          if (clickedEl === this.valueSpan) {
+            return;
+          }
+          this.#hasPendingClick = true;
+          this.#elementsWithPendingClicks.add(this.valueSpan);
 
-        const matchedSelector = ACTIONABLE_ELEMENTS_SELECTORS.find(selector =>
-          clickedEl.matches(selector)
-        );
-        if (matchedSelector) {
-          const similarElements = [
-            ...this.valueSpan.querySelectorAll(matchedSelector),
-          ];
-          this._clickedElementOptions = {
-            selector: matchedSelector,
-            index: similarElements.indexOf(clickedEl),
-          };
-        }
-      });
+          const matchedSelector = ACTIONABLE_ELEMENTS_SELECTORS.find(selector =>
+            clickedEl.matches(selector)
+          );
+          if (matchedSelector) {
+            const similarElements = [
+              ...this.valueSpan.querySelectorAll(matchedSelector),
+            ];
+            this.#clickedElementOptions = {
+              selector: matchedSelector,
+              index: similarElements.indexOf(clickedEl),
+            };
+          }
+        },
+        { signal: this.abortController.signal }
+      );
 
-      this.valueSpan.addEventListener("pointerup", () => {
-        // if we have dragged, we will handle the pending click in _draggingOnPointerUp instead
-        if (this._hasDragged) {
-          return;
-        }
-        this._clickedElementOptions = null;
-        this._hasPendingClick = false;
-      });
-
-      this.valueSpan.addEventListener("click", event => {
-        const target = event.target;
-
-        if (target.nodeName === "a") {
-          event.stopPropagation();
-          event.preventDefault();
-          openContentLink(target.href);
-        }
-      });
+      this.valueSpan.addEventListener(
+        "pointerup",
+        () => {
+          // if we have dragged, we will handle the pending click in #draggingOnPointerUp instead
+          if (this.#hasDragged) {
+            return;
+          }
+          this.#clickedElementOptions = null;
+          this.#hasPendingClick = false;
+          this.#elementsWithPendingClicks.delete(this.valueSpan);
+        },
+        { signal: this.abortController.signal }
+      );
 
       this.ruleView.on(
         "draggable-preference-updated",
-        this._onDraggablePreferenceChanged
+        this.#onDraggablePreferenceChanged,
+        { signal: this.abortController.signal }
       );
-      if (this._isDraggableProperty(this.prop)) {
-        this._addDraggingCapability();
+      if (this.#isDraggableProperty(this.prop)) {
+        this.#addDraggingCapability();
       }
 
       editableField({
-        start: this._onStartEditing,
+        start: this.#onStartEditing,
         element: this.valueSpan,
-        done: this._onValueDone,
-        destroy: this.update,
-        validate: this._onValidate,
+        done: this.#onValueDone,
+        destroy: onValueDonePromise => {
+          const cb = this.update;
+          // The `done` callback is called before this `destroy` callback is.
+          // In #onValueDone, we might preview/set the property and we want to wait for
+          // that to be resolved before updating the view so all data are up to date (see Bug 1325145).
+          if (
+            onValueDonePromise &&
+            typeof onValueDonePromise.then === "function"
+          ) {
+            return onValueDonePromise.then(cb);
+          }
+          return cb();
+        },
+        validate: this.#onValidate,
         advanceChars: advanceValidate,
         contentType: InplaceEditor.CONTENT_TYPES.CSS_VALUE,
         property: this.prop,
@@ -426,7 +434,7 @@ TextPropertyEditor.prototype = {
         maxWidth: () => this.container.getBoundingClientRect().width,
         cssProperties: this.cssProperties,
         getCssVariables,
-        getGridLineNames: this.getGridlineNames,
+        getGridLineNames: this.#getGridlineNames,
         showSuggestCompletionOnEmpty: true,
         // (Shift+)Tab will move the focus to the previous/next editable field (so property name,
         // or new property).
@@ -442,16 +450,16 @@ TextPropertyEditor.prototype = {
         inputAriaLabelledBy: this.nameSpan.id,
       });
     }
-  },
+  }
 
   /**
    * Get the grid line names of the grid that the currently selected element is
    * contained in.
    *
-   * @return {Object} Contains the names of the cols and rows as arrays
+   * @return {object} Contains the names of the cols and rows as arrays
    * {cols: [], rows: []}.
    */
-  async getGridlineNames() {
+  #getGridlineNames = async () => {
     const gridLineNames = { cols: [], rows: [] };
     const layoutInspector =
       await this.ruleView.inspector.walker.getLayoutInspector();
@@ -516,32 +524,32 @@ TextPropertyEditor.prototype = {
     // Emit message for test files
     this.ruleView.inspector.emit("grid-line-names-updated");
     return gridLineNames;
-  },
+  };
 
   /**
    * Get the path from which to resolve requests for this
    * rule's stylesheet.
    *
-   * @return {String} the stylesheet's href.
+   * @return {string} the stylesheet's href.
    */
-  get sheetHref() {
+  get #sheetHref() {
     const domRule = this.rule.domRule;
     if (domRule) {
       return domRule.href || domRule.nodeHref;
     }
     return undefined;
-  },
+  }
 
   /**
    * Populate the span based on changes to the TextProperty.
    */
   // eslint-disable-next-line complexity
-  update() {
+  update = () => {
     if (this.ruleView.isDestroyed) {
       return;
     }
 
-    this.updatePropertyState();
+    this.updateUI();
 
     const name = this.prop.name;
     this.nameSpan.textContent = name;
@@ -562,7 +570,7 @@ TextPropertyEditor.prototype = {
       val += " !" + this.prop.priority;
     }
 
-    const propDirty = store.userProperties.contains(this.rule.domRule, name);
+    const propDirty = this.prop.isPropertyChanged;
 
     if (propDirty) {
       this.element.setAttribute("dirty", "");
@@ -593,7 +601,7 @@ TextPropertyEditor.prototype = {
       defaultColorUnit: this.ruleView.inspector.defaultColorUnit,
       urlClass: "theme-link",
       fontFamilyClass: FONT_FAMILY_CLASS,
-      baseURI: this.sheetHref,
+      baseURI: this.#sheetHref,
       unmatchedClass: "inspector-unmatched",
       matchedVariableClass: "inspector-variable",
       getVariableData: varName =>
@@ -602,6 +610,7 @@ TextPropertyEditor.prototype = {
           this.rule.pseudoElement
         ),
       inStartingStyleRule: this.rule.isInStartingStyle(),
+      isValid: this.isValid(),
     };
 
     if (this.rule.darkColorScheme !== undefined) {
@@ -633,11 +642,10 @@ TextPropertyEditor.prototype = {
     this.valueSpan.appendChild(frag);
     if (
       this.valueSpan.textProperty?.name === "grid-template-areas" &&
-      this.isValid() &&
       (this.valueSpan.innerText.includes(`"`) ||
         this.valueSpan.innerText.includes(`'`))
     ) {
-      this._formatGridTemplateAreasValue();
+      this.#formatGridTemplateAreasValue();
     }
 
     this.ruleView.emit("property-value-updated", {
@@ -673,18 +681,18 @@ TextPropertyEditor.prototype = {
     }
 
     // Attach the color picker tooltip to the color swatches
-    this._colorSwatchSpans = this.valueSpan.querySelectorAll(
+    this.#colorSwatchSpans = this.valueSpan.querySelectorAll(
       "." + COLOR_SWATCH_CLASS
     );
     if (this.ruleEditor.isEditable) {
-      for (const span of this._colorSwatchSpans) {
+      for (const span of this.#colorSwatchSpans) {
         // Adding this swatch to the list of swatches our colorpicker
         // knows about
         this.ruleView.tooltips.getTooltip("colorPicker").addSwatch(span, {
-          onShow: this._onStartEditing,
-          onPreview: this._onSwatchPreview,
-          onCommit: this._onSwatchCommit,
-          onRevert: this._onSwatchRevert,
+          onShow: this.#onStartEditing,
+          onPreview: this.#onSwatchPreview,
+          onCommit: this.#onSwatchCommit,
+          onRevert: this.#onSwatchRevert,
         });
         const title = l10n("rule.colorSwatch.tooltip");
         span.setAttribute("title", title);
@@ -693,18 +701,18 @@ TextPropertyEditor.prototype = {
     }
 
     // Attach the cubic-bezier tooltip to the bezier swatches
-    this._bezierSwatchSpans = this.valueSpan.querySelectorAll(
+    this.#bezierSwatchSpans = this.valueSpan.querySelectorAll(
       "." + BEZIER_SWATCH_CLASS
     );
     if (this.ruleEditor.isEditable) {
-      for (const span of this._bezierSwatchSpans) {
+      for (const span of this.#bezierSwatchSpans) {
         // Adding this swatch to the list of swatches our colorpicker
         // knows about
         this.ruleView.tooltips.getTooltip("cubicBezier").addSwatch(span, {
-          onShow: this._onStartEditing,
-          onPreview: this._onSwatchPreview,
-          onCommit: this._onSwatchCommit,
-          onRevert: this._onSwatchRevert,
+          onShow: this.#onStartEditing,
+          onPreview: this.#onSwatchPreview,
+          onCommit: this.#onSwatchCommit,
+          onRevert: this.#onSwatchRevert,
         });
         const title = l10n("rule.bezierSwatch.tooltip");
         span.setAttribute("title", title);
@@ -712,20 +720,20 @@ TextPropertyEditor.prototype = {
     }
 
     // Attach the linear easing tooltip to the linear easing swatches
-    this._linearEasingSwatchSpans = this.valueSpan.querySelectorAll(
+    this.#linearEasingSwatchSpans = this.valueSpan.querySelectorAll(
       "." + LINEAR_EASING_SWATCH_CLASS
     );
     if (this.ruleEditor.isEditable) {
-      for (const span of this._linearEasingSwatchSpans) {
+      for (const span of this.#linearEasingSwatchSpans) {
         // Adding this swatch to the list of swatches our colorpicker
         // knows about
         this.ruleView.tooltips
           .getTooltip("linearEaseFunction")
           .addSwatch(span, {
-            onShow: this._onStartEditing,
-            onPreview: this._onSwatchPreview,
-            onCommit: this._onSwatchCommit,
-            onRevert: this._onSwatchRevert,
+            onShow: this.#onStartEditing,
+            onPreview: this.#onSwatchPreview,
+            onCommit: this.#onSwatchCommit,
+            onRevert: this.#onSwatchRevert,
           });
         span.setAttribute("title", l10n("rule.bezierSwatch.tooltip"));
       }
@@ -740,10 +748,10 @@ TextPropertyEditor.prototype = {
         this.ruleView.tooltips.getTooltip("filterEditor").addSwatch(
           span,
           {
-            onShow: this._onStartEditing,
-            onPreview: this._onSwatchPreview,
-            onCommit: this._onSwatchCommit,
-            onRevert: this._onSwatchRevert,
+            onShow: this.#onStartEditing,
+            onPreview: this.#onSwatchPreview,
+            onCommit: this.#onSwatchCommit,
+            onRevert: this.#onSwatchRevert,
           },
           outputParser,
           this.outputParserOptions
@@ -758,7 +766,7 @@ TextPropertyEditor.prototype = {
     );
     if (this.ruleEditor.isEditable) {
       for (const angleSpan of this.angleSwatchSpans) {
-        angleSpan.addEventListener("unit-change", this._onSwatchCommit);
+        angleSpan.addEventListener("unit-change", this.#onSwatchCommit);
         const title = l10n("rule.angleSwatch.tooltip");
         angleSpan.setAttribute("title", title);
       }
@@ -809,15 +817,16 @@ TextPropertyEditor.prototype = {
     // click on the value container. If we do, we have to trigger a click event
     // on the right element.
     // If we are dragging, we don't need to handle the pending click
-    if (this._hasPendingClick && !this._isDragging) {
-      this._hasPendingClick = false;
+    if (this.#hasPendingClick && !this.#isDragging) {
+      this.#hasPendingClick = false;
+      this.#elementsWithPendingClicks.delete(this.valueSpan);
       let elToClick;
 
-      if (this._clickedElementOptions !== null) {
-        const { selector, index } = this._clickedElementOptions;
+      if (this.#clickedElementOptions !== null) {
+        const { selector, index } = this.#clickedElementOptions;
         elToClick = this.valueSpan.querySelectorAll(selector)[index];
 
-        this._clickedElementOptions = null;
+        this.#clickedElementOptions = null;
       }
 
       if (!elToClick) {
@@ -827,29 +836,39 @@ TextPropertyEditor.prototype = {
     }
 
     // Populate the computed styles and shorthand overridden styles.
-    this._updateComputed();
-    this._updateShorthandOverridden();
+    this.#updateComputed();
+    this.#updateShorthandOverridden();
 
     // Update the rule property highlight.
     this.ruleView._updatePropertyHighlight(this);
 
-    // Restore focus back to the element whose markup was recreated above.
-    if (focusedElSelector) {
+    // Restore focus back to the element whose markup was recreated above, if
+    // the focus is still in the current document (avoid stealing the focus, see
+    // Bug 1911627).
+    if (this.doc.hasFocus() && focusedElSelector) {
       const elementToFocus = this.doc.querySelector(focusedElSelector);
       if (elementToFocus) {
         elementToFocus.focus();
       }
     }
-  },
+  };
 
-  _onStartEditing() {
-    this.element.classList.remove("ruleview-overridden");
-    this.filterProperty.hidden = true;
+  #onStartEditing = () => {
+    this.element.classList.remove("ruleview-overridden", "ruleview-invalid");
     this.enable.style.visibility = "hidden";
-    this.expander.style.display = "none";
-  },
+    if (this.filterProperty) {
+      this.filterProperty.hidden = true;
+    }
+    if (this.expander) {
+      this.expander.hidden = true;
+    }
+  };
 
-  get shouldShowComputedExpander() {
+  get #shouldShowComputedExpander() {
+    if (this.prop.name.startsWith("--") || this.editing) {
+      return false;
+    }
+
     // Only show the expander to reveal computed properties if:
     // - the computed properties are actually different from the current property (i.e
     //   these are longhands while the current property is the shorthand)
@@ -860,13 +879,147 @@ TextPropertyEditor.prototype = {
       this.prop.computed.some(c => c.name !== this.prop.name) &&
       !this.prop.computed.every(c => !c.value)
     );
-  },
+  }
+
+  get #shouldShowWarning() {
+    if (this.prop.name.startsWith("--")) {
+      return false;
+    }
+
+    return !this.editing && !this.isValid();
+  }
+
+  get #shouldShowInactiveCssState() {
+    return (
+      !this.editing &&
+      !this.prop.overridden &&
+      this.prop.enabled &&
+      !!this.prop.getInactiveCssData()
+    );
+  }
+
+  get #shouldShowFilterProperty() {
+    return (
+      !this.editing &&
+      this.isValid() &&
+      this.prop.overridden &&
+      !this.ruleEditor.rule.isUnmatched
+    );
+  }
+
+  #createComputedExpander() {
+    if (this.expander) {
+      return;
+    }
+
+    // Click to expand the computed properties of the text property.
+    this.expander = this.doc.createElementNS(HTML_NS, "button");
+    this.expander.ariaExpanded = false;
+    this.expander.classList.add("ruleview-expander", "theme-twisty");
+    this.expander.title = SHORTHAND_EXPANDER_TOOLTIP;
+
+    this.expander.addEventListener("click", this.#onExpandClicked, {
+      capture: true,
+      signal: this.abortController.signal,
+    });
+
+    this.container.insertBefore(this.expander, this.valueContainer);
+  }
+
+  #createComputedList() {
+    if (this.computed) {
+      return;
+    }
+    this.computed = this.doc.createElementNS(HTML_NS, "ul");
+    this.computed.classList.add("ruleview-computedlist");
+    this.element.insertBefore(this.computed, this.shorthandOverridden);
+  }
+
+  #createWarningIcon() {
+    if (this.warning) {
+      return;
+    }
+
+    this.warning = this.doc.createElementNS(HTML_NS, "div");
+    this.warning.classList.add("ruleview-warning");
+    this.warning.title = l10n("rule.warning.title");
+    this.container.insertBefore(
+      this.warning,
+      this.invalidAtComputedValueTimeWarning ||
+        this.inactiveCssState ||
+        this.compatibilityState ||
+        this.filterProperty
+    );
+  }
+
+  #createInvalidAtComputedValueTimeIcon() {
+    if (this.invalidAtComputedValueTimeWarning) {
+      return;
+    }
+
+    this.invalidAtComputedValueTimeWarning = this.doc.createElementNS(
+      HTML_NS,
+      "div"
+    );
+    this.invalidAtComputedValueTimeWarning.classList.add(
+      "ruleview-invalid-at-computed-value-time-warning"
+    );
+    this.container.insertBefore(
+      this.invalidAtComputedValueTimeWarning,
+      this.inactiveCssState || this.compatibilityState || this.filterProperty
+    );
+  }
+
+  #createInactiveCssWarningIcon() {
+    if (this.inactiveCssState) {
+      return;
+    }
+
+    this.inactiveCssState = this.doc.createElementNS(HTML_NS, "div");
+    this.inactiveCssState.classList.add("ruleview-inactive-css-warning");
+    this.container.insertBefore(
+      this.inactiveCssState,
+      this.compatibilityState || this.filterProperty
+    );
+  }
+
+  #createCompatibilityWarningIcon() {
+    if (this.compatibilityState) {
+      return;
+    }
+
+    this.compatibilityState = this.doc.createElementNS(HTML_NS, "div");
+    this.compatibilityState.classList.add("ruleview-compatibility-warning");
+    this.container.insertBefore(this.compatibilityState, this.filterProperty);
+  }
+
+  #createFilterPropertyButton() {
+    if (this.filterProperty) {
+      return;
+    }
+
+    // Filter button that filters for the current property name and is
+    // displayed when the property is overridden by another rule.
+    this.filterProperty = this.doc.createElementNS(HTML_NS, "button");
+    this.filterProperty.classList.add("ruleview-overridden-rule-filter");
+    this.filterProperty.title = l10n("rule.filterProperty.title");
+    this.container.append(this.filterProperty);
+
+    this.filterProperty.addEventListener(
+      "click",
+      event => {
+        this.ruleEditor.ruleView.setFilterStyles("`" + this.prop.name + "`");
+        event.stopPropagation();
+      },
+      { signal: this.abortController.signal }
+    );
+  }
 
   /**
    * Update the visibility of the enable checkbox, the warning indicator, the used
    * indicator and the filter property, as well as the overridden state of the property.
    */
-  updatePropertyState() {
+  updateUI = () => {
     if (this.prop.enabled) {
       this.enable.style.removeProperty("visibility");
     } else {
@@ -875,31 +1028,54 @@ TextPropertyEditor.prototype = {
 
     this.enable.checked = this.prop.enabled;
 
-    this.warning.title = !this.isNameValid()
-      ? l10n("rule.warningName.title")
-      : l10n("rule.warning.title");
+    if (this.#shouldShowWarning) {
+      this.element.classList.add("ruleview-invalid");
 
-    this.warning.hidden = this.editing || this.isValid();
+      if (!this.warning) {
+        this.#createWarningIcon();
+      } else {
+        this.warning.hidden = false;
+      }
+      this.warning.title = !this.#isNameValid()
+        ? l10n("rule.warningName.title")
+        : l10n("rule.warning.title");
+    } else {
+      this.element.classList.remove("ruleview-invalid");
+      if (this.warning) {
+        this.warning.hidden = true;
+      }
+    }
 
-    if (!this.editing && this.isInvalidAtComputedValueTime()) {
+    if (!this.editing && this.#isInvalidAtComputedValueTime()) {
+      if (!this.invalidAtComputedValueTimeWarning) {
+        this.#createInvalidAtComputedValueTimeIcon();
+      }
       this.invalidAtComputedValueTimeWarning.title = l10nFormatStr(
         "rule.warningInvalidAtComputedValueTime.title",
         `"${this.prop.getExpectedSyntax()}"`
       );
       this.invalidAtComputedValueTimeWarning.hidden = false;
-    } else {
+    } else if (this.invalidAtComputedValueTimeWarning) {
       this.invalidAtComputedValueTimeWarning.hidden = true;
     }
 
-    this.filterProperty.hidden =
-      this.editing ||
-      !this.isValid() ||
-      !this.prop.overridden ||
-      this.ruleEditor.rule.isUnmatched;
+    if (this.#shouldShowFilterProperty) {
+      if (!this.filterProperty) {
+        this.#createFilterPropertyButton();
+      }
+      this.filterProperty.hidden = false;
+    } else if (this.filterProperty) {
+      this.filterProperty.hidden = true;
+    }
 
-    this.expander.style.display = this.shouldShowComputedExpander
-      ? "inline-block"
-      : "none";
+    if (this.#shouldShowComputedExpander) {
+      if (!this.expander) {
+        this.#createComputedExpander();
+      }
+      this.expander.hidden = false;
+    } else if (this.expander) {
+      this.expander.hidden = true;
+    }
 
     if (
       !this.editing &&
@@ -910,58 +1086,83 @@ TextPropertyEditor.prototype = {
       this.element.classList.remove("ruleview-overridden");
     }
 
-    this.updatePropertyUsedIndicator();
-    this.updatePropertyCompatibilityIndicator();
-  },
+    this.#updateInactiveCssIndicator();
+    this.#updatePropertyCompatibilityIndicator();
+  };
 
-  updatePropertyUsedIndicator() {
-    const { used } = this.prop.isUsed();
+  #updateInactiveCssIndicator() {
+    const inactiveCssData = this.prop.getInactiveCssData();
 
-    if (this.editing || this.prop.overridden || !this.prop.enabled || used) {
-      this.element.classList.remove("unused");
-      this.unusedState.hidden = true;
+    if (
+      this.editing ||
+      this.prop.overridden ||
+      !this.prop.enabled ||
+      !inactiveCssData
+    ) {
+      this.element.classList.remove("inactive-css");
+      if (this.inactiveCssState) {
+        this.inactiveCssState.hidden = true;
+      }
     } else {
-      this.element.classList.add("unused");
-      this.unusedState.hidden = false;
+      this.element.classList.add("inactive-css");
+      if (!this.inactiveCssState) {
+        this.#createInactiveCssWarningIcon();
+      } else {
+        this.inactiveCssState.hidden = false;
+      }
     }
-  },
+  }
 
-  async updatePropertyCompatibilityIndicator() {
+  async #updatePropertyCompatibilityIndicator() {
     const { isCompatible } = await this.prop.isCompatible();
 
     if (this.editing || isCompatible) {
-      this.compatibilityState.hidden = true;
+      if (this.compatibilityState) {
+        this.compatibilityState.hidden = true;
+      }
     } else {
+      if (!this.compatibilityState) {
+        this.#createCompatibilityWarningIcon();
+      }
       this.compatibilityState.hidden = false;
     }
-  },
+  }
 
   /**
    * Update the indicator for computed styles. The computed styles themselves
    * are populated on demand, when they become visible.
    */
-  _updateComputed() {
-    this.computed.innerHTML = "";
-
-    this.expander.style.display =
-      !this.editing && this.shouldShowComputedExpander
-        ? "inline-block"
-        : "none";
-
-    this._populatedComputed = false;
-    if (this.expander.getAttribute("aria-expanded" === "true")) {
-      this._populateComputed();
+  #updateComputed() {
+    if (this.computed) {
+      this.computed.replaceChildren();
     }
-  },
+
+    if (this.#shouldShowComputedExpander) {
+      if (!this.expander) {
+        this.#createComputedExpander();
+      }
+      this.expander.hidden = false;
+    } else if (this.expander) {
+      this.expander.hidden = true;
+    }
+
+    this.#populatedComputed = false;
+    if (
+      this.expander &&
+      this.expander.getAttribute("aria-expanded" === "true")
+    ) {
+      this.populateComputed();
+    }
+  }
 
   /**
    * Populate the list of computed styles.
    */
-  _populateComputed() {
-    if (this._populatedComputed) {
+  populateComputed() {
+    if (this.#populatedComputed) {
       return;
     }
-    this._populatedComputed = true;
+    this.#populatedComputed = true;
 
     for (const computed of this.prop.computed) {
       // Don't bother to duplicate information already
@@ -970,40 +1171,53 @@ TextPropertyEditor.prototype = {
         continue;
       }
 
-      // Store the computed style element for easy access when highlighting
-      // styles
-      computed.element = this._createComputedListItem(
+      if (!this.computed) {
+        this.#createComputedList();
+      }
+
+      // Store the computed style element for easy access when highlighting styles
+      computed.element = this.#createComputedListItem(
         this.computed,
         computed,
         "ruleview-computed"
       );
     }
-  },
+  }
 
   /**
    * Update the indicator for overridden shorthand styles. The shorthand
    * overridden styles themselves are populated on demand, when they
    * become visible.
    */
-  _updateShorthandOverridden() {
-    this.shorthandOverridden.innerHTML = "";
+  #updateShorthandOverridden() {
+    if (this.shorthandOverridden) {
+      this.shorthandOverridden.replaceChildren();
+    }
 
-    this._populatedShorthandOverridden = false;
-    this._populateShorthandOverridden();
-  },
+    this.#populatedShorthandOverridden = false;
+    this.#populateShorthandOverridden();
+  }
 
   /**
    * Populate the list of overridden shorthand styles.
    */
-  _populateShorthandOverridden() {
+  #populateShorthandOverridden() {
     if (
-      this._populatedShorthandOverridden ||
+      this.#populatedShorthandOverridden ||
       this.prop.overridden ||
-      !this.shouldShowComputedExpander
+      !this.#shouldShowComputedExpander
     ) {
       return;
     }
-    this._populatedShorthandOverridden = true;
+    this.#populatedShorthandOverridden = true;
+
+    // Holds the viewers for the overridden shorthand properties.
+    // will be populated in |#updateShorthandOverridden|.
+    if (!this.shorthandOverridden) {
+      this.shorthandOverridden = this.doc.createElementNS(HTML_NS, "ul");
+      this.shorthandOverridden.classList.add("ruleview-overridden-items");
+      this.element.append(this.shorthandOverridden);
+    }
 
     for (const computed of this.prop.computed) {
       // Don't display duplicate information or show properties
@@ -1012,18 +1226,18 @@ TextPropertyEditor.prototype = {
         continue;
       }
 
-      this._createComputedListItem(
+      this.#createComputedListItem(
         this.shorthandOverridden,
         computed,
         "ruleview-overridden-item"
       );
     }
-  },
+  }
 
   /**
    * Creates and populates a list item with the computed CSS property.
    */
-  _createComputedListItem(parentEl, computed, className) {
+  #createComputedListItem(parentEl, computed, className) {
     const li = createChild(parentEl, "li", {
       class: className,
     });
@@ -1046,7 +1260,7 @@ TextPropertyEditor.prototype = {
     const frag = outputParser.parseCssProperty(computed.name, computed.value, {
       colorSwatchClass: "inspector-swatch inspector-colorswatch",
       urlClass: "theme-link",
-      baseURI: this.sheetHref,
+      baseURI: this.#sheetHref,
       fontFamilyClass: "ruleview-font-family",
     });
 
@@ -1064,35 +1278,35 @@ TextPropertyEditor.prototype = {
     appendText(propertyContainer, ";");
 
     return li;
-  },
+  }
 
   /**
    * Handle updates to the preference which disables/enables the feature to
    * edit size properties on drag.
    */
-  _onDraggablePreferenceChanged() {
-    if (this._isDraggableProperty(this.prop)) {
-      this._addDraggingCapability();
+  #onDraggablePreferenceChanged = () => {
+    if (this.#isDraggableProperty(this.prop)) {
+      this.#addDraggingCapability();
     } else {
-      this._removeDraggingCapacity();
+      this.#removeDraggingCapacity();
     }
-  },
+  };
 
   /**
    * Stop clicks propogating down the tree from the enable / disable checkbox.
    */
-  _onEnableClicked(event) {
+  #onEnableClicked = event => {
     event.stopPropagation();
-  },
+  };
 
   /**
    * Handles clicks on the disabled property.
    */
-  _onEnableChanged(event) {
+  #onEnableChanged = event => {
     this.prop.setEnabled(this.enable.checked);
     event.stopPropagation();
     this.telemetry.recordEvent("edit_rule", "ruleview");
-  },
+  };
 
   /**
    * Handles clicks on the computed property expander. If the computed list is
@@ -1101,7 +1315,12 @@ TextPropertyEditor.prototype = {
    * expand the computed list and tracks whether or not the computed list is
    * expanded by manually by the user.
    */
-  _onExpandClicked(event) {
+  #onExpandClicked = event => {
+    if (!this.computed) {
+      // Holds the viewers for the computed properties.
+      // will be populated in |#updateComputed|.
+      this.#createComputedList();
+    }
     const isOpened =
       this.computed.hasAttribute("filter-open") ||
       this.computed.hasAttribute("user-open");
@@ -1110,16 +1329,20 @@ TextPropertyEditor.prototype = {
     if (isOpened) {
       this.computed.removeAttribute("filter-open");
       this.computed.removeAttribute("user-open");
-      this.shorthandOverridden.hidden = false;
-      this._populateShorthandOverridden();
+      if (this.shorthandOverridden) {
+        this.shorthandOverridden.hidden = false;
+      }
+      this.#populateShorthandOverridden();
     } else {
       this.computed.setAttribute("user-open", "");
-      this.shorthandOverridden.hidden = true;
-      this._populateComputed();
+      if (this.shorthandOverridden) {
+        this.shorthandOverridden.hidden = true;
+      }
+      this.populateComputed();
     }
 
     event.stopPropagation();
-  },
+  };
 
   /**
    * Expands the computed list when a computed property is matched by the style
@@ -1127,12 +1350,20 @@ TextPropertyEditor.prototype = {
    * computed list was toggled opened by the filter.
    */
   expandForFilter() {
-    if (!this.computed.hasAttribute("user-open")) {
+    if (!this.computed || !this.computed.hasAttribute("user-open")) {
+      if (!this.expander) {
+        this.#createComputedExpander();
+      }
+      this.expander.hidden = false;
       this.expander.setAttribute("aria-expanded", "true");
+
+      if (!this.computed) {
+        this.#createComputedList();
+      }
       this.computed.setAttribute("filter-open", "");
-      this._populateComputed();
+      this.populateComputed();
     }
-  },
+  }
 
   /**
    * Collapses the computed list that was expanded by style filtering.
@@ -1140,24 +1371,24 @@ TextPropertyEditor.prototype = {
   collapseForFilter() {
     this.computed.removeAttribute("filter-open");
 
-    if (!this.computed.hasAttribute("user-open")) {
+    if (!this.computed.hasAttribute("user-open") && this.expander) {
       this.expander.setAttribute("aria-expanded", "false");
     }
-  },
+  }
 
   /**
    * Called when the property name's inplace editor is closed.
    * Ignores the change if the user pressed escape, otherwise
    * commits it.
    *
-   * @param {String} value
+   * @param {string} value
    *        The value contained in the editor.
-   * @param {Boolean} commit
+   * @param {boolean} commit
    *        True if the change should be applied.
-   * @param {Number} direction
+   * @param {number} direction
    *        The move focus direction number.
    */
-  _onNameDone(value, commit, direction) {
+  #onNameDone = (value, commit, direction) => {
     const isNameUnchanged =
       (!commit && !this.ruleEditor.isEditing) || this.committed.name === value;
     if (this.prop.value && isNameUnchanged) {
@@ -1203,54 +1434,40 @@ TextPropertyEditor.prototype = {
         this.ruleEditor.addProperties(properties.slice(1), this.prop);
       }
     }
-  },
+  };
 
   /**
    * Remove property from style and the editors from DOM.
    * Begin editing next or previous available property given the focus
    * direction.
    *
-   * @param {Number} direction
+   * @param {number} direction
    *        The move focus direction number.
    */
   remove(direction) {
-    if (this._colorSwatchSpans && this._colorSwatchSpans.length) {
-      for (const span of this._colorSwatchSpans) {
-        this.ruleView.tooltips.getTooltip("colorPicker").removeSwatch(span);
-      }
-    }
-
-    if (this.angleSwatchSpans && this.angleSwatchSpans.length) {
-      for (const span of this.angleSwatchSpans) {
-        span.removeEventListener("unit-change", this._onSwatchCommit);
-      }
-    }
-
-    this.ruleView.off(
-      "draggable-preference-updated",
-      this._onDraggablePreferenceChanged
-    );
-
-    this.element.remove();
     this.ruleEditor.rule.editClosestTextProperty(this.prop, direction);
+
+    this.prop.remove();
     this.nameSpan.textProperty = null;
     this.valueSpan.textProperty = null;
-    this.prop.remove();
-  },
+    this.element.remove();
+
+    this.destroy();
+  }
 
   /**
    * Called when a value editor closes.  If the user pressed escape,
    * revert to the value this property had before editing.
    *
-   * @param {String} value
+   * @param {string} value
    *        The value contained in the editor.
-   * @param {Boolean} commit
+   * @param {boolean} commit
    *        True if the change should be applied.
-   * @param {Number} direction
+   * @param {number} direction
    *        The move focus direction number.
    */
-  _onValueDone(value = "", commit, direction) {
-    const parsedProperties = this._getValueAndExtraProperties(value);
+  #onValueDone = (value = "", commit, direction) => {
+    const parsedProperties = this.#getValueAndExtraProperties(value);
     const val = parseSingleValue(
       this.cssProperties.isKnown,
       parsedProperties.firstValue
@@ -1266,26 +1483,26 @@ TextPropertyEditor.prototype = {
     // If the value is not empty (or is an empty variable) and unchanged,
     // revert the property back to its original value and enabled or disabled state
     if ((value.trim() || isVariable) && isValueUnchanged) {
-      this.ruleEditor.rule.previewPropertyValue(
+      const onPropertySet = this.ruleEditor.rule.previewPropertyValue(
         this.prop,
         val.value,
         val.priority
       );
       this.rule.setPropertyEnabled(this.prop, this.prop.enabled);
-      return;
+      return onPropertySet;
     }
 
     // Check if unit of value changed to add dragging feature
-    if (this._isDraggableProperty(val)) {
-      this._addDraggingCapability();
+    if (this.#isDraggableProperty(val)) {
+      this.#addDraggingCapability();
     } else {
-      this._removeDraggingCapacity();
+      this.#removeDraggingCapacity();
     }
 
     this.telemetry.recordEvent("edit_rule", "ruleview");
 
     // First, set this property value (common case, only modified a property)
-    this.prop.setValue(val.value, val.priority);
+    const onPropertySet = this.prop.setValue(val.value, val.priority);
 
     if (!this.prop.enabled) {
       this.prop.setEnabled(true);
@@ -1314,31 +1531,33 @@ TextPropertyEditor.prototype = {
         }
       }, 0);
     }
-  },
+
+    return onPropertySet;
+  };
 
   /**
    * Called when the swatch editor wants to commit a value change.
    */
-  _onSwatchCommit() {
-    this._onValueDone(this.valueSpan.textContent, true);
+  #onSwatchCommit = () => {
+    this.#onValueDone(this.valueSpan.textContent, true);
     this.update();
-  },
+  };
 
   /**
    * Called when the swatch editor wants to preview a value change.
    */
-  _onSwatchPreview() {
-    this._previewValue(this.valueSpan.textContent);
-  },
+  #onSwatchPreview = () => {
+    this.#previewValue(this.valueSpan.textContent);
+  };
 
   /**
    * Called when the swatch editor closes from an ESC. Revert to the original
    * value of this property before editing.
    */
-  _onSwatchRevert() {
-    this._previewValue(this.prop.value, true);
+  #onSwatchRevert = () => {
+    this.#previewValue(this.prop.value, true);
     this.update();
-  },
+  };
 
   /**
    * Parse a value string and break it into pieces, starting with the
@@ -1347,15 +1566,15 @@ TextPropertyEditor.prototype = {
    * Example: Calling with "red; width: 100px" would return
    * { firstValue: "red", propertiesToAdd: [{ name: "width", value: "100px" }] }
    *
-   * @param {String} value
+   * @param {string} value
    *        The string to parse
-   * @return {Object} An object with the following properties:
+   * @return {object} An object with the following properties:
    *        firstValue: A string containing a simple value, like
    *                    "red" or "100px!important"
    *        propertiesToAdd: An array with additional properties, following the
    *                         parseDeclarations format of {name,value,priority}
    */
-  _getValueAndExtraProperties(value) {
+  #getValueAndExtraProperties(value) {
     // The inplace editor will prevent manual typing of multiple properties,
     // but we need to deal with the case during a paste event.
     // Adding multiple properties inside of value editor sets value with the
@@ -1385,17 +1604,17 @@ TextPropertyEditor.prototype = {
       propertiesToAdd,
       firstValue,
     };
-  },
+  }
 
   /**
    * Live preview this property, without committing changes.
    *
-   * @param {String} value
+   * @param {string} value
    *        The value to set the current property to.
-   * @param {Boolean} reverting
+   * @param {boolean} reverting
    *        True if we're reverting the previously previewed value
    */
-  _previewValue(value, reverting = false) {
+  #previewValue = (value, reverting = false) => {
     // Since function call is debounced, we need to make sure we are still
     // editing, and any selector modifications have been completed
     if (!reverting && (!this.editing || this.ruleEditor.isEditing)) {
@@ -1408,43 +1627,43 @@ TextPropertyEditor.prototype = {
       val.value,
       val.priority
     );
-  },
+  };
 
   /**
    * Check if the event passed has a "small increment" modifier
    * Alt on macosx and ctrl on other OSs
    *
    * @param  {KeyboardEvent} event
-   * @returns {Boolean}
+   * @returns {boolean}
    */
-  _hasSmallIncrementModifier(event) {
+  #hasSmallIncrementModifier(event) {
     const modifier =
       lazy.AppConstants.platform === "macosx" ? "altKey" : "ctrlKey";
     return event[modifier] === true;
-  },
+  }
 
   /**
    * Parses the value to check if it is a dimension
    * e.g. if the input is "128px" it will return an object like
    * { groups: { value: "128", unit: "px"}}
    *
-   * @param  {String} value
-   * @returns {Object|null}
+   * @param  {string} value
+   * @returns {object | null}
    */
-  _parseDimension(value) {
+  #parseDimension(value) {
     // The regex handles values like +1, -1, 1e4, .4, 1.3e-4, 1.567
     const cssDimensionRegex =
       /^(?<value>[+-]?(\d*\.)?\d+(e[+-]?\d+)?)(?<unit>(%|[a-zA-Z]+))$/;
     return value.match(cssDimensionRegex);
-  },
+  }
 
   /**
    * Check if a textProperty value is supported to add the dragging feature
    *
    * @param  {TextProperty} textProperty
-   * @returns {Boolean}
+   * @returns {boolean}
    */
-  _isDraggableProperty(textProperty) {
+  #isDraggableProperty(textProperty) {
     // Check if the feature is explicitly disabled.
     if (!this.ruleView.draggablePropertiesEnabled) {
       return false;
@@ -1463,27 +1682,25 @@ TextPropertyEditor.prototype = {
       return false;
     }
 
-    const dimensionMatchObj = this._parseDimension(textProperty.value);
+    const dimensionMatchObj = this.#parseDimension(textProperty.value);
     return !!dimensionMatchObj;
-  },
+  }
 
-  _draggingOnPointerDown(event) {
-    // We want to handle a drag during a mouse button is pressed.  So, we can
-    // ignore pointer events which are caused by other devices.
-    if (event.pointerType != "mouse") {
+  #draggingOnPointerDown = event => {
+    if (!canPointerEventDrag(event)) {
       return;
     }
 
-    this._isDragging = true;
+    this.#isDragging = true;
     this.valueSpan.setPointerCapture(event.pointerId);
-    this._capturingPointerId = event.pointerId;
-    this._draggingController = new AbortController();
-    const { signal } = this._draggingController;
+    this.#capturingPointerId = event.pointerId;
+    this.#draggingController = new AbortController();
+    const { signal } = this.#draggingController;
 
     // turn off user-select in CSS when we drag
     this.valueSpan.classList.add(IS_DRAGGING_CLASSNAME);
 
-    const dimensionObj = this._parseDimension(this.prop.value);
+    const dimensionObj = this.#parseDimension(this.prop.value);
     const { value, unit } = dimensionObj.groups;
     // `pointerdown.screenX` may be fractional value and we will compare it
     // with `mousemove.screenX` which is always integer value and the difference
@@ -1493,7 +1710,7 @@ TextPropertyEditor.prototype = {
     // https://searchfox.org/mozilla-central/rev/7857ea04d142f2abc0d777085f9e54526c7cedf9/dom/events/MouseEvent.cpp#314
     // https://searchfox.org/mozilla-central/rev/7857ea04d142f2abc0d777085f9e54526c7cedf9/gfx/2d/Point.h#85-86
     const intScreenX = Math.floor(event.screenX + 0.5);
-    this._draggingValueCache = {
+    this.#draggingValueCache = {
       isInDeadzone: true,
       previousScreenX: intScreenX,
       value: parseFloat(value),
@@ -1502,23 +1719,23 @@ TextPropertyEditor.prototype = {
 
     // "pointermove" is fired when the button state is changed too.  Therefore,
     // we should listen to "mousemove" to handle the pointer position changes.
-    this.valueSpan.addEventListener("mousemove", this._draggingOnMouseMove, {
+    this.valueSpan.addEventListener("mousemove", this.#draggingOnMouseMove, {
       signal,
     });
-    this.valueSpan.addEventListener("pointerup", this._draggingOnPointerUp, {
+    this.valueSpan.addEventListener("pointerup", this.#draggingOnPointerUp, {
       signal,
     });
-    this.valueSpan.addEventListener("keydown", this._draggingOnKeydown, {
+    this.valueSpan.addEventListener("keydown", this.#draggingOnKeydown, {
       signal,
     });
-  },
+  };
 
-  _draggingOnMouseMove(event) {
-    if (!this._isDragging) {
+  #draggingOnMouseMove = throttle(event => {
+    if (!this.#isDragging) {
       return;
     }
 
-    const { isInDeadzone, previousScreenX } = this._draggingValueCache;
+    const { isInDeadzone, previousScreenX } = this.#draggingValueCache;
     let deltaX = event.screenX - previousScreenX;
 
     // If `isInDeadzone` is still true, the user has not previously left the deadzone.
@@ -1534,131 +1751,132 @@ TextPropertyEditor.prototype = {
         Math.sign(deltaX) * (Math.abs(deltaX) - DRAGGING_DEADZONE_DISTANCE);
 
       // Update the state to remember the user is out of the deadzone.
-      this._draggingValueCache.isInDeadzone = false;
+      this.#draggingValueCache.isInDeadzone = false;
     }
 
     let draggingSpeed = DEFAULT_DRAGGING_SPEED;
     if (event.shiftKey) {
       draggingSpeed = FAST_DRAGGING_SPEED;
-    } else if (this._hasSmallIncrementModifier(event)) {
+    } else if (this.#hasSmallIncrementModifier(event)) {
       draggingSpeed = SLOW_DRAGGING_SPEED;
     }
 
     const delta = deltaX * draggingSpeed;
-    this._draggingValueCache.previousScreenX = event.screenX;
-    this._draggingValueCache.value += delta;
+    this.#draggingValueCache.previousScreenX = event.screenX;
+    this.#draggingValueCache.value += delta;
 
     if (delta == 0) {
       return;
     }
 
-    const { value, unit } = this._draggingValueCache;
+    const { value, unit } = this.#draggingValueCache;
     // We use toFixed to avoid the case where value is too long, 9.00001px for example
     const roundedValue = Number.isInteger(value) ? value : value.toFixed(1);
     this.prop
       .setValue(roundedValue + unit, this.prop.priority)
       .then(() => this.ruleView.emitForTests("property-updated-by-dragging"));
-    this._hasDragged = true;
-  },
+    this.#hasDragged = true;
+  }, 30);
 
-  _draggingOnPointerUp() {
-    if (!this._isDragging) {
+  #draggingOnPointerUp = () => {
+    if (!this.#isDragging) {
       return;
     }
-    if (this._hasDragged) {
+    if (this.#hasDragged) {
       this.committed.value = this.prop.value;
       this.prop.setEnabled(true);
     }
-    this._onStopDragging();
-  },
+    this.#onStopDragging();
+  };
 
-  _draggingOnKeydown(event) {
+  #draggingOnKeydown = event => {
     if (event.key == "Escape") {
       this.prop.setValue(this.committed.value, this.committed.priority);
-      this._onStopDragging();
+      this.#onStopDragging();
       event.preventDefault();
     }
-  },
+  };
 
-  _onStopDragging() {
+  #onStopDragging() {
     // childHasDragged is used to stop the propagation of a click event when we
     // release the mouse in the ruleview.
     // The click event is not emitted when we have a pending click on the text property.
-    if (this._hasDragged && !this._hasPendingClick) {
+    if (this.#hasDragged && !this.#hasPendingClick) {
       this.ruleView.childHasDragged = true;
     }
-    this._isDragging = false;
-    this._hasDragged = false;
-    this._draggingValueCache = null;
-    if (this._capturingPointerId !== null) {
-      this._capturingPointerId = null;
+    this.#isDragging = false;
+    this.#hasDragged = false;
+    this.#draggingValueCache = null;
+    if (this.#capturingPointerId !== null) {
+      this.#capturingPointerId = null;
       try {
-        this.valueSpan.releasePointerCapture(this._capturingPointerId);
+        this.valueSpan.releasePointerCapture(this.#capturingPointerId);
       } catch (e) {
         // Ignore exception even if the pointerId has already been invalidated
         // before the capture has already been released implicitly.
       }
     }
     this.valueSpan.classList.remove(IS_DRAGGING_CLASSNAME);
-    this._draggingController.abort();
-  },
+    this.#draggingController.abort();
+  }
 
   /**
    * add event listeners to add the ability to modify any size value
    * by dragging the mouse horizontally
    */
-  _addDraggingCapability() {
+  #addDraggingCapability() {
     if (this.valueSpan.classList.contains(DRAGGABLE_VALUE_CLASSNAME)) {
       return;
     }
     this.valueSpan.classList.add(DRAGGABLE_VALUE_CLASSNAME);
     this.valueSpan.addEventListener(
       "pointerdown",
-      this._draggingOnPointerDown,
+      this.#draggingOnPointerDown,
       { passive: true }
     );
-  },
+  }
 
-  _removeDraggingCapacity() {
+  #removeDraggingCapacity() {
     if (!this.valueSpan.classList.contains(DRAGGABLE_VALUE_CLASSNAME)) {
       return;
     }
-    this._draggingController = null;
+    this.#draggingController = null;
     this.valueSpan.classList.remove(DRAGGABLE_VALUE_CLASSNAME);
     this.valueSpan.removeEventListener(
       "pointerdown",
-      this._draggingOnPointerDown,
+      this.#draggingOnPointerDown,
       { passive: true }
     );
-  },
+  }
 
   /**
    * Validate this property. Does it make sense for this value to be assigned
    * to this property name? This does not apply the property value
    *
-   * @return {Boolean} true if the property name + value pair is valid, false otherwise.
+   * @return {boolean} true if the property name + value pair is valid, false otherwise.
    */
   isValid() {
     return this.prop.isValid();
-  },
+  }
 
   /**
    * Validate the name of this property.
-   * @return {Boolean} true if the property name is valid, false otherwise.
+   *
+   * @return {boolean} true if the property name is valid, false otherwise.
    */
-  isNameValid() {
+  #isNameValid() {
     return this.prop.isNameValid();
-  },
+  }
 
-  isInvalidAtComputedValueTime() {
+  #isInvalidAtComputedValueTime() {
     return this.prop.isInvalidAtComputedValueTime();
-  },
+  }
 
   /**
    * Display grid-template-area value strings each on their own line
    * to display it in an ascii-art style matrix
    */
-  _formatGridTemplateAreasValue() {
+  #formatGridTemplateAreasValue() {
     this.valueSpan.classList.add("ruleview-propertyvalue-break-spaces");
 
     let quoteSymbolsUsed = [];
@@ -1681,7 +1899,7 @@ TextPropertyEditor.prototype = {
       .map(line => line.split(" "))
       .map((line, i, lines) =>
         line.map((col, j) =>
-          col.padEnd(Math.max(...lines.map(l => l[j].length)), " ")
+          col.padEnd(Math.max(...lines.map(l => l[j]?.length || 0)), " ")
         )
       )
       .map(
@@ -1689,7 +1907,43 @@ TextPropertyEditor.prototype = {
           `\n${quoteSymbolsUsed[i]}` + line.join(" ") + quoteSymbolsUsed[i]
       )
       .join(" ");
-  },
-};
+  }
+
+  destroy() {
+    if (this.#colorSwatchSpans && this.#colorSwatchSpans.length) {
+      for (const span of this.#colorSwatchSpans) {
+        this.ruleView.tooltips.getTooltip("colorPicker").removeSwatch(span);
+      }
+    }
+
+    if (this.angleSwatchSpans && this.angleSwatchSpans.length) {
+      for (const span of this.angleSwatchSpans) {
+        span.removeEventListener("unit-change", this.#onSwatchCommit);
+        this.ruleView.tooltips.getTooltip("filterEditor").removeSwatch(span);
+      }
+    }
+
+    if (this.#bezierSwatchSpans && this.#bezierSwatchSpans.length) {
+      for (const span of this.#bezierSwatchSpans) {
+        this.ruleView.tooltips.getTooltip("cubicBezier").removeSwatch(span);
+      }
+    }
+
+    if (this.#linearEasingSwatchSpans && this.#linearEasingSwatchSpans.length) {
+      for (const span of this.#linearEasingSwatchSpans) {
+        this.ruleView.tooltips
+          .getTooltip("linearEaseFunction")
+          .removeSwatch(span);
+      }
+    }
+
+    if (this.abortController) {
+      this.abortController.abort();
+      this.abortController = null;
+    }
+
+    this.#elementsWithPendingClicks.delete(this.valueSpan);
+  }
+}
 
 module.exports = TextPropertyEditor;

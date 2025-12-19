@@ -5,16 +5,15 @@
 #ifndef VIDEO_SESSION_H_
 #define VIDEO_SESSION_H_
 
+#include "MediaConduitInterface.h"
+#include "RtpRtcpConfig.h"
+#include "RunningStat.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/DataMutex.h"
 #include "mozilla/ReentrantMonitor.h"
 #include "mozilla/StateMirroring.h"
 #include "mozilla/UniquePtr.h"
-
-#include "MediaConduitInterface.h"
-#include "RtpRtcpConfig.h"
-#include "RunningStat.h"
 
 // conflicts with #include of scoped_ptr.h
 #undef FF
@@ -51,7 +50,7 @@ class WebrtcVideoEncoder : public VideoEncoder, public webrtc::VideoEncoder {};
 // Interface of external video decoder for WebRTC.
 class WebrtcVideoDecoder : public VideoDecoder, public webrtc::VideoDecoder {};
 
-class RecvSinkProxy : public rtc::VideoSinkInterface<webrtc::VideoFrame> {
+class RecvSinkProxy : public webrtc::VideoSinkInterface<webrtc::VideoFrame> {
  public:
   explicit RecvSinkProxy(WebrtcVideoConduit* aOwner) : mOwner(aOwner) {}
 
@@ -61,7 +60,7 @@ class RecvSinkProxy : public rtc::VideoSinkInterface<webrtc::VideoFrame> {
   WebrtcVideoConduit* const mOwner;
 };
 
-class SendSinkProxy : public rtc::VideoSinkInterface<webrtc::VideoFrame> {
+class SendSinkProxy : public webrtc::VideoSinkInterface<webrtc::VideoFrame> {
  public:
   explicit SendSinkProxy(WebrtcVideoConduit* aOwner) : mOwner(aOwner) {}
 
@@ -77,6 +76,7 @@ class SendSinkProxy : public rtc::VideoSinkInterface<webrtc::VideoFrame> {
  */
 class WebrtcVideoConduit : public VideoSessionConduit,
                            public webrtc::RtcpEventObserver {
+  friend class RecvSinkProxy;
   friend class SendSinkProxy;
 
  public:
@@ -133,6 +133,9 @@ class WebrtcVideoConduit : public VideoSessionConduit,
 
   RefPtr<GenericPromise> Shutdown() override;
 
+  // Call thread only.
+  bool IsShutdown() const override;
+
   bool Denoising() const { return mDenoising; }
 
   uint8_t SpatialLayers() const { return mSpatialLayers; }
@@ -173,7 +176,7 @@ class WebrtcVideoConduit : public VideoSessionConduit,
   void NotifyUnsetCurrentRemoteSSRC();
   void SetRemoteSSRCConfig(uint32_t aSsrc, uint32_t aRtxSsrc);
   void SetRemoteSSRCAndRestartAsNeeded(uint32_t aSsrc, uint32_t aRtxSsrc);
-  rtc::RefCountedObject<mozilla::VideoStreamFactory>*
+  webrtc::RefCountedObject<mozilla::VideoStreamFactory>*
   CreateVideoStreamFactory();
 
  public:
@@ -205,6 +208,7 @@ class WebrtcVideoConduit : public VideoSessionConduit,
 
   void OnRtpReceived(webrtc::RtpPacketReceived&& aPacket,
                      webrtc::RTPHeader&& aHeader);
+  void OnRtcpReceived(webrtc::CopyOnWriteBuffer&& aPacket);
 
   void OnRtcpBye() override;
   void OnRtcpTimeout() override;
@@ -226,8 +230,22 @@ class WebrtcVideoConduit : public VideoSessionConduit,
     mReceiverRtpEventListener =
         aEvent.Connect(mCallThread, this, &WebrtcVideoConduit::OnRtpReceived);
   }
+  void ConnectReceiverRtcpEvent(
+      MediaEventSourceExc<webrtc::CopyOnWriteBuffer>& aEvent) override {
+    mReceiverRtcpEventListener =
+        aEvent.Connect(mCallThread, this, &WebrtcVideoConduit::OnRtcpReceived);
+  }
+  void ConnectSenderRtcpEvent(
+      MediaEventSourceExc<webrtc::CopyOnWriteBuffer>& aEvent) override {
+    mSenderRtcpEventListener =
+        aEvent.Connect(mCallThread, this, &WebrtcVideoConduit::OnRtcpReceived);
+  }
 
-  std::vector<webrtc::RtpSource> GetUpstreamRtpSources() const override;
+  AbstractCanonical<Maybe<gfx::IntSize>>* CanonicalReceivingSize() override {
+    return &mReceivingSize;
+  }
+
+  const std::vector<webrtc::RtpSource>& GetUpstreamRtpSources() const override;
 
   void RequestKeyFrame(FrameTransformerProxy* aProxy) override;
   void GenerateKeyFrame(const Maybe<std::string>& aRid,
@@ -244,12 +262,20 @@ class WebrtcVideoConduit : public VideoSessionConduit,
   // Video Latency Test averaging filter
   void VideoLatencyUpdate(uint64_t aNewSample);
 
+  // Call thread only, called before DeleteSendStream if streams need recreation
+  void MemoSendStreamStats();
+
   void CreateSendStream();
   void DeleteSendStream();
   void CreateRecvStream();
   void DeleteRecvStream();
 
-  void DeliverPacket(rtc::CopyOnWriteBuffer packet, PacketType type) override;
+  // Call thread only.
+  // Should only be called from Shutdown()
+  void SetIsShutdown();
+
+  void DeliverPacket(webrtc::CopyOnWriteBuffer packet,
+                     PacketType type) override;
 
   MediaEventSource<void>& RtcpByeEvent() override { return mRtcpByeEvent; }
   MediaEventSource<void>& RtcpTimeoutEvent() override {
@@ -264,11 +290,10 @@ class WebrtcVideoConduit : public VideoSessionConduit,
   // Accessed on any thread under mRendererMonitor.
   RefPtr<mozilla::VideoRenderer> mRenderer;
 
-  // Accessed on any thread under mRendererMonitor.
-  unsigned short mReceivingWidth = 0;
-
-  // Accessed on any thread under mRendererMonitor.
-  unsigned short mReceivingHeight = 0;
+  // WEBRTC.ORG Call API
+  // Const so can be accessed on any thread. All methods are called on the Call
+  // thread.
+  const RefPtr<WebrtcCallWrapper> mCall;
 
   // Call worker thread. All access to mCall->Call() happens here.
   const nsCOMPtr<nsISerialEventTarget> mCallThread;
@@ -276,6 +301,9 @@ class WebrtcVideoConduit : public VideoSessionConduit,
   // Socket transport service thread that runs stats queries against us. Any
   // thread.
   const nsCOMPtr<nsISerialEventTarget> mStsThread;
+
+  // XXX
+  const RefPtr<AbstractThread> mFrameRecvThread;
 
   // Thread on which we are fed video frames. Set lazily on first call to
   // SendVideoFrame().
@@ -315,7 +343,8 @@ class WebrtcVideoConduit : public VideoSessionConduit,
     std::vector<VideoCodecConfig> mConfiguredRecvCodecs;
     Maybe<RtpRtcpConfig> mConfiguredRecvRtpRtcpConfig;
     // For tracking changes to mVideoDegradationPreference
-    webrtc::DegradationPreference mConfiguredDegradationPreference;
+    webrtc::DegradationPreference mConfiguredDegradationPreference =
+        webrtc::DegradationPreference::DISABLED;
 
     // For change tracking. Callthread only.
     RefPtr<FrameTransformerProxy> mConfiguredFrameTransformerProxySend;
@@ -324,6 +353,10 @@ class WebrtcVideoConduit : public VideoSessionConduit,
     Control() = delete;
     explicit Control(const RefPtr<AbstractThread>& aCallThread);
   } mControl;
+
+  // Canonical for mirroring mReceivingWidth and mReceivingHeight. Call thread
+  // only.
+  Canonical<Maybe<gfx::IntSize>> mReceivingSize;
 
   // WatchManager allowing Mirrors and other watch targets to trigger functions
   // that will update the webrtc.org configuration.
@@ -342,7 +375,7 @@ class WebrtcVideoConduit : public VideoSessionConduit,
   const UniquePtr<WebrtcVideoEncoderFactory> mEncoderFactory;
 
   // These sink proxies are needed because both the recv and send sides of the
-  // conduit need to implement rtc::VideoSinkInterface<webrtc::VideoFrame>.
+  // conduit need to implement webrtc::VideoSinkInterface<webrtc::VideoFrame>.
   RecvSinkProxy mRecvSinkProxy;
   SendSinkProxy mSendSinkProxy;
 
@@ -375,8 +408,7 @@ class WebrtcVideoConduit : public VideoSessionConduit,
   // Must call webrtc::Call::DestroyVideoReceive/SendStream to delete this.
   webrtc::VideoSendStream* mSendStream = nullptr;
 
-  // Written on the frame feeding thread.
-  // Guarded by mMutex, except for reads on the frame feeding thread.
+  // Size of the most recently sent video frame. Call thread only.
   Maybe<gfx::IntSize> mLastSize;
 
   // Written on the frame feeding thread, the timestamp of the last frame on the
@@ -420,11 +452,6 @@ class WebrtcVideoConduit : public VideoSessionConduit,
   // Target jitter buffer to be applied to the receive stream in milliseconds.
   uint16_t mJitterBufferTargetMs = 0;
 
-  // WEBRTC.ORG Call API
-  // Const so can be accessed on any thread. All methods are called on the Call
-  // thread.
-  const RefPtr<WebrtcCallWrapper> mCall;
-
   // Set up in the ctor and then not touched. Called through by the streams on
   // any thread. Safe since we own and control the lifetime of the streams.
   WebrtcSendTransport mSendTransport;
@@ -440,7 +467,7 @@ class WebrtcVideoConduit : public VideoSessionConduit,
 
   // Written only on the Call thread. Guarded by mMutex, except for reads on the
   // Call thread. Calls can happen under mMutex on any thread.
-  DataMutex<RefPtr<rtc::RefCountedObject<VideoStreamFactory>>>
+  DataMutex<RefPtr<webrtc::RefCountedObject<VideoStreamFactory>>>
       mVideoStreamFactory;
 
   // Call thread only.
@@ -481,9 +508,21 @@ class WebrtcVideoConduit : public VideoSessionConduit,
   // Protected by mRendererMonitor
   dom::RTCVideoFrameHistoryInternal mReceivedFrameHistory;
 
-  // Written only on the main thread.  Guarded by mMutex, except for
-  // reads on the main thread.
-  std::vector<webrtc::RtpSource> mRtpSources;
+  // Call thread only.
+  Canonical<std::vector<webrtc::RtpSource>> mCanonicalRtpSources;
+
+  // Main thread only mirror of mCanonicalRtpSources.
+  Mirror<std::vector<webrtc::RtpSource>> mRtpSources;
+
+  // Cache of stats that holds the send stream stats during the stream
+  // recreation process. After DeleteSendStream() then CreateSendStream() and
+  // before the codecs are initialized there is a gap where the send stream
+  // stats have no substreams. This holds onto the stats until the codecs are
+  // initialized and the send stream is recreated.
+  // It is mutable because we want to be able to invalidate the cache when a
+  // GetStats call is made.
+  // Call thread only.
+  mutable Maybe<webrtc::VideoSendStream::Stats> mTransitionalSendStreamStats;
 
   // Thread safe
   Atomic<bool> mTransportActive = Atomic<bool>(false);
@@ -495,7 +534,13 @@ class WebrtcVideoConduit : public VideoSessionConduit,
   MediaEventProducerExc<MediaPacket> mReceiverRtcpSendEvent;
 
   // Assigned and revoked on mStsThread. Listeners for receiving packets.
-  MediaEventListener mReceiverRtpEventListener;  // Rtp-receiving pipeline
+  MediaEventListener mReceiverRtpEventListener;   // Rtp-receiving pipeline
+  MediaEventListener mReceiverRtcpEventListener;  // Rctp-receiving pipeline
+  MediaEventListener mSenderRtcpEventListener;    // Rctp-sending pipeline
+
+  // Whether the conduit is shutdown or not.
+  // Call thread only.
+  bool mIsShutdown = false;
 };
 }  // namespace mozilla
 

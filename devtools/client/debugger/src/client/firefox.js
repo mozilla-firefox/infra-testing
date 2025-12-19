@@ -137,7 +137,7 @@ async function onToggleContentScripts() {
       targetCommand.TYPES.CONTENT_SCRIPT,
     ]);
     for (const targetFront of existingTargets) {
-      actions.removeTarget(targetFront);
+      await actions.removeTarget(targetFront);
     }
     targetCommand.unwatchTargets({
       types: [targetCommand.TYPES.CONTENT_SCRIPT],
@@ -217,8 +217,8 @@ async function onTargetAvailable({ targetFront }) {
   await actions.addTarget(targetFront);
 }
 
-function onTargetDestroyed({ targetFront }) {
-  actions.removeTarget(targetFront);
+async function onTargetDestroyed({ targetFront }) {
+  await actions.removeTarget(targetFront);
 }
 
 async function onSourceAvailable(sources) {
@@ -275,7 +275,9 @@ async function onTracingToggled() {
 function onDocumentEventAvailable(events) {
   for (const event of events) {
     // Only consider top level document, and ignore remote iframes top document
-    if (!event.targetFront.isTopLevel) continue;
+    if (!event.targetFront.isTopLevel) {
+      continue;
+    }
     // The browser toolbox debugger doesn't support the iframe dropdown.
     // you will always see all the sources of all targets of your debugging context.
     //

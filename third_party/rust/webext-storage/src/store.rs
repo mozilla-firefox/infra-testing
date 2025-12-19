@@ -97,6 +97,13 @@ impl WebExtStorageStore {
         api::get(conn, ext_id, keys)
     }
 
+    /// Returns the keys for a given extension ID.
+    pub fn get_keys(&self, ext_id: &str) -> Result<JsonValue> {
+        let db = &self.db.lock();
+        let conn = db.get_connection()?;
+        api::get_keys(conn, ext_id)
+    }
+
     /// Deletes the values for one or more keys. As with `get`, `keys` can be
     /// either a single string key, or an array of string keys. Returns a list
     /// of changes, where each change contains the old value for each deleted
@@ -161,7 +168,7 @@ impl WebExtStorageStore {
         // Failing to store this information should not cause migration failure.
         if let Err(e) = result.store(conn) {
             debug_assert!(false, "Migration error: {:?}", e);
-            log::warn!("Failed to record migration telmetry: {}", e);
+            warn!("Failed to record migration telmetry: {}", e);
         }
         Ok(())
     }

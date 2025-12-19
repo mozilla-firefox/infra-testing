@@ -106,7 +106,7 @@ bool XULButtonAccessible::AttributeChangesState(nsAtom* aAttribute) {
 
 void XULButtonAccessible::DOMAttributeChanged(int32_t aNameSpaceID,
                                               nsAtom* aAttribute,
-                                              int32_t aModType,
+                                              AttrModType aModType,
                                               const nsAttrValue* aOldValue,
                                               uint64_t aOldState) {
   AccessibleWrap::DOMAttributeChanged(aNameSpaceID, aAttribute, aModType,
@@ -232,7 +232,10 @@ ENameValueFlag XULGroupboxAccessible::NativeName(nsString& aName) const {
   // XXX: we use the first related accessible only.
   LocalAccessible* label =
       RelationByType(RelationType::LABELLED_BY).LocalNext();
-  if (label) return label->Name(aName);
+  if (label) {
+    label->Name(aName);
+    return eNameFromRelations;
+  }
 
   return eNameOK;
 }

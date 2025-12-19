@@ -16,67 +16,18 @@ ChromeUtils.defineESModuleGetters(lazy, {
   HistoryController: "resource:///modules/HistoryController.sys.mjs",
 });
 
-const URLs = [
-  "http://mochi.test:8888/browser/",
-  "https://www.example.com/",
-  "https://example.net/",
-  "https://example.org/",
-];
-
-const today = new Date();
-const yesterday = new Date(
-  today.getFullYear(),
-  today.getMonth(),
-  today.getDate() - 1
-);
-
-// Get date for the second-last day of the previous month.
-// (Do not use the last day, since that could be the same as yesterday's date.)
-const lastMonth = new Date(today.getFullYear(), today.getMonth(), -2);
-
-const dates = [today, yesterday, lastMonth];
+let URLs, dates, today;
 
 add_setup(async () => {
-  await PlacesUtils.history.clear();
-  const pageInfos = URLs.flatMap((url, i) =>
-    dates.map(date => ({
-      url,
-      title: `Example Domain ${i}`,
-      visits: [{ date }],
-    }))
-  );
-  await PlacesUtils.history.insertMany(pageInfos);
+  const historyInfo = await populateHistory();
+  URLs = historyInfo.URLs;
+  dates = historyInfo.dates;
+  today = dates[0];
 });
 
 registerCleanupFunction(async () => {
   await PlacesUtils.history.clear();
 });
-
-async function showHistorySidebar({ waitForPendingHistory = true } = {}) {
-  if (SidebarController.currentID !== "viewHistorySidebar") {
-    await SidebarController.show("viewHistorySidebar");
-  }
-  const { contentDocument, contentWindow } = SidebarController.browser;
-  const component = contentDocument.querySelector("sidebar-history");
-  if (waitForPendingHistory) {
-    await BrowserTestUtils.waitForCondition(
-      () => !component.controller.isHistoryPending
-    );
-  }
-  await component.updateComplete;
-  return { component, contentWindow };
-}
-
-async function waitForPageLoadTask(pageLoadTask, expectedUrl) {
-  const promiseTabOpen = BrowserTestUtils.waitForEvent(
-    window.gBrowser.tabContainer,
-    "TabOpen"
-  );
-  await pageLoadTask();
-  await promiseTabOpen;
-  await BrowserTestUtils.browserLoaded(window.gBrowser, false, expectedUrl);
-  info(`Navigated to ${expectedUrl}.`);
-}
 
 // TO DO - move below helper into universal helper with Places Bug 1954843
 /**
@@ -195,8 +146,8 @@ add_task(async function test_history_cards_created() {
   SidebarController.hide();
 });
 
-add_task(async function test_history_searchbox_focus() {
-  const { component } = await showHistorySidebar();
+add_task(async function test_history_searchbox_focus_and_context_menu() {
+  const { component, contentWindow } = await showHistorySidebar();
   const { searchTextbox } = component;
 
   ok(component.shadowRoot.activeElement, "check activeElement is present");
@@ -205,6 +156,24 @@ add_task(async function test_history_searchbox_focus() {
     searchTextbox,
     "Check search box is focused"
   );
+
+  const promisePopupShown = BrowserTestUtils.waitForEvent(
+    contentWindow,
+    "popupshown"
+  );
+  EventUtils.synthesizeMouseAtCenter(
+    searchTextbox,
+    { type: "contextmenu", button: 2 },
+    contentWindow
+  );
+  const { target: menu } = await promisePopupShown;
+  Assert.equal(
+    menu.id,
+    "textbox-contextmenu",
+    "The correct context menu is shown."
+  );
+  menu.hidePopup();
+
   SidebarController.hide();
 });
 
@@ -269,11 +238,13 @@ add_task(async function test_history_search() {
   }, "There are no matching search results.");
 
   info("Clear the search query.");
-  EventUtils.synthesizeMouseAtCenter(
-    searchTextbox.clearButton,
-    {},
-    contentWindow
+  let inputChildren = SpecialPowers.InspectorUtils.getChildrenForNode(
+    searchTextbox.inputEl,
+    true,
+    false
   );
+  let clearButton = inputChildren.find(e => e.localName == "button");
+  EventUtils.synthesizeMouseAtCenter(clearButton, {}, contentWindow);
   await TestUtils.waitForCondition(
     () => !component.lists[0].emptyState,
     "The original cards are restored."
@@ -389,199 +360,6 @@ add_task(async function test_history_sort() {
   SidebarController.hide();
 });
 
-add_task(async function test_history_keyboard_navigation() {
-  const { component, contentWindow } = await showHistorySidebar();
-  const { lists, cards } = component;
-  await BrowserTestUtils.waitForMutationCondition(
-    component.shadowRoot,
-    { childList: true, subtree: true },
-    () => !!lists.length
-  );
-  await BrowserTestUtils.waitForMutationCondition(
-    lists[0].shadowRoot,
-    { subtree: true, childList: true },
-    () => lists[0].rowEls.length === URLs.length
-  );
-  ok(true, "History rows are shown.");
-  const rows = lists[0].rowEls;
-
-  cards[0].summaryEl.focus();
-
-  info("Focus the next row.");
-  let focused = BrowserTestUtils.waitForEvent(rows[0], "focus", contentWindow);
-  EventUtils.synthesizeKey("KEY_ArrowDown", {}, contentWindow);
-  await focused;
-
-  info("Focus the previous card.");
-  focused = BrowserTestUtils.waitForEvent(
-    cards[0].summaryEl,
-    "focus",
-    contentWindow
-  );
-  EventUtils.synthesizeKey("KEY_ArrowUp", {}, contentWindow);
-  await focused;
-
-  info("Focus the next row.");
-  focused = BrowserTestUtils.waitForEvent(rows[0], "focus", contentWindow);
-  EventUtils.synthesizeKey("KEY_ArrowDown", {}, contentWindow);
-  await focused;
-
-  info("Focus the next row.");
-  focused = BrowserTestUtils.waitForEvent(rows[1], "focus", contentWindow);
-  EventUtils.synthesizeKey("KEY_ArrowDown", {}, contentWindow);
-  await focused;
-
-  info("Focus the next row.");
-  focused = BrowserTestUtils.waitForEvent(rows[2], "focus", contentWindow);
-  EventUtils.synthesizeKey("KEY_ArrowDown", {}, contentWindow);
-  await focused;
-
-  info("Focus the next row.");
-  focused = BrowserTestUtils.waitForEvent(rows[3], "focus", contentWindow);
-  EventUtils.synthesizeKey("KEY_ArrowDown", {}, contentWindow);
-  await focused;
-
-  info("Focus the next card.");
-  focused = BrowserTestUtils.waitForEvent(
-    cards[1].summaryEl,
-    "focus",
-    contentWindow
-  );
-  EventUtils.synthesizeKey("KEY_ArrowDown", {}, contentWindow);
-  await focused;
-
-  info("Focus the previous row.");
-  focused = BrowserTestUtils.waitForEvent(rows[3], "focus", contentWindow);
-  EventUtils.synthesizeKey("KEY_ArrowUp", {}, contentWindow);
-  await focused;
-
-  info("Open the focused link.");
-  await waitForPageLoadTask(
-    () => EventUtils.synthesizeKey("KEY_Enter", {}, contentWindow),
-    URLs[1]
-  );
-
-  info("Sort history by date and site.");
-  const {
-    menuButton,
-    _menu: menu,
-    _menuSortByDate: sortByDateButton,
-    _menuSortByDateSite: sortByDateSiteButton,
-    _menuSortByLastVisited: sortByLastVisitedButton,
-  } = component;
-  let promiseMenuShown = BrowserTestUtils.waitForEvent(menu, "popupshown");
-  EventUtils.synthesizeMouseAtCenter(menuButton, {}, contentWindow);
-  await promiseMenuShown;
-  menu.activateItem(sortByDateSiteButton);
-
-  // Wait for nested cards to appear.
-  await BrowserTestUtils.waitForMutationCondition(
-    component.shadowRoot,
-    { childList: true, subtree: true },
-    () => component.shadowRoot.querySelector(".nested-card")
-  );
-
-  info("Focus the first date.");
-  const firstDateCard = cards[0];
-  firstDateCard.summaryEl.focus();
-
-  info("Collapse and expand the card using arrow keys.");
-  EventUtils.synthesizeKey("KEY_ArrowLeft", {}, contentWindow);
-  await BrowserTestUtils.waitForMutationCondition(
-    firstDateCard,
-    { attributeFilter: ["expanded"] },
-    () => !firstDateCard.expanded
-  );
-  EventUtils.synthesizeKey("KEY_ArrowRight", {}, contentWindow);
-  await BrowserTestUtils.waitForMutationCondition(
-    firstDateCard,
-    { attributeFilter: ["expanded"] },
-    () => firstDateCard.expanded
-  );
-
-  info("Move down to the first site.");
-  const firstSiteCard = firstDateCard.querySelector(".nested-card");
-  focused = BrowserTestUtils.waitForEvent(
-    firstSiteCard.summaryEl,
-    "focus",
-    contentWindow
-  );
-  EventUtils.synthesizeKey("KEY_ArrowDown", {}, contentWindow);
-  await focused;
-
-  info("Move back up to the date header.");
-  focused = BrowserTestUtils.waitForEvent(
-    firstDateCard.summaryEl,
-    "focus",
-    contentWindow
-  );
-  EventUtils.synthesizeKey("KEY_ArrowUp", {}, contentWindow);
-  await focused;
-
-  info("Focus the last site, then move down to the second date.");
-  const lastSiteCard = firstDateCard.querySelector(".last-card");
-  lastSiteCard.summaryEl.focus();
-  const secondDateCard = component.shadowRoot.querySelectorAll(".date-card")[1];
-  focused = BrowserTestUtils.waitForEvent(
-    secondDateCard.summaryEl,
-    "focus",
-    contentWindow
-  );
-  EventUtils.synthesizeKey("KEY_ArrowDown", {}, contentWindow);
-  await focused;
-
-  info("Move back up to the site header.");
-  focused = BrowserTestUtils.waitForEvent(
-    lastSiteCard.summaryEl,
-    "focus",
-    contentWindow
-  );
-  EventUtils.synthesizeKey("KEY_ArrowUp", {}, contentWindow);
-  await focused;
-
-  info("Sort history by last visited.");
-  promiseMenuShown = BrowserTestUtils.waitForEvent(menu, "popupshown");
-  EventUtils.synthesizeMouseAtCenter(menuButton, {}, contentWindow);
-  await promiseMenuShown;
-  menu.activateItem(sortByLastVisitedButton);
-
-  // No containers when sorting by last visited.
-  // Wait until we have a single card and a single list.
-  await BrowserTestUtils.waitForMutationCondition(
-    component.shadowRoot,
-    { childList: true, subtree: true },
-    () => component.cards.length === 1 && component.lists.length === 1
-  );
-
-  info("Focus the first row and open the focused link.");
-  const tabList = component.lists[0];
-  await BrowserTestUtils.waitForMutationCondition(
-    tabList.shadowRoot,
-    { childList: true, subtree: true },
-    () => tabList.rowEls.length === URLs.length
-  );
-  tabList.rowEls[0].focus();
-  await waitForPageLoadTask(
-    () => EventUtils.synthesizeKey("KEY_Enter", {}, contentWindow),
-    URLs[1]
-  );
-
-  info("Revert back to sort by date.");
-  promiseMenuShown = BrowserTestUtils.waitForEvent(menu, "popupshown");
-  EventUtils.synthesizeMouseAtCenter(menuButton, {}, contentWindow);
-  await promiseMenuShown;
-  menu.activateItem(sortByDateButton);
-
-  // Wait for date cards to appear.
-  await BrowserTestUtils.waitForMutationCondition(
-    component.shadowRoot,
-    { childList: true, subtree: true },
-    () => component.shadowRoot.querySelector(".date-card")
-  );
-
-  SidebarController.hide();
-});
-
 add_task(async function test_history_hover_buttons() {
   const { component, contentWindow } = await showHistorySidebar();
   const { lists } = component;
@@ -605,10 +383,10 @@ add_task(async function test_history_hover_buttons() {
   // a mouse user would not need these links to become focusable, therefore this rule check shall be ignored
   // by a11y_checks suite. Bug 1961686 is a follow up update a helper so we can later remove this.
   AccessibilityUtils.setEnv({ focusableRule: false });
-  await waitForPageLoadTask(
-    () => EventUtils.synthesizeMouseAtCenter(rows[0].mainEl, {}, contentWindow),
-    URLs[1]
-  );
+  const browser = gBrowser.selectedBrowser;
+  const loaded = BrowserTestUtils.browserLoaded(browser, false, URLs[0]);
+  EventUtils.synthesizeMouseAtCenter(rows[0].mainEl, {}, contentWindow);
+  await loaded;
   AccessibilityUtils.resetEnv();
 
   info("Remove the first entry.");
@@ -818,6 +596,64 @@ add_task(async function test_history_context_menu() {
   SidebarController.hide();
 });
 
+add_task(async function test_select_and_remove() {
+  const { component, contentWindow } = await showHistorySidebar();
+  await component.updateComplete;
+  await BrowserTestUtils.waitForMutationCondition(
+    component.lists[0].shadowRoot,
+    { subtree: true, childList: true },
+    () => component.lists[0].rowEls.length
+  );
+  const rows = component.lists[0].rowEls;
+  Assert.ok(rows, "History rows are shown.");
+
+  function promiseRowSelected(index) {
+    return BrowserTestUtils.waitForMutationCondition(
+      rows[index],
+      { attributes: true },
+      () => rows[index].hasAttribute("selected")
+    );
+  }
+
+  info("Select the first two pages.");
+  rows[0].focus();
+  EventUtils.synthesizeKey("KEY_ArrowDown", { shiftKey: true }, contentWindow);
+  for (let i = 0; i < 2; i++) {
+    await promiseRowSelected(i);
+  }
+
+  info("Select all pages.");
+  EventUtils.synthesizeKey("A", { accelKey: true }, contentWindow);
+  for (let i = 0; i < rows.length; i++) {
+    await promiseRowSelected(i);
+  }
+
+  info("Press Enter key.");
+  EventUtils.synthesizeKey("KEY_Enter", {}, contentWindow);
+  Assert.equal(
+    gBrowser.tabs.length,
+    1,
+    "Enter key does not open pages during multi-selection."
+  );
+
+  info("Delete from history.");
+  const contextMenu = SidebarController.currentContextMenu;
+  const notification = PlacesTestUtils.waitForNotification("page-removed");
+  await openAndWaitForContextMenu(contextMenu, rows[0].mainEl, () =>
+    contextMenu.activateItem(
+      document.getElementById("sidebar-history-context-delete-pages")
+    )
+  );
+  const pagesRemoved = await notification;
+  Assert.equal(
+    pagesRemoved.length,
+    rows.length,
+    "The selected pages were removed."
+  );
+
+  SidebarController.hide();
+});
+
 add_task(async function test_history_empty_state() {
   const { component } = await showHistorySidebar();
   info("Clear all history.");
@@ -832,5 +668,55 @@ add_task(async function test_history_empty_state() {
     BrowserTestUtils.isVisible(component.emptyState),
     "Empty state is displayed."
   );
+  SidebarController.hide();
+});
+
+add_task(async function test_sort_by_site_headings() {
+  const { component, contentWindow } = await showHistorySidebar();
+  const {
+    _menu: menu,
+    menuButton,
+    _menuSortBySite: sortBySiteButton,
+  } = component;
+
+  await PlacesUtils.history.insertMany([
+    {
+      url: "file:///example.html",
+      title: "Example Local File",
+      visits: [{ date: today }],
+    },
+    {
+      url: "https://www.example.com/",
+      title: "Example Website",
+      visits: [{ date: today }],
+    },
+  ]);
+
+  info("Sort history by site.");
+  let promiseMenuShown = BrowserTestUtils.waitForEvent(menu, "popupshown");
+  EventUtils.synthesizeMouseAtCenter(menuButton, {}, contentWindow);
+  await promiseMenuShown;
+  menu.activateItem(sortBySiteButton);
+  await BrowserTestUtils.waitForMutationCondition(
+    component.shadowRoot,
+    { childList: true, subtree: true },
+    () => component.cards.length === 2
+  );
+
+  const [fileCard, websiteCard] = component.cards;
+  Assert.deepEqual(
+    document.l10n.getAttributes(fileCard),
+    {
+      args: null,
+      id: "sidebar-history-site-localhost",
+    },
+    "Correct heading shown for local files."
+  );
+  Assert.equal(
+    websiteCard.heading,
+    "example.com",
+    "Correct heading shown for websites."
+  );
+
   SidebarController.hide();
 });

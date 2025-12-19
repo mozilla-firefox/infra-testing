@@ -20,7 +20,7 @@ typealias WebsitePermissionsState = Map<PhoneFeature, WebsitePermission>
  * Value type that represents the state of the unified trust panel.
  *
  * @property baseDomain The base domain of the current site used to display the clear site data dialog.
- * @property isTrackingProtectionEnabled Flag indicating whether enhanced tracking protection is enabled.
+ * @property isTrackingProtectionEnabled Flag indicating whether enhanced tracking protection is enabled for a site.
  * @property numberOfTrackersBlocked The numbers of trackers blocked by enhanced tracking protection.
  * @property bucketedTrackers Mapping of trackers sorted into different tracking protection categories.
  * @property detailedTrackerCategory The [TrackingProtectionCategory] which will be shown in the tracker
@@ -105,7 +105,7 @@ sealed class WebsitePermission(
  * Represents the different possible autoplay values for a site.
  */
 enum class AutoplayValue(
-    @StringRes val title: Int,
+    @param:StringRes val title: Int,
     val autoplayAudibleStatus: AutoplayStatus,
     val autoplayInaudibleStatus: AutoplayStatus,
 ) {

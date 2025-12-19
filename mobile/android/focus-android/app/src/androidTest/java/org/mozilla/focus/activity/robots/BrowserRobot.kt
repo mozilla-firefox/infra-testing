@@ -4,6 +4,7 @@
 
 package org.mozilla.focus.activity.robots
 
+import android.net.Uri
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.IdlingRegistry
 import androidx.test.espresso.IdlingResource
@@ -24,7 +25,6 @@ import androidx.test.uiautomator.Until
 import org.hamcrest.Matchers.not
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.mozilla.focus.R
 import org.mozilla.focus.helpers.Constants.RETRY_COUNT
 import org.mozilla.focus.helpers.TestHelper.mDevice
 import org.mozilla.focus.helpers.TestHelper.packageName
@@ -34,6 +34,10 @@ import org.mozilla.focus.helpers.TestHelper.waitingTime
 import org.mozilla.focus.helpers.TestHelper.waitingTimeShort
 import org.mozilla.focus.idlingResources.SessionLoadedIdlingResource
 import java.time.LocalDate
+import mozilla.components.browser.toolbar.R as toolbarR
+import mozilla.components.feature.contextmenu.R as contextmenuR
+import mozilla.components.feature.findinpage.R as findinpageR
+import mozilla.components.ui.tabcounter.R as tabcounterR
 
 class BrowserRobot {
 
@@ -115,6 +119,13 @@ class BrowserRobot {
         }
     }
 
+    fun verifyCustomTabUrl(url: String) {
+        val uri = Uri.parse(url)
+        val expectedText = uri.host ?: url // fallback if host is null
+
+        verifyPageURL(expectedText)
+    }
+
     fun verifyPageURL(expectedText: String) {
         browserURLbar.waitForExists(waitingTime)
         sessionLoadedIdlingResource = SessionLoadedIdlingResource()
@@ -169,7 +180,7 @@ class BrowserRobot {
     fun verifyNumberOfTabsOpened(tabsCount: Int) {
         assertTrue(
             mDevice.findObject(
-                UiSelector().description("Tabs Open: $tabsCount. Tap to switch tabs."),
+                UiSelector().description("Private Tabs Open: $tabsCount. Tap to switch tabs."),
             ).waitForExists(waitingTime),
         )
     }
@@ -218,11 +229,10 @@ class BrowserRobot {
 
     fun verifyLinkContextMenu(linkAddress: String) {
         assertTrue(
-            mDevice.findObject(
-                UiSelector().resourceId("$packageName:id/parentPanel"),
-            ).waitForExists(waitingTime),
+            mDevice.findObject(UiSelector().resourceId("$packageName:id/parentPanel"))
+                .waitForExists(waitingTime),
         )
-        onView(withId(R.id.titleView)).check(matches(withText(linkAddress)))
+        onView(withId(contextmenuR.id.titleView)).check(matches(withText(linkAddress)))
         openLinkInPrivateTab.check(matches(isDisplayed()))
         copyLink.check(matches(isDisplayed()))
         shareLink.check(matches(isDisplayed()))
@@ -230,11 +240,10 @@ class BrowserRobot {
 
     fun verifyImageContextMenu(hasLink: Boolean, linkAddress: String) {
         assertTrue(
-            mDevice.findObject(
-                UiSelector().resourceId("$packageName:id/parentPanel"),
-            ).waitForExists(waitingTime),
+            mDevice.findObject(UiSelector().resourceId("$packageName:id/parentPanel"))
+                .waitForExists(waitingTime),
         )
-        onView(withId(R.id.titleView)).check(matches(withText(linkAddress)))
+        onView(withId(contextmenuR.id.titleView)).check(matches(withText(linkAddress)))
         if (hasLink) {
             openLinkInPrivateTab.check(matches(isDisplayed()))
             downloadLink.check(matches(isDisplayed()))
@@ -282,12 +291,10 @@ class BrowserRobot {
     fun clickCalendarForm() = clickPageObject(webPageItemWithResourceId("calendar"))
 
     fun selectDate() {
-        mDevice.findObject(UiSelector().resourceId("android:id/month_view")).waitForExists(waitingTime)
-
         mDevice.findObject(
             UiSelector()
                 .textContains("$currentDay")
-                .descriptionContains("$currentDay $currentMonth $currentYear"),
+                .descriptionContains("$currentMonth $currentDay"),
         ).click()
     }
 
@@ -601,9 +608,9 @@ private val browserURLbar = mDevice.findObject(
 
 private val eraseBrowsingButton = onView(withContentDescription("Erase browsing history"))
 
-private val tabsCounter = onView(withId(R.id.counter_root))
+private val tabsCounter = onView(withId(tabcounterR.id.counter_root))
 
-private val mainMenu = onView(withId(R.id.mozac_browser_toolbar_menu))
+private val mainMenu = onView(withId(toolbarR.id.mozac_browser_toolbar_menu))
 
 private val shareAppsList =
     mDevice.findObject(UiSelector().resourceId("android:id/resolver_list"))
@@ -639,15 +646,15 @@ private val copyImageLocation = onView(withText("Copy image location"))
 private val shareImage = onView(withText("Share image"))
 
 // Find in page toolbar
-private val findInPageQuery = onView(withId(R.id.find_in_page_query_text))
+private val findInPageQuery = onView(withId(findinpageR.id.find_in_page_query_text))
 
-private val findInPageResult = onView(withId(R.id.find_in_page_result_text))
+private val findInPageResult = onView(withId(findinpageR.id.find_in_page_result_text))
 
 private val findInPageNextButton = mDevice.findObject(UiSelector().resourceId("$packageName:id/find_in_page_next_btn"))
 
 private val findInPagePrevButton = mDevice.findObject(UiSelector().resourceId("$packageName:id/find_in_page_prev_btn"))
 
-private val findInPageCloseButton = onView(withId(R.id.find_in_page_close_btn))
+private val findInPageCloseButton = onView(withId(findinpageR.id.find_in_page_close_btn))
 
 private val openLinksInAppsMessage = mDevice.findObject(UiSelector().resourceId("$packageName:id/alertTitle"))
 

@@ -7,6 +7,12 @@
 
 const PAGE = `data:text/html,<a id="target" href="%23" onclick="window.open('http://www.example.com', '_blank', 'width=100,height=100');">Click me</a>`;
 
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["test.wait300msAfterTabSwitch", true]],
+  });
+});
+
 /**
  * Test that when a new window is opened from content, focus moves
  * to the initial browser in that window once the window has finished
@@ -24,11 +30,24 @@ add_task(async function test_focus_browser() {
 
       await BrowserTestUtils.synthesizeMouseAtCenter("#target", {}, browser);
       let newWin = await newWinPromise;
+
+      // Set up listener for focus event to bubble up on the window
+      let focusPromise = BrowserTestUtils.waitForEvent(newWin, "focus", true);
+
       await BrowserTestUtils.waitForContentEvent(
         newWin.gBrowser.selectedBrowser,
         "MozAfterPaint"
       );
       await delayedStartupPromise;
+
+      Assert.greaterOrEqual(
+        Glean.browserTimings.startupTimeline.delayedStartupFinished.testGetValue(),
+        Glean.browserTimings.startupTimeline.delayedStartupStarted.testGetValue(),
+        "Delayed startup timings in correct order."
+      );
+
+      // Wait for the focus event to occur
+      await focusPromise;
 
       let focusedElement = Services.focus.getFocusedElementForWindow(
         newWin,

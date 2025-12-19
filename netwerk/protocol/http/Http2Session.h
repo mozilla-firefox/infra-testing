@@ -10,7 +10,7 @@
 // https://www.rfc-editor.org/rfc/rfc7540.txt
 
 #include "ASpdySession.h"
-#include "mozilla/Attributes.h"
+#include "mozilla/Queue.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/WeakPtr.h"
 #include "nsAHttpConnection.h"
@@ -37,6 +37,33 @@ class nsHttpConnection;
 
 enum Http2StreamBaseType { Normal, WebSocket, Tunnel, ServerPush };
 enum class ExtendedCONNECTType : uint8_t { Proxy, WebSocket, WebTransport };
+enum class Http2StreamQueueType {
+  ReadyForWrite = 0,
+  QueuedStreams,
+  SlowConsumersReadyForRead
+};
+
+class Http2StreamQueueManager final {
+ public:
+  void AddStreamToQueue(Http2StreamQueueType aType, Http2StreamBase* aStream);
+  void RemoveStreamFromAllQueue(Http2StreamBase* aStream);
+  already_AddRefed<Http2StreamBase> GetNextStreamFromQueue(
+      Http2StreamQueueType aType);
+
+  uint32_t GetWriteQueueSize() const { return mReadyForWrite.Count(); }
+
+ private:
+  using StreamQueue = mozilla::Queue<WeakPtr<Http2StreamBase>>;
+
+  StreamQueue& GetQueue(Http2StreamQueueType aType);
+  bool GetQueueFlag(Http2StreamQueueType aType, Http2StreamBase* aStream);
+  void SetQueueFlag(Http2StreamQueueType aType, Http2StreamBase* aStream,
+                    bool value);
+
+  StreamQueue mReadyForWrite;
+  StreamQueue mQueuedStreams;
+  StreamQueue mSlowConsumersReadyForRead;
+};
 
 // b23b147c-c4f8-4d6e-841a-09f29a010de7
 #define NS_HTTP2SESSION_IID \
@@ -49,7 +76,7 @@ class Http2Session final : public ASpdySession,
   ~Http2Session();
 
  public:
-  NS_DECLARE_STATIC_IID_ACCESSOR(NS_HTTP2SESSION_IID)
+  NS_INLINE_DECL_STATIC_IID(NS_HTTP2SESSION_IID)
 
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSAHTTPTRANSACTION
@@ -159,6 +186,15 @@ class Http2Session final : public ASpdySession,
     SETTINGS_TYPE_ENABLE_CONNECT_PROTOCOL = 8,
     // see rfc9218. used to disable HTTP/2 priority signals
     SETTINGS_NO_RFC7540_PRIORITIES = 9,
+    // Used to indicate support for WebTransport over HTTP/2
+    SETTINGS_WEBTRANSPORT_MAX_SESSIONS = 0x2b60,
+    // Settings for WebTransport
+    // https://www.ietf.org/archive/id/draft-ietf-webtrans-http2-11.html#section-10.1
+    SETTINGS_WEBTRANSPORT_INITIAL_MAX_DATA = 0x2b61,
+    SETTINGS_WEBTRANSPORT_INITIAL_MAX_STREAM_DATA_UNI = 0x2b62,
+    SETTINGS_WEBTRANSPORT_INITIAL_MAX_STREAM_DATA_BIDI = 0x2b63,
+    SETTINGS_WEBTRANSPORT_INITIAL_MAX_STREAMS_UNI = 0x2b64,
+    SETTINGS_WEBTRANSPORT_INITIAL_MAX_STREAMS_BIDI = 0x2b65,
   };
 
   // This should be big enough to hold all of your control packets,
@@ -170,8 +206,6 @@ class Http2Session final : public ASpdySession,
   const static uint32_t kQueueMinimumCleanup = 24576;
   const static uint32_t kQueueTailRoom = 4096;
   const static uint32_t kQueueReserved = 1024;
-
-  const static uint32_t kMaxStreamID = 0x7800000;
 
   // This is a sentinel for a deleted stream. It is not a valid
   // 31 bit stream ID.
@@ -299,7 +333,7 @@ class Http2Session final : public ASpdySession,
 
   ExtendedCONNECTSupport GetExtendedCONNECTSupport() override;
 
-  already_AddRefed<nsHttpConnection> CreateTunnelStream(
+  Result<already_AddRefed<nsHttpConnection>, nsresult> CreateTunnelStream(
       nsAHttpTransaction* aHttpTransaction, nsIInterfaceRequestor* aCallbacks,
       PRIntervalTime aRtt, bool aIsExtendedCONNECT = false) override;
 
@@ -348,6 +382,7 @@ class Http2Session final : public ASpdySession,
                    bool aRemoveFromQueue = true);
   void SendHello();
   void RemoveStreamFromQueues(Http2StreamBase*);
+  void RemoveStreamFromTables(Http2StreamBase*);
   [[nodiscard]] nsresult ParsePadding(uint8_t&, uint16_t&);
 
   void SetWriteCallbacks();
@@ -375,7 +410,7 @@ class Http2Session final : public ASpdySession,
   void UpdateLocalSessionWindow(uint32_t bytes);
 
   void MaybeDecrementConcurrent(Http2StreamBase* stream);
-  bool RoomForMoreConcurrent();
+  uint32_t RoomForMoreConcurrent();
   void IncrementConcurrent(Http2StreamBase* stream);
   void QueueStream(Http2StreamBase* stream);
 
@@ -402,7 +437,7 @@ class Http2Session final : public ASpdySession,
   // further up the stack.
   RefPtr<nsAHttpSegmentReader> mSegmentReader;
   nsAHttpSegmentWriter* mSegmentWriter;
-
+  const uint32_t kMaxStreamID;
   uint32_t mSendingChunkSize;    /* the transmission chunk size */
   uint32_t mNextStreamID;        /* 24 bits */
   uint32_t mConcurrentHighWater; /* max parallelism on session */
@@ -414,15 +449,12 @@ class Http2Session final : public ASpdySession,
   // There are also several lists of streams: ready to write, queued due to
   // max parallelism, streams that need to force a read for push, and the full
   // set of pushed streams.
-  nsTHashMap<nsUint32HashKey, Http2StreamBase*> mStreamIDHash;
+  nsTHashMap<nsUint32HashKey, WeakPtr<Http2StreamBase>> mStreamIDHash;
   nsRefPtrHashtable<nsPtrHashKey<nsAHttpTransaction>, Http2StreamBase>
       mStreamTransactionHash;
   nsTArray<RefPtr<Http2StreamTunnel>> mTunnelStreams;
 
-  nsTArray<WeakPtr<Http2StreamBase>> mReadyForWrite;
-  nsTArray<WeakPtr<Http2StreamBase>> mQueuedStreams;
-  nsTArray<WeakPtr<Http2StreamBase>> mPushesReadyForRead;
-  nsTArray<WeakPtr<Http2StreamBase>> mSlowConsumersReadyForRead;
+  Http2StreamQueueManager mQueueManager;
 
   // Compression contexts for header transport.
   // HTTP/2 compresses only HTTP headers and does not reset the context in
@@ -456,14 +488,14 @@ class Http2Session final : public ASpdySession,
   // When a frame has been received that is addressed to a particular stream
   // (e.g. a data frame after the stream-id has been decoded), this points
   // to the stream.
-  Http2StreamBase* mInputFrameDataStream;
+  WeakPtr<Http2StreamBase> mInputFrameDataStream;
 
   // mNeedsCleanup is a state variable to defer cleanup of a closed stream
   // If needed, It is set in session::OnWriteSegments() and acted on and
   // cleared when the stack returns to session::WriteSegments(). The stream
   // cannot be destroyed directly out of OnWriteSegments because
   // stream::writeSegments() is on the stack at that time.
-  Http2StreamBase* mNeedsCleanup;
+  WeakPtr<Http2StreamBase> mNeedsCleanup;
 
   // This reason code in the last processed RESET frame
   uint32_t mDownstreamRstReason;
@@ -544,6 +576,12 @@ class Http2Session final : public ASpdySession,
   // The initial value of the local stream and session window
   uint32_t mInitialRwin;
 
+  uint32_t mInitialWebTransportMaxData = 0;
+  uint32_t mInitialWebTransportMaxStreamDataBidi = 0;
+  uint32_t mInitialWebTransportMaxStreamDataUnidi = 0;
+  uint32_t mInitialWebTransportMaxStreamsBidi = 0;
+  uint32_t mInitialWebTransportMaxStreamsUnidi = 0;
+
   // This is a output queue of bytes ready to be written to the SSL stream.
   // When that streams returns WOULD_BLOCK on direct write the bytes get
   // coalesced together here. This results in larger writes to the SSL layer.
@@ -609,9 +647,14 @@ class Http2Session final : public ASpdySession,
 
   bool mPeerFailedHandshake;
 
+  uint32_t mWebTransportMaxSessions = 0;
+
+  uint32_t mOngoingWebTransportSessions = 0;
+
  private:
   TimeStamp mLastTRRResponseTime;  // Time of the last successful TRR response
   uint32_t mTrrStreams;
+  nsCString mTrrHost;
 
   // Whether we allow websockets, based on a pref
   bool mEnableWebsockets = false;
@@ -623,8 +666,6 @@ class Http2Session final : public ASpdySession,
   // we've received the settings.
   bool mHasTransactionWaitingForExtendedCONNECT = false;
 };
-
-NS_DEFINE_STATIC_IID_ACCESSOR(Http2Session, NS_HTTP2SESSION_IID);
 
 }  // namespace net
 }  // namespace mozilla

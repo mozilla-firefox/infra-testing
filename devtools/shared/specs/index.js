@@ -54,11 +54,6 @@ const Types = (exports.__TypesForTests = [
     front: "devtools/client/fronts/breakpoint-list",
   },
   {
-    types: ["changes"],
-    spec: "devtools/shared/specs/changes",
-    front: "devtools/client/fronts/changes",
-  },
-  {
     types: ["compatibility"],
     spec: "devtools/shared/specs/compatibility",
     front: "devtools/client/fronts/compatibility",
@@ -103,11 +98,10 @@ const Types = (exports.__TypesForTests = [
     spec: "devtools/shared/specs/frame",
     front: "devtools/client/fronts/frame",
   },
-  /* heap snapshot has old fashion client and no front */
   {
     types: ["heapSnapshotFile"],
     spec: "devtools/shared/specs/heap-snapshot-file",
-    front: null,
+    front: "devtools/client/fronts/heap-snapshot-file",
   },
   {
     types: ["customhighlighter"],

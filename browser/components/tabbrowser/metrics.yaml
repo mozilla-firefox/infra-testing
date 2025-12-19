@@ -114,8 +114,6 @@ browser.ui.interaction:
       - mconley@mozilla.com
     expires: never
     telemetry_mirror: BROWSER_UI_INTERACTION_ALL_TABS_PANEL_DRAGSTART_TAB_EVENT_COUNT
-    no_lint:
-      - COMMON_PREFIX
 
   all_tabs_panel_entrypoint:
     type: labeled_counter
@@ -133,8 +131,24 @@ browser.ui.interaction:
       - mconley@mozilla.com
     expires: never
     telemetry_mirror: BROWSER_UI_INTERACTION_ALL_TABS_PANEL_ENTRYPOINT
-    no_lint:
-      - COMMON_PREFIX
+
+  tab_movement:
+    type: labeled_counter
+    description: >
+      Records information about user tab movements within the tab strip.
+    bugs:
+      - https://bugzil.la/1988855
+    data_reviews:
+      - https://bugzil.la/1988855
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - sthompson@mozilla.com
+    expires: never
+    labels:
+      - not_from_external_app
+      - from_external_app_next_to_active_tab
+      - from_external_app_tab_strip_end
 
 tabgroup:
   create_group:
@@ -220,6 +234,9 @@ tabgroup:
         type: quantity
       layout:
         description: The layout of the tab strip when the tabs were added (either "horizontal" or "vertical")
+        type: string
+      group_type:
+        description: The state of the tab group to which the tab(s) are being added ("expanded", "collapsed" or "saved")
         type: string
     expires: never
 
@@ -363,6 +380,26 @@ tabgroup:
         type: string
     expires: never
 
+  ungroup:
+    type: event
+    description: >
+      Recorded when the user ungroups all tabs of a tab group
+    notification_emails:
+      - dao@mozilla.com
+      - jswinarton@mozilla.com
+      - sthompson@mozilla.com
+    bugs:
+      - https://bugzil.la/1963713
+    data_reviews:
+      - https://bugzil.la/1963713
+    data_sensitivity:
+      - interaction
+    extra_keys:
+      source:
+        description: The system, surface, or control the user used to ungroup the tabs of the tab group
+        type: string
+    expires: never
+
   tab_interactions:
     type: labeled_counter
     description: >
@@ -376,18 +413,22 @@ tabgroup:
     bugs:
       - https://bugzil.la/1938405
       - https://bugzil.la/1960360
+      - https://bugzil.la/1961161
     data_reviews:
       - https://bugzil.la/1938405
       - https://bugzil.la/1960360
+      - https://bugzil.la/1961161
     data_sensitivity:
       - interaction
     labels:
-      - activate
+      - activate_expanded
+      - activate_collapsed
       - add
       - duplicate
       - new
       - close_tabstrip
       - close_tabmenu
+      - close_tab_other
       - reorder
       - remove_same_window
       - remove_other_window
@@ -406,6 +447,7 @@ tabgroup:
       - sthompson@mozilla.com
     bugs:
       - https://bugzil.la/1938401
+      - https://bugzil.la/1971241
     data_reviews:
       - https://bugzil.la/1938401
     data_sensitivity:
@@ -423,6 +465,7 @@ tabgroup:
       - delete
       - ungroup
       - move_window
+      - hover_preview
     expires: never
 
 
@@ -493,6 +536,9 @@ tabgroup:
       label_reason:
         description: Whether the model suggested no label due to low probability or dissimilar tabs
         type: string
+      backend:
+        description: The backend used for the ML Engine
+        type: string
     expires: never
     no_lint:
       - COMMON_PREFIX
@@ -538,7 +584,52 @@ tabgroup:
       id:
         description: The ID of the created tab group
         type: string
+      backend:
+        description: The backend used for the ML Engine
+        type: string
     expires: never
+    no_lint:
+      - COMMON_PREFIX
+
+  smart_tab:
+    type: event
+    description: >
+      Recorded when any pref cause smart tabs to be enabled / disabled
+    notification_emails:
+      - rrando@mozilla.com
+      - vbaungally@mozilla.com
+    bugs:
+      - https://bugzil.la/1962228
+    data_reviews:
+      - https://bugzil.la/1962228
+    data_sensitivity:
+      - interaction
+    extra_keys:
+      enabled:
+        description: whether the preference was enabled or disabled in any way
+        type: boolean
+    expires: never
+    no_lint:
+      - COMMON_PREFIX
+
+  smart_tab_enabled:
+    # metrics
+    type: boolean
+    lifetime: application
+    description: >
+      Records if the user has smart tab groups enabled
+    notification_emails:
+      - rrando@mozilla.com
+      - vbaungally@mozilla.com
+    bugs:
+      - https://bugzil.la/1962228
+    data_reviews:
+      - https://bugzil.la/1962228
+    data_sensitivity:
+      - interaction
+    expires: never
+    send_in_pings:
+      - metrics
     no_lint:
       - COMMON_PREFIX
 
@@ -693,3 +784,65 @@ browser.tabclose:
       - mconley@mozilla.com
     expires: never
     telemetry_mirror: FX_TAB_CLOSE_PERMIT_UNLOAD_TIME_MS
+
+link.handling:
+  open_next_to_active_tab_settings_enabled:
+    type: boolean
+    lifetime: application
+    description: >
+      Records if the user has the "Open links from apps next to your active tab"
+      feature enabled.
+    notification_emails:
+      - sthompson@mozilla.com
+    bugs:
+      - https://bugzil.la/1988855
+    data_reviews:
+      - https://bugzil.la/1988855
+    data_sensitivity:
+      - interaction
+    expires: never
+    no_lint:
+      - COMMON_PREFIX
+  open_next_to_active_tab_settings_change:
+    type: event
+    description: >
+      This is recorded when the "Open links from apps next to your active tab"
+      checkbox in the General > Tabs section of about:preferences is toggled.
+    bugs:
+      - https://bugzil.la/1988855
+    data_reviews:
+      - https://bugzil.la/1988855
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - sthompson@mozilla.com
+    expires: never
+    extra_keys:
+      checked:
+        description: >
+          Whether the checkbox was toggled on or off.
+        type: boolean
+    no_lint:
+      - COMMON_PREFIX
+  open_from_external_app:
+    type: event
+    description: >
+      This is recorded when a link is clicked outside of Firefox and this external
+      link is then opened inside of Firefox. The "Open links from apps next to
+      your active tab" option governs the behavior of where the link will be opened.
+    bugs:
+      - https://bugzil.la/1988855
+    data_reviews:
+      - https://bugzil.la/1988855
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - sthompson@mozilla.com
+    expires: never
+    extra_keys:
+      next_to_active_tab:
+        description: >
+          Whether the link was opened next to the active tab.
+        type: boolean
+    no_lint:
+      - COMMON_PREFIX

@@ -11,21 +11,23 @@ support-files = [
 ["browser_BrowserUtils.js"]
 
 ["browser_CreditCard.js"]
-skip-if = ["os == 'mac' && os_version == '11.20' && arch == 'aarch64'"] # Disabled due to bleedover with other tests when run in regular suites; passes in "failures" jobs
 tags = "bleedover"
 
 ["browser_Finder.js"]
 
 ["browser_FinderHighlighter.js"]
-skip-if = ["true"] # bug 1831518 covers re-enabling
+skip-if = [
+  "true", # bug 1831518 covers re-enabling
+]
 
 ["browser_FinderHighlighter2.js"]
-skip-if = ["true"] # bug 1831518 covers re-enabling
+skip-if = [
+  "true", # bug 1831518 covers re-enabling
+]
 
 ["browser_FinderSound.js"]
 
 ["browser_Finder_hidden_textarea.js"]
-skip-if = ["verify && debug"]
 
 ["browser_Finder_null_global.js"]
 
@@ -34,11 +36,6 @@ skip-if = ["verify && debug"]
 ["browser_Finder_overflowed_onscreen.js"]
 
 ["browser_Finder_overflowed_textarea.js"]
-skip-if = [
-  "os == 'linux' && debug && verify",
-  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && debug && verify",
-  "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && debug && verify",
-]
 
 ["browser_Finder_pointer_events_none.js"]
 
@@ -56,7 +53,7 @@ skip-if = [
 
 ["browser_Troubleshoot.js"]
 skip-if = [
-   "os == 'win' && os_version == '11.26100' && bits == 64 && asan", # Bug 1863166
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && asan", # Bug 1863166
 ]
 
 ["browser_web_channel.js"]

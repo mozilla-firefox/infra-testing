@@ -237,6 +237,20 @@ browser.startup:
     telemetry_mirror: BROWSER_STARTUP_ABOUTHOME_CACHE_SHUTDOWNWRITE
     no_lint:
       - COMMON_PREFIX
+  kiosk_mode:
+    type: boolean
+    description: >
+      True when the browser was started in kiosk mode.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1914581
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1914581
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - rtestard@mozilla.com
+    expires: never
+    lifetime: application
 
 datasanitization:
   privacy_sanitize_sanitize_on_shutdown:
@@ -982,7 +996,7 @@ browser:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1525076
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1874944
     notification_emails:
-      - aoprea@mozilla.com
+      - omc-core@mozilla.com
     expires: never
     telemetry_mirror: h#BROWSER_ATTRIBUTION_ERRORS
 

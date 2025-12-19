@@ -12,7 +12,11 @@ const _OpenInPrivateWindow = site => ({
   icon: "new-window-private",
   action: ac.OnlyToMain({
     type: at.OPEN_PRIVATE_WINDOW,
-    data: { url: site.url, referrer: site.referrer },
+    data: {
+      url: site.url,
+      referrer: site.referrer,
+      event_source: "CONTEXT_MENU",
+    },
   }),
   userEvent: "OPEN_PRIVATE_WINDOW",
 });
@@ -71,10 +75,23 @@ export const LinkMenuOptions = {
     action: ac.AlsoToMain({
       type: at.OPEN_NEW_WINDOW,
       data: {
+        card_type: site.card_type,
         referrer: site.referrer,
         typedBonus: site.typedBonus,
         url: site.url,
-        sponsored_tile_id: site.sponsored_tile_id,
+        is_sponsored: !!site.sponsored_tile_id,
+        event_source: "CONTEXT_MENU",
+        topic: site.topic,
+        firstVisibleTimestamp: site.firstVisibleTimestamp,
+        tile_id: site.tile_id,
+        recommendation_id: site.recommendation_id,
+        scheduled_corpus_item_id: site.scheduled_corpus_item_id,
+        corpus_item_id: site.corpus_item_id,
+        received_rank: site.received_rank,
+        recommended_at: site.recommended_at,
+        format: site.format,
+        ...(site.flight_id ? { flight_id: site.flight_id } : {}),
+        is_pocket_card: site.type === "CardGrid",
         ...(site.section
           ? {
               section: site.section,
@@ -86,6 +103,7 @@ export const LinkMenuOptions = {
     }),
     userEvent: "OPEN_NEW_WINDOW",
   }),
+
   // This blocks the url for regular stories,
   // but also sends a message to DiscoveryStream with flight_id.
   // If DiscoveryStream sees this message for a flight_id
@@ -99,6 +117,7 @@ export const LinkMenuOptions = {
     icon: "dismiss",
     action: ac.AlsoToMain({
       type: at.BLOCK_URL,
+      source: eventSource,
       data: tiles.map(site => ({
         url: site.original_url || site.open_url || site.url,
         // pocket_id is only for pocket stories being in highlights, and then dismissed.
@@ -128,7 +147,6 @@ export const LinkMenuOptions = {
         position: pos,
         ...(site.sponsored_tile_id ? { tile_id: site.sponsored_tile_id } : {}),
         is_pocket_card: site.type === "CardGrid",
-        is_list_card: site.is_list_card,
         ...(site.format ? { format: site.format } : {}),
         ...(site.section
           ? {
@@ -286,46 +304,6 @@ export const LinkMenuOptions = {
     }),
     userEvent: "UNPIN",
   }),
-  SaveToPocket: (site, index, eventSource = "CARDGRID") => ({
-    id: "newtab-menu-save-to-pocket",
-    icon: "pocket-save",
-    action: ac.AlsoToMain({
-      type: at.SAVE_TO_POCKET,
-      data: {
-        site: { url: site.url, title: site.title },
-      },
-    }),
-    impression: ac.ImpressionStats({
-      source: eventSource,
-      pocket: 0,
-      tiles: [
-        {
-          id: site.guid,
-          pos: index,
-          ...(site.shim && site.shim.save ? { shim: site.shim.save } : {}),
-        },
-      ],
-    }),
-    userEvent: "SAVE_TO_POCKET",
-  }),
-  DeleteFromPocket: site => ({
-    id: "newtab-menu-delete-pocket",
-    icon: "pocket-delete",
-    action: ac.AlsoToMain({
-      type: at.DELETE_FROM_POCKET,
-      data: { pocket_id: site.pocket_id },
-    }),
-    userEvent: "DELETE_FROM_POCKET",
-  }),
-  ArchiveFromPocket: site => ({
-    id: "newtab-menu-archive-pocket",
-    icon: "pocket-archive",
-    action: ac.AlsoToMain({
-      type: at.ARCHIVE_FROM_POCKET,
-      data: { pocket_id: site.pocket_id },
-    }),
-    userEvent: "ARCHIVE_FROM_POCKET",
-  }),
   EditTopSite: (site, index) => ({
     id: "newtab-menu-edit-topsites",
     icon: "edit",
@@ -342,22 +320,6 @@ export const LinkMenuOptions = {
     site.isPinned
       ? LinkMenuOptions.UnpinTopSite(site)
       : LinkMenuOptions.PinTopSite(site, index),
-  CheckSavedToPocket: (site, index, source) =>
-    site.pocket_id
-      ? LinkMenuOptions.DeleteFromPocket(site)
-      : LinkMenuOptions.SaveToPocket(site, index, source),
-  CheckBookmarkOrArchive: site =>
-    site.pocket_id
-      ? LinkMenuOptions.ArchiveFromPocket(site)
-      : LinkMenuOptions.CheckBookmark(site),
-  CheckArchiveFromPocket: site =>
-    site.pocket_id
-      ? LinkMenuOptions.ArchiveFromPocket(site)
-      : LinkMenuOptions.EmptyItem(),
-  CheckDeleteFromPocket: site =>
-    site.pocket_id
-      ? LinkMenuOptions.DeleteFromPocket(site)
-      : LinkMenuOptions.EmptyItem(),
   OpenInPrivateWindow: (site, index, eventSource, isEnabled) =>
     isEnabled ? _OpenInPrivateWindow(site) : LinkMenuOptions.EmptyItem(),
   ChangeWeatherLocation: () => ({
@@ -366,6 +328,13 @@ export const LinkMenuOptions = {
       type: at.WEATHER_SEARCH_ACTIVE,
       data: true,
     }),
+  }),
+  DetectLocation: () => ({
+    id: "newtab-weather-menu-detect-my-location",
+    action: ac.AlsoToMain({
+      type: at.WEATHER_USER_OPT_IN_LOCATION,
+    }),
+    userEvent: "WEATHER_DETECT_LOCATION",
   }),
   ChangeWeatherDisplaySimple: () => ({
     id: "newtab-weather-menu-change-weather-display-simple",
@@ -424,29 +393,6 @@ export const LinkMenuOptions = {
       data: { url: site.url },
     }),
   }),
-  FakespotDismiss: () => ({
-    id: "newtab-menu-dismiss",
-    action: ac.OnlyToMain({
-      type: at.SET_PREF,
-      data: {
-        name: "discoverystream.contextualContent.fakespot.enabled",
-        value: false,
-      },
-    }),
-    impression: ac.OnlyToMain({
-      type: at.FAKESPOT_DISMISS,
-    }),
-  }),
-  AboutFakespot: site => ({
-    id: "newtab-menu-about-fakespot",
-    action: ac.OnlyToMain({
-      type: at.OPEN_LINK,
-      data: { url: site.url },
-    }),
-    impression: ac.OnlyToMain({
-      type: at.OPEN_ABOUT_FAKESPOT,
-    }),
-  }),
   SectionBlock: ({
     sectionPersonalization,
     sectionKey,
@@ -463,7 +409,7 @@ export const LinkMenuOptions = {
           // Once the user confirmed their intention to block this section,
           // update their preferences.
           ac.AlsoToMain({
-            type: at.SECTION_PERSONALIZATION_UPDATE,
+            type: at.SECTION_PERSONALIZATION_SET,
             data: {
               ...sectionPersonalization,
               [sectionKey]: {
@@ -507,8 +453,8 @@ export const LinkMenuOptions = {
   }) => ({
     id: "newtab-menu-section-unfollow",
     action: ac.AlsoToMain({
-      type: at.SECTION_PERSONALIZATION_UPDATE,
-      data: (({ sectionKey: _sectionKey, ...remaining }) => remaining)(
+      type: at.SECTION_PERSONALIZATION_SET,
+      data: (({ [sectionKey]: _sectionKey, ...remaining }) => remaining)(
         sectionPersonalization
       ),
     }),
@@ -553,15 +499,12 @@ export const LinkMenuOptions = {
 
   ReportContent: site => {
     return {
-      id: "newtab-menu-report-content",
+      id: "newtab-menu-report",
       action: ac.AlsoToMain({
         type: at.REPORT_CONTENT_OPEN,
         data: {
           card_type: site.card_type,
           corpus_item_id: site.corpus_item_id,
-          is_section_followed: site.is_section_followed,
-          received_rank: site.received_rank,
-          recommended_at: site.recommended_at,
           scheduled_corpus_item_id: site.scheduled_corpus_item_id,
           section_position: site.section_position,
           section: site.section,

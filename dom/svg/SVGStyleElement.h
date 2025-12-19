@@ -7,9 +7,8 @@
 #ifndef DOM_SVG_SVGSTYLEELEMENT_H_
 #define DOM_SVG_SVGSTYLEELEMENT_H_
 
-#include "mozilla/Attributes.h"
-#include "mozilla/dom/LinkStyle.h"
 #include "SVGElement.h"
+#include "mozilla/dom/LinkStyle.h"
 #include "nsStubMutationObserver.h"
 
 nsresult NS_NewSVGStyleElement(
@@ -86,6 +85,7 @@ class SVGStyleElement final : public SVGStyleElementBase,
    * parent; we should only respond to the change if aContent is non-anonymous.
    */
   void ContentChanged(nsIContent* aContent);
+  nsresult CopyInnerTo(SVGStyleElement* aDest);
 };
 
 }  // namespace mozilla::dom

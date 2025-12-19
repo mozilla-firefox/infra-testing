@@ -4,19 +4,17 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DIRS += ["build", "decoders", "encoders"]
-if CONFIG["ENABLE_TESTS"]:
-    DIRS += ["test/gtest"]
+DIRS += ["build", "decoders", "encoders", "remote"]
+TEST_DIRS += ["test/gtest"]
 
 if CONFIG["FUZZING_INTERFACES"]:
-    DIRS += ["test/fuzzing"]
+    TEST_DIRS += ["test/fuzzing"]
 
 with Files("**"):
     BUG_COMPONENT = ("Core", "Graphics: ImageLib")
 
 BROWSER_CHROME_MANIFESTS += [
     "test/browser/browser.toml",
-    "test/browser/browser_sandbox_headless.toml",
 ]
 
 MOCHITEST_MANIFESTS += ["test/mochitest/mochitest.toml"]
@@ -62,6 +60,7 @@ EXPORTS.mozilla.image += [
     "encoders/ico/nsICOEncoder.h",
     "encoders/jpeg/nsJPEGEncoder.h",
     "encoders/png/nsPNGEncoder.h",
+    "FetchDecodedImage.h",
     "ICOFileHeaders.h",
     "ImageMemoryReporter.h",
     "ImageUtils.h",
@@ -80,6 +79,7 @@ UNIFIED_SOURCES += [
     "Decoder.cpp",
     "DecoderFactory.cpp",
     "DynamicImage.cpp",
+    "FetchDecodedImage.cpp",
     "FrameAnimator.cpp",
     "FrozenImage.cpp",
     "IDecodingTask.cpp",

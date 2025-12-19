@@ -6,7 +6,6 @@
 
 #include "base/pickle.h"
 
-#include "mozilla/Alignment.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/EndianUtils.h"
 #include "mozilla/Telemetry.h"
@@ -127,6 +126,7 @@ Pickle::Pickle(uint32_t header_size, size_t segment_capacity)
   DCHECK(static_cast<memberAlignmentType>(header_size) >= sizeof(Header));
   DCHECK(header_size_ <= kHeaderSegmentCapacity);
   header_ = reinterpret_cast<Header*>(buffers_.Start());
+  memset(header_, 0, header_size_);
   header_->payload_size = 0;
 }
 

@@ -6,11 +6,11 @@
 
 #include "mozilla/dom/HTMLTitleElement.h"
 
-#include "mozilla/dom/HTMLTitleElementBinding.h"
 #include "mozilla/ErrorResult.h"
-#include "nsStyleConsts.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/HTMLTitleElementBinding.h"
 #include "nsContentUtils.h"
+#include "nsStyleConsts.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Title)
 
@@ -49,16 +49,18 @@ void HTMLTitleElement::CharacterDataChanged(nsIContent* aContent,
   SendTitleChangeEvent(false);
 }
 
-void HTMLTitleElement::ContentAppended(nsIContent* aFirstNewContent) {
+void HTMLTitleElement::ContentAppended(nsIContent* aFirstNewContent,
+                                       const ContentAppendInfo&) {
   SendTitleChangeEvent(false);
 }
 
-void HTMLTitleElement::ContentInserted(nsIContent* aChild) {
+void HTMLTitleElement::ContentInserted(nsIContent* aChild,
+                                       const ContentInsertInfo&) {
   SendTitleChangeEvent(false);
 }
 
 void HTMLTitleElement::ContentWillBeRemoved(nsIContent* aChild,
-                                            const BatchRemovalState*) {
+                                            const ContentRemoveInfo&) {
   SendTitleChangeEvent(false);
 }
 

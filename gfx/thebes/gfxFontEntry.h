@@ -125,7 +125,8 @@ class gfxCharacterMap : public gfxSparseBitSet {
     }
   }
 
-  gfxCharacterMap() = default;
+  explicit gfxCharacterMap(uint32_t aReserveBlocks)
+      : gfxSparseBitSet(aReserveBlocks) {}
 
   explicit gfxCharacterMap(const gfxSparseBitSet& aOther)
       : gfxSparseBitSet(aOther) {}
@@ -410,7 +411,7 @@ class gfxFontEntry {
   // unregisters the table from the font entry.
   //
   // Pass nullptr for aBuffer to indicate that the table is not present and
-  // nullptr will be returned.  Also returns nullptr on OOM.
+  // nullptr will be returned.
   hb_blob_t* ShareFontTableAndGetBlob(uint32_t aTag, nsTArray<uint8_t>* aTable);
 
   // Get the font's unitsPerEm from the 'head' table, in the case of an
@@ -492,7 +493,8 @@ class gfxFontEntry {
 
   // Used for reporting on individual font entries in the user font cache,
   // which are not present in the platform font list.
-  size_t ComputedSizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
+  virtual size_t ComputedSizeOfExcludingThis(
+      mozilla::MallocSizeOf aMallocSizeOf);
 
   // Used when checking for complex script support, to mask off cmap ranges
   struct ScriptRange {
@@ -606,9 +608,10 @@ class gfxFontEntry {
 
   // bitvector of substitution space features per script, one each
   // for default and non-default features
-  uint32_t mDefaultSubSpaceFeatures[(int(Script::NUM_SCRIPT_CODES) + 31) / 32];
-  uint32_t
-      mNonDefaultSubSpaceFeatures[(int(Script::NUM_SCRIPT_CODES) + 31) / 32];
+  uint32_t mDefaultSubSpaceFeatures[(int(Script::NUM_SCRIPT_CODES) + 31) /
+                                    32] MOZ_GUARDED_BY(mFeatureInfoLock);
+  uint32_t mNonDefaultSubSpaceFeatures[(int(Script::NUM_SCRIPT_CODES) + 31) /
+                                       32] MOZ_GUARDED_BY(mFeatureInfoLock);
 
   mozilla::Atomic<uint32_t> mUVSOffset;
 
@@ -791,12 +794,6 @@ class gfxFontEntry {
 
   friend class gfxFontEntryCallbacks;
 
-  // For memory reporting: size of user-font data belonging to this entry.
-  // We record this in the font entry because the actual data block may be
-  // handed over to platform APIs, so that it would become difficult (and
-  // platform-specific) to measure it directly at report-gathering time.
-  uint32_t mComputedSizeOfUserFont = 0;
-
   // Font's unitsPerEm from the 'head' table, if available (will be set to
   // kInvalidUPEM for non-sfnt font formats)
   uint16_t mUnitsPerEm = 0;
@@ -876,11 +873,10 @@ class gfxFontEntry {
 
     // Transfer (not copy) elements of aTable to a new hb_blob_t and
     // return ownership to the caller.  A weak reference to the blob is
-    // recorded in the hashtable entry so that others may use the same
-    // table.
-    hb_blob_t* ShareTableAndGetBlob(
-        nsTArray<uint8_t>&& aTable,
-        nsTHashtable<FontTableHashEntry>* aHashtable);
+    // recorded in the font entry's table cache so that others may use
+    // the same table.
+    hb_blob_t* ShareTableAndGetBlob(nsTArray<uint8_t>&& aTable,
+                                    gfxFontEntry* aFontEntry);
 
     // Return a strong reference to the blob.
     // Callers must hb_blob_destroy the returned blob.

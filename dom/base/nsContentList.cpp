@@ -11,26 +11,26 @@
  */
 
 #include "nsContentList.h"
-#include "nsIContent.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/ContentIterator.h"
-#include "mozilla/dom/Element.h"
-#include "nsWrapperCacheInlines.h"
-#include "nsContentUtils.h"
-#include "nsCCUncollectableMarker.h"
-#include "nsGkAtoms.h"
-#include "mozilla/dom/HTMLCollectionBinding.h"
-#include "mozilla/dom/NodeListBinding.h"
-#include "mozilla/Likely.h"
-#include "nsGenericHTMLElement.h"
-#include "jsfriendapi.h"
+
 #include <algorithm>
-#include "mozilla/dom/NodeInfoInlines.h"
-#include "mozilla/MruCache.h"
-#include "mozilla/StaticPtr.h"
 
 #include "PLDHashTable.h"
+#include "jsfriendapi.h"
+#include "mozilla/ContentIterator.h"
+#include "mozilla/MruCache.h"
+#include "mozilla/StaticPtr.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/HTMLCollectionBinding.h"
+#include "mozilla/dom/NodeInfoInlines.h"
+#include "mozilla/dom/NodeListBinding.h"
+#include "nsCCUncollectableMarker.h"
+#include "nsContentUtils.h"
+#include "nsGenericHTMLElement.h"
+#include "nsGkAtoms.h"
+#include "nsIContent.h"
 #include "nsTHashtable.h"
+#include "nsWrapperCacheInlines.h"
 
 #ifdef DEBUG_CONTENT_LIST
 #  define ASSERT_IN_SYNC AssertInSync()
@@ -669,7 +669,7 @@ nsIContent* nsContentList::Item(uint32_t aIndex) {
 }
 
 void nsContentList::AttributeChanged(Element* aElement, int32_t aNameSpaceID,
-                                     nsAtom* aAttribute, int32_t aModType,
+                                     nsAtom* aAttribute, AttrModType,
                                      const nsAttrValue* aOldValue) {
   MOZ_ASSERT(aElement, "Must have a content node to work with");
 
@@ -706,7 +706,8 @@ void nsContentList::AttributeChanged(Element* aElement, int32_t aNameSpaceID,
   }
 }
 
-void nsContentList::ContentAppended(nsIContent* aFirstNewContent) {
+void nsContentList::ContentAppended(nsIContent* aFirstNewContent,
+                                    const ContentAppendInfo&) {
   nsIContent* container = aFirstNewContent->GetParent();
   MOZ_ASSERT(container, "Can't get at the new content if no container!");
 
@@ -800,7 +801,8 @@ void nsContentList::ContentAppended(nsIContent* aFirstNewContent) {
   ASSERT_IN_SYNC;
 }
 
-void nsContentList::ContentInserted(nsIContent* aChild) {
+void nsContentList::ContentInserted(nsIContent* aChild,
+                                    const ContentInsertInfo&) {
   // Note that aChild->GetParentNode() can be null here if we are inserting into
   // the document itself; any attempted optimizations to this method should deal
   // with that.
@@ -815,7 +817,7 @@ void nsContentList::ContentInserted(nsIContent* aChild) {
 }
 
 void nsContentList::ContentWillBeRemoved(nsIContent* aChild,
-                                         const BatchRemovalState*) {
+                                         const ContentRemoveInfo&) {
   if (mState != State::Dirty &&
       MayContainRelevantNodes(aChild->GetParentNode()) &&
       nsContentUtils::IsInSameAnonymousTree(mRootNode, aChild) &&
@@ -1068,7 +1070,7 @@ JSObject* nsCachableElementsByNameNodeList::WrapObject(
 
 void nsCachableElementsByNameNodeList::AttributeChanged(
     Element* aElement, int32_t aNameSpaceID, nsAtom* aAttribute,
-    int32_t aModType, const nsAttrValue* aOldValue) {
+    AttrModType aModType, const nsAttrValue* aOldValue) {
   // No need to rebuild the list if the changed attribute is not the name
   // attribute.
   if (aAttribute != nsGkAtoms::name) {
@@ -1097,7 +1099,7 @@ JSObject* nsLabelsNodeList::WrapObject(JSContext* cx,
 }
 
 void nsLabelsNodeList::AttributeChanged(Element* aElement, int32_t aNameSpaceID,
-                                        nsAtom* aAttribute, int32_t aModType,
+                                        nsAtom* aAttribute, AttrModType,
                                         const nsAttrValue* aOldValue) {
   MOZ_ASSERT(aElement, "Must have a content node to work with");
   if (mState == State::Dirty ||
@@ -1115,7 +1117,8 @@ void nsLabelsNodeList::AttributeChanged(Element* aElement, int32_t aNameSpaceID,
   }
 }
 
-void nsLabelsNodeList::ContentAppended(nsIContent* aFirstNewContent) {
+void nsLabelsNodeList::ContentAppended(nsIContent* aFirstNewContent,
+                                       const ContentAppendInfo&) {
   nsIContent* container = aFirstNewContent->GetParent();
   // If a labelable element is moved to outside or inside of
   // nested associated labels, we're gonna have to modify
@@ -1127,7 +1130,8 @@ void nsLabelsNodeList::ContentAppended(nsIContent* aFirstNewContent) {
   }
 }
 
-void nsLabelsNodeList::ContentInserted(nsIContent* aChild) {
+void nsLabelsNodeList::ContentInserted(nsIContent* aChild,
+                                       const ContentInsertInfo&) {
   // If a labelable element is moved to outside or inside of
   // nested associated labels, we're gonna have to modify
   // the content list.
@@ -1139,7 +1143,7 @@ void nsLabelsNodeList::ContentInserted(nsIContent* aChild) {
 }
 
 void nsLabelsNodeList::ContentWillBeRemoved(nsIContent* aChild,
-                                            const BatchRemovalState* aState) {
+                                            const ContentRemoveInfo&) {
   // If a labelable element is removed, we're gonna have to clean
   // the content list.
   if (mState != State::Dirty &&

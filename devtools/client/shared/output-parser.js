@@ -17,8 +17,15 @@ const {
 
 const STYLE_INSPECTOR_PROPERTIES =
   "devtools/shared/locales/styleinspector.properties";
-const { LocalizationHelper } = require("resource://devtools/shared/l10n.js");
-const STYLE_INSPECTOR_L10N = new LocalizationHelper(STYLE_INSPECTOR_PROPERTIES);
+
+loader.lazyGetter(this, "STYLE_INSPECTOR_L10N", function () {
+  const { LocalizationHelper } = require("resource://devtools/shared/l10n.js");
+  return new LocalizationHelper(STYLE_INSPECTOR_PROPERTIES);
+});
+
+loader.lazyGetter(this, "VARIABLE_JUMP_DEFINITION_TITLE", function () {
+  return STYLE_INSPECTOR_L10N.getStr("rule.variableJumpDefinition.title");
+});
 
 // Functions that accept an angle argument.
 const ANGLE_TAKING_FUNCTIONS = new Set([
@@ -60,6 +67,7 @@ const COLOR_TAKING_FUNCTIONS = new Set([
   "repeating-conic-gradient",
   "drop-shadow",
   "color-mix",
+  "contrast-color",
   "light-dark",
 ]);
 // Functions that accept a shape argument.
@@ -129,11 +137,11 @@ class OutputParser {
   /**
    * Parse a CSS property value given a property name.
    *
-   * @param  {String} name
+   * @param  {string} name
    *         CSS Property Name
-   * @param  {String} value
+   * @param  {string} value
    *         CSS Property value
-   * @param  {Object} [options]
+   * @param  {object} [options]
    *         Options object. For valid options and default values see
    *         #mergeOptions().
    * @return {DocumentFragment}
@@ -171,10 +179,7 @@ class OutputParser {
             options.getVariableData?.(name).computedValue
           )));
 
-    // The filter property is special in that we want to show the
-    // swatch even if the value is invalid, because this way the user
-    // can easily use the editor to fix it.
-    if (options.expectFilter || this.#cssPropertySupportsValue(name, value)) {
+    if (this.#cssPropertySupportsValue(name, value, options)) {
       return this.#parse(value, options);
     }
     this.#appendTextNode(value);
@@ -189,15 +194,15 @@ class OutputParser {
    * If |stopAtComma| is true, then also stop when a top-level
    * (unparenthesized) comma is seen.
    *
-   * @param  {String} text
+   * @param  {string} text
    *         The original source text.
    * @param  {CSSLexer} tokenStream
    *         The token stream from which to read.
-   * @param  {Object} options
+   * @param  {object} options
    *         The options object in use; @see #mergeOptions.
-   * @param  {Boolean} stopAtComma
+   * @param  {boolean} stopAtComma
    *         If true, stop at a comma.
-   * @return {Object}
+   * @return {object}
    *         An object of the form {tokens, functionData, sawComma, sawVariable, depth}.
    *         |tokens| is a list of the non-comment, non-whitespace tokens
    *         that were seen. The stopping token (paren or comma) will not
@@ -270,13 +275,13 @@ class OutputParser {
    *
    * @param  {CSSToken} initialToken
    *         The "var(" token that was already seen.
-   * @param  {String} text
+   * @param  {string} text
    *         The original input text.
    * @param  {CSSLexer} tokenStream
    *         The token stream from which to read.
-   * @param  {Object} options
+   * @param  {object} options
    *         The options object in use; @see #mergeOptions.
-   * @return {Object}
+   * @return {object}
    *         - node: A node for the variable, with the appropriate text and
    *           title. Eg. a span with "var(--var1)" as the textContent
    *           and a title for --var1 like "--var1 = 10" or
@@ -305,10 +310,12 @@ class OutputParser {
     let varFallbackValue;
     let varSubstitutedValue;
     let varComputedValue;
+    let varName;
 
     // Get the variable value if it is in use.
     if (tokens && tokens.length === 1) {
-      varData = options.getVariableData(tokens[0].text);
+      varName = tokens[0].text;
+      varData = options.getVariableData(varName);
       const varValue =
         typeof varData.value === "string"
           ? varData.value
@@ -361,22 +368,29 @@ class OutputParser {
         // createNode does not handle `false`, let's stringify the boolean.
         firstOpts["data-registered-property-inherits"] = `${inherits}`;
       }
-    } else {
+
+      const customPropNode = this.#createNode("span", firstOpts, result);
+      if (options.showJumpToVariableButton) {
+        customPropNode.append(
+          this.#createNode("button", {
+            class: "ruleview-variable-link jump-definition",
+            "data-variable-name": varName,
+            title: VARIABLE_JUMP_DEFINITION_TITLE,
+          })
+        );
+      }
+
+      variableNode.appendChild(customPropNode);
+    } else if (varName) {
       // The variable is not set and does not have an initial value, mark it unmatched.
       firstOpts.class = options.unmatchedClass;
 
-      // Get the variable name.
-      const varName = text.substring(
-        tokens[0].startOffset,
-        tokens[0].endOffset
-      );
       firstOpts["data-variable"] = STYLE_INSPECTOR_L10N.getFormatStr(
         "rule.variableUnset",
         varName
       );
+      variableNode.appendChild(this.#createNode("span", firstOpts, result));
     }
-
-    variableNode.appendChild(this.#createNode("span", firstOpts, result));
 
     // If we saw a ",", then append it and show the remainder using
     // the correct highlighting.
@@ -415,13 +429,13 @@ class OutputParser {
    * stopping at EOF; or optionally when an umatched close paren is
    * seen.
    *
-   * @param  {String} text
+   * @param  {string} text
    *         The original input text.
-   * @param  {Object} options
+   * @param  {object} options
    *         The options object in use; @see #mergeOptions.
    * @param  {CSSLexer} tokenStream
    *         The token stream from which to read
-   * @param  {Boolean} stopAtCloseParen
+   * @param  {boolean} stopAtCloseParen
    *         If true, stop at an umatched close paren.
    * @return {DocumentFragment}
    *         A document fragment.
@@ -706,7 +720,7 @@ class OutputParser {
           }
           break;
         }
-        case "Dimension":
+        case "Dimension": {
           const value = text.substring(token.startOffset, token.endOffset);
           if (angleOK(value)) {
             this.#appendAngle(value, options);
@@ -714,6 +728,7 @@ class OutputParser {
             this.#appendTextNode(value);
           }
           break;
+        }
         case "UnquotedUrl":
         case "BadUrl":
           this.#appendURL(
@@ -942,9 +957,9 @@ class OutputParser {
   /**
    * Parse a string.
    *
-   * @param  {String} text
+   * @param  {string} text
    *         Text to parse.
-   * @param  {Object} [options]
+   * @param  {object} [options]
    *         Options object. For valid options and default values see
    *         #mergeOptions().
    * @return {DocumentFragment}
@@ -962,11 +977,11 @@ class OutputParser {
   /**
    * Returns true if it's a "display: [inline-]flex" token.
    *
-   * @param  {String} text
+   * @param  {string} text
    *         The parsed text.
-   * @param  {Object} token
+   * @param  {object} token
    *         The parsed token.
-   * @param  {Object} options
+   * @param  {object} options
    *         The options given to #parse.
    */
   #isDisplayFlex(text, token, options) {
@@ -979,11 +994,11 @@ class OutputParser {
   /**
    * Returns true if it's a "display: [inline-]grid" token.
    *
-   * @param  {String} text
+   * @param  {string} text
    *         The parsed text.
-   * @param  {Object} token
+   * @param  {object} token
    *         The parsed token.
-   * @param  {Object} options
+   * @param  {object} options
    *         The options given to #parse.
    */
   #isDisplayGrid(text, token, options) {
@@ -996,9 +1011,9 @@ class OutputParser {
   /**
    * Append a cubic-bezier timing function value to the output
    *
-   * @param {String} bezier
+   * @param {string} bezier
    *        The cubic-bezier timing function
-   * @param {Object} options
+   * @param {object} options
    *        Options object. For valid options and default values see
    *        #mergeOptions()
    */
@@ -1059,9 +1074,9 @@ class OutputParser {
    * Append a Flexbox|Grid highlighter toggle icon next to the value in a
    * "display: [inline-]flex" or "display: [inline-]grid" declaration.
    *
-   * @param {String} text
+   * @param {string} text
    *        The text value to append
-   * @param {String} toggleButtonClassName
+   * @param {string} toggleButtonClassName
    *        The class name for the toggle button.
    *        If not passed/empty, the toggle button won't be created.
    */
@@ -1084,9 +1099,9 @@ class OutputParser {
    * Append a CSS shapes highlighter toggle next to the value, and parse the value
    * into spans, each containing a point that can be hovered over.
    *
-   * @param {String} shape
+   * @param {string} shape
    *        The shape text value to append
-   * @param {Object} options
+   * @param {object} options
    *        Options object. For valid options and default values see
    *        #mergeOptions()
    */
@@ -1144,7 +1159,7 @@ class OutputParser {
    * Parse the given polygon coordinates and create a span for each coordinate pair,
    * adding it to the given container node.
    *
-   * @param {String} coords
+   * @param {string} coords
    *        The string of coordinate pairs.
    * @param {Node} container
    *        The node to which spans containing points are added.
@@ -1294,7 +1309,7 @@ class OutputParser {
    * Parse the given circle coordinates and populate the given container appropriately
    * with a separate span for the center point.
    *
-   * @param {String} coords
+   * @param {string} coords
    *        The circle definition.
    * @param {Node} container
    *        The node to which the definition is added.
@@ -1455,7 +1470,7 @@ class OutputParser {
    * Parse the given ellipse coordinates and populate the given container appropriately
    * with a separate span for each point
    *
-   * @param {String} coords
+   * @param {string} coords
    *        The ellipse definition.
    * @param {Node} container
    *        The node to which the definition is added.
@@ -1625,7 +1640,7 @@ class OutputParser {
   /**
    * Parse the given inset coordinates and populate the given container appropriately.
    *
-   * @param {String} coords
+   * @param {string} coords
    *        The inset definition.
    * @param {Node} container
    *        The node to which the definition is added.
@@ -1770,9 +1785,9 @@ class OutputParser {
   /**
    * Append a angle value to the output
    *
-   * @param {String} angle
+   * @param {string} angle
    *        angle to append
-   * @param {Object} options
+   * @param {object} options
    *        Options object. For valid options and default values see
    *        #mergeOptions()
    */
@@ -1818,12 +1833,23 @@ class OutputParser {
   /**
    * Check if a CSS property supports a specific value.
    *
-   * @param  {String} name
+   * @param  {string} name
    *         CSS Property name to check
-   * @param  {String} value
+   * @param  {string} value
    *         CSS Property value to check
+   * @param  {object} options
+   *         Options object. For valid options and default values see #mergeOptions().
    */
-  #cssPropertySupportsValue(name, value) {
+  #cssPropertySupportsValue(name, value, options) {
+    if (
+      options.isValid ||
+      // The filter property is special in that we want to show the swatch even if the
+      // value is invalid, because this way the user can easily use the editor to fix it.
+      options.expectFilter
+    ) {
+      return true;
+    }
+
     // Checking pair as a CSS declaration string to account for "!important" in value.
     const declaration = `${name}:${value}`;
     return this.#doc.defaultView.CSS.supports(declaration);
@@ -1844,14 +1870,14 @@ class OutputParser {
   /**
    * Append a color to the output.
    *
-   * @param {String} color
+   * @param {string} color
    *         Color to append
-   * @param {Object} [options]
+   * @param {object} [options]
    * @param {CSSColor} options.colorObj: A css color for the passed color. Will be computed
    *         if not passed.
    * @param {DOMNode} options.variableContainer: A DOM Node that is the result of parsing
    *        a CSS variable
-   * @param {String} options.colorFunction: The color function that is used to produce this color
+   * @param {string} options.colorFunction: The color function that is used to produce this color
    * @param {*} For all the other valid options and default values see #mergeOptions().
    */
   #appendColor(color, options = {}) {
@@ -1929,7 +1955,7 @@ class OutputParser {
   /**
    * Wrap some existing nodes in a filter editor.
    *
-   * @param {String} filters
+   * @param {string} filters
    *        The full text of the "filter" property.
    * @param {object} options
    *        The options object passed to parseCssProperty().
@@ -1969,6 +1995,9 @@ class OutputParser {
 
     // Prevent click event to be fired to not show the tooltip
     event.stopPropagation();
+    // Prevent text selection but switch the focus
+    event.preventDefault();
+    event.target.focus({ focusVisible: false });
 
     const swatch = event.target;
     const color = this.#colorSwatches.get(swatch);
@@ -2017,11 +2046,11 @@ class OutputParser {
   /**
    * Append a URL to the output.
    *
-   * @param  {String} match
+   * @param  {string} match
    *         Complete match that may include "url(xxx)"
-   * @param  {String} url
+   * @param  {string} url
    *         Actual URL
-   * @param  {Object} [options]
+   * @param  {object} [options]
    *         Options object. For valid options and default values see
    *         #mergeOptions().
    */
@@ -2064,9 +2093,9 @@ class OutputParser {
   /**
    * Append a font family to the output.
    *
-   * @param  {String} fontFamily
+   * @param  {string} fontFamily
    *         Font family to append
-   * @param  {Object} options
+   * @param  {object} options
    *         Options object. For valid options and default values see
    *         #mergeOptions().
    */
@@ -2120,11 +2149,11 @@ class OutputParser {
   /**
    * Create a node.
    *
-   * @param  {String} tagName
+   * @param  {string} tagName
    *         Tag type e.g. "div"
-   * @param  {Object} attributes
+   * @param  {object} attributes
    *         e.g. {class: "someClass", style: "cursor:pointer"};
-   * @param  {String} [value]
+   * @param  {string} [value]
    *         If a value is included it will be appended as a text node inside
    *         the tag. This is useful e.g. for span tags.
    * @return {Node} Newly created Node.
@@ -2151,11 +2180,11 @@ class OutputParser {
   /**
    * Create and append a node to the output.
    *
-   * @param  {String} tagName
+   * @param  {string} tagName
    *         Tag type e.g. "div"
-   * @param  {Object} attributes
+   * @param  {object} attributes
    *         e.g. {class: "someClass", style: "cursor:pointer"};
-   * @param  {String} [value]
+   * @param  {string} [value]
    *         If a value is included it will be appended as a text node inside
    *         the tag. This is useful e.g. for span tags.
    */
@@ -2171,7 +2200,7 @@ class OutputParser {
   /**
    * Append an element or a text node to the output.
    *
-   * @param {DOMNode|String} item
+   * @param {DOMNode | string} item
    */
   #append(item) {
     this.#getCurrentStackParts().push(item);
@@ -2181,7 +2210,7 @@ class OutputParser {
    * Append a text node to the output. If the previously output item was a text
    * node then we append the text to that node.
    *
-   * @param  {String} text
+   * @param  {string} text
    *         Text to append
    */
   #appendTextNode(text) {
@@ -2223,35 +2252,35 @@ class OutputParser {
   /**
    * Merges options objects. Default values are set here.
    *
-   * @param  {Object} overrides
+   * @param  {object} overrides
    *         The option values to override e.g. #mergeOptions({colors: false})
-   * @param {Boolean} overrides.useDefaultColorUnit: Convert colors to the default type
+   * @param {boolean} overrides.useDefaultColorUnit: Convert colors to the default type
    *                                                 selected in the options panel.
-   * @param {String} overrides.angleClass: The class to use for the angle value that follows
+   * @param {string} overrides.angleClass: The class to use for the angle value that follows
    *                                       the swatch.
-   * @param {String} overrides.angleSwatchClass: The class to use for angle swatches.
-   * @param {String} overrides.bezierClass: The class to use for the bezier value that
+   * @param {string} overrides.angleSwatchClass: The class to use for angle swatches.
+   * @param {string} overrides.bezierClass: The class to use for the bezier value that
    *        follows the swatch.
-   * @param {String} overrides.bezierSwatchClass: The class to use for bezier swatches.
-   * @param {String} overrides.colorClass: The class to use for the color value that
+   * @param {string} overrides.bezierSwatchClass: The class to use for bezier swatches.
+   * @param {string} overrides.colorClass: The class to use for the color value that
    *        follows the swatch.
-   * @param {String} overrides.colorSwatchClass: The class to use for color swatches.
-   * @param {Boolean} overrides.colorSwatchReadOnly: Whether the resulting color swatch
+   * @param {string} overrides.colorSwatchClass: The class to use for color swatches.
+   * @param {boolean} overrides.colorSwatchReadOnly: Whether the resulting color swatch
    *        should be read-only or not. Defaults to false.
-   * @param {Boolean} overrides.filterSwatch: A special case for parsing a "filter" property,
+   * @param {boolean} overrides.filterSwatch: A special case for parsing a "filter" property,
    *        causing the parser to skip the call to #wrapFilter. Used only for previewing
    *        with the filter swatch.
-   * @param {String} overrides.flexClass: The class to use for the flex icon.
-   * @param {String} overrides.gridClass: The class to use for the grid icon.
-   * @param {String} overrides.shapeClass: The class to use for the shape value that
+   * @param {string} overrides.flexClass: The class to use for the flex icon.
+   * @param {string} overrides.gridClass: The class to use for the grid icon.
+   * @param {string} overrides.shapeClass: The class to use for the shape value that
    *         follows the swatch.
-   * @param {String} overrides.shapeSwatchClass: The class to use for the shape swatch.
-   * @param {String} overrides.urlClass: The class to be used for url() links.
-   * @param {String} overrides.fontFamilyClass: The class to be used for font families.
-   * @param {String} overrides.unmatchedClass: The class to use for a component of
+   * @param {string} overrides.shapeSwatchClass: The class to use for the shape swatch.
+   * @param {string} overrides.urlClass: The class to be used for url() links.
+   * @param {string} overrides.fontFamilyClass: The class to be used for font families.
+   * @param {string} overrides.unmatchedClass: The class to use for a component of
    *        a `var(…)` that is not in use.
-   * @param {Boolean} overrides.supportsColor: Does the CSS property support colors?
-   * @param {String} overrides.baseURI: A string used to resolve relative links.
+   * @param {boolean} overrides.supportsColor: Does the CSS property support colors?
+   * @param {string} overrides.baseURI: A string used to resolve relative links.
    * @param {Function} overrides.getVariableData: A function taking a single argument,
    *        the name of a variable. This should return an object with the following properties:
    *          - {String|undefined} value: The variable's value. Undefined if variable is
@@ -2259,8 +2288,11 @@ class OutputParser {
    *          - {RegisteredPropertyResource|undefined} registeredProperty: The registered
    *            property data (syntax, initial value, inherits). Undefined if the variable
    *            is not a registered property.
-   * @param {Boolean} overrides.isDarkColorScheme: Is the currently applied color scheme dark.
-   * @return {Object} Overridden options object
+   * @param {boolean} overrides.showJumpToVariableButton: Should we show a jump to
+   *        definition for CSS variables. Defaults to true.
+   * @param {boolean} overrides.isDarkColorScheme: Is the currently applied color scheme dark.
+   * @param {boolean} overrides.isValid: Is the name+value valid.
+   * @return {object} Overridden options object
    */
   #mergeOptions(overrides) {
     const defaults = {
@@ -2283,6 +2315,7 @@ class OutputParser {
       fontFamilyClass: null,
       baseURI: undefined,
       getVariableData: null,
+      showJumpToVariableButton: true,
       unmatchedClass: null,
       inStartingStyleRule: false,
       isDarkColorScheme: null,

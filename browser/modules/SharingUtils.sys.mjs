@@ -14,9 +14,9 @@ let lazy = {};
 XPCOMUtils.defineLazyServiceGetters(lazy, {
   MacSharingService: [
     "@mozilla.org/widget/macsharingservice;1",
-    "nsIMacSharingService",
+    Ci.nsIMacSharingService,
   ],
-  WindowsUIUtils: ["@mozilla.org/windows-ui-utils;1", "nsIWindowsUIUtils"],
+  WindowsUIUtils: ["@mozilla.org/windows-ui-utils;1", Ci.nsIWindowsUIUtils],
 });
 
 class SharingUtilsCls {
@@ -178,7 +178,7 @@ class SharingUtilsCls {
       item.classList.add("menuitem-iconic");
       item.setAttribute("label", share.menuItemTitle);
       item.setAttribute("share-name", share.name);
-      item.setAttribute("image", share.image);
+      item.setAttribute("image", ChromeUtils.encodeURIForSrcset(share.image));
       if (!shouldEnable) {
         item.setAttribute("disabled", "true");
       }

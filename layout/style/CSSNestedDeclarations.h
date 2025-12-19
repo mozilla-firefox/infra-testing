@@ -7,8 +7,8 @@
 #ifndef mozilla_CSSNestedDeclarations_h
 #define mozilla_CSSNestedDeclarations_h
 
-#include "mozilla/css/Rule.h"
 #include "mozilla/ServoBindingTypes.h"
+#include "mozilla/css/Rule.h"
 #include "nsDOMCSSDeclaration.h"
 
 namespace mozilla {
@@ -66,10 +66,10 @@ class CSSNestedDeclarations final : public css::Rule {
   // WebIDL interface
   StyleCssRuleType Type() const final;
   void GetCssText(nsACString& aCssText) const final;
-  nsICSSDeclaration* Style() { return &mDecls; }
+  nsDOMCSSDeclaration* Style() { return &mDecls; }
 
   StyleLockedNestedDeclarationsRule* Raw() const { return mRawRule.get(); }
-  StyleLockedDeclarationBlock* RawStyle() const;
+  const StyleLockedDeclarationBlock* RawStyle() const;
   void SetRawAfterClone(RefPtr<StyleLockedNestedDeclarationsRule>);
 
   // Methods of mozilla::css::Rule

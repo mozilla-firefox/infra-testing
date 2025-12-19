@@ -17,7 +17,7 @@ var { ExtensionError } = ExtensionUtils;
 
 ChromeUtils.defineLazyGetter(this, "symbolicationService", () => {
   let { createLocalSymbolicationService } = ChromeUtils.importESModule(
-    "resource://devtools/client/performance-new/shared/symbolication.sys.mjs"
+    "resource://devtools/shared/performance-new/symbolication.sys.mjs"
   );
   return createLocalSymbolicationService(Services.profiler.sharedLibraries, []);
 });
@@ -28,7 +28,7 @@ const isRunningObserver = {
   observe(subject, topic) {
     switch (topic) {
       case "profiler-started":
-      case "profiler-stopped":
+      case "profiler-stopped": {
         // Call observer(false) or observer(true), but do it through a promise
         // so that it's asynchronous.
         // We don't want it to be synchronous because of the observer call in
@@ -39,6 +39,7 @@ const isRunningObserver = {
           isRunningPromise.then(observer);
         }
         break;
+      }
     }
   },
 

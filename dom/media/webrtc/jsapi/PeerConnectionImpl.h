@@ -5,56 +5,53 @@
 #ifndef _PEER_CONNECTION_IMPL_H_
 #define _PEER_CONNECTION_IMPL_H_
 
+#include <cmath>
+#include <map>
 #include <string>
 #include <vector>
-#include <map>
-#include <cmath>
 
-#include "prlock.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/Mutex.h"
 #include "mozilla/RefPtr.h"
 #include "nsComponentManagerUtils.h"
-#include "nsPIDOMWindow.h"
-#include "nsIUUIDGenerator.h"
 #include "nsIThread.h"
+#include "nsIUUIDGenerator.h"
+#include "nsPIDOMWindow.h"
 #include "nsTHashSet.h"
-#include "mozilla/Mutex.h"
-#include "mozilla/Attributes.h"
+#include "prlock.h"
 
 // Work around nasty macro in webrtc/voice_engine/voice_engine_defines.h
 #ifdef GetLastError
 #  undef GetLastError
 #endif
 
-#include "jsep/JsepSession.h"
-#include "jsep/JsepSessionImpl.h"
-#include "sdp/SdpMediaSection.h"
 #include "DefaultCodecPreferences.h"
-
-#include "mozilla/ErrorResult.h"
-#include "jsapi/PacketDumper.h"
-#include "mozilla/dom/RTCPeerConnectionBinding.h"  // mozPacketDumpType, maybe move?
-#include "mozilla/dom/PeerConnectionImplBinding.h"  // ChainedOperation
-#include "mozilla/dom/RTCRtpCapabilitiesBinding.h"
-#include "mozilla/dom/RTCRtpTransceiverBinding.h"
-#include "mozilla/dom/RTCConfigurationBinding.h"
-#include "PrincipalChangeObserver.h"
-#include "mozilla/dom/PromiseNativeHandler.h"
-
-#include "mozilla/TimeStamp.h"
-#include "mozilla/net/DataChannel.h"
-#include "VideoUtils.h"
-#include "VideoSegment.h"
-#include "mozilla/dom/RTCStatsReportBinding.h"
-#include "mozilla/PeerIdentity.h"
-#include "RTCStatsIdGenerator.h"
-#include "RTCStatsReport.h"
-
-#include "mozilla/net/StunAddrsRequestChild.h"
 #include "MediaEventSource.h"
 #include "MediaTransportHandler.h"
-#include "nsIHttpChannelInternal.h"
+#include "PrincipalChangeObserver.h"
 #include "RTCDtlsTransport.h"
 #include "RTCRtpTransceiver.h"
+#include "RTCStatsIdGenerator.h"
+#include "RTCStatsReport.h"
+#include "VideoSegment.h"
+#include "VideoUtils.h"
+#include "jsapi/PacketDumper.h"
+#include "jsep/JsepSession.h"
+#include "jsep/JsepSessionImpl.h"
+#include "mozilla/ErrorResult.h"
+#include "mozilla/PeerIdentity.h"
+#include "mozilla/TimeStamp.h"
+#include "mozilla/dom/PeerConnectionImplBinding.h"  // ChainedOperation
+#include "mozilla/dom/PromiseNativeHandler.h"
+#include "mozilla/dom/RTCConfigurationBinding.h"
+#include "mozilla/dom/RTCPeerConnectionBinding.h"  // mozPacketDumpType, maybe move?
+#include "mozilla/dom/RTCRtpCapabilitiesBinding.h"
+#include "mozilla/dom/RTCRtpTransceiverBinding.h"
+#include "mozilla/dom/RTCStatsReportBinding.h"
+#include "mozilla/net/DataChannel.h"
+#include "mozilla/net/StunAddrsRequestChild.h"
+#include "nsIHttpChannelInternal.h"
+#include "sdp/SdpMediaSection.h"
 
 namespace test {
 #ifdef USE_FAKE_PCOBSERVER
@@ -62,7 +59,6 @@ class AFakePCObserver;
 #endif
 }  // namespace test
 
-class nsDOMDataChannel;
 class nsIPrincipal;
 
 namespace mozilla {
@@ -78,6 +74,7 @@ class SharedWebrtcState;
 namespace dom {
 class RTCCertificate;
 struct RTCConfiguration;
+class RTCDataChannel;
 struct RTCRtpSourceEntry;
 struct RTCIceServer;
 struct RTCOfferOptions;
@@ -115,22 +112,20 @@ typedef struct Timecard Timecard;
 
 namespace mozilla {
 
-using mozilla::DtlsIdentity;
-using mozilla::ErrorResult;
-using mozilla::PeerIdentity;
-using mozilla::dom::PeerConnectionObserver;
-using mozilla::dom::RTCConfiguration;
-using mozilla::dom::RTCIceServer;
-using mozilla::dom::RTCOfferOptions;
+using dom::PeerConnectionObserver;
+using dom::RTCConfiguration;
+using dom::RTCDataChannel;
+using dom::RTCIceServer;
+using dom::RTCOfferOptions;
 
 class PeerConnectionWrapper;
 class RemoteSourceStreamInfo;
 
 // Uuid Generator
-class PCUuidGenerator : public mozilla::JsepUuidGenerator {
+class PCUuidGenerator : public JsepUuidGenerator {
  public:
   virtual bool Generate(std::string* idp) override;
-  virtual mozilla::JsepUuidGenerator* Clone() const override {
+  virtual JsepUuidGenerator* Clone() const override {
     return new PCUuidGenerator(*this);
   }
 
@@ -173,12 +168,11 @@ struct PeerConnectionAutoTimer {
 class PeerConnectionImpl final
     : public nsISupports,
       public nsWrapperCache,
-      public mozilla::DataChannelConnection::DataConnectionListener {
+      public DataChannelConnection::DataConnectionListener {
   struct Internal;  // Avoid exposing c includes to bindings
 
  public:
-  explicit PeerConnectionImpl(
-      const mozilla::dom::GlobalObject* aGlobal = nullptr);
+  explicit PeerConnectionImpl(const dom::GlobalObject* aGlobal = nullptr);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(PeerConnectionImpl)
@@ -194,7 +188,7 @@ class PeerConnectionImpl final
   nsPIDOMWindowInner* GetParentObject() const;
 
   static already_AddRefed<PeerConnectionImpl> Constructor(
-      const mozilla::dom::GlobalObject& aGlobal);
+      const dom::GlobalObject& aGlobal);
 
   static DefaultCodecPreferences GetDefaultCodecPreferences(
       const OverrideRtxPreference aOverrideRtxPreference =
@@ -202,8 +196,12 @@ class PeerConnectionImpl final
     return DefaultCodecPreferences(aOverrideRtxPreference);
   }
   // DataConnection observers
-  void NotifyDataChannel(already_AddRefed<mozilla::DataChannel> aChannel)
-      // PeerConnectionImpl only inherits from mozilla::DataChannelConnection
+  void NotifyDataChannel(already_AddRefed<DataChannel> aChannel,
+                         const nsACString& aLabel, bool aOrdered,
+                         dom::Nullable<uint16_t> aMaxLifeTime,
+                         dom::Nullable<uint16_t> aMaxRetransmits,
+                         const nsACString& aProtocol, bool aNegotiated)
+      // PeerConnectionImpl only inherits from DataChannelConnection
       // inside libxul.
       override;
 
@@ -252,8 +250,8 @@ class PeerConnectionImpl final
   void Initialize(PeerConnectionObserver& aObserver,
                   nsGlobalWindowInner& aWindow, ErrorResult& rv);
 
-  void SetCertificate(mozilla::dom::RTCCertificate& aCertificate);
-  const RefPtr<mozilla::dom::RTCCertificate>& Certificate() const;
+  void SetCertificate(dom::RTCCertificate& aCertificate);
+  const RefPtr<dom::RTCCertificate>& Certificate() const;
   // This is a hack to support external linkage.
   RefPtr<DtlsIdentity> Identity() const;
 
@@ -265,7 +263,7 @@ class PeerConnectionImpl final
   NS_IMETHODIMP CreateAnswer();
   void CreateAnswer(ErrorResult& rv) { rv = CreateAnswer(); }
 
-  NS_IMETHODIMP CreateOffer(const mozilla::JsepOfferOptions& aConstraints);
+  NS_IMETHODIMP CreateOffer(const JsepOfferOptions& aConstraints);
 
   NS_IMETHODIMP SetLocalDescription(int32_t aAction, const char* aSDP);
 
@@ -372,32 +370,30 @@ class PeerConnectionImpl final
   dom::Nullable<bool> GetCurrentOfferer() const;
   dom::Nullable<bool> GetPendingOfferer() const;
 
-  NS_IMETHODIMP SignalingState(mozilla::dom::RTCSignalingState* aState);
+  NS_IMETHODIMP SignalingState(dom::RTCSignalingState* aState);
 
-  mozilla::dom::RTCSignalingState SignalingState() {
-    mozilla::dom::RTCSignalingState state;
+  dom::RTCSignalingState SignalingState() {
+    dom::RTCSignalingState state;
     SignalingState(&state);
     return state;
   }
 
-  NS_IMETHODIMP IceConnectionState(mozilla::dom::RTCIceConnectionState* aState);
+  NS_IMETHODIMP IceConnectionState(dom::RTCIceConnectionState* aState);
 
-  mozilla::dom::RTCIceConnectionState IceConnectionState() {
-    mozilla::dom::RTCIceConnectionState state;
+  dom::RTCIceConnectionState IceConnectionState() {
+    dom::RTCIceConnectionState state;
     IceConnectionState(&state);
     return state;
   }
 
-  NS_IMETHODIMP IceGatheringState(mozilla::dom::RTCIceGatheringState* aState);
+  NS_IMETHODIMP IceGatheringState(dom::RTCIceGatheringState* aState);
 
-  mozilla::dom::RTCIceGatheringState IceGatheringState() {
-    return mIceGatheringState;
-  }
+  dom::RTCIceGatheringState IceGatheringState() { return mIceGatheringState; }
 
-  NS_IMETHODIMP ConnectionState(mozilla::dom::RTCPeerConnectionState* aState);
+  NS_IMETHODIMP ConnectionState(dom::RTCPeerConnectionState* aState);
 
-  mozilla::dom::RTCPeerConnectionState ConnectionState() {
-    mozilla::dom::RTCPeerConnectionState state;
+  dom::RTCPeerConnectionState ConnectionState() {
+    dom::RTCPeerConnectionState state;
     ConnectionState(&state);
     return state;
   }
@@ -426,9 +422,9 @@ class PeerConnectionImpl final
 
   nsresult MaybeInitializeDataChannel();
 
-  NS_IMETHODIMP_TO_ERRORRESULT_RETREF(nsDOMDataChannel, CreateDataChannel,
-                                      ErrorResult& rv, const nsAString& aLabel,
-                                      const nsAString& aProtocol,
+  NS_IMETHODIMP_TO_ERRORRESULT_RETREF(RTCDataChannel, CreateDataChannel,
+                                      ErrorResult& rv, const nsACString& aLabel,
+                                      const nsACString& aProtocol,
                                       uint16_t aType, bool outOfOrderAllowed,
                                       uint16_t aMaxTime, uint16_t aMaxNum,
                                       bool aExternalNegotiated,
@@ -508,7 +504,7 @@ class PeerConnectionImpl final
   bool IsClosed() const;
 
   // called when DTLS connects; we only need this once
-  nsresult OnAlpnNegotiated(bool aPrivacyRequested);
+  nsresult OnAlpnNegotiated(const std::string& aAlpn, bool aPrivacyRequested);
 
   void OnDtlsStateChange(const std::string& aTransportId,
                          TransportLayer::State aState);
@@ -611,14 +607,11 @@ class PeerConnectionImpl final
   PeerConnectionImpl& operator=(PeerConnectionImpl);
 
   RefPtr<dom::RTCStatsPromise> GetDataChannelStats(
-      const RefPtr<DataChannelConnection>& aDataChannelConnection,
       const DOMHighResTimeStamp aTimestamp);
   nsresult CalculateFingerprint(const nsACString& algorithm,
                                 std::vector<uint8_t>* fingerprint) const;
-  nsresult ConfigureJsepSessionCodecs();
 
-  NS_IMETHODIMP EnsureDataConnection(uint16_t aLocalPort, uint16_t aNumstreams,
-                                     uint32_t aMaxMessageSize, bool aMMSSet);
+  NS_IMETHODIMP EnsureDataConnection(uint16_t aLocalPort, uint16_t aNumstreams);
 
   nsresult CheckApiState(bool assert_ice_ready) const;
   void StoreFinalStats(UniquePtr<dom::RTCStatsReportInternal>&& report);
@@ -637,7 +630,7 @@ class PeerConnectionImpl final
 
   nsresult GetDatachannelParameters(uint32_t* channels, uint16_t* localport,
                                     uint16_t* remoteport,
-                                    uint32_t* maxmessagesize, bool* mmsset,
+                                    uint32_t* maxmessagesize,
                                     std::string* transportId,
                                     bool* client) const;
 
@@ -668,23 +661,24 @@ class PeerConnectionImpl final
   // Configuration used to initialize the PeerConnection
   dom::RTCConfigurationInternal mJsConfiguration;
 
-  mozilla::dom::RTCSignalingState mSignalingState;
+  dom::RTCSignalingState mSignalingState;
 
   // ICE State
-  mozilla::dom::RTCIceConnectionState mIceConnectionState;
-  mozilla::dom::RTCIceGatheringState mIceGatheringState;
+  dom::RTCIceConnectionState mIceConnectionState;
+  dom::RTCIceGatheringState mIceGatheringState;
 
-  mozilla::dom::RTCPeerConnectionState mConnectionState;
+  dom::RTCPeerConnectionState mConnectionState;
 
   RefPtr<PeerConnectionObserver> mPCObserver;
 
   nsCOMPtr<nsPIDOMWindowInner> mWindow;
+  nsString mOrigin;
 
   // The SDP sent in from JS
   std::string mLocalRequestedSDP;
   std::string mRemoteRequestedSDP;
   // Only accessed from main
-  mozilla::dom::Sequence<mozilla::dom::RTCSdpHistoryEntryInternal> mSdpHistory;
+  dom::Sequence<dom::RTCSdpHistoryEntryInternal> mSdpHistory;
   std::string mPendingLocalDescription;
   std::string mPendingRemoteDescription;
   std::string mCurrentLocalDescription;
@@ -701,7 +695,7 @@ class PeerConnectionImpl final
   // void if they are not yet identified, and no identity setting has been set
   RefPtr<PeerIdentity> mPeerIdentity;
   // The certificate we are using.
-  RefPtr<mozilla::dom::RTCCertificate> mCertificate;
+  RefPtr<dom::RTCCertificate> mCertificate;
   // Whether an app should be prevented from accessing media produced by the PC
   // If this is true, then media will not be sent until mPeerIdentity matches
   // local streams PeerIdentity; and remote streams are protected from content
@@ -722,7 +716,7 @@ class PeerConnectionImpl final
   nsCOMPtr<nsISerialEventTarget> mSTSThread;
 
   // DataConnection that's used to get all the DataChannels
-  RefPtr<mozilla::DataChannelConnection> mDataConnection;
+  RefPtr<DataChannelConnection> mDataConnection;
   unsigned int mDataChannelsOpened = 0;
   unsigned int mDataChannelsClosed = 0;
 
@@ -730,14 +724,14 @@ class PeerConnectionImpl final
   RefPtr<MediaTransportHandler> mTransportHandler;
 
   // The JSEP negotiation session.
-  mozilla::UniquePtr<PCUuidGenerator> mUuidGen;
-  mozilla::UniquePtr<mozilla::JsepSession> mJsepSession;
+  UniquePtr<PCUuidGenerator> mUuidGen;
+  UniquePtr<JsepSession> mJsepSession;
   // There are lots of error cases where we want to abandon an sRD/sLD _after_
   // it has already been applied to the JSEP engine, and revert back to the
   // previous state. We also want to ensure that the various modifications
   // to the JSEP engine are not exposed to JS until the sRD/sLD completes,
   // which is why we have a new "uncommitted" JSEP engine.
-  mozilla::UniquePtr<mozilla::JsepSession> mUncommittedJsepSession;
+  UniquePtr<JsepSession> mUncommittedJsepSession;
   unsigned long mIceRestartCount;
   unsigned long mIceRollbackCount;
 
@@ -753,11 +747,9 @@ class PeerConnectionImpl final
   bool mDisableLongTermStats = false;
 
   // Start time of ICE.
-  mozilla::TimeStamp mIceStartTime;
+  TimeStamp mIceStartTime;
   // Hold PeerConnectionAutoTimer instances for each window.
   static std::map<uint64_t, PeerConnectionAutoTimer> sCallDurationTimers;
-
-  bool mHaveConfiguredCodecs;
 
   bool mTrickle;
 
@@ -796,8 +788,7 @@ class PeerConnectionImpl final
     void OnMDNSQueryComplete(const nsCString& hostname,
                              const Maybe<nsCString>& address) override;
 
-    void OnStunAddrsAvailable(
-        const mozilla::net::NrIceStunAddrArray& addrs) override;
+    void OnStunAddrsAvailable(const net::NrIceStunAddrArray& addrs) override;
 
    private:
     // This class is not cycle-collected, so we must avoid grabbing a strong
@@ -936,45 +927,12 @@ class PeerConnectionImpl final
   };
   std::map<std::string, std::list<PendingIceCandidate>> mQueriedMDNSHostnames;
 
-  // Connecting PCImpl to sigslot is not safe, because sigslot takes strong
-  // references without any reference counting, and JS holds refcounted strong
-  // references to PCImpl (meaning JS can cause PCImpl to be destroyed).  This
-  // is not ref-counted (since sigslot holds onto non-refcounted strong refs)
-  // Must be destroyed on STS. Holds a weak reference to PCImpl.
-  class SignalHandler : public sigslot::has_slots<> {
-   public:
-    SignalHandler(PeerConnectionImpl* aPc, MediaTransportHandler* aSource);
-    virtual ~SignalHandler();
-
-    void ConnectSignals();
-
-    // ICE events
-    void IceGatheringStateChange_s(const std::string& aTransportId,
-                                   dom::RTCIceGathererState aState);
-    void IceConnectionStateChange_s(const std::string& aTransportId,
-                                    dom::RTCIceTransportState aState);
-    void OnCandidateFound_s(const std::string& aTransportId,
-                            const CandidateInfo& aCandidateInfo);
-    void AlpnNegotiated_s(const std::string& aAlpn, bool aPrivacyRequested);
-    void ConnectionStateChange_s(const std::string& aTransportId,
-                                 TransportLayer::State aState);
-    void OnPacketReceived_s(const std::string& aTransportId,
-                            const MediaPacket& aPacket);
-
-    MediaEventSourceExc<MediaPacket>& RtcpReceiveEvent() {
-      return mRtcpReceiveEvent;
-    }
-
-   private:
-    const std::string mHandle;
-    RefPtr<MediaTransportHandler> mSource;
-    RefPtr<nsISerialEventTarget> mSTSThread;
-    RefPtr<PacketDumper> mPacketDumper;
-    MediaEventProducerExc<MediaPacket> mRtcpReceiveEvent;
-  };
-
-  mozilla::UniquePtr<SignalHandler> mSignalHandler;
-  MediaEventListener mRtcpReceiveListener;
+  MediaEventListener mGatheringStateChangeListener;
+  MediaEventListener mConnectionStateChangeListener;
+  MediaEventListener mCandidateListener;
+  MediaEventListener mAlpnNegotiatedListener;
+  MediaEventListener mStateChangeListener;
+  MediaEventListener mRtcpStateChangeListener;
 
   // Make absolutely sure our refcount does not go to 0 before Close() is called
   // This is because Close does a stats query, which needs the

@@ -13,11 +13,12 @@ loadScripts(
 ChromeUtils.defineESModuleGetters(this, {
   PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
-  UrlbarProvider: "resource:///modules/UrlbarUtils.sys.mjs",
-  UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
+  UrlbarProvider: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
+  UrlbarProvidersManager:
+    "moz-src:///browser/components/urlbar/UrlbarProvidersManager.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
   UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.sys.mjs",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
+  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
 });
 
 function isEventForAutocompleteItem(event) {
@@ -68,7 +69,7 @@ class TipTestProvider extends UrlbarProvider {
   get type() {
     return UrlbarUtils.PROVIDER_TYPE.PROFILE;
   }
-  isActive() {
+  async isActive() {
     return true;
   }
   isRestricting() {
@@ -286,7 +287,7 @@ async function runTests() {
     // With native context menus, we do not observe accessibility events and we
     // cannot send synthetic key events to the menu.
     info("Opening and closing context native context menu");
-    let contextMenu = gURLBar.querySelector("menupopup");
+    let contextMenu = gURLBar.querySelector(".textbox-contextmenu");
     let popupshown = BrowserTestUtils.waitForEvent(contextMenu, "popupshown");
     EventUtils.synthesizeMouseAtCenter(gURLBar.querySelector("moz-input-box"), {
       type: "contextmenu",
@@ -330,16 +331,16 @@ async function runTests() {
 // with the main test.
 async function runTipTests() {
   let matches = [
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.HISTORY,
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
       // eslint-disable-next-line @microsoft/sdl/no-insecure-url
-      { url: "http://mozilla.org/a" }
-    ),
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.TIP,
-      UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-      {
+      payload: { url: "http://mozilla.org/a" },
+    }),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.TIP,
+      source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+      payload: {
         // eslint-disable-next-line @microsoft/sdl/no-insecure-url
         helpUrl: "http://example.com/",
         type: "test",
@@ -351,20 +352,20 @@ async function runTipTests() {
             l10n: { id: "urlbar-search-tips-confirm" },
           },
         ],
-      }
-    ),
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.HISTORY,
+      },
+    }),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
       // eslint-disable-next-line @microsoft/sdl/no-insecure-url
-      { url: "http://mozilla.org/b" }
-    ),
-    new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.HISTORY,
+      payload: { url: "http://mozilla.org/b" },
+    }),
+    new UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
       // eslint-disable-next-line @microsoft/sdl/no-insecure-url
-      { url: "http://mozilla.org/c" }
-    ),
+      payload: { url: "http://mozilla.org/c" },
+    }),
   ];
 
   // Ensure the tip appears in the expected position.

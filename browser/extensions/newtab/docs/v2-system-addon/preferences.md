@@ -105,7 +105,6 @@ Not intended for user configuration, but is programmatically updated. Used for t
 - Default:
   ```json
   {
-    "api_key_pref": "extensions.pocket.oAuthConsumerKey",
     "collapsible": true,
     "enabled": true,
     "personalized": true,
@@ -244,14 +243,6 @@ This controls if newtab story personalization includes regular stories or not. S
 - Pref Type: Firefox
 
 This controls if newtab story personalization includes sponsored content or not. See recs.personalized for regular stories.
-
-### `browser.newtabpage.activity-stream.discoverystream.isCollectionDismissible`
-
-- Type: `boolean`
-- Default: true
-- Pref Type: Firefox
-
-This controls if newtab story collections are dismissible or not.
 
 ### `browser.newtabpage.activity-stream.feeds.section.topstories`
 

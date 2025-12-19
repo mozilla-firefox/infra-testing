@@ -22,6 +22,7 @@ class FxSuggestFacts {
         const val AMP_SUGGESTION_IMPRESSED = "amp_suggestion_impressed"
         const val WIKIPEDIA_SUGGESTION_CLICKED = "wikipedia_suggestion_clicked"
         const val WIKIPEDIA_SUGGESTION_IMPRESSED = "wikipedia_suggestion_impressed"
+        const val SUGGESTION_QUERY_COUNT = "suggestion_query_count"
     }
 
     /**
@@ -32,6 +33,7 @@ class FxSuggestFacts {
         const val POSITION = "position"
         const val IS_CLICKED = "is_clicked"
         const val ENGAGEMENT_ABANDONED = "engagement_abandoned"
+        const val CLIENT_COUNTRY = "client_country"
     }
 }
 
@@ -53,6 +55,7 @@ private fun emitFxSuggestFact(
 internal fun emitSuggestionClickedFact(
     interactionInfo: FxSuggestInteractionInfo,
     positionInAwesomeBar: Long,
+    clientCountry: String,
 ) {
     emitFxSuggestFact(
         Action.INTERACTION,
@@ -63,6 +66,7 @@ internal fun emitSuggestionClickedFact(
         metadata = mapOf(
             FxSuggestFacts.MetadataKeys.INTERACTION_INFO to interactionInfo,
             FxSuggestFacts.MetadataKeys.POSITION to positionInAwesomeBar,
+            FxSuggestFacts.MetadataKeys.CLIENT_COUNTRY to clientCountry,
         ),
     )
 }
@@ -71,6 +75,7 @@ internal fun emitSuggestionImpressedFact(
     interactionInfo: FxSuggestInteractionInfo,
     positionInAwesomeBar: Long,
     isClicked: Boolean,
+    clientCountry: String,
     engagementAbandoned: Boolean,
 ) {
     emitFxSuggestFact(
@@ -84,6 +89,19 @@ internal fun emitSuggestionImpressedFact(
             FxSuggestFacts.MetadataKeys.POSITION to positionInAwesomeBar,
             FxSuggestFacts.MetadataKeys.IS_CLICKED to isClicked,
             FxSuggestFacts.MetadataKeys.ENGAGEMENT_ABANDONED to engagementAbandoned,
+            FxSuggestFacts.MetadataKeys.CLIENT_COUNTRY to clientCountry,
+        ),
+    )
+}
+
+internal fun emitSuggestionQueryCountFact(
+    queryCount: Int,
+) {
+    emitFxSuggestFact(
+        action = Action.INTERACTION,
+        item = FxSuggestFacts.Items.SUGGESTION_QUERY_COUNT,
+        metadata = mapOf(
+            "query_count" to queryCount.toLong(),
         ),
     )
 }

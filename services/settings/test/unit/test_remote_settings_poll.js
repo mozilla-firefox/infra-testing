@@ -62,12 +62,7 @@ add_setup(() => {
   server = new HttpServer();
   server.start(-1);
 
-  // Pretend we are in nightly channel to make sure all telemetry events are sent.
-  let oldGetChannel = Policy.getChannel;
-  Policy.getChannel = () => "nightly";
-
   registerCleanupFunction(() => {
-    Policy.getChannel = oldGetChannel;
     server.stop(() => {});
   });
 });
@@ -1044,7 +1039,7 @@ add_task(async function test_check_clockskew_takes_age_into_account() {
   await RemoteSettings.pollChanges();
 
   const clockSkew = Services.prefs.getIntPref(PREF_CLOCK_SKEW_SECONDS);
-  Assert.ok(clockSkew >= skewSeconds, `clockSkew is ${clockSkew}`);
+  Assert.greaterOrEqual(clockSkew, skewSeconds, `clockSkew is ${clockSkew}`);
 });
 add_task(clear_state);
 

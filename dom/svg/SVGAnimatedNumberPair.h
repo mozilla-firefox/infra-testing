@@ -8,13 +8,11 @@
 #define DOM_SVG_SVGANIMATEDNUMBERPAIR_H_
 
 #include "DOMSVGAnimatedNumber.h"
+#include "mozilla/SMILAttr.h"
+#include "mozilla/UniquePtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsError.h"
 #include "nsMathUtils.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/FloatingPoint.h"
-#include "mozilla/SMILAttr.h"
-#include "mozilla/UniquePtr.h"
 
 namespace mozilla {
 

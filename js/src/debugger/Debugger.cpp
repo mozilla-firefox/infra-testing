@@ -13,7 +13,6 @@
 #include "mozilla/Maybe.h"             // for Maybe, Nothing, Some
 #include "mozilla/ScopeExit.h"         // for MakeScopeExit, ScopeExit
 #include "mozilla/Sprintf.h"           // for SprintfLiteral
-#include "mozilla/ThreadLocal.h"       // for ThreadLocal
 #include "mozilla/TimeStamp.h"         // for TimeStamp
 #include "mozilla/UniquePtr.h"         // for UniquePtr
 #include "mozilla/Variant.h"           // for AsVariant, AsVariantTemporary
@@ -59,7 +58,7 @@
 #include "gc/ZoneAllocator.h"             // for ZoneAllocPolicy
 #include "jit/BaselineDebugModeOSR.h"  // for RecompileOnStackBaselineScriptsForDebugMode
 #include "jit/BaselineJIT.h"           // for FinishDiscardBaselineScript
-#include "jit/Invalidation.h"         // for RecompileInfoVector
+#include "jit/Invalidation.h"         // for IonScriptKeyVector
 #include "jit/JitContext.h"           // for JitContext
 #include "jit/JitOptions.h"           // for fuzzingSafe
 #include "jit/JitScript.h"            // for JitScript
@@ -394,6 +393,11 @@ bool js::ParseEvalOptions(JSContext* cx, HandleValue value,
   }
   options.setHideFromDebugger(ToBoolean(v));
 
+  if (!JS_GetProperty(cx, opts, "bypassCSP", &v)) {
+    return false;
+  }
+  options.setBypassCSP(ToBoolean(v));
+
   if (options.kind() == EvalOptions::EnvKind::GlobalWithExtraOuterBindings) {
     if (!JS_GetProperty(cx, opts, "useInnerBindings", &v)) {
       return false;
@@ -453,7 +457,10 @@ Breakpoint::Breakpoint(Debugger* debugger, HandleObject wrappedDebugger,
 }
 
 void Breakpoint::trace(JSTracer* trc) {
+  MOZ_ASSERT_IF(trc->kind() != JS::TracerKind::Moving,
+                !IsDeadProxyObject(wrappedDebugger));
   TraceEdge(trc, &wrappedDebugger, "breakpoint owner");
+
   TraceEdge(trc, &handler, "breakpoint handler");
 }
 
@@ -3262,7 +3269,7 @@ static inline void MarkJitScriptActiveIfObservable(
 
 static bool AppendAndInvalidateScript(JSContext* cx, Zone* zone,
                                       JSScript* script,
-                                      jit::RecompileInfoVector& invalid,
+                                      jit::IonScriptKeyVector& invalid,
                                       Vector<JSScript*>& scripts) {
   // Enter the script's realm as AddPendingInvalidation attempts to
   // cancel off-thread compilations, whose books are kept on the
@@ -3289,7 +3296,7 @@ static bool UpdateExecutionObservabilityOfScriptsInZone(
   // Iterate through observable scripts, invalidating their Ion scripts and
   // appending them to a vector for discarding their baseline scripts later.
   {
-    RecompileInfoVector invalid;
+    IonScriptKeyVector invalid;
     if (JSScript* script = obs.singleScriptForZoneInvalidation()) {
       if (obs.shouldRecompileOrInvalidate(script)) {
         if (!AppendAndInvalidateScript(cx, zone, script, invalid, scripts)) {
@@ -3858,51 +3865,55 @@ bool DebugAPI::edgeIsInDebuggerWeakmap(JSRuntime* rt, JSObject* src,
       // the key from the source object and check everything matches.
       AbstractGeneratorObject* genObj = &frame->unwrappedGenerator();
       return frame->generatorScript() == &dst.as<BaseScript>() &&
-             dbg->generatorFrames.hasEntry(genObj, src);
+             dbg->generatorFrames.hasEntry(genObj, frame);
     }
     return dst.is<JSObject>() &&
            dst.as<JSObject>().is<AbstractGeneratorObject>() &&
            dbg->generatorFrames.hasEntry(
-               &dst.as<JSObject>().as<AbstractGeneratorObject>(), src);
+               &dst.as<JSObject>().as<AbstractGeneratorObject>(), frame);
   }
   if (src->is<DebuggerObject>()) {
-    Debugger* dbg = src->as<DebuggerObject>().owner();
+    DebuggerObject* dobj = &src->as<DebuggerObject>();
+    Debugger* dbg = dobj->owner();
     MOZ_ASSERT(RuntimeHasDebugger(rt, dbg));
     return dst.is<JSObject>() &&
-           dbg->objects.hasEntry(&dst.as<JSObject>(), src);
+           dbg->objects.hasEntry(&dst.as<JSObject>(), dobj);
   }
   if (src->is<DebuggerEnvironment>()) {
-    Debugger* dbg = src->as<DebuggerEnvironment>().owner();
+    DebuggerEnvironment* denv = &src->as<DebuggerEnvironment>();
+    Debugger* dbg = denv->owner();
     MOZ_ASSERT(RuntimeHasDebugger(rt, dbg));
     return dst.is<JSObject>() &&
-           dbg->environments.hasEntry(&dst.as<JSObject>(), src);
+           dbg->environments.hasEntry(&dst.as<JSObject>(), denv);
   }
   if (src->is<DebuggerScript>()) {
-    Debugger* dbg = src->as<DebuggerScript>().owner();
+    DebuggerScript* dscript = &src->as<DebuggerScript>();
+    Debugger* dbg = dscript->owner();
     MOZ_ASSERT(RuntimeHasDebugger(rt, dbg));
 
     return src->as<DebuggerScript>().getReferent().match(
         [=](BaseScript* script) {
           return dst.is<BaseScript>() && script == &dst.as<BaseScript>() &&
-                 dbg->scripts.hasEntry(script, src);
+                 dbg->scripts.hasEntry(script, dscript);
         },
         [=](WasmInstanceObject* instance) {
           return dst.is<JSObject>() && instance == &dst.as<JSObject>() &&
-                 dbg->wasmInstanceScripts.hasEntry(instance, src);
+                 dbg->wasmInstanceScripts.hasEntry(instance, dscript);
         });
   }
   if (src->is<DebuggerSource>()) {
-    Debugger* dbg = src->as<DebuggerSource>().owner();
+    DebuggerSource* dsource = &src->as<DebuggerSource>();
+    Debugger* dbg = dsource->owner();
     MOZ_ASSERT(RuntimeHasDebugger(rt, dbg));
 
     return src->as<DebuggerSource>().getReferent().match(
         [=](ScriptSourceObject* sso) {
           return dst.is<JSObject>() && sso == &dst.as<JSObject>() &&
-                 dbg->sources.hasEntry(sso, src);
+                 dbg->sources.hasEntry(sso, dsource);
         },
         [=](WasmInstanceObject* instance) {
           return dst.is<JSObject>() && instance == &dst.as<JSObject>() &&
-                 dbg->wasmInstanceSources.hasEntry(instance, src);
+                 dbg->wasmInstanceSources.hasEntry(instance, dsource);
         });
   }
   MOZ_ASSERT_UNREACHABLE("Unhandled cross-compartment edge");
@@ -4000,7 +4011,7 @@ void DebugAPI::slowPathTraceGeneratorFrame(JSTracer* tracer,
 
     if (Debugger::GeneratorWeakMap::Ptr entry =
             dbg->generatorFrames.lookupUnbarriered(generator)) {
-      HeapPtr<DebuggerFrame*>& frameObj = entry->value();
+      PreBarriered<DebuggerFrame*>& frameObj = entry->value();
       if (frameObj->hasAnyHooks()) {
         // See comment above.
         TraceCrossCompartmentEdge(tracer, generator, &frameObj,

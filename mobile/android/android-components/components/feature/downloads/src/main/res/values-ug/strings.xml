@@ -1,12 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:tools="http://schemas.android.com/tools" xmlns:moz="http://mozac.org/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!-- Name of the "notification channel" used for displaying download notification. See https://developer.android.com/training/notify-user/channels -->
   <string name="mozac_feature_downloads_notification_channel">چۈشۈرۈلمىلەر</string>
   <!--
-    Text shown on the second row of an in progress download notification.
-    %1$s will be replaced with the percentage of download completed so far.
+    Summary text shown on an in progress download notification.
+    %1$s will be replaced with the estimated time remaining to complete the download.
   -->
-  <string name="mozac_feature_downloads_percentage_notification_text" moz:removedIn="139" tools:ignore="UnusedResources">%1$s تاماملاندى</string>
+  <string name="mozac_feature_downloads_time_remaining">%1$s قالدى</string>
+  <!-- Summary text shown on an in progress download notification when the estimated time remaining is unknown. -->
+  <string name="mozac_feature_downloads_time_remaining_unknown">نامەلۇم ۋاقىت</string>
   <!-- Text shown on the second row of a paused download notification. -->
   <string name="mozac_feature_downloads_paused_notification_text">چۈشۈرۈش توختىتىلدى</string>
   <!-- Text shown on the second row of an completed download notification. The filename is shown on the first row. -->
@@ -17,25 +26,29 @@
     Alert dialog confirmation before downloading a previously downloaded file, this is the title.
     %1$s will be replaced with the size of the file.
   -->
-  <string name="mozac_feature_downloads_again_dialog_title" tools:ignore="UnusedResources">ھۆججەتنى قايتا چۈشۈرەمدۇ؟  (%1$s)</string>
+  <string name="mozac_feature_downloads_again_dialog_title">ھۆججەتنى قايتا چۈشۈرەمدۇ؟ (%1$s)</string>
   <!--
     Alert dialog confirmation before downloading a file, this is the title.
     %1$s will be replaced with the size of the file.
   -->
-  <string name="mozac_feature_downloads_dialog_title_3">ھۆججەتنى چۈشۈرەمدۇ؟  (%1$s)</string>
-  <!-- Alert dialog confirmation before download a file, this is the title. %1$s will be replaced with the name of the file. -->
-  <string name="mozac_feature_downloads_dialog_title2" moz:removedIn="138" tools:ignore="UnusedResources">چۈشۈرۈش(%1$s)</string>
+  <string name="mozac_feature_downloads_dialog_title_3">ھۆججەتنى چۈشۈرەمدۇ؟ (%1$s)</string>
+  <!-- This string is used as the title for the download confirmation dialog when the size of the file is not known. -->
+  <string name="mozac_feature_downloads_dialog_title_with_unknown_size">ھۆججەتنى چۈشۈرەمدۇ؟</string>
+  <!-- Alert dialog confirmation before downloading a previously downloaded file, this is the title when the size of the file is not known. -->
+  <string name="mozac_feature_downloads_again_dialog_title_with_unknown_size">ھۆججەتنى قايتا چۈشۈرەمدۇ؟</string>
   <!-- Alert dialog confirmation before download a file, this is the positive action. -->
   <string name="mozac_feature_downloads_dialog_download">چۈشۈرۈش</string>
   <!-- Alert dialog confirmation before downloading a file again, this is the positive action. -->
-  <string name="mozac_feature_downloads_dialog_download_again" tools:ignore="UnusedResources">قايتا چۈشۈر</string>
+  <string name="mozac_feature_downloads_dialog_download_again">قايتا چۈشۈر</string>
   <!-- Alert dialog confirmation before download a file, this is the negative action. -->
   <string name="mozac_feature_downloads_dialog_cancel">ۋاز كەچ</string>
   <!--
     Alert dialog confirmation before downloading a previously downloaded file, this is the description.
     %1$s will be replaced with the name of the file.
   -->
-  <string name="mozac_feature_downloads_already_exists_dialog_title" tools:ignore="UnusedResources">%1$s مەۋجۇت.</string>
+  <string name="mozac_feature_downloads_already_exists_dialog_title">%1$s مەۋجۇت.</string>
+  <!-- Alert dialog confirmation before downloading a previously downloaded file, this is the neutral action that proposes to open the file instead. -->
+  <string name="mozac_feature_downloads_open_existing_file">مەۋجۇت ھۆججەتنى ئاچ</string>
   <!--
     Alert dialog confirmation before downloading a file without network connection, this is the description.
     %1$s will be replaced with the name of the file.
@@ -50,13 +63,13 @@
   <!-- Message that appears when the downloaded file is a specific type (%1$s) that Android doesn't support opening. -->
   <string name="mozac_feature_downloads_open_not_supported1">%1$sھۆججىتىنى ئاچىدىغان ئەپ تېپىلمىدى</string>
   <!-- Button that pauses the download when pressed. -->
-  <string name="mozac_feature_downloads_button_pause">توختىتىش</string>
+  <string name="mozac_feature_downloads_button_pause">ۋاقىتلىق توختا</string>
   <!-- Button that resumes the download when pressed. -->
-  <string name="mozac_feature_downloads_button_resume">داۋاملاشتۇرۇش</string>
+  <string name="mozac_feature_downloads_button_resume">داۋاملاشتۇر</string>
   <!-- Button that cancels the download when pressed. -->
   <string name="mozac_feature_downloads_button_cancel">ۋاز كەچ</string>
   <!-- Button that opens the downloaded file when pressed. -->
-  <string name="mozac_feature_downloads_button_open">ئېچىش</string>
+  <string name="mozac_feature_downloads_button_open">ئاچ</string>
   <!-- Button that restarts the download after a failed attempt. -->
   <string name="mozac_feature_downloads_button_try_again">قايتا سىناڭ</string>
   <!-- Content description for close button -->
@@ -64,7 +77,7 @@
   <!-- Title for the third party download app chooser dialog -->
   <string name="mozac_feature_downloads_third_party_app_chooser_dialog_title">تۆۋەندىكى ئەپتە مەشغۇلاتنى تاماملايدۇ</string>
   <!-- Message that appears when trying to download with an external app fails. %1$s will be replaced with the name the external app. -->
-  <string name="mozac_feature_downloads_unable_to_open_third_party_app"> %1$sنى ئاچالمىدى</string>
+  <string name="mozac_feature_downloads_unable_to_open_third_party_app">%1$sنى ئاچالمىدى</string>
   <!-- Text for the info dialog when write to storage permissions have been denied but user tries to download a file. -->
   <string name="mozac_feature_downloads_write_external_storage_permissions_needed_message">ھۆججەت چۈشۈرۈشتە ھۆججەت ۋە ۋاسىتە زىيارەت قىلىش ئىجازىتىگە ئېھتىياجلىق. ئاندىرويىد تەڭشەككە يۆتكىلىپ، ھوقۇقنى چېكىپ، يول قوينى چېكىڭ.</string>
   <!-- Alert dialog confirmation before cancelling downloads, this is the title -->

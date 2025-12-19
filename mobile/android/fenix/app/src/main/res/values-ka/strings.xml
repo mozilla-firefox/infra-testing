@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources xmlns:tools="http://schemas.android.com/tools" xmlns:moz="http://mozac.org/tools">
   <!-- App name for private browsing mode. %s is the name of the app (for example "Firefox"). -->
   <string name="app_name_private_5">პირადი %s</string>
@@ -10,10 +17,6 @@
     Content description (not visible, for screen readers etc.): "Three dot" menu button.
   -->
   <string name="content_description_menu">დამატებითი პარამეტრები</string>
-  <!-- Content description (not visible, for screen readers etc.): "Private Browsing" menu button. -->
-  <string name="content_description_private_browsing_button">პირადი თვალიერების ჩართვა</string>
-  <!-- Content description (not visible, for screen readers etc.): "Private Browsing" menu button. -->
-  <string name="content_description_disable_private_browsing_button">პირადი თვალიერების გამორთვა</string>
   <!-- Content description (not visible, for screen readers etc.): "Private Browsing" menu button. -->
   <string name="content_description_private_browsing">პირადი თვალიერება</string>
   <!-- Placeholder text shown in the search bar before a user enters text for the default engine -->
@@ -32,8 +35,16 @@
   <string name="no_open_tabs_description">თქვენი გახსნილი ჩანართები გამოჩნდება აქ.</string>
   <!-- No Private Tabs Message Description -->
   <string name="no_private_tabs_description">თქვენი პირადი ჩანართები გამოჩნდება აქ.</string>
+  <!-- The header text displayed on the private tabs page when no private tabs are open -->
+  <string name="tab_manager_empty_private_tabs_page_header">პირადი თვალიერება</string>
+  <!-- The supplementary text displayed on the private tabs page when no private tabs are open. %1$s is the name of the app (for example "Firefox") -->
+  <string name="tab_manager_empty_private_tabs_page_description">%1$s არ დაიმახსოვრებს მონახულებულ გვერდებსა თუ ფუნთუშებს, მაგრამ ახლად ჩანიშნული გვერდები შენარჩუნდება.</string>
+  <!-- The header text displayed on the normal tabs page when no normal tabs are open -->
+  <string name="tab_manager_empty_normal_tabs_page_header">ძიების დასაწყებად ახალი ჩანართის შექმნა</string>
   <!-- Tab tray multi select title in app bar. %1$d is the number of tabs selected -->
   <string name="tab_tray_multi_select_title">%1$d მონიშნულია</string>
+  <!-- Tab tray multi select title in app bar when no tabs are selected -->
+  <string name="tab_tray_multi_select_title_empty">ჩანართების შერჩევა</string>
   <!-- Label of button in create collection dialog for creating a new collection -->
   <string name="tab_tray_add_new_collection">ახალი კრებულის დამატება</string>
   <!-- Label of editable text in create collection dialog for naming a new collection -->
@@ -44,6 +55,14 @@
   <string name="tab_tray_close_multiselect_content_description">ერთიანად შერჩევის გაუქმება</string>
   <!-- Content description for save to collection button while in multiselect mode in tab tray -->
   <string name="tab_tray_collection_button_multiselect_content_description">შერჩეული ჩანართების კრებულში შენახვა</string>
+  <!-- The header text displayed on the synced tabs page when the user is not logged into an account. -->
+  <string name="tab_manager_empty_synced_tabs_page_header">წამოიღეთ ჩანართები ნებისმიერი მოწყობილობიდან</string>
+  <!-- The supplementary text displayed on the synced tabs page when the user is not logged into an account. -->
+  <string name="tab_manager_empty_synced_tabs_page_description">შედით, რომ მართოთ დასინქრონებული ჩანართები ყველა თქვენი მოწყობილობიდან.</string>
+  <!-- The action text displayed on the synced tabs page when the user is not logged into an account, prompting the user to sign into their account. When clicked, it takes the user to the account sign-in flow. -->
+  <string name="tab_manager_empty_synced_tabs_page_sign_in_cta">შესვლა</string>
+  <!-- Text for the button used to show all stories -->
+  <string name="homepage_all_stories">ყველა სიახლე</string>
   <!--
     Home - Bookmarks
 
@@ -55,18 +74,11 @@
   <!-- Text for the menu button to remove a recently saved bookmark from the user's home screen -->
   <string name="home_bookmarks_menu_item_remove">მოცილება</string>
   <!-- About content. %1$s is the name of the app (for example "Firefox"). -->
-  <string name="about_content">%1$s შემქმნელი Mozilla.</string>
-  <!--
-    Private Browsing
-
-    Explanation for private browsing displayed to users on home view when they first enable private mode.
-    %1$s is the name of the app (for example "Firefox").
-  -->
-  <string name="private_browsing_placeholder_description_2">
-        %1$s გაასუფთავებს თქვენი ძიებისა და ნახვების ისტორიას ყველა პირადი ჩანართის დახურვისას ან გამოსვლისას. მართალია, ეს ვერ დაფარავს თქვენს ვინაობას საიტებისა და ინტერნეტის მომწოდებლისგან, მაგრამ გაგიადვილებთ, დაიცვათ პირადი მონაცემები, თუ ამ მოწყობილობის სხვაც გამოიყენებს.</string>
-  <string name="private_browsing_common_myths">
-       ცრუ წარმოდგენები პირადი თვალიერების შესახებ
-    </string>
+  <string name="about_content">%1$s, შემქმნელია Mozilla.</string>
+  <!-- Private Browsing -->
+  <string name="private_browsing_common_myths">ცრუ წარმოდგენები პირადი თვალიერების შესახებ</string>
+  <!-- Text to be announced by the accessibility service to inform the user that the private browsing mode is currently active. -->
+  <string name="private_browsing_a11y_session_announcement">პირადი დათვალიერების რეჟიმი</string>
   <!--
     True Private Browsing Mode
 
@@ -79,23 +91,18 @@
     %1$s is the name of the app (for example "Firefox").
     %2$s is a link using felt_privacy_info_card_subtitle_link_text as text
   -->
-  <string name="felt_privacy_info_card_subtitle_2">%1$s წაშლის თქვენს ფუნთუშებს, ისტორიასა და საიტის მონაცემებს ყველა პირადი ჩანართის დახურვისას. %2$s</string>
+  <string name="felt_privacy_info_card_subtitle_2" tools:ignore="UnusedResources" moz:removedIn="147">%1$s წაშლის თქვენს ფუნთუშებს, ისტორიასა და საიტის მონაცემებს ყველა პირადი ჩანართის დახურვისას. %2$s</string>
+  <!--
+    Description of private browsing mode displayed to users on the homepage when they enable private mode.
+    %1$s is the name of the app (for example "Firefox").
+  -->
+  <string name="felt_privacy_info_card_subtitle_3">%1$s წაშლის თქვენს ფუნთუშებს, ისტორიასა და საიტის მონაცემებს ყველა პირადი ჩანართის დახურვისას.</string>
   <!--
     Clickable portion of the explanation for private browsing that links the user to our
     about privacy page.
     This string is used in felt_privacy_info_card_subtitle as the text for the link.
   -->
   <string name="felt_privacy_info_card_subtitle_link_text">ვისთვის შეიძლება იყოს ხილული ჩემი საქმიანობა?</string>
-  <!--
-    Private mode shortcut "contextual feature recommendation" (CFR)
-
-    Text for the Private mode shortcut CFR message for adding a private mode shortcut to open private tabs from the Home screen
-  -->
-  <string name="private_mode_cfr_message_2" moz:removedIn="138" tools:ignore="UnusedResources">გახსენით ახალი პირადი ჩანართი ერთი შეხებით.</string>
-  <!-- Text for the positive button to accept adding a Private Browsing shortcut to the Home screen -->
-  <string name="private_mode_cfr_pos_button_text" moz:removedIn="138" tools:ignore="UnusedResources">მთავარ ეკრანზე დამატება</string>
-  <!-- Text for the negative button to decline adding a Private Browsing shortcut to the Home screen -->
-  <string name="cfr_neg_button_text" moz:removedIn="138" tools:ignore="UnusedResources">არა, გმადლობთ</string>
   <!--
     Open in App "contextual feature recommendation" (CFR)
 
@@ -106,31 +113,13 @@
   <string name="open_in_app_cfr_positive_button_text">პარამეტრებზე გადასვლა</string>
   <!-- Text for the negative action button -->
   <string name="open_in_app_cfr_negative_button_text">გამოტოვება</string>
-  <!--
-    Private browsing erase action "contextual feature recommendation" (CFR)
+  <!-- Private browsing erase action "contextual feature recommendation" (CFR) -->
 
-    Text for the message displayed in the contextual feature recommendation popup promoting the erase private browsing feature.
-  -->
-  <string name="erase_action_cfr_message">შეეხეთ აქ ახალი პირადი სეანსის დასაწყებად. წაშალეთ თქვენი ისტორია, ფუნთუშები — ყველაფერი.</string>
-  <!--
-    Toolbar "contextual feature recommendation" (CFR)
-
-    Text for the title displayed in the contextual feature recommendation popup promoting the navigation bar.
-  -->
-  <string name="navbar_cfr_title">სწრაფი თვალიერება ახალი სამოძრაოთი</string>
-  <!-- Text for the message displayed in the contextual feature recommendation popup promoting the navigation bar. -->
-  <string name="navbar_cfr_message_2">საიტზე ეს ზოლი იკეცება ქვემოთ დამატებითი სივრცისთვის.</string>
-  <!-- Text for the message displayed for the popup promoting the long press of navigation in the navigation bar. -->
-  <string name="navbar_navigation_buttons_cfr_message">დიდხანს შეეხეთ ისრებს ამ ჩანართის ისტორიის გვერდებს შორის გადასასვლელად.</string>
   <!--
     Address bar swipe "contextual feature recommendation" (CFR)
 
-    Text for the title displayed in the contextual feature recommendation popup promoting swipe of address bar.
+    Text for the message displayed in the contextual feature recommendation popup promoting swipe of address bar.
   -->
-  <string name="address_bar_swipe_cfr_title" tools:ignore="UnusedResources" moz:removedIn="139">გადაუსვით ხელსაწყოთა ზოლს ჩანართების გადასართველად</string>
-  <!-- Text for the message displayed in the contextual feature recommendation popup promoting swipe of address bar. -->
-  <string name="address_bar_swipe_cfr_message" tools:ignore="UnusedResources" moz:removedIn="139">გაუსვით მარცხნივ ან მარჯვნივ. ბოლო ჩანართის მარცხნივ გასმისას ახალი გაიხსნება.</string>
-  <!-- Text for the message displayed in the contextual feature recommendation popup promoting swipe of address bar. -->
   <string name="address_bar_swipe_cfr_message_2">გაუსვით ხელსაწყოთა ზოლს მარცხნივ ან მარჯვნივ ჩანართების გადასართავად.</string>
   <!-- Text for the info dialog when camera permissions have been denied but user tries to access a camera feature. -->
   <string name="camera_permissions_needed_message">კამერასთან წვდომაა საჭირო. გადადით Android-პარამეტრებში, შეეხეთ ნებართვებს და შემდეგ დაშვებას.</string>
@@ -218,29 +207,12 @@
   <string name="browser_menu_stop">შეჩერება</string>
   <!-- Browser menu button that opens the extensions manager -->
   <string name="browser_menu_extensions">გაფართოებები</string>
-  <!--
-    Browser menu banner header text for extensions onboarding.
-    %s is the name of the app (for example "Firefox").
-  -->
-  <string name="browser_menu_extensions_banner_onboarding_header">გახადეთ %s მეტად თქვენებური</string>
   <!-- Browser menu banner header text for extensions onboarding when all installed extensions have been disabled. -->
   <string name="browser_menu_disabled_extensions_banner_onboarding_header">თქვენ დაყენებული გაქვთ გაფართოებები, მაგრამ არაა ჩართული</string>
-  <!--
-    Browser menu banner body text for extensions onboarding.
-    %s is the name of the app (for example "Firefox").
-  -->
-  <string name="browser_menu_extensions_banner_onboarding_body">გაფართოებებით ახლებურად მოინახულებთ გვერდებს, განსაზღვრავთ, როგორ გამოიყურებოდეს %s და გააუმჯობესებთ პირადულობასა თუ უსაფრთხოებას.</string>
-  <!--
-    Browser menu banner body text for extensions onboarding when all installed extensions have been disabled.
-    %s is the label of the button that opens the extension manager (for example "Manage extensions").
-  -->
-  <string name="browser_menu_disabled_extensions_banner_onboarding_body">გაფართოებების გამოსაყენებლად ჩართეთ ისინი პარამეტრებიდან ან აირჩიეთ „%s“ ქვემოთ.</string>
-  <!-- Browser menu banner link text for learning more about extensions -->
-  <string name="browser_menu_extensions_banner_learn_more">ვრცლად</string>
   <!-- Browser menu button that opens the extensions manager -->
   <string name="browser_menu_manage_extensions">გაფართოებების მართვა</string>
-  <!-- Content description (not visible, for screen readers etc.): Section heading for recommended extensions. -->
-  <string name="browser_menu_recommended_section_content_description">სასურველი გაფართოებები</string>
+  <!-- Browser menu group that contains additional settings in collapsed state -->
+  <string name="browser_menu_more_settings">გავრცობილად</string>
   <!--
     Content description (not visible, for screen readers etc.): Label for plus icon used to add extension.
     %1$s is the name of the extension (for example: ClearURLs).
@@ -252,6 +224,8 @@
   <string name="browser_menu_extensions_disabled_description">დროებით ამორთულია</string>
   <!-- The description of the browser menu appears when the user hasn't installed any extensions. -->
   <string name="browser_menu_no_extensions_installed_description">გაფართოებები არაა ჩართული</string>
+  <!-- The description of the browser menu appears when the user hasn't installed any extensions and there are recommended extensions. -->
+  <string name="browser_menu_try_a_recommended_extension_description">მოსინჯეთ რჩეული გაფართოება</string>
   <!-- Browser menu button that opens account settings -->
   <string name="browser_menu_account_settings">ანგარიშის შესახებ</string>
   <!-- Browser menu button that sends a user to help articles -->
@@ -270,28 +244,20 @@
   <string name="browser_menu_add_to_homescreen">ეკრანზე დამატება</string>
   <!-- Browser menu toggle that adds a PWA of the site on the device home screen. -->
   <string name="browser_menu_add_app_to_homescreen">მთავარ ეკრანზე დამატება</string>
-  <!-- Browser menu toggle that adds a shortcut to the site on the device home screen. -->
-  <string name="browser_menu_add_to_homescreen_2">მთავარ ეკრანზე დამატება…</string>
-  <!-- Browser menu toggle that adds a PWA of the site on the device home screen. -->
-  <string name="browser_menu_add_app_to_homescreen_2">მთავარ ეკრანზე დამატება…</string>
   <!-- Text for notifying users that Xiaomi devices require additional permissions to add to home screen -->
   <string name="browser_menu_add_to_homescreen_xiaomi">Xiaomi მოწყობილობებს შეიძლება დასჭირდეს დამატებითი ნებართვები მალსახმობების დასამატებლად მთავარ ეკრანზე. გთხოვთ გადაამოწმოთ თქვენი პარამეტრები.</string>
   <!-- Content description (not visible, for screen readers etc.) for the Resync tabs button -->
   <string name="resync_button_content_description">კვლავ დასინქრონება</string>
   <!-- Browser menu button that opens the find in page menu -->
   <string name="browser_menu_find_in_page">პოვნა გვერდზე</string>
-  <!-- Browser menu button that opens the find in page menu -->
-  <string name="browser_menu_find_in_page_2">პოვნა გვერდზე…</string>
   <!-- Browser menu button that opens the translations dialog, which has options to translate the current browser page. -->
   <string name="browser_menu_translations">გვერდის თარგმნა</string>
-  <!-- Browser menu button that saves the current tab to a collection -->
-  <string name="browser_menu_save_to_collection">კრებულში შენახვა…</string>
   <!-- Browser menu button that saves the current tab to a collection -->
   <string name="browser_menu_save_to_collection_2">კრებულში შენახვა</string>
   <!-- Browser menu button that open a share menu to share the current site -->
   <string name="browser_menu_share">გაზიარება</string>
-  <!-- Browser menu button that open a share menu to share the current site -->
-  <string name="browser_menu_share_2">გაზიარება…</string>
+  <!-- Browser menu button that goes to the homepage screen -->
+  <string name="browser_menu_homepage">საწყისი გვერდი</string>
   <!--
     Browser menu button shown in custom tabs that opens the current tab in Fenix
     %1$s is the name of the app (for example "Firefox").
@@ -326,34 +292,25 @@
   <!-- Browser menu label to sign in to sync on the device using Mozilla accounts -->
   <string name="browser_menu_sign_in">შესვლა</string>
   <!-- Browser menu caption label for the "Sign in" browser menu item described in `browser_menu_sign_in` -->
-  <string name="browser_menu_sign_in_caption">დაასინქრონეთ პაროლები, ჩანართები და სხვა</string>
+  <string name="browser_menu_sign_in_caption_3">დაასინქრონეთ პაროლები, სანიშნები და სხვა</string>
   <!-- Browser menu label to sign back in to sync on the device when the user's account needs to be reauthenticated -->
-  <string name="browser_menu_sign_back_in_to_sync">შესვლა სინქრონიზაციისთვის</string>
+  <string name="browser_menu_sign_back_in_to_sync">კვლავ შესვლა და სინქ.</string>
   <!-- Browser menu caption label for the "Sign back in to sync" browser menu item described in `browser_menu_sign_back_in_to_sync` when there is an error in syncing -->
   <string name="browser_menu_syncing_paused_caption">დასინქრონება შეჩერებულია</string>
+  <!-- Browser menu caption label for an authenticated user -->
+  <string name="browser_menu_signed_in_caption">მართეთ, რას ამარქაფებთ და ასინქრონებთ</string>
   <!-- Browser menu label that creates a private tab -->
   <string name="browser_menu_new_private_tab">ახალი პირადი ჩანართი</string>
   <!-- Browser menu label that navigates to the Password screen -->
   <string name="browser_menu_passwords">პაროლები</string>
-  <!--
-    Browser menu label that navigates to the SUMO page for the Firefox for Android release notes.
-    %1$s is the name of the app (for example "Firefox").
-  -->
-  <string name="browser_menu_new_in_firefox">რა სიახლეებითაა %1$s</string>
-  <!-- Browser menu label that toggles the request for the desktop site of the currently visited page -->
-  <string name="browser_menu_switch_to_desktop_site">სრული საიტი</string>
-  <!-- Browser menu label that toggles the request for the mobile site of the currently visited page -->
-  <string name="browser_menu_switch_to_mobile_site">მობილურის საიტი</string>
-  <!-- Browser menu label that navigates to the page tools sub-menu -->
-  <string name="browser_menu_tools">ხელსაწყოები</string>
-  <!-- Content description (not visible, for screen readers etc.): Back button for all menu redesign sub-menu -->
-  <string name="browser_menu_back_button_content_description">მთავარ მენიუზე დაბრუნება</string>
-  <!-- Content description (not visible, for screen readers etc.) for bottom sheet handlebar main menu. -->
-  <string name="browser_main_menu_handlebar_content_description">მთავარი მენიუს ფურცლის დახურვა</string>
+  <!-- Content description (not visible, for screen readers etc.) for the handle used to drag the main menu at the bottom of the screen. -->
+  <string name="browser_close_main_menu_handlebar_content_description">მენიუს დახურვა</string>
+  <!-- Content description (not visible, for screen readers etc.) for main menu navigation header. -->
+  <string name="browser_main_menu_content_description_navigation_header">გადაადგილება</string>
   <!-- Content description (not visible, for screen readers etc.) for main menu help button. -->
-  <string name="browser_main_menu_content_description_help_button">დახმარება</string>
+  <string name="browser_main_menu_content_description_help_button" tools:ignore="UnusedResources" moz:removedIn="146">დახმარება</string>
   <!-- Content description (not visible, for screen readers etc.) for main menu settings button. -->
-  <string name="browser_main_menu_content_description_settings_button">პარამეტრები</string>
+  <string name="browser_main_menu_content_description_settings_button" tools:ignore="UnusedResources" moz:removedIn="146">პარამეტრები</string>
   <!-- Content description (not visible, for screen readers etc.) for bottom sheet handlebar extensions menu. -->
   <string name="browser_extensions_menu_handlebar_content_description">გაფართოების მენიუს ფურცლის დახურვა</string>
   <!-- Content description (not visible, for screen readers etc.) for bottom sheet handlebar save menu. -->
@@ -362,49 +319,38 @@
   <string name="browser_tools_menu_handlebar_content_description">ხელსაწყოების მენიუს ფურცლის დახურვა</string>
   <!-- Content description (not visible, for screen readers etc.) for bottom sheet handlebar custom tab menu. -->
   <string name="browser_custom_tab_menu_handlebar_content_description">მორგებული ჩანართის ფურცლის დახურვა</string>
-  <!-- Browser menu description that describes the various tools related menu items inside of the tools sub-menu when the "Report broken site" feature is available -->
-  <string name="browser_menu_tools_description_with_translate_with_report_site_2">საკითხავი ხედი, თარგმნა, გაუმართაობის მოხსენება, ბეჭდვა, გაზიარება, აპის გახსნა</string>
-  <!-- Browser menu description that describes the various tools related menu items inside of the tools sub-menu -->
-  <string name="browser_menu_tools_description_with_translate_without_report_site">საკითხავი ხედი, თარგმნა, ბეჭდვა, გაზიარება, აპის გახსნა</string>
-  <!-- Browser menu description that describes the various tools related menu items inside of the tools sub-menu when the "Report broken site" feature is available -->
-  <string name="browser_menu_tools_description_with_report_site_2">საკითხავი ხედი, გაუმართაობის მოხსენება, ბეჭდვა, გაზიარება, აპის გახსნა</string>
-  <!-- Browser menu description that describes the various tools related menu items inside of the tools sub-menu -->
-  <string name="browser_menu_tools_description_without_report_site">წაკითხვის ხედი, თარგმნა, ამობეჭდვა, გაზიარება, აპის გახსნა</string>
-  <!--
-    Browser menu label that navigates to the save sub-menu, which contains various save related menu items such as
-    bookmarking a page, saving to collection, shortcut or as a PDF, and adding to home screen
-  -->
-  <string name="browser_menu_save">შენახვა</string>
-  <!-- Browser menu description that describes the various save related menu items inside of the save sub-menu -->
-  <string name="browser_menu_save_description">ჩანიშვნა, მალსახმობი, მთავარი გვერდი, კრებული, PDF</string>
   <!-- Browser menu label that bookmarks the currently visited page -->
-  <string name="browser_menu_bookmark_this_page">ამ გვერდის ჩანიშვნა</string>
+  <string name="browser_menu_bookmark_this_page_2">გვერდის ჩანიშვნა</string>
   <!-- Browser menu label that navigates to the edit bookmark screen for the current bookmarked page -->
   <string name="browser_menu_edit_bookmark">სანიშნის ჩასწორება</string>
   <!-- Browser menu label that the saves the currently visited page as a PDF -->
-  <string name="browser_menu_save_as_pdf">შეინახოს PDF…</string>
-  <!-- Browser menu label for turning ON reader view of the current visited page -->
-  <string name="browser_menu_turn_on_reader_view">საკითხავი ხედის ჩართვა</string>
-  <!-- Browser menu label for turning OFF reader view of the current visited page -->
-  <string name="browser_menu_turn_off_reader_view">საკითხავი ხედის გამორთვა</string>
-  <!-- Browser menu button that reopens a private tab as a regular tab -->
-  <string name="browser_menu_open_in_normal_tab">გადასვლა ჩვეულებრივ ჩანართზე</string>
+  <string name="browser_menu_save_as_pdf_2">შეინახოს PDF</string>
   <!-- Browser menu label for navigating to the translation feature, which provides language translation options the current visited page -->
-  <string name="browser_menu_translate_page">გვერდის თარგმნა…</string>
+  <string name="browser_menu_translate_page_2">გვერდის თარგმნა</string>
   <!-- Browser menu label for navigating to the Web Compat Reporter feature, which provides users the ability to send bug reports for broken sites. -->
-  <string name="browser_menu_webcompat_reporter">გაუმართაობის მოხსენება…</string>
-  <!--
-    Browser menu label that is displayed when the current page has been translated by the translation feature.
-    %1$s is the name of the language that page was translated to (e.g. English).
-  -->
-  <string name="browser_menu_translated_to">%1$s თარგმანი</string>
+  <string name="browser_menu_webcompat_reporter">არეული საიტის მოხსენება…</string>
+  <!-- Browser menu label for navigating to the Web Compat Reporter feature, which provides users the ability to send bug reports for broken sites. -->
+  <string name="browser_menu_webcompat_reporter_2">არეული საიტის მოხსენება</string>
+  <!-- Browser menu label that is displayed when the current page has been translated by the translation feature. -->
+  <string name="browser_menu_translated">ნათარგმნი</string>
   <!-- Browser menu label for the print feature -->
-  <string name="browser_menu_print">ბეჭდვა…</string>
+  <string name="browser_menu_print_2">ბეჭდვა</string>
   <!--
     Browser menu label for the Delete browsing data on quit feature.
     %1$s is the name of the app (for example "Firefox").
   -->
   <string name="browser_menu_delete_browsing_data_on_quit">დაიხუროს %1$s</string>
+  <!--
+    Content description for a banner within the menu which prompt the user to make this app their default browser.
+    %1$s is the name of the app (for example "Firefox").
+  -->
+  <string name="browser_menu_default_banner_title">გახადეთ %1$s ნაგულისხმევი</string>
+  <!-- Label text within the set as default banner -->
+  <string name="browser_menu_default_banner_subtitle_2">სწრაფი, პირადი და თქვენთვის შექმნილი.</string>
+  <!-- Content description (not visible, for screen readers etc.) for the button that dismisses the set as default banner in the menu -->
+  <string name="browser_menu_default_banner_dismiss_promotion">დამკვეთისგან მოწოდებულის არიდება</string>
+  <!-- Content description (not visible, for screen readers etc.) for recommended extensions in main menu -->
+  <string name="browser_menu_recommended_extensions_content_description">დამატებით</string>
   <!--
     Menu "contextual feature recommendation" (CFR)
 
@@ -425,11 +371,6 @@
     Content description for the Home screen button on the browser toolbar
   -->
   <string name="browser_toolbar_home">მთავარი ეკრანი</string>
-  <!--
-    Content description (not visible, for screen readers etc.): Erase button: Erase the browsing
-    history and go back to the home screen.
-  -->
-  <string name="browser_toolbar_erase">ისტორიის გასუფთავება</string>
   <!-- Content description for the translate page toolbar button that opens the translations dialog when no translation has occurred. -->
   <string name="browser_toolbar_translate">გვერდის თარგმნა</string>
   <!--
@@ -438,6 +379,18 @@
     %2$s is the name of the language which the page was translated to. (For example: French)
   -->
   <string name="browser_toolbar_translated_successfully">თარგმანი ენებს შორის %1$s და %2$s.</string>
+  <!--
+    Translation Toolbar
+
+    Translation toolbar label that is displayed when the current page has been translated by the translation feature.
+    %1$s is the name of the language that is displayed in the original page. (For example: English)
+    %2$s is the name of the language which the page was translated to. (For example: French)
+  -->
+  <string name="translation_toolbar_translated_from_and_to" tools:ignore="UnusedResources">თარგმანი ენებს შორის %1$s და %2$s</string>
+  <!-- Content description for the translate toolbar action that opens the translations dialog. -->
+  <string name="translation_toolbar_expand_action">გაიხსნას თარგმანის არე</string>
+  <!-- Content description for the translate toolbar action that closes the translations toolbar. -->
+  <string name="translation_toolbar_close_action">შეტყობინების აცილება</string>
   <!--
     Locale Settings Fragment
 
@@ -488,24 +441,8 @@
   <!--
     Home onboarding
 
-    Home onboarding dialog welcome screen title text.
+    Content description (not visible, for screen readers etc.): Close button for the home onboarding dialog
   -->
-  <string name="onboarding_home_welcome_title_2">კეთილი იყოს თქვენი ფეხი მეტად პირად ინტერნეტსივრცეში</string>
-  <!-- Home onboarding dialog welcome screen description text. -->
-  <string name="onboarding_home_welcome_description">მეტი ფერი. გაუმჯობესებული პირადულობა. ხალხის მოგებაზე წინ დაყენება მუდამ.</string>
-  <!-- Home onboarding dialog sign into sync screen title text. -->
-  <string name="onboarding_home_sync_title_3">ეკრანებს შორის გადართვა ჯერ არნახული სიმარტივით</string>
-  <!-- Home onboarding dialog sign into sync screen description text. -->
-  <string name="onboarding_home_sync_description">განაგრძეთ იქიდან, სადაც შეჩერდით, სხვა მოწყობილობიდან ჩანართების წამოღებით ახლა უკვე საწყის გვერდზე.</string>
-  <!-- Text for the button to continue the onboarding on the home onboarding dialog. -->
-  <string name="onboarding_home_get_started_button">დაიწყეთ</string>
-  <!-- Text for the button to navigate to the sync sign in screen on the home onboarding dialog. -->
-  <string name="onboarding_home_sign_in_button">შესვლა</string>
-  <!-- Text for the button to skip the onboarding on the home onboarding dialog. -->
-  <string name="onboarding_home_skip_button">გამოტოვება</string>
-  <!-- Onboarding home screen sync popup dialog message, shown on top of Recent Synced Tabs in the Jump back in section. -->
-  <string name="sync_cfr_message">თქვენი ჩანართები სინქრონდება! განაგრძეთ იქიდანვე, სადაც შეჩერდით სხვა მოწყობილობაზე.</string>
-  <!-- Content description (not visible, for screen readers etc.): Close button for the home onboarding dialog -->
   <string name="onboarding_home_content_description_close_button">დახურვა</string>
   <!--
     Juno first user onboarding flow experiment, strings are marked unused as they are only referenced by Nimbus experiments.
@@ -519,15 +456,15 @@
     Title for set firefox as default browser screen used by Nimbus experiments.
     Note: The word "Firefox" should NOT be translated
   -->
-  <string name="juno_onboarding_default_browser_title_nimbus_3" tools:ignore="BrandUsage,UnusedResources">გაარკვიეთ, რითაა მილიონობით ხალხის რჩეული Firefox</string>
+  <string name="juno_onboarding_default_browser_title_nimbus_3" tools:ignore="BrandUsage,UnusedResources" moz:removedIn="146">გაარკვიეთ, რითაა მილიონობით ხალხის რჩეული Firefox</string>
   <!-- Title for set firefox as default browser screen used by Nimbus experiments. -->
-  <string name="juno_onboarding_default_browser_title_nimbus_4" tools:ignore="UnusedResources">უსაფრთხო თვალიერება მეტი არჩევანით</string>
+  <string name="juno_onboarding_default_browser_title_nimbus_4" tools:ignore="UnusedResources" moz:removedIn="146">უსაფრთხო თვალიერება მეტი არჩევანით</string>
   <!-- Description for set firefox as default browser screen used by Nimbus experiments. -->
   <string name="juno_onboarding_default_browser_description_nimbus_3">ჩვენი ბრაუზერი არამომგებიანი დაწესებულებისგანაა და გეხმარებათ აირიდოთ კომპანიებისგან ფარული თვალთვალი ვებსივრცით სარგებლობისას.</string>
   <!-- Description for set firefox as default browser screen used by Nimbus experiments. -->
-  <string name="juno_onboarding_default_browser_description_nimbus_4" tools:ignore="UnusedResources">100 მილიონზე მეტი ადამიანი იცავს თავის პირადულობას არამომგებიანი დაწესებულების მიერ მხარდაჭერილი ბრაუზერის არჩევით.</string>
+  <string name="juno_onboarding_default_browser_description_nimbus_4" tools:ignore="UnusedResources" moz:removedIn="146">100 მილიონზე მეტი ადამიანი იცავს თავის პირადულობას არამომგებიანი დაწესებულების მიერ მხარდაჭერილი ბრაუზერის არჩევით.</string>
   <!-- Description for set firefox as default browser screen used by Nimbus experiments. -->
-  <string name="juno_onboarding_default_browser_description_nimbus_5" tools:ignore="UnusedResources">ცნობილი მეთვალყურეები? იზღუდება თავისთავად. გაფართოებები? 700-ვე შეგიძლიათ მოსინჯოთ. PDF? ჩვენი ჩაშენებული წამკითხველით უადვილესი გამოსაყენებელია.</string>
+  <string name="juno_onboarding_default_browser_description_nimbus_5" tools:ignore="UnusedResources" moz:removedIn="146">ცნობილი მეთვალყურეები? იზღუდება თავისთავად. გაფართოებები? 700-ვე შეგიძლიათ მოსინჯოთ. PDF? ჩვენი ჩაშენებული წამკითხველით უადვილესი გამოსაყენებელია.</string>
   <!-- Text for the button to set firefox as default browser on the device -->
   <string name="juno_onboarding_default_browser_positive_button" tools:ignore="UnusedResources">ნაგულისხმევ ბრაუზერად დაყენება</string>
   <!-- Text for the button dismiss the screen and move on with the flow -->
@@ -574,45 +511,6 @@
   <string name="juno_onboarding_add_search_widget_positive_button" tools:ignore="BrandUsage,UnusedResources">Firefox-ჩანამატი ეკრანზე</string>
   <!-- Text for the button to dismiss the screen and move on with the flow -->
   <string name="juno_onboarding_add_search_widget_negative_button" tools:ignore="UnusedResources">ახლა არა</string>
-  <!--
-    Onboarding header for the add-ons card used by Nimbus experiments. Nimbus experiments do not support string placeholders.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="onboarding_add_on_header" tools:ignore="BrandUsage,UnusedResources">მოირგეთ თქვენი Firefox გაფართოებებით</string>
-  <!-- Onboarding sub header for the add-ons card, used by Nimbus experiments. -->
-  <string name="onboarding_add_on_sub_header" tools:ignore="UnusedResources">დაამატეთ გარეშე მხარის გაფართოებები გაუმჯობესებული უსაფრთხოებისთვის, სარგებლიანობისთვის და ა. შ.</string>
-  <!-- Onboarding add-ons card, for checking more add-ons on, used by Nimbus experiments. -->
-  <string name="onboarding_add_on_explore_more_extensions_2">მოიძიეთ სხვა გაფართოებები</string>
-  <!-- Onboarding add-ons card, button for start browsing, used by Nimbus experiments. -->
-  <string name="onboarding_add_on_start_browsing_button_2">დაიწყეთ მოგზაურობა ინტერნეტში</string>
-  <!-- Ublock name for the onboarding add-ons card, used by Nimbus experiments. Note: The word "Ublock Origin" is a brand name should NOT be translated -->
-  <string name="onboarding_add_on_ublock_name" tools:ignore="UnusedResources">uBlock Origin</string>
-  <!-- Ublock description for the onboarding add-ons card, used by Nimbus experiments. -->
-  <string name="onboarding_add_on_ublock_description" tools:ignore="UnusedResources">შეზღუდეთ რეკლამები ქმედითად და შედეგიანად.</string>
-  <!-- Privacy Badger name for the onboarding add-ons card, used by Nimbus experiments. Note: The word "Privacy Badger" is a brand name should NOT be translated -->
-  <string name="onboarding_add_on_privacy_badger_name" tools:ignore="UnusedResources">Privacy Badger</string>
-  <!-- Privacy Badger description for the onboarding add-ons card, used by Nimbus experiments. -->
-  <string name="onboarding_add_on_privacy_badger_description" tools:ignore="UnusedResources">თვალთვალის საწინააღმდეგო ძვირფასეულობა. შეზღუდეთ უხილავი მეთვალყურეები და ჯაშუშური რეკლამები.</string>
-  <!-- Search by Image name for the onboarding add-ons card, used by Nimbus experiments. Note: The word "Search by Image" is a brand name should NOT be translated -->
-  <string name="onboarding_add_on_search_by_image_name" tools:ignore="UnusedResources">Search by Image</string>
-  <!-- Search by Image description for the onboarding add-ons card, used by Nimbus experiments. -->
-  <string name="onboarding_add_on_search_by_image_description" tools:ignore="UnusedResources">სურათმა მიიქცია თქვენი ყურადღება და გსურთ, უკეთ გაეცნოთ.</string>
-  <!-- Dark Reader name for the onboarding add-ons card, used by Nimbus experiments. Note: The word "Dark Reader" is a brand name should NOT be translated -->
-  <string name="onboarding_add_on_dark_reader_name" tools:ignore="UnusedResources">Dark Reader</string>
-  <!-- Privacy Badger description for the onboarding add-ons card, used by Nimbus experiments. -->
-  <string name="onboarding_add_on_dark_reader_description" tools:ignore="UnusedResources">მორგებული მუქი რეჟიმი მობილური ვებგვერდებისთვის.</string>
-  <!-- Label for the number of reviews for an add-on. %1$s is the formatted number of reviews e.g. "1,234", "12,345", "123,456". -->
-  <string name="onboarding_add_on_reviews_label">მიმოხილვა: %1$s</string>
-  <!-- Content description for the add-on icon. -->
-  <string name="onboarding_add_on_icon_content_description">დამატების ხატულა</string>
-  <!-- Content description for the an installed add-on icon. -->
-  <string name="onboarding_installed_add_on_icon_content_description">ჩადგმული დამატების ხატულა</string>
-  <!-- Content description for the an installing add-on icon. -->
-  <string name="onboarding_installing_add_on_icon_content_description">ჩასადგმელი დამატების ხატულა</string>
-  <!-- Content description for the add add-on button. -->
-  <string name="onboarding_add_on_add_button_content_description">დამატების ჩასადგმელი ღილაკი</string>
-  <!-- Content description for the star rating group. %1$s is the rating. -->
-  <string name="onboarding_add_on_star_rating_content_description">%1$s შეფასება 5-იდან</string>
   <!-- Title for the privacy preferences dialog shown during onboarding. Note: The word "Firefox" should NOT be translated. -->
   <string name="onboarding_preferences_dialog_title" tools:ignore="BrandUsage">დაგვეხმარეთ, გავაუმჯობესოთ Firefox</string>
   <!-- Title for the crash reporting option in the privacy preferences dialog shown during onboarding. -->
@@ -621,6 +519,16 @@
   <string name="onboarding_preferences_dialog_crash_reporting_description">უეცარი გათიშვის მოხსენებები საშუალებას გვაძლევს, გამოვავლინოთ და მოვაგვაროთ ბრაუზერის ხარვეზები. მოხსენებები შეიძლება შეიცავდეს პირად ან საფრთხილო მონაცემებს.</string>
   <!-- Learn more link for the crash reporting option in the privacy preferences dialog shown during onboarding. -->
   <string name="onboarding_preferences_dialog_crash_reporting_learn_more_2">ვრცლად</string>
+  <!-- Title for the startup crash page. %s is the name of the app (for example "Firefox") -->
+  <string name="startup_crash_title">%s ახლიდან უნდა ჩაირთოს</string>
+  <!-- Body text for the startup crash page. %s is the name of the app (for example "Firefox") -->
+  <string name="startup_crash_body">ხარვეზებით გაეშვა %s.\n\nუეცარი გათიშვის მოხსენებები გვეხმარება, გამოვავლინოთ და მოვაგვაროთ ბრაუზერის ხარვეზები. მოხსენებები შეიძლება შეიცავდეს პირად ან საფრთხილო მონაცემებს.</string>
+  <!-- Button text to submit a startup crash report -->
+  <string name="startup_crash_positive">უეცარი გათიშვის მოხსენება</string>
+  <!-- Button text to continue and not send a startup crash report -->
+  <string name="startup_crash_negative">არა, გმადლობთ</string>
+  <!-- Button text to reopen firefox after the crash is processed %s is the name of the app (for example "Firefox") -->
+  <string name="startup_crash_restart">ახლიდან ჩაირთოს %s</string>
   <!-- Title for the usage data option in the privacy preferences dialog shown during onboarding. Note: The word "Mozilla" should NOT be translated. -->
   <string name="onboarding_preferences_dialog_usage_data_title">ტექნიკურ და გამოყენების მონაცემებს გაეცნოს Mozilla</string>
   <string name="onboarding_preferences_dialog_usage_data_description_2" tools:ignore="BrandUsage">მონაცემები თქვენი მოწყობილობის, აპარატურული გაწყობისა და იმის შესახებ, თუ როგორ გამოიყენება Firefox, გვეხმარება შესაძლებლობების, წარმადობისა და მდგრადობის საყოველთაო გაუმჯობესებაში.</string>
@@ -632,7 +540,7 @@
   <!-- Terms of service sub header label. -->
   <string name="onboarding_terms_of_service_sub_header_2">გვერდების თვალიერება სწრაფად და დაცულად</string>
   <!-- Terms of service onboarding page continue button label. -->
-  <string name="onboarding_term_of_service_agree_and_continue_button_label">თანხმობა და გაგრძელება</string>
+  <string name="onboarding_term_of_service_agree_and_continue_button_label_2">განაგრძეთ</string>
   <!-- Line one of the terms of service onboarding page. %1$s is replaced by an active link, using onboarding_term_of_service_line_one_link_text_2 as text (“Firefox Terms of Use”). -->
   <string name="onboarding_term_of_service_line_one_2">თუ განაგრძობთ, თანახმა ხართ მიიღოთ %1$s.</string>
   <!-- Used as text for the link in onboarding_term_of_service_line_one_2. -->
@@ -642,15 +550,70 @@
   <!-- Used as text for the link in onboarding_term_of_service_line_two. -->
   <string name="onboarding_term_of_service_line_two_link_text">პირადულობის დებულება</string>
   <!-- Line three of the terms of service onboarding page. 'Firefox' and 'Mozilla' are intentionally hardcoded. %1$s is replaced by an active link using onboarding_term_of_service_line_three_link_text as text (“Manage”). -->
-  <string name="onboarding_term_of_service_line_three" tools:ignore="BrandUsage">ბრაუზერის გასაუმჯობესებლად Firefox აგზავნის Mozilla-ში შემოწმებისა და გამოყენების შედეგებს. %1$s</string>
+  <string name="onboarding_term_of_service_line_three" tools:ignore="BrandUsage">ბრაუზერის გასაუმჯობესებლად Firefox გზავნის შემოწმებისა და გამოყენების შედეგებს, რომელთაც გაეცნობა Mozilla. %1$s</string>
   <!-- Used as text for the link in onboarding_term_of_service_line_three. -->
   <string name="onboarding_term_of_service_line_three_link_text">მართვა</string>
+  <!-- Terms of use (ToU) onboarding redesign title. -->
+  <string name="onboarding_redesign_tou_title">გახსენით შეუდარებელი Android-ბრაუზერი</string>
+  <!-- Terms of use (ToU) first subheader. -->
+  <string name="onboarding_redesign_tou_subheader_one">საიტების ელვისებური გახნა</string>
+  <!-- Terms of use (ToU) second subheader. -->
+  <string name="onboarding_redesign_tou_subheader_two">თვალთვალის არიდება თავისთავად</string>
+  <!-- Terms of use (ToU) third subheader. -->
+  <string name="onboarding_redesign_tou_subheader_three">მორგების ათასგვარი საშუალება</string>
+  <!--
+    Terms of use (ToU) first body text. %1$s is replaced by an active link,
+    using onboarding_redesign_tou_body_one_link_text as text (“Firefox Terms of Use”).
+  -->
+  <string name="onboarding_redesign_tou_body_one">თუ განაგრძობთ, თანახმა ხართ მიიღოთ %1$s.</string>
+  <!-- Used as text for the link in onboarding_redesign_tou_body_one. -->
+  <string name="onboarding_redesign_tou_body_one_link_text" tools:ignore="BrandUsage">გამოყენების პირობები, რომელსაც გთავაზობთ Firefox</string>
+  <!--
+    Terms of use (ToU) second body text. 'Firefox' is intentionally hardcoded.
+    %1$s is replaced by an active link, using onboarding_redesign_tou_body_two_link_text as text (“Privacy Notice”).
+  -->
+  <string name="onboarding_redesign_tou_body_two" tools:ignore="BrandUsage">Firefox ზრუნავს თქვენს პირადულობაზე. ვრცლად იხილეთ %1$s.</string>
+  <!-- Used as text for the link in onboarding_redesign_tou_body_two. -->
+  <string name="onboarding_redesign_tou_body_two_link_text">პირადულობის განაცხადი</string>
+  <!--
+    Terms of use (ToU) third body text. 'Firefox' and 'Mozilla' are intentionally hardcoded.
+    %1$s is replaced by an active link using onboarding_redesign_tou_body_three_link_text as text (“Manage Settings”).
+  -->
+  <string name="onboarding_redesign_tou_body_three" tools:ignore="BrandUsage">ბრაუზერის გასაუმჯობესებლად Firefox გზავნის შემოწმებისა და გამოყენების შედეგებს, რომელთაც გაეცნობა Mozilla. %1$s</string>
+  <!-- Used as text for the link in onboarding_redesign_tou_body_three. -->
+  <string name="onboarding_redesign_tou_body_three_link_text">პარამეტრების მართვა</string>
+  <!-- Terms of use (ToU) onboarding page continue button label. -->
+  <string name="onboarding_redesign_tou_agree_and_continue_button_label">განაგრძეთ</string>
+  <!-- Onboarding header for the toolbar selection card. -->
+  <string name="onboarding_redesign_customize_toolbar_title">სად განთავსდეს მისამართების ზოლი?</string>
+  <!-- Onboarding label for 'Continue' button. -->
+  <string name="onboarding_redesign_continue_button">განაგრძეთ</string>
+  <!-- Marketing onboarding page title. 'Firefox' is intentionally hardcoded. -->
+  <string name="onboarding_marketing_redesign_title" tools:ignore="BrandUsage">დაგვეხმარეთ, გავავრცელოთ Firefox</string>
+  <!-- Marketing onboarding page opt-out checkbox. Unchecking the box does not increase data collection. Our data practices remain the same. 'Mozilla' is intentionally hardcoded. -->
+  <string name="onboarding_marketing_redesign_opt_out_checkbox" tools:ignore="BrandUsage">გაუზიარეთ Mozilla-ს მოკავშირე სამსახურებს გავრცელების საკითხებში, როგორ აღმოაჩინეთ Firefox და იყენებთ თუ არა. ეს მონაცემები არასდროს გაიყიდება.</string>
+  <!-- Marketing onboarding page clickable link text to "learn more" on how data is used. -->
+  <string name="onboarding_marketing_redesign_learn_more">როგორ ვიყენებთ მონაცემებს</string>
+  <!-- Marketing onboarding page button label. Button to confirm choice and start browsing. -->
+  <string name="onboarding_marketing_redesign_positive_button">თანხმობა</string>
+  <!-- Set to default browser onboarding redesign title. -->
+  <string name="onboarding_redesign_set_default_browser_title">თვალთვალისგან თავისთავადი დაცვა ნაგულისხმევად</string>
+  <!-- Set to default browser onboarding redesign body. -->
+  <string name="onboarding_redesign_set_default_browser_body">ერთი შეხებით აირიდეთ კომპანიებისგან თვალთვალი ყოველი დაწკაპებისას.</string>
+  <!-- Sync onboarding redesign title. 'Firefox' is intentionally hardcoded. -->
+  <string name="onboarding_redesign_sync_title" tools:ignore="BrandUsage">დაასინქრონეთ ყველგან, სადაც Firefox გიყენიათ</string>
+  <!-- Sync onboarding redesign body. -->
+  <string name="onboarding_redesign_sync_body">გადაიტანეთ სანიშნები, ჩანართები და პაროლები ნებისმიერ მოწყობილობაზე. ყველაფერი დაცული იქნება დაშიფვრით.</string>
+  <!-- Sync onboarding redesign positive button text. -->
+  <string name="onboarding_redesign_sync_positive_button">დასინქ. დაწყება</string>
+  <!-- Sync onboarding redesign negative button text. -->
+  <string name="onboarding_redesign_sync_negative_button">ახლა არა</string>
   <!-- Marketing onboarding page title. 'Firefox' is intentionally hardcoded. -->
   <string name="onboarding_marketing_title" tools:ignore="BrandUsage,UnusedResources">დაგვეხმარეთ, გავავრცელოთ Firefox</string>
   <!-- Marketing onboarding page body. 'Firefox' is intentionally hardcoded. -->
   <string name="onboarding_marketing_body" tools:ignore="BrandUsage,UnusedResources">როდესაც გვიზიარებთ, თუ როგორ აღმოაჩინეთ Firefox და როგორ იყენებთ, გვეხმარებით გავაცნოთ ბრაუზერი კიდევ უფრო მეტ ხალხს.</string>
-  <!-- Marketing onboarding page opt-in checkbox. 'Mozilla' is intentionally hardcoded. -->
-  <string name="onboarding_marketing_opt_in_checkbox" tools:ignore="UnusedResources">გაუზიარეთ მცირე ოდენობის მონაცემები Mozilla-ს გაყიდვების საქმიანობაში მოკავშირე სამსახურებს. ეს მონაცემები არასდროს გაიყიდება და არ იქნება გამოყენებული სარეკლამოდ.</string>
+  <!-- Marketing onboarding page opt-out checkbox. Unchecking the box does not increase data collection. Our data practices remain the same. 'Mozilla' is intentionally hardcoded. -->
+  <string name="onboarding_marketing_opt_out_checkbox">გაუზიარეთ მონაცემები Mozilla-ს გაყიდვების საქმიანობაში მოკავშირე სამსახურებს. ეს მონაცემები არასდროს გაიყიდება და არ იქნება გამოყენებული სარეკლამოდ.</string>
   <!-- Marketing onboarding page clickable link text to "learn more" on how data is used. -->
   <string name="onboarding_marketing_learn_more" tools:ignore="UnusedResources">როგორ ვიყენებთ მონაცემებს</string>
   <!-- Marketing onboarding page button label. Button to confirm choice and start browsing. -->
@@ -743,7 +706,7 @@
   <!-- Preference Category for settings related to Search address bar -->
   <string name="preferences_settings_address_bar">მისამართის ველის პარამეტრები</string>
   <!-- Preference Category for settings to Firefox Suggest -->
-  <string name="preference_search_address_bar_fx_suggest" tools:ignore="BrandUsage">მისამართების ველი – Firefox-შემოთავაზება</string>
+  <string name="preference_search_address_bar_fx_suggest" tools:ignore="BrandUsage">მისამართების ველში Firefox-შემოთავაზება</string>
   <!-- Preference link to Learn more about Firefox Suggest -->
   <string name="preference_search_learn_about_fx_suggest" tools:ignore="BrandUsage">ვრცლად Firefox-შემოთავაზების შესახებ</string>
   <!-- Preference link to rating Fenix on the Play Store -->
@@ -776,7 +739,7 @@
   <!-- Preference title for using the screen lock to hide tabs in private browsing -->
   <string name="preferences_pbm_lock_screen_title">ეკრანის ჩაკეტვით ჩანართების დამალვა პირადი თვალიერებისას</string>
   <!-- Informs the user how to access the tabs when "Use screen lock to hide tabs in private browsing" is enabled -->
-  <string name="preferences_pbm_lock_screen_summary">იხილეთ ჩანართები თითის ანაბეჭდით, სახით ამოცნობით ან PIN-კოდით.</string>
+  <string name="preferences_pbm_lock_screen_summary_3">იხილეთ ჩანართები თითის ანაბეჭდით, PIN-კოდით ან სახის ამოცნობით. ამის ჩართვით ასევე შეიზღუდება ეკრანის გადაღება და გაზიარება.</string>
   <!-- Label for cookie banner section in quick settings panel. -->
   <string name="cookie_banner_blocker">ფუნთუშის მოთხოვნების შემზღუდავი</string>
   <!-- Preference for removing cookie/consent banners from sites automatically in private mode. See reduce_cookie_banner_summary for additional context. -->
@@ -841,16 +804,26 @@
   <string name="preferences_category_account">ანგარიში</string>
   <!-- Preference for changing where the AddressBar is positioned -->
   <string name="preferences_toolbar_2">მისამართების ველის მდებარეობა</string>
+  <!-- Preference for changing toolbar layout -->
+  <string name="preferences_toolbar_layout">ხელსაწყოთა ზოლის განლაგება</string>
   <!-- Preference for changing default theme to dark or light mode -->
   <string name="preferences_theme">თემა</string>
   <!-- Preference for customizing the home screen -->
   <string name="preferences_home_2">საწყისი გვერდი</string>
+  <!-- Preference for customizing the app icon -->
+  <string name="preferences_app_icon">აპის ხატულა</string>
+  <!-- Preference for showing the tab strip -->
+  <string name="preferences_tab_strip">ჩანართის ზოლის ჩვენება</string>
+  <!-- Preference for gestures based actions -->
+  <string name="preferences_toolbar_shortcut">ხელსაწყოების მალსახმობი</string>
+  <!-- Preference for gestures based actions -->
+  <string name="preferences_toolbar_select_shortcut">მალსახმობის არჩევა</string>
   <!-- Preference for gestures based actions -->
   <string name="preferences_gestures">ჟესტები</string>
   <!-- Preference for settings related to visual options -->
   <string name="preferences_customize">მორგება</string>
-  <!-- Preference description for banner about signing in -->
-  <string name="preferences_sign_in_description_2">შედით ანგარიშზე, რომ დაასინქრონოთ თქვენი ჩანართები, სანიშნები, პაროლები და სხვ.</string>
+  <!-- Preference description shown in the banner prompting the user to sign in for sync features -->
+  <string name="preferences_sign_in_description">დაასინქრონეთ ჩანართები, სანიშნები, პაროლები და ა. შ.</string>
   <!-- Preference shown instead of account display name while account profile information isn't available yet. -->
   <string name="preferences_account_default_name_2">Mozilla-ანგარიში</string>
   <!-- Preference text for account title when there was an error syncing FxA -->
@@ -859,8 +832,6 @@
   <string name="preferences_language">ენა</string>
   <!-- Preference for translations -->
   <string name="preferences_translations">თარგმანები</string>
-  <!-- Preference for data choices -->
-  <string name="preferences_data_choices">მონაცემთა შერჩევა</string>
   <!-- Preference for data collection -->
   <string name="preferences_data_collection">მონაცემთა აღრიცხვა</string>
   <!-- Preference for developers -->
@@ -882,7 +853,7 @@
   <!-- Preference title for switch preference to suggest bookmarks when searching -->
   <string name="preferences_search_bookmarks">ძიება სანიშნებში</string>
   <!-- Preference title for switch preference to show shortcuts when searching -->
-  <string name="preferences_show_shortcuts">მალსახმობების ჩვენება</string>
+  <string name="preferences_show_shortcuts" tools:ignore="UnusedResources" moz:removedIn="147">მალსახმობების ჩვენება</string>
   <!-- Preference title for switch preference to suggest synced tabs when searching -->
   <string name="preferences_search_synced_tabs">დასინქრონებულ ჩანართებში ძიება</string>
   <!-- Preference for account settings -->
@@ -921,8 +892,14 @@
   <string name="preferences_open_links_in_apps_ask">შეკითხვა გახსნამდე</string>
   <!-- Preference for open links in third party apps never open in apps option -->
   <string name="preferences_open_links_in_apps_never">არასდროს</string>
-  <!-- Preference for open download with an external download manager app -->
-  <string name="preferences_external_download_manager">ჩამოტვირთვის გარეშე მმართველი</string>
+  <!-- Preference title for choosing an app to handle downloads -->
+  <string name="preferences_choose_app_for_downloads">მართეთ ჩამოტვირთვები სხვა პროგრამით</string>
+  <!-- Title for the setting to automatically clean up downloaded files. %s is the name of the app (for example "Firefox"). -->
+  <string name="preferences_downloads_settings_clean_up_files_title">წაშლისას %s მოწყობილობიდანაც წაშლის</string>
+  <!-- Summary for the setting to automatically clean up downloaded files -->
+  <string name="preferences_downloads_settings_clean_up_files_summary">ფაილების მოცილებისას ჩამოტვირთვებიდან ასევე მოცილდება მოწყობილობიდანაც</string>
+  <!-- Preference for downloads -->
+  <string name="preferences_downloads">ჩამოტვირთვები</string>
   <!-- Preference for enabling gecko engine logs -->
   <string name="preferences_enable_gecko_logs">Gecko-აღრიცხვების ჩართვა</string>
   <!-- Message to indicate users that we are quitting the application to apply the changes -->
@@ -940,17 +917,25 @@
   <!--
     Add-on Permissions
 
-    The title of the required permissions section from addon's permissions screen
+    The title of the origin permission option allowing a user to enable the extension to run on all sites
   -->
-  <string name="addons_permissions_heading_required" tools:ignore="UnusedResources">აუცილებელი</string>
-  <!-- The title of the optional permissions section from addon's permissions screen -->
-  <string name="addons_permissions_heading_optional" tools:ignore="UnusedResources">არააუცილებელი</string>
-  <!-- The title of the origin permission option allowing a user to enable the extension to run on all sites -->
-  <string name="addons_permissions_allow_for_all_sites" tools:ignore="UnusedResources">ნებართვა ყველა საიტისთვის</string>
+  <string name="addons_permissions_allow_for_all_sites">ნებართვა ყველა საიტისთვის</string>
   <!-- The subtitle for the allow for all sites preference toggle -->
-  <string name="addons_permissions_allow_for_all_sites_subtitle" tools:ignore="UnusedResources">თუ ენდობით ამ გაფართოებას, შეგიძლიათ დართოთ ნება ყველა საიტზე.</string>
+  <string name="addons_permissions_allow_for_all_sites_subtitle">თუ ენდობით ამ გაფართოებას, შეგიძლიათ დართოთ ნება ყველა საიტზე.</string>
   <!-- The text shown when an extension does not require permissions -->
   <string name="addons_does_not_require_permissions">გაფართოება არ ითხოვს რამე ნებართვას.</string>
+  <!-- The description of data collection permissions listed in the addon's permissions screen.  %1$s is a formatted list of permissions. -->
+  <string name="addons_permissions_required_data_collection_description_2">შემქმნელის თქმით ამ გაფართოებით აღირიცხება: %1$s</string>
+  <!-- The description of the "none" data collection permission, when the extension doesn't collect anything according to the developer. -->
+  <string name="addons_permissions_none_required_data_collection_description">შემქმნელის თქმით ეს გაფართოება არ საჭიროებს მონაცემთა აღრიცხვას.</string>
+  <!-- The title of the required permissions section from addon's permissions screen. -->
+  <string name="addons_permissions_heading_required_permissions">აუცილებელი ნებართვები:</string>
+  <!-- The title of the optional permissions section from addon's permissions screen. -->
+  <string name="addons_permissions_heading_optional_permissions">არააუცილებელი ნებართვები:</string>
+  <!-- The title of the required data collection permissions section from addon's permissions screen. -->
+  <string name="addons_permissions_heading_required_data_collection">აუცილებელ მონაცემთა აღრიცხვა:</string>
+  <!-- The title of the optional data collection permissions section from addon's permissions screen. -->
+  <string name="addons_permissions_heading_optional_data_collection">უმნიშვნელო მონაცემთა აღრიცხვა:</string>
   <!--
     Add-on Preferences
 
@@ -981,9 +966,7 @@
   -->
   <string name="customize_toggle_recently_visited">ბოლოს ნანახი</string>
   <!-- Title for the customize home screen section with Pocket. -->
-  <string name="customize_toggle_pocket_2">მეტად დამაფიქრებელი ამბები</string>
-  <!-- Summary for the customize home screen section with Pocket. %s is "Pocket". -->
-  <string name="customize_toggle_pocket_summary">სტატიებს გთავაზობთ %s</string>
+  <string name="customize_toggle_pocket_3">ამბები</string>
   <!-- Title for the customize home screen section with sponsored Pocket stories. -->
   <string name="customize_toggle_pocket_sponsored">ამბები დამკვეთისგან</string>
   <!-- Title for the opening wallpaper settings screen -->
@@ -996,10 +979,6 @@
     Content description for various wallpapers. %1$s is the name of the wallpaper.
   -->
   <string name="wallpapers_item_name_content_description">ფონის ნაწილი: %1$s</string>
-  <!-- Snackbar message for when wallpaper is selected -->
-  <string name="wallpaper_updated_snackbar_message">ფონი განახლებულია!</string>
-  <!-- Snackbar label for action to view selected wallpaper -->
-  <string name="wallpaper_updated_snackbar_action">ნახვა</string>
   <!-- Snackbar message for when wallpaper couldn't be downloaded -->
   <string name="wallpaper_download_error_snackbar_message">ფონის ჩამოტვირთვა ვერ მოხერხდა</string>
   <!-- Snackbar label for action to retry downloading the wallpaper -->
@@ -1022,6 +1001,78 @@
   <string name="wallpapers_onboarding_dialog_body_text">აირჩიეთ ფონი, რომელიც შთაგაგონებთ.</string>
   <!-- Wallpaper onboarding dialog learn more button text. The button navigates to the wallpaper settings screen. -->
   <string name="wallpapers_onboarding_dialog_explore_more_button_text">სხვა გაფორმების მოძიება</string>
+  <!--
+    Icon picker
+
+    Title for the "Default" alternative app icon variant in the icon picker screen.
+  -->
+  <string name="alternative_app_icon_option_default">ნაგულისხმევი</string>
+  <!-- Title for the "Light" alternative app icon variant in the icon picker screen. -->
+  <string name="alternative_app_icon_option_light">ნათელი</string>
+  <!-- Title for the "Dark" alternative app icon variant in the icon picker screen. -->
+  <string name="alternative_app_icon_option_dark">მუქი</string>
+  <!-- Title for the "Red" alternative app icon variant in the icon picker screen. -->
+  <string name="alternative_app_icon_option_red">წითელი</string>
+  <!-- Title for the "Green" alternative app icon variant in the icon picker screen. -->
+  <string name="alternative_app_icon_option_green">მწვანე</string>
+  <!-- Title for the "Blue" alternative app icon variant in the icon picker screen. -->
+  <string name="alternative_app_icon_option_blue">ლურჯი</string>
+  <!-- Title for the "Purple" alternative app icon variant in the icon picker screen. -->
+  <string name="alternative_app_icon_option_purple">მოიისფრო</string>
+  <!-- Title for the "Purple Dark" alternative app icon variant in the icon picker screen. -->
+  <string name="alternative_app_icon_option_purple_dark">მუქი იისფერი</string>
+  <!-- Title for the "Sunrise" gradient alternative app icon variant in the icon picker screen. The app icon features a soft yellow-to-blue gradient background, resembling the colors of early morning light. -->
+  <string name="alternative_app_icon_option_gradient_sunrise">რიჟრაჟი</string>
+  <!-- Title for the "Golden Hour" gradient alternative app icon variant in the icon picker screen. The app icon features a warm golden-to-pink gradient background, resembling the colors of the sunlight shortly before sunset. -->
+  <string name="alternative_app_icon_option_gradient_golden_hour">დღის ოქროს საათი</string>
+  <!-- Title for the "Sunset" gradient alternative app icon variant in the icon picker screen. The app icon has a rich red-to-purple gradient background, resembling the tones of a sunset sky. -->
+  <string name="alternative_app_icon_option_gradient_sunset">დაისი</string>
+  <!-- Title for the "Blue Hour" gradient alternative app icon variant in the icon picker screen. The app icon has a cool blue gradient background, resembling the sky color around the time just after sunset or before sunrise. -->
+  <string name="alternative_app_icon_option_gradient_blue_hour">დღის ლურჯი საათი</string>
+  <!-- Title for the "Twilight" gradient alternative app icon variant in the icon picker screen. The app icon has a purple-toned gradient background, resembling the sky color during twilight. -->
+  <string name="alternative_app_icon_option_gradient_twilight">შებინდება</string>
+  <!-- Title for the "Midnight" gradient alternative app icon variant in the icon picker screen. The app icon features a dark gradient background, resembling the deep tones of the night sky. -->
+  <string name="alternative_app_icon_option_gradient_midnight">შუაღამე</string>
+  <!-- Title for the "Northern Lights" gradient alternative app icon variant in the icon picker screen. The app icon has a dynamic green, blue, and purple gradient background, resembling the aurora borealis. -->
+  <string name="alternative_app_icon_option_gradient_northern_lights">ჩრდილოეთის ციალი</string>
+  <!-- Title for the "Retro 2004" themed alternative app icon variant in the icon picker screen. This app icon uses the classic Firefox logo from 2004. -->
+  <string name="alternative_app_icon_option_retro_2004">ძველებური 2004</string>
+  <!-- Title for the "Pixelated" themed alternative app icon variant in the icon picker screen. This app icon features a pixel-art style, resembling retro 8-bit graphics. -->
+  <string name="alternative_app_icon_option_pixelated">დაკბილული</string>
+  <!-- Title for the "Minimal" themed alternative app icon variant in the icon picker screen. The app icon presents a simplified, flat and monochrome version of the Firefox logo. -->
+  <string name="alternative_app_icon_option_minimal">სადა</string>
+  <!-- Title for the "Pride" themed alternative app icon variant in the icon picker screen. The app icon incorporates a rainbow color scheme in support of the LGBTQ+ community. -->
+  <string name="alternative_app_icon_option_pride">სიამაყე</string>
+  <!-- Title for the "Momo" themed alternative app icon variant in the icon picker screen. The app icon was created by artist @heyheymomodraws and features a unique hand-drawn style with a friendly fox. -->
+  <string name="alternative_app_icon_option_momo">Momo</string>
+  <!-- Subtitle for the "Momo" themed alternative app icon variant in the icon picker screen. The app icon was created by artist @heyheymomodraws and features a unique hand-drawn style with a friendly fox. -->
+  <string name="alternative_app_icon_option_momo_subtitle">შემქმნელი @heyheymomodraws</string>
+  <!-- Title for the "Cuddling" themed alternative app icon variant in the icon picker screen. The app icon features a playful design with an adorable aesthetic. -->
+  <string name="alternative_app_icon_option_cuddling">მიხუტება</string>
+  <!-- Title for the "Flaming" themed alternative app icon variant in the icon picker screen. The app icon features a fiery design, with the Firefox logo surrounded by flames for a bold, energetic look. -->
+  <string name="alternative_app_icon_option_flaming">ცეცხლოვანი</string>
+  <!-- Title for the "Cool" themed alternative app icon variant in the icon picker screen. The app icon uses a warm orange-to-yellow gradient background with a sleek, modern twist on the Firefox logo, giving it a fresh and stylish appearance. -->
+  <string name="alternative_app_icon_option_cool">კმაყოფილი</string>
+  <!-- Title for the "Solid colors" group of alternative app icon variants in the icon picker screen. This group contains icons with flat, uniform color backgrounds. -->
+  <string name="alternative_app_icon_group_solid_colors">ერთგვაროვანი ფერები</string>
+  <!-- Title for the "Gradients" group of alternative app icon variants in the icon picker screen. This group contains icons with gradient backgrounds inspired by natural light conditions. -->
+  <string name="alternative_app_icon_group_gradients">გარდამავალი ფერები</string>
+  <!-- Title for the "Other" group of alternative app icon variants in the icon picker screen. This group includes retro, pixel art, themed, and artist-created icons. -->
+  <string name="alternative_app_icon_group_other" tools:ignore="UnusedResources" moz:removedIn="146">სხვა</string>
+  <!-- Title for the "Featured" group of alternative app icon variants in the icon picker screen. This group includes retro, pixel art, themed, and artist-created icons. -->
+  <string name="alternative_app_icon_group_featured">რჩეული</string>
+  <!-- Title to show in alert when user selects an alternative app icon -->
+  <string name="restart_warning_dialog_title">შეიცვალოს პროგრამის ხატულა?</string>
+  <!-- Message to warn users that applying an alternative app icon may require an app restart. Whether or not the app closes depends on what version of Android it is, so we use the word "may" instead of "will". %1$s is replaced by the brand name (e.g. Firefox). -->
+  <string name="restart_warning_dialog_body_2">პროგრამა შეიძლება დაიხუროს. მხოლოდ შეეხეთ თქვენს ახალთახალ ხატულას, რომ კვლავ გაეშვას %1$s.</string>
+  <!-- Message to warn users that applying an alternative app icon may require an app restart and will remove existing shortcuts because of the OS limitations. Whether or not the app closes depends on what version of Android it is, so we use the word "may" instead of "will". %1$s is replaced by the brand name (e.g. Firefox). -->
+  <string name="restart_and_shortcuts_removal_warning_dialog_body">ხატულას შეცვლით მთავარ ეკრანზე შენახული საიტები და მალსახმობები წაიშლება. \n\n%1$s შეიძლება დაიხუროს. ხელახლა გასახსნელად შეეხეთ თქვენს ახალ ხატულას.</string>
+  <!-- Dialog button text for confirming the possible app restart and new icon selection -->
+  <string name="restart_warning_dialog_button_positive_2">ხატულას შეცვლა</string>
+  <!-- Dialog button text for cancelling app icon change -->
+  <string name="restart_warning_dialog_button_negative">გაუქმება</string>
+  <!-- Error message snackbar shown after the user tried to apply the new icon but the Android OS threw an error while updating existing app shortcuts (e.g. private mode shortcut) -->
+  <string name="shortcuts_update_error">ხატულა ვერ განახლდა. მოაცილეთ არსებული მალსახმობები და ხელახლა სცადეთ.</string>
   <!--
     Add-ons general availability nimbus message
 
@@ -1129,13 +1180,27 @@
   <!-- Text displayed when there are no exceptions, with learn more link that brings users to a tracking protection SUMO page -->
   <string name="exceptions_empty_message_learn_more_link">ვრცლად</string>
   <!-- Preference switch for usage and technical data collection -->
-  <string name="preference_usage_data_1" tools:ignore="UnusedResources" moz:removedIn="138">ტექნიკური და გამოყენების მონაცემები</string>
-  <!-- Preference switch for usage and technical data collection -->
   <string name="preference_usage_data_2">ტექნიკური და გამოყენების მონაცემების გაგზავნა</string>
-  <!-- Preference switch for usage and technical learn more link -->
-  <string name="preference_usage_data_learn_more">ვრცლად</string>
+  <!-- Preference switch for usage and technical learn more link in new compose -->
+  <string name="preference_usage_data_learn_more_2">ვრცლად ტექნიკურ მონაცემებზე</string>
   <!-- Preference description for marketing data collection. Note: The words "Firefox" should NOT be translated -->
   <string name="preferences_usage_data_description_1" tools:ignore="BrandUsage">თქვენი მოწყობილობის მასახიათებლები, აპარატურული გაწყობა და გამოყენების მონაცემები გვეხმარება გავაუმჯობესოთ Firefox შესაძლებლობების, წარმადობისა და მდგრადობის კუთხით.</string>
+  <!-- Preference switch for daily usage ping data collection -->
+  <string name="preferences_daily_usage_ping_title">დღიური გამოყენების უწყება</string>
+  <string name="preferences_daily_usage_ping_description">ამით Mozilla მიახლოებით ითვლის მოქმედ მომხმარებლებს.</string>
+  <string name="preferences_daily_usage_ping_learn_more">ვრცლად დღიური გამოყენების უწყების შესახებ</string>
+  <!-- Title for the crash reporting option in the privacy preferences dialog shown during onboarding. -->
+  <string name="crash_reporting_snack_bar_message">მოხსენება გაიგზავნა</string>
+  <!-- Text for sumo link to learn more about crash reports in data collection screen -->
+  <string name="preferences_crashes_learn_more">ვრცლად უეცარი გათიშვების მოხსენებებზე</string>
+  <!-- Title Headers for data collection settings screen -->
+  <string name="crash_reports_data_category">უეცარი გათიშვის მოხსენებები</string>
+  <string name="usage_data_category">გამოყენების მონაცემები</string>
+  <string name="studies_data_category">კვლევები</string>
+  <string name="technical_data_category">ტექნიკური მონაცემები</string>
+  <string name="crash_reporting_description">უეცარი გათიშვის მოხსენებები საშუალებას გვაძლევს, გამოვავლინოთ და მოვაგვაროთ ბრაუზერის ხარვეზები. მოხსენებები შეიძლება შეიცავდეს პირად ან საფრთხილო მონაცემებს.</string>
+  <!-- Section title for campaign measurement in data collections screen -->
+  <string name="preferences_marketing_data_title">გაცნობითი საქმიანობის საზომი</string>
   <!-- Preference switch for campaign measurement data (marketing data) collection -->
   <string name="preferences_marketing_data_2">გაცნობითი საქმიანობის საზომი</string>
   <!--
@@ -1145,16 +1210,6 @@
   <string name="preferences_marketing_data_description_4" tools:ignore="BrandUsage">გაუზიარეთ Mozilla-ს მოკავშირე სამსახურებს გავრცელების საკითხებში, როგორ აღმოაჩინეთ Firefox და იყენებთ თუ არა.</string>
   <!-- Learn more link for marketing data preference -->
   <string name="preferences_marketing_data_learn_more">ვრცლად მარკეტინგულ მონაცემებზე</string>
-  <!-- Preference switch for daily usage ping data collection -->
-  <string name="preferences_daily_usage_ping_title">დღიური გამოყენების უწყება</string>
-  <string name="preferences_daily_usage_ping_description">ამით %@ მიახლოებით ითვლის მოქმედ მომხმარებლებს.</string>
-  <string name="preferences_daily_usage_ping_learn_more">ვრცლად დღიური გამოყენების უწყების შესახებ</string>
-  <!-- Preference switch title for automatically submitting crash reports -->
-  <string name="preferences_automatically_send_crashes_title">უეცარი გათიშვის მოხსენებების თვითგაგზავნა</string>
-  <!-- Preference switch description for automatically submitting crash reports -->
-  <string name="preferences_automatically_send_crashes_description">საშუალებას მოგვცემს, გამოვავლინოთ და მოვაგვაროთ ბრაუზერის ხარვეზები. მოხსენებები შეიძლება შეიცავდეს პირად ან საფრთხილო მონაცემებს.</string>
-  <!-- Learn more link for crash reporting preference -->
-  <string name="onboarding_preferences_dialog_crash_reporting_learn_more">ვრცლად უეცარი გათიშვების მოხსენებებზე</string>
   <!-- Title for studies preferences -->
   <string name="preference_experiments_2">კვლევები</string>
   <!-- Summary for studies preferences -->
@@ -1162,9 +1217,9 @@
   <!--
     Turn On Sync Preferences
 
-    Header of the Sync and save your data preference view
+    Header of the Sign in preference view
   -->
-  <string name="preferences_sync_2">დაასინქრონეთ და გადაინახეთ თქვენი მონაცემები</string>
+  <string name="preferences_sign_in">შესვლა</string>
   <!-- Preference for reconnecting to FxA sync -->
   <string name="preferences_sync_sign_in_to_reconnect">შესვლა ხელახლა დასაკავშირებლად</string>
   <!-- Preference for removing FxA account -->
@@ -1174,7 +1229,7 @@
 
     Instructions on how to access pairing
   -->
-  <string name="pair_instructions_2">QR-კოდი წააკითხეთ გვერდიდან &lt;b&gt;firefox.com/pair&lt;/b&gt;</string>
+  <string name="pair_instructions_2"><![CDATA[QR-კოდი წააკითხეთ გვერდიდან <b>firefox.com/pair</b>]]></string>
   <!--
     Toolbar Preferences
 
@@ -1183,6 +1238,30 @@
   <string name="preference_top_toolbar">ზემოთ</string>
   <!-- Preference for using bottom toolbar -->
   <string name="preference_bottom_toolbar">ქვემოთ</string>
+  <!-- Preference for using simple toolbar -->
+  <string name="preference_simple_toolbar">მარტივი</string>
+  <!-- Preference for using expanded toolbar -->
+  <string name="preference_expanded_toolbar">ჩამოშლილი</string>
+  <!-- Preference description indicating the toolbar location preference is disabled when the tab strip is enabled -->
+  <string name="preference_toolbar_pref_disabled_explanation">მისამართების ველი უნდა იყოს ზემოთ, როცა ჩანართის ზოლი გამოჩენილია.</string>
+  <!-- New tab shortcut in toolbar customization -->
+  <string name="toolbar_customize_shortcut_new_tab">ახალი ჩანართის გახსნა</string>
+  <!-- Share shortcut in toolbar customization -->
+  <string name="toolbar_customize_shortcut_share">გაზიარება</string>
+  <!-- Add bookmark shortcut in toolbar customization -->
+  <string name="toolbar_customize_shortcut_add_bookmark">სანიშნის დამატება</string>
+  <!-- Translate shortcut in toolbar customization. "Translate" is a verb -->
+  <string name="toolbar_customize_shortcut_translate">თარგმნა</string>
+  <!-- Homepage shortcut in toolbar customization -->
+  <string name="toolbar_customize_shortcut_homepage">საწყისი გვერდი</string>
+  <!-- Back shortcut in toolbar customization -->
+  <string name="toolbar_customize_shortcut_back">უკან</string>
+  <!--
+    App icon Preferences
+
+    Title for the preference that lets the user pick a new app icon
+  -->
+  <string name="preference_select_app_icon_title">აპის ხატულის შერჩევა</string>
   <!--
     Theme Preferences
 
@@ -1196,6 +1275,12 @@
   <!-- Preference for using following device theme -->
   <string name="preference_follow_device_theme">მოწყობილობის თემის მიხედვით</string>
   <!--
+    Tab Strip Preferences
+
+    Preferences for showing tab strip
+  -->
+  <string name="preference_tab_strip_show">ჩანართის ზოლის გამოჩენა</string>
+  <!--
     Gestures Preferences
 
     Preferences for using pull to refresh in a webpage
@@ -1205,10 +1290,8 @@
   <string name="preference_gestures_dynamic_toolbar">გადაადგილებისას ხელსაწყოთა დამალვა</string>
   <!-- Preference for showing the opened tabs by swiping up on the toolbar -->
   <string name="preference_gestures_swipe_toolbar_show_tabs">აუსვით ხელსაწყოთა ზოლზე ჩანართების გახსნისთვის</string>
-  <!-- Preference for using the dynamic toolbars -->
-  <string name="preference_gestures_dynamic_toolbar_2">გადაადგილებისას ხელსაწყოებისა და მისამართის ველის დამალვა</string>
   <!-- Preference for switching tabs by swiping horizontally on the addressbar -->
-  <string name="preference_gestures_swipe_toolbar_switch_tabs_2">გადაუსვით მისამართის ველს ჩანართების გადასართველად</string>
+  <string name="preference_gestures_swipe_toolbar_switch_tabs_2">მისამართის ველზე გასმით ჩანართების გადართვა</string>
   <!--
     Library
 
@@ -1288,7 +1371,7 @@
   <!-- Title of preference that allows a user to auto close tabs after a specified amount of time -->
   <string name="preferences_close_tabs">ჩანართების დახურვა</string>
   <!-- Option for auto closing tabs that will never auto close tabs, always allows user to manually close tabs -->
-  <string name="close_tabs_manually">ხელით</string>
+  <string name="close_tabs_manually">არასდროს</string>
   <!-- Option for auto closing tabs that will auto close tabs after one day -->
   <string name="close_tabs_after_one_day">ერთი დღის შემდეგ</string>
   <!-- Option for auto closing tabs that will auto close tabs after one week -->
@@ -1297,6 +1380,8 @@
   <string name="close_tabs_after_one_month">ერთი თვის შემდეგ</string>
   <!-- Title of preference that allows a user to specify the auto-close settings for open tabs -->
   <string name="preference_auto_close_tabs" tools:ignore="UnusedResources">გახსნილი ჩანართების თვითდახურვა</string>
+  <!-- Content description (not visible, for screen readers etc.): Close tab button -->
+  <string name="tab_manager_close_tabs">დახურვა</string>
   <!--
     Opening screen
 
@@ -1328,9 +1413,9 @@
 
     Category header of a preference that allows a user to enable or disable the inactive tabs feature
   -->
-  <string name="preferences_inactive_tabs">ძველი ჩანართების უქმეებში გადატანა</string>
+  <string name="preferences_inactive_tabs">ძველი ჩანართების უქმებში გადატანა</string>
   <!-- Title of inactive tabs preference -->
-  <string name="preferences_inactive_tabs_title">ორი კვირის მოუნახულებელი ჩანართები გადმოვა უქმეების არეში.</string>
+  <string name="preferences_inactive_tabs_title">ორი კვირის მოუნახულებელი ჩანართები გადავა უქმეთა არეში.</string>
   <!--
     Studies
 
@@ -1348,6 +1433,11 @@
   <!--
     Sessions
 
+    Title for the list of tabs in the current normal session used by a11y services
+    The %1$s will be replaced by the number of opened normal tabs
+  -->
+  <string name="tabs_header_normal_tabs_counter_title">გახსნილი ჩვეულებრივი ჩანართი: %1$s. შეეხეთ გადასაცვლელად.</string>
+  <!--
     Title for the list of tabs in the current private session used by a11y services
     The %1$s will be replaced by the number of opened private tabs
   -->
@@ -1357,6 +1447,18 @@
     The %1$s will be replaced by the number of opened synced tabs
   -->
   <string name="tabs_header_synced_tabs_counter_title">გახსნილი დასინქ. ჩანართი: %1$s. შეეხეთ გადასაცვლელად.</string>
+  <!-- Text for the tabs header private tabs -->
+  <string name="tabs_header_private_tabs_title">პირადი</string>
+  <!-- Text for the tabs header normal tabs -->
+  <string name="tabs_header_normal_tabs_title">ჩანართები</string>
+  <!-- Text for the tabs header synced tabs -->
+  <string name="tabs_header_synced_tabs_title">დასინქ.</string>
+  <!-- Text for the new tab button in the Tab Manager to indicate opening a new normal tab -->
+  <string name="tab_manager_floating_action_button_new_normal_tab">ახალი ჩანართი</string>
+  <!-- Text for the new tab button in the Tab Manager to indicate opening a new private tab -->
+  <string name="tab_manager_floating_action_button_new_private_tab">ახალი პირადი ჩანართი</string>
+  <!-- Text for floating action button in the Tab Manager used to initiate a re-sync of synced tabs -->
+  <string name="tab_manager_floating_action_button_sync_tabs">ჩანართების დასინქ.</string>
   <!-- Content description (not visible, for screen readers etc.): Add tab button. Adds a news tab when pressed -->
   <string name="add_tab">ჩანართის დამატება</string>
   <!-- Content description (not visible, for screen readers etc.): Add tab button. Adds a news tab when pressed -->
@@ -1377,10 +1479,26 @@
   <string name="tab_tray_menu_tab_settings">ჩანართის პარამეტრები</string>
   <!-- Text shown in the menu for closing all tabs -->
   <string name="tab_tray_menu_item_close">ყველა ჩანართის დახურვა</string>
+  <!-- Text shown as the title of the Close all tabs confirmation dialog in Tab Manager -->
+  <string name="tab_manager_close_all_tabs_dialog_title">დაიხუროს ყველა ჩანართი?</string>
+  <!-- Text shown in the body of the Close all tabs confirmation dialog in Tab Manager -->
+  <string name="tab_manager_close_all_tabs_dialog_body">დაიხურება ყველა გახსნილი ჩანართი.</string>
+  <!-- Text shown on the confirm button in the Close all tabs confirmation dialog -->
+  <string name="tab_manager_close_all_tabs_dialog_confirm">ჩანართების დახურვა</string>
+  <!-- Text shown on the cancel button in the Close all tabs confirmation dialog -->
+  <string name="tab_manager_close_all_tabs_dialog_cancel">გაუქმება</string>
   <!-- Text shown in the multiselect menu for bookmarking selected tabs. -->
   <string name="tab_tray_multiselect_menu_item_bookmark">სანიშნი</string>
+  <!-- Content description (not visible, for screen readers etc.): Bookmarks selected tabs. -->
+  <string name="tab_manager_multiselect_menu_item_bookmark_content_description">შერჩეული ჩანართების ჩანიშვნა</string>
   <!-- Text shown in the multiselect menu for closing selected tabs. -->
   <string name="tab_tray_multiselect_menu_item_close">დახურვა</string>
+  <!-- Content description (not visible, for screen readers etc.): Closes selected tabs. -->
+  <string name="tab_manager_multiselect_menu_item_close_content_description">შერჩეული ჩანართების დახურვა</string>
+  <!-- Text shown in the multiselect menu for sharing selected tabs. -->
+  <string name="tab_manager_multiselect_menu_item_share">გაზიარება</string>
+  <!-- Text shown in the multiselect menu for adding selected tabs to collections. -->
+  <string name="tab_manager_multiselect_menu_item_add_to_collection">კრებულში დამატება</string>
   <!-- Content description for tabs tray multiselect share button -->
   <string name="tab_tray_multiselect_share_content_description">არჩეული ჩანართების გაზიარება</string>
   <!-- Content description for tabs tray multiselect menu -->
@@ -1413,6 +1531,8 @@
   <string name="delete_from_history">ისტორიიდან ამოშლა</string>
   <!-- Postfix for private WebApp titles. %1$s is the name of the app (for example "Firefox"). -->
   <string name="pwa_site_controls_title_private">%1$s (პირადი რეჟიმი)</string>
+  <!-- Content description (not visible, for screen readers etc.) for the button to open the Tab Search feature to search through tabs. -->
+  <string name="tab_manager_open_tab_search">გახსენით ჩანართების ძიება</string>
   <!--
     History
 
@@ -1447,30 +1567,24 @@
   <!--
     Downloads
 
-    Text for the snackbar to confirm that multiple downloads items have been removed
-  -->
-  <string name="download_delete_multiple_items_snackbar_1" moz:removedIn="138" tools:ignore="UnusedResources">ჩამოტვირთვები მოცილებულია</string>
-  <!--
     Text for the snackbar to confirm that a multiple download items have been removed. %1$s is the number of removed download items.
     %1$d is the number of items deleted.
   -->
   <string name="download_delete_multiple_items_snackbar_2">წაშლილი ერთეული: %1$d</string>
-  <!-- Text for the snackbar to confirm that a single download item has been removed. %1$s is the name of the download item. -->
-  <string name="download_delete_single_item_snackbar" moz:removedIn="138" tools:ignore="UnusedResources">%1$s მოცილებულია</string>
+  <!-- Title for the dialog that prompts the user to choose an app for downloading a file. -->
+  <string name="download_app_dialog_title">ფაილის ჩამოსატვირთად:</string>
   <!-- Text for the snackbar to confirm that a single download item has been removed. %1$s is the name of the download item. -->
   <string name="download_delete_single_item_snackbar_2">წაიშალა „%1$s“</string>
   <!-- Text for the snackbar to confirm that downloads are in progress. -->
-  <string name="download_in_progress_snackbar" tools:ignore="UnusedResources">ჩამოტვირთვა მიმდინარეობს…</string>
+  <string name="download_in_progress_snackbar">ჩამოტვირთვა მიმდინარეობს…</string>
   <!-- Text for the snackbar action button to view in progress download details. -->
-  <string name="download_in_progress_snackbar_action_details" tools:ignore="UnusedResources">ვრცლად</string>
+  <string name="download_in_progress_snackbar_action_details">ვრცლად</string>
   <!-- Text for the snackbar to confirm that a download has completed. -->
-  <string name="download_completed_snackbar" tools:ignore="UnusedResources">ჩამოტვირთვა დასრულდა</string>
+  <string name="download_completed_snackbar">ჩამოტვირთვა დასრულდა</string>
   <!-- Text for the snackbar action button to open a completed download. -->
-  <string name="download_completed_snackbar_action_open" tools:ignore="UnusedResources">გახსნა</string>
+  <string name="download_completed_snackbar_action_open">გახსნა</string>
   <!-- Text for the snackbar action button to undo deleting a download. -->
   <string name="download_undo_delete_snackbar_action">დაბრუნება</string>
-  <!-- Text shown when no download exists -->
-  <string name="download_empty_message_1" moz:removedIn="138" tools:ignore="UnusedResources">ჩამოტვირთული ფაილები არაა</string>
   <!-- Text shown when no download exists -->
   <string name="download_empty_message_2">ჩამოტვირთვები არაა</string>
   <!-- Text description shown when no download exists -->
@@ -1480,10 +1594,40 @@
     %1$d is the number of downloads selected
   -->
   <string name="download_multi_select_title">შერჩეულია %1$d</string>
-  <!-- Text for the button to remove a single download item -->
-  <string name="download_delete_item_1" moz:removedIn="138" tools:ignore="UnusedResources">მოცილება</string>
+  <!-- Title for the dialog that is shown when there is not enough storage space to download a file. -->
+  <string name="download_file_has_not_enough_storage_dialog_title">ადგილი არასაკმარისია</string>
+  <!--
+    Message for the dialog that is shown when there is not enough storage space to download a file.
+    %s is the name of the file to download.
+  -->
+  <string name="download_file_has_not_enough_storage_dialog_message"><![CDATA[ამ მოწყობილობას არ აქვს ადგილი, რომ ჩამოიტვირთოს <b>%s</b>.]]></string>
+  <!--
+    Text for the confirm button in the dialog that is shown when there is not enough storage space to download a file.
+    This button will navigate the user to the device's storage management settings.
+  -->
+  <string name="download_file_has_not_enough_storage_dialog_confirm_button_text">ფაილების მართვა</string>
+  <!--
+    Text for the cancel button in the dialog that is shown when there is not enough storage space to download a file.
+    This button will dismiss the dialog.
+  -->
+  <string name="download_file_has_not_enough_storage_dialog_cancel_button_text">გაუქმება</string>
   <!-- Text for the button to delete a single downloaded file item -->
   <string name="download_delete_item">წაშლა</string>
+  <!-- Content description for the toolbar "Navigate back" button -->
+  <string name="download_navigate_back_description">გადასვლა უკან</string>
+  <!-- Content description for the toolbar back button while searching the downloads -->
+  <string name="download_close_search_description">უკან და ძიების დახურვა</string>
+  <!--
+    Content description for the search bar clear text button on the downloads screen
+
+    Content description for pause action button on the downloads screen
+  -->
+  <string name="download_pause_action">შეჩერება</string>
+  <!-- Content description for resume action button on the downloads screen -->
+  <string name="download_resume_action">გაგრძელება</string>
+  <!-- Content description for retry download action button on the downloads screen -->
+  <string name="download_retry_action">გამეორება</string>
+  <string name="download_clear_search_description">გასუფთავება</string>
   <!-- Text for the button to share the download URL -->
   <string name="download_share_url">URL-ბმულის გაზიარება</string>
   <!-- Text for the button to share the download file -->
@@ -1495,7 +1639,7 @@
   <!-- Alert dialog confirmation before deleting multiple download items, this is the negative action. -->
   <string name="download_delete_multi_select_dialog_cancel">გაუქმება</string>
   <!-- Text for the header of in progress downloads -->
-  <string name="download_header_in_progress" tools:ignore="UnusedResources">მიმდინარეობს</string>
+  <string name="download_header_in_progress">მიმდინარეობს</string>
   <!--
     Time period headers for downloads
 
@@ -1510,19 +1654,41 @@
   <string name="download_time_period_last_30_days">ბოლო 30 დღე</string>
   <!-- Text for the header that groups the downloads older than other groups -->
   <string name="download_time_period_older">უფრო ძველი</string>
+  <!-- Description of an in progress download item, displayed in the downloads list when the download has just started. -->
+  <string name="download_item_in_progress_description_preparing">მზადდება ჩამოტვირთვა…</string>
   <!--
-    Description of an in progress download item, displayed in the downloads list.
+    Description of an in progress download item, displayed in the downloads list when the download time remaining is known.
     %1$s is the current file size that has been downloaded.
     %2$s is the total size of the downloaded file.
     %3$s is the amount of time remaining to complete the download.
   -->
-  <string name="download_item_in_progress_description" tools:ignore="UnusedResources">%1$s / %2$s • დარჩა %3$s</string>
-  <!-- Text to indicate that an in progress download is paused. -->
-  <string name="download_item_status_paused" tools:ignore="UnusedResources">შეჩერდა</string>
-  <!-- Text to indicate that the download speed of an in progress download is being calculated. -->
-  <string name="download_item_download_speed_pending" tools:ignore="UnusedResources">ელოდება</string>
+  <string name="download_item_in_progress_description_2">%1$s / %2$s • დარჩა %3$s.</string>
+  <!--
+    Description of an in progress download item, displayed in the downloads list when the estimated download time remaining is still being calculated.
+    %1$s is the current file size that has been downloaded.
+    %2$s is the total size of the downloaded file.
+  -->
+  <string name="download_item_in_progress_description_pending">%1$s / %2$s • ელოდება</string>
+  <!--
+    Description of an in progress download item, displayed in the downloads list when the total download size is unknown. This results in the estimated download time remaining to be unknown also.
+    %1$s is the current file size that has been downloaded.
+  -->
+  <string name="download_item_in_progress_description_unknown_total_size">%1$s • დაუდგენელი დრო</string>
+  <!--
+    Description of a paused download item, displayed in the downloads list.
+    %1$s is the current file size that has been downloaded.
+    %2$s is the total size of the downloaded file.
+  -->
+  <string name="download_item_paused_description">%1$s / %2$s • შეჩერებულია</string>
+  <!--
+    Description of a paused download item, displayed in the downloads list when the total download size is unknown.
+    %1$s is the current file size that has been downloaded.
+  -->
+  <string name="download_item_paused_description_unknown_total_size">%1$s • შეჩერებული</string>
   <!-- Text to indicate that a download has failed to download. -->
-  <string name="download_item_status_failed" tools:ignore="UnusedResources">ჩამოტვირთვა ვერ მოხერხდა</string>
+  <string name="download_item_status_failed">ჩამოტვირთვა ვერ მოხერხდა</string>
+  <!-- Text for the snackbar action button to view failed download details. -->
+  <string name="download_failed_snackbar_action_details">ვრცლად</string>
   <!-- Placeholder text to indicate that users can use the search bar to search for a download. -->
   <string name="download_search_placeholder">ძიება ჩამოტვირთვებში</string>
   <!-- Text to indicate that no downloads match the search query. -->
@@ -1542,23 +1708,17 @@
   <!-- Text for the filter button to show only documents in the downloads list -->
   <string name="download_content_type_filter_document">დოკუმენტები</string>
   <!-- Text for the filter button to show all other file types in the downloads list -->
-  <string name="download_content_type_filter_other" moz:removedIn="138" tools:ignore="UnusedResources">სხვა</string>
-  <!-- Text for the filter button to show all other file types in the downloads list -->
   <string name="download_content_type_filter_other_1">სხვა</string>
-  <!--
-    Description of a downloaded item, displayed in the downloads list.
-    %1$s: The size of the downloaded file.
-    %2$s: The URL of the downloaded file.
-  -->
-  <string name="download_item_description" moz:removedIn="138" tools:ignore="UnusedResources">%1$s • %2$s</string>
   <!--
     WebCompat Reporter
 
     The title of the Web Compat Reporter feature. This is displayed in the top app bar.
   -->
-  <string name="webcompat_reporter_screen_title">საიტზე გაუმართაობის მოხსენება</string>
-  <!-- The description of the Web Compat Reporter feature. %1$s is the name of the app (for example "Firefox"). -->
-  <string name="webcompat_reporter_description">დაგვეხმარეთ, განვავითაროთ %1$s ყველასთვის. Mozilla-ს თანამშრომლები თქვენ მიერ გამოგზავნილ მონაცემებს იყენებენ ვებსაიტთან დაკავშირებული ხარვეზების მოსაგვარებლად.</string>
+  <string name="webcompat_reporter_screen_title">არეული საიტის მოხსენება</string>
+  <!-- The description of the Web Compat Reporter feature, which has a "learn more" button text for navigating to a SUMO link to learn more about reporting a broken site. %1$s is the name of the app (for example "Firefox") and %2$s is the learn more button. -->
+  <string name="webcompat_reporter_description_3">თქვენი მოხსენება გვეხმარება ხარვეზების გამოვლენაში, რომ გამოვასწოროთ %1$s და გავხადოთ უკეთესი ყველასთვის. %2$s</string>
+  <!-- The button text for navigating to the SUMO link to learn more about reporting a broken site. -->
+  <string name="webcompat_reporter_learn_more">ვრცლად</string>
   <!-- The text field label of the URL text field. This is displayed above the user-inputted URL. -->
   <string name="webcompat_reporter_label_url">ბმული</string>
   <!-- The error message of the URL text field when an invalid URL has been entered. -->
@@ -1566,35 +1726,51 @@
   <!-- The label/title of a field in the Web Compat Reporter feature for explaining a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_label_whats_broken_2">რა დაზიანდა?</string>
   <!-- The placeholder text for the dropdown where a user selects a high-level reason why the site is broken. -->
-  <string name="webcompat_reporter_choose_reason">მიზეზის არჩევა</string>
+  <string name="webcompat_reporter_choose_reason_2">აირჩიეთ მიზეზი</string>
   <!-- The error message of the dropdown, prompting the user to select a high-level reason why the site is broken. -->
   <string name="webcompat_reporter_choose_reason_error">გთხოვთ მიუთითოთ მიზეზი</string>
   <!-- The label/title of an optional field in the Web Compat Reporter feature for adding additional information. -->
   <string name="webcompat_reporter_label_description">აღწერეთ ხარვეზი (არასავალდებულო)</string>
   <!-- The button text for navigating away from the feature to provide more information on the broken site's bug report. -->
-  <string name="webcompat_reporter_send_more_info">დაწვრილებით მონაცემების გაგზავნა</string>
+  <string name="webcompat_reporter_add_more_info">დაწვრილებითი მონაცემების დართვა</string>
   <!-- The button text for the cancel button to leave the Web Compat Reporter feature. -->
   <string name="webcompat_reporter_cancel">გაუქმება</string>
   <!-- The button text for the send button to submit the provided form data. -->
   <string name="webcompat_reporter_send">გაგზავნა</string>
   <!-- Text for a snackbar to confirm the successful submission of a WebCompat report. -->
-  <string name="webcompat_reporter_success_snackbar_text">თქვენი მოხსენება გაიგზავნა</string>
-  <!-- Button text for closing or dismissing the snackbar shown after successfully submitting a WebCompat report. -->
-  <string name="webcompat_reporter_dismiss_success_snackbar_text">დახურვა</string>
+  <string name="webcompat_reporter_success_snackbar_text_2">მოხსენება გაიგზავნა</string>
+  <!-- Placeholder text for the description field to prompt the user on what they should type. -->
+  <string name="webcompat_reporter_problem_description_placeholder_text">რა მოხდა? რა უნდა მომხდარიყო?</string>
+  <!-- Label of the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. -->
+  <string name="webcompat_reporter_etp_checkbox_text">თვალთვალისგან დაცვისას შეზღუდული ბმულების გადაგზავნა</string>
+  <!-- Description text for the checkbox on the “Report broken site” screen for sending URLS blocked by Enhanced Tracking Protection. It informs the user when checked, the report will include the list of URLs that were blocked by Enhanced Tracking Protection on the current page. -->
+  <string name="webcompat_reporter_etp_checkbox_description">თვალთვალისგან გაძლიერებულმა დაცვამ ზოგიერთ საიტზე შეიძლება შეზღუდოს გამართულად მუშაობისთვის საჭირო მეთვალყურეები და სკრიპტები.</string>
+  <!-- The button text for the preview report button to view a preview of the report. -->
+  <string name="webcompat_reporter_preview_report">მოხსენების შეთვალიერება</string>
+  <!-- The title shown at the top of the WebCompat Report preview panel. This appears after the user taps the “Preview” button before sending a report. -->
+  <string name="webcompat_reporter_preview_bottom_sheet_header">მოხსენების შეთვალიერება</string>
+  <!-- Label for the “Send” button shown in the WebCompat Report preview panel, which the user taps to submit the report. -->
+  <string name="webcompat_reporter_preview_bottom_sheet_send">გაგზავნა</string>
   <!--
     These reason strings are dropdown options on a WebCompat reporter form, indicating what is broken on the site.
 
-    Broken site reason text for site slow or not working
+    Broken site reason text for site doesn’t load
   -->
-  <string name="webcompat_reporter_reason_slow">საიტი ნელია ან არ მუშაობს</string>
-  <!-- Broken site reason text for images or videos -->
-  <string name="webcompat_reporter_reason_media">სურათები ან ვიდეოები</string>
-  <!-- Broken site reason text for buttons, links, and other content -->
-  <string name="webcompat_reporter_reason_content">ღილაკები, ბმულები და სხვა შიგთავსი</string>
-  <!-- Broken site reason text for sign in or sign out -->
-  <string name="webcompat_reporter_reason_account">ანგარიშზე შესვლა ან გამოსვლა</string>
-  <!-- Broken site reason text for ad blocker -->
-  <string name="webcompat_reporter_reason_ad_blocker">რეკლამის შემზღუდავი</string>
+  <string name="webcompat_reporter_reason_load">საიტი არ იტვირთება</string>
+  <!-- Broken site reason text for can’t pay, check out or shop -->
+  <string name="webcompat_reporter_reason_checkout">ვერ ხერხდება გადახდა, გამოწერა ან შეძენა</string>
+  <!-- Broken site reason text for site is slow -->
+  <string name="webcompat_reporter_reason_slow2">საიტი შენელებულია</string>
+  <!-- Broken site reason text for video isn’t playing or loading -->
+  <string name="webcompat_reporter_reason_media2">ვიდეო ვერ ეშვება ან ვერ იტვირთება</string>
+  <!-- Broken site reason text for missing content -->
+  <string name="webcompat_reporter_reason_content2">აკლია ნაწილები</string>
+  <!-- Broken site reason text for can’t sign in or register -->
+  <string name="webcompat_reporter_reason_account2">ანგარიშში შესვლა ან ახლის შექმნა ვერ ხერხდება</string>
+  <!-- Broken site reason text for site asked to turn off ad blocker -->
+  <string name="webcompat_reporter_reason_turn_off_adblocker">საიტი ითხოვს რეკლამის შემზღუდავის გათიშვას</string>
+  <!-- Broken site reason text for browser isn’t supported or blocked -->
+  <string name="webcompat_reporter_reason_notsupported">ბრაუზერი არაა მხარდაჭერილი ან იზღუდება</string>
   <!-- Broken site reason text for something else -->
   <string name="webcompat_reporter_reason_other">სხვა</string>
   <!--
@@ -1610,29 +1786,48 @@
   <!-- Restore tab button text on the tab crash page -->
   <string name="tab_crash_restore">ჩანართის აღდგენა</string>
   <!-- Unsubmitted crash dialog title, %s is the name of the app (for example "Firefox"). -->
-  <string name="unsubmitted_crash_dialog_title">%s ახლიდან უნდა ჩაირთოს</string>
+  <string name="unsubmitted_crash_dialog_title_2">%s უეცრად გაითიშა. გაიგზავნოს მოხსენება?</string>
+  <!-- Single unsubmitted crash matching remote settings. %1$s is the name of the app (for example "Firefox"). -->
+  <string name="unsubmitted_crash_requested_by_devs_dialog_title">გადაუგზავნელი მოხსენება გაქვთ უეცარი გათიშვის შესახებ, რომლის კვლევაც მიმდინარეობს. მისი გამოგზავნით დაგვეხმარებით, გავაუმჯობესოთ %1$s. ამ ცნობის დახურვით მოხსენება უგულებელყოფილი დარჩება.</string>
+  <!-- Multiple unsubmitted crashes matching remote settings. %1$d is the number of unsent crash reports, %2$s is the name of the app (for example "Firefox"). -->
+  <string name="unsubmitted_crashes_requested_by_devs_dialog_title">გადაუგზავნელი მოხსენებები (%1$d) გაქვთ უეცარი გათიშვის შესახებ, რომლის კვლევაც მიმდინარეობს. მათი გამოგზავნით დაგვეხმარებით, გავაუმჯობესოთ %2$s. ამ ცნობის დახურვით მოხსენებები უგულებელყოფილი დარჩება.</string>
   <!-- Unsubmitted crash dialog checkbox label for automatically sending reports in the future -->
   <string name="unsubmitted_crash_dialog_checkbox_label">უეცარი გათიშვის მოხსენებების თვითგაგზავნა</string>
   <!-- Unsubmitted crash dialog negative button to dismiss the dialog -->
   <string name="unsubmitted_crash_dialog_negative_button">დახურვა</string>
+  <!-- Unsubmitted crash dialog negative button to dismiss the dialog -->
+  <string name="unsubmitted_crash_dialog_negative_button_2">ᲓᲐᲮᲣᲠᲕᲐ</string>
+  <!-- Unsubmitted crash dialog negative button to never be asked for the submission -->
+  <string name="unsubmitted_crash_requested_by_devs_dialog_never_button">აღარ გამოჩნდეს</string>
+  <!-- Unsubmitted crash dialog positive button to submit crash report -->
+  <string name="unsubmitted_crash_dialog_positive_button_2">ᲒᲐᲒᲖᲐᲕᲜᲐ</string>
   <!-- Unsubmitted crash dialog positive button to submit crash report -->
   <string name="unsubmitted_crash_dialog_positive_button">უეცარი გათიშვის მოხსენება</string>
+  <!-- Body text for crash report dialog. %s is the link text in the annotated string (ie. "Learn More") -->
+  <string name="unsubmitted_crash_dialog_body">უეცარი გათიშვის მოხსენებები გვეხმარება, გამოვავლინოთ და მოვაგვაროთ ბრაუზერის ხარვეზები. მოხსენებები შეიძლება შეიცავდეს პირად ან საფრთხილო მონაცემებს. %s</string>
+  <string name="unsubmitted_crash_dialog_learn_more">ვრცლად</string>
+  <!-- Unsubmitted crash dialog button to open a web page with more details on the feature and privacy policy -->
+  <string name="unsubmitted_crash_requested_by_devs_learn_more">ვრცლად</string>
   <!--
     Bookmarks
 
-    Confirmation message for a dialog confirming if the user wants to delete the selected folder
+    Confirmation message for a dialog confirming if the user wants to delete multiple items.
   -->
-  <string name="bookmark_delete_folder_confirmation_dialog">ნამდვილად გსურთ ამ საქაღალდის წაშლა?</string>
-  <!-- Confirmation message for a dialog confirming if the user wants to delete multiple items. -->
   <string name="bookmark_delete_folders_confirmation_dialog">ნამდვილად გსურთ მონიშნული ერთეულების წაშლა?</string>
-  <!-- Confirmation message for a dialog confirming if the user wants to delete multiple items including folders. %s is the name of the app (for example "Firefox"). -->
-  <string name="bookmark_delete_multiple_folders_confirmation_dialog">%s წაშლის მონიშნულებს.</string>
   <!-- Text for the cancel button on delete bookmark dialog -->
   <string name="bookmark_delete_negative">გაუქმება</string>
   <!-- Screen title for adding a bookmarks folder -->
   <string name="bookmark_add_folder">საქაღალდის დამატება</string>
   <!-- Snackbar title that confirms a bookmark was saved into a folder. %s is the name of the folder the bookmark was saved into. -->
   <string name="bookmark_saved_in_folder_snackbar">შეინახავს „%s“</string>
+  <!-- Snackbar title describing failure to add a new folder -->
+  <string name="bookmark_error_add_folder">ვერ დაემატა საქაღალდე</string>
+  <!-- Snackbar title describing failure to edit an existing folder -->
+  <string name="bookmark_error_edit_folder">ვერ ჩასწორდა საქაღალდე</string>
+  <!-- Snackbar title describing failure to select a new parent folder for a bookmark or folder -->
+  <string name="bookmark_error_select_folder">ვერ შეიცვალა ზედა საქაღალდე</string>
+  <!-- Snackbar title describing failure to edit a bookmark -->
+  <string name="bookmark_error_edit_bookmark">ვერ ჩასწორდა სანიშნი</string>
   <!-- Snackbar edit button shown after a bookmark has been created. -->
   <string name="edit_bookmark_snackbar_action">ჩასწორება</string>
   <!-- Bookmark menu move button -->
@@ -1643,6 +1838,8 @@
   <string name="bookmark_menu_copy_button">ასლი</string>
   <!-- Bookmark overflow menu share button -->
   <string name="bookmark_menu_share_button">გაზიარება</string>
+  <!-- Bookmark overflow menu select all bookmarks -->
+  <string name="bookmark_menu_select_all_bookmarks">ყველას მონიშვნა</string>
   <!-- Bookmark overflow menu open in new tab button -->
   <string name="bookmark_menu_open_in_new_tab_button">ახალ ჩანართში გახსნა</string>
   <!-- Bookmark overflow menu open in private tab button -->
@@ -1653,8 +1850,10 @@
   <string name="bookmark_menu_open_all_in_private_tabs_button">ყველას პირად ჩანართებში გახსნა</string>
   <!-- Bookmark overflow menu delete button -->
   <string name="bookmark_menu_delete_button">წაშლა</string>
-  <!-- Bookmark overflow menu save button -->
-  <string name="bookmark_menu_save_button">შენახვა</string>
+  <!-- Accessibility label for sorting options -->
+  <string name="bookmark_sort_menu_content_desc">დალაგების პარამეტრები</string>
+  <!-- Label for button to sort bookmarks by user-defined sort order in the bookmark sorting overflow menu. -->
+  <string name="bookmark_sort_menu_custom">დალაგება შერჩეული თანმიმდევრობით</string>
   <!-- Label for button to sort bookmarks by newest in the bookmark sorting overflow menu. -->
   <string name="bookmark_sort_menu_newest">დალაგება უახლესით</string>
   <!-- Label for button to sort bookmarks by oldest in the bookmark sorting overflow menu. -->
@@ -1672,8 +1871,6 @@
   <string name="edit_bookmark_fragment_title">სანიშნის ჩასწორება</string>
   <!-- Bookmark folder editing screen title -->
   <string name="edit_bookmark_folder_fragment_title">საქაღალდის ჩასწორება</string>
-  <!-- Bookmark sign in button message -->
-  <string name="bookmark_sign_in_button">შედით დასინქრონებული სანიშნების სანახავად</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">URL-ბმული</string>
   <!-- Bookmark FOLDER editing field label -->
@@ -1684,33 +1881,21 @@
   <string name="bookmark_name_label">სახელი</string>
   <!-- Label for a text input field for a bookmark or folder name -->
   <string name="bookmark_name_label_normal_case">სახელი</string>
-  <!-- Bookmark add folder screen title -->
-  <string name="bookmark_add_folder_fragment_label">საქაღალდის დამატება</string>
   <!-- Bookmark select folder screen title -->
   <string name="bookmark_select_folder_fragment_label">საქაღალდის მითითება</string>
-  <!-- Bookmark editing error missing title -->
-  <string name="bookmark_empty_title_error">უნდა ჰქონდეს სათაური</string>
   <!-- Bookmark editing error missing or improper URL -->
   <string name="bookmark_invalid_url_error">არამართებული URL</string>
-  <!-- Bookmark screen message for empty bookmarks folder -->
-  <string name="bookmarks_empty_message">სანიშნები არ არის</string>
   <!--
     Bookmark snackbar message on deletion
     %1$s is the host part of the URL of the bookmark deleted, if any
   -->
   <string name="bookmark_deletion_snackbar_message">წაიშალა %1$s</string>
-  <!-- Bookmark snackbar message on deleting multiple bookmarks not including folders -->
-  <string name="bookmark_deletion_multiple_snackbar_message_2">სანიშნები წაიშალა</string>
-  <!-- Bookmark snackbar message on deleting multiple bookmarks including folders -->
-  <string name="bookmark_deletion_multiple_snackbar_message_3">იშლება მითითებული საქაღალდეები</string>
   <!-- Bookmark undo button for deletion snackbar action -->
   <string name="bookmark_undo_deletion">დაბრუნება</string>
   <!-- Bookmark snackbar message for deleting a single item. %s is the title of the item being deleted -->
   <string name="bookmark_delete_single_item">წაიშალა %s</string>
   <!-- Bookmark snackbar message for deleting multiple items. %s is the number of items being deleted -->
   <string name="bookmark_delete_multiple_items">წაშლილი ერთეულები: %s</string>
-  <!-- Text for the button to search all bookmarks -->
-  <string name="bookmark_search">შეიყვანეთ საძიებო ფრაზა</string>
   <!-- Content description for the bookmark navigation bar back button -->
   <string name="bookmark_navigate_back_button_content_description">გადასვლა უკან</string>
   <!-- Content description for the bookmark list new folder navigation bar button -->
@@ -1723,8 +1908,12 @@
   <string name="bookmark_search_button_content_description">სანიშნების ძიება</string>
   <!-- Content description for the overflow menu for a bookmark item. %s is a folder name or bookmark title. -->
   <string name="bookmark_item_menu_button_content_description">ჩანაწერების მენიუ – %s</string>
+  <!-- Content description for the "close" button in bookmarks screen. -->
+  <string name="bookmark_close_button_content_description">სანიშნების დახურვა</string>
   <!-- Title for the bookmark list empty state -->
   <string name="bookmark_empty_list_title">სანიშნები არაა</string>
+  <!-- Bookmark screen folder description. %s is the count of bookmark folder children -->
+  <string name="bookmarks_folder_description">სანიშნები საქაღალდეში: %s</string>
   <!-- Description for the bookmark list empty state when you're not signed into sync. -->
   <string name="bookmark_empty_list_guest_description">შეინახეთ საიტები გვერდების მონახულებისას. შედით და წამოიღეთ სანიშნები სხვა დასინქრონებული მოწყობილობებიდან.</string>
   <!-- Text for the button to navigate to sync authentication -->
@@ -1765,6 +1954,10 @@
   <string name="clear_permissions_on_all_sites">ყველა საიტის ნებართვის გასუფთავება</string>
   <!-- Preference for altering video and audio autoplay for all websites -->
   <string name="preference_browser_feature_autoplay">თვითგაშვება</string>
+  <!-- Preference for local device access for all websites -->
+  <string name="preference_browser_feature_local_device_access">მოწყობილობის პროგრამები და მომსახურებები</string>
+  <!-- Preference for local network access for all websites -->
+  <string name="preference_browser_feature_local_network_access">შიდა ქსელის მოწყობილობები</string>
   <!-- Preference for altering the camera access for all websites -->
   <string name="preference_phone_feature_camera">კამერა</string>
   <!-- Preference for altering the microphone access for all websites -->
@@ -1821,6 +2014,10 @@
   <string name="studies_on">ჩართ.</string>
   <!-- Summary of studies data on quit preference if it is set to off -->
   <string name="studies_off">გამორთ.</string>
+  <!-- Toggle if desktop site is turned on -->
+  <string name="browser_feature_desktop_site_on">ჩართ.</string>
+  <!-- Toggle if desktop site is turned off -->
+  <string name="browser_feature_desktop_site_off">გამორთ.</string>
   <!-- Category header of a preference that allows a user to alter settings related to web permissions. -->
   <string name="preferences_category_permissions">ნებართვები</string>
   <!-- Category header of a preference that allows a user to alter settings related to web content. -->
@@ -1861,12 +2058,10 @@
     %d is a placeholder for the number of tabs selected.
   -->
   <string name="create_collection_save_to_collection_tab_selected">%d ჩანართია შერჩეული</string>
-  <!-- Text shown in snackbar when multiple tabs have been saved in a collection -->
-  <string name="create_collection_tabs_saved">ჩანართები შენახულია!</string>
   <!-- Text shown in snackbar when one or multiple tabs have been saved in a new collection -->
-  <string name="create_collection_tabs_saved_new_collection">კრებული შენახულია!</string>
+  <string name="create_collection_tabs_saved_new_collection_2">კრებული შენახულია</string>
   <!-- Text shown in snackbar when one tab has been saved in a collection -->
-  <string name="create_collection_tab_saved">ჩანართი შენახულია!</string>
+  <string name="create_collection_tab_saved_2">ჩანართი შენახულია</string>
   <!-- Content description (not visible, for screen readers etc.): button to close the collection creator -->
   <string name="create_collection_close">დახურვა</string>
   <!-- Button to save currently selected tabs in the "select tabs" step of the collection creator -->
@@ -1912,8 +2107,8 @@
   <string name="toast_copy_link_to_clipboard">ასლი აღებულია</string>
   <!-- An option from the share dialog to sign into sync -->
   <string name="sync_sign_in">დასინქ. შესვლა</string>
-  <!-- An option from the three dot menu to sync and save data -->
-  <string name="sync_menu_sync_and_save_data">დასინქ. და შენახვა</string>
+  <!-- An option from the three dot menu to sign in -->
+  <string name="sync_menu_sign_in">შესვლა</string>
   <!-- An option from the share dialog to send link to all other sync devices -->
   <string name="sync_send_to_all">ყველა მოწყობილობაზე გაგზავნა</string>
   <!-- An option from the share dialog to reconnect to sync -->
@@ -1939,8 +2134,7 @@
   <!-- A message template for the shared link with a footer. %1$s is the shared link, %2$s is the app name (e.g. Firefox) and %3$s is a download link for the app. -->
   <string name="sent_from_firefox_template" tools:ignore="UnusedResources">%1$s\n\nგთავაზობთ %2$s 🦊 გამოცადოთ მობილური ბრაუზერი: %3$s</string>
   <!-- A short message template for the shared link with a footer. %1$s is the shared link, %2$s is the app name (e.g. Firefox) and %3$s is a download link for the app. -->
-  <string name="sent_from_firefox_template_short" tools:ignore="UnusedResources">%1$s\n\nგთავაზობთ %2$s 🦊 %3$s
-</string>
+  <string name="sent_from_firefox_template_short" tools:ignore="UnusedResources">%1$s\n\nგთავაზობთ %2$s 🦊 %3$s</string>
   <!--
     Notifications
 
@@ -1994,31 +2188,23 @@
   <!--
     Snackbar
 
-    Text shown in snackbar when user deletes a collection
+    Text shown in snackbar when user closes a tab
   -->
-  <string name="snackbar_collection_deleted">კრებული წაიშალა</string>
-  <!-- Text shown in snackbar when user renames a collection -->
-  <string name="snackbar_collection_renamed">კრებულს გადაერქვა</string>
-  <!-- Text shown in snackbar when user closes a tab -->
   <string name="snackbar_tab_closed">ჩანართი დაიხურა</string>
   <!-- Text shown in snackbar when user closes all tabs -->
   <string name="snackbar_tabs_closed">ჩანართები დაიხურა</string>
   <!-- Text shown in snackbar when user closes multiple inactive tabs. %1$s will be replaced with the number of tabs closed. -->
   <string name="snackbar_num_tabs_closed">დახურული ჩანართი: %1$s</string>
   <!-- Text shown in snackbar when user bookmarks a list of tabs. %s is the name of the folder the bookmark was saved into. -->
-  <string name="snackbar_message_bookmarks_saved_in">სანიშნებს შეინახავს „%s“!</string>
+  <string name="snackbar_message_bookmarks_saved_in_2">სანიშნებს შეინახავს „%s“</string>
   <!-- Text shown in snackbar when user adds a site to shortcuts -->
   <string name="snackbar_added_to_shortcuts">მალსახმობებში დამატება!</string>
   <!-- Text shown in snackbar when user closes a private tab -->
   <string name="snackbar_private_tab_closed">პირადი ჩანართი დაიხურა</string>
-  <!-- Text shown in snackbar when user closes all private tabs -->
-  <string name="snackbar_private_tabs_closed">პირადი ჩანართები დაიხურა</string>
   <!-- Text shown in snackbar when user erases their private browsing data -->
   <string name="snackbar_private_data_deleted">პირადი ფანჯრის მონაცემები გასუფთავებულია</string>
   <!-- Text shown in snackbar to undo deleting a tab, top site or collection -->
   <string name="snackbar_deleted_undo">დაბრუნება</string>
-  <!-- Text shown in snackbar when user removes a top site -->
-  <string name="snackbar_top_site_removed">საიტი მოცილებულია</string>
   <!--
     QR code scanner prompt which appears after scanning a code, but before navigating to it
     %1$s is the name of the app (for example "Firefox"), %2$s is the URL or text scanned
@@ -2034,16 +2220,14 @@
   <string name="qr_scanner_dialog_invalid_ok">კარგი</string>
   <!-- Tab collection deletion prompt dialog message. %1$s is the collection name. -->
   <string name="tab_collection_dialog_message">ნამდვილად გსურთ, წაიშალოს %1$s?</string>
-  <!-- Tab collection deletion prompt dialog option to delete the collection -->
-  <string name="tab_collection_dialog_positive">წაშლა</string>
-  <!-- Message for copying the URL via long press on the toolbar -->
-  <string name="url_copied">URL-ს ასლი აღებულია</string>
   <!-- Sample text for accessibility font size -->
   <string name="accessibility_text_size_sample_text_1">ეს ტექსტი ნიმუშია. იგი აჩვენებს, თუ როგორ გამოჩნდება ნაწერი ამ პარამეტრით ზომის გაზრდისას ან შემცირებისას.</string>
   <!-- Summary for Accessibility Text Size Scaling Preference -->
   <string name="preference_accessibility_text_size_summary">გაზარდეთ ან შეამცირეთ ნაწერის ზომა საიტებზე</string>
   <!-- Title for Accessibility Text Size Scaling Preference -->
   <string name="preference_accessibility_font_size_title">შრიფტის ზომა</string>
+  <!-- %d is the percentage of the slide bar for setting the text font size and %% will be announced as "percent". -->
+  <string name="a11y_preference_accessibility_font_size_percentage">%d %%.</string>
   <!-- Title for Accessibility Text Automatic Size Scaling Preference -->
   <string name="preference_accessibility_auto_size_2">შრიფტის ავტომატური ზომა</string>
   <!-- Summary for Accessibility Text Automatic Size Scaling Preference -->
@@ -2124,9 +2308,9 @@
 
     Text shown in snackbar when multiple tabs have been sent to device
   -->
-  <string name="sync_sent_tabs_snackbar">ჩანართები გაიგზავნა!</string>
+  <string name="sync_sent_tabs_snackbar_2">ჩანართები გაიგზავნა</string>
   <!-- Text shown in snackbar when one tab has been sent to device -->
-  <string name="sync_sent_tab_snackbar">ჩანართი გაიგზავნა!</string>
+  <string name="sync_sent_tab_snackbar_2">ჩანართი გაიგზავნა</string>
   <!-- Text shown in snackbar when sharing tabs failed -->
   <string name="sync_sent_tab_error_snackbar">გაგზავნა ვერ ხერხდება</string>
   <!-- Text shown in snackbar for the "retry" action that the user has after sharing tabs failed -->
@@ -2134,7 +2318,7 @@
   <!-- Title of QR Pairing Fragment -->
   <string name="sync_scan_code">კოდის წაკითხვა</string>
   <!-- Instructions on how to access pairing -->
-  <string name="sign_in_instructions" tools:ignore="BrandUsage">გაუშვით კომპიუტერში Firefox და გახსენით გვერდი &lt;b&gt;https://firefox.com/pair&lt;/b&gt;</string>
+  <string name="sign_in_instructions" tools:ignore="BrandUsage"><![CDATA[გაუშვით კომპიუტერში Firefox და გახსენით გვერდი <b>https://firefox.com/pair</b>]]></string>
   <!-- Text shown for sign in pairing when ready -->
   <string name="sign_in_ready_for_scan">მზადაა წასაკითხად</string>
   <!-- Text shown for settings option for sign with pairing -->
@@ -2142,7 +2326,7 @@
   <!-- Text shown for settings option for sign with email -->
   <string name="sign_in_with_email">ელფოსტის გამოყენება სანაცვლოდ</string>
   <!-- Text shown for settings option for create new account text.'Firefox' intentionally hardcoded here. -->
-  <string name="sign_in_create_account_text" tools:ignore="BrandUsage">არ გაქვთ ანგარიში? &lt;u&gt;შექმენით&lt;/u&gt; და დაასინქრონეთ Firefox მოწყობილობებზე.</string>
+  <string name="sign_in_create_account_text" tools:ignore="BrandUsage"><![CDATA[არ გაქვთ ანგარიში? <u>შექმენით</u> და დაასინქრონეთ Firefox მოწყობილობებზე.]]></string>
   <!-- Text shown in confirmation dialog to sign out of account. %s is the name of the app (for example "Firefox"). -->
   <string name="sign_out_confirmation_message_2">%s შეწყვეტს დასინქრონებას თქვენი ანგარიშით, მაგრამ არ წაშლის მონაცემებს ამ მოწყობილობაზე.</string>
   <!-- Option to continue signing out of account shown in confirmation dialog to sign out of account -->
@@ -2166,15 +2350,41 @@
   <!-- Text displayed that links to website about enhanced tracking protection -->
   <string name="preference_enhanced_tracking_protection_explanation_learn_more">ვრცლად</string>
   <!-- Preference for enhanced tracking protection for the standard protection settings -->
-  <string name="preference_enhanced_tracking_protection_standard_default_1">ჩვეულებრივი (ნაგულისხმევი)</string>
+  <string name="preference_enhanced_tracking_protection_standard_default_1">საშუალო (ნაგულისხმევი)</string>
   <!-- Preference description for enhanced tracking protection for the standard protection settings -->
   <string name="preference_enhanced_tracking_protection_standard_description_5">გვერდები ჩაიტვირთება ჩვეულებრივ, მაგრამ ნაკლები მეთვალყურე შეიზღუდება.</string>
   <!-- Accessibility text for the Standard protection information icon -->
-  <string name="preference_enhanced_tracking_protection_standard_info_button">რა იზღუდება თვალთვალისგან ჩვეულებრივი დაცვით</string>
+  <string name="preference_enhanced_tracking_protection_standard_info_button">რა იზღუდება თვალთვალისგან საშუალო დაცვით</string>
   <!-- Preference for enhanced tracking protection for the strict protection settings -->
   <string name="preference_enhanced_tracking_protection_strict">მკაცრი</string>
   <!-- Preference description for enhanced tracking protection for the strict protection settings -->
   <string name="preference_enhanced_tracking_protection_strict_description_4">მეტად მძლავრი დაცვა თვალთვალისგან და მეტი სისწრაფე, მაგრამ საიტების ნაწილმა, შესაძლოა გაუმართავად იმუშაოს.</string>
+  <!-- Preference description for the checkbox setting for "baseline" exceptions (a set of content blocking exceptions applied to fix major website breakage). %1$s is the name of the application (e.g. Fenix). -->
+  <string name="preference_enhanced_tracking_protection_allow_list_baseline" tools:ignore="UnusedResources" moz:removedIn="144">ნების დართვა, რომ %1$s თავადვე მიუთითებს საჭირო გამონაკლისებს ცნობილ საიტებზე გაუმართაობების ასარიდებლად.</string>
+  <!-- Preference description for the checkbox setting for "convenience" exceptions (a set of content blocking exceptions applied to fix convenience site features). -->
+  <string name="preference_enhanced_tracking_protection_allow_list_convenience" tools:ignore="UnusedResources" moz:removedIn="144">აგრეთვე, თავადვე მიუთითებს იმ გამონაკლისებსაც, რომლებიც მხოლოდ მცირე ხარვეზების აღმოფხვრისა და მოსახერხებელი შესაძლებლობების ხელმისაწვდომობისთვისაა საჭირო.</string>
+  <!-- Preference label for the enhanced tracking protection option to fix major site issues caused by tracker blocking -->
+  <string name="preference_enhanced_tracking_protection_allow_list_baseline_2">საიტზე მნიშვნელოვანი ხარვეზების გამოსწორება (სასურველია)</string>
+  <!-- Preference label for the enhanced tracking protection option to fix minor site issues caused by tracker blocking -->
+  <string name="preference_enhanced_tracking_protection_allow_list_convenience_label">საიტზე მცირე ხარვეზების გამოსწორება</string>
+  <!-- Preference description for the enhanced tracking protection option to fix minor site issues caused by tracker blocking -->
+  <string name="preference_enhanced_tracking_protection_allow_list_convenience_description">უნდა გამოიყენებოდეს მნიშვნელოვანი ხარვეზების გამოსწორებისთვის.</string>
+  <!-- Preference sub header for the enhanced tracking protection options to fix issues caused by tracker blocking -->
+  <string name="preference_enhanced_tracking_protection_allow_list_subheader">საიტზე ხარვეზების გამოსწორება</string>
+  <!-- Learn more text for the enhanced tracking protection options to fix issues caused by tracker blocking -->
+  <string name="preference_enhanced_tracking_protection_allow_list_learn_more">ვრცლად</string>
+  <!--
+    Dialog that appears after user tries to uncheck the baseline exceptions preference under Strict or Custom tracking protection
+
+    Title for the dialog that appears after disabling the baseline exceptions preference under Strict or Custom tracking protection
+  -->
+  <string name="preference_enhanced_tracking_protection_allow_list_dialog_title">ნამდვილად გსურთ ხარვეზების გამოსწორების უარყოფა?</string>
+  <!-- Message for the dialog that appears after disabling the baseline exceptions preference under Strict or Custom tracking protection. %1$s is the name of the application (e.g. Fenix). -->
+  <string name="preference_enhanced_tracking_protection_allow_list_dialog_message">ეს პარამეტრი გამოგადგებათ საიტის გავრცელებული ხარვეზების გამოსწორებაში. გამორთვის შემთხვევაში ზოგი საიტი გაუმართავად იმუშავებს და %1$s ამ ხარვეზების აღმოფხვრაში ვერ დაგეხმარებათ.</string>
+  <!-- Confirmation button text for the dialog that appears after disabling the baseline exceptions preference under Strict or Custom tracking protection -->
+  <string name="preference_enhanced_tracking_protection_allow_list_dialog_confirm">გასწორების გამორთვა</string>
+  <!-- Cancel button text for the dialog that appears after disabling the baseline exceptions preference under Strict or Custom tracking protection. This dismisses the dialog and re-enables the preference. -->
+  <string name="preference_enhanced_tracking_protection_allow_list_dialog_cancel">გასწორების დატოვება</string>
   <!-- Accessibility text for the Strict protection information icon -->
   <string name="preference_enhanced_tracking_protection_strict_info_button">რა იზღუდება თვალთვალისგან მკაცრი დაცვით</string>
   <!-- Preference for enhanced tracking protection for the custom protection settings -->
@@ -2271,7 +2481,7 @@
     Description of the SmartBlock Enhanced Tracking Protection feature. The * symbol is intentionally hardcoded here,
     as we use it on the UI to indicate which trackers have been partially unblocked.
   -->
-  <string name="preference_etp_smartblock_description">ქვემოთ მონიშნული ზოგი მეთვალყურე ნაწილობრივ დაშვებულია ამ გვერდზე, მათთან თქვენი ურთიერთქმედების გამო *.</string>
+  <string name="preference_etp_smartblock_description">ქვემოთ აღნიშნული ზოგი მეთვალყურე ნაწილობრივ დაშვებულია ამ გვერდზე, მათთან თქვენი ურთიერთქმედების შედეგად *.</string>
   <!-- Text displayed that links to website about enhanced tracking protection SmartBlock -->
   <string name="preference_etp_smartblock_learn_more">ვრცლად</string>
   <!--
@@ -2289,8 +2499,6 @@
   <string name="preference_doh_summary">საიტთა სახელების გადამყვანი (DNS) მომსახურების HTTPS-ით გატარებისას საიტის მისამართის მოთხოვნები იგზავნება დაშიფრული არხით, შედეგად იქმნება დაცული DNS და გარეშე პირებს უძნელდებათ გაარკვიონ, რომელ ვებსაიტებთან ცდილობთ წვდომას. %1$s</string>
   <!-- Used as text for the link in `preference_doh_title`, points to documentation about "DNS over HTTPS" -->
   <string name="preference_doh_learn_more">ვრცლად</string>
-  <!-- Content description for the toolbar "Navigate up" button -->
-  <string name="preference_doh_up_description">ზემოთ გადასვლა</string>
   <!-- Content description for the "Exceptions" button -->
   <string name="preference_doh_exceptions_description">გამონაკლისები</string>
   <!-- Content description for the "Info" button -->
@@ -2449,6 +2657,8 @@
   <string name="preferences_passwords_exceptions_remove_all">ყველა გამონაკლისის წაშლა</string>
   <!-- Hint for search box in passwords list -->
   <string name="preferences_passwords_saved_logins_search_2">პაროლების ძიება</string>
+  <!-- Content description for the logins navigation bar back button -->
+  <string name="logins_navigate_back_button_content_description">უკან</string>
   <!-- The header for the site that a login is for -->
   <string name="preferences_passwords_saved_logins_site">საიტი</string>
   <!-- The header for the username for a login -->
@@ -2469,6 +2679,26 @@
   <string name="saved_login_clear_username">სახელის გასუფთავება</string>
   <!-- Content Description (for screenreaders etc) read for the button to clear the hostname field while creating a login -->
   <string name="saved_login_clear_hostname">მისამართის გასუფთავება</string>
+  <!-- Content description, used by tools like screenreaders, for the 3 dots button that shows commands related to the currently displayed login (edit, delete). -->
+  <string name="login_detail_menu_button_content_description">შესვლის მონაცემების მენიუ</string>
+  <!-- Content description, used by tools like screenreaders, to go back and exit the login detail view. -->
+  <string name="login_details_navigate_back_button_content_description">გადასვლა უკან</string>
+  <!-- Edit text for the login detail menu edit button -->
+  <string name="login_detail_menu_edit_button">ჩასწორება</string>
+  <!-- Delete text for the login detail menu delete button -->
+  <string name="login_detail_menu_delete_button">წაშლა</string>
+  <!-- Content description, used by tools like screenreaders, to go back and exit the add login view. -->
+  <string name="add_login_navigate_back_button_content_description">გადასვლა უკან</string>
+  <!-- Content description, used by tools like screenreaders, to press on the save new login button. -->
+  <string name="add_login_save_new_login_button_content_description">ახალი ანგარიშის შენახვა</string>
+  <!-- Content description, used by tools like screenreaders, to go back and exit the edit login view. -->
+  <string name="edit_login_navigate_back_button_content_description">გადასვლა უკან</string>
+  <!-- Content description, used by tools like screenreaders, to press on the edit login button. -->
+  <string name="edit_login_button_content_description">შესვლის მონაცემის ჩასწორება</string>
+  <!-- Content description, used by tools like screenreaders, to press on the add new login button. -->
+  <string name="saved_logins_add_new_login_button_content_description">დაამატეთ ახალი ანგარიში</string>
+  <!-- Content description, used by tools like screenreaders, to press on the clear search text button. -->
+  <string name="saved_logins_clear_search_text_button_content_description">ძიების გასუფთავება</string>
   <!-- Content Description (for screenreaders etc) read for the button to open a site in logins -->
   <string name="saved_login_open_site">საიტის ბრაუზერში გახსნა</string>
   <!-- Content Description (for screenreaders etc) read for the button to reveal a password in logins -->
@@ -2477,6 +2707,10 @@
   <string name="saved_login_hide_password">პაროლის დამალვა</string>
   <!-- Message displayed in biometric prompt displayed for authentication before allowing users to view their passwords -->
   <string name="logins_biometric_prompt_message_2">გახსენით შენახული ბარათების სანახავად</string>
+  <!-- Button for unlocking logins on the biometric lock screen -->
+  <string name="logins_biometric_unlock_button">გახსნა</string>
+  <!-- Button for leaving logins on the biometric lock screen -->
+  <string name="logins_biometric_leave_button">გამოსვლა</string>
   <!-- Title of warning dialog if users have no device authentication set up -->
   <string name="logins_warning_dialog_title_2">დაიცავით შენახული პაროლები</string>
   <!-- Message of warning dialog if users have no device authentication set up -->
@@ -2527,14 +2761,20 @@
   <string name="preferences_addresses_save_and_autofill_addresses_2">მისამართების შენახვა და თვითშევსება</string>
   <!-- Preference summary for saving and filling address data -->
   <string name="preferences_addresses_save_and_autofill_addresses_summary_2">მოიცავს ტელეფონის ნომრებსა და ელფოსტის მისამართებს</string>
+  <!-- Preference option for syncing addresses across devices. This is displayed when the user is not signed into sync -->
+  <string name="preferences_addresses_sync_addresses_across_devices">დაასინქრონეთ მისამართები სხვადასხვა მოწყობილობაზე</string>
+  <!-- Preference option for syncing addresses across devices. This is displayed when the user is signed into sync -->
+  <string name="preferences_addresses_sync_addresses">დაასინქ. მისამართები</string>
+  <!-- Content description navigating back from autofill settings screen. -->
+  <string name="autofill_settings_navigate_back_button_content_description">უკან</string>
   <!-- Title of the "Add card" screen -->
   <string name="credit_cards_add_card">ბარათის დამატება</string>
+  <!-- Content description for the "credit card feature" top bar back button -->
+  <string name="credit_cards_navigate_back_button_content_description">გადასვლა უკან</string>
   <!-- Title of the "Edit card" screen -->
   <string name="credit_cards_edit_card">ბარათის ჩასწორება</string>
   <!-- The header for the card number of a credit card -->
   <string name="credit_cards_card_number">ბარათის ნომერი</string>
-  <!-- The header for the expiration date of a credit card -->
-  <string name="credit_cards_expiration_date">ვადის გასვლის თარიღი</string>
   <!-- The label for the expiration date month of a credit card to be used by a11y services -->
   <string name="credit_cards_expiration_date_month">ვადის გასვლის თვე</string>
   <!-- The label for the expiration date year of a credit card to be used by a11y services -->
@@ -2583,6 +2823,8 @@
   <string name="addresses_manage_addresses">მისამართების მართვა</string>
   <!-- The header for the name of an address. Name represents a person's full name, typically made up of a first, middle and last name, e.g. John Joe Doe. -->
   <string name="addresses_name">სახელი</string>
+  <!-- Label for an address field (e.g. mailing address) used as part of the form autofill feature. The organization's name related to the address helps in distinguishing addresses used for business or personal purposes. -->
+  <string name="addresses_organization" tools:ignore="UnusedResources">დაწესებულება</string>
   <!-- The header for the street address of an address -->
   <string name="addresses_street_address">ქუჩის მისამართი</string>
   <!-- The header for the city of an address -->
@@ -2599,6 +2841,44 @@
   <string name="addresses_phone">ტელეფონი</string>
   <!-- The header for the email of an address -->
   <string name="addresses_email">ელფოსტა</string>
+  <!-- Label for an address field (e.g. mailing address) used as part of the form autofill feature. This specific field is used for addresses in Iran, Mexico. -->
+  <string name="addresses_neighborhood" tools:ignore="UnusedResources">უბანი</string>
+  <!-- Label for an address field (e.g. mailing address) used as part of the form autofill feature. The Village or Township field, specific to Malaysia is crucial for addresses in rural areas. -->
+  <string name="addresses_village_township" tools:ignore="UnusedResources">სოფელი ან დაბა</string>
+  <!-- Label for an address field (e.g. mailing address) used as part of the form autofill feature. The Island field, used in places like the Cayman Islands and the Bahamas if an address is located on a specific island. -->
+  <string name="addresses_island" tools:ignore="UnusedResources">კუნძული</string>
+  <!-- Label for an address field (e.g. mailing address) used as part of the form autofill feature. The Townland field, specific to Ireland is a specific type of land division used in rural areas. -->
+  <string name="addresses_townland" tools:ignore="UnusedResources">დასახლება</string>
+  <!-- Label for an address field (e.g. mailing address) used as part of the form autofill feature. This specific field is used as secondary address information (below the country level, e.g. county) in Honk Kong, Sudan, Syria, Türkiye, and as sublocality (civil entity below a locality, e.g. district) in Korea. -->
+  <string name="addresses_district" tools:ignore="UnusedResources">რაიონი</string>
+  <!-- Label for an address field (e.g. mailing address) used as part of the form autofill feature. Used in the United Kingdom, Norway and Sweden -->
+  <string name="addresses_post_town" tools:ignore="UnusedResources">საფოსტო ქალაქი</string>
+  <!-- Label for an address field (e.g. mailing address) used as part of the form autofill feature. This specific field is used as a tertiary address information (below the state level, e.g. Tasmania in Australia -->
+  <string name="addresses_suburb" tools:ignore="UnusedResources">გარეუბანი</string>
+  <!-- Label for an address field (e.g. mailing address) used as part of the form autofill feature. This specific field is crucial for addressing in regions where county lines play a key role in postal services. -->
+  <string name="addresses_county" tools:ignore="UnusedResources">ქვეყანა</string>
+  <!-- Label for an address field (e.g. mailing address) used as part of the form autofill feature. Significant in places where parishes are used for local administration and addressing. Ensures users can specify parish details for better autofill accuracy. Used in Barbados and Jamaica. -->
+  <string name="addresses_parish" tools:ignore="UnusedResources">სამრევლო</string>
+  <!-- Label for an address field (e.g. mailing address) used as part of the form autofill feature. Essential for addresses in countries like Japan where prefectures are a major administrative division. -->
+  <string name="addresses_prefecture" tools:ignore="UnusedResources">პრეფექტურა</string>
+  <!-- Label for an address field (e.g. mailing address) used as part of the form autofill feature. Allowing users to specify a particular area within a city or region. Used in Hong Kong -->
+  <string name="addresses_area" tools:ignore="UnusedResources">ნაკვეთი</string>
+  <!-- Label for an address field (e.g. mailing address) used as part of the form autofill feature. The header for the Do/Si of the address. Do/Si refers to provincial level divisions, pertinent to addresses in South Korea. -->
+  <string name="addresses_do_si" tools:ignore="UnusedResources">დო/სი</string>
+  <!-- Label for an address field (e.g. mailing address) used as part of the form autofill feature. Used in countries like Nicaragua and Colombia where departments are a key administrative division. -->
+  <string name="addresses_department" tools:ignore="UnusedResources">განყოფილება</string>
+  <!-- Label for an address field (e.g. mailing address) used as part of the form autofill feature. Essential for addresses in the United Arab Emirates. -->
+  <string name="addresses_emirate" tools:ignore="UnusedResources">საამირო</string>
+  <!-- Label for an address field (e.g. mailing address) used as part of the form autofill feature. Relevant for addresses in countries like Russia and Ukraine. -->
+  <string name="addresses_oblast" tools:ignore="UnusedResources">ოლქი</string>
+  <!-- Label for an address field (e.g. mailing address) used as part of the form autofill feature. The PIN (Postal Index Number) field, used in India is a code representing a specific area. -->
+  <string name="addresses_pin" tools:ignore="UnusedResources">მიმაგრება</string>
+  <!-- Label for an address field (e.g. mailing address) used as part of the form autofill feature. The postal code field is universally used in address forms to specify the area code for mail sorting. -->
+  <string name="addresses_postal_code" tools:ignore="UnusedResources">საფოსტო ინდექსი</string>
+  <!-- Label for an address field (e.g. mailing address) used as part of the form autofill feature. the Eircode field, specific to Ireland is a unique postal code system that helps in precise location identification. -->
+  <string name="addresses_eircode" tools:ignore="UnusedResources">Eir-კოდი</string>
+  <!-- Label for an address field (e.g. mailing address) used as part of the form autofill feature. Used in cases we want to only display the word "Country" over "Country or Region". -->
+  <string name="addresses_country_only" tools:ignore="UnusedResources">ქვეყანა</string>
   <!-- The text for the "Save" button for saving an address -->
   <string name="addresses_save_button">შენახვა</string>
   <!-- The text for the "Cancel" button for cancelling adding, updating or deleting an address -->
@@ -2651,22 +2931,14 @@
   <string name="search_add_custom_engine_error_empty_search_string">შეიყვანეთ საძიებო ფრაზა</string>
   <!-- Text shown when a user leaves out the required template string -->
   <string name="search_add_custom_engine_error_missing_template">დარწმუნდით, რომ შეესაბამება მოცემულ მაგალითს</string>
-  <!-- Text shown when we aren't able to validate the custom search query. %s is the url of the custom search engine. -->
-  <string name="search_add_custom_engine_error_cannot_reach">შეცდომა კავშირისას – „%s“</string>
-  <!-- Text shown when a user creates a new search engine. %s is the url of the custom search engine. -->
-  <string name="search_add_custom_engine_success_message">შეიქმნა %s</string>
-  <!-- Text shown when a user successfully edits a custom search engine. %s is the url of the custom search engine. -->
-  <string name="search_edit_custom_engine_success_message">შენახულია %s</string>
-  <!-- Text shown when a user successfully deletes a custom search engine. %s is the url of the custom search engine. -->
-  <string name="search_delete_search_engine_success_message">წაიშალა %s</string>
   <!-- Heading for the instructions to allow a permission -->
   <string name="phone_feature_blocked_intro">დასაშვებად:</string>
   <!-- First step for the allowing a permission -->
   <string name="phone_feature_blocked_step_settings">1. გადადით Android-პარამეტრებში</string>
   <!-- Second step for the allowing a permission -->
-  <string name="phone_feature_blocked_step_permissions">2. შეეხეთ &lt;b&gt;ნებართვებს&lt;/b&gt;</string>
+  <string name="phone_feature_blocked_step_permissions"><![CDATA[2. შეეხეთ <b>ნებართვებს</b>]]></string>
   <!-- Third step for the allowing a permission (%1$s is the permission name, for example "Camera"). -->
-  <string name="phone_feature_blocked_step_feature">3. გახადეთ &lt;b&gt;%1$s&lt;/b&gt; დაშვებული</string>
+  <string name="phone_feature_blocked_step_feature"><![CDATA[3. გახადეთ <b>%1$s</b> დაშვებული]]></string>
   <!-- Label that indicates a site is using a secure connection -->
   <string name="quick_settings_sheet_secure_connection_2">კავშირი დაცულია</string>
   <!-- Label that indicates a site is using a insecure connection -->
@@ -2676,7 +2948,7 @@
   <!-- Label to clear site data -->
   <string name="clear_site_data">ფუნთუშებისა და საიტის მონაცემების გასუფთავება</string>
   <!-- Confirmation message for a dialog confirming if the user wants to delete all data for current site. %s is the domain of the site. -->
-  <string name="confirm_clear_site_data">ნამდვილად გსურთ ყველა ფუნთუშისა და მონაცემის გასუფთავება საიტიდან &lt;b&gt;%s&lt;/b&gt;?</string>
+  <string name="confirm_clear_site_data"><![CDATA[ნამდვილად გსურთ ყველა ფუნთუშისა და მონაცემის გასუფთავება საიტიდან <b>%s</b>?]]></string>
   <!-- Confirmation message for a dialog confirming if the user wants to delete all the permissions for all sites -->
   <string name="confirm_clear_permissions_on_all_sites">ნამდვილად გსურთ ყველა ნებართვის გასუფთავება თითოეულ საიტზე?</string>
   <!-- Confirmation message for a dialog confirming if the user wants to delete all the permissions for a site -->
@@ -2685,8 +2957,6 @@
   <string name="confirm_clear_permission_site">ნამდვილად გსურთ ამ ნებართვის წაშლა ამ საიტზე?</string>
   <!-- label shown when there are not site exceptions to show in the site exception settings -->
   <string name="no_site_exceptions">გამონაკლისები არ არის</string>
-  <!-- Bookmark deletion confirmation -->
-  <string name="bookmark_deletion_confirmation">ნამდვილად გსურთ ამ სანიშნის წაშლა?</string>
   <!-- Browser menu button that adds a shortcut to the home fragment -->
   <string name="browser_menu_add_to_shortcuts">მალსახმობებში დამატება</string>
   <!-- Browser menu button that removes a shortcut from the home fragment -->
@@ -2765,8 +3035,15 @@
   <!--
     Top Sites
 
-    Title text displayed in the dialog when shortcuts limit is reached.
+    Title text displayed for the shortcuts home screen section.
   -->
+  <string name="homepage_shortcuts_title">მალსახმობები</string>
+  <!--
+    Context description text for the "Show all" button in the shortcuts home screen section
+    which navigates the user to a screen displaying all the shortcuts.
+  -->
+  <string name="homepage_shortcuts_show_all_content_description">ყველა მალსახმობის ჩვენება</string>
+  <!-- Title text displayed in the dialog when shortcuts limit is reached. -->
   <string name="shortcut_max_limit_title">მალსახმობების ზღვარი მიღწეულია</string>
   <!-- Content description text displayed in the dialog when shortcut limit is reached. -->
   <string name="shortcut_max_limit_content">ახალი მალსახმობის დასამატებლად, წაშალეთ წინა. მასზე დიდხანს შეხებით და მოცილებით.</string>
@@ -2804,6 +3081,11 @@
     Title text displayed in the tabs tray when a tab has been unused for 14 days.
   -->
   <string name="inactive_tabs_title">უქმი ჩანართები</string>
+  <!--
+    Text displayed in the tabs tray, indicating the number of inactive tabs.
+    %d is the number of inactive tabs.
+  -->
+  <string name="inactive_tabs_num_items">ჩანაწერი: %d</string>
   <!-- Content description for closing all inactive tabs -->
   <string name="inactive_tabs_delete_all">ყველა უქმი ჩანართის დახურვა</string>
   <!-- Content description for expanding the inactive tabs section. -->
@@ -2828,8 +3110,6 @@
     Search suggestions title for Firefox Suggest.
   -->
   <string name="firefox_suggest_header" tools:ignore="BrandUsage">Firefox-შეთავაზება</string>
-  <!-- Search suggestions title for trending searches. -->
-  <string name="trending_searches_header" moz:removedIn="137" tools:ignore="UnusedResources">ხშირად მოძიებული</string>
   <!--
     Search suggestions title for trending search suggestions.
     %s is a placeholder for the name of the search engine providing the trending search suggestions.
@@ -2855,24 +3135,19 @@
   <string name="radio_preference_info_content_description">დაწკაპეთ ვრცლად სანახავად</string>
   <!-- Content description for the action bar "up" button -->
   <string name="action_bar_up_description">ზემოთ გადასვლა</string>
-  <!-- Content description for privacy content close button -->
-  <string name="privacy_content_close_button_content_description">დახურვა</string>
   <!--
     Pocket recommended stories
 
     Header text for a section on the home screen.
   -->
-  <string name="pocket_stories_header_1">მეტად სააზროვნო მასალები</string>
-  <!-- Header text for a section on the home screen. -->
-  <string name="pocket_stories_categories_header">ამბები თემატურად</string>
-  <!-- Text of a button allowing users to access an external url for more Pocket recommendations. -->
-  <string name="pocket_stories_placeholder_text">აღმოაჩინეთ მეტი</string>
-  <!-- Title of an app feature. Smaller than a heading. %s is "Pocket". -->
-  <string name="pocket_stories_feature_title_2">უზრუნველყოფს %s.</string>
-  <!-- Caption for describing a certain feature. %s is a link using pocket_stories_feature_learn_more as text, which will load an url in a new tab when clicked. -->
-  <string name="pocket_stories_feature_caption" tools:ignore="BrandUsage">Firefox ოჯახის ნაწილი. %s</string>
-  <!-- Clickable text for opening an external link for more information about Pocket. -->
-  <string name="pocket_stories_feature_learn_more">ვრცლად</string>
+  <string name="pocket_stories_header_2">ამბები</string>
+  <!--
+    Context description text for the "Discover more" button in the stories home screen section
+    which navigates the user to a screen displaying more stories.
+  -->
+  <string name="stories_discover_more_content_description">აღმოაჩინეთ სხვა ამბებიც</string>
+  <!-- Content description for the "Navigate back" button on the top app bar of the Stories screen. -->
+  <string name="stories_back_button_content_description">გადასვლა უკან</string>
   <!-- Text indicating that the Pocket story that also displays this text is a sponsored story by other 3rd party entity. -->
   <string name="pocket_stories_sponsor_indication">დამკვეთისგან</string>
   <!-- Snackbar message for enrolling in a Nimbus experiment from the secret settings when Studies preference is Off. -->
@@ -2884,11 +3159,11 @@
 
     Paragraph explaining the grading system we use to classify the reliability of a product's reviews.
   -->
-  <string name="review_quality_check_info_review_grade_header" moz:removedIn="136" tools:ignore="UnusedResources">გასაყიდ ნაწარმზე თითოეულ მიმოხილვას ეწერება &lt;b&gt;ნიშნები&lt;/b&gt; A-დან F-მდე.</string>
+  <string name="review_quality_check_info_review_grade_header" moz:removedIn="136" tools:ignore="UnusedResources"><![CDATA[გასაყიდ ნაწარმზე თითოეულ მიმოხილვას ეწერება <b>ნიშნები</b> A-დან F-მდე.]]></string>
   <!-- Paragraph explaining how a product's adjusted grading is calculated. -->
-  <string name="review_quality_check_explanation_body_adjusted_grading" moz:removedIn="136" tools:ignore="UnusedResources">&lt;b&gt;შესწორებული შეფასება&lt;/b&gt; ეყრდნობა მხოლოდ სანდოდ მიჩნეულ მიმოხილვებს.</string>
+  <string name="review_quality_check_explanation_body_adjusted_grading" moz:removedIn="136" tools:ignore="UnusedResources"><![CDATA[<b>შესწორებული შეფასება</b> ეყრდნობა მხოლოდ სანდოდ მიჩნეულ მიმოხილვებს.]]></string>
   <!-- Paragraph explaining product review highlights. %s is the name of the retailer (e.g. Amazon). -->
-  <string name="review_quality_check_explanation_body_highlights" moz:removedIn="136" tools:ignore="UnusedResources">&lt;b&gt;გამოსარჩევი&lt;/b&gt; ბოლო 80 დღეში %s-ის სანდოდ მიჩნეული მიმოხილვებიდან.</string>
+  <string name="review_quality_check_explanation_body_highlights" moz:removedIn="136" tools:ignore="UnusedResources"><![CDATA[<b>გამოსარჩევი</b> ბოლო 80 დღეში %s-ის სანდოდ მიჩნეული მიმოხილვებიდან.]]></string>
   <!--
     Accessibility services actions labels. These will be appended to accessibility actions like "Double tap to.." but not by or applications but by services like Talkback.
 
@@ -2903,10 +3178,6 @@
   <string name="a11y_state_label_expanded">გაშლილი</string>
   <!-- Action label for links to a website containing documentation about a wallpaper collection. Talkback will append this to say "Double tap to open link to learn more about this collection". -->
   <string name="a11y_action_label_wallpaper_collection_learn_more">გახსენით ბმული და იხილეთ ვრცლად ამ კრებულზე</string>
-  <!-- Action label for links that point to an article. Talkback will append this to say "Double tap to read the article". -->
-  <string name="a11y_action_label_read_article">სტატიის წაკითხვა</string>
-  <!-- Action label for links to the Firefox Pocket website. Talkback will append this to say "Double tap to open link to learn more". -->
-  <string name="a11y_action_label_pocket_learn_more">ვრცლად იხილეთ ბმულზე</string>
   <!-- Content description for headings announced by accessibility service. %s is the text of the heading. Talkback will announce the text and then speak the word "Heading" indicating to the user that this text is a heading for a section. -->
   <string name="a11y_heading">%s, სათაური</string>
   <!-- Title for dialog displayed when trying to access links present in a text. -->
@@ -3110,12 +3381,12 @@
     The title of the warning card informs the user that an error has occurred at downloading a language.
     %1$s is the language name, for example, "Spanish".
   -->
-  <string name="download_languages_error_warning_text">ვერ ჩამოიტვირთა &lt;b&gt;%1$s&lt;/b&gt;. გთხოვთ, კვლავ სცადოთ.</string>
+  <string name="download_languages_error_warning_text"><![CDATA[ვერ ჩამოიტვირთა <b>%1$s</b>. გთხოვთ, კვლავ სცადოთ.]]></string>
   <!--
     The title of the warning card informs the user that an error has occurred at deleting a language.
     %1$s is the language name, for example, "Spanish".
   -->
-  <string name="download_languages_delete_error_warning_text">ვერ წაიშალა &lt;b&gt;%1$s&lt;/b&gt;. გთხოვთ, კვლავ სცადოთ.</string>
+  <string name="download_languages_delete_error_warning_text"><![CDATA[ვერ წაიშალა <b>%1$s</b>. გთხოვთ, კვლავ სცადოთ.]]></string>
   <!--
     Title for the dialog used by the translations feature to confirm deleting a language.
     The dialog will be presented when the user requests deletion of a language.
@@ -3156,12 +3427,8 @@
   <!--
     Unified Trust Panel
 
-    Text for the protection panel header when the site is secure.
+    Title text for the protection panel banner when the site is not secure.
   -->
-  <string name="protection_panel_header_secure">დაცული</string>
-  <!-- Text for the protection panel header when the site is not secure. -->
-  <string name="protection_panel_header_not_secure">დაუცველი</string>
-  <!-- Title text for the protection panel banner when the site is not secure. -->
   <string name="protection_panel_banner_not_secure_title">ფრთხილად იყავით ამ საიტზე</string>
   <!-- Description text for the protection panel banner when the site is not secure. -->
   <string name="protection_panel_banner_not_secure_description">კავშირი დაუცველია.</string>
@@ -3181,10 +3448,14 @@
   <string name="protection_panel_banner_protected_description">დაცული ხართ. თუ რამეს შევამჩნევთ, გაცნობებთ.</string>
   <!-- Label text for the Enhanced Tracking Protection toggle. -->
   <string name="protection_panel_etp_toggle_label">თვალთვალისგან გაძლიერებული დაცვა</string>
+  <!-- Toggle if Enhanced Tracking Protection is turned on -->
+  <string name="protection_panel_etp_toggle_on">ჩართ.</string>
+  <!-- Toggle if Enhanced Tracking Protection is turned off -->
+  <string name="protection_panel_etp_toggle_off">გამორთ.</string>
   <!-- Description text for the Enhanced Tracking Protection toggle when tracking protection is enabled. -->
-  <string name="protection_panel_etp_toggle_enabled_description">თუ საიტზე რამე გაუმართავად ჩანს, სინჯეთ გამორთვა.</string>
+  <string name="protection_panel_etp_toggle_enabled_description_2">თუ საიტზე რამე გაუმართავია, სინჯეთ გამორთვა.</string>
   <!-- Description text for the Enhanced Tracking Protection toggle when tracking protection is disabled. -->
-  <string name="protection_panel_etp_toggle_disabled_description">დაცვა გამორთულია. გირჩევთ ისევ ჩართოთ.</string>
+  <string name="protection_panel_etp_toggle_disabled_description_2">თვალთვალისგან დაცვის ჩართვა სასურველია.</string>
   <!--
     Text for displaying the total number of trackers blocked in the protection panel.
     %d is a placeholder for the number of trackers blocked.
@@ -3192,8 +3463,12 @@
   <string name="protection_panel_num_trackers_blocked">შეზღუდული მეთვალყურე: %d</string>
   <!-- Text for when no trackers have been blocked. -->
   <string name="protection_panel_no_trackers_blocked">მეთვალყურეები არაა ნაპოვნი</string>
+  <!-- Text for when tracking protection is disabled and no trackers are blocked. -->
+  <string name="protection_panel_etp_disabled_no_trackers_blocked">მეთვალყურეები არ იზღუდება</string>
   <!-- Link text to navigate to privacy and security settings from the protection panel. -->
-  <string name="protection_panel_privacy_and_security_settings">პირადულობისა და უსაფრთხოების პარამეტრები</string>
+  <string name="protection_panel_privacy_and_security_settings_2">პირადულობის პარამეტრები</string>
+  <!-- Title text for the protection panel permissions section. -->
+  <string name="protection_panel_permissions_title">ნებართვები</string>
   <!--
     Text for displaying the total number of trackers blocked in the trackers blocked panel.
     %d is a placeholder for the number of trackers blocked.
@@ -3209,20 +3484,20 @@
     Description text for a dialog confirming whether the user wants to delete all data for current site.
     %s is a placeholder for the base domain of website.
   -->
-  <string name="clear_site_data_dialog_description">ფუნთუშებისა და საიტის მონაცემების წაშლით &lt;b&gt;%s&lt;/b&gt; დაგატოვებინებთ შესულ ანგარიშებს და შესაძლოა, საყიდლების კალათებიც დაგიცარიელდეთ.</string>
+  <string name="clear_site_data_dialog_description"><![CDATA[ფუნთუშებისა და საიტის მონაცემების წაშლით <b>%s</b> დაგატოვებინებთ შესულ ანგარიშებს და შესაძლოა, საყიდლების კალათებიც დაგიცარიელდეთ.]]></string>
   <!-- Button text on the clear site data dialog to allow users to confirm they wish to clear the site data. -->
   <string name="clear_site_data_dialog_positive_button_text">გასუფთავება</string>
   <!-- Button text on the clear site data dialog to allow users to cancel the action and not clear the site data. -->
   <string name="clear_site_data_dialog_negative_button_text">გაუქმება</string>
-  <!-- Snackbar title shown when the site data has been cleared. -->
-  <string name="clear_site_data_snackbar">ფუნთუშები და საიტის მონაცემები წაიშალა</string>
   <!-- Text for the connection security panel when the site is secure. -->
   <string name="connection_security_panel_secure">დაცული კავშირი</string>
   <!-- Text for the connection security panel when the site is not secure. -->
   <string name="connection_security_panel_not_secure">დაუცველი კავშირი</string>
+  <!-- Text for the connection security panel when accessed from local PDF. -->
+  <string name="connection_security_panel_local_pdf">ეს გვერდი მოწყობილობაზევე ინახება</string>
   <!--
     Text for the connection security panel to indicate who the certificate was verified by.
-    %s is a placeholder for the name of the certificate authority that verified the ticket
+    %s is a placeholder for the name of the certificate authority that issued the certificate.
   -->
   <string name="connection_security_panel_verified_by">დამმოწმებელია %s</string>
   <!--
@@ -3260,7 +3535,7 @@
   <!-- The error message of the text field in the tab creation tool when the text field has characters other than digits -->
   <string name="debug_drawer_tab_tools_tab_quantity_non_digits_error">გთხოვთ შეიყვანოთ მხოლოდ დადებითი რიცხვები</string>
   <!-- The error message of the text field in the tab creation tool when the text field is a zero -->
-  <string name="debug_drawer_tab_tools_tab_quantity_non_zero_error">გთხოვთ შეიყვანოთ ნულზე მეტი რიცხვი</string>
+  <string name="debug_drawer_tab_tools_tab_quantity_non_zero_error">გთხოვთ შეიყვანოთ ნულზე დიდი რიცხვი</string>
   <!--
     The error message of the text field in the tab creation tool when the text field is a
     quantity greater than the max tabs. %1$s is the maximum number of tabs
@@ -3270,7 +3545,7 @@
   <!-- The button text to add tabs to the active tab group in the tab creation tool. -->
   <string name="debug_drawer_tab_tools_tab_creation_tool_button_text_active">მოქმედ ჩანართებში დამატება</string>
   <!-- The button text to add tabs to the inactive tab group in the tab creation tool. -->
-  <string name="debug_drawer_tab_tools_tab_creation_tool_button_text_inactive">უმოქმედო ჩანართებში დამატება</string>
+  <string name="debug_drawer_tab_tools_tab_creation_tool_button_text_inactive">უქმ ჩანართებში დამატება</string>
   <!-- The button text to add tabs to the private tab group in the tab creation tool. -->
   <string name="debug_drawer_tab_tools_tab_creation_tool_button_text_private">პირადი ჩანართების დამატება</string>
   <!--
@@ -3339,6 +3614,8 @@
   <string name="microsurvey_close_handle_content_description">გამოკითხვის დახურვა</string>
   <!-- Content description for "X" button that is closing microsurvey. -->
   <string name="microsurvey_close_button_content_description">დახურვა</string>
+  <!-- The title of the autofill tab in the Debug Drawer. -->
+  <string name="debug_drawer_autofill_title">თვითშევსების ხელსაწყოები</string>
   <!--
     Debug drawer logins
 
@@ -3365,6 +3642,16 @@
   <string name="debug_drawer_add_new_address">ახალი მისამართის დამატება შერჩეული ენისთვის</string>
   <!-- The title of the button for deleting in the debug drawer all addresses. -->
   <string name="debug_drawer_delete_all_addresses">ყველა მისამართის წაშლა</string>
+  <!--
+    Debug drawer credit cards
+
+    The title of the credit cards feature in the Debug Drawer.
+  -->
+  <string name="debug_drawer_credit_cards_title">საკრედიტო ბარათები</string>
+  <!-- The title of the button in the debug drawer for adding a new credit card -->
+  <string name="debug_drawer_add_new_credit_card">ახალი საკრედიტო ბარათის დამატება</string>
+  <!-- The title of the button for deleting in the debug drawer all addresses. -->
+  <string name="debug_drawer_delete_all_credit_cards">ყველა საკრედიტო ბარათის წაშლა</string>
   <!--
     Debug drawer "contextual feature recommendation" (CFR) tools
 
@@ -3399,6 +3686,16 @@
   <string name="debug_drawer_override_current_region_label">ამჟამინდელი მხარის ჩანაცვლება</string>
   <!-- The title of the button for overriding home and current region. -->
   <string name="debug_drawer_override_region">მშობლიური და ამჟამინდელი მხარის ჩანაცვლება</string>
+  <!-- The title of the button for overriding home region permanently. -->
+  <string name="debug_drawer_override_home_region_permanently">მშობლიური მხარის ჩანაცვლება მუდმივად</string>
+  <!--
+    Add-ons debug tools
+
+    The description of the Add-ons Tools in the Debug Drawer
+  -->
+  <string name="debug_drawer_addons_tools_title">დამატებების ხელსაწყოები</string>
+  <!-- The title of the button used to check for add-on updates. -->
+  <string name="addons_debug_tools_check_for_updates_button">განახლებების შემოწმება</string>
   <!--
     Messages explaining how to exit fullscreen mode
 
@@ -3453,14 +3750,8 @@
   <string name="certificate_warning_push_notification_pnw2_message" tools:ignore="UnusedResources">განაახლეთ 14 მარტამდე, დამატებებითა და სხვა შესაძლებლობებით სარგებლობა რომ განაგრძოთ.</string>
   <!-- Push notification message about old Firefox version -->
   <string name="certificate_warning_push_notification_pnw3_message" tools:ignore="UnusedResources">ზოგიერთი შესაძლებლობა ხვალიდან შეწყვეტს მუშაობას.</string>
-  <!--
-    TextField Design System Component
+  <!-- TextField Design System Component -->
 
-    The default content description for the eye trailing icon button in TextField
-  -->
-  <string name="text_field_eye_trailing_icon_default_content_description" moz:removedIn="139" tools:ignore="UnusedResources">დაფარული ტექსტის გამოჩენა</string>
-  <!-- The default content description for the cross trailing icon button in TextField -->
-  <string name="text_field_cross_trailing_icon_default_content_description" moz:removedIn="139" tools:ignore="UnusedResources">ტექსტის გასუფთავება</string>
   <!--
     Setup checklist feature
 
@@ -3502,6 +3793,22 @@
   <!-- Subtitle for a setup checklist with 6 steps completed state. %1$s is the name of the app (for example "Firefox"). -->
   <string name="setup_checklist_subtitle_6_steps_completed_state">თქვენ გაიარეთ 6-ივე ნაბიჯი გასამართად. გამოიყენეთ %1$s და დატკბით სიჩქარით, პირადულობითა და უსაფრთხოებით.</string>
   <!--
+    ===== Setup checklist feature: Subtitles for 5 steps (Large screen devices don't support toolbar placement) =====
+
+    Subtitle for a setup checklist with 5 steps initial state. %1$s is the name of the app (for example "Firefox").
+  -->
+  <string name="setup_checklist_subtitle_5_steps_initial_state">შეასრულეთ 5-ივე ნაბიჯი, რომ გამართოთ %1$s ვებსივრცით სრულყოფილად სარგებლობისთვის.</string>
+  <!-- Subtitle for a setup checklist with 5 steps when the first task is completed. -->
+  <string name="setup_checklist_subtitle_5_steps_first_step">მშვენიერი დასაწყისია! შესრულებულია 1 ნაბიჯი 5-იდან.</string>
+  <!-- Subtitle for the setup checklist when the second task is completed. -->
+  <string name="setup_checklist_subtitle_5_steps_second_step">5 ნაბიჯიდან 2 შესრულებულია. მშვენიერი წინსვლაა!</string>
+  <!-- Subtitle for a setup checklist with 5 steps when three of the tasks are completed. -->
+  <string name="setup_checklist_subtitle_5_steps_third_step">ნახევარი უკვე გავლილია! სამი ნაბიჯი შესრულდა და 2 წინაა.</string>
+  <!-- Subtitle for a setup checklist with 5 steps when the fifth task is completed. -->
+  <string name="setup_checklist_subtitle_5_steps_fourth_step">თითქმის მზადაა! მხოლოდ 1 ნაბიჯიღა გაშორებთ დასრულებამდე.</string>
+  <!-- Subtitle for a setup checklist with 5 steps completed state. %1$s is the name of the app (for example "Firefox"). -->
+  <string name="setup_checklist_subtitle_5_steps_completed_state">თქვენ გაიარეთ 5-ივე ნაბიჯი გასამართად. გამოიყენეთ %1$s და დატკბით სიჩქარით, პირადულობითა და უსაფრთხოებით.</string>
+  <!--
     ===== Setup checklist feature: Task titles =====
 
     The title of the default browser task for the setup checklist
@@ -3516,7 +3823,7 @@
   <!-- The title of the explore extensions task for the setup checklist -->
   <string name="setup_checklist_task_explore_extensions">გაფართოებების მოძიება</string>
   <!-- The title of the search widget task for the setup checklist -->
-  <string name="setup_checklist_task_search_widget">საძიებო ჩანამატის ჩადგმა</string>
+  <string name="setup_checklist_task_search_widget_2">მოსინჯეთ საძიებოს ჩანამატი</string>
   <!--
     ===== Setup checklist feature: Group titles =====
 
@@ -3546,9 +3853,101 @@
 
     Label for the secondary action to exit private browsing mode
   -->
-  <string name="pbm_authentication_leave_private_tabs">პირადი ჩანართების დატოვება</string>
+  <string name="pbm_authentication_leave_private_tabs">პირადი ჩანართებიდან გასვლა</string>
   <!-- Label for the primary action button to unlock private tabs -->
   <string name="pbm_authentication_unlock">გახსნა</string>
   <!-- Title text instructing the user to unlock private tabs -->
   <string name="pbm_authentication_unlock_private_tabs">პირადი ჩანართების გაღება</string>
+  <!-- Authentication prompt title to enable the private tabs mode -->
+  <string name="pbm_authentication_enable_lock">პირად ჩანართებზე ეკრანის ჩაკეტვის ჩართვა</string>
+  <!-- Authentication prompt title to disable the private tabs mode -->
+  <string name="pbm_authentication_disable_lock">პირად ჩანართებზე ეკრანის ჩაკეტვის გათიშვა</string>
+  <!-- Label for a preference shown when the device supports screen lock (e.g., PIN, pattern, or password) but the user has not set one up. -->
+  <string name="pbm_authentication_lock_device_feature_disabled">ეკრანის ჩაკეტვის გამართვა ჩანართების დასამალად</string>
+  <!-- Title text for the contextual feature recommendation (CFR) suggesting the user enable a screen lock to protect private tabs -->
+  <string name="private_tab_cfr_title">დაიმალოს ეკრანის ჩაკეტვით პირადი ჩანართები?</string>
+  <!-- Negative button text for the contextual feature recommendation (CFR) dismissing the screen lock suggestion -->
+  <string name="private_tab_cfr_negative">არა, გმადლობთ</string>
+  <!-- Positive button text for the contextual feature recommendation (CFR) enabling screen lock for private tabs -->
+  <string name="private_tab_cfr_positive">ჩანართების ჩაკეტვა</string>
+  <!--
+    Review prompt
+
+    Title for a prompt asking the user about their experience using the app. %1$s is the name of the app (for example "Firefox").
+  -->
+  <string name="review_prompt_pre_prompt_header">როგორ მოგეწონათ %1$s?</string>
+  <!-- Label for a button negatively rating the user's experience with the app -->
+  <string name="review_prompt_negative_button">ხარვეზებს ვაწყდები</string>
+  <!-- Label for a button positively rating the user's experience with the app -->
+  <string name="review_prompt_positive_button">მშვენიერია!</string>
+  <!-- Title for a prompt asking the user to rate the app on Google Play Store. %1$s is the name of the app (for example "Firefox"). -->
+  <string name="review_prompt_rate_header">გმადლობთ, რომ გიყვართ %1$s. გცალიათ, რომ შეფასებითაც გამოხატოთ სიყვარული?</string>
+  <!-- Label for a button proceeding to rate the app on Google Play Store. %1$s is the name of the app (for example "Firefox"). -->
+  <string name="review_prompt_rate_button">შეაფასეთ %1$s, იხილეთ Play Store</string>
+  <!-- Title for a prompt asking the user send us feedback. %1$s is the name of the app (for example "Firefox"). -->
+  <string name="review_prompt_feedback_header">სამწუხაროა, რომ სიძნელეებს წააწყდით. გვაცნობეთ, თუ რით შეიძლება გავაუმჯობესოთ %1$s.</string>
+  <!-- Label for a button opening a feedback forum -->
+  <string name="review_prompt_feedback_button">გამოგვეხმაურეთ</string>
+  <!--
+    Settings Search Strings
+
+    Title of Settings Search. "Search" is a verb here
+  -->
+  <string name="settings_search_title">ძიება პარამეტრებში</string>
+  <!-- Content description (not visible, for screen readers etc.) for the button to clear the search field for settings search -->
+  <string name="content_description_settings_search_clear_search">ძიების გასუფთავება</string>
+  <!-- Content description (not visible, for screen readers etc.) for the button to navigate back to the Settings page from the Settings Search screen. -->
+  <string name="content_description_settings_search_navigate_back">გადასვლა უკან</string>
+  <!-- Message displayed when the search field in the Settings Search screen is empty -->
+  <string name="settings_search_empty_query_placeholder">ბოლოს მოძიებულები არაა</string>
+  <!-- Message when error happens with Settings Search -->
+  <string name="settings_search_error_message" tools:ignore="UnusedResources" moz:removedIn="147">წარმოიქმნა შეცდომა</string>
+  <!-- Text of button allowing to clear history of recent searches done in the settings screen. -->
+  <string name="settings_search_clear_recent_searches_message">ყველას გასუფთავება</string>
+  <!-- Section header for recent search results -->
+  <string name="settings_search_recent_searches_section_header">ბოლოს მოძიებულის შედეგები</string>
+  <!-- Message displayed when the search field is not empty but search results is empty. -->
+  <string name="settings_search_no_results_title">ვერაფერი მოინახა</string>
+  <!-- Sub-message displayed when the search field is not empty but search results is empty. -->
+  <string name="settings_search_no_results_message">იქნებ სხვანაირად მოინახოს?</string>
+  <!--
+    Terms of use pop up prompt
+
+    Title for the pop up prompt
+  -->
+  <string name="terms_of_use_prompt_title">გარკვეული ცვლილებებია</string>
+  <!--
+    Message for the terms of use pop up prompt
+    %1$s is the product name "Firefox"
+    %2$s is the string terms_of_use_prompt_link_terms_of_use (Terms of Use) that is a link to the terms of use
+    %3$s is the string terms_of_use_prompt_link_privacy_notice (Privacy Notice) that is a link to the privacy notice
+  -->
+  <string name="terms_of_use_prompt_message_1">ახლახან წარვადგინეთ შესწორებული %1$s %2$s და განვაახლეთ %3$s.</string>
+  <!--
+    Second part of the terms of use pop up prompt
+    %1$s is the string terms_of_use_prompt_link_learn_more (Learn more) that is a link to a website with more information about the terms of use
+  -->
+  <string name="terms_of_use_prompt_message_2">გთხოვთ, დრო დაუთმოთ მის განხილვას და დაეთანხმოთ. %1$s.</string>
+  <!-- Terms of use link in the pop up prompt message that links to the terms of use -->
+  <string name="terms_of_use_prompt_link_terms_of_use">გამოყენების პირობები</string>
+  <!-- Privacy notice link in the pop up prompt message that links to the privacy notice -->
+  <string name="terms_of_use_prompt_link_privacy_notice">პირადულობის დებულება</string>
+  <!-- Learn more link in the pop up prompt message that links to a site with more information about the terms of use -->
+  <string name="terms_of_use_prompt_link_learn_more">ვრცლად</string>
+  <!-- Label for a button to accept the terms of use -->
+  <string name="terms_of_use_prompt_accept">მიღება</string>
+  <!-- Label for a button to postpone accepting the terms of use -->
+  <string name="terms_of_use_prompt_postpone">მოგვიანებით შეხსენება</string>
+  <!--
+    Privacy notice homepage banner
+
+    A message we show the user on the homepage when there is a new version of the privacy notice. 'Firefox' is intentionally hardcoded.
+    %1$s is replaced by an active link using privacy_notice_updated_homepage_message_privacy_notice as text (Privacy Notice)
+    %2$s is replaced by an active link using privacy_notice_updated_homepage_message_learn_more as text (Learn more)
+  -->
+  <string name="privacy_notice_updated_homepage_message" tools:ignore="BrandUsage,UnusedResources">%1$s განახლებულია იმ უახლესი შესაძლებლობების ასახვისთვის, რომელთაც შეიცავს Firefox. %2$s</string>
+  <!-- The first active link used in privacy_notice_updated_homepage_message -->
+  <string name="privacy_notice_updated_homepage_message_privacy_notice" tools:ignore="UnusedResources">პირადულობის განაცხადი</string>
+  <!-- The second active link used in privacy_notice_updated_homepage_message -->
+  <string name="privacy_notice_updated_homepage_message_learn_more" tools:ignore="UnusedResources">ვრცლად</string>
 </resources>

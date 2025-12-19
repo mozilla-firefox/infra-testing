@@ -28,13 +28,19 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "AlertsService",
   "@mozilla.org/alerts-service;1",
-  "nsIAlertsService"
+  Ci.nsIAlertsService
 );
 
 ChromeUtils.defineLazyGetter(
   lazy,
   "accountsL10n",
   () => new Localization(["browser/accounts.ftl", "branding/brand.ftl"], true)
+);
+
+const AlertNotification = Components.Constructor(
+  "@mozilla.org/alert-notification;1",
+  "nsIAlertNotification",
+  "initWithObject"
 );
 
 /**
@@ -87,7 +93,11 @@ export const AccountsGlue = {
         this._onIncomingCloseTabCommand(subject);
         break;
       case "sync-ui-state:update": {
-        this._updateFxaBadges(lazy.BrowserWindowTracker.getTopWindow());
+        this._updateFxaBadges(
+          lazy.BrowserWindowTracker.getTopWindow({
+            allowFromInactiveWorkspace: true,
+          })
+        );
 
         if (lazy.CLIENT_ASSOCIATION_PING_ENABLED) {
           let fxaState = lazy.UIState.get();
@@ -123,14 +133,12 @@ export const AccountsGlue = {
       }
       this._openPreferences("sync");
     };
-    lazy.AlertsService.showAlertNotification(
-      null,
+    let alert = new AlertNotification({
       title,
-      body,
-      true,
-      null,
-      clickCallback
-    );
+      text: body,
+      textClickable: true,
+    });
+    lazy.AlertsService.showAlert(alert, clickCallback);
   },
 
   _openURLInNewWindow(url) {
@@ -242,19 +250,12 @@ export const AccountsGlue = {
         }
       };
 
-      // Specify an icon because on Windows no icon is shown at the moment
-      let imageURL;
-      if (AppConstants.platform == "win") {
-        imageURL = "chrome://branding/content/icon64.png";
-      }
-      lazy.AlertsService.showAlertNotification(
-        imageURL,
+      let alert = new AlertNotification({
         title,
-        body,
-        true,
-        null,
-        clickCallback
-      );
+        text: body,
+        textClickable: true,
+      });
+      lazy.AlertsService.showAlert(alert, clickCallback);
     } catch (ex) {
       console.error("Error displaying tab(s) received by Sync: ", ex);
     }
@@ -320,11 +321,6 @@ export const AccountsGlue = {
       }
     };
 
-    let imageURL;
-    if (AppConstants.platform == "win") {
-      imageURL = "chrome://branding/content/icon64.png";
-    }
-
     // Reset the count only if there are no pending notifications
     if (!lazy.CloseRemoteTab.hasPendingCloseTabNotification) {
       lazy.CloseRemoteTab.closeTabNotificationCount = 0;
@@ -339,15 +335,13 @@ export const AccountsGlue = {
     ]);
 
     try {
-      lazy.AlertsService.showAlertNotification(
-        imageURL,
+      let alert = new AlertNotification({
         title,
-        body,
-        true,
-        null,
-        clickCallback,
-        "closed-tab-notification"
-      );
+        text: body,
+        textClickable: true,
+        name: "closed-tab-notification",
+      });
+      lazy.AlertsService.showAlert(alert, clickCallback);
     } catch (ex) {
       console.error("Error notifying user of closed tab(s) ", ex);
     }
@@ -355,10 +349,6 @@ export const AccountsGlue = {
 
   async _onVerifyLoginNotification({ body, title, url }) {
     let tab;
-    let imageURL;
-    if (AppConstants.platform == "win") {
-      imageURL = "chrome://branding/content/icon64.png";
-    }
     let win = lazy.BrowserWindowTracker.getTopWindow({ private: false });
     if (!win) {
       win = await this._openURLInNewWindow(url);
@@ -376,14 +366,12 @@ export const AccountsGlue = {
     };
 
     try {
-      lazy.AlertsService.showAlertNotification(
-        imageURL,
+      let alert = new AlertNotification({
         title,
         body,
-        true,
-        null,
-        clickCallback
-      );
+        textClickable: true,
+      });
+      lazy.AlertsService.showAlert(alert, clickCallback);
     } catch (ex) {
       console.error("Error notifying of a verify login event: ", ex);
     }
@@ -413,14 +401,12 @@ export const AccountsGlue = {
     };
 
     try {
-      lazy.AlertsService.showAlertNotification(
-        null,
+      let alert = new AlertNotification({
         title,
-        body,
-        true,
-        null,
-        clickCallback
-      );
+        text: body,
+        textClickable: true,
+      });
+      lazy.AlertsService.showAlert(alert, clickCallback);
     } catch (ex) {
       console.error("Error notifying of a new Sync device: ", ex);
     }
@@ -438,14 +424,13 @@ export const AccountsGlue = {
       }
       this._openPreferences("sync");
     };
-    lazy.AlertsService.showAlertNotification(
-      null,
+
+    let alert = new AlertNotification({
       title,
-      body,
-      true,
-      null,
-      clickCallback
-    );
+      text: body,
+      textClickable: true,
+    });
+    lazy.AlertsService.showAlert(alert, clickCallback);
   },
 
   _updateFxaBadges(win) {
@@ -478,8 +463,16 @@ export const AccountsGlue = {
   },
 
   // Open preferences even if there are no open windows.
-  _openPreferences(...args) {
+  async _openPreferences(...args) {
     let chromeWindow = lazy.BrowserWindowTracker.getTopWindow();
+    if (!chromeWindow && AppConstants.platform !== "macosx") {
+      // If we're not on macOS, there may be no windows open in this
+      // workspace, so open a new one. (the macOS case is handled below)
+      //
+      // This should get cleaned up in bug 1983081 since openPreferences()
+      // shouldn't require a window argument.
+      chromeWindow = await lazy.BrowserWindowTracker.promiseOpenWindow();
+    }
     if (chromeWindow) {
       chromeWindow.openPreferences(...args);
       return;

@@ -83,6 +83,16 @@ sealed class MenuAction : Action {
     data object FindInPage : MenuAction()
 
     /**
+     * [MenuAction] dispatched when it's a new installation of Firefox.
+     */
+    data object MenuBanner : MenuAction()
+
+    /**
+     * [MenuAction] dispatched when menu banner should be dismissed.
+     */
+    data object DismissMenuBanner : MenuAction()
+
+    /**
      * [MenuAction] dispatched when a private tab is open in normal tab.
      */
     data object OpenInRegularTab : MenuAction()
@@ -201,16 +211,6 @@ sealed class MenuAction : Action {
     data object RequestMobileSite : MenuAction()
 
     /**
-     * [MenuAction] dispatched when the save menu item is clicked.
-     */
-    data object SaveMenuClicked : MenuAction()
-
-    /**
-     * [MenuAction] dispatched when the tools menu item is clicked.
-     */
-    data object ToolsMenuClicked : MenuAction()
-
-    /**
      * [MenuAction] dispatched to show the menu CFR.
      */
     data object OnCFRShown : MenuAction()
@@ -237,11 +237,6 @@ sealed class MenuAction : Action {
         ) : Navigate()
 
         /**
-         * [Navigate] action dispatched when navigating to the help SUMO article.
-         */
-        data object Help : Navigate()
-
-        /**
          * [Navigate] action dispatched when navigating to the settings.
          */
         data object Settings : Navigate()
@@ -265,11 +260,6 @@ sealed class MenuAction : Action {
          * [Navigate] action dispatched when navigating to passwords.
          */
         data object Passwords : Navigate()
-
-        /**
-         * [Navigate] action dispatched when navigating to customize homepage.
-         */
-        data object CustomizeHomepage : Navigate()
 
         /**
          * [Navigate] action dispatched when navigating to release notes.
@@ -321,16 +311,6 @@ sealed class MenuAction : Action {
         data object ExtensionsLearnMore : Navigate()
 
         /**
-         * [Navigate] action dispatched when navigating to the new tab.
-         */
-        data object NewTab : Navigate()
-
-        /**
-         * [Navigate] action dispatched when navigating to the new private tab.
-         */
-        data object NewPrivateTab : Navigate()
-
-        /**
          * [Navigate] action dispatched when navigating to the given [addon] details.
          *
          * @property addon The [Addon] details to display.
@@ -340,8 +320,49 @@ sealed class MenuAction : Action {
         ) : Navigate()
 
         /**
+         * [Navigate] action dispatched when navigating to the given installed [addon] details.
+         *
+         * @property addon The [Addon] details to display.
+         */
+        data class InstalledAddonDetails(
+            val addon: Addon,
+        ) : Navigate()
+
+        /**
          * [Navigate] action dispatched when the user clicks to report a broken site.
          */
         data object WebCompatReporter : Navigate()
+
+        /**
+         * [Navigate] action dispatched when navigating back from the current page.
+         *
+         * @property viewHistory Whether the tab history menu should be displayed.
+         */
+        data class Back(
+            val viewHistory: Boolean,
+        ) : Navigate()
+
+        /**
+         * [Navigate] action dispatched when navigating forward from the current page.
+         *
+         * @property viewHistory Whether the tab history menu should be displayed.
+         */
+        data class Forward(
+            val viewHistory: Boolean,
+        ) : Navigate()
+
+        /**
+         * [Navigate] action dispatched when reloading the current page.
+         *
+         * @property bypassCache Whether or not the cache should be bypassed when reloading.
+         */
+        data class Reload(
+            val bypassCache: Boolean,
+        ) : Navigate()
+
+        /**
+         * [Navigate] action dispatched when stopping the current page from loading.
+         */
+        data object Stop : Navigate()
     }
 }

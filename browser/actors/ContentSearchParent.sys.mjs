@@ -8,11 +8,13 @@ ChromeUtils.defineESModuleGetters(lazy, {
   BrowserSearchTelemetry:
     "moz-src:///browser/components/search/BrowserSearchTelemetry.sys.mjs",
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
+  DEFAULT_FORM_HISTORY_PARAM:
+    "moz-src:///toolkit/components/search/SearchSuggestionController.sys.mjs",
   FormHistory: "resource://gre/modules/FormHistory.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   SearchSuggestionController:
-    "resource://gre/modules/SearchSuggestionController.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
+    "moz-src:///toolkit/components/search/SearchSuggestionController.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
 });
 
 const MAX_LOCAL_SUGGESTIONS = 3;
@@ -168,6 +170,7 @@ export let ContentSearch = {
 
   /**
    * Observes changes in prefs tracked by UrlbarPrefs.
+   *
    * @param {string} pref
    *   The name of the pref, relative to `browser.urlbar.` if the pref is
    *   in that branch.
@@ -190,7 +193,7 @@ export let ContentSearch = {
       );
       lazy.FormHistory.update({
         op: "remove",
-        fieldname: browserData.controller.formHistoryParam,
+        fieldname: lazy.DEFAULT_FORM_HISTORY_PARAM,
         value: entry,
         guid: result.guid,
       }).catch(err =>
@@ -204,14 +207,9 @@ export let ContentSearch = {
       "engineName",
       "searchString",
       "healthReportKey",
-      "searchPurpose",
     ]);
     let engine = Services.search.getEngineByName(data.engineName);
-    let submission = engine.getSubmission(
-      data.searchString,
-      "",
-      data.searchPurpose
-    );
+    let submission = engine.getSubmission(data.searchString, "");
     let win = browser.ownerGlobal;
     if (!win) {
       // The browser may have been closed between the time its content sent the
@@ -266,13 +264,18 @@ export let ContentSearch = {
     let browserData = this._suggestionDataForBrowser(browser, true);
     let { controller } = browserData;
     let ok = lazy.SearchSuggestionController.engineOffersSuggestions(engine);
-    controller.maxLocalResults = ok ? MAX_LOCAL_SUGGESTIONS : MAX_SUGGESTIONS;
-    controller.maxRemoteResults = ok ? MAX_SUGGESTIONS : 0;
-    let priv = lazy.PrivateBrowsingUtils.isBrowserPrivate(browser);
+    let maxLocalResults = ok ? MAX_LOCAL_SUGGESTIONS : MAX_SUGGESTIONS;
+    let maxRemoteResults = ok ? MAX_SUGGESTIONS : 0;
     // fetch() rejects its promise if there's a pending request, but since we
     // process our event queue serially, there's never a pending request.
     this._currentSuggestion = { controller, browser };
-    let suggestions = await controller.fetch(searchString, priv, engine);
+    let suggestions = await controller.fetch({
+      searchString,
+      inPrivateBrowsing: lazy.PrivateBrowsingUtils.isBrowserPrivate(browser),
+      engine,
+      maxLocalResults,
+      maxRemoteResults,
+    });
 
     // Simplify results since we do not support rich results in this component.
     suggestions.local = suggestions.local.map(e => e.value);
@@ -323,10 +326,9 @@ export let ContentSearch = {
     ) {
       return false;
     }
-    let browserData = this._suggestionDataForBrowser(browser, true);
     lazy.FormHistory.update({
       op: "bump",
-      fieldname: browserData.controller.formHistoryParam,
+      fieldname: lazy.DEFAULT_FORM_HISTORY_PARAM,
       value: entry.value,
       source: entry.engineName,
     }).catch(err => console.error("Error adding form history entry: ", err));
@@ -336,7 +338,7 @@ export let ContentSearch = {
   /**
    * Construct a state object representing the search engine state.
    *
-   * @returns {Object} state
+   * @returns {object} state
    */
   async currentStateObj() {
     let state = {
@@ -350,7 +352,7 @@ export let ContentSearch = {
         name: engine.name,
         iconData: await this._getEngineIconURL(engine),
         hidden: engine.hideOneOffButton,
-        isAppProvided: engine.isAppProvided,
+        isConfigEngine: engine.isConfigEngine,
       });
     }
 
@@ -546,7 +548,7 @@ export let ContentSearch = {
     let obj = {
       name: engine.name,
       iconData: await this._getEngineIconURL(engine),
-      isAppProvided: engine.isAppProvided,
+      isConfigEngine: engine.isConfigEngine,
     };
     return obj;
   },

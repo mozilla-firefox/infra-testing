@@ -5,10 +5,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MessagePortParent.h"
+
 #include "MessagePortService.h"
 #include "mozilla/dom/RefMessageBodyService.h"
 #include "mozilla/dom/SharedMessageBody.h"
-#include "mozilla/Unused.h"
 
 namespace mozilla::dom {
 
@@ -114,7 +114,7 @@ mozilla::ipc::IPCResult MessagePortParent::RecvStopSendingData() {
   }
 
   mCanSendData = false;
-  Unused << SendStopSendingDataConfirmed();
+  (void)SendStopSendingDataConfirmed();
   return IPC_OK();
 }
 
@@ -131,7 +131,7 @@ mozilla::ipc::IPCResult MessagePortParent::RecvClose() {
 
   MOZ_ASSERT(!mEntangled);
 
-  Unused << Send__delete__(this);
+  (void)Send__delete__(this);
   return IPC_OK();
 }
 
@@ -152,7 +152,7 @@ bool MessagePortParent::Entangled(nsTArray<MessageData>&& aMessages) {
 
 void MessagePortParent::CloseAndDelete() {
   Close();
-  Unused << Send__delete__(this);
+  (void)Send__delete__(this);
 }
 
 void MessagePortParent::Close() {

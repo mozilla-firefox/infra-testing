@@ -478,17 +478,13 @@ static MOZ_ALWAYS_INLINE double CanonicalizeNaN(double d) {
  *   through a particular value. For example, if cx->exception has a magic
  *   value, the reason must be JS_GENERATOR_CLOSING.
  *
- * - The JS::Value operations are preferred.  The JSVAL_* operations remain for
- *   compatibility; they may be removed at some point.  These operations mostly
- *   provide similar functionality.  But there are a few key differences.  One
- *   is that JS::Value gives null a separate type.
- *   Also, to help prevent mistakenly boxing a nullable JSObject* as an object,
+ * - To help prevent mistakenly boxing a nullable JSObject* as an object,
  *   Value::setObject takes a JSObject&. (Conversely, Value::toObject returns a
  *   JSObject&.)  A convenience member Value::setObjectOrNull is provided.
  *
- * - Note that JS::Value is 8 bytes on 32 and 64-bit architectures. Thus, on
- *   32-bit user code should avoid copying jsval/JS::Value as much as possible,
- *   preferring to pass by const Value&.
+ * - Note that JS::Value is 8 bytes on 32 and 64-bit architectures. Because most
+ *   of our users are now on 64-bit platforms, code should prefer passing
+ *   JS::Value by value instead of |const Value&|.
  *
  * Spectre mitigations
  * ===================
@@ -504,7 +500,7 @@ static MOZ_ALWAYS_INLINE double CanonicalizeNaN(double d) {
  *   conditional move (not speculated) to zero the payload register if the type
  *   doesn't match.
  */
-class alignas(8) Value {
+class Value {
  private:
   uint64_t asBits_;
 
@@ -855,16 +851,19 @@ class alignas(8) Value {
     MOZ_ASSERT(isGCThing());
     static_assert((JSVAL_TAG_STRING & 0x03) == size_t(JS::TraceKind::String),
                   "Value type tags must correspond with JS::TraceKinds.");
-    static_assert((JSVAL_TAG_SYMBOL & 0x03) == size_t(JS::TraceKind::Symbol),
-                  "Value type tags must correspond with JS::TraceKinds.");
     static_assert((JSVAL_TAG_OBJECT & 0x03) == size_t(JS::TraceKind::Object),
                   "Value type tags must correspond with JS::TraceKinds.");
     static_assert((JSVAL_TAG_BIGINT & 0x03) == size_t(JS::TraceKind::BigInt),
                   "Value type tags must correspond with JS::TraceKinds.");
-    if (MOZ_UNLIKELY(isPrivateGCThing())) {
+    static_assert(JSVAL_TAG_SYMBOL + 1 == JSVAL_TAG_PRIVATE_GCTHING,
+                  "Symbol and PrivateGCThing tags should be adjacent to allow "
+                  "checking for them with a single branch");
+    JSValueTag tag = toTag();
+    if (MOZ_UNLIKELY(tag == JSVAL_TAG_SYMBOL ||
+                     tag == JSVAL_TAG_PRIVATE_GCTHING)) {
       return JS::GCThingTraceKind(toGCThing());
     }
-    return JS::TraceKind(toTag() & 0x03);
+    return JS::TraceKind(tag & 0x03);
   }
 
   JSWhyMagic whyMagic() const {
@@ -1061,7 +1060,7 @@ class alignas(8) Value {
   void dumpFields(js::JSONPrinter& json) const;
   void dumpStringContent(js::GenericPrinter& out) const;
 #endif
-} JS_HAZ_GC_POINTER MOZ_NON_PARAM;
+} JS_HAZ_GC_POINTER;
 
 static_assert(sizeof(Value) == 8,
               "Value size must leave three tag bits, be a binary power, and "
@@ -1228,7 +1227,7 @@ JS_PUBLIC_API void HeapValueWriteBarriers(Value* valuep, const Value& prev,
                                           const Value& next);
 
 template <>
-struct GCPolicy<JS::Value> {
+struct GCPolicy<JS::Value> : public GCPolicyBase<JS::Value> {
   static void trace(JSTracer* trc, Value* v, const char* name) {
     // This should only be called as part of root marking since that's the only
     // time we should trace unbarriered GC thing pointers. This will assert if
@@ -1380,7 +1379,7 @@ template <typename Wrapper>
 class HeapOperations<JS::Value, Wrapper>
     : public MutableWrappedPtrOperations<JS::Value, Wrapper> {};
 
-MOZ_HAVE_NORETURN MOZ_COLD MOZ_NEVER_INLINE void ReportBadValueTypeAndCrash(
+[[noreturn]] MOZ_COLD MOZ_NEVER_INLINE void ReportBadValueTypeAndCrash(
     const JS::Value& val);
 
 // If the Value is a GC pointer type, call |f| with the pointer cast to that

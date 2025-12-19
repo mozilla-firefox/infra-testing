@@ -5,35 +5,36 @@
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  MerinoClient: "resource:///modules/MerinoClient.sys.mjs",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
+  MerinoClient: "moz-src:///browser/components/urlbar/MerinoClient.sys.mjs",
+  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
 });
+
+ChromeUtils.defineLazyGetter(lazy, "logger", () =>
+  lazy.UrlbarUtils.getLogger({ prefix: "GeolocationUtils" })
+);
 
 // Cache period for Merino's geolocation response. This is intentionally a small
 // amount of time. See the `cachePeriodMs` discussion in `MerinoClient`.
-const GEOLOCATION_CACHE_PERIOD_MS = 120000; // 2 minutes
+const GEOLOCATION_CACHE_PERIOD_MS = 2 * 60 * 60 * 1000; // 2 hours.
 
 // The mean Earth radius used in distance calculations.
 const EARTH_RADIUS_KM = 6371.009;
+
+// Timeout setting to fetch geolocation from Merino.
+const MERINO_TIMEOUT_MS = 5000;
 
 /**
  * Utils for fetching the client's geolocation from Merino, computing distances
  * between locations, and finding suggestions that best match the geolocation.
  */
 class _GeolocationUtils {
-  constructor() {
-    ChromeUtils.defineLazyGetter(this, "logger", () =>
-      lazy.UrlbarUtils.getLogger({ prefix: "GeolocationUtils" })
-    );
-  }
-
   /**
    * Fetches the client's geolocation from Merino. Merino gets the geolocation
    * by looking up the client's IP address in its MaxMind database. We cache
    * responses for a brief period of time so that fetches during a urlbar
    * session don't ping Merino over and over.
    *
-   * @returns {object}
+   * @returns {Promise<object>}
    *   An object with the following properties (see Merino source for latest):
    *
    *   {string} country
@@ -62,16 +63,34 @@ class _GeolocationUtils {
       });
     }
 
-    this.logger.debug("Fetching geolocation from Merino");
+    lazy.logger.debug("Fetching geolocation from Merino");
     let results = await this.#merino.fetch({
       providers: ["geolocation"],
       query: "",
+      timeoutMs: MERINO_TIMEOUT_MS,
     });
 
-    this.logger.debug("Got geolocation from Merino", results);
+    lazy.logger.debug("Got geolocation from Merino", results);
 
     return results?.[0]?.custom_details?.geolocation || null;
   }
+
+  /**
+   * @typedef {object} GeoLocationItem
+   * @property {string|number} [latitude]
+   *   The location's latitude in decimal coordinates as either a string or float.
+   * @property {string|number} [longitude]
+   *   The location's longitude in decimal coordinates as either a string or float.
+   * @property {string} [country]
+   *   The location's two-digit ISO country code. Case doesn't matter.
+   * @property {string} [region]
+   *   The location's region, e.g., a U.S. state. This is compared to the
+   *   `region_code` in the Merino geolocation response (case insensitive) so
+   *   it should be the same format: the region ISO code, e.g., the two-letter
+   *   abbreviation for U.S. states.
+   * @property {number} [population]
+   *   The location's population.
+   */
 
   /**
    * Returns the item from an array of candidate items that best matches the
@@ -94,25 +113,11 @@ class _GeolocationUtils {
    *
    * @param {Array} items
    *   Array of items, which can be anything.
-   * @param {Function} locationFromItem
+   * @param {(item: any) => GeoLocationItem} locationFromItem
    *   A function that maps an item to its location. It will be called as
    *   `locationFromItem(item)` and it should return an object with the
-   *   following properties, all optional:
-   *
-   *   {number} latitude
-   *     The location's latitude in decimal coordinates.
-   *   {number} longitude
-   *     The location's longitude in decimal coordinates.
-   *   {string} country
-   *     The location's two-digit ISO country code. Case doesn't matter.
-   *   {string} region
-   *     The location's region, e.g., a U.S. state. This is compared to the
-   *     `region_code` in the Merino geolocation response (case insensitive) so
-   *     it should be the same format: the region ISO code, e.g., the two-letter
-   *     abbreviation for U.S. states.
-   *   {number} population
-   *     The location's population.
-   * @returns {object|null}
+   *   defined properties, all optional.
+   * @returns {Promise<object|null>}
    *   The best item as described above, or null if `items` is empty.
    */
   async best(items, locationFromItem = i => i) {
@@ -150,7 +155,7 @@ class _GeolocationUtils {
    *   ```
    * @param {Array} items
    *   Array of items as described in the doc for `best()`.
-   * @param {Function} locationFromItem
+   * @param {(item: any) => GeoLocationItem} locationFromItem
    *   Mapping function as described in the doc for `best()`.
    * @returns {object|null}
    *   The nearest item as described above. If there are multiple nearest items
@@ -158,9 +163,9 @@ class _GeolocationUtils {
    *   `geo` does not include a location or coordinates, null is returned.
    */
   #bestByDistance(geo, items, locationFromItem) {
-    let geoLat = geo.location?.latitude;
-    let geoLong = geo.location?.longitude;
-    if (typeof geoLat != "number" || typeof geoLong != "number") {
+    let geoLat = parseFloat(geo.location?.latitude);
+    let geoLong = parseFloat(geo.location?.longitude);
+    if (isNaN(geoLat) || isNaN(geoLong)) {
       return null;
     }
 
@@ -174,15 +179,23 @@ class _GeolocationUtils {
     let dMin = Infinity;
     for (let item of items) {
       let location = locationFromItem(item);
-      if (
-        typeof location.latitude != "number" ||
-        typeof location.longitude != "number"
-      ) {
+      if (!location) {
         continue;
       }
-      let [itemLat, itemLong] = [location.latitude, location.longitude].map(
-        toRadians
-      );
+
+      let locationLat =
+        typeof location.latitude == "number"
+          ? location.latitude
+          : parseFloat(location.latitude);
+      let locationLong =
+        typeof location.longitude == "number"
+          ? location.longitude
+          : parseFloat(location.longitude);
+      if (isNaN(locationLat) || isNaN(locationLong)) {
+        continue;
+      }
+
+      let [itemLat, itemLong] = [locationLat, locationLong].map(toRadians);
       let d =
         EARTH_RADIUS_KM *
         Math.acos(
@@ -227,7 +240,7 @@ class _GeolocationUtils {
    *   ```
    * @param {Array} items
    *   Array of items as described in the doc for `best()`.
-   * @param {Function} locationFromItem
+   * @param {(item: any) => GeoLocationItem} locationFromItem
    *   Mapping function as described in the doc for `best()`.
    * @returns {object|null}
    *   The item as described above or null.
@@ -244,7 +257,7 @@ class _GeolocationUtils {
     let bestRegionTuple;
     for (let item of items) {
       let location = locationFromItem(item);
-      if (location.country?.toLowerCase() == geoCountry) {
+      if (location?.country?.toLowerCase() == geoCountry) {
         if (
           !bestCountryTuple ||
           hasLargerPopulation(location, bestCountryTuple.location)

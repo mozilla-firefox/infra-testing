@@ -10,13 +10,11 @@
 
 #include "modules/remote_bitrate_estimator/overuse_detector.h"
 
-#include <math.h>
-#include <stdio.h>
-
 #include <algorithm>
-#include <string>
+#include <cmath>
+#include <cstdint>
 
-#include "rtc_base/checks.h"
+#include "api/transport/bandwidth_usage.h"
 #include "rtc_base/numerics/safe_minmax.h"
 
 namespace webrtc {

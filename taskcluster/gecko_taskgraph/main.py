@@ -4,7 +4,6 @@
 
 import argparse
 import atexit
-import json
 import logging
 import os
 import shutil
@@ -13,7 +12,7 @@ import sys
 import tempfile
 import traceback
 from pathlib import Path
-from typing import Any, List
+from typing import Any
 
 import appdirs
 import yaml
@@ -23,7 +22,9 @@ from taskgraph.main import (
     command,
     commands,
     dump_output,
+    format_kind_graph_mermaid,
     generate_taskgraph,
+    get_taskgraph_generator,
 )
 
 from gecko_taskgraph import GECKO
@@ -46,6 +47,79 @@ def format_taskgraph_yaml(taskgraph):
 
 
 FORMAT_METHODS["yaml"] = format_taskgraph_yaml
+
+
+@command(
+    "kind-graph",
+    help="Show the kind dependency graph as a Mermaid flowchart diagram.",
+)
+@argument("--root", "-r", help="root of the taskgraph definition relative to topsrcdir")
+@argument("--quiet", "-q", action="store_true", help="suppress all logging output")
+@argument(
+    "--verbose", "-v", action="store_true", help="include debug-level logging output"
+)
+@argument(
+    "--parameters",
+    "-p",
+    default=None,
+    help="Parameters to use for the generation. Can be a path to file (.yml or "
+    ".json; see `taskcluster/docs/parameters.rst`), a url, of the form "
+    "`project=mozilla-central` to download latest parameters file for the specified "
+    "project from CI, or of the form `task-id=<decision task id>` to download "
+    "parameters from the specified decision task.",
+)
+@argument(
+    "-o",
+    "--output-file",
+    default=None,
+    help="file path to store generated output.",
+)
+@argument(
+    "-k",
+    "--target-kind",
+    dest="target_kinds",
+    action="append",
+    default=[],
+    help="only return kinds and their dependencies.",
+)
+def show_kinds(options):
+    from taskgraph.parameters import parameters_loader  # noqa: PLC0415
+
+    if options.pop("verbose", False):
+        logging.root.setLevel(logging.DEBUG)
+
+    setup_logging()
+
+    target_kinds = options.get("target_kinds", [])
+    parameters = options.get("parameters")
+    if not parameters:
+        parameters = parameters_loader(
+            None, strict=False, overrides={"target-kinds": target_kinds}
+        )
+    elif isinstance(parameters, str):
+        parameters = parameters_loader(
+            parameters,
+            overrides={"target-kinds": target_kinds},
+            strict=False,
+        )
+    elif target_kinds:
+        # Parameters object already exists (from tests)
+        parameters["target-kinds"] = target_kinds
+
+    tgg = get_taskgraph_generator(options.get("root"), parameters)
+    kind_graph = tgg.kind_graph
+
+    output = format_kind_graph_mermaid(kind_graph)
+
+    output_file = options.get("output_file")
+    if output_file:
+        with open(output_file, "w") as fh:
+            print(output, file=fh)
+        print(f"Kind graph written to {output_file}", file=sys.stderr)
+    else:
+        print(output)
+
+    return 0
 
 
 @command(
@@ -146,7 +220,7 @@ FORMAT_METHODS["yaml"] = format_taskgraph_yaml
     "--tasks-regex",
     "--tasks",
     default=None,
-    help="only return tasks with labels matching this regular " "expression.",
+    help="only return tasks with labels matching this regular expression.",
 )
 @argument(
     "--exclude-key",
@@ -220,20 +294,21 @@ def show_taskgraph(options):
         # branch or bookmark (which are both available on the VCS object)
         # as `branch` is preferable to a specific revision.
         cur_ref = repo.branch or repo.head_ref[:12]
+        cur_ref_file = cur_ref.replace("/", "_")
 
         diffdir = tempfile.mkdtemp()
         atexit.register(
             shutil.rmtree, diffdir
         )  # make sure the directory gets cleaned up
         options["output_file"] = os.path.join(
-            diffdir, f"{options['graph_attr']}_{cur_ref}"
+            diffdir, f"{options['graph_attr']}_{cur_ref_file}"
         )
         print(f"Generating {options['graph_attr']} @ {cur_ref}", file=sys.stderr)
 
     overrides = {
         "target-kinds": options.get("target_kinds"),
     }
-    parameters: List[Any[str, Parameters]] = options.pop("parameters")
+    parameters: list[Any[str, Parameters]] = options.pop("parameters")
     if not parameters:
         parameters = [
             parameters_loader(None, strict=False, overrides=overrides)
@@ -278,11 +353,9 @@ def show_taskgraph(options):
 
         # Reload taskgraph modules to pick up changes and clear global state.
         for mod in sys.modules.copy():
-            if (
-                mod != __name__
-                and mod != "taskgraph.main"
-                and mod.split(".", 1)[0].endswith(("taskgraph", "mozbuild"))
-            ):
+            if mod not in {__name__, "taskgraph.main"} and mod.split(".", 1)[
+                0
+            ].endswith(("taskgraph", "mozbuild")):
                 del sys.modules[mod]
 
         # Ensure gecko_taskgraph is ahead of taskcluster_taskgraph in sys.path.
@@ -295,11 +368,12 @@ def show_taskgraph(options):
         else:
             base_ref = options["diff"]
 
+        base_ref_file = base_ref.replace("/", "_")
         try:
             repo.update(base_ref)
             base_ref = repo.head_ref[:12]
             options["output_file"] = os.path.join(
-                diffdir, f"{options['graph_attr']}_{base_ref}"
+                diffdir, f"{options['graph_attr']}_{base_ref_file}"
             )
             print(f"Generating {options['graph_attr']} @ {base_ref}", file=sys.stderr)
             generate_taskgraph(options, parameters, overrides, logdir)
@@ -317,8 +391,10 @@ def show_taskgraph(options):
 
         non_fatal_failures = []
         for spec in parameters:
-            base_path = os.path.join(diffdir, f"{options['graph_attr']}_{base_ref}")
-            cur_path = os.path.join(diffdir, f"{options['graph_attr']}_{cur_ref}")
+            base_path = os.path.join(
+                diffdir, f"{options['graph_attr']}_{base_ref_file}"
+            )
+            cur_path = os.path.join(diffdir, f"{options['graph_attr']}_{cur_ref_file}")
 
             params_name = None
             if len(parameters) > 1:
@@ -376,8 +452,7 @@ def show_taskgraph(options):
 
         if options["format"] != "json":
             print(
-                "If you were expecting differences in task bodies "
-                'you should pass "-J"\n',
+                'If you were expecting differences in task bodies you should pass "-J"\n',
                 file=sys.stderr,
             )
 
@@ -412,8 +487,7 @@ def build_image(args):
 )
 @argument(
     "--task-id",
-    help="Load the image at public/image.tar.zst in this task, "
-    "rather than searching the index",
+    help="Load the image at public/image.tar.zst in this task, rather than searching the index",
 )
 @argument(
     "-t",
@@ -450,8 +524,7 @@ def load_image(args):
 @command("image-digest", help="Print the digest of a docker image.")
 @argument(
     "image_name",
-    help="Print the digest of the image of this name based on the current "
-    "contents of the tree.",
+    help="Print the digest of the image of this name based on the current contents of the tree.",
 )
 def image_digest(args):
     from taskgraph.docker import get_image_digest
@@ -514,6 +587,13 @@ def image_digest(args):
     "--tasks-for", required=True, help="the tasks_for value used to generate this task"
 )
 @argument("--try-task-config-file", help="path to try task configuration file")
+@argument(
+    "--no-verify",
+    dest="verify",
+    default=True,
+    action="store_false",
+    help="Skip graph verifications.",
+)
 def decision(options):
     from gecko_taskgraph.decision import taskgraph_decision
 
@@ -528,6 +608,8 @@ def decision(options):
     help="root of the taskgraph definition relative to topsrcdir",
 )
 def action_callback(options):
+    from taskgraph.util import json
+
     from gecko_taskgraph.actions import trigger_action_callback
     from gecko_taskgraph.actions.util import get_parameters
 
@@ -567,7 +649,7 @@ def action_callback(options):
     "--parameters",
     "-p",
     default="",
-    help="parameters file (.yml or .json; see " "`taskcluster/docs/parameters.rst`)`",
+    help="parameters file (.yml or .json; see `taskcluster/docs/parameters.rst`)`",
 )
 @argument("--task-id", default=None, help="TaskId to which the action applies")
 @argument(
@@ -578,7 +660,7 @@ def action_callback(options):
 def test_action_callback(options):
     import taskgraph.parameters
     from taskgraph.config import load_graph_config
-    from taskgraph.util import yaml
+    from taskgraph.util import json, yaml
 
     import gecko_taskgraph.actions
 

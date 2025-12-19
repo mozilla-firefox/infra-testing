@@ -8,10 +8,16 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   assert: "chrome://remote/content/shared/webdriver/Assert.sys.mjs",
+  Certificates: "chrome://remote/content/shared/webdriver/Certificates.sys.mjs",
   error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
   getWebDriverSessionById:
     "chrome://remote/content/shared/webdriver/Session.sys.mjs",
   pprint: "chrome://remote/content/shared/Format.sys.mjs",
+  ProxyConfiguration:
+    "chrome://remote/content/shared/webdriver/Capabilities.sys.mjs",
+  ProxyPerUserContextManager:
+    "chrome://remote/content/webdriver-bidi/ProxyPerUserContextManager.sys.mjs",
+  ProxyTypes: "chrome://remote/content/shared/webdriver/Capabilities.sys.mjs",
   TabManager: "chrome://remote/content/shared/TabManager.sys.mjs",
   UserContextManager:
     "chrome://remote/content/shared/UserContextManager.sys.mjs",
@@ -68,11 +74,31 @@ ChromeUtils.defineESModuleGetters(lazy, {
  */
 
 class BrowserModule extends RootBiDiModule {
+  #proxyManager;
+  #userContextsWithInsecureCertificatesOverrides;
+
   constructor(messageHandler) {
     super(messageHandler);
+
+    this.#proxyManager = new lazy.ProxyPerUserContextManager();
+
+    // A set of internal user context ids to keep track of user contexts
+    // which had insecure certificates overrides set for them.
+    this.#userContextsWithInsecureCertificatesOverrides = new Set();
   }
 
-  destroy() {}
+  destroy() {
+    // Reset "allowInsecureCerts" for the userContexts,
+    // which were created in the scope of this session.
+    for (const userContext of this
+      .#userContextsWithInsecureCertificatesOverrides) {
+      lazy.Certificates.resetSecurityChecksForUserContext(userContext);
+    }
+
+    this.#userContextsWithInsecureCertificatesOverrides = null;
+
+    this.#proxyManager.destroy();
+  }
 
   /**
    * Commands
@@ -99,7 +125,7 @@ class BrowserModule extends RootBiDiModule {
     }
 
     // Close all open top-level browsing contexts by not prompting for beforeunload.
-    for (const tab of lazy.TabManager.tabs) {
+    for (const tab of lazy.TabManager.allTabs) {
       lazy.TabManager.removeTab(tab, { skipPermitUnload: true });
     }
   }
@@ -130,11 +156,63 @@ class BrowserModule extends RootBiDiModule {
   /**
    * Creates a user context.
    *
+   * @param {object=} options
+   * @param {boolean=} options.acceptInsecureCerts
+   *     Indicates whether untrusted and self-signed TLS certificates
+   *     should be implicitly trusted on navigation for this user context.
+   * @param {object=} options.proxy
+   *     An object which holds the proxy settings.
+   *
    * @returns {UserContextInfo}
    *     UserContextInfo object for the created user context.
+   *
+   * @throws {InvalidArgumentError}
+   *     Raised if an argument is of an invalid type or value.
+   * @throws {UnsupportedOperationError}
+   *     Raised when the command is called with unsupported proxy types.
    */
-  async createUserContext() {
+  async createUserContext(options = {}) {
+    const { acceptInsecureCerts = null, proxy = null } = options;
+
+    if (acceptInsecureCerts !== null) {
+      lazy.assert.boolean(
+        acceptInsecureCerts,
+        lazy.pprint`Expected "acceptInsecureCerts" to be a boolean, got ${acceptInsecureCerts}`
+      );
+    }
+
+    let proxyObject;
+    if (proxy !== null) {
+      proxyObject = lazy.ProxyConfiguration.fromJSON(proxy);
+
+      if (
+        proxyObject.proxyType === lazy.ProxyTypes.System ||
+        proxyObject.proxyType === lazy.ProxyTypes.Autodetect ||
+        proxyObject.proxyType === lazy.ProxyTypes.Pac
+      ) {
+        // Bug 1968887: Add support for "system", "autodetect" and "pac" proxy types.
+        throw new lazy.error.UnsupportedOperationError(
+          `Proxy type "${proxyObject.proxyType}" is not supported`
+        );
+      }
+    }
+
     const userContextId = lazy.UserContextManager.createContext("webdriver");
+    const internalId = lazy.UserContextManager.getInternalIdById(userContextId);
+
+    if (acceptInsecureCerts !== null) {
+      this.#userContextsWithInsecureCertificatesOverrides.add(internalId);
+      if (acceptInsecureCerts) {
+        lazy.Certificates.disableSecurityChecks(internalId);
+      } else {
+        lazy.Certificates.enableSecurityChecks(internalId);
+      }
+    }
+
+    if (proxy !== null) {
+      this.#proxyManager.addConfiguration(internalId, proxyObject);
+    }
+
     return { userContext: userContextId };
   }
 
@@ -186,9 +264,18 @@ class BrowserModule extends RootBiDiModule {
         `User Context with id ${userContextId} was not found`
       );
     }
+
+    const internalId = lazy.UserContextManager.getInternalIdById(userContextId);
+
     lazy.UserContextManager.removeUserContext(userContextId, {
       closeContextTabs: true,
     });
+
+    // Reset the state to clean up the platform state.
+    lazy.Certificates.resetSecurityChecksForUserContext(internalId);
+    this.#userContextsWithInsecureCertificatesOverrides.delete(internalId);
+
+    this.#proxyManager.deleteConfiguration(internalId);
   }
 
   #getClientWindowInfo(window) {

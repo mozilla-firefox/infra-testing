@@ -9,6 +9,7 @@
 
 // Keep others in (case-insensitive) order:
 #include "AutoReferenceChainGuard.h"
+#include "SVGAnimatedTransformList.h"
 #include "gfx2DGlue.h"
 #include "gfxContext.h"
 #include "gfxMatrix.h"
@@ -26,7 +27,6 @@
 #include "mozilla/gfx/2D.h"
 #include "nsGkAtoms.h"
 #include "nsIFrameInlines.h"
-#include "SVGAnimatedTransformList.h"
 
 using namespace mozilla::dom;
 using namespace mozilla::dom::SVGUnitTypes_Binding;
@@ -56,7 +56,7 @@ NS_QUERYFRAME_TAIL_INHERITING(SVGPaintServerFrame)
 
 nsresult SVGPatternFrame::AttributeChanged(int32_t aNameSpaceID,
                                            nsAtom* aAttribute,
-                                           int32_t aModType) {
+                                           AttrModType aModType) {
   if (aNameSpaceID == kNameSpaceID_None &&
       (aAttribute == nsGkAtoms::patternUnits ||
        aAttribute == nsGkAtoms::patternContentUnits ||
@@ -150,7 +150,7 @@ static bool IncludeBBoxScale(const SVGAnimatedViewBox& aViewBox,
 // Given the matrix for the pattern element's own transform, this returns a
 // combined matrix including the transforms applicable to its target.
 static Matrix GetPatternMatrix(nsIFrame* aSource,
-                               const StyleSVGPaint nsStyleSVG::*aFillOrStroke,
+                               const StyleSVGPaint nsStyleSVG::* aFillOrStroke,
                                uint16_t aPatternUnits,
                                const gfxMatrix& patternTransform,
                                const gfxRect& bbox, const gfxRect& callerBBox,
@@ -194,7 +194,7 @@ static nsresult GetTargetGeometry(gfxRect* aBBox,
 
   // Sanity check
   if (IncludeBBoxScale(aViewBox, aPatternContentUnits, aPatternUnits) &&
-      (aBBox->Width() <= 0 || aBBox->Height() <= 0)) {
+      aBBox->IsEmpty()) {
     return NS_ERROR_FAILURE;
   }
 
@@ -253,7 +253,7 @@ void SVGPatternFrame::PaintChildren(DrawTarget* aDrawTarget,
 already_AddRefed<SourceSurface> SVGPatternFrame::PaintPattern(
     const DrawTarget* aDrawTarget, Matrix* patternMatrix,
     const Matrix& aContextMatrix, nsIFrame* aSource,
-    StyleSVGPaint nsStyleSVG::*aFillOrStroke, float aGraphicOpacity,
+    StyleSVGPaint nsStyleSVG::* aFillOrStroke, float aGraphicOpacity,
     const gfxRect* aOverrideBounds, imgDrawingParams& aImgParams) {
   /*
    * General approach:
@@ -326,7 +326,7 @@ already_AddRefed<SourceSurface> SVGPatternFrame::PaintPattern(
   // box for the pattern tile.
   gfxRect bbox =
       GetPatternRect(patternUnits, callerBBox, aContextMatrix, aSource);
-  if (bbox.Width() <= 0.0 || bbox.Height() <= 0.0) {
+  if (bbox.IsEmpty()) {
     return nullptr;
   }
 
@@ -581,10 +581,11 @@ gfxRect SVGPatternFrame::GetPatternRect(uint16_t aPatternUnits,
   tmpWidth = GetLengthValue(SVGPatternElement::ATTR_WIDTH);
 
   if (aPatternUnits == SVG_UNIT_TYPE_OBJECTBOUNDINGBOX) {
-    x = SVGUtils::ObjectSpace(aTargetBBox, tmpX);
-    y = SVGUtils::ObjectSpace(aTargetBBox, tmpY);
-    width = SVGUtils::ObjectSpace(aTargetBBox, tmpWidth);
-    height = SVGUtils::ObjectSpace(aTargetBBox, tmpHeight);
+    SVGElementMetrics metrics(SVGElement::FromNode(GetContent()));
+    x = SVGUtils::ObjectSpace(aTargetBBox, metrics, tmpX);
+    y = SVGUtils::ObjectSpace(aTargetBBox, metrics, tmpY);
+    width = SVGUtils::ObjectSpace(aTargetBBox, metrics, tmpWidth);
+    height = SVGUtils::ObjectSpace(aTargetBBox, metrics, tmpHeight);
   } else {
     if (aTarget->IsTextFrame()) {
       aTarget = aTarget->GetParent();
@@ -629,7 +630,7 @@ gfxMatrix SVGPatternFrame::ConstructCTM(const SVGAnimatedViewBox& aViewBox,
   const SVGViewBox& viewBox =
       aViewBox.GetAnimValue() * Style()->EffectiveZoom().ToFloat();
 
-  if (viewBox.height <= 0.0f || viewBox.width <= 0.0f) {
+  if (!viewBox.IsValid()) {
     return gfxMatrix(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);  // singular
   }
 
@@ -665,7 +666,7 @@ gfxMatrix SVGPatternFrame::ConstructCTM(const SVGAnimatedViewBox& aViewBox,
 // SVGPaintServerFrame methods:
 already_AddRefed<gfxPattern> SVGPatternFrame::GetPaintServerPattern(
     nsIFrame* aSource, const DrawTarget* aDrawTarget,
-    const gfxMatrix& aContextMatrix, StyleSVGPaint nsStyleSVG::*aFillOrStroke,
+    const gfxMatrix& aContextMatrix, StyleSVGPaint nsStyleSVG::* aFillOrStroke,
     float aGraphicOpacity, imgDrawingParams& aImgParams,
     const gfxRect* aOverrideBounds) {
   if (aGraphicOpacity == 0.0f) {

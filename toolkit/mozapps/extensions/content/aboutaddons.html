@@ -10,7 +10,7 @@
     <!-- Bug 1571346 Remove 'unsafe-inline' from style-src within about:addons -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src chrome:; style-src chrome: 'unsafe-inline'; img-src chrome: file: jar: https: http:; connect-src chrome: data: https: http:; object-src 'none'"
+      content="default-src chrome:; style-src chrome: 'unsafe-inline'; img-src chrome: blob: file: jar: https: http:; connect-src chrome: data: https: http:; object-src 'none'"
     />
     <meta name="color-scheme" content="light dark" />
     <link rel="stylesheet" href="chrome://global/skin/in-content/common.css" />
@@ -27,15 +27,14 @@
       rel="shortcut icon"
       href="chrome://mozapps/skin/extensions/extension.svg"
     />
+    <link
+      href="chrome://mozapps/content/extensions/components/addon-mlmodel-details.css"
+      rel="stylesheet"
+    />
 
     <link rel="localization" href="branding/brand.ftl" />
     <link rel="localization" href="toolkit/about/aboutAddons.ftl" />
     <link rel="localization" href="toolkit/global/extensionPermissions.ftl" />
-    <link
-      rel="localization"
-      href="locales-preview/dataCollectionPermissions.ftl"
-    />
-    <link rel="localization" href="locales-preview/localModelManagement.ftl" />
 
     <!-- Defer scripts so all the templates are loaded by the time they run. -->
     <script
@@ -69,6 +68,14 @@
     <script
       src="chrome://mozapps/content/extensions/components/mlmodel-list-intro.mjs"
       type="module"
+    ></script>
+    <script
+      type="module"
+      src="chrome://mozapps/content/extensions/components/mlmodel-card-header-additions.mjs"
+    ></script>
+    <script
+      type="module"
+      src="chrome://mozapps/content/extensions/components/mlmodel-card-list-additions.mjs"
     ></script>
     <script
       type="module"
@@ -325,50 +332,25 @@
     </template>
 
     <template name="addon-permissions-list">
-      <!-- Permissions -->
-      <div class="addon-permissions-required" hidden>
-        <h2
-          class="permission-header"
-          data-l10n-id="addon-permissions-required"
-        ></h2>
-        <ul class="addon-permissions-list"></ul>
-      </div>
-      <div class="addon-permissions-optional" hidden>
-        <h2
-          class="permission-header"
-          data-l10n-id="addon-permissions-optional"
-        ></h2>
-        <ul class="addon-permissions-list"></ul>
-      </div>
-
-      <!-- Data collection -->
-      <div class="addon-data-collection-permissions-required" hidden>
-        <h2
-          class="permission-header"
-          data-l10n-id="addon-permissions-required-data-collection"
-        ></h2>
-        <ul class="addon-permissions-list"></ul>
-      </div>
-      <div class="addon-data-collection-permissions-optional" hidden>
-        <h2
-          class="permission-header"
-          data-l10n-id="addon-permissions-optional-data-collection"
-        ></h2>
-        <ul class="addon-permissions-list"></ul>
-      </div>
-
-      <div
-        class="addon-detail-row addon-permissions-empty"
-        data-l10n-id="addon-permissions-empty2"
-        hidden
-      ></div>
-
-      <div class="addon-detail-row">
-        <a
-          is="moz-support-link"
-          support-page="extension-permissions"
-          data-l10n-id="addon-permissions-learnmore"
-        ></a>
+      <div class="addon-permissions-list-wrapper">
+        <h2 class="permission-header"></h2>
+        <em class="permission-subheader" hidden></em>
+        <div class="addon-permissions-required" hidden>
+          <div
+            class="permission-subsection"
+            data-l10n-id="addon-permissions-required-label"
+          ></div>
+          <ul class="addon-permissions-list"></ul>
+        </div>
+        <div class="addon-permissions-optional" hidden>
+          <div
+            class="permission-subsection"
+            data-l10n-id="addon-permissions-optional-label"
+          ></div>
+          <ul class="addon-permissions-list"></ul>
+        </div>
+        <div class="addon-permissions-empty" hidden></div>
+        <div class="addon-permissions-footer"></div>
       </div>
     </template>
 
@@ -441,6 +423,7 @@
                 data-l10n-id="extension-enable-addon-button-label"
                 hidden
               ></moz-toggle>
+              <mlmodel-card-header-additions></mlmodel-card-header-additions>
               <button
                 class="more-options-button"
                 action="more-options"
@@ -449,6 +432,7 @@
                 aria-expanded="false"
               ></button>
             </div>
+            <mlmodel-card-list-additions></mlmodel-card-list-additions>
             <!-- This ends up in the tab order when the ellipsis happens, but it isn't necessary. -->
             <span class="addon-description" tabindex="-1"></span>
           </div>
@@ -731,6 +715,14 @@
           action="open-amo-colorway-collection"
           data-l10n-id="colorway-removal-notice-button"
         ></button>
+      </moz-message-bar>
+    </template>
+
+    <template name="forced-colors-notice">
+      <moz-message-bar
+        data-l10n-id="forced-colors-theme-notice"
+        data-l10n-attrs="message"
+      >
       </moz-message-bar>
     </template>
 

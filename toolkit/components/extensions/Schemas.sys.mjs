@@ -3,7 +3,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* eslint-disable mozilla/valid-lazy */
 
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
@@ -13,7 +12,6 @@ import { ExtensionUtils } from "resource://gre/modules/ExtensionUtils.sys.mjs";
 var { DefaultMap, DefaultWeakMap } = ExtensionUtils;
 
 const lazy = XPCOMUtils.declareLazy({
-  ExtensionParent: "resource://gre/modules/ExtensionParent.sys.mjs",
   NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
   ShortcutUtils: "resource://gre/modules/ShortcutUtils.sys.mjs",
   StartupCache: "resource://gre/modules/ExtensionParent.sys.mjs",
@@ -302,41 +300,26 @@ const POSTPROCESSORS = {
       throw new Error(msg);
     }
 
-    // no valid environment found, proceed to throwing an error
+    // no valid environment found, raise a warning and ignore background property
     const msg = `background requires at least one of ${
       WebExtensionPolicy.backgroundServiceWorkerEnabled
         ? '"service_worker", '
         : ""
     }"scripts" or "page".`;
-    context.logError(context.makeError(msg));
-    throw new Error(msg);
+    context.logWarning(msg);
+    return null;
   },
 
   checkValidRequiredDataCollection(value, context) {
     if (value.length > 1 && value.includes("none")) {
       const normalizedValue = value.filter(perm => perm !== "none");
       context.logWarning(
-        context.makeError(
-          `Data collection permission "none" is ignored because other data collection permissions have been specified. ` +
-            `Either remove "none" from the required list, or do not include other required data collection permissions.`
-        )
+        `Data collection permission "none" is ignored because other data collection permissions have been specified. ` +
+          `Either remove "none" from the required list, or do not include other required data collection permissions.`
       );
       return normalizedValue;
     }
     return value;
-  },
-
-  manifestVersionCheck(value, context) {
-    if (
-      value == 2 ||
-      (value == 3 &&
-        Services.prefs.getBoolPref("extensions.manifestV3.enabled", false))
-    ) {
-      return value;
-    }
-    const msg = `Unsupported manifest version: ${value}`;
-    context.logError(context.makeError(msg));
-    throw new Error(msg);
   },
 
   webAccessibleMatching(value, context) {
@@ -449,6 +432,9 @@ class Context {
       localize(value) {
         return value;
       },
+      stringToLowerCase(value) {
+        return value.toLowerCase();
+      },
       ...params.preprocessors,
     };
 
@@ -458,6 +444,7 @@ class Context {
 
     this.currentChoices = new Set();
     this.choicePathIndex = 0;
+    this.suppressedWarnings = null;
 
     for (let method of overridableMethods) {
       if (method in params) {
@@ -481,6 +468,10 @@ class Context {
 
   get ignoreUnrecognizedProperties() {
     return !!this.params.ignoreUnrecognizedProperties;
+  }
+
+  get temporarilyInstalled() {
+    return !!this.params.temporarilyInstalled;
   }
 
   get principal() {
@@ -593,7 +584,7 @@ class Context {
    * @param {string} message
    * @param {object} [options]
    * @param {boolean} [options.warning = false]
-   * @returns {Error}
+   * @returns {Error|string}
    */
   makeError(message, { warning = false } = {}) {
     let error = forceString(this.error(message, null, warning).error);
@@ -628,13 +619,28 @@ class Context {
   }
 
   /**
-   * Logs a warning. An error might be thrown when we treat warnings as errors.
+   * Logs a warning message. An error might be thrown when we treat warnings as
+   * errors.
    *
    * @param {string} warningMessage
    */
   logWarning(warningMessage) {
     let error = this.makeError(warningMessage, { warning: true });
-    this.logError(error);
+    this._logNormalizedWarning(error);
+  }
+
+  /**
+   * Logs a normalized warning object. An error might be thrown when we treat
+   * warnings as errors.
+   *
+   * @param {Error|string} warningObject
+   */
+  _logNormalizedWarning(warningObject) {
+    if (this.suppressedWarnings) {
+      this.suppressedWarnings.push(warningObject);
+      return;
+    }
+    this.logError(warningObject);
 
     if (lazy.treatWarningsAsErrors) {
       // This pref is false by default, and true by default in tests to
@@ -645,10 +651,35 @@ class Context {
         "Treating warning as error because the preference " +
           "extensions.webextensions.warnings-as-errors is set to true"
       );
-      if (typeof error === "string") {
-        error = new Error(error);
+      if (typeof warningObject === "string") {
+        warningObject = new Error(warningObject);
       }
-      throw error;
+      throw warningObject;
+    }
+  }
+
+  /**
+   * Suppresses warnings logged during the execution of `callback` and returns
+   * them along with the callback's result. Any warnings that would normally be
+   * logged by `this.logWarning()` are instead collected and returned to the
+   * caller.
+   *
+   * @param {Function} callback - A function whose execution may log warnings.
+   * @returns {object}
+   * @property {any} result - The return value of the callback.
+   * @property {string[]} suppressedWarnings - An array of suppressed warnings.
+   */
+  suppressWarnings(callback) {
+    let oldWarnings = this.suppressedWarnings;
+    let suppressedWarnings = [];
+    this.suppressedWarnings = suppressedWarnings;
+    try {
+      return {
+        result: callback(),
+        suppressedWarnings,
+      };
+    } finally {
+      this.suppressedWarnings = oldWarnings;
     }
   }
 
@@ -668,7 +699,7 @@ class Context {
 
   /**
    * Executes the given callback, and returns an array of choice strings
-   * passed to {@see #error} during its execution.
+   * passed to {@link #error} during its execution.
    *
    * @param {Function} callback
    * @returns {object}
@@ -1230,11 +1261,37 @@ const FORMATS = {
     // Manifest V3 extension_pages allows WASM.  When sandbox is
     // implemented, or any other V3 or later directive, the flags
     // logic will need to be updated.
+
     let flags =
       context.manifestVersion < 3
         ? Ci.nsIAddonContentPolicy.CSP_ALLOW_ANY
         : Ci.nsIAddonContentPolicy.CSP_ALLOW_WASM;
+
     let error = lazy.contentPolicyService.validateAddonCSP(string, flags);
+
+    if (
+      error &&
+      context.manifestVersion === 3 &&
+      !lazy.contentPolicyService.validateAddonCSP(
+        string,
+        flags | Ci.nsIAddonContentPolicy.CSP_ALLOW_LOCALHOST
+      )
+    ) {
+      error =
+        `Using localhost in the Content Security Policy is invalid, ` +
+        `and is only permitted during development with temporarily ` +
+        `loaded add-ons`;
+
+      // The error occurred due to the presence of localhost CSP settings, which should be allowed
+      // when an MV3 extension is loaded as a temporary add-on for debugging purposes.
+      if (context.temporarilyInstalled) {
+        context.logWarning(
+          `Warning processing ${context.currentTarget}: ${error}`
+        );
+        return string;
+      }
+    }
+
     if (error != null) {
       // The CSP validation error is not reported as part of the "choices" error message,
       // we log the CSP validation error explicitly here to make it easier for the addon developers
@@ -1643,8 +1700,13 @@ class ChoiceType extends Type {
           continue;
         }
 
-        let r = choice.normalize(value, context);
+        let { result: r, suppressedWarnings } = context.suppressWarnings(() =>
+          choice.normalize(value, context)
+        );
         if (!r.error) {
+          for (let w of suppressedWarnings) {
+            context._logNormalizedWarning(w);
+          }
           return r;
         }
 
@@ -3968,7 +4030,7 @@ export var Schemas = {
       return;
     }
 
-    const startTime = Cu.now();
+    const startTime = ChromeUtils.now();
     let schemaCache = await this.loadCachedSchemas();
     const fromCache = schemaCache.has(url);
 

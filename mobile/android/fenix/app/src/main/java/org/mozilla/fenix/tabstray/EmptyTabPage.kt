@@ -7,7 +7,8 @@ package org.mozilla.fenix.tabstray
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.Text
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -27,10 +28,10 @@ internal fun EmptyTabPage(isPrivate: Boolean) {
     val testTag: String
     val emptyTextId: Int
     if (isPrivate) {
-        testTag = TabsTrayTestTag.emptyPrivateTabsList
+        testTag = TabsTrayTestTag.EMPTY_PRIVATE_TABS_LIST
         emptyTextId = R.string.no_private_tabs_description
     } else {
-        testTag = TabsTrayTestTag.emptyNormalTabsList
+        testTag = TabsTrayTestTag.EMPTY_NORMAL_TABS_LIST
         emptyTextId = R.string.no_open_tabs_description
     }
 
@@ -44,7 +45,7 @@ internal fun EmptyTabPage(isPrivate: Boolean) {
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .padding(top = 80.dp),
-            color = FirefoxTheme.colors.textSecondary,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = FirefoxTheme.typography.body1,
         )
     }

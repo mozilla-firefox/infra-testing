@@ -365,7 +365,8 @@ nsIContentHandle* nsHtml5TreeBuilder::createElement(
             if (rel.LowerCaseEqualsASCII("stylesheet")) {
               nsHtml5String url =
                   aAttributes->getValue(nsHtml5AttributeName::ATTR_HREF);
-              if (url) {
+              if (url &&
+                  !aAttributes->getValue(nsHtml5AttributeName::ATTR_DISABLED)) {
                 nsHtml5String charset =
                     aAttributes->getValue(nsHtml5AttributeName::ATTR_CHARSET);
                 nsHtml5String crossOrigin = aAttributes->getValue(
@@ -547,22 +548,21 @@ nsIContentHandle* nsHtml5TreeBuilder::createElement(
         }
         break;
       case kNameSpaceID_SVG:
-        if (nsGkAtoms::image == aName) {
+        if (nsGkAtoms::image == aName || nsGkAtoms::feImage == aName) {
           nsHtml5String url =
               aAttributes->getValue(nsHtml5AttributeName::ATTR_HREF);
           if (!url) {
             url = aAttributes->getValue(nsHtml5AttributeName::ATTR_XLINK_HREF);
           }
           if (url) {
-            // Currently SVG's `<image>` element lacks support for
-            // `fetchpriority`, see bug 1847712. Hence passing nullptr which
-            // maps to the auto state
-            // (https://html.spec.whatwg.org/#fetch-priority-attribute).
-            auto fetchPriority = nullptr;
+            nsHtml5String crossOrigin =
+                aAttributes->getValue(nsHtml5AttributeName::ATTR_CROSSORIGIN);
+            nsHtml5String fetchPriority =
+                aAttributes->getValue(nsHtml5AttributeName::ATTR_FETCHPRIORITY);
 
             mSpeculativeLoadQueue.AppendElement()->InitImage(
-                url, nullptr, nullptr, nullptr, nullptr, nullptr, false,
-                fetchPriority);
+                url, crossOrigin, /* aMedia = */ nullptr, nullptr, nullptr,
+                nullptr, false, fetchPriority);
           }
         } else if (nsGkAtoms::script == aName) {
           nsHtml5TreeOperation* treeOp =
@@ -621,14 +621,8 @@ nsIContentHandle* nsHtml5TreeBuilder::createElement(
                   aAttributes->getValue(nsHtml5AttributeName::ATTR_INTEGRITY);
               nsHtml5String referrerPolicy = aAttributes->getValue(
                   nsHtml5AttributeName::ATTR_REFERRERPOLICY);
-
-              // Bug 1847712: SVG's `<script>` element doesn't support
-              // `fetchpriority` yet.
-              // Use the empty string and rely on the
-              // "invalid value default" state being used later.
-              // Compared to using a non-empty string, this doesn't
-              // require calling `Release()` for the string.
-              nsHtml5String fetchPriority = nsHtml5String::EmptyString();
+              nsHtml5String fetchPriority = aAttributes->getValue(
+                  nsHtml5AttributeName::ATTR_FETCHPRIORITY);
 
               mSpeculativeLoadQueue.AppendElement()->InitScript(
                   url, nullptr, type, crossOrigin, /* aMedia = */ nullptr,
@@ -1296,6 +1290,19 @@ void nsHtml5TreeBuilder::elementPopped(int32_t aNamespace, nsAtom* aName,
     if (mBuilder) {
       return;
     }
+
+    // https://html.spec.whatwg.org/#parsing-main-incdata
+    // An end tag whose tag name is "script"
+    //  - If the active speculative HTML parser is null and the JavaScript
+    // execution context stack is empty, then perform a microtask checkpoint.
+    nsHtml5TreeOperation* treeOpMicrotask =
+        mOpQueue.AppendElement(mozilla::fallible);
+    if (MOZ_UNLIKELY(!treeOpMicrotask)) {
+      MarkAsBrokenAndRequestSuspensionWithoutBuilder(NS_ERROR_OUT_OF_MEMORY);
+      return;
+    }
+    treeOpMicrotask->Init(mozilla::AsVariant(opMicrotaskCheckpoint()));
+
     if (mCurrentHtmlScriptCannotDocumentWriteOrBlock) {
       NS_ASSERTION(
           aNamespace == kNameSpaceID_XHTML || aNamespace == kNameSpaceID_SVG,
@@ -1736,7 +1743,8 @@ void nsHtml5TreeBuilder::setDocumentFragmentForTemplate(
 nsIContentHandle* nsHtml5TreeBuilder::getShadowRootFromHost(
     nsIContentHandle* aHost, nsIContentHandle* aTemplateNode,
     nsHtml5String aShadowRootMode, bool aShadowRootIsClonable,
-    bool aShadowRootIsSerializable, bool aShadowRootDelegatesFocus) {
+    bool aShadowRootIsSerializable, bool aShadowRootDelegatesFocus,
+    nsHtml5String aShadowRootReferenceTarget) {
   mozilla::dom::ShadowRootMode mode;
   if (aShadowRootMode.LowerCaseEqualsASCII("open")) {
     mode = mozilla::dom::ShadowRootMode::Open;
@@ -1746,10 +1754,14 @@ nsIContentHandle* nsHtml5TreeBuilder::getShadowRootFromHost(
     return nullptr;
   }
 
+  nsString shadowRootReferenceTarget;
+  aShadowRootReferenceTarget.ToString(shadowRootReferenceTarget);
+
   if (mBuilder) {
     nsIContent* root = nsContentUtils::AttachDeclarativeShadowRoot(
         static_cast<nsIContent*>(aHost), mode, aShadowRootIsClonable,
-        aShadowRootIsSerializable, aShadowRootDelegatesFocus);
+        aShadowRootIsSerializable, aShadowRootDelegatesFocus,
+        shadowRootReferenceTarget);
     if (!root) {
       nsContentUtils::LogSimpleConsoleError(
           u"Failed to attach Declarative Shadow DOM."_ns, "DOM"_ns,
@@ -1767,7 +1779,8 @@ nsIContentHandle* nsHtml5TreeBuilder::getShadowRootFromHost(
   nsIContentHandle* fragHandle = AllocateContentHandle();
   opGetShadowRootFromHost operation(
       aHost, fragHandle, aTemplateNode, mode, aShadowRootIsClonable,
-      aShadowRootIsSerializable, aShadowRootDelegatesFocus);
+      aShadowRootIsSerializable, aShadowRootDelegatesFocus,
+      shadowRootReferenceTarget);
   treeOp->Init(mozilla::AsVariant(operation));
   return fragHandle;
 }

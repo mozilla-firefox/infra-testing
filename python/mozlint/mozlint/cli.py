@@ -236,7 +236,10 @@ class MozlintParser(ArgumentParser):
         args.extra_args = extra
 
         self.validate(args)
-        return args, extra
+        # Any extra arguments returned from `parse_known_args` are considered an
+        # error. Since we stash these into `extra_args` we just return an empty
+        # list.
+        return args, []
 
     def validate(self, args):
         if args.edit and not os.environ.get("EDITOR"):
@@ -442,6 +445,7 @@ def run(
             not paths
             and Path.cwd() == Path(lint.root)
             and not (outgoing or workdir or rev)
+            and not setup
         ):
             print(
                 "warning: linting the entire repo takes a long time, using --outgoing and "
@@ -453,7 +457,7 @@ def run(
 
         # Always run bootstrapping, but return early if --setup was passed in.
         ret = lint.setup(virtualenv_manager=virtualenv_manager)
-        if setup:
+        if setup or not lint.linters:
             return ret
 
         if linters_info["linters_not_found"] != []:
@@ -511,7 +515,7 @@ def run(
         if out:
             fh = open(path, "w") if path else sys.stdout
 
-            if not path and fh.encoding == "ascii":
+            if not path and fh.encoding in ("ascii", "iso8859-1"):
                 # If sys.stdout.encoding is ascii, printing output will fail
                 # due to the stylish formatter's use of unicode characters.
                 # Ideally the user should fix their environment by setting

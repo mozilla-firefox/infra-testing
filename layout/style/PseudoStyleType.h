@@ -7,13 +7,13 @@
 #ifndef mozilla_PseudoStyleType_h
 #define mozilla_PseudoStyleType_h
 
-#include "mozilla/RefPtr.h"
-#include "nsAtom.h"
-#include "PLDHashTable.h"
-
 #include <cstddef>
 #include <cstdint>
 #include <iosfwd>
+
+#include "PLDHashTable.h"
+#include "mozilla/RefPtr.h"
+#include "nsAtom.h"
 
 namespace mozilla {
 namespace dom {
@@ -125,11 +125,16 @@ class PseudoStyle final {
     return aType == Type::viewTransition ||
            IsNamedViewTransitionPseudoElement(aType);
   }
+
+  static bool IsElementBackedPseudo(Type aType) {
+    return aType == Type::detailsContent ||
+           IsNamedViewTransitionPseudoElement(aType);
+  }
 };
 
 /*
- * The psuedo style request is used to get the pseudo style of an element. This
- * include a pseudo style type and an identidier which is used for functional
+ * The pseudo style request is used to get the pseudo style of an element. This
+ * include a pseudo style type and an identifier which is used for functional
  * pseudo style.
  */
 struct PseudoStyleRequest {
@@ -143,9 +148,7 @@ struct PseudoStyleRequest {
   PseudoStyleRequest(PseudoStyleType aType, nsAtom* aIdentifier)
       : mType(aType), mIdentifier(aIdentifier) {}
 
-  bool operator==(const PseudoStyleRequest& aOther) const {
-    return mType == aOther.mType && mIdentifier == aOther.mIdentifier;
-  }
+  bool operator==(const PseudoStyleRequest&) const = default;
 
   bool IsNotPseudo() const { return mType == PseudoStyleType::NotPseudo; }
   bool IsPseudoElementOrNotPseudo() const {
@@ -164,6 +167,9 @@ struct PseudoStyleRequest {
   }
   static PseudoStyleRequest Marker() {
     return PseudoStyleRequest(PseudoStyleType::marker);
+  }
+  static PseudoStyleRequest Backdrop() {
+    return PseudoStyleRequest(PseudoStyleType::backdrop);
   }
 
   PseudoStyleType mType = PseudoStyleType::NotPseudo;

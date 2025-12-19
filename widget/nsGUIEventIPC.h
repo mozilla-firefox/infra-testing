@@ -11,8 +11,7 @@
 #include "mozilla/ContentCache.h"
 #include "mozilla/GfxMessageUtils.h"
 #include "mozilla/dom/Touch.h"
-#include "mozilla/ipc/IPDLParamTraits.h"  // for ReadIPDLParam and WriteIPDLParam
-#include "mozilla/ipc/URIUtils.h"         // for IPDLParamTraits<nsIURI*>
+#include "mozilla/ipc/URIUtils.h"  // for ParamTraits<nsIURI*>
 #include "mozilla/layers/LayersMessageUtils.h"
 #include "mozilla/MiscEvents.h"
 #include "mozilla/MouseEvents.h"
@@ -157,32 +156,39 @@ struct ParamTraits<mozilla::WidgetWheelEvent> {
     WriteParam(aWriter, aParam.mCanTriggerSwipe);
     WriteParam(aWriter, aParam.mAllowToOverrideSystemScrollSpeed);
     WriteParam(aWriter, aParam.mDeltaValuesHorizontalizedForDefaultHandler);
+    WriteParam(aWriter, aParam.mCallbackId);
+
+    // Mark the event as stopped to notify callback.
+    const_cast<mozilla::WidgetWheelEvent&>(aParam).mCallbackId.reset();
   }
 
   static bool Read(MessageReader* aReader, paramType* aResult) {
     uint8_t scrollType = 0;
-    bool rv = ReadParam(aReader,
-                        static_cast<mozilla::WidgetMouseEventBase*>(aResult)) &&
-              ReadParam(aReader, &aResult->mDeltaX) &&
-              ReadParam(aReader, &aResult->mDeltaY) &&
-              ReadParam(aReader, &aResult->mDeltaZ) &&
-              ReadParam(aReader, &aResult->mDeltaMode) &&
-              ReadParam(aReader, &aResult->mWheelTicksX) &&
-              ReadParam(aReader, &aResult->mWheelTicksY) &&
-              ReadParam(aReader, &aResult->mCustomizedByUserPrefs) &&
-              ReadParam(aReader, &aResult->mMayHaveMomentum) &&
-              ReadParam(aReader, &aResult->mIsMomentum) &&
-              ReadParam(aReader, &aResult->mIsNoLineOrPageDelta) &&
-              ReadParam(aReader, &aResult->mLineOrPageDeltaX) &&
-              ReadParam(aReader, &aResult->mLineOrPageDeltaY) &&
-              ReadParam(aReader, &scrollType) &&
-              ReadParam(aReader, &aResult->mOverflowDeltaX) &&
-              ReadParam(aReader, &aResult->mOverflowDeltaY) &&
-              ReadParam(aReader, &aResult->mViewPortIsOverscrolled) &&
-              ReadParam(aReader, &aResult->mCanTriggerSwipe) &&
-              ReadParam(aReader, &aResult->mAllowToOverrideSystemScrollSpeed) &&
-              ReadParam(aReader,
-                        &aResult->mDeltaValuesHorizontalizedForDefaultHandler);
+    bool rv =
+        ReadParam(aReader,
+                  static_cast<mozilla::WidgetMouseEventBase*>(aResult)) &&
+        ReadParam(aReader, &aResult->mDeltaX) &&
+        ReadParam(aReader, &aResult->mDeltaY) &&
+        ReadParam(aReader, &aResult->mDeltaZ) &&
+        ReadParam(aReader, &aResult->mDeltaMode) &&
+        ReadParam(aReader, &aResult->mWheelTicksX) &&
+        ReadParam(aReader, &aResult->mWheelTicksY) &&
+        ReadParam(aReader, &aResult->mCustomizedByUserPrefs) &&
+        ReadParam(aReader, &aResult->mMayHaveMomentum) &&
+        ReadParam(aReader, &aResult->mIsMomentum) &&
+        ReadParam(aReader, &aResult->mIsNoLineOrPageDelta) &&
+        ReadParam(aReader, &aResult->mLineOrPageDeltaX) &&
+        ReadParam(aReader, &aResult->mLineOrPageDeltaY) &&
+        ReadParam(aReader, &scrollType) &&
+        ReadParam(aReader, &aResult->mOverflowDeltaX) &&
+        ReadParam(aReader, &aResult->mOverflowDeltaY) &&
+        ReadParam(aReader, &aResult->mViewPortIsOverscrolled) &&
+        ReadParam(aReader, &aResult->mCanTriggerSwipe) &&
+        ReadParam(aReader, &aResult->mAllowToOverrideSystemScrollSpeed) &&
+        ReadParam(aReader,
+                  &aResult->mDeltaValuesHorizontalizedForDefaultHandler) &&
+        ReadParam(aReader, &aResult->mCallbackId);
+
     aResult->mScrollType =
         static_cast<mozilla::WidgetWheelEvent::ScrollType>(scrollType);
     return rv;
@@ -244,6 +250,10 @@ struct ParamTraits<mozilla::WidgetMouseEvent> {
                               aParam.mExitFrom.value()));
     }
     WriteParam(aWriter, aParam.mClickCount);
+    WriteParam(aWriter, aParam.mCallbackId);
+
+    // Mark the event as stopped to notify callback.
+    const_cast<mozilla::WidgetMouseEvent&>(aParam).mCallbackId.reset();
   }
 
   static bool Read(MessageReader* aReader, paramType* aResult) {
@@ -267,7 +277,8 @@ struct ParamTraits<mozilla::WidgetMouseEvent> {
       rv = rv && ReadParam(aReader, &exitFrom);
       aResult->mExitFrom = Some(static_cast<paramType::ExitFrom>(exitFrom));
     }
-    rv = rv && ReadParam(aReader, &aResult->mClickCount);
+    rv = rv && ReadParam(aReader, &aResult->mClickCount) &&
+         ReadParam(aReader, &aResult->mCallbackId);
     return rv;
   }
 };
@@ -850,7 +861,7 @@ struct ParamTraits<mozilla::widget::InputContext> {
     WriteParam(aWriter, aParam.mOrigin);
     WriteParam(aWriter, aParam.mHasHandledUserInput);
     WriteParam(aWriter, aParam.mInPrivateBrowsing);
-    mozilla::ipc::WriteIPDLParam(aWriter, aWriter->GetActor(), aParam.mURI);
+    WriteParam(aWriter, aParam.mURI);
   }
 
   static bool Read(MessageReader* aReader, paramType* aResult) {
@@ -863,8 +874,7 @@ struct ParamTraits<mozilla::widget::InputContext> {
            ReadParam(aReader, &aResult->mOrigin) &&
            ReadParam(aReader, &aResult->mHasHandledUserInput) &&
            ReadParam(aReader, &aResult->mInPrivateBrowsing) &&
-           mozilla::ipc::ReadIPDLParam(aReader, aReader->GetActor(),
-                                       address_of(aResult->mURI));
+           ReadParam(aReader, address_of(aResult->mURI));
   }
 };
 

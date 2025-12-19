@@ -18,9 +18,9 @@
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/RadioGroupContainer.h"
+#include "nsAtomHashKeys.h"
 #include "nsCycleCollectionParticipant.h"  // NS_DECL_CYCLE_*
 #include "nsIContent.h"                    // base class
-#include "nsAtomHashKeys.h"
 #include "nsIHTMLCollection.h"
 #include "nsIWeakReferenceUtils.h"
 
@@ -30,8 +30,8 @@ class nsLabelsNodeList;
 class nsDOMAttributeMap;
 class nsDOMTokenList;
 class nsIControllers;
-class nsICSSDeclaration;
 class nsDOMCSSAttributeDeclaration;
+class nsDOMCSSDeclaration;
 class nsDOMStringMap;
 class nsIURI;
 
@@ -44,6 +44,8 @@ namespace dom {
 struct CustomElementData;
 class Element;
 class PopoverData;
+class StylePropertyMap;
+class StylePropertyMapReadOnly;
 }  // namespace dom
 }  // namespace mozilla
 
@@ -55,7 +57,7 @@ class nsNodeSupportsWeakRefTearoff final : public nsISupportsWeakReference {
   explicit nsNodeSupportsWeakRefTearoff(nsINode* aNode) : mNode(aNode) {}
 
   // nsISupports
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
 
   // nsISupportsWeakReference
   NS_DECL_NSISUPPORTSWEAKREFERENCE
@@ -95,12 +97,13 @@ class FragmentOrElement : public nsIContent {
   // nsINode interface methods
   virtual void GetTextContentInternal(nsAString& aTextContent,
                                       mozilla::OOMReporter& aError) override;
-  virtual void SetTextContentInternal(const nsAString& aTextContent,
-                                      nsIPrincipal* aSubjectPrincipal,
-                                      mozilla::ErrorResult& aError) override;
+  virtual void SetTextContentInternal(
+      const nsAString& aTextContent, nsIPrincipal* aSubjectPrincipal,
+      mozilla::ErrorResult& aError,
+      MutationEffectOnScript aMutationEffectOnScript) override;
 
   // nsIContent interface methods
-  const nsTextFragment* GetText() override;
+  const CharacterDataBuffer* GetCharacterDataBuffer() const override;
   uint32_t TextLength() const override;
   bool TextIsOnlyWhitespace() override;
   bool ThreadSafeTextIsOnlyWhitespace() const override;
@@ -125,13 +128,6 @@ class FragmentOrElement : public nsIContent {
   }
 
  public:
-  /**
-   * If there are listeners for DOMNodeInserted event, fires the event on all
-   * aNodes
-   */
-  static void FireNodeInserted(Document* aDoc, nsINode* aParent,
-                               const nsTArray<nsCOMPtr<nsIContent>>& aNodes);
-
   NS_DECL_CYCLE_COLLECTION_SKIPPABLE_WRAPPERCACHE_CLASS_INHERITED(
       FragmentOrElement, nsIContent)
 
@@ -146,7 +142,7 @@ class FragmentOrElement : public nsIContent {
   /**
    * Is the HTML local name a void element?
    */
-  static bool IsHTMLVoid(nsAtom* aLocalName);
+  static bool IsHTMLVoid(const nsAtom* aLocalName);
 
  protected:
   virtual ~FragmentOrElement();
@@ -217,6 +213,12 @@ class FragmentOrElement : public nsIContent {
      * PopoverData for the element.
      */
     UniquePtr<PopoverData> mPopoverData;
+
+    /**
+     * The association to a popover that this element was the source
+     * showing a popover, e.g. the source in `el.showPopover({source})`.
+     */
+    nsWeakPtr mAssociatedPopover;
 
     /**
      * CustomStates for the element.
@@ -300,7 +302,7 @@ class FragmentOrElement : public nsIContent {
      * style rules)
      * @see nsGenericHTMLElement::GetStyle
      */
-    nsCOMPtr<nsICSSDeclaration> mStyle;
+    nsCOMPtr<nsDOMCSSDeclaration> mStyle;
 
     /**
      * @see Element::Attributes
@@ -316,6 +318,16 @@ class FragmentOrElement : public nsIContent {
      * An object implementing the .classList property for this element.
      */
     RefPtr<nsDOMTokenList> mClassList;
+
+    /**
+     * An object implementing the .computedStyleMap() method for this element.
+     */
+    RefPtr<StylePropertyMapReadOnly> mComputedStyleMap;
+
+    /**
+     * An object implementing the .attributeStyleMap property for this element.
+     */
+    RefPtr<StylePropertyMap> mAttributeStyleMap;
   };
 
   /**

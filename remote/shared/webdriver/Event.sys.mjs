@@ -59,26 +59,41 @@ event.MouseButton = {
 };
 
 /**
- * Synthesise a mouse event at a point.
+ * Synthesize a mouse event in `win` at a point.
  *
- * If the type is specified in opts, an mouse event of that type is
+ * If the type is specified in `event`, a mouse event of that type is
  * fired. Otherwise, a mousedown followed by a mouseup is performed.
  *
- * @param {number} left
- *     Offset from viewport left, in CSS pixels
- * @param {number} top
- *     Offset from viewport top, in CSS pixels
- * @param {object} opts
- *     Object which may contain the properties "shiftKey", "ctrlKey",
- *     "altKey", "metaKey", "accessKey", "clickCount", "button", and
- *     "type".
- * @param {Window} win
- *     Window object.
+ * @param {number} left - Value for the X offset in CSS pixels.
+ * @param {number} top - Value for the Y offset in CSS pixels.
+ * @param {module:EventUtils~MouseEventData} event - Details of the mouse event
+ *     to dispatch.
+ * @param {DOMWindow} win - DOM window used to dispatch the event.
  *
- * @returns {boolean} defaultPrevented
+ * @returns {Promise<boolean>} Promise that resolves to a boolean,
+ *     indicating whether the event had preventDefault() called on it.
  */
-event.synthesizeMouseAtPoint = function (left, top, opts, win) {
-  return _getEventUtils(win).synthesizeMouseAtPoint(left, top, opts, win);
+event.synthesizeMouseAtPoint = function (left, top, event, win) {
+  if (!event.asyncEnabled) {
+    return Promise.resolve(
+      _getEventUtils(win).synthesizeMouseAtPoint(left, top, event, win)
+    );
+  }
+
+  // A callback must be used when handling events with the `asyncEnabled`
+  // flag set to `true`, as these events are synthesized in the parent process.
+  // We need to wait for them to be fully dispatched to the content process
+  // before continuing.
+  const { promise, resolve } = Promise.withResolvers();
+  const preventDefaultFlag = _getEventUtils(win).synthesizeMouseAtPoint(
+    left,
+    top,
+    event,
+    win,
+    () => resolve()
+  );
+
+  return promise.then(() => preventDefaultFlag);
 };
 
 /**
@@ -105,37 +120,35 @@ event.synthesizeTouchAtPoint = function (left, top, opts, win) {
 };
 
 /**
- * Synthesise a wheel scroll event at a point.
+ * Synthesize a wheel event in `win` at a point, without flushing layout.
  *
- * @param {number} left
- *     Offset from viewport left, in CSS pixels
- * @param {number} top
- *     Offset from viewport top, in CSS pixels
- * @param {object} opts
- *     Object which may contain the properties "shiftKey", "ctrlKey",
- *     "altKey", "metaKey", "accessKey", "deltaX", "deltaY", "deltaZ",
- *     "deltaMode", "lineOrPageDeltaX", "lineOrPageDeltaY", "isMomentum",
- *     "isNoLineOrPageDelta", "isCustomizedByPrefs", "expectedOverflowDeltaX",
- *     "expectedOverflowDeltaY"
- * @param {Window} win
- *     Window object.
+ * @param {number} left - Floating-point value for the X offset in CSS pixels.
+ * @param {number} top - Floating-point value for the Y offset in CSS pixels.
+ * @param {module:EventUtils~WheelEventData} event - Details of the wheel event
+ *     to dispatch.
+ * @param {DOMWindow} win - DOM window used to dispatch the event.
+ *
+ * @returns {Promise} - Promise that resolves once the event has been dispatched.
  */
-event.synthesizeWheelAtPoint = function (left, top, opts, win) {
+event.synthesizeWheelAtPoint = function (left, top, event, win) {
   const dpr = win.devicePixelRatio;
 
   // All delta properties expect the value in device pixels while the
   // WebDriver specification uses CSS pixels.
-  if (typeof opts.deltaX !== "undefined") {
-    opts.deltaX *= dpr;
+  // TODO: check if the conversion needs to be done at the platform level
+  if (typeof event.deltaX !== "undefined") {
+    event.deltaX *= dpr;
   }
-  if (typeof opts.deltaY !== "undefined") {
-    opts.deltaY *= dpr;
+  if (typeof event.deltaY !== "undefined") {
+    event.deltaY *= dpr;
   }
-  if (typeof opts.deltaZ !== "undefined") {
-    opts.deltaZ *= dpr;
+  if (typeof event.deltaZ !== "undefined") {
+    event.deltaZ *= dpr;
   }
 
-  return _getEventUtils(win).synthesizeWheelAtPoint(left, top, opts, win);
+  return new Promise(resolve =>
+    _getEventUtils(win).synthesizeWheelAtPoint(left, top, event, win, resolve)
+  );
 };
 
 event.synthesizeMultiTouch = function (opts, win) {

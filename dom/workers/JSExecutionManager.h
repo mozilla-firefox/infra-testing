@@ -8,9 +8,10 @@
 #define mozilla_dom_workers_jsexecutionmanager_h__
 
 #include <stdint.h>
+
 #include <deque>
+
 #include "MainThreadUtils.h"
-#include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/CondVar.h"
 #include "mozilla/Mutex.h"

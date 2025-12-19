@@ -6,15 +6,16 @@
 #ifndef GPU_DEVICE_H_
 #define GPU_DEVICE_H_
 
+#include "ExternalTexture.h"
 #include "ObjectModel.h"
-#include "nsTHashSet.h"
+#include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/WeakPtr.h"
-#include "mozilla/webgpu/WebGPUTypes.h"
 #include "mozilla/webgpu/PWebGPUTypes.h"
+#include "mozilla/webgpu/WebGPUTypes.h"
 #include "mozilla/webrender/WebRenderAPI.h"
-#include "mozilla/DOMEventTargetHelper.h"
+#include "nsTHashSet.h"
 
 namespace mozilla {
 namespace dom {
@@ -25,6 +26,7 @@ struct GPUExtent3DDict;
 
 struct GPUBufferDescriptor;
 struct GPUTextureDescriptor;
+struct GPUExternalTextureDescriptor;
 struct GPUSamplerDescriptor;
 struct GPUBindGroupLayoutDescriptor;
 struct GPUPipelineLayoutDescriptor;
@@ -60,6 +62,7 @@ namespace ffi {
 struct WGPULimits;
 }
 class Adapter;
+class AdapterInfo;
 class BindGroup;
 class BindGroupLayout;
 class Buffer;
@@ -79,66 +82,63 @@ class SupportedLimits;
 class Texture;
 class WebGPUChild;
 
-using MappingPromise =
-    MozPromise<BufferMapResult, ipc::ResponseRejectReason, true>;
-
-class Device final : public DOMEventTargetHelper, public SupportsWeakPtr {
+class Device final : public DOMEventTargetHelper,
+                     public SupportsWeakPtr,
+                     public ObjectBase {
  public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(Device, DOMEventTargetHelper)
   GPU_DECL_JS_WRAP(Device)
 
-  const RawId mId;
   RefPtr<SupportedFeatures> mFeatures;
   RefPtr<SupportedLimits> mLimits;
-  const bool mSupportExternalTextureInSwapChain;
+  RefPtr<AdapterInfo> mAdapterInfo;
+  const bool mSupportSharedTextureInSwapChain;
 
   static CheckedInt<uint32_t> BufferStrideWithMask(
       const gfx::IntSize& aSize, const gfx::SurfaceFormat& aFormat);
 
   explicit Device(Adapter* const aParent, RawId aDeviceId, RawId aQueueId,
-                  const ffi::WGPULimits&);
+                  RefPtr<SupportedFeatures> aFeatures,
+                  RefPtr<SupportedLimits> aLimits,
+                  RefPtr<AdapterInfo> aAdapterInfo,
+                  RefPtr<dom::Promise> aLostPromise);
 
-  RefPtr<WebGPUChild> GetBridge();
   already_AddRefed<Texture> InitSwapChain(
       const dom::GPUCanvasConfiguration* const aConfig,
       const layers::RemoteTextureOwnerId aOwnerId,
-      bool aUseExternalTextureInSwapChain, gfx::SurfaceFormat aFormat,
+      bool aUseSharedTextureInSwapChain, gfx::SurfaceFormat aFormat,
       gfx::IntSize aCanvasSize);
   bool CheckNewWarning(const nsACString& aMessage);
 
-  void CleanupUnregisteredInParent();
-
-  void GenerateValidationError(const nsCString& aMessage);
   void TrackBuffer(Buffer* aBuffer);
   void UntrackBuffer(Buffer* aBuffer);
 
-  bool IsLost() const;
-  bool IsBridgeAlive() const;
-
-  RawId GetId() const { return mId; }
-
  private:
-  ~Device();
-  void Cleanup();
+  virtual ~Device();
+  // Expires external textures in mExternalTexturesToExpire. Scheduled to run
+  // as a stable state task when an external texture is imported from an
+  // HTMLVideoElement.
+  void ExpireExternalTextures();
 
-  RefPtr<WebGPUChild> mBridge;
-  bool mValid = true;
-  nsString mLabel;
   RefPtr<dom::Promise> mLostPromise;
   RefPtr<Queue> mQueue;
   nsTHashSet<nsCString> mKnownWarnings;
   nsTHashSet<Buffer*> mTrackedBuffers;
+  ExternalTextureCache mExternalTextureCache;
+  // List of external textures due to be expired in the next automatic expiry
+  // task.
+  nsTArray<WeakPtr<ExternalTexture>> mExternalTexturesToExpire;
 
  public:
-  void GetLabel(nsAString& aValue) const;
-  void SetLabel(const nsAString& aLabel);
   dom::Promise* GetLost(ErrorResult& aRv);
-  void ResolveLost(Maybe<dom::GPUDeviceLostReason> aReason,
-                   const nsAString& aMessage);
+  void ResolveLost(dom::GPUDeviceLostReason aReason, const nsAString& aMessage);
 
   const RefPtr<SupportedFeatures>& Features() const { return mFeatures; }
   const RefPtr<SupportedLimits>& Limits() const { return mLimits; }
+  const RefPtr<webgpu::AdapterInfo>& GetAdapterInfo() const {
+    return mAdapterInfo;
+  }
   const RefPtr<Queue>& GetQueue() const { return mQueue; }
 
   already_AddRefed<Buffer> CreateBuffer(const dom::GPUBufferDescriptor& aDesc,
@@ -153,6 +153,8 @@ class Device final : public DOMEventTargetHelper, public SupportsWeakPtr {
   already_AddRefed<Texture> CreateTexture(
       const dom::GPUTextureDescriptor& aDesc,
       Maybe<layers::RemoteTextureOwnerId> aOwnerId);
+  already_AddRefed<ExternalTexture> ImportExternalTexture(
+      const dom::GPUExternalTextureDescriptor& aDesc, ErrorResult& aRv);
   already_AddRefed<Sampler> CreateSampler(
       const dom::GPUSamplerDescriptor& aDesc);
 
@@ -171,7 +173,7 @@ class Device final : public DOMEventTargetHelper, public SupportsWeakPtr {
   already_AddRefed<BindGroup> CreateBindGroup(
       const dom::GPUBindGroupDescriptor& aDesc);
 
-  MOZ_CAN_RUN_SCRIPT already_AddRefed<ShaderModule> CreateShaderModule(
+  already_AddRefed<ShaderModule> CreateShaderModule(
       const dom::GPUShaderModuleDescriptor& aDesc, ErrorResult& aRv);
   already_AddRefed<ComputePipeline> CreateComputePipeline(
       const dom::GPUComputePipelineDescriptor& aDesc);
@@ -189,6 +191,13 @@ class Device final : public DOMEventTargetHelper, public SupportsWeakPtr {
 
   IMPL_EVENT_HANDLER(uncapturederror)
 };
+
+// We can't use MOZ_CAN_RUN_SCRIPT since it's called by a function that has its
+// declaration generated by cbindgen.
+MOZ_CAN_RUN_SCRIPT_BOUNDARY
+void reportCompilationMessagesToConsole(
+    const RefPtr<ShaderModule>& aShaderModule,
+    const nsTArray<WebGPUCompilationMessage>& aMessages);
 
 }  // namespace webgpu
 }  // namespace mozilla

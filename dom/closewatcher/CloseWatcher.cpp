@@ -6,13 +6,13 @@
 
 #include "CloseWatcher.h"
 
+#include "mozilla/RefPtr.h"
 #include "mozilla/dom/CloseWatcherBinding.h"
 #include "mozilla/dom/CloseWatcherManager.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/EventBinding.h"
 #include "mozilla/dom/ToJSValue.h"
 #include "mozilla/dom/WindowContext.h"
-#include "mozilla/RefPtr.h"
 #include "nsGlobalWindowInner.h"
 
 namespace mozilla::dom {
@@ -42,8 +42,7 @@ already_AddRefed<CloseWatcher> CloseWatcher::Constructor(
     watcher->Follow(signal);
   }
 
-  auto* manager = window->EnsureCloseWatcherManager();
-  manager->Add(*watcher);
+  watcher->AddToWindowsCloseWatcherManager();
   return watcher.forget();
 }
 
@@ -55,9 +54,11 @@ JSObject* CloseWatcher::WrapObject(JSContext* aCx,
 // https://html.spec.whatwg.org/multipage/interaction.html#close-watcher-request-close
 bool CloseWatcher::RequestToClose(bool aRequireHistoryActionActivation) {
   // 1. If closeWatcher is not active, then return true.
-  // 2. If closeWatcher's is running cancel action is true, then return true.
-  // 3. Let window be closeWatcher's window.
-  // 4. If window's associated Document is not fully active, then return true.
+  // 2. If the result of running closeWatcher's get enabled state is false, then
+  // return true.
+  // 3. If closeWatcher's is running cancel action is true, then return true.
+  // 4. Let window be closeWatcher's window.
+  // 5. If window's associated Document is not fully active, then return true.
   if (!IsActive() || mIsRunningCancelAction) {
     return true;
   }
@@ -67,41 +68,45 @@ bool CloseWatcher::RequestToClose(bool aRequireHistoryActionActivation) {
       GetOwnerWindow()->EnsureCloseWatcherManager();
   EventInit init;
   init.mBubbles = false;
-  // 5. Let canPreventClose be true if window's close watcher manager's groups's
+  // 6. Let canPreventClose be true if window's close watcher manager's groups's
   // size is less than window's close watcher manager's allowed number of
   // groups, and window has history-action activation; otherwise false.
-  init.mCancelable = !aRequireHistoryActionActivation || (manager->CanGrow() && winCtx->HasValidHistoryActivation());
+  init.mCancelable =
+      !aRequireHistoryActionActivation ||
+      (manager->CanGrow() && winCtx->HasValidHistoryActivation());
   RefPtr<Event> event = Event::Constructor(this, u"cancel"_ns, init);
   event->SetTrusted(true);
-  // 6. Set closeWatcher's is running cancel action to true.
+  // 7. Set closeWatcher's is running cancel action to true.
   mIsRunningCancelAction = true;
-  // 7. Let shouldContinue be the result of running closeWatcher's cancel action
+  // 8. Let shouldContinue be the result of running closeWatcher's cancel action
   // given canPreventClose.
   DispatchEvent(*event);
-  // 8. Set closeWatcher's is running cancel action to false.
+  // 9. Set closeWatcher's is running cancel action to false.
   mIsRunningCancelAction = false;
-  // 9. If shouldContinue is false, then:
+  // 10. If shouldContinue is false, then:
   if (event->DefaultPrevented()) {
-    // 9.2. Consume history-action user activation given window.
+    // 10.2. Consume history-action user activation given window.
     winCtx->ConsumeHistoryActivation();
-    // 9.3. Return false.
+    // 10.3. Return false.
     return false;
   }
-  // 10. Close closeWatcher.
+  // 11. Close closeWatcher.
   Close();
-  // 11. Return true.
+  // 12. Return true.
   return true;
 }
 
-// https://html.spec.whatwg.org/multipage/interaction.html#close-watcher-request-close
+// https://html.spec.whatwg.org/multipage/interaction.html#close-watcher-close
 void CloseWatcher::Close() {
   // 1. If closeWatcher is not active, then return.
-  // 2. If closeWatcher's window's associated Document is not fully active, then
+  // 2. If the result of running closeWatcher's get enabled state is false, then
+  // return true.
+  // 3. If closeWatcher's window's associated Document is not fully active, then
   // return.
   if (!IsActive()) {
     return;
   }
-  // 3. Destroy closeWatcher.
+  // 4. Destroy closeWatcher.
   Destroy();
   EventInit init;
   init.mBubbles = false;
@@ -111,13 +116,24 @@ void CloseWatcher::Close() {
   DispatchEvent(*event);
 }
 
+void CloseWatcher::AddToWindowsCloseWatcherManager() {
+  if (auto* window = GetOwnerWindow()) {
+    window->EnsureCloseWatcherManager()->Add(*this);
+    window->NotifyCloseWatcherAdded();
+  }
+}
+
 void CloseWatcher::Destroy() {
   if (auto* window = GetOwnerWindow()) {
     window->EnsureCloseWatcherManager()->Remove(*this);
+    window->NotifyCloseWatcherRemoved();
   }
 }
 
 bool CloseWatcher::IsActive() const {
+  if (!mEnabled) {
+    return false;
+  }
   if (auto* window = GetOwnerWindow()) {
     return window->IsFullyActive() &&
            window->EnsureCloseWatcherManager()->Contains(*this);

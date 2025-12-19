@@ -80,9 +80,10 @@ add_task(async function () {
     "JS:1516340399466235600",
     "Big number has expected parsed value text"
   );
-  ok(
+  is(
     values[2].querySelector(".parsed-value").getAttribute("title"),
-    "Big number parsed value label has a title attribute"
+    "JavaScript parsed value",
+    "Big number parsed value label has expected title attribute"
   );
 
   info("Check numbers with higher precision than what's possible in JS");
@@ -125,6 +126,33 @@ add_task(async function () {
   ok(
     values[4].querySelector(".parsed-value").getAttribute("title"),
     "Exponential number parsed value label has a title attribute"
+  );
+
+  await teardown(monitor);
+});
+
+add_task(async function testLargeRootInteger() {
+  const { tab, monitor } = await initNetMonitor(
+    JSON_BASIC_URL + "?name=large-root-integer",
+    { requestCount: 1 }
+  );
+
+  const { document, store, windowRequire } = monitor.panelWin;
+  const Actions = windowRequire("devtools/client/netmonitor/src/actions/index");
+
+  store.dispatch(Actions.batchEnable(false));
+
+  await performRequests(monitor, tab, 1);
+
+  const onCodeMirrorReady = waitForDOM(document, "#response-panel .cm-content");
+
+  store.dispatch(Actions.toggleNetworkDetails());
+  clickOnSidebarTab(document, "response");
+  const [codeMirrorCodeEl] = await onCodeMirrorReady;
+  is(
+    codeMirrorCodeEl.querySelector(".cm-line").textContent,
+    "1516340399466235648",
+    "Large number is displayed in a CodeMirror editor"
   );
 
   await teardown(monitor);

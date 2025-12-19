@@ -4,14 +4,18 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   AddonTestUtils: "resource://testing-common/AddonTestUtils.sys.mjs",
-  AppProvidedSearchEngine:
-    "resource://gre/modules/AppProvidedSearchEngine.sys.mjs",
+  AppProvidedConfigEngine:
+    "moz-src:///toolkit/components/search/ConfigSearchEngine.sys.mjs",
   ExtensionTestUtils:
     "resource://testing-common/ExtensionXPCShellUtils.sys.mjs",
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
-  SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
+  SearchUtils: "moz-src:///toolkit/components/search/SearchUtils.sys.mjs",
   sinon: "resource://testing-common/Sinon.sys.mjs",
 });
+
+/**
+ * @import {AppProvidedConfigEngine} from "ConfigSearchEngine.sys.mjs"
+ */
 
 /**
  * A class containing useful testing functions for Search based tests.
@@ -64,6 +68,7 @@ class _SearchTestUtils {
         if (this.#stubs.size) {
           this.#stubs = new Map();
 
+          Services.search.wrappedJSObject._settings._testResetSettings();
           let settingsWritten = SearchTestUtils.promiseSearchNotification(
             "write-settings-to-disk-complete"
           );
@@ -144,6 +149,9 @@ class _SearchTestUtils {
         await Services.search.removeEngine(engine);
       } catch (ex) {
         // Don't throw if the test has already removed it.
+      }
+      if (setAsDefault) {
+        this.clearDefaultSearchEngineCachedPrefs();
       }
     });
     return engine;
@@ -397,12 +405,12 @@ class _SearchTestUtils {
    *
    * @param {Array} engineConfigurations
    *   An array of engine configurations.
-   * @returns {AppProvidedSearchEngine[]}
-   *   An array of app provided search engine objects.
+   * @returns {Promise<AppProvidedConfigEngine[]>}
+   *   An array of app provided config engine objects.
    */
   async searchConfigToEngines(engineConfigurations) {
     return engineConfigurations.map(
-      config => new lazy.AppProvidedSearchEngine({ config })
+      config => new lazy.AppProvidedConfigEngine({ config })
     );
   }
 
@@ -484,12 +492,13 @@ class _SearchTestUtils {
     let previousEngine = Services.search.defaultEngine;
     let previousPrivateEngine = Services.search.defaultPrivateEngine;
 
-    async function cleanup() {
+    let cleanup = async () => {
       if (setAsDefault) {
         await Services.search.setDefault(
           previousEngine,
           Ci.nsISearchService.CHANGE_REASON_UNKNOWN
         );
+        this.clearDefaultSearchEngineCachedPrefs();
       }
       if (setAsDefaultPrivate) {
         await Services.search.setDefaultPrivate(
@@ -498,7 +507,7 @@ class _SearchTestUtils {
         );
       }
       await extension.unload();
-    }
+    };
 
     // Cleanup must be registered before loading the extension to avoid
     // failures for mochitests.
@@ -760,6 +769,64 @@ class _SearchTestUtils {
       };
       reader.readAsDataURL(blob);
     });
+  }
+
+  /**
+   * Extracts post data string from an nsISearchSubmission.
+   * If there is no post data, returns null.
+   *
+   * @param {?nsISearchSubmission} submission
+   * @returns {?string}
+   */
+  getPostDataString(submission) {
+    if (!submission.postData) {
+      return null;
+    }
+
+    let binaryStream = Cc["@mozilla.org/binaryinputstream;1"].createInstance(
+      Ci.nsIBinaryInputStream
+    );
+    binaryStream.setInputStream(submission.postData.data);
+
+    return binaryStream.readBytes(binaryStream.available());
+  }
+
+  /**
+   * Wait until a specific engine event on a specific engine.
+   *
+   * @param {string} expectedEngineName
+   *   Name of the engine to wait for.
+   * @param {string} expectedData
+   *   Data to wait for.
+   * @returns {Promise<nsISearchEngine>}
+   *   Resolves to the search engine with the expected name.
+   */
+  promiseEngine(expectedEngineName, expectedData = "engine-added") {
+    let { promise, resolve } = Promise.withResolvers();
+    Services.obs.addObserver(function obs(subject, _topic, data) {
+      let engine = subject.QueryInterface(Ci.nsISearchEngine);
+
+      if (data == expectedData && engine.name == expectedEngineName) {
+        Services.obs.removeObserver(obs, "browser-search-engine-modified");
+        resolve(engine);
+      }
+    }, "browser-search-engine-modified");
+    return promise;
+  }
+
+  /**
+   * Clears preferences which store settings relating to caching of the default
+   * search engines. This is used to avoid compare-preferences reporting that the
+   * preferences have changed.
+   */
+  clearDefaultSearchEngineCachedPrefs() {
+    const prefs = [
+      "browser.urlbar.recentsearches.lastDefaultChanged",
+      "browser.newtabpage.activity-stream.trendingSearch.defaultSearchEngine",
+    ];
+    for (let pref of prefs) {
+      Services.prefs.clearUserPref(pref);
+    }
   }
 }
 

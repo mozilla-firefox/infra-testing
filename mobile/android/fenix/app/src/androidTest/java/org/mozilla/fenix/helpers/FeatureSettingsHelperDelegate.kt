@@ -16,40 +16,41 @@ import org.mozilla.fenix.helpers.ETPPolicy.STANDARD
 import org.mozilla.fenix.helpers.ETPPolicy.STRICT
 import org.mozilla.fenix.helpers.FeatureSettingsHelper.Companion.settings
 import org.mozilla.fenix.helpers.TestHelper.appContext
-import org.mozilla.fenix.onboarding.FenixOnboarding
 import org.mozilla.fenix.settings.PhoneFeature
 import org.mozilla.fenix.utils.Settings
 
 /**
  * Helper for querying the status and modifying various features and settings in the application.
  */
-class FeatureSettingsHelperDelegate() : FeatureSettingsHelper {
+class FeatureSettingsHelperDelegate : FeatureSettingsHelper {
     /**
      * The current feature flags used inside the app before the tests start.
      * These will be restored when the tests end.
      */
     private val initialFeatureFlags = FeatureFlags(
-        isHomeOnboardingDialogEnabled = settings.showHomeOnboardingDialog,
-        homeOnboardingDialogVersion = getHomeOnboardingVersion(),
+        isHomepageHeaderEnabled = settings.showHomepageHeader,
         isPocketEnabled = settings.showPocketRecommendationsFeature,
-        isNavigationBarCFREnabled = settings.shouldShowNavigationBarCFR,
         isRecentTabsFeatureEnabled = settings.showRecentTabsFeature,
         isRecentlyVisitedFeatureEnabled = settings.historyMetadataUIFeature,
         isPWAsPromptEnabled = !settings.userKnowsAboutPwas,
         isWallpaperOnboardingEnabled = settings.showWallpaperOnboarding,
         isDeleteSitePermissionsEnabled = settings.deleteSitePermissions,
         isOpenInAppBannerEnabled = settings.shouldShowOpenInAppBanner,
+        isUnifiedTrustPanelEnabled = settings.enableUnifiedTrustPanel,
         etpPolicy = getETPPolicy(settings),
-        composeTopSitesEnabled = settings.enableComposeTopSites,
         isLocationPermissionEnabled = getFeaturePermission(PhoneFeature.LOCATION, settings),
-        isNavigationToolbarEnabled = settings.navigationToolbarEnabled,
+        isComposableToolbarEnabled = settings.shouldUseComposableToolbar,
         isMenuRedesignEnabled = settings.enableMenuRedesign,
         isMenuRedesignCFREnabled = settings.shouldShowMenuCFR,
-        isNewBookmarksEnabled = settings.useNewBookmarks,
         isMicrosurveyEnabled = settings.microsurveyFeatureEnabled,
         shouldUseBottomToolbar = settings.shouldUseBottomToolbar,
         onboardingFeatureEnabled = settings.onboardingFeatureEnabled,
-        isComposeHomepageEnabled = settings.enableComposeHomepage,
+        isUseNewCrashReporterDialog = settings.useNewCrashReporterDialog,
+        isTabSwipeCFREnabled = settings.hasShownTabSwipeCFR,
+        isTermsOfServiceAccepted = settings.hasAcceptedTermsOfService,
+        openLinksInApp = getOpenLinksInApp(settings),
+        tabManagerOpeningAnimationEnabled = settings.tabManagerOpeningAnimationEnabled,
+        hasSeenBrowserToolbarCFR = settings.hasSeenBrowserToolbarCFR,
     )
 
     /**
@@ -57,35 +58,28 @@ class FeatureSettingsHelperDelegate() : FeatureSettingsHelper {
      */
     private var updatedFeatureFlags = initialFeatureFlags.copy()
 
-    override var isHomeOnboardingDialogEnabled: Boolean
-        get() = updatedFeatureFlags.isHomeOnboardingDialogEnabled &&
-            FenixOnboarding(appContext).userHasBeenOnboarded()
-        set(value) {
-            updatedFeatureFlags.isHomeOnboardingDialogEnabled = value
-            updatedFeatureFlags.homeOnboardingDialogVersion = when (value) {
-                true -> FenixOnboarding.CURRENT_ONBOARDING_VERSION
-                false -> 0
-            }
-        }
-
+    override var isHomepageHeaderEnabled: Boolean by updatedFeatureFlags::isHomepageHeaderEnabled
     override var isPocketEnabled: Boolean by updatedFeatureFlags::isPocketEnabled
-    override var isNavigationBarCFREnabled: Boolean by updatedFeatureFlags::isNavigationBarCFREnabled
     override var isWallpaperOnboardingEnabled: Boolean by updatedFeatureFlags::isWallpaperOnboardingEnabled
     override var isRecentTabsFeatureEnabled: Boolean by updatedFeatureFlags::isRecentTabsFeatureEnabled
     override var isRecentlyVisitedFeatureEnabled: Boolean by updatedFeatureFlags::isRecentlyVisitedFeatureEnabled
     override var isPWAsPromptEnabled: Boolean by updatedFeatureFlags::isPWAsPromptEnabled
     override var isOpenInAppBannerEnabled: Boolean by updatedFeatureFlags::isOpenInAppBannerEnabled
+    override var isUnifiedTrustPanelEnabled: Boolean by updatedFeatureFlags::isUnifiedTrustPanelEnabled
     override var etpPolicy: ETPPolicy by updatedFeatureFlags::etpPolicy
-    override var composeTopSitesEnabled: Boolean by updatedFeatureFlags::composeTopSitesEnabled
     override var isLocationPermissionEnabled: SitePermissionsRules.Action by updatedFeatureFlags::isLocationPermissionEnabled
-    override var isNavigationToolbarEnabled: Boolean by updatedFeatureFlags::isNavigationToolbarEnabled
+    override var isComposableToolbarEnabled: Boolean by updatedFeatureFlags::isComposableToolbarEnabled
     override var isMenuRedesignEnabled: Boolean by updatedFeatureFlags::isMenuRedesignEnabled
     override var isMenuRedesignCFREnabled: Boolean by updatedFeatureFlags::isMenuRedesignCFREnabled
-    override var isNewBookmarksEnabled: Boolean by updatedFeatureFlags::isNewBookmarksEnabled
     override var isMicrosurveyEnabled: Boolean by updatedFeatureFlags::isMicrosurveyEnabled
     override var shouldUseBottomToolbar: Boolean by updatedFeatureFlags::shouldUseBottomToolbar
     override var onboardingFeatureEnabled: Boolean by updatedFeatureFlags::onboardingFeatureEnabled
-    override var isComposeHomepageEnabled: Boolean by updatedFeatureFlags::isComposeHomepageEnabled
+    override var isUseNewCrashReporterDialog: Boolean by updatedFeatureFlags::isUseNewCrashReporterDialog
+    override var isTabSwipeCFREnabled: Boolean by updatedFeatureFlags::isTabSwipeCFREnabled
+    override var isTermsOfServiceAccepted: Boolean by updatedFeatureFlags::isTermsOfServiceAccepted
+    override var openLinksInExternalApp: OpenLinksInApp by updatedFeatureFlags::openLinksInApp
+    override var tabManagerOpeningAnimationEnabled: Boolean by updatedFeatureFlags::tabManagerOpeningAnimationEnabled
+    override var hasSeenBrowserToolbarCFR: Boolean by updatedFeatureFlags::hasSeenBrowserToolbarCFR
 
     override fun applyFlagUpdates() {
         Log.i(TAG, "applyFlagUpdates: Trying to apply the updated feature flags: $updatedFeatureFlags")
@@ -102,52 +96,56 @@ class FeatureSettingsHelperDelegate() : FeatureSettingsHelper {
     override var isDeleteSitePermissionsEnabled: Boolean by updatedFeatureFlags::isDeleteSitePermissionsEnabled
 
     private fun applyFeatureFlags(featureFlags: FeatureFlags) {
-        settings.showHomeOnboardingDialog = featureFlags.isHomeOnboardingDialogEnabled
-        setHomeOnboardingVersion(featureFlags.homeOnboardingDialogVersion)
+        settings.showHomepageHeader = featureFlags.isHomepageHeaderEnabled
         settings.showPocketRecommendationsFeature = featureFlags.isPocketEnabled
-        settings.shouldShowNavigationBarCFR = featureFlags.isNavigationBarCFREnabled
         settings.showRecentTabsFeature = featureFlags.isRecentTabsFeatureEnabled
         settings.historyMetadataUIFeature = featureFlags.isRecentlyVisitedFeatureEnabled
         settings.userKnowsAboutPwas = !featureFlags.isPWAsPromptEnabled
         settings.showWallpaperOnboarding = featureFlags.isWallpaperOnboardingEnabled
         settings.deleteSitePermissions = featureFlags.isDeleteSitePermissionsEnabled
         settings.shouldShowOpenInAppBanner = featureFlags.isOpenInAppBannerEnabled
-        settings.enableComposeTopSites = featureFlags.composeTopSitesEnabled
-        settings.navigationToolbarEnabled = featureFlags.isNavigationToolbarEnabled
+        settings.shouldUseComposableToolbar = featureFlags.isComposableToolbarEnabled
         settings.enableMenuRedesign = featureFlags.isMenuRedesignEnabled
         settings.shouldShowMenuCFR = featureFlags.isMenuRedesignCFREnabled
-        settings.useNewBookmarks = featureFlags.isNewBookmarksEnabled
         settings.microsurveyFeatureEnabled = featureFlags.isMicrosurveyEnabled
         settings.shouldUseBottomToolbar = featureFlags.shouldUseBottomToolbar
+        settings.enableUnifiedTrustPanel = featureFlags.isUnifiedTrustPanelEnabled
         setETPPolicy(featureFlags.etpPolicy)
         setPermissions(PhoneFeature.LOCATION, featureFlags.isLocationPermissionEnabled)
         settings.onboardingFeatureEnabled = featureFlags.onboardingFeatureEnabled
-        settings.enableComposeHomepage = featureFlags.isComposeHomepageEnabled
+        settings.useNewCrashReporterDialog = featureFlags.isUseNewCrashReporterDialog
+        settings.hasShownTabSwipeCFR = !featureFlags.isTabSwipeCFREnabled
+        settings.hasAcceptedTermsOfService = featureFlags.isTermsOfServiceAccepted
+        setOpenLinksInApp(featureFlags.openLinksInApp)
+        settings.tabManagerOpeningAnimationEnabled = featureFlags.tabManagerOpeningAnimationEnabled
+        settings.hasSeenBrowserToolbarCFR = featureFlags.hasSeenBrowserToolbarCFR
     }
 }
 
 private data class FeatureFlags(
-    var isHomeOnboardingDialogEnabled: Boolean,
-    var homeOnboardingDialogVersion: Int,
+    var isHomepageHeaderEnabled: Boolean,
     var isPocketEnabled: Boolean,
-    var isNavigationBarCFREnabled: Boolean,
     var isRecentTabsFeatureEnabled: Boolean,
     var isRecentlyVisitedFeatureEnabled: Boolean,
     var isPWAsPromptEnabled: Boolean,
     var isWallpaperOnboardingEnabled: Boolean,
     var isDeleteSitePermissionsEnabled: Boolean,
     var isOpenInAppBannerEnabled: Boolean,
+    var isUnifiedTrustPanelEnabled: Boolean,
     var etpPolicy: ETPPolicy,
-    var composeTopSitesEnabled: Boolean,
     var isLocationPermissionEnabled: SitePermissionsRules.Action,
-    var isNavigationToolbarEnabled: Boolean,
+    var isComposableToolbarEnabled: Boolean,
     var isMenuRedesignEnabled: Boolean,
     var isMenuRedesignCFREnabled: Boolean,
-    var isNewBookmarksEnabled: Boolean,
     var isMicrosurveyEnabled: Boolean,
     var shouldUseBottomToolbar: Boolean,
     var onboardingFeatureEnabled: Boolean,
-    var isComposeHomepageEnabled: Boolean,
+    var isUseNewCrashReporterDialog: Boolean,
+    var isTabSwipeCFREnabled: Boolean,
+    var isTermsOfServiceAccepted: Boolean,
+    var openLinksInApp: OpenLinksInApp,
+    var tabManagerOpeningAnimationEnabled: Boolean,
+    var hasSeenBrowserToolbarCFR: Boolean,
 )
 
 internal fun getETPPolicy(settings: Settings): ETPPolicy {
@@ -205,20 +203,26 @@ private fun setETPPolicy(policy: ETPPolicy) {
     }
 }
 
-private fun getHomeOnboardingVersion(): Int {
-    Log.i(TAG, "getHomeOnboardingVersion: Trying to get the onboarding version")
-    return FenixOnboarding(appContext)
-        .preferences
-        .getInt(FenixOnboarding.LAST_VERSION_ONBOARDING_KEY, 0)
+internal fun getOpenLinksInApp(settings: Settings): OpenLinksInApp {
+    return when (settings.openLinksInExternalApp) {
+        appContext.getString(R.string.pref_key_open_links_in_apps_always) -> OpenLinksInApp.ALWAYS
+        appContext.getString(R.string.pref_key_open_links_in_apps_ask) -> OpenLinksInApp.ASK
+        appContext.getString(R.string.pref_key_open_links_in_apps_never) -> OpenLinksInApp.NEVER
+        else -> {
+            Log.i(TAG, "getOpenLinksInApp: Unknown preference value found: \"${settings.openLinksInExternalApp}\", defaulting to \"Ask before opening\".")
+            OpenLinksInApp.ASK
+        }
+    }
 }
 
-private fun setHomeOnboardingVersion(version: Int) {
-    Log.i(TAG, "setHomeOnboardingVersion: Trying to set the onboarding version to: $version")
-    FenixOnboarding(appContext)
-        .preferences.edit()
-        .putInt(FenixOnboarding.LAST_VERSION_ONBOARDING_KEY, version)
-        .commit()
-    Log.i(TAG, "setHomeOnboardingVersion: Onboarding version was set to: $version")
+private fun setOpenLinksInApp(value: OpenLinksInApp) {
+    val prefValue = when (value) {
+        OpenLinksInApp.ALWAYS -> appContext.getString(R.string.pref_key_open_links_in_apps_always)
+        OpenLinksInApp.ASK -> appContext.getString(R.string.pref_key_open_links_in_apps_ask)
+        OpenLinksInApp.NEVER -> appContext.getString(R.string.pref_key_open_links_in_apps_never)
+    }
+    settings.openLinksInExternalApp = prefValue
+    Log.i(TAG, "setOpenLinksInApp: Set the preference to \"$prefValue\".")
 }
 
 internal fun getFeaturePermission(feature: PhoneFeature, settings: Settings): SitePermissionsRules.Action {

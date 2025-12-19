@@ -6,16 +6,15 @@
 #ifndef GPU_Queue_H_
 #define GPU_Queue_H_
 
-#include "nsWrapperCache.h"
 #include "ObjectModel.h"
-#include "mozilla/dom/TypedArray.h"
+#include "mozilla/dom/BufferSourceBindingFwd.h"
 #include "mozilla/webgpu/WebGPUTypes.h"
+#include "nsWrapperCache.h"
 
 namespace mozilla {
 class ErrorResult;
 namespace dom {
 class RangeEnforcedUnsignedLongSequenceOrGPUExtent3DDict;
-class ArrayBufferViewOrArrayBuffer;
 template <typename T>
 class Optional;
 template <typename T>
@@ -35,29 +34,29 @@ class CommandBuffer;
 class Device;
 class Fence;
 
-class Queue final : public ObjectBase, public ChildOf<Device> {
+class Queue final : public nsWrapperCache,
+                    public ObjectBase,
+                    public ChildOf<Device> {
  public:
   GPU_DECL_CYCLE_COLLECTION(Queue)
   GPU_DECL_JS_WRAP(Queue)
 
-  Queue(Device* const aParent, WebGPUChild* aBridge, RawId aId);
+  Queue(Device* const aParent, RawId aId);
 
   void Submit(
       const dom::Sequence<OwningNonNull<CommandBuffer>>& aCommandBuffers);
 
   already_AddRefed<dom::Promise> OnSubmittedWorkDone(ErrorResult& aRv);
 
-  void WriteBuffer(
-      const Buffer& aBuffer, uint64_t aBufferOffset,
-      const dom::MaybeSharedArrayBufferOrMaybeSharedArrayBufferView& data,
-      uint64_t aDataOffset, const dom::Optional<uint64_t>& aSize,
-      ErrorResult& aRv);
+  void WriteBuffer(const Buffer& aBuffer, uint64_t aBufferOffset,
+                   const dom::AllowSharedBufferSource& data,
+                   uint64_t aDataOffset, const dom::Optional<uint64_t>& aSize,
+                   ErrorResult& aRv);
 
-  void WriteTexture(
-      const dom::GPUTexelCopyTextureInfo& aDestination,
-      const dom::MaybeSharedArrayBufferOrMaybeSharedArrayBufferView& data,
-      const dom::GPUTexelCopyBufferLayout& aDataLayout,
-      const dom::GPUExtent3D& aSize, ErrorResult& aRv);
+  void WriteTexture(const dom::GPUTexelCopyTextureInfo& aDestination,
+                    const dom::AllowSharedBufferSource& data,
+                    const dom::GPUTexelCopyBufferLayout& aDataLayout,
+                    const dom::GPUExtent3D& aSize, ErrorResult& aRv);
 
   void CopyExternalImageToTexture(
       const dom::GPUCopyExternalImageSourceInfo& aSource,
@@ -66,12 +65,10 @@ class Queue final : public ObjectBase, public ChildOf<Device> {
 
  private:
   virtual ~Queue();
-  void Cleanup() {}
 
-  RefPtr<WebGPUChild> mBridge;
-  const RawId mId;
-
- public:
+  // Index to use for the next submission containing external textures. Used to
+  // keep track of when work involving external textures is done.
+  uint64_t mNextExternalTextureSubmissionIndex = 1;
 };
 
 }  // namespace webgpu

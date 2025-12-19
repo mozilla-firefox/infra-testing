@@ -1,3 +1,5 @@
+requestLongerTimeout(2);
+
 const TEST_SCRIPT_URL =
   "https://example.com/browser/dom/tests/browser/page_scriptCache_container.html";
 const TEST_MODULE_URL =
@@ -8,7 +10,7 @@ const TEST_SJS_URL =
 
 async function testCache({ enableCache, type }) {
   await SpecialPowers.pushPrefEnv({
-    set: [["dom.script_loader.navigation_cache", enableCache]],
+    set: [["dom.script_loader.experimental.navigation_cache", enableCache]],
   });
   registerCleanupFunction(() => SpecialPowers.popPrefEnv());
 

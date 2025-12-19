@@ -32,7 +32,7 @@ const gSelects = {
     "  #one { background-color: transparent; }" +
     "</style>" +
     "<body><select id='one'>" +
-    '  <option value="One">{"unstyled": "true"}</option>' +
+    '  <option value="One">{"color": "-moz-ComboboxText", "backgroundColor": "rgba(0, 0, 0, 0)"}</option>' +
     '  <option value="Two" selected="true">{"end": "true"}</option>' +
     "</select></body></html>",
 
@@ -313,7 +313,7 @@ function computeLabels(tab) {
         ) {
           any = true;
           expected[color] = _rgbaToString(
-            InspectorUtils.colorToRGBA(expected[color], content.document)
+            content.InspectorUtils.colorToRGBA(expected[color])
           );
         }
       }
@@ -461,7 +461,10 @@ let kDefaultSelectStyles = {};
 
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
-    set: [["dom.forms.select.customstyling", true]],
+    set: [
+      ["test.wait300msAfterTabSwitch", true],
+      ["dom.forms.select.customstyling", true],
+    ],
   });
   kDefaultSelectStyles = await BrowserTestUtils.withNewTab(
     `data:text/html,<select>`,
@@ -497,7 +500,6 @@ add_task(async function test_colors_applied_to_popup() {
 // This test checks when a <select> element has a transparent background applied to itself.
 add_task(async function test_transparent_applied_to_popup() {
   let options = {
-    unstyled: true,
     skipSelectColorTest: true,
   };
   await testSelectColors("TRANSPARENT_SELECT", 2, options);
@@ -794,12 +796,8 @@ add_task(async function test_scrollbar_props() {
 
 if (AppConstants.platform == "win") {
   add_task(async function test_darkmode() {
-    let lightSelectColor = rgbaToString(
-      InspectorUtils.colorToRGBA("MenuText", document)
-    );
-    let lightSelectBgColor = rgbaToString(
-      InspectorUtils.colorToRGBA("Menu", document)
-    );
+    let lightSelectColor = rgbaToString(InspectorUtils.colorToRGBA("MenuText"));
+    let lightSelectBgColor = rgbaToString(InspectorUtils.colorToRGBA("Menu"));
 
     // Force dark mode:
     let darkModeQuery = matchMedia("(prefers-color-scheme: dark)");
@@ -808,12 +806,8 @@ if (AppConstants.platform == "win") {
     await darkModeChange;
 
     // Determine colours from the main context menu:
-    let darkSelectColor = rgbaToString(
-      InspectorUtils.colorToRGBA("MenuText", document)
-    );
-    let darkSelectBgColor = rgbaToString(
-      InspectorUtils.colorToRGBA("Menu", document)
-    );
+    let darkSelectColor = rgbaToString(InspectorUtils.colorToRGBA("MenuText"));
+    let darkSelectBgColor = rgbaToString(InspectorUtils.colorToRGBA("Menu"));
 
     isnot(lightSelectColor, darkSelectColor);
     isnot(lightSelectBgColor, darkSelectBgColor);

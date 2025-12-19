@@ -139,7 +139,7 @@ class BacktrackStack {
   int sp() const { return static_cast<int>(data_.size()); }
   void set_sp(uint32_t new_sp) {
     DCHECK_LE(new_sp, sp());
-    data_.resize_no_init(new_sp);
+    data_.resize(new_sp);
   }
 
  private:
@@ -284,20 +284,21 @@ IrregexpInterpreter::Result HandleInterrupts(
       return ThrowStackOverflow(isolate, call_origin);
     } else if (check.InterruptRequested()) {
       const bool was_one_byte =
-          (*subject_string_out)->IsOneByteRepresentation();
+          String::IsOneByteRepresentationUnderneath(*subject_string_out);
       Tagged<Object> result;
       {
         AllowGarbageCollection yes_gc;
         result = isolate->stack_guard()->HandleInterrupts();
       }
-      if (IsException(result, isolate)) {
+      if (IsExceptionHole(result, isolate)) {
         return IrregexpInterpreter::EXCEPTION;
       }
 
       // If we changed between a LATIN1 and a UC16 string, we need to
       // restart regexp matching with the appropriate template instantiation of
       // RawMatch.
-      if (subject_handle->IsOneByteRepresentation() != was_one_byte) {
+      if (String::IsOneByteRepresentationUnderneath(*subject_handle) !=
+          was_one_byte) {
         return IrregexpInterpreter::RETRY;
       }
 
@@ -567,12 +568,12 @@ IrregexpInterpreter::Result RawMatch(
       ADVANCE_CURRENT_POSITION(LoadPacked24Signed(insn));
       DISPATCH();
     }
-    BYTECODE(CHECK_GREEDY) {
+    BYTECODE(CHECK_FIXED_LENGTH) {
       if (current == backtrack_stack.peek()) {
         SET_PC_FROM_OFFSET(Load32Aligned(pc + 4));
         backtrack_stack.pop();
       } else {
-        ADVANCE(CHECK_GREEDY);
+        ADVANCE(CHECK_FIXED_LENGTH);
       }
       DISPATCH();
     }
@@ -1064,7 +1065,7 @@ int IrregexpInterpreter::Match(Isolate* isolate,
 
   bool is_any_unicode =
       IsEitherUnicode(JSRegExp::AsRegExpFlags(regexp_data->flags()));
-  bool is_one_byte = subject_string->IsOneByteRepresentation();
+  bool is_one_byte = String::IsOneByteRepresentationUnderneath(subject_string);
   Tagged<TrustedByteArray> code_array = regexp_data->bytecode(is_one_byte);
   int total_register_count = regexp_data->max_register_count();
 
@@ -1166,10 +1167,17 @@ IrregexpInterpreter::Result IrregexpInterpreter::MatchInternal(
 
 // This method is called through an external reference from RegExpExecInternal
 // builtin.
+#ifdef V8_ENABLE_SANDBOX_HARDWARE_SUPPORT
+// Hardware sandboxing is incompatible with ASAN, see crbug.com/432168626.
+DISABLE_ASAN
+#endif  // V8_ENABLE_SANDBOX_HARDWARE_SUPPORT
 int IrregexpInterpreter::MatchForCallFromJs(
     Address subject, int32_t start_position, Address, Address,
     int* output_registers, int32_t output_register_count,
     RegExp::CallOrigin call_origin, Isolate* isolate, Address regexp_data) {
+  // TODO(422992937): investigate running the interpreter in sandboxed mode.
+  ExitSandboxScope unsandboxed;
+
   DCHECK_NOT_NULL(isolate);
   DCHECK_NOT_NULL(output_registers);
   DCHECK(call_origin == RegExp::CallOrigin::kFromJs);
@@ -1181,7 +1189,7 @@ int IrregexpInterpreter::MatchForCallFromJs(
 
   Tagged<String> subject_string = Cast<String>(Tagged<Object>(subject));
   Tagged<IrRegExpData> regexp_data_obj =
-      Cast<IrRegExpData>(Tagged<Object>(regexp_data));
+      SbxCast<IrRegExpData>(Tagged<Object>(regexp_data));
 
   if (regexp_data_obj->MarkedForTierUp()) {
     // Returning RETRY will re-enter through runtime, where actual recompilation

@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use super::mock::{mock_key, MockKey};
+pub use std::env::consts;
 pub use std::env::VarError;
 use std::ffi::{OsStr, OsString};
 
@@ -16,6 +17,10 @@ mock_key! {
 
 mock_key! {
     pub struct MockHomeDir => super::path::PathBuf
+}
+
+mock_key! {
+    pub struct MockTempDir => super::path::PathBuf
 }
 
 pub struct ArgsOs {
@@ -52,6 +57,10 @@ pub fn args_os() -> ArgsOs {
 
 pub fn home_dir() -> Option<super::path::PathBuf> {
     MockHomeDir.try_get(|p| p.clone())
+}
+
+pub fn temp_dir() -> super::path::PathBuf {
+    MockTempDir.get(|p| p.clone())
 }
 
 #[allow(unused)]

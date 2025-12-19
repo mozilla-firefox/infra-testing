@@ -10,7 +10,7 @@
 import {
   UrlbarProvider,
   UrlbarUtils,
-} from "resource:///modules/UrlbarUtils.sys.mjs";
+} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 const lazy = {};
 
@@ -20,23 +20,25 @@ const DYNAMIC_TYPE_NAME = "actions";
 
 // The suggestion index of the actions row within the urlbar results.
 const SUGGESTED_INDEX = 1;
+const SUGGESTED_INDEX_TABS_MODE = 0;
 
 const SCOTCH_BONNET_PREF = "scotchBonnet.enableOverride";
 const ACTIONS_PREF = "secondaryActions.featureGate";
 const QUICK_ACTIONS_PREF = "suggest.quickactions";
+const MAX_ACTIONS_PREF = "secondaryActions.maxActionsShown";
 
 // Prefs relating to the onboarding label shown to new users.
 const TIMES_TO_SHOW_PREF = "quickactions.timesToShowOnboardingLabel";
 const TIMES_SHOWN_PREF = "quickactions.timesShownOnboardingLabel";
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
 });
 
-import { ActionsProviderQuickActions } from "resource:///modules/ActionsProviderQuickActions.sys.mjs";
-import { ActionsProviderContextualSearch } from "resource:///modules/ActionsProviderContextualSearch.sys.mjs";
-import { ActionsProviderTabGroups } from "resource:///modules/ActionsProviderTabGroups.sys.mjs";
+import { ActionsProviderQuickActions } from "moz-src:///browser/components/urlbar/ActionsProviderQuickActions.sys.mjs";
+import { ActionsProviderContextualSearch } from "moz-src:///browser/components/urlbar/ActionsProviderContextualSearch.sys.mjs";
+import { ActionsProviderTabGroups } from "moz-src:///browser/components/urlbar/ActionsProviderTabGroups.sys.mjs";
 
 let globalActionsProviders = [
   ActionsProviderContextualSearch,
@@ -47,16 +49,15 @@ let globalActionsProviders = [
 /**
  * A provider that lets the user view all available global actions for a query.
  */
-class ProviderGlobalActions extends UrlbarProvider {
-  get name() {
-    return "UrlbarProviderGlobalActions";
-  }
-
+export class UrlbarProviderGlobalActions extends UrlbarProvider {
+  /**
+   * @returns {Values<typeof UrlbarUtils.PROVIDER_TYPE>}
+   */
   get type() {
     return UrlbarUtils.PROVIDER_TYPE.PROFILE;
   }
 
-  isActive() {
+  async isActive(_queryContext) {
     return (
       (lazy.UrlbarPrefs.get(SCOTCH_BONNET_PREF) ||
         lazy.UrlbarPrefs.get(ACTIONS_PREF)) &&
@@ -64,6 +65,13 @@ class ProviderGlobalActions extends UrlbarProvider {
     );
   }
 
+  /**
+   * Starts querying.
+   *
+   * @param {UrlbarQueryContext} queryContext
+   * @param {(provider: UrlbarProvider, result: UrlbarResult) => void} addCallback
+   *   Callback invoked by the provider to add a new result.
+   */
   async startQuery(queryContext, addCallback) {
     let actionsResults = [];
     let searchModeEngine = "";
@@ -77,6 +85,7 @@ class ProviderGlobalActions extends UrlbarProvider {
             // We only allow one action that provides an engine search mode.
             continue;
           }
+          action.providerName = provider.name;
           actionsResults.push(action);
         }
       }
@@ -84,6 +93,10 @@ class ProviderGlobalActions extends UrlbarProvider {
 
     if (!actionsResults.length) {
       return;
+    }
+
+    if (actionsResults.length > lazy.UrlbarPrefs.get(MAX_ACTIONS_PREF)) {
+      actionsResults.length = lazy.UrlbarPrefs.get(MAX_ACTIONS_PREF);
     }
 
     let showOnboardingLabel =
@@ -108,12 +121,15 @@ class ProviderGlobalActions extends UrlbarProvider {
       payload.engine = searchModeEngine;
     }
 
-    let result = new lazy.UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.DYNAMIC,
-      UrlbarUtils.RESULT_SOURCE.ACTIONS,
-      payload
-    );
-    result.suggestedIndex = SUGGESTED_INDEX;
+    let result = new lazy.UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.DYNAMIC,
+      source: UrlbarUtils.RESULT_SOURCE.ACTIONS,
+      suggestedIndex:
+        queryContext.restrictSource == UrlbarUtils.RESULT_SOURCE.TABS
+          ? SUGGESTED_INDEX_TABS_MODE
+          : SUGGESTED_INDEX,
+      payload,
+    });
     addCallback(this, result);
   }
 
@@ -169,6 +185,7 @@ class ProviderGlobalActions extends UrlbarProvider {
           {
             name: `label-${i}`,
             tag: "span",
+            classList: ["urlbarView-action-btn-label"],
           },
         ],
       };
@@ -203,16 +220,14 @@ class ProviderGlobalActions extends UrlbarProvider {
     let viewUpdate = {};
     if (result.payload.showOnboardingLabel) {
       viewUpdate["press-tab-label"] = {
-        l10n: { id: "press-tab-label", cacheable: true },
+        l10n: { id: "press-tab-label" },
       };
     }
     result.payload.actionsResults.forEach((action, i) => {
       viewUpdate[`label-${i}`] = {
-        l10n: { id: action.l10nId, args: action.l10nArgs, cacheable: true },
+        l10n: { id: action.l10nId, args: action.l10nArgs },
       };
     });
     return viewUpdate;
   }
 }
-
-export var UrlbarProviderGlobalActions = new ProviderGlobalActions();

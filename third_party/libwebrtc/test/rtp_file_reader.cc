@@ -10,15 +10,21 @@
 
 #include "test/rtp_file_reader.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
 #include <map>
+#include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
 #include "absl/strings/string_view.h"
+#include "api/array_view.h"
 #include "modules/rtp_rtcp/source/rtp_util.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/system/arch.h"
 #include "rtc_base/time_utils.h"
 
 namespace {
@@ -464,7 +470,7 @@ class PcapReader : public RtpFileReaderImpl {
 
   int ProcessPacket(RtpPacketMarker& marker,
                     const std::set<uint32_t>& ssrc_filter,
-                    rtc::ArrayView<const uint8_t> packet) {
+                    ArrayView<const uint8_t> packet) {
     if (IsRtcpPacket(packet)) {
       marker.payload_type = packet[1];
       packets_.push_back(marker);
@@ -502,7 +508,7 @@ class PcapReader : public RtpFileReaderImpl {
 
     *next_packet_pos = ftell(file_) + incl_len;
 
-    RtpPacketMarker marker = {0};
+    RtpPacketMarker marker = {};
     marker.time_offset_ms = CalcTimeDelta(ts_sec, ts_usec, stream_start_ms);
     TRY_PCAP(ReadPacketHeader(&marker));
     marker.pos_in_file = ftell(file_);
@@ -551,13 +557,13 @@ class PcapReader : public RtpFileReaderImpl {
         TRY_PCAP(Read(&incl_len, false));
         TRY_PCAP(Read(&orig_len, false));
 
-        RtpPacketMarker marker = {0};
+        RtpPacketMarker marker = {};
         // Note: Wireshark writes nanoseconds most of the time, see comments in
         // it's pcapio.c. We are only interesting in the time difference so
         // truncating to uint32_t is ok.
         uint64_t timestamp_ms =
             ((static_cast<uint64_t>(ts_upper) << 32) | ts_lower) /
-            rtc::kNumMicrosecsPerSec;
+            kNumMicrosecsPerSec;
         marker.time_offset_ms =
             static_cast<uint32_t>(timestamp_ms) - stream_start_ms;
         TRY_PCAP(ReadPacketHeader(&marker));
@@ -661,13 +667,13 @@ class PcapReader : public RtpFileReaderImpl {
       RTC_LOG(LS_INFO) << "TCP packets are not handled";
       return kResultSkip;
     } else if (protocol == kProtocolUdp) {
-      uint16_t length;
-      uint16_t checksum;
+      uint16_t payload_length;
+      uint16_t payload_checksum;
       TRY_PCAP(Read(&marker->source_port, true));
       TRY_PCAP(Read(&marker->dest_port, true));
-      TRY_PCAP(Read(&length, true));
-      TRY_PCAP(Read(&checksum, true));
-      marker->payload_length = length - kUdpHeaderLength;
+      TRY_PCAP(Read(&payload_length, true));
+      TRY_PCAP(Read(&payload_checksum, true));
+      marker->payload_length = payload_length - kUdpHeaderLength;
     } else {
       RTC_LOG(LS_INFO) << "Unknown transport (expected UDP or TCP)";
       return kResultSkip;

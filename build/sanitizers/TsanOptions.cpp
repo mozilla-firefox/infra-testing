@@ -3,7 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/Attributes.h"
 #include "mozilla/Types.h"
 
 //
@@ -79,6 +78,7 @@ extern "C" MOZ_EXPORT const char* __tsan_default_suppressions() {
          "called_from_lib:libgvfscommon\n"
          "called_from_lib:libgvfsdbus\n"
          "called_from_lib:libibus-1\n"
+         "called_from_lib:libnvidia-egl-wayland\n"
          "called_from_lib:libnvidia-eglcore\n"
          "called_from_lib:libnvidia-glsi\n"
          "called_from_lib:libogg.so\n"
@@ -135,6 +135,7 @@ extern "C" MOZ_EXPORT const char* __tsan_default_suppressions() {
          // Bug 1824768
          "mutex:libdbus-1\n"
          "mutex:swrast_dri.so\n"
+         "mutex:libgallium-*.so\n"
          // Bug 1651446 - permanent (ffmpeg)
          "race:libavcodec.so*\n"
          "race:libavutil.so*\n"
@@ -163,9 +164,12 @@ extern "C" MOZ_EXPORT const char* __tsan_default_suppressions() {
          "race:radeonsi_dri\n"
          // Bug 1722721 - WebRender using uninstrumented Mesa drivers
          "race:swrast_dri.so\n"
+         "race:libgallium-*.so\n"
          // Bug 1825171
          "race:libffi.so\n"
          "race:mozilla::widget::WaylandBuffer::BufferReleaseCallbackHandler\n"
+          // Bug 1953677
+         "race:i965_dri.so\n"
 
 
 

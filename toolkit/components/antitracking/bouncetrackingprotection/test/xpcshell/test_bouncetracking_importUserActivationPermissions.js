@@ -39,8 +39,10 @@ function cleanup() {
 }
 
 add_setup(function () {
-  // Need a profile to data clearing calls.
-  do_get_profile();
+  Services.prefs.setIntPref(
+    "privacy.bounceTrackingProtection.mode",
+    Ci.nsIBounceTrackingProtection.MODE_ENABLED
+  );
 
   btp = Cc["@mozilla.org/bounce-tracking-protection;1"].getService(
     Ci.nsIBounceTrackingProtection

@@ -5,9 +5,9 @@
 package org.mozilla.fenix.tabstray
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import mozilla.components.browser.state.state.createTab
 import mozilla.components.compose.base.menu.MenuItem
 import mozilla.components.compose.base.text.Text
-import mozilla.components.support.test.libstate.ext.waitUntilIdle
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -15,6 +15,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.R
+import org.mozilla.fenix.tabstray.ext.generateMultiSelectBannerMenuItems
 import org.mozilla.fenix.tabstray.ext.getMenuItems
 import org.mozilla.fenix.tabstray.ext.isSelect
 
@@ -31,7 +32,6 @@ class TabsTrayStateTest {
     @Test
     fun `WHEN entering select mode THEN isSelected extension method returns true`() {
         store.dispatch(TabsTrayAction.EnterSelectMode)
-        store.waitUntilIdle()
 
         assertTrue(store.state.mode.isSelect())
     }
@@ -39,7 +39,6 @@ class TabsTrayStateTest {
     @Test
     fun `WHEN entering normal mode THEN isSelected extension method returns false`() {
         store.dispatch(TabsTrayAction.ExitSelectMode)
-        store.waitUntilIdle()
 
         assertFalse(store.state.mode.isSelect())
     }
@@ -176,6 +175,123 @@ class TabsTrayStateTest {
             (menuItems[1] as MenuItem.TextItem).text,
             Text.Resource(R.string.tab_tray_menu_recently_closed),
         )
+    }
+
+    @Test
+    fun `GIVEN the Tabs Tray is in multiselection mode AND on the normal tabs page AND the inactive menu item needs to be shown AND on the normal tabs page WHEN the user clicks on the three-dot button THEN the bookmark, close, and make inactive menu items are returned`() {
+        val menuItems = generateMultiSelectBannerMenuItems(
+            shouldShowInactiveButton = true,
+            onBookmarkSelectedTabsClick = {},
+            onCloseSelectedTabsClick = {},
+            onMakeSelectedTabsInactive = {},
+        )
+        assertEquals(3, menuItems.size)
+        assertEquals(
+            listOf(
+                Text.Resource(R.string.tab_tray_multiselect_menu_item_bookmark),
+                Text.Resource(R.string.tab_tray_multiselect_menu_item_close),
+                Text.Resource(R.string.inactive_tabs_menu_item),
+            ),
+            menuItems.map { (it as MenuItem.TextItem).text },
+        )
+    }
+
+    @Test
+    fun `GIVEN the Tabs Tray is in multiselection mode AND on the normal tabs page AND the inactive menu item should not be shown WHEN the user clicks on the three-dot button THEN the bookmark and close menu items are returned`() {
+        val menuItems = generateMultiSelectBannerMenuItems(
+            shouldShowInactiveButton = false,
+            onBookmarkSelectedTabsClick = {},
+            onCloseSelectedTabsClick = {},
+            onMakeSelectedTabsInactive = {},
+        )
+        assertEquals(2, menuItems.size)
+        assertEquals(
+            (menuItems[0] as MenuItem.TextItem).text,
+            Text.Resource(R.string.tab_tray_multiselect_menu_item_bookmark),
+        )
+        assertEquals(
+            (menuItems[1] as MenuItem.TextItem).text,
+            Text.Resource(R.string.tab_tray_multiselect_menu_item_close),
+        )
+    }
+
+    /**
+    *  [TabsTrayState.searchIconVisible] coverage
+    */
+
+    @Test
+    fun `WHEN the user is on the normal tabs page THEN the search icon is visible`() {
+        val testState = TabsTrayState(
+            selectedPage = Page.NormalTabs,
+            tabSearchEnabled = true,
+        )
+        assertTrue(testState.searchIconVisible)
+    }
+
+    @Test
+    fun `GIVEN Tab Search is not enabled WHEN the user is on the normal tabs page THEN the search icon is not visible`() {
+        val testState = TabsTrayState(
+            selectedPage = Page.NormalTabs,
+            tabSearchEnabled = false,
+        )
+        assertFalse(testState.searchIconVisible)
+    }
+
+    @Test
+    fun `WHEN the user is on the private tabs page THEN the search icon is visible`() {
+        val testState = TabsTrayState(
+            selectedPage = Page.PrivateTabs,
+            tabSearchEnabled = true,
+        )
+        assertTrue(testState.searchIconVisible)
+    }
+
+    @Test
+    fun `WHEN the user is on the synced tabs page THEN the search icon is not visible`() {
+        val testState = TabsTrayState(selectedPage = Page.SyncedTabs)
+        assertFalse(testState.searchIconVisible)
+    }
+
+    /**
+     *  [TabsTrayState.searchIconEnabled] coverage
+     */
+
+    @Test
+    fun `GIVEN the user has no normal tabs open WHEN the user is on the normal tabs page THEN the search icon is disabled`() {
+        val testState = TabsTrayState(
+            selectedPage = Page.NormalTabs,
+            normalTabs = emptyList(),
+        )
+        assertFalse(testState.searchIconEnabled)
+    }
+
+    @Test
+    fun `GIVEN the user has at least one normal tab open WHEN the user is on the normal tabs page THEN the search icon is disabled`() {
+        val testState = TabsTrayState(
+            selectedPage = Page.NormalTabs,
+            normalTabs = listOf(createTab(url = "url")),
+            tabSearchEnabled = true,
+        )
+        assertTrue(testState.searchIconEnabled)
+    }
+
+    @Test
+    fun `GIVEN the user has no private tabs open WHEN the user is on the private tabs page THEN the search icon is disabled`() {
+        val testState = TabsTrayState(
+            selectedPage = Page.PrivateTabs,
+            privateTabs = emptyList(),
+        )
+        assertFalse(testState.searchIconEnabled)
+    }
+
+    @Test
+    fun `GIVEN the user has at least one private tab open WHEN the user is on the private tabs page THEN the search icon is disabled`() {
+        val testState = TabsTrayState(
+            selectedPage = Page.PrivateTabs,
+            privateTabs = listOf(createTab(url = "url")),
+            tabSearchEnabled = true,
+        )
+        assertTrue(testState.searchIconEnabled)
     }
 
     private fun initMenuItems(

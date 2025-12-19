@@ -15,10 +15,10 @@ DEFINES["RTC_DAV1D_IN_INTERNAL_DECODER_FACTORY"] = True
 DEFINES["RTC_ENABLE_VP9"] = True
 DEFINES["USE_AURA"] = "1"
 DEFINES["USE_GLIB"] = "1"
-DEFINES["USE_NSS_CERTS"] = "1"
 DEFINES["USE_OZONE"] = "1"
 DEFINES["USE_UDEV"] = True
 DEFINES["WEBRTC_ENABLE_PROTOBUF"] = "0"
+DEFINES["WEBRTC_ENCODER_PSNR_STATS"] = True
 DEFINES["WEBRTC_LIBRARY_IMPL"] = True
 DEFINES["WEBRTC_LINUX"] = True
 DEFINES["WEBRTC_MOZILLA_BUILD"] = True
@@ -36,13 +36,14 @@ FINAL_LIBRARY = "xul"
 
 
 LOCAL_INCLUDES += [
+    "!/dist/include/libwebrtc_overrides",
     "!/ipc/ipdl/_ipdlheaders",
     "!/third_party/libwebrtc/gen",
-    "/gfx/angle/checkout/include/",
     "/ipc/chromium/src",
     "/third_party/abseil-cpp/",
     "/third_party/libepoxy/libepoxy/include/",
     "/third_party/libwebrtc/",
+    "/third_party/libwebrtc/third_party/libepoxy/libepoxy/include/",
     "/tools/profiler/public"
 ]
 
@@ -61,6 +62,7 @@ if CONFIG["TARGET_CPU"] == "aarch64":
 
     DEFINES["WEBRTC_ARCH_ARM64"] = True
     DEFINES["WEBRTC_HAS_NEON"] = True
+    DEFINES["__ARM_NEON__"] = "1"
 
 if CONFIG["TARGET_CPU"] == "arm":
 
@@ -80,9 +82,5 @@ if CONFIG["TARGET_CPU"] == "x86":
 if CONFIG["TARGET_CPU"] == "x86_64":
 
     DEFINES["WEBRTC_ENABLE_AVX2"] = True
-
-if CONFIG["MOZ_X11"] == "1" and CONFIG["OS_TARGET"] == "Linux":
-
-    DEFINES["USE_X11"] = "1"
 
 Library("epoxy_gn")

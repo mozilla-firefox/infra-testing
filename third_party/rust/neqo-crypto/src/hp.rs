@@ -4,11 +4,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![allow(
-    clippy::module_name_repetitions,
-    reason = "<https://github.com/mozilla/neqo/issues/2284#issuecomment-2782711813>"
-)]
-
 use std::{
     cell::RefCell,
     fmt::{self, Debug},
@@ -44,7 +39,7 @@ experimental_api!(SSL_HkdfExpandLabelWithMech(
 ));
 
 #[derive(Clone)]
-pub enum HpKey {
+pub enum Key {
     /// An AES encryption context.
     /// Note: as we need to clone this object, we clone the pointer and
     /// track references using `Rc`.  `PK11Context` can't be used with `PK11_CloneContext`
@@ -55,13 +50,13 @@ pub enum HpKey {
     Chacha(SymKey),
 }
 
-impl Debug for HpKey {
+impl Debug for Key {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "HpKey")
+        write!(f, "hp::Key")
     }
 }
 
-impl HpKey {
+impl Key {
     pub const SAMPLE_SIZE: usize = 16;
 
     /// QUIC-specific API for extracting a header-protection key.
@@ -102,7 +97,7 @@ impl HpKey {
                 &mut secret,
             )
         }?;
-        let key = SymKey::from_ptr(secret).or(Err(Error::HkdfError))?;
+        let key = SymKey::from_ptr(secret).or(Err(Error::Hkdf))?;
 
         let res = match cipher {
             TLS_AES_128_GCM_SHA256 | TLS_AES_256_GCM_SHA384 => {
@@ -114,7 +109,7 @@ impl HpKey {
                         &Item::wrap(&ZERO[..0])?, // Borrow a zero-length slice of ZERO.
                     )
                 };
-                let context = Context::from_ptr(context_ptr).or(Err(Error::CipherInitFailure))?;
+                let context = Context::from_ptr(context_ptr).or(Err(Error::CipherInit))?;
                 Self::Aes(Rc::new(RefCell::new(context)))
             }
             TLS_CHACHA20_POLY1305_SHA256 => Self::Chacha(key),
@@ -139,14 +134,12 @@ impl HpKey {
     ///
     /// # Errors
     ///
-    /// An error is returned if the NSS functions fail; a sample of the
-    /// wrong size is the obvious cause.
+    /// An error is returned if the NSS functions fail.
     ///
     /// # Panics
     ///
     /// When the mechanism for our key is not supported.
-    /// Or when the sample provided is not at least `self.sample_size()` bytes.
-    pub fn mask(&self, sample: &[u8]) -> Res<[u8; Self::SAMPLE_SIZE]> {
+    pub fn mask(&self, sample: &[u8; Self::SAMPLE_SIZE]) -> Res<[u8; Self::SAMPLE_SIZE]> {
         let mut output = [0; Self::SAMPLE_SIZE];
 
         match self {
@@ -158,7 +151,7 @@ impl HpKey {
                         output.as_mut_ptr(),
                         &mut output_len,
                         c_int::try_from(output.len())?,
-                        sample[..Self::SAMPLE_SIZE].as_ptr().cast(),
+                        sample.as_ptr().cast(),
                         c_int::try_from(Self::SAMPLE_SIZE)?,
                     )
                 })?;
@@ -170,7 +163,7 @@ impl HpKey {
                 let params: CK_CHACHA20_PARAMS = CK_CHACHA20_PARAMS {
                     pBlockCounter: sample.as_ptr().cast_mut(),
                     blockCounterBits: 32,
-                    pNonce: sample[4..Self::SAMPLE_SIZE].as_ptr().cast_mut(),
+                    pNonce: sample[4..].as_ptr().cast_mut(),
                     ulNonceBits: 96,
                 };
                 let mut output_len: c_uint = 0;

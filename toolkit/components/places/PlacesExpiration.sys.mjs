@@ -14,7 +14,6 @@
  * - On a repeating timer we expire in small chunks.
  *
  * Expiration algorithm will adapt itself based on:
- * - Memory size of the device.
  * - Status of the database (clean or dirty).
  */
 
@@ -34,21 +33,9 @@ const TOPIC_IDLE_DAILY = "idle-daily";
 const TOPIC_TESTING_MODE = "testing-mode";
 const TOPIC_TEST_INTERVAL_CHANGED = "test-interval-changed";
 
-// This value determines which systems we consider to have limited memory.
-// This is used to protect against large database sizes on those systems.
-const DATABASE_MEMORY_CONSTRAINED_THRESHOLD = 2147483648; // 2 GiB
-
-// This value determines which systems we consider to have limited disk space.
-// This is used to protect against large database sizes on those systems.
-const DATABASE_DISK_CONSTRAINED_THRESHOLD = 5368709120; // 5 GiB
-
 // Maximum size of the optimal database.  High-end hardware has plenty of
 // memory and disk space, but performances don't grow linearly.
 const DATABASE_MAX_SIZE = 78643200; // 75 MiB
-// If the physical memory size is bogus, fallback to this.
-const MEMSIZE_FALLBACK_BYTES = 268435456; // 256 MiB
-// If the disk available space is bogus, fallback to this.
-const DISKSIZE_FALLBACK_BYTES = 268435456; // 256 MiB
 
 // Max number of entries to expire at each expiration step.
 // This value is globally used for different kind of data we expire, can be
@@ -87,33 +74,64 @@ const OVERLIMIT_PAGES_THRESHOLD = 1000;
 // Milliseconds in a day.
 const MSECS_PER_DAY = 86400000;
 
-// When we expire we can use these limits:
-// - SMALL for usual partial expirations, will expire a small chunk.
-// - LARGE for idle or shutdown expirations, will expire a large chunk.
-// - UNLIMITED will expire all the orphans.
-// - DEBUG will use a known limit, passed along with the debug notification.
+/**
+ * Represents the expiration limits.
+ *
+ * @readonly
+ * @enum {number}
+ */
 const LIMIT = {
+  /** SMALL for usual partial expirations, will expire a small chunk. */
   SMALL: 0,
+
+  /** LARGE for idle or shutdown expirations, will expire a large chunk. */
   LARGE: 1,
+
+  /** UNLIMITED will expire all the orphans. */
   UNLIMITED: 2,
+
+  /** DEBUG will use a known limit, passed along with the debug notification. */
   DEBUG: 3,
 };
 
-// Represents the status of history database.
+/**
+ * Represents the status of history database.
+ *
+ * Bug 1965962 - Freeze const objects and use the specific values for types.
+ *
+ * @readonly
+ * @enum {number}
+ */
 const STATUS = {
   CLEAN: 0,
   DIRTY: 1,
   UNKNOWN: 2,
 };
 
-// Represents actions on which a query will run.
+/**
+ * Represents actions on which a query will run.
+ *
+ * @readonly
+ * @enum {number}
+ */
 const ACTION = {
-  TIMED: 1 << 0, // happens every this.intervalSeconds
-  TIMED_OVERLIMIT: 1 << 1, // like TIMED but only when history is over limits
-  SHUTDOWN_DIRTY: 1 << 2, // happens at shutdown for DIRTY state
-  IDLE_DIRTY: 1 << 3, // happens on idle for DIRTY state
-  IDLE_DAILY: 1 << 4, // happens once a day on idle
-  DEBUG: 1 << 5, // happens on TOPIC_DEBUG_START_EXPIRATION
+  /** Happens every this.intervalSeconds. */
+  TIMED: 1 << 0, //
+
+  /** Like TIMED but only when history is over limits. */
+  TIMED_OVERLIMIT: 1 << 1,
+
+  /** Happens at shutdown for DIRTY state. */
+  SHUTDOWN_DIRTY: 1 << 2,
+
+  /** Happens on idle for DIRTY state. */
+  IDLE_DIRTY: 1 << 3,
+
+  /** Happens once a day on idle. */
+  IDLE_DAILY: 1 << 4,
+
+  /** Happens on TOPIC_DEBUG_START_EXPIRATION. */
+  DEBUG: 1 << 5,
 };
 
 // The queries we use to expire.
@@ -234,6 +252,39 @@ const EXPIRATION_QUERIES = {
       ACTION.IDLE_DIRTY |
       ACTION.IDLE_DAILY |
       ACTION.DEBUG,
+  },
+
+  // Expire icon relations for pages not visited in the last six months.
+  // The six-month threshold is arbitrary: the history view groups visits older
+  // than six months under a "Older than 6 months" entry, so losing icons in
+  // such a large list would be acceptable.
+  // We only remove relations whose expire_ms is at least six months older than
+  // the page's last visit, indicating the relation has not been refreshed by
+  // visits for a long time and is likely stale.
+  // We also exclude bookmarked pages and root icons.
+  // We proceed cautiously because these icons might still be in use;
+  // they are only potentially stale.
+  // Orphaned icons are removed by subsequent expiration queries.
+  QUERY_EXPIRE_OLD_FAVICON_RELATIONS: {
+    sql: `
+    DELETE FROM moz_icons_to_pages
+    WHERE (page_id, icon_id) IN (
+     	SELECT page_id, icon_id
+      FROM moz_icons_to_pages ip
+      JOIN moz_icons i ON i.id = icon_id
+      JOIN moz_pages_w_icons pi ON pi.id = page_id
+      JOIN moz_places ON url_hash = page_url_hash
+      WHERE
+      last_visit_date BETWEEN
+      strftime('%s', ip.expire_ms / 1000, 'unixepoch', '+6 months', 'localtime', 'utc') * 1000000
+      AND strftime('%s', 'now', 'localtime', '-6 months', 'utc') * 1000000
+      AND root = 0
+      AND foreign_count = 0
+      ORDER BY last_visit_date ASC
+      LIMIT 100
+    )
+    `,
+    actions: ACTION.IDLE_DIRTY | ACTION.IDLE_DAILY | ACTION.DEBUG,
   },
 
   // Expire from favicons any page that has only relations older than 180 days,
@@ -399,7 +450,7 @@ export function nsPlacesExpiration() {
     this,
     "_idle",
     "@mozilla.org/widget/useridleservice;1",
-    "nsIUserIdleService"
+    Ci.nsIUserIdleService
   );
 
   // Max number of unique URIs to retain in history.
@@ -408,7 +459,7 @@ export function nsPlacesExpiration() {
   // instead we will stop after the next expiration step that will bring us
   // below it.
   // If this preference does not exist or has a negative value, we will
-  // calculate a limit based on current hardware.
+  // calculate a limit based on the database size.
   XPCOMUtils.defineLazyPreferenceGetter(
     this,
     "maxPages",
@@ -576,6 +627,7 @@ nsPlacesExpiration.prototype = {
     let expectedResults = row.getResultByName("expected_results");
     if (expectedResults > 0) {
       if (!("_expectedResultsCount" in this)) {
+        // @ts-ignore - Bug 1965966 this is dynamically created/deleted.
         this._expectedResultsCount = expectedResults;
       }
       if (this._expectedResultsCount > 0) {
@@ -592,7 +644,7 @@ nsPlacesExpiration.prototype = {
     );
 
     if (mostRecentExpiredVisit) {
-      let days = parseInt(
+      let days = Math.floor(
         (Date.now() - mostRecentExpiredVisit / 1000) / MSECS_PER_DAY
       );
       if (!this._mostRecentExpiredVisitDays) {
@@ -618,6 +670,12 @@ nsPlacesExpiration.prototype = {
   _shuttingDown: false,
 
   _status: STATUS.UNKNOWN,
+
+  /**
+   * Set the status of the history database.
+   *
+   * @param {STATUS} aNewStatus
+   */
   set status(aNewStatus) {
     if (aNewStatus != this._status) {
       // If status changes we should restart the timer.
@@ -628,53 +686,39 @@ nsPlacesExpiration.prototype = {
       this.expireOnIdle = aNewStatus == STATUS.DIRTY;
     }
   },
+
+  /**
+   * Get the status of the history database.
+   *
+   * @returns {STATUS}
+   */
   get status() {
     return this._status;
   },
 
+  /**
+   * Get the maximum number of pages that should be retained.
+   *
+   * The limit is calculated to keep the Places database around
+   * DATABASE_MAX_SIZE in size.
+   *
+   * Users can override the default limit by setting
+   * `places.history.expiration.max_pages` to a custom limit.
+   *
+   * @returns {Promise<number>}
+   *   The maximum number of pages.
+   */
   async getPagesLimit() {
     if (this._pagesLimit != null) {
       return this._pagesLimit;
     }
+    // @ts-ignore - maxPages is dynamically added.
     if (this.maxPages >= 0) {
+      // @ts-ignore - maxPages is dynamically added.
       return (this._pagesLimit = this.maxPages);
     }
 
-    // The user didn't specify a custom limit, so we calculate the number of
-    // unique places that may fit an optimal database size on this hardware.
-    // Oldest pages over this threshold will be expired.
-    let memSizeBytes = MEMSIZE_FALLBACK_BYTES;
-    try {
-      // Limit the size on systems with small memory.
-      memSizeBytes = Services.sysinfo.getProperty("memsize");
-    } catch (ex) {}
-    if (memSizeBytes <= 0) {
-      memSizeBytes = MEMSIZE_FALLBACK_BYTES;
-    }
-
-    let diskAvailableBytes = DISKSIZE_FALLBACK_BYTES;
-    try {
-      // Protect against a full disk or tiny quota.
-      diskAvailableBytes =
-        lazy.PlacesUtils.history.DBConnection.databaseFile.QueryInterface(
-          Ci.nsIFile
-        ).diskSpaceAvailable;
-    } catch (ex) {}
-    if (diskAvailableBytes <= 0) {
-      diskAvailableBytes = DISKSIZE_FALLBACK_BYTES;
-    }
-
-    const isMemoryConstrained =
-      memSizeBytes < DATABASE_MEMORY_CONSTRAINED_THRESHOLD;
-    const isDiskConstrained =
-      diskAvailableBytes < DATABASE_DISK_CONSTRAINED_THRESHOLD;
-
     let optimalDatabaseSize = DATABASE_MAX_SIZE;
-    if (isMemoryConstrained || isDiskConstrained) {
-      // This size is used to protect against a large database size
-      // on disks with limited space or on systems with small memory
-      optimalDatabaseSize /= 2;
-    }
 
     // Calculate avg size of a URI in the database.
     let db;
@@ -712,6 +756,15 @@ nsPlacesExpiration.prototype = {
 
   _isIdleObserver: false,
   _expireOnIdle: false,
+
+  /**
+   * Sets if expiration should occur when the system is idle. It also manages
+   * idle observation and adjusts behavior based on shutdown state and
+   * debugging.
+   *
+   * @param {boolean} aExpireOnIdle
+   *   Whether to expire on idle time.
+   */
   set expireOnIdle(aExpireOnIdle) {
     // Observe idle regardless aExpireOnIdle, since we always want to stop
     // timed expiration on idle, to preserve mobile battery life.
@@ -732,6 +785,12 @@ nsPlacesExpiration.prototype = {
       this._expireOnIdle = aExpireOnIdle;
     }
   },
+
+  /**
+   * Whether to expire visits and orphans.
+   *
+   * @returns {boolean}
+   */
   get expireOnIdle() {
     return this._expireOnIdle;
   },
@@ -742,11 +801,10 @@ nsPlacesExpiration.prototype = {
   /**
    * Expires visits and orphans.
    *
-   * @param aAction
-   *        The ACTION we are expiring for.  See the ACTION const for values.
-   * @param aLimit
-   *        Whether to use small, large or no limits when expiring.  See the
-   *        LIMIT const for values.
+   * @param {ACTION} aAction
+   *   The ACTION we are expiring for.
+   * @param {LIMIT} aLimit
+   *   Whether to use small, large or no limits when expiring.
    */
   async _expire(aAction, aLimit) {
     // Don't try to further expire after shutdown.
@@ -827,13 +885,16 @@ nsPlacesExpiration.prototype = {
   /**
    * Generate a query used for expiration.
    *
-   * @param aQueryType
-   *        Type of the query.
-   * @param aLimit
-   *        Whether to use small, large or no limits when expiring.  See the
-   *        LIMIT const for values.
-   * @param aAction
-   *        Current action causing the expiration.  See the ACTION const.
+   * @param {string} aQueryType
+   *   Type of the query.
+   * @param {LIMIT} aLimit
+   *   Whether to use small, large or no limits when expiring.
+   * @param {ACTION} aAction
+   *   Current action causing the expiration.
+   *
+   * @returns {Promise<object|undefined>}
+   *   Resolves an object based on the query, or undefined if no valid query
+   *   type was provided.
    */
   async _getQueryParams(aQueryType, aLimit, aAction) {
     let baseLimit;
@@ -905,7 +966,9 @@ nsPlacesExpiration.prototype = {
   /**
    * Creates a new timer based on this.intervalSeconds.
    *
-   * @returns a REPEATING_SLACK nsITimer that runs every this.intervalSeconds.
+   * @returns {nsITimer|undefined}
+   *   A REPEATING_SLACK nsITimer that runs every this.intervalSeconds. Returns
+   *   undefined if this is shutting down.
    */
   _newTimer() {
     if (this._timer) {
@@ -916,14 +979,17 @@ nsPlacesExpiration.prototype = {
     }
 
     if (!this._isIdleObserver) {
+      // @ts-ignore - _idle is lazily instantiated.
       this._idle.addIdleObserver(this, IDLE_TIMEOUT_SECONDS);
       this._isIdleObserver = true;
     }
 
+    // @ts-ignore - this.intervalSeconds is lazily instantiated.
+    let seconds = this.intervalSeconds;
     let interval =
       this.status != STATUS.DIRTY
-        ? this.intervalSeconds * EXPIRE_AGGRESSIVITY_MULTIPLIER
-        : this.intervalSeconds;
+        ? seconds * EXPIRE_AGGRESSIVITY_MULTIPLIER
+        : seconds;
 
     let timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
     timer.initWithCallback(

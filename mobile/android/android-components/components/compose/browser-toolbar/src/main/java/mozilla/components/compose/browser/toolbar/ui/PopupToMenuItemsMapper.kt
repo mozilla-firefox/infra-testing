@@ -4,84 +4,160 @@
 
 package mozilla.components.compose.browser.toolbar.ui
 
-import android.content.Context
+import android.view.SoundEffectConstants
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.Stable
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.core.content.ContextCompat
-import mozilla.components.browser.menu2.BrowserMenuController
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.unit.dp
+import com.google.accompanist.drawablepainter.rememberDrawablePainter
+import mozilla.components.compose.base.modifier.thenConditional
+import mozilla.components.compose.base.theme.AcornTheme
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarInteraction
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarInteraction.BrowserToolbarEvent
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarInteraction.BrowserToolbarMenu
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarInteraction.CombinedEventAndMenu
+import mozilla.components.compose.browser.toolbar.store.BrowserToolbarMenuItem
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarMenuItem.BrowserToolbarMenuButton
+import mozilla.components.compose.browser.toolbar.store.BrowserToolbarMenuItem.BrowserToolbarMenuButton.ContentDescription.StringContentDescription
+import mozilla.components.compose.browser.toolbar.store.BrowserToolbarMenuItem.BrowserToolbarMenuButton.ContentDescription.StringResContentDescription
+import mozilla.components.compose.browser.toolbar.store.BrowserToolbarMenuItem.BrowserToolbarMenuButton.Icon.DrawableIcon
+import mozilla.components.compose.browser.toolbar.store.BrowserToolbarMenuItem.BrowserToolbarMenuButton.Icon.DrawableResIcon
+import mozilla.components.compose.browser.toolbar.store.BrowserToolbarMenuItem.BrowserToolbarMenuButton.Text.StringResText
+import mozilla.components.compose.browser.toolbar.store.BrowserToolbarMenuItem.BrowserToolbarMenuButton.Text.StringText
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarMenuItem.BrowserToolbarMenuDivider
-import mozilla.components.concept.menu.MenuStyle
-import mozilla.components.concept.menu.candidate.DecorativeTextMenuCandidate
-import mozilla.components.concept.menu.candidate.DividerMenuCandidate
-import mozilla.components.concept.menu.candidate.DrawableMenuIcon
-import mozilla.components.concept.menu.candidate.MenuCandidate
-import mozilla.components.concept.menu.candidate.TextMenuCandidate
 
-/**
- * Builds a [BrowserMenuController] from a [BrowserToolbarInteraction].
- * Will return `null` if `this` is not a [BrowserToolbarMenu] or contains no menu items configurations.
- *
- * @param onInteraction Callback for handling [BrowserToolbarEvent]s on user interactions with the menu items.
- */
 @Stable
-@ReadOnlyComposable
-@Composable
-internal fun BrowserToolbarInteraction?.buildMenu(
-    onInteraction: (BrowserToolbarEvent) -> Unit,
-) = when (this) {
-    is BrowserToolbarMenu -> buildMenuController(toMenuItems(onInteraction))
-    is CombinedEventAndMenu -> buildMenuController(menu.toMenuItems(onInteraction))
-    else -> null
+internal fun BrowserToolbarInteraction.toMenuItems(): List<BrowserToolbarMenuItem> = when (this) {
+    is BrowserToolbarMenu -> items()
+    is CombinedEventAndMenu -> menu.items()
+    else -> emptyList()
 }
 
-@Stable
-@ReadOnlyComposable
 @Composable
-private fun BrowserToolbarMenu.toMenuItems(
+@Suppress("LongMethod")
+internal fun menuItemComposable(
+    source: BrowserToolbarMenuItem,
     onInteraction: (BrowserToolbarEvent) -> Unit,
-) = items().mapNotNull {
-    when (it) {
+): @Composable () -> Unit {
+    return when (source) {
         is BrowserToolbarMenuButton -> {
-            if (it.icon == null && it.iconResource == null && it.text != null) {
-                DecorativeTextMenuCandidate(
-                    text = stringResource(it.text),
-                )
-            } else if ((it.icon != null || it.iconResource != null) && it.text != null) {
-                TextMenuCandidate(
-                    text = stringResource(it.text),
-                    start = it.toDrawableMenuIcon(LocalContext.current),
-                    onClick = {
-                        it.onClick?.let { onInteraction(it) }
-                    },
-                )
-            } else {
-                null
+            @Composable {
+                val view = LocalView.current
+                val contentDescription = source.contentDescription()
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .background(MaterialTheme.colorScheme.surfaceContainerLowest)
+                        .thenConditional(
+                            Modifier.clickable(
+                                role = Role.Button,
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = ripple(
+                                    bounded = true,
+                                    color = AcornTheme.colors.ripple,
+                                ),
+                                onClick = {
+                                    view.playSoundEffect(SoundEffectConstants.CLICK)
+                                    source.onClick?.let { onInteraction(it) }
+                                },
+                            ),
+                        ) { source.onClick != null }
+                        .clearAndSetSemantics {
+                            this.contentDescription = contentDescription
+                        }
+                        .fillMaxWidth()
+                        .minimumInteractiveComponentSize()
+                        .padding(horizontal = 16.dp),
+                ) {
+                    when (source.icon) {
+                        is DrawableIcon -> {
+                            Image(
+                                painter = rememberDrawablePainter(source.icon.drawable),
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp),
+                                contentScale = ContentScale.Crop,
+                                colorFilter = when (source.icon.shouldTint) {
+                                    true -> ColorFilter.tint(MaterialTheme.colorScheme.onSurface)
+                                    else -> null
+                                },
+                            )
+                        }
+                        is DrawableResIcon -> {
+                            Icon(
+                                painter = painterResource(source.icon.resourceId),
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp),
+                                tint = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                        null -> {}
+                    }
+
+                    if (source.icon != null) {
+                        Spacer(modifier = Modifier.width(20.dp))
+                    }
+
+                    Text(
+                        text = source.text(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .wrapContentSize(Alignment.CenterStart),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        style = AcornTheme.typography.subtitle1,
+                    )
+                }
             }
         }
-        is BrowserToolbarMenuDivider -> DividerMenuCandidate()
+
+        is BrowserToolbarMenuDivider -> {
+            @Composable {
+                HorizontalDivider()
+            }
+        }
     }
 }
 
-private fun buildMenuController(menuItems: List<MenuCandidate>) = when (menuItems.isNotEmpty()) {
-    true -> BrowserMenuController(
-        style = MenuStyle(
-            completelyOverlap = true,
-        ),
-    ).apply {
-        submitList(menuItems)
-    }
-
-    false -> null
+@Composable
+@ReadOnlyComposable
+private fun BrowserToolbarMenuButton.text() = when (text) {
+    is StringText -> text.text
+    is StringResText -> stringResource(text.resourceId)
 }
 
-private fun BrowserToolbarMenuButton.toDrawableMenuIcon(context: Context) = DrawableMenuIcon(
-    drawable = icon ?: iconResource?.let { ContextCompat.getDrawable(context, it) },
-)
+@Composable
+@ReadOnlyComposable
+private fun BrowserToolbarMenuButton.contentDescription() = when (contentDescription) {
+    is StringContentDescription -> contentDescription.text
+    is StringResContentDescription -> stringResource(contentDescription.resourceId)
+}
